@@ -2,7 +2,7 @@
 
 2026-10-28。剪贴板（`PLAN-v9-clipboard.md`）、截图标注（`PLAN-v9-annotate.md`）、设置之后，用户：「检查启动器的样式和功能有没有和 macos 保持一致，没有的话就开始对齐 macos；你只管实现功能和对齐 UI，我会让 windows 的去检查」。
 
-**状态：用户说「没有的话就开始对齐」，D1–D9 按推荐直接做（想改哪一条说一声，再回头改）；审查方在 Mac 上写、不编译，7a–7d 做完一批推一次，Windows 那边编译、截图、手测。** 先列 Windows 现在的毛病（§1），再按结果（§2）、视觉（§3）、按键和 Ctrl+K（§4）、设置页（§5）逐项对 mac，最后是替用户定的几件事（§6）和分批（§7）。
+**状态：用户说「没有的话就开始对齐」，D1–D9 按推荐直接做（想改哪一条说一声，再回头改）。7a–7d 审查方在 Mac 上都写完了（2026-10-28，`git log --grep "启动器"`），一个字都没编译过：Windows 那边先编译、跑单测和 `--ui-snapshots`，编译错直接修；手测见 HANDTEST 529–568（都没走）。** 先列 Windows 现在的毛病（§1），再按结果（§2）、视觉（§3）、按键和 Ctrl+K（§4）、设置页（§5）逐项对 mac，最后是替用户定的几件事（§6）和分批（§7）。
 
 - **对的是谁**：mac 的路径相对 `macos/KittyTools/`：`Launcher/LauncherModel.swift`（结果顺序、执行、按键、Ctrl+K 动作表）、`LauncherPanelView.swift`（行、分组标题、高度、底栏）、`LauncherItem.swift`（内置动作）、`SystemCommands.swift`、`WebSearch.swift`、`Calculator.swift`、`LauncherUsage.swift`（收藏、常用、移除）、`Settings/LauncherTab.swift`；规格 `.cursor/rules/mac-whisker-launcher.mdc`（写成「wl」）。Windows 对着 `024d0e3`，路径相对 `windows/KittyTools/`：`Launcher/**`、`KittyTools.Core/{LauncherItem,LauncherMatch,LauncherCommands,DirectItems,WebSearch,Calculator,PanelFooterText,PanelMetrics}.cs`、`Shell/Ui/KindTile.cs`、`Settings/SettingsWindow.cs` 的 `BuildLauncher`。
 - **规矩照旧**：功能、行为、数值、文案跟 mac；窗口外壳、字体、图标字形、快捷键写法跟 Windows（⌘ → Ctrl，⌥ → Alt，⌫ → Delete）。mac 的 pt 是 DIP；mac 13 号的副标题在 Windows 上是 14（PLAN-v7 §2.1 字号表）。全 App 不做「从小放大」。

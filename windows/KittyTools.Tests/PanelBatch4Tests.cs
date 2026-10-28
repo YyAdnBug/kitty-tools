@@ -8,21 +8,6 @@ namespace KittyTools.Tests;
 public sealed class PanelMetricsTests
 {
     [TestMethod]
-    public void HeightsFollowRowsWithMinAndMax()
-    {
-        Assert.AreEqual(PanelMetrics.LauncherChrome + 3 * PanelMetrics.LauncherRowHeight, PanelMetrics.LauncherHeight(1));
-        Assert.AreEqual(PanelMetrics.LauncherChrome + 8 * PanelMetrics.LauncherRowHeight, PanelMetrics.LauncherHeight(9));
-        Assert.AreEqual(PanelMetrics.LauncherChrome + 8 * PanelMetrics.LauncherRowHeight, PanelMetrics.LauncherHeight(40));
-    }
-
-    [TestMethod]
-    public void LauncherShowsAtLeastAsMuchAsClipboardPerRow()
-    {
-        // PLAN-v7 U3：启动器一行 40，和剪贴板一样高；同样行数时两者只差顶栏 / 底栏的 6 DIP。
-        Assert.IsTrue(PanelMetrics.LauncherHeight(5) <= PanelMetrics.ClipboardHeightFor(5, 1, reservesLens: false));
-    }
-
-    [TestMethod]
     public void LensHeightReservesRoomWithoutJumping()
     {
         // 照 mac：没有条目 140；三行一条分组 = 内缩 12 + 标题 24 + 120 + 透镜预留 158；关掉透镜不预留；12 条封顶 520。

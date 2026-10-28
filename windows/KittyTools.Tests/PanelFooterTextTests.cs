@@ -27,36 +27,42 @@ public sealed class PanelFooterTextTests
     [TestMethod]
     public void LauncherVerbFollowsKind()
     {
+        // PLAN-v9-launcher：名字照 mac primaryAction。
         Assert.AreEqual(new FooterVerb("打开", false), PanelFooterText.LauncherVerb(LauncherKind.App, @"C:\a.exe", false));
         Assert.AreEqual("打开", PanelFooterText.LauncherVerb(LauncherKind.Setting, "ms-settings:display", false).Text);
-        Assert.AreEqual("打开", PanelFooterText.LauncherVerb(LauncherKind.Url, "https://example.com", false).Text);
+        Assert.AreEqual("打开网址", PanelFooterText.LauncherVerb(LauncherKind.Url, "https://example.com", false).Text);
         Assert.AreEqual("打开", PanelFooterText.LauncherVerb(LauncherKind.Path, @"C:\a.txt", false).Text);
         Assert.AreEqual("搜索", PanelFooterText.LauncherVerb(LauncherKind.Search, "bing:x", false).Text);
         Assert.AreEqual("粘贴", PanelFooterText.LauncherVerb(LauncherKind.Calculation, "=2", false).Text);
         Assert.AreEqual("运行", PanelFooterText.LauncherVerb(LauncherKind.Command, "lock", false).Text);
-        Assert.AreEqual("搜索", PanelFooterText.LauncherVerb(LauncherKind.Action, "cb:abc", false).Text);
-        Assert.AreEqual("翻译", PanelFooterText.LauncherVerb(LauncherKind.Action, "fy:abc", false).Text);
-        Assert.AreEqual("结束", PanelFooterText.LauncherVerb(LauncherKind.Action, "kill:42", false).Text);
-        Assert.AreEqual("复制地址", PanelFooterText.LauncherVerb(LauncherKind.Action, "port:42:3000", false).Text);
-        Assert.AreEqual("运行", PanelFooterText.LauncherVerb(LauncherKind.Action, "screenshot", false).Text);
+        Assert.AreEqual("搜索", PanelFooterText.LauncherVerb(LauncherKind.Clip, "abc", false).Text);
+        Assert.AreEqual("打开", PanelFooterText.LauncherVerb(LauncherKind.Clip, "", false).Text);
+        Assert.AreEqual("翻译", PanelFooterText.LauncherVerb(LauncherKind.Translate, "abc", false).Text);
+        Assert.AreEqual("结束", PanelFooterText.LauncherVerb(LauncherKind.Process, "42", false).Text);
+        Assert.AreEqual("补全关键词", PanelFooterText.LauncherVerb(LauncherKind.Prompt, "system-kill", false).Text);
+        Assert.AreEqual("运行", PanelFooterText.LauncherVerb(LauncherKind.Action, "action:screenshot", false).Text);
     }
 
     [TestMethod]
     public void ArmedIsDangerConfirm()
     {
-        Assert.AreEqual(new FooterVerb("确认…", true), PanelFooterText.LauncherVerb(LauncherKind.Command, "restart", true));
-        Assert.AreEqual(new FooterVerb("确认…", true), PanelFooterText.LauncherVerb(LauncherKind.Action, "kill:42", true));
-        Assert.IsFalse(PanelFooterText.LauncherVerb(LauncherKind.Action, "kill:42", false).Danger);
+        Assert.AreEqual(new FooterVerb("确认重启", true), PanelFooterText.LauncherVerb(LauncherKind.Command, "restart", true, "重启"));
+        Assert.AreEqual(new FooterVerb("确认结束", true), PanelFooterText.LauncherVerb(LauncherKind.Process, "42", true));
+        Assert.IsFalse(PanelFooterText.LauncherVerb(LauncherKind.Process, "42", false).Danger);
     }
 
     [TestMethod]
-    public void KindNameSplitsProcessAndPort()
+    public void KindNameFollowsMac()
     {
         Assert.AreEqual("应用", PanelFooterText.LauncherKindName(LauncherKind.App, "x"));
         Assert.AreEqual("系统", PanelFooterText.LauncherKindName(LauncherKind.Command, "lock"));
-        Assert.AreEqual("进程", PanelFooterText.LauncherKindName(LauncherKind.Action, "kill:42"));
-        Assert.AreEqual("端口", PanelFooterText.LauncherKindName(LauncherKind.Action, "port:42:80"));
-        Assert.AreEqual("动作", PanelFooterText.LauncherKindName(LauncherKind.Action, "screenshot"));
+        Assert.AreEqual("进程", PanelFooterText.LauncherKindName(LauncherKind.Process, "42"));
+        Assert.AreEqual("进程", PanelFooterText.LauncherKindName(LauncherKind.Process, "42:80"));
+        Assert.AreEqual("命令", PanelFooterText.LauncherKindName(LauncherKind.Action, "action:screenshot"));
         Assert.AreEqual("计算", PanelFooterText.LauncherKindName(LauncherKind.Calculation, "=1"));
+        Assert.AreEqual("PDF", PanelFooterText.LauncherKindName(LauncherKind.Path, @"C:\a\report.pdf"));
+        Assert.AreEqual("文件夹", PanelFooterText.LauncherKindName(LauncherKind.Path, @"C:\a\"));
+        Assert.AreEqual("系统", PanelFooterText.LauncherKindName(LauncherKind.Prompt, "system-quit"));
+        Assert.AreEqual("搜索", PanelFooterText.LauncherKindName(LauncherKind.Prompt, "google"));
     }
 }

@@ -297,8 +297,8 @@ internal static unsafe partial class ClipboardFormats
         return (path, DisplayName(path), processId);
     }
 
-    /// <summary>进程号 → （父进程号, 文件名）：用 Toolhelp 快照一次拿全，找主程序时只查表。</summary>
-    private static Dictionary<uint, (uint Parent, string Name)> SnapshotProcesses()
+    /// <summary>进程号 → （父进程号, 文件名）：用 Toolhelp 快照一次拿全，找主程序时只查表（启动器的 kill / port 也用）。</summary>
+    internal static Dictionary<uint, (uint Parent, string Name)> SnapshotProcesses()
     {
         var map = new Dictionary<uint, (uint, string)>();
         var snapshot = CreateToolhelp32Snapshot(Th32CsSnapProcess, 0);

@@ -60,7 +60,7 @@ public sealed class CalculatorPortedTests
     {
         Assert.AreEqual("0.3", Calculator.Format(0.1 + 0.2));
         Assert.AreEqual("30", Calculator.Format(30.000));
-        Assert.AreEqual("1E+20", Calculator.Format(1e20));
+        Assert.AreEqual("1E20", Calculator.Format(1e20)); // 同 mac（Foundation 的科学计数不带 +）
     }
 }
 

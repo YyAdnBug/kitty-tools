@@ -75,6 +75,43 @@ internal sealed class LauncherUsageStore
         return _tops;
     }
 
+    /// <summary>
+    /// 「常用」里 Ctrl+Delete（mac forget）：忘掉这一项的全部使用记录（全局的和各个查询的），返回删掉的那几行，Ctrl+Z 原样放回。
+    /// </summary>
+    public List<LauncherUsageRow> Forget(LauncherItem item)
+    {
+        var kind = KindText(item.Kind);
+        var removed = _entries.Values.Where(row => row.Kind == kind && row.Target == item.Target).ToList();
+        foreach (var row in removed)
+        {
+            _entries.Remove(Key(row.Query, row.Kind, row.Target));
+            _database.DeleteLauncherUsage(row.Query, row.Kind, row.Target);
+        }
+
+        return removed;
+    }
+
+    /// <summary>撤销移除：把 Forget 删掉的几行原样写回。</summary>
+    public void Restore(IEnumerable<LauncherUsageRow> rows)
+    {
+        foreach (var row in rows)
+        {
+            _entries[Key(row.Query, row.Kind, row.Target)] = row;
+            try
+            {
+                _database.SaveLauncherUsage(row);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("launcher.usage-restore-failed", ex);
+            }
+        }
+    }
+
+    /// <summary>用过的网址 / 文件（mac usedLocations）：不在任何目录里，靠全局使用记录找回来，和应用一起参与排序。</summary>
+    public IEnumerable<LauncherUsageRow> UsedLocations()
+        => _entries.Values.Where(row => row.Query.Length == 0 && row.Kind is "url" or "path");
+
     public void Clear()
     {
         _entries.Clear();
@@ -132,6 +169,10 @@ internal sealed class LauncherUsageStore
         LauncherKind.Url => "url",
         LauncherKind.Path => "path",
         LauncherKind.Search => "search",
+        LauncherKind.Clip => "clip",
+        LauncherKind.Translate => "translate",
+        LauncherKind.Prompt => "prompt",
+        LauncherKind.Process => "process",
         _ => "calculation",
     };
 

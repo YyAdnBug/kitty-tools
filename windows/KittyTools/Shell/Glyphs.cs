@@ -124,4 +124,12 @@ internal static class Glyphs
     public const string Lock = "\uE72E";
     public const string Sleep = "\uE708";
     public const string Recycle = "\uE74D";
+
+    // 启动器对齐 mac（PLAN-v9-launcher）：系统命令、Ctrl+K 菜单用到的。
+    public const string Monitor = "\uE7F4";
+    public const string SignOut = "\uE77B";
+    public const string VolumeUp = "\uE995";
+    public const string VolumeDown = "\uE993";
+    public const string Command = "\uE756";
+    public const string Minimize = "\uE921";
 }

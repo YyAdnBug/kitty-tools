@@ -13,7 +13,7 @@ internal sealed partial class ListHighlight : Grid
 
     public ListHighlight()
     {
-        Height = PanelMetrics.LauncherRowHeight;
+        Height = LauncherListLayout.RowHeight;
         IsHitTestVisible = false;
         Visibility = Visibility.Collapsed;
         HorizontalAlignment = HorizontalAlignment.Stretch;

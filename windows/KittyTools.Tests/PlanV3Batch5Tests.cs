@@ -14,7 +14,8 @@ public sealed class LauncherCommandTests
         Assert.AreEqual("report", LauncherCommands.Classify(" report").Query);
         Assert.AreEqual(LauncherMode.FileSearch, LauncherCommands.Classify("open report.pdf").Mode);
         Assert.AreEqual("report.pdf", LauncherCommands.Classify("open report.pdf").Query);
-        Assert.AreEqual(LauncherMode.FileSearch, LauncherCommands.Classify("FIND report").Mode);
+        // PLAN-v9-launcher：find 和 open 分开（find 的 Enter 是在资源管理器中显示）。
+        Assert.AreEqual(LauncherMode.FileFind, LauncherCommands.Classify("FIND report").Mode);
         Assert.AreEqual(LauncherMode.Kill, LauncherCommands.Classify("kill code").Mode);
         Assert.AreEqual("code", LauncherCommands.Classify("kill code").Query);
         Assert.AreEqual(LauncherMode.Port, LauncherCommands.Classify("port 443").Mode);

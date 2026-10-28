@@ -297,35 +297,40 @@ internal static class ShortcutsSheet
             new("Ctrl+W", "收起"),
         }),
 
-        // Launcher/LauncherPanel.xaml.cs 的 OnKeyDown，回车的几种在 LauncherModel.Execute。
+        // Launcher/LauncherPanel.xaml.cs 的 OnKeyDown，各键做什么在 LauncherModel（PLAN-v9-launcher K1–K9）。
         new("launcher", "启动器", "launcher", Glyphs.Search, new[] { HotKeyActions.Launcher }, new ShortcutEntry[]
         {
-            new("Enter", "打开选中项（计算结果是粘贴）；关机这类命令要再按一次确认"),
-            new("Ctrl+Enter", "在资源管理器中显示（应用是打开所在位置，计算结果只复制）"),
+            new("Enter", "打开选中项（计算结果是粘贴，find 搜到的文件是在资源管理器中显示）；关机、结束进程这类要再按一次确认"),
+            new("Ctrl+Enter", "在资源管理器中显示（计算结果只复制，网址用别的浏览器打开，quit 里是强制退出）"),
+            new("Alt+Enter", "在资源管理器里搜索输入的字"),
+            new("Shift+Enter", "用兜底搜索在网上搜输入的字"),
             new("Ctrl+Shift+Enter", "以管理员身份运行（应用）"),
-            new("Tab", "补全（计算结果接着算）"),
-            new("Ctrl+C", "复制网址或路径"),
-            new("Ctrl+D", "加入 / 取消收藏"),
+            new("Tab", "补全到搜索框（计算结果接着算，文件夹接着往下找）"),
+            new("Ctrl+C", "复制路径、网址或结果"),
+            new("Ctrl+Shift+C", "网址复制为 Markdown 链接"),
+            new("Ctrl+D", "加入 / 取消收藏（最多 8 个）"),
             new("Ctrl+Alt+↑↓", "调整收藏的顺序"),
-            new("Ctrl+K", "打开操作菜单（右键是同一份）"),
+            new("Ctrl+Delete", "从「常用」里移除选中的一项（Ctrl+Z 撤销）"),
+            new("Ctrl+K", "打开操作菜单（光标在末尾时按 → 也行；右键是同一份）"),
             new("Ctrl+1–9", "打开第 1–9 项"),
-            new("Ctrl", "按住一会儿，前 9 行右边浮出 1–9 的键帽"),
+            new("Ctrl", "按住一会儿，前 9 行右边换成 Ctrl+1–9 的键帽；按住 Ctrl / Alt / Shift 时选中行写着松手前按 Enter 会做什么"),
             new("↑↓", "移动选中（到头从另一头接着）"),
             new("Ctrl+,", "打开 设置 › 启动器"),
-            new("Esc", "先清空搜索，再收起"),
+            new("Esc", "先关菜单、撤掉等确认的那一下，再清空搜索，最后收起"),
         }),
 
         // Core/LauncherCommands.cs、WebSearch.cs，Launcher/SystemCommands.cs。
         new("launcher", "启动器 · 输入", "launcher", Glyphs.CommandPrompt, Array.Empty<string>(), new ShortcutEntry[]
         {
             new("空格", "开头打一个空格：搜文件"),
-            new("open", "find", "搜文件（后面不打字列最近用过的 20 个）"),
-            new("kill", "列出进程：Enter 结束（再按一次确认）"),
-            new("port", "列出在监听的端口：Enter 复制「localhost:端口」"),
+            new("open", "find", "搜文件并打开 / 在资源管理器中显示（后面不打字列最近打开的）"),
+            new(new[] { "quit", "hide", "forcequit" }, "列出正在运行的应用：退出（关窗口）/ 最小化 / 强制退出"),
+            new("kill", "列出后台进程：Enter 结束（再按一次确认）；「kill :3000」按端口找"),
+            new("port", "列出在监听的端口：Enter 结束占着它的进程（有窗口的程序是退出）"),
             new("cb", "在剪贴板历史里搜"),
             new("fy", "翻译输入的文字"),
             new(new[] { "g", "bing", "bd", "gh" }, "关键词 + 空格 + 要搜的字：网页搜索（设置 › 启动器 里能加能改）"),
-            new("restart", "系统命令（锁定、睡眠、注销、重启、关机、清空回收站）：中文、英文、拼音都能搜"),
+            new(new[] { "lock", "sleep", "emptytrash" }, "系统命令（锁定、睡眠、关闭显示器、屏保、回收站、注销、重启、关机、音量）：中文、英文、拼音都能搜"),
         }),
 
         // Translate/TranslateWindow.cs 的 OnSourceKeyDown（焦点在原文框里时）。

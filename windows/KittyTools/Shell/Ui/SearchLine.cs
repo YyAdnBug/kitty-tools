@@ -25,7 +25,7 @@ public sealed partial class SearchLine : Grid
         ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
-        var icon = new FontIcon
+        _icon = new FontIcon
         {
             Glyph = Glyphs.Search,
             FontSize = 17,
@@ -35,8 +35,8 @@ public sealed partial class SearchLine : Grid
             Width = 22,
             HorizontalAlignment = HorizontalAlignment.Center,
         };
-        SetColumn(icon, 0);
-        Children.Add(icon);
+        SetColumn(_icon, 0);
+        Children.Add(_icon);
 
         Chips = new StackPanel
         {
@@ -85,6 +85,10 @@ public sealed partial class SearchLine : Grid
     }
 
     private readonly Border _hairline;
+    private readonly FontIcon _icon;
+
+    /// <summary>线头的符号：平时放大镜，Ctrl+K 菜单开着时换成命令符号（mac SearchLine symbol）。</summary>
+    public void SetSymbol(string glyph) => _icon.Glyph = glyph;
 
     public TextBox Box { get; }
 

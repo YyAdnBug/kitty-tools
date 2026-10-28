@@ -1,5 +1,5 @@
 // 种类色块（PLAN-v7 §2.1）：家族色从上往下 0.95 → 0.75 的渐变，白色符号，0.5 px 内描边。
-// 24 / 32 两档；取代以前的「家族色 12% 淡底 + 彩色符号」。
+// 24 / 32 两档；取代以前的「家族色 12% 淡底 + 彩色符号」。启动器各种结果的家族色和符号照 mac（PLAN-v9-launcher V8）。
 using KittyTools.Core;
 using Microsoft.UI;
 using Microsoft.UI.Text;
@@ -71,17 +71,19 @@ internal static class KindTile
         };
     }
 
+    /// <summary>
+    /// 启动器每种结果的家族色（照 mac LauncherItem.familyColor）：应用 / 文件灰（只在取不到图标时露出来）、系统命令和进程紫、
+    /// 网址青、搜索和补全提示靛、计算橙、cb 那一行蓝、fy 那一行绿；内置动作跟它在托盘菜单里那一节。
+    /// </summary>
     public static string FamilyOf(LauncherKind kind) => kind switch
     {
-        LauncherKind.App => "launcher",
-        LauncherKind.Setting => "general",
-        LauncherKind.Command => "command",
-        LauncherKind.Action => "capture",
+        LauncherKind.Command or LauncherKind.Process => "command",
         LauncherKind.Url => "url",
-        LauncherKind.Path => "shortcut",
-        LauncherKind.Search => "search",
+        LauncherKind.Search or LauncherKind.Prompt => "search",
         LauncherKind.Calculation => "calculator",
-        _ => "translate",
+        LauncherKind.Clip => "clipboard",
+        LauncherKind.Translate => "translate",
+        _ => "general",
     };
 
     public static string GlyphOf(LauncherKind kind) => kind switch
@@ -89,56 +91,43 @@ internal static class KindTile
         LauncherKind.App => Glyphs.App,
         LauncherKind.Setting => Glyphs.Settings,
         LauncherKind.Command => Glyphs.Shutdown,
-        LauncherKind.Action => Glyphs.Copy,
+        LauncherKind.Action => Glyphs.Settings,
         LauncherKind.Url => Glyphs.Globe,
-        LauncherKind.Path => Glyphs.Folder,
-        LauncherKind.Search => Glyphs.Search,
+        LauncherKind.Path => Glyphs.File,
+        LauncherKind.Search or LauncherKind.Prompt => Glyphs.Search,
         LauncherKind.Calculation => Glyphs.Calculator,
-        _ => Glyphs.Translate,
+        LauncherKind.Clip => Glyphs.ClipboardHistory,
+        LauncherKind.Translate => Glyphs.TextTranslate,
+        LauncherKind.Process => Glyphs.Process,
+        _ => Glyphs.App,
     };
 
-    /// <summary>动作按目标细分家族（PLAN-v7 §3.2：端口、kill 用各自的色块，不要一律是复制图标）。</summary>
-    public static string FamilyOf(LauncherKind kind, string target)
+    /// <summary>按目标细分：内置动作用它自己的、系统命令各有各的符号、补全提示看是哪一种（文件 / 系统命令 / fy / 网页搜索）。</summary>
+    public static string FamilyOf(LauncherKind kind, string target) => kind switch
     {
-        if (kind != LauncherKind.Action)
-        {
-            return FamilyOf(kind);
-        }
+        LauncherKind.Action => LauncherActions.FamilyOf(target),
+        LauncherKind.Prompt when target.StartsWith("file-", StringComparison.Ordinal) => "general",
+        LauncherKind.Prompt when target.StartsWith("system-", StringComparison.Ordinal) => "command",
+        LauncherKind.Prompt when target == "translate-fy" => "translate",
+        _ => FamilyOf(kind),
+    };
 
-        return target switch
-        {
-            _ when target.StartsWith("kill:", StringComparison.Ordinal) => "command",
-            _ when target.StartsWith("port:", StringComparison.Ordinal) => "command",
-            _ when target.StartsWith("cb:", StringComparison.Ordinal) => "clipboard",
-            _ when target.StartsWith("fy:", StringComparison.Ordinal) => "translate",
-            LauncherActions.Clipboard => "clipboard",
-            LauncherActions.Translate => "translate",
-            LauncherActions.Settings or LauncherActions.Quit => "general",
-            _ => FamilyOf(kind),
-        };
-    }
-
-    public static string GlyphOf(LauncherKind kind, string target)
+    public static string GlyphOf(LauncherKind kind, string target) => kind switch
     {
-        if (kind != LauncherKind.Action)
+        LauncherKind.Action => LauncherActions.GlyphOf(target),
+        LauncherKind.Command => SystemCommands.GlyphOf(target),
+        LauncherKind.Path when target.EndsWith('\\') => Glyphs.Folder,
+        LauncherKind.Prompt => target switch
         {
-            return GlyphOf(kind);
-        }
-
-        return target switch
-        {
-            _ when target.StartsWith("kill:", StringComparison.Ordinal) => Glyphs.Process,
-            _ when target.StartsWith("port:", StringComparison.Ordinal) => Glyphs.Port,
-            _ when target.StartsWith("cb:", StringComparison.Ordinal) => Glyphs.Paste,
-            _ when target.StartsWith("fy:", StringComparison.Ordinal) => Glyphs.Translate,
-            LauncherActions.Clipboard => Glyphs.ClipboardHistory,
-            LauncherActions.Translate => Glyphs.TextTranslate,
-            LauncherActions.Screenshot => Glyphs.Screenshot,
-            LauncherActions.ScreenshotTranslate => Glyphs.ScreenshotTranslate,
-            LauncherActions.Ocr => Glyphs.Ocr,
-            LauncherActions.Settings => Glyphs.Settings,
-            LauncherActions.Quit => Glyphs.Close,
-            _ => GlyphOf(kind),
-        };
-    }
+            "file-open" or "file-find" => Glyphs.Search,
+            "system-quit" => Glyphs.Close,
+            "system-hide" => Glyphs.Minimize,
+            "system-forcequit" => Glyphs.Error,
+            "system-kill" => Glyphs.Stop,
+            "system-port" => Glyphs.Port,
+            "translate-fy" => Glyphs.TextTranslate,
+            _ => Glyphs.Search,
+        },
+        _ => GlyphOf(kind),
+    };
 }

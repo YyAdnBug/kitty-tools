@@ -1,4 +1,4 @@
-// 剪贴板面板里浮起的菜单（照 mac Shell/ActionMenu.swift）：Tab 的筛选面板和 Ctrl+K 的操作面板都是它。
+// 剪贴板面板里浮起的菜单（照 mac Shell/ActionMenu.swift）：Tab 的筛选面板和 Ctrl+K 的操作面板都是它；启动器的 Ctrl+K 也用它（PLAN-v9-launcher D2）。
 // 画在面板自己里面（不是系统菜单：焦点一直留在搜索框，搜索框这时用来过滤条目）。行 28：图标 16 + 名字 + 右边的键位，
 // 已生效 / 当前所在的打品牌粉 ✓，危险项用危险色，节和节之间一条发丝线；有子列表的行尾一个 ›，进去后顶上一行「‹ 上一级」。
 // ↑↓ 选、Enter 执行（子列表行是进去）、→ 进子列表、过滤词为空时 ← 回上一级；鼠标悬停选中、点击执行。
@@ -23,7 +23,8 @@ internal sealed record PaletteItem(
     string? Shortcut = null,
     bool Checked = false,
     bool Danger = false,
-    IReadOnlyList<PaletteItem>? Submenu = null);
+    IReadOnlyList<PaletteItem>? Submenu = null,
+    string? Detail = null);
 
 internal sealed partial class ClipPalette : Grid
 {
@@ -311,9 +312,21 @@ internal sealed partial class ClipPalette : Grid
 
         Grid.SetColumn(title, 1);
         grid.Children.Add(title);
+        // 右边：子列表的 ›、键位，或一行小字（启动器计算结果「复制十六进制」要复制的值，mac ActionMenu 的 detail）。
         FrameworkElement? trailing = item.Submenu is not null
             ? new FontIcon { Glyph = Glyphs.ChevronRight, FontSize = 10, Foreground = Theme.SecondaryText() }
-            : item.Shortcut is { } shortcut ? KeyCap.Create(shortcut) : null;
+            : item.Shortcut is { } shortcut
+                ? KeyCap.Create(shortcut)
+                : item.Detail is { } detail
+                    ? new TextBlock
+                    {
+                        Text = detail,
+                        FontSize = Theme.FontSize("Kitty.FontSize.Meta"),
+                        Foreground = Theme.Brush("TextFillColorTertiaryBrush", Color.FromArgb(255, 128, 128, 128)),
+                        TextTrimming = TextTrimming.CharacterEllipsis,
+                        MaxWidth = 120,
+                    }
+                    : null;
         if (trailing is not null)
         {
             trailing.VerticalAlignment = VerticalAlignment.Center;

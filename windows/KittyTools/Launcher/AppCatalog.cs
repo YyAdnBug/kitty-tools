@@ -202,10 +202,9 @@ internal sealed class AppCatalog
                     initials.Add(pinyin.Initials);
                 }
 
+                // PLAN-v9-launcher B9（mac A25）：不写和右边「应用」重复的「桌面应用」；中文名写 exe 的英文名，子文件夹里的写文件夹名。
                 var parent = Path.GetFileName(Path.GetDirectoryName(file));
-                var subtitle = string.IsNullOrEmpty(parent) || parent.Equals("Programs", StringComparison.OrdinalIgnoreCase)
-                    ? "桌面应用"
-                    : parent;
+                var subtitle = LauncherText.AppSubtitle(title, target is null ? null : Path.GetFileName(target), parent);
                 var item = new LauncherItem
                 {
                     Kind = LauncherKind.App,
@@ -287,7 +286,7 @@ internal sealed class AppCatalog
                             Kind = LauncherKind.App,
                             Target = @"shell:AppsFolder\" + aumid,
                             Title = display,
-                            Subtitle = "商店应用",
+                            Subtitle = string.Empty,
                             Names = names.Distinct().ToList(),
                             Initials = initials.Distinct().ToList(),
                             IconData = icon,

@@ -55,31 +55,6 @@ public sealed class ProcessTreeTests
 }
 
 [TestClass]
-public sealed class PanelMetricsMixedRowsTests
-{
-    [TestMethod]
-    public void CalculationRowIsTaller()
-    {
-        var normal = PanelMetrics.LauncherHeightFor(new[] { 40.0, 40.0, 40.0 });
-        var withCalc = PanelMetrics.LauncherHeightFor(new[] { 64.0, 40.0, 40.0 });
-        Assert.AreEqual(PanelMetrics.LauncherChrome + 120, normal);
-        Assert.AreEqual(PanelMetrics.LauncherChrome + 144, withCalc);
-        Assert.IsTrue(withCalc > normal);
-    }
-
-    [TestMethod]
-    public void CapsAtEightRowsAndKeepsMinimum()
-    {
-        var many = Enumerable.Repeat(40.0, 20).ToList();
-        // 八行普通行 = 116 + 320 = 436，还没到 520。
-        Assert.AreEqual(PanelMetrics.LauncherChrome + 8 * 40, PanelMetrics.LauncherHeightFor(many));
-
-        var one = PanelMetrics.LauncherHeightFor(new[] { 40.0 });
-        Assert.AreEqual(PanelMetrics.LauncherChrome + 120, one);
-    }
-}
-
-[TestClass]
 public sealed class UpdateDownloadTotalTests
 {
     [TestMethod]

@@ -40,7 +40,9 @@ public static class DirectItems
                     Target = path,
                     Title = Path.GetFileName(path.TrimEnd('\\', '/')) is { Length: > 0 } name ? name : path,
                     Subtitle = path,
-                    Completion = path,
+                    // 文件夹补成「路径\」，接着往下找（mac completion(for:)）。
+                    Completion = Directory.Exists(path) && !path.EndsWith('\\') ? path + "\\" : path,
+                    IsFolder = Directory.Exists(path),
                 },
             };
         }

@@ -1,5 +1,6 @@
-// 启动器收藏（第三版 §6）：launcher_favorites，按 position 排；Ctrl+D 收藏 / 取消，Ctrl+Alt+↑↓ 调顺序。
-// 空查询时收藏排在「常用」前面。目标用 Target（应用路径 / 设置页 id / 命令 target），Kind 记类型，重建时能认出。
+// 启动器收藏（第三版 §6，PLAN-v9-launcher R8 照 mac）：launcher_favorites，按 position 排；Ctrl+D 收藏 / 取消（看得见的满 8 个不让加，
+// 由模型判断），Ctrl+Alt+↑↓ 和看得见的邻居换。空查询时收藏排在「常用」前面；还原不出来的只藏起来、不删。
+// 目标用 Target（应用路径 / 设置页 id / 命令 target），Kind 记类型，重建时能认出。
 using KittyTools.Infrastructure;
 
 namespace KittyTools;
@@ -84,32 +85,38 @@ internal sealed class LauncherFavorites
         return true;
     }
 
-    /// <summary>调顺序：把 target 往 delta 方向移（-1 上、+1 下），重排后写回 position。</summary>
-    public void Move(string target, int delta)
+    /// <summary>
+    /// 调顺序（Ctrl+Alt+↑↓）：和看得见的上一个 / 下一个换（藏着的收藏——这台还原不出来的——不挡着，换了看得出变化；
+    /// mac swapFavorites）。visible：空查询里看得见的收藏，按顺序。换不了返回 false（调用方响一声）。
+    /// </summary>
+    public bool Move(string target, IReadOnlyList<string> visible, int delta)
     {
-        var ordered = Load();
-        var index = ordered.FindIndex(item => item.Target == target);
-        if (index < 0)
+        var order = Load().Select(item => item.Target).ToList();
+        if (KittyTools.Core.LauncherHome.Swap(order, visible, target, delta) is not { } swapped)
         {
-            return;
+            return false;
         }
 
-        var next = Math.Clamp(index + delta, 0, ordered.Count - 1);
-        if (next == index)
+        _database.BeginTransaction();
+        try
         {
-            return;
+            for (var position = 0; position < swapped.Count; position++)
+            {
+                using var statement = _database.Connection.Prepare(
+                    "UPDATE launcher_favorites SET position = $position WHERE target = $target;");
+                statement.BindInt64(1, position);
+                statement.BindText(2, swapped[position]);
+                statement.Step();
+            }
+
+            _database.Commit();
+        }
+        catch
+        {
+            _database.Rollback();
+            throw;
         }
 
-        var moved = ordered[index];
-        ordered.RemoveAt(index);
-        ordered.Insert(next, moved);
-        for (var position = 0; position < ordered.Count; position++)
-        {
-            using var statement = _database.Connection.Prepare(
-                "UPDATE launcher_favorites SET position = $position WHERE target = $target;");
-            statement.BindInt64(1, position);
-            statement.BindText(2, ordered[position].Target);
-            statement.Step();
-        }
+        return true;
     }
 }

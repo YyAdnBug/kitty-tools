@@ -70,7 +70,15 @@ internal static class UiSnapshotProbe
                 SettingsService.Current.Theme = dark ? "dark" : "light";
                 SettingsService.Save();
                 root.RequestedTheme = theme;
-                await SafeRenderAsync(root, () => new LauncherPanel(), "launcher", dark, directory);
+                // PLAN-v9-launcher 7b：收藏 + 常用、计算卡、kill / port 列表、补全提示、空结果、Ctrl+K 菜单、按住 Ctrl 的键帽。
+                foreach (var state in new[]
+                         {
+                             "launcher", "launcher-home", "launcher-calc", "launcher-kill", "launcher-port", "launcher-prompt",
+                             "launcher-empty", "launcher-actions", "launcher-keys",
+                         })
+                {
+                    await SafeRenderAsync(root, () => new LauncherPanel(), state, dark, directory);
+                }
                 await SafeRenderAsync(root, () => new ClipboardPanel(), "clip", dark, directory);
                 // PLAN-v7 §3.1：多选时的底栏（已选 N 条 · 合并粘贴 / 收藏 / 删除 / 取消）。
                 await SafeRenderAsync(root, () => new ClipboardPanel(), "clip-multi", dark, directory);
@@ -436,7 +444,10 @@ internal static class UiSnapshotProbe
         {
             case LauncherPanel launcher:
                 launcher.OnShown();
-                launcher.SetQuery("a");
+                launcher.ApplyProbeState(name);
+                // kill / port 在后台列：等它到了再按内容定高。
+                await Task.Delay(name is "launcher-kill" or "launcher-port" ? 1500 : 300);
+                panel.Height = launcher.ContentHeightDip;
                 break;
             case ClipboardPanel clipboard:
                 clipboard.OnShown();

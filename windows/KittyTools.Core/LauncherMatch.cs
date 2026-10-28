@@ -46,6 +46,37 @@ public static class LauncherMatch
         return tokens.Length > 1 ? Math.Max(Tier(whole, item), perToken) : perToken;
     }
 
+    /// <summary>把查询折叠后按空白切成词（MayMatch 用，一次按键切一次）。</summary>
+    public static string[] Tokens(string query)
+        => Fold(query).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+
+    /// <summary>
+    /// 粗筛（mac mayMatch）：每个词都是某个名字的子串、或某个缩写的开头——这是 Score 不为 0 的必要条件。
+    /// 书签、浏览历史几千条，先用它滤一遍再完整打分。
+    /// </summary>
+    public static bool MayMatch(string[] tokens, LauncherItem item)
+    {
+        foreach (var token in tokens)
+        {
+            var hit = false;
+            foreach (var name in item.Names)
+            {
+                if (name.Contains(token, StringComparison.Ordinal))
+                {
+                    hit = true;
+                    break;
+                }
+            }
+
+            if (!hit && !(token.Length >= 2 && item.Initials.Any(initials => initials.StartsWith(token, StringComparison.Ordinal))))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     /// <summary>匹配、加使用加成、排序；同分先按 Priority，再标题短的在前，再按原顺序。</summary>
     public static List<LauncherItem> Rank(
         IReadOnlyList<LauncherItem> items,

@@ -1168,6 +1168,11 @@ internal sealed class SettingsWindow : Window
         return sketch;
     }
 
+    /// <summary>
+    /// 设置 › 启动器（PLAN-v9-launcher §5，照 mac LauncherTab）：功能开关 ｜ 呼出时切到英文输入法、启动器里的按键 ｜ 文件搜索 ｜
+    /// 浏览器书签与历史（只列装了的，每家书签 / 也搜浏览历史两个开关，下面写读到了几条）｜ 网页搜索与快捷链接（每条一个兜底开关、
+    /// 能新建和编辑、↑↓ 排序，有问题的橙字写出来）+ 有本地结果时也显示兜底搜索 ｜ 使用记录（清空…，先确认）。
+    /// </summary>
     private void BuildLauncher()
     {
         if (!ShowIfDisabled(Feature.Launcher))
@@ -1175,19 +1180,49 @@ internal sealed class SettingsWindow : Window
             return;
         }
 
-        _content.Children.Add(Header("启动器", "应用、系统设置、系统命令、计算和网址直达；网页搜索只有一个兜底。"));
+        _content.Children.Add(Header("启动器", "搜应用、系统设置、文件、书签、网址、路径、算式（也能换算单位和进制）和系统命令（lock、quit、kill 这些），Enter 打开，Ctrl+K 看这一项的全部操作。"));
         AddShortcutsLink("launcher");
         var settings = SettingsService.Current;
-        var engines = (settings.LauncherSearchEngines ?? WebSearch.Defaults())
-            .Select(engine => new KittyTools.Core.SearchEngine
+
+        AddToggle("呼出时切到英文输入法", "只在搜索框里生效，离开后恢复；要搜中文时先关掉",
+            settings.LauncherRomanInput,
+            isOn =>
             {
-                Id = engine.Id,
-                Name = engine.Name,
-                Keyword = engine.Keyword,
-                UrlTemplate = engine.UrlTemplate,
-                Fallback = engine.Fallback,
-            })
-            .ToList();
+                settings.LauncherRomanInput = isOn;
+                SettingsService.Save();
+            }, "\uE765");
+
+        // 文件搜索
+        _content.Children.Add(Section("文件搜索",
+            "「open 文件名」搜文件并打开，「find 文件名」在资源管理器中显示；搜的是 Windows 搜索建了索引的位置，不想被搜到的文件夹从索引里去掉。"));
+        _content.Children.Add(SettingsUi.Card("\uE8B7", "建了索引的位置", "设置 › 隐私和安全性 › 搜索 Windows", null,
+            () => LauncherOpeners.Start("ms-settings:cortana-windowssearch")));
+
+        // 浏览器书签与历史
+        _content.Children.Add(Section("浏览器书签与历史", "只列本机装了的浏览器。"));
+        var installed = Browsers.Installed();
+        if (installed.Count == 0)
+        {
+            _content.Children.Add(SettingsUi.Card(string.Empty, "没有找到浏览器", "装了 Edge、Chrome、Firefox 这些之后会列在这里"));
+        }
+
+        foreach (var browser in installed)
+        {
+            AddBrowserRows(settings, browser);
+        }
+
+        // 读完数据重画这一页时别再读一次：浏览器开着时 History 一直在改，不拦会一遍遍重建、滚动跳回顶部。
+        if (!_browsersJustRefreshed)
+        {
+            _ = RefreshBrowsersAsync(settings);
+        }
+
+        _browsersJustRefreshed = false;
+
+        // 网页搜索与快捷链接
+        _content.Children.Add(Section("网页搜索与快捷链接",
+            "网址里有 {query} 的是搜索（「关键词 空格 内容」直达，开关 = 没有本地结果时兜底），没有的是快捷链接。搜索的关键词重复时用靠前的；点「编辑」改名称、关键词和网址。"));
+        var engines = (settings.LauncherSearchEngines ?? WebSearch.Defaults()).Select(Copy).ToList();
 
         void Persist()
         {
@@ -1196,140 +1231,339 @@ internal sealed class SettingsWindow : Window
             BuildPage("launcher");
         }
 
-        _content.Children.Add(Section("网页搜索", "有关键词的用「关键词 空格 内容」直达；勾「兜底」的只在没有本地结果时列在最后（只能有一个）。"));
         for (var index = 0; index < engines.Count; index++)
         {
-            var engine = engines[index];
-            var row = new Grid { ColumnSpacing = 10 };
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(180) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(90) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-            var name = new StackPanel { Spacing = 1 };
-            name.Children.Add(new TextBlock
-            {
-                Text = engine.Name,
-                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            });
-            name.Children.Add(new TextBlock
-            {
-                Text = string.IsNullOrEmpty(engine.Keyword) ? "无关键词" : engine.Keyword,
-                FontSize = 11,
-                Foreground = Theme.SecondaryText(),
-            });
-            Grid.SetColumn(name, 0);
-            row.Children.Add(name);
-
-            var url = new TextBlock
-            {
-                Text = engine.UrlTemplate,
-                FontSize = 11,
-                Foreground = Theme.SecondaryText(),
-                TextTrimming = TextTrimming.CharacterEllipsis,
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-            Grid.SetColumn(url, 2);
-            row.Children.Add(url);
-
-            var fallback = new CheckBox
-            {
-                Content = "兜底",
-                IsChecked = engine.Fallback,
-                VerticalAlignment = VerticalAlignment.Center,
-            };
-            fallback.Click += (_, _) =>
-            {
-                var value = fallback.IsChecked == true;
-                foreach (var other in engines)
-                {
-                    other.Fallback = false;
-                }
-
-                engine.Fallback = value;
-                Persist();
-            };
-            Grid.SetColumn(fallback, 3);
-            row.Children.Add(fallback);
-
-            var up = new Button { Content = "↑", Padding = new Thickness(8, 2, 8, 2), IsEnabled = index > 0 };
-            up.Click += (_, _) =>
-            {
-                (engines[index - 1], engines[index]) = (engines[index], engines[index - 1]);
-                Persist();
-            };
-            Grid.SetColumn(up, 4);
-            row.Children.Add(up);
-
-            var down = new Button
-            {
-                Content = "↓",
-                Padding = new Thickness(8, 2, 8, 2),
-                IsEnabled = index < engines.Count - 1,
-            };
-            down.Click += (_, _) =>
-            {
-                (engines[index + 1], engines[index]) = (engines[index], engines[index + 1]);
-                Persist();
-            };
-            Grid.SetColumn(down, 5);
-            row.Children.Add(down);
-
-            var remove = new Button { Content = "删除", Padding = new Thickness(8, 2, 8, 2) };
-            remove.Click += (_, _) =>
-            {
-                engines.RemoveAt(index);
-                Persist();
-            };
-            Grid.SetColumn(remove, 6);
-            row.Children.Add(remove);
-            _content.Children.Add(row);
+            _content.Children.Add(EngineRow(engines, index, Persist));
         }
 
-        var add = new Button { Content = "＋ 添加搜索" };
+        var add = new Button { Content = "＋ 添加搜索或快捷链接" };
+        AutomationProperties.SetName(add, "添加搜索或快捷链接");
         var addMenu = new MenuFlyout();
-        foreach (var preset in KittyTools.Core.WebSearch.Presets
-                     .Where(preset => engines.All(engine => engine.Id != preset.Id)))
+        foreach (var preset in WebSearch.Presets.Where(preset => engines.All(engine => engine.Id != preset.Id)))
         {
-            var item = new MenuFlyoutItem { Text = preset.Name };
+            var item = new MenuFlyoutItem { Text = $"{preset.Name}（{preset.Keyword}）" };
             item.Click += (_, _) =>
             {
-                engines.Add(new KittyTools.Core.SearchEngine
-                {
-                    Id = preset.Id,
-                    Name = preset.Name,
-                    Keyword = preset.Keyword,
-                    UrlTemplate = preset.UrlTemplate,
-                    Fallback = false,
-                });
+                engines.Add(Copy(preset));
                 Persist();
             };
             addMenu.Items.Add(item);
         }
 
+        if (addMenu.Items.Count > 0)
+        {
+            addMenu.Items.Add(new MenuFlyoutSeparator());
+        }
+
+        var custom = new MenuFlyoutItem { Text = "自定义搜索或快捷链接…" };
+        custom.Click += async (_, _) =>
+        {
+            var engine = new KittyTools.Core.SearchEngine
+            {
+                Id = "custom-" + Guid.NewGuid().ToString("N")[..8],
+                Name = string.Empty,
+                Keyword = string.Empty,
+                UrlTemplate = "https://",
+                Fallback = false,
+            };
+            if (await EditEngineAsync(engine, engines.Append(engine).ToList()))
+            {
+                engines.Add(engine);
+                Persist();
+            }
+        };
+        addMenu.Items.Add(custom);
         add.Flyout = addMenu;
         _content.Children.Add(add);
 
-        _content.Children.Add(Section("使用记录", "「常用」和排序从这里学；清空后收藏和网页搜索列表不动。"));
-        var clear = new Button { Content = "清空使用记录" };
-        var armed = false;
-        clear.Click += (_, _) =>
-        {
-            if (!armed)
+        AddToggle("有本地结果时也显示兜底搜索", "关着时只在没有本地结果时才列兜底搜索",
+            settings.LauncherFallbackAlways,
+            isOn =>
             {
-                armed = true;
-                clear.Content = "再点一次：清空";
+                settings.LauncherFallbackAlways = isOn;
+                SettingsService.Save();
+            }, "\uE721");
+
+        // 使用记录
+        _content.Children.Add(Section("使用记录",
+            "启动器按用过的次数和时间排序，空搜索框里先列收藏（Ctrl+D 加入），再列「常用」。在「常用」里选中一项按 Ctrl+Delete 可以单独移除，Ctrl+Z 撤销。"));
+        var clear = new Button { Content = "清空使用记录…", Foreground = Theme.Critical() };
+        clear.Click += async (_, _) =>
+        {
+            var dialog = new ContentDialog
+            {
+                RequestedTheme = Theme.ElementTheme,
+                Title = "清空启动器的使用记录？",
+                Content = "「常用」和按使用习惯的排序会从头开始学，收藏不动。",
+                PrimaryButtonText = "清空",
+                CloseButtonText = "取消",
+                DefaultButton = ContentDialogButton.Close,
+                XamlRoot = _content.XamlRoot,
+            };
+            if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+            {
                 return;
             }
 
             LauncherUsageStore.Instance?.Clear();
             NoticeHost.Show("已清空", "「常用」从头开始学", NoticeTone.Normal);
-            BuildPage("launcher");
         };
         _content.Children.Add(clear);
+    }
+
+    /// <summary>这一次重建是浏览器数据读完触发的（不再触发下一次读）。</summary>
+    private bool _browsersJustRefreshed;
+
+    private static KittyTools.Core.SearchEngine Copy(KittyTools.Core.SearchEngine engine) => new()
+    {
+        Id = engine.Id,
+        Name = engine.Name,
+        Keyword = engine.Keyword,
+        UrlTemplate = engine.UrlTemplate,
+        Fallback = engine.Fallback,
+    };
+
+    /// <summary>
+    /// 一家浏览器（mac browserRows）：书签开关，开着时下面写读到了几条（没读到是橙字）；书签开着时下面缩进一行「也搜浏览历史」（默认关）。
+    /// </summary>
+    private void AddBrowserRows(Settings settings, BrowserInfo browser)
+    {
+        var bookmarkIds = Browsers.BookmarkIds(settings).ToList();
+        var historyIds = (settings.LauncherHistoryBrowsers ?? new List<string>()).ToList();
+        var bookmarksOn = bookmarkIds.Contains(browser.Id);
+        var bookmarkStatus = bookmarksOn ? BrowserIndex.Status(browser.Id, history: false) : null;
+        _content.Children.Add(SettingsUi.Card(
+            "\uE774",
+            browser.Name,
+            bookmarksOn ? string.Empty : "书签",
+            SettingsUi.Toggle(bookmarksOn, isOn =>
+            {
+                var ids = Browsers.BookmarkIds(settings).Where(id => id != browser.Id).ToList();
+                if (isOn)
+                {
+                    ids.Add(browser.Id);
+                }
+
+                settings.LauncherBookmarkBrowsers = ids;
+                SettingsService.Save();
+                BuildPage("launcher");
+            }, $"读 {browser.Name} 的书签")));
+        if (bookmarksOn)
+        {
+            _content.Children.Add(StatusLine(bookmarkStatus, "书签", "书签文件里一条书签都没有", "没找到书签文件", indent: 50));
+            var historyOn = historyIds.Contains(browser.Id);
+            var historyCard = SettingsUi.Card(
+                string.Empty,
+                "也搜浏览历史",
+                historyOn ? string.Empty : "去过两次以上或手输过的网页，排在书签后面",
+                SettingsUi.Toggle(historyOn, isOn =>
+                {
+                    var ids = (settings.LauncherHistoryBrowsers ?? new List<string>()).Where(id => id != browser.Id).ToList();
+                    if (isOn)
+                    {
+                        ids.Add(browser.Id);
+                    }
+
+                    settings.LauncherHistoryBrowsers = ids;
+                    SettingsService.Save();
+                    BuildPage("launcher");
+                }, $"也搜 {browser.Name} 的浏览历史"));
+            historyCard.Margin = new Thickness(24, 0, 0, 0);
+            _content.Children.Add(historyCard);
+            if (historyOn)
+            {
+                _content.Children.Add(StatusLine(BrowserIndex.Status(browser.Id, history: true), "历史",
+                    "浏览历史里还没有常去的网页", "没找到浏览历史文件", indent: 74));
+            }
+        }
+    }
+
+    /// <summary>开关下的一行：「已读到 N 条书签」；没读到是橙字（配置问题的语义色）；还没读完写「正在读取…」。</summary>
+    private static UIElement StatusLine(BrowserStatus? status, string noun, string empty, string missing, double indent)
+    {
+        var (text, problem) = status switch
+        {
+            null or { State: BrowserReadState.Reading } => ("正在读取…", false),
+            { State: BrowserReadState.Read, Count: > 0 } read => ($"已读到 {read.Count} 条{noun}", false),
+            { State: BrowserReadState.Read } => (empty, true),
+            _ => (missing, true),
+        };
+        return new TextBlock
+        {
+            Text = text,
+            FontSize = Theme.FontSize("Kitty.FontSize.Label"),
+            Foreground = problem
+                ? Theme.Brush("SystemFillColorCautionBrush", Windows.UI.Color.FromArgb(255, 157, 93, 0))
+                : Theme.SecondaryText(),
+            Margin = new Thickness(indent, -2, 0, 4),
+        };
+    }
+
+    /// <summary>开关变了、页面重建时：浏览器数据该重读就在后台读，读完还停在这一页就再画一次（条数就出来了）。</summary>
+    private async Task RefreshBrowsersAsync(Settings settings)
+    {
+        if (await BrowserIndex.RefreshAsync(Browsers.BookmarkIds(settings), Browsers.HistoryIds(settings), force: true) &&
+            _currentPage == "launcher" && !IsClosed)
+        {
+            _browsersJustRefreshed = true;
+            BuildPage("launcher");
+        }
+    }
+
+    /// <summary>一条搜索 / 快捷链接（mac EngineListRow）：名称 + 种类或橙色的问题、关键词键帽、兜底开关（快捷链接没有）、↑ ↓ 编辑 删除。</summary>
+    private Border EngineRow(List<KittyTools.Core.SearchEngine> engines, int index, Action persist)
+    {
+        var engine = engines[index];
+        var problem = WebSearch.Problem(engine, engines);
+        var controls = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
+        if (engine.Keyword.Length > 0)
+        {
+            var keyCap = KeyCap.Create(engine.Keyword);
+            keyCap.VerticalAlignment = VerticalAlignment.Center;
+            AutomationProperties.SetName(keyCap, "关键词 " + engine.Keyword);
+            controls.Children.Add(keyCap);
+        }
+
+        if (!engine.IsQuicklink)
+        {
+            controls.Children.Add(SettingsUi.Toggle(engine.Fallback, isOn =>
+            {
+                engine.Fallback = isOn;
+                persist();
+            }, $"「{WebSearch.Title(engine)}」没有本地结果时兜底"));
+        }
+
+        Button Small(string text, string name, bool enabled, Action action)
+        {
+            var button = new Button { Content = text, Padding = new Thickness(8, 2, 8, 2), IsEnabled = enabled };
+            AutomationProperties.SetName(button, name);
+            button.Click += (_, _) => action();
+            controls.Children.Add(button);
+            return button;
+        }
+
+        Small("↑", "上移", index > 0, () =>
+        {
+            (engines[index - 1], engines[index]) = (engines[index], engines[index - 1]);
+            persist();
+        });
+        Small("↓", "下移", index < engines.Count - 1, () =>
+        {
+            (engines[index + 1], engines[index]) = (engines[index], engines[index + 1]);
+            persist();
+        });
+        Small("编辑…", "编辑 " + WebSearch.Title(engine), true, async () =>
+        {
+            if (await EditEngineAsync(engine, engines))
+            {
+                persist();
+            }
+        });
+        Small("删除", "删除 " + WebSearch.Title(engine), true, async () =>
+        {
+            // 预置的直接删（「+」里能加回来），自定义的先确认。
+            if (!WebSearch.IsPreset(engine.Id))
+            {
+                var dialog = new ContentDialog
+                {
+                    RequestedTheme = Theme.ElementTheme,
+                    Title = $"删除「{WebSearch.Title(engine)}」？",
+                    Content = "自定义的名称、关键词和网址删掉就找不回来了。",
+                    PrimaryButtonText = "删除",
+                    CloseButtonText = "取消",
+                    DefaultButton = ContentDialogButton.Close,
+                    XamlRoot = _content.XamlRoot,
+                };
+                if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+                {
+                    return;
+                }
+            }
+
+            engines.Remove(engine);
+            persist();
+        });
+
+        var card = SettingsUi.Card(
+            engine.IsQuicklink ? "\uE71B" : "\uE721",
+            WebSearch.Title(engine),
+            problem ?? WebSearch.KindTitle(engine),
+            controls);
+        if (problem is not null && card.Child is Grid grid &&
+            grid.Children.OfType<StackPanel>().FirstOrDefault()?.Children.OfType<TextBlock>().Skip(1).FirstOrDefault() is { } detail)
+        {
+            detail.Foreground = Theme.Brush("SystemFillColorCautionBrush", Windows.UI.Color.FromArgb(255, 157, 93, 0));
+        }
+
+        return card;
+    }
+
+    /// <summary>
+    /// 编辑一条（mac SearchEngineDetail，L3）：名称、关键词、网址三个框，下面橙字写现在有什么问题；网址空着或不完整时「保存」置灰。
+    /// 改的是传进来的那一条；点「保存」才返回 true。
+    /// </summary>
+    private async Task<bool> EditEngineAsync(KittyTools.Core.SearchEngine engine, List<KittyTools.Core.SearchEngine> list)
+    {
+        var draft = Copy(engine);
+        var name = new TextBox { Header = "名称", Text = draft.Name, PlaceholderText = "比如：GitHub" };
+        var keyword = new TextBox { Header = "关键词（可空）", Text = draft.Keyword, PlaceholderText = "比如：gh" };
+        var url = new TextBox
+        {
+            Header = "网址",
+            Text = draft.UrlTemplate,
+            PlaceholderText = "https://github.com/search?q={query}",
+        };
+        var hint = new TextBlock
+        {
+            FontSize = Theme.FontSize("Kitty.FontSize.Label"),
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Theme.SecondaryText(),
+        };
+        var panel = new StackPanel { Spacing = 10, MinWidth = 420 };
+        panel.Children.Add(name);
+        panel.Children.Add(keyword);
+        panel.Children.Add(url);
+        panel.Children.Add(hint);
+        var dialog = new ContentDialog
+        {
+            RequestedTheme = Theme.ElementTheme,
+            Title = engine.Name.Trim().Length == 0 ? "新建搜索或快捷链接" : "编辑「" + WebSearch.Title(engine) + "」",
+            Content = panel,
+            PrimaryButtonText = "保存",
+            CloseButtonText = "取消",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = _content.XamlRoot,
+        };
+
+        void Validate()
+        {
+            draft.Name = name.Text;
+            draft.Keyword = keyword.Text.Trim();
+            draft.UrlTemplate = url.Text.Trim();
+            var others = list.Select(item => item.Id == engine.Id ? draft : item).ToList();
+            var problem = WebSearch.Problem(draft, others);
+            hint.Text = problem ?? "网址里放 {query} 就是搜索（「关键词 空格 内容」直达），不放就是快捷链接；也可以填 C:\\ 这类文件夹路径。";
+            hint.Foreground = problem is null
+                ? Theme.SecondaryText()
+                : Theme.Brush("SystemFillColorCautionBrush", Windows.UI.Color.FromArgb(255, 157, 93, 0));
+            // 名称、网址这两样不对就不让存；关键词重复、用不上只提醒（mac 也只写橙字）。
+            dialog.IsPrimaryButtonEnabled = problem is not ("还没填名称" or "网址不完整") &&
+                                            !(problem ?? string.Empty).StartsWith("关键词「", StringComparison.Ordinal);
+        }
+
+        name.TextChanged += (_, _) => Validate();
+        keyword.TextChanged += (_, _) => Validate();
+        url.TextChanged += (_, _) => Validate();
+        Validate();
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+        {
+            return false;
+        }
+
+        engine.Name = draft.Name.Trim();
+        engine.Keyword = draft.Keyword;
+        engine.UrlTemplate = draft.UrlTemplate;
+        return true;
     }
 
     private void BuildScreenshot()
@@ -2482,6 +2716,18 @@ internal sealed class SettingsWindow : Window
 
     private static UIElement Header(string title, string subtitle)
         => SettingsUi.Header(title, subtitle);
+
+    /// <summary>启动器的「快捷键速查表」：设置窗排好版之后弹（ContentDialog 要 XamlRoot）。</summary>
+    public void ShowShortcutsSheet()
+    {
+        DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+        {
+            if (_content.XamlRoot is { } root)
+            {
+                _ = ShortcutsSheet.ShowAsync(root, null);
+            }
+        });
+    }
 
     /// <summary>页头下面一行「查看全部快捷键…」（PLAN-v8 第 4 批）：点开速查表，停在这一页那一类。</summary>
     private void AddShortcutsLink(string page)

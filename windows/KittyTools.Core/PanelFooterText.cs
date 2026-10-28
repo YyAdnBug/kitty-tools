@@ -20,41 +20,50 @@ public static class PanelFooterText
     /// <summary>多选时左边的字。</summary>
     public static string ClipSelected(int count) => $"已选 {count} 条";
 
-    /// <summary>启动器的种类名：行尾和底栏左边是同一个字。</summary>
+    /// <summary>启动器的种类名：行尾和底栏左边是同一个字（照 mac kindTitle）。文件按扩展名（文件夹写「文件夹」）。</summary>
     public static string LauncherKindName(LauncherKind kind, string target) => kind switch
     {
         LauncherKind.App => "应用",
         LauncherKind.Setting => "设置",
         LauncherKind.Command => "系统",
-        LauncherKind.Action when target.StartsWith("kill:", StringComparison.Ordinal) => "进程",
-        LauncherKind.Action when target.StartsWith("port:", StringComparison.Ordinal) => "端口",
-        LauncherKind.Action => "动作",
+        LauncherKind.Action => "命令",
         LauncherKind.Url => "网址",
-        LauncherKind.Path => "路径",
+        LauncherKind.Path => LauncherText.FileKindTitle(target, target.EndsWith('\\')),
         LauncherKind.Search => "搜索",
         LauncherKind.Calculation => "计算",
+        LauncherKind.Clip => "剪贴板",
+        LauncherKind.Translate => "翻译",
+        LauncherKind.Process => "进程",
+        LauncherKind.Prompt when target.StartsWith("system-", StringComparison.Ordinal) => "系统",
+        LauncherKind.Prompt when target == "translate-fy" => "翻译",
+        LauncherKind.Prompt => "搜索",
         _ => string.Empty,
     };
 
-    /// <summary>启动器底栏「动词 ↩」：上膛的危险命令一律「确认…」+ 危险色（mac 的两档用法）。</summary>
-    public static FooterVerb LauncherVerb(LauncherKind kind, string target, bool armed)
+    /// <summary>
+    /// 启动器底栏「动词 ↩」（照 mac primaryAction 的名字）：应用 / 文件「打开」、命令「运行」、网址「打开网址」、计算「粘贴」…；
+    /// 上膛的不可撤销命令换成「确认 + 原来的名字」（系统命令写它的标题：「确认清空回收站」）、危险色。
+    /// 带对象模式（quit / kill / port…）的名字由 LauncherModel 按模式给。
+    /// </summary>
+    public static FooterVerb LauncherVerb(LauncherKind kind, string target, bool armed, string title = "")
     {
-        if (armed)
+        var verb = kind switch
         {
-            return new FooterVerb("确认…", Danger: true);
-        }
-
-        return new FooterVerb(kind switch
-        {
-            LauncherKind.Command => "运行",
-            LauncherKind.Action when target.StartsWith("cb:", StringComparison.Ordinal) => "搜索",
-            LauncherKind.Action when target.StartsWith("fy:", StringComparison.Ordinal) => "翻译",
-            LauncherKind.Action when target.StartsWith("kill:", StringComparison.Ordinal) => "结束",
-            LauncherKind.Action when target.StartsWith("port:", StringComparison.Ordinal) => "复制地址",
-            LauncherKind.Action => "运行",
+            LauncherKind.Action or LauncherKind.Command => "运行",
+            LauncherKind.Url => "打开网址",
             LauncherKind.Search => "搜索",
             LauncherKind.Calculation => "粘贴",
+            LauncherKind.Clip => target.Length == 0 ? "打开" : "搜索",
+            LauncherKind.Translate => "翻译",
+            LauncherKind.Prompt => "补全关键词",
+            LauncherKind.Process => "结束",
             _ => "打开",
-        }, Danger: false);
+        };
+        if (armed)
+        {
+            return new FooterVerb(kind == LauncherKind.Command && title.Length > 0 ? "确认" + title : "确认" + verb, Danger: true);
+        }
+
+        return new FooterVerb(verb, Danger: false);
     }
 }

@@ -1,11 +1,14 @@
-// 启动器面板：搜索框 + 单列结果（行高 48，最多同时看到 8 行）+ 底栏。
-// 空查询是「常用」8 行；结果来源和顺序在 LauncherModel。焦点一直在搜索框，方向键转给列表。
-// 第二版 §3.6：高度随内容（三行起、八行封顶）、选中高亮滑动、按住 Ctrl 150 ms 后前九行出数字键帽、
-// 计算结果单独一种行（28 号等宽）、危险命令上膛时副标题用危险色。
-using System.Numerics;
+// 启动器面板（PLAN-v9-launcher，照 mac LauncherPanelView）：搜索线 + 列表（LauncherListView，分组标题、40 的行、64 的计算卡）+ 底栏。
+// 焦点一直在搜索框，方向键、Enter、Ctrl 组合键都在这里分给模型（状态和动作全在 LauncherModel）。高度随内容（Core 的
+// LauncherListLayout.PanelHeight），顶边不动。按住 Ctrl 150 ms 后前九行的种类换成「Ctrl+N」键帽；按住 Ctrl / Alt / Shift 时
+// 选中行的副标题换成替代动作。Ctrl+K（或光标在末尾时 →）开面板里的操作菜单（剪贴板的 ClipPalette），开着时搜索框用来过滤；
+// 右键是同一份动作的系统菜单。底栏左边是种类，右边「主动作 ↩」「操作 Ctrl+K」，有新版本时多一枚「更新到 x」。
 using KittyTools.Core;
 using KittyTools.Infrastructure;
+using KittyTools.Ui;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
@@ -18,38 +21,35 @@ namespace KittyTools;
 
 public sealed partial class LauncherPanel : UserControl
 {
-    private static string _lastQuery = string.Empty;
-    private static string? _lastTarget;
-    private static long _lastClosedAt;
-
-    private readonly List<LauncherItem> _items = new();
+    private readonly LauncherListView _list = new();
+    private readonly ClipPalette _palette = new();
     private readonly Dictionary<string, BitmapImage> _icons = new();
+    private readonly Dictionary<string, byte[]?> _pathIcons = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _pendingHosts = new(StringComparer.OrdinalIgnoreCase);
     private readonly Microsoft.UI.Dispatching.DispatcherQueueTimer _keyHintTimer;
-    private LauncherMode _specialMode = LauncherMode.Normal;
-    private readonly List<LauncherItem> _specialItems = new();
-    private CancellationTokenSource? _specialCts;
-    private string? _specialQuery;
-    private bool _specialLoading;
+    private readonly Microsoft.UI.Dispatching.DispatcherQueueTimer _shiftTimer;
     private bool _active;
-    private bool _showKeyHints;
-    private bool _executed;
-    private bool _animateHighlight;
-    private MotionCurve _highlightCurve = MotionCurve.Glide;
-    private string _query = string.Empty;
     private bool _composing;
-    private ScrollViewer? _listScroll;
-    /// <summary>底栏现在摆的是哪一套（家族 / 符号 / 动词）：没变就不重建。</summary>
-    private string _footerKey = string.Empty;
-    /// <summary>底栏的「操作 Ctrl+K」：操作菜单锚在它上面（mac：锚右下，右缘对着键帽）。</summary>
-    private Button? _actionsButton;
+    private bool _iconLoadQueued;
+    private bool _suppressSearch;
+    private bool _showKeyHints;
+    private int _selected = -1;
 
-    /// <summary>搜索线的输入框（PLAN-v7 §2.2 的共用部件）。</summary>
-    private TextBox SearchBox => SearchLineControl.Box;
+    /// <summary>选中的那一项的 id：异步到的新结果按它保持选中（结果换掉之后就对不上 _selected 的位置了）。</summary>
+    private string? _selectedId;
+    private LauncherAlternate _alternate = LauncherAlternate.None;
+    private double _paletteHeight;
+    private string? _savedQuery;
+
+    /// <summary>底栏现在摆的是哪一套：没变就不重建（按 ↓ 连发时多半不变）。</summary>
+    private string _footerKey = string.Empty;
 
     public LauncherPanel()
     {
         InitializeComponent();
-        SearchBox.PlaceholderText = "搜索应用、设置、命令…";
+        SearchLineControl.ExtendHairline();
+        SearchBox.PlaceholderText = Placeholder;
+        AutomationProperties.SetName(SearchBox, "搜索应用、网址、命令或文件");
         SearchBox.TextChanged += OnSearchTextChanged;
         AddHandler(UIElement.KeyDownEvent, new KeyEventHandler(OnKeyDown), handledEventsToo: true);
         AddHandler(UIElement.KeyUpEvent, new KeyEventHandler(OnKeyUp), handledEventsToo: true);
@@ -63,94 +63,149 @@ public sealed partial class LauncherPanel : UserControl
         _keyHintTimer.Interval = TimeSpan.FromMilliseconds(150);
         _keyHintTimer.IsRepeating = false;
         _keyHintTimer.Tick += (_, _) => SetKeyHints(true);
+        // Shift 在 Windows 上也用来打大写和符号：按住 300 ms 没打别的键才换副标题，不然打一个大写字母副标题就闪一下。
+        _shiftTimer = DispatcherQueue.CreateTimer();
+        _shiftTimer.Interval = TimeSpan.FromMilliseconds(300);
+        _shiftTimer.IsRepeating = false;
+        _shiftTimer.Tick += (_, _) => SetAlternate(LauncherAlternate.Shift);
 
-        List.Loaded += (_, _) =>
+        ListHost.Children.Insert(0, _list);
+        ListHost.Children.Add(_palette);
+        _palette.Closed += OnPaletteClosed;
+        _palette.FilterReset += () => SetSearchQuietly(string.Empty);
+        _list.ItemTapped += index =>
         {
-            _listScroll ??= FindDescendant<ScrollViewer>(List);
-            if (_listScroll is not null)
+            CloseMenu();
+            if (Model is { } model)
             {
-                _listScroll.ViewChanged += (_, _) => MoveHighlight(animated: false);
+                model.UserMovedSelection = true;
             }
 
-            MoveHighlight(animated: false);
+            Select(index, MotionCurve.Glide);
         };
-        if (AppCatalog.Instance is { } catalog)
+        _list.ItemDoubleTapped += index =>
         {
-            catalog.Changed += OnCatalogChanged;
-        }
+            if (Model is { } model && index < model.Results.Count)
+            {
+                Select(index, MotionCurve.Instant);
+                model.KeyRepeat = false;
+                model.Execute(model.Results[index]);
+                AfterAction();
+            }
+        };
+        _list.ItemRightTapped += OnItemRightTapped;
 
         // 空闲两分钟后放掉缓存的图标位图，下次打开再按需解码。
         IdleReclaimer.Register(ReleaseCaches);
     }
 
-    /// <summary>空闲回收：放掉暂时不用的图标位图。</summary>
-    public void ReleaseCaches()
-    {
-        _icons.Clear();
-        Log.Info("launcher.caches-released");
-    }
-
     public event Action? CloseRequested;
-
-    /// <summary>调试 / 从别处带查询打开（截图和手测用）。</summary>
-    public void SetQuery(string query)
-    {
-        _query = query;
-        SearchBox.Text = query;
-        SearchBox.SelectionStart = query.Length;
-        Refresh(keepSelection: false, animated: false);
-        _heightDip = ContentHeightDip;
-        SearchBox.Focus(FocusState.Programmatic);
-    }
-
-    private double _heightDip;
 
     public event Action? SettingsRequested;
 
     /// <summary>内容高度变了（DIP，是否带动画）：浮层窗口据此改高度、顶边不动。</summary>
     public event Action<double, bool>? HeightRequested;
 
+    private const string Placeholder = "搜索应用、网址、命令或文件";
+
+    private TextBox SearchBox => SearchLineControl.Box;
+
+    private static LauncherModel? Model => LauncherModel.Instance;
+
+    private LauncherItem? SelectedItem
+        => Model is { } model && _selected >= 0 && _selected < model.Results.Count ? model.Results[_selected] : null;
+
+    /// <summary>空闲回收：放掉暂时不用的图标位图。</summary>
+    public void ReleaseCaches()
+    {
+        _icons.Clear();
+        _pathIcons.Clear();
+        Log.Info("launcher.caches-released");
+    }
+
+    /// <summary>按当前结果算出来的面板高度（mac height(for:)）。</summary>
     public double ContentHeightDip
     {
         get
         {
-            var heights = _items
-                .Select(item => item.Kind == LauncherKind.Calculation
-                    ? PanelMetrics.LauncherCalculationRowHeight
-                    : PanelMetrics.LauncherRowHeight)
-                .ToList();
-            return PanelMetrics.LauncherHeightFor(heights);
+            if (Model is not { } model)
+            {
+                return LauncherListLayout.SearchHeight + LauncherListLayout.BarHeight;
+            }
+
+            var heights = model.Results.Select(item => LauncherListLayout.HeightOf(item.Kind)).ToList();
+            return LauncherListLayout.PanelHeight(
+                heights, model.Groups.Count, model.ShowsEmptyText, _palette.IsOpen ? _paletteHeight : 0);
         }
+    }
+
+    /// <summary>
+    /// 模型的回调接到这块面板上：每次呼出都接一次（截图自检会另建几块面板、把回调接走，真正那块再呼出时要接回来）。
+    /// </summary>
+    private void Wire()
+    {
+        if (Model is not { } model)
+        {
+            return;
+        }
+
+        model.HidePanel = () => CloseRequested?.Invoke();
+        model.ReplaceQuery = text =>
+        {
+            SearchBox.Text = text;
+            SearchBox.SelectionStart = text.Length;
+        };
+        model.ShowBarNotice = (text, actionText, action, success) => Footer.ShowNotice(text, actionText, action, success);
+        model.Announce = Announce;
+        model.ResultsChanged = keep =>
+        {
+            if (_active)
+            {
+                Render(keep ?? (model.UserMovedSelection ? _selectedId : null), resetScroll: false);
+            }
+        };
     }
 
     public void OnShown()
     {
+        Wire();
         _active = true;
-        _executed = false;
-        // 外观可能在收起期间换过：底栏按新颜色重建一次。
         _footerKey = string.Empty;
+        _alternate = LauncherAlternate.None;
         Footer.HideNotice();
         SetKeyHints(false);
-        var restore = _lastClosedAt != 0 &&
-                      Environment.TickCount64 - _lastClosedAt <= 60_000 &&
-                      _lastQuery.Trim().Length > 0;
-        _query = restore ? _lastQuery : string.Empty;
-        SearchBox.Text = _query;
-        Refresh(keepSelection: restore, animated: false);
-        if (restore && _lastTarget is not null)
+        if (Model is not { } model)
         {
-            var index = _items.FindIndex(item => item.Target == _lastTarget);
-            if (index >= 0)
-            {
-                _highlightCurve = MotionCurve.Snap;
-                _animateHighlight = true;
-                List.SelectedIndex = index;
-                List.ScrollIntoView(List.SelectedItem);
-            }
+            return;
+        }
+
+        model.PrepareForShow();
+        ApplyInputScope();
+        SetSearchQuietly(model.Query);
+        Render(model.KeptSelection, resetScroll: true);
+        if (model.ResumesQuery)
+        {
+            // 接着上次的查询：字全选着，直接打字就替换（mac）。
+            SearchBox.SelectAll();
         }
 
         FocusSearch();
-        AppCatalog.Instance?.RefreshIfStale();
+    }
+
+    public void OnHidden()
+    {
+        _active = false;
+        Model?.DidHide(SelectedItem?.Id);
+        _palette.Close();
+        SetSearchQuietly(string.Empty);
+        _selected = -1;
+        _selectedId = null;
+        _list.SetItems(new LauncherListLayout(Array.Empty<double>(), Array.Empty<int>()), new Dictionary<int, string>(), -1,
+            _ => throw new InvalidOperationException());
+        _keyHintTimer.Stop();
+        _shiftTimer.Stop();
+        _showKeyHints = false;
+        Footer.HideNotice();
     }
 
     public void FocusSearch()
@@ -161,691 +216,379 @@ public sealed partial class LauncherPanel : UserControl
         }
     }
 
-    public void OnHidden()
+    /// <summary>调试 / 从别处带查询打开（截图和手测用）。</summary>
+    public void SetQuery(string query)
     {
-        _active = false;
-        if (!_executed)
+        if (Model is not { } model)
         {
-            _lastQuery = _query;
-            _lastTarget = SelectedItem?.Target;
-            _lastClosedAt = Environment.TickCount64;
-        }
-        else
-        {
-            _lastQuery = string.Empty;
-            _lastTarget = null;
-            _lastClosedAt = 0;
+            return;
         }
 
-        SearchBox.Text = string.Empty;
-        _items.Clear();
-        List.ItemsSource = null;
-        Highlight.Visibility = Visibility.Collapsed;
-        _keyHintTimer.Stop();
-        _showKeyHints = false;
-        Footer.HideNotice();
+        SetSearchQuietly(query);
+        model.Search(query);
+        Render(null, resetScroll: true);
+        FocusSearch();
     }
 
-    private void OnCatalogChanged()
+    /// <summary>截图自检摆状态（UiSnapshotProbe）：launcher-home / -calc / -kill / -empty / -actions / -keys。</summary>
+    public void ApplyProbeState(string name)
     {
-        if (_active)
+        switch (name)
         {
-            Refresh(keepSelection: true);
+            case "launcher-home":
+                SetQuery(string.Empty);
+                break;
+            case "launcher-calc":
+                SetQuery("10 km to mi");
+                break;
+            case "launcher-kill":
+                SetQuery("kill ");
+                break;
+            case "launcher-port":
+                SetQuery("port ");
+                break;
+            case "launcher-empty":
+                SetQuery("zzqqxxyy");
+                break;
+            case "launcher-prompt":
+                SetQuery("g");
+                break;
+            case "launcher-actions":
+                SetQuery("a");
+                ToggleActions();
+                break;
+            case "launcher-keys":
+                SetQuery("a");
+                SetKeyHints(true);
+                break;
+            default:
+                SetQuery("a");
+                break;
         }
     }
+
+    /// <summary>设置 › 启动器「呼出时切到英文输入法」（L1）：搜索框的输入范围设成半角字母数字，输入法在这个框里默认英文，不动系统设置。</summary>
+    private void ApplyInputScope()
+    {
+        var scope = new InputScope();
+        scope.Names.Add(new InputScopeName(SettingsService.Current.LauncherRomanInput
+            ? InputScopeNameValue.AlphanumericHalfWidth
+            : InputScopeNameValue.Default));
+        SearchBox.InputScope = scope;
+    }
+
+    // ---- 搜索和渲染
 
     private void OnSearchTextChanged(object sender, TextChangedEventArgs e)
     {
-        _query = SearchBox.Text;
-        if (!CompositionRules.ShouldSearch(_composing, _query))
+        if (!_active || _suppressSearch || !CompositionRules.ShouldSearch(_composing, SearchBox.Text))
         {
             return;
         }
 
-        Refresh(animated: false);
+        if (_palette.IsOpen)
+        {
+            _palette.SetFilter(SearchBox.Text);
+            return;
+        }
+
+        // 字和模型的查询一样就不重搜：WinUI 的 TextChanged 是异步发的，SetSearchQuietly 那个开关拦不住它，
+        // 不拦的话呼出时接着上次的查询、关掉 Ctrl+K 菜单这几处会再搜一遍、选中跳回第一行。
+        if (Model is not { } model || SearchBox.Text == model.Query)
+        {
+            return;
+        }
+
+        if (model.CanUndoForget)
+        {
+            Footer.HideNotice();
+        }
+
+        model.UserMovedSelection = false;
+        model.Search(SearchBox.Text);
+        Render(null, resetScroll: true);
     }
 
-    private void Refresh(bool keepSelection = false, bool animated = true)
+    /// <summary>改搜索框里的字但不触发搜索（呼出、开关菜单时）。</summary>
+    private void SetSearchQuietly(string text)
     {
-        if (LauncherModel.Instance is not { } model)
+        _suppressSearch = true;
+        SearchBox.Text = text;
+        SearchBox.SelectionStart = text.Length;
+        _suppressSearch = false;
+    }
+
+    /// <summary>按模型的结果重画列表：keepId 那一项还在就留在它上面（上膛的那一项优先），否则回到第一行。</summary>
+    private void Render(string? keepId, bool resetScroll)
+    {
+        if (Model is not { } model)
         {
             return;
         }
 
-        // 空格开头 / open / find / kill / port：走异步的额外查找（第三版 §6）。
-        var classified = LauncherCommands.Classify(_query);
-        if (classified.Mode != LauncherMode.Normal)
+        var results = model.Results;
+        var heights = results.Select(item => LauncherListLayout.HeightOf(item.Kind)).ToList();
+        var layout = new LauncherListLayout(heights, model.Groups.Select(group => group.Row).ToList());
+        var titles = new Dictionary<int, string>();
+        foreach (var group in model.Groups)
         {
-            _specialMode = classified.Mode;
-            _items.Clear();
-            _items.AddRange(_specialItems);
-            RenderRows(model, keepSelection, animated);
-            ScheduleSpecial(classified);
-            return;
+            titles.TryAdd(group.Row, group.Title);
         }
 
-        _specialMode = LauncherMode.Normal;
-        _specialCts?.Cancel();
-        _specialQuery = null;
-
-        var previousTarget = keepSelection ? SelectedItem?.Target : null;
-        _items.Clear();
-        _items.AddRange(model.Results(_query));
-
-        var rows = new List<LauncherRow>(_items.Count);
-        for (var index = 0; index < _items.Count; index++)
+        var keep = model.ArmedId ?? keepId;
+        var index = keep is null ? -1 : results.FindIndex(item => item.Id == keep);
+        _selected = index >= 0 ? index : results.Count > 0 ? 0 : -1;
+        _selectedId = _selected >= 0 ? results[_selected].Id : null;
+        _pendingHosts.Clear();
+        _list.SetItems(layout, titles, _selected, BuildRow);
+        _list.Visibility = results.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        EmptyText.Text = model.EmptyText;
+        EmptyText.Visibility = model.ShowsEmptyText ? Visibility.Visible : Visibility.Collapsed;
+        if (resetScroll)
         {
-            var item = _items[index];
-            rows.Add(LauncherRow.Create(
-                item,
-                model.SubtitleFor(item),
-                index,
-                _showKeyHints,
-                IconFor(item),
-                model.IsArmed(item)));
+            _list.ScrollToTop();
         }
 
-        List.ItemsSource = rows;
-        EmptyState.Visibility = rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        if (rows.Count == 0)
+        if (_selected >= 0)
         {
-            EmptyIcon.Glyph = _query.Trim().Length == 0 ? "\uE721" : "\uE946";
-            EmptyText.Text = AppCatalog.Instance is { IsScanning: true, HasScanned: false }
-                ? "正在扫描应用…"
-                : _query.Trim().Length == 0
-                    ? "输入以搜索应用、设置、命令…"
-                    : "没有结果\n换个词试试";
+            _list.Reveal(_selected);
         }
 
-        if (rows.Count == 0)
-        {
-            List.SelectedIndex = -1;
-            Highlight.Visibility = Visibility.Collapsed;
-        }
-        else
-        {
-            var index = previousTarget is null
-                ? 0
-                : Math.Max(0, _items.FindIndex(item => item.Target == previousTarget));
-            if (List.SelectedIndex != index)
-            {
-                _animateHighlight = animated;
-                _highlightCurve = MotionCurve.Snap;
-                List.SelectedIndex = index;
-            }
-            else
-            {
-                DispatcherQueue.TryEnqueue(() => MoveHighlight(animated: false));
-            }
-
-            List.ScrollIntoView(rows[index]);
-        }
-
+        _footerKey = string.Empty;
         UpdateFooter();
-        HeightRequested?.Invoke(ContentHeightDip, animated);
+        HeightRequested?.Invoke(ContentHeightDip, false);
+        LoadSiteIcons();
     }
 
-    /// <summary>特殊模式的行和普通模式一样渲染（图标、键帽、选中）。</summary>
-    private void RenderRows(LauncherModel model, bool keepSelection, bool animated)
+    private LauncherRowView BuildRow(int index)
     {
-        var previousTarget = keepSelection ? SelectedItem?.Target : null;
-        var rows = new List<LauncherRow>(_items.Count);
-        for (var index = 0; index < _items.Count; index++)
+        var item = Model!.Results[index];
+        var row = new LauncherRowView(item, index, Context(item, index));
+        // 滚出来的新行要的网站图标也攒成一批去查（Render 末尾那一次只管得到当时建好的行）。
+        if (_pendingHosts.Count > 0 && !_iconLoadQueued)
         {
-            var item = _items[index];
-            rows.Add(LauncherRow.Create(
-                item, model.SubtitleFor(item), index, _showKeyHints, IconFor(item), model.IsArmed(item)));
-        }
-
-        List.ItemsSource = rows;
-        EmptyState.Visibility = rows.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        if (rows.Count == 0)
-        {
-            EmptyIcon.Glyph = "\uE721";
-            EmptyText.Text = _specialLoading
-                ? _specialMode switch
-                {
-                    LauncherMode.FileSearch => "正在找文件…",
-                    LauncherMode.Kill => "正在列进程…",
-                    _ => "正在列端口…",
-                }
-                : _specialMode switch
-                {
-                    LauncherMode.FileSearch => "没有找到文件\n会搜桌面、文档、下载、图片、视频、音乐和 OneDrive",
-                    LauncherMode.Kill => "没有匹配的进程",
-                    _ => "没有匹配的端口",
-                };
-            List.SelectedIndex = -1;
-            Highlight.Visibility = Visibility.Collapsed;
-        }
-        else
-        {
-            var index = previousTarget is null
-                ? 0
-                : Math.Max(0, _items.FindIndex(item => item.Target == previousTarget));
-            _animateHighlight = animated;
-            _highlightCurve = MotionCurve.Snap;
-            List.SelectedIndex = index;
-            List.ScrollIntoView(rows[index]);
-        }
-
-        UpdateFooter();
-        HeightRequested?.Invoke(ContentHeightDip, animated);
-    }
-
-    private void ScheduleSpecial((LauncherMode Mode, string Query) request)
-    {
-        _specialLoading = _specialItems.Count == 0;
-        if (_specialQuery == request.Query && _specialCts is not null && !_specialCts.IsCancellationRequested)
-        {
-            return;
-        }
-
-        _specialQuery = request.Query;
-        _specialCts?.Cancel();
-        var cts = new CancellationTokenSource();
-        _specialCts = cts;
-        var query = request.Query;
-        var mode = request.Mode;
-        _ = Task.Run(async () =>
-        {
-            // 打字时别每个字都扫一遍磁盘。
-            await Task.Delay(180, cts.Token);
-            List<LauncherItem> items;
-            try
-            {
-                items = mode switch
-                {
-                    LauncherMode.FileSearch => LauncherModel.FileItems(
-                        query.Length == 0
-                            ? FileSearch.Recent(20)
-                            : await FileSearch.SearchAsync(query, cts.Token)),
-                    LauncherMode.Kill => LauncherModel.ProcessItems(
-                        await ProcessSearch.SearchAsync(query, cts.Token)),
-                    _ => LauncherModel.PortItems(await PortSearch.SearchAsync(query, cts.Token)),
-                };
-            }
-            catch (OperationCanceledException)
-            {
-                return;
-            }
-            catch (Exception ex)
-            {
-                Log.Warn($"launcher.special-failed {ex.GetType().Name}");
-                items = new List<LauncherItem>();
-            }
-
+            _iconLoadQueued = true;
             DispatcherQueue.TryEnqueue(() =>
             {
-                if (cts.IsCancellationRequested || _specialQuery != query || _specialMode != mode)
-                {
-                    return;
-                }
-
-                _specialItems.Clear();
-                _specialItems.AddRange(items);
-                _specialLoading = false;
-                if (LauncherModel.Instance is { } model)
-                {
-                    _items.Clear();
-                    _items.AddRange(_specialItems);
-                    RenderRows(model, keepSelection: true, animated: false);
-                }
+                _iconLoadQueued = false;
+                LoadSiteIcons();
             });
-        });
+        }
+
+        return row;
     }
 
-    /// <summary>
-    /// PLAN-v7 §3.2 底栏：左边是选中项的种类（16 色块 + 种类名），右边「动词 ↩」「操作 Ctrl+K」；
-    /// 上膛的危险命令动词换成「确认…」，字和键帽都是危险色。没有选中项时只留就地提示。
-    /// 按 ↓ 连发时种类和动词多半不变：没变就不重建。
-    /// </summary>
-    private void UpdateFooter()
+    private LauncherRowContext Context(LauncherItem item, int index)
     {
-        var item = SelectedItem;
-        if (item is null)
+        var model = Model!;
+        var selected = index == _selected;
+        var armed = model.IsArmed(item);
+        var alternate = selected ? model.AlternateSubtitle(item, _alternate) : null;
+        var hotKey = selected && item.HotKeyAction is { } action && !_showKeyHints
+            ? ShellRuntime.Instance?.HotKeys.ShortcutFor(action)
+            : null;
+        return new LauncherRowContext(
+            alternate ?? item.Subtitle,
+            alternate is not null && !armed,
+            armed,
+            KindName(item),
+            hotKey,
+            IconFor(item));
+    }
+
+    private static string KindName(LauncherItem item)
+        => item.Kind == LauncherKind.Path
+            ? LauncherText.FileKindTitle(item.Target, item.IsFolder)
+            : PanelFooterText.LauncherKindName(item.Kind, item.Target);
+
+    /// <summary>某一行的副标题 / 快捷键键帽按现在的选中、上膛、修饰键重算（不重建整行）。</summary>
+    private void RefreshRow(int index)
+    {
+        if (Model is not { } model || index < 0 || index >= model.Results.Count || _list.RowAt(index) is not { } row)
         {
-            SetFooter(string.Empty, null, () => { });
             return;
         }
 
-        var armed = LauncherModel.Instance?.IsArmed(item) == true;
-        var verb = PanelFooterText.LauncherVerb(item.Kind, item.Target, armed);
-        var family = Ui.KindTile.FamilyOf(item.Kind, item.Target);
-        var glyph = Ui.KindTile.GlyphOf(item.Kind, item.Target);
-        SetFooter(
-            $"{family}|{glyph}|{PanelFooterText.LauncherKindName(item.Kind, item.Target)}|{verb}",
-            item,
-            () =>
+        var context = Context(model.Results[index], index);
+        row.SetSubtitle(context.Subtitle, context.SubtitleIsAlternate, context.Armed);
+        row.SetHotKey(context.HotKey);
+    }
+
+    /// <summary>换选中：撤掉上膛、不能再撤销移除，高亮滑过去、露出这一行，底栏跟着换。</summary>
+    private void Select(int index, MotionCurve curve)
+    {
+        if (Model is not { } model || index < 0 || index >= model.Results.Count)
+        {
+            return;
+        }
+
+        var old = _selected;
+        var disarmed = model.Disarm();
+        if (model.CanUndoForget)
+        {
+            Footer.HideNotice();
+        }
+
+        model.DropUndo();
+        _selected = index;
+        _selectedId = model.Results[index].Id;
+        _list.SetSelection(index, curve);
+        _list.Reveal(index);
+        RefreshRow(old);
+        RefreshRow(index);
+        if (disarmed || old != index)
+        {
+            UpdateFooter();
+        }
+    }
+
+    private void MoveSelection(int delta, bool repeat)
+    {
+        if (Model is not { } model || model.Results.Count == 0)
+        {
+            return;
+        }
+
+        model.UserMovedSelection = true;
+        var count = model.Results.Count;
+        var index = ((_selected < 0 ? 0 : _selected) + delta + count) % count;
+        // 连发不动画（mac：键盘单按 snap、连发 instant）。
+        Select(index, repeat ? MotionCurve.Instant : MotionCurve.Snap);
+    }
+
+    /// <summary>执行了一下但面板还开着（上膛了、补全了、响了一声）：上膛的那一项选中、副标题换成确认提示、底栏换危险色。</summary>
+    private void AfterAction()
+    {
+        if (!_active || Model is not { } model)
+        {
+            return;
+        }
+
+        if (model.ArmedId is { } armed)
+        {
+            var index = model.Results.FindIndex(item => item.Id == armed);
+            if (index >= 0 && index != _selected)
             {
-                Footer.SetLeading(Ui.KindTile.Create(item.Kind, item.Target, 16));
-                Footer.Status = PanelFooterText.LauncherKindName(item.Kind, item.Target);
-                Footer.AddVerb(verb.Text, "↩", primary: true, () => Execute(control: false, shift: false), verb.Danger);
-                _actionsButton = Footer.AddVerb("操作", "Ctrl+K", primary: false, () => ShowActionMenu());
-            });
-    }
-
-    private void SetFooter(string key, LauncherItem? item, Action build)
-    {
-        if (key == _footerKey)
-        {
-            return;
+                var old = _selected;
+                _selected = index;
+                _selectedId = armed;
+                _list.SetSelection(index, MotionCurve.Snap);
+                _list.Reveal(index);
+                RefreshRow(old);
+            }
         }
 
-        _footerKey = key;
-        Footer.ClearActions();
-        _actionsButton = null;
-        if (item is null)
-        {
-            Footer.SetLeading(null);
-            Footer.Status = string.Empty;
-            return;
-        }
-
-        build();
-    }
-
-    private LauncherItem? SelectedItem => (List.SelectedItem as LauncherRow)?.Item;
-
-    private void OnItemClick(object sender, ItemClickEventArgs e)
-    {
-        if (e.ClickedItem is LauncherRow row)
-        {
-            _animateHighlight = true;
-            _highlightCurve = MotionCurve.Glide;
-            List.SelectedItem = row;
-        }
-    }
-
-    private void OnSelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
+        RefreshRow(_selected);
+        _footerKey = string.Empty;
         UpdateFooter();
-        var animated = _animateHighlight;
-        _animateHighlight = false;
-        DispatcherQueue.TryEnqueue(() => MoveHighlight(animated));
     }
 
-    /// <summary>只有一块中性高亮，换选中项时滑过去（PLAN-v2 §3.6）。</summary>
-    private void MoveHighlight(bool animated)
+    // ---- 图标
+
+    private ImageSource? IconFor(LauncherItem item)
     {
-        var index = List.SelectedIndex;
-        if (index < 0 || index >= _items.Count)
+        string key;
+        byte[]? bytes;
+        switch (item.Kind)
         {
-            Highlight.Visibility = Visibility.Collapsed;
-            return;
-        }
-
-        if (List.ContainerFromIndex(index) is not ListViewItem container)
-        {
-            Highlight.Visibility = Visibility.Collapsed;
-            return;
-        }
-
-        var offset = container.TransformToVisual(List).TransformPoint(new Windows.Foundation.Point(0, 0));
-        Highlight.Width = Math.Max(0, List.ActualWidth - 2);
-        Highlight.Height = Math.Max(24, container.ActualHeight);
-        Highlight.Visibility = Visibility.Visible;
-        // 不带动画也走 SlideTo（Instant）：它会停掉还在滑的那一段，不然滚动时高亮会被旧动画拖走。
-        Motion.SlideTo(Highlight, 0, offset.Y, animated && !Motion.Reduced ? _highlightCurve : MotionCurve.Instant);
-    }
-
-    private void SetKeyHints(bool show)
-    {
-        if (_showKeyHints == show)
-        {
-            return;
-        }
-
-        _showKeyHints = show;
-        Refresh(keepSelection: true, animated: false);
-    }
-
-    private static T? FindDescendant<T>(DependencyObject root)
-        where T : DependencyObject
-    {
-        var count = VisualTreeHelper.GetChildrenCount(root);
-        for (var index = 0; index < count; index++)
-        {
-            var child = VisualTreeHelper.GetChild(root, index);
-            if (child is T match)
-            {
-                return match;
-            }
-
-            if (FindDescendant<T>(child) is { } deeper)
-            {
-                return deeper;
-            }
-        }
-
-        return null;
-    }
-
-    private void OnListDoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
-    {
-        e.Handled = true;
-        Execute(control: false, shift: false);
-    }
-
-    private void OnKeyDown(object sender, KeyRoutedEventArgs e)
-    {
-        if (!_active)
-        {
-            return;
-        }
-
-        var control = IsDown(VirtualKey.Control);
-        var shift = IsDown(VirtualKey.Shift);
-        if (e.Key == VirtualKey.Control)
-        {
-            // 按住 Ctrl 150 ms 才浮现键帽（PLAN-v2 §3.6）。
-            if (!_showKeyHints)
-            {
-                _keyHintTimer.Stop();
-                _keyHintTimer.Start();
-            }
-
-            return;
-        }
-
-        switch (e.Key)
-        {
-            case VirtualKey.Escape:
-                e.Handled = true;
-                if (SearchBox.Text.Length > 0)
+            case LauncherKind.Setting:
+                // 系统设置的页：用「设置」应用的图标（mac 用系统设置 App 的图标）。
+                key = "settings-app";
+                bytes = SettingsAppIcon();
+                break;
+            case LauncherKind.Url or LauncherKind.Search:
+                if (LauncherText.Host(item.Target) is not { } host)
                 {
-                    SearchBox.Text = string.Empty;
+                    return null;
                 }
-                else
+
+                key = "site:" + host;
+                bytes = SiteIcons.Peek(host, out var found);
+                if (!found)
                 {
-                    CloseRequested?.Invoke();
+                    _pendingHosts.Add(host);
                 }
 
                 break;
-            case VirtualKey.Down:
-                e.Handled = true;
-                if (control && IsDown(VirtualKey.Menu) && SelectedItem is { } downItem &&
-                    LauncherModel.Instance is { } downModel)
-                {
-                    downModel.MoveFavorite(downItem, 1);
-                    Refresh(keepSelection: true, animated: false);
-                }
-                else
-                {
-                    MoveSelection(1);
-                }
-
+            case LauncherKind.App when item.IconData is { Length: > 0 } data:
+                key = "app:" + item.Target;
+                bytes = data;
                 break;
-            case VirtualKey.Up:
-                e.Handled = true;
-                if (control && IsDown(VirtualKey.Menu) && SelectedItem is { } upItem &&
-                    LauncherModel.Instance is { } upModel)
-                {
-                    upModel.MoveFavorite(upItem, -1);
-                    Refresh(keepSelection: true, animated: false);
-                }
-                else
-                {
-                    MoveSelection(-1);
-                }
-
+            case LauncherKind.App or LauncherKind.Path:
+                key = "path:" + item.Target;
+                bytes = PathIcon(item.Target);
                 break;
-            case VirtualKey.Enter:
-                e.Handled = true;
-                Execute(control, shift);
+            case LauncherKind.Process when item.Process?.ExePath is { } exe:
+                key = "path:" + exe;
+                bytes = PathIcon(exe);
                 break;
-            case VirtualKey.Tab:
-                e.Handled = true;
-                Complete();
-                break;
-            case VirtualKey.D when control:
-                e.Handled = true;
-                ToggleFavorite();
-                break;
-            case VirtualKey.C when control:
-                e.Handled = true;
-                CopyTarget();
-                break;
-            case VirtualKey.K when control:
-                e.Handled = true;
-                ShowActionMenu();
-                break;
-            case (VirtualKey)188 when control:
-                // Ctrl+,（VK_OEM_COMMA）：直达设置 › 启动器，同 mac 的 ⌘,；底栏不再放齿轮。
-                e.Handled = true;
-                SettingsRequested?.Invoke();
-                break;
-            case >= VirtualKey.Number1 and <= VirtualKey.Number9 when control:
-                e.Handled = true;
-                var index = (int)e.Key - (int)VirtualKey.Number1;
-                if (index < _items.Count)
-                {
-                    List.SelectedIndex = index;
-                    Execute(control: false, shift: false);
-                }
-
-                break;
-        }
-    }
-
-    private void OnKeyUp(object sender, KeyRoutedEventArgs e)
-    {
-        if (e.Key == VirtualKey.Control)
-        {
-            _keyHintTimer.Stop();
-            SetKeyHints(false);
-        }
-    }
-
-    private static bool IsDown(VirtualKey key)
-        => Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(key)
-            .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
-
-    private void MoveSelection(int delta)
-    {
-        if (_items.Count == 0)
-        {
-            return;
+            default:
+                return null;
         }
 
-        var index = (List.SelectedIndex + delta + _items.Count) % _items.Count;
-        _animateHighlight = true;
-        _highlightCurve = MotionCurve.Snap;
-        List.SelectedIndex = index;
-        List.ScrollIntoView(List.SelectedItem);
-    }
-
-    private void Complete()
-    {
-        if (SelectedItem?.Completion is not { Length: > 0 } completion)
-        {
-            return;
-        }
-
-        SearchBox.Text = completion;
-        SearchBox.SelectionStart = SearchBox.Text.Length;
-    }
-
-    private void CopyTarget()
-    {
-        var item = SelectedItem;
-        if (item is null)
-        {
-            return;
-        }
-
-        var text = item.Kind switch
-        {
-            LauncherKind.Url or LauncherKind.Search or LauncherKind.Path => item.Target,
-            LauncherKind.App when !item.Target.StartsWith(@"shell:AppsFolder\", StringComparison.Ordinal) =>
-                item.Target,
-            _ => null,
-        };
-        if (string.IsNullOrEmpty(text))
-        {
-            return;
-        }
-
-        if (ClipboardWriter.WriteText(text))
-        {
-            ClipboardService.Instance?.MarkOwnWrite();
-            ClipboardService.Instance?.Store.RecordOwnText(text);
-            Footer.ShowNotice("已复制");
-        }
-    }
-
-    /// <summary>Ctrl+D：加入 / 取消收藏，结果在底栏左边就地提示（mac 体检 B38）。</summary>
-    private void ToggleFavorite()
-    {
-        if (SelectedItem is not { } item || LauncherModel.Instance is not { } model)
-        {
-            return;
-        }
-
-        var on = model.ToggleFavorite(item);
-        Refresh(keepSelection: true, animated: false);
-        Footer.ShowNotice(on ? "已加入收藏" : "已取消收藏");
-    }
-
-    private void Execute(bool control, bool shift)
-    {
-        var item = SelectedItem;
-        if (item is null || LauncherModel.Instance is not { } model)
-        {
-            return;
-        }
-
-        if (!model.Execute(item, control, shift, OverlayHost.PasteTarget, out var error))
-        {
-            if (error is not null)
-            {
-                NoticeHost.Show("没能打开", error, NoticeTone.Warning);
-            }
-            else
-            {
-                Refresh(keepSelection: true);
-            }
-
-            return;
-        }
-
-        var keepsPanel = item.Kind == LauncherKind.Action &&
-                         (item.Target == LauncherActions.Clipboard ||
-                          item.Target == LauncherActions.Translate ||
-                          item.Target.StartsWith("cb:", StringComparison.Ordinal) ||
-                          item.Target.StartsWith("fy:", StringComparison.Ordinal));
-        _executed = true;
-        if (!keepsPanel)
-        {
-            CloseRequested?.Invoke();
-        }
-    }
-
-    private void OnListRightTapped(object sender, RightTappedRoutedEventArgs e)
-    {
-        var row = (e.OriginalSource as FrameworkElement)?.DataContext as LauncherRow;
-        if (row is null)
-        {
-            return;
-        }
-
-        List.SelectedItem = row;
-        var menu = Ui.ActionMenu.Build(ActionsFor(row.Item));
-        menu.ShowAt(List, new FlyoutShowOptions { Position = e.GetPosition(List) });
-        e.Handled = true;
-    }
-
-    /// <summary>Ctrl+K / 底栏「操作」：和右键同一份条目，锚在底栏「操作」上、右缘对齐（PLAN-v7 §2.2 ActionMenu）。</summary>
-    private void ShowActionMenu()
-    {
-        if (SelectedItem is not { } item)
-        {
-            return;
-        }
-
-        var menu = Ui.ActionMenu.Build(ActionsFor(item));
-        // 点底栏按钮时焦点跑到了按钮上：菜单关掉后还给搜索框，方向键和打字照常。
-        menu.Closed += (_, _) => FocusSearch();
-        FrameworkElement anchor = _actionsButton is { } button ? button : Footer;
-        menu.ShowAt(anchor, new FlyoutShowOptions { Placement = FlyoutPlacementMode.TopEdgeAlignedRight });
-    }
-
-    /// <summary>一项的全部操作：主动作（动词同底栏）、替代动作、复制、补全、收藏。危险的（上膛、结束进程）用危险色。</summary>
-    private List<Ui.ActionMenuItem> ActionsFor(LauncherItem item)
-    {
-        var armed = LauncherModel.Instance?.IsArmed(item) == true;
-        var verb = PanelFooterText.LauncherVerb(item.Kind, item.Target, armed);
-        var killing = item.Kind == LauncherKind.Action && item.Target.StartsWith("kill:", StringComparison.Ordinal);
-        var actions = new List<Ui.ActionMenuItem>
-        {
-            new(Ui.KindTile.GlyphOf(item.Kind, item.Target), verb.Text, "Enter",
-                () => Execute(control: false, shift: false), Danger: verb.Danger || killing),
-        };
-        var storeApp = item.Target.StartsWith(@"shell:AppsFolder\", StringComparison.Ordinal);
-        if (item.Kind == LauncherKind.App)
-        {
-            if (!storeApp)
-            {
-                actions.Add(new(Glyphs.Folder, "打开文件所在位置", "Ctrl+Enter", () => Execute(control: true, shift: false)));
-            }
-
-            actions.Add(new(Glyphs.App, "以管理员身份运行", "Ctrl+Shift+Enter", () => Execute(control: true, shift: true)));
-        }
-
-        if (item.Kind == LauncherKind.Path && File.Exists(item.Target))
-        {
-            actions.Add(new(Glyphs.Folder, "在资源管理器中显示", "Ctrl+Enter", () => Execute(control: true, shift: false)));
-        }
-
-        if (item.Kind is LauncherKind.Url or LauncherKind.Path or LauncherKind.Search ||
-            (item.Kind == LauncherKind.App && !storeApp))
-        {
-            actions.Add(new(
-                Glyphs.Copy,
-                item.Kind is LauncherKind.Url or LauncherKind.Search ? "复制网址" : "复制路径",
-                "Ctrl+C",
-                CopyTarget));
-        }
-
-        if (item.Kind == LauncherKind.Calculation)
-        {
-            actions.Add(new(Glyphs.Copy, "复制结果", "Ctrl+Enter", () => Execute(control: true, shift: false)));
-        }
-
-        if (item.Completion is { Length: > 0 })
-        {
-            actions.Add(new(Glyphs.ChevronRight, "补全", "Tab", Complete));
-        }
-
-        if (item.Kind != LauncherKind.Calculation && LauncherModel.Instance is { } model)
-        {
-            var favorite = model.IsFavorite(item);
-            actions.Add(new(
-                favorite ? Glyphs.FavoriteFilled : Glyphs.Favorite,
-                favorite ? "取消收藏" : "加入收藏",
-                "Ctrl+D",
-                ToggleFavorite));
-        }
-
-        return actions;
-    }
-
-    private BitmapImage? IconFor(LauncherItem item)
-    {
-        if (item.IconData is not { Length: > 0 } bytes)
+        if (bytes is not { Length: > 0 })
         {
             return null;
         }
 
-        if (_icons.TryGetValue(item.Target, out var cached))
+        if (_icons.TryGetValue(key, out var cached))
         {
             return cached;
         }
 
-        var image = new BitmapImage { DecodePixelWidth = 32 };
-        _icons[item.Target] = image;
+        var image = new BitmapImage { DecodePixelWidth = 48 };
+        _icons[key] = image;
         _ = LoadIconAsync(image, bytes);
         return image;
+    }
+
+    /// <summary>文件、exe 的系统图标（按路径缓存；读不到的也记着，不反复读）。</summary>
+    private byte[]? PathIcon(string path)
+    {
+        if (_pathIcons.TryGetValue(path, out var cached))
+        {
+            return cached;
+        }
+
+        byte[]? bytes = null;
+        try
+        {
+            if (File.Exists(path) || Directory.Exists(path))
+            {
+                bytes = ShellIcons.LoadPng(path, XamlRoot?.RasterizationScale ?? 1.0, 24);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"launcher.path-icon-failed {ex.GetType().Name}");
+        }
+
+        _pathIcons[path] = bytes;
+        return bytes;
+    }
+
+    private static byte[]? SettingsAppIcon()
+        => AppCatalog.Instance?.Apps
+            .FirstOrDefault(app => app.Target.Contains("immersivecontrolpanel", StringComparison.OrdinalIgnoreCase))
+            ?.IconData;
+
+    /// <summary>这一轮布局报上来的网站主机攒成一批，在后台查本机浏览器的图标库；查到了再重画一次。</summary>
+    private void LoadSiteIcons()
+    {
+        if (_pendingHosts.Count == 0)
+        {
+            return;
+        }
+
+        var hosts = _pendingHosts.ToList();
+        _pendingHosts.Clear();
+        SiteIcons.Load(hosts, () =>
+        {
+            if (_active)
+            {
+                Render(_selectedId, resetScroll: false);
+            }
+        });
     }
 
     private static async Task LoadIconAsync(BitmapImage image, byte[] bytes)
@@ -867,6 +610,492 @@ public sealed partial class LauncherPanel : UserControl
         catch (Exception ex)
         {
             Log.Warn($"launcher.icon-failed {ex.GetType().Name}");
+        }
+    }
+
+    // ---- 底栏
+
+    /// <summary>
+    /// 底栏（mac bar）：左边是选中项的种类（16 色块 + 种类名），右边「主动作 ↩」（上膛 / 强制的字和键帽是危险色）·「操作 Ctrl+K」；
+    /// 有新版本时右边最前面多一枚「更新到 x」（mac 在左边种类后面；Windows 底栏左边要让给就地提示）。没有选中项时只剩它。
+    /// </summary>
+    private void UpdateFooter()
+    {
+        var item = SelectedItem;
+        var update = UpdateService.AvailableVersion;
+        var primary = item is null || Model is not { } model ? default : model.PrimaryAction(item);
+        var key = item is null
+            ? "|" + update
+            : $"{item.Kind}|{item.Target}|{item.IsFolder}|{primary.Title}|{primary.Danger}|{update}";
+        if (key == _footerKey)
+        {
+            return;
+        }
+
+        _footerKey = key;
+        Footer.ClearActions();
+        if (update is not null)
+        {
+            Footer.AddVerb($"更新到 {update}", null, primary: false, () =>
+            {
+                CloseRequested?.Invoke();
+                if (!AutoUpdater.IsBusy)
+                {
+                    _ = AutoUpdater.StartAsync();
+                }
+            });
+        }
+
+        if (item is null)
+        {
+            Footer.SetLeading(null);
+            Footer.Status = string.Empty;
+            return;
+        }
+
+        Footer.SetLeading(KindTile.Create(KindTile.FamilyOf(item.Kind, item.Target), FooterGlyph(item), 16));
+        Footer.Status = KindName(item);
+        Footer.AddVerb(primary.Title, "↩", primary: true, ExecuteSelected, primary.Danger);
+        Footer.AddVerb("操作", "Ctrl+K", primary: false, ToggleActions);
+    }
+
+    /// <summary>底栏左边 16 色块的符号：只看种类（mac familySymbol）。</summary>
+    private static string FooterGlyph(LauncherItem item) => item.Kind switch
+    {
+        LauncherKind.App => Glyphs.App,
+        LauncherKind.Path => item.IsFolder ? Glyphs.Folder : Glyphs.File,
+        LauncherKind.Action => Glyphs.Command,
+        LauncherKind.Command => Glyphs.Shutdown,
+        LauncherKind.Setting => Glyphs.Settings,
+        _ => KindTile.GlyphOf(item.Kind, item.Target),
+    };
+
+    // ---- 按键
+
+    private void OnKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (!_active || Model is not { } model)
+        {
+            return;
+        }
+
+        var control = IsDown(VirtualKey.Control);
+        var shift = IsDown(VirtualKey.Shift);
+        var alt = IsDown(VirtualKey.Menu);
+        var repeat = e.KeyStatus.WasKeyDown;
+        switch (e.Key)
+        {
+            case VirtualKey.Control:
+                // 按住 Ctrl 150 ms 才浮现键帽。
+                if (!_showKeyHints)
+                {
+                    _keyHintTimer.Stop();
+                    _keyHintTimer.Start();
+                }
+
+                SetAlternate(LauncherAlternate.Control);
+                return;
+            case VirtualKey.Menu:
+                SetAlternate(LauncherAlternate.Alt);
+                return;
+            case VirtualKey.Shift:
+                if (!e.KeyStatus.WasKeyDown)
+                {
+                    _shiftTimer.Stop();
+                    _shiftTimer.Start();
+                }
+
+                return;
+        }
+
+        // 按着 Shift 又打了别的键（大写字母、符号）：是在打字，不是要看 Shift+Enter。
+        _shiftTimer.Stop();
+        if (_alternate == LauncherAlternate.Shift && e.Key != VirtualKey.Enter)
+        {
+            SetAlternate(LauncherAlternate.None);
+        }
+
+        if (_palette.IsOpen && HandlePaletteKey(e, control))
+        {
+            return;
+        }
+
+        var item = SelectedItem;
+        switch (e.Key)
+        {
+            case VirtualKey.Escape:
+                // 先撤上膛，再清空搜索，最后收起。
+                e.Handled = true;
+                model.DropUndo();
+                if (model.Disarm())
+                {
+                    AfterAction();
+                }
+                else if (SearchBox.Text.Length > 0)
+                {
+                    SearchBox.Text = string.Empty;
+                }
+                else
+                {
+                    CloseRequested?.Invoke();
+                }
+
+                break;
+            case VirtualKey.Down:
+            case VirtualKey.Up:
+                e.Handled = true;
+                var delta = e.Key == VirtualKey.Down ? 1 : -1;
+                if (control && alt && item is not null && model.MoveFavorite(item, delta))
+                {
+                    break;
+                }
+
+                MoveSelection(delta, repeat);
+                break;
+            case VirtualKey.Enter:
+                e.Handled = true;
+                if (item is null && !alt && !shift)
+                {
+                    break;
+                }
+
+                model.KeyRepeat = repeat;
+                if (alt)
+                {
+                    model.SearchInExplorer();
+                }
+                else if (shift && !control)
+                {
+                    model.SearchWeb();
+                }
+                else if (item is null)
+                {
+                    break;
+                }
+                else if (control && shift)
+                {
+                    model.RunAsAdmin(item);
+                }
+                else if (control)
+                {
+                    model.CommandReturn(item);
+                }
+                else
+                {
+                    model.Execute(item);
+                }
+
+                AfterAction();
+                break;
+            case VirtualKey.Tab:
+                // 没得补也吞掉，不让焦点跳到别的控件。
+                e.Handled = true;
+                if (item is not null)
+                {
+                    model.Complete(item);
+                }
+
+                break;
+            // 菜单开着时 → 交给过滤框（HandlePaletteKey 没接它）；不然光标在末尾按 → 会把刚开的菜单又关掉。
+            case VirtualKey.Right when item is not null && CaretAtEnd && !_palette.IsOpen:
+                e.Handled = true;
+                ToggleActions();
+                break;
+            case VirtualKey.K when control:
+                e.Handled = true;
+                ToggleActions();
+                break;
+            case VirtualKey.C when control && SearchBox.SelectionLength == 0 && item is not null:
+                if (shift)
+                {
+                    if (LauncherText.IsWebLink(item))
+                    {
+                        e.Handled = true;
+                        model.Copy(item, LauncherModel.CopyFormat.Markdown);
+                    }
+                }
+                else if (model.CopyTitle(item) is not null)
+                {
+                    e.Handled = true;
+                    model.Copy(item);
+                }
+
+                break;
+            case VirtualKey.D when control:
+                e.Handled = true;
+                if (item is not null)
+                {
+                    model.ToggleFavorite(item);
+                }
+
+                break;
+            case VirtualKey.Delete when control && model.IsShowingHome:
+                // 「常用」里 Ctrl+Delete：忘掉这一项（有查询时照常删到词尾）。收藏上没有这个动作，响一声。
+                e.Handled = true;
+                if (item is not null)
+                {
+                    model.Forget(item);
+                }
+
+                break;
+            case VirtualKey.Z when control && model.CanUndoForget:
+                e.Handled = true;
+                Footer.HideNotice();
+                model.UndoForget();
+                break;
+            case (VirtualKey)188 when control:
+                // Ctrl+,（VK_OEM_COMMA）：直达设置 › 启动器。
+                e.Handled = true;
+                SettingsRequested?.Invoke();
+                break;
+            case >= VirtualKey.Number1 and <= VirtualKey.Number9 when control:
+                e.Handled = true;
+                var number = (int)e.Key - (int)VirtualKey.Number1;
+                if (number < model.Results.Count)
+                {
+                    model.KeyRepeat = repeat;
+                    model.Execute(model.Results[number]);
+                    AfterAction();
+                }
+
+                break;
+        }
+    }
+
+    private void OnKeyUp(object sender, KeyRoutedEventArgs e)
+    {
+        switch (e.Key)
+        {
+            case VirtualKey.Control:
+                _keyHintTimer.Stop();
+                SetKeyHints(false);
+                SetAlternate(LauncherAlternate.None);
+                break;
+            case VirtualKey.Menu:
+            case VirtualKey.Shift:
+                _shiftTimer.Stop();
+                SetAlternate(LauncherAlternate.None);
+                break;
+        }
+    }
+
+    private bool CaretAtEnd => SearchBox.SelectionLength == 0 && SearchBox.SelectionStart == SearchBox.Text.Length;
+
+    private static bool IsDown(VirtualKey key)
+        => Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(key)
+            .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+
+    private void ExecuteSelected()
+    {
+        if (Model is { } model && SelectedItem is { } item)
+        {
+            model.KeyRepeat = false;
+            model.Execute(item);
+            AfterAction();
+        }
+    }
+
+    /// <summary>按住修饰键：选中行的副标题换成它的替代动作（mac alternateSubtitle）。</summary>
+    private void SetAlternate(LauncherAlternate alternate)
+    {
+        if (_alternate == alternate)
+        {
+            return;
+        }
+
+        _alternate = alternate;
+        RefreshRow(_selected);
+    }
+
+    private void SetKeyHints(bool show)
+    {
+        if (_showKeyHints == show)
+        {
+            return;
+        }
+
+        _showKeyHints = show;
+        _list.SetShortcutsShown(show);
+        RefreshRow(_selected);
+    }
+
+    // ---- Ctrl+K 菜单、右键菜单
+
+    /// <summary>Ctrl+K / → / 底栏「操作」：没有选中项时不打开；开着时再按是关。</summary>
+    private void ToggleActions()
+    {
+        if (_palette.IsOpen)
+        {
+            _palette.Close();
+            return;
+        }
+
+        if (Model is not { } model || SelectedItem is not { } item)
+        {
+            return;
+        }
+
+        // 点菜单项（不经过 Enter）执行的也要刷新上膛的副标题和底栏。
+        var actions = model.ActionsFor(item)
+            .Select(action => action.Run is { } run
+                ? action with
+                {
+                    Run = () =>
+                    {
+                        model.KeyRepeat = false;
+                        run();
+                        AfterAction();
+                    },
+                }
+                : action)
+            .ToList();
+        _savedQuery = SearchBox.Text;
+        SetSearchQuietly(string.Empty);
+        var sections = actions.Select(action => action.Section).Distinct().Count();
+        _paletteHeight = Math.Min(actions.Count * ClipPalette.RowHeight + Math.Max(0, sections - 1) * 9, ClipPalette.MaxListHeight) + 12;
+        _palette.HorizontalAlignment = HorizontalAlignment.Right;
+        _palette.VerticalAlignment = VerticalAlignment.Bottom;
+        _palette.Margin = new Thickness(0, 0, 16, 4);
+        _palette.Open("actions", actions);
+        SearchBox.PlaceholderText = "搜索操作";
+        SearchLineControl.SetSymbol(Glyphs.Command);
+        HeightRequested?.Invoke(ContentHeightDip, false);
+        FocusSearch();
+    }
+
+    private void CloseMenu()
+    {
+        if (_palette.IsOpen)
+        {
+            _palette.Close();
+        }
+    }
+
+    private void OnPaletteClosed()
+    {
+        SetSearchQuietly(_savedQuery ?? string.Empty);
+        _savedQuery = null;
+        SearchBox.PlaceholderText = Placeholder;
+        SearchLineControl.SetSymbol(Glyphs.Search);
+        if (_active)
+        {
+            HeightRequested?.Invoke(ContentHeightDip, false);
+            FocusSearch();
+        }
+    }
+
+    /// <summary>
+    /// 菜单开着时的按键（mac handleMenuCommand）：↑↓ 选、Enter 执行、Esc / 过滤词为空时 ← 只关菜单；Tab 关菜单再补全；
+    /// 菜单里标着的 Ctrl 组合键先关菜单再照常做。返回 true = 已经处理。
+    /// </summary>
+    private bool HandlePaletteKey(KeyRoutedEventArgs e, bool control)
+    {
+        switch (e.Key)
+        {
+            case VirtualKey.Escape:
+                e.Handled = true;
+                if (!_palette.Back())
+                {
+                    _palette.Close();
+                }
+
+                return true;
+            case VirtualKey.Up:
+                e.Handled = true;
+                _palette.Move(-1);
+                return true;
+            case VirtualKey.Down:
+                e.Handled = true;
+                _palette.Move(1);
+                return true;
+            case VirtualKey.Enter when !control && !IsDown(VirtualKey.Menu) && !IsDown(VirtualKey.Shift):
+                e.Handled = true;
+                if (Model is { } model)
+                {
+                    model.KeyRepeat = e.KeyStatus.WasKeyDown;
+                }
+
+                _palette.Activate();
+                AfterAction();
+                return true;
+            case VirtualKey.Left when SearchBox.Text.Length == 0:
+                e.Handled = true;
+                if (!_palette.Back())
+                {
+                    _palette.Close();
+                }
+
+                return true;
+            case VirtualKey.K when control:
+                e.Handled = true;
+                _palette.Close();
+                return true;
+        }
+
+        // Tab、Ctrl+Enter / Alt+Enter / Shift+Enter、别的 Ctrl 组合键：先关菜单再照常做；过滤框里有字时 Ctrl+A / V / X / Z / Delete 交给输入框。
+        if (e.Key == VirtualKey.Tab || e.Key == VirtualKey.Enter ||
+            (control && e.Key is not (VirtualKey.Control or VirtualKey.Shift or VirtualKey.Menu)))
+        {
+            if (control && SearchBox.Text.Length > 0 &&
+                e.Key is VirtualKey.A or VirtualKey.V or VirtualKey.X or VirtualKey.Z or VirtualKey.Back or VirtualKey.Delete)
+            {
+                return true;
+            }
+
+            _palette.Close();
+        }
+
+        return false;
+    }
+
+    /// <summary>右键（mac：和 Ctrl+K 同一份动作，对着被点的那一行）：用系统的菜单，节和节之间一条分隔线，不写键位。</summary>
+    private void OnItemRightTapped(int index, FrameworkElement row, Windows.Foundation.Point position)
+    {
+        if (Model is not { } model || index >= model.Results.Count)
+        {
+            return;
+        }
+
+        CloseMenu();
+        Select(index, MotionCurve.Glide);
+        var item = model.Results[index];
+        var menu = new MenuFlyout();
+        var lastSection = int.MinValue;
+        foreach (var action in model.ActionsFor(item))
+        {
+            if (lastSection != int.MinValue && action.Section != lastSection)
+            {
+                menu.Items.Add(new MenuFlyoutSeparator());
+            }
+
+            lastSection = action.Section;
+            var run = action.Run ?? (() => { });
+            menu.Items.Add(ActionMenu.Create(new ActionMenuItem(action.Glyph, action.Title, null, () =>
+            {
+                model.KeyRepeat = false;
+                run();
+                AfterAction();
+            }, action.Danger)));
+        }
+
+        menu.Closed += (_, _) => FocusSearch();
+        menu.ShowAt(row, new FlyoutShowOptions { Position = position });
+    }
+
+    private void Announce(string text)
+    {
+        try
+        {
+            var peer = FrameworkElementAutomationPeer.FromElement(this) ?? FrameworkElementAutomationPeer.CreatePeerForElement(this);
+            peer?.RaiseNotificationEvent(
+                AutomationNotificationKind.ActionCompleted,
+                AutomationNotificationProcessing.ImportantMostRecent,
+                text,
+                "kitty-launcher");
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"launcher.announce-failed {ex.GetType().Name}");
         }
     }
 }

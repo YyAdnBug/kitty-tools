@@ -401,11 +401,12 @@ internal sealed class ShellRuntime
         // 调试：浏览器历史 / Firefox 书签（R20）。
         if (Environment.GetCommandLineArgs().Contains("--history", StringComparer.OrdinalIgnoreCase))
         {
-            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() =>
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(async () =>
             {
-                HistoryIndex.Load();
-                BookmarkIndex.Load();
-                Log.Info($"history.debug hits={HistoryIndex.Search("github").Count}");
+                // 调试开关：所有装了的浏览器书签和历史都读（不看设置里的开关）。
+                var all = Browsers.Installed().Select(browser => browser.Id).ToList();
+                await BrowserIndex.RefreshAsync(all, all);
+                Log.Info($"history.debug bookmarks={BrowserIndex.Bookmarks.Count} history={BrowserIndex.History.Count}");
             });
         }
 
@@ -771,6 +772,13 @@ internal sealed class ShellRuntime
         }
 
         _settingsWindow.ShowPage(welcome, page);
+    }
+
+    /// <summary>启动器的「快捷键速查表」（PLAN-v9-launcher R12）：打开设置窗，在上面弹速查表。</summary>
+    public void ShowShortcutsSheet()
+    {
+        ShowSettings(welcome: false, "hotkeys");
+        _settingsWindow?.ShowShortcutsSheet();
     }
 
     /// <summary>关掉设置窗（内存探针、自动更新重启前用）。</summary>

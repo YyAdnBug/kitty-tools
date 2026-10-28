@@ -7,169 +7,30 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="mc">
 
-    <UserControl.Resources>
-        <!-- 和剪贴板面板一样：系统选中底色设成透明，只用我们自己那块会滑动的高亮。 -->
-        <SolidColorBrush x:Key="ListViewItemBackgroundSelected" Color="Transparent" />
-        <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPointerOver" Color="Transparent" />
-        <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPressed" Color="Transparent" />
-        <SolidColorBrush x:Key="ListViewItemSelectionIndicatorBrush" Color="Transparent" />
-        <SolidColorBrush x:Key="ListViewItemSelectionIndicatorPointerOverBrush" Color="Transparent" />
-        <SolidColorBrush x:Key="ListViewItemSelectionIndicatorPressedBrush" Color="Transparent" />
-
-        <Style x:Key="LauncherRowStyle" TargetType="ListViewItem">
-            <Setter Property="Padding" Value="0" />
-            <Setter Property="Margin" Value="0" />
-            <Setter Property="MinHeight" Value="0" />
-            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-        </Style>
-
-        <DataTemplate x:Key="LauncherRowTemplate" x:DataType="local:LauncherRow">
-            <Grid Height="{x:Bind RowHeight}" ColumnSpacing="10" Padding="6,0">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <Border
-                    Width="24"
-                    Height="24"
-                    CornerRadius="5.5"
-                    Background="{x:Bind IconBackground}"
-                    VerticalAlignment="Center">
-                    <Grid>
-                        <FontIcon
-                            Glyph="{x:Bind Glyph}"
-                            FontSize="12"
-                            Foreground="White"
-                            Visibility="{x:Bind GlyphVisibility}"
-                            HorizontalAlignment="Center"
-                            VerticalAlignment="Center" />
-                        <Image
-                            Source="{x:Bind IconImage}"
-                            Stretch="Uniform"
-                            Width="20"
-                            Height="20"
-                            Visibility="{x:Bind ImageVisibility}" />
-                    </Grid>
-                </Border>
-                <Grid Grid.Column="1" VerticalAlignment="Center">
-                    <StackPanel
-                        Orientation="Horizontal"
-                        Spacing="8"
-                        Visibility="{x:Bind NormalVisibility}">
-                        <TextBlock
-                            Text="{x:Bind Title}"
-                            FontSize="14"
-                            FontWeight="Medium"
-                            TextTrimming="CharacterEllipsis"
-                            TextWrapping="NoWrap"
-                            MaxLines="1"
-                            VerticalAlignment="Center" />
-                        <TextBlock
-                            Text="{x:Bind Subtitle}"
-                            FontSize="14"
-                            Foreground="{x:Bind SubtitleBrush}"
-                            TextTrimming="CharacterEllipsis"
-                            TextWrapping="NoWrap"
-                            MaxLines="1"
-                            VerticalAlignment="Center" />
-                    </StackPanel>
-                    <StackPanel
-                        Spacing="0"
-                        Visibility="{x:Bind CalculationVisibility}">
-                        <TextBlock
-                            Text="{x:Bind Subtitle}"
-                            FontSize="{StaticResource Kitty.FontSize.Label}"
-                            Foreground="{x:Bind SubtitleBrush}"
-                            TextTrimming="CharacterEllipsis"
-                            TextWrapping="NoWrap"
-                            MaxLines="1" />
-                        <TextBlock
-                            Text="{x:Bind Title}"
-                            FontSize="{StaticResource Kitty.FontSize.Result}"
-                            FontWeight="SemiBold"
-                            FontFamily="{x:Bind TitleFontFamily}"
-                            TextTrimming="CharacterEllipsis"
-                            TextWrapping="NoWrap"
-                            MaxLines="1" />
-                    </StackPanel>
-                </Grid>
-                <StackPanel
-                    Grid.Column="2"
-                    Orientation="Horizontal"
-                    Spacing="8"
-                    VerticalAlignment="Center">
-                    <TextBlock
-                        Text="{x:Bind KindLabel}"
-                        FontSize="{StaticResource Kitty.FontSize.Meta}"
-                        Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                        VerticalAlignment="Center" />
-                    <Border
-                        Style="{StaticResource Kitty.KeyCap}"
-                        Visibility="{x:Bind KeyHintVisibility}">
-                        <TextBlock
-                            Text="{x:Bind KeyHint}"
-                            FontSize="{StaticResource Kitty.FontSize.KeyCap}"
-                            HorizontalAlignment="Center"
-                            VerticalAlignment="Center" />
-                    </Border>
-                </StackPanel>
-            </Grid>
-        </DataTemplate>
-    </UserControl.Resources>
-
-    <Grid Padding="16,12,16,0" RowSpacing="6">
+    <!-- 照 mac LauncherPanelView：搜索线 56（含底下一条通栏发丝线）+ 列表（四周内缩 6，由代码放进 ListHost）+ 底栏 36，没有外边距。
+         没有结果时 ListHost 里只有一行字；Ctrl+K 菜单也浮在 ListHost 里，锚在右下、右缘对着底栏的 Ctrl+K 键帽。 -->
+    <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="36" />
         </Grid.RowDefinitions>
 
-        <ui:SearchLine x:Name="SearchLineControl" />
+        <ui:SearchLine x:Name="SearchLineControl" Grid.Row="0" />
 
-        <Grid Grid.Row="1">
-            <Border
-                x:Name="Highlight"
-                Height="40"
-                CornerRadius="4"
-                Background="{ThemeResource SubtleFillColorSecondaryBrush}"
-                IsHitTestVisible="False"
-                Visibility="Collapsed"
-                HorizontalAlignment="Stretch"
-                VerticalAlignment="Top" />
-            <StackPanel
-                x:Name="EmptyState"
+        <Grid x:Name="ListHost" Grid.Row="1">
+            <TextBlock
+                x:Name="EmptyText"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                FontSize="{StaticResource Kitty.FontSize.Body}"
                 HorizontalAlignment="Center"
                 VerticalAlignment="Center"
-                Spacing="8"
+                TextAlignment="Center"
                 Visibility="Collapsed"
-                IsHitTestVisible="False">
-                <FontIcon
-                    x:Name="EmptyIcon"
-                    Glyph="&#xE721;"
-                    FontSize="28"
-                    Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                    HorizontalAlignment="Center" />
-                <TextBlock
-                    x:Name="EmptyText"
-                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                    FontSize="{StaticResource Kitty.FontSize.RowTitle}"
-                    TextAlignment="Center" />
-            </StackPanel>
-            <ListView
-                x:Name="List"
-                ItemTemplate="{StaticResource LauncherRowTemplate}"
-                ItemContainerStyle="{StaticResource LauncherRowStyle}"
-                SelectionMode="Single"
-                IsItemClickEnabled="True"
-                ItemClick="OnItemClick"
-                SelectionChanged="OnSelectionChanged"
-                DoubleTapped="OnListDoubleTapped"
-                RightTapped="OnListRightTapped"
-                ScrollViewer.HorizontalScrollBarVisibility="Disabled" />
+                IsHitTestVisible="False" />
         </Grid>
 
-        <!-- PLAN-v7 §3.2 底栏：左选中项的种类（16 色块 + 种类名），右「打开 ↩」「操作 Ctrl+K」；没有齿轮（Ctrl+, 直达设置） -->
-        <ui:PanelFooter x:Name="Footer" Grid.Row="2" Margin="-16,0,-16,0" />
+        <!-- 底栏：左边选中项的种类（16 色块 + 种类名），右边「主动作 ↩」「操作 Ctrl+K」；没有齿轮（Ctrl+, 直达设置） -->
+        <ui:PanelFooter x:Name="Footer" Grid.Row="2" />
     </Grid>
 </UserControl>

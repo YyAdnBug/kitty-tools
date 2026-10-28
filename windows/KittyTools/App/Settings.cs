@@ -163,6 +163,20 @@ internal sealed class Settings
     /// <summary>启动器的网页搜索列表；null = 从没存过（默认前 8 个，Bing 兜底）。</summary>
     public List<KittyTools.Core.SearchEngine>? LauncherSearchEngines { get; set; }
 
+    // 启动器对齐 mac（PLAN-v9-launcher，2026-10-28）。字段名进了 settings.json、跟着设置导出，以后别改。
+
+    /// <summary>呼出时切到英文输入法（mac launcherRomanInput，默认关；PLAN-v9 L1）。</summary>
+    public bool LauncherRomanInput { get; set; }
+
+    /// <summary>有本地结果时也显示兜底搜索（mac launcherFallbackAlways，默认关；PLAN-v9 L4）。</summary>
+    public bool LauncherFallbackAlways { get; set; }
+
+    /// <summary>书签开着的浏览器 id；null = 从没设过（Edge、Chrome，PLAN-v9 V1）。</summary>
+    public List<string>? LauncherBookmarkBrowsers { get; set; }
+
+    /// <summary>也搜浏览历史的浏览器 id（书签也开着才算）；null = 都没开。</summary>
+    public List<string>? LauncherHistoryBrowsers { get; set; }
+
     public List<HotKeySetting> HotKeys { get; set; } = new();
 
     /// <summary>
