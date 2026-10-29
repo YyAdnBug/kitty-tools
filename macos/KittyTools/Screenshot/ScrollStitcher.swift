@@ -6,6 +6,9 @@
 //   置信度却总是 1，不能用。
 // - 网页内核的界面（Claude、Chrome、VS Code……）滚动停在小数像素上，文字按小数位置重画，滚过之后有字的行没有一行
 //   逐字节相同（2026-10-17）：逐字节和画布里都找不到时，再按每行的分段亮度和容差投票（fuzzyMatch，规矩同上）。
+//   容差投票只比两帧之间在动的那几段（2026-10-29 用户报「电脑上的移动端网页完全识别不到」）：移动端版式两边的灰底留白、
+//   固定的侧栏、开着的开发者工具原地不动，算进去时对的位移也对不上（侧栏的字不跟着滚）、错的位移又处处一样（留白）。
+//   「有字」看这一行和上下行有没有差别，不看左右有没有起伏：留白和内容的分界每行都在，按左右看空白行也成了有字。
 // - 两个方向都能拼（聊天记录往上翻）：每帧在「画布」上有个位置，超出画布下边就接到下面、超出上边就接到上面，
 //   在画布里面（往回滚）只更新位置。
 // - 吸顶栏 / 页脚：往下接先去掉画布末尾的页脚、再接新帧的新内容连同它的页脚，所以长图始终是「最上面那帧的
@@ -78,7 +81,7 @@ struct ScrollStitcher {
   private static let relocateShare = 0.5
   private static let relocateCover = 0.25
   /// 容差匹配（fuzzyMatch）：每行按这么宽（像素）一段求亮度和；某个位移下每像素平均差不超过 fuzzyTolerance 级亮度的行
-  /// 算一票；票数还要占重叠部分有字行的这个比例。一段里各段亮度差超过 inkLevels 级的行才算有字
+  /// 算一票；票数还要占重叠部分有字行的这个比例。和上一行或下一行在某一段上差出 inkLevels 级（每像素平均）的行才算有字
   private static let bin = 16
   private static let fuzzyTolerance = 2
   private static let fuzzyShare = 0.5
@@ -299,12 +302,25 @@ struct ScrollStitcher {
   private static func fuzzyMatch(from a: Frame, to b: Frame) -> Match? {
     let height = a.ink.count
     let bins = a.bins
-    guard bins > 0 else { return nil }
-    // 隔一行取一行投票：票数的比例不变、快一倍；对上的首尾行最多差一行，页脚和吸顶栏只会估大（宁大勿小）
-    let voters = stride(from: 0, to: height, by: 2).filter {
-      b.ink[$0] && b.hashes[$0] != a.hashes[$0]
+    // 在动的段：两帧同一位置上变了的行超过二十分之一。原地没变的（留白、固定侧栏、开发者工具；只有光标在闪的也算）不比
+    let moving = (0..<bins).filter { k in
+      (0..<height).count { a.profile[$0 * bins + k] != b.profile[$0 * bins + k] } > height / 20
     }
-    let limit = Int32(fuzzyTolerance * bin * 4 * bins)
+    guard !moving.isEmpty else { return nil }
+    // 有字：在动的段里和上一行或下一行差出 inkLevels 级（同 Frame.ink，只看这几段）。
+    // 隔一行取一行投票：票数的比例不变、快一倍；对上的首尾行最多差一行，页脚和吸顶栏只会估大（宁大勿小）
+    let spread = Int32(inkLevels * bin * 4)
+    func varies(_ y: Int) -> Bool {
+      moving.contains { k in
+        let value = b.profile[y * bins + k]
+        return (y > 0 && abs(value - b.profile[(y - 1) * bins + k]) > spread)
+          || (y + 1 < height && abs(value - b.profile[(y + 1) * bins + k]) > spread)
+      }
+    }
+    let voters = stride(from: 0, to: height, by: 2).filter {
+      b.hashes[$0] != a.hashes[$0] && varies($0)
+    }
+    let limit = Int32(fuzzyTolerance * bin * 4 * moving.count)
     // b 的第 i 行停在 a 的第 j 行和第 j + 1 行之间（滚了 dy + 一个小数）：每段亮度应落在这两行之间，只算超出的部分。
     // 每行的上下界先算好
     var low = a.profile
@@ -316,7 +332,7 @@ struct ScrollStitcher {
     }
     func close(_ i: Int, _ j: Int) -> Bool {
       var sum: Int32 = 0
-      for k in 0..<bins {
+      for k in moving {
         let value = b.profile[i * bins + k]
         sum += max(low[j * bins + k] - value, value - high[j * bins + k], 0)
         if sum > limit { return false }
@@ -448,8 +464,8 @@ struct ScrollStitcher {
     let lookup: [Int: [Int]]
     /// 在本帧里出现太多次的行哈希
     let common: Set<Int>
-    /// 容差匹配用：每行 bins 段的亮度和（B + 2G + R，只看比较的列），按行连着存；ink 是这一行各段之间亮度有起伏
-    /// （有字；纯色和只差一两级的渐变底不算）
+    /// 容差匹配用：每行 bins 段的亮度和（B + 2G + R，只看比较的列），按行连着存；ink 是这一行和上下行有差别
+    /// （有字；纯色、大块同色底和只差一两级的渐变底不算）
     let bins: Int
     let profile: [Int32]
     let ink: [Bool]
@@ -473,8 +489,6 @@ struct ScrollStitcher {
       let bin = ScrollStitcher.bin
       let bins = compared / bin
       var profile = [Int32](repeating: 0, count: bins * height)
-      var ink = [Bool](repeating: false, count: height)
-      let inkSpread = Int32(ScrollStitcher.inkLevels * bin * 4)
       pixels.withUnsafeBytes { buffer in
         let bytes = buffer.bindMemory(to: UInt8.self)
         for y in 0..<height {
@@ -483,8 +497,6 @@ struct ScrollStitcher {
           hasher.combine(bytes: UnsafeRawBufferPointer(start: row, count: compared * 4))
           hashes[y] = hasher.finalize()
           solid[y] = memcmp(row + 4, row, compared * 4 - 4) == 0
-          var low = Int32.max
-          var high = Int32.min
           for k in 0..<bins {
             var sum: Int32 = 0
             var offset = y * rowBytes + k * bin * 4
@@ -493,12 +505,18 @@ struct ScrollStitcher {
               offset += 4
             }
             profile[y * bins + k] = sum
-            low = min(low, sum)
-            high = max(high, sum)
           }
-          ink[y] = bins > 0 && high - low > inkSpread
         }
       }
+      // 有字：和上一行或下一行在某一段上差出 inkLevels 级（竖着有起伏）
+      let inkSpread = Int32(ScrollStitcher.inkLevels * bin * 4)
+      var edge = [Bool](repeating: false, count: height + 1)  // 第 y 行和第 y - 1 行不一样
+      for y in 1..<max(height, 1) {
+        edge[y] = (0..<bins).contains { k in
+          abs(profile[y * bins + k] - profile[(y - 1) * bins + k]) > inkSpread
+        }
+      }
+      let ink = (0..<height).map { edge[$0] || edge[$0 + 1] }
       var rows: [Int: [Int]] = [:]
       for y in 0..<height where !solid[y] { rows[hashes[y], default: []].append(y) }
       self.pixels = pixels

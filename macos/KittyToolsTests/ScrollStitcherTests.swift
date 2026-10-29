@@ -2,7 +2,7 @@
 // 带闪烁光标的页脚和随滚动移动的滚动条，喂给 ScrollStitcher，逐字节核对拼出的长图。
 // 覆盖：往下 / 往上拼、页脚光标闪烁（锁住页脚不能估小）、滚太快对不上后往回滚接着拼、画面不动与小变化、
 // 滚到底回弹（单帧、多帧）、往回滚不丢有字的行、长度上限、整页重复行时宁可不接、悬停高亮原地变了一块不算对不上、
-// 和上一帧没有重叠时在已拼的画布里重新找到位置。
+// 和上一帧没有重叠时在已拼的画布里重新找到位置、小数像素滚动、电脑上的移动端网页（两边留白、旁边不动的面板）。
 
 import CoreGraphics
 import Foundation
@@ -55,7 +55,7 @@ struct ScrollStitcherTests {
     return bytes
   }
 
-  private static func image(_ bytes: [UInt8], rows: Int = height) -> CGImage {
+  private static func image(_ bytes: [UInt8], rows: Int = height, width: Int = width) -> CGImage {
     CGImage(
       width: width, height: rows, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4,
       space: CGColorSpace(name: CGColorSpace.sRGB)!,
@@ -356,6 +356,46 @@ struct ScrollStitcherTests {
     #expect(abs(stitcher.outputHeight - (270 + Self.height - 100)) <= 2)
     // 一下滚出一整屏照样对不上，不误接
     #expect(stitcher.add(Self.strokesFrame(at: 600.5)) == .lost)
+  }
+
+  /// 电脑上的移动端网页：中间白底一栏是 strokes 那一页，两边灰底留白；panel 时右边再盖一块原地不动、有字的面板
+  /// （开着的开发者工具）。半像素同 strokesFrame，只糊在滚的那一栏
+  private static func mobileFrame(at offset: Double, panel: Bool) -> CGImage {
+    let wide = 360
+    let column = 100
+    var bytes = [UInt8](repeating: 236, count: wide * 4 * height)
+    let source = pixels(strokesFrame(at: offset))
+    for y in 0..<height {
+      let from = y * width * 4
+      bytes.replaceSubrange(
+        (y * wide + column) * 4..<(y * wide + column + width) * 4,
+        with: source[from..<from + width * 4])
+      guard panel else { continue }
+      for x in 260..<350 where (x * 7 + y / 9 * 13) % 5 == 0 && y % 9 < 6 {
+        bytes.replaceSubrange((y * wide + x) * 4..<(y * wide + x) * 4 + 3, with: [90, 90, 90])
+      }
+    }
+    return image(bytes, width: wide)
+  }
+
+  @Test(arguments: [false, true])
+  func stitchesMobileLayoutBesideStillColumns(panel: Bool) throws {
+    // 2026-10-29 用户报「电脑上的移动端网页完全识别不到」：两边留白的灰白分界每行都在，空白行也被当成有字、处处投票；
+    // 开着的开发者工具不跟着滚，对的位移下也对不上。只比在动的那几段，每一帧都要接上
+    var stitcher = try #require(
+      ScrollStitcher(
+        first: Self.mobileFrame(at: 100, panel: panel), scrollbarWidth: Self.scrollbar,
+        maxHeight: 100_000))
+    for offset in [130.5, 161, 191.5, 236, 270.5] {
+      guard case .moved(let grown) = stitcher.add(Self.mobileFrame(at: offset, panel: panel))
+      else {
+        Issue.record("滚到 \(offset) 没对上")
+        return
+      }
+      #expect(grown > 0)
+    }
+    #expect(abs(stitcher.outputHeight - (270 + Self.height - 100)) <= 2)
+    #expect(stitcher.add(Self.mobileFrame(at: 600.5, panel: panel)) == .lost)
   }
 
   /// 预览取长图的哪一段（面板上滚轮浏览）：跟随最近接的那头、from 夹进范围、整张放得下时只有一段
