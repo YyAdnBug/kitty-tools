@@ -513,7 +513,9 @@ internal sealed partial class SettingsWindow : Window
         _content.Children.Add(Header("通用", "外观、登录时打开、权限、同步、设置的导出与导入"));
         if (_firstRun)
         {
-            _content.Children.Add(BuildWelcome());
+            // 首次安装：盖一层三屏的欢迎引导（SettingsWindow.Onboarding.cs，照 mac OnboardingView），只弹一次。
+            _firstRun = false;
+            ShowOnboardingWhenReady(firstRun: true);
         }
 
         // 功能
@@ -1247,60 +1249,6 @@ internal sealed partial class SettingsWindow : Window
         ArchiveSection.Clips => "片段与收藏",
         _ => "生词本",
     };
-
-    private Border BuildWelcome()
-    {
-        var panel = new StackPanel { Spacing = 10 };
-        panel.Children.Add(new TextBlock
-        {
-            Text = "欢迎使用 Kitty Tools",
-            FontSize = 22,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-        });
-        panel.Children.Add(new TextBlock
-        {
-            Text = "它会一直在托盘里运行。Windows 11 默认把新图标收进任务栏右下角的「^」溢出区，" +
-                   "点开「^」找到 Kitty Tools，可以把它拖到任务栏上。\n\n" +
-                   "默认快捷键：剪贴板 Alt+C、启动器 Alt+Space、划词翻译 Alt+E、输入翻译 Alt+T、" +
-                   "截图翻译 Alt+S、截图 Alt+X、识字 Alt+O、录屏 Alt+R。\n\n" +
-                   "用不着的功能可以在下面「功能」里整个关掉。",
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = Theme.SecondaryText(),
-        });
-
-        // R37：安装程序装的，安装时已经问过开机启动，照它实际写下的值；不然「开始使用」会把没勾的又写回去。
-        if (SetupRecord.IsInstalled)
-        {
-            SettingsService.Current.StartWithWindows = Autostart.IsEnabled();
-        }
-
-        var autostart = new CheckBox
-        {
-            Content = "登录时自动打开",
-            IsChecked = SettingsService.Current.StartWithWindows,
-        };
-        panel.Children.Add(autostart);
-
-        var start = new Button
-        {
-            Content = "开始使用",
-            Background = new SolidColorBrush(Theme.AccentColor),
-            Foreground = new SolidColorBrush(Theme.OnAccentColor),
-        };
-        start.Click += (_, _) =>
-        {
-            var enabled = autostart.IsChecked == true;
-            SettingsService.Current.StartWithWindows = enabled;
-            Autostart.Set(enabled);
-            SettingsService.MarkStarted();
-            _firstRun = false;
-            BuildPage("general");
-            NoticeHost.Show("可以开始了", "快捷键随时在托盘菜单里", NoticeTone.Normal);
-        };
-        panel.Children.Add(start);
-
-        return Card(panel);
-    }
 
     /// <summary>
     /// 设置 › 剪贴板（照 mac Settings/ClipboardTab.swift 的分节，PLAN-v9-clipboard §5）：历史 ｜ 面板（示意图 + 三个开关）｜
@@ -2814,13 +2762,9 @@ internal sealed partial class SettingsWindow : Window
         var releases = new HyperlinkButton { Content = "打开发布页" };
         releases.Click += (_, _) => LauncherOpeners.Start(ReleasesPage);
         links.Children.Add(releases);
-        // PLAN-v9 G4：重看欢迎引导（通用页顶上那张卡）。
+        // PLAN-v9 G4：重看欢迎引导（三屏的那个对话框，「登录时自动打开」跟着现在的状态）。
         var welcome = new HyperlinkButton { Content = "重看欢迎引导" };
-        welcome.Click += (_, _) =>
-        {
-            _firstRun = true;
-            BuildPage("general");
-        };
+        welcome.Click += (_, _) => _ = ShowOnboardingAsync(firstRun: false);
         links.Children.Add(welcome);
         hero.Children.Add(links);
 
