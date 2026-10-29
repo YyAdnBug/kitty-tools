@@ -8,6 +8,19 @@ namespace KittyTools.Tests;
 public sealed class RecordingPipelineTests
 {
     [TestMethod]
+    public void StandardSharpnessCapsTheLongSideAt1920()
+    {
+        Assert.AreEqual((2560, 1440), RecordingPipeline.OutputSize(2560, 1440, standard: false));
+        Assert.AreEqual((1920, 1080), RecordingPipeline.OutputSize(2560, 1440, standard: true));
+        // 竖的：长边是高。
+        Assert.AreEqual((1080, 1920), RecordingPipeline.OutputSize(1440, 2560, standard: true));
+        // 不到 1920 的两种一样（取偶数）。
+        Assert.AreEqual((1280, 720), RecordingPipeline.OutputSize(1281, 721, standard: true));
+        // 3840 × 1601 → 1920 × 800.5 → 取偶 800。
+        Assert.AreEqual((1920, 800), RecordingPipeline.OutputSize(3840, 1601, standard: true));
+    }
+
+    [TestMethod]
     public void BitrateMatchesPlanExamples()
     {
         Assert.AreEqual(4_354_560u, RecordingPipeline.BitrateFor(1920, 1080, 30));

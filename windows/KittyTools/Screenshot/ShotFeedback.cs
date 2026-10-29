@@ -2,8 +2,8 @@
 // 「截完图放哪」（角落缩略图 / 都不要；都不要时照样进截图历史）。
 // 声音用 C:\Windows\Media 里系统自带的「Windows Navigation Start.wav」（一声轻的咔嗒，不随包带素材，PLAN-v9 S6）；
 // 系统静音时 PlaySound 自己不出声；全屏游戏、演示模式这些（SHQueryUserNotificationState 不是「接受通知」）不响。
-// ponytail: 「都不要」时 mac 在右下角闪一下，这里先什么都不出——闪一下要一扇透明的小窗口，归 Windows 那边做（REVIEW）；
-// 「勿扰」开着时系统没有公开接口查，响不响照 SHQueryUserNotificationState。
+// 「都不要」时右下角闪一下（ShotFlash，同 mac）。
+// ponytail: 「勿扰」开着时系统没有公开接口查，响不响照 SHQueryUserNotificationState。
 using System.Runtime.InteropServices;
 using KittyTools.Infrastructure;
 
@@ -22,10 +22,13 @@ internal static partial class ShotFeedback
     public static void Delivered(byte[] png, PixelBounds origin, string? savedPath = null)
     {
         PlayShutter();
-        if (SettingsService.Current.ShotPlacement != "none")
+        if (SettingsService.Current.ShotPlacement == "none")
         {
-            ScreenshotCard.Show(png, origin, savedPath);
+            ShotFlash.Show(origin);
+            return;
         }
+
+        ScreenshotCard.Show(png, origin, savedPath);
     }
 
     /// <summary>快门声：设置里关着、正在全屏 / 演示时不响；设置页的「试听」传 force。</summary>

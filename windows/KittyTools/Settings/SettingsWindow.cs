@@ -97,6 +97,7 @@ internal sealed partial class SettingsWindow : Window
         ["record"] = new[]
         {
             "录屏", "录音", "视频", "保存", "文件夹", "系统声音", "麦克风", "来源", "立即开始", "控制条", "帧率", "点按", "按键", "速查",
+            "清晰度", "分辨率", "画质", "文件大小", "倒数", "光标", "只显示快捷键",
         },
         ["hotkeys"] = new[] { "快捷键", "热键", "冲突", "录制", "恢复默认", "速查", "按键", "钉图" },
         ["about"] = new[] { "版本", "更新", "日志", "发布", "检查更新", "自动检查" },
@@ -2281,6 +2282,13 @@ internal sealed partial class SettingsWindow : Window
                 SettingsService.Current.RecordFps = index == 1 ? 60 : 30;
                 SettingsService.Save();
             });
+        AddCombo("清晰度", string.Empty, new[] { "原始", "标准" },
+            SettingsService.Current.RecordSharpness == "standard" ? 1 : 0,
+            index =>
+            {
+                SettingsService.Current.RecordSharpness = index == 1 ? "standard" : "original";
+                SettingsService.Save();
+            });
         var countdowns = new[] { 0, 3, 5 };
         AddCombo("开始前倒数", string.Empty, new[] { "不倒数", "3 秒", "5 秒" },
             Math.Max(0, Array.IndexOf(countdowns, SettingsService.Current.RecordCountdown)),
@@ -2332,7 +2340,8 @@ internal sealed partial class SettingsWindow : Window
                 SettingsService.Save();
             });
         _content.Children.Add(SettingsUi.Footnote(
-            "60 fps 更顺，文件大约大一半；大屏上可能录不满 60。框一块区域、或在遮罩里单击一扇窗口录它，倒数完开始；录的时候选区外一圈粉线，线不进画面。" +
+            "60 fps 更顺，文件大约大一半；大屏上可能录不满 60。标准清晰度把画面长边缩到 1920，大屏、高分屏上文件小一半多，小字会糊一些；" +
+            "录好的也可以在角落的卡上点「压缩」另存一份小的。框一块区域、或在遮罩里单击一扇窗口录它，倒数完开始；录的时候选区外一圈粉线，线不进画面。" +
             "全部按键会把打的字也录进去；只显示快捷键：带 Ctrl、Alt、Win 的组合键、Esc 和 F 键才进画面，打字不显示。" +
             "第一次录麦克风时，要在 设置 › 隐私和安全性 › 麦克风 里允许桌面应用。"));
 

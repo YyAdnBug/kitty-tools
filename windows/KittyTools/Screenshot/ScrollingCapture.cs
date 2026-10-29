@@ -3,6 +3,8 @@
 // 遮罩收起后选区外一圈品牌粉实线（RecordingFrame.ShowScrolling，同 mac ScrollCapture 的边框；2026-10-29 用户反馈
 // 以前开始滚后什么框都没有）：线在选区外、又不进截图，抓的帧里没有它；
 // 进度用轻提示胶囊显示，Enter / Esc 用临时注册的全局热键（不带修饰键，只在长截图期间有效）。
+// REVIEW R43：每拍只 BitBlt 选区那一块（以前抓全部屏再裁），转像素、算行哈希、找重叠在线程池上做（一次只拼一拍，
+// 上一拍没拼完这一拍就跳过），拼接按条带存（ScrollCanvas）；「完成」等正在拼的那一拍拼完再合成。
 using KittyTools.Core;
 using KittyTools.Infrastructure;
 using Microsoft.UI.Dispatching;
@@ -27,6 +29,12 @@ internal static class ScrollingCapture
     private static PixelBounds _rect;
     /// <summary>拼到一半的那张（条带，REVIEW R43）：每拍只拿找重叠要看的那几行比，完成时才合成一张。</summary>
     private static ScrollCanvas? _canvas;
+
+    /// <summary>正在线程池上拼的那一拍（拼完回 UI 线程换上）；没有在拼时是 null。</summary>
+    private static Task<ScrollCanvas>? _work;
+
+    /// <summary>「完成」进行中：等着正在拼的那一拍，这时候不再抓新的、也不再进「完成」。</summary>
+    private static bool _completing;
     private static int _frames;
     private static Action<ScrollFrame>? _onComplete;
     private static Action? _onCancel;
@@ -52,6 +60,8 @@ internal static class ScrollingCapture
         _screen = screen;
         _rect = rect;
         _canvas = null;
+        _work = null;
+        _completing = false;
         _frames = 0;
         _direction = direction;
         _autoScroll = autoScroll;
@@ -81,15 +91,40 @@ internal static class ScrollingCapture
             NoticeTone.Normal);
     }
 
-    public static void Complete()
+    public static async void Complete()
     {
-        if (!Active || _canvas is null)
+        if (!Active || _completing)
+        {
+            return;
+        }
+
+        _completing = true;
+        var canvas = _canvas;
+        if (_work is { } work)
+        {
+            try
+            {
+                canvas = await work;
+            }
+            catch (Exception ex)
+            {
+                Log.Warn($"scroll.frame-failed {ex.GetType().Name}");
+            }
+        }
+
+        // 等的这一会儿按了 Esc：照放弃算。
+        if (!Active)
+        {
+            return;
+        }
+
+        if (canvas is null)
         {
             Cancel();
             return;
         }
 
-        var frame = _canvas.Compose();
+        var frame = canvas.Compose();
         var callback = _onComplete;
         Stop();
         Log.Info($"scroll.done frames={_frames} height={frame.Height}");
@@ -128,47 +163,61 @@ internal static class ScrollingCapture
         _hasRestore = false;
         _screen = null;
         _canvas = null;
+        _work = null;
+        _completing = false;
         _onComplete = null;
         _onCancel = null;
     }
 
-    private static void CaptureFrame()
+    private static async void CaptureFrame()
     {
-        if (!Active || _screen is null || _timer is null && _frames > 0)
+        if (!Active || _screen is null || _timer is null && _frames > 0 || _work is not null || _completing)
         {
             return;
         }
 
         try
         {
-            // 重新抓整屏，再裁出选区（屏幕内容会变，冻结帧不能再用）。
-            var screens = ScreenCapture.CaptureAll();
-            var screen = screens.FirstOrDefault(item => item.Bounds.Contains(
-                             _rect.Left, _rect.Top) &&
-                         _rect.Right <= item.Bounds.Right && _rect.Bottom <= item.Bounds.Bottom);
-            if (screen is null)
+            // 只抓选区那一块（屏幕内容会变，冻结帧不能再用）；GDI 的屏幕 DC 用的就是全局的物理像素坐标。
+            var rect = _rect;
+            var bgra = ScreenCapture.CaptureRegion(rect);
+            if (bgra is null)
             {
                 NoticeHost.Show("长截图", "选区不在屏幕上了", NoticeTone.Warning);
                 Cancel();
                 return;
             }
 
-            var local = new PixelBounds(
-                _rect.Left - screen.Bounds.Left, _rect.Top - screen.Bounds.Top,
-                _rect.Right - screen.Bounds.Left, _rect.Bottom - screen.Bounds.Top);
-            var bgra = screen.Crop(local);
-            var pixels = new int[local.Width * local.Height];
-            Buffer.BlockCopy(bgra, 0, pixels, 0, bgra.Length);
-            var frame = new ScrollFrame(local.Width, local.Height, pixels);
-            if (_canvas is null)
+            var canvas = _canvas;
+            var direction = _direction;
+            var work = Task.Run(() =>
             {
-                _canvas = new ScrollCanvas(frame);
-            }
-            else
+                var pixels = new int[rect.Width * rect.Height];
+                Buffer.BlockCopy(bgra, 0, pixels, 0, Math.Min(bgra.Length, pixels.Length * 4));
+                var frame = new ScrollFrame(rect.Width, rect.Height, pixels);
+                if (canvas is null)
+                {
+                    return new ScrollCanvas(frame);
+                }
+
+                canvas.Append(frame, direction);
+                return canvas;
+            });
+            _work = work;
+            var result = await work;
+            if (!ReferenceEquals(_work, work))
             {
-                _canvas.Append(frame, _direction);
+                // 拼的时候长截图已经结束（放弃了、换了一轮）：这一拍不要了。
+                return;
             }
 
+            _work = null;
+            if (!Active || _completing)
+            {
+                return;
+            }
+
+            _canvas = result;
             _frames++;
             if (_canvas.Height >= ScrollStitcher.MaxOutputHeight)
             {
@@ -183,6 +232,7 @@ internal static class ScrollingCapture
         }
         catch (Exception ex)
         {
+            _work = null;
             Log.Warn($"scroll.frame-failed {ex.GetType().Name}");
         }
     }

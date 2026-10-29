@@ -184,6 +184,9 @@ internal sealed class Settings
     /// <summary>显示按键时只显示快捷键（PLAN-v9 R4）：默认 false = 全部按键（同 mac；打的字也会录进去）。</summary>
     public bool RecordKeysShortcutsOnly { get; set; }
 
+    /// <summary>录屏的清晰度（PLAN-v9 R5）：original = 原样（默认）/ standard = 长边封顶 1920。</summary>
+    public string RecordSharpness { get; set; } = "original";
+
     /// <summary>录屏开始前倒数几秒（PLAN-v9 R2）：0 / 3（默认）/ 5。</summary>
     public int RecordCountdown { get; set; } = 3;
 

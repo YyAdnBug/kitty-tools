@@ -1,4 +1,5 @@
 // R29：窗口录制改尺寸时把新画面按比例缩放、居中画进固定大小的输出纹理（四周补黑）。
+// PLAN-v9 R5：「标准」清晰度录选区时，把屏幕帧里的那一块（DrawRegion 的源矩形）缩进输出纹理。
 // 只在源尺寸 != 输出尺寸时走这里；同尺寸仍然用 D3D11 的 CopySubresourceRegion，避免每帧多一次 Win2D 画。
 using KittyTools.Infrastructure;
 using Microsoft.Graphics.Canvas;
@@ -34,6 +35,12 @@ internal sealed unsafe class WgcScaler : IDisposable
     public bool Draw(
         ID3D11Texture2D* source, int sourceWidth, int sourceHeight,
         ID3D11Texture2D* target, int targetWidth, int targetHeight)
+        => DrawRegion(source, 0, 0, sourceWidth, sourceHeight, target, targetWidth, targetHeight);
+
+    /// <summary>把源纹理里 (left, top, width, height) 那一块等比缩放、居中画进目标纹理（四周补黑）。</summary>
+    public bool DrawRegion(
+        ID3D11Texture2D* source, int left, int top, int sourceWidth, int sourceHeight,
+        ID3D11Texture2D* target, int targetWidth, int targetHeight)
     {
         if (sourceWidth < 2 || sourceHeight < 2 || targetWidth < 2 || targetHeight < 2)
         {
@@ -63,12 +70,10 @@ internal sealed unsafe class WgcScaler : IDisposable
             var scale = Math.Min((double)targetWidth / sourceWidth, (double)targetHeight / sourceHeight);
             var width = sourceWidth * scale;
             var height = sourceHeight * scale;
-            var left = (targetWidth - width) / 2;
-            var top = (targetHeight - height) / 2;
             session.DrawImage(
                 bitmap,
-                new Windows.Foundation.Rect(left, top, width, height),
-                new Windows.Foundation.Rect(0, 0, sourceWidth, sourceHeight));
+                new Windows.Foundation.Rect((targetWidth - width) / 2, (targetHeight - height) / 2, width, height),
+                new Windows.Foundation.Rect(left, top, sourceWidth, sourceHeight));
             return true;
         }
         catch (Exception ex)

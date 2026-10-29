@@ -44,6 +44,25 @@ public static class RecordingPipeline
     public static (int Width, int Height) EvenSize(int width, int height)
         => (Math.Max(2, width & ~1), Math.Max(2, height & ~1));
 
+    /// <summary>「标准」清晰度的长边上限（PLAN-v9 R5）。</summary>
+    public const int StandardLongSide = 1920;
+
+    /// <summary>
+    /// 设置 › 录制「清晰度」的输出尺寸（PLAN-v9 R5）：原始 = 录的那一块原样（取偶数）；标准 = 长边封顶 1920、等比缩、取偶数
+    /// （大屏、高分屏上文件小一半多，小字会糊一些）。本来就不到 1920 的两种一样。
+    /// </summary>
+    public static (int Width, int Height) OutputSize(int width, int height, bool standard)
+    {
+        var longSide = Math.Max(width, height);
+        if (!standard || longSide <= StandardLongSide)
+        {
+            return EvenSize(width, height);
+        }
+
+        var scale = (double)StandardLongSide / longSide;
+        return EvenSize((int)Math.Round(width * scale), (int)Math.Round(height * scale));
+    }
+
     /// <summary>把全局坐标里的选区裁到显示器内，返回相对显示器左上角的矩形；裁不出来返回 null。</summary>
     public static (int Left, int Top, int Right, int Bottom)? Crop(
         int regionLeft, int regionTop, int regionRight, int regionBottom,

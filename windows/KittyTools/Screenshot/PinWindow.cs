@@ -27,7 +27,8 @@ internal sealed partial class PinWindow : Window
     private readonly Image _image;
     private readonly Border _hover;
     private Microsoft.UI.Dispatching.DispatcherQueueTimer _hoverTimer = null!;
-    private int _opacityIndex;
+    /// <summary>图的不透明度 0.1–1（PLAN-v9 S10：滑块 10–100%，同 mac PinPanel；以前四档循环）。</summary>
+    private double _opacity = 1;
     private readonly HWND _hwnd;
     private double _scale = 1;
     private bool _dragging;
@@ -144,11 +145,8 @@ internal sealed partial class PinWindow : Window
             return button;
         }
 
-        Action("\uE7B3", "透明度", () =>
-        {
-            _opacityIndex = (_opacityIndex + 1) % 4;
-            _image.Opacity = 1 - _opacityIndex * 0.25;
-        });
+        Button? opacityButton = null;
+        opacityButton = Action("\uE7B3", "透明度", () => ShowOpacityFlyout(opacityButton!));
         Action(Glyphs.Close, "关闭钉图", Close);
         var bar = new Border
         {
@@ -298,6 +296,7 @@ internal sealed partial class PinWindow : Window
         Add(menu, "存储", () => _ = ScreenshotOutput.QuickSavePngAsync(_png));
         Add(menu, "另存为…", () => _ = ScreenshotOutput.SavePngAsAsync(AppWindow, _png));
         Add(menu, "识字并复制", () => _ = RecognizeAsync());
+        Add(menu, $"透明度 {Math.Round(_opacity * 100)}%…", () => ShowOpacityFlyout(_root));
         if (Features.IsOn(Feature.Translate))
         {
             Add(menu, "翻译", () => _ = TranslateAsync());
@@ -307,6 +306,29 @@ internal sealed partial class PinWindow : Window
         Add(menu, "关闭", Close);
         menu.ShowAt(_root, new FlyoutShowOptions { Position = e.GetPosition(_root) });
         e.Handled = true;
+    }
+
+    /// <summary>透明度滑块（S10，10–100%，一格 10%）：拖的时候图跟着变；MenuFlyout 放不了滑块，另开一个小浮层。</summary>
+    private void ShowOpacityFlyout(FrameworkElement anchor)
+    {
+        var slider = new Slider
+        {
+            Header = "透明度",
+            Minimum = 10,
+            Maximum = 100,
+            StepFrequency = 10,
+            SmallChange = 10,
+            LargeChange = 10,
+            Value = Math.Round(_opacity * 100),
+            Width = 200,
+        };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(slider, "钉图透明度");
+        slider.ValueChanged += (_, args) =>
+        {
+            _opacity = Math.Clamp(args.NewValue / 100, 0.1, 1);
+            _image.Opacity = _opacity;
+        };
+        new Flyout { Content = slider }.ShowAt(anchor);
     }
 
     private static void Add(MenuFlyout menu, string text, Action action)
