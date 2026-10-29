@@ -3,7 +3,8 @@
 // 记录在主库的 shots 表。录制的只记文件路径和一张封面（有的话），不复制文件。
 // 和 mac 不一样（替用户定的）：画了标注的那几条另存一张成品 <id>-c.png——Windows 的标注渲染要冻结帧（马赛克取像素），
 // 离开遮罩之后合成不了；没画标注的成品就是原图，不多存。
-// 留 30 天、总共 2 GB，超了先删最旧的（ShotHistoryRules.Stale）；「保留截图历史」关掉或截图功能关掉时不记、已记的留着。
+// 默认留 30 天、总共 2 GB，超了先删最旧的（ShotHistoryRules.Stale）；天数和占用在 设置 › 截图 里改（PLAN-v9 S8）。
+// 「保留截图历史」关掉或截图功能关掉时不记、已记的留着。
 // 图不进每日备份、历史不进同步。写图在线程池，库只在 UI 线程上碰（和别的几个 store 共用主库连接）。
 using KittyTools.Core;
 using KittyTools.Infrastructure;
@@ -360,8 +361,8 @@ internal sealed class ShotHistory
         var stale = ShotHistoryRules.Stale(
             _items.Select(item => new ShotStaleItem(item.Id, item.CreatedAt, item.Bytes)),
             DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-            ShotHistoryRules.DefaultDays,
-            ShotHistoryRules.DefaultBytes);
+            Math.Max(0, SettingsService.Current.ShotHistoryDays),
+            Math.Max(0, SettingsService.Current.ShotHistoryMegabytes) * 1_048_576L);
         if (stale.Count > 0)
         {
             Remove(stale);

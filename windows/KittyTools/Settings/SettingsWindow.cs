@@ -1833,19 +1833,86 @@ internal sealed partial class SettingsWindow : Window
         _content.Children.Add(SettingsUi.Card("截图时播放快门声", string.Empty, shutter));
         _content.Children.Add(SettingsUi.Footnote("拷贝、存储、钉图时响；系统静音、全屏游戏和演示时不响。截图翻译、识字不出声。"));
 
-        // 截图历史（PLAN-v8 H3）
+        // 截图历史（PLAN-v8 H3；保留期、占用、清空是 PLAN-v9 S8，照 mac：关掉「保留」时下面两行变灰）
         _content.Children.Add(SettingsUi.Section("截图历史"));
-        AddToggle("保留截图历史", "关掉后不再记，已经记下的留着",
+        Border? daysCard = null;
+        Border? sizeCard = null;
+        AddToggle("保留截图历史", string.Empty,
             SettingsService.Current.ShotHistory,
             value =>
             {
                 SettingsService.Current.ShotHistory = value;
                 SettingsService.Save();
+                if (daysCard is not null && sizeCard is not null)
+                {
+                    SettingsUi.SetEnabled(daysCard, value);
+                    SettingsUi.SetEnabled(sizeCard, value);
+                }
             });
+        var days = new[] { 7, 30, 90, 0 };
+        daysCard = SettingsUi.Card("保留", string.Empty, SettingsUi.Combo(
+            new[] { "7 天", "30 天", "90 天", "一直留着" },
+            Math.Max(0, Array.IndexOf(days, SettingsService.Current.ShotHistoryDays)),
+            index =>
+            {
+                SettingsService.Current.ShotHistoryDays = days[index];
+                SettingsService.Save();
+                ShotHistory.Instance?.Prune();
+            }, "截图历史保留多久"), enabled: SettingsService.Current.ShotHistory);
+        _content.Children.Add(daysCard);
+        var sizes = new[] { 1024, 2048, 5120, 0 };
+        sizeCard = SettingsUi.Card("最多占用", string.Empty, SettingsUi.Combo(
+            new[] { "1 GB", "2 GB", "5 GB", "不限" },
+            Math.Max(0, Array.IndexOf(sizes, SettingsService.Current.ShotHistoryMegabytes)),
+            index =>
+            {
+                SettingsService.Current.ShotHistoryMegabytes = sizes[index];
+                SettingsService.Save();
+                ShotHistory.Instance?.Prune();
+            }, "截图历史最多占用"), enabled: SettingsService.Current.ShotHistory);
+        _content.Children.Add(sizeCard);
+        var historyButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
         var openHistory = new Button { Content = "打开截图历史…" };
         openHistory.Click += (_, _) => ShotHistoryWindow.ShowWindow();
-        _content.Children.Add(SettingsUi.Card("截图历史", "看、拷贝、再钉出来，或者删掉", openHistory));
-        _content.Children.Add(SettingsUi.Footnote("截图、长截图、钉过的图和录制都记在这里，留 30 天、最多 2 GB，超了先删最旧的。"));
+        historyButtons.Children.Add(openHistory);
+        // 现在清空：管数据的，截图功能关着也能用（同 mac 不套 gated）。
+        var clearHistory = new Button
+        {
+            Content = "现在清空…",
+            Foreground = Theme.Critical(),
+            IsEnabled = ShotHistory.Instance?.Items.Count > 0,
+        };
+        clearHistory.Click += async (_, _) =>
+        {
+            if (ShotHistory.Instance is not { } history || history.Items.Count == 0)
+            {
+                return;
+            }
+
+            var dialog = new ContentDialog
+            {
+                RequestedTheme = Theme.ElementTheme,
+                Title = "清空截图历史？",
+                Content = $"{history.Items.Count} 条历史连同留着的原图一起删掉，不能撤销；已经存到文件夹里的文件不动。",
+                PrimaryButtonText = "清空",
+                CloseButtonText = "取消",
+                DefaultButton = ContentDialogButton.Close,
+                XamlRoot = _content.XamlRoot,
+            };
+            if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+            {
+                return;
+            }
+
+            history.Remove(history.Items.Select(item => item.Id).ToList());
+            NoticeHost.Show("已清空截图历史", string.Empty, NoticeTone.Normal);
+            BuildPage("screenshot");
+        };
+        historyButtons.Children.Add(clearHistory);
+        _content.Children.Add(Ungated(SettingsUi.Card("截图历史", "看、拷贝、再钉出来，或者删掉", historyButtons)));
+        _content.Children.Add(SettingsUi.Footnote(
+            "截图、长截图、钉过的图和录屏录音都留在这里，能回头接着改标注、再钉一次。超过保留期或占用的先删最旧的（已经存到文件夹里的文件不动）。" +
+            "历史只在这台电脑上，不跟着同步。"));
 
         // 截完图放哪（PLAN-v9 S7）：角落缩略图 / 都不要（mac 还有晾衣绳，Windows 不做）。
         _content.Children.Add(new Border { Height = 8 });

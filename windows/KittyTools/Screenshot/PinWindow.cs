@@ -292,10 +292,18 @@ internal sealed partial class PinWindow : Window
 
     private void OnRightTapped(object sender, RightTappedRoutedEventArgs e)
     {
+        // PLAN-v9 S10（同 mac 钉图的右键菜单）：加了「存储」（快速保存到截图文件夹）和「翻译」（识字后开翻译浮窗）。
         var menu = new MenuFlyout();
         Add(menu, "复制", () => _ = CopyAsync());
+        Add(menu, "存储", () => _ = ScreenshotOutput.QuickSavePngAsync(_png));
         Add(menu, "另存为…", () => _ = ScreenshotOutput.SavePngAsAsync(AppWindow, _png));
         Add(menu, "识字并复制", () => _ = RecognizeAsync());
+        if (Features.IsOn(Feature.Translate))
+        {
+            Add(menu, "翻译", () => _ = TranslateAsync());
+        }
+
+        menu.Items.Add(new MenuFlyoutSeparator());
         Add(menu, "关闭", Close);
         menu.ShowAt(_root, new FlyoutShowOptions { Position = e.GetPosition(_root) });
         e.Handled = true;
@@ -352,28 +360,56 @@ internal sealed partial class PinWindow : Window
         }
     }
 
-    private async Task RecognizeAsync()
+    /// <summary>认出钉图里的字：没有识字组件、一个字都没认出来时提示并返回 null。</summary>
+    private async Task<string?> RecognizedTextAsync()
     {
         if (!OcrService.HasEngine)
         {
             NoticeHost.Show("没装中文识字组件", string.Empty, NoticeTone.Warning,
                 NoticeActions.SystemSettings("ms-settings:regionlanguage"));
-            return;
+            return null;
         }
 
+        var decoded = await ImageCodec.PngToBgraAsync(_png);
+        if (decoded is not { } image)
+        {
+            return null;
+        }
+
+        var (text, _) = await OcrService.RecognizeAsync(
+            image.Bgra, image.Width, image.Height, joined: SettingsService.Current.OcrJoinLines);
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            NoticeHost.Show("没有识别到文字", string.Empty, NoticeTone.Warning);
+            return null;
+        }
+
+        return text;
+    }
+
+    /// <summary>右键「翻译」：识字后照截图翻译那样开浮窗（原文按设置记进剪贴板历史）。</summary>
+    private async Task TranslateAsync()
+    {
         try
         {
-            var decoded = await ImageCodec.PngToBgraAsync(_png);
-            if (decoded is not { } image)
+            if (await RecognizedTextAsync() is { } text)
             {
-                return;
+                TranslateHost.ShowRecognized(text);
             }
+        }
+        catch (Exception ex)
+        {
+            Log.Error("pin.translate-failed", ex);
+            NoticeHost.Show("识字失败", ex.GetType().Name, NoticeTone.Error);
+        }
+    }
 
-            var (text, _) = await OcrService.RecognizeAsync(
-                image.Bgra, image.Width, image.Height, joined: SettingsService.Current.OcrJoinLines);
-            if (string.IsNullOrWhiteSpace(text))
+    private async Task RecognizeAsync()
+    {
+        try
+        {
+            if (await RecognizedTextAsync() is not { } text)
             {
-                NoticeHost.Show("没有识别到文字", string.Empty, NoticeTone.Warning);
                 return;
             }
 

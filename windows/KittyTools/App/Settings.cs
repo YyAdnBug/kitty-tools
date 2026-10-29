@@ -147,6 +147,12 @@ internal sealed class Settings
 
     public int ScreenshotLastHeight { get; set; }
 
+    /// <summary>截图历史留几天（PLAN-v9 S8）：7 / 30（默认）/ 90 / 0 = 一直留着。</summary>
+    public int ShotHistoryDays { get; set; } = Core.ShotHistoryRules.DefaultDays;
+
+    /// <summary>截图历史最多占用多少 MB（PLAN-v9 S8）：1024 / 2048（默认）/ 5120 / 0 = 不限。</summary>
+    public int ShotHistoryMegabytes { get; set; } = 2048;
+
     /// <summary>截图时播放快门声（PLAN-v9 S6，默认开，同 mac）：拷贝、存储、钉图时响。</summary>
     public bool ScreenshotShutterSound { get; set; } = true;
 
