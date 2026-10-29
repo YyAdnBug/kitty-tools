@@ -69,6 +69,36 @@ internal static class Motion
             visual.StartAnimation("Translation", CurveTo(compositor, Vector3.Zero, spring.Value));
         });
 
+    /// <summary>
+    /// 挤压弹开（设置 › 通用 › 动效「呼出面板时挤压弹开」，同 mac OverlayPanel.squeezeIn）：从 0.9 宽 × 0.75 高（顶边不动、左右居中）
+    /// 按 island 弹开、略冲过头再回来，同时淡入；系统关了动画效果时只淡入（同 Entrance 的减弱）。
+    /// ponytail: mac 是整扇窗口逐帧改尺寸；Windows 的窗口外框和阴影是 DWM 画的、跟不上，这里只缩放里面的内容，
+    /// 头几帧内容四周露出窗口底色。手感不好就照 mac 默认关着。
+    /// </summary>
+    public static void SqueezeIn(FrameworkElement element)
+    {
+        if (Reduced)
+        {
+            Entrance(element);
+            return;
+        }
+
+        WhenReady(element, visual =>
+        {
+            var spring = MotionCurves.Effective(MotionCurve.Island, Reduced);
+            if (spring is null)
+            {
+                return;
+            }
+
+            visual.CenterPoint = new Vector3((float)(element.ActualWidth / 2), 0, 0);
+            visual.Scale = new Vector3(0.9f, 0.75f, 1);
+            visual.StartAnimation("Scale", CurveTo(visual.Compositor, Vector3.One, spring.Value));
+            visual.Opacity = 0f;
+            StartFade(visual, 1f, MotionCurves.FadeInSeconds);
+        });
+    }
+
     /// <summary>小东西出现：只淡入（不再从 0.85 放大，0.1.0 用户反馈）。</summary>
     public static void Appear(FrameworkElement element)
         => WhenReady(element, visual =>

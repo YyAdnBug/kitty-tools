@@ -506,8 +506,8 @@ internal sealed partial class SettingsWindow : Window
     }
 
     /// <summary>
-    /// 设置 › 通用（照 mac GeneralTab 的分组和顺序）：功能 ｜ 外观、强调色 ｜ 启动 ｜ 权限 ｜ 同步 ｜ 导出与导入 ｜ 数据。
-    /// mac 的「动效」「菜单栏」两组 Windows 没有，「自动检查更新」在关于页（同 mac），见 MAC-DIFF.md。
+    /// 设置 › 通用（照 mac GeneralTab 的分组和顺序）：功能 ｜ 外观、强调色 ｜ 动效 ｜ 启动 ｜ 权限 ｜ 同步 ｜ 导出与导入 ｜ 数据。
+    /// mac 的「菜单栏」一组 Windows 没有，「自动检查更新」在关于页（同 mac），见 MAC-DIFF.md。
     /// </summary>
     private void BuildGeneral()
     {
@@ -547,6 +547,16 @@ internal sealed partial class SettingsWindow : Window
                 ? "跟随 设置 › 个性化 › 颜色 里的强调色"
                 : "右键菜单、焦点框这些由系统绘制，仍使用系统强调色",
             AccentPicker()));
+
+        // 动效（mac 外观下面单独一组）
+        _content.Children.Add(SettingsUi.Section("动效"));
+        AddToggle("呼出面板时挤压弹开", "剪贴板、启动器和翻译浮窗从窄一点、矮一点弹开到原尺寸；系统关了动画效果时不弹",
+            SettingsService.Current.PanelSqueezeEntrance,
+            isOn =>
+            {
+                SettingsService.Current.PanelSqueezeEntrance = isOn;
+                SettingsService.Save();
+            });
 
         // 启动
         _content.Children.Add(SettingsUi.Section("启动"));

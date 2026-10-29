@@ -147,6 +147,9 @@ internal sealed class Settings
 
     public int ScreenshotLastHeight { get; set; }
 
+    /// <summary>呼出面板时挤压弹开（剪贴板、启动器、翻译浮窗共用，同 mac panelSqueezeEntrance，默认关）。</summary>
+    public bool PanelSqueezeEntrance { get; set; }
+
     /// <summary>每天自动备份设置与数据（PLAN-v9 G2，默认开，同 mac）。这台电脑自己的状态，不跟着导出导入走。</summary>
     public bool DailyBackup { get; set; } = true;
 
