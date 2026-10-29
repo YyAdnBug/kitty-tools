@@ -52,6 +52,7 @@ internal sealed partial class SettingsWindow : Window
         ("translate", "翻译", "\uE774"),
         ("launcher", "启动器", "\uE721"),
         ("screenshot", "截图", "\uE722"),
+        ("record", "录制", Glyphs.Record),
         ("about", "关于", "\uE946"),
     };
 
@@ -139,7 +140,8 @@ internal sealed partial class SettingsWindow : Window
         _width = (int)Math.Round(980 * scale);
         _height = (int)Math.Round(720 * scale);
         AppWindow.Resize(new Windows.Graphics.SizeInt32(_width, _height));
-        AppWindow.SetIcon(Paths.ExecutablePath);
+        // 标题栏左上角的图标（2026-10-29 用户反馈：以前传 exe 路径，SetIcon 不认，显示的是系统默认图标）。
+        AppWindow.SetIcon(Paths.AppIconFile);
         Theme.ApplyTitleBar(AppWindow);
 
         BuildPage("general");
@@ -247,6 +249,7 @@ internal sealed partial class SettingsWindow : Window
         _stale = false;
         _currentPage = page;
         _content.Children.Clear();
+        _browserRefreshers.Clear();
         switch (page)
         {
             case "hotkeys":
@@ -263,6 +266,9 @@ internal sealed partial class SettingsWindow : Window
                 break;
             case "screenshot":
                 BuildScreenshot();
+                break;
+            case "record":
+                BuildRecord();
                 break;
             case "about":
                 BuildAbout();
@@ -331,8 +337,9 @@ internal sealed partial class SettingsWindow : Window
                 Features.Blurb(feature),
                 SettingsUi.Toggle(Features.IsOn(feature), isOn =>
                 {
+                    // 不重建这一页：这一页只有这排开关跟着功能变，它自己已经拨过去了（以前重建两遍，整页的开关都闪）。
+                    // 热键、托盘菜单在 ShellRuntime.OnSettingsChanged 里跟着换；功能自己那一页是点进去时才建的。
                     Features.Set(feature, isOn);
-                    BuildPage(_currentPage);
                 }, Features.Title(feature)),
                 leading: FeatureTile(feature)));
         }
@@ -775,14 +782,26 @@ internal sealed partial class SettingsWindow : Window
 
         // 面板
         _content.Children.Add(SettingsUi.Section("面板"));
-        _content.Children.Add(ClipboardSketch(settings.ClipboardShowLens, settings.LinkPreviews));
+        var sketch = ClipboardSketch(settings.ClipboardShowLens, settings.LinkPreviews);
+        _content.Children.Add(sketch);
+        // 两个开关只换上面那张示意图，不重建整页（重建时整页的开关都闪一下，2026-10-29 用户反馈）。
+        void RedrawSketch()
+        {
+            var index = _content.Children.IndexOf(sketch);
+            if (index >= 0)
+            {
+                sketch = ClipboardSketch(settings.ClipboardShowLens, settings.LinkPreviews);
+                _content.Children[index] = sketch;
+            }
+        }
+
         AddToggle("显示透镜", "选中的条目在原地展开预览；关掉就是纯列表，一屏多露出几行",
             settings.ClipboardShowLens,
             isOn =>
             {
                 settings.ClipboardShowLens = isOn;
                 SettingsService.Save();
-                BuildPage("clipboard");
+                RedrawSketch();
             });
         AddToggle("链接显示网页标题和图片", "选中链接时联网读取；本机、内网和带登录令牌的网址不读",
             settings.LinkPreviews,
@@ -795,7 +814,7 @@ internal sealed partial class SettingsWindow : Window
                     LinkPreviewService.Clear();
                 }
 
-                BuildPage("clipboard");
+                RedrawSketch();
             });
         AddToggle("单击条目直接粘贴", "关着时单击选中、双击粘贴；打开后点一下就粘贴，想先看内容用 ↑↓，Ctrl 单击、Shift 单击照常多选",
             settings.ClipboardPasteOnClick,
@@ -1142,29 +1161,30 @@ internal sealed partial class SettingsWindow : Window
             AddBrowserRows(settings, browser);
         }
 
-        // 读完数据重画这一页时别再读一次：浏览器开着时 History 一直在改，不拦会一遍遍重建、滚动跳回顶部。
-        if (!_browsersJustRefreshed)
-        {
-            _ = RefreshBrowsersAsync(settings);
-        }
-
-        _browsersJustRefreshed = false;
+        // 后台读浏览器数据，读完原地改各行的条数（不重建整页：以前读完整页重画，开关全闪一下、滚动跳回顶部）。
+        _ = RefreshBrowsersAsync(settings);
 
         // 网页搜索与快捷链接
         _content.Children.Add(Section("网页搜索与快捷链接",
             "网址里有 {query} 的是搜索（「关键词 空格 内容」直达，开关 = 没有本地结果时兜底），没有的是快捷链接。搜索的关键词重复时用靠前的；点「编辑」改名称、关键词和网址。"));
         var engines = (settings.LauncherSearchEngines ?? WebSearch.Defaults()).Select(Copy).ToList();
 
-        void Persist()
+        void Save()
         {
             settings.LauncherSearchEngines = engines;
             SettingsService.Save();
+        }
+
+        // 增删、挪位置、改名要重画这一节；只拨兜底开关的不重画（Save），免得整页的开关都闪一下。
+        void Persist()
+        {
+            Save();
             BuildPage("launcher");
         }
 
         for (var index = 0; index < engines.Count; index++)
         {
-            _content.Children.Add(EngineRow(engines, index, Persist));
+            _content.Children.Add(EngineRow(engines, index, Persist, Save));
         }
 
         var add = new Button { Content = "＋ 添加搜索或快捷链接" };
@@ -1242,8 +1262,8 @@ internal sealed partial class SettingsWindow : Window
         _content.Children.Add(clear);
     }
 
-    /// <summary>这一次重建是浏览器数据读完触发的（不再触发下一次读）。</summary>
-    private bool _browsersJustRefreshed;
+    /// <summary>这一页浏览器各行「读到几条」的原地刷新（BuildPage 换页时清空）。</summary>
+    private readonly List<Action> _browserRefreshers = new();
 
     private static KittyTools.Core.SearchEngine Copy(KittyTools.Core.SearchEngine engine) => new()
     {
@@ -1259,17 +1279,11 @@ internal sealed partial class SettingsWindow : Window
     /// </summary>
     private void AddBrowserRows(Settings settings, BrowserInfo browser)
     {
-        var bookmarkIds = Browsers.BookmarkIds(settings).ToList();
-        var historyIds = (settings.LauncherHistoryBrowsers ?? new List<string>()).ToList();
-        var bookmarksOn = bookmarkIds.Contains(browser.Id);
-        // 读到几条写在名字下面（mac browserRows）；书签关着时只有名字。
-        var (bookmarkText, bookmarkProblem) = bookmarksOn
-            ? StatusText(BrowserIndex.Status(browser.Id, history: false), "书签", "书签文件里一条书签都没有", "没找到书签文件")
-            : (string.Empty, false);
-        _content.Children.Add(SettingsUi.Card(
+        // 开关一变只原地改这两行（说明文字、历史那一行露不露），不重建整页（2026-10-29 用户反馈：别的开关跟着闪）。
+        var bookmarkCard = SettingsUi.Card(
             browser.Name,
-            bookmarkText,
-            SettingsUi.Toggle(bookmarksOn, isOn =>
+            string.Empty,
+            SettingsUi.Toggle(Browsers.BookmarkIds(settings).Contains(browser.Id), isOn =>
             {
                 var ids = Browsers.BookmarkIds(settings).Where(id => id != browser.Id).ToList();
                 if (isOn)
@@ -1279,33 +1293,54 @@ internal sealed partial class SettingsWindow : Window
 
                 settings.LauncherBookmarkBrowsers = ids;
                 SettingsService.Save();
-                BuildPage("launcher");
-            }, $"读 {browser.Name} 的书签"),
-            problem: bookmarkProblem));
-        if (bookmarksOn)
+                RefreshAllBrowserRows();
+                _ = RefreshBrowsersAsync(settings);
+            }, $"读 {browser.Name} 的书签"));
+        var historyCard = SettingsUi.Card(
+            "也搜浏览历史",
+            string.Empty,
+            SettingsUi.Toggle((settings.LauncherHistoryBrowsers ?? new List<string>()).Contains(browser.Id), isOn =>
+            {
+                var ids = (settings.LauncherHistoryBrowsers ?? new List<string>()).Where(id => id != browser.Id).ToList();
+                if (isOn)
+                {
+                    ids.Add(browser.Id);
+                }
+
+                settings.LauncherHistoryBrowsers = ids;
+                SettingsService.Save();
+                RefreshAllBrowserRows();
+                _ = RefreshBrowsersAsync(settings);
+            }, $"也搜 {browser.Name} 的浏览历史"));
+        historyCard.Margin = new Thickness(24, 0, 0, 0);
+        _content.Children.Add(bookmarkCard);
+        _content.Children.Add(historyCard);
+
+        // 读到几条写在名字下面（mac browserRows）；书签关着时只有名字、历史那一行不露。
+        void Refresh()
         {
-            var historyOn = historyIds.Contains(browser.Id);
+            var bookmarksOn = Browsers.BookmarkIds(settings).Contains(browser.Id);
+            var (bookmarkText, bookmarkProblem) = bookmarksOn
+                ? StatusText(BrowserIndex.Status(browser.Id, history: false), "书签", "书签文件里一条书签都没有", "没找到书签文件")
+                : (string.Empty, false);
+            SettingsUi.SetDescription(bookmarkCard, bookmarkText, bookmarkProblem);
+            historyCard.Visibility = bookmarksOn ? Visibility.Visible : Visibility.Collapsed;
+            var historyOn = (settings.LauncherHistoryBrowsers ?? new List<string>()).Contains(browser.Id);
             var (historyText, historyProblem) = historyOn
                 ? StatusText(BrowserIndex.Status(browser.Id, history: true), "历史", "浏览历史里还没有常去的网页", "没找到浏览历史文件")
                 : ("去过两次以上或手输过的网页，排在书签后面", false);
-            var historyCard = SettingsUi.Card(
-                "也搜浏览历史",
-                historyText,
-                SettingsUi.Toggle(historyOn, isOn =>
-                {
-                    var ids = (settings.LauncherHistoryBrowsers ?? new List<string>()).Where(id => id != browser.Id).ToList();
-                    if (isOn)
-                    {
-                        ids.Add(browser.Id);
-                    }
+            SettingsUi.SetDescription(historyCard, historyText, historyProblem);
+        }
 
-                    settings.LauncherHistoryBrowsers = ids;
-                    SettingsService.Save();
-                    BuildPage("launcher");
-                }, $"也搜 {browser.Name} 的浏览历史"),
-                problem: historyProblem);
-            historyCard.Margin = new Thickness(24, 0, 0, 0);
-            _content.Children.Add(historyCard);
+        _browserRefreshers.Add(Refresh);
+        Refresh();
+    }
+
+    private void RefreshAllBrowserRows()
+    {
+        foreach (var refresh in _browserRefreshers.ToArray())
+        {
+            refresh();
         }
     }
 
@@ -1319,19 +1354,18 @@ internal sealed partial class SettingsWindow : Window
             _ => (missing, true),
         };
 
-    /// <summary>开关变了、页面重建时：浏览器数据该重读就在后台读，读完还停在这一页就再画一次（条数就出来了）。</summary>
+    /// <summary>开关变了、进这一页时：浏览器数据该重读就在后台读，读完还停在这一页就原地改各行的条数。</summary>
     private async Task RefreshBrowsersAsync(Settings settings)
     {
         if (await BrowserIndex.RefreshAsync(Browsers.BookmarkIds(settings), Browsers.HistoryIds(settings), force: true) &&
             _currentPage == "launcher" && !IsClosed)
         {
-            _browsersJustRefreshed = true;
-            BuildPage("launcher");
+            RefreshAllBrowserRows();
         }
     }
 
     /// <summary>一条搜索 / 快捷链接（mac EngineListRow）：名称 + 种类或橙色的问题、关键词键帽、兜底开关（快捷链接没有）、↑ ↓ 编辑 删除。</summary>
-    private Border EngineRow(List<KittyTools.Core.SearchEngine> engines, int index, Action persist)
+    private Border EngineRow(List<KittyTools.Core.SearchEngine> engines, int index, Action persist, Action save)
     {
         var engine = engines[index];
         var problem = WebSearch.Problem(engine, engines);
@@ -1349,7 +1383,7 @@ internal sealed partial class SettingsWindow : Window
             controls.Children.Add(SettingsUi.Toggle(engine.Fallback, isOn =>
             {
                 engine.Fallback = isOn;
-                persist();
+                save();
             }, $"「{WebSearch.Title(engine)}」没有本地结果时兜底"));
         }
 
@@ -1565,112 +1599,127 @@ internal sealed partial class SettingsWindow : Window
         var openHistory = new Button { Content = "打开…" };
         openHistory.Click += (_, _) => ShotHistoryWindow.ShowWindow();
         _content.Children.Add(SettingsUi.Card("截图历史", "看、拷贝、再钉出来，或者删掉", openHistory));
+    }
 
-        if (Features.IsOn(Feature.Recording))
+    /// <summary>
+    /// 设置 › 录制（2026-10-29 用户：设置里看不到录制）：以前塞在「截图」页最下面、录屏功能打开才出来；
+    /// 照 mac RecordTab 拆成单独一页（保存到 / 录屏 / 录音），功能关着时同别的页只留「已关闭」卡片。
+    /// </summary>
+    private void BuildRecord()
+    {
+        if (!ShowIfDisabled(Feature.Recording))
         {
-            _content.Children.Add(Section(
-                "录屏", "Alt+R 开始 / 停止；录鼠标所在那块屏的整屏，可以带系统声音和麦克风。"));
-            AddCombo("帧率", "15 够用；30 更顺、文件更大。",
-                new[] { "15 fps", "30 fps" },
-                SettingsService.Current.RecordFps >= 30 ? 1 : 0,
-                index =>
-                {
-                    SettingsService.Current.RecordFps = index == 1 ? 30 : 15;
-                    SettingsService.Save();
-                });
+            return;
+        }
 
-            AddToggle("显示点按", "录制画面里画一个圈（左键粉色、右键蓝色）。",
-                SettingsService.Current.RecordClicks,
-                value =>
-                {
-                    SettingsService.Current.RecordClicks = value;
-                    SettingsService.Save();
-                });
-            AddToggle("显示按键", "只显示带修饰键的快捷键（如 Ctrl + Shift + S），单个字母不显示。",
-                SettingsService.Current.RecordKeys,
-                value =>
-                {
-                    SettingsService.Current.RecordKeys = value;
-                    SettingsService.Save();
-                });
-            AddToggle("系统声音", "录默认输出设备的声音（WASAPI 回环）；关掉只录麦克风或只有画面。",
-                SettingsService.Current.RecordSystemSound,
-                value =>
-                {
-                    SettingsService.Current.RecordSystemSound = value;
-                    SettingsService.Save();
-                });
-            AddToggle("麦克风", "录默认麦克风，和系统声音混成一条音轨。第一次会要系统麦克风权限。",
-                SettingsService.Current.RecordMicrophone,
-                value =>
-                {
-                    SettingsService.Current.RecordMicrophone = value;
-                    SettingsService.Save();
-                });
-            AddToggle("按快捷键后立即开始录音",
-                "关掉时先出控制条，点 ● 才开始；适合先调麦克风再用。",
-                SettingsService.Current.RecordInstantStart,
-                value =>
-                {
-                    SettingsService.Current.RecordInstantStart = value;
-                    SettingsService.Save();
-                });
-
-            var folderRow = new Grid { ColumnSpacing = 8 };
-            folderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            folderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            var folder = new TextBox
+        _content.Children.Add(Header("录制", "录屏和录音；托盘菜单里也能开始和停止。"));
+        AddShortcutsLink("screenshot");
+        _content.Children.Add(Section(
+            "保存到", "录屏和录音都存在这里，文件名是「录屏 日期 时间.mp4」「录音 日期 时间.m4a」。"));
+        var folderRow = new Grid { ColumnSpacing = 8 };
+        folderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        folderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var folder = new TextBox
+        {
+            Text = RecordingHost.Folder,
+            IsReadOnly = true,
+            FontSize = 13,
+        };
+        AutomationProperties.SetName(folder, "录制保存目录");
+        folderRow.Children.Add(folder);
+        var pick = new Button { Content = "选择文件夹…" };
+        pick.Click += async (_, _) =>
+        {
+            try
             {
-                Text = RecordingHost.Folder,
-                IsReadOnly = true,
-                FontSize = 13,
-            };
-            AutomationProperties.SetName(folder, "录制保存目录");
-            folderRow.Children.Add(folder);
-            var pick = new Button { Content = "选择文件夹…" };
-            pick.Click += async (_, _) =>
+                var picker = new FolderPicker(AppWindow.Id);
+                var result = await picker.PickSingleFolderAsync();
+                if (result is not null && !string.IsNullOrEmpty(result.Path))
+                {
+                    SettingsService.Current.RecordDirectory = result.Path;
+                    SettingsService.Save();
+                    BuildPage("record");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error("settings.record-folder-failed", ex);
+            }
+        };
+        Grid.SetColumn(pick, 1);
+        folderRow.Children.Add(pick);
+        _content.Children.Add(folderRow);
+        _content.Children.Add(SettingsUi.Card(
+            "打开录制文件夹",
+            RecordingHost.Folder,
+            null,
+            () =>
             {
                 try
                 {
-                    var picker = new FolderPicker(AppWindow.Id);
-                    var result = await picker.PickSingleFolderAsync();
-                    if (result is not null && !string.IsNullOrEmpty(result.Path))
+                    Directory.CreateDirectory(RecordingHost.Folder);
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
                     {
-                        SettingsService.Current.RecordDirectory = result.Path;
-                        SettingsService.Save();
-                        BuildPage("screenshot");
-                    }
+                        FileName = "explorer.exe",
+                        Arguments = "\"" + RecordingHost.Folder + "\"",
+                        UseShellExecute = true,
+                    });
                 }
                 catch (Exception ex)
                 {
-                    Log.Error("settings.record-folder-failed", ex);
+                    Log.Warn($"settings.record-folder-open {ex.GetType().Name}");
                 }
-            };
-            Grid.SetColumn(pick, 1);
-            folderRow.Children.Add(pick);
-            _content.Children.Add(folderRow);
-            _content.Children.Add(SettingsUi.Card(
-                "打开录屏文件夹",
-                RecordingHost.Folder,
-                null,
-                () =>
-                {
-                    try
-                    {
-                        Directory.CreateDirectory(RecordingHost.Folder);
-                        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                        {
-                            FileName = "explorer.exe",
-                            Arguments = "\"" + RecordingHost.Folder + "\"",
-                            UseShellExecute = true,
-                        });
-                    }
-                    catch (Exception ex)
-                    {
-                        Log.Warn($"settings.record-folder-open {ex.GetType().Name}");
-                    }
-                }));
-        }
+            }));
+
+        _content.Children.Add(Section(
+            "录屏", "框一块区域、或在遮罩里单击一扇窗口录它，倒数 3 秒后开始；录的时候选区外一圈粉线。"));
+        AddCombo("帧率", "15 够用；30 更顺、文件更大。",
+            new[] { "15 fps", "30 fps" },
+            SettingsService.Current.RecordFps >= 30 ? 1 : 0,
+            index =>
+            {
+                SettingsService.Current.RecordFps = index == 1 ? 30 : 15;
+                SettingsService.Save();
+            });
+
+        AddToggle("显示点按", "录制画面里画一个圈（左键粉色、右键蓝色）。",
+            SettingsService.Current.RecordClicks,
+            value =>
+            {
+                SettingsService.Current.RecordClicks = value;
+                SettingsService.Save();
+            });
+        AddToggle("显示按键", "只显示带修饰键的快捷键（如 Ctrl + Shift + S），单个字母不显示。",
+            SettingsService.Current.RecordKeys,
+            value =>
+            {
+                SettingsService.Current.RecordKeys = value;
+                SettingsService.Save();
+            });
+        AddToggle("系统声音", "录默认输出设备的声音（WASAPI 回环）；关掉只录麦克风或只有画面。",
+            SettingsService.Current.RecordSystemSound,
+            value =>
+            {
+                SettingsService.Current.RecordSystemSound = value;
+                SettingsService.Save();
+            });
+        AddToggle("麦克风", "录默认麦克风，和系统声音混成一条音轨。第一次会要系统麦克风权限。",
+            SettingsService.Current.RecordMicrophone,
+            value =>
+            {
+                SettingsService.Current.RecordMicrophone = value;
+                SettingsService.Save();
+            });
+        _content.Children.Add(Section(
+            "录音", "录哪路声音跟上面录屏的「系统声音」「麦克风」两个开关走；只录麦克风时锁屏照录，录了系统声音的锁屏会停。"));
+        AddToggle("按快捷键后立即开始录音",
+            "关掉时先在屏幕底部出控制条，点「开始」才录；适合先调麦克风再用。",
+            SettingsService.Current.RecordInstantStart,
+            value =>
+            {
+                SettingsService.Current.RecordInstantStart = value;
+                SettingsService.Save();
+            });
     }
 
     /// <summary>功能关掉了：这一页只留一张「已关闭」的卡和去打开的按钮（第三版 §2.3）。</summary>
@@ -2131,7 +2180,7 @@ internal sealed partial class SettingsWindow : Window
         }
     }
 
-    /// <summary>通用 › 功能一行的家族色块（mac FeatureToggle）：和侧栏那一页同一个；录屏没有自己的页，用截图的粉 + 录制符号。</summary>
+    /// <summary>通用 › 功能一行的家族色块（mac FeatureToggle）：和侧栏那一页同一个；录屏是「录制」页的截图粉 + 录制符号。</summary>
     private static Border FeatureTile(Feature feature)
     {
         if (feature == Feature.Recording)
@@ -2176,7 +2225,7 @@ internal sealed partial class SettingsWindow : Window
         "clipboard" => "clipboard",
         "translate" => "translate",
         "launcher" => "launcher",
-        "screenshot" => "capture",
+        "screenshot" or "record" => "capture",
         "about" => "general",
         _ => "general",
     };
@@ -2341,11 +2390,13 @@ internal sealed partial class SettingsWindow : Window
         return row;
     }
 
-    private void AddToggle(string title, string subtitle, bool value, Action<bool> changed)
-        => _content.Children.Add(SettingsUi.Card(
-            title,
-            subtitle,
-            SettingsUi.Toggle(value, changed, title)));
+    /// <summary>加一张带开关的卡；返回这张卡，别的开关要原地改它的说明 / 能不能点时用（SettingsUi.SetDescription / SetEnabled）。</summary>
+    private Border AddToggle(string title, string subtitle, bool value, Action<bool> changed)
+    {
+        var card = SettingsUi.Card(title, subtitle, SettingsUi.Toggle(value, changed, title));
+        _content.Children.Add(card);
+        return card;
+    }
 
     private void AddCombo(
         string title, string subtitle, string[] items, int selected, Action<int> changed)

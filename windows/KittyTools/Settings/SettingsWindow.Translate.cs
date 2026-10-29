@@ -134,36 +134,47 @@ internal sealed partial class SettingsWindow
                 SettingsService.Save();
                 TranslateHost.ApplyCopyTranslate();
             });
+        // 这几个开关只原地改受影响的那一行（说明 / 能不能点），不重建整页：重建时整页的开关都闪一下（2026-10-29 用户反馈）。
+        static string CopyRecognizedNote(bool autoCopy) => autoCopy
+            ? "识别出来就放进剪贴板；译文出来后，剪贴板换成译文（上面开着自动复制）"
+            : "识别出来就放进剪贴板，Ctrl+V 能直接粘贴；关着时只记进剪贴板历史";
+        Border? copyRecognizedCard = null;
         AddToggle("自动复制译文", "复制即译弹出的翻译不会自动复制，免得覆盖你刚复制的原文", settings.TranslateAutoCopy, isOn =>
         {
             settings.TranslateAutoCopy = isOn;
             SettingsService.Save();
-            BuildPage("translate");
+            if (copyRecognizedCard is not null)
+            {
+                SettingsUi.SetDescription(copyRecognizedCard, CopyRecognizedNote(isOn));
+            }
         });
-        AddToggle("截图翻译时复制识别出的原文",
-            settings.TranslateAutoCopy
-                ? "识别出来就放进剪贴板；译文出来后，剪贴板换成译文（上面开着自动复制）"
-                : "识别出来就放进剪贴板，Ctrl+V 能直接粘贴；关着时只记进剪贴板历史",
+        copyRecognizedCard = AddToggle("截图翻译时复制识别出的原文",
+            CopyRecognizedNote(settings.TranslateAutoCopy),
             settings.TranslateCopyRecognized, isOn =>
             {
                 settings.TranslateCopyRecognized = isOn;
                 SettingsService.Save();
             });
+        Border? limitCard = null;
         AddToggle("记录翻译历史", string.Empty, settings.TranslateHistoryEnabled, isOn =>
         {
             settings.TranslateHistoryEnabled = isOn;
             SettingsService.Save();
-            BuildPage("translate");
+            if (limitCard is not null)
+            {
+                SettingsUi.SetEnabled(limitCard, isOn);
+            }
         });
         var limits = new[] { 1000, 5000, 0 };
-        _content.Children.Add(SettingsUi.Card("历史最多保留", string.Empty,
+        limitCard = SettingsUi.Card("历史最多保留", string.Empty,
             SettingsUi.Combo(new[] { "1000 条", "5000 条", "不限" },
                 Math.Max(0, Array.IndexOf(limits, settings.TranslateHistoryLimit)), index =>
                 {
                     settings.TranslateHistoryLimit = limits[index];
                     SettingsService.Save();
                 }, "历史最多保留"),
-            enabled: settings.TranslateHistoryEnabled));
+            enabled: settings.TranslateHistoryEnabled);
+        _content.Children.Add(limitCard);
 
         var exportMenu = new MenuFlyout();
         foreach (var (favoritesOnly, anki, title) in HistoryMenu.Exports)
@@ -240,11 +251,17 @@ internal sealed partial class SettingsWindow
     {
         var (status, problem) = ServiceStatus(store, service);
         var controls = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, VerticalAlignment = VerticalAlignment.Center };
+        Border? statusCard = null;
         controls.Children.Add(SettingsUi.Toggle(service.Enabled, isOn =>
         {
             service.Enabled = isOn;
             store.Save();
-            BuildPage("translate");
+            // 只改这一行的状态说明（以前整页重建，别的服务的开关跟着闪）。
+            if (statusCard is not null)
+            {
+                var (text, bad) = ServiceStatus(store, service);
+                SettingsUi.SetDescription(statusCard, text, bad);
+            }
         }, $"启用「{service.Name}」"));
         controls.Children.Add(new FontIcon
         {
@@ -260,6 +277,7 @@ internal sealed partial class SettingsWindow
             () => OpenServiceDetail(service.Id),
             leading: ServiceTile.Create(service, 24),
             problem: problem);
+        statusCard = card;
 
         var menu = new MenuFlyout();
         void Add(string text, bool enabled, Action action)

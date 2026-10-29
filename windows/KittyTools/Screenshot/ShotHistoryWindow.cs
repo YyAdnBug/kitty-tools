@@ -136,7 +136,8 @@ internal sealed class ShotHistoryWindow : Window
         var hwnd = (Windows.Win32.Foundation.HWND)WinRT.Interop.WindowNative.GetWindowHandle(this);
         var scale = PInvoke.GetDpiForWindow(hwnd) / 96.0;
         AppWindow.Resize(new Windows.Graphics.SizeInt32((int)Math.Round(960 * scale), (int)Math.Round(620 * scale)));
-        AppWindow.SetIcon(Paths.ExecutablePath);
+        // 标题栏左上角的图标（2026-10-29 用户反馈：以前传 exe 路径，SetIcon 不认，显示的是系统默认图标）。
+        AppWindow.SetIcon(Paths.AppIconFile);
         Theme.ApplyTitleBar(AppWindow);
 
         // Delete 删掉选中的那条（先问一次）；焦点在搜索框里时是删字。

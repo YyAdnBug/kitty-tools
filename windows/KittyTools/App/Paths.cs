@@ -68,4 +68,7 @@ internal static class Paths
     public static string UpdatesDirectory => Path.Combine(DataDirectory, "updates");
 
     public static string ExecutablePath => Environment.ProcessPath ?? string.Empty;
+
+    /// <summary>随包的应用图标（csproj 里 Content 拷到输出 / 发布目录）。AppWindow.SetIcon 只认 .ico 文件，给 exe 路径会退回系统默认图标。</summary>
+    public static string AppIconFile => Path.Combine(AppContext.BaseDirectory, "Resources", "AppIcon.ico");
 }

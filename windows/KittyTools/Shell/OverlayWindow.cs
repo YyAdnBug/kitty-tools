@@ -328,11 +328,37 @@ internal sealed unsafe class OverlayWindow : Window
         AppWindow.MoveAndResize(new RectInt32(position.X, position.Y, widthPx, heightPx));
     }
 
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern IntPtr GetWindow(IntPtr hwnd, uint command);
+
     private void OnActivated(object sender, WindowActivatedEventArgs args)
     {
         if (args.WindowActivationState == WindowActivationState.Deactivated && _visible && !_hiding && !_pinned)
         {
-            HideOverlay(restoreForeground: false);
+            // 点的可能是归面板所有的窗口（Ctrl+Y 放大预览）：WS_EX_NOACTIVATE 拦不住 XAML 点击时抢焦点把它激活，
+            // 以前面板一失去激活就收起、放大卡跟着没了（2026-10-29 用户反馈；mac 点放大卡面板不收）。
+            // 等这一轮激活换完再看前台是谁：是面板自己的附属窗口就不收，把激活还给面板（键盘一直归面板）。
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                if (!_visible || _hiding)
+                {
+                    return;
+                }
+
+                var foreground = PInvoke.GetForegroundWindow();
+                if (foreground == _hwnd)
+                {
+                    return;
+                }
+
+                if (foreground != default && GetWindow((IntPtr)foreground.Value, 4 /* GW_OWNER */) == (IntPtr)_hwnd.Value)
+                {
+                    PInvoke.SetForegroundWindow(_hwnd);
+                    return;
+                }
+
+                HideOverlay(restoreForeground: false);
+            });
             return;
         }
 

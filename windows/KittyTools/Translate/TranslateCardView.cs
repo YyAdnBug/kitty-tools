@@ -3,7 +3,7 @@
 // 每格 20 × 18、间距 4、平时 0.45 透明。正文：等待是两根骨架条 + 扫光（模型在思考时上面多一行「思考中」）；生成中新字直接出现、末尾一根
 // 光标；截断的照常显示、下面一行说明；出错只显示错误行（配置问题橙色钥匙 + 「打开设置」直达这个服务，网络 / 服务问题红色三角 + 「重试」，
 // 自建 AI 另给「打开设置」），整张卡染橙 / 红。大模型生成中边框上一段强调色光绕行（2.4 s 一圈，几段虚线沿描边走，合成器上动），完成时整圈闪一下；
-// 复制时整卡闪一下。换状态时正文淡变 0.18 s；重新翻译时骨架先撑到上次正文的高。正文最多 8 行，再长在卡里滚、上下渐隐。
+// 复制时整卡闪一下。换状态时正文淡变 0.18 s；重新翻译时骨架先撑到上次正文的高。正文最多 8 行，再长在卡里滚（不做上下渐隐，见构造函数里的说明）。
 // 大模型的结果有 Markdown 时按 Markdown 显示（Core 的 InlineMarkdown：行内记号 + 标题、列表、引用、代码块）。
 using System.Numerics;
 using System.Text.RegularExpressions;
@@ -56,8 +56,6 @@ internal sealed partial class TranslateCardView
     private readonly StackPanel _skeleton;
     private readonly TextBlock _thinking;
     private readonly List<Border> _bands = new();
-    private readonly Border _fadeTop;
-    private readonly Border _fadeBottom;
     private readonly Border _copyFlash;
 
     private ContainerVisual? _effects;
@@ -174,10 +172,8 @@ internal sealed partial class TranslateCardView
             HorizontalScrollMode = ScrollMode.Disabled,
             IsTabStop = false,
         };
-        // ponytail: 渐隐是盖在上下两头的卡底色渐变（不是 mac 的透明度遮罩：XAML 元素在 WinUI 里要遮罩得先渲成合成表面）；
-        // 错误卡不会滚，深浅色跟着卡底色走。要真遮罩换 CompositionVisualSurface + CompositionMaskBrush。
-        _fadeTop = Fade(top: true);
-        _fadeBottom = Fade(top: false);
+        // 不做上下渐隐（2026-10-29 用户反馈：以前盖在两头的卡底色渐变在半透明的窗口上对不上色，看着像两道阴影）。
+        // mac 是透明度遮罩；WinUI 3 没有 OpacityMask，要做得把正文渲成合成表面再套 CompositionMaskBrush，先不做。
 
         _failure = new Grid { ColumnSpacing = 8, Padding = new Thickness(SideInset, 0, SideInset, 0), Visibility = Visibility.Collapsed };
         _failure.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(IconSlot) });
@@ -204,8 +200,6 @@ internal sealed partial class TranslateCardView
 
         _body = new Grid { Margin = new Thickness(0, 3, 0, 0) };
         _body.Children.Add(_scroll);
-        _body.Children.Add(_fadeTop);
-        _body.Children.Add(_fadeBottom);
         _body.Children.Add(_failure);
         _body.Children.Add(_skeleton);
 
@@ -229,10 +223,6 @@ internal sealed partial class TranslateCardView
         _host.Children.Add(_card);
         _host.Children.Add(_copyFlash);
         _host.SizeChanged += (_, args) => SizeEffects(args.NewSize);
-        _scroll.ViewChanged += (_, _) => UpdateFade();
-        // 正文排好、卡片改高之后才知道还有没有没露出来的（Update 里那次调用时还没排版）：不然长结果出来时底部没有渐隐，要滚一下才有。
-        _textPanel.SizeChanged += (_, _) => UpdateFade();
-        _scroll.SizeChanged += (_, _) => UpdateFade();
         AutomationProperties.SetName(_host, service.Name);
     }
 
@@ -351,7 +341,6 @@ internal sealed partial class TranslateCardView
         ApplyTint(card);
         BuildActions(card, index, copied);
         _copied = copied;
-        UpdateFade();
     }
 
     /// <summary>朗读开始 / 结束时只换朗读按钮（Speech.Changed）。</summary>
@@ -559,44 +548,6 @@ internal sealed partial class TranslateCardView
             _card.ClearValue(Border.BackgroundProperty);
             _card.ClearValue(Border.BorderBrushProperty);
         }
-    }
-
-    private Border Fade(bool top)
-    {
-        // 卡底是半透明的 Kitty.Card 叠在窗口底色上：渐隐也得是这两层叠出来的颜色。只用 Kitty.CardSolid（窗口底色的近似）的话，
-        // 深色下渐隐比卡底暗一截（实测 43 对 64），正文底下一条黑带、和卡底之间一道硬边。
-        var solid = Theme.CardColor();
-        var layer = (Theme.Brush("Kitty.Card", Theme.Argb(0, 0, 0, 0)) as SolidColorBrush)?.Color ?? Theme.Argb(0, 0, 0, 0);
-        var alpha = layer.A / 255.0;
-        byte Mix(byte under, byte over) => (byte)Math.Round(under + (over - under) * alpha);
-        var color = Theme.Argb(255, Mix(solid.R, layer.R), Mix(solid.G, layer.G), Mix(solid.B, layer.B));
-        var brush = new LinearGradientBrush
-        {
-            StartPoint = new Windows.Foundation.Point(0, 0),
-            EndPoint = new Windows.Foundation.Point(0, 1),
-        };
-        brush.GradientStops.Add(new GradientStop { Color = top ? color : Theme.Argb(0, color.R, color.G, color.B), Offset = 0 });
-        brush.GradientStops.Add(new GradientStop { Color = top ? Theme.Argb(0, color.R, color.G, color.B) : color, Offset = 1 });
-        return new Border
-        {
-            Height = 22,
-            VerticalAlignment = top ? VerticalAlignment.Top : VerticalAlignment.Bottom,
-            // 右边滚动条那一条不盖
-            Margin = new Thickness(0, 0, SideInset, 0),
-            IsHitTestVisible = false,
-            Visibility = Visibility.Collapsed,
-            Background = brush,
-        };
-    }
-
-    private void UpdateFade()
-    {
-        var visible = _scroll.Visibility == Visibility.Visible && _body.Visibility == Visibility.Visible;
-        _fadeTop.Height = _fadeBottom.Height = LineHeight;
-        _fadeTop.Visibility = visible && _scroll.VerticalOffset > 1 ? Visibility.Visible : Visibility.Collapsed;
-        _fadeBottom.Visibility = visible && _scroll.ScrollableHeight - _scroll.VerticalOffset > 1
-            ? Visibility.Visible
-            : Visibility.Collapsed;
     }
 
     private bool IsNearBottom()

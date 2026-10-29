@@ -27,7 +27,7 @@ internal static class SettingsUi
         FrameworkElement? leading = null,
         bool problem = false)
     {
-        var text = new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
+        var text = new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center, Name = CardTextName };
         text.Children.Add(new TextBlock
         {
             Text = title,
@@ -99,6 +99,53 @@ internal static class SettingsUi
 
         AutomationProperties.SetName(card, description.Length > 0 ? $"{title}，{description}" : title);
         return card;
+    }
+
+    private const string CardTextName = "KittyCardText";
+
+    /// <summary>
+    /// 原地改一张 <see cref="Card"/> 的说明（空 = 收起那一行）。开关旁边的说明、下面那一行要跟着变时用它，
+    /// 别整页重建：重建时整页的开关都换成新建的，看着每个都闪一下（2026-10-29 用户反馈）。
+    /// </summary>
+    public static void SetDescription(Border card, string description, bool problem = false)
+    {
+        if (card.Child is not Grid row ||
+            row.Children.OfType<StackPanel>().FirstOrDefault(panel => panel.Name == CardTextName) is not { } text)
+        {
+            return;
+        }
+
+        var label = text.Children.Count > 1 ? text.Children[1] as TextBlock : null;
+        if (string.IsNullOrEmpty(description))
+        {
+            if (label is not null)
+            {
+                label.Visibility = Visibility.Collapsed;
+            }
+
+            return;
+        }
+
+        if (label is null)
+        {
+            label = new TextBlock
+            {
+                FontSize = Theme.FontSize("Kitty.FontSize.Label"),
+                TextWrapping = TextWrapping.Wrap,
+            };
+            text.Children.Add(label);
+        }
+
+        label.Text = description;
+        label.Foreground = problem ? Theme.Caution() : Theme.SecondaryText();
+        label.Visibility = Visibility.Visible;
+    }
+
+    /// <summary>原地改一张 <see cref="Card"/> 能不能点（和 Card 的 enabled 参数同一套：0.55 透明、不接点击）。</summary>
+    public static void SetEnabled(Border card, bool enabled)
+    {
+        card.IsHitTestVisible = enabled;
+        card.Opacity = enabled ? 1 : 0.55;
     }
 
     /// <summary>左右并排的小开关（用于卡片右侧）。</summary>

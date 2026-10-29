@@ -14,6 +14,7 @@ internal sealed class ShellRuntime
     private SettingsWindow? _settingsWindow;
     private string _hotKeySignature = string.Empty;
     private string? _appearanceSignature;
+    private string? _featureSignature;
     private bool? _autoCheck;
 
     public static ShellRuntime? Instance { get; private set; }
@@ -1130,27 +1131,38 @@ internal sealed class ShellRuntime
             UpdateService.Configure(SettingsService.Current.AutoCheckUpdates);
         }
 
-        // REVIEW R44：外观、强调色、功能开关真的变了，才换强调色资源、重建设置页；别的保存（每次截图记上次区域、
+        // REVIEW R44：外观、强调色真的变了，才换强调色资源、重建设置页；别的保存（每次截图记上次区域、
         // 翻译窗收起记位置……）以前也整页重建，设置窗关着（只是隐藏）也照建。
+        // 功能开关变了只停 / 起后台工作，设置页不重建：开关就在当前页上、已经拨过去了（以前也算进外观，
+        // 一拨整页重建，所有开关都闪一下，2026-10-29 用户反馈）。
         var appearance = AppearanceSignature(SettingsService.Current);
+        var features = FeatureSignature();
         if (appearance != _appearanceSignature)
         {
             _appearanceSignature = appearance;
+            _featureSignature = features;
             Theme.ApplyAccent();
             ApplyFeatures();
             _settingsWindow?.RefreshTheme();
         }
         else
         {
+            if (features != _featureSignature)
+            {
+                _featureSignature = features;
+                ApplyFeatures();
+            }
+
             _settingsWindow?.MarkStale();
         }
 
         TranslateHost.ApplyCopyTranslate();
     }
 
-    private static string AppearanceSignature(Settings settings)
-        => settings.Theme + "|" + settings.Accent + "|" +
-           string.Concat(Enum.GetValues<Feature>().Select(feature => Features.IsOn(feature) ? '1' : '0'));
+    private static string AppearanceSignature(Settings settings) => settings.Theme + "|" + settings.Accent;
+
+    private static string FeatureSignature()
+        => string.Concat(Enum.GetValues<Feature>().Select(feature => Features.IsOn(feature) ? '1' : '0'));
 
     /// <summary>重注册全部热键，并记下这次用的绑定组合（用来判断下次保存要不要重注册）。</summary>
     private void RegisterHotKeys()
