@@ -33,6 +33,11 @@
 - **服务图标**：`ServiceTile.Create` 现在收 `TranslateServiceConfig`（以前收 vendor 字符串）；Core 加了 `ServiceBadge.Logo` / `IsFullBleed`、`AiEndpoint.ParseProtocol`（`AiServiceProvider.Protocol` 转调它）。`Resources/ServiceLogo` 多了 deepl / deepseek / openai / siliconflow 四张 128 px PNG（mac 那边是 SVG，在 Mac 上渲的）——确认 Release 发布目录里有这四张。
 - **kill 白屏（用户 2026-10-28 晚转来）**：截图里窗口停在「正在读取进程…」那一档的高（144）、整块白，正是 d670adc2 修过的那个死锁（行一出来在 UI 线程同步编 exe 图标的 PNG）——报的包多半早于 d670adc2，用现在的 windows-wip 重打。根上补了一道：`ShellIcons.ToPng` 改成把编码放到线程池再同步等，以后谁在 UI 线程上调 `LoadPng` 都不会再死锁；`RunningProcesses` 枚举窗口先认进程、跳过自己的窗口（对自己的窗口 `GetWindowTextLength` 会同步发消息给 UI 线程，UI 线程正等着同一把锁时互相等死）。验：kill / port / quit 各进一次，列表出来、带图标；quit 里按 Enter 关一个记事本不卡。
   - **Windows 验证（2026-10-28 夜，Claude 在 worktree 里）**：猜对了——用户装的 exe 是 16:27 打的 1a60e3d（d670adc2 的父提交），open / find 卡也是同一个死锁（文件结果的图标）。f0a9a019 一次编过、0 警告。在 1a60e3d 上 `find kitty` / `kill ` 必卡、`1+1` 不卡；本版 Debug 和 Release AOT 跑 kill → port → quit → open → find 全程 UI 线程最长卡 104 ms（启动时），见 HANDTEST 621–624。注意 WM_NULL / SendMessageTimeout 探不出这种卡：UI 线程停在 COM 等待里照样回「发来的」消息，要往 DispatcherQueue 排活量（新加的 `--launcher-script` 就是这么量的）。顺手：hide 的最小化改 `ShowWindowAsync`（UI 线程上 `ShowWindow` 别的进程的窗口要等对方，对方没响应就跟着卡）。
+- **录屏 / 长截图看不到边框（2026-10-29，Claude 在 worktree 里查的）**：不是旧包——用户装的是 12:01 从 `b3b5598` 打的，
+  日志有 `record.frame-shown … created=4 excluded=True`、位置都对。原因是 `WDA_EXCLUDEFROMCAPTURE`：对照脚本在屏幕正中
+  出两根同样的分层窗口横条，只差这个标记，用户只看得到没设的那根——在这台机器上设了它的这种窗口连屏幕上都不显示。
+  改成只给收进选区里面的线设（贴屏幕边、整屏、最大化窗口那几条），选区外的线不设（录屏按选区裁、长截图按选区抓，本来就录不进去）。
+  代价：整屏 / 最大化窗口贴边那几条在这台机器上照样看不见（等于 mac 的不画）。
 - **编译时留意**：`SettingsWindow.ServiceRow` 里的本地函数和 async lambda、`ServiceStatus` 的 switch 出元组；`LauncherPanel.xaml` 给底栏那一行起了名字 `FooterRow`。
 
 ## v9 启动器分工（2026-10-28，用户：「没有的话就开始对齐 macos」，PLAN-v9-launcher D1–D9 按推荐）

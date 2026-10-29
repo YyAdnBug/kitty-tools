@@ -1,10 +1,12 @@
 // 录屏的选区边框（2026-10-29 用户反馈：开录后选区的边框就没了，不知道在录哪）。照 mac ScreenRecorder.showFrame：
 // 倒数一开始就出、停止 / 放弃 / 取消那一刻收；选区外一圈 2 的截图强调色（品牌粉）实线（RecordingFrameRules）。
 // 贴着屏幕边、外面放不下的那一侧：录屏收进选区里面画（线不进录屏，整屏、最大化的窗口也看得出在录哪；mac 是不画，
-// 用户反馈「还是没有边框」后改的），前提是「不进截图 / 录屏」设上了，设不上（老系统）就照 mac 不画；长截图一律只画外面。
+// 用户反馈「还是没有边框」后改的），这几条要设「不进截图 / 录屏」，设不上（老系统）就照 mac 不画；长截图一律只画外面。
 // mac 倒数时走蚂蚁线、录制中带呼吸发光；这里只画静止的实线。
 // 四条细窗口各占一条边，纯色靠窗口类的背景画刷（不建 XAML、不自己画）；WS_EX_LAYERED | WS_EX_TRANSPARENT 让鼠标点穿，
-// 不激活、不进任务栏和 Alt+Tab，WDA_EXCLUDEFROMCAPTURE 不进截图和别的录屏（线本来就在选区外，不会录进这段）。
+// 不激活、不进任务栏和 Alt+Tab。
+// 「不进截图 / 录屏」（WDA_EXCLUDEFROMCAPTURE）只设在收进选区里面的那几条上：用户机器上（2026-10-29 实测，对照条
+// 看不到）设了它的这种分层窗口连屏幕上都不显示，四条全设时边框整个看不见。选区外的线本来就不在录屏 / 长截图裁的范围里。
 // 录的是一扇窗口时（WGC 跟着窗口录），每 200 ms 按窗口现在的位置重摆。
 // 长截图也用它（同 mac ScrollCapture 的 ScrollBorderView）：另一套四条，录屏时也能截长图，两套各管各的。
 using System.Runtime.CompilerServices;
@@ -47,8 +49,6 @@ internal static unsafe partial class RecordingFrame
         private readonly string _name;
         private readonly bool _insideAtEdges;
         private readonly IntPtr[] _strips = new IntPtr[4];
-        /// <summary>四条都设上了 WDA_EXCLUDEFROMCAPTURE：这时才敢把线画进选区里面。</summary>
-        private bool _excluded;
         private bool _shown;
         private IntPtr _window;
         private PixelBounds _region;
@@ -69,7 +69,6 @@ internal static unsafe partial class RecordingFrame
 
             _shown = true;
             _window = window;
-            _excluded = true;
             var created = 0;
             for (var i = 0; i < _strips.Length; i++)
             {
@@ -78,7 +77,6 @@ internal static unsafe partial class RecordingFrame
                 _strips[i] = hwnd;
                 if (hwnd == IntPtr.Zero)
                 {
-                    _excluded = false;
                     Log.Warn($"record.frame-create-failed {_name} {Marshal.GetLastWin32Error()}");
                     continue;
                 }
@@ -87,12 +85,6 @@ internal static unsafe partial class RecordingFrame
                 if (!SetLayeredWindowAttributes(hwnd, 0, 255, 0x2 /* LWA_ALPHA */))
                 {
                     Log.Warn($"record.frame-layered-failed {_name} {Marshal.GetLastWin32Error()}");
-                }
-
-                if (!SetWindowDisplayAffinity(hwnd, 0x11 /* WDA_EXCLUDEFROMCAPTURE */))
-                {
-                    _excluded = false;
-                    Log.Warn($"record.frame-affinity-failed {_name} {Marshal.GetLastWin32Error()}");
                 }
             }
 
@@ -112,7 +104,7 @@ internal static unsafe partial class RecordingFrame
                 _follow.Start();
             }
 
-            Log.Info($"record.frame-shown {_name} created={created} excluded={_excluded}");
+            Log.Info($"record.frame-shown {_name} created={created}");
         }
 
         public void Hide()
@@ -151,7 +143,7 @@ internal static unsafe partial class RecordingFrame
             var strips = RecordingFrameRules.Strips(
                 region.Left, region.Top, region.Right, region.Bottom,
                 info.rcMonitor.left, info.rcMonitor.top, info.rcMonitor.right, info.rcMonitor.bottom,
-                Displays.ScaleOf(monitor), insideAtEdges: _insideAtEdges && _excluded);
+                Displays.ScaleOf(monitor), insideAtEdges: _insideAtEdges);
             // 坐标不算隐私：真机上边框没出来时，看日志就知道是没建出来、摆错了地方，还是四条都是空的。
             Log.Info($"record.frame-place {_name} region={region.Left},{region.Top},{region.Right},{region.Bottom} " +
                      $"screen={info.rcMonitor.left},{info.rcMonitor.top},{info.rcMonitor.right},{info.rcMonitor.bottom} " +
@@ -169,6 +161,20 @@ internal static unsafe partial class RecordingFrame
                 {
                     ShowWindow(hwnd, 0 /* SW_HIDE */);
                     continue;
+                }
+
+                // 收进选区里面的线要「不进录屏」，设不上就不画；选区外的线不设（设了在用户机器上屏幕上也看不见）。
+                // 跟着窗口走时同一条可能从外面挪到里面，每次都重设。
+                var inside = strip.X >= region.Left && strip.Y >= region.Top &&
+                             strip.X + strip.Width <= region.Right && strip.Y + strip.Height <= region.Bottom;
+                if (!SetWindowDisplayAffinity(hwnd, inside ? 0x11u /* WDA_EXCLUDEFROMCAPTURE */ : 0u /* WDA_NONE */))
+                {
+                    Log.Warn($"record.frame-affinity-failed {_name} inside={inside} {Marshal.GetLastWin32Error()}");
+                    if (inside)
+                    {
+                        ShowWindow(hwnd, 0 /* SW_HIDE */);
+                        continue;
+                    }
                 }
 
                 if (!SetWindowPos(hwnd, new IntPtr(-1) /* HWND_TOPMOST */, strip.X, strip.Y, strip.Width, strip.Height,
