@@ -681,9 +681,9 @@ internal sealed partial class SettingsWindow : Window
         {
             Text = "它会一直在托盘里运行。Windows 11 默认把新图标收进任务栏右下角的「^」溢出区，" +
                    "点开「^」找到 Kitty Tools，可以把它拖到任务栏上。\n\n" +
-                   "默认快捷键：剪贴板 Alt+C、划词翻译 Alt+E、输入翻译 Alt+T、" +
-                   "截图翻译 Alt+S、截图 Alt+X、识字 Alt+O。\n\n" +
-                   "启动器（Alt+Space）和录屏（Alt+R）先关着，要用的话在下面「功能」里打开。",
+                   "默认快捷键：剪贴板 Alt+C、启动器 Alt+Space、划词翻译 Alt+E、输入翻译 Alt+T、" +
+                   "截图翻译 Alt+S、截图 Alt+X、识字 Alt+O、录屏 Alt+R。\n\n" +
+                   "用不着的功能可以在下面「功能」里整个关掉。",
             TextWrapping = TextWrapping.Wrap,
             Foreground = Theme.SecondaryText(),
         });

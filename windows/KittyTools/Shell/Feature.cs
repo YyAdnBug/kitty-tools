@@ -1,7 +1,7 @@
 // 能单独关掉的功能（第三版 §2.3，照 mac 的 Shell/Feature.swift）：剪贴板、翻译、启动器、截图、录屏。
 // 关掉 = 热键不注册、托盘里不显示、后台工作停掉、设置里那一页变灰并写明「已关闭」；
 // 数据层照常（库照开、每日备份照做），设置和快捷键原样留着，打开立即回来、不用重启。
-// 0.1.0 主打剪贴板、截图、翻译（2026-10-27 用户定）：启动器和录屏没存过时默认关，见 DefaultOn。
+// 没存过 = 开（PLAN-v10 D2，2026-10-29：启动器、录屏都对齐 mac 了，0.1.0 默认打开；发版冒烟里哪样过不了就只把它改回默认关）。
 using KittyTools.Infrastructure;
 
 namespace KittyTools;
@@ -44,15 +44,9 @@ internal static class Features
         _ => "框选截图、识别图中文字、钉在屏幕上",
     };
 
-    /// <summary>没存过 = <see cref="DefaultOn"/>。</summary>
+    /// <summary>没存过 = 开；拨过的照用户的。</summary>
     public static bool IsOn(Feature feature)
-        => SettingsService.Current.Features is { } map && map.TryGetValue(Key(feature), out var on)
-            ? on
-            : DefaultOn(feature);
-
-    // ponytail: 启动器、录屏在 0.1.0 默认关（启动器读浏览历史和默认值还没对齐 mac，PLAN-v9 V1；录屏真机没走完，R24）。
-    // 这两样验完以后删掉这个方法，回到「没存过 = 开」。
-    private static bool DefaultOn(Feature feature) => feature is not (Feature.Launcher or Feature.Recording);
+        => SettingsService.Current.Features is not { } map || !map.TryGetValue(Key(feature), out var on) || on;
 
     public static void Set(Feature feature, bool on)
     {
