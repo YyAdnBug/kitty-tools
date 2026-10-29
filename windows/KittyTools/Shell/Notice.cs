@@ -6,7 +6,7 @@
 // 能交互（PLAN-v8 第 5 批 H9–H14）：鼠标进来算悬停：停住计时、往上长成卡片（第一行 + 最多 4 行详情），
 // 按钮全露出来、加 ×；离开合回一行、接着走剩下的时间（至少 1.5 s）。点卡片本身只执行「打开」类的按钮。
 // 鼠标在上面时来的新提示先排着（只留最新的），进行中那条的结果原地换。
-// 窗口不抢焦点：WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW，SW_SHOWNOACTIVATE。
+// 窗口不抢焦点：WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW，SW_SHOWNOACTIVATE；不进截图和录屏（WDA_EXCLUDEFROMCAPTURE）。
 using System.Runtime.InteropServices;
 using KittyTools.Core;
 using KittyTools.Infrastructure;
@@ -316,6 +316,10 @@ internal sealed unsafe partial class NoticeHost
             : string.IsNullOrEmpty(detail) ? 1.4 : 2.0;
         _contentChangedAt = Environment.TickCount64;
         Place(_hovered);
+        // 不进截图和录屏（mac 的提示岛也不进画面）：以前开录那条「正在录屏」会录进每段视频的开头。
+        // 截图自检（KITTY_HUD_CAPTURE=1，同录制条）时放开；每条都按当时的环境变量设。
+        SetWindowDisplayAffinity((IntPtr)_hwnd.Value,
+            Environment.GetEnvironmentVariable("KITTY_HUD_CAPTURE") == "1" ? 0u : 0x11u /* WDA_EXCLUDEFROMCAPTURE */);
         if (!_visible)
         {
             // 出场交给系统：DWM 给不激活的窗口自己的淡入，内容再跟一个淡入。
@@ -582,4 +586,8 @@ internal sealed unsafe partial class NoticeHost
 
     [LibraryImport("dwmapi.dll", EntryPoint = "DwmSetWindowAttribute")]
     private static partial int DwmSetWindowAttribute(IntPtr hWnd, int attribute, ref int value, int size);
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool SetWindowDisplayAffinity(IntPtr hWnd, uint affinity);
 }

@@ -164,6 +164,14 @@ internal static class AudioHost
     {
         if (_recorder is not { } recorder)
         {
+            // 待录时控制条上的「停止」= 关掉控制条（以前点了没反应，只能再按一次托盘 / 快捷键）。
+            if (IsArmed)
+            {
+                IsArmed = false;
+                AudioHud.Hide();
+                Changed?.Invoke();
+            }
+
             return;
         }
 

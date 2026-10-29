@@ -1,5 +1,5 @@
 // 录屏倒数（第四版）：选区确认后 3 秒开始，轻提示「3 秒后开始录屏…」，期间 Esc 取消。
-// Esc 是临时注册的全局热键（只挂这三秒），倒数结束 / 取消立刻注销。
+// Esc 是临时注册的全局热键（只挂这三秒），倒数结束 / 取消立刻注销。选区边框（RecordingFrame）从倒数开始就出。
 using KittyTools.Infrastructure;
 using Microsoft.UI.Dispatching;
 using Windows.Win32;
@@ -28,6 +28,8 @@ internal static class RecordingCountdown
         _window = window;
         _remaining = 3;
         Active = true;
+        // 倒数时就把选区框出来（mac 倒数时边框已经在了），录屏开始后接着用这一份。
+        RecordingFrame.Show(region, window);
         PInvoke.RegisterHotKey(HiddenWindow.Hwnd, EscapeId, 0, (uint)Windows.Win32.UI.Input.KeyboardAndMouse.VIRTUAL_KEY.VK_ESCAPE);
         NoticeHost.Show("3 秒后开始录屏", "Esc 取消", NoticeTone.Normal);
         _timer = DispatcherQueue.GetForCurrentThread()!.CreateTimer();
@@ -65,6 +67,7 @@ internal static class RecordingCountdown
         }
 
         Finish();
+        RecordingFrame.Hide();
         NoticeHost.Show("已取消录屏", string.Empty, NoticeTone.Normal);
     }
 

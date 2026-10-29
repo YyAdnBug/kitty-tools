@@ -1,5 +1,5 @@
 // Ctrl+Y 放大预览（照 mac QuickLookView / PreviewView enlarged、mac-whisker-clipboard「⌘Y 放大卡」，PLAN-v9-clipboard D3）：
-// 单独一扇置顶、不激活的窗口（WS_EX_NOACTIVATE + SW_SHOWNOACTIVATE），键盘一直归剪贴板面板：↑↓ 照样换条目、它跟着换；
+// 单独一扇置顶、不激活的窗口（WS_EX_NOACTIVATE + SW_SHOWNOACTIVATE），归剪贴板面板所有（点面板也压不到它），键盘一直归剪贴板面板：↑↓ 照样换条目、它跟着换；
 // Ctrl+Y / Esc 收起。以剪贴板面板为中心、夹在可见区、最大屏幕 90%；出现只淡入 + 落 8（Windows 版不做从小放大）。
 // 内容：来源程序彩色页眉 40（图标平均色，白字不够 4.5:1 时压暗或改黑字）+ 按类型的大预览（字号 ×1.2、文字能选中）+ 页脚胶囊。
 using KittyTools.Core;
@@ -36,6 +36,7 @@ internal sealed partial class ClipQuickLook : Window
     private readonly HWND _hwnd;
     private TextBlock? _selectable;
     private bool _shown;
+    private HWND _owner;
 
     public ClipQuickLook()
     {
@@ -93,6 +94,17 @@ internal sealed partial class ClipQuickLook : Window
         var left = Math.Clamp(centerX - widthPx / 2, work.Left, Math.Max(work.Left, work.Right - widthPx));
         var top = Math.Clamp(centerY - heightPx / 2, work.Top, Math.Max(work.Top, work.Bottom - heightPx));
         AppWindow.MoveAndResize(new RectInt32(left, top, widthPx, heightPx));
+        if (_owner != panel)
+        {
+            // 归剪贴板面板所有（owner）：两扇都是置顶窗口，以前谁被点谁在上，点一下后面的面板，放大卡就一直压在它下面
+            // （2026-10-29 用户反馈）；有了 owner，系统保证它总在面板上面。面板那扇窗口不销毁（OverlayWindow），不会连带把它销毁。
+            _owner = panel;
+            unsafe
+            {
+                SetWindowLongPtr((IntPtr)_hwnd.Value, -8 /* GWLP_HWNDPARENT */, (IntPtr)panel.Value);
+            }
+        }
+
         if (!_shown)
         {
             PInvoke.ShowWindow(_hwnd, (SHOW_WINDOW_CMD)4); // SW_SHOWNOACTIVATE
@@ -513,4 +525,7 @@ internal sealed partial class ClipQuickLook : Window
 
     [System.Runtime.InteropServices.LibraryImport("user32.dll", EntryPoint = "SetWindowLongW", SetLastError = true)]
     private static partial int SetWindowLong(IntPtr hwnd, int index, int value);
+
+    [System.Runtime.InteropServices.LibraryImport("user32.dll", EntryPoint = "SetWindowLongPtrW", SetLastError = true)]
+    private static partial IntPtr SetWindowLongPtr(IntPtr hwnd, int index, IntPtr value);
 }

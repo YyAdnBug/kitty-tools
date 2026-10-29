@@ -1,4 +1,4 @@
-// 识字：Windows.Media.Ocr。超过 MaxImageDimension 先等比缩小；中日韩文字之间的空格去掉；
+// 识字：Windows.Media.Ocr。超过 MaxImageDimension 先等比缩小；字太小时放大再认一遍（OcrScale，同 Text Grab）；中日韩文字之间的空格去掉；
 // 按行框切段、段内接行交给 Core 的 OcrText（和 mac 的 OCR.paragraphs / joiningLines 同一套规则）。
 // 引擎按「设置里的第一 / 第二语言」挑：用户语言的识字引擎里只有英文时，中文是识别不出来的，
 // 要按没装组件处理，而不是随便拿一个引擎硬认（第二版 §2 P3）。
@@ -52,10 +52,25 @@ internal static class OcrService
         string separator = "\n")
     {
         var engine = PickEngine() ?? throw new InvalidOperationException("没装可用的识字组件");
-        var (pixels, scaledWidth, scaledHeight) = Fit(bgra, width, height, (int)OcrEngine.MaxImageDimension);
-        using var bitmap = SoftwareBitmap.CreateCopyFromBuffer(
-            BufferFrom(pixels), BitmapPixelFormat.Bgra8, scaledWidth, scaledHeight, BitmapAlphaMode.Premultiplied);
-        var result = await engine.RecognizeAsync(bitmap);
+        var maximum = (int)OcrEngine.MaxImageDimension;
+        var (pixels, scaledWidth, scaledHeight) = Fit(bgra, width, height, maximum);
+        var result = await RecognizeOnceAsync(engine, pixels, scaledWidth, scaledHeight);
+        // 小字放大再认一遍（OcrScale）；放大后什么都没认出来就用第一遍的。框按放大倍数换回来。
+        var scale = 1.0;
+        var factor = OcrScale.Factor(AverageWordHeight(result), scaledWidth, scaledHeight, maximum);
+        if (factor > 1)
+        {
+            var largerWidth = (int)Math.Round(scaledWidth * factor);
+            var largerHeight = (int)Math.Round(scaledHeight * factor);
+            var larger = await Task.Run(() => OcrScale.Resize(pixels, scaledWidth, scaledHeight, largerWidth, largerHeight));
+            var retry = await RecognizeOnceAsync(engine, larger, largerWidth, largerHeight);
+            if (retry.Lines.Count > 0)
+            {
+                result = retry;
+                scale = (double)largerWidth / scaledWidth;
+            }
+        }
+
         var lines = new List<CoreOcrLine>();
         foreach (var line in result.Lines)
         {
@@ -66,10 +81,34 @@ internal static class OcrService
             }
 
             var box = Union(line);
-            lines.Add(new CoreOcrLine(text, box));
+            lines.Add(new CoreOcrLine(text, RectD.FromLtrb(box.X / scale, box.Y / scale, box.Right / scale, box.Bottom / scale)));
         }
 
         return (OcrText.Text(lines, joined, separator), lines);
+    }
+
+    private static async Task<OcrResult> RecognizeOnceAsync(OcrEngine engine, byte[] pixels, int width, int height)
+    {
+        using var bitmap = SoftwareBitmap.CreateCopyFromBuffer(
+            BufferFrom(pixels), BitmapPixelFormat.Bgra8, width, height, BitmapAlphaMode.Premultiplied);
+        return await engine.RecognizeAsync(bitmap);
+    }
+
+    /// <summary>认出来的字的平均高度（像素）；一个都没有时 0。中日韩文字一个字就是一个 word。</summary>
+    private static double AverageWordHeight(OcrResult result)
+    {
+        double total = 0;
+        var count = 0;
+        foreach (var line in result.Lines)
+        {
+            foreach (var word in line.Words)
+            {
+                total += word.BoundingRect.Height;
+                count++;
+            }
+        }
+
+        return count == 0 ? 0 : total / count;
     }
 
     private static IReadOnlyList<string> NeededTags()

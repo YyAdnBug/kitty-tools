@@ -68,6 +68,7 @@ internal static unsafe class RecordingHost
         RECT rect;
         if (!PInvoke.GetWindowRect(new HWND(hwnd), &rect))
         {
+            RecordingFrame.Hide();
             NoticeHost.Show("没能开始录屏", "拿不到这个窗口的位置", NoticeTone.Error);
             return;
         }
@@ -103,6 +104,7 @@ internal static unsafe class RecordingHost
 
         if (recorder is null)
         {
+            RecordingFrame.Hide();
             NoticeHost.Show("没能开始录屏", error ?? "未知原因", NoticeTone.Error);
             return;
         }
@@ -125,6 +127,7 @@ internal static unsafe class RecordingHost
         SettingsService.Current.RecordingTempPath = recorder.TemporaryPath;
         SettingsService.Save();
         SetThreadExecutionState(EsContinuous | EsSystemRequired | EsDisplayRequired);
+        RecordingFrame.Show(region, window);
         RecordingHud.Show(region);
         if (SettingsService.Current.RecordClicks || SettingsService.Current.RecordKeys)
         {
@@ -160,6 +163,7 @@ internal static unsafe class RecordingHost
 
         _recorder = null;
         RecordingHud.Hide();
+        RecordingFrame.Hide();
         InputHooks.Stop();
         RecordingEffects.Clear();
         var path = recorder.Stop();
@@ -194,6 +198,7 @@ internal static unsafe class RecordingHost
 
         _recorder = null;
         RecordingHud.Hide();
+        RecordingFrame.Hide();
         InputHooks.Stop();
         RecordingEffects.Clear();
         var path = recorder.Stop();
