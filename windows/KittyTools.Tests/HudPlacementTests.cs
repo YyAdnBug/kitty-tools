@@ -18,6 +18,15 @@ public sealed class HudPlacementTests
     }
 
     [TestMethod]
+    public void WiderHudStaysCenteredUnderTheRegion()
+    {
+        // 录屏那条宽 300（PLAN-v9 R7）：150% 下 450 像素，仍在选区下方居中。
+        var rect = HudPlacement.Compute(100, 100, 600, 300, 0, 0, 1920, 1080, 1.5, widthDip: 300);
+        Assert.AreEqual(450, rect.Width);
+        Assert.AreEqual(125, rect.X);
+    }
+
+    [TestMethod]
     public void FallsAboveWhenBottomDoesNotFit()
     {
         var rect = HudPlacement.Compute(100, 900, 500, 1070, 0, 0, 1920, 1080, 1.0);

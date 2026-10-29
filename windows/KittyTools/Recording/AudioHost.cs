@@ -277,6 +277,7 @@ internal static class AudioHost
 
         Log.Info($"audio.saved {Path.GetFileName(path)} size={new FileInfo(path).Length}");
         _ = ShotHistory.RecordFileAsync(path, Core.ShotKind.Audio);
+        ScreenshotCard.ShowFile(path, Core.ShotKind.Audio);
         // 不再自己弹资源管理器（PLAN-v8 H14）：提示上给「在资源管理器中显示」「打开」。
         NoticeHost.Show("录音已保存",
             reason is null ? Path.GetFileName(path) : $"{reason}，已录的部分存在 {Path.GetFileName(path)}",

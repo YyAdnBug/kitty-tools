@@ -20,6 +20,12 @@ internal static unsafe class RecordingHost
 
     public static string? LiveNote => _recorder?.LiveNote;
 
+    /// <summary>这一段录不录系统声音（开录时的设置；录制条上的图标，PLAN-v9 R7）。</summary>
+    public static bool WithSystemAudio { get; private set; }
+
+    /// <summary>这一段录不录麦克风（开录时的设置，权限被拒就是 false）。</summary>
+    public static bool WithMicrophone { get; private set; }
+
     public static string? LastPath { get; private set; }
 
     public static event Action? Changed;
@@ -106,9 +112,15 @@ internal static unsafe class RecordingHost
         if (recorder is null)
         {
             RecordingFrame.Hide();
+            RecordingHud.Hide();
             NoticeHost.Show("没能开始录屏", error ?? "未知原因", NoticeTone.Error);
             return;
         }
+
+        var microphoneDenied = recorder is WgcRecorder { MicrophoneDenied: true } ||
+                               recorder is GdiMp4Recorder { MicrophoneDenied: true };
+        WithSystemAudio = settings.RecordSystemSound;
+        WithMicrophone = settings.RecordMicrophone && !microphoneDenied;
 
         if (note is not null)
         {
@@ -252,6 +264,7 @@ internal static unsafe class RecordingHost
 
         Log.Info($"record.saved {Path.GetFileName(path)}");
         _ = ShotHistory.RecordFileAsync(path, Core.ShotKind.Video);
+        ScreenshotCard.ShowFile(path, Core.ShotKind.Video);
         // 不再自己弹资源管理器（mac 也不弹，PLAN-v8 H14）：提示上给「在资源管理器中显示」「打开」。
         NoticeHost.Show("录屏已保存",
             reason is null ? Path.GetFileName(path) : $"{reason}，已录的部分存在 {Path.GetFileName(path)}",

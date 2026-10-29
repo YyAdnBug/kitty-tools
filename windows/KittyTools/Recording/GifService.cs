@@ -100,6 +100,7 @@ internal static class GifService
             var size = new FileInfo(final).Length;
             Log.Info($"video.gif {Path.GetFileName(final)} size={size}");
             _ = ShotHistory.RecordFileAsync(final, ShotKind.Gif);
+            ScreenshotCard.ShowFile(final, ShotKind.Gif);
             NoticeHost.Show("GIF 好了", $"{Path.GetFileName(final)} · {size / 1024} KB", NoticeTone.Normal,
                 NoticeActions.Reveal(final), NoticeActions.Open(final));
             return final;

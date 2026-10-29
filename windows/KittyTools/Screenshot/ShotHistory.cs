@@ -221,7 +221,7 @@ internal sealed class ShotHistory
     }
 
     /// <summary>录屏的封面：0.5 s（不到 1 s 的取中间）那一帧，长边缩到缩略图那么大。</summary>
-    private static async Task<byte[]?> VideoPosterAsync(string path)
+    internal static async Task<byte[]?> VideoPosterAsync(string path)
     {
         var file = await Windows.Storage.StorageFile.GetFileFromPathAsync(path);
         var clip = await Windows.Media.Editing.MediaClip.CreateFromFileAsync(file);
