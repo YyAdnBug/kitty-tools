@@ -264,6 +264,48 @@ internal static unsafe partial class ClipboardFormats
         return null;
     }
 
+    /// <summary>复制的图片文件认这些扩展名（「钉住剪贴板里的图」，同 mac PinBoard.clipboardImage 的 file 那一支）。</summary>
+    private static readonly string[] ImageExtensions = { ".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tif", ".tiff", ".webp", ".heic" };
+
+    /// <summary>
+    /// 「钉住剪贴板里的图」（PLAN-v9 F3）：剪贴板里的图——PNG 优先，其次 DIB；都没有时复制的第一个图片文件的路径。
+    /// 只读、不改剪贴板；和 Read 不同，同时带着文字的（网页里复制的图）也认图。什么都没有返回 null。
+    /// </summary>
+    public static (byte[]? Image, bool IsDib, string? File)? ReadImageForPin()
+    {
+        if (!OpenClipboard())
+        {
+            Log.Warn("clipboard.pin-open-failed");
+            return null;
+        }
+
+        try
+        {
+            if (PngFormat != 0 && Has(PngFormat) && ReadBlobWithin(PngFormat, MaxImageBytes) is { Length: > 0 } png)
+            {
+                return (png, false, null);
+            }
+
+            if ((Has(CF_DIBV5) || Has(CF_DIB)) &&
+                ReadBlobWithin(Has(CF_DIBV5) ? CF_DIBV5 : CF_DIB, MaxImageBytes) is { Length: > 0 } dib)
+            {
+                return (dib, true, null);
+            }
+
+            if (Has(CF_HDROP) && ReadFiles().FirstOrDefault(path =>
+                    ImageExtensions.Contains(Path.GetExtension(path), StringComparer.OrdinalIgnoreCase)) is { } file)
+            {
+                return (null, false, file);
+            }
+
+            return null;
+        }
+        finally
+        {
+            PInvoke.CloseClipboard();
+        }
+    }
+
     /// <summary>剪贴板写入方（拿不到时用当时的前台窗口，标成推测值）。本 App 自己的窗口返回 null。</summary>
     public static (string? Exe, string? Name, uint Pid) Source()
     {

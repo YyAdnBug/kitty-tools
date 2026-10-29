@@ -428,7 +428,8 @@ internal static class ShortcutsSheet
             new("Enter", "拼好，拷贝"),
             new("Esc", "放弃"),
         }),
-        new("screenshot", "钉图", "capture", Glyphs.Pin, Array.Empty<string>(), new ShortcutEntry[]
+        // 全局的「钉住剪贴板里的图」（PLAN-v9 F3）不设默认键，没设时那一行写「未设置」（同 mac）。
+        new("screenshot", "钉图", "capture", Glyphs.Pin, new[] { HotKeyActions.PinClipboard }, new ShortcutEntry[]
         {
             new("滚轮", "缩放（10%–500%）"),
             new("0", "恢复 100%"),
@@ -438,7 +439,7 @@ internal static class ShortcutsSheet
             new("O", "识字并拷贝"),
             new("Esc", "双击", "关闭"),
         }),
-        new("screenshot", "录制", "capture", Glyphs.Record, new[] { HotKeyActions.Record }, new ShortcutEntry[]
+        new("screenshot", "录制", "capture", Glyphs.Record, new[] { HotKeyActions.Record, HotKeyActions.Audio }, new ShortcutEntry[]
         {
             new("Esc", "倒数的时候取消"),
         }),

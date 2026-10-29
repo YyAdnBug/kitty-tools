@@ -410,6 +410,67 @@ internal static class PinHost
         window.ShowPin();
     }
 
+    /// <summary>
+    /// 钉到鼠标所在屏、以鼠标为中心（剪贴板面板的钉图、「钉住剪贴板里的图」共用）：最大占可见区 80%，夹在可见区里。
+    /// offset 是连钉几张时往右下错开的量；那个位置已经有一张钉图时再错开 24（连按几下快捷键不叠成一张，同 mac clipboardFrame）。
+    /// </summary>
+    public static void ShowNearCursor(byte[] png, int imageWidth, int imageHeight, int offset = 0)
+    {
+        PInvoke.GetCursorPos(out var cursor);
+        var area = Microsoft.UI.Windowing.DisplayArea.GetFromPoint(
+            new PointInt32(cursor.X, cursor.Y), Microsoft.UI.Windowing.DisplayAreaFallback.Primary).WorkArea;
+        var scale = Math.Min(1, Math.Min(area.Width * 0.8 / imageWidth, area.Height * 0.8 / imageHeight));
+        var width = Math.Max(1, (int)(imageWidth * scale));
+        var height = Math.Max(1, (int)(imageHeight * scale));
+        for (var tries = 0; ; tries++)
+        {
+            var left = Math.Clamp(cursor.X - width / 2 + offset, area.X, area.X + area.Width - width);
+            var top = Math.Clamp(cursor.Y - height / 2 + offset, area.Y, area.Y + area.Height - height);
+            if (tries < 20 && Windows.Any(window =>
+                    Math.Abs(window.AppWindow.Position.X - left) <= 2 && Math.Abs(window.AppWindow.Position.Y - top) <= 2))
+            {
+                offset += 24;
+                continue;
+            }
+
+            Show(png, new PixelBounds(left, top, left + width, top + height));
+            return;
+        }
+    }
+
+    /// <summary>
+    /// 「钉住剪贴板里的图」（PLAN-v9 F3，同 mac AppDelegate.pinClipboard）：剪贴板里是图（或复制的是图片文件）就钉到鼠标旁边，
+    /// 不是图就提示；剪贴板只读。
+    /// </summary>
+    public static async Task PinClipboardAsync()
+    {
+        if (ClipboardFormats.ReadImageForPin() is not { } source)
+        {
+            NoticeHost.Show("剪贴板里没有图片", string.Empty, NoticeTone.Warning);
+            return;
+        }
+
+        try
+        {
+            var data = source.File is { } file ? await File.ReadAllBytesAsync(file) : source.Image!;
+            var decoded = source.IsDib ? await ImageCodec.DibToPngAsync(data) : await ImageCodec.AnyToPngAsync(data);
+            if (decoded is not { } image)
+            {
+                NoticeHost.Show("没能钉到屏幕",
+                    source.File is { } name ? $"读不出「{Path.GetFileName(name)}」" : "读不出这张图片", NoticeTone.Error);
+                return;
+            }
+
+            ShowNearCursor(image.Png, image.Width, image.Height);
+            Log.Info("pin.clipboard");
+        }
+        catch (Exception ex)
+        {
+            Log.Error("pin.clipboard-failed", ex);
+            NoticeHost.Show("没能钉到屏幕", ex.GetType().Name, NoticeTone.Error);
+        }
+    }
+
     /// <summary>全部关掉（内存探针、退出时用）。</summary>
     public static void CloseAll()
     {

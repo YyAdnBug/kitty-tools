@@ -68,7 +68,7 @@ internal static class Features
         HotKeyActions.Launcher => Feature.Launcher,
         HotKeyActions.SelectionTranslate or HotKeyActions.InputTranslate or HotKeyActions.ScreenshotTranslate
             or HotKeyActions.TranslateReplace => Feature.Translate,
-        HotKeyActions.Record => Feature.Recording,
+        HotKeyActions.Record or HotKeyActions.Audio => Feature.Recording,
         _ => Feature.Screenshot,
     };
 }

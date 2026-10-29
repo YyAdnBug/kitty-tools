@@ -46,6 +46,35 @@ internal static class ImageCodec
         }
     }
 
+    /// <summary>
+    /// 任意系统认得的图片格式（PNG / JPEG / BMP / GIF / TIFF / WebP 扩展装了的话）→ PNG；本来就是 PNG 的字节不改。
+    /// 「钉住剪贴板里的图」复制的是图片文件时用（PLAN-v9 F3）。
+    /// </summary>
+    public static async Task<DecodedImage?> AnyToPngAsync(byte[] data)
+    {
+        try
+        {
+            using var stream = await ToStreamAsync(data);
+            var decoder = await BitmapDecoder.CreateAsync(stream);
+            if (decoder.DecoderInformation?.CodecId == BitmapDecoder.PngDecoderId)
+            {
+                return new DecodedImage(data, (int)decoder.PixelWidth, (int)decoder.PixelHeight);
+            }
+
+            using var bitmap = await decoder.GetSoftwareBitmapAsync(
+                BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied);
+            using var output = new InMemoryRandomAccessStream();
+            var encoder = await BitmapEncoder.CreateAsync(BitmapEncoder.PngEncoderId, output);
+            encoder.SetSoftwareBitmap(bitmap);
+            await encoder.FlushAsync();
+            return new DecodedImage(await ReadAllAsync(output), bitmap.PixelWidth, bitmap.PixelHeight);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     /// <summary>PNG → BGRA 像素（自上而下）；钉图识字用。</summary>
     public static async Task<(byte[] Bgra, int Width, int Height)?> PngToBgraAsync(byte[] png)
     {

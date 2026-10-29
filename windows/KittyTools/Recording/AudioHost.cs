@@ -68,8 +68,8 @@ internal static class AudioHost
 
         if (IsArmed)
         {
-            IsArmed = false;
-            AudioHud.Hide();
+            // 待录时再按一次（快捷键、托盘、启动器）= 开始录（同 mac「点 ● 或再按一次才开始」）；不录就点控制条上的 ✕ 关闭。
+            BeginFromHud();
             return;
         }
 

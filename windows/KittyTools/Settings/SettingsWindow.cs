@@ -2214,6 +2214,8 @@ internal sealed partial class SettingsWindow : Window
             HotKeyActions.Record => Glyphs.Record,
             HotKeyActions.ShotHistory => Glyphs.Clock,
             HotKeyActions.TranslateReplace => Glyphs.Swap,
+            HotKeyActions.Audio => Glyphs.Microphone,
+            HotKeyActions.PinClipboard => Glyphs.Pin,
             _ => Glyphs.Screenshot,
         };
         return KindTile.Create(family, glyph, 20);

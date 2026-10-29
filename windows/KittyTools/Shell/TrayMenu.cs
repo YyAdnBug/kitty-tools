@@ -209,17 +209,14 @@ internal static partial class TrayMenu
                     () => _ = GifService.ConvertLastAsync());
             }
 
+            // 录音（PLAN-v9 F2）：同录屏，右边写它的快捷键；待录时不算在录，仍叫「录音」，点它是开始（同 mac）。
             if (AudioHost.IsRecording)
             {
-                Add(menu, "停止录音 " + AudioHost.Elapsed, string.Empty, AudioHost.Stop);
-            }
-            else if (AudioHost.IsArmed)
-            {
-                Add(menu, "取消待录", string.Empty, AudioHost.Toggle);
+                Add(menu, "停止录音 " + AudioHost.Elapsed, HotKeyActions.Audio, AudioHost.Stop);
             }
             else
             {
-                Add(menu, "录音（麦克风）", string.Empty, AudioHost.Toggle);
+                Add(menu, "录音", HotKeyActions.Audio, AudioHost.Toggle);
             }
         }
 

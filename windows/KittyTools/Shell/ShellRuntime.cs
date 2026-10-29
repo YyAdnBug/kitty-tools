@@ -1112,6 +1112,12 @@ internal sealed class ShellRuntime
             case HotKeyActions.TranslateReplace:
                 TranslateHost.TranslateAndReplace();
                 break;
+            case HotKeyActions.Audio:
+                AudioHost.Toggle();
+                break;
+            case HotKeyActions.PinClipboard:
+                _ = PinHost.PinClipboardAsync();
+                break;
         }
     }
 

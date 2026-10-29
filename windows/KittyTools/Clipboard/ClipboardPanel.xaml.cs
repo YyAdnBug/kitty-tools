@@ -1790,20 +1790,12 @@ public sealed partial class ClipboardPanel : UserControl
                 return;
             }
             var png = await File.ReadAllBytesAsync(path);
-            var decoded = await ImageCodec.PngToBgraAsync(png);
+            var decoded = await ImageCodec.ReadPngAsync(png);
             if (decoded is not { } image)
             {
                 return;
             }
-            PInvoke.GetCursorPos(out var cursor);
-            var area = DisplayArea.GetFromPoint(
-                new PointInt32(cursor.X, cursor.Y), DisplayAreaFallback.Primary).WorkArea;
-            var scale = Math.Min(1, Math.Min(area.Width * 0.8 / image.Width, area.Height * 0.8 / image.Height));
-            var width = Math.Max(1, (int)(image.Width * scale));
-            var height = Math.Max(1, (int)(image.Height * scale));
-            var left = Math.Clamp(cursor.X - width / 2 + offset, area.X, area.X + area.Width - width);
-            var top = Math.Clamp(cursor.Y - height / 2 + offset, area.Y, area.Y + area.Height - height);
-            PinHost.Show(png, new PixelBounds(left, top, left + width, top + height));
+            PinHost.ShowNearCursor(png, image.Width, image.Height, offset);
         }
         catch (Exception ex)
         {

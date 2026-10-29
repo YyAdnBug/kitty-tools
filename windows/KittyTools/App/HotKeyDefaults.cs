@@ -20,6 +20,12 @@ internal static class HotKeyActions
 
     /// <summary>划词翻译并替换（不开浮窗，PLAN-v9-translate F7），默认不设键；名字同 mac。</summary>
     public const string TranslateReplace = "translateReplace";
+
+    /// <summary>录音（PLAN-v9 F2），默认不设键；录着时按是停止，待录时按是开始（同 mac audioRecord）。</summary>
+    public const string Audio = "audioRecord";
+
+    /// <summary>钉住剪贴板里的图（PLAN-v9 F3），默认不设键（同 mac pinClipboard）。</summary>
+    public const string PinClipboard = "pinClipboard";
 }
 
 internal sealed record HotKeyDefault(
@@ -44,6 +50,8 @@ internal static class SettingsDefaults
         // 新动作只加在最后（快捷键页和速查表按这张表的顺序排）。
         new(HotKeyActions.ShotHistory, "截图历史", HotKeyModifiers.None, 0),
         new(HotKeyActions.TranslateReplace, "划词翻译并替换", HotKeyModifiers.None, 0),
+        new(HotKeyActions.Audio, "录音（再按一次停止）", HotKeyModifiers.None, 0),
+        new(HotKeyActions.PinClipboard, "钉住剪贴板里的图", HotKeyModifiers.None, 0),
     };
 
     public static void Apply(Settings settings)
