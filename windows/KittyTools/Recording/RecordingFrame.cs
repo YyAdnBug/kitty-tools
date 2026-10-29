@@ -197,4 +197,14 @@ internal static unsafe partial class RecordingFrame
 
     [LibraryImport("dwmapi.dll")]
     private static partial int DwmGetWindowAttribute(IntPtr hwnd, int attribute, out RECT value, int size);
+
+    // LibraryImport 的源生成器认不出 CsWin32 生成的 RECT（SYSLIB1051），这里自己声明一个（同 WindowList）。
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RECT
+    {
+        public int left;
+        public int top;
+        public int right;
+        public int bottom;
+    }
 }
