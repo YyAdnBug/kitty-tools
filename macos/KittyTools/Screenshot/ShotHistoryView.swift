@@ -139,9 +139,9 @@ struct ShotHistoryView: View {
                   ShotCard(
                     item: item, chosen: model.picked.contains(item.id), history: model.history,
                     generation: model.redraws,
-                    select: { model.click(item.id) }, edit: { edit(item) }
+                    select: { model.click(item.id) }, edit: { edit(item) },
+                    drag: { model.beginDrag(item) }
                   )
-                  .onDrag { model.dragProvider(for: item) }
                   .contextMenu { menu(item) }
                 }
               }
@@ -331,6 +331,9 @@ private struct ShotCard: View {
   let generation: Int
   let select: () -> Void
   let edit: () -> Void
+  /// 拖开 6 pt 时调一次：起 AppKit 拖放会话（选中的几张一起拖，ShotHistoryModel.beginDrag），之后的鼠标事件归它
+  let drag: () -> Void
+  @GestureState private var dragging = false
 
   var body: some View {
     VStack(spacing: 6) {
@@ -373,6 +376,13 @@ private struct ShotCard: View {
     .contentShape(.rect)
     .simultaneousGesture(TapGesture(count: 2).onEnded { edit() })
     .simultaneousGesture(TapGesture().onEnded { select() })
+    .simultaneousGesture(
+      DragGesture(minimumDistance: 6).updating($dragging) { _, started, _ in
+        guard !started else { return }
+        started = true
+        drag()
+      }
+    )
     .accessibilityElement(children: .combine)
     .accessibilityLabel("\(item.kind.title)，\(ShotHistoryModel.caption(item))")
     .accessibilityAddTraits(chosen ? [.isSelected, .isButton] : .isButton)

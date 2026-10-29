@@ -492,6 +492,55 @@ struct ShotHistoryTests {
     }
   }
 
+  /// 多选一起拖（2026-10-29 用户报「选了几张，拖出去只拖走一张」）：按住的是选中的之一就拖全部选中的，选区外的只拖它；
+  /// 没画标注的当场给文件（克隆原图），有标注的给文件承诺，放下时才合成、写到对方给的位置；录制的文件不在了不拖
+  @Test func dragsTheWholeSelection() async throws {
+    let (history, root) = try makeHistory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let red = Annotation(
+      shape: .rectangle(CGRect(x: 0, y: 0, width: 200, height: 150)),
+      style: Annotation.Style(color: .red, weight: .large, option: 1))
+    let plain = try #require(await history.record(image(), scale: 2))
+    let drawn = try #require(await history.record(image(), scale: 2, annotations: [red]))
+    let other = try #require(await history.record(image(), scale: 2))
+    let gone = root.appending(path: "删掉了的录屏.mov")
+    try Data("假的录像".utf8).write(to: gone)
+    let video = try #require(await history.record(file: gone, poster: image(), kind: .video))
+    try FileManager.default.removeItem(at: gone)
+
+    let items = history.items
+    func item(_ id: UUID) -> ShotHistory.Item { items.first { $0.id == id }! }
+    let model = ShotHistoryModel(history: history)
+    model.click(plain, flags: [])
+    model.click(drawn, flags: .command)
+    #expect(Set(model.dragged(from: item(drawn)).map(\.id)) == [plain, drawn])
+    #expect(model.dragged(from: item(other)).map(\.id) == [other])
+
+    let file = try #require(history.dragWriter(for: item(plain)) as? NSURL)
+    #expect(ShotHistory.isDisposable(file as URL))
+    #expect(try Data(contentsOf: file as URL) == Data(contentsOf: history.url(for: plain)))
+    #expect(history.dragWriter(for: item(video)) == nil)
+
+    let promise = try #require(history.dragWriter(for: item(drawn)) as? NSFilePromiseProvider)
+    let delegate = try #require(promise.delegate)
+    #expect(
+      delegate.filePromiseProvider(promise, fileNameForType: UTType.png.identifier)
+        .hasPrefix("截图 "))
+    let target = root.appending(path: "放下的.png")
+    let error: (any Error)? = await withCheckedContinuation { continuation in
+      delegate.filePromiseProvider(promise, writePromiseTo: target) {
+        continuation.resume(returning: $0)
+      }
+    }
+    #expect(error == nil)
+    let source = try #require(CGImageSourceCreateWithURL(target as CFURL, nil))
+    let dropped = try #require(CGImageSourceCreateImageAtIndex(source, 0, nil))
+    #expect(Self.redness(of: dropped) > 0.1, "放下的那份没带标注")  // 没画标注的灰图约等于 0
+    for made in [file as URL, history.dragFileNow(for: item(drawn))].compactMap(\.self) {
+      try? FileManager.default.removeItem(at: made.deletingLastPathComponent())
+    }
+  }
+
   /// 录制的拖的那一下才克隆一份（第三轮体检 R3：晾衣绳允许拖进废纸篓，扔掉的得是这份、不是用户的录像；
   /// 不先备着：克隆和原文件共用数据块，用户删了原录像空间回不来）
   @Test func dragClonesUserFiles() async throws {

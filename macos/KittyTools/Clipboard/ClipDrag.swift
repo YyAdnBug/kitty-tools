@@ -4,6 +4,7 @@
 // 拖放期间点外关闭自然不会触发：会话从面板里的按下开始，拖着的时候没有新的按下事件（OverlayPanel 只看按下）；
 // 真放下了（对方收了）才照常收起面板（onDrop，固定着不收），拖回来 / 没放成不收。
 // 预览是这一行的样子（图标块 + 标题），多项时 AppKit 自己叠在下面并标个数。
+// 截图历史的网格多选拖出去也走 begin（2026-10-29，拖的是 ShotHistory.dragWriter 给的文件 / 文件承诺）。
 
 import AppKit
 import SwiftUI
@@ -11,7 +12,7 @@ import SwiftUI
 enum ClipDrag {
   /// 在行的拖动手势里调：那时 NSApp.currentEvent 是面板里的 leftMouseDragged，会话从它开始
   static func begin(
-    _ items: [NSPasteboardItem], preview: NSImage?, onDrop: @escaping () -> Void
+    _ items: [any NSPasteboardWriting], preview: NSImage?, onDrop: @escaping () -> Void = {}
   ) {
     guard !items.isEmpty, let event = NSApp.currentEvent, event.type == .leftMouseDragged,
       let view = event.window?.contentView

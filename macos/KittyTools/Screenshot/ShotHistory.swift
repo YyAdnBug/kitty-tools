@@ -228,11 +228,7 @@ import UniformTypeIdentifiers
   func dragFile(for item: Item) async -> URL? {
     if item.filePath != nil { return dragFileNow(for: item) }
     if let made = dragFileNow(for: item) { return made }
-    let name =
-      item.savedPath.map { ($0 as NSString).lastPathComponent }
-      ?? ScreenshotOutput.availableURL(in: ShotShelf.dragDirectory, date: item.createdAt)
-      .lastPathComponent
-    let target = Self.freshFolder().appending(path: name)
+    let target = Self.freshFolder().appending(path: dragName(for: item))
     var cloned = false
     if item.annotations.isEmpty {
       cloned = await Self.cloneOriginal(url(for: item.id), scale: item.scale, to: target)
@@ -265,6 +261,33 @@ import UniformTypeIdentifiers
       return nil
     }
     return made
+  }
+
+  /// 截图拖出去叫什么：存过的借它的文件名，没存过的照快速保存起
+  func dragName(for item: Item) -> String {
+    item.savedPath.map { ($0 as NSString).lastPathComponent }
+      ?? ScreenshotOutput.availableURL(in: ShotShelf.dragDirectory, date: item.createdAt)
+      .lastPathComponent
+  }
+
+  /// 历史窗口网格里拖的那一下，每条一份（多选时整批一起拖，ShotHistoryModel.beginDrag 起 AppKit 拖放会话）：
+  /// 手头有文件的直接给文件——录制的当场克隆、拖过的那份、没画标注的截图当场克隆原图，都是常数时间；
+  /// 有标注、还没合成过的给一个文件承诺，放下那一刻才合成（同 dragProvider：不在按下去拖的那一下卡住）。
+  /// 录制的文件已经不在了给 nil
+  func dragWriter(for item: Item) -> (any NSPasteboardWriting)? {
+    if let url = dragFileNow(for: item) { return url as NSURL }
+    guard item.filePath == nil else { return nil }
+    if item.annotations.isEmpty {
+      let target = Self.freshFolder().appending(path: dragName(for: item))
+      if Self.cloneOriginalNow(url(for: item.id), scale: item.scale, to: target) {
+        dragFiles[item.id] = target
+        return target as NSURL
+      }
+    }
+    let promise = ShotPromise(item: item, history: self)
+    let provider = NSFilePromiseProvider(fileType: UTType.png.identifier, delegate: promise)
+    provider.userInfo = promise  // 代理是弱引用，靠它留住
+    return provider
   }
 
   /// 拖出目录里一个新文件夹（还没建，写的时候建）：名字照用户的 / 照快速保存，各放各的不撞名
@@ -309,6 +332,11 @@ import UniformTypeIdentifiers
   @concurrent nonisolated static func cloneOriginal(_ source: URL, scale: CGFloat, to target: URL)
     async -> Bool
   {
+    cloneOriginalNow(source, scale: scale, to: target)
+  }
+
+  /// 同上，当场做（只读文件头再克隆，常数时间：拖的那一下用）
+  nonisolated static func cloneOriginalNow(_ source: URL, scale: CGFloat, to target: URL) -> Bool {
     guard let image = CGImageSourceCreateWithURL(source as CFURL, nil),
       let properties = CGImageSourceCopyPropertiesAtIndex(image, 0, nil) as? [CFString: Any],
       let dpi = properties[kCGImagePropertyDPIWidth] as? Double, abs(dpi - 72 * scale) < 0.5
@@ -579,5 +607,46 @@ import UniformTypeIdentifiers
   nonisolated static func decode(_ json: String) -> [Annotation]? {
     guard let data = json.data(using: .utf8) else { return nil }
     return try? JSONDecoder().decode([Annotation].self, from: data)
+  }
+}
+
+/// 有标注、还没合成过的那条拖出去时的文件承诺（ShotHistory.dragWriter）：对方放下时给个位置，这里现合成
+/// （dragFile，做好的记着），再拷到那个位置——同一块 APFS 卷上是克隆。拷贝在主线程外做
+private final class ShotPromise: NSObject, NSFilePromiseProviderDelegate {
+  let item: ShotHistory.Item
+  weak var history: ShotHistory?
+
+  init(item: ShotHistory.Item, history: ShotHistory) {
+    self.item = item
+    self.history = history
+  }
+
+  func filePromiseProvider(_ provider: NSFilePromiseProvider, fileNameForType fileType: String)
+    -> String
+  {
+    history?.dragName(for: item) ?? "截图.png"
+  }
+
+  nonisolated func filePromiseProvider(
+    _ provider: NSFilePromiseProvider, writePromiseTo url: URL,
+    completionHandler: @escaping (Error?) -> Void
+  ) {
+    // 同 dragProvider：系统给的回调没标 sending，只在主 actor 上调一次
+    nonisolated(unsafe) let finish = completionHandler
+    Task { @MainActor in
+      guard let made = await history?.dragFile(for: item) else {
+        return finish(CocoaError(.fileNoSuchFile))
+      }
+      finish(await Self.copy(made, to: url))
+    }
+  }
+
+  @concurrent nonisolated private static func copy(_ file: URL, to target: URL) async -> Error? {
+    do {
+      try FileManager.default.copyItem(at: file, to: target)
+      return nil
+    } catch {
+      return error
+    }
   }
 }

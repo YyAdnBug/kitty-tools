@@ -179,9 +179,35 @@ import SwiftUI
 
   func open(_ item: ShotHistory.Item) { ShotHistory.open(item, notice: actions.notice) }
 
-  /// 拖到别的 App 里去（同晾衣绳，见 ShotHistory.dragFile：截图拖现合成的成品、录制的拖一份克隆）
+  /// 拖到别的 App 里去（同晾衣绳，见 ShotHistory.dragFile：截图拖现合成的成品、录制的拖一份克隆）。右边的大预览用它
   func dragProvider(for item: ShotHistory.Item) -> NSItemProvider {
     history.dragProvider(for: item)
+  }
+
+  /// 网格里拖一张出去要拖的那几条：拖的是选中的那几张之一就是全部选中的（按列出来的顺序），否则只这一张（同剪贴板）
+  func dragged(from item: ShotHistory.Item) -> [ShotHistory.Item] {
+    picked.contains(item.id) ? chosen : [item]
+  }
+
+  /// 网格里拖一张出去：在卡片的拖动手势里起 AppKit 拖放会话（ClipDrag）——SwiftUI 的 onDrag 一次只给一个
+  /// NSItemProvider，选了几张也只拖走按住的那一张（2026-10-29 用户报的）。不改选中；指针下是按住那张的缩略图
+  func beginDrag(_ item: ShotHistory.Item) {
+    ClipDrag.begin(dragged(from: item).compactMap(history.dragWriter), preview: dragPreview(item))
+  }
+
+  /// 拖动时指针下的那张：缩略图缩到卡片大小（还没读好、录音没有图时给 nil，ClipDrag 换成通用图标）
+  private func dragPreview(_ item: ShotHistory.Item) -> NSImage? {
+    guard let thumbnail = ShotThumbnails.shared.cached(item.id), thumbnail.size.width > 0,
+      thumbnail.size.height > 0
+    else { return nil }
+    let ratio = min(
+      ShotHistoryView.cardWidth / thumbnail.size.width,
+      ShotHistoryView.cardHeight / thumbnail.size.height, 1)
+    let size = CGSize(width: thumbnail.size.width * ratio, height: thumbnail.size.height * ratio)
+    return NSImage(size: size, flipped: false) { rect in
+      thumbnail.draw(in: rect)
+      return true
+    }
   }
 
   /// 这一条有没有文件可以显示 / 打开（没有时那一项置灰）
