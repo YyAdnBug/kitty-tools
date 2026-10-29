@@ -1,4 +1,5 @@
-// 录屏倒数（第四版）：选区确认后 3 秒开始，轻提示「3 秒后开始录屏…」，期间 Esc 取消。
+// 录屏倒数（第四版）：选区确认后按 设置 › 录制「开始前倒数」（0 / 3 / 5 秒，默认 3，PLAN-v9 R2）开始，
+// 轻提示「3 秒后开始录屏…」，期间 Esc 取消；不倒数时直接开录。倒数挪到录制条上是 R6（Windows 那边）。
 // Esc 是临时注册的全局热键（只挂这三秒），倒数结束 / 取消立刻注销。选区边框（RecordingFrame）从倒数开始就出。
 using KittyTools.Infrastructure;
 using Microsoft.UI.Dispatching;
@@ -26,12 +27,18 @@ internal static class RecordingCountdown
 
         _region = region;
         _window = window;
-        _remaining = 3;
-        Active = true;
+        _remaining = SettingsService.Current.RecordCountdown is var seconds and (0 or 5) ? seconds : 3;
         // 倒数时就把选区框出来（mac 倒数时边框已经在了），录屏开始后接着用这一份。
         RecordingFrame.Show(region, window);
+        if (_remaining == 0)
+        {
+            Begin();
+            return;
+        }
+
+        Active = true;
         PInvoke.RegisterHotKey(HiddenWindow.Hwnd, EscapeId, 0, (uint)Windows.Win32.UI.Input.KeyboardAndMouse.VIRTUAL_KEY.VK_ESCAPE);
-        NoticeHost.Show("3 秒后开始录屏", "Esc 取消", NoticeTone.Normal);
+        NoticeHost.Show($"{_remaining} 秒后开始录屏", "Esc 取消", NoticeTone.Normal);
         _timer = DispatcherQueue.GetForCurrentThread()!.CreateTimer();
         _timer.Interval = TimeSpan.FromSeconds(1);
         _timer.IsRepeating = true;
@@ -49,6 +56,11 @@ internal static class RecordingCountdown
         }
 
         Finish();
+        Begin();
+    }
+
+    private static void Begin()
+    {
         if (_window != IntPtr.Zero)
         {
             RecordingHost.StartWindow(_window);

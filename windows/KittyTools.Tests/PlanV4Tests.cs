@@ -30,6 +30,23 @@ public sealed class RecorderRulesTests
     }
 
     [TestMethod]
+    public void KeycapsShowEverythingOrOnlyShortcuts()
+    {
+        // 全部按键（默认）：打字也显示，修饰键连着写。
+        Assert.AreEqual("A", RecordingOverlay.KeycapText("A", false, false, false, false, false, false, shortcutsOnly: false));
+        Assert.AreEqual("Shift + A", RecordingOverlay.KeycapText("A", false, false, true, false, false, false, false));
+        Assert.AreEqual("Ctrl + Alt + Shift + Win + K", RecordingOverlay.KeycapText("K", true, true, true, true, false, false, false));
+        // 只显示快捷键：Shift + 字母、单个字母不显示；Ctrl 组合、Esc、F 键显示。
+        Assert.IsNull(RecordingOverlay.KeycapText("A", false, false, false, false, false, false, shortcutsOnly: true));
+        Assert.IsNull(RecordingOverlay.KeycapText("A", false, false, true, false, false, false, true));
+        Assert.AreEqual("Ctrl + S", RecordingOverlay.KeycapText("S", true, false, false, false, false, false, true));
+        Assert.AreEqual("Esc", RecordingOverlay.KeycapText("Esc", false, false, false, false, false, true, true));
+        Assert.AreEqual("F5", RecordingOverlay.KeycapText("F5", false, false, false, false, true, false, true));
+        // 认不得的键、修饰键本身：都不显示。
+        Assert.IsNull(RecordingOverlay.KeycapText(null, true, false, false, false, false, false, false));
+    }
+
+    [TestMethod]
     public void FrameRateIsThirtyOrSixty()
     {
         Assert.AreEqual(30, RecorderRules.DefaultFps);

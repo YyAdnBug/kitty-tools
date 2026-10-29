@@ -366,7 +366,8 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
             session = pool.CreateCaptureSession(item);
             try
             {
-                session.IsCursorCaptureEnabled = true;
+                // 设置 › 录制「显示光标」（PLAN-v9 R3，默认录）。
+                session.IsCursorCaptureEnabled = SettingsService.Current.RecordCursor;
             }
             catch
             {

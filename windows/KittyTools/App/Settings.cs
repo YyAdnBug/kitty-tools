@@ -175,6 +175,15 @@ internal sealed class Settings
     /// <summary>录制中显示快捷键胶囊（默认关）。</summary>
     public bool RecordKeys { get; set; }
 
+    /// <summary>显示按键时只显示快捷键（PLAN-v9 R4）：默认 false = 全部按键（同 mac；打的字也会录进去）。</summary>
+    public bool RecordKeysShortcutsOnly { get; set; }
+
+    /// <summary>录屏开始前倒数几秒（PLAN-v9 R2）：0 / 3（默认）/ 5。</summary>
+    public int RecordCountdown { get; set; } = 3;
+
+    /// <summary>录屏里录不录鼠标光标（PLAN-v9 R3，默认录）。</summary>
+    public bool RecordCursor { get; set; } = true;
+
     /// <summary>录屏时录系统声音（默认开，PLAN-v6 第 2 批）。</summary>
     public bool RecordSystemSound { get; set; } = true;
 

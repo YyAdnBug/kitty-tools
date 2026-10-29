@@ -1971,6 +1971,21 @@ internal sealed partial class SettingsWindow : Window
                 SettingsService.Current.RecordFps = index == 1 ? 60 : 30;
                 SettingsService.Save();
             });
+        var countdowns = new[] { 0, 3, 5 };
+        AddCombo("开始前倒数", string.Empty, new[] { "不倒数", "3 秒", "5 秒" },
+            Math.Max(0, Array.IndexOf(countdowns, SettingsService.Current.RecordCountdown)),
+            index =>
+            {
+                SettingsService.Current.RecordCountdown = countdowns[index];
+                SettingsService.Save();
+            });
+        AddToggle("显示光标", string.Empty,
+            SettingsService.Current.RecordCursor,
+            value =>
+            {
+                SettingsService.Current.RecordCursor = value;
+                SettingsService.Save();
+            });
         AddToggle("显示点按", "录制画面里画一个圈（左键粉色、右键蓝色）",
             SettingsService.Current.RecordClicks,
             value =>
@@ -1978,11 +1993,18 @@ internal sealed partial class SettingsWindow : Window
                 SettingsService.Current.RecordClicks = value;
                 SettingsService.Save();
             });
-        AddToggle("显示按键", "只显示带修饰键的快捷键（如 Ctrl + Shift + S），单个字母不显示",
+        AddToggle("显示按键", "按下的键在画面底部显示成一颗胶囊",
             SettingsService.Current.RecordKeys,
             value =>
             {
                 SettingsService.Current.RecordKeys = value;
+                SettingsService.Save();
+            });
+        AddCombo("显示按键时", string.Empty, new[] { "全部按键", "只显示快捷键" },
+            SettingsService.Current.RecordKeysShortcutsOnly ? 1 : 0,
+            index =>
+            {
+                SettingsService.Current.RecordKeysShortcutsOnly = index == 1;
                 SettingsService.Save();
             });
         AddToggle("系统声音", "录默认输出设备的声音；关掉只录麦克风或只有画面",
@@ -2000,7 +2022,8 @@ internal sealed partial class SettingsWindow : Window
                 SettingsService.Save();
             });
         _content.Children.Add(SettingsUi.Footnote(
-            "60 fps 更顺，文件大约大一半；大屏上可能录不满 60。框一块区域、或在遮罩里单击一扇窗口录它，倒数 3 秒后开始；录的时候选区外一圈粉线，线不进画面。" +
+            "60 fps 更顺，文件大约大一半；大屏上可能录不满 60。框一块区域、或在遮罩里单击一扇窗口录它，倒数完开始；录的时候选区外一圈粉线，线不进画面。" +
+            "全部按键会把打的字也录进去；只显示快捷键：带 Ctrl、Alt、Win 的组合键、Esc 和 F 键才进画面，打字不显示。" +
             "第一次录麦克风时，要在 设置 › 隐私和安全性 › 麦克风 里允许桌面应用。"));
 
         _content.Children.Add(SettingsUi.Section("录音"));

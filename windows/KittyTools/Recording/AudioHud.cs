@@ -31,6 +31,10 @@ internal sealed partial class AudioHud
     private readonly Border _levelFill;
     private readonly TextBlock _hint;
     private readonly Button _pause;
+
+    /// <summary>待录时的两个来源开关（PLAN-v9 R10，就是 设置 › 录制「来源」那一项，至少留一个）。</summary>
+    private readonly Button _systemSource;
+    private readonly Button _microphoneSource;
     private readonly Button _discard;
     private readonly Button _stop;
     private readonly DispatcherQueueTimer _tick;
@@ -159,10 +163,17 @@ internal sealed partial class AudioHud
             Spacing = 8,
             VerticalAlignment = VerticalAlignment.Center,
         };
+        _systemSource = SourceButton("系统声音");
+        _systemSource.Click += (_, _) => ToggleSource(system: true);
+        _microphoneSource = SourceButton("麦克风");
+        _microphoneSource.Click += (_, _) => ToggleSource(system: false);
+
         row.Children.Add(dot);
         row.Children.Add(_timer);
         row.Children.Add(meter);
         row.Children.Add(_hint);
+        row.Children.Add(_systemSource);
+        row.Children.Add(_microphoneSource);
         row.Children.Add(_pause);
         row.Children.Add(_discard);
         row.Children.Add(_stop);
@@ -288,11 +299,63 @@ internal sealed partial class AudioHud
     private void UpdatePause()
     {
         _pause.Content = _pending ? "开始" : AudioHost.IsPaused ? "继续" : "暂停";
-        // 待录：[✕ 关闭][开始]；录着：[暂停][✕ 放弃][停止]（mac RecordingHUD 的 ready / recording）。
+        // 待录：[系统声音][麦克风][开始][✕ 关闭]；录着：[暂停][✕ 放弃][停止]（mac RecordingHUD 的 ready / recording）。
         _stop.Visibility = _pending ? Visibility.Collapsed : Visibility.Visible;
+        var (system, microphone) = RecorderRules.AudioSource(SettingsService.Current.AudioSource);
+        ShowSource(_systemSource, _pending, system, Glyphs.Volume, Glyphs.VolumeOff, "系统声音");
+        ShowSource(_microphoneSource, _pending, microphone, Glyphs.Microphone, Glyphs.MicrophoneOff, "麦克风");
         _discard.Content = _pending ? "✕ 关闭" : _armed ? "再点一次放弃" : "✕ 放弃";
         _discard.Foreground = _armed ? _discardArmed : _discardNormal;
         AutomationProperties.SetName(_discard, _pending ? "关闭录音控制条" : "放弃这段录音（点两下）");
+    }
+
+    private static Button SourceButton(string name)
+    {
+        var button = new Button
+        {
+            Padding = new Thickness(6, 3, 6, 3),
+            Background = new SolidColorBrush(Colors.Transparent),
+            BorderThickness = new Thickness(0),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        ToolTipService.SetToolTip(button, name);
+        return button;
+    }
+
+    /// <summary>来源开关的样子：开着是强调色图标、关着是灰的划掉的图标；录着时不露（录哪一路开录时就定了）。</summary>
+    private static void ShowSource(Button button, bool pending, bool on, string glyph, string offGlyph, string name)
+    {
+        button.Visibility = pending ? Visibility.Visible : Visibility.Collapsed;
+        button.Content = new FontIcon
+        {
+            Glyph = on ? glyph : offGlyph,
+            FontSize = 14,
+            Foreground = on ? new SolidColorBrush(Theme.AccentColor) : new SolidColorBrush(Theme.Argb(140, 255, 255, 255)),
+        };
+        AutomationProperties.SetName(button, $"{name}：{(on ? "录" : "不录")}，点一下切换");
+    }
+
+    /// <summary>点一个来源：开 ↔ 关，两个都关的那一下不理（至少留一个，同 mac）。改的就是 设置 › 录制「来源」。</summary>
+    private void ToggleSource(bool system)
+    {
+        var (systemOn, microphoneOn) = RecorderRules.AudioSource(SettingsService.Current.AudioSource);
+        if (system)
+        {
+            systemOn = !systemOn;
+        }
+        else
+        {
+            microphoneOn = !microphoneOn;
+        }
+
+        if (!systemOn && !microphoneOn)
+        {
+            return;
+        }
+
+        SettingsService.Current.AudioSource = systemOn && microphoneOn ? "both" : systemOn ? "system" : "microphone";
+        SettingsService.Save();
+        UpdatePause();
     }
 
     /// <summary>✕：待录时关掉控制条；录着时点两下（2 s 内）才放弃，第一下变红「再点一次放弃」（同录屏的控制条）。</summary>

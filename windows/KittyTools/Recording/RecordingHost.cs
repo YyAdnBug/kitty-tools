@@ -132,6 +132,7 @@ internal static unsafe class RecordingHost
         RecordingHud.Show(region);
         if (SettingsService.Current.RecordClicks || SettingsService.Current.RecordKeys)
         {
+            InputHooks.ShortcutsOnly = SettingsService.Current.RecordKeysShortcutsOnly;
             InputHooks.Start(
                 region,
                 (x, y, down, right) =>
