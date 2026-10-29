@@ -49,6 +49,11 @@
   分组是好几个 GridView，系统多选跨不了组，改成 SelectionMode None + ItemClick、选中自己管（Core 的 `ShotHistoryRules.Click / Span / Moved / Summary`，
   `ShotHistorySelectionTests`）。要你们看：PreviewKeyDown 先拿方向键以后 GridView 自己的焦点框跟不跟；拖好几张到资源管理器 / 微信；
   `SHOpenFolderAndSelectItems` 一次选中好几个文件。
+- **Windows 编译记录（2026-10-29，Claude 在 worktree 里，e7e8b85）**：三处编不过，修在 59e10ad，别的一次编过。
+  `HomePanel.OnActivated` 的 `WindowActivatedEventArgs` 和文件里 `using Windows.UI.Core` 的同名类型撞了（CS0104），写全 `Microsoft.UI.Xaml.`；
+  `HandleForProbe`、`ShowSelf` 里 `(IntPtr)hwnd.Value` 要 unsafe（CS0214），整个类标 unsafe 又让里面的 await 编不过（CS4004），
+  改成一个 `private static unsafe IntPtr Pointer(HWND)`；`PlanV4Tests.FrameRateIsThirtyOrSixty` 的 `Assert.AreEqual(30, DefaultFps)`
+  被分析器当成恒真（MSTEST0032，测试项目里是错误），断言留着、那一行用 pragma 关掉分析器。修完 Debug x64 0 警告 0 错误，459 个单测全过。
 - 长截图接不上移动端网页（mac 0ff55dd7）→ 已写（HANDTEST 791–793）：容差比较只比在动的列、只让有字的行投票（`ScrollStitcher.FuzzyOverlap`），
   `ScrollStitcherStillColumnsTests` 两个场景在旧算法上都失败（Python 移植比过：侧栏一帧接不上、移动端接成 191 行），新算法 130。整行哈希那条路没动。
 - 0.2.0 最后一批的收尾 → 已写（版本号 0.2.0、`changelog.json` 0.2.0 条目、`STATUS.md` §8）：`build-release.ps1` 要你们在 Windows 上跑，产物路径写进 STATUS §6。
