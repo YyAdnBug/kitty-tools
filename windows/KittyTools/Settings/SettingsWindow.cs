@@ -591,7 +591,7 @@ internal sealed partial class SettingsWindow : Window
 
         BuildSyncSection();
 
-        // 导出与导入：一行两个按钮（mac TransferSection）。每天自动备份那几行是 0.2.0 的 G2。
+        // 导出与导入：一行两个按钮（mac TransferSection），下面每天自动备份的三行（PLAN-v9 G2）。
         _content.Children.Add(SettingsUi.Section("导出与导入"));
         var transfer = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
         var export = new Button { Content = "导出…" };
@@ -604,8 +604,9 @@ internal sealed partial class SettingsWindow : Window
             "设置与数据",
             "设置、快捷键、翻译服务、网页搜索、片段和文字收藏、生词本存成一个文件，换电脑或重装后导回来",
             transfer));
+        BuildBackupRows();
         _content.Children.Add(SettingsUi.Footnote(
-            "普通历史、图片和文件类的收藏不在文件里；截图的存储文件夹、登录时打开和系统权限要在新电脑上重新设。导入前会先把现在的存一份。"));
+            "普通历史、图片和文件类的收藏不在文件里；截图的存储文件夹、登录时打开和系统权限要在新电脑上重新设。"));
 
         // 数据
         _content.Children.Add(SettingsUi.Section("数据"));
@@ -706,7 +707,7 @@ internal sealed partial class SettingsWindow : Window
         }
     }
 
-    /// <summary>导入：读文件 → 需要时问密码 → 先自动备份 → 合并进本机（第三版 §2.2）。</summary>
+    /// <summary>导入：选文件 → 读出来（不是我们的文件只提示）→ 列出里面有哪几类、要先说的，确认后先备份再合并（第三版 §2.2、PLAN-v9 G3）。</summary>
     private async Task ImportArchiveAsync()
     {
         try
@@ -719,67 +720,322 @@ internal sealed partial class SettingsWindow : Window
                 return;
             }
 
-            var info = new FileInfo(file.Path);
-            if (!info.Exists || info.Length > SettingsArchive.MaxFileBytes)
+            if (await ReadArchiveAsync(file.Path) is { } archive)
             {
-                NoticeHost.Show("文件太大", "导出文件最多 32 MB", NoticeTone.Warning);
-                return;
+                await ReviewAndApplyAsync(archive, restoring: null);
             }
-
-            var archive = ArchiveService.Decode(await File.ReadAllTextAsync(file.Path));
-            if (archive is null)
-            {
-                NoticeHost.Show("这不是 Kitty Tools 导出的设置文件", "换一个文件试试", NoticeTone.Error);
-                return;
-            }
-
-            string? password = null;
-            if (archive.Secrets is not null)
-            {
-                var box = new PasswordBox { Header = "这个文件带了加密的密钥，输入密码（不导密钥就留空）" };
-                var dialog = new ContentDialog
-                {
-                    RequestedTheme = Theme.ElementTheme,
-                    Title = "导入",
-                    PrimaryButtonText = "导入",
-                    CloseButtonText = "取消",
-                    DefaultButton = ContentDialogButton.Primary,
-                    Content = box,
-                    XamlRoot = _shell.XamlRoot,
-                };
-                if (await dialog.ShowAsync() != ContentDialogResult.Primary)
-                {
-                    return;
-                }
-
-                password = box.Password;
-            }
-
-            if (ArchiveService.BackupBeforeImport() is null)
-            {
-                NoticeHost.Show("没能先备份现在的数据", "所以没有导入", NoticeTone.Error);
-                return;
-            }
-
-            var (outcome, error) = ArchiveService.Apply(archive, password);
-            if (error is not null)
-            {
-                NoticeHost.Show("导入没成功", error, NoticeTone.Error);
-                return;
-            }
-
-            NoticeHost.Show(
-                "已导入",
-                $"片段 {outcome.ClipsAdded} 条、收藏 {outcome.ClipsUpdated} 条、生词 {outcome.WordsAdded} 条、" +
-                $"服务 {outcome.ServicesAdded} 个、搜索 {outcome.EnginesAdded} 个、密钥 {outcome.Secrets} 个",
-                NoticeTone.Normal);
-            BuildPage("general");
         }
         catch (Exception ex)
         {
             Log.Error("settings.import-failed", ex);
             NoticeHost.Show("没能导入", ex.GetType().Name, NoticeTone.Error);
         }
+    }
+
+    /// <summary>读一个导出 / 备份文件；太大、不是我们的文件时提示并返回 null。</summary>
+    private static async Task<SettingsArchive?> ReadArchiveAsync(string path)
+    {
+        var info = new FileInfo(path);
+        if (!info.Exists || info.Length > SettingsArchive.MaxFileBytes)
+        {
+            NoticeHost.Show("文件太大", "导出文件最多 32 MB", NoticeTone.Warning);
+            return null;
+        }
+
+        var archive = ArchiveService.Decode(await File.ReadAllTextAsync(path));
+        if (archive is null)
+        {
+            NoticeHost.Show("这不是 Kitty Tools 导出的设置文件", "换一个文件试试", NoticeTone.Error);
+        }
+
+        return archive;
+    }
+
+    /// <summary>
+    /// 导入 / 从备份恢复的确认（PLAN-v9 G3，照 mac ImportSheet）：只列文件里有的几类（各写清是整类换掉还是合并，默认都勾），
+    /// 翻译服务会连到的自己填的地址一行一个（不省略），带密钥时一个密码框，会让历史留得更少、隐私变弱的橙字先说；
+    /// 导入时最后一句提醒只导入信得过的文件。确定后先把现在的存一份（没存成就不导），再合并勾上的几类。
+    /// restoring：从备份恢复时是那一份的名字（页头和按钮换成「恢复」，不出「信得过」那句）。
+    /// </summary>
+    private async Task ReviewAndApplyAsync(SettingsArchive archive, string? restoring)
+    {
+        var settings = SettingsService.Current;
+        var panel = new StackPanel { Spacing = 8, MinWidth = 400, MaxWidth = 460 };
+        panel.Children.Add(new TextBlock
+        {
+            Text = (restoring is null ? "导入" : "恢复") +
+                   (settings.DailyBackup
+                       ? "不能撤销；动手之前会先把现在的存一份，设置和快捷键可以用「从备份恢复」换回去。"
+                       : "不能撤销。"),
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Theme.SecondaryText(),
+        });
+
+        var checks = new Dictionary<ArchiveSection, CheckBox>();
+        void Offer(ArchiveSection section, bool present, string detail)
+        {
+            if (!present)
+            {
+                return;
+            }
+
+            var check = new CheckBox { IsChecked = true };
+            var label = new StackPanel { Spacing = 1 };
+            label.Children.Add(new TextBlock { Text = SectionTitle(section) });
+            label.Children.Add(new TextBlock
+            {
+                Text = detail,
+                FontSize = 12,
+                Foreground = Theme.SecondaryText(),
+                TextWrapping = TextWrapping.Wrap,
+            });
+            check.Content = label;
+            checks[section] = check;
+            panel.Children.Add(check);
+        }
+
+        Offer(ArchiveSection.Preferences, archive.AppliesWindowsSettings && archive.Preferences is { Count: > 0 }, "整类换成文件里的");
+        Offer(ArchiveSection.Hotkeys, archive.AppliesWindowsSettings && archive.Hotkeys is { Count: > 0 }, "整类换成文件里的");
+        Offer(ArchiveSection.Services, archive.TranslateServices is { Count: > 0 },
+            "同一个服务换成文件里的设置，没有的加进来" + (archive.Secrets is null ? string.Empty : "；带着加密的密钥"));
+        Offer(ArchiveSection.Engines, archive.SearchEngines is { Count: > 0 }, "同一个关键词的换成文件里的，没有的加进来");
+        Offer(ArchiveSection.Clips, archive.Clips is { Count: > 0 }, "合并：同样的正文不重复加，只补标记；不删本机已有的");
+        Offer(ArchiveSection.Vocabulary, archive.Vocabulary is { Count: > 0 }, "合并：同样的词句不重复加；不删本机已有的");
+        if (checks.Count == 0)
+        {
+            NoticeHost.Show("这个文件里没有能导入的", "Mac 导出的文件里的设置和快捷键不导（两边的含义不一样）", NoticeTone.Warning);
+            return;
+        }
+
+        var addresses = ImportReview.Addresses(archive);
+        if (addresses.Count > 0 && checks.ContainsKey(ArchiveSection.Services))
+        {
+            var list = new StackPanel { Spacing = 2 };
+            list.Children.Add(new TextBlock
+            {
+                Text = $"勾着「翻译服务」时，要翻的字会发到这些地址（共 {addresses.Count} 个）：",
+                FontSize = 12,
+                Foreground = Theme.SecondaryText(),
+                TextWrapping = TextWrapping.Wrap,
+            });
+            foreach (var address in addresses)
+            {
+                list.Children.Add(new TextBlock
+                {
+                    Text = address,
+                    FontSize = 12,
+                    Foreground = Theme.SecondaryText(),
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    IsTextSelectionEnabled = true,
+                });
+            }
+
+            panel.Children.Add(addresses.Count > 8
+                ? new ScrollViewer { MaxHeight = 126, Content = list, Margin = new Thickness(28, 0, 0, 0) }
+                : new Border { Child = list, Margin = new Thickness(28, 0, 0, 0) });
+        }
+
+        PasswordBox? password = null;
+        if (archive.Secrets is not null && checks.ContainsKey(ArchiveSection.Services))
+        {
+            password = new PasswordBox { Header = "这个文件带了加密的密钥：输入导出时设的密码（不填就不导入密钥）" };
+            panel.Children.Add(password);
+        }
+
+        foreach (var warning in ImportReview.Warnings(
+                     archive, settings.ClipboardRetentionDays, settings.ClipboardBlockSensitive, settings.ClipboardExcludedApps))
+        {
+            panel.Children.Add(new TextBlock
+            {
+                Text = warning,
+                FontSize = 12,
+                Foreground = Theme.Caution(),
+                TextWrapping = TextWrapping.Wrap,
+            });
+        }
+
+        if (restoring is null)
+        {
+            panel.Children.Add(new TextBlock
+            {
+                Text = "只导入信得过的文件：别人给的文件可能把翻译服务改到别的地址，要翻的字会发到那里。",
+                FontSize = 12,
+                Foreground = Theme.SecondaryText(),
+                TextWrapping = TextWrapping.Wrap,
+            });
+        }
+
+        var dialog = new ContentDialog
+        {
+            RequestedTheme = Theme.ElementTheme,
+            Title = restoring is null ? "导入" : "从备份恢复 · " + restoring,
+            PrimaryButtonText = restoring is null ? "导入" : "恢复",
+            CloseButtonText = "取消",
+            DefaultButton = ContentDialogButton.Primary,
+            Content = new ScrollViewer { Content = panel, MaxHeight = 480 },
+            XamlRoot = _shell.XamlRoot,
+        };
+        foreach (var box in checks.Values)
+        {
+            box.Click += (_, _) => dialog.IsPrimaryButtonEnabled = checks.Values.Any(item => item.IsChecked == true);
+        }
+
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+        {
+            return;
+        }
+
+        var chosen = checks.Where(pair => pair.Value.IsChecked == true).Select(pair => pair.Key).ToList();
+        if (ArchiveService.BackupBeforeImport() is null)
+        {
+            NoticeHost.Show("没能先把现在的存一份", "所以没有" + (restoring is null ? "导入" : "恢复"), NoticeTone.Error);
+            return;
+        }
+
+        var secret = password?.Password;
+        var (outcome, error) = ArchiveService.Apply(
+            ArchiveService.Only(archive, chosen), string.IsNullOrEmpty(secret) ? null : secret);
+        if (error is not null)
+        {
+            NoticeHost.Show(restoring is null ? "导入没成功" : "恢复没成功", error, NoticeTone.Error);
+            return;
+        }
+
+        NoticeHost.Show(
+            restoring is null ? "已导入" : "已恢复",
+            $"{chosen.Count} 类" + (outcome.Secrets > 0 ? "，含密钥" : string.Empty) +
+            (outcome.ClipsAdded + outcome.WordsAdded > 0 ? $"，新增片段 / 收藏 {outcome.ClipsAdded} 条、生词 {outcome.WordsAdded} 条" : string.Empty),
+            NoticeTone.Normal);
+        BuildPage("general");
+    }
+
+    /// <summary>
+    /// 每天自动备份的三行（PLAN-v9 G2，照 mac TransferSection.backupRows）：开关；已有的备份 +「从备份恢复」；另存一份到（开关开着时）。
+    /// 备份在这台电脑上，不跟着导出导入走。
+    /// </summary>
+    private void BuildBackupRows()
+    {
+        var settings = SettingsService.Current;
+        AddToggle("每天自动备份",
+            $"上面这些每天自动存一份在这台电脑上，留最近 {ArchiveService.DailyKeep} 份；导入前也会先存一份，设置和快捷键导错了能换回去。不含密钥。",
+            settings.DailyBackup,
+            isOn =>
+            {
+                settings.DailyBackup = isOn;
+                SettingsService.Save();
+                if (isOn)
+                {
+                    ShellRuntime.ScheduleBackup();
+                }
+
+                BuildPage("general");
+            });
+
+        var copies = ArchiveService.BackupFiles("Kitty Tools 自动备份 *.json")
+            .Concat(ArchiveService.BackupFiles("Kitty Tools 导入前 *.json"))
+            .Select(path => (Path: path, Title: ImportReview.BackupTitle(path, DateTime.Now), At: File.GetLastWriteTime(path)))
+            .Where(copy => copy.Title is not null)
+            .OrderByDescending(copy => copy.At)
+            .ToList();
+        var restore = new DropDownButton { Content = "从备份恢复", IsEnabled = copies.Count > 0 };
+        var menu = new MenuFlyout();
+        foreach (var copy in copies)
+        {
+            var item = new MenuFlyoutItem { Text = copy.Title ?? string.Empty };
+            item.Click += async (_, _) =>
+            {
+                try
+                {
+                    if (await ReadArchiveAsync(copy.Path) is { } archive)
+                    {
+                        await ReviewAndApplyAsync(archive, copy.Title);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Error("settings.restore-failed", ex);
+                    NoticeHost.Show("没能恢复", ex.GetType().Name, NoticeTone.Error);
+                }
+            };
+            menu.Items.Add(item);
+        }
+
+        restore.Flyout = menu;
+        var latest = copies.FirstOrDefault();
+        _content.Children.Add(SettingsUi.Card(
+            "已有的备份",
+            latest.Title is null
+                ? "还没有备份"
+                : $"最近一份：{latest.Title}{(latest.Title.StartsWith("导入前", StringComparison.Ordinal) ? string.Empty : " " + latest.At.ToString("HH':'mm", System.Globalization.CultureInfo.InvariantCulture))}，共 {copies.Count} 份",
+            restore));
+
+        if (!settings.DailyBackup)
+        {
+            return;
+        }
+
+        var folder = settings.BackupCopyFolder;
+        var controls = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
+        if (!string.IsNullOrEmpty(folder))
+        {
+            // 不去碰那个文件夹（可能是卡住的网络盘）：名字只取路径最后一段，图标用符号（同 mac）。
+            var name = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
+            name.Children.Add(new FontIcon { Glyph = "\uE8B7", FontSize = 14, Foreground = Theme.SecondaryText() });
+            name.Children.Add(new TextBlock
+            {
+                Text = Path.GetFileName(folder.TrimEnd('\\', '/')) is { Length: > 0 } last ? last : folder,
+                MaxWidth = 180,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                Foreground = Theme.SecondaryText(),
+            });
+            ToolTipService.SetToolTip(name, folder);
+            controls.Children.Add(name);
+            var stop = new HyperlinkButton { Content = "不再另存" };
+            stop.Click += (_, _) =>
+            {
+                settings.BackupCopyFolder = null;
+                ArchiveService.CopyProblem = null;
+                SettingsService.Save();
+                BuildPage("general");
+            };
+            controls.Children.Add(stop);
+        }
+
+        var choose = new Button { Content = string.IsNullOrEmpty(folder) ? "选择…" : "更改…" };
+        choose.Click += async (_, _) =>
+        {
+            try
+            {
+                var picker = new FolderPicker(AppWindow.Id);
+                var result = await picker.PickSingleFolderAsync();
+                if (result is null || string.IsNullOrEmpty(result.Path))
+                {
+                    return;
+                }
+
+                settings.BackupCopyFolder = result.Path;
+                ArchiveService.CopyProblem = null;
+                SettingsService.Save();
+                // 选完当场存一份过去（同 mac）；在后台，免得卡在网络盘上。
+                var target = result.Path;
+                ArchiveService.CopyProblem = await Task.Run(() => ArchiveService.CopyLatestDaily(target));
+                BuildPage("general");
+            }
+            catch (Exception ex)
+            {
+                Log.Error("settings.backup-folder-failed", ex);
+            }
+        };
+        controls.Children.Add(choose);
+        var problem = ArchiveService.CopyProblem;
+        var description = string.IsNullOrEmpty(folder)
+            ? "每天那份再存一份到别的文件夹（比如 OneDrive 里），硬盘坏了、换电脑时还在。文件不加密，片段、收藏和生词原样写在里面"
+            : $"每天那份也存到这里。文件名末尾的 {ArchiveService.DeviceTag} 是这台电脑的编号，几台电脑可以共用一个文件夹。文件不加密，片段、收藏和生词原样写在里面";
+        _content.Children.Add(SettingsUi.Card(
+            "另存一份到",
+            problem ?? description,
+            controls,
+            problem: problem is not null));
     }
 
     /// <summary>
@@ -2398,7 +2654,7 @@ internal sealed partial class SettingsWindow : Window
     /// <summary>
     /// 设置 › 关于（照 mac AboutTab 的品牌页，没有页头）：128 的 App 图标 + 字标 + 品牌粉版本胶囊 + 更新状态一行 +「自动检查更新」+
     /// 「打开发布页」，下面是更新日志时间线（当前版本品牌粉圆点）。在这里点的检查结果、更新进度写在页上（同 mac）。
-    /// mac 的「未来计划」「重看欢迎引导」Windows 还没有（MAC-DIFF.md）。
+    /// 没有 mac 的「未来计划」（PLAN-v9 G4 定了不做，MAC-DIFF.md）。
     /// </summary>
     private void BuildAbout()
     {
@@ -2448,9 +2704,19 @@ internal sealed partial class SettingsWindow : Window
             SettingsService.Save();
         };
         hero.Children.Add(autoCheck);
-        var releases = new HyperlinkButton { Content = "打开发布页", HorizontalAlignment = HorizontalAlignment.Center };
+        var links = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 16, HorizontalAlignment = HorizontalAlignment.Center };
+        var releases = new HyperlinkButton { Content = "打开发布页" };
         releases.Click += (_, _) => LauncherOpeners.Start(ReleasesPage);
-        hero.Children.Add(releases);
+        links.Children.Add(releases);
+        // PLAN-v9 G4：重看欢迎引导（通用页顶上那张卡）。
+        var welcome = new HyperlinkButton { Content = "重看欢迎引导" };
+        welcome.Click += (_, _) =>
+        {
+            _firstRun = true;
+            BuildPage("general");
+        };
+        links.Children.Add(welcome);
+        hero.Children.Add(links);
 
         // 顶上一层品牌色淡下去的底（mac 是奶油色渐变）。
         var wash = new LinearGradientBrush

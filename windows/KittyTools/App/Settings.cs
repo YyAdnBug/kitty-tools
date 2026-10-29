@@ -147,6 +147,12 @@ internal sealed class Settings
 
     public int ScreenshotLastHeight { get; set; }
 
+    /// <summary>每天自动备份设置与数据（PLAN-v9 G2，默认开，同 mac）。这台电脑自己的状态，不跟着导出导入走。</summary>
+    public bool DailyBackup { get; set; } = true;
+
+    /// <summary>每天那份另存一份到这个文件夹（PLAN-v9 G2；null = 不另存）。</summary>
+    public string? BackupCopyFolder { get; set; }
+
     /// <summary>截图历史留几天（PLAN-v9 S8）：7 / 30（默认）/ 90 / 0 = 一直留着。</summary>
     public int ShotHistoryDays { get; set; } = Core.ShotHistoryRules.DefaultDays;
 

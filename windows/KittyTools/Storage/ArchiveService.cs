@@ -2,6 +2,8 @@
 // 以及反过来把文件合并回本机。读文件当成不可信输入（Core 里 Sanitized 过一遍），密钥走 Core 的 ArchiveCrypto。
 // 自动备份：每天一份「Kitty Tools 自动备份 日期.json」（留 7 份），导入前另存一份（留 3 份）——和 mac 的
 // Storage/SettingsBackup 同一个规矩，放在数据目录的 backups\ 里（和数据库备份同一个文件夹，文件名不同）。
+// PLAN-v9 G2：每天那份能关掉（Settings.DailyBackup）、能另存一份到别的文件夹（BackupCopyFolder，文件名末尾带这台电脑的编号，
+// 几台电脑共用一个文件夹也不打架），没存过去的原因记在 CopyProblem 给设置页用橙字写出来；导入时能只导勾上的几类（Only）。
 using System.Text;
 using System.Text.Json;
 using KittyTools.Core;
@@ -32,6 +34,77 @@ internal static class ArchiveService
 
     /// <summary>导出文件所在的地方（自动备份也在这里）。</summary>
     public static string Folder => Path.Combine(Paths.DataDirectory, BackupPlan.FolderName);
+
+    /// <summary>今天那份没另存过去的原因（设置页橙字）；存过去了、换了文件夹就清掉。哪个线程写都行，只是一个字符串。</summary>
+    public static volatile string? CopyProblem;
+
+    /// <summary>
+    /// 这台电脑的编号（另存的文件名末尾那 4 位）：机器名的 FNV-1a，每次启动都一样（string.GetHashCode 每个进程不一样，不能用）。
+    /// </summary>
+    public static string DeviceTag
+    {
+        get
+        {
+            var hash = 2166136261u;
+            foreach (var character in Environment.MachineName.ToUpperInvariant())
+            {
+                hash = (hash ^ character) * 16777619u;
+            }
+
+            return (hash & 0xFFFF).ToString("X4", System.Globalization.CultureInfo.InvariantCulture);
+        }
+    }
+
+    /// <summary>
+    /// 把最新那份自动备份另存到 folder（文件名「Kitty Tools 自动备份 日期 编号.json」，那里也只留 7 份）。
+    /// 可能是卡住的网络盘：在后台线程上调。返回 null = 存好了，否则是给人看的原因。
+    /// </summary>
+    public static string? CopyLatestDaily(string folder)
+    {
+        var latest = BackupFiles("Kitty Tools 自动备份 *.json").FirstOrDefault();
+        if (latest is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            if (!Directory.Exists(folder))
+            {
+                return "今天那份没存过去：找不到文件夹（没连上、被移走，或者没有访问权限）";
+            }
+
+            var name = $"{Path.GetFileNameWithoutExtension(latest)} {DeviceTag}.json";
+            File.Copy(latest, Path.Combine(folder, name), overwrite: true);
+            Rotate(folder, $"Kitty Tools 自动备份 * {DeviceTag}.json", DailyKeep, Path.Combine(folder, name));
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return "今天那份没存过去：没有写这个文件夹的权限";
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"archive.copy-failed {ex.GetType().Name}");
+            return "今天那份没存过去：写不进这个文件夹（盘满了，或者文件被占着）";
+        }
+    }
+
+    /// <summary>导入时只导勾上的几类（PLAN-v9 G3）：别的类在副本里清成空，Apply 就不碰它们。密钥跟着「翻译服务」走。</summary>
+    public static SettingsArchive Only(SettingsArchive archive, IReadOnlyCollection<ArchiveSection> sections) => new()
+    {
+        App = archive.App,
+        Format = archive.Format,
+        Platform = archive.Platform,
+        Preferences = sections.Contains(ArchiveSection.Preferences) ? archive.Preferences : null,
+        Hotkeys = sections.Contains(ArchiveSection.Hotkeys) ? archive.Hotkeys : null,
+        TranslateServices = sections.Contains(ArchiveSection.Services) ? archive.TranslateServices : null,
+        SearchEngines = sections.Contains(ArchiveSection.Engines) ? archive.SearchEngines : null,
+        Clips = sections.Contains(ArchiveSection.Clips) ? archive.Clips : null,
+        ClipGroups = sections.Contains(ArchiveSection.Clips) ? archive.ClipGroups : null,
+        Vocabulary = sections.Contains(ArchiveSection.Vocabulary) ? archive.Vocabulary : null,
+        Secrets = sections.Contains(ArchiveSection.Services) ? archive.Secrets : null,
+    };
 
     public static string Encode(SettingsArchive archive)
         => JsonSerializer.Serialize(archive, ArchiveJsonContext.Default.SettingsArchive);

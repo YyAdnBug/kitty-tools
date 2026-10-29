@@ -886,7 +886,8 @@ internal sealed class ShellRuntime
     }
 
     /// <summary>后台跑一次每日备份（今天备过就直接返回）。</summary>
-    private static void ScheduleBackup()
+    /// <summary>每日备份（启动、解锁、唤醒时；设置页开了「每天自动备份」、选了另存的文件夹时也调一次）。</summary>
+    internal static void ScheduleBackup()
     {
         // 库打不开、还没问用户怎么恢复的时候不备份：别拿坏的库顶掉好的备份。
         if (Recovery.Needed is not null)
@@ -900,9 +901,12 @@ internal sealed class ShellRuntime
         // 以前整个在线程池上做，碰上正在复制东西就「集合已修改」，当天那份没备成。
         string? dailyPath = null;
         SettingsArchive? archive = null;
+        // PLAN-v9 G2：「每天自动备份」关着时只备数据库（那份是打不开时恢复用的），设置与数据那份不写。
+        var daily = SettingsService.Current.DailyBackup;
+        var copyFolder = daily ? SettingsService.Current.BackupCopyFolder : null;
         try
         {
-            dailyPath = ArchiveService.DailyPathIfMissing();
+            dailyPath = daily ? ArchiveService.DailyPathIfMissing() : null;
             if (dailyPath is not null)
             {
                 archive = ArchiveService.Build(Enum.GetValues<ArchiveSection>(), password: null);
@@ -922,6 +926,11 @@ internal sealed class ShellRuntime
                 if (dailyPath is not null && archive is not null)
                 {
                     ArchiveService.WriteDaily(dailyPath, archive);
+                }
+
+                if (!string.IsNullOrEmpty(copyFolder))
+                {
+                    ArchiveService.CopyProblem = ArchiveService.CopyLatestDaily(copyFolder);
                 }
             }
             catch (Exception ex)
