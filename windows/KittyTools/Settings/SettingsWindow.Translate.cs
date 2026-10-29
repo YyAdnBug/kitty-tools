@@ -116,10 +116,12 @@ internal sealed partial class SettingsWindow
 
         // ---- 行为
         _content.Children.Add(Section("行为", "收藏的记录不算在保留条数里、永不清理。"));
-        AddCombo("浮窗位置", "跟随鼠标：划词、截图翻译、复制即译时出现在光标旁边；输入翻译总在上次拖到的位置",
-            new[] { "跟随鼠标", "上次位置" }, settings.TranslateWindowPosition == "last" ? 1 : 0, index =>
+        var positions = new[] { "top", "pointer", "last" };
+        AddCombo("浮窗位置",
+            "划词、截图翻译、复制即译时出现的位置：屏幕上方是鼠标所在屏幕的上方正中，跟随鼠标是光标旁边；输入翻译总在上次拖到的位置",
+            new[] { "屏幕上方", "跟随鼠标", "上次位置" }, Math.Max(0, Array.IndexOf(positions, settings.TranslateWindowPosition)), index =>
             {
-                settings.TranslateWindowPosition = index == 1 ? "last" : "pointer";
+                settings.TranslateWindowPosition = positions[index];
                 SettingsService.Save();
             });
         AddToggle("翻译前把同一段里的换行接起来（适合 PDF 复制的文字）", string.Empty, settings.TranslateJoinLines, isOn =>

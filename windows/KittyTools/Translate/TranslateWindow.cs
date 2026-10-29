@@ -387,7 +387,7 @@ internal sealed partial class TranslateWindow : Window
         }
 
         SetSourceQuietly(_coordinator.SourceText);
-        ShowCore(activate: true, followMouse: false);
+        ShowCore(activate: true, Placement.Last);
         ActivateWindow();
         FocusSource();
         _source.SelectAll();
@@ -399,7 +399,7 @@ internal sealed partial class TranslateWindow : Window
         RemoveNoActivateStyle();
         SetSourceQuietly(text);
         _coordinator.Translate(text, replace);
-        ShowCore(activate: true, followMouse: FollowsMouse);
+        ShowCore(activate: true, ConfiguredPlacement);
         ActivateWindow();
         FocusSource();
     }
@@ -412,7 +412,7 @@ internal sealed partial class TranslateWindow : Window
         if (fromCopy)
         {
             ApplyNoActivateStyle();
-            ShowCore(activate: false, followMouse: FollowsMouse);
+            ShowCore(activate: false, ConfiguredPlacement);
             PInvoke.ShowWindow(_hwnd, (SHOW_WINDOW_CMD)4); // SW_SHOWNOACTIVATE
             OutsideClickHook.Install(_hwnd, OnOutsideClick);
             ResizeToContent();
@@ -420,7 +420,7 @@ internal sealed partial class TranslateWindow : Window
         }
 
         RemoveNoActivateStyle();
-        ShowCore(activate: true, followMouse: FollowsMouse);
+        ShowCore(activate: true, ConfiguredPlacement);
         ActivateWindow();
         FocusSource();
     }
@@ -432,7 +432,7 @@ internal sealed partial class TranslateWindow : Window
         ApplyNoActivateStyle();
         SetSourceQuietly(text);
         _coordinator.Translate(text);
-        ShowCore(activate: false, followMouse: FollowsMouse);
+        ShowCore(activate: false, ConfiguredPlacement);
         PInvoke.ShowWindow(_hwnd, (SHOW_WINDOW_CMD)4); // SW_SHOWNOACTIVATE
         OutsideClickHook.Install(_hwnd, OnOutsideClick);
         ResizeToContent();
@@ -509,9 +509,23 @@ internal sealed partial class TranslateWindow : Window
         SettingsService.Save();
     }
 
-    private static bool FollowsMouse => SettingsService.Current.TranslateWindowPosition != "last";
+    /// <summary>浮窗出现在哪：屏幕上方（默认）/ 跟随鼠标 / 上次的位置。</summary>
+    private enum Placement
+    {
+        Top,
+        Pointer,
+        Last,
+    }
 
-    private void ShowCore(bool activate, bool followMouse)
+    /// <summary>「浮窗位置」（top / pointer / last，认不出的按默认的屏幕上方）：划词、复制即译、截图翻译、剪贴板「翻译」用它。</summary>
+    private static Placement ConfiguredPlacement => SettingsService.Current.TranslateWindowPosition switch
+    {
+        "pointer" => Placement.Pointer,
+        "last" => Placement.Last,
+        _ => Placement.Top,
+    };
+
+    private void ShowCore(bool activate, Placement placement)
     {
         IdleReclaimer.Cancel();
         _root.RequestedTheme = Theme.ElementTheme;
@@ -519,7 +533,7 @@ internal sealed partial class TranslateWindow : Window
         _previousForeground = before != default && !Foreground.IsOurs(before) ? before : default;
         ApplyFontScale();
         RefreshAll();
-        Place(followMouse);
+        Place(placement);
         if (!_visible)
         {
             _visible = true;
@@ -1256,7 +1270,7 @@ internal sealed partial class TranslateWindow : Window
         if (!_visible)
         {
             _noActivate = true;
-            ShowCore(activate: false, followMouse: false);
+            ShowCore(activate: false, Placement.Last);
         }
 
         if (state.StartsWith("translate-history", StringComparison.Ordinal))
@@ -1322,8 +1336,10 @@ internal sealed partial class TranslateWindow : Window
             }
 
             _resizing = true;
+            // 往下长出了工作区就整块往上挪（屏幕上方出现的浮窗翻长文时最容易碰到；同 mac setContentHeight）。
             var position = AppWindow.Position;
-            AppWindow.MoveAndResize(new RectInt32(position.X, position.Y, widthPx, heightPx));
+            var rect = MonitorLayout.Clamp(new PixelRect(position.X, position.Y, widthPx, heightPx), display.Work);
+            AppWindow.MoveAndResize(new RectInt32(rect.X, rect.Y, rect.Width, rect.Height));
         }
         catch (Exception ex)
         {
@@ -1335,12 +1351,16 @@ internal sealed partial class TranslateWindow : Window
         }
     }
 
-    /// <summary>followMouse：放在光标右下 12（放不下翻到左边 / 上边）；否则上次的位置（第一次没有记过时也跟着鼠标）。</summary>
-    private void Place(bool followMouse)
+    /// <summary>
+    /// Top：鼠标所在屏的上方正中（同启动器 / 剪贴板：顶边在工作区往下 20%，2026-10-29 用户要求的默认）；Pointer：光标右下 12
+    /// （放不下翻到左边 / 上边）；Last：上次的位置（输入翻译总用它；第一次没有记过时按「浮窗位置」放，「上次位置」也一样就跟着鼠标）。
+    /// </summary>
+    private void Place(Placement placement)
     {
         var settings = SettingsService.Current;
         var (desired, mustFit) = MeasureHeights();
-        if (!followMouse && (settings.TranslateWindowX != 0 || settings.TranslateWindowY != 0))
+        var saved = settings.TranslateWindowX != 0 || settings.TranslateWindowY != 0;
+        if (placement == Placement.Last && saved)
         {
             // 上次的位置：按那块屏（存的是像素坐标）的缩放比例换算尺寸。
             var x = (int)settings.TranslateWindowX;
@@ -1351,6 +1371,15 @@ internal sealed partial class TranslateWindow : Window
                 new PixelRect(x, y, MonitorLayout.Pixels(_widthDip, display.Scale), MonitorLayout.Pixels(height, display.Scale)),
                 display.Work);
             AppWindow.MoveAndResize(new RectInt32(rect.X, rect.Y, rect.Width, rect.Height));
+            return;
+        }
+
+        if (placement == Placement.Top || (placement == Placement.Last && ConfiguredPlacement == Placement.Top))
+        {
+            var screen = Displays.AtCursor();
+            var topHeight = TranslateSession.PanelHeight(desired, mustFit, screen.Work.Height / screen.Scale);
+            var top = MonitorLayout.Overlay(screen.Work, screen.Scale, _widthDip, topHeight, MonitorLayout.ClipboardTopFraction);
+            AppWindow.MoveAndResize(new RectInt32(top.X, top.Y, top.Width, top.Height));
             return;
         }
 

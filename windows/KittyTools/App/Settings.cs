@@ -77,10 +77,10 @@ internal sealed class Settings
     public bool TranslateAutoCopy { get; set; }
 
     /// <summary>
-    /// 浮窗位置：pointer = 跟随鼠标；last = 上次位置。只管划词、复制即译、截图翻译；输入翻译总在上次的位置（mac）。
-    /// 上次的位置（X / Y，像素）不管哪种都记。
+    /// 浮窗位置：top = 屏幕上方（默认，2026-10-29 用户要求：鼠标所在屏的上方正中，同启动器）；pointer = 跟随鼠标；last = 上次位置。
+    /// 只管划词、复制即译、截图翻译、剪贴板「翻译」；输入翻译总在上次的位置（mac）。上次的位置（X / Y，像素）不管哪种都记。
     /// </summary>
-    public string TranslateWindowPosition { get; set; } = "pointer";
+    public string TranslateWindowPosition { get; set; } = "top";
 
     public double TranslateWindowX { get; set; }
 
