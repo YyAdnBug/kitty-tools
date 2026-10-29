@@ -3,6 +3,7 @@
 // 等待卡的循环动效只动图层的变换（第二轮体检第 1 批）、生成中光标的位置（第 1b 批）、历史行的时间补零（第 1c 批）；
 // 体检第 4 批：复制即译过滤、自动复制按来源、截断与思考的流约定、错误种类、划词没取到、输入翻译再打开、⌘D 收藏、
 // 历史 ⌘K 与分页、浮窗跟随鼠标、历史保留档位升级、朗读声线；
+// 结果卡片的 Markdown（块级，2026-10-29）；
 // 以及按需启用的联网冒烟测试（TEST_RUNNER_KITTY_LIVE_TRANSLATE=1，用内置智谱 key 真翻一句）。
 
 import AVFoundation
@@ -1181,5 +1182,45 @@ struct TranslateBatch4Tests {
     let speaker = Speaker()
     speaker.stop()
     #expect(speaker.speaking == nil)
+  }
+}
+
+/// 结果卡片的 Markdown（2026-10-29 加块级）：标题、列表、引用、分隔线、代码块；行内记号不跨行配对；不误伤普通文字
+struct ResultMarkdownTests {
+  private func text(_ markdown: String) -> String {
+    String(ProviderCardView.markdown(markdown).characters)
+  }
+
+  @Test func blockMarkers() {
+    #expect(text("## 标题\n- 一\n  * 二\n+ 三\n") == "标题\n• 一\n  • 二\n• 三\n")
+    let heading = ProviderCardView.markdown("# **重点** 说明")
+    #expect(
+      heading.runs.allSatisfy { $0.inlinePresentationIntent?.contains(.stronglyEmphasized) == true }
+    )
+    let quote = ProviderCardView.markdown("> 引用 **粗**")
+    #expect(String(quote.characters) == "引用 粗")
+    #expect(quote.runs.allSatisfy { $0.swiftUI.foregroundColor == .secondary })
+    #expect(text("上\n---\n下") == "上\n────────\n下")
+    // 围栏行去掉，里面的行等宽、不解析行内记号
+    let code = ProviderCardView.markdown("看：\n```swift\nlet a = **b**\n```\n完")
+    #expect(String(code.characters) == "看：\nlet a = **b**\n完")
+    #expect(
+      code.runs.contains {
+        $0.inlinePresentationIntent == .code && String(code[$0.range].characters) == "let a = **b**"
+      })
+    #expect(text("a **b** `c`") == "a b c")
+    #expect(text("**一\n二**") == "**一\n二**")
+    #expect(text("#tag") == "#tag")
+    #expect(text("1. 第一步") == "1. 第一步")
+    #expect(text("2 * 3 * 4") == "2 * 3 * 4")
+  }
+
+  @Test func detectsMarkdown() {
+    #expect(ProviderCardView.hasMarkdown("**词性** 名词"))
+    #expect(ProviderCardView.hasMarkdown("第一行\n# 标题"))
+    #expect(ProviderCardView.hasMarkdown("- 一\n- 二"))
+    #expect(ProviderCardView.hasMarkdown("> 引用"))
+    #expect(!ProviderCardView.hasMarkdown("普通的一句话 * 不算"))
+    #expect(!ProviderCardView.hasMarkdown("#tag 和 1. 编号"))
   }
 }

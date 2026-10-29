@@ -2647,6 +2647,25 @@ struct SnapshotProbeTests {
           ]
         }
       ),
+      // 结果里的块级 Markdown（2026-10-29）：标题粗体、列表 •、引用次要色、分隔线、代码块等宽
+      (
+        "translate-markdown",
+        { c in
+          c.sourceText =
+            "## Install\n- Download the app\n  - Open it\n> Requires macOS 15\n---\n```\nbrew install kitty\n```"
+          c.detected = .en
+          c.target = .zhHans
+          c.translatedSource = c.sourceText
+          c.cards = [
+            .init(
+              service: zhipu,
+              state: .done(
+                "## 安装\n- 下载 **App**\n  - 打开它\n> 需要 macOS 15\n---\n```\nbrew install kitty\n```\n1. 第一步 `--help`"
+              )),
+            .init(service: gpt, state: .done("## 安装\n- 下载 App")),
+          ]
+        }
+      ),
       // 划词没取到文字：占位换成说明（体检 A16）
       ("translate-missed-selection", { c in c.beginInput(missedSelection: true) }),
       // 原文改过、还没重译：原文框右下角弹出「翻译 ↩」

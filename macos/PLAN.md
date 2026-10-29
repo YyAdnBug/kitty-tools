@@ -43,7 +43,7 @@
 | NaturalLanguage `NLLanguageRecognizer` | 10.14 | 语种检测（替代 Lingua，能识别繁体） |
 | ScreenCaptureKit `SCStream` + `SCRecordingOutput`；AVFoundation `AVAudioRecorder`、`AVCaptureDevice`（麦克风授权与设备）、`AVURLAsset` / `AVAssetImageGenerator` / `AVAssetExportSession` / `AVMutableComposition`；Synchronization `Mutex` | 15.0 | 录屏与录音（2026-09-30 立项，PLAN §10「录屏与录音」）：系统录制管线直接写文件、录音、闪退恢复读文件、最后一帧、音轨导出；录制委托的可变状态（`Mutex` 翻译服务已在用）。第 1 批起在用：`SCStream` + `SCRecordingOutput`（`Screenshot/ScreenRecorder.swift` 录屏）、`AVURLAsset`（启动时读上次闪退留下的文件 `isPlayable`）；第 3 批起 `AVAssetImageGenerator`（停止后取最后一帧，飞入和视频卡用）；第 4 批起 `AVCaptureDevice`（麦克风授权、默认输入的设备名 / 蓝牙、断开通知）；第 5 批起 `AVAudioRecorder`（`Screenshot/AudioRecorder.swift` 录音：m4a、暂停续写、`updateMeters` / `averagePower` 电平，主线程直接用、不挂委托）；第 6 批起 `AVMutableComposition` + `AVAssetExportSession`（录系统声音：录屏管线的 mp4 只取音轨无损导出成 m4a，`ScreenRecorder.extractAudio`）和 `CMSampleBuffer` 的格式描述 / 数据块（样本回调里读 Float32 声音样本算电平）；第 7 批 `AVAssetImageGenerator` 还用来逐帧取 GIF 的帧（`VideoExport`） |
 | AVFoundation `AVSpeechSynthesizer` | 10.14 | 朗读 |
-| Foundation `URLSession.bytes(for:)`、`AttributedString(markdown:)` | 12 | SSE 流式输出、行内 Markdown |
+| Foundation `URLSession.bytes(for:)`、`AttributedString(markdown:)` | 12 | SSE 流式输出、结果卡片的 Markdown（逐行认块级 + 行内） |
 | CryptoKit：`Insecure.MD5`、`SHA256`、`AES.GCM` | 10.15 | 百度 / 有道签名、图片去重 hash；设置导出里加密翻译服务的密钥（2026-10-07，`Storage/SettingsArchive.swift`）；便签同步的内容哈希和冲突另存那条的编号（2026-10-22，`Notes/NoteSync.swift`） |
 | Darwin `gethostuuid` | 10.5 | 便签同步认「这台 Mac」：电脑编号跟着库走，硬件编号对不上（库被搬到了另一台）就换新的（2026-10-22，`NoteStore.hostID`） |
 | CommonCrypto `CCKeyDerivationPBKDF` | 10.7 | 设置导出：按用户设的密码算加密密钥（PBKDF2-HMAC-SHA256；CryptoKit 没有按密码算密钥的函数） |

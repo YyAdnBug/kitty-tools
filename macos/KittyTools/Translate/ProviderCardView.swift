@@ -5,7 +5,7 @@
 // 完成时整圈闪一下；截断的照常显示正文、下面一行说明（体检 B19）；失败分两种（体检 C5）：配置 / 密钥问题是淡橙卡
 // （钥匙图标，只给「打开设置」，直达这个服务的详情页），网络 / 服务错误是淡红卡（图标晃一下，给「重试」，
 // 自建 AI 服务另给「打开设置」）。重新翻译时卡片原位不动，只让正文交叉淡变 0.18 s（§4）。
-// 复制时对勾替换 + 整卡闪品牌粉。大模型完成后按行内 Markdown 渲染。
+// 复制时对勾替换 + 整卡闪品牌粉。大模型完成后按 Markdown 渲染（行内记号 + 标题、列表、引用、分隔线、代码块）。
 // 折叠状态由浮窗按服务记住（跨重启），不再因为出结果自动展开；复制的对勾状态在会话里（⌘1–9 也亮）。
 // 正文最高 8 行（按字号算的常数），再长就在卡片里滚动：滚动区铺满卡宽，系统滚动条贴卡片右边、落在内边距里不压字；
 // 下面还有时底部渐隐、滚下去后顶部也渐隐；
@@ -314,7 +314,7 @@ struct ProviderCardView: View {
       }
       .id(phase)
     } else if case .done(let text) = state {
-      // 大模型输出里有行内 Markdown 才按 Markdown 渲染
+      // 大模型输出里有 Markdown 才按 Markdown 渲染
       Text(Self.markdown(text)).font(.system(size: 15 * fontScale)).lineSpacing(3.5)
         .textSelection(.enabled)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -376,15 +376,79 @@ struct ProviderCardView: View {
     service.name.replacing(/（.*）$/, with: "")
   }
 
+  /// 有没有值得按 Markdown 显示的记号：行内的粗体、代码、链接，或者哪一行以标题、列表、引用、分隔线开头
   static func hasMarkdown(_ text: String) -> Bool {
     text.contains("**") || text.contains("__") || text.contains("`") || text.contains("](")
+      || text.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline)
+        .contains { block(of: String($0)).kind != .plain }
   }
 
-  /// 行内 Markdown（块级标记原样显示）；解析失败按纯文本
-  private static func markdown(_ text: String) -> AttributedString {
-    (try? AttributedString(
-      markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
-      ?? AttributedString(text)
+  /// 大模型结果的 Markdown（2026-10-29 用户反馈「结果没解析 Markdown」：以前只认行内记号，大模型照原文留下的标题、
+  /// 列表原样显示）。逐行先认块级：# 标题 → 粗体，- * + 列表 → •（缩进保留），> 引用 → 次要色，--- → 一段次要色横线，
+  /// ``` 围栏里的行 → 等宽、不解析（围栏行本身去掉）；编号列表本来好读，原样。剩下的按行内 Markdown，行内记号只在
+  /// 一行里配对；某行解析失败就按纯文本。复制按钮复制的还是原文。同 Windows 的 InlineMarkdown。
+  /// ponytail: 表格、任务框、嵌套引用的层级按普通行显示；要整套 Markdown 再换成按块排的视图
+  static func markdown(_ text: String) -> AttributedString {
+    var result = AttributedString()
+    var fenced = false
+    var first = true
+    for raw in text.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline) {
+      let line = String(raw)
+      if line.drop(while: { $0 == " " || $0 == "\t" }).hasPrefix("```") {
+        fenced.toggle()
+        continue
+      }
+      if !first { result += AttributedString("\n") }
+      first = false
+      if fenced {
+        var code = AttributedString(line)
+        code.inlinePresentationIntent = .code
+        result += code
+        continue
+      }
+      let (kind, prefix, body) = block(of: line)
+      var lead = AttributedString(prefix)
+      if kind == .rule { lead.foregroundColor = .secondary }
+      var part =
+        (try? AttributedString(
+          markdown: body, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
+        ?? AttributedString(body)
+      switch kind {
+      case .heading:
+        part = part.transformingAttributes(\.inlinePresentationIntent) {
+          $0.value = ($0.value ?? []).union(.stronglyEmphasized)
+        }
+      case .quote: part.foregroundColor = .secondary
+      default: break
+      }
+      result += lead + part
+    }
+    return result
+  }
+
+  private enum Block { case plain, heading, bullet, quote, rule }
+
+  /// 一行是哪种块：prefix 是换掉行首记号后显示的字（列表的缩进 + •、分隔线），body 是剩下按行内 Markdown 解析的
+  private static func block(of line: String) -> (kind: Block, prefix: String, body: String) {
+    let indent = String(line.prefix { $0 == " " || $0 == "\t" })
+    let rest = line.dropFirst(indent.count)
+    let hashes = rest.prefix { $0 == "#" }.count
+    if (1...6).contains(hashes), rest.count == hashes || rest.dropFirst(hashes).first == " " {
+      return (.heading, "", rest.dropFirst(hashes).trimmingCharacters(in: .whitespaces))
+    }
+    let compact = rest.filter { $0 != " " }
+    if compact.count >= 3, let mark = compact.first, "-*_".contains(mark),
+      compact.allSatisfy({ $0 == mark })
+    {
+      return (.rule, "────────", "")
+    }
+    if let mark = rest.first, "-*+".contains(mark), rest.dropFirst().first == " " {
+      return (.bullet, indent + "• ", String(rest.dropFirst(2)))
+    }
+    if rest.first == ">" {
+      return (.quote, "", String(rest.drop { $0 == ">" || $0 == " " }))
+    }
+    return (.plain, "", line)
   }
 }
 
