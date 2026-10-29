@@ -197,6 +197,12 @@ internal static class UiSnapshotProbe
             await WindowShot.SaveAsync(AudioHud.HandleForProbe, Path.Combine(directory, "shot-audio-pending.png"));
             AudioHud.Hide();
 
+            // PLAN-v10 §5：主界面（快捷键那条路：鼠标所在屏的上方正中；浅 / 深跟着外观设置，高对比度和贴任务栏的位置靠手测）。
+            HomePanel.ShowAtCursor();
+            await Task.Delay(900);
+            await WindowShot.SaveAsync(HomePanel.HandleForProbe, Path.Combine(directory, "home.png"));
+            HomePanel.Hide(restoreForeground: false);
+
             // 托盘菜单换成了系统的 Win32 菜单（2026-10-27）：TrackPopupMenuEx 一直占着界面线程等到菜单收起，
             // 这里截不了；深浅色两张靠手测截（HANDTEST 367）。
             Log.Info("snapshot.tray-menu skipped (system menu)");

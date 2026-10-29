@@ -261,7 +261,7 @@ internal sealed partial class SettingsWindow
         checks.Clear();
         foreach (var action in OnboardingHotKeys)
         {
-            if (!Features.IsOn(Features.ForHotKey(action)) ||
+            if (!Features.IsOnFor(action) ||
                 SettingsDefaults.BindingFor(SettingsService.Current, action).VirtualKey == 0 ||
                 SettingsDefaults.Find(action) is not { } definition)
             {

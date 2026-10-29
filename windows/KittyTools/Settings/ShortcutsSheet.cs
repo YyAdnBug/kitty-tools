@@ -444,12 +444,35 @@ internal static class ShortcutsSheet
             new("Esc", "倒数的时候取消"),
         }),
 
+        // Screenshot/LongAnnotateWindow.cs（PLAN-v9 S12）。
+        new("screenshot", "长图标注", "capture", Glyphs.Edit, Array.Empty<string>(), new ShortcutEntry[]
+        {
+            new("1–0", "选工具（再按一次收起）"),
+            new("Shift", "拖的时候按住：正方形 / 正圆、线吸到 45°"),
+            new("Delete", "删掉选中的标注"),
+            new("Ctrl+Z", "撤销"),
+            new("Ctrl+Y", "Ctrl+Shift+Z", "重做"),
+            new("Enter", "Ctrl+C", "拷贝"),
+            new("Ctrl+S", "保存到截图文件夹"),
+            new("Ctrl+Shift+S", "另存为…"),
+            new("Esc", "先收起工具；画过标注时按两下放弃"),
+        }),
+
         // Screenshot/ShotHistoryWindow.cs。
         new("screenshot", "截图历史", "capture", Glyphs.History, new[] { HotKeyActions.ShotHistory }, new ShortcutEntry[]
         {
             new("双击", "改标注（录制的是用默认程序打开）"),
             new("右键", "这一条的全部操作"),
             new("Delete", "删掉选中的那条（先问一次）"),
+        }),
+
+        // Shell/HomePanel.cs（PLAN-v10 §5）：托盘左键打开；全局的「打开主界面」不设默认键。
+        new("general", "主界面", "general", Glyphs.Home, new[] { HotKeyActions.Home }, new ShortcutEntry[]
+        {
+            new("←→↑↓", "Tab", "选一格（左右到头绕回）"),
+            new("Enter", "空格", "执行选中的那一格"),
+            new("Ctrl+,", "打开设置"),
+            new("Esc", "收起"),
         }),
 
         // Settings/SettingsWindow.cs 的 OnRecordKeyDown（只在录快捷键时）。

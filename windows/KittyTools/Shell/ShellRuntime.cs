@@ -111,8 +111,9 @@ internal sealed class ShellRuntime
         UpdateService.Initialize(dispatcher!);
         _autoCheck = SettingsService.Current.AutoCheckUpdates;
         UpdateService.Configure(SettingsService.Current.AutoCheckUpdates);
+        // 第二次启动：打开主界面（PLAN-v10 §5，以前是打开设置）。
         SingleInstance.StartServer(() =>
-            dispatcher?.TryEnqueue(() => ShowSettings(welcome: false)));
+            dispatcher?.TryEnqueue(HomePanel.ShowAtCursor));
 
         Log.Info("shell.ready");
         Theme.VerifyThemeResources();
@@ -824,15 +825,19 @@ internal sealed class ShellRuntime
         }
     }
 
-    public void ToggleCopyTranslate()
+    /// <summary>quiet：不弹轻提示（主界面里切，结果就在格子上，PLAN-v10 §5）。</summary>
+    public void ToggleCopyTranslate(bool quiet = false)
     {
         SettingsService.Current.CopyTranslate = !SettingsService.Current.CopyTranslate;
         SettingsService.Save();
-        NoticeHost.Show("复制即译", SettingsService.Current.CopyTranslate ? "已打开" : "已关闭", NoticeTone.Normal,
-            new NoticeAction("撤销", ToggleCopyTranslate));
+        if (!quiet)
+        {
+            NoticeHost.Show("复制即译", SettingsService.Current.CopyTranslate ? "已打开" : "已关闭", NoticeTone.Normal,
+                new NoticeAction("撤销", () => ToggleCopyTranslate()));
+        }
     }
 
-    public void TogglePauseClipboard()
+    public void TogglePauseClipboard(bool quiet = false)
     {
         if (Clipboard is null || !Features.IsOn(Feature.Clipboard))
         {
@@ -840,8 +845,11 @@ internal sealed class ShellRuntime
         }
 
         Clipboard.Paused = !Clipboard.Paused;
-        NoticeHost.Show("剪贴板记录", Clipboard.Paused ? "已暂停" : "已恢复", NoticeTone.Normal,
-            new NoticeAction("撤销", TogglePauseClipboard));
+        if (!quiet)
+        {
+            NoticeHost.Show("剪贴板记录", Clipboard.Paused ? "已暂停" : "已恢复", NoticeTone.Normal,
+                new NoticeAction("撤销", () => TogglePauseClipboard()));
+        }
     }
 
     public void OpenClipboard()
@@ -1082,7 +1090,7 @@ internal sealed class ShellRuntime
     private void OnHotKey(string action)
     {
         // 功能关掉了就什么都不做（热键本来也没注册，保险）。
-        if (!Features.IsOn(Features.ForHotKey(action)))
+        if (!Features.IsOnFor(action))
         {
             return;
         }
@@ -1128,8 +1136,14 @@ internal sealed class ShellRuntime
             case HotKeyActions.PinClipboard:
                 _ = PinHost.PinClipboardAsync();
                 break;
+            case HotKeyActions.Home:
+                HomePanel.Toggle();
+                break;
         }
     }
+
+    /// <summary>主界面点一格：和按它的快捷键做同一件事（PLAN-v10 §5）。</summary>
+    internal void RunAction(string action) => OnHotKey(action);
 
     private void OnSettingsChanged()
     {

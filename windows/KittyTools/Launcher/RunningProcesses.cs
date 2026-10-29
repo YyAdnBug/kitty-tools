@@ -26,9 +26,42 @@ internal static unsafe partial class RunningProcesses
     private static readonly HashSet<string> ShellClasses = new(StringComparer.Ordinal)
     {
         "Shell_TrayWnd", "Shell_SecondaryTrayWnd", "Progman", "WorkerW", "Windows.UI.Core.CoreWindow",
+        // 托盘的「^」溢出区（Windows 10 / 11 两种）。
+        "NotifyIconOverflowWindow", "TopLevelWindowForOverflowXamlIsland",
     };
 
     private static Dictionary<int, List<IntPtr>>? _collecting;
+
+    /// <summary>TopAppWindow 用：找到第一扇就停。</summary>
+    private static bool _firstOnly;
+
+    /// <summary>是不是任务栏、桌面、托盘溢出区这些「壳」的窗口（点托盘时前台是它们，不算用户在用的程序）。</summary>
+    public static bool IsShellWindow(IntPtr hwnd)
+    {
+        char* buffer = stackalloc char[64];
+        var length = hwnd == IntPtr.Zero ? 0 : GetClassNameW(hwnd, buffer, 64);
+        return length > 0 && ShellClasses.Contains(new string(buffer, 0, length));
+    }
+
+    /// <summary>
+    /// z 序里最上面那扇应用窗口（同 Collect 的筛法：看得见、不是本 App、不是工具窗、没被藏、有标题、不是壳），没有返回 0。
+    /// 主界面从托盘打开时前台是任务栏，拿它当「原来的那个程序」（划词翻译要从它取选中的字，PLAN-v10 §5）。UI 线程上调。
+    /// </summary>
+    public static IntPtr TopAppWindow()
+    {
+        var result = new Dictionary<int, List<IntPtr>>();
+        lock (ShellClasses)
+        {
+            _collecting = result;
+            _firstOnly = true;
+            var callback = (IntPtr)(delegate* unmanaged[Stdcall]<IntPtr, IntPtr, int>)&Collect;
+            EnumWindows(callback, IntPtr.Zero);
+            _firstOnly = false;
+            _collecting = null;
+        }
+
+        return result.Values.FirstOrDefault()?.FirstOrDefault() ?? IntPtr.Zero;
+    }
 
     /// <summary>拍一次快照（线程池里调；几十毫秒）。foregroundPid：呼出启动器之前在前台的那个程序（UI 线程上取好传进来）。</summary>
     public static ProcessSnapshot Take(int foregroundPid)
@@ -254,6 +287,10 @@ internal static unsafe partial class RunningProcesses
             }
 
             list.Add(hwnd);
+            if (_firstOnly)
+            {
+                return 0;
+            }
         }
         catch
         {

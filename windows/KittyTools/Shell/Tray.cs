@@ -2,6 +2,7 @@
 // Windows 11 默认把新图标收进「^」溢出区；资源管理器重启时靠 TaskbarCreated 重新加。
 // 菜单是系统的 Win32 弹出菜单（Shell/TrayMenu.cs，2026-10-27 R66；以前是 WinUI 的 MenuFlyout）。
 // v4 下右键会先后收到 WM_RBUTTONUP 和 WM_CONTEXTMENU，只认后者；左键认 NIN_SELECT，键盘认 NIN_KEYSELECT。
+// PLAN-v10 §5：左键 / 在图标上按 Enter、空格 → 主界面（HomePanel，贴着任务栏弹出）；右键、菜单键 → 照旧弹菜单（主界面开着就先收起）。
 using System.Runtime.InteropServices;
 using KittyTools.Infrastructure;
 using Windows.Win32;
@@ -164,21 +165,53 @@ internal static unsafe partial class Tray
             // 只认 WM_CONTEXTMENU：右键在 v4 下先来一个 WM_RBUTTONUP，两个都弹菜单会弹两次或重入。
             case WmContextMenu:
             case NinContextMenu:
-            // 左键 / 键盘选中：v4 发 NIN_SELECT 和 NIN_KEYSELECT，不再发 WM_LBUTTONUP。
-            case NinSelect:
-            case NinKeySelect:
             {
                 // v4 的 wParam 是这次弹菜单的位置（鼠标处；键盘选中时是图标处），屏幕物理坐标。照微软
                 // NotificationIcon 示例在这一点弹；以前一律取鼠标位置，键盘选中时菜单跑到鼠标那儿去了。
                 var x = (short)(wParam.Value & 0xFFFF);
                 var y = (short)((wParam.Value >> 16) & 0xFFFF);
+                HomePanel.Hide(restoreForeground: false);
                 TrayMenu.Show(x, y);
+                break;
+            }
+
+            // 左键 / 键盘选中：v4 发 NIN_SELECT 和 NIN_KEYSELECT，不再发 WM_LBUTTONUP。
+            case NinSelect:
+            case NinKeySelect:
+            {
+                var x = (short)(wParam.Value & 0xFFFF);
+                var y = (short)((wParam.Value >> 16) & 0xFFFF);
+                HomePanel.ShowFromTray(x, y, keyboard: mouseMessage == NinKeySelect);
                 break;
             }
         }
     }
 
     public static void ShowMenu() => TrayMenu.Show();
+
+    /// <summary>托盘图标在屏幕上的矩形（物理像素）；图标收在「^」溢出区里、溢出区没展开时系统给的是溢出区按钮那一块，拿不到返回 false。</summary>
+    public static bool TryGetIconRect(out int left, out int top, out int right, out int bottom)
+    {
+        left = top = right = bottom = 0;
+        if (!_added)
+        {
+            return false;
+        }
+
+        var identifier = new NOTIFYICONIDENTIFIER
+        {
+            cbSize = (uint)sizeof(NOTIFYICONIDENTIFIER),
+            hWnd = HiddenWindow.Hwnd,
+            uID = TrayIconId,
+        };
+        if (PInvoke.Shell_NotifyIconGetRect(identifier, out var rect).Failed || rect.right <= rect.left)
+        {
+            return false;
+        }
+
+        (left, top, right, bottom) = (rect.left, rect.top, rect.right, rect.bottom);
+        return true;
+    }
 
     private static void SetText(ref Windows.Win32.__char_128 buffer, string text)
     {

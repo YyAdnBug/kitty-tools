@@ -150,4 +150,7 @@ internal static class Glyphs
     /// <summary>往回的箭头（替换原文）。</summary>
     public const string ReplaceBack = "\uE7A7";
     public const string Minimize = "\uE921";
+
+    /// <summary>主界面（PLAN-v10 §5）。</summary>
+    public const string Home = "\uE80F";
 }

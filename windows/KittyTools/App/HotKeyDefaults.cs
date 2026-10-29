@@ -26,6 +26,9 @@ internal static class HotKeyActions
 
     /// <summary>钉住剪贴板里的图（PLAN-v9 F3），默认不设键（同 mac pinClipboard）。</summary>
     public const string PinClipboard = "pinClipboard";
+
+    /// <summary>打开主界面（PLAN-v10 §5），默认不设键、不归哪个功能（同 mac home）；托盘菜单里不放。</summary>
+    public const string Home = "home";
 }
 
 internal sealed record HotKeyDefault(
@@ -52,6 +55,7 @@ internal static class SettingsDefaults
         new(HotKeyActions.TranslateReplace, "划词翻译并替换", HotKeyModifiers.None, 0),
         new(HotKeyActions.Audio, "录音（再按一次停止）", HotKeyModifiers.None, 0),
         new(HotKeyActions.PinClipboard, "钉住剪贴板里的图", HotKeyModifiers.None, 0),
+        new(HotKeyActions.Home, "打开主界面", HotKeyModifiers.None, 0),
     };
 
     public static void Apply(Settings settings)

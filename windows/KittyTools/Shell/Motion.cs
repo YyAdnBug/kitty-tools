@@ -49,9 +49,9 @@ internal static class Motion
 
     /// <summary>
     /// 入场：透明度 0→1（0.12 s）+ 内容下落 6 px（glide 弹簧）。系统关了动画就只淡入。rise 是起点的竖直偏移：默认 −6 往下落，
-    /// 截图工具栏在选区上方时传 6 往上升（从靠选区那条边长出来）。
+    /// 截图工具栏在选区上方时传 6 往上升（从靠选区那条边长出来）。slide 是起点的水平偏移（主界面贴着左 / 右边的任务栏时从那边滑进来）。
     /// </summary>
-    public static void Entrance(FrameworkElement element, MotionCurve curve = MotionCurve.Glide, float rise = -6)
+    public static void Entrance(FrameworkElement element, MotionCurve curve = MotionCurve.Glide, float rise = -6, float slide = 0)
         => WhenReady(element, visual =>
         {
             var compositor = visual.Compositor;
@@ -65,7 +65,7 @@ internal static class Motion
             }
 
             EnableTranslation(element);
-            visual.Properties.InsertVector3("Translation", new Vector3(0, rise, 0));
+            visual.Properties.InsertVector3("Translation", new Vector3(slide, rise, 0));
             visual.StartAnimation("Translation", CurveTo(compositor, Vector3.Zero, spring.Value));
         });
 

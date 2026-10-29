@@ -24,7 +24,7 @@ internal sealed class HotKeyManager
         foreach (var definition in SettingsDefaults.DefaultHotKeys)
         {
             // 功能关掉了：热键不注册（第三版 §2.3）。
-            if (!Features.IsOn(Features.ForHotKey(definition.Action)))
+            if (!Features.IsOnFor(definition.Action))
             {
                 id++;
                 continue;

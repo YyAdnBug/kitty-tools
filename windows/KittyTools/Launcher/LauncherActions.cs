@@ -1,6 +1,6 @@
 // 启动器里本 App 自己的动作（PLAN-v9-launcher R12 = PLAN-v9 L8，照 mac LauncherItem.actions）：和托盘菜单同名同序——
 // 剪贴板历史、暂停记录剪贴板（副标题写正在记录 / 已暂停）｜输入翻译、复制即译（已开启 / 已关闭）｜截图、截图翻译、截取上次区域、
-// 识字、截图历史、钉住剪贴板里的图、隐藏 / 显示全部钉图和关闭全部钉图（有钉图时，PLAN-v9 S10）、录屏、录音｜设置、快捷键速查表、
+// 识字、截图历史、钉住剪贴板里的图、隐藏 / 显示全部钉图和关闭全部钉图（有钉图时，PLAN-v9 S10）、录屏、录音｜打开主界面（PLAN-v10 §5）、设置、快捷键速查表、
 // 关于 Kitty Tools、检查更新（有新版本时「更新到 x」）、退出 Kitty Tools。
 // 关着的功能那一节不列（Feature）；启动器自己、划词翻译不列（点了启动器，原来的程序就不在前台了，取不到选中的字，同托盘 G1）。
 // 副标题只写「Kitty Tools」，英文名和拼音只进匹配；对得上全局快捷动作的，选中时右边显示它的键帽。
@@ -26,6 +26,7 @@ internal static class LauncherActions
     public const string PinsClose = "action:pins-close";
     public const string Record = "action:record";
     public const string Audio = "action:audio";
+    public const string Home = "action:home";
     public const string Settings = "action:settings";
     public const string Shortcuts = "action:shortcuts";
     public const string About = "action:about";
@@ -86,6 +87,7 @@ internal static class LauncherActions
                 Glyphs.Microphone, "capture", HotKeyActions.Audio)));
         }
 
+        items.Add(Item(new(Home, "打开主界面", "Home Panel All Features", Glyphs.Home, "general", HotKeyActions.Home)));
         items.Add(Item(new(Settings, "设置", "Settings Preferences", Glyphs.Settings, "general")));
         items.Add(Item(new(Shortcuts, "快捷键速查表", "Keyboard Shortcuts", Glyphs.Keyboard, "shortcut")));
         items.Add(Item(new(About, "关于 Kitty Tools", "About Kitty Tools", Glyphs.Info, "general")));
@@ -124,6 +126,7 @@ internal static class LauncherActions
         Record => Glyphs.Record,
         Audio => Glyphs.Microphone,
         Shortcuts => Glyphs.Keyboard,
+        Home => Glyphs.Home,
         About => Glyphs.Info,
         Update => Glyphs.Update,
         Quit => Glyphs.Close,
@@ -177,6 +180,9 @@ internal static class LauncherActions
                 break;
             case Audio:
                 AudioHost.Toggle();
+                break;
+            case Home:
+                HomePanel.ShowAtCursor();
                 break;
             case Settings:
                 runtime?.ShowSettings(welcome: false);

@@ -2496,14 +2496,17 @@ internal sealed partial class SettingsWindow : Window
                 HotKeyActions.Screenshot, HotKeyActions.ScreenshotLast, HotKeyActions.Ocr, HotKeyActions.Record,
                 HotKeyActions.Audio, HotKeyActions.PinClipboard, HotKeyActions.ShotHistory,
             }),
+            // 主界面（PLAN-v10 §5）：不归哪个功能、一直在（同 mac 那一节）。
+            ("主界面", new List<string> { HotKeyActions.Home }),
         };
         var known = sections.SelectMany(section => section.Actions).ToHashSet();
-        sections[^1].Actions.AddRange(SettingsDefaults.DefaultHotKeys
+        // 没归进哪一节的（以后新加的动作）先放进「截图与录制」。
+        sections[2].Actions.AddRange(SettingsDefaults.DefaultHotKeys
             .Select(definition => definition.Action)
             .Where(action => !known.Contains(action)));
         foreach (var (title, actions) in sections)
         {
-            var visible = actions.Where(action => Features.IsOn(Features.ForHotKey(action))).ToList();
+            var visible = actions.Where(Features.IsOnFor).ToList();
             if (visible.Count == 0)
             {
                 continue;
@@ -3184,16 +3187,21 @@ internal sealed partial class SettingsWindow : Window
     }
 
     /// <summary>快捷键页一行的家族色块（mac HotKeyAction.symbol / color）：剪贴板蓝、启动器紫、翻译绿、截图和录屏粉。</summary>
-    private static Border HotKeyTile(string action)
-    {
-        var family = Features.ForHotKey(action) switch
+    private static Border HotKeyTile(string action) => KindTile.Create(HotKeyFamily(action), HotKeyGlyph(action), 20);
+
+    /// <summary>全局动作的家族色（主界面的格子也用它）；打开主界面是通用的那一色。</summary>
+    internal static string HotKeyFamily(string action) => action == HotKeyActions.Home
+        ? "general"
+        : Features.ForHotKey(action) switch
         {
             Feature.Clipboard => "clipboard",
             Feature.Launcher => "launcher",
             Feature.Translate => "translate",
             _ => "capture",
         };
-        var glyph = action switch
+
+    /// <summary>全局动作的符号（快捷键页、主界面的格子）。</summary>
+    internal static string HotKeyGlyph(string action) => action switch
         {
             HotKeyActions.Clipboard => Glyphs.ClipboardHistory,
             HotKeyActions.Launcher => Glyphs.Command,
@@ -3207,10 +3215,9 @@ internal sealed partial class SettingsWindow : Window
             HotKeyActions.TranslateReplace => Glyphs.Swap,
             HotKeyActions.Audio => Glyphs.Microphone,
             HotKeyActions.PinClipboard => Glyphs.Pin,
+            HotKeyActions.Home => Glyphs.Home,
             _ => Glyphs.Screenshot,
         };
-        return KindTile.Create(family, glyph, 20);
-    }
 
     private static string FamilyForPage(string tag) => tag switch
     {

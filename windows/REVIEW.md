@@ -40,6 +40,11 @@
   `AnnotationRenderer.Draw` 加了 `frozenAt` 给荧光笔垫当前那条）。入口：历史里「改标注」放不进屏幕的、长截图面板的「标注」。
   要你们特别看：CanvasVirtualControl 放在 ScrollViewer 里滚动时有没有空白块；30000 行的出图耗时和显存；面板贴在选区里时
   （选区差不多整屏）拍出来的帧里有没有面板（设了「不进录屏」）。
+- 第 0b 批 主界面（托盘左键，PLAN-v10 §5；规格在 windows-wip 的 PLAN-v10 a1fc4519）→ 已写（HANDTEST 765–779）：`Shell/HomePanel.cs` + Core 的 `HomeLayout`（分节、
+  折行、高、选中移动、任务栏在哪条边、贴着托盘摆在哪，`HomeLayoutTests`）。D3 原本窗口 / 托盘 / 焦点归你们边写边验，用户让审查方先写了。
+  要你们特别看：点托盘时前台变成任务栏，「划词翻译」靠 `RunningProcesses.TopAppWindow()` 找回原来的窗口，在记事本里实测一次；再点托盘收起靠
+  收起后 300 ms 内的 NIN_SELECT 不开，按住鼠标久一点会不会又打开；`Shell_NotifyIconGetRect` 在图标收进「^」时给的矩形；
+  格子用 ToggleButton / Button 换了模板资源，深色 / 高对比度下悬停和按下的底色对不对。
 - 0.2.0 最后一批的收尾 → 已写（版本号 0.2.0、`changelog.json` 0.2.0 条目、`STATUS.md` §8）：`build-release.ps1` 要你们在 Windows 上跑，产物路径写进 STATUS §6。
 - 第 3 批 S10 → 已写（右键「透明度 N%…」和悬停的透明度钮都打开一个带滑块的小浮层）：钉图透明度 10–100% 的滑块（mac 在右键菜单里；WinUI 的 MenuFlyout 放不了滑块，可以换成 Flyout 或右键菜单里一项打开小浮层，你们看着定）。右键的「存储」「翻译」、托盘 / 启动器的「隐藏 / 关闭全部钉图」审查方写了。
 
