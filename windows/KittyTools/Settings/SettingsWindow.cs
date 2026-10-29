@@ -1108,14 +1108,15 @@ internal sealed partial class SettingsWindow : Window
             };
             _content.Children.Add(SettingsUi.Card("同步文件夹", trouble ?? SyncStatusLine(status), controls, problem: trouble is not null));
 
-            AddSyncPart("片段与收藏", "文字的片段、收藏和收藏夹；图片和文件的收藏不同步", Feature.Clipboard,
-                settings.SyncClips, value => settings.SyncClips = value);
-            AddSyncPart("生词本", "翻译里收藏的词句", Feature.Translate,
-                settings.SyncVocabulary, value => settings.SyncVocabulary = value);
-            AddSyncPart("网页搜索与快捷链接", "启动器里的网页搜索和快捷链接", Feature.Launcher,
-                settings.SyncEngines, value => settings.SyncEngines = value);
-            AddSyncPart("翻译服务", "哪几个服务、顺序和设置；密钥不同步，别的电脑上要自己填一次", Feature.Translate,
-                settings.SyncServices, value => settings.SyncServices = value);
+            var others = status?.Devices.Count ?? 0;
+            AddSyncPart(Core.Sync.ClipSync.Kind, "片段与收藏", "文字的片段、收藏和收藏夹；图片和文件的收藏不同步", Feature.Clipboard,
+                settings.SyncClips, value => settings.SyncClips = value, others);
+            AddSyncPart(Core.Sync.VocabularySync.Kind, "生词本", "翻译里收藏的词句", Feature.Translate,
+                settings.SyncVocabulary, value => settings.SyncVocabulary = value, others);
+            AddSyncPart(Core.Sync.EngineSync.Kind, "网页搜索与快捷链接", "启动器里的网页搜索和快捷链接", Feature.Launcher,
+                settings.SyncEngines, value => settings.SyncEngines = value, others);
+            AddSyncPart(Core.Sync.ServiceSync.Kind, "翻译服务", "哪几个服务、顺序和设置；密钥不同步，别的电脑上要自己填一次", Feature.Translate,
+                settings.SyncServices, value => settings.SyncServices = value, others);
 
             var peers = status is { Devices.Count: > 0 }
                 ? string.Join("、", status.Devices)
@@ -1132,15 +1133,49 @@ internal sealed partial class SettingsWindow : Window
     }
 
     /// <summary>同步的一类：勾上才同步；它跟着的功能关着时说一声（勾着也先不同步，Syncer 里同样这么判断）。</summary>
-    private void AddSyncPart(string title, string detail, Feature feature, bool value, Action<bool> set)
+    /// <summary>
+    /// 勾上一类会是它第一次合、文件夹里又已经有别的电脑时，先问「合在一起？」（同 mac SyncSection.part）；不合就把开关拨回去。
+    /// </summary>
+    private void AddSyncPart(string kind, string title, string detail, Feature feature, bool value, Action<bool> set, int others)
         => AddToggle(title,
             Features.IsOn(feature) ? detail : $"{Features.Title(feature)}关着，先不同步；在上面「功能」里打开就接着同步",
             value,
-            isOn =>
+            async isOn =>
             {
+                if (isOn && others > 0 && Syncer.Instance?.Joins(kind) == true &&
+                    !await ConfirmJoinAsync($"「{title}」和已经在同步的电脑合在一起？", null))
+                {
+                    BuildPage("general");
+                    return;
+                }
+
                 set(isOn);
                 SettingsService.Save();
+                if (isOn)
+                {
+                    _ = Syncer.Instance?.RoundAsync();
+                }
             });
+
+    /// <summary>「合在一起后……」：第一次选文件夹时、勾上还没合过的一类时共用（mac SyncSection.joinNote，去掉 Windows 不同步的几类）。</summary>
+    private const string JoinNote =
+        "合在一起后，这台电脑上的片段、收藏、生词、网页搜索和翻译服务会和它们的一起出现在每台电脑上（同样的不重复）；" +
+        "之后同一条两边都改过的，后改的留下。";
+
+    private async Task<bool> ConfirmJoinAsync(string title, string? lead)
+    {
+        var dialog = new ContentDialog
+        {
+            RequestedTheme = Theme.ElementTheme,
+            Title = title,
+            Content = new TextBlock { Text = (lead ?? string.Empty) + JoinNote, TextWrapping = TextWrapping.Wrap, MaxWidth = 420 },
+            PrimaryButtonText = "合在一起",
+            CloseButtonText = "取消",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = _shell.XamlRoot,
+        };
+        return await dialog.ShowAsync() == ContentDialogResult.Primary;
+    }
 
     /// <summary>状态：上次同步的时刻（第一轮还没完时说正在同步）。</summary>
     private static string SyncStatusLine(SyncStatus? status)
@@ -1170,11 +1205,24 @@ internal sealed partial class SettingsWindow : Window
                 return;
             }
 
-            // 空文件夹才开（或者已经有我们的标记）；否则提示。
+            // 空文件夹才开（或者已经有我们的标记）；否则提示。在后台看：可能是卡住的网络盘（同 mac「这一节不去碰那个文件夹」）。
             var disk = new Core.Sync.SyncDisk(folder.Path);
-            if (disk.Marker() is null && disk.LooksForeign())
+            var own = SyncDevice.Instance?.Id;
+            var (marker, foreign, others) = await Task.Run(() =>
+            {
+                var found = disk.Marker();
+                return (found, found is null && disk.LooksForeign(), disk.DeviceIds().Count(id => id != own));
+            });
+            if (marker is null && foreign)
             {
                 NoticeHost.Show("这个文件夹里已经有别的东西了", "请新建一个空文件夹来同步", NoticeTone.Warning);
+                return;
+            }
+
+            // 已经有别的电脑在用这个文件夹：先问合不合在一起（同 mac）。
+            if (marker is not null && others > 0 &&
+                !await ConfirmJoinAsync("和这个文件夹里的合在一起？", $"这个文件夹里已经有 {others} 台电脑在同步。"))
+            {
                 return;
             }
 
@@ -1717,10 +1765,14 @@ internal sealed partial class SettingsWindow : Window
             BuildPage("launcher");
         }
 
-        for (var index = 0; index < engines.Count; index++)
+        var engineRows = engines.Select((_, index) => EngineRow(engines, index, Persist, Save)).ToList();
+        _content.Children.Add(ReorderableList(engineRows, "网页搜索与快捷链接（拖动排序）", order =>
         {
-            _content.Children.Add(EngineRow(engines, index, Persist, Save));
-        }
+            var reordered = order.Select(index => engines[index]).ToList();
+            engines.Clear();
+            engines.AddRange(reordered);
+            Persist();
+        }));
 
         var add = new Button { Content = "＋ 添加搜索或快捷链接" };
         AutomationProperties.SetName(add, "添加搜索或快捷链接");
@@ -1770,7 +1822,7 @@ internal sealed partial class SettingsWindow : Window
                 SettingsService.Save();
             });
         _content.Children.Add(SettingsUi.Footnote(
-            "网址里有 {query} 的是搜索（「关键词 空格 内容」直达，开关 = 没有本地结果时兜底），没有的是快捷链接。搜索的关键词重复时用靠前的；点「编辑」改名称、关键词和网址。"));
+            "网址里有 {query} 的是搜索（「关键词 空格 内容」直达，开关 = 没有本地结果时兜底），没有的是快捷链接。搜索的关键词重复时用靠前的，拖动一行改顺序；点一行改名称、关键词和网址，右键可以上移、下移和删除。"));
 
         // 使用记录：功能关着也能清（同 mac）
         _content.Children.Add(Ungated(SettingsUi.Section("使用记录")));
@@ -1798,6 +1850,48 @@ internal sealed partial class SettingsWindow : Window
         _content.Children.Add(Ungated(clear));
         _content.Children.Add(Ungated(SettingsUi.Footnote(
             "启动器按用过的次数和时间排序，空搜索框里先列收藏（Ctrl+D 加入），再列「常用」。在「常用」里选中一项按 Ctrl+Delete 可以单独移除，Ctrl+Z 撤销。")));
+    }
+
+    /// <summary>
+    /// 能拖动排序的一列卡（mac 有序列表的 .onMove，N12：翻译服务、网页搜索）：有几行就多高、跟着页面滚，不在列表里滚；
+    /// 拖完按新顺序回调（旧的下标，按新的先后排）。右键菜单里的上移 / 下移照旧。
+    /// 容器自己建成 ListViewItem（不用 Style：少一处 AOT 下的类型名转换），去掉内边距、两张卡之间空 8 同页面别的卡。
+    /// </summary>
+    private static ListView ReorderableList(IReadOnlyList<Border> rows, string name, Action<IReadOnlyList<int>> moved)
+    {
+        var list = new ListView
+        {
+            SelectionMode = ListViewSelectionMode.None,
+            CanDragItems = true,
+            CanReorderItems = true,
+            AllowDrop = true,
+            Padding = new Thickness(0),
+        };
+        ScrollViewer.SetVerticalScrollMode(list, ScrollMode.Disabled);
+        ScrollViewer.SetVerticalScrollBarVisibility(list, ScrollBarVisibility.Disabled);
+        AutomationProperties.SetName(list, name);
+        for (var index = 0; index < rows.Count; index++)
+        {
+            list.Items.Add(new ListViewItem
+            {
+                Content = rows[index],
+                Tag = index,
+                Padding = new Thickness(0),
+                MinHeight = 0,
+                Margin = new Thickness(0, 0, 0, 8),
+                HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            });
+        }
+
+        list.DragItemsCompleted += (_, _) =>
+        {
+            var order = list.Items.OfType<ListViewItem>().Select(item => item.Tag is int index ? index : -1).ToList();
+            if (order.All(index => index >= 0) && !order.SequenceEqual(Enumerable.Range(0, order.Count)))
+            {
+                moved(order);
+            }
+        };
+        return list;
     }
 
     /// <summary>这一页浏览器各行「读到几条」的原地刷新（BuildPage 换页时清空）。</summary>
@@ -1902,7 +1996,10 @@ internal sealed partial class SettingsWindow : Window
         }
     }
 
-    /// <summary>一条搜索 / 快捷链接（mac EngineListRow）：名称 + 种类或橙色的问题、关键词键帽、兜底开关（快捷链接没有）、↑ ↓ 编辑 删除。</summary>
+    /// <summary>
+    /// 一条搜索 / 快捷链接（mac EngineListRow）：名称 + 种类或橙色的问题、关键词键帽、兜底开关（快捷链接没有）；
+    /// 点一行编辑，右键 编辑… / 上移 / 下移 / 删除（同 mac：行里不放 ↑↓ 按钮，排序靠拖动）。
+    /// </summary>
     private Border EngineRow(List<KittyTools.Core.SearchEngine> engines, int index, Action persist, Action save)
     {
         var engine = engines[index];
@@ -1925,33 +2022,15 @@ internal sealed partial class SettingsWindow : Window
             }, $"「{WebSearch.Title(engine)}」没有本地结果时兜底"));
         }
 
-        Button Small(string text, string name, bool enabled, Action action)
-        {
-            var button = new Button { Content = text, Padding = new Thickness(8, 2, 8, 2), IsEnabled = enabled };
-            AutomationProperties.SetName(button, name);
-            button.Click += (_, _) => action();
-            controls.Children.Add(button);
-            return button;
-        }
-
-        Small("↑", "上移", index > 0, () =>
-        {
-            (engines[index - 1], engines[index]) = (engines[index], engines[index - 1]);
-            persist();
-        });
-        Small("↓", "下移", index < engines.Count - 1, () =>
-        {
-            (engines[index + 1], engines[index]) = (engines[index], engines[index + 1]);
-            persist();
-        });
-        Small("编辑…", "编辑 " + WebSearch.Title(engine), true, async () =>
+        async Task EditAsync()
         {
             if (await EditEngineAsync(engine, engines))
             {
                 persist();
             }
-        });
-        Small("删除", "删除 " + WebSearch.Title(engine), true, async () =>
+        }
+
+        async Task RemoveAsync()
         {
             // 预置的直接删（「+」里能加回来），自定义的先确认。
             if (!WebSearch.IsPreset(engine.Id))
@@ -1974,13 +2053,40 @@ internal sealed partial class SettingsWindow : Window
 
             engines.Remove(engine);
             persist();
-        });
+        }
 
-        return SettingsUi.Card(
+        var card = SettingsUi.Card(
             WebSearch.Title(engine),
             problem ?? WebSearch.KindTitle(engine),
             controls,
+            () => _ = EditAsync(),
             problem: problem is not null);
+        AutomationProperties.SetHelpText(card, "点一下编辑；拖动排序；右键有上移、下移和删除");
+
+        var menu = new MenuFlyout();
+        void Add(string text, bool enabled, Action action)
+        {
+            var item = new MenuFlyoutItem { Text = text, IsEnabled = enabled };
+            item.Click += (_, _) => action();
+            menu.Items.Add(item);
+        }
+
+        Add("编辑…", true, () => _ = EditAsync());
+        menu.Items.Add(new MenuFlyoutSeparator());
+        Add("上移", index > 0, () =>
+        {
+            (engines[index - 1], engines[index]) = (engines[index], engines[index - 1]);
+            persist();
+        });
+        Add("下移", index < engines.Count - 1, () =>
+        {
+            (engines[index + 1], engines[index]) = (engines[index], engines[index + 1]);
+            persist();
+        });
+        menu.Items.Add(new MenuFlyoutSeparator());
+        Add(WebSearch.IsPreset(engine.Id) ? "删除" : "删除…", true, () => _ = RemoveAsync());
+        card.ContextFlyout = menu;
+        return card;
     }
 
     /// <summary>

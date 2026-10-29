@@ -95,6 +95,9 @@ internal sealed class Syncer
 
     public bool Enabled => SettingsService.Current.SyncEnabled && !string.IsNullOrEmpty(Folder);
 
+    /// <summary>这一类勾上会是它第一次和文件夹里的合（账本里还没有它）：设置页先问「合在一起？」（同 mac NoteSyncer.joins）。</summary>
+    public bool Joins(string kind) => Enabled && _ledger.Read(kind) is null;
+
     /// <summary>合一轮（开同步、定时器、唤醒、「立即同步」都走这里）；关着时停掉定时器，开着时确保它在转。</summary>
     public async Task RoundAsync()
     {
