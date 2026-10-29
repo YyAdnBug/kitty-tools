@@ -45,9 +45,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   // MARK: 数据与服务（按依赖顺序）
 
-  /// ~/Library/Application Support/<bundle id>/（Debug 与 Release 的 bundle id 不同，数据天然隔离）
-  private let dataDirectory = URL.applicationSupportDirectory.appending(
+  /// ~/Library/Application Support/<bundle id>/（Debug 与 Release 的 bundle id 不同，数据天然隔离）：两个库、图片、
+  /// 每日备份都在这里；设置 › 通用「数据目录」在访达里打开它
+  static let supportDirectory = URL.applicationSupportDirectory.appending(
     path: Bundle.main.bundleIdentifier ?? "com.yy.kitty-tools.native")
+  private let dataDirectory = AppDelegate.supportDirectory
   /// 库和读它的三个仓库：一起打开，哪一步（开库、建表、读表）抛错都算打不开，不留开到一半的连接
   /// （不是 private：BackupTests 在临时目录里拿它走真的打开流程）
   struct Stores {

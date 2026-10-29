@@ -5,7 +5,7 @@
 // 菜单栏图标（显示 / 隐藏、单色 / 彩色，StatusItem 看着偏好立刻跟着变，第 9 批 M1 M2）、登录时打开、
 // 权限状态（辅助功能、屏幕录制、麦克风（录屏第 4 批）、15.4 起的剪贴板访问，同一种 PermissionRow；从未授权变已授权时
 // 符号替换 + 弹一下）、几台 Mac 之间的同步（SyncSection，Settings/SyncSection.swift，2026-10-23）、全部设置的导出与导入
-// （TransferSection，Settings/SettingsTransfer.swift）。
+// （TransferSection，Settings/SettingsTransfer.swift）、数据目录（在访达中显示，2026-10-29 照 Windows 加）。
 
 import AVFoundation
 import ServiceManagement
@@ -125,6 +125,16 @@ struct GeneralTab: View {
       }
       if let sync { SyncSection(syncer: sync) }
       if let transfer { TransferSection(transfer: transfer) }
+      Section("数据") {
+        // 设置在系统的偏好设置里、日志在系统日志里，都不在这个目录：说明里不提（2026-10-29 照 Windows 的「数据目录」加）
+        LabeledContent {
+          Button("在访达中显示") { NSWorkspace.shared.open(AppDelegate.supportDirectory) }
+            .accessibilityLabel("在访达中显示数据目录")
+        } label: {
+          Text("数据目录")
+          Text("剪贴板、便签和翻译历史的数据库、图片和每日备份都在这里")
+        }
+      }
     }
     .formStyle(.grouped)
     .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
