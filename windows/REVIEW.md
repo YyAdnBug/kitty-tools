@@ -28,6 +28,13 @@
 
 - （还没有）
 
+**第 1、5 步记录（2026-10-29，Claude 在 worktree `kitty-win-claude` 里，代码 1e12834）**：
+- 编译：rebase 到 1e12834（含 2ad8b45 收口、1e12834 设置布局），Debug x64 `--no-incremental` 0 警告 0 错误，没有要修的编译错。`dotnet test`：424 个全过。
+- 打包：`build-release.ps1` 出了 x64 / ARM64 的 zip、setup.exe 和 `.sha256`，0 个裁剪 / AOT 警告，两个发布目录都有 `KittyTools.pri` 和 `Microsoft.UI.Xaml.Controls.pri`，两个 exe 里都有内置智谱 key。x64 zip 30.4 MB（`2a6ad24b…`）、安装包 22.3 MB（`bc63868a…`）；ARM64 zip 29.5 MB（`b5c891d5…`）、安装包 22 MB（`7d6fb4eb…`）。
+- `setup-e2e.ps1 -Zip …x64.zip`：五步 18 项全过、退出码 0（测试名 e2e983032，回收站里多一个 `KittyTools.Probe.e2e983032`，可以清掉）。
+- 两处环境上的事（不是代码问题）：这台机器没有 `pwsh`，两个脚本都用 Windows PowerShell 5.1 跑的（`powershell -ExecutionPolicy Bypass -File …`，脚本带 BOM，能跑，e2e 的输出在 5.1 的控制台里中文乱码、结果不受影响）；内置 key 的 `windows/Secrets.props` 只在主 checkout 里，在别的 worktree 打包要先拷过去，不然包里没有默认 key（10-29 上午用户发现过一次）。
+- 没做：第 2–4 步的冒烟清单和手测（要按键、看屏幕，留给用户）。
+
 ## v9 翻译分工（2026-10-28，用户：「全部按推荐」，PLAN-v9-translate D1–D3 按推荐）
 
 翻译对齐 mac（`PLAN-v9-translate.md`）由 **审查方（Claude）在 Mac 上写、不编译**，8a–8e 一次写完、一起推。你们负责编译、单测、`--ui-snapshots`、手测（HANDTEST 581–620）；编译错直接修，在这一节下面记一句。
