@@ -43,6 +43,10 @@ final class OverlayPanel: NSPanel {
   private var anchor: NSPoint?
   /// 这一次出现放到屏幕上方（翻译浮窗「屏幕上方」：和 topAnchored 的启动器同一个位置，但只管这一次）
   private var atTop = false
+  /// 这一次出现挂在这个图标下面（主界面：点菜单栏图标打开的，图标在屏幕上的位置）
+  private var below: NSRect?
+  /// 点在这些地方（屏幕坐标）不算点了外面（主界面：15–26 上再点一下菜单栏图标由图标自己收起，见 StatusItem.ownsClick）
+  var ignoresClick: (NSPoint) -> Bool = { _ in false }
   /// 启动器：每次都放在鼠标所在屏、顶边在可见区 20% 处，高度随内容往下伸缩
   private let topAnchored: Bool
   private var mouseMonitors: [Any] = []
@@ -209,9 +213,11 @@ final class OverlayPanel: NSPanel {
   /// makingKey = false：只露出来、不抢键盘（复制即译），此时靠点外关闭。
   /// anchor：新出现时放在这一点（鼠标位置）的右下 12 pt（翻译浮窗「跟随鼠标」）；已经开着就不挪。
   /// atTop：新出现时放在鼠标所在屏的上方正中（翻译浮窗「屏幕上方」，同启动器的位置）；已经开着就不挪。
+  /// below：新出现时挂在这个图标（屏幕坐标）下面（主界面，点菜单栏图标打开的）；已经开着就不挪。
   /// keepsPlace：原地重新露出来（划词翻译并替换期间临时 orderOut 的固定浮窗），不重新摆
   func present(
-    makingKey: Bool = true, anchor: NSPoint? = nil, atTop: Bool = false, keepsPlace: Bool = false
+    makingKey: Bool = true, anchor: NSPoint? = nil, atTop: Bool = false, below: NSRect? = nil,
+    keepsPlace: Bool = false
   ) {
     let appearing = !isVisible
     // 淡出的替身 0.10 s 内还在：直接不透明盖住它
@@ -221,6 +227,7 @@ final class OverlayPanel: NSPanel {
       saveFrameIfMoved()
       self.anchor = anchor
       self.atTop = atTop
+      self.below = below
       if !keepsPlace { placeForShow() }
       animationBehavior = .none
       alphaValue = fades ? 0 : 1
@@ -651,10 +658,14 @@ final class OverlayPanel: NSPanel {
   }
 
   private func placeForShow() {
-    let mouse = NSEvent.mouseLocation
-    let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
+    // 挂在图标下面时用图标所在的那块屏（键盘、旁白点开的，鼠标不一定在那儿）
+    let point = below.map { NSPoint(x: $0.midX, y: $0.midY) } ?? NSEvent.mouseLocation
+    let screen = NSScreen.screens.first { NSMouseInRect(point, $0.frame, false) } ?? NSScreen.main
     guard let visible = screen?.visibleFrame else { return }
     defer { placed = (NSPoint(x: frame.minX, y: frame.maxY), frame.width) }
+    if let below {
+      return setFrameOrigin(Self.frame(below: below, size: frame.size, in: visible).origin)
+    }
     if topAnchored || atTop {
       let top = visible.maxY - visible.height * 0.2
       setFrameOrigin(NSPoint(x: visible.midX - frame.width / 2, y: top - frame.height))
@@ -725,6 +736,15 @@ final class OverlayPanel: NSPanel {
     return NSRect(x: x, y: top - size.height, width: size.width, height: size.height)
   }
 
+  /// 挂在菜单栏图标下面（主界面，纯函数配单测）：右边对着图标的右边，顶边在图标（菜单栏）下面 6 pt；
+  /// 左右夹进可见区（内缩 8）
+  static func frame(below icon: NSRect, size: NSSize, in visible: NSRect) -> NSRect {
+    let area = visible.insetBy(dx: 8, dy: 0)
+    let x = max(min(icon.maxX - size.width, area.maxX - size.width), area.minX)
+    let top = min(icon.minY, visible.maxY) - 6
+    return NSRect(x: x, y: top - size.height, width: size.width, height: size.height)
+  }
+
   /// 上次的位置换算到另一块屏（纯函数配单测）：左上角在可见区里的相对位置不变，再夹进新屏的可见区
   static func relocated(_ frame: NSRect, from old: NSRect, to new: NSRect) -> NSRect {
     guard old != new, old.width > 0, old.height > 0 else { return frame }
@@ -763,6 +783,7 @@ final class OverlayPanel: NSPanel {
   }
 
   private func clickedOutside() {
+    guard !ignoresClick(NSEvent.mouseLocation) else { return }
     if !isPinned() { dismiss(byKeyboard: false) }
   }
 

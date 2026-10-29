@@ -111,6 +111,21 @@ struct HomeTests {
     #expect(Home.width == 2 * Home.inset + 5 * Home.tile.width + 4 * Home.gap)
   }
 
+  /// 点菜单栏图标打开的挂在图标下面：右边对着图标的右边、顶边在菜单栏下面 6 pt；靠屏幕左边的图标往里挪
+  @Test func placedBelowTheIcon() {
+    let visible = NSRect(x: 0, y: 0, width: 1470, height: 918)
+    let size = NSSize(width: Home.width, height: 600)
+    let icon = NSRect(x: 1143, y: 918, width: 29, height: 38)
+    let frame = OverlayPanel.frame(below: icon, size: size, in: visible)
+    #expect(frame.maxX == icon.maxX && frame.maxY == visible.maxY - 6 && frame.size == size)
+    let left = OverlayPanel.frame(
+      below: NSRect(x: 40, y: 918, width: 29, height: 38), size: size, in: visible)
+    #expect(left.minX == 8)
+    let right = OverlayPanel.frame(
+      below: NSRect(x: 1450, y: 918, width: 29, height: 38), size: size, in: visible)
+    #expect(right.maxX == visible.maxX - 8)
+  }
+
   /// ←→ 按顺序走、到头回绕；↑↓ 换行、列不变，短的那行落在最后一格，第一行 / 最后一行不动；还没选中时是第一格
   @Test func movement() {
     let rows = [[0, 1, 2], [3, 4, 5, 6, 7], [8, 9]]

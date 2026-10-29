@@ -1,4 +1,10 @@
 // 菜单栏图标与菜单（Whisker §6 菜单栏，D 阶段）：从 SwiftUI MenuBarExtra 迁到 NSStatusItem 才能给图标做动效——
+// 左键打开主界面（Shell/HomePanel.swift，2026-10-29 拍板），右键和 ⌃点弹下面这个菜单（不挂 item.menu：挂了左右键都是菜单）。
+// macOS 27 起左键走系统的展开界面接口（expandedInterfaceDelegate：系统说什么时候开、什么时候收，键盘导航、在几个菜单栏
+// 菜单之间滑着切换才对）；15–26 走按钮的动作。27.0.1 样机实测（macos/build/research/home-panel-2026-10-29/probe/）：
+// 右键照样到得了按钮的动作；菜单要从按钮上直接弹（挂 item.menu 再 performClick 会被当成左键、开出主界面）；主界面开着时
+// 再点图标系统什么都不说，靠主界面「点了外面」收起（15–26 上图标自己收，ownsClick）；⌃点系统当左键开展开、按钮同时还收到
+// 一次右键，所以带 ⌃ 的展开当场取消、只弹菜单。
 // 主动完成一件事时弹一下（pop），长任务期间呼吸（opacity 1 ↔ 0.45，1.2 s 往返），被动的剪贴板采集不播；
 // 减弱动态效果时都不动。刘海岛出「进行中」就呼吸、出「成功」就弹（Island.onToneChange），截图飞行卡片落地也弹。
 // 菜单每次打开前重建（快捷键、钉图状态会变），用 sectionHeader 分 剪贴板与启动器 / 翻译 / 截图与录制 三节（N15，AppDelegate 按
@@ -18,6 +24,10 @@ final class StatusItem: NSObject, NSMenuDelegate {
   private let menu = NSMenu()
   /// 打开菜单前往里填菜单项（AppDelegate 给）
   var buildMenu: (NSMenu) -> Void = { _ in }
+  /// 左键：打开主界面，参数是图标在屏幕上的位置（主界面挂在它下面）；收起；开着没有（AppDelegate 给）
+  var openHome: (NSRect) -> Void = { _ in }
+  var closeHome: () -> Void = {}
+  var homeIsOpen: () -> Bool = { false }
   private var isWorking = false
   private var isApplying = false
   /// 按钮上现在是哪种图（nil = 还没设）
@@ -62,7 +72,10 @@ final class StatusItem: NSObject, NSMenuDelegate {
     super.init()
     item.button?.wantsLayer = true
     menu.delegate = self
-    item.menu = menu
+    item.button?.target = self
+    item.button?.action = #selector(clicked)
+    item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
+    if #available(macOS 27, *) { item.expandedInterfaceDelegate = self }
     applyPrefs()
     // 设置 › 通用改了立刻生效（@AppStorage 写的就是 standard）；别的偏好变了也会来，没变的不碰
     NotificationCenter.default.addObserver(
@@ -184,6 +197,49 @@ final class StatusItem: NSObject, NSMenuDelegate {
     buildMenu(menu)
   }
 
+  /// 图标在屏幕上的位置（藏着时 nil）
+  var iconFrame: NSRect? { item.isVisible ? item.button?.window?.frame : nil }
+
+  /// 这一下点在图标上、由图标自己处理（主界面不当成点了外面）：只在 15–26——那里再点一下图标，按钮的动作负责收起；
+  /// 27 上系统不把这一下交给我们，得让主界面当成点了外面收起
+  func ownsClick(at point: NSPoint) -> Bool {
+    if #available(macOS 27, *) { return false }
+    return iconFrame?.contains(point) == true
+  }
+
+  /// 按钮的动作：右键、⌃点弹菜单；15–26 的左键开 / 收主界面（27 上左键走 expandedInterfaceDelegate，到不了这里）
+  @objc private func clicked() {
+    let event = NSApp.currentEvent
+    if event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true {
+      return showMenu()
+    }
+    // 27 上左键归 expandedInterfaceDelegate：哪天也送到这里来，别开两次
+    if #available(macOS 27, *) { return }
+    if homeIsOpen() { closeHome() } else { expand() }
+  }
+
+  private func expand() {
+    guard let frame = iconFrame else { return }
+    openHome(frame)
+    item.button?.highlight(true)
+  }
+
+  /// 主界面收起了（点外面、Esc、点了格子、程序收起都算）：撤掉图标的高亮；27 上告诉系统这次展开结束了
+  func homeDidClose() {
+    item.button?.highlight(false)
+    if #available(macOS 27, *) { item.expandedInterfaceSession?.cancel() }
+  }
+
+  /// 菜单从按钮上直接弹（菜单项打开前在 menuNeedsUpdate 里现建）；主界面开着就先收起
+  private func showMenu() {
+    guard let button = item.button else { return }
+    closeHome()
+    button.highlight(true)
+    let below = button.isFlipped ? button.bounds.maxY + 5 : button.bounds.minY - 5
+    menu.popUp(positioning: nil, at: NSPoint(x: 0, y: below), in: button)
+    button.highlight(false)
+  }
+
   /// 刘海岛的语气变了：进行中 → 呼吸；成功 → 停下呼吸、弹一下；其它（含收起）→ 停下
   func reflect(_ tone: Island.Tone?) {
     setWorking(tone == .progress)
@@ -218,6 +274,23 @@ final class StatusItem: NSObject, NSMenuDelegate {
     breathe.repeatCount = .infinity
     breathe.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
     layer.add(breathe, forKey: "breathe")
+  }
+}
+
+@available(macOS 27, *)
+extension StatusItem: NSStatusItemExpandedInterfaceDelegate {
+  /// 系统叫开（左键、键盘导航到图标）：开主界面。⌃点系统也当左键开，可按钮同时还收到一次右键（菜单从那里弹）——不开
+  func statusItem(
+    _ statusItem: NSStatusItem,
+    didBegin expandedInterfaceSession: NSStatusItemExpandedInterfaceSession
+  ) {
+    if NSEvent.modifierFlags.contains(.control) { return expandedInterfaceSession.cancel() }
+    expand()
+  }
+
+  /// 系统叫收（别的菜单栏菜单接手了、键盘导航走开了）
+  func statusItemDidEndExpandedInterfaceSession(_ statusItem: NSStatusItem, animated: Bool) {
+    closeHome()
   }
 }
 

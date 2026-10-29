@@ -272,7 +272,7 @@ private struct TryScreen: View {
         }
       }
       .padding(.top, 12)
-      Text("提示从屏幕顶部正中冒出来，有刘海时点一下刘海能看最近几条\n换键、看面板里的按键：设置 › 快捷键")
+      Text("提示从屏幕顶部正中冒出来，有刘海时点一下刘海能看最近几条\n点菜单栏图标看全部功能；换键、看面板里的按键：设置 › 快捷键")
         .font(.caption)
         .foregroundStyle(.secondary)
         .multilineTextAlignment(.center)

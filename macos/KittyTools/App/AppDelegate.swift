@@ -220,7 +220,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       model.run(extra)
       return true
     }
-    panel.onHide = { [unowned self] in idleReclaim.schedule() }
+    panel.onHide = { [unowned self] in
+      statusItem?.homeDidClose()
+      idleReclaim.schedule()
+    }
+    // 15–26 上再点菜单栏图标由图标自己收起：不当成点了外面（不然先收、松手时又开）
+    panel.ignoresClick = { [unowned self] in statusItem?.ownsClick(at: $0) == true }
     model.hidePanel = { [unowned panel] in panel.hide() }
     model.openFeatures = { [unowned self] in showSettings(page: .general) }
     model.perform = { [unowned self] target in
@@ -780,6 +785,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     let statusItem = StatusItem()
     statusItem.buildMenu = { [unowned self] in buildStatusMenu($0) }
+    // 左键：主界面（右键、⌃点是菜单）
+    statusItem.openHome = { [unowned self] in showHome(under: $0) }
+    statusItem.closeHome = { [unowned self] in builtHomePanel?.dismiss(byKeyboard: false) }
+    statusItem.homeIsOpen = { [unowned self] in builtHomePanel?.isVisible == true }
     island.onToneChange = { [weak statusItem] in statusItem?.reflect($0) }
     self.statusItem = statusItem
     updater.island = island
@@ -1160,15 +1169,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     showHome()
   }
 
-  /// 打开主界面（已经开着就把键盘拿回来）：在鼠标所在屏的上方正中，和启动器、剪贴板面板、快速记一条、选状态的面板
-  /// 同一个位置，只开一个——收起那几块（固定着的剪贴板面板也收，同 toggleLauncher）
-  func showHome() {
+  /// 打开主界面（已经开着就把键盘拿回来）。icon：点菜单栏图标打开的，挂在图标下面；nil（快捷键、启动器、再打开一次 App、
+  /// 图标藏着）在鼠标所在屏的上方正中，和启动器、剪贴板面板、快速记一条、选状态的面板同一个位置。只开一个——收起那几块
+  /// （固定着的剪贴板面板也收，同 toggleLauncher）
+  func showHome(under icon: NSRect? = nil) {
     builtClipboardPanel?.hide()
     builtLauncherPanel?.hide()
     statusPicker.panel?.hide()
     noteCapture?.panel.hide()
     refreshHome(appearing: !homePanel.isVisible)
-    homePanel.present(atTop: true)
+    homePanel.present(atTop: icon == nil, below: icon)
   }
 
   /// 按现在的状态重排主界面（关着的功能、开关、在不在录、钉图、当前生效的快捷键）。appearing：新呼出，直接定大小；
