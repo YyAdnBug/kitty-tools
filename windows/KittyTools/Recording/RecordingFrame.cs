@@ -1,5 +1,7 @@
 // 录屏的选区边框（2026-10-29 用户反馈：开录后选区的边框就没了，不知道在录哪）。照 mac ScreenRecorder.showFrame：
-// 倒数一开始就出、停止 / 放弃 / 取消那一刻收；选区外一圈 2 的截图强调色（品牌粉）实线，整屏不画（RecordingFrameRules）。
+// 倒数一开始就出、停止 / 放弃 / 取消那一刻收；选区外一圈 2 的截图强调色（品牌粉）实线（RecordingFrameRules）。
+// 贴着屏幕边、外面放不下的那一侧：录屏收进选区里面画（线不进录屏，整屏、最大化的窗口也看得出在录哪；mac 是不画，
+// 用户反馈「还是没有边框」后改的），前提是「不进截图 / 录屏」设上了，设不上（老系统）就照 mac 不画；长截图一律只画外面。
 // mac 倒数时走蚂蚁线、录制中带呼吸发光；这里只画静止的实线。
 // 四条细窗口各占一条边，纯色靠窗口类的背景画刷（不建 XAML、不自己画）；WS_EX_LAYERED | WS_EX_TRANSPARENT 让鼠标点穿，
 // 不激活、不进任务栏和 Alt+Tab，WDA_EXCLUDEFROMCAPTURE 不进截图和别的录屏（线本来就在选区外，不会录进这段）。
@@ -25,8 +27,8 @@ internal static unsafe partial class RecordingFrame
                                    0x08000000 /* NOACTIVATE */ | 0x00080000 /* LAYERED */ | 0x00000020 /* TRANSPARENT */;
 
     private static readonly delegate* unmanaged[Stdcall]<HWND, uint, WPARAM, LPARAM, LRESULT> WndProcPtr = &WndProc;
-    private static readonly Frame Recording = new();
-    private static readonly Frame Scrolling = new();
+    private static readonly Frame Recording = new("record", insideAtEdges: true);
+    private static readonly Frame Scrolling = new("scroll", insideAtEdges: false);
     private static HINSTANCE _instance;
     private static bool _registered;
 
@@ -42,11 +44,21 @@ internal static unsafe partial class RecordingFrame
 
     private sealed class Frame
     {
+        private readonly string _name;
+        private readonly bool _insideAtEdges;
         private readonly IntPtr[] _strips = new IntPtr[4];
+        /// <summary>四条都设上了 WDA_EXCLUDEFROMCAPTURE：这时才敢把线画进选区里面。</summary>
+        private bool _excluded;
         private bool _shown;
         private IntPtr _window;
         private PixelBounds _region;
         private DispatcherQueueTimer? _follow;
+
+        public Frame(string name, bool insideAtEdges)
+        {
+            _name = name;
+            _insideAtEdges = insideAtEdges;
+        }
 
         public void Show(PixelBounds region, IntPtr window)
         {
@@ -57,15 +69,30 @@ internal static unsafe partial class RecordingFrame
 
             _shown = true;
             _window = window;
+            _excluded = true;
+            var created = 0;
             for (var i = 0; i < _strips.Length; i++)
             {
                 var hwnd = (IntPtr)Native.CreateWindowEx(
                     WsExFlags, ClassName, string.Empty, WsPopup, 0, 0, 0, 0, default, IntPtr.Zero, _instance, (void*)0).Value;
                 _strips[i] = hwnd;
-                if (hwnd != IntPtr.Zero)
+                if (hwnd == IntPtr.Zero)
                 {
-                    SetLayeredWindowAttributes(hwnd, 0, 255, 0x2 /* LWA_ALPHA */);
-                    SetWindowDisplayAffinity(hwnd, 0x11 /* WDA_EXCLUDEFROMCAPTURE */);
+                    _excluded = false;
+                    Log.Warn($"record.frame-create-failed {_name} {Marshal.GetLastWin32Error()}");
+                    continue;
+                }
+
+                created++;
+                if (!SetLayeredWindowAttributes(hwnd, 0, 255, 0x2 /* LWA_ALPHA */))
+                {
+                    Log.Warn($"record.frame-layered-failed {_name} {Marshal.GetLastWin32Error()}");
+                }
+
+                if (!SetWindowDisplayAffinity(hwnd, 0x11 /* WDA_EXCLUDEFROMCAPTURE */))
+                {
+                    _excluded = false;
+                    Log.Warn($"record.frame-affinity-failed {_name} {Marshal.GetLastWin32Error()}");
                 }
             }
 
@@ -85,7 +112,7 @@ internal static unsafe partial class RecordingFrame
                 _follow.Start();
             }
 
-            Log.Info("record.frame-shown");
+            Log.Info($"record.frame-shown {_name} created={created} excluded={_excluded}");
         }
 
         public void Hide()
@@ -124,7 +151,11 @@ internal static unsafe partial class RecordingFrame
             var strips = RecordingFrameRules.Strips(
                 region.Left, region.Top, region.Right, region.Bottom,
                 info.rcMonitor.left, info.rcMonitor.top, info.rcMonitor.right, info.rcMonitor.bottom,
-                Displays.ScaleOf(monitor));
+                Displays.ScaleOf(monitor), insideAtEdges: _insideAtEdges && _excluded);
+            // 坐标不算隐私：真机上边框没出来时，看日志就知道是没建出来、摆错了地方，还是四条都是空的。
+            Log.Info($"record.frame-place {_name} region={region.Left},{region.Top},{region.Right},{region.Bottom} " +
+                     $"screen={info.rcMonitor.left},{info.rcMonitor.top},{info.rcMonitor.right},{info.rcMonitor.bottom} " +
+                     $"strips={string.Join(' ', strips.Select(strip => strip.IsEmpty ? "-" : $"{strip.X},{strip.Y},{strip.Width}x{strip.Height}"))}");
             for (var i = 0; i < _strips.Length; i++)
             {
                 var hwnd = _strips[i];
@@ -140,8 +171,11 @@ internal static unsafe partial class RecordingFrame
                     continue;
                 }
 
-                SetWindowPos(hwnd, new IntPtr(-1) /* HWND_TOPMOST */, strip.X, strip.Y, strip.Width, strip.Height,
-                    0x0010 /* SWP_NOACTIVATE */ | 0x0040 /* SWP_SHOWWINDOW */);
+                if (!SetWindowPos(hwnd, new IntPtr(-1) /* HWND_TOPMOST */, strip.X, strip.Y, strip.Width, strip.Height,
+                        0x0010 /* SWP_NOACTIVATE */ | 0x0040 /* SWP_SHOWWINDOW */))
+                {
+                    Log.Warn($"record.frame-pos-failed {_name} {Marshal.GetLastWin32Error()}");
+                }
             }
         }
     }

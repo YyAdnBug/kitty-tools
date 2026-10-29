@@ -488,7 +488,7 @@ internal sealed class ScreenshotSession
         var global = GlobalRect(screen, Selection);
         foreach (var overlay in _overlays)
         {
-            overlay.Close();
+            overlay.CloseCloaked();
         }
 
         _overlays.Clear();
@@ -655,7 +655,7 @@ internal sealed class ScreenshotSession
         _current = null;
         foreach (var overlay in _overlays)
         {
-            overlay.Close();
+            overlay.CloseCloaked();
         }
 
         _overlays.Clear();

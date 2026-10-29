@@ -2426,6 +2426,20 @@ internal sealed partial class SelectionOverlayWindow : Window
         SetCloaked(false);
     }
 
+    /// <summary>
+    /// 收起：先隐身（DWM cloak）再关。关窗口时 Closed 里的 Release 先把内容拆掉（Content = null），HWND 销毁前合成出来的那一帧
+    /// 是空白底，在用户机器上是白的，整块屏闪一下白（2026-10-29 用户反馈「录屏开始时整个屏幕闪一下白屏」；
+    /// 出现时的同一个坑见 ShowOverlay）。隐身的窗口不上屏，拆内容那一帧就看不见了。
+    /// </summary>
+    public unsafe void CloseCloaked()
+    {
+        CompositionTarget.Rendering -= OnRenderingWhileCloaked;
+        _cloaked = true;
+        var value = 1;
+        DwmSetWindowAttribute(_hwnd, 13 /* DWMWA_CLOAK */, &value, sizeof(int));
+        Close();
+    }
+
     private unsafe void SetCloaked(bool cloaked)
     {
         if (_cloaked == cloaked)
