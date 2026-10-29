@@ -85,8 +85,9 @@ enum Prefs {
   static let translateHistoryLimit = "translateHistoryLimit"
   /// 「保留条数」的档位（0 = 不限）；旧档位（100–2000）在 migrate 里挪到下一档
   static let translateHistoryLimitChoices = [1000, 5000, 0]
-  /// 翻译浮窗出现的位置（体检 A13）：mouse 跟随鼠标（默认，划词 / 截图翻译 / 复制即译 / 剪贴板「翻译」在光标右下）/
-  /// last 上次位置（用户拖到哪就在哪）。输入翻译总是上次位置
+  /// 翻译浮窗出现的位置（体检 A13；2026-10-29 加 top 并改成默认）：top 屏幕上方（鼠标所在屏的上方正中，同启动器）/
+  /// mouse 跟随鼠标（划词 / 截图翻译 / 复制即译 / 剪贴板「翻译」在光标右下）/ last 上次位置（用户拖到哪就在哪）。
+  /// 输入翻译总是上次拖到的位置（top 时没拖过就在上方）。旧版本读到 top 当跟随鼠标（只认 last）
   static let translatePanelPosition = "translatePanelPosition"
   /// 翻译浮窗字号倍数（⌘+ / ⌘- / ⌘0）
   static let translateFontScale = "translateFontScale"
@@ -338,7 +339,7 @@ enum Prefs {
       translateCopyRecognized: false,
       translateHistoryEnabled: true,
       translateHistoryLimit: 5000,
-      translatePanelPosition: "mouse",
+      translatePanelPosition: "top",
       translateCopyToTranslate: false,
       translateSystemDictionary: true,
       translateWordMode: true,

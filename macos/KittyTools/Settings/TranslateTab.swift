@@ -27,7 +27,7 @@ struct TranslateTab: View {
   @AppStorage(Prefs.translateCopyRecognized) private var copyRecognized = false
   @AppStorage(Prefs.translateHistoryEnabled) private var historyEnabled = true
   @AppStorage(Prefs.translateHistoryLimit) private var historyLimit = 5000
-  @AppStorage(Prefs.translatePanelPosition) private var panelPosition = "mouse"
+  @AppStorage(Prefs.translatePanelPosition) private var panelPosition = "top"
   /// 推进的详情页在 navigation.path（主菜单「返回」也要读写它）
   @Environment(SettingsNavigation.self) private var navigation
   /// 列表里用键盘选中的服务（「−」和 ⌫ 删它；鼠标单击直接推进，不留选中）
@@ -137,11 +137,12 @@ struct TranslateTab: View {
       Section {
         Group {
           Picker(selection: $panelPosition) {
+            Text("屏幕上方").tag("top")
             Text("跟随鼠标").tag("mouse")
             Text("上次位置").tag("last")
           } label: {
             Text("浮窗位置")
-            Text("跟随鼠标：划词、截图翻译、复制即译时出现在光标旁边；输入翻译总在上次拖到的位置")
+            Text("划词、截图翻译、复制即译时出现的位置：屏幕上方是鼠标所在屏幕的上方正中，跟随鼠标是光标旁边；输入翻译总在上次拖到的位置")
           }
           .pickerStyle(.segmented)
           Toggle("翻译前把同一段里的换行接起来（适合 PDF 复制的文字）", isOn: $removeNewlines)

@@ -1405,20 +1405,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   /// 输入翻译（体检 A14）：热键是开关——浮窗开着且是 key 就收起；否则打开，保留上次的原文和结果、原文全选
-  /// （直接打字就替换，⌫ 清空），上次收起时中断的卡片重跑。总在上次的位置（不跟随鼠标）。菜单栏、启动器同一条路
+  /// （直接打字就替换，⌫ 清空），上次收起时中断的卡片重跑。总在上次拖到的位置（不跟随鼠标）；「屏幕上方」时没拖过就放上方。
+  /// 菜单栏、启动器同一条路
   func showInputTranslate() {
     if translatePanel.isVisible, translatePanel.isKeyWindow { return translatePanel.dismiss() }
     coordinator.resumeInput()
-    translatePanel.present()
+    translatePanel.present(atTop: Self.translatePosition == "top" && !translatePanel.hasUserFrame)
     (translatePanel.firstResponder as? NSTextView)?.selectAll(nil)
   }
 
-  /// 翻译浮窗出现：设置 › 翻译「浮窗位置」是跟随鼠标（默认）时放在光标右下，否则在上次的位置（体检 A13）
+  /// 翻译浮窗出现（划词、截图翻译、复制即译、剪贴板「翻译」）：设置 › 翻译「浮窗位置」是屏幕上方（默认，2026-10-29 用户要求）时
+  /// 放在鼠标所在屏的上方正中（同启动器的位置），跟随鼠标时放在光标右下，上次位置时在上次拖到的地方（体检 A13）
   private func presentTranslate(makingKey: Bool = true) {
-    let followsMouse =
-      UserDefaults.standard.string(forKey: Prefs.translatePanelPosition) != "last"
+    let position = Self.translatePosition
     translatePanel.present(
-      makingKey: makingKey, anchor: followsMouse ? NSEvent.mouseLocation : nil)
+      makingKey: makingKey, anchor: position == "mouse" ? NSEvent.mouseLocation : nil,
+      atTop: position == "top")
+  }
+
+  /// 「浮窗位置」：top（屏幕上方）/ mouse（跟随鼠标）/ last（上次位置）；认不出的值按默认的屏幕上方
+  private static var translatePosition: String {
+    let value = UserDefaults.standard.string(forKey: Prefs.translatePanelPosition)
+    return value == "mouse" || value == "last" ? value! : "top"
   }
 
   /// 便签正文里选中的一段（第 8 批 R13）：划词翻译直接读它、替换回它，不走 AX、不发 ⌘C

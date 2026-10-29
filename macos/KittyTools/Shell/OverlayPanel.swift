@@ -41,6 +41,8 @@ final class OverlayPanel: NSPanel {
   private var userFrame: (topLeft: NSPoint, width: CGFloat)?
   /// 下一次出现时的锚点（present 传进来的鼠标位置）
   private var anchor: NSPoint?
+  /// 这一次出现放到屏幕上方（翻译浮窗「屏幕上方」：和 topAnchored 的启动器同一个位置，但只管这一次）
+  private var atTop = false
   /// 启动器：每次都放在鼠标所在屏、顶边在可见区 20% 处，高度随内容往下伸缩
   private let topAnchored: Bool
   private var mouseMonitors: [Any] = []
@@ -206,8 +208,11 @@ final class OverlayPanel: NSPanel {
 
   /// makingKey = false：只露出来、不抢键盘（复制即译），此时靠点外关闭。
   /// anchor：新出现时放在这一点（鼠标位置）的右下 12 pt（翻译浮窗「跟随鼠标」）；已经开着就不挪。
+  /// atTop：新出现时放在鼠标所在屏的上方正中（翻译浮窗「屏幕上方」，同启动器的位置）；已经开着就不挪。
   /// keepsPlace：原地重新露出来（划词翻译并替换期间临时 orderOut 的固定浮窗），不重新摆
-  func present(makingKey: Bool = true, anchor: NSPoint? = nil, keepsPlace: Bool = false) {
+  func present(
+    makingKey: Bool = true, anchor: NSPoint? = nil, atTop: Bool = false, keepsPlace: Bool = false
+  ) {
     let appearing = !isVisible
     // 淡出的替身 0.10 s 内还在：直接不透明盖住它
     let fades = appearing && CACurrentMediaTime() - lastDismiss > 0.15
@@ -215,6 +220,7 @@ final class OverlayPanel: NSPanel {
       // 直接 orderOut 收起的（划词时浮窗是 key）没经过 hide / dismiss：这里补记用户拖过的位置
       saveFrameIfMoved()
       self.anchor = anchor
+      self.atTop = atTop
       if !keepsPlace { placeForShow() }
       animationBehavior = .none
       alphaValue = fades ? 0 : 1
@@ -649,7 +655,7 @@ final class OverlayPanel: NSPanel {
     let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
     guard let visible = screen?.visibleFrame else { return }
     defer { placed = (NSPoint(x: frame.minX, y: frame.maxY), frame.width) }
-    if topAnchored {
+    if topAnchored || atTop {
       let top = visible.maxY - visible.height * 0.2
       setFrameOrigin(NSPoint(x: visible.midX - frame.width / 2, y: top - frame.height))
       return
@@ -665,6 +671,9 @@ final class OverlayPanel: NSPanel {
     }
     setFrameOrigin(NSPoint(x: visible.midX - frame.width / 2, y: visible.midY - frame.height / 2))
   }
+
+  /// 用户拖过这块浮层（有记下的位置）：翻译浮窗「屏幕上方」时，输入翻译没拖过就放到上方、拖过就回到拖到的地方
+  var hasUserFrame: Bool { userFrame != nil }
 
   /// 收起时：用户拖过、拖宽过（和这次摆好的左上角 / 宽度不同）才记下来。比左上角：高度随内容变、顶边不动。
   /// 只拖宽没挪（右边的拖边）时位置沿用 userFrame，没有才用当前位置
