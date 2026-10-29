@@ -309,10 +309,11 @@ import Observation
     return OCR.joiningLines(text, paragraphSeparator: "\n\n")
   }
 
-  /// 复制即译要不要翻这段（体检 A12，纯函数配单测）：网址、路径、纯数字 / 符号、超长的、目标是「自动」时本来就是
-  /// 第一语言的文字都静默跳过（不弹浮窗）。translated：最近一次翻译的原文，同一段再复制一次不重翻（B20）
+  /// 复制即译要不要翻这段（体检 A12，纯函数配单测）：网址、路径、纯数字 / 符号、超长的都静默跳过（不弹浮窗）；
+  /// 第一语言的文字照翻成第二语言（2026-10-29 用户反馈复制中文不弹，以前目标「自动」时一律跳过）。
+  /// translated：最近一次翻译的原文，同一段再复制一次不重翻（B20）
   static func worthTranslating(
-    copied text: String, translated: String?, first: Lang, second: Lang, autoTarget: Bool
+    copied text: String, translated: String?, first: Lang, second: Lang
   ) -> Bool {
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty, trimmed != translated, trimmed.utf8.count <= maxSourceBytes else {
@@ -325,8 +326,7 @@ import Observation
       return false
     }
     if oneLine, trimmed.hasPrefix("/") || trimmed.hasPrefix("~/") { return false }
-    guard let detected = Lang.detect(trimmed, preferring: [first, second]) else { return false }
-    return !(autoTarget && detected.isSameLanguage(as: first))
+    return Lang.detect(trimmed, preferring: [first, second]) != nil
   }
 
   /// 按浮窗上选的源 / 目标（全局记住的）和检测结果定这次的请求；wordMode：单个词时让大模型按词典格式回答

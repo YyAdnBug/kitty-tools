@@ -147,7 +147,7 @@ struct TranslateTab: View {
           Toggle("翻译前把同一段里的换行接起来（适合 PDF 复制的文字）", isOn: $removeNewlines)
           Toggle(isOn: $copyToTranslate) {
             Text("复制即译")
-            Text("在别的 App 里复制外语文字，浮窗自动弹出翻译（网址、路径、数字和第一语言的文字不翻）")
+            Text("在别的 App 里复制文字，浮窗自动弹出翻译（网址、路径和数字不翻）")
           }
           Toggle("自动复制译文", isOn: $autoCopy)
             .help("复制即译弹出的翻译不会自动复制，免得覆盖你刚复制的原文")

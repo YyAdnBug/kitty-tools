@@ -2515,8 +2515,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let (first, second) = Lang.preferredPair
     guard
       TranslateCoordinator.worthTranslating(
-        copied: text, translated: coordinator.translatedSource, first: first, second: second,
-        autoTarget: defaults.string(forKey: Prefs.translateTarget) == nil)
+        copied: text, translated: coordinator.translatedSource, first: first, second: second)
     else { return }
     coordinator.translate(text, fromCopy: true)
     presentTranslate(makingKey: false)

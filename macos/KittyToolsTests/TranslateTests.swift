@@ -760,11 +760,11 @@ struct TranslateBatch4Tests {
         keyCode: UInt16(code)))
   }
 
-  /// 复制即译不挑内容的问题（体检 A12）：网址、路径、数字、超长、目标自动时的第一语言静默跳过；同一段不重翻（B20）
+  /// 复制即译不挑内容的问题（体检 A12）：网址、路径、数字、超长静默跳过；同一段不重翻（B20）；第一语言照翻（2026-10-29）
   @Test func copyToTranslateSkipsNonText() {
-    func worth(_ text: String, translated: String? = nil, autoTarget: Bool = true) -> Bool {
+    func worth(_ text: String, translated: String? = nil) -> Bool {
       TranslateCoordinator.worthTranslating(
-        copied: text, translated: translated, first: .zhHans, second: .en, autoTarget: autoTarget)
+        copied: text, translated: translated, first: .zhHans, second: .en)
     }
     #expect(worth("The quick brown fox jumps over the lazy dog."))
     #expect(!worth("https://example.com/a?b=c"))
@@ -775,8 +775,7 @@ struct TranslateBatch4Tests {
     #expect(!worth("123 456.78 %"))
     #expect(!worth("  \n "))
     #expect(!worth(String(repeating: "a ", count: TranslateCoordinator.maxSourceBytes)))
-    #expect(!worth("这是一段中文"))  // 目标自动时第一语言不翻
-    #expect(worth("这是一段中文", autoTarget: false))  // 固定了目标就照翻
+    #expect(worth("这是一段中文"))  // 第一语言也翻（翻成第二语言）
     #expect(!worth(" Ship it \n", translated: "Ship it"))  // 刚翻过的同一段
     #expect(worth("Ship it", translated: "Ship"))
   }
