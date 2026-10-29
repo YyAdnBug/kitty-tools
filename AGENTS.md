@@ -6,6 +6,7 @@
 
 **kitty-tools 原生 macOS 版**：Swift 6 + SwiftUI / AppKit 写的纯原生菜单栏工具，替代 Tauri 版的 macOS 端；基本自用，只支持 Apple 芯片（arm64），最低 macOS 15.0。
 
+- **入口**：左键点菜单栏图标是主界面（`Shell/HomePanel.swift`，全部功能一格一格摆着），右键 / ⌃点是菜单（0.7.0，PLAN §10「主界面」）。
 - **功能**（括号里是加进来的版本；每个都能在 设置 › 通用 › 功能 里整个关掉，`Shell/Feature.swift`）：
   - 剪贴板历史 `Clipboard/`（0.1.0）
   - 翻译 `Translate/`：划词 / 输入 / 复制即译 / 截图翻译（0.1.0）
