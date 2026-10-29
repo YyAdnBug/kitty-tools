@@ -4,7 +4,7 @@
 // 光标；截断的照常显示、下面一行说明；出错只显示错误行（配置问题橙色钥匙 + 「打开设置」直达这个服务，网络 / 服务问题红色三角 + 「重试」，
 // 自建 AI 另给「打开设置」），整张卡染橙 / 红。大模型生成中边框上一段强调色光绕行（2.4 s 一圈，几段虚线沿描边走，合成器上动），完成时整圈闪一下；
 // 复制时整卡闪一下。换状态时正文淡变 0.18 s；重新翻译时骨架先撑到上次正文的高。正文最多 8 行，再长在卡里滚、上下渐隐。
-// 大模型的结果有行内 Markdown 时按 Markdown 显示（Core 的 InlineMarkdown）。
+// 大模型的结果有 Markdown 时按 Markdown 显示（Core 的 InlineMarkdown：行内记号 + 标题、列表、引用、代码块）。
 using System.Numerics;
 using System.Text.RegularExpressions;
 using KittyTools.Core;
@@ -457,6 +457,11 @@ internal sealed partial class TranslateCardView
             if (span.Strike)
             {
                 run.TextDecorations = Windows.UI.Text.TextDecorations.Strikethrough;
+            }
+
+            if (span.Dim)
+            {
+                run.Foreground = Theme.SecondaryText();
             }
 
             if (span.Link is { } link && Uri.TryCreate(link, UriKind.Absolute, out var uri))

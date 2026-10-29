@@ -241,8 +241,8 @@ public sealed class AiEndpointTests
 [TestClass]
 public sealed class CopyTranslateRulesTests
 {
-    private static bool Worth(string text, string? translated = null, bool autoTarget = true)
-        => CopyTranslateRules.WorthTranslating(text, translated, Lang.ZhHans, Lang.En, autoTarget);
+    private static bool Worth(string text, string? translated = null)
+        => CopyTranslateRules.WorthTranslating(text, translated, Lang.ZhHans, Lang.En);
 
     [TestMethod]
     public void FiltersOrdinaryCases()
@@ -260,10 +260,10 @@ public sealed class CopyTranslateRulesTests
     }
 
     [TestMethod]
-    public void SkipsTextAlreadyInFirstLanguageOnlyWhenTargetIsAuto()
+    public void TranslatesFirstLanguageButNotTheSameTextTwice()
     {
-        Assert.IsFalse(Worth("这是一段中文"));
-        Assert.IsTrue(Worth("这是一段中文", autoTarget: false));
+        // 2026-10-29：复制中文也弹（以前目标自动时第一语言跳过）。
+        Assert.IsTrue(Worth("这是一段中文"));
         Assert.IsFalse(Worth(" Ship it \n", translated: "Ship it"));
         Assert.IsTrue(Worth("Ship it", translated: "Ship"));
     }

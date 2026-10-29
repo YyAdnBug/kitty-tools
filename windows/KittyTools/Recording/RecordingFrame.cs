@@ -4,6 +4,7 @@
 // 四条细窗口各占一条边，纯色靠窗口类的背景画刷（不建 XAML、不自己画）；WS_EX_LAYERED | WS_EX_TRANSPARENT 让鼠标点穿，
 // 不激活、不进任务栏和 Alt+Tab，WDA_EXCLUDEFROMCAPTURE 不进截图和别的录屏（线本来就在选区外，不会录进这段）。
 // 录的是一扇窗口时（WGC 跟着窗口录），每 200 ms 按窗口现在的位置重摆。
+// 长截图也用它（同 mac ScrollCapture 的 ScrollBorderView）：另一套四条，录屏时也能截长图，两套各管各的。
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using KittyTools.Core;
@@ -24,109 +25,124 @@ internal static unsafe partial class RecordingFrame
                                    0x08000000 /* NOACTIVATE */ | 0x00080000 /* LAYERED */ | 0x00000020 /* TRANSPARENT */;
 
     private static readonly delegate* unmanaged[Stdcall]<HWND, uint, WPARAM, LPARAM, LRESULT> WndProcPtr = &WndProc;
-    private static readonly IntPtr[] Strips = new IntPtr[4];
+    private static readonly Frame Recording = new();
+    private static readonly Frame Scrolling = new();
     private static HINSTANCE _instance;
     private static bool _registered;
-    private static bool _shown;
-    private static IntPtr _window;
-    private static PixelBounds _region;
-    private static DispatcherQueueTimer? _follow;
 
-    /// <summary>倒数开始时出（倒数过就已经在了，录屏开始时再调是空操作）。window 不是 0 时跟着那扇窗口走。</summary>
-    public static void Show(PixelBounds region, IntPtr window = default)
+    /// <summary>录屏：倒数开始时出（倒数过就已经在了，录屏开始时再调是空操作）。window 不是 0 时跟着那扇窗口走。</summary>
+    public static void Show(PixelBounds region, IntPtr window = default) => Recording.Show(region, window);
+
+    public static void Hide() => Recording.Hide();
+
+    /// <summary>长截图：选区收起、开始滚时出，完成 / 放弃时收。</summary>
+    public static void ShowScrolling(PixelBounds region) => Scrolling.Show(region, IntPtr.Zero);
+
+    public static void HideScrolling() => Scrolling.Hide();
+
+    private sealed class Frame
     {
-        if (_shown || !EnsureClass())
-        {
-            return;
-        }
+        private readonly IntPtr[] _strips = new IntPtr[4];
+        private bool _shown;
+        private IntPtr _window;
+        private PixelBounds _region;
+        private DispatcherQueueTimer? _follow;
 
-        _shown = true;
-        _window = window;
-        for (var i = 0; i < Strips.Length; i++)
+        public void Show(PixelBounds region, IntPtr window)
         {
-            var hwnd = (IntPtr)Native.CreateWindowEx(
-                WsExFlags, ClassName, string.Empty, WsPopup, 0, 0, 0, 0, default, IntPtr.Zero, _instance, (void*)0).Value;
-            Strips[i] = hwnd;
-            if (hwnd != IntPtr.Zero)
+            if (_shown || !EnsureClass())
             {
-                SetLayeredWindowAttributes(hwnd, 0, 255, 0x2 /* LWA_ALPHA */);
-                SetWindowDisplayAffinity(hwnd, 0x11 /* WDA_EXCLUDEFROMCAPTURE */);
+                return;
             }
-        }
 
-        Place(window != IntPtr.Zero && WindowBounds(window) is { } bounds ? bounds : region);
-        if (window != IntPtr.Zero)
-        {
-            _follow = DispatcherQueue.GetForCurrentThread()!.CreateTimer();
-            _follow.Interval = TimeSpan.FromMilliseconds(200);
-            _follow.IsRepeating = true;
-            _follow.Tick += (_, _) =>
+            _shown = true;
+            _window = window;
+            for (var i = 0; i < _strips.Length; i++)
             {
-                if (WindowBounds(_window) is { } moved && moved != _region)
+                var hwnd = (IntPtr)Native.CreateWindowEx(
+                    WsExFlags, ClassName, string.Empty, WsPopup, 0, 0, 0, 0, default, IntPtr.Zero, _instance, (void*)0).Value;
+                _strips[i] = hwnd;
+                if (hwnd != IntPtr.Zero)
                 {
-                    Place(moved);
+                    SetLayeredWindowAttributes(hwnd, 0, 255, 0x2 /* LWA_ALPHA */);
+                    SetWindowDisplayAffinity(hwnd, 0x11 /* WDA_EXCLUDEFROMCAPTURE */);
                 }
-            };
-            _follow.Start();
-        }
-
-        Log.Info("record.frame-shown");
-    }
-
-    public static void Hide()
-    {
-        if (!_shown)
-        {
-            return;
-        }
-
-        _shown = false;
-        _window = IntPtr.Zero;
-        _follow?.Stop();
-        _follow = null;
-        for (var i = 0; i < Strips.Length; i++)
-        {
-            if (Strips[i] != IntPtr.Zero)
-            {
-                DestroyWindow(Strips[i]);
-                Strips[i] = IntPtr.Zero;
-            }
-        }
-    }
-
-    private static void Place(PixelBounds region)
-    {
-        _region = region;
-        var monitor = PInvoke.MonitorFromPoint(
-            new System.Drawing.Point(region.Left + region.Width / 2, region.Top + region.Height / 2),
-            MONITOR_FROM_FLAGS.MONITOR_DEFAULTTONEAREST);
-        var info = new MONITORINFO { cbSize = (uint)sizeof(MONITORINFO) };
-        if (monitor == default || !PInvoke.GetMonitorInfo(monitor, ref info))
-        {
-            return;
-        }
-
-        var strips = RecordingFrameRules.Strips(
-            region.Left, region.Top, region.Right, region.Bottom,
-            info.rcMonitor.left, info.rcMonitor.top, info.rcMonitor.right, info.rcMonitor.bottom,
-            Displays.ScaleOf(monitor));
-        for (var i = 0; i < Strips.Length; i++)
-        {
-            var hwnd = Strips[i];
-            if (hwnd == IntPtr.Zero)
-            {
-                continue;
             }
 
-            var strip = strips[i];
-            if (strip.IsEmpty)
+            Place(window != IntPtr.Zero && WindowBounds(window) is { } bounds ? bounds : region);
+            if (window != IntPtr.Zero)
             {
-                ShowWindow(hwnd, 0 /* SW_HIDE */);
-                continue;
+                _follow = DispatcherQueue.GetForCurrentThread()!.CreateTimer();
+                _follow.Interval = TimeSpan.FromMilliseconds(200);
+                _follow.IsRepeating = true;
+                _follow.Tick += (_, _) =>
+                {
+                    if (WindowBounds(_window) is { } moved && moved != _region)
+                    {
+                        Place(moved);
+                    }
+                };
+                _follow.Start();
             }
 
-            SetWindowPos(hwnd, new IntPtr(-1) /* HWND_TOPMOST */, strip.X, strip.Y, strip.Width, strip.Height,
-                0x0010 /* SWP_NOACTIVATE */ | 0x0040 /* SWP_SHOWWINDOW */);
+            Log.Info("record.frame-shown");
+        }
+
+        public void Hide()
+        {
+            if (!_shown)
+            {
+                return;
+            }
+
+            _shown = false;
+            _window = IntPtr.Zero;
+            _follow?.Stop();
+            _follow = null;
+            for (var i = 0; i < _strips.Length; i++)
+            {
+                if (_strips[i] != IntPtr.Zero)
+                {
+                    DestroyWindow(_strips[i]);
+                    _strips[i] = IntPtr.Zero;
+                }
+            }
+        }
+
+        private void Place(PixelBounds region)
+        {
+            _region = region;
+            var monitor = PInvoke.MonitorFromPoint(
+                new System.Drawing.Point(region.Left + region.Width / 2, region.Top + region.Height / 2),
+                MONITOR_FROM_FLAGS.MONITOR_DEFAULTTONEAREST);
+            var info = new MONITORINFO { cbSize = (uint)sizeof(MONITORINFO) };
+            if (monitor == default || !PInvoke.GetMonitorInfo(monitor, ref info))
+            {
+                return;
+            }
+
+            var strips = RecordingFrameRules.Strips(
+                region.Left, region.Top, region.Right, region.Bottom,
+                info.rcMonitor.left, info.rcMonitor.top, info.rcMonitor.right, info.rcMonitor.bottom,
+                Displays.ScaleOf(monitor));
+            for (var i = 0; i < _strips.Length; i++)
+            {
+                var hwnd = _strips[i];
+                if (hwnd == IntPtr.Zero)
+                {
+                    continue;
+                }
+
+                var strip = strips[i];
+                if (strip.IsEmpty)
+                {
+                    ShowWindow(hwnd, 0 /* SW_HIDE */);
+                    continue;
+                }
+
+                SetWindowPos(hwnd, new IntPtr(-1) /* HWND_TOPMOST */, strip.X, strip.Y, strip.Width, strip.Height,
+                    0x0010 /* SWP_NOACTIVATE */ | 0x0040 /* SWP_SHOWWINDOW */);
+            }
         }
     }
 

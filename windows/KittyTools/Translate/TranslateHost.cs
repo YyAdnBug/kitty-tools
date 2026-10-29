@@ -278,8 +278,7 @@ internal static class TranslateHost
 
         // 去重跟最近一次翻译的原文比，不管它是从哪个入口来的（F18，mac worthTranslating 的 translated）。
         var (first, second) = TranslateServiceStore.Instance?.Languages ?? (Lang.ZhHans, Lang.En);
-        var autoTarget = Langs.FromCode(SettingsService.Current.TranslateTarget) is null;
-        if (!CopyTranslateRules.WorthTranslating(text, _window?.TranslatedSource, first, second, autoTarget))
+        if (!CopyTranslateRules.WorthTranslating(text, _window?.TranslatedSource, first, second))
         {
             return;
         }

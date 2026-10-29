@@ -1,6 +1,7 @@
 // 长截图（第三版 §7）：选区收起后，每 600 ms 抓一帧选区交给 Core 的 ScrollStitcher 拼；
 // 用户自己滚，Enter / 「完成」结束，Esc 放弃，高度到 30000 自动结束。
-// 遮罩已经收起，所以选区里没有我们的边框（方案里的 WDA_EXCLUDEFROMCAPTURE 那一套就不需要了）；
+// 遮罩收起后选区外一圈品牌粉实线（RecordingFrame.ShowScrolling，同 mac ScrollCapture 的边框；2026-10-29 用户反馈
+// 以前开始滚后什么框都没有）：线在选区外、又不进截图，抓的帧里没有它；
 // 进度用轻提示胶囊显示，Enter / Esc 用临时注册的全局热键（不带修饰键，只在长截图期间有效）。
 using KittyTools.Core;
 using KittyTools.Infrastructure;
@@ -65,6 +66,7 @@ internal static class ScrollingCapture
         }
         PInvoke.RegisterHotKey(HiddenWindow.Hwnd, EnterId, 0, (uint)VIRTUAL_KEY.VK_RETURN);
         PInvoke.RegisterHotKey(HiddenWindow.Hwnd, EscapeId, 0, (uint)VIRTUAL_KEY.VK_ESCAPE);
+        RecordingFrame.ShowScrolling(rect);
         CaptureFrame();
         _timer = DispatcherQueue.GetForCurrentThread()!.CreateTimer();
         _timer.Interval = Interval;
@@ -111,6 +113,7 @@ internal static class ScrollingCapture
         Active = false;
         _timer?.Stop();
         _timer = null;
+        RecordingFrame.HideScrolling();
         PInvoke.UnregisterHotKey(HiddenWindow.Hwnd, EnterId);
         PInvoke.UnregisterHotKey(HiddenWindow.Hwnd, EscapeId);
         PInvoke.UnregisterHotKey(HiddenWindow.Hwnd, ResumeId);

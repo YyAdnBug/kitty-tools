@@ -127,7 +127,7 @@ internal sealed partial class SettingsWindow
             settings.TranslateJoinLines = isOn;
             SettingsService.Save();
         });
-        AddToggle("复制即译", "在别的程序里复制外语文字，浮窗自动弹出翻译（网址、路径、数字和第一语言的文字不翻）",
+        AddToggle("复制即译", "在别的程序里复制文字，浮窗自动弹出翻译（网址、路径和数字不翻）",
             settings.CopyTranslate, isOn =>
             {
                 settings.CopyTranslate = isOn;
