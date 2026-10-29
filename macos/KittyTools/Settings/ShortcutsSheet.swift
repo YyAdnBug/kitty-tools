@@ -656,6 +656,17 @@ struct ShortcutsSheet: View {
           Entry(text: "点刘海：打开 / 收起最近的提示和快捷动作（指针停在刘海上时岛会鼓起一点）"),
           Entry(text: "鼠标挪到弹出的提示上：停住、展开看全文和按钮；在岛上双指往上滑收起"),
         ]),
+      // 主界面（2026-10-29，Shell/HomePanel.swift 的 Home.key / Home.command）：不属于哪个功能，一直列
+      Group(
+        title: "主界面", symbol: HotKeyAction.home.symbol, color: Style.Family.general,
+        globals: [.home],
+        entries: [
+          Entry("←→", "↑↓", text: "在格子之间换（Tab、⇧Tab 也行）"),
+          Entry("↩", "空格", text: "执行选中的那一格；开关原地切换"),
+          Entry("⌘,", text: "打开设置"),
+          Entry("⌘Q", text: "退出 Kitty Tools"),
+          Entry("Esc", "⌘W", text: "收起"),
+        ]),
       // mac-whisker §6 设置；代码在 SettingsWindow 的 SettingsCommands（主菜单「显示 › 返回」）
       Group(
         title: "设置", symbol: "gearshape.fill", color: Style.Family.general,

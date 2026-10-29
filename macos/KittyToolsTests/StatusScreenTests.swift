@@ -856,10 +856,10 @@ struct StatusScreenTests {
   @Test func entries() throws {
     #expect(HotKeyAction.allCases.firstIndex(of: .statusScreen) == 12)
     #expect(HotKeyAction.statusScreen.defaultHotKey == nil)
-    // 后面只有不归功能的「刘海岛」一节（2026-10-26）
+    // 后面只有不归功能的「刘海岛」（2026-10-26）、「主界面」（2026-10-29）两节
     let sections = HotKeyAction.visibleSections(enabled: Set(Feature.allCases))
-    #expect(sections.suffix(2).map(\.title) == ["状态屏", "刘海岛"])
-    #expect(sections.dropLast().last?.actions == [.statusScreen])
+    #expect(sections.suffix(3).map(\.title) == ["状态屏", "刘海岛", "主界面"])
+    #expect(sections.dropLast(2).last?.actions == [.statusScreen])
     #expect(LauncherItem.actions().allSatisfy { !$0.isStatusPreset })
     var presets = StatusPreset.builtIn
     presets[2].symbol = ""
@@ -870,7 +870,7 @@ struct StatusScreenTests {
     #expect(
       Array(targets[(first - 1)...(first + 4)]) == [
         "launchpad", "statusScreen:clean", "statusScreen:busy", "statusScreen:back", "island",
-        "settings",
+        "home",
       ])
     let statuses = items.filter(\.isStatusPreset)
     #expect(statuses.map(\.title) == ["清洁屏幕", "请勿触碰", "马上回来"])

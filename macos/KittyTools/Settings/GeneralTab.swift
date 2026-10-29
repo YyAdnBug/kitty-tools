@@ -58,7 +58,7 @@ struct GeneralTab: View {
       Section("菜单栏") {
         Toggle(isOn: $statusItemVisible) {
           Text("在菜单栏显示图标")
-          Text("隐藏后，再打开一次 Kitty Tools（在启动器或访达里）可以回到设置；快捷键照常能用")
+          Text("隐藏后，再打开一次 Kitty Tools（在启动器或访达里）会打开主界面；快捷键照常能用")
         }
         // 分段左边是菜单栏上现在那张图（1:1 实时预览）：分段控件只显示文字，塞不进图。
         // LabeledContent 的标签不随 .disabled 变淡，图标隐藏时自己淡成 .tertiary（同系统禁用文字）

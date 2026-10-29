@@ -203,6 +203,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       size: statusPickerModel.layout.size, autoHide: .clickOutside, isPinned: { false },
       content: StatusPickerView(model: statusPickerModel))
   }
+  /// 主界面（2026-10-29，Shell/HomePanel.swift）：快捷键「打开主界面」、启动器、再打开一次 App 时出来。第一次用时才建、
+  /// 建了留着（同启动器：小、天天用）；没有固定，点外面就收起
+  private lazy var homeModel = HomeModel()
+  private weak var builtHomePanel: OverlayPanel?
+  private lazy var homePanel: OverlayPanel = {
+    let model = homeModel
+    let panel = OverlayPanel(
+      size: model.size, autoHide: .clickOutside, isPinned: { false },
+      // 包 AnyView：同启动器（带了 environment 的不透明类型 Swift 6.4 不让直接传进这个泛型 init）
+      content: AnyView(HomeView(model: model).environment(updater)))
+    // ⌘, 设置、⌘Q 退出（主界面不激活本 App，主菜单收不到）
+    panel.keyEquivalentHandler = { [unowned model] event in
+      guard let extra = Home.command(code: Int(event.keyCode), modifiers: event.modifierFlags)
+      else { return false }
+      model.run(extra)
+      return true
+    }
+    panel.onHide = { [unowned self] in idleReclaim.schedule() }
+    model.hidePanel = { [unowned panel] in panel.hide() }
+    model.openFeatures = { [unowned self] in showSettings(page: .general) }
+    model.perform = { [unowned self] target in
+      switch target {
+      case .action(let action): run(action)
+      // 开关原地切：结果就在格子上，不再弹岛（mac-whisker S2「分工」）
+      case .extra(let extra):
+        run(extra, announcing: false)
+        if builtHomePanel?.isVisible == true { refreshHome(appearing: false) }
+      }
+    }
+    builtHomePanel = panel
+    return panel
+  }()
   /// 菜单栏图标与菜单（启动后才建：单测以本 App 为宿主时不往菜单栏加东西）
   private var statusItem: StatusItem?
   /// 标注遮罩（长截图按 A、历史里双击打开，收起就放掉）
@@ -1073,20 +1105,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
   }
 
-  /// 再打开一次本 App：点程序坞图标（设置窗打开期间才有）、在访达或启动器里打开已经在运行的它。
-  /// 菜单栏图标隐藏时（设置 › 通用，第 9 批 M1）就靠这条回到设置
+  /// 再打开一次本 App：点程序坞图标（设置窗等普通窗口开着时才有）、在访达或启动器里打开已经在运行的它。
+  /// 打开主界面（2026-10-29 拍板 C2；原来是进设置，设置从主界面一键过去）；菜单栏图标隐藏时（设置 › 通用，第 9 批 M1）
+  /// 就靠这条回来
   func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
     // 启动时「数据打不开」的弹框还开着（没有程序坞图标，容易被别的窗口盖住再点一次）：把它带到前面，不建设置窗
     guard isRunning else {
       NSApp.activate()
       return false
     }
-    // 全部便签窗口开着时点程序坞图标：把开着的窗口带到前面就行，不另开设置窗
-    if notesWindow?.isVisible == true {
+    // 普通窗口（设置窗、全部便签窗口、截图历史）开着时点程序坞图标——图标就是它们带出来的：把开着的带到前面就行，
+    // 不另开主界面
+    if NSApp.windows.contains(where: { $0.isVisible && !($0 is NSPanel) && $0.canBecomeMain }) {
       NSApp.activate()
       return true
     }
-    showSettings()
+    showHome()
     return false
   }
 
@@ -1117,6 +1151,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // 接着上次的查询（没执行就收起、60 秒内，体检 A27）：字全选，直接打字就替换，↩ 照样执行上次选中的
     if appearing, launcherModel.resumesQuery {
       (launcherPanel.firstResponder as? NSTextView)?.selectAll(nil)
+    }
+  }
+
+  /// 快捷键「打开主界面」、启动器里那一项：开着、是 key 时再按一次 = 收起
+  func toggleHome() {
+    if homePanel.isVisible && homePanel.isKeyWindow { return homePanel.dismiss() }
+    showHome()
+  }
+
+  /// 打开主界面（已经开着就把键盘拿回来）：在鼠标所在屏的上方正中，和启动器、剪贴板面板、快速记一条、选状态的面板
+  /// 同一个位置，只开一个——收起那几块（固定着的剪贴板面板也收，同 toggleLauncher）
+  func showHome() {
+    builtClipboardPanel?.hide()
+    builtLauncherPanel?.hide()
+    statusPicker.panel?.hide()
+    noteCapture?.panel.hide()
+    refreshHome(appearing: !homePanel.isVisible)
+    homePanel.present(atTop: true)
+  }
+
+  /// 按现在的状态重排主界面（关着的功能、开关、在不在录、钉图、当前生效的快捷键）。appearing：新呼出，直接定大小；
+  /// 开着时（切了开关）高度变了带动画
+  private func refreshHome(appearing: Bool) {
+    homeModel.update(
+      Home.sections(state: menuState, keys: hotKeys.bindings.mapValues(\.display)),
+      offCount: Home.offCount(
+        enabled: Feature.enabled, available: Set(Feature.allCases.filter(\.isAvailable))),
+      appearing: appearing)
+    if appearing {
+      homePanel.setContentSize(homeModel.size)
+    } else {
+      homePanel.setContentHeight(homeModel.size.height, animated: true)
     }
   }
 
@@ -1226,13 +1292,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     run(MenuExtra(rawValue: id) ?? .settings)
   }
 
-  /// 菜单栏里不对应全局热键的项：菜单栏、启动器同一个分发
-  private func run(_ extra: MenuExtra) {
+  /// 菜单栏里不对应全局热键的项：菜单栏、启动器、主界面同一个分发。announcing = false：开关切了不弹岛（主界面里结果就在格子上）
+  private func run(_ extra: MenuExtra, announcing: Bool = true) {
     // 归关着的功能的那几项（暂停记录、复制即译、钉图）：同 run(action) 的兜底
     if let feature = extra.section?.feature, !feature.isOn { return }
     switch extra {
-    case .pauseClipboard: togglePauseRecording()
-    case .copyToTranslate: toggleCopyToTranslate()
+    case .pauseClipboard: togglePauseRecording(announcing: announcing)
+    case .copyToTranslate: toggleCopyToTranslate(announcing: announcing)
     case .pinsToggle: pins.toggleHidden()
     case .pinsClose: closeAllPins()
     case .settings: showSettings()
@@ -1268,6 +1334,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     guard action.isActive else { return }
     // 启动台是全屏面板：按别的功能键时先收掉（它自己的键走 toggle）
     if action != .launchpad, launchpad.isOpen { launchpad.close(animated: false) }
+    // 主界面开着时按了别的功能（快捷键）：先收起它（从主界面点的，它已经收了）
+    if action != .home { builtHomePanel?.hide() }
     switch action {
     case .clipboard: toggleClipboard()
     case .launcher: toggleLauncher()
@@ -1289,6 +1357,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     case .noteAll: showNotes()
     case .launchpad: launchpad.toggle()
     case .island: island.toggleBoard()
+    case .home: toggleHome()
     }
   }
 
@@ -1329,12 +1398,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     .init("勾选同步", opens: true) { [unowned self] in showSettings(page: .general) }
   }
 
-  /// 暂停 / 恢复记录剪贴板（菜单栏、启动器，D4）：不存盘，重启 App 自动恢复记录（免得忘了关）；
-  /// 菜单一关就看不出开没开，用刘海说
-  private func togglePauseRecording() {
+  /// 暂停 / 恢复记录剪贴板（菜单栏、启动器、主界面，D4）：不存盘，重启 App 自动恢复记录（免得忘了关）；
+  /// 菜单一关就看不出开没开，用刘海说（announcing = false：主界面里格子就是开关，不说）
+  private func togglePauseRecording(announcing: Bool = true) {
     let paused = watcher.isUserPaused
     watcher.isUserPaused = !paused
     clipboardModel.isRecordingPaused = !paused
+    guard announcing else { return }
     island.show(
       paused ? "已恢复记录剪贴板" : "已暂停记录剪贴板",
       detail: paused ? nil : "复制的内容不进历史，再点一次恢复", tone: .info,
@@ -1342,10 +1412,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       actions: [.init("撤销") { [unowned self] in togglePauseRecording() }])
   }
 
-  /// 复制即译开关（菜单栏、启动器）：开关一关就看不出开没开，这个后台模式会影响之后的每次复制，用刘海说
-  private func toggleCopyToTranslate() {
+  /// 复制即译开关（菜单栏、启动器、主界面）：开关一关就看不出开没开，这个后台模式会影响之后的每次复制，用刘海说
+  /// （announcing = false：主界面里格子就是开关，不说）
+  private func toggleCopyToTranslate(announcing: Bool = true) {
     let wasOn = UserDefaults.standard.bool(forKey: Prefs.translateCopyToTranslate)
     UserDefaults.standard.set(!wasOn, forKey: Prefs.translateCopyToTranslate)
+    guard announcing else { return }
     island.show(
       wasOn ? "已关闭复制即译" : "已开启复制即译", detail: wasOn ? nil : "复制文字后会弹出翻译", tone: .info,
       symbol: wasOn ? "character.bubble" : "character.bubble.fill",
@@ -2546,9 +2618,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     settingsWindow.show(page: page, onboarding: onboarding)
   }
 
-  /// 三块浮层、选状态的面板、快速记一条都收起，固定着的也收（打开设置、打开全部便签、进入状态屏）
+  /// 三块浮层、选状态的面板、快速记一条、主界面都收起，固定着的也收（打开设置、打开全部便签、进入状态屏）
   private func hidePanels() {
     launchpad.close(animated: false)
+    builtHomePanel?.hide()
     builtClipboardPanel?.hide()
     builtLauncherPanel?.hide()
     statusPicker.panel?.hide()
@@ -2582,7 +2655,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       ) { [unowned self] in Task { await updater.install() } }
       menu.addItem(.separator())
     }
-    for (index, section) in HotKeyAction.sections.enumerated() {
+    // 「打开主界面」不进菜单：菜单和主界面是同一个图标的两半（右键 / 左键）
+    for (index, section) in HotKeyAction.sections.filter({ $0.actions != [.home] }).enumerated() {
       if index > 0 { menu.addItem(.separator()) }
       if section.actions == [.statusScreen] {
         let family = HotKeyAction.statusScreen
@@ -2667,7 +2741,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   /// LaunchServices 不保证同一 bundle id 只跑一份（例如 DMG 里一份、/Applications 里又一份）：
-  /// 发现更早启动的实例就再打开一次它的包（LaunchServices 给它发 reopen → 进设置，菜单栏图标隐藏时也回得去；
+  /// 发现更早启动的实例就再打开一次它的包（LaunchServices 给它发 reopen → 主界面，菜单栏图标隐藏时也回得去；
   /// 只 activate 的话没窗口的菜单栏 App 什么也不显示），自己退出。更新后的重启是等旧进程退了才 open，走不到这里。
   /// 只让「更晚的」退出：两份同时启动时若都见到对方就退，会一起退光（实测过）；启动时间相同再比 pid
   private func yieldToOlderInstance() -> Bool {

@@ -9,7 +9,7 @@ enum Prefs {
   static let appearance = "appearance"
   /// 强调色（AccentChoice.rawValue）：system 跟随系统（默认）/ blue / purple / pink（品牌粉）/ red / orange / yellow / green / graphite
   static let accent = "accent"
-  /// 在菜单栏显示图标（第 9 批 M1，默认开）；关掉后再打开一次本 App（访达 / 启动器）回到设置，快捷键照常
+  /// 在菜单栏显示图标（第 9 批 M1，默认开）；关掉后再打开一次本 App（访达 / 启动器）打开主界面，快捷键照常
   static let statusItemVisible = "statusItemVisible"
   /// 菜单栏图标样式（StatusItem.IconStyle.rawValue）：template 单色剪影（默认）/ color 彩色 App 图标（第 9 批 M2）
   static let statusItemStyle = "statusItemStyle"

@@ -11,7 +11,8 @@ struct FeatureTests {
   private let all = Set(Feature.allCases)
 
   /// 每个动作恰好归一个功能，就是它所在那一节里的；每个功能至少一个动作（程序坞预览除外：它停在程序坞上就弹，
-  /// 没有快捷键，拍板 D1）；和设置页同名。打开刘海岛不归哪个功能（岛关不掉，2026-10-26）
+  /// 没有快捷键，拍板 D1）；和设置页同名。打开刘海岛（岛关不掉，2026-10-26）、打开主界面（全部功能的入口，2026-10-29）
+  /// 不归哪个功能
   @Test func everyActionBelongsToOneFeature() {
     for feature in Feature.allCases {
       #expect(HotKeyAction.allCases.contains { $0.feature == feature } == (feature != .dockPreview))
@@ -21,6 +22,7 @@ struct FeatureTests {
     #expect(HotKeyAction.pinClipboard.feature == .screenshot)
     #expect(HotKeyAction.audioRecord.feature == .record)
     #expect(HotKeyAction.island.feature == nil && HotKeyAction.island.isActive)
+    #expect(HotKeyAction.home.feature == nil && HotKeyAction.home.isActive)
     // 菜单栏的非热键项跟着它那一节的动作走
     #expect(MenuExtra.pauseClipboard.section?.feature == .clipboard)
     #expect(MenuExtra.copyToTranslate.section?.feature == .translate)
@@ -34,7 +36,7 @@ struct FeatureTests {
     #expect(Set(full.flatMap(\.actions)) == Set(HotKeyAction.allCases))
     #expect(full.first?.title == "剪贴板与启动器")
     // 功能全关时只剩不归功能的那一节
-    #expect(HotKeyAction.visibleSections(enabled: []).map(\.title) == ["刘海岛"])
+    #expect(HotKeyAction.visibleSections(enabled: []).map(\.title) == ["刘海岛", "主界面"])
 
     let noClipboard = HotKeyAction.visibleSections(enabled: all.subtracting([.clipboard]))
     #expect(noClipboard.first?.title == "启动器")
@@ -129,7 +131,7 @@ struct FeatureTests {
       noRecord.first { $0.title == "截图 · 出图" }?.entries.contains { $0.keys == ["R"] } == false)
 
     // 都关掉只剩不归功能的「设置」一组
-    #expect(ShortcutsSheet.groups(enabled: []).map(\.title) == ["刘海岛", "设置"])
+    #expect(ShortcutsSheet.groups(enabled: []).map(\.title) == ["刘海岛", "主界面", "设置"])
   }
 
   /// 启动台原来的总开关（launchpadEnabled，没发布过）挪进功能开关一次：只在新键没存过时搬，旧键都删

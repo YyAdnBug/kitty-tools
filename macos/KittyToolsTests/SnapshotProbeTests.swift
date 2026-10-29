@@ -1267,6 +1267,59 @@ struct SnapshotProbeTests {
     }
   }
 
+  /// 主界面（Shell/HomePanel.swift，2026-10-29 拍板）。单独一个测试函数，几秒：
+  ///   -only-testing:'KittyToolsTests/SnapshotProbeTests/home()'
+  /// 面板的大小取模型算出来的（和真面板一样）。出：全开浅 / 深色（键盘选中「截图」、鼠标停在「启动器」上）、开关都开着
+  /// 而且在录屏、有钉图（深色）、关掉便签和录制（多一行「2 个功能关着 · 管理…」）、增强对比度（选中描边、发丝线）、
+  /// 有新版本（底栏左边「更新到 x」，Updater 从环境给）
+  @Test(.enabled(if: directory != nil)) func home() throws {
+    let out = try #require(Self.directory)
+    try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
+    Prefs.registerDefaults()
+    let all = Set(Feature.allCases)
+    let keys: [HotKeyAction: String] = [
+      .clipboard: "⌥C", .launcher: "⌥Space", .selectionTranslate: "⌥D", .inputTranslate: "⌥T",
+      .screenshotTranslate: "⌥S", .screenshot: "⌥A", .screenshotLastRegion: "⌥X",
+      .recognizeText: "⌥O", .screenRecord: "⌥R", .noteCapture: "⌥N",
+    ]
+    func model(
+      _ state: LauncherItem.ActionState, off: Int = 0, selection: Int? = nil, hovered: Int? = nil
+    ) -> HomeModel {
+      HomeModel(
+        sections: Home.sections(state: state, keys: keys), offCount: off, selection: selection,
+        hovered: hovered)
+    }
+    func shot(_ name: String, _ view: some View, _ model: HomeModel, dark: Bool = false) throws {
+      try snapshot(view, size: model.size, dark: dark, to: "\(out)/\(name).png")
+    }
+    var state = LauncherItem.ActionState()
+    state.features = all
+    for dark in [false, true] {
+      let home = model(state, selection: 8, hovered: 1)
+      try shot("home\(dark ? "-dark" : "")", HomeView(model: home), home, dark: dark)
+    }
+    var busy = LauncherItem.ActionState(
+      recordingPaused: true, copyToTranslate: true, pinsHidden: false, recording: .screenRecord)
+    busy.features = all
+    let busyModel = model(busy)
+    try shot("home-busy-dark", HomeView(model: busyModel), busyModel, dark: true)
+    var fewer = state
+    fewer.features = all.subtracting([.notes, .record])
+    let fewerModel = model(fewer, off: Home.offCount(enabled: fewer.features, available: all))
+    try shot("home-features-off", HomeView(model: fewerModel), fewerModel)
+    let contrast = model(state, selection: 0)
+    try shot(
+      "home-contrast",
+      HomeView(model: contrast).environment(\._colorSchemeContrast, .increased), contrast)
+    let updater = Updater(
+      state: .available(
+        .init(
+          version: "0.7.1", archive: URL(string: "https://example.com/Kitty.zip")!,
+          page: Updater.releasesPage)))
+    let update = model(state)
+    try shot("home-update", HomeView(model: update).environment(updater), update)
+  }
+
   /// 选状态的面板（PLAN §10 第 4 批，Z13a Z14a）。单独一个测试函数：改这块面板时只跑它（十来秒）——
   ///   -only-testing:'KittyToolsTests/SnapshotProbeTests/statusPicker()'
   /// 卡片里的图标是表情的静止画面（第 5 批：卡片不动）。

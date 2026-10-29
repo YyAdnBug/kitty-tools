@@ -146,7 +146,7 @@ struct HotKey: Codable, Hashable {
 enum HotKeyAction: String, CaseIterable {
   case clipboard, selectionTranslate, inputTranslate, screenshotTranslate, launcher, screenshot,
     screenshotLastRegion, recognizeText, translateReplace, screenRecord, audioRecord, pinClipboard,
-    statusScreen, noteCapture, noteNew, noteAll, launchpad, shotHistory, island, clothesline
+    statusScreen, noteCapture, noteNew, noteAll, launchpad, shotHistory, island, clothesline, home
 
   var title: String {
     switch self {
@@ -170,6 +170,7 @@ enum HotKeyAction: String, CaseIterable {
     case .noteAll: "全部便签"
     case .launchpad: "启动台"
     case .island: "打开刘海岛"
+    case .home: "打开主界面"
     }
   }
 
@@ -239,6 +240,8 @@ enum HotKeyAction: String, CaseIterable {
     case .launchpad: nil
     // 刘海岛（2026-10-26）：刘海屏点刘海就能打开，键给没有刘海的屏用，到 设置 › 快捷键 里自己设
     case .island: nil
+    // 主界面（2026-10-29）：主入口是点菜单栏图标，键给把图标藏起来的人自己设
+    case .home: nil
     }
   }
 
@@ -287,7 +290,7 @@ enum HotKeyAction: String, CaseIterable {
   }
 
   /// 归哪个功能（Feature）：就是它所在的那一节——截图翻译归翻译（截图关了它照样能用）、钉住剪贴板里的图归截图。
-  /// nil = 不属于哪个功能、一直在（打开刘海岛：岛是全 App 的轻提示，关不掉）
+  /// nil = 不属于哪个功能、一直在（打开刘海岛：岛是全 App 的轻提示，关不掉；打开主界面：全部功能的入口）
   var feature: Feature? {
     switch self {
     case .clipboard: .clipboard
@@ -300,7 +303,7 @@ enum HotKeyAction: String, CaseIterable {
     case .noteCapture, .noteNew, .noteAll: .notes
     case .launchpad: .launchpad
     case .statusScreen: .statusScreen
-    case .island: nil
+    case .island, .home: nil
     }
   }
 
@@ -330,6 +333,8 @@ enum HotKeyAction: String, CaseIterable {
     ("状态屏", [.statusScreen]),
     // 刘海岛（2026-10-26）：不属于哪个功能、一直在
     ("刘海岛", [.island]),
+    // 主界面（2026-10-29）：同刘海岛，一直在；菜单栏菜单里不列（菜单就是图标的另一半），主界面里也不列它自己
+    ("主界面", [.home]),
   ]
 
   /// 刘海岛那一张上的快捷动作（2026-10-26）：截图家族在前（同截图工具栏的顺序），再录制、快速记一条
@@ -364,6 +369,8 @@ enum HotKeyAction: String, CaseIterable {
     case .noteAll: "note.text"
     case .launchpad: "square.grid.3x3.fill"
     case .island: "rectangle.topthird.inset.filled"
+    // 从菜单栏垂下来的那一块
+    case .home: "menubar.arrow.down.rectangle"
     }
   }
 
@@ -380,7 +387,7 @@ enum HotKeyAction: String, CaseIterable {
     case .statusScreen: Style.Family.statusScreen
     case .noteCapture, .noteNew, .noteAll: Style.Family.notes
     case .launchpad: Style.Family.launchpad
-    case .island: Style.Family.general
+    case .island, .home: Style.Family.general
     }
   }
 }

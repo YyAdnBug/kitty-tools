@@ -170,6 +170,8 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
     .noteCapture: "Quick Note Capture 便签", .noteNew: "New Note", .noteAll: "All Notes",
     // 第八族：搜「启动台」「launchpad」「应用」都找得到它（和现有的「启动器」是两个东西，名字分开）
     .launchpad: "Launchpad 启动台 应用",
+    // 主界面（2026-10-29）：搜「全部功能」「功能」也找得到
+    .home: "Home Main Window 全部功能",
   ]
 
   private static func action(

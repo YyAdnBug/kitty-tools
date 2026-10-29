@@ -6,7 +6,7 @@
 // 不对应全局热键的项（暂停记录、复制即译、钉图、设置、关于、检查更新、退出）是 MenuExtra，启动器的内置动作读同一份。
 // 图标默认是角色「探头」的剪影（资源 StatusIcon，22 × 16 pt 模板图，由 macos/brand-icons.swift 生成）；设置 › 通用可换成
 // 彩色（完整的 App 图标）或隐藏（第 9 批 M1 M2），偏好一变立刻跟着变。隐藏只是 isVisible = false，动效照常调、看不见而已；
-// 隐藏后回设置靠再打开一次本 App（AppDelegate.applicationShouldHandleReopen），退出在启动器里（MenuExtra.quit）。
+// 隐藏后靠再打开一次本 App 回到主界面（AppDelegate.applicationShouldHandleReopen，设置从那里一键过去），退出在启动器里（MenuExtra.quit）。
 // 有新版本时图标右上角一个强调色小圆点（updateVersion，2026-10-06）：常驻到更新为止，点开菜单最上面就是「更新到 x…」。
 
 import AppKit
