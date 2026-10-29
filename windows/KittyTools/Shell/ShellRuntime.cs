@@ -132,6 +132,13 @@ internal sealed class ShellRuntime
                 {
                     File.Delete(file);
                 }
+
+                // 截图历史拖出去 / 一起拷贝的那几份（每条一个子文件夹，免得同一秒截的重名）。
+                var history = Path.Combine(temp, "history");
+                if (Directory.Exists(history))
+                {
+                    Directory.Delete(history, recursive: true);
+                }
             }
         }
         catch (Exception ex)

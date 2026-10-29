@@ -45,6 +45,12 @@
   要你们特别看：点托盘时前台变成任务栏，「划词翻译」靠 `RunningProcesses.TopAppWindow()` 找回原来的窗口，在记事本里实测一次；再点托盘收起靠
   收起后 300 ms 内的 NIN_SELECT 不开，按住鼠标久一点会不会又打开；`Shell_NotifyIconGetRect` 在图标收进「^」时给的矩形；
   格子用 ToggleButton / Button 换了模板资源，深色 / 高对比度下悬停和按下的底色对不对。
+- 截图历史的多选、快捷键、拖出去（mac 1ec2ca9a / 933c1dd9 / 0de6c18b / 605f41c8，PLAN-v9 之后 mac 新加的）→ 已写（HANDTEST 780–790）：
+  分组是好几个 GridView，系统多选跨不了组，改成 SelectionMode None + ItemClick、选中自己管（Core 的 `ShotHistoryRules.Click / Span / Moved / Summary`，
+  `ShotHistorySelectionTests`）。要你们看：PreviewKeyDown 先拿方向键以后 GridView 自己的焦点框跟不跟；拖好几张到资源管理器 / 微信；
+  `SHOpenFolderAndSelectItems` 一次选中好几个文件。
+- 长截图接不上移动端网页（mac 0ff55dd7）→ 已写（HANDTEST 791–793）：容差比较只比在动的列、只让有字的行投票（`ScrollStitcher.FuzzyOverlap`），
+  `ScrollStitcherStillColumnsTests` 两个场景在旧算法上都失败（Python 移植比过：侧栏一帧接不上、移动端接成 191 行），新算法 130。整行哈希那条路没动。
 - 0.2.0 最后一批的收尾 → 已写（版本号 0.2.0、`changelog.json` 0.2.0 条目、`STATUS.md` §8）：`build-release.ps1` 要你们在 Windows 上跑，产物路径写进 STATUS §6。
 - 第 3 批 S10 → 已写（右键「透明度 N%…」和悬停的透明度钮都打开一个带滑块的小浮层）：钉图透明度 10–100% 的滑块（mac 在右键菜单里；WinUI 的 MenuFlyout 放不了滑块，可以换成 Flyout 或右键菜单里一项打开小浮层，你们看着定）。右键的「存储」「翻译」、托盘 / 启动器的「隐藏 / 关闭全部钉图」审查方写了。
 

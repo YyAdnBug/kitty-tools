@@ -461,9 +461,20 @@ internal static class ShortcutsSheet
         // Screenshot/ShotHistoryWindow.cs。
         new("screenshot", "截图历史", "capture", Glyphs.History, new[] { HotKeyActions.ShotHistory }, new ShortcutEntry[]
         {
-            new("双击", "改标注（录制的是用默认程序打开）"),
-            new("右键", "这一条的全部操作"),
-            new("Delete", "删掉选中的那条（先问一次）"),
+            new("双击", "Enter", "改标注（录制的是用默认程序打开）"),
+            new("右键", "这一条的全部操作；右键点选中的那几张里的一张是整批的"),
+            new("Ctrl+单击", "Shift+单击", "多选：加选或去掉 / 从上一张连过去"),
+            new("Ctrl+A", "全选列出来的"),
+            new("←→↑↓", "挑图（↑↓ 跳一行）；按住 Shift 连着选"),
+            new("Ctrl+C", "拷贝（选着几张时拷成几个文件）"),
+            new("Ctrl+S", "存储到截图文件夹"),
+            new("Ctrl+Shift+S", "另存为…"),
+            new("Ctrl+P", "钉到屏幕"),
+            new("Ctrl+O", "识字并拷贝"),
+            new("Ctrl+Shift+R", "在资源管理器中显示"),
+            new("Ctrl+F", "跳到搜索框"),
+            new("Ctrl+1–4", "全部 / 截图 / 长截图 / 录制"),
+            new("Delete", "删掉选中的（先问一次）"),
         }),
 
         // Shell/HomePanel.cs（PLAN-v10 §5）：托盘左键打开；全局的「打开主界面」不设默认键。

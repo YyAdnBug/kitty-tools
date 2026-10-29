@@ -59,7 +59,8 @@ internal static partial class ScreenshotOutput
         return png is null ? null : await QuickSavePngAsync(png);
     }
 
-    public static async Task<string?> QuickSavePngAsync(byte[] png)
+    /// <summary>quiet：存成了不弹「已保存截图」（截图历史一起存好几张时最后只说一句）；出错照样提示。</summary>
+    public static async Task<string?> QuickSavePngAsync(byte[] png, bool quiet = false)
     {
         var folder = string.IsNullOrWhiteSpace(SettingsService.Current.ScreenshotSaveFolder)
             ? DefaultFolder()
@@ -79,8 +80,12 @@ internal static partial class ScreenshotOutput
         try
         {
             await File.WriteAllBytesAsync(path, png);
-            NoticeHost.Show("已保存截图", Path.GetFileName(path), NoticeTone.Normal,
-                NoticeActions.Reveal(path), NoticeActions.Open(path));
+            if (!quiet)
+            {
+                NoticeHost.Show("已保存截图", Path.GetFileName(path), NoticeTone.Normal,
+                    NoticeActions.Reveal(path), NoticeActions.Open(path));
+            }
+
             return path;
         }
         catch (Exception ex)

@@ -2,6 +2,9 @@
 // 相邻两帧都是「同一块选区」的实时画面，下一帧比上一帧多滚了一段。先按整行哈希投票找重叠：
 // 用新帧顶部若干行去上一帧里找位置（向下滚），或反过来（向上滚）；哈希对不上再用每隔 4 像素采样的
 // 容差比较兜底；吸顶栏（每一帧最上面都一样）不参与投票，避免把页头拼进去两次；输出高度上限 30000。
+// 容差比较只比两帧之间在动的列、只让有字的行投票（照 mac 0ff55dd7，用户报「电脑上的移动端网页完全识别不到」）：移动端版式
+// 两边的灰底留白、固定的侧栏、开着的开发者工具原地不动，算进去时对的位移也对不上（侧栏的字不跟着滚）、错的位移又处处一样（留白）；
+// 「有字」看这一行和上下行有没有差别，空白行对哪个位移都一样，不投票。
 // 拍的过程中用 ScrollCanvas（REVIEW R43）：拼好的部分按条带存，每拍只拿找重叠要看的那几行比，不再整张重新分配、重新哈希。
 using System.Buffers;
 
@@ -139,10 +142,16 @@ public static class ScrollStitcher
 
     private static int FuzzyOverlap(ScrollFrame previous, ScrollFrame next, ScrollDirection direction, int sticky)
     {
+        var columns = MovingColumns(previous, next);
+        if (columns.Length == 0)
+        {
+            return 0;
+        }
+
         var max = Math.Min(Math.Min(previous.Height, next.Height), MaxOverlap);
         for (var overlap = max; overlap >= Math.Max(MinOverlap, sticky); overlap--)
         {
-            if (Similar(previous, next, overlap, direction))
+            if (Similar(previous, next, overlap, direction, columns))
             {
                 return overlap;
             }
@@ -151,38 +160,90 @@ public static class ScrollStitcher
         return 0;
     }
 
-    private static bool Similar(ScrollFrame previous, ScrollFrame next, int overlap, ScrollDirection direction)
+    /// <summary>
+    /// 在动的列（每隔 4 像素取一列）：两帧同一位置上对不上的行超过二十分之一。原地不动的（两边留白、固定侧栏、开发者工具；
+    /// 只有光标在闪的也算不动）不比。
+    /// </summary>
+    private static int[] MovingColumns(ScrollFrame previous, ScrollFrame next)
     {
-        var rows = Math.Min(overlap, 60);
-        var misses = 0;
-        for (var row = 0; row < rows; row++)
+        var height = Math.Min(previous.Height, next.Height);
+        var columns = new List<int>();
+        for (var x = 0; x < previous.Width; x += 4)
         {
+            var changed = 0;
+            for (var y = 0; y < height; y++)
+            {
+                if (!Close(previous.Pixels[y * previous.Width + x], next.Pixels[y * next.Width + x]))
+                {
+                    changed++;
+                }
+            }
+
+            if (changed > height / 20)
+            {
+                columns.Add(x);
+            }
+        }
+
+        return columns.ToArray();
+    }
+
+    /// <summary>
+    /// 这个重叠对不对：在重叠部分均匀取至多 60 行，只让有字的行投票（空白行对哪个位移都一样），每行只比在动的列；
+    /// 对不上的列超过八分之一算一票反对，反对不超过十分之一才算对。有字的行不到 3 行判断不了，算不对。
+    /// </summary>
+    private static bool Similar(ScrollFrame previous, ScrollFrame next, int overlap, ScrollDirection direction, int[] columns)
+    {
+        var samples = Math.Min(overlap, 60);
+        var voters = 0;
+        var misses = 0;
+        for (var sample = 0; sample < samples; sample++)
+        {
+            var row = sample * (overlap - 1) / Math.Max(samples - 1, 1);
             var previousRow = direction == ScrollDirection.Down
                 ? previous.Height - overlap + row
                 : row;
             var nextRow = direction == ScrollDirection.Down
                 ? row
                 : next.Height - overlap + row;
-            var mismatches = 0;
-            var samples = 0;
-            for (var x = 0; x < previous.Width; x += 4)
+            if (!HasInk(next, nextRow, columns))
             {
-                samples++;
-                var a = previous.Pixels[previousRow * previous.Width + x];
-                var b = next.Pixels[nextRow * next.Width + x];
-                if (!Close(a, b))
+                continue;
+            }
+
+            voters++;
+            var mismatches = 0;
+            foreach (var x in columns)
+            {
+                if (!Close(previous.Pixels[previousRow * previous.Width + x], next.Pixels[nextRow * next.Width + x]))
                 {
                     mismatches++;
                 }
             }
 
-            if (mismatches > samples / 8)
+            if (mismatches > columns.Length / 8)
             {
                 misses++;
             }
         }
 
-        return misses <= Math.Max(1, rows / 10);
+        return voters >= 3 && misses <= Math.Max(1, voters / 10);
+    }
+
+    /// <summary>有字：在动的列里和上一行或下一行对不上（竖着有起伏；留白、纯色底、只差一两级的渐变底不算）。</summary>
+    private static bool HasInk(ScrollFrame frame, int row, int[] columns)
+    {
+        foreach (var x in columns)
+        {
+            var value = frame.Pixels[row * frame.Width + x];
+            if ((row > 0 && !Close(value, frame.Pixels[(row - 1) * frame.Width + x])) ||
+                (row + 1 < frame.Height && !Close(value, frame.Pixels[(row + 1) * frame.Width + x])))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static bool Close(int a, int b)
