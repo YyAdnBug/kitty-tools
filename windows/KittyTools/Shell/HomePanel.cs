@@ -98,7 +98,10 @@ internal sealed class HomePanel : Window
     public static bool IsVisible => _instance?._visible == true;
 
     /// <summary>截图自检（WindowShot）用：这扇窗口的 HWND，没建过是 0。</summary>
-    internal static IntPtr HandleForProbe => _instance is null ? IntPtr.Zero : (IntPtr)_instance._hwnd.Value;
+    internal static IntPtr HandleForProbe => _instance is null ? IntPtr.Zero : Pointer(_instance._hwnd);
+
+    // HWND.Value 是 void*：只在这里进 unsafe（整个类标 unsafe 的话里面的 async 方法不能 await，CS4004）。
+    private static unsafe IntPtr Pointer(HWND hwnd) => (IntPtr)hwnd.Value;
 
     /// <summary>托盘左键 / 键盘选中：(x, y) 是托盘回调给的位置（拿不到图标矩形时用它）。</summary>
     public static void ShowFromTray(int x, int y, bool keyboard)
@@ -157,7 +160,7 @@ internal sealed class HomePanel : Window
         // 和剪贴板面板、启动器只开一个。
         OverlayHost.Hide(restoreForeground: false);
         var before = Foreground.Get();
-        _previous = before != default && !Foreground.IsOurs(before) && !RunningProcesses.IsShellWindow((IntPtr)before.Value)
+        _previous = before != default && !Foreground.IsOurs(before) && !RunningProcesses.IsShellWindow(Pointer(before))
             ? before
             : (HWND)RunningProcesses.TopAppWindow();
         _keys.RequestedTheme = Theme.ElementTheme;
@@ -266,7 +269,7 @@ internal sealed class HomePanel : Window
         }
     }
 
-    private void OnActivated(object sender, WindowActivatedEventArgs args)
+    private void OnActivated(object sender, Microsoft.UI.Xaml.WindowActivatedEventArgs args)
     {
         if (args.WindowActivationState == WindowActivationState.Deactivated && _visible && !_hiding)
         {

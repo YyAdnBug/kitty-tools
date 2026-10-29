@@ -49,7 +49,10 @@ public sealed class RecorderRulesTests
     [TestMethod]
     public void FrameRateIsThirtyOrSixty()
     {
+        // DefaultFps 是常量，分析器认为这条恒真（MSTEST0032）；留着它是为了有人改默认帧率时这里先红。
+#pragma warning disable MSTEST0032
         Assert.AreEqual(30, RecorderRules.DefaultFps);
+#pragma warning restore MSTEST0032
         Assert.AreEqual(30, RecorderRules.NormalizeFps(15));
         Assert.AreEqual(30, RecorderRules.NormalizeFps(30));
         Assert.AreEqual(30, RecorderRules.NormalizeFps(59));
