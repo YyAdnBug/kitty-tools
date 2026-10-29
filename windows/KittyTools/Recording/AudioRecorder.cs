@@ -48,6 +48,10 @@ internal sealed class AudioRecorder : IDisposable
 
     public bool MicrophoneDenied => _microphoneDenied;
 
+    public bool RecordsMicrophone => _microphone;
+
+    public bool RecordsSystemAudio => _systemAudio;
+
     public string? OutputPath => File.Exists(_final) ? _final : null;
 
     public string TemporaryPath => _temporary;

@@ -1,5 +1,6 @@
 // 录音的入口（PLAN-v6 第 3 批）：托盘 / 快捷键开始或停止，和录屏同一个文件夹、同一套 WASAPI 采集。
-// 只建一路 AAC 音轨写 .m4a；支持系统声音 / 麦克风、暂停 / 继续、电平（RMS dBFS）。
+// 只建一路 AAC 音轨写 .m4a；支持系统声音 / 麦克风、暂停 / 继续、电平（RMS dBFS）、放弃（R9）。
+// 保存目录的盘剩不到 1 GB 时按停止收尾（同录屏 R8，mac AudioRecorder）；锁屏时只录麦克风的照录（R11，在 ShellRuntime）。
 using KittyTools.Core;
 using KittyTools.Infrastructure;
 
@@ -8,6 +9,7 @@ namespace KittyTools;
 internal static class AudioHost
 {
     private static AudioRecorder? _recorder;
+    private static Microsoft.UI.Dispatching.DispatcherQueueTimer? _diskTimer;
     private static long _startedAt;
     private static long _pausedAt;
     private static long _pausedTotal;
@@ -28,13 +30,22 @@ internal static class AudioHost
 
     public static event Action? Changed;
 
-    public static string Elapsed
+    /// <summary>录这一路有没有麦克风（「没听到声音」只在有麦克风时提示，同 mac）。</summary>
+    public static bool RecordsMicrophone => _recorder?.RecordsMicrophone == true;
+
+    /// <summary>录这一路有没有系统声音（只录麦克风时锁屏照录，R11）。</summary>
+    public static bool RecordsSystemAudio => _recorder?.RecordsSystemAudio == true;
+
+    public static string Elapsed => RecorderRules.Duration(ElapsedMs);
+
+    /// <summary>已录的毫秒数，不算暂停的时间。</summary>
+    public static long ElapsedMs
     {
         get
         {
             if (_recorder is null)
             {
-                return RecorderRules.Duration(0);
+                return 0;
             }
 
             var elapsed = Environment.TickCount64 - _startedAt - _pausedTotal;
@@ -43,7 +54,7 @@ internal static class AudioHost
                 elapsed -= Environment.TickCount64 - _pausedAt;
             }
 
-            return RecorderRules.Duration(Math.Max(0, elapsed));
+            return Math.Max(0, elapsed);
         }
     }
 
@@ -125,6 +136,7 @@ internal static class AudioHost
         _pausedAt = 0;
         _pausedTotal = 0;
         Log.Info("audio.begin");
+        WatchDisk(recorder);
         AudioHud.Show(note);
         NoticeHost.Show(
             "正在录音",
@@ -160,7 +172,69 @@ internal static class AudioHost
         Log.Info("audio.resumed");
     }
 
-    public static void Stop()
+    public static void Stop() => StopCore(null);
+
+    /// <summary>每 10 s 看一次保存目录的盘，剩不到 1 GB 就停下保存（同录屏 R8、mac AudioRecorder）。</summary>
+    private static void WatchDisk(AudioRecorder recorder)
+    {
+        if (Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread() is not { } queue)
+        {
+            return;
+        }
+
+        _diskTimer = queue.CreateTimer();
+        _diskTimer.Interval = TimeSpan.FromSeconds(10);
+        _diskTimer.IsRepeating = true;
+        _diskTimer.Tick += (_, _) =>
+        {
+            if (ReferenceEquals(_recorder, recorder) && !RecordingHost.HasRoomFor(recorder.TemporaryPath))
+            {
+                Log.Info("audio.interrupted disk");
+                StopCore("磁盘剩余不到 1 GB");
+            }
+        };
+        _diskTimer.Start();
+    }
+
+    /// <summary>放弃这段录音（控制条上的 ✕ 点两下，R9）：停止、删掉文件。</summary>
+    public static void Abandon()
+    {
+        if (_recorder is not { } recorder)
+        {
+            return;
+        }
+
+        _recorder = null;
+        _diskTimer?.Stop();
+        _diskTimer = null;
+        IsArmed = false;
+        AudioHud.Hide();
+        var path = recorder.Stop();
+        recorder.Dispose();
+        IdleReclaimer.Schedule();
+        SettingsService.Current.AudioTempPath = null;
+        SettingsService.Save();
+        Changed?.Invoke();
+        foreach (var file in new[] { path, recorder.TemporaryPath })
+        {
+            try
+            {
+                if (file is not null && File.Exists(file))
+                {
+                    File.Delete(file);
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warn($"audio.abandon-delete {ex.GetType().Name}");
+            }
+        }
+
+        Log.Info("audio.abandoned");
+        NoticeHost.Show("已放弃这段录音", string.Empty, NoticeTone.Normal);
+    }
+
+    private static void StopCore(string? reason)
     {
         if (_recorder is not { } recorder)
         {
@@ -176,6 +250,8 @@ internal static class AudioHost
         }
 
         _recorder = null;
+        _diskTimer?.Stop();
+        _diskTimer = null;
         IsArmed = false;
         AudioHud.Hide();
         var path = recorder.Stop();
@@ -194,7 +270,9 @@ internal static class AudioHost
         Log.Info($"audio.saved {Path.GetFileName(path)} size={new FileInfo(path).Length}");
         _ = ShotHistory.RecordFileAsync(path, Core.ShotKind.Audio);
         // 不再自己弹资源管理器（PLAN-v8 H14）：提示上给「在资源管理器中显示」「打开」。
-        NoticeHost.Show("录音已保存", Path.GetFileName(path), NoticeTone.Normal,
+        NoticeHost.Show("录音已保存",
+            reason is null ? Path.GetFileName(path) : $"{reason}，已录的部分存在 {Path.GetFileName(path)}",
+            reason is null ? NoticeTone.Normal : NoticeTone.Warning,
             NoticeActions.Reveal(path), NoticeActions.Open(path));
     }
 

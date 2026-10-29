@@ -132,6 +132,12 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
 
     public bool MicrophoneDenied => _microphoneDenied;
 
+    /// <summary>录的是一扇窗口（不是选区 / 整屏）。</summary>
+    public bool RecordsWindow => _window != IntPtr.Zero;
+
+    /// <summary>被录的窗口关了、屏幕断开了（GraphicsCaptureItem.Closed，后台线程上来）。</summary>
+    public event Action? SourceClosed;
+
     private sealed class PendingFrame
     {
         public ID3D11Texture2D* Source;
@@ -262,6 +268,8 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
                 return;
             }
 
+            // R8：录的窗口关了 / 屏拔了：交给 RecordingHost 按停止收尾（以前一直补最后一帧）。在随便哪个线程上来。
+            item.Closed += (_, _) => SourceClosed?.Invoke();
             _sourceWidth = item.Size.Width;
             _sourceHeight = item.Size.Height;
             if (_sourceWidth < 2 || _sourceHeight < 2)

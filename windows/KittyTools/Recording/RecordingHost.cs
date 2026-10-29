@@ -1,4 +1,4 @@
-// 录屏的入口和收尾：Alt+R / 托盘切换；录制中禁掉系统闲置睡眠；停止后放到保存目录，
+// 录屏的入口和收尾：Alt+R / 托盘切换；录制中禁掉系统闲置睡眠；录的窗口关了、磁盘不够了按停止收尾（R8）；停止后放到保存目录，
 // 轻提示 + 在资源管理器里显示。启动时看到上次留下的临时文件就挪进保存目录（闪退恢复）。
 // PLAN-v6 第 1 批起默认走 WGC + 硬件 H.264；有系统声音 / 麦克风时仍走 GDI 那条（第 2 批再并到 GPU 管线）。
 using System.Runtime.InteropServices;
@@ -12,6 +12,7 @@ namespace KittyTools;
 internal static unsafe class RecordingHost
 {
     private static IVideoRecorder? _recorder;
+    private static Microsoft.UI.Dispatching.DispatcherQueueTimer? _diskTimer;
     private static long _startedAt;
     private static bool _microphoneSettingsPending;
 
@@ -149,12 +150,79 @@ internal static unsafe class RecordingHost
                 });
         }
 
+        WatchForInterruptions(recorder);
         Log.Info("record.begin");
         NoticeHost.Show("正在录屏", "Alt+R 或托盘「停止录屏」结束", NoticeTone.Normal);
         Changed?.Invoke();
     }
 
-    public static void Stop()
+    public static void Stop() => StopCore(null);
+
+    /// <summary>中途出事（R8）：和点停止走同一条收尾、保存已录的部分，原因写进「录屏已保存」的提示（同 mac 的结果岛）。</summary>
+    public static void StopFor(string reason)
+    {
+        Log.Info($"record.interrupted {reason}");
+        StopCore(reason);
+    }
+
+    /// <summary>
+    /// R8（照 mac ScreenRecorder）：录的窗口关了 / 录的屏断开了（WGC 的 GraphicsCaptureItem.Closed），
+    /// 保存目录所在的盘剩不到 1 GB（每 10 s 看一次）——都按停止收尾。锁屏、睡眠在 ShellRuntime。
+    /// </summary>
+    private static void WatchForInterruptions(IVideoRecorder recorder)
+    {
+        var queue = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
+        if (recorder is WgcRecorder wgc && queue is not null)
+        {
+            wgc.SourceClosed += () => queue.TryEnqueue(() =>
+            {
+                if (ReferenceEquals(_recorder, wgc))
+                {
+                    StopFor(wgc.RecordsWindow ? "录的窗口关了" : "录的屏幕断开了");
+                }
+            });
+        }
+
+        if (queue is null)
+        {
+            return;
+        }
+
+        _diskTimer = queue.CreateTimer();
+        _diskTimer.Interval = TimeSpan.FromSeconds(10);
+        _diskTimer.IsRepeating = true;
+        _diskTimer.Tick += (_, _) =>
+        {
+            if (ReferenceEquals(_recorder, recorder) && !HasRoomFor(recorder.TemporaryPath))
+            {
+                StopFor("磁盘剩余不到 1 GB");
+            }
+        };
+        _diskTimer.Start();
+    }
+
+    internal static bool HasRoomFor(string path)
+    {
+        try
+        {
+            var root = Path.GetPathRoot(Path.GetFullPath(path));
+            return string.IsNullOrEmpty(root) || RecorderRules.HasRoom(new DriveInfo(root).AvailableFreeSpace);
+        }
+        catch (Exception ex)
+        {
+            // 读不到剩余空间（网络盘之类）就不拦。
+            Log.Warn($"record.disk-check {ex.GetType().Name}");
+            return true;
+        }
+    }
+
+    private static void StopWatching()
+    {
+        _diskTimer?.Stop();
+        _diskTimer = null;
+    }
+
+    private static void StopCore(string? reason)
     {
         if (_recorder is not { } recorder)
         {
@@ -162,6 +230,7 @@ internal static unsafe class RecordingHost
         }
 
         _recorder = null;
+        StopWatching();
         RecordingHud.Hide();
         RecordingFrame.Hide();
         InputHooks.Stop();
@@ -183,7 +252,9 @@ internal static unsafe class RecordingHost
         Log.Info($"record.saved {Path.GetFileName(path)}");
         _ = ShotHistory.RecordFileAsync(path, Core.ShotKind.Video);
         // 不再自己弹资源管理器（mac 也不弹，PLAN-v8 H14）：提示上给「在资源管理器中显示」「打开」。
-        NoticeHost.Show("录屏已保存", Path.GetFileName(path), NoticeTone.Normal,
+        NoticeHost.Show("录屏已保存",
+            reason is null ? Path.GetFileName(path) : $"{reason}，已录的部分存在 {Path.GetFileName(path)}",
+            reason is null ? NoticeTone.Normal : NoticeTone.Warning,
             NoticeActions.Reveal(path), NoticeActions.Open(path));
         OpenMicrophoneSettingsIfPending();
     }
@@ -197,6 +268,7 @@ internal static unsafe class RecordingHost
         }
 
         _recorder = null;
+        StopWatching();
         RecordingHud.Hide();
         RecordingFrame.Hide();
         InputHooks.Stop();

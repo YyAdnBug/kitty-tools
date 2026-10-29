@@ -1018,10 +1018,10 @@ internal sealed class ShellRuntime
         }
         else if (msg == WmWtsSessionChange)
         {
-            // 7 = 锁屏：录屏 / 录音停掉并保存；8 = 解锁时看一眼今天的备份。
+            // 7 = 锁屏：录屏停掉并保存，录音只录麦克风时照录（R11）；8 = 解锁时看一眼今天的备份。
             if (wParam.Value == 7)
             {
-                StopRecordingForSession();
+                StopRecordingForSession(locking: true);
                 if (SettingsService.Current.ClipboardClearOnLock && Clipboard?.Store is { } locked)
                 {
                     // 锁屏时清空普通历史（先提交撤销栈；收藏、片段、收藏夹里的不清，mac）。
@@ -1045,12 +1045,15 @@ internal sealed class ShellRuntime
         else if (msg == WmPowerBroadcast && wParam.Value == 4)
         {
             // PBT_APMSUSPEND：睡之前把录屏 / 录音收尾。
-            StopRecordingForSession();
+            StopRecordingForSession(locking: false);
         }
     }
 
-    /// <summary>锁屏 / 睡眠：录屏和录音都停止并保存（第四版）。</summary>
-    private static void StopRecordingForSession()
+    /// <summary>
+    /// 锁屏 / 睡眠：录屏停止并保存（第四版）。录音照 mac（PLAN-v9 R11）：睡眠一律停；锁屏时只录麦克风的照录
+    /// （会议录音常常录到锁屏），录了系统声音的停（mac 录系统声音走录屏管线，锁屏就断）。
+    /// </summary>
+    private static void StopRecordingForSession(bool locking)
     {
         if (RecordingHost.IsRecording)
         {
@@ -1058,7 +1061,7 @@ internal sealed class ShellRuntime
             RecordingHost.Stop();
         }
 
-        if (AudioHost.IsRecording)
+        if (AudioHost.IsRecording && (!locking || AudioHost.RecordsSystemAudio))
         {
             Log.Info("audio.session-stop");
             AudioHost.Stop();

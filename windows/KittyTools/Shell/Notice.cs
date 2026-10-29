@@ -3,7 +3,7 @@
 // 不再用「大透明窗口 + 里面画一颗胶囊」：透明那一层在这台机器上一直是白的（0.1.0 用户反馈「外面一圈白色容器」）。
 // 出场 / 收起交给系统（DWM 给窗口的淡入淡出），按钮、进度条都是系统控件（主按钮 AccentButtonStyle）。
 // 报得出百分比的（下载更新、转 GIF、压缩）走 ShowProgress：标题后面一条细进度条，原地改、不重新出场、不播报。
-// 能交互（PLAN-v8 第 5 批 H9–H14）：鼠标进来算悬停：停住计时、往上长成卡片（第一行 + 最多 4 行详情），
+// 能交互（PLAN-v8 第 5 批 H9–H14）：鼠标进来算悬停：停住计时、往上长成卡片（第一行 + 最多 4 行详情；窗口摆一次、内容由合成层滑过去），
 // 按钮全露出来、加 ×；离开合回一行、接着走剩下的时间（至少 1.5 s）。点卡片本身只执行「打开」类的按钮。
 // 鼠标在上面时来的新提示先排着（只留最新的），进行中那条的结果原地换。
 // 窗口不抢焦点：WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW，SW_SHOWNOACTIVATE；不进截图和录屏（WDA_EXCLUDEFROMCAPTURE）。
@@ -299,6 +299,7 @@ internal sealed unsafe partial class NoticeHost
         _pending = null;
         _progress = fraction is not null;
         _actions = actions;
+        BuildButtons();
         _root.RequestedTheme = Theme.ElementTheme;
         _title.Text = title;
         _detail.Text = detail;
@@ -388,19 +389,27 @@ internal sealed unsafe partial class NoticeHost
         var narrow = !expanded && _actions.Count > 0;
         _title.MaxWidth = narrow ? 230 : 400;
         _detail.MaxWidth = narrow ? 230 : 400;
+        // 收着时只露第一个（最主要的）；展开后露其余的和最右边强调色的那个（H11，顺序是 BuildButtons 排好的）。
+        for (var index = 0; index < _buttons.Children.Count; index++)
+        {
+            var shown = expanded ? index > 0 : index == 0;
+            _buttons.Children[index].Visibility = shown ? Visibility.Visible : Visibility.Collapsed;
+        }
+    }
+
+    /// <summary>
+    /// 出提示时就把两种样子的按钮都建好：收着时第一个（普通样式）；展开时其余的 + 第一个（强调色、放最右）。
+    /// 悬停只切显示（以前每次悬停都现建一遍按钮，鼠标一进来先卡一下）。
+    /// </summary>
+    private void BuildButtons()
+    {
         _buttons.Children.Clear();
         if (_actions.Count == 0)
         {
             return;
         }
 
-        // 收着时只露第一个（最主要的）；展开后全露出来，主按钮放最右、强调色（H11）。
-        if (!expanded)
-        {
-            _buttons.Children.Add(MakeButton(_actions[0], primary: false));
-            return;
-        }
-
+        _buttons.Children.Add(MakeButton(_actions[0], primary: false));
         for (var index = 1; index < _actions.Count; index++)
         {
             _buttons.Children.Add(MakeButton(_actions[index], primary: false));
@@ -508,7 +517,19 @@ internal sealed unsafe partial class NoticeHost
         _hideTimer.Stop();
         _remainingMs = Math.Max(0, _hideDeadline - Environment.TickCount64);
         _contentChangedAt = Environment.TickCount64;
+        var before = _window.AppWindow.Position;
         Place(expanded: true);
+        SlideFrom(before, MotionCurve.Island);
+        // 展开才露出来的：完整详情、其余按钮、×，跟着淡入。
+        Motion.Appear(_detailFull);
+        Motion.Appear(_close);
+        for (var index = 1; index < _buttons.Children.Count; index++)
+        {
+            if (_buttons.Children[index] is FrameworkElement button)
+            {
+                Motion.Appear(button);
+            }
+        }
     }
 
     private void HoverEnd()
@@ -523,9 +544,30 @@ internal sealed unsafe partial class NoticeHost
         }
 
         _contentChangedAt = Environment.TickCount64;
+        var before = _window.AppWindow.Position;
         Place(expanded: false);
+        SlideFrom(before, MotionCurve.Retract);
         // 进行中的合回一行、继续挂着；别的接着走剩下的时间，至少 1.5 s。
         StartHideTimer(_progress ? 60_000 : Math.Max(1500, _remainingMs));
+    }
+
+    /// <summary>
+    /// 悬停展开 / 合上：窗口只摆一次，标题那一行由合成层从原来的屏幕位置滑到新位置（展开 island、合上 retract，H10）。
+    /// 以前窗口顶边一下子往上拉、那一行跟着跳上去，看着一卡一卡的（2026-10-29 用户反馈）；也不每帧改窗口大小
+    /// （顶边每帧动时内容会跟着抖，PLAN-v6 的逐帧探针量的只是底边）。系统关了动画效果时直接到位。
+    /// ponytail: 窗口变大和内容的起点偏移不保证落在同一帧，最坏闪一帧；真机看得出来，再改成两扇窗口交叉淡变（DWM 自己的出场动画）。
+    /// </summary>
+    private void SlideFrom(PointInt32 before, MotionCurve curve)
+    {
+        var after = _window.AppWindow.Position;
+        if (Motion.Reduced || (before.X == after.X && before.Y == after.Y))
+        {
+            return;
+        }
+
+        var scale = Displays.AtWindow(_hwnd).Scale;
+        Motion.SlideTo(_content, (before.X - after.X) / scale, (before.Y - after.Y) / scale, MotionCurve.Instant);
+        Motion.SlideTo(_content, 0, 0, curve);
     }
 
     /// <summary>语气图标：信息 / 进行中用强调色，警告橙、错误红（Windows 的 InfoBar 也是这几种颜色）。</summary>
