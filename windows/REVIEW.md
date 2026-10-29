@@ -377,7 +377,7 @@
 - `OverlayWindow.cs` 文件头说浮层按 Esc、Ctrl+W 收起，启动器不认 Ctrl+W。
 - 设置窗没有返回（mac 有 ⌘[），也不能 Esc 关；要不要做你们定，做了同步速查表的「设置窗」一组。
 
-### R42（P1）启动器第一次搜索时，在 UI 线程上把浏览器的库整个拷一遍
+### R42（P1）启动器第一次搜索时，在 UI 线程上把浏览器的库整个拷一遍 → 已修（`41bb4286` 启动器 7a–7d：线程池里读、换快照、10 分钟看一次文件变没变）
 
 - `Launcher/LauncherModel.cs:56,70`：每次搜索都调 `BookmarkIndex.Load()` / `HistoryIndex.Load()`。第一次是真读：`Launcher/LookupServices.cs:425` 起，每个浏览器的每个配置都 `CopyWithWal`（:379），把 `History` / `places.sqlite` 整个拷到临时目录，再开库查，全在 UI 线程上。用久了的 Chrome `History` 有几十到几百 MB，拷完之前启动器是卡住的。
 - 读过一次 `_loaded` 就一直是 true：新加的书签、新的浏览记录要等重启才搜得到。
@@ -389,7 +389,7 @@
   - 默认读不读浏览历史、读哪几家是 V1 的事。这一条只管两件：别卡住，能刷新。
 - **验收**：日志记读库的耗时和线程（`history.load ms= thread=`），本机 `History` 有多大写进报告；打开启动器后第一次输入到列表出来，前后各量一次。
 
-### R43（P1）长截图：每 600 ms 在 UI 线程上抓所有屏，再把整张长图重新分配、重算一遍
+### R43（P1）长截图：每 600 ms 在 UI 线程上抓所有屏，再把整张长图重新分配、重算一遍 → 拼接那一半已写（windows-next，审查方，待编译）：Core 的 `ScrollCanvas` 存条带，`ScrollCanvasTests` 和逐帧整张拼逐像素比；**只抓选区那块屏、找重叠挪进线程池归你们**（D5，抓屏）
 
 - `Screenshot/ScrollingCapture.cs:141`：每一拍都 `ScreenCapture.CaptureAll()` 抓全部显示器的整屏，只用选区那一块。
 - `KittyTools.Core/ScrollStitcher.cs:53` 的 `Append(_current, frame)`：`Skip`、`Combine`、`Prepend`（:189 起）各新分配一份**整张**长图，再 `new ScrollFrame`；构造函数（:11）把整张图每一行重新哈希一遍。
@@ -416,7 +416,7 @@
   - `ApplyFeatures`、`TranslateHost.ApplyCopyTranslate` 也看一下：没比过的照这个办。
 - **验收**：打开设置窗再关掉，截 10 次图，`BuildPage` 次数是 0（加一行 Debug 日志数）；在设置里换强调色、换外观、关一个功能，照样立刻生效。
 
-### R45（P2）流式翻译：每来一段，UI 线程就把所有卡片和窗口高度重算一遍
+### R45（P2）流式翻译：每来一段，UI 线程就把所有卡片和窗口高度重算一遍 → 已写（windows-next，审查方，待编译）：流式片段合并成 33 ms 刷一次，换状态照旧当场刷；读流还在 UI 线程（ponytail）
 
 - `Translate/TranslateCoordinator.cs:206–213`：每个流式片段都 `card.Text = piece` → `Changed?.Invoke()`。全仓没有一处 `ConfigureAwait(false)`，读流、解析 JSON 的续延全回到 UI 线程。
 - `Translate/TranslateWindow.cs:936` 的 `OnCoordinatorChanged`：**所有**卡片 `Update`、`RebuildFooter`、`RefreshTranslateButton`，再 `ResizeToContent` 两次（一次当场、一次排队）。
@@ -448,7 +448,7 @@
 - **建议**：钉图复制改成先 `await PrepareImageAsync`；`ImageStore.Save` 不再算哈希，哈希和写盘挪进 `ClipboardService.SaveImageAsync` 已有的那个 `Task.Run`；`ShowPreview` 记住上次显示的那一条和它的版本，一样就直接返回。
 - **验收**：钉一张 4K 截图，按复制，UI 线程卡多久前后各量一次；复制一张 20 MB 的图，`RecordImage` 在 UI 线程上的耗时前后各量一次。
 
-### R49（P2）同步每 20 秒全量跑一轮，什么都没变也照跑
+### R49（P2）同步每 20 秒全量跑一轮，什么都没变也照跑 → 已写（windows-next，审查方，待编译）：`SyncDisk.Fingerprint` + 本机改动计数，都没变就跳过这一轮；`SyncRows(retainedOnly)`
 
 - `Storage/SyncFolder.cs:218` 的定时器每 20 秒 `RoundAsync`，`KittyTools.Core/Sync/SyncRunner.cs:64` 起：把文件夹里所有设备、所有类别的文件读进来，整份解码、合并，再编回去比较，没有「上一轮以来什么都没变」的短路。
 - UI 线程上每轮还有两件事：

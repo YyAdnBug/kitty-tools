@@ -62,11 +62,17 @@ internal sealed class ClipboardStore
     public bool SyncBusy => _undo.Count > 0;
 
     /// <summary>同步要的本机文字条目（留着的先补上 uid）。</summary>
-    public List<SyncClipRow> SyncRows()
+    /// <summary>retainedOnly：只要收藏、片段、收藏夹里的（编出去时只用这些，REVIEW R49：不再给全部历史各建一行）；落地时要全部。</summary>
+    public List<SyncClipRow> SyncRows(bool retainedOnly = false)
     {
         var rows = new List<SyncClipRow>();
         foreach (var entry in _items.Where(item => item.Kind == ClipKind.Text && item.Text is not null))
         {
+            if (retainedOnly && !IsRetained(entry))
+            {
+                continue;
+            }
+
             if (IsRetained(entry))
             {
                 EnsureUid(entry);

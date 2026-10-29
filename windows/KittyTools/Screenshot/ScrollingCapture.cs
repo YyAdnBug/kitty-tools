@@ -25,7 +25,8 @@ internal static class ScrollingCapture
     private static DispatcherQueueTimer? _timer;
     private static FrozenScreen? _screen;
     private static PixelBounds _rect;
-    private static ScrollFrame? _current;
+    /// <summary>拼到一半的那张（条带，REVIEW R43）：每拍只拿找重叠要看的那几行比，完成时才合成一张。</summary>
+    private static ScrollCanvas? _canvas;
     private static int _frames;
     private static Action<ScrollFrame>? _onComplete;
     private static Action? _onCancel;
@@ -50,7 +51,7 @@ internal static class ScrollingCapture
 
         _screen = screen;
         _rect = rect;
-        _current = null;
+        _canvas = null;
         _frames = 0;
         _direction = direction;
         _autoScroll = autoScroll;
@@ -82,13 +83,13 @@ internal static class ScrollingCapture
 
     public static void Complete()
     {
-        if (!Active || _current is null)
+        if (!Active || _canvas is null)
         {
             Cancel();
             return;
         }
 
-        var frame = _current;
+        var frame = _canvas.Compose();
         var callback = _onComplete;
         Stop();
         Log.Info($"scroll.done frames={_frames} height={frame.Height}");
@@ -126,7 +127,7 @@ internal static class ScrollingCapture
         _paused = false;
         _hasRestore = false;
         _screen = null;
-        _current = null;
+        _canvas = null;
         _onComplete = null;
         _onCancel = null;
     }
@@ -159,21 +160,17 @@ internal static class ScrollingCapture
             var pixels = new int[local.Width * local.Height];
             Buffer.BlockCopy(bgra, 0, pixels, 0, bgra.Length);
             var frame = new ScrollFrame(local.Width, local.Height, pixels);
-            if (_current is null)
+            if (_canvas is null)
             {
-                _current = frame;
+                _canvas = new ScrollCanvas(frame);
             }
             else
             {
-                var next = ScrollStitcher.Append(_current, frame, _direction);
-                if (next is not null)
-                {
-                    _current = next;
-                }
+                _canvas.Append(frame, _direction);
             }
 
             _frames++;
-            if (_current.Height >= ScrollStitcher.MaxOutputHeight)
+            if (_canvas.Height >= ScrollStitcher.MaxOutputHeight)
             {
                 Complete();
                 return;
