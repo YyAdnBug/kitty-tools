@@ -29,11 +29,6 @@ internal sealed partial class SettingsWindow
 
     private void BuildTranslate()
     {
-        if (!ShowIfDisabled(Feature.Translate))
-        {
-            return;
-        }
-
         var store = TranslateServiceStore.Instance;
         if (store is null)
         {
@@ -52,15 +47,18 @@ internal sealed partial class SettingsWindow
         Log.Info("settings.translate.build-start");
         var settings = SettingsService.Current;
         _content.Children.Add(Header("翻译", "语言、翻译服务与密钥、历史"));
+        // 2026-10-29 布局对齐 mac：第一行「启用翻译」，组的说明写在组下面；历史的保留、导出清空和按键那几行功能关着也能用。
+        AddFeatureToggle(Feature.Translate);
 
         // ---- 语言
-        _content.Children.Add(Section("语言",
-            "目标语言选「自动」时：原文是第一语言就译成第二语言，否则译成第一语言（简繁中文算同一种）。源语言和目标语言在翻译浮窗顶部切换，会一直记住。"));
+        _content.Children.Add(SettingsUi.Section("语言"));
         var langs = Enum.GetValues<Lang>();
         var titles = langs.Select(lang => lang.Title()).ToArray();
         var (first, second) = store.Languages;
         AddCombo("第一语言", string.Empty, titles, Array.IndexOf(langs, first), index => SetLanguage(isFirst: true, langs[index]));
         AddCombo("第二语言", string.Empty, titles, Array.IndexOf(langs, second), index => SetLanguage(isFirst: false, langs[index]));
+        _content.Children.Add(SettingsUi.Footnote(
+            "目标语言选「自动」时：原文是第一语言就译成第二语言，否则译成第一语言（简繁中文算同一种）。源语言和目标语言在翻译浮窗顶部切换，会一直记住。"));
 
         // ---- 译文字号：滑块 + 一张真卡片（第一个服务）跟着变
         _content.Children.Add(SettingsUi.Section("译文字号"));
@@ -107,15 +105,16 @@ internal sealed partial class SettingsWindow
         _content.Children.Add(preview.Root);
 
         // ---- 查词（系统词典那一项 Windows 不做：没有系统词典接口，PLAN-v3 §3.4）
-        _content.Children.Add(Section("查词", "查单个词时不自动复制、不给「替换原文」。"));
+        _content.Children.Add(SettingsUi.Section("查词"));
         AddToggle("查单个词时大模型按词典回答（读音、词性、例句）", string.Empty, settings.TranslateWordLookup, isOn =>
         {
             settings.TranslateWordLookup = isOn;
             SettingsService.Save();
         });
+        _content.Children.Add(SettingsUi.Footnote("查单个词时不自动复制、不给「替换原文」。"));
 
         // ---- 行为
-        _content.Children.Add(Section("行为", "收藏的记录不算在保留条数里、永不清理。"));
+        _content.Children.Add(SettingsUi.Section("行为"));
         var positions = new[] { "top", "pointer", "last" };
         AddCombo("浮窗位置",
             "划词、截图翻译、复制即译时出现的位置：屏幕上方是鼠标所在屏幕的上方正中，跟随鼠标是光标旁边；输入翻译总在上次拖到的位置",
@@ -176,7 +175,7 @@ internal sealed partial class SettingsWindow
                     SettingsService.Save();
                 }, "历史最多保留"),
             enabled: settings.TranslateHistoryEnabled);
-        _content.Children.Add(limitCard);
+        _content.Children.Add(Ungated(limitCard));
 
         var exportMenu = new MenuFlyout();
         foreach (var (favoritesOnly, anki, title) in HistoryMenu.Exports)
@@ -193,17 +192,14 @@ internal sealed partial class SettingsWindow
         var historyButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         historyButtons.Children.Add(export);
         historyButtons.Children.Add(clear);
-        _content.Children.Add(SettingsUi.Card("导出和清空", string.Empty, historyButtons));
+        _content.Children.Add(Ungated(SettingsUi.Card("导出和清空", string.Empty, historyButtons)));
 
-        var keys = new Button { Content = "查看全部快捷键…" };
-        keys.Click += (_, _) => _ = ShortcutsSheet.ShowAsync(_content.XamlRoot, "translate");
-        _content.Children.Add(SettingsUi.Card("翻译浮窗里的按键",
-            "Enter 翻译，Ctrl+R 重新翻译，Ctrl+1–9 复制第 1–9 个结果，Ctrl+H 翻译历史；划词来的翻译可以「替换原文」", keys));
+        Ungated(AddShortcutsRow("translate", "翻译浮窗里的按键",
+            "Enter 翻译，Ctrl+R 重新翻译，Ctrl+1–9 复制第 1–9 个结果，Ctrl+H 翻译历史；划词来的翻译可以「替换原文」"));
+        _content.Children.Add(Ungated(SettingsUi.Footnote("收藏的记录不算在保留条数里、永不清理。")));
 
         // ---- 翻译服务
-        _content.Children.Add(Section("翻译服务",
-            "结果按这个顺序显示；排在最前、翻译成功的那个服务的结果写入历史、用于自动复制和收藏。点一行进入设置，右键可以上移、下移和删除。" +
-            "删掉的内置服务可以从「添加服务」加回来，密钥还在。"));
+        _content.Children.Add(SettingsUi.Section("翻译服务"));
         if (TranslateServiceStore.BuiltinZhipuKey is null)
         {
             _content.Children.Add(new TextBlock
@@ -222,6 +218,9 @@ internal sealed partial class SettingsWindow
         }
 
         _content.Children.Add(AddServiceButton(store));
+        _content.Children.Add(SettingsUi.Footnote(
+            "结果按这个顺序显示；排在最前、翻译成功的那个服务的结果写入历史、用于自动复制和收藏。点一行进入设置，右键可以上移、下移和删除。" +
+            "删掉的内置服务可以从「添加服务」加回来，密钥还在。"));
         Log.Info($"settings.translate.build-done services={store.Services.Count}");
     }
 
@@ -605,7 +604,7 @@ internal sealed partial class SettingsWindow
         }
 
         // ---- 密钥：预先填好已存的（掩码显示），改了就存；清空就删掉
-        _content.Children.Add(Section("密钥", "只存在这台电脑的凭据管理器里。"));
+        _content.Children.Add(SettingsUi.Section("密钥"));
         foreach (var field in TranslateKinds.SecretFields(service.Kind))
         {
             var box = new PasswordBox
@@ -627,8 +626,10 @@ internal sealed partial class SettingsWindow
             apiKey ??= box;
         }
 
+        _content.Children.Add(SettingsUi.Footnote("只存在这台电脑的凭据管理器里。"));
+
         // ---- 测试连接
-        _content.Children.Add(Section("测试", "用「Hello, world」做一次英译中。"));
+        _content.Children.Add(SettingsUi.Section("测试"));
         var test = new Button { Content = "测试连接" };
         var busy = new ProgressRing { Width = 16, Height = 16, IsActive = false, Visibility = Visibility.Collapsed };
         var resultIcon = new FontIcon { FontSize = 13, Visibility = Visibility.Collapsed, VerticalAlignment = VerticalAlignment.Center };
@@ -677,6 +678,7 @@ internal sealed partial class SettingsWindow
         testRow.Children.Add(resultIcon);
         testRow.Children.Add(resultText);
         _content.Children.Add(testRow);
+        _content.Children.Add(SettingsUi.Footnote("用「Hello, world」做一次英译中。"));
 
         if (service.Kind == TranslateKinds.Ai)
         {

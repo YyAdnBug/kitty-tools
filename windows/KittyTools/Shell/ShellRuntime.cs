@@ -448,7 +448,7 @@ internal sealed class ShellRuntime
             {
                 ShowSettings(welcome: false);
                 await Task.Delay(700);
-                foreach (var page in new[] { "general", "hotkeys", "clipboard", "translate", "launcher", "screenshot", "about" })
+                foreach (var page in new[] { "general", "clipboard", "launcher", "translate", "screenshot", "record", "hotkeys", "about" })
                 {
                     _settingsWindow?.ShowPage(welcome: false, page);
                     await Task.Delay(400);
@@ -731,7 +731,7 @@ internal sealed class ShellRuntime
                 {
                     Log.Info("smoke.settings");
                     ShowSettings(welcome: false);
-                    foreach (var page in new[] { "general", "hotkeys", "clipboard", "translate", "launcher", "screenshot", "about" })
+                    foreach (var page in new[] { "general", "clipboard", "launcher", "translate", "screenshot", "record", "hotkeys", "about" })
                     {
                         Log.Info($"smoke.settings.{page}");
                         _settingsWindow?.ShowPage(welcome: false, page);
@@ -777,7 +777,8 @@ internal sealed class ShellRuntime
     }
 
     /// <param name="service">翻译服务的 id：直达设置 › 翻译里那个服务的详情（翻译错误卡的「打开设置」）。</param>
-    public void ShowSettings(bool welcome, string page = "general", string? service = null)
+    /// <summary>page 不给 = 设置窗上次停在的那一页（同 mac 记住上次的页）。</summary>
+    public void ShowSettings(bool welcome, string? page = null, string? service = null)
     {
         OverlayHost.Hide(restoreForeground: false);
         if (_settingsWindow is null || _settingsWindow.IsClosed)

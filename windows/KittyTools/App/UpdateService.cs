@@ -35,6 +35,9 @@ internal static class UpdateService
     /// <summary>本地假发布列表（KITTY_UPDATE_FEED）：验证每日检查会走线程池那条路。</summary>
     public static bool UsingLocalFeed { get; private set; }
 
+    /// <summary>上一次检查没成（网络不通、发布列表读不出来）：设置 › 关于 把结果写在页上，不另弹提示（同 mac）。</summary>
+    public static bool LastCheckFailed { get; private set; }
+
     public static void Initialize(Microsoft.UI.Dispatching.DispatcherQueue dispatcher)
     {
         _dispatcher = dispatcher;
@@ -130,10 +133,12 @@ internal static class UpdateService
 
             var newer = best is not null && best > current;
             Log.Info($"update.check newer={newer} version={bestVersion ?? "none"} localFeed={UsingLocalFeed}");
+            LastCheckFailed = false;
             ApplyResult(newer, bestVersion, bestUrl, bestZip, bestHash, bestAsset, current, userInitiated);
         }
         catch (Exception ex)
         {
+            LastCheckFailed = true;
             Log.Warn($"update.check-failed {ex.GetType().Name}");
             if (userInitiated)
             {

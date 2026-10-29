@@ -202,6 +202,18 @@ internal static class SettingsUi
         return panel;
     }
 
+    /// <summary>
+    /// 组脚注（mac SectionFootnote）：解释整组的话写在这一组卡片的下面，12 secondary、靠左；卡片里不单独放一行说明（PLAN-v7 §3.7）。
+    /// </summary>
+    public static UIElement Footnote(string text) => new TextBlock
+    {
+        Text = text,
+        FontSize = 12,
+        Foreground = Theme.SecondaryText(),
+        TextWrapping = TextWrapping.Wrap,
+        Margin = new Thickness(2, 0, 2, 4),
+    };
+
     /// <summary>页头：一个家族色块 + 大标题 + 一句说明（PLAN-v7 §3.7）。glyph 是这一页自己的符号（和左栏同一个，同 mac PageHeader 的 page.symbol）。</summary>
     public static UIElement Header(string title, string subtitle, string? glyph = null)
     {
@@ -240,7 +252,7 @@ internal static class SettingsUi
         "剪贴板" => "clipboard",
         "翻译" => "translate",
         "启动器" => "launcher",
-        "截图" => "capture",
+        "截图" or "录制" => "capture",
         _ => "general",
     };
 
@@ -267,26 +279,32 @@ internal static class SettingsUi
         return row;
     }
 
-    /// <summary>更新日志条目前的类型标签（feat / fix / perf / ui）。</summary>
+    /// <summary>
+    /// 更新日志条目前的种类标签（同 mac 关于页的 ChangeRow）：新增绿、修复橙、性能紫、界面蓝，字是种类色、底是同色 12%。
+    /// </summary>
     public static Border TypeTag(string? type)
     {
-        var (label, brush) = type switch
+        var (label, color) = type switch
         {
-            "feat" => ("新", Theme.Success()),
-            "fix" => ("修", Theme.Critical()),
-            "perf" => ("快", Theme.Brush("SystemFillColorCautionBrush", Theme.BrandPink)),
-            "ui" => ("界面", Theme.Family.Tint(Theme.Family.Launcher, 40)),
-            _ => ("", Theme.SecondaryText()),
+            "feat" => ("新增", Theme.Family.Translate),
+            "fix" => ("修复", Theme.Family.Shortcut),
+            "perf" => ("性能", Theme.Family.Launcher),
+            "ui" => ("界面", Theme.Family.Clipboard),
+            _ => (type ?? string.Empty, Theme.Family.General),
         };
         return new Border
         {
-            Padding = new Thickness(6, 1, 6, 1),
+            Padding = new Thickness(5, 1, 5, 1),
             CornerRadius = new CornerRadius(4),
-            Background = Theme.Brush(
-                "ControlFillColorSecondaryBrush",
-                Theme.Argb(40, 128, 128, 128)),
+            Background = Theme.Family.Tint(color, 31),
             VerticalAlignment = VerticalAlignment.Top,
-            Child = new TextBlock { Text = label, FontSize = 10, Foreground = brush },
+            Child = new TextBlock
+            {
+                Text = label,
+                FontSize = 10,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = new SolidColorBrush(color),
+            },
         };
     }
 }

@@ -42,6 +42,25 @@ internal static unsafe partial class ShellIcons
         return LoadLargeIcon(path, size);
     }
 
+    /// <summary>资源管理器里显示的名字（「屏幕截图」这种本地化的文件夹名，设置里「保存到」那一行用）；取不到时用路径最后一段。</summary>
+    public static string DisplayName(string path)
+    {
+        var info = default(SHFILEINFOW);
+        fixed (char* name = path)
+        {
+            if (PInvoke.SHGetFileInfo(
+                    new PCWSTR(name), default, &info, (uint)sizeof(SHFILEINFOW),
+                    SHGFI_FLAGS.SHGFI_DISPLAYNAME) != 0 &&
+                info.szDisplayName.ToString() is { Length: > 0 } display)
+            {
+                return display;
+            }
+        }
+
+        var last = Path.GetFileName(path.TrimEnd('\\', '/'));
+        return string.IsNullOrEmpty(last) ? path : last;
+    }
+
     /// <summary>按图标位置（exe / dll / ico + 序号）和像素尺寸直接取一档图标。</summary>
     private static byte[]? LoadFromIconLocation(string iconPath, int index, int size)
     {
