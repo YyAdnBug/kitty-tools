@@ -109,7 +109,7 @@ internal sealed class ScreenshotSession
     /// <summary>
     /// 截图历史「改标注」（PLAN-v8 第 3 批）：原图 1:1 摆在鼠标所在屏的正中当冻结帧（四周深灰），选区就是这张图，
     /// 当初的标注照原样摆上，用截图遮罩那一套工具接着改；拷贝 / 存储 / 钉图时回写同一条。
-    /// ponytail: 比屏幕还大的（长截图）先不支持，要可滚动的长图画布（PLAN-v8 第 3 批下半）。
+    /// 比屏幕还大的（长截图）开长图标注窗口（LongAnnotateWindow，PLAN-v9 S12）。
     /// </summary>
     internal static async void StartEditing(ShotItem item)
     {
@@ -126,7 +126,11 @@ internal sealed class ScreenshotSession
 
         if (ScreenCapture.CanvasAtCursor(image.Bgra, image.Width, image.Height, out var placed) is not { } screen)
         {
-            NoticeHost.Show("这张比屏幕还大", "长图的标注还没做，可以先拷贝或钉出来看", NoticeTone.Normal);
+            var scale = Math.Max(1, item.Scale);
+            LongAnnotateWindow.Open(
+                image.Bgra, image.Width, image.Height, item.Scale,
+                item.Annotations.Select(data => ShotAnnotations.FromData(data, 0, 0, scale)).OfType<Annotation>().ToList(),
+                item.Id, png);
             return;
         }
 
@@ -508,7 +512,7 @@ internal sealed class ScreenshotSession
             global,
             up ? ScrollDirection.Up : ScrollDirection.Down,
             autoScroll,
-            frame => _ = CompleteScrollingAsync(frame, global),
+            (frame, annotate) => _ = CompleteScrollingAsync(frame, global, annotate),
             () =>
             {
                 NoticeHost.Show("已取消长截图", string.Empty, NoticeTone.Normal);
@@ -516,7 +520,8 @@ internal sealed class ScreenshotSession
             });
     }
 
-    private async Task CompleteScrollingAsync(ScrollFrame frame, PixelBounds global)
+    /// <summary>长截图拼完：拷贝、进历史、出角落卡；annotate（面板上点了「标注」）时不拷贝，进历史后开长图标注窗口（PLAN-v9 S12）。</summary>
+    private async Task CompleteScrollingAsync(ScrollFrame frame, PixelBounds global, bool annotate)
     {
         var bgra = new byte[frame.Width * frame.Height * 4];
         for (var index = 0; index < frame.Pixels.Length; index++)
@@ -530,6 +535,23 @@ internal sealed class ScreenshotSession
 
         var png = await ImageCodec.BgraToPngAsync(frame.Width, frame.Height, bgra);
         var screen = SelectionScreen;
+        if (annotate)
+        {
+            Finish();
+            if (png is null)
+            {
+                NoticeHost.Show("长截图没拼成", "再试一次", NoticeTone.Warning);
+                return;
+            }
+
+            var scale = screen?.Scale ?? 1;
+            var id = ShotHistory.IsOn
+                ? await ShotHistory.RecordAsync(png, frame.Width, frame.Height, scale, ShotKind.Scroll, source: _sourceName)
+                : null;
+            LongAnnotateWindow.Open(bgra, frame.Width, frame.Height, scale, Array.Empty<Annotation>(), id, png);
+            return;
+        }
+
         var copied = false;
         if (png is not null && screen is not null)
         {

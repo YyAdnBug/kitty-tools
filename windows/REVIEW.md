@@ -34,8 +34,12 @@
   R12 角落卡设 `WDA_EXCLUDEFROMCAPTURE`（这台机器上设了它的分层窗口不显示，角落卡是 WinUI 窗口、按理没事，要亲眼看）；
   R3「显示光标」审查方只接了 WGC 那条（`IsCursorCaptureEnabled`），GDI 那条如果还在用，看一下光标是不是本来就没录。
   R10 待录控制条上的来源开关审查方写了（`AudioHud`），宽度 400 放不放得下要看一眼。
-- 第 6 批 S11 S12（长截图拍的时候有预览、拼完能标注）整批是画布活：预览读 `ScrollCanvas` 的条带（R43 已经改成条带，别再拷整张），
-  长图标注用 Win2D `CanvasVirtualControl` 避开 16384 的纹理上限（PLAN-v8 H7）。审查方这边没写。
+- 第 6 批 S11 S12 → 已写（HANDTEST 751–764）：S11 选区旁边一块预览面板 `ScrollPreviewPanel`（直接从 `ScrollCanvas` 的条带取样，
+  只在没有正在拼的那一拍时取；滚轮往回看、指示条、双击回到最新，纯函数在 Core 的 `ScrollPreview`）；S12 `LongAnnotateWindow`
+  （`CanvasVirtualControl` + 4096 行一条的位图，出图也一条条画；标注模型 / 画法 / 命中 / 手柄全用截图遮罩那套，
+  `AnnotationRenderer.Draw` 加了 `frozenAt` 给荧光笔垫当前那条）。入口：历史里「改标注」放不进屏幕的、长截图面板的「标注」。
+  要你们特别看：CanvasVirtualControl 放在 ScrollViewer 里滚动时有没有空白块；30000 行的出图耗时和显存；面板贴在选区里时
+  （选区差不多整屏）拍出来的帧里有没有面板（设了「不进录屏」）。
 - 0.2.0 最后一批的收尾（版本号、changelog、STATUS）等上面这些都做完再做。
 - 第 3 批 S10 → 已写（右键「透明度 N%…」和悬停的透明度钮都打开一个带滑块的小浮层）：钉图透明度 10–100% 的滑块（mac 在右键菜单里；WinUI 的 MenuFlyout 放不了滑块，可以换成 Flyout 或右键菜单里一项打开小浮层，你们看着定）。右键的「存储」「翻译」、托盘 / 启动器的「隐藏 / 关闭全部钉图」审查方写了。
 
@@ -136,7 +140,7 @@
   - 调试参数 `--notice-buttons`；`--ui-snapshots` 多 `island-buttons`、`island-expanded`。
   - **最可能要改的**：按钮的轻量样式资源键（`ButtonBackgroundPointerOver` 等）在 WinUI 2.x 里叫不叫这个；`WS_EX_NOACTIVATE` 的窗口里按钮点不点得动（录制条那边是点得动的）；`--notice-anim-test` 的窗口高度变了，量宽度的那段可能要跟着改。验收看 `HANDTEST` 339–345。
 - 第 4 批：速查表（`Settings/ShortcutsSheet.cs`），设置的剪贴板 / 启动器 / 截图 / 翻译 / 快捷键五页标题下面加了「查看全部快捷键…」。里面的面板按键是逐个对着现在的按键处理抄的（每组注明了文件），**改了面板按键要同步这里**；R39–R41 修完后跟着改。历史窗口加了 Delete 删选中的那条。
-- **第 3 批下（长图标注）先不做**：长图比屏幕高，截图遮罩那一套用不上，要另写一个能滚的长图画布、把标注交互再做一遍（约等于 `SelectionOverlayWindow` 的一半）。mac 那边的用户数据里长截图是 0 次，等用户要了再做。
+- **第 3 批下（长图标注）先不做**（0.2.0 的 S12 做了，见上面 windows-next 那段）：长图比屏幕高，截图遮罩那一套用不上，要另写一个能滚的长图画布、把标注交互再做一遍（约等于 `SelectionOverlayWindow` 的一半）。mac 那边的用户数据里长截图是 0 次，等用户要了再做。
 - **和方案不一样**：画了标注的另存一张成品 `<id>-c.png`（Windows 的 `AnnotationRenderer` 画马赛克要冻结帧，离开遮罩合成不了）；来源程序先不记；角落缩略图卡没有右键菜单，「在历史里看」没加。
 - **要验**：`ShotHistoryTests`；截图拷贝 / 存储 / 钉图 / 长截图 / 录屏 / 录音 / GIF 各来一次，`%LOCALAPPDATA%\KittyTools\shots\` 和 `shots` 表对得上；历史窗口每个操作；改标注后缩略图跟着变、再打开看到改过的标注；`Annotation` 以后加了字段（比如空心 / 实心）要在 `ShotAnnotations` 里一起存。
 

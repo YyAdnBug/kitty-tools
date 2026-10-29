@@ -1299,7 +1299,7 @@ internal sealed partial class SelectionOverlayWindow : Window
     }
 
     /// <summary>工具栏上的图标：Fluent 字形；序号没有合适的，写带圈的 1。</summary>
-    private static string ToolGlyph(AnnotationKind kind) => kind switch
+    internal static string ToolGlyph(AnnotationKind kind) => kind switch
     {
         AnnotationKind.Rectangle => Glyphs.ToolRectangle,
         AnnotationKind.Ellipse => Glyphs.ToolEllipse,
@@ -1313,7 +1313,7 @@ internal sealed partial class SelectionOverlayWindow : Window
         _ => Glyphs.ToolSpotlight,
     };
 
-    private static Button ToolbarButton(string label, string tooltip, string automationName, double width = 32)
+    internal static Button ToolbarButton(string label, string tooltip, string automationName, double width = 32)
     {
         var glyph = label.Length >= 1 && label[0] >= '\uE000' && label[0] <= '\uF8FF';
         var button = new Button

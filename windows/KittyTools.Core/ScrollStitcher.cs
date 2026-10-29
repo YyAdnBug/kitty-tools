@@ -347,6 +347,47 @@ public sealed class ScrollCanvas
     }
 
     /// <summary>
+    /// 预览（PLAN-v9 S11）：第 start 起的 count 行缩成 width × height（最近邻取样，不拷整张）。
+    /// 不加锁：调用方保证这时没有 Append 在跑（ScrollingCapture 只在没有正在拼的那一拍时取）。
+    /// </summary>
+    public int[] Sample(int start, int count, int width, int height)
+    {
+        var result = new int[Math.Max(width, 0) * Math.Max(height, 0)];
+        if (width <= 0 || height <= 0 || count <= 0)
+        {
+            return result;
+        }
+
+        start = Math.Clamp(start, 0, Height - 1);
+        var index = 0;
+        var stripRow = 0;
+        for (var y = 0; y < height; y++)
+        {
+            var row = start + (int)((long)y * count / height);
+            if (row >= Height)
+            {
+                break;
+            }
+
+            // 行号只增不减，条带顺着往下找。
+            while (stripRow + _strips[index].Rows <= row)
+            {
+                stripRow += _strips[index].Rows;
+                index++;
+            }
+
+            var strip = _strips[index];
+            var source = (strip.Start + row - stripRow) * Width;
+            for (var x = 0; x < width; x++)
+            {
+                result[y * width + x] = strip.Pixels[source + (int)((long)x * Width / width)];
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
     /// 拿去和新帧比的那张小图：ScrollStitcher.Plan 只读最上面 HeadRows 行，和往下滚时最下面 / 往上滚时紧接着上面的 MaxOverlap 行；
     /// 高不小于新帧（Plan 里取的 min(上一张, 新帧) 才和整张时一样）。整张没那么高时就是整张。
     /// </summary>
