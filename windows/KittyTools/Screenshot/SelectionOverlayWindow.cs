@@ -2376,6 +2376,7 @@ internal sealed partial class SelectionOverlayWindow : Window
             screen.Bounds.Top + (int)Math.Round(selection.Bottom));
         _session.RecordHistory(screen, selection, png, pinned: true);
         _session.Finish();
+        ShotFeedback.PlayShutter();
         PinHost.Show(png, global);
     }
 

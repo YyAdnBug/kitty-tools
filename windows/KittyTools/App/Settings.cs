@@ -147,6 +147,12 @@ internal sealed class Settings
 
     public int ScreenshotLastHeight { get; set; }
 
+    /// <summary>截图时播放快门声（PLAN-v9 S6，默认开，同 mac）：拷贝、存储、钉图时响。</summary>
+    public bool ScreenshotShutterSound { get; set; } = true;
+
+    /// <summary>截完图放哪（PLAN-v9 S7）：card = 角落缩略图（默认）/ none = 都不要（照样进截图历史）。</summary>
+    public string ShotPlacement { get; set; } = "card";
+
     // 录制（第四版）：帧率、保存目录、上次没写完的临时文件（闪退恢复用）。
     public int RecordFps { get; set; } = Core.RecorderRules.DefaultFps;
 

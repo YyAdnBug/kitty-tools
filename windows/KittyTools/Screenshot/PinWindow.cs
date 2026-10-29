@@ -402,8 +402,43 @@ internal static class PinHost
 {
     private static readonly List<PinWindow> Windows = new();
 
+    /// <summary>屏幕上有几张钉图（托盘、启动器里「隐藏 / 关闭全部钉图」只在有钉图时列出来）。</summary>
+    public static int Count => Windows.Count;
+
+    /// <summary>托盘「隐藏全部钉图」之后（PLAN-v9 G1、S10，同 mac 菜单栏）：再钉新的一张时先全部显示回来。</summary>
+    public static bool AllHidden { get; private set; }
+
+    /// <summary>显示 / 隐藏全部钉图（不关掉，位置、缩放、透明度都留着）。</summary>
+    public static void ToggleHidden()
+    {
+        AllHidden = !AllHidden && Windows.Count > 0;
+        foreach (var window in Windows.ToList())
+        {
+            try
+            {
+                if (AllHidden)
+                {
+                    window.AppWindow.Hide();
+                }
+                else
+                {
+                    window.AppWindow.Show(false);
+                }
+            }
+            catch
+            {
+                // 已经关掉的跳过。
+            }
+        }
+    }
+
     public static void Show(byte[] png, PixelBounds bounds)
     {
+        if (AllHidden)
+        {
+            ToggleHidden();
+        }
+
         var window = new PinWindow(png, bounds);
         Windows.Add(window);
         window.Closed += (_, _) => Windows.Remove(window);
@@ -487,5 +522,6 @@ internal static class PinHost
         }
 
         Windows.Clear();
+        AllHidden = false;
     }
 }

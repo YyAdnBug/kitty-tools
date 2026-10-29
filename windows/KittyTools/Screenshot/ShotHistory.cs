@@ -133,7 +133,8 @@ internal sealed class ShotHistory
         byte[]? composedPng = null,
         string? savedPath = null,
         bool pinned = false,
-        PixelBounds? frame = null)
+        PixelBounds? frame = null,
+        string? source = null)
     {
         if (Instance is not { } history || !IsOn)
         {
@@ -156,7 +157,8 @@ internal sealed class ShotHistory
             PixelWidth = width,
             PixelHeight = height,
             Scale = scale,
-            // ponytail: 来源程序先不记（截图时前台是我们的遮罩，要在开遮罩之前记下前台窗口）；历史窗口没有就不显示。
+            // 来源程序：开遮罩之前记下的前台程序（PLAN-v9 S13，ScreenshotSession.ForegroundAppName）；拿不到是 null，历史窗口就不显示。
+            Source = source,
             SavedPath = savedPath,
             Annotations = annotations?.ToList() ?? new List<ShotAnnotationData>(),
             PinnedAt = pinned ? now : null,

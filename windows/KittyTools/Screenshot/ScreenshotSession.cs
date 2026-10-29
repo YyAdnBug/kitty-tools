@@ -24,6 +24,9 @@ internal sealed class ScreenshotSession
 
     /// <summary>从截图历史打开的那一条（PLAN-v8 第 3 批）和图摆在哪：选区没动过就回写它，不另记一条。</summary>
     private string? _editingId;
+
+    /// <summary>进遮罩时前台的程序（截图历史的「来源」，PLAN-v9 S13）。</summary>
+    private string? _sourceName;
     private RectD _editingRect;
 
     public ScreenshotSession(ScreenshotMode mode, List<FrozenScreen> screens, List<SnapWindow> windows)
@@ -73,6 +76,8 @@ internal sealed class ScreenshotSession
             return;
         }
 
+        // 截图历史记来源（PLAN-v9 S13）：开遮罩之前、我们的面板还没收起时记下前台是谁（前台是我们自己就不记）。
+        var source = ForegroundAppName();
         ShellRuntime.Instance?.HotKeys.UnregisterAll();
         OverlayHost.Hide(restoreForeground: false);
         TranslateHost.Hide(restoreForeground: false);
@@ -95,7 +100,7 @@ internal sealed class ScreenshotSession
         }
 
         var windows = WindowList.Capture();
-        var session = new ScreenshotSession(mode, screens, windows);
+        var session = new ScreenshotSession(mode, screens, windows) { _sourceName = source };
         _current = session;
         Log.Info($"screenshot.begin mode={mode} screens={screens.Count}");
         session.ShowOverlays();
@@ -358,7 +363,7 @@ internal sealed class ScreenshotSession
         // 飞入 + 角落缩略图（PLAN-v2 §3.8 / D5）。
         if (copied && png is not null)
         {
-            ScreenshotCard.Show(png, origin);
+            ShotFeedback.Delivered(png, origin);
         }
     }
 
@@ -402,7 +407,11 @@ internal sealed class ScreenshotSession
         Finish();
         if (saved is not null)
         {
-            ScreenshotCard.Show(png, origin, saved);
+            ShotFeedback.Delivered(png, origin, saved);
+        }
+        else if (savedAs is not null)
+        {
+            ShotFeedback.PlayShutter();
         }
     }
 
@@ -427,6 +436,7 @@ internal sealed class ScreenshotSession
         var global = new PixelBounds(
             settings.ScreenshotLastX, settings.ScreenshotLastY,
             settings.ScreenshotLastX + width, settings.ScreenshotLastY + height);
+        var source = ForegroundAppName();
         List<FrozenScreen> screens;
         try
         {
@@ -460,8 +470,9 @@ internal sealed class ScreenshotSession
             var png = await ImageCodec.BgraToPngAsync(global.Width, global.Height, bgra);
             if (png is not null && await ScreenshotOutput.CopyPngAsync(png, global.Width, global.Height))
             {
-                _ = ShotHistory.RecordAsync(png, global.Width, global.Height, screen.Scale, ShotKind.Shot, frame: global);
-                ScreenshotCard.Show(png, global);
+                _ = ShotHistory.RecordAsync(png, global.Width, global.Height, screen.Scale, ShotKind.Shot, frame: global,
+                    source: source);
+                ShotFeedback.Delivered(png, global);
             }
         }
         catch (Exception ex)
@@ -530,8 +541,8 @@ internal sealed class ScreenshotSession
         Finish();
         if (copied && png is not null)
         {
-            _ = ShotHistory.RecordAsync(png, frame.Width, frame.Height, screen?.Scale ?? 1, ShotKind.Scroll);
-            ScreenshotCard.Show(png, global);
+            _ = ShotHistory.RecordAsync(png, frame.Width, frame.Height, screen?.Scale ?? 1, ShotKind.Scroll, source: _sourceName);
+            ShotFeedback.Delivered(png, global);
         }
     }
 
@@ -584,8 +595,31 @@ internal sealed class ScreenshotSession
             {
                 await ShotHistory.RecordAsync(
                     png, rect.Width, rect.Height, scale, ShotKind.Shot, annotations,
-                    original is null ? null : composed, savedPath, pinned, frame);
+                    original is null ? null : composed, savedPath, pinned, frame, _sourceName);
             }
+        }
+    }
+
+    /// <summary>进遮罩那一刻前台窗口所属的程序名（截图历史的「来源」，PLAN-v9 S13）；是我们自己、拿不到时 null。</summary>
+    private static string? ForegroundAppName()
+    {
+        try
+        {
+            var hwnd = Foreground.Get();
+            if (hwnd == default)
+            {
+                return null;
+            }
+
+            PInvoke.GetWindowThreadProcessId(hwnd, out var pid);
+            return pid == 0 || pid == (uint)Environment.ProcessId
+                ? null
+                : ClipboardFormats.ProcessImage(pid) is { } path ? ClipboardFormats.DisplayName(path) : null;
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"screenshot.source-failed {ex.GetType().Name}");
+            return null;
         }
     }
 

@@ -92,7 +92,7 @@ internal sealed partial class SettingsWindow : Window
         },
         ["screenshot"] = new[]
         {
-            "保存", "存储", "目录", "文件夹", "识字", "换行", "标注", "长截图", "钉图", "截图历史", "按键", "速查",
+            "保存", "存储", "目录", "文件夹", "快门", "声音", "缩略图", "识字", "换行", "标注", "长截图", "钉图", "截图历史", "按键", "速查",
         },
         ["record"] = new[]
         {
@@ -1796,12 +1796,12 @@ internal sealed partial class SettingsWindow : Window
     }
 
     /// <summary>
-    /// 设置 › 截图（照 mac ScreenshotTab）：启用截图 ｜ 快速保存到 ｜ 截图历史 ｜ 识字 ｜ 框选、标注、长截图和录屏的按键。
-    /// 快门声、截完图放哪、截图历史的保留天数和占用是 0.2.0 的 S6–S8（MAC-DIFF.md）。
+    /// 设置 › 截图（照 mac ScreenshotTab）：启用截图 ｜ 快速保存到 ｜ 快门声 ｜ 截图历史 ｜ 截完图放哪 ｜ 识字 ｜
+    /// 框选、标注、长截图和录屏的按键。截图历史的保留天数和占用是 S8（MAC-DIFF.md）。
     /// </summary>
     private void BuildScreenshot()
     {
-        _content.Children.Add(Header("截图", "快速保存、截图历史和识字"));
+        _content.Children.Add(Header("截图", "快速保存、快门声、缩略图和识字"));
         AddFeatureToggle(Feature.Screenshot);
 
         // 快速保存到：功能关着也能改（mac 这一行在变灰的那块外面）
@@ -1817,6 +1817,22 @@ internal sealed partial class SettingsWindow : Window
             "按 Ctrl+S 或工具栏的「存储」存到这里，文件名是「截图 日期 时间.png」，重名自动加序号；Ctrl+Shift+S 每次另存为。" +
             "没选过时存到系统的「屏幕截图」文件夹。截图不会上传到任何服务。")));
 
+        // 快门声（PLAN-v9 S6）：右边先是「试听」，再是开关。
+        _content.Children.Add(new Border { Height = 8 });
+        var shutter = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, VerticalAlignment = VerticalAlignment.Center };
+        var listen = new Button { Content = new FontIcon { Glyph = "\uE767", FontSize = 14 }, Padding = new Thickness(8, 4, 8, 4) };
+        AutomationProperties.SetName(listen, "试听快门声");
+        ToolTipService.SetToolTip(listen, "试听");
+        listen.Click += (_, _) => ShotFeedback.PlayShutter(force: true);
+        shutter.Children.Add(listen);
+        shutter.Children.Add(SettingsUi.Toggle(SettingsService.Current.ScreenshotShutterSound, value =>
+        {
+            SettingsService.Current.ScreenshotShutterSound = value;
+            SettingsService.Save();
+        }, "截图时播放快门声"));
+        _content.Children.Add(SettingsUi.Card("截图时播放快门声", string.Empty, shutter));
+        _content.Children.Add(SettingsUi.Footnote("拷贝、存储、钉图时响；系统静音、全屏游戏和演示时不响。截图翻译、识字不出声。"));
+
         // 截图历史（PLAN-v8 H3）
         _content.Children.Add(SettingsUi.Section("截图历史"));
         AddToggle("保留截图历史", "关掉后不再记，已经记下的留着",
@@ -1830,6 +1846,18 @@ internal sealed partial class SettingsWindow : Window
         openHistory.Click += (_, _) => ShotHistoryWindow.ShowWindow();
         _content.Children.Add(SettingsUi.Card("截图历史", "看、拷贝、再钉出来，或者删掉", openHistory));
         _content.Children.Add(SettingsUi.Footnote("截图、长截图、钉过的图和录制都记在这里，留 30 天、最多 2 GB，超了先删最旧的。"));
+
+        // 截完图放哪（PLAN-v9 S7）：角落缩略图 / 都不要（mac 还有晾衣绳，Windows 不做）。
+        _content.Children.Add(new Border { Height = 8 });
+        var placements = new[] { "card", "none" };
+        AddCombo("截完图放哪", string.Empty, new[] { "角落缩略图", "都不要" },
+            Math.Max(0, Array.IndexOf(placements, SettingsService.Current.ShotPlacement)),
+            index =>
+            {
+                SettingsService.Current.ShotPlacement = placements[index];
+                SettingsService.Save();
+            });
+        _content.Children.Add(SettingsUi.Footnote("角落的缩略图可以拖出、钉图、存储；选「都不要」后截完不出缩略图，仍然进截图历史。"));
 
         // 识字
         _content.Children.Add(new Border { Height = 8 });

@@ -1,6 +1,7 @@
 // 启动器里本 App 自己的动作（PLAN-v9-launcher R12 = PLAN-v9 L8，照 mac LauncherItem.actions）：和托盘菜单同名同序——
 // 剪贴板历史、暂停记录剪贴板（副标题写正在记录 / 已暂停）｜输入翻译、复制即译（已开启 / 已关闭）｜截图、截图翻译、截取上次区域、
-// 识字、截图历史、钉住剪贴板里的图、录屏、录音｜设置、快捷键速查表、关于 Kitty Tools、检查更新（有新版本时「更新到 x」）、退出 Kitty Tools。
+// 识字、截图历史、钉住剪贴板里的图、隐藏 / 显示全部钉图和关闭全部钉图（有钉图时，PLAN-v9 S10）、录屏、录音｜设置、快捷键速查表、
+// 关于 Kitty Tools、检查更新（有新版本时「更新到 x」）、退出 Kitty Tools。
 // 关着的功能那一节不列（Feature）；启动器自己、划词翻译不列（点了启动器，原来的程序就不在前台了，取不到选中的字，同托盘 G1）。
 // 副标题只写「Kitty Tools」，英文名和拼音只进匹配；对得上全局快捷动作的，选中时右边显示它的键帽。
 // 退出排在最后（同系统命令），避免回车误退；退出不记使用。老的 9 个 id 不改（使用记录按 id 累计）。
@@ -21,6 +22,8 @@ internal static class LauncherActions
     public const string Ocr = "action:ocr";
     public const string ShotHistory = "action:shot-history";
     public const string PinClipboard = "action:pin-clipboard";
+    public const string PinsToggle = "action:pins-toggle";
+    public const string PinsClose = "action:pins-close";
     public const string Record = "action:record";
     public const string Audio = "action:audio";
     public const string Settings = "action:settings";
@@ -67,6 +70,12 @@ internal static class LauncherActions
             items.Add(Item(new(ShotHistory, "截图历史", "Screenshot History", Glyphs.History, "capture", HotKeyActions.ShotHistory)));
             items.Add(Item(new(PinClipboard, "钉住剪贴板里的图", "Pin Clipboard Image", Glyphs.Pin, "capture",
                 HotKeyActions.PinClipboard)));
+            if (PinHost.Count > 0)
+            {
+                items.Add(Item(new(PinsToggle, PinHost.AllHidden ? "显示全部钉图" : "隐藏全部钉图", "Show Hide All Pins",
+                    Glyphs.Pin, "capture")));
+                items.Add(Item(new(PinsClose, "关闭全部钉图", "Close All Pins", Glyphs.Pin, "capture")));
+            }
         }
 
         if (Features.IsOn(Feature.Recording))
@@ -95,7 +104,8 @@ internal static class LauncherActions
     {
         Clipboard or PauseClipboard => "clipboard",
         Translate or CopyTranslate => "translate",
-        Screenshot or ScreenshotTranslate or ScreenshotLast or Ocr or ShotHistory or PinClipboard or Record or Audio => "capture",
+        Screenshot or ScreenshotTranslate or ScreenshotLast or Ocr or ShotHistory or PinClipboard or PinsToggle or PinsClose
+            or Record or Audio => "capture",
         Shortcuts => "shortcut",
         _ => "general",
     };
@@ -110,7 +120,7 @@ internal static class LauncherActions
         ScreenshotTranslate => Glyphs.ScreenshotTranslate,
         Ocr => Glyphs.Ocr,
         ShotHistory => Glyphs.History,
-        PinClipboard => Glyphs.Pin,
+        PinClipboard or PinsToggle or PinsClose => Glyphs.Pin,
         Record => Glyphs.Record,
         Audio => Glyphs.Microphone,
         Shortcuts => Glyphs.Keyboard,
@@ -155,6 +165,12 @@ internal static class LauncherActions
                 break;
             case PinClipboard:
                 _ = PinHost.PinClipboardAsync();
+                break;
+            case PinsToggle:
+                PinHost.ToggleHidden();
+                break;
+            case PinsClose:
+                PinHost.CloseAll();
                 break;
             case Record:
                 StartLater(RecordingHost.Toggle);
