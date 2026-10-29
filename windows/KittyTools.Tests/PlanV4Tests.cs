@@ -30,6 +30,27 @@ public sealed class RecorderRulesTests
     }
 
     [TestMethod]
+    public void FrameRateIsThirtyOrSixty()
+    {
+        Assert.AreEqual(30, RecorderRules.DefaultFps);
+        Assert.AreEqual(30, RecorderRules.NormalizeFps(15));
+        Assert.AreEqual(30, RecorderRules.NormalizeFps(30));
+        Assert.AreEqual(30, RecorderRules.NormalizeFps(59));
+        Assert.AreEqual(60, RecorderRules.NormalizeFps(60));
+        Assert.AreEqual(60, RecorderRules.NormalizeFps(120));
+    }
+
+    [TestMethod]
+    public void AudioSourceDefaultsToMicrophone()
+    {
+        Assert.AreEqual((false, true), RecorderRules.AudioSource("microphone"));
+        Assert.AreEqual((true, false), RecorderRules.AudioSource("system"));
+        Assert.AreEqual((true, true), RecorderRules.AudioSource("both"));
+        Assert.AreEqual((false, true), RecorderRules.AudioSource(null));
+        Assert.AreEqual((false, true), RecorderRules.AudioSource("speaker"));
+    }
+
+    [TestMethod]
     public void RoomAndDuration()
     {
         Assert.IsFalse(RecorderRules.HasRoom((1L << 30) - 1));

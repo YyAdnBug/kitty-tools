@@ -1,6 +1,8 @@
 // 录音的入口（PLAN-v6 第 3 批）：托盘 / 快捷键开始或停止，和录屏同一个文件夹、同一套 WASAPI 采集。
 // 只建一路 AAC 音轨写 .m4a；支持系统声音 / 麦克风、暂停 / 继续、电平（RMS dBFS）、放弃（R9）。
 // 保存目录的盘剩不到 1 GB 时按停止收尾（同录屏 R8，mac AudioRecorder）；锁屏时只录麦克风的照录（R11，在 ShellRuntime）。
+// 录哪一路看 设置 › 录制「来源」（PLAN-v9 V5：麦克风（默认）/ 系统声音 / 两者，和录屏的两个开关分开）；
+// 麦克风用不了（隐私设置里关着、没插麦克风）时退回系统声音，来源改成「系统声音」，提示带「打开设置」（同 mac）。
 using KittyTools.Core;
 using KittyTools.Infrastructure;
 
@@ -100,31 +102,32 @@ internal static class AudioHost
         }
 
         var settings = SettingsService.Current;
-        var recorder = AudioRecorder.Start(
-            RecordingHost.Folder, settings.RecordSystemSound, settings.RecordMicrophone,
-            out var error, out var note);
+        var (systemAudio, microphone) = RecorderRules.AudioSource(settings.AudioSource);
+        var recorder = AudioRecorder.Start(RecordingHost.Folder, systemAudio, microphone, out var error, out var note);
+        // 只选了麦克风、麦克风开不了：退回系统声音再试一次（选了「两者」时系统声音那一路照录，下面一样改来源）。
+        var fellBack = false;
+        if (recorder is null && microphone && !systemAudio)
+        {
+            Log.Info("audio.microphone-unavailable fallback=system");
+            recorder = AudioRecorder.Start(RecordingHost.Folder, systemAudio: true, microphone: false, out error, out note);
+            fellBack = recorder is not null;
+        }
+
         if (recorder is null)
         {
             IsArmed = false;
             AudioHud.Hide();
-            NoticeHost.Show("没能开始录音", error ?? "未知原因", NoticeTone.Error);
-            if (settings.RecordMicrophone)
-            {
-                try
-                {
-                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                    {
-                        FileName = "ms-settings:privacy-microphone",
-                        UseShellExecute = true,
-                    });
-                }
-                catch
-                {
-                    // 打不开设置就算了。
-                }
-            }
-
+            NoticeHost.Show("没能开始录音", error ?? "未知原因", NoticeTone.Error,
+                NoticeActions.SystemSettings("ms-settings:privacy-microphone"));
+            Changed?.Invoke();
             return;
+        }
+
+        if (fellBack || (microphone && recorder.MicrophoneDenied))
+        {
+            settings.AudioSource = "system";
+            SettingsService.Save();
+            note = "麦克风用不了，改成录系统声音（设置 › 隐私和安全性 › 麦克风）";
         }
 
         _recorder = recorder;
@@ -138,10 +141,15 @@ internal static class AudioHost
         Log.Info("audio.begin");
         WatchDisk(recorder);
         AudioHud.Show(note);
-        NoticeHost.Show(
-            "正在录音",
-            string.IsNullOrEmpty(note) ? "托盘「停止录音」结束" : note,
-            string.IsNullOrEmpty(note) ? NoticeTone.Normal : NoticeTone.Warning);
+        if (string.IsNullOrEmpty(note))
+        {
+            NoticeHost.Show("正在录音", "托盘「停止录音」结束", NoticeTone.Normal);
+        }
+        else
+        {
+            NoticeHost.Show("正在录音", note, NoticeTone.Warning, NoticeActions.SystemSettings("ms-settings:privacy-microphone"));
+        }
+
         Changed?.Invoke();
     }
 

@@ -148,7 +148,7 @@ internal sealed class Settings
     public int ScreenshotLastHeight { get; set; }
 
     // 录制（第四版）：帧率、保存目录、上次没写完的临时文件（闪退恢复用）。
-    public int RecordFps { get; set; } = 15;
+    public int RecordFps { get; set; } = Core.RecorderRules.DefaultFps;
 
     public string? RecordDirectory { get; set; }
 
@@ -169,8 +169,17 @@ internal sealed class Settings
     /// <summary>录屏时录麦克风（默认关）。</summary>
     public bool RecordMicrophone { get; set; }
 
-    /// <summary>按录音快捷键后立即开始；关掉时先出控制条，点 ● 才录（REVIEW R28）。</summary>
-    public bool RecordInstantStart { get; set; } = true;
+    /// <summary>
+    /// 按录音快捷键后立即开始；关着时先在屏幕底部出控制条，点「开始」或再按一次才录（REVIEW R28）。
+    /// 默认关（PLAN-v9 V4，同 mac：先让人看见录的是哪一路、电平动不动）。
+    /// </summary>
+    public bool RecordInstantStart { get; set; }
+
+    /// <summary>
+    /// 录音录什么（PLAN-v9 V5）：microphone（默认，同 mac）/ system / both。和录屏的 RecordSystemSound / RecordMicrophone 分开；
+    /// 选了麦克风却用不了（隐私设置里关着）时 AudioHost 改成 system 并提示。
+    /// </summary>
+    public string AudioSource { get; set; } = "microphone";
 
     public List<TranslateServiceConfig>? TranslateServices { get; set; }
 
@@ -297,6 +306,9 @@ internal static class SettingsService
                     _current.RecordSystemSound = true;
                     _current.Version = 2;
                 }
+
+                // 帧率只剩 30 / 60（PLAN-v9 V3）：以前存的 15 读成 30。
+                _current.RecordFps = Core.RecorderRules.NormalizeFps(_current.RecordFps);
             }
             catch (Exception ex)
             {

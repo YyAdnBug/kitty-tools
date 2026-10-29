@@ -1,4 +1,5 @@
-// 录屏的纯规则（PLAN-v6 第 3 批起）：宽高偶数、帧率范围、文件名、临时文件、剩余空间。
+// 录屏的纯规则（PLAN-v6 第 3 批起）：宽高偶数、帧率范围、文件名、临时文件、剩余空间；
+// 帧率只给 30 / 60、默认 30，录音的来源（PLAN-v9 V3、V5，同 mac）。
 // 录屏输出 H.264 MP4；录音输出 M4A。
 using System.Globalization;
 
@@ -8,7 +9,8 @@ public readonly record struct RecordSize(int Width, int Height);
 
 public static class RecorderRules
 {
-    public const int DefaultFps = 15;
+    /// <summary>录屏帧率默认 30（PLAN-v9 V3，同 mac；以前是 15 / 30、默认 15）。</summary>
+    public const int DefaultFps = 30;
 
     public const int MaxFps = 60;
 
@@ -31,6 +33,17 @@ public static class RecorderRules
     }
 
     public static bool HasRoom(long freeBytes) => freeBytes >= 1L << 30;
+
+    /// <summary>设置里只有 30 / 60：存着的别的值（以前的 15）读成 30。</summary>
+    public static int NormalizeFps(int fps) => fps >= 60 ? 60 : 30;
+
+    /// <summary>录音录什么（PLAN-v9 V5，同 mac AudioRecorder.Source）：microphone（默认）/ system / both，认不出的按麦克风。</summary>
+    public static (bool SystemAudio, bool Microphone) AudioSource(string? source) => source switch
+    {
+        "system" => (true, false),
+        "both" => (true, true),
+        _ => (false, true),
+    };
 
     public static string Duration(long milliseconds)
     {

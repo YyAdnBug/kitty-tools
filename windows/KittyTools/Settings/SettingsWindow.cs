@@ -1850,11 +1850,12 @@ internal sealed partial class SettingsWindow : Window
 
     /// <summary>
     /// 设置 › 录制（照 mac RecordTab）：启用录屏 ｜ 保存到 ｜ 录屏 ｜ 录音 ｜ 录屏和录音的按键。
-    /// 保存位置和截图分开（录屏默认在「视频」里，同系统的截图工具，MAC-DIFF.md）；清晰度、倒数、显示光标、录音来源这些是 0.2.0 的 V3–V5、R1–R7。
+    /// 保存位置和截图分开（录屏默认在「视频」里，同系统的截图工具，MAC-DIFF.md）；帧率 30 / 60、录音的来源（PLAN-v9 V3、V5）；
+    /// 清晰度、倒数、显示光标这些是 R1–R7。
     /// </summary>
     private void BuildRecord()
     {
-        _content.Children.Add(Header("录制", "录屏的帧率和按键，录音"));
+        _content.Children.Add(Header("录制", "录屏的帧率和按键，录音的来源"));
         AddFeatureToggle(Feature.Recording);
 
         _content.Children.Add(Ungated(new Border { Height = 8 }));
@@ -1868,11 +1869,11 @@ internal sealed partial class SettingsWindow : Window
 
         _content.Children.Add(SettingsUi.Section("录屏"));
         AddCombo("帧率", string.Empty,
-            new[] { "15 fps", "30 fps" },
-            SettingsService.Current.RecordFps >= 30 ? 1 : 0,
+            new[] { "30 fps", "60 fps" },
+            SettingsService.Current.RecordFps >= 60 ? 1 : 0,
             index =>
             {
-                SettingsService.Current.RecordFps = index == 1 ? 30 : 15;
+                SettingsService.Current.RecordFps = index == 1 ? 60 : 30;
                 SettingsService.Save();
             });
         AddToggle("显示点按", "录制画面里画一个圈（左键粉色、右键蓝色）",
@@ -1904,10 +1905,18 @@ internal sealed partial class SettingsWindow : Window
                 SettingsService.Save();
             });
         _content.Children.Add(SettingsUi.Footnote(
-            "30 fps 更顺，文件大约大一倍。框一块区域、或在遮罩里单击一扇窗口录它，倒数 3 秒后开始；录的时候选区外一圈粉线，线不进画面。" +
+            "60 fps 更顺，文件大约大一半；大屏上可能录不满 60。框一块区域、或在遮罩里单击一扇窗口录它，倒数 3 秒后开始；录的时候选区外一圈粉线，线不进画面。" +
             "第一次录麦克风时，要在 设置 › 隐私和安全性 › 麦克风 里允许桌面应用。"));
 
         _content.Children.Add(SettingsUi.Section("录音"));
+        var sources = new[] { "microphone", "system", "both" };
+        AddCombo("来源", string.Empty, new[] { "麦克风", "系统声音", "两者" },
+            Math.Max(0, Array.IndexOf(sources, SettingsService.Current.AudioSource)),
+            index =>
+            {
+                SettingsService.Current.AudioSource = sources[index];
+                SettingsService.Save();
+            });
         AddToggle("按快捷键后立即开始录音", string.Empty,
             SettingsService.Current.RecordInstantStart,
             value =>
@@ -1916,7 +1925,7 @@ internal sealed partial class SettingsWindow : Window
                 SettingsService.Save();
             });
         _content.Children.Add(SettingsUi.Footnote(
-            "录哪路声音跟上面录屏的「系统声音」「麦克风」两个开关走；只录麦克风时锁屏照录，录了系统声音的锁屏会停。" +
+            "和录屏的「系统声音」「麦克风」分开；麦克风用不了（设置 › 隐私和安全性 › 麦克风 里关着）时改成录系统声音。只录麦克风时锁屏照录，录了系统声音的锁屏会停。" +
             "立即开始关着时，按快捷键（或点托盘、启动器里的「录音」）先在屏幕底部打开录音控制条，点「开始」或再按一次才开始录。"));
 
         _content.Children.Add(new Border { Height = 8 });
