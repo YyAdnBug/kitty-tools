@@ -115,3 +115,14 @@
 - settings-general-*.png / settings-general-end-*.png：设置 › 通用整页和滚到底——「功能」每行 20 的家族色块、单独的「数据」一节，卡上没有灰色单色图标；页头图标是这一页自己的（d8770e5）
 - settings-hotkeys-*.png：快捷键页，每行家族色块，最后一行「划词翻译并替换」（未设置）。多数行写「被占用」是因为装着的正式版占着这些键（Dev 自检档和正式版同时开）
 - launcher-home-*.png：启动器空首页（空数据）——只有搜索线，没有底栏、没有下面那一截
+
+## 0.1.1-icons（0.1.1 功能图标换成和 mac 共用的那一套，主仓 4592f65 / aabd713）
+
+Release x64（Native AOT）的 exe 用 `KITTY_PROBE_PROFILE` 跑 `--ui-snapshots` 出的，浅 / 深各一张：
+
+- settings-light.png / settings-dark.png：设置侧栏、通用页头和「功能」各行的色块
+- settings-hotkeys-light.png / settings-hotkeys-dark.png：快捷键页（「被占用」是因为真装的那份占着这些键）
+- shortcuts-sheet-light.png / shortcuts-sheet-dark.png：速查表左栏五类 + 截图那一类的组头（框选换了，标注照旧）
+- home-light.png / home-dark.png：主界面（暂停记录、复制即译照旧是圆里的 Segoe 符号）
+- launcher-icons-shot-light.png / launcher-icons-shot-dark.png：启动器搜「截图」，内置动作行首的色块
+- icons-scale-light.png：用到的 18 个图标在 20 / 32 的色块里按 1、1.5、2 倍各排两行（看边缘和居中）
