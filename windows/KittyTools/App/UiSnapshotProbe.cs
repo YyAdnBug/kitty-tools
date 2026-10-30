@@ -8,6 +8,7 @@
 using System.Runtime.InteropServices.WindowsRuntime;
 using KittyTools.Core;
 using KittyTools.Infrastructure;
+using KittyTools.Ui;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -82,6 +83,8 @@ internal static class UiSnapshotProbe
                          {
                              "launcher", "launcher-home", "launcher-calc", "launcher-kill", "launcher-port", "launcher-prompt",
                              "launcher-empty", "launcher-actions", "launcher-calc-actions", "launcher-keys",
+                             "launcher-icons-shot", "launcher-icons-clip", "launcher-icons-record", "launcher-icons-home",
+                             "launcher-icons-fy",
                          })
                 {
                     await SafeRenderAsync(root, () => new LauncherPanel(), state, dark, directory);
@@ -125,6 +128,9 @@ internal static class UiSnapshotProbe
                 await SafeRenderSettingsAsync(dark, directory);
                 // 代码建的三级文字（速查表的「全局」、空状态的符号、截图历史的分组标题和种类符号）要按设置里的外观给色。
                 await SafeRenderAsync(root, ShortcutsSheet.ProbeView, "shortcuts", dark, directory);
+                // 0.1.1 功能图标：左栏五类、截图那一类的组头（框选 / 钉图 / 录制换了，标注 / 出图 / 长截图照旧）。
+                await SafeRenderAsync(root, () => ShortcutsSheet.ProbeSheet("screenshot"), "shortcuts-sheet", dark, directory);
+                await SafeRenderAsync(root, IconScaleView, "icons-scale", dark, directory);
                 await SafeRenderShotHistoryAsync(dark, directory);
             }
 
@@ -198,10 +204,20 @@ internal static class UiSnapshotProbe
             AudioHud.Hide();
 
             // PLAN-v10 §5：主界面（快捷键那条路：鼠标所在屏的上方正中；浅 / 深跟着外观设置，高对比度和贴任务栏的位置靠手测）。
-            HomePanel.ShowAtCursor();
-            await Task.Delay(900);
-            await WindowShot.SaveAsync(HomePanel.HandleForProbe, Path.Combine(directory, "home.png"));
-            HomePanel.Hide(restoreForeground: false);
+            // 0.1.1 功能图标：浅、深各一张（主界面每次打开按当时的外观设置取色）。
+            var theme = SettingsService.Current.Theme;
+            foreach (var dark in new[] { false, true })
+            {
+                SettingsService.Current.Theme = dark ? "dark" : "light";
+                HomePanel.ShowAtCursor();
+                await Task.Delay(900);
+                await WindowShot.SaveAsync(
+                    HomePanel.HandleForProbe, Path.Combine(directory, $"home-{(dark ? "dark" : "light")}.png"));
+                HomePanel.Hide(restoreForeground: false);
+                await Task.Delay(300);
+            }
+
+            SettingsService.Current.Theme = theme;
 
             // 托盘菜单换成了系统的 Win32 菜单（2026-10-27）：TrackPopupMenuEx 一直占着界面线程等到菜单收起，
             // 这里截不了；深浅色两张靠手测截（HANDTEST 367）。
@@ -351,6 +367,45 @@ internal static class UiSnapshotProbe
         => Environment.GetEnvironmentVariable("KITTY_SNAPSHOT_ONLY") is not { Length: > 0 } only ||
            only.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                .Any(prefix => name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// 0.1.1 功能图标（HANDTEST 800）：用到的 18 个图标放在 20 / 32 的色块里，按 1、1.5、2 倍各排两行（9 个一行），
+    /// 看边缘和居中。这台机器只有一块 100% 的屏，150% / 200% 靠放大变换近似（矢量照样按最终尺寸栅格化）。
+    /// </summary>
+    private static FrameworkElement IconScaleView()
+    {
+        string[] icons =
+        {
+            FeatureIcons.General, FeatureIcons.Clipboard, FeatureIcons.Launcher, FeatureIcons.Translate,
+            FeatureIcons.Screenshot, FeatureIcons.Record, FeatureIcons.Hotkeys, FeatureIcons.About, FeatureIcons.Home,
+            FeatureIcons.TranslateSelection, FeatureIcons.TranslateInput, FeatureIcons.TranslateReplace,
+            FeatureIcons.TranslateScreenshot, FeatureIcons.ScreenshotLast, FeatureIcons.ScreenshotText,
+            FeatureIcons.ScreenshotHistory, FeatureIcons.RecordAudio, FeatureIcons.Pin,
+        };
+        var canvas = new Canvas();
+        var y = 8.0;
+        foreach (var scale in new[] { 1.0, 1.5, 2.0 })
+        {
+            foreach (var size in new[] { 20.0, 32.0 })
+            {
+                for (var row = 0; row < 2; row++)
+                {
+                    for (var column = 0; column < 9; column++)
+                    {
+                        var tile = KindTile.Create("capture", icons[row * 9 + column], size);
+                        tile.RenderTransform = new ScaleTransform { ScaleX = scale, ScaleY = scale };
+                        Canvas.SetLeft(tile, 8 + column * (size * scale + 8));
+                        Canvas.SetTop(tile, y);
+                        canvas.Children.Add(tile);
+                    }
+
+                    y += size * scale + 6;
+                }
+            }
+        }
+
+        return canvas;
+    }
 
     private static async Task SafeRenderAsync(
         Grid root, Func<FrameworkElement> create, string name, bool dark, string directory)
@@ -548,6 +603,10 @@ internal static class UiSnapshotProbe
             settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 1300));
             settings.ShowPage(welcome: false, "hotkeys");
             await RenderWindowAsync(settings, "settings-hotkeys", dark, directory);
+            // 0.1.1 功能图标（HANDTEST 794）：关于页页头 32 的色块是猫头。
+            settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 720));
+            settings.ShowPage(welcome: false, "about");
+            await RenderWindowAsync(settings, "settings-about", dark, directory);
         }
         catch (Exception ex)
         {

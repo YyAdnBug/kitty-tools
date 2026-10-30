@@ -322,6 +322,22 @@ public sealed partial class LauncherPanel : UserControl
                 SetQuery("a");
                 SetKeyHints(true);
                 break;
+            // 0.1.1 功能图标（HANDTEST 799）：内置动作和 fy 行首的色块。
+            case "launcher-icons-shot":
+                SetQuery("截图");
+                break;
+            case "launcher-icons-clip":
+                SetQuery("剪贴板");
+                break;
+            case "launcher-icons-record":
+                SetQuery("录");
+                break;
+            case "launcher-icons-home":
+                SetQuery("主界面");
+                break;
+            case "launcher-icons-fy":
+                SetQuery("fy hello");
+                break;
             default:
                 SetQuery("a");
                 break;

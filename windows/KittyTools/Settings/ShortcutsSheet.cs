@@ -53,15 +53,7 @@ internal static class ShortcutsSheet
         var selected = Pages.Any(item => item.Page == page) ? page! : Pages[0].Page;
         var search = new TextBox { PlaceholderText = "搜索快捷键", Margin = new Thickness(0, 0, 0, 8) };
         AutomationProperties.SetName(search, "搜索快捷键");
-        var list = new ListView { SelectionMode = ListViewSelectionMode.Single };
-        foreach (var (tag, title, glyph) in Pages)
-        {
-            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Tag = tag };
-            row.Children.Add(KindTile.Create(Family(tag), glyph, 20));
-            row.Children.Add(new TextBlock { Text = title, VerticalAlignment = VerticalAlignment.Center });
-            AutomationProperties.SetName(row, title);
-            list.Items.Add(row);
-        }
+        var list = PageList();
 
         var left = new Grid { Width = 168 };
         left.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -148,6 +140,42 @@ internal static class ShortcutsSheet
         }
 
         return panel;
+    }
+
+    /// <summary>--ui-snapshots（0.1.1 功能图标）：左栏五类 + 右边 <paramref name="page"/> 那一类的几组（不弹对话框）。</summary>
+    internal static FrameworkElement ProbeSheet(string page)
+    {
+        var list = PageList();
+        list.SelectedIndex = Array.FindIndex(Pages, item => item.Page == page);
+        var right = new StackPanel { Spacing = 4, Padding = new Thickness(16, 0, 8, 8) };
+        foreach (var group in Groups().Where(group => group.Page == page))
+        {
+            right.Children.Add(GroupView(group));
+        }
+
+        var body = new Grid { ColumnSpacing = 8, Padding = new Thickness(16) };
+        body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(168) });
+        body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        body.Children.Add(list);
+        Grid.SetColumn(right, 1);
+        body.Children.Add(right);
+        return body;
+    }
+
+    /// <summary>左栏的分类列表：家族色块 + 名字，Tag 是页名。</summary>
+    private static ListView PageList()
+    {
+        var list = new ListView { SelectionMode = ListViewSelectionMode.Single };
+        foreach (var (tag, title, glyph) in Pages)
+        {
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Tag = tag };
+            row.Children.Add(KindTile.Create(Family(tag), glyph, 20));
+            row.Children.Add(new TextBlock { Text = title, VerticalAlignment = VerticalAlignment.Center });
+            AutomationProperties.SetName(row, title);
+            list.Items.Add(row);
+        }
+
+        return list;
     }
 
     /// <summary>搜索：说明、按键、组名里都要有每一个词；整组标题命中就整组留着。</summary>
