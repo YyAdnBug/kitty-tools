@@ -55,16 +55,21 @@
 
 每批照 `AGENTS.md`「每一批的流程」；D5 选 A 时每批写明哪一半在 Mac 写、哪一半在 Windows 写。
 
+**顺序（2026-10-30 功能图标拍板后）**：0a → 0 → 0c → 0b → 1 → 2 … 6。0a、0c 是 2026-10-30 用户拍板加的（§6）：
+功能图标是 0.2.0 第一批（拍板 D4）；长截图的预览（S11）从第 6 批提前到修完 R43 马上做（拍板 D5），第 6 批只剩 S12。
+
 | 批 | 内容 | 验收（除了自查清单） |
 |---|---|---|
+| 0a | 功能图标换成和 mac 共用的那一套（§6，拍板 D1–D4） | 设置侧栏和页头、功能开关、快捷键页、速查表组头、启动器内置动作的色块都是新图标，和 mac 同一个功能同一个图；按钮里的通用操作照旧 Segoe；浅色 / 深色 / 高对比度、100% / 150% / 200% 缩放各截一张 |
 | 0 | REVIEW R42、R43、R45、R49（UI 线程上的大活、空转的同步） | 启动器第一次搜索、长截图、两张卡同时流式出字时 UI 线程不卡（量帧间隔）；同步什么都没变时一轮 < 5 ms |
 | 0b | 主界面（托盘左键，§5；2026-10-29 用户加的，拍板 D2 排在这里） | 左键开主界面、右键照旧系统菜单、开着时再点图标收起不回弹；内容、名字、顺序同 mac；方向键 / Enter / Esc；关掉功能后那一行；第二次启动出主界面 |
+| 0c | 长截图拍的时候有预览（S11，拍板 D5：修完 R43 马上做） | 选区旁边一块预览面板，样子照 mac `Screenshot/ScrollCapture.swift`：拼好的那一头跟着长，鼠标在上面滚就往回看、右边一条位置条、双击回到最新；高度数字；一排图标钮 存储 ▾ ｜ ✕ ✓（「标注」钮等第 6 批 S12 做完再放）；轻提示胶囊只留开头那一句；预览直接读 R43 改好的条带，不另拷整张图 |
 | 1 | V3–V5 | 新装：录屏 30 fps（存着 15 的读成 30）；按录音热键先出控制条；录音默认录麦克风，拒了权限退回系统声音并提示 |
 | 2 | 第 6 批「截完之后」：S6、S7、S9、S13、G1 | 快门声默认开、静音时不响；截完放哪两档；角落叠三张；截图历史里看得到来源程序；托盘补截取上次区域、钉图两项、关于 |
 | 3 | 第 6 批「截图历史和钉图」：S8、S10 | 历史的保留天数 / 占用能改、能清空；钉图透明度滑块、右键翻译 / 存储，托盘全部隐藏 / 关闭 |
 | 4 | 第 6 批「录制」：R1–R7、R10、R12 | 录完出卡（转 GIF / 压缩在卡上）；倒数 0 / 3 / 5、倒数在录制条上；关了光标的录屏里没有光标；录音待录态能切来源；角落卡不进录屏 |
 | 5 | 第 8 批：G2–G4 | 从备份恢复走一遍（临时数据目录）；导入一份把保留期改短的设置，提醒出来了；关于页能重看欢迎引导 |
-| 6 | 第 7 批：S11、S12 | 30000 px 的长图能往回看、能标注、能导出；拍的过程中内存峰值和 R43 修完后的数一致 |
+| 6 | 第 7 批：S12（S11 挪到了 0c） | 30000 px 的长图能标注、能导出，长截图面板上的「标注」钮放上去；拍的过程中内存峰值和 R43 修完后的数一致 |
 
 最后一批：版本号 0.2.0，`changelog.json` 写这一版，更新 `STATUS.md`，照旧不发布、由用户决定。
 
@@ -77,7 +82,7 @@ mac 那边也搁着的脚本命令 / 模块化（`macos` 的拍板页，用户�
 
 2026-10-29 用户：「目前点击系统托盘的左键和右键都是打开菜单，需要改成左键可以有一个窗口可以看到所有功能，就是类似一个主界面的功能，windows 也需要一起同步这个功能」。
 拍板页 https://claude.ai/artifact/QFAprVTYcWsbWpRWGbMwS6（17 项，用户「全部按推荐」）。mac 先做（0.7.0，`macos/KittyTools/Shell/HomePanel.swift`、`Shell/StatusItem.swift`，
-规格在 `.cursor/rules/mac-whisker-settings.mdc`「主界面」、`macos/PLAN.md` §10「主界面」），Windows 照下面做；**D2：0.1.0 打完包之后**，0.2.0 性能那批（第 0 批）之后第一个做。
+规格在 `.cursor/rules/mac-whisker-settings.mdc`「主界面」、`macos/PLAN.md` §10「主界面」），Windows 照下面做；**D2：0.1.0 打完包之后**，0.2.0 性能那批（第 0 批）和长截图预览（0c，2026-10-30 拍板 D5 插在它前面）之后做。
 
 **分工（拍板 D3，照本页 D5）**：Core 里的纯函数和单测、文案在 Mac 写（这一批开始时审查方先推上来）；窗口、托盘点击、定位、键盘、焦点交给 Windows 这边边写边验。
 
@@ -109,3 +114,50 @@ mac 那边也搁着的脚本命令 / 模块化（`macos` 的拍板页，用户�
 
 **验收**：照 `macos/HANDTEST.md`「主界面手测」1–10 在 Windows 上走一遍（11 是 macOS 27 独有的），外加：任务栏放在左 / 上 / 右边各试一次位置；
 图标收在「^」溢出区里时点它也能开；高 DPI、两块屏；浅色、深色、高对比度各截一张。做完从 `MAC-DIFF.md`「还没对齐」里删掉那一条。
+
+## 6. 功能图标（0.2.0 第 0a 批，2026-10-30）
+
+用户 2026-10-30：两边的图标没保持一致，「考虑要不要引入一套 icon 给他们共同使用」「每个功能的 icon 帮我重新设计一下，然后统一到 windows 和 macos」。
+拍板页 https://claude.ai/artifact/H9NqNwEMZgFmvdkKRnbvRJ，**全部按推荐**：D1 自己画一套，一份 SVG 源、Mac 上的脚本生成两边（不引入图标库）；
+D2 只换色块里的功能图标，按钮和菜单里的通用操作照旧 Segoe Fluent；D3 实心 + 镂空；D4 mac 进 0.7.0，Windows 0.1.0 不动、0.2.0 第一批换；
+D5 长截图预览提前（上面 0c）。mac 已经做完（main 上，`macos/PLAN.md` §10「功能图标」），Windows 照下面做。
+
+**源和生成（Mac 上做）**
+- 源在仓库根 `icons/feature/kitty.*.svg`（26 个），生成脚本 `icons/build-icons.swift`。这一批开始时先把 main 上加 `icons/` 的那个提交
+  （只动 `icons/`）拣到 windows-wip，再在仓库根跑 `swift icons/build-icons.swift windows`，出 `windows/KittyTools/Shell/FeatureIcons.cs`：
+  每个图标一个 `const string`（24 × 24 格的 XAML 路径数据，`F1` 开头；线条已经描成面、合成一条）。这个文件是生成的，别手改。
+- 改图标只改 `icons/feature/`，两边各自重新生成。
+
+**用法（Windows 上做）**
+- `Ui/KindTile.cs` 加一个接路径数据的入口：`Path`（`Data` 用 `XamlBindingHelper.ConvertValue(typeof(Geometry), data)` 转，AOT 下要实测）
+  放进 `Viewbox`，大小 = 色块的 0.6（20 → 12、24 → 14.4、32 → 19.2、40 → 24，同 mac 拍板页），填充白色（便签的黄底上是 black 0.85，
+  Windows 现在没有便签）。转好的 Geometry 按名字缓存，别每次重建。
+- 换掉色块里这些 `Glyphs`（只换色块里的，同一个字形用在按钮上的照旧）：
+
+| 用处 | 现在 | 换成 |
+|---|---|---|
+| 剪贴板历史 | `ClipboardHistory` | `FeatureIcons.Clipboard` |
+| 启动器 | `Command` / `Search` / `CommandPrompt` | `FeatureIcons.Launcher` |
+| 翻译（设置页、速查表组头） | `Translate` | `FeatureIcons.Translate` |
+| 划词翻译 | `Translate` | `FeatureIcons.TranslateSelection` |
+| 输入翻译 | `TextTranslate` | `FeatureIcons.TranslateInput` |
+| 划词翻译并替换 | `Swap` | `FeatureIcons.TranslateReplace` |
+| 截图翻译 | `ScreenshotTranslate` | `FeatureIcons.TranslateScreenshot` |
+| 截图 | `Screenshot` / `Camera` | `FeatureIcons.Screenshot` |
+| 截取上次区域 | `ToolRectangle` | `FeatureIcons.ScreenshotLast` |
+| 识字 | `Ocr` | `FeatureIcons.ScreenshotText` |
+| 截图历史 | `Clock` | `FeatureIcons.ScreenshotHistory` |
+| 钉住剪贴板里的图 | `Pin` | `FeatureIcons.Pin` |
+| 录制 / 录屏 | `Record` | `FeatureIcons.Record` |
+| 录音、麦克风权限行 | `Microphone` | `FeatureIcons.RecordAudio` |
+| 通用、设置 | `Settings` | `FeatureIcons.General` |
+| 快捷键、速查表 | `Keyboard` | `FeatureIcons.Hotkeys` |
+| 关于 | `Info` | `FeatureIcons.About`（猫头） |
+| 主界面（0b 批） | — | `FeatureIcons.Home` |
+
+- 改的地方：`Settings/SettingsWindow.cs`（侧栏 `Pages`、页头、快捷键行的 `HotKeyGlyph`、功能开关、权限行）、`Settings/SettingsUi.cs`（页头）、
+  `Settings/ShortcutsSheet.cs`（每组的组头）、`Launcher/LauncherActions.cs` / `LauncherPanel.xaml.cs` / `Ui/KindTile.cs`（内置动作和底栏左边的色块）。
+  `Glyphs.cs` 里只剩按钮在用的；没人用了的删掉。
+- 验收：和 mac 的截图自检并排看（`settings-hotkeys`、`features-general`、`home`、`launcher-builtins`），同一个功能同一个图、色块里位置居中；
+  高对比度下色块照旧（家族色不跟系统高对比度换，符号是白的）。
+
