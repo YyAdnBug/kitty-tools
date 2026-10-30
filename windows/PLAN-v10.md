@@ -37,7 +37,7 @@
 
 ## 2. 0.1.0 收口（D1、D3 选 A 时）
 
-1. **Windows 那边**：`git fetch && git rebase origin/windows-wip`，编译、单测、`--ui-snapshots`，编译错直接修。
+1. **Windows 那边**：`git fetch && git rebase origin/windows`，编译、单测、`--ui-snapshots`，编译错直接修。
 2. **走发版冒烟清单**（HANDTEST 开头那 18 步；第 12–14 步录屏 / 录音、第 4 步启动器这次要走，D2 看结果），每一步失败先停下来修。
 3. **优先手测**（每块挑核心路径，不是 300 条全走）：
    - 剪贴板：6b 列表、6d 键盘和菜单、6f 放大预览（459–472、484–499、509–517、628、651）；
@@ -56,8 +56,8 @@
 每批照 `AGENTS.md`「每一批的流程」；D5 选 A 时每批写明哪一半在 Mac 写、哪一半在 Windows 写。
 
 **现状（2026-10-30 更正）**：下表第 0–6 批、收尾和主界面（0b）10-29 已经在 `windows-next` 上做完了（REVIEW「收口」：新功能在 windows-next 上做，
-0.1.0 打完包再并回 windows-wip），长截图预览和长图标注是 `6026ed60`（S11、S12）。0a 功能图标是 2026-10-30 图标拍板页加的（§6），
-**在 windows-next 上接着做**，不改 windows-wip。
+0.1.0 打完包再并回 windows（原名 windows-wip）），长截图预览和长图标注是 `6026ed60`（S11、S12）。0a 功能图标是 2026-10-30 图标拍板页加的（§6），
+**在 windows-next 上接着做**，不改 windows。
 
 | 批 | 内容 | 验收（除了自查清单） |
 |---|---|---|
@@ -120,10 +120,10 @@ mac 那边也搁着的脚本命令 / 模块化（`macos` 的拍板页，用户�
 用户 2026-10-30：两边的图标没保持一致，「考虑要不要引入一套 icon 给他们共同使用」「每个功能的 icon 帮我重新设计一下，然后统一到 windows 和 macos」。
 拍板页 https://claude.ai/artifact/H9NqNwEMZgFmvdkKRnbvRJ，**全部按推荐**：D1 自己画一套，一份 SVG 源、Mac 上的脚本生成两边（不引入图标库）；
 D2 只换色块里的功能图标，按钮和菜单里的通用操作照旧 Segoe Fluent；D3 实心 + 镂空；D4 mac 进 0.7.0，Windows 0.1.0 不动、0.2.0 第一批换；
-D5 长截图预览提前——不用排了，windows-next 上 `6026ed60` 已经做完（S11、S12）。mac 已经做完（main 上，`macos/PLAN.md` §10「功能图标」），Windows 照下面做。
+D5 长截图预览提前——不用排了，windows-next 上 `6026ed60` 已经做完（S11、S12）。mac 已经做完（`macos` 分支，`macos/PLAN.md` §10「功能图标」），Windows 照下面做。
 
 **源和生成（Mac 上做）**
-- 源在仓库根 `icons/feature/kitty.*.svg`（26 个），生成脚本 `icons/build-icons.swift`。这一批开始时先把 main 上加 `icons/` 的那个提交
+- 源在仓库根 `icons/feature/kitty.*.svg`（26 个），生成脚本 `icons/build-icons.swift`。这一批开始时先把 `macos` 分支上加 `icons/` 的那个提交
   （`346611c4`，只动 `icons/`）拣到 windows-next，再在仓库根跑 `swift icons/build-icons.swift windows`，出 `windows/KittyTools/Shell/FeatureIcons.cs`：
   每个图标一个 `const string`（24 × 24 格的 XAML 路径数据，`F1` 开头；线条已经描成面、合成一条）。这个文件是生成的，别手改。
 - 改图标只改 `icons/feature/`，两边各自重新生成。

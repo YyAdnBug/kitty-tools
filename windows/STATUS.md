@@ -128,7 +128,7 @@ AOT x64 / ARM64 每次发布都零 trim / AOT 警告；PRI 四个文件齐全
 
 ## 6. 提交与产物
 
-- 分支 `windows-wip`；截图在 `windows-shots` 的 `<版本>-batch-<N>/`。
+- 分支 `windows`（2026-10-30 由 `windows-wip` 改名），下一版的新功能在 `windows-next`；截图在 `windows-shots` 的 `<版本>-batch-<N>/`。
 - 发布产物（未发布）：`windows/build/release/0.7.0/`
   （x64 78.1 MB / zip 29.2 MB，ARM64 83.8 MB / zip 28.4 MB，另有 `.sha256`、`release-notes.md`、`SIZES.txt`）。
 
