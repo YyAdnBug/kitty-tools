@@ -11,5 +11,7 @@
   <ItemGroup>
     <ProjectReference Include="..\KittyTools.Core\KittyTools.Core.csproj" />
     <None Include="Fixtures\**" CopyToOutputDirectory="PreserveNewest" />
+    <!-- 生成的功能图标路径数据（只有常量），PathDataTests 逐个解析。 -->
+    <Compile Include="..\KittyTools\Shell\FeatureIcons.cs" Link="FeatureIcons.cs" />
   </ItemGroup>
 </Project>

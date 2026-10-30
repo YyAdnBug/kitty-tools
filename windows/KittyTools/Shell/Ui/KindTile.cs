@@ -1,6 +1,6 @@
 // 种类色块（PLAN-v7 §2.1）：家族色从上往下 0.95 → 0.75 的渐变，白色符号，0.5 px 内描边。
 // 24 / 32 两档；取代以前的「家族色 12% 淡底 + 彩色符号」。启动器各种结果的家族色和符号照 mac（PLAN-v9-launcher V8）。
-// 功能图标（2026-10-30，PLAN-v10 §6）：和 mac 共用的那一套是路径数据（FeatureIcons，"F1 M…"），这里画成路径；
+// 功能图标（2026-10-30，PLAN-v10 §6）：和 mac 共用的那一套是路径数据（FeatureIcons，"F1 M…"），这里解析（Core 的 PathData）后画成路径；
 // 别的符号照旧是 Segoe 字形。调用的地方传哪种都行，一个入口分开画。
 using KittyTools.Core;
 using Microsoft.UI;
@@ -48,15 +48,14 @@ internal static class KindTile
             };
         }
 
-        // 路径数据交给 XAML 自己解析（不走反射，AOT 照样能用）。
-        // ponytail: 每个色块现解析一次（一个图标几 KB，同时在屏上的色块最多几十个）；Geometry 不能被几个 Path 共用，
-        // 真要省就缓存 XAML 串、照样每次 Load。
-        var path = (Microsoft.UI.Xaml.Shapes.Path)Microsoft.UI.Xaml.Markup.XamlReader.Load(
-            "<Path xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\" Data=\"" + glyph + "\"/>");
-        path.Fill = white;
-        path.Width = 24;
-        path.Height = 24;
-        path.Stretch = Stretch.None;
+        var path = new Microsoft.UI.Xaml.Shapes.Path
+        {
+            Data = Geometry(glyph),
+            Fill = white,
+            Width = 24,
+            Height = 24,
+            Stretch = Stretch.None,
+        };
         return new Viewbox
         {
             Width = size * 0.6,
@@ -65,6 +64,55 @@ internal static class KindTile
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
         };
+    }
+
+    // 解析过的路径数据（最多 26 个图标）；Geometry 不能被几个 Path 共用，每个色块照样新建一份。
+    private static readonly Dictionary<string, PathDataResult> Parsed = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// 路径数据拼成 PathGeometry。不用 XamlReader.Load：Native AOT 里它拿回来的对象转不成 Path
+    /// （0.1.1 Release 实测一打开设置窗就 InvalidCastException），解析在 Core 的 PathData。
+    /// </summary>
+    private static PathGeometry Geometry(string data)
+    {
+        if (!Parsed.TryGetValue(data, out var parsed))
+        {
+            parsed = PathData.Parse(data);
+            Parsed[data] = parsed;
+        }
+
+        var geometry = new PathGeometry { FillRule = parsed.NonZero ? FillRule.Nonzero : FillRule.EvenOdd };
+        foreach (var figure in parsed.Figures)
+        {
+            var built = new PathFigure
+            {
+                StartPoint = new Windows.Foundation.Point(figure.StartX, figure.StartY),
+                IsClosed = figure.Closed,
+                IsFilled = true,
+            };
+            foreach (var segment in figure.Segments)
+            {
+                built.Segments.Add(segment.Command switch
+                {
+                    PathCommand.Line => new LineSegment { Point = new(segment.X1, segment.Y1) },
+                    PathCommand.Quadratic => new QuadraticBezierSegment
+                    {
+                        Point1 = new(segment.X1, segment.Y1),
+                        Point2 = new(segment.X2, segment.Y2),
+                    },
+                    _ => new BezierSegment
+                    {
+                        Point1 = new(segment.X1, segment.Y1),
+                        Point2 = new(segment.X2, segment.Y2),
+                        Point3 = new(segment.X3, segment.Y3),
+                    },
+                });
+            }
+
+            geometry.Figures.Add(built);
+        }
+
+        return geometry;
     }
 
     public static Border Create(Color color, double size = 24)
