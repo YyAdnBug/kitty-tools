@@ -4,33 +4,40 @@
 // 拖放期间点外关闭自然不会触发：会话从面板里的按下开始，拖着的时候没有新的按下事件（OverlayPanel 只看按下）；
 // 真放下了（对方收了）才照常收起面板（onDrop，固定着不收），拖回来 / 没放成不收。
 // 预览是这一行的样子（图标块 + 标题），多项时 AppKit 自己叠在下面并标个数。
-// 截图历史的网格多选拖出去也走 begin（2026-10-29，拖的是 ShotHistory.dragWriter 给的文件 / 文件承诺）。
+// 截图历史的网格多选拖出去也走 begin（2026-10-29，拖的是 ShotHistory.dragWriter 给的文件 / 文件承诺）；
+// 它每张都给预览，选中的几张摞成一叠跟着指针（2026-10-30 用户要「拖动时是我选中的那些图片」）。
 
 import AppKit
 import SwiftUI
 
 enum ClipDrag {
-  /// 在行的拖动手势里调：那时 NSApp.currentEvent 是面板里的 leftMouseDragged，会话从它开始
+  /// 在行的拖动手势里调：那时 NSApp.currentEvent 是面板里的 leftMouseDragged，会话从它开始。
+  /// previews[i] 是第 i 项的预览，以指针为中心；没给的那几项不画、叠在同一处（AppKit 标个数），
+  /// 第一项没图时换通用图标。给了不止一张就摞成一叠（.pile：叠在一起、各自歪一点，同访达拖几张照片）
   static func begin(
-    _ items: [any NSPasteboardWriting], preview: NSImage?, onDrop: @escaping () -> Void = {}
+    _ items: [any NSPasteboardWriting], previews: [NSImage?], onDrop: @escaping () -> Void = {}
   ) {
     guard !items.isEmpty, let event = NSApp.currentEvent, event.type == .leftMouseDragged,
       let view = event.window?.contentView
     else { return }
     let point = view.convert(event.locationInWindow, from: nil)
-    let image = preview ?? NSImage(systemSymbolName: "doc.on.doc", accessibilityDescription: nil)
-    let size = image?.size ?? CGSize(width: 24, height: 24)
-    // 预览以指针为中心；后面几项叠在同一处、不另画（AppKit 标个数）
-    let frame = CGRect(
-      x: point.x - size.width / 2, y: point.y - size.height / 2, width: size.width,
-      height: size.height)
     let dragging = items.enumerated().map { index, item in
+      var image = index < previews.count ? previews[index] : nil
+      if index == 0, image == nil {
+        image = NSImage(systemSymbolName: "doc.on.doc", accessibilityDescription: nil)
+      }
+      let size = image?.size ?? CGSize(width: 24, height: 24)
       let draggingItem = NSDraggingItem(pasteboardWriter: item)
-      draggingItem.setDraggingFrame(frame, contents: index == 0 ? image : nil)
+      draggingItem.setDraggingFrame(
+        CGRect(
+          x: point.x - size.width / 2, y: point.y - size.height / 2, width: size.width,
+          height: size.height),
+        contents: image)
       return draggingItem
     }
     source.onDrop = onDrop
-    view.beginDraggingSession(with: dragging, event: event, source: source)
+    let session = view.beginDraggingSession(with: dragging, event: event, source: source)
+    if previews.count > 1 { session.draggingFormation = .pile }
   }
 
   /// 拖动预览：行首的 24 pt 图标块 + 标题（最宽 320，单行截断），画在窗口底色的圆角卡上。

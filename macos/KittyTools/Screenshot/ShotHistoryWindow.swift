@@ -190,12 +190,22 @@ import SwiftUI
   }
 
   /// 网格里拖一张出去：在卡片的拖动手势里起 AppKit 拖放会话（ClipDrag）——SwiftUI 的 onDrag 一次只给一个
-  /// NSItemProvider，选了几张也只拖走按住的那一张（2026-10-29 用户报的）。不改选中；指针下是按住那张的缩略图
+  /// NSItemProvider，选了几张也只拖走按住的那一张（2026-10-29 用户报的）。不改选中；
+  /// 指针下是拖的那几张的缩略图摞成的一叠（2026-10-30 用户要的，原来只有按住那张 + 个数）
   func beginDrag(_ item: ShotHistory.Item) {
-    ClipDrag.begin(dragged(from: item).compactMap(history.dragWriter), preview: dragPreview(item))
+    // 文件已经不在了的录制拖不出去（dragWriter 给 nil），预览跟着拖得出去的那几条一一对上
+    let pairs = dragged(from: item).compactMap { one in
+      history.dragWriter(for: one).map { (one, $0) }
+    }
+    ClipDrag.begin(
+      pairs.map(\.1), previews: pairs.prefix(Self.pileLimit).map { dragPreview($0.0) })
   }
 
-  /// 拖动时指针下的那张：缩略图缩到卡片大小（还没读好、录音没有图时给 nil，ClipDrag 换成通用图标）
+  /// 一叠最多画几张：再多也是摞在同一处看不出来，只是多画图（后面的照样拖走，AppKit 标总数）
+  private static let pileLimit = 8
+
+  /// 拖动时的一张：缩略图缩到卡片大小、圆角同网格里的卡片，一圈白边让摞在一起的几张分得开
+  /// （还没读好、录音没有图时给 nil：第一张换通用图标，后面的不画）
   private func dragPreview(_ item: ShotHistory.Item) -> NSImage? {
     guard let thumbnail = ShotThumbnails.shared.cached(item.id), thumbnail.size.width > 0,
       thumbnail.size.height > 0
@@ -205,7 +215,13 @@ import SwiftUI
       ShotHistoryView.cardHeight / thumbnail.size.height, 1)
     let size = CGSize(width: thumbnail.size.width * ratio, height: thumbnail.size.height * ratio)
     return NSImage(size: size, flipped: false) { rect in
+      let shape = NSBezierPath(
+        roundedRect: rect, xRadius: Style.Radius.card, yRadius: Style.Radius.card)
+      shape.addClip()
       thumbnail.draw(in: rect)
+      NSColor.white.withAlphaComponent(0.85).setStroke()
+      shape.lineWidth = 3  // 裁在形状里面，看得见的是里侧那 1.5 pt
+      shape.stroke()
       return true
     }
   }

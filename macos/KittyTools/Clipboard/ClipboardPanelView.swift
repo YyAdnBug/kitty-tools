@@ -776,7 +776,7 @@ private struct ClipListRow: View {
         started = true
         ClipDrag.begin(
           model.dragItems(for: item),
-          preview: ClipDrag.preview(item, form: form, images: model.store.images)
+          previews: [ClipDrag.preview(item, form: form, images: model.store.images)]
         ) { [model] in if !model.isPinned { model.hidePanel() } }
       }
     )
