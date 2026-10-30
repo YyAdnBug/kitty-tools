@@ -117,6 +117,12 @@ TEST_RUNNER_KITTY_LIVE_LAUNCHPAD_ANIM=/tmp/kitty-launchpad-anim xcodebuild -proj
 TEST_RUNNER_KITTY_MEMORY_PROBE_DIR=/tmp/kitty-memory xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
   test -only-testing:'KittyToolsTests/MemoryProbeTests/measure()'
 
+# 剪贴板采集读大图的探针（按需，几秒；第四轮体检 F4②）：在一块自己起名的剪贴板上（不碰系统剪贴板、不进历史）放一张约 40 MP
+# 的 PNG + TIFF，量主线程 data(forType:) 读 .png / .tiff 各多久（本进程写、另一个进程写、只有 TIFF 三种），grep「clipboard-probe」；
+# 2026-10-30 本机：另一个进程写的 87 MB PNG 第一次 10 ms、114 MB TIFF 18 ms。iPhone 传来的通用剪贴板量不到，看 HANDTEST
+TEST_RUNNER_KITTY_CLIPBOARD_PROBE=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
+  test -only-testing:'KittyToolsTests/ClipboardProbeTests/measure()'
+
 # 便签「点另一条」的屏外量测（按需，约两分钟；300 条便签在屏外的全部便签窗口和屏幕边缘那叠里来回切，量到正文框排好的时间和
 # 主线程 CPU，结果 grep「notes-probe」；用法和拿 sample 看主线程的循环模式见测试文件头。前后对比用同一种构建）
 TEST_RUNNER_KITTY_NOTES_PROBE=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \

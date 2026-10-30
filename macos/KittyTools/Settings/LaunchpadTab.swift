@@ -38,6 +38,9 @@ struct LaunchpadTab: View {
   @AppStorage(Prefs.launchpadPinchSense) private var pinchSense = PinchRecognizer.Sensitivity
     .standard.rawValue
   @AppStorage(Prefs.launchpadCorner) private var corner = LaunchpadCornerOption.off.rawValue
+  /// 「上一次」的那份排法存在偏好里（LaunchpadUndo）：读它只为导入、恢复、撤销之后按钮立刻跟着变（第四轮体检 E19；
+  /// 闭包不可观察），能不能撤仍以 canUndo 为准
+  @AppStorage(Prefs.launchpadUndoLayout) private var undoLayout: String?
   @State private var systemPinch = false
 
   /// 系统手势的开关读出来变了没有（变了才重起监听，G8；纯函数）
@@ -140,7 +143,7 @@ struct LaunchpadTab: View {
         }
         LabeledContent {
           Button("撤销上一次导入", action: undo)
-            .disabled(!canUndo())
+            .disabled(undoLayout == nil || !canUndo())
         } label: {
           Text("撤销上一次导入")
           Text("换回导入前的样子，只能用一次")

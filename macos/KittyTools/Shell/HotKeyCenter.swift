@@ -403,6 +403,8 @@ enum HotKeyAction: String, CaseIterable {
   private(set) var fireCount = 0
   /// 正在录制的动作（设置 › 快捷键）：同一时刻只录一个，点了别的录制框，前一个就停下
   var recording: HotKeyAction?
+  /// 按偏好重新注册过几次：同步、导入改了快捷键后都会 reload，开着的录制框据此重读自己的组合（第四轮体检 E19）
+  private(set) var generation = 0
   @ObservationIgnored private var handlers: [HotKeyAction: () -> Void] = [:]
   @ObservationIgnored private var refs: [EventHotKeyRef] = []
   @ObservationIgnored private var handlerRef: EventHandlerRef?
@@ -423,6 +425,7 @@ enum HotKeyAction: String, CaseIterable {
   /// 按偏好重新注册全部热键
   func reload() {
     suspend()
+    generation += 1
     installHandlerIfNeeded()
     for (index, action) in HotKeyAction.allCases.enumerated() {
       guard action.isActive, let hotKey = action.hotKey else { continue }

@@ -14,7 +14,7 @@ struct HotKeyRecorder: View {
   let center: HotKeyCenter
   /// 录制时的提示，显示在那一行下面
   @Binding var message: String?
-  /// 设好的组合（UserDefaults 不可观察：只经 save 改，这里跟着记一份）
+  /// 设好的组合（UserDefaults 不可观察：这里记一份，save 时改；同步、导入改了偏好后热键中心会 reload，跟着重读）
   @State private var current: HotKey?
   @State private var monitor: Any?
   /// 录制中按住的修饰键（例如「⌥⇧」）
@@ -73,6 +73,7 @@ struct HotKeyRecorder: View {
       Button("清除") { save(nil) }
         .disabled(current == nil)
     }
+    .onChange(of: center.generation) { current = action.hotKey }
     .onChange(of: center.recording) { _, recording in
       // 点了别的录制框：这里停止监听、收掉这一行录错的提示，热键由那一个录完再恢复
       if recording != action, monitor != nil {

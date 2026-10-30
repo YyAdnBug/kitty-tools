@@ -1,7 +1,7 @@
 // 剪贴板历史：内存列表（按复制时间新→旧）+ clips 表持久化。所有改动都走这里：先改数组，再写库。
 // 同内容再次复制 = 把原条目挪到最前（保留 id、收藏、备注、收藏夹、OCR），不另起一条；删掉还没提交的也拿回来。
 // 收藏夹（体检 A1）：收藏 = 默认收藏夹，clip_groups 是命名收藏夹（按 position 排，可拖动），归进收藏夹就是收藏。
-// ⌘Z 撤销栈（体检 A2）：删除、删收藏夹、取消收藏后超期的条目一批一批压栈，面板收起或退出 App 时才提交。
+// ⌘Z 撤销栈（体检 A2）：删除、删收藏夹、取消收藏后超期的条目一批一批压栈，面板收起、固定着闲够 2 分钟或退出 App 时才提交。
 // 导入片段和文字收藏（设置 › 通用「导入」，adopt）：同样正文的不另起一条，只补标记；不能撤销。
 
 import AppKit
@@ -14,13 +14,23 @@ import Observation
     var maxAge: TimeInterval?
     var imageBytes = 0
 
+    init(maxAge: TimeInterval? = nil, imageBytes: Int = 0) {
+      self.maxAge = maxAge
+      self.imageBytes = imageBytes
+    }
+
+    /// 按设置里的两项（保留天数、图片占用 MB；0 = 永久 / 不限）
+    init(days: Int, imageMB: Int) {
+      self.init(
+        maxAge: days > 0 ? TimeInterval(days) * 86_400 : nil, imageBytes: imageMB * 1_048_576)
+    }
+
     /// 设置里的「保留普通历史」天数，0 = 永久
     static var days: Int { UserDefaults.standard.integer(forKey: Prefs.clipboardRetentionDays) }
 
     static var current: Limits {
       Limits(
-        maxAge: days > 0 ? TimeInterval(days) * 86_400 : nil,
-        imageBytes: UserDefaults.standard.integer(forKey: Prefs.clipboardImageBudgetMB) * 1_048_576)
+        days: days, imageMB: UserDefaults.standard.integer(forKey: Prefs.clipboardImageBudgetMB))
     }
   }
 
@@ -37,7 +47,8 @@ import Observation
   private(set) var items: [ClipItem] = []
   /// 命名收藏夹，按 position（拖动排的顺序）
   private(set) var groups: [ClipGroup] = []
-  /// 撤销栈：面板收起前 ⌘Z 一批一批连着撤；面板收起、退出 App 时 commitDeletion 清空
+  /// 撤销栈：面板收起前（固定着时闲 2 分钟前）⌘Z 一批一批连着撤；面板收起、固定着闲够 2 分钟、退出 App 时
+  /// commitDeletion 清空
   private(set) var undoStack: [Undo] = []
   var canUndo: Bool { !undoStack.isEmpty }
   @ObservationIgnored let images: ImageStore
@@ -127,7 +138,7 @@ import Observation
       existing.sourceBundleID = new.sourceBundleID
       // 带格式与否以最近一次复制为准
       existing.richType = new.richType
-      items.insert(existing, at: 0)
+      insertByTime(existing)
       write {
         try db.execute(
           """
@@ -141,7 +152,7 @@ import Observation
           ])
       }
     } else {
-      items.insert(new, at: 0)
+      insertByTime(new)
       write {
         let values = Self.encode(new) + [rich]
         let placeholders = Array(repeating: "?", count: values.count).joined(separator: ", ")
@@ -151,6 +162,15 @@ import Observation
     }
     enforceLimits()
     if new.kind == .image { recognizePendingImages() }
+  }
+
+  /// 刚复制的按复制时间插到该在的位置（一般就是最前）：图片要先存好 PNG 才记，比它晚复制的文字可能已经先记了，插在最前
+  /// 会压过那条文字、重启后又反过来（第四轮体检 E24①）。同一刻的排在已有的前面，和库里 copied_at DESC, rowid DESC 一致。
+  /// 时钟往回调过时，比现在还晚的条目不算更新的：新记的至少排在它们前面（同 bump 插在最前）
+  private func insertByTime(_ item: ClipItem, now: Date = .now) {
+    items.insert(
+      item,
+      at: items.firstIndex { $0.copiedAt > now || $0.copiedAt <= item.copiedAt } ?? items.endIndex)
   }
 
   /// 本 App 自己写进剪贴板的一段文字（取色、截图翻译、识字、复制图中文字：Paster.write 让 watcher 跳过了）记进历史：
@@ -213,6 +233,11 @@ import Observation
         items.insert(item, at: items.firstIndex { $0.copiedAt < item.copiedAt } ?? items.endIndex)
       }
     case .group(let group, let index, let members):
+      // 删掉之后又建了（或改名成）同名的：条目并进那个，不出现两个同名收藏夹（第四轮体检 E24②）
+      if let same = groups.first(where: { $0.name == group.name }) {
+        assign(Set(members), to: same.id)
+        break
+      }
       groups.insert(group, at: min(index, groups.count))
       write {
         try db.execute(
@@ -255,25 +280,32 @@ import Observation
   }
 
   /// 改条目的可编辑字段并落库（正文、收藏、备注、片段、收藏夹）。正文改了就丢掉格式
+  /// 几条一起改时一个事务写下去（全选后批量收藏、移到收藏夹：逐条提交的话每条落一次盘，第四轮体检 F4①）
   func update(_ ids: Set<UUID>, _ change: (inout ClipItem) -> Void) {
+    var changed: [ClipItem] = []
     for index in items.indices where ids.contains(items[index].id) {
       var item = items[index]
       change(&item)
       if item.text != items[index].text { item.richType = nil }
       items[index] = item
       searchKeys[item.id] = nil
-      write {
-        try db.execute(
-          """
-          UPDATE clips SET text = ?, favorite = ?, note = ?, snippet = ?, group_id = ?, rich_type = ?,
-            rich_data = CASE WHEN ? IS NULL THEN NULL ELSE rich_data END WHERE id = ?
-          """,
-          [
-            item.text, item.favorite, item.note, item.isSnippet, item.groupID?.uuidString,
-            item.richType?.rawValue, item.richType?.rawValue, item.id.uuidString,
-          ])
-      }
+      changed.append(item)
     }
+    guard !changed.isEmpty else { return }
+    write { try db.transaction { for item in changed { try saveEdits(item) } } }
+  }
+
+  /// 把一条的可编辑字段写进库（update、导入 adopt）。富文本没了就连数据一起清
+  private func saveEdits(_ item: ClipItem) throws {
+    try db.execute(
+      """
+      UPDATE clips SET text = ?, favorite = ?, note = ?, snippet = ?, group_id = ?, rich_type = ?,
+        rich_data = CASE WHEN ? IS NULL THEN NULL ELSE rich_data END WHERE id = ?
+      """,
+      [
+        item.text, item.favorite, item.note, item.isSnippet, item.groupID?.uuidString,
+        item.richType?.rawValue, item.richType?.rawValue, item.id.uuidString,
+      ])
   }
 
   /// 全部已收藏 → 全部取消（同时移出收藏夹，备注不动），否则全部收藏。返回取消后超期的条数（见 changeRetention）
@@ -292,8 +324,8 @@ import Observation
     changeRetention(ids) { $0.isSnippet = false }
   }
 
-  /// 改收藏 / 片段这类决定保留的字段。改完不再留下、又已超过保留天数的条目压进撤销栈：面板收起前不清理、⌘Z 能改回来。
-  /// 返回这样的条数（界面据此提示「超过 N 天，收起面板后会被清理」）
+  /// 改收藏 / 片段这类决定保留的字段。改完不再留下、又已超过保留天数的条目压进撤销栈：面板收起前（固定着时闲 2 分钟前）
+  /// 不清理、⌘Z 能改回来。返回这样的条数（界面据此提示「超过 N 天，稍后会被清理」）
   @discardableResult
   func changeRetention(
     _ ids: Set<UUID>, limits: Limits = .current, now: Date = .now,
@@ -328,8 +360,10 @@ import Observation
       item.text = text
       item.isSnippet = true
       record(item)
-      // 删了还没提交的同一段被 record 拿回来了：它原来不是片段
-      if let first = items.first, !first.isSnippet { update([first.id]) { $0.isSnippet = true } }
+      // 删了还没提交的同一段被 record 拿回来了：它原来不是片段（record 按时间插，不一定在最前，按正文找）
+      if let saved = items.first(where: { $0.kind == .text && $0.text == text }), !saved.isSnippet {
+        update([saved.id]) { $0.isSnippet = true }
+      }
     }
   }
 
@@ -379,7 +413,8 @@ import Observation
             item.groupID = group
             // 不变式：归了收藏夹的一定是收藏
             item.favorite = clip.favorite || group != nil
-            // 同一时刻的后插入的在前，和库里 copied_at DESC, rowid DESC 的顺序一致
+            // 同一时刻的后插入的在前，和库里 copied_at DESC, rowid DESC 的顺序一致（导入的是旧条目：按时间插，
+            // 不像 insertByTime 那样把比现在还晚的当成现在）
             items.insert(
               item, at: items.firstIndex { $0.copiedAt <= item.copiedAt } ?? items.endIndex)
             let values = Self.encode(item)
@@ -393,8 +428,13 @@ import Observation
           changed.note = (current.note ?? "").isEmpty ? clip.note : current.note
           changed.groupID = current.groupID ?? group
           changed.favorite = current.favorite || clip.favorite || changed.groupID != nil
-          guard changed != current else { continue }
-          update([id]) { $0 = changed }
+          guard changed != current, let index = items.firstIndex(where: { $0.id == id }) else {
+            continue
+          }
+          // 直接写、出错往外抛（整个导入回滚）；不经过会吞错的 update
+          items[index] = changed
+          searchKeys[id] = nil
+          try saveEdits(changed)
           updated += 1
         }
       }
@@ -519,10 +559,23 @@ import Observation
   }
 
   /// 按保留天数 / 普通图片总占用清理普通历史（收藏、片段不动；取消收藏后超期、还能 ⌘Z 的也先不动）。
-  /// 图片只算普通图片（收藏 / 片段的不占额度，体检 B2），从最旧的删起，最新的一张普通图片（刚复制的）这一轮不删。
   /// 返回删了几条（设置页改小上限时用刘海说一声）
   @discardableResult
   func enforceLimits(_ limits: Limits = .current, now: Date = .now) -> Int {
+    let doomed = doomed(by: limits, now: now)
+    delete(doomed)
+    return doomed.count
+  }
+
+  /// 按这组上限会清掉几条、其中几张图片（只算不删：设置里改短保留天数、改小图片占用之前先问，第四轮体检 E4）
+  func pruneCount(_ limits: Limits, now: Date = .now) -> (items: Int, images: Int) {
+    let doomed = doomed(by: limits, now: now)
+    return (doomed.count, items.count { $0.kind == .image && doomed.contains($0.id) })
+  }
+
+  /// enforceLimits 要删的那些（和 pruneCount 同一套条件）。图片只算普通图片（收藏 / 片段的不占额度，体检 B2），从最旧的
+  /// 删起，最新的一张普通图片（刚复制的）这一轮不删
+  private func doomed(by limits: Limits, now: Date) -> Set<UUID> {
     var undoable = Set<UUID>()
     for case .unretained(let before) in undoStack { undoable.formUnion(before.map(\.id)) }
     let ordinary = items.filter { !$0.isRetained && !undoable.contains($0.id) }
@@ -538,8 +591,7 @@ import Observation
         total -= item.image?.byteCount ?? 0
       }
     }
-    delete(doomed)
-    return doomed.count
+    return doomed
   }
 
   /// 图片占用：普通历史的（算进「图片最多占用」）和留下的（收藏 / 片段）分开算
@@ -550,13 +602,15 @@ import Observation
     }
   }
 
-  /// 退出 / 锁屏、设置里「立即清空」时清空普通历史；返回删了几条。
-  /// 先提交撤销栈：删掉的普通条目不能在清空后再 ⌘Z 回来，取消收藏后等清理的也一并清掉
+  /// 退出 / 锁屏、设置里「立即清空」、开着「退出时清空」时的启动（上次闪退、强退没走到退出那一步）清空普通历史；返回删了几条。
+  /// 先提交撤销栈：删掉的普通条目不能在清空后再 ⌘Z 回来，取消收藏后等清理的也一并清掉。
+  /// 清完把 -wal 并回库里再截成空的：写进来时的那几帧还带着正文（库里的页由 secure_delete 清零，第四轮体检 E5）
   @discardableResult
   func clearOrdinary() -> Int {
     commitDeletion()
     let doomed = Set(items.filter { !$0.isRetained }.map(\.id))
     delete(doomed)
+    write { try db.execute("PRAGMA wal_checkpoint(TRUNCATE)") }
     return doomed.count
   }
 
@@ -635,7 +689,7 @@ import Observation
 
 extension ClipboardStore: SyncSource {
   /// 同步文件里的一条片段 / 收藏（编号 = 条目的编号）。复制时间不同步：每粘贴一次就变，会让别处同时改的备注输掉、
-  /// 文件跟着重写；新来的条目排在最前（来的那一刻）
+  /// 文件跟着重写；本机没有的新条目排在历史末尾（applySync）
   private nonisolated struct SyncedClip: Codable {
     var text: String
     var favorite: Bool
@@ -839,6 +893,11 @@ extension ClipboardStore: SyncSource {
       slots[slot] = item
       touched[item.id] = item
     }
+    // 本机没有的新来的排在历史末尾：本机没复制过它，排在最前会压过刚复制的（⌘1、{clipboard:1} 取到它；第一次合时几百条
+    // 一起盖在最前）。时间取本机最旧那条之前，几条之间按处理的先后（编号）各差 1 毫秒（第四轮体检 E10）。代价：时间是旧的，
+    // 取消收藏 / 移出片段后它就是超过保留天数的普通历史，很快被清理（同本机取消一条很久以前的收藏）
+    let oldest = items.lazy.map(\.copiedAt).min() ?? .now
+    var arrivals = 0.0
     /// 拿走一格（这一条换到最后、并进别的、删掉）
     func take(_ slot: Int) -> ClipItem? {
       guard let item = slots[slot] else { return nil }
@@ -863,7 +922,8 @@ extension ClipboardStore: SyncSource {
       if let index, let existing = take(index) {
         item = existing
       } else {
-        item = ClipItem(kind: .text)
+        arrivals += 1
+        item = ClipItem(kind: .text, copiedAt: oldest.addingTimeInterval(-0.001 * arrivals))
         item.id = id
       }
       if item.text != synced.text { item.richType = nil }

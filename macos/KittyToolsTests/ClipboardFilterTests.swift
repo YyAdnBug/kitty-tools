@@ -67,6 +67,31 @@ struct ClipboardFilterTests {
     for text in misses { #expect(!ClipboardFilter.looksSensitive(text), "\(text)") }
   }
 
+  /// 第四轮体检 E24③ 补的几种：Stripe（sk_ / rk_ 的 live / test）、GitLab、npm、Hugging Face。每种一条命中；
+  /// 文章里提到前缀、长度不够、前面不是词边界、变量名这类短的普通词不拦
+  @Test func moreKnownSecretFormats() {
+    let stripe = String(repeating: "a1B2", count: 6)  // 24 位
+    let hits = [
+      "sk_live_" + stripe, "sk_test_" + stripe, "rk_live_" + stripe, "rk_test_" + stripe,
+      "STRIPE_KEY=sk_live_" + stripe + "xyz",
+      "glpat-" + String(repeating: "aB3_", count: 5),
+      "token=npm_" + String(repeating: "a1B2", count: 9),
+      "hf_" + String(repeating: "aBcDeFgHiJ", count: 3) + "kLmN",
+      "密钥hf_" + String(repeating: "aBcDeFgHiJ", count: 3) + "kLmN",
+    ]
+    for text in hits { #expect(ClipboardFilter.looksSensitive(text), "\(text)") }
+    let misses = [
+      "sk_live_ 开头的是 Stripe 的正式密钥", "sk_test_short123",
+      "ask_live_" + stripe,  // 前面不是词边界
+      "sk_prod_" + stripe,  // 不认的环境名
+      "glpat- 开头的是 GitLab 的个人令牌", "glpat-short",
+      "npm_config_cache", "npm_package_name", "npm_" + String(repeating: "a1", count: 10),
+      "hf_hub_download", "hf_model_name_for_tests",
+      "hf_" + String(repeating: "a1", count: 16),  // 32 位，不够
+    ]
+    for text in misses { #expect(!ClipboardFilter.looksSensitive(text), "\(text)") }
+  }
+
   /// 大段文本（watcher 在主线程过滤，最多 5 MB）：只在字节上找确切前缀，不对全文跑正则。
   /// 1 MB 满是 gh / night / light 的英文不命中、也不慢；后面藏着一个 token 照样拦住
   @Test func largeTextStaysFast() {

@@ -2,7 +2,8 @@
 // 密钥规则：
 // 1. sk- 后面允许 - 和 _（sk-proj-… / sk-ant-api03-… 也拦）；为防误伤，prefix 前是词边界、token 里有数字；
 // 2. bearer 只量 token 本身，文章里提到 bearer token 不会整段丢弃；
-// 3. 固定前缀 + 长度的常见密钥（体检 B5）：GitHub、AWS Access Key、Slack、Google API Key、私钥块、JWT，前面要求词边界。
+// 3. 固定前缀 + 长度的常见密钥（体检 B5）：GitHub、AWS Access Key、Slack、Google API Key、私钥块、JWT，前面要求词边界；
+//    第四轮体检 E24③ 补 Stripe（sk_ / rk_ 的 live / test）、GitLab、npm、Hugging Face。
 //    跑在 watcher 的轮询里（主线程，文本最多 5 MB）：先在 UTF-8 字节上 memmem 找确切的字面前缀，
 //    每处命中只从那里起跑一次锚定的正则（只吃 token 那么长），不对全文跑正则。
 
@@ -41,14 +42,19 @@ enum ClipboardFilter {
   /// 固定前缀的密钥（体检 B5）：needle 是确切的字面前缀，regex 从 needle 处锚定匹配（prefixMatch）
   private static let secretPatterns: [(needle: String, regex: Regex<Substring>)] = {
     let github = /gh[pousr]_[A-Za-z0-9]{36,}/
-    return ["ghp_", "gho_", "ghu_", "ghs_", "ghr_"].map { ($0, github) } + [
-      ("github_pat_", /github_pat_[A-Za-z0-9_]{60,}/),  // GitHub 细粒度 token
-      ("AKIA", /AKIA[0-9A-Z]{16}\b/),  // AWS Access Key ID
-      ("xox", /xox[abposr]-[A-Za-z0-9-]{10,}/),  // Slack
-      ("AIza", /AIza[0-9A-Za-z_\-]{35}/),  // Google API Key
-      ("-----BEGIN ", /-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----/),  // 私钥块
-      ("eyJ", /eyJ[A-Za-z0-9_\-]{10,}\.eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}/),  // JWT
-    ]
+    let stripe = /[sr]k_(?:live|test)_[A-Za-z0-9]{24,}/
+    return ["ghp_", "gho_", "ghu_", "ghs_", "ghr_"].map { ($0, github) }
+      + ["sk_live_", "sk_test_", "rk_live_", "rk_test_"].map { ($0, stripe) } + [
+        ("github_pat_", /github_pat_[A-Za-z0-9_]{60,}/),  // GitHub 细粒度 token
+        ("AKIA", /AKIA[0-9A-Z]{16}\b/),  // AWS Access Key ID
+        ("xox", /xox[abposr]-[A-Za-z0-9-]{10,}/),  // Slack
+        ("AIza", /AIza[0-9A-Za-z_\-]{35}/),  // Google API Key
+        ("-----BEGIN ", /-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----/),  // 私钥块
+        ("eyJ", /eyJ[A-Za-z0-9_\-]{10,}\.eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}/),  // JWT
+        ("glpat-", /glpat-[A-Za-z0-9_\-]{20,}/),  // GitLab 个人令牌
+        ("npm_", /npm_[A-Za-z0-9]{36,}/),  // npm 令牌
+        ("hf_", /hf_[A-Za-z0-9]{34,}/),  // Hugging Face 令牌
+      ]
   }()
 
   /// 前缀前面要是词边界（前一个字节不是 ASCII 字母、数字、下划线；中文等非 ASCII 紧挨着也算边界，

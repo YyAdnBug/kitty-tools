@@ -696,6 +696,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     // 剪贴板关着（Feature）也照做：保留天数到期照删、孤儿图片照清（数据层不跟着开关走）。轮询和识字在 applyFeatures 里按开关起
     let launchedAt = Date.now
+    // 开着「退出时清空」：上次闪退、强退、断电没走到退出那一步，启动时补清一次，不把普通历史带回来（第四轮体检 E5）
+    if UserDefaults.standard.bool(forKey: Prefs.clipboardClearOnQuit) {
+      clipboardStore.clearOrdinary()
+    }
     clipboardStore.enforceLimits()
     clipboardStore.images.removeOrphans(
       keeping: Set(clipboardStore.items.map(\.id)), createdBefore: launchedAt)

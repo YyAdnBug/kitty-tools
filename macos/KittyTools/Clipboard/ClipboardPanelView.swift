@@ -14,6 +14,11 @@ import SwiftUI
 struct ClipboardPanelView: View {
   /// day = 那天的零点：分组和行的身份按它，不按标题（过了午夜「今天」改叫「昨天」，还是同一组、同一批行）
   typealias DaySection = (day: Date, title: String, rows: [(offset: Int, element: ClipItem)])
+  /// 列表的第一条和条数：新条目进来的信号（itemsChanged）
+  private struct FirstAndCount: Equatable {
+    var id: UUID?
+    var count: Int
+  }
 
   @Bindable var model: ClipboardPanelModel
   @AppStorage(Prefs.clipboardHideOnUnfocus) private var hideOnUnfocus = true
@@ -125,7 +130,10 @@ struct ClipboardPanelView: View {
       try? await Task.sleep(for: .milliseconds(150))
       if !Task.isCancelled { shownKeys = heldKeys }
     }
-    .onChange(of: model.store.items.first?.id) { model.itemsChanged() }
+    // 第一条和条数一起看：图片按复制时间插到第 2 条时第一条没变（第四轮体检 E24①）
+    .onChange(of: FirstAndCount(id: model.store.items.first?.id, count: model.store.items.count)) {
+      model.itemsChanged()
+    }
     .coordinateSpace(.named(Self.space))
     .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
       trusted = Permissions.isAccessibilityTrusted

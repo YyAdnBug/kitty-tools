@@ -284,6 +284,193 @@ struct ClipboardStoreTests {
     #expect(try makeStore(db).0.groups.map(\.id) == [long.id, added.id])
   }
 
+  /// 删掉收藏夹、再建一个同名的、⌘Z：条目并进新建的那个，不出现两个同名收藏夹，库里也是（第四轮体检 E24②）
+  @Test func undoDeletedGroupMergesIntoSameName() throws {
+    let (store, db) = try makeStore()
+    let work = try #require(store.createGroup(named: "工作"))
+    store.record(text("x"))
+    store.assign([store.items[0].id], to: work.id)
+    store.deleteGroup(work.id)
+    let again = try #require(store.createGroup(named: "工作"))
+    guard case .group = store.undo() else {
+      Issue.record("没撤到删掉的收藏夹")
+      return
+    }
+    #expect(store.groups.map(\.id) == [again.id] && !store.canUndo)
+    #expect(store.items[0].groupID == again.id && store.items[0].favorite)
+    let (reloaded, _) = try makeStore(db)
+    #expect(reloaded.groups.map(\.id) == [again.id] && reloaded.items[0].groupID == again.id)
+  }
+
+  /// 图片要先存好 PNG 才记：比它晚复制的文字先记了，图片按复制时间排在文字后面（不插在最前），重开一次顺序一样
+  /// （第四轮体检 E24①）；存成片段时按正文找刚记的那条（不拿最前那条）
+  @Test func recordKeepsCopyOrder() throws {
+    let (store, db) = try makeStore()
+    store.record(text("先前的", ago: 10))
+    let imageCopiedAt = Date.now.addingTimeInterval(-1)
+    store.record(text("后复制的文字"))
+    var image = ClipItem(kind: .image, copiedAt: imageCopiedAt)
+    image.image = .init(width: 1, height: 1, byteCount: 1, sha256: "e24")
+    store.record(image)
+    #expect(store.items.map(\.kind) == [.text, .image, .text])
+    #expect(store.items[0].text == "后复制的文字")
+    let (reloaded, _) = try makeStore(db)
+    #expect(reloaded.items.map(\.id) == store.items.map(\.id))
+    // 删了还没提交的同一段被存成片段：从撤销栈拿回来、标成片段，别的条目不受连累
+    var future = text("将来的", ago: -60)
+    future.favorite = true
+    store.record(future)
+    let earlier = try #require(store.items.first { $0.text == "先前的" })
+    store.deleteWithUndo([earlier.id])
+    store.saveSnippet("先前的")
+    #expect(store.items.first { $0.text == "先前的" }?.isSnippet == true && !store.canUndo)
+    #expect(store.items.first { $0.text == "将来的" }?.isSnippet == false)
+  }
+
+  /// 时钟往回调过（库里有比现在还晚的条目）：刚复制的照样排在最前，和 bump 一致；导入的旧条目照时间插（第四轮体检 E24①）
+  @Test func freshCopiesGoBeforeFutureEntries() throws {
+    let (store, _) = try makeStore()
+    store.record(text("很早的", ago: 3600))
+    store.record(text("时钟调回去之前的", ago: -86_400))
+    store.record(text("刚复制的"))
+    #expect(store.items.map(\.text) == ["刚复制的", "时钟调回去之前的", "很早的"])
+    store.bump(try #require(store.items.last).id)
+    #expect(store.items.first?.text == "很早的")
+    store.adopt(
+      [
+        SettingsArchive.Clip(
+          text: "导入的", favorite: true, snippet: false, copiedAt: .now.addingTimeInterval(-60))
+      ],
+      groups: [])
+    #expect(store.items.last?.text == "导入的")
+  }
+
+  /// 改小上限前先干跑（设置页的确认，第四轮体检 E4）：pruneCount 和 enforceLimits 挑的是同一批，干跑不删；图片单独数
+  @Test func pruneCountMatchesEnforceLimits() throws {
+    let (store, _) = try makeStore()
+    var favorite = text("留着的")
+    favorite.favorite = true
+    store.record(favorite)
+    store.record(text("普通"))
+    for _ in 0..<3 {
+      var image = ClipItem(kind: .image)
+      image.image = .init(width: 1, height: 1, byteCount: 100, sha256: UUID().uuidString)
+      store.record(image)
+    }
+    // 图片占用 150 字节：留最新的一张，再删一张就够（300 → 200 → 100）
+    let budget = store.pruneCount(.init(imageBytes: 150))
+    #expect(budget.items == 2 && budget.images == 2 && store.items.count == 5)
+    // 十天后、保留 1 周：普通的四条都超期（收藏的不算）
+    let later = Date.now.addingTimeInterval(10 * 86_400)
+    let week = ClipboardStore.Limits(days: 7, imageMB: 0)
+    let aged = store.pruneCount(week, now: later)
+    #expect(aged.items == 4 && aged.images == 3 && store.items.count == 5)
+    #expect(store.enforceLimits(week, now: later) == 4)
+    #expect(store.items.map(\.text) == ["留着的"])
+    #expect(store.pruneCount(week, now: later).items == 0)
+    #expect(ClipboardTab.pruneWarning(items: 3, images: 0) == "会删掉 3 条普通历史，收藏和片段不受影响。")
+    #expect(
+      ClipboardTab.pruneWarning(items: 2, images: 2) == "会删掉 2 张普通历史里的图片，收藏和片段不受影响。")
+    #expect(
+      ClipboardTab.pruneWarning(items: 5, images: 2)
+        == "会删掉 5 条普通历史（其中 2 张图片），收藏和片段不受影响。")
+  }
+
+  /// 清空普通历史后正文不留在库文件和 -wal 里（secure_delete = ON + 截掉 -wal，第四轮体检 E5）：短的，和超过一页、
+  /// 标记在末尾的长正文（FAST 时溢出页进空闲列表不清零，主库里搜得到）；可写的连接都开着 secure_delete
+  @Test func clearedTextLeavesNoTrace() throws {
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let path = directory.appending(path: "kitty.sqlite3").path
+    let db = try Database(path: path)
+    #expect(try db.query("PRAGMA secure_delete") { $0.int(0) } == [1])
+    let (store, _) = try makeStore(db)
+    let secret = "kitty-e5-\(UUID().uuidString)"
+    store.record(text(secret))
+    // 标记重复三遍放在末尾：一遍正好跨在两页之间也还有别的能搜到
+    let longSecret = "kitty-e5-long-\(UUID().uuidString)"
+    store.record(
+      text(String(repeating: "长正文，", count: 3000) + " \(longSecret) \(longSecret) \(longSecret)"))
+    var kept = text("kitty-e5-留着的片段")
+    kept.isSnippet = true
+    store.record(kept)
+    let contents = {
+      ["", "-wal"].reduce(into: Data()) { data, suffix in
+        data += (try? Data(contentsOf: URL(filePath: path + suffix))) ?? Data()
+      }
+    }
+    for marker in [secret, longSecret] {
+      #expect(contents().range(of: Data(marker.utf8)) != nil)  // 写进去时在 -wal 里
+    }
+    #expect(store.clearOrdinary() == 2)
+    for marker in [secret, longSecret] {
+      #expect(contents().range(of: Data(marker.utf8)) == nil, "\(marker)")
+    }
+    #expect(store.items.map(\.text) == ["kitty-e5-留着的片段"])
+    let (reloaded, _) = try makeStore(db)
+    #expect(reloaded.items.map(\.text) == ["kitty-e5-留着的片段"])
+  }
+
+  /// 已经在事务里时再开一层用保存点（ClipboardStore.update 自己包一层事务，导入 adopt 在它外面又开了一层；第四轮体检 F4①）：
+  /// 里层出错只退回自己那段、外层照常提交；外层出错全部退回；几条一起改的照样落库
+  @Test func nestedTransactionsUseSavepoints() throws {
+    struct Boom: Error {}
+    let db = try Database(path: ":memory:")
+    try db.execute("CREATE TABLE t(v TEXT)")
+    try db.transaction {
+      try db.execute("INSERT INTO t VALUES ('外层')")
+      try? db.transaction {
+        try db.execute("INSERT INTO t VALUES ('退回的')")
+        throw Boom()
+      }
+      try db.transaction { try db.execute("INSERT INTO t VALUES ('里层')") }
+    }
+    #expect(try db.query("SELECT v FROM t ORDER BY rowid") { $0.text(0) } == ["外层", "里层"])
+    #expect(throws: Boom.self) {
+      try db.transaction {
+        try db.execute("INSERT INTO t VALUES ('都退回')")
+        try db.transaction { try db.execute("INSERT INTO t VALUES ('也退回')") }
+        throw Boom()
+      }
+    }
+    #expect(try db.query("SELECT COUNT(*) FROM t") { $0.int(0) } == [2])
+    let (store, _) = try makeStore(db)
+    for name in ["a", "b", "c"] { store.record(text(name)) }
+    try db.transaction { store.update(Set(store.items.map(\.id))) { $0.favorite = true } }
+    store.update(Set(store.items.map(\.id))) { $0.note = "一起改" }
+    let (reloaded, _) = try makeStore(db)
+    #expect(
+      reloaded.items.count == 3 && reloaded.items.allSatisfy { $0.favorite && $0.note == "一起改" })
+  }
+
+  /// 面板固定着、删了没撤：闲够 idleCommitDelay 就提交（落库、撤销栈清空，同步那一类不再被跳过）；没固定的不提交
+  /// （第四轮体检 U11）
+  @Test func pinnedPanelCommitsDeletionWhenIdle() async throws {
+    let (store, db) = try makeStore()
+    store.record(text("留着", ago: 2))
+    store.record(text("删掉"))
+    let suite = "kitty-clipboard-idle-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let model = ClipboardPanelModel(store: store)
+    model.defaults = defaults
+    model.idleCommitDelay = .milliseconds(50)
+    defaults.set(true, forKey: Prefs.clipboardHideOnUnfocus)  // 没固定
+    model.delete([try #require(store.items.first { $0.text == "删掉" }).id])
+    try await Task.sleep(for: .milliseconds(300))
+    #expect(store.canUndo && store.syncBusy)
+    defaults.set(false, forKey: Prefs.clipboardHideOnUnfocus)  // 固定着
+    model.noteActivity()
+    var rounds = 0
+    while store.canUndo, rounds < 150 {
+      try await Task.sleep(for: .milliseconds(20))
+      rounds += 1
+    }
+    #expect(!store.canUndo && !store.syncBusy)
+    let (reloaded, _) = try makeStore(db)
+    #expect(reloaded.items.map(\.text) == ["留着"])
+  }
+
   /// 旧库升级（幂等）：clip_groups 补 position（按创建时间），已归组没收藏的条目置收藏；再开一次不出错、结果不变
   @Test func migratesOldDatabase() throws {
     let db = try Database(path: ":memory:")

@@ -269,7 +269,7 @@ struct SnapshotProbeTests {
         }
       ),
       // 取消收藏后已超过保留天数（体检 A1）
-      ("toast-expiring", { m in m.toast = .undo("超过 7 天，收起面板后会被清理") }),
+      ("toast-expiring", { m in m.toast = .undo("超过 7 天，稍后会被清理") }),
       // 菜单栏暂停了记录（D4）
       ("paused", { m in m.isRecordingPaused = true }),
       ("snippets", { m in m.scope = .snippets }),

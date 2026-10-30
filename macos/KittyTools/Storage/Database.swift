@@ -53,7 +53,12 @@ nonisolated final class Database {
       throw Failure(description: "打开数据库失败：\(path)")
     }
     sqlite3_busy_timeout(handle, 2000)
-    if !readOnly, wal { try execute("PRAGMA journal_mode = WAL") }
+    guard !readOnly else { return }
+    // 删掉的内容清零（第四轮体检 E5：删掉、清空、到期清理的正文和备注不留在库文件里）。用 ON 不用 FAST：FAST 只清
+    // 页里的行，超过一页的长正文删掉后溢出页整页进空闲列表、原样留着（评审实测搜得到）；ON 连空闲页一起清，代价是删长行时
+    // 多写一些盘。-wal 里写进来时的那几帧另外截掉（ClipboardStore.clearOrdinary）。macOS 27 的系统 sqlite 默认是 FAST
+    try execute("PRAGMA secure_delete = ON")
+    if wal { try execute("PRAGMA journal_mode = WAL") }
   }
 
   deinit { sqlite3_close(handle) }
@@ -93,14 +98,29 @@ nonisolated final class Database {
     try execute("VACUUM INTO ?", [path])
   }
 
-  /// body 抛错则整体回滚
+  /// body 抛错则整体回滚。已经在事务里（外层开的）时用保存点嵌进去：抛错只退回这一段、错误照样往外抛，
+  /// 外层接住就接着做（ClipboardStore.update 自己包一层事务，导入 adopt 又在它外面开了一层）
   func transaction(_ body: () throws -> Void) throws {
-    try execute("BEGIN IMMEDIATE")
+    let nested = sqlite3_get_autocommit(handle) == 0
+    try execute(nested ? "SAVEPOINT nested" : "BEGIN IMMEDIATE")
     do {
       try body()
-      try execute("COMMIT")
+      if nested {
+        try execute("RELEASE nested")
+      } else {
+        // body 里有语句出错被吞掉、SQLite 已经自动回滚了整个事务（之后的语句是一条条自动提交的）：别当成功
+        guard sqlite3_get_autocommit(handle) == 0 else {
+          throw Failure(description: "事务已被回滚")
+        }
+        try execute("COMMIT")
+      }
     } catch {
-      try? execute("ROLLBACK")
+      if nested {
+        try? execute("ROLLBACK TO nested")
+        try? execute("RELEASE nested")
+      } else {
+        try? execute("ROLLBACK")
+      }
       throw error
     }
   }

@@ -108,6 +108,7 @@ import Observation
     didSet {
       armsLastToken = false
       restartBrowsing()
+      noteActivity()
     }
   }
   var scope = Scope.all { didSet { restartBrowsing() } }
@@ -131,7 +132,12 @@ import Observation
   var multiSelection: Set<UUID> = [] {
     didSet { if multiSelection.isEmpty, palette == .groups { palette = nil } }
   }
-  var dialog: Dialog? { didSet { if dialog != nil { endQuickLook() } } }
+  /// 关上时重新计时：对话框开着（编辑正文、备注…）不提交撤销栈（U11）
+  var dialog: Dialog? {
+    didSet {
+      if dialog != nil { endQuickLook() } else if oldValue != nil { noteActivity() }
+    }
+  }
   /// ⌘Y 放大预览开着
   private(set) var isQuickLooking = false
   /// 放大预览的浮层上画不画卡片：打开前设上，浮层真正收走（缩回动画放完）才清掉。
@@ -184,6 +190,11 @@ import Observation
   private var isBrowsing = false
   private var anchorID: UUID?
   @ObservationIgnored private var toastTask: Task<Void, Never>?
+  /// 固定着的面板闲多久就把撤销栈提交（U11；单测改短）
+  @ObservationIgnored var idleCommitDelay = Duration.seconds(120)
+  @ObservationIgnored private var idleCommit: Task<Void, Never>?
+  /// 固定不固定读哪份偏好（单测给临时域）
+  @ObservationIgnored var defaults = UserDefaults.standard
   /// ⌘C 复制的条目：面板开着时列表不动，收起（reset）时再挪到最前 / 记新历史（体检 A8）。
   /// changeCount 是写完那一刻的：收起时剪贴板已被别的内容换掉（复制图中文字、色值块、固定着去别处复制）就不挪
   @ObservationIgnored private var pendingCopy: (entry: Payload.Entry?, changeCount: Int)?
@@ -350,6 +361,7 @@ import Observation
   /// Esc 依次：缩回放大预览 → 回上一级菜单 → 关浮起的菜单 → 关对话框 → 取消标签待删 → 清空搜索词 → 取消多选 → 交给面板关闭。
   /// 条件不满足的返回 false，交还字段编辑器照常处理（移光标、删字）
   func handleCommand(_ selector: Selector) -> Bool {
+    noteActivity()
     switch selector {
     case #selector(NSResponder.cancelOperation(_:)):
       if isQuickLooking {
@@ -420,6 +432,7 @@ import Observation
   /// 面板收到的 ⌘ / ⌥⌘ 组合键；返回 false 交还系统（搜索框、过滤框里的复制、粘贴、撤销等）。
   /// 做了才收起浮起的菜单：没做的（过滤框里的复制、粘贴）菜单留着（同启动器，体检 B10）
   func handleKeyEquivalent(_ event: NSEvent) -> Bool {
+    noteActivity()
     // 不看大写锁定和 fn（⌘⌦ 带 fn），和 OverlayPanel 的 ⌘W 同一套判断
     let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
     let key = Int(event.keyCode)
@@ -591,6 +604,7 @@ import Observation
   /// 双击以第一下选中的条目为准：第一下让透镜收放、行会位移，第二下可能落在别的行上。
   /// 打开「单击条目直接粘贴」后没有第一下，粘贴的就是点中的这条
   func click(_ item: ClipItem) {
+    noteActivity()
     let closesMenu = palette != nil
     isBrowsing = true
     selectionMotion = .glide
@@ -796,7 +810,7 @@ import Observation
   }
 
   /// 固定着（点外面不收起）：打开链接 / 文件、在访达中显示、钉到屏幕之后面板留着
-  var isPinned: Bool { !UserDefaults.standard.bool(forKey: Prefs.clipboardHideOnUnfocus) }
+  var isPinned: Bool { !defaults.bool(forKey: Prefs.clipboardHideOnUnfocus) }
 
   /// 条目里还在的文件（都不在了要说一声：activateFileViewerSelecting / open 什么也不做）
   private func existingFiles(_ item: ClipItem) -> [URL]? {
@@ -908,7 +922,10 @@ import Observation
   /// 新建片段（名称存成备注，搜索时能搜到；体检 C2）：被当前范围、筛选、搜索挡住看不见时（像没存上），用刘海说一声
   func saveSnippet(_ text: String, name: String = "") {
     store.saveSnippet(text)
-    guard let saved = store.items.first, saved.text == text else { return }
+    // 刚存的那条按正文找：store.record 按复制时间插，不保证在最前（同 ClipboardStore.saveSnippet）
+    guard let saved = store.items.first(where: { $0.kind == .text && $0.text == text }) else {
+      return
+    }
     let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
     if !name.isEmpty { store.update([saved.id]) { $0.note = name } }
     guard !visibleItems.contains(where: { $0.id == saved.id }) else { return }
@@ -928,9 +945,9 @@ import Observation
   /// ⌘P / 底栏图钉：固定 = 点面板外面不收起（Esc、⌘W、再按热键照样收，mac-overlay-panel §2）。
   /// 和底栏图钉读写同一个偏好（clipboardHideOnUnfocus 为 false 即固定），底栏就地提示
   func togglePinned() {
-    let defaults = UserDefaults.standard
     let pinning = defaults.bool(forKey: Prefs.clipboardHideOnUnfocus)
     defaults.set(!pinning, forKey: Prefs.clipboardHideOnUnfocus)
+    noteActivity()
     let text = pinning ? "已固定" : "已取消固定"
     // 放大预览开着时底栏和图钉都被它盖住，改走刘海（岛自己会播报）
     guard isQuickLooking, let island else { return showToast(.message(text)) }
@@ -1026,7 +1043,8 @@ import Observation
     isBrowsing = true
   }
 
-  /// 删除一律不确认：进撤销栈，面板收起前 ⌘Z 一批一批连着撤（收起或退出 App 时才真正删，体检 A2）。
+  /// 删除一律不确认：进撤销栈，面板收起前（固定着时闲 2 分钟前）⌘Z 一批一批连着撤（收起、固定着闲够 2 分钟或退出 App 时
+  /// 才真正删，体检 A2、第四轮体检 U11）。
   /// 底栏「已删除 N 条 · 撤销 ⌘Z」5 秒后淡出，⌘Z 照样有效
   func delete(_ ids: Set<UUID>) {
     guard !ids.isEmpty else { return }
@@ -1037,6 +1055,7 @@ import Observation
 
   /// ⌘Z / 底栏「撤销」：撤最近一批，VoiceOver 播报撤了什么；删掉的回来后选中这一批里最靠前的那条
   func undoDelete() {
+    defer { noteActivity() }
     toastTask?.cancel()
     listMotion = .settle
     toast = nil
@@ -1069,15 +1088,16 @@ import Observation
     warnExpiring(expiring)
   }
 
-  /// 取消收藏 / 移出片段后已超过保留天数的条目：说一声收起面板后会被清理（⌘Z 改回来）
+  /// 取消收藏 / 移出片段后已超过保留天数的条目：说一声稍后会被清理（收起面板、固定着闲够 2 分钟之后；⌘Z 改回来）
   private func warnExpiring(_ count: Int) {
     guard count > 0 else { return }
-    showUndo("超过 \(ClipboardStore.Limits.days) 天，收起面板后会被清理", symbol: "clock.circle.fill")
+    showUndo("超过 \(ClipboardStore.Limits.days) 天，稍后会被清理", symbol: "clock.circle.fill")
   }
 
   /// 能撤销的操作的提示：底栏「… · 撤销 ⌘Z」5 秒（播报「…，按 Command-Z 撤销」）；放大预览开着时底栏被它盖住，
   /// 另走刘海（岛自己会播报）
   private func showUndo(_ text: String, symbol: String) {
+    noteActivity()
     showToast(.undo(text), spoken: "\(text)，按 Command-Z 撤销")
     if isQuickLooking, let island {
       island.show(
@@ -1129,11 +1149,27 @@ import Observation
     toastTask?.cancel()
     self.toast = toast
     if !(isQuickLooking && island != nil) { Island.announce(spoken ?? toast.text) }
-    // 到期只让提示淡出；删掉的在面板收起时才提交（⌘Z 一直有效）
+    // 到期只让提示淡出；删掉的在面板收起（固定着时闲够 2 分钟）时才提交，在那之前 ⌘Z 一直有效
     toastTask = Task {
       try? await Task.sleep(for: .seconds(toast.seconds))
       guard !Task.isCancelled else { return }
       self.toast = nil
+    }
+  }
+
+  /// 面板里有动静（按键、打字、点按、能撤销的改动）：重新计时。固定着的面板能开几个小时，删掉的平时等收起才落库——这期间
+  /// 片段和收藏的同步一直被跳过（syncBusy）、闪退的话删掉的还会回来。所以撤销栈不空时，固定着闲够 idleCommitDelay 就提交
+  /// 一次（之后那几条 ⌘Z 撤不回；第四轮体检 U11）。一次性的计时、给一成的余量；对话框开着时不提交（关上时重新计时）；
+  /// 收起面板（reset）时取消，收起本来就提交
+  func noteActivity() {
+    idleCommit?.cancel()
+    idleCommit = nil
+    guard store.canUndo else { return }
+    let delay = idleCommitDelay
+    idleCommit = Task { [weak self] in
+      try? await Task.sleep(for: delay, tolerance: delay / 10)
+      guard !Task.isCancelled, let self, isPinned, dialog == nil else { return }
+      store.commitDeletion()
     }
   }
 
@@ -1453,6 +1489,7 @@ import Observation
   func reset() {
     endQuickLook()
     toastTask?.cancel()
+    idleCommit?.cancel()
     store.commitDeletion()
     if let pendingCopy, pendingCopy.changeCount == clipboardChangeCount() {
       remember(pendingCopy.entry)

@@ -509,6 +509,37 @@ struct NoteSyncerTests {
     #expect(ledger != nil)
   }
 
+  /// 本机没有的同步条目排在历史末尾（第四轮体检 E10）：第一次合时对面的几条片段都排在本机最旧那条之后（⌘1 取到的还是本机
+  /// 刚复制的），重开一次顺序不变；平时新来一条也排在最后；本机有的、对面改了的不动时间
+  @Test func arrivingClipsGoToTheEndOfHistory() async throws {
+    try makeShared()
+    defer { cleanUp() }
+    let a = try Mac(host: "a", root: root)
+    let b = try Mac(host: "b", root: root)
+    for text in ["片段一", "片段二", "片段三"] { a.clipboard.saveSnippet(text) }
+    var old = ClipItem(kind: .text, copiedAt: .now.addingTimeInterval(-100))
+    old.text = "B 很早复制的"
+    b.clipboard.record(old)
+    b.clipboard.recordOwnText("B 刚复制的")
+    for mac in [a, b] { #expect(await mac.syncer.enable(folder: shared) == nil) }
+    await settle([a, b])
+    let texts = { b.clipboard.items.map { $0.text ?? "" } }
+    #expect(texts().count == 5 && Array(texts().prefix(2)) == ["B 刚复制的", "B 很早复制的"])
+    #expect(Set(texts().dropFirst(2)) == ["片段一", "片段二", "片段三"])
+    let reopened = try ClipboardStore(
+      db: b.kitty, images: ImageStore(directory: root.appending(path: "重开")))
+    #expect(reopened.items.map(\.id) == b.clipboard.items.map(\.id))
+    // 平时新来一条：也排在最后；对面改了备注的那条不动时间
+    let times = Dictionary(uniqueKeysWithValues: b.clipboard.items.map { ($0.id, $0.copiedAt) })
+    a.clipboard.saveSnippet("片段四")
+    let one = try #require(a.clipboard.items.first { $0.text == "片段一" })
+    a.clipboard.update([one.id]) { $0.note = "A 加的备注" }
+    await settle([a, b])
+    #expect(texts().first == "B 刚复制的" && texts().last == "片段四")
+    let edited = try #require(b.clipboard.items.first { $0.text == "片段一" })
+    #expect(edited.note == "A 加的备注" && edited.copiedAt == times[edited.id])
+  }
+
   /// 第一次合：两台都有同样正文的收藏，合完各只有一条
   @Test func joiningDoesNotDuplicateClips() async throws {
     try makeShared()

@@ -1,6 +1,7 @@
 // 设置 › 剪贴板：保留普通历史（一行按时间，体检 A4）与普通图片占用、面板行为（带实时示意图：单列 + 透镜 + 底栏）、
 // 粘贴方式与图片文字、隐私（敏感文本 / 清空时机）、排除的 App（按 bundle ID 精确匹配的 App 列表，体检 A11）。
-// 上限类设置改了立即生效（执行一次清理）。控件分工（Whisker §6）：> 5 项弹出菜单、3–5 项单选。
+// 上限类设置改了立即生效（执行一次清理）；会删掉东西时先问（第四轮体检 E4，取消就不改）。控件分工（Whisker §6）：
+// > 5 项弹出菜单、3–5 项单选。排除的 App 跟着偏好走：同步 / 导入换了列表，开着的页面跟上，改的时候也从偏好现读（E19）。
 
 import SwiftUI
 import UniformTypeIdentifiers
@@ -17,10 +18,14 @@ struct ClipboardTab: View {
   @AppStorage(Prefs.clipboardBlockSensitive) private var blockSensitive = true
   @AppStorage(Prefs.clipboardClearOnQuit) private var clearOnQuit = false
   @AppStorage(Prefs.clipboardClearOnLock) private var clearOnLock = false
-  @State private var excluded =
-    UserDefaults.standard.stringArray(forKey: Prefs.clipboardExcludedBundleIDs) ?? []
+  /// 排除的 App（显示用的一份；偏好变了跟着换，改的时候从偏好现读，见 changeExcluded）
+  @State private var excluded = Self.storedExcluded
   @State private var excludedSelection: String?
   @State private var confirmClear = false
+  /// 改短保留天数 / 改小图片占用会删掉东西：先问，确认了才改（E4）
+  @State private var limitChange: LimitChange?
+  /// 确认框收起后让两个选项重建一次：取消时值没改，但弹出菜单 / 单选可能已经停在点的那一项上
+  @State private var limitPickers = 0
   @Environment(Island.self) private var island: Island?
 
   var body: some View {
@@ -28,23 +33,24 @@ struct ClipboardTab: View {
     Form {
       Section { FeatureToggle(feature: .clipboard, inPage: true) }
       Section {
-        Picker("保留普通历史", selection: $retentionDays) {
+        Picker("保留普通历史", selection: limited(.days)) {
           ForEach(Prefs.clipboardRetentionChoices, id: \.self) {
             Text(Self.retentionTitle($0)).tag($0)
           }
         }
+        .id(limitPickers)
         // 横排单选包进 LabeledContent：贴着右边线（直接放 Picker 的话单选紧跟在标签后面、靠左）
         LabeledContent("图片最多占用") {
-          Picker("图片最多占用", selection: $imageBudgetMB) {
-            ForEach([(512, "512 MB"), (1024, "1 GB"), (2048, "2 GB"), (5120, "5 GB")], id: \.0) {
+          Picker("图片最多占用", selection: limited(.imageMB)) {
+            ForEach(Self.imageBudgetChoices, id: \.0) {
               Text($0.1).tag($0.0)
             }
-            Text("不限").tag(0)
           }
           .pickerStyle(.radioGroup)
           .horizontalRadioGroupLayout()
           .labelsHidden()
           .fixedSize()
+          .id(limitPickers)
         }
         LabeledContent("图片当前占用", value: imageUsage)
       } header: {
@@ -111,11 +117,27 @@ struct ClipboardTab: View {
       .gated(by: .clipboard)
     }
     .formStyle(.grouped)
-    .onChange(of: retentionDays) { pruned(store.enforceLimits()) }
-    .onChange(of: imageBudgetMB) { pruned(store.enforceLimits()) }
     .onChange(of: imageOCR) { store.recognizePendingImages() }
-    .onChange(of: excluded) {
-      UserDefaults.standard.set(excluded, forKey: Prefs.clipboardExcludedBundleIDs)
+    // 同步、导入落下了新的排除列表：页面跟上（异步序列在主线程上接：偏好不一定是在主线程上改的）
+    .task {
+      for await _ in NotificationCenter.default.notifications(
+        named: UserDefaults.didChangeNotification, object: UserDefaults.standard)
+      {
+        let stored = Self.storedExcluded
+        if stored != excluded { excluded = stored }
+      }
+    }
+    .confirmationDialog(
+      limitChange.map(Self.title) ?? "", isPresented: confirmsLimit, titleVisibility: .visible,
+      presenting: limitChange
+    ) { change in
+      Button("删除", role: .destructive) {
+        set(change.field, change.value)
+        pruned(store.enforceLimits())
+      }
+      Button("取消", role: .cancel) {}
+    } message: { change in
+      Text(Self.pruneWarning(items: change.items, images: change.images))
     }
     .confirmationDialog("清空所有普通历史？", isPresented: $confirmClear) {
       Button("清空", role: .destructive) {
@@ -128,6 +150,79 @@ struct ClipboardTab: View {
     } message: {
       Text("收藏和片段会保留")
     }
+  }
+
+  /// 「图片最多占用」的档位（MB → 名字；0 = 不限）
+  static let imageBudgetChoices = [
+    (512, "512 MB"), (1024, "1 GB"), (2048, "2 GB"), (5120, "5 GB"), (0, "不限"),
+  ]
+
+  /// 两个上限：保留天数、图片占用（MB）
+  private enum LimitField { case days, imageMB }
+
+  /// 要改的那一项、新值和改了会删掉几条（其中几张图片）
+  private struct LimitChange: Equatable {
+    var field: LimitField
+    var value: Int
+    var items: Int
+    var images: Int
+  }
+
+  private func limit(_ field: LimitField) -> Int {
+    field == .days ? retentionDays : imageBudgetMB
+  }
+
+  /// 只写变了的那一项：没动的那项写进持久域的话，同步会把它当成本机刚改的发出去、盖掉另一台的设置
+  private func set(_ field: LimitField, _ value: Int) {
+    if field == .days { retentionDays = value } else { imageBudgetMB = value }
+  }
+
+  /// 两个上限选项的绑定：改到会删掉东西的那一档先不写偏好，记下来问（E4）；不会删的照旧直接生效。
+  /// 和清理同一套条件干跑（ClipboardStore.pruneCount），收藏、片段、还能 ⌘Z 的不算
+  private func limited(_ field: LimitField) -> Binding<Int> {
+    Binding {
+      limit(field)
+    } set: { value in
+      guard value != limit(field) else { return }
+      let count = store.pruneCount(
+        .init(
+          days: field == .days ? value : retentionDays,
+          imageMB: field == .imageMB ? value : imageBudgetMB))
+      guard count.items > 0 else { return set(field, value) }
+      limitChange = LimitChange(
+        field: field, value: value, items: count.items, images: count.images)
+    }
+  }
+
+  /// 确认框以任何方式收起（删除、取消、Esc）都让两个选项重建一次：取消时值没改，弹出菜单 / 单选却可能停在点的那一项上
+  private var confirmsLimit: Binding<Bool> {
+    Binding {
+      limitChange != nil
+    } set: {
+      guard !$0 else { return }
+      limitChange = nil
+      limitPickers += 1
+    }
+  }
+
+  /// 确认框的标题：「保留普通历史改成「1 天」？」「图片最多占用改成「512 MB」？」
+  private static func title(_ change: LimitChange) -> String {
+    switch change.field {
+    case .days: "保留普通历史改成「\(retentionTitle(change.value))」？"
+    case .imageMB:
+      "图片最多占用改成「\(imageBudgetChoices.first { $0.0 == change.value }?.1 ?? "\(change.value) MB")」？"
+    }
+  }
+
+  /// 改上限前的确认里那句：会删掉几条普通历史（其中几张图片），收藏和片段不受影响
+  static func pruneWarning(items: Int, images: Int) -> String {
+    let what =
+      switch images {
+      case 0: "\(items) 条普通历史"
+      case items: "\(images) 张普通历史里的图片"
+      default: "\(items) 条普通历史（其中 \(images) 张图片）"
+      }
+    return "会删掉 \(what)，收藏和片段不受影响。"
   }
 
   /// 「保留普通历史」的档位名：1 天 / 1 周 / 1 个月 / 3 个月 / 1 年 / 永久
@@ -172,14 +267,27 @@ struct ClipboardTab: View {
     .onDeleteCommand(perform: removeSelected)
   }
 
+  private static var storedExcluded: [String] {
+    UserDefaults.standard.stringArray(forKey: Prefs.clipboardExcludedBundleIDs) ?? []
+  }
+
+  /// 改排除列表：从偏好现读再改、写回（页面上那份可能还没跟上同步刚落下的，拿它整张写回会盖掉另一台加的 App，E19）
+  private func changeExcluded(_ change: (inout [String]) -> Void) {
+    var list = Self.storedExcluded
+    change(&list)
+    UserDefaults.standard.set(list, forKey: Prefs.clipboardExcludedBundleIDs)
+    excluded = list
+  }
+
   private func add(_ bundleID: String) {
-    guard !excluded.contains(bundleID) else { return }
-    excluded.append(bundleID)
+    changeExcluded { list in
+      if !list.contains(bundleID) { list.append(bundleID) }
+    }
   }
 
   private func removeSelected() {
     guard let id = excludedSelection else { return }
-    excluded.removeAll { $0 == id }
+    changeExcluded { $0.removeAll { $0 == id } }
     excludedSelection = nil
   }
 
