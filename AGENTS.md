@@ -178,7 +178,7 @@ macos/build-dmg.sh
 swift macos/brand-icons.swift
 
 # 功能图标（色块里那 26 个，mac 和 Windows 共用）：改了 icons/feature/*.svg 之后重新生成 mac 的自定义符号；
-# 每个图标合成后和逐元素直接画的逐像素比，对不上就报错。Windows 那份 FeatureIcons.cs 在 windows / windows-next 分支上跑 `… windows`
+# 每个图标合成后和逐元素直接画的逐像素比，对不上就报错。Windows 那份 FeatureIcons.cs 在 windows 分支上跑 `… windows`
 swift icons/build-icons.swift mac
 
 # 状态屏的动画表情：把下载好的 Microsoft Fluent Emoji Animated 动画 PNG 转成包里用的 HEICS（要加表情时才跑；
