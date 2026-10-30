@@ -1,6 +1,6 @@
 // 标注遮罩（2026-10-26；原来是一扇正经窗口，用户手测说「我要的是截图后出现工具栏的那种效果」，当天改成遮罩）：
 // 长截图拼完按 A、截图历史里双击一条，都用它——整屏盖一层暗底，图摆在中间，工具栏贴在图下方，
-// 和截图框选确定之后那一套看齐；标完拷贝 / 存储 / 另存为 / 识字。
+// 和截图框选确定之后那一套看齐（图外面一圈也是选区那道双描边、直角，2026-10-30 用户要的）；标完拷贝 / 存储 / 另存为 / 识字。
 // 窗口形态是无边框的 NSPanel 子类（要当 key 收按键、收文字输入；mac-overlay-panel §1 的例外之一），
 // 状态栏层级、盖住鼠标所在的那块屏、**不激活本 App**（同截图遮罩，前台 App 不变）。
 // 图比遮罩里那块地方大时（长截图）在框里滚动、能缩放，所以长图照样标得了。
@@ -27,6 +27,9 @@ import Carbon.HIToolbox
   let panel: AnnotatePanel
   /// 整屏的暗底（图那一块挖空）
   private let shade = CALayer()
+  /// 图外面一圈双描边，同截图选区（SelectionView.refresh）：内 1.5 pt 强调色 + 外 1 pt black 0.28
+  private let outline = CAShapeLayer()
+  private let outlineOuter = CAShapeLayer()
   /// 图在遮罩里占的那一块（点，面板坐标）
   private var box = CGRect.zero
   /// Esc 第一下是「再按一次放弃」（画过标注时；遮罩里不弹系统框，同录屏放弃两下）
@@ -71,9 +74,6 @@ import Carbon.HIToolbox
     scrollView.contentView = CenteringClipView()  // 图比框窄 / 矮时居中，不贴着左下角
     scrollView.documentView = canvas
     scrollView.wantsLayer = true
-    scrollView.layer?.cornerRadius = Style.Radius.card
-    scrollView.layer?.cornerCurve = .continuous
-    scrollView.layer?.masksToBounds = true
     bar.onClick = { [unowned self] item in clicked(item) }
     styleBar.onColor = { [unowned self] color in canvas.restyle { $0.color = color } }
     styleBar.onWeight = { [unowned self] weight in canvas.restyle { $0.weight = weight } }
@@ -88,6 +88,14 @@ import Carbon.HIToolbox
     shade.frame = content.bounds
     shade.backgroundColor = Style.HUD.scrim.cgColor
     content.layer?.addSublayer(shade)
+    outline.lineWidth = 1.5
+    outline.strokeColor = Style.Shot.accent.cgColor
+    outlineOuter.lineWidth = 1
+    outlineOuter.strokeColor = NSColor.black.withAlphaComponent(0.28).cgColor
+    for layer in [outlineOuter, outline] {
+      layer.fillColor = nil
+      content.layer?.addSublayer(layer)
+    }
     box = Self.imageBox(pointSize: pointSize, in: target.visibleFrame, origin: target.frame.origin)
     scrollView.frame = box
     content.addSubview(scrollView)
@@ -102,6 +110,11 @@ import Carbon.HIToolbox
     NotificationCenter.default.addObserver(
       self, selector: #selector(magnified), name: NSScrollView.didEndLiveMagnifyNotification,
       object: scrollView)
+    // 缩放、滚动都会改视口：描边跟着图走
+    scrollView.contentView.postsBoundsChangedNotifications = true
+    NotificationCenter.default.addObserver(
+      self, selector: #selector(placeOutline), name: NSView.boundsDidChangeNotification,
+      object: scrollView.contentView)
     panel.level = .statusBar  // 同截图遮罩：盖住菜单栏和程序坞
     panel.collectionBehavior = [.fullScreenAuxiliary, .ignoresCycle]
     panel.isOpaque = false
@@ -117,6 +130,7 @@ import Carbon.HIToolbox
     syncBars()
     zoomToFit()
     scrollToTop()
+    placeOutline()
   }
 
   /// 图在遮罩里占哪一块（点，面板坐标）：按可见区的 80% 适配、最大 1:1，居中；
@@ -179,6 +193,20 @@ import Carbon.HIToolbox
 
   /// 捏合缩放完（没经 setMagnification）：手柄的粗细跟上
   @objc private func magnified() { canvas.zoom = scrollView.magnification }
+
+  /// 描边套住看得见的那块图：长图溢出时就是图框，图比框小（很小的截图、缩小看）时贴着图本身
+  @objc private func placeOutline() {
+    guard let content = panel.contentView else { return }
+    let shown = content.backingAlignedRect(
+      canvas.convert(canvas.bounds, to: content).intersection(scrollView.frame),
+      options: .alignAllEdgesNearest)
+    guard !shown.isNull else { return }
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    outline.path = CGPath(rect: shown.insetBy(dx: -0.75, dy: -0.75), transform: nil)
+    outlineOuter.path = CGPath(rect: shown.insetBy(dx: -2, dy: -2), transform: nil)
+    CATransaction.commit()
+  }
 
   /// 长图从上往下看：一打开停在最上面（画布原点在左下，顶边是最大的 y）
   private func scrollToTop() {
