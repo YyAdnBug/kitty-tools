@@ -1,6 +1,6 @@
 # AGENTS.md
 
-`main` 分支（原生版主线，2026-09-27 由 `macos-native` 改名）的 agent 项目指引（Cursor / Codex 直接读；Claude Code 经 `CLAUDE.md` 导入）。常驻红线在 `.cursor/rules/mac-native.mdc`。
+`macos` 分支（mac 原生版主线；2026-09-27 由 `macos-native` 改名 main，2026-10-30 再改名 macos，`main` 从此只放 README 和截图）的 agent 项目指引（Cursor / Codex 直接读；Claude Code 经 `CLAUDE.md` 导入）。常驻红线在 `.cursor/rules/mac-native.mdc`。
 
 ## 项目概述
 
@@ -23,7 +23,7 @@
 - 现状、待手测、下一步看 PLAN §12（各族立项日期、批次进度的原文在 §12「各族进度摘要（原 AGENTS 项目概述）」）；手测条目和发版冒烟清单看 `macos/HANDTEST.md`；拍板和每族的规矩看 PLAN §10 和对应的 `mac-*` 规则。
 - Bundle ID `com.yy.kitty-tools.native`（Debug `com.yy.kitty-tools.native.dev`），不再改（改了会丢偏好、钥匙串和授权）；产品名 / .app 名 `Kitty Tools`（Debug `Kitty Tools Dev`）。和 Tauri 旧版同名：安装前先删掉 /Applications 里旧版的 `Kitty Tools.app`。
 - **规格**：各 `mac-*` 规则（界面与动效按 `mac-whisker`）+ 对标产品（启动器 Alfred / Raycast、翻译 Bob、截图 iShot / CleanShot、录屏 CleanShot / ⌘⇧5、录音 QuickTime / iShot、剪贴板 Paste）。`macos/PLAN.md` 只留仍有效的（§2 技术栈、§4 架构与文件表、§8 打包、§10 约束与决定、§11 实现原则与旧逻辑问题、§12 现状），历史在 `macos/docs/archive/`。
-- **Windows 原生版**在 `windows/`（C# + WinUI 3）：规矩和方案在 `windows/AGENTS.md`、`windows/PLAN.md`。本文件其余部分和 `.cursor/rules/mac-*.mdc` 只管 `macos/`；Windows 的提交写成 `<type>(win): …`，release 不标 latest。
+- **Windows 原生版**在 `windows` 分支的 `windows/`（C# + WinUI 3；本分支里的 `windows/` 是 0.6.0 时的旧快照，别在这里改）：规矩和方案在那边的 `windows/AGENTS.md`、`windows/PLAN.md`。本文件其余部分和 `.cursor/rules/mac-*.mdc` 只管 `macos/`；Windows 的提交写成 `<type>(win): …`，release 不标 latest。
 
 ## 技术栈
 
@@ -178,7 +178,7 @@ macos/build-dmg.sh
 swift macos/brand-icons.swift
 
 # 功能图标（色块里那 26 个，mac 和 Windows 共用）：改了 icons/feature/*.svg 之后重新生成 mac 的自定义符号；
-# 每个图标合成后和逐元素直接画的逐像素比，对不上就报错。Windows 那份 FeatureIcons.cs 在 windows-wip 上跑 `… windows`
+# 每个图标合成后和逐元素直接画的逐像素比，对不上就报错。Windows 那份 FeatureIcons.cs 在 windows / windows-next 分支上跑 `… windows`
 swift icons/build-icons.swift mac
 
 # 状态屏的动画表情：把下载好的 Microsoft Fluent Emoji Animated 动画 PNG 转成包里用的 HEICS（要加表情时才跑；
@@ -213,7 +213,7 @@ defaults delete com.yy.kitty-tools.native.dev folderAccessRequested
 
 ## Tauri 版不作参考
 
-- 分支：原生版在 `main`（2026-09-27 由 `macos-native` 改名）；`master` 仍是 Tauri 版，两条线互不合并。
+- 分支：mac 原生版在 `macos`（2026-09-27 由 `macos-native` 改名 main，2026-10-30 改名 macos），Windows 版在 `windows`，`main` 只放介绍（README 的功能说明有变化时到 main 上改）；`master` 仍是 Tauri 版，两条线互不合并。
 - Tauri 快照（`src/`、`src-tauri/` 等）2026-09-27 按用户要求从本分支删除，仓库里只剩原生工程；要翻旧代码去 master `ee615b3` 或 git 历史。本分支不 merge master，也不以合回 master 为目标。
 - **不作行为、界面、默认值、文案的参考**（用户 2026-09-26）：原生版有自己的样式和逻辑，不兼容 Tauri 版的数据和设置（它已不再运行）；以各 `mac-*` 规则、Whisker 和对标产品为准。
 - PLAN §5 / §6（已归档到 `macos/docs/archive/PLAN-migration.md`）的 path:line 指的是 master 上的文件，只是迁移期的历史记录，不再是规格。
