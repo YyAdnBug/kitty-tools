@@ -55,7 +55,10 @@ internal static class Features
         SettingsService.Save();
     }
 
-    /// <summary>这个热键动作属于哪个功能（关掉那个功能就不注册它）。</summary>
+    /// <summary>这个热键动作现在用得上：它归的功能开着；打开主界面不归哪个功能，一直在（同 mac HotKeyAction.feature 为 nil）。</summary>
+    public static bool IsOnFor(string action) => action == HotKeyActions.Home || IsOn(ForHotKey(action));
+
+    /// <summary>这个热键动作属于哪个功能（关掉那个功能就不注册它）；打开主界面不归哪个功能，看开没开用 IsOnFor。</summary>
     public static Feature ForHotKey(string action) => action switch
     {
         HotKeyActions.Clipboard => Feature.Clipboard,

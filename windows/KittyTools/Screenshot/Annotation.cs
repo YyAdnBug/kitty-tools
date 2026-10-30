@@ -70,6 +70,7 @@ internal static class AnnotationRenderer
     /// <summary>
     /// 画一组标注。frozen 是这块屏的冻结帧（荧光笔正片叠底要垫它），selection 是选区（像素）：聚光灯只压暗选区里面
     /// （屏幕上选区外已经有遮罩的暗色；导出的位图本来就只有选区那么大）。
+    /// frozenAt：frozen 左上角在像素坐标里的位置（长图标注一条条画，frozen 是那一条；PLAN-v9 S12），平常是 (0, 0)。
     /// </summary>
     public static void Draw(
         CanvasDrawingSession ds,
@@ -79,12 +80,13 @@ internal static class AnnotationRenderer
         PointD origin,
         double unit,
         double strokeScale,
-        RectD selection)
+        RectD selection,
+        PointD frozenAt = default)
     {
         var map = new Mapping(origin, unit, strokeScale);
         foreach (var annotation in annotations.Where(annotation => annotation.Kind == AnnotationKind.Highlighter))
         {
-            DrawHighlighter(ds, annotation, frozen, map);
+            DrawHighlighter(ds, annotation, frozen, map, frozenAt);
         }
 
         foreach (var annotation in annotations.Where(annotation => annotation.Layer == 0))
@@ -354,7 +356,7 @@ internal static class AnnotationRenderer
     }
 
     /// <summary>荧光笔：笔迹范围里冻结帧 × 颜色 0.45（正片叠底：底下的字不被盖浅），没有阴影。</summary>
-    private static void DrawHighlighter(CanvasDrawingSession ds, Annotation annotation, CanvasBitmap? frozen, Mapping map)
+    private static void DrawHighlighter(CanvasDrawingSession ds, Annotation annotation, CanvasBitmap? frozen, Mapping map, PointD frozenAt)
     {
         if (frozen is null)
         {
@@ -371,7 +373,7 @@ internal static class AnnotationRenderer
         using var backdrop = new Transform2DEffect
         {
             Source = frozen,
-            TransformMatrix = Matrix3x2.CreateTranslation((float)-map.Origin.X, (float)-map.Origin.Y) *
+            TransformMatrix = Matrix3x2.CreateTranslation((float)(frozenAt.X - map.Origin.X), (float)(frozenAt.Y - map.Origin.Y)) *
                               Matrix3x2.CreateScale((float)map.Unit),
         };
         using var ink = new ColorSourceEffect { Color = Color.FromArgb(115, color.R, color.G, color.B) };

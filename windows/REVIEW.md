@@ -22,7 +22,43 @@
 
 **审查方 10-29 另做的**（用户要求，没编译）：
 - 设置各页的布局对齐 mac（侧栏顺序、搜索设置、组说明写在组下面、功能页「启用 X」+ 关着变灰、快捷键页分组和录制框、关于页品牌页……），手测 HANDTEST 676–691，不一样的地方和原因写在新文件 `MAC-DIFF.md`。编译错你们直接修。
-- 用户同时要「继续实现没做的功能」：定的是**新功能在 `windows-next` 分支上做**（PLAN-v10 §3 的 0.2.0 各批），windows（原名 windows-wip）照旧只收口；0.1.0 打完包再把 windows-next 并回来。你们收口期间不用管 windows-next。
+- **2026-10-30 改了**：2026-10-30 用户：「windows 现在所有的功能都叫 0.1.0，之前说的 0.2.0 没有」——windows-next 上做完的第 0–6 批、收尾、主界面都并进 `windows`，跟 0.1.0 一起发，发完删掉 windows-next；版本号和 `changelog.json` 收回 0.1.0。所以收口要对着合并后的代码重来一遍：第 1 步编译 / 单测 / `--ui-snapshots`（编译错直接修）→ 按 `HANDTEST.md` 692–793 把并进来的那几批在屏幕上验 → 下面「windows-next 里留给你们的」那几样 → 第 5 步打包。
+- （10-29 原来的安排）用户同时要「继续实现没做的功能」：定的是**新功能在 `windows-next` 分支上做**（PLAN-v10 §3 的 0.2.0 各批），windows（原名 windows-wip）照旧只收口；0.1.0 打完包再把 windows-next 并回来。你们收口期间不用管 windows-next。
+
+**windows-next（原「0.2.0」，2026-10-30 已并进 windows、算进 0.1.0）里留给你们的**（D5：窗口、合成、抓屏、输入钩子这类；现在就做、做完再打包，审查方写好的那一半在各批的提交里）。
+2026-10-29 用户又说这一半也由审查方先写：下面标了「已写」的是审查方写好、没编译的，你们编译、在屏幕上验、有问题直接改；没标的还没写。
+- 第 0 批 R43 → 已写（只 BitBlt 选区、找重叠在线程池，HANDTEST 742–748）：长截图只抓选区那块屏（现在每拍 `ScreenCapture.CaptureAll()`），找重叠挪进线程池。拼接已经改成 `ScrollCanvas`。
+- 第 2 批 S7 → 已写（`ShotFlash`）：「截完图放哪」选「都不要」时右下角闪一下（mac：一块小的白光淡出），现在什么都不出（`Screenshot/ShotFeedback.cs` 的 ponytail）。
+- 第 2 批 S9 → 已写（`ScreenshotCard` 改成一叠，见 HANDTEST 733–741）：角落缩略图最多叠三张、双击打开、存过以后「在资源管理器中显示」、右键菜单（含「在历史里看」）（`Screenshot/ScreenshotCard.cs`）。
+- 第 4 批（录制）：R1 R6 R7 R12 → 已写（HANDTEST 733–741）；R5 → 已写（HANDTEST 742–748）。原文：R1 录完的角落卡（和截图的角落卡同一叠）、R5 清晰度（标准 = 长边封顶 1920，Settings 和设置页一起加）、
+  R6 倒数挪到录制条上（`RecordingCountdown` 现在按「开始前倒数」0 / 3 / 5 秒出轻提示，审查方写了）、R7 录制条上的声音状态图标、
+  R12 角落卡设 `WDA_EXCLUDEFROMCAPTURE`（这台机器上设了它的分层窗口不显示，角落卡是 WinUI 窗口、按理没事，要亲眼看）；
+  R3「显示光标」审查方只接了 WGC 那条（`IsCursorCaptureEnabled`），GDI 那条如果还在用，看一下光标是不是本来就没录。
+  R10 待录控制条上的来源开关审查方写了（`AudioHud`），宽度 400 放不放得下要看一眼。
+- 第 6 批 S11 S12 → 已写（HANDTEST 751–764）：S11 选区旁边一块预览面板 `ScrollPreviewPanel`（直接从 `ScrollCanvas` 的条带取样，
+  只在没有正在拼的那一拍时取；滚轮往回看、指示条、双击回到最新，纯函数在 Core 的 `ScrollPreview`）；S12 `LongAnnotateWindow`
+  （`CanvasVirtualControl` + 4096 行一条的位图，出图也一条条画；标注模型 / 画法 / 命中 / 手柄全用截图遮罩那套，
+  `AnnotationRenderer.Draw` 加了 `frozenAt` 给荧光笔垫当前那条）。入口：历史里「改标注」放不进屏幕的、长截图面板的「标注」。
+  要你们特别看：CanvasVirtualControl 放在 ScrollViewer 里滚动时有没有空白块；30000 行的出图耗时和显存；面板贴在选区里时
+  （选区差不多整屏）拍出来的帧里有没有面板（设了「不进录屏」）。
+- 第 0b 批 主界面（托盘左键，PLAN-v10 §5；规格在 windows-wip 的 PLAN-v10 a1fc4519）→ 已写（HANDTEST 765–779）：`Shell/HomePanel.cs` + Core 的 `HomeLayout`（分节、
+  折行、高、选中移动、任务栏在哪条边、贴着托盘摆在哪，`HomeLayoutTests`）。D3 原本窗口 / 托盘 / 焦点归你们边写边验，用户让审查方先写了。
+  要你们特别看：点托盘时前台变成任务栏，「划词翻译」靠 `RunningProcesses.TopAppWindow()` 找回原来的窗口，在记事本里实测一次；再点托盘收起靠
+  收起后 300 ms 内的 NIN_SELECT 不开，按住鼠标久一点会不会又打开；`Shell_NotifyIconGetRect` 在图标收进「^」时给的矩形；
+  格子用 ToggleButton / Button 换了模板资源，深色 / 高对比度下悬停和按下的底色对不对。
+- 截图历史的多选、快捷键、拖出去（mac 1ec2ca9a / 933c1dd9 / 0de6c18b / 605f41c8，PLAN-v9 之后 mac 新加的）→ 已写（HANDTEST 780–790）：
+  分组是好几个 GridView，系统多选跨不了组，改成 SelectionMode None + ItemClick、选中自己管（Core 的 `ShotHistoryRules.Click / Span / Moved / Summary`，
+  `ShotHistorySelectionTests`）。要你们看：PreviewKeyDown 先拿方向键以后 GridView 自己的焦点框跟不跟；拖好几张到资源管理器 / 微信；
+  `SHOpenFolderAndSelectItems` 一次选中好几个文件。
+- **Windows 编译记录（2026-10-29，Claude 在 worktree 里，e7e8b85）**：三处编不过，修在 59e10ad，别的一次编过。
+  `HomePanel.OnActivated` 的 `WindowActivatedEventArgs` 和文件里 `using Windows.UI.Core` 的同名类型撞了（CS0104），写全 `Microsoft.UI.Xaml.`；
+  `HandleForProbe`、`ShowSelf` 里 `(IntPtr)hwnd.Value` 要 unsafe（CS0214），整个类标 unsafe 又让里面的 await 编不过（CS4004），
+  改成一个 `private static unsafe IntPtr Pointer(HWND)`；`PlanV4Tests.FrameRateIsThirtyOrSixty` 的 `Assert.AreEqual(30, DefaultFps)`
+  被分析器当成恒真（MSTEST0032，测试项目里是错误），断言留着、那一行用 pragma 关掉分析器。修完 Debug x64 0 警告 0 错误，459 个单测全过。
+- 长截图接不上移动端网页（mac 0ff55dd7）→ 已写（HANDTEST 791–793）：容差比较只比在动的列、只让有字的行投票（`ScrollStitcher.FuzzyOverlap`），
+  `ScrollStitcherStillColumnsTests` 两个场景在旧算法上都失败（Python 移植比过：侧栏一帧接不上、移动端接成 191 行），新算法 130。整行哈希那条路没动。
+- 0.2.0 最后一批的收尾 → 已写；2026-10-30 版本号和 `changelog.json` 收回 0.1.0（两条合成一条，23 项）：`build-release.ps1` 要你们在 Windows 上跑，产物路径写进 STATUS §6。
+- 第 3 批 S10 → 已写（右键「透明度 N%…」和悬停的透明度钮都打开一个带滑块的小浮层）：钉图透明度 10–100% 的滑块（mac 在右键菜单里；WinUI 的 MenuFlyout 放不了滑块，可以换成 Flyout 或右键菜单里一项打开小浮层，你们看着定）。右键的「存储」「翻译」、托盘 / 启动器的「隐藏 / 关闭全部钉图」审查方写了。
 
 **收口问题**（你们往下加，审查方修完在条目后面写提交号）：
 
@@ -128,7 +164,7 @@
   - 调试参数 `--notice-buttons`；`--ui-snapshots` 多 `island-buttons`、`island-expanded`。
   - **最可能要改的**：按钮的轻量样式资源键（`ButtonBackgroundPointerOver` 等）在 WinUI 2.x 里叫不叫这个；`WS_EX_NOACTIVATE` 的窗口里按钮点不点得动（录制条那边是点得动的）；`--notice-anim-test` 的窗口高度变了，量宽度的那段可能要跟着改。验收看 `HANDTEST` 339–345。
 - 第 4 批：速查表（`Settings/ShortcutsSheet.cs`），设置的剪贴板 / 启动器 / 截图 / 翻译 / 快捷键五页标题下面加了「查看全部快捷键…」。里面的面板按键是逐个对着现在的按键处理抄的（每组注明了文件），**改了面板按键要同步这里**；R39–R41 修完后跟着改。历史窗口加了 Delete 删选中的那条。
-- **第 3 批下（长图标注）先不做**：长图比屏幕高，截图遮罩那一套用不上，要另写一个能滚的长图画布、把标注交互再做一遍（约等于 `SelectionOverlayWindow` 的一半）。mac 那边的用户数据里长截图是 0 次，等用户要了再做。
+- **第 3 批下（长图标注）先不做**（0.2.0 的 S12 做了，见上面 windows-next 那段）：长图比屏幕高，截图遮罩那一套用不上，要另写一个能滚的长图画布、把标注交互再做一遍（约等于 `SelectionOverlayWindow` 的一半）。mac 那边的用户数据里长截图是 0 次，等用户要了再做。
 - **和方案不一样**：画了标注的另存一张成品 `<id>-c.png`（Windows 的 `AnnotationRenderer` 画马赛克要冻结帧，离开遮罩合成不了）；来源程序先不记；角落缩略图卡没有右键菜单，「在历史里看」没加。
 - **要验**：`ShotHistoryTests`；截图拷贝 / 存储 / 钉图 / 长截图 / 录屏 / 录音 / GIF 各来一次，`%LOCALAPPDATA%\KittyTools\shots\` 和 `shots` 表对得上；历史窗口每个操作；改标注后缩略图跟着变、再打开看到改过的标注；`Annotation` 以后加了字段（比如空心 / 实心）要在 `ShotAnnotations` 里一起存。
 
@@ -384,7 +420,7 @@
 - `OverlayWindow.cs` 文件头说浮层按 Esc、Ctrl+W 收起，启动器不认 Ctrl+W。
 - 设置窗没有返回（mac 有 ⌘[），也不能 Esc 关；要不要做你们定，做了同步速查表的「设置窗」一组。
 
-### R42（P1）启动器第一次搜索时，在 UI 线程上把浏览器的库整个拷一遍
+### R42（P1）启动器第一次搜索时，在 UI 线程上把浏览器的库整个拷一遍 → 已修（`41bb4286` 启动器 7a–7d：线程池里读、换快照、10 分钟看一次文件变没变）
 
 - `Launcher/LauncherModel.cs:56,70`：每次搜索都调 `BookmarkIndex.Load()` / `HistoryIndex.Load()`。第一次是真读：`Launcher/LookupServices.cs:425` 起，每个浏览器的每个配置都 `CopyWithWal`（:379），把 `History` / `places.sqlite` 整个拷到临时目录，再开库查，全在 UI 线程上。用久了的 Chrome `History` 有几十到几百 MB，拷完之前启动器是卡住的。
 - 读过一次 `_loaded` 就一直是 true：新加的书签、新的浏览记录要等重启才搜得到。
@@ -396,7 +432,7 @@
   - 默认读不读浏览历史、读哪几家是 V1 的事。这一条只管两件：别卡住，能刷新。
 - **验收**：日志记读库的耗时和线程（`history.load ms= thread=`），本机 `History` 有多大写进报告；打开启动器后第一次输入到列表出来，前后各量一次。
 
-### R43（P1）长截图：每 600 ms 在 UI 线程上抓所有屏，再把整张长图重新分配、重算一遍
+### R43（P1）长截图：每 600 ms 在 UI 线程上抓所有屏，再把整张长图重新分配、重算一遍 → 拼接那一半已写（windows-next，审查方，待编译）：Core 的 `ScrollCanvas` 存条带，`ScrollCanvasTests` 和逐帧整张拼逐像素比；**只抓选区那块屏、找重叠挪进线程池归你们**（D5，抓屏）
 
 - `Screenshot/ScrollingCapture.cs:141`：每一拍都 `ScreenCapture.CaptureAll()` 抓全部显示器的整屏，只用选区那一块。
 - `KittyTools.Core/ScrollStitcher.cs:53` 的 `Append(_current, frame)`：`Skip`、`Combine`、`Prepend`（:189 起）各新分配一份**整张**长图，再 `new ScrollFrame`；构造函数（:11）把整张图每一行重新哈希一遍。
@@ -423,7 +459,7 @@
   - `ApplyFeatures`、`TranslateHost.ApplyCopyTranslate` 也看一下：没比过的照这个办。
 - **验收**：打开设置窗再关掉，截 10 次图，`BuildPage` 次数是 0（加一行 Debug 日志数）；在设置里换强调色、换外观、关一个功能，照样立刻生效。
 
-### R45（P2）流式翻译：每来一段，UI 线程就把所有卡片和窗口高度重算一遍
+### R45（P2）流式翻译：每来一段，UI 线程就把所有卡片和窗口高度重算一遍 → 已写（windows-next，审查方，待编译）：流式片段合并成 33 ms 刷一次，换状态照旧当场刷；读流还在 UI 线程（ponytail）
 
 - `Translate/TranslateCoordinator.cs:206–213`：每个流式片段都 `card.Text = piece` → `Changed?.Invoke()`。全仓没有一处 `ConfigureAwait(false)`，读流、解析 JSON 的续延全回到 UI 线程。
 - `Translate/TranslateWindow.cs:936` 的 `OnCoordinatorChanged`：**所有**卡片 `Update`、`RebuildFooter`、`RefreshTranslateButton`，再 `ResizeToContent` 两次（一次当场、一次排队）。
@@ -455,7 +491,7 @@
 - **建议**：钉图复制改成先 `await PrepareImageAsync`；`ImageStore.Save` 不再算哈希，哈希和写盘挪进 `ClipboardService.SaveImageAsync` 已有的那个 `Task.Run`；`ShowPreview` 记住上次显示的那一条和它的版本，一样就直接返回。
 - **验收**：钉一张 4K 截图，按复制，UI 线程卡多久前后各量一次；复制一张 20 MB 的图，`RecordImage` 在 UI 线程上的耗时前后各量一次。
 
-### R49（P2）同步每 20 秒全量跑一轮，什么都没变也照跑
+### R49（P2）同步每 20 秒全量跑一轮，什么都没变也照跑 → 已写（windows-next，审查方，待编译）：`SyncDisk.Fingerprint` + 本机改动计数，都没变就跳过这一轮；`SyncRows(retainedOnly)`
 
 - `Storage/SyncFolder.cs:218` 的定时器每 20 秒 `RoundAsync`，`KittyTools.Core/Sync/SyncRunner.cs:64` 起：把文件夹里所有设备、所有类别的文件读进来，整份解码、合并，再编回去比较，没有「上一轮以来什么都没变」的短路。
 - UI 线程上每轮还有两件事：

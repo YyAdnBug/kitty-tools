@@ -19,7 +19,7 @@ Kitty Tools 的 **Windows 原生版**（C# + WinUI 3，2026-10-23 立项）。�
 
 9. `PLAN-v8.md`（跟上 mac 0.7.0 的新功能：截图历史、标注遮罩、速查表；2026-10-26 用户定）：**审查方在 Mac 上写代码**（不编译）推上来，你们负责编译、单测、截图、手测，编译错直接修。和 v7 并行，文件归属看 `REVIEW.md`「v8 分工」。
 10. `PLAN-v9.md`（补齐和 mac 的功能差距，2026-10-27 写的拍板页）：**用户拍板之前别动**；拍板后照里面 §0 定的分工和 §10 的分批做。在这之前先修 `REVIEW.md` 的 R41–R52、R24。
-11. `PLAN-v10.md`（2026-10-29 用户「全部按推荐」）：**先收口发 0.1.0**——照 `REVIEW.md`「0.1.0 收口（PLAN-v10）」在真机上走冒烟和优先手测、问题记在那一节、审查方按条修，**这期间不加新功能**；打完包再照 PLAN-v10 §3 做 0.2.0（剩下的 PLAN-v9 第 1、6、7、8 批）。分工（D5）：纯逻辑 / Core / 设置页 / 文案审查方在 Mac 写；窗口、合成、抓屏、输入钩子这类要在屏幕上看效果的你们边写边验。
+11. `PLAN-v10.md`（2026-10-29 用户「全部按推荐」）：**先收口发 0.1.0**——照 `REVIEW.md`「0.1.0 收口（PLAN-v10）」在真机上走冒烟和优先手测、问题记在那一节、审查方按条修，**这期间不加新功能**；打完包再照 PLAN-v10 §3 做 0.2.0（剩下的 PLAN-v9 第 1、6、7、8 批）。**2026-10-30 改了：没有 0.2.0，windows-next 上做完的那几批已并进 `windows`、跟 0.1.0 一起发**，收口对着合并后的代码重来一遍（REVIEW「0.1.0 收口」开头那条）。分工（D5）：纯逻辑 / Core / 设置页 / 文案审查方在 Mac 写；窗口、合成、抓屏、输入钩子这类要在屏幕上看效果的你们边写边验。
 
 `PLAN.md` 是第一版的规格，后面几版没提到的地方照它。
 
@@ -133,7 +133,7 @@ Kitty Tools 的 **Windows 原生版**（C# + WinUI 3，2026-10-23 立项）。�
 ## 提交、分支、截图
 
 - **只推 `origin`（`github.com/YyAdnBug/kitty-tools`）**，不推任何 fork。推送失败先 `git fetch origin && git rebase origin/windows` 再推；还不行就停下来报告，不要换远端。
-- **分支**（2026-10-30 起）：在 `windows` 上做（原来叫 `windows-wip`，GitHub 上改名过来的；本地检出 `git branch -m windows-wip windows && git fetch origin --prune && git branch -u origin/windows windows`）；下一版的新功能在 `windows-next`，做完并回 `windows`。`main` 只放介绍、`macos` 是 mac 版，两边都不碰、不 rebase。审查方也会往这个分支提交文档（`REVIEW.md`、方案的修订），所以推送前一定先 rebase 到 `origin/windows`。**绝不强推**，也不改写已经推上去的提交。
+- **分支**（2026-10-30 起）：在 `windows` 上做（原来叫 `windows-wip`，GitHub 上改名过来的；本地检出 `git branch -m windows-wip windows && git fetch origin --prune && git branch -u origin/windows windows`）；`windows-next` 上做完的那几批 2026-10-30 已并进来（算进 0.1.0），0.1.0 发完就删掉它，以后新功能也都在 `windows` 上做。`main` 只放介绍、`macos` 是 mac 版，两边都不碰、不 rebase。审查方也会往这个分支提交文档（`REVIEW.md`、方案的修订），所以推送前一定先 rebase 到 `origin/windows`。**绝不强推**，也不改写已经推上去的提交。
 - **提交格式**：`<type>(win): <description>`，type 取 feat / fix / ui / refactor / docs / perf / build / chore。标题一行、70 字以内；空一行写正文，**正文就是这批的报告**。一批可以拆成几个提交，报告写在最后一个里。
 - **截图**：推到孤儿分支 `windows-shots`（`git worktree add ../kitty-shots windows-shots` 之后在那个目录里提交、推送），每批一个目录、6–10 张、单张 < 500 KB；动效录 3–5 秒的短视频（mp4 < 5 MB）也放这里。
 - **截图里不能有别的东西**（`windows-shots` 在公开仓库里）：只截我们自己的窗口（按窗口矩形裁，或只抓我们的 HWND）；录屏要验证时，先开一个自己的满屏测试图案窗口，只录它。整个桌面的图一律不推；推之前自己看一遍，不能出现别的 App、别的对话、IP、账号。

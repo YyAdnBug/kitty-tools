@@ -1,5 +1,6 @@
 // 截图历史的纯规则（PLAN-v8 H1–H4，照 mac ShotHistory.swift）：种类、该清掉哪些（30 天 / 2 GB，最新那条不按总量删）、
 // 标注的 JSON（Windows 自己的格式：tool 名和字段名进了磁盘，以后别改）、缩略图尺寸、按天分组的标题。配单测 ShotHistoryTests。
+// 历史窗口的多选（Ctrl / Shift 点、Shift + 方向键）、方向键挑图、多选时的那一行小结（照 mac 1ec2ca9a / 933c1dd9），配单测 ShotHistorySelectionTests。
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -340,6 +341,129 @@ public static class ShotHistoryRules
             default:
                 return annotation with { Rect = data.Rect.Offset(dx, dy) };
         }
+    }
+
+    /// <summary>
+    /// 点了一张以后选中哪些（照 mac 1ec2ca9a，同资源管理器）：单点 = 只选它；Ctrl 点 = 加选或去掉；Shift 点 = 从锚点连到它
+    /// （Ctrl 点出来的零散的不丢）。锚点：单点、Ctrl 点换成它，Shift 点不动。ids 是现在列出来的顺序。
+    /// </summary>
+    public static (HashSet<string> Picked, string? Anchor) Click(
+        IReadOnlyList<string> ids, IReadOnlyCollection<string> picked, string? anchor, string id, bool control, bool shift)
+    {
+        var from = anchor is null ? -1 : IndexOf(ids, anchor);
+        var to = IndexOf(ids, id);
+        if (shift && from >= 0 && to >= 0)
+        {
+            var result = new HashSet<string>(picked);
+            result.UnionWith(Span(ids, from, to));
+            return (result, anchor);
+        }
+
+        if (control)
+        {
+            var result = new HashSet<string>(picked);
+            if (!result.Remove(id))
+            {
+                result.Add(id);
+            }
+
+            return (result, id);
+        }
+
+        return (new HashSet<string> { id }, id);
+    }
+
+    /// <summary>第 from 张到第 to 张（含两头，哪头在前都行）。</summary>
+    public static HashSet<string> Span(IReadOnlyList<string> ids, int from, int to)
+    {
+        var result = new HashSet<string>();
+        for (var index = Math.Max(0, Math.Min(from, to)); index <= Math.Min(ids.Count - 1, Math.Max(from, to)); index++)
+        {
+            result.Add(ids[index]);
+        }
+
+        return result;
+    }
+
+    /// <summary>网格一行放几张（至少 1）：宽 width 里能排下几张 cell 宽的卡（cell 含卡和卡之间的空）。</summary>
+    public static int Columns(double width, double cell) => Math.Max(1, (int)(width / Math.Max(1, cell)));
+
+    /// <summary>
+    /// 方向键在卡片之间挑（照 mac 933c1dd9 的 gridStepping）：按天分组、每组自己折行（groups 是各组几张），←→ 挪一张、
+    /// ↑↓ 挪到上 / 下一行的同一列（那一行短就落在它最后一张），都夹在两头、不绕回。还没选中时落在第一张；一张都没有时 null。
+    /// dx / dy 是 −1、0、1。
+    /// </summary>
+    public static int? Moved(int? current, int dx, int dy, IReadOnlyList<int> groups, int columns)
+    {
+        var count = groups.Sum();
+        if (count == 0)
+        {
+            return null;
+        }
+
+        if (current is not { } index || index < 0 || index >= count)
+        {
+            return 0;
+        }
+
+        if (dx != 0)
+        {
+            return Math.Clamp(index + dx, 0, count - 1);
+        }
+
+        // 每一行的第一张和张数。
+        var rows = new List<(int Start, int Length)>();
+        var start = 0;
+        foreach (var size in groups)
+        {
+            for (var offset = 0; offset < size; offset += columns)
+            {
+                rows.Add((start + offset, Math.Min(columns, size - offset)));
+            }
+
+            start += size;
+        }
+
+        var row = rows.FindIndex(item => index >= item.Start && index < item.Start + item.Length);
+        var target = row + Math.Sign(dy);
+        if (row < 0 || target < 0 || target >= rows.Count)
+        {
+            return index;
+        }
+
+        var column = index - rows[row].Start;
+        return rows[target].Start + Math.Min(column, rows[target].Length - 1);
+    }
+
+    /// <summary>选着好几条时右边那一行：「2 张截图 · 1 段录屏 · 共 12 MB」（各几个、一共多大）。</summary>
+    public static string Summary(IReadOnlyList<(ShotKind Kind, long Bytes)> items)
+    {
+        var parts = new List<string>();
+        foreach (var kind in Enum.GetValues<ShotKind>())
+        {
+            var count = items.Count(item => item.Kind == kind);
+            if (count > 0)
+            {
+                // 「1 张 GIF」：中文和英文之间空一格。
+                parts.Add($"{count} {(kind is ShotKind.Video or ShotKind.Audio ? "段" : "张")}{(kind == ShotKind.Gif ? " " : string.Empty)}{Title(kind)}");
+            }
+        }
+
+        parts.Add("共 " + LauncherText.Memory(items.Sum(item => Math.Max(0, item.Bytes))));
+        return string.Join(" · ", parts);
+    }
+
+    private static int IndexOf(IReadOnlyList<string> ids, string id)
+    {
+        for (var index = 0; index < ids.Count; index++)
+        {
+            if (ids[index] == id)
+            {
+                return index;
+            }
+        }
+
+        return -1;
     }
 
     /// <summary>历史窗口按天分组的标题：「今天」「昨天」「10 月 24 日」，不是今年的带年份。都是本地日期。</summary>

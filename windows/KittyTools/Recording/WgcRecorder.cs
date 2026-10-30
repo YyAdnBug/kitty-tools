@@ -84,6 +84,16 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
     private int _outputHeight;
     private int _cropLeft;
     private int _cropTop;
+
+    /// <summary>选区在屏幕帧里裁出来的那一块多大（「标准」清晰度时比输出大，要缩，PLAN-v9 R5）。</summary>
+    private int _cropWidth;
+    private int _cropHeight;
+
+    /// <summary>设置 › 录制「清晰度」选了标准：长边封顶 1920（开录时读一次）。</summary>
+    private readonly bool _standard = SettingsService.Current.RecordSharpness == "standard";
+
+    /// <summary>输出比录的那一块小多少（点按圈的坐标跟着乘）。</summary>
+    private double _effectScale = 1;
     private int _sourceWidth;
     private int _sourceHeight;
     private TimeSpan _startCpu;
@@ -280,9 +290,11 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
 
             if (_window != IntPtr.Zero)
             {
-                var size = RecordingPipeline.EvenSize(_sourceWidth, _sourceHeight);
+                // 「标准」清晰度：输出缩到长边 1920，窗口帧和输出不一样大就走缩放器（R29 那条路）。
+                var size = RecordingPipeline.OutputSize(_sourceWidth, _sourceHeight, _standard);
                 _outputWidth = size.Width;
                 _outputHeight = size.Height;
+                _effectScale = (double)_outputWidth / Math.Max(1, _sourceWidth);
                 RECT windowRect;
                 if (PInvoke.GetWindowRect(new HWND(_window), &windowRect))
                 {
@@ -308,8 +320,12 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
                 _originY = info.rcMonitor.top + _cropTop;
                 var size = RecordingPipeline.EvenSize(
                     crop.Value.Right - crop.Value.Left, crop.Value.Bottom - crop.Value.Top);
-                _outputWidth = size.Width;
-                _outputHeight = size.Height;
+                _cropWidth = size.Width;
+                _cropHeight = size.Height;
+                var output = RecordingPipeline.OutputSize(size.Width, size.Height, _standard);
+                _outputWidth = output.Width;
+                _outputHeight = output.Height;
+                _effectScale = (double)_outputWidth / Math.Max(1, _cropWidth);
             }
 
             // 纹理池：每帧先拷到一张自己的纹理上，编码线程慢慢写，不占着 WGC 的帧。
@@ -366,7 +382,8 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
             session = pool.CreateCaptureSession(item);
             try
             {
-                session.IsCursorCaptureEnabled = true;
+                // 设置 › 录制「显示光标」（PLAN-v9 R3，默认录）。
+                session.IsCursorCaptureEnabled = SettingsService.Current.RecordCursor;
             }
             catch
             {
@@ -806,6 +823,21 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
             return null;
         }
 
+        // R5：「标准」清晰度录选区：把屏幕帧里那一块缩进输出；缩放器起不来退回下面的裁（只录到左上角那一截）。
+        if (_window == IntPtr.Zero && (_cropWidth != _outputWidth || _cropHeight != _outputHeight))
+        {
+            _scaler ??= WgcScaler.TryCreate(_context!);
+            var scaleStart = Stopwatch.GetTimestamp();
+            if (_scaler?.DrawRegion(
+                    pending.Source, _cropLeft, _cropTop,
+                    Math.Min(_cropWidth, pending.Width - _cropLeft), Math.Min(_cropHeight, pending.Height - _cropTop),
+                    target, _outputWidth, _outputHeight) == true)
+            {
+                _copyTicks += Stopwatch.GetTimestamp() - scaleStart;
+                return target;
+            }
+        }
+
         // R29：窗口尺寸变了就等比缩放 + 居中补黑；缩放器起不来再退回居中裁。
         if (_window != IntPtr.Zero &&
             (pending.Width != _outputWidth || pending.Height != _outputHeight))
@@ -892,7 +924,7 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
 
         _effects?.Draw(
             texture, _outputWidth, _outputHeight, _originX, _originY, rings, keycap,
-            Environment.TickCount64);
+            Environment.TickCount64, _effectScale);
     }
 
     private bool AddAudioStream(IntPtr writer, uint* audioStream, out string? error)

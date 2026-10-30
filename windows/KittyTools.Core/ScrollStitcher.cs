@@ -2,6 +2,10 @@
 // 相邻两帧都是「同一块选区」的实时画面，下一帧比上一帧多滚了一段。先按整行哈希投票找重叠：
 // 用新帧顶部若干行去上一帧里找位置（向下滚），或反过来（向上滚）；哈希对不上再用每隔 4 像素采样的
 // 容差比较兜底；吸顶栏（每一帧最上面都一样）不参与投票，避免把页头拼进去两次；输出高度上限 30000。
+// 容差比较只比两帧之间在动的列、只让有字的行投票（照 mac 0ff55dd7，用户报「电脑上的移动端网页完全识别不到」）：移动端版式
+// 两边的灰底留白、固定的侧栏、开着的开发者工具原地不动，算进去时对的位移也对不上（侧栏的字不跟着滚）、错的位移又处处一样（留白）；
+// 「有字」看这一行和上下行有没有差别，空白行对哪个位移都一样，不投票。
+// 拍的过程中用 ScrollCanvas（REVIEW R43）：拼好的部分按条带存，每拍只拿找重叠要看的那几行比，不再整张重新分配、重新哈希。
 using System.Buffers;
 
 namespace KittyTools.Core;
@@ -49,9 +53,30 @@ public static class ScrollStitcher
 
     public const int MaxOverlap = 800;
 
+    /// <summary>吸顶栏最多算这么多行（StickyRows）。</summary>
+    public const int MaxStickyRows = 120;
+
     /// <summary>把两帧接起来：返回新的整幅画面；接口不清（找不到重叠）时返回 null。</summary>
     public static ScrollFrame? Append(ScrollFrame previous, ScrollFrame next, ScrollDirection direction)
     {
+        if (Plan(previous, next, direction, out var previousBody, out var nextBody) is not { } plan)
+        {
+            return null;
+        }
+
+        var body = Combine(previousBody, nextBody, plan.Overlap, up: direction == ScrollDirection.Up);
+        return plan.Sticky == 0 ? body : Prepend(previous, plan.Sticky, body);
+    }
+
+    /// <summary>两帧怎么接：吸顶栏几行、重叠几行；接口不清（宽度不一样、找不到重叠）返回 null。Append 和 ScrollCanvas 共用。</summary>
+    public static (int Sticky, int Overlap)? Plan(ScrollFrame previous, ScrollFrame next, ScrollDirection direction)
+        => Plan(previous, next, direction, out _, out _);
+
+    private static (int Sticky, int Overlap)? Plan(
+        ScrollFrame previous, ScrollFrame next, ScrollDirection direction, out ScrollFrame previousBody, out ScrollFrame nextBody)
+    {
+        previousBody = previous;
+        nextBody = next;
         if (previous.Width != next.Width)
         {
             return null;
@@ -59,18 +84,10 @@ public static class ScrollStitcher
 
         // 吸顶栏（两帧最上面一样的那几行）不参与拼接：先剥掉，拼完再放回去一次。
         var sticky = StickyRows(previous, next);
-        var previousBody = Skip(previous, sticky);
-        var nextBody = Skip(next, sticky);
+        previousBody = Skip(previous, sticky);
+        nextBody = Skip(next, sticky);
         var overlap = FindOverlap(previousBody, nextBody, direction);
-        if (overlap <= 0)
-        {
-            return null;
-        }
-
-        var body = direction == ScrollDirection.Down
-            ? Combine(previousBody, nextBody, overlap, up: false)
-            : Combine(previousBody, nextBody, overlap, up: true);
-        return sticky == 0 ? body : Prepend(previous, sticky, body);
+        return overlap <= 0 ? null : (sticky, overlap);
     }
 
     /// <summary>找重叠行数：向下滚 = 新帧顶部与上一帧底部重合；向上滚 = 新帧底部与上一帧顶部重合。</summary>
@@ -113,7 +130,7 @@ public static class ScrollStitcher
     /// <summary>吸顶栏：两帧最上面连续相同的行数（向下滚时不吃进新画面）。最多算 120 行。</summary>
     public static int StickyRows(ScrollFrame previous, ScrollFrame next)
     {
-        var limit = Math.Min(Math.Min(previous.Height, next.Height) / 4, 120);
+        var limit = Math.Min(Math.Min(previous.Height, next.Height) / 4, MaxStickyRows);
         var rows = 0;
         while (rows < limit && previous.Hashes[rows] == next.Hashes[rows])
         {
@@ -125,10 +142,16 @@ public static class ScrollStitcher
 
     private static int FuzzyOverlap(ScrollFrame previous, ScrollFrame next, ScrollDirection direction, int sticky)
     {
+        var columns = MovingColumns(previous, next);
+        if (columns.Length == 0)
+        {
+            return 0;
+        }
+
         var max = Math.Min(Math.Min(previous.Height, next.Height), MaxOverlap);
         for (var overlap = max; overlap >= Math.Max(MinOverlap, sticky); overlap--)
         {
-            if (Similar(previous, next, overlap, direction))
+            if (Similar(previous, next, overlap, direction, columns))
             {
                 return overlap;
             }
@@ -137,38 +160,90 @@ public static class ScrollStitcher
         return 0;
     }
 
-    private static bool Similar(ScrollFrame previous, ScrollFrame next, int overlap, ScrollDirection direction)
+    /// <summary>
+    /// 在动的列（每隔 4 像素取一列）：两帧同一位置上对不上的行超过二十分之一。原地不动的（两边留白、固定侧栏、开发者工具；
+    /// 只有光标在闪的也算不动）不比。
+    /// </summary>
+    private static int[] MovingColumns(ScrollFrame previous, ScrollFrame next)
     {
-        var rows = Math.Min(overlap, 60);
-        var misses = 0;
-        for (var row = 0; row < rows; row++)
+        var height = Math.Min(previous.Height, next.Height);
+        var columns = new List<int>();
+        for (var x = 0; x < previous.Width; x += 4)
         {
+            var changed = 0;
+            for (var y = 0; y < height; y++)
+            {
+                if (!Close(previous.Pixels[y * previous.Width + x], next.Pixels[y * next.Width + x]))
+                {
+                    changed++;
+                }
+            }
+
+            if (changed > height / 20)
+            {
+                columns.Add(x);
+            }
+        }
+
+        return columns.ToArray();
+    }
+
+    /// <summary>
+    /// 这个重叠对不对：在重叠部分均匀取至多 60 行，只让有字的行投票（空白行对哪个位移都一样），每行只比在动的列；
+    /// 对不上的列超过八分之一算一票反对，反对不超过十分之一才算对。有字的行不到 3 行判断不了，算不对。
+    /// </summary>
+    private static bool Similar(ScrollFrame previous, ScrollFrame next, int overlap, ScrollDirection direction, int[] columns)
+    {
+        var samples = Math.Min(overlap, 60);
+        var voters = 0;
+        var misses = 0;
+        for (var sample = 0; sample < samples; sample++)
+        {
+            var row = sample * (overlap - 1) / Math.Max(samples - 1, 1);
             var previousRow = direction == ScrollDirection.Down
                 ? previous.Height - overlap + row
                 : row;
             var nextRow = direction == ScrollDirection.Down
                 ? row
                 : next.Height - overlap + row;
-            var mismatches = 0;
-            var samples = 0;
-            for (var x = 0; x < previous.Width; x += 4)
+            if (!HasInk(next, nextRow, columns))
             {
-                samples++;
-                var a = previous.Pixels[previousRow * previous.Width + x];
-                var b = next.Pixels[nextRow * next.Width + x];
-                if (!Close(a, b))
+                continue;
+            }
+
+            voters++;
+            var mismatches = 0;
+            foreach (var x in columns)
+            {
+                if (!Close(previous.Pixels[previousRow * previous.Width + x], next.Pixels[nextRow * next.Width + x]))
                 {
                     mismatches++;
                 }
             }
 
-            if (mismatches > samples / 8)
+            if (mismatches > columns.Length / 8)
             {
                 misses++;
             }
         }
 
-        return misses <= Math.Max(1, rows / 10);
+        return voters >= 3 && misses <= Math.Max(1, voters / 10);
+    }
+
+    /// <summary>有字：在动的列里和上一行或下一行对不上（竖着有起伏；留白、纯色底、只差一两级的渐变底不算）。</summary>
+    private static bool HasInk(ScrollFrame frame, int row, int[] columns)
+    {
+        foreach (var x in columns)
+        {
+            var value = frame.Pixels[row * frame.Width + x];
+            if ((row > 0 && !Close(value, frame.Pixels[(row - 1) * frame.Width + x])) ||
+                (row + 1 < frame.Height && !Close(value, frame.Pixels[(row + 1) * frame.Width + x])))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static bool Close(int a, int b)
@@ -254,4 +329,214 @@ public static class ScrollStitcher
 
         return current;
     }
+}
+
+/// <summary>
+/// 拍到一半的长截图（REVIEW R43）：拼好的部分存成一串条带。以前每拍把整张长图重新分配、重新哈希（1440 × 30000 时一份 172 MB，
+/// 有吸顶栏时一拍三份，拷贝量随长度平方涨）；现在每拍只拼一张「找重叠要看的那几行」的小图去和新帧比（ScrollStitcher.Plan），
+/// 接上的新行另存一条，Compose 时才合成一张。吸顶栏、重叠的行数和整张逐帧拼的一模一样，结果逐像素相同（单测比过）。
+/// </summary>
+public sealed class ScrollCanvas
+{
+    /// <summary>找重叠时要看的最上面几行：外层吸顶栏 ≤ 120 行，剥掉它以后里面再判断一次吸顶栏又是 ≤ 120 行。</summary>
+    private const int HeadRows = 2 * ScrollStitcher.MaxStickyRows;
+
+    private readonly List<Strip> _strips = new();
+
+    public ScrollCanvas(ScrollFrame first)
+    {
+        Width = first.Width;
+        Height = first.Height;
+        _strips.Add(new Strip(first.Pixels, 0, first.Height));
+    }
+
+    public int Width { get; }
+
+    public int Height { get; private set; }
+
+    /// <summary>接上一帧；接口不清（宽度不一样、找不到重叠）返回 false，图不变。同 ScrollStitcher.Append，到 30000 行截掉。</summary>
+    public bool Append(ScrollFrame next, ScrollDirection direction)
+    {
+        if (next.Width != Width || ScrollStitcher.Plan(Probe(direction, next.Height), next, direction) is not { } plan)
+        {
+            return false;
+        }
+
+        var (sticky, overlap) = plan;
+        if (direction == ScrollDirection.Down)
+        {
+            // 整张 + 新帧去掉吸顶栏和重叠的那一截，接在最下面。
+            var take = Math.Min(next.Height - sticky - overlap, ScrollStitcher.MaxOutputHeight - Height);
+            if (take > 0)
+            {
+                var rows = new int[take * Width];
+                Array.Copy(next.Pixels, (sticky + overlap) * Width, rows, 0, rows.Length);
+                _strips.Add(new Strip(rows, 0, take));
+                Height += take;
+            }
+
+            return true;
+        }
+
+        // 往上：上面的吸顶栏 + 新帧去掉吸顶栏的整段 + 原来的身子去掉最上面 overlap 行（重叠的那一截留新帧的）。
+        var head = Slice(0, sticky);
+        var tail = Slice(sticky + overlap, Height);
+        var body = new int[(next.Height - sticky) * Width];
+        Array.Copy(next.Pixels, sticky * Width, body, 0, body.Length);
+        _strips.Clear();
+        _strips.AddRange(head);
+        _strips.Add(new Strip(body, 0, next.Height - sticky));
+        _strips.AddRange(tail);
+        Height = _strips.Sum(strip => strip.Rows);
+        Truncate(ScrollStitcher.MaxOutputHeight);
+        Compact();
+        return true;
+    }
+
+    /// <summary>合成一张（完成时调一次）。</summary>
+    public ScrollFrame Compose()
+    {
+        var pixels = new int[Width * Height];
+        var offset = 0;
+        foreach (var strip in _strips)
+        {
+            Array.Copy(strip.Pixels, strip.Start * Width, pixels, offset * Width, strip.Rows * Width);
+            offset += strip.Rows;
+        }
+
+        return new ScrollFrame(Width, Height, pixels);
+    }
+
+    /// <summary>
+    /// 预览（PLAN-v9 S11）：第 start 起的 count 行缩成 width × height（最近邻取样，不拷整张）。
+    /// 不加锁：调用方保证这时没有 Append 在跑（ScrollingCapture 只在没有正在拼的那一拍时取）。
+    /// </summary>
+    public int[] Sample(int start, int count, int width, int height)
+    {
+        var result = new int[Math.Max(width, 0) * Math.Max(height, 0)];
+        if (width <= 0 || height <= 0 || count <= 0)
+        {
+            return result;
+        }
+
+        start = Math.Clamp(start, 0, Height - 1);
+        var index = 0;
+        var stripRow = 0;
+        for (var y = 0; y < height; y++)
+        {
+            var row = start + (int)((long)y * count / height);
+            if (row >= Height)
+            {
+                break;
+            }
+
+            // 行号只增不减，条带顺着往下找。
+            while (stripRow + _strips[index].Rows <= row)
+            {
+                stripRow += _strips[index].Rows;
+                index++;
+            }
+
+            var strip = _strips[index];
+            var source = (strip.Start + row - stripRow) * Width;
+            for (var x = 0; x < width; x++)
+            {
+                result[y * width + x] = strip.Pixels[source + (int)((long)x * Width / width)];
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// 拿去和新帧比的那张小图：ScrollStitcher.Plan 只读最上面 HeadRows 行，和往下滚时最下面 / 往上滚时紧接着上面的 MaxOverlap 行；
+    /// 高不小于新帧（Plan 里取的 min(上一张, 新帧) 才和整张时一样）。整张没那么高时就是整张。
+    /// </summary>
+    private ScrollFrame Probe(ScrollDirection direction, int nextHeight)
+    {
+        var height = Math.Max(
+            direction == ScrollDirection.Down
+                ? HeadRows + ScrollStitcher.MaxOverlap
+                : ScrollStitcher.MaxStickyRows + ScrollStitcher.MaxOverlap,
+            nextHeight);
+        if (Height <= height)
+        {
+            return Compose();
+        }
+
+        var pixels = new int[height * Width];
+        if (direction == ScrollDirection.Down)
+        {
+            CopyRows(0, HeadRows, pixels, 0);
+            CopyRows(Height - (height - HeadRows), height - HeadRows, pixels, HeadRows);
+        }
+        else
+        {
+            CopyRows(0, height, pixels, 0);
+        }
+
+        return new ScrollFrame(Width, height, pixels);
+    }
+
+    /// <summary>把第 from 行起的 count 行拷到 destination 的第 at 行。</summary>
+    private void CopyRows(int from, int count, int[] destination, int at)
+    {
+        foreach (var strip in Slice(from, from + count))
+        {
+            Array.Copy(strip.Pixels, strip.Start * Width, destination, at * Width, strip.Rows * Width);
+            at += strip.Rows;
+        }
+    }
+
+    /// <summary>第 from 到 to 行（不含）那一段的条带（不拷像素）。</summary>
+    private List<Strip> Slice(int from, int to)
+    {
+        var result = new List<Strip>();
+        var row = 0;
+        foreach (var strip in _strips)
+        {
+            var start = Math.Max(from, row);
+            var end = Math.Min(to, row + strip.Rows);
+            if (end > start)
+            {
+                result.Add(new Strip(strip.Pixels, strip.Start + start - row, end - start));
+            }
+
+            row += strip.Rows;
+        }
+
+        return result;
+    }
+
+    private void Truncate(int maximum)
+    {
+        if (Height <= maximum)
+        {
+            return;
+        }
+
+        var kept = Slice(0, maximum);
+        _strips.Clear();
+        _strips.AddRange(kept);
+        Height = maximum;
+    }
+
+    /// <summary>
+    /// 往上拼时旧条带被切掉一截，切剩的不到一半就拷成一份刚好的：不然每拍都留着上一帧整份的像素，拍上百帧能多占好几百 MB。
+    /// </summary>
+    private void Compact()
+    {
+        for (var index = 0; index < _strips.Count; index++)
+        {
+            var strip = _strips[index];
+            if (strip.Rows * Width * 2 < strip.Pixels.Length)
+            {
+                var pixels = new int[strip.Rows * Width];
+                Array.Copy(strip.Pixels, strip.Start * Width, pixels, 0, pixels.Length);
+                _strips[index] = new Strip(pixels, 0, strip.Rows);
+            }
+        }
+    }
+
+    private readonly record struct Strip(int[] Pixels, int Start, int Rows);
 }

@@ -147,8 +147,29 @@ internal sealed class Settings
 
     public int ScreenshotLastHeight { get; set; }
 
+    /// <summary>呼出面板时挤压弹开（剪贴板、启动器、翻译浮窗共用，同 mac panelSqueezeEntrance，默认关）。</summary>
+    public bool PanelSqueezeEntrance { get; set; }
+
+    /// <summary>每天自动备份设置与数据（PLAN-v9 G2，默认开，同 mac）。这台电脑自己的状态，不跟着导出导入走。</summary>
+    public bool DailyBackup { get; set; } = true;
+
+    /// <summary>每天那份另存一份到这个文件夹（PLAN-v9 G2；null = 不另存）。</summary>
+    public string? BackupCopyFolder { get; set; }
+
+    /// <summary>截图历史留几天（PLAN-v9 S8）：7 / 30（默认）/ 90 / 0 = 一直留着。</summary>
+    public int ShotHistoryDays { get; set; } = Core.ShotHistoryRules.DefaultDays;
+
+    /// <summary>截图历史最多占用多少 MB（PLAN-v9 S8）：1024 / 2048（默认）/ 5120 / 0 = 不限。</summary>
+    public int ShotHistoryMegabytes { get; set; } = 2048;
+
+    /// <summary>截图时播放快门声（PLAN-v9 S6，默认开，同 mac）：拷贝、存储、钉图时响。</summary>
+    public bool ScreenshotShutterSound { get; set; } = true;
+
+    /// <summary>截完图放哪（PLAN-v9 S7）：card = 角落缩略图（默认）/ none = 都不要（照样进截图历史）。</summary>
+    public string ShotPlacement { get; set; } = "card";
+
     // 录制（第四版）：帧率、保存目录、上次没写完的临时文件（闪退恢复用）。
-    public int RecordFps { get; set; } = 15;
+    public int RecordFps { get; set; } = Core.RecorderRules.DefaultFps;
 
     public string? RecordDirectory { get; set; }
 
@@ -163,14 +184,35 @@ internal sealed class Settings
     /// <summary>录制中显示快捷键胶囊（默认关）。</summary>
     public bool RecordKeys { get; set; }
 
+    /// <summary>显示按键时只显示快捷键（PLAN-v9 R4）：默认 false = 全部按键（同 mac；打的字也会录进去）。</summary>
+    public bool RecordKeysShortcutsOnly { get; set; }
+
+    /// <summary>录屏的清晰度（PLAN-v9 R5）：original = 原样（默认）/ standard = 长边封顶 1920。</summary>
+    public string RecordSharpness { get; set; } = "original";
+
+    /// <summary>录屏开始前倒数几秒（PLAN-v9 R2）：0 / 3（默认）/ 5。</summary>
+    public int RecordCountdown { get; set; } = 3;
+
+    /// <summary>录屏里录不录鼠标光标（PLAN-v9 R3，默认录）。</summary>
+    public bool RecordCursor { get; set; } = true;
+
     /// <summary>录屏时录系统声音（默认开，PLAN-v6 第 2 批）。</summary>
     public bool RecordSystemSound { get; set; } = true;
 
     /// <summary>录屏时录麦克风（默认关）。</summary>
     public bool RecordMicrophone { get; set; }
 
-    /// <summary>按录音快捷键后立即开始；关掉时先出控制条，点 ● 才录（REVIEW R28）。</summary>
-    public bool RecordInstantStart { get; set; } = true;
+    /// <summary>
+    /// 按录音快捷键后立即开始；关着时先在屏幕底部出控制条，点「开始」或再按一次才录（REVIEW R28）。
+    /// 默认关（PLAN-v9 V4，同 mac：先让人看见录的是哪一路、电平动不动）。
+    /// </summary>
+    public bool RecordInstantStart { get; set; }
+
+    /// <summary>
+    /// 录音录什么（PLAN-v9 V5）：microphone（默认，同 mac）/ system / both。和录屏的 RecordSystemSound / RecordMicrophone 分开；
+    /// 选了麦克风却用不了（隐私设置里关着）时 AudioHost 改成 system 并提示。
+    /// </summary>
+    public string AudioSource { get; set; } = "microphone";
 
     public List<TranslateServiceConfig>? TranslateServices { get; set; }
 
@@ -297,6 +339,9 @@ internal static class SettingsService
                     _current.RecordSystemSound = true;
                     _current.Version = 2;
                 }
+
+                // 帧率只剩 30 / 60（PLAN-v9 V3）：以前存的 15 读成 30。
+                _current.RecordFps = Core.RecorderRules.NormalizeFps(_current.RecordFps);
             }
             catch (Exception ex)
             {

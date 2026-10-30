@@ -193,8 +193,16 @@ internal sealed unsafe class OverlayWindow : Window
         }
 
         PInvoke.DwmFlush();
-        // 入场：透明度 0→1 + 内容下落 6 px（减弱动画时只淡入）。
-        Motion.Entrance(kind == OverlayKind.Clipboard ? _clipboard! : _launcher!);
+        // 入场：透明度 0→1 + 内容下落 6 px（减弱动画时只淡入）；开了「呼出面板时挤压弹开」时挤压弹开。
+        var panel = kind == OverlayKind.Clipboard ? (FrameworkElement)_clipboard! : _launcher!;
+        if (SettingsService.Current.PanelSqueezeEntrance)
+        {
+            Motion.SqueezeIn(panel);
+        }
+        else
+        {
+            Motion.Entrance(panel);
+        }
         Log.Info($"overlay.show kind={kind} height={_heightDip:F0}");
     }
 

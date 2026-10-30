@@ -3,6 +3,8 @@
 // 按列表顺序第一个翻成功的服务（主结果，TranslateSession.Primary）定下来时写历史、按设置自动复制一次：排在前面的出错了就往后取，
 // 前面的还在跑就先等。截断的不算完成。被取消的请求一个字都不再写回卡片（每次跑一个号，旧号写不进新卡）。
 // 替换原文只给划词来的会话（Replace）；静默的「划词翻译并替换」走 TranslateOnceAsync（只用第一个启用的服务、不开浮窗）。
+// 流式的片段合并成 33 ms 刷一次窗口（REVIEW R45）；换状态（出完、出错、重试）照旧当场刷。
+// ponytail: 读流、解析 JSON 还在 UI 线程上（每段很小）；量出来还卡再挪进线程池，只把累积好的字交回来。
 using KittyTools.Core;
 using KittyTools.Infrastructure;
 using Windows.Win32.Foundation;
@@ -45,6 +47,9 @@ internal sealed class TranslateCoordinator
 
     private int _copyTick;
 
+    /// <summary>流式片段的刷新合并成一拍（33 ms，一次性的计时器）：以前每来一段就把所有卡片、窗口高度重算一遍。</summary>
+    private Microsoft.UI.Dispatching.DispatcherQueueTimer? _streamTimer;
+
     public event Action? Changed;
 
     /// <summary>复制了一张卡（服务 id）：卡上换对勾、整张卡闪一下。</summary>
@@ -54,6 +59,29 @@ internal sealed class TranslateCoordinator
     public event Action<string>? Announce;
 
     public IReadOnlyList<TranslateCard> Cards => _cards;
+
+    /// <summary>流式片段来了：33 ms 之内再来的并进同一拍，拍子到了用当时最新的字刷一次。没有 UI 线程（单测）就当场刷。</summary>
+    private void ChangedSoon()
+    {
+        if (_streamTimer is null)
+        {
+            if (Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread() is not { } queue)
+            {
+                Changed?.Invoke();
+                return;
+            }
+
+            _streamTimer = queue.CreateTimer();
+            _streamTimer.Interval = TimeSpan.FromMilliseconds(33);
+            _streamTimer.IsRepeating = false;
+            _streamTimer.Tick += (_, _) => Changed?.Invoke();
+        }
+
+        if (!_streamTimer.IsRunning)
+        {
+            _streamTimer.Start();
+        }
+    }
 
     public string SourceText { get; private set; } = string.Empty;
 
@@ -433,7 +461,7 @@ internal sealed class TranslateCoordinator
                 latest = piece;
                 card.State = CardState.Running;
                 card.Text = piece;
-                Changed?.Invoke();
+                ChangedSoon();
             }
 
             // 取消时流会正常结束而不是抛错：半截结果不能当成完成。
@@ -444,6 +472,7 @@ internal sealed class TranslateCoordinator
 
             card.State = CardState.Done;
             card.Text = latest;
+            _streamTimer?.Stop();
             Changed?.Invoke();
         }
         catch (OperationCanceledException) when (cts.IsCancellationRequested)
@@ -463,6 +492,7 @@ internal sealed class TranslateCoordinator
             card.State = truncated ? CardState.Truncated : CardState.Failed;
             card.Text = truncated ? latest : string.Empty;
             card.Error = error;
+            _streamTimer?.Stop();
             Changed?.Invoke();
         }
         finally

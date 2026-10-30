@@ -43,6 +43,16 @@ internal static unsafe class Displays
         return new Display(work, ScaleOf(monitor));
     }
 
+    /// <summary>(x, y) 所在显示器的整块范围（含任务栏；主界面拿它和工作区比，看任务栏在哪条边）。</summary>
+    public static WorkArea MonitorBoundsAt(int x, int y)
+    {
+        var monitor = PInvoke.MonitorFromPoint(new System.Drawing.Point(x, y), MONITOR_FROM_FLAGS.MONITOR_DEFAULTTONEAREST);
+        var info = new MONITORINFO { cbSize = (uint)sizeof(MONITORINFO) };
+        return monitor != default && PInvoke.GetMonitorInfo(monitor, ref info)
+            ? new WorkArea(info.rcMonitor.left, info.rcMonitor.top, info.rcMonitor.right, info.rcMonitor.bottom)
+            : Display.Fallback.Work;
+    }
+
     public static double ScaleOf(HMONITOR monitor)
     {
         if (FakeScale is { } fake)

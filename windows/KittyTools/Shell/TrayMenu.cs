@@ -175,6 +175,8 @@ internal static partial class TrayMenu
         {
             Add(menu, "截图", HotKeyActions.Screenshot,
                 () => ScreenshotSession.Start(ScreenshotMode.Capture), capture: true);
+            // PLAN-v9 G1（同 mac 菜单栏）：截取上次区域、钉图那几项、关于。划词翻译不放：一点托盘原来的程序就不在前台了。
+            Add(menu, "截取上次区域", HotKeyActions.ScreenshotLast, ScreenshotSession.StartLast, capture: true);
             if (Features.IsOn(Feature.Translate))
             {
                 Add(menu, "截图翻译", HotKeyActions.ScreenshotTranslate,
@@ -183,6 +185,12 @@ internal static partial class TrayMenu
 
             Add(menu, "识字", HotKeyActions.Ocr, () => ScreenshotSession.Start(ScreenshotMode.Ocr), capture: true);
             Add(menu, "截图历史", HotKeyActions.ShotHistory, ShotHistoryWindow.ShowWindow);
+            Add(menu, "钉住剪贴板里的图", HotKeyActions.PinClipboard, () => _ = PinHost.PinClipboardAsync());
+            if (PinHost.Count > 0)
+            {
+                Add(menu, PinHost.AllHidden ? "显示全部钉图" : "隐藏全部钉图", string.Empty, PinHost.ToggleHidden);
+                Add(menu, "关闭全部钉图", string.Empty, PinHost.CloseAll);
+            }
         }
 
         if (Features.IsOn(Feature.Recording))
@@ -222,6 +230,7 @@ internal static partial class TrayMenu
 
         AddSeparator(menu);
         menu.Add(new Item("设置…", null, () => runtime?.ShowSettings(welcome: false)));
+        menu.Add(new Item("关于 Kitty Tools", null, () => runtime?.ShowSettings(welcome: false, "about")));
         var updateText = AutoUpdater.ProgressMenuText
                          ?? (UpdateService.AvailableVersion is { } available
                              ? $"更新到 {available}"

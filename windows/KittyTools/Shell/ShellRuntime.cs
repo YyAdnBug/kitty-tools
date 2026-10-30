@@ -111,8 +111,9 @@ internal sealed class ShellRuntime
         UpdateService.Initialize(dispatcher!);
         _autoCheck = SettingsService.Current.AutoCheckUpdates;
         UpdateService.Configure(SettingsService.Current.AutoCheckUpdates);
+        // 第二次启动：打开主界面（PLAN-v10 §5，以前是打开设置）。
         SingleInstance.StartServer(() =>
-            dispatcher?.TryEnqueue(() => ShowSettings(welcome: false)));
+            dispatcher?.TryEnqueue(HomePanel.ShowAtCursor));
 
         Log.Info("shell.ready");
         Theme.VerifyThemeResources();
@@ -130,6 +131,13 @@ internal sealed class ShellRuntime
                 foreach (var file in Directory.EnumerateFiles(temp, "*.png"))
                 {
                     File.Delete(file);
+                }
+
+                // 截图历史拖出去 / 一起拷贝的那几份（每条一个子文件夹，免得同一秒截的重名）。
+                var history = Path.Combine(temp, "history");
+                if (Directory.Exists(history))
+                {
+                    Directory.Delete(history, recursive: true);
                 }
             }
         }
@@ -824,15 +832,19 @@ internal sealed class ShellRuntime
         }
     }
 
-    public void ToggleCopyTranslate()
+    /// <summary>quiet：不弹轻提示（主界面里切，结果就在格子上，PLAN-v10 §5）。</summary>
+    public void ToggleCopyTranslate(bool quiet = false)
     {
         SettingsService.Current.CopyTranslate = !SettingsService.Current.CopyTranslate;
         SettingsService.Save();
-        NoticeHost.Show("复制即译", SettingsService.Current.CopyTranslate ? "已打开" : "已关闭", NoticeTone.Normal,
-            new NoticeAction("撤销", ToggleCopyTranslate));
+        if (!quiet)
+        {
+            NoticeHost.Show("复制即译", SettingsService.Current.CopyTranslate ? "已打开" : "已关闭", NoticeTone.Normal,
+                new NoticeAction("撤销", () => ToggleCopyTranslate()));
+        }
     }
 
-    public void TogglePauseClipboard()
+    public void TogglePauseClipboard(bool quiet = false)
     {
         if (Clipboard is null || !Features.IsOn(Feature.Clipboard))
         {
@@ -840,8 +852,11 @@ internal sealed class ShellRuntime
         }
 
         Clipboard.Paused = !Clipboard.Paused;
-        NoticeHost.Show("剪贴板记录", Clipboard.Paused ? "已暂停" : "已恢复", NoticeTone.Normal,
-            new NoticeAction("撤销", TogglePauseClipboard));
+        if (!quiet)
+        {
+            NoticeHost.Show("剪贴板记录", Clipboard.Paused ? "已暂停" : "已恢复", NoticeTone.Normal,
+                new NoticeAction("撤销", () => TogglePauseClipboard()));
+        }
     }
 
     public void OpenClipboard()
@@ -886,7 +901,8 @@ internal sealed class ShellRuntime
     }
 
     /// <summary>后台跑一次每日备份（今天备过就直接返回）。</summary>
-    private static void ScheduleBackup()
+    /// <summary>每日备份（启动、解锁、唤醒时；设置页开了「每天自动备份」、选了另存的文件夹时也调一次）。</summary>
+    internal static void ScheduleBackup()
     {
         // 库打不开、还没问用户怎么恢复的时候不备份：别拿坏的库顶掉好的备份。
         if (Recovery.Needed is not null)
@@ -900,9 +916,12 @@ internal sealed class ShellRuntime
         // 以前整个在线程池上做，碰上正在复制东西就「集合已修改」，当天那份没备成。
         string? dailyPath = null;
         SettingsArchive? archive = null;
+        // PLAN-v9 G2：「每天自动备份」关着时只备数据库（那份是打不开时恢复用的），设置与数据那份不写。
+        var daily = SettingsService.Current.DailyBackup;
+        var copyFolder = daily ? SettingsService.Current.BackupCopyFolder : null;
         try
         {
-            dailyPath = ArchiveService.DailyPathIfMissing();
+            dailyPath = daily ? ArchiveService.DailyPathIfMissing() : null;
             if (dailyPath is not null)
             {
                 archive = ArchiveService.Build(Enum.GetValues<ArchiveSection>(), password: null);
@@ -922,6 +941,11 @@ internal sealed class ShellRuntime
                 if (dailyPath is not null && archive is not null)
                 {
                     ArchiveService.WriteDaily(dailyPath, archive);
+                }
+
+                if (!string.IsNullOrEmpty(copyFolder))
+                {
+                    ArchiveService.CopyProblem = ArchiveService.CopyLatestDaily(copyFolder);
                 }
             }
             catch (Exception ex)
@@ -1073,7 +1097,7 @@ internal sealed class ShellRuntime
     private void OnHotKey(string action)
     {
         // 功能关掉了就什么都不做（热键本来也没注册，保险）。
-        if (!Features.IsOn(Features.ForHotKey(action)))
+        if (!Features.IsOnFor(action))
         {
             return;
         }
@@ -1119,8 +1143,14 @@ internal sealed class ShellRuntime
             case HotKeyActions.PinClipboard:
                 _ = PinHost.PinClipboardAsync();
                 break;
+            case HotKeyActions.Home:
+                HomePanel.Toggle();
+                break;
         }
     }
+
+    /// <summary>主界面点一格：和按它的快捷键做同一件事（PLAN-v10 §5）。</summary>
+    internal void RunAction(string action) => OnHotKey(action);
 
     private void OnSettingsChanged()
     {

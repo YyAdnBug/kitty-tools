@@ -548,8 +548,15 @@ internal sealed partial class TranslateWindow : Window
             }
         }
 
-        // 入场：透明度 0→1 + 下落 6 px（减弱动画时只淡入）。
-        Motion.Entrance(_root);
+        // 入场：透明度 0→1 + 下落 6 px（减弱动画时只淡入）；开了「呼出面板时挤压弹开」时挤压弹开。
+        if (SettingsService.Current.PanelSqueezeEntrance)
+        {
+            Motion.SqueezeIn(_root);
+        }
+        else
+        {
+            Motion.Entrance(_root);
+        }
         Log.Info($"translate.show activate={activate}");
     }
 

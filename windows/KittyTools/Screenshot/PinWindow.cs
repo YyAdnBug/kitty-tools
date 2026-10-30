@@ -27,7 +27,8 @@ internal sealed partial class PinWindow : Window
     private readonly Image _image;
     private readonly Border _hover;
     private Microsoft.UI.Dispatching.DispatcherQueueTimer _hoverTimer = null!;
-    private int _opacityIndex;
+    /// <summary>图的不透明度 0.1–1（PLAN-v9 S10：滑块 10–100%，同 mac PinPanel；以前四档循环）。</summary>
+    private double _opacity = 1;
     private readonly HWND _hwnd;
     private double _scale = 1;
     private bool _dragging;
@@ -144,11 +145,8 @@ internal sealed partial class PinWindow : Window
             return button;
         }
 
-        Action("\uE7B3", "透明度", () =>
-        {
-            _opacityIndex = (_opacityIndex + 1) % 4;
-            _image.Opacity = 1 - _opacityIndex * 0.25;
-        });
+        Button? opacityButton = null;
+        opacityButton = Action("\uE7B3", "透明度", () => ShowOpacityFlyout(opacityButton!));
         Action(Glyphs.Close, "关闭钉图", Close);
         var bar = new Border
         {
@@ -292,13 +290,45 @@ internal sealed partial class PinWindow : Window
 
     private void OnRightTapped(object sender, RightTappedRoutedEventArgs e)
     {
+        // PLAN-v9 S10（同 mac 钉图的右键菜单）：加了「存储」（快速保存到截图文件夹）和「翻译」（识字后开翻译浮窗）。
         var menu = new MenuFlyout();
         Add(menu, "复制", () => _ = CopyAsync());
+        Add(menu, "存储", () => _ = ScreenshotOutput.QuickSavePngAsync(_png));
         Add(menu, "另存为…", () => _ = ScreenshotOutput.SavePngAsAsync(AppWindow, _png));
         Add(menu, "识字并复制", () => _ = RecognizeAsync());
+        Add(menu, $"透明度 {Math.Round(_opacity * 100)}%…", () => ShowOpacityFlyout(_root));
+        if (Features.IsOn(Feature.Translate))
+        {
+            Add(menu, "翻译", () => _ = TranslateAsync());
+        }
+
+        menu.Items.Add(new MenuFlyoutSeparator());
         Add(menu, "关闭", Close);
         menu.ShowAt(_root, new FlyoutShowOptions { Position = e.GetPosition(_root) });
         e.Handled = true;
+    }
+
+    /// <summary>透明度滑块（S10，10–100%，一格 10%）：拖的时候图跟着变；MenuFlyout 放不了滑块，另开一个小浮层。</summary>
+    private void ShowOpacityFlyout(FrameworkElement anchor)
+    {
+        var slider = new Slider
+        {
+            Header = "透明度",
+            Minimum = 10,
+            Maximum = 100,
+            StepFrequency = 10,
+            SmallChange = 10,
+            LargeChange = 10,
+            Value = Math.Round(_opacity * 100),
+            Width = 200,
+        };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(slider, "钉图透明度");
+        slider.ValueChanged += (_, args) =>
+        {
+            _opacity = Math.Clamp(args.NewValue / 100, 0.1, 1);
+            _image.Opacity = _opacity;
+        };
+        new Flyout { Content = slider }.ShowAt(anchor);
     }
 
     private static void Add(MenuFlyout menu, string text, Action action)
@@ -352,28 +382,56 @@ internal sealed partial class PinWindow : Window
         }
     }
 
-    private async Task RecognizeAsync()
+    /// <summary>认出钉图里的字：没有识字组件、一个字都没认出来时提示并返回 null。</summary>
+    private async Task<string?> RecognizedTextAsync()
     {
         if (!OcrService.HasEngine)
         {
             NoticeHost.Show("没装中文识字组件", string.Empty, NoticeTone.Warning,
                 NoticeActions.SystemSettings("ms-settings:regionlanguage"));
-            return;
+            return null;
         }
 
+        var decoded = await ImageCodec.PngToBgraAsync(_png);
+        if (decoded is not { } image)
+        {
+            return null;
+        }
+
+        var (text, _) = await OcrService.RecognizeAsync(
+            image.Bgra, image.Width, image.Height, joined: SettingsService.Current.OcrJoinLines);
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            NoticeHost.Show("没有识别到文字", string.Empty, NoticeTone.Warning);
+            return null;
+        }
+
+        return text;
+    }
+
+    /// <summary>右键「翻译」：识字后照截图翻译那样开浮窗（原文按设置记进剪贴板历史）。</summary>
+    private async Task TranslateAsync()
+    {
         try
         {
-            var decoded = await ImageCodec.PngToBgraAsync(_png);
-            if (decoded is not { } image)
+            if (await RecognizedTextAsync() is { } text)
             {
-                return;
+                TranslateHost.ShowRecognized(text);
             }
+        }
+        catch (Exception ex)
+        {
+            Log.Error("pin.translate-failed", ex);
+            NoticeHost.Show("识字失败", ex.GetType().Name, NoticeTone.Error);
+        }
+    }
 
-            var (text, _) = await OcrService.RecognizeAsync(
-                image.Bgra, image.Width, image.Height, joined: SettingsService.Current.OcrJoinLines);
-            if (string.IsNullOrWhiteSpace(text))
+    private async Task RecognizeAsync()
+    {
+        try
+        {
+            if (await RecognizedTextAsync() is not { } text)
             {
-                NoticeHost.Show("没有识别到文字", string.Empty, NoticeTone.Warning);
                 return;
             }
 
@@ -402,8 +460,43 @@ internal static class PinHost
 {
     private static readonly List<PinWindow> Windows = new();
 
+    /// <summary>屏幕上有几张钉图（托盘、启动器里「隐藏 / 关闭全部钉图」只在有钉图时列出来）。</summary>
+    public static int Count => Windows.Count;
+
+    /// <summary>托盘「隐藏全部钉图」之后（PLAN-v9 G1、S10，同 mac 菜单栏）：再钉新的一张时先全部显示回来。</summary>
+    public static bool AllHidden { get; private set; }
+
+    /// <summary>显示 / 隐藏全部钉图（不关掉，位置、缩放、透明度都留着）。</summary>
+    public static void ToggleHidden()
+    {
+        AllHidden = !AllHidden && Windows.Count > 0;
+        foreach (var window in Windows.ToList())
+        {
+            try
+            {
+                if (AllHidden)
+                {
+                    window.AppWindow.Hide();
+                }
+                else
+                {
+                    window.AppWindow.Show(false);
+                }
+            }
+            catch
+            {
+                // 已经关掉的跳过。
+            }
+        }
+    }
+
     public static void Show(byte[] png, PixelBounds bounds)
     {
+        if (AllHidden)
+        {
+            ToggleHidden();
+        }
+
         var window = new PinWindow(png, bounds);
         Windows.Add(window);
         window.Closed += (_, _) => Windows.Remove(window);
@@ -487,5 +580,6 @@ internal static class PinHost
         }
 
         Windows.Clear();
+        AllHidden = false;
     }
 }

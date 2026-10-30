@@ -1,21 +1,37 @@
 // 截图历史窗口（PLAN-v8 第 2 批 H5，照 mac 的 ShotHistoryWindow / ShotHistoryView）：普通的 WinUI 窗口（外壳跟 Windows），
 // 左边按天分组的缩略图网格，右边 280 宽的预览、两行信息和一列操作；顶上「全部 / 截图 / 长截图 / 录制」+ 搜索框。
 // 只建一扇；关掉就整扇放掉，缩略图跟着放。入口：快捷动作「截图历史」（托盘、启动器、快捷键页）、设置 › 截图。
+// 多选（照 mac 1ec2ca9a）：Ctrl 点加选或去掉、Shift 点从锚点连过去（Ctrl 点出来的零散的不丢）、Ctrl+A 全选列出来的、Shift + 方向键连着选；
+// 选着两张以上时右边换成「已选 N 项」+ 各几个一共多大 + 能一起做的四件（拷贝 / 存储 / 在资源管理器中显示 / 删除），右键点选中的那几张里的
+// 一张是整批的菜单，点选中外面那张还是单条那套、选中不变。分组是好几个 GridView，系统的多选跨不了组，选中自己管（GridView 不选，卡上自己画描边）。
+// 快捷键（照 mac 933c1dd9）：Ctrl+C 拷贝、Ctrl+S 存储、Ctrl+Shift+S 另存为、Ctrl+P 钉图、Ctrl+O 识字并拷贝、Ctrl+Shift+R 在资源管理器中显示、
+// Enter 改标注、Delete 删除、Ctrl+F 搜索、Ctrl+1–4 换筛选、方向键挑图（↑↓ 跳一行，一行几张按网格宽度量）；在搜索框里打字时方向键、Ctrl+C / A、
+// Enter、Delete 让给输入框。右边每一行操作后面写着它的键。
+// 拖出去（照 mac 0de6c18b / 605f41c8）：卡和右边的大预览都能拖到别的程序；按住的是选中的之一就拖全部选中的，不然只拖它（不改选中）。
+// 录制的、存过盘的拖那个文件本身，别的拖一份成品 PNG（原图 + 标注，临时文件夹 kitty-shots\history 里，启动时清空）。
+using System.Globalization;
+using System.Runtime.InteropServices;
 using KittyTools.Core;
 using KittyTools.Infrastructure;
 using KittyTools.Ui;
+using Microsoft.UI.Input;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
+using Windows.ApplicationModel.DataTransfer;
+using Windows.Storage;
 using Windows.UI;
+using Windows.UI.Core;
 using Windows.Win32;
 
 namespace KittyTools;
 
-internal sealed class ShotHistoryWindow : Window
+internal sealed partial class ShotHistoryWindow : Window
 {
     /// <summary>
     /// ponytail: 一次只排最近的这么多张，底下「再显示」往后加（30 天 / 2 GB 的历史通常几百张）；
@@ -39,9 +55,22 @@ internal sealed class ShotHistoryWindow : Window
     private readonly TextBlock _infoState;
     private readonly StackPanel _actions;
     private readonly List<GridView> _grids = new();
+
+    /// <summary>现在列出来的（按顺序；方向键、Shift 点、全选都按它）和每一天各几张。</summary>
+    private readonly List<ShotItem> _listed = new();
+    private readonly List<int> _groupSizes = new();
+
+    /// <summary>选中的几张（照 mac：picked + 锚点；正好一张时右边是它的详情）。</summary>
+    private readonly HashSet<string> _picked = new();
+
+    /// <summary>每张卡的选中描边，和卡在哪个 GridView 里（换选中时不用整个重排）。</summary>
+    private readonly Dictionary<string, Border> _marks = new();
+    private readonly Dictionary<string, (GridView Grid, FrameworkElement Card)> _cards = new();
     private int _shown = PageSize;
-    private ShotItem? _selected;
-    private bool _syncingSelection;
+    private string? _anchor;
+
+    /// <summary>方向键从哪张出发（最后点的、挪到的那张）。</summary>
+    private string? _cursor;
 
     private ShotHistoryWindow(ShotHistory history)
     {
@@ -80,7 +109,18 @@ internal sealed class ShotHistoryWindow : Window
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
         };
 
-        _preview = new Image { Stretch = Stretch.Uniform };
+        _preview = new Image { Stretch = Stretch.Uniform, CanDrag = true };
+        _preview.DragStarting += (_, args) =>
+        {
+            if (OnlyPicked() is { } item)
+            {
+                OnDragStarting(item, args);
+            }
+            else
+            {
+                args.Cancel = true;
+            }
+        };
         var previewBox = new Border
         {
             Height = 180,
@@ -140,16 +180,8 @@ internal sealed class ShotHistoryWindow : Window
         AppWindow.SetIcon(Paths.AppIconFile);
         Theme.ApplyTitleBar(AppWindow);
 
-        // Delete 删掉选中的那条（先问一次）；焦点在搜索框里时是删字。
-        _root.KeyDown += (_, args) =>
-        {
-            if (args.Key == Windows.System.VirtualKey.Delete && args.OriginalSource is not TextBox &&
-                _selected is { } selected)
-            {
-                args.Handled = true;
-                _ = ForgetAsync(selected);
-            }
-        };
+        // 先于网格看到按键（不然方向键被 GridView 拿去挪焦点）。
+        _root.PreviewKeyDown += OnPreviewKeyDown;
         _history.Changed += OnHistoryChanged;
         _history.ThumbnailChanged += OnThumbnailChanged;
         Closed += (_, _) =>
@@ -158,6 +190,8 @@ internal sealed class ShotHistoryWindow : Window
             _history.ThumbnailChanged -= OnThumbnailChanged;
             _groups.Children.Clear();
             _grids.Clear();
+            _cards.Clear();
+            _marks.Clear();
             _preview.Source = null;
             _current = null;
             IdleReclaimer.Schedule();
@@ -248,13 +282,17 @@ internal sealed class ShotHistoryWindow : Window
 
         _groups.Children.Clear();
         _grids.Clear();
+        _cards.Clear();
+        _marks.Clear();
+        _listed.Clear();
+        _groupSizes.Clear();
         var items = Filtered().ToList();
         if (items.Count == 0)
         {
             _groups.Children.Add(_history.Items.Count == 0
                 ? EmptyState.Create(Glyphs.History, "还没有截图", "截图、长截图、钉过的图和录制都会记在这里，留 30 天")
                 : EmptyState.Create(Glyphs.Search, "没有符合的", "换个关键词，或者切回「全部」"));
-            Select(null);
+            Apply(Array.Empty<string>(), null, null);
             return;
         }
 
@@ -269,13 +307,20 @@ internal sealed class ShotHistoryWindow : Window
                 Foreground = Theme.TertiaryText(),
                 Margin = new Thickness(0, 12, 0, 4),
             });
-            var grid = new GridView { SelectionMode = ListViewSelectionMode.Single };
+            // 系统的选中关掉（跨不了组），点卡走 ItemClick，选中自己画。
+            var grid = new GridView { SelectionMode = ListViewSelectionMode.None, IsItemClickEnabled = true };
+            var count = 0;
             foreach (var item in group)
             {
-                grid.Items.Add(Card(item));
+                var card = Card(item);
+                grid.Items.Add(card);
+                _cards[item.Id] = (grid, card);
+                _listed.Add(item);
+                count++;
             }
 
-            grid.SelectionChanged += OnGridSelectionChanged;
+            _groupSizes.Add(count);
+            grid.ItemClick += OnCardClick;
             _grids.Add(grid);
             _groups.Children.Add(grid);
         }
@@ -296,8 +341,18 @@ internal sealed class ShotHistoryWindow : Window
             _groups.Children.Add(more);
         }
 
-        var keep = _selected is { } selected ? items.FirstOrDefault(item => item.Id == selected.Id) : null;
-        SelectInGrids(keep ?? items[0]);
+        // 删掉的、筛掉的不留在选中里；一张都不剩就选第一张。
+        var listed = _listed.Select(item => item.Id).ToHashSet();
+        var kept = _picked.Where(listed.Contains).ToList();
+        if (kept.Count == 0)
+        {
+            Apply(new[] { _listed[0].Id }, _listed[0].Id, _listed[0].Id);
+        }
+        else
+        {
+            Apply(kept, _anchor is { } anchor && listed.Contains(anchor) ? anchor : kept[0],
+                _cursor is { } cursor && listed.Contains(cursor) ? cursor : kept[0]);
+        }
     }
 
     private FrameworkElement Card(ShotItem item)
@@ -355,51 +410,79 @@ internal sealed class ShotHistoryWindow : Window
             });
         }
 
+        // 选中：强调色描边 + 一层选中底（画在最上面，不挡点击）。
+        var mark = new Border
+        {
+            CornerRadius = Theme.Corner("Kitty.Corner.Card"),
+            BorderThickness = new Thickness(2),
+            BorderBrush = new SolidColorBrush(Theme.AccentColor),
+            Background = Theme.Brush("Kitty.Fill.Selected", Color.FromArgb(18, 0, 0, 0)),
+            IsHitTestVisible = false,
+            Visibility = Visibility.Collapsed,
+        };
+        card.Children.Add(mark);
+        _marks[item.Id] = mark;
+
         AutomationProperties.SetName(
             card, $"{ShotHistoryRules.Title(item.Kind)}，{LocalTime(item.CreatedAt):M 月 d 日 HH:mm}");
         card.DoubleTapped += (_, _) => Open(item);
         card.ContextFlyout = Menu(item);
+        card.CanDrag = true;
+        card.DragStarting += (_, args) => OnDragStarting(item, args);
         return card;
     }
 
-    private void OnGridSelectionChanged(object sender, SelectionChangedEventArgs args)
+    private static bool IsDown(Windows.System.VirtualKey key)
+        => InputKeyboardSource.GetKeyStateForCurrentThread(key).HasFlag(CoreVirtualKeyStates.Down);
+
+    /// <summary>点一张：单点只选它、Ctrl 点加选或去掉、Shift 点从锚点连过去（ShotHistoryRules.Click）。</summary>
+    private void OnCardClick(object sender, ItemClickEventArgs args)
     {
-        if (_syncingSelection || sender is not GridView grid || grid.SelectedItem is not FrameworkElement { Tag: ShotItem item })
+        if (args.ClickedItem is not FrameworkElement { Tag: ShotItem item })
         {
             return;
         }
 
-        // 分组是几个 GridView：选了这一组的，别的组清掉。
-        _syncingSelection = true;
-        foreach (var other in _grids)
-        {
-            if (other != grid)
-            {
-                other.SelectedItem = null;
-            }
-        }
-
-        _syncingSelection = false;
-        Select(item);
+        var (picked, anchor) = ShotHistoryRules.Click(
+            Ids(), _picked, _anchor, item.Id, IsDown(Windows.System.VirtualKey.Control), IsDown(Windows.System.VirtualKey.Shift));
+        Apply(picked, anchor, item.Id);
     }
 
-    private void SelectInGrids(ShotItem item)
+    private List<string> Ids() => _listed.Select(item => item.Id).ToList();
+
+    /// <summary>换选中：描边跟着换，右边换成单条的详情或「已选 N 项」。</summary>
+    private void Apply(IEnumerable<string> picked, string? anchor, string? cursor)
     {
-        _syncingSelection = true;
-        foreach (var grid in _grids)
+        var next = picked.ToList();
+        _picked.Clear();
+        _picked.UnionWith(next);
+        _anchor = anchor;
+        _cursor = cursor;
+        foreach (var (id, mark) in _marks)
         {
-            grid.SelectedItem = grid.Items.FirstOrDefault(element => element is FrameworkElement { Tag: ShotItem candidate } &&
-                                                                     candidate.Id == item.Id);
+            mark.Visibility = _picked.Contains(id) ? Visibility.Visible : Visibility.Collapsed;
         }
 
-        _syncingSelection = false;
-        Select(item);
+        var items = PickedItems();
+        if (items.Count > 1)
+        {
+            SelectMany(items);
+        }
+        else
+        {
+            Select(items.FirstOrDefault());
+        }
     }
+
+    /// <summary>选中的几张，按列出来的顺序。</summary>
+    private List<ShotItem> PickedItems() => _listed.Where(item => _picked.Contains(item.Id)).ToList();
+
+    /// <summary>正好选着一张时是它。</summary>
+    private ShotItem? OnlyPicked() => _picked.Count == 1 ? _listed.FirstOrDefault(item => _picked.Contains(item.Id)) : null;
 
     /// <summary>右边：大预览、两行信息、这一条能做的操作。</summary>
     private void Select(ShotItem? item)
     {
-        _selected = item;
         _actions.Children.Clear();
         if (item is null)
         {
@@ -455,27 +538,81 @@ internal sealed class ShotHistoryWindow : Window
 
         _infoState.Text = string.Join(" · ", state);
 
-        foreach (var (glyph, title, action, enabled, danger) in Actions(item))
+        foreach (var action in Actions(item))
         {
-            var button = new Button
-            {
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                HorizontalContentAlignment = HorizontalAlignment.Left,
-                Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
-                BorderThickness = new Thickness(0),
-                IsEnabled = enabled,
-                Content = ActionContent(glyph, title, danger),
-            };
-            AutomationProperties.SetName(button, title);
-            button.Click += (_, _) => action();
-            _actions.Children.Add(button);
+            _actions.Children.Add(ActionButton(action));
         }
     }
 
+    /// <summary>选着两张以上：「已选 N 项」、各几个一共多大，底下是能一起做的四件（同 mac many）。</summary>
+    private void SelectMany(List<ShotItem> items)
+    {
+        _actions.Children.Clear();
+        _preview.Source = null;
+        _infoTime.Text = $"已选 {items.Count} 项";
+        _infoState.Text = ShotHistoryRules.Summary(items.Select(item => (item.Kind, SizeOf(item))).ToList());
+        foreach (var action in ManyActions(items))
+        {
+            _actions.Children.Add(ActionButton(action));
+        }
+    }
+
+    /// <summary>占多大：录制的看文件本身，截图看原图 + 缩略图。</summary>
+    private static long SizeOf(ShotItem item)
+    {
+        if (!ShotHistoryRules.IsRecording(item.Kind))
+        {
+            return item.Bytes;
+        }
+
+        try
+        {
+            return item.FilePath is { } path && File.Exists(path) ? new FileInfo(path).Length : 0;
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
+    private static Button ActionButton((string Glyph, string Title, string? Key, Action Run, bool Enabled, bool Danger) action)
+    {
+        var button = new Button
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+            BorderThickness = new Thickness(0),
+            IsEnabled = action.Enabled,
+            Content = ActionContent(action.Glyph, action.Title, action.Key, action.Enabled, action.Danger),
+        };
+        AutomationProperties.SetName(button, action.Title);
+        if (action.Key is { } key)
+        {
+            AutomationProperties.SetAcceleratorKey(button, key);
+        }
+
+        button.Click += (_, _) => action.Run();
+        return button;
+    }
+
+    /// <summary>
+    /// 右键菜单：每次打开现排——右键点的是多选里的一张就是整批的那四件，点在选中外面的那张只管它自己、不动选中（同 mac）。
+    /// 先放一份单条的（空菜单不弹）。
+    /// </summary>
     private MenuFlyout Menu(ShotItem item)
     {
         var menu = new MenuFlyout();
-        foreach (var (glyph, title, action, enabled, danger) in Actions(item))
+        Fill(menu, Actions(item));
+        menu.Opening += (_, _) =>
+            Fill(menu, _picked.Count > 1 && _picked.Contains(item.Id) ? ManyActions(PickedItems()) : Actions(item));
+        return menu;
+    }
+
+    private static void Fill(MenuFlyout menu, List<(string Glyph, string Title, string? Key, Action Run, bool Enabled, bool Danger)> actions)
+    {
+        menu.Items.Clear();
+        foreach (var (glyph, title, key, action, enabled, danger) in actions)
         {
             var entry = new MenuFlyoutItem
             {
@@ -483,6 +620,11 @@ internal sealed class ShotHistoryWindow : Window
                 Icon = new FontIcon { Glyph = glyph },
                 IsEnabled = enabled,
             };
+            if (key is not null)
+            {
+                entry.KeyboardAcceleratorTextOverride = key;
+            }
+
             if (danger)
             {
                 entry.Foreground = Theme.Brush("Kitty.Danger", Color.FromArgb(255, 196, 43, 28));
@@ -491,41 +633,57 @@ internal sealed class ShotHistoryWindow : Window
             entry.Click += (_, _) => action();
             menu.Items.Add(entry);
         }
-
-        return menu;
     }
 
-    /// <summary>一条能做的操作（右边那一列和右键菜单是同一份）。</summary>
-    private List<(string Glyph, string Title, Action Run, bool Enabled, bool Danger)> Actions(ShotItem item)
+    /// <summary>一条能做的操作（右边那一列和右键菜单是同一份），后面写着它的键。</summary>
+    private List<(string Glyph, string Title, string? Key, Action Run, bool Enabled, bool Danger)> Actions(ShotItem item)
     {
         if (ShotHistoryRules.IsRecording(item.Kind))
         {
             return new()
             {
-                (Glyphs.OpenInNewWindow, "打开", () => Open(item), true, false),
-                (Glyphs.Copy, "拷贝", () => CopyFile(item), true, false),
-                (Glyphs.Folder, "在资源管理器中显示", () => Reveal(item), true, false),
-                (Glyphs.Delete, "从历史里删掉…", () => _ = ForgetAsync(item), true, true),
+                (Glyphs.OpenInNewWindow, "打开", "Enter", () => Open(item), true, false),
+                (Glyphs.Copy, "拷贝", "Ctrl+C", () => CopyFile(item), true, false),
+                (Glyphs.Folder, "在资源管理器中显示", "Ctrl+Shift+R", () => Reveal(item), true, false),
+                (Glyphs.Delete, "从历史里删掉…", "Delete", () => _ = ForgetAsync(item), true, true),
             };
         }
 
         return new()
         {
-            (Glyphs.Edit, "改标注", () => Open(item), true, false),
-            (Glyphs.Copy, "拷贝", () => _ = CopyAsync(item), true, false),
-            (Glyphs.Save, "存储", () => _ = SaveAsync(item, saveAs: false), true, false),
-            (Glyphs.SaveAs, "另存为…", () => _ = SaveAsync(item, saveAs: true), true, false),
-            (Glyphs.Pin, "钉到屏幕", () => Pin(item), true, false),
-            (Glyphs.Ocr, "识字并拷贝", () => _ = RecognizeAsync(item), true, false),
-            (Glyphs.Folder, "在资源管理器中显示", () => Reveal(item), true, false),
-            (Glyphs.Delete, "删除…", () => _ = ForgetAsync(item), true, true),
+            (Glyphs.Edit, "改标注", "Enter", () => Open(item), true, false),
+            (Glyphs.Copy, "拷贝", "Ctrl+C", () => _ = CopyAsync(item), true, false),
+            (Glyphs.Save, "存储", "Ctrl+S", () => _ = SaveAsync(item, saveAs: false), true, false),
+            (Glyphs.SaveAs, "另存为…", "Ctrl+Shift+S", () => _ = SaveAsync(item, saveAs: true), true, false),
+            (Glyphs.Pin, "钉到屏幕", "Ctrl+P", () => Pin(item), true, false),
+            (Glyphs.Ocr, "识字并拷贝", "Ctrl+O", () => _ = RecognizeAsync(item), true, false),
+            (Glyphs.Folder, "在资源管理器中显示", "Ctrl+Shift+R", () => Reveal(item), true, false),
+            (Glyphs.Delete, "删除…", "Delete", () => _ = ForgetAsync(item), true, true),
         };
     }
 
-    private static StackPanel ActionContent(string glyph, string title, bool danger)
+    /// <summary>选着好几张时能一起做的（同 mac）：拷贝成几个文件、一条条存到截图文件夹、在资源管理器里选中、删除。</summary>
+    private List<(string Glyph, string Title, string? Key, Action Run, bool Enabled, bool Danger)> ManyActions(List<ShotItem> items)
+    {
+        var count = items.Count;
+        return new()
+        {
+            (Glyphs.Copy, $"拷贝 {count} 项", "Ctrl+C", () => _ = CopyManyAsync(items), true, false),
+            (Glyphs.Save, $"存储 {count} 项", "Ctrl+S", () => _ = SaveManyAsync(items),
+                items.Any(item => !ShotHistoryRules.IsRecording(item.Kind)), false),
+            (Glyphs.Folder, "在资源管理器中显示", "Ctrl+Shift+R", () => RevealMany(items), true, false),
+            (Glyphs.Delete, $"删除 {count} 项…", "Delete", () => _ = ForgetManyAsync(items), true, true),
+        };
+    }
+
+    /// <summary>一行操作：图标 + 名字，右边是它的键（置灰的那行键也跟着灰）。</summary>
+    private static Grid ActionContent(string glyph, string title, string? key, bool enabled, bool danger)
     {
         var foreground = danger ? Theme.Brush("Kitty.Danger", Color.FromArgb(255, 196, 43, 28)) : null;
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
+        var row = new Grid { ColumnSpacing = 10 };
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var icon = new FontIcon { Glyph = glyph, FontSize = 14 };
         var text = new TextBlock { Text = title, FontSize = Theme.FontSize("Kitty.FontSize.Body") };
         if (foreground is not null)
@@ -534,8 +692,22 @@ internal sealed class ShotHistoryWindow : Window
             text.Foreground = foreground;
         }
 
+        Grid.SetColumn(text, 1);
         row.Children.Add(icon);
         row.Children.Add(text);
+        if (key is not null)
+        {
+            var cap = new TextBlock
+            {
+                Text = key,
+                FontSize = Theme.FontSize("Kitty.FontSize.Meta"),
+                Foreground = enabled ? Theme.SecondaryText() : Theme.TertiaryText(),
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            Grid.SetColumn(cap, 2);
+            row.Children.Add(cap);
+        }
+
         return row;
     }
 
@@ -749,6 +921,375 @@ internal sealed class ShotHistoryWindow : Window
             _history.Remove(new[] { item.Id });
         }
     }
+
+    // ---- 按键（照 mac 933c1dd9；先于网格看到，方向键不让 GridView 拿去挪焦点）
+
+    private void OnPreviewKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        var control = IsDown(Windows.System.VirtualKey.Control);
+        var shift = IsDown(Windows.System.VirtualKey.Shift);
+        // 在搜索框里打字、焦点在按钮 / 筛选上时，方向键、Enter、Delete、Ctrl+C / A 让给它们。
+        var busy = e.OriginalSource is TextBox or ButtonBase or SelectorBarItem;
+        var key = e.Key;
+        if (control && key is >= Windows.System.VirtualKey.Number1 and <= Windows.System.VirtualKey.Number4)
+        {
+            _filter.SelectedItem = _filter.Items[key - Windows.System.VirtualKey.Number1];
+        }
+        else if (control && key == Windows.System.VirtualKey.F)
+        {
+            _search.Focus(FocusState.Keyboard);
+            _search.SelectAll();
+        }
+        else if (control && key == Windows.System.VirtualKey.S)
+        {
+            SaveSelection(saveAs: shift);
+        }
+        else if (control && !shift && key == Windows.System.VirtualKey.P)
+        {
+            WithSingleImage(Pin);
+        }
+        else if (control && !shift && key == Windows.System.VirtualKey.O)
+        {
+            WithSingleImage(item => _ = RecognizeAsync(item));
+        }
+        else if (control && shift && key == Windows.System.VirtualKey.R)
+        {
+            RevealMany(PickedItems());
+        }
+        else if (busy)
+        {
+            return;
+        }
+        else if (control && key == Windows.System.VirtualKey.A)
+        {
+            Apply(Ids(), _listed.FirstOrDefault()?.Id, _cursor);
+        }
+        else if (control && key == Windows.System.VirtualKey.C)
+        {
+            CopySelection();
+        }
+        else if (!control && key == Windows.System.VirtualKey.Enter && OnlyPicked() is { } item)
+        {
+            Open(item);
+        }
+        else if (!control && key == Windows.System.VirtualKey.Delete && _picked.Count > 0)
+        {
+            ForgetSelection();
+        }
+        else if (!control && Direction(key) is { } step)
+        {
+            Move(step.Dx, step.Dy, shift);
+        }
+        else
+        {
+            return;
+        }
+
+        e.Handled = true;
+    }
+
+    private static (int Dx, int Dy)? Direction(Windows.System.VirtualKey key) => key switch
+    {
+        Windows.System.VirtualKey.Left => (-1, 0),
+        Windows.System.VirtualKey.Right => (1, 0),
+        Windows.System.VirtualKey.Up => (0, -1),
+        Windows.System.VirtualKey.Down => (0, 1),
+        _ => null,
+    };
+
+    /// <summary>方向键挑图（一行几张按网格宽度量）；按着 Shift 是从锚点连着选。挪到的那张滚进眼前、拿到焦点（读屏跟着念）。</summary>
+    private void Move(int dx, int dy, bool shift)
+    {
+        var ids = Ids();
+        var current = _cursor is { } cursor ? ids.IndexOf(cursor) : -1;
+        // GridView 的每一格多出 4 的外边距（系统样式）。
+        var columns = ShotHistoryRules.Columns(_grids.FirstOrDefault()?.ActualWidth ?? 0, CardWidth + 4);
+        if (ShotHistoryRules.Moved(current < 0 ? null : current, dx, dy, _groupSizes, columns) is not { } next)
+        {
+            return;
+        }
+
+        var target = ids[next];
+        if (shift)
+        {
+            var anchor = _anchor is { } from && ids.IndexOf(from) is var index and >= 0 ? index : Math.Max(current, 0);
+            Apply(ShotHistoryRules.Span(ids, anchor, next), ids[anchor], target);
+        }
+        else
+        {
+            Apply(new[] { target }, target, target);
+        }
+
+        if (_cards.TryGetValue(target, out var place))
+        {
+            place.Card.StartBringIntoView();
+            (place.Grid.ContainerFromItem(place.Card) as Control)?.Focus(FocusState.Keyboard);
+        }
+    }
+
+    /// <summary>只对「正好选着一张截图」做的（钉图、识字）。</summary>
+    private void WithSingleImage(Action<ShotItem> run)
+    {
+        if (OnlyPicked() is { } item && !ShotHistoryRules.IsRecording(item.Kind))
+        {
+            run(item);
+        }
+    }
+
+    private void CopySelection()
+    {
+        var items = PickedItems();
+        if (items.Count > 1)
+        {
+            _ = CopyManyAsync(items);
+        }
+        else if (items.Count == 1 && ShotHistoryRules.IsRecording(items[0].Kind))
+        {
+            CopyFile(items[0]);
+        }
+        else if (items.Count == 1)
+        {
+            _ = CopyAsync(items[0]);
+        }
+    }
+
+    private void SaveSelection(bool saveAs)
+    {
+        var items = PickedItems();
+        if (items.Count > 1 && !saveAs)
+        {
+            _ = SaveManyAsync(items);
+        }
+        else if (items.Count == 1 && !ShotHistoryRules.IsRecording(items[0].Kind))
+        {
+            _ = SaveAsync(items[0], saveAs);
+        }
+    }
+
+    private void ForgetSelection()
+    {
+        var items = PickedItems();
+        if (items.Count > 1)
+        {
+            _ = ForgetManyAsync(items);
+        }
+        else if (items.Count == 1)
+        {
+            _ = ForgetAsync(items[0]);
+        }
+    }
+
+    // ---- 拖出去、一起拷贝 / 存储 / 显示 / 删除
+
+    /// <summary>
+    /// 这一条拖出去 / 一起拷贝时给哪个文件（照 mac ShotHistory.dragFile）：录制的就是那个文件；存过盘、文件还在的是存的那个；
+    /// 别的把成品 PNG（原图 + 标注，本来就是 PNG）拷一份到临时文件夹，拷过、又没改过标注的直接用。没有返回 null。
+    /// </summary>
+    private static string? DragFile(ShotItem item)
+    {
+        if (ShotHistoryRules.IsRecording(item.Kind))
+        {
+            return ShotHistory.FileExists(item) ? item.FilePath : null;
+        }
+
+        if (item.SavedPath is { Length: > 0 } saved && File.Exists(saved))
+        {
+            return saved;
+        }
+
+        var source = File.Exists(ShotHistory.ComposedPath(item.Id)) ? ShotHistory.ComposedPath(item.Id) : ShotHistory.ImagePath(item.Id);
+        if (!File.Exists(source))
+        {
+            return null;
+        }
+
+        try
+        {
+            // 每条一个子文件夹：同一秒截的两张名字一样，放一起会互相顶掉（启动时整个清掉）。
+            var folder = Path.Combine(Path.GetTempPath(), "kitty-shots", "history", item.Id);
+            Directory.CreateDirectory(folder);
+            var created = LocalTime(item.CreatedAt).ToString("yyyy-MM-dd HH.mm.ss", CultureInfo.InvariantCulture);
+            var path = Path.Combine(folder, $"{ShotHistoryRules.Title(item.Kind)} {created}.png");
+            if (!File.Exists(path) || File.GetLastWriteTimeUtc(path) < File.GetLastWriteTimeUtc(source))
+            {
+                File.Copy(source, path, overwrite: true);
+            }
+
+            return path;
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"shots.drag-file-failed {ex.GetType().Name}");
+            return null;
+        }
+    }
+
+    /// <summary>按住的是选中的之一就拖全部选中的，不然只拖它（不改选中）。</summary>
+    private async void OnDragStarting(ShotItem item, DragStartingEventArgs args)
+    {
+        // REVIEW R11：不在 UI 线程上同步等异步，用 deferral + await（同角落卡）。
+        var deferral = args.GetDeferral();
+        try
+        {
+            var items = _picked.Count > 1 && _picked.Contains(item.Id) ? PickedItems() : new List<ShotItem> { item };
+            var files = new List<IStorageItem>();
+            foreach (var each in items)
+            {
+                if (DragFile(each) is { } path)
+                {
+                    files.Add(await StorageFile.GetFileFromPathAsync(path));
+                }
+            }
+
+            if (files.Count == 0)
+            {
+                args.Cancel = true;
+                return;
+            }
+
+            args.Data.SetStorageItems(files);
+            args.Data.RequestedOperation = DataPackageOperation.Copy;
+            args.Data.Properties.Title = files.Count == 1 ? files[0].Name : $"{files.Count} 项";
+            Log.Info($"shots.drag count={files.Count}");
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"shots.drag-failed {ex.GetType().Name}");
+            args.Cancel = true;
+        }
+        finally
+        {
+            deferral.Complete();
+        }
+    }
+
+    /// <summary>好几张一起拷贝：剪贴板只装得下一张图，装成几个文件（同 mac copyMany，和拖出去同一份文件）。</summary>
+    private static Task CopyManyAsync(List<ShotItem> items)
+    {
+        var paths = items.Select(DragFile).OfType<string>().ToList();
+        if (paths.Count == 0)
+        {
+            NoticeHost.Show("没有能拷贝的文件", "选中的原图和录制文件都不在了", NoticeTone.Warning);
+        }
+        else if (ClipboardWriter.WriteFiles(paths))
+        {
+            ClipboardService.Instance?.MarkOwnWrite();
+            NoticeHost.Show($"已复制 {paths.Count} 项", "能在资源管理器、聊天窗口里粘贴", NoticeTone.Normal);
+        }
+        else
+        {
+            NoticeHost.Show("没能复制", "剪贴板被别的程序占着", NoticeTone.Error);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    /// <summary>好几张一起存：一条条存到截图文件夹，最后只说一句（同 mac saveMany）；录制的本来就是文件，跳过。</summary>
+    private async Task SaveManyAsync(List<ShotItem> items)
+    {
+        string? last = null;
+        var saved = 0;
+        foreach (var item in items.Where(item => !ShotHistoryRules.IsRecording(item.Kind)))
+        {
+            if (ShotHistory.ReadOutput(item.Id) is not { } png || await ScreenshotOutput.QuickSavePngAsync(png, quiet: true) is not { } path)
+            {
+                continue;
+            }
+
+            _history.MarkSaved(item.Id, path);
+            last = path;
+            saved++;
+        }
+
+        if (last is null)
+        {
+            NoticeHost.Show("一张都没存成", "原图不在了，或者截图文件夹写不进去", NoticeTone.Warning);
+            return;
+        }
+
+        NoticeHost.Show($"已存 {saved} 张", Path.GetFileName(Path.GetDirectoryName(last)) ?? last, NoticeTone.Normal,
+            NoticeActions.Reveal(last));
+    }
+
+    /// <summary>在资源管理器里选中这几个文件（同一个文件夹的一次选中；没存成文件的跳过）。</summary>
+    private static void RevealMany(List<ShotItem> items)
+    {
+        if (items.Count == 1)
+        {
+            Reveal(items[0]);
+            return;
+        }
+
+        var paths = items.Select(item => item.FilePath ?? item.SavedPath).OfType<string>().Where(File.Exists).ToList();
+        if (paths.Count == 0)
+        {
+            NoticeHost.Show("选中的都还没存成文件", "先点「存储」", NoticeTone.Normal);
+            return;
+        }
+
+        // ponytail: 散在好几个文件夹时只开前 4 个，每个文件夹一扇资源管理器。
+        foreach (var folder in paths.GroupBy(path => Path.GetDirectoryName(path) ?? string.Empty).Take(4))
+        {
+            SelectInExplorer(folder.Key, folder.ToList());
+        }
+    }
+
+    /// <summary>SHOpenFolderAndSelectItems：开 folder，选中里面的这几个文件（explorer /select 只选得了一个）。</summary>
+    private static void SelectInExplorer(string folder, List<string> files)
+    {
+        var parent = IntPtr.Zero;
+        var children = new List<IntPtr>();
+        try
+        {
+            parent = ILCreateFromPath(folder);
+            children.AddRange(files.Select(ILCreateFromPath).Where(pidl => pidl != IntPtr.Zero));
+            if (parent == IntPtr.Zero || children.Count == 0 ||
+                SHOpenFolderAndSelectItems(parent, (uint)children.Count, children.ToArray(), 0) != 0)
+            {
+                Log.Warn("shots.reveal-many-failed");
+            }
+        }
+        finally
+        {
+            foreach (var child in children)
+            {
+                ILFree(child);
+            }
+
+            if (parent != IntPtr.Zero)
+            {
+                ILFree(parent);
+            }
+        }
+    }
+
+    /// <summary>好几张一起删：问一次（截图的原图和标注删掉，录制的文件不动、只是不在历史里了）。</summary>
+    private async Task ForgetManyAsync(List<ShotItem> items)
+    {
+        var dialog = new ContentDialog
+        {
+            RequestedTheme = Theme.ElementTheme,
+            Title = $"删除这 {items.Count} 项？",
+            Content = "截图的原图和标注会删掉，已经存成文件的不动；录制的文件也不动，只是不在历史里了。",
+            PrimaryButtonText = "删除",
+            CloseButtonText = "取消",
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = _root.XamlRoot,
+        };
+        if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+        {
+            _history.Remove(items.Select(item => item.Id).ToList());
+        }
+    }
+
+    [LibraryImport("shell32.dll", EntryPoint = "ILCreateFromPathW", StringMarshalling = StringMarshalling.Utf16)]
+    private static partial IntPtr ILCreateFromPath(string path);
+
+    [LibraryImport("shell32.dll")]
+    private static partial void ILFree(IntPtr pidl);
+
+    [LibraryImport("shell32.dll")]
+    private static partial int SHOpenFolderAndSelectItems(IntPtr folder, uint count, IntPtr[] items, uint flags);
 
     private static string KindGlyph(ShotKind kind) => kind switch
     {

@@ -5,6 +5,8 @@
 // - 四个薄适配（ISyncSource）：问仓库要本机的那份；把 Core 算好的规划落进库，和账本同一个事务（片段、生词在 kitty.sqlite3；
 //   网页搜索、翻译服务在 settings.json，账本紧跟着写进 sync-ledger.json）。
 // 每一类跟着各自的设置和功能开关：clips 跟剪贴板，vocabulary 和 services 跟翻译，engines 跟启动器（PLAN-v5 §4.3）。
+// REVIEW R49：上一轮什么都没剩下之后，要读的那几个文件（SyncDisk.Fingerprint）和本机这几类（改一次 _revision 加一）都没动，
+// 这一轮就不读、不合，只把「上次同步」记成现在。
 using KittyTools.Core;
 using KittyTools.Core.Sync;
 using KittyTools.Infrastructure;
@@ -40,11 +42,20 @@ internal sealed class Syncer
     private Dictionary<string, int> _pending = new(StringComparer.Ordinal);
     private Dictionary<string, int> _confirmed = new(StringComparer.Ordinal);
 
+    /// <summary>本机要同步的数据（剪贴板库、生词本、settings.json 里的网页搜索和翻译服务）改了几次：只增不减，UI 线程上加。</summary>
+    private long _revision;
+    private ClipboardStore? _watchedClips;
+    private TranslationHistory? _watchedHistory;
+
+    /// <summary>上一轮什么都没剩下（合完、没等确认、没出错）时这一轮开始那一刻的样子；下一轮还是这样就跳过。</summary>
+    private string? _quiet;
+
     private Syncer(SyncDevice device, SyncLedger ledger, DispatcherQueue dispatcher)
     {
         _device = new DeviceState(device, ledger);
         _ledger = ledger;
         _dispatcher = dispatcher;
+        SettingsService.Changed += () => _revision++;
     }
 
     public static Syncer? Instance => _instance;
@@ -83,6 +94,9 @@ internal sealed class Syncer
     }
 
     public bool Enabled => SettingsService.Current.SyncEnabled && !string.IsNullOrEmpty(Folder);
+
+    /// <summary>这一类勾上会是它第一次和文件夹里的合（账本里还没有它）：设置页先问「合在一起？」（同 mac NoteSyncer.joins）。</summary>
+    public bool Joins(string kind) => Enabled && _ledger.Read(kind) is null;
 
     /// <summary>合一轮（开同步、定时器、唤醒、「立即同步」都走这里）；关着时停掉定时器，开着时确保它在转。</summary>
     public async Task RoundAsync()
@@ -150,9 +164,27 @@ internal sealed class Syncer
 
     private async Task RunOnceAsync(string folder)
     {
+        WatchLocalChanges();
+        var sources = Sources();
+        var kinds = sources.Select(source => source.Kind).ToList();
+        var revision = _revision;
+        var fingerprint = await Task.Run(() => Fingerprint(folder, kinds));
+        var signature = fingerprint is null ? null : $"{folder}|{revision}|{string.Join(',', kinds)}|{fingerprint}";
+        if (signature is not null && signature == _quiet && _confirmed.Count == 0)
+        {
+            Status.State = "idle";
+            Status.Message = string.Empty;
+            Status.LastSync = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            return;
+        }
+
         var allowance = _confirmed;
-        var runner = new SyncRunner(_device, Sources(), Environment.MachineName, message => Log.Warn(message));
+        var runner = new SyncRunner(_device, sources, Environment.MachineName, message => Log.Warn(message));
+        var started = Environment.TickCount64;
         var result = await runner.RunAsync(folder, allowance, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        Log.Info($"sync.round state={result.State} kinds={kinds.Count} written={result.Written.Count} ms={Environment.TickCount64 - started}");
+        // 用这一轮开始前取的样子：合的这一会儿别处写了、本机改了，下一轮看到的就不一样，照样整轮跑。
+        _quiet = result.State == "idle" && result.Waiting.Count == 0 ? signature : null;
         Status.State = result.State;
         Status.Message = result.Message;
         Status.Devices = result.Devices;
@@ -179,6 +211,36 @@ internal sealed class Syncer
         _pending = new Dictionary<string, int>(StringComparer.Ordinal);
         _confirmed = new Dictionary<string, int>(StringComparer.Ordinal);
         _braked = 0;
+    }
+
+    /// <summary>本机这几类改了就让 _revision 加一（剪贴板库、生词本起得比同步晚：每轮看一眼，换了实例再挂一次）。</summary>
+    private void WatchLocalChanges()
+    {
+        if (ClipboardService.Instance?.Store is { } clips && !ReferenceEquals(clips, _watchedClips))
+        {
+            _watchedClips = clips;
+            clips.Changed += () => _revision++;
+        }
+
+        if (TranslationHistory.Instance is { } history && !ReferenceEquals(history, _watchedHistory))
+        {
+            _watchedHistory = history;
+            history.Changed += () => _revision++;
+        }
+    }
+
+    private static string? Fingerprint(string folder, IReadOnlyList<string> kinds)
+    {
+        try
+        {
+            return new SyncDisk(folder).Fingerprint(kinds);
+        }
+        catch (Exception ex)
+        {
+            // 读不到就当变了，照常整轮跑。
+            Log.Warn($"sync.fingerprint-failed {ex.GetType().Name}");
+            return null;
+        }
     }
 
     private List<ISyncSource> Sources()
@@ -279,7 +341,7 @@ internal sealed class Syncer
                 return null;
             }
 
-            return ClipSync.Values(store.SyncRows(), store.SyncGroups());
+            return ClipSync.Values(store.SyncRows(retainedOnly: true), store.SyncGroups());
         }
 
         public override string? Apply(

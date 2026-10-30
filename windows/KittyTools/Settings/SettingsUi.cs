@@ -87,13 +87,21 @@ internal static class SettingsUi
         };
         if (onClick is not null)
         {
-            // 只认左键：右键是卡上的菜单（翻译服务那几行）。
-            card.PointerPressed += (_, e) =>
+            // Tapped（按下再松开、中间没拖动）：拖动排序的列表里按住卡拖走时不算点（以前用 PointerPressed，一按就打开了）；
+            // 右键是卡上的菜单（RightTapped，不触发这里）。点在卡上的开关、按钮上时（Tapped 会冒泡上来）也不算点卡。
+            card.Tapped += (_, e) =>
             {
-                if (e.GetCurrentPoint(card).Properties.IsLeftButtonPressed)
+                for (var node = e.OriginalSource as DependencyObject;
+                     node is not null && !ReferenceEquals(node, card);
+                     node = VisualTreeHelper.GetParent(node))
                 {
-                    onClick();
+                    if (node is Control)
+                    {
+                        return;
+                    }
                 }
+
+                onClick();
             };
         }
 

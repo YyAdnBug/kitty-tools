@@ -211,15 +211,18 @@ internal sealed partial class SettingsWindow
             });
         }
 
+        // 拖动排序（mac 有序列表，N12）；右键的上移 / 下移照旧。
         var services = store.Services.ToList();
-        for (var index = 0; index < services.Count; index++)
+        var serviceRows = services.Select((service, index) => ServiceRow(store, service, index, services.Count)).ToList();
+        _content.Children.Add(ReorderableList(serviceRows, "翻译服务（拖动排序）", order =>
         {
-            _content.Children.Add(ServiceRow(store, services[index], index, services.Count));
-        }
+            store.ReplaceServices(order.Select(index => services[index]).ToList());
+            BuildPage("translate");
+        }));
 
         _content.Children.Add(AddServiceButton(store));
         _content.Children.Add(SettingsUi.Footnote(
-            "结果按这个顺序显示；排在最前、翻译成功的那个服务的结果写入历史、用于自动复制和收藏。点一行进入设置，右键可以上移、下移和删除。" +
+            "结果按这个顺序显示，拖动一行改顺序；排在最前、翻译成功的那个服务的结果写入历史、用于自动复制和收藏。点一行进入设置，右键可以上移、下移和删除。" +
             "删掉的内置服务可以从「添加服务」加回来，密钥还在。"));
         Log.Info($"settings.translate.build-done services={store.Services.Count}");
     }
@@ -246,7 +249,7 @@ internal sealed partial class SettingsWindow
     /// <summary>
     /// 一个服务一行（mac ServiceListRow）：服务图标 24、名称 + 状态、启用开关、›；点一行进详情，右键 设置… / 上移 / 下移 / 删除。
     /// 内置的直接删（「添加服务」里能加回来，密钥留着），自建的 AI 服务先确认、连密钥一起删。
-    /// ponytail: 只能右键上移 / 下移，没做 mac 那样的拖动排序（卡片列表要换成可拖的 ListView）；服务多了再做。
+    /// 排序靠拖（外面的 ReorderableList），右键的上移 / 下移是给键盘和读屏的。
     /// </summary>
     private Border ServiceRow(TranslateServiceStore store, TranslateServiceConfig service, int index, int count)
     {

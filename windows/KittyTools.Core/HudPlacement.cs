@@ -13,13 +13,14 @@ public static class HudPlacement
 
     public readonly record struct Rect(int X, int Y, int Width, int Height);
 
+    /// <summary>widthDip：控制条的宽（录屏那条多了两个声音图标，PLAN-v9 R7，传 300）。</summary>
     public static Rect Compute(
         int regionLeft, int regionTop, int regionRight, int regionBottom,
         int workLeft, int workTop, int workRight, int workBottom,
-        double scale)
+        double scale, double widthDip = WidthDip)
     {
         scale = scale <= 0 ? 1 : scale;
-        var width = (int)Math.Round(WidthDip * scale);
+        var width = (int)Math.Round(widthDip * scale);
         var height = (int)Math.Round(HeightDip * scale);
         var gap = (int)Math.Round(GapDip * scale);
 

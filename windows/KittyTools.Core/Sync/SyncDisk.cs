@@ -103,6 +103,35 @@ public sealed class SyncDisk(string root)
         }
     }
 
+    /// <summary>
+    /// 一轮要读的那几个文件现在的样子：标记、每台的 device.json 和这几类的文件，各记路径、修改时间、大小（没有的记 -）。
+    /// 和上一轮什么都没剩下时的一样，这一轮就不用整份读、整份合（REVIEW R49）。只读属性，云盘的占位文件不会因此开始下载。
+    /// </summary>
+    public string Fingerprint(IEnumerable<string> kinds)
+    {
+        var builder = new System.Text.StringBuilder();
+        void Add(string relative)
+        {
+            var info = new FileInfo(Path.Combine(Root, relative));
+            builder.Append(relative).Append('=')
+                .Append(info.Exists ? $"{info.LastWriteTimeUtc.Ticks}:{info.Length}" : "-")
+                .Append('\n');
+        }
+
+        var wanted = kinds.ToList();
+        Add(SyncFolderRules.MarkerFile);
+        foreach (var device in DeviceIds().OrderBy(id => id, StringComparer.Ordinal))
+        {
+            Add(DevicePath(device));
+            foreach (var kind in wanted)
+            {
+                Add(KindPath(device, kind));
+            }
+        }
+
+        return builder.ToString();
+    }
+
     public static string DevicePath(string device)
         => Path.Combine(SyncFolderRules.DevicesFolder, device, SyncFolderRules.DeviceFile);
 

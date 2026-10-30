@@ -35,10 +35,13 @@ internal sealed class WgcEffects : IDisposable
         }
     }
 
-    /// <summary>在 <paramref name="texture"/> 上画；没有要画的就返回 false。</summary>
+    /// <summary>
+    /// 在 <paramref name="texture"/> 上画；没有要画的就返回 false。scale：输出比录的那一块小多少（「标准」清晰度缩过时 &lt; 1，
+    /// 点按圈的位置跟着乘，PLAN-v9 R5）。
+    /// </summary>
     public unsafe bool Draw(
         ID3D11Texture2D* texture, int width, int height, int originX, int originY,
-        IReadOnlyList<ClickRing> rings, Keycap? keycap, long now)
+        IReadOnlyList<ClickRing> rings, Keycap? keycap, long now, double scale = 1)
     {
         if ((rings.Count == 0 && keycap is null) || width < 2 || height < 2)
         {
@@ -76,7 +79,7 @@ internal sealed class WgcEffects : IDisposable
                     ? Theme.Argb(alpha, 74, 144, 255)
                     : Theme.Argb(alpha, 255, 150, 186);
                 session.DrawCircle(
-                    ring.X - originX, ring.Y - originY, radius, color,
+                    (float)((ring.X - originX) * scale), (float)((ring.Y - originY) * scale), radius, color,
                     (float)Math.Max(2, 4 - progress * 2));
             }
 

@@ -49,9 +49,9 @@ internal static class Motion
 
     /// <summary>
     /// 入场：透明度 0→1（0.12 s）+ 内容下落 6 px（glide 弹簧）。系统关了动画就只淡入。rise 是起点的竖直偏移：默认 −6 往下落，
-    /// 截图工具栏在选区上方时传 6 往上升（从靠选区那条边长出来）。
+    /// 截图工具栏在选区上方时传 6 往上升（从靠选区那条边长出来）。slide 是起点的水平偏移（主界面贴着左 / 右边的任务栏时从那边滑进来）。
     /// </summary>
-    public static void Entrance(FrameworkElement element, MotionCurve curve = MotionCurve.Glide, float rise = -6)
+    public static void Entrance(FrameworkElement element, MotionCurve curve = MotionCurve.Glide, float rise = -6, float slide = 0)
         => WhenReady(element, visual =>
         {
             var compositor = visual.Compositor;
@@ -65,9 +65,39 @@ internal static class Motion
             }
 
             EnableTranslation(element);
-            visual.Properties.InsertVector3("Translation", new Vector3(0, rise, 0));
+            visual.Properties.InsertVector3("Translation", new Vector3(slide, rise, 0));
             visual.StartAnimation("Translation", CurveTo(compositor, Vector3.Zero, spring.Value));
         });
+
+    /// <summary>
+    /// 挤压弹开（设置 › 通用 › 动效「呼出面板时挤压弹开」，同 mac OverlayPanel.squeezeIn）：从 0.9 宽 × 0.75 高（顶边不动、左右居中）
+    /// 按 island 弹开、略冲过头再回来，同时淡入；系统关了动画效果时只淡入（同 Entrance 的减弱）。
+    /// ponytail: mac 是整扇窗口逐帧改尺寸；Windows 的窗口外框和阴影是 DWM 画的、跟不上，这里只缩放里面的内容，
+    /// 头几帧内容四周露出窗口底色。手感不好就照 mac 默认关着。
+    /// </summary>
+    public static void SqueezeIn(FrameworkElement element)
+    {
+        if (Reduced)
+        {
+            Entrance(element);
+            return;
+        }
+
+        WhenReady(element, visual =>
+        {
+            var spring = MotionCurves.Effective(MotionCurve.Island, Reduced);
+            if (spring is null)
+            {
+                return;
+            }
+
+            visual.CenterPoint = new Vector3((float)(element.ActualWidth / 2), 0, 0);
+            visual.Scale = new Vector3(0.9f, 0.75f, 1);
+            visual.StartAnimation("Scale", CurveTo(visual.Compositor, Vector3.One, spring.Value));
+            visual.Opacity = 0f;
+            StartFade(visual, 1f, MotionCurves.FadeInSeconds);
+        });
+    }
 
     /// <summary>小东西出现：只淡入（不再从 0.85 放大，0.1.0 用户反馈）。</summary>
     public static void Appear(FrameworkElement element)

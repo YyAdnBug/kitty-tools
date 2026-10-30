@@ -30,6 +30,47 @@ public sealed class RecorderRulesTests
     }
 
     [TestMethod]
+    public void KeycapsShowEverythingOrOnlyShortcuts()
+    {
+        // 全部按键（默认）：打字也显示，修饰键连着写。
+        Assert.AreEqual("A", RecordingOverlay.KeycapText("A", false, false, false, false, false, false, shortcutsOnly: false));
+        Assert.AreEqual("Shift + A", RecordingOverlay.KeycapText("A", false, false, true, false, false, false, false));
+        Assert.AreEqual("Ctrl + Alt + Shift + Win + K", RecordingOverlay.KeycapText("K", true, true, true, true, false, false, false));
+        // 只显示快捷键：Shift + 字母、单个字母不显示；Ctrl 组合、Esc、F 键显示。
+        Assert.IsNull(RecordingOverlay.KeycapText("A", false, false, false, false, false, false, shortcutsOnly: true));
+        Assert.IsNull(RecordingOverlay.KeycapText("A", false, false, true, false, false, false, true));
+        Assert.AreEqual("Ctrl + S", RecordingOverlay.KeycapText("S", true, false, false, false, false, false, true));
+        Assert.AreEqual("Esc", RecordingOverlay.KeycapText("Esc", false, false, false, false, false, true, true));
+        Assert.AreEqual("F5", RecordingOverlay.KeycapText("F5", false, false, false, false, true, false, true));
+        // 认不得的键、修饰键本身：都不显示。
+        Assert.IsNull(RecordingOverlay.KeycapText(null, true, false, false, false, false, false, false));
+    }
+
+    [TestMethod]
+    public void FrameRateIsThirtyOrSixty()
+    {
+        // DefaultFps 是常量，分析器认为这条恒真（MSTEST0032）；留着它是为了有人改默认帧率时这里先红。
+#pragma warning disable MSTEST0032
+        Assert.AreEqual(30, RecorderRules.DefaultFps);
+#pragma warning restore MSTEST0032
+        Assert.AreEqual(30, RecorderRules.NormalizeFps(15));
+        Assert.AreEqual(30, RecorderRules.NormalizeFps(30));
+        Assert.AreEqual(30, RecorderRules.NormalizeFps(59));
+        Assert.AreEqual(60, RecorderRules.NormalizeFps(60));
+        Assert.AreEqual(60, RecorderRules.NormalizeFps(120));
+    }
+
+    [TestMethod]
+    public void AudioSourceDefaultsToMicrophone()
+    {
+        Assert.AreEqual((false, true), RecorderRules.AudioSource("microphone"));
+        Assert.AreEqual((true, false), RecorderRules.AudioSource("system"));
+        Assert.AreEqual((true, true), RecorderRules.AudioSource("both"));
+        Assert.AreEqual((false, true), RecorderRules.AudioSource(null));
+        Assert.AreEqual((false, true), RecorderRules.AudioSource("speaker"));
+    }
+
+    [TestMethod]
     public void RoomAndDuration()
     {
         Assert.IsFalse(RecorderRules.HasRoom((1L << 30) - 1));

@@ -2,6 +2,7 @@
 // 只看按下；注入的按键（我们的粘贴 / 片段 / 取词）跳过。钩子跑在单独线程 + 消息循环上，
 // 回调只把坐标 / 按键丢给 UI 线程，画圈和胶囊由 InputOverlay 做。
 using System.Runtime.InteropServices;
+using KittyTools.Core;
 using KittyTools.Infrastructure;
 
 namespace KittyTools;
@@ -30,6 +31,9 @@ internal static unsafe class InputHooks
     private static Action<string>? _key;
 
     public static bool Active => _running;
+
+    /// <summary>「显示按键时」选了「只显示快捷键」（PLAN-v9 R4；开始前在 UI 线程上设好，钩子线程只读）。</summary>
+    public static bool ShortcutsOnly { get; set; }
 
     public static void Start(PixelBounds region, Action<int, int, bool, bool> click, Action<string> key)
     {
@@ -169,24 +173,16 @@ internal static unsafe class InputHooks
             return null;
         }
 
-        var parts = new List<string>();
-        if (IsDown(0x11) || IsDown(0xA2)) parts.Add("Ctrl");
-        if (IsDown(0x12) || IsDown(0xA3)) parts.Add("Alt");
-        if (IsDown(0x10) || IsDown(0xA0)) parts.Add("Shift");
-        if (IsDown(0x5B) || IsDown(0x5C)) parts.Add("Win");
-        var name = KeyName(key);
-        if (name is null)
-        {
-            return null;
-        }
-
-        if (parts.Count == 0 && key is < 0x70 or > 0x87)
-        {
-            return null; // 单个字母 / 数字不显示
-        }
-
-        parts.Add(name);
-        return string.Join(" + ", parts);
+        // 写什么、显不显示的规则在 Core（RecordingOverlay.KeycapText，PLAN-v9 R4：全部按键 / 只显示快捷键）。
+        return RecordingOverlay.KeycapText(
+            KeyName(key),
+            IsDown(0x11) || IsDown(0xA2),
+            IsDown(0x12) || IsDown(0xA3),
+            IsDown(0x10) || IsDown(0xA0),
+            IsDown(0x5B) || IsDown(0x5C),
+            function: key is >= 0x70 and <= 0x87,
+            escape: key == 0x1B,
+            ShortcutsOnly);
     }
 
     private static string? KeyName(uint key) => key switch

@@ -24,6 +24,9 @@ internal sealed class ScreenshotSession
 
     /// <summary>从截图历史打开的那一条（PLAN-v8 第 3 批）和图摆在哪：选区没动过就回写它，不另记一条。</summary>
     private string? _editingId;
+
+    /// <summary>进遮罩时前台的程序（截图历史的「来源」，PLAN-v9 S13）。</summary>
+    private string? _sourceName;
     private RectD _editingRect;
 
     public ScreenshotSession(ScreenshotMode mode, List<FrozenScreen> screens, List<SnapWindow> windows)
@@ -73,6 +76,8 @@ internal sealed class ScreenshotSession
             return;
         }
 
+        // 截图历史记来源（PLAN-v9 S13）：开遮罩之前、我们的面板还没收起时记下前台是谁（前台是我们自己就不记）。
+        var source = ForegroundAppName();
         ShellRuntime.Instance?.HotKeys.UnregisterAll();
         OverlayHost.Hide(restoreForeground: false);
         TranslateHost.Hide(restoreForeground: false);
@@ -95,7 +100,7 @@ internal sealed class ScreenshotSession
         }
 
         var windows = WindowList.Capture();
-        var session = new ScreenshotSession(mode, screens, windows);
+        var session = new ScreenshotSession(mode, screens, windows) { _sourceName = source };
         _current = session;
         Log.Info($"screenshot.begin mode={mode} screens={screens.Count}");
         session.ShowOverlays();
@@ -104,7 +109,7 @@ internal sealed class ScreenshotSession
     /// <summary>
     /// 截图历史「改标注」（PLAN-v8 第 3 批）：原图 1:1 摆在鼠标所在屏的正中当冻结帧（四周深灰），选区就是这张图，
     /// 当初的标注照原样摆上，用截图遮罩那一套工具接着改；拷贝 / 存储 / 钉图时回写同一条。
-    /// ponytail: 比屏幕还大的（长截图）先不支持，要可滚动的长图画布（PLAN-v8 第 3 批下半）。
+    /// 比屏幕还大的（长截图）开长图标注窗口（LongAnnotateWindow，PLAN-v9 S12）。
     /// </summary>
     internal static async void StartEditing(ShotItem item)
     {
@@ -121,7 +126,11 @@ internal sealed class ScreenshotSession
 
         if (ScreenCapture.CanvasAtCursor(image.Bgra, image.Width, image.Height, out var placed) is not { } screen)
         {
-            NoticeHost.Show("这张比屏幕还大", "长图的标注还没做，可以先拷贝或钉出来看", NoticeTone.Normal);
+            var scale = Math.Max(1, item.Scale);
+            LongAnnotateWindow.Open(
+                image.Bgra, image.Width, image.Height, item.Scale,
+                item.Annotations.Select(data => ShotAnnotations.FromData(data, 0, 0, scale)).OfType<Annotation>().ToList(),
+                item.Id, png);
             return;
         }
 
@@ -358,7 +367,7 @@ internal sealed class ScreenshotSession
         // 飞入 + 角落缩略图（PLAN-v2 §3.8 / D5）。
         if (copied && png is not null)
         {
-            ScreenshotCard.Show(png, origin);
+            ShotFeedback.Delivered(png, origin);
         }
     }
 
@@ -402,7 +411,11 @@ internal sealed class ScreenshotSession
         Finish();
         if (saved is not null)
         {
-            ScreenshotCard.Show(png, origin, saved);
+            ShotFeedback.Delivered(png, origin, saved);
+        }
+        else if (savedAs is not null)
+        {
+            ShotFeedback.PlayShutter();
         }
     }
 
@@ -427,6 +440,7 @@ internal sealed class ScreenshotSession
         var global = new PixelBounds(
             settings.ScreenshotLastX, settings.ScreenshotLastY,
             settings.ScreenshotLastX + width, settings.ScreenshotLastY + height);
+        var source = ForegroundAppName();
         List<FrozenScreen> screens;
         try
         {
@@ -460,8 +474,9 @@ internal sealed class ScreenshotSession
             var png = await ImageCodec.BgraToPngAsync(global.Width, global.Height, bgra);
             if (png is not null && await ScreenshotOutput.CopyPngAsync(png, global.Width, global.Height))
             {
-                _ = ShotHistory.RecordAsync(png, global.Width, global.Height, screen.Scale, ShotKind.Shot, frame: global);
-                ScreenshotCard.Show(png, global);
+                _ = ShotHistory.RecordAsync(png, global.Width, global.Height, screen.Scale, ShotKind.Shot, frame: global,
+                    source: source);
+                ShotFeedback.Delivered(png, global);
             }
         }
         catch (Exception ex)
@@ -497,7 +512,7 @@ internal sealed class ScreenshotSession
             global,
             up ? ScrollDirection.Up : ScrollDirection.Down,
             autoScroll,
-            frame => _ = CompleteScrollingAsync(frame, global),
+            (frame, annotate) => _ = CompleteScrollingAsync(frame, global, annotate),
             () =>
             {
                 NoticeHost.Show("已取消长截图", string.Empty, NoticeTone.Normal);
@@ -505,7 +520,8 @@ internal sealed class ScreenshotSession
             });
     }
 
-    private async Task CompleteScrollingAsync(ScrollFrame frame, PixelBounds global)
+    /// <summary>长截图拼完：拷贝、进历史、出角落卡；annotate（面板上点了「标注」）时不拷贝，进历史后开长图标注窗口（PLAN-v9 S12）。</summary>
+    private async Task CompleteScrollingAsync(ScrollFrame frame, PixelBounds global, bool annotate)
     {
         var bgra = new byte[frame.Width * frame.Height * 4];
         for (var index = 0; index < frame.Pixels.Length; index++)
@@ -519,6 +535,23 @@ internal sealed class ScreenshotSession
 
         var png = await ImageCodec.BgraToPngAsync(frame.Width, frame.Height, bgra);
         var screen = SelectionScreen;
+        if (annotate)
+        {
+            Finish();
+            if (png is null)
+            {
+                NoticeHost.Show("长截图没拼成", "再试一次", NoticeTone.Warning);
+                return;
+            }
+
+            var scale = screen?.Scale ?? 1;
+            var id = ShotHistory.IsOn
+                ? await ShotHistory.RecordAsync(png, frame.Width, frame.Height, scale, ShotKind.Scroll, source: _sourceName)
+                : null;
+            LongAnnotateWindow.Open(bgra, frame.Width, frame.Height, scale, Array.Empty<Annotation>(), id, png);
+            return;
+        }
+
         var copied = false;
         if (png is not null && screen is not null)
         {
@@ -530,8 +563,8 @@ internal sealed class ScreenshotSession
         Finish();
         if (copied && png is not null)
         {
-            _ = ShotHistory.RecordAsync(png, frame.Width, frame.Height, screen?.Scale ?? 1, ShotKind.Scroll);
-            ScreenshotCard.Show(png, global);
+            _ = ShotHistory.RecordAsync(png, frame.Width, frame.Height, screen?.Scale ?? 1, ShotKind.Scroll, source: _sourceName);
+            ShotFeedback.Delivered(png, global);
         }
     }
 
@@ -584,8 +617,31 @@ internal sealed class ScreenshotSession
             {
                 await ShotHistory.RecordAsync(
                     png, rect.Width, rect.Height, scale, ShotKind.Shot, annotations,
-                    original is null ? null : composed, savedPath, pinned, frame);
+                    original is null ? null : composed, savedPath, pinned, frame, _sourceName);
             }
+        }
+    }
+
+    /// <summary>进遮罩那一刻前台窗口所属的程序名（截图历史的「来源」，PLAN-v9 S13）；是我们自己、拿不到时 null。</summary>
+    private static string? ForegroundAppName()
+    {
+        try
+        {
+            var hwnd = Foreground.Get();
+            if (hwnd == default)
+            {
+                return null;
+            }
+
+            PInvoke.GetWindowThreadProcessId(hwnd, out var pid);
+            return pid == 0 || pid == (uint)Environment.ProcessId
+                ? null
+                : ClipboardFormats.ProcessImage(pid) is { } path ? ClipboardFormats.DisplayName(path) : null;
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"screenshot.source-failed {ex.GetType().Name}");
+            return null;
         }
     }
 
