@@ -19,7 +19,7 @@
   - 晾衣绳 `Screenshot/Clothesline*.swift`：截完图挂到屏幕顶上的绳子，和右下角的缩略图二选一（0.7.0）
   - 全局同步（设置 › 通用「同步」）：同步文件夹，便签（0.6.0）之外设置、快捷键、片段和收藏等也能同步（0.7.0）
   - 刘海岛交互：提示能悬停展开、带按钮，点刘海叫出最近的提示（0.7.0）
-- **版本**：已发布到 0.6.0（latest，2026-10-24）；`MARKETING_VERSION` 是 0.7.0、没发布，含上面标 0.7.0 的几样和第三轮体检的修复。各版真机手测都没走完。
+- **版本**：已发布到 0.7.0（latest，2026-10-30：主界面、程序坞预览、全局同步、截图历史和晾衣绳、长图标注、刘海岛交互、第三轮体检、功能图标重画）；`MARKETING_VERSION` 是 0.7.0。各版真机手测都没走完。
 - 现状、待手测、下一步看 PLAN §12（各族立项日期、批次进度的原文在 §12「各族进度摘要（原 AGENTS 项目概述）」）；手测条目和发版冒烟清单看 `macos/HANDTEST.md`；拍板和每族的规矩看 PLAN §10 和对应的 `mac-*` 规则。
 - Bundle ID `com.yy.kitty-tools.native`（Debug `com.yy.kitty-tools.native.dev`），不再改（改了会丢偏好、钥匙串和授权）；产品名 / .app 名 `Kitty Tools`（Debug `Kitty Tools Dev`）。和 Tauri 旧版同名：安装前先删掉 /Applications 里旧版的 `Kitty Tools.app`。
 - **规格**：各 `mac-*` 规则（界面与动效按 `mac-whisker`）+ 对标产品（启动器 Alfred / Raycast、翻译 Bob、截图 iShot / CleanShot、录屏 CleanShot / ⌘⇧5、录音 QuickTime / iShot、剪贴板 Paste）。`macos/PLAN.md` 只留仍有效的（§2 技术栈、§4 架构与文件表、§8 打包、§10 约束与决定、§11 实现原则与旧逻辑问题、§12 现状），历史在 `macos/docs/archive/`。
