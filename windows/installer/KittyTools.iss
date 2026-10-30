@@ -281,7 +281,9 @@ begin
   Why := WhyNotInstallDir(Dir);
   if Why <> '' then
   begin
-    MsgBox(Why, mbError, MB_OK);
+    { 静默安装也会走到这里（Inno 模拟点「下一步」，返回 False 就退出）：普通 MsgBox 不认 /SUPPRESSMSGBOXES，
+      会弹个框停住（setup-e2e 第 1 步卡死过），所以用 SuppressibleMsgBox。 }
+    SuppressibleMsgBox(Why, mbError, MB_OK, IDOK);
     Result := False;
   end;
 end;
@@ -299,7 +301,7 @@ end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
-  { 静默安装不走 NextButtonClick，位置在这里再查一遍。 }
+  { 位置在这里再查一遍（兜底：NextButtonClick 之后 WizardDirValue 还可能被别处改）。 }
   Result := WhyNotInstallDir(WithKittyFolder(WizardDirValue));
   if Result <> '' then
     exit;
