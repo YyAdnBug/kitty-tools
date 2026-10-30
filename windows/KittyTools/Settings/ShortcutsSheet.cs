@@ -39,11 +39,11 @@ internal static class ShortcutsSheet
     /// <summary>左栏的分类（就是设置页），按这个顺序排。</summary>
     private static readonly (string Page, string Title, string Glyph)[] Pages =
     {
-        ("clipboard", "剪贴板", ""),
-        ("launcher", "启动器", ""),
-        ("translate", "翻译", ""),
-        ("screenshot", "截图与录制", ""),
-        ("general", "设置窗", ""),
+        ("clipboard", "剪贴板", FeatureIcons.Clipboard),
+        ("launcher", "启动器", FeatureIcons.Launcher),
+        ("translate", "翻译", FeatureIcons.Translate),
+        ("screenshot", "截图与录制", FeatureIcons.Screenshot),
+        ("general", "设置窗", FeatureIcons.General),
     };
 
     /// <summary>在设置窗上弹出速查表，停在 <paramref name="page"/> 那一类（不是这几类的停在第一类）。</summary>
@@ -280,7 +280,7 @@ internal static class ShortcutsSheet
     private static List<ShortcutGroup> Groups() => new()
     {
         // Clipboard/ClipboardPanel.xaml.cs 的 OnKeyDown / OnKeyUp。
-        new("clipboard", "剪贴板", "clipboard", Glyphs.Copy, new[] { HotKeyActions.Clipboard }, new ShortcutEntry[]
+        new("clipboard", "剪贴板", "clipboard", FeatureIcons.Clipboard, new[] { HotKeyActions.Clipboard }, new ShortcutEntry[]
         {
             new("Enter", "粘贴选中的条目（多选时合并 / 一起 / 依次粘贴）"),
             new("Shift+Enter", "粘贴为纯文本"),
@@ -311,7 +311,7 @@ internal static class ShortcutsSheet
         }),
 
         // Launcher/LauncherPanel.xaml.cs 的 OnKeyDown，各键做什么在 LauncherModel（PLAN-v9-launcher K1–K9）。
-        new("launcher", "启动器", "launcher", Glyphs.Search, new[] { HotKeyActions.Launcher }, new ShortcutEntry[]
+        new("launcher", "启动器", "launcher", FeatureIcons.Launcher, new[] { HotKeyActions.Launcher }, new ShortcutEntry[]
         {
             new("Enter", "打开选中项（计算结果是粘贴，find 搜到的文件是在资源管理器中显示）；关机、结束进程这类要再按一次确认"),
             new("Ctrl+Enter", "在资源管理器中显示（计算结果只复制，网址用别的浏览器打开，quit 里是强制退出）"),
@@ -348,7 +348,7 @@ internal static class ShortcutsSheet
         }),
 
         // Translate/TranslateWindow.cs 的 OnRootPreviewKeyDown / OnSourceKeyDown（PLAN-v9-translate K1–K6，照 mac 速查表的「翻译」）。
-        new("translate", "翻译", "translate", Glyphs.Translate,
+        new("translate", "翻译", "translate", FeatureIcons.Translate,
             new[]
             {
                 HotKeyActions.SelectionTranslate, HotKeyActions.InputTranslate, HotKeyActions.TranslateReplace,
@@ -384,7 +384,7 @@ internal static class ShortcutsSheet
         }),
 
         // Screenshot/SelectionOverlayWindow.cs 的 OnKeyDown 和鼠标处理。
-        new("screenshot", "截图 · 框选", "capture", Glyphs.Screenshot,
+        new("screenshot", "截图 · 框选", "capture", FeatureIcons.Screenshot,
             new[] { HotKeyActions.Screenshot, HotKeyActions.ScreenshotLast, HotKeyActions.Ocr },
             new ShortcutEntry[]
             {
@@ -429,7 +429,7 @@ internal static class ShortcutsSheet
             new("Esc", "放弃"),
         }),
         // 全局的「钉住剪贴板里的图」（PLAN-v9 F3）不设默认键，没设时那一行写「未设置」（同 mac）。
-        new("screenshot", "钉图", "capture", Glyphs.Pin, new[] { HotKeyActions.PinClipboard }, new ShortcutEntry[]
+        new("screenshot", "钉图", "capture", FeatureIcons.Pin, new[] { HotKeyActions.PinClipboard }, new ShortcutEntry[]
         {
             new("滚轮", "缩放（10%–500%）"),
             new("0", "恢复 100%"),
@@ -439,7 +439,7 @@ internal static class ShortcutsSheet
             new("O", "识字并拷贝"),
             new("Esc", "双击", "关闭"),
         }),
-        new("screenshot", "录制", "capture", Glyphs.Record, new[] { HotKeyActions.Record, HotKeyActions.Audio }, new ShortcutEntry[]
+        new("screenshot", "录制", "capture", FeatureIcons.Record, new[] { HotKeyActions.Record, HotKeyActions.Audio }, new ShortcutEntry[]
         {
             new("Esc", "倒数的时候取消"),
         }),
@@ -459,7 +459,7 @@ internal static class ShortcutsSheet
         }),
 
         // Screenshot/ShotHistoryWindow.cs。
-        new("screenshot", "截图历史", "capture", Glyphs.History, new[] { HotKeyActions.ShotHistory }, new ShortcutEntry[]
+        new("screenshot", "截图历史", "capture", FeatureIcons.ScreenshotHistory, new[] { HotKeyActions.ShotHistory }, new ShortcutEntry[]
         {
             new("双击", "Enter", "改标注（录制的是用默认程序打开）"),
             new("右键", "这一条的全部操作；右键点选中的那几张里的一张是整批的"),
@@ -478,7 +478,7 @@ internal static class ShortcutsSheet
         }),
 
         // Shell/HomePanel.cs（PLAN-v10 §5）：托盘左键打开；全局的「打开主界面」不设默认键。
-        new("general", "主界面", "general", Glyphs.Home, new[] { HotKeyActions.Home }, new ShortcutEntry[]
+        new("general", "主界面", "general", FeatureIcons.Home, new[] { HotKeyActions.Home }, new ShortcutEntry[]
         {
             new("←→↑↓", "Tab", "选一格（左右到头绕回）"),
             new("Enter", "空格", "执行选中的那一格"),
@@ -487,7 +487,7 @@ internal static class ShortcutsSheet
         }),
 
         // Settings/SettingsWindow.cs 的 OnRecordKeyDown（只在录快捷键时）。
-        new("general", "设置窗", "general", Glyphs.Settings, Array.Empty<string>(), new ShortcutEntry[]
+        new("general", "设置窗", "general", FeatureIcons.General, Array.Empty<string>(), new ShortcutEntry[]
         {
             new("Esc", "录快捷键时取消；按下带 Ctrl / Alt / Shift / Win 的组合就存成新的"),
         }),

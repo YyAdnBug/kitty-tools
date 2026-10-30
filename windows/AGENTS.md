@@ -116,7 +116,7 @@ Kitty Tools 的 **Windows 原生版**（C# + WinUI 3，2026-10-23 立项）。�
 - **窗口外壳**：DWM 画的 8 圆角、系统阴影、亚克力 / Mica；窗口退场不淡出（PLAN-v7 §1）。
 - **设置窗的外壳**：Windows 11 设置的样子，NavigationView + 设置卡（U6）；里面的内容对齐 mac。
 - **字体**：Segoe UI Variable、Cascadia Mono。
-- **图标字体**：Segoe Fluent Icons。每个符号照 mac 的图标表一一对应，意思和 mac 一样，字形用 Windows 的。
+- **图标字体**：Segoe Fluent Icons。每个符号照 mac 的图标表一一对应，意思和 mac 一样，字形用 Windows 的。**例外（2026-10-30）**：色块里的功能图标（设置侧栏和页头、功能开关、快捷键页、速查表组头、主界面、启动器里对得上全局快捷动作的那几项）用和 mac 共用的那一套 `Shell/FeatureIcons.cs`（生成的，别手改；源在仓库根 `icons/feature/`，在 Mac 上跑 `swift icons/build-icons.swift windows`），`Ui/KindTile.cs` 认出 `"F1 "` 开头的路径数据就画成路径；按钮、菜单里的通用操作照旧 Segoe（PLAN-v10 §6）。
 - **常驻入口**：托盘，不是菜单栏。mac 的刘海岛在 Windows 上就是屏幕上方的胶囊，跟刘海有关的交互不移植。
 - **快捷键**：写成 `Ctrl + Shift + S`，不写 ⌘ ⌥ 这些符号。默认键避开 Windows 和常用软件已经占用的组合，PLAN.md 里定过的照旧。
 - **系统自己的东西**：右键菜单、文件对话框、通知、开始菜单、读屏（UIA），都用系统的。
@@ -170,3 +170,4 @@ pwsh windows/tools/setup-e2e.ps1 -Zip windows/build/release/<版本>/KittyTools-
 - 拼音表 `KittyTools.Core/Resources/pinyin.txt`（`swift windows/tools/pinyin-table.swift`）；
 - 应用图标 `KittyTools/Resources/AppIcon.ico` 和录制中的托盘图标 `AppIconRecording.ico`（`swift windows/tools/app-icon.swift`）；
 - 同步格式样本 `KittyTools.Tests/Fixtures/sync-golden.json`（`swift windows/tools/sync-golden.swift`，第五版用）。
+- 功能图标 `KittyTools/Shell/FeatureIcons.cs`（在仓库根跑 `swift icons/build-icons.swift windows`，源是 `icons/feature/*.svg`，和 mac 共用；2026-10-30）。

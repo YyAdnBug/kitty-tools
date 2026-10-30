@@ -43,7 +43,7 @@ internal static class LauncherActions
         var items = new List<LauncherItem>();
         if (Features.IsOn(Feature.Clipboard))
         {
-            items.Add(Item(new(Clipboard, "剪贴板历史", "Clipboard History", Glyphs.ClipboardHistory, "clipboard", HotKeyActions.Clipboard)));
+            items.Add(Item(new(Clipboard, "剪贴板历史", "Clipboard History", FeatureIcons.Clipboard, "clipboard", HotKeyActions.Clipboard)));
             items.Add(Item(
                 new(PauseClipboard, "暂停记录剪贴板", "Pause Clipboard", Glyphs.Pause, "clipboard"),
                 runtime?.Clipboard?.Paused == true ? "已暂停" : "正在记录"));
@@ -51,7 +51,7 @@ internal static class LauncherActions
 
         if (Features.IsOn(Feature.Translate))
         {
-            items.Add(Item(new(Translate, "输入翻译", "Translate Input", Glyphs.TextTranslate, "translate", HotKeyActions.InputTranslate)));
+            items.Add(Item(new(Translate, "输入翻译", "Translate Input", FeatureIcons.TranslateInput, "translate", HotKeyActions.InputTranslate)));
             items.Add(Item(
                 new(CopyTranslate, "复制即译", "Copy to Translate", Glyphs.Translate, "translate"),
                 SettingsService.Current.CopyTranslate ? "已开启" : "已关闭"));
@@ -59,17 +59,17 @@ internal static class LauncherActions
 
         if (Features.IsOn(Feature.Screenshot))
         {
-            items.Add(Item(new(Screenshot, "截图", "Screenshot Capture", Glyphs.Screenshot, "capture", HotKeyActions.Screenshot)));
+            items.Add(Item(new(Screenshot, "截图", "Screenshot Capture", FeatureIcons.Screenshot, "capture", HotKeyActions.Screenshot)));
             if (Features.IsOn(Feature.Translate))
             {
-                items.Add(Item(new(ScreenshotTranslate, "截图翻译", "Screenshot Translate", Glyphs.ScreenshotTranslate, "capture",
+                items.Add(Item(new(ScreenshotTranslate, "截图翻译", "Screenshot Translate", FeatureIcons.TranslateScreenshot, "capture",
                     HotKeyActions.ScreenshotTranslate)));
             }
 
-            items.Add(Item(new(ScreenshotLast, "截取上次区域", "Capture Last Region", Glyphs.Screenshot, "capture", HotKeyActions.ScreenshotLast)));
-            items.Add(Item(new(Ocr, "识字", "OCR Recognize Text", Glyphs.Ocr, "capture", HotKeyActions.Ocr)));
-            items.Add(Item(new(ShotHistory, "截图历史", "Screenshot History", Glyphs.History, "capture", HotKeyActions.ShotHistory)));
-            items.Add(Item(new(PinClipboard, "钉住剪贴板里的图", "Pin Clipboard Image", Glyphs.Pin, "capture",
+            items.Add(Item(new(ScreenshotLast, "截取上次区域", "Capture Last Region", FeatureIcons.ScreenshotLast, "capture", HotKeyActions.ScreenshotLast)));
+            items.Add(Item(new(Ocr, "识字", "OCR Recognize Text", FeatureIcons.ScreenshotText, "capture", HotKeyActions.Ocr)));
+            items.Add(Item(new(ShotHistory, "截图历史", "Screenshot History", FeatureIcons.ScreenshotHistory, "capture", HotKeyActions.ShotHistory)));
+            items.Add(Item(new(PinClipboard, "钉住剪贴板里的图", "Pin Clipboard Image", FeatureIcons.Pin, "capture",
                 HotKeyActions.PinClipboard)));
             if (PinHost.Count > 0)
             {
@@ -81,13 +81,13 @@ internal static class LauncherActions
 
         if (Features.IsOn(Feature.Recording))
         {
-            items.Add(Item(new(Record, RecordingHost.IsRecording ? "停止录屏" : "录屏", "Screen Recording Record Video", Glyphs.Record,
+            items.Add(Item(new(Record, RecordingHost.IsRecording ? "停止录屏" : "录屏", "Screen Recording Record Video", FeatureIcons.Record,
                 "capture", HotKeyActions.Record)));
             items.Add(Item(new(Audio, AudioHost.IsRecording ? "停止录音" : "录音", "Audio Recording Record Voice Microphone",
-                Glyphs.Microphone, "capture", HotKeyActions.Audio)));
+                FeatureIcons.RecordAudio, "capture", HotKeyActions.Audio)));
         }
 
-        items.Add(Item(new(Home, "打开主界面", "Home Panel All Features", Glyphs.Home, "general", HotKeyActions.Home)));
+        items.Add(Item(new(Home, "打开主界面", "Home Panel All Features", FeatureIcons.Home, "general", HotKeyActions.Home)));
         items.Add(Item(new(Settings, "设置", "Settings Preferences", Glyphs.Settings, "general")));
         items.Add(Item(new(Shortcuts, "快捷键速查表", "Keyboard Shortcuts", Glyphs.Keyboard, "shortcut")));
         items.Add(Item(new(About, "关于 Kitty Tools", "About Kitty Tools", Glyphs.Info, "general")));
@@ -112,21 +112,27 @@ internal static class LauncherActions
         _ => "general",
     };
 
+    /// <summary>
+    /// 行里色块的符号。对得上全局快捷动作的用和 mac 共用的功能图标（同快捷键页，mac HotKeyAction.symbol）；
+    /// 其余（暂停记录、复制即译、钉图开关、设置、速查表、关于、更新、退出）照旧是 Segoe 字形（mac 也是系统符号）。
+    /// </summary>
     public static string GlyphOf(string target) => target switch
     {
-        Clipboard => Glyphs.ClipboardHistory,
+        Clipboard => FeatureIcons.Clipboard,
         PauseClipboard => Glyphs.Pause,
-        Translate => Glyphs.TextTranslate,
+        Translate => FeatureIcons.TranslateInput,
         CopyTranslate => Glyphs.Translate,
-        Screenshot or ScreenshotLast => Glyphs.Screenshot,
-        ScreenshotTranslate => Glyphs.ScreenshotTranslate,
-        Ocr => Glyphs.Ocr,
-        ShotHistory => Glyphs.History,
-        PinClipboard or PinsToggle or PinsClose => Glyphs.Pin,
-        Record => Glyphs.Record,
-        Audio => Glyphs.Microphone,
+        Screenshot => FeatureIcons.Screenshot,
+        ScreenshotLast => FeatureIcons.ScreenshotLast,
+        ScreenshotTranslate => FeatureIcons.TranslateScreenshot,
+        Ocr => FeatureIcons.ScreenshotText,
+        ShotHistory => FeatureIcons.ScreenshotHistory,
+        PinClipboard => FeatureIcons.Pin,
+        PinsToggle or PinsClose => Glyphs.Pin,
+        Record => FeatureIcons.Record,
+        Audio => FeatureIcons.RecordAudio,
         Shortcuts => Glyphs.Keyboard,
-        Home => Glyphs.Home,
+        Home => FeatureIcons.Home,
         About => Glyphs.Info,
         Update => Glyphs.Update,
         Quit => Glyphs.Close,

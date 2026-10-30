@@ -8,6 +8,20 @@
 
 条目编号不复用。行号按条目里写的那个提交。
 
+## 0.1.1 功能图标（PLAN-v10 §6，2026-10-30 用户「现在换」，审查方在 Mac 上写、**没编译**）
+
+审查方做的：`icons/` 从 macos 拣过来；`Shell/FeatureIcons.cs` 是 Mac 上 `swift icons/build-icons.swift windows` 生成的（26 个，别手改）；
+`Ui/KindTile.cs` 认出 `"F1 "` 开头的就用 `XamlReader.Load` 解析成 `Path`，放进 24 × 24 的 `Viewbox`、占色块的 0.6；调用的地方
+（`SettingsWindow` 的 `Pages` / `FeatureTile` / 麦克风权限行 / `HotKeyGlyph`、`SettingsUi.Header`、`ShortcutsSheet` 左栏和组头、
+`LauncherActions.GlyphOf`、`KindTile.GlyphOf` 的 Clip / Translate / fy）换成 `FeatureIcons.*`；版本 0.1.1，`changelog.json` 加一条。
+
+你们做的：
+1. 编译 Debug x64 和 Release AOT，**零 trim / AOT 警告**（`XamlReader.Load` 这一路要实测；真不行就在 `KindTile` 里自己把 `M L C Q Z` 解析成 `PathGeometry`，生成的数据只有这五种命令、都是绝对坐标）；`dotnet test` 全过。
+2. `--ui-snapshots`，把设置侧栏、快捷键页、速查表、主界面、启动器内置动作各截一张浅色、一张深色，推到 `windows-shots` 的 `0.1.1-icons/`；和 mac 0.7.0 同一处对着看。
+3. 走 `HANDTEST.md` 794–800。
+4. 图标看着不对（偏、糊、太大太小、哪处还是旧字形）直接改 `KindTile` 或调用处，提交写清楚；图形本身要改的告诉审查方（改 `icons/feature/` 再两边各自生成）。
+5. 都过了再照 0.1.0 那次的命令打 0.1.1 的包、发 `windows-v0.1.1`（不标 latest、不标预发布）。
+
 ## 0.1.0 收口（PLAN-v10，2026-10-29 用户「全部按推荐」）
 
 剪贴板、翻译、启动器、截图、录屏 / 录音都对齐 mac 了，**先把 0.1.0 收口发出去**（PLAN-v10 D1），这期间不加新功能（D3）。

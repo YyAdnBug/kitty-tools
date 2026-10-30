@@ -249,7 +249,7 @@ internal static class SettingsUi
             Spacing = 12,
             Margin = new Thickness(2, 0, 2, 8),
         };
-        row.Children.Add(KindTile.Create(FamilyOfPage(title), glyph ?? Glyphs.Settings, 32));
+        row.Children.Add(KindTile.Create(FamilyOfPage(title), glyph ?? FeatureIcons.General, 32));
         row.Children.Add(texts);
         return row;
     }

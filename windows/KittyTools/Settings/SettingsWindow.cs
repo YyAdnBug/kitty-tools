@@ -52,16 +52,17 @@ internal sealed partial class SettingsWindow : Window
     private bool _active;
 
     // 侧栏顺序同 mac：通用 / 剪贴板 / 启动器 / 翻译 / 截图 / 录制 / 快捷键 / 关于（mac 独有的几页没有）。
+    // 色块是和 mac 共用的功能图标（FeatureIcons，PLAN-v10 §6）。
     private static readonly (string Tag, string Title, string Glyph)[] Pages =
     {
-        ("general", "通用", "\uE713"),
-        ("clipboard", "剪贴板", "\uE8C8"),
-        ("launcher", "启动器", "\uE721"),
-        ("translate", "翻译", "\uE774"),
-        ("screenshot", "截图", "\uE722"),
-        ("record", "录制", Glyphs.Record),
-        ("hotkeys", "快捷键", "\uE765"),
-        ("about", "关于", "\uE946"),
+        ("general", "通用", FeatureIcons.General),
+        ("clipboard", "剪贴板", FeatureIcons.Clipboard),
+        ("launcher", "启动器", FeatureIcons.Launcher),
+        ("translate", "翻译", FeatureIcons.Translate),
+        ("screenshot", "截图", FeatureIcons.Screenshot),
+        ("record", "录制", FeatureIcons.Record),
+        ("hotkeys", "快捷键", FeatureIcons.Hotkeys),
+        ("about", "关于", FeatureIcons.About),
     };
 
     /// <summary>侧栏「搜索设置」按页名和这些词筛（同 mac SettingsPage.keywords，换成 Windows 上的说法）。</summary>
@@ -599,7 +600,7 @@ internal sealed partial class SettingsWindow : Window
                 ? "录屏、录音时录下你的声音"
                 : "录屏、录音时录下你的声音；设置 › 隐私和安全性 › 麦克风 里现在不让桌面应用用",
             microphoneControl,
-            leading: KindTile.Create("capture", Glyphs.Microphone, 24),
+            leading: KindTile.Create("capture", FeatureIcons.RecordAudio, 24),
             problem: _microphoneAllowed != true));
 
         BuildSyncSection();
@@ -3179,7 +3180,7 @@ internal sealed partial class SettingsWindow : Window
     {
         if (feature == Feature.Recording)
         {
-            return KindTile.Create("capture", Glyphs.Record, 20);
+            return KindTile.Create("capture", FeatureIcons.Record, 20);
         }
 
         var tag = Features.Key(feature);
@@ -3200,23 +3201,23 @@ internal sealed partial class SettingsWindow : Window
             _ => "capture",
         };
 
-    /// <summary>全局动作的符号（快捷键页、主界面的格子）。</summary>
+    /// <summary>全局动作的符号（快捷键页、主界面的格子、速查表）：和 mac HotKeyAction.symbol 同一套功能图标。</summary>
     internal static string HotKeyGlyph(string action) => action switch
         {
-            HotKeyActions.Clipboard => Glyphs.ClipboardHistory,
-            HotKeyActions.Launcher => Glyphs.Command,
-            HotKeyActions.SelectionTranslate => Glyphs.Translate,
-            HotKeyActions.InputTranslate => Glyphs.TextTranslate,
-            HotKeyActions.ScreenshotTranslate => Glyphs.ScreenshotTranslate,
-            HotKeyActions.ScreenshotLast => Glyphs.ToolRectangle,
-            HotKeyActions.Ocr => Glyphs.Ocr,
-            HotKeyActions.Record => Glyphs.Record,
-            HotKeyActions.ShotHistory => Glyphs.Clock,
-            HotKeyActions.TranslateReplace => Glyphs.Swap,
-            HotKeyActions.Audio => Glyphs.Microphone,
-            HotKeyActions.PinClipboard => Glyphs.Pin,
-            HotKeyActions.Home => Glyphs.Home,
-            _ => Glyphs.Screenshot,
+            HotKeyActions.Clipboard => FeatureIcons.Clipboard,
+            HotKeyActions.Launcher => FeatureIcons.Launcher,
+            HotKeyActions.SelectionTranslate => FeatureIcons.TranslateSelection,
+            HotKeyActions.InputTranslate => FeatureIcons.TranslateInput,
+            HotKeyActions.ScreenshotTranslate => FeatureIcons.TranslateScreenshot,
+            HotKeyActions.ScreenshotLast => FeatureIcons.ScreenshotLast,
+            HotKeyActions.Ocr => FeatureIcons.ScreenshotText,
+            HotKeyActions.Record => FeatureIcons.Record,
+            HotKeyActions.ShotHistory => FeatureIcons.ScreenshotHistory,
+            HotKeyActions.TranslateReplace => FeatureIcons.TranslateReplace,
+            HotKeyActions.Audio => FeatureIcons.RecordAudio,
+            HotKeyActions.PinClipboard => FeatureIcons.Pin,
+            HotKeyActions.Home => FeatureIcons.Home,
+            _ => FeatureIcons.Screenshot,
         };
 
     private static string FamilyForPage(string tag) => tag switch

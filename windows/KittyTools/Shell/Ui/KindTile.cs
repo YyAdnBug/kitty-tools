@@ -1,5 +1,7 @@
 // 种类色块（PLAN-v7 §2.1）：家族色从上往下 0.95 → 0.75 的渐变，白色符号，0.5 px 内描边。
 // 24 / 32 两档；取代以前的「家族色 12% 淡底 + 彩色符号」。启动器各种结果的家族色和符号照 mac（PLAN-v9-launcher V8）。
+// 功能图标（2026-10-30，PLAN-v10 §6）：和 mac 共用的那一套是路径数据（FeatureIcons，"F1 M…"），这里画成路径；
+// 别的符号照旧是 Segoe 字形。调用的地方传哪种都行，一个入口分开画。
 using KittyTools.Core;
 using Microsoft.UI;
 using Microsoft.UI.Text;
@@ -23,15 +25,46 @@ internal static class KindTile
     {
         var color = Theme.Family.For(family);
         var border = Create(color, size);
-        border.Child = new FontIcon
+        border.Child = Symbol(glyph ?? Glyphs.App, size);
+        return border;
+    }
+
+    /// <summary>
+    /// 色块里的符号：功能图标（<see cref="FeatureIcons"/>）画成路径，24 格放进色块的 0.6（同 mac KindTile：20 → 12、24 → 14.4、
+    /// 32 → 19.2）；Segoe 字形照旧，字号是色块的一半。
+    /// </summary>
+    private static FrameworkElement Symbol(string glyph, double size)
+    {
+        var white = new SolidColorBrush(Colors.White);
+        if (!glyph.StartsWith("F1 ", StringComparison.Ordinal))
         {
-            Glyph = glyph ?? Glyphs.App,
-            FontSize = size * 0.5,
-            Foreground = new SolidColorBrush(Colors.White),
+            return new FontIcon
+            {
+                Glyph = glyph,
+                FontSize = size * 0.5,
+                Foreground = white,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+        }
+
+        // 路径数据交给 XAML 自己解析（不走反射，AOT 照样能用）。
+        // ponytail: 每个色块现解析一次（一个图标几 KB，同时在屏上的色块最多几十个）；Geometry 不能被几个 Path 共用，
+        // 真要省就缓存 XAML 串、照样每次 Load。
+        var path = (Microsoft.UI.Xaml.Shapes.Path)Microsoft.UI.Xaml.Markup.XamlReader.Load(
+            "<Path xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\" Data=\"" + glyph + "\"/>");
+        path.Fill = white;
+        path.Width = 24;
+        path.Height = 24;
+        path.Stretch = Stretch.None;
+        return new Viewbox
+        {
+            Width = size * 0.6,
+            Height = size * 0.6,
+            Child = path,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
         };
-        return border;
     }
 
     public static Border Create(Color color, double size = 24)
@@ -96,8 +129,8 @@ internal static class KindTile
         LauncherKind.Path => Glyphs.File,
         LauncherKind.Search or LauncherKind.Prompt => Glyphs.Search,
         LauncherKind.Calculation => Glyphs.Calculator,
-        LauncherKind.Clip => Glyphs.ClipboardHistory,
-        LauncherKind.Translate => Glyphs.TextTranslate,
+        LauncherKind.Clip => FeatureIcons.Clipboard,
+        LauncherKind.Translate => FeatureIcons.Translate,
         LauncherKind.Process => Glyphs.Process,
         LauncherKind.Ip => Glyphs.Port,
         _ => Glyphs.App,
@@ -129,7 +162,7 @@ internal static class KindTile
             "system-forcequit" => Glyphs.Error,
             "system-kill" => Glyphs.Stop,
             "system-port" => Glyphs.Port,
-            "translate-fy" => Glyphs.TextTranslate,
+            "translate-fy" => FeatureIcons.Translate,
             _ => Glyphs.Search,
         },
         _ => GlyphOf(kind),

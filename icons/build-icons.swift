@@ -490,7 +490,7 @@ func writeWindows(_ icons: [(name: String, title: String, path: CGPath)]) throws
     lines.append("    public const string \(constantName(icon.name)) = \"F1 \(pathData(icon.path))\";")
   }
   lines.append("}")
-  try (lines.joined(separator: "\r\n") + "\r\n").write(to: file, atomically: true, encoding: .utf8)
+  try (lines.joined(separator: "\n") + "\n").write(to: file, atomically: true, encoding: .utf8)
   print("windows: \(icons.count) 个 → \(file.path)")
 }
 
