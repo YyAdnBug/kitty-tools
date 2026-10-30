@@ -22,6 +22,30 @@
 4. 图标看着不对（偏、糊、太大太小、哪处还是旧字形）直接改 `KindTile` 或调用处，提交写清楚；图形本身要改的告诉审查方（改 `icons/feature/` 再两边各自生成）。
 5. 都过了再照 0.1.0 那次的命令打 0.1.1 的包、发 `windows-v0.1.1`（不标 latest、不标预发布）。
 
+**Windows 这边做的（2026-10-30，Claude 在 worktree `kitty-win-claude`）**：
+- **`XamlReader.Load` 在 AOT 里崩**（4592f65）：AOT 编译零警告，但 Release 的 exe 一启动建设置窗就 `InvalidCastException`
+  （`KindTile.Symbol`，crash 日志 stage=xaml）——Load 拿回来的对象转不成 `Path`。照第 1 条的后路改成自己解析：
+  `Core/PathData.cs`（F0/F1、M L Q C Z、绝对坐标，别的命令报错），`KindTile` 拼成 `PathGeometry`；测试项目链接
+  `FeatureIcons.cs`，26 个都能解析、坐标都在 24 格里。改完 Release x64 / ARM64 零警告，`dotnet test` 463 个全过，
+  Release x64 跑 `--ui-snapshots` 不再崩。**以后加 `XamlReader` 一类的东西，得跑一次 Release 的 exe 才算验过。**
+- `--ui-snapshots` 加了启动器 `launcher-icons-*`、`home-light/dark`、`shortcuts-sheet`（速查表左栏 + 截图那一类）、
+  `settings-about`、`icons-scale`（aabd713）。Release 出的 11 张在 `windows-shots` 的 `0.1.1-icons/`（580325c）。
+- 和 mac 对照：这台机器上没有 mac，对的是代码——`HotKeyGlyph` / 侧栏 `Pages` / `LauncherActions.GlyphOf` 和 mac 的
+  `HotKeyAction.symbol`、`SettingsTab.symbol` 一一对得上；剩下还用 Segoe 字形的都是 HANDTEST 写了「照旧」的
+  （暂停记录、复制即译、钉图开关、设置、速查表、关于、退出、截图 · 标注 / 出图 / 长截图 / 翻译 · 历史的组头、工具栏和菜单）。
+- HANDTEST 794–800：
+  - 794 侧栏和页头：浅 / 深看过（截图），每行都是新图标、没有空的，关于那行是 App 图标。**关于页在 Windows 上没有页头**
+    （`BuildAbout` 是品牌页：128 的 App 图标 + 字标），所以「页头 32 的色块是猫头」这一句不适用，`FeatureIcons.About`
+    目前在 Windows 上没有地方画出来——要不要在哪里用猫头，审查方定。高对比度没看（要改系统设置）。
+  - 795 功能开关和麦克风权限行：看过（settings-general 截图），和侧栏同一个图，麦克风行是麦克风。
+  - 796 快捷键页、797 速查表（左栏五类 + 截图那一类的组头；剪贴板组头）、798 主界面、799 启动器搜「截图」「剪贴板」
+    「录」「主界面」「fy」：都看过截图，符合；799 选中行时底栏左边小色块是种类（命令）的 Segoe 字形，没变。
+    启动器那几项是自检里直接塞查询，没在真启动器上打字（不在桌面上合成按键）。
+  - 800 清晰和缩放：这台机器只有一块 100% 的屏，**150% / 200% 没在真屏上看**（改显示缩放是系统设置，我不动）；
+    用 `icons-scale`（放大变换，矢量照样按最终尺寸栅格化）看了 1、1.5、2 倍：边缘干净、在色块里居中。
+    「打开设置窗、速查表不比以前慢」没量；解析结果按字符串缓存，每个色块只新建一份几十段的 PathGeometry。
+- 图形本身没发现要改的。
+
 ## 0.1.0 收口（PLAN-v10，2026-10-29 用户「全部按推荐」）
 
 剪贴板、翻译、启动器、截图、录屏 / 录音都对齐 mac 了，**先把 0.1.0 收口发出去**（PLAN-v10 D1），这期间不加新功能（D3）。
