@@ -461,7 +461,13 @@ internal sealed partial class SettingsWindow : Window
 
     private static async Task LoadAppIconAsync(Image image, double scale, double size)
     {
-        var png = await Task.Run(() => ShellIcons.LoadPng(Paths.ExecutablePath, scale, size));
+        // ico 里 64 往上只有 256 一档（windows/tools/app-icon.swift）。要的像素超过 64 时直接取 256 那张、交给 XAML 缩小；
+        // 按原尺寸要的话（关于页 128），系统挑离得最近的 64 那张放大两倍，很糊（2026-10-30 用户真机报的）。
+        // ponytail: 超过 256 像素（128 的图标在 250% 缩放下）还是从 256 放大，到时候 ico 加一档 512。
+        var pixels = MonitorLayout.Pixels(size, Math.Max(1.0, scale));
+        var png = await Task.Run(() => pixels > 64
+            ? ShellIcons.LoadPng(Paths.ExecutablePath, 1.0, 256)
+            : ShellIcons.LoadPng(Paths.ExecutablePath, scale, size));
         if (png is { Length: > 0 })
         {
             image.Source = IconSource(png);

@@ -25,7 +25,9 @@ zip 和 `.sha256` 并校验，不装，报告 `%TEMP%\kitty-update-live\report.t
 你们做的：
 1. 编译 Debug / Release AOT 零警告，`dotnet test` 全过（`NextHopKeepsPercentEscapes`、`NextHopResolvesRelativeLocation`）。
 2. 先在旧版（之前装的 0.1.0 / 0.1.1）的日志里确认原因：点更新那一下有 `update.untrusted-url`。不是这个的话停下来报告，别发。
-3. 打 0.1.0 的包（先删掉旧的 `windows\build\release\0.1.0\`），走 HANDTEST 802（覆盖装）。
+3. 打 0.1.0 的包（先删掉旧的 `windows\build\release\0.1.0\`），走 HANDTEST 802（覆盖装）、804（关于页图标）。
+   - 顺带修的：设置 › 关于的 128 App 图标很糊（用户截图）——`AppIconImage` 按原尺寸向系统要图标，ico 里没有 128 那档，系统挑 64 放大两倍；
+     改成要的像素超过 64 就取 256 那张交给 XAML 缩小（`SettingsWindow.LoadAppIconAsync`）。
 4. 都过了照上次的命令发 `windows-v0.1.0`（不标 latest、不标预发布）；发完马上用新包跑 HANDTEST 801（`--update-live=0.1.0`，从刚发的 release 真下载、校验），不 ok 就把这次的 release 删掉、停下来报告。
 
 ## 0.1.1 功能图标（PLAN-v10 §6，2026-10-30 用户「现在换」，审查方在 Mac 上写、**没编译**；已并进重发的 0.1.0）
