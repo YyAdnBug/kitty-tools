@@ -33,7 +33,6 @@ macOS 版用 Swift 6 + SwiftUI / AppKit 写成，常驻菜单栏、不占程序�
 |---|---|---|
 | [`macos`](https://github.com/YyAdnBug/kitty-tools/tree/macos) | macOS 版（Swift 6 + SwiftUI / AppKit），零第三方依赖 | tag `macos-v*`，最新一版标 latest |
 | [`windows`](https://github.com/YyAdnBug/kitty-tools/tree/windows) | Windows 版（C# + .NET + WinUI 3，Native AOT），只用微软的包 | tag `windows-v*`，不标 latest |
-| [`windows-next`](https://github.com/YyAdnBug/kitty-tools/tree/windows-next) | Windows 版下一版正在做的功能，做完并回 `windows` | — |
 
 两个版本的功能、样子和默认值尽量对齐；剪贴板片段、生词本、网页搜索、翻译服务能在 Mac 和 Windows 之间同步。
 
