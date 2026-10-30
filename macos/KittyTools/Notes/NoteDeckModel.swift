@@ -400,7 +400,7 @@ import SwiftUI
   /// 「便签」页）。前面是家族色的符号（系统菜单，非模板图）
   var edgeItems: [ActionMenu.Item] {
     func icon(_ symbol: String, _ color: Color) -> NSImage? {
-      NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+      NSImage.symbol(symbol)?
         .withSymbolConfiguration(.init(hierarchicalColor: NSColor(color)))
     }
     return [

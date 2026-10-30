@@ -164,7 +164,7 @@ struct IslandExcerptTests {
       "folder.badge.minus",
     ]
     for symbol in plated + bare {
-      #expect(NSImage(systemSymbolName: symbol, accessibilityDescription: nil) != nil, "\(symbol)")
+      #expect(NSImage.symbol(symbol) != nil, "\(symbol)")
     }
     #expect(plated.allSatisfy(Island.hasPlate) && !bare.contains(where: Island.hasPlate))
   }

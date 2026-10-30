@@ -48,6 +48,7 @@ macos/                       # 本分支唯一开发区
 ├── PLAN.md                  # 仍有效的方案：§2 技术栈、§4 架构与文件表、§8 打包、§10 约束与决定、§11 实现原则、§12 现状与下一步
 ├── HANDTEST.md              # 发版冒烟清单 + 各批手测条目（原 PLAN §12，编号不变；新的手测加在这里）
 └── docs/archive/            # PLAN 挪出去的迁移期历史和已完成批次的实现记录（原样，只查不改）
+icons/                       # 功能图标：mac 和 Windows 共用的 26 个 SVG（feature/kitty.*.svg）+ 生成脚本 build-icons.swift
 .cursor/rules/               # mac-native.mdc（常驻）、ponytail.mdc（只给 Cursor）、各 mac-* 规则（mac-whisker 拆成核心 + mac-whisker-<界面>.mdc）
 .claude/skills/mac-*/        # 按需技能，里程碑结束后补
 ```
@@ -175,6 +176,10 @@ macos/build-dmg.sh
 
 # 重新生成 App 图标、菜单栏剪影和 DMG 背景（改角色或产品名只改这个脚本；加一个目录参数另存放大预览）
 swift macos/brand-icons.swift
+
+# 功能图标（色块里那 26 个，mac 和 Windows 共用）：改了 icons/feature/*.svg 之后重新生成 mac 的自定义符号；
+# 每个图标合成后和逐元素直接画的逐像素比，对不上就报错。Windows 那份 FeatureIcons.cs 在 windows-wip 上跑 `… windows`
+swift icons/build-icons.swift mac
 
 # 状态屏的动画表情：把下载好的 Microsoft Fluent Emoji Animated 动画 PNG 转成包里用的 HEICS（要加表情时才跑；
 # 原文件不进仓库，本机留在 macos/build/status-emoji/src/；清单在脚本和 StatusScreen/StatusEmoji.swift 两处）

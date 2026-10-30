@@ -575,7 +575,7 @@ struct NotesWindowTests {
     #expect(actions.allSatisfy { $0.color == Style.Family.notes })
     #expect(Set(actions.map(\.symbol)).count == 3)
     for symbol in actions.map(\.symbol) + ["rectangle.split.2x1", "archivebox", "trash.slash"] {
-      #expect(NSImage(systemSymbolName: symbol, accessibilityDescription: nil) != nil, "\(symbol)")
+      #expect(NSImage.symbol(symbol) != nil, "\(symbol)")
     }
     // 默认键让给用户自己设的：别的动作存了 ⌥N，快速记一条没设过就当没设
     let optionN = try JSONEncoder().encode(HotKey(keyCode: kVK_ANSI_N, modifiers: optionKey))

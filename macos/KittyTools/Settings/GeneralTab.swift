@@ -170,7 +170,7 @@ struct GeneralTab: View {
       detail: behavior == .alwaysDeny
         ? "已被拒绝，剪贴板历史不会再记录新内容；到「从其他 App 粘贴」里改成始终允许"
         : "后台记录剪贴板历史；系统询问时到「从其他 App 粘贴」里改成始终允许",
-      symbol: "doc.on.clipboard.fill", color: Style.Family.clipboard,
+      symbol: HotKeyAction.clipboard.symbol, color: Style.Family.clipboard,
       granted: behavior != .ask && behavior != .alwaysDeny, button: "打开设置"
     ) {
       // ponytail: 打开隐私那一栏的总页；「从其他 App 粘贴」的专用锚点真机查到再换
@@ -226,7 +226,7 @@ extension PermissionRow {
   static func screenRecording(granted: Bool) -> PermissionRow {
     PermissionRow(
       title: "屏幕录制", detail: "截图、截图翻译、识字、录屏、录系统声音、程序坞预览的缩略图；授权后可能要重新打开本 App 才生效",
-      symbol: "record.circle", color: Style.Family.screenshot, granted: granted
+      symbol: HotKeyAction.screenRecord.symbol, color: Style.Family.screenshot, granted: granted
     ) {
       Permissions.requestScreenRecording()
       Permissions.Kind.screenRecording.openSettings()

@@ -200,7 +200,7 @@ private struct NoteIconButton: View {
 
   var body: some View {
     Button(action: action) {
-      Image(systemName: symbol)
+      Image(symbol: symbol)
         .font(.system(size: 13, weight: .medium))
         .foregroundStyle(ink)
         .contentTransition(.symbolEffect(.replace))

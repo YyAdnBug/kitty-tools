@@ -40,7 +40,7 @@ struct DockPreviewTab: View {
           Permissions.openAccessibilitySettings()
         }
         PermissionRow(
-          title: "屏幕录制", detail: "截窗口的缩略图；没有它只列窗口的名字", symbol: "record.circle",
+          title: "屏幕录制", detail: "截窗口的缩略图；没有它只列窗口的名字", symbol: HotKeyAction.screenRecord.symbol,
           color: Style.Family.screenshot, granted: screenRecording
         ) {
           Permissions.requestScreenRecording()

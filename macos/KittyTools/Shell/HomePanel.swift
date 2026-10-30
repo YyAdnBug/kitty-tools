@@ -425,7 +425,7 @@ private struct HomeTile: View {
   @ViewBuilder private var icon: some View {
     if let isOn = tile.isOn {
       // 开关：圆，关着中性底，开着强调色（同控制中心）
-      Image(systemName: tile.symbol)
+      Image(symbol: tile.symbol)
         .font(.system(size: 13, weight: .semibold))
         .foregroundStyle(isOn ? AnyShapeStyle(Style.onBrand) : AnyShapeStyle(.primary))
         .frame(width: 30, height: 30)

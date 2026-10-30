@@ -50,7 +50,7 @@ private struct QuickAction: View {
   var body: some View {
     Button(action: run) {
       VStack(spacing: 5) {
-        Image(systemName: action.symbol ?? "circle")
+        Image(symbol: action.symbol ?? "circle")
           .font(.system(size: 15, weight: .medium))
           .foregroundStyle(.white.opacity(0.92))
           .frame(width: 36, height: 36)

@@ -464,7 +464,7 @@ extension LauncherItem {
     case .prompt where target.hasPrefix("file-"): "doc.text.magnifyingglass"
     case .prompt where target.hasPrefix("system-"):
       SystemCommands.Verb(rawValue: String(target.dropFirst("system-".count)))?.symbol ?? "power"
-    case .prompt where target == "translate-fy": "character.bubble.fill"
+    case .prompt where target == "translate-fy": SettingsPage.translate.symbol
     case .search, .prompt: "magnifyingglass"
     default: symbol
     }
@@ -478,7 +478,7 @@ extension LauncherItem {
     case .path: contentType?.conforms(to: .folder) == true ? "folder.fill" : "doc.fill"
     case .action: isStatusPreset ? HotKeyAction.statusScreen.symbol : "command"
     case .system: "power"
-    case .translate: "character.bubble.fill"
+    case .translate: SettingsPage.translate.symbol
     case .url where isSettingsPane: "gearshape.fill"
     default: tileSymbol
     }

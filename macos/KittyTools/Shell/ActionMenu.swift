@@ -214,7 +214,7 @@ struct ActionMenu: View {
         if let image = item.image {
           Image(nsImage: image).resizable().frame(width: 16, height: 16)
         } else if let symbol = item.symbol {
-          Image(systemName: symbol)
+          Image(symbol: symbol)
             .font(.system(size: 12, weight: .medium))
             .frame(width: 16)
             .foregroundStyle(ink)

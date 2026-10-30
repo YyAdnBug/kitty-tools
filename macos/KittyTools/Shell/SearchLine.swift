@@ -12,7 +12,7 @@ struct SearchLine<Content: View>: View {
 
   var body: some View {
     HStack(spacing: 6) {
-      Image(systemName: symbol)
+      Image(symbol: symbol)
         .font(.system(size: 17, weight: .medium))
         .foregroundStyle(.tertiary)
         .contentTransition(.symbolEffect(.replace))

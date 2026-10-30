@@ -968,7 +968,7 @@ struct IslandLeading: View {
       let ink = content.tone == .info || content.tone == .progress ? Style.onBrand : .white
       Group {
         if Island.hasPlate(content.symbol) {
-          Image(systemName: content.symbol)
+          Image(symbol: content.symbol)
             .symbolRenderingMode(.palette)
             .foregroundStyle(ink, Self.tint(content.tone))
         } else {
@@ -977,7 +977,7 @@ struct IslandLeading: View {
           Image(systemName: "circle.fill")
             .foregroundStyle(Self.tint(content.tone))
             .overlay {
-              Image(systemName: content.symbol)
+              Image(symbol: content.symbol)
                 .resizable()
                 .scaledToFit()
                 .frame(width: 12, height: 12)

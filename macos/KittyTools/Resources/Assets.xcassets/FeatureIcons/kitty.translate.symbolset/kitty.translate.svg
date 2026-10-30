@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<!-- 生成的文件，别手改：源在仓库根的 icons/feature/，改完跑 swift icons/build-icons.swift mac -->
+<svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="3300" height="2200">
+ <g id="Notes">
+  <rect height="2200" id="artboard" style="fill:white;opacity:1" width="3300" x="0" y="0"/>
+  <text id="template-version" style="stroke:none;fill:black;font-family:sans-serif;font-size:13;text-anchor:end;" transform="matrix(1 0 0 1 3036 1933)">Template v.3.0</text>
+ </g>
+ <g id="Guides">
+  <line id="Baseline-S" style="fill:none;stroke:#27AAE1;opacity:1;stroke-width:0.5;" x1="263" x2="3036" y1="696" y2="696"/>
+  <line id="Capline-S" style="fill:none;stroke:#27AAE1;opacity:1;stroke-width:0.5;" x1="263" x2="3036" y1="625.541" y2="625.541"/>
+  <line id="Baseline-M" style="fill:none;stroke:#27AAE1;opacity:1;stroke-width:0.5;" x1="263" x2="3036" y1="1126" y2="1126"/>
+  <line id="Capline-M" style="fill:none;stroke:#27AAE1;opacity:1;stroke-width:0.5;" x1="263" x2="3036" y1="1055.54" y2="1055.54"/>
+  <line id="Baseline-L" style="fill:none;stroke:#27AAE1;opacity:1;stroke-width:0.5;" x1="263" x2="3036" y1="1556" y2="1556"/>
+  <line id="Capline-L" style="fill:none;stroke:#27AAE1;opacity:1;stroke-width:0.5;" x1="263" x2="3036" y1="1485.54" y2="1485.54"/>
+  <line id="left-margin-Regular-M" style="fill:none;stroke:#00AEEF;stroke-width:0.5;opacity:1.0;" y1="1030.79" y2="1150.12" x1="1440" x2="1440"/>
+  <line id="right-margin-Regular-M" style="fill:none;stroke:#00AEEF;stroke-width:0.5;opacity:1.0;" y1="1030.79" y2="1150.12" x1="1560" x2="1560"/>
+ </g>
+ <g id="Symbols">
+  <g id="Regular-M" transform="matrix(1 0 0 1 1440 1126)">
+   <path d="M110 -40.23L110 -10.23C110 -1.946 103.284 4.77 95 4.77L93 4.77L98 18.77L77 4.77L60 4.77C51.716 4.77 45 -1.946 45 -10.23L45 -40.23C45 -48.514 51.716 -55.23 60 -55.23L95 -55.23C103.284 -55.23 110 -48.514 110 -40.23ZM73.5 -42.23L63 -7.23L71.25 -7.23L73.5 -15.23L81.5 -15.23L83.75 -7.23L92 -7.23L81.5 -42.23ZM79.75 -22.23L75.25 -22.23L77.5 -30.73ZM70 -72.73L70 -62.73L60 -62.73C47.574 -62.73 37.5 -52.656 37.5 -40.23L37.5 -35.23L22.5 -35.23C15.596 -35.23 10 -40.826 10 -47.73L10 -72.73C10 -79.634 15.596 -85.23 22.5 -85.23L57.5 -85.23C64.404 -85.23 70 -79.634 70 -72.73Z"/>
+  </g>
+ </g>
+</svg>

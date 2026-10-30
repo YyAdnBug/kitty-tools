@@ -342,35 +342,35 @@ enum HotKeyAction: String, CaseIterable {
     .screenshot, .recognizeText, .screenshotTranslate, .screenRecord, .audioRecord, .noteCapture,
   ]
 
-  /// 种类色块里的符号
+  /// 种类色块里的符号：自画的功能图标（2026-10-30 拍板，mac 和 Windows 共用一套，见 SymbolImage）。
+  /// 色块、菜单栏菜单、主界面、刘海岛、速查表都用它；截图工具栏、⌘K 里的同名按钮照旧是 SF Symbols（拍板 D2）
   var symbol: String {
     switch self {
-    case .clipboard: "doc.on.clipboard.fill"
-    case .launcher: "command"
-    case .selectionTranslate: "character.bubble.fill"
-    case .inputTranslate: "character.cursor.ibeam"
-    case .translateReplace: "arrow.left.arrow.right"
-    // 截图家族同一个动作到处同一个图标（体检 B44）：截图翻译 = translate，识字 = text.viewfinder（同截图工具栏、剪贴板 ⌘K）
-    case .screenshotTranslate: "translate"
-    case .screenshot: "camera.viewfinder"
-    case .screenshotLastRegion: "rectangle.dashed"
-    case .recognizeText: "text.viewfinder"
-    case .screenRecord: "record.circle"
-    case .audioRecord: "waveform"
-    // 同速查表的「钉图」组、常驻缩略图的钉图钮；不用 pin：菜单里紧挨着的「隐藏全部钉图」是它
-    case .pinClipboard: "pin.fill"
-    case .shotHistory: "clock.arrow.circlepath"
-    // 晾衣绳：挂着照片的绳子（SF Symbols 里没有绳子，用挂在横杆上的那个）
-    case .clothesline: "photo.on.rectangle.angled"
-    case .statusScreen: "hand.raised.fill"
-    case .noteCapture: "square.and.pencil"
-    case .noteNew: "note.text.badge.plus"
+    case .clipboard: "kitty.clipboard"
+    case .launcher: "kitty.launcher"
+    case .selectionTranslate: "kitty.translate.selection"
+    case .inputTranslate: "kitty.translate.input"
+    case .translateReplace: "kitty.translate.replace"
+    // 截图家族三个共用取景框四角：截图、识字、截图翻译
+    case .screenshotTranslate: "kitty.translate.screenshot"
+    case .screenshot: "kitty.screenshot"
+    case .screenshotLastRegion: "kitty.screenshot.last"
+    case .recognizeText: "kitty.screenshot.text"
+    case .screenRecord: "kitty.record"
+    case .audioRecord: "kitty.record.audio"
+    // 同速查表的「钉图」组；菜单里紧挨着的「隐藏全部钉图」是 SF 的 pin
+    case .pinClipboard: "kitty.pin"
+    case .shotHistory: "kitty.screenshot.history"
+    case .clothesline: "kitty.clothesline"
+    case .statusScreen: "kitty.status.screen"
+    case .noteCapture: "kitty.notes.capture"
+    case .noteNew: "kitty.notes.new"
     // 便签家族的符号（设置页头、速查表那一组也是它）
-    case .noteAll: "note.text"
-    case .launchpad: "square.grid.3x3.fill"
-    case .island: "rectangle.topthird.inset.filled"
+    case .noteAll: "kitty.notes"
+    case .launchpad: "kitty.launchpad"
+    case .island: "kitty.island"
     // 从菜单栏垂下来的那一块
-    case .home: "menubar.arrow.down.rectangle"
+    case .home: "kitty.home"
     }
   }
 

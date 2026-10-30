@@ -343,8 +343,7 @@ struct KindTile: View {
 
   var body: some View {
     let shape = RoundedRectangle(cornerRadius: Style.Radius.tile(size), style: .continuous)
-    Image(systemName: symbol)
-      .font(.system(size: size * 0.5, weight: .semibold))
+    glyph
       .foregroundStyle(Style.Family.onTile(color))
       .frame(width: size, height: size)
       .background(
@@ -354,6 +353,16 @@ struct KindTile: View {
             endPoint: .bottom))
       )
       .overlay(shape.strokeBorder(.white.opacity(0.18), lineWidth: 0.5))
+  }
+
+  /// 自画的 kitty.* 用配好字号的 NSImage 画：设置侧栏的 List 里按名字取的资源符号（Image("kitty.…")）什么都不画
+  /// （2026-10-30 macOS 27 屏外实测：同一个 List 里系统符号、Image(nsImage:) 都正常，别处的 Image("kitty.…") 也正常）
+  @ViewBuilder private var glyph: some View {
+    if SymbolImage.isCustom(symbol), let image = SymbolImage.sized(symbol, pointSize: size * 0.5) {
+      Image(nsImage: image)
+    } else {
+      Image(symbol: symbol).font(.system(size: size * 0.5, weight: .semibold))
+    }
   }
 }
 
@@ -606,7 +615,7 @@ struct EmptyState<Detail: View>: View {
 
   var body: some View {
     VStack(spacing: 8) {
-      Image(systemName: symbol)
+      Image(symbol: symbol)
         .font(.system(size: 28))
         .symbolRenderingMode(.hierarchical)
         .foregroundStyle(.tertiary)

@@ -191,7 +191,7 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
     if kind == .action || kind == .clip, let action = hotKeyAction { return action.symbol }
     return switch (kind, target) {
     case (.action, _): MenuExtra(rawValue: target)?.symbol ?? "gearshape"
-    case (.translate, _): "character.bubble.fill"
+    case (.translate, _): SettingsPage.translate.symbol
     case (.system, _): SystemCommand(rawValue: target)?.symbol ?? "power"
     case (.process, _): "terminal.fill"
     case (.ip, let target):

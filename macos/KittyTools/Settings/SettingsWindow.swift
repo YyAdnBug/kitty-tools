@@ -49,18 +49,18 @@ enum SettingsPage: String, CaseIterable, Identifiable {
 
   var symbol: String {
     switch self {
-    case .general: "gearshape.fill"
-    case .clipboard: "doc.on.clipboard.fill"
-    case .launcher: "command"
-    case .launchpad: "square.grid.3x3.fill"
-    case .screenshot: "camera.viewfinder"
-    case .record: "record.circle"
+    case .general: "kitty.general"
+    case .clipboard: HotKeyAction.clipboard.symbol
+    case .launcher: HotKeyAction.launcher.symbol
+    case .launchpad: HotKeyAction.launchpad.symbol
+    case .screenshot: HotKeyAction.screenshot.symbol
+    case .record: HotKeyAction.screenRecord.symbol
     case .notes: HotKeyAction.noteAll.symbol
     case .statusScreen: HotKeyAction.statusScreen.symbol
-    case .dockPreview: "dock.rectangle"
-    case .translate: "character.bubble.fill"
-    case .hotkeys: "keyboard.fill"
-    case .about: "info.circle.fill"
+    case .dockPreview: "kitty.dock.preview"
+    case .translate: "kitty.translate"
+    case .hotkeys: "kitty.hotkeys"
+    case .about: "kitty.about"  // 品牌页：猫头
     }
   }
 

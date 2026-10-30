@@ -204,7 +204,7 @@ struct ShotChromeTests {
     }
   }
 
-  // 栏里用到的 SF Symbols（连同菜单栏 / 快捷键页的热键动作图标）在最低系统上都存在（force unwrap 不会崩）
+  // 栏里用到的 SF Symbols（连同菜单栏 / 快捷键页的热键动作图标，那些是自画的 kitty.*）在最低系统上都存在（force unwrap 不会崩）
   @Test func toolbarSymbolsExist() {
     let symbols =
       Annotation.Tool.allCases.map(\.symbol) + HotKeyAction.allCases.map(\.symbol) + [
@@ -213,7 +213,7 @@ struct ShotChromeTests {
         "checkmark",
       ]
     for symbol in symbols {
-      #expect(NSImage(systemSymbolName: symbol, accessibilityDescription: nil) != nil, "\(symbol)")
+      #expect(NSImage.symbol(symbol) != nil, "\(symbol)")
     }
   }
 

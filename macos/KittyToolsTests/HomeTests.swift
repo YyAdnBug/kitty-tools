@@ -37,14 +37,14 @@ struct HomeTests {
     // 名字、符号、家族色和菜单 / 启动器同一份（主界面里用的符号都在）
     for tile in tiles {
       #expect(
-        NSImage(systemSymbolName: tile.symbol, accessibilityDescription: nil) != nil,
+        NSImage.symbol(tile.symbol) != nil,
         "\(tile.symbol)")
       if case .action(let action) = tile.target {
         #expect(tile.title == action.title && tile.color == action.color)
       }
     }
     #expect(
-      NSImage(systemSymbolName: HotKeyAction.home.symbol, accessibilityDescription: nil) != nil)
+      NSImage.symbol(HotKeyAction.home.symbol) != nil)
   }
 
   /// 开关开着、有钉图、在录屏时：格子跟着现在的样子

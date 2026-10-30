@@ -345,8 +345,16 @@ private struct NotesToolbar: View, Equatable {
           .disabled(!state.hasNote)
           .help("删除（⌘⌫），进「最近删除」")
         }
-        Button(Model.newTitle, systemImage: HotKeyAction.noteNew.symbol) { model.create() }
-          .help("新建便签（⌘N）")
+        Button {
+          model.create()
+        } label: {
+          Label {
+            Text(Model.newTitle)
+          } icon: {
+            Image(symbol: HotKeyAction.noteNew.symbol)
+          }
+        }
+        .help("新建便签（⌘N）")
         // 手测反馈第 3 批：去设置的快捷入口，落在「便签」那一页
         Button(Model.settingsTitle, systemImage: Model.settingsSymbol) { model.openSettings() }
           .help("\(Model.settingsTitle)（⌘,）")

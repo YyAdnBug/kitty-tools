@@ -108,7 +108,7 @@ struct ShortcutsSheet: View {
   /// 页头：40 pt 色块 + 标题 + 说明
   private var header: some View {
     HStack(spacing: 12) {
-      KindTile(symbol: "keyboard.fill", color: Style.Family.keyboard, size: 40)
+      KindTile(symbol: SettingsPage.hotkeys.symbol, color: Style.Family.keyboard, size: 40)
       VStack(alignment: .leading, spacing: 2) {
         Text("快捷键速查").font(.title2.weight(.semibold))
         Text("标着「全局」的在任何 App 里都能按，可到 设置 › 快捷键 里改；其余是面板和设置窗里的按键。")
@@ -273,7 +273,7 @@ struct ShortcutsSheet: View {
     [
       // mac-clipboard §4 面板交互表（Lens Bar，N1–N4）；代码在 ClipboardPanelModel
       Group(
-        title: "剪贴板", symbol: "doc.on.clipboard.fill", color: Style.Family.clipboard,
+        title: "剪贴板", symbol: HotKeyAction.clipboard.symbol, color: Style.Family.clipboard,
         globals: [.clipboard],
         entries: [
           Entry("↩", text: "粘贴选中的条目（双击同样，设置里可改成点一下就粘贴；多选时全是文本合并、全是文件一起粘贴，其余依次粘贴）"),
@@ -306,7 +306,8 @@ struct ShortcutsSheet: View {
         ]),
       // mac-whisker §6 启动器（N8–N10，体检第 5 批）；代码在 LauncherModel.handleCommand / handleKeyEquivalent
       Group(
-        title: "启动器", symbol: "command", color: Style.Family.command, globals: [.launcher],
+        title: "启动器", symbol: HotKeyAction.launcher.symbol, color: Style.Family.command,
+        globals: [.launcher],
         entries: [
           Entry("↩", text: "打开选中项（计算结果是粘贴；双击同样）"),
           Entry("⌘↩", text: "在访达中显示（find 搜到的是打开，计算结果只复制，网址用第二个浏览器打开）"),
@@ -351,7 +352,7 @@ struct ShortcutsSheet: View {
         ]),
       // mac-translate「浮窗快捷键」「翻译浮窗」（N5–N6）；代码在 TranslateCoordinator.handleKeyEquivalent、SourceTextView
       Group(
-        title: "翻译", symbol: "character.bubble.fill", color: Style.Family.translate,
+        title: "翻译", symbol: SettingsPage.translate.symbol, color: Style.Family.translate,
         globals: [.selectionTranslate, .inputTranslate, .translateReplace, .screenshotTranslate],
         entries: [
           Entry("↩", text: "翻译"),
@@ -385,7 +386,7 @@ struct ShortcutsSheet: View {
         ]),
       // mac-whisker §6 截图「待选」「框选 / 拖边」「键盘调整」；代码在 SelectionView.keyDown
       Group(
-        title: "截图 · 框选", symbol: "camera.viewfinder", color: Style.Family.screenshot,
+        title: "截图 · 框选", symbol: HotKeyAction.screenshot.symbol, color: Style.Family.screenshot,
         features: [.screenshot, .translate, .record],
         globals: [.screenshot, .screenshotLastRegion, .recognizeText],
         entries: [
@@ -443,7 +444,7 @@ struct ShortcutsSheet: View {
       // 截图历史（2026-10-26 拍板 C1）：全局的「截图历史」不设默认键，没设时那一行写「未设置」。
       // 窗口里的键在 ShotHistoryView
       Group(
-        title: "截图历史", symbol: "clock.arrow.circlepath", color: Style.Family.screenshot,
+        title: "截图历史", symbol: HotKeyAction.shotHistory.symbol, color: Style.Family.screenshot,
         features: [.screenshot], globals: [.shotHistory],
         entries: [
           Entry("↑↓", "←→", text: "在卡片之间挑（←→ 前一张 / 后一张，↑↓ 上下一行；搜索框里打字时让给它）"),
@@ -495,7 +496,7 @@ struct ShortcutsSheet: View {
       // mac-whisker §6 截图「录屏」（录屏第 1、2 批）；框选、拖边、方向键同「截图 · 框选」，代码在 SelectionView.keyDown，
       // 倒数的 Esc 是 ScreenRecorder 临时注册的热键
       Group(
-        title: "录屏", symbol: "record.circle", color: Style.Family.screenshot,
+        title: "录屏", symbol: HotKeyAction.screenRecord.symbol, color: Style.Family.screenshot,
         globals: [.screenRecord],
         entries: [
           Entry("↩", text: "开始录制（双击选区同样）"),
@@ -507,7 +508,7 @@ struct ShortcutsSheet: View {
       // mac-whisker §6 截图「录音」（录音第 5 批，AudioRecorder；手测反馈第 3 批：第一下先出控制条，设置 › 录制可改成
       // 按下立即开始）；录音不设默认键，没设时这两行的键帽是空的
       Group(
-        title: "录音", symbol: "waveform", color: Style.Family.screenshot,
+        title: "录音", symbol: HotKeyAction.audioRecord.symbol, color: Style.Family.screenshot,
         globals: [.audioRecord],
         entries: [
           Entry(
@@ -520,7 +521,7 @@ struct ShortcutsSheet: View {
       // mac-overlay-panel §9 钉图；代码在 PinView.keyDown / performKeyEquivalent。全局的「钉住剪贴板里的图」（第二轮体检 F1）
       // 不设默认键，没设时那一行写「未设置」
       Group(
-        title: "钉图", symbol: "pin.fill", color: Style.Family.screenshot,
+        title: "钉图", symbol: HotKeyAction.pinClipboard.symbol, color: Style.Family.screenshot,
         globals: [.pinClipboard],
         entries: [
           Entry("⌘C", text: "拷贝"),
@@ -669,7 +670,7 @@ struct ShortcutsSheet: View {
         ]),
       // mac-whisker §6 设置；代码在 SettingsWindow 的 SettingsCommands（主菜单「显示 › 返回」）
       Group(
-        title: "设置", symbol: "gearshape.fill", color: Style.Family.general,
+        title: "设置", symbol: SettingsPage.general.symbol, color: Style.Family.general,
         entries: [
           Entry("⌘[", text: "从翻译服务、网页搜索、状态屏的状态的详情页返回列表")
         ]),

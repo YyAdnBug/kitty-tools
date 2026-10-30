@@ -408,7 +408,7 @@ extension NSMenu {
     let item = NSMenuItem(title: title, action: #selector(MenuTarget.run), keyEquivalent: key)
     item.target = MenuTarget.shared
     item.representedObject = run
-    item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+    item.image = NSImage.symbol(symbol)?
       .withSymbolConfiguration(.init(hierarchicalColor: color))
     item.keyEquivalentModifierMask = modifiers
     addItem(item)
