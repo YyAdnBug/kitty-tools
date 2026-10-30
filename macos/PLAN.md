@@ -516,6 +516,9 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 - **默认关**（拍板 A3）：`Feature.defaultOn`，程序坞预览注册成 false（导出只带存过的值，导入旧文件会回到关）；运行中打开时缺
   辅助功能就弹系统的授权框，有了再要屏幕录制（`AppDelegate.applyFeatures`；启动时不问）。导入会不会打开它不进
   `SettingsArchive.privacyLosses`：缩略图只在内存里、不往外发。
+- 2026-10-29 体检（用户「说不上来哪里不对劲」，对照 DockDoor 和系统菜单查出 7 条，用户选改 1–4）：等着弹时按过鼠标不弹、
+  收着时停稳一半就列窗口截图、面板直接出现不淡入、✕ 挪到左上角；没改的 5–7（悬停改强调色描边、换图标不滑改成跳、长标题中间截断）
+  先搁着。规矩在 mac-dock-preview §5、mac-whisker-dock-preview §1–3，手测 HANDTEST「程序坞预览手测」18、19。
 
 ### 刘海岛交互（0.7.0，2026-10-26 立项）
 

@@ -1,6 +1,6 @@
 // 程序坞预览的面板内容（第九族第 2 批；拍板 C4 C5 C6）：顶上一行 App 图标 + 名字，下面一排（多了换行）窗口卡片——缩略图（还没
 // 截到 / 截不到画 App 图标）+ 标题，最小化 / 隐藏 / 在别的桌面的在图的左下角一个角标；悬停的那张底色变浅灰、往外抬 2 点，图的
-// 右上角出 ✕（拿得到关闭钮的才有）。点卡片切过去，点 ✕ 关掉那扇。卡片的尺寸按 DockPreviewLayout 排好的方案；整块铺满宿主、
+// 左上角出 ✕（拿得到关闭钮的才有；Mac 上关闭都在左上角，2026-10-29 从右上角挪过来）。点卡片切过去，点 ✕ 关掉那扇。卡片的尺寸按 DockPreviewLayout 排好的方案；整块铺满宿主、
 // 顶上对齐，面板的大小只由窗口定（换图标时窗口在滑，内容不另走一条曲线）。换 App 时新旧两排叠在同一处交叉淡变。
 // 角标和 ✕ 用卡片上小标记同一个底（hudMark：HUD 深底 + 内描边，永远深色）。没有屏幕录制授权时只有图标位和标题，
 // 最底下多一行说明（拍板 A2）。本 App 不激活，悬停靠 HoverTracker（activeAlways 追踪区）。
@@ -178,7 +178,7 @@ private struct PreviewCard: View {
         .clipShape(shape)
         .overlay(shape.hairlineBorder())
         .overlay(alignment: .bottomLeading) { badge }
-        .overlay(alignment: .topTrailing) { closeButton }
+        .overlay(alignment: .topLeading) { closeButton }
     } else {
       shape.fill(Style.controlFill)
         .overlay {
@@ -187,7 +187,7 @@ private struct PreviewCard: View {
           }
         }
         .overlay(alignment: .bottomLeading) { badge }
-        .overlay(alignment: .topTrailing) { closeButton }
+        .overlay(alignment: .topLeading) { closeButton }
     }
   }
 

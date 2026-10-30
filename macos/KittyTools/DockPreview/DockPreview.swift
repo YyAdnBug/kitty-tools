@@ -16,6 +16,10 @@
 // 顺着程序坞快速划过一排图标（2026-10-26 用户报：一路冒出好几个预览、动画卡顿掉帧）：原来每路过一个图标就在主线程列一遍
 // 窗口（辅助功能，约 20–50 ms）、重排一遍、开一段 0.24 s 的交叉淡变，几段淡变叠在一起、主线程被堵；现在路过的不换，停稳
 // switchDelay 才换（这期间鼠标停着的那个图标也算「在附近」，面板不收），连着换的不淡变。
+// 2026-10-29 用户说「说不上来哪里不对劲」，对照 DockDoor 和系统菜单改了三处时机：等着弹的那 0.2 秒里按过鼠标（点图标切 App、
+// 按住拖、右键开菜单）就不弹（原来照样弹出来、盖在刚切过来的 App 上）；收着时停稳一半就列窗口、开始截图，弹出来时图多半已经
+// 截到了（原来先摆一排 App 图标、再一张张蹦成缩略图），晚到的淡入；面板直接出现、不淡入（同系统菜单：淡入那 0.12 秒里程序坞
+// 自己的名字提示会从半透明的面板里透出来）。
 // ponytail: 换一次还是在主线程同步列一次窗口（中位约 20 ms、最长约 50 ms，PLAN §10）；缩略图一扇扇串行截（一扇约
 // 15 ms，二十扇约 0.3 s，先显示上次的图；2 秒内截过的不再截，WindowShots.fresh）。停稳了换还嫌顿，再把列窗口挪到
 // 截图那样的后台、截图开两三路并发。
@@ -45,6 +49,10 @@ import SwiftUI
   /// 上一次换 App 的时刻：0.3 秒内连着换的不做交叉淡变
   private var lastSwitch: TimeInterval = 0
   private var capturing: Task<Void, Never>?
+  /// capturing 截的是哪一份、面板上显示着哪一份（Prepared.token）：截到的图只顶到显示着的那一份上
+  private var capturingToken = 0
+  private var shownToken = 0
+  private var preparations = 0
   /// 弹着时看鼠标在哪的定时器（收着时不跑）
   private var watch: Timer?
   private var linger = DockPreviewLayout.Linger()
@@ -62,6 +70,20 @@ import SwiftUI
   /// 两次换 App 隔得比这短就不做交叉淡变（Whisker §1：连发瞬时），不然几段淡变叠在一起
   static let crossfadeGap: TimeInterval = 0.3
   static let watchInterval: TimeInterval = 0.1
+
+  /// 列好、排好、等着弹的一份：收着时停稳一半就备好、开始截图，到点弹出来时图多半已经截到了
+  private struct Prepared {
+    let token: Int
+    let target: NSRunningApplication
+    var item: DockWatcher.Item
+    let screen: NSScreen
+    let edge: DockPreviewLayout.Edge
+    let showsThumbnails: Bool
+    let plan: DockPreviewLayout.Plan
+    var frame: NSRect
+    /// 列出来的（多到排不下的已经去掉，和 plan.thumbs 一一对应）
+    let windows: [DockWindow]
+  }
 
   init() {
     model.onOpen = { [unowned self] in open($0) }
@@ -100,6 +122,8 @@ import SwiftUI
     pendingShow?.cancel()
     // 离开了程序坞、停在不是 App 的图标上：收不收由 watch 按鼠标在哪定
     pendingItem = nil
+    // 收着时为上一个图标备好的截图还没用上就换走了：别截了
+    if shown == nil { capturing?.cancel() }
     guard let item else {
       dismissedURL = nil
       return
@@ -111,13 +135,51 @@ import SwiftUI
     else { return }
     // 收着时停 0.2 秒才弹；弹着时停稳 80 毫秒才换：快速划过去的图标一个都不列、不画
     pendingItem = item
-    let delay = shown == nil ? Self.showDelay : Self.switchDelay
+    let opening = shown == nil
+    let start = CACurrentMediaTime()
+    // 等的这段时间里按过鼠标（点这个图标切 App、按住开始拖、右键开程序坞的菜单）：不弹，鼠标离开这个图标之前也不再弹
+    // （同 DockDoor 按下就取消；弹着时的点击归 watchClicks 管，等的时候原来没人管，照样弹出来盖在刚切过来的 App 上）。
+    // 点了的 App 正忙着把窗口拿到前面，这时也别去列它的窗口（辅助功能可能卡到超时）
+    let clicked = {
+      NSEvent.pressedMouseButtons != 0 || Self.secondsSinceClick() < CACurrentMediaTime() - start
+    }
     pendingShow = Task { [weak self] in
-      try? await Task.sleep(for: delay)
+      var prepared: Prepared?
+      if opening {
+        // 收着时停稳一半就列窗口、开始截图（路过的图标停不到这么久，不列），到点弹出来时图多半已经在了
+        try? await Task.sleep(for: Self.showDelay / 2)
+        guard !Task.isCancelled, let self else { return }
+        guard !clicked() else {
+          self.pendingItem = nil
+          self.dismissedURL = item.bundleURL
+          return
+        }
+        prepared = self.prepare(target, at: item)
+        if let prepared, prepared.showsThumbnails { self.capture(prepared) }
+        try? await Task.sleep(for: Self.showDelay / 2)
+      } else {
+        try? await Task.sleep(for: Self.switchDelay)
+      }
       guard !Task.isCancelled, let self else { return }
       self.pendingItem = nil
-      self.present(target, at: item)
+      if clicked() {
+        if self.shown == nil { self.capturing?.cancel() }
+        self.dismissedURL = item.bundleURL
+        return
+      }
+      guard let prepared = opening ? prepared : self.prepare(target, at: item) else {
+        return self.hide(animated: true)
+      }
+      self.present(prepared)
     }
+  }
+
+  /// 离上一次按下鼠标（左键、右键、别的键）过了几秒
+  private static func secondsSinceClick() -> TimeInterval {
+    let types: [CGEventType] = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+    return types.map {
+      CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: $0)
+    }.min() ?? .infinity
   }
 
   /// 程序坞图标指向的那个开着的 App：先按路径配（不碰磁盘），配不上再按 bundle id（/Applications/Safari.app 是指向别处的
@@ -136,26 +198,48 @@ import SwiftUI
 
   // MARK: 弹出、换、收
 
-  private func present(_ target: NSRunningApplication, at item: DockWatcher.Item) {
-    guard !isSuppressed() else { return hide(animated: false) }
-    // 停了 0.2 秒，放大、自动隐藏滑出的动画大多走完了：图标的位置重读一次
+  /// 列窗口（主线程，中位约 20 ms）、排好。没窗口、找不到屏、别的功能占着屏幕时是 nil
+  private func prepare(_ target: NSRunningApplication, at item: DockWatcher.Item) -> Prepared? {
+    guard !isSuppressed() else { return nil }
+    // 停稳了，放大、自动隐藏滑出的动画大多走完了：图标的位置重读一次
     var item = item
     if let frame = DockWatcher.currentFrame(of: item) { item.frame = frame }
     let windows = lister.list(target)
     let screens = NSScreen.screens
     guard !windows.isEmpty,
       let index = DockPreviewLayout.screenIndex(for: item.frame, in: screens.map(\.frame))
-    else { return hide(animated: true) }
+    else { return nil }
     let screen = screens[index]
     let edge = DockPreviewLayout.Edge(orientation: Self.dockOrientation())
     let showsThumbnails = Permissions.isScreenRecordingAllowed
     let (plan, frame) = layout(
       windows, item: item, edge: edge, screen: screen, compact: !showsThumbnails)
-    let listed = Array(windows.prefix(plan.thumbs.count))
+    preparations += 1
+    return Prepared(
+      token: preparations, target: target, item: item, screen: screen, edge: edge,
+      showsThumbnails: showsThumbnails, plan: plan, frame: frame,
+      windows: Array(windows.prefix(plan.thumbs.count)))
+  }
+
+  private func present(_ prepared: Prepared) {
+    guard !isSuppressed() else { return hide(animated: false) }
+    var prepared = prepared
+    // 收着时是停稳一半时排的，这期间放大、自动隐藏滑出的动画可能还没走完：弹之前按图标现在的位置再摆一次（尺寸不变、不重列）
+    if let current = DockWatcher.currentFrame(of: prepared.item), current != prepared.item.frame {
+      prepared.item.frame = current
+      prepared.frame.origin = DockPreviewLayout.origin(
+        panel: prepared.plan.panel, item: current, edge: prepared.edge,
+        screen: prepared.screen.frame, visible: prepared.screen.visibleFrame)
+    }
+    let target = prepared.target
+    let (plan, frame, edge) = (prepared.plan, prepared.frame, prepared.edge)
+    let listed = prepared.windows
+    let showsThumbnails = prepared.showsThumbnails
     let sameApp = shown?.app.processIdentifier == target.processIdentifier
     let panel = self.panel ?? makePanel()
     let switching = shown != nil && panel.isVisible
-    shown = (target, item, screen)
+    shown = (target, prepared.item, prepared.screen)
+    shownToken = prepared.token
     linger = DockPreviewLayout.Linger()
 
     let update = {
@@ -193,13 +277,17 @@ import SwiftUI
           panel.animator().alphaValue = 1
         }
       } else {
-        panel.alphaValue = 0
+        // 直接出现、不淡入（同系统菜单）：淡入那 0.12 秒里程序坞自己的名字提示会从半透明的面板里透出来
+        host?.layoutSubtreeIfNeeded()
+        panel.alphaValue = 1
         panel.orderFrontRegardless()
         animateIn(edge: edge, reduced: reduced)
       }
       startWatching()
     }
-    if showsThumbnails { capture(listed, thumbs: plan.thumbs, scale: screen.backingScaleFactor) }
+    // 停稳一半时已经开始截这一份的就接着截，不重来
+    let capturingThis = capturingToken == prepared.token && capturing?.isCancelled == false
+    if showsThumbnails, !capturingThis { capture(prepared) }
   }
 
   /// 排好、算出面板的帧（夹进这块屏）
@@ -218,15 +306,9 @@ import SwiftUI
     return (plan, NSRect(origin: origin, size: plan.panel))
   }
 
-  /// 入场，同 OverlayPanel.animateIn：窗口淡入（fadeIn），内容从图标那边错开 6 点弹回（弹簧 0.24 / 0.12），材质本身不动；
-  /// 减弱动态效果时只淡入
+  /// 入场：窗口已经直接不透明（不淡入，见 present），内容从图标那边错开 6 点弹回（弹簧 0.24 / 0.12，同 OverlayPanel.animateIn），
+  /// 材质本身不动；减弱动态效果时直接出现、不动
   private func animateIn(edge: DockPreviewLayout.Edge, reduced: Bool) {
-    guard let panel else { return }
-    NSAnimationContext.runAnimationGroup { context in
-      context.duration = Style.fadeIn
-      context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-      panel.animator().alphaValue = 1
-    }
     guard !reduced, let layer = host?.layer else { return }
     let rise = CASpringAnimation(perceptualDuration: 0.24, bounce: 0.12)
     // AppKit 图层 y 向上：程序坞在下面时从下方 6 点升上来，在左右两边时从那一侧出来
@@ -250,18 +332,23 @@ import SwiftUI
     }
   }
 
-  /// 一张张当场截（主线程外缩小）；换了 App、收起了就停
-  private func capture(_ windows: [DockWindow], thumbs: [CGSize], scale: CGFloat) {
+  /// 一张张当场截（主线程外缩小），截到的进缓存；这一份正显示着就顶到卡片上，晚到的淡入（原来一张张蹦出来）。
+  /// 收着时停稳一半就开始截（还没显示，只进缓存，弹出时从缓存取）；换了一份、收起了就停
+  private func capture(_ prepared: Prepared) {
     capturing?.cancel()
-    let generation = model.generation
+    capturingToken = prepared.token
+    let scale = prepared.screen.backingScaleFactor
     capturing = Task { [weak self] in
-      for (window, thumb) in zip(windows, thumbs) {
-        guard let self, !Task.isCancelled, self.model.generation == generation else { return }
+      for (window, thumb) in zip(prepared.windows, prepared.plan.thumbs) {
+        guard let self, !Task.isCancelled else { return }
         let box = CGSize(width: thumb.width * scale, height: thumb.height * scale)
         guard let image = await self.shots.shoot(window, maxPixels: box) else { continue }
-        guard !Task.isCancelled, self.model.generation == generation else { return }
-        // 刚截过的（WindowShots.fresh）就是换过去时顶上的那张：不再赋一遍，免得每张卡片白重画
-        if self.model.images[window.id] !== image { self.model.images[window.id] = image }
+        guard !Task.isCancelled else { return }
+        // 刚截过的（WindowShots.fresh）就是弹出时顶上的那张：不再赋一遍，免得每张卡片白重画
+        guard self.shownToken == prepared.token, self.model.images[window.id] !== image else {
+          continue
+        }
+        withAnimation(.easeOut(duration: Style.fadeIn)) { self.model.images[window.id] = image }
       }
     }
   }
