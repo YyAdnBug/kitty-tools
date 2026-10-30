@@ -572,7 +572,8 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 - 用户 2026-10-30：两边的图标没保持一致，「考虑要不要引入一套 icon 给他们共同使用」「每个功能的 icon 帮我重新设计一下，然后统一到
   windows 和 macos」。拍板页 https://claude.ai/artifact/H9NqNwEMZgFmvdkKRnbvRJ（本地 `build/research/icons-2026-10-30/`），**全部按推荐**：
   D1 自己画一套、一份 SVG 源脚本生成两边（不引入图标库）；D2 只换色块里的功能图标，通用操作照旧用各自系统的；D3 实心 + 镂空；
-  D4 mac 进 0.7.0，Windows 0.1.0 不动、0.2.0 第一批换；D5 Windows 长截图的预览面板（PLAN-v9 S11）在 0.2.0 提前到修完 R43 就做。
+  D4 mac 进 0.7.0，Windows 0.1.0 不动、0.2.0 换（在 windows-next 上，PLAN-v10 §6 第 0a 批）；D5 Windows 长截图的预览面板（PLAN-v9 S11）提前做——
+  其实 10-29 已经在 windows-next 上做完了（6026ed60，连同 S12 长图标注），等 0.1.0 打完包并回 windows-wip。
 - 做法：源 `icons/feature/kitty.*.svg`（26 个），`icons/build-icons.swift` 把填充、线条、虚线都描成面并合成一条路径（CGPath 的并集），
   出 mac 的自定义符号模板（Template v.3.0，只放 Regular-M，24 格 × 5 = 120 宽，格子中心对着大写高的中线）和 Windows 的
   `FeatureIcons.cs`（24 格坐标的 XAML 路径数据）。App 里 `HotKeyAction.symbol`、`SettingsPage.symbol` 改成 `kitty.*`，
