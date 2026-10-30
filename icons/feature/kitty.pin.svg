@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <title>钉图</title>
+  <path fill="currentColor" d="M8.5 2.5H15.5A1.5 1.5 0 0 1 15.5 5.5H15L16 10.5L18.8 12.6A1 1 0 0 1 18.2 14.4H5.8A1 1 0 0 1 5.2 12.6L8 10.5L9 5.5H8.5A1.5 1.5 0 0 1 8.5 2.5Z"/>
+  <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M12 14.4V21.4"/>
+</svg>

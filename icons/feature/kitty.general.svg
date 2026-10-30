@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <title>通用</title>
+  <circle cx="12" cy="12" r="5.3" fill="none" stroke="currentColor" stroke-width="3.2"/>
+  <path fill="none" stroke="currentColor" stroke-width="3.9" stroke-linecap="round" d="M19 12H20.2M16.95 16.95L17.8 17.8M12 19V20.2M7.05 16.95L6.2 17.8M5 12H3.8M7.05 7.05L6.2 6.2M12 5V3.8M16.95 7.05L17.8 6.2"/>
+</svg>
