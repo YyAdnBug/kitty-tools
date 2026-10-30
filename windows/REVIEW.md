@@ -45,6 +45,15 @@
     用 `icons-scale`（放大变换，矢量照样按最终尺寸栅格化）看了 1、1.5、2 倍：边缘干净、在色块里居中。
     「打开设置窗、速查表不比以前慢」没量；解析结果按字符串缓存，每个色块只新建一份几十段的 PathGeometry。
 - 图形本身没发现要改的。
+- **打包和发布**（1727146）：`build-release.ps1` 零警告，智谱默认 key 在两个 exe 里；`setup-e2e` 18 项全过。
+  x64 setup.exe `/SILENT /DIR="D:\Apps\Kitty Tools"` 覆盖了真装的 0.1.0（exe 12:56:58 → 15:32:04，版本 0.1.1+1727146），
+  重新打开没崩，第二次启动弹出的主界面是新图标。`windows-v0.1.1` 发了（tag 指 1727146，不是 latest、不是预发布，8 个文件；
+  这台机器没有 gh，照 0.1.0 用凭据管理器的 token 走 REST API）。latest 还是 `macos-v0.7.0`。
+  0.1.0 的构建拷一份用探针档开着，12 秒后 `update.check newer=True version=0.1.1`。
+  - x64：zip 32,214,408 B `40c585c6cbb289a09e9be611c08053b7273059e005b3990d72dac2a56185bc91`；
+    setup 23,635,890 B `ac911dd55396e7a2ac3178db2aab0693d84e55f02fb727d0f87982f9d960edc3`
+  - arm64：zip 31,297,762 B `427de8613e8cd1b55f473f88c77a2dc4db3b2cf928d43a96ca82d8454d17250d`；
+    setup 23,299,535 B `2ea714679f8c444788f77e0e580f6ac0e38d929c57a5ed3b9ebb479dfa3622d5`
 
 ## 0.1.0 收口（PLAN-v10，2026-10-29 用户「全部按推荐」）
 
