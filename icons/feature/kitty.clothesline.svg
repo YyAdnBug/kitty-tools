@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-  <title>晾衣绳</title>
-  <path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M1.6 4.4Q12 10.4 22.4 4.4"/>
-  <g transform="rotate(-6 5.9 7.4)"><path fill="currentColor" fill-rule="evenodd" d="M3.9 7.4H7.9A1.1 1.1 0 0 1 9 8.5V15.5A1.1 1.1 0 0 1 7.9 16.6H3.9A1.1 1.1 0 0 1 2.8 15.5V8.5A1.1 1.1 0 0 1 3.9 7.4ZM4.3 9V13.4H7.5V9Z"/><rect x="5.2" y="5.2" width="1.4" height="3.2" rx="0.5" fill="currentColor"/></g>
-  <g transform="rotate(6 18.1 7.4)"><path fill="currentColor" fill-rule="evenodd" d="M16.1 7.4H20.1A1.1 1.1 0 0 1 21.2 8.5V15.5A1.1 1.1 0 0 1 20.1 16.6H16.1A1.1 1.1 0 0 1 15 15.5V8.5A1.1 1.1 0 0 1 16.1 7.4ZM16.5 9V13.4H19.7V9Z"/><rect x="17.4" y="5.2" width="1.4" height="3.2" rx="0.5" fill="currentColor"/></g>
-</svg>

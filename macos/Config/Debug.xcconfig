@@ -1,9 +1,0 @@
-// Debug 配置：独立 bundle id（.dev）和名字（Kitty Tools Dev.app），数据、偏好、TCC 授权与 Release 隔离
-#include "Base.xcconfig"
-BUNDLE_ID_SUFFIX = .dev
-APP_PRODUCT_NAME = Kitty Tools Dev
-SWIFT_OPTIMIZATION_LEVEL = -Onone
-SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG $(inherited)
-DEBUG_INFORMATION_FORMAT = dwarf
-// 单测要 @testable import
-ENABLE_TESTABILITY = YES

@@ -1,15 +1,16 @@
 <p align="center">
-  <img src="macos/KittyTools/Resources/Assets.xcassets/AppIcon.appiconset/icon_256x256@2x.png" width="128" alt="Kitty Tools 图标">
+  <img src="docs/images/icon.png" width="128" alt="Kitty Tools 图标">
 </p>
 
 <h1 align="center">Kitty Tools</h1>
 
 <p align="center">
-  纯原生的 macOS 菜单栏效率工具：剪贴板历史 · 启动器 · 翻译 · 截图 · 录屏录音 · 便签 · 启动台 · 状态屏 · 程序坞预览
+  纯原生的效率工具，macOS 版和 Windows 版各写一套：剪贴板历史 · 启动器 · 翻译 · 截图 · 录屏录音 · 便签 · 启动台 · 状态屏 · 程序坞预览
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/macOS-15%2B-000?logo=apple" alt="macOS 15+">
+  <img src="https://img.shields.io/badge/Windows-11%2022H2%2B-0078D4" alt="Windows 11 22H2+">
   <img src="https://img.shields.io/badge/Apple%20Silicon-arm64-555" alt="Apple Silicon">
   <img src="https://img.shields.io/badge/Swift-6.2-F05138?logo=swift&logoColor=white" alt="Swift 6.2">
   <img src="https://img.shields.io/badge/%E7%AC%AC%E4%B8%89%E6%96%B9%E4%BE%9D%E8%B5%96-0-E8577A" alt="零第三方依赖">
@@ -20,11 +21,29 @@
   <img src="docs/images/welcome.png" width="580" alt="欢迎引导：全部功能一览">
 </p>
 
-Kitty Tools 用 Swift 6 + SwiftUI / AppKit 写成，常驻菜单栏、不占程序坞。九个功能都用全局快捷键（或菜单栏、启动器）呼出，弹出时不抢前台 App 的焦点，选好内容能直接粘贴回原来的 App；用不上的功能可以在设置里整个关掉。识字、语种检测和敏感内容识别都在本机完成，密钥存在系统钥匙串里。提示从屏幕顶部的刘海冒出来，设置和数据每天自动备份、能在几台 Mac 之间同步。支持浅色 / 深色外观，强调色可以自选，新版本在 App 内一键更新。
+macOS 版用 Swift 6 + SwiftUI / AppKit 写成，常驻菜单栏、不占程序坞。九个功能都用全局快捷键（或菜单栏、启动器）呼出，弹出时不抢前台 App 的焦点，选好内容能直接粘贴回原来的 App；用不上的功能可以在设置里整个关掉。识字、语种检测和敏感内容识别都在本机完成，密钥存在系统钥匙串里。提示从屏幕顶部的刘海冒出来，设置和数据每天自动备份、能在几台 Mac 之间同步。支持浅色 / 深色外观，强调色可以自选，新版本在 App 内一键更新。
 
-> 个人项目，持续更新中。只支持 Apple 芯片、macOS 15 及以上。
+> 个人项目，持续更新中。macOS 版只支持 Apple 芯片、macOS 15 及以上；Windows 版支持 Windows 11 22H2 及以上（x64 / ARM64）。
 
-## 功能
+## 分支
+
+`main` 只放这份介绍和截图，代码按平台分在两个分支里：
+
+| 分支 | 内容 | 发布 |
+|---|---|---|
+| [`macos`](https://github.com/YyAdnBug/kitty-tools/tree/macos) | macOS 版（Swift 6 + SwiftUI / AppKit），零第三方依赖 | tag `macos-v*`，最新一版标 latest |
+| [`windows`](https://github.com/YyAdnBug/kitty-tools/tree/windows) | Windows 版（C# + .NET + WinUI 3，Native AOT），只用微软的包 | tag `windows-v*`，不标 latest |
+| [`windows-next`](https://github.com/YyAdnBug/kitty-tools/tree/windows-next) | Windows 版下一版正在做的功能，做完并回 `windows` | — |
+
+两个版本的功能、样子和默认值尽量对齐；剪贴板片段、生词本、网页搜索、翻译服务能在 Mac 和 Windows 之间同步。
+
+## Windows 版
+
+常驻托盘，全局快捷键呼出，界面跟着 Windows 11 的样子走（亚克力、Segoe 字体），功能和 mac 版对齐：剪贴板历史（片段、收藏夹、多选粘贴、拖出去）、翻译（八个服务、流式、划词 / 输入 / 复制即译、历史与生词本）、启动器（应用、设置页、系统命令、计算、文件搜索、浏览器书签、kill / port）、截图（标注、识字、钉图、截图翻译、长截图、截图历史）、录屏与录音。
+
+从 [Releases](https://github.com/YyAdnBug/kitty-tools/releases) 里找 `windows-v` 开头的版本，下载 `KittyTools-x.y.z-windows-x64-setup.exe`（ARM 电脑下载 arm64 那个）双击安装，以后在程序里自动更新。代码、规矩和计划在 [`windows`](https://github.com/YyAdnBug/kitty-tools/tree/windows/windows) 分支的 `windows/` 下，入口是 `windows/AGENTS.md`。
+
+## macOS 版的功能
 
 ### 📋 剪贴板历史
 
@@ -155,7 +174,7 @@ Kitty Tools 用 Swift 6 + SwiftUI / AppKit 写成，常驻菜单栏、不占程�
 - **备份与导出**：每天自动备份一份（留最近 7 份，可以另存到别的文件夹），设置与数据能导出成一个文件再导入（密钥可以加密带上）
 - **快捷键速查表**：各设置页的「查看全部快捷键…」，按功能分类、能搜索，从哪一页点开就停在哪一类
 
-## 默认快捷键
+## macOS 版的默认快捷键
 
 | 功能 | 快捷键 |
 |---|---|
@@ -172,7 +191,7 @@ Kitty Tools 用 Swift 6 + SwiftUI / AppKit 写成，常驻菜单栏、不占程�
 
 划词翻译并替换、录音、截图历史、钉住剪贴板里的图、新建便签、全部便签、启动台、状态屏、打开刘海岛默认不设，需要时到「设置 › 快捷键」里自己录。所有快捷键都能在那里改。macOS 15.0 / 15.1 不允许注册只带 ⌥ 的组合，在这两个版本上请改成带 ⌘ 或 ⌃ 的组合（快捷键页会提示）。
 
-## 安装
+## 安装 macOS 版
 
 1. 从 [Releases](https://github.com/YyAdnBug/kitty-tools/releases/latest) 下载 `Kitty.Tools_x.y.z_arm64.dmg`（`_arm64.zip` 是 App 内更新用的，不用手动下载），或按下面的步骤自己打包。
 2. 把 `Kitty Tools.app` 拖进「应用程序」。
@@ -191,12 +210,12 @@ Kitty Tools 用 Swift 6 + SwiftUI / AppKit 写成，常驻菜单栏、不占程�
 
 > 新装（或系统大版本更新）后的第一次识字，系统要先为本 App 准备识字模型，大约要一分钟。App 启动后会在后台自己准备好；要是赶上还没准备完，刘海岛会说「正在准备识字模型」并显示已等了多久，之后识字都是一眨眼的事。
 
-## 从源码构建
+## 从源码构建 macOS 版
 
-需要 Xcode 26.3 及以上和 Apple 芯片的 Mac，没有任何第三方依赖。
+代码在 `macos` 分支。需要 Xcode 26.3 及以上和 Apple 芯片的 Mac，没有任何第三方依赖。
 
 ```bash
-git clone https://github.com/YyAdnBug/kitty-tools.git
+git clone -b macos https://github.com/YyAdnBug/kitty-tools.git
 cd kitty-tools
 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools build
 ```
@@ -216,6 +235,8 @@ TEST_RUNNER_KITTY_SNAPSHOT_DIR=/tmp/kitty-shots xcodebuild -project macos/KittyT
 
 ## 项目结构
 
+`macos` 分支：
+
 ```
 macos/
 ├── KittyTools/          # App/ Shell/ Storage/ Clipboard/ Launcher/ Launchpad/ Translate/ Screenshot/ StatusScreen/ Notes/ DockPreview/ Settings/ Resources/
@@ -224,10 +245,10 @@ macos/
 ├── build-dmg.sh         # 打包：archive → 自检 → DMG + App 内更新用的 zip
 ├── brand-icons.swift    # 用 CoreGraphics 生成 App 图标、菜单栏图标和 DMG 背景
 └── status-emoji.swift   # 状态屏的动画表情：动画 PNG 转成包里用的 HEICS
-windows/                 # Windows 原生版（C# + WinUI 3，开发中）
+icons/                   # 两个版本共用的功能图标（SVG）和生成脚本
 ```
 
-开发约定见 [AGENTS.md](./AGENTS.md)，各模块规范见 [.cursor/rules/](./.cursor/rules/)。
+开发约定见 `macos` 分支的 [AGENTS.md](https://github.com/YyAdnBug/kitty-tools/blob/macos/AGENTS.md)，各模块规范见 [.cursor/rules/](https://github.com/YyAdnBug/kitty-tools/tree/macos/.cursor/rules)。Windows 版的结构和约定见 `windows` 分支的 [windows/AGENTS.md](https://github.com/YyAdnBug/kitty-tools/blob/windows/windows/AGENTS.md)。
 
 ## 致谢
 

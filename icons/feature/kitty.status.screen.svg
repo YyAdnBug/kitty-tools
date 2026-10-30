@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-  <title>状态屏</title>
-  <path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" d="M10.8 4.6L5.6 10.4M13.2 4.6L18.4 10.4"/>
-  <circle cx="12" cy="3.4" r="1.8" fill="currentColor"/>
-  <path fill="currentColor" fill-rule="evenodd" d="M5 10H19A2.5 2.5 0 0 1 21.5 12.5V18.5A2.5 2.5 0 0 1 19 21H5A2.5 2.5 0 0 1 2.5 18.5V12.5A2.5 2.5 0 0 1 5 10ZM7.4 13.4H16.6A0.9 0.9 0 0 1 16.6 15.2H7.4A0.9 0.9 0 0 1 7.4 13.4ZM7.4 16.4H12.6A0.9 0.9 0 0 1 12.6 18.2H7.4A0.9 0.9 0 0 1 7.4 16.4Z"/>
-</svg>
