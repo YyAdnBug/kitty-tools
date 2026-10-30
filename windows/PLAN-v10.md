@@ -117,7 +117,7 @@ mac 那边也搁着的脚本命令 / 模块化（`macos` 的拍板页，用户�
 
 ## 6. 功能图标（0.1.0 发完后在 windows 上做，2026-10-30）
 
-**进度（2026-10-30，版本 0.1.1）**：审查方在 Mac 上写完了，**没编译**——`icons/` 拣过来（`build:` 那个提交），生成 `Shell/FeatureIcons.cs`，`KindTile` 认路径数据，下表里的地方都换了（启动器内置动作只换对得上全局快捷动作的，同 mac）。Windows 那边编译、截图、手测，见 REVIEW「0.1.1 功能图标」、HANDTEST 794–800。
+**进度（2026-10-30，原定 0.1.1；同一天用户删了已发的 windows-v0.1.0 / v0.1.1，并进重发的 0.1.0）**：审查方在 Mac 上写完了，**没编译**——`icons/` 拣过来（`build:` 那个提交），生成 `Shell/FeatureIcons.cs`，`KindTile` 认路径数据，下表里的地方都换了（启动器内置动作只换对得上全局快捷动作的，同 mac）。Windows 那边编译、截图、手测，见 REVIEW「0.1.1 功能图标」、HANDTEST 794–800。
 
 用户 2026-10-30：两边的图标没保持一致，「考虑要不要引入一套 icon 给他们共同使用」「每个功能的 icon 帮我重新设计一下，然后统一到 windows 和 macos」。
 拍板页 https://claude.ai/artifact/H9NqNwEMZgFmvdkKRnbvRJ，**全部按推荐**：D1 自己画一套，一份 SVG 源、Mac 上的脚本生成两边（不引入图标库）；

@@ -61,6 +61,7 @@ Kitty Tools 的 **Windows 原生版**（C# + WinUI 3，2026-10-23 立项）。�
 
 - **版本号从 0.1.0 重新算（2026-10-27 用户定）**：之前的 0.1.0–0.7.0 都是内部版本、一个都没发过，更新日志已经合成对外的第一版 0.1.0。主打剪贴板、截图、翻译；启动器和录屏原定这一版默认关，2026-10-29 PLAN-v10 D2 改成默认开（冒烟过不了的那个再改回关）。之后的方案照这个往下排：PLAN-v9 做完是 0.2.0。各 PLAN 里写的 0.2.0–0.8.0 是旧的编号，只当历史看。
 - 每一版的最后一批：改 `Directory.Build.props` 的版本号，在 `KittyTools/Resources/changelog.json` 加这一版的条目（type 只用 feat / fix / perf / ui），跑 `build-release.ps1` 把 x64 / ARM64 的 zip 和 `.sha256` 准备好，报告里写产物路径。
+- **发版前对着真 GitHub 验一次更新的下载**（2026-10-30 起；当时发的 0.1.0 / 0.1.1 的 App 内更新一点就失败，只有真地址才碰得到。那两个 release 用户让删了，修好后重发了 0.1.0）：用新打的包跑 `KittyTools.exe --update-live=<已经发出去的上一版>`，退出码 0、`%TEMP%\kitty-update-live\report.txt` 写着 ok 才算过（`App/UpdateLive.cs`）。
 - **不发布**。发布由用户决定；发布时一律 `--latest=false`（mac 版的更新检查只认 latest 且只认 `macos-v*`，Windows 版成了 latest，mac 用户就收不到更新了）。
 
 ### 现状文档 `STATUS.md`

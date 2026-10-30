@@ -67,6 +67,15 @@ public static class UpdateTrust
     /// <summary>这个地址是不是测试用的（不是正常 Release 该走的 https GitHub 地址）。</summary>
     public static bool IsTestSource(string? url) => !IsAllowedDownloadUrl(url);
 
+    /// <summary>
+    /// 跳转的下一跳地址，百分号转义原样保留（<see cref="Uri.AbsoluteUri"/>）。不能用 <see cref="Uri.ToString"/>：
+    /// 它把 %20 还原成空格，GitHub 资产跳到 release-assets.githubusercontent.com 的地址里正好有
+    /// （response-content-disposition=attachment%3B%20filename…），还原后过不了这里的检查、签名也对不上——
+    /// 0.1.0 / 0.1.1 的 App 内更新一点就失败（2026-10-30 用户真机报的）。
+    /// </summary>
+    public static string NextHop(string current, Uri location)
+        => (location.IsAbsoluteUri ? location : new Uri(new Uri(current), location)).AbsoluteUri;
+
     private static bool IsHost(Uri uri, string host)
         => string.Equals(uri.IdnHost, host, StringComparison.OrdinalIgnoreCase);
 

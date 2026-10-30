@@ -8,7 +8,27 @@
 
 条目编号不复用。行号按条目里写的那个提交。
 
-## 0.1.1 功能图标（PLAN-v10 §6，2026-10-30 用户「现在换」，审查方在 Mac 上写、**没编译**）
+## 重发 0.1.0：App 内更新修复（2026-10-30 用户真机报，审查方在 Mac 上写、**没编译**）
+
+**2026-10-30 用户定：删掉已发的 `windows-v0.1.0`、`windows-v0.1.1`（连同 tag，审查方删的），把功能图标和这次的修复一起重新发成 0.1.0**。版本号回到 0.1.0，`changelog.json` 只剩一条 0.1.0（功能图标并进去了）。下面原来写的 0.1.2 都按「重发的 0.1.0」理解。
+
+**现象**：装 0.1.0，有 0.1.1，点「更新并重新打开」→ 显示正在下载 → 按钮又变回「更新并重新打开」，没更新上。
+**原因**：`UpdateHttp.SendAsync` 跟随跳转时 `location.ToString()`。GitHub 的资产地址 302 到 `release-assets.githubusercontent.com`，
+那个地址的查询串里有 `response-content-disposition=attachment%3B%20filename…`（`.sha256` 那个的签名里还有 `%2B`）；
+`Uri.ToString()` 把 `%20` 还原成空格，`EnsureTrusted` 见到空格就当不可信、抛 `update-untrusted-url`，第一跳就失败（日志应该有
+`update.untrusted-url`、`update.download failed`）。以前的验证都碰不到：`--update-e2e` 走本地文件，`UpdateFlowTests` 是假传输，
+「检查到 0.1.1」只读 API（API 不跳转）。
+**审查方改的**：`Core/UpdateTrust.NextHop`（`AbsoluteUri`，转义原样保留）+ 两条单测（用 0.1.1 真跳转地址的形状）；`UpdateHttp` 改用它；
+新开关 `--update-live=<版本>`（`App/UpdateLive.cs`，`Program.cs` 接在 `--update-e2e` 后面）：用正常的白名单从真 GitHub 下载那一版的
+zip 和 `.sha256` 并校验，不装，报告 `%TEMP%\kitty-update-live\report.txt`；AGENTS「版本和发布」加了「发版前跑一次」。版本号回到 0.1.0（重发）。
+
+你们做的：
+1. 编译 Debug / Release AOT 零警告，`dotnet test` 全过（`NextHopKeepsPercentEscapes`、`NextHopResolvesRelativeLocation`）。
+2. 先在旧版（之前装的 0.1.0 / 0.1.1）的日志里确认原因：点更新那一下有 `update.untrusted-url`。不是这个的话停下来报告，别发。
+3. 打 0.1.0 的包（先删掉旧的 `windows\build\release\0.1.0\`），走 HANDTEST 802（覆盖装）。
+4. 都过了照上次的命令发 `windows-v0.1.0`（不标 latest、不标预发布）；发完马上用新包跑 HANDTEST 801（`--update-live=0.1.0`，从刚发的 release 真下载、校验），不 ok 就把这次的 release 删掉、停下来报告。
+
+## 0.1.1 功能图标（PLAN-v10 §6，2026-10-30 用户「现在换」，审查方在 Mac 上写、**没编译**；已并进重发的 0.1.0）
 
 审查方做的：`icons/` 从 macos 拣过来；`Shell/FeatureIcons.cs` 是 Mac 上 `swift icons/build-icons.swift windows` 生成的（26 个，别手改）；
 `Ui/KindTile.cs` 认出 `"F1 "` 开头的就用 `XamlReader.Load` 解析成 `Path`，放进 24 × 24 的 `Viewbox`、占色块的 0.6；调用的地方

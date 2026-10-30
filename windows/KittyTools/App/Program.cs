@@ -17,6 +17,12 @@ public static class Program
             return UpdateE2E.Run(args);
         }
 
+        // 对着真 GitHub 走一遍更新的下载和校验（发版前跑，见 UpdateLive）：同样不需要窗口，跑完就退出。
+        if (UpdateLive.IsRequested(args))
+        {
+            return UpdateLive.Run(args);
+        }
+
         // 安装程序（Inno，PLAN-setup-inno §4.2 / §4.3）调的两个：不建窗口、不占单实例、不写数据目录，做完就退。
         if (args.Contains("--quit", StringComparer.OrdinalIgnoreCase))
         {

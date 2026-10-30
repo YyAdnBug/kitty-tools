@@ -95,4 +95,35 @@ public sealed class UpdateTrustTests
         Assert.IsTrue(UpdateTrust.IsTestSource("file:///C:/releases.json"));
         Assert.IsTrue(UpdateTrust.IsTestSource(null));
     }
+
+    // GitHub 资产的真实跳转（2026-10-30 从 windows-v0.1.1 取的形状，签名换成假的）：查询串里有 %20、%2B、%3D、%3B。
+    private const string AssetLocation =
+        "https://release-assets.githubusercontent.com/github-production-release-asset/1390577340/8904b3cd-30d0-4289-86cf-861b48aff523"
+        + "?sp=r&sv=2018-11-09&sr=b&spr=https&se=2026-10-30T07%3A36%3A17Z"
+        + "&rscd=attachment%3B+filename%3DKittyTools-0.1.1-windows-x64.zip&rsct=application%2Foctet-stream"
+        + "&sig=AbCd%2BEf%2FGh%3D&response-content-disposition=attachment%3B%20filename%3DKittyTools-0.1.1-windows-x64.zip";
+
+    private const string AssetUrl =
+        "https://github.com/YyAdnBug/kitty-tools/releases/download/windows-v0.1.1/KittyTools-0.1.1-windows-x64.zip";
+
+    [TestMethod]
+    public void NextHopKeepsPercentEscapes()
+    {
+        var next = UpdateTrust.NextHop(AssetUrl, new Uri(AssetLocation));
+        // 转义一个不少（签名、文件名都原样），而且过得了白名单。
+        Assert.AreEqual(AssetLocation, next);
+        Assert.IsTrue(UpdateTrust.IsAllowedDownloadUrl(next));
+        // 0.1.0 / 0.1.1 的写法：ToString() 把 %20 还原成空格，白名单不认，更新一点就失败。
+        Assert.IsFalse(UpdateTrust.IsAllowedDownloadUrl(new Uri(AssetLocation).ToString()));
+    }
+
+    [TestMethod]
+    public void NextHopResolvesRelativeLocation()
+    {
+        var next = UpdateTrust.NextHop(
+            "https://github.com/YyAdnBug/kitty-tools/releases/download/windows-v0.1.1/a.zip",
+            new Uri("/YyAdnBug/kitty-tools/releases/download/windows-v0.1.1/b%20c.zip", UriKind.Relative));
+        Assert.AreEqual("https://github.com/YyAdnBug/kitty-tools/releases/download/windows-v0.1.1/b%20c.zip", next);
+        Assert.IsTrue(UpdateTrust.IsAllowedDownloadUrl(next));
+    }
 }

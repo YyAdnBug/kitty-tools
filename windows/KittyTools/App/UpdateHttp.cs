@@ -140,9 +140,8 @@ internal static class UpdateHttp
                     throw new HttpRequestException("redirect-without-location");
                 }
 
-                current = location.IsAbsoluteUri
-                    ? location.ToString()
-                    : new Uri(new Uri(current), location).ToString();
+                // 转义原样保留（ToString 会把 %20 还原成空格，真 GitHub 的跳转地址过不了白名单，见 NextHop）。
+                current = UpdateTrust.NextHop(current, location);
                 // 跳转之后的每一跳也按同一张表查（R1）。
                 EnsureTrusted(current, isFeed: false);
                 continue;
