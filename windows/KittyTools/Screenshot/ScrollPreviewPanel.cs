@@ -208,6 +208,76 @@ internal sealed partial class ScrollPreviewPanel
         panel.ShowStatus();
     }
 
+    /// <summary>
+    /// 自检（Debug 的 --long-annotate-probe，要 KITTY_HUD_CAPTURE=1 才抓得到）：出面板、喂三拍造出来的帧（往下滚），
+    /// 每拍后抓一次面板那块屏；再在右下角闪一下「都不要」的白块、80 ms 后抓那一角。图都存进 directory。
+    /// </summary>
+    internal static async Task ProbeAsync(string directory)
+    {
+        Directory.CreateDirectory(directory);
+        const int width = 800;
+        const int height = 600;
+        var content = new int[width * 2400];
+        for (var y = 0; y < 2400; y++)
+        {
+            var color = unchecked((int)0xFF000000) | (y * 97 % 256 << 16) | (y / 40 * 53 % 256 << 8) | (y * 13 % 256);
+            for (var x = 0; x < width; x++)
+            {
+                content[y * width + x] = x < 40 + y % 300 ? color : unchecked((int)0xFFF0F0F0);
+            }
+        }
+
+        ScrollFrame FrameAt(int top)
+        {
+            var pixels = new int[width * height];
+            Array.Copy(content, top * width, pixels, 0, pixels.Length);
+            return new ScrollFrame(width, height, pixels);
+        }
+
+        var region = new PixelBounds(400, 200, 400 + width, 200 + height);
+        Show(region, "滚动选区，Enter 完成，Esc 放弃");
+        var canvas = new ScrollCanvas(FrameAt(0));
+        var shots = 0;
+        foreach (var top in new[] { 0, 350, 700, 1200 })
+        {
+            var before = canvas.Height;
+            if (top > 0)
+            {
+                canvas.Append(FrameAt(top), ScrollDirection.Down);
+            }
+
+            Update(canvas, false, canvas.Height - before);
+            await Task.Delay(600);
+            if (_instance?._window is { } window)
+            {
+                var position = window.AppWindow.Position;
+                var size = window.AppWindow.Size;
+                await SaveScreen(
+                    new PixelBounds(position.X, position.Y, position.X + size.Width, position.Y + size.Height),
+                    Path.Combine(directory, $"scroll-panel-{shots++}.png"));
+            }
+
+            Log.Info($"scroll.panel-probe top={top} height={canvas.Height}");
+        }
+
+        Hide();
+        ShotFlash.Show(new PixelBounds(0, 0, 1200, 800));
+        await Task.Delay(80);
+        var display = Displays.AtPoint(1, 1);
+        await SaveScreen(
+            new PixelBounds(display.Work.Right - 700, display.Work.Bottom - 500, display.Work.Right, display.Work.Bottom),
+            Path.Combine(directory, "shot-flash.png"));
+
+        static async Task SaveScreen(PixelBounds bounds, string path)
+        {
+            if (ScreenCapture.CaptureRegion(bounds) is { } bgra &&
+                await ImageCodec.BgraToPngAsync(bounds.Width, bounds.Height, bgra) is { } png)
+            {
+                await File.WriteAllBytesAsync(path, png);
+            }
+        }
+    }
+
     public static void Hide()
     {
         if (_instance is not { } panel)

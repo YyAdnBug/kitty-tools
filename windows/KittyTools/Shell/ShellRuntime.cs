@@ -402,6 +402,22 @@ internal sealed class ShellRuntime
 
 
 #if DEBUG
+        // 调试用：长图标注自检（--long-annotate-probe=行数，图出到 --long-annotate-dir= 或临时目录，HANDTEST 759 / 763）。
+        var longProbeArg = Environment.GetCommandLineArgs()
+            .FirstOrDefault(arg => arg.StartsWith("--long-annotate-probe=", StringComparison.OrdinalIgnoreCase));
+        if (longProbeArg is not null && int.TryParse(longProbeArg["--long-annotate-probe=".Length..], out var longRows))
+        {
+            var dirArg = Environment.GetCommandLineArgs()
+                .FirstOrDefault(arg => arg.StartsWith("--long-annotate-dir=", StringComparison.OrdinalIgnoreCase));
+            var dir = dirArg?["--long-annotate-dir=".Length..] ?? Path.Combine(Path.GetTempPath(), "kitty-long-annotate");
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(async () =>
+            {
+                // 先过一遍长截图的预览面板和「都不要」闪一下（HANDTEST 742 / 751–752），再开长图标注。
+                await ScrollPreviewPanel.ProbeAsync(dir);
+                await LongAnnotateWindow.ProbeAsync(Math.Clamp(longRows, 100, ScrollStitcher.MaxOutputHeight), dir);
+            });
+        }
+
         // 调试用：直接开录屏的选区遮罩（截图 / 手测 Alt+R 的界面）。
         if (Environment.GetCommandLineArgs().Contains("--record-select", StringComparer.OrdinalIgnoreCase))
         {

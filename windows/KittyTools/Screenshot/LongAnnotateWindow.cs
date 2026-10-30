@@ -909,6 +909,65 @@ internal sealed class LongAnnotateWindow
         }
     }
 
+    /// <summary>
+    /// 自检（Debug 的 --long-annotate-probe=行数）：造一张条纹长图、带几条跨 4096 行接缝的标注打开，
+    /// 开头、接缝、滚到底各拍一张窗口（WGC），再出一次图量耗时；不写剪贴板、不碰截图历史，拍完关掉。
+    /// </summary>
+    internal static async Task ProbeAsync(int rows, string directory)
+    {
+        const int width = 1200;
+        var bgra = new byte[width * rows * 4];
+        for (var y = 0; y < rows; y++)
+        {
+            var shade = (byte)(y / 64 % 2 == 0 ? 240 : 200);
+            for (var x = 0; x < width; x++)
+            {
+                var offset = (y * width + x) * 4;
+                bgra[offset] = shade;
+                bgra[offset + 1] = (byte)(y * 255 / rows);
+                bgra[offset + 2] = (byte)(x * 255 / width);
+                bgra[offset + 3] = 255;
+            }
+        }
+
+        var seam = Math.Min(BandRows, rows / 2);
+        var items = new[]
+        {
+            Annotation.Drawn(AnnotationKind.Rectangle, new PointD(100, seam - 200), new PointD(500, seam + 200), false,
+                AnnotationStyle.DefaultFor(AnnotationKind.Rectangle)),
+            Annotation.Drawn(AnnotationKind.Highlighter, new PointD(600, seam - 150), new PointD(1100, seam + 150), false,
+                AnnotationStyle.DefaultFor(AnnotationKind.Highlighter)),
+            Annotation.Drawn(AnnotationKind.Mosaic, new PointD(100, seam - 100), new PointD(500, seam + 100), false,
+                AnnotationStyle.DefaultFor(AnnotationKind.Mosaic)),
+        }.OfType<Annotation>().ToList();
+        Directory.CreateDirectory(directory);
+        Open(bgra, width, rows, 1, items, null, null);
+        if (_instance is not { } window)
+        {
+            Log.Warn("long-annotate.probe not-open");
+            return;
+        }
+
+        var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(window._window);
+        await Task.Delay(1500);
+        await WindowShot.SaveAsync(hwnd, Path.Combine(directory, "long-annotate-top.png"));
+        window._scroller.ChangeView(null, seam * window._unit - 300, null, true);
+        await Task.Delay(1200);
+        await WindowShot.SaveAsync(hwnd, Path.Combine(directory, "long-annotate-seam.png"));
+        window._scroller.ChangeView(null, window._scroller.ScrollableHeight, null, true);
+        await Task.Delay(1200);
+        await WindowShot.SaveAsync(hwnd, Path.Combine(directory, "long-annotate-bottom.png"));
+        var started = System.Diagnostics.Stopwatch.StartNew();
+        var png = await window.ComposeAsync();
+        Log.Info($"long-annotate.probe rows={rows} export-ms={started.ElapsedMilliseconds} png={png?.Length ?? 0} bands={window._bands.Count}");
+        if (png is not null)
+        {
+            await File.WriteAllBytesAsync(Path.Combine(directory, "long-annotate-export.png"), png);
+        }
+
+        window._window.Close();
+    }
+
     private void Release()
     {
         if (ReferenceEquals(_instance, this))
