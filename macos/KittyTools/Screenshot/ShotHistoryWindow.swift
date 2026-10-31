@@ -229,6 +229,11 @@ import SwiftUI
   /// 这一条有没有文件可以显示 / 打开（没有时那一项置灰）
   func hasFile(_ item: ShotHistory.Item) -> Bool { (item.filePath ?? item.savedPath) != nil }
 
+  /// 录屏能做的后续活（转成 GIF、压缩；第四轮体检 U1）
+  func jobs(for item: ShotHistory.Item) -> [VideoJob] {
+    VideoJob.available(for: item.kind, file: item.filePath.map { URL(filePath: $0) })
+  }
+
   /// 网格一行放得下几张：方向键的 ↑↓ 要跳一行。由视图量出宽度后写进来
   @ObservationIgnored var columnsPerRow = 4
 

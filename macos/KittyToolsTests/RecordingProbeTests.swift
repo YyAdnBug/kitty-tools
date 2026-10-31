@@ -817,7 +817,10 @@ struct RecordingProbeTests {
     #expect(result.poster != nil)
     // 压缩：尺寸不变、H.264、文件在
     let target = VideoExport.compressedTarget(for: file, in: folder)
-    try await VideoExport.compress(file, to: target) { _ in }
+    let zipSuite = "kitty-probe-zip-\(UUID().uuidString)"  // 「正在压」记在临时偏好域，不写用户的偏好
+    let zipDefaults = try #require(UserDefaults(suiteName: zipSuite))
+    defer { zipDefaults.removePersistentDomain(forName: zipSuite) }
+    try await VideoExport.compress(file, to: target, defaults: zipDefaults) { _ in }
     let small = await inspect(target)
     #expect(small.playable && small.codec == "avc1" && small.size == media.size)
     let megabits = { (media: ProbeMedia) in

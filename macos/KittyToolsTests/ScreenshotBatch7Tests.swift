@@ -153,6 +153,26 @@ struct ScreenshotBatch7Tests {
     }
   }
 
+  /// Esc 上膛（第四轮体检 U3）：长图比第一帧长了才上膛，只有一帧时一下放弃；上膛的提示盖过别的提示、危险色、播报。
+  /// 抓帧间隔（F1）：自动滚动 160 ms；手动 40 ms，连着 5 帧没变化放宽到 200 ms
+  @Test func scrollEscapeArmsAndIdleInterval() {
+    #expect(!ScrollCapture.escapeArms(height: 480, frameHeight: 480))
+    #expect(ScrollCapture.escapeArms(height: 481, frameHeight: 480))
+    let armed = ScrollCapture.status(
+      notice: ScrollCapture.Status(text: "已经滚到底了"), isFull: true, isLost: true,
+      isAutoScrolling: false, isBrowsing: true, isArmed: true)
+    #expect(armed == ScrollCapture.Status(text: "再按一次 Esc 放弃这张长图", tone: .danger))
+    #expect(armed.announces)
+    #expect(
+      ScrollCapture.status(notice: nil, isFull: false, isLost: false, isAutoScrolling: false).tone
+        == .normal)
+    // 按两下的时窗和录制条的放弃同一份（RecordingHUD.Discard，2 秒，那边有单测）
+    #expect(ScrollCapture.interval(isAutoScrolling: true, quietFrames: 10) == .milliseconds(160))
+    #expect(ScrollCapture.interval(isAutoScrolling: false, quietFrames: 0) == .milliseconds(40))
+    #expect(ScrollCapture.interval(isAutoScrolling: false, quietFrames: 4) == .milliseconds(40))
+    #expect(ScrollCapture.interval(isAutoScrolling: false, quietFrames: 5) == .milliseconds(200))
+  }
+
   // 面板按钮叫法和截图工具栏一致：拷贝 / 存储到「访达里的名字」/ 另存为…（B41）
   @Test func scrollPanelUsesShotWording() throws {
     let folder = FileManager.default.displayName(atPath: ScreenshotOutput.saveDirectory.path)

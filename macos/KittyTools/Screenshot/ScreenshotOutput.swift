@@ -31,8 +31,9 @@ enum ScreenshotOutput {
     "存储到「\(FileManager.default.displayName(atPath: saveDirectory.path))」"
   }
 
-  /// saved：设置里选的文件夹（没选过 = nil）。已不存在的目录（拔掉的移动硬盘等）跳过，往下退
-  static func directory(saved: String?) -> URL {
+  /// saved：设置里选的文件夹（没选过 = nil）。已不存在的目录（拔掉的移动硬盘等）跳过，往下退。
+  /// 要查文件夹在不在（可能在卡住的网络盘上）：快速保存在主线程外调它（quickSave）
+  nonisolated static func directory(saved: String?) -> URL {
     let candidates = [
       saved,
       UserDefaults(suiteName: "com.apple.screencapture")?.string(forKey: "location").map {
@@ -52,7 +53,7 @@ enum ScreenshotOutput {
 
   /// 「截图 2026-09-24 22.46.10.png」；已有同名文件就追加「 2」「 3」…。录屏传「录屏」「mp4」（同一个快速保存目录）。
   /// 纯函数（只查文件是否存在），配单测
-  static func availableURL(
+  nonisolated static func availableURL(
     in directory: URL, date: Date = .now, prefix: String = "截图", ext: String = "png"
   ) -> URL {
     let stamp = date.formatted(
@@ -70,12 +71,45 @@ enum ScreenshotOutput {
     return url
   }
 
-  /// ⌘S：存进快速保存目录（首次写桌面 / 下载等目录时系统会问一次文件夹访问授权）
+  /// ⌘S：存进快速保存目录（首次写桌面 / 下载等目录时系统会问一次文件夹访问授权）。
+  /// 看保存目录在不在、起名、写盘一起在主线程外（第四轮体检 F4：用户另选的文件夹可能在卡住的网络盘上，mac-native §3）。
+  /// 不覆盖（.withoutOverwriting）：同一秒里连存两张，后一张起到了同一个名字的话写的时候报错，重新起名（最多试几次）
   @discardableResult
-  static func quickSave(_ png: Data) throws -> URL {
-    let url = availableURL(in: saveDirectory)
-    try png.write(to: url, options: .withoutOverwriting)
-    return url
+  @concurrent nonisolated static func quickSave(_ png: Data) async throws -> URL {
+    let folder = directory(
+      saved: UserDefaults.standard.string(forKey: Prefs.screenshotSaveDirectory))
+    for attempt in 1...5 {
+      let url = availableURL(in: folder)
+      do {
+        try png.write(to: url, options: .withoutOverwriting)
+        return url
+      } catch CocoaError.fileWriteFileExists where attempt < 5 {
+        continue
+      }
+    }
+    throw CocoaError(.fileWriteFileExists)
+  }
+
+  /// 写文件（截图的快速保存、另存为，第四轮体检 F4）：用户选的文件夹可能在网络盘上，不在主线程写
+  @concurrent nonisolated static func write(_ data: Data, to url: URL, options: Data.WritingOptions)
+    async throws
+  {
+    try data.write(to: url, options: options)
+  }
+
+  /// 没有写权限（文件夹授权被拒、只读的文件夹）：岛上给「去授权」「更改保存位置」（第四轮体检 U7）。纯函数，配单测
+  nonisolated static func isPermissionDenied(_ error: any Error) -> Bool {
+    let error = error as NSError
+    if error.domain == NSCocoaErrorDomain,
+      [CocoaError.fileWriteNoPermission.rawValue, CocoaError.fileReadNoPermission.rawValue]
+        .contains(error.code)
+    {
+      return true
+    }
+    if error.domain == NSPOSIXErrorDomain, [Int(EPERM), Int(EACCES)].contains(error.code) {
+      return true
+    }
+    return (error.userInfo[NSUnderlyingErrorKey] as? NSError).map(isPermissionDenied) ?? false
   }
 
   /// 另存为：遮罩已收起。激活本 App、面板提到最前、存完把前台还给原来的 App 都在 FilePanel 里。不设 directoryURL：
@@ -91,7 +125,7 @@ enum ScreenshotOutput {
     // 本 App 不在前台（截图遮罩、钉图都不激活）：激活、提到最前、关掉后还回去都在 FilePanel 里
     let response = await FilePanel.begin(panel)
     guard response == .OK, let url = panel.url else { return nil }
-    try png.write(to: url, options: .atomic)
+    try await write(png, to: url, options: .atomic)
     return url
   }
 }

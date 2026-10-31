@@ -127,6 +127,25 @@ struct ScrollStitcherTests {
       stitcher.makeImage(), top: 100, bottom: 470 + Self.height, topFrame: first, bottomFrame: last)
   }
 
+  /// 长截图会话在主线程外算帧（第四轮体检 F1：ScrollStitcher.frame）再接：每一帧的结果和拼出来的长图，和当场算帧的一模一样
+  @Test func framesPreparedOffMainStitchTheSame() async throws {
+    let first = Self.frame(at: 100)
+    var direct = try Self.stitcher(first)
+    var prepared = try Self.stitcher(first)
+    for (index, offset) in [103, 140, 140, 230, 90, 330, 470, 1200].enumerated() {
+      let image = Self.image(Self.frame(at: offset, caret: index % 2 == 0))
+      let frame = await ScrollStitcher.frame(image, layout: prepared.layout)
+      #expect(prepared.add(frame) == direct.add(image), "滚到 \(offset)")
+    }
+    let a = try #require(direct.makeImage()?.dataProvider?.data as Data?)
+    let b = try #require(prepared.makeImage()?.dataProvider?.data as Data?)
+    #expect(a == b && direct.outputHeight == prepared.outputHeight)
+    // 尺寸不对的帧：算不出来，和原来一样算对不上
+    let wrong = Self.image(Self.frame(at: 0), width: Self.width / 2)
+    #expect(await ScrollStitcher.frame(wrong, layout: prepared.layout) == nil)
+    #expect(prepared.add(nil) == .lost)
+  }
+
   @Test func stitchesUpLikeAChatHistory() throws {
     let first = Self.frame(at: 1500, caret: true)
     var stitcher = try Self.stitcher(first)

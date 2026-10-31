@@ -1,6 +1,7 @@
 // 设置 › 截图：⌘S 快速保存的位置（文件夹图标 + 访达里的名字，选过的能恢复默认，体检 A28；录屏、录音也存这里，
 // 「录制」页的「保存到」是同一行 SaveDirectoryRow）、快门声（可试听）、截图后留不留常驻缩略图（体检 D18）、
-// 识字是否把同一段里的换行接起来（开关旁边实时对照效果，体检 A32）。录屏、录音的设置在「录制」页（RecordTab，2026-10-03 拆出去）。
+// 识字是否把同一段里的换行接起来（开关旁边实时对照效果，体检 A32）。截图历史改短保留期 / 改小占用会删掉东西时先问
+// （第四轮体检 E24，同剪贴板 E4），改了当场清一次。录屏、录音的设置在「录制」页（RecordTab，2026-10-03 拆出去）。
 // 框选、标注、长截图、录屏的按键不写进页里（N11）：一句话 +「查看全部快捷键…」打开速查表；全局快捷键在「快捷键」页。
 
 import AppKit
@@ -19,6 +20,10 @@ struct ScreenshotTab: View {
   @AppStorage(Prefs.shotHistoryDays) private var historyDays = 30
   @AppStorage(Prefs.shotHistoryMegabytes) private var historyMegabytes = 2 * 1024
   @State private var confirmClear = false
+  /// 改短保留期 / 改小占用会删掉历史：先问，确认了才改（第四轮体检 E24，同剪贴板的 E4）
+  @State private var limitChange: HistoryLimit?
+  /// 确认框收起后让两个选项重建一次：取消时值没改，弹出菜单却可能停在点的那一项上
+  @State private var limitPickers = 0
 
   var body: some View {
     // 关着时（Feature）变灰；存到哪个文件夹录制也在用，照常能改
@@ -49,17 +54,16 @@ struct ScreenshotTab: View {
         Section {
           Toggle("保留截图历史", isOn: $keepsHistory)
           if keepsHistory {
-            Picker("保留", selection: $historyDays) {
-              Text("7 天").tag(7)
-              Text("30 天").tag(30)
-              Text("90 天").tag(90)
-              Text("一直留着").tag(0)
+            Picker("保留", selection: limited(days: true)) {
+              ForEach([7, 30, 90, 0], id: \.self) { Text(Self.daysTitle($0)).tag($0) }
             }
-            Picker("最多占用", selection: $historyMegabytes) {
+            .id("days \(limitPickers)")  // 两个选项的 id 不能一样：同一个 id 的兄弟视图会被当成同一个
+            Picker("最多占用", selection: limited(days: false)) {
               ForEach(Prefs.shotHistoryMegabyteChoices, id: \.self) {
-                Text($0 == 0 ? "不限" : "\($0 / 1024) GB").tag($0)
+                Text(Self.megabytesTitle($0)).tag($0)
               }
             }
+            .id("megabytes \(limitPickers)")
           }
           HStack {
             Button("打开截图历史…", action: openHistory)
@@ -69,7 +73,7 @@ struct ScreenshotTab: View {
           }
         } footer: {
           SectionFootnote(
-            "截图、长截图、录屏录音都留在这里，能回头接着改标注、再钉一次。超过保留期或占用的先删最旧的（已经存到文件夹里的文件不动）。历史只在这台 Mac 上，不跟着同步。"
+            "截图、长截图、录屏录音都留在这里，能回头接着改标注（马赛克会直接打进存下的图）、再钉一次。超过保留期或占用的先删最旧的（已经存到文件夹里的文件不动）。历史只在这台 Mac 上，不跟着同步。"
           )
         }
         Section {
@@ -113,6 +117,68 @@ struct ScreenshotTab: View {
     } message: {
       Text("\(shots?.items.count ?? 0) 条历史连同留着的原图一起删掉，不能撤销；已经存到文件夹里的文件不动。")
     }
+    .confirmationDialog(
+      limitChange.map(Self.title) ?? "", isPresented: confirmsLimit, titleVisibility: .visible,
+      presenting: limitChange
+    ) { change in
+      Button("删除", role: .destructive) { apply(change) }
+      Button("取消", role: .cancel) {}
+    } message: { change in
+      Text("会删掉 \(change.count) 条截图历史，连同留着的原图；已经存到文件夹里的文件不动。")
+    }
+  }
+
+  /// 要改的那一项（保留天数 / 最多占用的 MB）、新值和改了会删掉几条
+  private struct HistoryLimit: Equatable {
+    var isDays: Bool
+    var value: Int
+    var count: Int
+  }
+
+  /// 两个上限选项的绑定：改到会删掉历史的那一档先不写偏好，记下来问；不会删的照旧直接生效。
+  /// 和清理同一套条件干跑（ShotHistory.pruneCount）。改了就当场清一次（原来要等下一次截图才清）
+  private func limited(days: Bool) -> Binding<Int> {
+    Binding {
+      days ? historyDays : historyMegabytes
+    } set: { value in
+      guard value != (days ? historyDays : historyMegabytes) else { return }
+      let change = HistoryLimit(
+        isDays: days, value: value,
+        count: shots?.pruneCount(
+          days: days ? value : historyDays, megabytes: days ? historyMegabytes : value) ?? 0)
+      guard change.count > 0 else { return apply(change) }
+      limitChange = change
+    }
+  }
+
+  /// 只写变了的那一项（同剪贴板 E4：没动的那项写进持久域，同步会当成本机刚改的发出去），再按新的上限清一次
+  private func apply(_ change: HistoryLimit) {
+    if change.isDays { historyDays = change.value } else { historyMegabytes = change.value }
+    shots?.prune()
+  }
+
+  /// 确认框以任何方式收起（删除、取消、Esc）都让两个选项重建一次
+  private var confirmsLimit: Binding<Bool> {
+    Binding {
+      limitChange != nil
+    } set: {
+      guard !$0 else { return }
+      limitChange = nil
+      limitPickers += 1
+    }
+  }
+
+  /// 确认框的标题：「截图历史改成保留「7 天」？」「截图历史最多占用改成「1 GB」？」
+  private static func title(_ change: HistoryLimit) -> String {
+    change.isDays
+      ? "截图历史改成保留「\(daysTitle(change.value))」？"
+      : "截图历史最多占用改成「\(megabytesTitle(change.value))」？"
+  }
+
+  static func daysTitle(_ days: Int) -> String { days == 0 ? "一直留着" : "\(days) 天" }
+
+  static func megabytesTitle(_ megabytes: Int) -> String {
+    megabytes == 0 ? "不限" : "\(megabytes / 1024) GB"
   }
 }
 

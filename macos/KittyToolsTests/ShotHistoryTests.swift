@@ -886,13 +886,171 @@ struct ShotHistoryTests {
     let first = try #require(await history.record(image(), scale: 2))
     _ = await history.record(image(), scale: 2)
     history.seed(history.items.map { modified($0, bytes: 400_000) })
+    // 设置里改上限之前先干跑（第四轮体检 E24）：上限 1 MB 不删，改成「不限」也不删；超了的那一档报几条
+    #expect(history.pruneCount(days: 0, megabytes: 1) == 0)
+    #expect(history.pruneCount(days: 0, megabytes: 0) == 0)
     history.prune()
     #expect(history.items.count == 2)
+    history.seed(history.items.map { $0.id == first ? modified($0, bytes: 2 * 1024 * 1024) : $0 })
+    #expect(history.pruneCount(days: 0, megabytes: 1) == 1)
+    #expect(history.items.count == 2)  // 干跑不删
+    history.seed(history.items.map { modified($0, bytes: 400_000) })
     history.seed(history.items.map { $0.id == first ? modified($0, bytes: 2 * 1024 * 1024) : $0 })
     _ = await history.record(image(), scale: 2)
     #expect(history.items.count == 2 && !history.items.contains { $0.id == first })
     try await waitUntil { !FileManager.default.fileExists(atPath: history.url(for: first).path) }
     #expect(!FileManager.default.fileExists(atPath: history.url(for: first).path))
+  }
+
+  // MARK: 马赛克打进存下的原图（第四轮体检 E6）
+
+  /// 每一列颜色都不一样的图（马赛克打上去看得出变了）
+  private func pattern(width: Int = 400, height: Int = 300) -> CGImage {
+    let context = CGContext(
+      data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+      space: CGColorSpace(name: CGColorSpace.sRGB)!,
+      bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
+        | CGBitmapInfo.byteOrder32Little.rawValue)!
+    for x in 0..<width {
+      for y in stride(from: 0, to: height, by: 10) {
+        context.setFillColor(
+          CGColor(
+            srgbRed: CGFloat(x % 7) / 6, green: CGFloat(y % 13) / 12,
+            blue: CGFloat((x + y) % 5) / 4,
+            alpha: 1))
+        context.fill(CGRect(x: x, y: y, width: 1, height: 10))
+      }
+    }
+    return context.makeImage()!
+  }
+
+  /// 图上一块（点，原点左下，scale 2）的像素，统一画进 sRGB 位图再取（PNG 读回来的格式不一样也能比）
+  private static func pixels(of image: CGImage, in rect: CGRect, scale: CGFloat = 2) -> [UInt8] {
+    let (width, height) = (image.width, image.height)
+    let context = CGContext(
+      data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+      space: CGColorSpace(name: CGColorSpace.sRGB)!,
+      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+    context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+    let data = context.data!.assumingMemoryBound(to: UInt8.self)
+    let left = Int(rect.minX * scale)
+    let right = Int(rect.maxX * scale)
+    let top = height - Int(rect.maxY * scale)  // 行从上往下
+    let bottom = height - Int(rect.minY * scale)
+    var out: [UInt8] = []
+    for row in top..<bottom {
+      out.append(
+        contentsOf: UnsafeBufferPointer(
+          start: data + row * width * 4 + left * 4, count: (right - left) * 4))
+    }
+    return out
+  }
+
+  /// 等 update 在后台的那几步（打码写原图、写缩略图）做完：它做完会把 edits 里这一条清掉。按轮数等，最多约 10 秒
+  /// （全量单测满载时写盘、编码都会慢）
+  private func waitForEdit(_ history: ShotHistory, _ id: UUID) async throws {
+    for _ in 0..<400 where history.edits[id] != nil {
+      try await Task.sleep(for: .milliseconds(25))
+    }
+    #expect(history.edits[id] == nil, "update 在后台的几步 10 秒还没做完")
+  }
+
+  /// 截图那条路（record）：马赛克打进存下的原图——马赛克那一块的像素和合成出来的成品一样、和原图不一样；标注里没有
+  /// 马赛克，别的标注照旧留着能改；原图 + 剩下的标注合成出来还是当初那张成品
+  @Test func recordBakesMosaicIntoTheOriginal() async throws {
+    let (history, root) = try makeHistory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let original = pattern()
+    let area = CGRect(x: 20, y: 20, width: 60, height: 40)
+    let mosaic = Annotation(shape: .mosaic(area))
+    let box = Annotation(shape: .rectangle(CGRect(x: 120, y: 80, width: 50, height: 40)))
+    let composed = ShotHistory.compose(original, annotations: [mosaic, box], scale: 2)
+    let id = try #require(
+      await history.record(
+        original, composed: composed, scale: 2, annotations: [mosaic, box]))
+    #expect(history.item(id)?.annotations == [box])
+    #expect(!(history.item(id)?.annotations.contains { $0.tool == .mosaic } ?? true))
+    let stored = try #require(await history.image(for: id))
+    #expect(Self.pixels(of: stored, in: area) == Self.pixels(of: composed, in: area))
+    #expect(Self.pixels(of: stored, in: area) != Self.pixels(of: original, in: area))
+    // 框没打进去（还能改）
+    let boxArea = CGRect(x: 110, y: 70, width: 70, height: 60)
+    #expect(Self.pixels(of: stored, in: boxArea) == Self.pixels(of: original, in: boxArea))
+    let whole = CGRect(x: 0, y: 0, width: 200, height: 150)
+    #expect(
+      Self.pixels(of: ShotHistory.compose(stored, annotations: [box], scale: 2), in: whole)
+        == Self.pixels(of: composed, in: whole))
+    // 只有马赛克：标注空了
+    let only = try #require(
+      await history.record(
+        original, composed: ShotHistory.compose(original, annotations: [mosaic], scale: 2),
+        scale: 2, annotations: [mosaic]))
+    #expect(history.item(only)?.annotations == [])
+  }
+
+  /// 长截图 / 长图标注 / 改标注回写那几条路（update）：新画的马赛克同样打进原图、不进标注；给了遮罩里那张原图就用它，
+  /// 没给读盘（已经打过的码留着，再打一块）；之后照旧能改别的标注
+  @Test func updateBakesMosaicIntoTheOriginal() async throws {
+    let (history, root) = try makeHistory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let original = pattern()
+    let id = try #require(
+      await history.record(original, composed: original, scale: 2, kind: .scroll))
+    let first = CGRect(x: 10, y: 90, width: 50, height: 40)
+    let arrow = Annotation(shape: .arrow(from: CGPoint(x: 100, y: 20), to: CGPoint(x: 180, y: 60)))
+    let drawn = [arrow, Annotation(shape: .mosaic(first))]
+    let composed = ShotHistory.compose(original, annotations: drawn, scale: 2)
+    history.update(id, annotations: drawn, composed: composed, original: original)
+    // 原图打好码之前马赛克先留在标注里（这时拷贝、钉图、拖出去合成的都带着码）
+    #expect(history.item(id)?.annotations == drawn)
+    try await waitForEdit(history, id)
+    #expect(history.item(id)?.annotations == [arrow])
+    let baked = try #require(await history.image(for: id))
+    #expect(Self.pixels(of: baked, in: first) == Self.pixels(of: composed, in: first))
+    #expect(Self.pixels(of: baked, in: first) != Self.pixels(of: original, in: first))
+    // 再打一块（不给原图：读盘上已经打过码的那张）
+    let second = CGRect(x: 120, y: 90, width: 50, height: 40)
+    let more = [arrow, Annotation(shape: .mosaic(second))]
+    try await update(history, id, more)
+    try await waitForEdit(history, id)
+    #expect(history.item(id)?.annotations == [arrow])
+    let expected = Self.pixels(
+      of: ShotHistory.compose(baked, annotations: more, scale: 2), in: second)
+    let twice = try #require(await history.image(for: id))
+    #expect(Self.pixels(of: twice, in: second) == expected)
+    #expect(Self.pixels(of: twice, in: first) == Self.pixels(of: composed, in: first))
+    #expect(history.item(id)?.bytes ?? 0 > 0)
+    // 只动别的标注：照旧只改标注
+    let moved = Annotation(shape: .arrow(from: CGPoint(x: 90, y: 20), to: CGPoint(x: 180, y: 70)))
+    try await update(history, id, [moved])
+    #expect(history.item(id)?.annotations == [moved])
+  }
+
+  /// 打码写原图失败（文件夹只读；闪退同理）：马赛克留在标注里，从历史拷贝 / 钉图 / 拖出去合成出来的还是打了码的，
+  /// 不露出明文（E6 评审：原来先把马赛克从标注里拿掉、再在后台写原图）
+  @Test func mosaicStaysWhenTheOriginalCannotBeWritten() async throws {
+    let (history, root) = try makeHistory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let original = pattern()
+    let id = try #require(await history.record(original, composed: original, scale: 2))
+    let folder = history.url(for: id).deletingLastPathComponent()
+    try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: folder.path)
+    defer {
+      try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: folder.path)
+    }
+    let area = CGRect(x: 30, y: 40, width: 60, height: 40)
+    let drawn = [Annotation(shape: .mosaic(area))]
+    let masked = ShotHistory.compose(original, annotations: drawn, scale: 2)
+    history.update(id, annotations: drawn, composed: masked, original: original)
+    try await waitForEdit(history, id)
+    let item = try #require(history.item(id))
+    #expect(item.annotations == drawn)
+    let composed = try #require(await history.composed(item))
+    #expect(Self.pixels(of: composed, in: area) == Self.pixels(of: masked, in: area))
+    #expect(Self.pixels(of: composed, in: area) != Self.pixels(of: original, in: area))
+    // 拖出去的那份同样带着码（没画别的标注时会克隆原图——这时原图没打码，不能克隆它）
+    let (_, dragged) = try await dragged(history, id)
+    #expect(Self.pixels(of: dragged, in: area) == Self.pixels(of: masked, in: area))
   }
 
   private func modified(_ item: ShotHistory.Item, bytes: Int) -> ShotHistory.Item {

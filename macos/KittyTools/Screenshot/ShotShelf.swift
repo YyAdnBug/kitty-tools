@@ -5,7 +5,7 @@
 // 窗口是普通 NSPanel 实例（不当 key、不激活本 App；层级状态栏，之后的截图冻结帧会排除它），用完放回复用池
 // （挂过 NSHostingView 的窗口 close 后 AppKit 不释放，同 FlyCard）。减弱动态效果时不飞，直接在角落淡入、淡出。
 // 卡片只留缩到卡片大小的图和复制 / 保存时编码好的 PNG（不再编码一遍，也不留整张解码的图：5K 一张 59 MB、长截图上百 MB），
-// 钉图时才解码；拖出用的临时 PNG 在主线程外写。
+// 钉图时才解码；拖出用的临时 PNG 在主线程外写，卡片走的时候没拖过的就删掉（拖过的留到下次启动，第四轮体检 F2）。
 // 录屏（第 3 批，拍板 R11-a）的视频卡是同一种卡片的另一种内容（ShelfCard.Kind.video）：图是最后一帧（取不到就是 HUD 底色）、
 // 多了播放符号和时长；文件已经存好了，悬停只有「拷贝」（拷的是文件，进剪贴板历史）和关闭 / 在访达中显示，双击用默认 App 打开，
 // 拖出去就是那个文件，右键多「打开」「移到废纸篓」（能放回，不二次确认）。
@@ -16,7 +16,7 @@
 // 胶囊，没有播放符号），pop 出来、旧卡让位，操作同视频卡（没有「转成 GIF」）。进度岛的详情里写百分比（第二轮体检 R3）。
 // 压缩（第二轮体检 R1）：视频卡悬停时右下角多一个圆钮「压缩」（右键 / 旁白动作同名；矮卡没有圆钮，走右键），把录好的文件压小
 // 另存一份（VideoExport.compress，原文件不动），进度、取消、不自己滑走都同转 GIF；压好了在角落叠一张压缩版的视频卡
-// （它没有「压缩」：已经压过了）。
+// （它没有「压缩」：已经压过了）。这两件的进度岛、取消、结果岛在 VideoJob（第四轮体检 U1，截图历史、晾衣绳也从那里开始）。
 
 import AppKit
 import SwiftUI
@@ -239,11 +239,13 @@ final class ShotShelf {
   var isBusy = false
   /// 拖出去用的文件：存过就是存的那个，否则是临时目录里编码好的 PNG
   @ObservationIgnored private(set) var fileURL: URL?
+  /// 临时目录里那份 PNG 和它拖出去过没有（第四轮体检 F2）：卡片走的时候没拖过的就删掉；拖过的可能还在被邮件、聊天的
+  /// 附件读，留给下次启动时清空整个目录（ShotShelf.dragDirectory 的老规矩）
+  @ObservationIgnored private var dragFile: URL?
+  @ObservationIgnored private var dragged = false
   @ObservationIgnored private var timer: Task<Void, Never>?
-  /// 正在转成 GIF（第 7 批）/ 正在压缩：做的时候不自己滑走，卡片被关掉就取消；一张卡同时只做一样，exporting 是它
-  /// 进度岛的标题和符号
+  /// 这张卡开始的转 GIF（第 7 批）/ 压缩（VideoJob）：做的时候不自己滑走，卡片被关掉就取消
   @ObservationIgnored private var export: Task<Void, Never>?
-  @ObservationIgnored private var exporting: (title: String, symbol: String)?
   /// 压缩出来的那张（视频卡）：不再给「压缩」
   @ObservationIgnored let isCompressed: Bool
   /// 没有飞行卡片交接、在角落弹出来（GIF 卡，第 7 批）：出现时 pop
@@ -381,6 +383,8 @@ final class ShotShelf {
   func slideOut(completion: @escaping @MainActor @Sendable () -> Void) {
     timer?.cancel()
     export?.cancel()  // 卡片被关掉（关闭、横扫、被挤走）：GIF 不转了、不压了
+    if let dragFile, !dragged { try? FileManager.default.removeItem(at: dragFile) }
+    dragFile = nil
     let exit = (screen?.frame.maxX ?? rect.maxX) - rect.minX + ShotShelf.margin + 10
     NSAnimationContext.runAnimationGroup { context in
       context.duration = Style.reduceMotion ? 0.2 : 0.28
@@ -459,15 +463,8 @@ final class ShotShelf {
           CGImageSourceCreateImageAtIndex($0, 0, nil)
         })
     else { return }
-    let aspect = pixels.height / max(pixels.width, 1)
-    var size = CGSize(width: source.width, height: source.width * aspect)
-    let visible = screen?.visibleFrame ?? source
-    if size.height > visible.height * 0.9 {
-      size = CGSize(width: visible.height * 0.9 / aspect, height: visible.height * 0.9)
-    }
-    let frame = CGRect(
-      x: source.minX, y: max(source.maxY - size.height, visible.minY), width: size.width,
-      height: size.height)
+    let frame = PinBoard.restoredFrame(
+      pixels: pixels, source: source, visible: screen?.visibleFrame ?? source)
     shelf?.pin(full, frame)
     close()
   }
@@ -513,6 +510,7 @@ final class ShotShelf {
 
   /// 拖出去的东西：文件（临时文件还没写好时给 PNG 数据）
   func dragItem() -> NSItemProvider {
+    if fileURL != nil, fileURL == dragFile { dragged = true }
     if let fileURL, let provider = NSItemProvider(contentsOf: fileURL) { return provider }
     if let png { return NSItemProvider(item: png as NSData, typeIdentifier: UTType.png.identifier) }
     return shown.map { NSItemProvider(object: NSImage(cgImage: $0, size: .zero)) }
@@ -534,8 +532,14 @@ final class ShotShelf {
   private func writeDragFile() async {
     guard let png = await encoded() else { return }
     let url = ScreenshotOutput.availableURL(in: ShotShelf.dragDirectory)
-    guard await Self.write(png, to: url), fileURL == nil else { return }
+    guard await Self.write(png, to: url) else { return }
+    // 写的这一会儿存过了（拖存的那个文件）、或者卡片已经走了：这份没人用，删掉
+    guard fileURL == nil, !isLeaving else {
+      try? FileManager.default.removeItem(at: url)
+      return
+    }
     fileURL = url
+    dragFile = url
   }
 
   /// 写临时文件（几 MB 到几十 MB，不在主线程写）
@@ -556,78 +560,41 @@ final class ShotShelf {
     }
   }
 
-  /// 录屏转成 GIF（第 7 批，R12-a）：存进快速保存目录「录屏 <开录时刻>.gif」，转的时候岛挂进度（菜单栏图标跟着呼吸）、
-  /// 超过 60 s 的在进度里说只转前 60 秒；转好岛「已存成 GIF」+ 大小，角落叠一张 GIF 卡；转不成岛说原因；取消（卡片被关掉）不出岛。
-  /// 正在转（或者正在压缩）时再点只让岛再说一次，不重复开。进度岛的详情里写百分比（第二轮体检 R3；Island.progress 只改
-  /// 详情、不重新出场、不播报），标题后面一条细进度条跟着走（2026-10-13，和更新包下载的岛同一种）
-  func convertToGIF() {
-    guard case .video(let url, let seconds) = kind, exists(url), !isExporting() else { return }
-    let island = shelf?.island
-    let progress = "正在转成 GIF…"
-    let note = Double(seconds) > VideoExport.maxSeconds ? "只转前 60 秒" : nil
-    let target = VideoExport.target(for: url, in: ScreenshotOutput.saveDirectory)
-    island?.show(
-      progress, detail: note, tone: .progress, symbol: Self.gifIslandSymbol,
-      actions: [cancelExport])
-    exporting = (progress, Self.gifIslandSymbol)
-    export = Task {
-      do {
-        let first = try await VideoExport.gif(from: url, to: target) { percent in
-          island?.progress(
-            progress, detail: Self.progressDetail(percent, note: note),
-            fraction: Double(percent) / 100)
-        }
-        let bytes = (try? target.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
-        island?.show(
-          "已存成 GIF", detail: Int64(bytes).formatted(.byteCount(style: .file)),
-          leading: Island.thumbnail(of: first), actions: .file(target))
-        // 叠在同一块屏的角落（最新的在最下面，这张视频卡往上让位）
-        shelf?.remember(target, first, .gif)
-        if let shelf, let corner = FlyCard.landingRect(for: rect, size: rect.size) {
-          shelf.add(gif: target, first: first, source: source, at: corner)
-        }
-      } catch is CancellationError {
-        island?.dismiss(ifShowing: progress)
-      } catch {
-        island?.show("没能转成 GIF", detail: error.localizedDescription, tone: .error)
-      }
-      finishExport()
-    }
+  /// 录屏转成 GIF（第 7 批，R12-a）/ 压缩（第二轮体检 R1）：进度岛、取消、结果岛都在 VideoJob（第四轮体检 U1：截图历史、
+  /// 晾衣绳共用一份）。这张卡开始的那件做的时候卡片不自己滑走、卡片被关掉就取消；做好了在角落叠一张 GIF 卡 / 压缩版的视频卡
+  /// （最新的在最下面，这张往上让位）、记进截图历史。这一段已经在做了（这张卡或者历史里开始的）只让岛再说一次
+  func convertToGIF() { run(.gif) }
+
+  func compress() {
+    guard canCompress else { return }
+    run(.compress)
   }
 
-  /// 压缩（第二轮体检 R1）：把录屏压小另存一份「<原名> 压缩版.mp4」（VideoExport.compress，原文件不动），压的时候岛挂进度
-  /// 和百分比、卡片不自己滑走，卡片被关掉就取消（不出岛、不留半成品）；压好岛「已压缩」+ 前后大小，角落叠一张压缩版的
-  /// 视频卡；压不成岛说原因
-  func compress() {
-    guard case .video(let url, let seconds) = kind, canCompress, exists(url), !isExporting() else {
-      return
-    }
-    let island = shelf?.island
-    let progress = "正在压缩…"
-    let target = VideoExport.compressedTarget(for: url, in: url.deletingLastPathComponent())
-    island?.show(
-      progress, tone: .progress, symbol: Self.compressIslandSymbol, actions: [cancelExport])
-    exporting = (progress, Self.compressIslandSymbol)
-    export = Task {
-      do {
-        try await VideoExport.compress(url, to: target) { percent in
-          island?.progress(
-            progress, detail: Self.progressDetail(percent), fraction: Double(percent) / 100)
-        }
-        island?.show(
-          "已压缩", detail: Self.sizeChange(from: url, to: target),
-          leading: shown.map(Island.thumbnail(of:)) ?? .tone, actions: .file(target))
-        shelf?.remember(target, shown, .video)
-        if let shelf, let corner = FlyCard.landingRect(for: rect, size: rect.size) {
-          shelf.add(
-            compressed: target, seconds: seconds, poster: shown, source: source, at: corner)
-        }
-      } catch is CancellationError {
-        island?.dismiss(ifShowing: progress)
-      } catch {
-        island?.show("没能压缩", detail: error.localizedDescription, tone: .error)
+  private func run(_ job: VideoJob) {
+    guard case .video(let url, let seconds) = kind, exists(url) else { return }
+    // 这一段正在做（start 给 nil，岛已经把那件再说了一次）：这张卡手上的那件不动
+    guard
+      let task = job.start(
+        url, seconds: seconds, poster: shown, island: shelf?.island,
+        finished: { [weak self] in self?.finishExport() },
+        done: { [weak self] in self?.made($0, by: job) })
+    else { return }
+    export = task
+  }
+
+  /// 做好了：记进截图历史，在角落叠一张 GIF 卡 / 压缩版的视频卡
+  private func made(_ output: VideoJob.Output, by job: VideoJob) {
+    guard case .video(_, let seconds) = kind, let shelf else { return }
+    shelf.remember(output.file, output.poster, job.kind)
+    guard let corner = FlyCard.landingRect(for: rect, size: rect.size) else { return }
+    switch job {
+    case .gif:
+      if let first = output.poster {
+        shelf.add(gif: output.file, first: first, source: source, at: corner)
       }
-      finishExport()
+    case .compress:
+      shelf.add(
+        compressed: output.file, seconds: seconds, poster: shown, source: source, at: corner)
     }
   }
 
@@ -636,38 +603,14 @@ final class ShotShelf {
     if case .video = kind { !isCompressed } else { false }
   }
 
-  /// 这张卡正在转 GIF / 压缩：岛把正在做的那件再说一次（标题不变，后面的百分比接着在这条上更新），返回 true
-  private func isExporting() -> Bool {
-    guard export != nil, let exporting else { return false }
-    shelf?.island?.show(
-      exporting.title, detail: "这一段还没做完", tone: .progress, symbol: exporting.symbol,
-      actions: [cancelExport])
-    return true
-  }
-
-  /// 进度岛上的「取消」：同关掉卡片，GIF 不转了、不压了（不出岛、不留半成品）
-  private var cancelExport: Island.Action {
-    .init("取消") { [weak self] in self?.export?.cancel() }
-  }
-
   private func finishExport() {
     export = nil
-    exporting = nil
     if !isHovered { scheduleDismiss(after: 2.5) }
   }
 
   /// 进度岛的详情（纯函数，配单测）：「37%」；有附注的（转 GIF 只转前 60 秒）写在前面
   nonisolated static func progressDetail(_ percent: Int, note: String? = nil) -> String {
     [note, "\(min(max(percent, 0), 100))%"].compactMap { $0 }.joined(separator: " · ")
-  }
-
-  /// 「121.8 MB → 29.3 MB」
-  private static func sizeChange(from old: URL, to new: URL) -> String {
-    [old, new].map {
-      Int64((try? $0.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0)
-        .formatted(.byteCount(style: .file))
-    }
-    .joined(separator: " → ")
   }
 
   /// 触控板横扫：卡片跟着手指往右走（往左不动），松手时过了 50 pt、或还在快速往右甩（过了 16 pt、80 ms 内最后一下

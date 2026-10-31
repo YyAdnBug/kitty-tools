@@ -203,6 +203,8 @@ final class ScreenRecorder: NSObject {
     /// 录下的文件：挪进快速保存目录的那份；挪不过去时是留在 workFile 那里的那份（moved 为 false）；nil = 没有录下东西
     var file: URL?
     var moved: Bool
+    /// 挪不进去是因为没有写权限（文件夹授权被拒、只读的文件夹）：岛上给「去授权」「更改保存位置」（第四轮体检 U7）
+    var moveDenied = false
     var duration: Duration
     var reason: Reason
     /// 录的区域（点，全局坐标；整屏就是那块屏）：飞入的起点
@@ -981,28 +983,34 @@ final class ScreenRecorder: NSObject {
       if await progress.value { island?.dismiss(ifShowing: saving) }
     }
     defaults.removeObject(forKey: medium.inProgressKey)
-    let (saved, moved) = Self.settle(file, into: directory, medium: medium, keeps: keeps)
-    return Result(file: saved, moved: moved, duration: duration, reason: reason, region: region)
+    let (saved, moved, denied) = Self.settle(file, into: directory, medium: medium, keeps: keeps)
+    return Result(
+      file: saved, moved: moved, moveDenied: denied, duration: duration, reason: reason,
+      region: region)
   }
 
   /// 收尾挪文件（录屏、录音共用）：不留的（放弃、取消、没开始录）和不在的删掉；否则挪进快速保存目录（「录屏 / 录音 <开录时刻>」，
-  /// 重名追加序号），挪不过去（如桌面的文件夹授权被拒）的留在原地（系统不清理）、改成同样的名字，AppDelegate 在访达里选中它
+  /// 重名追加序号），挪不过去（如桌面的文件夹授权被拒）的留在原地（系统不清理）、改成同样的名字，AppDelegate 在访达里选中它；
+  /// denied：挪不过去是因为没有写权限
   static func settle(_ temp: URL, into directory: URL, medium: Medium, keeps: Bool) -> (
-    file: URL?, moved: Bool
+    file: URL?, moved: Bool, denied: Bool
   ) {
     let manager = FileManager.default
     guard keeps, manager.fileExists(atPath: temp.path) else {
       try? manager.removeItem(at: temp)
-      return (nil, false)
+      return (nil, false, false)
     }
     let target = savedURL(for: temp, in: directory, medium: medium)
     do {
       try manager.moveItem(at: temp, to: target)
-      return (target, true)
+      return (target, true, false)
     } catch {
       Log.record.error("\(medium.noun)挪不进快速保存目录：\(error)")
       let renamed = savedURL(for: temp, in: temp.deletingLastPathComponent(), medium: medium)
-      return ((try? manager.moveItem(at: temp, to: renamed)) != nil ? renamed : temp, false)
+      return (
+        (try? manager.moveItem(at: temp, to: renamed)) != nil ? renamed : temp, false,
+        ScreenshotOutput.isPermissionDenied(error)
+      )
     }
   }
 

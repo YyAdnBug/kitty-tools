@@ -88,6 +88,51 @@ enum ScreenCapture {
     }
   }
 
+  /// 冻结这一步最多等多久（第四轮体检 E22）：截屏的系统服务偶尔不返回，一直等下去 isCapturing 就一直为真、
+  /// 截图家族的热键全被静默忽略。平常几十毫秒
+  static let freezeTimeout: Duration = .seconds(5)
+
+  /// 等 work 最多 limit：超时返回 nil；work 照样跑完，晚到的结果丢掉（系统调用取消不了）。work 抛错就抛出去。配单测
+  static func within<T>(_ limit: Duration, _ work: @escaping @MainActor () async throws -> T)
+    async throws -> T?
+  {
+    let race = Race<T>()
+    await withCheckedContinuation { (wake: CheckedContinuation<Void, Never>) in
+      race.wake = wake
+      race.timer = Task {
+        try? await Task.sleep(for: limit)
+        race.finish(nil)
+      }
+      Task {
+        do {
+          race.finish(.success(try await work()))
+        } catch {
+          race.finish(.failure(error))
+        }
+      }
+    }
+    // 交出去就放手：race 还被没跑完的那个任务拿着（超时后晚到的 work），别让它多拖着整屏的冻结帧
+    let result = race.result
+    race.result = nil
+    return try result?.get()
+  }
+
+  /// within 里先到的那一个（结果或超时）：先到的叫醒等着的、停掉计时，后到的不算
+  private final class Race<T> {
+    var wake: CheckedContinuation<Void, Never>?
+    var result: Result<T, any Error>?
+    var timer: Task<Void, Never>?
+
+    func finish(_ result: Result<T, any Error>?) {
+      guard let wake else { return }
+      self.wake = nil
+      self.result = result
+      timer?.cancel()
+      timer = nil
+      wake.resume()
+    }
+  }
+
   /// NSWindow.windowNumber → CGWindowID；不是窗口服务器里的窗口号时 nil。两种情况：没显示过的窗口是负数（defer 建的
   /// 面板第一次露出来之前）；macOS 27 上菜单栏图标的窗口（NSStatusBarWindow）给 2³²（0x1_0000_0000，实测崩溃报告），
   /// 装不进 UInt32——直接 CGWindowID(_:) 会让截图、录屏一开始就闪退（0.4.0）。窗口号一律经这里转

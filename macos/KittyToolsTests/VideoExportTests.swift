@@ -120,13 +120,17 @@ struct VideoExportTests {
     let folder = FileManager.default.temporaryDirectory.appending(path: "kitty-zip-\(UUID())")
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: folder) }
+    // 正在压的临时文件记在临时偏好域里（不写用户的偏好）
+    let suite = "kitty-zip-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
     let source = folder.appending(path: "录屏 合成.mp4")
     try await Self.writeNoise(to: source, width: 640, height: 360, frames: 60)
     let size = { (url: URL) in (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0 }
     let before = size(source)
     let target = VideoExport.compressedTarget(for: source, in: folder)
     var reported: [Int] = []
-    try await VideoExport.compress(source, to: target) { reported.append($0) }
+    try await VideoExport.compress(source, to: target, defaults: defaults) { reported.append($0) }
     #expect(size(source) == before)
     #expect(
       size(target) > 0 && Double(size(target)) < Double(before) * 0.7, "\(before) → \(size(target))"
@@ -140,10 +144,56 @@ struct VideoExportTests {
     #expect(abs(try await asset.load(.duration).seconds - 2) < 0.2)
     // 取消：不留文件
     let cancelled = VideoExport.compressedTarget(for: source, in: folder)
-    let task = Task { try await VideoExport.compress(source, to: cancelled) { _ in } }
+    let task = Task {
+      try await VideoExport.compress(source, to: cancelled, defaults: defaults) { _ in }
+    }
     task.cancel()
     await #expect(throws: CancellationError.self) { try await task.value }
     #expect(!FileManager.default.fileExists(atPath: cancelled.path))
+    // 先写隐藏的临时名、做完改名（第四轮体检 E24）：文件夹里不留临时文件，记着的「正在压」也划掉了（做完、取消都划）；
+    // 做的这一会儿目标名被占了就另起一个
+    let names = try FileManager.default.contentsOfDirectory(atPath: folder.path)
+    #expect(!names.contains { $0.hasPrefix(".") })
+    #expect(defaults.object(forKey: Prefs.compressingFiles) == nil)
+    let taken = VideoExport.compressedTarget(for: source, in: folder)
+    try Data().write(to: taken)
+    let saved = try await VideoExport.compress(source, to: taken, defaults: defaults) { _ in }
+    #expect(saved != taken && saved.lastPathComponent.hasPrefix("录屏 合成 压缩版"))
+    #expect((try? taken.resourceValues(forKeys: [.fileSizeKey]))?.fileSize == 0)
+  }
+
+  /// 压缩中途退出留下的临时文件（第四轮体检 E24）：启动时只删记下的那几个路径（不在了的跳过），旁边的文件不动、
+  /// 不列目录，记录清掉；压缩出来的那段不再给「压缩」（U1）
+  @Test func partialsAreCleanedAndCompressedVideosAreKnown() async throws {
+    let folder = FileManager.default.temporaryDirectory.appending(path: "kitty-partial-\(UUID())")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let suite = "kitty-partial-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let partial = VideoExport.partialName()
+    #expect(partial.hasPrefix(".") && partial.hasSuffix(".mp4"))
+    for name in [partial, "录屏 a.mp4", ".Kitty 压缩中 别人的.mp4"] {
+      try Data().write(to: folder.appending(path: name))
+    }
+    defaults.set(
+      [folder.appending(path: partial).path, folder.appending(path: "不在了.mp4").path],
+      forKey: Prefs.compressingFiles)
+    await VideoExport.removePartials(defaults: defaults)
+    #expect(
+      Set(try FileManager.default.contentsOfDirectory(atPath: folder.path))
+        == ["录屏 a.mp4", ".Kitty 压缩中 别人的.mp4"])
+    #expect(defaults.object(forKey: Prefs.compressingFiles) == nil)
+    #expect(VideoExport.isCompressed(URL(filePath: "/a/录屏 a 压缩版.mp4")))
+    #expect(VideoExport.isCompressed(URL(filePath: "/a/录屏 a 压缩版 2.mp4")))
+    #expect(!VideoExport.isCompressed(URL(filePath: "/a/录屏 a.mp4")))
+    let video = URL(filePath: "/a/录屏 a.mp4")
+    #expect(VideoJob.available(for: .video, file: video) == [.gif, .compress])
+    #expect(
+      VideoJob.available(for: .video, file: URL(filePath: "/a/录屏 a 压缩版.mp4")) == [.gif])
+    #expect(VideoJob.available(for: .audio, file: URL(filePath: "/a/录音 a.m4a")).isEmpty)
+    #expect(VideoJob.available(for: .gif, file: URL(filePath: "/a/录屏 a.gif")).isEmpty)
+    #expect(VideoJob.available(for: .video, file: nil).isEmpty)
   }
 
   /// 写一段每帧都是噪点的 H.264 视频（30 fps，约 8 Mbps）

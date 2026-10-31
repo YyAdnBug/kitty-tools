@@ -101,7 +101,7 @@ enum Prefs {
   static let translateWordMode = "translateWordMode"
 
   /// 截图 ⌘S 快速保存的目录（设置 › 截图「快速保存到」选的；「另存为」不改它，体检 A28）；没设 = 系统截屏的存储位置
-  static let screenshotSaveDirectory = "screenshotSaveDirectory"
+  nonisolated static let screenshotSaveDirectory = "screenshotSaveDirectory"
   /// 上次截图的区域（NSStringFromRect，全局坐标）：框选时按 D、或用「截取上次区域」热键
   static let screenshotLastRegion = "screenshotLastRegion"
   /// 每个标注工具上次用的样式（JSON 字典，键是 Annotation.Tool 的 rawValue 字符串）；没存过的工具
@@ -132,6 +132,9 @@ enum Prefs {
   static let screenRecordingInProgress = "screenRecordingInProgress"
   /// 正在录的音的文件路径（录音第 5 批，AudioRecorder 开录时写、收尾时删；闪退后同样由 ScreenRecorder.recover 接手）
   static let audioRecordingInProgress = "audioRecordingInProgress"
+  /// 正在压缩的录屏的隐藏临时文件路径（数组；VideoExport.compress 开始时记、做完 / 失败 / 取消时划掉）：启动时还在 =
+  /// 上次压到一半退出了，VideoExport.removePartials 删掉那几个文件（第四轮体检 E24）。没有默认值，不进设置导出和同步
+  static let compressingFiles = "compressingFiles"
   /// 录屏帧率：30（默认）/ 60（设置 › 录制「录屏」，录屏第 2 批；大屏上 60 不保证满帧，PLAN §10 第 0 批实测）
   static let screenRecordFrameRate = "screenRecordFrameRate"
   /// 开录前倒数几秒：0 不倒数 / 3（默认）/ 5（拍板 R9-a；倒数不进文件）

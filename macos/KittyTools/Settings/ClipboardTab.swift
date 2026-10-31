@@ -118,10 +118,11 @@ struct ClipboardTab: View {
     }
     .formStyle(.grouped)
     .onChange(of: imageOCR) { store.recognizePendingImages() }
-    // 同步、导入落下了新的排除列表：页面跟上（异步序列在主线程上接：偏好不一定是在主线程上改的）
+    // 同步、导入落下了新的排除列表：页面跟上（异步序列在主线程上接：偏好不一定是在主线程上改的）。
+    // object 不填：UserDefaults 不是 Sendable，填 .standard 会报警告；别的偏好域发来的也只是多比一次
     .task {
       for await _ in NotificationCenter.default.notifications(
-        named: UserDefaults.didChangeNotification, object: UserDefaults.standard)
+        named: UserDefaults.didChangeNotification)
       {
         let stored = Self.storedExcluded
         if stored != excluded { excluded = stored }

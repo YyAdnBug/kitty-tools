@@ -732,6 +732,92 @@ struct ScreenshotTests {
     #expect(frame([first.insetBy(dx: -first.width * 0.02, dy: -first.height * 0.02)]) == second)
   }
 
+  /// 冻结帧最多等多久（第四轮体检 E22）：先到的算——按时回来照常给结果、抛错照常抛；系统服务不返回时到点给 nil
+  /// （晚到的结果丢掉），不一直卡着 isCapturing
+  @Test func freezeGivesUpWhenCaptureHangs() async throws {
+    #expect(try await ScreenCapture.within(.seconds(2)) { 42 } == 42)
+    // 不按耗时断言：并行跑的别的套件占着主线程时，到点的那一下也要排队（实测满载时排了十几秒）
+    let hung = try await ScreenCapture.within(.milliseconds(50)) { () async throws -> Int in
+      try? await Task.sleep(for: .seconds(30))
+      return 1
+    }
+    #expect(hung == nil)
+    await #expect(throws: CocoaError.self) {
+      _ = try await ScreenCapture.within(.seconds(2)) { () async throws -> Int in
+        throw CocoaError(.featureUnsupported)
+      }
+    }
+  }
+
+  /// 截图存盘（第四轮体检 F4 / U7）：不覆盖的写法撞上同名文件报 fileWriteFileExists（快速保存靠它重新起名）；
+  /// 没有写权限的错误认得出来（岛上给「去授权」「更改保存位置」），别的错误不算
+  @Test func saveErrorsAreRecognized() async throws {
+    let folder = FileManager.default.temporaryDirectory.appending(path: "kitty-save-\(UUID())")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer {
+      try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: folder.path)
+      try? FileManager.default.removeItem(at: folder)
+    }
+    let file = folder.appending(path: "截图.png")
+    try await ScreenshotOutput.write(Data([1]), to: file, options: .withoutOverwriting)
+    do {
+      try await ScreenshotOutput.write(Data([2]), to: file, options: .withoutOverwriting)
+      Issue.record("同名文件被覆盖了")
+    } catch {
+      #expect((error as? CocoaError)?.code == .fileWriteFileExists)
+      #expect(!ScreenshotOutput.isPermissionDenied(error))
+    }
+    #expect(try Data(contentsOf: file) == Data([1]))
+    try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: folder.path)
+    do {
+      try await ScreenshotOutput.write(Data([3]), to: folder.appending(path: "b.png"), options: [])
+      Issue.record("只读的文件夹也写进去了")
+    } catch {
+      #expect(ScreenshotOutput.isPermissionDenied(error))
+    }
+    #expect(ScreenshotOutput.isPermissionDenied(CocoaError(.fileWriteNoPermission)))
+    #expect(
+      ScreenshotOutput.isPermissionDenied(NSError(domain: NSPOSIXErrorDomain, code: Int(EPERM))))
+    #expect(!ScreenshotOutput.isPermissionDenied(CocoaError(.fileWriteOutOfSpace)))
+  }
+
+  /// 从历史 / 晾衣绳钉回去（第四轮体检 E3）：截图照原来那一块；长截图记的是选区，按图的比例重算（选区宽、最高可见区
+  /// 90%、顶边对齐）不被压扁；那块屏拔掉了（和现在哪块屏都不相交）、没记位置的钉在可见区中央
+  @Test func historyPinKeepsAspectAndStaysOnScreen() {
+    let main = (
+      frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
+      visible: CGRect(x: 0, y: 40, width: 1440, height: 835)
+    )
+    let pin = { (pixels: CGSize, source: CGRect?) in
+      PinBoard.historyFrame(
+        pixels: pixels, scale: 2, source: source, screens: [main], fallback: main.visible,
+        pinned: [])
+    }
+    // 截图：图和选区同比例，原样钉回
+    let shot = CGRect(x: 100, y: 300, width: 400, height: 200)
+    #expect(pin(CGSize(width: 800, height: 400), shot) == shot)
+    // 长截图：选区 400 × 200，图 800 × 1200（拼出来高得多）→ 宽 400、高 600，顶边对齐选区
+    let tall = pin(CGSize(width: 800, height: 1200), shot)
+    #expect(tall.size == CGSize(width: 400, height: 600))
+    #expect(tall.minY == main.visible.minY)  // 顶边对齐的话底边会出可见区：贴着可见区底边
+    let high = pin(
+      CGSize(width: 800, height: 1200), CGRect(x: 100, y: 700, width: 400, height: 150))
+    #expect(high.size == CGSize(width: 400, height: 600) && high.maxY == 850)
+    // 很长：等比缩到可见区高的 90%，底边不出可见区
+    let long = pin(
+      CGSize(width: 800, height: 16000), CGRect(x: 100, y: 700, width: 400, height: 150))
+    #expect(abs(long.height - main.visible.height * 0.9) < 0.001)
+    #expect(abs(long.height / long.width - 20) < 0.001)
+    #expect(long.minY >= main.visible.minY)
+    // 外接屏拔掉了：当初那块在现在的屏外面 → 可见区中央（同钉住剪贴板里的图）
+    let gone = CGRect(x: 2000, y: 300, width: 400, height: 200)
+    let center = PinBoard.clipboardFrame(
+      pixels: CGSize(width: 800, height: 400), scale: 2, visible: main.visible, pinned: [])
+    #expect(pin(CGSize(width: 800, height: 400), gone) == center)
+    #expect(pin(CGSize(width: 800, height: 400), nil) == center)
+    #expect(main.visible.contains(center))
+  }
+
   /// 把图编码成 type（properties：JPEG 的 EXIF 方向这类）
   static func encode(_ image: CGImage, as type: UTType, properties: [CFString: Any] = [:]) throws
     -> Data

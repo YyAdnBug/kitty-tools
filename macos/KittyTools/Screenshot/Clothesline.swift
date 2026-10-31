@@ -47,12 +47,17 @@ import SwiftUI
 
   /// 右键菜单和旁白动作（一节一组，节间分隔线）：截图「改标注 / 拷贝 / 存储 / 钉图 /（存过的）在访达中显示 /
   /// 在历史里看 ｜ 取下 ｜ 从历史里删掉」——同常驻缩略图那一整套（拍板 C3），多了「改标注」和末尾两条；
-  /// 录制的那几条没有图，只有「拷贝 / 打开 / 在访达中显示 / 在历史里看」。纯函数，配单测
+  /// 录制的那几条没有图，只有「拷贝 / 打开 / 在访达中显示 / 在历史里看」，录屏另有「转成 GIF / 压缩」（同视频卡，
+  /// 第四轮体检 U1；压缩出来的那段没有「压缩」）。纯函数，配单测
   static func menu(for item: ShotHistory.Item, screenshotOn: Bool = Feature.screenshot.isOn)
     -> [[ShelfCard.Command]]
   {
     guard item.filePath == nil else {
-      return [[.copy, .open, .reveal, .history], [.unpeg], [.forget]]
+      let convert = VideoJob.available(
+        for: item.kind, file: item.filePath.map { URL(filePath: $0) })
+      return [
+        [.copy] + convert.map(\.command) + [.open, .reveal, .history], [.unpeg], [.forget],
+      ]
     }
     let saved: [ShelfCard.Command] = item.savedPath == nil ? [] : [.reveal]
     // 截图这个功能关掉时绳子整个就没了，这里仍按开关给（同常驻缩略图）
@@ -149,8 +154,10 @@ import SwiftUI
     case .reveal: ShotHistory.reveal(item, notice: actions.notice)
     case .open: ShotHistory.open(item, notice: actions.notice)
     case .unpeg: unpeg(item.id)
+    case .gif: actions.convert(item, .gif)
+    case .compress: actions.convert(item, .compress)
     // 绳子上没有这几样（menu 里不给）
-    case .gif, .compress, .trash, .close: break
+    case .trash, .close: break
     }
   }
 

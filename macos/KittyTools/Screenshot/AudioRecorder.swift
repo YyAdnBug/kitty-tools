@@ -474,11 +474,12 @@ final class AudioRecorder: NSObject {
     recorder = nil
     tearDown()
     defaults.removeObject(forKey: ScreenRecorder.Medium.audio.inProgressKey)
-    let (file, moved) = ScreenRecorder.settle(
+    let (file, moved, denied) = ScreenRecorder.settle(
       temp, into: directory, medium: .audio,
       keeps: started && reason != .discarded && reason != .cancelled)
     var result = ScreenRecorder.Result(
-      file: file, moved: moved, duration: duration, reason: reason, region: region)
+      file: file, moved: moved, moveDenied: denied, duration: duration, reason: reason,
+      region: region)
     result.microphoneDenied = microphoneDenied
     if moved { result.poster = Self.waveform(levels.envelope) }
     onFinish(result)

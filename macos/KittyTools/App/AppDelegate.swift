@@ -743,6 +743,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let self else { return }
         // 「最近删除」里放满 30 天的便签、图片目录里没人引用满 30 天的文件：启动时清一次，换日时再清
         self.purgeNotes()
+        // 截图历史过了保留期的同样换日时清（原来只在记新的一条时清，一直不截图就一直留着，第四轮体检 E24）
+        self.shotHistory.prune()
         self.backupIfDue()
       }
     }
@@ -824,7 +826,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         detail: "到 设置 › 快捷键 里看原因、换一个组合",
         tone: .warning, symbol: "keyboard", actions: [openHotKeySettings])
     }
-    // 上次录屏 / 录音没正常收尾（闪退）：能播的挪进快速保存目录，说一声（C7）
+    // 上次录屏 / 录音没正常收尾（闪退）：能播的挪进快速保存目录，说一声（C7）。
+    // 压缩到一半退出留下的隐藏临时文件也删掉（E24：只删记下的那几个路径，不列保存目录）
+    Task { await VideoExport.removePartials() }
     Task {
       for medium in [ScreenRecorder.Medium.screen, .audio] {
         guard
@@ -1968,10 +1972,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       }
     }
     let symbol = medium == .screen ? "video.circle.fill" : "waveform.circle.fill"
+    // 挪不进去是没有写权限（U7）：出路换成「打开系统设置」「更改保存位置」（文件已经在访达里选中了）
+    let actions =
+      result.moveDenied ? saveFolderActions : result.file.map([Island.Action].file) ?? []
     island.show(
       summary.title, detail: summary.detail, tone: summary.tone,
-      symbol: summary.tone == .success ? symbol : nil, leading: leading,
-      actions: result.file.map([Island.Action].file) ?? [])
+      symbol: summary.tone == .success ? symbol : nil, leading: leading, actions: actions)
   }
 
   /// 录屏存进快速保存目录后（拍板 R11-a）：最后一帧从选区（整屏录制就是那块屏）按 S1 飞到右下角，没有快门声，落地弹文件夹
@@ -2231,13 +2237,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     actions.pin = { [unowned self] item in
       Task {
         guard let image = await shotHistory.composed(item) else { return missingShot() }
-        // 钉回当初那一块（拍板 B2）；没记位置的（老条目）钉在可见区中央，同「钉住剪贴板里的图」
-        let frame =
-          item.frame
-          ?? PinBoard.clipboardFrame(
-            pixels: CGSize(width: image.width, height: image.height),
-            scale: item.scale, visible: (NSScreen.main ?? NSScreen.screens[0]).visibleFrame,
-            pinned: pins.panels.map(\.frame))
+        // 钉回当初那一块（拍板 B2），大小按图的比例重算（长截图记的是选区，E3）；没记位置的（老条目）、那块屏已经拔掉的
+        // 钉在可见区中央，同「钉住剪贴板里的图」
+        let frame = PinBoard.historyFrame(
+          pixels: CGSize(width: image.width, height: image.height), scale: item.scale,
+          source: item.frame, screens: NSScreen.screens.map { ($0.frame, $0.visibleFrame) },
+          fallback: (NSScreen.main ?? NSScreen.screens[0]).visibleFrame,
+          pinned: pins.panels.map(\.frame))
         pins.pin(image, frame: frame)
         shotHistory.markPinned(item.id)
       }
@@ -2256,6 +2262,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let original = await shotHistory.image(for: item.id) else { return missingShot() }
         openAnnotate(
           original, scale: item.scale, history: { item.id }, annotations: item.annotations)
+      }
+    }
+    // 录屏转成 GIF / 压缩（U1）：进度岛、取消、结果岛同常驻缩略图的视频卡（VideoJob）；做好的进历史
+    // （GIF 存进快速保存目录，压缩版在原文件旁边），封面用这一条的缩略图
+    actions.convert = { [unowned self] item, job in
+      guard let path = item.filePath, ShotHistory.fileExists(item) else { return missingShotFile() }
+      Task {
+        let poster = job == .compress ? await shotHistory.thumbnail(for: item.id) : nil
+        job.start(URL(filePath: path), poster: poster, island: island) { [unowned self] output in
+          Task {
+            await shotHistory.record(file: output.file, poster: output.poster, kind: job.kind)
+          }
+        }
       }
     }
     actions.forget = { [unowned self] item in showShotHistory(deleting: item) }
@@ -2291,14 +2310,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     annotations: [Annotation] = []
   ) {
     annotateOverlay?.close()
+    let original = image
     let editor = AnnotateOverlay(image: image, scale: scale, annotations: annotations) {
       [unowned self] action, image, scale, annotations in
       // 改完的标注回写到历史那一条（拍板 C4：更新同一条，不新建），缩略图照这张成品缩、不再读原图重合成（R6）。
+      // 新画的马赛克打进存下的原图（E6）：用遮罩里这张没画标注的，不再读盘。
       // 编号要等历史记完（刚拼好的长截图是并行记的）：另起任务等，不挡出图（同截图那条路）
       let remembered = Task { await history?() }
       Task {
         if let id = await remembered.value {
-          shotHistory.update(id, annotations: annotations, composed: image)
+          shotHistory.update(
+            id, annotations: annotations, composed: image, original: original)
         }
       }
       Task {
@@ -2375,7 +2397,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     guard screenRecordingAllowed(for: feature) else { return nil }
     let shots: [ScreenCapture.Shot]
     do {
-      shots = try await ScreenCapture.freeze()
+      // 截屏的系统服务不返回时最多等 5 秒（E22）：不然 isCapturing 一直为真，截图家族的热键全被静默忽略
+      guard
+        let frozen = try await ScreenCapture.within(
+          ScreenCapture.freezeTimeout, ScreenCapture.freeze)
+      else {
+        island.show("截屏没有响应", detail: "请再试一次", tone: .warning)
+        return nil
+      }
+      shots = frozen
     } catch {
       island.show("截屏失败", detail: error.localizedDescription, tone: .error)
       return nil
@@ -2518,15 +2548,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     return url
   }
 
-  /// 存编码好的 PNG；返回存到的文件（取消、失败为 nil）。失败时截图改放进剪贴板，别让这张图就这么丢了
+  /// 存编码好的 PNG；返回存到的文件（取消、失败为 nil）。失败时截图改放进剪贴板，别让这张图就这么丢了；
+  /// 没有写权限时岛上给出路（U7）
   private func savePNG(_ png: Data, asking: Bool) async -> URL? {
     do {
-      return asking ? try await ScreenshotOutput.saveAs(png) : try ScreenshotOutput.quickSave(png)
+      return asking
+        ? try await ScreenshotOutput.saveAs(png) : try await ScreenshotOutput.quickSave(png)
     } catch {
       await copyPNG(png)
-      island.show("保存失败，截图已复制到剪贴板", detail: error.localizedDescription, tone: .warning)
+      // 另存为是自己选的位置：只给授权，不给「更改保存位置」（那是快速保存的设置）
+      let actions =
+        !ScreenshotOutput.isPermissionDenied(error)
+        ? [] : asking ? [.settings(for: .filesAndFolders)] : saveFolderActions
+      island.show(
+        "保存失败，截图已复制到剪贴板", detail: error.localizedDescription, tone: .warning,
+        actions: actions)
       return nil
     }
+  }
+
+  /// 存不进保存目录（没有写权限：文件夹授权被拒、只读的文件夹）时岛上的出路（第四轮体检 U7）：「打开系统设置」到
+  /// 「文件和文件夹」授权（全 App 同一个按钮，Island.Action.settings），或者「更改保存位置」到 设置 › 截图。
+  /// 录制挪不进保存目录时同一份
+  private var saveFolderActions: [Island.Action] {
+    [
+      .settings(for: .filesAndFolders),
+      .init("更改保存位置", opens: true) { [unowned self] in showSettings(page: .screenshot) },
+    ]
   }
 
   /// 截图落地：快门声 + 飞行卡片（遮罩刚收起就飞，不等编码）。返回的 land 在复制 / 保存成功后调，给卡片角标、编码好的

@@ -258,6 +258,11 @@ struct ShotHistoryView: View {
         row("识字并拷贝", "text.viewfinder", key: "⌘O") { model.actions.recognize(item) }
       } else {
         row("打开", "play.rectangle", key: "↩") { model.open(item) }
+        // 录制的拷的是文件（第四轮体检 U1：原来只有 ⌘C，这里没有）；录屏另有转成 GIF、压缩（同视频卡）
+        row("拷贝", "doc.on.doc", key: "⌘C") { model.actions.copy(item) }
+        ForEach(model.jobs(for: item), id: \.self) { job in
+          row(job.title, job.symbol) { model.actions.convert(item, job) }
+        }
       }
       row("在访达中显示", "folder", key: "⇧⌘R") { model.reveal(item) }
         .disabled(!model.hasFile(item))
@@ -267,7 +272,7 @@ struct ShotHistoryView: View {
 
   /// 一行操作：右边写着键位（同菜单里的写法，用户不用去速查表翻）
   private func row(
-    _ title: String, _ symbol: String, key: String, danger: Bool = false,
+    _ title: String, _ symbol: String, key: String = "", danger: Bool = false,
     action: @escaping () -> Void
   ) -> some View {
     Button(action: action) {
@@ -304,6 +309,10 @@ struct ShotHistoryView: View {
       Button("识字并拷贝") { model.actions.recognize(item) }
     } else {
       Button("打开") { model.open(item) }
+      Button("拷贝") { model.actions.copy(item) }
+      ForEach(model.jobs(for: item), id: \.self) { job in
+        Button(job.title) { model.actions.convert(item, job) }
+      }
     }
     Button("在访达中显示") { model.reveal(item) }
       .disabled(!model.hasFile(item))

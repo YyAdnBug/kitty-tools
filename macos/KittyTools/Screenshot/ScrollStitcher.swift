@@ -64,7 +64,7 @@ struct ScrollStitcher {
   private enum Edge { case top, bottom }
 
   /// 一行在帧里出现超过这么多次就不投票（空白里的竖线边框、重复的代码行）
-  private static let maxRepeat = 8
+  nonisolated private static let maxRepeat = 8
   /// 对上至少要这么多行投票、票数是第二名的这么多倍，且占重叠部分可比行的这个比例
   /// （比例只挡「重叠部分大多在变、碰巧几行一样」，比如选区里在放视频）
   private static let minVotes = 6
@@ -82,10 +82,10 @@ struct ScrollStitcher {
   private static let relocateCover = 0.25
   /// 容差匹配（fuzzyMatch）：每行按这么宽（像素）一段求亮度和；某个位移下每像素平均差不超过 fuzzyTolerance 级亮度的行
   /// 算一票；票数还要占重叠部分有字行的这个比例。和上一行或下一行在某一段上差出 inkLevels 级（每像素平均）的行才算有字
-  private static let bin = 16
+  nonisolated private static let bin = 16
   private static let fuzzyTolerance = 2
   private static let fuzzyShare = 0.5
-  private static let inkLevels = 3
+  nonisolated private static let inkLevels = 3
 
   /// 长图当前的高度（像素）
   var outputHeight: Int { bottom - top }
@@ -107,7 +107,8 @@ struct ScrollStitcher {
     }
     compared = width - min(max(scrollbarWidth, 0), width / 4)
     guard height > 1, maxHeight >= height,
-      let frame = Frame(first, width: width, height: height, compared: compared, space: colorSpace)
+      let frame = Frame(
+        first, layout: Layout(width: width, height: height, compared: compared, space: colorSpace))
     else { return nil }
     reference = frame
     below = frame.pixels
@@ -115,11 +116,30 @@ struct ScrollStitcher {
     bottom = height
   }
 
-  /// 接一帧（尺寸必须和第一帧相同）
+  /// 接一帧（尺寸必须和第一帧相同）：当场算帧再接（单测、截图自检用；长截图会话在主线程外算帧，见 frame(_:layout:)）
   mutating func add(_ image: CGImage) -> Outcome {
-    guard
-      let frame = Frame(image, width: width, height: height, compared: compared, space: colorSpace)
-    else { return .lost }
+    add(Frame(image, layout: layout))
+  }
+
+  /// 算一帧要的东西（拷像素、逐行哈希、分段亮度和）只看这几样，带到主线程外去算
+  nonisolated struct Layout: Sendable {
+    let width: Int
+    let height: Int
+    let compared: Int
+    let space: CGColorSpace
+  }
+
+  var layout: Layout { Layout(width: width, height: height, compared: compared, space: colorSpace) }
+
+  /// 在主线程外算好一帧（第四轮体检 F1：一帧要拷几 MB 像素、逐行哈希，长截图静止时原来也每秒在主线程上算 25 帧；
+  /// mac-native §3 第 1 类 hash）。接到长图上（add）仍在主线程、按截的先后来，拼出来的和当场算的一样
+  @concurrent nonisolated static func frame(_ image: CGImage, layout: Layout) async -> Frame? {
+    Frame(image, layout: layout)
+  }
+
+  /// 接一帧算好的（nil：尺寸不对、画不进位图）
+  mutating func add(_ frame: Frame?) -> Outcome {
+    guard let frame else { return .lost }
     let a = reference.hashes
     let b = frame.hashes
     let changed = (0..<height).count { a[$0] != b[$0] }
@@ -450,12 +470,13 @@ struct ScrollStitcher {
   }
 
   /// BGRA 预乘（ScreenCaptureKit 默认的排列，画进来不用转换）
-  private static let bitmapInfo =
+  nonisolated private static let bitmapInfo =
     CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
 
   // MARK: 帧
 
-  private struct Frame {
+  /// 算好的一帧（值类型，能从主线程外带回来）
+  nonisolated struct Frame: Sendable {
     /// 第 0 行是图的顶行
     let pixels: [UInt8]
     let hashes: [Int]
@@ -470,7 +491,10 @@ struct ScrollStitcher {
     let profile: [Int32]
     let ink: [Bool]
 
-    init?(_ image: CGImage, width: Int, height: Int, compared: Int, space: CGColorSpace) {
+    init?(_ image: CGImage, layout: Layout) {
+      let (width, height, compared, space) = (
+        layout.width, layout.height, layout.compared, layout.space
+      )
       guard image.width == width, image.height == height else { return nil }
       let rowBytes = width * 4
       var pixels = [UInt8](repeating: 0, count: rowBytes * height)

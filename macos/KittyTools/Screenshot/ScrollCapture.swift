@@ -130,14 +130,17 @@ final class ScrollCapture {
     self.continuation = continuation
     // 在预览上滚动 = 往回看长图前面的内容（HUD 改 browseFrom，这里重取那一段）
     panel.hudView.onBrowse = { [unowned self] in
+      disarm()
       previewIsStale = true
       refreshPreview(force: false, interval: .milliseconds(30))
       updateStatus()  // 重画时会把滚到最新那头的 browseFrom 清掉，状态行读的是清过的值
     }
     panel.hudView.onAction = { [unowned self] action in
+      if action != .escape { disarm() }  // 别的操作解除 Esc 的上膛
       switch action {
       case .toggleAuto: toggleAutoScroll()
       case .cancel: finish(nil)
+      case .escape: escape()
       case .output(let output): finish(output)
       case .saveMenu: break  // HUD 自己弹菜单，不会传上来
       }
@@ -153,14 +156,20 @@ final class ScrollCapture {
     loop = Task { await run() }
   }
 
-  /// 一直截选区：手动滚时尽量密（两帧之间滚得越少越容易对上），自动滚时每截一帧滚一步、等画面画完
+  /// 一直截选区：手动滚时尽量密（两帧之间滚得越少越容易对上），自动滚时每截一帧滚一步、等画面画完；
+  /// 画面停着不动时放慢（interval）。拷像素、逐行哈希这些在主线程外算（ScrollStitcher.frame，第四轮体检 F1），
+  /// 接到长图上仍在主线程、一帧接一帧按顺序来
   private func run() async {
     while continuation != nil {
       do {
         let image = try await SCScreenshotManager.captureImage(
           contentFilter: filter, configuration: configuration)
         guard continuation != nil else { return }
-        handle(stitcher.add(image))
+        let frame = await ScrollStitcher.frame(image, layout: stitcher.layout)
+        guard continuation != nil else { return }
+        let outcome = stitcher.add(frame)
+        quietFrames = outcome == .unchanged ? quietFrames + 1 : 0
+        handle(outcome)
       } catch {
         guard continuation != nil else { return }
         captureStopped = true
@@ -169,8 +178,19 @@ final class ScrollCapture {
         updateStatus()
         return refreshPreview(force: true)
       }
-      try? await Task.sleep(for: .milliseconds(isAutoScrolling ? 160 : 40))
+      try? await Task.sleep(
+        for: Self.interval(isAutoScrolling: isAutoScrolling, quietFrames: quietFrames))
     }
+  }
+
+  /// 连着几帧画面没变
+  private var quietFrames = 0
+
+  /// 下一帧隔多久截（纯函数，配单测）：自动滚动 160 ms（等画面画完）；手动时 40 ms，连着 5 帧没变化（停着看、去拿鼠标）
+  /// 放宽到 200 ms，一有变化就回到 40 ms（第四轮体检 F1：静止时原来也每秒在主线程上算 25 帧）
+  static func interval(isAutoScrolling: Bool, quietFrames: Int) -> Duration {
+    if isAutoScrolling { return .milliseconds(160) }
+    return .milliseconds(quietFrames >= 5 ? 200 : 40)
   }
 
   // MARK: 状态
@@ -192,6 +212,7 @@ final class ScrollCapture {
       if grown != 0 {
         notice = nil
         previewIsStale = true
+        escapeArm = .init()  // 又接上了新的一段：Esc 的上膛解除
       }
     case .lost: isLost = true
     case .full:
@@ -226,8 +247,11 @@ final class ScrollCapture {
   /// 要停留的提示 > 最长 > 对不上 > 操作说明。滚到底 / 到顶 / 最长是正常结束，用平常的颜色（体检 B42）；
   /// 但对不上（没到最长，同边框变橙的条件）盖过平常色的提示：停在「已经滚到底了」后手动滚得太快，要看到橙字、听到播报。纯函数，配单测
   static func status(
-    notice: Status?, isFull: Bool, isLost: Bool, isAutoScrolling: Bool, isBrowsing: Bool = false
+    notice: Status?, isFull: Bool, isLost: Bool, isAutoScrolling: Bool, isBrowsing: Bool = false,
+    isArmed: Bool = false
   ) -> Status {
+    // Esc 上膛了（U3）：等着再按一次，盖过别的提示（危险色，同录制条放弃上膛）
+    if isArmed { return Status(text: "再按一次 Esc 放弃这张长图", tone: .danger) }
     if let notice, !(isLost && !isFull && notice.tone == .normal) { return notice }
     if isFull { return Status(text: "已经最长了，按 ↩ 拷贝") }
     if isLost { return Status(text: "对不上了：往回滚一点，再慢慢滚", tone: .lost) }
@@ -241,7 +265,7 @@ final class ScrollCapture {
   private func updateStatus() {
     let status = Self.status(
       notice: notice, isFull: isFull, isLost: isLost, isAutoScrolling: isAutoScrolling,
-      isBrowsing: panel.hudView.browseFrom != nil)
+      isBrowsing: panel.hudView.browseFrom != nil, isArmed: escapeArm.isArmed(at: .now))
     panel.hudView.show(
       status.text, tone: status.tone, width: stitcher.width, height: stitcher.outputHeight)
     borderView.update(lost: isLost && !isFull, marching: isAutoScrolling)
@@ -254,6 +278,34 @@ final class ScrollCapture {
     }
     announced = status.announces ? status.text : nil
   }
+
+  // MARK: Esc
+
+  /// Esc 放弃要按两下（第四轮体检 U3）：长图已经比第一帧长时第一下只上膛（状态行危险色「再按一次 Esc 放弃这张长图」
+  /// 并播报），约 2 秒内再按才放弃；期间接上了新的一段、点了别的、按了别的键都解除。只有一帧时照旧一下放弃。
+  /// 点 ✕ 照旧一下放弃（点按钮是存心的）
+  private var escapeArm = RecordingHUD.Discard()
+
+  private func escape() {
+    guard Self.escapeArms(height: stitcher.outputHeight, frameHeight: stitcher.height),
+      !escapeArm.press(at: .now)
+    else { return finish(nil) }
+    updateStatus()
+    // 过了时候状态行回到原来那句（抓帧循环每帧也会刷新；截屏出错停了的时候靠这一下）
+    Task { [weak self] in
+      try? await Task.sleep(for: RecordingHUD.Discard.window)
+      self?.updateStatus()
+    }
+  }
+
+  private func disarm() {
+    guard escapeArm.isArmed(at: .now) else { return }
+    escapeArm = .init()
+    updateStatus()
+  }
+
+  /// 第一下 Esc 要不要上膛（纯函数，配单测）：长图比第一帧长了（拼上过东西）才要，只有一帧时一下就放弃
+  static func escapeArms(height: Int, frameHeight: Int) -> Bool { height > frameHeight }
 
   // MARK: 自动滚动
 
@@ -511,15 +563,18 @@ final class ScrollCapturePanel: NSPanel {
 /// 内圈 rim 都在毛玻璃自己的图层上（和它以前自己就是 NSVisualEffectView 时一样，外层只是透明的壳）；
 /// macOS 26 起是液态玻璃（mac-whisker §2「26 分支」）
 final class ScrollCaptureHUD: NSView {
-  enum Item {
+  enum Item: Equatable {
     case toggleAuto, cancel
+    /// 按了 Esc（✕ 是 cancel）：长图拼上过东西时第一下只上膛（第四轮体检 U3）
+    case escape
     /// 存储右边的 ▾：弹「存储到… / 另存为…」（同截图工具栏）
     case saveMenu
     case output(ScrollCapture.Action)
   }
 
-  /// 状态文字的样子（体检 B42）：平常（含正常结束）次要文字色；缺授权、截屏失败橙色；对不上橙色，刚变成对不上时抖一下
-  enum Tone { case normal, warning, lost }
+  /// 状态文字的样子（体检 B42）：平常（含正常结束）次要文字色；缺授权、截屏失败橙色；对不上橙色，刚变成对不上时抖一下；
+  /// Esc 上膛等着再按一次是危险色（U3）
+  enum Tone { case normal, warning, lost, danger }
 
   static let width: CGFloat = 216
   /// 预览上下渐隐的高度
@@ -828,10 +883,15 @@ final class ScrollCaptureHUD: NSView {
     if window?.isKeyWindow == false { window?.makeKey() }
   }
 
-  /// tone：平常 / 要注意（缺授权、截屏失败，橙色）/ 对不上（橙色，刚变成对不上时抖一下 0.35 s）
+  /// tone：平常 / 要注意（缺授权、截屏失败，橙色）/ 对不上（橙色，刚变成对不上时抖一下 0.35 s）/ 等着再按一次 Esc（危险色）
   func show(_ text: String, tone: Tone = .normal, width: Int, height: Int) {
     status.stringValue = text
-    status.textColor = tone == .normal ? Style.HUD.secondaryText : .systemOrange
+    status.textColor =
+      switch tone {
+      case .normal: Style.HUD.secondaryText
+      case .danger: Style.HUD.danger
+      case .warning, .lost: .systemOrange
+      }
     if tone == .lost, lastTone != .lost, !Style.reduceMotion, let layer = status.layer {
       let shake = CAKeyframeAnimation(keyPath: "transform.translation.x")
       shake.values = [0, -6, 6, -4, 4, 0]
@@ -941,7 +1001,7 @@ final class ScrollCaptureHUD: NSView {
     openMenu?.dismiss()
     let flags = event.modifierFlags.intersection([.command, .control, .option])
     switch Int(event.keyCode) {
-    case kVK_Escape: onAction(.cancel)
+    case kVK_Escape: onAction(.escape)
     case kVK_Return where flags.isEmpty, kVK_ANSI_KeypadEnter where flags.isEmpty:
       onAction(.output(.copy))
     case kVK_ANSI_A where flags.isEmpty: onAction(.output(.annotate))

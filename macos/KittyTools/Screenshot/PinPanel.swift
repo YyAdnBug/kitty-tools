@@ -142,6 +142,33 @@ extension PinBoard {
     }
     return slot(index)
   }
+
+  /// 钉回当初框的那一块（纯函数）：大小按图的宽高比重算——选区宽，太高的等比缩到可见区高度的 90%，顶边对齐选区、
+  /// 底边不出可见区。截图的图和选区同比例，照原样；长截图记的是选区（比图矮得多），直接拿它当窗口大小会被压扁。
+  /// 常驻缩略图钉长截图、截图历史 / 晾衣绳钉回去都走它
+  static func restoredFrame(pixels: CGSize, source: CGRect, visible: CGRect) -> CGRect {
+    let aspect = pixels.height / max(pixels.width, 1)
+    var size = CGSize(width: source.width, height: source.width * aspect)
+    if size.height > visible.height * 0.9 {
+      size = CGSize(width: visible.height * 0.9 / aspect, height: visible.height * 0.9)
+    }
+    return CGRect(
+      x: source.minX, y: max(source.maxY - size.height, visible.minY), width: size.width,
+      height: size.height)
+  }
+
+  /// 历史里的一条钉到哪（纯函数，第四轮体检 E3）：当初那一块还在某块屏上就钉回去（restoredFrame，按那块屏的可见区）；
+  /// 没记位置（老条目）、或那块屏已经拔掉（和现在哪块屏都不相交）就钉在 fallback 可见区的中央（clipboardFrame）。
+  /// screens：每块屏的 frame 和 visibleFrame
+  static func historyFrame(
+    pixels: CGSize, scale: CGFloat, source: CGRect?, screens: [(frame: CGRect, visible: CGRect)],
+    fallback: CGRect, pinned: [CGRect]
+  ) -> CGRect {
+    guard let source, let screen = screens.first(where: { $0.frame.intersects(source) }) else {
+      return clipboardFrame(pixels: pixels, scale: scale, visible: fallback, pinned: pinned)
+    }
+    return restoredFrame(pixels: pixels, source: source, visible: screen.visible)
+  }
 }
 
 /// 一张钉图。无边框窗口默认当不了 key（收不到 Esc / ⌘C），所以要子类化

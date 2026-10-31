@@ -3429,6 +3429,8 @@ struct SnapshotProbeTests {
           id: UUID(), kind: kind, createdAt: now.addingTimeInterval(-daysAgo * 86400),
           pixelSize: CGSize(width: 1600, height: 1000), scale: 2, source: source,
           savedPath: kind == .shot ? nil : "/tmp/\(kind.rawValue).mov",
+          filePath: [ShotHistory.Kind.video, .audio, .gif].contains(kind)
+            ? "/tmp/\(kind.rawValue).mov" : nil,
           annotations: kind == .shot
             ? [Annotation(shape: .rectangle(CGRect(x: 1, y: 2, width: 3, height: 4)))] : [],
           bytes: 1024))
@@ -3440,6 +3442,12 @@ struct SnapshotProbeTests {
         ShotHistoryView(model: model), size: NSSize(width: 900, height: 560), dark: dark,
         to: "\(out)/shot-history\(dark ? "-dark" : "").png")
     }
+    // 录屏那条（第四轮体检 U1）：右边是打开 / 拷贝 / 转成 GIF / 压缩 / 在访达中显示 / 删除
+    model.selection = items.first { $0.kind == .video }?.id
+    try snapshot(
+      ShotHistoryView(model: model), size: NSSize(width: 900, height: 560), dark: false,
+      to: "\(out)/shot-history-video.png")
+    model.selection = items.first?.id
     // 多选（2026-10-27）：右边换成「已选 N 项」和能一起做的那几件
     model.picked = Set(items.prefix(3).map(\.id))
     model.anchor = items.first?.id
@@ -3560,6 +3568,17 @@ struct SnapshotProbeTests {
       (
         "scroll-permission", false,
         ScrollCapture.Status(text: "自动滚动需要「辅助功能」授权，授权后点 ▶ 开始", tone: .warning)
+      ),
+      // 拼上过东西后第一下 Esc 只上膛（第四轮体检 U3）：危险色，深浅色
+      (
+        "scroll-armed", false,
+        ScrollCapture.status(
+          notice: nil, isFull: false, isLost: false, isAutoScrolling: false, isArmed: true)
+      ),
+      (
+        "scroll-armed-dark", true,
+        ScrollCapture.status(
+          notice: nil, isFull: false, isLost: false, isAutoScrolling: false, isArmed: true)
       ),
     ] {
       states.append(

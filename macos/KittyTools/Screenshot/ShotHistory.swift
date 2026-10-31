@@ -1,7 +1,8 @@
 // 截图历史（2026-10-26 拍板，macos/build/research/shot-history-2026-10-26/decisions.html）：截图、长截图、钉过的、
 // 录屏、录音、GIF 都进这一个历史（拍板 B1：识字和翻译不产出图，不进）。
 // 每条存**原图 + 标注（JSON）+ 一张小缩略图**，拷贝 / 存储 / 钉图要的成品图用时再合成（拍板 A1）——标注和原图分开存
-// 才能回头接着改，成品再存一份就是双倍磁盘。录制的只记文件路径和一张封面，不复制那个文件。
+// 才能回头接着改，成品再存一份就是双倍磁盘。**马赛克例外**：它打进存下的原图、不进标注（第四轮体检 E6，bakingMosaics），
+// 盘上不留打码底下的明文。录制的只记文件路径和一张封面，不复制那个文件。
 // 自己一个库（拍板 A2）：<数据目录>/shots/<id>.png 是原图、<id>-t.png 是缩略图，记录在主库的 shots 表，
 // 和剪贴板的图片库各管各的（拷贝出去的截图照旧也进剪贴板历史）。
 // 留 30 天、总共最多 2 GB，超了先删最旧的（拍板 A3，Prefs.shotHistoryDays / shotHistoryMegabytes）；
@@ -25,6 +26,8 @@ import UniformTypeIdentifiers
   var pin: @MainActor (ShotHistory.Item) -> Void = { _ in }
   var recognize: @MainActor (ShotHistory.Item) -> Void = { _ in }
   var edit: @MainActor (ShotHistory.Item) -> Void = { _ in }
+  /// 录屏转成 GIF / 压缩（第四轮体检 U1：原来只有角落的视频卡上有，卡片滑走就找不到了；VideoJob.available 给哪几件）
+  var convert: @MainActor (ShotHistory.Item, VideoJob) -> Void = { _, _ in }
   /// 多选时一起做（2026-10-27）：拷贝写成几个文件进剪贴板（剪贴板只装得下一张图），存储一次说一句话
   var copyMany: @MainActor ([ShotHistory.Item]) -> Void = { _ in }
   var saveMany: @MainActor ([ShotHistory.Item]) -> Void = { _ in }
@@ -130,7 +133,8 @@ import UniformTypeIdentifiers
 
   /// 截图 / 长截图：原图和缩略图写盘、入库。返回这一条的 id（没记返回 nil）。
   /// png：拷贝 / 存储时已经编好的原图（R6：同一张图不再编第二遍；nil 就在这里编）；
-  /// composed：成品图（原图 + 标注），缩略图照它缩（nil 就在这里合成）
+  /// composed：成品图（原图 + 标注），缩略图照它缩（nil 就在这里合成）。
+  /// **马赛克打进存下的原图**（第四轮体检 E6，bakingMosaics）：盘上不留马赛克底下的明文，回头改标注也删不掉它
   @discardableResult func record(
     _ image: CGImage, png: Data? = nil, composed: CGImage? = nil, scale: CGFloat,
     kind: Kind = .shot, annotations: [Annotation] = [], source: String? = nil, saved: URL? = nil,
@@ -139,16 +143,33 @@ import UniformTypeIdentifiers
     guard isOn else { return nil }
     let id = UUID()
     let shown = composed ?? Self.compose(image, annotations: annotations, scale: scale)
-    guard let bytes = await write(image, png: png, thumbnailOf: shown, scale: scale, id: id) else {
-      return nil
-    }
+    let (stored, kept) = Self.bakingMosaics(image, annotations: annotations, scale: scale)
+    guard
+      let bytes = await write(
+        stored, png: stored === image ? png : nil, thumbnailOf: shown, scale: scale, id: id)
+    else { return nil }
     add(
       Item(
         id: id, kind: kind, createdAt: .now,
         pixelSize: CGSize(width: image.width, height: image.height), scale: scale, source: source,
-        savedPath: saved?.path, filePath: nil, annotations: annotations,
+        savedPath: saved?.path, filePath: nil, annotations: kept,
         pinnedAt: pinned ? .now : nil, frame: frame, bytes: bytes))
     return id
+  }
+
+  /// 马赛克打进原图（第四轮体检 E6）：返回要存的原图（原图 + 马赛克）和去掉马赛克的标注；没有马赛克原样返回。
+  /// 历史存的是原图 + 标注（拍板 A1），马赛克也算标注的话，盘上就是没打码的明文、改标注时还能把码删掉——
+  /// 打进图里以后它就是图的一部分，选不中也删不掉；其余标注照旧能改。马赛克在最底下一层（drawAll 先画它），
+  /// 先打进原图再画其余标注，和一起画出来的成品一样。纯函数，配单测
+  static func bakingMosaics(_ original: CGImage, annotations: [Annotation], scale: CGFloat) -> (
+    image: CGImage, annotations: [Annotation]
+  ) {
+    let mosaics = annotations.filter { $0.tool == .mosaic }
+    guard !mosaics.isEmpty else { return (original, annotations) }
+    return (
+      compose(original, annotations: mosaics, scale: scale),
+      annotations.filter { $0.tool != .mosaic }
+    )
   }
 
   /// 录屏 / 录音 / GIF：文件归快速保存的文件夹管，这里只记路径和一张封面（拍板 B1）
@@ -170,29 +191,92 @@ import UniformTypeIdentifiers
   /// **缩略图跟着重做**：它画的是成品（原图 + 标注），不重做的话历史里看着像没改过
   /// （2026-10-26 用户手测报的）。composed 是标注窗口出图时那张成品，缩略图直接照它缩——原来在主线程上读整张原图、
   /// 全分辨率再合成一遍（长截图 3000 × 30000 时内存翻几倍，第三轮体检 R6）。标注没变就什么都不做。
-  /// 拖出去的那份旧的不再用（R2：原来照旧拖它，改完标注拖出去的还是旧图）
-  func update(_ id: UUID, annotations: [Annotation], composed: CGImage) {
+  /// 拖出去的那份旧的不再用（R2：原来照旧拖它，改完标注拖出去的还是旧图）。
+  /// 新画的马赛克打进原图、不进标注（第四轮体检 E6，同 record）：original 是标注遮罩里那张没画标注的图（不给就读盘），
+  /// 只有画了马赛克时才重渲、重写一遍原图（长截图整张重渲，内存翻倍，只在这时付）。
+  /// **先写原图、再改标注**：马赛克先原样留在标注里（内存和库），原图打好码写完盘、而且仍是最后一次改的，才把它从标注里
+  /// 拿掉、占用跟着改（同一条 UPDATE）。这中间拷贝 / 钉图 / 拖出去合成的都带着码；中途闪退、写盘失败，码还在标注里——
+  /// 最多是盘上的图已经打过码、标注里又叠一层，不会露出明文。
+  /// 同一扇遮罩里拷贝过带马赛克的、再删掉马赛克拷贝：标注和上次一样（码已经不在标注里），什么都不做，历史里照样有码——
+  /// 往多打码的方向错，留着
+  func update(
+    _ id: UUID, annotations: [Annotation], composed: CGImage, original: CGImage? = nil
+  ) {
+    let hasMosaic = annotations.contains { $0.tool == .mosaic }
     guard let index = items.firstIndex(where: { $0.id == id }),
-      items[index].annotations != annotations
+      hasMosaic || items[index].annotations != annotations
     else { return }
-    items[index].annotations = annotations
-    try? db.execute(
-      "UPDATE shots SET annotations = ? WHERE id = ?",
-      [Self.encode(annotations), id.uuidString])
-    // 拖出去的那份不再用（下次重做）；文件不删，见 dragFile
-    dragFiles[id] = nil
+    let scale = items[index].scale
+    store(id, annotations: annotations)
+    // 这几步之间可能又改了一回（识字不关窗口，接着改再拷贝）、或者整条删了：只认最后那次，删了的别留孤儿文件
+    let edit = UUID()
+    edits[id] = edit
+    let isLatest = { [weak self] in self?.edits[id] == edit && self?.item(id) != nil }
     Task {
-      // 这几步之间可能又改了一回（识字不关窗口，接着改再拷贝）、或者整条删了：只认最后那次，删了的别留孤儿缩略图
-      guard let small = await Self.thumbnail(of: composed),
-        item(id)?.annotations == annotations,
+      defer { if edits[id] == edit { edits[id] = nil } }
+      var baked: Data?
+      if hasMosaic {
+        guard let base = await resolved(original, id),
+          let png = await ScreenshotOutput.png(
+            Self.bakingMosaics(base, annotations: annotations, scale: scale).image, scale: scale),
+          isLatest(), await Self.write(png, to: url(for: id))
+        else { return }
+        // 写的这一会儿整条删了：删文件的那一下可能比这次写早，别留孤儿原图
+        guard item(id) != nil else {
+          try? FileManager.default.removeItem(at: url(for: id))
+          return
+        }
+        baked = png
+      }
+      guard let small = await Self.thumbnail(of: composed), isLatest(),
         await Self.write(small, to: thumbnailURL(for: id))
-      else { return }
-      guard let now = item(id) else {
+      else {
+        // 缩略图没写成：原图已经打好码的照样把码从标注里拿掉（仍是最后一次改的话）
+        if let baked, isLatest() {
+          let thumbnail = (try? thumbnailURL(for: id).resourceValues(forKeys: [.fileSizeKey]))?
+            .fileSize
+          commitBaked(id, annotations, bytes: baked.count + (thumbnail ?? 0))
+        }
+        return
+      }
+      guard item(id) != nil else {
         try? FileManager.default.removeItem(at: thumbnailURL(for: id))
         return
       }
-      if now.annotations == annotations { onThumbnailChanged(id) }
+      guard edits[id] == edit else { return }
+      if let baked { commitBaked(id, annotations, bytes: baked.count + small.count) }
+      onThumbnailChanged(id)
     }
+  }
+
+  /// 改标注时排着的最后那一次（按编号；update 的几步异步写盘只认它，做完清掉——单测等它清掉）
+  @ObservationIgnored private(set) var edits: [UUID: UUID] = [:]
+  /// 每一条的标注改过几回（拖出去的那份做到一半标注变了，按它认，不按标注比：打完码又拿掉马赛克，标注会变回原样）
+  @ObservationIgnored private var versions: [UUID: Int] = [:]
+
+  /// 记下新标注：内存、库，拖出去的那份不再用（下次重做；文件不删，见 dragFile）
+  private func store(_ id: UUID, annotations: [Annotation], bytes: Int? = nil) {
+    guard let index = items.firstIndex(where: { $0.id == id }) else { return }
+    var item = items[index]
+    item.annotations = annotations
+    item.bytes = bytes ?? item.bytes
+    items[index] = item
+    try? db.execute(
+      "UPDATE shots SET annotations = ?, bytes = ? WHERE id = ?",
+      [Self.encode(annotations), item.bytes, id.uuidString])
+    dragFiles[id] = nil
+    versions[id, default: 0] += 1
+  }
+
+  /// 原图打好了码：马赛克从标注里拿掉，占用换成新原图 + 缩略图（同一条 UPDATE）
+  private func commitBaked(_ id: UUID, _ annotations: [Annotation], bytes: Int) {
+    store(id, annotations: annotations.filter { $0.tool != .mosaic }, bytes: bytes)
+  }
+
+  /// 给了就用给的，没给读盘
+  private func resolved(_ image: CGImage?, _ id: UUID) async -> CGImage? {
+    if let image { return image }
+    return await self.image(for: id)
   }
 
   /// 某一条的缩略图重做好了（历史窗口清掉它的缓存、重画那张卡）
@@ -228,6 +312,7 @@ import UniformTypeIdentifiers
   func dragFile(for item: Item) async -> URL? {
     if item.filePath != nil { return dragFileNow(for: item) }
     if let made = dragFileNow(for: item) { return made }
+    let version = versions[item.id]
     let target = Self.freshFolder().appending(path: dragName(for: item))
     var cloned = false
     if item.annotations.isEmpty {
@@ -239,9 +324,12 @@ import UniformTypeIdentifiers
         await Self.write(png, to: target)
       else { return nil }
     }
-    // 做的这一会儿删了、又改了标注：这份是旧的，不记（文件照旧不删）；改了的照新标注重做
+    // 做的这一会儿删了、又改了标注：这份是旧的，不记（文件照旧不删）；改了的照新标注重做。按改过几回认，不按标注比：
+    // 打码那一下标注先加上马赛克、原图打好码再拿掉，标注变回原样，但这份克隆的还是没打码的原图（E6）
     guard let now = self.item(item.id) else { return nil }
-    guard now.annotations == item.annotations else { return await dragFile(for: now) }
+    guard versions[item.id] == version, now.annotations == item.annotations else {
+      return await dragFile(for: now)
+    }
     dragFiles[item.id] = target
     return target
   }
@@ -275,6 +363,7 @@ import UniformTypeIdentifiers
   /// 有标注、还没合成过的给一个文件承诺，放下那一刻才合成（同 dragProvider：不在按下去拖的那一下卡住）。
   /// 录制的文件已经不在了给 nil
   func dragWriter(for item: Item) -> (any NSPasteboardWriting)? {
+    let item = self.item(item.id) ?? item  // 按现在的标注（正在打码时马赛克还在标注里，不克隆没打码的原图）
     if let url = dragFileNow(for: item) { return url as NSURL }
     guard item.filePath == nil else { return nil }
     if item.annotations.isEmpty {
@@ -455,6 +544,7 @@ import UniformTypeIdentifiers
     for id in ids {
       ShotThumbnails.shared.forget(id)
       dragFiles[id] = nil  // 拖出去的那份不删（见 dragFile）
+      versions[id] = nil
     }
     let files = ids.flatMap { [url(for: $0), thumbnailURL(for: $0)] }
     Task { await Self.delete(files) }
@@ -471,12 +561,17 @@ import UniformTypeIdentifiers
   /// 设置里的「现在清空」（第 4 批）：记录和图都删掉，录制的文件不动（它归快速保存的文件夹管）
   func clear() { remove(items.map(\.id)) }
 
-  /// 过期的、超总量的清掉（每次记一条之后跑一遍）
+  /// 过期的、超总量的清掉（每次记一条之后、换日时、设置里改了上限后跑一遍）
   func prune() {
     remove(
       Self.stale(
         items, now: .now, days: defaults.integer(forKey: Prefs.shotHistoryDays),
         limit: defaults.integer(forKey: Prefs.shotHistoryMegabytes) * 1024 * 1024))
+  }
+
+  /// 上限改成这样会清掉几条（设置里改之前先问，第四轮体检 E24；和 prune 同一套条件干跑）
+  func pruneCount(days: Int, megabytes: Int) -> Int {
+    Self.stale(items, now: .now, days: days, limit: megabytes * 1024 * 1024).count
   }
 
   /// 该删哪些：过期的（days > 0 时），以及从新到旧累计超过 limit 之后的那些（limit > 0 时）。

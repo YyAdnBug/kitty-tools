@@ -216,7 +216,8 @@ struct ClotheslineTests {
   }
 
   /// 右键菜单（拍板 C3 D2）：截图是常驻缩略图那一整套 + 改标注，末尾「取下」「从历史里删掉」各一节；
-  /// 存过的才有「在访达中显示」；录制的那几条没有图，只有拷贝 / 打开 / 在访达中显示
+  /// 存过的才有「在访达中显示」；录制的那几条没有图，只有拷贝 / 打开 / 在访达中显示，录屏另有转成 GIF / 压缩
+  /// （第四轮体检 U1，同视频卡；压缩出来的那段没有「压缩」，录音没有这两样）
   @Test func cardMenu() {
     let shot = ShotHistory.Item(
       id: UUID(), kind: .shot, createdAt: .now, pixelSize: CGSize(width: 800, height: 600),
@@ -236,8 +237,25 @@ struct ClotheslineTests {
     video.filePath = "/tmp/录屏.mp4"
     #expect(
       ClotheslineModel.menu(for: video, screenshotOn: true) == [
+        [.copy, .gif, .compress, .open, .reveal, .history], [.unpeg], [.forget],
+      ])
+    var compressed = video
+    compressed.filePath = "/tmp/录屏 压缩版 2.mp4"
+    #expect(
+      ClotheslineModel.menu(for: compressed, screenshotOn: true) == [
+        [.copy, .gif, .open, .reveal, .history], [.unpeg], [.forget],
+      ])
+    var audio = video
+    audio.kind = .audio
+    audio.filePath = "/tmp/录音.m4a"
+    #expect(
+      ClotheslineModel.menu(for: audio, screenshotOn: true) == [
         [.copy, .open, .reveal, .history], [.unpeg], [.forget],
       ])
+    // 名字、符号和视频卡同一份
+    #expect(VideoJob.gif.title == "转成 GIF" && VideoJob.compress.title == "压缩")
+    #expect(VideoJob.gif.symbol == ShelfCard.gifSymbol)
+    #expect(VideoJob.compress.symbol == ShelfCard.compressSymbol)
     // 名字：同一个动作全 App 一个叫法
     #expect(
       ClotheslineModel.menu(for: shot, screenshotOn: true).flatMap { $0 }.map(\.title) == [
