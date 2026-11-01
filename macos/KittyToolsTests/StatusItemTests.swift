@@ -4,7 +4,7 @@ import Testing
 
 @testable import KittyTools
 
-/// 第 9 批：菜单栏图标可隐藏（M1）、可选彩色（M2）。不建真的 StatusItem（会往菜单栏里插一个图标），
+/// 第 9 批：菜单栏图标可隐藏（M1）、可选彩色（M2）；第四轮体检 U12①：只有真的 ⌃点才弹菜单。不建真的 StatusItem（会往菜单栏里插一个图标），
 /// 只测偏好默认值、样式 → 图片、彩色图标的出图和启动器里的「退出」；不写用户的偏好
 struct StatusItemTests {
   /// 默认显示、单色（只读注册域）；没存过、认不得的样式都回落单色
@@ -63,6 +63,33 @@ struct StatusItemTests {
     #expect(cream.redComponent > 0.9 && cream.greenComponent > 0.85 && cream.blueComponent > 0.8)
     let cat = try #require(pixel(16, 11))
     #expect(cat.redComponent < 0.35 && cat.greenComponent < 0.3)
+  }
+
+  /// 什么时候弹菜单（U12①）：当前事件是鼠标事件时——右键、左键点并带 ⌃；读屏「按下」、键盘导航（当前事件是按键，
+  /// 读屏的组合键带 ⌃）是左键的意思（开主界面）。当前事件不是鼠标事件（macOS 27 的菜单栏在进程外）时看此刻：
+  /// 鼠标键按着、⌃ 也按着才算 ⌃点
+  @Test func onlyRealControlClicksShowTheMenu() {
+    func menu(
+      _ type: NSEvent.EventType?, _ flags: NSEvent.ModifierFlags, pressed: Int = 0,
+      held: NSEvent.ModifierFlags = []
+    ) -> Bool {
+      StatusItem.showsMenu(type: type, flags: flags, pressedButtons: pressed, held: held)
+    }
+    #expect(menu(.rightMouseUp, []))
+    #expect(menu(.rightMouseDown, .control))
+    #expect(menu(.leftMouseUp, .control))
+    #expect(menu(.leftMouseDown, [.control, .option]))
+    #expect(!menu(.leftMouseUp, []))
+    // 鼠标事件以事件上的修饰键为准，不看此刻
+    #expect(!menu(.leftMouseUp, [], pressed: 1, held: .control))
+    // 读屏 / 键盘：鼠标键没按着，⌃ 按着也不算
+    #expect(!menu(.keyDown, [.control, .option], held: [.control, .option]))
+    #expect(!menu(nil, .control, held: .control))
+    // 拿不到那一下点击：此刻鼠标键和 ⌃ 都按着才算
+    #expect(menu(.appKitDefined, [], pressed: 1, held: .control))
+    #expect(menu(nil, [], pressed: 1, held: [.control]))
+    #expect(!menu(nil, [], pressed: 1, held: []))
+    #expect(!menu(.systemDefined, [], pressed: 0, held: .control))
   }
 
   /// 启动器内置动作最后是「退出 Kitty Tools」（菜单栏图标隐藏时只剩这里能退出），符号 power、通用家族灰

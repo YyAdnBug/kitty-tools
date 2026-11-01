@@ -684,7 +684,7 @@ struct LaunchpadReviewTests {
   @Test func optionDoesNotJiggleWhileSearching() {
     let model = model(LaunchpadLayout(pages: [[.app(ref("a"))]]))
     model.query = "a"
-    model.optionChanged(true)
+    model.optionChanged(.option)
     #expect(!model.jiggling)
   }
   // MARK: F41 撤销
@@ -698,6 +698,64 @@ struct LaunchpadReviewTests {
     #expect(LaunchpadUndo.load(from: defaults) == layout)
     LaunchpadUndo.save(nil, to: defaults)
     #expect(LaunchpadUndo.load(from: defaults) == nil)
+    // 改行列数留的撤销点连改之前的行列数一起记（E12）；导入 / 恢复默认的不记，换成它们时清掉
+    LaunchpadUndo.save(layout, grid: LaunchpadGrid(columns: 7, rows: 5), to: defaults)
+    #expect(LaunchpadUndo.load(from: defaults) == layout)
+    #expect(LaunchpadUndo.grid(from: defaults) == LaunchpadGrid(columns: 7, rows: 5))
+    LaunchpadUndo.save(layout, to: defaults)
+    #expect(LaunchpadUndo.grid(from: defaults) == nil)
+    LaunchpadUndo.save(nil, grid: LaunchpadGrid(columns: 7, rows: 5), to: defaults)
+    #expect(LaunchpadUndo.grid(from: defaults) == nil)
+  }
+
+  // MARK: 第四轮体检 E12 改行列数
+
+  /// 改行列数不打乱分页：变大什么都不动（页本来就可以不满）；变小只把每页挤出来的顺到下一页开头（一路往后推），
+  /// 不从头紧排——第 3 页原来的那几个还是第 3 页
+  @Test func changingGridKeepsPageBoundaries() {
+    let ids = (0..<14).map { ref("app\($0)") }
+    let tiles = ids.map { LaunchpadTile.app($0) }
+    // 三页：6、3、5 个（中间那页没排满，导入的布局常这样）
+    let layout = LaunchpadLayout(pages: [
+      Array(tiles[0..<6]), Array(tiles[6..<9]), Array(tiles[9..<14]),
+    ])
+    #expect(layout.tidied(capacity: 6) == layout)
+    #expect(layout.tidied(capacity: 35) == layout)
+    // 一页 5 个：第 1 页挤出 app5 到第 2 页开头；第 2 页 4 个放得下；第 3 页原样
+    let shrunk = layout.tidied(capacity: 5)
+    #expect(
+      shrunk.pages.map { $0.map(\.id) }
+        == [
+          Array(tiles[0..<5]), [tiles[5]] + Array(tiles[6..<9]), Array(tiles[9..<14]),
+        ].map { $0.map(\.id) })
+    // 一页 4 个：挤出来的一路往后推，页只多不少，先后不变
+    let tighter = layout.tidied(capacity: 4)
+    #expect(tighter.tiles.map(\.id) == layout.tiles.map(\.id))
+    #expect(tighter.pages.allSatisfy { $0.count <= 4 } && tighter.pages.count == 4)
+    #expect(tighter.pages[1].map(\.id) == [tiles[4], tiles[5], tiles[6], tiles[7]].map(\.id))
+    // 原来是从头紧排：一页 5 个时第 2 页被第 3 页的头两个补满（app5…app9）、第 3 页从 app10 开始
+    #expect(layout.repaginated(capacity: 5).pages[2].first?.id == tiles[10].id)
+    #expect(shrunk.pages[2].first?.id == tiles[9].id)
+  }
+
+  /// 界面只建当前页和左右各一页，翻到哪补到哪、建了不拆（F4⑥：300 个 App 一次全建第一帧约 140 ms、多占约 90 MB）
+  @Test func onlyNearbyPagesAreBuilt() {
+    let tiles = (0..<30).map { LaunchpadTile.app(ref("p\($0)")) }
+    let layout = LaunchpadLayout(
+      pages: stride(from: 0, to: 30, by: 6).map { Array(tiles[$0..<($0 + 6)]) })
+    let paged = model(layout, startPage: 2)
+    #expect(paged.page == 2 && paged.builtPages == [1, 2, 3])
+    paged.go(to: 4)
+    #expect(paged.builtPages.isSuperset(of: [1, 2, 3, 4]))
+    paged.go(to: 0)
+    #expect(paged.builtPages.isSuperset(of: [0, 1, 2, 3, 4]))
+    #expect(LaunchpadModel.neighborPages(of: 0) == -1...1)
+    // 一下跳到最后一页（点页点、⌘→）：中间滑过的那几页也建上
+    let jump = model(layout)
+    #expect(jump.builtPages == [-1, 0, 1])
+    jump.lastPage()
+    #expect(jump.page == 4 && jump.builtPages.isSuperset(of: 0...4))
+    #expect(LaunchpadModel.pagesToBuild(from: 4, to: 1) == 0...5)
   }
 
   // MARK: F15 触发角

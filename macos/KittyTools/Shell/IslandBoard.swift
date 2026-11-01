@@ -1,6 +1,7 @@
 // 刘海岛的「那一张」（2026-10-26，用户要能主动叫出来：点刘海、或者快捷键「打开刘海岛」）：上面一排快捷动作（截图、录屏、
 // 录音、识字、截图翻译、快速记一条，关着的功能不出），下面是本次启动以来最近 10 条提示，新的在前。还能点的打开类按钮
 // （在访达中显示、打开系统设置、打开设置）照样能点，点一行等于点它的按钮；撤销、取消这类过后再点会出事，不留。
+// 用快捷键叫出时 ←→ 选中的快捷动作圆底换成强调色的焦点圈（第四轮体检 U9），↩ 执行它。
 // 宽 420，画在岛的黑底上（同 Island 的深色、字号刻度），不另开窗口。
 
 import SwiftUI
@@ -12,8 +13,10 @@ struct IslandBoard: View {
     VStack(alignment: .leading, spacing: 0) {
       if !island.quickActions.isEmpty {
         HStack(spacing: 6) {
-          ForEach(Array(island.quickActions.enumerated()), id: \.offset) { _, action in
-            QuickAction(action: action) { island.perform(action) }
+          ForEach(Array(island.quickActions.enumerated()), id: \.offset) { index, action in
+            QuickAction(action: action, selected: island.boardSelection == index) {
+              island.perform(action)
+            }
           }
         }
         .frame(maxWidth: .infinity)
@@ -42,9 +45,10 @@ struct IslandBoard: View {
   }
 }
 
-/// 一个快捷动作：36 pt 的圆底符号 + 11 pt 的名字，宽 60
+/// 一个快捷动作：36 pt 的圆底符号 + 11 pt 的名字，宽 60。键盘选中时圆底亮一档、外面一圈强调色（焦点环，Whisker §1）
 private struct QuickAction: View {
   let action: Island.Action
+  var selected = false
   let run: () -> Void
 
   var body: some View {
@@ -54,10 +58,13 @@ private struct QuickAction: View {
           .font(.system(size: 15, weight: .medium))
           .foregroundStyle(.white.opacity(0.92))
           .frame(width: 36, height: 36)
-          .background(Circle().fill(.white.opacity(0.12)))
+          .background(Circle().fill(.white.opacity(selected ? 0.24 : 0.12)))
+          .overlay {
+            if selected { Circle().strokeBorder(Style.brand, lineWidth: 2).padding(-3) }
+          }
         Text(action.title)
           .font(.system(size: 11))
-          .foregroundStyle(.white.opacity(0.75))
+          .foregroundStyle(.white.opacity(selected ? 0.95 : 0.75))
           .lineLimit(1)
       }
       .frame(width: 60)
@@ -65,6 +72,7 @@ private struct QuickAction: View {
     }
     .buttonStyle(IslandButtonStyle())
     .accessibilityLabel(action.title)
+    .accessibilityAddTraits(selected ? .isSelected : [])
   }
 }
 

@@ -13,9 +13,8 @@ struct DockPreviewTab: View {
   var missing: [String]?
 
   var body: some View {
-    // 从系统设置授权回来，设置窗重新当 key 时刷新两行的状态（同通用页）
-    let becameKey = NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)
-    return form.onReceive(becameKey) { _ in
+    // 从系统设置授权回来，设置窗重新当 key 时刷新两行的状态（同通用页；只认设置窗自己，F3）
+    form.onSettingsBecameKey {
       trusted = Permissions.isAccessibilityTrusted
       screenRecording = Permissions.isScreenRecordingAllowed
     }
@@ -35,17 +34,11 @@ struct DockPreviewTab: View {
         PermissionRow(
           title: "辅助功能", detail: "知道鼠标停在哪个图标上，列出、切换和关掉窗口；没有它用不了",
           symbol: "hand.raised.fill", color: Style.Family.command, granted: trusted
-        ) {
-          Permissions.requestAccessibility()
-          Permissions.openAccessibilitySettings()
-        }
+        ) { Permissions.grant(.accessibility) }
         PermissionRow(
           title: "屏幕录制", detail: "截窗口的缩略图；没有它只列窗口的名字", symbol: HotKeyAction.screenRecord.symbol,
           color: Style.Family.screenshot, granted: screenRecording
-        ) {
-          Permissions.requestScreenRecording()
-          Permissions.Kind.screenRecording.openSettings()
-        }
+        ) { Permissions.grant(.screenRecording) }
       } header: {
         Text("权限")
       } footer: {

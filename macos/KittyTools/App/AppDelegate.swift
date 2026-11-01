@@ -172,7 +172,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         && !statusScreen.isActive && !OverlayPanel.isSelectingRegion(in: NSApp.windows)
         && hotKeys.recording == nil
     }
+    board.openTrackpadSettings = { [unowned self] in openTrackpadSettings() }
     board.willOpen = { [unowned self] in
+      builtHomePanel?.hide()
       builtClipboardPanel?.hide()
       builtLauncherPanel?.hide()
       statusPicker.panel?.hide()
@@ -584,6 +586,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   /// 这次的欢迎引导是首次安装（「登录时自动打开」默认勾）；关于页重看时清掉，勾选框跟随当前状态
   private var firstInstall = false
+  /// 欢迎引导从哪一屏起：首次安装没走完、下次接着开的从做到的那屏起（E1）；关于页重看从头
+  private var onboardingStart = OnboardingView.Screen.welcome
   /// 「已更新到」那座岛已经顺带说了同步新加的几类先没勾（NoteSyncer.isUpgrade）：便签库开好后不再单独弹
   private var toldSyncUpgrade = false
 
@@ -623,7 +627,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             resetDefault: { [unowned self] in launchpad.resetToDefault() },
             undo: { [unowned self] in launchpad.undoLastLayoutChange() },
             canUndo: { [unowned self] in launchpad.canUndoLayout },
-            reflow: { [unowned self] in launchpad.reflow() },
+            reflow: { [unowned self] in launchpad.reflow(from: $0) },
             importSystem: { [unowned self] in launchpad.importFromSystem() },
             pinchChanged: { [unowned self] in launchpad.applySettings() },
             cornerChanged: { [unowned self] in launchpad.applySettings() },
@@ -653,11 +657,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AnyView(
           AboutTab(updater: updater.isSupported ? updater : nil) {
             self.firstInstall = false
+            self.onboardingStart = .welcome
             created?.navigation.showsOnboarding = true
           })
       }
     } onboarding: { [unowned self] in
-      AnyView(OnboardingView(center: hotKeys, firstRun: firstInstall).environment(island))
+      AnyView(
+        OnboardingView(center: hotKeys, firstRun: firstInstall, screen: onboardingStart) {
+          [unowned self] screen in
+          // 首次安装：记做到了第几屏（引导只往前翻），没走完就退出、下次接着开（E1）
+          if firstInstall {
+            UserDefaults.standard.set(screen.rawValue, forKey: Prefs.onboardingScreen)
+          }
+        }
+        .environment(island))
     }
     created = window
     return window
@@ -759,7 +772,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // 状态屏里热键本来停着；万一被别处重新注册了（安全输入开着时拦截也吞不掉它们）：不响应
         guard !statusScreen.isActive else { return }
-        run(action)
+        run(action, byKey: true)
       }
     }
     hotKeys.reload()
@@ -1145,7 +1158,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       NSApp.activate()
       return true
     }
-    showHome()
+    // 从访达 / 程序坞再打开一次时本 App 被激活了：主界面是不激活的面板，先把前台还给原来的 App（deactivate 交还给
+    // 上一个在前台的），不然从主界面打开的剪贴板、片段 ⌘V 落到本 App 自己身上（第四轮体检 E22②）。
+    // 失活不一定当场落定：等真退到后面了再出主界面（最多 0.5 s），不然它刚当上 key 就跟着本 App 一起被撤掉
+    guard NSApp.isActive else {
+      showHome()
+      return false
+    }
+    NSApp.deactivate()
+    Task { [weak self] in
+      for _ in 0..<25 where NSApp.isActive { try? await Task.sleep(for: .milliseconds(20)) }
+      self?.showHome()
+    }
     return false
   }
 
@@ -1365,8 +1389,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       features: Feature.enabled)
   }
 
-  /// 全局热键动作：热键、菜单栏、启动器同一个分发
-  func run(_ action: HotKeyAction) {
+  /// 全局热键动作：热键、菜单栏、启动器同一个分发。byKey：全局快捷键按出来的
+  func run(_ action: HotKeyAction, byKey: Bool = false) {
     // 关着的功能（Feature）：入口都藏了，这里兜底一道（漏网的路——别处直接调过来的——也挡住）
     guard action.isActive else { return }
     // 启动台是全屏面板：按别的功能键时先收掉（它自己的键走 toggle）
@@ -1393,7 +1417,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     case .noteNew: newNote()
     case .noteAll: showNotes()
     case .launchpad: launchpad.toggle()
-    case .island: island.toggleBoard()
+    // 按键叫出的（全局快捷键；启动器、主界面里按 ↩——这一刻的事件是按键）：临时当 key，Esc / ←→ / ↩ 能用（U9）。
+    // 用鼠标从菜单栏菜单、主界面点的，和点刘海叫出的一样不抢键盘
+    case .island:
+      island.toggleBoard(byKeyboard: byKey || NSApp.currentEvent?.type == .keyDown)
     case .home: toggleHome()
     }
   }
@@ -2795,14 +2822,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   // MARK: 启动辅助
 
   /// 首次安装打开欢迎引导（授权、快捷键；引导下面是通用页）。更新后第一次启动不开设置窗、不抢前台：
-  /// 刘海岛说「已更新到 x」+ 本版摘要（菜单栏图标照常弹一下），全文在菜单「关于 Kitty Tools」
+  /// 刘海岛说「已更新到 x」+ 本版摘要（菜单栏图标照常弹一下），全文在菜单「关于 Kitty Tools」。
+  /// 首次安装时「看过这一版」等引导走完才记（E1，settingsNavigation.onboardingClosed）：没走完就退出（授权屏幕录制后系统
+  /// 要求重开）的，下次启动接着开引导、从做到的那一屏起；「登录时自动打开」按默认（开）注册，引导走完之前每次启动都补一次
   private func showWelcomeIfNeeded() {
-    let last = UserDefaults.standard.string(forKey: Prefs.lastSeenVersion)
-    UserDefaults.standard.set(AboutTab.version, forKey: Prefs.lastSeenVersion)
+    let defaults = UserDefaults.standard
+    let last = defaults.string(forKey: Prefs.lastSeenVersion)
     if last == nil {
+      let reached = (defaults.object(forKey: Prefs.onboardingScreen) as? Int)
+        .flatMap(OnboardingView.Screen.init(rawValue:))
+      if reached == nil {
+        defaults.set(OnboardingView.Screen.welcome.rawValue, forKey: Prefs.onboardingScreen)
+      }
+      // 登录项按默认（开）注册：引导还没走完时每次启动都看一眼，还没注册的才注册（上次没注册成、引导中途退出的补上；
+      // 用户的选择在引导「开始使用」时才作数，之后在通用页里关掉照旧取消注册）；从磁盘映像里打开的不注册
+      if LaunchAtLogin.isInstalled, LaunchAtLogin.isNotRegistered { try? LaunchAtLogin.set(true) }
+      settingsNavigation.onboardingClosed = { [unowned self] in finishOnboarding() }
       firstInstall = true
+      onboardingStart = OnboardingView.resume(
+        reached: reached,
+        granted: Permissions.isAccessibilityTrusted && Permissions.isScreenRecordingAllowed)
       showSettings(page: .general, onboarding: true)
-    } else if last != AboutTab.version {
+      return
+    }
+    // 从有「请求过」标记之前的版本升上来的：系统的授权框多半早弹过，标记补成请求过（U10）
+    if let last { Permissions.adoptRequestFlags(upgradingFrom: last, defaults: defaults) }
+    defaults.set(AboutTab.version, forKey: Prefs.lastSeenVersion)
+    if last != AboutTab.version {
       let summary = AboutTab.releases.first { $0.version == AboutTab.version }?.summary
       var actions = [
         Island.Action("看更新了什么", opens: true) { [unowned self] in showSettings(page: .about) }
@@ -2820,6 +2866,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         "已更新到 \(AboutTab.version)", detail: detail, tone: .success, symbol: "sparkles",
         actions: actions)
     }
+  }
+
+  /// 首次安装的引导走完了（「开始使用」、Esc、关掉设置窗）：这时才记「看过这一版」，做到第几屏的记录删掉（E1）
+  private func finishOnboarding() {
+    settingsNavigation.onboardingClosed = {}
+    UserDefaults.standard.set(AboutTab.version, forKey: Prefs.lastSeenVersion)
+    UserDefaults.standard.removeObject(forKey: Prefs.onboardingScreen)
   }
 
   /// LaunchServices 不保证同一 bundle id 只跑一份（例如 DMG 里一份、/Applications 里又一份）：

@@ -44,8 +44,9 @@ enum Permissions {
 
   static var isAccessibilityTrusted: Bool { AXIsProcessTrusted() }
 
-  /// 未授权时弹系统授权框。系统只弹一次，之后要去系统设置里手动打开
+  /// 未授权时弹系统授权框。系统只弹一次，之后要去系统设置里手动打开（记下「请求过」，「去授权」据此不再弹框，U10）
   static func requestAccessibility() {
+    UserDefaults.standard.set(true, forKey: Prefs.accessibilityRequested)
     // 用字面量而不是 kAXTrustedCheckOptionPrompt：后者是全局 var，Swift 6 下不算并发安全
     AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
   }
@@ -56,7 +57,38 @@ enum Permissions {
   static var isScreenRecordingAllowed: Bool { CGPreflightScreenCaptureAccess() }
 
   /// 未授权时弹系统授权框（同样只弹一次）。截屏前先经这里，免得每块屏幕各弹一个框
-  static func requestScreenRecording() { CGRequestScreenCaptureAccess() }
+  static func requestScreenRecording() {
+    UserDefaults.standard.set(true, forKey: Prefs.screenRecordingRequested)
+    CGRequestScreenCaptureAccess()
+  }
+
+  /// 「请求过」的标记是哪一版加的（第四轮体检 U10，0.7.1）
+  static let requestFlagsSince = "0.7.1"
+
+  /// 从这之前的版本升上来的（lastSeen 是上次看过的版本）：系统的授权框多半早弹过、标记却是空的，第一次点「去授权」会什么都
+  /// 不出——两个标记没写过就记成请求过。新装的（看过的就是有标记的版本）不动：它们还没请求过，第一次点该弹系统框
+  static func adoptRequestFlags(upgradingFrom lastSeen: String, defaults: UserDefaults) {
+    guard Updater.isNewer(requestFlagsSince, than: lastSeen) else { return }
+    for key in [Prefs.accessibilityRequested, Prefs.screenRecordingRequested]
+    where defaults.object(forKey: key) == nil {
+      defaults.set(true, forKey: key)
+    }
+  }
+
+  /// 「去授权」（设置 › 通用、欢迎引导第二屏、设置 › 程序坞预览、程序坞预览面板底下那行；第四轮体检 U10）：没请求过时只弹
+  /// 系统授权框（框上有「打开系统设置」）；请求过了（系统不会再弹）才直接打开系统设置那一页。原来两样一起来，系统框和
+  /// 系统设置叠着出两个窗。别的授权一律打开系统设置
+  static func grant(_ kind: Kind) {
+    let defaults = UserDefaults.standard
+    switch kind {
+    case .accessibility where !defaults.bool(forKey: Prefs.accessibilityRequested):
+      requestAccessibility()
+    case .screenRecording where !defaults.bool(forKey: Prefs.screenRecordingRequested):
+      requestScreenRecording()
+    default:
+      kind.openSettings()
+    }
+  }
 
   /// 麦克风授权：没问过 / 拒绝 / 受限 / 允许（只检查、不弹框）
   static var microphoneStatus: AVAuthorizationStatus {

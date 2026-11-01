@@ -1562,8 +1562,8 @@ struct StatusScreenTests {
       StatusScreen.growingIndex(card: card.offsetBy(dx: 0, dy: 9000), screens: [full, side]) == 0)
   }
 
-  /// 同一件事在真的图层上看一遍（屏外的普通窗口，不建状态屏的面板、不上屏）：铺满窗口的 NSHostingView（翻转的视图，
-  /// 状态屏面板的内容就是它）图层设上起始变换，它在上一级里的 frame 就是卡片换到窗口里的位置——和面板里 grow 的算法一样
+  /// 同一件事在真的图层上看一遍（屏外的普通窗口，不建状态屏的面板、不上屏）：包在容器里、铺满窗口的 NSHostingView（翻转的视图，
+  /// 状态屏面板的画面就是它）图层设上起始变换，它在上一级里的 frame 就是卡片换到窗口里的位置——和面板里 grow 的算法一样
   @Test func zoomStartLandsOnCardLayer() throws {
     let frame = NSRect(x: -20000, y: -20000, width: 1200, height: 800)
     let window = NSWindow(
@@ -1571,7 +1571,8 @@ struct StatusScreenTests {
     let host = NSHostingView(rootView: Color.black)
     host.sizingOptions = []
     host.wantsLayer = true
-    window.contentView = host
+    // 和面板一样包在普通容器里（E21）
+    window.setHostedContent(host)
     window.setFrame(frame, display: false)
     let layer = try #require(host.layer)
     let parent = try #require(host.superview)
@@ -1612,7 +1613,7 @@ struct StatusScreenTests {
     // 和状态屏面板里一样：内容视图没有另外要图层，grow 自己要
     let host = NSHostingView(rootView: Color.black)
     host.sizingOptions = []
-    window.contentView = host
+    window.setHostedContent(host)
     window.setFrame(frame, display: false)
     window.orderFront(nil)
     defer { window.orderOut(nil) }

@@ -146,6 +146,11 @@ nonisolated struct LaunchpadImport {
     return String(decoding: bytes, as: UTF8.self) + "com.apple.dock.launchpad/db/db"
   }
 
+  /// 本机有没有旧库（第一次打开时先看一眼：没有就不挂「正在按原来的启动台排列…」，U13⑦）
+  static func systemDatabaseExists() -> Bool {
+    systemDatabasePath().map { FileManager.default.fileExists(atPath: $0) } ?? false
+  }
+
   /// 后台读本机的旧库（F31）；`@concurrent` 离开主 actor
   @concurrent
   nonisolated static func readSystemLayoutInBackground(

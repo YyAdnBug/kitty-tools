@@ -437,14 +437,22 @@ struct LaunchpadRecheckTests {
 
   @Test func realGestureClickOpensAndDragReorders() async throws {
     let refs = ["a", "b", "c", "d", "e", "f"].map(ref)
-    let model = model(LaunchpadLayout(pages: [refs.map { LaunchpadTile.app($0) }]))
+    // 满载时两次事件之间可能隔一秒多：按住进抖动（1 s）、停在图标中心合成（0.4 s）这些计时会抢在松手前面，
+    // 单击变成「按住」、拖过 b 的中心建了文件夹（第四轮体检第 5 批追加：全量单测偶发失败）。这里只验手势收得到，计时都放长
+    let layout = LaunchpadLayout(pages: [refs.map { LaunchpadTile.app($0) }])
+    let model = LaunchpadModel(
+      layout: layout, catalog: layout.apps.map { app($0) }, icons: LaunchpadIcons(), columns: 3,
+      rows: 2, screenSize: CGSize(width: 900, height: 600), dragTiming: .patient)
     var opened: String?
     model.onOpenApp = { opened = $0.id }
     let live = LiveLaunchpad(model)
     defer { live.close() }
     let frame = try #require(await live.gridFrame())
-    // 单击 b：打开 b
+    // 第一页画出来、手势挂好（按轮数，不按时间）
+    await live.settle()
+    // 单击 b：打开 b（手势的动作可能晚一轮才到：按轮数等）
     await live.click(center(1, in: frame, of: model))
+    for _ in 0..<100 where opened == nil { await live.settle() }
     #expect(opened == refs[1].id)
     #expect(model.drag == nil)
     // 把 a 拖到 e 那一格的左边沿松手：挪到 e 前面，不建文件夹，手势收得到松手
@@ -459,6 +467,7 @@ struct LaunchpadRecheckTests {
         CGPoint(x: start.x + (target.x - start.x) * t, y: start.y + (target.y - start.y) * t))
     }
     await live.send(.leftMouseUp, target)
+    for _ in 0..<100 where model.drag != nil { await live.settle() }
     #expect(model.drag == nil)
     #expect(model.layout.tiles.allSatisfy { $0.folder == nil })
     #expect(

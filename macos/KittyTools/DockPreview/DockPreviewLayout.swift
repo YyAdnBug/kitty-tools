@@ -226,6 +226,13 @@ enum DockPreviewLayout {
     return bridge.insetBy(dx: -2, dy: -2).contains(mouse)
   }
 
+  /// 弹着时换图标的计时到点：鼠标真在待换的那个图标上（外扩 2 点，同 keepsOpen）、又不在面板里（外扩 4 点）才换
+  /// （第四轮体检 E22③）
+  static func switches(mouse: CGPoint, pending: CGRect, panel: CGRect) -> Bool {
+    pending.insetBy(dx: -2, dy: -2).contains(mouse)
+      && !panel.insetBy(dx: -4, dy: -4).contains(mouse)
+  }
+
   /// 鼠标离开预览之后的倒计时：离开满 delay 秒才收，回来就重新算
   struct Linger: Equatable {
     static let delay: TimeInterval = 0.3

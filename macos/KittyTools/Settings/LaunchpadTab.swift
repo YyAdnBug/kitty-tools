@@ -1,10 +1,10 @@
 // 设置 › 启动台（第八族，SPEC R10；2026-10-18）。五组：
 // 「启动台」——总开关（关掉后快捷键、菜单栏、触发角、捏合都不打开）、按键速查；
-// 「排列」——一页几列几行（改了按新容量重新分页）；
+// 「排列」——一页几列几行（变少时挤不下的顺到下一页开头、页边界不动，岛上能撤销；E12）；
 // 「触控板」——手势 关闭 / 四指捏合 / 五指捏合、灵敏度三档，页脚说清怎么认（系统的开着时让给系统、唤醒后自己接上）；
 //   系统的捏合手势还开着时给一行提示和「打开触控板设置」（只读系统设置，不改）；私有框架加载不了时这一行灰掉写明；
 // 「触发角」——选一个屏幕角，鼠标推到那里停一下打开（默认关）；
-// 「排列数据」——从系统旧启动台导入（确认，导入前留一份可撤销）、恢复默认排列、撤销上一次导入。
+// 「排列数据」——从系统旧启动台导入（确认，导入前留一份可撤销）、恢复默认排列、撤销上一次导入或恢复默认（改行列数挤过的也算）。
 // 页头由 SettingsRoot 画（家族色薄荷绿）。布局本身不在这里改，拖动、文件夹、抖动删 App 全在面板里（R4–R6）。
 
 import AppKit
@@ -13,11 +13,11 @@ import SwiftUI
 struct LaunchpadTab: View {
   /// 恢复默认排列（这里二次确认后调它）
   var resetDefault: () -> Void = {}
-  /// 撤销上一次导入 / 恢复默认
+  /// 撤销上一次导入 / 恢复默认 / 改行列数
   var undo: () -> Void = {}
   var canUndo: () -> Bool = { false }
-  /// 行列数变了：按新容量重新分页并存盘
-  var reflow: () -> Void = {}
+  /// 行列数变了（参数是改之前的）：变少时把挤不下的顺到下一页开头并存盘
+  var reflow: (LaunchpadGrid) -> Void = { _ in }
   /// 从系统旧启动台重新导入（这里二次确认后调它）
   var importSystem: () -> Void = {}
   /// 捏合开关 / 灵敏度变了、触发角变了：重新起停监听
@@ -86,7 +86,7 @@ struct LaunchpadTab: View {
             }
           } label: {
             Text("一页几列")
-            Text("改了按新容量重新分页")
+            Text("改少了，每页挤不下的顺到下一页开头")
           }
           LabeledContent {
             HStack(spacing: 8) {
@@ -142,11 +142,11 @@ struct LaunchpadTab: View {
           Text("系统 App 在前、其余按名字排")
         }
         LabeledContent {
-          Button("撤销上一次导入", action: undo)
+          Button("撤销上一次导入或恢复默认", action: undo)
             .disabled(undoLayout == nil || !canUndo())
         } label: {
-          Text("撤销上一次导入")
-          Text("换回导入前的样子，只能用一次")
+          Text("撤销上一次导入或恢复默认")
+          Text("换回导入、恢复默认或改行列数之前的样子，只能用一次")
         }
       } header: {
         Text("排列数据")
@@ -156,16 +156,16 @@ struct LaunchpadTab: View {
       systemPinch = systemPinchOn()
       pinchChanged()
     }
-    .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
-      // 用户照提示去系统设置关掉再回来：读到状态**变了**才重起监听（F13）。任何窗口变 key 都会走到这里
-      // （设置窗关了也不放，打开启动台、呼出剪贴板都算），没变就别动——重起会把正在捏的那一下清掉（G8）
+    .onSettingsBecameKey {
+      // 用户照提示去系统设置关掉再回来：读到状态**变了**才重起监听（F13）。只在设置窗自己成为 key 时读（F3），
+      // 没变就别动——重起会把正在捏的那一下清掉（G8）
       let next = systemPinchOn()
       guard Self.shouldReapply(old: systemPinch, new: next) else { return }
       systemPinch = next
       pinchChanged()
     }
-    .onChange(of: columns) { reflow() }
-    .onChange(of: rows) { reflow() }
+    .onChange(of: columns) { old, _ in reflow(LaunchpadGrid(columns: old, rows: rows)) }
+    .onChange(of: rows) { old, _ in reflow(LaunchpadGrid(columns: columns, rows: old)) }
     .onChange(of: enabled) { pinchChanged() }
     .onChange(of: gesture) { pinchChanged() }
     .onChange(of: pinchSense) { pinchChanged() }
@@ -173,12 +173,12 @@ struct LaunchpadTab: View {
     .confirmationDialog("恢复默认排列？", isPresented: $confirmsReset) {
       Button("恢复", role: .destructive, action: resetDefault)
     } message: {
-      Text("现在的排法会被换掉；之后可以在「撤销上一次导入」里换回来一次。App 本身不受影响。")
+      Text("现在的排法会被换掉；之后可以在「撤销上一次导入或恢复默认」里换回来一次。App 本身不受影响。")
     }
     .confirmationDialog("从系统启动台重新导入？", isPresented: $confirmsImport) {
       Button("导入", role: .destructive, action: importSystem)
     } message: {
-      Text("现在的排法会被换掉；之后可以在「撤销上一次导入」里换回来一次。库里已经卸掉的 App 跳过。")
+      Text("现在的排法会被换掉；之后可以在「撤销上一次导入或恢复默认」里换回来一次。库里已经卸掉的 App 跳过。")
     }
     // macOS 上 Form 在有的容器里会取 columns 样式（标签右对齐一列、说明和标题挤成一行），
     // 和别的设置页（grouped：标题 + 说明堆叠、控件靠右）不一致——显式定成 grouped

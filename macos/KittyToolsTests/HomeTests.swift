@@ -126,6 +126,27 @@ struct HomeTests {
     #expect(right.maxX == visible.maxX - 8)
   }
 
+  /// 屏幕上方（E14）：高 606 的主界面在 665 高的可见区里底边原来掉出去 74 pt——整体往上挪到底边贴底；760、900 高的照旧
+  /// 顶边在 20% 处；比可见区还高时顶边贴顶
+  @Test func placedAtTopStaysOnScreen() {
+    let size = NSSize(width: 520, height: 606)
+    func bottom(_ height: CGFloat) -> CGFloat {
+      OverlayPanel.frame(atTopOf: NSRect(x: 0, y: 0, width: 1470, height: height), size: size).minY
+    }
+    #expect(bottom(665) == 0)
+    #expect(bottom(760) == 2)
+    #expect(bottom(900) == 114)
+    for height: CGFloat in [665, 760, 900] {
+      let visible = NSRect(x: 0, y: 25, width: 1470, height: height)
+      let frame = OverlayPanel.frame(atTopOf: visible, size: size)
+      #expect(frame.size == size && frame.midX == visible.midX)
+      #expect(frame.minY >= visible.minY && frame.maxY <= visible.maxY, "\(height)")
+    }
+    let tall = OverlayPanel.frame(
+      atTopOf: NSRect(x: 0, y: 0, width: 1470, height: 500), size: size)
+    #expect(tall.maxY == 500)
+  }
+
   /// ←→ 按顺序走、到头回绕；↑↓ 换行、列不变，短的那行落在最后一格，第一行 / 最后一行不动；还没选中时是第一格
   @Test func movement() {
     let rows = [[0, 1, 2], [3, 4, 5, 6, 7], [8, 9]]

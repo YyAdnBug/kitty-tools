@@ -422,6 +422,24 @@ struct DockPreviewTests {
         mouse: CGPoint(x: 75, y: 300), panel: sidePanel, item: sideItem, edge: .left))
   }
 
+  /// 换图标的计时到点时：鼠标真在待换的图标上才换；已经挪进面板（程序坞的选中顺路落到了旁边的图标上）、离开了那个图标
+  /// 都不换（E22③）。待换的图标在 keepsOpen 里也只在鼠标在它上面时算（上面那条）
+  @Test func switchesOnlyWhileTheMouseIsOnTheNextIcon() {
+    let panel = CGRect(x: 530, y: 90, width: 400, height: 200)
+    let next = CGRect(x: 770, y: 4, width: 60, height: 60)
+    func switches(_ x: CGFloat, _ y: CGFloat) -> Bool {
+      DockPreviewLayout.switches(mouse: CGPoint(x: x, y: y), pending: next, panel: panel)
+    }
+    #expect(switches(800, 30), "停在旁边那个图标上")
+    #expect(switches(771, 63), "图标边上（外扩 2 点）")
+    #expect(!switches(800, 120), "已经挪进面板")
+    #expect(!switches(700, 30), "回到了原来的图标上")
+    // 图标的框伸进了面板（放大时）：鼠标在两者重叠的地方算在面板里
+    let tall = CGRect(x: 770, y: 4, width: 60, height: 100)
+    #expect(
+      !DockPreviewLayout.switches(mouse: CGPoint(x: 800, y: 95), pending: tall, panel: panel))
+  }
+
   @Test func lingerHidesOnlyAfterStayingAway() {
     var linger = DockPreviewLayout.Linger()
     // 依次喂（在不在附近，此刻），看每一步该不该收

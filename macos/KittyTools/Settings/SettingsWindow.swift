@@ -204,7 +204,11 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   /// 当前页推进的详情页（翻译服务 / 网页搜索 / 状态屏的状态的 id；TranslateTab、LauncherTab、StatusScreenTab 的
   /// NavigationStack 用它），换页时清空
   var path: [String] = []
-  var showsOnboarding = false
+  var showsOnboarding = false {
+    didSet { if oldValue, !showsOnboarding { onboardingClosed() } }
+  }
+  /// 欢迎引导关掉了（「开始使用」、Esc、关掉设置窗都算走完）：AppDelegate 这时才记「看过这一版」（第四轮体检 E1）
+  @ObservationIgnored var onboardingClosed: () -> Void = {}
   /// 快捷键速查表（启动器里的「快捷键速查表」打开设置窗时盖上；页面里的「查看全部快捷键…」按钮自己管）
   var showsShortcuts = false
   /// 设置窗是 key（SettingsWindow 的窗口代理写）。开着 sheet（确认框、速查表、引导）或别的面板在前时不是
@@ -281,6 +285,8 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
   func windowDidResignKey(_ notification: Notification) { navigation.isKey = false }
 
   func windowWillClose(_ notification: Notification) {
+    // 引导开着时关掉设置窗也算关掉了引导（E1）
+    if navigation.showsOnboarding { navigation.showsOnboarding = false }
     NSApp.leaveDockIfNoWindows(closing: window)
   }
 }
@@ -533,5 +539,25 @@ struct SectionFootnote: View {
       .multilineTextAlignment(.leading)
       .frame(maxWidth: .infinity, alignment: .leading)
       .padding(.horizontal, 10)
+  }
+}
+
+extension View {
+  /// 设置窗自己成为 key 时跑一下（从系统设置授权回来、关掉表单回到页面时刷新授权、登录项这些；第四轮体检 F3）。
+  /// 原来听的是全局的 didBecomeKeyNotification：剪贴板面板、启动器、启动台、截图遮罩……任何窗口成为 key 都把每页的
+  /// 检查跑一遍（读授权、读系统手势、读浏览器历史）。没有设置窗的地方（截图自检）不跑
+  func onSettingsBecameKey(perform action: @escaping () -> Void) -> some View {
+    modifier(SettingsBecameKey(action: action))
+  }
+}
+
+private struct SettingsBecameKey: ViewModifier {
+  @Environment(SettingsNavigation.self) private var navigation: SettingsNavigation?
+  let action: () -> Void
+
+  func body(content: Content) -> some View {
+    content.onChange(of: navigation?.isKey == true) { _, isKey in
+      if isKey { action() }
+    }
   }
 }

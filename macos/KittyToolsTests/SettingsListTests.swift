@@ -1,9 +1,11 @@
 // 设置里有序列表（N12）的单测：网页搜索一条的问题提示（名称、网址、保留 / 重复关键词（只算搜索之间）、用不上）、
 // 列表 JSON 读写（关键词去空白）、预置判断（删自定义的要确认）、翻译服务状态副标题（开着才标橙）、
 // 列表有几行就多高（不封顶，每一行都在外框里）；
-// 另有通用页的外观偏好 → NSAppearance 名字、设置窗侧栏不画原生选中高亮（自绘那块才是选中）、工具栏的「‹ 返回」和主菜单「显示 › 返回」。
+// 另有通用页的外观偏好 → NSAppearance 名字、设置窗侧栏不画原生选中高亮（自绘那块才是选中）、工具栏的「‹ 返回」和主菜单「显示 › 返回」；
+// 欢迎引导没走完时下次从哪一屏接着开、什么时候算走完（第四轮体检 E1）。
 
 import AppKit
+import ServiceManagement
 import SwiftUI
 import Testing
 
@@ -175,6 +177,68 @@ struct SettingsListTests {
     #expect(AppAppearance.name(for: "dark") == .darkAqua)
     #expect(AppAppearance.name(for: nil) == nil)
     #expect(AppAppearance.name(for: "sepia") == nil)
+  }
+
+  /// 引导没走完就退出、下次接着开（E1）：做到第三屏的回第三屏；停在授权那一屏的，两项都授权了直接第三屏、还缺的回第二屏；
+  /// 只看过第一屏 / 没记录的从头来
+  @Test func onboardingResumesWhereItStopped() {
+    typealias Screen = OnboardingView.Screen
+    #expect(OnboardingView.resume(reached: nil, granted: true) == .welcome)
+    #expect(OnboardingView.resume(reached: .welcome, granted: true) == .welcome)
+    #expect(OnboardingView.resume(reached: .permissions, granted: true) == .tryIt)
+    #expect(OnboardingView.resume(reached: .permissions, granted: false) == .permissions)
+    #expect(OnboardingView.resume(reached: .tryIt, granted: false) == .tryIt)
+    #expect(Screen.welcome < .permissions && Screen.permissions < .tryIt)
+    // 偏好里存的就是 rawValue：认得出来
+    #expect(Screen(rawValue: Screen.tryIt.rawValue) == .tryIt && Screen(rawValue: 9) == nil)
+  }
+
+  /// 点「开始使用」时登录项怎么改（E1）：动过勾选框才照它来（重看时状态是「要批准」、勾选框显示没勾，没动它不取消注册）；
+  /// 没动过的只有首次安装勾着、还没注册的再注册一次
+  @Test func onboardingOnlyChangesLoginItemWhenTouched() {
+    func change(_ touched: Bool, _ checked: Bool, _ firstRun: Bool, _ status: SMAppService.Status)
+      -> Bool?
+    {
+      OnboardingView.loginChange(
+        touched: touched, checked: checked, firstRun: firstRun, status: status)
+    }
+    #expect(change(false, false, false, .requiresApproval) == nil)
+    #expect(change(false, true, false, .enabled) == nil)
+    #expect(change(false, true, true, .enabled) == nil)
+    #expect(change(false, true, true, .notRegistered) == true)
+    #expect(change(false, true, false, .notRegistered) == nil)
+    #expect(change(true, false, true, .enabled) == false)
+    #expect(change(true, false, false, .requiresApproval) == false)
+    #expect(change(true, false, false, .notRegistered) == nil)
+    #expect(change(true, true, false, .requiresApproval) == true)
+    #expect(change(true, true, false, .enabled) == nil)
+  }
+
+  /// 从 0.7.1 之前升上来的：「请求过」的标记补成 true（系统框多半早弹过，不补的话第一次点「去授权」什么都不出，U10）；
+  /// 写过的不动；新装的（上次看过的已经是有标记的版本）不补——它们第一次点该弹系统框
+  @Test func upgradesAdoptPermissionRequestFlags() throws {
+    let suite = "kitty-permission-flags-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    Permissions.adoptRequestFlags(upgradingFrom: "0.7.1", defaults: defaults)
+    #expect(defaults.object(forKey: Prefs.accessibilityRequested) == nil)
+    defaults.set(false, forKey: Prefs.screenRecordingRequested)
+    Permissions.adoptRequestFlags(upgradingFrom: "0.7.0", defaults: defaults)
+    #expect(defaults.bool(forKey: Prefs.accessibilityRequested))
+    #expect(defaults.object(forKey: Prefs.screenRecordingRequested) as? Bool == false)
+  }
+
+  /// 引导关掉（开始使用、Esc 都是把 showsOnboarding 置回 false）才报「走完了」，只报一次；打开不算（E1）
+  @MainActor @Test func onboardingClosedFiresOnceOnDismiss() {
+    let navigation = SettingsNavigation(defaults: nil)
+    var closed = 0
+    navigation.onboardingClosed = { closed += 1 }
+    navigation.showsOnboarding = true
+    #expect(closed == 0)
+    navigation.showsOnboarding = false
+    #expect(closed == 1)
+    navigation.showsOnboarding = false
+    #expect(closed == 1)
   }
 
   /// 设置窗侧栏的选中自绘：外面那个表格不画原生高亮（换页后也不会被改回来），原生选中照旧跟着当前页走

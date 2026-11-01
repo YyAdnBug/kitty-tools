@@ -22,6 +22,28 @@ struct LaunchpadPinchTests {
   }
 
   /// 四指收拢：缩过 4% 开始跟、进度按满格比例算、抬手（手指一根根离开）= 松手，带松手前的进度和速度；抬完再来一次照样认
+  /// 捏合让给了系统那句话（U5）：这次打开有第一次导入（本机有旧库）或别的提示时留到下次——在导入起来之前就要判断，
+  /// 不然导入的进度和结果把它顶掉、又记成说过了；系统的捏合这期间关了就不欠了
+  @Test func pinchHintWaitsForAQuietOpen() {
+    typealias Hint = Launchpad.PinchHint
+    #expect(
+      Launchpad.pinchHint(owed: true, notice: false, importing: false, systemPinchOn: true) == .tell
+    )
+    #expect(
+      Launchpad.pinchHint(owed: true, notice: false, importing: true, systemPinchOn: true) == .later
+    )
+    #expect(
+      Launchpad.pinchHint(owed: true, notice: true, importing: false, systemPinchOn: true) == .later
+    )
+    #expect(
+      Launchpad.pinchHint(owed: true, notice: false, importing: false, systemPinchOn: false)
+        == .drop)
+    #expect(
+      Launchpad.pinchHint(owed: false, notice: false, importing: false, systemPinchOn: true)
+        == .drop)
+    #expect(Hint.later != Hint.tell)
+  }
+
   @Test func convergingFourFingersTrackAndEndOnLift() throws {
     var recognizer = PinchRecognizer(sensitivity: .standard)
     #expect(recognizer.feed(frame(0, ring(0.2))) == nil)

@@ -66,6 +66,8 @@ final class NoteDeck: NSObject {
   static let focusRetryDelays: [TimeInterval] = [0.05, 0.15]
 
   let model: NoteDeckModel
+  /// 扇出后多久没动静收回（平时就是 idleDelay；单测里放长，满载时 4 秒会抢在测试的下一步前面）
+  var idleAfter = NoteDeck.idleDelay
   /// 「一直展开」时没有药丸
   private(set) var pill: NoteDeckPill?
   /// 没展开过、收起后放掉了都是 nil
@@ -648,11 +650,11 @@ final class NoteDeck: NSObject {
 
   /// 离「没动静满 idleDelay」还差多久；到了就发 idle（正拖着标签、右键菜单开着时不算，重新数），返回 nil
   private func idleWait() -> Duration? {
-    let left = Self.idleDelay - (ContinuousClock.now - lastActivity)
+    let left = idleAfter - (ContinuousClock.now - lastActivity)
     guard left <= .zero else { return left }
     if model.state.isDragging || model.isShowingMenu {
       lastActivity = .now
-      return Self.idleDelay
+      return idleAfter
     }
     model.send(.idle)
     return nil

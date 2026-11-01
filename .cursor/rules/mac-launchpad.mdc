@@ -18,7 +18,7 @@ Kitty 的第八族「启动台」（SPEC 在 `macos/build/research/launchpad/SPE
   只剩一个 App 的文件夹；顺序稳定。加新 App 追加到最后一页末尾；卸掉的拿掉；文件夹剩一个当场解散、空了消失。
 - 挪格子、建 / 加 / 拖出 / 解散文件夹、改名、按行列数重新分页、默认排法、合并本机 App 全在 `LaunchpadLayout` 的纯函数里，
   界面和总控不许自己拼页数组。拖动传的是**格子的 id**（`LaunchpadTile.id`，`app\n<id>` / `folder\n<uuid>`）。
-- 行列数改了（设置里）按新容量重新分页（`Launchpad.reflow`），启动台没开着也生效。
+- 行列数改了（设置里，`Launchpad.reflow(from:)`）**页边界保住**（第四轮体检 E12，`LaunchpadLayout.tidied`）：容量变大什么都不动（页本来就可以不满，同系统启动台），变小只把每页挤出来的顺到下一页开头（日常编辑的 `pushed`），**不从头紧排**（`repaginated` 只给导入时每页比容量多的库、默认排法用）；真挪了图标才存盘、留撤销点（连同改之前的行列数 `Prefs.launchpadUndoGrid`，撤销时一起换回去——只换布局的话下次打开又按现在的容量挤一遍），岛上带「撤销」。启动台没开着也生效；打开时（`openingPlan`）同样走 `tidied`。
 - **合并本机 App 时空列表 = 还不知道**（App 刚启动、后台扫目录还没回来）：`merged(apps: [])` 原样返回，打开时不合并、不存盘，
   扫完再接（G2：当成「全卸了」会把用户的布局清空并存盘）。恢复默认排列在目录为空时不做。
 - 拖动的落点（G3，纯函数 `LaunchpadModel.dropTarget`）：拿起时空位留在原处；指针在某个**画出来的**图标的左 / 右半 = 插到它前 / 后，
@@ -54,7 +54,7 @@ Kitty 的第八族「启动台」（SPEC 在 `macos/build/research/launchpad/SPE
   **位图按 App 包的修改时间认**（`LaunchpadProjectApp.modified`：包本身和 `Contents/Info.plist` 取晚的；第三轮体检 B3）：升级换了图标的照新的重画，
   画好之前旧图照样显示；扫完目录已经不在的（卸掉的）放掉（`LaunchpadIcons.prune`）。启动器那边重扫 App 目录时清掉 App 路径的图标缓存（`LauncherIcons.forget`）。
 - 背景的壁纸（`LaunchpadWallpaper`）只读 `NSWorkspace.desktopImageURL` 那个文件，后台缩着读、裁、模糊，缓存一张；不截屏、不要权限。
-- 第一次自动导入、设置里重新导入时，岛上先挂「正在按原来的启动台排列…」（`.progress`），排好换成结果；导入期间用户动过布局就不覆盖、换成「已保留你刚才的排列」。打开到第一帧、翻页每帧的时间要量（R11），写进 PLAN。
+- 第一次自动导入、设置里重新导入时，岛上先挂「正在按原来的启动台排列…」（`.progress`），排好换成结果（第一次自动导入先看旧库的文件在不在：系统里根本没有就直接按默认排法、不挂进行中也不出结果提示，第四轮体检 U13⑦）；导入期间用户动过布局就不覆盖、换成「已保留你刚才的排列」。打开到第一帧、翻页每帧的时间要量（R11），写进 PLAN。
 
 ## 3. 窗口
 - `LaunchpadPanel` 固定 `darkAqua`（浅色系统下搜索框也是白字，F16）；先摆面板再出岛（F14）。它是「浮层只有 OverlayPanel 一种」的新例外（mac-overlay-panel §1）：无边框、`.nonactivatingPanel`、
@@ -68,6 +68,7 @@ Kitty 的第八族「启动台」（SPEC 在 `macos/build/research/launchpad/SPE
 - 键盘：搜索框（`CommandTextField`）挂进窗口时登记成 `initialFirstResponder`，一打开就能打字；方向键 / ↩ / Esc 走
   `doCommandBy`（组字期间归输入法，不抢）；⌘← / ⌘→ / ⌘W 走面板的 `performKeyEquivalent`；焦点不在搜索框时走面板 `keyDown`。
   **不装全局按键监听**。两指滑 / 滚轮从面板的 `sendEvent` 进（`.scrollWheel`），别处不许装事件监听。
+  按 ⌥ 进抖动只认「⌥ 从没按着到按着、而且只按着 ⌥」（`LaunchpadModel.optionChange`，第四轮体检 E24⑥）：打开那一刻按着的修饰键记在模型的 `modifiers` 里（用带 ⌥ 的快捷键打开的），面板成为 key 时再对一次（打开到当 key 之间松开的收不到 flagsChanged），松开它们不算按下 ⌥；⌘⌥ 这类组合不进。
 - 点空白处收起：由界面的背景层收（面板盖满整块屏）；文件夹开着时点空白只收文件夹。
 - 搜索框的焦点按面板自己的 `firstResponder` 拿放（`LaunchpadPanel.setSearchFocus`，model 的 `onSearchFocus` 接，模型里一律走 `setSearchFocus`）：
   开文件夹、进抖动时放掉，关掉 / 退出时还回去（G9：原来只放不还，之后打字只会响一声）。不用 `NSApp.keyWindow`。
@@ -75,6 +76,7 @@ Kitty 的第八族「启动台」（SPEC 在 `macos/build/research/launchpad/SPE
   整个界面视图）或它的字段编辑器里就报 `onSearchClick`（不拦，照常派发）→ `model.searchClicked()`，界面把占位挪到左边、亮出插入点
   （焦点本来就在框里，点了没变化，用户以为没点中；2026-10-19）。屏外单测等 `initialFirstResponder is NSTextField` 再取，别拿整个界面视图当搜索框。
 - 收起后晚一拍拆界面：面板在 async 里强持一拍，只放**这块面板自己的**模型（中间又开了新的，新模型不能被放掉，G20）。
+- **界面只建当前页和左右各一页**（第四轮体检 F4⑥，`LaunchpadModel.builtPages`）：翻到哪补到哪、建了不拆（收起时整块放掉）；一下跳好几页（点页点、⌘← ⌘→）时两页之间整段都补上（`pagesToBuild`，中间那几页是滑过去的）；没建的页是同样大的空位，网格框照样量。屏外量的（`LaunchpadProbeTests`，300 个 App 8 页）：一次全建第一帧约 140 ms、多占约 90 MB，改后约 40 ms、约 26 MB。
 - 拖动 / 搜索中来的布局（导入、恢复默认）和扫完的目录先压着，松手 / 清空搜索时（model 的 `onSettled`）再换（G14 / G26）；
   压着的布局在模型里（`LaunchpadModel.replaceWhenIdle`），松手换上时**再交给总控存一次盘**——松手那一挪已经把「拖之前那份 + 这一挪」存下去、
   盖掉了总控先存的那份（第三轮体检 B4：第一次自动导入恰好在拖的时候排好，下次打开导入的排法就没了）；
@@ -89,7 +91,7 @@ Kitty 的第八族「启动台」（SPEC 在 `macos/build/research/launchpad/SPE
 ## 4. 入口和互斥
 - 入口：菜单栏（`HotKeyAction.sections` 里「启动台」一节）、现有启动器里的「启动台」一条、全局快捷键（**默认不设**，
   设置 › 快捷键 里录）、触控板捏合（§6，主入口）、触发角（§7，默认关）。
-- 和别的浮层互斥：打开启动台前先收剪贴板面板、启动器、选状态面板、快速记一条、翻译浮窗（`Launchpad.willOpen`）；
+- 和别的浮层互斥：打开启动台前先收主界面（第四轮体检 E24⑦）、剪贴板面板、启动器、选状态面板、快速记一条、翻译浮窗（`Launchpad.willOpen`）；
   按别的功能键、开设置窗 / 全部便签、进状态屏、开始截图 / 录屏时先收起启动台（`hidePanels` / `beginCapture` / `run`）。
 - 截图框选、长截图、录屏选区 / 倒数、状态屏、正在录快捷键、读选中文字时**不响应**（`Launchpad.canOpen`，同便签边缘的 `canFan` 路数）。
 - **调度中心开着时打开 = 先让调度中心退掉**（2026-10-19 真机反馈：调度中心给窗口画的 ✕ 盖在启动台上、还点得到；它不是普通窗口，调高层级也盖不住）。
@@ -151,7 +153,7 @@ Kitty 的第八族「启动台」（SPEC 在 `macos/build/research/launchpad/SPE
   `TrackpadFourFingerPinchGesture` / `TrackpadFiveFingerPinchGesture`；设置页每次出现、要被捏合打开时读一次，**不轮询、不写系统设置**。
   几个域合起来（`TrackpadSystemGesture.combined`，G5）：任一域显式开 = 开；有域显式关、没有显式开 = 关；所有域都没信息才按系统默认开。
   设置页只在读到的值**变了**时重起监听（G8）。
-  系统的还开着时我们认到捏合也不打开，设置页给提示和「打开触控板设置」。
+  系统的还开着时我们认到捏合也不打开，设置页给提示和「打开触控板设置」。**第一次这样让给系统时刘海岛说一次**（第四轮体检 U5，`Prefs.launchpadPinchYieldTold`，不注册默认值）：不当场说（系统的「应用程序」那一屏正盖着），**下次打开启动台时**说，带「打开触控板设置」；那次打开岛上已经有别的话（读不出来的提示、本机有旧库的第一次导入——**要在 `autoImportIfNeeded` 之前判断**，它一起来就清掉 `pendingAutoImport`）就再等一次；到时候系统的已经关了就不说（`Launchpad.pinchHint`）。
 
 ## 7. 触发角（第 3 批）
 - 触发后要等真的离开才重新武装（`CornerArm`）；启动台开着时全屏面板盖住了角，那时的离开收不到也不算——**收起时鼠标已经不在角里就当离开过**
@@ -173,7 +175,7 @@ Kitty 的第八族「启动台」（SPEC 在 `macos/build/research/launchpad/SPE
   **不能加 `immutable=1`**：SQLite 会跳过 -wal，读到的是旧排法，F8），
   读完删拷贝；用 `Storage/Database.swift` 现成的封装，**不直接碰 sqlite3 C API**。
 - 自动导入只在「还没存过布局」时做一次（存过布局的判定见 §1：持久域里那个键非空）；设置里的「从系统启动台重新导入…」随时可做。
-  导入前把现在的布局留一份，可在设置里撤销一次（那一份存在偏好 `launchpadUndoLayout` 里；设置页的「撤销上一次导入」按钮看着这个偏好（`@AppStorage`）变可用 / 不可用，能不能撤仍问 `canUndoLayout`——闭包不可观察，导入、恢复、岛上撤销之后按钮要立刻跟着变，第四轮体检 E19）。库里有的本机没装 → 跳过；本机有的库里没有 → 按 §1 追加到最后。
+  导入前把现在的布局留一份，可在设置里撤销一次（那一份存在偏好 `launchpadUndoLayout` 里；设置页的「撤销上一次导入或恢复默认」按钮（第四轮体检 U13⑦ 改的名；改行列数挤过的也能撤，E12）看着这个偏好（`@AppStorage`）变可用 / 不可用，能不能撤仍问 `canUndoLayout`——闭包不可观察，导入、恢复、岛上撤销之后按钮要立刻跟着变，第四轮体检 E19）。库里有的本机没装 → 跳过；本机有的库里没有 → 按 §1 追加到最后。
 - 单测自己按 `items` / `apps` / `groups` 三张表造小库，**不拿用户的库进测试**。
 
 ## 9. 测试口径
@@ -183,6 +185,8 @@ Kitty 的第八族「启动台」（SPEC 在 `macos/build/research/launchpad/SPE
   每步查 §1 的不变式，挪动还查「源页和目标页之间的那几页不变」（页边界）；过 model 的那一层走合成那一支（`armCombineForTesting`）。
 - 真的 SwiftUI 手势：屏外 `NSWindow` + `NSHostingView`（宿主 `acceptsFirstMouse`），**进程内** `window.sendEvent(NSEvent.mouseEvent(…))`
   ——不发系统事件、不 makeKey、不动用户的鼠标（`LaunchpadRecheckTests.realGestureClickOpensAndDragReorders`，G29）。
+  这类测试不验计时的，模型用 `LaunchpadDragTiming.patient`（按住进抖动 `hold`、合成、翻页都等一分钟）、事件之后按轮数等到状态成立再断言：
+  全量单测满载时两次事件之间可能隔一秒多，1 s 的按住、0.4 s 的合成会抢在松手前面（第四轮体检第 5 批追加）。
 - 单测不许替真代码喂答案：取名、合成这些用生产的那个函数（G12：注入了自己写的闭包，真代码没改也绿）；格子 id 用 `LaunchpadTile.id`
   （G18：拿 `"b"` 当 id，`locate` 找不到、原样返回，怎么都过）。
 - **排版 / 布局的矩形对 ≠ 画出来对**：画进位图看颜色的单测（`cacheDisplay`，屏外）要覆盖「不在第一页 / 不在第一行 / 不在左上角」。

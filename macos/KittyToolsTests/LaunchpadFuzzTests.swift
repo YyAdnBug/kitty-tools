@@ -1,9 +1,10 @@
 // 启动台布局的随机操作测试（SPEC §5.1 / §10.2 的不变式；每次全量都跑，按需加大步数）。
 // 种子固定（KITTY_LAUNCHPAD_FUZZ_SEED 换一批、KITTY_LAUNCHPAD_FUZZ 改进步数；xcodebuild 去掉 TEST_RUNNER_ 前缀），
-// 每一步随机做：挪格子、建文件夹、改名、拖出、加进文件夹、卸载、新装、改行列数、重排、删 App；之后检查：
+// 每一步随机做：挪格子、建文件夹、改名、拖出、加进文件夹、卸载、新装、改行列数（保住页边界，E12）、重排、删 App；之后检查：
 // 池子里的 App 每个恰好出现一次；没有空页、空文件夹、只剩一个 App 的文件夹；页内格子不超过容量；
 // 新装的接在最后、原来的页和顺序不变（F7 / F11）。出问题时报种子和步号。
 
+import AppKit
 import CoreGraphics
 import Foundation
 import Testing
@@ -139,8 +140,22 @@ struct LaunchpadFuzzTests {
               "种子 \(seed) 第 \(step) 步：新装的重排了原来的图标")
             #expect(layout.apps.last?.id == fresh.id)
           case 7:
+            // 改行列数（E12）：页边界保住——变大什么都不动，变小只把每页挤出来的顺到下一页开头，格子的先后不变
+            let old = capacity
+            let before = LaunchpadLayout(pages: LaunchpadLayout.sanitized(layout.pages))
             capacity = capacityChoices[random.next(capacityChoices.count)]
-            layout = layout.repaginated(capacity: capacity)
+            layout = layout.tidied(capacity: capacity)
+            #expect(
+              layout.tiles.map(\.id) == before.tiles.map(\.id),
+              "种子 \(seed) 第 \(step) 步：改行列数换了格子的先后")
+            if capacity >= old {
+              #expect(layout == before, "种子 \(seed) 第 \(step) 步：容量变大却重排了")
+            } else {
+              // 从不往前补（不从头紧排）：页只会变多
+              #expect(
+                layout.pages.count >= before.pages.count,
+                "种子 \(seed) 第 \(step) 步：容量变小页数反而少了")
+            }
           case 8:
             let folders = layout.tiles.compactMap(\.folder)
             if let folder = folders[safe: random.next(folders.count)] {
@@ -212,7 +227,7 @@ struct LaunchpadFuzzTests {
           model.go(to: 0)
           model.query = model.query.isEmpty ? "App" : ""
         case 2:
-          model.optionChanged(random.next(2) == 0)
+          model.optionChanged(random.next(2) == 0 ? .option : [])
         case 3:
           if model.jiggling { model.exitJiggle() } else { model.enterJiggle() }
         case 4:

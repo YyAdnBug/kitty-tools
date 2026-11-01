@@ -1,4 +1,4 @@
-// 应用内更新：GitHub release JSON 解析、版本比较（纯逻辑）；整条安装链路按需启用——拿 build-dmg.sh 打出来的
+// 应用内更新：GitHub release 列表的 JSON 解析（混着 Windows 版）、版本比较（纯逻辑）；整条安装链路按需启用——拿 build-dmg.sh 打出来的
 // 真 zip 走「下载（file://）→ 解包 → 校验 → 替换」，替换的是临时目录里的假 App，不碰「应用程序」：
 //   TEST_RUNNER_KITTY_UPDATE_ZIP="$PWD/macos/build/Kitty Tools_0.1.0_arm64.zip" xcodebuild -project \
 //     macos/KittyTools.xcodeproj -scheme KittyTools test -only-testing:KittyToolsTests/UpdaterTests
@@ -12,11 +12,18 @@ struct UpdaterTests {
   nonisolated private static let zipPath =
     ProcessInfo.processInfo.environment["KITTY_UPDATE_ZIP"]
 
-  private static func payload(tag: String, assets: [(String, String)]) -> Data {
+  /// 一个 release 的 JSON（GitHub release 列表里的一项）
+  private static func entry(
+    tag: String, assets: [(String, String)], draft: Bool = false, prerelease: Bool = false
+  ) -> String {
     let list = assets.map { #"{"name":"\#($0.0)","browser_download_url":"\#($0.1)"}"# }
-    return Data(
-      #"{"tag_name":"\#(tag)","html_url":"https://github.com/YyAdnBug/kitty-tools/releases/tag/\#(tag)","draft":false,"prerelease":false,"assets":[\#(list.joined(separator: ","))]}"#
-        .utf8)
+    return
+      #"{"tag_name":"\#(tag)","html_url":"https://github.com/YyAdnBug/kitty-tools/releases/tag/\#(tag)","draft":\#(draft),"prerelease":\#(prerelease),"assets":[\#(list.joined(separator: ","))]}"#
+  }
+
+  /// 只有这一个 release 的列表
+  private static func payload(tag: String, assets: [(String, String)]) -> Data {
+    Data("[\(entry(tag: tag, assets: assets))]".utf8)
   }
 
   @Test func parsesLatestRelease() throws {
@@ -45,6 +52,42 @@ struct UpdaterTests {
         from: Self.payload(
           tag: "macos-v0.2.0", assets: [("K_arm64.zip", "http://example.com/b.zip")]))
         == nil)
+  }
+
+  /// 读的是 release 列表（E13）：Windows 版和 mac 版发在同一个仓库，windows-v* 排在最前（GitHub 的 latest 也是它）时
+  /// 照样挑出版本号最大的 macos-v*；草稿、预发布、没有 zip 的跳过；列表里没有 mac 版是 nil
+  @Test func picksNewestMacReleaseFromMixedList() throws {
+    let zip = { (version: String) in
+      [
+        (
+          "Kitty.Tools_\(version)_arm64.zip",
+          "https://github.com/x/y/releases/download/\(version)/b.zip"
+        )
+      ]
+    }
+    let windows = [("Kitty.Tools_0.1.1_x64-setup.exe", "https://github.com/x/y/w.exe")]
+    let list = [
+      Self.entry(tag: "windows-v0.1.1", assets: windows),
+      Self.entry(tag: "macos-v0.8.0", assets: zip("0.8.0"), draft: true),
+      Self.entry(tag: "macos-v0.7.2", assets: zip("0.7.2"), prerelease: true),
+      Self.entry(tag: "macos-v0.7.0", assets: zip("0.7.0")),
+      Self.entry(tag: "windows-v0.1.0", assets: windows),
+      Self.entry(tag: "macos-v0.7.10", assets: [("K.dmg", "https://github.com/x/y/b.dmg")]),
+      Self.entry(tag: "macos-v0.7.1", assets: zip("0.7.1")),
+      Self.entry(tag: "macos-v0.6.0", assets: zip("0.6.0")),
+    ]
+    let release = try #require(
+      try Updater.release(from: Data("[\(list.joined(separator: ","))]".utf8)))
+    #expect(release.version == "0.7.1")
+    #expect(release.archive.absoluteString.contains("/0.7.1/"))
+    #expect(release.page.absoluteString.hasSuffix("macos-v0.7.1"))
+    // 只有 Windows 版、空列表：没有
+    #expect(try Updater.release(from: Data("[\(list[0]),\(list[4])]".utf8)) == nil)
+    #expect(try Updater.release(from: Data("[]".utf8)) == nil)
+    // 不是列表（读到的还是单个 release 的格式）：解析失败，当成没查成
+    #expect(throws: (any Error).self) {
+      try Updater.release(from: Data(list[3].utf8))
+    }
   }
 
   @Test func comparesVersionsNumerically() {

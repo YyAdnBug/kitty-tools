@@ -6,22 +6,44 @@
 // 那一行弹出品牌粉 ✓（pop）：热键弹出的面板 / 截图遮罩正盖在引导上，所以 ✓ 等引导所在的 sheet 重新成为 key
 // （用户关掉面板、截完图回来）再弹，播报是即时的。屏与屏之间 settle 滑过去，减弱动态效果时只淡入淡出；
 // 没有跳过、页码点、上一步 / 下一步，只有一个品牌粉主按钮（Esc 照样关：藏着一个 cancelAction 按钮）。「关于」页可以重看。
-// 第三屏底下一个勾选框「登录时自动打开」（首次安装默认勾，体检 D20：不开机自启的话重启后快捷键全都没反应；重看时跟随当前状态），点「开始使用」时生效，
-// 失败走刘海岛；从磁盘映像等临时位置运行时换成一行说明。关掉引导后照旧停在通用页（下面就是这个开关）。
+// 第三屏底下一个勾选框「登录时自动打开」（体检 D20：不开机自启的话重启后快捷键全都没反应；勾不勾跟随当前状态——首次安装
+// 一启动就按默认（开）注册好了，第四轮体检 E1），点「开始使用」时生效（勾掉就取消注册），失败走刘海岛；从磁盘映像等
+// 临时位置运行时换成一行说明。关掉引导后照旧停在通用页（下面就是这个开关）。
+// 首次安装时引导走完（「开始使用」、Esc、关掉设置窗）才记「看过这一版」：中途退出（授权屏幕录制后系统要求重开）下次启动
+// 接着开，从做到的那一屏起（resume，E1；AppDelegate.showWelcomeIfNeeded）。
 
 import ServiceManagement
 import SwiftUI
 
 struct OnboardingView: View {
-  enum Screen { case welcome, permissions, tryIt }
+  enum Screen: Int, Comparable {
+    case welcome, permissions, tryIt
+
+    static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
+  }
+
+  /// 没走完的引导下次接着开时从哪一屏起（纯函数，E1）：做到过第三屏的回第三屏；停在第二屏（授权）的，两项都已经授权了
+  /// （多半是授权屏幕录制后系统让重开）就直接到第三屏，还缺的回第二屏接着授权；只看过第一屏、没记录的从头来
+  static func resume(reached: Screen?, granted: Bool) -> Screen {
+    switch reached {
+    case .tryIt: .tryIt
+    case .permissions: granted ? .tryIt : .permissions
+    case .welcome, nil: .welcome
+    }
+  }
 
   let center: HotKeyCenter
+  /// 换到了哪一屏（AppDelegate 记进偏好，下次没走完接着开时用；截图自检里不记）
+  var onScreen: (Screen) -> Void = { _ in }
   @Environment(\.dismiss) private var dismiss
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(Island.self) private var island: Island?
   @State private var screen: Screen
-  /// 第二屏的「登录时自动打开」，点「开始使用」时生效
+  /// 第三屏的「登录时自动打开」，点「开始使用」时生效（用户动过它才算数）
   @State private var launchAtLogin: Bool
+  /// 用户动过「登录时自动打开」没有：没动就不改登录项（重看时状态是「要批准」、勾选框显示没勾，别因此取消注册）
+  @State private var loginTouched = false
+  private let firstRun: Bool
   /// 引导开着时按过的全局快捷键
   @State private var tried: Set<HotKeyAction>
   /// 按过、✓ 还没弹的（等引导重新成为 key）
@@ -32,13 +54,16 @@ struct OnboardingView: View {
   /// 挂在设置窗工具栏下沿：首次安装时设置窗是默认大小（内容 600，工具栏约 52），高 520 放得下
   static let size = CGSize(width: 580, height: 520)
 
-  /// firstRun：首次安装，「登录时自动打开」默认勾；关于页重看时跟随当前状态（不把用户在通用页关掉的又打开）。
-  /// screen / tried：从哪一屏开始、哪些已经按过（截图自检摆状态用）
+  /// firstRun：首次安装，「登录时自动打开」默认勾（启动时已经注册过；没注册成的也勾着，点「开始使用」再试一次）；
+  /// 关于页重看时跟随当前状态（不把用户在通用页关掉的又打开）。
+  /// screen：从哪一屏开始（没走完接着开的、截图自检摆状态）；tried：哪些已经按过（截图自检）
   init(
     center: HotKeyCenter, firstRun: Bool = false, screen: Screen = .welcome,
-    tried: Set<HotKeyAction> = []
+    tried: Set<HotKeyAction> = [], onScreen: @escaping (Screen) -> Void = { _ in }
   ) {
     self.center = center
+    self.onScreen = onScreen
+    self.firstRun = firstRun
     _launchAtLogin = State(initialValue: firstRun || SMAppService.mainApp.status == .enabled)
     _screen = State(initialValue: screen)
     _tried = State(initialValue: tried)
@@ -88,6 +113,8 @@ struct OnboardingView: View {
         .accessibilityHidden(true)
       WindowProbe { window = ObjectIdentifier($0) }
     }
+    .onChange(of: screen) { onScreen(screen) }
+    .onChange(of: launchAtLogin) { loginTouched = true }
     .onChange(of: center.fireCount) {
       guard let action = center.lastFired, !tried.contains(action) else { return }
       pending.insert(action)
@@ -105,16 +132,36 @@ struct OnboardingView: View {
     }
   }
 
-  /// 「开始使用」：勾着「登录时自动打开」就加入登录项（已经加过的不再加；没勾不去关，用户可能早就在通用页开了）
+  /// 「开始使用」：用户动过勾选框才照它改登录项（首次安装一启动就按默认注册过了，勾掉就是用户不要）；没动过的不改，
+  /// 只有首次安装、勾着、却还没注册上（启动时没注册成）的再试一次
   private func finish() {
-    if launchAtLogin, LaunchAtLogin.isInstalled, SMAppService.mainApp.status != .enabled {
+    if LaunchAtLogin.isInstalled,
+      let wants = Self.loginChange(
+        touched: loginTouched, checked: launchAtLogin, firstRun: firstRun,
+        status: SMAppService.mainApp.status)
+    {
       do {
-        try LaunchAtLogin.set(true)
+        try LaunchAtLogin.set(wants)
       } catch {
-        island?.show("没能加入登录项", detail: error.localizedDescription, tone: .warning)
+        island?.show(
+          wants ? "没能加入登录项" : "没能取消登录项", detail: error.localizedDescription,
+          tone: .warning)
       }
     }
     dismiss()
+  }
+
+  /// 点「开始使用」时登录项要改成什么（纯函数，E1）：true = 注册、false = 取消注册、nil = 不动。
+  /// 动过勾选框：照它来，已经是那样的不重复做；没动过：只有首次安装勾着、还没注册的注册（要批准的、已开着的都不动）
+  static func loginChange(
+    touched: Bool, checked: Bool, firstRun: Bool, status: SMAppService.Status
+  ) -> Bool? {
+    let registered = status == .enabled || status == .requiresApproval
+    if touched {
+      if checked { return status == .enabled ? nil : true }
+      return registered ? false : nil
+    }
+    return firstRun && checked && status == .notRegistered ? true : nil
   }
 
   /// 只往前翻：第二屏从右边滑进来，第一屏往左滑出去

@@ -129,13 +129,37 @@ struct LaunchpadModelTests {
 
   @Test func optionEntersAndExitsJiggle() {
     let model = model(LaunchpadLayout(pages: [[.app(ref("a"))]]))
-    model.optionChanged(true)
+    model.optionChanged(.option)
     #expect(model.jiggling)
-    model.optionChanged(false)
+    model.optionChanged([])
     #expect(!model.jiggling)
     // 按住图标进的那种不受松开 ⌥ 影响
     model.enterJiggle()
-    model.optionChanged(false)
+    model.optionChanged([])
+    #expect(model.jiggling)
+  }
+
+  /// 只在 ⌥ 从没按着到按着、而且没有别的修饰键时进（E24⑥）：用 ⌥⌘L 这类快捷键打开时按着的键，松开它们不算；
+  /// 按着 ⌥ 打开的要松开再按；⌘⌥、⌥⇧ 不进
+  @Test func optionOnlyCountsAFreshPress() {
+    typealias Model = LaunchpadModel
+    #expect(Model.optionChange(from: [], to: .option) == true)
+    #expect(Model.optionChange(from: .option, to: []) == false)
+    #expect(Model.optionChange(from: [.option, .command], to: .option) == nil)
+    #expect(Model.optionChange(from: .command, to: [.command, .option]) == nil)
+    #expect(Model.optionChange(from: .shift, to: .option) == true)
+    #expect(Model.optionChange(from: .option, to: [.option, .shift]) == nil)
+    #expect(Model.optionChange(from: [.option, .shift], to: .shift) == false)
+    // 大写锁定、fn 这类不算修饰键
+    #expect(Model.optionChange(from: .capsLock, to: [.capsLock, .option]) == true)
+    // 打开时按着 ⌥⌘（快捷键），先松 ⌘：不进；再松 ⌥：没进过、不出；再按 ⌥：进
+    let model = model(LaunchpadLayout(pages: [[.app(ref("a"))]]))
+    model.modifiers = [.option, .command]
+    model.optionChanged(.option)
+    #expect(!model.jiggling)
+    model.optionChanged([])
+    #expect(!model.jiggling)
+    model.optionChanged(.option)
     #expect(model.jiggling)
   }
 

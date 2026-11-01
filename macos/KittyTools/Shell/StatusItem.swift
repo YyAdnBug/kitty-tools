@@ -4,7 +4,8 @@
 // 菜单之间滑着切换才对）；15–26 走按钮的动作。27.0.1 样机实测（macos/build/research/home-panel-2026-10-29/probe/）：
 // 右键照样到得了按钮的动作；菜单要从按钮上直接弹（挂 item.menu 再 performClick 会被当成左键、开出主界面）；主界面开着时
 // 再点图标系统什么都不说，靠主界面「点了外面」收起（15–26 上图标自己收，ownsClick）；⌃点系统当左键开展开、按钮同时还收到
-// 一次右键，所以带 ⌃ 的展开当场取消、只弹菜单。
+// 一次右键，所以带 ⌃ 的展开当场取消、只弹菜单（只认鼠标点击时带的 ⌃——当前事件是鼠标事件就看它，不是就看此刻鼠标键和 ⌃
+// 是不是都按着，第四轮体检 U12①：读屏、键盘导航按着 ⌃ 时照样开主界面）；菜单另有读屏自定义动作「显示菜单」。
 // 主动完成一件事时弹一下（pop），长任务期间呼吸（opacity 1 ↔ 0.45，1.2 s 往返），被动的剪贴板采集不播；
 // 减弱动态效果时都不动。刘海岛出「进行中」就呼吸、出「成功」就弹（Island.onToneChange），截图飞行卡片落地也弹。
 // 菜单每次打开前重建（快捷键、钉图状态会变），用 sectionHeader 分 剪贴板与启动器 / 翻译 / 截图与录制 三节（N15，AppDelegate 按
@@ -76,6 +77,13 @@ final class StatusItem: NSObject, NSMenuDelegate {
     item.button?.action = #selector(clicked)
     item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
     if #available(macOS 27, *) { item.expandedInterfaceDelegate = self }
+    // 读屏用户按不出右键 / ⌃点：菜单另给一个自定义动作（U12①）
+    item.button?.setAccessibilityCustomActions([
+      NSAccessibilityCustomAction(name: "显示菜单") { [weak self] in
+        self?.showMenu()
+        return true
+      }
+    ])
     applyPrefs()
     // 设置 › 通用改了立刻生效（@AppStorage 写的就是 standard）；别的偏好变了也会来，没变的不碰
     NotificationCenter.default.addObserver(
@@ -209,13 +217,31 @@ final class StatusItem: NSObject, NSMenuDelegate {
 
   /// 按钮的动作：右键、⌃点弹菜单；15–26 的左键开 / 收主界面（27 上左键走 expandedInterfaceDelegate，到不了这里）
   @objc private func clicked() {
-    let event = NSApp.currentEvent
-    if event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true {
-      return showMenu()
-    }
+    if Self.showsMenu(NSApp.currentEvent) { return showMenu() }
     // 27 上左键归 expandedInterfaceDelegate：哪天也送到这里来，别开两次
     if #available(macOS 27, *) { return }
     if homeIsOpen() { closeHome() } else { expand() }
+  }
+
+  /// 这一下是要菜单（U12①）：当前事件现取，此刻的鼠标键和修饰键是退路
+  private static func showsMenu(_ event: NSEvent?) -> Bool {
+    showsMenu(
+      type: event?.type, flags: event?.modifierFlags ?? [],
+      pressedButtons: NSEvent.pressedMouseButtons, held: NSEvent.modifierFlags)
+  }
+
+  /// 这一下是要菜单（纯函数，U12①）：当前事件是鼠标事件时——右键，或者左键点、带着 ⌃。读屏「按下」、键盘导航到图标时
+  /// 当前事件是按键（读屏的组合键里就有 ⌃），不能当成 ⌃点。当前事件不是鼠标事件时（macOS 27 的菜单栏在进程外，系统叫开
+  /// 展开界面时可能拿不到那一下点击）退到「此刻鼠标键按着、⌃ 也按着」
+  static func showsMenu(
+    type: NSEvent.EventType?, flags: NSEvent.ModifierFlags, pressedButtons: Int,
+    held: NSEvent.ModifierFlags
+  ) -> Bool {
+    switch type {
+    case .rightMouseDown, .rightMouseUp: true
+    case .leftMouseDown, .leftMouseUp: flags.contains(.control)
+    default: pressedButtons != 0 && held.contains(.control)
+    }
   }
 
   private func expand() {
@@ -279,12 +305,14 @@ final class StatusItem: NSObject, NSMenuDelegate {
 
 @available(macOS 27, *)
 extension StatusItem: NSStatusItemExpandedInterfaceDelegate {
-  /// 系统叫开（左键、键盘导航到图标）：开主界面。⌃点系统也当左键开，可按钮同时还收到一次右键（菜单从那里弹）——不开
+  /// 系统叫开（左键、键盘导航到图标）：开主界面。⌃点系统也当左键开，可按钮同时还收到一次右键（菜单从那里弹）——不开。
+  /// 只认鼠标点击时带的 ⌃（U12①：原来看的是全局修饰键，读屏、键盘导航按着 ⌃ 时主界面一直开不出来；菜单栏在进程外，
+  /// 当前事件可能不是那一下点击，那就看此刻鼠标键和 ⌃ 是不是都按着）
   func statusItem(
     _ statusItem: NSStatusItem,
     didBegin expandedInterfaceSession: NSStatusItemExpandedInterfaceSession
   ) {
-    if NSEvent.modifierFlags.contains(.control) { return expandedInterfaceSession.cancel() }
+    if Self.showsMenu(NSApp.currentEvent) { return expandedInterfaceSession.cancel() }
     expand()
   }
 

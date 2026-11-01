@@ -89,9 +89,9 @@ struct NoteFloatTests {
     (panel?.firstResponder as? NoteTextView)?.identifier?.rawValue
   }
 
-  /// 等界面跟上：一轮一轮让出去，到条件成立为止（最多 3 秒；按轮数、不掐时间）
+  /// 等界面跟上：一轮一轮让出去，按轮数等到条件成立（最多 500 轮，平时约 10 秒；满载时一轮比 20 ms 长，等得更久）
   private func settle(until done: () -> Bool) async throws {
-    for _ in 0..<150 where !done() { try await Task.sleep(for: .milliseconds(20)) }
+    for _ in 0..<500 where !done() { try await Task.sleep(for: .milliseconds(20)) }
   }
 
   private func key(
@@ -1819,6 +1819,9 @@ struct NoteFloatTests {
       float.model.send(.remove)
       deck.close()
     }
+    // 浮动便签落下后那一列回到扇出、开始数「4 秒没动静收回」：满载时下面几步之间隔得比 4 秒还久，那一列自己收了、
+    // 再点标签打不开（第四轮体检第 5 批追加）。这条不验收回，放长
+    deck.idleAfter = .seconds(600)
     for id in ids { deck.model.store.setPinned(true, of: id) }
     deck.pill?.onPress()
     deck.model.tapTab(ids[0])

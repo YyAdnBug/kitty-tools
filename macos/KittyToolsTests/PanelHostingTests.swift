@@ -116,8 +116,10 @@ struct PanelHostingTests {
       }
       try await Task.sleep(for: .milliseconds(16))
     }
-    // 带动画的那几下走完
-    try await Task.sleep(for: .milliseconds(400))
+    // 带动画的那几下走完：按轮数等到每块面板都到了目标（满载时动画会拖很久，固定等 400 ms 偶发不够），最多约 10 秒
+    for _ in 0..<500 where zip(panels, targets).contains(where: { $0.frame != $1 }) {
+      try await Task.sleep(for: .milliseconds(20))
+    }
     // 最小 / 最大尺寸也还是窗口自己设的（宿主当 contentView 时 SwiftUI 会按内容改掉它们）
     let bare = NSPanel(
       contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered,
@@ -133,5 +135,43 @@ struct PanelHostingTests {
         "\(name) \(panel.contentMinSize)")
       #expect(panel.contentMaxSize == bare.contentMaxSize, "\(name) \(panel.contentMaxSize)")
     }
+  }
+
+  /// 状态屏的全屏面板（E21）：宿主同样包在容器里；换屏 / 改分辨率时 arrangePanels 会改它的大小，画面（字号跟着屏高走、
+  /// 每次都重排）被反复改大小不崩、大小只由窗口定。只建面板、摆在离所有屏幕很远的地方，**不进入状态屏**（不建拦截、不当 key，§11）
+  @Test func statusScreenPanelResizesWhileContentChanges() async throws {
+    try #require(
+      !NSScreen.screens.contains {
+        $0.frame.insetBy(dx: -4000, dy: -4000).contains(Self.far)
+      })
+    let busy = try #require(StatusPreset.builtIn.first)
+    let session = StatusScreen(showing: busy, startedAt: .now, elapsed: 0, showsHint: true)
+    let panel = StatusScreenPanel(
+      frame: CGRect(origin: Self.far, size: CGSize(width: 1512, height: 982)), session: session)
+    panel.orderFrontRegardless()
+    defer { panel.orderOut(nil) }
+    let content = try #require(panel.contentView)
+    #expect(type(of: content) == NSView.self && content.subviews.count == 1)
+    #expect(panel.host.map { $0.superview === content } == true)
+    var random = SeededRandom(seed: 20_261_101)
+    var target = panel.frame
+    for _ in 0..<120 {
+      target = CGRect(
+        origin: Self.far,
+        size: CGSize(
+          width: .random(in: 800...3008, using: &random),
+          height: .random(in: 600...1692, using: &random)))
+      panel.setFrame(target, display: true)
+      #expect(panel.frame == target)
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    for _ in 0..<100 where panel.frame != target { try await Task.sleep(for: .milliseconds(20)) }
+    let bare = NSPanel(
+      contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered,
+      defer: true)
+    #expect(panel.frame == target)
+    #expect(panel.minSize == bare.minSize && panel.maxSize == bare.maxSize)
+    #expect(panel.contentMinSize == bare.contentMinSize, "\(panel.contentMinSize)")
+    #expect(panel.contentMaxSize == bare.contentMaxSize, "\(panel.contentMaxSize)")
   }
 }

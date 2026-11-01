@@ -1,5 +1,5 @@
 // 刘海岛（Whisker 招牌时刻 S2，mac-whisker §5）：全局轻提示从刘海里长出来；没有刘海的屏幕上是菜单栏下方的黑色胶囊。
-// 一个尺寸固定、不抢键盘的透明窗口（普通 NSPanel 实例，level 状态栏）放在鼠标所在屏顶部正中，
+// 一个尺寸固定、平时不抢键盘的透明窗口（IslandPanel：只为「那一张」用快捷键叫出时能临时当 key，level 状态栏）放在鼠标所在屏顶部正中，
 // 只让 SwiftUI 里的岛形状变形，不动画窗口 frame。内容晚 60 ms 出场；原地更新（翻译中 → 已替换）只换宽度；
 // 错误时整座岛左右抖一下；消失时先退内容，再缩回刘海。停留：只有标题 1.4 s、带详情 2 s、错误 3 s、带按钮 6 s、进行中一直挂着。
 // 能交互（2026-10-26 拍板，全部按推荐）：鼠标挪到岛上就停住计时、往下长成卡片（完整详情、全部按钮、×），离开 1.5 s 后收；
@@ -7,6 +7,8 @@
 // 画出来的形状上时才接（全局 + 本 App 的鼠标移动监听按位置开关），透明处和阴影那一圈照旧点穿。
 // 主动叫出来（同日用户「不能手动交互吗」，三项按推荐）：没有提示时点刘海（指针停在刘海上岛先鼓起一点），或者按
 // 「打开刘海岛」的快捷键（哪块屏都行），长出「那一张」：一排快捷动作 + 本次启动以来最近 10 条提示（IslandBoard.swift）。
+// 用快捷键叫出的那一张临时当 key（第四轮体检 U9）：Esc 收、←→ 选快捷动作、↩ 执行，到点自己收（同平时的岛）；收起时键盘
+// 还给原来那扇窗口 / 原来的 App。点刘海叫出的照旧不抢键盘。
 
 import AppKit
 import Observation
@@ -85,6 +87,12 @@ import SwiftUI
   private(set) var history: [Record] = []
   /// 那一张上的快捷动作：打开时从 boardActions 取一次
   private(set) var quickActions: [Action] = []
+  /// 用快捷键叫出的那一张上，←→ 选中的快捷动作（第几个；鼠标叫出的、没有快捷动作时是 nil，U9）
+  private(set) var boardSelection: Int?
+  /// 那一张是用快捷键叫出的、正临时拿着键盘：收起时还回去
+  @ObservationIgnored private var holdsKeyboard = false
+  /// 叫出那一张之前本 App 里当 key 的窗口（固定着的剪贴板面板、设置窗）：还键盘时还给它
+  @ObservationIgnored private weak var keyBeforeBoard: NSWindow?
   /// 快捷动作从哪来（AppDelegate 给：截图、录屏、录音、识字、截图翻译、快速记一条；关着的功能不给）
   @ObservationIgnored var boardActions: () -> [Action] = { [] }
   /// 各块屏上硬件刘海的位置（屏幕坐标）：屏幕变了就重算
@@ -97,7 +105,7 @@ import SwiftUI
   @ObservationIgnored var isSuppressed: () -> Bool = { false }
   @ObservationIgnored private var screenObserver: Any?
   @ObservationIgnored private(set) var geometry = Geometry.capsule(menuBar: 24)
-  @ObservationIgnored private var window: NSPanel?
+  @ObservationIgnored private var window: IslandPanel?
   @ObservationIgnored private var host: IslandHost?
   @ObservationIgnored private var dwell: Task<Void, Never>?
   /// 这一条到点收起的时刻；悬停时停住，离开后接着走剩下的（至少 leaveDelay）
@@ -141,7 +149,7 @@ import SwiftUI
   init(
     showing content: Content?, geometry: Geometry = .capsule(menuBar: 24),
     actions: [Action] = [], expanded: Bool = false, board records: [Record]? = nil,
-    quickActions: [Action] = [], peeking: Bool = false
+    quickActions: [Action] = [], peeking: Bool = false, boardSelection: Int? = nil
   ) {
     isStaged = true
     self.content = content
@@ -153,6 +161,7 @@ import SwiftUI
     history = records ?? []
     self.quickActions = quickActions
     isPeeking = peeking
+    self.boardSelection = boardSelection
   }
 
   /// 详情里的一句摘录：第一行前 24 个字，后面还有就补「…」（\r\n、\r、U+2028 都算换行）
@@ -213,6 +222,8 @@ import SwiftUI
   }
 
   private func apply(_ next: Content, actions: [Action]) {
+    // 那一张开着时换成这一条：键盘还回去
+    releaseKeyboard()
     self.actions = actions
     // 离开后照旧展开着的那张卡片：换成新的一条就合上，新提示一律从一行出来
     if !isHovered, isExpanded { withAnimation(Self.resize) { isExpanded = false } }
@@ -346,9 +357,9 @@ import SwiftUI
   }
 
   /// 点岛上的按钮：先收起再跑（跑之前岛已经不在，动作里弹面板不会和岛抢）。排着的那条让给按钮自己的结果：
-  /// 按钮没出新提示就换上它，出了就等那条收起再出
-  func perform(_ action: Action) {
-    guard isSettled else { return }
+  /// 按钮没出新提示就换上它，出了就等那条收起再出。checked = false：键盘按的 ↩（不怕「按钮刚挪了位置」那一下）
+  func perform(_ action: Action, checked: Bool = true) {
+    guard !checked || isSettled else { return }
     let queued = pending
     pending = nil
     dismiss()
@@ -377,6 +388,7 @@ import SwiftUI
   /// 或者调用方自己收），直接换成排着的那条
   func dismiss() {
     dwell?.cancel()
+    releaseKeyboard()
     guard isOpen else { return }
     if let (next, actions) = pending {
       pending = nil
@@ -413,12 +425,13 @@ import SwiftUI
   /// （缩回的弹簧标的 0.34 s 是感知上的时长，真停稳还要一会儿；终点藏在刘海后面，多留一会儿看不出来）
   private static let retractTime = Duration.milliseconds(600)
 
-  /// 打开 / 收起那一张（快捷键「打开刘海岛」、点刘海）。岛上正有提示时换成那一张（那条已经记在列表里）
-  func toggleBoard() {
-    if isBoardOpen { dismiss() } else { openBoard() }
+  /// 打开 / 收起那一张（快捷键「打开刘海岛」、点刘海）。岛上正有提示时换成那一张（那条已经记在列表里）。
+  /// byKeyboard：快捷键叫出的——临时当 key，Esc / ←→ / ↩ 能用，到点自己收（U9）
+  func toggleBoard(byKeyboard: Bool = false) {
+    if isBoardOpen { dismiss() } else { openBoard(byKeyboard: byKeyboard) }
   }
 
-  private func openBoard() {
+  private func openBoard(byKeyboard: Bool = false) {
     dwell?.cancel()
     hoverCheck?.cancel()
     // 进行中的提示留着（排着，progress() 接着改它的百分比），收起那一张时换回来；别的已经在列表里了
@@ -442,7 +455,75 @@ import SwiftUI
       content = nil
       isBoardOpen = true
     }
-    Self.announce("最近的提示和快捷动作")
+    guard byKeyboard, let window else { return Self.announce("最近的提示和快捷动作") }
+    takeKeyboard(window)
+    Self.announce(
+      quickActions.isEmpty
+        ? "最近的提示，按 Esc 关闭"
+        : "最近的提示和快捷动作，左右键选快捷动作，回车执行，Esc 关闭；现在是「\(quickActions[0].title)」")
+  }
+
+  /// 那一张没人碰时多久自己收（同带按钮的岛）
+  static let boardKeyboardDwell = Duration.seconds(6)
+
+  /// 快捷键叫出的那一张：临时当 key（窗口是不激活本 App 的面板，前台 App 不变），选中第一个快捷动作，到点自己收
+  private func takeKeyboard(_ window: IslandPanel) {
+    if let key = NSApp.keyWindow, key !== window { keyBeforeBoard = key }
+    holdsKeyboard = true
+    boardSelection = quickActions.isEmpty ? nil : 0
+    window.keyable = true
+    window.onKey = { [weak self] in self?.boardKey($0) }
+    window.makeKey()
+    arm(Self.boardKeyboardDwell)
+  }
+
+  /// 那一张上的按键（窗口当 key 时 sendEvent 交过来）：Esc 收、←→ 选（到头回绕）、↩ 执行；别的键吞掉、不响
+  private func boardKey(_ event: NSEvent) {
+    guard isBoardOpen, holdsKeyboard else { return }
+    // 按了键就重新计时（鼠标停在岛上时计时本来就停着）
+    if !isHovered { arm(Self.boardKeyboardDwell) }
+    switch Int(event.keyCode) {
+    case 53:
+      dismiss()
+    case 123, 124:
+      guard
+        let next = Self.moved(
+          boardSelection, by: event.keyCode == 123 ? -1 : 1,
+          count: quickActions.count)
+      else { return }
+      boardSelection = next
+      Self.announce(quickActions[next].title)
+    case 36, 76:
+      if let index = boardSelection, quickActions.indices.contains(index) {
+        perform(quickActions[index], checked: false)
+      }
+    default:
+      break
+    }
+  }
+
+  /// ←→ 选快捷动作（纯函数）：到头回绕；还没选中时从第一个起；没有快捷动作是 nil
+  static func moved(_ selection: Int?, by step: Int, count: Int) -> Int? {
+    guard count > 0 else { return nil }
+    guard let selection else { return 0 }
+    return ((selection + step) % count + count) % count
+  }
+
+  /// 收起 / 换成别的提示时把键盘还回去：叫出之前本 App 里有 key 窗口就还给它；本 App 不在前台（键盘本来在别的 App 里）
+  /// 就 deactivate 一次——不激活的面板收起后 AppKit 会把 key 交给本进程别的面板、一直不放（同 NoteFloats.returnKeyboard）
+  private func releaseKeyboard() {
+    guard holdsKeyboard else { return }
+    holdsKeyboard = false
+    boardSelection = nil
+    window?.keyable = false
+    window?.onKey = nil
+    defer { keyBeforeBoard = nil }
+    guard window?.isKeyWindow == true else { return }
+    if let previous = keyBeforeBoard, previous.isVisible {
+      previous.makeKey()
+    } else if !NSApp.isActive {
+      NSApp.deactivate()
+    }
   }
 
   /// 双指在岛上往上滑多少算收起（pt，按手指方向）
@@ -612,7 +693,7 @@ import SwiftUI
   }
 
   /// 放到鼠标所在屏顶部正中（刘海屏贴着顶边，其它屏在菜单栏下方）。只在窗口不在屏上时调
-  private func place(_ window: NSPanel) {
+  private func place(_ window: IslandPanel) {
     let mouse = NSEvent.mouseLocation
     guard
       let screen = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) })
@@ -642,8 +723,8 @@ import SwiftUI
     return .capsule(menuBar: screen.frame.maxY - screen.visibleFrame.maxY)
   }
 
-  private func makeWindow() -> NSPanel {
-    let panel = NSPanel(
+  private func makeWindow() -> IslandPanel {
+    let panel = IslandPanel(
       contentRect: CGRect(origin: .zero, size: geometry.windowSize),
       styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
     // 本 App 失活时不收（NSPanel 默认收；收回浮动便签后 NoteFloats.returnKeyboard 会 deactivate 一次）
@@ -1195,6 +1276,30 @@ nonisolated struct IslandOutline: InsettableShape {
       to: CGPoint(x: rect.maxX + ear, y: rect.minY), control: CGPoint(x: rect.maxX, y: rect.minY))
     path.closeSubpath()
     return path
+  }
+}
+
+/// 岛的窗口：无边框窗口默认当不了 key，「那一张」用快捷键叫出时要临时当 key 收 Esc / ←→ / ↩（U9）——只为这个子类化
+/// （mac-overlay-panel §1 的例外）。平时 keyable 是 false，同普通的 NSPanel、当不了 key。当着 key 的那几秒里按键全归岛：
+/// 普通键在 sendEvent 里交给岛（岛不认的也吞掉、不响），带 ⌘ 的组合在 performKeyEquivalent 里吞掉（不让 ⌘Q 退出本 App、
+/// ⌘, 开设置）；都不进响应链
+final class IslandPanel: NSPanel {
+  var keyable = false
+  var onKey: ((NSEvent) -> Void)?
+
+  override var canBecomeKey: Bool { keyable }
+  override var canBecomeMain: Bool { false }
+
+  override func sendEvent(_ event: NSEvent) {
+    if keyable, event.type == .keyDown {
+      onKey?(event)
+      return
+    }
+    super.sendEvent(event)
+  }
+
+  override func performKeyEquivalent(with event: NSEvent) -> Bool {
+    keyable || super.performKeyEquivalent(with: event)
   }
 }
 

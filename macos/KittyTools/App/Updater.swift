@@ -1,11 +1,13 @@
 // 应用内更新（PLAN D8，2026-09-27 改为做）：读本仓库（github.com/YyAdnBug/kitty-tools，不碰 Tauri 版的仓库）的
-// latest release（tag macos-v*）。有更新的版本：刘海岛提示一次（每个版本一次；只停 2 秒、不接点击，错过就没了），
+// release 列表，取版本号最大的 macos-v*（跳过草稿和预发布；第四轮体检 E13：同一个仓库里还发 Windows 版，windows-v* 标成
+// latest 时读 releases/latest 就找不到 mac 的新版）。有更新的版本：刘海岛提示一次（每个版本一次；只停 2 秒、不接点击，错过就没了），
 // 所以另有常驻到更新为止的入口（2026-10-06，对标 Alfred 窗口底部的小提示 / Raycast 根搜索顶上那一行 / Sparkle 给后台 App 的
 // 「温和提醒」）：菜单栏图标右上角的小圆点（StatusItem.updateVersion）+ 菜单顶上「更新到 x…」、剪贴板面板和启动器底栏的
 // 「更新到 x」（UpdateBarHint）、关于页的「更新并重新打开」。更新 = 下载 release 里的 *_arm64.zip → ditto 解到 App 所在卷的临时目录 →
 // 校验 bundle id、版本号和签名（Apple 签发、本团队 HTX9F4KG39 的证书）→ 原子地换掉正在运行的 .app →
 // 等本进程退出后重新打开。下载是最久的一步，下了多少实时报出来（progress：关于页的进度条、刘海岛上的细条和百分比，
-// 2026-10-13 用户要求「不是一直 loading」）；之后解包、验签、替换只有一两秒，写「正在安装」。不用 Sparkle（禁止第三方依赖）；解包、验签交给系统的 ditto / codesign，在进程外跑。
+// 2026-10-13 用户要求「不是一直 loading」），下载中能取消（岛和关于页的「取消」，第四轮体检 E23：回到「有新版本」，
+// 下了一半的临时文件由系统的下载任务删掉）；之后解包、验签、替换只有一两秒，写「正在安装」、不能取消。不用 Sparkle（禁止第三方依赖）；解包、验签交给系统的 ditto / codesign，在进程外跑。
 // App 自己用 URLSession 下载的文件不带隔离标记（实测），换上的新版不会再被 Gatekeeper 拦；证书不变，授权不丢。
 // 只有正式版（bundle id com.yy.kitty-tools.native）更新：Debug 版的 bundle id 不同，装过去会把 Dev 换成正式版。
 
@@ -52,24 +54,30 @@ import AppKit
   /// 此刻不能更新的原因（录屏中「录制结束后再更新」，AppDelegate 写）：关于页的「更新并重新打开」置灰、旁边写它；
   /// 菜单里点了「更新到 x…」用刘海说
   var blocker: String?
+  /// 正在下载更新包（关于页和岛上这时有「取消」；下完进入解包、验签、替换就是 false，那几步不能停）
+  private(set) var isDownloading = false
   /// 刘海岛（AppDelegate 给，单测里是 nil）
   @ObservationIgnored var island: Island?
+  /// 正在下载的那个任务（「取消」掐它，E23）
+  @ObservationIgnored private var downloadTask: Task<(URL, URLResponse), Error>?
   @ObservationIgnored private var schedule: Task<Void, Never>?
   /// 检查进行中时菜单里又点了「检查更新…」：这次的结果也用刘海说
   @ObservationIgnored private var menuWaiting = false
 
   static let bundleID = "com.yy.kitty-tools.native"
   static let releasesPage = URL(string: "https://github.com/YyAdnBug/kitty-tools/releases")!
-  private static let latest = URL(
-    string: "https://api.github.com/repos/YyAdnBug/kitty-tools/releases/latest")!
+  /// 最近 20 个 release（mac 和 Windows 混在一起，按发布时间倒序）：从里面挑 macos-v*
+  private static let releases = URL(
+    string: "https://api.github.com/repos/YyAdnBug/kitty-tools/releases?per_page=20")!
   /// 新包必须满足的签名要求：同一个 bundle id、Apple 签发、本团队的证书（只认团队，换证书也能更新）
   static let requirement =
     "=identifier \"\(bundleID)\" and anchor apple generic and certificate leaf[subject.OU] = \"HTX9F4KG39\""
 
-  /// state / progress：截图自检直接摆出各种状态；正常使用就是 `Updater()`
-  init(state: State = .idle, progress: Double? = nil) {
+  /// state / progress / downloading：截图自检直接摆出各种状态；正常使用就是 `Updater()`
+  init(state: State = .idle, progress: Double? = nil, downloading: Bool = false) {
     self.state = state
     self.progress = progress
+    isDownloading = downloading
     available = Self.available(nil, after: state)
   }
 
@@ -114,11 +122,11 @@ import AppKit
     let previous = state
     state = .checking
     do {
-      var request = URLRequest(url: Self.latest)
+      var request = URLRequest(url: Self.releases)
       request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
       let (data, response) = try await URLSession.shared.data(for: request)
       let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-      // 还没发过正式版时 latest 是 404
+      // 仓库还没有 release 时列表是空的（200）；404 当成没有
       guard status == 200 || status == 404 else { throw UpdateError("GitHub 返回 \(status)") }
       let toMenu = trigger == .menu || menuWaiting
       menuWaiting = false
@@ -180,24 +188,55 @@ import AppKit
     }
     state = .installing(release)
     progress = nil
-    if trigger != .page { showInstalling(release) }
     do {
       let app = Bundle.main.bundleURL
-      // 进度是下载的线程报的：回到主线程再动界面
-      try await Self.replace(app, with: release) { [weak self] fraction in
+      try Self.checkReplaceable(app)
+      // 下载单独一个任务：「取消」只掐它（E23）。进度是下载的线程报的，回到主线程再动界面
+      let report: @Sendable (Double) -> Void = { [weak self] fraction in
         Task { @MainActor in self?.downloaded(fraction, of: release) }
       }
+      let task = Task { try await Self.download(release.archive, progress: report) }
+      downloadTask = task
+      isDownloading = true
+      if trigger != .page { showInstalling(release) }
+      let result = await task.result
+      downloadTask = nil
+      isDownloading = false
+      // 点了「取消」（哪怕刚好下完）：回到「有新版本」，下好的包删掉；没下完的临时文件系统的下载任务自己删
+      if task.isCancelled {
+        if case .success(let downloaded) = result {
+          try? FileManager.default.removeItem(at: downloaded.0)
+        }
+        return downloadCancelled(release)
+      }
+      let (zip, response) = try result.get()
+      // 下完了：岛上的「取消」去掉（解包、验签、替换不能停）
+      if trigger != .page { showInstalling(release) }
+      try await Self.replace(app, with: release, zip: zip, response: response)
       try Self.relaunch(app)
       NSApp.terminate(nil)
       // 还走得到这里 = 退出被取消了（B5：原来一直显示「正在安装」）。等着本进程退出再重开的 sh 留着
       quitCancelled(release, trigger: trigger)
     } catch {
+      downloadTask = nil
+      isDownloading = false
       state = .available(release)
       progress = nil
       island?.show(
         "更新失败", detail: error.localizedDescription, tone: .error,
         actions: [installAction("重试")])
     }
+  }
+
+  /// 关于页、岛上的「取消」（只在下载中有用；同转 GIF 的取消：不出结果岛）
+  func cancelDownload() {
+    downloadTask?.cancel()
+  }
+
+  private func downloadCancelled(_ release: Release) {
+    state = .available(release)
+    progress = nil
+    island?.dismiss(ifShowing: Self.installingTitle(release.version))
   }
 
   /// 岛上的「更新」「重试」：同菜单栏的「更新到 x」
@@ -220,10 +259,12 @@ import AppKit
     island?.show("新版本 \(release.version) 已装好", detail: Self.installedDetail)
   }
 
+  /// 下载中带「取消」，下完（在装）就不带
   private func showInstalling(_ release: Release) {
     island?.show(
       Self.installingTitle(release.version), detail: Self.installingDetail(progress),
-      tone: .progress, symbol: "arrow.down.circle.fill", fraction: progress)
+      tone: .progress, symbol: "arrow.down.circle.fill", fraction: progress,
+      actions: isDownloading ? [.init("取消") { [weak self] in self?.cancelDownload() }] : [])
   }
 
   /// 下载又进了一截：整百分点才动一次界面（一次下载报几百回），只往前走（回主线程的顺序不保证）；岛上那一条跟着改
@@ -273,7 +314,8 @@ import AppKit
     }
   }
 
-  /// GitHub「latest release」的 JSON → 版本、更新包、发布页。不是 macos-v* 的 tag、没有 https 的 *_arm64.zip 时 nil
+  /// GitHub release 列表的 JSON → 版本号最大的那个 mac 版（版本、更新包、发布页）。只认 macos-v* 的 tag、带 https 的
+  /// *_arm64.zip 的；草稿、预发布跳过（E13：windows-v* 可能是 latest、也可能排在最前）。一个都没有时 nil
   static func release(from data: Data) throws -> Release? {
     struct Payload: Decodable {
       struct Asset: Decodable {
@@ -282,19 +324,24 @@ import AppKit
       }
       let tagName: String
       let htmlUrl: URL
+      let draft: Bool?
+      let prerelease: Bool?
       let assets: [Asset]
     }
     let decoder = JSONDecoder()
     decoder.keyDecodingStrategy = .convertFromSnakeCase
-    let payload = try decoder.decode(Payload.self, from: data)
     let prefix = "macos-v"
-    guard payload.tagName.hasPrefix(prefix),
-      let asset = payload.assets.first(where: { $0.name.hasSuffix("_arm64.zip") }),
-      asset.browserDownloadUrl.scheme == "https"
-    else { return nil }
-    return Release(
-      version: String(payload.tagName.dropFirst(prefix.count)), archive: asset.browserDownloadUrl,
-      page: payload.htmlUrl)
+    let candidates = try decoder.decode([Payload].self, from: data).compactMap {
+      payload -> Release? in
+      guard payload.draft != true, payload.prerelease != true, payload.tagName.hasPrefix(prefix),
+        let asset = payload.assets.first(where: { $0.name.hasSuffix("_arm64.zip") }),
+        asset.browserDownloadUrl.scheme == "https"
+      else { return nil }
+      return Release(
+        version: String(payload.tagName.dropFirst(prefix.count)),
+        archive: asset.browserDownloadUrl, page: payload.htmlUrl)
+    }
+    return candidates.max { isNewer($1.version, than: $0.version) }
   }
 
   /// 按数字逐段比（0.1.10 比 0.1.9 新）
@@ -310,6 +357,13 @@ import AppKit
   static func replace(
     _ target: URL, with release: Release, progress: @escaping @Sendable (Double) -> Void = { _ in }
   ) async throws {
+    try checkReplaceable(target)
+    let (zip, response) = try await download(release.archive, progress: progress)
+    try await replace(target, with: release, zip: zip, response: response)
+  }
+
+  /// 换得了 target 吗（下载之前先看，免得白下）
+  static func checkReplaceable(_ target: URL) throws {
     let folderURL = target.deletingLastPathComponent()
     let folder = folderURL.path
     let readOnly = (try? folderURL.resourceValues(forKeys: [.volumeIsReadOnlyKey]))?
@@ -320,7 +374,12 @@ import AppKit
     guard FileManager.default.isWritableFile(atPath: folder) else {
       throw UpdateError("没有权限替换「\(folder)」里的 App：请用管理员账户更新，或到发布页下载后手动替换")
     }
-    let (zip, response) = try await download(release.archive, progress: progress)
+  }
+
+  /// 下好的更新包（zip，这里用完就删）：解到 target 所在卷的临时目录、校验、原子地换掉 target
+  static func replace(
+    _ target: URL, with release: Release, zip: URL, response: URLResponse
+  ) async throws {
     defer { try? FileManager.default.removeItem(at: zip) }
     if let status = (response as? HTTPURLResponse)?.statusCode, status != 200 {
       throw UpdateError("下载失败（\(status)）")

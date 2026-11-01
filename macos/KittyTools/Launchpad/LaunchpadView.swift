@@ -259,13 +259,20 @@ struct LaunchpadView: View {
     let pages = model.displayPages
     return HStack(spacing: 0) {
       ForEach(pages.indices, id: \.self) { index in
-        pageGrid(index, metrics: metrics)
-          .frame(width: size.width, height: metrics.gridHeight, alignment: .top)
-          .onGeometryChange(for: CGRect.self) { proxy in
-            proxy.frame(in: .named(Self.gridSpace))
-          } action: { frame in
-            model.gridFrames[index] = frame
+        // 只建当前页左右各一页、翻到哪补到哪（F4⑥）；还没建的是同样大的空位，网格框照样量
+        Group {
+          if model.builtPages.contains(index) {
+            pageGrid(index, metrics: metrics)
+          } else {
+            Color.clear
           }
+        }
+        .frame(width: size.width, height: metrics.gridHeight, alignment: .top)
+        .onGeometryChange(for: CGRect.self) { proxy in
+          proxy.frame(in: .named(Self.gridSpace))
+        } action: { frame in
+          model.gridFrames[index] = frame
+        }
       }
     }
     .frame(width: size.width * CGFloat(max(pages.count, 1)), alignment: .leading)

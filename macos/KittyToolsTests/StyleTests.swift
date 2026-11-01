@@ -364,6 +364,15 @@ struct IslandExcerptTests {
     #expect(tucked.width > 0 && tucked.height > 0)
   }
 
+  /// 快捷键叫出的那一张上 ←→ 选快捷动作（U9）：到头回绕，还没选中时从第一个起，没有快捷动作就没有选中
+  @Test func boardSelectionWraps() {
+    #expect(Island.moved(0, by: 1, count: 6) == 1)
+    #expect(Island.moved(5, by: 1, count: 6) == 0)
+    #expect(Island.moved(0, by: -1, count: 6) == 5)
+    #expect(Island.moved(nil, by: -1, count: 6) == 0)
+    #expect(Island.moved(2, by: 1, count: 0) == nil)
+  }
+
   /// 双指往上滑收起：按手指方向算，「自然滚动」开着时 scrollingDeltaY 和手指同向（往下为正）
   @Test func swipeUpFollowsFingers() {
     #expect(Island.fingersUp(deltaY: -10, inverted: true) == 10)

@@ -267,8 +267,12 @@ enum Prefs {
   nonisolated static let launchpadLayout = "launchpadLayout"
   /// 存过但读不出来的布局的原文（另存一份，出问题时还能捞回来；不注册默认值、不跟着导出）
   nonisolated static let launchpadLayoutUnreadable = "launchpadLayoutUnreadable"
-  /// 上一次导入 / 恢复默认之前的布局（设置页和岛上的「撤销」用；不注册默认值、不跟着导出）
+  /// 上一次导入 / 恢复默认 / 改行列数之前的布局（设置页和岛上的「撤销」用；不注册默认值、不跟着导出）
   nonisolated static let launchpadUndoLayout = "launchpadUndoLayout"
+  /// 撤销点是改行列数留的时候，改之前的 [列, 行]（第四轮体检 E12；撤销时一起换回去）。不注册默认值
+  nonisolated static let launchpadUndoGrid = "launchpadUndoGrid"
+  /// 认到捏合、却因为系统的捏合手势开着让给了系统的那一下，刘海岛说过没有（第四轮体检 U5，只说一次）。不注册默认值
+  nonisolated static let launchpadPinchYieldTold = "launchpadPinchYieldTold"
   nonisolated static let launchpadColumnChoices = 5...10
   nonisolated static let launchpadRowChoices = 4...8
   /// 触控板手势（PinchFingers 的 rawValue：off / four / five，默认四指；系统的捏合还开着时我们认到也不打开，
@@ -278,8 +282,16 @@ enum Prefs {
   /// 触发角（LaunchpadCornerOption 的 rawValue：off / topLeft / topRight / bottomLeft / bottomRight，默认关）
   nonisolated static let launchpadCorner = "launchpadCorner"
 
-  /// 上次启动的版本号：没有 = 首次安装（打开欢迎引导），和当前不同 = 刚更新（刘海岛「已更新到 x」+ 本版摘要，不开设置窗，体检 A29）
+  /// 看过的版本号：没有 = 首次安装（打开欢迎引导），和当前不同 = 刚更新（刘海岛「已更新到 x」+ 本版摘要，不开设置窗，体检 A29）。
+  /// 首次安装时**引导走完才记**（点「开始使用」或关掉引导；第四轮体检 E1）：中途退出（授权屏幕录制后系统要求重开）下次接着开
   static let lastSeenVersion = "lastSeenVersion"
+  /// 欢迎引导做到了第几屏（OnboardingView.Screen 的 rawValue）：没走完就退出、下次接着开时从哪一屏起（E1）；走完删掉。
+  /// 这台电脑自己的状态，不注册默认值
+  static let onboardingScreen = "onboardingScreen"
+  /// 「去授权」请求过辅助功能 / 屏幕录制的系统授权框没有（第四轮体检 U10：系统只弹一次，请求过了再点就直接打开系统设置那一页，
+  /// 不再两个窗一起出来）。这台电脑自己的状态，不注册默认值
+  static let accessibilityRequested = "accessibilityRequested"
+  static let screenRecordingRequested = "screenRecordingRequested"
   /// 自动检查更新（启动后一次、之后每天一次）
   static let updateAutoCheck = "updateAutoCheck"
   /// 已经用刘海岛提示过的新版本号（后台检查每个版本只提示一次）

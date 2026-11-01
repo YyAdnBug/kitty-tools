@@ -566,7 +566,8 @@ struct SnapshotProbeTests {
     ]
     navigation.page = .about
     for (name, state, dark, progress) in updateStates {
-      let updater = Updater(state: state, progress: progress)
+      // 下载中有「取消」（第四轮体检 E23），下完在装的没有
+      let updater = Updater(state: state, progress: progress, downloading: name == "downloading")
       try snapshot(
         SettingsRoot(navigation: navigation) { page in
           page == .about ? AnyView(AboutTab(updater: updater)) : pages(page)
@@ -998,12 +999,16 @@ struct SnapshotProbeTests {
           symbol: "exclamationmark.triangle.fill", leading: .tone),
         actions: [.settings(for: .screenRecording)], at: .now.addingTimeInterval(-4000)),
     ]
-    let boards: [(String, Island.Geometry, [Island.Record])] = [
-      ("island-board", notch, records), ("island-board-capsule", .capsule(menuBar: 24), records),
-      ("island-board-empty", notch, []),
+    // 用快捷键叫出、←→ 选到第 2 个快捷动作（第四轮体检 U9）
+    let boards: [(String, Island.Geometry, [Island.Record], Int?)] = [
+      ("island-board", notch, records, nil),
+      ("island-board-capsule", .capsule(menuBar: 24), records, nil),
+      ("island-board-empty", notch, [], nil), ("island-board-keyboard", notch, records, 1),
     ]
-    for (name, geometry, list) in boards {
-      let island = Island(showing: nil, geometry: geometry, board: list, quickActions: quick)
+    for (name, geometry, list, selection) in boards {
+      let island = Island(
+        showing: nil, geometry: geometry, board: list, quickActions: quick,
+        boardSelection: selection)
       try snapshot(
         IslandView(island: island), size: geometry.windowSize, dark: false,
         to: "\(out)/\(name).png")

@@ -270,19 +270,16 @@ nonisolated struct LaunchpadLayout: Codable, Equatable, Sendable {
     }
   }
 
-  /// 顶层按容量重排（改行列数、恢复默认之后用；日常编辑不许调它，页边界要保住，见 `pushed`）
+  /// 顶层按容量从头紧排（导入的库每页比现在的容量多时、默认排法用；改行列数、打开、日常编辑不许调它，页边界要保住，
+  /// 见 `tidied` / `pushed`）
   func repaginated(capacity: Int) -> LaunchpadLayout {
     LaunchpadLayout(pages: Self.paginate(Self.sanitized(pages).flatMap { $0 }, capacity: capacity))
   }
 
-  /// 打开时用：只在一页真的超过容量（用户改过行列数）时才整份重排，否则页边界原样保留（导入的多页布局不被压紧）
+  /// 改行列数之后、打开时用（第四轮体检 E12）：**页边界保住**——容量变大什么都不动（页本来就可以不满，同系统启动台），
+  /// 变小只把每页挤出来的顺到下一页开头（日常编辑的 `pushed`），不从头紧排；顺带去掉重复、空页、空文件夹
   func tidied(capacity: Int) -> LaunchpadLayout {
-    let clean = Self.sanitized(pages)
-    let capacity = max(capacity, 1)
-    guard clean.contains(where: { $0.count > capacity }) else {
-      return LaunchpadLayout(pages: clean)
-    }
-    return LaunchpadLayout(pages: Self.paginate(clean.flatMap { $0 }, capacity: capacity))
+    LaunchpadLayout(pages: Self.pushed(Self.sanitized(pages), capacity: capacity))
   }
 
   /// 编辑之后：哪一页超过容量，就把多出来的从前端推到下一页开头，逐页往后；空页去掉。

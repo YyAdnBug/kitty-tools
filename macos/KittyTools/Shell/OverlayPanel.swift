@@ -667,9 +667,7 @@ final class OverlayPanel: NSPanel {
       return setFrameOrigin(Self.frame(below: below, size: frame.size, in: visible).origin)
     }
     if topAnchored || atTop {
-      let top = visible.maxY - visible.height * 0.2
-      setFrameOrigin(NSPoint(x: visible.midX - frame.width / 2, y: top - frame.height))
-      return
+      return setFrameOrigin(Self.frame(atTopOf: visible, size: frame.size).origin)
     }
     if let anchor {
       return setFrameOrigin(Self.frame(near: anchor, size: frame.size, in: visible).origin)
@@ -734,6 +732,17 @@ final class OverlayPanel: NSPanel {
     x = max(min(x, area.maxX - size.width), area.minX)
     top = min(max(top, area.minY + size.height), area.maxY)
     return NSRect(x: x, y: top - size.height, width: size.width, height: size.height)
+  }
+
+  /// 屏幕上方（启动器、剪贴板面板、主界面、翻译浮窗「屏幕上方」，纯函数配单测）：横向居中、顶边在可见区 20% 处；
+  /// 高的面板（主界面 606）在矮的可见区里底边会掉出去，那就整体往上挪到底边贴着可见区底，但顶边不超过可见区顶
+  /// （比可见区还高时顶边贴顶、露出上面那部分；第四轮体检 E14）
+  static func frame(atTopOf visible: NSRect, size: NSSize) -> NSRect {
+    let top = visible.maxY - visible.height * 0.2
+    var bottom = top - size.height
+    if bottom < visible.minY { bottom = min(visible.minY, visible.maxY - size.height) }
+    return NSRect(
+      x: visible.midX - size.width / 2, y: bottom, width: size.width, height: size.height)
   }
 
   /// 挂在菜单栏图标下面（主界面，纯函数配单测）：右边对着图标的右边，顶边在图标（菜单栏）下面 6 pt；

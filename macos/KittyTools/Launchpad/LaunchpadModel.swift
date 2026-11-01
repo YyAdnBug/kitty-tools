@@ -61,7 +61,21 @@ final class LaunchpadModel {
   /// 搜索框交出焦点（开文件夹、进抖动）时复位
   private(set) var searchEngaged = false
   /// 当前页（0 起）
-  private(set) var page = 0
+  private(set) var page = 0 {
+    didSet { builtPages.formUnion(Self.pagesToBuild(from: oldValue, to: page)) }
+  }
+  /// 界面建了哪几页（第四轮体检 F4⑥）：打开时只建当前页和左右各一页，翻到哪补到哪、建了不拆（收起时整块放掉）。
+  /// 300 个 App（8 页）一次全建第一帧约 140 ms、多占约 90 MB（屏外量，LaunchpadProbeTests）
+  private(set) var builtPages: Set<Int> = []
+
+  /// 当前页和左右各一页（翻过去之前邻页已经建好，跟手滑的时候看得到）
+  static func neighborPages(of page: Int) -> ClosedRange<Int> { (page - 1)...(page + 1) }
+
+  /// 从 old 翻到 new 要补建哪几页：两页之间整段再各往外一页——一下跳好几页（点页点、⌘← ⌘→）时中间那几页是滑过去的，
+  /// 不补的话滑过的是空白
+  static func pagesToBuild(from old: Int, to new: Int) -> ClosedRange<Int> {
+    (min(old, new) - 1)...(max(old, new) + 1)
+  }
   /// 搜索开始时那一页（删光搜索字回到它）
   private var pageBeforeSearch: Int?
   /// 键盘选中的格子在当前页里的下标；nil = 还没按方向键（鼠标指着不高亮）
@@ -94,8 +108,8 @@ final class LaunchpadModel {
   private(set) var drag: LaunchpadDrag?
   /// 等确认删除的 App（确认框在界面里）
   var deleteCandidate: LaunchpadProjectApp?
-  /// ⌥ 现在按着没有（面板的 flagsChanged 喂进来）
-  var optionHeld = false
+  /// 现在按着的修饰键（⌘⌃⌥⇧）：打开时记下当时按着的（总控给），之后面板的 flagsChanged 喂进来（E24⑥）
+  @ObservationIgnored var modifiers: NSEvent.ModifierFlags = []
   /// 要重命名文件夹时的草稿（界面绑它）
   var folderNameDraft = ""
 
@@ -164,6 +178,7 @@ final class LaunchpadModel {
     self.screenSize = screenSize
     // 重新打开回到上次那一页（F24；夹在页数里）
     page = min(max(startPage, 0), max(layout.pageCount - 1, 0))
+    builtPages = Set(Self.neighborPages(of: page))
   }
 
   var metrics: LaunchpadMetrics {
@@ -707,16 +722,33 @@ final class LaunchpadModel {
     if openFolderID == nil { setSearchFocus(true) }
   }
 
-  /// 面板的 flagsChanged 喂进来：⌥ 按下进抖动、松开退出（按住图标进的那种不受影响）。
+  /// 面板的 flagsChanged 喂进来：⌥ 单独按下进抖动、松开退出（按住图标进的那种不受影响）。
   /// 正在搜索 / 搜索框有字时按 ⌥ 是打特殊字符，不进抖动（F45）
-  func optionChanged(_ held: Bool) {
-    optionHeld = held
-    if held {
+  func optionChanged(_ flags: NSEvent.ModifierFlags) {
+    let change = Self.optionChange(from: modifiers, to: flags)
+    modifiers = flags.intersection(Self.modifierKeys)
+    switch change {
+    case true?:
       guard drag == nil, !isSearching else { return }
       enterJiggle(byOption: true)
-    } else if jiggleByOption {
+    case false? where jiggleByOption:
       exitJiggle()
+    default: break
     }
+  }
+
+  static let modifierKeys: NSEvent.ModifierFlags = [.command, .control, .option, .shift]
+
+  /// ⌥ 进出抖动（纯函数，E24⑥）：true = 进（⌥ 从没按着变成按着、而且只按着 ⌥），false = 出（⌥ 松开了），nil = 不变。
+  /// 打开时按着的键（用带 ⌥ 的快捷键打开的）记在 old 里：松开别的键不算按下 ⌥，按着 ⌥ 打开的要松开再按才进；
+  /// ⌘⌥ 这类组合不进
+  static func optionChange(
+    from old: NSEvent.ModifierFlags, to new: NSEvent.ModifierFlags
+  ) -> Bool? {
+    let (was, now) = (old.intersection(modifierKeys), new.intersection(modifierKeys))
+    if !was.contains(.option), now == .option { return true }
+    if was.contains(.option), !now.contains(.option) { return false }
+    return nil
   }
 
   func requestDelete(_ app: LaunchpadProjectApp) {
@@ -754,8 +786,9 @@ final class LaunchpadModel {
     // 搜索时不许拖（结果的位置不是布局的位置），但按下 / 松手照记：单击照样打开结果（F5）
     guard !isSearching else { return }
     // 按住不动 1 秒 = 进抖动模式；这一次松手不算点击（F4）
+    let hold = dragTiming.hold
     jiggleTask = Task { [weak self] in
-      try? await Task.sleep(for: .seconds(1))
+      try? await Task.sleep(for: hold)
       guard !Task.isCancelled, let self, self.drag?.tileID == tile.id,
         self.drag?.isDragging != true
       else { return }

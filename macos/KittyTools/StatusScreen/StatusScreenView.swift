@@ -46,9 +46,15 @@ final class StatusScreenPanel: NSPanel {
     host.addTrackingArea(
       NSTrackingArea(
         rect: .zero, options: [.mouseMoved, .activeAlways, .inVisibleRect], owner: self))
-    contentView = host
+    // 宿主包在普通容器里（mac-overlay-panel §1 setHostedContent，第四轮体检 E21）：换屏 / 改分辨率时 arrangePanels 会改
+    // 面板大小，宿主直接当 contentView 时 SwiftUI 会按内容改窗口的最小 / 最大尺寸、在「更新约束」里绕下去崩掉
+    self.host = host
+    setHostedContent(host)
     setFrame(frame, display: false)
   }
+
+  /// 画面（SwiftUI 宿主）：追踪区挂在它上面，从卡片长出来时动的也是它的图层
+  private(set) var host: NSView?
 
   /// 底色：熄屏、告示纯黑；透出是整屏压暗（Style.HUD.scrim，增强对比度时压得更深）
   static func backdrop(_ style: StatusPreset.Look) -> NSColor {
@@ -115,7 +121,7 @@ final class StatusScreenPanel: NSPanel {
     // 第一响应者是窗口自己，不是画面
     makeFirstResponder(nil)
     if let card {
-      return Self.grow(contentView, from: card) { [weak self] in
+      return Self.grow(host, from: card) { [weak self] in
         self?.isOpaque = backdrop.0
         self?.backgroundColor = backdrop.1
       }

@@ -137,7 +137,7 @@ struct GeneralTab: View {
       }
     }
     .formStyle(.grouped)
-    .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+    .onSettingsBecameKey {
       trusted = Permissions.isAccessibilityTrusted
       screenRecording = Permissions.isScreenRecordingAllowed
       microphone = Permissions.microphoneStatus
@@ -212,25 +212,20 @@ struct PermissionRow: View {
 }
 
 extension PermissionRow {
-  /// 辅助功能、屏幕录制这两行：通用 › 权限和欢迎引导的「授权」一屏共用，用途只写这一处
+  /// 辅助功能、屏幕录制这两行：通用 › 权限和欢迎引导的「授权」一屏共用，用途只写这一处。
+  /// 「去授权」只弹一个窗（U10）：没请求过弹系统授权框，请求过了才打开系统设置
   static func accessibility(granted: Bool) -> PermissionRow {
     PermissionRow(
       title: "辅助功能", detail: "粘贴回原 App、划词翻译、长截图自动滚动、录屏显示按键、程序坞预览",
       symbol: "hand.raised.fill", color: Style.Family.command, granted: granted
-    ) {
-      Permissions.requestAccessibility()
-      Permissions.openAccessibilitySettings()
-    }
+    ) { Permissions.grant(.accessibility) }
   }
 
   static func screenRecording(granted: Bool) -> PermissionRow {
     PermissionRow(
       title: "屏幕录制", detail: "截图、截图翻译、识字、录屏、录系统声音、程序坞预览的缩略图；授权后可能要重新打开本 App 才生效",
       symbol: HotKeyAction.screenRecord.symbol, color: Style.Family.screenshot, granted: granted
-    ) {
-      Permissions.requestScreenRecording()
-      Permissions.Kind.screenRecording.openSettings()
-    }
+    ) { Permissions.grant(.screenRecording) }
   }
 }
 
@@ -498,6 +493,9 @@ enum LaunchAtLogin {
     let path = Bundle.main.bundlePath
     return !path.hasPrefix("/Volumes/") && !path.contains("/AppTranslocation/")
   }
+
+  /// 还没注册过登录项（要用户批准的、已经开着的都不算）
+  static var isNotRegistered: Bool { SMAppService.mainApp.status == .notRegistered }
 
   static func set(_ enabled: Bool) throws {
     if enabled {

@@ -88,6 +88,11 @@ import SwiftUI
   init() {
     model.onOpen = { [unowned self] in open($0) }
     model.onClose = { [unowned self] in close($0) }
+    // 没有屏幕录制授权时底下那行（U12③）：去授权（没请求过弹系统框，请求过了打开系统设置那一页），面板收起
+    model.onGrant = { [unowned self] in
+      Permissions.grant(.screenRecording)
+      hide(animated: true)
+    }
   }
 
   /// 起：挂上程序坞。没有辅助功能授权时这一下挂不上，之后程序坞那边每 5 秒体检时接着试（授权了就挂上）
@@ -159,6 +164,17 @@ import SwiftUI
         try? await Task.sleep(for: Self.showDelay / 2)
       } else {
         try? await Task.sleep(for: Self.switchDelay)
+        guard !Task.isCancelled, let self else { return }
+        // 到点时鼠标不在待换的那个图标上（或者已经在面板里）就不换（E22③）：从图标往上挪进面板时，程序坞的选中可能
+        // 顺路落到旁边的图标上，80 毫秒后整块换成了别的 App。图标的位置现读（放大的动画可能还在走）
+        let frame = DockWatcher.currentFrame(of: item) ?? item.frame
+        if let panel = self.panel,
+          !DockPreviewLayout.switches(
+            mouse: NSEvent.mouseLocation, pending: frame, panel: panel.frame)
+        {
+          self.pendingItem = nil
+          return
+        }
       }
       guard !Task.isCancelled, let self else { return }
       self.pendingItem = nil

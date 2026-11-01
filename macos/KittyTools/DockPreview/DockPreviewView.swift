@@ -3,7 +3,7 @@
 // 左上角出 ✕（拿得到关闭钮的才有；Mac 上关闭都在左上角，2026-10-29 从右上角挪过来）。点卡片切过去，点 ✕ 关掉那扇。卡片的尺寸按 DockPreviewLayout 排好的方案；整块铺满宿主、
 // 顶上对齐，面板的大小只由窗口定（换图标时窗口在滑，内容不另走一条曲线）。换 App 时新旧两排叠在同一处交叉淡变。
 // 角标和 ✕ 用卡片上小标记同一个底（hudMark：HUD 深底 + 内描边，永远深色）。没有屏幕录制授权时只有图标位和标题，
-// 最底下多一行说明（拍板 A2）。本 App 不激活，悬停靠 HoverTracker（activeAlways 追踪区）。
+// 最底下多一行说明（拍板 A2），点它去授权（第四轮体检 U12③）。本 App 不激活，悬停靠 HoverTracker（activeAlways 追踪区）。
 
 import AppKit
 import SwiftUI
@@ -27,6 +27,8 @@ import SwiftUI
   var hovered: CGWindowID?
   var onOpen: (DockWindow) -> Void = { _ in }
   var onClose: (DockWindow) -> Void = { _ in }
+  /// 点了「允许屏幕录制后显示缩略图」
+  var onGrant: () -> Void = {}
 }
 
 struct DockPreviewView: View {
@@ -41,10 +43,22 @@ struct DockPreviewView: View {
           .transition(.opacity)
       }
       if !model.showsThumbnails {
-        Text("允许屏幕录制后显示缩略图")
+        // 一个按钮（U12③）：面板不当 key，宿主接第一下点击（acceptsFirstMouse）；点了去授权、面板收起
+        Button(action: model.onGrant) {
+          HStack(spacing: 2) {
+            Text("允许屏幕录制后显示缩略图")
+            Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold))
+          }
           .font(.system(size: 11))
-          .foregroundStyle(.secondary)
+          .foregroundStyle(Style.brandInk)
           .frame(height: DockPreviewLayout.noteHeight)
+          .frame(maxWidth: .infinity)
+          .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .pointerStyle(.link)
+        .accessibilityLabel("允许屏幕录制")
+        .accessibilityHint("去授权屏幕录制，允许后显示窗口的缩略图")
       }
     }
     .padding(DockPreviewLayout.padding)

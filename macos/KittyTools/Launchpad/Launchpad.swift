@@ -31,8 +31,10 @@ final class Launchpad {
   var island: Island?
   /// 现在能不能打开（截图框选、录屏、状态屏、正在录快捷键…时不能）
   var canOpen: () -> Bool = { true }
-  /// 打开之前把别的浮层收起（剪贴板、启动器、选状态、快速记一条、翻译浮窗）
+  /// 打开之前把别的浮层收起（主界面、剪贴板、启动器、选状态、快速记一条、翻译浮窗）
   var willOpen: () -> Void = {}
+  /// 打开系统设置 › 触控板（捏合让给系统时岛上的按钮，U5）
+  var openTrackpadSettings: () -> Void = {}
   private(set) var isOpen = false
   /// 打开中的窗口 / 收起的簿记（F20：按窗口记，不信一个全局代号）
   private let book = LaunchpadWindowBook()
@@ -73,6 +75,9 @@ final class Launchpad {
   private var pinchWatchdog: Task<Void, Never>?
   /// 调度中心开着时打开的：在等它退干净（这期间面板不收鼠标、不拿键盘，`waitForMissionControl`）
   private var missionControlWait: Task<Void, Never>?
+  /// 认到了捏合、却因为系统的捏合手势开着让给了系统，还没说过（U5）：下次打开启动台时岛上说一次。不当场说——
+  /// 系统的「应用程序」那一屏这时正盖着，岛出来也看不见
+  private var owesPinchHint = false
 
   init() {
     undoLayout = LaunchpadUndo.load(from: .standard)
@@ -160,6 +165,8 @@ final class Launchpad {
     }
     // 先停在「收着」：面板第一帧画完再走（present）
     model.zoom = 0
+    // 打开这一刻按着的键（用带 ⌥ 的快捷键打开的）：松开它们不算按下 ⌥（E24⑥）
+    model.modifiers = NSEvent.modifierFlags.intersection(LaunchpadModel.modifierKeys)
     self.model = model
     let panel = LaunchpadPanel(frame: screen.frame, model: model)
     let zoom = LaunchpadZoom(host: panel.contentView)
@@ -181,7 +188,12 @@ final class Launchpad {
     panel.onFirstPage = { [weak model] in model?.firstPage() }
     panel.onLastPage = { [weak model] in model?.lastPage() }
     panel.onCloseRequest = { [weak model] in model?.requestClose() }
-    panel.onFlagsChanged = { [weak model] held in model?.optionChanged(held) }
+    panel.onFlagsChanged = { [weak model] flags in model?.optionChanged(flags) }
+    // 拿到键盘时再对一次（E24⑥）：打开到当 key 之间（捏合跟手、等调度中心退掉）松开的 ⌥ 收不到 flagsChanged，
+    // 不对的话还当它按着、吃掉下一次单按 ⌥
+    panel.onBecomeKey = { [weak model] in
+      model?.modifiers = NSEvent.modifierFlags.intersection(LaunchpadModel.modifierKeys)
+    }
     // 只认现在这块：收起途中的旧面板走完 orderOut 时也会失去 key，那时新开的那块（捏合建的，还没当过 key）不能被当成「别的 App 到前台」收掉
     panel.onResignKey = { [weak self, weak panel] in
       guard let self, let panel, panel === self.panel else { return }
@@ -207,8 +219,53 @@ final class Launchpad {
       },
       notice: interactive ? nil : showNotice)
     if missionControl { waitForMissionControl(panel) }
-    if !interactive { autoImportIfNeeded() }
+    if !interactive {
+      // 先看要不要说捏合的事、再起第一次导入：导入一起来就把 pendingAutoImport 清掉了，看不出这次岛上会挂导入的进度和结果
+      tellPinchYieldedIfOwed(notice: showNotice != nil)
+      autoImportIfNeeded()
+    }
     return true
+  }
+
+  /// 「捏合让给了系统」这次说不说（纯函数，U5）
+  enum PinchHint: Equatable {
+    /// 现在说
+    case tell
+    /// 这次岛上有别的话（排列读不出来的提示、第一次导入的进度和结果，会把它顶掉）：留到下次打开
+    case later
+    /// 不欠了（没欠过，或者系统的捏合这期间已经关了）
+    case drop
+  }
+
+  static func pinchHint(owed: Bool, notice: Bool, importing: Bool, systemPinchOn: Bool)
+    -> PinchHint
+  {
+    guard owed, systemPinchOn else { return .drop }
+    return notice || importing ? .later : .tell
+  }
+
+  /// 捏合让给过系统、还没说过（U5）：岛上说一次，带「打开触控板设置」，记下说过了（偏好，不注册默认值）。
+  /// 这次打开岛上已经有别的话（排列读不出来、要做第一次导入）就留到下次。在 autoImportIfNeeded 之前调
+  private func tellPinchYieldedIfOwed(notice: Bool) {
+    guard owesPinchHint else { return }
+    switch Self.pinchHint(
+      owed: true, notice: notice,
+      // 第一次打开、本机有旧库：这次会挂「正在按原来的启动台排列…」再换成结果（没有旧库的不出岛，U13⑦）
+      importing: pendingAutoImport && LaunchpadImport.systemDatabaseExists(),
+      systemPinchOn: systemPinchIsOn)
+    {
+    case .later: return
+    case .drop:
+      owesPinchHint = false
+      return
+    case .tell: owesPinchHint = false
+    }
+    UserDefaults.standard.set(true, forKey: Prefs.launchpadPinchYieldTold)
+    island?.show(
+      "捏合打开的是系统的应用程序视图",
+      detail: "要用捏合打开启动台，到 系统设置 › 触控板 › 更多手势 里关掉「应用程序」",
+      tone: .info, symbol: "hand.pinch",
+      actions: [.init("打开触控板设置", opens: true) { [weak self] in self?.openTrackpadSettings() }])
   }
 
   /// 调度中心开着时打开的：它给窗口画的 ✕ 会盖在启动台上面、还点得到（调度中心不是普通窗口，层级调高也盖不住），所以先让它退；
@@ -327,8 +384,14 @@ final class Launchpad {
   private func pinch(_ event: PinchRecognizer.Event) {
     switch event {
     case .began(.pinch):
-      // 系统手势可能在监听起来之后才被打开：认到的那一刻再读一次（F13）
-      guard pinchTracking == nil, !isOpen, canOpen(), !systemPinchIsOn else { return }
+      guard pinchTracking == nil, !isOpen, canOpen() else { return }
+      // 系统手势可能在监听起来之后才被打开：认到的那一刻再读一次（F13）；让给系统的，第一次记下、下次打开时说（U5）
+      guard !systemPinchIsOn else {
+        if !UserDefaults.standard.bool(forKey: Prefs.launchpadPinchYieldTold) {
+          owesPinchHint = true
+        }
+        return
+      }
       guard open(interactive: true) else { return }
       pinchTracking = .pinch
       watchPinch()
@@ -488,6 +551,14 @@ final class Launchpad {
     pendingAutoImport = false
     let local = Self.localApps(catalog)
     let capacity = Self.capacity
+    // 系统里根本没有旧启动台的库（新 Mac、新账户）：直接按默认排法，不挂「正在按原来的启动台排列…」、也不出结果提示
+    // （第四轮体检 U13⑦；面板上本来就是默认排法；只看文件在不在，不读库）
+    guard LaunchpadImport.systemDatabaseExists() else {
+      let layout = LaunchpadLayout.defaultLayout(Self.defaultApps(catalog), capacity: capacity)
+      save(layout)
+      replaceOpenLayout(layout)
+      return
+    }
     // 读旧库要一会儿：岛上先挂着「进行中」，排好换成结果（2026-10-18 真机反馈「卡一阵、没有提示」）
     island?.show("正在按原来的启动台排列…", tone: .progress, symbol: "square.grid.3x3")
     importTask?.cancel()
@@ -661,12 +732,18 @@ final class Launchpad {
     }
   }
 
-  /// 设置里改了一页几列几行：按新容量重新分页并存盘（启动台没开着也生效，下次打开就是新的页）
-  func reflow() {
+  /// 设置里改了一页几列几行（old：改之前的列、行）：页边界保住（E12）——变大什么都不动，变小只把每页挤出来的顺到下一页开头；
+  /// 真挪了图标才存盘、留撤销点（连同改之前的行列数，撤销时一起换回去），岛上带「撤销」。启动台没开着也生效
+  func reflow(from old: LaunchpadGrid) {
     guard let layout = LaunchpadLayout.load(from: .standard) else { return }
-    let updated = layout.repaginated(capacity: Self.capacity)
+    let updated = layout.tidied(capacity: Self.capacity)
+    guard updated != layout else { return }
+    setUndoLayout(layout, grid: old)
     save(updated)
     replaceOpenLayout(updated)
+    island?.show(
+      "已按每页 \(Self.columns) × \(Self.rows) 重新排好", detail: "挤不下的图标顺到了下一页开头",
+      symbol: "square.grid.3x3", actions: undoAction(after: layout))
   }
 
   /// 设置 › 启动台「恢复默认排列」（二次确认在设置页里）
@@ -688,10 +765,16 @@ final class Launchpad {
       symbol: "arrow.uturn.backward", actions: undoAction(after: old))
   }
 
-  /// 撤销上一次导入 / 恢复默认（只留一份；存在偏好里，重启后还能用一次，F41）
+  /// 撤销上一次导入 / 恢复默认 / 改行列数（只留一份；存在偏好里，重启后还能用一次，F41）。改行列数的那一份连行列数一起换回去
+  /// （E12：只换布局的话下次打开又按现在的容量挤一遍，等于没撤）
   func undoLastLayoutChange() {
     guard let undoLayout else { return }
+    let grid = LaunchpadUndo.grid(from: .standard)
     setUndoLayout(nil)
+    if let grid {
+      UserDefaults.standard.set(grid.columns, forKey: Prefs.launchpadColumns)
+      UserDefaults.standard.set(grid.rows, forKey: Prefs.launchpadRows)
+    }
     save(undoLayout)
     replaceOpenLayout(undoLayout)
     island?.show("已还原上一次的排列", symbol: "arrow.uturn.backward")
@@ -706,9 +789,9 @@ final class Launchpad {
     return [.init("撤销") { [weak self] in self?.undoLastLayoutChange() }]
   }
 
-  private func setUndoLayout(_ layout: LaunchpadLayout?) {
+  private func setUndoLayout(_ layout: LaunchpadLayout?, grid: LaunchpadGrid? = nil) {
     undoLayout = layout
-    LaunchpadUndo.save(layout, to: .standard)
+    LaunchpadUndo.save(layout, grid: grid, to: .standard)
   }
 
   // MARK: 偏好
@@ -750,15 +833,35 @@ final class Launchpad {
   }
 }
 
-/// 撤销上一次导入 / 恢复默认的「上一次」（F41）：只留一份，存在偏好里，重启后还能用一次。
-/// 纯读写，单测用注入的 suite。
+/// 一页几列几行
+nonisolated struct LaunchpadGrid: Equatable, Sendable {
+  var columns: Int
+  var rows: Int
+}
+
+/// 撤销上一次导入 / 恢复默认 / 改行列数的「上一次」（F41）：只留一份，存在偏好里，重启后还能用一次。
+/// 改行列数的那一份另记改之前的行列数（E12；`launchpadUndoGrid`，别的两种不记）。纯读写，单测用注入的 suite。
 nonisolated enum LaunchpadUndo {
-  static func save(_ layout: LaunchpadLayout?, to defaults: UserDefaults) {
+  static func save(
+    _ layout: LaunchpadLayout?, grid: LaunchpadGrid? = nil, to defaults: UserDefaults
+  ) {
     if let text = layout?.jsonString() {
       defaults.set(text, forKey: Prefs.launchpadUndoLayout)
     } else {
       defaults.removeObject(forKey: Prefs.launchpadUndoLayout)
     }
+    if let grid, layout != nil {
+      defaults.set([grid.columns, grid.rows], forKey: Prefs.launchpadUndoGrid)
+    } else {
+      defaults.removeObject(forKey: Prefs.launchpadUndoGrid)
+    }
+  }
+
+  /// 撤销点是改行列数留的：改之前的行列数；别的撤销点、读不出来是 nil
+  static func grid(from defaults: UserDefaults) -> LaunchpadGrid? {
+    guard let pair = defaults.array(forKey: Prefs.launchpadUndoGrid) as? [Int], pair.count == 2
+    else { return nil }
+    return LaunchpadGrid(columns: pair[0], rows: pair[1])
   }
 
   static func load(from defaults: UserDefaults) -> LaunchpadLayout? {

@@ -19,10 +19,12 @@ final class LaunchpadPanel: NSPanel {
   var onFirstPage: (() -> Void)?
   var onLastPage: (() -> Void)?
   var onCloseRequest: (() -> Void)?
-  /// ⌥ 按下 / 松开（抖动模式：按着进、松开退）
-  var onFlagsChanged: ((Bool) -> Void)?
+  /// 修饰键变了（抖动模式：单独按下 ⌥ 进、松开退，进不进由模型按前后两次的修饰键定）
+  var onFlagsChanged: ((NSEvent.ModifierFlags) -> Void)?
   /// 失去 key（F23：确认框是挂在面板上的 sheet 时不收，别的 App 到前台就收）
   var onResignKey: (() -> Void)?
+  /// 成为 key（拿到键盘那一刻重新对一次按着的修饰键，E24⑥）
+  var onBecomeKey: (() -> Void)?
   /// 在搜索框上按下（焦点本来就在框里，点了没变化；界面据此把占位挪到左边、亮出插入点）
   var onSearchClick: (() -> Void)?
 
@@ -125,13 +127,18 @@ final class LaunchpadPanel: NSPanel {
   override func cancelOperation(_ sender: Any?) { onCancel?() }
 
   override func flagsChanged(with event: NSEvent) {
-    onFlagsChanged?(event.modifierFlags.contains(.option))
+    onFlagsChanged?(event.modifierFlags)
     super.flagsChanged(with: event)
   }
 
   override func resignKey() {
     super.resignKey()
     onResignKey?()
+  }
+
+  override func becomeKey() {
+    super.becomeKey()
+    onBecomeKey?()
   }
 
   /// 搜索框拿 / 放焦点（G9：开文件夹、进抖动时放掉，关掉 / 退出时还回去，「一打字就进搜索」照常）。

@@ -42,9 +42,7 @@ struct LauncherTab: View {
       .navigationDestination(for: String.self) { id in SearchEngineDetail(id: id) }
     }
     .onAppear(perform: recheck)
-    .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
-      recheck()
-    }
+    .onSettingsBecameKey(perform: recheck)
     // 开关变了、设置窗重新变 key：该读的浏览历史 / Firefox 书签在进程外读，关掉的扔掉
     .task(id: "\(bookmarkIDs)|\(historyIDs)|\(checks)") { await BrowserHistory.shared.refresh() }
     .confirmationDialog("清空启动器的使用记录？", isPresented: $confirmsClear) {

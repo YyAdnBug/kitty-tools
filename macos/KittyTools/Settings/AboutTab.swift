@@ -1,5 +1,5 @@
 // 设置 › 关于（Whisker 品牌页）：128 pt 大图标（点一下摇一摇，悬停时跟着指针 3D 倾斜 ≤ 6°）+ 26 pt 圆体字标 +
-// 版本胶囊 + 应用内更新（Updater：检查更新、发现新版本时「更新并重新打开」、自动检查开关）+ 未来计划（随包的
+// 版本胶囊 + 应用内更新（Updater：检查更新、发现新版本时「更新并重新打开」、下载中「取消」、自动检查开关）+ 未来计划（随包的
 // roadmap.json：已知的小毛病在前、以后的新功能在后；做好了从那里拿掉、写进更新日志，2026-10-18 用户要求）+ 更新日志时间线
 // （随包分发的 changelog.json，最新版在前）；可以重看欢迎引导。更新后第一次启动不再自动打开这一页，只由刘海岛说
 // 「已更新到 x」+ 本版摘要（AppDelegate 比较 lastSeenVersion，体检 A29），全文在这里。
@@ -173,6 +173,8 @@ struct AboutTab: View {
           Text(Updater.installingLine(release.version, progress: updater.progress))
             .monospacedDigit()
             .foregroundStyle(.secondary)
+          // 下载中能取消（E23，回到「有新版本」）；下完在装的那一两秒不能停
+          if updater.isDownloading { link("取消") { updater.cancelDownload() } }
         case .installed(let release):
           Label(
             "新版本 \(release.version) 已装好，\(Updater.installedDetail)",

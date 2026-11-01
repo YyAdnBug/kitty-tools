@@ -107,9 +107,7 @@ struct TransferSection: View {
       SectionFootnote("普通历史、图片和文件类的收藏不在文件里；截图的存储文件夹、登录时打开和系统权限要在新电脑上重新设。")
     }
     .onAppear(perform: reload)
-    .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) {
-      _ in reload()
-    }
+    .onSettingsBecameKey(perform: reload)
     .onReceive(NotificationCenter.default.publisher(for: SettingsBackup.changed)) { _ in reload() }
   }
 

@@ -84,6 +84,7 @@ struct SettingsArchiveTests {
       Prefs.folderAccessRequested, Prefs.screenRecordingInProgress, Prefs.updateNotifiedVersion,
       Prefs.screenshotSaveDirectory, Prefs.statusScreenLastPreset,
       Prefs.launcherWebSearchEngines, HotKeyAction.clipboard.prefsKey, "translateServices",
+      Prefs.onboardingScreen, Prefs.accessibilityRequested, Prefs.screenRecordingRequested,
     ] {
       #expect(kinds[key] == nil)
     }

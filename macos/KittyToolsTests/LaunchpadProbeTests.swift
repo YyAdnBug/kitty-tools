@@ -6,6 +6,8 @@
 //   - 两指滑跟手时每一帧（喂一次 scroll 再布局一次）主线程要多久（中位 / 最长）；
 //   - 捏合跟手时每一帧（改一次 model.zoom 再布局一次：上面那层的缩放，GESTURE.md A）主线程要多久（中位 / 最长）；
 //   - 建出来、收起放掉前后 phys_footprint 各多少（活动监视器的口径）。
+// 本机的目录量一遍，再造 300 个 App 的假目录量一遍（第四轮体检 F4⑥：界面一次建全部页，第一帧超过 120 ms 或内存超过 40 MB
+// 才改成只建当前页 ±1）。两遍都先把图标画好（同真用时后台画好、常驻的位图），第一帧不算画图标；footprint 不算图标位图。
 // 触控板监听静置时的 CPU 量不了：R11 要求只在真机上量（单测里不注册回调、不读真触点，SPEC §2），
 // 数字在 HANDTEST「启动台手测」10 里看。
 
@@ -34,10 +36,29 @@ struct LaunchpadProbeTests {
   }
 
   @Test(.enabled(if: LaunchpadProbeTests.isEnabled)) func measure() throws {
-    let megabyte = 1024 * 1024
     let scanStart = Date()
     let catalog = LaunchpadCatalog.load()
     let scan = Date().timeIntervalSince(scanStart)
+    try probe(catalog, label: "local", scan: scan)
+    // 第四轮体检 F4⑥：300 个 App 的假目录（本机的轮着用、编号不同；图标照本机的画），看一次建全部页的第一帧和内存
+    let fake = (0..<300).map { index in
+      let app = catalog[index % catalog.count]
+      let ref = LaunchpadAppRef(bundleID: "probe.app\(index)", path: app.path)
+      return LaunchpadProjectApp(
+        id: ref.id, ref: ref,
+        item: LauncherItem(
+          kind: .app, target: app.path, title: "\(app.name) \(index)", subtitle: "应用程序"),
+        url: app.url, isSystem: app.isSystem, inUtilities: app.inUtilities, isAppStore: false,
+        category: nil)
+    }
+    try probe(fake, label: "fake300", scan: 0)
+  }
+
+  /// 量一份目录：图标先画好（同真用时常驻的位图，第一帧不算画图标的时间），再屏外建界面
+  private func probe(_ catalog: [LaunchpadProjectApp], label: String, scan: TimeInterval) throws {
+    let megabyte = 1024 * 1024
+    let icons = LaunchpadIcons()
+    for app in catalog { _ = icons.icon(for: app, size: 64) }
     let layout = LaunchpadLayout.defaultLayout(
       catalog.map {
         LaunchpadLayout.DefaultApp(
@@ -55,8 +76,7 @@ struct LaunchpadProbeTests {
     var zoomWorst = 0.0
     do {
       let model = LaunchpadModel(
-        layout: layout, catalog: catalog, icons: LaunchpadIcons(), columns: 7, rows: 5,
-        screenSize: size)
+        layout: layout, catalog: catalog, icons: icons, columns: 7, rows: 5, screenSize: size)
       let host = NSHostingView(
         rootView: LaunchpadView(model: model).frame(width: size.width, height: size.height))
       let window = NSWindow(
@@ -123,8 +143,9 @@ struct LaunchpadProbeTests {
     print(
       String(
         format:
-          "launchpad-probe apps=%d scan=%.1fms firstFrame=%.1fms pageLayout median=%.2fms worst=%.2fms track median=%.2fms worst=%.2fms zoom median=%.2fms worst=%.2fms footprint open=+%.1fMB released=%+.1fMB",
-        count, scan * 1000, firstFrame * 1000, median, worst, trackMedian, trackWorst,
+          "launchpad-probe %@ apps=%d pages=%d scan=%.1fms firstFrame=%.1fms pageLayout median=%.2fms worst=%.2fms track median=%.2fms worst=%.2fms zoom median=%.2fms worst=%.2fms footprint open=+%.1fMB released=%+.1fMB",
+        label, count, layout.pages.count, scan * 1000, firstFrame * 1000, median, worst,
+        trackMedian, trackWorst,
         zoomMedian, zoomWorst,
         Double(opened - before) / Double(megabyte), Double(released - before) / Double(megabyte)))
   }

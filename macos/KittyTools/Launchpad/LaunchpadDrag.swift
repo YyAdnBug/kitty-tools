@@ -16,10 +16,17 @@ nonisolated struct LaunchpadDragTiming: Sendable {
   var edgeDwell: Duration = .milliseconds(400)
   /// 一直停在边上，之后每隔多久再翻一页
   var edgeRepeat: Duration = .milliseconds(600)
+  /// 按住不动多久进抖动（这一次松手不算点击）
+  var hold: Duration = .seconds(1)
 
   static let macOS15 = LaunchpadDragTiming()
   /// 单测：让位不等（指针一到落点就换上去），别的照旧
   static let immediate = LaunchpadDragTiming(reflow: .zero)
+  /// 单测里发真鼠标事件、又不想碰上任何计时的：让位不等，合成、开文件夹、翻页、按住进抖动都要等一分钟（满载时两次事件
+  /// 之间可能隔一秒多，按住进抖动、停在图标中心合成这些计时会抢先，第四轮体检第 5 批追加）
+  static let patient = LaunchpadDragTiming(
+    reflow: .zero, combine: .seconds(60), folderOpen: .seconds(60), edgeDwell: .seconds(60),
+    edgeRepeat: .seconds(60), hold: .seconds(60))
 }
 
 /// 松手 / 取消之后那份跟手的滑进落点（滑回原位）：界面按它画，到了就清掉
