@@ -213,7 +213,7 @@ import Observation
   // MARK: 开关
 
   /// 用这个文件夹同步：没有标记的写一个（新的库），有标记的接着用那个库。返回没开成的原因（nil = 开了，调用方接着
-  /// start）。文件夹里已经有别的电脑的便签时合不合在一起，由调用方先问（NoteSyncDisk.inspect）
+  /// start）。文件夹里已经有别的电脑在同步时合不合在一起，由调用方先问（NoteSyncDisk.inspect）
   func enable(folder: URL) async -> String? {
     let inspection = await NoteSyncDisk.inspect(folder: folder, device: store.deviceID)
     guard inspection.exists else { return "这个文件夹不在了" }
@@ -225,7 +225,7 @@ import Observation
       return "这个文件夹是更新版本的 Kitty Tools 用的，先更新再同步"
     }
     if library == nil, inspection.devices > 0 {
-      return "这个文件夹里有别的 Mac 同步过的便签，却找不到同步记录（可能还没下载完），稍后再试"
+      return "这个文件夹里有别的 Mac 同步过的数据，却找不到同步记录（可能还没下载完），稍后再试"
     }
     // 没同步过的文件夹要是空的：不往「文稿」这种放着别的东西的文件夹里撒子文件夹
     if library == nil, !inspection.empty {

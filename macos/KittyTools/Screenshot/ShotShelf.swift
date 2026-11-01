@@ -35,6 +35,8 @@ final class ShotShelf {
   /// 右键「在历史里看」：打开截图历史窗口（AppDelegate 给）。
   /// ponytail: 只打开窗口、不定位到这一条——最新的本来就排在最前面
   var openHistory: () -> Void = {}
+  /// 截图历史开着没有（ShotHistory.isOn，AppDelegate 给）：关着时右键没有「在历史里看」（第四轮体检 U13）
+  var historyIsOn: () -> Bool = { true }
 
   private(set) var cards: [ShelfCard] = []
   private var idle: [NSPanel] = []
@@ -315,19 +317,20 @@ final class ShotShelf {
     return recording.medium.noun + "，" + ScreenRecorder.spoken(recording.seconds)
   }
 
-  /// 右键菜单（一节一组，节间分隔线）：截图「拷贝 / 存储 / 钉图 /（存过的）在访达中显示 ｜ 关闭」；
-  /// 录屏「拷贝 / 转成 GIF / 压缩 / 打开 / 在访达中显示 ｜ 移到废纸篓 ｜ 关闭」（压缩出来的那张没有「压缩」），
-  /// 录音、GIF 同录屏但没有「转成 GIF」「压缩」（已经存了，没有存储；不是图，没有钉图）
+  /// 右键菜单（一节一组，节间分隔线）：截图「拷贝 / 存储 / 钉图 /（存过的）在访达中显示 / 在历史里看 ｜ 关闭」；
+  /// 录屏「拷贝 / 转成 GIF / 压缩 / 打开 / 在访达中显示 / 在历史里看 ｜ 移到废纸篓 ｜ 关闭」（压缩出来的那张没有「压缩」），
+  /// 录音、GIF 同录屏但没有「转成 GIF」「压缩」（已经存了，没有存储；不是图，没有钉图）。截图历史关着时没有「在历史里看」
   var menu: [[Command]] {
+    let history: [Command] = shelf?.historyIsOn() == false ? [] : [.history]
     guard kind.file == nil else {
       var convert: [Command] = []
       if case .video = kind { convert = canCompress ? [.gif, .compress] : [.gif] }
-      return [[.copy] + convert + [.open, .reveal, .history], [.trash], [.close]]
+      return [[.copy] + convert + [.open, .reveal] + history, [.trash], [.close]]
     }
     let saved = if case .saved = badge { true } else { false }
     // 截图这个功能关掉之后还留在角落的：没有钉图（Feature）
     let pin: [Command] = Feature.screenshot.isOn ? [.pin] : []
-    return [[.copy, .save] + pin + (saved ? [.reveal] : []) + [.history], [.close]]
+    return [[.copy, .save] + pin + (saved ? [.reveal] : []) + history, [.close]]
   }
 
   func perform(_ command: Command) {

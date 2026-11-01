@@ -84,7 +84,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   /// 页头下面的一句说明
   var summary: String {
     switch self {
-    case .general: "外观、菜单栏图标、登录时打开、权限、设置的导出与导入"
+    case .general: "功能、外观、菜单栏、登录时打开、权限、同步、导出与导入、数据目录"
     case .clipboard: "历史上限、面板、内容格式和隐私"
     case .launcher: "搜索 App、文件、书签与历史、网页搜索与快捷链接"
     case .launchpad: "全屏的图标网格：排法、翻页、搜索、文件夹、捏合"
@@ -110,6 +110,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         "导出", "导入", "备份", "恢复", "迁移", "换电脑", "配置",
         "功能", "模块", "关闭", "停用", "启用", "不用",
         "同步", "iCloud", "云盘", "多台", "几台", "另一台",
+        "数据", "数据目录", "访达", "文件夹",
       ]
     case .clipboard:
       [

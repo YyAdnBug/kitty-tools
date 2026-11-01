@@ -28,7 +28,7 @@ struct DockPreviewTab: View {
         Text("程序坞预览")
       } footer: {
         SectionFootnote(
-          "点一张切到那扇窗口，悬停时点右上角的 ✕ 关掉它。最小化的、隐藏的和别的桌面上的窗口也列出来。")
+          "点一张切到那扇窗口，悬停时点左上角的 ✕ 关掉它。最小化的、隐藏的和别的桌面上的窗口也列出来。")
       }
       Section {
         PermissionRow(

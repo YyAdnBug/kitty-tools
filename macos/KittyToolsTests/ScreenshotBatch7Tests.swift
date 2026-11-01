@@ -180,7 +180,10 @@ struct ScreenshotBatch7Tests {
     func views(in view: NSView) -> [NSView] { view.subviews.flatMap { [$0] + views(in: $0) } }
     let tips = Set(views(in: ScrollCaptureHUD()).compactMap { ($0 as? NSButton)?.toolTip })
     // 面板上「另存为…」在存储右边的 ▾ 菜单里（2026-10-26 加「标注」时收进去的），按钮提示只剩这三样
-    #expect(tips.isSuperset(of: ["拷贝（↩）", "存储到「\(folder)」（⌘S）", "存储到… / 另存为…", "标注（A）"]))
+    #expect(
+      tips.isSuperset(of: [
+        "拷贝（↩）", "存储到「\(folder)」（⌘S）", "存储到「\(folder)」 / 另存为…", "标注（A）",
+      ]))
     let h = Harness()
     h.makeSelection()
     #expect(h.toolbar?.button(for: .output(.save))?.toolTip == "存储到「\(folder)」（⌘S）")
@@ -223,7 +226,7 @@ struct ScreenshotBatch7Tests {
     #expect(h.view.announcement == "长截图不带这些标注，拼完可以在长图上标")
   }
 
-  /// 长截图面板：A 进标注；存储右边的 ▾ 弹「存储到…／另存为…」，点了交回 saveAs
+  /// 长截图面板：A 进标注；存储右边的 ▾ 弹「存储到「桌面」／另存为…」，点了交回 saveAs
   @MainActor @Test func scrollPanelAnnotateAndSaveMenu() throws {
     let hud = ScrollCaptureHUD()
     var actions: [ScrollCaptureHUD.Item] = []
@@ -247,7 +250,9 @@ struct ScreenshotBatch7Tests {
     }
     func all(_ view: NSView) -> [NSView] { view.subviews.flatMap { [$0] + all($0) } }
     let caret = try #require(
-      all(hud).compactMap { $0 as? NSButton }.first { $0.toolTip == "存储到… / 另存为…" })
+      all(hud).compactMap { $0 as? NSButton }.first {
+        $0.toolTip == ScreenshotOutput.saveTitle + " / 另存为…"
+      })
     caret.performClick(nil)
     #expect(actions.count == 1)  // 只弹菜单，不出图
     let menu = try #require(hud.subviews.compactMap { $0 as? HUDMenu }.first)

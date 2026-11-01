@@ -141,9 +141,12 @@ struct NoteSheet: View {
       ) {
         model.toggleTask()
       }
+      // 浮着的便签固定不固定都在别的窗口上面，固定只管重启后回不回来：提示单独说这一句
       NoteIconButton(
         symbol: note.isPinned ? "pin.fill" : "pin",
-        label: "\(NotesWindowModel.pinTitle(note))（⌘P）", ink: paper.ink
+        label: "\(NotesWindowModel.pinTitle(note))（⌘P）", ink: paper.ink,
+        help: model.isFloating
+          ? (note.isPinned ? "取消固定（⌘P）：重启后不再浮在这里" : "固定（⌘P）：重启后还浮在这里") : nil
       ) {
         model.togglePinned()
       }
@@ -196,6 +199,8 @@ private struct NoteIconButton: View {
   let symbol: String
   let label: String
   let ink: Color
+  /// 悬停提示另写一句时给（不给 = 就是 label）
+  var help: String? = nil
   let action: () -> Void
   @State private var isHovered = false
 
@@ -219,6 +224,6 @@ private struct NoteIconButton: View {
       }
     }
     .accessibilityLabel(label)
-    .help(label)
+    .help(help ?? label)
   }
 }

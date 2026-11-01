@@ -3408,7 +3408,9 @@ struct SnapshotProbeTests {
   /// 长截图面板：刚开始（还没预览）、拼了一段（预览 + 尺寸）、对不上（橙色提示）、自动滚动中，深浅色
   /// 长图标注窗口的画布：长图上画了矩形、箭头、序号，选中的那条带虚线框和手柄（工具栏是 HUD 皮肤，
   /// 和长截图面板一样在 macOS 26 起的玻璃下渲染出来是空白，这里只出画布）
-  /// 截图历史窗口（历史第 2 批）：空的、有几条（按天分组、选中一条出右边的预览）、搜不到，深浅各一张
+  /// 截图历史窗口（历史第 2 批）：空的、有几条（按天分组、选中一条出右边的预览）、搜不到，深浅各一张；
+  /// 空状态按设置说（第四轮体检 U13）：保留 7 天的、截图历史关着的（临时偏好域，用完删掉；不用 register——注册域是
+  /// 整个进程共用的，会漏给 UserDefaults.standard 和后面的测试）
   private func renderShotHistory(_ out: String) throws {
     let root = FileManager.default.temporaryDirectory.appending(path: "kitty-shot-history-shots")
     try? FileManager.default.removeItem(at: root)
@@ -3416,10 +3418,24 @@ struct SnapshotProbeTests {
       db: Database(path: ":memory:"), directory: root.appending(path: "shots"))
     defer { try? FileManager.default.removeItem(at: root) }
     let model = ShotHistoryModel(history: history)
+    let suites = ["kitty-snapshot-\(UUID().uuidString)", "kitty-snapshot-\(UUID().uuidString)"]
+    let keeps = try #require(UserDefaults(suiteName: suites[0]))
+    let off = try #require(UserDefaults(suiteName: suites[1]))
+    defer {
+      for (prefs, name) in zip([keeps, off], suites) { prefs.removePersistentDomain(forName: name) }
+    }
+    for prefs in [keeps, off] { prefs.set(true, forKey: Feature.screenshot.prefsKey) }
+    keeps.set(true, forKey: Prefs.shotHistory)
+    keeps.set(7, forKey: Prefs.shotHistoryDays)
+    off.set(false, forKey: Prefs.shotHistory)
     for dark in [false, true] {
       try snapshot(
-        ShotHistoryView(model: model), size: NSSize(width: 900, height: 560), dark: dark,
-        to: "\(out)/shot-history-empty\(dark ? "-dark" : "").png")
+        ShotHistoryView(model: model).defaultAppStorage(keeps),
+        size: NSSize(width: 900, height: 560),
+        dark: dark, to: "\(out)/shot-history-empty\(dark ? "-dark" : "").png")
+      try snapshot(
+        ShotHistoryView(model: model).defaultAppStorage(off), size: NSSize(width: 900, height: 560),
+        dark: dark, to: "\(out)/shot-history-off\(dark ? "-dark" : "").png")
     }
     // 摆几条（图不写盘：缩略图读不到就画种类符号，网格的排法一样看得出来）
     let now = Date.now
@@ -4122,7 +4138,7 @@ struct SnapshotProbeTests {
     }
     try snapshot(section(), size: size, dark: false, to: "\(out)/sync-off.png")
     prefs.set(
-      SyncSection.iCloudDrive.appending(path: "Kitty Tools 便签").path,
+      SyncSection.iCloudDrive.appending(path: "Kitty Tools 同步").path,
       forKey: Prefs.notesSyncFolder)
     prefs.set("库", forKey: Prefs.notesSyncLibrary)
     // 勾存过（这一版里开的同步）：不然每张都当成从只同步便签的版本升上来的

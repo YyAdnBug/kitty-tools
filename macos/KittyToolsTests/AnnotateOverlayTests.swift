@@ -1,5 +1,5 @@
 // 长图标注窗口（第 1 批）的单测：画布的坐标换算（脏区 ↔ 图里的像素）、窗口默认大小、按宽适配的缩放、
-// 工具栏是长图那一套（只有识字，没有翻译 / 长截图 / 录屏 / 钉图）、按键出图。
+// 工具栏是长图那一套（只有识字，没有翻译 / 长截图 / 录屏 / 钉图）、按键出图、存储 ▾ 弹 HUD 菜单（第四轮体检 U13）。
 // 很高的长图在真窗口里滚动、导出要多久、占多少内存在按需探针 AnnotateOverlayProbeTests 里量。
 
 import AppKit
@@ -114,6 +114,56 @@ struct AnnotateOverlayTests {
     try press(kVK_Return, "\r")
     #expect(actions == [.recognize, .copy])
     editor.close()
+  }
+
+  /// 存储右边的 ▾（第四轮体检 U13）：弹 HUD 菜单「存储到「桌面」/ 另存为…」，不直接出图；Esc 先收菜单、遮罩留着；
+  /// 点外面只收菜单；菜单里点「另存为…」交回 saveAs、遮罩收起
+  @Test func saveCaretOpensHUDMenu() throws {
+    var actions: [RegionSelector.Action] = []
+    var closed = false
+    let editor = AnnotateOverlay(image: image(width: 400, height: 600), scale: 2) {
+      action, _, _, _ in actions.append(action)
+    }
+    editor.onClose = { closed = true }
+    defer { editor.close() }
+    let content = try #require(editor.panel.contentView)
+    let bar = try #require(content.subviews.compactMap { $0 as? EditorToolbar }.first)
+    let caret = try #require(bar.button(for: .saveMenu))
+    #expect(caret.toolTip == ScreenshotOutput.saveTitle + " / 另存为…")
+    caret.performClick(nil)
+    let menu = try #require(editor.saveMenu)
+    #expect(actions.isEmpty && !closed)
+    func all(_ view: NSView) -> [NSView] { view.subviews.flatMap { [$0] + all($0) } }
+    let rows = all(menu).filter { $0.accessibilityRole() == .button }
+    #expect(rows.compactMap { $0.accessibilityLabel() } == [ScreenshotOutput.saveTitle, "另存为…"])
+    // Esc：只收菜单（画布是第一响应者，它自己也认 Esc；菜单要先收）
+    let escape = try #require(
+      NSEvent.keyEvent(
+        with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+        windowNumber: editor.panel.windowNumber, context: nil, characters: "\u{1b}",
+        charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: UInt16(kVK_Escape)))
+    editor.panel.sendEvent(escape)
+    #expect(editor.saveMenu == nil && menu.superview == nil)
+    #expect(actions.isEmpty && !closed)
+    // 再点 ▾ 开、再点一下收
+    caret.performClick(nil)
+    #expect(editor.saveMenu != nil)
+    caret.performClick(nil)
+    #expect(editor.saveMenu == nil)
+    // 点在暗底上：只收菜单，这一下吃掉
+    caret.performClick(nil)
+    let click = try #require(
+      NSEvent.mouseEvent(
+        with: .leftMouseDown, location: CGPoint(x: 5, y: 5), modifierFlags: [], timestamp: 0,
+        windowNumber: editor.panel.windowNumber, context: nil, eventNumber: 0, clickCount: 1,
+        pressure: 1))
+    #expect(editor.panel.intercept(click))
+    #expect(editor.saveMenu == nil && !closed)
+    // 菜单里的「另存为…」
+    caret.performClick(nil)
+    let again = try #require(editor.saveMenu)
+    _ = all(again).filter { $0.accessibilityRole() == .button }.last?.accessibilityPerformPress()
+    #expect(actions == [.saveAs] && closed)
   }
 
   /// 输入文字时的编辑键交给输入框（第三轮体检 R5）：⌘S / ⌘C 不再出图关窗，⌘Z 撤的是框里打的字、不是整条标注

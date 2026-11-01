@@ -790,6 +790,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       Task { await shotHistory.record(file: file, poster: poster, kind: kind) }
     }
     shelf.openHistory = { [unowned self] in showShotHistory() }
+    shelf.historyIsOn = { [unowned self] in shotHistory.isOn }
     // 改完标注、缩略图重做好了（2026-10-26 用户手测：历史里看着像没改过）：清掉那张的缓存，
     // 开着的历史窗口重画网格、晾衣绳重画那张卡并重做拖出去的那份
     shotHistory.onThumbnailChanged = { [unowned self] id in
@@ -2191,6 +2192,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   func showShotHistory(deleting: ShotHistory.Item? = nil) {
     let model =
       shotHistoryWindow?.model ?? ShotHistoryModel(history: shotHistory, actions: shotActions)
+    model.openSettings = { [unowned self] in showSettings(page: .screenshot) }
     if let deleting {
       model.selection = deleting.id
       model.deleting = [deleting.id]

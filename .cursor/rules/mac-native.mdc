@@ -6,7 +6,7 @@ alwaysApply: true
 
 # mac-native：原生 macOS 分支红线
 
-`macos/PLAN.md` 只留仍有效的：§2 技术栈白名单、§4 架构与文件表、§8 打包、§10 约束与已拍板决定、§11 旧逻辑问题与语言规则、§12 现状与下一步（迁移期历史和已完成批次的实现记录原样归档在 `macos/docs/archive/`）；手测条目和发版冒烟清单在 `macos/HANDTEST.md`，新的手测加在那里；行为、界面、默认值、文案以各 `mac-*` 规则、`mac-whisker.mdc` 和对标产品为准。下面每条都是硬约束，违反即返工。
+`macos/PLAN.md` 只留仍有效的：§2 技术栈白名单、§4 架构与文件表、§8 打包、§10 约束与已拍板决定、§11 旧逻辑问题与语言规则、§12 现状与下一步（迁移期历史和已完成批次的实现记录原样归档在 `macos/docs/archive/`）；发版前走的「真机回归清单」和正在验收的那一轮手测在 `macos/HANDTEST.md`，新的手测加在那里（怎么加、编号规则见它的开头；到 2026-10-30 的发版冒烟清单和各批手测原样归档在 `macos/docs/archive/HANDTEST-2026-10.md`，编号不变，「HANDTEST X 第 N 条」这类引用指那里）；行为、界面、默认值、文案以各 `mac-*` 规则、`mac-whisker.mdc` 和对标产品为准。下面每条都是硬约束，违反即返工。
 
 ## 1. 结构
 - 唯一开发区是 `macos/`：源码在 `KittyTools/{App,Shell,Storage,Clipboard,Translate,Launcher,Launchpad,Screenshot,StatusScreen,Notes,DockPreview,Settings,Resources}`，文件归属照 PLAN §4 的表格；`KittyToolsTests/` 只测纯函数。

@@ -4,7 +4,7 @@
 import AppKit
 import SwiftUI
 
-/// 没开时一行「选择文件夹…」（打开面板先指到 iCloud 云盘）；选的文件夹里已经有别的 Mac 的便签，先问一句合不合在一起。
+/// 没开时一行「选择文件夹…」（打开面板先指到 iCloud 云盘）；选的文件夹里已经有别的 Mac 在同步，先问一句合不合在一起。
 /// 开着时：文件夹（悬停看路径）+「停止同步」+「立即同步」（刹车时换成「继续同步」），说明是状态（上次同步、还在下载几个），
 /// 出了问题橙字说为什么、能怎么办；下面一行列出别的 Mac 和它们上次有改动的时刻。勾上一类会是它第一次合（升级上来的那台
 /// 新加的几类先没勾，NoteSyncer.isUpgrade）时先问合不合在一起，说明和选文件夹时那段一样。**这一节不去碰那个文件夹**（可能在卡住的
@@ -112,7 +112,7 @@ struct SyncSection: View {
       }
     }
     .confirmationDialog(
-      "和这个文件夹里的便签合在一起？",
+      "和这个文件夹里已经在同步的 Mac 合在一起？",
       isPresented: Binding {
         joining != nil
       } set: {
@@ -144,7 +144,7 @@ struct SyncSection: View {
     if FileManager.default.fileExists(atPath: Self.iCloudDrive.path) {
       panel.directoryURL = Self.iCloudDrive
     }
-    panel.message = "选一个几台 Mac 都看得到的空文件夹（比如在 iCloud 云盘里新建一个「Kitty Tools 便签」），每台 Mac 选同一个"
+    panel.message = "选一个几台 Mac 都看得到的空文件夹（比如在 iCloud 云盘里新建一个「Kitty Tools 同步」），每台 Mac 选同一个"
     panel.prompt = "用这个文件夹同步"
     problem = nil
     isBusy = true
@@ -158,7 +158,7 @@ struct SyncSection: View {
         let seen = await NoteSyncDisk.inspect(folder: folder, device: syncer.store.deviceID)
         looking = false
         isBusy = false
-        // 有别的 Mac 的便签才问（更新的格式不问：开的时候直接说先更新）
+        // 有别的 Mac 在同步才问（更新的格式不问：开的时候直接说先更新）
         if let marker = seen.marker, marker.format <= NoteSyncFolder.format, seen.devices > 0 {
           joining = Joining(folder: folder, devices: seen.devices, notes: seen.notes)
         } else {
@@ -198,7 +198,7 @@ struct SyncSection: View {
           .buttonStyle(.plain)
           .foregroundStyle(Style.brandInk)
           .pointerStyle(.link)
-          .help("文件夹里的东西留着，这台 Mac 上的便签不动")
+          .help("文件夹里的东西留着，这台 Mac 上的数据也不动")
         if case .waiting = syncer.status {
           Button("继续同步") { syncer.confirmTrashing() }
         } else {

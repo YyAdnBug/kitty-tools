@@ -567,7 +567,7 @@ final class ScrollCaptureHUD: NSView {
     case toggleAuto, cancel
     /// 按了 Esc（✕ 是 cancel）：长图拼上过东西时第一下只上膛（第四轮体检 U3）
     case escape
-    /// 存储右边的 ▾：弹「存储到… / 另存为…」（同截图工具栏）
+    /// 存储右边的 ▾：弹「存储到「桌面」/ 另存为…」（同截图工具栏）
     case saveMenu
     case output(ScrollCapture.Action)
   }
@@ -699,7 +699,7 @@ final class ScrollCaptureHUD: NSView {
       (.toggleAuto, "play.fill", "自动滚动（空格）"),
       (.output(.annotate), "pencil.tip.crop.circle", "标注（A）"),
       (.output(.save), "square.and.arrow.down", ScreenshotOutput.saveTitle + "（⌘S）"),
-      (.saveMenu, "chevron.down", "存储到… / 另存为…"),
+      (.saveMenu, "chevron.down", ScreenshotOutput.saveTitle + " / 另存为…"),
       (.cancel, "xmark", "取消（Esc）"),
       (.output(.copy), "checkmark", "拷贝（↩）"),
     ]

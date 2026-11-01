@@ -2,7 +2,9 @@
 // 选中一条右边是大预览、信息和一排操作。模型和窗口在 ShotHistoryWindow.swift。
 // 文件末尾的 ShotThumbnail（缩略图在主线程外读、读好再画）是这里和晾衣绳的卡片共用的。
 // Whisker：系统皮肤的窗口（同设置窗、全部便签窗口），卡片圆角 card，选中那张画 2 pt 强调色描边
-// （强调色只标「现在该操作的东西」，核心 §1.2），空状态用 EmptyState。
+// （强调色只标「现在该操作的东西」，核心 §1.2），空状态用 EmptyState（按实际设置说：保留几天、历史关着时给打开的入口）。
+// 快速保存叫「存储到「桌面」」（ScreenshotOutput.saveTitle，同截图工具栏、钉图；第四轮体检 U13：原来写「存储到…」，
+// 像会弹框，其实直接存）。
 
 import SwiftUI
 
@@ -11,6 +13,10 @@ struct ShotHistoryView: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   /// 光标在不在搜索框里：在的话方向键和 ⌘C 让给它（见 shortcuts）
   @FocusState private var searching: Bool
+  /// 空状态按实际设置说（第四轮体检 U13）：历史关着（截图功能或「保留截图历史」）、保留几天
+  @AppStorage(Feature.screenshot.prefsKey) private var screenshotOn = true
+  @AppStorage(Prefs.shotHistory) private var keepsHistory = true
+  @AppStorage(Prefs.shotHistoryDays) private var historyDays = 30
 
   /// 网格里一张卡多宽（高按 3:2 留，图按自己的比例缩在里面）
   static let cardWidth: CGFloat = 168
@@ -93,7 +99,7 @@ struct ShotHistoryView: View {
       .disabled(searching)
       Button("改标注") { if let item { edit(item) } }
         .keyboardShortcut(.return, modifiers: []).disabled(item == nil)
-      Button("存储到…") { model.saveSelection() }
+      Button(ScreenshotOutput.saveTitle) { model.saveSelection() }
         .keyboardShortcut("s").disabled(!model.canSave)
       Button("钉到屏幕") { if let item { model.actions.pin(item) } }
         .keyboardShortcut("p").disabled(!isImage)
@@ -122,12 +128,7 @@ struct ShotHistoryView: View {
     return ScrollViewReader { proxy in
       ScrollView {
         if groups.isEmpty {
-          EmptyState(symbol: "clock.arrow.circlepath", title: "还没有截图") {
-            Text(
-              model.search.isEmpty
-                ? "截图、长截图、录屏录音都会留在这里，默认保留 30 天。" : "换个词试试。")
-          }
-          .padding(.top, 80)
+          emptyState.padding(.top, 80)
         }
         LazyVStack(alignment: .leading, spacing: 18, pinnedViews: [.sectionHeaders]) {
           ForEach(groups) { group in
@@ -172,6 +173,37 @@ struct ShotHistoryView: View {
         proxy.scrollTo(now, anchor: nil)
       }
     }
+  }
+
+  /// 网格里一条都没有时：搜不到 / 历史关着（给去设置的入口）/ 还没有（保留几天照设置说）
+  @ViewBuilder private var emptyState: some View {
+    if !model.search.isEmpty {
+      EmptyState(symbol: "magnifyingglass", title: "没有匹配的截图") {
+        Text("换个词试试").foregroundStyle(.secondary)
+      }
+    } else if !(screenshotOn && keepsHistory) {
+      EmptyState(symbol: "clock.arrow.circlepath", title: "截图历史已关闭") {
+        VStack(spacing: 6) {
+          Text("在 设置 › 截图 里打开「保留截图历史」，截图、长截图和录屏录音就会留在这里")
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+          Button("打开设置", action: model.openSettings)
+            .buttonStyle(.plain)
+            .foregroundStyle(Style.brandInk)
+            .pointerStyle(.link)
+        }
+        .frame(maxWidth: 360)
+      }
+    } else {
+      EmptyState(symbol: "clock.arrow.circlepath", title: "还没有截图") {
+        Text(Self.keepLine(days: historyDays)).foregroundStyle(.secondary)
+      }
+    }
+  }
+
+  /// 空状态那句：保留几天照设置（0 = 一直留着）
+  static func keepLine(days: Int) -> String {
+    "截图、长截图和录屏录音都会留在这里，" + (days > 0 ? "保留 \(days) 天" : "一直留着")
   }
 
   static func symbol(_ kind: ShotHistory.Kind) -> String {
@@ -234,7 +266,9 @@ struct ShotHistoryView: View {
       Divider()
       VStack(alignment: .leading, spacing: 8) {
         row("拷贝", "doc.on.doc", key: "⌘C") { model.copySelection() }
-        row("存储到…", "square.and.arrow.down", key: "⌘S") { model.saveSelection() }
+        row(ScreenshotOutput.saveTitle, "square.and.arrow.down", key: "⌘S") {
+          model.saveSelection()
+        }
         row("在访达中显示", "folder", key: "⇧⌘R") { model.revealSelection() }
         row("删除", "trash", key: "⌫", danger: true) { model.deleteSelection() }
       }
@@ -252,7 +286,9 @@ struct ShotHistoryView: View {
       if isImage {
         row("改标注", "pencil.tip.crop.circle", key: "↩") { edit(item) }
         row("拷贝", "doc.on.doc", key: "⌘C") { model.actions.copy(item) }
-        row("存储到…", "square.and.arrow.down", key: "⌘S") { model.actions.save(item) }
+        row(ScreenshotOutput.saveTitle, "square.and.arrow.down", key: "⌘S") {
+          model.actions.save(item)
+        }
         row("另存为…", "square.and.arrow.down.on.square", key: "⇧⌘S") { model.actions.saveAs(item) }
         row("钉到屏幕", "pin", key: "⌘P") { model.actions.pin(item) }
         row("识字并拷贝", "text.viewfinder", key: "⌘O") { model.actions.recognize(item) }
@@ -294,7 +330,9 @@ struct ShotHistoryView: View {
     if chosen.count > 1, chosen.contains(where: { $0.id == item.id }) {
       // 右键点的就是多选里的一张：整批做（点在选区外面的那张只管它自己，不动选中）
       Button("拷贝 \(chosen.count) 项") { model.actions.copyMany(chosen) }
-      Button("存储 \(chosen.count) 项…") { model.actions.saveMany(chosen) }
+      Button("存储 \(chosen.count) 项到「\(ScreenshotOutput.saveFolderName)」") {
+        model.actions.saveMany(chosen)
+      }
       Button("在访达中显示") { model.reveal(chosen) }
       Divider()
       Button("删除 \(chosen.count) 项", role: .destructive) {
@@ -303,7 +341,7 @@ struct ShotHistoryView: View {
     } else if item.filePath == nil {
       Button("改标注") { edit(item) }
       Button("拷贝") { model.actions.copy(item) }
-      Button("存储到…") { model.actions.save(item) }
+      Button(ScreenshotOutput.saveTitle) { model.actions.save(item) }
       Button("另存为…") { model.actions.saveAs(item) }
       Button("钉到屏幕") { model.actions.pin(item) }
       Button("识字并拷贝") { model.actions.recognize(item) }

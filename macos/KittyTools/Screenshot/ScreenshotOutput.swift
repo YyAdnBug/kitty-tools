@@ -26,10 +26,12 @@ enum ScreenshotOutput {
     directory(saved: UserDefaults.standard.string(forKey: Prefs.screenshotSaveDirectory))
   }
 
-  /// 快速保存那一项的叫法（截图家族同一个，体检 B41）：存储到「桌面」——访达里的名字，不写 Desktop
-  static var saveTitle: String {
-    "存储到「\(FileManager.default.displayName(atPath: saveDirectory.path))」"
-  }
+  /// 快速保存那一项的叫法（截图家族同一个，体检 B41；截图历史窗口也是，第四轮体检 U13）：存储到「桌面」——访达里的名字，
+  /// 不写 Desktop
+  static var saveTitle: String { "存储到「\(saveFolderName)」" }
+
+  /// 快速保存的文件夹在访达里的名字（「桌面」）：多选时「存储 3 项到「桌面」」也用它
+  static var saveFolderName: String { FileManager.default.displayName(atPath: saveDirectory.path) }
 
   /// saved：设置里选的文件夹（没选过 = nil）。已不存在的目录（拔掉的移动硬盘等）跳过，往下退。
   /// 要查文件夹在不在（可能在卡住的网络盘上）：快速保存在主线程外调它（quickSave）

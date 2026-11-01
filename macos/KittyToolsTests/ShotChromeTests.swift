@@ -143,7 +143,8 @@ struct ShotChromeTests {
     // ▶ 标注 ｜ 存储 ▾ ｜ ✕ ✓（2026-10-26 加「标注」，另存为收进了 ▾）
     #expect(
       buttons.map(\.toolTip) == [
-        "自动滚动（空格）", "标注（A）", ScreenshotOutput.saveTitle + "（⌘S）", "存储到… / 另存为…",
+        "自动滚动（空格）", "标注（A）", ScreenshotOutput.saveTitle + "（⌘S）",
+        ScreenshotOutput.saveTitle + " / 另存为…",
         "取消（Esc）", "拷贝（↩）",
       ])
     let rects = buttons.map(frame)

@@ -60,6 +60,8 @@ import SwiftUI
 
   /// 每条的操作（AppDelegate 给，晾衣绳和这里共用一份 ShotActions；说一句话的 notice 也在里面）
   @ObservationIgnored var actions = ShotActions()
+  /// 历史关着时空状态里的「打开设置」：到 设置 › 截图（AppDelegate 给）
+  @ObservationIgnored var openSettings: @MainActor () -> Void = {}
 
   init(history: ShotHistory, actions: ShotActions = ShotActions()) {
     self.history = history

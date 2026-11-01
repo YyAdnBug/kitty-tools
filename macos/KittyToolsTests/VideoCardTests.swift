@@ -59,6 +59,23 @@ struct VideoCardTests {
     }
   }
 
+  /// 截图历史关着（第四轮体检 U13）：录制卡、截图卡的右键都没有「在历史里看」
+  @Test func menuHidesHistoryWhenOff() throws {
+    let shelf = ShotShelf()
+    shelf.historyIsOn = { false }
+    let video = card(URL(filePath: "/tmp/录屏 a.mp4"), shelf: shelf)
+    #expect(video.menu == [[.copy, .gif, .compress, .open, .reveal], [.trash], [.close]])
+    let image = try #require(
+      CGContext(
+        data: nil, width: 4, height: 4, bitsPerComponent: 8, bytesPerRow: 0,
+        space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)?.makeImage())
+    let shot = ShelfCard(
+      image: image, png: Data(), scale: 2, source: Self.rect, rect: Self.rect, badge: .copied,
+      screen: nil, panel: NSPanel(), shelf: shelf)
+    #expect(!shot.menu.joined().contains(.history))
+  }
+
   /// 拷贝 = 文件 URL 进剪贴板 + 一条文件条目进历史（再拷一次只挪到最前）；文件被移走了就不拷
   @Test func copyWritesFileURLAndRecordsFileEntry() throws {
     let folder = FileManager.default.temporaryDirectory.appending(path: "kitty-video-\(UUID())")

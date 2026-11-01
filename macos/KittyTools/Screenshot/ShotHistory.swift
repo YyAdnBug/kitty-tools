@@ -499,7 +499,7 @@ import UniformTypeIdentifiers
   /// 「点了没反应」（2026-10-26 用户手测报的）
   static func reveal(_ item: Item, notice: (String, Bool) -> Void) {
     guard let path = item.filePath ?? item.savedPath else {
-      return notice("这张还没存成文件，先「存储到…」", false)
+      return notice("这张还没存成文件，先存储一下", false)
     }
     guard fileExists(item) else { return notice("文件已经不在了", true) }
     NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: path)])
@@ -515,7 +515,7 @@ import UniformTypeIdentifiers
       .compactMap { $0.filePath ?? $0.savedPath }
       .filter { FileManager.default.fileExists(atPath: $0) }
       .map { URL(filePath: $0) }
-    guard !urls.isEmpty else { return notice("这几条都还没存成文件，先「存储到…」", false) }
+    guard !urls.isEmpty else { return notice("这几条都还没存成文件，先存储一下", false) }
     NSWorkspace.shared.activateFileViewerSelecting(urls)
   }
 

@@ -260,7 +260,7 @@ final class EditorToolbar: PopView {
       },
       [
         (.output(.save), "square.and.arrow.down", "存储", ScreenshotOutput.saveTitle + "（⌘S）"),
-        (.saveMenu, "chevron.down", "更多存储选项", "存储到… / 另存为…"),
+        (.saveMenu, "chevron.down", "更多存储选项", ScreenshotOutput.saveTitle + " / 另存为…"),
       ],
       [(.cancel, "xmark", "取消", "取消（Esc）"), (.output(.copy), "checkmark", "拷贝", "拷贝（↩）")],
     ]

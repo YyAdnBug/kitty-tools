@@ -41,8 +41,11 @@ struct SettingsListTests {
     #expect(SettingsPage.page(for: "帧率", current: .screenshot) == .record)
     #expect(!SettingsPage.screenshot.matches("录屏") && !SettingsPage.screenshot.matches("麦克风"))
     #expect(SettingsPage.page(for: "文件夹", current: .record) == .record)
-    // 「文件夹」只在截图页的保存文件夹里（启动台页改叫「App 文件夹」，F38）：按侧栏顺序停在截图
-    #expect(SettingsPage.page(for: "文件夹", current: .about) == .screenshot)
+    // 「文件夹」：通用页（同步文件夹、数据目录，第四轮体检 U13）和截图页的保存文件夹都有（启动台页改叫「App 文件夹」，
+    // F38），按侧栏顺序停在通用；当前页是截图时不动
+    #expect(SettingsPage.page(for: "文件夹", current: .about) == .general)
+    #expect(SettingsPage.page(for: "文件夹", current: .screenshot) == .screenshot)
+    #expect(SettingsPage.page(for: "数据目录", current: .about) == .general)
     #expect(SettingsPage.page(for: "App 文件夹", current: .about) == .launchpad)
     // 「状态」也是通用页「状态栏」里的字：搜它停在状态屏；状态屏页里各项的叫法搜得到
     #expect(SettingsPage.page(for: "状态", current: .general) == .statusScreen)

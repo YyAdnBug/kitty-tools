@@ -19,8 +19,8 @@
   - 晾衣绳 `Screenshot/Clothesline*.swift`：截完图挂到屏幕顶上的绳子，和右下角的缩略图二选一（0.7.0）
   - 全局同步（设置 › 通用「同步」）：同步文件夹，便签（0.6.0）之外设置、快捷键、片段和收藏等也能同步（0.7.0）
   - 刘海岛交互：提示能悬停展开、带按钮，点刘海叫出最近的提示（0.7.0）
-- **版本**：已发布到 0.7.0（latest，2026-10-30：主界面、程序坞预览、全局同步、截图历史和晾衣绳、长图标注、刘海岛交互、第三轮体检、功能图标重画）；`MARKETING_VERSION` 是 0.7.0。各版真机手测都没走完。
-- 现状、待手测、下一步看 PLAN §12（各族立项日期、批次进度的原文在 §12「各族进度摘要（原 AGENTS 项目概述）」）；手测条目和发版冒烟清单看 `macos/HANDTEST.md`；拍板和每族的规矩看 PLAN §10 和对应的 `mac-*` 规则。
+- **版本**：已发布到 0.7.0（latest，2026-10-30：主界面、程序坞预览、全局同步、截图历史和晾衣绳、长图标注、刘海岛交互、第三轮体检、功能图标重画）；`MARKETING_VERSION` 是 0.7.1（第四轮体检，2026-11-01 做完，没发布，PLAN §12）。各版真机手测都没走完。
+- 现状、待手测、下一步看 PLAN §12（各族立项日期、批次进度的原文在 §12「各族进度摘要（原 AGENTS 项目概述）」）；发版前走的「真机回归清单」和正在验收的那一轮手测看 `macos/HANDTEST.md`（到 2026-10-30 的发版冒烟清单和各批手测原样归档在 `macos/docs/archive/HANDTEST-2026-10.md`，编号不变，代码注释、规则里「HANDTEST X 第 N 条」都指那里）；拍板和每族的规矩看 PLAN §10 和对应的 `mac-*` 规则。
 - Bundle ID `com.yy.kitty-tools.native`（Debug `com.yy.kitty-tools.native.dev`），不再改（改了会丢偏好、钥匙串和授权）；产品名 / .app 名 `Kitty Tools`（Debug `Kitty Tools Dev`）。和 Tauri 旧版同名：安装前先删掉 /Applications 里旧版的 `Kitty Tools.app`。
 - **规格**：各 `mac-*` 规则（界面与动效按 `mac-whisker`）+ 对标产品（启动器 Alfred / Raycast、翻译 Bob、截图 iShot / CleanShot、录屏 CleanShot / ⌘⇧5、录音 QuickTime / iShot、剪贴板 Paste）。`macos/PLAN.md` 只留仍有效的（§2 技术栈、§4 架构与文件表、§8 打包、§10 约束与决定、§11 实现原则与旧逻辑问题、§12 现状），历史在 `macos/docs/archive/`。
 - **Windows 原生版**在 `windows` 分支的 `windows/`（C# + WinUI 3；本分支里的 `windows/` 是 0.6.0 时的旧快照，别在这里改）：规矩和方案在那边的 `windows/AGENTS.md`、`windows/PLAN.md`。本文件其余部分和 `.cursor/rules/mac-*.mdc` 只管 `macos/`；Windows 的提交写成 `<type>(win): …`，release 不标 latest。
@@ -46,8 +46,8 @@ macos/                       # 本分支唯一开发区
 ├── brand-icons.swift        # 品牌图标：角色「探头」的 AppIcon 10 张 + 菜单栏剪影 StatusIcon + DMG 背景（CoreGraphics 生成）
 ├── .swift-format
 ├── PLAN.md                  # 仍有效的方案：§2 技术栈、§4 架构与文件表、§8 打包、§10 约束与决定、§11 实现原则、§12 现状与下一步
-├── HANDTEST.md              # 发版冒烟清单 + 各批手测条目（原 PLAN §12，编号不变；新的手测加在这里）
-└── docs/archive/            # PLAN 挪出去的迁移期历史和已完成批次的实现记录（原样，只查不改）
+├── HANDTEST.md              # 真机回归清单（约 40 条，发版前走）+ 正在验收的那一轮手测（新的手测加在这里；旧条目在 docs/archive/HANDTEST-2026-10.md）
+└── docs/archive/            # PLAN 挪出去的迁移期历史和已完成批次的实现记录、HANDTEST-2026-10.md（旧的冒烟清单和各批手测）（原样，只查不改）
 icons/                       # 功能图标：mac 和 Windows 共用的 26 个 SVG（feature/kitty.*.svg）+ 生成脚本 build-icons.swift
 .cursor/rules/               # mac-native.mdc（常驻）、ponytail.mdc（只给 Cursor）、各 mac-* 规则（mac-whisker 拆成核心 + mac-whisker-<界面>.mdc）
 .claude/skills/mac-*/        # 按需技能，里程碑结束后补

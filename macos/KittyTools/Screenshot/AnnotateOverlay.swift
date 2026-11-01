@@ -38,6 +38,8 @@ import Carbon.HIToolbox
   private let canvas: ScrollCanvas
   private let bar = EditorToolbar(mode: .longShot)
   private let styleBar = StyleBar()
+  /// 存储右边 ▾ 弹的 HUD 菜单（开着时有值）：Esc、点外面先收它（同截图遮罩、长截图面板）
+  private(set) var saveMenu: HUDMenu?
   private let output: Output
   /// 关掉了（AppDelegate 放掉这个会话）
   var onClose: () -> Void = {}
@@ -83,6 +85,7 @@ import Carbon.HIToolbox
     let content = AnnotateOverlayView()
     content.frame = CGRect(origin: .zero, size: target.frame.size)
     content.onKey = { [unowned self] key in self.key(key) }
+    panel.intercept = { [unowned self] event in menuTakes(event) }
     content.wantsLayer = true
     // 整屏压暗（同截图遮罩的 shade）：图那一块由 scrollView 盖住，所以直接铺一层就行
     shade.frame = content.bounds
@@ -251,14 +254,56 @@ import Carbon.HIToolbox
   private func composed() -> CGImage { canvas.composed() }
 
   private func clicked(_ item: EditorToolbar.Item) {
+    if item != .saveMenu { saveMenu?.dismiss() }
     switch item {
     case .output(let action): emit(action)
     case .cancel: dismiss()
-    case .saveMenu: emit(.saveAs)  // 第 3 批换成 HUD 菜单（存储到… / 另存为…）
+    case .saveMenu: toggleSaveMenu()
     case .tool(let tool): canvas.choose(tool)
     case .undo: canvas.undo()
     case .redo: canvas.redo()
     case .scroll, .record: break  // 长图的工具栏里没有这两颗
+    }
+  }
+
+  /// 存储右边的 ▾：HUD 菜单「存储到「桌面」⌘S / 另存为… ⇧⌘S」，锚在存储钮下方（同截图工具栏、长截图面板的那一份，
+  /// 第四轮体检 U13：原来直接另存为）；开着时再点一下收起
+  private func toggleSaveMenu() {
+    guard saveMenu == nil else { return saveMenu?.dismiss() ?? () }
+    guard let content = panel.contentView, let body = bar.button(for: .output(.save)),
+      let caret = bar.button(for: .saveMenu)
+    else { return }
+    let next = HUDMenu(
+      [
+        .init(title: ScreenshotOutput.saveTitle, key: "⌘S") { [weak self] in self?.emit(.save) },
+        .init(title: "另存为…", key: "⇧⌘S") { [weak self] in self?.emit(.saveAs) },
+      ], label: "存储选项")
+    saveMenu = next
+    next.onDismiss = { [weak self, weak next] in
+      if self?.saveMenu === next { self?.saveMenu = nil }
+    }
+    next.present(
+      in: content,
+      anchor: body.convert(body.bounds, to: content).union(caret.convert(caret.bounds, to: content))
+    )
+  }
+
+  /// 开着菜单时先过一遍窗口收到的事件（画布是第一响应者、自己认 Esc，等它冒泡上来就晚了）。按键：先收菜单，Esc 到此
+  /// 为止（同截图遮罩：Esc 先关 HUD 菜单），别的键照常。按下鼠标：点在菜单、工具栏上照常（工具栏的钮自己先收菜单，
+  /// ▾ 再点一下收起）；点在托盘上收菜单、照常点；点在别处（图、暗底）只收菜单，这一下不做别的。返回 true = 吃掉
+  private func menuTakes(_ event: NSEvent) -> Bool {
+    guard let menu = saveMenu, let content = panel.contentView else { return false }
+    switch event.type {
+    case .keyDown:
+      menu.dismiss()
+      return Int(event.keyCode) == kVK_Escape
+    case .leftMouseDown, .rightMouseDown:
+      let point = content.convert(event.locationInWindow, from: nil)
+      if menu.frame.contains(point) || bar.frame.contains(point) { return false }
+      menu.dismiss()
+      return !(styleBar.isShown && styleBar.frame.contains(point))
+    default:
+      return false
     }
   }
 
@@ -322,8 +367,18 @@ import Carbon.HIToolbox
 /// 遮罩面板：无边框窗口默认当不了 key（收不到 Esc、↩、打字），所以要子类化（同截图遮罩、长截图面板；
 /// mac-overlay-panel §1 的例外之一）
 final class AnnotatePanel: NSPanel {
+  /// 按键、按下鼠标（左右键）先问一声：返回 true = 吃掉这一下（开着 HUD 菜单时 Esc、点外面只收菜单）
+  var intercept: (NSEvent) -> Bool = { _ in false }
+
   override var canBecomeKey: Bool { true }
   override var canBecomeMain: Bool { false }
+
+  override func sendEvent(_ event: NSEvent) {
+    if [.keyDown, .leftMouseDown, .rightMouseDown].contains(event.type), intercept(event) {
+      return
+    }
+    super.sendEvent(event)
+  }
 }
 
 /// 遮罩的内容视图：暗底、图框和工具栏的壳，按键在这里收（画布当第一响应者画标注，没处理的键冒泡到这里）
