@@ -79,6 +79,19 @@ public sealed class CometPathTests
     }
 
     [TestMethod]
+    public void BorderStartsWhereTheTopLeftCornerBegins()
+    {
+        // 合成层的圆角矩形从左边 (left, top + r) 起、先走左上圆角（实测）；走过一段圆弧才到上边。
+        var (x, y) = CometPath.PointAt(200, 100, 10, 0);
+        Assert.AreEqual(-100, x, 1e-9);
+        Assert.AreEqual(-40, y, 1e-9);
+        var perimeter = 2 * (180 + 80) + 2 * Math.PI * 10;
+        (x, y) = CometPath.PointAt(200, 100, 10, Math.PI * 10 / 2 / perimeter);
+        Assert.AreEqual(-90, x, 1e-6);
+        Assert.AreEqual(-50, y, 1e-6);
+    }
+
+    [TestMethod]
     public void PointsLieOnTheBorder()
     {
         for (var s = 0.0; s < 1; s += 0.01)

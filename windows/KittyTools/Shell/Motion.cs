@@ -37,6 +37,12 @@ internal static class Motion
 
     private static bool ReadAnimationsEnabled()
     {
+        // 自检档里 KITTY_REDUCED_MOTION=1 当作系统关了动画效果（HANDTEST 811 之类，不用去改系统设置）。
+        if (Paths.IsTestProfile && Environment.GetEnvironmentVariable("KITTY_REDUCED_MOTION") == "1")
+        {
+            return false;
+        }
+
         try
         {
             return new UISettings().AnimationsEnabled;

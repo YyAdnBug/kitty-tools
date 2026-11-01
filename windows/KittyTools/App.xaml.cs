@@ -23,6 +23,20 @@ public partial class App : Application
         DebugSettings.XamlResourceReferenceFailed += (_, e) => Log.Warn("xaml.resource-failed " + e.Message);
 #endif
         TaskScheduler.UnobservedTaskException += (_, e) => CrashLog.Record("task", e.Exception);
+        // 自检档里 KITTY_APP_THEME=dark / light 把 App 的主题定死，当作系统是深色 / 浅色（不用去改系统设置）：
+        // WinUI 自己的主题画刷按它解，外观设置和系统不一致时的颜色问题要靠它看（HANDTEST 805–807）。
+        if (Paths.IsTestProfile && Environment.GetEnvironmentVariable("KITTY_APP_THEME") is { } appTheme)
+        {
+            if (appTheme == "dark")
+            {
+                RequestedTheme = ApplicationTheme.Dark;
+            }
+            else if (appTheme == "light")
+            {
+                RequestedTheme = ApplicationTheme.Light;
+            }
+        }
+
         try
         {
             InitializeComponent();

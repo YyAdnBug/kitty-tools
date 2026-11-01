@@ -287,6 +287,12 @@ internal sealed class ShellRuntime
                 {
                     TranslateHost.ShowText(text);
                 }
+
+                // 录翻译浮窗流式出字（彗星边框、卡片长高，HANDTEST 808–811）：逐帧原始像素 + 一段 mp4，只抓这一扇窗口，录完退出。
+                if (Environment.GetEnvironmentVariable("KITTY_COMET_RECORD_LIVE") is { Length: > 0 } directory)
+                {
+                    _ = RecordTranslateAsync(directory);
+                }
             });
         }
 
@@ -802,6 +808,25 @@ internal sealed class ShellRuntime
 
     /// <param name="service">翻译服务的 id：直达设置 › 翻译里那个服务的详情（翻译错误卡的「打开设置」）。</param>
     /// <summary>page 不给 = 设置窗上次停在的那一页（同 mac 记住上次的页）。</summary>
+    private static async Task RecordTranslateAsync(string directory)
+    {
+        await Task.Delay(200);
+        if (TranslateHost.WindowForProbe is not { } window)
+        {
+            Environment.Exit(2);
+            return;
+        }
+
+        var handle = WinRT.Interop.WindowNative.GetWindowHandle(window);
+        var seconds = double.TryParse(Environment.GetEnvironmentVariable("KITTY_COMET_RECORD_SECONDS"), out var value) ? value : 6;
+        var video = WgcRecorder.StartWindow(handle, 60, Path.Combine(directory, "video"), false, false, out _, out _);
+        await WindowShot.RecordRawAsync(handle, Path.Combine(directory, "raw"), seconds);
+        Log.Info($"comet.record-live video={video?.Stop()}");
+        video?.Dispose();
+        await WindowShot.SaveAsync(handle, Path.Combine(directory, "after.png"));
+        Environment.Exit(0);
+    }
+
     public void ShowSettings(bool welcome, string? page = null, string? service = null)
     {
         OverlayHost.Hide(restoreForeground: false);

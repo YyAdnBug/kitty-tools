@@ -3,7 +3,8 @@
 // WinUI 的合成层没有角向渐变，TranslateCardView 用同一条描边上的几段虚线叠出来：
 // - Layers：把这条亮度曲线拆成 N 层嵌套的段，第 k 层盖住亮度 ≥ k/N 的那一截，叠起来（源在上）正好是 k/N，段和段之间没有接缝。
 // - HeadTrack：mac 是角度匀速，落到描边上并不匀速——扁卡片上光在长边中间走得慢、绕短边时一闪而过。这里把匀速转的
-//   角度换成描边上的位置，合成器照这些关键帧走。描边的起点按「左上圆角之后的上边、顺时针」算（D2D 圆角矩形的走法）。
+//   角度换成描边上的位置，合成器照这些关键帧走。描边的起点是左边、左上圆角开始的那一点 (left, top + r)，先走左上圆角、
+//   再走上边，顺时针（2026-11-01 在 Windows 上放一小段虚线实测；按「左上圆角之后」算会差一段圆弧）。
 namespace KittyTools.Core;
 
 public static class CometPath
@@ -87,7 +88,13 @@ public static class CometPath
         var (hx, hy) = (width / 2, height / 2);
         var (cx, cy) = (hx - radius, hy - radius);
 
-        // 上边往右 → 右上角 → 右边往下 → 右下角 → 下边往左 → 左下角 → 左边往上 → 左上角。
+        // 左上角 → 上边往右 → 右上角 → 右边往下 → 右下角 → 下边往左 → 左下角 → 左边往上。
+        if (d < arc)
+        {
+            return Round(-cx, -cy, Math.PI, d, radius);
+        }
+
+        d -= arc;
         if (d < straightX)
         {
             return (-cx + d, -hy);
@@ -124,13 +131,7 @@ public static class CometPath
         }
 
         d -= arc;
-        if (d < straightY)
-        {
-            return (-hx, cy - d);
-        }
-
-        d -= straightY;
-        return Round(-cx, -cy, Math.PI, Math.Min(d, arc), radius);
+        return (-hx, cy - Math.Min(d, straightY));
     }
 
     /// <summary>圆角上的点：圆心 (x, y)，从 start 弧度起顺时针走了 d。</summary>

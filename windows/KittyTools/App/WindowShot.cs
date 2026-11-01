@@ -129,6 +129,96 @@ internal static class WindowShot
         }
     }
 
+    /// <summary>
+    /// 连着抓 <paramref name="hwnd"/> <paramref name="seconds"/> 秒：每来一帧存一个 BGRA 原始文件（头 8 字节是宽、高，
+    /// 文件名是从开始算的毫秒）。彗星这类合成层动画逐帧量位置用（HANDTEST 808–811），返回存了几帧。
+    /// </summary>
+    public static async Task<int> RecordRawAsync(IntPtr hwnd, string directory, double seconds)
+    {
+        if (hwnd == IntPtr.Zero)
+        {
+            return 0;
+        }
+
+        Directory.CreateDirectory(directory);
+        using var context = D3DContext.Create(out var error);
+        if (context is null || WgcInterop.ForWindow(hwnd) is not { } item)
+        {
+            Log.Warn($"ui-snapshots record-raw failed {error}");
+            return 0;
+        }
+
+        var saved = 0;
+        var size = item.Size;
+        var start = System.Diagnostics.Stopwatch.GetTimestamp();
+        var writes = new List<Task>();
+        using var pool = Direct3D11CaptureFramePool.CreateFreeThreaded(
+            context.WinRt, DirectXPixelFormat.B8G8R8A8UIntNormalized, 3, item.Size);
+        pool.FrameArrived += (sender, _) =>
+        {
+            using var frame = sender.TryGetNextFrame();
+            if (frame is null)
+            {
+                return;
+            }
+
+            // 窗口长高了：帧池按新大小重建（不然下面那截录不进来），这一帧照旧存。
+            var content = frame.ContentSize;
+            if (content.Width != size.Width || content.Height != size.Height)
+            {
+                size = content;
+                sender.Recreate(context.WinRt, DirectXPixelFormat.B8G8R8A8UIntNormalized, 3, content);
+            }
+
+            var ms = (int)System.Diagnostics.Stopwatch.GetElapsedTime(start).TotalMilliseconds;
+            var copy = SoftwareBitmap.CreateCopyFromSurfaceAsync(frame.Surface, BitmapAlphaMode.Premultiplied).AsTask();
+            lock (writes)
+            {
+                writes.Add(copy.ContinueWith(task =>
+                {
+                    using var bitmap = task.Result;
+                    var pixels = new byte[8 + bitmap.PixelWidth * bitmap.PixelHeight * 4];
+                    BitConverter.TryWriteBytes(pixels.AsSpan(0, 4), bitmap.PixelWidth);
+                    BitConverter.TryWriteBytes(pixels.AsSpan(4, 4), bitmap.PixelHeight);
+                    bitmap.CopyToBuffer(pixels.AsBuffer(8, pixels.Length - 8));
+                    File.WriteAllBytes(Path.Combine(directory, $"{ms:D5}.raw"), pixels);
+                    Interlocked.Increment(ref saved);
+                }, TaskScheduler.Default));
+            }
+        };
+        using var session = pool.CreateCaptureSession(item);
+        try
+        {
+            session.IsCursorCaptureEnabled = false;
+            session.IsBorderRequired = false;
+        }
+        catch
+        {
+            // 老系统没有这两个属性。
+        }
+
+        session.StartCapture();
+        await Task.Delay(TimeSpan.FromSeconds(seconds));
+        session.Dispose();
+        Task[] pending;
+        lock (writes)
+        {
+            pending = writes.ToArray();
+        }
+
+        try
+        {
+            await Task.WhenAll(pending);
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"ui-snapshots record-raw write failed {ex.GetType().Name}");
+        }
+
+        Log.Info($"ui-snapshots record-raw frames={saved} dir={directory}");
+        return saved;
+    }
+
     /// <summary>alpha > 8 的像素外接矩形，四周放宽 <paramref name="padding"/>；整块透明时返回空矩形。</summary>
     private static PixelBounds OpaqueBounds(byte[] pixels, int width, int height, int padding)
     {

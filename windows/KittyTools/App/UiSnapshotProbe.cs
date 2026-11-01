@@ -503,6 +503,18 @@ internal static class UiSnapshotProbe
                     await WindowShot.SaveAsync(handle, Path.Combine(directory, $"{state}-{(dark ? "dark" : "light")}-window.png"));
                     if (state == "translate-running" && Environment.GetEnvironmentVariable("KITTY_COMET_FRAMES") == "1")
                     {
+                        // 逐帧量光头位置（原始像素），同时用录屏那条路录一段 mp4 给人看；都只抓这一扇窗口。
+                        if (Environment.GetEnvironmentVariable("KITTY_COMET_RECORD") is { Length: > 0 } seconds &&
+                            double.TryParse(seconds, out var length))
+                        {
+                            var video = WgcRecorder.StartWindow(
+                                handle, 60, Path.Combine(directory, $"comet-{(dark ? "dark" : "light")}-video"),
+                                false, false, out var recordError, out _);
+                            await WindowShot.RecordRawAsync(handle, Path.Combine(directory, $"comet-{(dark ? "dark" : "light")}-raw"), length);
+                            Log.Info($"ui-snapshots comet video={video?.Stop()} error={recordError}");
+                            video?.Dispose();
+                        }
+
                         for (var frame = 0; frame < 8; frame++)
                         {
                             await Task.Delay(300);
@@ -586,6 +598,7 @@ internal static class UiSnapshotProbe
             settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 1700));
             settings.ShowPage(welcome: false, "clipboard");
             await RenderWindowAsync(settings, "settings-clipboard", dark, directory);
+            await ShootSettingsWindowAsync(settings, "settings-clipboard", dark, directory);
             // PLAN-v9-translate 8e：设置 › 翻译整页（字号预览卡）、一个 AI 服务的详情子页、快捷键页。
             SeedTranslateServices();
             settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 1900));
@@ -598,6 +611,7 @@ internal static class UiSnapshotProbe
                 settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 1100));
                 settings.ShowPage(welcome: false, "translate", ai.Id);
                 await RenderWindowAsync(settings, "settings-translate-service", dark, directory);
+                await ShootSettingsWindowAsync(settings, "settings-translate-service", dark, directory);
             }
 
             settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 1300));
@@ -623,6 +637,24 @@ internal static class UiSnapshotProbe
                 // 已经关了。
             }
         }
+    }
+
+    /// <summary>
+    /// 设置窗真窗口的样子（WGC 抓自己的窗口，带毛玻璃底；RenderTargetBitmap 画不出底，深色图会是浅底白字）：
+    /// 只拍上面一屏，看开关圆点、搜索框和输入框的字（HANDTEST 805–806）。
+    /// </summary>
+    private static async Task ShootSettingsWindowAsync(SettingsWindow settings, string name, bool dark, string directory)
+    {
+        if (!Wanted(name))
+        {
+            return;
+        }
+
+        settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 760));
+        await Task.Delay(800);
+        await WindowShot.SaveAsync(
+            WinRT.Interop.WindowNative.GetWindowHandle(settings),
+            Path.Combine(directory, $"{name}-{(dark ? "dark" : "light")}-window.png"));
     }
 
     private static async Task RenderWindowAsync(

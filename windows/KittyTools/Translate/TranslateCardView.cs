@@ -640,6 +640,8 @@ internal sealed partial class TranslateCardView
             }
             else
             {
+                // 减弱动态效果时这条从没扫过、Translation 没打开：直接停 "Translation.X" 会抛 ArgumentException，整个 App 闪退。
+                ElementCompositionPreview.SetIsTranslationEnabled(band, true);
                 ElementCompositionPreview.GetElementVisual(band).StopAnimation("Translation.X");
                 band.Opacity = 0;
             }
@@ -749,7 +751,8 @@ internal sealed partial class TranslateCardView
             return;
         }
 
-        if (_cometSince != 0)
+        // 减弱动态效果时光停着：卡片长高重排时不按过去的时间往前挪（不然每长一行跳一次）。
+        if (_cometSince != 0 && !Motion.Reduced)
         {
             _cometTurn += System.Diagnostics.Stopwatch.GetElapsedTime(_cometSince).TotalSeconds / CometLap;
         }
@@ -760,8 +763,9 @@ internal sealed partial class TranslateCardView
         var compositor = _comet.Compositor;
         var size = _cometGeometry.Size;
         var track = CometPath.HeadTrack(size.X, size.Y, _cometGeometry.CornerRadius.X, _cometTurn, CometKeyframes);
-        // 虚线长度按描边粗细的倍数算（D2D 的规矩）。
-        var perimeter = _cometPerimeter / CometThickness;
+        // 合成层的虚线长度是 DIP（实测，不是 D2D 那样按描边粗细的倍数）：按粗细除的话图样一圈只有周长的 2/3，
+        // 一圈里出来一个半彗星、快慢的位置也错开。
+        var perimeter = _cometPerimeter;
         var linear = compositor.CreateLinearEasingFunction();
         for (var index = 0; index < _comet.Shapes.Count && index < CometLayers.Length; index++)
         {
