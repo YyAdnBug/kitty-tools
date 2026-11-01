@@ -650,7 +650,7 @@ internal sealed partial class SettingsWindow
             resultIcon.Visibility = ok is null ? Visibility.Collapsed : Visibility.Visible;
             resultIcon.Glyph = ok == true ? Glyphs.Check : Glyphs.Error;
             resultIcon.Foreground = ok == true
-                ? Theme.Brush("SystemFillColorSuccessBrush", Theme.Argb(255, 15, 123, 15))
+                ? Theme.Success()
                 : Theme.Critical();
             resultText.Text = text;
         }

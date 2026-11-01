@@ -27,7 +27,7 @@ internal static class KeyCap
             ? new SolidColorBrush(Theme.OnAccentColor)
             : danger
                 ? Theme.Brush("Kitty.OnDanger", Color.FromArgb(255, 255, 255, 255))
-                : Theme.Brush("TextFillColorPrimaryBrush", Color.FromArgb(255, 32, 32, 32));
+                : Theme.PrimaryText();
         border.Child = new TextBlock
         {
             Text = text,

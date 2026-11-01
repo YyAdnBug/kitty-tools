@@ -154,7 +154,7 @@ public sealed partial class PanelFooter : Grid
                 ? Theme.Brush("Kitty.Danger", Color.FromArgb(255, 196, 43, 28))
                 : primary
                     ? new SolidColorBrush(Theme.AccentTextColor)
-                    : Theme.Brush("TextFillColorPrimaryBrush", Color.FromArgb(255, 32, 32, 32)),
+                    : Theme.PrimaryText(),
             VerticalAlignment = VerticalAlignment.Center,
         });
         if (!string.IsNullOrEmpty(key))
@@ -187,7 +187,7 @@ public sealed partial class PanelFooter : Grid
             {
                 Glyph = glyph,
                 FontSize = 14,
-                Foreground = Theme.Brush("TextFillColorSecondaryBrush", Color.FromArgb(255, 96, 96, 96)),
+                Foreground = Theme.SecondaryText(),
             },
             Width = 28,
             Height = 28,
@@ -270,6 +270,6 @@ public sealed partial class PanelFooter : Grid
     private void ApplyBrushes()
     {
         _hairline.Background = Theme.Brush("Kitty.Hairline", Color.FromArgb(20, 0, 0, 0));
-        _status.Foreground = Theme.Brush("TextFillColorSecondaryBrush", Color.FromArgb(255, 96, 96, 96));
+        _status.Foreground = Theme.SecondaryText();
     }
 }

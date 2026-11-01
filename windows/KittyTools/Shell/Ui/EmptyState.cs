@@ -40,7 +40,7 @@ internal static class EmptyState
             {
                 Text = detail,
                 FontSize = Theme.FontSize("Kitty.FontSize.Meta"),
-                Foreground = Theme.Brush("TextFillColorSecondaryBrush", Color.FromArgb(255, 96, 96, 96)),
+                Foreground = Theme.SecondaryText(),
                 HorizontalAlignment = HorizontalAlignment.Center,
                 TextAlignment = TextAlignment.Center,
                 TextWrapping = TextWrapping.Wrap,

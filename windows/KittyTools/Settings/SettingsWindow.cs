@@ -2101,7 +2101,7 @@ internal sealed partial class SettingsWindow : Window
             hint.Text = problem ?? "网址里放 {query} 就是搜索（「关键词 空格 内容」直达），不放就是快捷链接；也可以填 C:\\ 这类文件夹路径。";
             hint.Foreground = problem is null
                 ? Theme.SecondaryText()
-                : Theme.Brush("SystemFillColorCautionBrush", Windows.UI.Color.FromArgb(255, 157, 93, 0));
+                : Theme.Caution();
             // 名称、网址这两样不对就不让存；关键词重复、用不上只提醒（mac 也只写橙字）。
             dialog.IsPrimaryButtonEnabled = problem is not ("还没填名称" or "网址不完整") &&
                                             !(problem ?? string.Empty).StartsWith("关键词「", StringComparison.Ordinal);
@@ -2835,7 +2835,7 @@ internal sealed partial class SettingsWindow : Window
         }
         else if (UpdateService.AvailableVersion is { } available)
         {
-            row.Children.Add(Text($"有新版本 {available}", Theme.Brush("TextFillColorPrimaryBrush", Theme.Argb(255, 0, 0, 0))));
+            row.Children.Add(Text($"有新版本 {available}", Theme.PrimaryText()));
             var install = new Button { Content = "更新并重新打开", Style = Theme.Style("AccentButtonStyle") };
             install.Click += (_, _) =>
             {

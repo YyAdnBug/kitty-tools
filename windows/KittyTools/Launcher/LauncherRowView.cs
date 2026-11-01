@@ -195,7 +195,7 @@ internal sealed partial class LauncherRowView : Grid
         => armed
             ? Theme.Brush("Kitty.Danger", Color.FromArgb(255, 196, 43, 28))
             : alternate
-                ? Theme.Brush("TextFillColorPrimaryBrush", Color.FromArgb(255, 32, 32, 32))
+                ? Theme.PrimaryText()
                 : Theme.SecondaryText();
 
     /// <summary>图标：解码好的图（应用 / 文件 / 网站图标，网站图标垫白底方块）或种类色块。</summary>

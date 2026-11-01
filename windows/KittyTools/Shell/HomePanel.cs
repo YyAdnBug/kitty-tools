@@ -516,7 +516,7 @@ internal sealed class HomePanel : Window
                 FontSize = 14,
                 Foreground = on
                     ? new SolidColorBrush(Theme.OnAccentColor)
-                    : Theme.Brush("TextFillColorPrimaryBrush", Theme.Argb(255, 32, 32, 32)),
+                    : Theme.PrimaryText(),
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
             },
@@ -529,7 +529,7 @@ internal sealed class HomePanel : Window
         var clear = new SolidColorBrush(Colors.Transparent);
         var hover = Theme.Brush("Kitty.Fill.Hover", Theme.Argb(10, 128, 128, 128));
         var pressed = Theme.Brush("Kitty.Fill.Selected", Theme.Argb(18, 128, 128, 128));
-        var text = Theme.Brush("TextFillColorPrimaryBrush", Theme.Argb(255, 32, 32, 32));
+        var text = Theme.PrimaryText();
         foreach (var prefix in new[] { "Button", "ToggleButton" })
         {
             foreach (var state in new[] { string.Empty, "Checked" })

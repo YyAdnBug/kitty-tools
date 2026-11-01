@@ -190,24 +190,31 @@ internal static class Theme
     }
 
     /// <summary>
-    /// 按 key 取内置主题资源里的画刷，**按设置里选的那套深浅色**（REVIEW R4）：
-    /// 以前从 `Application.Current.Resources` 直接取，拿到的是跟系统走的那一套；设置里选了另一种外观时，
-    /// 代码里设上去的卡片底 / 次要文字全是反的。现在先找 XamlControlsResources 的
+    /// 按 key 取主题资源里的画刷，**按设置里选的那套深浅色**（REVIEW R4）：先找
     /// `ThemeDictionaries[Dark / Light / HighContrast]`，取不到再退回应用资源，最后用兜底色。
+    /// 浅 / 深色时只取 Styles.xaml 的 `Kitty.*`（字面色）；WinUI 自己的（TextFillColor*、SystemFillColor*）直接给兜底色，
+    /// 调用方按 EffectiveTheme 算好：那些画刷全 App 共用一份、颜色是 {ThemeResource} 绑着的，从代码里取按的是 App 的主题
+    /// （跟系统，R15 实测 Default 也解出浅色），还会把那一份改掉——设置里选深色、系统是浅色时，模板里引用同一份的
+    /// 开关圆点、输入框的字跟着变成浅色那套的黑（2026-11-01 用户截图）。高对比度时整个 App 都是 HC，对得上，照旧取系统的。
     /// 不跟深浅色变的常量（截图 HUD、胶囊、家族色）本来就不走这里。
     /// </summary>
     public static Brush Brush(string key, Color fallback)
     {
+        var themeKey = ThemeKey;
+        if (themeKey != "HighContrast" && !key.StartsWith("Kitty.", StringComparison.Ordinal))
+        {
+            return new SolidColorBrush(fallback);
+        }
+
         try
         {
             if (Application.Current?.Resources is { } resources)
             {
-                // 深色先找 Dark，再退回 Default（XamlControlsResources 有的键只在 Default 里；
-                // 但 Default 也可能拿到浅色那套，R15 的教训）。
-                var keys = ThemeKey == "Default" ? new[] { "Dark", "Default" } : new[] { ThemeKey };
-                foreach (var themeKey in keys)
+                // 深色先找 Dark（Styles.xaml），再退回 Default。
+                var keys = themeKey == "Default" ? new[] { "Dark", "Default" } : new[] { themeKey };
+                foreach (var dictionaryKey in keys)
                 {
-                    if (FindTheme(resources, themeKey, key, depth: 0) is { } themed &&
+                    if (FindTheme(resources, dictionaryKey, key, depth: 0) is { } themed &&
                         themed.TryGetValue(key, out var themedValue) &&
                         themedValue is Brush themedBrush)
                     {
@@ -332,17 +339,14 @@ internal static class Theme
             ? Color.FromArgb(0x0F, 255, 255, 255)
             : Color.FromArgb(0x8C, 255, 255, 255));
 
-    /// <summary>次要文字。代码建的元素不在主题作用域里，直接按设置里选的那套给颜色（R15）。</summary>
-    public static Brush SecondaryText() => new SolidColorBrush(
-        EffectiveTheme == ElementTheme.Dark
-            ? Color.FromArgb(255, 190, 190, 190)
-            : Color.FromArgb(255, 96, 96, 96));
+    /// <summary>主要文字（代码里要显式给前景时）：按设置里选的那套直接给颜色，高对比度取系统的（见 Brush）。</summary>
+    public static Brush PrimaryText() => Brush("TextFillColorPrimaryBrush", Value(0x1A1A1A, 0xFFFFFF));
 
-    /// <summary>三级文字（启动器的种类、分组标题）：同 SecondaryText，按设置里选的那套直接给颜色，不取主题字典（R15）。</summary>
-    public static Brush TertiaryText() => new SolidColorBrush(
-        EffectiveTheme == ElementTheme.Dark
-            ? Color.FromArgb(255, 150, 150, 150)
-            : Color.FromArgb(255, 128, 128, 128));
+    /// <summary>次要文字。同 PrimaryText（R15）。</summary>
+    public static Brush SecondaryText() => Brush("TextFillColorSecondaryBrush", Value(0x606060, 0xBEBEBE));
+
+    /// <summary>三级文字（启动器的种类、分组标题）。同 PrimaryText（R15）。</summary>
+    public static Brush TertiaryText() => Brush("TextFillColorTertiaryBrush", Value(0x808080, 0x969696));
 
     /// <summary>设置卡的实色近似（渐隐遮罩的终点）。</summary>
     public static Color CardColor()
@@ -372,13 +376,13 @@ internal static class Theme
     }
 
     /// <summary>危险 / 错误色（快捷键被占用、错误卡）。</summary>
-    public static Brush Critical() => Brush("SystemFillColorCriticalBrush", Color.FromArgb(255, 196, 43, 28));
+    public static Brush Critical() => Brush("SystemFillColorCriticalBrush", Value(0xC42B1C, 0xFF99A4));
 
     /// <summary>警告 / 设置问题色。</summary>
-    public static Brush Caution() => Brush("SystemFillColorCautionBrush", Color.FromArgb(255, 157, 93, 0));
+    public static Brush Caution() => Brush("SystemFillColorCautionBrush", Value(0x9D5D00, 0xFCE100));
 
     /// <summary>成功色（连接正常、已同步）。</summary>
-    public static Brush Success() => Brush("SystemFillColorSuccessBrush", Color.FromArgb(255, 15, 123, 15));
+    public static Brush Success() => Brush("SystemFillColorSuccessBrush", Value(0x0F7B0F, 0x6CCB5F));
 
     /// <summary>窗口标题栏跟着设置里的深浅色走（REVIEW R4）。</summary>
     public static void ApplyTitleBar(Microsoft.UI.Windowing.AppWindow window)

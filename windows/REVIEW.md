@@ -8,6 +8,30 @@
 
 条目编号不复用。行号按条目里写的那个提交。
 
+## 深色下的开关和输入框、翻译卡的彗星边框（2026-11-01 用户截图，审查方在 Mac 上写、**没编译**）
+
+**现象**：深色下设置窗「搜索设置」的字、开关关着和开着的圆点都是黑的；翻译卡生成中的彗星边框和 mac 不一样（几段台阶）。
+用户：「如果做不到 macos 这种效果就按照 windows 的去实现」。
+
+**审查方改的**：
+- 根因：`Theme.Brush` 从代码里取 WinUI 自己的主题画刷（`TextFillColor*`、`SystemFillColor*`）。那一份全 App 共用、颜色是 `{ThemeResource}` 绑着的，
+  按 App 的主题（跟系统）解，还会把共用的那份改掉（R15 当时就量到 Default 解出浅色）。截图取色：开关描边、搜索框底是深色值，
+  关着的圆点和占位字（都接 `TextFillColorSecondaryBrush`）是浅色那套的 #9E000000。现在浅 / 深色时 `Theme.Brush` 只取 `Kitty.*`，
+  别的键直接给兜底色；新加 `Theme.PrimaryText()`，`SecondaryText / TertiaryText / Critical / Caution / Success` 的兜底按深浅两档给
+  （值同 WinUI），10 处调用点换过去；高对比度照旧取系统的。
+- `Styles.xaml` 浅 / 深两套里给死 `ToggleSwitchKnobFill{On,Off}*`、`TextControlForeground*`、`TextControlPlaceholderForeground*`（字面色，值同 WinUI 默认）；
+  开着的圆点两套都是白（同 mac；WinUI 深色是黑）。
+- 彗星：还是同一条描边上的虚线，改成 16 层嵌套的段（`Core/CometPath.Layers`，叠起来是 mac 那条亮度曲线，单测比过），光头照 mac 的角度匀速换算成描边位置
+  （`CometPath.HeadTrack`，64 个关键帧：扁卡片上长边中间慢、绕短边快）；卡片长高时接着当前方向走；减弱动态效果时停住不藏（同 mac）。
+  没换成 Windows 的进度条：这一版能做得像 mac，做不像再换（见第 4 条）。
+
+你们做的：
+1. 编译 Debug / Release AOT 零警告，`dotnet test` 全过（新的 `CometPathTests` 6 个）。
+2. 外观深色 + 系统浅色、外观深色 + 系统深色各开一次设置窗截图（剪贴板页、翻译服务详情），推 `windows-shots` 的 `0.1.0-dark-fix/`；走 HANDTEST 805–807。
+3. 录一段 3–5 秒的翻译卡生成中（只录自己的浮窗），走 808–811；`--ui-snapshots` 里有生成中那张的话一起看。
+4. 彗星看着还是不对（有缝、台阶、亮度不对、慢的地方不在长边正中）先照 809 调起点；调不好就按用户说的换 Windows 的做法：生成中卡片底边一条
+   `ProgressBar IsIndeterminate`（强调色、2 高、贴着圆角里面），删掉 `_comet` 那套，`CometPath` 一起删，提交里写清楚。
+
 ## 重发 0.1.0：App 内更新修复（2026-10-30 用户真机报，审查方在 Mac 上写、**没编译**）
 
 **2026-10-30 用户定：删掉已发的 `windows-v0.1.0`、`windows-v0.1.1`（连同 tag，审查方删的），把功能图标和这次的修复一起重新发成 0.1.0**。版本号回到 0.1.0，`changelog.json` 只剩一条 0.1.0（功能图标并进去了）。下面原来写的 0.1.2 都按「重发的 0.1.0」理解。

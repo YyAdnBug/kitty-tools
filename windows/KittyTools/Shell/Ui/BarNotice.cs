@@ -25,7 +25,7 @@ internal static class BarNotice
                 Width = 14,
                 Height = 14,
                 CornerRadius = new CornerRadius(7),
-                Background = Theme.Brush("SystemFillColorSuccessBrush", Color.FromArgb(255, 15, 123, 15)),
+                Background = Theme.Success(),
                 Child = new FontIcon
                 {
                     Glyph = Glyphs.Check,
@@ -42,7 +42,7 @@ internal static class BarNotice
         {
             Text = text,
             FontSize = Theme.FontSize("Kitty.FontSize.Meta"),
-            Foreground = Theme.Brush("TextFillColorSecondaryBrush", Color.FromArgb(255, 96, 96, 96)),
+            Foreground = Theme.SecondaryText(),
             VerticalAlignment = VerticalAlignment.Center,
         });
         if (!string.IsNullOrWhiteSpace(actionText) && action is not null)
