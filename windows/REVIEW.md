@@ -54,6 +54,21 @@ zip 和 `.sha256` 并校验，不装，报告 `%TEMP%\kitty-update-live\report.t
      改成要的像素超过 64 就取 256 那张交给 XAML 缩小（`SettingsWindow.LoadAppIconAsync`）。
 4. 都过了照上次的命令发 `windows-v0.1.0`（不标 latest、不标预发布）；发完马上用新包跑 HANDTEST 801（`--update-live=0.1.0`，从刚发的 release 真下载、校验），不 ok 就把这次的 release 删掉、停下来报告。
 
+**Windows 这边做的（2026-11-01，Claude 在新 worktree `kitty-win-rel010`）**：
+- 原因确认：用户的 `%LOCALAPPDATA%\KittyTools\logs\kitty-20261030.log` 15:44:51–15:53:35 点了 8 次更新，每次都是
+  `update.untrusted-url` → `update.download failed InvalidOperationException: update-untrusted-url`。
+- **关于页图标的修复没生效**（34e37df）：9c66556 还是走 `ShellIcons.LoadPng`，而 exe 的 `SHGetFileInfo(SHGFI_ICONLOCATION)` 回来的文件名是空的，
+  `LoadFromIconLocation` 返回 null、退回 32 px 的大图标再放大——Release 的 `--ui-snapshots` 里关于页的图标是 32 放大四倍。改成
+  `ShellIcons.LoadPngFromIconFile` 直接对 exe 调 `SHDefExtractIcon`（要 256 回来就是 256×256）；启动器 / 剪贴板照旧走 `LoadPng`。
+  启动器里 exe 的图标大概也是这样（32 那张缩放），发版前没动，留着。
+- Debug x64、Release AOT x64 / ARM64 零警告；`dotnet test` 465 个全过（含两条 NextHop）；Release x64 跑过 `--ui-snapshots`（145 张，关于页浅 / 深都清楚）；
+  setup-e2e 18 项全过；内置智谱 key 在两个 exe 里。
+- HANDTEST 801：发完用新包 x64 的 exe 跑 `--update-live=0.1.0` → 退出码 0，`version=0.1.0 testMode=False ok=True 下载 32219713 字节，sha256 对得上`。
+  802：x64 setup `/SILENT /DIR="D:\Apps\Kitty Tools"` 覆盖了真实安装（原来登记 0.1.1、exe 是 0.1.0+4b90ed6）→ exe 0.1.0+34e37df、登记 0.1.0，
+  重新打开正常（日志 app.start → shell.ready）。关于页只写「版本 0.1.0」，提交号只在 exe 的文件属性里。真窗口里的关于页留给用户看。
+  804：只有一块 100% 的屏，100% 下关于页看过（截图），150% / 200% 没测；欢迎引导第一屏的 64 图标走同一条路，没单独截图。
+- 发布：`windows-v0.1.0` 指 34e37df，不是 latest（latest 仍是 macos-v0.7.0）、不是预发布，8 个文件。上传中途 x64 zip 断了一次（草稿状态，续传后才发布）。
+
 ## 0.1.1 功能图标（PLAN-v10 §6，2026-10-30 用户「现在换」，审查方在 Mac 上写、**没编译**；已并进重发的 0.1.0）
 
 审查方做的：`icons/` 从 macos 拣过来；`Shell/FeatureIcons.cs` 是 Mac 上 `swift icons/build-icons.swift windows` 生成的（26 个，别手改）；
