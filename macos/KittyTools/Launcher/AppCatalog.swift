@@ -16,10 +16,11 @@ import AppKit
 import Synchronization
 
 enum AppCatalog {
+  /// 最后一个系统目录里是钥匙串访问、归档实用工具、目录实用工具这些（第四轮体检 E9）；启动台照系统的不列它们
   nonisolated static let directories = [
     "/Applications", "/Applications/Utilities", "/System/Applications",
     "/System/Applications/Utilities", "/System/Cryptexes/App/System/Applications",
-    NSHomeDirectory() + "/Applications",
+    "/System/Library/CoreServices/Applications", NSHomeDirectory() + "/Applications",
   ]
 
   nonisolated static let extraApps = ["/System/Library/CoreServices/Finder.app"]

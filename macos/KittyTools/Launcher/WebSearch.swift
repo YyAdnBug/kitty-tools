@@ -19,8 +19,9 @@ struct SearchEngine: Codable, Hashable, Identifiable {
 }
 
 enum WebSearch {
-  /// 可添加的预置搜索（设置里「添加」菜单）；新装时默认用前 8 个，只有第 1 个（Google）兜底，Bing、百度只走关键词
-  /// （体检 A24：三个同类的通用搜索兜底是三行做同一件事）。没存过列表的人 engines 取 defaults，会跟着变；改过列表的不变
+  /// 可添加的预置搜索（设置里「添加」菜单）；新装时默认用前 8 个，只有一个兜底（体检 A24：三个同类的通用搜索兜底是
+  /// 三行做同一件事）：一般是 Google，地区是中国大陆时是百度（第四轮体检 U8：Google 打不开），别的只走关键词。
+  /// 没存过列表的人 engines 取 defaults，会跟着变；改过列表的不变
   static let presets = [
     preset("google", "Google", "g", "https://www.google.com/search?q={query}", fallback: true),
     preset("bing", "Bing", "bing", "https://www.bing.com/search?q={query}"),
@@ -37,7 +38,17 @@ enum WebSearch {
     preset("mdn", "MDN", "mdn", "https://developer.mozilla.org/search?q={query}"),
   ]
 
-  static let defaults = Array(presets.prefix(8))
+  static var defaults: [SearchEngine] { defaults(region: Locale.current.region) }
+
+  /// 按地区给的默认列表（纯函数，单测注入地区）：中国大陆兜底换成百度，仍只有一个
+  static func defaults(region: Locale.Region?) -> [SearchEngine] {
+    let fallback = region == .chinaMainland ? "baidu" : "google"
+    return presets.prefix(8).map { engine in
+      var engine = engine
+      engine.enabled = engine.id == fallback
+      return engine
+    }
+  }
 
   private static func preset(
     _ id: String, _ name: String, _ keyword: String, _ url: String, fallback: Bool = false
@@ -75,7 +86,7 @@ enum WebSearch {
   static func fallbackItems(for query: String, engines: [SearchEngine] = engines) -> [LauncherItem]
   {
     let text = query.trimmingCharacters(in: .whitespaces)
-    guard text.count >= 2 else { return [] }
+    guard LauncherMatch.isLongEnough(text) else { return [] }
     return engines.filter { $0.enabled && !$0.isQuicklink }.map { item($0, text) }
   }
 

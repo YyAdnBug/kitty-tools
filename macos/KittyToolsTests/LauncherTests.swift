@@ -257,8 +257,9 @@ struct LauncherTests {
     #expect(WebSearch.primary(in: engines)?.id == "g")
     #expect(WebSearch.fallbackItems(for: "s", engines: engines).isEmpty)
     #expect(!LauncherItem.Kind.search.isRecorded)  // 搜索页不记使用
-    // 新装默认只让 Google 兜底，Bing、百度只走关键词（体检 A24）；fy 是保留关键词（体检 D10）
-    #expect(WebSearch.defaults.filter(\.enabled).map(\.id) == ["google"])
+    // 新装默认只让 Google 兜底，Bing、百度只走关键词（体检 A24；地区是中国大陆时换成百度，见 Checkup4LauncherTests）；
+    // fy 是保留关键词（体检 D10）
+    #expect(WebSearch.defaults(region: .unitedStates).filter(\.enabled).map(\.id) == ["google"])
     #expect(
       WebSearch.defaults.contains { $0.keyword == "bing" }
         && WebSearch.reservedKeywords["fy"] != nil)
@@ -525,5 +526,100 @@ struct LauncherTests {
     #expect(KeyCombo.caps("⌃⌥⇧⌘I") == ["⌃", "⌥", "⇧", "⌘", "I"])
     #expect(KeyCombo.caps("⌥空格") == ["⌥", "空格"])
     #expect(KeyCombo.caps("F5") == ["F5"])
+  }
+}
+
+/// 第四轮体检第 3 批（启动器）：这个查询选过的本地结果排到固定行前面（E8）；扫 CoreServices/Applications、启动台不列（E9）；
+/// 中国大陆默认百度兜底、含中文时 1 个字就搜书签 / 历史 / 兜底（U8）
+struct Checkup4LauncherTests {
+  private func app(_ title: String, chinese: String? = nil) -> LauncherItem {
+    let pinyin = chinese.flatMap(AppCatalog.pinyin)
+    return LauncherItem(
+      kind: .app, target: "/Applications/\(title).app", title: chinese ?? title, subtitle: "",
+      names: [chinese, title, pinyin?.full].compactMap { $0.map(LauncherMatch.fold) },
+      initials: [LauncherMatch.initials(title), pinyin?.initials].compactMap { $0 })
+  }
+
+  @Test func promotingKeepsOrder() {
+    let (a, b, c, fixed) = (app("A"), app("B"), app("C"), app("Fixed"))
+    let chosen: Set = [a.id, c.id]
+    #expect(
+      LauncherModel.promoting([a, b, c], over: [fixed]) { chosen.contains($0.id) }.map(\.id)
+        == [a.id, c.id, fixed.id, b.id])
+    #expect(
+      LauncherModel.promoting([a, b], over: [fixed]) { _ in false }.map(\.id) == [
+        fixed.id, a.id, b.id,
+      ])
+  }
+
+  /// gh / bd / ip：没选过时固定行（搜索提示、ip 地址）在最前；在完全相同的输入下选过的 App 排到它们前面
+  @Test func chosenLocalResultsGoBeforeFixedRows() throws {
+    let ghostty = app("Ghostty")
+    let netdisk = app("BaiduNetdisk", chinese: "百度网盘")
+    let mirroring = app("iPhone Mirroring")
+    let usage = try LauncherUsage(db: Database(path: ":memory:"))
+    let model = LauncherModel(usage: usage, apps: [ghostty, netdisk, mirroring])
+    model.localAddresses = {
+      IPAddresses.localItems(
+        [.init(interface: "en0", address: "192.168.1.23")], primary: "en0", names: ["en0": "Wi-Fi"])
+    }
+    model.publicAddress = { _ in nil }
+    for (query, item, fixed) in [
+      ("gh", ghostty, "用 GitHub 搜索…"), ("bd", netdisk, "用 百度 搜索…"),
+      ("ip", mirroring, "192.168.1.23"),
+    ] {
+      model.query = query
+      #expect(model.results.first?.title == fixed, "\(query)")
+      #expect(model.results.contains { $0.id == item.id }, "\(query)")
+      // 别的输入下选过的不算
+      usage.record(item, query: query + "x")
+      model.query = query
+      #expect(model.results.first?.title == fixed, "\(query)")
+      usage.record(item, query: query)
+      model.query = query
+      #expect(model.results.first?.id == item.id, "\(query)")
+      #expect(model.results.dropFirst().first?.title == fixed, "\(query)")
+    }
+  }
+
+  @Test func coreServicesAppsInLauncherNotLaunchpad() {
+    let keychain = "/System/Library/CoreServices/Applications/Keychain Access.app"
+    #expect(
+      AppCatalog.scan().contains {
+        $0.target.hasPrefix("/System/Library/CoreServices/Applications/")
+      })
+    #expect(AppCatalog.location(of: keychain) == "")  // 标准目录：副标题不写位置
+    func item(_ path: String, kind: LauncherItem.Kind = .app) -> LauncherItem {
+      LauncherItem(kind: kind, target: path, title: "x", subtitle: "")
+    }
+    #expect(!LaunchpadCatalog.shows(item(keychain)))
+    #expect(!LaunchpadCatalog.shows(item("/System/Library/CoreServices/Finder.app")))
+    #expect(LaunchpadCatalog.shows(item("/System/Applications/Calculator.app")))
+    #expect(LaunchpadCatalog.shows(item("/Applications/Ghostty.app")))
+    #expect(
+      !LaunchpadCatalog.shows(item("x-apple.systempreferences:com.apple.Displays", kind: .url)))
+    #expect(
+      !LaunchpadCatalog.load().contains { $0.path.hasPrefix("/System/Library/CoreServices/") })
+  }
+
+  @Test func regionalFallbackAndShortChineseQueries() throws {
+    let china = WebSearch.defaults(region: .chinaMainland)
+    #expect(china.filter(\.enabled).map(\.id) == ["baidu"])
+    #expect(WebSearch.defaults(region: .unitedStates).filter(\.enabled).map(\.id) == ["google"])
+    #expect(WebSearch.defaults(region: nil).filter(\.enabled).map(\.id) == ["google"])
+    #expect(china.map(\.id) == WebSearch.defaults(region: .japan).map(\.id))  // 只换兜底，列表一样
+    #expect(WebSearch.primary(in: china)?.id == "baidu")
+    #expect(LauncherMatch.isLongEnough("ab") && LauncherMatch.isLongEnough("龘"))
+    #expect(!LauncherMatch.isLongEnough("a") && !LauncherMatch.isLongEnough(" a "))
+    #expect(
+      WebSearch.fallbackItems(for: "龘", engines: china).map(\.target)
+        == ["https://www.baidu.com/s?wd=%E9%BE%98"])
+    #expect(WebSearch.fallbackItems(for: "a", engines: china).isEmpty)
+    // 启动器里：一个汉字没有本地结果时照样出兜底
+    let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [])
+    model.query = "龘"
+    #expect(model.results.contains { $0.kind == .search })
+    model.query = "q"
+    #expect(!model.results.contains { $0.kind == .search })
   }
 }

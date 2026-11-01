@@ -540,6 +540,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     coordinator.focusSource = { [unowned panel] in
       panel.makeFirstResponder(panel.initialFirstResponder)
     }
+    coordinator.isPanelKey = { [unowned panel] in panel.isKeyWindow }
     panel.onHide = { [unowned self, unowned panel] in
       // 收起即作废进行中的请求（省额度）、停下朗读（体检 B23）；把 key 还给之前处于 key 的浮层（剪贴板面板 / 启动器）。
       // 已有别的窗口成了 key（因失焦而收起）就不抢
@@ -2648,8 +2649,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       blue: CGFloat(value & 0xFF) / 255, alpha: 1)
   }
 
-  /// 复制即译：只露出浮窗、不抢键盘（用户可能正在别的 App 里继续打字）。网址、路径、数字、超长的、本来就是第一语言的
-  /// （目标自动时）和刚翻过的同一段静默跳过（体检 A12 B20）；这次的译文不自动复制（盖掉刚复制的原文，A19）
+  /// 复制即译：只露出浮窗、不抢键盘（用户可能正在别的 App 里继续打字）。网址、路径、纯数字 / 符号、超长的和刚翻过的同一段
+  /// 静默跳过（体检 A12 B20；第一语言的照翻成第二语言，2026-10-29）；通用剪贴板过来的 watcher 不交过来（第四轮体检 E17）；
+  /// 这次的译文不自动复制（盖掉刚复制的原文，A19）
   private func copyToTranslate(_ text: String) {
     let defaults = UserDefaults.standard
     // 状态屏里不弹：浮窗会在面板底下冒出来（透出样式看得见）

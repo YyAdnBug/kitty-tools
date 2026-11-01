@@ -1,7 +1,7 @@
 // 启动台的 App 目录（SPEC §5.3）：复用启动器的 AppCatalog.scan()（同一份目录、同一套去重和中文名、拼音、首字母），
-// 只留 .app——不要系统设置的面板，也不要访达（macOS 15 的启动台里没有访达）。扫的时候顺带取 bundle id、是不是从
-// App Store 装的（Contents/_MASReceipt/receipt，而且不在 /System 下）、LSApplicationCategoryType（文件夹名字用），
-// 都只读 Info.plist / 看文件在不在，便宜。显示名、搜索用的名字直接沿用 LauncherItem，和现有启动器一致。
+// 只留 .app——不要系统设置的面板，也不要访达和 CoreServices/Applications 里的（macOS 15 的启动台里都没有，
+// shows）。扫的时候顺带取 bundle id、是不是从 App Store 装的（Contents/_MASReceipt/receipt，而且不在 /System 下）、
+// LSApplicationCategoryType（文件夹名字用），都只读 Info.plist / 看文件在不在，便宜。显示名、搜索用的名字直接沿用 LauncherItem，和现有启动器一致。
 // 图标在后台画成位图、常驻在 LaunchpadIcons（2026-10-18 真机反馈后；原来是面板收起后闲下来放掉），按 App 包的修改时间认：
 // 升级换了图标的重画，卸掉的放掉（第三轮体检 B3）。
 
@@ -33,11 +33,15 @@ enum LaunchpadCatalog {
   nonisolated static func loadInBackground() async -> [LaunchpadProjectApp] { load() }
 
   nonisolated static func load() -> [LaunchpadProjectApp] {
-    let scanned = AppCatalog.scan()
-      .filter { $0.kind == .app && !$0.target.hasSuffix("/Finder.app") }
-      .map { app($0) }
+    let scanned = AppCatalog.scan().filter(shows).map { app($0) }
       .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     return disambiguated(scanned)
+  }
+
+  /// 启动台列不列这一项：只要 .app，/System/Library/CoreServices 下的不要——访达、CoreServices/Applications 里的
+  /// 钥匙串访问、归档实用工具这些（启动器扫了它们，第四轮体检 E9；系统的启动台也不列）
+  nonisolated static func shows(_ item: LauncherItem) -> Bool {
+    item.kind == .app && !item.target.hasPrefix("/System/Library/CoreServices/")
   }
 
   /// 同一个 bundle id 有两份时（Xcode / Xcode-beta…）只留一格会丢一个 App：后面几份按路径认（F26）。

@@ -282,6 +282,12 @@ extension TranslateService {
       case .ai:
         if aiProtocol != .anthropic, (baseURL ?? "").trimmingCharacters(in: .whitespaces).isEmpty {
           ("未填服务地址", true)
+        } else if let url = AIService.endpoint(baseURL ?? "", aiProtocol ?? .openai),
+          !HTTP.isLocalNetwork(url), secret() == nil
+        {
+          // 本机 / 局域网的模型可以不要 Key（也不读钥匙串）；别的地址翻译前直接报「请先在设置里填写 API Key」
+          // （第四轮体检 E20）
+          ("未填 API Key", true)
         } else if (model ?? "").trimmingCharacters(in: .whitespaces).isEmpty {
           ("未填模型", true)
         } else {

@@ -1,5 +1,6 @@
 // 启动器状态与操作：查询 → 结果。空查询先列「收藏」（⌘D 加，按加入顺序、⌥⌘↑↓ 调），再用「常用」（全局使用分）补足到
-// 8 行（体检 A22 D13）。结果顺序：直达网址 / 路径、计算结果（含单位换算、进制，体检 D11）、关键词搜索，然后 App 目录
+// 8 行（体检 A22 D13）。结果顺序：这个查询选过的本地结果（第四轮体检 E8）、直达网址 / 路径、计算结果（含单位换算、
+// 进制，体检 D11）、关键词搜索，然后 App 目录
 // （含系统设置面板，体检 D9）+ 内置动作 + 快捷链接 / 搜索提示 + 书签 + 用过的网址 / 文件按匹配分排序（同分系统命令最后，
 // 体检 B36），再是浏览历史（各家开了「也搜浏览历史」才有，排在书签后、不和书签 / 用过的重复，最多 5 行，体检 D8），网页搜索兜底；
 // 「cb 关键词」只有一行，↩ 收起启动器、呼出剪贴板面板并把关键词填进它的搜索框（N9；单输 cb 时它排第一、后面照常接本地结果）；
@@ -298,7 +299,7 @@ import UniformTypeIdentifiers
       let reloaded = await refreshHistory()
       historyTask = nil
       if reloaded, !userMovedSelection, armed == nil, fileRequest == nil, commandRequest == nil,
-        query.trimmingCharacters(in: .whitespaces).count >= 2
+        LauncherMatch.isLongEnough(query)
       {
         search()
       }
@@ -401,8 +402,9 @@ import UniformTypeIdentifiers
       clip + fy + ip + direct
       + [Calculator.item(for: query), keyword].compactMap { $0 } + prompts.exact
       + filePrompts.exact + systemPrompts.exact
-    // 书签、浏览历史至少 2 个字才搜（1 个字母命中太多）
-    let bookmarks = query.count >= 2 && !isFixture ? Bookmarks.items() : []
+    // 书签、浏览历史至少 2 个字才搜（1 个字母命中太多；含中文时 1 个字就搜，U8）
+    let longEnough = LauncherMatch.isLongEnough(query)
+    let bookmarks = longEnough && !isFixture ? Bookmarks.items() : []
     let used = usedLocations(excluding: bookmarks)
     // 书签先粗筛（几千个每敲一个字都完整打分太慢，P3；同 visited）
     let tokens = LauncherMatch.tokens(query)
@@ -410,7 +412,7 @@ import UniformTypeIdentifiers
       apps + builtIns + SystemCommands.items + WebSearch.quicklinkItems(engines: engines)
         + bookmarks.filter { LauncherMatch.mayMatch(tokens, $0) } + used, query: query
     ) { usage.boost(for: $0, query: query) }
-    let history = query.count >= 2 ? visited(query, excluding: bookmarks + used) : []
+    let history = longEnough ? visited(query, excluding: bookmarks + used) : []
     // 兜底默认只在没有本地结果时出现（和 Alfred 一样；以前带空格的查询把兜底排到匹配的 App 前面），
     // 设置里可改成总是附在最后。已经有网址 / 路径直达项、或明写了 http(s):// 的就不再兜底（体检 B35：
     // 以前只看开头是不是 http，「http 缓存」「https 证书」没有本地结果时什么都不剩）
@@ -424,10 +426,20 @@ import UniformTypeIdentifiers
       ? WebSearch.fallbackItems(for: query, engines: engines) : []
     // 直达项和书签 / 用过的网址可能是同一项：按 id 去重，保留靠前的
     var seen = Set<String>()
+    let ordered = Self.promoting(local, over: top) { usage.boost(for: $0, query: query).query > 0 }
     results =
-      (top + local + history + prompts.partial + filePrompts.partial + systemPrompts.partial
-      + fallback)
+      (ordered + history + prompts.partial + filePrompts.partial + systemPrompts.partial + fallback)
       .filter { seen.insert($0.id).inserted }
+  }
+
+  /// 本地结果里在完全相同的输入下选过的（使用记录里这个查询的分 > 0）排到固定行（剪贴板、翻译、ip、直达、计算、
+  /// 关键词提示）前面，彼此顺序不变；其余本地结果照旧跟在固定行后面（第四轮体检 E8：输 gh 选过 Ghostty 的，
+  /// 下次 gh 第一行还是「用 GitHub 搜索…」）。纯函数，配单测
+  static func promoting(
+    _ local: [LauncherItem], over top: [LauncherItem], chosen: (LauncherItem) -> Bool
+  ) -> [LauncherItem] {
+    let picked = local.filter(chosen)
+    return picked + top + local.filter { !chosen($0) }
   }
 
   /// 浏览历史里匹配上的（体检 D8）：去掉已经是书签 / 用过的网址（不分大小写），只比标题和去协议的网址、不加使用分，

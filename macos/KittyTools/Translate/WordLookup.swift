@@ -1,5 +1,6 @@
 // 查词（D4，对标 Bob：不单开「词典模式」，原文是单个词时自动出词典信息）：
-// - isWord：原文算不算「一个词」——字母文字 1–3 个词（只含字母、连字符、撇号），中日文 1–4 个字；
+// - isWord / isPhrase：原文算不算「一个词」——字母文字 1 个词（只含字母、连字符、撇号），中日文 1–4 个字；
+//   2–3 个词的（isPhrase）只有系统词典查到同一个词头时才算（sameHeadword，第四轮体检 U2：Sign in、Privacy Policy 不该出词典）；
 // - 系统词典：DictionaryServices 的 DCSCopyTextDefinition（公开 C API，查「词典」App 里启用的词典），
 //   返回一整行纯文本，这里按实测的格式（词头 音节 | 音标 | 词性 (变形) 1 释义: 例句 | 例句 • 子义项 … PHRASES …）
 //   切成词性分组和义项。它会模糊匹配（look up 返回 lookup、give up 返回 give）：词头和原文对不上、
@@ -33,17 +34,36 @@ nonisolated struct DictionaryEntry: Equatable, Sendable {
 }
 
 nonisolated enum WordLookup {
-  /// 原文算不算「一个词」（查词：系统词典、大模型的单词模式）
+  /// 原文算不算「一个词」（查词：系统词典、大模型的单词模式）：字母文字 1 个词、中日文 1–4 个字
   static func isWord(_ text: String) -> Bool {
     let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !text.isEmpty, text.count <= 40, !text.contains(where: \.isNewline) else { return false }
-    if text.unicodeScalars.allSatisfy(isCJK) { return (1...4).contains(text.count) }
+    if !text.isEmpty, text.unicodeScalars.allSatisfy(isCJK) { return (1...4).contains(text.count) }
+    return words(text)?.count == 1
+  }
+
+  /// 字母文字 2–3 个词（ice cream、look up）：要系统词典查到同一个词头（sameHeadword）才算查词（U2）
+  static func isPhrase(_ text: String) -> Bool {
+    (2...3).contains(words(text)?.count ?? 0)
+  }
+
+  /// 词典查到的是不是这个词组本身（不分大小写、多个空格算一个）：look up 查到 lookup、Sign in 查到 sign 都不算
+  static func sameHeadword(_ entry: DictionaryEntry, _ text: String) -> Bool {
+    func normalized(_ text: String) -> String {
+      text.lowercased().split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    }
+    return entry.query == nil && normalized(entry.headword) == normalized(text)
+  }
+
+  /// 拆成词：一行、≤ 40 字，每个词字母开头、只含字母 / 连字符 / 撇号；不是这样的返回 nil
+  private static func words(_ text: String) -> [Substring]? {
+    let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !text.isEmpty, text.count <= 40, !text.contains(where: \.isNewline) else { return nil }
     let words = text.split(separator: " ")
-    return (1...3).contains(words.count)
-      && words.allSatisfy { word in
-        word.first?.isLetter == true
-          && word.allSatisfy { $0.isLetter || $0 == "-" || $0 == "'" || $0 == "’" }
-      }
+    let valid = words.allSatisfy { word in
+      word.first?.isLetter == true
+        && word.allSatisfy { $0.isLetter || $0 == "-" || $0 == "'" || $0 == "’" }
+    }
+    return valid ? words : nil
   }
 
   /// 单词模式提示词里的示例词条（照着示例写比照着说明写稳得多：免费的 glm-4-flash 会把「美 /音标/」这种说明原样抄出来）。

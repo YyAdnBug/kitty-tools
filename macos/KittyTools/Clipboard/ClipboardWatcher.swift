@@ -1,7 +1,8 @@
 // 剪贴板采集：系统没有剪贴板变化通知，只能轮询 changeCount（0.3s），变了才读内容。
 // 读取顺序：隐私标记 → 来源（通用剪贴板 / 写入方的来源标记 / 本 App 自己的窗口 / 前台 App）→ 排除的来源 App → 文件 →
 // 文本（总是附带格式）→ 图片。在自家浮层里 ⌘C（翻译原文 / 译文、剪贴板备注等，走 NSText.copy 不经 Paster，
-// 复制那一刻记下 Paster.panelCopyChangeCount）来源记成本 App（没有来源）、不触发复制即译（体检 B20）。
+// 复制那一刻记下 Paster.panelCopyChangeCount）来源记成本 App（没有来源）、不触发复制即译（体检 B20）；
+// 通用剪贴板过来的照常记、也不触发复制即译（第四轮体检 E17）。
 // 启动时直接对齐当前 changeCount，不把启动前就在剪贴板里的内容记一遍。
 // 两种暂停互不相干：pause() / resume() 给划词取词用；isUserPaused 是菜单栏「暂停记录剪贴板」（不存盘，重启自动恢复）。
 // 剪贴板这个功能关着（Feature）时 records 是 false：还在跑只为复制即译——过滤照旧（隐私标记、排除的 App、疑似密钥），
@@ -85,6 +86,14 @@ final class ClipboardWatcher {
     return frontmost ?? (nil, nil)
   }
 
+  /// 这次复制触不触发复制即译（纯函数，配单测）：自家窗口里复制的不触发（来源标记过来的照常）；通用剪贴板过来的
+  /// （iPhone、另一台 Mac 上复制的）照常记进历史、但不弹浮窗——用户不在这台 Mac 前（第四轮体检 E17）
+  static func triggersCopyToTranslate(
+    ownWindow: Bool, remote: Bool, source: (name: String?, bundleID: String?)
+  ) -> Bool {
+    !remote && !(ownWindow && source.name == nil && source.bundleID == nil)
+  }
+
   private func poll() {
     let pasteboard = NSPasteboard.general
     let changeCount = pasteboard.changeCount
@@ -141,8 +150,11 @@ final class ClipboardWatcher {
         }
       }
       if records { store.record(item, rich: rich) }
-      // 自家窗口里复制的不触发复制即译（来源标记 / 通用剪贴板过来的照常）
-      if !(ownWindow && source.name == nil && source.bundleID == nil) { onText?(text) }
+      if Self.triggersCopyToTranslate(
+        ownWindow: ownWindow, remote: types.contains(Self.remoteMarker), source: source)
+      {
+        onText?(text)
+      }
       return
     }
 

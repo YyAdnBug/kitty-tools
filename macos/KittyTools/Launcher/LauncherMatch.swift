@@ -40,6 +40,13 @@ nonisolated enum LauncherMatch {
     }
   }
 
+  /// 书签、浏览历史、兜底搜索够不够长：至少 2 个字（1 个字母命中太多）；含中文（非 ASCII）时 1 个字就够
+  /// （第四轮体检 U8，同文件搜索的 isTooShort）
+  static func isLongEnough(_ query: String) -> Bool {
+    let text = query.trimmingCharacters(in: .whitespaces)
+    return text.count >= 2 || text.unicodeScalars.contains { !$0.isASCII }
+  }
+
   /// 0 表示不匹配
   static func score(_ query: String, item: LauncherItem) -> Double {
     let whole = fold(query.trimmingCharacters(in: .whitespaces))

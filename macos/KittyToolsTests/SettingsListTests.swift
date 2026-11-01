@@ -107,13 +107,16 @@ struct SettingsListTests {
       SearchEngineDetail.isPreset("google") && !SearchEngineDetail.isPreset("custom-1a2b3c4d"))
   }
 
-  /// 不碰钥匙串的几种：智谱写模型，自建 AI 缺地址 / 模型；关着的服务缺配置不标橙
+  /// 智谱写模型，自建 AI 缺地址 / Key / 模型；关着的服务缺配置不标橙。只读钥匙串（新建的服务没有 Key）
   @Test func serviceStatus() {
     var ai = TranslateService.newAI()
     #expect(ai.settingsStatus.text == "未填服务地址" && !ai.settingsStatus.isProblem)
     ai.isEnabled = true
     #expect(ai.settingsStatus == ("未填服务地址", true))
     ai.aiProtocol = .anthropic
+    // 空地址 = 官方接口，没填 Key（第四轮体检 E20）；本机地址不要 Key，接着才是缺模型
+    #expect(ai.settingsStatus == ("未填 API Key", true))
+    ai.baseURL = "http://127.0.0.1:8080"
     #expect(ai.settingsStatus == ("未填模型", true))
     ai.model = "claude-haiku"
     #expect(ai.settingsStatus == ("Anthropic · claude-haiku", false))

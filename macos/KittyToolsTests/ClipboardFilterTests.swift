@@ -182,4 +182,14 @@ struct ClipboardFilterTests {
         bundleID: own(false, "com.apple.Safari").bundleID, excluded: ["com.apple.Safari"]))
     #expect(own(true, nil) == ("其他设备", nil))
   }
+
+  /// 第四轮体检 E17：通用剪贴板过来的照常记、不触发复制即译；自家窗口里复制的不触发；来源标记过来的照常
+  @Test func copyToTranslateSkipsRemoteAndOwnCopies() {
+    let trigger = ClipboardWatcher.triggersCopyToTranslate
+    #expect(trigger(false, false, ("Safari", "com.apple.Safari")))
+    #expect(!trigger(false, true, ("其他设备", nil)))
+    #expect(!trigger(true, true, ("其他设备", nil)))
+    #expect(!trigger(true, false, (nil, nil)))
+    #expect(trigger(true, false, ("Safari", "com.apple.Safari")))
+  }
 }

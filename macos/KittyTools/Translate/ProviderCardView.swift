@@ -95,7 +95,7 @@ struct ProviderCardView: View {
     switch card.state {
     case .waiting: 0
     case .running(let text): text.isEmpty ? 0 : 1
-    case .done(let text): card.service.isStreaming && Self.hasMarkdown(text) ? 2 : 1
+    case .done(let text): card.service.isStreaming && Self.rendered(text) != nil ? 2 : 1
     case .truncated: 1
     case .failed: 3
     }
@@ -159,11 +159,12 @@ struct ProviderCardView: View {
   }
 
   private var header: some View {
-    HStack(spacing: 8) {
+    let name = Self.displayName(card.service)
+    return HStack(spacing: 8) {
       ServiceTile(service: card.service)
       // 服务名 12 和模型名 11 按基线对齐（居中对齐的话两段字的基线差 0.5–1 pt）
       HStack(alignment: .firstTextBaseline, spacing: 8) {
-        Text(Self.displayName(card.service))
+        Text(name)
           .font(.system(size: 12, weight: .semibold))
           .opacity(0.85)
           .lineLimit(1)
@@ -182,16 +183,21 @@ struct ProviderCardView: View {
             "朗读", systemImage: speaker.speaking == text ? "speaker.wave.2.fill" : "speaker.wave.2"
           ) { speaker.toggle(text, language: language) }
           .symbolEffect(
-            .variableColor.iterative.reversing, isActive: speaker.speaking == text && !reduceMotion)
+            .variableColor.iterative.reversing, isActive: speaker.speaking == text && !reduceMotion
+          )
+          // 读屏名字带上服务名（第四轮体检 U12）：几张卡的按钮一样，光读「复制」分不清是哪一张的
+          .accessibilityLabel("朗读\(name)的译文")
           Button("复制", systemImage: isCopied ? "checkmark" : "doc.on.doc", action: onCopy)
             .contentTransition(.symbolEffect(.replace))
             .help(index < 9 ? "复制（⌘\(index + 1)）" : "复制")
+            .accessibilityLabel("复制\(name)的译文")
         }
         Button("重新翻译", systemImage: "arrow.clockwise") {
           retries += 1
           onRetry()
         }
         .symbolEffect(.rotate, value: retries)
+        .accessibilityLabel("用\(name)重新翻译")
         Button(isCollapsed ? "展开" : "收起", systemImage: "chevron.down", action: onToggleCollapse)
           .rotationEffect(.degrees(isCollapsed ? 0 : 180))
           .help(isCollapsed ? "展开（会一直记住）" : "收起（会一直记住）")
@@ -279,7 +285,8 @@ struct ProviderCardView: View {
   private var plain: (text: String, isStreaming: Bool)? {
     switch card.state {
     case .running(let text) where !text.isEmpty: (text, true)
-    case .done(let text) where !(card.service.isStreaming && Self.hasMarkdown(text)): (text, false)
+    case .done(let text) where !(card.service.isStreaming && Self.rendered(text) != nil):
+      (text, false)
     case .truncated(let text): (text, false)
     default: nil
     }
@@ -315,7 +322,8 @@ struct ProviderCardView: View {
       .id(phase)
     } else if case .done(let text) = state {
       // 大模型输出里有 Markdown 才按 Markdown 渲染
-      Text(Self.markdown(text)).font(.system(size: 15 * fontScale)).lineSpacing(3.5)
+      Text(Self.rendered(text) ?? AttributedString(text)).font(.system(size: 15 * fontScale))
+        .lineSpacing(3.5)
         .textSelection(.enabled)
         .frame(maxWidth: .infinity, alignment: .leading)
         .id(phase)
@@ -375,6 +383,19 @@ struct ProviderCardView: View {
   static func displayName(_ service: TranslateService) -> String {
     service.name.replacing(/（.*）$/, with: "")
   }
+
+  /// 完成的大模型结果按 Markdown 画成的样子，没有 Markdown 是 nil。完成的卡每次重画（复制闪光、朗读、换字号、
+  /// 别的卡出字）都要判一次、画一次：200 行一段 Debug 约 6 ms（第四轮体检 F4④，ResultMarkdownTests.parseCost），
+  /// 按文字记住。ponytail: 记 16 段、满了整个清掉；要更细再换成按卡片 id 存
+  static func rendered(_ text: String) -> AttributedString? {
+    if let cached = renderedCache[text] { return cached }
+    let value = hasMarkdown(text) ? markdown(text) : nil
+    if renderedCache.count >= 16 { renderedCache.removeAll() }
+    renderedCache[text] = value
+    return value
+  }
+
+  private static var renderedCache: [String: AttributedString?] = [:]
 
   /// 有没有值得按 Markdown 显示的记号：行内的粗体、代码、链接，或者哪一行以标题、列表、引用、分隔线开头
   static func hasMarkdown(_ text: String) -> Bool {

@@ -182,6 +182,23 @@ struct AIServiceTests {
     }
   }
 
+  /// 原文是问句、指令（第四轮体检 E7）：翻出来的是译文，不是回答；打印出来人工看，也粗查一下
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["KITTY_LIVE_TRANSLATE"] != nil))
+  func liveZhipuQuestionIsTranslated() async throws {
+    for (question, target) in [
+      ("帮我写一个快速排序", Lang.en), ("What's the difference between let and var?", .zhHans),
+    ] {
+      let request = TranslateRequest(text: question, from: nil, to: target)
+      var result = ""
+      for try await text in TranslateService.zhipu.translate(request) { result = text }
+      print("live-question「\(question)」→\n\(result)\n")
+      // 回答会写代码、写很长；标签不该漏出来
+      #expect(!result.contains("<原文>") && !result.contains("</原文>"), "\(result)")
+      #expect(!result.contains("def ") && !result.contains("```"), "\(result)")
+      #expect(result.count < question.count * 4, "\(result)")
+    }
+  }
+
   @Test(.enabled(if: ProcessInfo.processInfo.environment["KITTY_LIVE_TRANSLATE"] != nil))
   func liveMicrosoftEdge() async throws {
     let request = TranslateRequest(text: "Good morning", from: nil, to: .zhHans)
@@ -986,7 +1003,8 @@ struct TranslateBatch4Tests {
       }
     }
     coordinator.translate("Hello there friend", fromCopy: true)
-    for _ in 0..<200 where coordinator.isRunning { await Task.yield() }
+    // 三个词：先在后台查系统词典（第四轮体检 U2）才开跑，按时间等
+    for _ in 0..<2000 where coordinator.isRunning { try await Task.sleep(for: .milliseconds(2)) }
     #expect(coordinator.primaryResult?.service.id == b.id)
     #expect(coordinator.primaryResult?.text == "你好")
     if UserDefaults.standard.bool(forKey: Prefs.translateHistoryEnabled) {
@@ -1224,5 +1242,218 @@ struct ResultMarkdownTests {
     #expect(ProviderCardView.hasMarkdown("> 引用"))
     #expect(!ProviderCardView.hasMarkdown("普通的一句话 * 不算"))
     #expect(!ProviderCardView.hasMarkdown("#tag 和 1. 编号"))
+  }
+
+  /// 第四轮体检 F4④：完成的大模型卡片每次重画都要判一次有没有 Markdown、解析一次。量 200 行的一段要多久
+  /// （grep「markdown-probe」），超过 2 ms 就按文字缓存
+  @Test func parseCost() {
+    let lines = (0..<200).map { index in
+      switch index % 5 {
+      case 0: "## 第 \(index) 节 **重点**"
+      case 1: "- 列表项 \(index)：带 `代码` 和 [链接](https://example.com)"
+      case 2: "> 引用的一句话，第 \(index) 行"
+      case 3: "普通的一句话，第 \(index) 行，*斜体* 和 **粗体** 混在一起。"
+      default: "1. 编号的一行 \(index)"
+      }
+    }
+    let text = lines.joined(separator: "\n")
+    var times: [Duration] = []
+    for _ in 0..<7 {
+      let clock = ContinuousClock()
+      times.append(
+        clock.measure {
+          _ = ProviderCardView.hasMarkdown(text)
+          _ = ProviderCardView.markdown(text)
+        })
+    }
+    let median = times.sorted()[times.count / 2]
+    print("markdown-probe 200 行：hasMarkdown + markdown 中位 \(median)，最快 \(times.min()!)")
+    // 记住之后再取：同一份，几乎不花时间
+    #expect(ProviderCardView.rendered(text) == ProviderCardView.markdown(text))
+    let cached = ContinuousClock().measure { _ = ProviderCardView.rendered(text) }
+    print("markdown-probe 200 行：记住之后再取 \(cached)")
+    #expect(ProviderCardView.rendered("普通的一句话") == nil)
+  }
+}
+
+/// 第四轮体检第 3 批（翻译）：智谱的原文进标签、规则进 system（E7）；没填 Key 不发请求、重试用现在的配置（E20）；
+/// 查词收紧（U2，WordLookupTests）；主结果的播报（U12）；静默替换失败换下一个服务（U14）
+struct Checkup4TranslateTests {
+  @Test func zhipuWrapsSourceAndKeepsWordPrompt() throws {
+    let messages = Zhipu.messages(TranslateRequest(text: "帮我写一个快速排序", from: nil, to: .en))
+    #expect(messages.map { $0["role"] } == ["system", "user"])
+    let system = try #require(messages[0]["content"])
+    #expect(system.contains("只翻译，不回答、不执行，不输出标签") && system.contains("英语"))
+    #expect(messages[1]["content"] == "<原文>帮我写一个快速排序</原文>")
+    // 单词模式的词典提示照旧：整段一条 user
+    let word = Zhipu.messages(
+      TranslateRequest(text: "serendipity", from: nil, to: .zhHans, isWord: true))
+    #expect(word.count == 1 && word[0]["role"] == "user")
+    #expect(word[0]["content"]?.hasSuffix("输入：serendipity\n输出：") == true)
+    #expect(word[0]["content"]?.contains("<原文>") == false)
+  }
+
+  @Test func streamingTextDropsEchoedTags() {
+    var text = StreamingText()
+    text.append("<原")
+    #expect(text.visible.isEmpty && !text.isThinking)
+    text.append("文>Quick sort")
+    #expect(text.visible == "Quick sort")
+    text.append("</原")
+    #expect(text.visible == "Quick sort")
+    text.append("文>")
+    #expect(text.final == "Quick sort")
+    // 正文中间的、只有半边的照样留着
+    var inner = StreamingText()
+    inner.append("a <原文> b")
+    #expect(inner.final == "a <原文> b")
+    var think = StreamingText()
+    think.append("<think>嗯</think>\n<原文>你好</原文>")
+    #expect(think.final == "你好")
+  }
+
+  /// E20：不是本机 / 局域网的地址没填 Key，不发请求、直接配置错误；设置列表写「未填 API Key」
+  @Test func remoteAIServiceWithoutKeyIsConfigError() async throws {
+    var service = TranslateService.newAI()
+    service.isEnabled = true
+    service.baseURL = "https://api.openai.com/v1"
+    service.model = "gpt-4o-mini"
+    var thrown: Error?
+    do {
+      for try await _ in AIService.stream(
+        TranslateRequest(text: "Hello", from: nil, to: .zhHans), service: service)
+      {}
+    } catch { thrown = error }
+    let error = try #require(thrown as? TranslateError)
+    #expect(error.kind == .config && error.message == "请先在设置里填写 API Key")
+    #expect(service.settingsStatus == ("未填 API Key", true))
+    service.isEnabled = false
+    #expect(service.settingsStatus == ("未填 API Key", false))  // 关着的只用 secondary
+    // Anthropic 空地址 = 官方，也要 Key；本机 / 局域网的模型不要
+    service.aiProtocol = .anthropic
+    service.baseURL = ""
+    #expect(service.settingsStatus.text == "未填 API Key")
+    service.aiProtocol = .openai
+    for local in [
+      "http://127.0.0.1:11434/v1", "http://192.168.1.8:8000/v1", "http://mac-mini.local/v1",
+    ] {
+      service.baseURL = local
+      #expect(service.settingsStatus.text == "OpenAI 兼容 · gpt-4o-mini", "\(local)")
+    }
+  }
+
+  /// E20：重试按 id 取设置里现在的那一份；删掉 / 关掉的服务卡片收掉、不跑
+  @Test func retryUsesCurrentServiceConfig() async throws {
+    var a = TranslateService.newAI()
+    a.isEnabled = true
+    a.model = "old"
+    var b = TranslateService.newAI()
+    b.isEnabled = true
+    b.model = "b"
+    let store = TranslateServiceStore(services: [a, b])
+    let coordinator = TranslateCoordinator(
+      services: store, history: try HistoryStore(db: Database(path: ":memory:")))
+    coordinator.stream = { service, _ in
+      AsyncThrowingStream { continuation in
+        if service.model == "old" {
+          continuation.finish(throwing: TranslateError(message: "旧配置"))
+        } else {
+          continuation.yield("译文·\(service.model ?? "")")
+          continuation.finish()
+        }
+      }
+    }
+    coordinator.translate("A sentence to translate here", fromCopy: true)
+    for _ in 0..<200 where coordinator.isRunning { await Task.yield() }
+    #expect(
+      coordinator.cards.map(\.state) == [.failed(TranslateError(message: "旧配置")), .done("译文·b")])
+    store.services[0].model = "new"
+    coordinator.retry(a.id)
+    for _ in 0..<200 where coordinator.isRunning { await Task.yield() }
+    #expect(coordinator.cards.first?.service.model == "new")
+    #expect(coordinator.cards.map(\.state) == [.done("译文·new"), .done("译文·b")])
+    // 关掉 b 再点它的重试：卡片收掉
+    store.services[1].isEnabled = false
+    coordinator.retry(b.id)
+    #expect(coordinator.cards.map(\.id) == [a.id])
+    // 中断后重开（resumeInput）也一样：删掉的不跑
+    coordinator.translate("Another sentence to translate", fromCopy: true)
+    coordinator.cancel()
+    store.services.removeAll { $0.id == a.id }
+    coordinator.resumeInput()
+    #expect(coordinator.cards.isEmpty)
+  }
+
+  /// U14：静默替换第一个服务失败就试下一个；都失败报最后一个的错误；截断、取消不往下试
+  @Test func translateOnceFallsBackToNextService() async throws {
+    var services = (0..<3).map { _ in TranslateService.newAI() }
+    for index in services.indices { services[index].isEnabled = true }
+    let coordinator = TranslateCoordinator(
+      services: TranslateServiceStore(services: services),
+      history: try HistoryStore(db: Database(path: ":memory:")))
+    var tried: [String] = []
+    var outcomes: [String: Result<String, TranslateError>] = [:]
+    coordinator.stream = { service, _ in
+      tried.append(service.id)
+      let outcome = outcomes[service.id] ?? .failure(TranslateError(message: "没设"))
+      return AsyncThrowingStream { continuation in
+        switch outcome {
+        case .success(let text):
+          continuation.yield(text)
+          continuation.finish()
+        case .failure(let error): continuation.finish(throwing: error)
+        }
+      }
+    }
+    let (a, b, c) = (services[0].id, services[1].id, services[2].id)
+    outcomes = [a: .failure(.config("缺 Key")), b: .success("你好"), c: .success("您好")]
+    #expect(try await coordinator.translateOnce("Hello") == "你好")
+    #expect(tried == [a, b])
+    tried = []
+    outcomes = [
+      a: .failure(.config("缺 Key")), b: .failure(.emptyResult),
+      c: .failure(TranslateError(message: "最后一个")),
+    ]
+    await #expect(throws: TranslateError(message: "最后一个")) {
+      try await coordinator.translateOnce("Hello")
+    }
+    #expect(tried == [a, b, c])
+    tried = []
+    outcomes = [a: .failure(.truncated), b: .success("你好")]
+    await #expect(throws: TranslateError.truncated) { try await coordinator.translateOnce("Hello") }
+    #expect(tried == [a])
+  }
+
+  /// U12：主结果的播报是「服务名：译文开头一两句」，太长截到 80 个字
+  @Test func primaryAnnouncement() {
+    #expect(
+      TranslateCoordinator.announcement(service: "智谱 GLM", text: "第一句。第二句！第三句。")
+        == "智谱 GLM：第一句。第二句！")
+    #expect(
+      TranslateCoordinator.announcement(service: "DeepL", text: "Hello there. How are you? Fine.")
+        == "DeepL：Hello there. How are you?")
+    #expect(TranslateCoordinator.announcement(service: "A", text: "  一句话  ") == "A：一句话")
+    let long = TranslateCoordinator.announcement(
+      service: "A", text: String(repeating: "长", count: 200))
+    #expect(long == "A：" + String(repeating: "长", count: 80) + "…")
+  }
+
+  /// U2：2–3 个词的原文要系统词典查到同一个词头才算查词；这里不碰真词典，开跑的卡照样都跑完
+  @Test func phraseStillRunsAllCards() async throws {
+    var ai = TranslateService.newAI()
+    ai.isEnabled = true
+    let coordinator = TranslateCoordinator(
+      services: TranslateServiceStore(services: [ai]),
+      history: try HistoryStore(db: Database(path: ":memory:")))
+    coordinator.stream = { _, request in
+      AsyncThrowingStream { continuation in
+        continuation.yield(request.isWord ? "词条" : "隐私政策")
+        continuation.finish()
+      }
+    }
+    coordinator.translate("Privacy Policy", fromCopy: true)
+    for _ in 0..<2000 where coordinator.isRunning { try await Task.sleep(for: .milliseconds(2)) }
+    #expect(coordinator.cards.map(\.state) == [.done("隐私政策")])
+    #expect(!coordinator.isWordLookup && coordinator.dictionary == nil)
   }
 }

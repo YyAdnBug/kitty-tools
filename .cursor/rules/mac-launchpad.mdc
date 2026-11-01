@@ -43,7 +43,8 @@ Kitty 的第八族「启动台」（SPEC 在 `macos/build/research/launchpad/SPE
 
 ## 2. App 目录
 - 复用 `AppCatalog.scan()`（同一份目录、去重、中文名、拼音、首字母），**只留 `.app`**，目录扫描在后台（`@concurrent` 的 `LaunchpadCatalog.loadInBackground`，回来接上；打开路径不扫）：不要系统设置的面板（kind `.url`），
-  不要访达。`LaunchpadCatalog.load()` 顺带读 bundle id、`LSApplicationCategoryType`（本地化名给文件夹起名）、
+  不要访达，也不要 `/System/Library/CoreServices/Applications` 里的（启动器 2026-10-30 起扫它：钥匙串访问、归档实用工具这些，
+  系统的启动台不列；`LaunchpadCatalog.shows`：`/System/Library/CoreServices/` 下的一律不要，第四轮体检 E9）。`LaunchpadCatalog.load()` 顺带读 bundle id、`LSApplicationCategoryType`（本地化名给文件夹起名）、
   `Contents/_MASReceipt/receipt`（只有 App Store 装的才给删）。目录修改时间（`AppCatalog.signature`）变了、或者离上次扫超过 5 分钟（`LauncherModel.rescanInterval`，
   第三轮体检 U4：装进 /Applications 子文件夹里的、子文件夹里升级的，顶层目录的修改时间不变）才重扫，都在打开时后台扫、不挡打开。
 - 图标 `NSWorkspace.shared.icon(forFile:)`（文档写明任何线程能调），**在后台画成一张位图、常驻**在 `LaunchpadIcons`

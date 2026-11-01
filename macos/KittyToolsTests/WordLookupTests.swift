@@ -7,14 +7,39 @@ import Testing
 /// 「词典」App 默认词典）返回的原文（长词条截短了，结构不变）
 struct WordLookupTests {
   @Test func recognizesSingleWords() {
-    for word in ["run", "look up", "ice cream", "don't", "e-mail", "API", "苹果", "一丝不苟", "한국어"] {
+    for word in ["run", "well-being", "don't", "e-mail", "API", "苹果", "一丝不苟", "한국어"] {
       #expect(WordLookup.isWord(word), "\(word)")
     }
     for text in [
       "", "今天天气很好", "Hello, world", "iPhone 16", "a b c d", "line\nbreak", "3.14", "C++",
+      "look up", "ice cream", "Sign in",
     ] {
       #expect(!WordLookup.isWord(text), "\(text)")
     }
+  }
+
+  /// 第四轮体检 U2：2–3 个词的只有系统词典查到同一个词头（不分大小写）才算查词
+  @Test func phrasesNeedTheSameHeadword() {
+    for text in [
+      "Sign in", "Privacy Policy", "look up", "ice cream", "Ice  Cream", "point of view",
+    ] {
+      #expect(WordLookup.isPhrase(text), "\(text)")
+    }
+    for text in ["run", "well-being", "a b c d", "Hello, world", "苹果", ""] {
+      #expect(!WordLookup.isPhrase(text), "\(text)")
+    }
+    func entry(_ headword: String, query: String? = nil) -> DictionaryEntry {
+      DictionaryEntry(
+        headword: headword, query: query, phonetic: nil,
+        groups: [.init(partOfSpeech: "noun", forms: nil, senses: [.init(definition: "x")])])
+    }
+    #expect(WordLookup.sameHeadword(entry("ice cream"), "ice cream"))
+    #expect(WordLookup.sameHeadword(entry("ice cream"), "Ice  Cream"))
+    #expect(!WordLookup.sameHeadword(entry("lookup"), "look up"))
+    #expect(!WordLookup.sameHeadword(entry("sign"), "Sign in"))
+    #expect(!WordLookup.sameHeadword(entry("privacy"), "Privacy Policy"))
+    // 词典按变形认回原形的（query 不为 nil）对词组不算
+    #expect(!WordLookup.sameHeadword(entry("run into", query: "ran into"), "ran into"))
   }
 
   static let run =
