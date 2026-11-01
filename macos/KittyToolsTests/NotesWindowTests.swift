@@ -118,17 +118,17 @@ struct NotesWindowTests {
     model.delete(ids[1])
     #expect(store.trashed.map(\.id) == [ids[1]] && model.selection == ids[2])
     model.delete(ids[2])
-    #expect(model.selection == ids[0] && model.undoStack == [ids[1], ids[2]])
+    #expect(model.selection == ids[0] && model.undoStack.map(\.id) == [ids[1], ids[2]])
     // 右键删一条没选中的：选中的不动
     let extra = store.create(body: "D", now: Self.at(500)).id
     model.delete(extra)
-    #expect(model.selection == ids[0] && model.undoStack.last == extra)
+    #expect(model.selection == ids[0] && model.undoStack.last == .deleted(extra))
 
-    #expect(model.undoDelete() && model.selection == extra)
-    #expect(model.undoDelete() && model.selection == ids[2])
-    #expect(model.undoDelete() && model.selection == ids[1])
+    #expect(model.undoRemoval() && model.selection == extra)
+    #expect(model.undoRemoval() && model.selection == ids[2])
+    #expect(model.undoRemoval() && model.selection == ids[1])
     #expect(store.active.map(\.id) == [extra] + ids && store.trashed.isEmpty)
-    #expect(!model.undoDelete() && model.undoStack.isEmpty)
+    #expect(!model.undoRemoval() && model.undoStack.isEmpty)
   }
 
   /// 栈里的那条已经不在「最近删除」里了（自己放回了、永久删了）就跳过；归档里删的放回归档；被搜索词挡着就清掉搜索词；
@@ -140,21 +140,21 @@ struct NotesWindowTests {
     model.delete(ids[2])
     store.restore(ids[2])
     store.erase(ids[1])
-    #expect(model.undoDelete() && model.selection == ids[0] && model.undoStack.isEmpty)
+    #expect(model.undoRemoval() && model.selection == ids[0] && model.undoStack.isEmpty)
 
     store.setArchived(true, of: ids[2])
     model.scope = .archive
     model.delete(ids[2])
     model.scope = .all
     model.query = "A"
-    #expect(model.undoDelete())
+    #expect(model.undoRemoval())
     #expect(model.scope == .archive && model.query.isEmpty && model.selection == ids[2])
     #expect(store.archived.map(\.id) == [ids[2]])
 
     model.scope = .all
     model.delete(ids[0])
     model.closed()
-    #expect(model.undoStack.isEmpty && !model.undoDelete())
+    #expect(model.undoStack.isEmpty && !model.undoRemoval())
     #expect(store.trashed.map(\.id) == [ids[0]])
   }
 
@@ -182,7 +182,7 @@ struct NotesWindowTests {
     // 这一串里已经放回的不算：删 A、⌘Z、几秒内再删 B → 岛上是单条的「已删除」，「放回」只放回 B
     model.scope = .all
     model.delete(ids[0])
-    #expect(model.undoDelete())
+    #expect(model.undoRemoval())
     model.delete(ids[1])
     #expect(island.content?.title == "已删除")
     try #require(island.actions.first).run()
@@ -375,7 +375,125 @@ struct NotesWindowTests {
     #expect(deleted.color == 5 && !deleted.isPinned && !deleted.isArchived)
   }
 
-  /// 新建：排最前、选中、焦点进正文、回到「全部」并清掉搜索词；最前面那条还是空白的就用它，不多建
+  /// 第四轮体检 F4⑤：1 MB 正文算一次字数（底下那行小字，每打一个字都重算）、一次任务进度（列表行、标签的摘要，正文
+  /// 一变就重算）各要多久——只打印（grep「F4⑤」）。2026-11-01 量的（-O，整模块优化，开发机）：每隔一行一个颜色标记的
+  /// 1 MB：原来字数 228 ms + 进度 56 ms，改后 76 + 2.5 ms（剩下的是逐行解析那一万个颜色标记）；没有颜色标记的 1 MB：
+  /// 改后 6.9 + 2.3 ms（底是 String.count 的约 3 ms）。Debug 下慢好几倍，量要用 -O。正文超过 64 KB 时这两样已经
+  /// 不在打字路径上算（停手 0.3 s 再算，NoteStore.characterCount(of:)）。按需跑（同便签第 8 批的探针一个开关）：
+  /// TEST_RUNNER_KITTY_NOTES_COLOR_PROBE=1 … -only-testing:'KittyToolsTests/NotesWindowTests/longNoteFootnoteAndProgressCost()'
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["KITTY_NOTES_COLOR_PROBE"] != nil))
+  func longNoteFootnoteAndProgressCost() {
+    let line = "☐ 第一项任务写在这里，后面跟一些字 abc def\n普通的一行字，中文和 English mixed 123 [红]{red}\n"
+    var body = ""
+    while body.utf8.count + line.utf8.count < Note.maxBodyBytes { body += line }
+    let note = Note(id: "长", body: body, createdAt: .now, modifiedAt: .now)
+    let clock = ContinuousClock()
+    var (count, progress) = (Duration.zero, Duration.zero)
+    let rounds = 5
+    for _ in 0..<rounds {
+      count += clock.measure { _ = NotesWindowModel.footnote(note) }
+      progress += clock.measure { _ = NoteTasks.progress(in: body) }
+    }
+    print("F4⑤ \(body.utf8.count) 字节正文：字数 \(count / rounds)，任务进度 \(progress / rounds)")
+    let plain = body.replacingOccurrences(of: "[红]{red}", with: "红")
+    var (plainCount, plainProgress) = (Duration.zero, Duration.zero)
+    for _ in 0..<rounds {
+      plainCount += clock.measure { _ = NotesWindowModel.characterCount(plain) }
+      plainProgress += clock.measure { _ = NoteTasks.progress(in: plain) }
+    }
+    print("F4⑤ 没有颜色标记的同样大小：字数 \(plainCount / rounds)，任务进度 \(plainProgress / rounds)")
+    #expect(NoteTasks.progress(in: body)?.total == body.components(separatedBy: "☐").count - 1)
+  }
+
+  /// 第四轮体检 F4⑤ 换了算法的字数、任务进度：和原来的算法（去掉令牌和标记再一个字一个字数；一行一行拆出来认任务）
+  /// 结果一样——空白（含全角空格、\r\n）、表情和组合字符、图片令牌、颜色标记、代码块里的标记和方框、缩进的任务、
+  /// 方框后面不是空格的
+  @Test func fastCountsMatchTheOriginalAlgorithms() {
+    let image = NoteImages.token(NoteImages.Image(id: UUID(), ext: "png", width: 120))
+    let samples = [
+      "", "  \n\t", "一二三 abc", "全角\u{3000}空格\u{00A0}和\r\n换行\r\n",
+      "👨‍👩‍👧 🇨🇳 e\u{301} 한국어", "图 \(image) 后面\n\(image)", "[红]{red} 和 [蓝的字]{blue}！",
+      "```\n[不是标记]{red}\n☐ 不是任务\n```\n☐ 是任务\n",
+      "☐ 待办\n\t◧ 进行中\n  ▣ 紧急\n☑ 完成\n☒ 取消\n☐abc\n☐\n- 列表\n", "~~~\n☑ 块里\n~~~\n☑ 外面",
+      "☐ 一\r\n☑ 二\r☑ 三\u{2028}☐ 四",
+      "a\u{85}b\u{A0}c\u{1680}d\u{2000}e\u{200A}f\u{2028}g\u{2029}h\u{202F}i\u{205F}j\u{3000}k\u{0B}l\u{0C}m",
+      "零宽\u{200B}不是空白‰\u{2030}\u{2060}\u{180E} \u{301}\r\n\n\r", "行中间 ``` 不是围栏\n☐ 任务", "☑",
+      "\n\n☑ \n ☐\t",
+    ]
+    for body in samples {
+      let original = NoteMarkdown.strippingColors(from: NoteImages.stripping(body))
+        .reduce(0) { $1.isWhitespace ? $0 : $0 + 1 }
+      #expect(NotesWindowModel.characterCount(body) == original, "\(body)")
+      var lines: [(Int, Int)] = []
+      let text = body as NSString
+      let blocks = NoteMarkdown.codeBlocks(in: text)
+      text.enumerateSubstrings(in: NSRange(location: 0, length: text.length), options: .byLines) {
+        line, range, _, _ in
+        guard NoteMarkdown.role(at: range.location, in: blocks) == nil,
+          let state = NoteTasks.state(of: line ?? ""), state.countsAsProgress
+        else { return }
+        lines.append((state == .done ? 1 : 0, 1))
+      }
+      let expected = lines.reduce((0, 0)) { ($0.0 + $1.0, $0.1 + $1.1) }
+      let progress = NoteTasks.progress(in: body)
+      #expect(progress?.done ?? 0 == expected.0 && progress?.total ?? 0 == expected.1, "\(body)")
+    }
+  }
+
+  /// 归档能撤回（第四轮体检 U6）：⌘Z 放回原来的位置（不挪到最前）、选中它；和删除在同一个栈里按先后撤；
+  /// 岛上的「取消归档」放回这一串里还在归档里的
+  @Test func archivingCanBeUndone() throws {
+    let (model, store, ids) = try make(["一", "二", "三"])
+    model.toggleArchived(ids[1])
+    model.delete(ids[2])
+    #expect(store.active.map(\.id) == [ids[0]])
+    model.undo()
+    #expect(store.active.map(\.id) == [ids[0], ids[2]], "先撤后做的删除")
+    model.undo()
+    #expect(store.active.map(\.id) == ids && model.selection == ids[1], "再撤归档：回到原处")
+    // 岛上的「取消归档」：连着归档的一串一起放回原处、⌘Z 栈里也拿掉
+    let island = Island(showing: nil)
+    model.island = island
+    model.toggleArchived(ids[0])
+    #expect(island.content?.title == "已归档")
+    model.toggleArchived(ids[2])
+    #expect(island.content?.title == "已归档 2 条")
+    let unarchive = try #require(island.actions.first)
+    #expect(unarchive.title == NotesWindowModel.unarchiveTitle && !unarchive.opens)
+    unarchive.run()
+    #expect(store.active.map(\.id) == ids && store.archived.isEmpty)
+    #expect(model.undoStack.isEmpty)
+    #expect(
+      NotesWindowModel.archivedTitle(1) == "已归档" && NotesWindowModel.archivedTitle(3) == "已归档 3 条")
+  }
+
+  /// 换走 / 关窗口时，这次运行里新建、还空白着的那条删掉（第四轮体检 E11）；写了字的、还开在别处的留着
+  @Test func leavingABlankNoteDropsIt() async throws {
+    let (model, store, ids) = try make(["有字的"])
+    store.isComposing = { _ in false }
+    model.create()
+    let blank = try #require(model.selection)
+    #expect(blank != ids[0] && store.active.count == 2)
+    model.selection = ids[0]
+    for _ in 0..<50 where store.note(blank) != nil { await Task.yield() }
+    #expect(store.note(blank) == nil && store.trashed.isEmpty)
+    // 开在别处（那叠里、浮着）的不删
+    model.create()
+    let held = try #require(model.selection)
+    store.isOpen = { $0 == held }
+    model.closed()
+    for _ in 0..<50 { await Task.yield() }
+    #expect(store.note(held) != nil)
+    // 关窗口时删掉了：再打开窗口时按列表重新选
+    store.isOpen = { _ in false }
+    model.closed()
+    for _ in 0..<50 where store.note(held) != nil { await Task.yield() }
+    #expect(store.note(held) == nil && model.selection == held)
+    model.revalidateSelection()
+    #expect(model.selection == ids[0])
+  }
+
+  /// 新建：排最前、选中、焦点进正文、回到「全部」并清掉搜索词；有空白的就用它，不多建
   @Test func createReusesBlankNoteOnTop() throws {
     let (model, store, _) = try make()
     var focused = 0

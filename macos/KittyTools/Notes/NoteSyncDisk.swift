@@ -9,8 +9,11 @@
 //   1–2 秒，同一刻里再改一回、大小一样就认不出），读失败的不记（下一轮再读）。标记、自己的 device.json 读不出来要说
 //   （Snapshot：开同步时别把没下载完的标记当成没有、新建一个盖掉；一轮里认不出库被退回去了就先不合）。
 // - 写（write）：先写临时名再改名（原子写：同步盘不会传上一半的文件；图片尤其——传了一半的那份会被当成「已经有了」）。
-//   便签文件、墓碑文件、device.json（名字、第几轮变了才写，**最后写**）、图片两头补齐；要删的删。每一样写不成记下第一个
-//   原因，别的照写。文件夹本身不在了就什么都不写（不替它建回来）。
+//   便签文件、墓碑文件、device.json（名字、第几轮变了才写，**最后写**）、图片两头补齐；要删的删（共用 images/ 里没人
+//   引用的图也在这删，第四轮体检 E16，都走 coordinatedDelete）。每一样写不成记下第一个原因，别的照写。文件夹本身不在了
+//   就什么都不写（不替它建回来）。
+// - 目录在、却列不出来（devices/、某台的 notes/）：这一轮便签那部分算没读清楚（unsettled）——看着像「那台没有便签」，
+//   共用的图片会被当成没人引用（E16）。
 // - 全局同步的一类一类数据（2026-10-23，SyncRecords）：每台子文件夹里的 `<类别>.json`，读法同上（先看属性、没下载的
 //   算读不出来、按文件号 + 时刻 + 大小记着上一轮读出来的），写在 device.json 之前。
 // - 每一部分读到的文件的属性（Snapshot.stamps，第三轮体检第 6 批）：执行层拿它和上一轮比，没变的部分跳过；本机自己那几类
@@ -20,6 +23,7 @@
 // 测试在临时目录里真读真写（不是同步盘，没有下载状态）。
 
 import Foundation
+import os
 
 nonisolated enum NoteSyncDisk {
   /// 墓碑文件、别的小文件最大多少
@@ -123,7 +127,9 @@ nonisolated enum NoteSyncDisk {
     case .read(let marker): snapshot.folder.marker = marker
     }
     let devices = root.appending(path: NoteSyncFolder.devicesName)
-    for name in listing(devices) where isDeviceName(name) {
+    let deviceNames = entries(devices)
+    if deviceNames == nil { snapshot.unsettled.insert(notesPart) }
+    for name in deviceNames ?? [] where isDeviceName(name) {
       let folder = devices.appending(path: name)
       guard isDirectory(folder) else { continue }
       var device = NoteSyncFolder.Device()
@@ -159,7 +165,9 @@ nonisolated enum NoteSyncDisk {
         snapshot.unsettled.insert(notesPart)
       }
       let notes = folder.appending(path: NoteSyncFolder.notesName)
-      for file in listing(notes) {
+      let files = entries(notes)
+      if files == nil { snapshot.unsettled.insert(notesPart) }
+      for file in files ?? [] {
         // 旧式的占位文件（`.名字.icloud`）：那一条还没下载
         if file.hasPrefix("."), file.hasSuffix(".icloud") {
           let real = String(file.dropFirst().dropLast(".icloud".count))
@@ -336,7 +344,16 @@ nonisolated enum NoteSyncDisk {
   }
 
   private static func listing(_ folder: URL) -> [String] {
-    ((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []).sorted()
+    entries(folder) ?? []
+  }
+
+  /// 列一个目录（排好序）：不在是空的；在、却列不出来（没权限、读到一半出错）是 nil
+  private static func entries(_ folder: URL) -> [String]? {
+    do {
+      return try FileManager.default.contentsOfDirectory(atPath: folder.path).sorted()
+    } catch {
+      return isDirectory(folder) ? nil : []
+    }
   }
 
   private static func isDirectory(_ url: URL) -> Bool {
@@ -359,10 +376,11 @@ nonisolated enum NoteSyncDisk {
 
   /// 写一遍的结果
   struct Written: Sendable {
-    /// 写成了的便签（编号）、删掉了的、拿下来的图片
+    /// 写成了的便签（编号）、删掉了的、拿下来的图片、从共用的 images/ 里删掉了的（文件名）
     var wrote: Set<String> = []
     var deleted: Set<String> = []
     var downloaded: [NoteImages.Image] = []
+    var deletedImages: Set<String> = []
     /// 第一个没写成的原因
     var problem: String?
   }
@@ -439,6 +457,17 @@ nonisolated enum NoteSyncDisk {
         } catch {
           note(error)
         }
+      }
+    }
+    // 共用的 images/ 里没人引用的（E16，NoteSyncFolder.imagePurge 定的）：协调着删（同步盘的守护进程在写它时等它写完）。
+    // 删不成不算这一轮出错（不写进 problem、不让整轮停）：只记日志，账上还记着，下一轮再删
+    for name in plan.imageDeletes where NoteImageStore.identifier(ofFileNamed: name) != nil {
+      do {
+        try coordinatedDelete(shared.appending(path: name))
+        result.deletedImages.insert(name)
+      } catch {
+        Log.storage.error(
+          "同步文件夹里一张没人引用的便签图片没删成：\(error.localizedDescription, privacy: .public)")
       }
     }
     for (kind, data) in kinds.sorted(by: { $0.key.rawValue < $1.key.rawValue }) {

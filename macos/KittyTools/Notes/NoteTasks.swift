@@ -475,9 +475,14 @@ nonisolated enum NoteTasks {
 
   /// 任务做完几条 / 共几条；一条都不算（没有任务、只有取消的）是 nil。口径同 prefix(of:)：行首（缩进之后）的方框，
   /// 后面是空格或行尾；**代码块里的行不算**（块里的方框只是字）
+  /// 第四轮体检 F4⑤：1 MB 的正文原来一次约 60 ms（每取一行都要换算下标、每行拷一份）——没有代码块、只用 \n 换行的
+  /// （几乎都是）按 UTF-8 一遍过（quickProgress）；别的整篇拷成 UTF-16 一次，行首只看缩进后面那一个字是不是方框，
+  /// 是了才认。两条路和 state(of:) 同一个口径（单测对过）
   static func progress(in body: String) -> (done: Int, total: Int)? {
-    let text = body as NSString
-    let blocks = codeBlocks(in: body)
+    if let quick = quickProgress(body) { return quick.total > 0 ? quick : nil }
+    let text = NSString(string: body)
+    let blocks =
+      body.contains("```") || body.contains("~~~") ? NoteMarkdown.codeBlocks(in: text) : []
     var (finished, total) = (0, 0)
     var location = 0
     while location < text.length {
@@ -485,16 +490,80 @@ nonisolated enum NoteTasks {
       text.getLineStart(
         &start, end: &end, contentsEnd: &contentsEnd,
         for: NSRange(location: location, length: 0))
-      if NoteMarkdown.role(at: start, in: blocks) == nil {
-        let line = text.substring(with: NSRange(location: start, length: contentsEnd - start))
-        if let state = Self.state(of: line), state.countsAsProgress {
-          total += 1
-          if state == .done { finished += 1 }
-        }
+      var box = start
+      while box < contentsEnd, case let unit = text.character(at: box), unit == space || unit == tab
+      {
+        box += 1
+      }
+      if box < contentsEnd, box + 1 == contentsEnd || text.character(at: box + 1) == space,
+        let scalar = UnicodeScalar(text.character(at: box)),
+        let state = State(character: Character(scalar)), state.countsAsProgress,
+        NoteMarkdown.role(at: start, in: blocks) == nil
+      {
+        total += 1
+        if state == .done { finished += 1 }
       }
       location = max(end, location + 1)
     }
     return total > 0 ? (finished, total) : nil
+  }
+
+  /// progress 的快路径：按 UTF-8 一行一行看行首（缩进是空格、tab，后面三个字节是不是五种方框之一，方框后面是空格或行尾）。
+  /// 碰到可能是代码块围栏的（连着三个 ` 或 ~）、\n 之外的换行（\r、U+0085、U+2028、U+2029）就给 nil：那些交给
+  /// NSString 那条路（代码块里的行不算、换行的认法跟着系统）
+  private static func quickProgress(_ body: String) -> (done: Int, total: Int)? {
+    var body = body
+    return body.withUTF8 { bytes -> (done: Int, total: Int)? in
+      var (finished, total) = (0, 0)
+      var index = 0
+      var lineStart = true
+      var run: (byte: UInt8, count: Int) = (0, 0)
+      while index < bytes.count {
+        let byte = bytes[index]
+        if byte == 0x60 || byte == 0x7E {
+          run = run.byte == byte ? (byte, run.count + 1) : (byte, 1)
+          if run.count >= 3 { return nil }
+        } else {
+          run = (0, 0)
+        }
+        switch byte {
+        case 0x0D: return nil
+        case 0xC2 where index + 1 < bytes.count && bytes[index + 1] == 0x85: return nil
+        case 0xE2
+        where index + 2 < bytes.count && bytes[index + 1] == 0x80
+          && (bytes[index + 2] == 0xA8 || bytes[index + 2] == 0xA9):
+          return nil
+        default: break
+        }
+        if lineStart {
+          lineStart = false
+          var box = index
+          while box < bytes.count, bytes[box] == 0x20 || bytes[box] == 0x09 { box += 1 }
+          if box + 2 < bytes.count, bytes[box] == 0xE2,
+            let state = boxState(bytes[box + 1], bytes[box + 2]),
+            box + 3 == bytes.count || bytes[box + 3] == 0x20 || bytes[box + 3] == 0x0A
+          {
+            if state.countsAsProgress { total += 1 }
+            if state == .done { finished += 1 }
+          }
+        }
+        if byte == 0x0A { lineStart = true }
+        index += 1
+      }
+      return (finished, total)
+    }
+  }
+
+  /// 方框的 UTF-8 后两个字节（第一个都是 E2）→ 状态：☐ 98 90、◧ 97 A7、▣ 96 A3、☑ 98 91、☒ 98 92
+  private static func boxState(_ second: UInt8, _ third: UInt8) -> State? {
+    switch (second, third) {
+    case (0x98, 0x90): .todo
+    case (0x97, 0xA7): .doing
+    case (0x96, 0xA3): .urgent
+    case (0x98, 0x91): .done
+    case (0x98, 0x92): .cancelled
+    default: nil
+    }
   }
 }
 

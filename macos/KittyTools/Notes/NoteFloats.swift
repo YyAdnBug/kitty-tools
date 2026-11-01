@@ -112,7 +112,7 @@ import Observation
       guard let frame = NoteFloatLayout.restored(place, note: store.note(place.id), in: screens)
       else { continue }
       let float = make()
-      float.restore(place.id, frame: frame)
+      float.restore(place.id, frame: frame, place: place)
       admit(float, place.id)
     }
     defaults.removeObject(forKey: Prefs.notesFloatPlace)

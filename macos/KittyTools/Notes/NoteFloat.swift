@@ -17,6 +17,8 @@
 //   （NoteDeckLayout.placements；笔记本做主屏、外接屏放右边，那叠就在左边）。从那叠里出来的带着那一叠的边（Origin），
 //   别的按它所在那块屏的那叠（homeEdge），屏幕边缘没有那叠才按偏好。
 // - 记下的大小拿出来时夹进它要出现的那块屏的可见区（大外接屏上拉大的回到笔记本上不伸出屏幕）。
+// - **人放下它的地方**（anchor：落下、挪完、拉完、浮出来的那一刻，连那块屏的名字；第四轮体检 E15）：屏幕变了按它摆
+//   （NoteFloatLayout.placed）——那块屏拔了被挤到别的屏时只挪窗口、不改它，插回来就回到原处；固定着的记的也是它。
 // - 落下时截图框选正开着（拖到一半按了截图）：不抢遮罩的 key，只放第一响应者。
 // - 落盘：浮出来之前、换一张、收回、便签不在了、失去 key、长截图让开，都先 NoteStore.flush()。
 // - **记着的两样**（都是这台电脑自己的状态，不注册默认值）：拉过的大小（下次浮出来还是这么大，这里记）；固定着的
@@ -75,6 +77,14 @@ final class NoteFloat: NSObject, NSWindowDelegate {
     var slidesFrom: CGRect?
     var selection: NSRange?
     var takesKey = true
+    /// 重启后恢复的：记着的那个地方（连那块屏）。别的是 nil：落下时按落在哪记
+    var anchor: Anchor?
+  }
+
+  /// 人放下它的地方：位置和那块屏的名字（E15）
+  private struct Anchor {
+    var frame: CGRect
+    var display: String?
   }
 
   /// 替身四周给阴影留多少
@@ -115,6 +125,10 @@ final class NoteFloat: NSObject, NSWindowDelegate {
   private var caret: NSRange?
   /// 面板该在的位置（帧动画没放完时 panel.frame 是中间值，记位置、算落点都按它）
   private var rest = CGRect.zero
+  /// 人放下它的地方（见文件头；还没落下是 nil）
+  private var anchor: Anchor?
+  /// 正按着把手挪（这时屏幕变了不按 anchor 摆：会把正跟着鼠标走的面板拽回去）
+  private var isMoving = false
   /// 跟着鼠标走时，鼠标离面板左下角多远
   private var grab = CGSize.zero
   /// 松手的地方（落在哪块屏按它算）
@@ -226,9 +240,11 @@ final class NoteFloat: NSObject, NSWindowDelegate {
   }
 
   /// 重启后：固定着浮在屏幕上的这一张回到 frame（不当 key；NoteFloats 认过这条还在、还固定着，位置夹进了现在的屏幕）
-  func restore(_ id: String, frame: CGRect) {
+  func restore(_ id: String, frame: CGRect, place: NoteFloatLayout.Place? = nil) {
     guard model.state.noteID == nil else { return }
-    arrival = Arrival(frame: frame, edge: edge(near: frame), takesKey: false)
+    arrival = Arrival(
+      frame: frame, edge: edge(near: frame), takesKey: false,
+      anchor: place.map { Anchor(frame: $0.frame, display: $0.display) })
     model.send(.float(id))
   }
 
@@ -264,11 +280,15 @@ final class NoteFloat: NSObject, NSWindowDelegate {
     let metrics = NoteDeckMetrics(scale: options.size.scale)
     if model.metrics != metrics { model.metrics = metrics }
     if model.edgeShown != edgeShown { model.edgeShown = edgeShown }
-    guard panel != nil, !model.state.isDragging else { return }
+    guard let panel, !model.state.isDragging, !isMoving, !panel.inLiveResize else { return }
     face(edge(near: rest))
-    let settled = NoteFloatLayout.settled(rest, in: screens())
-    if settled != rest {
-      setFrame(settled)
+    // 按人放下它的地方摆（E15）：那块屏不在就挤到别的屏（只挪窗口、anchor 不改），回来了放回原处
+    let screens = screens()
+    let target =
+      anchor.map { NoteFloatLayout.placed(frame: $0.frame, display: $0.display, in: screens) }
+      ?? NoteFloatLayout.settled(rest, in: screens)
+    if target != rest {
+      setFrame(target)
       onPersist()
     }
   }
@@ -315,6 +335,7 @@ final class NoteFloat: NSObject, NSWindowDelegate {
   private func show() {
     guard let arrival, model.state.noteID != nil else { return }
     self.arrival = nil
+    anchor = arrival.anchor
     // 在前一张放掉之后才转：前一张退场的替身画的还是它自己那一侧
     face(arrival.edge)
     landsWithKey = arrival.takesKey
@@ -346,6 +367,8 @@ final class NoteFloat: NSObject, NSWindowDelegate {
   private func land(settles: Bool) {
     guard panel != nil else { return }
     if settles { settle(at: dropPoint) }
+    // 落下了：记下人放它的地方（重启后恢复的带着记着的那个，不按挤到哪改）
+    if anchor == nil { remember(pointer: dropPoint) }
     dropPoint = nil
     if Self.landsWithKey(landsWithKey, windows: NSApp.windows) { focusBody() } else { focusNow() }
   }
@@ -381,6 +404,8 @@ final class NoteFloat: NSObject, NSWindowDelegate {
     guard let old = panel else { return }
     panel = nil
     isCovered = false
+    anchor = nil
+    isMoving = false
     caret = nil
     grab = .zero
     NSObject.cancelPreviousPerformRequests(withTarget: self)
@@ -473,11 +498,18 @@ final class NoteFloat: NSObject, NSWindowDelegate {
   /// 它该在的位置（帧动画没放完时 panel.frame 是中间值）；没有面板是 nil（NoteFloats 错开新的一张时看）
   var restingFrame: CGRect? { panel == nil ? nil : rest }
 
-  /// 这一张现在该记在哪（固定着、浮着、落下了才有；NoteFloatLayout.place 定）：NoteFloats 几张一起写进偏好
+  /// 这一张现在该记在哪（固定着、浮着、落下了才有；NoteFloatLayout.place 定）：NoteFloats 几张一起写进偏好。
+  /// 记的是人放下它的地方（anchor），不是被拔屏挤过去的地方
   var place: NoteFloatLayout.Place? {
     NoteFloatLayout.place(
       id: panel == nil ? nil : model.state.noteID, isDragging: model.state.isDragging,
-      note: model.current, frame: rest)
+      note: model.current, frame: anchor?.frame ?? rest, display: anchor?.display)
+  }
+
+  /// 人把它放在了现在这里（落下、挪完、拉完）：记下位置和它在哪块屏上（pointer：松手的地方，算哪块屏按它）
+  private func remember(pointer: CGPoint? = nil) {
+    anchor = Anchor(
+      frame: rest, display: NoteFloatLayout.display(of: rest, pointer: pointer, in: screens()))
   }
 
   /// 把面板摆到 frame，并记成它该在的位置。不做动画（duration 0）也走零时长的 animator：直接 setFrame 盖不掉正在跑的
@@ -499,6 +531,7 @@ final class NoteFloat: NSObject, NSWindowDelegate {
   /// 按着把手开始挪：到最前面（同一层级里那叠扇出的那一列、别的 App 的浮动窗口可能盖着一部分），记下鼠标离左下角多远。还在跑的帧动画先停在原地
   private func beginMove(from start: CGPoint) {
     guard let panel else { return }
+    isMoving = true
     onTouch()
     setFrame(panel.frame)
     panel.orderFrontRegardless()
@@ -514,8 +547,10 @@ final class NoteFloat: NSObject, NSWindowDelegate {
 
   /// 挪完松手：夹进松手那块屏的可见区，位置记下来（固定着的）
   private func endMove(at pointer: CGPoint) {
+    isMoving = false
     follow(pointer)
     settle(at: pointer)
+    remember(pointer: pointer)
     onPersist()
   }
 
@@ -573,6 +608,7 @@ final class NoteFloat: NSObject, NSWindowDelegate {
   func windowDidEndLiveResize(_ notification: Notification) {
     guard let panel else { return }
     setFrame(NoteFloatLayout.settled(panel.frame, in: screens()))
+    remember()
     defaults.set(NSStringFromSize(rest.size), forKey: Prefs.notesFloatSize)
     onPersist()
   }

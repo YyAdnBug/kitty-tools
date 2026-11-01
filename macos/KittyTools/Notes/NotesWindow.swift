@@ -1,7 +1,7 @@
 // 全部便签窗口（PLAN §10「便签」，mac-whisker-notes.mdc「全部便签」）：普通 NSWindow，不是浮层——打开方式同设置窗
 // （先收起浮层 → 切成 .regular 并激活；关掉时设置窗也没开着才切回 .accessory，NSApplication.leaveDockIfNoWindows）。
 // 这里是窗口和它的状态（NotesWindowModel）：三个视图（全部 / 归档 / 最近删除）和搜索、选中项跟着列表怎么变、
-// 各种操作、删除的撤销栈（⌘Z 一条条放回，窗口关掉时清空）、拖动排序、底下那行小字；两种显示方式（便签墙 / 列表，
+// 各种操作、删除和归档的撤销栈（⌘Z 一条条放回，窗口关掉时清空）、拖动排序、底下那行小字；两种显示方式（便签墙 / 列表，
 // 默认便签墙，记住上次选的）和便签墙上放大着的那张（编辑卡）、墙怎么排（卡片的高：可见区附近的当场建、其余分批在后面
 // 几轮建，卡片缓存在仓库那一层 NoteStore.wallCard）、方向键、拖动排序落到仓库的哪里。
 // 界面在 NotesWindowView.swift（列表）和 NotesWallView.swift（便签墙）。
@@ -72,12 +72,23 @@ import SwiftUI
   }
   /// 选中的便签（编号）。它不在当前列表里也可以：正在改的那条被搜索词筛掉时，编辑区还是它
   var selection: String? {
-    didSet { if selection != oldValue { selectionChanged() } }
+    didSet { if selection != oldValue { selectionChanged(from: oldValue) } }
   }
-  /// 刚删的便签（编号，后删的在后）：⌘Z 一条条放回；窗口关掉时清空
-  private(set) var undoStack: [String] = []
-  /// 连着删的这一串（岛上的「放回」）
+  /// 刚删的、刚归档的便签（后做的在后）：⌘Z 一条条放回原处（第四轮体检 U6 加了归档）；窗口关掉时清空
+  private(set) var undoStack: [Removal] = []
+  enum Removal: Equatable {
+    case deleted(String)
+    case archived(String)
+
+    var id: String {
+      switch self {
+      case .deleted(let id), .archived(let id): id
+      }
+    }
+  }
+  /// 连着删的这一串（岛上的「放回」）、连着归档的这一串（岛上的「取消归档」）
   @ObservationIgnored private var deletions = Deletions()
+  @ObservationIgnored private var archivals = Deletions()
   /// 正文打到上限了、这一次输入没进（底下那行小字换成警告）；再打进去字、换一条就收
   private(set) var isOverLimit = false
   /// 等确认永久删除的那条、等确认清空最近删除
@@ -184,6 +195,12 @@ import SwiftUI
     selection = Self.selection(keeping: selection, in: notes.map(\.id))
   }
 
+  /// 窗口再打开时：选中的那条已经不在了（关窗口时删掉的空白便签——NoteStore.left，第四轮体检 E11；别处永久删了的）
+  /// 就按列表重新选
+  func revalidateSelection() {
+    if let selection, store.note(selection) == nil { reconcile() }
+  }
+
   /// 列表换了之后选中谁（纯函数）：原来那条还在就不动，不在了选第一条，空的就不选
   static func selection(keeping id: String?, in ids: [String]) -> String? {
     id.flatMap { ids.contains($0) ? $0 : nil } ?? ids.first
@@ -203,8 +220,10 @@ import SwiftUI
     if selection == id { selection = next }
   }
 
-  private func selectionChanged() {
+  private func selectionChanged(from old: String?) {
     store.flush()
+    // 换走的那条是这次运行里新建、还空白着的：删掉（NoteStore.left，第四轮体检 E11）
+    if let old { store.left(old) }
     // 从这扇窗口打开的取色面板改的是上一条：换了一条就关掉（选中的正是它在改的那条不关）
     NoteColorPicker.shared.close(owner: self, keeping: selection)
     isOverLimit = false
@@ -290,7 +309,7 @@ import SwiftUI
     showSettings()
   }
 
-  /// ⌘N：新建一条（排最前）、选中、焦点进正文（便签墙上直接放大成编辑卡）。最前面那条还是空白的就用它，
+  /// ⌘N：新建一条（排最前）、选中、焦点进正文（便签墙上直接放大成编辑卡）。有本机建的空白便签就用它（挪到最前面），
   /// 不再多建一条（NoteStore.blankOrNew）
   func create() {
     let note = store.blankOrNew()
@@ -437,7 +456,7 @@ import SwiftUI
       return
     }
     removing(id) { store.delete(id) }
-    undoStack.append(id)
+    undoStack.append(.deleted(id))
     // 这一串里已经放回 / 永久删了的不算（不然删 A、⌘Z、再删 B 会写成「已删除 2 条」）
     let ids = deletions.add(id).filter { store.note($0)?.deletedAt != nil }
     island?.show(
@@ -450,10 +469,48 @@ import SwiftUI
   func restoreDeleted(_ ids: [String]) {
     let back = NoteSheetModel.restore(ids, in: store)
     guard let id = back.last, let note = store.note(id) else { return }
-    undoStack.removeAll(where: ids.contains)
+    undoStack.removeAll {
+      guard case .deleted(let id) = $0 else { return false }
+      return ids.contains(id)
+    }
     select(restored: id)
     // 结果就在列表上：只播报（同 ⌘Z）
     Island.announce(NoteSheetModel.restoredTitle(back.count, first: note))
+  }
+
+  /// 岛上的「取消归档」（第四轮体检 U6）：这一串里还在归档里的放回原处（不挪到最前：归档没动过顺序），选中最后归档的那条
+  func restoreArchived(_ ids: [String]) {
+    let back = Self.unarchive(ids, in: store)
+    guard let id = back.last, let note = store.note(id) else { return }
+    undoStack.removeAll {
+      guard case .archived(let id) = $0 else { return false }
+      return ids.contains(id)
+    }
+    select(restored: id)
+    Island.announce(Self.unarchivedTitle(back.count, first: note))
+  }
+
+  // MARK: 归档的提示（全部便签窗口、屏幕边缘那叠、浮动便签同一份，第四轮体检 U6）
+
+  static let unarchiveTitle = "取消归档"
+  static let archivedSymbol = "archivebox.circle.fill"
+
+  static func archivedTitle(_ count: Int) -> String { count > 1 ? "已归档 \(count) 条" : "已归档" }
+
+  static func unarchivedTitle(_ count: Int, first: Note) -> String {
+    count > 1 ? "已取消归档 \(count) 条" : "已取消归档「\(Island.excerpt(first.displayTitle))」"
+  }
+
+  /// 还在归档里（没删）
+  static func isArchived(_ id: String, in store: NoteStore) -> Bool {
+    store.note(id).map { $0.isArchived && $0.deletedAt == nil } ?? false
+  }
+
+  /// 这几条里还在归档里的放回原处（取消归档、不挪到最前）。返回放回了哪几条
+  static func unarchive(_ ids: [String], in store: NoteStore) -> [String] {
+    let back = ids.filter { isArchived($0, in: store) }
+    for id in back { store.setArchived(false, of: id, toFront: false) }
+    return back
   }
 
   /// 删除的提示：一条是「已删除」，连着删了几条（岛上的「放回」放回这一串）带上条数
@@ -487,9 +544,10 @@ import SwiftUI
     return true
   }
 
-  /// ⌘Z：焦点所在的输入框（正文、标题、搜索框）自己还有可撤销的打字，归它；否则放回刚删的；都没有再看正文里打的字
+  /// ⌘Z：焦点所在的输入框（正文、标题、搜索框）自己还有可撤销的打字，归它；否则放回刚删的 / 刚归档的；都没有再看
+  /// 正文里打的字
   func undo() {
-    if undoFocusedText(false) || undoDelete() { return }
+    if undoFocusedText(false) || undoRemoval() { return }
     if textUndo.canUndo { textUndo.undo() } else { NSSound.beep() }
   }
 
@@ -500,15 +558,22 @@ import SwiftUI
     if textUndo.canRedo { textUndo.redo() } else { NSSound.beep() }
   }
 
-  /// 放回最近删的那一条并选中它（连着删了几条就连着撤）。栈里那条已经不在「最近删除」里了（自己放回了、永久删了）就跳过。
-  /// 返回放没放回
+  /// 放回最近删的 / 归档的那一条并选中它（连着做了几条就连着撤）。栈里那条已经不在「最近删除」/ 归档里了（自己放回了、
+  /// 永久删了）就跳过。归档的回到原来的位置（不挪到最前）。返回放没放回
   @discardableResult
-  func undoDelete() -> Bool {
-    while let id = undoStack.popLast() {
-      guard let note = store.note(id), note.deletedAt != nil else { continue }
-      store.restore(id)
-      select(restored: id)
-      Island.announce("已放回「\(note.displayTitle)」")
+  func undoRemoval() -> Bool {
+    while let last = undoStack.popLast() {
+      switch last {
+      case .deleted(let id):
+        guard let note = store.note(id), note.deletedAt != nil else { continue }
+        store.restore(id)
+        select(restored: id)
+        Island.announce("已放回「\(note.displayTitle)」")
+      case .archived(let id):
+        guard Self.unarchive([id], in: store) == [id], let note = store.note(id) else { continue }
+        select(restored: id)
+        Island.announce(Self.unarchivedTitle(1, first: note))
+      }
       return true
     }
     return false
@@ -522,11 +587,18 @@ import SwiftUI
     selection = id
   }
 
-  /// ⇧⌘A：归档 / 取消归档（取消归档的排回「全部」最前）
+  /// ⇧⌘A：归档 / 取消归档（取消归档的排回「全部」最前）。归档照删除的写法（第四轮体检 U6）：岛上「已归档」+「取消归档」
+  /// （连着归档的几条一起放回），⌘Z 也能撤回
   func toggleArchived(_ id: String) {
     guard let note = store.note(id), note.deletedAt == nil else { return }
     removing(id) { store.setArchived(!note.isArchived, of: id) }
-    Island.announce(note.isArchived ? "已取消归档" : "已归档")
+    guard !note.isArchived else { return Island.announce("已取消归档") }
+    undoStack.append(.archived(id))
+    let ids = archivals.add(id).filter { Self.isArchived($0, in: store) }
+    island?.show(
+      Self.archivedTitle(ids.count), detail: "⌘Z 撤销，或到「归档」里找回",
+      symbol: Self.archivedSymbol,
+      actions: [.init(Self.unarchiveTitle) { [weak self] in self?.restoreArchived(ids) }])
   }
 
   /// ⌘P：固定 / 取消固定
@@ -700,6 +772,8 @@ import SwiftUI
   /// 窗口关了：落盘，撤销栈清空，编辑卡收回（下次打开是墙），分批建卡片的停下（建好的留在仓库里，下次打开接着建）
   func closed() {
     store.flush()
+    // 关的时候开着的那条是这次运行里新建、还空白着的：删掉（NoteStore.left，第四轮体检 E11）
+    if let selection { store.left(selection) }
     undoStack = []
     expanded = nil
     cardTimer?.invalidate()
@@ -717,13 +791,67 @@ import SwiftUI
       .relative(presentation: .named).locale(Locale(identifier: "zh-Hans")))
   }
 
+  /// 底下那行小字里的字数（纯函数）：不算空白；**不数图片的令牌**（一张图算 0 个字：不然一张图让底下多出六七十个字，
+  /// F19）、**也不数颜色的标记**（第 8 批：`[` 和 `]{red}` 是显示时才露出来的标记）。
+  /// 第四轮体检 F4⑤：原来是去掉令牌和标记拷两份再一个字一个字数，1 MB 的正文一次约 230 ms（-O；每打一个字都要算）——
+  /// 现在整篇的字数（String.count 有快路径）减去空白、再减去令牌和标记的长度（都是不含空白的 ASCII，一个字一个单位），
+  /// 不拷正文；结果和原来的算法一样（单测对过；\r\n 是一个字）
+  static func characterCount(_ body: String) -> Int {
+    var count = body.count - whitespace(in: body)
+    if NoteImages.containsToken(body) {
+      for match in NoteImages.matches(in: body as NSString) { count -= match.range.length }
+    }
+    for marker in NoteMarkdown.colorMarkers(in: body) { count -= marker.length }
+    return count
+  }
+
+  /// 有几个空白的字（Unicode 的 White_Space，Character.isWhitespace 认的那 25 个；\r\n 算一个）：按 UTF-8 的字节直接比，
+  /// 不解码、不查属性表（查属性表每个字一次函数调用，1 MB 的正文约 30 ms）
+  private static func whitespace(in body: String) -> Int {
+    var body = body
+    return body.withUTF8 { bytes in
+      var count = 0
+      var index = 0
+      while index < bytes.count {
+        let byte = bytes[index]
+        if byte < 0x80 {
+          // \t \n \v \f \r、空格；\r\n 是一个字
+          if (0x09...0x0D).contains(byte) || byte == 0x20 {
+            if !(byte == 0x0A && index > 0 && bytes[index - 1] == 0x0D) { count += 1 }
+          }
+          index += 1
+          continue
+        }
+        let next = index + 1 < bytes.count ? bytes[index + 1] : 0
+        let third = index + 2 < bytes.count ? bytes[index + 2] : 0
+        switch byte {
+        // U+0085、U+00A0
+        case 0xC2 where next == 0x85 || next == 0xA0: count += 1
+        // U+1680
+        case 0xE1 where next == 0x9A && third == 0x80: count += 1
+        // U+2000–200A、U+2028、U+2029、U+202F；U+205F
+        case 0xE2
+        where next == 0x80
+          && ((0x80...0x8A).contains(third) || third == 0xA8 || third == 0xA9 || third == 0xAF):
+          count += 1
+        case 0xE2 where next == 0x81 && third == 0x9F: count += 1
+        // U+3000
+        case 0xE3 where next == 0x80 && third == 0x80: count += 1
+        default: break
+        }
+        index += 1
+      }
+      return count
+    }
+  }
+
   /// 右边最底下那行小字：「改于 今天 09:12 · 128 字」；最近删除里是「删于 昨天 22:40 · 29 天后永久删除」
-  static func footnote(_ note: Note, now: Date = .now, calendar: Calendar = .current) -> String {
+  /// count：算好的字数（NoteStore.characterCount(of:) 按正文缓存）；nil = 现算
+  static func footnote(
+    _ note: Note, count: Int? = nil, now: Date = .now, calendar: Calendar = .current
+  ) -> String {
     guard let deleted = note.deletedAt else {
-      // 字数**不数图片的令牌**（一张图算 0 个字）：不然一张图让底下多出六七十个字（F19）；**也不数颜色的标记**
-      // （第 8 批：`[` 和 `]{red}` 是显示时才露出来的标记，不算用户写的字）
-      let count = NoteMarkdown.strippingColors(from: NoteImages.stripping(note.body))
-        .reduce(0) { $1.isWhitespace ? $0 : $0 + 1 }
+      let count = count ?? characterCount(note.body)
       return "改于 \(SettingsBackup.when(note.modifiedAt, now: now, calendar: calendar)) · \(count) 字"
     }
     let left = deleted.addingTimeInterval(Double(NoteStore.trashDays) * 86_400)
@@ -812,6 +940,7 @@ final class NotesWindow: NSObject, NSWindowDelegate {
 
   /// 显示并激活（调用方先把浮层收起，同 SettingsWindow.show）
   func show() {
+    model.revalidateSelection()
     NSApp.setActivationPolicy(.regular)
     window.makeKeyAndOrderFront(nil)
     NSApp.activate()

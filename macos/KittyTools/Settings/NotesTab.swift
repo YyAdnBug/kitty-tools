@@ -200,22 +200,22 @@ struct NotesTab: View {
         let result = await NoteMarkdownFiles.importNotes(
           sources: sources, imageDirectory: imageDirectory)
         isTransferring = false
-        guard !result.notes.isEmpty else {
-          island?.show("没有导入", detail: "选的地方没有 .md 文件", tone: .warning)
-          return
-        }
         // 读出来的都是没删的：和导出文件同一个换法（自定义纸色拆成预设 + 色值）
         let entries = result.notes.compactMap(SettingsArchive.NoteEntry.init)
-        let adoption = store.adopt(entries)
-        var detail = "新增 \(adoption.added) · 更新 \(adoption.updated) · 跳过 \(result.skipped)"
-        if result.missingImages > 0 { detail += " · \(result.missingImages) 张图片没导进来" }
-        if result.limitHit { detail += " · 只导了前 \(NoteMarkdownFiles.maxFiles) 个" }
+        // 在别处改过的那几条只取内容，归档 / 固定 / 顺序留本机的（第四轮体检 E18）
+        let adoption =
+          entries.isEmpty
+          ? NoteStore.Adoption() : store.adopt(entries, contentOnly: result.editedElsewhere)
+        // 岛上按新增 / 更新写，都没有说「没有变化」，一条都没读出来写清为什么（第四轮体检 E18）
+        let message = NoteMarkdownFiles.importMessage(
+          files: sources.count, result: result, added: adoption.added, updated: adoption.updated)
         if !adoption.saved {
           island?.show("便签没存上", detail: "导入的内容在内存里，稍后会自动再试", tone: .warning)
+        } else if message.warning {
+          island?.show(message.title, detail: message.detail, tone: .warning)
         } else {
           island?.show(
-            "已导入 \(result.notes.count) 条便签", detail: detail,
-            symbol: "square.and.arrow.down.circle.fill")
+            message.title, detail: message.detail, symbol: "square.and.arrow.down.circle.fill")
         }
       }
     }

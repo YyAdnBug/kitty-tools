@@ -2,7 +2,9 @@
 // 和被动过的文件（哈希对不上、写了却解不出来的键、重复的键、太大、钟太长）给 nil、设置里「导入…」认得出同步文件、墓碑文件
 // 往返；一轮：不是那个文件夹 / 更新的格式 / 谁的墓碑读不出来就整轮不合、读不出来的那一版不算、自己子文件夹里本机没有的合回来、
 // 只交出变了的、数要放进最近删除的条数和刹车；写出去：和自己文件夹里不一样的重写（读不出来的也重写）、该删的、墓碑、图片
-// 传上去拿下来；认出库被退回去了（哪几条）。全是纯函数，不碰文件系统。经过文件夹的随机测试在 NoteSyncFuzzTests。
+// 传上去拿下来；认出库被退回去了（哪几条）；共用 images/ 里能删哪几张（第四轮体检 E16：有人引用不删、读不清楚整轮不删、
+// 本机已经没有的记满 1 天 / 本机还有的记满 30 天才删、账怎么记怎么去掉、下一张哪一刻到期）。全是纯函数，不碰文件系统。
+// 经过文件夹的随机测试在 NoteSyncFuzzTests；删共用图片的临时目录集成测试在 NoteSyncerTests。
 
 import Foundation
 import Testing
@@ -270,5 +272,65 @@ struct NoteSyncFolderTests {
       regressed(["B": NoteSyncFolder.Device(notes: [current.id: carried])]) == [current.id],
       "自己的文件读不出来时，别人那份里也带着本机那一格")
     #expect(regressed(["A": NoteSyncFolder.Device(notes: [vanished.id: vanished])]).isEmpty)
+  }
+  // MARK: 共用 images/ 的清理（第四轮体检 E16）
+
+  /// 一张图同时满足才删：没人引用；本机已经没有的记满 1 天、本机还有的记满 30 天；读不清楚整轮不删、账不动
+  @Test func folderImagesArePurgedConservatively() throws {
+    let (gone, kept, used) = (UUID(), UUID(), UUID())
+    let names = Set([gone, kept, used].map { "\($0.uuidString).png" })
+    let purge = { (ledger: [String: Date], now: TimeInterval, readable: Bool) in
+      NoteSyncFolder.imagePurge(
+        folderImages: names.union(["不是图片.txt"]), referenced: [used], localImages: [kept],
+        ledger: ledger, readable: readable, now: Self.at(now))
+    }
+    // 第一次看见：都记上「现在」，一张不删；下一张到期是 1 天后（本机没有的那张）
+    let first = purge([:], 0, true)
+    #expect(first.deletes.isEmpty)
+    #expect(
+      first.ledger == ["\(gone.uuidString).png": Self.at(0), "\(kept.uuidString).png": Self.at(0)])
+    #expect(first.due == Self.at(86_400))
+    // 不到 1 天：不删
+    #expect(purge(first.ledger, 86_399, true).deletes.isEmpty)
+    // 满 1 天：本机已经没有的删，本机还有的等到 30 天
+    let day = purge(first.ledger, 86_400, true)
+    #expect(day.deletes == ["\(gone.uuidString).png"])
+    #expect(day.ledger == first.ledger, "要删的也照记，删成了下一轮文件不在了再去掉")
+    #expect(day.due == Self.at(30 * 86_400))
+    #expect(
+      Set(purge(first.ledger, 30 * 86_400, true).deletes)
+        == ["\(gone.uuidString).png", "\(kept.uuidString).png"])
+    // 读不清楚：一张不删、账原样（不往上记新的）
+    let blind = purge(first.ledger, 40 * 86_400, false)
+    #expect(blind.deletes.isEmpty && blind.ledger == first.ledger && blind.due == nil)
+    #expect(purge([:], 40 * 86_400, false).ledger.isEmpty)
+    // 又有人引用了 / 文件不在了：从账上去掉
+    let revived = NoteSyncFolder.imagePurge(
+      folderImages: ["\(kept.uuidString).png"], referenced: [kept], localImages: [],
+      ledger: first.ledger, readable: true, now: Self.at(40 * 86_400))
+    #expect(revived.deletes.isEmpty && revived.ledger.isEmpty && revived.due == nil)
+    // 账存取：毫秒往返；写坏了当空账（只会晚删）
+    #expect(
+      NoteSyncFolder.ledger(fromText: NoteSyncFolder.ledgerText(first.ledger)) == first.ledger)
+    #expect(NoteSyncFolder.ledger(fromText: "乱写的").isEmpty)
+    #expect(NoteSyncFolder.ledger(fromText: nil).isEmpty)
+  }
+
+  /// 文件夹里各台的引用（含最近删除里的）、读没读清楚（墓碑、便签文件）
+  @Test func folderReferencesAndReadability() {
+    let image = NoteImages.Image(id: UUID(), ext: "png")
+    let trashed = note("图 \(NoteImages.token(image))", deleted: 20)
+    let plain = note("没有图")
+    var devices = [
+      "A": NoteSyncFolder.Device(notes: [plain.id: plain]),
+      "B": NoteSyncFolder.Device(notes: [trashed.id: trashed]),
+    ]
+    #expect(NoteSyncFolder.referencedImages(in: folder(devices)) == [image.id])
+    #expect(NoteSyncFolder.isReadable(folder(devices)))
+    devices["B"]?.unreadable = [UUID().uuidString]
+    #expect(!NoteSyncFolder.isReadable(folder(devices)))
+    devices["B"]?.unreadable = []
+    devices["B"]?.erased = .unreadable
+    #expect(!NoteSyncFolder.isReadable(folder(devices)))
   }
 }

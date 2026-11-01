@@ -995,6 +995,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     backupIfDue()
     noteEdge = noteStore.map(makeNoteEdge)
+    // 开着的空白便签不删（NoteStore.left，第四轮体检 E11）：那叠里开着的、浮着的、全部便签窗口里选着的
+    noteStore?.isOpen = { [unowned self] id in
+      noteEdge?.isOpen(id) == true
+        || (notesWindow?.isVisible == true && notesModel?.selection == id)
+    }
     if let noteStore {
       let syncer = NoteSyncer(store: noteStore)
       syncer.island = island
@@ -1074,6 +1079,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
     // 便签攒着的改动先落下去；落不下去、用户选了取消就不退（这时录屏 / 录音什么都还没动）
     guard flushNotesBeforeQuit() else { return .terminateCancel }
+    // 快速记一条停手不到 1 秒的草稿（E2）
+    noteCapture?.model.saveDraft()
     closeReadyAudio()  // 待录的录音控制条没有东西要收尾：直接收掉，不等它回调
     guard recorder != nil || audioRecorder != nil else { return .terminateNow }
     quitsAfterRecording = true
@@ -1233,7 +1240,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   private func makeNoteCapture(_ store: NoteStore) -> (panel: OverlayPanel, model: NoteCaptureModel)
   {
-    let model = NoteCaptureModel(store: store)
+    // 草稿存在数据目录里（E2：不放偏好——偏好会被设置的导出 / 同步带走），建面板时读回
+    let model = NoteCaptureModel(
+      store: store, draftURL: dataDirectory.appending(path: NoteCaptureModel.draftName))
     let panel = OverlayPanel(
       size: NSSize(width: Style.listPanelWidth, height: model.height), topAnchored: true,
       // 没有固定：点外面就收起（草稿留着）
@@ -1245,6 +1254,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     model.dismissPanel = { [unowned panel] in panel.dismiss() }
     model.resize = { [unowned panel] in panel.setContentHeight($0, animated: true) }
     model.island = island
+    // 岛上的「恢复」（E2）：重新呼出；「打开」（U6）：那叠开着就在那叠里打开这一条，关着在全部便签窗口里打开
+    model.reopen = { [unowned self, unowned panel] in
+      if !(panel.isVisible && panel.isKeyWindow) { toggleNoteCapture() }
+    }
+    // 这一下可能是很久以后在「那一张」里点的：那条已经归档 / 删掉了就去全部便签窗口里它在的地方（没了就只打开窗口）
+    model.openNote = { [unowned self] id in
+      if store.note(id)?.isActive == true, noteEdge?.open(id) == true { return }
+      showNotes(revealing: id)
+    }
     return (panel, model)
   }
 

@@ -98,7 +98,8 @@ struct NoteSheet: View {
         undo: model.textUndo, images: model.store.images,
         imageArrivals: model.store.imageArrivals, onImageProblem: model.imageProblem)
       NoteFootnote(
-        note: note, isOverLimit: model.isOverLimit, isUnsaved: model.store.saveProblem != nil
+        note: note, isOverLimit: model.isOverLimit, isUnsaved: model.store.saveProblem != nil,
+        count: model.store.characterCount(of: note)
       )
       .padding(.horizontal, Self.margin)
       .frame(height: 26)

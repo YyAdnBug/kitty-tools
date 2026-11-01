@@ -2,7 +2,9 @@
 // 全是纯函数，单测 NoteFloatTests 锁住：
 // - 拖出来：按着把手挪过多远算脱出（detaches）、没挪开算点了一下（moved）、脱出那一刻浮动面板摆在哪（lifted：
 //   带着标签的那一侧的上角不动，把手不跳）、之后怎么跟着鼠标走（origin）；
-// - 落下、屏幕变了：算在哪块屏（home）、整块夹进那块屏的可见区（clamped / settled）；
+// - 落下、屏幕变了：算在哪块屏（home / display）、整块夹进那块屏的可见区（clamped / settled）；人放下它的地方连那块屏的
+//   名字一起记（第四轮体检 E15，同那叠的 notesDeckChosenDisplay）：拔了那块屏被挤到别处时只挪窗口、不改记录，
+//   那块屏回来就放回原处（placed(frame:display:in:)）；
 // - 不靠拖浮出来时摆在哪（placed）、收回时替身朝哪边滑多远（tuckOffset）；
 // - 哪些便签能浮着（floats；层级不在这里：浮动便签一律浮动层级，NoteFloatPanel）；
 // - 记下的大小（size：夹进要出现的那块屏）、固定着的那一张的位置（Place：哪条便签 + 在哪；place 定该不该记，
@@ -82,6 +84,23 @@ nonisolated enum NoteFloatLayout {
   {
     guard let index = home(of: frame, pointer: pointer, in: screens) else { return frame }
     return clamped(frame, in: screens[index].visibleFrame)
+  }
+
+  /// 这块面板算在哪块屏上，那块屏的名字（NoteDeckScreen.name，同那叠「指定的那一块」的认法）；一块屏都没有是 nil
+  static func display(of frame: CGRect, pointer: CGPoint? = nil, in screens: [NoteDeckScreen])
+    -> String?
+  {
+    home(of: frame, pointer: pointer, in: screens).map { screens[$0].name }
+  }
+
+  /// 人放下它的地方（frame，在 display 那块屏上）现在该摆在哪（E15）：那块屏还接着就回到它上面（夹进它的可见区）；
+  /// 不在了（拔了外接屏）按 settled 挤到别的屏——调用方不改记录，那块屏插回来再算一遍就回到原处。没记屏（0.7.0 之前
+  /// 记的）同 settled
+  static func placed(frame: CGRect, display: String?, in screens: [NoteDeckScreen]) -> CGRect {
+    if let display, let screen = screens.first(where: { $0.name == display }) {
+      return clamped(frame, in: screen.visibleFrame)
+    }
+    return settled(frame, in: screens)
   }
 
   /// 不靠拖浮出来（操作菜单、全部便签窗口）摆在哪：从那叠里出来的（sheet 是它在那叠里的位置）比原处往屏幕里面挪
@@ -164,14 +183,17 @@ nonisolated enum NoteFloatLayout {
       height: min(max(size.height, minSize.height), limit?.height ?? .infinity).rounded())
   }
 
-  /// 固定着浮在屏幕上的那一张：哪条便签、在哪（Prefs.notesFloatPlace；这台电脑自己的状态）
+  /// 固定着浮在屏幕上的那一张：哪条便签、在哪、在哪块屏上（Prefs.notesFloatPlaces；这台电脑自己的状态。display 是
+  /// 第四轮体检 E15 加的，0.7.0 之前记的没有）
   struct Place: Equatable, Sendable {
     var id: String
     var frame: CGRect
+    var display: String?
 
-    init(id: String, frame: CGRect) {
+    init(id: String, frame: CGRect, display: String? = nil) {
       self.id = id
       self.frame = frame
+      self.display = display
     }
 
     /// 读偏好里那一项。不是这个样子的（没存过、别的东西写的、数不是有限数）是 nil
@@ -183,27 +205,33 @@ nonisolated enum NoteFloatLayout {
       guard [frame.minX, frame.minY, frame.width, frame.height].allSatisfy(\.isFinite),
         frame.width > 0, frame.height > 0
       else { return nil }
-      self.init(id: id, frame: frame)
+      self.init(id: id, frame: frame, display: stored["display"].flatMap { $0.isEmpty ? nil : $0 })
     }
 
     /// 存进偏好的样子
-    var stored: [String: String] { ["id": id, "frame": NSStringFromRect(frame)] }
+    var stored: [String: String] {
+      var stored = ["id": id, "frame": NSStringFromRect(frame)]
+      if let display { stored["display"] = display }
+      return stored
+    }
   }
 
-  /// 现在该记什么：浮着、已经落下、而且这条便签固定着，就记它在哪；别的时候不记（nil = 把记着的删掉）——
-  /// 没固定的不跨重启
-  static func place(id: String?, isDragging: Bool, note: Note?, frame: CGRect) -> Place? {
+  /// 现在该记什么：浮着、已经落下、而且这条便签固定着，就记它在哪（人放下它的地方和那块屏）；别的时候不记（nil = 把
+  /// 记着的删掉）——没固定的不跨重启
+  static func place(
+    id: String?, isDragging: Bool, note: Note?, frame: CGRect, display: String? = nil
+  ) -> Place? {
     guard let id, !isDragging, let note, note.id == id, floats(note), note.isPinned else {
       return nil
     }
-    return Place(id: id, frame: frame)
+    return Place(id: id, frame: frame, display: display)
   }
 
-  /// 重启后要不要让它回来、回到哪：记着的那条便签还在、没归档没删、还固定着才回来；位置夹进现在看得见的屏幕
-  /// （原来那块屏不在了就到主显示器）。不回来是 nil
+  /// 重启后要不要让它回来、回到哪：记着的那条便签还在、没归档没删、还固定着才回来；记着的那块屏接着就回到它上面，
+  /// 不在了挤到现在看得见的屏幕上（placed：记录不改，那块屏插回来再放回原处）。不回来是 nil
   static func restored(_ place: Place?, note: Note?, in screens: [NoteDeckScreen]) -> CGRect? {
     guard let place, let note, note.id == place.id, floats(note), note.isPinned, !screens.isEmpty
     else { return nil }
-    return settled(place.frame, in: screens)
+    return placed(frame: place.frame, display: place.display, in: screens)
   }
 }

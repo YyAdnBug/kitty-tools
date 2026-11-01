@@ -154,6 +154,8 @@ struct IslandExcerptTests {
       "speaker.wave.2.circle.fill", "minus.circle.fill", "play.circle.fill", "pause.circle.fill",
       "clock.circle.fill", "waveform.circle.fill", "video.circle.fill", "arrow.down.circle.fill",
       "arrow.triangle.2.circlepath.circle.fill", "arrow.uturn.backward.circle.fill",
+      // 第四轮体检 U6：归档的岛
+      NotesWindowModel.archivedSymbol,
       ShelfCard.gifIslandSymbol, ShelfCard.compressIslandSymbol,
     ]
     let bare = [

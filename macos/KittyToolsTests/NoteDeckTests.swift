@@ -758,7 +758,7 @@ struct NoteDeckTests {
     #expect(model.noteSize(layout) == CGSize(width: 460, height: 380))
   }
 
-  /// 新建：建一条排最前并打开；最前面那条还是空白的就用它
+  /// 新建：建一条排最前并打开；有空白的就用它
   @Test func creatingOpensAFreshNote() throws {
     let (model, store, _) = try make(["旧的"])
     model.create()
@@ -1633,7 +1633,57 @@ struct NoteDeckTests {
     #expect(focused == 2)
   }
 
-  /// 最前面那条还是空白的就复用（全部便签窗口、那叠共用的那一个方法）
+  /// 那叠里关掉 / 换走这次新建、还空白着的那条：删掉（第四轮体检 E11）；关掉的那条正浮着（拖出去了）不删
+  @Test func closingABlankNoteInTheDeckDropsIt() async throws {
+    let (model, store, ids) = try make(["旧的"])
+    store.isComposing = { _ in false }
+    model.send(Self.enter)
+    model.create()
+    let blank = try #require(model.state.openID)
+    model.tapTab(ids[0])
+    #expect(model.state.openID == ids[0])
+    for _ in 0..<50 where store.note(blank) != nil { await Task.yield() }
+    #expect(store.note(blank) == nil && store.trashed.isEmpty)
+    model.create()
+    let floated = try #require(model.state.openID)
+    store.isOpen = { $0 == floated }
+    model.close()
+    for _ in 0..<50 { await Task.yield() }
+    #expect(store.note(floated) != nil)
+  }
+
+  /// 那叠里归档（第四轮体检 U6）：岛上「已归档」+「取消归档」，点了放回原处（不挪到最前）、岛上说一句
+  @Test func archivingFromTheDeckCanBeUndone() throws {
+    let (model, store, ids) = try make(["一", "二", "三"])
+    let island = Island(showing: nil)
+    model.island = island
+    model.send(Self.enter)
+    model.tapTab(ids[1])
+    model.archive()
+    #expect(model.state.openID == nil && store.active.map(\.id) == [ids[0], ids[2]])
+    #expect(island.content?.title == "已归档")
+    let unarchive = try #require(island.actions.first)
+    #expect(unarchive.title == NotesWindowModel.unarchiveTitle)
+    unarchive.run()
+    #expect(store.active.map(\.id) == ids)
+    #expect(island.content?.title == "已取消归档「二」")
+  }
+
+  /// 别的 App 里按下、松开（第四轮体检 U4）：只有在别处单纯点一下才算点别处；挪开过（往便签里拖图、拖别的东西）、
+  /// 松在这叠的内容上（拖进来了）都不算
+  @Test func onlyAPlainClickElsewhereCloses() {
+    let deck = CGRect(x: 1000, y: 100, width: 400, height: 600)
+    let start = CGPoint(x: 200, y: 300)
+    #expect(NoteDeck.isPlainClick(from: start, to: start, deck: deck))
+    #expect(NoteDeck.isPlainClick(from: start, to: CGPoint(x: 203, y: 302), deck: deck))
+    #expect(!NoteDeck.isPlainClick(from: start, to: CGPoint(x: 260, y: 300), deck: deck))
+    #expect(!NoteDeck.isPlainClick(from: start, to: CGPoint(x: 1100, y: 300), deck: deck))
+    // 在这叠的内容上按下、松开（不会是别的 App 收到的，兜底）
+    let inside = CGPoint(x: 1200, y: 400)
+    #expect(!NoteDeck.isPlainClick(from: inside, to: inside, deck: deck))
+  }
+
+  /// 有空白的就复用（全部便签窗口、那叠共用的那一个方法）
   @Test func blankNoteIsReused() throws {
     let store = try NoteStore(db: Database(path: ":memory:"))
     let first = store.blankOrNew()

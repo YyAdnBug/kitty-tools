@@ -465,7 +465,8 @@ struct NoteEditor: View {
         readOnly(paper)
       }
       NoteFootnote(
-        note: note, isOverLimit: model.isOverLimit, isUnsaved: model.store.saveProblem != nil
+        note: note, isOverLimit: model.isOverLimit, isUnsaved: model.store.saveProblem != nil,
+        count: model.store.characterCount(of: note)
       )
       .padding(.horizontal, Self.margin)
       .frame(height: 28)

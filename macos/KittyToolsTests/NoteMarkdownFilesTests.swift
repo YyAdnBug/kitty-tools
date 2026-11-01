@@ -3,6 +3,8 @@
 // - 临时目录里真的导出、再导回来（编号、时间、颜色、归档、固定、顺序、图片、第二遍不重复）；
 // - 别处的文件（有 / 没有 # 标题、别人的 YAML 头、BOM、CRLF、非 UTF-8、超大）、图片（已有的编号不复制、别处的存成新编号、
 //   ../ 跑出去、符号链接、网址、文件不在）。
+// - 第四轮体检 E18：在别处改过的自家文件（文件时间比文件头晚 2 秒以上）按文件时间算改于、导回来换上并把旧的放进最近删除；
+//   导出的文件时间就是便签的改于（没动过的导回来不变）；跳过的原因分开数；岛上那句话怎么说。
 // 窗口、系统剪贴板、用户的文件夹都不碰：全是测试自己建的临时目录。
 
 import AppKit
@@ -310,6 +312,113 @@ struct NoteMarkdownFilesTests {
     let result = await NoteMarkdownFiles.importNotes(sources: sources, imageDirectory: nil)
     #expect(result.notes.count == 1 && result.skipped == 1)
     #expect(result.notes[0].body == "第一行\n第二行\n第三行")
+  }
+
+  // MARK: 在别处改过的自家文件（第四轮体检 E18）
+
+  /// 在别处改过没有：有正文哈希只看它；没有的（0.7.1 之前导出的）文件时间比文件头晚 2 秒以上才算；文件时间读不出来不算
+  @Test func editedElsewhereFollowsTheBodyHash() {
+    let header = Date(timeIntervalSince1970: 1_760_000_000)
+    let edited = NoteMarkdownFiles.editedElsewhere
+    let later = header.addingTimeInterval(3600)
+    #expect(!edited(header, later, false), "有哈希、对得上：文件时间再新也不算（被碰过）")
+    #expect(edited(header, later, true))
+    #expect(!edited(header, nil, true))
+    #expect(!edited(header, header.addingTimeInterval(2), nil))
+    #expect(!edited(header, header.addingTimeInterval(-60), nil))
+    #expect(edited(header, header.addingTimeInterval(2.5), nil))
+  }
+
+  /// 导出的文件头里有正文的哈希：被碰过（文件时间新了、字没动）导回来什么都不变；在别处改了正文导回来换上（改于是
+  /// 文件时间）、旧的进最近删除，固定 / 归档 / 顺序留本机的；没有哈希的旧文件按文件时间认（第四轮体检 E18）
+  @Test func externallyEditedFilesComeBack() async throws {
+    let parent = root.appending(path: "改过", directoryHint: .isDirectory)
+    try manager.createDirectory(at: parent, withIntermediateDirectories: true)
+    let store = try NoteStore(db: Database(path: ":memory:"))
+    let original = store.create(
+      body: "原来的字", now: Date(timeIntervalSince1970: 1_760_000_100.456))
+    let result = await NoteMarkdownFiles.export(
+      notes: [original], imageDirectory: nil, to: parent,
+      now: Date(timeIntervalSince1970: 1_760_000_000))
+    let file = try #require(result.folder).appending(path: "原来的字.md")
+    #expect(try String(contentsOf: file, encoding: .utf8).contains("\nbody-hash: "))
+    func adopt() async throws -> NoteStore.Adoption {
+      let imported = await NoteMarkdownFiles.importNotes(
+        sources: [.init(url: file, root: file.deletingLastPathComponent())], imageDirectory: nil)
+      return store.adopt(
+        imported.notes.compactMap(SettingsArchive.NoteEntry.init),
+        contentOnly: imported.editedElsewhere)
+    }
+    var adoption = try await adopt()
+    #expect(adoption.added == 0 && adoption.updated == 0)
+    // 导出之后本机又改了一下状态（固定）；文件被碰过（原样拷了一遍，时间新了）：不算改过、不盖本机的
+    store.setPinned(true, of: original.id)
+    let touchedAt = Date.now.addingTimeInterval(-60)
+    try manager.setAttributes([.modificationDate: touchedAt], ofItemAtPath: file.path)
+    adoption = try await adopt()
+    #expect(adoption.updated == 0 && store.note(original.id)?.body == "原来的字")
+    // 在别的编辑器里改了正文（文件头没动）
+    let edited = try String(contentsOf: file, encoding: .utf8)
+      .replacingOccurrences(of: "原来的字", with: "外面改的字")
+    try edited.write(to: file, atomically: true, encoding: .utf8)
+    let editedAt = Date.now.addingTimeInterval(-30)
+    try manager.setAttributes([.modificationDate: editedAt], ofItemAtPath: file.path)
+    adoption = try await adopt()
+    #expect(adoption.updated == 1)
+    let after = try #require(store.note(original.id))
+    #expect(after.body == "外面改的字" && after.isPinned, "只取内容：固定留本机的")
+    #expect(abs(after.modifiedAt.timeIntervalSince(editedAt)) < 0.01)
+    #expect(store.trashed.map(\.body) == ["原来的字"], "被换下来的那版进最近删除")
+    // 再导一遍：不变
+    adoption = try await adopt()
+    #expect(adoption.updated == 0 && store.trashed.count == 1)
+    // 没有哈希的旧文件：文件时间比文件头晚就算改过
+    let legacy = try String(contentsOf: file, encoding: .utf8)
+      .components(separatedBy: "\n").filter { !$0.hasPrefix("body-hash:") }
+      .joined(separator: "\n").replacingOccurrences(of: "外面改的字", with: "旧文件里改的")
+    try legacy.write(to: file, atomically: true, encoding: .utf8)
+    try manager.setAttributes(
+      [.modificationDate: Date.now.addingTimeInterval(-10)], ofItemAtPath: file.path)
+    adoption = try await adopt()
+    #expect(adoption.updated == 1 && store.note(original.id)?.body == "旧文件里改的")
+  }
+
+  /// 跳过的原因分开数（太大、不是 UTF-8）；岛上那句话：新增 / 更新 / 没有变化 / 全被跳过时写原因 / 没有 .md
+  @Test func skipReasonsAndIslandMessage() async throws {
+    let folder = root.appending(path: "跳过", directoryHint: .isDirectory)
+    try manager.createDirectory(at: folder, withIntermediateDirectories: true)
+    try Data(count: NoteMarkdownFiles.maxFileBytes + 1).write(to: folder.appending(path: "大.md"))
+    try Data([0xFF, 0xFE, 0x00, 0x41]).write(to: folder.appending(path: "坏.md"))
+    let sources = NoteMarkdownFiles.markdownFiles(in: folder).map {
+      NoteMarkdownFiles.Source(url: $0, root: folder)
+    }
+    let skipped = await NoteMarkdownFiles.importNotes(sources: sources, imageDirectory: nil)
+    #expect(skipped.notes.isEmpty && skipped.skipped == 2)
+    #expect(skipped.reasons == [.tooLarge: 1, .notText: 1])
+    let message = NoteMarkdownFiles.importMessage
+    let allSkipped = message(2, skipped, 0, 0)
+    #expect(allSkipped.title == "没有导入" && allSkipped.warning)
+    #expect(allSkipped.detail == "全部跳过了：1 个太大（超过 4 MB）、1 个不是 UTF-8 文本")
+    #expect(message(0, .init(), 0, 0) == ("没有导入", "选的地方没有 .md 文件", true))
+    var read = NoteMarkdownFiles.ImportResult()
+    read.notes = [note(body: "一"), note(body: "二"), note(body: "三")]
+    #expect(message(3, read, 0, 0) == ("没有变化", "3 条和现在的一样", false))
+    #expect(message(3, read, 3, 0).title == "已导入 3 条新便签")
+    #expect(message(3, read, 0, 1) == ("已更新 1 条便签", "2 条和现在的一样", false))
+    read.skip(.tooLarge)
+    read.missingImages = 2
+    #expect(
+      message(4, read, 1, 1)
+        == (
+          "已导入：新增 1 条，更新 1 条", "1 条和现在的一样 · 跳过 1 个太大（超过 4 MB） · 2 张图片没导进来",
+          false
+        ))
+    // 超过 2000 个：只说「只导了前 2000 个」，不再算进跳过
+    read.skip(.overLimit, count: 7)
+    read.limitHit = true
+    #expect(
+      message(2007, read, 1, 1).detail
+        == "1 条和现在的一样 · 跳过 1 个太大（超过 4 MB） · 2 张图片没导进来 · 只导了前 2000 个")
   }
 
   @Test func importStoresForeignImagesAndKeepsBadOnes() async throws {

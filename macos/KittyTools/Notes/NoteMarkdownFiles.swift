@@ -4,7 +4,10 @@
 //   文件头带编号、自己起的标题、颜色、时间（到毫秒、本地时区）、修订号、归档、固定、顺序；**新建一个文件夹**
 //   「Kitty Tools 便签 2026-10-17」（重名加「 2」「 3」），绝不覆盖、绝不往已有的文件夹里混写。
 // - 导入：自己的文件按编号合并（NoteStore.adopt：改得更晚的才换、被换掉的那一版进「最近删除」），同一个文件夹
-//   导两遍第二遍什么都不变；别处的 .md / .markdown / .txt 每个变一条新便签（新编号），开头有别人的 YAML 头就原样
+//   导两遍第二遍什么都不变；**在别处改过的自家文件**按文件的修改时间算改于（第四轮体检 E18）：导出时文件头里写正文的
+//   哈希（body-hash），导回时正文和它对不上才算改过——只是被碰过（cp、git、AirDrop、编辑器原样存一次）的文件时间新了
+//   不算；没有哈希的旧导出文件，文件时间比文件头晚 2 秒以上算改过。按文件时间算的那几条只取内容（adopt 的 contentOnly）；
+//   别处的 .md / .markdown / .txt 每个变一条新便签（新编号），开头有别人的 YAML 头就原样
 //   留在正文里。图片路径相对那个 .md 所在的文件夹，解析符号链接之后必须还在用户选的那个文件夹里（不联网）。
 // - 纯函数（文件名、文件头、三种换法、路径判断）都在这里配单测；读文件、写文件、存图片在 @concurrent 里做
 //   （mac-native §3），`adopt` 和界面的刘海岛在主线程。
@@ -14,6 +17,7 @@
 //   截到 255 里再被系统拒了好。导入只读文件夹的第一层，不进子文件夹（SPEC §7 不做）。
 
 import AppKit
+import CryptoKit
 import Foundation
 import Synchronization
 import UniformTypeIdentifiers
@@ -115,7 +119,7 @@ nonisolated enum NoteMarkdownFiles {
   // MARK: 文件头
 
   /// 一条便签的文件头（`---` 那几行，不带后面的空行）
-  static func header(for note: Note) -> String {
+  static func header(for note: Note, bodyHash: String? = nil) -> String {
     var lines = ["---", "kitty-note: \(note.id)"]
     let own = note.title.trimmingCharacters(in: .whitespacesAndNewlines)
     if !own.isEmpty { lines.append("title: \(jsonString(note.title))") }
@@ -131,8 +135,15 @@ nonisolated enum NoteMarkdownFiles {
     lines.append("archived: \(note.isArchived)")
     lines.append("pinned: \(note.isPinned)")
     lines.append("order: \(note.order)")
+    if let bodyHash { lines.append("body-hash: \(bodyHash)") }
     lines.append("---")
     return lines.joined(separator: "\n")
+  }
+
+  /// 文件头之后那段正文的哈希（E18：导回时看正文在别处改过没有）。导出时算写出去的那段，导回时算读到的那段
+  /// （\r\n 已经换成 \n：只换了换行符的不算改过）
+  static func bodyHash(_ text: String) -> String {
+    Signing.hex(SHA256.hash(data: Data(text.utf8)).prefix(16))
   }
 
   /// 值按 JSON 字符串写（引号、反斜杠、换行都转义）：JSON 字符串也是合法的 YAML
@@ -158,6 +169,8 @@ nonisolated enum NoteMarkdownFiles {
     var archived = false
     var pinned = false
     var order: Double = 0
+    /// 导出时正文的哈希（E18；0.7.1 之前导出的没有）
+    var bodyHash: String?
     var text = ""
   }
 
@@ -192,6 +205,7 @@ nonisolated enum NoteMarkdownFiles {
     if let raw = values["archived"] { header.archived = raw == "true" }
     if let raw = values["pinned"] { header.pinned = raw == "true" }
     if let raw = values["order"], let order = Double(raw), order.isFinite { header.order = order }
+    header.bodyHash = values["body-hash"].flatMap { $0.isEmpty ? nil : $0 }
     // 收尾的 `---` 后面紧跟的一个换行不算正文（`\r\n` 在进来之前已经换成 `\n`）
     var start = min(closing + 1, lines.count)
     // 导出的文件在收尾的 `---` 后面空一行再写正文：那一行是分隔用的，不算正文。没有空行（别处手写的）照旧
@@ -481,7 +495,8 @@ nonisolated enum NoteMarkdownFiles {
   static func fileText(for note: Note) -> (text: String, images: [NoteImages.Image]) {
     let tasks = NoteTasks.markdown(from: note.body)
     let (body, images) = markdownImages(tasks)
-    return (header(for: note) + "\n\n" + NoteMarkdown.html(from: body), images)
+    let markdown = NoteMarkdown.html(from: body)
+    return (header(for: note, bodyHash: bodyHash(markdown)) + "\n\n" + markdown, images)
   }
 
   /// 拷一张图的结果：拷好了、旁边已经有了（跳过、**不覆盖**）、源文件不在或拷不进去
@@ -616,15 +631,96 @@ nonisolated enum NoteMarkdownFiles {
     var root: URL
   }
 
+  /// 为什么跳过一个文件（岛上写清原因，E18）
+  enum Skip: Int, CaseIterable, Sendable {
+    /// 超过 maxFileBytes
+    case tooLarge
+    /// 不是 UTF-8 文本
+    case notText
+    /// 换完正文超过一条便签的上限
+    case tooLong
+    /// 读不出来（没权限、读到一半出错）
+    case unreadable
+    /// 同步文件夹里的文件
+    case syncFile
+    /// 超过一次 maxFiles 个
+    case overLimit
+
+    var text: String {
+      switch self {
+      case .tooLarge: "太大（超过 \(NoteMarkdownFiles.maxFileBytes >> 20) MB）"
+      case .notText: "不是 UTF-8 文本"
+      case .tooLong: "超过一条便签 \(Note.maxBodyBytes >> 20) MB 的上限"
+      case .unreadable: "读不出来"
+      case .syncFile: "是同步文件夹里的文件"
+      case .overLimit: "超过一次 \(NoteMarkdownFiles.maxFiles) 个"
+      }
+    }
+  }
+
   /// 导入做了什么
   struct ImportResult: Sendable {
     var notes: [Note] = []
-    /// 跳过（不是 UTF-8、太大、换完超上限、读不出来、超过 2000 个）
+    /// 跳过（不是 UTF-8、太大、换完超上限、读不出来、超过 2000 个）：一共几个、各为什么
     var skipped = 0
+    var reasons: [Skip: Int] = [:]
     /// 图片没导进来的张数（跑出文件夹、不在、太大、读不出、不是图片）
     var missingImages = 0
     /// 只导了前 2000 个
     var limitHit = false
+    /// 「改于」按文件的修改时间算的那几条（编号；在别的编辑器里改过正文）：adopt 时只取内容，状态留本机的
+    var editedElsewhere: Set<String> = []
+
+    mutating func skip(_ reason: Skip, count: Int = 1) {
+      guard count > 0 else { return }
+      skipped += count
+      reasons[reason, default: 0] += count
+    }
+  }
+
+  /// 自家文件在别处改过没有（纯函数，E18）。bodyChanged：文件头里有正文哈希时，读到的正文和它对不对得上（nil = 0.7.1
+  /// 之前导出的、没有哈希）。有哈希就只看它（文件时间被 cp、git、AirDrop、编辑器原样存一次碰过都不算）；没有的，文件的
+  /// 修改时间比文件头里的「改于」晚 editedSlack 以上算改过。文件时间读不出来算没改过
+  static func editedElsewhere(header: Date, file: Date?, bodyChanged: Bool?) -> Bool {
+    guard let file else { return false }
+    return bodyChanged ?? (file.timeIntervalSince(header) > editedSlack)
+  }
+
+  /// 没有哈希的旧文件，文件时间比文件头晚多少才算在别处改过：有的盘、拷来拷去时刻只精确到 1–2 秒
+  static let editedSlack: TimeInterval = 2
+
+  /// 导入完岛上怎么说（纯函数，E18）：files 是选中的地方里有几个能导的文件；added / updated 是 adopt 的结果；
+  /// 标题按新增 / 更新写，都是 0 说「没有变化」；一条都没读出来时写清为什么（没有 .md、全都被跳过了及原因）
+  static func importMessage(
+    files: Int, result: ImportResult, added: Int, updated: Int
+  ) -> (title: String, detail: String?, warning: Bool) {
+    var parts: [String] = []
+    guard files > 0 else { return ("没有导入", "选的地方没有 .md 文件", true) }
+    guard !result.notes.isEmpty else {
+      return ("没有导入", "全部跳过了：" + reasons(result).joined(separator: "、"), true)
+    }
+    let title: String
+    switch (added, updated) {
+    case (0, 0): title = "没有变化"
+    case (_, 0): title = "已导入 \(added) 条新便签"
+    case (0, _): title = "已更新 \(updated) 条便签"
+    default: title = "已导入：新增 \(added) 条，更新 \(updated) 条"
+    }
+    let same = result.notes.count - added - updated
+    if same > 0 { parts.append("\(same) 条和现在的一样") }
+    // 超过 2000 个：只说「只导了前 2000 个」那一句，不再算进跳过
+    let skipped = reasons(result, excluding: result.limitHit ? .overLimit : nil)
+    if !skipped.isEmpty { parts.append("跳过 " + skipped.joined(separator: "、")) }
+    if result.missingImages > 0 { parts.append("\(result.missingImages) 张图片没导进来") }
+    if result.limitHit { parts.append("只导了前 \(maxFiles) 个") }
+    return (title, parts.isEmpty ? nil : parts.joined(separator: " · "), false)
+  }
+
+  /// 跳过的原因一句一句：「2 个太大（超过 4 MB）」
+  private static func reasons(_ result: ImportResult, excluding left: Skip? = nil) -> [String] {
+    Skip.allCases.filter { $0 != left }.compactMap { reason in
+      result.reasons[reason].map { "\($0) 个\(reason.text)" }
+    }
   }
 
   /// 读 sources（已经按文件名排好、截到 maxFiles）、换成 Note。自己家的头按编号、别处的每个一条新便签。
@@ -639,24 +735,32 @@ nonisolated enum NoteMarkdownFiles {
         $0.url.lastPathComponent.localizedStandardCompare($1.url.lastPathComponent)
           == .orderedAscending
       }.prefix(maxFiles))
-    result.skipped += max(0, sources.count - maxFiles)
+    result.skip(.overLimit, count: max(0, sources.count - maxFiles))
     for (index, source) in files.enumerated() {
       guard let attributes = try? FileManager.default.attributesOfItem(atPath: source.url.path),
-        let size = attributes[.size] as? Int, size <= maxFileBytes
+        let size = attributes[.size] as? Int
       else {
-        result.skipped += 1
+        result.skip(.unreadable)
         continue
       }
-      guard let data = try? Data(contentsOf: source.url), let raw = decode(data) else {
-        result.skipped += 1
+      guard size <= maxFileBytes else {
+        result.skip(.tooLarge)
         continue
       }
-      let modified =
-        (try? source.url.resourceValues(forKeys: [.contentModificationDateKey]))?
-        .contentModificationDate ?? now
+      guard let data = try? Data(contentsOf: source.url) else {
+        result.skip(.unreadable)
+        continue
+      }
+      guard let raw = decode(data) else {
+        result.skip(.notText)
+        continue
+      }
+      // 修改时间从文件属性里现读（URL 的 resourceValues 会缓存：同一个 URL 读过一次，别处改了文件也还是旧的）
+      let fileModified = attributes[.modificationDate] as? Date
+      let modified = fileModified ?? now
       // 同步文件夹里的文件（NoteSyncFolder）：这里读不全它的删除时刻、正文也不是 Markdown，跳过
       if NoteSyncFolder.isSyncFile(raw) {
-        result.skipped += 1
+        result.skip(.syncFile)
         continue
       }
       if var header = parseHeader(raw, modifiedFallback: modified) {
@@ -664,16 +768,23 @@ nonisolated enum NoteMarkdownFiles {
           in: bodyFromMarkdown(header.text).body, root: source.root, imageDirectory: imageDirectory)
         result.missingImages += failures
         guard body.utf8.count <= Note.maxBodyBytes else {
-          result.skipped += 1
+          result.skip(.tooLong)
           continue
         }
+        // 在别处改过的（E18）：「改于」按文件的修改时间，adopt 时只取内容
+        let headerModified = header.modified ?? modified
+        let edited = editedElsewhere(
+          header: headerModified, file: fileModified,
+          bodyChanged: header.bodyHash.map { $0 != bodyHash(header.text) })
+        if edited { result.editedElsewhere.insert(header.id) }
         header.text = body
         var note = Note(
           id: header.id, title: Note.sanitized(title: header.title),
           body: Note.sanitized(text: body),
           color: Note.color(preset: header.color, tint: header.tint),
           createdAt: Note.stamp(header.created ?? modified),
-          modifiedAt: Note.stamp(header.modified ?? modified), revision: header.revision,
+          modifiedAt: Note.stamp(edited ? fileModified ?? headerModified : headerModified),
+          revision: header.revision,
           isArchived: header.archived, isPinned: header.pinned, order: header.order)
         note.title = Note.sanitized(title: header.title)
         note.body = Note.sanitized(text: body)
@@ -686,7 +797,7 @@ nonisolated enum NoteMarkdownFiles {
           in: body, root: source.root, imageDirectory: imageDirectory)
         result.missingImages += failures
         guard converted.utf8.count <= Note.maxBodyBytes else {
-          result.skipped += 1
+          result.skip(.tooLong)
           continue
         }
         let content = prefix + converted

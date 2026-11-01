@@ -300,6 +300,45 @@ struct NoteFloatTests {
     #expect(Layout.restored(place, note: gone, in: screens) == nil)
   }
 
+  /// 拔外接屏之后回原处（第四轮体检 E15）：记着那块屏的名字；拔了挤到主屏（记录不改），插回来回到原处；记录里的屏一直
+  /// 不在就一直在主屏、记录还是原来的；存取带着屏的名字，0.7.0 之前没记屏的照旧按重叠算
+  @Test func floatReturnsToItsDisplayAfterUnplugging() {
+    let laptop = Self.screen()
+    let external = Self.screen("副屏", x: 1440)
+    let both = [laptop, external]
+    let spot = CGRect(x: 2000, y: 300, width: 460, height: 380)
+    #expect(Layout.display(of: spot, in: both) == "副屏")
+    #expect(Layout.display(of: spot, pointer: CGPoint(x: 10, y: 10), in: both) == "主屏")
+    #expect(Layout.display(of: spot, in: []) == nil)
+    // 两块都在：就在原处
+    #expect(Layout.placed(frame: spot, display: "副屏", in: both) == spot)
+    // 拔了：挤进主屏的可见区
+    let squeezed = Layout.placed(frame: spot, display: "副屏", in: [laptop])
+    #expect(squeezed == CGRect(x: 1440 - 460, y: 300, width: 460, height: 380))
+    // 插回来：同一个记录算出来的又是原处
+    #expect(Layout.placed(frame: spot, display: "副屏", in: both) == spot)
+    // 插回来的那块屏换了位置（排在左边）：还是回到那块屏上（夹进它的可见区）
+    let movedExternal = Self.screen("副屏", x: -1440)
+    #expect(
+      external.visibleFrame.contains(spot)
+        && movedExternal.visibleFrame.contains(
+          Layout.placed(frame: spot, display: "副屏", in: [laptop, movedExternal]))
+    )
+    // 重启时那块屏不在：先在主屏，记录照旧
+    var note = Note(id: "甲", createdAt: .now, modifiedAt: .now)
+    note.isPinned = true
+    let place = Place(id: "甲", frame: spot, display: "副屏")
+    #expect(Layout.restored(place, note: note, in: [laptop]) == squeezed)
+    #expect(Layout.restored(place, note: note, in: both) == spot)
+    #expect(
+      Layout.place(id: "甲", isDragging: false, note: note, frame: spot, display: "副屏") == place)
+    // 存取带着屏；没记屏的（旧记录）读出来是 nil，算法同 settled
+    #expect(Place(stored: place.stored) == place)
+    #expect(Place(stored: ["id": "甲", "frame": NSStringFromRect(spot)])?.display == nil)
+    #expect(Layout.placed(frame: spot, display: nil, in: [laptop]) == squeezed)
+    #expect(Layout.placed(frame: spot, display: "早就没了的屏", in: both) == spot)
+  }
+
   /// 记着的大小、固定着的那一张在哪是这台电脑自己的状态：不注册默认值、不跟着导出走
   @Test func floatStateIsMachineState() {
     for key in [Prefs.notesFloatSize, Prefs.notesFloatPlace, Prefs.notesFloatPlaces] {
@@ -794,7 +833,7 @@ struct NoteFloatTests {
     #expect(float.panel?.level == .floating)
     #expect(
       float.place
-        == Place(id: ids[0], frame: expected))
+        == Place(id: ids[0], frame: expected, display: Self.far.name))
     store.setPinned(false, of: ids[0])
     float.storeChanged()
     #expect(
@@ -907,7 +946,7 @@ struct NoteFloatTests {
     #expect(float.panel?.level == .floating)
     #expect(
       float.place
-        == Place(id: ids[1], frame: sheet))
+        == Place(id: ids[1], frame: sheet, display: Self.far.name))
   }
 
   /// 按着把手挪：面板跟着鼠标走，松手夹进可见区、固定着的把新位置记下来
@@ -933,7 +972,7 @@ struct NoteFloatTests {
     #expect(float.panel === panel && panel.frame == frame.offsetBy(dx: 120, dy: -60))
     #expect(
       float.place
-        == Place(id: ids[0], frame: frame.offsetBy(dx: 120, dy: -60)))
+        == Place(id: ids[0], frame: frame.offsetBy(dx: 120, dy: -60), display: Self.far.name))
     // 挪出那块屏的右边：松手夹回来
     float.model.gripChanged(at: start)
     float.model.gripChanged(at: CGPoint(x: start.x + 5000, y: start.y))
@@ -1203,12 +1242,16 @@ struct NoteFloatTests {
     float.update(options: options, edgeShown: false)
     #expect(!float.model.tabOnLeading && !float.model.edgeShown)
     #expect(float.model.metrics.tabWidth == 38)
-    // 那块屏变小了（分辨率、程序坞）：夹回来，记着的位置跟着改
+    // 那块屏变小了（分辨率、程序坞）：夹回来；记着的还是人放下它的地方（第四轮体检 E15：屏幕变了只挪窗口、不改记录），
+    // 变回原来的大小就回到原处
     let smaller = Self.screen("测试", x: -40000, y: -40000, width: 800, height: 600)
     float.screens = { [smaller] }
     float.update(options: options, edgeShown: false)
     #expect(smaller.visibleFrame.contains(panel.frame) && panel.frame.size == frame.size)
-    #expect(float.place?.frame == panel.frame)
+    #expect(float.place?.frame == frame && float.place?.display == Self.far.name)
+    float.screens = { [Self.far] }
+    float.update(options: options, edgeShown: false)
+    #expect(panel.frame == frame)
   }
 
   /// 长截图：压在选区上的先收走，结束放回来；不相交的不动。点它在那叠里的标签时也放回来
@@ -1483,6 +1526,44 @@ struct NoteFloatTests {
   /// 拖出来的整条路，两块面板一起：过了阈值，浮动面板出现在这条便签在那叠里的位置；**鼠标松开之前那叠里的那一份
   /// 还在视图树里**（手势是从它身上开始的）、两个正文框并存，这时打的字按编号落、两边对得上；松手，那叠里的那一份
   /// 收掉，浮动面板拿到焦点。之后点那叠里它的标签不再开第二份
+  @Test func blankNoteDraggedOutKeepsFloating() async throws {
+    // 第四轮体检 E11 走真的交接：那叠里新建一条空白便签、拖出来浮着——它从那叠里「下来」了，但浮着，不删；
+    // 收回边缘才删（isOpen 照 NoteEdge.isOpen：哪一叠开着它、哪一张浮着它）
+    let (defaults, suite) = try prefs()
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let (deck, float, ids) = try wired(["甲"], defaults: defaults)
+    defer {
+      float.model.send(.remove)
+      deck.close()
+    }
+    let store = deck.model.store
+    store.isOpen = { [weak deck, weak float] id in
+      float?.model.state.noteID == id || deck?.model.noteID == id
+    }
+    store.isComposing = { _ in false }
+    store.setPinned(true, of: ids[0])
+    deck.pill?.onPress()
+    deck.model.create()
+    let blank = try #require(deck.model.state.openID)
+    #expect(blank != ids[0] && store.note(blank)?.body == "")
+    // 便签开着时装着全局的鼠标监听：固定着，用户这时在别处点一下才不会把它收掉（还是空白的）
+    store.setPinned(true, of: blank)
+    try await settle { focusedNote(deck.panel) == blank }
+    let sheet = deck.contentFrame
+    let start = CGPoint(x: sheet.minX + 12, y: sheet.midY)
+    deck.model.gripChanged(at: start)
+    deck.model.gripChanged(at: CGPoint(x: start.x - 60, y: start.y))
+    deck.model.gripEnded(.tab, at: CGPoint(x: start.x - 260, y: start.y - 30))
+    #expect(deck.model.state.openID == nil && float.model.state.noteID == blank)
+    for _ in 0..<20 { await Task.yield() }
+    try await Task.sleep(for: .milliseconds(100))
+    #expect(store.note(blank) != nil, "浮着的空白便签不删")
+    // 收回边缘：下来了、哪儿都没开着它，删
+    float.model.close()
+    try await settle { store.note(blank) == nil }
+    #expect(store.note(blank) == nil && store.trashed.isEmpty)
+  }
+
   @Test func deckHandsTheNoteOverToTheFloat() async throws {
     let (defaults, suite) = try prefs()
     defer { defaults.removePersistentDomain(forName: suite) }

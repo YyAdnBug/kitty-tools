@@ -35,6 +35,9 @@
 //   （5000 条便签 -O 13–19 ms，1000 条约 6 ms）——要再省就换 FSEvents 只看变了的；有一个永远读不出来的文件（哪台不用了的
 //   Mac 留下的坏文件）时，那一部分每轮都不跳过，回到原来每轮全合的样子。
 // 拿下来的图片：编辑器里正开着的那条下次打开时才画出来（附件的尺寸在建的时候读）。
+// 共用的 images/ 里没人引用的图（第四轮体检 E16）：便签那部分合完、写出去之前按 NoteSyncFolder.imagePurge 定删哪几张
+// （账在库里 note_meta；本机图片目录不在、账读不出来都不删），跟着那一轮的写一起删；账上有到期的那一刻（imagesDue）
+// 输入没变也不跳过。电脑名（device.json 里的）一次运行只取一次（第四轮体检 E24⑧：不每 20 秒问一遍系统）。
 // ponytail: 退出时不再赶一轮（落盘照常，下次打开那一轮写出去）
 
 import AppKit
@@ -116,6 +119,10 @@ import Observation
   @ObservationIgnored private var settled: [String: Inputs] = [:]
   /// 上一轮跳过了哪几部分（单测看）
   @ObservationIgnored private(set) var skippedParts: Set<String> = []
+  /// 共用的 images/ 里账上下一张到期的时刻（E16）：到了就算输入没变也合一轮——文件夹一直不变的话，到期的删不掉
+  @ObservationIgnored private var imagesDue: Date?
+  /// 这台电脑叫什么：一次运行只取一次（E24⑧）
+  @ObservationIgnored private var name: String?
 
   /// 一部分这一轮的输入里会变的那几样：读到的文件的属性（NoteSyncDisk.Stamp）+ 本机那份。一样就合出来、写出去的都一样
   private enum Inputs: Equatable {
@@ -365,7 +372,8 @@ import Observation
       device: store.deviceID, epoch: epoch, images: localImages,
       folderImages: snapshot.folder.images)
     let notesSettled = !snapshot.unsettled.contains(Self.notesPart)
-    if notesOn, notesSettled, previous[Self.notesPart] == noteInputs {
+    let imagesDueNow = imagesDue.map { clock() >= $0 } ?? false
+    if notesOn, notesSettled, !imagesDueNow, previous[Self.notesPart] == noteInputs {
       settling[Self.notesPart] = noteInputs
       skipping.insert(Self.notesPart)
     } else if notesOn {
@@ -423,6 +431,7 @@ import Observation
         localImages: localImages, folderImages: snapshot.folder.images)
       // 没换进来的那几条也先不写出去（还是没合的样子：别的电脑会把它当成和自己各改各的、另存一条）
       plan.writes.removeAll { held.contains($0.id) }
+      plan.imageDeletes = purgeImages(snapshot, localImages: localImages, readable: notesSettled)
       // 什么都没换、什么都不用写（也没换编号）：输入不变的话下一轮也一样
       if notesSettled, !merged, plan.isEmpty, regressed.isEmpty, !rolledBack {
         settling[Self.notesPart] = noteInputs
@@ -463,12 +472,22 @@ import Observation
         return halt(.failed(error.localizedDescription))
       }
     }
-    let name = await computerName()
+    let name: String
+    if let cached = self.name {
+      name = cached
+    } else {
+      name = await computerName()
+      self.name = name
+    }
     let written = await NoteSyncDisk.write(
       plan, folder: folder, device: store.deviceID, name: name, epoch: next,
       images: store.images?.directory, kinds: kindFiles)
     // 拿下来的图已经在本机的图片目录里了（别处出了错、换了文件夹也一样）：按「没图」建的墙卡片、编辑器里的占位框换上它们
     store.imagesArrived(Set(written.downloaded.map(\.id)))
+    // 写成了的便签：这次运行里新建的空白便签丢掉时要留墓碑（NoteStore.dropIfBlank）
+    store.published(written.wrote)
+    // 删成了的共用图片从账上去掉（E16）：别的电脑补传回来时从头记，不会刚传上来就又删
+    if !written.deletedImages.isEmpty { forgetPurged(written.deletedImages) }
     guard self.folder == folder else { return }
     if let problem = written.problem { return halt(.failed(problem)) }
     settled = settling
@@ -485,6 +504,39 @@ import Observation
     braked = nil
     if let trouble { return halt(trouble) }
     status = .idle
+  }
+
+  /// 共用的 images/ 这一轮删哪几张（E16，规则在 NoteSyncFolder.imagePurge）：引用 = 本机的便签（含最近删除里的）+ 文件夹里
+  /// 各台的；readable 是读文件那一层说的「读清楚了」，这里再看一遍每台的墓碑和便签文件。本机图片目录没接上、账读不出来
+  /// 都不删（账写坏了从头记：只会晚删）；账变了存回库里（存不上下一轮从头记，同样只会晚删）
+  private func purgeImages(
+    _ snapshot: NoteSyncDisk.Snapshot, localImages: Set<String>, readable: Bool
+  ) -> [String] {
+    imagesDue = nil
+    guard store.images != nil, !snapshot.folder.images.isEmpty else { return [] }
+    let stored: String?
+    do { stored = try store.meta(NoteSyncFolder.imageLedgerKey) } catch { return [] }
+    let ledger = NoteSyncFolder.ledger(fromText: stored)
+    let purge = NoteSyncFolder.imagePurge(
+      folderImages: snapshot.folder.images,
+      referenced: store.referencedImages.union(
+        NoteSyncFolder.referencedImages(in: snapshot.folder)),
+      localImages: Set(localImages.compactMap(NoteImageStore.identifier(ofFileNamed:))),
+      ledger: ledger, readable: readable && NoteSyncFolder.isReadable(snapshot.folder), now: clock()
+    )
+    if purge.ledger != ledger {
+      try? store.setMeta(NoteSyncFolder.imageLedgerKey, NoteSyncFolder.ledgerText(purge.ledger))
+    }
+    imagesDue = purge.due
+    return purge.deletes
+  }
+
+  /// 删成了的共用图片从账上去掉（账读不出来、存不上：下一轮那张图不在了，imagePurge 自己会去掉）
+  private func forgetPurged(_ names: Set<String>) {
+    guard let stored = try? store.meta(NoteSyncFolder.imageLedgerKey) else { return }
+    var ledger = NoteSyncFolder.ledger(fromText: stored)
+    for name in names { ledger[name] = nil }
+    try? store.setMeta(NoteSyncFolder.imageLedgerKey, NoteSyncFolder.ledgerText(ledger))
   }
 
   /// 一类合到哪了

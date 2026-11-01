@@ -338,7 +338,7 @@ struct NoteBatch8bTests {
     let all = await NoteMarkdownFiles.export(notes: [note], imageDirectory: images, to: parent)
     let name = try #require(all.folder).appending(path: "导出我.md")
     #expect(try String(contentsOf: name, encoding: .utf8) == written)
-    #expect(written.hasPrefix(NoteMarkdownFiles.header(for: note)))
+    #expect(written == NoteMarkdownFiles.fileText(for: note).text)
     #expect(written.contains("attachments/\(id.uuidString).png"))
     // 图片拷到旁边的 attachments，字节一样
     let copied = root.appending(path: "attachments/\(id.uuidString).png")

@@ -2,7 +2,9 @@
 // 两个临时的偏好域）用同一个临时文件夹真读真写——开同步（新文件夹写标记、已有的接着用）、新建 / 改 / 冲突另存 / 永久删
 // 传过去、刹车停下来等确认、正在编辑的那条先不换也先不写出去、文件夹不在 / 不是那个文件夹时停、图片两头补齐、认出库被
 // 退回去了换编号且不丢字、写到一半停了不算退回去、关掉同步、开同步时不盖掉别人的标记。读写那一层另测：没变的文件不再读
-// （换了文件号的照读）、占位文件和太大的文件算读不出来、写、删、墓碑、电脑名。
+// （换了文件号的照读）、占位文件和太大的文件算读不出来、写、删、墓碑、电脑名（一次运行只取一次，第四轮体检 E24⑧）。
+// 共用 images/ 的清理（第四轮体检 E16）：别的电脑还引用、本机还引用的不删；本机已经没有的记满 1 天删、本机还有的记满
+// 30 天删；哪台的子文件夹有读不出来的便签文件、有没下载完的占位文件时整轮不删。
 // 都在临时目录和临时偏好域里，用完删；不碰真实的数据目录、偏好和剪贴板。
 
 import Foundation
@@ -1269,5 +1271,145 @@ struct NoteSyncerTests {
     await b.syncer.round()
     let text = try #require(b.clipboard.items.first { $0.isSnippet }?.text)
     #expect(Array(text.utf8) == Array("cafe\u{301}".utf8))
+  }
+  // MARK: 共用 images/ 的清理（第四轮体检 E16）
+
+  private var sharedImages: URL {
+    shared.appending(path: NoteSyncFolder.imagesName, directoryHint: .isDirectory)
+  }
+
+  private func inFolder(_ name: String) -> Bool {
+    FileManager.default.fileExists(atPath: sharedImages.appending(path: name).path)
+  }
+
+  /// 往共用的 images/ 里放一张谁都没引用过的图，返回文件名
+  private func strayImage() throws -> String {
+    try FileManager.default.createDirectory(at: sharedImages, withIntermediateDirectories: true)
+    let name = "\(UUID().uuidString).png"
+    try NoteImageFixture.data(type: .png, width: 8, height: 8).write(
+      to: sharedImages.appending(path: name))
+    return name
+  }
+
+  /// 另一台电脑（C）的 notes/ 目录
+  private var otherNotes: URL {
+    shared.appending(path: "devices/C/notes", directoryHint: .isDirectory)
+  }
+
+  /// 合一轮：先把文件都拨回一小时前（刚写过的算没读清楚，这一轮不清图片）
+  private func agedRound(_ mac: Mac) async throws {
+    try age(to: Date.now.addingTimeInterval(-3600))
+    await mac.syncer.round()
+  }
+
+  /// 删的条件一样不少：别的电脑（C 的子文件夹里还留着那条便签）还引用的不删；本机已经没有的记满 1 天删；本机还有的
+  /// 记满 30 天才删；本机自己还引用的一直不删
+  @Test func folderImagesArePurgedOnlyWhenNobodyNeedsThem() async throws {
+    try makeShared()
+    defer { cleanUp() }
+    let a = try Mac(host: "a", root: root)
+    #expect(await a.syncer.enable(folder: shared) == nil)
+    var now = Date.now
+    a.syncer.clock = { now }
+    let images = try #require(a.store.images)
+    func stored() async throws -> NoteImages.Image {
+      try await NoteImageStore.store(
+        data: NoteImageFixture.data(type: .png, width: 40, height: 30), in: images.directory
+      ).get().image
+    }
+    let kept = try await stored()
+    let common = try await stored()
+    a.store.create(body: "留着 \(NoteImages.token(kept))", now: now)
+    let note = a.store.create(body: "C 也有 \(NoteImages.token(common))", now: now)
+    let stray = try strayImage()
+    try await agedRound(a)
+    let keptName = "\(kept.id.uuidString).\(kept.ext)"
+    let sharedName = "\(common.id.uuidString).\(common.ext)"
+    #expect(inFolder(keptName) && inFolder(sharedName) && inFolder(stray))
+    // C 也有这条（同一版），A 把它永久删了：C 的子文件夹里还引用着那张图
+    try FileManager.default.createDirectory(at: otherNotes, withIntermediateDirectories: true)
+    let mine = shared.appending(path: "devices/\(a.store.deviceID)/notes")
+    try FileManager.default.copyItem(
+      at: mine.appending(path: NoteSyncFolder.fileName(of: note.id)),
+      to: otherNotes.appending(path: NoteSyncFolder.fileName(of: note.id)))
+    a.store.erase(note.id, now: now)
+    try await agedRound(a)
+    #expect(a.store.note(note.id) == nil, "墓碑压住 C 那份")
+    // 半天：都还在（stray 本机没有，记了才半天）
+    now += 43_200
+    try await agedRound(a)
+    #expect(inFolder(stray))
+    // 满 1 天（多给一分钟：账按毫秒存）：本机没有、谁都不引用的那张删了；C 还引用的、本机引用的都在
+    now += 43_260
+    try await agedRound(a)
+    #expect(!inFolder(stray) && inFolder(sharedName) && inFolder(keptName))
+    // 删成了的从账上去掉：别的电脑补传回来时从头记，不会刚传上来就又删
+    let ledger = NoteSyncFolder.ledger(fromText: try a.store.meta(NoteSyncFolder.imageLedgerKey))
+    #expect(ledger[stray] == nil)
+    // 40 天后：C 还引用着就一直在
+    now += 40 * 86_400
+    try await agedRound(a)
+    #expect(inFolder(sharedName) && inFolder(keptName))
+    // C 也删了那条：从这一轮起记账；本机图片目录里还有它，满 30 天才删
+    try FileManager.default.removeItem(
+      at: otherNotes.appending(path: NoteSyncFolder.fileName(of: note.id)))
+    try await agedRound(a)
+    now += 29 * 86_400
+    try await agedRound(a)
+    #expect(inFolder(sharedName))
+    now += 86_460
+    try await agedRound(a)
+    #expect(!inFolder(sharedName) && inFolder(keptName))
+    #expect(
+      FileManager.default.fileExists(atPath: images.url(for: common.id, ext: common.ext).path))
+  }
+
+  /// 哪台的子文件夹读不清楚（有写坏的便签文件、有没下载完的占位文件）：整轮一张都不删；读清楚了照常删
+  @Test(arguments: [false, true])
+  func unreadableFoldersStopThePurge(placeholder: Bool) async throws {
+    try makeShared()
+    defer { cleanUp() }
+    let a = try Mac(host: "a", root: root)
+    #expect(await a.syncer.enable(folder: shared) == nil)
+    var now = Date.now
+    a.syncer.clock = { now }
+    let stray = try strayImage()
+    try await agedRound(a)
+    try FileManager.default.createDirectory(at: otherNotes, withIntermediateDirectories: true)
+    let id = UUID().uuidString
+    let blocker =
+      placeholder
+      ? otherNotes.appending(path: ".\(id).md.icloud") : otherNotes.appending(path: "\(id).md")
+    try Data("写坏了的".utf8).write(to: blocker)
+    now += 40 * 86_400
+    try await agedRound(a)
+    #expect(inFolder(stray), "C 的子文件夹读不清楚：不删")
+    try FileManager.default.removeItem(at: blocker)
+    try await agedRound(a)
+    #expect(!inFolder(stray), "读清楚了：账上早就满了，删")
+  }
+
+  /// 电脑名（device.json 里的）一次运行只取一次：不每 20 秒问一遍系统（第四轮体检 E24⑧）
+  @Test func computerNameIsAskedOnce() async throws {
+    try makeShared()
+    defer { cleanUp() }
+    let a = try Mac(host: "a", root: root)
+    var asked = 0
+    a.syncer.computerName = {
+      asked += 1
+      return "我的 Mac"
+    }
+    #expect(await a.syncer.enable(folder: shared) == nil)
+    a.store.create(body: "一", now: .now)
+    await a.syncer.round()
+    a.store.create(body: "二", now: .now)
+    await a.syncer.round()
+    #expect(asked == 1)
+    let info = try JSONDecoder().decode(
+      NoteSyncFolder.DeviceInfo.self,
+      from: Data(
+        contentsOf: shared.appending(
+          path: "devices/\(a.store.deviceID)/\(NoteSyncFolder.deviceInfoName)")))
+    #expect(info.name == "我的 Mac")
   }
 }

@@ -464,7 +464,7 @@ import SwiftUI
     if !shown { onActivity() }
   }
 
-  /// 标签列下的「+」：建一条（最前面那条还是空白的就用它）并在这叠里打开
+  /// 标签列下的「+」：建一条（有本机建的空白便签就用它，挪到最前面，NoteStore.blankOrNew）并在这叠里打开
   func create() {
     open(created: store.blankOrNew().id)
   }

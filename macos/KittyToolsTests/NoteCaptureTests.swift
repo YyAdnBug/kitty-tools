@@ -2,7 +2,9 @@
 // 超过单条上限不存）、目的地列表（最近改过的 8 条没归档的）、⌘1–⌘9、草稿在收起后留着 / Esc 清空、面板的高度、
 // 新便签的标题（填了就用、只填标题也存、记到已有的不用它、和草稿一起留一起清、两个输入框的焦点交接）；
 // 另有便签正文字节上限的判断（NoteTextView.overflows）。
-// 全用内存库；不给岛（岛会真的开窗口），不碰用户的偏好和数据目录。
+// 第四轮体检 E2：草稿存进文件（停手 / 收起时存、清空时删、下次建面板读回；空的、读不出来的不算）、Esc 清掉非空的才给
+// 「恢复」、恢复把内容放回来（这几秒里又打的字接在后面）。
+// 全用内存库；不给岛（岛会真的开窗口），不碰用户的偏好和数据目录（草稿文件在临时目录里）。
 
 import AppKit
 import Carbon.HIToolbox
@@ -322,5 +324,99 @@ struct NoteCaptureTests {
     #expect(fits("你好吗", NSRange(location: 0, length: 1), "", 1))
     #expect(fits("你好吗", NSRange(location: 0, length: 1), "abc", 1))
     #expect(!fits("你好吗", NSRange(location: 0, length: 1), "abcd", 1))
+  }
+  // MARK: 草稿存进文件（第四轮体检 E2）
+
+  private func draftFile() -> URL {
+    FileManager.default.temporaryDirectory.appending(path: "kitty-note-draft-\(UUID().uuidString)")
+      .appending(path: NoteCaptureModel.draftName)
+  }
+
+  /// 存、读回、清空时删：标题、正文、目的地一起；空的不写文件；读不出来、是空的当没有
+  @Test func draftSurvivesARestart() throws {
+    let url = draftFile()
+    defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+    let store = try NoteStore(db: Database(path: ":memory:"))
+    let target = store.create(body: "已有的", now: Self.at(0))
+    let model = NoteCaptureModel(store: store, draftURL: url)
+    model.draft = "   "
+    model.saveDraft()
+    #expect(!FileManager.default.fileExists(atPath: url.path), "只有空白：不写")
+    model.draft = "没写完的"
+    model.title = "标题"
+    model.select(1)
+    model.saveDraft()
+    let again = NoteCaptureModel(store: store, draftURL: url)
+    #expect(again.draft == "没写完的" && again.title == "标题" && again.target?.id == target.id)
+    #expect(again.current == model.current)
+    // 存好了：文件删掉
+    #expect(again.save(now: Self.at(1)) == .saved(target.id))
+    #expect(!FileManager.default.fileExists(atPath: url.path))
+    // 写坏的、空的：当没有
+    try Data("乱写的".utf8).write(to: url)
+    #expect(NoteCaptureModel(store: store, draftURL: url).draft.isEmpty)
+    #expect(NoteCaptureModel.Draft(data: NoteCaptureModel.Draft(title: " ").data) == nil)
+    #expect(NoteCaptureModel.Draft(data: nil) == nil)
+  }
+
+  /// Esc：清空、删文件；清掉的不是空的才给「恢复」，恢复把内容放回来、重新呼出；这几秒里又打了字的接在后面
+  @Test func escapeOffersRestoreOnlyForRealDrafts() throws {
+    let url = draftFile()
+    defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+    let store = try NoteStore(db: Database(path: ":memory:"))
+    let model = NoteCaptureModel(store: store, draftURL: url)
+    var reopened = 0
+    model.reopen = { reopened += 1 }
+    model.draft = "要清掉的"
+    model.title = "题"
+    model.saveDraft()
+    let cleared = model.current
+    #expect(NoteCaptureModel.offersRestore(cleared))
+    #expect(!NoteCaptureModel.offersRestore(.init(title: "  ", body: "\n\t")))
+    let island = Island(showing: nil)
+    model.island = island
+    model.cancel()
+    #expect(model.draft.isEmpty && model.title.isEmpty)
+    #expect(!FileManager.default.fileExists(atPath: url.path))
+    // 详情只说能恢复，不写草稿的字（岛会记进「那一张」的最近提示）
+    #expect(island.content?.title == "已清空草稿")
+    #expect(island.content?.detail == "几秒内点「恢复」能放回来")
+    let restore = try #require(island.actions.first)
+    #expect(restore.title == "恢复" && !restore.opens)
+    restore.run()
+    #expect(model.draft == "要清掉的" && model.title == "题" && reopened == 1)
+    // 清掉的是空的：不弹岛
+    let quiet = Island(showing: nil)
+    model.island = quiet
+    model.title = ""
+    model.draft = "  "
+    model.cancel()
+    #expect(quiet.content == nil)
+    // 清掉之后又打了几个字再点恢复：原来的在前、新打的接在后面，标题不盖掉新填的
+    model.cancel()
+    model.draft = "新打的"
+    model.title = "新题"
+    model.restore(cleared)
+    #expect(model.draft == "要清掉的\n新打的" && model.title == "新题")
+  }
+
+  /// 存好后岛上「已记下」带「打开」（第四轮体检 U6）：打开类、点了打开存进去的那一条
+  @Test func savedIslandOpensTheNote() throws {
+    let (model, store, _) = try make()
+    let island = Island(showing: nil)
+    model.island = island
+    var opened: [String] = []
+    model.openNote = { opened.append($0) }
+    model.draft = "记一下"
+    let id = try #require(
+      {
+        if case .saved(let id) = model.save(now: Self.at(0)) { return id }
+        return nil
+      }())
+    #expect(island.content?.title == "已记下" && store.note(id) != nil)
+    let open = try #require(island.actions.first)
+    #expect(open.title == "打开" && open.opens)
+    open.run()
+    #expect(opened == [id])
   }
 }

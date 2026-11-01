@@ -1,6 +1,9 @@
 // 快速记一条（PLAN §10「便签」，全局键默认 ⌥N）的状态和规则。面板是 OverlayPanel 的一个实例（AppDelegate.noteCapture），
 // 和启动器、剪贴板面板同位置同宽、只开一个；视图在 NoteCaptureView.swift。
 // - 草稿：点面板外面、再按热键、⌘W 收起时留着（连同标题、选的目的地），下次呼出还在；Esc 一起清空并收起；保存后一起清空。
+//   **重启也不丢**（第四轮体检 E2）：停手约 1 秒（draftDelay）、面板收起、退出前存进数据目录里的 notes-draft.json（原子写；
+//   不放偏好——偏好会被设置的导出 / 同步带走；这个文件不在任何备份、导出、同步的范围里），清空时删掉，下次建面板时读回。
+//   Esc 清掉的草稿不是空的：岛上「已清空草稿」+「恢复」，点了重新呼出、把内容放回来（这时又打了字的，接在后面）。
 // - 标题（2026-10-13 手测反馈）：记成新便签时顶上那一行是个标题框，填了就是新便签的标题，不填照旧取正文第一行；
 //   只填了标题、正文空着也算有内容，存成一条只有标题的便签。记到已有的某条时没有这个框（填过的留着、不用它）。
 //   焦点：呼出时在正文；正文里 Tab 去标题，标题里 Tab / ↩ 回正文（↩ 不保存）；换目的地后回正文——两个框的交接用
@@ -8,11 +11,13 @@
 // - 记到哪：默认新便签；也可以接在最近改过的 8 条没归档的便签之一后面（⌘1 新便签，⌘2–⌘9 那 8 条）。选了的那条在面板
 //   开着时被删了、归档了，就当新便签。
 // - 保存（正文里 ↩）：去掉首尾空白，空的不存；新便签 = 新建一条；已有的 = 接在它正文后面（原来有内容、末尾没换行就先换一行）。
-//   存完的正文会超过 Note.maxBodyBytes 时不存，底栏就地说（不截断）。存好收起面板，刘海岛「已记下」+ 那条便签的标题。
+//   存完的正文会超过 Note.maxBodyBytes 时不存，底栏就地说（不截断）。存好收起面板，刘海岛「已记下」+ 那条便签的标题，
+//   带「打开」（第四轮体检 U6：屏幕边缘那叠开着就在那叠里打开这一条，关着在全部便签窗口里打开；AppDelegate 接）。
 
 import AppKit
 import Carbon.HIToolbox
 import Observation
+import os
 
 @Observable final class NoteCaptureModel {
   /// 按 ↩ 之后怎么样了
@@ -43,6 +48,10 @@ import Observation
   /// 目的地里最多列几条已有的便签（⌘2–⌘9）
   static let destinationLimit = 8
 
+  /// 草稿停手多久存进文件、文件叫什么（在数据目录里，E2）
+  static let draftDelay: Duration = .seconds(1)
+  static let draftName = "notes-draft.json"
+
   let store: NoteStore
   /// 草稿
   var draft = "" {
@@ -50,17 +59,24 @@ import Observation
       guard draft != oldValue else { return }
       notice = nil
       resize(height)
+      draftChanged()
     }
   }
   /// 新便签的标题（可不填）。和草稿一起留着、一起清空；记到已有的便签时不用它
   var title = "" {
-    didSet { if title != oldValue { notice = nil } }
+    didSet {
+      guard title != oldValue else { return }
+      notice = nil
+      draftChanged()
+    }
   }
   /// 两个输入框的焦点交接：数变一次，那个框拿一次焦点
   private(set) var titleFocus = 0
   private(set) var bodyFocus = 0
   /// 记到哪条已有的便签（编号）；nil = 新便签。读的时候用 target：它不在目的地里了（删了、归档了）就不算数
-  private(set) var destination: String?
+  private(set) var destination: String? {
+    didSet { if destination != oldValue { draftChanged() } }
+  }
   /// 底栏左边的就地提示（存不了的原因）；一改草稿、一换目的地就收
   private(set) var notice: BarNotice?
   /// 鼠标停在第几个目的地上（顶上那一行先写它的名字）；nil = 没停
@@ -70,8 +86,111 @@ import Observation
   @ObservationIgnored var hidePanel: () -> Void = {}
   @ObservationIgnored var dismissPanel: () -> Void = {}
   @ObservationIgnored var resize: (CGFloat) -> Void = { _ in }
+  /// 岛上的「打开」（存好的那条，U6）、「恢复」（重新呼出面板，E2）：AppDelegate 接
+  @ObservationIgnored var openNote: (String) -> Void = { _ in }
+  @ObservationIgnored var reopen: () -> Void = {}
+  /// 草稿存在哪（nil = 不存：单测、截图自检）
+  @ObservationIgnored private let draftURL: URL?
+  @ObservationIgnored private var draftTask: Task<Void, Never>?
+  /// 正在把文件里读回来的草稿放进来（这时不回头再存一遍）
+  @ObservationIgnored private var isLoadingDraft = false
 
-  init(store: NoteStore) { self.store = store }
+  init(store: NoteStore, draftURL: URL? = nil) {
+    self.store = store
+    self.draftURL = draftURL
+    if let saved = draftURL.flatMap({ Draft(data: try? Data(contentsOf: $0)) }) {
+      isLoadingDraft = true
+      put(saved)
+      isLoadingDraft = false
+    }
+  }
+
+  // MARK: 草稿（E2）
+
+  /// 草稿的三样：标题、正文、记到哪（notes-draft.json 的样子）
+  struct Draft: Codable, Equatable {
+    var title = ""
+    var body = ""
+    var destination: String?
+
+    /// 去掉空白什么都没有：不存文件、Esc 清掉也不给「恢复」
+    var isEmpty: Bool {
+      title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        && body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// 读文件里的（没有、读不出来、是空的都是 nil）
+    init?(data: Data?) {
+      guard let data, let draft = try? JSONDecoder().decode(Draft.self, from: data), !draft.isEmpty
+      else { return nil }
+      self = draft
+    }
+
+    init(title: String = "", body: String = "", destination: String? = nil) {
+      (self.title, self.body, self.destination) = (title, body, destination)
+    }
+
+    var data: Data? { try? JSONEncoder().encode(self) }
+  }
+
+  /// 现在的草稿
+  var current: Draft { Draft(title: title, body: draft, destination: destination) }
+
+  private func put(_ saved: Draft) {
+    title = saved.title
+    draft = saved.body
+    destination = saved.destination
+  }
+
+  /// 标题、正文、目的地变了：停手 draftDelay 再存
+  private func draftChanged() {
+    guard draftURL != nil, !isLoadingDraft else { return }
+    draftTask?.cancel()
+    draftTask = Task { [weak self] in
+      try? await Task.sleep(for: Self.draftDelay)
+      guard !Task.isCancelled else { return }
+      self?.saveDraft()
+    }
+  }
+
+  /// 现在就存（面板收起、退出前也调）：空的删掉文件，不空的原子写
+  func saveDraft() {
+    draftTask?.cancel()
+    draftTask = nil
+    guard let draftURL else { return }
+    let draft = current
+    if draft.isEmpty {
+      guard FileManager.default.fileExists(atPath: draftURL.path) else { return }
+      do {
+        try FileManager.default.removeItem(at: draftURL)
+      } catch {
+        // 删不掉（权限、占用）：写一份空的盖上去（读回来当没有），不然下次启动它又回来、被存第二次
+        do {
+          try Draft().data?.write(to: draftURL, options: .atomic)
+        } catch {
+          Log.storage.error(
+            "快速记一条的草稿文件删不掉也盖不掉：\(error.localizedDescription, privacy: .public)")
+        }
+      }
+    } else if let data = draft.data {
+      do {
+        try FileManager.default.createDirectory(
+          at: draftURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try data.write(to: draftURL, options: .atomic)
+      } catch {
+        Log.storage.error("快速记一条的草稿没存上：\(error.localizedDescription, privacy: .public)")
+      }
+    }
+  }
+
+  /// 岛上的「恢复」：重新呼出面板、把清掉的那份放回来。这几秒里又打了字的：标题空着才换，正文接在后面，目的地还是新便签才换
+  func restore(_ saved: Draft) {
+    if title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { title = saved.title }
+    draft = draft.isEmpty ? saved.body : Self.body(appending: draft, to: saved.body)
+    if destination == nil { destination = saved.destination }
+    reopen()
+    bodyFocus += 1
+  }
 
   // MARK: 目的地
 
@@ -175,7 +294,10 @@ import Observation
       // 字在内存里、仓库会自己再试（NoteStore.flush）；退出前还落不下去 AppDelegate 会拦
       island?.show("记下了，但还没存上", detail: Island.excerpt(problem), tone: .warning)
     } else {
-      island?.show("已记下", detail: store.note(id)?.displayTitle)
+      // 「打开」（U6）：在屏幕边缘那叠 / 全部便签窗口里打开这一条，点岛本身也是它
+      island?.show(
+        "已记下", detail: store.note(id)?.displayTitle,
+        actions: [.init("打开", opens: true) { [weak self] in self?.openNote(id) }])
     }
     return .saved(id)
   }
@@ -186,11 +308,20 @@ import Observation
     return old + (old.hasSuffix("\n") ? "" : "\n") + text
   }
 
-  /// Esc：清空并收起
+  /// Esc：清空并收起。清掉的不是空的：岛上「已清空草稿」+「恢复」（E2）
   func cancel() {
+    let cleared = current
     reset()
     dismissPanel()
+    guard Self.offersRestore(cleared) else { return }
+    // 不把草稿的字写上岛（岛会记进那一张里的最近提示：清掉的字不该在那里多留一阵）
+    island?.show(
+      "已清空草稿", detail: "几秒内点「恢复」能放回来", symbol: "trash.circle.fill",
+      actions: [.init("恢复") { [weak self] in self?.restore(cleared) }])
   }
+
+  /// Esc 清掉的这份要不要给「恢复」（纯函数）：去掉空白还有字才给
+  static func offersRestore(_ cleared: Draft) -> Bool { !cleared.isEmpty }
 
   /// 要呼出了：上次选的目的地已经不在了就回到新便签
   func prepareForShow() {
@@ -198,17 +329,20 @@ import Observation
     notice = nil
   }
 
-  /// 面板收起了（草稿和目的地留着）
+  /// 面板收起了（草稿和目的地留着，顺手存进文件）
   func didHide() {
     hovered = nil
     notice = nil
+    if draftTask != nil { saveDraft() }
   }
 
+  /// 清空（存好了、Esc）：草稿文件跟着删
   private func reset() {
     draft = ""
     title = ""
     destination = nil
     notice = nil
+    saveDraft()
   }
 
   // MARK: 高度

@@ -9,6 +9,8 @@
 // - 写进来的文字都先收拾一遍（Note.sanitized：去掉 NUL，标题截到上限）；修订号每次改动 +1（到顶为止），「改于」只在
 //   标题 / 正文 / 颜色变时更新。要用到「现在」的改动都带一个 now 参数（默认 .now，单测传固定的；同剪贴板、翻译历史的仓库）。
 // - 删除是软删（deletedAt），进「最近删除」留 trashDays 天，到期由 purgeExpired 真删。
+// - 空白便签不越攒越多（第四轮体检 E11）：这次运行里新建的、关掉 / 换走 / 收回时标题正文都空的，直接永久删掉（left →
+//   dropIfBlank，走 erase 留墓碑：同步那边照常）；以前留下的老空便签不动，「新建」先复用任意一条空白的（blankOrNew）。
 // - 导出文件的第七类「便签」（SettingsArchive）：exportable 是没删的全部，adopt 按编号合并——本机被换掉的那一版不丢，
 //   另存一条进「最近删除」。
 // 搜索在内存里做（标题 + 正文，口径同剪贴板搜索）。和 sqlite 的 C 接口打交道的只有 Database。
@@ -22,6 +24,7 @@
 //   这几样**都不升 user_version**：新加的是可空的列和新表，0.5.0 的读写写明列名、碰不到它们（同 tint 那一列的规矩）。
 // 列表行、标签、预览卡上显示的推导结果（标题、摘要、任务进度）按便签缓存在这里（summary(of:)）：标题、正文没变就不重算。
 // 便签墙上的卡片（字和量好的高，wallCard(of:markdown:)）同样缓存在这里：关掉全部便签窗口再开、换视图再换回来都不重建。
+// 底下那行的字数（characterCount(of:)）也按便签缓存；正文超过 64 KB 时字数和任务进度停手 0.3 s 再算（第四轮体检 F4⑤）。
 
 import Foundation
 import OSLog
@@ -85,6 +88,13 @@ import Observation
   @ObservationIgnored private var summaries:
     [String: (title: String, body: String, summary: Summary)] =
       [:]
+  /// 底下那行字数的缓存（characterCount(of:)）：编号 → 算的时候的正文和字数
+  @ObservationIgnored private var counts: [String: (body: String, count: Int)] = [:]
+  /// 长正文推迟算的那几条（编号）、排着的那一次（见 characterCount(of:)）
+  @ObservationIgnored private var deferred: Set<String> = []
+  @ObservationIgnored private var settleTask: Task<Void, Never>?
+  /// 推迟算的那几条停手后算好了：数变一次（推迟时读过它的界面跟着重画，拿到新的字数和任务进度）
+  private(set) var settled = 0
   /// 便签墙卡片的缓存（wallCard(of:markdown:)）：编号 → 建的时候看的那几样和卡片
   @ObservationIgnored private var wallCards: [String: (key: WallCardKey, card: NoteWallCard)] = [:]
   /// 正文折叠结果的缓存（搜索用）：编号 → 折叠时的标题、正文和结果。比的是字本身（同 summaries：修订号到顶就不再变，
@@ -119,6 +129,19 @@ import Observation
   @ObservationIgnored private(set) var erased: [String: NoteSync.Tombstone] = [:]
   /// 墓碑改了还没落盘的编号（落盘时有墓碑就写、没有就删那一行）
   @ObservationIgnored private var unsavedTombstones: Set<String> = []
+  /// 这次运行里新建的便签（create）：关掉、换走、收回时还是空白的就直接永久删掉（left，第四轮体检 E11）。
+  /// 以前留下的老空便签不在里面、不动（blankOrNew 会复用它们）
+  @ObservationIgnored private var createdThisRun: Set<String> = []
+  /// 这条便签现在还开在哪儿吗（那叠里开着、浮着、全部便签窗口里选着；AppDelegate 接）：开着的空白便签不删
+  @ObservationIgnored var isOpen: (String) -> Bool = { _ in false }
+  /// 这条便签的正文框里还挂着没确认的组字（输入法拼音打到一半；组字期间字不交给仓库，晚到的提交要落回它）：先不删，
+  /// 过 composingRecheck 再看（单测换成自己给的）
+  @ObservationIgnored var isComposing: (String) -> Bool = {
+    NoteSyncer.editingNotes().contains($0)
+  }
+  /// 这次运行里写进过同步文件夹的便签（NoteSyncer 写成了之后报）：这次运行里新建、还没写出去过的空白便签删掉时不留墓碑
+  /// ——别的电脑不可能有它
+  @ObservationIgnored private var publishedThisRun: Set<String> = []
 
   private static let columns = """
     id, title, body, color, created_at, modified_at, revision, archived, pinned, sort_order,
@@ -364,10 +387,52 @@ import Observation
     if let cached = summaries[note.id], cached.title == note.title, cached.body == note.body {
       return cached.summary
     }
+    // 长正文正打着字：先用上次算的（自己起了标题的标题照常现算，便宜），停手再算（F4⑤）
+    if let cached = summaries[note.id], deferring(note) {
+      let own = !note.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      return Summary(
+        title: own ? note.displayTitle : cached.summary.title, preview: cached.summary.preview,
+        progress: cached.summary.progress)
+    }
     let summary = Summary(
       title: note.displayTitle, preview: note.preview, progress: note.taskProgress)
     summaries[note.id] = (note.title, note.body, summary)
     return summary
+  }
+
+  /// 正文超过它的便签，底下那行字数和任务进度不在打字路径上算（第四轮体检 F4⑤）：停手 settleDelay 再算
+  nonisolated static let deferredBytes = 64 * 1024
+  nonisolated static let settleDelay: TimeInterval = 0.3
+
+  /// 底下那行的字数（NotesWindowModel.characterCount），按便签缓存：正文没变就是上次算的。
+  /// ponytail: 正文超过 deferredBytes 时打字中先显示上次的数，停手 settleDelay 再算——1 MB 的正文算一次约 9 ms（-O，
+  /// 带上万个颜色标记的约 76 ms），每个字都算就卡；要每个字都准，升级成编辑器按改动的那几行增量维护
+  func characterCount(of note: Note) -> Int {
+    if let cached = counts[note.id], cached.body == note.body { return cached.count }
+    if let cached = counts[note.id], deferring(note) { return cached.count }
+    let count = NotesWindowModel.characterCount(note.body)
+    counts[note.id] = (note.body, count)
+    return count
+  }
+
+  /// 这条正打着字、正文又长：推迟算，停手 settleDelay 后把它的缓存作废、settled 变一次（界面重画时现算）。
+  /// 读一下 settled：调用的界面看着它
+  private func deferring(_ note: Note) -> Bool {
+    guard note.body.utf8.count > Self.deferredBytes else { return false }
+    _ = settled
+    deferred.insert(note.id)
+    settleTask?.cancel()
+    settleTask = Task { [weak self, wait] in
+      try? await wait(Self.settleDelay)
+      guard !Task.isCancelled, let self else { return }
+      for id in deferred {
+        counts[id] = nil
+        summaries[id] = nil
+      }
+      deferred = []
+      settled &+= 1
+    }
+    return true
   }
 
   /// 建一张卡片时看的几样（都没变就还是那张）：标题、正文、颜色、固定（标题给图钉让出一截）、Markdown 开关
@@ -446,15 +511,63 @@ import Observation
       clock: [deviceID: 1])
     notes.append(note)
     unsaved.insert(note.id)
+    createdThisRun.insert(note.id)
     flush()
     return note
   }
 
-  /// 「新建便签」用的那一条：没归档没删的里最前面那条还是空白的（标题、正文都没有）就用它，不然新建一条——
-  /// 连点几次「新建」不会攒出一串空便签。全部便签窗口、屏幕边缘那叠（标签列下的「+」、全局动作）共用
+  /// 「新建便签」用的那一条：没归档没删的里有本机建的空白便签（标题、正文都没有；这次运行里建的，或者版本钟里只有本机
+  /// 那一格——另一台同步来的不用，它在那边可能正开着）就用它（不在最前面就挪到最前面），不然新建一条——连点几次「新建」
+  /// 不会攒出一串空便签。全部便签窗口、屏幕边缘那叠（标签列下的「+」、全局动作）共用
   func blankOrNew(now: Date = .now) -> Note {
-    if let first = active.first, first.title.isEmpty, first.body.isEmpty { return first }
-    return create(now: now)
+    let list = active
+    let device = deviceID
+    let local = { (note: Note) in
+      self.createdThisRun.contains(note.id) || note.clock.keys.allSatisfy { $0 == device }
+    }
+    guard let blank = list.first(where: { Self.isBlank($0) && local($0) }) else {
+      return create(now: now)
+    }
+    if blank.id != list.first?.id { move(blank.id, to: 0, now: now) }
+    return note(blank.id) ?? blank
+  }
+
+  private static func isBlank(_ note: Note) -> Bool { note.title.isEmpty && note.body.isEmpty }
+
+  /// 正文框里挂着组字的便签，过多久再看一次能不能删
+  nonisolated static let composingRecheck: TimeInterval = 0.5
+
+  /// 这几条写进同步文件夹了（NoteSyncer 一轮写成之后）
+  func published(_ ids: Set<String>) { publishedThisRun.formUnion(ids) }
+
+  /// 一条便签从界面上下来了（关掉、换走、收回；第四轮体检 E11）：晚一拍看——这次运行里新建的、标题正文都空、没归档
+  /// 没删、也没开在别处（拖出来浮着、全部便签窗口里选着），就永久删掉（dropIfBlank）。晚一拍是因为「从那叠里收掉、
+  /// 浮出去」「换走、又被复用」这类交接里，它先下来、再在别处开起来
+  func left(_ id: String) {
+    guard createdThisRun.contains(id) else { return }
+    Task { [weak self] in self?.dropIfBlank(id) }
+  }
+
+  /// 这次运行里新建的空白便签（没归档没删、没开在别处）永久删掉：不进「最近删除」，走 erase——写进过同步文件夹的留墓碑
+  /// （同步时告诉别的电脑，别处还留着的那份不会被合回来），没写出去过的不留（别处不可能有它）。正文框里还挂着组字的
+  /// 先不删（拼音打到一半就换走 / 收起：输入法晚到的提交要落回它），过 composingRecheck 再看一次。返回这一下删没删
+  @discardableResult
+  func dropIfBlank(_ id: String, now: Date = .now) -> Bool {
+    guard createdThisRun.contains(id), let note = note(id), note.isActive, Self.isBlank(note),
+      !isOpen(id)
+    else { return false }
+    if isComposing(id) {
+      Task { [weak self, wait] in
+        try? await wait(Self.composingRecheck)
+        self?.dropIfBlank(id)
+      }
+      return false
+    }
+    createdThisRun.remove(id)
+    // ponytail: 墓碑只增不减（一条几十个字节，见 erased）。写出去过才留，就算每次都写出去了，一次运行里新建又丢掉的
+    // 空白便签也就几条；真多了再按「文件夹里已经没人有这条」清
+    erase([id], now: now, tombstones: publishedThisRun.contains(id))
+    return true
   }
 
   /// 改正文 / 标题：打字时每个字调一次，攒着等停手再落盘
@@ -474,13 +587,14 @@ import Observation
     if live { scheduleSave(at: now) } else { flush() }
   }
 
-  /// 归档 / 取消归档；取消归档的排回最前
-  func setArchived(_ archived: Bool, of id: String, now: Date = .now) {
+  /// 归档 / 取消归档；取消归档的排回最前。toFront 是 false 时回到原来的位置（撤销刚做的归档：归档不动顺序，
+  /// 岛上的「取消归档」、全部便签窗口的 ⌘Z，第四轮体检 U6）
+  func setArchived(_ archived: Bool, of id: String, now: Date = .now, toFront: Bool = true) {
     let front = top
     update(id, now: now) { note in
       guard note.isArchived != archived else { return }
       note.isArchived = archived
-      if !archived { note.order = front }
+      if !archived, toFront { note.order = front }
     }
   }
 
@@ -563,22 +677,27 @@ import Observation
     return expired.count
   }
 
-  private func erase(_ ids: Set<String>, now: Date) {
+  /// tombstones 是 false：不留墓碑（这次运行里新建、从没写进同步文件夹的空白便签，dropIfBlank）
+  private func erase(_ ids: Set<String>, now: Date, tombstones: Bool = true) {
     let doomed = notes.filter { ids.contains($0.id) }
     guard !doomed.isEmpty else { return }
-    remove(doomed, tombstones: [:])
+    remove(doomed, tombstones: [:], leavesTombstones: tombstones)
     flush()
   }
 
   /// 从内存里拿掉这几条（落盘时从库里删），各留一块墓碑：被删那一版的钟和状态时刻（同步时压住它和它的前身，NoteSync），
   /// 再并上传进来的（同步时压住它的那块）和本机原来就有的
-  private func remove(_ doomed: [Note], tombstones: [String: NoteSync.Tombstone]) {
+  private func remove(
+    _ doomed: [Note], tombstones: [String: NoteSync.Tombstone], leavesTombstones: Bool = true
+  ) {
     let ids = Set(doomed.map(\.id))
     notes.removeAll { ids.contains($0.id) }
     for note in doomed {
       summaries[note.id] = nil
       wallCards[note.id] = nil
       folded[note.id] = nil
+      counts[note.id] = nil
+      guard leavesTombstones else { continue }
       var tombstone = NoteSync.Tombstone(clock: note.clock, state: note.stateTime)
       for other in [tombstones[note.id], erased[note.id]].compactMap({ $0 }) {
         tombstone = tombstone.merged(with: other)
@@ -815,13 +934,17 @@ import Observation
   ///   每导一次都赢一次；
   /// - 本机那条在「最近删除」里的不动（删了的不被导入悄悄救回来，要用就自己放回）；本机独有的不动。
   /// 一个事务落盘；没落下去时 saved 是 false（内容在内存里、留着重试）
+  /// contentOnly：这几条只取内容（标题、正文、颜色），归档 / 固定 / 顺序留本机的——Markdown 导入时「改于」是按文件的
+  /// 修改时间算的那几条（在别的编辑器里改过正文，文件头里的状态是导出那一刻的，第四轮体检 E18）
   @discardableResult
-  func adopt(_ entries: [SettingsArchive.NoteEntry], now: Date = .now) -> Adoption {
+  func adopt(
+    _ entries: [SettingsArchive.NoteEntry], contentOnly: Set<String> = [], now: Date = .now
+  ) -> Adoption {
     let now = Note.stamp(now)
     var result = Adoption()
     var offsets: [String: Int] = [:]
     for (offset, note) in notes.enumerated() { offsets[note.id] = offset }
-    for entry in entries {
+    for entry in Self.newestEntries(entries) {
       let isAhead = entry.modifiedAt > Note.milliseconds(now)
       let modified = min(Note.date(milliseconds: entry.modifiedAt), now)
       let title = Note.sanitized(title: entry.title)
@@ -848,15 +971,19 @@ import Observation
       }
       let old = notes[offset]
       guard old.deletedAt == nil, !isAhead, modified > old.modifiedAt else { continue }
+      // 标题、正文、颜色和本机的一模一样（只是「改于」晚：拷来拷去、被别的程序碰过的文件，E18）：整条不动
+      guard (title, body, color) != (old.title, old.body, old.color) else { continue }
       var note = old
       note.title = title
       note.body = body
       note.color = color
       note.modifiedAt = modified
       note.revision = Note.nextRevision(after: max(old.revision, entry.revision))
-      note.isArchived = entry.archived
-      note.isPinned = entry.pinned
-      note.order = order
+      if !contentOnly.contains(entry.id) {
+        note.isArchived = entry.archived
+        note.isPinned = entry.pinned
+        note.order = order
+      }
       if (title, body, color) != (old.title, old.body, old.color) {
         note.clock[deviceID, default: 0] += 1
       }
@@ -882,6 +1009,17 @@ import Observation
     }
     result.saved = flush()
     return result
+  }
+
+  /// 同一个编号来了几条（访达里复制一份又改了、多选了两个导出文件夹、单条导出过两次）：只留「改于」最晚的那条，
+  /// 一样晚留前面那条（纯函数）。顺序照留下的那几条在原来的位置
+  static func newestEntries(_ entries: [SettingsArchive.NoteEntry]) -> [SettingsArchive.NoteEntry] {
+    var best: [String: Int] = [:]
+    for (index, entry) in entries.enumerated() {
+      if let kept = best[entry.id], entries[kept].modifiedAt >= entry.modifiedAt { continue }
+      best[entry.id] = index
+    }
+    return entries.enumerated().filter { best[$0.element.id] == $0.offset }.map(\.element)
   }
 
   // MARK: 同步（便签未来计划 A；合并规则在 NoteSync，执行层在同步文件夹那几批）

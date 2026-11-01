@@ -238,19 +238,28 @@ final class NoteEdge {
     for entry in decks { entry.deck.suspend(kind) }
   }
 
-  /// 「新建便签」：建一条（最前面那条还是空白的就用它，NoteStore.blankOrNew）并在鼠标所在屏的那叠里打开（那块屏没放就用
+  /// 这条便签现在开在哪一叠里、或者浮着（NoteStore.isOpen：开着的空白便签不删，第四轮体检 E11）
+  func isOpen(_ id: String) -> Bool {
+    floats.floatingIDs.contains(id) || decks.contains { $0.deck.model.noteID == id }
+  }
+
+  /// 「新建便签」：建一条（有空白的就用它，NoteStore.blankOrNew）并在鼠标所在屏的那叠里打开（那块屏没放就用
   /// 放了的第一块）。返回 false = 这边开不了（总开关关着、哪块屏都放不了），调用方照老办法在全部便签窗口里打开
-  func openNew() -> Bool {
+  func openNew() -> Bool { open(nil) }
+
+  /// 在鼠标所在屏的那叠里打开 id 这条（快速记一条存好后岛上的「打开」，第四轮体检 U6；它正浮着就叫到前面）；
+  /// nil = 「新建便签」那一条。返回 false 同 openNew
+  func open(_ id: String?) -> Bool {
     let options = NoteDeckOptions(defaults)
     guard options.isEnabled,
       !NoteDeckLayout.placements(NoteDeckScreen.attached(), options: options).isEmpty
     else { return false }
-    let note = store.blankOrNew()
+    let id = id ?? store.blankOrNew().id
     refresh()  // 这是第一条的话，那叠这时才有
     let mouse = NSEvent.mouseLocation
     let home = decks.first { $0.deck.screen.frame.contains(mouse) } ?? decks.first
     guard let deck = home?.deck else { return false }
-    deck.model.open(created: note.id)
+    deck.model.open(created: id)
     return true
   }
 

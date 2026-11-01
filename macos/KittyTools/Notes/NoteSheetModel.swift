@@ -48,8 +48,11 @@ import Observation
   private(set) var focus: Focus?
 
   @ObservationIgnored var island: Island?
-  /// 连着删的这一串（岛上的「放回」，NotesWindowModel.Deletions）
+  /// 连着删的这一串（岛上的「放回」，NotesWindowModel.Deletions）；连着归档的这一串（岛上的「取消归档」）
   @ObservationIgnored private var deletions = NotesWindowModel.Deletions()
+  @ObservationIgnored private var archivals = NotesWindowModel.Deletions()
+  /// sheetChanged 上一次说开着的那条（换了 / 关了时它就是「下来的那条」）
+  @ObservationIgnored private var shown: String?
   /// 窗口当 key 并兜底把焦点放进正文（界面不直接调它，调 requestFocus）；操作菜单开关了
   @ObservationIgnored var focusBody: () -> Void = {}
   @ObservationIgnored var onMenu: (Bool) -> Void = { _ in }
@@ -104,8 +107,11 @@ import Observation
   }
 
   /// 开着的换了一条（或者关了）：菜单关掉、上限的标记收掉、换一个新的撤销栈；新的那条记一次「该它拿焦点」
-  /// （悬停打开的、重启后恢复的也记：不当 key，但第一响应者照样落在正文上，点进去当了 key 就能直接打字）
+  /// （悬停打开的、重启后恢复的也记：不当 key，但第一响应者照样落在正文上，点进去当了 key 就能直接打字）。
+  /// 下来的那条告诉仓库（这次运行里新建的空白便签关掉 / 换走 / 收回就删，NoteStore.left，第四轮体检 E11）
   func sheetChanged(to id: String?) {
+    if let shown, shown != id { store.left(shown) }
+    shown = id
     if menu != nil { closeMenu() }
     // 从这里打开的取色面板改的是上一条：换了一条 / 收起了就关掉，不然拖的是一条看不见的便签（打开的正是它在改的那条不关）
     NoteColorPicker.shared.close(owner: self, keeping: id)
@@ -203,12 +209,26 @@ import Observation
     Island.announce(NotePaper.of(color: color).name)
   }
 
-  /// ⇧⌘A：归档（要找回到「全部便签」的「归档」里）。归档的是开着的那条就先从界面上拿走
+  /// ⇧⌘A：归档（要找回到「全部便签」的「归档」里）。归档的是开着的那条就先从界面上拿走。照删除的写法（第四轮体检
+  /// U6）：岛上带「取消归档」（连着归档的几条一起放回原处）；按钮拿的是仓库不是这个模型（同 delete）
   func archive(_ id: String? = nil) {
     guard let note = target(id) else { return }
     if note.id == noteID { retire() }
     store.setArchived(true, of: note.id)
-    Island.announce("已归档")
+    let ids = archivals.add(note.id).filter { NotesWindowModel.isArchived($0, in: store) }
+    island?.show(
+      NotesWindowModel.archivedTitle(ids.count), detail: "到「全部便签」的「归档」里找回",
+      symbol: NotesWindowModel.archivedSymbol,
+      actions: [
+        .init(NotesWindowModel.unarchiveTitle) { [store, island] in
+          // 屏幕上看不出放回了（那叠收着、浮动便签不再浮起来）：岛上说一句
+          let back = NotesWindowModel.unarchive(ids, in: store)
+          guard let first = back.first.flatMap(store.note) else { return }
+          island?.show(
+            NotesWindowModel.unarchivedTitle(back.count, first: first),
+            symbol: "arrow.uturn.backward.circle.fill")
+        }
+      ])
   }
 
   /// 删除：进「最近删除」。这里没有列表、也没有 ⌘Z：岛上带「放回」（连着删的几条一起放回，第三轮体检 U2），过后到

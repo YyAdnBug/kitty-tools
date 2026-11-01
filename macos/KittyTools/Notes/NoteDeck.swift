@@ -94,6 +94,8 @@ final class NoteDeck: NSObject {
   var onHide: () -> Void = {}
 
   private var monitors: [Any] = []
+  /// 在别的 App 里按下了左键、还没松开：按下的地方（U4：松开时再判是点了一下还是拖了东西）
+  private var pendingPress: CGPoint?
   /// 拖出去的那一阵的鼠标松开监听（watchRelease）
   private var releaseMonitors: [Any] = []
   /// 监听到松开的地方（晚一拍看的时候用）
@@ -449,12 +451,27 @@ final class NoteDeck: NSObject {
 
   // MARK: 点别处
 
-  /// 打开便签时装：点别处就收起（固定的不收）。global 管别的 App，local 管自家窗口；关掉时卸，成对
+  /// 打开便签时装：点别处就收起（固定的不收）。global 管别的 App，local 管自家窗口；关掉时卸，成对。
+  /// **别的 App 里的左键按下先不判，等松开再判**（第四轮体检 U4）：从访达、浏览器往开着的便签里拖图，按下的那一下在别的
+  /// App 里——按下就收的话，图还没拖到便签就没了。松开时挪开过（拖了东西）、松在这叠上（拖进来了）都不收，只有在别处
+  /// 点了一下（isPlainClick）才收；松开没收到（别的 App 的拖拽、菜单吃掉了）就不收，下一下按下重新来。右键、别的键照旧按下就判
   private func installMonitors() {
     guard monitors.isEmpty else { return }
+    pendingPress = nil
     let mask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
-    let global = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] _ in
+    let global = NSEvent.addGlobalMonitorForEvents(matching: mask.union(.leftMouseUp)) {
+      [weak self] event in
+      let type = event.type
       MainActor.assumeIsolated {
+        if type == .leftMouseUp {
+          guard let self, let start = self.pendingPress else { return }
+          self.pendingPress = nil
+          let deck = self.model.contentFrame(in: self.frame)
+          if Self.isPlainClick(from: start, to: NSEvent.mouseLocation, deck: deck) {
+            self.clickedElsewhere()
+          }
+          return
+        }
         // 系统的存储 / 打开面板（「插入图片…」「导出为 Markdown…」）窗口是本进程的，里面的内容却是另一个进程画的：
         // 在面板里点，事件到的是那个进程，本进程只有 global 监听收得到——看着就是「点了别的 App」，没固定的便签被收起
         // （2026-10-18 用户真机报）。点在本进程开着的文件面板范围里不算点别处
@@ -462,13 +479,12 @@ final class NoteDeck: NSObject {
         if Self.isInsideFilePanel(NSEvent.mouseLocation, frames: frames) { return }
         // 系统的「表情与符号」、输入法的候选窗：在给这条便签挑字，不收（OverlayPanel.isInputMethodClick）
         if OverlayPanel.isInputMethodClick() { return }
-        // 取色面板（「其他颜色…」）正给这一叠的便签挑颜色：吸管在屏幕上取色那一下也到这里（不在本进程里点的）。
-        // 晚一拍再看：别的 App 到了前台才算点了别处
-        if let self, NoteColorPicker.shared.isOpen(owner: self.model) {
-          self.perform(#selector(self.clickedOutsideIfSwitched), with: nil, afterDelay: 0.2)
+        guard let self else { return }
+        if type == .leftMouseDown {
+          self.pendingPress = NSEvent.mouseLocation
           return
         }
-        self?.clickedOutside()
+        self.clickedElsewhere()
       }
     }
     let local = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
@@ -487,6 +503,23 @@ final class NoteDeck: NSObject {
   private func removeMonitors() {
     monitors.forEach(NSEvent.removeMonitor)
     monitors = []
+    pendingPress = nil
+  }
+
+  /// 在别的 App 里点了（按下就判的右键 / 别的键，左键是松开时判过的那一下）。取色面板（「其他颜色…」）正给这一叠的
+  /// 便签挑颜色：吸管在屏幕上取色那一下也到这里（不在本进程里点的）——晚一拍再看：别的 App 到了前台才算点了别处
+  private func clickedElsewhere() {
+    if NoteColorPicker.shared.isOpen(owner: model) {
+      perform(#selector(clickedOutsideIfSwitched), with: nil, afterDelay: 0.2)
+      return
+    }
+    clickedOutside()
+  }
+
+  /// 别的 App 里按下（start）、松开（end）的这一下是不是单纯点了一下（纯函数，U4）：挪开过（dragSlop 以上：拖了东西、
+  /// 往便签里拖图）、松在这叠的内容上（deck：拖进来了）都不是
+  static func isPlainClick(from start: CGPoint, to end: CGPoint, deck: CGRect) -> Bool {
+    !NoteFloatLayout.moved(from: start, to: end) && !deck.contains(end)
   }
 
   // MARK: 拖出去之后的松开（兜底）

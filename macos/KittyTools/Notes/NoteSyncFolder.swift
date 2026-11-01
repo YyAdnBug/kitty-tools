@@ -22,6 +22,11 @@
 //   分几轮才到的话可以每轮都不到线——都进最近删除，找得回来。
 // 写出去（publish，合完、落盘之后）：自己子文件夹里那一版和本机的不一样（或者读不出来、没有）就重写；本机已经没有（永久删了）
 // 的文件删掉；墓碑变了重写 erased.json；正文里引用的图片，文件夹里没有就传上去、本机没有就拿下来。
+// **共用的 images/ 也清**（第四轮体检 E16，imagePurge；删的是用户云盘里的文件，宁可少删）：一张图同时满足才删——本机和
+// **所有**子文件夹里的便签（含最近删除里的）都不再引用它；这台电脑记着它没人引用已经有一阵（账在库里 note_meta，从第一次
+// 发现算起）：本机图片目录里也没有它（本机已经清掉了）满 imageGraceDays 天，或者满 imageOrphanDays 天；这一轮整个文件夹
+// 都读得清楚（有读不出来的、没下载完的占位、刚改过的、列不出来的目录，这一轮一张都不删、账也不动）。删错了也不丢：还引用
+// 它的那台本机有这张图，下一轮看文件夹里没有就再传上去。
 // 认出「库被退回去了」（regressed：时间机器从旧备份恢复了整个数据目录）：哪一版（自己的、别人的）里本机那一格的钟比库里
 // 那条的大——接着用这个编号会和以前发出去的撞上。执行层换一个新编号、给这几条各记一笔新编号的改动（变成和那几版
 // 「各改各的」，恢复后打的字走另存那条路，不被当成被盖过），旧的子文件夹当成别人的照常合；**要在写出去之前做**。
@@ -39,6 +44,11 @@ nonisolated enum NoteSyncFolder {
   static let notesPart = "notes"
   /// 文件夹格式的版本（标记、墓碑文件里写着）：以后改了写法 +1，读到更大的整轮不合、说先更新
   static let format = 1
+  /// 共用的 images/ 里没人引用的图：本机已经没有它的记满几天删、本机还有它的记满几天删（E16）
+  static let imageGraceDays = 1
+  static let imageOrphanDays = NoteImageStore.orphanDays
+  /// 那本账在库里（note_meta）的哪一项
+  static let imageLedgerKey = "sync-image-orphans"
   /// 一轮放进「最近删除」多少条要停下来问（A5）
   static let brakeCount = 20
   static let brakeFloor = 5
@@ -348,8 +358,12 @@ nonisolated enum NoteSyncFolder {
     /// 文件夹里没有、要传上去的图片；本机没有、要拿下来的图片
     var uploads: [NoteImages.Image] = []
     var downloads: [NoteImages.Image] = []
+    /// 共用的 images/ 里要删的（文件名；imagePurge 定的，E16）
+    var imageDeletes: [String] = []
     /// 什么都不用做
-    var isEmpty: Bool { !touchesNotes && uploads.isEmpty && downloads.isEmpty }
+    var isEmpty: Bool {
+      !touchesNotes && uploads.isEmpty && downloads.isEmpty && imageDeletes.isEmpty
+    }
     /// 便签文件、墓碑文件要动（这才算写出去新的一轮：图片两头补齐不算，NoteSyncer 的 epoch）
     var touchesNotes: Bool { !writes.isEmpty || !deletes.isEmpty || erased != nil }
   }
@@ -381,6 +395,74 @@ nonisolated enum NoteSyncFolder {
       if !localImages.contains(name), folderImages.contains(name) { plan.downloads.append(image) }
     }
     return plan
+  }
+
+  /// 共用的 images/ 这一轮能删哪几张（E16，见文件头）。folderImages：images/ 里的文件名；referenced：本机和文件夹里各台
+  /// 的便签正文引用到的图片编号（referencedImages）；localImages：本机图片目录里的编号；ledger：这台电脑记的「第一次发现
+  /// 没人引用」的时刻（按文件名）；readable：这一轮整个文件夹都读得清楚（执行层看读的结果给，见 isReadable）。
+  /// 返回要删的（排好序）、新的账（没人引用、还在的记着——要删的也照记，删成了下一轮文件不在了再去掉；有人引用的、文件
+  /// 不在了的去掉）、账上还没到期的那几张里最早哪一刻到期（到了执行层不跳过那一轮，NoteSyncer.imagesDue）。
+  /// 读得不清楚时一张不删、账原样
+  static func imagePurge(
+    folderImages: Set<String>, referenced: Set<UUID>, localImages: Set<UUID>,
+    ledger: [String: Date], readable: Bool, now: Date
+  ) -> ImagePurge {
+    guard readable else { return ImagePurge(ledger: ledger) }
+    var purge = ImagePurge()
+    for name in folderImages.sorted() {
+      guard let id = NoteImageStore.identifier(ofFileNamed: name), !referenced.contains(id) else {
+        continue
+      }
+      let since = ledger[name] ?? now
+      purge.ledger[name] = since
+      let days = localImages.contains(id) ? imageOrphanDays : imageGraceDays
+      let due = since.addingTimeInterval(Double(days) * 86_400)
+      if now >= due {
+        purge.deletes.append(name)
+      } else {
+        purge.due = min(purge.due ?? due, due)
+      }
+    }
+    return purge
+  }
+
+  struct ImagePurge: Equatable, Sendable {
+    var deletes: [String] = []
+    var ledger: [String: Date] = [:]
+    var due: Date?
+  }
+
+  /// 账存进库里的样子：文件名 → 毫秒（JSON）；读回来——没有、写坏了都当空账（从头记：只会晚删，不会早删）
+  static func ledgerText(_ ledger: [String: Date]) -> String {
+    let raw = ledger.mapValues { Note.milliseconds($0) }
+    return (try? encoder.encode(raw)).flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+  }
+
+  static func ledger(fromText text: String?) -> [String: Date] {
+    guard let text,
+      let raw = try? JSONDecoder().decode([String: Int64].self, from: Data(text.utf8))
+    else { return [:] }
+    return raw.mapValues { date($0) }
+  }
+
+  /// 便签和墓碑都读得出来：每台的墓碑文件读到了、没有读不出来的便签文件（imagePurge 的 readable 还要执行层那一半：
+  /// 没下载完的、刚改过的、读不出来的 device.json、列不出来的目录）
+  static func isReadable(_ folder: Folder) -> Bool {
+    folder.devices.values.allSatisfy { device in
+      guard case .read = device.erased else { return false }
+      return device.unreadable.isEmpty
+    }
+  }
+
+  /// 文件夹里各台的便签（含最近删除里的）正文引用到的图片编号
+  static func referencedImages(in folder: Folder) -> Set<UUID> {
+    var ids: Set<UUID> = []
+    for device in folder.devices.values {
+      for note in device.notes.values where NoteImages.containsToken(note.body) {
+        ids.formUnion(NoteImages.ids(in: note.body))
+      }
+    }
+    return ids
   }
 
   /// 库被退回去了吗（时间机器从旧备份恢复了整个数据目录）：哪一版（各子文件夹里的，含自己的）里本机那一格的钟比库里

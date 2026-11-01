@@ -1939,10 +1939,23 @@ nonisolated enum NoteMarkdown {
     return result as String
   }
 
+  /// 正文里有没有可能是颜色标记的「]{」：按字节找（Foundation 的 contains 把整篇桥成 NSString 再找，1 MB 的正文约
+  /// 18 ms——底下那行小字每打一个字都问一遍，第四轮体检 F4⑤；同 NoteImages.containsToken）
+  static func hasColorMarker(_ body: String) -> Bool {
+    var body = body
+    return body.withUTF8 { bytes in
+      colorOpener.withUnsafeBufferPointer { needle in
+        memmem(bytes.baseAddress, bytes.count, needle.baseAddress, needle.count) != nil
+      }
+    }
+  }
+
+  private static let colorOpener = Array("]{".utf8)
+
   /// 颜色的标记在正文里的位置（UTF-16，从前到后）：strippingColors 去掉的就是它们；搜索命中换回正文里的位置也要它
   /// （NoteStore.firstMatch）。代码块里的行不算
   static func colorMarkers(in body: String) -> [NSRange] {
-    guard body.contains("]{") else { return [] }
+    guard hasColorMarker(body) else { return [] }
     let text = body as NSString
     let blocks = codeBlocks(in: text)
     var found: [NSRange] = []

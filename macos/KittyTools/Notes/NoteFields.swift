@@ -93,6 +93,8 @@ struct NoteFootnote: View {
   let isOverLimit: Bool
   /// 仓库里有没落下盘的改动（NoteStore.saveProblem 不是 nil；它自己会再试）
   var isUnsaved = false
+  /// 字数（NoteStore.characterCount(of:)：按正文缓存，长正文打字时停手再算）；nil = 现算
+  var count: Int?
 
   static let unsavedText = "没存上，正在重试"
 
@@ -110,7 +112,7 @@ struct NoteFootnote: View {
           .accessibilityHidden(true)
         Text(warning).foregroundStyle(paper.ink)
       } else {
-        Text(NotesWindowModel.footnote(note)).foregroundStyle(paper.secondaryInk)
+        Text(NotesWindowModel.footnote(note, count: count)).foregroundStyle(paper.secondaryInk)
       }
       Spacer(minLength: 0)
     }

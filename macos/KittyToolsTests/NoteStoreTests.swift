@@ -786,9 +786,10 @@ struct NoteStoreTests {
       #expect(sorted(store) == settled)
     }
     #expect(store.trashed.isEmpty)
-    // 等到文件里的时间不再是未来（真过了一天多）：这时它确实比本机的新，才换（两条都是；重复的那条照旧不认）
+    // 等到文件里的时间不再是未来（真过了一天多）：这时它确实比本机的新，才换（重复的那条照旧不认）。导进来过的那条和文件里
+    // 一模一样，只是「改于」晚：不算更新（第四轮体检 E18）
     let caughtUp = store.adopt(entries, now: Self.at(2 * 86_400))
-    #expect(caughtUp == NoteStore.Adoption(added: 0, updated: 2, saved: true))
+    #expect(caughtUp == NoteStore.Adoption(added: 0, updated: 1, saved: true))
     #expect(store.note(mine.id)?.body == "钟快的电脑上的一版" && store.note(id)?.body == "钟快的电脑写的")
     #expect(store.trashed.map(\.body) == ["本机的"])
 
@@ -958,6 +959,175 @@ struct NoteStoreTests {
       store.setTitle("标题 \(offset)", of: note.id, now: Self.at(Double(offset + 1)))
       #expect(flag.fired.withLock { $0 }, "\(view.name)：命中缓存的那次读也要看着仓库变")
     }
+  }
+  // MARK: 空白便签不越攒越多（第四轮体检 E11）
+
+  /// 这次运行里新建的空白便签：下来（left）之后晚一拍永久删掉——不进「最近删除」、留墓碑（同步照常）；
+  /// 写了字的、归档了的、还开在别处的不删；再开一次库（下一次运行）留下来的老空便签不删
+  @Test func blankNotesCreatedThisRunAreDroppedWhenLeft() async throws {
+    let (store, db) = try open()
+    let blank = store.create(now: Self.at(0))
+    let typed = store.create(now: Self.at(1))
+    store.setBody("写了字", of: typed.id, now: Self.at(2))
+    let archived = store.create(now: Self.at(3))
+    store.setArchived(true, of: archived.id, now: Self.at(4))
+    let held = store.create(now: Self.at(5))
+    store.isOpen = { $0 == held.id }
+    store.isComposing = { _ in false }
+    for id in [blank.id, typed.id, archived.id, held.id] { store.left(id) }
+    // 晚一拍：left 那一下还在
+    #expect(store.note(blank.id) != nil)
+    await settle { store.note(blank.id) == nil }
+    #expect(store.note(blank.id) == nil && store.trashed.isEmpty)
+    #expect(store.erased[blank.id] == nil, "没写进过同步文件夹：不留墓碑")
+    #expect(store.note(typed.id) != nil && store.note(archived.id) != nil)
+    #expect(store.note(held.id) != nil, "还开在别处的不删")
+    // 开着的那条关了之后再下来：删；它写进过同步文件夹，留墓碑（同步时告诉别的电脑）
+    store.isOpen = { _ in false }
+    store.published([held.id])
+    #expect(store.dropIfBlank(held.id, now: Self.at(6)))
+    #expect(store.erased[held.id] != nil)
+    // 下一次运行：老的空便签不动
+    let old = store.create(now: Self.at(7))
+    let next = try NoteStore(db: db)
+    next.left(old.id)
+    await settle(rounds: 50)
+    #expect(!next.dropIfBlank(old.id) && next.note(old.id) != nil)
+    #expect(
+      try saved(db).contains { $0.id == old.id } && !(try saved(db).contains { $0.id == blank.id }))
+  }
+
+  /// 正文框里还挂着组字（拼音打到一半就换走 / 收起）：先不删，过一会儿再看——这时组字提交了、有字了就不删；
+  /// 没提交（组字取消）还是空白的才删
+  @Test func blankNotesBeingComposedAreRechecked() async throws {
+    let sleeper = Sleeper()
+    let (store, _) = try open(sleeper: sleeper)
+    var composing = true
+    store.isComposing = { _ in composing }
+    let typed = store.create(now: Self.at(0))
+    let cancelled = store.create(now: Self.at(1))
+    store.left(typed.id)
+    store.left(cancelled.id)
+    await settle { sleeper.waiting >= 2 }
+    #expect(store.note(typed.id) != nil && store.note(cancelled.id) != nil)
+    #expect(sleeper.requested.contains(NoteStore.composingRecheck))
+    // 输入法晚到的提交落进来了
+    store.setBody("你好", of: typed.id, now: Self.at(2))
+    composing = false
+    sleeper.releaseAll()
+    await settle { store.note(cancelled.id) == nil }
+    #expect(store.note(typed.id)?.body == "你好" && store.note(cancelled.id) == nil)
+  }
+
+  /// 「新建」不复用另一台电脑同步来的空白便签（它在那边可能正开着）；本机以前建的（下一次运行、钟里只有本机那一格）照用
+  @Test func blankOrNewOnlyReusesLocalBlanks() throws {
+    let db = try Database(path: ":memory:")
+    let here = try NoteStore(db: db, wait: { _ in }, host: "这台")
+    let mine = here.create(now: Self.at(0))
+    let again = try NoteStore(db: db, wait: { _ in }, host: "这台")
+    #expect(again.blankOrNew(now: Self.at(1)).id == mine.id, "本机以前建的照用")
+    let elsewhere = try NoteStore(db: db, wait: { _ in }, host: "那台")
+    #expect(elsewhere.deviceID != here.deviceID)
+    let fresh = elsewhere.blankOrNew(now: Self.at(2))
+    #expect(fresh.id != mine.id && elsewhere.active.count == 2, "那台建的不用")
+  }
+
+  /// 长正文（超过 64 KB）：底下那行字数、任务进度不在打字路径上算——打字时先给上次的，停手 settleDelay 再算；
+  /// 短的照常当场算（第四轮体检 F4⑤）
+  @Test func longBodiesSettleTheirCountsAfterAPause() async throws {
+    let sleeper = Sleeper()
+    let (store, _) = try open(sleeper: sleeper)
+    let filler = String(repeating: "字", count: NoteStore.deferredBytes / 3 + 10)
+    let note = store.create(body: "☐ 一\n" + filler, now: Self.at(0))
+    let count = filler.count + 2
+    #expect(store.characterCount(of: note) == count)
+    #expect(store.summary(of: note).progress?.total == 1)
+    store.setBody("☐ 一\n☑ 二\n" + filler, of: note.id, now: Self.at(1))
+    let typed = try #require(store.note(note.id))
+    let settled = store.settled
+    #expect(store.characterCount(of: typed) == count, "打字时先给上次的")
+    #expect(store.summary(of: typed).progress?.total == 1)
+    await settle { sleeper.requested.contains(NoteStore.settleDelay) }
+    sleeper.releaseAll()
+    await settle { store.settled != settled }
+    #expect(store.characterCount(of: typed) == count + 2)
+    let progress = store.summary(of: typed).progress
+    #expect(progress?.done == 1 && progress?.total == 2)
+    // 短的当场算
+    let short = store.create(body: "短", now: Self.at(2))
+    store.setBody("短的", of: short.id, now: Self.at(3))
+    #expect(store.characterCount(of: try #require(store.note(short.id))) == 2)
+  }
+
+  /// 同一个编号来了几条：只认「改于」最晚的（一样晚认前面的）；只取内容的那几条（Markdown 导入里在别处改过的）
+  /// 归档 / 固定 / 顺序留本机的；标题、正文、颜色和本机一样的整条不动（状态不一样也不动，第四轮体检 E18）
+  @Test func adoptKeepsTheNewestDuplicateAndContentOnly() throws {
+    let (store, _) = try open()
+    let note = store.create(body: "本机的", now: Self.at(0))
+    store.setPinned(true, of: note.id, now: Self.at(1))
+    let base = Note.milliseconds(Self.at(10))
+    let duplicates = [
+      entry(note.id, "旧的一份", modified: base),
+      entry(note.id, "新的一份", modified: base + 1_000, archived: true, order: 9),
+      entry(note.id, "一样新的另一份", modified: base + 1_000),
+    ]
+    #expect(NoteStore.newestEntries(duplicates).map(\.body) == ["新的一份"])
+    let adoption = store.adopt(duplicates, contentOnly: [note.id], now: Self.at(60))
+    #expect(adoption.updated == 1)
+    let after = try #require(store.note(note.id))
+    #expect(after.body == "新的一份" && after.isPinned && !after.isArchived && after.order != 9)
+    // 内容一样、状态不一样：整条不动
+    let same = entry(
+      note.id, "新的一份", modified: base + 5_000, archived: true, pinned: false, order: 3)
+    #expect(store.adopt([same], now: Self.at(60)).updated == 0)
+    #expect(store.note(note.id) == after)
+  }
+
+  /// 「新建便签」复用任意一条空白、没归档的（不只是最前面那条），复用的挪到最前；归档的空白不用
+  @Test func blankOrNewReusesAnyBlankAndMovesItToTheFront() throws {
+    let (store, _) = try open()
+    let blank = store.create(now: Self.at(0))
+    let archivedBlank = store.create(now: Self.at(1))
+    store.setArchived(true, of: archivedBlank.id, now: Self.at(2))
+    let front = store.create(body: "最前面", now: Self.at(3))
+    #expect(store.active.map(\.id) == [front.id, blank.id])
+    let reused = store.blankOrNew(now: Self.at(4))
+    #expect(reused.id == blank.id && store.active.map(\.id) == [blank.id, front.id])
+    #expect(store.notes.count == 3)
+    store.setTitle("有标题了", of: blank.id, now: Self.at(5))
+    let fresh = store.blankOrNew(now: Self.at(6))
+    #expect(fresh.id != archivedBlank.id && store.notes.count == 4)
+  }
+
+  /// 撤回归档（toFront: false）：回到原来的位置；平常的取消归档排回最前（第四轮体检 U6）
+  @Test func unarchivingInPlaceKeepsTheOrder() throws {
+    let (store, _) = try open()
+    for (offset, body) in ["三", "二", "一"].enumerated() {
+      store.create(body: body, now: Self.at(Double(offset)))
+    }
+    let ids = store.active.map(\.id)
+    store.setArchived(true, of: ids[1], now: Self.at(10))
+    #expect(store.active.map(\.id) == [ids[0], ids[2]])
+    store.setArchived(false, of: ids[1], now: Self.at(11), toFront: false)
+    #expect(store.active.map(\.id) == ids)
+    store.setArchived(true, of: ids[2], now: Self.at(12))
+    store.setArchived(false, of: ids[2], now: Self.at(13))
+    #expect(store.active.first?.id == ids[2])
+  }
+
+  /// 导入（adopt）带来的和本机一模一样、只是「改于」晚：不算更新、什么都不动（E18：拷过、被碰过的 .md 文件时间新了）
+  @Test func adoptingAnIdenticalNewerCopyChangesNothing() throws {
+    let (store, _) = try open()
+    let note = store.create(body: "一样的", now: Self.at(0))
+    let entry = try #require(
+      SettingsArchive.NoteEntry(
+        Note(
+          id: note.id, title: note.title, body: note.body, color: note.color,
+          createdAt: note.createdAt, modifiedAt: Self.at(100), order: note.order)))
+    let before = try #require(store.note(note.id))
+    let adoption = store.adopt([entry], now: Self.at(200))
+    #expect(adoption.added == 0 && adoption.updated == 0)
+    #expect(store.note(note.id) == before && store.trashed.isEmpty)
   }
 }
 
