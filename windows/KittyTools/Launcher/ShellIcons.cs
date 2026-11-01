@@ -42,6 +42,13 @@ internal static unsafe partial class ShellIcons
         return LoadLargeIcon(path, size);
     }
 
+    /// <summary>
+    /// 直接从 exe / dll / ico 按序号取一档像素尺寸的图标（App 自己的图标用）。不能走 LoadPng：exe 的
+    /// SHGetFileInfo(SHGFI_ICONLOCATION) 回来的文件名是空的，会退回 32 px 的大图标再放大，要多大都糊。
+    /// </summary>
+    public static byte[]? LoadPngFromIconFile(string iconPath, int index, int pixels)
+        => LoadFromIconLocation(iconPath, index, pixels);
+
     /// <summary>资源管理器里显示的名字（「屏幕截图」这种本地化的文件夹名，设置里「保存到」那一行用）；取不到时用路径最后一段。</summary>
     public static string DisplayName(string path)
     {
