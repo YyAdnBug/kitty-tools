@@ -524,7 +524,14 @@ internal sealed partial class ScreenshotCard : Window
 
         try
         {
-            _image.Source = await ImageCodec.ToBitmapAsync(_png);
+            // 按卡片大小解码（REVIEW R52）：一张 4K 截图整张解码约 23 MB，卡片上只露两三百像素宽；
+            // 三张 4K 卡实测 +69.5 MB → +5.6 MB。UniformToFill 裁掉一边，所以按「高度也铺满」时要的宽来解。
+            // 卡片不放大、也没有飞入了（0.1.0 起直接淡入），按卡片像素解码不会糊。
+            var (cardWidth, cardHeight) = CardSize(_pixelSize.Width, _pixelSize.Height);
+            var width = MonitorLayout.Pixels(cardWidth, _scale);
+            var height = MonitorLayout.Pixels(cardHeight, _scale);
+            var decodeWidth = Math.Max(width, (int)Math.Ceiling(height * (double)_pixelSize.Width / Math.Max(1, _pixelSize.Height)));
+            _image.Source = await ImageCodec.ToBitmapAsync(_png, decodeWidth);
         }
         catch (Exception ex)
         {
