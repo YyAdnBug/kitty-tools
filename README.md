@@ -260,3 +260,7 @@ icons/                   # 两个版本共用的功能图标（SVG）和生成�
 
 - 便签的交互和数值参考了 [Noty](https://github.com/aimen08/noty)（MIT），代码全部自己重写
 - 状态屏的动画表情来自 [Microsoft Fluent Emoji Animated](https://github.com/microsoft/fluentui-emoji-animated)（MIT）
+
+## 友情链接
+
+- 这里面的人说话好听又帅，都是大佬。[LinuxDo](https://linux.do)
