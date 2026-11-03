@@ -440,19 +440,18 @@ body::before {
   padding-block: 72px 88px;
   overflow: hidden;
 }
-.hero-grid {
+.hero-in {
   display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
   gap: 56px;
-  align-items: center;
 }
 .hero-copy {
   display: grid;
   gap: 22px;
-  justify-items: start;
+  justify-items: center;
+  text-align: center;
 }
 .hero h1 {
-  font-size: clamp(36px, 5.4vw, 60px);
+  font-size: clamp(38px, 6vw, 68px);
   font-weight: 800;
   letter-spacing: -0.02em;
 }
@@ -462,6 +461,11 @@ body::before {
 }
 .hero .lead {
   max-width: 34em;
+  text-wrap: balance;
+}
+.hero .btn-row,
+.hero .dl-meta {
+  justify-content: center;
 }
 .dl-meta {
   font-size: 14px;
@@ -484,6 +488,12 @@ body::before {
 [data-os="windows"] .for-mac {
   display: none;
 }
+.for-phone {
+  display: none;
+}
+[data-os="phone"] .for-phone {
+  display: revert;
+}
 .dl-note {
   font-size: 14px;
   color: var(--muted);
@@ -496,9 +506,8 @@ body::before {
   .hero {
     padding-block: 40px 64px;
   }
-  .hero-grid {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 48px;
+  .hero-in {
+    gap: 40px;
   }
 }
 
@@ -515,13 +524,13 @@ body::before {
   filter: drop-shadow(0 16px 28px rgba(40, 20, 30, 0.22)) drop-shadow(0 2px 6px rgba(40, 20, 30, 0.12));
 }
 .hero-stage {
-  aspect-ratio: 16 / 11;
+  aspect-ratio: 16 / 10;
   overflow: visible;
 }
 .menubar {
   position: absolute;
   inset: 0 0 auto;
-  height: 26px;
+  height: 28px;
   border-radius: 22px 22px 0 0;
   background: rgba(255, 255, 255, 0.42);
   -webkit-backdrop-filter: blur(20px);
@@ -529,9 +538,9 @@ body::before {
   display: flex;
   justify-content: flex-end;
   align-items: center;
-  gap: 14px;
-  padding: 0 16px;
-  font-size: 12px;
+  gap: 16px;
+  padding: 0 18px;
+  font-size: 13px;
   font-weight: 500;
   color: rgba(0, 0, 0, 0.78);
 }
@@ -548,9 +557,9 @@ body::before {
 .menubar .mb-kitty {
   display: inline-grid;
   place-items: center;
-  width: 30px;
-  height: 20px;
-  border-radius: 5px;
+  width: 34px;
+  height: 22px;
+  border-radius: 6px;
   background: rgba(127, 127, 127, 0.28);
 }
 .menubar .mb-kitty i {
@@ -560,26 +569,40 @@ body::before {
   -webkit-mask: url("status-icon.png") center / contain no-repeat;
   mask: url("status-icon.png") center / contain no-repeat;
 }
+/* 主界面挂在菜单栏的猫下面；剪贴板在左边，两块不重叠 */
 .hero-stage .home {
   position: absolute;
-  right: 4%;
-  top: 34px;
-  width: 44%;
+  right: 5%;
+  top: 36px;
+  width: 29%;
 }
 .hero-stage .clipbox {
   position: absolute;
-  left: 5%;
-  bottom: 6%;
-  width: 62%;
+  left: 7%;
+  bottom: 8%;
+  width: 56%;
 }
 /* 猫扒在面板上沿：SVG 里 y 614（原图标卡片的上沿）在 viewBox 高度的 88.66% 处，往下挪 11.34% 正好对齐 */
 .peek {
   position: absolute;
   bottom: 100%;
-  left: 14%;
-  width: 34%;
+  left: 10%;
+  width: 24%;
   transform: translateY(11.34%);
   z-index: 1;
+}
+@media (max-width: 640px) {
+  .hero-stage {
+    aspect-ratio: 4 / 3.4;
+  }
+  .hero-stage .home {
+    display: none;
+  }
+  .hero-stage .clipbox {
+    left: 5%;
+    width: 90%;
+    bottom: 7%;
+  }
 }
 
 /* ---------- 探头 ---------- */
@@ -682,7 +705,18 @@ body::before {
 }
 @media (max-width: 520px) {
   .tiles {
+    gap: 10px;
+  }
+  .tile {
     grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    padding: 14px;
+  }
+  .tile .ico {
+    grid-row: auto;
+  }
+  .tile > span:last-child {
+    display: none;
   }
 }
 
@@ -704,6 +738,49 @@ body::before {
   background: var(--on, #fff);
   -webkit-mask: var(--i) center / contain no-repeat;
   mask: var(--i) center / contain no-repeat;
+}
+/* 图标的地址写在这份样式表里（写在页面的内联变量里，Chrome 会按样式表的位置去解析，找不到） */
+.i-clipboard {
+  --i: url("icons/kitty.clipboard.svg");
+}
+.i-dock-preview {
+  --i: url("icons/kitty.dock.preview.svg");
+}
+.i-general {
+  --i: url("icons/kitty.general.svg");
+}
+.i-home {
+  --i: url("icons/kitty.home.svg");
+}
+.i-island {
+  --i: url("icons/kitty.island.svg");
+}
+.i-launcher {
+  --i: url("icons/kitty.launcher.svg");
+}
+.i-launchpad {
+  --i: url("icons/kitty.launchpad.svg");
+}
+.i-notes {
+  --i: url("icons/kitty.notes.svg");
+}
+.i-record {
+  --i: url("icons/kitty.record.svg");
+}
+.i-screenshot {
+  --i: url("icons/kitty.screenshot.svg");
+}
+.i-screenshot-history {
+  --i: url("icons/kitty.screenshot.history.svg");
+}
+.i-screenshot-text {
+  --i: url("icons/kitty.screenshot.text.svg");
+}
+.i-status-screen {
+  --i: url("icons/kitty.status.screen.svg");
+}
+.i-translate {
+  --i: url("icons/kitty.translate.svg");
 }
 .ico.lg {
   width: 52px;
@@ -1738,4 +1815,18 @@ a.card:hover {
 }
 .privacy .prose {
   gap: 10px;
+}
+.notes-gallery {
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+}
+.notes-gallery figure {
+  grid-template-rows: 1fr auto;
+}
+@media (max-width: 900px) {
+  .notes-gallery {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .notes-gallery .stage.full {
+    max-width: 320px;
+  }
 }

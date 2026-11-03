@@ -39,7 +39,7 @@
 <main id="main">
 
 <section class="hero">
-  <div class="wrap hero-grid">
+  <div class="wrap hero-in">
     <div class="hero-copy">
       <a class="eyebrow" href="changelog/"><span data-needs="mac" hidden>新版本 <span data-fill="mac-version"></span> ·</span> 看看最近更新了什么 →</a>
       <h1><span class="nw">Mac 上的小事，</span><em class="nw">交给一只猫</em></h1>
@@ -57,6 +57,7 @@
         <span class="for-mac">下载开始了。第一次打开会被系统拦下：到「系统设置 › 隐私与安全性」，在下面点「仍要打开」就好，只有第一次需要。<a href="download/#install">看安装说明</a></span>
         <span class="for-win">下载开始了。出现「Windows 已保护你的电脑」时，点「更多信息」→「仍要运行」。<a href="download/#windows">看安装说明</a></span>
       </p>
+      <p class="dl-note for-phone">在手机上看？Kitty Tools 装在电脑上：Mac（Apple 芯片）或 Windows 11。回到电脑上打开这个网址下载就好。</p>
       <p class="small muted"><span class="for-mac">也有 <a href="download/#windows">Windows 版</a>。</span><span class="for-win">也有 <a href="download/#mac">Mac 版</a>，功能更全。</span> <a href="download/#install">第一次安装要注意什么？</a></p>
     </div>
 
@@ -68,7 +69,7 @@
       <picture>
         <source srcset="assets/shots/home-dark.avif" media="(prefers-color-scheme: dark)" type="image/avif">
         <source srcset="assets/shots/home-light.avif" type="image/avif">
-        <img class="shot home" src="assets/shots/home-light.png" alt="">
+        <img class="shot home" src="assets/shots/home-light.png" width="488" height="606" alt="">
       </picture>
       <div class="clipbox">
         <svg class="cat peek" viewBox="246 176 532 494" aria-hidden="true" focusable="false">
@@ -94,7 +95,7 @@
         <picture>
           <source srcset="assets/shots/clipboard-dark.avif" media="(prefers-color-scheme: dark)" type="image/avif">
           <source srcset="assets/shots/clipboard-light.avif" type="image/avif">
-          <img class="shot clip" src="assets/shots/clipboard-light.png" alt="">
+          <img class="shot clip" src="assets/shots/clipboard-light.png" width="720" height="520" alt="">
         </picture>
       </div>
     </div>
@@ -108,18 +109,18 @@
       <p class="lead">每样都能用快捷键叫出来，弹出时不抢你正在用的 App。用不上的，可以在设置里整个关掉。</p>
     </div>
     <div class="tiles">
-      <a class="tile reveal" href="features/#clipboard"><span class="ico" style="--c:var(--blue);--i:url(assets/icons/kitty.clipboard.svg)"></span><b>剪贴板历史 <kbd>⌥C</kbd></b><span>复制过的文字、图片、文件都留着，搜得到、粘得回去</span></a>
-      <a class="tile reveal" href="features/#launcher"><span class="ico" style="--c:var(--purple);--i:url(assets/icons/kitty.launcher.svg)"></span><b>启动器 <kbd>⌥Space</kbd></b><span>打开 App、找文件、算算数、搜网页，拼音也认</span></a>
-      <a class="tile reveal" href="features/#translate"><span class="ico" style="--c:var(--green);--i:url(assets/icons/kitty.translate.svg)"></span><b>翻译 <kbd>⌥D</kbd></b><span>划词、输入、复制、截图都能翻，内置服务不用配置</span></a>
-      <a class="tile reveal" href="features/#screenshot"><span class="ico" style="--c:var(--pink);--i:url(assets/icons/kitty.screenshot.svg)"></span><b>截图 <kbd>⌥A</kbd></b><span>框选、十种标注、钉在屏幕上，还能拼长截图</span></a>
-      <a class="tile reveal" href="features/#screenshot"><span class="ico" style="--c:var(--pink);--i:url(assets/icons/kitty.screenshot.text.svg)"></span><b>识字 <kbd>⌥O</kbd></b><span>框一块屏幕把字认出来，二维码也行，不联网</span></a>
-      <a class="tile reveal" href="features/#record"><span class="ico" style="--c:var(--pink);--i:url(assets/icons/kitty.record.svg)"></span><b>录屏与录音 <kbd>⌥R</kbd></b><span>录一块区域或整屏，带上声音，转 GIF、压缩</span></a>
-      <a class="tile reveal" href="features/#notes"><span class="ico yellow" style="--c:var(--yellow);--i:url(assets/icons/kitty.notes.svg)"></span><b>便签 <kbd>⌥N</kbd></b><span>贴在屏幕边上，想到什么随手记一条</span></a>
-      <a class="tile reveal" href="features/#screenshot"><span class="ico" style="--c:var(--pink);--i:url(assets/icons/kitty.screenshot.history.svg)"></span><b>截图历史</b><span>截过的、录过的都在一处，回头还能接着改标注</span></a>
-      <a class="tile reveal" href="features/#launchpad"><span class="ico" style="--c:var(--mint);--i:url(assets/icons/kitty.launchpad.svg)"></span><b>启动台</b><span>全屏的 App 网格，捏合触控板就打开（macOS 26 起）</span></a>
-      <a class="tile reveal" href="features/#status-screen"><span class="ico" style="--c:var(--brown);--i:url(assets/icons/kitty.status.screen.svg)"></span><b>状态屏</b><span>盖住屏幕、拦住键盘鼠标，擦屏幕或离开座位时用</span></a>
-      <a class="tile reveal" href="features/#dock-preview"><span class="ico" style="--c:var(--cyan);--i:url(assets/icons/kitty.dock.preview.svg)"></span><b>程序坞预览</b><span>停在程序坞图标上，看这个 App 的所有窗口</span></a>
-      <a class="tile reveal" href="features/#island"><span class="ico" style="--c:var(--gray);--i:url(assets/icons/kitty.island.svg)"></span><b>刘海岛</b><span>提示从刘海里长出来，点一下叫出常用动作</span></a>
+      <a class="tile reveal" href="features/#clipboard"><span class="ico i-clipboard" style="--c:var(--blue)"></span><b>剪贴板历史 <kbd>⌥C</kbd></b><span>复制过的文字、图片、文件都留着，搜得到、粘得回去</span></a>
+      <a class="tile reveal" href="features/#launcher"><span class="ico i-launcher" style="--c:var(--purple)"></span><b>启动器 <kbd>⌥Space</kbd></b><span>打开 App、找文件、算算数、搜网页，拼音也认</span></a>
+      <a class="tile reveal" href="features/#translate"><span class="ico i-translate" style="--c:var(--green)"></span><b>翻译 <kbd>⌥D</kbd></b><span>划词、输入、复制、截图都能翻，内置服务不用配置</span></a>
+      <a class="tile reveal" href="features/#screenshot"><span class="ico i-screenshot" style="--c:var(--pink)"></span><b>截图 <kbd>⌥A</kbd></b><span>框选、十种标注、钉在屏幕上，还能拼长截图</span></a>
+      <a class="tile reveal" href="features/#screenshot"><span class="ico i-screenshot-text" style="--c:var(--pink)"></span><b>识字 <kbd>⌥O</kbd></b><span>框一块屏幕把字认出来，二维码也行，不联网</span></a>
+      <a class="tile reveal" href="features/#record"><span class="ico i-record" style="--c:var(--pink)"></span><b>录屏与录音 <kbd>⌥R</kbd></b><span>录一块区域或整屏，带上声音，转 GIF、压缩</span></a>
+      <a class="tile reveal" href="features/#notes"><span class="ico yellow i-notes" style="--c:var(--yellow)"></span><b>便签 <kbd>⌥N</kbd></b><span>贴在屏幕边上，想到什么随手记一条</span></a>
+      <a class="tile reveal" href="features/#screenshot"><span class="ico i-screenshot-history" style="--c:var(--pink)"></span><b>截图历史</b><span>截过的、录过的都在一处，回头还能接着改标注</span></a>
+      <a class="tile reveal" href="features/#launchpad"><span class="ico i-launchpad" style="--c:var(--mint)"></span><b>启动台</b><span>全屏的 App 网格，捏合触控板就打开（macOS 26 起）</span></a>
+      <a class="tile reveal" href="features/#status-screen"><span class="ico i-status-screen" style="--c:var(--brown)"></span><b>状态屏</b><span>盖住屏幕、拦住键盘鼠标，擦屏幕或离开座位时用</span></a>
+      <a class="tile reveal" href="features/#dock-preview"><span class="ico i-dock-preview" style="--c:var(--cyan)"></span><b>程序坞预览</b><span>停在程序坞图标上，看这个 App 的所有窗口</span></a>
+      <a class="tile reveal" href="features/#island"><span class="ico i-island" style="--c:var(--gray)"></span><b>刘海岛</b><span>提示从刘海里长出来，点一下叫出常用动作</span></a>
     </div>
   </div>
 </section>
@@ -128,7 +129,7 @@
   <div class="wrap">
     <article class="feature reveal">
       <div class="feature-copy">
-        <span class="eyebrow"><span class="ico sm" style="--c:var(--blue);--i:url(assets/icons/kitty.clipboard.svg)"></span>剪贴板历史 <kbd>⌥C</kbd></span>
+        <span class="eyebrow"><span class="ico sm i-clipboard" style="--c:var(--blue)"></span>剪贴板历史 <kbd>⌥C</kbd></span>
         <h2>复制过的，一样都不丢</h2>
         <p>文字（带格式）、图片、文件都记下来，重复的只挪到最前。按 ↩ 粘回原来的 App，⌘1–9 直接粘第几条。</p>
         <ul class="points">
@@ -143,14 +144,14 @@
         <picture>
           <source srcset="assets/shots/clipboard-dark.avif" media="(prefers-color-scheme: dark)" type="image/avif">
           <source srcset="assets/shots/clipboard-light.avif" type="image/avif">
-          <img class="shot" src="assets/shots/clipboard-light.png" alt="剪贴板历史面板：选中的一段文字原地展开，下面是链接、图片、颜色值和代码" loading="lazy">
+          <img class="shot" src="assets/shots/clipboard-light.png" width="720" height="520" alt="剪贴板历史面板：选中的一段文字原地展开，下面是链接、图片、颜色值和代码" loading="lazy">
         </picture>
       </div>
     </article>
 
     <article class="feature flip reveal">
       <div class="feature-copy">
-        <span class="eyebrow"><span class="ico sm" style="--c:var(--purple);--i:url(assets/icons/kitty.launcher.svg)"></span>启动器 <kbd>⌥Space</kbd></span>
+        <span class="eyebrow"><span class="ico sm i-launcher" style="--c:var(--purple)"></span>启动器 <kbd>⌥Space</kbd></span>
         <h2>想打开什么，敲几个字母就够</h2>
         <p>App、文件、系统设置、浏览器书签都搜得到。中文名、拼音全拼和首字母都认，常用的越用越靠前。</p>
         <ul class="points">
@@ -165,14 +166,14 @@
         <picture>
           <source srcset="assets/shots/launcher-dark.avif" media="(prefers-color-scheme: dark)" type="image/avif">
           <source srcset="assets/shots/launcher-light.avif" type="image/avif">
-          <img class="shot" src="assets/shots/launcher-light.png" alt="启动器：输入拼音首字母就搜到了对应的 App" loading="lazy">
+          <img class="shot" src="assets/shots/launcher-light.png" width="720" height="265" alt="启动器：输入拼音首字母就搜到了对应的 App" loading="lazy">
         </picture>
       </div>
     </article>
 
     <article class="feature reveal">
       <div class="feature-copy">
-        <span class="eyebrow"><span class="ico sm" style="--c:var(--green);--i:url(assets/icons/kitty.translate.svg)"></span>翻译 <kbd>⌥D</kbd></span>
+        <span class="eyebrow"><span class="ico sm i-translate" style="--c:var(--green)"></span>翻译 <kbd>⌥D</kbd></span>
         <h2>选中就翻，不用切窗口</h2>
         <p>在任何 App 里选中文字按快捷键，浮窗跟着鼠标出来。也能输入翻译、复制即译，或者框一块屏幕截图翻译。</p>
         <ul class="points">
@@ -187,14 +188,14 @@
         <picture>
           <source srcset="assets/shots/translate-dark.avif" media="(prefers-color-scheme: dark)" type="image/avif">
           <source srcset="assets/shots/translate-light.avif" type="image/avif">
-          <img class="shot" src="assets/shots/translate-light.png" alt="翻译浮窗：一段英文，两家服务的中文译文" loading="lazy">
+          <img class="shot" src="assets/shots/translate-light.png" width="420" height="359" alt="翻译浮窗：一段英文，两家服务的中文译文" loading="lazy">
         </picture>
       </div>
     </article>
 
     <article class="feature flip reveal">
       <div class="feature-copy">
-        <span class="eyebrow"><span class="ico sm" style="--c:var(--pink);--i:url(assets/icons/kitty.screenshot.svg)"></span>截图 <kbd>⌥A</kbd></span>
+        <span class="eyebrow"><span class="ico sm i-screenshot" style="--c:var(--pink)"></span>截图 <kbd>⌥A</kbd></span>
         <h2>截下来，标清楚，再送出去</h2>
         <p>先冻结屏幕再框选，自动吸附窗口边。十种标注工具，画完还能挪、能改。</p>
         <ul class="points">
@@ -206,7 +207,7 @@
         <a class="arrow-link" href="features/#screenshot">截图的全部功能</a>
       </div>
       <div class="stage feature-stage full">
-        <img class="screen" src="assets/shots/screenshot-annotate.jpg" alt="截图标注：选区里有矩形框、箭头、序号和一段文字，一块马赛克盖住了邮箱，工具栏在选区下方" loading="lazy">
+        <picture><source srcset="assets/shots/screenshot-annotate-dark.avif" media="(prefers-color-scheme: dark)" type="image/avif"><source srcset="assets/shots/screenshot-annotate-light.avif" type="image/avif"><img class="screen" src="assets/shots/screenshot-annotate-light.jpg" width="1600" height="1000" alt="截图标注：选区里有矩形框、箭头、序号和一段文字，一块马赛克盖住了邮箱，工具栏在选区下方" loading="lazy"></picture>
       </div>
     </article>
   </div>
@@ -234,28 +235,28 @@
     </div>
     <div class="cards">
       <a class="card reveal" href="features/#record">
-        <div class="stage"><picture><source srcset="assets/shots/record-hud-dark.avif" media="(prefers-color-scheme: dark)" type="image/avif"><source srcset="assets/shots/record-hud-light.avif" type="image/avif"><img class="shot" src="assets/shots/record-hud-light.png" alt="录屏时的录制条：计时、麦克风和停止按钮" loading="lazy"></picture></div>
-        <div class="card-body"><h3><span class="ico sm" style="--c:var(--pink);--i:url(assets/icons/kitty.record.svg)"></span>录屏与录音</h3><p>框一块区域或整屏，录系统声音和麦克风，显示点按和按键；录完转 GIF 或压缩。</p></div>
+        <div class="stage"><picture><source srcset="assets/shots/record-hud-dark.avif" media="(prefers-color-scheme: dark)" type="image/avif"><source srcset="assets/shots/record-hud-light.avif" type="image/avif"><img class="shot" src="assets/shots/record-hud-light.png" width="194" height="40" alt="录屏时的录制条：计时、麦克风和停止按钮" loading="lazy"></picture></div>
+        <div class="card-body"><h3><span class="ico sm i-record" style="--c:var(--pink)"></span>录屏与录音</h3><p>框一块区域或整屏，录系统声音和麦克风，显示点按和按键；录完转 GIF 或压缩。</p></div>
       </a>
       <a class="card reveal" href="features/#notes">
-        <div class="stage"><picture><source srcset="assets/shots/notes-wall-dark.avif" media="(prefers-color-scheme: dark)" type="image/avif"><source srcset="assets/shots/notes-wall-light.avif" type="image/avif"><img class="shot" src="assets/shots/notes-wall-light.png" alt="全部便签：便签墙上几张不同颜色的便签" loading="lazy"></picture></div>
-        <div class="card-body"><h3><span class="ico sm yellow" style="--c:var(--yellow);--i:url(assets/icons/kitty.notes.svg)"></span>便签</h3><p>贴在屏幕边上，鼠标靠过去就扇开；任务、颜色、图片都能放，能导出成 Markdown。</p></div>
+        <div class="stage"><picture><source srcset="assets/shots/notes-wall-dark.avif" media="(prefers-color-scheme: dark)" type="image/avif"><source srcset="assets/shots/notes-wall-light.avif" type="image/avif"><img class="shot" src="assets/shots/notes-wall-light.png" width="1080" height="560" alt="全部便签：便签墙上几张不同颜色的便签" loading="lazy"></picture></div>
+        <div class="card-body"><h3><span class="ico sm yellow i-notes" style="--c:var(--yellow)"></span>便签</h3><p>贴在屏幕边上，鼠标靠过去就扇开；任务、颜色、图片都能放，能导出成 Markdown。</p></div>
       </a>
       <a class="card reveal" href="features/#launchpad">
-        <div class="stage full"><img src="assets/shots/launchpad.jpg" alt="启动台：全屏的 App 图标网格" loading="lazy"></div>
-        <div class="card-body"><h3><span class="ico sm" style="--c:var(--mint);--i:url(assets/icons/kitty.launchpad.svg)"></span>启动台</h3><p>熟悉的全屏图标网格：翻页、搜索、拖成文件夹，捏合触控板打开。macOS 26 起。</p></div>
+        <div class="stage full"><picture><source srcset="assets/shots/launchpad-dark.avif" media="(prefers-color-scheme: dark)" type="image/avif"><source srcset="assets/shots/launchpad-light.avif" type="image/avif"><img src="assets/shots/launchpad-light.jpg" width="1600" height="1000" alt="启动台：全屏的 App 图标网格" loading="lazy"></picture></div>
+        <div class="card-body"><h3><span class="ico sm i-launchpad" style="--c:var(--mint)"></span>启动台</h3><p>熟悉的全屏图标网格：翻页、搜索、拖成文件夹，捏合触控板打开。macOS 26 起。</p></div>
       </a>
       <a class="card reveal" href="features/#status-screen">
-        <div class="stage full"><img src="assets/shots/status-screen.jpg" alt="状态屏：屏幕上写着「马上回来」" loading="lazy"></div>
-        <div class="card-body"><h3><span class="ico sm" style="--c:var(--brown);--i:url(assets/icons/kitty.status.screen.svg)"></span>状态屏</h3><p>一键盖住所有屏幕、拦住键盘鼠标，擦屏幕、跑任务、离开座位时用。</p></div>
+        <div class="stage full"><img src="assets/shots/status-screen.jpg" width="1600" height="1000" alt="状态屏：屏幕上写着「马上回来」" loading="lazy"></div>
+        <div class="card-body"><h3><span class="ico sm i-status-screen" style="--c:var(--brown)"></span>状态屏</h3><p>一键盖住所有屏幕、拦住键盘鼠标，擦屏幕、跑任务、离开座位时用。</p></div>
       </a>
       <a class="card reveal" href="features/#dock-preview">
-        <div class="stage"><picture><source srcset="assets/shots/dock-preview-dark.avif" media="(prefers-color-scheme: dark)" type="image/avif"><source srcset="assets/shots/dock-preview-light.avif" type="image/avif"><img class="shot" src="assets/shots/dock-preview-light.png" alt="程序坞预览：一个 App 的几扇窗口缩略图" loading="lazy"></picture></div>
-        <div class="card-body"><h3><span class="ico sm" style="--c:var(--cyan);--i:url(assets/icons/kitty.dock.preview.svg)"></span>程序坞预览</h3><p>鼠标停在程序坞图标上，弹出它所有窗口的缩略图，点一下切过去。</p></div>
+        <div class="stage"><picture><source srcset="assets/shots/dock-preview-dark.avif" media="(prefers-color-scheme: dark)" type="image/avif"><source srcset="assets/shots/dock-preview-light.avif" type="image/avif"><img class="shot" src="assets/shots/dock-preview-light.png" width="687" height="217" alt="程序坞预览：一个 App 的几扇窗口缩略图" loading="lazy"></picture></div>
+        <div class="card-body"><h3><span class="ico sm i-dock-preview" style="--c:var(--cyan)"></span>程序坞预览</h3><p>鼠标停在程序坞图标上，弹出它所有窗口的缩略图，点一下切过去。</p></div>
       </a>
       <a class="card reveal" href="features/#island">
-        <div class="stage"><img class="shot" src="assets/shots/island.png" alt="刘海岛：「已存到桌面」的提示，带「在访达中显示」按钮" loading="lazy"></div>
-        <div class="card-body"><h3><span class="ico sm" style="--c:var(--gray);--i:url(assets/icons/kitty.island.svg)"></span>刘海岛</h3><p>复制好了、存好了，提示都从刘海里长出来；点一下刘海，叫出最近的提示和常用动作。</p></div>
+        <div class="stage"><img class="shot" src="assets/shots/island.png" width="407" height="114" alt="刘海岛：「已存到桌面」的提示，带「在访达中显示」按钮" loading="lazy"></div>
+        <div class="card-body"><h3><span class="ico sm i-island" style="--c:var(--gray)"></span>刘海岛</h3><p>复制好了、存好了，提示都从刘海里长出来；点一下刘海，叫出最近的提示和常用动作。</p></div>
       </a>
     </div>
   </div>

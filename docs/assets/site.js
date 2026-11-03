@@ -92,10 +92,10 @@
     return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
   }
 
-  // 访客的系统：只分 Mac、Windows、其他（手机、Linux）
+  // 访客的系统：Mac、Windows、手机（含 iPad）、其他（Linux 等）
   var ua = navigator.userAgent;
   var mobile = /iPhone|iPad|iPod|Android/i.test(ua) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(ua));
-  var os = mobile ? "other" : /Windows/i.test(ua) ? "windows" : /Macintosh|Mac OS X/i.test(ua) ? "mac" : "other";
+  var os = mobile ? "phone" : /Windows/i.test(ua) ? "windows" : /Macintosh|Mac OS X/i.test(ua) ? "mac" : "other";
   document.documentElement.dataset.os = os;
 
   // Windows 的 ARM 电脑：Edge / Chrome 能告诉我们，别的浏览器认不出就给 x64
@@ -115,6 +115,7 @@
   if (os === "windows") {
     document.querySelectorAll("[data-auto]").forEach(function (a) {
       a.dataset.dl = "win";
+      a.href = "https://github.com/YyAdnBug/kitty-tools/releases?q=windows&expanded=true";
       var label = a.querySelector("[data-label]");
       if (label) label.textContent = "下载 Windows 版";
     });
