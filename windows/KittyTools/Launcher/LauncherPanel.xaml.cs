@@ -937,6 +937,11 @@ public sealed partial class LauncherPanel : UserControl
                 e.Handled = true;
                 ToggleActions();
                 break;
+            // 浮层都认 Ctrl+W 收起（OverlayWindow 文件头、剪贴板面板同一处；REVIEW R41）。
+            case VirtualKey.W when control:
+                e.Handled = true;
+                CloseRequested?.Invoke();
+                break;
             case VirtualKey.C when control && SearchBox.SelectionLength == 0 && item is not null:
                 if (shift)
                 {

@@ -789,7 +789,11 @@ internal sealed partial class ShotHistoryWindow : Window
 
         var service = ClipboardService.Instance;
         service?.MarkOwnWrite();
-        service?.Store.RecordImage(png, item.PixelWidth, item.PixelHeight, null, "截图历史");
+        if (service is not null)
+        {
+            _ = service.Store.RecordImageAsync(png, item.PixelWidth, item.PixelHeight, null, "截图历史");
+        }
+
         NoticeHost.Show("已复制截图", $"{item.PixelWidth} × {item.PixelHeight}", NoticeTone.Normal);
     }
 

@@ -1,5 +1,6 @@
 // 图片文件：images\<id>.png；按 PNG 字节的 SHA-256 去重（同样的内容只会有一张图进库）。
 // 编码在后台做，这里只负责落盘、删文件和清理没有条目的孤儿文件。
+// REVIEW R48：写盘和算哈希在线程池上（Stage），入库拿到编号后 UI 线程只换个名（Adopt）；单张图最多 128 MB，以前整张在 UI 线程上写、算两遍哈希。
 using System.Security.Cryptography;
 
 namespace KittyTools;
@@ -18,23 +19,39 @@ internal sealed class ImageStore
 
     public bool Exists(long id) => File.Exists(PathFor(id));
 
-    /// <summary>写图片（原子替换）；返回 PNG 字节的 SHA-256（小写十六进制）。</summary>
-    public string Save(long id, byte[] png)
+    /// <summary>先写到 images\staged-*.tmp、算好 SHA-256（小写十六进制）。在线程池上调；入库后 Adopt，查重命中就 Discard。</summary>
+    public (string Hash, string Staged) Stage(byte[] png)
     {
         Directory.CreateDirectory(_directory);
+        var staged = Path.Combine(_directory, $"staged-{Guid.NewGuid():N}.tmp");
+        File.WriteAllBytes(staged, png);
+        return (Hash(png), staged);
+    }
+
+    /// <summary>暂存的那份换成这一条的图（原子替换，同一个盘上只是改名）。</summary>
+    public void Adopt(long id, string staged)
+    {
         var path = PathFor(id);
-        var temporary = path + ".tmp";
-        File.WriteAllBytes(temporary, png);
         if (File.Exists(path))
         {
-            File.Replace(temporary, path, null);
+            File.Replace(staged, path, null);
         }
         else
         {
-            File.Move(temporary, path);
+            File.Move(staged, path);
         }
+    }
 
-        return Hash(png);
+    public static void Discard(string staged)
+    {
+        try
+        {
+            File.Delete(staged);
+        }
+        catch
+        {
+            // 删不掉就留着，下次启动清孤儿时再试。
+        }
     }
 
     public void Delete(long id)
@@ -53,6 +70,12 @@ internal sealed class ImageStore
     public int CleanupOrphans(IReadOnlyCollection<long> keep)
     {
         var deleted = 0;
+        // 暂存了还没入库就退出 / 闪退留下的（Stage）。
+        foreach (var file in Directory.EnumerateFiles(_directory, "staged-*.tmp"))
+        {
+            Discard(file);
+        }
+
         foreach (var file in Directory.EnumerateFiles(_directory, "*.png"))
         {
             var name = Path.GetFileNameWithoutExtension(file);

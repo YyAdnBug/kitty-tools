@@ -211,7 +211,7 @@ internal sealed class ClipboardService
             return;
         }
 
-        Store.RecordImage(image.Png, image.Width, image.Height, exe, name);
+        await Store.RecordImageAsync(image.Png, image.Width, image.Height, exe, name);
         OcrQueue.Kick();
         Log.Info($"clipboard.record kind=image count={Store.Count}");
     }

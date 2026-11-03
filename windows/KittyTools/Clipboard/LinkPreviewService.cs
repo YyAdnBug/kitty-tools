@@ -1,6 +1,8 @@
 // 链接预览的取数（第三版 §5，E5）：规则在 Core 的 LinkPreviewRules（拦截、解析都配单测）。
 // 不发 Cookie、不缓存到磁盘；网页读到 </head> 或 512 KB 就停，图片超过 4 MB 放弃；内存里最多记 12 条
 // （头图缩到长边 1200，空闲回收时丢掉解码好的图、留着字节——这里直接按字节缓存，够用）。
+// REVIEW R51：空闲回收时丢掉带头图的那几条（单张最多 4 MB，12 条能有几十 MB），下次选中再取；读网页的缓冲从池子里借，
+// 找 </head 只扫新读进来的那一段（往回多看 5 个字节）。
 // 设置里关掉时调用方不取，缓存也不显示。
 using KittyTools.Core;
 using KittyTools.Infrastructure;
@@ -78,26 +80,37 @@ internal sealed class LinkPreviewService
             }
 
             await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-            var buffer = new byte[LinkPreviewRules.MaxHtmlBytes];
-            var total = 0;
-            while (total < buffer.Length)
+            string html;
+            var buffer = System.Buffers.ArrayPool<byte>.Shared.Rent(LinkPreviewRules.MaxHtmlBytes);
+            try
             {
-                var read = await stream.ReadAsync(buffer.AsMemory(total), cancellationToken);
-                if (read <= 0)
+                var total = 0;
+                while (total < LinkPreviewRules.MaxHtmlBytes)
                 {
-                    break;
+                    var read = await stream.ReadAsync(
+                        buffer.AsMemory(total, LinkPreviewRules.MaxHtmlBytes - total), cancellationToken);
+                    if (read <= 0)
+                    {
+                        break;
+                    }
+
+                    var from = Math.Max(0, total - 5);
+                    total += read;
+                    var headEnd = IndexOf(buffer.AsSpan(from, total - from), "</head"u8);
+                    if (headEnd >= 0)
+                    {
+                        total = from + headEnd + 6;
+                        break;
+                    }
                 }
 
-                total += read;
-                var headEnd = IndexOf(buffer.AsSpan(0, total), "</head"u8);
-                if (headEnd >= 0)
-                {
-                    total = headEnd + 6;
-                    break;
-                }
+                html = System.Text.Encoding.UTF8.GetString(buffer, 0, total);
+            }
+            finally
+            {
+                System.Buffers.ArrayPool<byte>.Shared.Return(buffer);
             }
 
-            var html = System.Text.Encoding.UTF8.GetString(buffer, 0, total);
             var preview = LinkPreviewRules.Parse(uri, html);
             if (preview is null)
             {
@@ -133,6 +146,18 @@ internal sealed class LinkPreviewService
         lock (Cache)
         {
             Cache.Clear();
+        }
+    }
+
+    /// <summary>空闲回收（剪贴板面板的 ReleaseCaches 调）：带头图的那几条丢掉，下次选中再取；没有图的留着。</summary>
+    public static void ReleaseImages()
+    {
+        lock (Cache)
+        {
+            foreach (var key in Cache.Where(pair => pair.Value?.ImageBytes is not null).Select(pair => pair.Key).ToList())
+            {
+                Cache.Remove(key);
+            }
         }
     }
 

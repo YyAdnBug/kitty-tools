@@ -358,6 +358,7 @@ internal static class ShortcutsSheet
             new("↑↓", "移动选中（到头从另一头接着）"),
             new("Ctrl+,", "打开 设置 › 启动器"),
             new("Esc", "先关菜单、撤掉等确认的那一下，再清空搜索，最后收起"),
+            new("Ctrl+W", "收起"),
         }),
 
         // Core/LauncherCommands.cs、WebSearch.cs，Launcher/SystemCommands.cs。

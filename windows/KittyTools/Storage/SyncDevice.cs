@@ -172,16 +172,6 @@ internal sealed class SyncLedger
         WriteFile(map);
     }
 
-    /// <summary>本机这一格的版本钟次数：存在 ~clock 这一行，不进同步文件。</summary>
-    public int NextCounter()
-    {
-        var text = Read("~clock");
-        var counter = int.TryParse(text, out var value) ? value : 0;
-        counter++;
-        WriteRawClock(counter);
-        return counter;
-    }
-
     /// <summary>本机上一次写出去的 device.json 的 epoch（用来认出库被退回去了）。</summary>
     public int ReadEpoch()
     {
@@ -192,9 +182,6 @@ internal sealed class SyncLedger
 
     public void WriteEpoch(int epoch) => WriteRaw("~epoch", epoch.ToString(
         System.Globalization.CultureInfo.InvariantCulture));
-
-    private void WriteRawClock(int counter)
-        => WriteRaw("~clock", counter.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
     private void WriteRaw(string kind, string value)
     {

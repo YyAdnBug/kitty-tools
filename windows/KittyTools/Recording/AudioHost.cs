@@ -286,7 +286,8 @@ internal static class AudioHost
     }
 
     /// <summary>上次录音闪退：把临时分段 MP4 重封装成 .m4a 并提示（R28，照 R23）。</summary>
-    public static void RecoverOnStartup()
+    /// <summary>上次录到一半的录音（闪退恢复）：同录屏，重封装在线程池上做（REVIEW R51）。</summary>
+    public static async Task RecoverOnStartupAsync()
     {
         var temporary = SettingsService.Current.AudioTempPath;
         if (string.IsNullOrEmpty(temporary) || !File.Exists(temporary))
@@ -296,19 +297,27 @@ internal static class AudioHost
 
         try
         {
-            Directory.CreateDirectory(RecordingHost.Folder);
-            var final = Path.Combine(RecordingHost.Folder, RecorderRules.FileName(DateTime.Now, audio: true));
-            if (!Mp4Remux.TryRemuxWithTimeout(temporary, final))
+            var folder = RecordingHost.Folder;
+            var final = Path.Combine(folder, RecorderRules.FileName(DateTime.Now, audio: true));
+            await Task.Run(() =>
             {
-                File.Move(temporary, final, overwrite: true);
-            }
-            else
+                Directory.CreateDirectory(folder);
+                if (!Mp4Remux.TryRemuxWithTimeout(temporary, final))
+                {
+                    File.Move(temporary, final, overwrite: true);
+                }
+                else
+                {
+                    File.Delete(temporary);
+                }
+            });
+
+            if (SettingsService.Current.AudioTempPath == temporary)
             {
-                File.Delete(temporary);
+                SettingsService.Current.AudioTempPath = null;
+                SettingsService.Save();
             }
 
-            SettingsService.Current.AudioTempPath = null;
-            SettingsService.Save();
             Log.Info($"audio.recovered size={(File.Exists(final) ? new FileInfo(final).Length : 0)}");
             NoticeHost.Show("上次的录音已保存", Path.GetFileName(final), NoticeTone.Normal, NoticeActions.Reveal(final));
         }

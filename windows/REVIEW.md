@@ -55,6 +55,22 @@
    你们定：换成低级键盘钩子只看不吞（Esc 照样给前台程序、我们也收到）是不是更好；改了的话 Enter 一起看，提交里写清楚。HANDTEST 841 记结果。
 5. M1 在真屏上看：长截图钉出来的大小、位置；有副屏的话走 839。
 
+### 第 3 批：REVIEW 剩下的小条（R40 R41 R48 R50 R51 R52）→ 已写（审查方，`git log --grep "PLAN-v11 第 3 批"`，没编译）
+
+- **R40**：对着现在的代码看过，翻译历史的 Shift+Tab 筛收藏、删改成 Ctrl+Delete（不再和搜索框里删字抢 Delete）、Ctrl+H / W / P 都已经在 PLAN-v9 翻译那批（8a–8e）里好了，没改代码。
+- **R41**：启动器认 Ctrl+W（速查表加了一行）；钉图右键加「恢复 100%」（「存储」S10 已经加了）。**设置窗按 Esc 关 / 返回不做**：Windows 的设置窗没有按 Esc 关的习惯，详情页顶上已经有「‹ 返回」。
+- **R48**：复制大图（截图、钉图、角落卡、截图历史、剪贴板监听）改走 `ClipboardStore.RecordImageAsync`：写盘和 SHA-256 在线程池上（`ImageStore.Stage` 写成 `staged-*.tmp`），UI 线程只查重、入库、改名（`Adopt`）；查重命中删暂存的；启动清孤儿时顺带清 `staged-*.tmp`。`ImageStore.Save` 删了。透镜的图记住上一张（`ClipLensView._lastImage`），同一条刷新不再从盘上解码。顺带：钉图「复制」记的尺寸也按图本身（同 M16）。
+- **R50**：日志常驻一个 `StreamWriter`（AutoFlush、共享读写删），写之前看日期，跨天换文件、顺手清 7 天前的；`Shutdown` 关文件。**没换成后台队列**（一行几微秒，ponytail 写了量出来卡再换）。
+- **R51**：固定面板只挂一次 Tick；`{cursor}` 往回挪 50 下一批发（500 下从约 4 s 变成约 80 ms）；链接预览缓冲从 `ArrayPool` 借、只扫新读进来的那段、空闲回收丢带头图的那几条；翻译历史加普通索引（迁移第 9 步 `translations_source_target`）；录屏 / 录音的闪退恢复挪到线程池（`RecoverOnStartupAsync`，恢复期间又开了新录制时不清它的临时路径）；透镜里文件条目的存在性挪到线程池（先按「在」画，查完再改）；空闲回收时清搜索的折叠副本。**保留规则改用 long 不做**：5000 条每次复制多出的短字符串不到 1 ms，要改就得换 Core 的类型和十几条单测。
+- **R52**：删了 `ScreenshotOutput` 的 `PngAsync` / `CopyAsync` / `QuickSaveAsync` / `SaveAsAsync`、`SqliteStatement.BindBlob`、`ListHighlight.GlideTo` / `HideHighlight`、`SearchLine.FocusBox`、`Theme.KindTint`、`SyncDevice.NextCounter`（连 `WriteRawClock`）、`Paster.SendHotkey`、`Speech.TagFor`、`AudioRules.WritePcm16`、整个 `MicaBackdrop.cs`、`NetstatOutput` 连它的测试（`NetstatParsingTests`）。`HeightChange`、`TranslateReplaceHotKeySeen` 早就没了；`GetBlob`、`IsBuiltin`、`ResetBinding`、`BackupFiles`、`ApplyingRatio` 现在有人用，留着。
+  重复：`ImageCodec.ToBitmapAsync`（钉图、角落卡换过去；设置窗那份是先给 ImageSource 再填，形状不一样，留着；透镜、放大卡几处各有解码尺寸，没动）；「留着的条目」规则收成 `Core/Retention.IsRetained`，剪贴板库、同步、导入四处都调它。
+
+**你们做的**：
+1. 编译、零警告（`TreatWarningsAsErrors` 开着：删代码后有没有冒出没人用的私有字段、`using` 之外的警告），`dotnet test` 全过（少了 `NetstatParsingTests` 一个）。
+2. 走 HANDTEST 844–853。
+3. **飞入卡按卡片大小解码**（R52 最后一条）：`ScreenshotCard.LoadImageAsync` 现在是 `ImageCodec.ToBitmapAsync(_png)`，加 `decodeWidth`（卡片宽 × 缩放）就是按卡片大小解码；先量一下截图后的内存省多少、飞入开头几帧糊不糊，再决定用不用（记在这里）。
+4. `Mp4Remux.TryRemuxWithTimeout` 现在在线程池上跑（以前在 UI 线程）：闪退恢复走一次（HANDTEST 851），看重封装成功、提示照常出。
+
 ## 深色下的开关和输入框、翻译卡的彗星边框（2026-11-01 用户截图，审查方在 Mac 上写、**没编译**）——已修（75d6f86 + 12397aa）
 
 **现象**：深色下设置窗「搜索设置」的字、开关关着和开着的圆点都是黑的；翻译卡生成中的彗星边框和 mac 不一样（几段台阶）。
@@ -610,13 +626,13 @@ zip 和 `.sha256` 并校验，不装，报告 `%TEMP%\kitty-update-live\report.t
 - `P` 不看修饰键，Ctrl+P 也会钉图；方向键不能挪选区（mac 有：1 点 / Shift 10 点）。
 - **建议**：工具键照 mac 改成数字（1 矩形、2 箭头、3 画笔、4 文字、5 马赛克……），把 A 还给自动滚动、T 还给截图翻译；按键换工具和点按钮走同一个方法；P 只认不带修饰键的；方向键挪选区。改完同步 `Settings/ShortcutsSheet.cs` 的「截图 · 标注」「截图 · 出图」两组和 `HANDTEST`。
 
-### R40（P3）翻译历史里的键
+### R40（P3）翻译历史里的键 → 已由 PLAN-v9 翻译 8a–8e 修掉（Shift+Tab、Ctrl+Delete、Ctrl+H/W/P 走根按键；PLAN-v11 第 3 批核对过）
 
 - `TranslateWindow`：Ctrl+H 只挂在原文框上，历史打开后焦点在历史的搜索框里，**按 Ctrl+H 回不去**（L596 的注释说「再按一次回来」）；Ctrl+W、Ctrl+P、Ctrl+1–9 在历史里也不响应。
 - `RefreshHistory` 里读 `Shift + Tab` 来筛收藏（L633），但没有哪个按键处理会在 Shift+Tab 时调它，等于走不到（mac 是 ⇧Tab 在 全部 / 收藏 之间切）。
 - 历史里的 Delete 只看光标在不在末尾，没看有没有选中文字（剪贴板那边两样都看）。
 
-### R41（P3）几处按键和说明对不上 → 第一条已写（`53d609e9`，审查方，待编译）；其余三条不挡 0.1.0
+### R41（P3）几处按键和说明对不上 → 第一条已写（`53d609e9`）；其余三条 PLAN-v11 第 3 批（设置窗 Esc 不做，见那一节）
 
 - 剪贴板的 Ctrl+K 操作面板里按 Enter 只是把焦点挪到第一个匹配的按钮，**不执行**（L1862）；mac 是直接执行第一项。
 - 钉图文件头说「右键菜单同这些」，菜单里少了快速保存和恢复 100%。
@@ -686,7 +702,7 @@ zip 和 `.sha256` 并校验，不装，报告 `%TEMP%\kitty-update-live\report.t
 - **建议**：要备份的数据（收藏的片段、收藏夹、生词本、设置）在 UI 线程上取成快照，序列化、加密、写文件放线程池。
 - **验收**：单测或者 `--backup-now` 调试参数：一边每 10 ms 往剪贴板库里加一条，一边备份 20 次，全部成功。
 
-### R48（P2）UI 线程上几处同步的图片活 → 第一条已写（`53d609e9`，审查方，待编译）；另外两条不挡 0.1.0
+### R48（P2）UI 线程上几处同步的图片活 → 第一条已写（`53d609e9`）；另外两条 PLAN-v11 第 3 批已写（没编译）
 
 - `Screenshot/PinWindow.cs:313`：钉图「复制」直接 `WriteImagePng(_png)`，没带转好的 DIB，于是走到 `Clipboard/ClipboardWriter.cs:121` 的 `Task.Run(...).GetAwaiter().GetResult()`，在 UI 线程上干等 PNG → DIB（那里的注释自己写了大图要几百毫秒）。别的入口都先 `await PrepareImageAsync`。
 - `Clipboard/ClipboardStore.cs:389` 的 `RecordImage` 算一次 SHA-256，`:426` 的 `Images.Save` → `Clipboard/ImageStore.cs:22` 同步 `File.WriteAllBytes` 整张 PNG（单张上限 128 MB），再算一次 SHA-256（返回值没人用）。复制大图、截图、钉图、从历史复制都会走到。
@@ -703,14 +719,14 @@ zip 和 `.sha256` 并校验，不装，报告 `%TEMP%\kitty-update-live\report.t
 - **建议**：记下每个文件的修改时间和大小，再给本机四类数据各记一个修订号（改一次加一）；都没变就跳过这一轮。`SyncRows` 先按 `IsRetained` 过滤。只改 Windows 的执行层，文件格式不动。
 - **验收**：开着同步静置 10 分钟，进程 CPU 和每轮耗时前后各量一次；R26 的集成测试照样全过。
 
-### R50（P3）日志：每写一行开关一次文件，跨天不换文件
+### R50（P3）日志：每写一行开关一次文件，跨天不换文件 → PLAN-v11 第 3 批已写（没编译）
 
 - `App/Log.cs:58`：每行都 `File.AppendAllText`，在调用方的线程上开、写、关一次文件（大多是 UI 线程；装了杀毒软件的机器上每次几毫秒）。
 - 文件名在 `Initialize`（:18）时就定死了，7 天清理也只在启动时跑：常驻托盘的进程几周不重启，就是一个越写越大的文件，清理也不跑。
 - **建议**：一个后台队列 + 常驻的 `StreamWriter`（退出、崩溃记录时 flush）；写之前看一眼日期，变了就换文件，顺手清理。
 - **验收**：单测或调试参数：把钟拨过午夜，新的一行进新文件；连写 1 万行的耗时前后各量一次。
 
-### R51（P3）几处小的
+### R51（P3）几处小的 → PLAN-v11 第 3 批已写（没编译；保留规则改 long 那条不做）
 
 - `Shell/OverlayWindow.cs:96`：每固定一次面板，都给复用的 `_foregroundTimer` 再挂一个 `Tick`，从不摘。固定 N 次以后，每 400 ms 跑 N 遍。只在建计时器时挂一次。
 - `Shell/Paster.cs:151` 的 `SendLeft`：片段里 `{cursor}` 往回挪时，每挪一格就一次 `SendInput` + `Thread.Sleep(8)`，上限 500 格，最多在 UI 线程上冻 4 秒（`Clipboard/ClipboardPanel.xaml.cs:1333` 调）。一次 `SendInput` 把 2 × N 个按键发完；真有程序吃不住，再分成 50 个一组。
@@ -726,7 +742,7 @@ zip 和 `.sha256` 并校验，不装，报告 `%TEMP%\kitty-update-live\report.t
 - `Clipboard/ClipboardStore.cs:697–705`：每复制一次，都给全部条目建 `RetentionItem`，每条一个 `Id.ToString()`，后面 `doomed.Contains(item.Id.ToString())` 又转一遍。保留规则直接用 long。
 - `Clipboard/ClipboardStore.cs:752`：第一次搜索后每条都缓存一份 UTF-8 折叠副本 `Folded`，等于全部文本再存一遍；空闲回收（`ClipboardPanel.xaml.cs:109 ReleaseCaches`）不清它。空闲回收时一起置空（重建只是一次冷搜，0.5.0 量过 5.7 ms）。
 
-### R52（P3）死代码和重复代码
+### R52（P3）死代码和重复代码 → PLAN-v11 第 3 批已写（没编译；飞入卡按卡片大小解码留给你们量）
 
 - 全仓（含测试）只剩声明、没有调用的：
   - `Shell/Motion.cs:156 HeightChange`；

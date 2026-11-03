@@ -96,19 +96,7 @@ internal sealed partial class PinWindow : Window
     {
         try
         {
-            using var stream = new InMemoryRandomAccessStream();
-            using (var writer = new DataWriter(stream))
-            {
-                writer.WriteBytes(_png);
-                await writer.StoreAsync();
-                await writer.FlushAsync();
-                writer.DetachStream();
-            }
-
-            stream.Seek(0);
-            var bitmap = new BitmapImage();
-            await bitmap.SetSourceAsync(stream);
-            _image.Source = bitmap;
+            _image.Source = await ImageCodec.ToBitmapAsync(_png);
         }
         catch (Exception ex)
         {
@@ -296,6 +284,8 @@ internal sealed partial class PinWindow : Window
         Add(menu, "存储", () => _ = ScreenshotOutput.QuickSavePngAsync(_png));
         Add(menu, "另存为…", () => _ = ScreenshotOutput.SavePngAsAsync(AppWindow, _png));
         Add(menu, "识字并复制", () => _ = RecognizeAsync());
+        // 文件头说「右键菜单同这些」，以前少了它（REVIEW R41）；键是 0。
+        Add(menu, "恢复 100%", () => Zoom(1 / _scale));
         Add(menu, $"透明度 {Math.Round(_opacity * 100)}%…", () => ShowOpacityFlyout(_root));
         if (Features.IsOn(Feature.Translate))
         {
@@ -345,8 +335,12 @@ internal sealed partial class PinWindow : Window
         if (ClipboardWriter.WriteImagePng(prepared.Png, prepared.Dib))
         {
             ClipboardService.Instance?.MarkOwnWrite();
-            ClipboardService.Instance?.Store.RecordImage(
-                _png, _origin.Width, _origin.Height, null, "钉图");
+            // 尺寸按图本身的像素：长截图钉出来比选区长（同角落卡，PLAN-v11 M16）。
+            var (width, height) = KittyTools.Core.PngInfo.Size(_png) ?? (_origin.Width, _origin.Height);
+            if (ClipboardService.Instance is { } service)
+            {
+                _ = service.Store.RecordImageAsync(_png, width, height, null, "钉图");
+            }
             NoticeHost.Show("已复制钉图", string.Empty, NoticeTone.Normal);
         }
         else

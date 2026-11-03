@@ -22,7 +22,7 @@ namespace KittyTools.Core.Sync;
 public sealed record SyncClipRow(
     long Row, string? Uid, string Text, bool Favorite, bool Snippet, string? Note, string? Group, long CopiedAt)
 {
-    public bool IsRetained => Favorite || Snippet || Group is not null;
+    public bool IsRetained => Retention.IsRetained(Favorite, Snippet, Group);
 }
 
 /// <summary>本机的一个收藏夹；Created 是毫秒。</summary>
@@ -156,7 +156,7 @@ public static class ClipSync
 
         public bool TextChanged { get; set; }
 
-        public bool IsRetained => Favorite || Snippet || Group is not null;
+        public bool IsRetained => Retention.IsRetained(Favorite, Snippet, Group);
 
         public static Item From(SyncClipRow row) => new()
         {

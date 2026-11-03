@@ -16,20 +16,6 @@ internal static partial class ScreenshotOutput
             (int)Math.Round(rect.Right), (int)Math.Round(rect.Bottom));
     }
 
-    public static async Task<byte[]?> PngAsync(FrozenScreen screen, Core.RectD selection)
-    {
-        var rect = SelectionPixels(screen, selection);
-        var bgra = screen.Crop(rect);
-        return await ImageCodec.BgraToPngAsync(rect.Width, rect.Height, bgra);
-    }
-
-    public static async Task<bool> CopyAsync(FrozenScreen screen, Core.RectD selection)
-    {
-        var rect = SelectionPixels(screen, selection);
-        var png = await PngAsync(screen, selection);
-        return png is not null && await CopyPngAsync(png, rect.Width, rect.Height);
-    }
-
     /// <summary>
     /// 复制一张已经编好的 PNG，宽高由调用方给：长截图拼出来的那张比选区高得多，
     /// 不能按选区算（REVIEW R62：以前剪贴板历史、预览角标、「已复制截图」都写选区的大小）。
@@ -47,16 +33,14 @@ internal static partial class ScreenshotOutput
 
         var service = ClipboardService.Instance;
         service?.MarkOwnWrite();
-        service?.Store.RecordImage(png, width, height, null, "截图");
+        if (service is not null)
+        {
+            _ = service.Store.RecordImageAsync(png, width, height, null, "截图");
+        }
+
         NoticeHost.Show("已复制截图", $"{width} × {height}", NoticeTone.Normal);
         Log.Info($"screenshot.copy ok=true {width}x{height}");
         return true;
-    }
-
-    public static async Task<string?> QuickSaveAsync(FrozenScreen screen, Core.RectD selection)
-    {
-        var png = await PngAsync(screen, selection);
-        return png is null ? null : await QuickSavePngAsync(png);
     }
 
     /// <summary>quiet：存成了不弹「已保存截图」（截图历史一起存好几张时最后只说一句）；出错照样提示。</summary>
@@ -94,17 +78,6 @@ internal static partial class ScreenshotOutput
             NoticeHost.Show("没能保存", "文件写不进去", NoticeTone.Error);
             return null;
         }
-    }
-
-    public static async Task<string?> SaveAsAsync(Microsoft.UI.Windowing.AppWindow appWindow, FrozenScreen screen, Core.RectD selection)
-    {
-        var png = await PngAsync(screen, selection);
-        if (png is null)
-        {
-            return null;
-        }
-
-        return await SavePngAsAsync(appWindow, png);
     }
 
     public static async Task<string?> SavePngAsAsync(Microsoft.UI.Windowing.AppWindow appWindow, byte[] png)

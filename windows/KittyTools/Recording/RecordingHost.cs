@@ -335,7 +335,8 @@ internal static unsafe class RecordingHost
     }
 
     /// <summary>上次录到一半（闪退 / 断电）：把临时文件挪进保存目录并提示。</summary>
-    public static void RecoverOnStartup()
+    /// <summary>上次录到一半的文件（闪退恢复）。重封装在线程池上做（REVIEW R51：以前在启动路径的 UI 线程上同步等），做完回 UI 线程提示。</summary>
+    public static async Task RecoverOnStartupAsync()
     {
         var temporary = SettingsService.Current.RecordingTempPath;
         if (string.IsNullOrEmpty(temporary) || !File.Exists(temporary))
@@ -345,19 +346,29 @@ internal static unsafe class RecordingHost
 
         try
         {
-            Directory.CreateDirectory(Folder);
-            var path = Path.Combine(Folder, RecorderRules.FileName(DateTime.Now));
-            if (Mp4Remux.TryRemuxWithTimeout(temporary, path))
+            var folder = Folder;
+            var path = Path.Combine(folder, RecorderRules.FileName(DateTime.Now));
+            await Task.Run(() =>
             {
-                File.Delete(temporary);
-            }
-            else
+                Directory.CreateDirectory(folder);
+                if (Mp4Remux.TryRemuxWithTimeout(temporary, path))
+                {
+                    File.Delete(temporary);
+                }
+                else
+                {
+                    // 分段 MP4 原样挪过去，至少能放（R23 的退路）。
+                    File.Move(temporary, path, overwrite: true);
+                }
+            });
+
+            // 恢复的这一会儿又开了一段新的录屏：它的临时文件别清掉。
+            if (SettingsService.Current.RecordingTempPath == temporary)
             {
-                // 分段 MP4 原样挪过去，至少能放（R23 的退路）。
-                File.Move(temporary, path, overwrite: true);
+                SettingsService.Current.RecordingTempPath = null;
+                SettingsService.Save();
             }
-            SettingsService.Current.RecordingTempPath = null;
-            SettingsService.Save();
+
             Log.Info($"record.recovered size={(File.Exists(path) ? new FileInfo(path).Length : 0)}");
             NoticeHost.Show("上次的录屏已保存", Path.GetFileName(path), NoticeTone.Normal, NoticeActions.Reveal(path));
         }

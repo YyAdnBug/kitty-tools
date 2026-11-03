@@ -149,6 +149,12 @@ public static class Schema
             );
             CREATE INDEX IF NOT EXISTS shots_created_at ON shots(created_at DESC);
             """),
+        new SchemaStep(
+            9,
+            "translations 按原文 + 目标语言查的普通索引（REVIEW R51：Find 以前只有收藏的部分唯一索引，非收藏的全表扫）",
+            """
+            CREATE INDEX IF NOT EXISTS translations_source_target ON translations(source, target_lang);
+            """),
     };
 
     /// <summary>从 currentVersion 开始还要跑的步骤（升序）。比代码新的库（用户装过更新的版本）一步都不跑。</summary>

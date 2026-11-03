@@ -221,15 +221,6 @@ internal sealed unsafe partial class SqliteStatement : IDisposable
         return this;
     }
 
-    public SqliteStatement BindBlob(int index, ReadOnlySpan<byte> value)
-    {
-        fixed (byte* data = value)
-        {
-            Check(Sqlite3BindBlob(_statement, index, data, value.Length, Transient));
-        }
-
-        return this;
-    }
 
     public SqliteStatement BindNull(int index)
     {

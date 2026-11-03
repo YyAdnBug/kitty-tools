@@ -25,6 +25,12 @@ public readonly record struct RetentionLimits(int MaxAgeDays, long ImageBudgetBy
 
 public static class Retention
 {
+    /// <summary>
+    /// 用户明确留下的（收藏 ∨ 片段 ∨ 在收藏夹里，同 mac isRetained）：保留天数、图片占用、清空都不动它们，同步也只同步这些。
+    /// 剪贴板库和同步那两处都调这一条（REVIEW R52：以前写了三份）。
+    /// </summary>
+    public static bool IsRetained(bool favorite, bool snippet, string? group) => favorite || snippet || group is not null;
+
     /// <summary>不再留下的条目是不是已经超过保留天数（取消收藏 / 移出片段后要不要进撤销栈，照 mac changeRetention）。</summary>
     public static bool IsExpired(long copiedAtMs, RetentionLimits limits, long nowMs)
         => limits.MaxAgeMs is { } maxAge && nowMs - copiedAtMs > maxAge;

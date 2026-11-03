@@ -106,9 +106,6 @@ public sealed partial class SearchLine : Grid
 
     public StackPanel Chips { get; }
 
-    /// <summary>把焦点放进输入框（面板打开时用）。</summary>
-    public void FocusBox() => Box.Focus(FocusState.Programmatic);
-
     /// <summary>U2 的筛选标签：高 22、12 semibold、强调色 0.12 底 + AccentText 字，带 ×。</summary>
     public Border AddChip(string text, Action? onRemove = null)
     {

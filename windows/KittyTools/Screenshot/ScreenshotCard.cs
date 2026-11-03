@@ -524,19 +524,7 @@ internal sealed partial class ScreenshotCard : Window
 
         try
         {
-            using var stream = new InMemoryRandomAccessStream();
-            using (var writer = new DataWriter(stream))
-            {
-                writer.WriteBytes(_png);
-                await writer.StoreAsync();
-                await writer.FlushAsync();
-                writer.DetachStream();
-            }
-
-            stream.Seek(0);
-            var bitmap = new BitmapImage();
-            await bitmap.SetSourceAsync(stream);
-            _image.Source = bitmap;
+            _image.Source = await ImageCodec.ToBitmapAsync(_png);
         }
         catch (Exception ex)
         {
@@ -557,7 +545,11 @@ internal sealed partial class ScreenshotCard : Window
             if (ClipboardWriter.WriteImagePng(prepared.Png, prepared.Dib))
             {
                 ClipboardService.Instance?.MarkOwnWrite();
-                ClipboardService.Instance?.Store.RecordImage(_png, _pixelSize.Width, _pixelSize.Height, null, "截图");
+                if (ClipboardService.Instance is { } service)
+                {
+                    _ = service.Store.RecordImageAsync(_png, _pixelSize.Width, _pixelSize.Height, null, "截图");
+                }
+
                 NoticeHost.Show("已复制截图", $"{_pixelSize.Width} × {_pixelSize.Height}", NoticeTone.Normal);
             }
             else

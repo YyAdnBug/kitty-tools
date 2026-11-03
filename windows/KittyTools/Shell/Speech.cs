@@ -151,15 +151,4 @@ internal static class Speech
         var lower = code.ToLowerInvariant();
         return lower.Length >= 2 ? lower[..2] : lower;
     }
-
-    /// <summary>语言代码（Lang.Code()）→ BCP-47 前缀。</summary>
-    public static string TagFor(string? code)
-    {
-        if (string.IsNullOrWhiteSpace(code))
-        {
-            return "en";
-        }
-
-        return code.Replace('_', '-');
-    }
 }

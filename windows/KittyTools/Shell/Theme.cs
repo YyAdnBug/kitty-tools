@@ -119,19 +119,6 @@ internal static class Theme
             });
             return gradient;
         }
-
-        /// <summary>启动器一行的图标块（按行的种类）。</summary>
-        public static Brush KindTint(LauncherKind kind) => kind switch
-        {
-            LauncherKind.App => Tint(Launcher, 32),
-            LauncherKind.Setting => Tint(General, 28),
-            LauncherKind.Command => Tint(Shortcut, 30),
-            LauncherKind.Action => Tint(Capture, 30),
-            LauncherKind.Url => Tint(Url, 30),
-            LauncherKind.Path => Tint(Shortcut, 30),
-            LauncherKind.Search => Tint(Search, 30),
-            _ => Tint(Translate, 30),
-        };
     }
 
     /// <summary>浅 / 深两档取一档。</summary>

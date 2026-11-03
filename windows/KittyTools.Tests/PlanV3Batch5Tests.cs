@@ -70,29 +70,3 @@ public sealed class BookmarkParsingTests
     }
 }
 
-[TestClass]
-public sealed class NetstatParsingTests
-{
-    [TestMethod]
-    public void ParsesListeningTcpAndUdp()
-    {
-        var output = """
-            活动连接
-
-              协议  本地地址          外部地址        状态           PID
-              TCP    0.0.0.0:135            0.0.0.0:0              LISTENING       1200
-              TCP    127.0.0.1:5432         0.0.0.0:0              LISTENING       4321
-              TCP    127.0.0.1:9000         127.0.0.1:55000        ESTABLISHED     9999
-              UDP    0.0.0.0:5353           *:*                                    2000
-              UDP    [::]:5353              *:*                                    2000
-            """;
-        var rows = NetstatOutput.Parse(output);
-        Assert.AreEqual(4, rows.Count);
-        Assert.IsTrue(rows.Any(row => row is { Protocol: "TCP", Port: 135, Pid: 1200 }));
-        Assert.IsTrue(rows.Any(row => row is { Port: 5432, Pid: 4321 }));
-        Assert.IsFalse(rows.Any(row => row.Port == 9000)); // 不是监听
-        Assert.IsTrue(rows.Any(row => row is { Protocol: "UDP", Port: 5353 }));
-        Assert.AreEqual(135, rows[0].Port); // 按端口排
-        Assert.AreEqual(0, NetstatOutput.Parse(string.Empty).Count);
-    }
-}

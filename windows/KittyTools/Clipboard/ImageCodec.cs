@@ -219,6 +219,23 @@ internal static class ImageCodec
         return await ReadAllAsync(output);
     }
 
+    /// <summary>
+    /// 图片字节 → BitmapImage（REVIEW R52：钉图、角落卡、设置里的图标以前各写一份「写进内存流再 SetSource」）。
+    /// decodeWidth > 0 时按这个宽（物理像素）解码，省内存。出错照常抛给调用方。UI 线程上调。
+    /// </summary>
+    public static async Task<Microsoft.UI.Xaml.Media.Imaging.BitmapImage> ToBitmapAsync(byte[] bytes, int decodeWidth = 0)
+    {
+        using var stream = await ToStreamAsync(bytes);
+        var bitmap = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage();
+        if (decodeWidth > 0)
+        {
+            bitmap.DecodePixelWidth = decodeWidth;
+        }
+
+        await bitmap.SetSourceAsync(stream);
+        return bitmap;
+    }
+
     private static async Task<InMemoryRandomAccessStream> ToStreamAsync(byte[] bytes)
     {
         var stream = new InMemoryRandomAccessStream();

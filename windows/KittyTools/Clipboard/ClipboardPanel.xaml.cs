@@ -137,10 +137,16 @@ public sealed partial class ClipboardPanel : UserControl
         IdleReclaimer.Register(ReleaseCaches);
     }
 
-    /// <summary>空闲回收：丢掉 JSON 美化的缓存（透镜本身面板收起时就拆了）。</summary>
+    /// <summary>
+    /// 空闲回收：丢掉 JSON 美化的缓存（透镜本身面板收起时就拆了）、链接预览的头图、透镜记着的那张图，
+    /// 还有搜索给每条存的折叠副本（等于全部文本再存一遍；重建只是一次冷搜，5000 条约 6 ms；REVIEW R51）。
+    /// </summary>
     public void ReleaseCaches()
     {
         _prettyCache.Clear();
+        LinkPreviewService.ReleaseImages();
+        ClipLensView.ReleaseCache();
+        Store?.ReleaseSearchCache();
         Log.Info("clipboard.caches-released");
     }
 

@@ -315,14 +315,30 @@ internal static class ClipLensView
         return frame;
     }
 
+    /// <summary>
+    /// 上一次解出来的那张（REVIEW R48）：选中的还是同一条时，列表刷新（搜索每敲一下、识字、同步带来的 Changed）重建透镜
+    /// 不再从盘上重新解码。images\&lt;id&gt;.png 的内容不会变，按路径 + 高认就行；只留一张、108 高，占不了多少。
+    /// </summary>
+    private static (string Path, int Height, BitmapImage Bitmap)? _lastImage;
+
+    /// <summary>空闲回收时放掉记着的那张。</summary>
+    public static void ReleaseCache() => _lastImage = null;
+
     private static async Task LoadAsync(Microsoft.UI.Xaml.Controls.Image image, string path, int height)
     {
+        if (_lastImage is { } last && last.Path == path && last.Height == height)
+        {
+            image.Source = last.Bitmap;
+            return;
+        }
+
         try
         {
             using var stream = await Windows.Storage.Streams.FileRandomAccessStream.OpenAsync(path, FileAccessMode.Read);
             var bitmap = new BitmapImage { DecodePixelHeight = height, DecodePixelType = DecodePixelType.Physical };
             await bitmap.SetSourceAsync(stream);
             image.Source = bitmap;
+            _lastImage = (path, height, bitmap);
         }
         catch (Exception ex)
         {
@@ -336,32 +352,23 @@ internal static class ClipLensView
         var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12 };
         foreach (var path in paths.Take(6))
         {
-            var exists = File.Exists(path) || Directory.Exists(path);
             var cell = new StackPanel { Width = 72, Spacing = 4 };
             var thumb = new Grid { Width = 48, Height = 48, HorizontalAlignment = HorizontalAlignment.Left };
-            thumb.Children.Add(new FontIcon
-            {
-                Glyph = Directory.Exists(path) ? Glyphs.Folder : Glyphs.File,
-                FontSize = 32,
-                Foreground = Theme.SecondaryText(),
-                Opacity = exists ? 1 : 0.4,
-            });
+            var icon = new FontIcon { Glyph = Glyphs.File, FontSize = 32, Foreground = Theme.SecondaryText() };
+            thumb.Children.Add(icon);
             cell.Children.Add(thumb);
-            cell.Children.Add(new TextBlock
+            var name = new TextBlock
             {
-                Text = Path.GetFileName(path.TrimEnd('\\', '/')) is { Length: > 0 } name ? name : path,
+                Text = Path.GetFileName(path.TrimEnd('\\', '/')) is { Length: > 0 } fileName ? fileName : path,
                 FontSize = 11,
                 Foreground = new SolidColorBrush(Ink),
-                Opacity = exists ? 1 : 0.5,
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 MaxLines = 1,
-            });
-            ToolTipService.SetToolTip(cell, exists ? path : path + "（找不到了）");
+            };
+            cell.Children.Add(name);
+            ToolTipService.SetToolTip(cell, path);
             row.Children.Add(cell);
-            if (exists)
-            {
-                _ = LoadThumbnailAsync(thumb, path, (uint)Math.Round(48 * Math.Max(1, scale)));
-            }
+            _ = CheckFileAsync(path, icon, name, cell, thumb, (uint)Math.Round(48 * Math.Max(1, scale)));
         }
 
         if (paths.Count > 6)
@@ -381,11 +388,34 @@ internal static class ClipLensView
         return row;
     }
 
-    private static async Task LoadThumbnailAsync(Grid host, string path, uint size)
+    /// <summary>
+    /// 在不在、是不是文件夹放到线程池上查（REVIEW R51：路径在断开的网络位置上时每个都能卡好几秒）；先按「在」画出来，
+    /// 查完回来改图标、变淡、加「找不到了」，在的再取系统缩略图。
+    /// </summary>
+    private static async Task CheckFileAsync(string path, FontIcon icon, TextBlock name, FrameworkElement cell, Grid thumb, uint size)
+    {
+        var (exists, folder) = await Task.Run(() =>
+        {
+            var isFolder = Directory.Exists(path);
+            return (isFolder || File.Exists(path), isFolder);
+        });
+        icon.Glyph = folder ? Glyphs.Folder : Glyphs.File;
+        if (!exists)
+        {
+            icon.Opacity = 0.4;
+            name.Opacity = 0.5;
+            ToolTipService.SetToolTip(cell, path + "（找不到了）");
+            return;
+        }
+
+        await LoadThumbnailAsync(thumb, path, size, folder);
+    }
+
+    private static async Task LoadThumbnailAsync(Grid host, string path, uint size, bool folder)
     {
         try
         {
-            IStorageItemProperties item = Directory.Exists(path)
+            IStorageItemProperties item = folder
                 ? await StorageFolder.GetFolderFromPathAsync(path)
                 : await StorageFile.GetFileFromPathAsync(path);
             using var thumbnail = await item.GetThumbnailAsync(ThumbnailMode.SingleItem, size, ThumbnailOptions.ResizeThumbnail);

@@ -47,18 +47,4 @@ public static class AudioRules
         var scaled = MathF.Round(value * (value < 0 ? 32768f : 32767f), MidpointRounding.AwayFromZero);
         return (short)scaled;
     }
-
-    /// <summary>把双声道浮点样本写成小端 16 位 PCM。</summary>
-    public static void WritePcm16(ReadOnlySpan<float> interleaved, Span<byte> destination)
-    {
-        var frames = Math.Min(interleaved.Length / Channels, destination.Length / PcmBlockAlign);
-        for (var frame = 0; frame < frames; frame++)
-        {
-            var offset = frame * PcmBlockAlign;
-            BinaryPrimitives.WriteInt16LittleEndian(
-                destination[offset..], ToPcm16(interleaved[frame * Channels]));
-            BinaryPrimitives.WriteInt16LittleEndian(
-                destination[(offset + 2)..], ToPcm16(interleaved[frame * Channels + 1]));
-        }
-    }
 }

@@ -162,16 +162,30 @@ internal static unsafe class Keyboard
 
     public static bool SendCtrlV() => SendCtrlCombo((VIRTUAL_KEY)0x56);
 
-    /// <summary>片段里的 {cursor}：粘贴之后往左挪这么多下（第三版 §4）。</summary>
+    /// <summary>
+    /// 片段里的 {cursor}：粘贴之后往左挪这么多下（第三版 §4）。50 下一批发、批与批之间歇 8 ms（REVIEW R51：以前一下一次
+    /// SendInput + Sleep(8)，最多 500 下，在 UI 线程上冻 4 秒）；真有程序一批吃不住，再把批改小。
+    /// </summary>
     public static void SendLeft(int count)
     {
-        Span<INPUT> inputs = stackalloc INPUT[2];
-        inputs[0] = KeyInput((VIRTUAL_KEY)0x25, 0); // VK_LEFT
-        inputs[1] = KeyInput((VIRTUAL_KEY)0x25, KEYBD_EVENT_FLAGS.KEYEVENTF_KEYUP);
-        for (var index = 0; index < Math.Min(count, Core.SnippetRules.MaxCursorBackChars); index++)
+        const int Batch = 50;
+        Span<INPUT> inputs = stackalloc INPUT[Batch * 2];
+        var remaining = Math.Min(count, Core.SnippetRules.MaxCursorBackChars);
+        while (remaining > 0)
         {
-            SendInputs(inputs);
-            Thread.Sleep(8);
+            var presses = Math.Min(Batch, remaining);
+            for (var index = 0; index < presses; index++)
+            {
+                inputs[index * 2] = KeyInput((VIRTUAL_KEY)0x25, 0); // VK_LEFT
+                inputs[index * 2 + 1] = KeyInput((VIRTUAL_KEY)0x25, KEYBD_EVENT_FLAGS.KEYEVENTF_KEYUP);
+            }
+
+            SendInputs(inputs[..(presses * 2)]);
+            remaining -= presses;
+            if (remaining > 0)
+            {
+                Thread.Sleep(8);
+            }
         }
     }
 
@@ -187,17 +201,6 @@ internal static unsafe class Keyboard
         inputs[2] = KeyInput(key, KEYBD_EVENT_FLAGS.KEYEVENTF_KEYUP);
         inputs[3] = KeyInput((VIRTUAL_KEY)0x11, KEYBD_EVENT_FLAGS.KEYEVENTF_KEYUP);
         return SendInputs(inputs) == 4;
-    }
-
-    public static bool SendHotkey(VIRTUAL_KEY key, bool alt = false)
-    {
-        Span<INPUT> inputs = stackalloc INPUT[4];
-        var index = 0;
-        if (alt) inputs[index++] = KeyInput((VIRTUAL_KEY)0x12, 0);
-        inputs[index++] = KeyInput(key, 0);
-        inputs[index++] = KeyInput(key, KEYBD_EVENT_FLAGS.KEYEVENTF_KEYUP);
-        if (alt) inputs[index++] = KeyInput((VIRTUAL_KEY)0x12, KEYBD_EVENT_FLAGS.KEYEVENTF_KEYUP);
-        return SendInputs(inputs[..index]) == (uint)index;
     }
 
     public static bool IsDown(int vk) => (PInvoke.GetAsyncKeyState(vk) & 0x8000) != 0;

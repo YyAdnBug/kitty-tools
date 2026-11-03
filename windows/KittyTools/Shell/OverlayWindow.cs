@@ -100,10 +100,15 @@ internal sealed unsafe class OverlayWindow : Window
         if (_pinned)
         {
             // 固定时用户可能点进别的程序再回来：隔一会儿记一下「最近一个不是本 App 的前台窗口」，粘贴就粘进它。
-            _foregroundTimer ??= DispatcherQueue.CreateTimer();
-            _foregroundTimer.Interval = TimeSpan.FromMilliseconds(400);
-            _foregroundTimer.IsRepeating = true;
-            _foregroundTimer.Tick += (_, _) => TrackExternalForeground();
+            // 计时器只在建的时候挂一次 Tick（REVIEW R51：以前每固定一次多挂一个，固定 N 次后每 400 ms 跑 N 遍）。
+            if (_foregroundTimer is null)
+            {
+                _foregroundTimer = DispatcherQueue.CreateTimer();
+                _foregroundTimer.Interval = TimeSpan.FromMilliseconds(400);
+                _foregroundTimer.IsRepeating = true;
+                _foregroundTimer.Tick += (_, _) => TrackExternalForeground();
+            }
+
             _foregroundTimer.Start();
         }
         else

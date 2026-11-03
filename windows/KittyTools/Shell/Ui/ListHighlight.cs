@@ -33,25 +33,4 @@ internal sealed partial class ListHighlight : Grid
         Margin = new Thickness(0, top, 0, 0);
         Visibility = Visibility.Visible;
     }
-
-    /// <summary>平滑移到某一行（鼠标点选、透镜展开）；系统关了动画时等同 SnapTo。</summary>
-    public void GlideTo(double top, double height)
-    {
-        if (Motion.Reduced)
-        {
-            SnapTo(top, height);
-            return;
-        }
-
-        Height = height;
-        var visual = Microsoft.UI.Xaml.Hosting.ElementCompositionPreview.GetElementVisual(this);
-        var animation = visual.Compositor.CreateVector3KeyFrameAnimation();
-        animation.InsertKeyFrame(1, new System.Numerics.Vector3(0, (float)top, 0));
-        animation.Duration = TimeSpan.FromSeconds(0.18);
-        visual.StartAnimation("Offset", animation);
-        Margin = new Thickness(0, top, 0, 0);
-        Visibility = Visibility.Visible;
-    }
-
-    public void HideHighlight() => Visibility = Visibility.Collapsed;
 }

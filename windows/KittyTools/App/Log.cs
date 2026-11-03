@@ -8,31 +8,48 @@ namespace KittyTools.Infrastructure;
 internal static class Log
 {
     private static readonly object Gate = new();
-    private static string? _path;
+
+    /// <summary>
+    /// 常驻的那个文件（REVIEW R50：以前每行都 File.AppendAllText，在调用方的线程上开、写、关一次，装了杀毒软件的机器上每次几毫秒）。
+    /// AutoFlush：每行都交给系统，闪退也不丢；文件共享读写删，开着时照样能看、能清。
+    /// ponytail: 还是在调用方的线程上写（一行几微秒）；量出来还卡再换成后台队列。
+    /// </summary>
+    private static StreamWriter? _writer;
+
+    /// <summary>_writer 是哪一天的文件：写之前看一眼，跨天就换新文件、顺手清 7 天前的（常驻托盘几周不重启也会换）。</summary>
+    private static DateTime _day;
+
+    private static bool _enabled;
 
     public static void Initialize()
     {
         try
         {
             Directory.CreateDirectory(Paths.LogsDirectory);
-            _path = Path.Combine(Paths.LogsDirectory, $"kitty-{DateTime.Now:yyyyMMdd}.log");
-            Cleanup();
+            lock (Gate)
+            {
+                _enabled = true;
+                Open(DateTime.Now.Date);
+            }
+
             Info("app.start");
         }
         catch
         {
-            // 日志写不出来不能影响启动；后面所有写入也会被忽略。
+            // 日志写不出来不能影响启动；后面的写入会再试着打开。
         }
     }
 
     public static void Info(string message) => Write("INFO", message);
 
-    /// <summary>卸载前不再写日志，免得数据目录被挪走时日志还开着（REVIEW R25）。</summary>
+    /// <summary>卸载前不再写日志、关掉文件，免得数据目录被挪走时日志还开着（REVIEW R25）。</summary>
     public static void Shutdown()
     {
         lock (Gate)
         {
-            _path = null;
+            _enabled = false;
+            _writer?.Dispose();
+            _writer = null;
         }
     }
 
@@ -45,23 +62,41 @@ internal static class Log
 
     private static void Write(string level, string message)
     {
-        if (_path is null)
-        {
-            return;
-        }
-
         try
         {
-            var line = $"{DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture)} [{level}] {message}{Environment.NewLine}";
+            var now = DateTime.Now;
+            var line = $"{now.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture)} [{level}] {message}{Environment.NewLine}";
             lock (Gate)
             {
-                File.AppendAllText(_path, line, Encoding.UTF8);
+                if (!_enabled)
+                {
+                    return;
+                }
+
+                if (_writer is null || now.Date != _day)
+                {
+                    Open(now.Date);
+                }
+
+                _writer!.Write(line);
             }
         }
         catch
         {
             // 同上，不影响功能。
         }
+    }
+
+    /// <summary>换到 day 那一天的文件（在 Gate 里调）。</summary>
+    private static void Open(DateTime day)
+    {
+        _writer?.Dispose();
+        _writer = null;
+        var path = Path.Combine(Paths.LogsDirectory, $"kitty-{day:yyyyMMdd}.log");
+        var stream = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete);
+        _writer = new StreamWriter(stream, new UTF8Encoding(false)) { AutoFlush = true };
+        _day = day;
+        Cleanup();
     }
 
     private static void Cleanup()

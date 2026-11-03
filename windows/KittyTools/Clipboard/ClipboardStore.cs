@@ -61,6 +61,15 @@ internal sealed class ClipboardStore
     /// <summary>同步：面板里还有能撤销的删除（还没落库）时这一轮先不合（mac syncBusy）。</summary>
     public bool SyncBusy => _undo.Count > 0;
 
+    /// <summary>空闲回收：搜索给每条存的折叠副本放掉，下次搜索时再建（REVIEW R51）。</summary>
+    public void ReleaseSearchCache()
+    {
+        foreach (var entry in _items)
+        {
+            entry.Folded = null;
+        }
+    }
+
     /// <summary>整个历史（文字、图片、文件）里最旧那条的复制时间；空的是 null。同步来的新条目排在它之前（第四轮体检 E10）。</summary>
     public long? OldestCopiedAt => _items.Count == 0 ? null : _items.Min(item => item.CopiedAt);
 
@@ -166,7 +175,7 @@ internal sealed class ClipboardStore
     /// 用户明确留下的（收藏 ∨ 片段；收藏夹里的都是收藏，同 mac isRetained）：保留天数、图片占用、清空都不动它们。
     /// 改这里要连 <see cref="BackupPlan"/> 里库的写法（<c>ClipRetainedSql</c>）一起改。
     /// </summary>
-    public static bool IsRetained(ClipEntry entry) => entry.Favorite || entry.Snippet || entry.GroupId is not null;
+    public static bool IsRetained(ClipEntry entry) => Retention.IsRetained(entry.Favorite, entry.Snippet, entry.GroupId);
 
     /// <summary>
     /// 存为 / 移出片段（片段和收藏各管各的，同 mac：收藏、收藏夹、备注都不动）。
@@ -220,7 +229,7 @@ internal sealed class ClipboardStore
         var limits = CurrentLimits();
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var expired = before
-            .Where(old => (old.Favorite || old.Snippet || old.GroupId is not null) && !IsRetained(old.Entry) &&
+            .Where(old => Retention.IsRetained(old.Favorite, old.Snippet, old.GroupId) && !IsRetained(old.Entry) &&
                           Retention.IsExpired(old.Entry.CopiedAt, limits, now))
             .ToList();
         if (expired.Count > 0)
@@ -457,9 +466,28 @@ internal sealed class ClipboardStore
     }
 
     /// <summary>新采集的图片（PNG 已在后台编好）。返回 false 表示 PNG 存不下来。</summary>
-    public bool RecordImage(byte[] png, int width, int height, string? sourceExe, string? sourceName)
+    /// <summary>
+    /// 记一张图（复制、截图、钉图、从截图历史复制都走这里）：写盘和 SHA-256 在线程池上做，UI 线程只查重、入库、换名（REVIEW R48）。
+    /// 返回是否记下了（查重命中算记下了）。
+    /// </summary>
+    public async Task<bool> RecordImageAsync(byte[] png, int width, int height, string? sourceExe, string? sourceName)
     {
-        var hash = ImageStore.Hash(png);
+        (string Hash, string Staged) staged;
+        try
+        {
+            staged = await Task.Run(() => Images.Stage(png));
+        }
+        catch (Exception ex)
+        {
+            Log.Error("clipboard.image-save-failed", ex);
+            return false;
+        }
+
+        return RecordImage(png.Length, width, height, sourceExe, sourceName, staged.Hash, staged.Staged);
+    }
+
+    private bool RecordImage(int byteCount, int width, int height, string? sourceExe, string? sourceName, string hash, string staged)
+    {
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var probe = new ClipEntry
         {
@@ -477,6 +505,7 @@ internal sealed class ClipboardStore
             existing.CopiedAt = now;
             _items.Insert(0, existing);
             _database.Touch(existing.Id, existing.CopiedAt);
+            ImageStore.Discard(staged);
             EnforceLimits();
             Changed?.Invoke();
             return true;
@@ -488,7 +517,7 @@ internal sealed class ClipboardStore
             ImageHash = hash,
             Width = width,
             Height = height,
-            ImageBytes = png.Length,
+            ImageBytes = byteCount,
             SourceExe = sourceExe,
             SourceName = sourceName,
             CopiedAt = now,
@@ -496,12 +525,13 @@ internal sealed class ClipboardStore
         entry.Id = _database.Insert(entry);
         try
         {
-            Images.Save(entry.Id, png);
+            Images.Adopt(entry.Id, staged);
         }
         catch (Exception ex)
         {
             Log.Error("clipboard.image-save-failed", ex);
             _database.Delete(new[] { entry.Id });
+            ImageStore.Discard(staged);
             return false;
         }
 
@@ -654,7 +684,7 @@ internal sealed class ClipboardStore
                         Snippet = clip.Snippet,
                         Note = clip.Note,
                         GroupId = groupId,
-                        Uid = clip.Favorite || clip.Snippet || groupId is not null
+                        Uid = Retention.IsRetained(clip.Favorite, clip.Snippet, groupId)
                             ? Guid.NewGuid().ToString("D").ToUpperInvariant()
                             : null,
                         CopiedAt = clip.CopiedAt,
