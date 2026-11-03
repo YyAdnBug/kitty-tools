@@ -263,4 +263,4 @@ icons/                   # 两个版本共用的功能图标（SVG）和生成�
 
 ## 友情链接
 
-- 这里面的人说话好听又帅，都是大佬。[LinuxDo](https://linux.do)
+- [LinuxDo](https://linux.do)：说话好听、个个都是大佬的技术社区
