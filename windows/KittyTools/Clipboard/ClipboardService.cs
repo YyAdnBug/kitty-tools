@@ -36,6 +36,12 @@ internal sealed class ClipboardService
             Store = new ClipboardStore(database, images),
         };
         service.Store.Load();
+        // 开着「退出时清空」：启动时先清一次。闪退、强退、关机没走完收尾时，上一次的普通历史不会带回来（第四轮体检 E5）。
+        if (SettingsService.Current.ClipboardClearOnQuit)
+        {
+            Log.Info($"clipboard.cleared-on-launch count={service.Store.ClearOrdinary()}");
+        }
+
         service.Store.EnforceLimits();
         service._ownSequence = PInvoke.GetClipboardSequenceNumber();
         Instance = service;

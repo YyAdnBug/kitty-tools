@@ -61,6 +61,9 @@ internal sealed class ClipboardStore
     /// <summary>同步：面板里还有能撤销的删除（还没落库）时这一轮先不合（mac syncBusy）。</summary>
     public bool SyncBusy => _undo.Count > 0;
 
+    /// <summary>整个历史（文字、图片、文件）里最旧那条的复制时间；空的是 null。同步来的新条目排在它之前（第四轮体检 E10）。</summary>
+    public long? OldestCopiedAt => _items.Count == 0 ? null : _items.Min(item => item.CopiedAt);
+
     /// <summary>同步要的本机文字条目（留着的先补上 uid）。</summary>
     /// <summary>retainedOnly：只要收藏、片段、收藏夹里的（编出去时只用这些，REVIEW R49：不再给全部历史各建一行）；落地时要全部。</summary>
     public List<SyncClipRow> SyncRows(bool retainedOnly = false)
@@ -908,25 +911,40 @@ internal sealed class ClipboardStore
     /// <summary>按保留天数 / 图片额度清理普通条目；还能撤销的（刚取消收藏、已超期的）这一轮不清。返回删了几条。</summary>
     public int EnforceLimits()
     {
+        var ids = Doomed(CurrentLimits()).Select(item => item.Id).ToList();
+        if (ids.Count == 0)
+        {
+            return 0;
+        }
+
+        Purge(ids);
+        Log.Info($"clipboard.retention count={ids.Count}");
+        return ids.Count;
+    }
+
+    /// <summary>
+    /// 干跑：换成这组上限会删掉几条（其中几张图片），和 EnforceLimits 同一套条件、什么都不删。
+    /// 设置里改短保留期 / 改小图片占用之前先问用（mac ClipboardStore.pruneCount，第四轮体检 E4）。
+    /// </summary>
+    public (int Items, int Images) PruneCount(RetentionLimits limits)
+    {
+        var doomed = Doomed(limits);
+        return (doomed.Count, doomed.Count(item => item.Kind == ClipKind.Image));
+    }
+
+    private List<ClipEntry> Doomed(RetentionLimits limits)
+    {
         var undoable = _undo.SelectMany(batch => batch.Unretained ?? new List<RetentionSnapshot>())
             .Select(old => old.Entry.Id)
             .ToHashSet();
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var doomed = Retention.Plan(
             _items.Where(item => !undoable.Contains(item.Id)).Select(item => item.ToRetentionItem()).ToList(),
-            CurrentLimits(),
+            limits,
             now);
-        if (doomed.Count == 0)
-        {
-            return 0;
-        }
-
-        var ids = _items.Where(item => doomed.Contains(item.Id.ToString()))
-            .Select(item => item.Id)
-            .ToList();
-        Purge(ids);
-        Log.Info($"clipboard.retention count={ids.Count}");
-        return ids.Count;
+        return doomed.Count == 0
+            ? new List<ClipEntry>()
+            : _items.Where(item => doomed.Contains(item.Id.ToString())).ToList();
     }
 
     /// <summary>清空普通历史（收藏、片段、收藏夹里的不动）：设置里「立即清空」、退出 / 锁屏清空时用。先提交撤销栈。</summary>
@@ -935,6 +953,11 @@ internal sealed class ClipboardStore
         CommitDeletion();
         var ids = _items.Where(item => !IsRetained(item)).Select(item => item.Id).ToList();
         Purge(ids);
+        if (ids.Count > 0)
+        {
+            _database.TruncateWal();
+        }
+
         return ids.Count;
     }
 

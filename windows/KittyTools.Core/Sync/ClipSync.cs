@@ -167,10 +167,17 @@ public static class ClipSync
         public SyncClipWrite ToWrite() => new(Row, Uid, Text, Favorite, Snippet, Note, Group, CopiedAt, TextChanged);
     }
 
-    /// <summary>把合出来的改动算成要落的样子（rows：本机全部文字条目；groups：本机收藏夹，按顺序；now：新条目的复制时间）。</summary>
+    /// <summary>
+    /// 把合出来的改动算成要落的样子（rows：本机全部文字条目；groups：本机收藏夹，按顺序；
+    /// oldest：本机整个历史里最旧那条的复制时间，历史是空的就给现在）。
+    /// 本机没有的新来的排在历史末尾（第四轮体检 E10，同 mac ClipboardStore.applySync）：排在最前会压过刚复制的
+    /// （Ctrl+1、{clipboard} 取到它；第一次合时几百条一起盖在最前）。时间取 oldest 之前、几条之间按处理的先后（编号）各差 1 毫秒；
+    /// 本机有的、对面改了的不动时间；和本机同正文的普通条目合成一条时取本机那条的（两条取晚的）。
+    /// 代价同 mac：时间是旧的，取消收藏 / 移出片段后它就是超过保留天数的普通历史，很快被清理。
+    /// </summary>
     public static ClipSyncPlan? Plan(
         IReadOnlyDictionary<string, string?> changes, IReadOnlyList<SyncClipRow> rows,
-        IReadOnlyList<SyncClipGroup> groups, long now, out string? failure)
+        IReadOnlyList<SyncClipGroup> groups, long oldest, out string? failure)
     {
         failure = null;
         var groupChanges = new List<(string Id, SyncedGroup? Group)>();
@@ -322,6 +329,7 @@ public static class ClipSync
             Touch(touched, item);
         }
 
+        var arrivals = 0L;
         foreach (var (id, synced) in clipChanges)
         {
             var existing = items.FirstOrDefault(item => item.Uid == id);
@@ -347,7 +355,8 @@ public static class ClipSync
             }
             else
             {
-                item = new Item { Uid = id, CopiedAt = now };
+                arrivals++;
+                item = new Item { Uid = id, CopiedAt = oldest - arrivals };
             }
 
             if (item.Row is not null && item.Text != synced.Text)

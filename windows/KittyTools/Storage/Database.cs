@@ -329,6 +329,19 @@ internal sealed class Database : IDisposable
         return statement.Step() ? statement.GetText(0) : null;
     }
 
+    /// <summary>清空之后把 -wal 截到 0（删掉的内容在 WAL 里还有一份，等自动检查点要很久；第四轮体检 E5）。</summary>
+    public void TruncateWal()
+    {
+        try
+        {
+            _connection.Execute("PRAGMA wal_checkpoint(TRUNCATE);");
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"db.wal-truncate-failed {ex.GetType().Name}");
+        }
+    }
+
     public void Delete(IReadOnlyCollection<long> ids)
     {
         if (ids.Count == 0)

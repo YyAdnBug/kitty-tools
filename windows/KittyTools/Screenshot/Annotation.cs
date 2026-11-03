@@ -391,7 +391,7 @@ internal static class AnnotationRenderer
     private static void DrawMosaic(CanvasDrawingSession ds, Annotation annotation, FrozenScreen screen, Mapping map)
     {
         var blurred = annotation.Style.Option == 1;
-        var cell = Math.Max(1, (int)Math.Round(annotation.Style.MosaicBlock * (blurred ? 1.5 : 1) * map.PixelsPerDip));
+        var cell = MosaicCell(annotation, map.PixelsPerDip);
         var left = (int)Math.Clamp(Math.Floor(annotation.Rect.X), 0, screen.Width);
         var top = (int)Math.Clamp(Math.Floor(annotation.Rect.Y), 0, screen.Height);
         var right = (int)Math.Clamp(Math.Ceiling(annotation.Rect.Right), 0, screen.Width);
@@ -499,22 +499,25 @@ internal static class AnnotationRenderer
     }
 
     private static (byte R, byte G, byte B) Average(FrozenScreen screen, int left, int top, int right, int bottom)
-    {
-        long r = 0, g = 0, b = 0;
-        var count = 0;
-        var step = Math.Max(1, (right - left) / 6);
-        for (var y = top; y < bottom; y += step)
-        {
-            for (var x = left; x < right; x += step)
-            {
-                var index = (y * screen.Width + x) * 4;
-                b += screen.Bgra[index];
-                g += screen.Bgra[index + 1];
-                r += screen.Bgra[index + 2];
-                count++;
-            }
-        }
+        => MosaicBurn.Average(screen.Bgra, screen.Width, left, top, right, bottom);
 
-        return count == 0 ? ((byte)0, (byte)0, (byte)0) : ((byte)(r / count), (byte)(g / count), (byte)(b / count));
+    /// <summary>马赛克的格子边长（像素）：粗细档 6 / 10 / 16 DIP，模糊那档再放大 1.5 倍。出图时 pixelsPerDip = 屏幕缩放。</summary>
+    internal static int MosaicCell(Annotation annotation, double pixelsPerDip)
+        => Math.Max(1, (int)Math.Round(annotation.Style.MosaicBlock * (annotation.Style.Option == 1 ? 1.5 : 1) * pixelsPerDip));
+
+    /// <summary>
+    /// 截图历史要存的原图（第四轮体检 E6）：把这几块马赛克打进 target（frozen 里 (offsetX, offsetY) 起的那一块，坐标都是 frozen 的像素），
+    /// 格子同出图（pixelsPerDip = 屏幕缩放）。之后存进历史的标注里不再带马赛克。
+    /// </summary>
+    internal static void BurnMosaics(
+        IEnumerable<Annotation> annotations, FrozenScreen frozen, double pixelsPerDip,
+        byte[] target, int targetWidth, int targetHeight, int offsetX, int offsetY)
+    {
+        foreach (var annotation in annotations.Where(annotation => annotation.Kind == AnnotationKind.Mosaic))
+        {
+            MosaicBurn.Apply(
+                frozen.Bgra, frozen.Width, frozen.Height, annotation.Rect, MosaicCell(annotation, pixelsPerDip),
+                target, targetWidth, targetHeight, offsetX, offsetY);
+        }
     }
 }

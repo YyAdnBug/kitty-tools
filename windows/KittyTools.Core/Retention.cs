@@ -79,4 +79,16 @@ public static class Retention
 
         return doomed;
     }
+
+    /// <summary>
+    /// 设置里改短保留期 / 改小图片占用之前那句确认（mac ClipboardTab.pruneWarning，第四轮体检 E4）：
+    /// 会删掉几条普通历史（其中几张图片），收藏和片段不受影响。
+    /// </summary>
+    public static string PruneWarning(int items, int images)
+    {
+        var what = images == 0 ? $"{items} 条普通历史"
+            : images == items ? $"{images} 张普通历史里的图片"
+            : $"{items} 条普通历史（其中 {images} 张图片）";
+        return $"会删掉 {what}，收藏和片段不受影响。";
+    }
 }

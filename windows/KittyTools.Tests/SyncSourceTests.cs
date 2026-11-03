@@ -40,6 +40,49 @@ public sealed class SyncSourceTests
         Assert.IsFalse(File.ReadAllText(ownPath).Contains("\"erased\":[{"), "文件里不该有墓碑");
     }
 
+    // ---- 同步来的新条目排在历史末尾（第四轮体检 E10，PLAN-v11 M7） ----
+
+    [TestMethod]
+    public void ArrivingClipsGoToTheEndOfHistory()
+    {
+        var clips = new MemoryClipSource();
+        var mine = clips.Add("本机的收藏");
+        var changed = ClipSync.Clip("本机的收藏，对面改过", true, false, null, null);
+        var first = "00000000-0000-4000-8000-000000000001";
+        var second = "00000000-0000-4000-8000-000000000002";
+        var changes = new Dictionary<string, string?>
+        {
+            [mine.Uid!] = changed,
+            [second] = ClipSync.Clip("别处的片段", false, true, null, null),
+            [first] = ClipSync.Clip("别处的收藏", true, false, null, null),
+        };
+
+        const long oldest = 1_000;
+        var plan = ClipSync.Plan(changes, clips.Rows, clips.Groups, oldest, out var failure);
+        Assert.IsNull(failure);
+
+        // 新来的排在本机最旧那条之前，按编号的先后各差 1 毫秒；本机有的那条时间不动。
+        Assert.AreEqual(oldest - 1, plan!.Writes.Single(write => write.Uid == first).CopiedAt);
+        Assert.AreEqual(oldest - 2, plan.Writes.Single(write => write.Uid == second).CopiedAt);
+        Assert.AreEqual(mine.CopiedAt, plan.Writes.Single(write => write.Uid == mine.Uid).CopiedAt);
+    }
+
+    [TestMethod]
+    public void ArrivingClipMergedWithLocalTextKeepsTheLocalTime()
+    {
+        // 本机历史里有同正文的普通条目：合成一条，时间取本机那条的（不跟着排到最后）。
+        var clips = new MemoryClipSource();
+        var local = clips.Add("同一段话", favorite: false);
+        var incoming = MemoryClipSource.NewUid();
+        var changes = new Dictionary<string, string?> { [incoming] = ClipSync.Clip("同一段话", true, false, null, null) };
+
+        var plan = ClipSync.Plan(changes, clips.Rows, clips.Groups, local.CopiedAt, out _);
+
+        var write = plan!.Writes.Single();
+        Assert.AreEqual(local.CopiedAt, write.CopiedAt);
+        Assert.IsTrue(write.Favorite);
+    }
+
     // ---- 收藏夹同名 → 编号小的留下、条目归过去 ----
 
     [TestMethod]

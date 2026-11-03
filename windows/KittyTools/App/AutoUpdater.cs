@@ -7,6 +7,8 @@
 // REVIEW R2：拉起新进程之后走 ShellRuntime.Exit()，提交删除、注销热键、删托盘图标。
 // REVIEW R3：流式写到 updates\<文件名>.partial，写完才改名；失败 / 取消 / 校验不过都删掉半成品；
 //            下载中托盘那一项显示「正在下载 37%」，不另外弹窗。
+// 第四轮体检 E23（PLAN-v11 M10）：下载能取消（进度提示上、托盘那一项、关于页），取消后回到「有新版本」。
+// ponytail: 取消只在下载和取 .sha256 时生效；校验过了、解压覆盖的那一两秒点了也照装（UpdateFlow 后面几步不看令牌）。
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using KittyTools.Core;
@@ -24,8 +26,21 @@ internal static class AutoUpdater
     /// <summary>开始下载时的 UI 线程：进度回调来自线程池，改轻提示要切回来（PLAN-v7 §3.4）。</summary>
     private static Microsoft.UI.Dispatching.DispatcherQueue? _queue;
 
+    /// <summary>这一次下载的取消（E23）；不在下载时为 null。</summary>
+    private static CancellationTokenSource? _cancel;
+
     /// <summary>正在下载 / 安装：托盘和设置里的按钮据此变灰。</summary>
     public static bool IsBusy => _busy;
+
+    /// <summary>取消正在下的更新（进度提示的「取消」、托盘那一项、关于页）。</summary>
+    public static void Cancel()
+    {
+        if (_busy && _cancel is { IsCancellationRequested: false } cancel)
+        {
+            Log.Info("update.cancel");
+            cancel.Cancel();
+        }
+    }
 
     /// <summary>下载中托盘菜单那一项的文字（R3）；不在下载时返回 null。</summary>
     public static string? ProgressMenuText
@@ -70,7 +85,8 @@ internal static class AutoUpdater
             var assetName = UpdateService.AvailableAssetName ?? $"KittyTools-{version}-{ArchitectureLabel()}.zip";
 
             _queue = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
-            NoticeHost.ShowProgress("正在下载更新", $"Kitty Tools {version}", 0);
+            _cancel = new CancellationTokenSource();
+            NoticeHost.ShowProgress("正在下载更新", $"Kitty Tools {version}", 0, CancelAction);
             var plan = new UpdatePlan(version, zipUrl, hashUrl, assetName);
             UpdateFlowResult result;
             try
@@ -83,10 +99,13 @@ internal static class AutoUpdater
                     UpdateHttp.DownloadAsync,
                     UpdateHttp.GetTextAsync,
                     UpdateFlow.ReadVersion,
-                    OnProgress);
+                    OnProgress,
+                    _cancel.Token);
             }
             catch (OperationCanceledException)
             {
+                // 半成品已经由 UpdateHttp / UpdateFlow 删掉；回到「有新版本」（托盘、关于页、主界面都照旧能点）。
+                NoticeHost.Show("已取消更新", $"有新版本 {version}，想装的时候再点「更新」", NoticeTone.Normal);
                 return;
             }
 
@@ -118,6 +137,8 @@ internal static class AutoUpdater
         {
             _busy = false;
             _progressPercent = -1;
+            _cancel?.Dispose();
+            _cancel = null;
             TryDeleteDirectory(staging);
         }
     }
@@ -217,7 +238,7 @@ internal static class AutoUpdater
                 {
                     if (_busy)
                     {
-                        NoticeHost.ShowProgress("正在下载更新", $"已下载 {percent}%", percent / 100.0);
+                        NoticeHost.ShowProgress("正在下载更新", $"已下载 {percent}%", percent / 100.0, CancelAction);
                     }
                 });
             }
@@ -227,6 +248,8 @@ internal static class AutoUpdater
             _progressPercent = 0;
         }
     }
+
+    private static readonly NoticeAction CancelAction = new("取消", Cancel);
 
     private static void TryDeleteDirectory(string path)
     {

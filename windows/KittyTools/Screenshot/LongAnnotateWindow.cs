@@ -894,7 +894,10 @@ internal sealed class LongAnnotateWindow
         ShowHint();
     }
 
-    /// <summary>回写截图历史的那一条：原图不动，标注和成品换新的（同截图遮罩改标注）。</summary>
+    /// <summary>
+    /// 回写截图历史的那一条：标注和成品换新的（同截图遮罩改标注）。画了马赛克时原图换成打过码的、标注里不带马赛克
+    /// （第四轮体检 E6）。两个调用的地方回写完都关窗口，所以直接打在 _bgra 上，不另拷一份几百 MB 的长图。
+    /// </summary>
     private void WriteBack(byte[] png, string? savedPath)
     {
         if (_historyId is not { } id || ShotHistory.Instance is not { } history)
@@ -902,7 +905,28 @@ internal sealed class LongAnnotateWindow
             return;
         }
 
-        history.UpdateAnnotations(id, _document.Items.Select(annotation => ShotAnnotations.ToData(annotation, 0, 0)).ToList(), png);
+        var annotations = _document.Items.Where(annotation => annotation.Kind != AnnotationKind.Mosaic)
+            .Select(annotation => ShotAnnotations.ToData(annotation, 0, 0)).ToList();
+        if (_document.Items.Any(annotation => annotation.Kind == AnnotationKind.Mosaic))
+        {
+            var bgra = _bgra;
+            AnnotationRenderer.BurnMosaics(_document.Items, _source, _scale, bgra, _width, _height, 0, 0);
+            var (width, height) = (_width, _height);
+            _ = WriteMaskedAsync();
+
+            async Task WriteMaskedAsync()
+            {
+                if (await ImageCodec.BgraToPngAsync(width, height, bgra) is { } masked)
+                {
+                    history.UpdateAnnotations(id, annotations, png, masked);
+                }
+            }
+        }
+        else
+        {
+            history.UpdateAnnotations(id, annotations, png);
+        }
+
         if (savedPath is not null)
         {
             history.MarkSaved(id, savedPath);

@@ -37,6 +37,8 @@ internal sealed partial class SettingsWindow
             return;
         }
 
+        // 同步换了服务列表（第四轮体检 E19）就重建这一页：详情页也照编号接到新的那份上（OnSyncChanged）。
+        _shownServices = store.Services;
         if (_serviceDetail is { } detail && store.Find(detail) is { } service)
         {
             BuildServiceDetail(store, service);
@@ -216,7 +218,16 @@ internal sealed partial class SettingsWindow
         var serviceRows = services.Select((service, index) => ServiceRow(store, service, index, services.Count)).ToList();
         _content.Children.Add(ReorderableList(serviceRows, "翻译服务（拖动排序）", order =>
         {
-            store.ReplaceServices(order.Select(index => services[index]).ToList());
+            // 页面开着时同步换了列表：别拿建页时那份把别的电脑刚改的盖掉，换成新的（第四轮体检 E19）。
+            if (!ReferenceEquals(store.Services, _shownServices))
+            {
+                NoticeHost.Show("翻译服务刚从别的电脑同步过来", "这一页换成了最新的，再拖一次", NoticeTone.Warning);
+            }
+            else
+            {
+                store.ReplaceServices(order.Select(index => services[index]).ToList());
+            }
+
             BuildPage("translate");
         }));
 

@@ -92,6 +92,15 @@ public sealed class RetentionTests
         CollectionAssert.AreEquivalent(new[] { "oldest", "middle" }, doomed.ToArray());
     }
 
+    [TestMethod]
+    public void PruneWarningSaysHowManyAndWhichKind()
+    {
+        // 期望值同 mac ClipboardTab.pruneWarning（第四轮体检 E4）。
+        Assert.AreEqual("会删掉 3 条普通历史，收藏和片段不受影响。", Retention.PruneWarning(3, 0));
+        Assert.AreEqual("会删掉 2 张普通历史里的图片，收藏和片段不受影响。", Retention.PruneWarning(2, 2));
+        Assert.AreEqual("会删掉 5 条普通历史（其中 2 张图片），收藏和片段不受影响。", Retention.PruneWarning(5, 2));
+    }
+
     private static RetentionItem Text(string id, long copiedAt, bool favorite = false)
         => new(id, ClipKind.Text, copiedAt, 0, favorite);
 

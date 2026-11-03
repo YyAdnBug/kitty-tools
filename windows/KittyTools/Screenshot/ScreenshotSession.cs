@@ -581,11 +581,31 @@ internal sealed class ScreenshotSession
         }
 
         var overlay = _overlays.FirstOrDefault(item => item.Screen == screen);
+        // 马赛克不进标注、直接打进存下的原图（第四轮体检 E6）：历史文件夹里的原图不留马赛克下面的明文。
         var annotations = overlay?.AnnotationsForHistory() ?? new List<ShotAnnotationData>();
+        var masks = overlay?.HasMosaics == true;
+        var rect = ScreenshotOutput.SelectionPixels(screen, selection);
         if (_editingId is { } editing && selection == _editingRect && ShotHistory.Instance is { } history)
         {
-            // 从历史里打开、选区没动：回写同一条（原图不动，标注和成品换新的）。框了别的范围就当新截的一张。
-            history.UpdateAnnotations(editing, annotations, composed);
+            // 从历史里打开、选区没动：回写同一条（标注和成品换新的；又画了马赛克时原图换成打过码的）。框了别的范围就当新截的一张。
+            if (masks)
+            {
+                var masked = overlay!.OriginalForHistory(rect);
+                _ = UpdateMaskedAsync();
+
+                async Task UpdateMaskedAsync()
+                {
+                    if (await ImageCodec.BgraToPngAsync(rect.Width, rect.Height, masked) is { } maskedPng)
+                    {
+                        history.UpdateAnnotations(editing, annotations, composed, maskedPng);
+                    }
+                }
+            }
+            else
+            {
+                history.UpdateAnnotations(editing, annotations, composed);
+            }
+
             if (savedPath is not null)
             {
                 history.MarkSaved(editing, savedPath);
@@ -604,8 +624,7 @@ internal sealed class ScreenshotSession
             return;
         }
 
-        var rect = ScreenshotOutput.SelectionPixels(screen, selection);
-        var original = annotations.Count == 0 ? null : screen.Crop(rect);
+        var original = annotations.Count == 0 && !masks ? null : overlay!.OriginalForHistory(rect);
         var frame = GlobalRect(screen, selection);
         var scale = screen.Scale;
         _ = RecordAsync();

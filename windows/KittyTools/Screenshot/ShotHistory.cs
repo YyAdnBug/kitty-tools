@@ -273,36 +273,74 @@ internal sealed class ShotHistory
     }
 
     /// <summary>改完标注回写同一条（原图不动），缩略图按新的成品重做（第 3 批的标注遮罩用）。</summary>
-    public void UpdateAnnotations(string id, IReadOnlyList<ShotAnnotationData> annotations, byte[] composedPng)
+    /// <summary>
+    /// 改标注回写同一条：标注和成品换新的。<paramref name="maskedOriginalPng"/>：这次又画了马赛克时，打过码的新原图
+    /// （第四轮体检 E6；标注里已经不带马赛克）。先把它写好，成功了再换标注和成品——中途失败或退出，库里的旧标注照旧、
+    /// 原图最多多一层码，不会露出明文。
+    /// </summary>
+    public void UpdateAnnotations(
+        string id, IReadOnlyList<ShotAnnotationData> annotations, byte[] composedPng, byte[]? maskedOriginalPng = null)
     {
-        if (Find(id) is not { } item)
+        if (Find(id) is null)
         {
             return;
         }
 
-        item.Annotations = annotations.ToList();
-        Execute(
-            "UPDATE shots SET annotations = $a WHERE id = $id;",
-            ShotHistoryRules.EncodeAnnotations(annotations),
-            id);
-        Changed?.Invoke();
+        if (maskedOriginalPng is null)
+        {
+            Apply();
+            return;
+        }
+
         _ = Task.Run(async () =>
         {
-            if (annotations.Count > 0)
+            try
             {
-                await File.WriteAllBytesAsync(ComposedPath(id), composedPng);
+                var temp = ImagePath(id) + ".masking";
+                await File.WriteAllBytesAsync(temp, maskedOriginalPng);
+                File.Move(temp, ImagePath(id), overwrite: true);
             }
-            else
+            catch (Exception ex)
             {
-                TryDelete(ComposedPath(id));
+                Log.Error("shots.mask-write-failed", ex);
+                return;
             }
 
-            if (await ImageCodec.ScaledPngAsync(composedPng, ShotHistoryRules.ThumbnailSide) is { } small)
-            {
-                await File.WriteAllBytesAsync(ThumbnailPath(id), small);
-                OnUi(() => ThumbnailChanged?.Invoke(id));
-            }
+            OnUi(Apply);
         });
+
+        void Apply()
+        {
+            if (Find(id) is not { } item)
+            {
+                return;
+            }
+
+            item.Annotations = annotations.ToList();
+            Execute(
+                "UPDATE shots SET annotations = $a WHERE id = $id;",
+                ShotHistoryRules.EncodeAnnotations(annotations),
+                id);
+            Changed?.Invoke();
+            _ = Task.Run(async () =>
+            {
+                // 只有马赛克时标注是空的，成品照旧留一份：屏幕上「模糊」那档打进原图的是方块（MosaicBurn 的 ponytail）。
+                if (annotations.Count > 0 || maskedOriginalPng is not null)
+                {
+                    await File.WriteAllBytesAsync(ComposedPath(id), composedPng);
+                }
+                else
+                {
+                    TryDelete(ComposedPath(id));
+                }
+
+                if (await ImageCodec.ScaledPngAsync(composedPng, ShotHistoryRules.ThumbnailSide) is { } small)
+                {
+                    await File.WriteAllBytesAsync(ThumbnailPath(id), small);
+                    OnUi(() => ThumbnailChanged?.Invoke(id));
+                }
+            });
+        }
     }
 
     public ShotItem? Find(string id) => _items.FirstOrDefault(item => item.Id == id);
@@ -358,16 +396,21 @@ internal sealed class ShotHistory
     /// <summary>过期的、超总量的清掉（启动时、每记一条之后）。</summary>
     public void Prune()
     {
-        var stale = ShotHistoryRules.Stale(
-            _items.Select(item => new ShotStaleItem(item.Id, item.CreatedAt, item.Bytes)),
-            DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-            Math.Max(0, SettingsService.Current.ShotHistoryDays),
-            Math.Max(0, SettingsService.Current.ShotHistoryMegabytes) * 1_048_576L);
+        var stale = Stale(SettingsService.Current.ShotHistoryDays, SettingsService.Current.ShotHistoryMegabytes);
         if (stale.Count > 0)
         {
             Remove(stale);
         }
     }
+
+    /// <summary>干跑：换成这组上限会删掉几条（设置里改短保留期 / 改小占用之前先问，mac ShotHistory.pruneCount）。</summary>
+    public int PruneCount(int days, int megabytes) => Stale(days, megabytes).Count;
+
+    private List<string> Stale(int days, int megabytes) => ShotHistoryRules.Stale(
+        _items.Select(item => new ShotStaleItem(item.Id, item.CreatedAt, item.Bytes)),
+        DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+        Math.Max(0, days),
+        Math.Max(0, megabytes) * 1_048_576L);
 
     private void Add(ShotItem item)
     {

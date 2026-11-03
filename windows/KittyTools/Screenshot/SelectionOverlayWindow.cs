@@ -220,10 +220,24 @@ internal sealed partial class SelectionOverlayWindow : Window
     }
 
     /// <summary>截图历史（PLAN-v8）：现在画着的标注，坐标换成选区里的像素。</summary>
+    /// <summary>存进截图历史的标注：马赛克不在里面，它直接打进存下的原图（OriginalForHistory，第四轮体检 E6）。</summary>
     internal List<ShotAnnotationData> AnnotationsForHistory()
     {
         var origin = _session.Selection;
-        return _document.Items.Select(annotation => ShotAnnotations.ToData(annotation, origin.X, origin.Y)).ToList();
+        return _document.Items.Where(annotation => annotation.Kind != AnnotationKind.Mosaic)
+            .Select(annotation => ShotAnnotations.ToData(annotation, origin.X, origin.Y)).ToList();
+    }
+
+    /// <summary>画了马赛克：截图历史要存打过码的原图（第四轮体检 E6）。</summary>
+    internal bool HasMosaics => _document.Items.Any(annotation => annotation.Kind == AnnotationKind.Mosaic);
+
+    /// <summary>截图历史的原图：冻结帧里 rect 这一块，马赛克打进去（同出图的格子）。在 Finish 放掉冻结帧之前调。</summary>
+    internal byte[] OriginalForHistory(PixelBounds rect)
+    {
+        var original = _screen.Crop(rect);
+        AnnotationRenderer.BurnMosaics(
+            _document.Items, _screen, _scale, original, rect.Width, rect.Height, rect.Left, rect.Top);
+        return original;
     }
 
     /// <summary>

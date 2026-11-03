@@ -8,6 +8,28 @@
 
 条目编号不复用。行号按条目里写的那个提交。
 
+## PLAN-v11（0.1.0 之后还没做的，2026-11-03 用户「全部按推荐」）
+
+方案和分批在 `PLAN-v11.md` §3；分工照 D10（同 PLAN-v10 D5）。每批审查方写好的推上来、**没编译**，你们编译、单测、在屏幕上验，编译错直接修，在这一节对应那批下面记一句。
+
+### 第 1 批：数据与隐私（M2 M3 M4 M7 M8 M10）→ 已写（审查方，`git log --grep "PLAN-v11 第 1 批"`，没编译）
+
+- **M2**（mac E4）改小保留期先问：`ClipboardStore.PruneCount`、`ShotHistory.PruneCount` 干跑；设置页的四个上限下拉框换成 `LimitCombo`（会删东西就弹确认，取消回原值）；说明文案 `Core/Retention.PruneWarning`（单测同 mac）。
+- **M3**（mac E5）：
+  - `ShellRuntime.FinishSession`：托盘退出、装完更新重启、**关机 / 注销（`WM_ENDSESSION`，以前没处理）**都走它——先停录屏 / 录音保存（M10 那一半），再提交撤销栈、按「退出时清空」清普通历史；
+  - 开着「退出时清空」时启动先清一次（`ClipboardService.Start`）；
+  - 所有可写连接 `PRAGMA secure_delete = ON`（`Sqlite.cs`），清空普通历史后 `wal_checkpoint(TRUNCATE)`（`Database.TruncateWal`）。
+- **M4**（mac E6）马赛克打进历史原图：`Core/MosaicBurn`（格子和取色同 `AnnotationRenderer.DrawMosaic`，它的 `Average` 改成调这里；单测 `MosaicBurnTests`）；截图遮罩 `OriginalForHistory` / `AnnotationsForHistory` 不带马赛克；改标注回写 `ShotHistory.UpdateAnnotations(…, maskedOriginalPng)` 先写好打过码的原图（临时名 + 改名）再换标注；长图标注 `WriteBack` 直接打在 `_bgra` 上（两个调用处回写完都关窗口）。「模糊」那档打进原图的是方块（ponytail 写在 `MosaicBurn.cs` 文件头）。
+- **M7**（mac E10）：`ClipSync.Plan` 的最后一个参数从「现在」改成「本机最旧那条的时间」（`ClipboardStore.OldestCopiedAt`），新来的排在它之前、各差 1 毫秒（单测 `ArrivingClipsGoToTheEndOfHistory`、`ArrivingClipMergedWithLocalTextKeepsTheLocalTime`）。
+- **M8**（mac E19）：设置窗订阅 `Syncer.Changed`（`OnSyncChanged`），开着网页搜索 / 翻译那一页、列表被同步换了（比引用）就重建；开着对话框 / 下拉框时先不动；网页搜索的 `Save`、翻译服务的拖动排序存之前比一次引用，旧了就提示、重建、不写。
+- **M10**（mac E23）：更新下载能取消——进度提示的「取消」、托盘那一项「正在下载 37% · 取消」、关于页进度条旁的「取消」；取消后提示「已取消更新」、回到「有新版本」。
+
+**你们做的**：
+1. 编译 Debug x64、Release AOT x64 / ARM64，零警告；`dotnet test` 全过（新加 `MosaicBurnTests` 3 个、`RetentionTests.PruneWarningSaysHowManyAndWhichKind`、`SyncSourceTests` 2 个）。要特别看的编译点：`SettingsWindow.LimitCombo` 里 `SettingsUi.Combo` 的 `changed` 传了空操作、另挂 `SelectionChanged`；`OnSyncChanged` 是表达式体的 void 方法；`ScreenshotSession.RecordHistory` 里 if 块中的局部函数 `UpdateMaskedAsync`。
+2. 走 `HANDTEST.md` 812–826。815、818 要真注销 / 重启（只能在这台机器的测试账号或 `.Dev` 数据上做，别动用户的真数据）；817 用 `findstr` 搜库文件。
+3. `WM_ENDSESSION` 里 `RecordingHost.Stop()` 要做重封装，录得长的时候看一眼系统有没有出「这个应用阻止关机」的界面（超过约 5 秒才会出）；出了就在这里记一句，审查方再看要不要先停录制、重封装留给下次启动的恢复。
+4. 截图：812 的确认框、824 的提示、825 托盘那一项（浅 / 深各一张），推 `windows-shots` 的 `0.1.1-batch-1/`。
+
 ## 深色下的开关和输入框、翻译卡的彗星边框（2026-11-01 用户截图，审查方在 Mac 上写、**没编译**）——已修（75d6f86 + 12397aa）
 
 **现象**：深色下设置窗「搜索设置」的字、开关关着和开着的圆点都是黑的；翻译卡生成中的彗星边框和 mac 不一样（几段台阶）。

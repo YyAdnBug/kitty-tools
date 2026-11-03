@@ -231,16 +231,22 @@ internal static partial class TrayMenu
         AddSeparator(menu);
         menu.Add(new Item("设置…", null, () => runtime?.ShowSettings(welcome: false)));
         menu.Add(new Item("关于 Kitty Tools", null, () => runtime?.ShowSettings(welcome: false, "about")));
-        var updateText = AutoUpdater.ProgressMenuText
-                         ?? (UpdateService.AvailableVersion is { } available
-                             ? $"更新到 {available}"
-                             : "检查更新");
+        // 下载中这一项是「正在下载 37% · 取消」，点了就取消（第四轮体检 E23）。
+        var updateText = AutoUpdater.ProgressMenuText is { } progress
+            ? progress + " · 取消"
+            : UpdateService.AvailableVersion is { } available
+                ? $"更新到 {available}"
+                : "检查更新";
         menu.Add(new Item(
             updateText,
             null,
             () =>
             {
-                if (UpdateService.AvailableVersion is not null)
+                if (AutoUpdater.IsBusy)
+                {
+                    AutoUpdater.Cancel();
+                }
+                else if (UpdateService.AvailableVersion is not null)
                 {
                     _ = AutoUpdater.StartAsync();
                 }
@@ -248,8 +254,7 @@ internal static partial class TrayMenu
                 {
                     _ = UpdateService.CheckAsync(userInitiated: true);
                 }
-            },
-            !AutoUpdater.IsBusy));
+            }));
         menu.Add(new Item("退出 Kitty Tools", null, () => runtime?.Exit()));
     }
 

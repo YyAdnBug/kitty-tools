@@ -353,8 +353,10 @@ internal sealed class Syncer
             }
 
             // 按落地这一刻的样子算（合在线程池上的那一会儿用户可能又改了）。
+            // 新来的排在本机最旧那条之前（第四轮体检 E10）。
             var plan = ClipSync.Plan(
-                changes, store.SyncRows(), store.SyncGroups(), DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                changes, store.SyncRows(), store.SyncGroups(),
+                store.OldestCopiedAt ?? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                 out var failure);
             if (plan is null)
             {

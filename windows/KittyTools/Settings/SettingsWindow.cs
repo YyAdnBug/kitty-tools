@@ -214,6 +214,11 @@ internal sealed partial class SettingsWindow : Window
         Theme.ApplyTitleBar(AppWindow);
 
         BuildPage("general");
+        if (Syncer.Instance is { } syncer)
+        {
+            syncer.Changed += OnSyncChanged;
+        }
+
         Activated += (_, args) =>
         {
             _active = args.WindowActivationState != WindowActivationState.Deactivated;
@@ -294,6 +299,48 @@ internal sealed partial class SettingsWindow : Window
         => Theme.Brush("Kitty.PageBackground", Theme.EffectiveTheme == ElementTheme.Dark
             ? Theme.Argb(255, 32, 32, 32)
             : Theme.Argb(255, 243, 243, 243));
+
+    /// <summary>建页时网页搜索 / 翻译服务的那一份：同步落下来会换成新的一份，比引用就知道页面旧了（第四轮体检 E19）。</summary>
+    private List<KittyTools.Core.SearchEngine>? _shownEngines;
+
+    private List<TranslateServiceConfig>? _shownServices;
+
+    /// <summary>
+    /// 一轮同步结束：开着的是网页搜索或翻译那一页、它的列表又被同步换了，就重建这一页（第四轮体检 E19，mac 设置页跟着偏好走）。
+    /// 窗口在后台时照旧等切回来；开着对话框 / 下拉框、正在录快捷键时先不动——改完存的时候 Save 会发现列表换过了。
+    /// </summary>
+    private void OnSyncChanged() => DispatcherQueue.TryEnqueue(() =>
+    {
+        if (IsClosed || _recordingAction is not null)
+        {
+            return;
+        }
+
+        var replaced = _currentPage switch
+        {
+            "launcher" => !ReferenceEquals(SettingsService.Current.LauncherSearchEngines, _shownEngines),
+            "translate" => TranslateServiceStore.Instance is { } store && !ReferenceEquals(store.Services, _shownServices),
+            _ => false,
+        };
+        if (!replaced)
+        {
+            return;
+        }
+
+        if (!_active)
+        {
+            _stale = true;
+            return;
+        }
+
+        if (_content.XamlRoot is { } root && VisualTreeHelper.GetOpenPopupsForXamlRoot(root).Count > 0)
+        {
+            return;
+        }
+
+        Log.Info($"settings.sync-refresh {_currentPage}");
+        BuildPage(_currentPage);
+    });
 
     /// <summary>设置在别处被存了（不是外观 / 强调色 / 功能开关变了）：窗口不在前台时记一下，切回来再重建。</summary>
     public void MarkStale()
@@ -1291,16 +1338,22 @@ internal sealed partial class SettingsWindow : Window
 
         // 历史
         _content.Children.Add(SettingsUi.Section("历史"));
+        // 两个上限：换到会删掉东西的那一档先问，取消回原值（第四轮体检 E4，mac ClipboardTab.limited）。
         var days = new[] { 1, 7, 30, 90, 365, 0 };
-        AddCombo("保留普通历史", string.Empty,
-            new[] { "1 天", "7 天", "30 天", "90 天", "1 年", "永久" },
+        var dayTitles = new[] { "1 天", "7 天", "30 天", "90 天", "1 年", "永久" };
+        _content.Children.Add(SettingsUi.Card("保留普通历史", string.Empty, LimitCombo(
+            dayTitles,
             Math.Max(0, Array.IndexOf(days, settings.ClipboardRetentionDays) is var dayIndex and >= 0 ? dayIndex : 5),
+            "保留普通历史",
+            index => ClipboardPrune(service,
+                new RetentionLimits(days[index], (long)settings.ClipboardImageBudgetMB * 1_048_576),
+                $"保留普通历史改成「{dayTitles[index]}」？"),
             index =>
             {
                 settings.ClipboardRetentionDays = days[index];
                 SettingsService.Save();
                 ReportCleanup(service.EnforceLimits());
-            });
+            })));
 
         // 图片占用：512 MB / 1 GB / 2 GB / 5 GB / 不限（= PLAN-v9 C2）；存着别的值（旧的 128 / 256）照原值算，多显示一项，换了就没了。
         var budgets = new List<(int Value, string Title)> { (512, "512 MB"), (1024, "1 GB"), (2048, "2 GB"), (5120, "5 GB"), (0, "不限") };
@@ -1309,15 +1362,19 @@ internal sealed partial class SettingsWindow : Window
             budgets.Insert(0, (settings.ClipboardImageBudgetMB, $"{settings.ClipboardImageBudgetMB} MB"));
         }
 
-        AddCombo("图片最多占用", string.Empty,
+        _content.Children.Add(SettingsUi.Card("图片最多占用", string.Empty, LimitCombo(
             budgets.Select(budget => budget.Title).ToArray(),
             budgets.FindIndex(budget => budget.Value == settings.ClipboardImageBudgetMB),
+            "图片最多占用",
+            index => ClipboardPrune(service,
+                new RetentionLimits(settings.ClipboardRetentionDays, (long)budgets[index].Value * 1_048_576),
+                $"图片最多占用改成「{budgets[index].Title}」？"),
             index =>
             {
                 settings.ClipboardImageBudgetMB = budgets[index].Value;
                 SettingsService.Save();
                 ReportCleanup(service.EnforceLimits());
-            });
+            })));
         _content.Children.Add(SettingsUi.Card("图片当前占用", string.Empty, new TextBlock
         {
             Text = $"普通图片约 {service.Store.OrdinaryImageBytes / 1_048_576.0:F0} MB · 共 {service.Store.Count} 条",
@@ -1716,10 +1773,20 @@ internal sealed partial class SettingsWindow : Window
         // 网页搜索与快捷链接
         _content.Children.Add(SettingsUi.Section("网页搜索与快捷链接"));
         var engines = (settings.LauncherSearchEngines ?? WebSearch.Defaults()).Select(Copy).ToList();
+        _shownEngines = settings.LauncherSearchEngines;
 
         void Save()
         {
+            // 页面开着时同步换了列表（第四轮体检 E19）：别拿建页时那份把别的电脑刚改的盖掉，换成新的再让用户改。
+            if (!ReferenceEquals(settings.LauncherSearchEngines, _shownEngines))
+            {
+                NoticeHost.Show("网页搜索刚从别的电脑同步过来", "这一页换成了最新的，再改一次", NoticeTone.Warning);
+                BuildPage("launcher");
+                return;
+            }
+
             settings.LauncherSearchEngines = engines;
+            _shownEngines = engines;
             SettingsService.Save();
         }
 
@@ -2176,27 +2243,36 @@ internal sealed partial class SettingsWindow : Window
                     SettingsUi.SetEnabled(sizeCard, value);
                 }
             });
+        // 两个上限：换到会删掉历史的那一档先问，取消回原值（第四轮体检 E24，同剪贴板 E4）。
         var days = new[] { 7, 30, 90, 0 };
-        daysCard = SettingsUi.Card("保留", string.Empty, SettingsUi.Combo(
-            new[] { "7 天", "30 天", "90 天", "一直留着" },
+        var dayTitles = new[] { "7 天", "30 天", "90 天", "一直留着" };
+        daysCard = SettingsUi.Card("保留", string.Empty, LimitCombo(
+            dayTitles,
             Math.Max(0, Array.IndexOf(days, SettingsService.Current.ShotHistoryDays)),
+            "截图历史保留多久",
+            index => ShotHistoryPrune(days[index], SettingsService.Current.ShotHistoryMegabytes,
+                $"截图历史改成保留「{dayTitles[index]}」？"),
             index =>
             {
                 SettingsService.Current.ShotHistoryDays = days[index];
                 SettingsService.Save();
                 ShotHistory.Instance?.Prune();
-            }, "截图历史保留多久"), enabled: SettingsService.Current.ShotHistory);
+            }), enabled: SettingsService.Current.ShotHistory);
         _content.Children.Add(daysCard);
         var sizes = new[] { 1024, 2048, 5120, 0 };
-        sizeCard = SettingsUi.Card("最多占用", string.Empty, SettingsUi.Combo(
-            new[] { "1 GB", "2 GB", "5 GB", "不限" },
+        var sizeTitles = new[] { "1 GB", "2 GB", "5 GB", "不限" };
+        sizeCard = SettingsUi.Card("最多占用", string.Empty, LimitCombo(
+            sizeTitles,
             Math.Max(0, Array.IndexOf(sizes, SettingsService.Current.ShotHistoryMegabytes)),
+            "截图历史最多占用",
+            index => ShotHistoryPrune(SettingsService.Current.ShotHistoryDays, sizes[index],
+                $"截图历史最多占用改成「{sizeTitles[index]}」？"),
             index =>
             {
                 SettingsService.Current.ShotHistoryMegabytes = sizes[index];
                 SettingsService.Save();
                 ShotHistory.Instance?.Prune();
-            }, "截图历史最多占用"), enabled: SettingsService.Current.ShotHistory);
+            }), enabled: SettingsService.Current.ShotHistory);
         _content.Children.Add(sizeCard);
         var historyButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
         var openHistory = new Button { Content = "打开截图历史…" };
@@ -2440,6 +2516,66 @@ internal sealed partial class SettingsWindow : Window
         };
         controls.Children.Add(change);
         return SettingsUi.Card(title, string.Empty, controls);
+    }
+
+    /// <summary>
+    /// 上限类下拉框（保留天数、占用）：换到会删掉东西的那一档先弹确认，取消就回原值；不会删的照旧直接生效
+    /// （第四轮体检 E4，mac ClipboardTab.limited）。preview 干跑新值：会删几条、确认的标题和那句说明。
+    /// </summary>
+    private ComboBox LimitCombo(
+        string[] items, int selected, string automationName,
+        Func<int, (int Count, string Title, string Warning)> preview, Action<int> apply)
+    {
+        var current = Math.Clamp(selected, 0, Math.Max(0, items.Length - 1));
+        var reverting = false;
+        var combo = SettingsUi.Combo(items, current, _ => { }, automationName);
+        combo.SelectionChanged += async (_, _) =>
+        {
+            var index = combo.SelectedIndex;
+            if (reverting || index < 0 || index == current)
+            {
+                return;
+            }
+
+            var (count, title, warning) = preview(index);
+            if (count > 0)
+            {
+                var dialog = new ContentDialog
+                {
+                    RequestedTheme = Theme.ElementTheme,
+                    Title = title,
+                    Content = new TextBlock { Text = warning, TextWrapping = TextWrapping.Wrap, MaxWidth = 420 },
+                    PrimaryButtonText = "删除",
+                    CloseButtonText = "取消",
+                    DefaultButton = ContentDialogButton.Close,
+                    XamlRoot = _content.XamlRoot,
+                };
+                if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+                {
+                    reverting = true;
+                    combo.SelectedIndex = current;
+                    reverting = false;
+                    return;
+                }
+            }
+
+            current = index;
+            apply(index);
+        };
+        return combo;
+    }
+
+    private static (int Count, string Title, string Warning) ClipboardPrune(
+        ClipboardService service, RetentionLimits limits, string title)
+    {
+        var (items, images) = service.Store.PruneCount(limits);
+        return (items, title, Retention.PruneWarning(items, images));
+    }
+
+    private static (int Count, string Title, string Warning) ShotHistoryPrune(int days, int megabytes, string title)
+    {
+        var count = ShotHistory.Instance?.PruneCount(days, megabytes) ?? 0;
+        return (count, title, $"会删掉 {count} 条截图历史，连同留着的原图；已经存到文件夹里的文件不动。");
     }
 
     private void ReportCleanup(int removed)
@@ -2831,6 +2967,11 @@ internal sealed partial class SettingsWindow : Window
         {
             row.Children.Add(new ProgressBar { Width = 140, IsIndeterminate = true, VerticalAlignment = VerticalAlignment.Center });
             row.Children.Add(Text(AutoUpdater.ProgressMenuText ?? "正在更新…"));
+            row.Children.Add(Link("取消", () =>
+            {
+                AutoUpdater.Cancel();
+                RefreshUpdateRow();
+            }));
             StartUpdateTicker();
         }
         else if (UpdateService.AvailableVersion is { } available)

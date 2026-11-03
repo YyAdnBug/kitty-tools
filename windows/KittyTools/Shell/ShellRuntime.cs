@@ -1018,12 +1018,7 @@ internal sealed class ShellRuntime
     public void Exit()
     {
         Log.Info("app.exit");
-        Clipboard?.CommitDeletion();
-        if (SettingsService.Current.ClipboardClearOnQuit && Clipboard?.Store is { } quitting)
-        {
-            // 退出时清空普通历史（收藏、片段、收藏夹里的不清，mac）。
-            Log.Info($"clipboard.cleared-on-quit count={quitting.ClearOrdinary()}");
-        }
+        FinishSession();
         HotKeys.UnregisterAll();
         Tray.Remove();
         Application.Current.Exit();
@@ -1044,6 +1039,46 @@ internal sealed class ShellRuntime
         };
         fallback.Start();
     }
+
+    /// <summary>
+    /// 退出前的收尾（托盘退出、装完更新重启、关机 / 注销都走这里）：录着的录屏 / 录音先停下保存（第四轮体检 E23），
+    /// 提交撤销栈里的删除，开着「退出时清空」就清普通历史（收藏、片段、收藏夹里的不清，mac）。都是同步的，做完才返回。
+    /// </summary>
+    private void FinishSession()
+    {
+        if (_finished)
+        {
+            return;
+        }
+
+        _finished = true;
+        try
+        {
+            if (RecordingHost.IsRecording)
+            {
+                Log.Info("record.exit-stop");
+                RecordingHost.Stop();
+            }
+
+            if (AudioHost.IsRecording)
+            {
+                Log.Info("audio.exit-stop");
+                AudioHost.Stop();
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error("record.exit-stop-failed", ex);
+        }
+
+        Clipboard?.CommitDeletion();
+        if (SettingsService.Current.ClipboardClearOnQuit && Clipboard?.Store is { } quitting)
+        {
+            Log.Info($"clipboard.cleared-on-quit count={quitting.ClearOrdinary()}");
+        }
+    }
+
+    private bool _finished;
 
     private void OnHiddenMessage(uint msg, Windows.Win32.Foundation.WPARAM wParam, Windows.Win32.Foundation.LPARAM lParam)
     {
@@ -1078,6 +1113,13 @@ internal sealed class ShellRuntime
         else if (msg == PInvoke.WM_CLIPBOARDUPDATE)
         {
             Clipboard?.OnClipboardUpdate();
+        }
+        else if (msg == PInvoke.WM_ENDSESSION && wParam.Value != 0)
+        {
+            // 关机 / 注销：这条消息处理完系统随时会结束进程，Exit() 走不到（第四轮体检 E5）。收尾同步做完再返回；
+            // WM_QUERYENDSESSION 交给 DefWindowProc（同意结束），不拦关机。
+            Log.Info($"app.end-session flags=0x{lParam.Value:x}");
+            FinishSession();
         }
         else if (msg == Tray.CallbackMessage)
         {
