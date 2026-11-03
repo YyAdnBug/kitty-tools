@@ -368,15 +368,17 @@ internal sealed class TestPatternWindow
     /// <summary>7 秒的 WAV：每秒前 100 ms 是 1 kHz，剩下静音；循环播放，系统声音回环能采到。</summary>
     private static string EnsureTone()
     {
+        const int rate = 48_000;
+        const int seconds = 7;
+        var samples = rate * seconds;
         var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "kitty-test-1khz.wav");
-        if (File.Exists(path))
+        // 只认长度对的：以前的版本在同一个名字下留了一个 83 ms 的文件，循环放起来一直在响、闪白一直亮，
+        // R24 的探针只找到 4 次闪白（2026-11-03 Windows 上查出来的）。
+        if (File.Exists(path) && new FileInfo(path).Length == 44 + samples * 2L)
         {
             return path;
         }
 
-        const int rate = 48_000;
-        const int seconds = 7;
-        var samples = rate * seconds;
         using var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.Read);
         using var writer = new BinaryWriter(stream);
         writer.Write("RIFF"u8.ToArray());

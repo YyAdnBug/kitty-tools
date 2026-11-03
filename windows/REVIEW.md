@@ -822,7 +822,7 @@ zip 和 `.sha256` 并校验，不装，报告 `%TEMP%\kitty-update-live\report.t
   - 「留着的条目」的规则 `IsRetained` 写了三处：`ClipboardStore.cs:151`、`KittyTools.Core/Sync/ClipSync.cs:25` 和 `:159`，留 Core 那一份。
 - 截图飞入卡（`Screenshot/ScreenshotCard.cs:380`）整张解码：卡片最后只有 200 × 140 DIP，一张 1440p 截图解出来约 14.7 MB，和 STATUS 里「截图后 +18 MB」量级接近。上面那个公用方法加了 `decodeWidth` 以后，先量一下按卡片大小解码能省多少、飞入开头几帧会不会发糊，再决定用不用。
 
-### R24（P1）第 2 批的音画同步是对着一张不动的画面量的，要重做 → 探针已重写（`f07feaa`，审查方），等 Windows 上重测
+### R24（P1）第 2 批的音画同步是对着一张不动的画面量的，要重做 → 探针已重写（`f07feaa`，审查方）；2026-11-03 Windows 重测：还没过（探针的测试音修了，剩下锯齿要逐帧解码才分得清，见本条末尾）
 
 **复查（2026-10-26 晚）**：这一条还没动。重做的时候，顺手把 R23 的重封装耗时（60 s、10 分钟的文件各一次）一起量了，写进同一份报告。
 
@@ -861,6 +861,22 @@ KittyTools.exe --record-test=600 --record-fps=30                     # 看 recor
 ```
 
 报告写 `sync.summary` 整行（验收：第一对、最后一对、静音后第一对都 < 50 ms，`passed=True`）、三行 `sync.frames`（都 `continuous=True`）、`wgc.stats` 的 CPU 和 `privateDelta`（目标 ≤ 40 MB）、60 秒和 10 分钟两次的重封装耗时。`passed=False` 时把 `sync.pair` 贴出来，看是固定偏移还是越走越偏。
+
+**Windows 重测（2026-11-03，PLAN-v11 第 4 批）→ 还没过，探针本身又查出一个问题，剩下的要逐帧解码才定得了**：
+
+1. 第一次跑 `passed=False`，`flashes=4 beeps=2`：`%TEMP%\kitty-test-1khz.wav` 是 10 月 26 日旧版本留下的 **83 ms** 文件，`EnsureTone` 见文件在就不重写——循环放起来一直在响、`Position` 一直落在前 100 ms 里、闪白一直亮。**修了**：长度不对就重写（`TestPatternWindow.EnsureTone`）。
+2. 修好后（Release AOT，`--record-test=68 --record-fps=60 --sync-silence`，再用 Debug `--sync-probe`）：
+   ```
+   sync.summary pairs=42 flashes=42 beeps=49 first=-7ms last=-177ms afterSilence=-94ms mean=-116ms maxAbs=227ms fps=57.6 passed=False
+   sync.frames at=1.0s  numbers=233,233,233,233,235,237,239,241,243,245 continuous=False
+   sync.frames at=30.0s numbers=3669,3671,3671,3673,3675,3677,3679,3681,3683,3685 continuous=True
+   sync.frames at=67.0s numbers=8112,8114,8114,8116,8118,8120,8122,8124,8126,8128 continuous=True
+   wgc.stats cpu=18.3%single privateDelta=29.1MB private=111.3MB wall=68.7s arrived=4091 accepted=4091
+   ```
+   `sync.pair` 不是固定偏移、也不是一路越走越偏，是**锯齿**：提示音在音轨里严格 1.000 s 一声（x.176、x.189 s，静音 20 s 前后各自整齐），闪白在视频里 1.03–1.07 s 一次，一圈越拖越晚（−7 → −35 → −85 → −152 → −185 ms），约 7 秒跳回来一次（14.2 s 处 −18 ms），刚好是提示音 WAV 循环的长度。
+3. 先以为是 `PlaybackSession.Position` 更新得粗，试了两种闪白的钟（两次更新之间按 Stopwatch 往前推；只在开始播放那一刻对一次表、之后全按 Stopwatch）：**结果几乎一样**（第二种 `first=15ms last=-192ms maxAbs=225ms`），所以不是测试图案的钟，两处试验都撤了。
+4. 剩下两个嫌疑，现有工具分不开：(a) 录下来的视频时间戳在一圈里被拉长、再跳回；(b) 探针用 `MediaComposition.GetThumbnailAsync(NearestFrame)` 按时间取帧，取到的不是那一刻的帧（帧号条码在第 1 秒连着 4 张一样、别处偶尔跳 4，像是取帧不准）。要定，得按顺序解码每一帧、拿每帧自己的时间戳去找闪白（Media Foundation `IMFSourceReader`，`Mp4Remux` 里已经有一半），这次没做。
+5. 其余几项：CPU 18.3% 单核、`privateDelta` 29 MB（目标 ≤ 40 MB，过）；音频 `loop=4091` 包、没断。60 s 的重封装 219 ms；10 分钟的见下面。
 
 ### R31（P1）0.7.0 的包是在「设置窗一打开就崩」修好之前打的，要重打；打包时加启动冒烟 → 已修（`5db1e8f`）
 
