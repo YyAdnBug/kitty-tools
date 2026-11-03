@@ -183,6 +183,24 @@
 3. 要在屏幕上看的：角落卡三个胶囊在窄卡（168 宽附近）上挤不挤；托盘两个角标在 100% / 150% 下清不清楚；主界面打字转启动器时焦点、前台对不对。
 4. 截图：角落卡悬停、关于页（有新版本 / 已下好 / 已跳过）、托盘两个角标（只截自己的图标那一块），推 `windows-shots` 的 `0.2.0-batch-6/`。
 
+### 0.2.0 第 8 批：C2 C5 C6 C8 → 已写（审查方，`git log --grep "PLAN-v11 第 8 批"`，没编译）
+
+用户 2026-11-03「接着写第 8 批」。方案里这一批带的「收尾」（版本 0.2.0、`changelog.json`、`STATUS.md`）**没做**：第 5 批（等 mac 0.8.0）和第 7 批还没做，0.2.0 的最后一批再收尾。
+
+- **C2** 主界面：选中高亮改成格子底下单独一块、`Motion.SlideTo` 滑过去（Snap；刚排出来时直接落位），格子本身不再改底色；位置算法 `Core/HomeLayout.TileOrigin`（和 `Height`、`Render` 同一套排法，单测 `TileOriginFollowsSectionsAndRows`）。
+  开着时订阅 `RecordingHost.Changed` / `AudioHost.Changed`，录制开始停止时重排、焦点留在原来那一格。钉图两格照旧只在打开时排（ponytail 写在文件头）。
+- **C5** 划词翻译并替换：固定着的、为了取词收起的浮窗，替换完（成没成都算）不抢焦点地在上次的位置露回来（`TranslateWindow.Reappear`；`TranslateHost` 那一段包进 try / finally）。
+- **C6** 录音「没听到声音」只看麦克风那一路：`AudioCaptureSet.MicrophonePeak`（每一路本来就记着开录以来的峰值）经 `AudioRecorder` / `AudioHost.MicrophonePeak` 给到 `AudioHud`，和 −70 dB 换算的振幅比。电平条照旧是两路混在一起的。
+- **C8** 拉丁字母的原文：`Langs.Detect` 加一个可选的识别参数（Core 照旧没有 P/Invoke；单测 `LatinScriptAsksTheRecognizer`），翻译时传 `LanguageRecognizer.Recognize`——
+  系统自带的 ELS「Microsoft Language Detection」（`elscore.dll`，`MappingGetServices` / `MappingRecognizeText` / `MappingFreePropertyBag`，`LibraryImport`，结构体照 elscore.h 写在文件里）。
+  不到 3 个词、认不出、认成 11 种以外的照旧按英语；复制即译的「值不值得翻」那一处不传（只看是不是 null，不用多问一次系统）。
+
+**你们做的**：
+1. 编译、零警告，`dotnet test` 全过（新加 `TileOriginFollowsSectionsAndRows`、`LatinScriptAsksTheRecognizer`）。
+2. **C8 的结构体要先在真机上验**：`MAPPING_ENUM_OPTIONS`、`MAPPING_PROPERTY_BAG`、`MAPPING_DATA_RANGE` 是照头文件手写的（x64 / ARM64 都是 8 字节对齐，最后两个位域合成一个 uint）。翻一句法语看日志有 `lang.els-ready`、识别出 fr；
+   要是 `MappingGetServices` 返回错误或者崩了，先对一遍 `sizeof`（C++ 里 `sizeof(MAPPING_ENUM_OPTIONS)` 应该是 80、`sizeof(MAPPING_PROPERTY_BAG)` 64、`sizeof(MAPPING_DATA_RANGE)` 72），修不好就让 `Recognize` 直接返回 null、记在这里。
+3. 走 HANDTEST 871–882；871 的滑动录 3–5 秒短视频（只录主界面），和截图一起推 `windows-shots` 的 `0.2.0-batch-8/`。
+
 ## 深色下的开关和输入框、翻译卡的彗星边框（2026-11-01 用户截图，审查方在 Mac 上写、**没编译**）——已修（75d6f86 + 12397aa）
 
 **现象**：深色下设置窗「搜索设置」的字、开关关着和开着的圆点都是黑的；翻译卡生成中的彗星边框和 mac 不一样（几段台阶）。

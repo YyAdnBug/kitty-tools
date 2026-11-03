@@ -175,91 +175,103 @@ internal static class TranslateHost
         }
 
         // 自家浮层在前台时先收起、把前台还给原来的程序：不然读到的、粘进去的都是自己。
-        // ponytail: 固定着的翻译浮窗也一起收了，替换完不再露出来（mac 会露回去）；要的话给浮窗加一个不抢焦点的重新露出。
+        // 固定着的翻译浮窗收起后，替换完（成没成都算）不抢焦点地原样露回来（PLAN-v11 C5，同 mac）。
         OverlayHost.Hide(restoreForeground: true);
+        var reappear = false;
         if (_window is { IsVisible: true } window && Foreground.IsOurs(Foreground.Get()))
         {
+            reappear = SettingsService.Current.TranslatePinned;
             window.Hide(restoreForeground: true);
         }
 
-        var source = Foreground.Get();
-        var pid = Foreground.PidOf(source);
-        string? text;
-        _selectionBusy = true;
         try
         {
-            text = await SelectionReader.ReadAsync(CancellationToken.None);
-        }
-        finally
-        {
-            // 取完词就放开，等网络时不挡别的热键。
-            _selectionBusy = false;
-        }
+            var source = Foreground.Get();
+            var pid = Foreground.PidOf(source);
+            string? text;
+            _selectionBusy = true;
+            try
+            {
+                text = await SelectionReader.ReadAsync(CancellationToken.None);
+            }
+            finally
+            {
+                // 取完词就放开，等网络时不挡别的热键。
+                _selectionBusy = false;
+            }
 
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            NoticeHost.Show("没有选中文字", string.Empty, NoticeTone.Warning);
-            return;
-        }
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                NoticeHost.Show("没有选中文字", string.Empty, NoticeTone.Warning);
+                return;
+            }
 
-        var cts = new CancellationTokenSource();
-        _replace = cts;
-        NoticeHost.Show("翻译中…", "再按一次快捷键取消", NoticeTone.Normal,
-            new NoticeAction("取消", () =>
+            var cts = new CancellationTokenSource();
+            _replace = cts;
+            NoticeHost.Show("翻译中…", "再按一次快捷键取消", NoticeTone.Normal,
+                new NoticeAction("取消", () =>
+                {
+                    if (_replace == cts)
+                    {
+                        TranslateAndReplace();
+                    }
+                }));
+            try
+            {
+                var result = TranslateSession.Rewrap(await TranslateCoordinator.TranslateOnceAsync(text, cts.Token), text);
+                if (cts.IsCancellationRequested)
+                {
+                    return;
+                }
+
+                var now = Foreground.Get();
+                if (source == default || Foreground.IsOurs(now) || Foreground.PidOf(now) != pid)
+                {
+                    if (ClipboardWriter.WriteText(result))
+                    {
+                        ClipboardService.Instance?.MarkOwnWrite();
+                        ClipboardService.Instance?.Store.RecordOwnText(result);
+                    }
+
+                    NoticeHost.Show("已复制译文", "前台已不是取词的程序，没有替换", NoticeTone.Normal);
+                    return;
+                }
+
+                // 失败时 Paster 自己会说原因（切不回去 / 管理员窗口 / 剪贴板被占）。
+                if (Paster.Paste(source, () => ClipboardWriter.WriteText(result), ClipboardService.Instance))
+                {
+                    ClipboardService.Instance?.Store.RecordOwnText(result);
+                    NoticeHost.Show("已替换为译文", TranslateSession.Excerpt(result), NoticeTone.Normal);
+                }
+            }
+            catch (OperationCanceledException) when (cts.IsCancellationRequested)
+            {
+                // 取消时提示已经换成「已取消」了。
+            }
+            catch (Exception ex)
+            {
+                if (!cts.IsCancellationRequested)
+                {
+                    // 重试 = 再划一次：前台还是取词的程序（点提示不激活本 App），选区多半还在。
+                    NoticeHost.Show("翻译失败", ex.Message, NoticeTone.Error, new NoticeAction("重试", TranslateAndReplace));
+                }
+            }
+            finally
             {
                 if (_replace == cts)
                 {
-                    TranslateAndReplace();
-                }
-            }));
-        try
-        {
-            var result = TranslateSession.Rewrap(await TranslateCoordinator.TranslateOnceAsync(text, cts.Token), text);
-            if (cts.IsCancellationRequested)
-            {
-                return;
-            }
-
-            var now = Foreground.Get();
-            if (source == default || Foreground.IsOurs(now) || Foreground.PidOf(now) != pid)
-            {
-                if (ClipboardWriter.WriteText(result))
-                {
-                    ClipboardService.Instance?.MarkOwnWrite();
-                    ClipboardService.Instance?.Store.RecordOwnText(result);
+                    _replace = null;
                 }
 
-                NoticeHost.Show("已复制译文", "前台已不是取词的程序，没有替换", NoticeTone.Normal);
-                return;
-            }
-
-            // 失败时 Paster 自己会说原因（切不回去 / 管理员窗口 / 剪贴板被占）。
-            if (Paster.Paste(source, () => ClipboardWriter.WriteText(result), ClipboardService.Instance))
-            {
-                ClipboardService.Instance?.Store.RecordOwnText(result);
-                NoticeHost.Show("已替换为译文", TranslateSession.Excerpt(result), NoticeTone.Normal);
-            }
-        }
-        catch (OperationCanceledException) when (cts.IsCancellationRequested)
-        {
-            // 取消时提示已经换成「已取消」了。
-        }
-        catch (Exception ex)
-        {
-            if (!cts.IsCancellationRequested)
-            {
-                // 重试 = 再划一次：前台还是取词的程序（点提示不激活本 App），选区多半还在。
-                NoticeHost.Show("翻译失败", ex.Message, NoticeTone.Error, new NoticeAction("重试", TranslateAndReplace));
+                cts.Dispose();
             }
         }
         finally
         {
-            if (_replace == cts)
+            if (reappear)
             {
-                _replace = null;
+                _window?.Reappear();
             }
-
-            cts.Dispose();
         }
     }
 

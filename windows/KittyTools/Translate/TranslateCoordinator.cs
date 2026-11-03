@@ -441,7 +441,8 @@ internal sealed class TranslateCoordinator
     {
         var settings = SettingsService.Current;
         var (first, second) = Langs.Pair(settings.TranslateFirstLanguage, settings.TranslateSecondLanguage);
-        var detected = Langs.Detect(text, new[] { first, second });
+        // 拉丁字母的原文交给系统的语言识别（PLAN-v11 C8：法 / 德 / 西 / 葡 / 意不再一律认成英文）。
+        var detected = Langs.Detect(text, new[] { first, second }, LanguageRecognizer.Recognize);
         var chosenTarget = Langs.FromCode(settings.TranslateTarget);
         var fixedSource = Langs.FromCode(settings.TranslateSource);
         var plan = Langs.Resolve(fixedSource, chosenTarget, detected, first, second);

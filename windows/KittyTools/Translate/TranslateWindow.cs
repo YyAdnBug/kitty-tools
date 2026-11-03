@@ -438,6 +438,23 @@ internal sealed partial class TranslateWindow : Window
         ResizeToContent();
     }
 
+    /// <summary>
+    /// 划词翻译并替换为了取词收起的、固定着的浮窗，替换完原样露回来（PLAN-v11 C5，同 mac）：不抢焦点（前台留在刚替换完的程序）、
+    /// 不重新翻译，回到上次的位置。
+    /// </summary>
+    public void Reappear()
+    {
+        if (_visible)
+        {
+            return;
+        }
+
+        _noActivate = true;
+        ShowCore(activate: false, Placement.Last);
+        OutsideClickHook.Install(_hwnd, OnOutsideClick);
+        ResizeToContent();
+    }
+
     /// <summary>不激活露出的浮窗（复制即译、剪贴板里的翻译）点到外面：固定着就不收（同 mac OverlayPanel.clickedOutside）。</summary>
     private void OnOutsideClick()
     {

@@ -46,6 +46,9 @@ internal sealed class AudioRecorder : IDisposable
     /// <summary>录音中实时备注：麦克风 / 系统声音断了会在这里出现（R28）。</summary>
     public string? LiveNote => _audio?.Note;
 
+    /// <summary>麦克风那一路开录以来最大的振幅（0–1，采集线程写、这里只读；没开麦克风是 0）。</summary>
+    public float MicrophonePeak => _audio?.MicrophonePeak ?? 0;
+
     public bool MicrophoneDenied => _microphoneDenied;
 
     public bool RecordsMicrophone => _microphone;

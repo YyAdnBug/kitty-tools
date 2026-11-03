@@ -12,6 +12,25 @@ public sealed class HomeLayoutTests
     private static HomeSection Section(string? title, params string[] ids) => new(title, ids.Select(Tile).ToList());
 
     [TestMethod]
+    public void TileOriginFollowsSectionsAndRows()
+    {
+        // PLAN-v11 C2：选中高亮滑到的位置，和 Render 的排法一样（有标题让出标题高，第二个起没标题的让出 UntitledGap）。
+        var sections = new[]
+        {
+            Section("剪贴板与启动器", "a", "b", "c", "d", "e", "f"),
+            Section(null, "g", "h"),
+        };
+        var step = HomeLayout.TileWidth + HomeLayout.Gap;
+        var row = HomeLayout.TileHeight + HomeLayout.Gap;
+        var top = HomeLayout.Top + HomeLayout.TitleHeight;
+        Assert.AreEqual((HomeLayout.Inset, top), HomeLayout.TileOrigin(sections, 0));
+        Assert.AreEqual((HomeLayout.Inset + 4 * step, top), HomeLayout.TileOrigin(sections, 4));
+        Assert.AreEqual((HomeLayout.Inset, top + row), HomeLayout.TileOrigin(sections, 5), "第 6 格折到第二行");
+        var second = top + 2 * HomeLayout.TileHeight + HomeLayout.Gap + HomeLayout.UntitledGap;
+        Assert.AreEqual((HomeLayout.Inset + step, second), HomeLayout.TileOrigin(sections, 7));
+    }
+
+    [TestMethod]
     public void SingleTileSectionsMergeIntoOneUntitledRow()
     {
         var sections = HomeLayout.Sections(new[]

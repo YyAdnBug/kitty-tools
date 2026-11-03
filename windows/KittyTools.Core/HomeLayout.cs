@@ -94,6 +94,32 @@ public static class HomeLayout
         return rows;
     }
 
+    /// <summary>
+    /// 第 index 格的左上角，相对格子那一块（含 Inset / Top 的内边距）：选中高亮滑到这里（PLAN-v11 C2，mac 的高亮是滑过去的）。
+    /// 排法同 Height 和 HomePanel.Render：有标题的节先让出标题高，没标题的（第一节除外）先让出 UntitledGap，一行 Columns 格。
+    /// </summary>
+    public static (double X, double Y) TileOrigin(IReadOnlyList<HomeSection> sections, int index)
+    {
+        var y = Top;
+        var start = 0;
+        for (var section = 0; section < sections.Count; section++)
+        {
+            y += sections[section].Title is not null ? TitleHeight : section == 0 ? 0 : UntitledGap;
+            var count = sections[section].Tiles.Count;
+            if (index < start + count)
+            {
+                var local = index - start;
+                return (Inset + local % Columns * (TileWidth + Gap), y + local / Columns * (TileHeight + Gap));
+            }
+
+            var rows = (count + Columns - 1) / Columns;
+            y += rows * TileHeight + (rows - 1) * Gap;
+            start += count;
+        }
+
+        return (Inset, Top);
+    }
+
     /// <summary>面板的高：格子那一块 +「N 个功能关着」那一行（有才有）+ 底栏。</summary>
     public static double Height(IReadOnlyList<HomeSection> sections, int offCount)
     {

@@ -25,6 +25,9 @@ internal static class AudioHost
 
     public static float Level => _recorder?.Level ?? -90;
 
+    /// <summary>麦克风那一路开录以来最大的振幅（「没听到声音」只看它，PLAN-v11 C6）。</summary>
+    public static float MicrophonePeak => _recorder?.MicrophonePeak ?? 0;
+
     /// <summary>录音中的实时状态：麦克风 / 系统声音断了（R28）。</summary>
     public static string? StatusNote => _recorder?.LiveNote;
 

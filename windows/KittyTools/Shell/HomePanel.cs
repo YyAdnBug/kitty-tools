@@ -12,7 +12,9 @@
 // 键盘：打开时没有选中，方向键 / Tab 才出一块中性高亮（焦点真的落在那一格上，读屏跟着念）；Enter / 空格执行，Esc 收起，Ctrl+, 设置。
 // 直接打字（可打印字符）就收起、打开启动器并填进这个字（PLAN-v11 F8，mac X12）。
 // 从托盘用键盘打开时停在第一格。
-// ponytail: 选中高亮是直接换格子的底色，没有 mac 那样滑过去；开着的时候格子不跟着录屏 / 钉图状态实时变，下次打开才换。
+// 选中高亮是格子底下单独一块，在格子间滑过去（Snap，同剪贴板 / 启动器；位置算法在 Core 的 HomeLayout.TileOrigin）；
+// 开着的时候录屏 / 录音开始、停止，格子跟着换（「录屏」⇄「停止录屏」）（PLAN-v11 C2）。
+// ponytail: 钉图那两格只在打开时排（钉图的增减没有事件；主界面开着时钉图也很少变），要跟着变再给 PinHost 加 Changed。
 using KittyTools.Core;
 using KittyTools.Infrastructure;
 using KittyTools.Ui;
@@ -51,6 +53,9 @@ internal sealed class HomePanel : Window
     private readonly UserControl _keys;
     private readonly StackPanel _content;
     private readonly List<ButtonBase> _tileViews = new();
+
+    /// <summary>选中高亮：格子底下单独一块，滑到选中的那一格（PLAN-v11 C2）；每次 Render 重建。</summary>
+    private Border? _highlight;
     private readonly HWND _hwnd;
     private List<HomeSection> _sections = new();
     private List<HomeTile> _tiles = new();
@@ -74,6 +79,8 @@ internal sealed class HomePanel : Window
         };
         _keys.KeyDown += OnKeyDown;
         _keys.CharacterReceived += OnCharacterReceived;
+        RecordingHost.Changed += OnRecordingChanged;
+        AudioHost.Changed += OnRecordingChanged;
         AutomationProperties.SetName(_keys, "主界面");
         Content = _keys;
         SystemBackdrop = new AcrylicBackdrop();
@@ -422,7 +429,22 @@ internal sealed class HomePanel : Window
             index += section.Tiles.Count;
         }
 
-        _content.Children.Add(grid);
+        // 格子透明，选中的底是垫在下面的一块（ShowSelection 把它滑过去）。
+        _highlight = new Border
+        {
+            Width = HomeLayout.TileWidth,
+            Height = HomeLayout.TileHeight,
+            CornerRadius = new CornerRadius(4),
+            Background = Theme.Brush("Kitty.Fill.Selected", Theme.Argb(18, 128, 128, 128)),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
+            IsHitTestVisible = false,
+            Visibility = Visibility.Collapsed,
+        };
+        var host = new Grid();
+        host.Children.Add(_highlight);
+        host.Children.Add(grid);
+        _content.Children.Add(host);
         if (_offCount > 0)
         {
             _content.Children.Add(OffNote());
@@ -675,14 +697,39 @@ internal sealed class HomePanel : Window
         _tileViews[index].Focus(FocusState.Keyboard);
     }
 
+    /// <summary>
+    /// 高亮挪到选中的那一格：刚排出来（打开、重排）时直接落位，之后在格子间滑（键盘驱动的选中高亮用 Snap，减弱动态效果时直接跳）。
+    /// 没有选中时藏起来。
+    /// </summary>
     private void ShowSelection()
     {
-        var selected = Theme.Brush("Kitty.Fill.Selected", Theme.Argb(18, 128, 128, 128));
-        for (var index = 0; index < _tileViews.Count; index++)
+        if (_highlight is not { } highlight)
         {
-            _tileViews[index].Background = index == _selection ? selected : new SolidColorBrush(Colors.Transparent);
+            return;
         }
+
+        if (_selection is not { } index || index < 0 || index >= _tiles.Count)
+        {
+            highlight.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        var (x, y) = HomeLayout.TileOrigin(_sections, index);
+        var appearing = highlight.Visibility != Visibility.Visible;
+        highlight.Visibility = Visibility.Visible;
+        Motion.SlideTo(highlight, x, y, appearing ? MotionCurve.Instant : MotionCurve.Snap);
     }
+
+    /// <summary>开着的时候录屏 / 录音开始、停止：格子跟着换名字（「录屏」⇄「停止录屏」），选中留在原来那一格。</summary>
+    private void OnRecordingChanged()
+        => DispatcherQueue.TryEnqueue(() =>
+        {
+            if (_visible)
+            {
+                Rebuild(appearing: false);
+                RefocusSelection();
+            }
+        });
 
     private void OnKeyDown(object sender, KeyRoutedEventArgs e)
     {

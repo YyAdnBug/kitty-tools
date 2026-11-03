@@ -3,7 +3,8 @@
 // - 目标「自动」：原文是第一语言就译成第二语言，否则译成第一语言；
 // - 源自动、固定目标正好是原文语言：改按「自动」译，并在界面上写明（FellBack）；
 // - 源和目标都固定且相同（旧设置留下的）：目标按「自动」处理。
-// Windows 没有 NaturalLanguage：只按书写系统认（拉丁字母一律算英文），见 PLAN §7.1。
+// Windows 没有 NaturalLanguage：按书写系统认，见 PLAN §7.1；拉丁字母的那一段交给调用方给的识别（App 里是系统的 ELS 语言识别，
+// PLAN-v11 C8，以前一律算英文），认不出、太短时按英文。
 using System.Text.RegularExpressions;
 
 namespace KittyTools.Core;
@@ -106,11 +107,13 @@ public static partial class Langs
     public static bool IsChinese(this Lang lang) => lang is Lang.ZhHans or Lang.ZhHant;
 
     /// <summary>
-    /// 按书写系统检测：假名 → 日文；谚文 → 韩文；汉字 → 中文；西里尔 → 俄文；拉丁字母 → 英文。
+    /// 按书写系统检测：假名 → 日文；谚文 → 韩文；汉字 → 中文；西里尔 → 俄文；拉丁字母 → latin 认出的那种（法 / 德 / 西 / 葡 / 意 / 英），
+    /// 没给 latin、认不出、不到 3 个词时 → 英文。
     /// 中日韩文里夹英文词时，CJK 字数不少于拉丁词数就只看 CJK 部分。
     /// 纯数字 / 符号返回 null。preferring 用来在简繁之间、以及两种 CJK 之外挑一个（比如汉字夹日文假名已经判日文）。
+    /// latin：文本 → 最可能的语言标签（「fr」「de-DE」），认不出返回 null（PLAN-v11 C8）。
     /// </summary>
-    public static Lang? Detect(string text, IReadOnlyList<Lang>? preferring = null)
+    public static Lang? Detect(string text, IReadOnlyList<Lang>? preferring = null, Func<string, string?>? latin = null)
     {
         var sample = text.Length > 2000 ? text[..2000] : text;
         var kana = Count(sample, KanaRegex());
@@ -153,10 +156,26 @@ public static partial class Langs
 
         if (latinLetters > 0)
         {
-            return Lang.En;
+            return LatinLanguage(sample, latinWords, latin);
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// 拉丁字母的原文是哪种：不到 3 个词不认（一两个词谁都认不准），认出的不是拉丁字母的那几种、或者不在 11 种里，都按英文。
+    /// </summary>
+    private static Lang LatinLanguage(string sample, int words, Func<string, string?>? latin)
+    {
+        if (words < 3 || latin?.Invoke(sample) is not { Length: > 0 } tag)
+        {
+            return Lang.En;
+        }
+
+        var primary = tag.Split('-')[0];
+        return FromCode(primary) is { } lang && lang is Lang.En or Lang.Fr or Lang.De or Lang.Es or Lang.Pt or Lang.It
+            ? lang
+            : Lang.En;
     }
 
     /// <summary>两个选成同一种时第二语言退回英语（第一语言是英语就退回简体中文）。</summary>

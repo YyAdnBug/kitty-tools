@@ -51,6 +51,9 @@ internal sealed partial class AudioHud
     /// <summary>低于这个电平算没声音（mac：数字静音约 −120，安静房间的底噪约 −41 到 −51）。</summary>
     private const float SilenceDb = -70;
 
+    /// <summary>SilenceDb 换成振幅（10^(−70/20)），和麦克风那一路的峰值比。</summary>
+    private static readonly float SilenceAmplitude = MathF.Pow(10, SilenceDb / 20);
+
     /// <summary>开录这么久还没听到声音就提示。</summary>
     private const long SilenceWindowMs = 5000;
 
@@ -272,7 +275,9 @@ internal sealed partial class AudioHud
         _timer.Text = AudioHost.Elapsed;
         var level = Math.Clamp((AudioHost.Level + 60) / 60.0, 0, 1);
         _levelFill.Width = 54 * level;
-        if (AudioHost.Level > SilenceDb)
+        // 「没听到声音」只看麦克风那一路（PLAN-v11 C6，同 mac）：以前看的是两路混在一起的电平，
+        // 「两者」时系统声音一响就不提示了，麦克风其实没进声音（拔了、静音了、选错了设备）。
+        if (AudioHost.MicrophonePeak > SilenceAmplitude)
         {
             _heard = true;
         }
@@ -283,7 +288,6 @@ internal sealed partial class AudioHud
         }
 
         // 断了的那一路（实时）> 没听到声音 > 开录时的提示。
-        // ponytail: 电平是两路混在一起的，「两者」时系统声音有声就不提示（mac 只看麦克风那一路）；要分开得让 AudioCaptureSet 各报各的电平。
         var live = AudioHost.StatusNote;
         var silent = !_heard && AudioHost.RecordsMicrophone && !AudioHost.IsPaused &&
                      AudioHost.ElapsedMs >= SilenceWindowMs;
