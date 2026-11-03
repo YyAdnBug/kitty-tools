@@ -2,14 +2,17 @@
 // 输入是 macos/brand-icons.swift 生成的 AppIcon PNG（改角色先跑那个脚本，再跑这个）；输出两个文件，各 16 / 20 / 24 / 32 /
 // 40 / 48 / 64 / 256 八档、每档存 PNG：
 // - windows/KittyTools/Resources/AppIcon.ico：应用图标，托盘也用它（Windows 托盘习惯用彩色应用图标，不分深浅色）；
-// - windows/KittyTools/Resources/AppIconRecording.ico：同一张图右下角加一个红点（录屏、录音时的托盘图标，PLAN-v4 V8）。
+// - windows/KittyTools/Resources/AppIconRecording.ico：同一张图右下角加一个红点（录屏、录音时的托盘图标，PLAN-v4 V8）；
+// - windows/KittyTools/Resources/AppIconPaused.ico：同一个位置一个灰色暂停角标（暂停记录剪贴板时的托盘图标，PLAN-v11 F9）。
+// 在只检出了 windows 分支的目录里跑时，mac 的图标在别的检出里：KITTY_MAC_ICONSET=<…/AppIcon.appiconset> swift windows/tools/app-icon.swift
 // 另出安装程序（Inno Setup，PLAN-setup-inno §3）的两组透明底 PNG，放在 windows/installer/：右上角的小图 wizard-small-*.png，
 // 完成页左边那条 wizard-large-<宽>x<高>.png（只放图标，深浅色外观都能用）；尺寸照 Inno 帮助里按 DPI 的表，它自己挑最接近的。
 // 每档取 mac 那组里不小于它的最小一张缩下来：16、32 用 mac 手调过的小图原样，20、24 从 32 缩，40、48 从 64 缩。
 import AppKit
 
 let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../..").standardized
-let mac = root.appendingPathComponent("macos/KittyTools/Resources/Assets.xcassets/AppIcon.appiconset")
+let mac = ProcessInfo.processInfo.environment["KITTY_MAC_ICONSET"].map { URL(fileURLWithPath: $0) }
+  ?? root.appendingPathComponent("macos/KittyTools/Resources/Assets.xcassets/AppIcon.appiconset")
 let resources = root.appendingPathComponent("windows/KittyTools/Resources")
 let sources: [(Int, String)] = [
   (16, "icon_16x16.png"), (32, "icon_32x32.png"), (64, "icon_32x32@2x.png"), (256, "icon_256x256.png"),
@@ -51,6 +54,31 @@ func recording(_ image: CGImage) -> CGImage {
   return ctx.makeImage()!
 }
 
+/// 右下角的灰色暂停角标：同红点的位置和大小，白边隔开，灰底上两道白竖条
+func paused(_ image: CGImage) -> CGImage {
+  let size = CGFloat(image.width)
+  let ctx = canvas(image.width)
+  ctx.draw(image, in: CGRect(x: 0, y: 0, width: size, height: size))
+  let diameter = (size * 0.44).rounded()
+  let ring = max(1, (size * 0.06).rounded())
+  let dot = CGRect(x: size - diameter, y: 0, width: diameter, height: diameter)
+  let white = CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1)
+  ctx.setFillColor(white)
+  ctx.fillEllipse(in: dot)
+  let inner = dot.insetBy(dx: ring, dy: ring)
+  ctx.setFillColor(CGColor(srgbRed: 0x8E / 255.0, green: 0x8E / 255.0, blue: 0x93 / 255.0, alpha: 1))
+  ctx.fillEllipse(in: inner)
+  let bar = max(1, (inner.width * 0.2).rounded())
+  let height = max(2, (inner.height * 0.5).rounded())
+  let gap = max(1, (inner.width * 0.16).rounded())
+  let left = (inner.midX - (bar * 2 + gap) / 2).rounded()
+  let bottom = (inner.midY - height / 2).rounded()
+  ctx.setFillColor(white)
+  ctx.fill(CGRect(x: left, y: bottom, width: bar, height: height))
+  ctx.fill(CGRect(x: left + bar + gap, y: bottom, width: bar, height: height))
+  return ctx.makeImage()!
+}
+
 func png(_ image: CGImage) -> Data {
   let data = NSMutableData()
   let dest = CGImageDestinationCreateWithData(data, "public.png" as CFString, 1, nil)!
@@ -76,7 +104,9 @@ func ico(_ images: [Data]) -> Data {
 }
 
 let base = sizes.map { size in scaled(load(sources.first { $0.0 >= size }!.1), to: size) }
-for (name, images) in [("AppIcon.ico", base), ("AppIconRecording.ico", base.map(recording))] {
+for (name, images) in [
+  ("AppIcon.ico", base), ("AppIconRecording.ico", base.map(recording)), ("AppIconPaused.ico", base.map(paused)),
+] {
   let data = ico(images.map(png))
   try data.write(to: resources.appendingPathComponent(name))
   print("\(name)：\(sizes.count) 档，\(data.count) 字节")

@@ -9,6 +9,9 @@
 //            下载中托盘那一项显示「正在下载 37%」，不另外弹窗。
 // 第四轮体检 E23（PLAN-v11 M10）：下载能取消（进度提示上、托盘那一项、关于页），取消后回到「有新版本」。
 // ponytail: 取消只在下载和取 .sha256 时生效；校验过了、解压覆盖的那一两秒点了也照装（UpdateFlow 后面几步不看令牌）。
+// PLAN-v11 F7（mac X11）：开着「后台下好、退出时安装」时，发现新版本就在后台下好、校验、解压（PrepareInBackgroundAsync，
+// 不弹进度、不动安装目录），托盘退出时装上（InstallReadyOnExit），下次打开就是新版本、提示一次「已更新到 x」；
+// 下好以后点「更新」不用再下，直接装上重开。关机 / 注销时不装：装到一半被系统结束会留下半新半旧的文件。
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using KittyTools.Core;
@@ -32,6 +35,20 @@ internal static class AutoUpdater
     /// <summary>正在下载 / 安装：托盘和设置里的按钮据此变灰。</summary>
     public static bool IsBusy => _busy;
 
+    /// <summary>后台下好、等着装的那一版：版本号和解压出来的「Kitty Tools」文件夹（PLAN-v11 F7）。</summary>
+    public static (string Version, string Entry)? Ready { get; private set; }
+
+    /// <summary>这一次下载是后台的（不弹进度提示）。</summary>
+    private static bool _background;
+
+    /// <summary>后台下着的时候用户点了「更新」：下好就直接装上重开。</summary>
+    private static bool _installWhenReady;
+
+    /// <summary>退出时装了更新的标记（里面是版本号）：下次启动看到它就清 *.old、提示「已更新到 x」。</summary>
+    private const string InstalledMarker = "installed-on-quit.txt";
+
+    private static string ReadyDirectory(string version) => Path.Combine(Paths.UpdatesDirectory, "ready-" + version);
+
     /// <summary>取消正在下的更新（进度提示的「取消」、托盘那一项、关于页）。</summary>
     public static void Cancel()
     {
@@ -50,6 +67,14 @@ internal static class AutoUpdater
     {
         if (_busy)
         {
+            // 后台正在下：下好就直接装上重开，这会儿把进度亮出来。
+            if (_background && !_installWhenReady)
+            {
+                _installWhenReady = true;
+                NoticeHost.ShowProgress("正在下载更新", ProgressMenuText ?? "正在下载…",
+                    Math.Max(0, _progressPercent) / 100.0, CancelAction);
+            }
+
             return;
         }
 
@@ -70,6 +95,32 @@ internal static class AutoUpdater
             NoticeHost.Show(
                 "装在没有写权限的目录", "自动更新改不了这里的文件，正在打开发布页", NoticeTone.Warning);
             UpdateService.OpenAvailable();
+            return;
+        }
+
+        // 后台已经下好这一版（F7）：不用再下，直接装上、重新打开。
+        if (Ready is { } ready && ready.Version == version)
+        {
+            Ready = null;
+            _busy = true;
+            try
+            {
+                var installed = UpdateFlow.Install(ready.Entry, installDir);
+                if (!installed.Ok)
+                {
+                    ReportFailure(version, installed);
+                    return;
+                }
+
+                Relaunch(installDir, version, installed.Installed.Count);
+            }
+            finally
+            {
+                _busy = false;
+                TryDeleteDirectory(ReadyDirectory(version));
+                UpdateService.NotifyChanged();
+            }
+
             return;
         }
 
@@ -116,16 +167,7 @@ internal static class AutoUpdater
                 return;
             }
 
-            Log.Info($"update.installed files={result.Installed.Count} version={version}");
-            // R38 / PLAN-setup-inno I12：安装程序装的，把「设置 › 应用」里的登记跟上新版本。
-            SetupRecord.AfterUpdate(installDir, version);
-            var exe = Path.Combine(installDir, "KittyTools.exe");
-            // 先把互斥量和转发服务让出来，不然新进程会以为自己才是第二个实例、转发完就退出。
-            SingleInstance.Release();
-            Process.Start(new ProcessStartInfo(exe, "--updated") { UseShellExecute = true });
-            // R2：走正常的退出流程（提交剪贴板删除、注销热键、删托盘图标），不要直接 Exit：
-            // 直接退会留下托盘图标，鼠标移过去才消失。
-            ExitApplication();
+            Relaunch(installDir, version, result.Installed.Count);
         }
         catch (Exception ex)
         {
@@ -142,6 +184,183 @@ internal static class AutoUpdater
             _cancel?.Dispose();
             _cancel = null;
             TryDeleteDirectory(staging);
+        }
+    }
+
+    /// <summary>装好了：改「设置 › 应用」里的登记、带 --updated 拉起新版本、走正常的退出流程。</summary>
+    private static void Relaunch(string installDir, string version, int files)
+    {
+        Log.Info($"update.installed files={files} version={version}");
+        // R38 / PLAN-setup-inno I12：安装程序装的，把「设置 › 应用」里的登记跟上新版本。
+        SetupRecord.AfterUpdate(installDir, version);
+        var exe = Path.Combine(installDir, "KittyTools.exe");
+        // 先把互斥量和转发服务让出来，不然新进程会以为自己才是第二个实例、转发完就退出。
+        SingleInstance.Release();
+        Process.Start(new ProcessStartInfo(exe, "--updated") { UseShellExecute = true });
+        // R2：走正常的退出流程（提交剪贴板删除、注销热键、删托盘图标），不要直接 Exit：
+        // 直接退会留下托盘图标，鼠标移过去才消失。
+        ExitApplication();
+    }
+
+    /// <summary>
+    /// 后台下好（PLAN-v11 F7）：有新版本、没跳过、开着「后台下好、退出时安装」、安装目录写得进时，下载、校验、解压到
+    /// updates\ready-x，不动安装目录、不弹进度（托盘那一项照样写「正在下载 37%」、能取消）。失败、取消都只记日志，
+    /// 点「更新」照旧走前台那条路。
+    /// </summary>
+    public static async Task PrepareInBackgroundAsync()
+    {
+        if (_busy || !SettingsService.Current.UpdateInstallOnQuit || !SettingsService.Current.AutoCheckUpdates ||
+            UpdateService.OfferedVersion is not { } version || Ready?.Version == version ||
+            UpdateService.AvailableZipUrl is not { } zipUrl)
+        {
+            return;
+        }
+
+        var installDir = InstallDirectory();
+        if (installDir is null || !UpdateInstaller.CanWriteInstallDirectory(installDir))
+        {
+            return;
+        }
+
+        _busy = true;
+        _background = true;
+        _progressPercent = -1;
+        _queue = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
+        _cancel = new CancellationTokenSource();
+        UpdateService.NotifyChanged();
+        var staging = ReadyDirectory(version);
+        try
+        {
+            Directory.CreateDirectory(Paths.UpdatesDirectory);
+            UpdateHttp.CleanupPartialFiles(Paths.UpdatesDirectory);
+            TryDeleteDirectory(staging);
+            var assetName = UpdateService.AvailableAssetName ?? $"KittyTools-{version}-{ArchitectureLabel()}.zip";
+            Log.Info($"update.prepare version={version}");
+            var result = await UpdateFlow.PrepareAsync(
+                new UpdatePlan(version, zipUrl, UpdateService.AvailableHashUrl, assetName),
+                Paths.UpdatesDirectory,
+                staging,
+                UpdateHttp.DownloadAsync,
+                UpdateHttp.GetTextAsync,
+                UpdateFlow.ReadVersion,
+                OnProgress,
+                _cancel.Token);
+            if (result.Ok && result.EntryDirectory is { } entry)
+            {
+                Ready = (version, entry);
+                Log.Info($"update.ready version={version}");
+            }
+            else
+            {
+                Log.Warn($"update.prepare-failed step={result.Step}");
+                TryDeleteDirectory(staging);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            Log.Info("update.prepare-cancelled");
+            TryDeleteDirectory(staging);
+            if (_installWhenReady)
+            {
+                NoticeHost.Show("已取消更新", $"有新版本 {version}，想装的时候再点「更新」", NoticeTone.Normal);
+            }
+
+            _installWhenReady = false;
+        }
+        catch (Exception ex)
+        {
+            Log.Error("update.prepare-failed", ex);
+            TryDeleteDirectory(staging);
+        }
+        finally
+        {
+            _busy = false;
+            _background = false;
+            _progressPercent = -1;
+            _cancel?.Dispose();
+            _cancel = null;
+            UpdateService.NotifyChanged();
+        }
+
+        // 后台下着的时候点了「更新」：现在直接装上重开（Ready 有了就不再下）；没下成就走前台那条路、照常报错。
+        if (_installWhenReady)
+        {
+            _installWhenReady = false;
+            _ = StartAsync();
+        }
+    }
+
+    /// <summary>
+    /// 托盘退出时（ShellRuntime.FinishSession）把后台下好的那一版装上，下次打开就是新版本（PLAN-v11 F7）。
+    /// 设置关了、版本被跳过了、正在下载时不装；装不上就算了，旧版本照用（UpdateInstaller 自己回滚）。
+    /// </summary>
+    public static void InstallReadyOnExit()
+    {
+        if (Ready is not { } ready || _busy || !SettingsService.Current.UpdateInstallOnQuit ||
+            ready.Version == SettingsService.Current.UpdateSkippedVersion || InstallDirectory() is not { } installDir)
+        {
+            return;
+        }
+
+        Ready = null;
+        var result = UpdateFlow.Install(ready.Entry, installDir);
+        if (!result.Ok)
+        {
+            Log.Warn($"update.quit-install-failed step={result.Step}");
+            return;
+        }
+
+        SetupRecord.AfterUpdate(installDir, ready.Version);
+        try
+        {
+            File.WriteAllText(Path.Combine(Paths.UpdatesDirectory, InstalledMarker), ready.Version);
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"update.marker-failed {ex.GetType().Name}");
+        }
+
+        Log.Info($"update.installed-on-quit files={result.Installed.Count} version={ready.Version}");
+    }
+
+    /// <summary>
+    /// 每次启动：带 --updated 启动、或者上次退出时装了更新（标记文件在）→ 清 *.old、提示一次「已更新到 x」；
+    /// 顺手删掉上次下好却没装的 updates\ready-*（版本可能已经过时，下次检查再下）。
+    /// </summary>
+    public static void AfterLaunch(bool updated)
+    {
+        var marker = Path.Combine(Paths.UpdatesDirectory, InstalledMarker);
+        var installedOnQuit = File.Exists(marker);
+        if (installedOnQuit)
+        {
+            try
+            {
+                File.Delete(marker);
+            }
+            catch
+            {
+                // 删不掉下次再提示一次，不碍事。
+            }
+        }
+
+        if (updated || installedOnQuit)
+        {
+            HandleUpdatedLaunch();
+        }
+
+        try
+        {
+            if (Directory.Exists(Paths.UpdatesDirectory))
+            {
+                foreach (var directory in Directory.EnumerateDirectories(Paths.UpdatesDirectory, "ready-*"))
+                {
+                    TryDeleteDirectory(directory);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"update.ready-cleanup-failed {ex.GetType().Name}");
         }
     }
 
@@ -238,7 +457,8 @@ internal static class AutoUpdater
                 _progressPercent = percent;
                 _queue?.TryEnqueue(() =>
                 {
-                    if (_busy)
+                    // 后台下载（F7）不弹进度，除非下着的时候用户点了「更新」。
+                    if (_busy && (!_background || _installWhenReady))
                     {
                         NoticeHost.ShowProgress("正在下载更新", $"已下载 {percent}%", percent / 100.0, CancelAction);
                     }

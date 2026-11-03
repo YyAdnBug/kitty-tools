@@ -3,6 +3,8 @@
 // 菜单是系统的 Win32 弹出菜单（Shell/TrayMenu.cs，2026-10-27 R66；以前是 WinUI 的 MenuFlyout）。
 // v4 下右键会先后收到 WM_RBUTTONUP 和 WM_CONTEXTMENU，只认后者；左键认 NIN_SELECT，键盘认 NIN_KEYSELECT。
 // PLAN-v10 §5：左键 / 在图标上按 Enter、空格 → 主界面（HomePanel，贴着任务栏弹出）；右键、菜单键 → 照旧弹菜单（主界面开着就先收起）。
+// 图标跟着状态换（Refresh，PLAN-v11 F9，mac X13）：录屏 / 录音中右下角红点（PLAN-v4 V8，图早就生成了、以前没接上），
+// 暂停记录剪贴板时灰色暂停角标（暂停只在这次运行里有效，容易忘了自己暂停过），平时是应用图标；悬停提示跟着写。
 using System.Runtime.InteropServices;
 using KittyTools.Infrastructure;
 using Windows.Win32;
@@ -26,6 +28,72 @@ internal static unsafe partial class Tray
     private static HICON _icon;
     private static bool _added;
 
+    private enum TrayState
+    {
+        Normal,
+        Recording,
+        Paused,
+    }
+
+    private static TrayState _state;
+
+    /// <summary>录屏 / 录音中 → 红点；暂停记录剪贴板（剪贴板功能开着时）→ 暂停角标；都不是 → 应用图标。录制优先。</summary>
+    private static TrayState CurrentState()
+        => RecordingHost.IsRecording || AudioHost.IsRecording
+            ? TrayState.Recording
+            : ShellRuntime.Instance?.Clipboard?.Paused == true && Features.IsOn(Feature.Clipboard)
+                ? TrayState.Paused
+                : TrayState.Normal;
+
+    private static string TipFor(TrayState state) => state switch
+    {
+        TrayState.Recording => Paths.ProductName + " · 正在录制",
+        TrayState.Paused => Paths.ProductName + " · 已暂停记录剪贴板",
+        _ => Paths.ProductName,
+    };
+
+    /// <summary>
+    /// 状态变了就换图标和悬停提示（录制开始 / 停止、暂停 / 恢复记录、关掉剪贴板功能时调；没变什么都不做）。
+    /// </summary>
+    public static void Refresh()
+    {
+        var state = CurrentState();
+        if (!_added || state == _state)
+        {
+            return;
+        }
+
+        var icon = LoadTrayIcon(state);
+        var data = new NOTIFYICONDATAW
+        {
+            cbSize = (uint)sizeof(NOTIFYICONDATAW),
+            hWnd = HiddenWindow.Hwnd,
+            uID = TrayIconId,
+            uFlags = NOTIFY_ICON_DATA_FLAGS.NIF_ICON | NOTIFY_ICON_DATA_FLAGS.NIF_TIP | NOTIFY_ICON_DATA_FLAGS.NIF_SHOWTIP,
+            hIcon = icon,
+        };
+        SetText(ref data.szTip, TipFor(state));
+        if (!PInvoke.Shell_NotifyIcon(NOTIFY_ICON_MESSAGE.NIM_MODIFY, in data))
+        {
+            Log.Warn($"tray.modify-failed {Marshal.GetLastWin32Error()}");
+            if (icon != default)
+            {
+                PInvoke.DestroyIcon(icon);
+            }
+
+            return;
+        }
+
+        if (_icon != default)
+        {
+            PInvoke.DestroyIcon(_icon);
+        }
+
+        _icon = icon;
+        _state = state;
+        Log.Info($"tray.state {state}");
+    }
+
     public static bool Add()
     {
         if (_added)
@@ -40,7 +108,8 @@ internal static unsafe partial class Tray
             return true;
         }
 
-        _icon = LoadTrayIcon();
+        _state = CurrentState();
+        _icon = LoadTrayIcon(_state);
         if (_icon == default)
         {
             Log.Error($"tray.icon-failed {Marshal.GetLastWin32Error()}");
@@ -57,7 +126,7 @@ internal static unsafe partial class Tray
             uCallbackMessage = CallbackMessage,
             hIcon = _icon,
         };
-        SetText(ref data.szTip, Paths.ProductName);
+        SetText(ref data.szTip, TipFor(_state));
 
         if (!PInvoke.Shell_NotifyIcon(NOTIFY_ICON_MESSAGE.NIM_ADD, in data))
         {
@@ -90,10 +159,21 @@ internal static unsafe partial class Tray
     /// 用 SHDefExtractIcon 按像素尺寸取：应用清单没有引 comctl32 v6，LoadIconWithScaleDown 在这个进程里
     /// 找不到入口点（实测 EntryPointNotFoundException），所以不走它。
     /// </summary>
-    private static HICON LoadTrayIcon()
+    private static HICON LoadTrayIcon(TrayState state)
     {
         var size = Math.Max(16, PInvoke.GetSystemMetrics(SYSTEM_METRICS_INDEX.SM_CXSMICON));
-        var path = Environment.ProcessPath;
+        // 两种状态图标是和 exe 放在一起的 .ico（csproj 的 Content）；读不到就照旧用应用图标。
+        var path = state switch
+        {
+            TrayState.Recording => Path.Combine(AppContext.BaseDirectory, "Resources", "AppIconRecording.ico"),
+            TrayState.Paused => Path.Combine(AppContext.BaseDirectory, "Resources", "AppIconPaused.ico"),
+            _ => Environment.ProcessPath,
+        };
+        if (state != TrayState.Normal && !File.Exists(path))
+        {
+            path = Environment.ProcessPath;
+        }
+
         if (!string.IsNullOrEmpty(path))
         {
             fixed (char* location = path)

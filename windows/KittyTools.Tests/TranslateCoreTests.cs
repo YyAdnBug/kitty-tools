@@ -286,3 +286,27 @@ public sealed class CopyTranslateRulesTests
         Assert.IsTrue(Worth("Ship it", translated: "Ship"));
     }
 }
+
+[TestClass]
+public sealed class FeedbackLinkTests
+{
+    [TestMethod]
+    public void PrefillsOnlyVersionAndSystem()
+    {
+        var url = FeedbackLink.Url("0.1.1", "x64", FeedbackLink.OsName(new Version(10, 0, 22631, 0)));
+        Assert.IsTrue(url.StartsWith("https://github.com/YyAdnBug/kitty-tools/issues/new?title=", StringComparison.Ordinal));
+        var query = Uri.UnescapeDataString(url[(url.IndexOf('?') + 1)..]);
+        StringAssert.Contains(query, "title=[Windows 0.1.1] ");
+        StringAssert.Contains(query, "版本：Kitty Tools 0.1.1（Windows x64）");
+        StringAssert.Contains(query, "系统：Windows 11 10.0.22631");
+        // 地址里不能有没转义的空格和换行（浏览器会截断）。
+        Assert.IsFalse(url.Contains(' ') || url.Contains('\n'));
+    }
+
+    [TestMethod]
+    public void WindowsTenBelowBuild22000()
+    {
+        Assert.AreEqual("Windows 10 10.0.19045", FeedbackLink.OsName(new Version(10, 0, 19045, 0)));
+        Assert.AreEqual("Windows 11 10.0.22000", FeedbackLink.OsName(new Version(10, 0, 22000, 0)));
+    }
+}

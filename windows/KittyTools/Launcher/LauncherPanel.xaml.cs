@@ -152,7 +152,7 @@ public sealed partial class LauncherPanel : UserControl
     /// 连搜索线底下的发丝线一起（面板只剩搜索线）。有就地提示、「更新到 x」时照常露出来。
     /// </summary>
     private bool ShowsBar => Model is not { } model || model.Results.Count > 0 || model.ShowsEmptyText || _palette.IsOpen ||
-                             Footer.HasNotice || UpdateService.AvailableVersion is not null;
+                             Footer.HasNotice || UpdateService.OfferedVersion is not null;
 
     private void ApplyBar()
     {
@@ -754,7 +754,7 @@ public sealed partial class LauncherPanel : UserControl
     private void UpdateFooter()
     {
         var item = SelectedItem;
-        var update = UpdateService.AvailableVersion;
+        var update = UpdateService.OfferedVersion;
         var primary = item is null || Model is not { } model ? default : model.PrimaryAction(item);
         var key = item is null
             ? "|" + update

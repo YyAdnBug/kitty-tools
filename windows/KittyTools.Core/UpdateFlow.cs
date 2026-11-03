@@ -40,6 +40,7 @@ public static class UpdateFlow
     /// <summary>
     /// 跑完整条流水线。传输用调用方给的两个函数（正常是 UpdateHttp，测试可以给假的），
     /// 版本号从 exe 的 FileVersionInfo 读，读不到就返回 <paramref name="readVersion"/> 的结果。
+    /// 等于 PrepareAsync + Install（后台下好、退出时再装的那条路两步分开调，PLAN-v11 F7）。
     /// </summary>
     public static async Task<UpdateFlowResult> RunAsync(
         UpdatePlan plan,
@@ -57,6 +58,25 @@ public static class UpdateFlow
             return UpdateFlowResult.Failed(UpdateStep.Install, "安装目录不存在");
         }
 
+        var prepared = await PrepareAsync(
+            plan, downloadDirectory, stagingDirectory, downloadAsync, getTextAsync, readVersion, progress, cancellationToken);
+        return prepared.Ok ? Install(prepared.EntryDirectory!, installDirectory) : prepared;
+    }
+
+    /// <summary>
+    /// 下载 → 校验 → 解压 → 找入口 → 比版本，不动安装目录。成了返回 Ok、Step = Version、EntryDirectory = 解压出来的那个
+    /// 「Kitty Tools」文件夹（之后交给 Install）。下载的 zip 无论成败都删掉，staging 留给调用方。
+    /// </summary>
+    public static async Task<UpdateFlowResult> PrepareAsync(
+        UpdatePlan plan,
+        string downloadDirectory,
+        string stagingDirectory,
+        Func<string, string, Action<long, long?>?, CancellationToken, Task> downloadAsync,
+        Func<string, CancellationToken, Task<string>> getTextAsync,
+        Func<string, Version?> readVersion,
+        Action<long, long?>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
         Directory.CreateDirectory(downloadDirectory);
         Directory.CreateDirectory(stagingDirectory);
         var zip = Path.Combine(downloadDirectory, plan.AssetName);
@@ -97,11 +117,7 @@ public static class UpdateFlow
                     $"更新包的版本对不上（期望 {plan.Version}，实际 {stagedVersion?.ToString(3) ?? "?"}）");
             }
 
-            step = UpdateStep.Install;
-            var result = UpdateInstaller.Install(entry, installDirectory);
-            return result.Ok
-                ? new UpdateFlowResult(true, UpdateStep.Install, null, result.Installed, entry)
-                : UpdateFlowResult.Failed(UpdateStep.Install, result.Error ?? "覆盖安装失败");
+            return new UpdateFlowResult(true, UpdateStep.Version, null, Array.Empty<string>(), entry);
         }
         catch (OperationCanceledException)
         {
@@ -115,6 +131,27 @@ public static class UpdateFlow
         {
             UpdateDownload.TryDelete(zip);
             UpdateDownload.TryDelete(UpdateDownload.PartialPath(zip));
+        }
+    }
+
+    /// <summary>把 PrepareAsync 解压出来的那个文件夹覆盖进安装目录（失败由 UpdateInstaller 自己回滚）。</summary>
+    public static UpdateFlowResult Install(string entryDirectory, string installDirectory)
+    {
+        try
+        {
+            if (!Directory.Exists(installDirectory))
+            {
+                return UpdateFlowResult.Failed(UpdateStep.Install, "安装目录不存在");
+            }
+
+            var result = UpdateInstaller.Install(entryDirectory, installDirectory);
+            return result.Ok
+                ? new UpdateFlowResult(true, UpdateStep.Install, null, result.Installed, entryDirectory)
+                : UpdateFlowResult.Failed(UpdateStep.Install, result.Error ?? "覆盖安装失败");
+        }
+        catch (Exception ex)
+        {
+            return UpdateFlowResult.Failed(UpdateStep.Install, $"{ex.GetType().Name}: {ex.Message}");
         }
     }
 

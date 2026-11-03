@@ -1,5 +1,7 @@
 // 检查更新：读 GitHub releases（只认 windows-v*、非草稿、非预发布），启动后一次、之后每天一次；
-// 有新版只轻提示一次（每个版本一次），托盘「检查更新」变成「下载新版本 x.y.z」打开发布页。
+// 有新版只轻提示一次（每个版本一次），托盘「检查更新」变成「更新到 x.y.z」。
+// PLAN-v11 F7（mac X11）：能「跳过这个版本」（托盘、主界面、启动器底栏不再挂着，更新的版本出来照常）；
+// 开着「后台下好、退出时安装」时，发现新版本就在后台下好（AutoUpdater.PrepareInBackgroundAsync），退出时装上。
 // 每日检查跑在线程池上，所以检查的后半段（改设置、通知、改托盘）一律回 UI 线程（第二版 §2 第 1 条）。
 // 调试开关：KITTY_UPDATE_FEED 指向一个本地 JSON 文件或 URL，用它代替 GitHub 的发布列表。
 // 这个开关、以及 http:// / file:// / 本地路径只在 Debug 或 --update-test 下认（REVIEW R1）；
@@ -19,6 +21,24 @@ internal static class UpdateService
     private static Microsoft.UI.Dispatching.DispatcherQueue? _dispatcher;
 
     public static string? AvailableVersion { get; private set; }
+
+    /// <summary>托盘、主界面、启动器底栏挂不挂「更新到 x」：有新版本、而且没被「跳过这个版本」跳过（关于页照样写有新版本）。</summary>
+    public static string? OfferedVersion
+        => AvailableVersion is { } version && version != SettingsService.Current.UpdateSkippedVersion ? version : null;
+
+    /// <summary>跳过现在这个新版本（关于页、「有新版本」提示上的按钮）。</summary>
+    public static void SkipAvailable()
+    {
+        if (AvailableVersion is not { } version)
+        {
+            return;
+        }
+
+        SettingsService.Current.UpdateSkippedVersion = version;
+        SettingsService.Save();
+        Log.Info($"update.skip version={version}");
+        Notify();
+    }
 
     public static string? AvailableUrl { get; private set; }
 
@@ -174,13 +194,15 @@ internal static class UpdateService
         AvailableHashUrl = newer ? bestHash : null;
         AvailableAssetName = newer ? bestAsset : null;
         Notify();
-        if (newer && bestVersion is not null &&
+        var skipped = newer && bestVersion == SettingsService.Current.UpdateSkippedVersion;
+        if (newer && !skipped && bestVersion is not null &&
             SettingsService.Current.NotifiedUpdateVersion != bestVersion)
         {
             SettingsService.Current.NotifiedUpdateVersion = bestVersion;
             SettingsService.Save();
             NotifyUser("有新版本", $"Kitty Tools {bestVersion} 已发布", NoticeTone.Normal,
-                new NoticeAction("更新", () => _ = AutoUpdater.StartAsync()));
+                new NoticeAction("更新", () => _ = AutoUpdater.StartAsync()),
+                new NoticeAction("跳过这个版本", SkipAvailable));
         }
         else if (userInitiated)
         {
@@ -188,6 +210,12 @@ internal static class UpdateService
                 newer ? "有新版本" : "已是最新版本",
                 newer ? $"Kitty Tools {bestVersion}" : current.ToString(3),
                 NoticeTone.Normal);
+        }
+
+        // 后台下好、退出时装（PLAN-v11 F7）：跳过的不下；设置关着、装在没有写权限的目录时 AutoUpdater 自己不做。
+        if (newer && !skipped)
+        {
+            _ = AutoUpdater.PrepareInBackgroundAsync();
         }
 
         // 手测自动更新用：KITTY_UPDATE_APPLY=1 时直接走下载 / 校验 / 替换（假发布列表配本地 zip）。

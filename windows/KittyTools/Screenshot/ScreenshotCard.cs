@@ -354,6 +354,11 @@ internal sealed partial class ScreenshotCard : Window
         {
             center.Children.Add(HudButton(Glyphs.Copy, "复制", withText, () => _ = CopyAsync()));
             center.Children.Add(HudButton(Glyphs.Save, "保存", withText, () => _ = SaveAsync()));
+            // 截完马上想补个箭头（PLAN-v11 F4，mac X7）：以前得打开截图历史找到它再双击。历史关着时没这个钮。
+            if (ShotHistory.IsOn)
+            {
+                center.Children.Add(HudButton(Glyphs.Edit, "改标注", false, EditAnnotations));
+            }
         }
         else
         {
@@ -594,6 +599,27 @@ internal sealed partial class ScreenshotCard : Window
         }
     }
 
+    /// <summary>
+    /// 改标注（PLAN-v11 F4）：找到这张在截图历史里的那一条，照历史里双击的那条路打开（截图遮罩 / 长图标注窗口），
+    /// 改完存回同一条。卡片先收起，免得盖在遮罩上、被拍进冻结画面。
+    /// </summary>
+    private void EditAnnotations()
+    {
+        if (_png is null)
+        {
+            return;
+        }
+
+        if (ShotHistory.IdFor(_png) is not { } id || ShotHistory.Instance?.Find(id) is not { } item)
+        {
+            NoticeHost.Show("还没记进截图历史", "稍等一下再点，或者到截图历史里找它", NoticeTone.Warning);
+            return;
+        }
+
+        CloseCard();
+        ScreenshotSession.StartEditing(item);
+    }
+
     private void Pin()
     {
         if (_png is null)
@@ -673,6 +699,7 @@ internal sealed partial class ScreenshotCard : Window
         {
             Add("复制", true, () => _ = CopyAsync());
             Add("存储", true, () => _ = SaveAsync());
+            Add("改标注", ShotHistory.IsOn, EditAnnotations);
             Add("钉在屏幕上", true, Pin);
             Add("打开", true, () => _ = OpenAsync());
             Add("在资源管理器中显示", _savedPath is not null, () =>

@@ -2920,12 +2920,32 @@ internal sealed partial class SettingsWindow : Window
             HorizontalAlignment = HorizontalAlignment.Center,
             Foreground = Theme.SecondaryText(),
         };
+        // PLAN-v11 F7（mac X11）：有新版本时在后台下好，点「退出」时装上；自动检查关着时没有意义，跟着变灰。
+        var installOnQuit = new CheckBox
+        {
+            Content = "在后台下载新版本，退出时安装",
+            IsChecked = SettingsService.Current.UpdateInstallOnQuit,
+            IsEnabled = SettingsService.Current.AutoCheckUpdates,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Foreground = Theme.SecondaryText(),
+        };
+        installOnQuit.Click += (_, _) =>
+        {
+            SettingsService.Current.UpdateInstallOnQuit = installOnQuit.IsChecked == true;
+            SettingsService.Save();
+            if (installOnQuit.IsChecked == true)
+            {
+                _ = AutoUpdater.PrepareInBackgroundAsync();
+            }
+        };
         autoCheck.Click += (_, _) =>
         {
             SettingsService.Current.AutoCheckUpdates = autoCheck.IsChecked == true;
             SettingsService.Save();
+            installOnQuit.IsEnabled = autoCheck.IsChecked == true;
         };
         hero.Children.Add(autoCheck);
+        hero.Children.Add(installOnQuit);
         var links = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 16, HorizontalAlignment = HorizontalAlignment.Center };
         var releases = new HyperlinkButton { Content = "打开发布页" };
         releases.Click += (_, _) => LauncherOpeners.Start(ReleasesPage);
@@ -2934,6 +2954,15 @@ internal sealed partial class SettingsWindow : Window
         var welcome = new HyperlinkButton { Content = "重看欢迎引导" };
         welcome.Click += (_, _) => _ = ShowOnboardingAsync(firstRun: false);
         links.Children.Add(welcome);
+        // PLAN-v11 F10（mac X14）：新建问题的页面，只预填版本号和系统版本，不带用户数据。
+        var feedback = new HyperlinkButton { Content = "反馈问题" };
+        feedback.Click += (_, _) => LauncherOpeners.Start(FeedbackLink.Url(
+            version,
+            System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture == System.Runtime.InteropServices.Architecture.Arm64
+                ? "ARM64"
+                : "x64",
+            FeedbackLink.OsName(Environment.OSVersion.Version)));
+        links.Children.Add(feedback);
         hero.Children.Add(links);
 
         // 顶上一层品牌色淡下去的底（mac 是奶油色渐变）。
@@ -2980,8 +3009,19 @@ internal sealed partial class SettingsWindow : Window
         }
         else if (UpdateService.AvailableVersion is { } available)
         {
-            row.Children.Add(Text($"有新版本 {available}", Theme.PrimaryText()));
-            var install = new Button { Content = "更新并重新打开", Style = Theme.Style("AccentButtonStyle") };
+            // PLAN-v11 F7：后台已经下好的写「已下好，退出时安装」，按钮还是马上装上重开；跳过了的写明，按钮照样在。
+            var ready = AutoUpdater.Ready?.Version == available;
+            var skipped = UpdateService.OfferedVersion is null;
+            row.Children.Add(Text(
+                ready ? $"{available} 已下好，退出时安装"
+                : skipped ? $"有新版本 {available}（已跳过）"
+                : $"有新版本 {available}",
+                Theme.PrimaryText()));
+            var install = new Button
+            {
+                Content = ready ? "现在重新打开" : "更新并重新打开",
+                Style = Theme.Style("AccentButtonStyle"),
+            };
             install.Click += (_, _) =>
             {
                 _ = AutoUpdater.StartAsync();
@@ -2989,6 +3029,14 @@ internal sealed partial class SettingsWindow : Window
             };
             row.Children.Add(install);
             row.Children.Add(Link("更新内容", UpdateService.OpenAvailable));
+            if (!skipped)
+            {
+                row.Children.Add(Link("跳过这个版本", () =>
+                {
+                    UpdateService.SkipAvailable();
+                    RefreshUpdateRow();
+                }));
+            }
         }
         else
         {

@@ -157,6 +157,32 @@
 - **截图**：`windows-shots` 的 `0.1.1-batch-3/`（角落卡按卡片大小解码后、关于页浅 / 深）。
 - **发布**（2026-11-03 用户：「发布0.1.1」）：https://github.com/YyAdnBug/kitty-tools/releases/tag/windows-v0.1.1 ，tag 指 `557181b`（exe 就是从它打的），不是 latest（latest 仍是 macos-v0.7.1）、不是预发布，8 个文件（两个架构的安装包、zip 和各自的 `.sha256`），说明用的是 `release-notes.md`。走 REST API：先建草稿、传完再发布。发布后用 0.1.0 的 Release 构建（探针档）检查更新：`update.check newer=True version=0.1.1`。
 
+### 0.2.0 第 6 批：F4 F7 F8 F9 F10 + 录屏尺寸 → 已写（审查方，`git log --grep "PLAN-v11 第 6 批"`，没编译）
+
+用户 2026-11-03 定：0.2.0 先从第 6 批写（第 5 批 F1–F3 要和 mac 0.8.0 同一份规格，mac 还没开始，往后放）。
+
+- **F4**（mac X7）角落卡「改标注」：`ShotHistory.IdFor(png)`（`ConditionalWeakTable`，RecordAsync 写完、UpdateAnnotations 换成品时记下交给历史的那几份 PNG → 编号）；
+  卡片悬停的胶囊里多一个只有图标的「改标注」、右键菜单也有，点了收起卡片、走 `ScreenshotSession.StartEditing`（同历史里双击）。历史关着时没有。
+- **F7**（mac X11）更新：
+  - 「跳过这个版本」：`Settings.UpdateSkippedVersion`；`UpdateService.OfferedVersion`（没跳过的新版本）换掉托盘、主界面、启动器底栏和内置动作里的 `AvailableVersion`，关于页照样写（「已跳过」）；「有新版本」轻提示多一个按钮。
+  - 后台下好、退出时装：`Settings.UpdateInstallOnQuit`（默认开，关于页一个勾选框，自动检查关着时变灰）；`UpdateFlow` 拆成 `PrepareAsync`（下载、校验、解压、比版本）+ `Install`，
+    `RunAsync` 行为不变（单测 `PrepareLeavesInstallUntouchedUntilInstall`）；`AutoUpdater.PrepareInBackgroundAsync` 下到 `updates\ready-<版本>`，不弹进度；
+    `InstallReadyOnExit` 只在用户自己点「退出」时装（`ShellRuntime.Exit(installUpdate: true)`：托盘、主界面、启动器）——**关机 / 注销、安装程序和卸载的 `--quit`、数据库恢复重开都不装**
+    （装到一半被结束会半新半旧；装进马上要被覆盖 / 删掉的目录会留 `*.old`）；装了写 `updates\installed-on-quit.txt`，下次启动 `AutoUpdater.AfterLaunch` 清 `*.old`、提示「已更新到 x」、删掉没装的 `ready-*`。
+    下好以后点「更新」直接装上重开；后台下着时点「更新」→ 亮出进度，下完直接装。
+- **F8**（mac X12）主界面打字：`_keys.CharacterReceived`，可打印字符（不含空格）→ 收起、还前台，`OverlayHost.SetLauncherQuery` + 打开启动器。
+- **F9**（mac X13）托盘角标：`tools/app-icon.swift` 加 `AppIconPaused.ico`（灰底白边两道竖条，和录制红点同一个位置；在 Mac 上生成的，旧的两个图标一字节没变）；
+  **录制中的红点 `AppIconRecording.ico` 以前生成了却从没接上**，这次一起接：`Tray.Refresh` 按 录制中 > 暂停记录（剪贴板功能开着时）> 平时 换图标和悬停提示，
+  `RecordingHost.Changed` / `AudioHost.Changed` / 暂停开关 / 功能开关时调；两个 .ico 进 csproj 的 Content。
+- **F10**（mac X14）关于页「反馈问题」：`Core/FeedbackLink`（只预填版本、架构、系统版本；单测 2 个）。
+- 0.1.1 收口查出来的：截图历史里录屏条目记视频本身的宽高（`ShotHistory.VideoSizeAsync`），不再是封面缩略图的 480 × 270。
+
+**你们做的**：
+1. 编译、零警告，`dotnet test` 全过（新加 `FeedbackLinkTests` 2 个、`UpdateFlowTests.PrepareLeavesInstallUntouchedUntilInstall`）。
+2. 走 HANDTEST 854–870。F7 那几条用 `--update-test` + 本机假发布列表（`KITTY_UPDATE_FEED` 指向一个列着更高版本的 JSON、zip 用 `build-release.ps1` 打的测试包），别碰真 GitHub 和用户的真实安装。
+3. 要在屏幕上看的：角落卡三个胶囊在窄卡（168 宽附近）上挤不挤；托盘两个角标在 100% / 150% 下清不清楚；主界面打字转启动器时焦点、前台对不对。
+4. 截图：角落卡悬停、关于页（有新版本 / 已下好 / 已跳过）、托盘两个角标（只截自己的图标那一块），推 `windows-shots` 的 `0.2.0-batch-6/`。
+
 ## 深色下的开关和输入框、翻译卡的彗星边框（2026-11-01 用户截图，审查方在 Mac 上写、**没编译**）——已修（75d6f86 + 12397aa）
 
 **现象**：深色下设置窗「搜索设置」的字、开关关着和开着的圆点都是黑的；翻译卡生成中的彗星边框和 mac 不一样（几段台阶）。

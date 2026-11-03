@@ -234,7 +234,7 @@ internal static partial class TrayMenu
         // 下载中这一项是「正在下载 37% · 取消」，点了就取消（第四轮体检 E23）。
         var updateText = AutoUpdater.ProgressMenuText is { } progress
             ? progress + " · 取消"
-            : UpdateService.AvailableVersion is { } available
+            : UpdateService.OfferedVersion is { } available
                 ? $"更新到 {available}"
                 : "检查更新";
         menu.Add(new Item(
@@ -246,7 +246,7 @@ internal static partial class TrayMenu
                 {
                     AutoUpdater.Cancel();
                 }
-                else if (UpdateService.AvailableVersion is not null)
+                else if (UpdateService.OfferedVersion is not null)
                 {
                     _ = AutoUpdater.StartAsync();
                 }
@@ -255,7 +255,7 @@ internal static partial class TrayMenu
                     _ = UpdateService.CheckAsync(userInitiated: true);
                 }
             }));
-        menu.Add(new Item("退出 Kitty Tools", null, () => runtime?.Exit()));
+        menu.Add(new Item("退出 Kitty Tools", null, () => runtime?.Exit(installUpdate: true)));
     }
 
     private static void Add(

@@ -1,6 +1,6 @@
 // 单实例：命名互斥量 Local\KittyTools（Debug 版 .Dev）。
 // 第二个实例把「打开设置」转给第一个，然后自己退出。
-// 管道还认 quit：KittyTools.exe --quit 发来（Inno 安装 / 卸载时调，PLAN-setup-inno I8），走和托盘「退出」一样的 ShellRuntime.Exit。
+// 管道还认 quit：KittyTools.exe --quit 发来（Inno 安装 / 卸载时调，PLAN-setup-inno I8），走和托盘「退出」一样的 ShellRuntime.Exit（只是不装后台下好的更新：安装程序马上要覆盖或删掉这些文件）。
 using System.IO.Pipes;
 using System.Text;
 using Microsoft.UI.Dispatching;

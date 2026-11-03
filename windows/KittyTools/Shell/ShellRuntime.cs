@@ -104,6 +104,9 @@ internal sealed class ShellRuntime
 
         HiddenWindow.Message += OnHiddenMessage;
         Tray.Add();
+        // 托盘图标跟着录制 / 暂停记录换（PLAN-v11 F9）。
+        RecordingHost.Changed += Tray.Refresh;
+        AudioHost.Changed += Tray.Refresh;
         HotKeys.Pressed += OnHotKey;
         RegisterHotKeys();
         SettingsService.Changed += OnSettingsChanged;
@@ -794,11 +797,10 @@ internal sealed class ShellRuntime
             });
         }
 
-        // 自动更新换上新版本后带 --updated 启动：清理 *.old 并提示一次（第二版 §5）。
-        if (Environment.GetCommandLineArgs().Contains("--updated", StringComparer.OrdinalIgnoreCase))
-        {
-            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(AutoUpdater.HandleUpdatedLaunch);
-        }
+        // 自动更新换上新版本后带 --updated 启动、或者上次退出时装了后台下好的更新：清理 *.old 并提示一次
+        // （第二版 §5、PLAN-v11 F7）；顺手删掉上次下好没装的。
+        var updated = Environment.GetCommandLineArgs().Contains("--updated", StringComparer.OrdinalIgnoreCase);
+        DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() => AutoUpdater.AfterLaunch(updated));
 
         if (SettingsService.IsNew)
         {
@@ -893,6 +895,7 @@ internal sealed class ShellRuntime
         }
 
         Clipboard.Paused = !Clipboard.Paused;
+        Tray.Refresh();
         if (!quiet)
         {
             NoticeHost.Show("剪贴板记录", Clipboard.Paused ? "已暂停" : "已恢复", NoticeTone.Normal,
@@ -919,6 +922,9 @@ internal sealed class ShellRuntime
         {
             clipboard.Suspended = !Features.IsOn(Feature.Clipboard);
         }
+
+        // 关掉剪贴板功能时暂停角标也撤掉（暂停只对开着的剪贴板有意义）。
+        Tray.Refresh();
 
         Log.Info(
             "features " + string.Join(
@@ -1015,10 +1021,14 @@ internal sealed class ShellRuntime
         Log.Shutdown();
     }
 
-    public void Exit()
+    /// <summary>
+    /// 退出。installUpdate：用户自己点的「退出」（托盘、主界面、启动器）才把后台下好的更新装上（PLAN-v11 F7）；
+    /// 安装程序 / 卸载叫退（--quit）、数据库恢复后重开、更新后重开都不装：装进马上要被覆盖或删掉的目录只会留下 *.old。
+    /// </summary>
+    public void Exit(bool installUpdate = false)
     {
         Log.Info("app.exit");
-        FinishSession();
+        FinishSession(installUpdate);
         HotKeys.UnregisterAll();
         Tray.Remove();
         Application.Current.Exit();
@@ -1043,8 +1053,9 @@ internal sealed class ShellRuntime
     /// <summary>
     /// 退出前的收尾（托盘退出、装完更新重启、关机 / 注销都走这里）：录着的录屏 / 录音先停下保存（第四轮体检 E23），
     /// 提交撤销栈里的删除，开着「退出时清空」就清普通历史（收藏、片段、收藏夹里的不清，mac）。都是同步的，做完才返回。
+    /// installUpdate：把后台下好的更新装上（PLAN-v11 F7）；关机 / 注销时不装（装到一半被系统结束会留下半新半旧的文件）。
     /// </summary>
-    private void FinishSession()
+    private void FinishSession(bool installUpdate)
     {
         if (_finished)
         {
@@ -1075,6 +1086,11 @@ internal sealed class ShellRuntime
         if (SettingsService.Current.ClipboardClearOnQuit && Clipboard?.Store is { } quitting)
         {
             Log.Info($"clipboard.cleared-on-quit count={quitting.ClearOrdinary()}");
+        }
+
+        if (installUpdate)
+        {
+            AutoUpdater.InstallReadyOnExit();
         }
     }
 
@@ -1111,7 +1127,7 @@ internal sealed class ShellRuntime
             // 关机 / 注销：这条消息处理完系统随时会结束进程，Exit() 走不到（第四轮体检 E5）。收尾同步做完再返回；
             // WM_QUERYENDSESSION 交给 DefWindowProc（同意结束），不拦关机。
             Log.Info($"app.end-session flags=0x{lParam.Value:x}");
-            FinishSession();
+            FinishSession(installUpdate: false);
         }
         else if (msg == Tray.CallbackMessage)
         {

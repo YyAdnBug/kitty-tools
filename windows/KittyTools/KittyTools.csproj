@@ -60,6 +60,9 @@
   </ItemGroup>
   <ItemGroup>
     <Content Include="Resources\AppIcon.ico" CopyToOutputDirectory="PreserveNewest" />
+    <!-- 托盘的两种状态图标（Shell/Tray.cs 按路径读）：录制中右下角红点、暂停记录剪贴板时灰色暂停角标（PLAN-v11 F9）。 -->
+    <Content Include="Resources\AppIconRecording.ico" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Resources\AppIconPaused.ico" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Resources\changelog.json" CopyToOutputDirectory="PreserveNewest" />
     <!-- 翻译服务的 logo（ms-appx:///Resources/ServiceLogo/*.png）：WinUI 把它们收成默认 Content，build 时会拷，publish 不拷；
          不标 CopyToOutputDirectory 的话发布包里一张都没有，设置和卡片上全是色块首字（2026-10-28 真机反馈的「logo 缺」）。 -->

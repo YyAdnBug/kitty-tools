@@ -92,7 +92,7 @@ internal static class LauncherActions
         items.Add(Item(new(Shortcuts, "快捷键速查表", "Keyboard Shortcuts", Glyphs.Keyboard, "shortcut")));
         items.Add(Item(new(About, "关于 Kitty Tools", "About Kitty Tools", Glyphs.Info, "general")));
         items.Add(Item(new(Update,
-            UpdateService.AvailableVersion is { } available ? $"更新到 {available}" : "检查更新",
+            UpdateService.OfferedVersion is { } available ? $"更新到 {available}" : "检查更新",
             "Check for Updates", Glyphs.Update, "general")));
         items.Add(Item(new(Quit, "退出 Kitty Tools", "Quit Kitty Tools", Glyphs.Close, "general"), priority: 1));
         return items;
@@ -200,7 +200,7 @@ internal static class LauncherActions
                 runtime?.ShowSettings(welcome: false, "about");
                 break;
             case Update:
-                if (UpdateService.AvailableVersion is not null)
+                if (UpdateService.OfferedVersion is not null)
                 {
                     if (!AutoUpdater.IsBusy)
                     {
@@ -214,7 +214,7 @@ internal static class LauncherActions
 
                 break;
             case Quit:
-                runtime?.Exit();
+                runtime?.Exit(installUpdate: true);
                 break;
         }
     }

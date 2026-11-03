@@ -99,6 +99,26 @@ public sealed class UpdateFlowTests
     }
 
     [TestMethod]
+    public async Task PrepareLeavesInstallUntouchedUntilInstall()
+    {
+        // PLAN-v11 F7：后台下好（PrepareAsync）时安装目录不动，退出时才 Install。
+        BuildPackage(("KittyTools.exe", "new-exe"));
+        Place("KittyTools.exe", "old-exe");
+
+        var prepared = await UpdateFlow.PrepareAsync(
+            Plan(), _downloads, _staging, DownloadAsync, ReadHashAsync, _ => new Version(0, 2, 0));
+
+        Assert.IsTrue(prepared.Ok, prepared.Error);
+        Assert.AreEqual(UpdateStep.Version, prepared.Step);
+        Assert.AreEqual("old-exe", File.ReadAllText(Path.Combine(_install, "KittyTools.exe")));
+        Assert.IsFalse(File.Exists(Path.Combine(_downloads, AssetName)));
+
+        var installed = UpdateFlow.Install(prepared.EntryDirectory!, _install);
+        Assert.IsTrue(installed.Ok, installed.Error);
+        Assert.AreEqual("new-exe", File.ReadAllText(Path.Combine(_install, "KittyTools.exe")));
+    }
+
+    [TestMethod]
     public async Task SuccessInstallsAndLeavesOldForRelaunch()
     {
         BuildPackage(("KittyTools.exe", "new-exe"), ("KittyTools.Core.dll", "new-dll"));

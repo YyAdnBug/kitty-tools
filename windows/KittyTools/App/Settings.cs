@@ -23,6 +23,12 @@ internal sealed class Settings
     /// <summary>已经轻提示过的版本；每个版本只提示一次。</summary>
     public string? NotifiedUpdateVersion { get; set; }
 
+    /// <summary>「跳过这个版本」跳过的那一版（PLAN-v11 F7）：托盘、主界面、启动器底栏不再挂「更新到 x」；更新的版本出来照常。</summary>
+    public string? UpdateSkippedVersion { get; set; }
+
+    /// <summary>有新版本时在后台下好，退出时装上，下次打开就是新版本（PLAN-v11 F7，mac X11）。关机 / 注销时不装。</summary>
+    public bool UpdateInstallOnQuit { get; set; } = true;
+
     public bool CopyTranslate { get; set; }
 
     /// <summary>保留天数：1 / 7 / 30 / 90 / 365 / 0（永久）。</summary>

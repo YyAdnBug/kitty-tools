@@ -10,6 +10,7 @@
 // 第二次启动（鼠标所在屏的上方正中，同剪贴板面板），开着时再按 = 收起。开着时再点托盘 = 收起：点托盘时面板先失去激活收起，紧接着来的
 // NIN_SELECT 不能再把它打开，收起后 300 ms 内的不开（mac 同一个坑：StatusItem.ownsClick）。
 // 键盘：打开时没有选中，方向键 / Tab 才出一块中性高亮（焦点真的落在那一格上，读屏跟着念）；Enter / 空格执行，Esc 收起，Ctrl+, 设置。
+// 直接打字（可打印字符）就收起、打开启动器并填进这个字（PLAN-v11 F8，mac X12）。
 // 从托盘用键盘打开时停在第一格。
 // ponytail: 选中高亮是直接换格子的底色，没有 mac 那样滑过去；开着的时候格子不跟着录屏 / 钉图状态实时变，下次打开才换。
 using KittyTools.Core;
@@ -72,6 +73,7 @@ internal sealed class HomePanel : Window
             RequestedTheme = Theme.ElementTheme,
         };
         _keys.KeyDown += OnKeyDown;
+        _keys.CharacterReceived += OnCharacterReceived;
         AutomationProperties.SetName(_keys, "主界面");
         Content = _keys;
         SystemBackdrop = new AcrylicBackdrop();
@@ -597,7 +599,7 @@ internal sealed class HomePanel : Window
         };
         bar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         bar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        if (UpdateService.AvailableVersion is { } available && !AutoUpdater.IsBusy)
+        if (UpdateService.OfferedVersion is { } available && !AutoUpdater.IsBusy)
         {
             var update = new HyperlinkButton
             {
@@ -617,7 +619,7 @@ internal sealed class HomePanel : Window
 
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, VerticalAlignment = VerticalAlignment.Center };
         actions.Children.Add(BarButton("设置", "Ctrl+,", "设置", () => ShellRuntime.Instance?.ShowSettings(welcome: false)));
-        actions.Children.Add(BarButton("退出", null, "退出 Kitty Tools", () => ShellRuntime.Instance?.Exit()));
+        actions.Children.Add(BarButton("退出", null, "退出 Kitty Tools", () => ShellRuntime.Instance?.Exit(installUpdate: true)));
         Grid.SetColumn(actions, 1);
         bar.Children.Add(actions);
         return bar;
@@ -734,6 +736,26 @@ internal sealed class HomePanel : Window
                 HideSelf(restoreForeground: true);
                 break;
         }
+    }
+
+    /// <summary>
+    /// 主界面里直接打字（PLAN-v11 F8，mac X12：以前按字母键什么都不发生）：可打印字符 → 收起、把前台还回去，
+    /// 再打开启动器并填进这个字（之后接着在启动器里打，输入法也在那边）。空格留给「执行」；启动器关着时不管。
+    /// </summary>
+    private void OnCharacterReceived(UIElement sender, CharacterReceivedRoutedEventArgs e)
+    {
+        var character = e.Character;
+        if (char.IsControl(character) || char.IsWhiteSpace(character) || IsDown(VirtualKey.Control) ||
+            IsDown(VirtualKey.Menu) || !Features.IsOn(Feature.Launcher))
+        {
+            return;
+        }
+
+        e.Handled = true;
+        Log.Info("home.type-to-launcher");
+        HideSelf(restoreForeground: true);
+        OverlayHost.SetLauncherQuery(character.ToString());
+        OverlayHost.Show(OverlayKind.Launcher);
     }
 
     /// <summary>点了 / 按了第 index 格：开关原地切（不收、不弹轻提示）；别的先收起、还前台，再做（要拍屏幕的再等 300 ms）。</summary>

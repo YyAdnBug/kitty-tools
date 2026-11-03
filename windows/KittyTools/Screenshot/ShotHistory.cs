@@ -113,6 +113,23 @@ internal sealed class ShotHistory
         }
     }
 
+    /// <summary>
+    /// 交给历史的那几份 PNG → 它是哪一条（按引用，图被回收了就跟着没了）：角落卡上的「改标注」靠它找到自己在历史里的那一条
+    /// （PLAN-v11 F4，mac X7）。记的时候是 RecordAsync 写完文件之后、UpdateAnnotations 换成品时。
+    /// </summary>
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<byte[], string> Outputs = new();
+
+    /// <summary>这份 PNG 是历史里的哪一条；还没记完、历史关着、记失败时是 null。</summary>
+    public static string? IdFor(byte[] png) => Outputs.TryGetValue(png, out var id) ? id : null;
+
+    private static void Remember(string id, byte[]? png)
+    {
+        if (png is not null)
+        {
+            Outputs.AddOrUpdate(png, id);
+        }
+    }
+
     public static string ImagePath(string id) => Path.Combine(Folder, id + ".png");
 
     public static string ThumbnailPath(string id) => Path.Combine(Folder, id + "-t.png");
@@ -148,6 +165,9 @@ internal sealed class ShotHistory
         {
             return null;
         }
+
+        Remember(id, originalPng);
+        Remember(id, composedPng);
 
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         history.OnUi(() => history.Add(new ShotItem
@@ -206,6 +226,12 @@ internal sealed class ShotHistory
             bytes = await Task.Run(() => WriteFilesAsync(id, null, posterPng, null)) ?? 0;
         }
 
+        // 录屏记视频本身的宽高，不是封面缩略图的（以前整屏 2560 × 1440 录的写成 480 × 270，PLAN-v11 第 3 批收口时查出来的）。
+        if (kind == ShotKind.Video && await VideoSizeAsync(file) is { } size)
+        {
+            (width, height) = size;
+        }
+
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         history.OnUi(() => history.Add(new ShotItem
         {
@@ -221,6 +247,23 @@ internal sealed class ShotHistory
     }
 
     /// <summary>录屏的封面：0.5 s（不到 1 s 的取中间）那一帧，长边缩到缩略图那么大。</summary>
+    /// <summary>视频本身的像素宽高；读不出来是 null。</summary>
+    private static async Task<(int Width, int Height)?> VideoSizeAsync(string path)
+    {
+        try
+        {
+            var file = await Windows.Storage.StorageFile.GetFileFromPathAsync(path);
+            var clip = await Windows.Media.Editing.MediaClip.CreateFromFileAsync(file);
+            var properties = clip.GetVideoEncodingProperties();
+            return properties.Width > 0 && properties.Height > 0 ? ((int)properties.Width, (int)properties.Height) : null;
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"shots.video-size-failed {ex.GetType().Name}");
+            return null;
+        }
+    }
+
     internal static async Task<byte[]?> VideoPosterAsync(string path)
     {
         var file = await Windows.Storage.StorageFile.GetFileFromPathAsync(path);
@@ -317,6 +360,7 @@ internal sealed class ShotHistory
             }
 
             item.Annotations = annotations.ToList();
+            Remember(id, composedPng);
             Execute(
                 "UPDATE shots SET annotations = $a WHERE id = $id;",
                 ShotHistoryRules.EncodeAnnotations(annotations),
