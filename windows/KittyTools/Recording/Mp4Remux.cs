@@ -135,6 +135,7 @@ internal static unsafe class Mp4Remux
 
             writer->BeginWriting();
             var written = 0;
+            var capped = false;
             while (true)
             {
                 uint actual = 0;
@@ -159,9 +160,14 @@ internal static unsafe class Mp4Remux
                         firsts[actual] = timestamp;
                     }
 
-                    if (++written > 200_000 || timestamp - firsts[actual] > 900_000_000L)
+                    // 防的是坏源让 ReadSample 一直不给结束：24 小时的时间戳、两千万个样本，远超能录的长度。
+                    // 撞上了算失败（调用方保留整段分段 MP4），不能把截掉的半截当成功——以前上限是 90 秒（100 ns 单位的
+                    // 9 亿）和 20 万个样本：超过一分半的录屏、录音都只存下前 90 秒，临时文件还被删了（2026-11-03 R24 的
+                    // 10 分钟重测查出来的，0.1.0 就这样）。
+                    if (++written > 20_000_000 || timestamp - firsts[actual] > 864_000_000_000L)
                     {
                         Log.Warn($"record.remux cap stream={actual} written={written}");
+                        capped = true;
                         break;
                     }
 
@@ -178,6 +184,12 @@ internal static unsafe class Mp4Remux
             }
 
             writer->Finalize();
+            if (capped)
+            {
+                File.Delete(destination);
+                return false;
+            }
+
             var ok = File.Exists(destination) && new FileInfo(destination).Length > 0;
             Log.Info($"record.remux ok={ok} ms={Environment.TickCount64 - started} samples={written}");
             return ok;
