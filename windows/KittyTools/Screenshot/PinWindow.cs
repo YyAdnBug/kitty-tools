@@ -36,6 +36,7 @@ internal sealed partial class PinWindow : Window
     private int _dragY;
     private int _windowX;
     private int _windowY;
+    private (int Left, int Top, int Width, int Height) _inset;
 
     public PinWindow(byte[] png, PixelBounds origin)
     {
@@ -74,7 +75,27 @@ internal sealed partial class PinWindow : Window
         _root.RightTapped += OnRightTapped;
 
         _ = LoadImageAsync();
+        // 窗口留着系统的细边框（阴影靠它），客户区比窗口小一圈：先摆一次量出边框，再把它加回窗口，
+        // 让客户区（图）正好落在 origin、一像素对一像素。以前图被压进小一圈的客户区：普通钉图糊一点、偏几个像素，
+        // 细长的长截图钉图横向压了约 8%（左右的边框比上下多，PLAN-v11 M1 真屏上量的）。
         AppWindow.MoveAndResize(new RectInt32(origin.Left, origin.Top, origin.Width, origin.Height));
+        _inset = ClientInset();
+        AppWindow.MoveAndResize(new RectInt32(
+            origin.Left - _inset.Left, origin.Top - _inset.Top, origin.Width + _inset.Width, origin.Height + _inset.Height));
+    }
+
+    /// <summary>客户区相对窗口的左上偏移，和窗口比客户区多出的宽高（物理像素）。</summary>
+    private unsafe (int Left, int Top, int Width, int Height) ClientInset()
+    {
+        if (!PInvoke.GetWindowRect(_hwnd, out var window) || !PInvoke.GetClientRect(_hwnd, out var client))
+        {
+            return default;
+        }
+
+        var corner = new System.Drawing.Point(0, 0);
+        PInvoke.ClientToScreen(_hwnd, &corner);
+        return (corner.X - window.left, corner.Y - window.top,
+            Math.Max(0, window.right - window.left - client.right), Math.Max(0, window.bottom - window.top - client.bottom));
     }
 
     public void ShowPin()
@@ -234,6 +255,8 @@ internal sealed partial class PinWindow : Window
         var height = Math.Max(1, (int)Math.Round(_origin.Height * _scale));
         var centerX = AppWindow.Position.X + AppWindow.Size.Width / 2;
         var centerY = AppWindow.Position.Y + AppWindow.Size.Height / 2;
+        width += _inset.Width;
+        height += _inset.Height;
         AppWindow.MoveAndResize(new RectInt32(centerX - width / 2, centerY - height / 2, width, height));
     }
 

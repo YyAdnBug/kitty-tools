@@ -3,7 +3,7 @@
 // 遮罩收起后选区外一圈品牌粉实线（RecordingFrame.ShowScrolling，同 mac ScrollCapture 的边框；2026-10-29 用户反馈
 // 以前开始滚后什么框都没有）：线在选区外、又不进截图，抓的帧里没有它；
 // 选区旁边一块预览面板（ScrollPreviewPanel，PLAN-v9 S11）：拼好的长图跟着长、能往回看，下面是尺寸、状态和「放弃」「完成」；
-// Enter / Esc 用临时注册的全局热键（不带修饰键，只在长截图期间有效）。
+// Enter 用临时注册的全局热键（不带修饰键，只在长截图期间有效）；Esc 走只看不吞的低级钩子（EscapeKeyWatch，PLAN-v11 M13）。
 // REVIEW R43：每拍只 BitBlt 选区那一块（以前抓全部屏再裁），转像素、算行哈希、找重叠在线程池上做（一次只拼一拍，
 // 上一拍没拼完这一拍就跳过），拼接按条带存（ScrollCanvas）；「完成」等正在拼的那一拍拼完再合成。
 using KittyTools.Core;
@@ -18,8 +18,6 @@ namespace KittyTools;
 internal static class ScrollingCapture
 {
     public const int EnterId = 920;
-
-    public const int EscapeId = 921;
 
     public const int ResumeId = 934;
 
@@ -82,7 +80,7 @@ internal static class ScrollingCapture
             HiddenWindow.Message += OnHiddenMessage;
         }
         PInvoke.RegisterHotKey(HiddenWindow.Hwnd, EnterId, 0, (uint)VIRTUAL_KEY.VK_RETURN);
-        PInvoke.RegisterHotKey(HiddenWindow.Hwnd, EscapeId, 0, (uint)VIRTUAL_KEY.VK_ESCAPE);
+        EscapeKeyWatch.Start(RequestCancel);
         RecordingFrame.ShowScrolling(rect);
         CaptureFrame();
         _timer = DispatcherQueue.GetForCurrentThread()!.CreateTimer();
@@ -182,7 +180,7 @@ internal static class ScrollingCapture
         RecordingFrame.HideScrolling();
         ScrollPreviewPanel.Hide();
         PInvoke.UnregisterHotKey(HiddenWindow.Hwnd, EnterId);
-        PInvoke.UnregisterHotKey(HiddenWindow.Hwnd, EscapeId);
+        EscapeKeyWatch.Stop();
         PInvoke.UnregisterHotKey(HiddenWindow.Hwnd, ResumeId);
         if (_messageHooked)
         {

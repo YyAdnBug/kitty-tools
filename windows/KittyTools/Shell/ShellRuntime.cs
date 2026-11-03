@@ -1093,18 +1093,10 @@ internal sealed class ShellRuntime
                 return;
             }
 
-            // 长截图期间 Enter / Esc 是临时注册的（第三版 §7）。
-            if (ScrollingCapture.Active && (int)wParam.Value is ScrollingCapture.EnterId or ScrollingCapture.EscapeId)
+            // 长截图期间 Enter 是临时注册的（第三版 §7；Esc 走 EscapeKeyWatch，PLAN-v11 M13）。
+            if (ScrollingCapture.Active && (int)wParam.Value == ScrollingCapture.EnterId)
             {
-                if ((int)wParam.Value == ScrollingCapture.EnterId)
-                {
-                    ScrollingCapture.Complete();
-                }
-                else
-                {
-                    ScrollingCapture.RequestCancel();
-                }
-
+                ScrollingCapture.Complete();
                 return;
             }
 
