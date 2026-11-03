@@ -1,6 +1,8 @@
 // 查词（单词模式）的判断（第三版 §3.4，纯函数 + 单测，规则照 mac 的 Translate/WordLookup.swift 的 isWord）：
-// 字母文字 1–3 个词、总长 ≤ 40；中日文 1–4 个字（不含标点和空白）。是「一个词」时，
+// 字母文字 1 个词、总长 ≤ 40；中日文 1–4 个字（不含标点和空白）。是「一个词」时，
 // 智谱和 AI 服务改用单词模式的提示词；结果不自动复制、不给「替换原文」。
+// 第四轮体检 U2：2–3 个词的（Sign in、Privacy Policy）以前也算，出来的是词典词条、没有「替换原文」。mac 改成
+// 系统词典查到同一个词头才算；Windows 没有系统词典（PLAN-v3 §3.4），2–3 个词的一律走普通翻译。
 namespace KittyTools.Core;
 
 public static class WordLookup
@@ -34,13 +36,13 @@ public static class WordLookup
             return false;
         }
 
-        if (value.Any(ch => !char.IsLetter(ch) && ch != '-' && ch != '\'' && ch != ' '))
+        if (value.Any(ch => !char.IsLetter(ch) && ch != '-' && ch != '\'' && ch != '’' && ch != ' '))
         {
             return false;
         }
 
         var words = value.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        return words.Length is >= 1 and <= 3;
+        return words.Length == 1 && char.IsLetter(words[0][0]);
     }
 
     /// <summary>

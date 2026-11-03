@@ -59,6 +59,9 @@ internal sealed partial class ScreenshotCard : Window
 
     /// <param name="png">截图（图片卡）；录制的卡是封面，可以没有。</param>
     /// <param name="file">录制的那个文件（录制卡）；截图卡是 null。</param>
+    /// <summary>图本身的像素宽高（长截图比选区长）；录完的卡没有图时是选区的。</summary>
+    private readonly (int Width, int Height) _pixelSize;
+
     private ScreenshotCard(byte[]? png, string? file, ShotKind kind, PixelBounds origin, string? savedPath)
     {
         _png = png;
@@ -80,7 +83,9 @@ internal sealed partial class ScreenshotCard : Window
             }
         };
 
-        var (cardWidth, cardHeight) = CardSize(origin.Width, origin.Height);
+        // 卡片的比例按图本身的像素：长截图比选区长得多（PLAN-v11 M16）；录完的卡没有图，按选区。
+        _pixelSize = png is not null && PngInfo.Size(png) is { } size ? size : (origin.Width, origin.Height);
+        var (cardWidth, cardHeight) = CardSize(_pixelSize.Width, _pixelSize.Height);
 
         _image = new Image
         {
@@ -552,8 +557,8 @@ internal sealed partial class ScreenshotCard : Window
             if (ClipboardWriter.WriteImagePng(prepared.Png, prepared.Dib))
             {
                 ClipboardService.Instance?.MarkOwnWrite();
-                ClipboardService.Instance?.Store.RecordImage(_png, _origin.Width, _origin.Height, null, "截图");
-                NoticeHost.Show("已复制截图", $"{_origin.Width} × {_origin.Height}", NoticeTone.Normal);
+                ClipboardService.Instance?.Store.RecordImage(_png, _pixelSize.Width, _pixelSize.Height, null, "截图");
+                NoticeHost.Show("已复制截图", $"{_pixelSize.Width} × {_pixelSize.Height}", NoticeTone.Normal);
             }
             else
             {
@@ -597,7 +602,17 @@ internal sealed partial class ScreenshotCard : Window
             return;
         }
 
-        PinHost.Show(_png, _origin);
+        // 钉回框的那一块；长截图（图比选区长）、那块屏拔掉了的按图的比例钉在鼠标旁边（第四轮体检 E3，以前长截图被压成一条）。
+        var center = ((_origin.Left + _origin.Right) / 2, (_origin.Top + _origin.Bottom) / 2);
+        if (_pixelSize == (_origin.Width, _origin.Height) && Displays.IsOnScreen(center.Item1, center.Item2))
+        {
+            PinHost.Show(_png, _origin);
+        }
+        else
+        {
+            PinHost.ShowNearCursor(_png, _pixelSize.Width, _pixelSize.Height);
+        }
+
         CloseCard();
     }
 

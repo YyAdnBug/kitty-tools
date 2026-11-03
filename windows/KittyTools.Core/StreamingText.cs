@@ -1,6 +1,7 @@
 // 流式译文的累积与清洗（纯逻辑，配单测）：拼接增量；去掉开头的 <think>…</think>
 // （开标签可能被拆在多个增量里，凑齐前先不显示）；最后去掉整段外面包的一层引号。
 // 正文中间出现的同名标签原样保留。IsThinking：还在开头的 <think> 段里。
+// 智谱的原文包在 <原文> 标签里（第四轮体检 E7）：模型照抄出来的首尾标签去掉（流式中凑了一半的也先不显示）。
 using System.Text;
 
 namespace KittyTools.Core;
@@ -12,6 +13,42 @@ public sealed class StreamingText
     public string Raw => _raw.ToString();
 
     public void Append(string delta) => _raw.Append(delta);
+
+    /// <summary>智谱的 user 消息里原文包在这对标签里（第四轮体检 E7，同 mac Zhipu.sourceTags）。</summary>
+    public const string SourceOpen = "<原文>";
+
+    public const string SourceClose = "</原文>";
+
+    /// <summary>去掉首尾的原文标签；开头 / 末尾是还没凑齐的半个标签（「&lt;原」「&lt;/原文」）时也先去掉（mac strippingSourceTags）。</summary>
+    public static string StripSourceTags(string text)
+    {
+        if (text.StartsWith(SourceOpen, StringComparison.Ordinal))
+        {
+            text = text[SourceOpen.Length..];
+        }
+        else if (text.Length > 0 && SourceOpen.StartsWith(text, StringComparison.Ordinal))
+        {
+            return string.Empty;
+        }
+
+        if (text.EndsWith(SourceClose, StringComparison.Ordinal))
+        {
+            text = text[..^SourceClose.Length];
+        }
+        else
+        {
+            for (var length = SourceClose.Length - 1; length >= 2; length--)
+            {
+                if (text.EndsWith(SourceClose[..length], StringComparison.Ordinal))
+                {
+                    text = text[..^length];
+                    break;
+                }
+            }
+        }
+
+        return text.Trim();
+    }
 
     /// <summary>当前可显示的译文；还在思考段里时返回空。</summary>
     public string Visible
@@ -35,7 +72,7 @@ public sealed class StreamingText
                 return string.Empty; // 可能是被拆开的开标签，等下一段
             }
 
-            return text.Trim();
+            return StripSourceTags(text.Trim());
         }
     }
 

@@ -242,12 +242,37 @@ internal sealed class TranslateCoordinator
         }
     }
 
+    /// <summary>
+    /// 重试用设置里现在的那份配置（第四轮体检 E20）：删掉或关掉了的服务，卡片收掉；同步换过服务列表的
+    /// （卡上还是旧的那个对象），换成新的那份再跑。
+    /// </summary>
     public void Retry(string serviceId)
     {
-        if (_cards.FirstOrDefault(card => card.Service.Id == serviceId) is { } card)
+        var index = _cards.FindIndex(card => card.Service.Id == serviceId);
+        if (index < 0)
         {
-            _ = RunAsync(card);
+            return;
         }
+
+        if (TranslateServiceStore.Instance?.Find(serviceId) is not { Enabled: true } current)
+        {
+            if (_runs.Remove(serviceId, out var previous))
+            {
+                previous.Cts.Cancel();
+                previous.Cts.Dispose();
+            }
+
+            _cards.RemoveAt(index);
+            Changed?.Invoke();
+            return;
+        }
+
+        if (!ReferenceEquals(_cards[index].Service, current))
+        {
+            _cards[index] = new TranslateCard { Service = current };
+        }
+
+        _ = RunAsync(_cards[index]);
     }
 
     /// <summary>停掉还在跑的服务，没出完的卡标成中断（不然隐藏的浮窗里骨架、彗星、光标停不下来）。</summary>
@@ -326,7 +351,8 @@ internal sealed class TranslateCoordinator
     }
 
     /// <summary>
-    /// 静默替换（划词翻译并替换）：不开浮窗、不动当前会话，只用第一个启用的服务、等完整结果；记历史（开着的话）。
+    /// 静默替换（划词翻译并替换）：不开浮窗、不动当前会话，按顺序用启用的服务、等完整结果；记历史（开着的话）。
+    /// 一个服务失败就试下一个（第四轮体检 U14，同 mac）；取消、截断不换（截断的半截不该悄悄换成别家的全文）。
     /// 不接行、不用单词模式：要替换回去的是译文、段落得保住。
     /// </summary>
     public static async Task<string> TranslateOnceAsync(string source, CancellationToken cancellationToken)
@@ -337,33 +363,48 @@ internal sealed class TranslateCoordinator
             throw new TranslateError("原文为空或太长");
         }
 
-        if (TranslateServiceStore.Instance?.Enabled.FirstOrDefault() is not { } service)
+        var services = TranslateServiceStore.Instance?.Enabled.ToList() ?? new List<TranslateServiceConfig>();
+        if (services.Count == 0)
         {
             throw TranslateError.Config("没有启用的翻译服务");
         }
 
         var request = PlanFor(text, wordMode: false).Request;
-        var latest = string.Empty;
-        await foreach (var piece in TranslateServiceStore.Translate(service, request, cancellationToken)
-                           .WithCancellation(cancellationToken))
+        Exception? failure = null;
+        foreach (var service in services)
         {
-            latest = piece;
+            try
+            {
+                var latest = string.Empty;
+                await foreach (var piece in TranslateServiceStore.Translate(service, request, cancellationToken)
+                                   .WithCancellation(cancellationToken))
+                {
+                    latest = piece;
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+                if (latest.Length == 0)
+                {
+                    throw TranslateError.EmptyResult;
+                }
+
+                var settings = SettingsService.Current;
+                if (settings.TranslateHistoryEnabled)
+                {
+                    TranslationHistory.Instance?.Add(
+                        request.Text, request.From?.Code(), request.To.Code(), latest, service.Name, settings.TranslateHistoryLimit);
+                }
+
+                return latest;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && !ReferenceEquals(ex, TranslateError.Truncated))
+            {
+                Log.Info($"translate.replace-next kind={service.Kind} error={(ex as TranslateError)?.Kind.ToString() ?? ex.GetType().Name}");
+                failure = ex;
+            }
         }
 
-        cancellationToken.ThrowIfCancellationRequested();
-        if (latest.Length == 0)
-        {
-            throw TranslateError.EmptyResult;
-        }
-
-        var settings = SettingsService.Current;
-        if (settings.TranslateHistoryEnabled)
-        {
-            TranslationHistory.Instance?.Add(
-                request.Text, request.From?.Code(), request.To.Code(), latest, service.Name, settings.TranslateHistoryLimit);
-        }
-
-        return latest;
+        throw failure!;
     }
 
     /// <summary>UI 截图自检（--ui-snapshots）：直接摆出一组卡片（不发请求）。正常入口不碰。</summary>

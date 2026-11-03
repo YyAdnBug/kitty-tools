@@ -115,6 +115,24 @@ public sealed class StreamingTextTests
     }
 
     [TestMethod]
+    public void StripsEchoedSourceTagsEvenWhenSplit()
+    {
+        // 第四轮体检 E7：智谱的原文包在 <原文> 里，模型照抄出来的首尾标签去掉（期望同 mac strippingSourceTags）。
+        var text = new StreamingText();
+        text.Append("<原");
+        Assert.AreEqual(string.Empty, text.Visible, "半个开标签先不显示");
+        text.Append("文>Help me write");
+        Assert.AreEqual("Help me write", text.Visible);
+        text.Append(" a quicksort</原");
+        Assert.AreEqual("Help me write a quicksort", text.Visible, "半个闭标签先去掉");
+        text.Append("文>");
+        Assert.AreEqual("Help me write a quicksort", text.Final);
+
+        Assert.AreEqual("a <原文> b", StreamingText.StripSourceTags("a <原文> b"), "中间的原样留着");
+        Assert.AreEqual("x <", StreamingText.StripSourceTags("x <"), "末尾单个 < 不当成半个标签");
+    }
+
+    [TestMethod]
     public void KeepsInnerTagsAndStripsOuterQuotes()
     {
         var text = new StreamingText();

@@ -425,7 +425,7 @@ internal sealed partial class SettingsWindow
             TranslateKinds.Zhipu => store.Secret(service) is null && TranslateServiceStore.BuiltinZhipuKey is null
                 ? ("未填密钥", true)
                 : (TranslatePresets.ZhipuModel(service.Model), false),
-            TranslateKinds.Ai => AiProviderStatus(service),
+            TranslateKinds.Ai => AiProviderStatus(store, service),
             TranslateKinds.DeepL => service.UsesDeepLX == true
                 ? string.IsNullOrWhiteSpace(service.BaseUrl) ? ("未填 DeepLX 地址", true) : ("DeepLX（自建）", false)
                 : store.Secret(service) is null ? ("未填密钥", true) : ("官方 API", false),
@@ -437,7 +437,7 @@ internal sealed partial class SettingsWindow
         return (text, missing && service.Enabled);
     }
 
-    private static (string, bool) AiProviderStatus(TranslateServiceConfig service)
+    private static (string, bool) AiProviderStatus(TranslateServiceStore store, TranslateServiceConfig service)
     {
         var protocol = AiEndpoint.ParseProtocol(service.Protocol);
         if (protocol != AiProtocol.Anthropic && string.IsNullOrWhiteSpace(service.BaseUrl))
@@ -448,6 +448,13 @@ internal sealed partial class SettingsWindow
         if (string.IsNullOrWhiteSpace(service.Model))
         {
             return ("未填模型", true);
+        }
+
+        // 公网地址没填 Key 的不发请求（第四轮体检 E20，AiServiceProvider 同一条），这里先说清楚。
+        if (store.Secret(service) is null && AiEndpoint.Resolve(service.BaseUrl, protocol) is { } url &&
+            !AiEndpoint.IsLocalNetwork(url))
+        {
+            return ("未填 API Key", true);
         }
 
         return ($"{ProtocolTitle(protocol)} · {service.Model.Trim()}", false);

@@ -298,8 +298,10 @@ internal sealed partial class LauncherModel
         top.AddRange(prompts.Exact);
         top.AddRange(commandPrompts.Exact);
 
-        // 书签、浏览历史至少 2 个字才搜（1 个字母命中太多）；书签先粗筛（几千个每敲一个字都完整打分太慢）。
-        var bookmarks = trimmed.Length >= 2 ? BrowserIndex.Bookmarks : (IReadOnlyList<LauncherItem>)Array.Empty<LauncherItem>();
+        // 书签、浏览历史至少 2 个字才搜（1 个字母命中太多；含中文时 1 个字就搜，第四轮体检 U8）；
+        // 书签先粗筛（几千个每敲一个字都完整打分太慢）。
+        var longEnough = LauncherMatch.IsLongEnough(trimmed);
+        var bookmarks = longEnough ? BrowserIndex.Bookmarks : (IReadOnlyList<LauncherItem>)Array.Empty<LauncherItem>();
         var tokens = LauncherMatch.Tokens(trimmed);
         var used = UsedLocations(bookmarks);
         var candidates = new List<LauncherItem>();
@@ -317,7 +319,7 @@ internal sealed partial class LauncherModel
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var local = LauncherMatch.Rank(candidates, trimmed, item =>
             LauncherUsageStore.Instance?.Boost(item, trimmed, now) ?? default);
-        var history = trimmed.Length >= 2 ? Visited(trimmed, tokens, bookmarks, used, now) : new List<LauncherItem>();
+        var history = longEnough ? Visited(trimmed, tokens, bookmarks, used, now) : new List<LauncherItem>();
 
         // 兜底只在没有本地结果时出现（设置里可改成总是附在最后）；已经有网址 / 路径直达项、或明写了 http(s):// 的不兜底。
         var lower = trimmed.ToLowerInvariant();
@@ -330,8 +332,11 @@ internal sealed partial class LauncherModel
             : new List<LauncherItem>();
 
         // 直达项和书签 / 用过的网址可能是同一项：按 id 去重，留靠前的。
+        // 在这个输入下选过的本地结果排到固定行前面（第四轮体检 E8）。
+        var ordered = LauncherMatch.Promoting(local, top, item =>
+            (LauncherUsageStore.Instance?.Boost(item, trimmed, now).Query ?? 0) > 0);
         var seen = new HashSet<string>();
-        return top.Concat(local).Concat(history).Concat(prompts.Partial).Concat(commandPrompts.Partial).Concat(fallback)
+        return ordered.Concat(history).Concat(prompts.Partial).Concat(commandPrompts.Partial).Concat(fallback)
             .Where(item => seen.Add(item.Id))
             .ToList();
     }

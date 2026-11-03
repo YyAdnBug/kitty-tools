@@ -46,6 +46,28 @@ public static class LauncherMatch
         return tokens.Length > 1 ? Math.Max(Tier(whole, item), perToken) : perToken;
     }
 
+    /// <summary>
+    /// 书签、浏览历史、兜底搜索够不够长：至少 2 个字（1 个字母命中太多）；含中文（非 ASCII）时 1 个字就够
+    /// （第四轮体检 U8，同 mac LauncherMatch.isLongEnough）。
+    /// </summary>
+    public static bool IsLongEnough(string query)
+    {
+        var text = query.Trim();
+        return text.Length >= 2 || text.Any(ch => ch > 0x7F);
+    }
+
+    /// <summary>
+    /// 本地结果里在完全相同的输入下选过的（chosen：使用记录里这个查询的分 > 0）排到固定行（剪贴板、翻译、ip、直达、计算、
+    /// 关键词提示）前面，彼此顺序不变；其余本地结果照旧跟在固定行后面（第四轮体检 E8，同 mac promoting：
+    /// 输 gh 选过 GitHub Desktop 的，下次 gh 第一行不再是「用 GitHub 搜索…」）。
+    /// </summary>
+    public static List<LauncherItem> Promoting(
+        IReadOnlyList<LauncherItem> local, IReadOnlyList<LauncherItem> top, Func<LauncherItem, bool> chosen)
+    {
+        var picked = local.Where(chosen).ToList();
+        return picked.Concat(top).Concat(local.Where(item => !chosen(item))).ToList();
+    }
+
     /// <summary>把查询折叠后按空白切成词（MayMatch 用，一次按键切一次）。</summary>
     public static string[] Tokens(string query)
         => Fold(query).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);

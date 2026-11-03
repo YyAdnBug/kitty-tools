@@ -91,11 +91,9 @@ public sealed class TranslateSigningTests
 public sealed class WordLookupTests
 {
     [TestMethod]
-    public void SingleWordsAndShortPhrases()
+    public void SingleWords()
     {
         Assert.IsTrue(WordLookup.IsWord("swift"));
-        Assert.IsTrue(WordLookup.IsWord("look up"));
-        Assert.IsTrue(WordLookup.IsWord("a piece of"));
         Assert.IsTrue(WordLookup.IsWord("well-known"));
         Assert.IsTrue(WordLookup.IsWord("don't"));
         Assert.IsTrue(WordLookup.IsWord("雨"));
@@ -106,6 +104,12 @@ public sealed class WordLookupTests
     [TestMethod]
     public void SentencesAndSentencesWithPunctuationAreNot()
     {
+        // 第四轮体检 U2（mac 同一条）：2–3 个词的短语走普通翻译、能替换原文；Windows 没有系统词典，不再按词组查词。
+        Assert.IsFalse(WordLookup.IsWord("look up"));
+        Assert.IsFalse(WordLookup.IsWord("a piece of"));
+        Assert.IsFalse(WordLookup.IsWord("Sign in"));
+        Assert.IsFalse(WordLookup.IsWord("Privacy Policy"));
+        Assert.IsFalse(WordLookup.IsWord("-run"));
         Assert.IsFalse(WordLookup.IsWord("this is a longer sentence"));
         Assert.IsFalse(WordLookup.IsWord("hello, world"));
         Assert.IsFalse(WordLookup.IsWord("你好，世界"));

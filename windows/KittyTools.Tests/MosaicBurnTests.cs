@@ -1,4 +1,5 @@
 // 马赛克打进原图（第四轮体检 E6，PLAN-v11 M4）：框里每格一种颜色、框外不动，格子跨出选区时取色照整屏。
+// 另有 PngInfo（PLAN-v11 M16：角落卡按图本身的像素算尺寸）。
 using KittyTools.Core;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -105,5 +106,25 @@ public sealed class MosaicBurnTests
     {
         var index = (y * width + x) * 4;
         return (bgra[index], bgra[index + 1], bgra[index + 2], bgra[index + 3]);
+    }
+}
+
+[TestClass]
+public sealed class PngInfoTests
+{
+    [TestMethod]
+    public void ReadsWidthAndHeightFromTheHeader()
+    {
+        // 签名 + IHDR 块头（长度 13）+ 宽 1200、高 30000（大端）；后面的内容不看。
+        var png = new byte[]
+        {
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+            0, 0, 0, 13, (byte)'I', (byte)'H', (byte)'D', (byte)'R',
+            0, 0, 0x04, 0xB0, 0, 0, 0x75, 0x30,
+            8, 6, 0, 0, 0,
+        };
+        Assert.AreEqual((1200, 30000), PngInfo.Size(png)!.Value);
+        Assert.IsNull(PngInfo.Size(png[..20]), "头不完整");
+        Assert.IsNull(PngInfo.Size(new byte[32]), "不是 PNG");
     }
 }

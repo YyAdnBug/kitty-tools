@@ -1102,7 +1102,7 @@ internal sealed class ShellRuntime
                 }
                 else
                 {
-                    ScrollingCapture.Cancel();
+                    ScrollingCapture.RequestCancel();
                 }
 
                 return;

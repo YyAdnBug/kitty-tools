@@ -76,11 +76,11 @@ public static class WebSearch
         return engine is null ? null : Item(engine, terms);
     }
 
-    /// <summary>没有本地结果时列在最后的网页搜索；太短的查询不列。</summary>
+    /// <summary>没有本地结果时列在最后的网页搜索；太短的查询不列（1 个字母不列，1 个汉字列：LauncherMatch.IsLongEnough）。</summary>
     public static List<LauncherItem> FallbackItems(string query, IReadOnlyList<SearchEngine> engines)
     {
         var text = query.Trim();
-        return text.Length < 2
+        return !LauncherMatch.IsLongEnough(text)
             ? new List<LauncherItem>()
             : engines.Where(engine => engine.Fallback && !engine.IsQuicklink).Select(engine => Item(engine, text)).ToList();
     }

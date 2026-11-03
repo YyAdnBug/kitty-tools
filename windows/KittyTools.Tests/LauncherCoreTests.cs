@@ -71,6 +71,35 @@ public sealed class LauncherMatchTests
         Assert.AreEqual("Chess", ranked[0].Title);
     }
 
+    [TestMethod]
+    public void ChosenLocalResultsGoAboveFixedRows()
+    {
+        // 第四轮体检 E8（同 mac promoting）：这个输入下选过的排到固定行前面，彼此顺序不变；其余的照旧在固定行后面。
+        var keyword = new LauncherItem { Kind = LauncherKind.Search, Title = "用 GitHub 搜索…", Target = "github" };
+        var github = App("GitHub Desktop");
+        var gimp = App("GIMP");
+        var ghostty = App("Ghostty");
+        var ordered = LauncherMatch.Promoting(
+            new[] { gimp, github, ghostty }, new[] { keyword }, item => item == github || item == ghostty);
+        CollectionAssert.AreEqual(new[] { github, ghostty, keyword, gimp }, ordered);
+
+        // 谁都没选过：固定行照旧在最前。
+        ordered = LauncherMatch.Promoting(new[] { gimp, github }, new[] { keyword }, _ => false);
+        CollectionAssert.AreEqual(new[] { keyword, gimp, github }, ordered);
+    }
+
+    [TestMethod]
+    public void OneChineseCharacterIsLongEnough()
+    {
+        // 第四轮体检 U8：1 个字母不搜书签 / 浏览历史 / 兜底，1 个汉字搜。
+        Assert.IsFalse(LauncherMatch.IsLongEnough("a"));
+        Assert.IsFalse(LauncherMatch.IsLongEnough(" a "));
+        Assert.IsTrue(LauncherMatch.IsLongEnough("gh"));
+        Assert.IsTrue(LauncherMatch.IsLongEnough("淘"));
+        Assert.AreEqual(0, WebSearch.FallbackItems("a", WebSearch.Defaults()).Count);
+        Assert.AreNotEqual(0, WebSearch.FallbackItems("淘", WebSearch.Defaults()).Count);
+    }
+
     private static double Score(LauncherItem item, string query) => LauncherMatch.Score(query, item);
 
     private static LauncherItem App(string title, string? chinese = null)

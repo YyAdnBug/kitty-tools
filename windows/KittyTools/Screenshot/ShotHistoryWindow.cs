@@ -640,13 +640,23 @@ internal sealed partial class ShotHistoryWindow : Window
     {
         if (ShotHistoryRules.IsRecording(item.Kind))
         {
-            return new()
+            var recording = new List<(string Glyph, string Title, string? Key, Action Run, bool Enabled, bool Danger)>
             {
                 (Glyphs.OpenInNewWindow, "打开", "Enter", () => Open(item), true, false),
                 (Glyphs.Copy, "拷贝", "Ctrl+C", () => CopyFile(item), true, false),
                 (Glyphs.Folder, "在资源管理器中显示", "Ctrl+Shift+R", () => Reveal(item), true, false),
-                (Glyphs.Delete, "从历史里删掉…", "Delete", () => _ = ForgetAsync(item), true, true),
             };
+            // 录屏的转 GIF / 压缩（第四轮体检 U1）：以前只在角落卡上（卡滑走就找不到）和托盘里「最近录的那一段」。
+            if (item.Kind == ShotKind.Video)
+            {
+                recording.Add((Glyphs.Image, "转成 GIF（10 fps，长边 800）", null, () => ConvertRecording(item, gif: true),
+                    !GifService.IsRunning, false));
+                recording.Add((Glyphs.Down, "压缩（不超过 60%）", null, () => ConvertRecording(item, gif: false),
+                    !CompressionService.IsRunning, false));
+            }
+
+            recording.Add((Glyphs.Delete, "从历史里删掉…", "Delete", () => _ = ForgetAsync(item), true, true));
+            return recording;
         }
 
         return new()
@@ -712,6 +722,18 @@ internal sealed partial class ShotHistoryWindow : Window
     }
 
     /// <summary>双击：截图的改标注（截图遮罩里接着改，改完回写这一条）；录制的用默认程序打开。</summary>
+    /// <summary>历史里的录屏转 GIF / 压缩（同角落卡、托盘那两项；进度和结果在轻提示里）。</summary>
+    private static void ConvertRecording(ShotItem item, bool gif)
+    {
+        if (!ShotHistory.FileExists(item) || item.FilePath is not { } file)
+        {
+            NoticeHost.Show("文件已经不在了", Path.GetFileName(item.FilePath ?? string.Empty), NoticeTone.Warning);
+            return;
+        }
+
+        _ = gif ? GifService.ConvertAsync(file) : CompressionService.CompressAsync(file);
+    }
+
     private void Open(ShotItem item)
     {
         if (!ShotHistoryRules.IsRecording(item.Kind))
@@ -806,7 +828,10 @@ internal sealed partial class ShotHistoryWindow : Window
         }
     }
 
-    /// <summary>钉回当初框的那一块；没有位置的（长截图）钉在鼠标所在屏中间，超过八成等比缩小。</summary>
+    /// <summary>
+    /// 钉回当初框的那一块；没有位置的（长截图）、当初那块屏已经不在了的，钉在鼠标所在屏中间，超过八成等比缩小
+    /// （第四轮体检 E3：以前那块屏拔掉后钉到看不见的地方）。
+    /// </summary>
     private void Pin(ShotItem item)
     {
         if (Output(item) is not { } png)
@@ -814,7 +839,10 @@ internal sealed partial class ShotHistoryWindow : Window
             return;
         }
 
-        var bounds = item.Frame ?? Centered(item.PixelWidth, item.PixelHeight);
+        var bounds = item.Frame is { } frame &&
+                     Displays.IsOnScreen((frame.Left + frame.Right) / 2, (frame.Top + frame.Bottom) / 2)
+            ? frame
+            : Centered(item.PixelWidth, item.PixelHeight);
         PinHost.Show(png, bounds);
         _history.MarkPinned(item.Id);
     }

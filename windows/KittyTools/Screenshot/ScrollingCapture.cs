@@ -68,6 +68,7 @@ internal static class ScrollingCapture
         _work = null;
         _completing = false;
         _frames = 0;
+        _escapeArmedAt = 0;
         _direction = direction;
         _autoScroll = autoScroll;
         _paused = false;
@@ -133,6 +134,31 @@ internal static class ScrollingCapture
         Stop();
         Log.Info($"scroll.done frames={_frames} height={frame.Height}");
         callback?.Invoke(frame, annotate);
+    }
+
+    /// <summary>上一次「只上膛」的 Esc 是什么时候（Environment.TickCount64）；3 秒内再按才放弃。</summary>
+    private static long _escapeArmedAt;
+
+    /// <summary>
+    /// 按了 Esc：拼得比第一帧长时第一下只上膛，提示「再按一次 Esc 放弃这张长图」（第四轮体检 U3：滚了一两分钟按一下就全丢）；
+    /// 还没拼出东西、或者 3 秒内又按了一次，才放弃。面板上的「放弃」按钮是明着点的，照旧直接放弃。
+    /// </summary>
+    public static void RequestCancel()
+    {
+        if (!Active)
+        {
+            return;
+        }
+
+        var now = Environment.TickCount64;
+        if (_canvas is { } canvas && canvas.Height > _rect.Height && now - _escapeArmedAt > 3000)
+        {
+            _escapeArmedAt = now;
+            NoticeHost.Show("再按一次 Esc 放弃这张长图", $"已经拼了 {canvas.Height} 像素高，Enter 完成", NoticeTone.Warning);
+            return;
+        }
+
+        Cancel();
     }
 
     public static void Cancel()

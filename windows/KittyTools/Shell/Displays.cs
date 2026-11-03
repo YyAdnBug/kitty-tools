@@ -43,6 +43,10 @@ internal static unsafe class Displays
         return new Display(work, ScaleOf(monitor));
     }
 
+    /// <summary>(x, y) 落在某块接着的显示器上（那块屏拔掉了就不在）。钉回「当初框的那一块」之前先看一眼（第四轮体检 E3）。</summary>
+    public static bool IsOnScreen(int x, int y)
+        => PInvoke.MonitorFromPoint(new System.Drawing.Point(x, y), MONITOR_FROM_FLAGS.MONITOR_DEFAULTTONULL) != default;
+
     /// <summary>(x, y) 所在显示器的整块范围（含任务栏；主界面拿它和工作区比，看任务栏在哪条边）。</summary>
     public static WorkArea MonitorBoundsAt(int x, int y)
     {
