@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <title>启动器</title>
+  <circle cx="10" cy="11" r="5.9" fill="none" stroke="currentColor" stroke-width="2.6"/>
+  <path d="M14.5 15.5L19.6 20.6" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/>
+  <path fill="currentColor" d="M19.4 1.6Q20 4.3 22.6 4.9Q20 5.5 19.4 8.2Q18.8 5.5 16.2 4.9Q18.8 4.3 19.4 1.6Z"/>
+</svg>

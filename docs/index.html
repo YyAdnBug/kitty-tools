@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kitty Tools：Mac 上的小事，交给一只猫</title>
+<meta name="description" content="Kitty Tools 是常驻菜单栏的免费效率工具：剪贴板历史、翻译、启动器、截图与长截图、录屏录音、便签、启动台、状态屏……按一下快捷键就到手边。Mac 版支持 Apple 芯片、macOS 15 起，也有 Windows 版。">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Kitty Tools">
+<meta property="og:title" content="Kitty Tools：Mac 上的小事，交给一只猫">
+<meta property="og:description" content="剪贴板、翻译、启动器、截图、便签……常用的小工具都在菜单栏里，按一下快捷键就到手边。免费。">
+<meta property="og:image" content="https://yyadnbug.github.io/kitty-tools/assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#141012" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="assets/favicon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="stylesheet" href="assets/site.css">
+<script src="assets/site.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="top">
+  <div class="top-in">
+    <a class="brand" href="./"><img src="assets/icon-64.png" width="30" height="30" alt=""><span>Kitty Tools</span></a>
+    <nav class="nav" aria-label="主导航">
+      <a href="features/">功能</a>
+      <a href="download/">下载</a>
+      <a href="changelog/">更新日志</a>
+      <a href="faq/">常见问题</a>
+    </nav>
+    <div class="top-actions">
+      <a class="icon-link" href="https://github.com/YyAdnBug/kitty-tools" aria-label="GitHub 上的代码"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg></a>
+      <a class="btn sm" href="download/">下载</a>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+
+<section class="hero">
+  <div class="wrap hero-grid">
+    <div class="hero-copy">
+      <a class="eyebrow" href="changelog/"><span data-needs="mac" hidden>新版本 <span data-fill="mac-version"></span> ·</span> 看看最近更新了什么 →</a>
+      <h1><span class="nw">Mac 上的小事，</span><em class="nw">交给一只猫</em></h1>
+      <p class="lead">剪贴板、翻译、启动器、截图、便签……常用的小工具都在菜单栏里，按一下快捷键就到手边。免费。</p>
+      <div class="btn-row">
+        <a class="btn" href="https://github.com/YyAdnBug/kitty-tools/releases/latest" data-dl="mac" data-auto aria-describedby="dl-note">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><path fill="currentColor" d="M10 2.5a1 1 0 0 1 1 1v8.09l2.8-2.8a1 1 0 1 1 1.4 1.42l-4.5 4.5a1 1 0 0 1-1.4 0l-4.5-4.5a1 1 0 1 1 1.4-1.42L9 11.6V3.5a1 1 0 0 1 1-1ZM4 16.5a1 1 0 0 1 1-1h10a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1Z"/></svg>
+          <span data-label>下载 Mac 版</span>
+        </a>
+        <a class="btn quiet" href="features/">看看都能做什么</a>
+      </div>
+      <p class="dl-meta" data-auto-meta><span data-needs="mac" hidden>版本 <span data-fill="mac-version"></span></span><span>Apple 芯片</span><span>macOS 15 起</span><span>免费</span></p>
+      <p class="dl-meta" data-auto-meta-win hidden><span>Windows 11（22H2 起）</span><span>x64 和 ARM64</span><span>免费</span></p>
+      <p class="dl-note" id="dl-note" hidden>
+        <span class="for-mac">下载开始了。第一次打开会被系统拦下：到「系统设置 › 隐私与安全性」，在下面点「仍要打开」就好，只有第一次需要。<a href="download/#install">看安装说明</a></span>
+        <span class="for-win">下载开始了。出现「Windows 已保护你的电脑」时，点「更多信息」→「仍要运行」。<a href="download/#windows">看安装说明</a></span>
+      </p>
+      <p class="small muted"><span class="for-mac">也有 <a href="download/#windows">Windows 版</a>。</span><span class="for-win">也有 <a href="download/#mac">Mac 版</a>，功能更全。</span> <a href="download/#install">第一次安装要注意什么？</a></p>
+    </div>
+
+    <div class="stage hero-stage" role="img" aria-label="桌面上，菜单栏图标下面弹出 Kitty Tools 的主界面，旁边是剪贴板历史面板，一只黑猫从面板上沿探出头">
+      <div class="menubar" aria-hidden="true">
+        <span class="mb-kitty"><i></i></span>
+        <span>周二 上午 9:41</span>
+      </div>
+      <picture>
+        <source srcset="assets/shots/home-dark.avif" media="(prefers-color-scheme: dark)" type="image/avif">
+        <source srcset="assets/shots/home-light.avif" type="image/avif">
+        <img class="shot home" src="assets/shots/home-light.png" alt="">
+      </picture>
+      <div class="clipbox">
+        <svg class="cat peek" viewBox="246 176 532 494" aria-hidden="true" focusable="false">
+          <defs><clipPath id="edge-hero"><rect x="0" y="0" width="1024" height="614"/></clipPath></defs>
+          <g clip-path="url(#edge-hero)"><g class="head">
+            <g class="halo" stroke-width="44" stroke-linejoin="round"><path d="M352 392 296 204 478 330Z"/><path d="M672 392 728 204 546 330Z"/><ellipse cx="512" cy="522" rx="262" ry="214"/></g>
+            <g fill="#3A2530" stroke="#3A2530" stroke-width="32" stroke-linejoin="round"><path d="M352 392 296 204 478 330Z"/><path d="M672 392 728 204 546 330Z"/></g>
+            <g fill="#FF7FA0" stroke="#FF7FA0" stroke-width="12" stroke-linejoin="round"><path d="M366 354 338 260 426 320Z"/><path d="M658 354 686 260 598 320Z"/></g>
+            <ellipse cx="512" cy="522" rx="256" ry="208" fill="#3A2530"/>
+            <ellipse cx="352" cy="568" rx="30" ry="16" fill="#FF7FA0" fill-opacity=".8"/><ellipse cx="672" cy="568" rx="30" ry="16" fill="#FF7FA0" fill-opacity=".8"/>
+            <g class="eye"><ellipse cx="424" cy="500" rx="56" ry="60" fill="#FFF5F0"/><ellipse cx="430" cy="524" rx="34" ry="35" fill="#3A2530"/><circle cx="445" cy="507" r="11.5" fill="#fff"/><circle cx="416" cy="541" r="5.5" fill="#fff" fill-opacity=".9"/></g>
+            <g class="eye"><ellipse cx="600" cy="500" rx="56" ry="60" fill="#FFF5F0"/><ellipse cx="606" cy="524" rx="34" ry="35" fill="#3A2530"/><circle cx="621" cy="507" r="11.5" fill="#fff"/><circle cx="592" cy="541" r="5.5" fill="#fff" fill-opacity=".9"/></g>
+            <path d="M496 566h32l-16 19z" fill="#FF7FA0" stroke="#FF7FA0" stroke-width="10" stroke-linejoin="round"/>
+            <path d="M490 594q10 18 22 2q12 16 22-2" fill="none" stroke="#FF9FB8" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+          </g></g>
+          <g class="paws">
+            <ellipse cx="386" cy="652" rx="70" ry="13" fill="#3A2530" fill-opacity=".18"/><ellipse cx="638" cy="652" rx="70" ry="13" fill="#3A2530" fill-opacity=".18"/>
+            <g class="halo"><ellipse cx="386" cy="616" rx="80" ry="50"/><ellipse cx="638" cy="616" rx="80" ry="50"/></g>
+            <ellipse cx="386" cy="616" rx="76" ry="46" fill="#3A2530"/><ellipse cx="638" cy="616" rx="76" ry="46" fill="#3A2530"/>
+            <g fill="#FF9FB8"><ellipse cx="360" cy="630" rx="10" ry="9"/><ellipse cx="386" cy="637" rx="10" ry="9"/><ellipse cx="412" cy="630" rx="10" ry="9"/><ellipse cx="612" cy="630" rx="10" ry="9"/><ellipse cx="638" cy="637" rx="10" ry="9"/><ellipse cx="664" cy="630" rx="10" ry="9"/></g>
+          </g>
+        </svg>
+        <picture>
+          <source srcset="assets/shots/clipboard-dark.avif" media="(prefers-color-scheme: dark)" type="image/avif">
+          <source srcset="assets/shots/clipboard-light.avif" type="image/avif">
+          <img class="shot clip" src="assets/shots/clipboard-light.png" alt="">
+        </picture>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="band cream">
+  <div class="wrap">
+    <div class="section-head">
+      <h2>常用的，都在这儿</h2>
+      <p class="lead">每样都能用快捷键叫出来，弹出时不抢你正在用的 App。用不上的，可以在设置里整个关掉。</p>
+    </div>
+    <div class="tiles">
+      <a class="tile reveal" href="features/#clipboard"><span class="ico" style="--c:var(--blue);--i:url(assets/icons/kitty.clipboard.svg)"></span><b>剪贴板历史 <kbd>⌥C</kbd></b><span>复制过的文字、图片、文件都留着，搜得到、粘得回去</span></a>
+      <a class="tile reveal" href="features/#launcher"><span class="ico" style="--c:var(--purple);--i:url(assets/icons/kitty.launcher.svg)"></span><b>启动器 <kbd>⌥Space</kbd></b><span>打开 App、找文件、算算数、搜网页，拼音也认</span></a>
+      <a class="tile reveal" href="features/#translate"><span class="ico" style="--c:var(--green);--i:url(assets/icons/kitty.translate.svg)"></span><b>翻译 <kbd>⌥D</kbd></b><span>划词、输入、复制、截图都能翻，内置服务不用配置</span></a>
+      <a class="tile reveal" href="features/#screenshot"><span class="ico" style="--c:var(--pink);--i:url(assets/icons/kitty.screenshot.svg)"></span><b>截图 <kbd>⌥A</kbd></b><span>框选、十种标注、钉在屏幕上，还能拼长截图</span></a>
+      <a class="tile reveal" href="features/#screenshot"><span class="ico" style="--c:var(--pink);--i:url(assets/icons/kitty.screenshot.text.svg)"></span><b>识字 <kbd>⌥O</kbd></b><span>框一块屏幕把字认出来，二维码也行，不联网</span></a>
+      <a class="tile reveal" href="features/#record"><span class="ico" style="--c:var(--pink);--i:url(assets/icons/kitty.record.svg)"></span><b>录屏与录音 <kbd>⌥R</kbd></b><span>录一块区域或整屏，带上声音，转 GIF、压缩</span></a>
+      <a class="tile reveal" href="features/#notes"><span class="ico yellow" style="--c:var(--yellow);--i:url(assets/icons/kitty.notes.svg)"></span><b>便签 <kbd>⌥N</kbd></b><span>贴在屏幕边上，想到什么随手记一条</span></a>
+      <a class="tile reveal" href="features/#screenshot"><span class="ico" style="--c:var(--pink);--i:url(assets/icons/kitty.screenshot.history.svg)"></span><b>截图历史</b><span>截过的、录过的都在一处，回头还能接着改标注</span></a>
+      <a class="tile reveal" href="features/#launchpad"><span class="ico" style="--c:var(--mint);--i:url(assets/icons/kitty.launchpad.svg)"></span><b>启动台</b><span>全屏的 App 网格，捏合触控板就打开（macOS 26 起）</span></a>
+      <a class="tile reveal" href="features/#status-screen"><span class="ico" style="--c:var(--brown);--i:url(assets/icons/kitty.status.screen.svg)"></span><b>状态屏</b><span>盖住屏幕、拦住键盘鼠标，擦屏幕或离开座位时用</span></a>
+      <a class="tile reveal" href="features/#dock-preview"><span class="ico" style="--c:var(--cyan);--i:url(assets/icons/kitty.dock.preview.svg)"></span><b>程序坞预览</b><span>停在程序坞图标上，看这个 App 的所有窗口</span></a>
+      <a class="tile reveal" href="features/#island"><span class="ico" style="--c:var(--gray);--i:url(assets/icons/kitty.island.svg)"></span><b>刘海岛</b><span>提示从刘海里长出来，点一下叫出常用动作</span></a>
+    </div>
+  </div>
+</section>
+
+<section class="band">
+  <div class="wrap">
+    <article class="feature reveal">
+      <div class="feature-copy">
+        <span class="eyebrow"><span class="ico sm" style="--c:var(--blue);--i:url(assets/icons/kitty.clipboard.svg)"></span>剪贴板历史 <kbd>⌥C</kbd></span>
+        <h2>复制过的，一样都不丢</h2>
+        <p>文字（带格式）、图片、文件都记下来，重复的只挪到最前。按 ↩ 粘回原来的 App，⌘1–9 直接粘第几条。</p>
+        <ul class="points">
+          <li>选中哪条就原地展开预览：代码带着色，颜色显示色值，链接带标题和头图</li>
+          <li>图片里的字也能搜，在本机识别，不联网</li>
+          <li>收藏、片段和备注；片段能带日期、光标位置这类占位符</li>
+          <li>密码管理器里复制的、看着像密钥的内容不记，也可以排除指定的 App</li>
+        </ul>
+        <a class="arrow-link" href="features/#clipboard">剪贴板的全部功能</a>
+      </div>
+      <div class="stage feature-stage">
+        <picture>
+          <source srcset="assets/shots/clipboard-dark.avif" media="(prefers-color-scheme: dark)" type="image/avif">
+          <source srcset="assets/shots/clipboard-light.avif" type="image/avif">
+          <img class="shot" src="assets/shots/clipboard-light.png" alt="剪贴板历史面板：选中的一段文字原地展开，下面是链接、图片、颜色值和代码" loading="lazy">
+        </picture>
+      </div>
+    </article>
+
+    <article class="feature flip reveal">
+      <div class="feature-copy">
+        <span class="eyebrow"><span class="ico sm" style="--c:var(--purple);--i:url(assets/icons/kitty.launcher.svg)"></span>启动器 <kbd>⌥Space</kbd></span>
+        <h2>想打开什么，敲几个字母就够</h2>
+        <p>App、文件、系统设置、浏览器书签都搜得到。中文名、拼音全拼和首字母都认，常用的越用越靠前。</p>
+        <ul class="points">
+          <li>算式和单位换算直接出结果，↩ 把结果粘出去</li>
+          <li>「g 关键词」搜网页，常用的搜索网站都预置好了</li>
+          <li>锁屏、清空废纸篓、结束进程、看端口被谁占着，一行命令</li>
+          <li>⌘K 打开动作菜单，常用的收藏起来</li>
+        </ul>
+        <a class="arrow-link" href="features/#launcher">启动器的全部功能</a>
+      </div>
+      <div class="stage feature-stage">
+        <picture>
+          <source srcset="assets/shots/launcher-dark.avif" media="(prefers-color-scheme: dark)" type="image/avif">
+          <source srcset="assets/shots/launcher-light.avif" type="image/avif">
+          <img class="shot" src="assets/shots/launcher-light.png" alt="启动器：输入拼音首字母就搜到了对应的 App" loading="lazy">
+        </picture>
+      </div>
+    </article>
+
+    <article class="feature reveal">
+      <div class="feature-copy">
+        <span class="eyebrow"><span class="ico sm" style="--c:var(--green);--i:url(assets/icons/kitty.translate.svg)"></span>翻译 <kbd>⌥D</kbd></span>
+        <h2>选中就翻，不用切窗口</h2>
+        <p>在任何 App 里选中文字按快捷键，浮窗跟着鼠标出来。也能输入翻译、复制即译，或者框一块屏幕截图翻译。</p>
+        <ul class="points">
+          <li>内置服务开箱即用；另有十几家翻译服务和大模型可选，几家一起出结果</li>
+          <li>大模型的译文边生成边显示</li>
+          <li>查单个词给出词典释义；译文能直接替换原文</li>
+          <li>翻译历史和生词本，能导出成表格或背单词卡片</li>
+        </ul>
+        <a class="arrow-link" href="features/#translate">翻译的全部功能</a>
+      </div>
+      <div class="stage feature-stage">
+        <picture>
+          <source srcset="assets/shots/translate-dark.avif" media="(prefers-color-scheme: dark)" type="image/avif">
+          <source srcset="assets/shots/translate-light.avif" type="image/avif">
+          <img class="shot" src="assets/shots/translate-light.png" alt="翻译浮窗：一段英文，两家服务的中文译文" loading="lazy">
+        </picture>
+      </div>
+    </article>
+
+    <article class="feature flip reveal">
+      <div class="feature-copy">
+        <span class="eyebrow"><span class="ico sm" style="--c:var(--pink);--i:url(assets/icons/kitty.screenshot.svg)"></span>截图 <kbd>⌥A</kbd></span>
+        <h2>截下来，标清楚，再送出去</h2>
+        <p>先冻结屏幕再框选，自动吸附窗口边。十种标注工具，画完还能挪、能改。</p>
+        <ul class="points">
+          <li>↩ 拷贝，⌘S 存储，或者钉在屏幕上当参考</li>
+          <li>识字、认二维码、截图翻译，一步到位</li>
+          <li>长截图：在选区里往下滚，自动拼成一张</li>
+          <li>截过的图都收在截图历史里，回头接着改标注</li>
+        </ul>
+        <a class="arrow-link" href="features/#screenshot">截图的全部功能</a>
+      </div>
+      <div class="stage feature-stage full">
+        <img class="screen" src="assets/shots/screenshot-annotate.jpg" alt="截图标注：选区里有矩形框、箭头、序号和一段文字，一块马赛克盖住了邮箱，工具栏在选区下方" loading="lazy">
+      </div>
+    </article>
+  </div>
+</section>
+
+<section class="band cream">
+  <div class="wrap">
+    <div class="section-head">
+      <h2>小，快，懂分寸</h2>
+    </div>
+    <div class="why">
+      <div class="reveal"><span class="num">12 MB</span><h3>又小又快</h3><p>纯原生写成，安装包十来兆。常驻菜单栏，不占程序坞，平时几乎不占 CPU。</p></div>
+      <div class="reveal"><span class="num">⌥</span><h3>手不离键盘</h3><p>每个功能都有快捷键。面板弹出时不抢焦点，选好了直接粘回原来的 App。</p></div>
+      <div class="reveal"><span class="num">本机</span><h3>隐私留在本机</h3><p>识字、语种检测、敏感内容识别都在本机完成，密钥存在系统钥匙串里，不收集使用数据。</p></div>
+      <div class="reveal"><span class="num">0 元</span><h3>免费</h3><p>免费下载，没有广告；新版本在 App 里一键更新。代码公开在 GitHub。</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="band">
+  <div class="wrap">
+    <div class="section-head">
+      <h2>还有这些</h2>
+      <p class="lead">不常用，用的时候正好有。</p>
+    </div>
+    <div class="cards">
+      <a class="card reveal" href="features/#record">
+        <div class="stage"><picture><source srcset="assets/shots/record-hud-dark.avif" media="(prefers-color-scheme: dark)" type="image/avif"><source srcset="assets/shots/record-hud-light.avif" type="image/avif"><img class="shot" src="assets/shots/record-hud-light.png" alt="录屏时的录制条：计时、麦克风和停止按钮" loading="lazy"></picture></div>
+        <div class="card-body"><h3><span class="ico sm" style="--c:var(--pink);--i:url(assets/icons/kitty.record.svg)"></span>录屏与录音</h3><p>框一块区域或整屏，录系统声音和麦克风，显示点按和按键；录完转 GIF 或压缩。</p></div>
+      </a>
+      <a class="card reveal" href="features/#notes">
+        <div class="stage"><picture><source srcset="assets/shots/notes-wall-dark.avif" media="(prefers-color-scheme: dark)" type="image/avif"><source srcset="assets/shots/notes-wall-light.avif" type="image/avif"><img class="shot" src="assets/shots/notes-wall-light.png" alt="全部便签：便签墙上几张不同颜色的便签" loading="lazy"></picture></div>
+        <div class="card-body"><h3><span class="ico sm yellow" style="--c:var(--yellow);--i:url(assets/icons/kitty.notes.svg)"></span>便签</h3><p>贴在屏幕边上，鼠标靠过去就扇开；任务、颜色、图片都能放，能导出成 Markdown。</p></div>
+      </a>
+      <a class="card reveal" href="features/#launchpad">
+        <div class="stage full"><img src="assets/shots/launchpad.jpg" alt="启动台：全屏的 App 图标网格" loading="lazy"></div>
+        <div class="card-body"><h3><span class="ico sm" style="--c:var(--mint);--i:url(assets/icons/kitty.launchpad.svg)"></span>启动台</h3><p>熟悉的全屏图标网格：翻页、搜索、拖成文件夹，捏合触控板打开。macOS 26 起。</p></div>
+      </a>
+      <a class="card reveal" href="features/#status-screen">
+        <div class="stage full"><img src="assets/shots/status-screen.jpg" alt="状态屏：屏幕上写着「马上回来」" loading="lazy"></div>
+        <div class="card-body"><h3><span class="ico sm" style="--c:var(--brown);--i:url(assets/icons/kitty.status.screen.svg)"></span>状态屏</h3><p>一键盖住所有屏幕、拦住键盘鼠标，擦屏幕、跑任务、离开座位时用。</p></div>
+      </a>
+      <a class="card reveal" href="features/#dock-preview">
+        <div class="stage"><picture><source srcset="assets/shots/dock-preview-dark.avif" media="(prefers-color-scheme: dark)" type="image/avif"><source srcset="assets/shots/dock-preview-light.avif" type="image/avif"><img class="shot" src="assets/shots/dock-preview-light.png" alt="程序坞预览：一个 App 的几扇窗口缩略图" loading="lazy"></picture></div>
+        <div class="card-body"><h3><span class="ico sm" style="--c:var(--cyan);--i:url(assets/icons/kitty.dock.preview.svg)"></span>程序坞预览</h3><p>鼠标停在程序坞图标上，弹出它所有窗口的缩略图，点一下切过去。</p></div>
+      </a>
+      <a class="card reveal" href="features/#island">
+        <div class="stage"><img class="shot" src="assets/shots/island.png" alt="刘海岛：「已存到桌面」的提示，带「在访达中显示」按钮" loading="lazy"></div>
+        <div class="card-body"><h3><span class="ico sm" style="--c:var(--gray);--i:url(assets/icons/kitty.island.svg)"></span>刘海岛</h3><p>复制好了、存好了，提示都从刘海里长出来；点一下刘海，叫出最近的提示和常用动作。</p></div>
+      </a>
+    </div>
+  </div>
+</section>
+
+<section class="band tight cream">
+  <div class="wrap split">
+    <div class="section-head" style="margin:0">
+      <h2>也有 Windows 版</h2>
+      <p class="muted">剪贴板、翻译、启动器、截图、录屏录音，样子和用法都照 Mac 版来；片段、收藏、生词本能在两边同步。支持 Windows 11（22H2 起），x64 和 ARM64。</p>
+    </div>
+    <div class="btn-row">
+      <a class="btn quiet" href="https://github.com/YyAdnBug/kitty-tools/releases?q=windows&amp;expanded=true" data-dl="win">下载 Windows 版</a>
+      <a class="arrow-link" href="download/#windows">安装说明</a>
+    </div>
+  </div>
+</section>
+
+<section class="band">
+  <div class="wrap">
+    <div class="cta-card">
+      <svg class="cat peek" viewBox="246 176 532 494" aria-hidden="true" focusable="false">
+        <defs><clipPath id="edge-cta"><rect x="0" y="0" width="1024" height="614"/></clipPath></defs>
+        <g clip-path="url(#edge-cta)"><g class="head">
+          <g class="halo" stroke-width="44" stroke-linejoin="round"><path d="M352 392 296 204 478 330Z"/><path d="M672 392 728 204 546 330Z"/><ellipse cx="512" cy="522" rx="262" ry="214"/></g>
+          <g fill="#3A2530" stroke="#3A2530" stroke-width="32" stroke-linejoin="round"><path d="M352 392 296 204 478 330Z"/><path d="M672 392 728 204 546 330Z"/></g>
+          <g fill="#FF7FA0" stroke="#FF7FA0" stroke-width="12" stroke-linejoin="round"><path d="M366 354 338 260 426 320Z"/><path d="M658 354 686 260 598 320Z"/></g>
+          <ellipse cx="512" cy="522" rx="256" ry="208" fill="#3A2530"/>
+          <ellipse cx="352" cy="568" rx="30" ry="16" fill="#FF7FA0" fill-opacity=".8"/><ellipse cx="672" cy="568" rx="30" ry="16" fill="#FF7FA0" fill-opacity=".8"/>
+          <g class="eye"><ellipse cx="424" cy="500" rx="56" ry="60" fill="#FFF5F0"/><ellipse cx="430" cy="524" rx="34" ry="35" fill="#3A2530"/><circle cx="445" cy="507" r="11.5" fill="#fff"/><circle cx="416" cy="541" r="5.5" fill="#fff" fill-opacity=".9"/></g>
+          <g class="eye"><ellipse cx="600" cy="500" rx="56" ry="60" fill="#FFF5F0"/><ellipse cx="606" cy="524" rx="34" ry="35" fill="#3A2530"/><circle cx="621" cy="507" r="11.5" fill="#fff"/><circle cx="592" cy="541" r="5.5" fill="#fff" fill-opacity=".9"/></g>
+          <path d="M496 566h32l-16 19z" fill="#FF7FA0" stroke="#FF7FA0" stroke-width="10" stroke-linejoin="round"/>
+          <path d="M490 594q10 18 22 2q12 16 22-2" fill="none" stroke="#FF9FB8" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+        </g></g>
+        <g class="paws">
+          <ellipse cx="386" cy="652" rx="70" ry="13" fill="#3A2530" fill-opacity=".18"/><ellipse cx="638" cy="652" rx="70" ry="13" fill="#3A2530" fill-opacity=".18"/>
+          <g class="halo"><ellipse cx="386" cy="616" rx="80" ry="50"/><ellipse cx="638" cy="616" rx="80" ry="50"/></g>
+          <ellipse cx="386" cy="616" rx="76" ry="46" fill="#3A2530"/><ellipse cx="638" cy="616" rx="76" ry="46" fill="#3A2530"/>
+          <g fill="#FF9FB8"><ellipse cx="360" cy="630" rx="10" ry="9"/><ellipse cx="386" cy="637" rx="10" ry="9"/><ellipse cx="412" cy="630" rx="10" ry="9"/><ellipse cx="612" cy="630" rx="10" ry="9"/><ellipse cx="638" cy="637" rx="10" ry="9"/><ellipse cx="664" cy="630" rx="10" ry="9"/></g>
+        </g>
+      </svg>
+      <div class="cta">
+        <h2>让猫来帮忙</h2>
+        <p class="lead">装上之后，菜单栏里多一只猫。点它，或者按快捷键。</p>
+        <div class="btn-row">
+          <a class="btn" href="https://github.com/YyAdnBug/kitty-tools/releases/latest" data-dl="mac" data-auto aria-describedby="dl-note-2"><span data-label>下载 Mac 版</span></a>
+          <a class="btn quiet" href="download/">其他下载方式</a>
+        </div>
+        <p class="dl-meta" data-auto-meta><span>Apple 芯片</span><span>macOS 15 起</span><span>免费</span></p>
+        <p class="dl-meta" data-auto-meta-win hidden><span>Windows 11（22H2 起）</span><span>x64 和 ARM64</span><span>免费</span></p>
+        <p class="dl-note" id="dl-note-2" hidden>
+          <span class="for-mac">下载开始了。第一次打开会被系统拦下：到「系统设置 › 隐私与安全性」，在下面点「仍要打开」就好。<a href="download/#install">看安装说明</a></span>
+          <span class="for-win">下载开始了。出现「Windows 已保护你的电脑」时，点「更多信息」→「仍要运行」。<a href="download/#windows">看安装说明</a></span>
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <div class="foot-grid">
+      <div>
+        <a class="brand" href="./"><img src="assets/icon-64.png" width="30" height="30" alt=""><span>Kitty Tools</span></a>
+        <p>Mac 上的小事，交给一只猫。</p>
+      </div>
+      <div><h2>产品</h2><ul><li><a href="features/">功能</a></li><li><a href="download/">下载</a></li><li><a href="changelog/">更新日志</a></li></ul></div>
+      <div><h2>帮助</h2><ul><li><a href="faq/">常见问题</a></li><li><a href="download/#install">安装说明</a></li><li><a href="faq/#privacy">隐私</a></li><li><a href="https://github.com/YyAdnBug/kitty-tools/issues/new">反馈问题</a></li></ul></div>
+      <div><h2>开发</h2><ul><li><a href="https://github.com/YyAdnBug/kitty-tools">GitHub</a></li><li><a href="https://github.com/YyAdnBug/kitty-tools/tree/macos">Mac 版源码</a></li><li><a href="https://github.com/YyAdnBug/kitty-tools/tree/windows">Windows 版源码</a></li></ul></div>
+      <div><h2>致谢</h2><ul><li><a href="https://github.com/aimen08/noty">Noty</a>：便签的交互参考</li><li><a href="https://github.com/microsoft/fluentui-emoji-animated">Fluent Emoji</a>：状态屏的动画表情</li></ul></div>
+    </div>
+    <div class="foot-base">
+      <span>© 2026 Kitty Tools · 代码公开在 GitHub</span>
+      <span>本站不用 Cookie，也不统计访问</span>
+    </div>
+  </div>
+</footer>
+</body>
+</html>

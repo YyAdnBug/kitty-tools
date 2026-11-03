@@ -14,7 +14,14 @@
   <img src="https://img.shields.io/badge/Apple%20Silicon-arm64-555" alt="Apple Silicon">
   <img src="https://img.shields.io/badge/Swift-6.2-F05138?logo=swift&logoColor=white" alt="Swift 6.2">
   <img src="https://img.shields.io/badge/%E7%AC%AC%E4%B8%89%E6%96%B9%E4%BE%9D%E8%B5%96-0-E8577A" alt="零第三方依赖">
-  <a href="https://github.com/YyAdnBug/kitty-tools/releases/latest"><img src="https://img.shields.io/github/v/release/YyAdnBug/kitty-tools?display_name=release&label=%E4%B8%8B%E8%BD%BD" alt="下载最新版"></a>
+  <a href="https://yyadnbug.github.io/kitty-tools/download/"><img src="https://img.shields.io/github/v/release/YyAdnBug/kitty-tools?display_name=release&label=%E4%B8%8B%E8%BD%BD" alt="下载最新版"></a>
+</p>
+
+<p align="center">
+  <a href="https://yyadnbug.github.io/kitty-tools/"><b>官网</b></a> ·
+  <a href="https://yyadnbug.github.io/kitty-tools/download/">下载与安装</a> ·
+  <a href="https://yyadnbug.github.io/kitty-tools/changelog/">更新日志</a> ·
+  <a href="https://yyadnbug.github.io/kitty-tools/faq/">常见问题</a>
 </p>
 
 <p align="center">

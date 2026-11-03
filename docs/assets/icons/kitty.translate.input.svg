@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <title>输入翻译</title>
+  <rect x="2.5" y="5.5" width="19" height="13" rx="3" fill="none" stroke="currentColor" stroke-width="2.2"/>
+  <path fill="currentColor" fill-rule="evenodd" d="M6.2 15.2L8.2 8.8H9.8L11.8 15.2H10.25L9.8 13.7H8.2L7.75 15.2ZM8.55 12.4H9.45L9 10.8Z"/>
+  <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M14.2 15.1H17.6"/>
+</svg>

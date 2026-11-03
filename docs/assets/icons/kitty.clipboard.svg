@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <title>剪贴板</title>
+  <path fill="currentColor" fill-rule="evenodd" d="M4 6.5A2.5 2.5 0 0 1 6.5 4V6A2 2 0 0 0 8.5 8H15.5A2 2 0 0 0 17.5 6V4A2.5 2.5 0 0 1 20 6.5V19.5A2.5 2.5 0 0 1 17.5 22H6.5A2.5 2.5 0 0 1 4 19.5ZM8.9 11.2H15.1A0.9 0.9 0 0 1 15.1 13H8.9A0.9 0.9 0 0 1 8.9 11.2ZM8.9 15.2H12.1A0.9 0.9 0 0 1 12.1 17H8.9A0.9 0.9 0 0 1 8.9 15.2Z"/>
+  <rect fill="currentColor" x="7.5" y="2" width="9" height="4.5" rx="1.6"/>
+</svg>

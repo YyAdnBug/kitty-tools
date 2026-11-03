@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>常见问题 · Kitty Tools</title>
+<meta name="description" content="安装和使用 Kitty Tools 时最常遇到的问题，以及隐私说明。">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Kitty Tools">
+<meta property="og:image" content="https://yyadnbug.github.io/kitty-tools/assets/og.png">
+<meta property="og:title" content="常见问题 · Kitty Tools">
+<meta property="og:description" content="安装和使用 Kitty Tools 时最常遇到的问题，以及隐私说明。">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#141012" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="../assets/favicon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="../assets/apple-touch-icon.png">
+<link rel="stylesheet" href="../assets/site.css">
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">跳到正文</a>
+<header class="top">
+  <div class="top-in">
+    <a class="brand" href="../"><img src="../assets/icon-64.png" width="30" height="30" alt=""><span>Kitty Tools</span></a>
+    <nav class="nav" aria-label="主导航">
+      <a href="../features/">功能</a>
+      <a href="../download/">下载</a>
+      <a href="../changelog/">更新日志</a>
+      <a href="../faq/" aria-current="page">常见问题</a>
+    </nav>
+    <div class="top-actions">
+      <a class="icon-link" href="https://github.com/YyAdnBug/kitty-tools" aria-label="GitHub 上的代码"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg></a>
+      <a class="btn sm" href="../download/">下载</a>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+<div class="wrap page-head">
+  <span class="eyebrow">常见问题</span>
+  <h1>常见问题</h1>
+  <p class="lead">装的时候、用的时候最常遇到的问题。没找到答案的，<a href="https://github.com/YyAdnBug/kitty-tools/issues/new">在 GitHub 上问</a>。</p>
+</div>
+
+<div class="wrap faq">
+  <section aria-labelledby="g-install">
+    <h2 id="g-install">安装</h2>
+    <details class="qa" id="blocked"><summary>第一次打开提示「未打开」，怎么办？</summary><div>
+      <p>Kitty Tools 签了名，但没有经过苹果的公证，所以第一次打开会被系统拦下。提示是「未打开」而不是「已损坏」，说明签名是好的。</p>
+      <p>打开「系统设置 › 隐私与安全性」，往下拉到「安全性」，点 Kitty Tools 旁边的「仍要打开」，输入登录密码即可（尝试打开后约 1 小时内有效）。也可以在「终端」里执行：</p>
+      <p><code>xattr -dr com.apple.quarantine "/Applications/Kitty Tools.app"</code></p>
+      <p>只有第一次需要。之后在 App 里更新，不用再放行。<a href="../download/#install">看带图的安装步骤</a></p>
+    </div></details>
+    <details class="qa" id="damaged"><summary>提示「已损坏，无法打开」？</summary><div>
+      <p>多半是下载不完整。删掉这个 App 和 DMG，重新下载一次再装。还不行的话，用上一条里的终端命令。</p>
+    </div></details>
+    <details class="qa" id="intel"><summary>我的 Mac 是 Intel 芯片，能用吗？</summary><div>
+      <p>不能。Mac 版只支持 Apple 芯片（M1 及以后）。不确定的话，点屏幕左上角的苹果菜单 › 关于本机，「芯片」一行写着 Apple M 开头的就可以。</p>
+    </div></details>
+    <details class="qa" id="macos"><summary>支持哪些 macOS 版本？</summary><div>
+      <p>macOS 15 及以上。启动台只在 macOS 26 起出现，macOS 15 上用系统自带的。</p>
+      <p>macOS 15.0 和 15.1 不允许只带 ⌥ 的快捷键，在这两个版本上请到 设置 › 快捷键 里改成带 ⌘ 或 ⌃ 的组合，那一页会提示。</p>
+    </div></details>
+    <details class="qa" id="slow"><summary>下载很慢，或者下不动？</summary><div>
+      <p>安装包放在 GitHub 上，在国内有时会慢。Mac 版的 DMG 只有十来兆，多试几次或换个网络一般都能下完。之后的更新在 App 里下载，用的也是 GitHub。</p>
+    </div></details>
+    <details class="qa" id="free"><summary>收费吗？代码在哪？</summary><div>
+      <p>免费，没有广告，也没有内购。代码公开在 <a href="https://github.com/YyAdnBug/kitty-tools">GitHub</a>：Mac 版在 <code>macos</code> 分支，Windows 版在 <code>windows</code> 分支。</p>
+    </div></details>
+  </section>
+
+  <section aria-labelledby="g-use">
+    <h2 id="g-use">使用</h2>
+    <details class="qa" id="permissions"><summary>为什么要「辅助功能」和「屏幕录制」权限？</summary><div>
+      <p>辅助功能用来把选好的内容粘贴回原来的 App、划词翻译、替换原文、长截图自动滚动、录屏时显示按键和程序坞预览；屏幕录制用来截图、识字、截图翻译、录屏和显示程序坞预览的缩略图。不给也能用其余功能。<a href="../download/#permissions">每项权限的用途</a></p>
+    </div></details>
+    <details class="qa" id="hotkeys"><summary>快捷键没反应，或者和别的 App 撞了？</summary><div>
+      <p>先看 设置 › 快捷键：注册不上的快捷键那里会标出来，换一个组合就行。再看 设置 › 通用 › 功能，这个功能是不是被关掉了。粘贴回原来的 App 要辅助功能权限，刚授权完没生效的，重新打开一次 App。</p>
+    </div></details>
+    <details class="qa" id="translate-key"><summary>翻译要自己填密钥吗？</summary><div>
+      <p>不用。内置的翻译服务开箱即用。想用别的服务（百度、有道、DeepL、各家大模型……），到 设置 › 翻译 里填上你自己的密钥。密钥存在系统钥匙串里，不会同步；导出设置时可以选择加密带上。</p>
+    </div></details>
+    <details class="qa" id="features-off"><summary>有些功能用不上，能关掉吗？</summary><div>
+      <p>能。设置 › 通用 › 功能 里每个功能一个开关，关掉的功能入口、快捷键和后台工作一起停，数据和设置都留着，打开立刻回来。</p>
+    </div></details>
+    <details class="qa" id="sync"><summary>能在几台电脑之间同步吗？</summary><div>
+      <p>能。在 设置 › 通用「同步」里选一个同步盘的文件夹（比如 iCloud 云盘），设置与快捷键、片段和收藏、生词本、网页搜索、翻译服务、便签等就会在几台 Mac 之间同步，每类一个开关。Mac 和 Windows 之间也能互通片段、收藏、生词本、网页搜索和翻译服务。密钥不同步。</p>
+    </div></details>
+    <details class="qa" id="update"><summary>怎么更新？</summary><div>
+      <p>有新版本时菜单栏里会出现「更新到 x.y.z…」，或者在 设置 › 关于 里点「更新并重新打开」，一键更新。</p>
+    </div></details>
+    <details class="qa" id="uninstall"><summary>怎么卸载、清掉数据？</summary><div>
+      <p>退出 App，把「应用程序」里的 Kitty Tools 拖进废纸篓。要连数据一起清，删掉 <code>~/Library/Application Support/com.yy.kitty-tools.native</code> 和 <code>~/Library/Preferences/com.yy.kitty-tools.native.plist</code>；翻译服务的密钥在「钥匙串访问」里，名称是 <code>com.yy.kitty-tools.native</code>。Windows 版在 设置 › 应用 里卸载。</p>
+    </div></details>
+    <details class="qa" id="windows"><summary>Windows 版和 Mac 版有什么不同？</summary><div>
+      <p>Windows 版有剪贴板历史、翻译、启动器、截图（含长截图和截图历史）、录屏与录音和主界面；便签、启动台、状态屏、程序坞预览和刘海岛目前只有 Mac 版有。两边分别发版，样子和用法尽量对齐，默认快捷键略有不同，见<a href="../features/#shortcuts">功能页的快捷键表</a>。</p>
+    </div></details>
+    <details class="qa" id="feedback"><summary>怎么反馈问题、提建议？</summary><div>
+      <p>在 <a href="https://github.com/YyAdnBug/kitty-tools/issues/new">GitHub</a> 上新建一个问题（要有 GitHub 账号）。写上版本号（设置 › 关于）、系统版本和怎么重现，最好附一张截图。</p>
+    </div></details>
+  </section>
+
+  <section class="privacy" id="privacy" aria-labelledby="g-privacy">
+    <h2 id="g-privacy">隐私</h2>
+    <div class="prose">
+      <p><strong>Kitty Tools 不收集任何使用数据</strong>：没有统计，没有广告，不需要账号。</p>
+      <h3>留在本机的</h3>
+      <ul>
+        <li>剪贴板历史、便签、截图历史、翻译历史都存在你自己的电脑上。</li>
+        <li>图片里的文字识别、语种检测、敏感内容识别，都用系统自带的能力在本机完成。</li>
+        <li>翻译服务的密钥存在系统钥匙串里。</li>
+      </ul>
+      <h3>会联网的，只在你用到时</h3>
+      <ul>
+        <li>翻译：把要翻译的原文发给你选的翻译服务（默认是内置的那一家），各家按自己的隐私政策处理。</li>
+        <li>剪贴板里的链接：在面板里预览时，去取这个网页的标题和头图。</li>
+        <li>检查更新和下载更新：读 GitHub 上的发布列表，从 GitHub 下载更新包。</li>
+        <li>启动器的 <code>ip</code> 命令：问一个公开服务你的公网地址；网页搜索和书签在你的浏览器里打开。</li>
+        <li>设置里显示翻译服务的图标时，到它的官网取一次图标。</li>
+      </ul>
+      <h3>同步</h3>
+      <p>同步只往你自己选的文件夹里写文件，Kitty Tools 没有自己的服务器。文件会不会上传、传到哪里，由那个同步盘决定。</p>
+      <h3>这个网站</h3>
+      <p>不用 Cookie，不统计访问。下载按钮和更新日志会在你的浏览器里直接读 GitHub 的公开接口（GitHub 会看到这次访问），读到的结果在浏览器里存 10 分钟。</p>
+    </div>
+  </section>
+</div>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <div class="foot-grid">
+      <div>
+        <a class="brand" href="../"><img src="../assets/icon-64.png" width="30" height="30" alt=""><span>Kitty Tools</span></a>
+        <p>Mac 上的小事，交给一只猫。</p>
+      </div>
+      <div><h2>产品</h2><ul><li><a href="../features/">功能</a></li><li><a href="../download/">下载</a></li><li><a href="../changelog/">更新日志</a></li></ul></div>
+      <div><h2>帮助</h2><ul><li><a href="../faq/">常见问题</a></li><li><a href="../download/#install">安装说明</a></li><li><a href="../faq/#privacy">隐私</a></li><li><a href="https://github.com/YyAdnBug/kitty-tools/issues/new">反馈问题</a></li></ul></div>
+      <div><h2>开发</h2><ul><li><a href="https://github.com/YyAdnBug/kitty-tools">GitHub</a></li><li><a href="https://github.com/YyAdnBug/kitty-tools/tree/macos">Mac 版源码</a></li><li><a href="https://github.com/YyAdnBug/kitty-tools/tree/windows">Windows 版源码</a></li></ul></div>
+      <div><h2>致谢</h2><ul><li><a href="https://github.com/aimen08/noty">Noty</a>：便签的交互参考</li><li><a href="https://github.com/microsoft/fluentui-emoji-animated">Fluent Emoji</a>：状态屏的动画表情</li></ul></div>
+    </div>
+    <div class="foot-base">
+      <span>© 2026 Kitty Tools · 代码公开在 GitHub</span>
+      <span>本站不用 Cookie，也不统计访问</span>
+    </div>
+  </div>
+</footer>
+</body>
+</html>
