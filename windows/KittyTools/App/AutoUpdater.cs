@@ -75,6 +75,7 @@ internal static class AutoUpdater
 
         _busy = true;
         _progressPercent = -1;
+        UpdateService.NotifyChanged();
         var staging = Path.Combine(Path.GetTempPath(), "kitty-update-" + Guid.NewGuid().ToString("N"));
         var downloadDir = Paths.UpdatesDirectory;
         try
@@ -137,6 +138,7 @@ internal static class AutoUpdater
         {
             _busy = false;
             _progressPercent = -1;
+            UpdateService.NotifyChanged();
             _cancel?.Dispose();
             _cancel = null;
             TryDeleteDirectory(staging);

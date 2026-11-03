@@ -280,6 +280,9 @@ internal static class UpdateService
         }
     }
 
+    /// <summary>下载开始 / 结束时 AutoUpdater 调：开着的关于页跟着换成进度 + 「取消」或回到「有新版本」。</summary>
+    internal static void NotifyChanged() => Notify();
+
     private static void Notify()
     {
         if (_dispatcher is null)

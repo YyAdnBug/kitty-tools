@@ -332,6 +332,9 @@ internal sealed partial class SelectionOverlayWindow : Window
 
     public FrozenScreen Screen => _screen;
 
+    /// <summary>--ui-snapshots 用：现在的选区（M4 取截图历史的原图）。</summary>
+    internal RectD ProbeSelection => _session.Selection;
+
     /// <summary>选区 + 标注合成成 PNG（像素和冻结帧 1:1）。</summary>
     public async Task<byte[]?> ExportPngAsync()
     {

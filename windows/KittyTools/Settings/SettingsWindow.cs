@@ -219,6 +219,10 @@ internal sealed partial class SettingsWindow : Window
             syncer.Changed += OnSyncChanged;
         }
 
+        // 从轻提示 / 托盘点了「更新」、或者下载结束：开着的关于页那一行跟着换（以前停在「更新并重新打开」，PLAN-v11 825 手测）。
+        // 设置窗全进程只建一次（关 = 隐藏），不用退订。
+        UpdateService.Changed += RefreshUpdateRow;
+
         Activated += (_, args) =>
         {
             _active = args.WindowActivationState != WindowActivationState.Deactivated;

@@ -9,7 +9,7 @@ using Windows.Win32.Foundation;
 
 namespace KittyTools;
 
-internal static unsafe class RecordingHost
+internal static class RecordingHost
 {
     private static IVideoRecorder? _recorder;
     private static Microsoft.UI.Dispatching.DispatcherQueueTimer? _diskTimer;
@@ -72,8 +72,7 @@ internal static unsafe class RecordingHost
             return;
         }
 
-        RECT rect;
-        if (!PInvoke.GetWindowRect(new HWND(hwnd), &rect))
+        if (!PInvoke.GetWindowRect(new HWND(hwnd), out var rect))
         {
             RecordingFrame.Hide();
             NoticeHost.Show("没能开始录屏", "拿不到这个窗口的位置", NoticeTone.Error);
@@ -334,7 +333,6 @@ internal static unsafe class RecordingHost
         }
     }
 
-    /// <summary>上次录到一半（闪退 / 断电）：把临时文件挪进保存目录并提示。</summary>
     /// <summary>上次录到一半的文件（闪退恢复）。重封装在线程池上做（REVIEW R51：以前在启动路径的 UI 线程上同步等），做完回 UI 线程提示。</summary>
     public static async Task RecoverOnStartupAsync()
     {

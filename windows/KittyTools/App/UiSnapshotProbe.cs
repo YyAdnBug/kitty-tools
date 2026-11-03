@@ -250,6 +250,14 @@ internal static class UiSnapshotProbe
                     await File.WriteAllBytesAsync(Path.Combine(directory, "shot-annotations-export.png"), exported);
                 }
 
+                // PLAN-v11 M4：截图历史存的原图（马赛克打进去、别的标注不画），和导出那张对着看马赛克那块
+                var historyRect = ScreenshotOutput.SelectionPixels(overlay.Screen, overlay.ProbeSelection);
+                if (await ImageCodec.BgraToPngAsync(
+                        historyRect.Width, historyRect.Height, overlay.OriginalForHistory(historyRect)) is { } historyPng)
+                {
+                    await File.WriteAllBytesAsync(Path.Combine(directory, "shot-history-original.png"), historyPng);
+                }
+
                 // 第 5d 批：文字三种样式 × 三档（只截选区）；再依次在无底小号、描边中号、底色大号那条上打开输入框，和收下后的那张逐像素对着看
                 var texts = crop with { Top = (int)(height * 0.25) - 20, Bottom = (int)(height * 0.6) + 20 };
                 overlay.ShowProbeTexts(null);
