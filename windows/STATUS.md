@@ -1,6 +1,6 @@
 # windows/STATUS.md：现状
 
-最后更新：2026-11-03，PLAN-v11 第 1–4 批收口（0.1.1）。**windows-v0.1.0 已发布**（tag `34e37df`，不是 latest）；**0.1.1 已打包、没发布**（`windows/build/release/0.1.1/`，发不发由用户定），
+最后更新：2026-11-03，PLAN-v11 第 1–4 批收口（0.1.1）。**windows-v0.1.0 已发布**（tag `34e37df`，不是 latest）；**windows-v0.1.1 已发布**（2026-11-03，tag `557181b`，不是 latest；包在 `windows/build/release/0.1.1/`），
 真机装在 `D:\Apps\Kitty Tools`。第 1–3 批是审查方在 Mac 上写的，Windows 这边编译、单测、在屏幕上验过（结果在 `REVIEW.md`「PLAN-v11」每批下面），第 4 批打包。
 §2 的数是 2026-11-03 的（标了的除外）；§3 起的大段旧内容是 10-29 之前的现状，没改的地方照旧有效。
 这份文档写**现在是什么样**，不写历史；每批收尾更新。
@@ -135,7 +135,7 @@ AOT x64 / ARM64 每次发布都零 trim / AOT 警告；PRI 四个文件齐全
 
 - 分支 `windows`（2026-10-30 由 `windows-wip` 改名）；截图在 `windows-shots` 的 `<版本>-batch-<N>/`。
 - 已发布：windows-v0.1.0（tag `34e37df`，不是 latest）。
-- 0.1.1 产物（**没发布**，2026-11-03，`0.1.1+557181b`）：`windows/build/release/0.1.1/`
+- 已发布：windows-v0.1.1（2026-11-03，tag `557181b`，不是 latest）。产物 `0.1.1+557181b`：`windows/build/release/0.1.1/`
   （x64 82 MB / zip 30.8 MB / 安装包 22.6 MB，ARM64 87.5 MB / zip 29.9 MB / 安装包 22.3 MB，另有 `.sha256`、`release-notes.md`、`SIZES.txt`）；
   `--smoke`、`setup-e2e.ps1` 18 项、`--update-live=0.1.0` 都过，已装到 `D:\Apps\Kitty Tools`。
 - 0.1.1 还要用户真机走的：`HANDTEST.md` 真机回归清单 R1–R40 里要按键 / 鼠标的那些（哪些这边走过写在 REVIEW「PLAN-v11 › 第 4 批」），

@@ -155,7 +155,7 @@
   - R38：`--crash-test`（Release 探针档）→ `crash-*.log` 有时间、阶段、版本 0.1.1.0、系统、堆栈；再开写了 `crash-seen`（提示出了一次）。这几次 Dev / 探针档的日志里搜不到原文、译文、网址、IP。
   - R40：Release 只有托盘静置 60 s CPU 0 ms；专用工作集只有托盘 56 MB（探针档带 5000 条剪贴板）；收起两分钟后 `clipboard.caches-released` 出了（内存探针）。
 - **截图**：`windows-shots` 的 `0.1.1-batch-3/`（角落卡按卡片大小解码后、关于页浅 / 深）。
-- **没发布、没打 tag**。
+- **发布**（2026-11-03 用户：「发布0.1.1」）：https://github.com/YyAdnBug/kitty-tools/releases/tag/windows-v0.1.1 ，tag 指 `557181b`（exe 就是从它打的），不是 latest（latest 仍是 macos-v0.7.1）、不是预发布，8 个文件（两个架构的安装包、zip 和各自的 `.sha256`），说明用的是 `release-notes.md`。走 REST API：先建草稿、传完再发布。发布后用 0.1.0 的 Release 构建（探针档）检查更新：`update.check newer=True version=0.1.1`。
 
 ## 深色下的开关和输入框、翻译卡的彗星边框（2026-11-01 用户截图，审查方在 Mac 上写、**没编译**）——已修（75d6f86 + 12397aa）
 
