@@ -442,7 +442,8 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
                             lastTexture = null;
                         }
 
-                        var time = Math.Max(0, nextWrite);
+                        // R24：帧自己的抓取时间（SystemRelativeTime，QPC）对齐到格子，不再一格一格往后排。
+                        var time = RecordingPipeline.FrameTime(latest.Time - _start100, nextWrite, interval);
                         var writeStart = Stopwatch.GetTimestamp();
                         ApplyEffects(ring);
                         var written = WriteFrame(writer, ring, time, interval);
@@ -621,7 +622,9 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
                 {
                     // 先写 .remux 临时名；超时 / 失败时不会在 _final 留一个 80 字节壳。
                     var staging = _final + ".remux.mp4";
-                    if (Mp4Remux.TryRemuxWithTimeout(_temporary, staging))
+                    // 自检（RecordMemoryProbe）：KITTY_RECMEM_NOREMUX=1 时不重封装，看录完留下的内存是不是这一遍的。
+                    var skipRemux = Paths.IsTestProfile && Environment.GetEnvironmentVariable("KITTY_RECMEM_NOREMUX") == "1";
+                    if (!skipRemux && Mp4Remux.TryRemuxWithTimeout(_temporary, staging))
                     {
                         File.Move(staging, _final, overwrite: true);
                         File.Delete(_temporary);
@@ -1188,7 +1191,9 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
 
         var managerKey = SinkWriterD3DManager;
         (*attributes)->SetUnknown(&managerKey, (IUnknown*)*manager);
-        (*attributes)->SetUINT32(EnableHardwareTransforms, 1);
+        // 自检（RecordMemoryProbe）：KITTY_RECMEM_SOFTWARE=1 时只用软件编码器，看录完留下的内存是不是硬件编码器的。
+        var software = Paths.IsTestProfile && Environment.GetEnvironmentVariable("KITTY_RECMEM_SOFTWARE") == "1";
+        (*attributes)->SetUINT32(EnableHardwareTransforms, software ? 0u : 1u);
         (*attributes)->SetGUID(TranscodeContainerType, Fmp4Container);
 
         // 先试硬件编码；不行再去掉硬件标志（软件编码也能用 GPU 抓屏），还不行就退 GDI。

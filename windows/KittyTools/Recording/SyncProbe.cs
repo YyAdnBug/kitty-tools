@@ -3,10 +3,11 @@
 // （AudioWavProbe），逐个配对报音画差；再在第 1 / 30 / 最后一秒连着抽 10 帧读条码，看画面是不是一直在动。
 // 视频按帧取样，单个音画差带着最多一帧的量化误差（30 fps 是 33 ms）；量同步时录 --record-fps=60。
 // 结果只写日志（grep `sync.`），不弹窗。
-using System.Runtime.InteropServices.WindowsRuntime;
+// 2026-11-04（PLAN-v11 第 7 批）：闪白和条码改成逐帧解码（VideoFrames，按顺序解每一帧、用它自己的时间戳），不再用
+// MediaComposition.GetThumbnailAsync 按时间取帧——那样取到的常是附近的另一帧，分不清锯齿是录下来的时间戳还是取帧造成的。
+// 另记 sync.timing：每帧时间戳的间隔、条码号（测试图案自己的更新计数）对时间戳的斜率，看录下来的时间是不是匀的。
 using KittyTools.Core;
 using KittyTools.Infrastructure;
-using Windows.Graphics.Imaging;
 using Windows.Media.Editing;
 using Windows.Storage;
 
@@ -14,11 +15,6 @@ namespace KittyTools;
 
 internal static class SyncProbe
 {
-    /// <summary>闪白亮 100 ms，按 1/15 s 一步粗扫不会漏；找到亮的再按 1/60 s 往回找起点。</summary>
-    private const double Coarse = 1.0 / 15;
-
-    private const double Fine = 1.0 / 60;
-
     public static async Task RunAsync(string path)
     {
         try
@@ -26,16 +22,25 @@ internal static class SyncProbe
             var started = Environment.TickCount64;
             var file = await StorageFile.GetFileFromPathAsync(Path.GetFullPath(path));
             var clip = await MediaClip.CreateFromFileAsync(file);
-            var composition = new MediaComposition();
-            composition.Clips.Add(clip);
             var duration = clip.OriginalDuration.TotalSeconds;
             var properties = clip.GetVideoEncodingProperties();
             var fps = properties.FrameRate.Denominator == 0
                 ? 30.0
                 : properties.FrameRate.Numerator / (double)properties.FrameRate.Denominator;
-            var aspect = properties.Width == 0 ? 9.0 / 16 : properties.Height / (double)properties.Width;
 
-            var flashes = await FlashOnsetsAsync(composition, duration);
+            var decoded = await Task.Run(() => Decode(Path.GetFullPath(path)));
+            var flashes = decoded.Flashes;
+            Log.Info($"sync.video flashes={flashes.Count} first={(flashes.Count > 0 ? flashes[0] : -1):F3}s frames={decoded.Times.Count}");
+            LogTiming(decoded);
+            // 每一帧的时间戳、真钟、更新计数、亮不亮，写在录像旁边（临时目录），离线看时间戳怎么走。
+            var csv = new System.Text.StringBuilder("index,seconds,clock,number\n");
+            for (var index = 0; index < decoded.Times.Count; index++)
+            {
+                csv.Append(System.FormattableString.Invariant(
+                    $"{index},{decoded.Times[index]:F4},{decoded.Clocks[index]},{decoded.Numbers[index]}\n"));
+            }
+
+            await File.WriteAllTextAsync(Path.ChangeExtension(Path.GetFullPath(path), ".frames.csv"), csv.ToString());
             var audio = await AudioWavProbe.CheckAsync(path);
             var pairs = AvSync.PairUp(flashes, audio.Onsets);
             foreach (var pair in pairs)
@@ -53,12 +58,13 @@ internal static class SyncProbe
 
             foreach (var at in new[] { 1.0, 30.0, duration - 1.5 })
             {
-                if (at < 0 || at + 10 / fps > duration)
+                var start = decoded.Times.FindIndex(time => time >= at);
+                if (start < 0 || start + 10 > decoded.Times.Count)
                 {
                     continue;
                 }
 
-                var numbers = await BarcodesAsync(composition, at, 10, fps, aspect);
+                var numbers = decoded.Numbers.GetRange(start, 10);
                 Log.Info(
                     $"sync.frames at={at:F1}s numbers={string.Join(',', numbers)} " +
                     $"continuous={AvSync.Continuous(numbers)}");
@@ -72,118 +78,143 @@ internal static class SyncProbe
         }
     }
 
-    private static async Task<List<double>> FlashOnsetsAsync(MediaComposition composition, double duration)
+    private sealed record Decoded(List<double> Times, List<int> Numbers, List<double> Flashes, List<int> Clocks);
+
+    /// <summary>按顺序解每一帧：整帧亮度（隔 8 个像素取一个）> 170 算闪白，暗 → 亮那一帧的时间戳就是闪白起点；顺手读条码。</summary>
+    private static Decoded Decode(string path)
     {
-        var onsets = new List<double>();
+        var times = new List<double>();
+        var numbers = new List<int>();
+        var clocks = new List<int>();
+        var flashes = new List<double>();
         var lit = false;
-        var lastDark = 0.0;
-        for (var time = 0.0; time <= duration; time += Coarse)
+        VideoFrames.Read(path, (seconds, bgra, width, height) =>
         {
-            var bright = await IsBrightAsync(composition, time);
-            if (bright && !lit)
+            double sum = 0;
+            var count = 0;
+            for (var index = 0; index < bgra.Length; index += 32)
             {
-                var onset = time;
-                for (var back = time - Fine; back > lastDark; back -= Fine)
-                {
-                    if (!await IsBrightAsync(composition, back))
-                    {
-                        break;
-                    }
-
-                    onset = back;
-                }
-
-                onsets.Add(onset);
+                sum += 0.114 * bgra[index] + 0.587 * bgra[index + 1] + 0.299 * bgra[index + 2];
+                count++;
             }
 
-            if (!bright)
+            var bright = count > 0 && sum / count > 170;
+            if (bright && !lit)
             {
-                lastDark = time;
+                flashes.Add(seconds);
             }
 
             lit = bright;
-        }
-
-        Log.Info($"sync.video flashes={onsets.Count} first={(onsets.Count > 0 ? onsets[0] : -1):F3}s");
-        return onsets;
+            times.Add(seconds);
+            numbers.Add(Barcode(bgra, width, height, TestPatternWindow.BarcodeTop));
+            clocks.Add(Barcode(bgra, width, height, TestPatternWindow.ClockTop));
+        });
+        return new Decoded(times, numbers, flashes, clocks);
     }
 
-    /// <summary>整帧平均亮度 > 170 算闪白（0.85 的白盖在深色画面上，平时不到 60）。</summary>
-    private static async Task<bool> IsBrightAsync(MediaComposition composition, double time)
+    private static int Barcode(ReadOnlySpan<byte> bgra, int width, int height, double top)
     {
-        var (pixels, width, height) = await FrameAsync(composition, time, 160, 90);
-        double sum = 0;
-        for (var index = 0; index < pixels.Length; index += 4)
+        var size = width * TestPatternWindow.BarcodeSize;
+        var centerY = (int)(height * top + size / 2);
+        var number = 0;
+        for (var bit = 0; bit < TestPatternWindow.BarcodeBits; bit++)
         {
-            sum += Luma(pixels, index);
-        }
-
-        return sum / (width * height) > 170;
-    }
-
-    /// <summary>从 <paramref name="at"/> 起连着 <paramref name="count"/> 帧，读测试图案右上角的条码。</summary>
-    private static async Task<List<int>> BarcodesAsync(
-        MediaComposition composition, double at, int count, double fps, double aspect)
-    {
-        const int width = 960;
-        var height = Math.Max(1, (int)Math.Round(width * aspect));
-        var numbers = new List<int>();
-        for (var step = 0; step < count; step++)
-        {
-            // 取帧中间的时间点，免得 NearestFrame 在两帧的边界上来回跳。
-            var (pixels, actualWidth, actualHeight) = await FrameAsync(
-                composition, at + (step + 0.5) / fps, width, height);
-            var size = actualWidth * TestPatternWindow.BarcodeSize;
-            var centerY = (int)(actualHeight * TestPatternWindow.BarcodeTop + size / 2);
-            var number = 0;
-            for (var bit = 0; bit < TestPatternWindow.BarcodeBits; bit++)
+            var centerX = (int)(width * (TestPatternWindow.BarcodeLeft + bit * TestPatternWindow.BarcodeStep) + size / 2);
+            double sum = 0;
+            var count = 0;
+            for (var y = centerY - 1; y <= centerY + 1; y++)
             {
-                var centerX = (int)(actualWidth *
-                    (TestPatternWindow.BarcodeLeft + bit * TestPatternWindow.BarcodeStep) + size / 2);
-                var on = AverageLuma(pixels, actualWidth, actualHeight, centerX, centerY) > 128;
-                number = (number << 1) | (on ? 1 : 0);
-            }
-
-            numbers.Add(number);
-        }
-
-        return numbers;
-    }
-
-    private static double AverageLuma(byte[] pixels, int width, int height, int centerX, int centerY)
-    {
-        double sum = 0;
-        var count = 0;
-        for (var y = centerY - 1; y <= centerY + 1; y++)
-        {
-            for (var x = centerX - 1; x <= centerX + 1; x++)
-            {
-                if (x < 0 || y < 0 || x >= width || y >= height)
+                for (var x = centerX - 1; x <= centerX + 1; x++)
                 {
-                    continue;
-                }
+                    if (x < 0 || y < 0 || x >= width || y >= height)
+                    {
+                        continue;
+                    }
 
-                sum += Luma(pixels, (y * width + x) * 4);
-                count++;
+                    var index = (y * width + x) * 4;
+                    sum += 0.114 * bgra[index] + 0.587 * bgra[index + 1] + 0.299 * bgra[index + 2];
+                    count++;
+                }
+            }
+
+            number = (number << 1) | (count > 0 && sum / count > 128 ? 1 : 0);
+        }
+
+        return number;
+    }
+
+    /// <summary>
+    /// 录下来的时间匀不匀：相邻两帧时间戳的间隔（最小 / 中位 / 最大）；条码号（测试图案每一拍加一）对时间戳拟合一条直线，
+    /// 每秒一段算斜率——时间戳被拉长 / 压短的那几段斜率会偏。
+    /// </summary>
+    private static void LogTiming(Decoded decoded)
+    {
+        var times = decoded.Times;
+        if (times.Count < 3)
+        {
+            return;
+        }
+
+        var gaps = new List<double>();
+        for (var index = 1; index < times.Count; index++)
+        {
+            gaps.Add(times[index] - times[index - 1]);
+        }
+
+        gaps.Sort();
+        Log.Info(
+            $"sync.timing frames={times.Count} gapMin={gaps[0] * 1000:F1}ms gapMedian={gaps[gaps.Count / 2] * 1000:F1}ms " +
+            $"gapMax={gaps[^1] * 1000:F1}ms span={times[^1] - times[0]:F3}s");
+        var rates = new List<string>();
+        for (var second = 0; second + 1 <= times[^1]; second++)
+        {
+            var from = times.FindIndex(time => time >= second);
+            var to = times.FindLastIndex(time => time < second + 1);
+            if (from < 0 || to <= from)
+            {
+                continue;
+            }
+
+            var updates = decoded.Numbers[to] - decoded.Numbers[from];
+            var elapsed = times[to] - times[from];
+            rates.Add(elapsed > 0 ? (updates / elapsed).ToString("F1", System.Globalization.CultureInfo.InvariantCulture) : "-");
+        }
+
+        Log.Info($"sync.timing updatesPerSecond={string.Join(',', rates)}");
+
+        // 真钟（测试图案画进去的 Stopwatch 百分之一秒）对视频时间戳：录下来的时间戳准的话，两者之差只差一个常数
+        // （画出来到被抓到的延迟），上下浮动不超过一两帧；时间戳被拉长 / 压短时这个差会一路漂。每 5 秒报一次差的中位数。
+        var residuals = new List<(double Time, double Residual)>();
+        for (var index = 0; index < times.Count; index++)
+        {
+            if (decoded.Clocks[index] is var clock and > 0)
+            {
+                residuals.Add((times[index], times[index] - clock / 100.0));
             }
         }
 
-        return count == 0 ? 0 : sum / count;
+        if (residuals.Count < 10)
+        {
+            Log.Info("sync.clock unreadable");
+            return;
+        }
+
+        var baseline = residuals.Select(item => item.Residual).OrderBy(value => value).ElementAt(residuals.Count / 2);
+        var windows = new List<string>();
+        for (var start = 0.0; start < times[^1]; start += 5)
+        {
+            var slice = residuals.Where(item => item.Time >= start && item.Time < start + 5)
+                .Select(item => (item.Residual - baseline) * 1000).OrderBy(value => value).ToList();
+            if (slice.Count > 0)
+            {
+                windows.Add(slice[slice.Count / 2].ToString("F0", System.Globalization.CultureInfo.InvariantCulture));
+            }
+        }
+
+        var all = residuals.Select(item => (item.Residual - baseline) * 1000).OrderBy(value => value).ToList();
+        Log.Info(
+            $"sync.clock frames={residuals.Count} p5={all[all.Count / 20]:F0}ms p95={all[all.Count * 19 / 20]:F0}ms " +
+            $"per5s={string.Join(',', windows)}ms");
     }
 
-    private static double Luma(byte[] pixels, int index) =>
-        0.114 * pixels[index] + 0.587 * pixels[index + 1] + 0.299 * pixels[index + 2];
-
-    private static async Task<(byte[] Pixels, int Width, int Height)> FrameAsync(
-        MediaComposition composition, double time, int width, int height)
-    {
-        using var image = await composition.GetThumbnailAsync(
-            TimeSpan.FromSeconds(Math.Max(0, time)), width, height, VideoFramePrecision.NearestFrame);
-        image.Seek(0);
-        var decoder = await BitmapDecoder.CreateAsync(image);
-        using var bitmap = await decoder.GetSoftwareBitmapAsync(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Ignore);
-        var bytes = new byte[bitmap.PixelWidth * bitmap.PixelHeight * 4];
-        bitmap.CopyToBuffer(bytes.AsBuffer());
-        return (bytes, bitmap.PixelWidth, bitmap.PixelHeight);
-    }
 }

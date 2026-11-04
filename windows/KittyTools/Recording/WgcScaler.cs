@@ -1,9 +1,12 @@
 // R29：窗口录制改尺寸时把新画面按比例缩放、居中画进固定大小的输出纹理（四周补黑）。
 // PLAN-v9 R5：「标准」清晰度录选区时，把屏幕帧里的那一块（DrawRegion 的源矩形）缩进输出纹理。
 // 只在源尺寸 != 输出尺寸时走这里；同尺寸仍然用 D3D11 的 CopySubresourceRegion，避免每帧多一次 Win2D 画。
+// 包纹理的 IDirect3DSurface 用完就关（PLAN-v11 第 7 批）：以前每帧包一个、从不关，每个都拿着纹理和整个 D3D 设备，
+// 录完要等终结器才放，空闲时几乎不 GC——窗口录制（帧的宽高常是奇数，每帧都走这里）每录一次留下约 24 MB。
 using KittyTools.Infrastructure;
 using Microsoft.Graphics.Canvas;
 using Microsoft.UI;
+using Windows.Graphics.DirectX.Direct3D11;
 using Windows.Win32.Graphics.Direct3D11;
 
 namespace KittyTools;
@@ -11,7 +14,7 @@ namespace KittyTools;
 internal sealed unsafe class WgcScaler : IDisposable
 {
     private readonly CanvasDevice _device;
-    private readonly Dictionary<IntPtr, CanvasRenderTarget> _targets = new();
+    private readonly Dictionary<IntPtr, (CanvasRenderTarget Target, IDirect3DSurface Surface)> _targets = new();
     private bool _logged;
 
     private WgcScaler(CanvasDevice device)
@@ -49,15 +52,17 @@ internal sealed unsafe class WgcScaler : IDisposable
 
         try
         {
-            using var bitmap = CanvasBitmap.CreateFromDirect3D11Surface(
-                _device, WgcInterop.SurfaceOf(source));
+            using var sourceSurface = WgcInterop.SurfaceOf(source);
+            using var bitmap = CanvasBitmap.CreateFromDirect3D11Surface(_device, sourceSurface);
             var key = (IntPtr)target;
-            if (!_targets.TryGetValue(key, out var renderTarget))
+            if (!_targets.TryGetValue(key, out var cached))
             {
-                renderTarget = CanvasRenderTarget.CreateFromDirect3D11Surface(
-                    _device, WgcInterop.SurfaceOf(target));
-                _targets[key] = renderTarget;
+                var targetSurface = WgcInterop.SurfaceOf(target);
+                cached = (CanvasRenderTarget.CreateFromDirect3D11Surface(_device, targetSurface), targetSurface);
+                _targets[key] = cached;
             }
+
+            var renderTarget = cached.Target;
 
             using var session = renderTarget.CreateDrawingSession();
             if (!_logged)
@@ -85,9 +90,10 @@ internal sealed unsafe class WgcScaler : IDisposable
 
     public void Dispose()
     {
-        foreach (var target in _targets.Values)
+        foreach (var (target, surface) in _targets.Values)
         {
             target.Dispose();
+            surface.Dispose();
         }
 
         _targets.Clear();

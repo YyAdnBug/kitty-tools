@@ -1,7 +1,12 @@
 // 录屏自检用的满屏测试窗口（PLAN-v6 §0 第 3 条）：整块主屏、不透明，画移动色块、滚动文字、帧号，
 // 每秒闪一次白、响一声 1 kHz。录屏验证只录这个窗口，不录用户的桌面。
-// 闪白跟着提示音的播放位置走（REVIEW R24：两边原来各走各的钟，量出来的音画差没有意义）；
-// 右上角 16 格条码是更新计数，SyncProbe 读它查录下来的帧号连不连续。
+// 闪白跟着提示音走（REVIEW R24：两边原来各走各的钟，量出来的音画差没有意义）：开播 / 恢复后第一次读到播放位置时
+// 对一次表，之后按 Stopwatch 画——2026-11-04 逐帧解码查出来，每一拍都读 PlaybackSession.Position 时它比真实播放慢约 5%、
+// 每次 WAV 循环才对齐一次，闪白自己就是锯齿。
+// ponytail: UI 线程画的闪白照样跟着 UI 线程一段一段地滞后（画进去的真钟看得出来，±100–200 ms），合成线程上的循环动画在这台
+// 机器上又是 1.04 秒一圈；这个 XAML 窗口当不了 50 ms 的准尺。要过 R24 得换一个不经过 XAML 的测试源（REVIEW R24 末尾）。
+// 右上角 16 格条码是更新计数，SyncProbe 读它查录下来的帧号连不连续；下面一排 16 格是「真钟」（Stopwatch 的百分之一秒），
+// SyncProbe 拿它和每帧的视频时间戳比，看录下来的时间戳准不准。
 // 除了 30 fps 的 XAML 更新，再加一条 Composition 动画横条：它在合成线程上跑 60 fps，
 // 保证 WGC 一直有新帧可抓（XAML 布局慢了也不会把录制降到十几帧）。
 // 由 --test-pattern 打开；--record-test=<秒> 会开窗、录 N 秒、关窗。
@@ -35,6 +40,10 @@ internal sealed class TestPatternWindow
     private readonly Rectangle _flash;
     private readonly Rectangle _marker;
     private readonly Rectangle[] _bits = new Rectangle[BarcodeBits];
+    private readonly Rectangle[] _clockBits = new Rectangle[BarcodeBits];
+
+    /// <summary>闪白的钟：开播 / 恢复后第一次读到播放位置时记下「Stopwatch 毫秒 − 播放位置」，之后闪白按它走；暂停时清掉。</summary>
+    private double? _toneAnchorMs;
     private readonly SolidColorBrush _bitOn = new(Colors.White);
     private readonly SolidColorBrush _bitOff = new(Colors.Black);
     private readonly System.Diagnostics.Stopwatch _clockWatch = System.Diagnostics.Stopwatch.StartNew();
@@ -42,7 +51,7 @@ internal sealed class TestPatternWindow
     private int _renderCount;
     private bool _tonePaused;
     private int _lastLoggedSecond = -1;
-    private bool _renderToggle;
+    private long _lastTickMs = -1000;
 
     private TestPatternWindow()
     {
@@ -144,6 +153,8 @@ internal sealed class TestPatternWindow
         {
             _bits[index] = new Rectangle { Fill = _bitOff };
             _canvas.Children.Add(_bits[index]);
+            _clockBits[index] = new Rectangle { Fill = _bitOff };
+            _canvas.Children.Add(_clockBits[index]);
         }
 
         _canvas.SizeChanged += (_, _) => LayoutBarcode();
@@ -161,10 +172,14 @@ internal sealed class TestPatternWindow
         _renderCount++;
         // 闪白每拍都看一次提示音的位置（只改 Opacity，不排版），对齐误差不超过一拍。
         UpdateFlash();
-        // Rendering 是 60 Hz；文字和条码按 30 fps 更新，省一半 UI 线程的活。
-        _renderToggle = !_renderToggle;
-        if (_renderToggle)
+        UpdateClockBits();
+        // 文字和条码按时间 30 fps 更新（不是「每两拍一次」）：Rendering 跟着屏幕刷新率走，这台机器是高刷屏，一秒来两百多次，
+        // 每两拍改一次文字就是一秒排一百多次版，UI 线程忙不过来，画面一路滞后、攒到两三百毫秒再丢帧追上——
+        // 2026-11-04 用画进去的真钟查出来，R24 量到的锯齿就是它。
+        var now = _clockWatch.ElapsedMilliseconds;
+        if (now - _lastTickMs >= 33)
         {
+            _lastTickMs = now;
             Tick();
         }
     }
@@ -180,6 +195,9 @@ internal sealed class TestPatternWindow
 
     public const double BarcodeTop = 0.02;
 
+    /// <summary>真钟那一排的上沿（同样按画布高的比例）。</summary>
+    public const double ClockTop = 0.06;
+
     private void LayoutBarcode()
     {
         var width = _canvas.ActualWidth;
@@ -190,6 +208,10 @@ internal sealed class TestPatternWindow
             _bits[index].Height = width * BarcodeSize;
             Canvas.SetLeft(_bits[index], width * (BarcodeLeft + index * BarcodeStep));
             Canvas.SetTop(_bits[index], height * BarcodeTop);
+            _clockBits[index].Width = width * BarcodeSize;
+            _clockBits[index].Height = width * BarcodeSize;
+            Canvas.SetLeft(_clockBits[index], width * (BarcodeLeft + index * BarcodeStep));
+            Canvas.SetTop(_clockBits[index], height * ClockTop);
         }
     }
 
@@ -199,8 +221,38 @@ internal sealed class TestPatternWindow
         var session = _player?.PlaybackSession;
         var playing = !_tonePaused && session is not null &&
             session.PlaybackState == MediaPlaybackState.Playing;
-        var lit = playing && session!.Position.TotalMilliseconds % 1000 < 100;
+        var now = _clockWatch.Elapsed.TotalMilliseconds;
+        if (!playing)
+        {
+            _toneAnchorMs = null;
+        }
+        else if (_toneAnchorMs is null && session!.Position.TotalMilliseconds is var position and > 0)
+        {
+            _toneAnchorMs = now - position;
+            Log.Info($"test-pattern.tone-anchor position={position:F0}ms");
+        }
+
+        var lit = _toneAnchorMs is { } anchor && now >= anchor && (now - anchor) % 1000 < 100;
         _flash.Opacity = lit ? 0.85 : 0;
+    }
+
+    private int _lastClockValue = -1;
+
+    /// <summary>真钟：Stopwatch 的百分之一秒（16 位，655 秒一圈），每一拍都更新。</summary>
+    private void UpdateClockBits()
+    {
+        var value = (int)(_clockWatch.ElapsedMilliseconds / 10) & 0xFFFF;
+        if (value == _lastClockValue)
+        {
+            return;
+        }
+
+        _lastClockValue = value;
+        for (var index = 0; index < BarcodeBits; index++)
+        {
+            var on = ((value >> (BarcodeBits - 1 - index)) & 1) != 0;
+            _clockBits[index].Fill = on ? _bitOn : _bitOff;
+        }
     }
 
     /// <summary>R24「静音 20 秒后照样同步」：停掉提示音（系统声音回环这时一个包都不出）。</summary>

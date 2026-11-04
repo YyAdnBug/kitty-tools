@@ -319,6 +319,15 @@ internal sealed class ShellRuntime
             DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() => _ = CaptureProbe.RunAsync(mode));
         }
 
+        // 自检档：录屏后内存回不回落（RecordMemoryProbe，只写日志）。
+        var recordMemory = Environment.GetCommandLineArgs()
+            .FirstOrDefault(arg => arg.StartsWith(RecordMemoryProbe.ArgumentPrefix, StringComparison.OrdinalIgnoreCase));
+        if (recordMemory is not null && Paths.IsTestProfile &&
+            int.TryParse(recordMemory[RecordMemoryProbe.ArgumentPrefix.Length..], out var recordMemoryTimes))
+        {
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() => _ = RecordMemoryProbe.RunAsync(Math.Clamp(recordMemoryTimes, 1, 20)));
+        }
+
         // 自检档：截图样式托盘换工具的动效录一段短视频（ToolbarAnimationProbe）。
         var toolbarAnim = Environment.GetCommandLineArgs()
             .FirstOrDefault(arg => arg.StartsWith(ToolbarAnimationProbe.ArgumentPrefix, StringComparison.OrdinalIgnoreCase));
