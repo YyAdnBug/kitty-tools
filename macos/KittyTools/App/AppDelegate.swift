@@ -2078,6 +2078,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       self?.recorded($0, .audio)
     }
     audioRecorder = recorder
+    ReminderSound.stop()  // 正在放的长提示音别录进去（提醒 C11）
     if immediately { return recorder.start() }
     // 先出控制条：来源可能在控制条上改，真正开始那一刻（点 ●、再触发一次）才查
     recorder.allowsStart = { [weak self] in self?.allowsAudioRecording($0) ?? false }
@@ -2121,6 +2122,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     self.recorder = recorder
     updater.blocker = "录制结束后再更新"
+    ReminderSound.stop()  // 正在放的长提示音别录进去（提醒 C11）
     recorder.start()
   }
 

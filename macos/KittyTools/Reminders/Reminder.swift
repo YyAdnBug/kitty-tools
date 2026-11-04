@@ -145,9 +145,9 @@ nonisolated struct Reminder: Codable, Hashable, Identifiable {
   /// 全屏多久自己收（秒，fullChoices 里的一个；0 = 点了才收，C5）
   var fullSeconds: Int
   var sound: Sound
-  /// 提示音（chimes 里的一个文件名）
+  /// 提示音的编号（ReminderSound：系统 / 个人「声音」文件夹里的声音名，或「file:文件名」= 自己选的文件）
   var chime: String
-  /// 没理会时每隔几分钟再催一次（nagChoices 里的一个；0 = 不催，C10）
+  /// 没理会时每隔几分钟再催一次（0 = 不催，C10；1–120，菜单里是 nagChoices，别的是「自定义…」填的）
   var nagMinutes: Int
 
   static let maxCount = 50
@@ -156,10 +156,12 @@ nonisolated struct Reminder: Codable, Hashable, Identifiable {
   /// id 的长度上限
   static let maxID = 64
   static let fullChoices = [0, 20, 60, 300]
-  static let nagChoices = [0, 5, 10, 15]
+  /// 2026-11-04 用户要 1 分钟：菜单里照 Due 的那一排（1 / 5 / 10 / 15 / 30 / 60），另有「自定义…」填 1–120（用户定）
+  static let nagChoices = [0, 1, 5, 10, 15, 30, 60]
+  static let nagRange = 1...120
   /// 「稍后」推多久（设置 › 提醒，Prefs.remindersSnoozeMinutes，C8）
   static let snoozeChoices = [5, 10, 15, 30]
-  /// 系统自带的提示音（/System/Library/Sounds 里的文件名）和界面上的叫法
+  /// 系统自带的提示音（/System/Library/Sounds 里的文件名）和界面上的叫法；个人文件夹里的、自己选的见 ReminderSound
   static let chimes: [(name: String, title: String)] = [
     ("Glass", "玻璃"), ("Ping", "叮"), ("Tink", "叮当"), ("Pop", "啵"), ("Purr", "呼噜"),
     ("Hero", "号角"), ("Submarine", "潜艇"), ("Bottle", "瓶子"), ("Funk", "放克"), ("Frog", "青蛙"),
@@ -236,8 +238,11 @@ nonisolated struct Reminder: Codable, Hashable, Identifiable {
       reminder.schedule = reminder.schedule.sanitized
       if reminder.statusID.count > maxID { reminder.statusID = "" }
       if !fullChoices.contains(reminder.fullSeconds) { reminder.fullSeconds = 0 }
-      if !chimes.contains(where: { $0.name == reminder.chime }) { reminder.chime = defaultChime }
-      if !nagChoices.contains(reminder.nagMinutes) { reminder.nagMinutes = 0 }
+      // 别的 Mac 上的声音这台没有也留着（到点响默认的）：只丢编号本身不合规的
+      if !ReminderSound.isValid(reminder.chime) { reminder.chime = defaultChime }
+      if reminder.nagMinutes != 0, !nagRange.contains(reminder.nagMinutes) {
+        reminder.nagMinutes = 0
+      }
       result.append(reminder)
       if result.count == maxCount { break }
     }
