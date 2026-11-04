@@ -244,6 +244,11 @@ internal static class UiSnapshotProbe
                 await WindowShot.SaveAsync(
                     overlay.Handle, Path.Combine(directory, "shot-annotations-tray.png"),
                     crop with { Left = Math.Max(0, crop.Left - (int)(120 * overlay.Screen.Scale)) });
+                // 裁剪（PLAN-v11 F11）：开着裁剪、拖着一个框（框外压暗、虚线框、工具栏「裁剪」亮着）
+                overlay.ShowProbeCrop();
+                await Task.Delay(500);
+                await WindowShot.SaveAsync(overlay.Handle, Path.Combine(directory, "shot-crop.png"), crop with { Top = 0 });
+                overlay.ShowProbeCrop(off: true);
                 // 导出走同一个 AnnotationRenderer.Draw（按像素）：和屏幕上的那张对着看
                 if (await overlay.ExportPngAsync() is { } exported)
                 {

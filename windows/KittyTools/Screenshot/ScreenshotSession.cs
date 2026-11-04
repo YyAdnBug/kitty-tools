@@ -593,10 +593,26 @@ internal sealed class ScreenshotSession
         var annotations = overlay?.AnnotationsForHistory() ?? new List<ShotAnnotationData>();
         var masks = overlay?.HasMosaics == true;
         var rect = ScreenshotOutput.SelectionPixels(screen, selection);
-        if (_editingId is { } editing && selection == _editingRect && ShotHistory.Instance is { } history)
+        var cropped = _editingId is not null && ImageCrop.IsCropOf(selection, _editingRect);
+        if (_editingId is { } editing && (selection == _editingRect || cropped) && ShotHistory.Instance is { } history)
         {
             // 从历史里打开、选区没动：回写同一条（标注和成品换新的；又画了马赛克时原图换成打过码的）。框了别的范围就当新截的一张。
-            if (masks)
+            // 选区缩在原图里面（裁剪，PLAN-v11 F11）也回写同一条：原图换成裁过的那一块，宽高跟着改。
+            if (cropped)
+            {
+                var croppedOriginal = overlay!.OriginalForHistory(rect);
+                var size = (rect.Width, rect.Height);
+                _ = UpdateCroppedAsync();
+
+                async Task UpdateCroppedAsync()
+                {
+                    if (await ImageCodec.BgraToPngAsync(size.Width, size.Height, croppedOriginal) is { } croppedPng)
+                    {
+                        history.UpdateAnnotations(editing, annotations, composed, croppedPng, size);
+                    }
+                }
+            }
+            else if (masks)
             {
                 var masked = overlay!.OriginalForHistory(rect);
                 _ = UpdateMaskedAsync();

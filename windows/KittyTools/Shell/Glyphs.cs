@@ -23,6 +23,7 @@ internal static class Glyphs
     public const string ChevronLeft = "\uE76B";
     public const string ChevronRight = "\uE76C";
     public const string More = "\uE712";
+    public const string Crop = "\uE7A8";
     public const string Undo = "\uE7A7";
     public const string Redo = "\uE7A6";
     public const string Camera = "\uE722";

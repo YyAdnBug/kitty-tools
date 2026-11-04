@@ -22,9 +22,9 @@ internal sealed class ShotItem
     public long CreatedAt { get; init; }
 
     /// <summary>原图的像素尺寸（录制的是封面的；没有封面是 0）。</summary>
-    public int PixelWidth { get; init; }
+    public int PixelWidth { get; set; }
 
-    public int PixelHeight { get; init; }
+    public int PixelHeight { get; set; }
 
     /// <summary>截的那块屏的缩放（1.5 = 150%）。</summary>
     public double Scale { get; init; } = 1;
@@ -321,8 +321,12 @@ internal sealed class ShotHistory
     /// （第四轮体检 E6；标注里已经不带马赛克）。先把它写好，成功了再换标注和成品——中途失败或退出，库里的旧标注照旧、
     /// 原图最多多一层码，不会露出明文。
     /// </summary>
+    /// <param name="croppedSize">
+    /// 标注里裁剪过（PLAN-v11 F11）：maskedOriginalPng 是裁过的原图，这里是它的宽高，记录跟着改；没裁时 null。
+    /// </param>
     public void UpdateAnnotations(
-        string id, IReadOnlyList<ShotAnnotationData> annotations, byte[] composedPng, byte[]? maskedOriginalPng = null)
+        string id, IReadOnlyList<ShotAnnotationData> annotations, byte[] composedPng, byte[]? maskedOriginalPng = null,
+        (int Width, int Height)? croppedSize = null)
     {
         if (Find(id) is null)
         {
@@ -365,6 +369,17 @@ internal sealed class ShotHistory
                 "UPDATE shots SET annotations = $a WHERE id = $id;",
                 ShotHistoryRules.EncodeAnnotations(annotations),
                 id);
+            if (croppedSize is { } size)
+            {
+                item.PixelWidth = size.Width;
+                item.PixelHeight = size.Height;
+                using var statement = _database.Connection.Prepare(
+                    "UPDATE shots SET pixel_width = $1, pixel_height = $2 WHERE id = $3;");
+                statement.BindInt64(1, size.Width);
+                statement.BindInt64(2, size.Height);
+                statement.BindText(3, id);
+                statement.Step();
+            }
             Changed?.Invoke();
             _ = Task.Run(async () =>
             {

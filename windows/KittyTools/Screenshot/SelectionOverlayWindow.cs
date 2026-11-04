@@ -78,6 +78,10 @@ internal sealed partial class SelectionOverlayWindow : Window
     private long _flashUntil;
     private TextBox? _textEditor;
     private PointD _textPoint;
+    /// <summary>裁剪（PLAN-v11 F11）：开着时在选区里拖一个框，松手选区就换成它；_cropDraft 是正在拖的那个框。</summary>
+    private bool _cropping;
+    private RectD? _cropDraft;
+    private Button? _cropButton;
     /// <summary>双击重新编辑的那条文字（编辑时画面上先不画它）；新写的是 null。</summary>
     private Annotation? _editingText;
     /// <summary>拖着的手柄、按下时手柄离光标多远（线类两端和弯曲手柄按偏了也不跳）。</summary>
@@ -940,6 +944,10 @@ internal sealed partial class SelectionOverlayWindow : Window
         toolLayer.Children.Add(tools);
 
         var extras = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
+        // 裁剪（PLAN-v11 F11，mac X17）：十种工具之外单独一个，开着时在选区里拖框裁小。
+        _cropButton = ToolbarButton(Glyphs.Crop, "裁剪（X）", "裁剪");
+        _cropButton.Click += (_, _) => ToggleCrop();
+        extras.Children.Add(_cropButton);
         _undoButton = ToolbarButton(Glyphs.Undo, "撤销（Ctrl+Z）", "撤销");
         _undoButton.Click += (_, _) => Undo();
         extras.Children.Add(_undoButton);
@@ -1385,6 +1393,12 @@ internal sealed partial class SelectionOverlayWindow : Window
 
         _tool = chosen;
         _document.SelectedId = null;
+        if (chosen is not null && _cropping)
+        {
+            // 选了标注工具：裁剪关掉（F11）
+            SetCropping(false);
+        }
+
         UpdateToolbarChrome();
         _canvas.Invalidate();
         Announce(chosen is { } picked ? AnnotationKinds.Title(picked) + "工具" : "已收起工具");
@@ -1517,6 +1531,7 @@ internal sealed partial class SelectionOverlayWindow : Window
             DrawTextEditor(ds);
             DrawSelection(ds, own);
             DrawAnnotationSelection(ds);
+            DrawCrop(ds, own);
         }
 
         if (_key)
@@ -1573,6 +1588,93 @@ internal sealed partial class SelectionOverlayWindow : Window
         {
             AnnotationRenderer.Draw(ds, new[] { draft }, _screen, _bitmap, new PointD(0, 0), 1 / _scale, 1, selection);
         }
+    }
+
+    private static readonly Microsoft.Graphics.Canvas.Geometry.CanvasStrokeStyle CropDash =
+        new() { CustomDashStyle = new[] { 4f, 3f } };
+
+    /// <summary>裁剪框（F11）：框外的选区再压暗一层，框是强调色的虚线；还没拖时只沿选区画一圈虚线提示。</summary>
+    private void DrawCrop(CanvasDrawingSession ds, RectD selection)
+    {
+        if (!_cropping)
+        {
+            return;
+        }
+
+        var outer = ToDip(selection);
+        if (_cropDraft is not { } crop)
+        {
+            ds.DrawRectangle(outer, Accent, 1.5f, CropDash);
+            return;
+        }
+
+        var inner = ToDip(crop);
+        var shade = Theme.Argb(140, 0, 0, 0);
+        ds.FillRectangle((float)outer.X, (float)outer.Y, (float)outer.Width, (float)(inner.Y - outer.Y), shade);
+        ds.FillRectangle((float)outer.X, (float)(inner.Y + inner.Height), (float)outer.Width,
+            (float)(outer.Y + outer.Height - inner.Y - inner.Height), shade);
+        ds.FillRectangle((float)outer.X, (float)inner.Y, (float)(inner.X - outer.X), (float)inner.Height, shade);
+        ds.FillRectangle((float)(inner.X + inner.Width), (float)inner.Y,
+            (float)(outer.X + outer.Width - inner.X - inner.Width), (float)inner.Height, shade);
+        ds.DrawRectangle(inner, Accent, 1.5f, CropDash);
+    }
+
+    /// <summary>--ui-snapshots：开着裁剪、拖着选区中间那一块的框（off：关掉）。只在合成的冻结帧上用。</summary>
+    internal void ShowProbeCrop(bool off = false)
+    {
+        if (off)
+        {
+            SetCropping(false);
+            return;
+        }
+
+        SetCropping(true);
+        var area = _session.Selection;
+        _cropDraft = new RectD(area.X + area.Width * 0.15, area.Y + area.Height * 0.2, area.Width * 0.6, area.Height * 0.55);
+        _canvas.Invalidate();
+    }
+
+    /// <summary>工具栏「裁剪」/ X：开着时收起工具、取消选中，顶上提示怎么裁；再按一次（或 Esc）关掉。</summary>
+    private void ToggleCrop()
+    {
+        if (_session.Mode != ScreenshotMode.Capture || !_session.HasSelection)
+        {
+            return;
+        }
+
+        CommitText();
+        SetCropping(!_cropping);
+    }
+
+    private void SetCropping(bool on)
+    {
+        _cropping = on;
+        _cropDraft = null;
+        if (on)
+        {
+            if (_tool is not null)
+            {
+                SelectTool(null);
+            }
+
+            _document.SelectedId = null;
+            _flash = "在选区里拖出要留下的部分，松手就裁；Esc 取消";
+            _flashUntil = Environment.TickCount64 + 4000;
+        }
+        else
+        {
+            _flashUntil = 0;
+        }
+
+        if (_cropButton is not null)
+        {
+            _cropButton.Background = new SolidColorBrush(on
+                ? Theme.Argb(64, Theme.BrandPink.R, Theme.BrandPink.G, Theme.BrandPink.B)
+                : Colors.Transparent);
+        }
+
+        UpdateToolbarChrome();
+        _canvas.Invalidate();
     }
 
     private void DrawSelection(Microsoft.Graphics.Canvas.CanvasDrawingSession ds, RectD selection)
@@ -1698,6 +1800,15 @@ internal sealed partial class SelectionOverlayWindow : Window
         _bendPressed = null;
         var own = _session.SelectionScreen == _screen && _session.HasSelection;
         var annotates = own && _session.Mode == ScreenshotMode.Capture;
+        if (_cropping && own && _session.Selection.Contains(point))
+        {
+            // 裁剪开着：在选区里拖的是裁剪框，标注、手柄都不接（F11）
+            _drag = DragKind.Crop;
+            _cropDraft = new RectD(point.X, point.Y, 0, 0);
+            e.Handled = true;
+            return;
+        }
+
         // 按下时谁优先（mac mouseDown）：选中标注的手柄 → 选区的边 / 角 → 标注本体 → 工具作画 → 平移选区 → 选区外。
         var handle = annotates ? AnnotationHandleAt(point) : null;
         if (handle is { } bend && bend.Handle == AnnotationHandle.Bend && doubleClick && bend.Annotation.Id == pressedBend)
@@ -1967,6 +2078,13 @@ internal sealed partial class SelectionOverlayWindow : Window
             _drag = DragKind.Draw;
         }
 
+        if (_drag == DragKind.Crop)
+        {
+            _cropDraft = RegionMath.Drawn(_pressed, point, _session.Selection, null, false);
+            _canvas.Invalidate();
+            return;
+        }
+
         if (_drag == DragKind.MoveAnnotation)
         {
             MoveSelectedAnnotation();
@@ -2072,6 +2190,25 @@ internal sealed partial class SelectionOverlayWindow : Window
 
             _copyOf = null;
             UpdateToolbarChrome();
+            _canvas.Invalidate();
+            e.Handled = true;
+            return;
+        }
+
+        if (_drag == DragKind.Crop)
+        {
+            _drag = DragKind.None;
+            _canvas.ReleasePointerCaptures();
+            var crop = _cropDraft;
+            _cropDraft = null;
+            // 太小算误点（同框选的最小边），裁剪开着、接着拖
+            if (crop is { } area && area.Width >= RegionMath.MinimumSide * _scale &&
+                area.Height >= RegionMath.MinimumSide * _scale)
+            {
+                _session.SetSelection(_screen, area);
+                SetCropping(false);
+            }
+
             _canvas.Invalidate();
             e.Handled = true;
             return;
@@ -2240,6 +2377,10 @@ internal sealed partial class SelectionOverlayWindow : Window
                 {
                     CommitText();
                 }
+                else if (_cropping)
+                {
+                    SetCropping(false);
+                }
                 else if (_document.SelectedId is not null)
                 {
                     _document.SelectedId = null;
@@ -2325,6 +2466,10 @@ internal sealed partial class SelectionOverlayWindow : Window
             case Windows.System.VirtualKey.C when control:
                 e.Handled = true;
                 _ = _session.CopySelectionAsync();
+                break;
+            case Windows.System.VirtualKey.X when !control && _session.Mode == ScreenshotMode.Capture && _session.HasSelection:
+                e.Handled = true;
+                ToggleCrop();
                 break;
             case Windows.System.VirtualKey.C:
                 e.Handled = true;
@@ -2598,6 +2743,8 @@ internal sealed partial class SelectionOverlayWindow : Window
         Annotate,
         MoveAnnotation,
         ResizeAnnotation,
+        /// <summary>裁剪开着时在选区里拖框（F11）。</summary>
+        Crop,
     }
 
     [StructLayout(LayoutKind.Sequential)]

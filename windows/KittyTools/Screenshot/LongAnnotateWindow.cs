@@ -6,6 +6,8 @@
 // 交互：1–0 选工具（再按收起）、拖动画、点中标注选中 / 拖着挪、拖手柄改大小（Shift 约束）、Delete 删、Ctrl+Z / Ctrl+Y 撤销重做；
 // Enter / Ctrl+C 拷贝、Ctrl+S 存到截图文件夹、Ctrl+Shift+S 另存为，画过标注时 Esc 要按两下才放弃（同 mac）。
 // 拷贝 / 存储时回写截图历史的那一条（原图不动，标注和成品换新的）。
+// 裁剪（PLAN-v11 F11，mac X17；工具栏「裁剪」/ X）：在长图上拖出要留下的那一段，松手原图和标注一起裁（长截图拼完常要裁掉头尾）；
+// 回写历史时原图换成裁过的、宽高跟着改。ponytail: 裁剪不进撤销（裁完撤销栈清空），裁错了 Esc 放弃这次重开。
 // ponytail: 没有缩放档位（只按宽适配）、样式只有颜色和粗细（没有实心 / 模糊这类选项）、文字不能双击重新编辑、
 // 画到窗口边不会自动滚、空格拖动平移没做；条带位图看过的都留着（最多和长图一样大，约 170 MB 显存）。要补照 mac ScrollCanvas.swift 文件头。
 using KittyTools.Core;
@@ -38,19 +40,19 @@ internal sealed class LongAnnotateWindow
     private static LongAnnotateWindow? _instance;
 
     private readonly Window _window;
-    private readonly byte[] _bgra;
-    private readonly int _width;
-    private readonly int _height;
+    private byte[] _bgra;
+    private int _width;
+    private int _height;
 
     /// <summary>截图时那块屏的缩放：标注的粗细、字号按它从 DIP 换成长图的像素（同截图遮罩）。</summary>
     private readonly double _scale;
 
     /// <summary>没画标注时直接用它出图；没有时（刚拼完）现编。</summary>
-    private readonly byte[]? _png;
+    private byte[]? _png;
     private readonly string? _historyId;
 
     /// <summary>马赛克取色用：整张长图当一块「冻结帧」。</summary>
-    private readonly FrozenScreen _source;
+    private FrozenScreen _source;
     private readonly PixelBounds _origin;
     private readonly AnnotationDocument _document = new();
     private readonly ScrollViewer _scroller;
@@ -62,6 +64,7 @@ internal sealed class LongAnnotateWindow
     private readonly Dictionary<AnnotationKind, Button> _toolButtons = new();
     private readonly Button _undoButton;
     private readonly Button _redoButton;
+    private readonly Button _cropButton;
     private readonly List<PointD> _pen = new();
 
     /// <summary>画面上 1 个长图像素是几个 DIP。</summary>
@@ -79,12 +82,18 @@ internal sealed class LongAnnotateWindow
     private long _escapeArmedAt;
     private bool _busy;
 
+    /// <summary>裁剪开着（F11）、正在拖的裁剪框（长图像素）、这次裁过没有（回写历史时原图跟着换）。</summary>
+    private bool _cropping;
+    private RectD? _cropDraft;
+    private bool _cropped;
+
     private enum Drag
     {
         None,
         Draw,
         Move,
         Resize,
+        Crop,
     }
 
     private LongAnnotateWindow(
@@ -147,6 +156,9 @@ internal sealed class LongAnnotateWindow
         flyout.Opening += (_, _) => flyout.Content = StylePicker(flyout);
         styleButton.Flyout = flyout;
         bar.Children.Add(styleButton);
+        _cropButton = SelectionOverlayWindow.ToolbarButton(Glyphs.Crop, "裁剪（X）", "裁剪");
+        _cropButton.Click += (_, _) => SetCropping(!_cropping);
+        bar.Children.Add(_cropButton);
         _undoButton = SelectionOverlayWindow.ToolbarButton(Glyphs.Undo, "撤销（Ctrl+Z）", "撤销");
         _undoButton.Click += (_, _) => Step(redo: false);
         _redoButton = SelectionOverlayWindow.ToolbarButton(Glyphs.Redo, "重做（Ctrl+Y）", "重做");
@@ -294,6 +306,7 @@ internal sealed class LongAnnotateWindow
             }
 
             DrawChrome(ds);
+            DrawCrop(ds);
         }
     }
 
@@ -336,6 +349,78 @@ internal sealed class LongAnnotateWindow
         }
 
         return bitmap;
+    }
+
+    /// <summary>裁剪框（F11）：框外压暗，框是强调色的虚线（同截图遮罩）。</summary>
+    private void DrawCrop(CanvasDrawingSession ds)
+    {
+        if (!_cropping || _cropDraft is not { } crop)
+        {
+            return;
+        }
+
+        var shade = Theme.Argb(150, 0, 0, 0);
+        var (width, height) = ((float)(_width * _unit), (float)(_height * _unit));
+        var (left, top) = ((float)(crop.X * _unit), (float)(crop.Y * _unit));
+        var (right, bottom) = ((float)(crop.Right * _unit), (float)(crop.Bottom * _unit));
+        ds.FillRectangle(0, 0, width, top, shade);
+        ds.FillRectangle(0, bottom, width, height - bottom, shade);
+        ds.FillRectangle(0, top, left, bottom - top, shade);
+        ds.FillRectangle(right, top, width - right, bottom - top, shade);
+        ds.DrawRectangle(left, top, right - left, bottom - top, Theme.Shot.Accent, 1.5f, SelectionDash);
+    }
+
+    /// <summary>工具栏「裁剪」/ X：开着时收起工具、取消选中；再按一次或 Esc 关掉。</summary>
+    private void SetCropping(bool on)
+    {
+        CommitText();
+        _cropping = on;
+        _cropDraft = null;
+        if (on)
+        {
+            _tool = null;
+            _document.SelectedId = null;
+        }
+
+        _cropButton.Background = new SolidColorBrush(on
+            ? Theme.Argb(64, Theme.BrandPink.R, Theme.BrandPink.G, Theme.BrandPink.B)
+            : Colors.Transparent);
+        ShowHint(on ? "在长图上拖出要留下的那一段，松手就裁；Esc 取消" : null);
+        UpdateToolbar();
+        _view.Invalidate();
+    }
+
+    /// <summary>
+    /// 裁成 area（长图像素）：原图换成那一块，标注跟着挪（裁到外面的照样留着、出图时画不到），条带位图重切，回到顶上。
+    /// 撤销栈清空（ponytail，见文件头）。
+    /// </summary>
+    private void ApplyCrop(RectD area)
+    {
+        var rect = ImageCrop.Clamp(area, _width, _height);
+        if (rect.Width == _width && rect.Height == _height)
+        {
+            SetCropping(false);
+            return;
+        }
+
+        var shifted = _document.Items.Select(annotation => annotation.Offset(-rect.Left, -rect.Top)).ToList();
+        _bgra = ImageCrop.Crop(_bgra, _width, _height, rect);
+        _width = rect.Width;
+        _height = rect.Height;
+        _source = new FrozenScreen { Index = 0, Bounds = new PixelBounds(0, 0, _width, _height), Scale = _scale, Bgra = _bgra };
+        _png = null;
+        _cropped = true;
+        _document.Load(shifted);
+        foreach (var band in _bands.Values)
+        {
+            band.Dispose();
+        }
+
+        _bands.Clear();
+        Log.Info($"screenshot.long-crop {_width}x{_height}");
+        SetCropping(false);
+        Fit();
+        _scroller.ChangeView(0, 0, null, true);
     }
 
     /// <summary>选中那条的虚线框和手柄（同截图遮罩 DrawAnnotationChrome）。</summary>
@@ -408,7 +493,12 @@ internal sealed class LongAnnotateWindow
         var point = ToImage(current.Position);
         _start = point;
         _before = _document.Items;
-        if (HandleAt(point) is { } handle && _document.Selected is { } selected)
+        if (_cropping)
+        {
+            _drag = Drag.Crop;
+            _cropDraft = new RectD(point.X, point.Y, 0, 0);
+        }
+        else if (HandleAt(point) is { } handle && _document.Selected is { } selected)
         {
             _drag = Drag.Resize;
             _grabbed = selected;
@@ -470,6 +560,11 @@ internal sealed class LongAnnotateWindow
         var shift = IsDown(VirtualKey.Shift);
         switch (_drag)
         {
+            case Drag.Crop:
+                _cropDraft = RectD.FromLtrb(
+                    Math.Clamp(Math.Min(_start.X, point.X), 0, _width), Math.Clamp(Math.Min(_start.Y, point.Y), 0, _height),
+                    Math.Clamp(Math.Max(_start.X, point.X), 0, _width), Math.Clamp(Math.Max(_start.Y, point.Y), 0, _height));
+                break;
             case Drag.Draw when _draft is { Kind: AnnotationKind.Pen } pen:
                 _pen.Add(point);
                 _draft = pen with { Points = _pen.ToArray() };
@@ -503,6 +598,19 @@ internal sealed class LongAnnotateWindow
         }
 
         _view.ReleasePointerCaptures();
+        if (drag == Drag.Crop)
+        {
+            var crop = _cropDraft;
+            _cropDraft = null;
+            if (crop is { } area && area.Width >= RegionMath.MinimumSide && area.Height >= RegionMath.MinimumSide)
+            {
+                ApplyCrop(area);
+            }
+
+            _view.Invalidate();
+            return;
+        }
+
         if (drag == Drag.Draw && _draft is { } draft)
         {
             _draft = null;
@@ -722,6 +830,11 @@ internal sealed class LongAnnotateWindow
 
     private void UpdateToolbar()
     {
+        if (_cropping && _tool is not null)
+        {
+            SetCropping(false);
+        }
+
         foreach (var (kind, button) in _toolButtons)
         {
             button.Background = new SolidColorBrush(kind == _tool
@@ -736,7 +849,7 @@ internal sealed class LongAnnotateWindow
     private void ShowHint(string? text = null)
         => _hint.Text = text ?? (_editor is not null
             ? "Esc 或 Ctrl+Enter 收下文字，Enter 换行"
-            : "Enter 拷贝 · Ctrl+S 保存 · 1–0 标注 · Delete 删掉选中的 · Esc 关闭");
+            : "Enter 拷贝 · Ctrl+S 保存 · 1–0 标注 · X 裁剪 · Delete 删掉选中的 · Esc 关闭");
 
     // ---- 键盘
 
@@ -775,6 +888,9 @@ internal sealed class LongAnnotateWindow
                 }
 
                 break;
+            case VirtualKey.X when !control:
+                SetCropping(!_cropping);
+                break;
             case >= VirtualKey.Number0 and <= VirtualKey.Number9 when !control:
                 SelectTool(AnnotationKinds.All[((int)e.Key - (int)VirtualKey.Number0 + 9) % 10]);
                 break;
@@ -788,6 +904,12 @@ internal sealed class LongAnnotateWindow
     /// <summary>Esc：选着工具先收起工具；画过标注时第一下只提示，2 秒内再按一次才关（同 mac 的「再按一次放弃」）。</summary>
     private void Escape()
     {
+        if (_cropping)
+        {
+            SetCropping(false);
+            return;
+        }
+
         if (_tool is not null)
         {
             SelectTool(null);
@@ -907,18 +1029,20 @@ internal sealed class LongAnnotateWindow
 
         var annotations = _document.Items.Where(annotation => annotation.Kind != AnnotationKind.Mosaic)
             .Select(annotation => ShotAnnotations.ToData(annotation, 0, 0)).ToList();
-        if (_document.Items.Any(annotation => annotation.Kind == AnnotationKind.Mosaic))
+        // 画了马赛克、或者裁过（F11）：原图换成手里这份（打过码 / 裁过的），裁过时宽高跟着改。
+        if (_cropped || _document.Items.Any(annotation => annotation.Kind == AnnotationKind.Mosaic))
         {
             var bgra = _bgra;
             AnnotationRenderer.BurnMosaics(_document.Items, _source, _scale, bgra, _width, _height, 0, 0);
             var (width, height) = (_width, _height);
+            var size = _cropped ? (width, height) : ((int, int)?)null;
             _ = WriteMaskedAsync();
 
             async Task WriteMaskedAsync()
             {
                 if (await ImageCodec.BgraToPngAsync(width, height, bgra) is { } masked)
                 {
-                    history.UpdateAnnotations(id, annotations, png, masked);
+                    history.UpdateAnnotations(id, annotations, png, masked, size);
                 }
             }
         }
@@ -987,6 +1111,23 @@ internal sealed class LongAnnotateWindow
         if (png is not null)
         {
             await File.WriteAllBytesAsync(Path.Combine(directory, "long-annotate-export.png"), png);
+        }
+
+        // 裁剪（F11）：裁掉头尾各 500 行、左右各 100 列，接缝处的标注跟着挪，出图量尺寸。
+        window.SetCropping(true);
+        window._cropDraft = new RectD(100, 500, width - 200, rows - 1000);
+        await Task.Delay(400);
+        await WindowShot.SaveAsync(hwnd, Path.Combine(directory, "long-annotate-crop-drag.png"));
+        window.ApplyCrop(window._cropDraft.Value);
+        await Task.Delay(800);
+        await WindowShot.SaveAsync(hwnd, Path.Combine(directory, "long-annotate-cropped.png"));
+        var croppedPng = await window.ComposeAsync();
+        var first = window._document.Items.FirstOrDefault();
+        Log.Info($"long-annotate.probe cropped={window._width}x{window._height} png={croppedPng?.Length ?? 0} " +
+                 $"firstAnnotation={first?.Rect.X:F0},{first?.Rect.Y:F0} cropped-flag={window._cropped}");
+        if (croppedPng is not null)
+        {
+            await File.WriteAllBytesAsync(Path.Combine(directory, "long-annotate-cropped-export.png"), croppedPng);
         }
 
         window._window.Close();
