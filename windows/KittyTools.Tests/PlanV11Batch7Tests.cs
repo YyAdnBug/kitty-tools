@@ -50,6 +50,22 @@ public sealed class PlanV11Batch7Tests
     }
 
     [TestMethod]
+    public void ZoomStepsWalkTheTable()
+    {
+        Assert.AreEqual(1.25, ZoomSteps.Next(1, up: true));
+        Assert.AreEqual(0.75, ZoomSteps.Next(1, up: false));
+        // 适合宽度常落在两档之间（0.41）：往上 0.5、往下 0.33
+        Assert.AreEqual(0.5, ZoomSteps.Next(0.41, up: true));
+        Assert.AreEqual(0.33, ZoomSteps.Next(0.41, up: false));
+        // 差不到 1% 算同一档，不会原地不动
+        Assert.AreEqual(0.75, ZoomSteps.Next(0.6699, up: true));
+        // 到头了停在头上
+        Assert.AreEqual(4, ZoomSteps.Next(4, up: true));
+        Assert.AreEqual(0.1, ZoomSteps.Next(0.1, up: false));
+        Assert.AreEqual("67%", ZoomSteps.Percent(0.67));
+    }
+
+    [TestMethod]
     public void EndpointIdComesOutOfTheDeviceInterfacePath()
     {
         var path = @"\\?\SWD#MMDEVAPI#{0.0.1.00000000}.{5d6b3a4c-1f2e-4a5b-9c8d-7e6f5a4b3c2d}#{2eef81be-33fa-4800-9670-1cd474972c3f}";

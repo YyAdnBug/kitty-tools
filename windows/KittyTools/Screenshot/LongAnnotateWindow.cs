@@ -8,8 +8,10 @@
 // 拷贝 / 存储时回写截图历史的那一条（原图不动，标注和成品换新的）。
 // 裁剪（PLAN-v11 F11，mac X17；工具栏「裁剪」/ X）：在长图上拖出要留下的那一段，松手原图和标注一起裁（长截图拼完常要裁掉头尾）；
 // 回写历史时原图换成裁过的、宽高跟着改。ponytail: 裁剪不进撤销（裁完撤销栈清空），裁错了 Esc 放弃这次重开。
-// ponytail: 没有缩放档位（只按宽适配）、样式只有颜色和粗细（没有实心 / 模糊这类选项）、文字不能双击重新编辑、
-// 画到窗口边不会自动滚、空格拖动平移没做；条带位图看过的都留着（最多和长图一样大，约 170 MB 显存）。要补照 mac ScrollCanvas.swift 文件头。
+// 缩放（PLAN-v11 C1，照 mac ScrollCanvas）：默认按宽适配（最大 1:1），Ctrl+0 回到适合宽度、Ctrl+1 实际大小、Ctrl+= / Ctrl+- 和
+// Ctrl+滚轮一档一档（Core 的 ZoomSteps），换档时画面中间那一点不动；样式弹层同截图遮罩多一排选项（空心 / 实心、像素 / 模糊……）；
+// 双击文字重新编辑；拖着画 / 挪的时候碰到窗口上下边自动滚；按住空格拖动平移。
+// ponytail: 条带位图看过的都留着（最多和长图一样大，约 170 MB 显存）。
 using KittyTools.Core;
 using KittyTools.Infrastructure;
 using Microsoft.Graphics.Canvas;
@@ -69,6 +71,21 @@ internal sealed class LongAnnotateWindow
 
     /// <summary>画面上 1 个长图像素是几个 DIP。</summary>
     private double _unit = 1;
+
+    /// <summary>缩放档位（实际大小的倍数，C1）；null = 适合宽度（默认，跟着窗口宽）。</summary>
+    private double? _zoom;
+
+    /// <summary>双击重新编辑的那条文字（C1）：编辑时画面上不画它，收下时换掉它。</summary>
+    private Annotation? _editingText;
+
+    /// <summary>按住空格（平移）、平移开始时的指针位置（相对滚动框）和滚动位置（C1）。</summary>
+    private bool _spaceDown;
+    private Windows.Foundation.Point _panFrom;
+    private (double X, double Y) _panOffset;
+
+    /// <summary>拖到窗口上下边时自动滚（C1）：最近一次指针在长图上的位置（DIP，相对画面）和计时器。</summary>
+    private Windows.Foundation.Point _lastViewPoint;
+    private Microsoft.UI.Dispatching.DispatcherQueueTimer? _edgeTimer;
     private AnnotationKind? _tool;
     private AnnotationStyle _style = AnnotationStyle.Default;
     private Annotation? _draft;
@@ -94,6 +111,7 @@ internal sealed class LongAnnotateWindow
         Move,
         Resize,
         Crop,
+        Pan,
     }
 
     private LongAnnotateWindow(
@@ -120,6 +138,8 @@ internal sealed class LongAnnotateWindow
         _view = new CanvasVirtualControl();
         _view.RegionsInvalidated += OnRegions;
         _view.PointerPressed += OnPressed;
+        _view.DoubleTapped += OnDoubleTapped;
+        _view.PointerWheelChanged += OnWheel;
         _view.PointerMoved += OnMoved;
         _view.PointerReleased += (_, _) => EndDrag();
         _view.PointerCaptureLost += (_, _) => EndDrag();
@@ -221,6 +241,22 @@ internal sealed class LongAnnotateWindow
         root.Children.Add(toolbar);
         root.Children.Add(_hint);
         root.KeyDown += OnKeyDown;
+        // 空格在滚动框里是翻页：先在这里拦下当「按住平移」（打字时照常进输入框）
+        root.PreviewKeyDown += (_, e) =>
+        {
+            if (e.Key == VirtualKey.Space && _editor is null && !IsDown(VirtualKey.Control))
+            {
+                _spaceDown = true;
+                e.Handled = true;
+            }
+        };
+        root.KeyUp += (_, e) =>
+        {
+            if (e.Key == VirtualKey.Space)
+            {
+                _spaceDown = false;
+            }
+        };
         _window.Content = root;
         _window.Closed += (_, _) => Release();
 
@@ -282,7 +318,7 @@ internal sealed class LongAnnotateWindow
         }
 
         CommitText();
-        _unit = Math.Min(1 / _scale, available / _width);
+        _unit = _zoom is { } zoom ? zoom / _scale : Math.Min(1 / _scale, available / _width);
         _page.Width = _width * _unit;
         _page.Height = _height * _unit;
         _view.Width = _page.Width;
@@ -295,6 +331,10 @@ internal sealed class LongAnnotateWindow
     private void OnRegions(CanvasVirtualControl sender, CanvasRegionsInvalidatedEventArgs args)
     {
         IReadOnlyList<Annotation> items = _draft is { } draft ? _document.Items.Append(draft).ToList() : _document.Items;
+        if (_editingText is { } editing)
+        {
+            items = items.Where(annotation => annotation.Id != editing.Id).ToList();
+        }
         foreach (var region in args.InvalidatedRegions)
         {
             using var ds = sender.CreateDrawingSession(region);
@@ -493,7 +533,15 @@ internal sealed class LongAnnotateWindow
         var point = ToImage(current.Position);
         _start = point;
         _before = _document.Items;
-        if (_cropping)
+        _lastViewPoint = current.Position;
+        if (_spaceDown)
+        {
+            // 按住空格拖：平移（C1）
+            _drag = Drag.Pan;
+            _panFrom = e.GetCurrentPoint(_scroller).Position;
+            _panOffset = (_scroller.HorizontalOffset, _scroller.VerticalOffset);
+        }
+        else if (_cropping)
         {
             _drag = Drag.Crop;
             _cropDraft = new RectD(point.X, point.Y, 0, 0);
@@ -556,7 +604,21 @@ internal sealed class LongAnnotateWindow
             return;
         }
 
-        var point = ToImage(e.GetCurrentPoint(_view).Position);
+        if (_drag == Drag.Pan)
+        {
+            var now = e.GetCurrentPoint(_scroller).Position;
+            _scroller.ChangeView(_panOffset.X - (now.X - _panFrom.X), _panOffset.Y - (now.Y - _panFrom.Y), null, true);
+            return;
+        }
+
+        _lastViewPoint = e.GetCurrentPoint(_view).Position;
+        UpdateEdgeScroll(e.GetCurrentPoint(_scroller).Position.Y);
+        DragTo(ToImage(_lastViewPoint));
+    }
+
+    /// <summary>拖着的时候指针挪到了长图上的 point（OnMoved、自动滚每一拍都走这里）。</summary>
+    private void DragTo(PointD point)
+    {
         var shift = IsDown(VirtualKey.Shift);
         switch (_drag)
         {
@@ -589,6 +651,7 @@ internal sealed class LongAnnotateWindow
 
     private void EndDrag()
     {
+        _edgeTimer?.Stop();
         var drag = _drag;
         _drag = Drag.None;
         _grabbed = null;
@@ -598,6 +661,11 @@ internal sealed class LongAnnotateWindow
         }
 
         _view.ReleasePointerCaptures();
+        if (drag == Drag.Pan)
+        {
+            return;
+        }
+
         if (drag == Drag.Crop)
         {
             var crop = _cropDraft;
@@ -632,22 +700,29 @@ internal sealed class LongAnnotateWindow
 
     // ---- 文字：点下的位置叠一个输入框，Esc / Ctrl+Enter / 点到外面收下（Enter 换行）
 
-    private void ShowEditor(PointD point)
+    private void ShowEditor(PointD point, Annotation? existing = null)
     {
         _editorPoint = point;
+        _editingText = existing;
+        var style = existing?.Style ?? _style;
         var editor = new TextBox
         {
+            Text = existing?.Text ?? string.Empty,
             AcceptsReturn = true,
             TextWrapping = TextWrapping.NoWrap,
             IsSpellCheckEnabled = false,
             MinWidth = 120,
             MinHeight = 0,
             Padding = new Thickness(0),
-            FontSize = Math.Max(1, _style.FontSize * _scale * _unit),
+            FontSize = Math.Max(1, style.FontSize * _scale * _unit),
             FontFamily = new FontFamily(AnnotationRenderer.TextFontFamily),
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            Foreground = new SolidColorBrush(AnnotationRenderer.ColorOf(_style.Color)),
+            Foreground = new SolidColorBrush(AnnotationRenderer.ColorOf(style.Color)),
         };
+        if (existing is not null)
+        {
+            editor.Loaded += (_, _) => editor.SelectAll();
+        }
         editor.PreviewKeyDown += (_, e) =>
         {
             if (e.Key == VirtualKey.Escape || (e.Key == VirtualKey.Enter && IsDown(VirtualKey.Control)))
@@ -676,7 +751,23 @@ internal sealed class LongAnnotateWindow
         _editor = null;
         _editorLayer.Children.Remove(editor);
         var text = editor.Text.Replace("\r\n", "\n").Replace('\r', '\n');
-        if (!string.IsNullOrWhiteSpace(text))
+        var existing = _editingText;
+        _editingText = null;
+        if (existing is not null)
+        {
+            // 双击重新编辑的（C1）：换掉原来那条（记一步撤销）；改成空的就删掉；没改什么不记
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                _document.Commit(_document.Items.Where(annotation => annotation.Id != existing.Id));
+            }
+            else if (text != existing.Text)
+            {
+                var changed = AnnotationRenderer.Measured(existing with { Text = text }, _scale);
+                _document.Commit(_document.Items.Select(annotation => annotation.Id == existing.Id ? changed : annotation));
+                _document.SelectedId = changed.Id;
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(text))
         {
             var annotation = AnnotationRenderer.Measured(
                 new Annotation
@@ -809,7 +900,141 @@ internal sealed class LongAnnotateWindow
         }
 
         panel.Children.Add(weights);
+
+        // 选项（C1，同截图遮罩的样式托盘）：空心 / 实心、无底 / 描边 / 底色、像素 / 模糊……没有的工具不出这一排
+        var optionTitles = AnnotationKinds.OptionTitles(kind);
+        if (optionTitles.Length > 0)
+        {
+            var options = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+            for (var index = 0; index < optionTitles.Length; index++)
+            {
+                var option = index;
+                var button = new Button
+                {
+                    Content = optionTitles[index],
+                    FontWeight = shown.Option == index ? Microsoft.UI.Text.FontWeights.SemiBold : Microsoft.UI.Text.FontWeights.Normal,
+                };
+                AutomationProperties.SetName(button, optionTitles[index]);
+                button.Click += (_, _) =>
+                {
+                    Restyle(style => style with { Option = option });
+                    flyout.Hide();
+                };
+                options.Children.Add(button);
+            }
+
+            panel.Children.Add(options);
+        }
+
         return panel;
+    }
+
+    // ---- 缩放、双击文字、平移、自动滚（C1）
+
+    /// <summary>换缩放档位：null = 适合宽度。画面中间那一点换档后还在中间。</summary>
+    private void SetZoom(double? zoom)
+    {
+        CommitText();
+        var viewport = (_scroller.ViewportWidth, _scroller.ViewportHeight);
+        var center = ((_scroller.HorizontalOffset + viewport.ViewportWidth / 2) / _unit,
+            (_scroller.VerticalOffset + viewport.ViewportHeight / 2) / _unit);
+        _zoom = zoom;
+        Fit();
+        _scroller.UpdateLayout();
+        _scroller.ChangeView(
+            Math.Max(0, center.Item1 * _unit - viewport.ViewportWidth / 2),
+            Math.Max(0, center.Item2 * _unit - viewport.ViewportHeight / 2), null, true);
+        ShowHint($"缩放 {ZoomSteps.Percent(_unit * _scale)} · Ctrl+0 适合宽度 · Ctrl+1 实际大小");
+    }
+
+    private void Zoom(bool up) => SetZoom(ZoomSteps.Next(_unit * _scale, up));
+
+    private void OnWheel(object sender, PointerRoutedEventArgs e)
+    {
+        if (!IsDown(VirtualKey.Control))
+        {
+            return;
+        }
+
+        e.Handled = true;
+        Zoom(up: e.GetCurrentPoint(_view).Properties.MouseWheelDelta > 0);
+    }
+
+    /// <summary>双击文字：重新编辑（同截图遮罩 E12）。第一下已经把它选中、开始拖了，这里收掉那一下再开输入框。</summary>
+    private void OnDoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
+    {
+        if (_busy || _cropping || _editor is not null)
+        {
+            return;
+        }
+
+        var point = ToImage(e.GetPosition(_view));
+        if (Annotation.Topmost(_document.Items, point, _scale) is { Kind: AnnotationKind.Text } text)
+        {
+            e.Handled = true;
+            EndDrag();
+            _document.SelectedId = null;
+            ShowEditor(new PointD(text.Rect.X, text.Rect.Y), text);
+            _view.Invalidate();
+        }
+    }
+
+    /// <summary>拖着画 / 挪 / 裁的时候指针到了滚动框上下边 32 DIP 以内：开始自动滚，越靠边越快；离开边停。</summary>
+    private void UpdateEdgeScroll(double pointerY)
+    {
+        if (_drag is Drag.None or Drag.Pan)
+        {
+            _edgeTimer?.Stop();
+            return;
+        }
+
+        const double band = 32;
+        var height = _scroller.ViewportHeight;
+        var speed = pointerY < band ? -(band - Math.Max(0, pointerY)) : pointerY > height - band
+            ? band - Math.Max(0, height - pointerY)
+            : 0;
+        if (speed == 0)
+        {
+            _edgeTimer?.Stop();
+            return;
+        }
+
+        _edgeSpeed = speed;
+        if (_edgeTimer is null)
+        {
+            _edgeTimer = _window.DispatcherQueue.CreateTimer();
+            _edgeTimer.Interval = TimeSpan.FromMilliseconds(16);
+            _edgeTimer.Tick += (_, _) => EdgeTick();
+        }
+
+        if (!_edgeTimer.IsRunning)
+        {
+            _edgeTimer.Start();
+        }
+    }
+
+    private double _edgeSpeed;
+
+    /// <summary>自动滚一拍：滚多少，指针在长图上的位置就跟着往下 / 往上挪多少，接着当成一次拖动。</summary>
+    private void EdgeTick()
+    {
+        if (_drag is Drag.None or Drag.Pan)
+        {
+            _edgeTimer?.Stop();
+            return;
+        }
+
+        var before = _scroller.VerticalOffset;
+        var target = Math.Clamp(before + _edgeSpeed, 0, _scroller.ScrollableHeight);
+        if (Math.Abs(target - before) < 0.5)
+        {
+            return;
+        }
+
+        _scroller.ChangeView(null, target, null, true);
+        _lastViewPoint = new Windows.Foundation.Point(_lastViewPoint.X, _lastViewPoint.Y + (target - before));
+        DragTo(ToImage(_lastViewPoint));
+        _view.Invalidate();
     }
 
     private void Step(bool redo)
@@ -849,7 +1074,7 @@ internal sealed class LongAnnotateWindow
     private void ShowHint(string? text = null)
         => _hint.Text = text ?? (_editor is not null
             ? "Esc 或 Ctrl+Enter 收下文字，Enter 换行"
-            : "Enter 拷贝 · Ctrl+S 保存 · 1–0 标注 · X 裁剪 · Delete 删掉选中的 · Esc 关闭");
+            : "Enter 拷贝 · Ctrl+S 保存 · 1–0 标注 · X 裁剪 · Ctrl+= / Ctrl+- 缩放 · 空格拖动平移 · Esc 关闭");
 
     // ---- 键盘
 
@@ -864,6 +1089,18 @@ internal sealed class LongAnnotateWindow
         var shift = IsDown(VirtualKey.Shift);
         switch (e.Key)
         {
+            case VirtualKey.Number0 or VirtualKey.NumberPad0 when control:
+                SetZoom(null);
+                break;
+            case VirtualKey.Number1 or VirtualKey.NumberPad1 when control:
+                SetZoom(1);
+                break;
+            case (VirtualKey)187 or VirtualKey.Add when control: // VK_OEM_PLUS（= / + 那个键）
+                Zoom(up: true);
+                break;
+            case (VirtualKey)189 or VirtualKey.Subtract when control: // VK_OEM_MINUS
+                Zoom(up: false);
+                break;
             case VirtualKey.Escape:
                 Escape();
                 break;
@@ -1087,6 +1324,13 @@ internal sealed class LongAnnotateWindow
                 AnnotationStyle.DefaultFor(AnnotationKind.Highlighter)),
             Annotation.Drawn(AnnotationKind.Mosaic, new PointD(100, seam - 100), new PointD(500, seam + 100), false,
                 AnnotationStyle.DefaultFor(AnnotationKind.Mosaic)),
+            AnnotationRenderer.Measured(
+                new Annotation
+                {
+                    Kind = AnnotationKind.Text, Rect = new RectD(120, 120, 0, 0), Text = "原来的字",
+                    Style = AnnotationStyle.DefaultFor(AnnotationKind.Text),
+                },
+                1),
         }.OfType<Annotation>().ToList();
         Directory.CreateDirectory(directory);
         Open(bgra, width, rows, 1, items, null, null);
@@ -1112,6 +1356,41 @@ internal sealed class LongAnnotateWindow
         {
             await File.WriteAllBytesAsync(Path.Combine(directory, "long-annotate-export.png"), png);
         }
+
+        // C1：缩放档位（实际大小、往下两档、回到适合宽度）、双击文字重新编辑、拖到窗口下边自动滚。
+        window._scroller.ChangeView(null, 0, null, true);
+        await Task.Delay(300);
+        var fit = window._unit;
+        window.SetZoom(1);
+        await Task.Delay(500);
+        await WindowShot.SaveAsync(hwnd, Path.Combine(directory, "long-annotate-zoom-100.png"));
+        var actual = window._unit;
+        window.Zoom(up: false);
+        window.Zoom(up: false);
+        await Task.Delay(300);
+        var smaller = window._unit;
+        window.SetZoom(null);
+        Log.Info($"long-annotate.probe zoom fit={fit:F3} actual={actual:F3} twoDown={smaller:F3} back={window._unit:F3}");
+
+        var text = window._document.Items.First(item => item.Kind == AnnotationKind.Text);
+        window.ShowEditor(new PointD(text.Rect.X, text.Rect.Y), text);
+        await Task.Delay(300);
+        await WindowShot.SaveAsync(hwnd, Path.Combine(directory, "long-annotate-text-reedit.png"));
+        window._editor!.Text = "改过的字";
+        window.CommitText();
+        var texts = window._document.Items.Where(item => item.Kind == AnnotationKind.Text).ToList();
+        Log.Info($"long-annotate.probe reedit texts={texts.Count} same-id={texts[0].Id == text.Id} changed={texts[0].Text == "改过的字"} undo={window._document.CanUndo}");
+
+        window._drag = Drag.Draw;
+        window._start = new PointD(200, 300);
+        window._draft = Annotation.Drawn(AnnotationKind.Rectangle, window._start, window._start, false, window._style);
+        window._lastViewPoint = new Windows.Foundation.Point(400, window._scroller.ViewportHeight - 8);
+        window.UpdateEdgeScroll(window._scroller.ViewportHeight - 8);
+        await Task.Delay(1000);
+        var scrolled = window._scroller.VerticalOffset;
+        var draftBottom = window._draft?.Rect.Bottom ?? 0;
+        window.EndDrag();
+        Log.Info($"long-annotate.probe edge-scroll offset={scrolled:F0} draftBottom={draftBottom:F0} items={window._document.Items.Count}");
 
         // 裁剪（F11）：裁掉头尾各 500 行、左右各 100 列，接缝处的标注跟着挪，出图量尺寸。
         window.SetCropping(true);
