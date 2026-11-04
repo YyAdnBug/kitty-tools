@@ -209,6 +209,20 @@ struct SettingsListTests {
     #expect(Screen.welcome < .permissions && Screen.permissions < .tryIt)
     // 偏好里存的就是 rawValue：认得出来
     #expect(Screen(rawValue: Screen.tryIt.rawValue) == .tryIt && Screen(rawValue: 9) == nil)
+    // 停在授权那一屏、现在勾的功能一项授权都用不着：也直接第三屏
+    #expect(OnboardingView.granted([]))
+  }
+
+  /// 引导第二屏只讲勾上的功能用得着的授权（功能管理 M6）：新装那四样两项都要；只勾便签、提醒、启动台一项都不要（跳过这一屏）；
+  /// 状态屏只要辅助功能；顺序固定
+  @Test func onboardingAsksOnlyNeededPermissions() {
+    #expect(OnboardingView.permissions(for: Feature.core) == [.accessibility, .screenRecording])
+    #expect(OnboardingView.permissions(for: [.notes, .reminders, .launchpad]).isEmpty)
+    #expect(OnboardingView.permissions(for: []).isEmpty)
+    #expect(OnboardingView.permissions(for: [.statusScreen, .notes]) == [.accessibility])
+    #expect(OnboardingView.permissions(for: [.clipboard]) == [.accessibility])
+    #expect(
+      OnboardingView.permissions(for: [.dockPreview]) == [.accessibility, .screenRecording])
   }
 
   /// 点「开始使用」时登录项怎么改（E1）：动过勾选框才照它来（重看时状态是「要批准」、勾选框显示没勾，没动它不取消注册）；

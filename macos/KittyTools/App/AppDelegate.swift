@@ -981,8 +981,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if turnedOn.contains(.dockPreview) {
       dockPreview.start()
       // 运行中打开时缺授权就带去授权（拍板 A3）：先要辅助功能（没有它用不了），有了再要屏幕录制（没有只列标题）；
-      // 启动时不问（关着的人、早就给过的人都不打扰）
-      if !launching {
+      // 启动时不问（关着的人、早就给过的人都不打扰）；在欢迎引导第一屏勾上的也不当场问，交给引导的授权那一屏（功能管理 M6：
+      // 当场弹会盖住引导，还把「请求过」用掉，授权屏的「去授权」就只能开系统设置了）
+      if !launching, !settingsNavigation.showsOnboarding {
         if !Permissions.isAccessibilityTrusted {
           Permissions.requestAccessibility()
         } else if !Permissions.isScreenRecordingAllowed {
@@ -3003,7 +3004,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       firstInstall = true
       onboardingStart = OnboardingView.resume(
         reached: reached,
-        granted: Permissions.isAccessibilityTrusted && Permissions.isScreenRecordingAllowed)
+        granted: OnboardingView.granted(OnboardingView.permissions(for: Feature.enabled)))
       showSettings(page: .general, onboarding: true)
       return
     }
