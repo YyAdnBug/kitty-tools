@@ -6,7 +6,7 @@
 // 另有任务进度的小件（NoteProgress：「☑ 2 / 5」，全部便签窗口的列表行、屏幕边缘那叠的悬停预览卡共用）。
 // **写入的闭包由用的地方绑好这条便签的编号**（setTitle / setBody 只给新的字）：换一条便签时旧的输入框还会在视图树里
 // 留一小会儿（淡出），它晚到的那一下——输入法组字到一半失焦时提交的字——得落回它自己那条，不能按「现在开着哪条」写。
-// 规范在 mac-whisker-notes.mdc；输入框的规矩在 mac-overlay-panel §3。
+// 规范在 mac-whisker/notes.md；输入框的规矩在 mac-overlay-panel §3。
 
 import SwiftUI
 

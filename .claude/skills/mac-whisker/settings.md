@@ -1,12 +1,6 @@
----
-description: Whisker 各界面规范 · 设置与其它（动作菜单 ActionMenu、设置窗、引导与关于、菜单栏与 App 图标）。先读 mac-whisker.mdc 核心，改这些界面再读本文件
-globs: macos/KittyTools/Settings/**,macos/KittyTools/Shell/ActionMenu.swift,macos/KittyTools/Shell/StatusItem.swift,macos/brand-icons.swift
-alwaysApply: false
----
-
 # mac-whisker · 设置与其它
 
-2026-10-03（第二轮体检第 8 批）从 `mac-whisker.mdc` §6「各界面规范」原样拆出来，内容没改。先读核心 `mac-whisker.mdc`（原则、皮肤、刻度、动效、招牌时刻、无障碍、性能、验收）再读本文件；文中的 §1–§11 指核心的章节，§6「…」指 §6 下各界面的小节（索引在核心 §6）。
+2026-10-03（第二轮体检第 8 批）从 `mac-whisker` §6「各界面规范」原样拆出来，内容没改。先读核心 `mac-whisker`（原则、皮肤、刻度、动效、招牌时刻、无障碍、性能、验收）再读本文件；文中的 §1–§11 指核心的章节，§6「…」指 §6 下各界面的小节（索引在核心 §6）。
 
 ## 6. 各界面规范 · 设置与其它
 

@@ -227,7 +227,7 @@ macos/
 windows/                 # Windows 原生版（C# + WinUI 3，开发中）
 ```
 
-开发约定见 [AGENTS.md](./AGENTS.md)，各模块规范见 [.cursor/rules/](./.cursor/rules/)。
+开发约定见 [AGENTS.md](./AGENTS.md)，各模块规范见 [.claude/skills/](./.claude/skills/)。
 
 ## 致谢
 

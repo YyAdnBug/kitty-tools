@@ -340,7 +340,7 @@ nonisolated enum NoteStyles {
     return merged(found)
   }
 
-  // MARK: 数值（长相在 mac-whisker-notes.mdc「正文里的 Markdown」）
+  // MARK: 数值（长相在 mac-whisker/notes.md「正文里的 Markdown」）
 
   /// 方框那个字（只用来占宽度，方框是 NoteTaskBox 画的）比正文的字大多少
   static let boxScale: CGFloat = 1.1

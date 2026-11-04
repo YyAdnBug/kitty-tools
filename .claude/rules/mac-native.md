@@ -1,12 +1,6 @@
----
-description: kitty-tools 原生 macOS 分支（macos，原名 main / macos-native）唯一常驻规则：结构、技术栈白名单、并发红线、风格、剪贴板写入、签名、发版、语言与 commit
-globs:
-alwaysApply: true
----
-
 # mac-native：原生 macOS 分支红线
 
-`macos/PLAN.md` 只留仍有效的：§2 技术栈白名单、§4 架构与文件表、§8 打包、§10 约束与已拍板决定、§11 旧逻辑问题与语言规则、§12 现状与下一步（迁移期历史和已完成批次的实现记录原样归档在 `macos/docs/archive/`）；发版前走的「真机回归清单」和正在验收的那一轮手测在 `macos/HANDTEST.md`，新的手测加在那里（怎么加、编号规则见它的开头；到 2026-10-30 的发版冒烟清单和各批手测原样归档在 `macos/docs/archive/HANDTEST-2026-10.md`，编号不变，「HANDTEST X 第 N 条」这类引用指那里）；行为、界面、默认值、文案以各 `mac-*` 规则、`mac-whisker.mdc` 和对标产品为准。下面每条都是硬约束，违反即返工。
+`macos/PLAN.md` 只留仍有效的：§2 技术栈白名单、§4 架构与文件表、§8 打包、§10 约束与已拍板决定、§11 旧逻辑问题与语言规则、§12 现状与下一步（迁移期历史和已完成批次的实现记录原样归档在 `macos/docs/archive/`）；发版前走的「真机回归清单」和正在验收的那一轮手测在 `macos/HANDTEST.md`，新的手测加在那里（怎么加、编号规则见它的开头；到 2026-10-30 的发版冒烟清单和各批手测原样归档在 `macos/docs/archive/HANDTEST-2026-10.md`，编号不变，「HANDTEST X 第 N 条」这类引用指那里）；行为、界面、默认值、文案以各 `mac-*` 规则、`mac-whisker` 和对标产品为准。下面每条都是硬约束，违反即返工。
 
 ## 1. 结构
 - 唯一开发区是 `macos/`：源码在 `KittyTools/{App,Shell,Storage,Clipboard,Translate,Launcher,Launchpad,Screenshot,StatusScreen,Notes,DockPreview,Settings,Resources}`，文件归属照 PLAN §4 的表格；`KittyToolsTests/` 只测纯函数。
@@ -40,7 +34,7 @@ alwaysApply: true
 - 遵循 Swift API 设计规范；`xcrun swift-format lint --strict -r macos/KittyTools` 无输出是唯一格式标准（配置 `macos/.swift-format`），提交前 `xcrun swift-format format -i -r macos/KittyTools`。
 - 日期显示统一用 `Date.FormatStyle`。
 - 单行文本用 `.lineLimit(1)` + `.truncationMode(.tail)`。
-- **视觉与动效一律按 `mac-whisker.mdc`（Whisker 设计语言）执行**（用户 2026-09-25 拍板，所有效果都要；核心之外，各界面的规范在 `mac-whisker-<界面>.mdc`，改哪个界面读哪个）：三种皮肤、`Shell/Style.swift` 刻度、七条弹簧曲线、五个招牌时刻。全 App 功能强调色 = `Style.brand`（文字 `Style.brandInk`、填充上的符号 `Style.onBrand`），取自 `Shell/Accent.swift`：默认跟随系统（系统「多色」时是 `AccentColor.colorset` 的品牌粉），设置 › 通用可换成系统设置那一排 8 色（用户 2026-09-27；细节 mac-whisker §3「颜色」）；家族色只用于种类色块和设置页头，内容色（来源 App、服务品牌色、语法着色等）不算强调色；不做主题 preset。**删除、清空、放弃这类危险操作和它们的二次确认，颜色全 App 统一用危险色 `Style.danger`**（系统红；用户 2026-10-07 要求以后统一；什么算危险、两档用法、`DangerButton` / `isDestructive` / `KeyCap(danger:)` 这些现成件、哪些交给系统画，见 mac-whisker §3「危险色」），不各写各的红。
+- **视觉与动效一律按 `mac-whisker`（Whisker 设计语言）执行**（用户 2026-09-25 拍板，所有效果都要；核心之外，各界面的规范在 `mac-whisker/<界面>.md`，改哪个界面读哪个）：三种皮肤、`Shell/Style.swift` 刻度、七条弹簧曲线、五个招牌时刻。全 App 功能强调色 = `Style.brand`（文字 `Style.brandInk`、填充上的符号 `Style.onBrand`），取自 `Shell/Accent.swift`：默认跟随系统（系统「多色」时是 `AccentColor.colorset` 的品牌粉），设置 › 通用可换成系统设置那一排 8 色（用户 2026-09-27；细节 mac-whisker §3「颜色」）；家族色只用于种类色块和设置页头，内容色（来源 App、服务品牌色、语法着色等）不算强调色；不做主题 preset。**删除、清空、放弃这类危险操作和它们的二次确认，颜色全 App 统一用危险色 `Style.danger`**（系统红；用户 2026-10-07 要求以后统一；什么算危险、两档用法、`DangerButton` / `isDestructive` / `KeyCap(danger:)` 这些现成件、哪些交给系统画，见 mac-whisker §3「危险色」），不各写各的红。
 - **界面与交互按 macOS 习惯设计**（用户要求）：参考 HIG 与 swiftui-expert-skill；界面改动用 SnapshotProbeTests 屏幕外渲染自检，禁止为截图弹出浮层抢用户键盘。
 - **单测和截图自检不写用户真实偏好或钥匙串**（`UserDefaults.standard`、Dev 版域 `com.yy.kitty-tools.native.dev`、Keychain）：用临时偏好域、注入的 store 或只读注册域，连「先写再恢复」也不行（`removeObject` 会删掉用户自己设的值）。2026-09-28 出过测试把 Dev 版翻译服务列表盖成测试数据的事故；跑全量测试前后对 `~/Library/Preferences/com.yy.kitty-tools.native.dev.plist` 做 md5 对比，变了先查原因。**系统的共享面板也会写**：单测里一碰 `NSColorPanel.shared`，AppKit 就往测试宿主（= Dev 版）的偏好域写它的窗口位置、工具栏、分栏状态（2026-10-22 实测，三个键）——测试里别建它，要判断「是不是取色面板」的逻辑用不着真实例。
 - 刻意的简化写 `ponytail:` 注释，写明上限和升级路径；为某个 App 补的时序延迟必须注明是哪个 App。

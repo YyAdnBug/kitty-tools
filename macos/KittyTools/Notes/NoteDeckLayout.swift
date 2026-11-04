@@ -1,4 +1,4 @@
-// 屏幕边缘那叠（PLAN §10「便签」第 3 批；窗口的规矩在 mac-overlay-panel §12，长相在 mac-whisker-notes.mdc）的几何。
+// 屏幕边缘那叠（PLAN §10「便签」第 3 批；窗口的规矩在 mac-overlay-panel §12，长相在 mac-whisker/notes.md）的几何。
 // 全是纯函数，单测 NoteDeckTests 锁住（设置在 NoteDeckOptions.swift）：
 // - NoteDeckMetrics：药丸和标签的各个尺寸，按大小档（0.85 / 1 / 1.25）一起缩放、取整到整点（叠着的标签不出缝）；
 // - NoteDeckLayout：一列标签怎么排（每张露出多长、要不要压短、「+N」、放不下时在视口里滚），加上一组算 frame 的函数——

@@ -5,7 +5,7 @@ description: 程序坞预览（第九族）的行为红线速查：私有接口�
 
 # mac-dock-preview（速查）
 
-完整规矩在 `rule.mdc`（= `.cursor/rules/mac-dock-preview.mdc`）；长相和动效在 `mac-whisker` 技能的 `dock-preview.mdc`。动手前读全文；下面只是最容易被忘的几条。
+完整规矩在同目录 `rule.md`；长相和动效在 `mac-whisker` 技能的 `dock-preview.md`。动手前读全文；下面只是最容易被忘的几条。
 
 - 私有接口只在 `WindowServer.swift`，运行时 `dlsym`、取不到就退回公开做法；**加新的私有接口先问用户**；第一次取符号在主线程（`prepare()`）。
 - 「当 key」事件：0x100 清零、只发按下、坐标在窗口外很远（AltTab 踩过的坑），别改回老写法。

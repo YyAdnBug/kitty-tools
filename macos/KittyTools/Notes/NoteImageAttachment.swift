@@ -17,7 +17,7 @@
 import AppKit
 import Synchronization
 
-/// 图片在正文里的尺寸和长相的数值（mac-whisker-notes.mdc「正文里的图片」）
+/// 图片在正文里的尺寸和长相的数值（mac-whisker/notes.md「正文里的图片」）
 nonisolated enum NoteImageLayout {
   /// 图片那一行上下各留多少（算在 cell 的框里）
   static let padding: CGFloat = 4

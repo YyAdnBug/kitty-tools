@@ -1,15 +1,9 @@
----
-description: Whisker 的程序坞预览：面板的皮肤、卡片和缩略图的尺寸、角标和 ✕、悬停、换行、弹出 / 换图标 / 收起的动效、没有屏幕录制时的样子、减弱动态效果和读屏
-globs: macos/KittyTools/DockPreview/**,macos/KittyTools/Settings/DockPreviewTab.swift
-alwaysApply: false
----
-
 # mac-whisker-dock-preview：程序坞预览的长相和动效
 
 程序坞预览（第九族，2026-10-22）用 **Panel 皮肤**（mac-whisker §2）：和剪贴板 / 启动器 / 翻译同一份材质
 （`OverlayPanel.makeBackground`：15 上毛玻璃 + 16 pt 圆角 + `PanelRim`，26 起液态玻璃），面板里只用填充、不叠玻璃。
-核心刻度照 `mac-whisker.mdc`；这一篇只写它自己的数。家族色 `Style.Family.dockPreview`（systemCyan）只在设置页头和
-设置 › 通用 ›「功能」那一行，**面板里不用家族色、不用强调色**。行为（什么时候弹 / 收）见 `mac-dock-preview.mdc`。
+核心刻度照 `mac-whisker`；这一篇只写它自己的数。家族色 `Style.Family.dockPreview`（systemCyan）只在设置页头和
+设置 › 通用 ›「功能」那一行，**面板里不用家族色、不用强调色**。行为（什么时候弹 / 收）见 `mac-dock-preview`。
 
 ## 1. 面板
 - 四周内边距 10；顶上一行 26 高：16 pt App 图标 + App 名（13 semibold，一行截断）居中。下面卡片，卡片之间、排和排之间 4。

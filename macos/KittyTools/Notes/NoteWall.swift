@@ -1,5 +1,5 @@
 // 全部便签窗口的「便签墙」（2026-10-15 手测反馈，用户原话「类似真正的便签条形式，就像留言板的便签墙那种形式」；
-// 长相在 mac-whisker-notes.mdc「便签墙」，界面在 NotesWallView.swift）。这里是纯函数和数值：
+// 长相在 mac-whisker/notes.md「便签墙」，界面在 NotesWallView.swift）。这里是纯函数和数值：
 // - 卡片一样宽、高随内容（有上下限），按窗口宽度排几列（列宽固定、整块居中：窗口变宽只多排列，卡片的高不用重算）；
 // - 瀑布流：每张放进当时最矮的那一列；分两段（固定的 / 其他，各有一行小标题；最近删除里不分）；
 // - 每张微微斜一点：大小按便签编号定（1–2°，每次一样），方向按位置交错（同一列上下相邻、左右相邻的不同向）；
@@ -12,7 +12,7 @@
 import AppKit
 
 nonisolated enum NoteWall {
-  // MARK: 数值（mac-whisker-notes.mdc「便签墙」）
+  // MARK: 数值（mac-whisker/notes.md「便签墙」）
 
   /// 卡片的宽、卡片之间（左右、上下）的距离、墙四周至少留多少
   static let cardWidth: CGFloat = 224

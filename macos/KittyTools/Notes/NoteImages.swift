@@ -1,4 +1,4 @@
-// 便签正文里的行内图片（第 7 批；规矩在 mac-overlay-panel §3「行内图片」、mac-whisker-notes.mdc「正文里的图片」）：
+// 便签正文里的行内图片（第 7 批；规矩在 mac-overlay-panel §3「行内图片」、mac-whisker/notes.md「正文里的图片」）：
 // **令牌**是存的正文里图片的样子——`![image](kitty-note-image://<UUID>.<ext>)`，记了宽度时
 // `![image|240](kitty-note-image://<UUID>.<ext>)`（宽度是整数点）。载入编辑器时令牌换成附件字符 U+FFFC、
 // 存盘时换回来（互转在 NoteTextView.replaceAll / NoteImageAttachment.stored(from:)）。

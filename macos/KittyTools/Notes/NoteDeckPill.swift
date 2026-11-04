@@ -1,4 +1,4 @@
-// 屏幕边缘的药丸（PLAN §10「便签」拍板 B；规矩在 mac-overlay-panel §12，长相在 mac-whisker-notes.mdc）：平时贴在屏幕边上的
+// 屏幕边缘的药丸（PLAN §10「便签」拍板 B；规矩在 mac-overlay-panel §12，长相在 mac-whisker/notes.md）：平时贴在屏幕边上的
 // 一小条，一条便签一道色条，鼠标靠过来就扇出那叠（Notes/NoteDeck.swift）。
 // 它是装饰：普通 NSPanel 实例（不子类化；无边框、nonactivating、永不当 key、无阴影），层级状态栏——截图的冻结帧
 // （ScreenCapture.keptOwnWindows）和录屏的白名单（recordedOwnWindows）按层级都不收它。所有桌面上都在；别的 App

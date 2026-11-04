@@ -1,4 +1,4 @@
-// Whisker 设计刻度（mac-whisker.mdc §2–4、§7）：圆角、七条命名弹簧曲线、强调色（取自 Accent）、中性色与功能家族色、
+// Whisker 设计刻度（mac-whisker §2–4、§7）：圆角、七条命名弹簧曲线、强调色（取自 Accent）、中性色与功能家族色、
 // 面板描边、卡片表面（CardSurface）、发丝线（Hairline / hairlineBorder，增强对比度时 1 pt）、输入框底、复制对勾停留、
 // 种类色块与键帽、面板内浮层的阴影（floatingShadow）、空状态（EmptyState）、列表型面板的宽、色值色块的内描边。
 // 界面里的圆角、曲线、强调色、选中色、发丝线一律从这里取，不硬编码；新增的值至少要被三处复用才放进来。

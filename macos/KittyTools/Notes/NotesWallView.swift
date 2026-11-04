@@ -1,5 +1,5 @@
 // 全部便签窗口的「便签墙」（默认的显示方式；另一种是列表，NotesWindowView 里的 NavigationSplitView）。长相在
-// mac-whisker-notes.mdc「便签墙」，排法、倾斜、方向键、拖动排序的规则在 NoteWall.swift，状态在 NotesWindowModel。
+// mac-whisker/notes.md「便签墙」，排法、倾斜、方向键、拖动排序的规则在 NoteWall.swift，状态在 NotesWindowModel。
 // - 墙：一张张纸色的卡片（标题、正文开头几行带样式、任务进度、固定的带图钉、底下相对时间），一样宽、高随内容，
 //   按窗口宽度排几列、竖排瀑布流；固定的一段在前。每张微微斜一点；鼠标停着的立正、稍微抬起来；选中的立正、
 //   后面垫一块中性的选中底（列表选中不用强调色）。编辑卡开着时后面的卡片不认悬停。

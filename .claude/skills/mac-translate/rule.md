@@ -1,9 +1,3 @@
----
-description: 原生分支翻译规范（语言规则、服务分发与密钥、智谱 / 大模型接口约束、流式与取消、划词与复制即译）
-globs: macos/KittyTools/Translate/**,macos/KittyTools/Settings/TranslateTab.swift,macos/KittyTools/Storage/Keychain.swift
-alwaysApply: false
----
-
 # mac-translate：翻译红线
 
 代码：`Translate/`（Language、TranslateService、Providers/*、HTTP、SSE、TranslateCoordinator、HistoryStore、SelectionReader、Speaker、各视图）、`Storage/Keychain.swift`。

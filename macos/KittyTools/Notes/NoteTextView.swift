@@ -1,4 +1,4 @@
-// 便签专用的正文编辑器（PLAN §10「便签」第 5、6 批；规矩在 mac-overlay-panel §3 §12，长相在 mac-whisker-notes.mdc）：
+// 便签专用的正文编辑器（PLAN §10「便签」第 5、6 批；规矩在 mac-overlay-panel §3 §12，长相在 mac-whisker/notes.md）：
 // 全部便签窗口和屏幕边缘那叠的正文都是它（NoteFields.swift 的 NoteBodyField 包着）；快速记一条照旧用 SourceTextView。
 // - **显式搭的 TextKit 1**（自己建 NSTextStorage → NSLayoutManager → NSTextContainer 再交给文本视图）：Markdown 的标记
 //   靠 NSLayoutManager 把字形藏起来，普通 NSTextView 拿到的是 TextKit 2，那一招不灵。只拿着文本视图就够：

@@ -1,14 +1,8 @@
----
-description: 启动台（第八族，2026-10-18）的规矩：模型和不变式、App 目录、布局存哪、全屏面板、入口和互斥、触控板捏合、触发角、旧库导入、删 App、测试口径
-globs: macos/KittyTools/Launchpad/**,macos/KittyTools/Settings/LaunchpadTab.swift
-alwaysApply: false
----
-
 # mac-launchpad：启动台红线
 
 Kitty 的第八族「启动台」（SPEC 在 `macos/build/research/launchpad/SPEC.md`，0.6.0）：复刻 macOS 15 的全屏图标网格。
 **和现有的「启动器」（`Launcher/`，⌥Space 的搜索框）是两个东西**：名字、设置、快捷键都分开，不共用面板和入口。
-代码在 `KittyTools/Launchpad/`，设置页 `Settings/LaunchpadTab.swift`；长相和动效见 `mac-whisker-launchpad.mdc`。
+代码在 `KittyTools/Launchpad/`，设置页 `Settings/LaunchpadTab.swift`；长相和动效见 `mac-whisker/launchpad.md`。
 
 ## 1. 模型（纯函数，全部单测）
 - `LaunchpadLayout`：页数组 → 格子数组 → App（`bundleID` 优先，没有就按解开链接后的路径）或文件夹（名字 + 内部的页）。

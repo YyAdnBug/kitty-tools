@@ -1,6 +1,6 @@
 # AGENTS.md
 
-`macos` 分支（mac 原生版主线；2026-09-27 由 `macos-native` 改名 main，2026-10-30 再改名 macos，`main` 从此只放 README 和截图）的 agent 项目指引（Cursor / Codex 直接读；Claude Code 经 `CLAUDE.md` 导入）。常驻红线在 `.cursor/rules/mac-native.mdc`。
+`macos` 分支（mac 原生版主线；2026-09-27 由 `macos-native` 改名 main，2026-10-30 再改名 macos，`main` 从此只放 README 和截图）的 agent 项目指引（Codex 直接读；Claude Code 经 `CLAUDE.md` 导入）。常驻红线在 `.claude/rules/mac-native.md`。
 
 ## 项目概述
 
@@ -23,7 +23,7 @@
 - 现状、待手测、下一步看 PLAN §12（各族立项日期、批次进度的原文在 §12「各族进度摘要（原 AGENTS 项目概述）」）；发版前走的「真机回归清单」和正在验收的那一轮手测看 `macos/HANDTEST.md`（到 2026-10-30 的发版冒烟清单和各批手测原样归档在 `macos/docs/archive/HANDTEST-2026-10.md`，编号不变，代码注释、规则里「HANDTEST X 第 N 条」都指那里）；拍板和每族的规矩看 PLAN §10 和对应的 `mac-*` 规则。
 - Bundle ID `com.yy.kitty-tools.native`（Debug `com.yy.kitty-tools.native.dev`），不再改（改了会丢偏好、钥匙串和授权）；产品名 / .app 名 `Kitty Tools`（Debug `Kitty Tools Dev`）。和 Tauri 旧版同名：安装前先删掉 /Applications 里旧版的 `Kitty Tools.app`。
 - **规格**：各 `mac-*` 规则（界面与动效按 `mac-whisker`）+ 对标产品（启动器 Alfred / Raycast、翻译 Bob、截图 iShot / CleanShot、录屏 CleanShot / ⌘⇧5、录音 QuickTime / iShot、剪贴板 Paste）。`macos/PLAN.md` 只留仍有效的（§2 技术栈、§4 架构与文件表、§8 打包、§10 约束与决定、§11 实现原则与旧逻辑问题、§12 现状），历史在 `macos/docs/archive/`。
-- **Windows 原生版**在 `windows` 分支的 `windows/`（C# + WinUI 3；本分支里的 `windows/` 是 0.6.0 时的旧快照，别在这里改）：规矩和方案在那边的 `windows/AGENTS.md`、`windows/PLAN.md`。本文件其余部分和 `.cursor/rules/mac-*.mdc` 只管 `macos/`；Windows 的提交写成 `<type>(win): …`，release 不标 latest。
+- **Windows 原生版**在 `windows` 分支的 `windows/`（C# + WinUI 3；本分支里的 `windows/` 是 0.6.0 时的旧快照，别在这里改）：规矩和方案在那边的 `windows/AGENTS.md`、`windows/PLAN.md`。本文件其余部分和 `.claude/` 里的规则只管 `macos/`；Windows 的提交写成 `<type>(win): …`，release 不标 latest。
 
 ## 技术栈
 
@@ -49,8 +49,8 @@ macos/                       # 本分支唯一开发区
 ├── HANDTEST.md              # 真机回归清单（约 40 条，发版前走）+ 正在验收的那一轮手测（新的手测加在这里；旧条目在 docs/archive/HANDTEST-2026-10.md）
 └── docs/archive/            # PLAN 挪出去的迁移期历史和已完成批次的实现记录、HANDTEST-2026-10.md（旧的冒烟清单和各批手测）（原样，只查不改）
 icons/                       # 功能图标：mac 和 Windows 共用的 26 个 SVG（feature/kitty.*.svg）+ 生成脚本 build-icons.swift
-.cursor/rules/               # mac-native.mdc（常驻）、ponytail.mdc（只给 Cursor）、各 mac-* 规则（mac-whisker 拆成核心 + mac-whisker-<界面>.mdc）
-.claude/skills/mac-*/        # 按需技能，里程碑结束后补
+.claude/rules/mac-native.md  # 常驻红线（Claude 每次会话自动加载）
+.claude/skills/mac-*/        # 按需技能：SKILL.md（触发描述 + 红线速查）+ rule.md（正文）；mac-whisker 另有各界面的 <界面>.md
 ```
 
 新文件放哪、叫什么，照 PLAN §4 的文件表；一个概念一个文件，不预建空目录。
@@ -204,18 +204,17 @@ defaults delete com.yy.kitty-tools.native.dev folderAccessRequested
 
 | 名称 | 类型 | 状态 | 何时加载 / 触发范围 |
 |---|---|---|---|
-| `mac-native` | 常驻规则 `.cursor/rules/mac-native.mdc` | 已有 | 始终加载 |
-| `ponytail` | 常驻规则 `.cursor/rules/ponytail.mdc` | 已有 | 只给 Cursor；Claude 侧由用户级插件生效 |
+| `mac-native` | 常驻规则 `.claude/rules/mac-native.md` | 已有 | 始终加载 |
 | `mac-overlay-panel` | 技能 | 已有（M1，M9 补截图与钉图，2026-10-10 补状态屏，2026-10-13 补便签的边缘那叠、便签编辑器和撤销 / 重做、正文里的 Markdown，2026-10-14 补浮动便签，2026-10-16 补便签墙和行内图片，2026-10-17 补导出导入、任务五态、文字颜色，2026-10-18 补快速记一条和全部便签窗口、整包覆盖，2026-10-22 补图片的宽度档位和裁切、取色面板、同时浮几张，2026-10-26 补长图标注窗口和晾衣绳） | `Shell/**`、`Screenshot/**`、`StatusScreen/**`、`DockPreview/**`、`Translate/SelectionReader.swift`、`Translate/SourceTextView.swift`、`Notes/` 里除 `Note.swift`、`NoteStore.swift`、`NotesBackup.swift`、`NoteSample.swift` 之外的全部（`NoteCapture*`、`NotesWindow*`、`NoteWall*`、`NoteEdge`、`NoteDeck*`、`NoteFloat*`、`NoteSheet*`、`NotePanel`、`NoteFields`、`NoteTextView*`、`NoteStyles`、`NoteMarkdown*`、`NoteTasks`、`NoteTaskBox`、`NotePaper`、`NoteImages`、`NoteImageStore`、`NoteImageAttachment`、`NoteImageCrop`、`NoteColorPicker`）；NSPanel、热键、前台快照、粘贴回原 App、划词时序、设置窗激活、截图框选遮罩、钉图、状态屏的全屏面板和事件拦截、便签屏幕边缘的药丸和那叠、浮动便签、便签正文的编辑器（TextKit 1、Markdown、行距 / 代码块、行内图片和裁切、五种任务状态、文字颜色）、Markdown 导出导入、从剪贴板 / 启动器粘贴落进便签、输入框里的撤销 / 重做 |
 | `mac-launchpad` | 技能 | 已有（2026-10-18，第八族） | `Launchpad/**`、`Settings/LaunchpadTab.swift`；启动台的模型与不变式、App 目录、布局存法、全屏面板、入口与互斥、触控板捏合、触发角、旧库导入、删 App、测试口径 |
 | `mac-dock-preview` | 技能 | 已有（2026-10-23，第九族） | `DockPreview/**`、`Settings/DockPreviewTab.swift`；私有接口和退路、听程序坞、列窗口、缩略图、切 / 关窗口、面板和时机（按鼠标位置收、不用滚动）、默认关和授权、内存、测试口径 |
 | `mac-clipboard` | 技能 | 已有（M3） | `Clipboard/**`、`Storage/Database.swift`、`Storage/Backup.swift`（每日备份、打不开时的恢复）、`Notes/NotesBackup.swift`（便签库平行的那一份，2026-10-12） |
 | `mac-translate` | 技能 | 已有（M4） | `Translate/**` |
-| `mac-whisker` | 技能 | 已有（2026-09-25；2026-10-03 拆成核心 + 5 个界面文件，2026-10-10 加状态屏一个，2026-10-12 加便签一个，2026-10-18 加启动台一个，2026-10-23 加程序坞预览一个） | 任何界面、动效、图标改动：先读核心 `rule.mdc`（三种皮肤、刻度、七条弹簧曲线、五个招牌时刻、无障碍、验收），再读那个界面的文件（`launcher` / `clipboard` / `translate` / `capture` / `settings` / `status-screen` / `notes` / `launchpad` / `dock-preview`.mdc，Cursor 按路径自动带上）；**用户要求以后都按它执行** |
+| `mac-whisker` | 技能 | 已有（2026-09-25；2026-10-03 拆成核心 + 5 个界面文件，2026-10-10 加状态屏一个，2026-10-12 加便签一个，2026-10-18 加启动台一个，2026-10-23 加程序坞预览一个） | 任何界面、动效、图标改动：先读核心 `rule.md`（三种皮肤、刻度、七条弹簧曲线、五个招牌时刻、无障碍、验收），再读那个界面的文件（`launcher` / `clipboard` / `translate` / `capture` / `settings` / `status-screen` / `notes` / `launchpad` / `dock-preview`.md）；**用户要求以后都按它执行** |
 
-- 规则正文只写在 `.cursor/rules/mac-*.mdc`。技能目录 `.claude/skills/mac-<name>/` 里 `SKILL.md` 只写触发描述和红线速查，`rule.mdc` 是符号链接：`ln -s ../../../.cursor/rules/mac-<name>.mdc .claude/skills/mac-<name>/rule.mdc`。mac-whisker 另有按界面拆出的 `mac-whisker-<界面>.mdc`，技能目录里各一个链接：`ln -s ../../../.cursor/rules/mac-whisker-<界面>.mdc .claude/skills/mac-whisker/<界面>.mdc`。
-- 动手前先读对应技能的 `rule.mdc` 全文。没有对应技能的地方按 `mac-native.mdc` 和 `mac-whisker` 执行，文件归属看 PLAN §4。
-- 不另建 `mac-ui`、`mac-release`：视觉与动效在 `mac-whisker`，其余 UI 约定在 `mac-native.mdc`，发布约束在 `build-dmg.sh` 头部注释。
+- 规则正文都在 `.claude/`：常驻的 `mac-native` 是 `.claude/rules/mac-native.md`（Claude 每次会话自动加载，`CLAUDE.md` 不用再导入）；其余每个规则一个技能目录 `.claude/skills/mac-<name>/`，`SKILL.md` 只写触发描述和红线速查，正文在同目录 `rule.md`；mac-whisker 按界面拆出的 `<界面>.md` 也在它的技能目录里。2026-11-04 起不再用 Cursor，原来的 `.cursor/rules/mac-*.mdc` 原样搬到这里（`mac-<name>.mdc` → `mac-<name>/rule.md`，`mac-whisker-<界面>.mdc` → `mac-whisker/<界面>.md`，去掉了 Cursor 的文件头），归档文档里的旧路径照这个找。
+- 动手前先读对应技能的 `rule.md` 全文。没有对应技能的地方按 `mac-native.md` 和 `mac-whisker` 执行，文件归属看 PLAN §4。
+- 不另建 `mac-ui`、`mac-release`：视觉与动效在 `mac-whisker`，其余 UI 约定在 `mac-native.md`，发布约束在 `build-dmg.sh` 头部注释。
 
 ## Tauri 版不作参考
 
@@ -237,8 +236,8 @@ defaults delete com.yy.kitty-tools.native.dev folderAccessRequested
 ## 给 agent 的工具
 
 - **Apple API 文档**：任意 `https://developer.apple.com/documentation/<path>` 后面加 `.md` 就能拿到 Markdown，直接 WebFetch（HIG 没有 `.md` 版）。
-- **Xcode 自带的 Apple agent 文档**：路径和篇目见 `mac-native.mdc` 文末，只按绝对路径读，不拷进仓库。
-- **sosumi MCP**（已接入）：查 Apple 文档、HIG、WWDC 字幕。Claude 读 `.mcp.json`，Cursor 读 `.cursor/mcp.json`，两边同一个 URL `https://sosumi.ai/mcp`。
-- **swiftui-expert-skill**（avdlee，已装在用户级 `~/.agents/skills/`，不进仓库）：写 / 审 SwiftUI 代码时加载；macOS 相关看它的 `references/macos-*.md`。它偏 iOS，和本仓库规则冲突时以 `mac-native.mdc` 为准。重装：`npx skills add avdlee/swiftui-agent-skill -s swiftui-expert-skill -g -a claude-code -a cursor`。
+- **Xcode 自带的 Apple agent 文档**：路径和篇目见 `mac-native.md` 文末，只按绝对路径读，不拷进仓库。
+- **sosumi MCP**（已接入）：查 Apple 文档、HIG、WWDC 字幕。配置在 `.mcp.json`（`https://sosumi.ai/mcp`）。
+- **swiftui-expert-skill**（avdlee，已装在用户级 `~/.agents/skills/`，不进仓库）：写 / 审 SwiftUI 代码时加载；macOS 相关看它的 `references/macos-*.md`。它偏 iOS，和本仓库规则冲突时以 `mac-native.md` 为准。重装：`npx skills add avdlee/swiftui-agent-skill -s swiftui-expert-skill -g -a claude-code`。
 - 不用：XcodeBuildMCP、swift-lsp、社区 concurrency 技能。编译诊断以 `xcodebuild` 为准，并发以 Xcode 自带的 `Swift-Concurrency-Updates.md` 为准。
-- Claude 的自动记忆按路径隔离，本 worktree 从空记忆开始；仍适用的旧结论已写进 `mac-native.mdc`。
+- Claude 的自动记忆按路径隔离，本 worktree 从空记忆开始；仍适用的旧结论已写进 `mac-native.md`。

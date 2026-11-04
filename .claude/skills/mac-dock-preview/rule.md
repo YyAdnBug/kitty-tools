@@ -1,15 +1,9 @@
----
-description: 程序坞预览（第九族，2026-10-22）的规矩：私有接口和退路、听程序坞、列窗口、缩略图、切 / 关窗口、面板和时机、默认关和授权、内存、测试口径
-globs: macos/KittyTools/DockPreview/**,macos/KittyTools/Settings/DockPreviewTab.swift
-alwaysApply: false
----
-
 # mac-dock-preview：程序坞预览红线
 
 Kitty 的第九族「程序坞预览」（拍板页 `macos/build/research/dock-preview-2026-10-22/decisions.html`，17 项全部按推荐；
 0.7.0）：鼠标停在程序坞的 App 图标上，图标上方弹出它所有窗口的缩略图，点一张切过去、✕ 关掉。对标 wins.cool 的
 Dock Preview；开源的 DockDoor、AltTab 是 GPL，**只借做法、一行代码都不拷**。代码在 `KittyTools/DockPreview/`，设置页
-`Settings/DockPreviewTab.swift`；长相和动效见 `mac-whisker-dock-preview.mdc`；本机实测和每批的做法在 PLAN §10「程序坞预览」。
+`Settings/DockPreviewTab.swift`；长相和动效见 `mac-whisker/dock-preview.md`；本机实测和每批的做法在 PLAN §10「程序坞预览」。
 
 ## 1. 私有接口（`WindowServer.swift`，全仓库只有它碰）
 - 用户拍板的五个 + 两个配套：`_AXUIElementGetWindow`、`CGSHWCaptureWindowList`、`CGSCopySpacesForWindows`、
