@@ -341,8 +341,8 @@ internal sealed partial class ScreenshotCard : Window
             IsHitTestVisible = false,
         });
 
-        // 两个带字的胶囊约 140 宽；卡片窄了就只留图标（mac：矮卡只剩图标的圆）。
-        var withText = width >= 168;
+        // 两个带字的胶囊约 140 宽，再加「改标注」的圆钮约 176（实测）；卡片窄了就只留图标（mac：矮卡只剩图标的圆）。
+        var withText = width >= (_file is null && ShotHistory.IsOn ? 196 : 168);
         var center = new StackPanel
         {
             Orientation = Orientation.Horizontal,

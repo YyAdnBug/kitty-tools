@@ -308,6 +308,15 @@ internal sealed class ShellRuntime
             DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() => _ = LauncherProbe.RunAsync(script));
         }
 
+        // 自检档：主界面高亮滑动录一段短视频（HomeSlideProbe）。
+        var homeSlide = Environment.GetCommandLineArgs()
+            .FirstOrDefault(arg => arg.StartsWith(HomeSlideProbe.ArgumentPrefix, StringComparison.OrdinalIgnoreCase));
+        if (homeSlide is not null && Paths.IsTestProfile)
+        {
+            var folder = homeSlide[HomeSlideProbe.ArgumentPrefix.Length..];
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() => _ = HomeSlideProbe.RunAsync(folder));
+        }
+
 #if DEBUG
         if (Environment.GetCommandLineArgs().Contains("--tray-menu", StringComparer.OrdinalIgnoreCase))
         {
@@ -396,6 +405,18 @@ internal sealed class ShellRuntime
             DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() => _ = RecordingProbe.RunAsync(folder));
         }
 
+
+        var framesArg = Environment.GetCommandLineArgs()
+            .FirstOrDefault(arg => arg.StartsWith(VideoFrameDump.ArgumentPrefix, StringComparison.OrdinalIgnoreCase));
+        if (framesArg is not null)
+        {
+            var argument = framesArg[VideoFrameDump.ArgumentPrefix.Length..];
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(async () =>
+            {
+                await VideoFrameDump.RunAsync(argument);
+                Application.Current.Exit();
+            });
+        }
 
         var syncArg = Environment.GetCommandLineArgs()
             .FirstOrDefault(arg => arg.StartsWith("--sync-probe=", StringComparison.OrdinalIgnoreCase));

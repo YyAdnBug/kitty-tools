@@ -183,6 +183,25 @@
 3. 要在屏幕上看的：角落卡三个胶囊在窄卡（168 宽附近）上挤不挤；托盘两个角标在 100% / 150% 下清不清楚；主界面打字转启动器时焦点、前台对不对。
 4. 截图：角落卡悬停、关于页（有新版本 / 已下好 / 已跳过）、托盘两个角标（只截自己的图标那一块），推 `windows-shots` 的 `0.2.0-batch-6/`。
 
+**Windows 验收（2026-11-03）**：
+
+- **编译**：Debug x64、Release AOT x64 / ARM64 一次过、零警告；`dotnet test` 486 个全过。审查方这一批的代码没有编译错。
+- **F7 更新**（Release AOT 装进临时目录当「已安装的 0.1.1」、探针档 + `--update-test` + `KITTY_UPDATE_FEED` 指本机假发布列表；
+  测试包是另开一个临时 worktree 把版本临时改成 0.1.9、跑 `build-release.ps1` 打的，没提交；没碰真 GitHub、没碰 `D:\Apps\Kitty Tools`）：
+  - 858 过：启动 12 s 后 `update.check newer=True` → `update.prepare` → `update.ready`（0.4 s），`updates\ready-0.1.9\Kitty Tools\` 是解压好的程序，安装目录的 exe 还是 0.1.1；主界面底栏「更新到 0.1.9」，关于页「0.1.9 已下好，退出时安装」+「现在重新打开」。
+  - 859 过：主界面「退出」（UIA Invoke，不发按键）→ `update.installed-on-quit files=97`，exe 变成 0.1.9；再打开 `update.relaunched removed-old=97`，`*.old`、`ready-*`、`installed-on-quit.txt` 都没了。
+  - 860 过：下好以后点主界面「更新到 0.1.9」→ 没再下载，`update.installed` 后带 `--updated` 重开（`removed-old=74`：旧进程还在退，有 23 个 `.old` 留到下次，这是原来就有的）。
+  - 862 过：下好以后给隐藏窗口发 `WM_ENDSESSION` → `app.end-session`、没有 `installed-on-quit`，exe 还是 0.1.1；下次启动先删 `ready-*`、12 s 后重新下好。
+  - 863 前半过：关于页取消勾选（UIA Toggle）→ 设置里 `updateInstallOnQuit: false`，重开后只有 `update.check`、没有 `update.prepare`。装在 `C:\Program Files` 那半没测。
+  - 857：**查出一个问题，修了**——后台已经下好时点「跳过这个版本」，关于页照样写「0.1.9 已下好，退出时安装」，可退出时 `InstallReadyOnExit` 不装跳过的版本，字和行为对不上（下好的那一份也一直留着）。改成跳过时 `AutoUpdater.DiscardReady` 删掉 `ready-x`，关于页先看跳过再看下好。修后：「有新版本 0.1.9（已跳过）」+「更新并重新打开」，日志 `update.ready-discarded` → `update.skip`，主界面底栏不再挂；假发布列表换成 0.2.0 → 又挂出「更新到 0.2.0」。
+  - 861（后台下着的时候点「更新」/ 托盘「取消」）没测：本机 file:// 的 30 MB 0.4 s 就下完，点不到中间。
+  - 每次托盘 / 主界面退出都有 `app.exit-forced`（R53 的兜底，2 秒后结束进程），原来就有，和这一批无关。
+- **F9 托盘角标**：三个 .ico 的 16 / 20 / 24 / 32 px 那几张放大拼在浅 / 深任务栏底上看：24 px（150%）暂停的两道竖条和红点都清楚；16 px（100%）红点清楚、暂停竖条只有 1 px 宽、挤但认得出。
+  这台机器上新托盘图标收在「^」里，`tray.rect` 指的是那个箭头，**真任务栏上 100% / 150% 的样子没拍到**（要点开「^」，留给用户）；高对比度没看。`--clipboard-paused` 启动时 `Tray.Add` 就按暂停取图标（读代码）。
+- **F4 角落卡**：`--ui-snapshots` 的 `shot-card-hover`（约 210 DIP 宽）三个胶囊放得下；量出来带字的两个胶囊加「改标注」圆钮一排约 176 DIP，原来按 168 宽切到只留图标，168–195 宽的卡会挤出去——改成有「改标注」时 196 起才带字。854–856 要真截图、悬停、点，没走。
+- **没走的**（要真按键 / 鼠标，留给用户）：854–856、861、864–865（主界面打字转启动器）、866–867 的真托盘、868（单测 `FeedbackLinkTests` 过）、869、870 高对比度。
+- **截图**：`windows-shots` 的 `0.2.0-batch-6/`：关于页（有新版本 / 已下好 / 已跳过，假发布列表）、角落卡悬停、托盘三个图标放大对照。
+
 ### 0.2.0 第 8 批：C2 C5 C6 C8 → 已写（审查方，`git log --grep "PLAN-v11 第 8 批"`，没编译）
 
 用户 2026-11-03「接着写第 8 批」。方案里这一批带的「收尾」（版本 0.2.0、`changelog.json`、`STATUS.md`）**没做**：第 5 批（等 mac 0.8.0）和第 7 批还没做，0.2.0 的最后一批再收尾。
@@ -200,6 +219,17 @@
 2. **C8 的结构体要先在真机上验**：`MAPPING_ENUM_OPTIONS`、`MAPPING_PROPERTY_BAG`、`MAPPING_DATA_RANGE` 是照头文件手写的（x64 / ARM64 都是 8 字节对齐，最后两个位域合成一个 uint）。翻一句法语看日志有 `lang.els-ready`、识别出 fr；
    要是 `MappingGetServices` 返回错误或者崩了，先对一遍 `sizeof`（C++ 里 `sizeof(MAPPING_ENUM_OPTIONS)` 应该是 80、`sizeof(MAPPING_PROPERTY_BAG)` 64、`sizeof(MAPPING_DATA_RANGE)` 72），修不好就让 `Recognize` 直接返回 null、记在这里。
 3. 走 HANDTEST 871–882；871 的滑动录 3–5 秒短视频（只录主界面），和截图一起推 `windows-shots` 的 `0.2.0-batch-8/`。
+
+**Windows 验收（2026-11-03）**：
+
+- **编译**：同第 6 批，零警告、486 个单测全过。
+- **C8 过**（Release AOT 探针档 + Debug，`--translate-text`，不抢焦点）：三个结构体照 elscore.h 对过 sizeof（80 / 64 / 72），`MappingGetServices` 一次成功，日志 `lang.els-ready`，没有 `lang.els-unavailable`、没崩。
+  浮窗顶上源语言胶囊（UIA 读的）：「Bonjour tout le monde, comment allez-vous aujourd'hui」→ 法语，「Guten Morgen, wie geht es dir heute」→ 德语，只有「Bonjour」一个词 → 英语（不到 3 个词不问系统）；
+  第一语言英语、第二语言法语时法文原文 → 法语译成英语（878）。日志里搜不到原文、译文。
+- **C2 过**：加了自检开关 `--home-slide-record=<目录>`（测试档；`HomePanel.ProbeMove` 直接挪选中，不发按键，WGC 只录主界面这扇窗口），又加了逐帧解码 `VideoFrames`（Media Foundation SourceReader，每帧自己的时间戳）和 `--video-frames=<mp4>|<目录>|<每几帧>`（Debug）。
+  解出来看：按一下之后约 0.2 s 里高亮在两格之间一帧帧挪过去（871）；`KITTY_REDUCED_MOTION=1` 时一帧就落到下一格（872）。短视频 4.4 s / 174 KB。
+- **没走的**：873–874（拨开关、开着主界面时开录）、C5（875–876，要在记事本里选字按快捷键）、C6（877，要麦克风）、879 的朗读、881（没有精简系统）——留给用户。
+- **截图**：`windows-shots` 的 `0.2.0-batch-8/`：主界面高亮滑动的短视频、主界面浅 / 深。
 
 ## 深色下的开关和输入框、翻译卡的彗星边框（2026-11-01 用户截图，审查方在 Mac 上写、**没编译**）——已修（75d6f86 + 12397aa）
 

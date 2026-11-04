@@ -290,6 +290,17 @@ internal static class AutoUpdater
         }
     }
 
+    /// <summary>跳过了后台下好的那一版：不再等着装，删掉 updates\ready-x（正在下的照样能取消）。</summary>
+    public static void DiscardReady(string version)
+    {
+        if (Ready is { } ready && ready.Version == version)
+        {
+            Ready = null;
+            TryDeleteDirectory(ReadyDirectory(version));
+            Log.Info($"update.ready-discarded version={version}");
+        }
+    }
+
     /// <summary>
     /// 托盘退出时（ShellRuntime.FinishSession）把后台下好的那一版装上，下次打开就是新版本（PLAN-v11 F7）。
     /// 设置关了、版本被跳过了、正在下载时不装；装不上就算了，旧版本照用（UpdateInstaller 自己回滚）。

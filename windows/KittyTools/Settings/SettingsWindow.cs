@@ -3010,8 +3010,8 @@ internal sealed partial class SettingsWindow : Window
         else if (UpdateService.AvailableVersion is { } available)
         {
             // PLAN-v11 F7：后台已经下好的写「已下好，退出时安装」，按钮还是马上装上重开；跳过了的写明，按钮照样在。
-            var ready = AutoUpdater.Ready?.Version == available;
             var skipped = UpdateService.OfferedVersion is null;
+            var ready = !skipped && AutoUpdater.Ready?.Version == available;
             row.Children.Add(Text(
                 ready ? $"{available} 已下好，退出时安装"
                 : skipped ? $"有新版本 {available}（已跳过）"

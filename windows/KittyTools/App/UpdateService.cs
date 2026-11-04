@@ -36,6 +36,8 @@ internal static class UpdateService
 
         SettingsService.Current.UpdateSkippedVersion = version;
         SettingsService.Save();
+        // 后台已经下好的这一版也不留了：退出时不会装它，留着只占地方、关于页还会写「已下好」。
+        AutoUpdater.DiscardReady(version);
         Log.Info($"update.skip version={version}");
         Notify();
     }

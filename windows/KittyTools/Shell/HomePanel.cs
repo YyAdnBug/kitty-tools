@@ -697,6 +697,20 @@ internal sealed class HomePanel : Window
         _tileViews[index].Focus(FocusState.Keyboard);
     }
 
+    /// <summary>自检（HomeSlideProbe）：照方向键挪一格选中，不发按键。</summary>
+    internal static void ProbeMove(HomeMove direction)
+    {
+        if (_instance is not { _visible: true } panel)
+        {
+            return;
+        }
+
+        if (HomeLayout.Moved(panel._selection, direction, HomeLayout.Rows(panel._sections)) is { } next)
+        {
+            panel.Select(next);
+        }
+    }
+
     /// <summary>
     /// 高亮挪到选中的那一格：刚排出来（打开、重排）时直接落位，之后在格子间滑（键盘驱动的选中高亮用 Snap，减弱动态效果时直接跳）。
     /// 没有选中时藏起来。
