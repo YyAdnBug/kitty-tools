@@ -33,6 +33,8 @@ enum Prefs {
   static let launcherFallbackAlways = "launcherFallbackAlways"
   /// 呼出启动器时搜索框只用英文输入法（Alfred 的 Force Keyboard；离开启动器后恢复）
   static let launcherRomanInput = "launcherRomanInput"
+  /// 计算器汇率换算用的那一天的汇率表（ExchangeRates.Table 的 JSON）：取来的缓存，**不注册默认值**（不导出、不同步）
+  static let launcherExchangeRates = "launcherExchangeRates"
   /// 剪贴板、启动器、翻译浮窗呼出时用挤压入场（设置 › 通用「动效」，默认关；2026-09-29 用户要求三块面板统一，设置从启动器页
   /// 挪到通用页；2026-10-03 转正，去掉「实验」）
   static let panelSqueezeEntrance = "panelSqueezeEntrance"

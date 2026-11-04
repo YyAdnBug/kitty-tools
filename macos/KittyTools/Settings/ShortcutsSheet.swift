@@ -349,6 +349,7 @@ struct ShortcutsSheet: View {
           Entry("kill", text: "列出后台进程（kill :端口 按端口列）：↩ 结束，⌘↩ 强制结束（再按一次确认）"),
           Entry("port", text: "列出在监听的端口：↩ 结束占用它的进程，⌘↩ 强制结束（再按一次确认）"),
           Entry("ip", text: "本机的局域网 / 内网地址和外网地址（外网要联网查）：↩ 粘贴，⌘↩ 只复制"),
+          Entry("currency", text: "汇率换算；也可以直接输「100 美元 转 日元」（要联网取汇率）"),
         ]),
       // mac-translate「浮窗快捷键」「翻译浮窗」（N5–N6）；代码在 TranslateCoordinator.handleKeyEquivalent、SourceTextView
       Group(

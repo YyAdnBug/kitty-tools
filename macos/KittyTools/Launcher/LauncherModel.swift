@@ -1,6 +1,6 @@
 // 启动器状态与操作：查询 → 结果。空查询先列「收藏」（⌘D 加，按加入顺序、⌥⌘↑↓ 调），再用「常用」（全局使用分）补足到
 // 8 行（体检 A22 D13）。结果顺序：这个查询选过的本地结果（第四轮体检 E8）、直达网址 / 路径、计算结果（含单位换算、
-// 进制，体检 D11）、关键词搜索，然后 App 目录
+// 进制，体检 D11；汇率换算 2026-11-04，汇率表要联网取，取到了只换那一行）、关键词搜索，然后 App 目录
 // （含系统设置面板，体检 D9）+ 内置动作 + 快捷链接 / 搜索提示 + 书签 + 用过的网址 / 文件按匹配分排序（同分系统命令最后，
 // 体检 B36），再是浏览历史（各家开了「也搜浏览历史」才有，排在书签后、不和书签 / 用过的重复，最多 5 行，体检 D8），网页搜索兜底；
 // 「cb 关键词」只有一行，↩ 收起启动器、呼出剪贴板面板并把关键词填进它的搜索框（N9；单输 cb 时它排第一、后面照常接本地结果）；
@@ -177,6 +177,15 @@ import UniformTypeIdentifiers
   @ObservationIgnored private var ipLocal: [LauncherItem]?
   @ObservationIgnored private var ipLookups: [IPAddresses.Service: IPAddresses.Lookup] = [:]
   @ObservationIgnored private var ipTasks: [IPAddresses.Service: Task<Void, Never>] = [:]
+  /// 计算器汇率换算的汇率表：取一份新的；单测、截图自检换成固定的，不联网
+  @ObservationIgnored var fetchRates: () async -> ExchangeRates.Table? = {
+    await ExchangeRates.fetch()
+  }
+  /// 手上的那份（正式运行时启动就从偏好读，取到新的写回去；单测、截图自检里不读不写偏好）
+  @ObservationIgnored var rates: ExchangeRates.Table?
+  @ObservationIgnored private var ratesTask: Task<Void, Never>?
+  /// 上一次取没取到（占位行写「没取到」；再打字、再呼出时重取）
+  @ObservationIgnored private var ratesFailed = false
   /// 这次呼出里查过的浏览器 / 打开方式（⌘K 每打一个字都要重算动作表，LaunchServices 别每次都问）
   @ObservationIgnored private var browserCache: [URL]?
   @ObservationIgnored private var applicationCache: [String: [(url: URL, isDefault: Bool)]] = [:]
@@ -216,6 +225,9 @@ import UniformTypeIdentifiers
       processTargets = { _ in [] }
       historyItems = { [] }
       refreshHistory = { false }
+      fetchRates = { nil }
+    } else {
+      rates = ExchangeRates.load()
     }
   }
 
@@ -333,6 +345,9 @@ import UniformTypeIdentifiers
     cancelIPLookups()
     ipLookups = [:]
     ipLocal = nil
+    ratesTask?.cancel()
+    ratesTask = nil
+    ratesFailed = false
     if executed || query.isEmpty {
       keptAt = nil
       if !query.isEmpty { query = "" }
@@ -359,6 +374,11 @@ import UniformTypeIdentifiers
     definitionTask?.cancel()
     // 打字路过 ip（「iphone」）时还没查完的不要了
     if !IPAddresses.matches(query) { cancelIPLookups() }
+    // 汇率同样：还在等那 0.3 s 的撤掉
+    if ExchangeRates.request(for: query) == nil {
+      ratesTask?.cancel()
+      ratesTask = nil
+    }
     fileRequest = FileSearch.request(for: query)
     commandRequest = fileRequest == nil ? SystemCommands.request(for: query) : nil
     if commandRequest == nil { commandItems = nil }
@@ -398,9 +418,10 @@ import UniformTypeIdentifiers
     let clip =
       features.contains(.clipboard) && Self.clipQuery(query) != nil ? [Self.clipItem("")] : []
     let fy = features.contains(.translate) ? Self.translatePrompts(for: query) : []
+    let currency = ExchangeRates.promptItems(for: query)
     let top =
-      clip + fy + ip + direct
-      + [Calculator.item(for: query), keyword].compactMap { $0 } + prompts.exact
+      clip + fy + currency + ip + direct
+      + [calculationItem(query), keyword].compactMap { $0 } + prompts.exact
       + filePrompts.exact + systemPrompts.exact
     // 书签、浏览历史至少 2 个字才搜（1 个字母命中太多；含中文时 1 个字就搜，U8）
     let longEnough = LauncherMatch.isLongEnough(query)
@@ -647,6 +668,44 @@ import UniformTypeIdentifiers
     return local + IPAddresses.publicItems(ipLookups)
   }
 
+  /// 计算结果那一行。是汇率换算时顺带看要不要取汇率表：一份都没有、或者存着的过了 6 小时，停 0.3 s 再取（打字路过不发请求），
+  /// 取到了原地换掉那一行（id 不变，选中不跳）；一份都没有时先是占位行（正在取 / 没取到），存着旧的就先用旧的
+  private func calculationItem(_ query: String) -> LauncherItem? {
+    if ExchangeRates.request(for: query) != nil,
+      ratesTask == nil, rates.map({ ExchangeRates.isStale($0, now: .now) }) ?? true
+    {
+      ratesFailed = false
+      ratesTask = Task {
+        try? await Task.sleep(for: ExchangeRates.fetchDelay)
+        guard !Task.isCancelled else { return }
+        let table = await fetchRates()
+        guard !Task.isCancelled else { return }
+        ratesTask = nil
+        if let table {
+          rates = table
+          if !isFixture { ExchangeRates.save(table) }
+        } else {
+          ratesFailed = true
+        }
+        let query = self.query.trimmingCharacters(in: .whitespaces)
+        guard let index = results.firstIndex(where: { $0.kind == .calculation }) else { return }
+        results[index] =
+          calculationRow(query) ?? ExchangeRates.placeholder(for: query, failed: true)
+      }
+    }
+    return calculationRow(query)
+  }
+
+  /// 算出来的那一行；汇率换算还没有表时是占位行（不取表，取表在 calculationItem）
+  private func calculationRow(_ query: String) -> LauncherItem? {
+    if let item = Calculator.item(for: query, rates: rates) { return item }
+    guard rates == nil, ExchangeRates.request(for: query) != nil else { return nil }
+    return ExchangeRates.placeholder(for: query, failed: ratesFailed)
+  }
+
+  /// 等汇率表取完（截图自检、单测用）
+  func ratesFetch() async { await ratesTask?.value }
+
   /// 撤掉还在等 / 在查的外网查询（查到的、没查到的留着）
   private func cancelIPLookups() {
     for (service, task) in ipTasks {
@@ -757,7 +816,9 @@ import UniformTypeIdentifiers
     }
     switch item.kind {
     case .calculation:
-      paste { Paster.write(string: item.payload ?? "", record: true) }
+      // 汇率还没取到的占位行没有 payload（同 ip）
+      guard let payload = item.payload else { return NSSound.beep() }
+      paste { Paster.write(string: payload, record: true) }
     case .ip:
       guard let address = item.payload else { return NSSound.beep() }
       paste { Paster.write(string: address, record: true) }
@@ -1023,7 +1084,10 @@ import UniformTypeIdentifiers
     case .url: ("打开网址", "safari")
     case .search: ("搜索", "magnifyingglass")
     case .prompt:
-      item.target == FileSearch.accessTarget ? ("授权", "lock.open") : ("补全关键词", "text.cursor")
+      item.target == FileSearch.accessTarget
+        ? ("授权", "lock.open")
+        : item.target == ExchangeRates.promptTarget
+          ? ("填进示例", "text.cursor") : ("补全关键词", "text.cursor")
     case .calculation, .ip: ("粘贴", "arrow.turn.down.left")
     case .clip: (item.target.isEmpty ? "打开" : "搜索", "doc.on.clipboard")
     case .translate: ("翻译", "character.bubble")
@@ -1047,8 +1111,8 @@ import UniformTypeIdentifiers
     return switch item.kind {
     case .app, .path:
       revealsOnReturn(item) ? ("打开", "arrow.up.forward.app") : ("在访达中显示", "folder")
-    case .calculation: ("只复制，不粘贴", "doc.on.doc")
-    case .ip where item.payload != nil: ("只复制，不粘贴", "doc.on.doc")
+    case .calculation where item.payload != nil, .ip where item.payload != nil:
+      ("只复制，不粘贴", "doc.on.doc")
     default: nil
     }
   }
@@ -1059,7 +1123,7 @@ import UniformTypeIdentifiers
     case .app, .path: "复制路径"
     case .url where AppCatalog.isSettingsPane(item.target): nil
     case .url, .search: "复制网址"
-    case .calculation: "复制结果"
+    case .calculation: item.payload == nil ? nil : "复制结果"
     case .ip: item.payload == nil ? nil : "复制地址"
     case .action, .system, .prompt, .clip, .translate, .process: nil
     }
@@ -1457,9 +1521,7 @@ import UniformTypeIdentifiers
       if revealsOnReturn(item) { return open(URL(filePath: item.target), item) }
       close()
       NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: item.target)])
-    case .calculation:
-      copy(item)
-    case .ip where item.payload != nil:
+    case .calculation where item.payload != nil, .ip where item.payload != nil:
       copy(item)
     default:
       NSSound.beep()  // 以前吞掉这个键、什么都不响
@@ -1583,7 +1645,7 @@ import UniformTypeIdentifiers
     }
     // 计算结果：原始数字（不分组、不带单位）、别的进制（体检 D11）
     if item.kind == .calculation {
-      for extra in Calculator.result(for: item.target)?.copies ?? [] {
+      for extra in Calculator.result(for: item.target, rates: rates)?.copies ?? [] {
         add(extra.title, "doc.on.doc", detail: extra.text, section: 2) { [unowned self] in
           copy(item, .calculation(extra))
         }
