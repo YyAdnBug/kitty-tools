@@ -36,6 +36,20 @@
     <AssemblyTitle Condition="'$(Configuration)' == 'Debug'">Kitty Tools Dev</AssemblyTitle>
     <Product Condition="'$(Configuration)' == 'Debug'">Kitty Tools Dev</Product>
   </PropertyGroup>
+  <!--
+    2026-11-04 GHSA-p3jp-9v83-76w9（CVE-2026-111497，.NET 的 Brotli 解码越界写）：本机 SDK 10.0.402 自带的 AOT 编译器和运行时是
+    10.0.13，还原时报 NU1903（警告当错误）、AOT 发布不出来。发布时把 SDK 自带清单里的运行时包和 AOT 编译器包改成修好的 10.0.14
+    （AOT 把运行时编进 exe，两样都要新；不用 RuntimeFrameworkVersion，它会连 Windows SDK 投影包的版本一起改坏）；
+    运行时只在发布时改：Debug 是依赖框架运行的，改了本机没装 10.0.14 运行时就起不来；编译器包 Debug 也会还原（PublishAot 带的
+    分析器），一直改。装了带 10.0.14 的 SDK 以后这一段可以删掉。
+  -->
+  <ItemGroup>
+    <KnownILCompilerPack Update="Microsoft.DotNet.ILCompiler" ILCompilerPackVersion="10.0.14" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(_IsPublishing)' == 'true'">
+    <KnownFrameworkReference Update="Microsoft.NETCore.App" LatestRuntimeFrameworkVersion="10.0.14" />
+    <KnownRuntimePack Update="Microsoft.NETCore.App" LatestRuntimeFrameworkVersion="10.0.14" />
+  </ItemGroup>
   <ItemGroup>
     <!-- R27：让 GC 在空闲时更积极地把不用的堆还给系统；只影响回收节奏，不压工作集。 -->
     <RuntimeHostConfigurationOption Include="System.GC.ConserveMemory" Value="5" />
