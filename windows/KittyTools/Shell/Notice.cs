@@ -133,6 +133,9 @@ internal sealed unsafe partial class NoticeHost
     private readonly DispatcherQueueTimer _hideTimer;
 
     private bool _visible;
+
+    /// <summary>窗口真的 ShowWindow 过了（_visible 是「这条该显示」，露出来要等低优先级那一拍，见 ShowCore）。</summary>
+    private bool _revealed;
     private bool _progress;
     private int _generation;
     private IReadOnlyList<NoticeAction> _actions = Array.Empty<NoticeAction>();
@@ -328,9 +331,13 @@ internal sealed unsafe partial class NoticeHost
         if (!_visible)
         {
             // 出场交给系统：DWM 给不激活的窗口自己的淡入，内容再跟一个淡入。
-            PInvoke.ShowWindow(_hwnd, (SHOW_WINDOW_CMD)SwShowNoActivate);
+            // 等手上的活做完再露（低优先级排一拍，空闲时就是马上）：复制截图那一下，后面还要关遮罩、建角落卡，
+            // UI 线程忙 150–200 ms，这时候露出来 XAML 还没画上，先是一块黑底（0.1.2 逐帧录到的，外观是浅色时最显眼）。
             _visible = true;
-            Motion.Appear(_content);
+            if (!_window.DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, Reveal))
+            {
+                Reveal();
+            }
         }
 
         if (_hovered)
@@ -588,11 +595,25 @@ internal sealed unsafe partial class NoticeHost
     }
 
     /// <summary>收起：交给系统（DWM 给窗口自己的淡出）。</summary>
+    /// <summary>真的露出来（ShowCore 排到低优先级的那一拍）。排着的时候已经收了（Hide）、或者已经露着，就不动。</summary>
+    private void Reveal()
+    {
+        if (!_visible || _revealed)
+        {
+            return;
+        }
+
+        _revealed = true;
+        PInvoke.ShowWindow(_hwnd, (SHOW_WINDOW_CMD)SwShowNoActivate);
+        Motion.Appear(_content);
+    }
+
     private void Hide()
     {
         _hideTimer.Stop();
         _window.AppWindow.Hide();
         _visible = false;
+        _revealed = false;
         _progress = false;
         _hovered = false;
         _pending = null;
