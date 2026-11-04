@@ -179,6 +179,34 @@
 4. **打包**：`changelog.json` 的日期改成打包那天，跑 `build-release.ps1`（带 `--smoke`），新包跑 `--update-live=0.1.1` 要过；装着 0.1.1 的临时目录里走一次 App 内更新到 0.1.2（`--update-test` + 本机假发布列表，同第 6 批的做法）。
 5. **不发布、不打 tag**，报告写产物路径和 sha256，提交推到 `windows-0.1.x`。**别把 `windows-0.1.x` 并进 `windows`**（你们推前要 rebase，带着合并提交会出事）：发布后审查方并。
 
+**Windows 验收（2026-11-04，`windows-0.1.x` 到 `df0e466`，没发布、没打 tag）**：
+
+- **截图完闪一下 → 找到了，是「已复制截图」那条提示第一次露面时白闪**：0.1.0（`34e37df`）、0.1.1（`557181b`）、windows（`835e9fb`）各打一份 Release AOT
+  探针包（临时探针，没提交）：主屏铺一张自己的静态色块图案，程序里开截图、定选区、复制（不发按键；复制那一步不写系统剪贴板，免得进用户真的剪贴板历史），
+  WGC 逐帧录整块主屏（KITTY_HUD_CAPTURE=1 放开提示 / 角落卡的不进截图），每帧量提示、角落卡两块的平均色。**三份一样**：遮罩一帧收掉、角落卡淡入都干净；
+  底部提示先**黑**约 150 ms，再**跳到近白（242–249）**，约 270 ms 才暗到深色亚克力（70）。同一进程里第二条提示没有白（44 淡到 70）；取消截图那条路三份都干净。
+  - 原因：提示窗口到第一次 `ShowCore` 才设 `_root.RequestedTheme`，亚克力接上时按的是系统主题。这台机器系统浅色、App 设了深色，第一次露面从浅色过渡到深色。
+  - 修：`a8b96c7`（建窗口时就设深浅色，一行），`git cherry-pick -x` 到 windows；0.1.2 更新日志补一条（`df0e466`）。同一探针：原样「黑 → 242 → 70」，修后「黑 → 52 → 70」。
+  - **没修的**：每次复制提示都先黑约 150–200 ms（复制那会儿 UI 线程忙，XAML 还没画上），三个版本都有、不是回归。试过启动后隐身预热提示窗口：
+    只去掉了空闲时第一条的一帧黑，复制时照样黑，还要处理层级，热修里没留。
+  - 用户今天 17:31 那三次截图日志里没有复制、没有存储（是取消掉的），取消那条路录出来是干净的。**0.1.2 装上以后如果还闪，要问用户闪的是哪一块、在复制还是取消之后。**
+  - 只看了 WGC 录下来的帧，没请用户用眼睛看修后的样子。
+- **编译**：Debug x64、Release AOT x64 / ARM64 零警告，`dotnet test` 481 个全过。`project.assets.json`：`Microsoft.DotNet.ILCompiler`、`runtime.win-x64 / win-arm64.Microsoft.DotNet.ILCompiler`、
+  `Microsoft.NETCore.App.Runtime.win-x64 / win-arm64`、`Microsoft.NETCore.App.Runtime.NativeAOT.win-x64 / win-arm64` 都是 10.0.14；两个架构的 exe 里是 `10.0.14+0427b9a`。
+  还剩 10.0.13 的只有 `Microsoft.NET.ILLink.Tasks`（编译期的裁剪器）、`Microsoft.NETCore.App.Host`、AspNetCore / WindowsDesktop 的运行时包（列在下载里，不进 AOT 的 exe）。
+- **窗口录屏的内存**：把 windows 上的 `RecordMemoryProbe` 临时拷进 0.1.1 和 0.1.2 的探针包（没提交），同一进程连录 3 次 640 × 360 的窗口（帧是 626 × 353，走 WgcScaler），
+  专用工作集：0.1.1 是 32.9 → 49.8 → 73.8 → 98.1 MB（每次 +24 MB、不回落）；0.1.2 是 33.0 → 48.9 → 50.6 → 51.1 MB。三个文件都存下了（151 帧，重封装成功）。
+  正式包 `--record-test=8 --record-resize` 也录了三次，都 `record.saved`。
+- **打包**：`build-release.ps1`（x64 解压跑了 `--smoke`）。exe 里有内置智谱 key（只数了出现次数），版本 `0.1.2+df0e466`。产物在 `kitty-win-012\windows\build\release\0.1.2\`：
+  - `KittyTools-0.1.2-windows-x64.zip`  `01f471277363a1cf9f2a3b069069c8f29ab66702013815ae3112d066244c5caf`
+  - `KittyTools-0.1.2-windows-x64-setup.exe`  `8f00c1f8315bcf7c3809b90bd24f869345d0e5589f393777670e285242851b76`
+  - `KittyTools-0.1.2-windows-arm64.zip`  `ead741e6485ee7075b27540135def09a2382284888120c55b817e342a10db7b5`
+  - `KittyTools-0.1.2-windows-arm64-setup.exe`  `060fc086c0275fd4386b5b05f2178aa5356eab90d60aaedbe5d48d9f2d05bf9b`
+- **更新**：新包 `--update-live=0.1.1` 过（exit 0，下了 32270403 字节、sha256 对得上）。0.1.1 的 x64 zip 解压到临时目录当「已安装的 0.1.1」，探针档 +
+  `--update-test` + `KITTY_UPDATE_FEED`（本机假发布列表，`file://` 指这次的 zip）+ `KITTY_UPDATE_APPLY=1`：`update.check newer=True version=0.1.2` →
+  `update.installed files=95` → 重开 `update.relaunched version=0.1.2 removed-old=72`，exe 变成 `0.1.2+df0e466`；23 个 `.old` 留到下次（旧进程还在退，第 6 批记过，原来就有）。
+  没碰真 GitHub 的发布、没碰 `D:\Apps\Kitty Tools`。
+
 ### 0.2.0 第 6 批：F4 F7 F8 F9 F10 + 录屏尺寸 → 已写（审查方，`git log --grep "PLAN-v11 第 6 批"`，没编译）
 
 用户 2026-11-03 定：0.2.0 先从第 6 批写（第 5 批 F1–F3 要和 mac 0.8.0 同一份规格，mac 还没开始，往后放）。
