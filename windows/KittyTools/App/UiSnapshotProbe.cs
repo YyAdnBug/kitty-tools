@@ -627,6 +627,13 @@ internal static class UiSnapshotProbe
                 await ShootSettingsWindowAsync(settings, "settings-translate-service", dark, directory);
             }
 
+            // PLAN-v11 第 7 批：截图页（带指针、隐藏桌面图标两个开关）、录制页（隐藏桌面图标、录哪个麦克风）整页。
+            settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 1900));
+            settings.ShowPage(welcome: false, "screenshot");
+            await RenderWindowAsync(settings, "settings-screenshot", dark, directory);
+            settings.ShowPage(welcome: false, "record");
+            await RenderWindowAsync(settings, "settings-record", dark, directory);
+
             settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 1300));
             settings.ShowPage(welcome: false, "hotkeys");
             await RenderWindowAsync(settings, "settings-hotkeys", dark, directory);
