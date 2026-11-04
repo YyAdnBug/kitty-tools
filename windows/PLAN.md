@@ -71,7 +71,7 @@
 | 选区几何（比例、中心、吸附、像素换算） | `Screenshot/RegionSelector.swift` | `SelectionGeometryTests.swift` |
 | 版本号和发布筛选 | `App/Updater.swift` | `UpdaterTests.swift` |
 
-- **只读行为的规则章节**（在 `.cursor/rules/` 下）：mac-clipboard §1–§3（数据、采集顺序、搜索），mac-translate §1–§5（语言、服务、接口约束、流式和取消、入口），mac-overlay-panel §2（自动隐藏和 Esc）、§6（划词时序）、§8（截图框选）。讲 AppKit 的部分跳过。
+- **只读行为的规则章节**（在 `.claude/skills/` 下）：mac-clipboard §1–§3（数据、采集顺序、搜索），mac-translate §1–§5（语言、服务、接口约束、流式和取消、入口），mac-overlay-panel §2（自动隐藏和 Esc）、§6（划词时序）、§8（截图框选）。讲 AppKit 的部分跳过。
 
 ## 4. 架构与文件
 

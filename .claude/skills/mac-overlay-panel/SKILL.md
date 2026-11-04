@@ -5,7 +5,7 @@ description: 原生分支 macOS 热键浮层规范（OverlayPanel、全局热键
 
 # mac-overlay-panel
 
-动手前先读同目录 `rule.mdc` 全文（正文唯一数据源：`.cursor/rules/mac-overlay-panel.mdc`）。
+动手前先读同目录 `rule.md` 全文。
 
 红线速查：
 - 浮层只用 `OverlayPanel`；显示只走 `present()`，永远不对浮层 `NSApp.activate`。（例外六个：截图框选遮罩 `SelectionOverlay` 见 rule §8、钉图 `PinPanel` 见 §9、长截图面板 `ScrollCapturePanel` 见 §10、状态屏的全屏面板 `StatusScreenPanel` 见 §11、便签屏幕边缘那叠的面板 `NoteDeckPanel` 和浮动便签的面板 `NoteFloatPanel` 见 §12）

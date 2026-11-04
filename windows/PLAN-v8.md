@@ -4,7 +4,7 @@
 
 - **谁做**：审查方（Claude，在 Mac 上，**不编译**）写代码推上来；Windows 上的 agent 编译、跑单测、截图、手测，编译错直接修，在 `REVIEW.md`「v8 分工」下面记一句。和 PLAN-v7 并行：v7 归你们，v8 归审查方，文件归属见 `REVIEW.md`。
 - **规矩**：`AGENTS.md` 红线照旧；「和 mac 版统一什么」那两张单子照旧（功能、行为、数据跟 mac，窗口外壳、字体、图标字体、系统控件跟 Windows）。
-- 规格来源：mac 的 `.cursor/rules/mac-overlay-panel.mdc`（截图历史、标注遮罩两条）、`mac-whisker-capture.mdc`（截图历史窗口、标注遮罩）、`macos/KittyTools/Screenshot/ShotHistory*.swift`、`AnnotateOverlay.swift`、`ScrollCanvas.swift`、`Settings/ShortcutsSheet.swift`。只照抄行为和数值。
+- 规格来源：mac 的 `.claude/skills/mac-overlay-panel/rule.md`（截图历史、标注遮罩两条）、`mac-whisker/capture.md`（截图历史窗口、标注遮罩）、`macos/KittyTools/Screenshot/ShotHistory*.swift`、`AnnotateOverlay.swift`、`ScrollCanvas.swift`、`Settings/ShortcutsSheet.swift`。只照抄行为和数值。
 
 ## 1. 还差什么（对照 mac 0.7.0）
 
@@ -60,7 +60,7 @@
 
 ### 第 5 批：提示带按钮、鼠标停上去展开（G4，照 mac「刘海岛交互」里和刘海无关的那部分）
 
-规格来源：mac `.cursor/rules/mac-whisker.mdc` §「S2 刘海岛」的「能交互」一段（无刘海屏那种胶囊），`macos/KittyTools/Shell/Island.swift`。
+规格来源：mac `.claude/skills/mac-whisker/rule.md` §「S2 刘海岛」的「能交互」一段（无刘海屏那种胶囊），`macos/KittyTools/Shell/Island.swift`。
 
 - **H9 接不接鼠标**：窗口平时照旧点得穿（`WS_EX_TRANSPARENT`）；提示开着时每 33 ms 看一次指针，**指针动过、落在画出来的形状上**才去掉 `WS_EX_TRANSPARENT` 接鼠标，移出形状就加回去（透明处照旧点穿）；提示冒在一动不动的指针下面不算悬停。只有提示开着时才看指针，收起就停。
 - **H10 悬停展开**：停住计时，往下长成卡片（island 弹簧；合上用 retract；关了动画效果时 0.2 s 直接换）：第一行和收着时同高（前导 + 标题 + 细进度条 + 按钮 + ×），完整详情折在下面最多 4 行（13、white 0.55，和标题左对齐）；卡片至少和收着那一行一样宽、最宽 460，圆角 18（收着时就是胶囊）。离开后合回一行，接着走剩下的时间（至少 1.5 s）再收；进行中的离开就合回一行、继续挂着。

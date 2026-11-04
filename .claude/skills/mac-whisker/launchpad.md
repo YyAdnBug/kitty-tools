@@ -1,13 +1,7 @@
----
-description: Whisker 的启动台皮肤：模糊的壁纸、图标网格的尺寸和间距、名字、页点、搜索框、打开 / 收起、翻页跟手、文件夹展开、抖动、减弱动态效果和无障碍
-globs: macos/KittyTools/Launchpad/**,macos/KittyTools/Settings/LaunchpadTab.swift
-alwaysApply: false
----
-
 # mac-whisker-launchpad：启动台的长相和动效
 
 启动台（第八族，2026-10-18）是 Whisker 的第四块地方：不是 Panel / HUD / Island 三种皮肤里的哪一种，是**一块盖满屏的
-模糊壁纸**。长相照 macOS 15（2026-10-18 真机反馈「差得多」之后按官方截图量的比例重排，下面的数都是那一轮的）。核心刻度（圆角、字号、七条弹簧、无障碍）照 `mac-whisker.mdc`；这一篇只写它自己的数。家族色 `Style.Family.launchpad`
+模糊壁纸**。长相照 macOS 15（2026-10-18 真机反馈「差得多」之后按官方截图量的比例重排，下面的数都是那一轮的）。核心刻度（圆角、字号、七条弹簧、无障碍）照 `mac-whisker`；这一篇只写它自己的数。家族色 `Style.Family.launchpad`
 （`systemMint`；设置页头、快捷键页、速查表、菜单栏）。
 
 ## 1. 底和层次

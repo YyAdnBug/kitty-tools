@@ -1,12 +1,6 @@
----
-description: Whisker 各界面规范 · 状态屏（全屏告示：三种样式、告示大字、透出样式的 HUD 底板、退出提示与进度环、触碰时的晃动、防残影、进出与无障碍；设置 › 状态屏和速查表页头）。先读 mac-whisker.mdc 核心，改状态屏界面再读本文件
-globs: macos/KittyTools/StatusScreen/**,macos/KittyTools/Settings/StatusScreenTab.swift,macos/KittyTools/Settings/StatusPresetDetail.swift
-alwaysApply: false
----
-
 # mac-whisker · 状态屏
 
-2026-10-10 立项（PLAN §10「状态屏」，拍板页 https://claude.ai/artifact/NRnPSmoeRo989G16ZEhkxp ）。先读核心 `mac-whisker.mdc`（原则、皮肤、刻度、动效、无障碍、验收）再读本文件；文中的 §1–§11 指核心的章节。窗口行为、事件拦截、退出判断的规矩在 `mac-overlay-panel.mdc` §11，本文件只管长什么样、怎么动。对标（只在这里写，界面里不提）：KeyboardCleanTool、CleanLock、Mole 的清洁模式、Leave My Mac Alone。
+2026-10-10 立项（PLAN §10「状态屏」，拍板页 https://claude.ai/artifact/NRnPSmoeRo989G16ZEhkxp ）。先读核心 `mac-whisker`（原则、皮肤、刻度、动效、无障碍、验收）再读本文件；文中的 §1–§11 指核心的章节。窗口行为、事件拦截、退出判断的规矩在 `mac-overlay-panel` §11，本文件只管长什么样、怎么动。对标（只在这里写，界面里不提）：KeyboardCleanTool、CleanLock、Mole 的清洁模式、Leave My Mac Alone。
 
 ## 6. 各界面规范 · 状态屏
 

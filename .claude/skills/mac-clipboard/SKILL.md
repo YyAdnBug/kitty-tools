@@ -5,7 +5,7 @@ description: 原生分支剪贴板历史规范（采集、存储、上限、搜�
 
 # mac-clipboard
 
-动手前先读同目录 `rule.mdc` 全文（正文唯一数据源：`.cursor/rules/mac-clipboard.mdc`）。
+动手前先读同目录 `rule.md` 全文。
 
 红线速查：
 - 留下的条目只看 `ClipItem.isRetained`（收藏 ∨ 片段；收藏夹里的都是收藏，备注不算）；天数与图片占用、清空只动普通历史。

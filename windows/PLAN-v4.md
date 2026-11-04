@@ -4,8 +4,8 @@
 
 - **行为以 mac 版为准**，只当行为规格读，实现照 Windows 的做法：
   - `macos/KittyTools/Screenshot/ScreenRecorder.swift`、`AudioRecorder.swift`、`RecordingHUD.swift`、`InputOverlay.swift`、`VideoExport.swift` 的文件头；
-  - `.cursor/rules/mac-overlay-panel.mdc` §8 里录屏和授权的条目、§10 的「点按圈」「按键提示」；
-  - `.cursor/rules/mac-whisker-capture.mdc` 里录制条、HUD、点按圈、按键胶囊的样子。
+  - `.claude/skills/mac-overlay-panel/rule.md` §8 里录屏和授权的条目、§10 的「点按圈」「按键提示」；
+  - `.claude/skills/mac-whisker/capture.md` 里录制条、HUD、点按圈、按键胶囊的样子。
 - 界面守 `PLAN-v2.md` §3 的视觉规矩：截图家族的控件一律品牌粉，深色 HUD 皮肤。
 - 下面「定下来的」都已经定了，不用再问。
 

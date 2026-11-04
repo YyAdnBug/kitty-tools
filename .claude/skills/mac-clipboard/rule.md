@@ -1,9 +1,3 @@
----
-description: 原生分支剪贴板历史规范（采集、存储、上限、搜索、面板交互与视觉、实测坑）
-globs: macos/KittyTools/Clipboard/**,macos/KittyTools/Storage/Database.swift,macos/KittyTools/Storage/Backup.swift,macos/KittyTools/Notes/NotesBackup.swift,macos/KittyTools/Settings/ClipboardTab.swift
-alwaysApply: false
----
-
 # mac-clipboard：剪贴板历史红线
 
 代码：`Clipboard/`（ClipItem、ClipboardStore、ClipboardWatcher、ClipboardFilter、ImageStore、OCR、Search、ContentForm、Snippet、ClipboardPanelModel + 各视图）、`Storage/Database.swift`、`Storage/Backup.swift`。
@@ -86,7 +80,7 @@ alwaysApply: false
 - ⌘Y 放大预览（`QuickLookView`）：单独一个 `OverlayPanel` 实例，内容是完整检查器（`PreviewView` enlarged：来源 App 彩色页眉、页脚胶囊（粘贴、复制、按类型的第 3 个：链接「打开」、文件「在访达中显示」、图片「钉到屏幕」、JSON「美化 / 原文」、其余「收藏」，体检 D2；操作 ⌘K）、可选中文字；图片带识别文字，单个文件嵌 `QLPreviewView`、多个文件 `FileGrid`）；图片在图片区里居中（2026-10-01 用户报告图片贴在右边：图片区那个 `ZStack` 的 `.topTrailing` 对齐是给宽×高胶囊用的，`.fit` 的图片比区域窄 / 矮时也跟着贴到右上角，所以图片自己先撑满再居中），窗口尺寸 `QuickLookView.idealSize(for:form:within:)`：图片放不下时等比缩进 `OverlayPanel.cardLimit`（所在屏可见区的 90%，`centeredFrame` 用同一个值），窗口跟着图片的比例走，到最小 560 × 420 为止——不要回到「先给原尺寸、再让 `centeredFrame` 宽高各夹各的」，被高度卡住的整屏截图窗口还是 90% 屏宽、图片两边空出几百点；尺寸在 AppDelegate 的 `quickLookFrame(for:)` 一处算（打开和换条目共用）；正文和识别文字都是 `CopyPlainTextView`：⌘C（和右键「拷贝」）只拷选中的纯文本，经 `copySelectedText` → `Paster.write(string:record: true)` 写（watcher 跳过：来源不会记成前台的别的 App、不触发复制即译，也不带语法着色 / 黄底 / 放大字号的 RTF），记成一条无来源的新条目，结果走岛（体检 B11）；打开大卡时置 `isBrowsing`，新条目进来大卡不跳；起点 frame 由选中高亮按前缀和上报（= 透镜的底，透镜关掉 / 多选时是选中行那一格；按选中项换一个上报视图，一出现就报终点位置，换下去的用 `.transition(.identity)` 立刻拿掉——跟着选中动画淡出的话，↓ 带出滚动时它还在报旧 id、拿掉时再把新的清成 nil；不交给行报：行换分组时新旧两行并存，旧行退场会把位置冲掉）。**不用系统 `QLPreviewPanel`**：它没有 `.nonactivatingPanel`，当 key 时键盘不再归本 App 的非激活浮层、点它会激活本 App（前台 App 变成自己，粘贴会落空）。预览浮层 `becomesKeyOnlyIfNeeded`（只有点里面的文字才当 key），剪贴板面板一直是 key；收起时（onHide）把 key 还给剪贴板面板。开筛选 / 操作面板、对话框、剪贴板面板收起、粘贴时预览直接消失（不缩回）。
 
 ## 5. 视觉
-- 按 Whisker（`mac-whisker.mdc` §6 剪贴板 = 透镜指令条 Lens Bar，尺寸、常数和动效以那里为准）：720 宽、顶部锚定（和启动器同位置）、高度按条数伸缩 ≤ 520；56 pt 搜索线里是放大镜 + 粉色标签 + 输入框；单列满宽、行 40、24 pt 图标块，⌘1–9 键帽按住 ⌘ 才出现；**选中是列表背后一块滑动的中性高亮，就是透镜的底，不填强调色、不反白**（按前缀和定位，键盘 snap、连发与筛选变化不动画、点选 glide）；底栏「条数 / 提示 ｜ 粘贴 ↩ · 操作 ⌘K ｜ 齿轮 图钉」；筛选面板和 ⌘K 共用 `Shell/ActionMenu.swift`；来源 App 彩色页眉只在 ⌘Y 大卡（`AppIcons.accentColor` → `PreviewView.headerStyle`：白字不到 4.5:1 时，偏暗的底色压暗到够、偏亮的改黑字）。
+- 按 Whisker（`mac-whisker` §6 剪贴板 = 透镜指令条 Lens Bar，尺寸、常数和动效以那里为准）：720 宽、顶部锚定（和启动器同位置）、高度按条数伸缩 ≤ 520；56 pt 搜索线里是放大镜 + 粉色标签 + 输入框；单列满宽、行 40、24 pt 图标块，⌘1–9 键帽按住 ⌘ 才出现；**选中是列表背后一块滑动的中性高亮，就是透镜的底，不填强调色、不反白**（按前缀和定位，键盘 snap、连发与筛选变化不动画、点选 glide）；底栏「条数 / 提示 ｜ 粘贴 ↩ · 操作 ⌘K ｜ 齿轮 图钉」；筛选面板和 ⌘K 共用 `Shell/ActionMenu.swift`；来源 App 彩色页眉只在 ⌘Y 大卡（`AppIcons.accentColor` → `PreviewView.headerStyle`：白字不到 4.5:1 时，偏暗的底色压暗到够、偏亮的改黑字）。
 - 透镜高度只用按类型的常数（`lensHeight` 查表，文本 90（无换行且 ≤ 60 字的短文本 36；行标题已经原样显示全的 0，见下一条）/ 代码与 JSON 128 / 颜色 72 / 链接 90 / 图片 108 / 文件 76，再加行头 40 + 元信息 22 + 底 8），**不量内在尺寸、不按行数估**：高亮块的前缀和、跟随滚动（共用 `Shell/ListReveal.swift`，mac-whisker §4）、窗口的透镜预留都靠它算得准；正文放进固定高度的 frame 裁切 + 底部渐隐。上下键不改窗口高度。
 - **同一句话不画两遍**（2026-10-01 用户指出短文本展开后显示两个）：行标题已经把整条文本原样显示全的（`ClipRowView.showsWholeText`：去掉首尾空白后和标题一字不差，且标题列最窄时也放得下），透镜没有正文区、只剩元信息行（总高 70），有搜索词时标题也不摘录（摘录会把开头藏起来，而这时没有正文区可看）；标题列放不下的一行字照旧给两行高的正文。**这个判定只能看条目自己的数据**（文本、带格式 / 片段 / 收藏）：⌘数字键帽、常显的滚动条都当它在，不读当前时间、修饰键、系统设置——高亮（面板的 body）和行（`ClipListRow` 的 body）各算各的，条目没变时 SwiftUI 不重算行，输入不纯两边会对不上。宽度预算照着 `ClipRowView` 的布局写（间距、内边距、右侧文字最宽共用常数；右侧「来源 · 多久前」/ 备注那一格是带 `maxWidth` 的 frame，字再短也占满 220，所以标题列最宽 406、最窄 352，再减标记（各连它前面的间距；没收藏时星标连间距都不占），和右侧写了什么无关），改行的布局要跟着改，`ClipboardPanelTests.wholeTitleIsNotTruncated` 把行画出来比像素、锁住「认可的标题没被截断」。已知上限：收藏夹筛选为「全部」时行尾的收藏夹胶囊没算进预算（ponytail 在 `showsWholeText`）。
 - 命中摘录走 `Search.excerpt`（纯函数，单测），只算屏上可见的行；搜索词高亮 systemYellow 0.35。

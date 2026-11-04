@@ -82,7 +82,7 @@ mac 那边也搁着的脚本命令 / 模块化（`macos` 的拍板页，用户�
 
 2026-10-29 用户：「目前点击系统托盘的左键和右键都是打开菜单，需要改成左键可以有一个窗口可以看到所有功能，就是类似一个主界面的功能，windows 也需要一起同步这个功能」。
 拍板页 https://claude.ai/artifact/QFAprVTYcWsbWpRWGbMwS6（17 项，用户「全部按推荐」）。mac 先做（0.7.0，`macos/KittyTools/Shell/HomePanel.swift`、`Shell/StatusItem.swift`，
-规格在 `.cursor/rules/mac-whisker-settings.mdc`「主界面」、`macos/PLAN.md` §10「主界面」），Windows 照下面做；**D2：0.1.0 打完包之后**，0.2.0 性能那批（第 0 批）之后第一个做。
+规格在 `.claude/skills/mac-whisker/settings.md`「主界面」、`macos/PLAN.md` §10「主界面」），Windows 照下面做；**D2：0.1.0 打完包之后**，0.2.0 性能那批（第 0 批）之后第一个做。
 
 **分工（拍板 D3，照本页 D5）**：Core 里的纯函数和单测、文案在 Mac 写（这一批开始时审查方先推上来）；窗口、托盘点击、定位、键盘、焦点交给 Windows 这边边写边验。
 

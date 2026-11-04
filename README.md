@@ -164,4 +164,4 @@ macos/
 └── brand-icons.swift    # 用 CoreGraphics 生成 App 图标、菜单栏图标和 DMG 背景
 ```
 
-开发约定见 [AGENTS.md](./AGENTS.md)，各模块规范见 [.cursor/rules/](./.cursor/rules/)。
+开发约定见 [AGENTS.md](./AGENTS.md)，各模块规范见 [.claude/skills/](./.claude/skills/)。

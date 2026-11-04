@@ -5,7 +5,7 @@ description: 原生分支翻译规范（语言规则、服务分发与钥匙串�
 
 # mac-translate
 
-动手前先读同目录 `rule.mdc` 全文（正文唯一数据源：`.cursor/rules/mac-translate.mdc`）。
+动手前先读同目录 `rule.md` 全文。
 
 红线速查：
 - 语言只在 `Lang.resolve` 解析；发给服务的目标语言必须是具体语言。

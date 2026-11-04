@@ -3,7 +3,7 @@
 2026-10-26。用户要求：「windows 版本的 ui 需要优化，请你出一个优化的方案，尽量保持和 macos 一致」。
 
 - **§1 的 U1–U6 已拍板：2026-10-26 用户「全部按推荐」**。`AGENTS.md`「顺序」第 8 步就是本文第 1–6 批 → 0.7.0。
-- 规格来源是 mac 的 Whisker：核心 `.cursor/rules/mac-whisker.mdc`，加上 `mac-whisker-{clipboard,launcher,translate,capture,settings}.mdc`。只照抄行为和数值，不搬 AppKit 的做法。文中「mac §x」指 Whisker 核心的章节，「mac · 剪贴板」这类指各界面文件。
+- 规格来源是 mac 的 Whisker：核心 `.claude/skills/mac-whisker/rule.md`，加上 `mac-whisker/{clipboard,launcher,translate,capture,settings}.md`。只照抄行为和数值，不搬 AppKit 的做法。文中「mac §x」指 Whisker 核心的章节，「mac · 剪贴板」这类指各界面文件。
 - 本文**取代** PLAN-v2 里和它冲突的条目：D3 剪贴板两栏、§3.6 启动器两行 48；轻提示的语气改成 mac 的圆底符号，不再给整块胶囊换底色。PLAN-v6 第 6 批第 1 项（主题资源）并进本文第 1 批；那一批其余几项（多屏 DPI、无障碍审计、输入法、长截图、R12）还在 v6 里做。
 - 红线不变（`AGENTS.md`）：只用微软的包、Native AOT 零警告、不用 `{Binding}` 和反射、截图只拍自己的窗口。
 - 下文的尺寸单位都是 DIP（epx），mac 的 pt 按 1:1 换算。
