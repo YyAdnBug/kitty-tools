@@ -286,9 +286,11 @@ internal sealed partial class RecordingHud
         var note = RecordingHost.LiveNote;
         _note.Text = note ?? string.Empty;
         _note.Visibility = string.IsNullOrEmpty(note) ? Visibility.Collapsed : Visibility.Visible;
-        ShowSource(_systemIcon, RecordingHost.WithSystemAudio, note?.Contains("系统声音", StringComparison.Ordinal) == true,
+        // 选的麦克风不在、用了系统默认的（F12）：照样在录，图标不染橙。
+        var problem = note == AudioCaptureSet.MicrophoneFallbackText ? null : note;
+        ShowSource(_systemIcon, RecordingHost.WithSystemAudio, problem?.Contains("系统声音", StringComparison.Ordinal) == true,
             Glyphs.Volume, Glyphs.VolumeOff, "系统声音");
-        ShowSource(_microphoneIcon, RecordingHost.WithMicrophone, note?.Contains("麦克风", StringComparison.Ordinal) == true,
+        ShowSource(_microphoneIcon, RecordingHost.WithMicrophone, problem?.Contains("麦克风", StringComparison.Ordinal) == true,
             Glyphs.Microphone, Glyphs.MicrophoneOff, "麦克风");
     }
 

@@ -33,7 +33,15 @@ internal sealed class AudioCaptureSet : IDisposable
 
     public string? Note => _notes.Count == 0 ? null : string.Join("；", _notes);
 
-    public static AudioCaptureSet Open(bool systemSound, bool microphone)
+    /// <summary>
+    /// 录屏选的麦克风不在、用了系统默认的（PLAN-v11 F12）：录制条上的橙字（声音是完整的，所以不进 Note、不弹「没有完整声音」）。
+    /// </summary>
+    public string? FallbackNote { get; private set; }
+
+    public const string MicrophoneFallbackText = "选的麦克风没连着，用的是系统默认的";
+
+    /// <param name="microphoneDevice">录屏选的麦克风（WASAPI 端点 Id，F12）；null = 系统默认（录音一直是 null）。</param>
+    public static AudioCaptureSet Open(bool systemSound, bool microphone, string? microphoneDevice = null)
     {
         var set = new AudioCaptureSet();
         if (systemSound)
@@ -51,7 +59,7 @@ internal sealed class AudioCaptureSet : IDisposable
 
         if (microphone)
         {
-            var mic = WasaCapture.Open(loopback: false, out var error);
+            var mic = WasaCapture.Open(loopback: false, out var error, microphoneDevice);
             if (mic is null)
             {
                 set.MicrophoneDenied = true;
@@ -60,6 +68,10 @@ internal sealed class AudioCaptureSet : IDisposable
             else
             {
                 set._sources.Add(mic);
+                if (mic.FellBack)
+                {
+                    set.FallbackNote = MicrophoneFallbackText;
+                }
             }
         }
 

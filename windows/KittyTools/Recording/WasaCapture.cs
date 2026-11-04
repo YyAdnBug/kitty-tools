@@ -1,6 +1,6 @@
 // 录屏声音的采集（R14）：WASAPI 共享模式。
 // - 系统声音：默认输出设备 + AUDCLNT_STREAMFLAGS_LOOPBACK 回环；
-// - 麦克风：默认输入设备；
+// - 麦克风：默认输入设备；录屏可以指定一个（PLAN-v11 F12，按 WASAPI 端点 Id），它不在时退回默认的（FellBack）；
 // 两路都要求音频引擎转成 48 kHz / 双声道 / float32（AUTOCONVERTPCM + SRC_DEFAULT_QUALITY），
 // 这样混音时不用自己重采样。用轮询（每轮录屏循环里 GetNextPacketSize），不用事件模式：
 // 回环在没有声音播放时不来事件。CsWin32 在 allowMarshaling=false 下生成的是函数指针结构体，AOT 能用。
@@ -45,12 +45,50 @@ internal sealed unsafe class WasaCapture : IDisposable
 
     public bool AccessDenied { get; private set; }
 
+    /// <summary>指定的麦克风打不开（拔了、关了），用的是系统默认的（F12）。</summary>
+    public bool FellBack { get; private set; }
+
     /// <summary>采到的非静音包数和峰值（探针用；0 表示这一路一直没声音）。</summary>
     public long Packets { get; private set; }
 
     public float Peak { get; private set; }
 
-    public static WasaCapture? Open(bool loopback, out string? error)
+    /// <param name="deviceId">麦克风的 WASAPI 端点 Id（F12）；null = 系统默认。回环不看它。</param>
+    /// <summary>按端点 Id 打开一个录音设备；不在、没启用时 null（日志只记错误码，不记设备名）。</summary>
+    private static IMMDevice* OpenEndpoint(IMMDeviceEnumerator* enumerator, string id)
+    {
+        IMMDevice* device = null;
+        try
+        {
+            fixed (char* text = id)
+            {
+                enumerator->GetDevice(new PCWSTR(text), &device);
+            }
+
+            device->GetState(out var state);
+            if ((uint)state == 1) // DEVICE_STATE_ACTIVE
+            {
+                Log.Info("audio.mic-device chosen");
+                return device;
+            }
+
+            Log.Warn($"audio.mic-device-missing state={state}");
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"audio.mic-device-missing hr=0x{ex.HResult:X8}");
+        }
+
+        if (device is not null)
+        {
+            device->Release();
+        }
+
+        return null;
+    }
+
+    /// <param name="deviceId">麦克风的 WASAPI 端点 Id（F12）；null = 系统默认。回环不看它。</param>
+    public static WasaCapture? Open(bool loopback, out string? error, string? deviceId = null)
     {
         var capture = new WasaCapture(loopback);
         var stage = "enumerator";
@@ -63,8 +101,18 @@ internal sealed unsafe class WasaCapture : IDisposable
 
             stage = "endpoint";
             IMMDevice* device = null;
-            enumerator->GetDefaultAudioEndpoint(
-                loopback ? EDataFlow.eRender : EDataFlow.eCapture, ERole.eConsole, &device);
+            if (!loopback && !string.IsNullOrEmpty(deviceId))
+            {
+                device = OpenEndpoint(enumerator, deviceId);
+                capture.FellBack = device is null;
+            }
+
+            if (device is null)
+            {
+                enumerator->GetDefaultAudioEndpoint(
+                    loopback ? EDataFlow.eRender : EDataFlow.eCapture, ERole.eConsole, &device);
+            }
+
             capture._device = device;
 
             stage = "activate";

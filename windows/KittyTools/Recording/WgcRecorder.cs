@@ -138,7 +138,7 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
 
     public string? Note => _note;
 
-    public string? LiveNote => _audio?.Note ?? _note;
+    public string? LiveNote => _audio?.Note ?? _note ?? _audio?.FallbackNote;
 
     public bool MicrophoneDenied => _microphoneDenied;
 
@@ -348,7 +348,7 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
 
             if (_systemAudio || _microphone)
             {
-                _audio = AudioCaptureSet.Open(_systemAudio, _microphone);
+                _audio = AudioCaptureSet.Open(_systemAudio, _microphone, SettingsService.Current.RecordMicrophoneDevice);
                 _note = _audio.Note;
                 _microphoneDenied = _audio.MicrophoneDenied;
             }

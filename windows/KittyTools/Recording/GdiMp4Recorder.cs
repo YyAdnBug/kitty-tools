@@ -207,7 +207,7 @@ internal sealed unsafe class GdiMp4Recorder : IVideoRecorder
 
             if (_systemAudio || _microphone)
             {
-                audio = AudioCaptureSet.Open(_systemAudio, _microphone);
+                audio = AudioCaptureSet.Open(_systemAudio, _microphone, SettingsService.Current.RecordMicrophoneDevice);
                 _audioNote = audio.Note;
                 _microphoneDenied = audio.MicrophoneDenied;
             }

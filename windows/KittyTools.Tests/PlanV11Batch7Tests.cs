@@ -48,4 +48,18 @@ public sealed class PlanV11Batch7Tests
         CollectionAssert.AreEqual(new byte[] { 5, 6, 9, 10 }, new[] { cropped[0], cropped[4], cropped[8], cropped[12] });
         Assert.ThrowsExactly<ArgumentOutOfRangeException>(() => ImageCrop.Crop(bgra, width, height, new CropRect(3, 0, 2, 1)));
     }
+
+    [TestMethod]
+    public void EndpointIdComesOutOfTheDeviceInterfacePath()
+    {
+        var path = @"\\?\SWD#MMDEVAPI#{0.0.1.00000000}.{5d6b3a4c-1f2e-4a5b-9c8d-7e6f5a4b3c2d}#{2eef81be-33fa-4800-9670-1cd474972c3f}";
+        Assert.AreEqual("{0.0.1.00000000}.{5d6b3a4c-1f2e-4a5b-9c8d-7e6f5a4b3c2d}", AudioEndpoints.EndpointId(path));
+        // 已经是端点 Id、别的设备类、空的：认不出
+        Assert.IsNull(AudioEndpoints.EndpointId("{0.0.1.00000000}.{5d6b3a4c-1f2e-4a5b-9c8d-7e6f5a4b3c2d}"));
+        Assert.IsNull(AudioEndpoints.EndpointId(@"\\?\USB#VID_046D&PID_0825#123#{65e8773d-8f56-11d0-a3b9-00a0c9223196}"));
+        Assert.IsNull(AudioEndpoints.EndpointId(null));
+        Assert.IsTrue(AudioEndpoints.IsPresent("{0.0.1.00000000}.{AB}", new[] { "{0.0.1.00000000}.{ab}" }));
+        Assert.IsFalse(AudioEndpoints.IsPresent(null, new[] { "{0.0.1.00000000}.{ab}" }));
+        Assert.IsFalse(AudioEndpoints.IsPresent("{0.0.1.00000000}.{cd}", new[] { "{0.0.1.00000000}.{ab}" }));
+    }
 }

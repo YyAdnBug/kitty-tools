@@ -215,6 +215,12 @@ internal sealed class Settings
     public bool RecordMicrophone { get; set; }
 
     /// <summary>
+    /// 录屏用哪个麦克风（PLAN-v11 F12，mac X18）：WASAPI 的端点 Id，null = 跟随系统（默认）。只管录屏，录音照旧用系统默认的。
+    /// 选的设备录的时候不在（拔了、关了）就用系统默认的，录制条上提示。
+    /// </summary>
+    public string? RecordMicrophoneDevice { get; set; }
+
+    /// <summary>
     /// 按录音快捷键后立即开始；关着时先在屏幕底部出控制条，点「开始」或再按一次才录（REVIEW R28）。
     /// 默认关（PLAN-v9 V4，同 mac：先让人看见录的是哪一路、电平动不动）。
     /// </summary>

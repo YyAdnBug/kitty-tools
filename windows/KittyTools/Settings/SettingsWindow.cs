@@ -2193,6 +2193,64 @@ internal sealed partial class SettingsWindow : Window
         return true;
     }
 
+    /// <summary>
+    /// 录屏用哪个麦克风（PLAN-v11 F12，mac X18）：先只有「跟随系统」（和选过、现在没连着的那个），设备列出来再补上；
+    /// 选了存 WASAPI 的端点 Id。录音不看它。
+    /// </summary>
+    private void AddMicrophoneDeviceRow()
+    {
+        var saved = SettingsService.Current.RecordMicrophoneDevice;
+        var ids = new List<string?> { null };
+        var names = new List<string> { "跟随系统" };
+        if (!string.IsNullOrEmpty(saved))
+        {
+            ids.Add(saved);
+            names.Add("选过的麦克风（没连着）");
+        }
+
+        var combo = SettingsUi.Combo(names.ToArray(), ids.Count - 1, _ => { }, "录屏用的麦克风");
+        var filling = true;
+        combo.SelectionChanged += (_, _) =>
+        {
+            if (filling || combo.SelectedIndex < 0 || combo.SelectedIndex >= ids.Count)
+            {
+                return;
+            }
+
+            SettingsService.Current.RecordMicrophoneDevice = ids[combo.SelectedIndex];
+            SettingsService.Save();
+        };
+        _content.Children.Add(SettingsUi.Card("录哪个麦克风", "选的设备录的时候没连着，就用系统默认的，录制条上会提示", combo));
+        _ = FillAsync();
+
+        async Task FillAsync()
+        {
+            var devices = await AudioDevices.MicrophonesAsync();
+            ids.RemoveRange(1, ids.Count - 1);
+            names.RemoveRange(1, names.Count - 1);
+            foreach (var (id, name) in devices)
+            {
+                ids.Add(id);
+                names.Add(name);
+            }
+
+            if (!string.IsNullOrEmpty(saved) && !AudioEndpoints.IsPresent(saved, devices.Select(device => device.Id)))
+            {
+                ids.Add(saved);
+                names.Add("选过的麦克风（没连着）");
+            }
+
+            combo.Items.Clear();
+            foreach (var name in names)
+            {
+                combo.Items.Add(name);
+            }
+
+            combo.SelectedIndex = Math.Max(0, ids.FindIndex(id => string.Equals(id, saved, StringComparison.OrdinalIgnoreCase)));
+            filling = false;
+        }
+    }
+
     /// <summary>截图、录屏时隐藏桌面图标（PLAN-v11 F6）：截图页和录制页各一行，改的是同一个设置。</summary>
     private void AddHideDesktopIconsToggle()
         => AddToggle("截图、录屏时隐藏桌面图标", "截的那一下、录的整段藏起桌面上的图标，完了自己显示回来",
@@ -2449,13 +2507,14 @@ internal sealed partial class SettingsWindow : Window
                 SettingsService.Current.RecordSystemSound = value;
                 SettingsService.Save();
             });
-        AddToggle("麦克风", "录默认麦克风，和系统声音混成一条音轨",
+        AddToggle("麦克风", "和系统声音混成一条音轨",
             SettingsService.Current.RecordMicrophone,
             value =>
             {
                 SettingsService.Current.RecordMicrophone = value;
                 SettingsService.Save();
             });
+        AddMicrophoneDeviceRow();
         _content.Children.Add(SettingsUi.Footnote(
             "60 fps 更顺，文件大约大一半；大屏上可能录不满 60。标准清晰度把画面长边缩到 1920，大屏、高分屏上文件小一半多，小字会糊一些；" +
             "录好的也可以在角落的卡上点「压缩」另存一份小的。框一块区域、或在遮罩里单击一扇窗口录它，倒数完开始；录的时候选区外一圈粉线，线不进画面。" +
