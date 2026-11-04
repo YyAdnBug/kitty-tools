@@ -15,7 +15,10 @@ struct FeatureTests {
   /// 不归哪个功能
   @Test func everyActionBelongsToOneFeature() {
     for feature in Feature.allCases {
-      #expect(HotKeyAction.allCases.contains { $0.feature == feature } == (feature != .dockPreview))
+      // ponytail: 提醒的快捷键「新建提醒」第 3 批加（拍板 D5），之后把它从这里拿掉
+      #expect(
+        HotKeyAction.allCases.contains { $0.feature == feature }
+          == (feature != .dockPreview && feature != .reminders))
       #expect(feature.page.rawValue == feature.rawValue)
     }
     #expect(HotKeyAction.screenshotTranslate.feature == .translate)

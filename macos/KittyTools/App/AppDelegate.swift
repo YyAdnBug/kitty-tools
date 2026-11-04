@@ -149,6 +149,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     screen.isBusy = { [unowned self] in isCapturing || isReadingSelection }
     return screen
   }()
+  /// 提醒（PLAN §10「提醒」）：到点挂在刘海岛上。起停跟着功能开关（applyFeatures），列表变了看着偏好跟上
+  private lazy var reminders: ReminderCenter = {
+    let center = ReminderCenter()
+    center.island = island
+    return center
+  }()
   /// 选状态的面板（Z13a，按状态屏的全局快捷键时先出它；StatusScreen/StatusPicker.swift）：选了就立刻收起面板，
   /// 再进入——进不去（没授权、正在录屏…）也照常收起，原因由 StatusScreen.enter 说。那张卡片在屏幕上的位置一起给过去，
   /// 画面从它长到整屏（Z14a）
@@ -646,6 +652,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             images: { [unowned self] in noteStore?.images },
             island: island))
       case .statusScreen: AnyView(StatusScreenTab())
+      case .reminders: AnyView(RemindersTab())
       case .dockPreview: AnyView(DockPreviewTab())
       case .translate:
         AnyView(
@@ -860,7 +867,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     NotificationCenter.default.addObserver(
       forName: UserDefaults.didChangeNotification, object: UserDefaults.standard, queue: .main
     ) { [weak self] _ in
-      MainActor.assumeIsolated { self?.applyFeatures() }
+      MainActor.assumeIsolated {
+        guard let self else { return }
+        self.applyFeatures()
+        // 提醒列表在偏好里：设置页改了、导入了、它自己删掉响过的一次性提醒，都从这里跟上（只比列表那一个键）
+        if Feature.reminders.isOn { self.reminders.defaultsChanged() }
+      }
     }
     // 新装、系统更新后识字模型要现场编译一回（约一分钟）：用得到识字的功能开着就趁早在后台子进程里编好，
     // 第一次截图翻译 / 识字不用干等（OCR.prepare；编好了它直接返回）
@@ -923,6 +935,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // 晾衣绳（第十族）：截图开着、而且「截完图放哪」选的就是它才听鼠标（start 自己再查一次落点，
     // 选了别的就当场取下、收起）；截图关掉时也取下全部（挂着的标记本来就不跨重启）
     if Feature.screenshot.isOn { clothesline.start() }
+
+    if turnedOn.contains(.reminders) { reminders.start() }
 
     if turnedOn.contains(.dockPreview) {
       dockPreview.start()
@@ -988,6 +1002,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if turnedOff.contains(.launchpad) { launchpad.turnOff() }
     if turnedOff.contains(.statusScreen) { statusPicker.panel?.hide() }
     if turnedOff.contains(.dockPreview) { dockPreview.stop() }
+    if turnedOff.contains(.reminders) { reminders.stop() }
     idleReclaim.schedule()  // 关掉的功能占着的缓存跟着还
   }
 

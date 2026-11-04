@@ -62,14 +62,16 @@ struct SettingsArchiveTests {
 
   // MARK: 导出
 
-  /// 注册了默认值的键都认得出类型（新加一个别的类型的设置时这里会挂），外加三个没有默认值的：两个字符串键、
-  /// 状态屏的状态列表；状态键、截图的存储文件夹、快捷键和两张列表不按偏好导出
+  /// 注册了默认值的键都认得出类型（新加一个别的类型的设置时这里会挂），外加四个没有默认值的：两个字符串键、
+  /// 状态屏的状态列表、提醒列表（2026-11-04）；状态键、截图的存储文件夹、快捷键和两张列表不按偏好导出
   @Test func everyRegisteredDefaultIsExportable() {
     let kinds = SettingsArchive.kinds
     // 启动台的布局是用户的数据，单独收（F9）：不按普通字符串、不在 kinds 里，但照样能导出
     #expect(
       Set(kinds.keys).isSuperset(of: Prefs.defaults.keys.filter { $0 != Prefs.launchpadLayout }))
-    #expect(kinds.count == Prefs.defaults.count - 1 + 3)
+    #expect(kinds.count == Prefs.defaults.count - 1 + 4)
+    #expect(kinds[Prefs.reminders] == .reminders)
+    #expect(kinds[Prefs.remindersState] == nil)
     #expect(kinds[Prefs.launchpadLayout] == nil)
     #expect(kinds[Prefs.translateSource] == .string)
     #expect(kinds[Prefs.statusScreenPresets] == .statuses)

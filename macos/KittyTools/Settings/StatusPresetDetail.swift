@@ -127,8 +127,9 @@ struct StatusPresetDetail: View {
 }
 
 /// 图标格子：一格「无」+ StatusEmoji.choices 的 16 个表情（静止画面），一行 7 个；选中的外面一圈强调色
-/// （同通用页的外观缩略图）。深色外观下颜色很深的那两个表情（开会、黑猫）的格子换成浅底（StatusEmoji.plated）
-private struct SymbolGrid: View {
+/// （同通用页的外观缩略图）。深色外观下颜色很深的那两个表情（开会、黑猫）的格子换成浅底（StatusEmoji.plated）。
+/// 提醒的详情页也用它（ReminderDetail）
+struct SymbolGrid: View {
   @Binding var selection: String
   @Environment(\.colorScheme) private var scheme
 

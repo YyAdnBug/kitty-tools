@@ -530,6 +530,8 @@ struct SnapshotProbeTests {
       case .notes: AnyView(NotesTab {})
       // 自带的三个状态（固定的列表：不读用户改过的那份）
       case .statusScreen: AnyView(StatusScreenTab(fixed: StatusPreset.builtIn))
+      // 三条示例（固定的列表：不读用户的）
+      case .reminders: AnyView(RemindersTab(fixed: Reminder.examples))
       // 私有接口在不在按固定的「都在」画（图不跟着机器变）
       case .dockPreview: AnyView(DockPreviewTab(missing: []))
       case .translate:
@@ -1140,6 +1142,104 @@ struct SnapshotProbeTests {
   /// 速查表的新页头（跳转胶囊两行）和拉长的全表（看「状态屏」那一组）、快捷键页（「进入排在最前面的状态」那一行）。
   /// 第 5 批：列表行和详情页页头是表情的静止画面（没选的是家族色块）、详情页的图标格子是「无」+ 16 个表情、
   /// 页里多了「动画」一组（「告示上的动画」开关）、关于页最底下那行素材出处
+  /// 提醒（PLAN §10「提醒」第 1 批）：设置 › 提醒的列表（浅深、空的）、各种详情页、刘海岛上挂着的提醒（收着 / 展开、
+  /// 刘海屏 / 胶囊、几条合成一条、错过的）。图都以 reminders- 开头，几秒钟：
+  /// -only-testing:'KittyToolsTests/SnapshotProbeTests/reminders()'
+  @Test(.enabled(if: directory != nil)) func reminders() throws {
+    let out = try #require(Self.directory)
+    try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
+    Prefs.registerDefaults()
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = .current
+    // 摘要里的「今天 / 明天」按固定的现在画（2026-11-02 周一 8:00）
+    let now = calendar.date(from: DateComponents(year: 2026, month: 11, day: 2, hour: 8))!
+    var meeting = Reminder(
+      id: "meeting", title: "周会", detail: "带上周报", symbol: "busts",
+      schedule: .init(kind: .weekly, time: 10 * 60, days: [2]))
+    meeting.nagMinutes = 5
+    var rent = Reminder(
+      id: "rent", title: "交房租", schedule: .init(kind: .monthly, time: 9 * 60, day: 31),
+      alert: .full)
+    rent.sound = .speak
+    let call = Reminder(
+      id: "call", title: "给妈妈打电话",
+      schedule: .init(kind: .once, date: now.addingTimeInterval(26 * 3600)))
+    let nap = Reminder(
+      id: "nap", title: "午休", symbol: "sleeping-face",
+      schedule: .init(kind: .weekly, time: 12 * 60 + 30, days: Reminder.Schedule.workdays),
+      alert: .status, statusID: "back")
+    var water = Reminder.examples[0]
+    water.isOn = true
+    let list = [water, meeting, rent, call, nap] + Reminder.examples.dropFirst()
+    let navigation = SettingsNavigation(defaults: nil)
+    let hotKeys = HotKeyCenter()
+    func root(_ reminders: [Reminder]) -> some View {
+      SettingsRoot(navigation: navigation) { page in
+        page == .hotkeys
+          ? AnyView(HotkeysTab(center: hotKeys)) : AnyView(RemindersTab(fixed: reminders, now: now))
+      } onboarding: {
+        AnyView(EmptyView())
+      }
+    }
+    navigation.page = .reminders
+    for dark in [false, true] {
+      try snapshot(
+        root(list), size: NSSize(width: 780, height: 900), dark: dark,
+        to: "\(out)/reminders-settings\(dark ? "-dark" : "").png")
+    }
+    try snapshot(
+      root([]), size: NSSize(width: 780, height: 600), dark: false,
+      to: "\(out)/reminders-settings-empty.png")
+    try snapshot(
+      root(list), size: NSSize(width: 700, height: 460), dark: false,
+      to: "\(out)/reminders-settings-min.png")
+    // 详情：间隔（星期 + 时段）、每周（只勾周一）、每月 + 全屏、一次、进入状态屏、全天的间隔 + 全屏 20 秒；深色一张
+    for (name, id, dark) in [
+      ("interval", "water", false), ("weekly", "meeting", false), ("monthly", "rent", false),
+      ("once", "call", false), ("status", "nap", false), ("eyes", "eyes", false),
+      ("interval-dark", "water", true),
+    ] {
+      try snapshot(
+        ReminderDetail(id: id, fixed: list, now: now), size: NSSize(width: 590, height: 1100),
+        dark: dark, to: "\(out)/reminders-detail-\(name).png")
+    }
+    // 时间已经过了的一次性提醒：页头换成橙色说明
+    var late = call
+    late.schedule.date = now.addingTimeInterval(-600)
+    try snapshot(
+      ReminderDetail(id: "call", fixed: [late], now: now), size: NSSize(width: 590, height: 700),
+      dark: false, to: "\(out)/reminders-detail-problem.png")
+    // 刘海岛上挂着的提醒：一条（带说明）、几条合成一条、错过的；收着 / 展开，刘海屏 / 胶囊
+    let notch = Island.Geometry.notch(width: 200, height: 32)
+    let capsule = Island.Geometry.capsule(menuBar: 24)
+    let buttons = ["知道了", "稍后 5 分钟"]
+    let cases: [(String, (String, String?), [String], Island.Geometry, Bool)] = [
+      ("one", ReminderCenter.notice(fired: [meeting], missed: [])!, buttons, notch, false),
+      ("one-expanded", ReminderCenter.notice(fired: [meeting], missed: [])!, buttons, notch, true),
+      (
+        "merged", ReminderCenter.notice(fired: [water, Reminder.examples[2]], missed: [])!, buttons,
+        capsule, false
+      ),
+      (
+        "missed", ReminderCenter.notice(fired: [], missed: [rent, call, nap])!, ["知道了"], notch,
+        false
+      ),
+      (
+        "missed-expanded", ReminderCenter.notice(fired: [meeting], missed: [rent, call])!, buttons,
+        capsule, true
+      ),
+    ]
+    for (name, notice, titles, geometry, expanded) in cases {
+      let island = Island(
+        showing: .init(
+          title: notice.0, detail: notice.1, tone: .info, symbol: "alarm.fill", leading: .tone),
+        geometry: geometry, actions: titles.map { Island.Action($0) {} }, expanded: expanded)
+      try snapshot(
+        IslandView(island: island), size: geometry.windowSize, dark: false,
+        to: "\(out)/reminders-island-\(name).png")
+    }
+  }
+
   @Test(.enabled(if: directory != nil)) func statusScreenSettings() throws {
     let out = try #require(Self.directory)
     try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)

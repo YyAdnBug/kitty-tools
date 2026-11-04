@@ -211,6 +211,10 @@ enum Style {
     static let launchpad = Color(nsColor: .systemMint)
     /// 程序坞预览（第九族，2026-10-22）：系统色里最后一个没用过的
     static let dockPreview = Color(nsColor: .systemCyan)
+    /// 提醒（2026-11-04，拍板 A5）：系统色用完了、红是危险色，自定义的琥珀色（铃铛的金），浅深各一套
+    static let reminders = Style.dynamic(
+      light: NSColor(srgbRed: 0.90, green: 0.60, blue: 0.08, alpha: 1),
+      dark: NSColor(srgbRed: 0.96, green: 0.68, blue: 0.22, alpha: 1))
 
     /// 种类色块上的符号色：白；便签的黄上白色只有约 1.5:1，换成 black 0.85（同强调色选黄时 onBrand 的做法）
     static func onTile(_ color: Color) -> Color { color == notes ? .black.opacity(0.85) : .white }

@@ -185,6 +185,14 @@ enum Prefs {
   /// **不注册默认值**：不跟着导出 / 导入走
   static let statusScreenLastPreset = "statusScreenLastPreset"
 
+  /// 提醒列表（Reminder 数组的 JSON，PLAN §10「提醒」）。**不注册默认值**：没存过时是三条示例（都关着，Reminder.load）。
+  /// 跟着设置的导出 / 导入和每日备份走——SettingsArchive.kinds 里单独登记（文件里写成一组提醒，导入时按 id 合并）
+  nonisolated static let reminders = "reminders"
+  /// 每条提醒处理到哪一刻、「稍后」推到几点（ReminderState 的 JSON）。这台电脑自己的状态：不注册默认值、不导出
+  nonisolated static let remindersState = "remindersState"
+  /// 点「稍后」推几分钟（设置 › 提醒，默认 5，C8）
+  static let remindersSnoozeMinutes = "remindersSnoozeMinutes"
+
   /// 全部便签窗口里正文的字号（设置 › 便签，pt；档位见 notesFontSizeChoices，默认 15）。读它走 Prefs.notesFontSize(_:)：
   /// 存了不在档位里的值（导入的文件、手改的偏好）按默认算
   static let notesFontSize = "notesFontSize"
@@ -383,6 +391,7 @@ enum Prefs {
       statusScreenExitHint: true,
       statusScreenHotKeyEntersFirst: false,
       statusScreenAnimations: true,
+      remindersSnoozeMinutes: 5,
       notesFontSize: 15,
       notesMarkdown: true,
       notesLineSpacing: NoteStyles.Spacing.standard.rawValue,

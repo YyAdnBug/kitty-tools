@@ -807,6 +807,7 @@ private final class Probe {
         case .record: AnyView(RecordTab())
         case .notes: AnyView(NotesTab {})
         case .statusScreen: AnyView(StatusScreenTab())
+        case .reminders: AnyView(EmptyView())
         case .dockPreview: AnyView(DockPreviewTab())
         case .translate:
           AnyView(TranslateTab(services: services, history: history, speaker: speaker))

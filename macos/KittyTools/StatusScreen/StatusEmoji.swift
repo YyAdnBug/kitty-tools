@@ -250,6 +250,9 @@ struct StatusPresetIcon: View {
   /// StatusPreset.symbol：表情 id，空 = 没选
   let symbol: String
   var size: CGFloat = 24
+  /// 没选表情时家族色块里的符号和颜色（提醒用自己的，ReminderIcon）
+  var plainSymbol = StatusPreset.plainSymbol
+  var plainColor = Style.Family.statusScreen
   @Environment(\.colorScheme) private var scheme
 
   var body: some View {
@@ -267,7 +270,7 @@ struct StatusPresetIcon: View {
           }
         }
     } else {
-      KindTile(symbol: StatusPreset.plainSymbol, color: Style.Family.statusScreen, size: size)
+      KindTile(symbol: plainSymbol, color: plainColor, size: size)
     }
   }
 }

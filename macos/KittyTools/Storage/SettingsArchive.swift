@@ -124,6 +124,8 @@ struct SettingsArchive: Codable, Equatable {
     case strings([String])
     /// 状态屏的状态列表（Prefs.statusScreenPresets）。有一个解不出（以后多了样式之类）整组读成 unsupported，不连累整个文件
     case statuses([StatusPreset])
+    /// 提醒列表（Prefs.reminders，2026-11-04）。旧版本读到是 unsupported、导入时丢掉，所以加它不用升 currentFormat
+    case reminders([Reminder])
     case unsupported
 
     init(from decoder: Decoder) throws {
@@ -141,6 +143,9 @@ struct SettingsArchive: Codable, Equatable {
         self = .strings(value)
       } else if let value = try? container.decode([StatusPreset].self) {
         self = .statuses(value)
+      } else if let value = try? container.decode([Reminder].self) {
+        // 状态的必填字段（样式、电源）提醒没有，提醒的（时间规则）状态没有：两种不会认错
+        self = .reminders(value)
       } else {
         self = .unsupported
       }
@@ -155,6 +160,7 @@ struct SettingsArchive: Codable, Equatable {
       case .string(let value): try container.encode(value)
       case .strings(let value): try container.encode(value)
       case .statuses(let value): try container.encode(value)
+      case .reminders(let value): try container.encode(value)
       case .unsupported: try container.encodeNil()
       }
     }
@@ -165,6 +171,8 @@ struct SettingsArchive: Codable, Equatable {
     case bool, int, double, string, strings
     /// 状态屏的状态列表：偏好里是一段 JSON（Data），文件里是一组状态
     case statuses
+    /// 提醒列表：同上，文件里是一组提醒
+    case reminders
 
     init?(defaultValue: Any) {
       switch defaultValue {
@@ -186,6 +194,7 @@ struct SettingsArchive: Codable, Equatable {
       case .string: (stored as? String).map(Value.string)
       case .strings: (stored as? [String]).map(Value.strings)
       case .statuses: (stored as? Data).map { .statuses(StatusPreset.decode($0)) }
+      case .reminders: (stored as? Data).map { .reminders(Reminder.decode($0)) }
       }
     }
 
@@ -204,6 +213,8 @@ struct SettingsArchive: Codable, Equatable {
         list
       case (.statuses, .statuses(let list)) where !StatusPreset.sanitized(list).isEmpty:
         StatusPreset.encoded(list)
+      case (.reminders, .reminders(let list)) where !Reminder.sanitized(list).isEmpty:
+        Reminder.encoded(list)
       default: nil
       }
     }
@@ -288,6 +299,7 @@ struct SettingsArchive: Codable, Equatable {
     var kinds = Prefs.defaults.compactMapValues { Kind(defaultValue: $0) }
     for key in [Prefs.translateSource, Prefs.translateTarget] { kinds[key] = .string }
     kinds[Prefs.statusScreenPresets] = .statuses
+    kinds[Prefs.reminders] = .reminders
     // 启动台的布局是用户的数据，不按字符串的 4096 字上限走，也不「文件里没有就删本机的」：单独收（capture / sanitized /
     // apply 里那三处），和状态屏的状态列表一个待遇
     kinds[Prefs.launchpadLayout] = nil
@@ -565,6 +577,9 @@ struct SettingsArchive: Codable, Equatable {
       if case .statuses(let list)? = kept[Prefs.statusScreenPresets] {
         kept[Prefs.statusScreenPresets] = .statuses(StatusPreset.sanitized(list))
       }
+      if case .reminders(let list)? = kept[Prefs.reminders] {
+        kept[Prefs.reminders] = .reminders(Reminder.sanitized(list))
+      }
       return kept
     }
     clean.hotkeys = hotkeys.map { entries in
@@ -673,7 +688,7 @@ struct SettingsArchive: Codable, Equatable {
     domainName: String? = Bundle.main.bundleIdentifier
   ) {
     if sections.contains(.preferences), let preferences {
-      for (key, kind) in Self.kinds where kind != .statuses {
+      for (key, kind) in Self.kinds where kind != .statuses && kind != .reminders {
         if let value = preferences[key].flatMap(kind.plist) {
           defaults.set(value, forKey: key)
         } else {
@@ -693,6 +708,14 @@ struct SettingsArchive: Codable, Equatable {
         let list = stored.map { StatusPreset.merged(incoming, into: StatusPreset.decode($0)) }
         if let data = Kind.statuses.plist(.statuses(list ?? incoming)) {
           defaults.set(data, forKey: Prefs.statusScreenPresets)
+        }
+      }
+      // 提醒同上：用户自己写的东西，文件里有才按 id 合并，不删本机独有的。本机没存过（还是示例）时直接用文件里的
+      if case .reminders(let incoming)? = preferences[Prefs.reminders] {
+        let stored = defaults.data(forKey: Prefs.reminders)
+        let list = stored.map { Reminder.merged(incoming, into: Reminder.decode($0)) }
+        if let data = Kind.reminders.plist(.reminders(list ?? incoming)) {
+          defaults.set(data, forKey: Prefs.reminders)
         }
       }
       // 旧档位（保留天数、历史条数）挪到现在的档位，免得设置页的选择器显示成空白

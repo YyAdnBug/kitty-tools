@@ -9,6 +9,8 @@
 // 「打开刘海岛」的快捷键（哪块屏都行），长出「那一张」：一排快捷动作 + 本次启动以来最近 10 条提示（IslandBoard.swift）。
 // 用快捷键叫出的那一张临时当 key（第四轮体检 U9）：Esc 收、←→ 选快捷动作、↩ 执行，到点自己收（同平时的岛）；收起时键盘
 // 还给原来那扇窗口 / 原来的 App。点刘海叫出的照旧不抢键盘。
+// 挂着直到处理（pin，2026-11-04 提醒 C2）：到点的提醒不到点收起，中间来的别的提示先显示、收起后换回它；只有它的按钮、×、
+// 双指上滑收得掉（×、上滑告诉调用方「处理了」）。一次只挂一条（几条提醒由调用方合成一条）。
 
 import AppKit
 import Observation
@@ -115,6 +117,9 @@ import SwiftUI
   @ObservationIgnored private var changedAt: ContinuousClock.Instant?
   /// 鼠标在岛上时来的新提示：移开再换上，只留最新一条（拍板 B5）
   @ObservationIgnored private var pending: (content: Content, actions: [Action])?
+  /// 挂着直到处理的那一条（提醒，PLAN §10「提醒」C2；pin）：不到点收起，别的提示来了先显示那条、收起后换回它
+  @ObservationIgnored private var pinned:
+    (content: Content, actions: [Action], onClose: () -> Void)?
   @ObservationIgnored private var monitors: [Any] = []
   /// 悬停期间每 0.2 s 再核一次指针：从岛直接挪进本 App 不收鼠标移动的窗口时没有移动事件，靠它发现离开
   @ObservationIgnored private var hoverCheck: Task<Void, Never>?
@@ -242,6 +247,11 @@ import SwiftUI
     onToneChange?(next.tone)
     // VoiceOver 不会去读不当 key 的岛：主动播报
     Self.announce([next.title, next.detail].compactMap { $0 }.joined(separator: "，"))
+    // 挂着的那条不到点收起（按钮、×、上滑才收）
+    if let pinned, next == pinned.content {
+      dwell?.cancel()
+      return
+    }
     // 带按钮的岛多留一会儿：1.4–2 秒来不及挪鼠标去点（G23）
     let seconds: Double =
       switch next.tone {
@@ -344,11 +354,14 @@ import SwiftUI
       apply(next, actions: actions)
       return
     }
-    if content?.tone == .progress {
+    if content?.tone == .progress || isShowingPinned {
       withAnimation(Style.Motion.retract.animation()) { isExpanded = false }
     }
     arm(max(remaining, Self.leaveDelay))
   }
+
+  /// 岛上现在就是挂着的那一条
+  private var isShowingPinned: Bool { pinned != nil && content == pinned?.content }
 
   /// 内容刚换过 / 刚展开（按钮挪了位置）的那一下不算点击
   private var isSettled: Bool {
@@ -360,6 +373,8 @@ import SwiftUI
   /// 按钮没出新提示就换上它，出了就等那条收起再出。checked = false：键盘按的 ↩（不怕「按钮刚挪了位置」那一下）
   func perform(_ action: Action, checked: Bool = true) {
     guard !checked || isSettled else { return }
+    // 点的是挂着那条的按钮：它就处理完了（按钮自己告诉调用方），不再换回来
+    if isShowingPinned { pinned = nil }
     let queued = pending
     pending = nil
     dismiss()
@@ -368,9 +383,50 @@ import SwiftUI
     if content == nil { apply(queued.content, actions: queued.actions) } else { pending = queued }
   }
 
-  /// 点 ×
+  /// 点 ×：挂着的那条就此处理完（告诉调用方，onClose）
   func close() {
-    if isSettled { dismiss() }
+    guard isSettled else { return }
+    guard isShowingPinned, let closing = pinned else { return dismiss() }
+    pinned = nil
+    dismiss()
+    closing.onClose()
+  }
+
+  /// 双指在岛上往上滑：同 ×（挂着的那条也算处理了），只是不等「刚换过」那 0.3 s
+  func swipeAway() {
+    guard isShowingPinned, let closing = pinned else { return dismiss() }
+    pinned = nil
+    dismiss()
+    closing.onClose()
+  }
+
+  /// 挂在岛上直到处理（提醒，PLAN §10「提醒」C2）：不到点收起；中间来了别的提示先显示那条，它收起后换回这一条；
+  /// 点它的按钮、点 ×、双指上滑才真的收（×、上滑调 onClose，按钮跑自己的动作）。再 pin 一次 = 换内容（几条提醒合成
+  /// 一条，B5），内容一样只换按钮。鼠标正停在别的提示上、那一张开着时先挂着不出，那条收起 / 那一张关掉时换上
+  func pin(
+    _ title: String, detail: String?, symbol: String, actions: [Action],
+    onClose: @escaping () -> Void
+  ) {
+    let next = Content(
+      title: title, detail: detail, tone: .info, symbol: symbol, leading: .tone, fraction: nil)
+    let wasShowing = isShowingPinned
+    let same = pinned?.content == next
+    pinned = (next, actions, onClose)
+    if same {
+      if wasShowing { self.actions = actions }
+      return
+    }
+    remember(next, actions: actions)
+    if isBoardOpen || (isHovered && content != nil && !wasShowing) { return }
+    apply(next, actions: actions)
+  }
+
+  /// 不再挂着（调用方那边处理完了、功能关了）：正显示着就收
+  func unpin() {
+    guard pinned != nil else { return }
+    let showing = isShowingPinned
+    pinned = nil
+    if showing { dismiss() }
   }
 
   /// 收起标题是 title 的这一条（没有结果岛的进行中提示，调用方做完了自己收）：正显示着就收，排着就丢掉
@@ -393,6 +449,11 @@ import SwiftUI
     if let (next, actions) = pending {
       pending = nil
       apply(next, actions: actions)
+      return
+    }
+    // 有挂着的那条：别的提示收起、那一张关掉时换回它；它自己只有按钮、×、上滑收得掉（unpin 先清掉再来）
+    if let pinned {
+      if !isShowingPinned { apply(pinned.content, actions: pinned.actions) }
       return
     }
     hoverCheck?.cancel()
@@ -1319,6 +1380,6 @@ private final class IslandHost: NSHostingView<IslandView> {
     guard swipe < Island.swipeDistance else { return }
     swipe += Island.fingersUp(
       deltaY: event.scrollingDeltaY, inverted: event.isDirectionInvertedFromDevice)
-    if swipe >= Island.swipeDistance { island?.dismiss() }
+    if swipe >= Island.swipeDistance { island?.swipeAway() }
   }
 }

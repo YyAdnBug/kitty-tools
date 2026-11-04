@@ -10,7 +10,7 @@ import Foundation
 /// nonisolated：便签那叠的设置（NoteDeckOptions，不绑主线程）也要读开没开
 nonisolated enum Feature: String, CaseIterable {
   case clipboard, launcher, translate, screenshot, record, notes, launchpad, statusScreen,
-    dockPreview
+    reminders, dockPreview
 
   /// 同名的设置页（名字、符号、家族色从它取）
   @MainActor var page: SettingsPage { SettingsPage(rawValue: rawValue) ?? .general }
@@ -30,6 +30,7 @@ nonisolated enum Feature: String, CaseIterable {
     case .notes: "快速记一条，屏幕边缘的便签"
     case .launchpad: "全屏的 App 图标网格"
     case .statusScreen: "盖住屏幕、拦住键盘鼠标的告示"
+    case .reminders: "到点提醒你：一次、每天、每周或每隔一阵"
     case .dockPreview: "鼠标停在程序坞的 App 图标上，看它所有窗口的缩略图"
     }
   }
