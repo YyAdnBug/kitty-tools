@@ -18,6 +18,9 @@ internal static class RecordingHost
 
     public static bool IsRecording => _recorder is not null;
 
+    /// <summary>这段录屏藏起的桌面图标（PLAN-v11 F6），停下时显示回来。</summary>
+    private static IDisposable? _desktopIcons;
+
     public static string? LiveNote => _recorder?.LiveNote;
 
     /// <summary>这一段录不录系统声音（开录时的设置；录制条上的图标，PLAN-v9 R7）。</summary>
@@ -90,6 +93,8 @@ internal static class RecordingHost
         }
 
         var settings = SettingsService.Current;
+        // 录一块区域时整段藏起桌面图标（PLAN-v11 F6）；录一扇窗口时画面里本来就没有桌面。
+        var icons = window == IntPtr.Zero ? DesktopIcons.HideIfEnabled() : null;
         IVideoRecorder? recorder;
         string? error;
         string? note;
@@ -110,11 +115,14 @@ internal static class RecordingHost
 
         if (recorder is null)
         {
+            icons?.Dispose();
             RecordingFrame.Hide();
             RecordingHud.Hide();
             NoticeHost.Show("没能开始录屏", error ?? "未知原因", NoticeTone.Error);
             return;
         }
+
+        _desktopIcons = icons;
 
         var microphoneDenied = recorder is WgcRecorder { MicrophoneDenied: true } ||
                                recorder is GdiMp4Recorder { MicrophoneDenied: true };
@@ -249,6 +257,8 @@ internal static class RecordingHost
         RecordingEffects.Clear();
         var path = recorder.Stop();
         recorder.Dispose();
+        _desktopIcons?.Dispose();
+        _desktopIcons = null;
         SettingsService.Current.RecordingTempPath = null;
         SettingsService.Save();
         SetThreadExecutionState(EsContinuous);
@@ -288,6 +298,8 @@ internal static class RecordingHost
         RecordingEffects.Clear();
         var path = recorder.Stop();
         recorder.Dispose();
+        _desktopIcons?.Dispose();
+        _desktopIcons = null;
         SettingsService.Current.RecordingTempPath = null;
         SettingsService.Save();
         SetThreadExecutionState(EsContinuous);

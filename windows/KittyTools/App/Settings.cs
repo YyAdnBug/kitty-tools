@@ -171,6 +171,12 @@ internal sealed class Settings
     /// <summary>截图时播放快门声（PLAN-v9 S6，默认开，同 mac）：拷贝、存储、钉图时响。</summary>
     public bool ScreenshotShutterSound { get; set; } = true;
 
+    /// <summary>截图带上鼠标指针（PLAN-v11 F5，mac X8，默认关）：按快捷键那一刻的指针画进冻结帧。</summary>
+    public bool ScreenshotCursor { get; set; }
+
+    /// <summary>截图、录屏时隐藏桌面图标（PLAN-v11 F6，mac X9，默认关）：截的那一下、录的整段，完了显示回来。</summary>
+    public bool CaptureHideDesktopIcons { get; set; }
+
     /// <summary>截完图放哪（PLAN-v9 S7）：card = 角落缩略图（默认）/ none = 都不要（照样进截图历史）。</summary>
     public string ShotPlacement { get; set; } = "card";
 

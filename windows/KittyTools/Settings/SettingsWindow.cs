@@ -2193,6 +2193,16 @@ internal sealed partial class SettingsWindow : Window
         return true;
     }
 
+    /// <summary>截图、录屏时隐藏桌面图标（PLAN-v11 F6）：截图页和录制页各一行，改的是同一个设置。</summary>
+    private void AddHideDesktopIconsToggle()
+        => AddToggle("截图、录屏时隐藏桌面图标", "截的那一下、录的整段藏起桌面上的图标，完了自己显示回来",
+            SettingsService.Current.CaptureHideDesktopIcons,
+            value =>
+            {
+                SettingsService.Current.CaptureHideDesktopIcons = value;
+                SettingsService.Save();
+            });
+
     /// <summary>
     /// 设置 › 截图（照 mac ScreenshotTab）：启用截图 ｜ 快速保存到 ｜ 快门声 ｜ 截图历史 ｜ 截完图放哪 ｜ 识字 ｜
     /// 框选、标注、长截图和录屏的按键。截图历史的保留天数和占用是 S8（MAC-DIFF.md）。
@@ -2230,6 +2240,16 @@ internal sealed partial class SettingsWindow : Window
         }, "截图时播放快门声"));
         _content.Children.Add(SettingsUi.Card("截图时播放快门声", string.Empty, shutter));
         _content.Children.Add(SettingsUi.Footnote("拷贝、存储、钉图时响；系统静音、全屏游戏和演示时不响。截图翻译、识字不出声。"));
+
+        // 带上鼠标指针、隐藏桌面图标（PLAN-v11 F5、F6，mac X8、X9；默认关）。隐藏桌面图标和 录制 页是同一个设置。
+        AddToggle("截图带上鼠标指针", "按快捷键那一刻的指针画进截图",
+            SettingsService.Current.ScreenshotCursor,
+            value =>
+            {
+                SettingsService.Current.ScreenshotCursor = value;
+                SettingsService.Save();
+            });
+        AddHideDesktopIconsToggle();
 
         // 截图历史（PLAN-v8 H3；保留期、占用、清空是 PLAN-v9 S8，照 mac：关掉「保留」时下面两行变灰）
         _content.Children.Add(SettingsUi.Section("截图历史"));
@@ -2400,6 +2420,7 @@ internal sealed partial class SettingsWindow : Window
                 SettingsService.Current.RecordCursor = value;
                 SettingsService.Save();
             });
+        AddHideDesktopIconsToggle();
         AddToggle("显示点按", "录制画面里画一个圈（左键粉色、右键蓝色）",
             SettingsService.Current.RecordClicks,
             value =>

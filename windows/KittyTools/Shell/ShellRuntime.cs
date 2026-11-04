@@ -122,6 +122,8 @@ internal sealed class ShellRuntime
         Theme.VerifyThemeResources();
 
         // 上次录到一半的文件（第四版闪退恢复）。
+        // 上次截图 / 录屏时藏了桌面图标、没来得及显示回来（闪退、被结束）：先显示回来（PLAN-v11 F6）。
+        DesktopIcons.RecoverAfterCrash();
         _ = RecordingHost.RecoverOnStartupAsync();
         _ = AudioHost.RecoverOnStartupAsync();
 
@@ -306,6 +308,15 @@ internal sealed class ShellRuntime
         {
             var script = launcherScript[LauncherProbe.ArgumentPrefix.Length..];
             DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() => _ = LauncherProbe.RunAsync(script));
+        }
+
+        // 自检档：截图带指针、隐藏桌面图标（CaptureProbe，只写日志）。
+        var captureProbe = Environment.GetCommandLineArgs()
+            .FirstOrDefault(arg => arg.StartsWith(CaptureProbe.ArgumentPrefix, StringComparison.OrdinalIgnoreCase));
+        if (captureProbe is not null && Paths.IsTestProfile)
+        {
+            var mode = captureProbe[CaptureProbe.ArgumentPrefix.Length..];
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() => _ = CaptureProbe.RunAsync(mode));
         }
 
         // 自检档：主界面高亮滑动录一段短视频（HomeSlideProbe）。

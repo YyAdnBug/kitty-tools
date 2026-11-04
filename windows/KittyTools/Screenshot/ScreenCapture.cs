@@ -1,6 +1,8 @@
 // 冻结帧：按下热键先把每块显示器 BitBlt 成 32 位 BGRA（物理像素、自上而下），
 // 之后框选、裁剪、放大镜都只读这一帧，不会出现「框完再截」时画面已经变了。
 // 受保护内容（DRM）截出来是黑的；HDR 按 SDR，见 PLAN §9.1 的 ponytail。
+// 带上鼠标指针（PLAN-v11 F5，mac X8，设置 › 截图，默认关）：按快捷键那一刻的指针，BitBlt 完画进鼠标所在那块屏的冻结帧
+// （GetCursorInfo + DrawIconEx，指针藏着时不画）。
 using System.Runtime.InteropServices;
 
 namespace KittyTools;
@@ -69,8 +71,9 @@ internal sealed class FrozenScreen
 
 internal static unsafe partial class ScreenCapture
 {
-    public static List<FrozenScreen> CaptureAll()
+    public static List<FrozenScreen> CaptureAll(bool withCursor = false)
     {
+        var cursor = withCursor ? CurrentCursor() : null;
         var monitors = new List<IntPtr>();
         _collected = monitors;
         var callback = (IntPtr)(delegate* unmanaged[Stdcall]<IntPtr, IntPtr, RECT*, IntPtr, int>)&CollectMonitor;
@@ -92,7 +95,7 @@ internal static unsafe partial class ScreenCapture
             GetDpiForMonitor(monitor, 0, ref dpiX, ref dpiY);
             var bounds = new PixelBounds(
                 info.rcMonitor.Left, info.rcMonitor.Top, info.rcMonitor.Right, info.rcMonitor.Bottom);
-            var bgra = Capture(bounds);
+            var bgra = Capture(bounds, cursor);
             if (bgra is null)
             {
                 continue;
@@ -213,8 +216,41 @@ internal static unsafe partial class ScreenCapture
     /// <summary>截屏幕上一块（物理像素）；给高度动画探针逐帧看窗口边缘用。</summary>
     internal static byte[]? CaptureRegion(PixelBounds bounds) => Capture(bounds);
 
-    private static byte[]? Capture(PixelBounds bounds)
-    {        if (bounds.Width <= 0 || bounds.Height <= 0)
+    /// <summary>此刻的指针：句柄、热点对准的屏幕位置（物理像素）和热点偏移；指针藏着（打字时、触屏）返回 null。</summary>
+    private static CursorShot? CurrentCursor()
+    {
+        var info = new CURSORINFO { cbSize = (uint)sizeof(CURSORINFO) };
+        if (!GetCursorInfo(ref info) || (info.flags & CursorShowing) == 0 || info.hCursor == IntPtr.Zero)
+        {
+            return null;
+        }
+
+        var hotX = 0;
+        var hotY = 0;
+        if (GetIconInfo(info.hCursor, out var icon))
+        {
+            hotX = (int)icon.xHotspot;
+            hotY = (int)icon.yHotspot;
+            // GetIconInfo 交出来的两张位图归调用方删。
+            if (icon.hbmMask != IntPtr.Zero)
+            {
+                DeleteObject(icon.hbmMask);
+            }
+
+            if (icon.hbmColor != IntPtr.Zero)
+            {
+                DeleteObject(icon.hbmColor);
+            }
+        }
+
+        return new CursorShot(info.hCursor, info.ptScreenPos.X, info.ptScreenPos.Y, hotX, hotY);
+    }
+
+    private sealed record CursorShot(IntPtr Handle, int X, int Y, int HotX, int HotY);
+
+    private static byte[]? Capture(PixelBounds bounds, CursorShot? cursor = null)
+    {
+        if (bounds.Width <= 0 || bounds.Height <= 0)
         {
             return null;
         }
@@ -260,6 +296,15 @@ internal static unsafe partial class ScreenCapture
                 return null;
             }
 
+            // 指针画在它所在的那块屏上（落在屏外的部分 GDI 自己裁掉）。
+            if (cursor is not null && bounds.Contains(cursor.X, cursor.Y))
+            {
+                DrawIconEx(
+                    memoryDc, cursor.X - cursor.HotX - bounds.Left, cursor.Y - cursor.HotY - bounds.Top,
+                    cursor.Handle, 0, 0, 0, IntPtr.Zero, DiNormal);
+                GdiFlush();
+            }
+
             var bytes = new byte[bounds.Width * bounds.Height * 4];
             new ReadOnlySpan<byte>((void*)bits, bytes.Length).CopyTo(bytes);
             // GDI 的 32 位 DIB 里 alpha 是垃圾值，统一置不透明。
@@ -298,6 +343,35 @@ internal static unsafe partial class ScreenCapture
         public int Top;
         public int Right;
         public int Bottom;
+    }
+
+    private const uint CursorShowing = 0x00000001;
+    private const uint DiNormal = 0x0003;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct POINT
+    {
+        public int X;
+        public int Y;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct CURSORINFO
+    {
+        public uint cbSize;
+        public uint flags;
+        public IntPtr hCursor;
+        public POINT ptScreenPos;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ICONINFO
+    {
+        public int fIcon;
+        public uint xHotspot;
+        public uint yHotspot;
+        public IntPtr hbmMask;
+        public IntPtr hbmColor;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -370,4 +444,21 @@ internal static unsafe partial class ScreenCapture
     [LibraryImport("gdi32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool DeleteDC(IntPtr dc);
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool GetCursorInfo(ref CURSORINFO info);
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool GetIconInfo(IntPtr icon, out ICONINFO info);
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool DrawIconEx(
+        IntPtr dc, int x, int y, IntPtr icon, int width, int height, uint step, IntPtr brush, uint flags);
+
+    [LibraryImport("gdi32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool GdiFlush();
 }

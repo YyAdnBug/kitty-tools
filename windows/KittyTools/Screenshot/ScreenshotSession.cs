@@ -84,7 +84,11 @@ internal sealed class ScreenshotSession
         List<FrozenScreen> screens;
         try
         {
-            screens = ScreenCapture.CaptureAll();
+            // 设置开着时藏起桌面图标、带上鼠标指针（PLAN-v11 F5、F6）：只在截冻结帧的这一下。
+            using (DesktopIcons.HideIfEnabled())
+            {
+                screens = ScreenCapture.CaptureAll(SettingsService.Current.ScreenshotCursor);
+            }
         }
         catch (Exception ex)
         {
@@ -444,7 +448,11 @@ internal sealed class ScreenshotSession
         List<FrozenScreen> screens;
         try
         {
-            screens = ScreenCapture.CaptureAll();
+            // 设置开着时藏起桌面图标、带上鼠标指针（PLAN-v11 F5、F6）：只在截冻结帧的这一下。
+            using (DesktopIcons.HideIfEnabled())
+            {
+                screens = ScreenCapture.CaptureAll(SettingsService.Current.ScreenshotCursor);
+            }
         }
         catch (Exception ex)
         {
