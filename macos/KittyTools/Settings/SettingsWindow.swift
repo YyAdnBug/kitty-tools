@@ -25,8 +25,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   /// 侧栏和搜索里列的页：macOS 15 上没有启动台（`Launchpad.isAvailable`）
   static let visible = visible(launchpad: Launchpad.isAvailable)
 
-  /// 侧栏的分组（功能管理拍板 M2 M3，像系统设置那样组之间留空、不写组名）：通用 ｜ 打字查找 ｜ 截图录制 ｜ 记事提醒 ｜
-  /// 改桌面的 ｜ 快捷键、关于。和 allCases 同序，单测锁住
+  /// 侧栏的分组（功能管理拍板 M2 M3）：通用 ｜ 文字与搜索 ｜ 截图与录制 ｜ 便签与提醒 ｜ 桌面 ｜ 快捷键、关于。和 allCases 同序，
+  /// 单测锁住。功能那四组带标题、能折叠（groupTitle）
   static let groups: [[SettingsPage]] = [
     [.general], [.clipboard, .launcher, .translate], [.screenshot, .record],
     [.notes, .reminders, .statusScreen], [.launchpad, .dockPreview], [.hotkeys, .about],
@@ -35,6 +35,18 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   /// 侧栏这一刻怎么分组（纯函数）：只留 pages 里有的（搜索匹配、这台系统有），空了的组不画
   static func grouped(_ pages: [SettingsPage]) -> [[SettingsPage]] {
     groups.map { $0.filter(pages.contains) }.filter { !$0.isEmpty }
+  }
+
+  /// 侧栏组标题（2026-11-04 真机反馈「间距那里有个提示」：同访达、邮件侧栏的小标题，点一下收起 / 展开，对标 PowerToys 导航的分组）。
+  /// 通用、快捷键与关于两组不写：一头一尾，收起来也省不了地方
+  var groupTitle: String? {
+    switch self {
+    case .clipboard, .launcher, .translate: "文字与搜索"
+    case .screenshot, .record: "截图与录制"
+    case .notes, .reminders, .statusScreen: "便签与提醒"
+    case .launchpad, .dockPreview: "桌面"
+    case .general, .hotkeys, .about: nil
+    }
   }
 
   /// 这一页是哪个功能的设置（通用、快捷键、关于不是）：功能关着时侧栏里这一行变淡、标「已关闭」（M1）
@@ -375,19 +387,46 @@ struct SettingsRoot: View {
   let page: (SettingsPage) -> AnyView
   let onboarding: () -> AnyView
   @State private var query = ""
+  /// 收起了的组（组标题，换行隔开；这台电脑自己的）
+  @AppStorage(Prefs.settingsCollapsedGroups) private var collapsedGroups = ""
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   private var matches: [SettingsPage] { SettingsPage.visible.filter { $0.matches(query) } }
 
+  /// 一组展开没有：搜索时都展开（不然对上的页藏在收起的组里）
+  private func expanded(_ title: String) -> Binding<Bool> {
+    Binding {
+      !query.isEmpty || !collapsed.contains(title)
+    } set: { open in
+      var titles = collapsed
+      if open { titles.remove(title) } else { titles.insert(title) }
+      collapsedGroups = titles.sorted().joined(separator: "\n")
+    }
+  }
+
+  private var collapsed: Set<String> {
+    Set(collapsedGroups.split(separator: "\n").map(String.init))
+  }
+
+  private func rows(_ group: [SettingsPage]) -> some View {
+    ForEach(group) { page in
+      SidebarRow(page: page, isSelected: page == navigation.page).tag(page)
+    }
+  }
+
   var body: some View {
     NavigationSplitView {
       List(selection: selection) {
-        // 分组：组之间留空、不写组名（系统设置的侧栏）
+        // 分组：功能那四组带小标题、点标题收起 / 展开（同访达的侧栏）；通用、快捷键与关于不写标题
         ForEach(SettingsPage.grouped(matches), id: \.first) { group in
-          Section {
-            ForEach(group) { page in
-              SidebarRow(page: page, isSelected: page == navigation.page).tag(page)
+          if let title = group.first?.groupTitle {
+            Section(isExpanded: expanded(title)) {
+              rows(group)
+            } header: {
+              Text(title)
             }
+          } else {
+            Section { rows(group) }
           }
         }
       }
@@ -418,9 +457,12 @@ struct SettingsRoot: View {
       let page = SettingsPage.page(for: query, current: navigation.page)
       if page != navigation.page { navigation.page = page }
     }
-    // 从菜单栏等处直接跳到一页，而旧搜索词把它筛掉了：清掉搜索词（侧栏不留一个没选中的残局）
+    // 从菜单栏等处直接跳到一页，而旧搜索词把它筛掉了：清掉搜索词（侧栏不留一个没选中的残局）；那一页在收起的组里就展开
     .onChange(of: navigation.page) {
       if !matches.contains(navigation.page) { query = "" }
+      if let title = navigation.page.groupTitle, collapsed.contains(title) {
+        expanded(title).wrappedValue = true
+      }
     }
     .sheet(isPresented: $navigation.showsOnboarding) {
       onboarding().symbolEffectsRemoved(reduceMotion).appAccent()

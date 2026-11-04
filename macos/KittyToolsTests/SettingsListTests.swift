@@ -35,6 +35,14 @@ struct SettingsListTests {
           [.notes, .reminders, .statusScreen], [.dockPreview], [.hotkeys, .about],
         ])
     #expect(SettingsPage.grouped([.reminders, .about]) == [[.reminders], [.about]])
+    // 组标题（2026-11-04 真机反馈）：一组里的页同一个标题；功能那四组有，一头一尾两组没有
+    for group in SettingsPage.groups {
+      #expect(Set(group.map(\.groupTitle)).count == 1, "\(group)")
+    }
+    #expect(
+      SettingsPage.groups.map(\.first?.groupTitle) == [
+        nil, "文字与搜索", "截图与录制", "便签与提醒", "桌面", nil,
+      ])
     // 功能页对得上功能，通用 / 快捷键 / 关于不是功能
     #expect(pages.compactMap(\.feature) == Feature.allCases)
     #expect(SettingsPage.general.feature == nil && SettingsPage.hotkeys.feature == nil)
