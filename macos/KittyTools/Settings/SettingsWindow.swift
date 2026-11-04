@@ -15,15 +15,30 @@ import AppKit
 import SwiftUI
 
 enum SettingsPage: String, CaseIterable, Identifiable {
-  // 和菜单栏、快捷键页、引导、速查表同序（记住的上次页存的是 rawValue，调顺序不受影响）：
-  // 启动台排在便签后面、状态屏前面（F38；以前跟在启动器后面，和菜单栏对不上）
-  case general, clipboard, launcher, translate, screenshot, record, notes, launchpad, statusScreen,
-    reminders, dockPreview, hotkeys, about
+  // 和菜单栏、快捷键页、引导、速查表同序（记住的上次页存的是 rawValue，调顺序不受影响）。2026-11-04 功能管理拍板 M3：
+  // 便签、提醒、状态屏一组，启动台、程序坞预览一组（启动台原来在便签后面）
+  case general, clipboard, launcher, translate, screenshot, record, notes, reminders, statusScreen,
+    launchpad, dockPreview, hotkeys, about
 
   var id: String { rawValue }
 
   /// 侧栏和搜索里列的页：macOS 15 上没有启动台（`Launchpad.isAvailable`）
   static let visible = visible(launchpad: Launchpad.isAvailable)
+
+  /// 侧栏的分组（功能管理拍板 M2 M3，像系统设置那样组之间留空、不写组名）：通用 ｜ 打字查找 ｜ 截图录制 ｜ 记事提醒 ｜
+  /// 改桌面的 ｜ 快捷键、关于。和 allCases 同序，单测锁住
+  static let groups: [[SettingsPage]] = [
+    [.general], [.clipboard, .launcher, .translate], [.screenshot, .record],
+    [.notes, .reminders, .statusScreen], [.launchpad, .dockPreview], [.hotkeys, .about],
+  ]
+
+  /// 侧栏这一刻怎么分组（纯函数）：只留 pages 里有的（搜索匹配、这台系统有），空了的组不画
+  static func grouped(_ pages: [SettingsPage]) -> [[SettingsPage]] {
+    groups.map { $0.filter(pages.contains) }.filter { !$0.isEmpty }
+  }
+
+  /// 这一页是哪个功能的设置（通用、快捷键、关于不是）：功能关着时侧栏里这一行变淡、标「已关闭」（M1）
+  var feature: Feature? { Feature(rawValue: rawValue) }
 
   /// 单测喂 false 看 macOS 15 上的样子
   static func visible(launchpad: Bool) -> [SettingsPage] {
@@ -367,8 +382,13 @@ struct SettingsRoot: View {
   var body: some View {
     NavigationSplitView {
       List(selection: selection) {
-        ForEach(matches) { page in
-          SidebarRow(page: page, isSelected: page == navigation.page).tag(page)
+        // 分组：组之间留空、不写组名（系统设置的侧栏）
+        ForEach(SettingsPage.grouped(matches), id: \.first) { group in
+          Section {
+            ForEach(group) { page in
+              SidebarRow(page: page, isSelected: page == navigation.page).tag(page)
+            }
+          }
         }
       }
       .overlay {
@@ -444,14 +464,19 @@ private struct SidebarRow: View {
     .listRowBackground(isSelected ? highlight(emphasized: emphasized) : nil)
   }
 
-  private var label: some View {
-    Label {
-      Text(page.title)
-    } icon: {
-      if page == .about {
-        Image(nsImage: Self.aboutIcon)
-      } else {
-        KindTile(symbol: page.symbol, color: page.color, size: 20)
+  @ViewBuilder private var label: some View {
+    if let feature = page.feature {
+      FeatureSidebarLabel(
+        page: page, feature: feature, emphasized: isSelected && activeState == .key)
+    } else {
+      Label {
+        Text(page.title)
+      } icon: {
+        if page == .about {
+          Image(nsImage: Self.aboutIcon)
+        } else {
+          KindTile(symbol: page.symbol, color: page.color, size: 20)
+        }
       }
     }
   }
@@ -466,6 +491,44 @@ private struct SidebarRow: View {
     return shape.fill(emphasized ? Style.brand : Style.selectedFill)
       .overlay { if !emphasized { shape.contrastSelectionBorder() } }
       .padding(.horizontal, Self.inset)
+  }
+}
+
+/// 功能页那一行：看着它的开关（@AppStorage，开关一变就跟上）。关着时色块变淡、行尾小字「已关闭」（功能管理拍板 M1：
+/// 页面照样留在侧栏里、点进去第一行就是开关，对标 PowerToys / Raycast 的自带功能）。名字不另设字色：选中时的 onBrand、
+/// 后台窗口变灰都由外面那层管
+private struct FeatureSidebarLabel: View {
+  let page: SettingsPage
+  let emphasized: Bool
+  @AppStorage private var isOn: Bool
+
+  init(page: SettingsPage, feature: Feature, emphasized: Bool) {
+    self.page = page
+    self.emphasized = emphasized
+    _isOn = AppStorage(wrappedValue: feature.defaultOn, feature.prefsKey)
+  }
+
+  var body: some View {
+    HStack(spacing: 4) {
+      Label {
+        Text(page.title).lineLimit(1).truncationMode(.tail)
+      } icon: {
+        KindTile(symbol: page.symbol, color: page.color, size: 20)
+          .opacity(isOn ? 1 : Style.disabledOpacity)
+      }
+      if !isOn {
+        Spacer(minLength: 4)
+        Text("已关闭")
+          .font(.system(size: 11))
+          .foregroundStyle(
+            emphasized ? AnyShapeStyle(Style.onBrand.opacity(0.8)) : AnyShapeStyle(.tertiary)
+          )
+          .lineLimit(1)
+          .fixedSize()
+      }
+    }
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(isOn ? page.title : page.title + "，已关闭")
   }
 }
 

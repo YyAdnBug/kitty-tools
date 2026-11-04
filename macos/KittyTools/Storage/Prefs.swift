@@ -308,10 +308,10 @@ enum Prefs {
 
   /// 看过的版本号：没有 = 首次安装（打开欢迎引导），和当前不同 = 刚更新（刘海岛「已更新到 x」+ 本版摘要，不开设置窗，体检 A29）。
   /// 首次安装时**引导走完才记**（点「开始使用」或关掉引导；第四轮体检 E1）：中途退出（授权屏幕录制后系统要求重开）下次接着开
-  static let lastSeenVersion = "lastSeenVersion"
+  nonisolated static let lastSeenVersion = "lastSeenVersion"
   /// 欢迎引导做到了第几屏（OnboardingView.Screen 的 rawValue）：没走完就退出、下次接着开时从哪一屏起（E1）；走完删掉。
   /// 这台电脑自己的状态，不注册默认值
-  static let onboardingScreen = "onboardingScreen"
+  nonisolated static let onboardingScreen = "onboardingScreen"
   /// 「去授权」请求过辅助功能 / 屏幕录制的系统授权框没有（第四轮体检 U10：系统只弹一次，请求过了再点就直接打开系统设置那一页，
   /// 不再两个窗一起出来）。这台电脑自己的状态，不注册默认值
   static let accessibilityRequested = "accessibilityRequested"

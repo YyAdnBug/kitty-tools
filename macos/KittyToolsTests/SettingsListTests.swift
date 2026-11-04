@@ -16,14 +16,28 @@ struct SettingsListTests {
   /// 便签、状态屏排在录制后面（状态屏 Z11，便签 2026-10-12；两页的先后同快捷键页的分节）；
   /// 启动台（第八族，2026-10-18）排在便签后面、状态屏前面（F38；和菜单栏、快捷键页同序）；
   /// 程序坞预览（第九族，2026-10-22）排在状态屏后面（它没有快捷键、菜单栏里没有它，拍板 D1）；
-  /// 提醒（2026-11-04）排在状态屏后面、程序坞预览前面
+  /// 提醒（2026-11-04）排在状态屏后面、程序坞预览前面。
+  /// 2026-11-04 功能管理拍板 M2 M3：分六组（组之间留空），便签、提醒、状态屏一组，启动台、程序坞预览一组
   @Test func sidebarOrderMatchesMenu() {
     let pages = SettingsPage.allCases
     #expect(
       pages == [
-        .general, .clipboard, .launcher, .translate, .screenshot, .record, .notes, .launchpad,
-        .statusScreen, .reminders, .dockPreview, .hotkeys, .about,
+        .general, .clipboard, .launcher, .translate, .screenshot, .record, .notes, .reminders,
+        .statusScreen, .launchpad, .dockPreview, .hotkeys, .about,
       ])
+    // 分组盖住每一页、和 allCases 同序
+    #expect(SettingsPage.groups.flatMap { $0 } == pages)
+    // 没有启动台（macOS 15）时那一组只剩程序坞预览；搜索只剩一组里的页时别的组不画
+    #expect(
+      SettingsPage.grouped(SettingsPage.visible(launchpad: false))
+        == [
+          [.general], [.clipboard, .launcher, .translate], [.screenshot, .record],
+          [.notes, .reminders, .statusScreen], [.dockPreview], [.hotkeys, .about],
+        ])
+    #expect(SettingsPage.grouped([.reminders, .about]) == [[.reminders], [.about]])
+    // 功能页对得上功能，通用 / 快捷键 / 关于不是功能
+    #expect(pages.compactMap(\.feature) == Feature.allCases)
+    #expect(SettingsPage.general.feature == nil && SettingsPage.hotkeys.feature == nil)
     let sections = HotKeyAction.sections.map(\.title)
     #expect(sections.firstIndex(of: "翻译")! < sections.firstIndex(of: "截图与录制")!)
   }

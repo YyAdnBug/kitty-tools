@@ -222,7 +222,7 @@ private struct WelcomeScreen: View {
       BrandIcon(size: 64)
       Heading(
         title: "欢迎使用 Kitty Tools",
-        subtitle: "这些小工具都住在菜单栏里，用快捷键随叫随到。\n用不上的可以到 设置 › 通用 › 功能 里关掉。"
+        subtitle: "这些小工具都住在菜单栏里，用快捷键随叫随到。\n常用的几样已经开着，别的用得上再到 设置 › 通用 › 功能 里打开。"
       )
       .padding(.top, 8)
       Grid(alignment: .topLeading, horizontalSpacing: 16, verticalSpacing: 12) {
@@ -233,7 +233,8 @@ private struct WelcomeScreen: View {
                 KindTile(symbol: feature.page.symbol, color: feature.page.color, size: 24)
                 VStack(alignment: .leading, spacing: 1) {
                   Text(feature.title).fontWeight(.medium)
-                  Text(feature.defaultOn ? feature.blurb : "\(feature.blurb)（默认关）")
+                  // 新装只开常用的四样（功能管理 M4）：按此刻开没开写
+                  Text(feature.isOn ? feature.blurb : "\(feature.blurb)（关着）")
                     .font(.subheadline).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 }

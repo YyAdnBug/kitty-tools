@@ -217,7 +217,7 @@ struct LauncherBatch5Tests {
         "translate-screenshot", "copyToTranslate", "screenshot", "screenshotLastRegion", "ocr",
         "screenRecord", "audioRecord", "pinClipboard", "shotHistory", "clothesline", "noteCapture",
         "noteNew",
-        "noteAll", "launchpad", "reminderNew", "island", "home", "settings", "shortcuts", "about",
+        "noteAll", "reminderNew", "launchpad", "island", "home", "settings", "shortcuts", "about",
         "quit",
       ])
     // 状态屏不是一条：每个状态一条（StatusScreenTests.entries）

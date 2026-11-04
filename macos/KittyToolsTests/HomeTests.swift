@@ -10,7 +10,7 @@ import Testing
 struct HomeTests {
   private let all = Set(Feature.allCases)
 
-  /// 全开：节名和菜单同名同序（「打开主界面」不列它自己）；每节末尾接那一节的开关；启动台、状态屏、刘海岛三个单格的节
+  /// 全开：节名和菜单同名同序（「打开主界面」不列它自己）；每节末尾接那一节的开关；提醒、状态屏、启动台、刘海岛几个单格的节
   /// 不画标题、并成最后一行；快捷键是传进来的那份，没设的空着
   @Test func sectionsFollowTheMenu() {
     var state = LauncherItem.ActionState(statusPresets: StatusPreset.builtIn)
@@ -26,7 +26,7 @@ struct HomeTests {
     #expect(sections[1].tiles.last?.target == .extra(.copyToTranslate))
     #expect(
       sections.last?.tiles.map(\.target) == [
-        .action(.launchpad), .action(.statusScreen), .action(.reminderNew), .action(.island),
+        .action(.reminderNew), .action(.statusScreen), .action(.launchpad), .action(.island),
       ])
     #expect(tiles.first { $0.target == .action(.screenshot) }?.key == "⌥A")
     #expect(tiles.first { $0.target == .action(.clipboard) }?.key == nil)
@@ -99,7 +99,7 @@ struct HomeTests {
     var state = LauncherItem.ActionState()
     state.features = all
     let sections = Home.sections(state: state, keys: [:])
-    // 3 / 5 / 8 / 3 / 4（截图与录制 8 格折成 5 + 3；最后一节是启动台、状态屏、新建提醒、刘海岛）
+    // 3 / 5 / 8 / 3 / 4（截图与录制 8 格折成 5 + 3；最后一节是新建提醒、状态屏、启动台、刘海岛）
     #expect(Home.rows(sections).map(\.count) == [3, 5, 5, 3, 3, 4])
     #expect(Home.rows(sections).flatMap { $0 } == Array(0..<23))
     let rows: CGFloat = 6

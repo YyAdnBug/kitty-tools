@@ -742,6 +742,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // 单测以本 App 为宿主运行：不碰真实数据、不起热键
     if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil { return }
     if yieldToOlderInstance() { return }
+    // 新装把功能开关明写进偏好（只开四个；升级上来的不碰），在注册默认值之前（功能管理拍板 M4 M5）
+    Feature.seedNewInstall()
     Prefs.registerDefaults()
     Prefs.migrate()
     AppAppearance.apply()  // 在任何浮层、设置窗、菜单出现之前
