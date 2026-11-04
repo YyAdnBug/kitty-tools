@@ -134,8 +134,11 @@ internal sealed unsafe partial class NoticeHost
 
     private bool _visible;
 
-    /// <summary>窗口真的 ShowWindow 过了（_visible 是「这条该显示」，露出来要等低优先级那一拍，见 ShowCore）。</summary>
-    private bool _revealed;
+    /// <summary>隐身（DWM cloak）着等 XAML 画上：露面时先隐身再 ShowWindow，画好几帧才显形（见 Reveal）。</summary>
+    private bool _cloaked;
+    private long _firstFrameAt;
+    private int _framesUntilUncloak;
+    private DispatcherQueueTimer? _cloakFallback;
     private bool _progress;
     private int _generation;
     private IReadOnlyList<NoticeAction> _actions = Array.Empty<NoticeAction>();
@@ -330,14 +333,8 @@ internal sealed unsafe partial class NoticeHost
             Environment.GetEnvironmentVariable("KITTY_HUD_CAPTURE") == "1" ? 0u : 0x11u /* WDA_EXCLUDEFROMCAPTURE */);
         if (!_visible)
         {
-            // 出场交给系统：DWM 给不激活的窗口自己的淡入，内容再跟一个淡入。
-            // 等手上的活做完再露（低优先级排一拍，空闲时就是马上）：复制截图那一下，后面还要关遮罩、建角落卡，
-            // UI 线程忙 150–200 ms，这时候露出来 XAML 还没画上，先是一块黑底（0.1.2 逐帧录到的，外观是浅色时最显眼）。
             _visible = true;
-            if (!_window.DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, Reveal))
-            {
-                Reveal();
-            }
+            Reveal();
         }
 
         if (_hovered)
@@ -594,26 +591,85 @@ internal sealed unsafe partial class NoticeHost
         _icon.Foreground = new SolidColorBrush(color);
     }
 
-    /// <summary>收起：交给系统（DWM 给窗口自己的淡出）。</summary>
-    /// <summary>真的露出来（ShowCore 排到低优先级的那一拍）。排着的时候已经收了（Hide）、或者已经露着，就不动。</summary>
+    /// <summary>
+    /// 露面：先隐身（DWM cloak）再 ShowWindow，XAML 画上第一帧、再过 4 次合成且 ≥ 50 ms 才显形，内容跟一个淡入（同截图遮罩的 SetCloaked）。
+    /// 直接露出来时 XAML 还没画上，先是一块空白：复制截图那一下 UI 线程还要关遮罩、建角落卡，忙 120–170 ms，
+    /// 0.1.2 逐帧录到深色时黑一块、浅色时白一块。排到低优先级再露也不行：遮罩关掉后 UI 线程空了一拍，露出来以后才去建角落卡，
+    /// 两种外观都成了白一块。隐身着 UI 线程忙的时候 Rendering 不来，就一直藏着。
+    /// </summary>
     private void Reveal()
     {
-        if (!_visible || _revealed)
+        SetCloaked(true);
+        // 藏着的时候内容先透明：显形那一帧是空的亚克力，内容再淡入（不然先满着闪一帧、再从 0 淡入）。
+        Motion.Fade(_content, 0f, 0.001);
+        _firstFrameAt = 0;
+        _framesUntilUncloak = 4;
+        CompositionTarget.Rendering -= OnRenderingWhileCloaked;
+        CompositionTarget.Rendering += OnRenderingWhileCloaked;
+        PInvoke.ShowWindow(_hwnd, (SHOW_WINDOW_CMD)SwShowNoActivate);
+        // 万一一直不来帧（设备丢失之类），最多藏 300 ms。
+        if (_cloakFallback is null)
+        {
+            _cloakFallback = _window.DispatcherQueue.CreateTimer();
+            _cloakFallback.Interval = TimeSpan.FromMilliseconds(300);
+            _cloakFallback.IsRepeating = false;
+            _cloakFallback.Tick += (_, _) => Uncloak();
+        }
+
+        _cloakFallback.Start();
+    }
+
+    private void OnRenderingWhileCloaked(object? sender, object args)
+    {
+        if (_firstFrameAt == 0)
+        {
+            _firstFrameAt = Environment.TickCount64;
+            return;
+        }
+
+        if (--_framesUntilUncloak > 0 || Environment.TickCount64 - _firstFrameAt < 50)
         {
             return;
         }
 
-        _revealed = true;
-        PInvoke.ShowWindow(_hwnd, (SHOW_WINDOW_CMD)SwShowNoActivate);
-        Motion.Appear(_content);
+        Uncloak();
     }
 
+    private void Uncloak()
+    {
+        CompositionTarget.Rendering -= OnRenderingWhileCloaked;
+        _cloakFallback?.Stop();
+        if (!_cloaked)
+        {
+            return;
+        }
+
+        SetCloaked(false);
+        // FadeIn 带 0 那一格关键帧：Appear 只有终点，第二次露面时从上一回的 1 起步，等于不淡入（逐帧录到的）。
+        Motion.FadeIn(_content, MotionCurves.FadeInSeconds);
+    }
+
+    private void SetCloaked(bool cloaked)
+    {
+        _cloaked = cloaked;
+        var value = cloaked ? 1 : 0;
+        DwmSetWindowAttribute((IntPtr)_hwnd.Value, 13 /* DWMWA_CLOAK */, ref value, sizeof(int));
+    }
+
+    /// <summary>收起：交给系统（DWM 给窗口自己的淡出）。</summary>
     private void Hide()
     {
         _hideTimer.Stop();
         _window.AppWindow.Hide();
+        // 还藏着就收了：不再等帧，下次露面重新隐身。
+        CompositionTarget.Rendering -= OnRenderingWhileCloaked;
+        _cloakFallback?.Stop();
+        if (_cloaked)
+        {
+            SetCloaked(false);
+        }
+
         _visible = false;
-        _revealed = false;
         _progress = false;
         _hovered = false;
         _pending = null;
