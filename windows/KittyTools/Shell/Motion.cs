@@ -14,6 +14,8 @@ using KittyTools.Infrastructure;
 using Microsoft.UI.Composition;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Hosting;
+using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Animation;
 using Windows.UI.ViewManagement;
 
 namespace KittyTools;
@@ -132,6 +134,98 @@ internal static class Motion
 
             visual.StartAnimation("Translation", CurveTo(visual.Compositor, target, spring.Value));
         });
+
+    /// <summary>
+    /// 已经摆到新位置的元素从旧位置滑过来（截图样式托盘换工具，PLAN-v11 C4）：Translation 先设成旧位置减新位置、再沿曲线回到 0。
+    /// Instant 或减弱动画时直接停在新位置。
+    /// </summary>
+    public static void SlideFrom(FrameworkElement element, double dx, double dy, MotionCurve curve)
+        => WhenReady(element, visual =>
+        {
+            EnableTranslation(element);
+            var spring = MotionCurves.Effective(curve, Reduced);
+            visual.StopAnimation("Translation");
+            if (spring is null || (Math.Abs(dx) < 0.5 && Math.Abs(dy) < 0.5))
+            {
+                visual.Properties.InsertVector3("Translation", Vector3.Zero);
+                return;
+            }
+
+            visual.Properties.InsertVector3("Translation", new Vector3((float)dx, (float)dy, 0));
+            visual.StartAnimation("Translation", CurveTo(visual.Compositor, Vector3.Zero, spring.Value));
+        });
+
+    /// <summary>
+    /// 宽度从 from 变到 to（截图样式托盘换工具时宽度 settle，C4）：XAML 的依赖动画，走完把 Width 放回自动。
+    /// 减弱动画、差不到半个 DIP 时直接放回自动。
+    /// </summary>
+    public static void WidthFrom(FrameworkElement element, double from, double to, MotionCurve curve)
+    {
+        var spring = MotionCurves.Effective(curve, Reduced);
+        if (spring is null || double.IsNaN(from) || from <= 0 || Math.Abs(from - to) < 0.5)
+        {
+            element.Width = double.NaN;
+            return;
+        }
+
+        var animation = new DoubleAnimation
+        {
+            From = from,
+            To = to,
+            Duration = new Duration(spring.Value.Period),
+            EnableDependentAnimation = true,
+            EasingFunction = new ExponentialEase { EasingMode = EasingMode.EaseOut, Exponent = 5 },
+        };
+        Storyboard.SetTarget(animation, element);
+        Storyboard.SetTargetProperty(animation, "Width");
+        var storyboard = new Storyboard();
+        storyboard.Children.Add(animation);
+        storyboard.Completed += (_, _) =>
+        {
+            storyboard.Stop();
+            element.Width = double.NaN;
+        };
+        storyboard.Begin();
+    }
+
+    /// <summary>
+    /// 小圆点被选中时 pop 一下（截图样式托盘的色点 / 粗细点，C4，mac Swatch）：1 → 1.28 → rest，时长用 Pop 那条曲线的；
+    /// 减弱动画时直接停在 rest。RenderTransform 换成新的 ScaleTransform。
+    /// </summary>
+    public static void PopScale(FrameworkElement element, double rest)
+    {
+        var scale = new ScaleTransform { ScaleX = rest, ScaleY = rest };
+        element.RenderTransform = scale;
+        if (MotionCurves.Effective(MotionCurve.Pop, Reduced) is not { } spring)
+        {
+            return;
+        }
+
+        scale.ScaleX = scale.ScaleY = 1;
+        var total = spring.Period.TotalMilliseconds;
+        var storyboard = new Storyboard();
+        foreach (var property in new[] { "ScaleX", "ScaleY" })
+        {
+            var frames = new DoubleAnimationUsingKeyFrames();
+            frames.KeyFrames.Add(new EasingDoubleKeyFrame
+            {
+                KeyTime = TimeSpan.FromMilliseconds(total * 0.4),
+                Value = 1.28,
+                EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut },
+            });
+            frames.KeyFrames.Add(new EasingDoubleKeyFrame
+            {
+                KeyTime = TimeSpan.FromMilliseconds(total),
+                Value = rest,
+                EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseInOut },
+            });
+            Storyboard.SetTarget(frames, scale);
+            Storyboard.SetTargetProperty(frames, property);
+            storyboard.Children.Add(frames);
+        }
+
+        storyboard.Begin();
+    }
 
     /// <summary>
     /// 弹簧曲线采样成关键帧（Core 的 SpringEase，时长 = 曲线的 duration）：每一帧是

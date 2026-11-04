@@ -319,6 +319,15 @@ internal sealed class ShellRuntime
             DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() => _ = CaptureProbe.RunAsync(mode));
         }
 
+        // 自检档：截图样式托盘换工具的动效录一段短视频（ToolbarAnimationProbe）。
+        var toolbarAnim = Environment.GetCommandLineArgs()
+            .FirstOrDefault(arg => arg.StartsWith(ToolbarAnimationProbe.ArgumentPrefix, StringComparison.OrdinalIgnoreCase));
+        if (toolbarAnim is not null && Paths.IsTestProfile)
+        {
+            var folder = toolbarAnim[ToolbarAnimationProbe.ArgumentPrefix.Length..];
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() => _ = ToolbarAnimationProbe.RunAsync(folder));
+        }
+
         // 自检档：主界面高亮滑动录一段短视频（HomeSlideProbe）。
         var homeSlide = Environment.GetCommandLineArgs()
             .FirstOrDefault(arg => arg.StartsWith(HomeSlideProbe.ArgumentPrefix, StringComparison.OrdinalIgnoreCase));
@@ -425,7 +434,8 @@ internal sealed class ShellRuntime
             DispatcherQueue.GetForCurrentThread()?.TryEnqueue(async () =>
             {
                 await VideoFrameDump.RunAsync(argument);
-                Application.Current.Exit();
+                // 只是自检：不走 Application.Exit（会漏关窗、进程留着，R53），直接结束。
+                Environment.Exit(0);
             });
         }
 

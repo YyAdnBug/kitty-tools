@@ -1108,7 +1108,7 @@ internal sealed partial class SelectionOverlayWindow : Window
     /// 样式托盘（mac StyleBar，PLAN-v9-annotate §4）：高 34、圆角 10，内容跟着工具换——有颜色的工具出 8 个色点 ｜ 三档
     /// （细 / 中 / 粗，文字小 / 中 / 大，聚光灯浅 / 中 / 深）｜ 选项分段（空心 / 实心、无底 / 描边 / 底色、像素 / 模糊）。
     /// 选了工具或选中了标注时锚在那个工具按钮下方 6（栏在选区上方时在栏上方）。
-    /// ponytail: mac 换工具时位置和宽度 settle 滑过去、色点选中 pop，这里直接换（动效在 5e 和工具栏一起做）。
+    /// 换工具时位置和宽度 settle 滑过去、色点 / 粗细点选中时 pop 一下（PLAN-v11 C4，mac StyleBar）；减弱动态效果时直接换。
     /// </summary>
     private Border BuildStyleTray()
     {
@@ -1259,10 +1259,23 @@ internal sealed partial class SelectionOverlayWindow : Window
         return (button, ring, dot);
     }
 
-    private static void MarkSwatch(Border ring, Border dot, bool chosen)
+    /// <summary>选中 / 取消一个点；animate 时从没选中变成选中的那个 pop 一下（C4；托盘刚排出来时不 pop）。</summary>
+    private static void MarkSwatch(Border ring, Border dot, bool chosen, bool animate)
     {
+        var was = ring.Visibility == Visibility.Visible;
         ring.Visibility = chosen ? Visibility.Visible : Visibility.Collapsed;
-        dot.RenderTransform = chosen ? new ScaleTransform { ScaleX = 1.1, ScaleY = 1.1 } : null;
+        if (!chosen)
+        {
+            dot.RenderTransform = null;
+        }
+        else if (animate && !was)
+        {
+            Motion.PopScale(dot, 1.1);
+        }
+        else if (!was)
+        {
+            dot.RenderTransform = new ScaleTransform { ScaleX = 1.1, ScaleY = 1.1 };
+        }
     }
 
     /// <summary>托盘跟上：该给谁看（打着的字 → 选中的标注 → 当前工具）、选中状态、位置。</summary>
@@ -1275,7 +1288,13 @@ internal sealed partial class SelectionOverlayWindow : Window
             return;
         }
 
-        if (owner != _trayKind)
+        // 换工具前托盘露着：记下旧的位置和宽，排好新的以后从那里 settle 过去（C4）
+        var wasShown = _styleTray.Visibility == Visibility.Visible;
+        var oldLeft = Canvas.GetLeft(_styleTray);
+        var oldTop = Canvas.GetTop(_styleTray);
+        var oldWidth = _styleTray.ActualWidth;
+        var rebuilt = owner != _trayKind;
+        if (rebuilt)
         {
             RebuildTray(owner);
         }
@@ -1283,12 +1302,12 @@ internal sealed partial class SelectionOverlayWindow : Window
         var style = ShownStyle;
         foreach (var (ring, dot, index) in _trayColors)
         {
-            MarkSwatch(ring, dot, index == style.Color);
+            MarkSwatch(ring, dot, index == style.Color, animate: !rebuilt);
         }
 
         foreach (var (ring, dot, index) in _trayWeights)
         {
-            MarkSwatch(ring, dot, index == style.Weight);
+            MarkSwatch(ring, dot, index == style.Weight, animate: !rebuilt);
         }
 
         foreach (var (button, index) in _trayOptions)
@@ -1314,13 +1333,20 @@ internal sealed partial class SelectionOverlayWindow : Window
             center = toolbarLeft + at.X + anchor.ActualWidth / 2;
         }
 
-        var size = _styleTray.DesiredSize;
+        // 宽按里面那一排量（C4：宽度正在动画时托盘自己的 DesiredSize 是动画里的宽）：左右内边距 6 + 描边
+        var size = new Windows.Foundation.Size(_trayRow.DesiredSize.Width + 13, _styleTray.DesiredSize.Height);
         // 托盘在栏外侧（选区下方的栏往下、上方的栏往上）；栏放进了选区时翻到栏上方（选区里面）
         var above = _toolbarSide != ToolbarSide.Below;
         var y = above ? toolbarTop - size.Height - 6 : toolbarTop + _toolbar.DesiredSize.Height + 6;
         var x = Math.Clamp(center - size.Width / 2, 4, Math.Max(4, _screen.Width / _scale - size.Width - 4));
+        var trayTop = Math.Clamp(y, 0, Math.Max(0, _screen.Height / _scale - size.Height));
         Canvas.SetLeft(_styleTray, x);
-        Canvas.SetTop(_styleTray, Math.Clamp(y, 0, Math.Max(0, _screen.Height / _scale - size.Height)));
+        Canvas.SetTop(_styleTray, trayTop);
+        if (rebuilt && wasShown && !double.IsNaN(oldLeft) && !double.IsNaN(oldTop))
+        {
+            Motion.SlideFrom(_styleTray, oldLeft - x, oldTop - trayTop, MotionCurve.Settle);
+            Motion.WidthFrom(_styleTray, oldWidth, size.Width, MotionCurve.Settle);
+        }
     }
 
     /// <summary>工具栏上的图标：Fluent 字形；序号没有合适的，写带圈的 1。</summary>
@@ -1618,6 +1644,18 @@ internal sealed partial class SelectionOverlayWindow : Window
             (float)(outer.X + outer.Width - inner.X - inner.Width), (float)inner.Height, shade);
         ds.DrawRectangle(inner, Accent, 1.5f, CropDash);
     }
+
+    /// <summary>自检（ToolbarAnimationProbe）：换到这个工具（同点工具栏的按钮）。</summary>
+    internal void ProbeTool(AnnotationKind kind)
+    {
+        if (_tool != kind)
+        {
+            SelectTool(kind);
+        }
+    }
+
+    /// <summary>自检（ToolbarAnimationProbe）：当前工具换一个颜色（同点托盘的色点）。</summary>
+    internal void ProbeColor(int color) => Restyle(style => style with { Color = color });
 
     /// <summary>--ui-snapshots：开着裁剪、拖着选区中间那一块的框（off：关掉）。只在合成的冻结帧上用。</summary>
     internal void ShowProbeCrop(bool off = false)

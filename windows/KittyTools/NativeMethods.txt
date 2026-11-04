@@ -213,6 +213,7 @@ IMFAttributes
 IMFMediaType
 IMFSample
 IMFMediaBuffer
+IMF2DBuffer
 IMFDXGIDeviceManager
 D3D11_CREATE_DEVICE_FLAG
 D3D11_BIND_FLAG

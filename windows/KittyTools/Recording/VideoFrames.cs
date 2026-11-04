@@ -79,35 +79,74 @@ internal static unsafe class VideoFrames
                         continue;
                     }
 
-                    sample->ConvertToContiguousBuffer(&media);
-                    byte* data;
-                    uint length;
-                    media->Lock(&data, null, &length);
-                    try
+                    // 不用 ConvertToContiguousBuffer：它交出来的是一维的缓冲，拿不到 IMF2DBuffer。宽高不是 16 的倍数时
+                    // （录窗口常见，2566 × 1446）解码器按补齐后的宽排行，只有 Lock2D 给的行距对。
+                    sample->GetBufferByIndex(0, &media);
+                    // 解码器常把每行补齐（2560 宽的行距不一定是 2560 × 4）、又不写默认步长：能拿到 IMF2DBuffer 就用 Lock2D 给的行距
+                    // （负的 = 自下而上，第一行指针已经对好），拿不到才按媒体类型里的步长。
+                    IMF2DBuffer* plane = null;
+                    var planeIid = typeof(IMF2DBuffer).GUID;
+                    if (media->QueryInterface(&planeIid, (void**)&plane).Succeeded && plane is not null)
                     {
-                        // 解码器常把每行补齐到 16 / 64 像素、又不写默认步长：缓冲区比 width * 4 * height 大时按「长度 / 行数」算。
-                        // 步长是负的：最后一行在最前面（自下而上），翻回自上而下。
-                        var absStride = Math.Abs(stride);
-                        if (absStride == row && length > (uint)(row * height) && length % (uint)height == 0)
+                        byte* first;
+                        int pitch;
+                        plane->Lock2D(&first, &pitch);
+                        if (frames == 0)
                         {
-                            absStride = (int)(length / (uint)height);
+                            KittyTools.Infrastructure.Log.Info($"video-frames.layout {width}x{height} pitch={pitch} row={row}");
                         }
 
-                        for (var y = 0; y < height; y++)
+                        try
                         {
-                            var sourceRow = stride >= 0 ? y : height - 1 - y;
-                            if ((long)(sourceRow + 1) * absStride > length)
+                            for (var y = 0; y < height; y++)
                             {
-                                break;
+                                new ReadOnlySpan<byte>(first + (long)y * pitch, row).CopyTo(buffer.AsSpan(y * row, row));
                             }
-
-                            new ReadOnlySpan<byte>(data + (long)sourceRow * absStride, row)
-                                .CopyTo(buffer.AsSpan(y * row, row));
+                        }
+                        finally
+                        {
+                            plane->Unlock2D();
+                            plane->Release();
                         }
                     }
-                    finally
+                    else
                     {
-                        media->Unlock();
+                        byte* data;
+                        uint length;
+                        media->Lock(&data, null, &length);
+                        if (frames == 0)
+                        {
+                            KittyTools.Infrastructure.Log.Info($"video-frames.layout {width}x{height} stride={stride} length={length} (no 2D)");
+                        }
+
+                        try
+                        {
+                            // 步长是负的：最后一行在最前面（自下而上），翻回自上而下。
+                            // 缓冲区比 width × 4 × height 大：宽高都补齐到了 16 的倍数（2566 × 1446 的录屏实测是
+                            // 2576 × 1456），行距 = 长度 ÷ 补齐后的行数。
+                            var absStride = Math.Abs(stride);
+                            var paddedRows = (height + 15) / 16 * 16;
+                            if (length != (uint)(row * height) && length % (uint)paddedRows == 0 &&
+                                length / (uint)paddedRows >= (uint)row)
+                            {
+                                absStride = (int)(length / (uint)paddedRows);
+                            }
+                            for (var y = 0; y < height; y++)
+                            {
+                                var sourceRow = stride >= 0 ? y : height - 1 - y;
+                                if ((long)(sourceRow + 1) * absStride > length)
+                                {
+                                    break;
+                                }
+
+                                new ReadOnlySpan<byte>(data + (long)sourceRow * absStride, row)
+                                    .CopyTo(buffer.AsSpan(y * row, row));
+                            }
+                        }
+                        finally
+                        {
+                            media->Unlock();
+                        }
                     }
 
                     onFrame(timestamp / 10_000_000.0, buffer, width, height);
