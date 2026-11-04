@@ -41,6 +41,8 @@ internal sealed unsafe class OverlayWindow : Window
     private bool _pinned;
     private Microsoft.UI.Dispatching.DispatcherQueueTimer? _foregroundTimer;
     private double _scale = 1;
+    /// <summary>这次出现在的那块屏的工作区（长高时夹进去）。</summary>
+    private WorkArea _work = new(int.MinValue / 2, int.MinValue / 2, int.MaxValue / 2, int.MaxValue / 2);
     private double _heightDip = 520;
     private double _heightFrom;
     private double _heightTo;
@@ -338,7 +340,9 @@ internal sealed unsafe class OverlayWindow : Window
         var widthPx = MonitorLayout.Pixels(WidthDip, _scale);
         var heightPx = MonitorLayout.Pixels(dip, _scale);
         var position = AppWindow.Position;
-        AppWindow.MoveAndResize(new RectInt32(position.X, position.Y, widthPx, heightPx));
+        // 顶边不动；长高了会出工作区底边（跟随鼠标时贴着屏幕下沿出现）就整体往上挪。
+        var rect = MonitorLayout.Clamp(new PixelRect(position.X, position.Y, widthPx, heightPx), _work);
+        AppWindow.MoveAndResize(new RectInt32(rect.X, rect.Y, rect.Width, rect.Height));
     }
 
     [System.Runtime.InteropServices.DllImport("user32.dll")]
@@ -388,14 +392,27 @@ internal sealed unsafe class OverlayWindow : Window
         }
     }
 
+    /// <summary>
+    /// 出现的位置：启动器、剪贴板默认在鼠标所在屏的上方正中；剪贴板选了「跟随鼠标」（设置 › 剪贴板「面板位置」）就在光标右下，
+    /// 放不下翻到左边 / 上边（同翻译浮窗）。按鼠标所在显示器自己的缩放比例算尺寸，不用窗口当前所在那块屏的 DPI
+    /// （两块屏缩放不同时，720 DIP 会算成一块屏的像素、摆到另一块屏上就缩水了）。
+    /// </summary>
     private void PositionAtPointer(double heightDip)
     {
-        // 鎸夐紶鏍囨墍鍦ㄦ樉绀哄櫒鑷繁鐨勭缉鏀炬瘮渚嬬畻灏哄锛屼笉鐢ㄧ獥鍙ｅ綋鍓嶆墍鍦ㄩ偅鍧楀睆鐨?DPI
-        // 锛堜袱鍧楀睆缂╂斁涓嶅悓鏃讹紝720 DIP 浼氱畻鎴愪竴鍧楀睆鐨勫儚绱犮€佹憜鍒板彟涓€鍧楀睆涓婂氨缂╂按浜嗭級銆?
         var display = Displays.AtCursor();
         _scale = display.Scale <= 0 ? 1 : display.Scale;
-        var rect = MonitorLayout.Overlay(
-            display.Work, _scale, WidthDip, heightDip, MonitorLayout.ClipboardTopFraction);
+        _work = display.Work;
+        PixelRect rect;
+        if (_kind == OverlayKind.Clipboard && SettingsService.Current.ClipboardPanelPosition == "pointer")
+        {
+            PInvoke.GetCursorPos(out var cursor);
+            rect = MonitorLayout.NearPointer(cursor.X, cursor.Y, display.Work, _scale, WidthDip, heightDip);
+        }
+        else
+        {
+            rect = MonitorLayout.Overlay(display.Work, _scale, WidthDip, heightDip, MonitorLayout.ClipboardTopFraction);
+        }
+
         AppWindow.MoveAndResize(new RectInt32(rect.X, rect.Y, rect.Width, rect.Height));
     }
 }

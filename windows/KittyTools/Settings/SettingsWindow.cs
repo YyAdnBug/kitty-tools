@@ -78,7 +78,7 @@ internal sealed partial class SettingsWindow : Window
         {
             "历史", "天数", "保留", "永久", "图片", "占用", "预览", "链接", "网页", "格式", "纯文本", "识别", "文字", "OCR", "隐私",
             "密钥", "银行卡", "清空", "退出", "锁屏", "排除", "应用", "收藏", "收藏夹", "片段", "密码", "敏感", "标题", "透镜", "单击",
-            "双击", "点击", "粘贴",
+            "双击", "点击", "粘贴", "位置", "面板位置", "鼠标", "跟随鼠标",
         },
         ["launcher"] = new[]
         {
@@ -94,6 +94,7 @@ internal sealed partial class SettingsWindow : Window
         ["screenshot"] = new[]
         {
             "保存", "存储", "目录", "文件夹", "快门", "声音", "缩略图", "识字", "换行", "标注", "长截图", "钉图", "截图历史", "按键", "速查",
+            "滚动截图", "自动滚动", "滚动", "速度", "太快",
         },
         ["record"] = new[]
         {
@@ -1430,6 +1431,14 @@ internal sealed partial class SettingsWindow : Window
                 settings.ClipboardPasteOnClick = isOn;
                 SettingsService.Save();
             });
+        // 面板位置（2026-11-04 用户要求，同翻译「浮窗位置」的前两项；mac 没有，MAC-DIFF.md）：下次打开面板时生效。
+        var clipPositions = new[] { "top", "pointer" };
+        AddCombo("面板位置", "屏幕上方是鼠标所在屏幕的上方正中，跟随鼠标是光标旁边",
+            new[] { "屏幕上方", "跟随鼠标" }, Math.Max(0, Array.IndexOf(clipPositions, settings.ClipboardPanelPosition)), index =>
+            {
+                settings.ClipboardPanelPosition = clipPositions[index];
+                SettingsService.Save();
+            });
 
         // 内容
         _content.Children.Add(SettingsUi.Section("内容"));
@@ -2410,6 +2419,20 @@ internal sealed partial class SettingsWindow : Window
                 SettingsService.Save();
             });
         _content.Children.Add(SettingsUi.Footnote("角落的缩略图可以拖出、钉图、存储；选「都不要」后截完不出缩略图，仍然进截图历史。"));
+
+        // 长截图自动滚动的速度（2026-11-04 用户反馈太快；mac 没有这一项，MAC-DIFF.md）。
+        _content.Children.Add(new Border { Height = 8 });
+        var speeds = new[] { "slow", "normal", "fast" };
+        AddCombo("长截图自动滚动", string.Empty, new[] { "慢", "标准", "快" },
+            Math.Max(0, Array.IndexOf(speeds, SettingsService.Current.ScrollCaptureSpeed)),
+            index =>
+            {
+                SettingsService.Current.ScrollCaptureSpeed = speeds[index];
+                SettingsService.Save();
+            });
+        _content.Children.Add(SettingsUi.Footnote(
+            "长截图时按 A（往上是 Shift+A）自动滚动。每一步按实际滚了多少调整，不管那个窗口滚轮一格滚多远；" +
+            "滚过头会退回来再接，滚到底自动停。拼不上、或者想看清再滚，就选「慢」。"));
 
         // 识字
         _content.Children.Add(new Border { Height = 8 });

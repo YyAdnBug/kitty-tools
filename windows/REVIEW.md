@@ -351,6 +351,29 @@
 - **没走的**：873–874（拨开关、开着主界面时开录）、C5（875–876，要在记事本里选字按快捷键）、C6（877，要麦克风）、879 的朗读、881（没有精简系统）——留给用户。
 - **截图**：`windows-shots` 的 `0.2.0-batch-8/`：主界面高亮滑动的短视频、主界面浅 / 深。
 
+### 用户反馈 2026-11-04：长截图自动滚动太快、剪贴板面板跟随鼠标 → 已写（审查方，`git log --grep "自动滚动按实际"`，没编译）
+
+用户原话：「滚动截图滚动速度过快，添加支持速度控制，或者看看市面上的解决办法」「粘贴板期望翻译的浮窗一样可以跟随鼠标」。
+
+- **长截图的步子**（`Core/ScrollPacer.cs`，单测 `ScrollPacerTests`）：以前每拍固定发一格滚轮（120），一格滚多远各程序不一样，矮选区一格就滚出了画面、之后帧帧对不上、页面照滚长图不长。
+  现在照 mac `ScrollCapture.autoScroll`：按上一拍实际拼上的行数算「一个滚轮单位几像素」，下一步只发够滚出选区高度一个比例的量（不到一格的 `mouseData`，高精度滚轮的程序按比例滚）；
+  对不上就往回退半步、步子减半，连着 4 次停下；不到一格画面没动（老程序攒满 120 才滚）就加到一格；整格 3 次不动 = 到头，停下。
+  比例是新设置 设置 › 截图「长截图自动滚动」慢 / 标准 / 快 = 12% / 25% / 40%（`ScrollCaptureSpeed`，默认 normal；同类产品里 ShareX 给「间隔 / 滚几格」两个旋钮，CleanShot 和 mac 自己控速，这里两者合一）。
+- **拼接的重叠不再限 800 行**（`ScrollStitcher.FindOverlap` / `FuzzyOverlap` 在整帧高度内找，同 mac 的 `match`；`MaxOverlap` 常量删了）：不然选区超过约 800 像素高时每步必须滚得多才对得上，「慢」就慢不下来。
+  `ScrollCanvas.Probe` 跟着改成「HeadRows（往上滚是 MaxStickyRows）+ 新帧高」，保证要比的那一截是连着的；`Similar` 反对票超过 `samples / 10` 就提前返回（对不上的帧要试上千个位置）。
+- **`ScrollingCapture`**：每拍记上一次拼上的那帧的行哈希（`_reference`），和它逐行一样就不拿去拼（整片纯色时随便哪个重叠都对得上，以前会凭空长空白），再用 `ScrollPacer.Classify` 分「长了 / 没动 / 对不上」喂给步子；
+  拼的那一拍改成返回 `Tick`（`_work` 的类型跟着变，`Complete` 里取 `.Canvas`）；`SendWheel(delta)` 收滚轮量、负数往回退；叫停时 `StopAutoScroll` 写状态行；按 A 继续时 `_pacer.Reset()`。
+- **剪贴板面板位置**（`Settings.ClipboardPanelPosition`，top / pointer，默认 top；设置 › 剪贴板「面板」组「面板位置」）：`OverlayWindow.PositionAtPointer` 在剪贴板 + pointer 时用 `MonitorLayout.NearPointer`（和翻译浮窗同一个），启动器照旧屏幕上方；
+  `ApplyHeight` 改高度时夹进这次那块屏的工作区（`_work`），贴着屏幕下沿出现的面板长高时往上挪、不出屏。顺手把 `PositionAtPointer` 那段编码坏掉的注释重写了。
+- `MAC-DIFF.md` 截图、剪贴板各加一条（两项都是 mac 没有的）；设置窗搜索词加了「跟随鼠标」「自动滚动」等。
+
+**你们做的**：
+1. 编译 Debug x64、Release AOT x64 / ARM64，零警告；`dotnet test` 全过（新加 `ScrollPacerTests` 12 个，其中 `TallSelection_SmallStepStillStitches` 是 1500 行高、每步 180 的拼接；原有的 `ScrollCanvasTests`、`PlanV3Batch6Tests`、`ScrollStitcherStillColumnsTests` 要照旧过——重叠上限去掉、`Probe` 变了）。
+   要特别看的编译点：`ScrollingCapture` 里嵌套的 `private readonly record struct Tick` 和 `_timer.Tick += …` 同名（成员访问，应该不冲突；冲突就把记录改名 `Beat`）；`Task.Run` 的 lambda 几个分支都返回 `new Tick(…)`；`SendWheel` 的 `unchecked((uint)(…))`。
+2. 拿 `--long-annotate-probe` 那套或者真网页量一下：1440 × 1300 的选区、对不上的帧（随便两张不相干的图）拼一次多久（`FuzzyOverlap` 现在最多试 1300 个位置，有提前返回），超过 200 ms 记在这里。
+3. 走 HANDTEST 906–917。909 要改系统的滚轮设置，测完改回。908 的「矮选区」挑一个一格滚很多的程序（设置、资源管理器的详细信息视图）。
+4. 截图：设置 › 截图 那一行、设置 › 剪贴板「面板位置」浅 / 深，剪贴板跟随鼠标出现在右下角翻到左上的样子，推 `windows-shots` 的 `0.2.0-feedback-1104/`。
+
 ## 深色下的开关和输入框、翻译卡的彗星边框（2026-11-01 用户截图，审查方在 Mac 上写、**没编译**）——已修（75d6f86 + 12397aa）
 
 **现象**：深色下设置窗「搜索设置」的字、开关关着和开着的圆点都是黑的；翻译卡生成中的彗星边框和 mac 不一样（几段台阶）。

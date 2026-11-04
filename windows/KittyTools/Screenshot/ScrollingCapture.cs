@@ -4,6 +4,8 @@
 // 以前开始滚后什么框都没有）：线在选区外、又不进截图，抓的帧里没有它；
 // 选区旁边一块预览面板（ScrollPreviewPanel，PLAN-v9 S11）：拼好的长图跟着长、能往回看，下面是尺寸、状态和「放弃」「完成」；
 // Enter 用临时注册的全局热键（不带修饰键，只在长截图期间有效）；Esc 走只看不吞的低级钩子（EscapeKeyWatch，PLAN-v11 M13）。
+// 自动滚动（A / Shift+A）每拍发多少滚轮量由 Core 的 ScrollPacer 按上一拍实际拼上的行数定（2026-11-04 用户反馈太快：
+// 以前固定一格，矮选区一格就滚出了画面）；速度在 设置 › 截图「长截图自动滚动」。滚到头、退了几次还对不上就停下、状态行说。
 // REVIEW R43：每拍只 BitBlt 选区那一块（以前抓全部屏再裁），转像素、算行哈希、找重叠在线程池上做（一次只拼一拍，
 // 上一拍没拼完这一拍就跳过），拼接按条带存（ScrollCanvas）；「完成」等正在拼的那一拍拼完再合成。
 using KittyTools.Core;
@@ -30,7 +32,13 @@ internal static class ScrollingCapture
     private static ScrollCanvas? _canvas;
 
     /// <summary>正在线程池上拼的那一拍（拼完回 UI 线程换上）；没有在拼时是 null。</summary>
-    private static Task<ScrollCanvas>? _work;
+    private static Task<Tick>? _work;
+
+    /// <summary>上一次拼上的那帧每行的哈希：判断这一拍是没动还是对不上（ScrollPacer.Classify）。</summary>
+    private static uint[]? _reference;
+
+    /// <summary>自动滚动的步子；手动滚时是 null。</summary>
+    private static ScrollPacer? _pacer;
 
     /// <summary>「完成」进行中：等着正在拼的那一拍，这时候不再抓新的、也不再进「完成」。</summary>
     private static bool _completing;
@@ -64,6 +72,8 @@ internal static class ScrollingCapture
         _rect = rect;
         _canvas = null;
         _work = null;
+        _reference = null;
+        _pacer = autoScroll ? new ScrollPacer(rect.Height, ScrollPacer.Parse(SettingsService.Current.ScrollCaptureSpeed)) : null;
         _completing = false;
         _frames = 0;
         _escapeArmedAt = 0;
@@ -88,7 +98,7 @@ internal static class ScrollingCapture
         _timer.IsRepeating = true;
         _timer.Tick += (_, _) => CaptureFrame();
         _timer.Start();
-        Log.Info($"scroll.begin {rect.Width}x{rect.Height} direction={direction} auto={autoScroll}");
+        Log.Info($"scroll.begin {rect.Width}x{rect.Height} direction={direction} auto={autoScroll} speed={SettingsService.Current.ScrollCaptureSpeed}");
         ScrollPreviewPanel.Show(
             rect, autoScroll ? "自动滚动中，Enter 完成，Esc 放弃" : "滚动选区，Enter 完成，Esc 放弃");
     }
@@ -107,7 +117,7 @@ internal static class ScrollingCapture
         {
             try
             {
-                canvas = await work;
+                canvas = (await work).Canvas;
             }
             catch (Exception ex)
             {
@@ -193,6 +203,8 @@ internal static class ScrollingCapture
         _screen = null;
         _canvas = null;
         _work = null;
+        _reference = null;
+        _pacer = null;
         _completing = false;
         _onComplete = null;
         _onCancel = null;
@@ -218,20 +230,29 @@ internal static class ScrollingCapture
             }
 
             var canvas = _canvas;
-            var before = canvas?.Height ?? 0;
+            var reference = _reference;
             var direction = _direction;
             var work = Task.Run(() =>
             {
                 var pixels = new int[rect.Width * rect.Height];
                 Buffer.BlockCopy(bgra, 0, pixels, 0, Math.Min(bgra.Length, pixels.Length * 4));
                 var frame = new ScrollFrame(rect.Width, rect.Height, pixels);
-                if (canvas is null)
+                if (canvas is null || reference is null)
                 {
-                    return new ScrollCanvas(frame);
+                    return new Tick(new ScrollCanvas(frame), frame.Hashes, ScrollStep.Moved, frame.Height);
                 }
 
-                canvas.Append(frame, direction);
-                return canvas;
+                // 和上次拼上的一样：不拿去拼（整片纯色时随便哪个重叠都对得上，会凭空长出空白）。
+                if (ScrollPacer.Same(reference, frame.Hashes))
+                {
+                    return new Tick(canvas, reference, ScrollStep.Unchanged, 0);
+                }
+
+                var before = canvas.Height;
+                var appended = canvas.Append(frame, direction);
+                var grown = canvas.Height - before;
+                return new Tick(
+                    canvas, appended ? frame.Hashes : reference, ScrollPacer.Classify(reference, frame.Hashes, appended, grown), grown);
             });
             _work = work;
             var result = await work;
@@ -247,18 +268,27 @@ internal static class ScrollingCapture
                 return;
             }
 
-            _canvas = result;
+            _canvas = result.Canvas;
+            _reference = result.Hashes;
             _frames++;
-            ScrollPreviewPanel.Update(result, direction == ScrollDirection.Up, result.Height - before);
+            ScrollPreviewPanel.Update(result.Canvas, direction == ScrollDirection.Up, result.Grown);
             if (_canvas.Height >= ScrollStitcher.MaxOutputHeight)
             {
                 Complete();
                 return;
             }
 
-            if (_autoScroll)
+            if (_autoScroll && _pacer is { } pacer)
             {
-                SendWheel();
+                var delta = pacer.Next(result.Step, result.Grown);
+                if (delta == 0)
+                {
+                    StopAutoScroll(pacer.Stopped);
+                }
+                else
+                {
+                    SendWheel(delta);
+                }
             }
         }
         catch (Exception ex)
@@ -268,8 +298,12 @@ internal static class ScrollingCapture
         }
     }
 
-    /// <summary>自动滚动：把光标放到选区中间滚一格（滚完放回原处），不点击。</summary>
-    private static unsafe void SendWheel()    {
+    /// <summary>
+    /// 自动滚动：把光标放到选区中间滚 delta 个滚轮单位（120 = 一格；负数往回退），滚完放回原处，不点击。
+    /// 不到一格的量支持高精度滚轮的程序按比例滚，老程序攒满一格才滚（ScrollPacer 会把量加上去）。
+    /// </summary>
+    private static unsafe void SendWheel(int delta)
+    {
         try
         {
             PInvoke.GetCursorPos(out var cursor);
@@ -285,7 +319,8 @@ internal static class ScrollingCapture
             {
                 dx = 0,
                 dy = 0,
-                mouseData = (uint)(_direction == ScrollDirection.Down ? -120 : 120),
+                // 滚轮往下（内容往上走）是负数。
+                mouseData = unchecked((uint)(_direction == ScrollDirection.Down ? -delta : delta)),
                 dwFlags = MOUSE_EVENT_FLAGS.MOUSEEVENTF_WHEEL,
                 time = 0,
                 dwExtraInfo = 0,
@@ -300,6 +335,19 @@ internal static class ScrollingCapture
         {
             Log.Warn($"scroll.wheel-failed {ex.GetType().Name}");
         }
+    }
+
+    /// <summary>ScrollPacer 叫停：滚到头了、或者退了几次还是对不上。手动滚、Enter 完成照常。</summary>
+    private static void StopAutoScroll(ScrollStopReason reason)
+    {
+        _autoScroll = false;
+        var end = _direction == ScrollDirection.Down ? "已经滚到底了" : "已经滚到顶了";
+        ScrollPreviewPanel.SetStatus(
+            reason == ScrollStopReason.Lost
+                ? "对不上，已停止自动滚动：可以自己慢慢滚，Enter 完成"
+                : $"{end}，Enter 完成，Esc 放弃",
+            warning: reason == ScrollStopReason.Lost);
+        Log.Info($"scroll.auto-stopped reason={reason} frames={_frames}");
     }
 
     private static void OnHiddenMessage(uint message, WPARAM wParam, LPARAM lParam)
@@ -333,6 +381,8 @@ internal static class ScrollingCapture
 
         _paused = false;
         _autoScroll = true;
+        // 停着的时候用户可能自己滚过：下一拍不拿暂停前那一步量。
+        _pacer?.Reset();
         PInvoke.UnregisterHotKey(HiddenWindow.Hwnd, ResumeId);
         ScrollPreviewPanel.SetStatus("自动滚动中，Enter 完成，Esc 放弃");
         Log.Info("scroll.resumed");
@@ -340,4 +390,7 @@ internal static class ScrollingCapture
 
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     private static extern bool SetCursorPos(int x, int y);
+
+    /// <summary>拼完的一拍：画布、这次拼上的那帧的行哈希（没拼上就还是上一次的）、算哪种、长了几行。</summary>
+    private readonly record struct Tick(ScrollCanvas Canvas, uint[] Hashes, ScrollStep Step, int Grown);
 }

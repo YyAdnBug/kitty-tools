@@ -50,6 +50,12 @@ internal sealed class Settings
     /// <summary>单击条目直接粘贴（mac clipboardPasteOnClick，默认关）。</summary>
     public bool ClipboardPasteOnClick { get; set; }
 
+    /// <summary>
+    /// 剪贴板面板出现在哪（2026-11-04 用户要求「像翻译浮窗一样能跟随鼠标」；mac 没有这一项，MAC-DIFF.md）：
+    /// top = 鼠标所在屏的上方正中（默认，同以前）/ pointer = 光标右下（放不下翻到左边 / 上边）。启动器总在屏幕上方。
+    /// </summary>
+    public string ClipboardPanelPosition { get; set; } = "top";
+
     /// <summary>默认粘贴为纯文本：打开后 Enter 粘纯文本、Shift+Enter 保留格式（mac clipboardPastePlainByDefault，默认关）。</summary>
     public bool ClipboardPastePlain { get; set; }
 
@@ -179,6 +185,9 @@ internal sealed class Settings
 
     /// <summary>截完图放哪（PLAN-v9 S7）：card = 角落缩略图（默认）/ none = 都不要（照样进截图历史）。</summary>
     public string ShotPlacement { get; set; } = "card";
+
+    /// <summary>长截图自动滚动的速度（2026-11-04 用户反馈太快）：slow / normal（默认）/ fast，每步滚出选区高度的 12% / 25% / 40%（Core ScrollPacer）。</summary>
+    public string ScrollCaptureSpeed { get; set; } = "normal";
 
     // 录制（第四版）：帧率、保存目录、上次没写完的临时文件（闪退恢复用）。
     public int RecordFps { get; set; } = Core.RecorderRules.DefaultFps;

@@ -6,6 +6,8 @@
 // 两边的灰底留白、固定的侧栏、开着的开发者工具原地不动，算进去时对的位移也对不上（侧栏的字不跟着滚）、错的位移又处处一样（留白）；
 // 「有字」看这一行和上下行有没有差别，空白行对哪个位移都一样，不投票。
 // 拍的过程中用 ScrollCanvas（REVIEW R43）：拼好的部分按条带存，每拍只拿找重叠要看的那几行比，不再整张重新分配、重新哈希。
+// 重叠在整帧高度内找（同 mac 的 match 找遍所有位移；2026-11-04 以前最多找 800 行：选区高、每步滚得少时找不到，
+// 长截图自动滚动想放慢就只能滚得更多，ScrollPacer）。
 using System.Buffers;
 
 namespace KittyTools.Core;
@@ -51,8 +53,6 @@ public static class ScrollStitcher
 
     public const int MinOverlap = 8;
 
-    public const int MaxOverlap = 800;
-
     /// <summary>吸顶栏最多算这么多行（StickyRows）。</summary>
     public const int MaxStickyRows = 120;
 
@@ -94,7 +94,7 @@ public static class ScrollStitcher
     public static int FindOverlap(ScrollFrame previous, ScrollFrame next, ScrollDirection direction)
     {
         var sticky = StickyRows(previous, next);
-        var max = Math.Min(Math.Min(previous.Height, next.Height), MaxOverlap);
+        var max = Math.Min(previous.Height, next.Height);
         var candidates = new List<(int Overlap, int Votes)>();
         for (var overlap = Math.Max(MinOverlap, sticky); overlap <= max; overlap++)
         {
@@ -148,7 +148,7 @@ public static class ScrollStitcher
             return 0;
         }
 
-        var max = Math.Min(Math.Min(previous.Height, next.Height), MaxOverlap);
+        var max = Math.Min(previous.Height, next.Height);
         for (var overlap = max; overlap >= Math.Max(MinOverlap, sticky); overlap--)
         {
             if (Similar(previous, next, overlap, direction, columns))
@@ -221,9 +221,11 @@ public static class ScrollStitcher
                 }
             }
 
-            if (mismatches > columns.Length / 8)
+            if (mismatches > columns.Length / 8 && ++misses > Math.Max(1, samples / 10))
             {
-                misses++;
+                // 投票的行不会多于 samples：反对已经超过它的十分之一，这个重叠不可能算对，不用往下比了
+                // （重叠在整帧里找以后，对不上的帧要试上千个位置）。
+                return false;
             }
         }
 
@@ -449,16 +451,12 @@ public sealed class ScrollCanvas
     }
 
     /// <summary>
-    /// 拿去和新帧比的那张小图：ScrollStitcher.Plan 只读最上面 HeadRows 行，和往下滚时最下面 / 往上滚时紧接着上面的 MaxOverlap 行；
-    /// 高不小于新帧（Plan 里取的 min(上一张, 新帧) 才和整张时一样）。整张没那么高时就是整张。
+    /// 拿去和新帧比的那张小图：ScrollStitcher.Plan 只读最上面 HeadRows 行，和往下滚时最下面 / 往上滚时紧接着上面的一帧高的行
+    /// （重叠最多一帧高）；高不小于新帧（Plan 里取的 min(上一张, 新帧) 才和整张时一样）。整张没那么高时就是整张。
     /// </summary>
     private ScrollFrame Probe(ScrollDirection direction, int nextHeight)
     {
-        var height = Math.Max(
-            direction == ScrollDirection.Down
-                ? HeadRows + ScrollStitcher.MaxOverlap
-                : ScrollStitcher.MaxStickyRows + ScrollStitcher.MaxOverlap,
-            nextHeight);
+        var height = (direction == ScrollDirection.Down ? HeadRows : ScrollStitcher.MaxStickyRows) + nextHeight;
         if (Height <= height)
         {
             return Compose();
