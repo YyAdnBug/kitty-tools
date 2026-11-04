@@ -157,6 +157,28 @@
 - **截图**：`windows-shots` 的 `0.1.1-batch-3/`（角落卡按卡片大小解码后、关于页浅 / 深）。
 - **发布**（2026-11-03 用户：「发布0.1.1」）：https://github.com/YyAdnBug/kitty-tools/releases/tag/windows-v0.1.1 ，tag 指 `557181b`（exe 就是从它打的），不是 latest（latest 仍是 macos-v0.7.1）、不是预发布，8 个文件（两个架构的安装包、zip 和各自的 `.sha256`），说明用的是 `release-notes.md`。走 REST API：先建草稿、传完再发布。发布后用 0.1.0 的 Release 构建（探针档）检查更新：`update.check newer=True version=0.1.1`。
 
+### 0.1.2 热修（2026-11-04 用户「可以开始 0.1.2」）→ 审查方已写（分支 `windows-0.1.x`，`ba556a37`，没编译）
+
+**为什么**：GHSA-p3jp-9v83-76w9（.NET Brotli 解码越界写，高危，2026-11-03 公布，< 10.0.14 都有）。0.1.1 是 10.0.13 打的，
+链接预览（默认开）的 HttpClient 开着 `AutomaticDecompression.All`：复制一个恶意网址就会去解它给的 Brotli。windows 分支上已经有 0.2.0
+做了一半的东西，所以从 tag `windows-v0.1.1` 开 `windows-0.1.x`，只带三样：`5fa12ae` 的运行时钉 10.0.14（拣过来是 `db2379e`）、
+`989cd77` 里的 `WgcScaler.cs`（窗口录屏每次多 24 MB 不回落；0.1.1 到第 7 批之间这个文件没动过，整段照搬）、版本 0.1.2 + 更新日志两条。
+
+**用户报的：截图完会闪一下**（「我记得之前没有」，可能是最近哪次优化带出来的）。审查方看了 0.1.0 → 0.1.1 截图收尾那条路（复制 / 存完 → `Finish` 关遮罩 → 角落卡淡入 + 「已复制截图」胶囊）上的改动，没找到一眼能认出的。嫌疑按可能性：
+1. `9853db1` 角落卡按卡片大小解码（`ToBitmapAsync(png, decodeWidth)`）：卡片先露出深色底、图后到，或者图在 `Motion.Appear` 中途换上来。
+2. `b2414c1` 复制后 `RecordImageAsync` 挪到后台、`75d6f86` `Theme.Brush` 的兜底色（胶囊 / 卡片某一帧的底色不对）。
+3. 只在 windows 分支上有的（如果用户装的是更新的测试包）：F5 / F6（默认关）、C4 工具栏动效。
+
+**你们做的**：
+1. **先查闪烁**：0.1.0、0.1.1、windows 分支最新各打一份 Release（探针档），用自己的满屏测试图案当背景，走一遍「框选 → 复制」（要的话加个探针：程序里定好选区、直接调复制，不发按键），WGC 录整块屏、`--video-frames` 逐帧看收尾前后那半秒（只在本机看，整屏的帧不推）。定出是哪个提交、哪一帧不对再修：
+   - 0.1.1 就有 → 修在 `windows-0.1.x` 上，再 `git cherry-pick -x` 到 `windows`，0.1.2 的更新日志补一条；
+   - 只有 windows 分支有 → 只修 `windows`，记在 0.2.0 那几批下面。
+   - 三份都不闪（复现不出来）→ 记下试了什么，问用户闪的是整屏、右下角的卡、还是顶上的胶囊。
+2. **编译 `windows-0.1.x`**：Debug、Release AOT x64 / ARM64 零警告，`dotnet test` 全过；`obj` 里的 `project.assets.json` 不能再有 10.0.13 的编译器 / 运行时包（`runtime.win-*.Microsoft.DotNet.ILCompiler`、`Microsoft.NETCore.App.Runtime.win-*`，有 `Microsoft.NETCore.App.Runtime.NativeAOT.win-*` 的话也要 10.0.14）。
+3. **窗口录屏的内存**：这条分支上没有 `--record-memory-probe`（第 7 批才加的），录一扇窗口两三次、看专用工作集不再一次涨一截、文件能存下就行（数在 windows 上第 7 批已经量过）。
+4. **打包**：`changelog.json` 的日期改成打包那天，跑 `build-release.ps1`（带 `--smoke`），新包跑 `--update-live=0.1.1` 要过；装着 0.1.1 的临时目录里走一次 App 内更新到 0.1.2（`--update-test` + 本机假发布列表，同第 6 批的做法）。
+5. **不发布、不打 tag**，报告写产物路径和 sha256，提交推到 `windows-0.1.x`。**别把 `windows-0.1.x` 并进 `windows`**（你们推前要 rebase，带着合并提交会出事）：发布后审查方并。
+
 ### 0.2.0 第 6 批：F4 F7 F8 F9 F10 + 录屏尺寸 → 已写（审查方，`git log --grep "PLAN-v11 第 6 批"`，没编译）
 
 用户 2026-11-03 定：0.2.0 先从第 6 批写（第 5 批 F1–F3 要和 mac 0.8.0 同一份规格，mac 还没开始，往后放）。
