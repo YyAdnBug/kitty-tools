@@ -254,7 +254,7 @@ macos/
 icons/                   # 两个版本共用的功能图标（SVG）和生成脚本
 ```
 
-开发约定见 `macos` 分支的 [AGENTS.md](https://github.com/YyAdnBug/kitty-tools/blob/macos/AGENTS.md)，各模块规范见 [.cursor/rules/](https://github.com/YyAdnBug/kitty-tools/tree/macos/.cursor/rules)。Windows 版的结构和约定见 `windows` 分支的 [windows/AGENTS.md](https://github.com/YyAdnBug/kitty-tools/blob/windows/windows/AGENTS.md)。
+开发约定见 `macos` 分支的 [AGENTS.md](https://github.com/YyAdnBug/kitty-tools/blob/macos/AGENTS.md)，各模块规范见 [.claude/skills/](https://github.com/YyAdnBug/kitty-tools/tree/macos/.claude/skills)。Windows 版的结构和约定见 `windows` 分支的 [windows/AGENTS.md](https://github.com/YyAdnBug/kitty-tools/blob/windows/windows/AGENTS.md)。
 
 ## 致谢
 

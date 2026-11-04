@@ -7,12 +7,11 @@
 # 本地 AI / agent 工具目录（整目录不进仓库；本地文件保留）
 .agents/
 .codegraph/
-# 只放行 .cursor/rules/、.cursor/mcp.json、.claude/skills/mac-*/
+.cursor/
+# 只放行 .claude/rules/、.claude/skills/mac-*/
 # （npx skills 装的社区技能是指向 .agents/ 的符号链接，放行会提交成断链）
-.cursor/*
-!.cursor/rules/
-!.cursor/mcp.json
 .claude/*
+!.claude/rules/
 !.claude/skills/
 .claude/skills/*
 !.claude/skills/mac-*/
