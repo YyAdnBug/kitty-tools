@@ -1,4 +1,4 @@
-// 设置 › 启动器：呼出时切英文输入法、文件搜索的文件夹授权、浏览器书签与历史（第 12 批：只列本机装了的，每家一行
+// 设置 › 启动器：呼出时切英文输入法、面板位置（屏幕上方 / 跟随鼠标 / 上次位置，同翻译浮窗）、文件搜索的文件夹授权、浏览器书签与历史（第 12 批：只列本机装了的，每家一行
 // 16 pt App 图标 + 名字 + 书签开关，写读到了几条 / 没找到书签文件 / 需要完全磁盘访问权限（体检 B39）；开着时下面缩进
 // 一行「也搜浏览历史」，默认关，体检 D8）、网页搜索与快捷链接
 // （N12：行 = 网站图标或种类色块 / 名称 / 状态 / 关键词键帽 / 兜底开关，拖动排序，「+ −」增删（自定义的先确认），
@@ -11,6 +11,7 @@ struct LauncherTab: View {
   /// 清空使用记录（LauncherUsage.clearAll）
   var clearUsage: () -> Void = {}
   @AppStorage(Prefs.launcherRomanInput) private var romanInput = false
+  @AppStorage(Prefs.launcherPanelPosition) private var panelPosition = "top"
   @AppStorage(Prefs.launcherFallbackAlways) private var fallbackAlways = false
   /// 书签 / 浏览历史开着的浏览器 id（换行分隔，Browsers.ids 拆）
   @AppStorage(Prefs.launcherBrowserBookmarks) private var bookmarkIDs = Prefs.defaultBookmarkIDs
@@ -76,6 +77,15 @@ struct LauncherTab: View {
             Text("呼出时切到英文输入法")
             Text("只在搜索框里生效，离开后恢复；要搜中文时先关掉")
           }
+          Picker(selection: $panelPosition) {
+            Text("屏幕上方").tag("top")
+            Text("跟随鼠标").tag("mouse")
+            Text("上次位置").tag("last")
+          } label: {
+            Text("面板位置")
+            Text("屏幕上方是鼠标所在屏幕的上方正中，跟随鼠标是光标旁边，上次位置是上次拖到的地方")
+          }
+          .pickerStyle(.segmented)
           LabeledContent {
             ShortcutsButton()
           } label: {

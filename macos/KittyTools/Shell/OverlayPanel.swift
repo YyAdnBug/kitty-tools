@@ -6,8 +6,9 @@
 // 出现时淡入 + 内容下落 6 pt，用户关掉时一块替身在原位淡出（真窗口立刻收走，键盘马上回到原 App；不用系统的窗口淡出，
 // 它会泛白，见 fadeOutStandIn），高度可带动画伸缩。
 // ⌘Y 放大预览用 zoom / unzoom：从检查器卡片的位置长出来、缩回去。剪贴板、启动器、翻译浮窗可选「挤压入场」（设置 › 通用「动效」，squeezesIn）。
-// 翻译浮窗（frameName）：present 带 anchor 时出现在光标右下 12 pt（放不下翻到另一侧，体检 A13），不带时回到用户上次拖到的
-// 位置（userFrame；所在屏不是鼠标所在屏时换算到鼠标所在屏同一相对位置）；只有用户拖过、拖宽过才记下新位置。
+// 翻译浮窗、剪贴板面板、启动器（frameName）：present 带 anchor 时出现在光标右下 12 pt（放不下翻到另一侧，体检 A13），
+// 带 atTop 时在屏幕上方，都不带时回到用户上次拖到的位置（userFrame；所在屏不是鼠标所在屏时换算到鼠标所在屏同一相对位置）；
+// 只有用户拖过、拖宽过才记下新位置。剪贴板面板、启动器的这三种由设置里的「面板位置」选（2026-11-04，同翻译「浮窗位置」）。
 
 import AppKit
 import Carbon.HIToolbox
@@ -211,7 +212,7 @@ final class OverlayPanel: NSPanel {
   func pasteTarget() -> NSTextView? { Paster.pasteTarget(in: pasteTargetWindow) }
 
   /// makingKey = false：只露出来、不抢键盘（复制即译），此时靠点外关闭。
-  /// anchor：新出现时放在这一点（鼠标位置）的右下 12 pt（翻译浮窗「跟随鼠标」）；已经开着就不挪。
+  /// anchor：新出现时放在这一点（鼠标位置）的右下 12 pt（翻译浮窗、剪贴板面板、启动器「跟随鼠标」）；已经开着就不挪。
   /// atTop：新出现时放在鼠标所在屏的上方正中（翻译浮窗「屏幕上方」，同启动器的位置）；已经开着就不挪。
   /// below：新出现时挂在这个图标（屏幕坐标）下面（主界面，点菜单栏图标打开的）；已经开着就不挪。
   /// keepsPlace：原地重新露出来（划词翻译并替换期间临时 orderOut 的固定浮窗），不重新摆
@@ -534,8 +535,21 @@ final class OverlayPanel: NSPanel {
     }
   }
 
-  func toggle() {
-    if isVisible && isKeyWindow { dismiss() } else { present() }
+  /// anchor、atTop 同 present（剪贴板面板、启动器的「面板位置」，placement 算）
+  func toggle(anchor: NSPoint? = nil, atTop: Bool = false) {
+    if isVisible && isKeyWindow { dismiss() } else { present(anchor: anchor, atTop: atTop) }
+  }
+
+  /// 「面板位置」怎么摆这一次（剪贴板面板、启动器，纯函数配单测）：top 屏幕上方 / mouse 光标右下 / last 上次拖到的地方，
+  /// 没拖过的「上次位置」和认不出的值都按屏幕上方
+  static func placement(_ position: String?, hasUserFrame: Bool, mouse: NSPoint) -> (
+    anchor: NSPoint?, atTop: Bool
+  ) {
+    switch position {
+    case "mouse": (mouse, false)
+    case "last": (nil, !hasUserFrame)
+    default: (nil, true)
+    }
   }
 
   override func performKeyEquivalent(with event: NSEvent) -> Bool {
@@ -666,17 +680,22 @@ final class OverlayPanel: NSPanel {
     if let below {
       return setFrameOrigin(Self.frame(below: below, size: frame.size, in: visible).origin)
     }
-    if topAnchored || atTop {
-      return setFrameOrigin(Self.frame(atTopOf: visible, size: frame.size).origin)
-    }
+    // 这一次指定的（锚点、屏幕上方）在前，记着的位置（frameName）其次，topAnchored 最后：剪贴板面板、启动器
+    // 「面板位置」选上次位置时既 topAnchored 又有 frameName，要回到拖到的地方
     if let anchor {
       return setFrameOrigin(Self.frame(near: anchor, size: frame.size, in: visible).origin)
+    }
+    if atTop {
+      return setFrameOrigin(Self.frame(atTopOf: visible, size: frame.size).origin)
     }
     if frameName != nil {
       return setFrame(
         Self.lastFrame(
           user: userFrame, size: frame.size, screens: NSScreen.screens.map(\.visibleFrame),
           in: visible), display: false)
+    }
+    if topAnchored {
+      return setFrameOrigin(Self.frame(atTopOf: visible, size: frame.size).origin)
     }
     setFrameOrigin(NSPoint(x: visible.midX - frame.width / 2, y: visible.midY - frame.height / 2))
   }

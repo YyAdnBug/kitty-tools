@@ -60,8 +60,11 @@ final class ScrollCapture {
 
   // 自动滚动
   private var isAutoScrolling = false
-  /// 每步滚多少点；按实际滚出的像素调，让相邻两帧重叠一半多
+  /// 每步滚多少点；按实际滚出的像素调，让每步滚出选区高度的 fraction
   private var step: CGFloat
+  /// 每步想滚出选区高度的多少：面板按钮行上面的「慢 / 标准 / 快」，记住上次（2026-11-04 用户反馈太快，
+  /// 原来固定 40% = 现在的「快」；先放在设置里，用户说「放在预览的底部更好」）
+  private var fraction = Prefs.ScrollSpeed.current().fraction
   /// 往哪个方向滚（1 往下、-1 往上）：跟着用户手动滚的方向
   private var direction: CGFloat = 1
   /// 滚轮事件的正负号：实测位移和发出去的方向相反就翻过来（不依赖系统对合成事件怎么处理「自然滚动」）
@@ -112,7 +115,7 @@ final class ScrollCapture {
         maxHeight: min(Self.maxHeight, Self.maxPixels / max(first.width, 1)))
     else { throw CaptureError.tooSmall }
     self.stitcher = stitcher
-    step = self.region.height * 0.4
+    step = self.region.height * fraction
   }
 
   private enum CaptureError: LocalizedError {
@@ -139,12 +142,14 @@ final class ScrollCapture {
       if action != .escape { disarm() }  // 别的操作解除 Esc 的上膛
       switch action {
       case .toggleAuto: toggleAutoScroll()
+      case .speed(let speed): setSpeed(speed)
       case .cancel: finish(nil)
       case .escape: escape()
       case .output(let output): finish(output)
       case .saveMenu: break  // HUD 自己弹菜单，不会传上来
       }
     }
+    panel.hudView.speed = Prefs.ScrollSpeed.current()
     border.orderFrontRegardless()
     panel.orderFrontRegardless()
     panel.makeKey()
@@ -333,6 +338,13 @@ final class ScrollCapture {
     postScroll(step)  // 先滚一步，下一帧就看得出动没动
   }
 
+  /// 面板上换了速度：步子按比例换过去（正在自动滚就是下一步），记下来下次照用
+  private func setSpeed(_ speed: Prefs.ScrollSpeed) {
+    step = min(max(step * speed.fraction / fraction, 20), region.height * 0.8)
+    fraction = speed.fraction
+    UserDefaults.standard.set(speed.rawValue, forKey: Prefs.scrollCaptureSpeed)
+  }
+
   private func stopAutoScroll() {
     guard isAutoScrolling else { return }
     isAutoScrolling = false
@@ -353,8 +365,8 @@ final class ScrollCapture {
       lostStreak = 0
       let shift = CGFloat(stitcher.lastShift)
       if lastPosted != 0, (shift > 0) != (lastPosted * direction > 0) { wheelSign = -wheelSign }
-      // 目标：每步滚出选区高度的 40%（像素），按这一步实际滚了多少调步长
-      step = min(max(step * region.height * scale * 0.4 / abs(shift), 20), region.height * 0.8)
+      step = Self.nextStep(
+        step, shift: shift, height: region.height, scale: scale, fraction: fraction)
     case .lost:
       lostStreak += 1
       if lostStreak >= 4 {
@@ -373,6 +385,15 @@ final class ScrollCapture {
       }
     }
     postScroll(step)
+  }
+
+  /// 下一步滚多少点（纯函数配单测）：这一步发了 step 点、实际滚出 shift 像素，按比例换算成滚出选区高度 fraction 要发多少；
+  /// 最少 20 点，最多选区高度的 80%
+  static func nextStep(
+    _ step: CGFloat, shift: CGFloat, height: CGFloat, scale: CGFloat, fraction: CGFloat
+  ) -> CGFloat {
+    guard shift != 0 else { return step }
+    return min(max(step * height * scale * fraction / abs(shift), 20), height * 0.8)
   }
 
   /// 按方向滚 points 点（负数往回滚）。像素级滚动事件，发到 HID 层：和真滚轮一样交给光标下的窗口
@@ -557,7 +578,8 @@ final class ScrollCapturePanel: NSPanel {
   override var canBecomeMain: Bool { false }
 }
 
-/// 面板内容：预览（最近拼上的那头）、高度、状态（固定两行高：换提示时上面的读数和预览不跳）、按钮（自动滚动 ｜ 另存为…、
+/// 面板内容：预览（最近拼上的那头）、高度、状态（固定两行高：换提示时上面的读数和预览不跳）、自动滚动的速度（慢 / 标准 / 快）、
+/// 按钮（自动滚动 ｜ 另存为…、
 /// 存储 ｜ 取消、拷贝：同截图工具栏、录制条，取消紧挨主圆钮；32 × 32）。按键也在这里收。
 /// 永远深色的 HUD 皮肤（和截图工具栏一致）：普通 NSView 包一层材质。15 是 `.hudWindow` 的毛玻璃，圆角裁切、描边、
 /// 内圈 rim 都在毛玻璃自己的图层上（和它以前自己就是 NSVisualEffectView 时一样，外层只是透明的壳）；
@@ -565,6 +587,8 @@ final class ScrollCapturePanel: NSPanel {
 final class ScrollCaptureHUD: NSView {
   enum Item: Equatable {
     case toggleAuto, cancel
+    /// 换了自动滚动的速度（按钮行上面那一行）
+    case speed(Prefs.ScrollSpeed)
     /// 按了 Esc（✕ 是 cancel）：长图拼上过东西时第一下只上膛（第四轮体检 U3）
     case escape
     /// 存储右边的 ▾：弹「存储到「桌面」/ 另存为…」（同截图工具栏）
@@ -592,6 +616,15 @@ final class ScrollCaptureHUD: NSView {
       autoButton.contentTintColor = isAutoScrolling ? Style.Shot.accent : Style.HUD.text
     }
   }
+  /// 自动滚动的速度（按钮行上面那一行；会话开始时设成上次选的）
+  var speed = Prefs.ScrollSpeed.normal {
+    didSet {
+      speedControl.selectedSegment = Prefs.ScrollSpeed.allCases.firstIndex(of: speed) ?? 1
+    }
+  }
+  private let speedControl = HUDSegmentedControl(
+    labels: Prefs.ScrollSpeed.allCases.map(\.title), trackingMode: .selectOne, target: nil,
+    action: nil)
   private let preview = NSImageView()
   private let fadeMask = CAGradientLayer()
   /// 接缝处的品牌粉闪光（每拼上一段）
@@ -742,7 +775,16 @@ final class ScrollCaptureHUD: NSView {
       view.setContentHuggingPriority(.required, for: .vertical)
     }
 
-    let stack = NSStackView(views: [preview, readingView, statusBox, bar])
+    // 自动滚动的速度：系统的分段控件（深色跟着材质走，读屏念「自动滚动速度」和选中的那段），和内容一样宽，贴在按钮行上面
+    speedControl.controlSize = .small
+    speedControl.segmentDistribution = .fillEqually
+    speedControl.refusesFirstResponder = true  // 同按钮：点了不抢第一响应者，Esc / ↩ / 空格照旧归 HUD
+    speedControl.selectedSegment = 1
+    speedControl.toolTip = "自动滚动的速度"
+    speedControl.setAccessibilityLabel("自动滚动速度")
+    speedControl.setContentHuggingPriority(.required, for: .vertical)
+
+    let stack = NSStackView(views: [preview, readingView, statusBox, speedControl, bar])
     stack.orientation = .vertical
     stack.alignment = .centerX
     stack.distribution = .fill  // 预览（抗拉伸优先级最低）吃掉剩下的高度
@@ -758,6 +800,7 @@ final class ScrollCaptureHUD: NSView {
       stack.bottomAnchor.constraint(equalTo: surface.bottomAnchor),
       preview.widthAnchor.constraint(equalToConstant: content),
       statusBox.widthAnchor.constraint(equalToConstant: content),
+      speedControl.widthAnchor.constraint(equalToConstant: content),
       statusBox.heightAnchor.constraint(equalToConstant: twoLines),
       status.leadingAnchor.constraint(equalTo: statusBox.leadingAnchor),
       status.trailingAnchor.constraint(equalTo: statusBox.trailingAnchor),
@@ -765,6 +808,8 @@ final class ScrollCaptureHUD: NSView {
     ])
     // 盖在内容上面（只是一圈 0.5 pt，挨着边，碰不到内容）
     if #unavailable(macOS 26) { surface.layer?.addSublayer(rim) }
+    speedControl.target = self
+    speedControl.action = #selector(speedChanged(_:))
     scrubber.backgroundColor = Style.HUD.secondaryText.cgColor
     scrubber.cornerRadius = 1.5
     scrubber.opacity = 0
@@ -960,6 +1005,14 @@ final class ScrollCaptureHUD: NSView {
     seam.add(flash, forKey: "flash")
   }
 
+  @objc private func speedChanged(_ sender: NSSegmentedControl) {
+    let all = Prefs.ScrollSpeed.allCases
+    guard all.indices.contains(sender.selectedSegment) else { return }
+    openMenu?.dismiss()
+    speed = all[sender.selectedSegment]
+    onAction(.speed(speed))
+  }
+
   @objc private func clicked(_ sender: NSButton) {
     let item = buttons[sender.tag].item
     if case .saveMenu = item { return toggleSaveMenu() }
@@ -1070,4 +1123,9 @@ private struct HeightReadingView: View {
     .foregroundStyle(Color(nsColor: Style.HUD.text))
     .accessibilityElement(children: .combine)
   }
+}
+
+/// 长截图面板上的速度分段：面板不激活本 App、常常不是 key，第一下点击就要换档（同面板上的按钮）
+private final class HUDSegmentedControl: NSSegmentedControl {
+  override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }

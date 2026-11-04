@@ -31,6 +31,8 @@ enum Prefs {
   static let launcherWebSearchEngines = "launcherWebSearchEngines"
   /// 兜底搜索在有本地结果时也附在最后（默认只在没有结果时出现）
   static let launcherFallbackAlways = "launcherFallbackAlways"
+  /// 启动器出现在哪（设置 › 启动器，2026-11-04）：同剪贴板面板的 clipboardPanelPosition（top / mouse / last）
+  static let launcherPanelPosition = "launcherPanelPosition"
   /// 呼出启动器时搜索框只用英文输入法（Alfred 的 Force Keyboard；离开启动器后恢复）
   static let launcherRomanInput = "launcherRomanInput"
   /// 计算器汇率换算用的那一天的汇率表（ExchangeRates.Table 的 JSON）：取来的缓存，**不注册默认值**（不导出、不同步）
@@ -68,6 +70,9 @@ enum Prefs {
   static let clipboardLinkPreview = "clipboardLinkPreview"
   /// 单击条目直接粘贴（设置 › 剪贴板「面板」，默认关 = 单击选中、双击粘贴）；⌘ 单击、⇧ 单击不看它，照常多选
   static let clipboardPasteOnClick = "clipboardPasteOnClick"
+  /// 剪贴板面板出现在哪（设置 › 剪贴板「面板」，2026-11-04 用户要求和翻译浮窗一致）：top 鼠标所在屏的上方正中（默认）/
+  /// mouse 光标右下（放不下翻到另一侧）/ last 上次拖到的地方（没拖过 = 屏幕上方）。启动器同一套（launcherPanelPosition）
+  static let clipboardPanelPosition = "clipboardPanelPosition"
 
   /// 源语言：没设 = 自动检测。只在翻译浮窗顶部切换，全局记住
   static let translateSource = "translateSourceLang"
@@ -114,6 +119,9 @@ enum Prefs {
   /// 截完图放哪（2026-10-26 晾衣绳拍板 B1，ShotPlacement 的 rawValue）：corner 右下角的常驻缩略图（默认，
   /// 体检 D18 原来那样）/ clothesline 挂到屏幕顶上的晾衣绳上 / none 都不要（只进历史，飞行卡片落地停 0.9 s 就滑走）
   static let screenshotPlacement = "screenshotPlacement"
+  /// 长截图自动滚动的速度（长截图面板按钮行上面那一行，记住上次；2026-11-04 用户反馈太快；ScrollSpeed 的 rawValue）：
+  /// 每步滚出选区高度的 10% / 20% / 40%，normal 是默认，fast 是以前唯一的速度
+  static let scrollCaptureSpeed = "scrollCaptureSpeed"
   /// 旧键（0.7.0 之前是「留不留常驻缩略图」一个布尔）：migrate 里升成上面那个三选一，关过它的人升级后是「都不要」
   static let screenshotShelfLegacy = "screenshotShelf"
   /// 保留截图历史（2026-10-26 拍板 B3，默认开）：关掉之后不再往历史里记，已经记下的留着（设置里另有「现在清空」）
@@ -357,6 +365,8 @@ enum Prefs {
       clipboardShowPreview: true,
       clipboardLinkPreview: true,
       clipboardPasteOnClick: false,
+      clipboardPanelPosition: "top",
+      launcherPanelPosition: "top",
       translateFirst: Lang.zhHans.rawValue,
       translateSecond: Lang.en.rawValue,
       translateRemoveNewlines: false,
@@ -373,6 +383,7 @@ enum Prefs {
       ocrJoinLines: false,
       screenshotShutterSound: true,
       screenshotPlacement: ShotPlacement.corner.rawValue,
+      scrollCaptureSpeed: ScrollSpeed.normal.rawValue,
       shotHistory: true,
       shotHistoryDays: 30,
       shotHistoryMegabytes: 2 * 1024,
@@ -427,6 +438,34 @@ enum Prefs {
     static func current(_ defaults: UserDefaults = .standard) -> ShotPlacement {
       defaults.string(forKey: Prefs.screenshotPlacement).flatMap(ShotPlacement.init(rawValue:))
         ?? .corner
+    }
+  }
+
+  /// 长截图自动滚动的速度（scrollCaptureSpeed）：每步想滚出选区高度的多少，实际滚多少由 ScrollCapture 按上一步量出来的调
+  enum ScrollSpeed: String, CaseIterable {
+    case slow, normal, fast
+
+    var title: String {
+      switch self {
+      case .slow: "慢"
+      case .normal: "标准"
+      case .fast: "快"
+      }
+    }
+
+    /// 每步滚出选区高度的比例（快 = 2026-11-04 以前唯一的 40%）
+    var fraction: CGFloat {
+      switch self {
+      case .slow: 0.1
+      case .normal: 0.2
+      case .fast: 0.4
+      }
+    }
+
+    /// 偏好里存的（认不出来按标准）
+    static func current(_ defaults: UserDefaults = .standard) -> ScrollSpeed {
+      defaults.string(forKey: Prefs.scrollCaptureSpeed).flatMap(ScrollSpeed.init(rawValue:))
+        ?? .normal
     }
   }
 

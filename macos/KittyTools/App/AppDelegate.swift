@@ -363,7 +363,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let model = launcherModel
     let panel = OverlayPanel(
       size: NSSize(width: Style.listPanelWidth, height: LauncherPanelView.searchHeight),
-      topAnchored: true,
+      frameName: "LauncherPanel", topAnchored: true,
       // 启动器没有固定（N8）：点外面就收起
       autoHide: .clickOutside, isPinned: { false },
       // 包 AnyView：带了 environment 的是不透明类型，Swift 6.4 认为它的 View 遵循可能是隔离的、不让直接传进这个泛型 init
@@ -477,7 +477,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let panel = OverlayPanel(
       size: NSSize(
         width: ClipboardPanelView.width, height: ClipboardPanelView.height(for: model)),
-      topAnchored: true, autoHide: .clickOutside,
+      frameName: "ClipboardPanel", topAnchored: true, autoHide: .clickOutside,
       isPinned: { !UserDefaults.standard.bool(forKey: Prefs.clipboardHideOnUnfocus) },
       content: AnyView(ClipboardPanelView(model: model).environment(updater)))
     panel.keyEquivalentHandler = { [unowned model] in model.handleKeyEquivalent($0) }
@@ -1240,7 +1240,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       noteCapture?.panel.hide()
     }
     if !clipboardPanel.isVisible { clipboardStore.enforceLimits() }
-    clipboardPanel.toggle()
+    // 设置 › 剪贴板「面板位置」：屏幕上方（默认）/ 跟随鼠标 / 上次位置（2026-11-04，同翻译浮窗）
+    let place = OverlayPanel.placement(
+      UserDefaults.standard.string(forKey: Prefs.clipboardPanelPosition),
+      hasUserFrame: clipboardPanel.hasUserFrame, mouse: NSEvent.mouseLocation)
+    clipboardPanel.toggle(anchor: place.anchor, atTop: place.atTop)
   }
 
   func toggleLauncher() {
@@ -1251,7 +1255,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     let appearing = !launcherPanel.isVisible
     if appearing { launcherModel.prepareForShow() }
-    launcherPanel.toggle()
+    // 设置 › 启动器「面板位置」：同剪贴板面板（2026-11-04）
+    let place = OverlayPanel.placement(
+      UserDefaults.standard.string(forKey: Prefs.launcherPanelPosition),
+      hasUserFrame: launcherPanel.hasUserFrame, mouse: NSEvent.mouseLocation)
+    launcherPanel.toggle(anchor: place.anchor, atTop: place.atTop)
     // 接着上次的查询（没执行就收起、60 秒内，体检 A27）：字全选，直接打字就替换，↩ 照样执行上次选中的
     if appearing, launcherModel.resumesQuery {
       (launcherPanel.firstResponder as? NSTextView)?.selectAll(nil)

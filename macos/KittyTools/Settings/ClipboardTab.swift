@@ -13,6 +13,7 @@ struct ClipboardTab: View {
   @AppStorage(Prefs.clipboardShowPreview) private var showPreview = true
   @AppStorage(Prefs.clipboardLinkPreview) private var linkPreview = true
   @AppStorage(Prefs.clipboardPasteOnClick) private var pasteOnClick = false
+  @AppStorage(Prefs.clipboardPanelPosition) private var panelPosition = "top"
   @AppStorage(Prefs.clipboardPastePlain) private var pastePlain = false
   @AppStorage(Prefs.clipboardImageOCR) private var imageOCR = true
   @AppStorage(Prefs.clipboardBlockSensitive) private var blockSensitive = true
@@ -73,6 +74,15 @@ struct ClipboardTab: View {
           Text("单击条目直接粘贴")
           Text("关着时单击选中、双击粘贴；打开后点一下就粘贴，想先看内容用 ↑↓，⌘ 单击、⇧ 单击照常多选")
         }
+        Picker(selection: $panelPosition) {
+          Text("屏幕上方").tag("top")
+          Text("跟随鼠标").tag("mouse")
+          Text("上次位置").tag("last")
+        } label: {
+          Text("面板位置")
+          Text("屏幕上方是鼠标所在屏幕的上方正中，跟随鼠标是光标旁边，上次位置是上次拖到的地方")
+        }
+        .pickerStyle(.segmented)
       }
       .gated(by: .clipboard)
       Section("内容") {
