@@ -217,6 +217,10 @@ internal sealed unsafe partial class NoticeHost
         _root = new Grid
         {
             Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+            // 建窗口时就按设置里选的深浅色：亚克力接上那一刻按的是这里的主题。以前到第一次 ShowCore 才设，
+            // App 外观和系统不同（系统浅色、App 深色）时第一条提示从浅色那套过渡约 300 ms 才到深色，
+            // 截图后的「已复制截图」就是一块白闪一下（0.1.2 用户反馈，逐帧录屏量的：黑 → 242 白 → 70 深）。
+            RequestedTheme = Theme.ElementTheme,
         };
         _root.Children.Add(_content);
         _root.Tapped += OnTapped;
