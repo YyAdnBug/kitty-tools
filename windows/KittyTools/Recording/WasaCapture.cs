@@ -53,7 +53,6 @@ internal sealed unsafe class WasaCapture : IDisposable
 
     public float Peak { get; private set; }
 
-    /// <param name="deviceId">麦克风的 WASAPI 端点 Id（F12）；null = 系统默认。回环不看它。</param>
     /// <summary>按端点 Id 打开一个录音设备；不在、没启用时 null（日志只记错误码，不记设备名）。</summary>
     private static IMMDevice* OpenEndpoint(IMMDeviceEnumerator* enumerator, string id)
     {

@@ -207,6 +207,23 @@
   `update.installed files=95` → 重开 `update.relaunched version=0.1.2 removed-old=72`，exe 变成 `0.1.2+df0e466`；23 个 `.old` 留到下次（旧进程还在退，第 6 批记过，原来就有）。
   没碰真 GitHub 的发布、没碰 `D:\Apps\Kitty Tools`。
 
+**第二轮（2026-11-04 用户「还有什么需要完善的吗，都完善了再发 0.1.2」）→ 审查方已写（`windows-0.1.x` 到 `0428a27`，没编译）**：
+挑的是 0.1.0 起就有、改动小、windows 上已经修好或一眼能修的；0.2.0 的新功能、C5 / C6 这类行为调整不带。
+- `7d0b807` 复制截图后提示先黑一块（上面「没修的」那条）：`NoticeHost.ShowCore` 第一次露面不再当场 `ShowWindow`，排到 `DispatcherQueue` 低优先级（空闲时就是下一拍），
+  复制后关遮罩、建角落卡那 150–200 ms 做完再露；排着的时候被收了就不露（`_revealed`）。已拣到 windows（`a57a0f7`）。
+- `0428a27` 拣两条：R24 的帧时间（`989cd77` 里 `WgcRecorder` 那一行 + `RecordingPipeline.FrameTime` + 单测，探针没带）、第 6 批的录屏尺寸（`b14faa2` 的 `VideoSizeAsync`）；
+  0.1.2 更新日志改成 5 条。
+
+**你们做的**：
+1. 编译 `windows-0.1.x`：Debug、Release AOT x64 / ARM64 零警告，`dotnet test` 全过（多了 `FrameTimeFollowsTheCaptureClock`）。
+2. 提示：同一个探针录复制截图，**App 浅色、深色各一遍**（系统浅色不动），提示那块不该再有黑底、白底；再弹一条空闲时的提示（比如托盘「暂停记录」），出来不该比原来慢。
+   要是低优先级排一拍还是黑（UI 线程空下来之前 XAML 已经被排了别的活），改成截图遮罩那套：先 DWM 隐身露出来，等画上第一帧、再过 4 次合成且 ≥ 50 ms 才显形，300 ms 兜底（`SelectionOverlayWindow.SetCloaked`）。
+3. 录屏：`--record-test` 录一段带系统声音的，文件能存下、能播；截图历史里这一条的尺寸是视频的（整屏录的不再是 480 × 270）。
+4. 重新打包（日期照旧 2026-11-04，过了这天就改成打包那天），`--smoke`、`--update-live=0.1.1`、假发布列表 0.1.1 → 0.1.2 再走一遍。
+5. **都过了就发布**（用户已经说了「都完善了再发 0.1.2」）：在 `windows-0.1.x` 最后那个提交上打 tag `windows-v0.1.2`，照 0.1.1 走 REST API——先建草稿、
+   传 8 个文件（两个架构的安装包、zip 和各自的 `.sha256`）、说明用 `release-notes.md`，再发布；**不标 latest**、不是预发布。发布后用 0.1.1 的 Release 构建（探针档）
+   检查更新要看到 `update.check newer=True version=0.1.2`。哪一步没过就别发，记在这里。结果记在这一节下面；`windows-0.1.x` 照旧别并进 `windows`，审查方并。
+
 ### 0.2.0 第 6 批：F4 F7 F8 F9 F10 + 录屏尺寸 → 已写（审查方，`git log --grep "PLAN-v11 第 6 批"`，没编译）
 
 用户 2026-11-03 定：0.2.0 先从第 6 批写（第 5 批 F1–F3 要和 mac 0.8.0 同一份规格，mac 还没开始，往后放）。
