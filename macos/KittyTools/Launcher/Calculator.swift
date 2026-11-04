@@ -5,7 +5,8 @@
 // 手写递归下降：NSExpression 遇到半截表达式会直接让进程崩溃。「2024-01-01」这类日期不当算式（修 §11 #37）。
 // 体检 D11（全部离线）：单位换算「数字 单位 (to|in|=|转) 单位」用系统的 Measurement（长度、质量、温度、数据、时间、面积、
 // 体积、速度；英文符号 + 中文名，下面一张表）；进制「255 in hex / bin / oct」「0xff in dec」；结果大字按千分位分组，
-// ↩ 粘贴、Tab 写回的仍是不分组的原值，⌘K 另有「复制原始数字」、输入带 0x / 0b 时「复制十六进制 / 二进制」。汇率要联网，不做。
+// ↩ 粘贴、Tab 写回的仍是不分组的原值，⌘K 另有「复制原始数字」、输入带 0x / 0b 时「复制十六进制 / 二进制」。
+// 汇率换算（2026-11-04，要联网）在 ExchangeRates：排在单位换算和进制后面、算式前面，汇率表由调用方给。
 
 import Foundation
 
@@ -15,6 +16,8 @@ enum Calculator {
     var display: String
     var payload: String
     var copies: [Copy] = []
+    /// 卡片右侧小字（汇率换算写「人民币 · 11-03 汇率」）；nil 是「计算」
+    var note: String? = nil
   }
 
   struct Copy: Equatable {
@@ -22,16 +25,24 @@ enum Calculator {
     let text: String
   }
 
-  static func item(for query: String) -> LauncherItem? {
-    guard let result = result(for: query) else { return nil }
+  static func item(
+    for query: String, rates: ExchangeRates.Table? = nil, home: String = ExchangeRates.home
+  ) -> LauncherItem? {
+    guard let result = result(for: query, rates: rates, home: home) else { return nil }
     return LauncherItem(
       kind: .calculation, target: query, title: result.display,
-      subtitle: "计算结果 · ↩ 粘贴 · Tab 接着算", payload: result.payload, completion: result.payload)
+      subtitle: result.note ?? "", payload: result.payload,
+      completion: result.payload)
   }
 
-  /// 单位换算 → 进制 → 算式，都不是就 nil
-  static func result(for query: String) -> Result? {
+  /// 单位换算 → 进制 → 汇率（没有汇率表时 nil）→ 算式，都不是就 nil
+  static func result(
+    for query: String, rates: ExchangeRates.Table? = nil, home: String = ExchangeRates.home
+  ) -> Result? {
     if let result = convert(query) ?? convertRadix(query) { return result }
+    if let request = ExchangeRates.request(for: query) {
+      return rates.flatMap { ExchangeRates.result(request, table: $0, home: home) }
+    }
     guard looksLikeMath(query), let value = evaluate(query) else { return nil }
     var result = number(value)
     if hasRadixLiteral(query) { result.copies += radixCopies(value, except: 10) }

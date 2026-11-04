@@ -3319,8 +3319,15 @@ struct SnapshotProbeTests {
           417: "/", 621: home + "/Library/Application Support/Postgres/var-18",
         ], apps: [1885: .init(path: "/Applications/WeChat.app", name: "微信")])
     }
+    // 汇率换算（2026-11-04）：注入的表，不联网；「没取到」那张不给表（截图里的模型取表一律取不到）
+    let rates = ExchangeRates.Table(
+      date: "2026-11-03", fetchedAt: .now,
+      rates: ["USD": 1, "CNY": 6.6714, "JPY": 157.84, "MYR": 4.2])
     for dark in [false, true] {
       for (name, query) in [
+        ("launcher-currency", "100 usd to cny"), ("launcher-currency-failed", "100 美元 转 日元"),
+        ("launcher-actions-currency", "100 usd to jpy"), ("launcher-currency-prompt", "汇率"),
+        ("launcher-currency-name", "100 美元 转 马来西亚林吉特"),
         ("launcher-units", "10 km to mi"), ("launcher-units-cn", "30 摄氏度 转 华氏度"),
         ("launcher-radix", "255 in hex"), ("launcher-calc-group", "1234567*3"),
         ("launcher-actions-calc", "0xff+1"), ("launcher-settings", "蓝牙"),
@@ -3331,10 +3338,12 @@ struct SnapshotProbeTests {
         ("launcher-port-force", "port 3000"), ("launcher-port-app", "port 微信"),
         ("launcher-ip", "ip"),
       ] {
+        model.rates = name == "launcher-currency-failed" ? nil : rates
         model.query = query
         await model.processLookup()
         await model.ipLookup()
-        model.showsActions = name == "launcher-actions-calc"
+        await model.ratesFetch()
+        model.showsActions = ["launcher-actions-calc", "launcher-actions-currency"].contains(name)
         if ["launcher-kill-force", "launcher-port-force"].contains(name),
           let first = model.results.first
         {
