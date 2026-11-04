@@ -607,8 +607,13 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 - **第 1 批（能响起来，2026-11-04）**：模型和收拾、时间计算和单测（`ReminderTests`）、执行层、刘海岛 `pin`、设置 › 提醒、功能开关、
   导出导入。所有方式先按轻提醒出、只放提示音（ponytail，第 2 批换）；侧栏图标先用系统的 `alarm.fill`（第 3 批画 `kitty.reminders`）；
   列表暂不进同步（`SettingsSync.localKeys`，第 3 批）。截图自检 `SnapshotProbeTests/reminders()`，图以 `reminders-` 开头。
-- 第 2 批：全屏（借状态屏的画面和面板类）、边框、朗读、催促、录屏 / 状态屏 / 锁屏的规矩、进入状态屏和退路。第 3 批：启动器、快捷键、
-  菜单栏、主界面、同步、自画图标、规则（mac-overlay-panel、mac-whisker 新的 reminders.md）。手测 `HANDTEST.md`「提醒手测」。
+- **第 2 批（各种方式，2026-11-04）**：全屏 `Reminders/ReminderScreen.swift`（借状态屏的透出底色、字号、表情和 HUD 底板；
+  面板是新的 `ReminderScreenPanel`——状态屏的面板吞掉所有点击，这里按钮要能点，所以是第九个 NSPanel 子类例外；底板上的
+  「稍后」是自画的 HUD 胶囊：系统带边框按钮跟着窗口外观画，屏外出图是白的）、边框 `ReminderGlow.swift`（每屏四条贴边窄窗口，
+  不开整屏透明窗）、朗读（翻译那边的 `Speaker`）、催促（`Island.nudge` 抖一下 + 再响，第 3 次换全屏）、录屏录音时降级且不出声、
+  状态屏里排着（`StatusScreen.onExit` → `ReminderCenter.recheck`）、进入状态屏（`AppDelegate.enterStatus(forReminder:)` 先挑出
+  进不去的情况，进不去退成全屏、底板上写原因 + 「去授权」）。全屏统一用透出样式（ponytail：不给每条选告示 / 透出，要了再加字段）。
+- 第 3 批：启动器、快捷键、菜单栏、主界面、同步、自画图标、规则（mac-whisker 新的 reminders.md）。手测 `HANDTEST.md`「提醒手测」。
 
 ## 11½. Whisker 设计语言改造（2026-09-25 起）
 

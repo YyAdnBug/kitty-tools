@@ -147,12 +147,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       return nil
     }
     screen.isBusy = { [unowned self] in isCapturing || isReadingSelection }
+    // 在状态屏里时到点的提醒等退出后再响（提醒 C11）
+    screen.onExit = { [unowned self] in
+      if Feature.reminders.isOn { reminders.recheck() }
+    }
     return screen
   }()
   /// 提醒（PLAN §10「提醒」）：到点挂在刘海岛上。起停跟着功能开关（applyFeatures），列表变了看着偏好跟上
   private lazy var reminders: ReminderCenter = {
     let center = ReminderCenter()
     center.island = island
+    // 录屏 / 录音时边框、全屏、状态屏都降成轻提醒，也不出声（C11）
+    center.isRecording = { [unowned self] in recorder != nil || audioRecorder?.isStarted == true }
+    center.isStatusActive = { [unowned self] in statusScreen.isActive }
+    center.enterStatus = { [unowned self] in enterStatus(forReminder: $0) }
+    center.speak = { [unowned self] text in
+      speaker.stop()
+      speaker.toggle(text, language: nil)
+    }
+    center.grantAccessibility = { Permissions.requestAccessibility() }
     return center
   }()
   /// 选状态的面板（Z13a，按状态屏的全局快捷键时先出它；StatusScreen/StatusPicker.swift）：选了就立刻收起面板，
@@ -682,6 +695,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     created = window
     return window
   }()
+
+  /// 到点的提醒要进入状态屏（提醒 C1 / C12）：先把进不去的情况挑出来（进不去时提醒退成全屏，原因写在全屏上——状态屏自己的
+  /// 警告岛会被全屏盖住），再真的进。进去了返回 nil
+  private func enterStatus(forReminder id: String) -> (reason: String, grants: Bool)? {
+    guard Feature.statusScreen.isOn else { return ("状态屏这个功能关着", false) }
+    guard Permissions.isAccessibilityTrusted else { return ("还没给辅助功能授权，进不了状态屏", true) }
+    if let blocked = statusScreen.blocker() { return (blocked.title + "，没进状态屏", false) }
+    guard !statusScreen.isBusy(), !statusScreen.isActive else { return ("现在进不了状态屏", false) }
+    let presets = StatusPreset.load()
+    guard let preset = presets.first(where: { $0.id == id }) ?? presets.first else {
+      return ("没有可进入的状态", false)
+    }
+    statusScreen.enter(preset)
+    return statusScreen.isActive ? nil : ("没进入状态屏", false)
+  }
 
   /// 导入设置（设置 › 通用）整批写完偏好之后，让运行中的东西跟上：各页自己改的时候有各自的 onChange，这里没人通知。
   /// 别的设置都是用到时现读偏好，菜单栏图标自己看着偏好。返回按新上限清掉了几条剪贴板历史（导入的结果里说）

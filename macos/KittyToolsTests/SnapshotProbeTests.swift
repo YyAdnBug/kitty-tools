@@ -1238,6 +1238,47 @@ struct SnapshotProbeTests {
         IslandView(island: island), size: geometry.windowSize, dark: false,
         to: "\(out)/reminders-island-\(name).png")
     }
+    // 全屏（第 2 批）：带表情和说明、20 秒倒数；几条合成一条、点了才收；进不去状态屏时的橙字和「去授权」；
+    // 出现后那 1 秒按钮还没出来；小屏
+    let fullScreens: [(String, ReminderScreen.Content, Bool, CGSize)] = [
+      (
+        "full",
+        .init(
+          title: "休息眼睛", detail: "看看 6 米外的地方，20 秒", symbol: "sleeping-face", seconds: 20,
+          snoozes: [5, 15, 60]), true, CGSize(width: 1440, height: 900)
+      ),
+      (
+        "full-merged",
+        .init(
+          title: "周会 · 交房租", detail: "还错过了：给妈妈打电话", symbol: "busts", seconds: 0,
+          snoozes: [15, 60]), true, CGSize(width: 1440, height: 900)
+      ),
+      (
+        "full-note",
+        .init(
+          title: "午休", detail: nil, symbol: "", seconds: 0, snoozes: [5, 15, 60],
+          note: ("还没给辅助功能授权，进不了状态屏", true)), true, CGSize(width: 1440, height: 900)
+      ),
+      (
+        "full-settling",
+        .init(
+          title: "喝水", detail: nil, symbol: "hot-beverage", seconds: 300, snoozes: [5, 15, 60]),
+        false, CGSize(width: 1440, height: 900)
+      ),
+      (
+        "full-small",
+        .init(
+          title: "起来走走，顺便把窗户打开透透气", detail: "已经坐了一个多小时", symbol: "waving-hand",
+          seconds: 60, snoozes: [5, 15, 60]), true, CGSize(width: 1024, height: 640)
+      ),
+    ]
+    for (name, content, settled, size) in fullScreens {
+      let model = ReminderScreenModel(
+        content: content, remaining: max(content.seconds - 2, 0), isSettled: settled)
+      try snapshot(
+        ReminderScreenView(model: model), size: NSSize(width: size.width, height: size.height),
+        dark: false, to: "\(out)/reminders-\(name).png")
+    }
   }
 
   @Test(.enabled(if: directory != nil)) func statusScreenSettings() throws {

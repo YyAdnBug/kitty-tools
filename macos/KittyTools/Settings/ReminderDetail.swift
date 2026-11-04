@@ -105,7 +105,12 @@ struct ReminderDetail: View {
           binding.wrappedValue = next
         }
       ) {
-        ForEach(Reminder.Alert.allCases, id: \.self) { Text($0.title).tag($0) }
+        // 状态屏这个功能关着时不给「进入状态屏」（指向别的功能的东西跟着它的开关，mac-native §1）；已经选了的照旧显示
+        ForEach(
+          Reminder.Alert.allCases.filter {
+            $0 != .status || Feature.statusScreen.isOn || editing.alert == .status
+          }, id: \.self
+        ) { Text($0.title).tag($0) }
       } label: {
         Text("提醒方式")
         Text(editing.alert.explanation)

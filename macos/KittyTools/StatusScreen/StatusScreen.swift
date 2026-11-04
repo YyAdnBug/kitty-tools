@@ -58,6 +58,8 @@ import Observation
   @ObservationIgnored var blocker: () -> (title: String, detail: String)? = { nil }
   /// 正在做一会儿就完的事（截图框选、读选中的文字）：不进、不提示
   @ObservationIgnored var isBusy: () -> Bool = { false }
+  /// 退出之后（App 退出时不调）：在状态屏里时到点的提醒这会儿再看（2026-11-04 提醒 C11）
+  @ObservationIgnored var onExit: () -> Void = {}
 
   /// 在状态屏里（退出的那一刻就不算了，面板可能还在淡出、拦截可能还在等按着的键松开）
   @ObservationIgnored private(set) var isActive = false
@@ -730,6 +732,7 @@ import Observation
         })
     }
     guard reason != .quit else { return }
+    defer { onExit() }
     island?.show(
       "状态屏已结束",
       detail: Self.summary(

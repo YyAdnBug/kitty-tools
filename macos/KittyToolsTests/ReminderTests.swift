@@ -1,6 +1,7 @@
 // 提醒（PLAN §10「提醒」第 1 批）：什么时候响（每周 / 每月 / 一次 / 间隔）、此刻哪几条响 / 算错过、状态跟上列表、
 // 收拾不可信的列表、逐个字段兜底的解码、摘要和岛上的字、导出导入的合并。全是纯函数：不读也不写用户的偏好。
 
+import CoreGraphics
 import Foundation
 import Testing
 
@@ -380,6 +381,56 @@ struct ReminderTests {
     #expect(Reminder.merged([stale, soon], into: [], now: Self.at(2, 8)).map(\.id) == ["new"])
     // 本机已经有的照样更新（哪怕过了时间）
     #expect(Reminder.merged([stale], into: [stale], now: Self.at(2, 8)).map(\.id) == ["old"])
+  }
+
+  // MARK: 第 2 批：方式
+
+  /// 几条一起到点按最显眼的那条；录屏录音时一律轻提醒（C11）
+  @Test func alertPicksMostProminent() {
+    func reminder(_ alert: Reminder.Alert, seconds: Int = 0) -> Reminder {
+      var reminder = Self.weekly("\(alert)\(seconds)")
+      reminder.alert = alert
+      reminder.fullSeconds = seconds
+      return reminder
+    }
+    let light = reminder(.light)
+    let glow = reminder(.glow)
+    let full = reminder(.full, seconds: 20)
+    let status = reminder(.status)
+    #expect(ReminderCenter.alert(for: [light, glow], recording: false) == .glow)
+    #expect(ReminderCenter.alert(for: [glow, full, light], recording: false) == .full)
+    #expect(ReminderCenter.alert(for: [full, status], recording: false) == .status)
+    #expect(ReminderCenter.alert(for: [full, status], recording: true) == .light)
+    #expect(ReminderCenter.alert(for: [], recording: false) == .light)
+    // 全屏多久：有一条点了才收就点了才收；只算全屏 / 状态屏的那几条
+    #expect(ReminderCenter.fullSeconds(for: [full, light]) == 20)
+    #expect(ReminderCenter.fullSeconds(for: [full, reminder(.full, seconds: 60)]) == 60)
+    #expect(ReminderCenter.fullSeconds(for: [full, reminder(.full)]) == 0)
+    #expect(ReminderCenter.fullSeconds(for: [light]) == 0)
+    // 稍后的选项：设置里的那个 + 15 分钟 + 1 小时，去重
+    #expect(ReminderCenter.snoozeChoices(default: 5) == [5, 15, 60])
+    #expect(ReminderCenter.snoozeChoices(default: 15) == [15, 60])
+    #expect(ReminderCenter.snoozeChoices(default: 30) == [15, 30, 60])
+  }
+
+  /// 边框的四条：贴着屏幕的四边、亮的那头朝外
+  @Test func glowStripsHugTheEdges() {
+    let screen = CGRect(x: 100, y: 50, width: 1000, height: 600)
+    let depth = ReminderGlow.depth
+    #expect(
+      ReminderGlow.Edge.top.frame(in: screen, depth: depth)
+        == CGRect(x: 100, y: 650 - depth, width: 1000, height: depth))
+    #expect(
+      ReminderGlow.Edge.bottom.frame(in: screen, depth: depth)
+        == CGRect(x: 100, y: 50, width: 1000, height: depth))
+    #expect(
+      ReminderGlow.Edge.left.frame(in: screen, depth: depth)
+        == CGRect(x: 100, y: 50, width: depth, height: 600))
+    #expect(
+      ReminderGlow.Edge.right.frame(in: screen, depth: depth)
+        == CGRect(x: 1100 - depth, y: 50, width: depth, height: 600))
+    #expect(
+      ReminderGlow.Edge.top.points.start.y == 1 && ReminderGlow.Edge.right.points.start.x == 1)
   }
 
   @Test func archiveRoundTripAndMerge() throws {

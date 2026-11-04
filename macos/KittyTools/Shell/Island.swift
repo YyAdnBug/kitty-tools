@@ -421,6 +421,13 @@ import SwiftUI
     apply(next, actions: actions)
   }
 
+  /// 催一下挂着的那条（提醒 C10）：整座岛左右抖一下（同出错时）、再播报一遍；没显示着它就不动
+  func nudge() {
+    guard isShowingPinned, let content else { return }
+    shakes += 1
+    Self.announce([content.title, content.detail].compactMap { $0 }.joined(separator: "，"))
+  }
+
   /// 不再挂着（调用方那边处理完了、功能关了）：正显示着就收
   func unpin() {
     guard pinned != nil else { return }

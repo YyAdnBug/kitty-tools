@@ -4,8 +4,12 @@
 // 「知道了」（或岛上的 ×、双指上滑）：一次的从列表里删掉（D7），间隔的从这一刻重新数；「稍后」推 N 分钟（C8，设置 › 提醒）。
 // 间隔提醒碰上锁屏、醒来、5 分钟没碰键盘鼠标，算休息过了，回来重新数（B3）：有开着的间隔提醒时每分钟看一眼空闲了多久，
 // 没有就不看。锁着屏时一条都不响，解锁后再看（晚了 5 分钟以内照常响）。
-// 第 1 批只有轻提醒和提示音：边框、全屏、进入状态屏、朗读、催促、录屏时降级、状态屏里排着在第 2 批，
-// 现在都按轻提醒出（ponytail：第 2 批换成各自的方式）。
+// 方式（C1，第 2 批）：几条一起到点时按最显眼的那条（状态屏 > 全屏 > 边框 > 轻提醒）；轻提醒挂在岛上，边框 = 四边的光 + 岛，
+// 全屏 = ReminderScreen（岛上不再挂），进入状态屏 = 到点直接进那个状态、算处理了（进不去时退成全屏，底板上说为什么，C12）。
+// 正在录屏、录音时全都降成轻提醒、也不出声（C11，不然录进去）；在状态屏里、锁着屏时一条都不响，退出 / 解锁后再看。
+// ponytail: 已经出来的边框 / 全屏，之后才开始录屏的不收（会录进去）；要的话在录屏开始时调一次 present。
+// 声音（C9）：提示音或朗读标题，只响一声。催促（C10）：岛上挂着没理的，每隔 N 分钟再响一声、岛晃一下，第 3 次换成全屏，
+// 之后不再催。
 // 状态（每条处理到哪一刻、推到几点）存在 Prefs.remindersState：这台电脑自己的，不导出；间隔的锚点只在内存里（重启就是重新数）。
 // 起停跟着功能开关（AppDelegate.applyFeatures）；关掉时岛上挂着的收掉，数据和状态不动。
 
@@ -13,6 +17,25 @@ import AppKit
 
 @MainActor final class ReminderCenter {
   var island: Island?
+  /// 正在录屏 / 录音（AppDelegate 给）：边框、全屏、状态屏都降成轻提醒，也不出声
+  var isRecording: () -> Bool = { false }
+  /// 正在状态屏里：先不响，退出后 AppDelegate 调 recheck
+  var isStatusActive: () -> Bool = { false }
+  /// 进入某个状态（状态屏的状态 id）；进不去时给原因，grants = 缺辅助功能授权
+  var enterStatus: (String) -> (reason: String, grants: Bool)? = { _ in ("状态屏不可用", false) }
+  /// 朗读一段文字（翻译那边现成的朗读）
+  var speak: (String) -> Void = { _ in }
+  /// 全屏上的「去授权」
+  var grantAccessibility: () -> Void = {}
+  private let screen = ReminderScreen()
+  private let glow = ReminderGlow()
+  /// 现在挂着的这一批用哪种方式（轻提醒 / 边框 / 全屏；进入状态屏的当场就处理完了，不留在这）。又有新的到点只升不降
+  private var mode = Reminder.Alert.light
+  /// 进入状态屏没进去的原因：写在全屏上（C12）
+  private var note: (text: String, grants: Bool)?
+  /// 催了几次（C10）
+  private var nags = 0
+  private var nagTask: Task<Void, Never>?
   private let defaults: UserDefaults
   private var isRunning = false
   private var list: [Reminder] = []
@@ -35,7 +58,15 @@ import AppKit
   /// 多久没碰键盘鼠标算离开了（B3）
   static let awayAfter: TimeInterval = 5 * 60
 
-  init(defaults: UserDefaults = .standard) { self.defaults = defaults }
+  init(defaults: UserDefaults = .standard) {
+    self.defaults = defaults
+    screen.onDone = { [weak self] in self?.acknowledge() }
+    screen.onSnooze = { [weak self] in self?.snooze(minutes: $0) }
+    screen.onGrant = { [weak self] in self?.grantAccessibility() }
+  }
+
+  /// 状态屏退出后（AppDelegate 调）：在里面时到点的这会儿再看
+  func recheck() { check() }
 
   func start() {
     guard !isRunning else { return }
@@ -59,6 +90,7 @@ import AppKit
     for (center, token) in observers { center.removeObserver(token) }
     observers = []
     if !firing.isEmpty || !missed.isEmpty { island?.unpin() }
+    hideSurfaces()
     firing = []
     missed = []
     anchors = [:]
@@ -137,7 +169,7 @@ import AppKit
     if !isAway, idlePoll != nil, Self.idleSeconds() >= Self.awayAfter { isAway = true }
     let result = ReminderCheck.check(
       list, state: state, anchors: anchors, showing: Set(firing + missed), now: now,
-      held: isLocked, away: isAway, calendar: .current)
+      held: isLocked || isStatusActive(), away: isAway, calendar: .current)
     let fresh = result.fire + result.missed
     if !fresh.isEmpty {
       for id in fresh {
@@ -149,8 +181,18 @@ import AppKit
       firing += result.fire
       missed += result.missed
       saveState()
+      let newly = result.fire.compactMap { id in list.first { $0.id == id } }
+      // 新到点的从第 1 次重新数催促（不然它的第 2 次就换成全屏了）
+      if !newly.isEmpty { nags = 0 }
+      sound(for: newly)
+      // 进了状态屏的只算这一批处理了：之前挂着没理的、这次一起算出来错过的照样留着，退出状态屏后看得到
+      // （2026-11-04 评审：原来全算处理了，没看到的一次性提醒被删掉）
+      if escalate(with: newly) {
+        firing.removeAll { result.fire.contains($0) }
+        return finish(result.fire)
+      }
       present()
-      chime(for: result.fire)
+      scheduleNag()
     }
     guard let next = result.next else { return }
     wake = Task { [weak self] in
@@ -161,22 +203,129 @@ import AppKit
     }
   }
 
-  // MARK: 岛
+  // MARK: 方式
 
-  /// 把挂着的（到点的 + 错过的）合成一条挂在岛上；都没有了就收掉
+  /// 新到点的这几条要什么方式：比现在挂着的更显眼才换（只升不降）。要进状态屏的当场进；进成了返回 true（这一批算处理了），
+  /// 进不去退成全屏、记下原因
+  private func escalate(with newly: [Reminder]) -> Bool {
+    guard !newly.isEmpty else { return false }
+    var target = Self.alert(for: newly, recording: isRecording())
+    if target == .status, let preset = newly.first(where: { $0.alert == .status })?.statusID {
+      guard let failure = enterStatus(preset) else { return true }
+      target = .full
+      note = (failure.reason, failure.grants)
+    }
+    if Self.rank(target) > Self.rank(mode) { mode = target }
+    return false
+  }
+
+  /// 把挂着的（到点的 + 错过的）按现在的方式摆出来：全屏 / 边框 + 岛 / 岛；只剩错过的一律在岛上；都没有了就全收掉
   private func present() {
-    guard let island else { return }
     let fired = firing.compactMap { id in list.first { $0.id == id } }
     let lost = missed.compactMap { id in list.first { $0.id == id } }
-    guard let notice = Self.notice(fired: fired, missed: lost) else { return island.unpin() }
+    guard let notice = Self.notice(fired: fired, missed: lost) else {
+      hideSurfaces()
+      island?.unpin()
+      return
+    }
+    // 只剩错过的（到点的被关掉、改了时间）：方式和催促都回到初始，下一条到点不会沿用刚才的边框 / 全屏
+    if fired.isEmpty { hideSurfaces() }
+    if !fired.isEmpty, mode == .full {
+      glow.dismiss()
+      island?.unpin()
+      screen.show(
+        .init(
+          title: notice.title, detail: notice.detail,
+          symbol: fired.first(where: { !$0.symbol.isEmpty })?.symbol ?? "",
+          seconds: Self.fullSeconds(for: fired),
+          snoozes: Self.snoozeChoices(default: snoozeMinutes),
+          note: note))
+      return
+    }
+    screen.dismiss()
+    if !fired.isEmpty, mode == .glow { glow.show() } else { glow.dismiss() }
     // 第一个是主按钮（露在行尾）
     var actions = [Island.Action("知道了") { [weak self] in self?.acknowledge() }]
     if !fired.isEmpty {
       actions.append(Island.Action("稍后 \(snoozeMinutes) 分钟") { [weak self] in self?.snooze() })
     }
-    island.pin(notice.title, detail: notice.detail, symbol: "alarm.fill", actions: actions) {
+    island?.pin(notice.title, detail: notice.detail, symbol: "alarm.fill", actions: actions) {
       [weak self] in self?.acknowledge()
     }
+  }
+
+  private func hideSurfaces() {
+    screen.dismiss()
+    glow.dismiss()
+    nagTask?.cancel()
+    nagTask = nil
+    mode = .light
+    note = nil
+    nags = 0
+  }
+
+  /// 几条一起到点时用哪种方式（纯函数，B5 + C11）：最显眼的那条；正在录屏录音时一律轻提醒
+  static func alert(for reminders: [Reminder], recording: Bool) -> Reminder.Alert {
+    guard !recording else { return .light }
+    return reminders.map(\.alert).max { rank($0) < rank($1) } ?? .light
+  }
+
+  static func rank(_ alert: Reminder.Alert) -> Int {
+    switch alert {
+    case .light: 0
+    case .glow: 1
+    case .full: 2
+    case .status: 3
+    }
+  }
+
+  /// 全屏多久自己收（纯函数）：有一条要「点了才收」就点了才收，否则取最长的；不是全屏的那几条（含进不去状态屏、退成全屏的）不算
+  static func fullSeconds(for reminders: [Reminder]) -> Int {
+    // 状态屏的没进去、退成全屏的不自己收（详情页里它没有「多久自己收起」，藏着的旧值不算；人可能不在跟前，C12）
+    let seconds = reminders.filter { $0.alert == .full }.map(\.fullSeconds)
+    return seconds.contains(0) || seconds.isEmpty ? 0 : seconds.max() ?? 0
+  }
+
+  /// 全屏上「稍后」的几个选项（纯函数，C8）：设置里定的那个 + 15 分钟 + 1 小时，去重、从小到大
+  static func snoozeChoices(default minutes: Int) -> [Int] {
+    Array(Set([minutes, 15, 60])).sorted()
+  }
+
+  // MARK: 催促（C10）
+
+  /// 挂着的里头有要催的（岛上、边框；全屏不催）：按最短的间隔排下一次
+  private func scheduleNag() {
+    nagTask?.cancel()
+    nagTask = nil
+    let minutes = firing.compactMap { id in list.first { $0.id == id }?.nagMinutes }.filter {
+      $0 > 0
+    }
+    guard mode != .full, let every = minutes.min() else { return }
+    nagTask = Task { [weak self] in
+      try? await Task.sleep(for: .seconds(every * 60), tolerance: .seconds(5))
+      guard !Task.isCancelled else { return }
+      self?.nag()
+    }
+  }
+
+  /// 再响一声、岛晃一下；第 3 次（到点那次算第 1 次）换成全屏，之后不再催。锁着屏、在状态屏里时等下一轮
+  private func nag() {
+    guard isRunning, !firing.isEmpty, mode != .full else { return }
+    if isLocked || isStatusActive() { return scheduleNag() }
+    let fired = firing.compactMap { id in list.first { $0.id == id } }
+    nags += 1
+    sound(for: fired)
+    if nags >= 2 {
+      if isRecording() {
+        island?.nudge()
+      } else {
+        mode = .full
+        present()
+      }
+      return
+    }
+    island?.nudge()
+    scheduleNag()
   }
 
   /// 岛上那一条写什么（纯函数）：到点的标题连在一起（只有一条时带它的说明），错过的写在详情里；只有错过的时
@@ -204,9 +353,9 @@ import AppKit
     finish(handled)
   }
 
-  /// 「稍后」：到点的推 N 分钟；一起挂着的错过的算处理了
-  private func snooze() {
-    let until = Date.now.addingTimeInterval(TimeInterval(snoozeMinutes * 60))
+  /// 「稍后」：到点的推 N 分钟（岛上是设置里定的那个，全屏上能另选）；一起挂着的错过的算处理了
+  private func snooze(minutes: Int? = nil) {
+    let until = Date.now.addingTimeInterval(TimeInterval((minutes ?? snoozeMinutes) * 60))
     for id in firing { state.snoozed[id] = until }
     let handled = missed
     firing = []
@@ -235,17 +384,24 @@ import AppKit
       state = ReminderCheck.reconciled(state, with: list, now: now)
     }
     saveState()
-    island?.unpin()
+    // 还有没处理的（进状态屏只处理了那一批）就照样摆着，都处理了才全收
+    if firing.isEmpty, missed.isEmpty {
+      hideSurfaces()
+      island?.unpin()
+    } else {
+      present()
+    }
     check()
   }
 
-  /// 提示音（C9，只响一声）：几条一起到点时响第一条选的。朗读第 2 批做（ponytail：现在选了朗读的不出声）
-  private func chime(for ids: [String]) {
-    guard
-      let reminder = ids.lazy.compactMap({ id in self.list.first { $0.id == id } })
-        .first(where: { $0.sound == .chime })
-    else { return }
-    NSSound(named: reminder.chime)?.play()
+  /// 声音（C9，只响一声）：几条一起到点时按第一条要出声的——提示音，或者把这几条的标题念出来。录屏录音时不出声（C11）
+  private func sound(for reminders: [Reminder]) {
+    guard !isRecording(), let first = reminders.first(where: { $0.sound != .none }) else { return }
+    switch first.sound {
+    case .chime: NSSound(named: first.chime)?.play()
+    case .speak: speak(reminders.map(\.title).joined(separator: "，"))
+    case .none: break
+    }
   }
 
   private func saveState() {
