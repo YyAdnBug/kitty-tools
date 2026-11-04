@@ -30,3 +30,5 @@ description: 原生分支的视觉与动效设计语言 Whisker（用户 2026-09
 - 现成件（体检 2026-09-28）：卡片 `.cardSurface()`（不加阴影）、输入框底 `Style.inputFill`、分隔线 `Hairline()` / 描边 `shape.hairlineBorder()`（增强对比度自动 1 pt，别写死 `lineWidth: 0.5`）、带文字的主按钮 `BrandButtonStyle`（不用 `.borderedProminent` + tint）、复制对勾停 `Style.copiedHold`、列表行悬停 `Shell/HoverTracker`（不用 `onHover`）。
 - 减弱动态效果 / 降低透明度 / 增强对比度都要处理；岛和飞行卡片要发 VoiceOver 播报。
 - 每个新界面过一遍 rule §10 的检查清单；截图自检补新状态。
+
+提醒（2026-11-04，第十个功能）的界面规范在同目录 `reminders.md`：设置 › 提醒、刘海岛上挂着的提醒、边框、全屏提醒、启动器的「提醒 …」行、菜单栏子菜单。

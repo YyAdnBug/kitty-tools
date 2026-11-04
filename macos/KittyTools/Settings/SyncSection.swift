@@ -17,6 +17,7 @@ struct SyncSection: View {
   @AppStorage(Feature.translate.prefsKey) private var translateOn = true
   @AppStorage(Feature.launcher.prefsKey) private var launcherOn = true
   @AppStorage(Feature.statusScreen.prefsKey) private var statusScreenOn = true
+  @AppStorage(Feature.reminders.prefsKey) private var remindersOn = true
   /// 开同步没成的原因（橙字）
   @State private var problem: String?
   /// 面板开着、正在看文件夹、正在开
@@ -75,6 +76,9 @@ struct SyncSection: View {
         part(
           SyncRecords.Kind.statuses.rawValue, title: SyncRecords.Kind.statuses.title,
           detail: "状态屏里自己写的那几个状态", feature: "状态屏", isOn: statusScreenOn)
+        part(
+          SyncRecords.Kind.reminders.rawValue, title: SyncRecords.Kind.reminders.title,
+          detail: "有哪些提醒、各自的时间和方式；两台都开着时两台都响", feature: "提醒", isOn: remindersOn)
         part(
           SyncRecords.Kind.launcher.rawValue, title: SyncRecords.Kind.launcher.title,
           detail: "空搜索框里收藏的那几个；这台没装的 App 不显示，装上就回来", feature: "启动器",

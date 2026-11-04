@@ -68,6 +68,29 @@ import AppKit
   /// 状态屏退出后（AppDelegate 调）：在里面时到点的这会儿再看
   func recheck() { check() }
 
+  /// 暂停全部提醒到 date（菜单栏，D6；nil = 恢复）：这期间一条都不响，之后晚了 5 分钟以内照常响、更晚的合成「错过了」
+  func pause(until date: Date?) {
+    guard isRunning else { return }
+    state.pausedUntil = date
+    saveState()
+    check()
+  }
+
+  /// 暂停到几点（还在暂停才有）
+  var pausedUntil: Date? { state.pausedUntil.flatMap { $0 > .now ? $0 : nil } }
+
+  /// 下一条要响的是哪条、几点（菜单栏「下一个」）；正挂着的不算
+  func nextUp() -> (reminder: Reminder, at: Date)? {
+    let now = Date.now
+    let showing = Set(firing + missed)
+    return list.filter { $0.isOn && !showing.contains($0.id) }
+      .compactMap { reminder in
+        ReminderCheck.due(reminder, state: state, anchors: anchors, calendar: .current)
+          .flatMap { $0 > now ? (reminder, $0) : nil }
+      }
+      .min { $0.1 < $1.1 }
+  }
+
   func start() {
     guard !isRunning else { return }
     isRunning = true
@@ -167,9 +190,10 @@ import AppKit
     let now = Date.now
     // 到点前一刻才离开的，等不到下一次空闲检查：有间隔提醒要看时现读一次
     if !isAway, idlePoll != nil, Self.idleSeconds() >= Self.awayAfter { isAway = true }
+    let paused = pausedUntil
     let result = ReminderCheck.check(
       list, state: state, anchors: anchors, showing: Set(firing + missed), now: now,
-      held: isLocked || isStatusActive(), away: isAway, calendar: .current)
+      held: isLocked || isStatusActive() || paused != nil, away: isAway, calendar: .current)
     let fresh = result.fire + result.missed
     if !fresh.isEmpty {
       for id in fresh {
@@ -194,7 +218,8 @@ import AppKit
       present()
       scheduleNag()
     }
-    guard let next = result.next else { return }
+    // 暂停着的到点了要再看一眼（那时补响 / 合成错过的）
+    guard let next = [result.next, paused].compactMap({ $0 }).min() else { return }
     wake = Task { [weak self] in
       try? await Task.sleep(
         for: .seconds(max(next.timeIntervalSinceNow, 0) + 0.05), tolerance: .seconds(1))
@@ -311,7 +336,7 @@ import AppKit
   /// 再响一声、岛晃一下；第 3 次（到点那次算第 1 次）换成全屏，之后不再催。锁着屏、在状态屏里时等下一轮
   private func nag() {
     guard isRunning, !firing.isEmpty, mode != .full else { return }
-    if isLocked || isStatusActive() { return scheduleNag() }
+    if isLocked || isStatusActive() || pausedUntil != nil { return scheduleNag() }
     let fired = firing.compactMap { id in list.first { $0.id == id } }
     nags += 1
     sound(for: fired)

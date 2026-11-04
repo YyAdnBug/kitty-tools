@@ -58,8 +58,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .record: HotKeyAction.screenRecord.symbol
     case .notes: HotKeyAction.noteAll.symbol
     case .statusScreen: HotKeyAction.statusScreen.symbol
-    // ponytail: 第 3 批换成自己画的闹钟（kitty.reminders，拍板 F2），现在先用系统符号
-    case .reminders: "alarm.fill"
+    // 自己画的闹钟（拍板 F2；icons/feature/kitty.reminders.svg）
+    case .reminders: "kitty.reminders"
     case .dockPreview: "kitty.dock.preview"
     case .translate: "kitty.translate"
     case .hotkeys: "kitty.hotkeys"

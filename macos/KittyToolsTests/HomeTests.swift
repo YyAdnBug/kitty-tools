@@ -26,7 +26,7 @@ struct HomeTests {
     #expect(sections[1].tiles.last?.target == .extra(.copyToTranslate))
     #expect(
       sections.last?.tiles.map(\.target) == [
-        .action(.launchpad), .action(.statusScreen), .action(.island),
+        .action(.launchpad), .action(.statusScreen), .action(.reminderNew), .action(.island),
       ])
     #expect(tiles.first { $0.target == .action(.screenshot) }?.key == "⌥A")
     #expect(tiles.first { $0.target == .action(.clipboard) }?.key == nil)
@@ -99,9 +99,9 @@ struct HomeTests {
     var state = LauncherItem.ActionState()
     state.features = all
     let sections = Home.sections(state: state, keys: [:])
-    // 3 / 5 / 8 / 3 / 3（截图与录制 8 格折成 5 + 3）
-    #expect(Home.rows(sections).map(\.count) == [3, 5, 5, 3, 3, 3])
-    #expect(Home.rows(sections).flatMap { $0 } == Array(0..<22))
+    // 3 / 5 / 8 / 3 / 4（截图与录制 8 格折成 5 + 3；最后一节是启动台、状态屏、新建提醒、刘海岛）
+    #expect(Home.rows(sections).map(\.count) == [3, 5, 5, 3, 3, 4])
+    #expect(Home.rows(sections).flatMap { $0 } == Array(0..<23))
     let rows: CGFloat = 6
     let expected =
       Home.top + Home.bottom + 4 * Home.titleHeight + Home.untitledGap + rows * Home.tile.height

@@ -394,6 +394,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       coordinator.translate(text)
       presentTranslate()
     }
+    // 「提醒 …」（提醒 D2 D4）：列表现读偏好；建一条、打开 / 暂停都写回偏好，执行层看着偏好变化跟上
+    model.reminders = { Feature.reminders.isOn ? Reminder.load() : [] }
+    model.createReminder = { [unowned self] in addReminder($0) }
+    model.toggleReminder = { id in
+      var list = Reminder.load()
+      guard let index = list.firstIndex(where: { $0.id == id }) else { return }
+      list[index].isOn.toggle()
+      Reminder.save(list)
+    }
+    model.openReminder = { [unowned self] in openReminder($0) }
     model.openQuickLook = { [unowned self] in
       launcherQuickLook.open().zoom(
         from: launcherRowFrame ?? launcherPanel.frame, to: launcherQuickLookFrame)
@@ -1088,7 +1098,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       }
       syncer.sources = [
         clipboardStore, historyStore, WebSearchSync(), TranslateServiceSync(store: serviceStore),
-        launcherUsage, StatusPresetSync(), settings,
+        launcherUsage, StatusPresetSync(), ReminderSync(), settings,
       ]
       syncer.featureOn = { Self.syncFeatures[$0]?.isOn ?? true }
       noteSyncer = syncer
@@ -1102,6 +1112,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     SyncRecords.Kind.vocabulary.rawValue: .translate, SyncRecords.Kind.engines.rawValue: .launcher,
     SyncRecords.Kind.services.rawValue: .translate, SyncRecords.Kind.launcher.rawValue: .launcher,
     SyncRecords.Kind.statuses.rawValue: .statusScreen,
+    SyncRecords.Kind.reminders.rawValue: .reminders,
   ]
 
   /// 便签的定期清理：「最近删除」里放满 30 天的真删；图片目录里没人引用满 30 天的文件删掉
@@ -1466,7 +1477,93 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     case .island:
       island.toggleBoard(byKeyboard: byKey || NSApp.currentEvent?.type == .keyDown)
     case .home: toggleHome()
+    case .reminderNew: newReminder()
     }
+  }
+
+  /// 「新建提醒」（提醒 D5）：打开启动器、填好「提醒 」，接着写时间和内容（解析和预览都在启动器里，不另做面板）；
+  /// 启动器这个功能关着时打开 设置 › 提醒
+  private func newReminder() {
+    guard Feature.launcher.isOn else { return showSettings(page: .reminders) }
+    if !(launcherPanel.isVisible && launcherPanel.isKeyWindow) { toggleLauncher() }
+    launcherModel.query = "提醒 "
+    (launcherPanel.firstResponder as? NSTextView)?.moveToEndOfDocument(nil)
+  }
+
+  /// 加一条提醒（启动器一句话建的、菜单栏「几分钟后提醒我」）：写进偏好（执行层看着偏好跟上），岛上说一声、带「编辑」
+  private func addReminder(_ reminder: Reminder) {
+    guard Feature.reminders.isOn else { return }
+    let list = Reminder.load()
+    guard list.count < Reminder.maxCount else {
+      return island.show(
+        "提醒已经满了", detail: "最多 \(Reminder.maxCount) 条，先到 设置 › 提醒 里删掉几条", tone: .warning)
+    }
+    Reminder.save(Reminder.adding(reminder, to: list))
+    island.show(
+      "提醒建好了", detail: reminder.summary() + " · " + reminder.title, tone: .success,
+      symbol: "checkmark.circle.fill",
+      actions: [Island.Action("编辑", opens: true) { [unowned self] in openReminder(reminder.id) }])
+  }
+
+  /// 菜单栏「提醒」一项带子菜单（提醒 D6）：新建提醒…（带全局快捷键）、下一个是什么、几分钟后提醒我、
+  /// 暂停全部 / 恢复、管理提醒…
+  private func addReminderMenu(to menu: NSMenu) {
+    let family = HotKeyAction.reminderNew
+    let color = NSColor(family.color)
+    let item = menu.addAction(SettingsPage.reminders.title, symbol: family.symbol, color: color) {}
+    let submenu = NSMenu()
+    let hotKey = hotKeys.bindings[family]
+    submenu.addAction(
+      family.title + "…", symbol: "plus", color: color, key: hotKey?.menuKeyEquivalent ?? "",
+      modifiers: hotKey?.modifierFlags ?? []
+    ) { [unowned self] in run(family) }
+    if let next = reminders.nextUp() {
+      let when = Reminder.Schedule(kind: .once, date: next.at).summary(
+        now: .now, calendar: .current)
+      submenu.addAction("下一个：\(next.reminder.title)（\(when)）", symbol: "clock", color: color) {
+        [unowned self] in openReminder(next.reminder.id)
+      }
+    }
+    submenu.addItem(.separator())
+    for minutes in [5, 10, 25, 60] {
+      submenu.addAction(
+        minutes == 60 ? "1 小时后提醒我" : "\(minutes) 分钟后提醒我", symbol: "timer", color: color
+      ) { [unowned self] in
+        addReminder(
+          Reminder(
+            id: UUID().uuidString, title: ReminderPhrase.defaultTitle,
+            schedule: .init(kind: .once, date: .now.addingTimeInterval(Double(minutes * 60)))))
+      }
+    }
+    submenu.addItem(.separator())
+    if let until = reminders.pausedUntil {
+      submenu.addAction(
+        "恢复提醒（暂停到 \(until.formatted(date: .omitted, time: .shortened))）", symbol: "play.circle",
+        color: color
+      ) { [unowned self] in
+        reminders.pause(until: nil)
+        island.show("提醒恢复了", tone: .success, symbol: "checkmark.circle.fill")
+      }
+    } else {
+      let tomorrow = Calendar.current.date(
+        byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: .now))
+      for (title, until) in [
+        ("暂停全部提醒 1 小时", Date.now.addingTimeInterval(3600)), ("暂停到明天", tomorrow),
+      ] {
+        guard let until else { continue }
+        submenu.addAction(title, symbol: "pause.circle", color: color) { [unowned self] in
+          reminders.pause(until: until)
+          island.show(
+            "提醒暂停到 \(until.formatted(date: .omitted, time: .shortened))",
+            detail: "这期间到点的，之后合成一条告诉你", tone: .info)
+        }
+      }
+    }
+    submenu.addItem(.separator())
+    submenu.addAction(
+      "管理提醒…", symbol: MenuExtra.settings.symbol, color: NSColor(MenuExtra.settings.color)
+    ) { [unowned self] in showSettings(page: .reminders) }
+    item.submenu = submenu
   }
 
   /// 状态屏的全局快捷键（快捷键、菜单栏子菜单的「选择状态…」）：先出选状态的面板，选一个再进（Z13a）；设置 › 状态屏
@@ -2765,6 +2862,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     NSWorkspace.shared.open(url)
   }
 
+  /// 打开 设置 › 提醒 并推进到这一条（启动器 ⌘↩、建好之后岛上的「编辑」、菜单栏）
+  func openReminder(_ id: String) {
+    showSettings(page: .reminders)
+    settingsNavigation.path = [id]
+  }
+
   /// 打开设置窗（page 为 nil 保持上次的页；onboarding 盖上欢迎引导）：先按正常隐藏路径收起浮层
   /// （固定的浮层会盖在设置窗上）
   func showSettings(page: SettingsPage? = nil, onboarding: Bool = false) {
@@ -2812,6 +2915,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // 「打开主界面」不进菜单：菜单和主界面是同一个图标的两半（右键 / 左键）
     for (index, section) in HotKeyAction.sections.filter({ $0.actions != [.home] }).enumerated() {
       if index > 0 { menu.addItem(.separator()) }
+      if section.actions == [.reminderNew] {
+        addReminderMenu(to: menu)
+        continue
+      }
       if section.actions == [.statusScreen] {
         let family = HotKeyAction.statusScreen
         let color = NSColor(family.color)

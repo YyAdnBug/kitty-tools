@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <title>提醒</title>
+  <path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" d="M3.4 6.6A4.4 4.4 0 0 1 7.6 2.6M20.6 6.6A4.4 4.4 0 0 0 16.4 2.6M6.8 21.4L7.9 19.7M17.2 21.4L16.1 19.7"/>
+  <path fill="currentColor" fill-rule="evenodd" d="M12 5.4A7.8 7.8 0 1 1 12 21A7.8 7.8 0 1 1 12 5.4ZM11.1 8.9A0.9 0.9 0 0 1 12.9 8.9V12.3H15.4A0.9 0.9 0 0 1 15.4 14.1H12A0.9 0.9 0 0 1 11.1 13.2Z"/>
+</svg>

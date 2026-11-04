@@ -71,7 +71,8 @@ struct SyncProbeTests {
       syncer.sources = [
         clipboard, history, WebSearchSync(defaults: defaults),
         TranslateServiceSync(store: TranslateServiceStore(services: [.zhipu]), defaults: defaults),
-        try LauncherUsage(db: kitty), StatusPresetSync(defaults: defaults), settings,
+        try LauncherUsage(db: kitty), StatusPresetSync(defaults: defaults),
+        ReminderSync(defaults: defaults), settings,
       ]
       syncer.computerName = { host }
       syncer.editing = { [] }

@@ -62,7 +62,7 @@ struct NoteSyncerTests {
       syncer.sources = [
         clipboard, history, WebSearchSync(defaults: defaults),
         TranslateServiceSync(store: services, defaults: defaults), launcher,
-        StatusPresetSync(defaults: defaults), settings,
+        StatusPresetSync(defaults: defaults), ReminderSync(defaults: defaults), settings,
       ]
       let host = self.host
       syncer.computerName = { host }

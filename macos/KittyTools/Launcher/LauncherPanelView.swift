@@ -404,7 +404,7 @@ private struct LauncherRow: View {
 
   @ViewBuilder private var icon: some View {
     if let emoji = item.presetEmoji {
-      // 状态屏的状态：它的表情（静止画面）；没选的是家族色块
+      // 状态屏的状态、提醒：它的表情（静止画面）；没选的是家族色块
       StatusPresetIcon(symbol: emoji)
     } else if item.contentType?.conforms(to: .volume) == true {
       // 宗卷（eject 列出来的）：磁盘色块，不读宗卷本身取图标（按类型取是个文件夹，读宗卷可能要授权）
@@ -458,6 +458,8 @@ extension LauncherItem {
   /// 行里种类色块的符号：内置动作用它自己的
   fileprivate var tileSymbol: String {
     switch kind {
+    case .reminder: SettingsPage.reminders.symbol
+    case .prompt where target.hasPrefix("reminder-"): SettingsPage.reminders.symbol
     case .calculation: "equal"
     case .path where contentType?.conforms(to: .volume) == true: "externaldrive.fill"
     case .prompt where target == FileSearch.accessTarget: "lock.open.fill"
@@ -495,6 +497,8 @@ extension LauncherItem {
     case .translate: Style.Family.translate
     case .prompt where target == "translate-fy": Style.Family.translate
     case .prompt where target == ExchangeRates.promptTarget: Style.Family.keyboard
+    case .reminder: Style.Family.reminders
+    case .prompt where target.hasPrefix("reminder-"): Style.Family.reminders
     case .system, .process, .ip: Style.Family.command
     case .prompt where target.hasPrefix("system-"): Style.Family.command
     case .url where isSettingsPane: Style.Family.general
@@ -525,12 +529,14 @@ extension LauncherItem {
     case .url: "网址"
     case .prompt where target == FileSearch.accessTarget: "授权"
     case .prompt where target == ExchangeRates.promptTarget: "汇率"
+    case .prompt where target.hasPrefix("reminder-"): "提醒"
     case .search, .prompt: "搜索"
     // 计算卡不显示副标题：汇率换算的副标题（「人民币 · 11-03 汇率」，ExchangeRates）写在这里，别的是空的
     case .calculation: subtitle.isEmpty ? "计算" : subtitle
     case .clip: "剪贴板"
     case .process: "进程"
     case .ip: "网络"
+    case .reminder: "提醒"
     }
   }
 }

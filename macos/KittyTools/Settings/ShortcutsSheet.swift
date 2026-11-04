@@ -650,6 +650,15 @@ struct ShortcutsSheet: View {
           Entry(text: "进入之后用鼠标按住屏幕底部的提示 2 秒：退出（动一下鼠标，提示就出现）"),
           Entry("0–9", text: "设了退出密码时：按住满 2 秒后输入密码（⌫ 删一位，Esc 不输了）"),
         ]),
+      // 提醒（PLAN §10「提醒」）：全局键不设默认，按了打开启动器、填好「提醒 」；全屏提醒上的按键在 ReminderScreenPanel
+      Group(
+        title: "提醒", symbol: HotKeyAction.reminderNew.symbol, color: Style.Family.reminders,
+        globals: [.reminderNew],
+        entries: [
+          Entry(text: "在启动器里输入「提醒 10分钟 喝水」「提醒 明天9点 交周报」：↩ 建好（tx、remind 也行）"),
+          Entry(text: "启动器里只输「提醒 」：列出全部提醒，↩ 打开 / 暂停那一条，⌘↩ 到设置里编辑"),
+          Entry("↩", "Esc", text: "全屏提醒：知道了（出现后 1 秒内按的不算）"),
+        ]),
       // 刘海岛（mac-whisker S2，2026-10-26）：不属于哪个功能，一直列
       Group(
         title: "刘海岛", symbol: HotKeyAction.island.symbol, color: Style.Family.general,

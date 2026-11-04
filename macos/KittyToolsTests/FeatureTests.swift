@@ -15,16 +15,14 @@ struct FeatureTests {
   /// 不归哪个功能
   @Test func everyActionBelongsToOneFeature() {
     for feature in Feature.allCases {
-      // ponytail: 提醒的快捷键「新建提醒」第 3 批加（拍板 D5），之后把它从这里拿掉
-      #expect(
-        HotKeyAction.allCases.contains { $0.feature == feature }
-          == (feature != .dockPreview && feature != .reminders))
+      #expect(HotKeyAction.allCases.contains { $0.feature == feature } == (feature != .dockPreview))
       #expect(feature.page.rawValue == feature.rawValue)
     }
     #expect(HotKeyAction.screenshotTranslate.feature == .translate)
     #expect(HotKeyAction.pinClipboard.feature == .screenshot)
     #expect(HotKeyAction.audioRecord.feature == .record)
     #expect(HotKeyAction.island.feature == nil && HotKeyAction.island.isActive)
+    #expect(HotKeyAction.reminderNew.feature == .reminders)
     #expect(HotKeyAction.home.feature == nil && HotKeyAction.home.isActive)
     // 菜单栏的非热键项跟着它那一节的动作走
     #expect(MenuExtra.pauseClipboard.section?.feature == .clipboard)

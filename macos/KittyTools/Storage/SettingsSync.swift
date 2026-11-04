@@ -34,7 +34,7 @@ import Foundation
     Prefs.clipboardHideOnUnfocus, Prefs.floatingPinned,
     // 另走一类（StatusPresetSync）
     Prefs.statusScreenPresets,
-    // ponytail: 提醒列表的同步第 3 批做（一条一条合，同状态屏的状态，拍板 E3），现在先不同步
+    // 另走一类（ReminderSync）
     Prefs.reminders,
   ]
   private static let prefPrefix = "pref:"

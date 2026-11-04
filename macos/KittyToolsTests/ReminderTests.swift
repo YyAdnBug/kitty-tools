@@ -301,6 +301,171 @@ struct ReminderTests {
       past.repeating(.once, now: Self.at(2, 8, 20), calendar: Self.calendar).date == Self.at(2, 9))
   }
 
+  // MARK: 第 3 批：一句话建提醒
+
+  @Test func phraseKeyword() {
+    #expect(ReminderPhrase.query("提醒 10分钟 喝水") == "10分钟 喝水")
+    #expect(ReminderPhrase.query("TX 明天") == "明天")
+    #expect(ReminderPhrase.query("remind  9点") == "9点")
+    #expect(ReminderPhrase.query("提醒") == nil && ReminderPhrase.query("提醒事项") == nil)
+    #expect(ReminderPhrase.query("txt") == nil)
+    #expect(
+      ReminderPhrase.isKeyword("tx") && ReminderPhrase.isKeyword("提醒 ")
+        && !ReminderPhrase.isKeyword("t"))
+  }
+
+  @Test func phraseDurations() {
+    let now = Self.at(2, 10)
+    func parse(_ text: String) -> ReminderPhrase.Parsed? {
+      ReminderPhrase.parse(text, now: now, calendar: Self.calendar)
+    }
+    func after(_ minutes: Double, _ title: String) -> ReminderPhrase.Parsed {
+      .init(date: now.addingTimeInterval(minutes * 60), title: title)
+    }
+    #expect(parse("10分钟 喝水") == after(10, "喝水"))
+    #expect(parse("喝水 10分钟后") == after(10, "喝水"))
+    #expect(parse("半小时后 开会") == after(30, "开会"))
+    #expect(parse("一刻钟后") == after(15, ReminderPhrase.defaultTitle))
+    #expect(parse("1小时20分 出门") == after(80, "出门"))
+    #expect(parse("1.5小时") == after(90, ReminderPhrase.defaultTitle))
+    #expect(parse("2h 休息") == after(120, "休息"))
+    #expect(parse("5m 泡面") == after(5, "泡面"))
+    // 「hello」不是小时，「10mg」不是分钟
+    #expect(parse("10 hello") == nil)
+    #expect(parse("吃药 10mg") == nil)
+    #expect(parse("0分钟") == nil)
+  }
+
+  @Test func phraseMoments() {
+    let now = Self.at(2, 10)  // 周一 10:00
+    func parse(_ text: String, at time: Date = Self.at(2, 10)) -> ReminderPhrase.Parsed? {
+      ReminderPhrase.parse(text, now: time, calendar: Self.calendar)
+    }
+    // 只写「9点」：最近的将来时刻（D3）
+    #expect(parse("9点 开会") == .init(date: Self.at(2, 21), title: "开会"))
+    #expect(parse("9点 开会", at: Self.at(2, 22)) == .init(date: Self.at(3, 9), title: "开会"))
+    #expect(parse("9:30 站会")?.date == Self.at(2, 21, 30))
+    #expect(parse("下午3点半 开会") == .init(date: Self.at(2, 15, 30), title: "开会"))
+    #expect(parse("晚上8点半 跑步")?.date == Self.at(2, 20, 30))
+    #expect(parse("中午12点 吃饭")?.date == Self.at(2, 12))
+    #expect(parse("3点15分")?.date == Self.at(2, 15, 15))
+    // 哪天：没写几点就是 9:00
+    #expect(parse("明天9点 交周报") == .init(date: Self.at(3, 9), title: "交周报"))
+    #expect(parse("明天 交周报")?.date == Self.at(3, 9))
+    #expect(parse("后天下午2点")?.date == Self.at(4, 14))
+    #expect(parse("周五 交周报")?.date == Self.at(6, 9))
+    #expect(parse("星期一 9点")?.date == Self.at(9, 9))  // 今天周一、9 点已经过了：下周一
+    #expect(parse("周一 11点")?.date == Self.at(2, 11))  // 今天周一、11 点还没到：今天
+    #expect(parse("下周一 开会")?.date == Self.at(9, 9))
+    #expect(parse("下周日")?.date == Self.at(15, 9))
+    #expect(parse("12月25日 买礼物")?.date == Self.at(25, 9, month: 12))
+    #expect(parse("1月1日")?.date == Self.at(1, 9, month: 1, year: 2027))
+    // 评审：写了哪段时间没写几点；两样都有按先出现的；「点」后面隔着空格的数字不是分钟；1 个半小时；0 点、晚上 12 点
+    #expect(parse("明天中午 吃饭") == .init(date: Self.at(3, 12), title: "吃饭"))
+    #expect(parse("明天下午")?.date == Self.at(3, 15))
+    #expect(parse("周五晚上 聚餐")?.date == Self.at(6, 20))
+    #expect(parse("今晚 看球")?.date == Self.at(2, 20))
+    #expect(parse("明晚8点 跑步") == .init(date: Self.at(3, 20), title: "跑步"))
+    #expect(parse("明早7点半")?.date == Self.at(3, 7, 30))
+    #expect(parse("周五下午3点 开会1小时") == .init(date: Self.at(6, 15), title: "开会1小时"))
+    #expect(parse("明天9点 跑步30分钟")?.date == Self.at(3, 9))
+    #expect(parse("跑步30分钟 明天9点")?.date == now.addingTimeInterval(30 * 60))
+    #expect(parse("明天9点 3号会议室") == .init(date: Self.at(3, 9), title: "3号会议室"))
+    #expect(parse("下午3点 2楼")?.date == Self.at(2, 15))
+    #expect(parse("9点5分")?.date == Self.at(2, 21, 5))
+    #expect(parse("1个半小时 出发")?.date == now.addingTimeInterval(90 * 60))
+    #expect(parse("一个半小时")?.date == now.addingTimeInterval(90 * 60))
+    #expect(parse("晚上12点")?.date == Self.at(3, 0))
+    #expect(parse("0:30")?.date == Self.at(3, 0, 30))
+    #expect(parse("１２月２５日 买礼物") == .init(date: Self.at(25, 9, month: 12), title: "买礼物"))
+    #expect(parse("每天9点 吃药") == nil && ReminderPhrase.isRepeating("每天9点 吃药"))
+    // 认不出 / 写错
+    #expect(parse("喝水") == nil)
+    #expect(parse("25点") == nil)
+    #expect(parse("2月30日") == nil)
+    #expect(parse("下午") == nil)
+    _ = now
+  }
+
+  /// 启动器「提醒 …」那几行：认出时间的先是「建一条」，认不出 / 已经过了是一行提示，后面是已有的（写了字的只列标题里带着的）
+  @Test func launcherRows() {
+    let now = Self.at(2, 10)
+    var water = Reminder.examples[0]
+    water.isOn = true
+    let list = [water, Reminder.examples[1]]
+    let rows = LauncherModel.reminderItems("10分钟 喝水", list: list, now: now, calendar: Self.calendar)
+    #expect(
+      rows.first?.kind == .reminder && rows.first?.target == "" && rows.first?.title == "提醒我：喝水")
+    #expect(rows.first?.payload == "10分钟 喝水")
+    let all = LauncherModel.reminderItems("", list: list, now: now, calendar: Self.calendar)
+    #expect(all.map(\.target) == ["water", "eyes"])
+    #expect(all[1].subtitle.hasSuffix("已暂停") && all[0].presetEmoji == "hot-beverage")
+    // 写的是标题里的字：已有的那条排第一，「认不出时间」的提示排在后面（↩ 落在那一条上）
+    let filtered = LauncherModel.reminderItems("眼睛", list: list, now: now, calendar: Self.calendar)
+    #expect(filtered.map(\.target) == ["eyes", LauncherModel.reminderHint])
+    #expect(filtered.last?.title == "认不出时间")
+    let repeating = LauncherModel.reminderItems(
+      "每天9点 吃药", list: [], now: now, calendar: Self.calendar)
+    #expect(repeating.map(\.title) == ["重复的提醒到设置里建"])
+    let past = LauncherModel.reminderItems("今天上午8点", list: [], now: now, calendar: Self.calendar)
+    #expect(past.map(\.title) == ["这个时间已经过了"])
+    #expect(LauncherModel.reminderPrompts(for: "tx").first?.completion == "tx ")
+    #expect(LauncherModel.reminderPrompts(for: "txt").isEmpty)
+    // 这三个词不能再当网页搜索的关键词（不然「tx 关键词」被提醒拿走）
+    #expect(ReminderPhrase.keywords.allSatisfy { WebSearch.reservedKeywords[$0] == "提醒" })
+  }
+
+  /// 暂停到几点跟着状态走：列表变了不丢；时间往回调过时最多收到一天
+  @Test func pauseSurvivesReconcileAndClockBack() {
+    var state = ReminderState()
+    state.pausedUntil = Self.at(2, 11)
+    #expect(
+      ReminderCheck.reconciled(state, with: [], now: Self.at(2, 10)).pausedUntil == Self.at(2, 11))
+    state.pausedUntil = Self.at(9, 10)
+    #expect(state.pulledBack(now: Self.at(2, 10), maxSnooze: 1800).pausedUntil == Self.at(3, 10))
+  }
+
+  /// 同步（E3）：交出去的一条一条、顺序一条，落到另一台（空的偏好域）一个字不差；更新版本写的（多了字段）整个不落
+  @Test func syncRoundTrip() throws {
+    let (from, fromName) = try Self.temporaryDefaults()
+    let (to, toName) = try Self.temporaryDefaults()
+    defer {
+      UserDefaults().removePersistentDomain(forName: fromName)
+      UserDefaults().removePersistentDomain(forName: toName)
+    }
+    var water = Reminder.examples[0]
+    water.isOn = true
+    let mine = Reminder(
+      id: "mine", title: "交周报", schedule: .init(kind: .weekly, time: 600, days: [6]))
+    Reminder.save([mine, water], to: from)
+    Reminder.save([], to: to)  // 另一台把示例删光了（没存过时是三条示例，会和合进来的排在一起）
+    let values = ReminderSync(defaults: from).syncValues()
+    #expect(Set(values.keys) == [SyncRecords.orderID, "mine", "water"])
+    let applied = ReminderSync(defaults: to).applySync(
+      values.mapValues { Optional($0) }, ledger: .init(), library: "lib")
+    #expect(applied == .saved)
+    #expect(Reminder.load(to) == [mine, water])
+    #expect(ReminderSync(defaults: to).syncValues() == values)
+    // 没碰过提醒的那台（偏好里没存过、界面上是示例）：不把示例当成自己的交出去
+    let (fresh, freshName) = try Self.temporaryDefaults()
+    defer { UserDefaults().removePersistentDomain(forName: freshName) }
+    #expect(
+      ReminderSync(defaults: fresh).syncValues() == [
+        SyncRecords.orderID: SyncRecords.orderValue([])
+      ])
+    // 多了不认识的字段：整个不落，本机的不动
+    let newer = try #require(values["mine"]).replacingOccurrences(of: "{", with: #"{"future":1,"#)
+    #expect(
+      ReminderSync(defaults: to).applySync(["mine": newer], ledger: .init(), library: "lib")
+        == .newer)
+    #expect(Reminder.load(to) == [mine, water])
+  }
+
+  private static func temporaryDefaults() throws -> (UserDefaults, String) {
+    let name = "reminder-tests-" + UUID().uuidString
+    return (try #require(UserDefaults(suiteName: name)), name)
+  }
+
   // MARK: 导出导入
 
   /// 评审 1：把一次性的时间改到已经过了（日期选择器夹到上一次画的那一刻）、打开一条过了时间的，都不当场响、不算错过；

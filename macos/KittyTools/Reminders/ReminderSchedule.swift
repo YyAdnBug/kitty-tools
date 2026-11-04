@@ -101,6 +101,8 @@ nonisolated struct ReminderState: Codable, Equatable {
   var marks: [String: Mark] = [:]
   /// 点了「稍后」的：推到几点（到点照常响，C8）
   var snoozed: [String: Date] = [:]
+  /// 菜单栏「暂停全部提醒」到几点（D6）：这之前一条都不响，之后照「错过的」规矩补
+  var pausedUntil: Date?
 
   /// 系统时间往回调过（NSSystemClockDidChange）：记在「将来」的处理时刻收回到现在、推到的时刻最多再推 maxSnooze，
   /// 不然要等真实时间追上才响（纯函数）
@@ -108,6 +110,8 @@ nonisolated struct ReminderState: Codable, Equatable {
     var next = self
     for (id, mark) in marks where mark.at > now { next.marks[id]?.at = now }
     for (id, date) in snoozed where date > now + maxSnooze { next.snoozed[id] = now + maxSnooze }
+    // 暂停最长到明天：调回去之后不会一停好几天
+    if let paused = pausedUntil, paused > now + 86_400 { next.pausedUntil = now + 86_400 }
     return next
   }
 
@@ -180,6 +184,7 @@ nonisolated enum ReminderCheck {
   static func reconciled(_ state: ReminderState, with list: [Reminder], now: Date) -> ReminderState
   {
     var next = ReminderState()
+    next.pausedUntil = state.pausedUntil
     for reminder in list where reminder.isOn {
       if let mark = state.marks[reminder.id], mark.schedule == reminder.schedule {
         next.marks[reminder.id] = mark

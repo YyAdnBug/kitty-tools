@@ -118,6 +118,11 @@ import UniformTypeIdentifiers
   @ObservationIgnored var openClipboard: (String) -> Void = { _ in }
   /// fy 那一行 ↩（启动器已收起）：翻译浮窗直接翻译这段
   @ObservationIgnored var translate: (String) -> Void = { _ in }
+  /// 「提醒 …」：现在的提醒列表、建一条、打开 / 暂停一条、到设置里编辑一条（AppDelegate 给；提醒关着时列表是空的）
+  @ObservationIgnored var reminders: () -> [Reminder] = { [] }
+  @ObservationIgnored var createReminder: (Reminder) -> Void = { _ in }
+  @ObservationIgnored var toggleReminder: (String) -> Void = { _ in }
+  @ObservationIgnored var openReminder: (String) -> Void = { _ in }
   /// 全局热键动作当前生效的组合（选中的内置动作右侧显示键帽）；AppDelegate 接 HotKeyCenter 注册上的那份
   @ObservationIgnored var boundHotKey: (HotKeyAction) -> HotKey? = { $0.hotKey }
   /// 文件搜索的授权提示 ↩：没问过就逐个弹系统框，问过就打开系统设置
@@ -403,6 +408,12 @@ import UniformTypeIdentifiers
       results = [Self.clipItem(keyword)]
       return
     }
+    // 「提醒 …」（带空格）只列提醒：能认出时间的先是「建一条」，再是已有的提醒（D2 D4）；单输「提醒」出补全提示
+    if features.contains(.reminders), let rest = ReminderPhrase.query(query) {
+      emptyText = "还没有提醒：在「提醒 」后面接着写时间和内容，如「10分钟 喝水」"
+      results = Self.reminderItems(rest, list: reminders(), now: .now)
+      return
+    }
     let query = query.trimmingCharacters(in: .whitespaces)
     let ip = IPAddresses.matches(query) ? ipItems() : []
     if query.isEmpty {
@@ -419,6 +430,8 @@ import UniformTypeIdentifiers
       features.contains(.clipboard) && Self.clipQuery(query) != nil ? [Self.clipItem("")] : []
     let fy = features.contains(.translate) ? Self.translatePrompts(for: query) : []
     let currency = ExchangeRates.promptItems(for: query)
+    // 「新建提醒…」提示排在本地结果后面：输「提醒」想打开系统「提醒事项」的，↩ 照旧打开它
+    let tx = features.contains(.reminders) ? Self.reminderPrompts(for: query) : []
     let top =
       clip + fy + currency + ip + direct
       + [calculationItem(query), keyword].compactMap { $0 } + prompts.exact
@@ -449,7 +462,8 @@ import UniformTypeIdentifiers
     var seen = Set<String>()
     let ordered = Self.promoting(local, over: top) { usage.boost(for: $0, query: query).query > 0 }
     results =
-      (ordered + history + prompts.partial + filePrompts.partial + systemPrompts.partial + fallback)
+      (ordered + tx + history + prompts.partial + filePrompts.partial + systemPrompts.partial
+      + fallback)
       .filter { seen.insert($0.id).inserted }
   }
 
@@ -628,6 +642,60 @@ import UniformTypeIdentifiers
     ]
   }
 
+  /// 单输「提醒」「tx」「remind」：↩ / Tab 补全关键词的提示（同 fy）
+  static func reminderPrompts(for query: String) -> [LauncherItem] {
+    guard ReminderPhrase.isKeyword(query) else { return [] }
+    return [
+      LauncherItem(
+        kind: .prompt, target: "reminder-new", title: "新建提醒…",
+        subtitle: "输入「提醒 空格 时间 内容」，如「提醒 10分钟 喝水」；↩ 或 Tab 补全关键词",
+        completion: query.trimmingCharacters(in: .whitespaces) + " ")
+    ]
+  }
+
+  /// 「提醒 …」那几行（纯函数）：认出了时间的先是「建一条」，再是已有的提醒——没写别的时全列，写了的只列标题里带着这些字的；
+  /// 认不出、已经过了、写的是重复的给一行提示，排在已有的后面（「提醒 眼睛」是在找那一条，↩ 落在它上面）
+  static func reminderItems(
+    _ rest: String, list: [Reminder], now: Date, calendar: Calendar = .current
+  ) -> [LauncherItem] {
+    var create: [LauncherItem] = []
+    var hint: [LauncherItem] = []
+    if !rest.isEmpty {
+      let parsed = ReminderPhrase.parse(rest, now: now, calendar: calendar)
+      if let parsed, parsed.date > now {
+        let when = Reminder.Schedule(kind: .once, date: parsed.date).summary(
+          now: now, calendar: calendar)
+        create.append(
+          LauncherItem(
+            kind: .reminder, target: "", title: "提醒我：\(parsed.title)", subtitle: when,
+            payload: rest))
+      } else {
+        let repeating = ReminderPhrase.isRepeating(ReminderPhrase.halfWidth(rest))
+        hint.append(
+          LauncherItem(
+            kind: .prompt, target: Self.reminderHint,
+            title: repeating ? "重复的提醒到设置里建" : parsed == nil ? "认不出时间" : "这个时间已经过了",
+            subtitle: repeating
+              ? "这里只建一次的；每天、每周、每隔一阵的到 设置 › 提醒 里加"
+              : "试试「10分钟 喝水」「明天9点 交周报」「下午3点半 开会」"))
+      }
+    }
+    let folded = LauncherMatch.fold(rest)
+    let existing = list.filter { rest.isEmpty || LauncherMatch.fold($0.title).contains(folded) }
+      .map { reminder in
+        var item = LauncherItem(
+          kind: .reminder, target: reminder.id, title: reminder.title,
+          subtitle: reminder.summary(now: now, calendar: calendar)
+            + (reminder.isOn ? "" : " · 已暂停"))
+        item.presetEmoji = reminder.symbol.isEmpty ? nil : reminder.symbol
+        return item
+      }
+    return create + existing + hint
+  }
+
+  /// 「提醒 …」认不出时那一行提示的目标（↩ 什么都不做，只响提示音）
+  static let reminderHint = "reminder-hint"
+
   /// 「fy 单词」：系统词典的第一条释义，到了再换副标题，不改行高（体检 D10；首查约 0.3 s）
   private func lookUpDefinition(_ text: String) {
     guard text.wholeMatch(of: /[A-Za-z][A-Za-z'’\-]*/) != nil else { return }
@@ -787,7 +855,8 @@ import UniformTypeIdentifiers
     case .path:
       return FileManager.default.fileExists(atPath: target)
         ? Self.item(kind: .path, target: target, title: title) : nil
-    case .search, .calculation, .clip, .prompt, .translate, .process, .ip: return nil  // 不记使用，不会出现
+    // 不记使用，不会出现
+    case .search, .calculation, .clip, .prompt, .translate, .process, .ip, .reminder: return nil
     }
   }
 
@@ -828,9 +897,26 @@ import UniformTypeIdentifiers
     case .translate:
       close()
       translate(item.target)
+    case .reminder where item.target.isEmpty:
+      // 「建一条」：按 ↩ 的这一刻再解析一遍（行列出来之后过了一会儿，「10分钟」要从现在算）
+      guard let text = item.payload, let parsed = ReminderPhrase.parse(text), parsed.date > .now
+      else { return NSSound.beep() }
+      close()
+      createReminder(
+        Reminder(
+          id: UUID().uuidString, title: parsed.title,
+          schedule: .init(kind: .once, date: parsed.date)))
+    case .reminder:
+      // 打开 / 暂停：启动器不收，摘要里的「已暂停」当场跟上，选中留在这一行
+      toggleReminder(item.target)
+      let kept = selection
+      search()
+      selection = min(kept, max(results.count - 1, 0))
     case .prompt where item.target == FileSearch.accessTarget:
       close()
       requestFolderAccess()
+    case .prompt where item.target == Self.reminderHint:
+      NSSound.beep()
     case .prompt:
       if let completion = item.completion { query = completion }
     case .search:
@@ -1049,7 +1135,7 @@ import UniformTypeIdentifiers
       let exists = FileManager.default.fileExists(atPath: item.target, isDirectory: &isDirectory)
       let path = (item.target as NSString).abbreviatingWithTildeInPath
       return exists && isDirectory.boolValue && !path.hasSuffix("/") ? path + "/" : path
-    case .search, .calculation, .clip, .prompt, .translate, .process, .ip: return nil
+    case .search, .calculation, .clip, .prompt, .translate, .process, .ip, .reminder: return nil
     }
   }
 
@@ -1083,6 +1169,7 @@ import UniformTypeIdentifiers
     case .url where AppCatalog.isSettingsPane(item.target): ("打开", "gearshape")
     case .url: ("打开网址", "safari")
     case .search: ("搜索", "magnifyingglass")
+    case .prompt where item.target == Self.reminderHint: ("改一下再建", "pencil")
     case .prompt:
       item.target == FileSearch.accessTarget
         ? ("授权", "lock.open")
@@ -1092,6 +1179,10 @@ import UniformTypeIdentifiers
     case .clip: (item.target.isEmpty ? "打开" : "搜索", "doc.on.clipboard")
     case .translate: ("翻译", "character.bubble")
     case .process: ("结束", "stop.circle")
+    case .reminder where item.target.isEmpty: ("建好提醒", "alarm")
+    case .reminder:
+      reminders().first { $0.id == item.target }?.isOn == true
+        ? ("暂停", "pause.circle") : ("打开", "play.circle")
     }
   }
 
@@ -1113,6 +1204,7 @@ import UniformTypeIdentifiers
       revealsOnReturn(item) ? ("打开", "arrow.up.forward.app") : ("在访达中显示", "folder")
     case .calculation where item.payload != nil, .ip where item.payload != nil:
       ("只复制，不粘贴", "doc.on.doc")
+    case .reminder where !item.target.isEmpty: ("在设置里编辑", "gearshape")
     default: nil
     }
   }
@@ -1125,7 +1217,7 @@ import UniformTypeIdentifiers
     case .url, .search: "复制网址"
     case .calculation: item.payload == nil ? nil : "复制结果"
     case .ip: item.payload == nil ? nil : "复制地址"
-    case .action, .system, .prompt, .clip, .translate, .process: nil
+    case .action, .system, .prompt, .clip, .translate, .process, .reminder: nil
     }
   }
 
@@ -1523,6 +1615,9 @@ import UniformTypeIdentifiers
       NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: item.target)])
     case .calculation where item.payload != nil, .ip where item.payload != nil:
       copy(item)
+    case .reminder where !item.target.isEmpty:
+      close()
+      openReminder(item.target)
     default:
       NSSound.beep()  // 以前吞掉这个键、什么都不响
     }

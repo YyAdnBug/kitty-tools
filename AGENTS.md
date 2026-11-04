@@ -17,6 +17,7 @@
   - 启动台 `Launchpad/`：复刻 macOS 15 的全屏图标网格，只在 macOS 26 起出现（0.6.0）
   - 程序坞预览 `DockPreview/`：停在程序坞图标上弹出它所有窗口的缩略图，默认关（0.7.0）
   - 晾衣绳 `Screenshot/Clothesline*.swift`：截完图挂到屏幕顶上的绳子，和右下角的缩略图二选一（0.7.0）
+  - 提醒 `Reminders/`：一次 / 每天 / 每周 / 每月 / 每隔一阵的定时提醒，刘海岛、边框、全屏或直接进入状态屏，启动器里一句话建（2026-11-04 立项，三批在 `reminder-wip` 做完，PLAN §10「提醒」）
   - 全局同步（设置 › 通用「同步」）：同步文件夹，便签（0.6.0）之外设置、快捷键、片段和收藏等也能同步（0.7.0）
   - 刘海岛交互：提示能悬停展开、带按钮，点刘海叫出最近的提示（0.7.0）
 - **版本**：已发布到 0.7.1（latest，2026-11-03：第四轮体检；0.7.0 是 2026-10-30：主界面、程序坞预览、全局同步、截图历史和晾衣绳、长图标注、刘海岛交互、第三轮体检、功能图标重画）；`MARKETING_VERSION` 是 0.7.1。各版真机手测都没走完。
@@ -38,7 +39,7 @@
 ```
 macos/                       # 本分支唯一开发区
 ├── KittyTools.xcodeproj/    # 共享 scheme：KittyTools
-├── KittyTools/              # 同步文件夹：App/ Shell/ Storage/ Clipboard/ Translate/ Launcher/ Launchpad/ Screenshot/ StatusScreen/ Notes/ DockPreview/ Settings/ Resources/
+├── KittyTools/              # 同步文件夹：App/ Shell/ Storage/ Clipboard/ Translate/ Launcher/ Launchpad/ Screenshot/ StatusScreen/ Notes/ DockPreview/ Reminders/ Settings/ Resources/
 ├── KittyToolsTests/         # 纯函数单测（Swift Testing），M2 起建
 ├── Config/                  # Base/Debug/Release.xcconfig、Info.plist（局部）、Secrets.xcconfig（不入库）
 ├── build-dmg.sh             # 打包：archive → 自检 → DMG + App 内更新用的 zip → notes
@@ -48,7 +49,7 @@ macos/                       # 本分支唯一开发区
 ├── PLAN.md                  # 仍有效的方案：§2 技术栈、§4 架构与文件表、§8 打包、§10 约束与决定、§11 实现原则、§12 现状与下一步
 ├── HANDTEST.md              # 真机回归清单（约 40 条，发版前走）+ 正在验收的那一轮手测（新的手测加在这里；旧条目在 docs/archive/HANDTEST-2026-10.md）
 └── docs/archive/            # PLAN 挪出去的迁移期历史和已完成批次的实现记录、HANDTEST-2026-10.md（旧的冒烟清单和各批手测）（原样，只查不改）
-icons/                       # 功能图标：mac 和 Windows 共用的 26 个 SVG（feature/kitty.*.svg）+ 生成脚本 build-icons.swift
+icons/                       # 功能图标：mac 和 Windows 共用的 27 个 SVG（2026-11-04 加的 kitty.reminders 还没在 windows 分支上生成）（feature/kitty.*.svg）+ 生成脚本 build-icons.swift
 .claude/rules/mac-native.md  # 常驻红线（Claude 每次会话自动加载）
 .claude/skills/mac-*/        # 按需技能：SKILL.md（触发描述 + 红线速查）+ rule.md（正文）；mac-whisker 另有各界面的 <界面>.md
 ```
@@ -89,6 +90,7 @@ xcrun swift-format format -i -r macos/KittyTools
 # 便签屏幕边缘那叠（药丸、标签列、预览卡、打开的便签、设置 › 便签「屏幕边缘」）是 notesDeck()，约一分钟，图以 notes-deck- 开头：-only-testing:'KittyToolsTests/SnapshotProbeTests/notesDeck()'；
 # 浮动便签（浅深、固定 / 没固定、8 种纸色、最小尺寸、操作菜单、那叠里浮着那条的标签）是 notesFloat()，约半分钟，图以 notes-float- 开头：-only-testing:'KittyToolsTests/SnapshotProbeTests/notesFloat()'；
 # 设置 › 通用「同步」那一节（没开、第一轮、好了、等确认、停了、升级上来的、便签关着、它在通用页里的位置）是 sync()，几秒，图以 sync- 开头；
+# 提醒（设置 › 提醒的列表和详情、刘海岛上挂着的提醒、全屏提醒）是 reminders()，几秒，图以 reminders- 开头；
 # 程序坞预览（面板：程序坞在下 / 左、悬停、换行、没有屏幕录制授权、没标题；设置 › 程序坞预览）是 dockPreview()，十几秒，
 # 图以 dock-preview- / settings-dock-preview 开头：-only-testing:'KittyToolsTests/SnapshotProbeTests/dockPreview()'）
 TEST_RUNNER_KITTY_SNAPSHOT_DIR=/tmp/kitty-shots xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
@@ -210,7 +212,7 @@ defaults delete com.yy.kitty-tools.native.dev folderAccessRequested
 | `mac-dock-preview` | 技能 | 已有（2026-10-23，第九族） | `DockPreview/**`、`Settings/DockPreviewTab.swift`；私有接口和退路、听程序坞、列窗口、缩略图、切 / 关窗口、面板和时机（按鼠标位置收、不用滚动）、默认关和授权、内存、测试口径 |
 | `mac-clipboard` | 技能 | 已有（M3） | `Clipboard/**`、`Storage/Database.swift`、`Storage/Backup.swift`（每日备份、打不开时的恢复）、`Notes/NotesBackup.swift`（便签库平行的那一份，2026-10-12） |
 | `mac-translate` | 技能 | 已有（M4） | `Translate/**` |
-| `mac-whisker` | 技能 | 已有（2026-09-25；2026-10-03 拆成核心 + 5 个界面文件，2026-10-10 加状态屏一个，2026-10-12 加便签一个，2026-10-18 加启动台一个，2026-10-23 加程序坞预览一个） | 任何界面、动效、图标改动：先读核心 `rule.md`（三种皮肤、刻度、七条弹簧曲线、五个招牌时刻、无障碍、验收），再读那个界面的文件（`launcher` / `clipboard` / `translate` / `capture` / `settings` / `status-screen` / `notes` / `launchpad` / `dock-preview`.md）；**用户要求以后都按它执行** |
+| `mac-whisker` | 技能 | 已有（2026-09-25；2026-10-03 拆成核心 + 5 个界面文件，2026-10-10 加状态屏一个，2026-10-12 加便签一个，2026-10-18 加启动台一个，2026-10-23 加程序坞预览一个，2026-11-04 加提醒一个） | 任何界面、动效、图标改动：先读核心 `rule.md`（三种皮肤、刻度、七条弹簧曲线、五个招牌时刻、无障碍、验收），再读那个界面的文件（`launcher` / `clipboard` / `translate` / `capture` / `settings` / `status-screen` / `notes` / `launchpad` / `dock-preview` / `reminders`.md）；**用户要求以后都按它执行**；提醒的执行层、面板规矩在 mac-overlay-panel §1（全屏面板）和 PLAN §10「提醒」 |
 
 - 规则正文都在 `.claude/`：常驻的 `mac-native` 是 `.claude/rules/mac-native.md`（Claude 每次会话自动加载，`CLAUDE.md` 不用再导入）；其余每个规则一个技能目录 `.claude/skills/mac-<name>/`，`SKILL.md` 只写触发描述和红线速查，正文在同目录 `rule.md`；mac-whisker 按界面拆出的 `<界面>.md` 也在它的技能目录里。2026-11-04 起不再用 Cursor，原来的 `.cursor/rules/mac-*.mdc` 原样搬到这里（`mac-<name>.mdc` → `mac-<name>/rule.md`，`mac-whisker-<界面>.mdc` → `mac-whisker/<界面>.md`，去掉了 Cursor 的文件头），归档文档里的旧路径照这个找。
 - 动手前先读对应技能的 `rule.md` 全文。没有对应技能的地方按 `mac-native.md` 和 `mac-whisker` 执行，文件归属看 PLAN §4。

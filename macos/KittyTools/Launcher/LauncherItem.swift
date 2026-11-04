@@ -27,6 +27,9 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
     /// 「ip」列的本机 / 外网地址（IPAddresses；目标是网卡 + 地址或「public」）：↩ 粘贴 payload、⌘↩ 只复制，
     /// 没有 payload 的（外网还在查、没查到，没连上网络）不能粘贴
     case ip
+    /// 「提醒 …」列的提醒（2026-11-04，PLAN §10「提醒」D2 D4）：目标是提醒的 id，↩ 打开 / 暂停、⌘↩ 到设置里编辑；
+    /// 目标空着的是「建一条」那一行（payload 是关键词后面那句话），↩ 建好
+    case reminder
 
     /// 只有这些记使用、能出现在「常用」里、能收藏
     var isRecorded: Bool { [.app, .action, .url, .path, .system].contains(self) }
@@ -53,7 +56,7 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
   var visitedAt: Date?
   /// kill / port 列的进程：结束时要的 PID 和名字；port 列的程序坞 App 另有包路径和显示名（↩ 走退出）
   var process: Processes.Entry?
-  /// 状态屏的一个状态：它选的表情（StatusPreset.symbol；空 = 没选，行里用家族色块垫）；别的结果是 nil
+  /// 状态屏的一个状态、一条提醒：它选的表情（空 = 没选，行里用家族色块垫）；别的结果是 nil
   var presetEmoji: String?
   /// 状态屏列表里排在最前面的那个状态，而且设置里打开了「按快捷键直接进入排在最前面的状态」：全局快捷键进的就是它，
   /// 选中时右侧显示键帽（同别的带全局快捷键的内置动作）。开关关着时（默认）快捷键是先出选状态的面板，哪一行都不带键帽
