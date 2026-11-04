@@ -442,7 +442,8 @@ internal sealed unsafe class WgcRecorder : IVideoRecorder
                             lastTexture = null;
                         }
 
-                        var time = Math.Max(0, nextWrite);
+                        // R24：帧自己的抓取时间（SystemRelativeTime，QPC）对齐到格子，不再一格一格往后排。
+                        var time = RecordingPipeline.FrameTime(latest.Time - _start100, nextWrite, interval);
                         var writeStart = Stopwatch.GetTimestamp();
                         ApplyEffects(ring);
                         var written = WriteFrame(writer, ring, time, interval);

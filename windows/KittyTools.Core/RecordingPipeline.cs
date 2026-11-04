@@ -36,6 +36,23 @@ public static class RecordingPipeline
         return frameTime - lastAccepted >= 10_000_000L / Math.Max(1, fps);
     }
 
+    /// <summary>
+    /// 一帧写进视频的时间（REVIEW R24，2026-11-04）：用这一帧自己的抓取时间（captured，录制开始算 0，和音频同一个 QPC 钟），
+    /// 往下对齐到帧率的格子；比上一帧该在的格子（nextSlot）还早时就放在 nextSlot，保证一帧比一帧晚、不叠在一起。
+    /// 以前直接用 nextSlot：帧来得比帧率慢（60 fps 实际只来 57 帧）时视频时间比真实时间走得慢、越拖越晚，
+    /// 音轨是准的，音画差就一路变大、补帧追上一次再从头来——R24 量到的锯齿。
+    /// </summary>
+    public static long FrameTime(long captured, long nextSlot, long interval)
+    {
+        if (interval <= 0)
+        {
+            return Math.Max(0, Math.Max(captured, nextSlot));
+        }
+
+        var snapped = captured <= 0 ? 0 : captured / interval * interval;
+        return Math.Max(Math.Max(0, nextSlot), snapped);
+    }
+
     /// <summary>停止收帧后，下一帧的补帧时刻（不早于 <paramref name="time"/>）。</summary>
     public static long NextRepeat(long lastTime, int fps)
         => lastTime + 10_000_000L / Math.Max(1, fps);

@@ -206,6 +206,12 @@ internal sealed class ShotHistory
             bytes = await Task.Run(() => WriteFilesAsync(id, null, posterPng, null)) ?? 0;
         }
 
+        // 录屏记视频本身的宽高，不是封面缩略图的（以前整屏 2560 × 1440 录的写成 480 × 270）。
+        if (kind == ShotKind.Video && await VideoSizeAsync(file) is { } size)
+        {
+            (width, height) = size;
+        }
+
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         history.OnUi(() => history.Add(new ShotItem
         {
@@ -218,6 +224,23 @@ internal sealed class ShotHistory
             FilePath = file,
             Bytes = bytes,
         }));
+    }
+
+    /// <summary>视频本身的像素宽高；读不出来是 null。</summary>
+    private static async Task<(int Width, int Height)?> VideoSizeAsync(string path)
+    {
+        try
+        {
+            var file = await Windows.Storage.StorageFile.GetFileFromPathAsync(path);
+            var clip = await Windows.Media.Editing.MediaClip.CreateFromFileAsync(file);
+            var properties = clip.GetVideoEncodingProperties();
+            return properties.Width > 0 && properties.Height > 0 ? ((int)properties.Width, (int)properties.Height) : null;
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"shots.video-size-failed {ex.GetType().Name}");
+            return null;
+        }
     }
 
     /// <summary>录屏的封面：0.5 s（不到 1 s 的取中间）那一帧，长边缩到缩略图那么大。</summary>
