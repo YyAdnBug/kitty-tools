@@ -2,8 +2,8 @@
 // 解出全部帧和每帧时长、把帧交给一个图层循环播，和两处共用的小视图——StatusEmojiView（告示上的那一个：静止画面垫着，
 // 帧来了换成在播的图层）、StatusPresetIcon（列表里一个状态的小图标）。颜色很深的两个表情（开会、黑猫）当小图标用时，
 // 深色外观下垫一块浅底（plated；设置的列表行 / 详情页页头 / 图标格子、启动器的状态行、菜单栏子菜单）。
-// 素材是 Microsoft Fluent Emoji Animated（MIT）转成的 HEICS（HEVC 图像序列，带透明通道，256 × 256，37–73 帧，
-// 每秒 24 帧），打进包里是平铺的 status-emoji-<id>.heics；转换脚本 macos/status-emoji.swift，
+// 素材是 Microsoft Fluent Emoji Animated（MIT）转成的 HEICS（HEVC 图像序列，带透明通道，256 × 256，33–73 帧，
+// 每秒 24 帧，画质 0.65：每个 0.1–0.4 MB，29 个共约 5.5 MB），打进包里是平铺的 status-emoji-<id>.heics；转换脚本 macos/status-emoji.swift，
 // 出处和许可全文在 Resources/status-emoji-LICENSE.txt。
 // 怎么播是实测定的（PLAN §10「表情怎么播」）：帧一次解完（主线程外），交给图层的 CAKeyframeAnimation 按帧换 contents，
 // 0.02–1.2% CPU；边解边播（CGAnimateImageAtURLWithBlock）要 4%，TimelineView / 定时器逐帧换图更贵，都不用。
@@ -16,13 +16,17 @@ import AppKit
 import SwiftUI
 
 enum StatusEmoji {
-  /// 可选的 16 个（设置里的图标格子按这个顺序）；name 是旁白读的中文名
+  /// 可选的 28 个（设置里的图标格子按这个顺序；后 12 个是 2026-11-04 加的：吃饭、运动、通勤……这些场景）；name 是旁白读的
+  /// 中文名。id 只能往后加、不能改（存在状态和提醒里）
   nonisolated static let choices: [(id: String, name: String)] = [
     ("raised-hand", "举手"), ("waving-hand", "挥手"), ("glowing-star", "发光的星"),
     ("alarm-clock", "闹钟"), ("hourglass", "沙漏"), ("hot-beverage", "热饮"), ("zzz", "Zzz"),
     ("sleeping-face", "睡觉"), ("shushing-face", "嘘"), ("busts", "开会"), ("telephone", "电话"),
     ("rocket", "火箭"), ("robot", "机器人"), ("fire", "火"), ("high-voltage", "闪电"),
-    ("black-cat", "黑猫"),
+    ("black-cat", "黑猫"), ("cook", "厨师"), ("person-running", "跑步"), ("automobile", "汽车"),
+    ("health-worker", "医护"), ("droplet", "水滴"), ("student", "学生"), ("lotus-position", "打坐"),
+    ("party-popper", "礼花"), ("office-worker", "上班"), ("person-walking", "走路"),
+    ("birthday-cake", "生日蛋糕"), ("thumbs-up", "点赞"),
   ]
   nonisolated static let ids = choices.map(\.id)
   /// 有人碰键盘鼠标时从屏幕底边冒出来的那双眼睛（Z17a）：不在可选的里面
@@ -76,7 +80,7 @@ enum StatusEmoji {
 
   // MARK: 静止画面
 
-  /// 静止画面：第一帧，按 id 缓存；没选（空）、不认识的 id 是 nil。一张 256 KB，17 个都用过约 4.4 MB，内存吃紧时
+  /// 静止画面：第一帧，按 id 缓存；没选（空）、不认识的 id 是 nil。一张 256 KB，29 个都用过约 4.4 MB，内存吃紧时
   /// 系统自己清（NSCache）。第一次要现解（约 5 ms 一张）
   static func still(_ id: String) -> CGImage? {
     if let cached = stills.object(forKey: id as NSString) { return cached }
@@ -125,7 +129,7 @@ enum StatusEmoji {
     }
   }
 
-  /// 把 16 张静止画面先在主线程外解好：设置里的图标格子一次要画 16 张，在主线程上现解要七八十毫秒
+  /// 把 28 张静止画面先在主线程外解好：设置里的图标格子一次要画 28 张，在主线程上现解要七八十毫秒
   static func warmStills() async {
     for id in ids where stills.object(forKey: id as NSString) == nil {
       if let image = await decodeFirstFrame(id) { stills.setObject(image, forKey: id as NSString) }

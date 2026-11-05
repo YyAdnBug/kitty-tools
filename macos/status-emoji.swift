@@ -1,11 +1,15 @@
 #!/usr/bin/env swift
 // 状态屏的动画表情（PLAN §10「状态屏」Z15）：把 Microsoft Fluent Emoji Animated 的动画 PNG 转成应用里用的
 // HEICS（HEVC 图像序列，带透明通道）。素材出处 https://github.com/microsoft/fluentui-emoji-animated ，MIT 许可
-// （许可全文在 KittyTools/Resources/status-emoji-LICENSE.txt）。原文件每个 0.8–2.8 MB，不进仓库；转完每个约 0.2–0.5 MB。
+// （许可全文在 KittyTools/Resources/status-emoji-LICENSE.txt）。原文件每个 0.5–2.8 MB，不进仓库；转完每个约 0.1–0.3 MB。
+// 画质 0.65（quality；2026-11-04 试过：默认画质平均 281 KB，0.65 是 186 KB、放大 3 倍看不出差别，0.5 眼睛边缘起块、渐变有断层；
+// 抽一半帧只剩 12 帧每秒、动起来卡，不用）。
 // 用法：swift macos/status-emoji.swift <放着下载好的 *_animated*.png 的目录>… [--out <输出目录>]
 //   默认输出到 macos/KittyTools/Resources/（同步文件夹，文件名 status-emoji-<id>.heics，打进包里是平铺的）。
 // 要加一个表情：从上面的仓库下载它的 animated PNG，在 emoji 表里加一行，再跑一遍；应用里的清单在 StatusEmoji.swift。
 // 只用 ImageIO / CoreGraphics：帧数、每帧时长原样保留，不缩放（原图就是 256 × 256）。
+// 2026-11-04 加了 12 个（吃饭、运动、通勤、看病、喝水、学习、专注、庆祝、上班、出门、生日、完成这些场景；动画的那一套里没有
+// 药丸、书、耳机、房子、对勾、碗，取最接近的）。
 
 import Foundation
 import ImageIO
@@ -28,8 +32,23 @@ let emoji: [(id: String, file: String)] = [
   ("fire", "fire_animated.png"),
   ("high-voltage", "high_voltage_animated.png"),
   ("black-cat", "black_cat_animated.png"),
+  ("cook", "cook_animated_default.png"),
+  ("person-running", "person_running_animated_default.png"),
+  ("automobile", "automobile_animated.png"),
+  ("health-worker", "health_worker_animated_default.png"),
+  ("droplet", "droplet_animated.png"),
+  ("student", "student_animated_default.png"),
+  ("lotus-position", "person_in_lotus_position_animated_default.png"),
+  ("party-popper", "party_popper_animated.png"),
+  ("office-worker", "office_worker_animated_default.png"),
+  ("person-walking", "person_walking_animated_default.png"),
+  ("birthday-cake", "birthday_cake_animated.png"),
+  ("thumbs-up", "thumbs_up_animated_default.png"),
   ("eyes", "eyes_animated.png"),
 ]
+
+/// HEVC 的画质（0–1）：见文件头
+let quality = 0.65
 
 var arguments = Array(CommandLine.arguments.dropFirst())
 var output = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
@@ -86,7 +105,8 @@ for item in emoji {
       [
         kCGImagePropertyHEICSDictionary: [
           kCGImagePropertyHEICSDelayTime: seconds, kCGImagePropertyHEICSUnclampedDelayTime: seconds,
-        ]
+        ],
+        kCGImageDestinationLossyCompressionQuality: quality,
       ] as CFDictionary)
   }
   guard CGImageDestinationFinalize(destination) else {

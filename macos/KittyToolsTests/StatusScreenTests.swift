@@ -6,7 +6,7 @@
 // 退出提示和 key 面板的范围、拦截对事件的分类、
 // 启动器里每个状态一条；设置 › 状态屏改列表的几个纯函数（加、删、挪、恢复自带的、详情页改一个、摘要）；选状态的面板
 // （第 4 批：选中怎么移动、按键、默认选中、排版、进入时给出去的卡片位置）和从卡片长到整屏的起始变换；告示上的动画
-// （第 5 批：表情的清单、17 个资源都在包里且解得出、旧符号名换成表情、每帧时长 → keyTimes、图层上挂的那段动画、
+// （第 5 批：表情的清单、全部资源都在包里且解得出、旧符号名换成表情、每帧时长 → keyTimes、图层上挂的那段动画、
 // 表情视图挂进屏外窗口真的在换帧、动不动 / 冒不冒眼睛 / 要解哪些帧的判断、表情和眼睛的尺寸位置、出场的时间表）。
 // 不进入状态屏、不建面板。
 //
@@ -109,9 +109,13 @@ struct StatusScreenTests {
     // 最多 20 个
     let many = (0..<30).map { preset("p\($0)", "状态 \($0)") }
     #expect(StatusPreset.sanitized(many).map(\.id) == (0..<20).map { "p\($0)" })
-    // 清单里的 16 个表情都留着；「眼睛」只在被碰时用，不能选
+    // 清单里的表情都留着；「眼睛」只在被碰时用，不能选
     let all = StatusEmoji.ids.enumerated().map { preset("e\($0.offset)", "状态", symbol: $0.element) }
-    #expect(StatusPreset.sanitized(all).map(\.symbol) == StatusEmoji.ids)
+    // （一张列表最多 20 个：表情比这多，按 20 个一组收拾）
+    for start in stride(from: 0, to: all.count, by: StatusPreset.maxCount) {
+      let group = Array(all[start..<min(start + StatusPreset.maxCount, all.count)])
+      #expect(StatusPreset.sanitized(group).map(\.symbol) == group.map(\.symbol))
+    }
     let peeking = StatusPreset.sanitized([preset("eyes", "状态", symbol: StatusEmoji.eyes)])
     #expect(peeking.map(\.symbol) == [""])
   }
@@ -958,20 +962,22 @@ struct StatusScreenTests {
 
   // MARK: 告示上的动画（第 5 批）
 
-  /// 清单：可选的 16 个、id 不重复、顺序固定、各有中文名；「眼睛」另算，不在可选的里面
+  /// 清单：可选的 28 个（2026-11-04 在后面加了 12 个）、id 不重复、顺序固定（只能往后加）、各有中文名；「眼睛」另算，不在可选的里面
   @Test func emojiCatalog() {
     #expect(
       StatusEmoji.ids == [
         "raised-hand", "waving-hand", "glowing-star", "alarm-clock", "hourglass", "hot-beverage",
         "zzz", "sleeping-face", "shushing-face", "busts", "telephone", "rocket", "robot", "fire",
-        "high-voltage", "black-cat",
+        "high-voltage", "black-cat", "cook", "person-running", "automobile", "health-worker",
+        "droplet", "student", "lotus-position", "party-popper", "office-worker", "person-walking",
+        "birthday-cake", "thumbs-up",
       ])
     #expect(
       StatusEmoji.choices.map(\.name) == [
         "举手", "挥手", "发光的星", "闹钟", "沙漏", "热饮", "Zzz", "睡觉", "嘘", "开会", "电话", "火箭", "机器人", "火",
-        "闪电", "黑猫",
+        "闪电", "黑猫", "厨师", "跑步", "汽车", "医护", "水滴", "学生", "打坐", "礼花", "上班", "走路", "生日蛋糕", "点赞",
       ])
-    #expect(Set(StatusEmoji.ids).count == 16 && Set(StatusEmoji.choices.map(\.name)).count == 16)
+    #expect(Set(StatusEmoji.ids).count == 28 && Set(StatusEmoji.choices.map(\.name)).count == 28)
     #expect(StatusEmoji.eyes == "eyes" && !StatusEmoji.ids.contains(StatusEmoji.eyes))
     #expect(StatusEmoji.name("alarm-clock") == "闹钟" && StatusEmoji.name("eyes") == nil)
     #expect(StatusEmoji.name("") == nil)
@@ -981,7 +987,7 @@ struct StatusScreenTests {
     }
   }
 
-  /// 17 个资源都在包里（测试宿主就是 App）而且解得出：每个都取得到文件，帧数大于 1、每帧 256 × 256、带透明通道
+  /// 29 个资源都在包里（测试宿主就是 App）而且解得出：每个都取得到文件，帧数大于 1、每帧 256 × 256、带透明通道
   /// （四角是透明的）、每帧时长大于 0；静止画面就是第一帧那么大，取第二次还是那张画面（比内容、不比对象：全量并行跑时
   /// 系统内存压力会把 NSCache 整个清掉，「再要一次是缓存里那一个」就偶发落空，第三轮体检 D1）
   @Test func emojiResourcesDecode() async throws {
