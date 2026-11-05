@@ -507,6 +507,7 @@ extension LauncherItem {
       SystemCommands.Verb(rawValue: String(target.dropFirst("system-".count)))?.symbol ?? "power"
     case .prompt where target == "translate-fy": SettingsPage.translate.symbol
     case .prompt where target == ExchangeRates.promptTarget: "equal"
+    case .prompt where target.hasPrefix(ExchangeRates.suggestionPrefix): "banknote"
     case .search, .prompt: "magnifyingglass"
     default: symbol
     }
@@ -536,6 +537,7 @@ extension LauncherItem {
     case .translate: Style.Family.translate
     case .prompt where target == "translate-fy": Style.Family.translate
     case .prompt where target == ExchangeRates.promptTarget: Style.Family.keyboard
+    case .prompt where target.hasPrefix(ExchangeRates.suggestionPrefix): Style.Family.keyboard
     case .system, .process, .ip: Style.Family.command
     case .prompt where target.hasPrefix("system-"): Style.Family.command
     case .url where isSettingsPane: Style.Family.general
@@ -566,6 +568,7 @@ extension LauncherItem {
     case .url: "网址"
     case .prompt where target == FileSearch.accessTarget: "授权"
     case .prompt where target == ExchangeRates.promptTarget: "汇率"
+    case .prompt where target.hasPrefix(ExchangeRates.suggestionPrefix): "货币"
     case .search, .prompt: "搜索"
     // 计算卡不显示副标题：汇率换算的副标题（「人民币 · 11-03 汇率」，ExchangeRates）写在这里，别的是空的
     case .calculation: subtitle.isEmpty ? "计算" : subtitle

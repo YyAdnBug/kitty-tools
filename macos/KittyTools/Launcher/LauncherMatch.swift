@@ -47,6 +47,25 @@ nonisolated enum LauncherMatch {
     return text.count >= 2 || text.unicodeScalars.contains { !$0.isASCII }
   }
 
+  /// 关键词提示行（open / find / quit… / kill / port / fy / 汇率）对上了没有。整个是关键词 = exact（排在最前面）；
+  /// 关键词、中文叫法或它的全拼的开头 = partial（排在本地结果后面、兜底搜索前面）。英文至少 2 个字母，有汉字时 1 个字就算
+  /// （isLongEnough）。中文叫法只算 partial：「退出」「翻译」也是本地结果（退出登录、输入翻译）要排的词，提示不抢第一行。
+  /// 用户 2026-11-04：打「curr」「端口」就该提示（对标 Raycast 按命令标题匹配、Alfred 关键词打一半就出）。
+  /// keywords / aliases 都写小写、不带空格
+  enum PromptMatch { case exact, partial }
+
+  static func promptMatch(_ query: String, keywords: [String], aliases: [String] = [])
+    -> PromptMatch?
+  {
+    let text = fold(query).filter { !$0.isWhitespace }
+    guard !text.isEmpty else { return nil }
+    if keywords.contains(text) { return .exact }
+    guard isLongEnough(text), (keywords + aliases).contains(where: { $0.hasPrefix(text) }) else {
+      return nil
+    }
+    return .partial
+  }
+
   /// 0 表示不匹配
   static func score(_ query: String, item: LauncherItem) -> Double {
     let whole = fold(query.trimmingCharacters(in: .whitespaces))

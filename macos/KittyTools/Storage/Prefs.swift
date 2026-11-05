@@ -37,6 +37,8 @@ enum Prefs {
   static let launcherRomanInput = "launcherRomanInput"
   /// 计算器汇率换算用的那一天的汇率表（ExchangeRates.Table 的 JSON）：取来的缓存，**不注册默认值**（不导出、不同步）
   static let launcherExchangeRates = "launcherExchangeRates"
+  /// 计算器汇率换算用过的货币（代码，最近的在前，最多 8 种）：货币候选排前面；这台电脑自己的，**不注册默认值**
+  static let launcherRecentCurrencies = "launcherRecentCurrencies"
   /// 剪贴板、启动器、翻译浮窗呼出时用挤压入场（设置 › 通用「动效」，默认关；2026-09-29 用户要求三块面板统一，设置从启动器页
   /// 挪到通用页；2026-10-03 转正，去掉「实验」）
   static let panelSqueezeEntrance = "panelSqueezeEntrance"

@@ -190,6 +190,8 @@ import UniformTypeIdentifiers
   @ObservationIgnored private var ratesTask: Task<Void, Never>?
   /// 上一次取没取到（占位行写「没取到」；再打字、再呼出时重取）
   @ObservationIgnored private var ratesFailed = false
+  /// 汇率换算用过的货币（货币候选排前面）；正式运行时启动就从偏好读，单测、截图自检里不读不写偏好
+  @ObservationIgnored var recentCurrencies: [String] = []
   /// 这次呼出里查过的浏览器 / 打开方式（⌘K 每打一个字都要重算动作表，LaunchServices 别每次都问）
   @ObservationIgnored private var browserCache: [URL]?
   @ObservationIgnored private var applicationCache: [String: [(url: URL, isDefault: Bool)]] = [:]
@@ -233,6 +235,7 @@ import UniformTypeIdentifiers
       showsFrequent = { true }
     } else {
       rates = ExchangeRates.load()
+      recentCurrencies = ExchangeRates.loadRecents()
     }
   }
 
@@ -422,12 +425,18 @@ import UniformTypeIdentifiers
     let systemPrompts = SystemCommands.promptItems(for: query)
     let clip =
       features.contains(.clipboard) && Self.clipQuery(query) != nil ? [Self.clipItem("")] : []
-    let fy = features.contains(.translate) ? Self.translatePrompts(for: query) : []
+    let fy = Self.translatePrompts(for: features.contains(.translate) ? query : "")
     let currency = ExchangeRates.promptItems(for: query)
-    let top =
-      clip + fy + currency + ip + direct
-      + [calculationItem(query), keyword].compactMap { $0 } + prompts.exact
-      + filePrompts.exact + systemPrompts.exact
+    let exactPrompts: [LauncherItem] = prompts.exact + filePrompts.exact + systemPrompts.exact
+    let partialPrompts: [LauncherItem] =
+      prompts.partial + filePrompts.partial + systemPrompts.partial + fy.partial + currency.partial
+    let calculation = calculationItem(query)
+    // 货币打到一半（「100 美元 转 英」）：紧跟在计算结果的位置列候选；有计算结果时不列（单位换算、打全了的汇率）
+    let currencyHints =
+      calculation == nil ? ExchangeRates.suggestions(for: query, recents: recentCurrencies) : []
+    let top: [LauncherItem] =
+      clip + fy.exact + currency.exact + ip + direct + [calculation].compactMap { $0 }
+      + currencyHints + [keyword].compactMap { $0 } + exactPrompts
     // 书签、浏览历史至少 2 个字才搜（1 个字母命中太多；含中文时 1 个字就搜，U8）
     let longEnough = LauncherMatch.isLongEnough(query)
     let bookmarks = longEnough && !isFixture ? Bookmarks.items() : []
@@ -453,9 +462,9 @@ import UniformTypeIdentifiers
     // 直达项和书签 / 用过的网址可能是同一项：按 id 去重，保留靠前的
     var seen = Set<String>()
     let ordered = Self.promoting(local, over: top) { usage.boost(for: $0, query: query).query > 0 }
-    results =
-      (ordered + history + prompts.partial + filePrompts.partial + systemPrompts.partial + fallback)
-      .filter { seen.insert($0.id).inserted }
+    results = (ordered + history + partialPrompts + fallback).filter {
+      seen.insert($0.id).inserted
+    }
   }
 
   /// 本地结果里在完全相同的输入下选过的（使用记录里这个查询的分 > 0）排到固定行（剪贴板、翻译、ip、直达、计算、
@@ -608,7 +617,9 @@ import UniformTypeIdentifiers
   static func clipItem(_ keyword: String) -> LauncherItem {
     LauncherItem(
       kind: .clip, target: keyword,
-      title: keyword.isEmpty ? "打开剪贴板历史" : "在剪贴板历史里搜索「\(keyword)」", subtitle: "")
+      title: keyword.isEmpty ? "打开剪贴板历史" : "在剪贴板历史里搜索「\(keyword)」",
+      // 只输 cb 时说一下还能带关键词（2026-11-04：每个提示行都写怎么用）
+      subtitle: keyword.isEmpty ? "↩ 打开剪贴板面板；输入「cb 空格 关键词」直接搜" : "")
   }
 
   /// 「fy 文本」的文本（不分大小写；只输 fy 不算，出补全提示）
@@ -623,14 +634,18 @@ import UniformTypeIdentifiers
     LauncherItem(kind: .translate, target: text, title: "翻译「\(text)」", subtitle: definition)
   }
 
-  /// 单输 fy：↩ / Tab 补全关键词的提示（同 open / find）
-  static func translatePrompts(for query: String) -> [LauncherItem] {
-    guard LauncherMatch.fold(query) == "fy" else { return [] }
-    return [
-      LauncherItem(
-        kind: .prompt, target: "translate-fy", title: "翻译…",
-        subtitle: "输入「fy 空格 文字」，↩ 或 Tab 补全关键词", completion: "fy ")
-    ]
+  /// 单输 fy：↩ / Tab 补全关键词的提示（同 open / find）；打「翻译」「fanyi」时排在本地结果（输入翻译）后面
+  static func translatePrompts(for query: String) -> (
+    exact: [LauncherItem], partial: [LauncherItem]
+  ) {
+    let item = LauncherItem(
+      kind: .prompt, target: "translate-fy", title: "翻译…",
+      subtitle: "输入「fy 空格 文字」，↩ 或 Tab 补全关键词", completion: "fy ")
+    switch LauncherMatch.promptMatch(query, keywords: ["fy"], aliases: ["翻译", "fanyi"]) {
+    case .exact: return ([item], [])
+    case .partial: return ([], [item])
+    case nil: return ([], [])
+    }
   }
 
   /// 「fy 单词」：系统词典的第一条释义，到了再换副标题，不改行高（体检 D10；首查约 0.3 s）
@@ -710,6 +725,15 @@ import UniformTypeIdentifiers
 
   /// 等汇率表取完（截图自检、单测用）
   func ratesFetch() async { await ratesTask?.value }
+
+  /// 用了一次汇率换算（↩ 粘贴、⌘↩ / ⌘C / ⌘K 复制）：记下它的两种货币，下次候选里排前面（不是汇率换算的不动）
+  private func rememberCurrencies(_ item: LauncherItem) {
+    guard item.kind == .calculation, item.payload != nil else { return }
+    let updated = ExchangeRates.remembering(item.target, in: recentCurrencies)
+    guard updated != recentCurrencies else { return }
+    recentCurrencies = updated
+    if !isFixture { ExchangeRates.saveRecents(updated) }
+  }
 
   /// 撤掉还在等 / 在查的外网查询（查到的、没查到的留着）
   private func cancelIPLookups() {
@@ -824,6 +848,7 @@ import UniformTypeIdentifiers
     case .calculation:
       // 汇率还没取到的占位行没有 payload（同 ip）
       guard let payload = item.payload else { return NSSound.beep() }
+      rememberCurrencies(item)
       paste { Paster.write(string: payload, record: true) }
     case .ip:
       guard let address = item.payload else { return NSSound.beep() }
@@ -1093,7 +1118,9 @@ import UniformTypeIdentifiers
       item.target == FileSearch.accessTarget
         ? ("授权", "lock.open")
         : item.target == ExchangeRates.promptTarget
-          ? ("填进示例", "text.cursor") : ("补全关键词", "text.cursor")
+          ? ("填进示例", "text.cursor")
+          : item.target.hasPrefix(ExchangeRates.suggestionPrefix)
+            ? ("补全货币", "text.cursor") : ("补全关键词", "text.cursor")
     case .calculation, .ip: ("粘贴", "arrow.turn.down.left")
     case .clip: (item.target.isEmpty ? "打开" : "搜索", "doc.on.clipboard")
     case .translate: ("翻译", "character.bubble")
@@ -1547,6 +1574,7 @@ import UniformTypeIdentifiers
   /// ⌘C：复制路径 / 网址 / 计算结果（⌘↩ 的计算结果也走这里）；网址另有 Markdown 链接、标题。面板同时收起，用刘海说
   /// 复制了什么；这些是本 App 给出的新文字，同时记进剪贴板历史（mac-native §5）
   func copy(_ item: LauncherItem, _ format: CopyFormat = .value) {
+    rememberCurrencies(item)
     let text: String
     let title: String?
     switch format {

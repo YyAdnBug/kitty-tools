@@ -146,6 +146,18 @@ enum SystemCommands {
       }
     }
 
+    /// 提示行另外认的中文叫法和全拼（只算打了一半：LauncherMatch.promptMatch）
+    var aliases: [String] {
+      switch self {
+      case .quit: ["退出", "退出应用", "tuichu"]
+      case .hide: ["隐藏", "隐藏应用", "yincang"]
+      case .forcequit: ["强制退出", "qiangzhituichu"]
+      case .eject: ["推出", "推出磁盘", "弹出", "弹出磁盘", "tuichu", "tanchu"]
+      case .kill: ["结束进程", "进程", "杀进程", "jieshujincheng", "jincheng"]
+      case .port: ["端口", "端口占用", "查看端口", "duankou"]
+      }
+    }
+
     /// 补全提示里「关键词 空格 X」的 X
     var noun: String {
       switch self {
@@ -210,10 +222,9 @@ enum SystemCommands {
     return nil
   }
 
-  /// 单输（或拼到一半）quit / hide / forcequit / eject / kill / port 时的补全提示：正好是关键词的放最前，
-  /// ≥ 2 个字的开头放本地结果后面（同文件搜索的 open / find）
+  /// 单输（或拼到一半）quit / hide / forcequit / eject / kill / port，或打了中文叫法（「端口」「进程」「duankou」）时的
+  /// 补全提示：正好是关键词的放最前，别的放本地结果后面（LauncherMatch.promptMatch，同文件搜索的 open / find）
   static func promptItems(for query: String) -> (exact: [LauncherItem], partial: [LauncherItem]) {
-    let text = LauncherMatch.fold(query.trimmingCharacters(in: .whitespaces))
     var exact: [LauncherItem] = []
     var partial: [LauncherItem] = []
     for verb in Verb.allCases {
@@ -221,10 +232,10 @@ enum SystemCommands {
         kind: .prompt, target: "system-" + verb.rawValue, title: verb.prompt,
         subtitle: "输入「\(verb.rawValue) 空格 \(verb.noun)」，↩ 或 Tab 补全关键词",
         completion: verb.rawValue + " ")
-      if text == verb.rawValue {
-        exact.append(item)
-      } else if text.count >= 2, verb.rawValue.hasPrefix(text) {
-        partial.append(item)
+      switch LauncherMatch.promptMatch(query, keywords: [verb.rawValue], aliases: verb.aliases) {
+      case .exact: exact.append(item)
+      case .partial: partial.append(item)
+      case nil: break
       }
     }
     return (exact, partial)

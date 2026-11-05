@@ -3327,6 +3327,10 @@ struct SnapshotProbeTests {
       for (name, query) in [
         ("launcher-currency", "100 usd to cny"), ("launcher-currency-failed", "100 美元 转 日元"),
         ("launcher-actions-currency", "100 usd to jpy"), ("launcher-currency-prompt", "汇率"),
+        ("launcher-currency-prompt-option", "curr"), ("launcher-prompt-cn", "端口"),
+        ("launcher-prompt-cb", "cb"), ("launcher-currency-hint", "100 美元 转 英"),
+        ("launcher-currency-hint-empty", "100 美元 转"), ("launcher-currency-rate", "美元兑人民币"),
+        ("launcher-currency-spoken", "100万日元是多少人民币"),
         ("launcher-currency-name", "100 美元 转 马来西亚林吉特"),
         ("launcher-units", "10 km to mi"), ("launcher-units-cn", "30 摄氏度 转 华氏度"),
         ("launcher-radix", "255 in hex"), ("launcher-calc-group", "1234567*3"),
@@ -3344,6 +3348,8 @@ struct SnapshotProbeTests {
         await model.ipLookup()
         await model.ratesFetch()
         model.showsActions = ["launcher-actions-calc", "launcher-actions-currency"].contains(name)
+        // 按住 ⌥ 时选中行的副标题换成替代动作（同 Alfred 按住修饰键换副标题）
+        model.alternate = name == "launcher-currency-prompt-option" ? .option : .none
         if ["launcher-kill-force", "launcher-port-force"].contains(name),
           let first = model.results.first
         {
