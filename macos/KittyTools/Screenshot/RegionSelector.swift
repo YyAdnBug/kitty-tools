@@ -454,6 +454,8 @@ final class SelectionSession {
   func finish(_ outcome: RegionSelector.Outcome?) {
     guard let continuation else { return }
     self.continuation = nil
+    // 会话收了：还在跑的翻译停掉，剩下的段不该继续往服务发请求（Esc 那条由 cancelTranslation 自己再兜一次）
+    for view in views { view.cancelTranslation() }
     let closing = overlays
     overlays = []
     views = []

@@ -43,8 +43,10 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private var translating = false
   /// 正在跑的就地翻译（Esc / 换屏框选时取消：不然剩下的段会继续打翻译服务）
   private var translateTask: Task<Void, Never>?
-  /// 选区上的呼吸脉冲（翻译中）
+  /// 选区上的扫光（翻译中）：容器裁掉多余的部分，里面一条浅白渐变从左扫到右。
+  /// 之前是整块白呼吸，白底窗口上几乎看不出来，改成扫光
   private let translatingPulse = CALayer()
+  private let translatingBand = CAGradientLayer()
   private var mode: SelectionView.Mode { session.mode }
   /// 截图、录屏：悬停窗口、单击选中、调整阶段（手柄、拖边、方向键、尺寸胶囊、比例）
   private var adjusts: Bool { mode != .quick }
@@ -227,8 +229,18 @@ final class SelectionView: NSView, NSTextViewDelegate {
     canvas.autoresizingMask = [.width, .height]
     addSubview(canvas)
     let root = canvas.layer!
-    translatingPulse.backgroundColor = NSColor.white.withAlphaComponent(0.26).cgColor
+    translatingPulse.masksToBounds = true
+    translatingPulse.backgroundColor = NSColor.white.withAlphaComponent(0.06).cgColor
     translatingPulse.isHidden = true
+    translatingBand.colors = [
+      NSColor.white.withAlphaComponent(0).cgColor,
+      NSColor.white.withAlphaComponent(0.55).cgColor,
+      NSColor.white.withAlphaComponent(0).cgColor,
+    ]
+    translatingBand.locations = [0, 0.5, 1]
+    translatingBand.startPoint = CGPoint(x: 0, y: 0.5)
+    translatingBand.endPoint = CGPoint(x: 1, y: 0.5)
+    translatingPulse.addSublayer(translatingBand)
     root.addSublayer(translatingPulse)
     shade.fillRule = .evenOdd
     shade.fillColor = NSColor.black.withAlphaComponent(0.18).cgColor
@@ -656,21 +668,23 @@ final class SelectionView: NSView, NSTextViewDelegate {
     outlineOuter.path = shown.map {
       CGPath(rect: insideScreen($0.insetBy(dx: -2, dy: -2), by: 2), transform: nil)
     }
-    // 就地翻译中：选区上盖一层呼吸的脉冲（白底轻微明暗，不挡文字），翻完就收
+    // 就地翻译中：选区上一条浅白渐变从左扫到右（1.1 秒一轮），衬着浅色底也看得出来
     translatingPulse.frame = shown ?? .zero
     translatingPulse.isHidden = !translating || shown == nil
-    if translating {
-      if translatingPulse.animation(forKey: "pulse") == nil {
-        let pulse = CABasicAnimation(keyPath: "opacity")
-        pulse.fromValue = 0.15
-        pulse.toValue = 0.42
-        pulse.duration = 0.55
-        pulse.autoreverses = true
-        pulse.repeatCount = .infinity
-        translatingPulse.add(pulse, forKey: "pulse")
+    if translating, let shown {
+      let band = max(60, shown.width * 0.5)
+      translatingBand.frame = CGRect(x: -band, y: 0, width: band, height: shown.height)
+      if translatingBand.animation(forKey: "sweep") == nil {
+        let sweep = CABasicAnimation(keyPath: "transform.translation.x")
+        sweep.fromValue = 0
+        sweep.toValue = shown.width + band
+        sweep.duration = 1.1
+        sweep.repeatCount = .infinity
+        sweep.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        translatingBand.add(sweep, forKey: "sweep")
       }
     } else {
-      translatingPulse.removeAnimation(forKey: "pulse")
+      translatingBand.removeAnimation(forKey: "sweep")
     }
     hint.layer.isHidden = selection != nil && !hintFlashing
     if !hint.layer.isHidden {
@@ -1749,7 +1763,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
 
   /// 停掉就地翻译：Esc 收起截图、这块屏被清掉时都要调，不然还在排队的那几段会继续往翻译服务发请求。
   /// 任务的取消点在 TranslateSegments 的每段开头，取消后不会再发新请求
-  private func cancelTranslation() {
+  func cancelTranslation() {
     translateTask?.cancel()
     translateTask = nil
     guard translating else { return }
