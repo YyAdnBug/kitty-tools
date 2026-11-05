@@ -208,6 +208,9 @@ enum Prefs {
   static let remindersSnoozeMinutes = "remindersSnoozeMinutes"
   /// 挑的系统表情有动画版时自动下载（EmojiPack，2026-11-05，默认开；设置 › 状态屏 / 提醒两页各一行）
   nonisolated static let emojiPackDownloads = "emojiPackDownloads"
+  /// 发表情包之前在本机试：从这台 Mac 上的临时服务器下（只认 http://127.0.0.1 / localhost，EmojiPack.remoteURL）。没有界面，
+  /// defaults write 设、用完删；不注册默认值（不导出、不同步）
+  nonisolated static let emojiPackTestServer = "emojiPackTestServer"
 
   /// 全部便签窗口里正文的字号（设置 › 便签，pt；档位见 notesFontSizeChoices，默认 15）。读它走 Prefs.notesFontSize(_:)：
   /// 存了不在档位里的值（导入的文件、手改的偏好）按默认算

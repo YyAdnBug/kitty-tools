@@ -667,6 +667,7 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
   流量算在他们头上）；746 个原文件 1.6 GB 下在 `macos/build/emoji-pack/src/`，转好 155 MB（平均 213 KB）在 `out/`，对照表 18.6 KB 打进包里。
   缓存上限 50 MB、不备份不导出不同步；开关「自动下载动画表情」默认开（设置 › 状态屏「动画」、设置 › 提醒「图标」）；下载时只带表情编号。
   有肤色的只做了默认肤色（挑了别的肤色保持静态，全肤色包要大三倍）。
+  发表情包之前在本机试：`defaults write <bundle id> emojiPackTestServer http://127.0.0.1:<端口>`，在 `macos/build/emoji-pack/out/` 起一个静态文件服务器（只认 http 的 127.0.0.1 / localhost），用完 `defaults delete`。
 
 ## 11½. Whisker 设计语言改造（2026-09-25 起）
 

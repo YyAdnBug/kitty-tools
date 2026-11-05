@@ -101,9 +101,18 @@ import Observation
     return done
   }
 
-  /// 本仓库那个 release 里的文件
-  nonisolated static func remoteURL(_ id: String, tag: String) -> URL? {
-    URL(string: "https://github.com/YyAdnBug/kitty-tools/releases/download/\(tag)/\(id).heics")
+  /// 本仓库那个 release 里的文件；设了本机测试服务器（Prefs.emojiPackTestServer，发表情包之前试用）时是那里的
+  nonisolated static func remoteURL(
+    _ id: String, tag: String,
+    testServer: String? = UserDefaults.standard.string(forKey: Prefs.emojiPackTestServer)
+  ) -> URL? {
+    if let testServer, let base = URL(string: testServer), base.scheme == "http",
+      ["127.0.0.1", "localhost"].contains(base.host())
+    {
+      return base.appending(path: id + ".heics")
+    }
+    return URL(
+      string: "https://github.com/YyAdnBug/kitty-tools/releases/download/\(tag)/\(id).heics")
   }
 
   private static func download(_ id: String, tag: String) async -> Bool {

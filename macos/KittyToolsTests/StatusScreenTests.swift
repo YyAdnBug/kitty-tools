@@ -220,6 +220,15 @@ struct StatusScreenTests {
     #expect(
       EmojiPack.remoteURL("dog", tag: "emoji-pack-1")?.absoluteString
         == "https://github.com/YyAdnBug/kitty-tools/releases/download/emoji-pack-1/dog.heics")
+    // 本机测试服务器：只认 http 的 127.0.0.1 / localhost，别的地址照旧走 release
+    #expect(
+      EmojiPack.remoteURL("dog", tag: "emoji-pack-1", testServer: "http://127.0.0.1:8765")?
+        .absoluteString == "http://127.0.0.1:8765/dog.heics")
+    for other in ["https://127.0.0.1:8765", "http://example.com", "file:///tmp", "乱写"] {
+      #expect(
+        EmojiPack.remoteURL("dog", tag: "emoji-pack-1", testServer: other)?.host() == "github.com",
+        "\(other)")
+    }
 
     let day: TimeInterval = 86400
     let files = [
