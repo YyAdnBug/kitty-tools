@@ -18,6 +18,8 @@ import UniformTypeIdentifiers
 
 struct LauncherPanelView: View {
   @Bindable var model: LauncherModel
+  /// 拖下边定的最多几行（W2，0 = 默认）
+  @AppStorage(Prefs.launcherPanelRows) private var rows = 0.0
   @AppStorage(Prefs.launcherRomanInput) private var romanInput = false
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   /// 按住 ⌘ 超过 150 ms：类型标签换成键帽
@@ -34,6 +36,8 @@ struct LauncherPanelView: View {
   static let inset: CGFloat = 6
   /// 多出半行，让人看得出下面还能滚（动作菜单同样）
   static let visibleRows = 8.5
+  /// 拖下边能定的行数（W2）：按半行吸附，露半行提示下面还有
+  static let rowRange = 6.5...14.5
 
   var body: some View {
     VStack(spacing: 0) {
@@ -58,7 +62,9 @@ struct LauncherPanelView: View {
       bar
     }
     .overlay(alignment: .bottomTrailing) { actionMenu }
-    .onChange(of: Self.height(for: model), initial: true) { _, height in model.resize(height) }
+    .onChange(of: Self.height(for: model, rows: rows), initial: true) { _, height in
+      model.resize(height)
+    }
     .onModifierKeysChanged(mask: [.command, .option, .control]) { _, keys in
       model.alternate =
         keys.contains(.command)
@@ -98,14 +104,33 @@ struct LauncherPanelView: View {
   }
 
   /// 面板高度 = 搜索栏 + 发丝线 +（错误）+ 列表（分组标题各 28 + 最多 8.5 行）+ 底栏；⌘K 菜单开着时至少放得下它
-  static func height(for model: LauncherModel) -> CGFloat {
+  /// rows：设置里拖出来的最多几行（0 = 默认 8.5）
+  /// 拖下边时面板能多高（W2）：列表 6.5 到 14.5 行
+  static func heightRange(for model: LauncherModel) -> ClosedRange<CGFloat> {
+    let chrome = listChrome(for: model)
+    return chrome + rowRange.lowerBound * rowHeight...chrome + rowRange.upperBound * rowHeight
+  }
+
+  /// 拖到这么高对应最多几行：按半行吸附，夹在 rowRange 里（纯函数，配单测）
+  static func rows(forHeight height: CGFloat, model: LauncherModel) -> Double {
+    let rows = Double((height - listChrome(for: model)) / rowHeight)
+    return min(max((rows - 0.5).rounded() + 0.5, rowRange.lowerBound), rowRange.upperBound)
+  }
+
+  /// 面板里除了行以外的高度：搜索栏、发丝线、错误、列表上下内缩、分组标题、底栏
+  private static func listChrome(for model: LauncherModel) -> CGFloat {
+    searchHeight + 0.5 + barHeight + (model.error != nil ? 28 : 0) + inset * 2
+      + CGFloat(model.groups.count) * groupHeight
+  }
+
+  static func height(for model: LauncherModel, rows limit: Double = 0) -> CGFloat {
     var height = searchHeight + 0.5 + barHeight
     if model.error != nil { height += 28 }
     if !model.isShowingRecent && model.results.isEmpty {
       height += rowHeight + 12
     } else if !model.results.isEmpty {
       let heights = model.results.map(rowHeight)
-      let full = Int(visibleRows)
+      let full = Int(limit > 0 ? limit : visibleRows)
       var rows = heights.prefix(full).reduce(0, +)
       if heights.count > full { rows += heights[full] / 2 }
       height += inset * 2 + CGFloat(model.groups.count) * groupHeight + rows

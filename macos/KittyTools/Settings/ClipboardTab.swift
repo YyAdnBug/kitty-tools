@@ -83,6 +83,9 @@ struct ClipboardTab: View {
           Text("屏幕上方是鼠标所在屏幕的上方正中，跟随鼠标是光标旁边，上次位置是上次拖到的地方")
         }
         .pickerStyle(.segmented)
+        PanelSizeRow(
+          detail: "拖左右两边改宽度，拖下边改最多显示几行", widthKey: Prefs.clipboardPanelWidth,
+          heightKey: Prefs.clipboardPanelRows, defaultWidth: Style.listPanelWidth)
       }
       .gated(by: .clipboard)
       Section("内容") {

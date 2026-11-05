@@ -108,6 +108,14 @@ enum Prefs {
   static let translateSystemDictionary = "translateSystemDictionary"
   /// 查单个词时大模型按词典格式回答：读音、词性释义、例句（D4）
   static let translateWordMode = "translateWordMode"
+  /// 三块主面板拖出来的大小（2026-11-05 拍板 W1 W2）：宽度（pt）、启动器 / 剪贴板最多露几行（x.5）、翻译浮窗最高多高（pt）。
+  /// 都是这台电脑自己的状态（屏幕不一样大），**不注册默认值**、不跟导出走；0 / 没写过 = 默认
+  static let launcherPanelWidth = "launcherPanelWidth"
+  static let clipboardPanelWidth = "clipboardPanelWidth"
+  static let translatePanelWidth = "translatePanelWidth"
+  static let launcherPanelRows = "launcherPanelRows"
+  static let clipboardPanelRows = "clipboardPanelRows"
+  static let translatePanelMaxHeight = "translatePanelMaxHeight"
   /// 英文单词用真人发音（有道词典的录音；关掉或取不到时用系统声音，2026-11-05 拍板 R3）
   static let translateWordRecording = "translateWordRecording"
   /// 英文单词的发音：us（美音，默认）/ uk（英音）

@@ -25,6 +25,8 @@ struct TranslatePanelView: View {
   /// 和菜单栏的勾、设置 › 翻译读写同一个偏好
   @AppStorage(Prefs.translateCopyToTranslate) private var copyToTranslate = false
   @AppStorage(Prefs.translateFontScale) private var fontScale = 1.0
+  /// 拖下边定的最高多高（W2，0 = 自动）
+  @AppStorage(Prefs.translatePanelMaxHeight) private var maxHeight = 0.0
   /// 折叠着的服务 id（换行分隔）：跨重启记住
   @AppStorage(Prefs.translateCollapsedServices) private var collapsedServices = ""
   /// nil = 自动检测
@@ -72,7 +74,8 @@ struct TranslatePanelView: View {
     .padding(.bottom, coordinator.showsHistory ? 0 : 2)
     // 一次操作只重译一次（交换、撞同语言时两个值在同一次更新里一起改）
     .onChange(of: [source, target]) { retranslate() }
-    .onChange(of: [desiredHeight, mustFitHeight], initial: true) {
+    // 拖下边改了最高多高（W2）也再量一次：resize 按设置里的上限算
+    .onChange(of: [desiredHeight, mustFitHeight, maxHeight], initial: true) {
       resize(desiredHeight, mustFitHeight)
     }
     // 「⋯」菜单和历史 ⌘K 的「清空历史…」共用一个确认框
@@ -113,9 +116,20 @@ struct TranslatePanelView: View {
     return word
   }
 
-  static func panelHeight(_ height: CGFloat, mustFit: CGFloat, visible: CGFloat) -> CGFloat {
-    min(max(height, 220), min(max(visible * 0.85, mustFit), visible - 24))
+  /// cap：拖下边定的最高多高（W2，0 = 自动：85% / 放得下前三张卡）；拖过的就照它，卡片区里滚
+  static func panelHeight(_ height: CGFloat, mustFit: CGFloat, visible: CGFloat, cap: CGFloat = 0)
+    -> CGFloat
+  {
+    let limit =
+      cap > 0
+      ? min(max(cap, minHeight), visible - 24) : min(max(visible * 0.85, mustFit), visible - 24)
+    return min(max(height, minHeight), limit)
   }
+
+  /// 浮窗最矮多高（也是拖下边的下限）
+  static let minHeight: CGFloat = 220
+  /// 浮窗默认宽度（「恢复默认大小」回到它）
+  static let defaultWidth: CGFloat = 420
 
   // MARK: 顶栏
 
