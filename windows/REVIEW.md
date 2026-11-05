@@ -19,17 +19,24 @@
 1. **拿代码**：`git fetch origin && git rebase origin/windows`；`git log --oneline --grep "PLAN-v12"` 应该有第 1–7 批七个提交，`83040384` 也在。
 2. **编译零警告**：`dotnet build windows/KittyTools.slnx -c Debug -p:Platform=x64`；`dotnet publish windows/KittyTools/KittyTools.csproj -c Release -r win-x64` 和 `-r win-arm64`，零 trim / AOT 警告；
    发布目录里有 `KittyTools.pri`、`Microsoft.UI.Xaml.Controls.pri`、`Resources\StatusEmoji\`（34 张 PNG + `manifest.txt` + `LICENSE.txt`）。各批「要特别看的编译点」写在那一批下面。
-3. **单测**：`dotnet test windows/KittyTools.Tests` 全过。新加 / 重写的：`ExchangeRatesTests` 11、`ScrollPacerTests` 13、`PlanV12Batch2Tests` 4、`StatusScreenTests` 17、`ReminderTests` 16。
+3. **单测**：`dotnet test windows/KittyTools.Tests` 全过。新加 / 重写的：`ExchangeRatesTests` 11、`ScrollPacerTests` 13、`PlanV12Batch2Tests` 4、`StatusScreenTests` 17、`ReminderTests` 18（审查方复查加了 2 个）。
    `ReminderTests.Canonical_MatchesMacByteForByte`、`StatusScreenTests.Sync_MatchesMacAndPlans` 是和 mac 互通的底线，过不了先把实际输出贴在那一批下面，别改 golden。**不许为了变绿删测试、改断言。**
 4. **状态屏只走自检**：`KittyTools.exe --status-screen-probe=<临时目录>`（测试档；Probe 模式只吞带标记的注入事件，真的键盘鼠标照常能用，屏幕会被盖住约 15 秒）。
    任何测试、自检、截图脚本都**不许真的进入状态屏**；提醒的「进入状态屏」也一样。要真进入的手测条目留给用户，标「没测」。
-5. **手测**（`HANDTEST.md`）：906–917（`83040384`，自动滚动那半照 932 起那一节走）、918–931（第 1 批）、932–951（第 2 批）、952–976（第 3 批）、977–981（第 4 批）、982–999（第 5 批）、1000–1014（第 6 批）、1015–1030（第 7 批）。
+5. **手测**（`HANDTEST.md`）：906–917（`83040384`，自动滚动那半照 932 起那一节走）、918–931（第 1 批）、932–951（第 2 批）、952–976（第 3 批）、977–981（第 4 批）、982–999（第 5 批）、1000–1014（第 6 批）、1015–1030（第 7 批）、1031–1042（审查方复查）。
    要真鼠标拖、真按键、等到点、第二块屏、真的 Mac 的，能做的做，做不了的标「没测」留给用户；结果写在那一条后面。同步（1013、1015）只用临时文件夹和假数据，不碰用户真实的同步文件夹。
 6. **截图**：各批一个目录推到 `windows-shots`：`0.2.0-feedback-1104/`、`0.2.0-v12-batch-1/`、`0.2.0-v12-batch-2/`、`0.3.0-v12-batch-3/`、`0.3.0-v12-batch-4/`、`0.3.0-v12-batch-5/`、`0.3.0-v12-batch-6/`、`0.3.0-v12-batch-7/`，要哪几张写在那批的「你们做的」里。
    先在 `../kitty-shots` 里 `git fetch origin && git reset --hard origin/windows-shots`；只截自己的窗口（状态屏、提醒全屏的图用自检出的），推之前自己看一遍。
 7. **自查**：内存探针（`KITTY_MEMORY_PROBE=1`，和 `1986a4b5` 比，哪一项涨超过 5 MB 写原因）；只有托盘静置 60 s 空闲 CPU 为 0（有开着的间隔提醒时每分钟看一次空闲，不算；提醒边框挂着时 30 Hz 换透明度，收起后回到 0）；
    新日志里没有剪贴板内容、原文、译文、URL、提醒和状态的标题。
 8. **版本**：第 1–2 批是 0.2.0、第 3–7 批是 0.3.0；版本号、更新日志、`build-release.ps1` 等这几批核验完再一起定，**不发布、不打 tag**。
+
+### 审查方复查（2026-11-05，`36aafcdf`，同样没编译）
+
+用户要求交给你们之前先由没写这些代码的人独立审一遍：四路分头读了 83040384 和第 1–7 批的 diff 和它们调到的现有代码，对照 mac（`origin/macos`）。
+确定的错已经改在 `36aafcdf`（提交正文是全表），各批下面「审查方复查」记了改了哪几处、留给你们确认的几处。**三处确定的编译错**：
+`StatusPreset.OneLine` 的字符字面量里是 U+2028 / U+2029 原字符、`StatusScreenHost._probe` 只写不读（CS0414）、状态屏编辑框的 lambda
+用到后面才赋值的 `dialog`（CS0165）；另把 `TickerText` 补成 partial（可能的 CsWinRT1028）。
 
 ### 第 1 批：启动器汇率换算（N1）→ 已写（审查方，`git log --grep "PLAN-v12 第 1 批"`，没编译）
 
@@ -49,6 +56,12 @@
 2. 走 HANDTEST 918–931（联网那几条用 Dev / 探针档）；927 断网可以拔网线或者临时关网卡，做完恢复。
 3. 截图：汇率结果、占位行、用法提示、货币候选（浅 / 深），推 `windows-shots` 的 `0.2.0-v12-batch-1/`。
 4. **别动 `83040384` 里长截图控速那半**：第 2 批照 mac 重做（速度放在长截图面板上、匀速小段滚动）；它的「剪贴板面板跟随鼠标」留着，第 2 批加「上次位置」和启动器那一行。这次先编译过它（在 REVIEW「用户反馈 2026-11-04」下面记一句）。
+
+**审查方复查（2026-11-05，`36aafcdf`）**：改了——取到的表里没有那种货币时那一行换成「没取到汇率」（以前「正在取汇率…」一直挂着；mac
+`calculationRow ?? placeholder(failed: true)`）；撤掉的那次取表也换进内存；`ExchangeRates.Suggestions` 先滤掉设置文件里不认得的货币代码
+（以前 `Currencies[code]` 抛 KeyNotFoundException）；`Calculator.Normalize` 把全角 ￥ £ ¢ ₩ 折成半角（mac widthInsensitive）；
+`ExchangeRateStore` 读正文也 5 秒超时（`ResponseHeadersRead` 时 `HttpClient.Timeout` 只管到响应头）；「提醒 …」那几行不能收藏、Tab 不补
+（`CanFavorite`、`LauncherText.Completion`，mac 的 `.reminder` 两样都没有）。HANDTEST 1041、1042。
 
 ### 第 2 批：面板位置、长截图控速、工具栏靠右（N2 N3 N4）→ 已写（审查方，`git log --grep "PLAN-v12 第 2 批"`，没编译）
 
@@ -86,6 +99,16 @@
 4. 截图：设置 › 剪贴板 / 启动器「面板位置」、设置 › 截图「工具栏位置」、靠右的工具栏、长截图面板带速度那一排（浅 / 深），推 `windows-shots` 的 `0.2.0-v12-batch-2/`；
    自动滚动录 3–5 秒短视频（只录测试窗口 + 面板）。
 
+**审查方复查（2026-11-05，`36aafcdf`）**：改了——拖面板不再抢列表（`OverlayWindow.IsControl` 多挡 `ScrollViewer` 和 `CanDrag` 的元素：
+行靠 Tapped、不处理按下，以前按住一动就成了挪面板，剪贴板条目拖到别的 App 也被抢）；「上次位置」记着的那块屏拔了（左上角不在任何屏上）
+退回屏幕上方，不夹到最近那块的边上。HANDTEST 1040。**留给你们确认**（没改）：
+- `ScrollPacer`：每条 WM_MOUSEWHEEL 只算 `zDelta / 120`、丢掉余数的老程序，每帧发几个单位时画面不动，发满一格再 3 帧不动会被判成到头；
+  真碰到就在「这一轮一次都没接上过」时退回整格发。
+- `ScrollStitcher.MovingColumns` 拿同一行号比 [0, 帧高)：画布高过「240 + 帧高」后，Probe 的 240 行起是最新一帧，和整张拼时比的不是同一段
+  （R43 起就这样，只走模糊兜底那条路）；`ScrollCanvasTests` 要是哪天对不上先看这里。去掉 800 行上限后对不上的帧要试整帧高那么多位置，量一下 4K 选区的耗时。
+- `CompositionTarget.Rendering` 在长截图面板没建出来时可能一帧都不来（看日志 `render-frames=`，是 0 就换 16 ms 的计时器）。
+- 自动滚动到头 / 对不上停下后按 A 接不着（A 只在暂停时注册），mac 有 ▶ 能重来；`HudPlacement` 的间距 8 和录制条的 10 差 2 DIP。
+
 ### 第 3 批：状态屏（N5）→ 已写（审查方，`git log --grep "PLAN-v12 第 3 批"`，没编译）
 
 照 mac `StatusScreen/`（0.4.0）、mac-overlay-panel §11、mac-whisker/status-screen.md。这次窗口、合成、输入钩子都是审查方在 Mac 上写的，**哪儿编不过、屏幕上不对就直接改**，改了记在这里。
@@ -119,6 +142,21 @@
 4. 手测 952–976 里要真按键的留给用户（写「没测」）；974 自检能跑。截图：设置 › 状态屏（浅 / 深）、编辑对话框、选状态的面板、三种样式（自检的图）、速查表那一类，推 `windows-shots` 的 `0.3.0-v12-batch-3/`。
 5. 内存：进入 / 退出各量一次（每块屏一两扇 WinUI 窗 + 一张约 4 MB 的图集）；静置 CPU 回到 0。
 
+**审查方复查（2026-11-05，`36aafcdf`）**：改了——编译错：`OneLine` 里的 U+2028 / U+2029 原字符（C# 把它们当换行）、`_probe` 只写不读
+（CS0414）、编辑对话框的图标按钮 lambda 用到后面才赋值的 `dialog`（CS0165，建按钮的循环挪到 dialog 之后）、`TickerText` 补 partial。
+逻辑：`InputBlock` UI 线程 5 秒没报平安（`Heartbeat`，会话每秒 Tick 报一次）就放行——mac 的拦截挂在主线程上，卡住时系统自己停，这里以前
+卡住就谁也出不去；放过自己补的 vkE8（`Foreground.Restore` 拿前台用的，以前被自己吞了、第二次 SetForegroundWindow 照样失败，还算一次触碰）；
+只吞「按下也是这里吞的」键和鼠标键的松开，进入前就按着的（快捷键里的 Ctrl、选状态时按的 Enter、正在拖）松开放过去（照样报给会话）。
+整屏黑窗按客户区补那圈看不见的边（同 `SelectionOverlayWindow.FixClientArea`，第 0 批实测约 3 px）；眼睛的方向不再装进 WinRT 的 `Tag`；
+提示收起、密码框收起后指针再藏（mac 同样）；重摆失败退出时也发 `Exited`；`StatusEmoji` 放合成层包 try/catch，画不出的图标（mac 来的系统表情）
+用 Segoe UI Emoji 画。HANDTEST 1034–1036。**留给你们确认**（没改）：
+- 透出样式谁都不拿前台（底板、压暗层都是 NOACTIVATE）：前台是管理员程序时低级钩子收不到发给它的键（UIPI），字照样打进去、按住 Esc 也退不出。
+  真是这样就让鼠标所在那块屏的底板去掉 NOACTIVATE 再拿前台（mac 每种样式都让面板当 key）。
+- 读屏播报挂在 Grid / Border 上：它们默认没有自动化 peer，`RaiseNotificationEvent` 可能什么都不做；不响就在根上放一个透明 TextBlock 专门播报。
+- `WM_DISPLAYCHANGE` 在隐藏窗口的窗口过程里同步整套重建（插拔时常连着来好几次），卡就改成 `DispatcherQueue.TryEnqueue` 合并成一次。
+- 锁屏后只靠 WTS_SESSION_UNLOCK 结束（mac 另有 2 秒一次的兜底轮询），万一没收到，热键、复制即译、提醒会一直被压着。
+- `Stop()` 的 Join 超时以后旧钩子线程退出时会摘掉下一次 Start 装上的钩子（句柄是静态字段）；只在线程 2 秒退不出时才会碰到。
+
 **替用户定的**：透出样式的做法和不冒眼睛（见上）；表情 160 像素 12 fps；不藏鼠标指针；标题整行入场、小字直接换、选中卡片不长成整屏（ponytail，MAC-DIFF 记了）；
 退出密码按扫描码认数字；拦截不放过注入事件（别的程序模拟按键也被挡，只有自检标记的例外——自检只在 Probe 模式里认它）；速查表里「用鼠标按住提示」那一行不画键帽。
 
@@ -132,6 +170,8 @@
   ponytail：行里是木色色块，不是 mac 那样的表情静止画面（LauncherRowView 只认色块 / 图标），要做给 `LauncherItem` 加一个表情 id 再在行里画 `StatusEmoji.Still`。
 
 **你们做的**：编译零警告、`dotnet test` 全过；手测 977–981（托盘子菜单要真点）；截图：托盘子菜单（只截菜单那一块）、主界面带状态屏那一格、启动器搜「状态屏」，推 `windows-shots` 的 `0.3.0-v12-batch-4/`。
+
+**审查方复查（2026-11-05）**：这一批（托盘子菜单、主界面、启动器的状态行）没找到要改的。
 
 ### 第 5 批：提醒（N6 的模型、执行层、各种方式、设置页）→ 已写（审查方，`git log --grep "PLAN-v12 第 5 批"`，没编译）
 
@@ -161,6 +201,18 @@
 **替用户定的**：提示音只有系统的通知声一种（mac 有 14 种，名字照存）；边框是实色细边、不呼吸（ponytail）；全屏又合进一条时整个重建；
 「暂停全部」和「N 分钟后提醒我」放在托盘子菜单（第 6 批）；编辑对话框里间隔的「到」用 0:00 表示到半夜。
 
+**审查方复查（2026-11-05，`36aafcdf`）**：改了——**和 mac 互通**：`Reminders.Sanitized` 以前比 mac 现在的严（mac 90dbc589 起提示音能选个人声音、
+「file:」音频，催促能自定义 1–120 分钟；0aea7ec8–7c203b88 起图标能是后加的 12 个表情、「pack:」动画表情、系统表情），收拾成默认值再同步回去会把
+mac 上选的抹掉；改成照 mac 认（`IsValidChime`、`MaxNag`、`StatusEmojiCatalog.IsStorable`），`NagChoices` 换成 mac 那一排，编辑框里这台没有的声音、
+自定义的催促多列一项留着（以前改个标题一保存就换掉）。状态没放宽：mac 把 0.7.1 不认得的表情放在 emoji 键，这一版读到整类停下、不动数据（mac 设计的退路）。
+`ReminderMath.LocalToUtc` 夏令时照 mac（跳过的钟点取之后第一刻，重复的取第一次）。`ReminderCenter`：醒来不清锁屏标记（mac didWake 只清 isAway；
+以前醒来停在锁屏界面时照样响、全屏倒数到 0 把一次性的删了）；在状态屏里 `Present` 先都收着、退出时 `Recheck` 再摆，用快捷键进状态屏时全屏提醒自己收起
+（Windows 两边都置顶、每秒互相往上提）。`ReminderScreen`：底板 Alt+F4 关不掉（以前关了压暗层留在屏上、「点了才收」的再也收不掉）、先隐身画好再显形、
+内容按值比（以前 Snoozes 比引用、列表一变就重新出场倒数重来）、鼠标不在任何屏上时第一块拿前台、标题 × 0.8（mac）。`Nudge` 不晃别处的提示。
+HANDTEST 1031、1037–1039。**留给你们确认**（没改）：全屏提醒收起后键盘焦点落到哪扇窗口（底板抢过前台，按顺序一扇扇关时可能交给别的屏上还没关的底板；
+回不到原来的程序就在 Show 时记下 `Foreground.Get()`、Close 后还回去）；挂着那条每次重新露面都会被读屏再念一遍；呼吸曲线是 `(1 − cos πt) / 2`、mac 是
+easeInEaseOut（差不到 0.01）。
+
 ### 第 6 批：提醒的入口、导出导入、同步（N6）→ 已写（审查方，`git log --grep "PLAN-v12 第 6 批"`，没编译）
 
 照 mac `LauncherModel`「提醒 …」、`addReminderMenu`、`HomePanel`、`ReminderSync`：
@@ -185,6 +237,12 @@
 
 **替用户定的**：「N 分钟后提醒我」「暂停全部」放在托盘子菜单（mac 在菜单栏菜单）；启动器里的提醒行是琥珀色块 + 提醒图标，不是每条自己的表情（同第 4 批状态行的 ponytail）；
 已有提醒按 Enter 是打开 / 暂停（不是打开编辑框，编辑走 Ctrl+Enter）；同步「提醒」默认开、跟着提醒功能的开关走。状态屏的状态列表的同步在第 7 批补上了。
+
+**审查方复查（2026-11-05，`36aafcdf`）**：改了——导入时本机没存过提醒 / 状态（还是示例 / 自带的）就直接用文件里的、不并进示例（mac `list ?? incoming`）；
+导出文件里的「0001-01-01T00:00:00Z」读回 distantPast（mac 的 distantPast 是儒略历 0001-01-01，比 .NET 早两天，用真 Swift 核对过；以前导一次，
+间隔 / 每周的提醒在同步里个个像改过）；`ReminderPhrase` 关键词和去首尾按全部空白认（全角空格），标题首尾一次去掉空白和「，,、。:：」。
+单测 `Sanitized_AndLoad` 的两个输入换成 mac 现在单测里的（催促 121、提示音 "../Nope"；原来的 3、"Xylo" 在 mac 现在的规则下合法），断言没改；
+新加 `Sanitized_KeepsWhatMacCanStore`、`LocalToUtc_DaylightSavingLikeMac`。golden 没动（两行用真 Swift 重编核对过）。HANDTEST 1032、1033。
 
 ### 第 7 批：补齐状态屏和提醒剩下的 → 已写（审查方，`git log --grep "PLAN-v12 第 7 批"`，没编译）
 
@@ -223,6 +281,9 @@
 
 **替用户定的**：14 个提示音对哪个 Windows 声音、叫什么（`Reminders.WindowsChimes`，第一个是系统的通知声）；边框的呼吸用 UI 线程计时器（不上 DirectComposition）；
 标题逐字只做淡入（没有模糊）；小字滚动一个字一个 TextBlock；设置页那两张列表被换掉时的提示文字；状态的同步默认开。
+
+**审查方复查（2026-11-05，`36aafcdf`）**：这一批里改到的（详见第 3、5、6 批下面那几段）：`TickerText` 补 partial；指针在提示、密码框收起后再藏；
+全屏提醒原地换内容时按值比；`StatusEmoji` 画不出的图标的退路。
 
 ## PLAN-v11（0.1.0 之后还没做的，2026-11-03 用户「全部按推荐」）
 
