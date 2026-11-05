@@ -354,3 +354,8 @@ mac 0.7.1（第四轮体检）修掉、Windows 也有的那几条，照 mac 同�
 1040. 剪贴板 / 启动器面板：按住列表里的一行拖 → 剪贴板是把条目拖出去（不挪面板），启动器是什么都不发生；按住面板底栏 / 空白处拖才挪面板。记着的那块屏拔掉后再叫出面板 → 在屏幕上方（不是夹在边上）。
 1041. 启动器输「100 xxx 转 jpy」这类表里没有的货币（取到汇率后）：那一行换成「没取到汇率」，不一直「正在取汇率…」；输「￥100」（全角）认得出是人民币。
 1042. 启动器「提醒 10分钟 喝水」那一行按 Ctrl+D 不能收藏、按 Tab 不把「提醒我：喝水」填进输入框。
+
+## PLAN-v13 第 1 批：便签的核心模型（1043–1044，审查方在 Mac 上写、没编译）
+
+1043. `dotnet test windows/KittyTools.Tests --filter "FullyQualifiedName~Note"`：`NoteTasksTests`、`NoteImagesTests`、`NotePaperTests`、`NoteMarkdownTests`、`NoteStylesTests` 全过（只有单测，这一批没有界面）。
+1044. 编出来的发布包里 `KittyTools.Core.dll` 没有 trim / AOT 警告（便签的 Core 只用 System.Text.Json 的 JsonDocument 读、自己写 JSON，不用序列化器）。

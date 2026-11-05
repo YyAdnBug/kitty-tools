@@ -8,6 +8,30 @@
 
 条目编号不复用。行号按条目里写的那个提交。
 
+## PLAN-v13（便签，2026-11-05 用户「继续新会话剩下的，现在不检查，最后一次性检查」）
+
+方案在 `PLAN-v13.md`（不是拍板页，行为照 mac 0.6.0 起的便签，`macos` b7a55e33；Windows 自己定的在 §3）。和 PLAN-v12 一样**全部在 Mac 上写、一行都没编译**，
+中间不交给你们核验；全部写完后统一核验（核验指令在这一节最后补全，覆盖 PLAN-v12 + PLAN-v13）。下面每批写清写了什么、要特别看的编译点、替用户定的。
+
+### 第 1 批：核心模型（Core）→ 已写（审查方，`git log --grep "PLAN-v13 第 1 批"`，没编译）
+
+照 mac `Notes/Note.swift`、`NoteTasks.swift`、`NoteImages.swift`、`NotePaper.swift`、`NoteMarkdown.swift`、`NoteStyles.swift`（纯函数那一半）：
+
+- `Core/Notes/NoteText.cs`：`NoteRange`（mac NSRange）、`NoteText.Line`（NSString.getLineStart 的口径：\n \r \r\n U+0085 U+2028 U+2029）、字位簇计数、Swift 的空白口径。
+- `Note.cs`：模型（**不可变 record，时间一律整数毫秒 long**，`Clock` 是 `IReadOnlyDictionary<string,long>`、改的时候换整张表；相等照 mac 的 Equatable，自己写的 `Equals`）、
+  收拾（NUL、标题 200 字 / 1 KB）、纸色的存法（预设 + tint）、显示标题 / 摘要。
+- `NoteTasks.cs`（五种状态、Ctrl+T、回车续行、Tab、「- [ ]」自动转换、和 Markdown 互转、进度）、`NoteImages.cs`（令牌、宽度五档、插图落点）、`NoteColor.cs`（六种文字颜色）、
+  `NotePaper.cs`（8 种纸色、自定义纸色的 OKLCH 推导、对比度、颜色菜单那份表、最近用过）、`NoteMarkdown.cs`（不用正则的扫描器、代码块、加标记、粘贴网址成链接、颜色、HTML 互转、plain）、
+  `NoteStyles.cs`（一行 → 样式区间、叠层、要重排哪几行、代码块角色变了的行、行距三档和各个比例）。
+- 单测：`NoteTasksTests` 12、`NoteImagesTests` 16、`NotePaperTests` 11、`NoteMarkdownTests`（mac `NoteMarkdownTests.swift` 全部 + `NoteBatch8Tests` / `NoteBatch8bTests` 里测这几个纯函数的）、
+  `NoteStylesTests`。期望值照 mac 原样；跳过了哪些写在各测试文件头。
+
+**要特别看的编译点**：源码里不能有原样的 U+2028 / U+2029（写文件的工具会把 `\uXXXX` 写成原字符，提交前扫过、都换回了转义；要是哪里还有，CS1010）；
+`NoteStyles.Kind` / `Shape` 是 record struct + 工厂（mac 带关联值的枚举）；`NoteMarkdownTests` 里 `using Span = …NoteStyles.Span;` 和 `System.Span<T>` 同名不同元数；
+`NoteMarkdown.Url` 用 `Uri.TryCreate`（Windows 上 `/usr/bin` 这种会被当成文件路径，测试里有这一条，过不了先看实际返回）；`NoteMarkdownTests` 有三条 0.5 秒的计时断言（Debug，线性的活，慢机器上可能紧）。
+
+**替用户定的**：`NoteMarkdown.Url` 比 .NET 的 `Uri` 严（开头空白不认、http / https 后面必须是 `//`），对齐 mac `URL` 的结果。
+
 ## PLAN-v12（跟上 mac：先把没有的功能做出来，2026-11-05 用户「先把未实现的功能实现」）
 
 清单和分批在 `PLAN-v12.md`（不是拍板页，行为照 mac）；分工同 PLAN-v11 D10。
