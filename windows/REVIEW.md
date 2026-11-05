@@ -86,6 +86,31 @@ WIC 的 `BitmapDecoder.HeifDecoderId`、`DecoderInformation.CodecId`；`NoteStor
 - `SyncFolderRules.ParseDevice` 比 mac 严（epoch 必须有、format 必须是 1）：更新版本写的 device.json 在 Windows 上算读不出来，便签这部分会停在「还没下载完」。留给 mac 真改了格式再说。
 - `NoteImageRules.Identifier`（本机图片目录）用 `Guid.TryParseExact("D")`，比 mac 的 UUID 解析宽一点点（.NET 认每段前的 `+`）；同步文件夹里的图片名用 `NoteSyncFolder.ImageId`（严格）。
 
+### 第 4 批：正文编辑器（RichEditBox）→ 已写（审查方，`git log --grep "PLAN-v13 第 4 批"`，没编译）
+
+照 mac `NoteTextView.swift`（+Images）的行为，做法是 PLAN-v13 §3.1：
+
+- `Notes/NoteEditor.cs`：RichEditBox 包一层。**存的是纯文本**，编辑器里的字和存的字差两处：段落符 \r ↔ \n、图片令牌 ↔ 一个 U+FFFC（图片表按出现顺序对应，改字时按改前改后的差跟着挪；别处拖进来的对象拿掉）。
+  样式只改格式：一行 → `NoteStyles.Spans` / `Runs` → 字体、字号、粗斜体、划线、颜色、隐藏，段落上行高（Exactly）、段前段后、缩进；**只重排受影响的行**（`Pending` / `LinesCovering` /
+  `NeighborLines` + 代码块角色变了的行），整段换字先排开头 4000 字、其余停手后一段段补。**Markdown 的标记**：拿着焦点时选区碰到的那几行淡淡露出来，别的行 `Hidden`。
+  **组字期间不重排、不交出去**（TextCompositionStarted / Ended）。会超 1 MB 的那一次改动退回、响一声。
+- **撤销自己管**（`Core/Notes/NoteUndo.cs`）：`Document.UndoLimit = 0`，Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z 走自己的栈；打字按「1 秒内、光标接着、空白后另起」分组，命令自己一组。单测 `NoteUndoTests`。
+- `NoteEditor.Input.cs`：回车续列表 / 任务、Tab / Shift+Tab 缩进、「- [ ]」加空格自动转换、Ctrl+T、Ctrl+B / I / Shift+X / E、Ctrl+F 查找条、Ctrl+C / X 拷的是存的形式、
+  粘贴一律纯文本（选中一段粘网址 = 链接）、点方框切换、Ctrl+点链接打开、右键菜单（剪切 / 拷贝 / 粘贴、格式 ›、任务状态 ›、文字颜色 ›）。代码块里这些都不做。
+- `NoteEditor.Images.cs`：载入时把占位的 U+FFFC 一张张换成图（`InsertImage`，宽按令牌或原图、不超过可用宽）；粘贴 / 插图先存进图片目录再插（每张独占一行）。宽度档位和裁切在第 7 批。
+
+**要特别看的编译点 / 屏幕上要看的**（都是没法在 Mac 上验的 RichEdit 行为，任何一条不对先记在这里，退路写在后面）：
+1. `CharacterFormat.Hidden` 真藏了吗、光标会不会停在藏着的字中间、`GetText(TextGetOptions.None)` 带不带藏着的字（要带）。藏不住的退路：标记不藏，只淡色（`MarkerInk`）。
+2. **字号单位**：代码按「TOM 的 Size 是磅、XAML 的 FontSize 是 DIP」乘 0.75（`PointsPerDip`）；屏上正文的字和设置里的字号不一样大就改这一个常数。
+3. `TextChanging` 的 `IsContentChanging` 在只改格式时是 false（不然每改一次格式都当成改字）；改格式的时候 `_applying` 也挡着。
+4. `InsertImage` 之后 `GetText` 里是一个 U+FFFC；替换占位的 U+FFFC 时选区不乱跳。
+5. `SelectionChanged` 在 `TextChanging` 之后来（撤销分组拿「改之前的光标」靠这个顺序）。
+6. `DisabledFormattingAccelerators = All` 之后 Ctrl+B / I / U 不再被 RichEdit 自己吃掉、能到 `PreviewKeyDown`。
+7. 点方框：`GetRangeFromPoint(…, ClientCoordinates)` 的坐标是不是相对 RichEditBox（点不中就换成相对内部 ScrollViewer 的坐标）。
+
+**替用户定的**（MAC-DIFF 第 8 批一起记）：任务方框是存着的那个字本身（Segoe UI Symbol），不是 mac 自己画的圆角方框；引用块没有左边的竖线（只缩进 + 色条色的字）；
+代码块的底是一行行的字底色，不是整块圆角矩形；查找条是自己的一个输入框（Enter 下一个、Shift+Enter 上一个），不是系统的；撤销按 1 秒分组（mac 是系统默认）。
+
 ## PLAN-v12（跟上 mac：先把没有的功能做出来，2026-11-05 用户「先把未实现的功能实现」）
 
 清单和分批在 `PLAN-v12.md`（不是拍板页，行为照 mac）；分工同 PLAN-v11 D10。
