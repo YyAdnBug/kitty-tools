@@ -52,4 +52,14 @@ struct ChangelogTests {
     }
     #expect(AboutTab.roadmap == plans)
   }
+
+  /// 关于页的更新日志一开始只展开当前版本；changelog 里没有当前版本号（开发中的新版本）就展开最新那条（最新在前）
+  @Test func expandsCurrentReleaseOrLatest() {
+    let releases = ["0.7.1", "0.7.0", "0.6.0"].map {
+      AboutTab.Release(version: $0, date: "", summary: "", changes: [])
+    }
+    #expect(AboutTab.firstExpanded(in: releases, current: "0.7.0") == "0.7.0")
+    #expect(AboutTab.firstExpanded(in: releases, current: "0.8.0") == "0.7.1")
+    #expect(AboutTab.firstExpanded(in: [], current: "0.8.0") == nil)
+  }
 }
