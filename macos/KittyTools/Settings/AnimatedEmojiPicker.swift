@@ -1,9 +1,8 @@
 // 「动画表情」弹窗（2026-11-05 用户：系统表情和动画版要两个入口；又说「动画版的选择面板和系统的保持一致」）：图标格子里「动画
 // 表情」那一格点开的气泡，照系统表情面板的样子排：顶上搜索框（一打开就能打字；中文名、CLDR 中文关键词、英文、表情字本身都能搜），
 // 中间 6 列大格子从头滚到尾（「常用」= 最近挑过的，再是表情与人物、动物与自然、食物、活动、旅行与地点、物品、旗帜，段之间空一点、
-// 不写标题），底下一排分类图标（点了跳过去，滚到哪一段哪个亮）。格子是包里带的缩略图（和挑到的是同一个样子）；鼠标停在一格
-// 0.4 s，那一格就下好动画、原地动起来（系统面板没有这一手，用户要看得出动画是什么）；名字在悬停提示里。点一格就选上、气泡
-// 收起：自带的 28 个之一存自带的 id，别的存「pack:编号」，第一次用到时下载（EmojiPack）。状态和提醒的详情页共用。
+// 不写标题），底下一排分类图标（点了跳过去，滚到哪一段哪个亮）。格子是包里带的缩略图（和挑到的是同一个样子），名字在悬停
+// 提示里；格子不动（用户「选择后就自动播放动画，不要 hover」：挑上之后详情页的预览自己放）。点一格就选上、气泡收起：自带的 28 个之一存自带的 id，别的存「pack:编号」，第一次用到时下载（EmojiPack）。状态和提醒的详情页共用。
 
 import SwiftUI
 
@@ -112,7 +111,7 @@ struct AnimatedEmojiPicker: View {
       ForEach(entries, id: \.id) { entry in
         let symbol = StatusEmoji.symbol(forPack: entry.id)
         PickerCell(
-          entry: entry, symbol: symbol, hovered: hovered == symbol, selected: symbol == current
+          entry: entry, hovered: hovered == symbol, selected: symbol == current
         ) {
           recentData = Self.recent(after: entry.id, in: recent).joined(separator: ",")
           pick(symbol)
@@ -155,24 +154,19 @@ struct AnimatedEmojiPicker: View {
   }
 }
 
-/// 气泡里的一格：缩略图（主线程外解，EmojiPack.loadThumbnail）；鼠标停 0.4 s 就下好动画、原地动起来（减弱动态效果时不动）；
-/// 选着的一圈强调色、悬停一块中性底（同系统面板的悬停）
+/// 气泡里的一格：缩略图（主线程外解，EmojiPack.loadThumbnail）；选着的一圈强调色、悬停一块中性底（同系统面板的悬停）
 private struct PickerCell: View {
   let entry: EmojiPack.Entry
-  let symbol: String
   let hovered: Bool
   let selected: Bool
   let pick: () -> Void
   @State private var thumbnail: CGImage?
-  @State private var frames: StatusEmoji.Frames?
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   init(
-    entry: EmojiPack.Entry, symbol: String, hovered: Bool, selected: Bool,
+    entry: EmojiPack.Entry, hovered: Bool, selected: Bool,
     pick: @escaping () -> Void
   ) {
     self.entry = entry
-    self.symbol = symbol
     self.hovered = hovered
     self.selected = selected
     self.pick = pick
@@ -182,11 +176,7 @@ private struct PickerCell: View {
   var body: some View {
     Button(action: pick) {
       ZStack {
-        if let frames {
-          StatusEmojiView(id: symbol, frames: frames, fetches: false)
-        } else if let thumbnail {
-          Image(decorative: thumbnail, scale: 1).resizable().interpolation(.high)
-        }
+        if let thumbnail { Image(decorative: thumbnail, scale: 1).resizable().interpolation(.high) }
       }
       .frame(width: AnimatedEmojiPicker.cell - 10, height: AnimatedEmojiPicker.cell - 10)
       .frame(width: AnimatedEmojiPicker.cell, height: AnimatedEmojiPicker.cell)
@@ -204,14 +194,6 @@ private struct PickerCell: View {
     }
     .buttonStyle(.plain)
     .task(id: entry.id) { thumbnail = await EmojiPack.loadThumbnail(entry.id) }
-    .task(id: hovered) {
-      frames = nil
-      guard hovered, !reduceMotion else { return }
-      try? await Task.sleep(for: .milliseconds(400))
-      guard !Task.isCancelled, let decoded = await StatusEmoji.load(symbol), !Task.isCancelled
-      else { return }
-      frames = decoded
-    }
     .help(entry.name)
     .accessibilityLabel(entry.name)
     .accessibilityAddTraits(selected ? .isSelected : [])

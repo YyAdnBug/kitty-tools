@@ -130,12 +130,10 @@ struct StatusPresetDetail: View {
 /// （同通用页的外观缩略图）。深色外观下颜色很深的那两个表情（开会、黑猫）的格子换成浅底（StatusEmoji.plated）。
 /// 「其他表情」打开系统的表情面板，挑哪个都行（静态，StatusEmoji.isCustom）；挑过的那一格就画它。提醒的详情页也用它（ReminderDetail）。
 /// 整个是一行「图标」：标题在左上（和别的行一样），格子靠右，中间空着的那一大块是预览（2026-11-04 用户要看得出动画是什么，
-/// 又说「左边位置大，放大居中」；同系统表情与符号面板、网页上常见的表情选择器的预览区）——鼠标停在哪一格，那里就放大放它的动画、
-/// 下面写它的名字（EmojiPreview），在空着的那块里居中；没停在格子上时是选中的那个、不动。格子本身一直是静止画面
+/// 又说「左边位置大，放大居中」）——放大放选中的那个的动画、下面写它的名字（EmojiPreview），在空着的那块里居中。2026-11-05 用户
+/// 「选择后就自动播放动画，不要 hover」：预览只跟着选中的走、一直在播，鼠标停在格子上不换。格子本身一直是静止画面
 struct SymbolGrid: View {
   @Binding var selection: String
-  /// 鼠标停在哪一格（截图自检可以直接给）
-  @State var hovered: String?
   @Environment(\.colorScheme) private var scheme
   /// 点一下「系统表情」+1：让看不见的接收框拿到焦点、打开系统的表情面板
   @State private var opensPicker = 0
@@ -148,7 +146,7 @@ struct SymbolGrid: View {
   var body: some View {
     HStack(alignment: .top, spacing: 12) {
       Text("图标")
-      EmojiPreview(symbol: hovered ?? selection, plays: hovered != nil)
+      EmojiPreview(symbol: selection)
         .frame(maxWidth: .infinity, maxHeight: .infinity)  // 标题和格子之间那一块里居中
       grid
     }
@@ -201,21 +199,11 @@ struct SymbolGrid: View {
       .contentShape(.rect)
     }
     .buttonStyle(.plain)
-    .onHover { hover(symbol, $0) }
     .animation(.easeOut(duration: Style.fadeIn), value: selected)
     // 旁白读表情的中文名（「举手」「闹钟」…），「无」那一格读它的字
     .accessibilityLabel(StatusEmoji.name(symbol) ?? "无")
     .help(StatusEmoji.name(symbol) ?? "不要图标")
     .accessibilityAddTraits(selected ? .isSelected : [])
-  }
-
-  /// 移进一格换成它，移出时还是它才清掉（从一格直接移到下一格时，先来的是下一格的移进）
-  private func hover(_ symbol: String, _ inside: Bool) {
-    if inside {
-      hovered = symbol
-    } else if hovered == symbol {
-      hovered = nil
-    }
   }
 
   /// 倒数第二格「动画表情」：挑过动画表情包里的（自带之外的）画它的静止画面 / 缩略图，没挑过是一个闪光符号；点开动画表情的气泡
@@ -253,13 +241,11 @@ struct SymbolGrid: View {
       .contentShape(.rect)
     }
     .buttonStyle(.plain)
-    .onHover { hover(pack ?? "", $0) }
     .popover(isPresented: $showsAnimated, arrowEdge: .bottom) {
       AnimatedEmojiPicker(
         selection: selection,
         pick: {
           selection = $0
-          hovered = nil  // 移出时比的是挑之前那一格，对不上就清不掉：挑完先清
           showsAnimated = false
         },
         section: StatusEmoji.packID(current).flatMap { EmojiPack.entries[$0]?.group })
@@ -299,17 +285,13 @@ struct SymbolGrid: View {
       }
       .overlay(alignment: .bottomTrailing) {
         // 系统表情原样存那个字
-        EmojiCatcher(trigger: opensPicker) {
-          selection = $0
-          hovered = nil
-        }
-        .frame(width: 1, height: 1)
-        .allowsHitTesting(false)  // 点格子是按按钮，不是点进这个输入框
+        EmojiCatcher(trigger: opensPicker) { selection = $0 }
+          .frame(width: 1, height: 1)
+          .allowsHitTesting(false)  // 点格子是按按钮，不是点进这个输入框
       }
       .contentShape(.rect)
     }
     .buttonStyle(.plain)
-    .onHover { hover(custom ?? "", $0) }
     .animation(.easeOut(duration: Style.fadeIn), value: custom)
     .accessibilityLabel(custom.map { "系统表情：\($0)" } ?? "系统表情")
     .help("从系统表情里挑一个（按系统的样子画，不会动）")
@@ -317,38 +299,30 @@ struct SymbolGrid: View {
   }
 }
 
-/// 「图标」那一行中间的预览：120 pt 的表情（和告示上的表情差不多大）+ 名字。plays（鼠标停在格子上）时把那个动画表情的帧解出来放（停一下才解：鼠标扫过去
-/// 不白解；一个表情的帧十几到几十 MB，移开、换一格就放手）；减弱动态效果时不放。没选图标、也没停在格子上时什么都不画
+/// 「图标」那一行中间的预览：120 pt 的表情（和告示上的表情差不多大）+ 名字。选中的是动画表情就把它的帧解出来一直放（一个表情的帧
+/// 十几到几十 MB，换一个、离开这一页就放手；没下好先下、先垫缩略图）；减弱动态效果时不放。没选图标时什么都不画
 struct EmojiPreview: View {
   let symbol: String
-  let plays: Bool
-  /// 多大（图标那一行里 120，动画表情气泡底下那条 56）、写不写名字、停多久才解帧 / 下载
-  var side: CGFloat = 120
-  var showsCaption = true
-  var delay = Duration.milliseconds(150)
   @State private var frames: StatusEmoji.Frames?
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
     VStack(spacing: 6) {
       if !symbol.isEmpty {
-        StatusEmojiView(id: symbol, frames: frames, fetches: !plays)
-          .frame(width: side, height: side)
-        if showsCaption {
-          Text(StatusEmoji.caption(symbol))
-            .font(.callout)
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
-            .truncationMode(.tail)
-        }
+        StatusEmojiView(id: symbol, frames: frames)
+          .frame(width: 120, height: 120)
+        Text(StatusEmoji.caption(symbol))
+          .font(.callout)
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+          .truncationMode(.tail)
       }
     }
     .accessibilityHidden(true)  // 每一格自己有名字，这里只是看的
-    .task(id: plays ? symbol : "") {
+    .task(id: symbol) {  // load 没下好会先下
       frames = nil
-      guard plays, !reduceMotion, !symbol.isEmpty else { return }
-      try? await Task.sleep(for: delay)
-      guard !Task.isCancelled, let decoded = await StatusEmoji.load(symbol), !Task.isCancelled
+      guard !reduceMotion, !symbol.isEmpty, let decoded = await StatusEmoji.load(symbol),
+        !Task.isCancelled
       else { return }
       frames = decoded
     }

@@ -301,13 +301,10 @@ enum StatusEmoji {
 struct StatusEmojiView: View {
   let symbol: String
   var frames: StatusEmoji.Frames?
-  /// 显示到就下动画表情（选上的那个）；气泡 / 图标格子的悬停预览传 false：鼠标扫过去不下，停够了由预览自己下
-  var fetches = true
 
-  init(id: String, frames: StatusEmoji.Frames? = nil, fetches: Bool = true) {
+  init(id: String, frames: StatusEmoji.Frames? = nil) {
     symbol = id
     self.frames = frames
-    self.fetches = fetches
   }
 
   var body: some View {
@@ -331,7 +328,7 @@ struct StatusEmojiView: View {
       }
       if let frames { EmojiPlayer(frames: frames) }
     }
-    .task(id: symbol) { if fetches { await EmojiPack.shared.fetch(symbol) } }
+    .task(id: symbol) { await EmojiPack.shared.fetch(symbol) }  // 显示到的就是选上的：下它
     .background {
       // 深色的表情垫一团亮光才看得见（只画一次的小渐变，比表情大一圈）
       if StatusEmoji.dim.contains(id) {

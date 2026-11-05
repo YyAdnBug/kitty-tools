@@ -1217,16 +1217,15 @@ struct SnapshotProbeTests {
     try snapshot(
       ReminderDetail(id: "call", fixed: [bell], now: now), size: NSSize(width: 590, height: 1100),
       dark: false, to: "\(out)/reminders-detail-sound.png")
-    // 图标格子的预览：鼠标停在「火箭」上（标题和格子之间那块里居中放大；屏外画的是静止画面）、没停时是选中的那个；深色一张；
-    // 设置窗最窄时（详情页约 470 宽）放不放得下
-    for (name, hovered, dark, width) in [
-      ("hover", Optional("rocket"), false, 590.0), ("selected", nil, false, 590),
-      ("hover-dark", "birthday-cake", true, 590), ("narrow", "rocket", false, 470),
-      ("custom-pack", "pack:dog", false, 590), ("custom-static", "👍🏽", false, 590),
+    // 图标格子的预览：选中的那个在标题和格子之间那块里居中放大（屏外画的是静止画面）；深色一张；设置窗最窄时（详情页约 470 宽）
+    // 放不放得下；选了动画表情包里的、系统表情
+    for (name, selection, dark, width) in [
+      ("selected", "hot-beverage", false, 590.0), ("dark", "birthday-cake", true, 590),
+      ("narrow", "rocket", false, 470), ("custom-pack", "pack:dog", false, 590),
+      ("custom-static", "👍🏽", false, 590),
     ] {
       try snapshot(
-        Form { SymbolGrid(selection: .constant("hot-beverage"), hovered: hovered) }.formStyle(
-          .grouped),
+        Form { SymbolGrid(selection: .constant(selection)) }.formStyle(.grouped),
         size: NSSize(width: width, height: 330), dark: dark,
         to: "\(out)/reminders-icon-grid-\(name).png")
     }
