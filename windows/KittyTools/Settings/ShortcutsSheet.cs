@@ -43,6 +43,7 @@ internal static class ShortcutsSheet
         ("launcher", "启动器", FeatureIcons.Launcher),
         ("translate", "翻译", FeatureIcons.Translate),
         ("screenshot", "截图与录制", FeatureIcons.Screenshot),
+        ("statusScreen", "状态屏", FeatureIcons.StatusScreen),
         ("general", "设置窗", FeatureIcons.General),
     };
 
@@ -249,9 +250,10 @@ internal static class ShortcutsSheet
         var keysPanel = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
         if (keys is null || keys.Count == 0)
         {
+            // 面板里的那几行没有键帽是本来就不用按键（状态屏「用鼠标按住提示」那一行，mac 同样）；全局动作没有是没设。
             keysPanel.Children.Add(new TextBlock
             {
-                Text = "未设置",
+                Text = global ? "未设置" : string.Empty,
                 FontSize = Theme.FontSize("Kitty.FontSize.Meta"),
                 Foreground = Theme.SecondaryText(),
             });
@@ -301,6 +303,7 @@ internal static class ShortcutsSheet
         "launcher" => "launcher",
         "translate" => "translate",
         "screenshot" => "capture",
+        "statusScreen" => "statusScreen",
         _ => "general",
     };
 
@@ -505,6 +508,18 @@ internal static class ShortcutsSheet
             new("Ctrl+F", "跳到搜索框"),
             new("Ctrl+1–4", "全部 / 截图 / 长截图 / 录制"),
             new("Delete", "删掉选中的（先问一次）"),
+        }),
+
+        // StatusScreen/StatusPicker.cs 的 OnKeyDown（选状态的面板）、StatusScreenHost（进入之后：Core 的 ExitHold / Passcode）。
+        new("statusScreen", "状态屏", "statusScreen", FeatureIcons.StatusScreen, new[] { HotKeyActions.StatusScreen }, new ShortcutEntry[]
+        {
+            new("←→", "↑↓", "选状态（再按一次全局快捷键也是选下一张）"),
+            new("1–9", "直接进入那一张"),
+            new("Enter", "进入选中的状态"),
+            new("Esc", "Ctrl+W", "收起选状态的面板"),
+            new("Esc", "进入之后按住 2 秒：退出（设了退出密码时接着输密码）"),
+            new(Array.Empty<string>(), "进入之后：动一下鼠标，再用鼠标按住屏幕底部的提示 2 秒，也能退出"),
+            new("0–9", "设了退出密码时：输密码（主键盘那一排和小键盘都行），Backspace 删一位，Esc 不输了"),
         }),
 
         // Shell/HomePanel.cs（PLAN-v10 §5）：托盘左键打开；全局的「打开主界面」不设默认键。

@@ -51,7 +51,7 @@ internal sealed partial class SettingsWindow : Window
     private bool _stale;
     private bool _active;
 
-    // 侧栏顺序同 mac：通用 / 剪贴板 / 启动器 / 翻译 / 截图 / 录制 / 快捷键 / 关于（mac 独有的几页没有）。
+    // 侧栏顺序同 mac：通用 / 剪贴板 / 启动器 / 翻译 / 截图 / 录制 / 状态屏 / 快捷键 / 关于（mac 独有的几页没有）。
     // 色块是和 mac 共用的功能图标（FeatureIcons，PLAN-v10 §6）。
     private static readonly (string Tag, string Title, string Glyph)[] Pages =
     {
@@ -61,6 +61,7 @@ internal sealed partial class SettingsWindow : Window
         ("translate", "翻译", FeatureIcons.Translate),
         ("screenshot", "截图", FeatureIcons.Screenshot),
         ("record", "录制", FeatureIcons.Record),
+        ("statusScreen", "状态屏", FeatureIcons.StatusScreen),
         ("hotkeys", "快捷键", FeatureIcons.Hotkeys),
         ("about", "关于", FeatureIcons.About),
     };
@@ -101,6 +102,11 @@ internal sealed partial class SettingsWindow : Window
         {
             "录屏", "录音", "视频", "保存", "文件夹", "系统声音", "麦克风", "来源", "立即开始", "控制条", "帧率", "点按", "按键", "速查",
             "清晰度", "分辨率", "画质", "文件大小", "倒数", "光标", "只显示快捷键",
+        },
+        ["statusScreen"] = new[]
+        {
+            "告示", "清洁", "擦屏幕", "请勿触碰", "马上回来", "熄屏", "透出", "拦住", "键盘", "鼠标", "退出", "密码", "Esc", "动画", "表情",
+            "不睡眠", "常亮", "自动结束",
         },
         ["hotkeys"] = new[] { "快捷键", "热键", "冲突", "录制", "恢复默认", "速查", "按键", "钉图" },
         ["about"] = new[] { "版本", "更新", "日志", "发布", "检查更新", "自动检查" },
@@ -398,6 +404,9 @@ internal sealed partial class SettingsWindow : Window
                 break;
             case "record":
                 BuildRecord();
+                break;
+            case "statusScreen":
+                BuildStatusScreen();
                 break;
             case "about":
                 BuildAbout();
@@ -3073,6 +3082,20 @@ internal sealed partial class SettingsWindow : Window
         wash.GradientStops.Add(new GradientStop { Color = Color.FromArgb(0, Theme.BrandPink.R, Theme.BrandPink.G, Theme.BrandPink.B), Offset = 1 });
         _content.Children.Add(new Border { CornerRadius = new CornerRadius(8), Background = wash, Child = hero });
         _content.Children.Add(ChangelogBlock(version, ink));
+
+        // 素材出处（mac emojiCredit）：MIT 许可要求随包带着许可全文，点「许可」用记事本打开随包那份。
+        var credit = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, Margin = new Thickness(0, 12, 0, 0) };
+        credit.Children.Add(new TextBlock
+        {
+            Text = "状态屏的动画表情来自 Microsoft Fluent Emoji（MIT 许可）",
+            FontSize = Theme.FontSize("Kitty.FontSize.Label"),
+            Foreground = Theme.SecondaryText(),
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        var license = new HyperlinkButton { Content = "许可", Padding = new Thickness(4, 0, 4, 0) };
+        license.Click += (_, _) => LauncherOpeners.Start(Path.Combine(AppContext.BaseDirectory, "Resources", "StatusEmoji", "LICENSE.txt"));
+        credit.Children.Add(license);
+        _content.Children.Add(credit);
     }
 
     /// <summary>版本胶囊下面那一行（mac updateRow）：强调色只给现在该点的「更新并重新打开」，其余是文字链接。</summary>
@@ -3494,6 +3517,7 @@ internal sealed partial class SettingsWindow : Window
             Feature.Clipboard => "clipboard",
             Feature.Launcher => "launcher",
             Feature.Translate => "translate",
+            Feature.StatusScreen => "statusScreen",
             _ => "capture",
         };
 
@@ -3513,6 +3537,7 @@ internal sealed partial class SettingsWindow : Window
             HotKeyActions.Audio => FeatureIcons.RecordAudio,
             HotKeyActions.PinClipboard => FeatureIcons.Pin,
             HotKeyActions.Home => FeatureIcons.Home,
+            HotKeyActions.StatusScreen => FeatureIcons.StatusScreen,
             _ => FeatureIcons.Screenshot,
         };
 
@@ -3523,6 +3548,7 @@ internal sealed partial class SettingsWindow : Window
         "translate" => "translate",
         "launcher" => "launcher",
         "screenshot" or "record" => "capture",
+        "statusScreen" => "statusScreen",
         "about" => "general",
         _ => "general",
     };

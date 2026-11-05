@@ -277,8 +277,8 @@ internal static class TranslateHost
 
     private static void OnTextCopied(string text)
     {
-        // REVIEW R57：翻译功能关着就别弹浮窗（托盘里那个开关这时候也是藏着的，关不掉）。
-        if (!Features.IsOn(Feature.Translate))
+        // REVIEW R57：翻译功能关着就别弹浮窗（托盘里那个开关这时候也是藏着的，关不掉）。状态屏里也不弹（PLAN-v12 N5，mac 同样）。
+        if (!Features.IsOn(Feature.Translate) || StatusScreenHost.Active)
         {
             return;
         }

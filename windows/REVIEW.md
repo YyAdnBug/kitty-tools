@@ -67,6 +67,42 @@
 4. 截图：设置 › 剪贴板 / 启动器「面板位置」、设置 › 截图「工具栏位置」、靠右的工具栏、长截图面板带速度那一排（浅 / 深），推 `windows-shots` 的 `0.2.0-v12-batch-2/`；
    自动滚动录 3–5 秒短视频（只录测试窗口 + 面板）。
 
+### 第 3 批：状态屏（N5）→ 已写（审查方，`git log --grep "PLAN-v12 第 3 批"`，没编译）
+
+照 mac `StatusScreen/`（0.4.0）、mac-overlay-panel §11、mac-whisker/status-screen.md。这次窗口、合成、输入钩子都是审查方在 Mac 上写的，**哪儿编不过、屏幕上不对就直接改**，改了记在这里。
+
+- **Core**：`StatusPreset.cs`（模型、自带三个、`Sanitized` / `Load` / `Merged`、列表操作、摘要、和 mac 一字不差的 JSON `Write` / `Read` / `ReadList`、表情清单 `StatusEmojiCatalog`）、
+  `StatusScreenRules.cs`（`ExitHold` 退出判断、`Passcode` 退出密码——数字按扫描码认、小字 / 结束的一句话、防残影、提示和眼睛的摆位、`RandomPeek`）。单测 `StatusScreenTests` 15 个。
+- **拦输入** `StatusScreen/InputBlock.cs`：单独线程上 `WH_KEYBOARD_LL` + `WH_MOUSE_LL`，键盘、鼠标键、滚轮回调返回 1 吞掉，鼠标移动放行（16 ms 报一次给会话）；
+  连发、修饰键在 UI 线程上按「哪些键按着」算；锁屏 `Pause`（摘钩子）、每分钟 `Refresh`（先装新的再摘旧的）。
+  **Probe 模式只吞 `dwExtraInfo == 0x4B495454` 的注入事件**，真的键盘鼠标照常放行：自检用它，`SendProbeKey` 发带标记的按键（`RawInput` 是手写的 40 字节 INPUT）。
+- **画面**：熄屏 / 告示 = 每块屏一扇不透明的整屏 WinUI 黑窗（没边框、`DWMWCP_DONOTROUND`、置顶、先 DWM cloak 画几帧再显形）；
+  **透出 = Win32 分层黑窗（整体透明度 0.68 / 高对比度 0.82）+ 一扇 HUD 小窗放那一列 + 一扇放胶囊**（透明 WinUI 窗在用户机器上是白的，0cc29cf7）。透出不冒眼睛。
+  `StatusScreenView.cs`（那一列、胶囊、密码框、缩小的预览）、`StatusScreenPanel.cs`（每屏的窗）。鼠标所在那块拿前台（压住任务栏），会话每秒 `SetWindowPos(HWND_TOPMOST)` 再提一次。
+- **表情** `StatusScreen/StatusEmoji.cs` + `Resources/StatusEmoji/`：在 Mac 上用 `tools/status-emoji.swift` 把 Fluent Emoji Animated（MIT，许可随包）转成帧图集 + 静止画面 + `manifest.txt`；
+  160 像素一格、12 fps（9.5 MB；24 fps 要 18 MB）。播放：`LoadedImageSurface`（ms-appx）→ 表面画刷铺满精灵 → 外面 `InsetClip` 只露一格 → `Offset` 离散关键帧无限循环（合成器里跑）。加载完之前是静止画面。
+- **会话** `StatusScreen/StatusScreenHost.cs`：进入（截图 / 长截图中响一声不进、录屏 / 录音中提示、拦截建不起来提示）、每秒小字和提到最上面、按住 2 秒、密码框、退出提示 3 秒、眼睛、
+  锁屏（WTS 7）收起 + 暂停、解锁（WTS 8）结束、显示器变化（WM_DISPLAYCHANGE）重摆、`SetThreadExecutionState` 管电源、退出后拦截等按键松开（最多 2 秒）、App 退出时当场撤（`FinishSession`）。
+  密码在凭据管理器（`Credentials.Target("statusScreenPasscode")`）。
+- **选状态的面板** `StatusScreen/StatusPicker.cs`（快捷键先出它；设置里开了「直接进入」就进第一个）。热键动作 `statusScreen`（不设默认键）、`Feature.StatusScreen`、家族色（木色 / 提醒的琥珀也加了）、
+  设置 › 状态屏（`SettingsWindow.StatusScreen.cs`）、速查表一类、导出导入四个键（同 mac）、关于页素材出处、复制即译在状态屏里不弹、MAC-DIFF。
+- 功能图标 `FeatureIcons.cs` 重新生成多了 `Reminders`：mac 的 `icons/feature/kitty.reminders.svg` 拷到了仓库根的 `icons/feature/`（**这一个文件在 `windows/` 外面**，同 mac 一字不差，两边共用那套源）。
+- HANDTEST 952–976。
+
+**你们做的**：
+1. 编译 Debug x64、Release AOT x64 / ARM64 零警告；`dotnet test` 全过（新加 `StatusScreenTests` 15 个）。发布目录里有 `Resources\StatusEmoji\*.png`（34 张）、`manifest.txt`、`LICENSE.txt`。
+   要特别看的编译点：`InputBlock` 的 `StatusInputKind? kind = message switch {…, _ => null}`、`RawInput` 显式布局；`StatusScreenPanel` 里 `Native.CreateWindowEx` / `WNDCLASSEXW` 照 `ShotFlash` 写的；
+   `StatusEmoji` 的 `CompositionStretch` / `LoadedImageSurface.LoadCompleted`；`StatusPicker` 里 `e.Key - VirtualKey.Number1`（枚举相减是 int）；`SettingsWindow.StatusScreen.cs` 的 `DropDownButton`。
+2. **先跑自检，别真的进入**：测试档 `--status-screen-probe=<目录>`（屏幕会被盖住约 15 秒，真的键盘鼠标照常能用）。日志看 `status.probe-key … swallowed≥2 touches=1`、`status.probe-hold … active-after-hold=False`；
+   看图：三种样式进入后、被碰之后（告示样式应有胶囊和眼睛、标题晃过）。要是 Probe 的事件没被吞（swallowed=0），先查 `KbdllHookStruct.ExtraInfo` 的偏移（x64 / ARM64 都是 16）。
+3. 屏幕上要看的（自检看不出来的）：透出的分层压暗层是不是黑的半透明（不是白的 / 全黑）；告示窗一露面有没有白闪；任务栏有没有被盖住（没盖住就记在这里，试 `SetWindowPos` 的时机）；
+   表情是不是在动（`LoadedImageSurface` 走 ms-appx 在发布包里取得到；取不到就退回静止画面，日志 `status.emoji-load-failed`）；进度环 2 秒走满。
+4. 手测 952–976 里要真按键的留给用户（写「没测」）；974 自检能跑。截图：设置 › 状态屏（浅 / 深）、编辑对话框、选状态的面板、三种样式（自检的图）、速查表那一类，推 `windows-shots` 的 `0.3.0-v12-batch-3/`。
+5. 内存：进入 / 退出各量一次（每块屏一两扇 WinUI 窗 + 一张约 4 MB 的图集）；静置 CPU 回到 0。
+
+**替用户定的**：透出样式的做法和不冒眼睛（见上）；表情 160 像素 12 fps；不藏鼠标指针；标题整行入场、小字直接换、选中卡片不长成整屏（ponytail，MAC-DIFF 记了）；
+退出密码按扫描码认数字；拦截不放过注入事件（别的程序模拟按键也被挡，只有自检标记的例外——自检只在 Probe 模式里认它）；速查表里「用鼠标按住提示」那一行不画键帽。
+
 ## PLAN-v11（0.1.0 之后还没做的，2026-11-03 用户「全部按推荐」）
 
 方案和分批在 `PLAN-v11.md` §3；分工照 D10（同 PLAN-v10 D5）。每批审查方写好的推上来、**没编译**，你们编译、单测、在屏幕上验，编译错直接修，在这一节对应那批下面记一句。

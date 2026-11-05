@@ -228,6 +228,61 @@ internal static class Motion
     }
 
     /// <summary>
+    /// 被挡下的反馈（状态屏的标题、密码框的圆点，mac Style.swift 的 Shake）：左右晃一下，位移 0, −7, 6, −4, 2, 0，共 0.4 s。
+    /// 系统关了动画效果时不晃。
+    /// </summary>
+    public static void Shake(FrameworkElement element)
+    {
+        if (Reduced)
+        {
+            return;
+        }
+
+        WhenReady(element, visual =>
+        {
+            EnableTranslation(element);
+            var animation = visual.Compositor.CreateVector3KeyFrameAnimation();
+            float[] steps = { 0, -7, 6, -4, 2, 0 };
+            for (var index = 0; index < steps.Length; index++)
+            {
+                animation.InsertKeyFrame(index / (float)(steps.Length - 1), new Vector3(steps[index], 0, 0));
+            }
+
+            animation.Duration = TimeSpan.FromMilliseconds(400);
+            visual.StartAnimation("Translation", animation);
+        });
+    }
+
+    /// <summary>
+    /// 状态屏的表情被碰时绕底边甩一下（mac：−12° / 10° / −6° / 0，放大到 1.12 再回来，0.5 s）。系统关了动画效果时不甩。
+    /// </summary>
+    public static void Swing(FrameworkElement element)
+    {
+        if (Reduced)
+        {
+            return;
+        }
+
+        WhenReady(element, visual =>
+        {
+            var compositor = visual.Compositor;
+            visual.CenterPoint = new Vector3((float)(element.ActualWidth / 2), (float)element.ActualHeight, 0);
+            var rotation = compositor.CreateScalarKeyFrameAnimation();
+            rotation.InsertKeyFrame(0.2f, -12);
+            rotation.InsertKeyFrame(0.45f, 10);
+            rotation.InsertKeyFrame(0.7f, -6);
+            rotation.InsertKeyFrame(1f, 0);
+            rotation.Duration = TimeSpan.FromMilliseconds(500);
+            var scale = compositor.CreateVector3KeyFrameAnimation();
+            scale.InsertKeyFrame(0.3f, new Vector3(1.12f, 1.12f, 1));
+            scale.InsertKeyFrame(1f, Vector3.One);
+            scale.Duration = TimeSpan.FromMilliseconds(500);
+            visual.StartAnimation("RotationAngleInDegrees", rotation);
+            visual.StartAnimation("Scale", scale);
+        });
+    }
+
+    /// <summary>
     /// 弹簧曲线采样成关键帧（Core 的 SpringEase，时长 = 曲线的 duration）：每一帧是
     /// this.StartingValue + (target − this.StartingValue) × p，被打断时从当前值接着走。
     /// ponytail: 不用 CreateSpring*Animation——第七版第 3 批实测轻提示几何上的 Composition 弹簧 2 秒多还在

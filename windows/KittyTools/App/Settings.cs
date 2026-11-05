@@ -291,6 +291,23 @@ internal sealed class Settings
     /// </summary>
     public List<string>? LauncherRecentCurrencies { get; set; }
 
+    // 状态屏（PLAN-v12 N5，mac Prefs.statusScreen*）。
+
+    /// <summary>状态列表（Core 的 StatusPreset，键名同 mac：id / title / detail / symbol / style / power / autoEndMinutes）；null = 自带的三个。</summary>
+    public List<KittyTools.Core.StatusPreset>? StatusScreenPresets { get; set; }
+
+    /// <summary>有人碰键盘鼠标时显示怎么退出（默认开）。</summary>
+    public bool StatusScreenExitHint { get; set; } = true;
+
+    /// <summary>按状态屏的全局快捷键时直接进入排在最前面的状态（默认关：先出一排预览卡片，选一个再进）。</summary>
+    public bool StatusScreenHotKeyEntersFirst { get; set; }
+
+    /// <summary>告示上的动画（表情动、进入时的出场、甩一下、冒眼睛；默认开）。</summary>
+    public bool StatusScreenAnimations { get; set; } = true;
+
+    /// <summary>上次进入的状态（选状态的面板默认选中它）。这台电脑自己的状态，不导出。</summary>
+    public string? StatusScreenLastPreset { get; set; }
+
     public List<HotKeySetting> HotKeys { get; set; } = new();
 
     /// <summary>

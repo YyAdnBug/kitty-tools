@@ -29,6 +29,9 @@ internal static class HotKeyActions
 
     /// <summary>打开主界面（PLAN-v10 §5），默认不设键、不归哪个功能（同 mac home）；托盘菜单里不放。</summary>
     public const string Home = "home";
+
+    /// <summary>状态屏（PLAN-v12 N5），默认不设键（同 mac statusScreen）：先出选状态的面板，设置里开了就直接进排在最前面的。</summary>
+    public const string StatusScreen = "statusScreen";
 }
 
 internal sealed record HotKeyDefault(
@@ -56,6 +59,7 @@ internal static class SettingsDefaults
         new(HotKeyActions.Audio, "录音（再按一次停止）", HotKeyModifiers.None, 0),
         new(HotKeyActions.PinClipboard, "钉住剪贴板里的图", HotKeyModifiers.None, 0),
         new(HotKeyActions.Home, "打开主界面", HotKeyModifiers.None, 0),
+        new(HotKeyActions.StatusScreen, "状态屏", HotKeyModifiers.None, 0),
     };
 
     public static void Apply(Settings settings)

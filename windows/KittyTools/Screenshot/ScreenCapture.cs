@@ -115,6 +115,35 @@ internal static unsafe partial class ScreenCapture
 
     private static List<IntPtr>? _collected;
 
+    /// <summary>每块显示器的整块范围（物理像素，含任务栏）和缩放，按左上排（状态屏每屏一张面板）。不抓屏。</summary>
+    public static List<(PixelBounds Bounds, double Scale)> Monitors()
+    {
+        var monitors = new List<IntPtr>();
+        _collected = monitors;
+        var callback = (IntPtr)(delegate* unmanaged[Stdcall]<IntPtr, IntPtr, RECT*, IntPtr, int>)&CollectMonitor;
+        EnumDisplayMonitors(IntPtr.Zero, null, callback, IntPtr.Zero);
+        _collected = null;
+
+        var result = new List<(PixelBounds Bounds, double Scale)>();
+        foreach (var monitor in monitors)
+        {
+            var info = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
+            if (!GetMonitorInfo(monitor, ref info))
+            {
+                continue;
+            }
+
+            var dpiX = 96u;
+            var dpiY = 96u;
+            GetDpiForMonitor(monitor, 0, ref dpiX, ref dpiY);
+            result.Add((
+                new PixelBounds(info.rcMonitor.Left, info.rcMonitor.Top, info.rcMonitor.Right, info.rcMonitor.Bottom),
+                Math.Max(1.0, dpiX / 96.0)));
+        }
+
+        return result.OrderBy(item => item.Bounds.Left).ThenBy(item => item.Bounds.Top).ToList();
+    }
+
     /// <summary>
     /// R33 截图自检用的假冻结帧：主屏大小，深灰底上几块浅一点的「窗口」，不含任何真实的屏幕内容，
     /// 截出来的图可以直接推到公开的 windows-shots。

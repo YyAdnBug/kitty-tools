@@ -337,6 +337,15 @@ internal sealed class ShellRuntime
             DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() => _ = ToolbarAnimationProbe.RunAsync(folder));
         }
 
+        // 自检档：状态屏三种样式各进一次（只拦带标记的注入事件，真的键盘鼠标照常放行；屏幕会被盖住约 15 秒）。
+        var statusProbe = Environment.GetCommandLineArgs()
+            .FirstOrDefault(arg => arg.StartsWith(StatusScreenHost.ProbeArgument, StringComparison.OrdinalIgnoreCase));
+        if (statusProbe is not null && Paths.IsTestProfile)
+        {
+            var folder = statusProbe[StatusScreenHost.ProbeArgument.Length..];
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() => _ = StatusScreenHost.RunProbeAsync(folder));
+        }
+
         // 自检档：主界面高亮滑动录一段短视频（HomeSlideProbe）。
         var homeSlide = Environment.GetCommandLineArgs()
             .FirstOrDefault(arg => arg.StartsWith(HomeSlideProbe.ArgumentPrefix, StringComparison.OrdinalIgnoreCase));
@@ -1114,6 +1123,8 @@ internal sealed class ShellRuntime
         }
 
         _finished = true;
+        // 状态屏：当场撤拦截、收窗口（不出「已结束」的提示）。
+        StatusScreenHost.Exit(Core.StatusExitReason.Quit);
         try
         {
             if (RecordingHost.IsRecording)
@@ -1151,6 +1162,7 @@ internal sealed class ShellRuntime
     {
         const uint WmWtsSessionChange = 0x02B1;
         const uint WmPowerBroadcast = 0x0218;
+        const uint WmDisplayChange = 0x007E;
         if (msg == PInvoke.WM_HOTKEY)
         {
             // 录屏倒数期间 Esc 取消（第四版）。
@@ -1187,8 +1199,10 @@ internal sealed class ShellRuntime
         else if (msg == WmWtsSessionChange)
         {
             // 7 = 锁屏：录屏停掉并保存，录音只录麦克风时照录（R11）；8 = 解锁时看一眼今天的备份。
+            // 状态屏：锁屏时让开（窗口收起、拦截暂停），解锁就结束（PLAN-v12 N5）。
             if (wParam.Value == 7)
             {
+                StatusScreenHost.Locked();
                 StopRecordingForSession(locking: true);
                 if (SettingsService.Current.ClipboardClearOnLock && Clipboard?.Store is { } locked)
                 {
@@ -1201,8 +1215,14 @@ internal sealed class ShellRuntime
             }
             else if (wParam.Value == 8)
             {
+                StatusScreenHost.Unlocked();
                 ScheduleBackup();
             }
+        }
+        else if (msg == WmDisplayChange)
+        {
+            // 显示器插拔、改分辨率：状态屏按现在的屏幕重摆（没在状态屏里什么都不做）。
+            StatusScreenHost.OnDisplaysChanged();
         }
         else if (msg == WmPowerBroadcast && wParam.Value is 7 or 0x12)
         {
@@ -1238,8 +1258,8 @@ internal sealed class ShellRuntime
 
     private void OnHotKey(string action)
     {
-        // 功能关掉了就什么都不做（热键本来也没注册，保险）。
-        if (!Features.IsOnFor(action))
+        // 功能关掉了就什么都不做（热键本来也没注册，保险）。状态屏里也不响应（键盘本来就被拦着，保险）。
+        if (!Features.IsOnFor(action) || StatusScreenHost.Active)
         {
             return;
         }
@@ -1287,6 +1307,9 @@ internal sealed class ShellRuntime
                 break;
             case HotKeyActions.Home:
                 HomePanel.Toggle();
+                break;
+            case HotKeyActions.StatusScreen:
+                StatusPicker.ToggleOrEnterFirst();
                 break;
         }
     }

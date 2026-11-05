@@ -434,6 +434,21 @@ internal static class ArchiveService
             writer.WriteString("clipboardPanelPosition", settings.ClipboardPanelPosition);
             writer.WriteString("launcherPanelPosition", settings.LauncherPanelPosition);
             writer.WriteString("screenshotToolbarAlign", settings.ScreenshotToolbarAlign);
+            // PLAN-v12 N5 状态屏：同 mac Prefs（状态列表是一组对象，导入时按 id 并进本机的、不删本机独有的）。
+            writer.WriteBoolean("statusScreenExitHint", settings.StatusScreenExitHint);
+            writer.WriteBoolean("statusScreenHotKeyEntersFirst", settings.StatusScreenHotKeyEntersFirst);
+            writer.WriteBoolean("statusScreenAnimations", settings.StatusScreenAnimations);
+            if (settings.StatusScreenPresets is { } presets)
+            {
+                writer.WriteStartArray("statusScreenPresets");
+                foreach (var preset in StatusPresets.Sanitized(presets))
+                {
+                    StatusPresets.Write(writer, preset);
+                }
+
+                writer.WriteEndArray();
+            }
+
             writer.WriteEndObject();
         }
 
@@ -502,6 +517,23 @@ internal static class ArchiveService
                     break;
                 case "screenshotToolbarAlign" when value.ValueKind == JsonValueKind.String && value.GetString() is "right" or "center":
                     settings.ScreenshotToolbarAlign = value.GetString()!;
+                    break;
+                case "statusScreenExitHint" when value.ValueKind is JsonValueKind.True or JsonValueKind.False:
+                    settings.StatusScreenExitHint = value.GetBoolean();
+                    break;
+                case "statusScreenHotKeyEntersFirst" when value.ValueKind is JsonValueKind.True or JsonValueKind.False:
+                    settings.StatusScreenHotKeyEntersFirst = value.GetBoolean();
+                    break;
+                case "statusScreenAnimations" when value.ValueKind is JsonValueKind.True or JsonValueKind.False:
+                    settings.StatusScreenAnimations = value.GetBoolean();
+                    break;
+                case "statusScreenPresets":
+                    // 用户自己写的东西：按 id 更新和添加、本机独有的不删（mac StatusPreset.merged）；有一个解不出整组不导。
+                    if (StatusPresets.ReadList(value) is { } incoming && StatusPresets.Sanitized(incoming).Count > 0)
+                    {
+                        settings.StatusScreenPresets = StatusPresets.Merged(incoming, StatusPresets.Load(settings.StatusScreenPresets));
+                    }
+
                     break;
             }
         }

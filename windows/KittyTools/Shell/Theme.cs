@@ -80,6 +80,12 @@ internal static class Theme
         public static Color Url => Value(0x30B0C7, 0x40C8E0);
         public static Color Search => Value(0x5856D6, 0x5E5CE6);
 
+        /// <summary>状态屏：告示牌的木色（mac systemBrown）。</summary>
+        public static Color StatusScreen => Value(0xA2845E, 0xAC8E68);
+
+        /// <summary>提醒：自定义的琥珀色（mac 系统色用完了、红是危险色）。</summary>
+        public static Color Reminders => Value(0xE69914, 0xF5AD38);
+
         public static Color For(string key) => key switch
         {
             "clipboard" => Clipboard,
@@ -89,6 +95,8 @@ internal static class Theme
             "shortcut" or "hotkey" or "calculator" => Shortcut,
             "url" => Url,
             "search" or "web" => Search,
+            "statusScreen" => StatusScreen,
+            "reminders" => Reminders,
             _ => General,
         };
 
