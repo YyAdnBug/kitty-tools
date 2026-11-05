@@ -81,7 +81,7 @@ struct ReminderDetail: View {
             } set: {
               binding.wrappedValue.detail = $0
             }, prompt: Text("可不填"))
-          LabeledContent("图标") { SymbolGrid(selection: binding.symbol) }
+          SymbolGrid(selection: binding.symbol)
         } footer: {
           SectionFootnote("标题最多 \(Reminder.maxTitle) 个字，说明最多 \(Reminder.maxDetail) 个字。")
         }

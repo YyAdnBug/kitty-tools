@@ -1217,6 +1217,17 @@ struct SnapshotProbeTests {
     try snapshot(
       ReminderDetail(id: "call", fixed: [bell], now: now), size: NSSize(width: 590, height: 1100),
       dark: false, to: "\(out)/reminders-detail-sound.png")
+    // 图标格子的预览：鼠标停在「火箭」上（左边标题下面是它的大图和名字；屏外画的是静止画面）、没停时是选中的那个；深色一张
+    for (name, hovered, dark) in [
+      ("hover", Optional("rocket"), false), ("selected", nil, false),
+      ("hover-dark", "birthday-cake", true),
+    ] {
+      try snapshot(
+        Form { SymbolGrid(selection: .constant("hot-beverage"), hovered: hovered) }.formStyle(
+          .grouped),
+        size: NSSize(width: 590, height: 330), dark: dark,
+        to: "\(out)/reminders-icon-grid-\(name).png")
+    }
     // 刘海岛上挂着的提醒：一条（带说明）、几条合成一条、错过的；收着 / 展开，刘海屏 / 胶囊
     let notch = Island.Geometry.notch(width: 200, height: 32)
     let capsule = Island.Geometry.capsule(menuBar: 24)

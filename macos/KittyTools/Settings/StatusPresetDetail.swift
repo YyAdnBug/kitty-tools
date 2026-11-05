@@ -67,7 +67,7 @@ struct StatusPresetDetail: View {
           } set: {
             binding.wrappedValue.detail = $0
           }, prompt: Text("可不填"))
-        LabeledContent("图标") { SymbolGrid(selection: binding.symbol) }
+        SymbolGrid(selection: binding.symbol)
       } footer: {
         SectionFootnote(
           "标题最多 \(StatusPreset.maxTitle) 个字，说明最多 \(StatusPreset.maxDetail) 个字。")
@@ -128,9 +128,14 @@ struct StatusPresetDetail: View {
 
 /// 图标格子：一格「无」+ StatusEmoji.choices 的表情（静止画面）+ 最后一格「其他表情」，一行 7 个；选中的外面一圈强调色
 /// （同通用页的外观缩略图）。深色外观下颜色很深的那两个表情（开会、黑猫）的格子换成浅底（StatusEmoji.plated）。
-/// 「其他表情」打开系统的表情面板，挑哪个都行（静态，StatusEmoji.isCustom）；挑过的那一格就画它。提醒的详情页也用它（ReminderDetail）
+/// 「其他表情」打开系统的表情面板，挑哪个都行（静态，StatusEmoji.isCustom）；挑过的那一格就画它。提醒的详情页也用它（ReminderDetail）。
+/// 整个是一行「图标」（LabeledContent）：左边标题下面空着的地方是预览（2026-11-04 用户要看得出动画是什么；同系统表情与符号面板、
+/// 网页上常见的表情选择器的预览区）——鼠标停在哪一格，那里就放它的动画、写它的名字（EmojiPreview）；没停在格子上时是选中的那个、
+/// 不动。格子本身一直是静止画面
 struct SymbolGrid: View {
   @Binding var selection: String
+  /// 鼠标停在哪一格（截图自检可以直接给）
+  @State var hovered: String?
   @Environment(\.colorScheme) private var scheme
   /// 点一下「其他表情」+1：让看不见的接收框拿到焦点、打开系统的表情面板
   @State private var opensPicker = 0
@@ -139,8 +144,19 @@ struct SymbolGrid: View {
   private static let ring: CGFloat = 2
 
   var body: some View {
+    LabeledContent {
+      grid
+    } label: {
+      VStack(alignment: .leading, spacing: 10) {
+        Text("图标")
+        EmojiPreview(symbol: hovered ?? selection, plays: hovered != nil)
+      }
+    }
+  }
+
+  private var grid: some View {
     let column = GridItem(.fixed(Self.cell + Self.ring * 2), spacing: 4)
-    LazyVGrid(columns: Array(repeating: column, count: 7), spacing: 4) {
+    return LazyVGrid(columns: Array(repeating: column, count: 7), spacing: 4) {
       ForEach([""] + StatusEmoji.ids, id: \.self) { cell($0) }
       customCell
     }
@@ -184,11 +200,21 @@ struct SymbolGrid: View {
       .contentShape(.rect)
     }
     .buttonStyle(.plain)
+    .onHover { hover(symbol, $0) }
     .animation(.easeOut(duration: Style.fadeIn), value: selected)
     // 旁白读表情的中文名（「举手」「闹钟」…），「无」那一格读它的字
     .accessibilityLabel(StatusEmoji.name(symbol) ?? "无")
     .help(StatusEmoji.name(symbol) ?? "不要图标")
     .accessibilityAddTraits(selected ? .isSelected : [])
+  }
+
+  /// 移进一格换成它，移出时还是它才清掉（从一格直接移到下一格时，先来的是下一格的移进）
+  private func hover(_ symbol: String, _ inside: Bool) {
+    if inside {
+      hovered = symbol
+    } else if hovered == symbol {
+      hovered = nil
+    }
   }
 
   /// 最后一格：没挑过系统表情时是一个笑脸符号，挑过的画那个表情；点了都是打开系统的表情面板
@@ -226,10 +252,46 @@ struct SymbolGrid: View {
       .contentShape(.rect)
     }
     .buttonStyle(.plain)
+    .onHover { hover(custom ?? "", $0) }
     .animation(.easeOut(duration: Style.fadeIn), value: custom)
     .accessibilityLabel(custom.map { "其他表情：\($0)" } ?? "其他表情")
     .help("挑一个其他表情（不会动）")
     .accessibilityAddTraits(custom != nil ? .isSelected : [])
+  }
+}
+
+/// 「图标」标题下面的预览：72 pt 的表情 + 名字。plays（鼠标停在格子上）时把那个动画表情的帧解出来放（停一下才解：鼠标扫过去
+/// 不白解；一个表情的帧十几到几十 MB，移开、换一格就放手）；减弱动态效果时不放。没选图标、也没停在格子上时什么都不画
+private struct EmojiPreview: View {
+  let symbol: String
+  let plays: Bool
+  @State private var frames: StatusEmoji.Frames?
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  static let side: CGFloat = 72
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      if !symbol.isEmpty {
+        StatusEmojiView(id: symbol, frames: frames)
+          .frame(width: Self.side, height: Self.side)
+        Text(StatusEmoji.name(symbol) ?? "")
+          .font(.system(size: 11))
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+          .truncationMode(.tail)
+      }
+    }
+    .frame(width: Self.side, alignment: .leading)
+    .accessibilityHidden(true)  // 每一格自己有名字，这里只是看的
+    .task(id: plays ? symbol : "") {
+      frames = nil
+      guard plays, !reduceMotion, StatusEmoji.ids.contains(symbol) else { return }
+      try? await Task.sleep(for: .milliseconds(150))
+      guard !Task.isCancelled, let decoded = await StatusEmoji.decode(symbol), !Task.isCancelled
+      else { return }
+      frames = decoded
+    }
   }
 }
 
