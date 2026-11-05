@@ -141,8 +141,8 @@ internal sealed partial class SettingsWindow
         var export = new Button { Content = "导出…", IsEnabled = NoteStore.Instance is not null };
         export.Click += (_, _) => _ = NotesTransfer.ExportAllAsync(this);
         _content.Children.Add(Ungated(SettingsUi.Card("导出为 Markdown", "每条便签一个 .md 文件，正文里的图片放在旁边的 attachments 文件夹", export)));
-        var import = new Button { Content = "导入…", IsEnabled = NoteStore.Instance is not null };
-        import.Click += (_, _) => _ = NotesTransfer.ImportAsync(this);
+        // Windows 的选择框不能同时选文件和文件夹：「导入…」弹两项（选择文件… / 选择文件夹…）
+        var import = new DropDownButton { Content = "导入…", IsEnabled = NoteStore.Instance is not null, Flyout = NotesTransfer.ImportMenu(this) };
         _content.Children.Add(Ungated(SettingsUi.Card("从 Markdown 导入", "导回导出过的文件夹不会重复；别处的 .md 文件每个变成一条新便签", import)));
         _content.Children.Add(Ungated(SettingsUi.Footnote(
             "便签存在这台电脑上，和剪贴板历史分开：清空历史、保留天数都碰不到它。每天自动备份一份，留最近 7 份（正文里的图片跟着一起备）。" +

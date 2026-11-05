@@ -394,7 +394,7 @@ internal sealed class NoteSheetView
         }
 
         Item(menu.Items, NotesWindowRules.OpenInWindowTitle, "\uE8A5", null, () => NotesWindow.ShowNote(note.Id));
-        Item(menu.Items, NotesWindowRules.SingleExportTitle, Glyphs.Save, null, () => _ = NotesTransfer.ExportOneAsync(note.Id));
+        Item(menu.Items, NotesWindowRules.SingleExportTitle, Glyphs.Save, null, () => _ = NotesTransfer.ExportOneAsync(note.Id, _more.XamlRoot));
         menu.Items.Add(new MenuFlyoutSeparator());
         Item(menu.Items, NotesWindowRules.SettingsTitle + "…", Glyphs.Settings, "Ctrl+,",
             () => ShellRuntime.Instance?.ShowSettings(false, "notes"));

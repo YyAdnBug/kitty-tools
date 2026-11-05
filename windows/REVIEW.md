@@ -163,6 +163,24 @@ WIC 的 `BitmapDecoder.HeifDecoderId`、`DecoderInformation.CodecId`；`NoteStor
 「不显示药丸」= 只留亚克力的一条；扇出、打开、收回没有动画；全屏判定是「前台窗口盖满那块屏」（不是桌面、不是我们自己的窗口）；标签的倾斜（mac 微微斜着）没做；
 打开的便签旁边没有 mac 那张跟着它的标签（标签列里那张描粗边表示打开着）。
 
+### 第 7 批：Markdown 导出导入、图片的宽度和裁切 → 已写（审查方，`git log --grep "PLAN-v13 第 7 批"`，没编译）
+
+- `Core/Notes/NoteMarkdownFiles.cs`（agent 照 mac `NoteMarkdownFiles.swift` 的纯函数移植、我对过 API）：文件名（清理、截断、重名加号；另外替换 Windows 不许的字符、给 CON / NUL 这类设备名加 `_`）、
+  导出文件夹名、文件头（时间按传进来的时区、毫秒，同 mac；手写的 ISO 读法，怪的值当读不出）、正文哈希、三种换法（任务 / 颜色 / 图片）、读文件的解码（去 BOM、严格 UTF-8、换行统一）、
+  自家文件 / 别处文件 → 便签、在别处改过没有、导入完怎么说。单测 `NoteMarkdownFilesTests` 18 个（mac 的用例原样移过来 + Windows 的几个；要真文件系统的那几个跳过，写在文件头）。
+- `Notes/NotesTransfer.cs`：导出全部（新建「Kitty Tools 便签 日期」、attachments\、写坏一个就停）、单条导出（`FileSavePicker`，owner 是那扇窗的 `XamlRoot.ContentIslandEnvironment.AppWindowId`）、
+  导入（「导入…」= 选择文件… / 选择文件夹…两项；线程池上读、换、存图片，UI 线程上 `Adopt`；图片路径相对 .md 的文件夹，绝对路径 / 网址 / 跑出去 / 符号链接不认）。
+- 图片（`NoteEditor.Images.cs`、`Notes/NoteImageCrop.cs`、`NoteImageStore.PngOfAsync`）：右键选区里的图 → 图片宽度五档、裁切…（对话框：四角拖大小、框里挪、框外重拉；另存一张新图，宽度按比例换算，一步撤销）、拷贝图片（转 PNG 写剪贴板）。
+
+**要特别看的编译点 / 屏幕上要看的**：
+1. `XamlRoot.ContentIslandEnvironment.AppWindowId` 在那叠 / 浮动便签的窗口里拿得到（拿不到时 `FileSavePicker(default)` 会不会抛：抛了就改成传那扇窗的 `AppWindow.Id`）。
+2. 导出的 .md 和 mac 导出的逐字一样（时间是本地时区、毫秒；`body-hash`）：能拿到 Mac 时两边各导一份同一条便签比一下（HANDTEST 1132）。
+3. 右键一张图时 RichEdit 的选区是不是正好那一个 U+FFFC（右键不选中的话「图片宽度」那几项不出现：那就在 `RightTapped` 里先把光标处的对象选上）。
+4. 裁切对话框里 `BitmapImage` 是不是已经按 EXIF 转正（对话框里的图和裁下来的对得上：拿一张手机竖拍的 JPEG 试）。
+
+**替用户定的**：「导入…」是两项的小菜单（Windows 的选择框不能同时选文件和文件夹）；裁切只有自由比例、用对话框（mac 原地一层、7 种比例）；没有拖右下角改宽的把手；
+文件名额外替换 Windows 不许的字符、设备名前加 `_`；导入时文件名排序用当前区域的不区分大小写比较（mac 是自然顺序）。
+
 ## PLAN-v12（跟上 mac：先把没有的功能做出来，2026-11-05 用户「先把未实现的功能实现」）
 
 清单和分批在 `PLAN-v12.md`（不是拍板页，行为照 mac）；分工同 PLAN-v11 D10。

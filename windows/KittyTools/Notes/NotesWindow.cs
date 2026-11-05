@@ -707,6 +707,7 @@ internal sealed class NotesWindow : Window
                     () => NoteFloats.Toggle(current.Id));
             }
 
+            Add(NotesWindowRules.SingleExportTitle, Glyphs.Save, () => _ = NotesTransfer.ExportOneAsync(current.Id, Content.XamlRoot));
             menu.Items.Add(new MenuFlyoutSeparator());
             Add(NotesWindowRules.DeleteTitle, Glyphs.Delete, () => RemoveSelected(current.Id));
         };

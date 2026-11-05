@@ -3,11 +3,14 @@
 //   不超过这一行的可用宽）；读不到的留着空位（同 mac 的占位框）。
 // - 插图：粘贴、拖进来、菜单「插入图片…」：先存进图片目录（线程池上），再插进正文——每张图独占一行，插完光标落到图下一行的行首
 //   （NoteImages.InsertionPlan）；一步撤销。
-// - 宽度五档（小 / 中 / 大 / 铺满 / 原始大小）、裁切、拷贝图片：第 7 批。
+// - 第 7 批：右键选区里的图——宽度五档（小 / 中 / 大 / 铺满 / 原始大小，令牌里的宽度，一步撤销）、裁切…（一个对话框里拖出要留下的那块，
+//   另存一张新图换上去，令牌的宽度按裁下来的比例换算；原图没人用 30 天后清掉）、拷贝图片（转成 PNG 写剪贴板）。
+//   mac 还能拖图片右下角的把手改宽、在原地盖一层裁：RichEdit 里的图拿不到把手，Windows 用菜单和对话框（MAC-DIFF）。
 using System.Runtime.InteropServices.WindowsRuntime;
 using KittyTools.Core.Notes;
 using KittyTools.Infrastructure;
 using Microsoft.UI.Text;
+using Microsoft.UI.Xaml.Controls;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Storage;
 using Windows.Storage.Streams;
@@ -249,5 +252,153 @@ internal sealed partial class NoteEditor
         {
             _ = LoadImagesAsync();
         }
+    }
+
+    // ---- 第 7 批：宽度、裁切、拷贝 ----
+
+    /// <summary>选区里的图：第几张、在正文里的位置。</summary>
+    private List<(int Index, int Position)> SelectedImages()
+    {
+        var selection = Selection;
+        var picked = new List<(int Index, int Position)>();
+        var index = _text.AsSpan(0, Math.Min(selection.Location, _text.Length)).Count(ObjectChar);
+        for (var position = selection.Location; position < Math.Min(selection.End, _text.Length); position++)
+        {
+            if (_text[position] != ObjectChar)
+            {
+                continue;
+            }
+
+            if (index < _images.Count)
+            {
+                picked.Add((index, position));
+            }
+
+            index++;
+        }
+
+        return picked;
+    }
+
+    /// <summary>右键菜单最前面的图片那几项（选区里没有图就不加）。</summary>
+    private void AddImageItems(IList<MenuFlyoutItemBase> items)
+    {
+        var picked = SelectedImages();
+        if (picked.Count == 0 || NoteId is null)
+        {
+            return;
+        }
+
+        var widths = picked.Select(item => _images[item.Index].Width).Distinct().ToList();
+        var current = widths.Count == 1 ? NoteImages.PresetOf(widths[0]) : null;
+        var width = new MenuFlyoutSubItem { Text = "图片宽度", Icon = new FontIcon { Glyph = "\uE740" } };
+        foreach (var preset in NoteImages.Presets)
+        {
+            var item = new ToggleMenuFlyoutItem { Text = NoteImages.Title(preset), IsChecked = current == preset };
+            item.Click += (_, _) => SetImageWidth(NoteImages.WidthOf(preset), picked);
+            width.Items.Add(item);
+        }
+
+        items.Add(width);
+        if (picked.Count == 1)
+        {
+            var one = picked[0];
+            Add(items, "裁切…", "\uE7A8", () => _ = CropImageAsync(one), _images[one.Index].Ext != "gif");
+            Add(items, "拷贝图片", Glyphs.Copy, () => _ = CopyImageAsync(_images[one.Index]), true);
+        }
+
+        items.Add(new MenuFlyoutSeparator());
+    }
+
+    /// <summary>改几张图的宽度（令牌里的宽度；字还是那几个 U+FFFC），一步撤销。</summary>
+    private void SetImageWidth(int? width, IReadOnlyList<(int Index, int Position)> picked)
+    {
+        if (picked.All(item => item.Index < _images.Count && _images[item.Index].Width == width))
+        {
+            return;
+        }
+
+        _undo.Command(Snapshot());
+        foreach (var (index, position) in picked)
+        {
+            if (index >= _images.Count)
+            {
+                continue;
+            }
+
+            var image = _images[index] with { Width = width };
+            _images[index] = image;
+            if (Images?.CachedSize(image.Id) is { } size && _imageBytes.TryGetValue(image.Id, out var bytes))
+            {
+                PlaceImage(position, image, size, bytes);
+            }
+        }
+
+        Publish();
+    }
+
+    /// <summary>拷贝图片：转成 PNG 写剪贴板（同截图、钉图那一路）。</summary>
+    private async Task CopyImageAsync(NoteImages.Image image)
+    {
+        if (Images is not { } store || await NoteImageStore.PngOfAsync(store.PathFor(image)) is not { } png)
+        {
+            NoticeHost.Show("读不出这张图片", string.Empty, NoticeTone.Warning);
+            return;
+        }
+
+        var prepared = await ClipboardWriter.PrepareImageAsync(png);
+        if (!ClipboardWriter.WriteImagePng(prepared.Png, prepared.Dib))
+        {
+            NoticeHost.Show("没能拷贝", "剪贴板被别的程序占着", NoticeTone.Warning);
+        }
+    }
+
+    /// <summary>裁切：对话框里拖出要留下的那块，另存一张新图换上去（一步撤销，撤回原图）。</summary>
+    private async Task CropImageAsync((int Index, int Position) picked)
+    {
+        if (Images is not { } store || picked.Index >= _images.Count || _box.XamlRoot is not { } root)
+        {
+            return;
+        }
+
+        var image = _images[picked.Index];
+        var path = store.PathFor(image);
+        if (await store.SizeOfAsync(image) is not { } size || await BytesAsync(store, image) is not { } bytes)
+        {
+            NoticeHost.Show("读不出这张图片", string.Empty, NoticeTone.Warning);
+            return;
+        }
+
+        if (await NoteImageCrop.AskAsync(root, bytes, size) is not { } rect)
+        {
+            return;
+        }
+
+        var result = await NoteImageStore.CropAsync(path, rect.X, rect.Y, rect.Width, rect.Height, store.Directory);
+        if (result.Stored is not { } stored)
+        {
+            var rejection = result.Rejection ?? NoteImageRules.Rejection.Unsaved;
+            NoticeHost.Show(NoteImageRules.NoticeTitle(rejection), NoteImageRules.NoticeDetail(rejection), NoticeTone.Warning);
+            return;
+        }
+
+        // 等对话框的这一会儿正文可能改过：还是同一张图、还在那个位置才换
+        if (picked.Index >= _images.Count || _images[picked.Index] != image || picked.Position >= _text.Length
+            || _text[picked.Position] != ObjectChar)
+        {
+            return;
+        }
+
+        store.Remember(stored);
+        var fullWidth = size.Orientation is >= 5 and <= 8 ? size.PixelHeight : size.PixelWidth;
+        var replaced = stored.Image with { Width = NoteImages.CroppedWidth(image.Width, fullWidth, rect.Width) };
+        _undo.Command(Snapshot());
+        _images[picked.Index] = replaced;
+        if (await BytesAsync(store, replaced) is { } croppedBytes && picked.Position < _text.Length && _text[picked.Position] == ObjectChar)
+        {
+            PlaceImage(picked.Position, replaced, stored.Size, croppedBytes);
+        }
+
+        Publish();
     }
 }

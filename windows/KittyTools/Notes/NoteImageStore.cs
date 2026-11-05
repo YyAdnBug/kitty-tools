@@ -223,6 +223,22 @@ internal sealed class NoteImageStore(string directory)
         return bytes;
     }
 
+    /// <summary>一张图转成 PNG 字节（「拷贝图片」写剪贴板用；转正、转到 sRGB）。读不出给 null。</summary>
+    public static Task<byte[]?> PngOfAsync(string path)
+        => Task.Run<byte[]?>(async () =>
+        {
+            try
+            {
+                var file = await Windows.Storage.StorageFile.GetFileFromPathAsync(path);
+                using var source = await file.OpenReadAsync();
+                return await EncodePngAsync(await BitmapDecoder.CreateAsync(source));
+            }
+            catch
+            {
+                return null;
+            }
+        });
+
     // ---- 裁切（另存一张新图，同 mac：令牌写法不改，撤销回原图，原图没人用 30 天才删）----
 
     /// <summary>按原图（转正之后）的像素裁 rect，照原格式存一张新图（JPEG 照 JPEG，别的一律 PNG）。</summary>

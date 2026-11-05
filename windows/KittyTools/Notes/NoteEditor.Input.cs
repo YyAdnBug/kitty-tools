@@ -326,6 +326,8 @@ internal sealed partial class NoteEditor
         menu.Opening += (_, _) =>
         {
             menu.Items.Clear();
+            // 选区里有图：先是图片那几项（宽度五档、裁切…、拷贝图片，第 7 批）
+            AddImageItems(menu.Items);
             Add(menu.Items, "剪切", Glyphs.Cut, () => CopySelection(cut: true), Selection.Length > 0, "Ctrl+X");
             Add(menu.Items, "拷贝", Glyphs.Copy, () => CopySelection(cut: false), Selection.Length > 0, "Ctrl+C");
             Add(menu.Items, "粘贴", Glyphs.Paste, () => _ = PasteAsync(), true, "Ctrl+V");
