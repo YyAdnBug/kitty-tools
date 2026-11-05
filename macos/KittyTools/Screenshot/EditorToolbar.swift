@@ -178,7 +178,8 @@ class HUDBar: PopView {
     applyGeometry()
   }
 
-  /// 材质内缩 0.5（外圈描边在外面）；阴影按圆角矩形设 shadowPath。26 的玻璃铺满、阴影系统画
+  /// 材质内缩 0.5（外圈描边在外面）；阴影按圆角矩形设 shadowPath。26 的玻璃铺满、阴影系统画。
+  /// 改了栏的尺寸就调它；之后尺寸再变，材质靠掩码跟着走
   func applyGeometry() {
     guard bounds.width > 1, bounds.height > 1 else { return }  // 零尺寸内缩出来是 null 矩形（原点无穷大）
     let inner = bounds.insetBy(dx: Self.materialInset, dy: Self.materialInset)
@@ -186,7 +187,11 @@ class HUDBar: PopView {
       material.frame = inner
       material.needsLayout = true  // 直接改 frame 不会让里面按约束居中的 stack 重排
     }
-    guard #unavailable(macOS 26), let layer else { return }
+    applyShadow()
+  }
+
+  private func applyShadow() {
+    guard #unavailable(macOS 26), let layer, bounds.width > 1, bounds.height > 1 else { return }
     Style.HUD.applyShadow(
       to: layer,
       path: CGPath(roundedRect: bounds, cornerWidth: radius, cornerHeight: radius, transform: nil))
@@ -198,9 +203,11 @@ class HUDBar: PopView {
     return 0.5
   }
 
+  /// 布局时只跟上阴影（图层属性）。不在这里改材质的 frame：布局阶段改带 autoresizing 约束的子视图 frame 会让约束失效，
+  /// 1x 屏上能让显示周期转不出来、闪退（同 PinView，issue #6）
   override func layout() {
     super.layout()
-    applyGeometry()
+    applyShadow()
   }
 }
 
