@@ -114,12 +114,18 @@ nonisolated enum OCR {
   /// 和上一行并排（同一高度的另一块）也断开。ponytail: 不看缩进和左边界（容易误判列表、代码）；
   /// macOS 26 的 RecognizeDocumentsRequest 直接给段落，有 26 测试机再换
   static func paragraphs(_ lines: [Line]) -> [[String]] {
+    groups(lines).map { $0.map(\.text) }
+  }
+
+  /// 按段分组的行本身（切段规则见 paragraphs，括号里的判断都在下面）：截图翻译的原位覆盖要每段的行框，
+  /// 只留文字的话位置就没了
+  static func groups(_ lines: [Line]) -> [[Line]] {
     guard !lines.isEmpty else { return [] }
     let heights = lines.map(\.box.height).sorted()
     let widths = lines.map(\.box.width).sorted()
     let lineHeight = heights[heights.count / 2]
     let lineWidth = widths[widths.count / 2]
-    var result: [[String]] = []
+    var result: [[Line]] = []
     var previous: Line?
     for line in lines {
       if let previous {
@@ -132,7 +138,7 @@ nonisolated enum OCR {
       } else {
         result.append([])
       }
-      result[result.count - 1].append(line.text)
+      result[result.count - 1].append(line)
       previous = line
     }
     return result
