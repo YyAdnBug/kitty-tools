@@ -27,13 +27,21 @@ struct GeneralTab: View {
   @State private var loginError: String?
   /// NSPasteboard.AccessBehavior 的 rawValue（这个类型 macOS 15.4 才有），窗口变成 key 时刷新
   @State private var pasteboardBehavior = Self.currentPasteboardBehavior
+  /// 新功能标记读它（截图自检单独画这一页时没有）
+  @Environment(SettingsNavigation.self) private var navigation: SettingsNavigation?
 
   var body: some View {
     Form {
       Section {
         ForEach(Feature.allCases.filter(\.isAvailable), id: \.self) { FeatureToggle(feature: $0) }
       } header: {
-        Text("功能")
+        HStack(spacing: 6) {
+          Text("功能")
+          // 新功能标记：0.8.0 加的这一节（WhatsNew），看着的时候留着、换页才没
+          if let navigation, WhatsNew.marks(section: "功能", of: .general, in: navigation.fresh) {
+            NewTag()
+          }
+        }
       } footer: {
         SectionFootnote("关掉的功能不出现在快捷键、菜单栏和启动器里，也不在后台运行；它的数据和设置都留着，打开就回来。")
       }

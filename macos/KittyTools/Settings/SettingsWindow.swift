@@ -214,6 +214,11 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   var showsShortcuts = false
   /// 设置窗是 key（SettingsWindow 的窗口代理写）。开着 sheet（确认框、速查表、引导）或别的面板在前时不是
   var isKey = false
+  /// 新功能标记（Shell/WhatsNew.swift）：设置窗里此刻要标的那几个（WhatsNew.Entry.id）——侧栏那一行、收起的组、页里那一节。
+  /// 换页时 visit 现算（看着的那页留着，换页才没）；截图自检直接摆
+  var fresh: Set<String> = []
+  /// 换到一页了（打开设置窗也算）：记下碰过、重算 fresh（AppDelegate 接上；单测、截图自检不接，不写偏好）
+  @ObservationIgnored var visit: (SettingsPage) -> Void = { _ in }
 
   /// 主菜单「返回」能不能用：只在设置窗自己在前、推进了详情页时
   var canGoBack: Bool { isKey && !path.isEmpty }
@@ -273,6 +278,8 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
   func show(page: SettingsPage? = nil, onboarding: Bool = false) {
     // 页面上开着 sheet（快捷键速查表、确认框等）时不换页：换页会把那一页连同 sheet 和没保存的输入一起拆掉
     if let page, window.attachedSheet == nil { navigation.page = page }
+    // 新功能标记：打开设置窗也算打开了那一页（换了页时 SettingsRoot 的 onChange 也会来一次，重复的不写偏好）
+    navigation.visit(navigation.page)
     if onboarding { navigation.showsOnboarding = true }
     NSApp.setActivationPolicy(.regular)
     window.makeKeyAndOrderFront(nil)
@@ -356,7 +363,11 @@ struct SettingsRoot: View {
     NavigationSplitView {
       List(selection: selection) {
         ForEach(matches) { page in
-          SidebarRow(page: page, isSelected: page == navigation.page).tag(page)
+          SidebarRow(
+            page: page, isSelected: page == navigation.page,
+            isNew: WhatsNew.marks(page, in: navigation.fresh)
+          )
+          .tag(page)
         }
       }
       .overlay {
@@ -386,6 +397,7 @@ struct SettingsRoot: View {
     }
     // 从菜单栏等处直接跳到一页，而旧搜索词把它筛掉了：清掉搜索词（侧栏不留一个没选中的残局）
     .onChange(of: navigation.page) {
+      navigation.visit(navigation.page)
       if !matches.contains(navigation.page) { query = "" }
     }
     .sheet(isPresented: $navigation.showsOnboarding) {
@@ -414,6 +426,8 @@ struct SettingsRoot: View {
 private struct SidebarRow: View {
   let page: SettingsPage
   let isSelected: Bool
+  /// 新功能标记：行尾系统的徽标「新」（拍板 C1）
+  var isNew = false
   @Environment(\.controlActiveState) private var activeState
 
   /// 系统侧栏选中块的几何（macOS 15.7 屏外实测，和原生高亮逐像素对过）：左右各内缩 10、整行高、圆角 5
@@ -426,6 +440,12 @@ private struct SidebarRow: View {
       // 只在强调色上设字色：显式设了前景（哪怕是 .foreground）会盖掉侧栏自己的字色（后台窗口变灰那套）
       if emphasized { label.foregroundStyle(Style.onBrand) } else { label }
     }
+    // 徽标在外面那层字色之外：强调色的选中行上跟着页名换成 onBrand，别处不设（系统徽标自己的颜色）
+    .badge(
+      isNew
+        ? emphasized ? Text(WhatsNew.label).foregroundStyle(Style.onBrand) : Text(WhatsNew.label)
+        : nil
+    )
     .background(NativeHighlightOff())
     .listRowBackground(isSelected ? highlight(emphasized: emphasized) : nil)
   }

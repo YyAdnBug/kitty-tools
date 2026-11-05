@@ -48,6 +48,8 @@ enum Home {
     let key: String?
     /// 开关（暂停记录剪贴板、复制即译）开没开；不是开关的 nil
     let isOn: Bool?
+    /// 新功能标记（WhatsNew）：名字前面一个强调色小圆点
+    var isNew = false
 
     var id: String {
       switch target {
@@ -65,15 +67,18 @@ enum Home {
 
   /// 分节（纯函数）：和菜单栏菜单同一份（AppDelegate.buildStatusMenu），关着的功能不出现，「打开主界面」不列；
   /// 每节末尾接那一节的 MenuExtra。只有一格的节不画标题，和前面同样是一格的并成一行（菜单里这几节也不画标题）。
-  /// keys：各动作当前生效的快捷键（HotKeyCenter.bindings 的 display）
-  static func sections(state: LauncherItem.ActionState, keys: [HotKeyAction: String]) -> [Section] {
+  /// keys：各动作当前生效的快捷键（HotKeyCenter.bindings 的 display）；fresh：这一版新加、还没碰过的动作（WhatsNew），格子标小圆点
+  static func sections(
+    state: LauncherItem.ActionState, keys: [HotKeyAction: String], fresh: Set<HotKeyAction> = []
+  ) -> [Section] {
     let extras = MenuExtra.allCases.filter { $0.section != nil && $0.isAvailable(state) }
     var result: [Section] = []
     for section in HotKeyAction.visibleSections(enabled: state.features) {
       var tiles = section.actions.filter { $0 != .home }.map { action in
         Tile(
           target: .action(action), title: action.title(recording: state.recording == action),
-          symbol: action.symbol, color: action.color, key: keys[action], isOn: nil)
+          symbol: action.symbol, color: action.color, key: keys[action], isOn: nil,
+          isNew: fresh.contains(action))
       }
       for extra in extras where section.actions.contains(where: { $0 == extra.section }) {
         let isOn = extra.isOn(state)
@@ -193,6 +198,8 @@ enum Home {
 @Observable final class HomeModel {
   private(set) var sections: [Home.Section]
   private(set) var offCount: Int
+  /// 设置里有只在那里才有入口的新功能（WhatsNew.inSettingsOnly）：底栏「设置」前面一个小圆点
+  private(set) var settingsIsNew: Bool
   /// 键盘选中的那一格；没按过方向键时没有（打开时不画高亮）
   private(set) var selection: Int?
   /// 鼠标停在哪一格上（没选中的那格铺 fill.hover）
@@ -209,10 +216,12 @@ enum Home {
 
   /// 截图自检直接摆出某个样子；正常使用建一个空的，每次呼出前 update
   init(
-    sections: [Home.Section] = [], offCount: Int = 0, selection: Int? = nil, hovered: Int? = nil
+    sections: [Home.Section] = [], offCount: Int = 0, settingsIsNew: Bool = false,
+    selection: Int? = nil, hovered: Int? = nil
   ) {
     self.sections = sections
     self.offCount = offCount
+    self.settingsIsNew = settingsIsNew
     self.selection = selection
     self.hovered = hovered
   }
@@ -221,9 +230,12 @@ enum Home {
   var size: CGSize { CGSize(width: Home.width, height: Home.height(sections, offCount: offCount)) }
 
   /// 换成现在的样子。appearing：新呼出（选中、悬停清掉）；开关切完原地刷新时选中留着
-  func update(_ sections: [Home.Section], offCount: Int, appearing: Bool) {
+  func update(
+    _ sections: [Home.Section], offCount: Int, settingsIsNew: Bool = false, appearing: Bool
+  ) {
     self.sections = sections
     self.offCount = offCount
+    self.settingsIsNew = settingsIsNew
     if appearing {
       selection = nil
       hovered = nil
@@ -350,12 +362,19 @@ struct HomeView: View {
       model.run(extra)
     } label: {
       HStack(spacing: 6) {
+        // 设置里有新的（只在那里才有入口的）：「设置」前面一个小圆点（拍板 A4）
+        if isNew(extra) { NewDot() }
         Text(title)
         KeyCap(key).accessibilityHidden(true)
       }
       .contentShape(.rect)
     }
-    .accessibilityLabel(extra == .quit ? "退出 Kitty Tools" : "设置")
+    .accessibilityLabel(
+      extra == .quit ? "退出 Kitty Tools" : isNew(extra) ? "设置，" + WhatsNew.spoken : "设置")
+  }
+
+  private func isNew(_ extra: MenuExtra) -> Bool {
+    extra == .settings && model.settingsIsNew
   }
 }
 
@@ -376,12 +395,16 @@ private struct HomeTile: View {
     } label: {
       VStack(spacing: 0) {
         icon.padding(.top, 9)
-        Text(tile.title)
-          .font(.system(size: 11))
-          .lineLimit(1)
-          .minimumScaleFactor(0.85)
-          .padding(.horizontal, 3)
-          .padding(.top, 6)
+        // 新功能：名字前面一个小圆点（iOS 主屏新装 App 的那种，拍板 A1）
+        HStack(spacing: 3) {
+          if tile.isNew { NewDot() }
+          Text(tile.title)
+            .font(.system(size: 11))
+            .lineLimit(1)
+            .minimumScaleFactor(0.85)
+        }
+        .padding(.horizontal, 3)
+        .padding(.top, 6)
         Text(detail)
           .font(.system(size: 10, weight: .medium, design: .rounded))
           .monospacedDigit()
@@ -416,7 +439,7 @@ private struct HomeTile: View {
       }
     }
     .help(tile.key.map { "\(tile.title)  \($0)" } ?? tile.title)
-    .accessibilityLabel(tile.title)
+    .accessibilityLabel(tile.isNew ? tile.title + "，" + WhatsNew.spoken : tile.title)
     .accessibilityValue(accessibilityValue)
     .accessibilityAddTraits(selected ? .isSelected : [])
     .accessibilityAddTraits(tile.isOn != nil ? .isToggle : [])
