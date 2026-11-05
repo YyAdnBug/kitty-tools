@@ -201,6 +201,12 @@ internal sealed partial class LauncherRowView : Grid
     /// <summary>图标：解码好的图（应用 / 文件 / 网站图标，网站图标垫白底方块）或种类色块。</summary>
     private static FrameworkElement Icon(LauncherItem item, ImageSource? image)
     {
+        // 状态屏的状态、提醒：它的表情（静止画面，深色下「开会」「黑猫」垫浅底）；没选表情的照旧是家族色块（mac presetEmoji）。
+        if (item.Emoji is { } emoji && StatusEmojiCatalog.Ids.Contains(emoji))
+        {
+            return StatusEmoji.Still(emoji, 24, Theme.EffectiveTheme == ElementTheme.Dark);
+        }
+
         if (image is null)
         {
             return KindTile.Create(KindTile.FamilyOf(item.Kind, item.Target), KindTile.GlyphOf(item.Kind, item.Target), 24);

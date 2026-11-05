@@ -289,7 +289,7 @@ internal static class ShortcutsSheet
             ? combo.Split('+')
             : new[] { combo };
 
-    private static string GlobalTitle(string action) => SettingsDefaults.Find(action)?.DisplayName ?? action;
+    private static string GlobalTitle(string action) => SettingsDefaults.RowTitle(action);
 
     /// <summary>这个全局动作现在设的组合（「Alt+C」），没设返回空。</summary>
     private static string GlobalKeys(string action)

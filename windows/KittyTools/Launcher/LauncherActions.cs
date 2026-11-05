@@ -113,7 +113,8 @@ internal static class LauncherActions
                     item.Initials.Add(spelled.Initials);
                 }
 
-                items.Add(item with { Note = "状态屏" });
+                var symbol = presets[index].Symbol;
+                items.Add(item with { Note = "状态屏", Emoji = symbol.Length > 0 ? symbol : null });
             }
         }
 

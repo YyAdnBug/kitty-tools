@@ -189,22 +189,7 @@ internal sealed unsafe partial class StatusScreenPanel
         _plate.AppWindow.MoveAndResize(HudFrame.WithFrame(_plate, new RectInt32(x, y, width, height)));
     }
 
-    /// <summary>出场：表情落下并弹一下（pop）、标题浮上来（glide），说明和小字随后淡入（mac Z16 的简化：标题整行，不逐字）。</summary>
-    private static void PlayEntrance(StatusScreenView.Column column)
-    {
-        if (column.Emoji is { } emoji)
-        {
-            Motion.Entrance(emoji, MotionCurve.Pop, rise: -24);
-        }
-
-        Motion.Entrance(column.Title, MotionCurve.Glide, rise: 10);
-        if (column.Detail is { } detail)
-        {
-            Motion.FadeIn(detail, 0.2, 180);
-        }
-
-        Motion.FadeIn(column.Footer, 0.2, 240);
-    }
+    private void PlayEntrance(StatusScreenView.Column column) => StatusScreenView.PlayEntrance(column, _animates);
 
     /// <summary>读屏读的整屏名字：「状态屏，标题，说明，按住 Esc 两秒退出」。</summary>
     private string AccessibleName()

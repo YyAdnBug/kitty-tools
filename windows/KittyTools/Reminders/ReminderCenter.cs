@@ -589,7 +589,18 @@ internal static partial class ReminderCenter
         }
         else
         {
-            PlaySound("SystemNotification", IntPtr.Zero, 0x00010000 /* SND_ALIAS */ | 0x0001 /* SND_ASYNC */ | 0x0002 /* SND_NODEFAULT */);
+            PlayChime(first.Chime);
+        }
+    }
+
+    /// <summary>放一个提示音（设置里选的时候试听也走这里）：%WINDIR%\Media 里对应的那个文件，没有就放系统的通知声。</summary>
+    public static void PlayChime(string name)
+    {
+        const uint flags = 0x0001 /* SND_ASYNC */ | 0x0002 /* SND_NODEFAULT */;
+        var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Media", Reminders.ChimeFile(name));
+        if (!File.Exists(path) || !PlaySound(path, IntPtr.Zero, 0x00020000 /* SND_FILENAME */ | flags))
+        {
+            PlaySound("SystemNotification", IntPtr.Zero, 0x00010000 /* SND_ALIAS */ | flags);
         }
     }
 

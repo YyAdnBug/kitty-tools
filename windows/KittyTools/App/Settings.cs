@@ -154,6 +154,9 @@ internal sealed class Settings
 
     public bool SyncServices { get; set; } = true;
 
+    /// <summary>同步状态屏的状态列表（PLAN-v12 第 7 批）。</summary>
+    public bool SyncStatuses { get; set; } = true;
+
     /// <summary>同步提醒列表（PLAN-v12 N6）。</summary>
     public bool SyncReminders { get; set; } = true;
 

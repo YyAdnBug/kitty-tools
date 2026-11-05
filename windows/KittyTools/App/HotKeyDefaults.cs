@@ -87,6 +87,15 @@ internal static class SettingsDefaults
     public static HotKeyDefault? Find(string action)
         => DefaultHotKeys.FirstOrDefault(d => d.Action == action);
 
+    /// <summary>
+    /// 快捷键页、速查表里这一行的名字（mac HotKeyAction.rowTitle，PLAN-v12 第 7 批）：状态屏的键照它实际做的事写——
+    /// 默认「选一个状态进入」，设置 › 状态屏开了直接进入时「进入排在最前面的状态」；别的同 DisplayName。
+    /// </summary>
+    public static string RowTitle(string action)
+        => action == HotKeyActions.StatusScreen
+            ? SettingsService.Current.StatusScreenHotKeyEntersFirst ? "进入排在最前面的状态" : "选一个状态进入"
+            : Find(action)?.DisplayName ?? action;
+
     public static HotKeyBinding BindingFor(Settings settings, string action)
     {
         var stored = settings.HotKeys.FirstOrDefault(h => h.Action == action);

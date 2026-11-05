@@ -541,3 +541,34 @@ public static class StatusScreenRules
     public static int DefaultIndex(IReadOnlyList<StatusPreset> presets, string? lastId)
         => Math.Max(0, presets.ToList().FindIndex(preset => preset.Id == lastId));
 }
+
+/// <summary>
+/// 告示出场的时间表（PLAN-v12 第 7 批，照 mac StatusEntrance；时刻 = 画面出现后过了几秒）：标题从 TitleStart 起逐字浮现，
+/// 字与字错开 Step、每个字走 GlyphSpan（三次方缓出）；说明和小字等最后一个字浮到一半时淡入（RestSpan）。
+/// </summary>
+public readonly record struct StatusEntrance(int Glyphs)
+{
+    public const double TitleStart = 0.06;
+    public const double GlyphSpan = 0.28;
+    public const double Stagger = 0.045;
+    public const double StaggerLimit = 0.9;
+    public const double RestSpan = 0.28;
+
+    /// <summary>字与字错开多少；标题长的时候压到整个标题在 StaggerLimit 秒内都开始浮现。</summary>
+    public double Step => Glyphs > 1 ? Math.Min(Stagger, StaggerLimit / (Glyphs - 1)) : 0;
+
+    /// <summary>说明和小字从什么时候开始淡入：最后一个字浮到一半。</summary>
+    public double RestStart => TitleStart + Step * Math.Max(Glyphs - 1, 0) + GlyphSpan / 2;
+
+    /// <summary>整个出场多久。</summary>
+    public double End => RestStart + RestSpan;
+
+    /// <summary>第 index 个字浮现到哪了（0–1，先快后慢）。</summary>
+    public double Glyph(int index, double time)
+    {
+        var start = TitleStart + Step * Math.Min(index, Math.Max(Glyphs - 1, 0));
+        return Eased((time - start) / GlyphSpan);
+    }
+
+    private static double Eased(double value) => 1 - Math.Pow(1 - Math.Clamp(value, 0, 1), 3);
+}

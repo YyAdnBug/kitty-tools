@@ -367,4 +367,33 @@ public sealed class ReminderTests
             Assert.AreEqual("提醒", WebSearch.ReservedKeywords[keyword]);
         }
     }
+
+    [TestMethod]
+    public void Glow_GradientAndBreath()
+    {
+        // 贴边那行最亮（0.85 往里一点点）、越往里越淡、到厚度为 0；28 像素厚。
+        Assert.AreEqual(0.85 * (1 - 0.5 / 28), ReminderGlowCurve.Alpha(0, 28), 1e-9);
+        Assert.IsTrue(ReminderGlowCurve.Alpha(10, 28) > ReminderGlowCurve.Alpha(20, 28));
+        Assert.AreEqual(0.0, ReminderGlowCurve.Alpha(28, 28));
+        Assert.AreEqual(0.0, ReminderGlowCurve.Alpha(3, 0));
+
+        // 淡入、之后 1 ↔ 0.35 来回（单程 1.2 s）；减弱动态效果时淡入完一直是 1。
+        var fade = MotionCurves.FadeInSeconds;
+        Assert.AreEqual(0.0, ReminderGlowCurve.Opacity(0, reduced: false));
+        Assert.AreEqual(0.5, ReminderGlowCurve.Opacity(fade / 2, reduced: false), 1e-9);
+        Assert.AreEqual(1, ReminderGlowCurve.Opacity(fade, reduced: false), 1e-9);
+        Assert.AreEqual(0.35, ReminderGlowCurve.Opacity(fade + 1.2, reduced: false), 1e-9);
+        Assert.AreEqual(1, ReminderGlowCurve.Opacity(fade + 2.4, reduced: false), 1e-9);
+        Assert.AreEqual(1.0, ReminderGlowCurve.Opacity(fade + 1.2, reduced: true));
+    }
+
+    [TestMethod]
+    public void Chimes_EveryMacNameHasItsOwnWindowsSound()
+    {
+        CollectionAssert.AreEqual(Reminders.Chimes, Reminders.WindowsChimes.Select(chime => chime.Name).ToArray());
+        Assert.AreEqual(Reminders.WindowsChimes.Length, Reminders.WindowsChimes.Select(chime => chime.File).Distinct().Count());
+        Assert.AreEqual(Reminders.WindowsChimes.Length, Reminders.WindowsChimes.Select(chime => chime.Title).Distinct().Count());
+        Assert.AreEqual("Windows Ding.wav", Reminders.ChimeFile("Ping"));
+        Assert.AreEqual("Windows Notify System Generic.wav", Reminders.ChimeFile("不认识的"));
+    }
 }

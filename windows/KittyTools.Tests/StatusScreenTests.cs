@@ -3,6 +3,7 @@
 using System.Text;
 using System.Text.Json;
 using KittyTools.Core;
+using KittyTools.Core.Sync;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace KittyTools.Tests;
@@ -333,5 +334,78 @@ public sealed class StatusScreenTests
         Assert.AreEqual(16, StatusEmojiCatalog.Choices.Length);
         Assert.IsTrue(StatusEmojiCatalog.NeedsPlate("busts", dark: true));
         Assert.IsFalse(StatusEmojiCatalog.NeedsPlate("busts", dark: false));
+    }
+
+    /// <summary>
+    /// 同步的那一行和 mac 一字不差（PLAN-v12 第 7 批）：下面几行是在 Mac 上用 mac 的 StatusPreset 结构 + SyncRecords.encoder
+    /// （sortedKeys、withoutEscapingSlashes）真编出来的（2026-11-05）；最后一条带引号、斜杠、反斜杠、表情和 U+007F（Swift 不转义它）。
+    /// </summary>
+    private static readonly string[] SyncGolden =
+    {
+        "{\"autoEndMinutes\":5,\"id\":\"clean\",\"power\":\"normal\",\"style\":\"blackout\",\"symbol\":\"glowing-star\",\"title\":\"清洁屏幕\"}",
+        "{\"autoEndMinutes\":0,\"detail\":\"电脑正在跑任务，别动键盘和鼠标\",\"id\":\"busy\",\"power\":\"displayOn\",\"style\":\"dim\",\"symbol\":\"raised-hand\",\"title\":\"请勿触碰\"}",
+        "{\"autoEndMinutes\":0,\"id\":\"back\",\"power\":\"awake\",\"style\":\"sign\",\"symbol\":\"alarm-clock\",\"title\":\"马上回来\"}",
+        "{\"autoEndMinutes\":60,\"detail\":\"C:\\\\路径 🐱 \u007f\",\"id\":\"7F3A-B\",\"power\":\"normal\",\"style\":\"sign\",\"symbol\":\"\",\"title\":\"开会 \\\"Q4\\\" / 复盘 <ok> & 'x'\"}",
+    };
+
+    [TestMethod]
+    public void Sync_MatchesMacAndPlans()
+    {
+        var builtIn = StatusPresets.BuiltIn();
+        for (var index = 0; index < builtIn.Count; index++)
+        {
+            Assert.AreEqual(SyncGolden[index], StatusPresets.Canonical(builtIn[index]), $"自带的第 {index + 1} 个");
+        }
+
+        var custom = new StatusPreset
+        {
+            Id = "7F3A-B", Title = "开会 \"Q4\" / 复盘 <ok> & 'x'", Detail = "C:\\路径 🐱 \u007f", Symbol = string.Empty,
+            Style = StatusPresets.Sign, Power = StatusPresets.Normal, AutoEndMinutes = 60,
+        };
+        Assert.AreEqual(SyncGolden[3], StatusPresets.Canonical(custom));
+        Assert.AreEqual("7F3A-B", StatusPresetSync.Decode(SyncGolden[3])!.Id);
+        Assert.AreEqual("清洁屏幕", StatusPresetSync.JoinKey(SyncGolden[0]));
+
+        // 认不出的样式、多了个键：编回去不一样 = 更新的版本写的，不落。
+        Assert.IsNull(StatusPresetSync.Decode(SyncGolden[0].Replace("\"blackout\"", "\"glass\"")));
+        Assert.IsNull(StatusPresetSync.Decode(SyncGolden[0].Replace("{\"autoEndMinutes\"", "{\"zzz\":1,\"autoEndMinutes\"")));
+
+        // 没存过：交出去的是自带的三个 + 顺序。
+        var values = StatusPresetSync.Values(null);
+        Assert.AreEqual(4, values.Count);
+        Assert.AreEqual(SyncGolden[1], values["busy"]);
+        Assert.AreEqual("[\"clean\",\"busy\",\"back\"]", values[SyncEngine.OrderID]);
+
+        var changes = new Dictionary<string, string?>
+        {
+            ["clean"] = null,
+            ["7F3A-B"] = SyncGolden[3],
+            ["back"] = SyncGolden[2].Replace("马上回来", "午饭去了"),
+            [SyncEngine.OrderID] = "[\"7F3A-B\",\"back\",\"busy\"]",
+        };
+        var planned = StatusPresetSync.Plan(changes, null, out var failure);
+        Assert.IsNull(failure);
+        CollectionAssert.AreEqual(new[] { "7F3A-B", "back", "busy" }, planned!.Select(preset => preset.Id).ToList());
+        Assert.AreEqual("午饭去了", planned[1].Title);
+        Assert.IsNull(StatusPresetSync.Plan(new Dictionary<string, string?> { ["x"] = "{" }, null, out failure));
+        Assert.IsNotNull(failure);
+    }
+
+    [TestMethod]
+    public void Entrance_StaggersGlyphsThenRest()
+    {
+        // 4 个字：错开 0.045 s，最后一个字浮到一半（0.06 + 0.135 + 0.14）时说明和小字开始淡入，再 0.28 s 出场结束（mac StatusEntrance）。
+        var entrance = new StatusEntrance(4);
+        Assert.AreEqual(0.045, entrance.Step, 1e-12);
+        Assert.AreEqual(0.335, entrance.RestStart, 1e-12);
+        Assert.AreEqual(0.615, entrance.End, 1e-12);
+        Assert.AreEqual(0.0, entrance.Glyph(0, 0.06));
+        Assert.AreEqual(1, entrance.Glyph(0, 0.34), 1e-12);
+        Assert.AreEqual(0.875, entrance.Glyph(3, 0.06 + 0.135 + 0.14), 1e-12);
+        Assert.AreEqual(1, entrance.Glyph(9, 1), 1e-12, "多出来的字跟最后一个一起");
+
+        // 30 个字：整个标题压在 0.9 s 内开始浮现；1 个字不错开。
+        Assert.AreEqual(0.9 / 29, new StatusEntrance(30).Step, 1e-12);
+        Assert.AreEqual(0.0, new StatusEntrance(1).Step);
     }
 }

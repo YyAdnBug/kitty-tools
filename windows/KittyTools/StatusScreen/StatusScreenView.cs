@@ -3,7 +3,10 @@
 // 设置和选状态面板里的缩小预览。整屏的会话（StatusScreenHost）、每屏的窗口（StatusScreenPanel）都从这里取，尺寸按标题字号的比例：
 // 标题 = 屏高 × 0.075（夹在 44–96 DIP），表情 1.3 倍、说明 0.36 倍、小字 max(13, 0.2 倍)；图标到标题 0.3、标题到说明 0.25、到小字 0.5。
 // 永远深色（HUD 家族），只有退出提示的进度环用强调色（截图那一套不随深浅的品牌粉）。
-// ponytail: mac 的标题逐字模糊浮现、小字逐位滚动的图层动画、选中卡片长成整屏没做（标题整行入场、小字直接换）；要做先看 mac-whisker 状态屏那一节。
+// 出场（PlayEntrance，状态屏和全屏提醒共用）：表情落下弹一下、标题逐字浮现（StatusEntrance 的时间表）、说明和小字随后淡入；
+// 小字是 TickerText（变了的数字滚过去）。
+// ponytail: 标题逐字只做淡入，整行一起浮上来（mac 每个字还从模糊 8 变清楚、各自上浮：TextBlock 的 Run 只能换颜色，
+// 要做得拆成一个字一个元素、自己折行，再给每个加模糊效果）。选中卡片长成整屏不做（Windows 版全 App 不做「从小放到大」，0.1.0 用户定）。
 using KittyTools.Core;
 using KittyTools.Ui;
 using Microsoft.UI;
@@ -41,7 +44,77 @@ internal static class StatusScreenView
 
         public TextBlock? Detail { get; init; }
 
-        public required TextBlock Footer { get; init; }
+        public required TickerText Footer { get; init; }
+    }
+
+    /// <summary>
+    /// 出场（mac Z16a）：表情落下并弹一下（pop）、标题逐字淡入且整行浮上来（glide）、说明和小字等最后一个字浮到一半时淡入。
+    /// animates：做不做逐字（mac screen.animates：状态屏的动画开着、没有减弱动态效果）；不做时标题整行入场（Motion 自己降级）。
+    /// </summary>
+    public static void PlayEntrance(Column column, bool animates)
+    {
+        if (column.Emoji is { } emoji)
+        {
+            Motion.Entrance(emoji, MotionCurve.Pop, rise: -24);
+        }
+
+        Motion.Entrance(column.Title, MotionCurve.Glide, rise: (float)(column.Title.FontSize * 0.1));
+        var entrance = new StatusEntrance(new System.Globalization.StringInfo(column.Title.Text).LengthInTextElements);
+        var emerges = animates && !Motion.Reduced;
+        if (emerges)
+        {
+            EmergeTitle(column.Title, entrance);
+        }
+
+        var restDelay = (int)Math.Round((emerges ? entrance.RestStart : 0.18) * 1000);
+        if (column.Detail is { } detail)
+        {
+            Motion.FadeIn(detail, StatusEntrance.RestSpan, restDelay);
+        }
+
+        Motion.FadeIn(column.Footer, StatusEntrance.RestSpan, restDelay + 60);
+    }
+
+    /// <summary>
+    /// 标题逐字淡入（mac GlyphEmerge 的简化）：每个字一个 Run、各自一支画刷，每帧按 StatusEntrance.Glyph 设透明度；
+    /// 播完换回整行文字（不留几十支画刷），播的时候窗口关了也只多跑到 End 为止。
+    /// </summary>
+    private static void EmergeTitle(TextBlock title, StatusEntrance entrance)
+    {
+        var text = title.Text;
+        var brushes = new List<SolidColorBrush>();
+        title.Inlines.Clear();
+        var enumerator = System.Globalization.StringInfo.GetTextElementEnumerator(text);
+        while (enumerator.MoveNext())
+        {
+            var brush = new SolidColorBrush(ColorHelper.FromArgb(0, HudText.R, HudText.G, HudText.B));
+            brushes.Add(brush);
+            title.Inlines.Add(new Microsoft.UI.Xaml.Documents.Run { Text = enumerator.GetTextElement(), Foreground = brush });
+        }
+
+        var started = System.Diagnostics.Stopwatch.GetTimestamp();
+
+        void Tick(object? sender, object args)
+        {
+            var time = System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalSeconds;
+            if (time >= entrance.End)
+            {
+                CompositionTarget.Rendering -= Tick;
+                title.Text = text;
+                return;
+            }
+
+            for (var index = 0; index < brushes.Count; index++)
+            {
+                var alpha = (byte)Math.Round(255 * entrance.Glyph(index, time));
+                if (brushes[index].Color.A != alpha)
+                {
+                    brushes[index].Color = ColorHelper.FromArgb(alpha, HudText.R, HudText.G, HudText.B);
+                }
+            }
+        }
+
+        CompositionTarget.Rendering += Tick;
     }
 
     /// <summary>
@@ -125,17 +198,15 @@ internal static class StatusScreenView
             root.Children.Add(detail);
         }
 
-        var footerText = new TextBlock
+        // 小字：做着动画的整屏里变了的数字滚过去（TickerText；已经多久往上滚，倒数往下滚），预览里直接换。
+        var footerText = new TickerText(
+            Math.Max(13, title * 0.2), new SolidColorBrush(HudSecondary), animated, preset.AutoEndMinutes > 0 ? -1 : 1)
         {
-            Text = footer ?? string.Empty,
-            FontSize = Math.Max(13, title * 0.2),
-            Foreground = new SolidColorBrush(HudSecondary),
-            TextTrimming = TextTrimming.CharacterEllipsis,
-            MaxLines = 1,
             HorizontalAlignment = HorizontalAlignment.Center,
             Margin = new Thickness(0, title * 0.5, 0, 0),
             Visibility = footer is null ? Visibility.Collapsed : Visibility.Visible,
         };
+        footerText.Text = footer ?? string.Empty;
         root.Children.Add(footerText);
         return new Column { Root = root, Title = titleText, Emoji = emoji, Detail = detail, Footer = footerText };
     }

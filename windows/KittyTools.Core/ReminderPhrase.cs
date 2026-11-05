@@ -405,6 +405,7 @@ public static class ReminderLauncher
                 Subtitle = Reminders.Summary(reminder, nowUtc, zone) + (reminder.IsOn ? string.Empty : " · 已暂停"),
                 Payload = reminder.IsOn ? "on" : "off",
                 Note = "提醒",
+                Emoji = reminder.Symbol.Length > 0 ? reminder.Symbol : null,
             });
         return create.Concat(existing).Concat(hint).ToList();
     }

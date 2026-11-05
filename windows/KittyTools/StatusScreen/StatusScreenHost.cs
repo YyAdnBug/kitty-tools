@@ -4,6 +4,7 @@
 // 定位是告示加防误触，不是安全措施：Ctrl+Alt+Del、Win+L 拦不住；忘了密码就锁屏再解锁（解锁即结束）。
 // 入口：托盘、主界面、启动器直接 Enter；全局快捷键默认先出选状态的面板（StatusPicker），设置里开了「直接进入」就进排在最前面的那个。
 // 退出之后拦截留到按着的键松开才撤（最多 2 秒），不然按住的 Esc 连发会落进前台程序。
+// 进入后鼠标指针藏起来，挪一下就回来（mac setHiddenUntilMouseMoves；PLAN-v12 第 7 批）。
 // **测试和自检绝不能真的进入**：RunProbeAsync 用 InputBlock 的 Probe 模式（只吞带标记的注入事件，真的键盘鼠标照常放行），
 // 只在自检档里、由 --status-screen-probe 打开（ShellRuntime）。
 using System.Runtime.InteropServices;
@@ -197,6 +198,11 @@ internal static partial class StatusScreenHost
             return "屏幕上的告示没建起来";
         }
 
+        if (!probe)
+        {
+            HideCursor();
+        }
+
         SetPower(preset.Power);
         _tickTimer = Timer(1000, repeating: true, Tick);
         if (preset.AutoEndMinutes > 0)
@@ -354,6 +360,7 @@ internal static partial class StatusScreenHost
     /// <summary>鼠标挪了：一阵里（中间停不超过 1 秒）累计超过 40 DIP 就浮出退出提示。</summary>
     private static void OnMouseMoved(int x, int y)
     {
+        RevealCursor();
         if (!Active || _locked)
         {
             return;
@@ -654,6 +661,7 @@ internal static partial class StatusScreenHost
         }
 
         Panels.Clear();
+        RevealCursor();
         // 按着的键（按住退出的 Esc / 左键）还没松：拦截留到松开，最多 2 秒；App 要退出、没有键按着就当场撤。
         if (reason == StatusExitReason.Quit || !_hold.IsAnythingDown(Environment.TickCount64))
         {
@@ -757,4 +765,34 @@ internal static partial class StatusScreenHost
 
     [LibraryImport("kernel32.dll")]
     private static partial uint SetThreadExecutionState(uint flags);
+
+    // ---- 鼠标指针
+
+    private static bool _cursorHidden;
+
+    /// <summary>
+    /// 藏起鼠标指针。ShowCursor 的计数跟着本线程走：只在指针停在本线程的窗口（每块屏的告示、压暗层）上时藏得住——正好就是状态屏盖着的时候；
+    /// 一藏一放成对（_cursorHidden），计数不会越减越多。
+    /// </summary>
+    private static void HideCursor()
+    {
+        if (!_cursorHidden)
+        {
+            ShowCursor(false);
+            _cursorHidden = true;
+        }
+    }
+
+    /// <summary>挪了鼠标、退出时放回来。</summary>
+    private static void RevealCursor()
+    {
+        if (_cursorHidden)
+        {
+            ShowCursor(true);
+            _cursorHidden = false;
+        }
+    }
+
+    [LibraryImport("user32.dll")]
+    private static partial int ShowCursor([MarshalAs(UnmanagedType.Bool)] bool show);
 }

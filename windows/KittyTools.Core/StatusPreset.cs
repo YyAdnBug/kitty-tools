@@ -5,7 +5,9 @@
 // 样式、电源存字符串（blackout / sign / dim、normal / awake / displayOn），和 mac 的 JSON 一字不差：设置导出文件、同步文件夹两边互读。
 // 设置 › 状态屏改列表用的几个纯函数（加、删、挪、恢复自带的、详情改一个）和列表行的摘要也在这里。
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
+using KittyTools.Core.Sync;
 
 namespace KittyTools.Core;
 
@@ -272,6 +274,34 @@ public static class StatusPresets
     }
 
     // ---- JSON（设置导出文件、同步文件夹；键名和 mac 的 Codable 一样，没有说明时不写 detail）
+
+    /// <summary>
+    /// 同步文件夹里的一行（PLAN-v12 第 7 批，mac SyncRecords.encoder：键排好序、不转义斜杠，字符串转义同 Swift 的 JSONEncoder），
+    /// 和 mac 编出来的一字不差（单测 StatusPresetSyncTests 的 golden 是在 Mac 上真编的）。
+    /// </summary>
+    public static string Canonical(StatusPreset preset)
+    {
+        var builder = new StringBuilder(160);
+        builder.Append("{\"autoEndMinutes\":").Append(preset.AutoEndMinutes.ToString(CultureInfo.InvariantCulture));
+        if (preset.Detail is { } detail)
+        {
+            builder.Append(",\"detail\":");
+            CanonicalJson.WriteString(detail, builder);
+        }
+
+        builder.Append(",\"id\":");
+        CanonicalJson.WriteString(preset.Id, builder);
+        builder.Append(",\"power\":");
+        CanonicalJson.WriteString(preset.Power, builder);
+        builder.Append(",\"style\":");
+        CanonicalJson.WriteString(preset.Style, builder);
+        builder.Append(",\"symbol\":");
+        CanonicalJson.WriteString(preset.Symbol, builder);
+        builder.Append(",\"title\":");
+        CanonicalJson.WriteString(preset.Title, builder);
+        builder.Append('}');
+        return builder.ToString();
+    }
 
     public static void Write(Utf8JsonWriter writer, StatusPreset preset)
     {

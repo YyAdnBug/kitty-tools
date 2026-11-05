@@ -375,3 +375,39 @@ public static class ReminderAlerts
         return (string.Join(" · ", fired.Select(reminder => reminder.Title)), detail);
     }
 }
+
+/// <summary>
+/// 提醒边框的渐变和呼吸（PLAN-v12 第 7 批，照 mac ReminderGlow）：贴着屏幕边那头 0.85、往里 Depth 淡到 0（线性，同 CAGradientLayer）；
+/// 出现先淡入 FadeIn 秒，之后透明度在 1 和 0.35 之间来回（单程 1.2 s、缓入缓出），减弱动态效果时只亮着。
+/// </summary>
+public static class ReminderGlowCurve
+{
+    public const double Depth = 28;
+    public const double EdgeAlpha = 0.85;
+    public const double Breath = 1.2;
+    public const double Dimmest = 0.35;
+
+    /// <summary>离屏幕边 distance 个像素（像素中心）的那一行的不透明度；depth 是这条的厚度（像素）。</summary>
+    public static double Alpha(int distance, int depth)
+        => depth <= 0 ? 0 : EdgeAlpha * Math.Clamp(1 - (distance + 0.5) / depth, 0, 1);
+
+    /// <summary>出现后 seconds 秒时整条的透明度（0–1）。</summary>
+    public static double Opacity(double seconds, bool reduced)
+    {
+        var fade = MotionCurves.FadeInSeconds;
+        if (seconds < fade)
+        {
+            return Math.Max(0, seconds / fade);
+        }
+
+        if (reduced)
+        {
+            return 1;
+        }
+
+        var phase = (seconds - fade) / Breath % 2;
+        var progress = phase <= 1 ? phase : 2 - phase;
+        var eased = (1 - Math.Cos(Math.PI * progress)) / 2;
+        return 1 - (1 - Dimmest) * eased;
+    }
+}

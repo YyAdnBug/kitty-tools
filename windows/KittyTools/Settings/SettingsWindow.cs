@@ -322,6 +322,11 @@ internal sealed partial class SettingsWindow : Window
 
     private List<TranslateServiceConfig>? _shownServices;
 
+    /// <summary>状态屏页、提醒页建页时设置里的那两张列表（同步换了就重建，PLAN-v12 第 7 批）。</summary>
+    private List<KittyTools.Core.StatusPreset>? _shownStatuses;
+
+    private List<KittyTools.Core.Reminder>? _shownReminders;
+
     /// <summary>
     /// 一轮同步结束：开着的是网页搜索或翻译那一页、它的列表又被同步换了，就重建这一页（第四轮体检 E19，mac 设置页跟着偏好走）。
     /// 窗口在后台时照旧等切回来；开着对话框 / 下拉框、正在录快捷键时先不动——改完存的时候 Save 会发现列表换过了。
@@ -337,6 +342,8 @@ internal sealed partial class SettingsWindow : Window
         {
             "launcher" => !ReferenceEquals(SettingsService.Current.LauncherSearchEngines, _shownEngines),
             "translate" => TranslateServiceStore.Instance is { } store && !ReferenceEquals(store.Services, _shownServices),
+            "statusScreen" => !ReferenceEquals(SettingsService.Current.StatusScreenPresets, _shownStatuses),
+            "reminders" => !ReferenceEquals(SettingsService.Current.Reminders, _shownReminders),
             _ => false,
         };
         if (!replaced)
@@ -1129,8 +1136,8 @@ internal sealed partial class SettingsWindow : Window
 
     /// <summary>
     /// 设置 › 通用 › 同步（PLAN-v5 §4.4；布局照 mac SyncSection）：没开时一行「选择文件夹…」；开着时文件夹 +「停止同步」+
-    /// 「立即同步」（等确认时换成「继续同步」），说明是状态，出了问题橙字；下面各类（PLAN-v12 加了提醒，五类）各一个开关，跟着的功能关着时说一声；最后是其他电脑。
-    /// mac 另外能同步设置、便签、状态屏和启动器收藏，Windows 这一版只有这五类（MAC-DIFF.md）。
+    /// 「立即同步」（等确认时换成「继续同步」），说明是状态，出了问题橙字；下面各类（PLAN-v12 加了状态屏的状态和提醒，六类）各一个开关，跟着的功能关着时说一声；最后是其他电脑。
+    /// mac 另外能同步设置、便签和启动器收藏，Windows 这一版只有这六类（MAC-DIFF.md）。
     /// </summary>
     private void BuildSyncSection()
     {
@@ -1206,7 +1213,9 @@ internal sealed partial class SettingsWindow : Window
                 settings.SyncEngines, value => settings.SyncEngines = value, others);
             AddSyncPart(Core.Sync.ServiceSync.Kind, "翻译服务", "哪几个服务、顺序和设置；密钥不同步，别的电脑上要自己填一次", Feature.Translate,
                 settings.SyncServices, value => settings.SyncServices = value, others);
-            AddSyncPart(Core.Sync.ReminderSync.Kind, "提醒", "提醒列表；推迟、暂停这些每台电脑各管各的", Feature.Reminders,
+            AddSyncPart(Core.Sync.StatusPresetSync.Kind, "状态屏的状态", "状态屏里自己写的那几个状态", Feature.StatusScreen,
+                settings.SyncStatuses, value => settings.SyncStatuses = value, others);
+            AddSyncPart(Core.Sync.ReminderSync.Kind, "提醒", "有哪些提醒、各自的时间和方式；两台都开着时两台都响", Feature.Reminders,
                 settings.SyncReminders, value => settings.SyncReminders = value, others);
 
             var peers = status is { Devices.Count: > 0 }
@@ -1250,7 +1259,7 @@ internal sealed partial class SettingsWindow : Window
 
     /// <summary>「合在一起后……」：第一次选文件夹时、勾上还没合过的一类时共用（mac SyncSection.joinNote，去掉 Windows 不同步的几类）。</summary>
     private const string JoinNote =
-        "合在一起后，这台电脑上的片段、收藏、生词、网页搜索、翻译服务和提醒会和它们的一起出现在每台电脑上（同样的不重复）；" +
+        "合在一起后，这台电脑上的片段、收藏、生词、网页搜索、翻译服务、状态屏的状态和提醒会和它们的一起出现在每台电脑上（同样的不重复）；" +
         "之后同一条两边都改过的，后改的留下。";
 
     private async Task<bool> ConfirmJoinAsync(string title, string? lead)
@@ -2834,7 +2843,7 @@ internal sealed partial class SettingsWindow : Window
             BorderThickness = new Thickness(0),
             Visibility = binding.VirtualKey == 0 ? Visibility.Collapsed : Visibility.Visible,
         };
-        AutomationProperties.SetName(clear, $"清除「{definition.DisplayName}」的快捷键");
+        AutomationProperties.SetName(clear, $"清除「{SettingsDefaults.RowTitle(action)}」的快捷键");
         ToolTipService.SetToolTip(clear, "清除");
         clear.Click += (_, _) => ClearHotKey(action);
         var recorder = new Grid { VerticalAlignment = VerticalAlignment.Center };
@@ -2842,7 +2851,7 @@ internal sealed partial class SettingsWindow : Window
         recorder.Children.Add(clear);
 
         var card = SettingsUi.Card(
-            definition.DisplayName, failure ?? string.Empty, recorder, leading: HotKeyTile(action), problem: failure is not null);
+            SettingsDefaults.RowTitle(action), failure ?? string.Empty, recorder, leading: HotKeyTile(action), problem: failure is not null);
         _hotKeyCards[action] = card;
         return card;
     }
@@ -2850,7 +2859,7 @@ internal sealed partial class SettingsWindow : Window
     /// <summary>录制框里显示的：录着时「按下快捷键」（强调色边），平时是键帽 / 未设置。</summary>
     private void ShowBinding(Button box, string action)
     {
-        var name = SettingsDefaults.Find(action)?.DisplayName ?? action;
+        var name = SettingsDefaults.RowTitle(action);
         if (_recordingAction == action)
         {
             box.Content = new TextBlock { Text = "按下快捷键", Foreground = Theme.SecondaryText() };

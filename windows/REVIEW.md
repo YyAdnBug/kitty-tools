@@ -12,24 +12,24 @@
 
 清单和分批在 `PLAN-v12.md`（不是拍板页，行为照 mac）；分工同 PLAN-v11 D10。
 
-### 给 Windows agent 的核验指令（PLAN-v12 第 1–6 批 + `83040384`，审查方 2026-11-05）
+### 给 Windows agent 的核验指令（PLAN-v12 第 1–7 批 + `83040384`，审查方 2026-11-05）
 
 这几批连同 `83040384`（用户反馈 2026-11-04 那一节）都是审查方在 Mac 上写的，**一行都没编译过**。2026-11-05 用户定：窗口、合成、输入钩子这次也在 Mac 上写，你们只编译、核验、修编译错和屏幕上不对的地方。按下面的顺序做，改了什么在对应那批下面记一句（改了什么、为什么）。
 
-1. **拿代码**：`git fetch origin && git rebase origin/windows`；`git log --oneline --grep "PLAN-v12"` 应该有第 1–6 批六个提交，`83040384` 也在。
+1. **拿代码**：`git fetch origin && git rebase origin/windows`；`git log --oneline --grep "PLAN-v12"` 应该有第 1–7 批七个提交，`83040384` 也在。
 2. **编译零警告**：`dotnet build windows/KittyTools.slnx -c Debug -p:Platform=x64`；`dotnet publish windows/KittyTools/KittyTools.csproj -c Release -r win-x64` 和 `-r win-arm64`，零 trim / AOT 警告；
    发布目录里有 `KittyTools.pri`、`Microsoft.UI.Xaml.Controls.pri`、`Resources\StatusEmoji\`（34 张 PNG + `manifest.txt` + `LICENSE.txt`）。各批「要特别看的编译点」写在那一批下面。
-3. **单测**：`dotnet test windows/KittyTools.Tests` 全过。新加 / 重写的：`ExchangeRatesTests` 11、`ScrollPacerTests` 13、`PlanV12Batch2Tests` 4、`StatusScreenTests` 15、`ReminderTests` 14。
-   `ReminderTests.Canonical_MatchesMacByteForByte` 是和 mac 互通的底线，过不了先把实际输出贴在第 5 批下面，别改 golden。**不许为了变绿删测试、改断言。**
+3. **单测**：`dotnet test windows/KittyTools.Tests` 全过。新加 / 重写的：`ExchangeRatesTests` 11、`ScrollPacerTests` 13、`PlanV12Batch2Tests` 4、`StatusScreenTests` 17、`ReminderTests` 16。
+   `ReminderTests.Canonical_MatchesMacByteForByte`、`StatusScreenTests.Sync_MatchesMacAndPlans` 是和 mac 互通的底线，过不了先把实际输出贴在那一批下面，别改 golden。**不许为了变绿删测试、改断言。**
 4. **状态屏只走自检**：`KittyTools.exe --status-screen-probe=<临时目录>`（测试档；Probe 模式只吞带标记的注入事件，真的键盘鼠标照常能用，屏幕会被盖住约 15 秒）。
    任何测试、自检、截图脚本都**不许真的进入状态屏**；提醒的「进入状态屏」也一样。要真进入的手测条目留给用户，标「没测」。
-5. **手测**（`HANDTEST.md`）：906–917（`83040384`，自动滚动那半照 932 起那一节走）、918–931（第 1 批）、932–951（第 2 批）、952–976（第 3 批）、977–981（第 4 批）、982–999（第 5 批）、1000–1014（第 6 批）。
-   要真鼠标拖、真按键、等到点、第二块屏、真的 Mac 的，能做的做，做不了的标「没测」留给用户；结果写在那一条后面。同步（1013）只用临时文件夹和假数据，不碰用户真实的同步文件夹。
-6. **截图**：各批一个目录推到 `windows-shots`：`0.2.0-feedback-1104/`、`0.2.0-v12-batch-1/`、`0.2.0-v12-batch-2/`、`0.3.0-v12-batch-3/`、`0.3.0-v12-batch-4/`、`0.3.0-v12-batch-5/`、`0.3.0-v12-batch-6/`，要哪几张写在那批的「你们做的」里。
+5. **手测**（`HANDTEST.md`）：906–917（`83040384`，自动滚动那半照 932 起那一节走）、918–931（第 1 批）、932–951（第 2 批）、952–976（第 3 批）、977–981（第 4 批）、982–999（第 5 批）、1000–1014（第 6 批）、1015–1030（第 7 批）。
+   要真鼠标拖、真按键、等到点、第二块屏、真的 Mac 的，能做的做，做不了的标「没测」留给用户；结果写在那一条后面。同步（1013、1015）只用临时文件夹和假数据，不碰用户真实的同步文件夹。
+6. **截图**：各批一个目录推到 `windows-shots`：`0.2.0-feedback-1104/`、`0.2.0-v12-batch-1/`、`0.2.0-v12-batch-2/`、`0.3.0-v12-batch-3/`、`0.3.0-v12-batch-4/`、`0.3.0-v12-batch-5/`、`0.3.0-v12-batch-6/`、`0.3.0-v12-batch-7/`，要哪几张写在那批的「你们做的」里。
    先在 `../kitty-shots` 里 `git fetch origin && git reset --hard origin/windows-shots`；只截自己的窗口（状态屏、提醒全屏的图用自检出的），推之前自己看一遍。
-7. **自查**：内存探针（`KITTY_MEMORY_PROBE=1`，和 `1986a4b5` 比，哪一项涨超过 5 MB 写原因）；只有托盘静置 60 s 空闲 CPU 为 0（有开着的间隔提醒时每分钟看一次空闲，不算）；
+7. **自查**：内存探针（`KITTY_MEMORY_PROBE=1`，和 `1986a4b5` 比，哪一项涨超过 5 MB 写原因）；只有托盘静置 60 s 空闲 CPU 为 0（有开着的间隔提醒时每分钟看一次空闲，不算；提醒边框挂着时 30 Hz 换透明度，收起后回到 0）；
    新日志里没有剪贴板内容、原文、译文、URL、提醒和状态的标题。
-8. **版本**：第 1–2 批是 0.2.0、第 3–6 批是 0.3.0；版本号、更新日志、`build-release.ps1` 等这几批核验完再一起定，**不发布、不打 tag**。
+8. **版本**：第 1–2 批是 0.2.0、第 3–7 批是 0.3.0；版本号、更新日志、`build-release.ps1` 等这几批核验完再一起定，**不发布、不打 tag**。
 
 ### 第 1 批：启动器汇率换算（N1）→ 已写（审查方，`git log --grep "PLAN-v12 第 1 批"`，没编译）
 
@@ -184,7 +184,45 @@
 3. 截图：启动器「提醒 10分钟 喝水」、「提醒 」列全部、认不出时间那行、托盘「提醒」子菜单（只截菜单）、主界面那一格、速查表那一类、设置 › 通用 › 同步多出的那一行（浅 / 深），推 `windows-shots` 的 `0.3.0-v12-batch-6/`。
 
 **替用户定的**：「N 分钟后提醒我」「暂停全部」放在托盘子菜单（mac 在菜单栏菜单）；启动器里的提醒行是琥珀色块 + 提醒图标，不是每条自己的表情（同第 4 批状态行的 ponytail）；
-已有提醒按 Enter 是打开 / 暂停（不是打开编辑框，编辑走 Ctrl+Enter）；同步「提醒」默认开、跟着提醒功能的开关走。状态屏的状态列表（mac 也同步）这一版**没接进同步**，导出导入照第 3 批已有。
+已有提醒按 Enter 是打开 / 暂停（不是打开编辑框，编辑走 Ctrl+Enter）；同步「提醒」默认开、跟着提醒功能的开关走。状态屏的状态列表的同步在第 7 批补上了。
+
+### 第 7 批：补齐状态屏和提醒剩下的 → 已写（审查方，`git log --grep "PLAN-v12 第 7 批"`，没编译）
+
+用户 2026-11-05：「先继续剩下的，然后 Windows 的 agent 在一起检查」。第 3–6 批报告里「没做 / ponytail」的几项，除了用户定过不做的（选中卡片长成整屏）和长期例外（透出样式不冒眼睛）都补上了：
+
+- **状态屏的状态接进同步**（mac `StatusPresetSync`）：`Core/Sync/StatusPresetSync.cs`（一个状态一条、顺序一条、第一次合标题一样的只留一个；没存过交出去的是自带的三个，同 mac）、
+  `StatusPresets.Canonical`（mac `SyncRecords.encoder` 那一行，golden 在 Mac 上真编的）；`SyncFolder.StatusSource`、`Settings.SyncStatuses`（默认开）、设置 › 通用 › 同步多一行「状态屏的状态」（说明同 mac），
+  `SyncRunner.Title`、`SyncFolderRules.IsSyncedKind` 认 `statuses`。提醒那一行的说明也换成 mac 的。
+- 设置 › 状态屏 / 提醒 页开着时列表被同步换了就重建（`OnSyncChanged` 多认这两页）；保存前比一次引用，旧了就提示、重建、不写（同网页搜索 E19）。
+- **启动器里状态和提醒的行画自己的表情**（mac `presetEmoji`）：`LauncherItem.Emoji`，`LauncherRowView.Icon` 先看它（`StatusEmoji.Still`），没选表情的照旧是色块。
+  顺手修：设置页和启动器判断深色用的是 `Theme.ElementTheme`（「跟随系统」时是 Default，深色系统下「开会」「黑猫」不垫浅底），换成 `Theme.EffectiveTheme`。
+- **提醒边框改成渐变 + 呼吸**（mac `ReminderGlow`）：`Reminders/ReminderGlow.cs` 重写成 `UpdateLayeredWindow` 逐像素透明的四条窄窗（28 DIP，贴边 0.85 → 0，预乘 alpha；位图交给系统后当场放掉），
+  呼吸只换整体透明度（不带位图的 `UpdateLayeredWindow`），UI 线程 30 Hz 计时器按 `Core/ReminderGlowCurve` 算；减弱动态效果时淡入完停表。
+- **提示音**：`Reminders.WindowsChimes`——mac 的 14 个名字各对一个 `%WINDIR%\Media` 里的声音（叫法按 Windows 的声音起，存的照旧是 mac 的名字），编辑框里声音选「提示音」时多一个下拉框、选了试听；
+  `ReminderCenter.PlayChime`（文件没有就放系统的通知声）。
+- **标题逐字浮现**（mac `GlyphEmerge` + `StatusEntrance`）：`Core/StatusScreenRules.cs` 的 `StatusEntrance` 时间表；`StatusScreenView.PlayEntrance`（状态屏和全屏提醒共用）把标题拆成每字一个 `Run`、
+  每帧（`CompositionTarget.Rendering`）按时间表设各自画刷的透明度，播完换回整行；整行同时浮上来字号的 0.1。只在状态屏的动画开着、没减弱动态效果时做（同 mac `screen.animates`）。
+  ponytail：没有逐字模糊、逐字上浮（Run 只能换颜色）。
+- **小字的数字滚过去**（mac `Ticker`）：`Shell/Ui/TickerText.cs`，变了的数字旧的滑出去淡掉、新的从另一边滑进来（`Motion.SlideFrom/SlideTo/Fade`，snap、0.12 s），已经多久往上、倒数往下；
+  不做动画的地方整行一个 TextBlock。`StatusScreenView.Column.Footer` 的类型换成它（调用处只用 `.Text`）。
+- **全屏提醒原地换内容**：又合进一条时压暗层和窗口都不动，底板里换成新的一列重新出场（`ReminderScreen.Fill`）。
+- **状态屏藏鼠标指针**（mac `setHiddenUntilMouseMoves`）：进入后 `ShowCursor(false)`，钩子报来第一下挪动就放回来，退出时一定放回；自检（Probe）不藏。
+- 快捷键页、速查表里状态屏那一行照它实际做的事写（mac `rowTitle`）：「选一个状态进入」/「进入排在最前面的状态」（`SettingsDefaults.RowTitle`）。
+- 单测：`StatusScreenTests` 加 `Sync_MatchesMacAndPlans`（golden 4 行）、`Entrance_StaggersGlyphsThenRest`；`ReminderTests` 加 `Glow_GradientAndBreath`、`Chimes_EveryMacNameHasItsOwnWindowsSound`。
+  MAC-DIFF 状态屏那节更新、加了提醒一节。HANDTEST 1015–1030。
+
+**你们做的**：
+1. 编译零警告、`dotnet test` 全过。要看的编译点：`ReminderGlow` 的 `BitmapInfo`（头 40 字节 + 一个颜色表位置）、`UpdateLayeredWindow` 传 null 指针的那次调用；
+   `TickerText` 重写的 `OnCreateAutomationPeer`（Grid 的子类）；`StatusScreenView.EmergeTitle` 往 `TextBlock.Inlines` 加 `Run` 再换回 `Text`；`ReminderScreen.Fill` 里 `IsLoaded` 分两路；
+   `StatusScreenHost.ShowCursor` 的 `LibraryImport`。
+2. 屏幕上要看的：边框是渐变不是实色、在呼吸、四个角略亮、点得穿（分层窗要是整条黑 / 整条不显示，先看 `reminder.glow-update-failed` 日志和预乘）；
+   标题逐字淡入有没有闪一下整行（`Inlines` 换回 `Text` 那一帧）；小字滚动时宽度不跳（Segoe UI 的数字等宽）；全屏提醒合进一条时压暗层不闪；状态屏自检里指针不藏（自检不藏是对的）。
+   每样只在自检档（`--status-screen-probe`）和真的到点的提醒里看，**别真的进入状态屏**。
+3. 截图 / 短视频推 `windows-shots` 的 `0.3.0-v12-batch-7/`：边框（只截一条边的窗口）、启动器带表情的状态行和提醒行（浅 / 深）、编辑框的提示音下拉框、同步那一节多出的一行；
+   标题逐字浮现、小字滚动各录 3 秒（自检档、只录告示那块屏）。
+
+**替用户定的**：14 个提示音对哪个 Windows 声音、叫什么（`Reminders.WindowsChimes`，第一个是系统的通知声）；边框的呼吸用 UI 线程计时器（不上 DirectComposition）；
+标题逐字只做淡入（没有模糊）；小字滚动一个字一个 TextBlock；设置页那两张列表被换掉时的提示文字；状态的同步默认开。
 
 ## PLAN-v11（0.1.0 之后还没做的，2026-11-03 用户「全部按推荐」）
 

@@ -22,9 +22,18 @@ internal sealed partial class SettingsWindow
         AddFeatureToggle(Feature.Reminders);
         var settings = SettingsService.Current;
         var reminders = Reminders.Load(settings.Reminders);
+        _shownReminders = settings.Reminders;
 
         void Persist(List<Reminder> next)
         {
+            // 页面开着时列表被换了（同步过来的、启动器 / 托盘新建的、一次性的响完删掉的；同网页搜索 E19）：别拿建页时那份盖掉。
+            if (!ReferenceEquals(settings.Reminders, _shownReminders))
+            {
+                NoticeHost.Show("提醒列表刚变过", "这一页换成了最新的，再改一次", NoticeTone.Warning);
+                BuildPage("reminders");
+                return;
+            }
+
             settings.Reminders = Reminders.Sanitized(next);
             SettingsService.Save();
             BuildPage("reminders");
@@ -84,7 +93,7 @@ internal sealed partial class SettingsWindow
     private Border ReminderRow(List<Reminder> reminders, int index, Action<List<Reminder>> persist)
     {
         var reminder = reminders[index];
-        var dark = Theme.ElementTheme == ElementTheme.Dark;
+        var dark = Theme.EffectiveTheme == ElementTheme.Dark;
         FrameworkElement leading = reminder.Symbol.Length > 0
             ? StatusEmoji.Still(reminder.Symbol, 24, dark)
             : KindTile.Create("reminders", FeatureIcons.Reminders, 24);
@@ -162,7 +171,7 @@ internal sealed partial class SettingsWindow
         var hint = new TextBlock { FontSize = Theme.FontSize("Kitty.FontSize.Label"), TextWrapping = TextWrapping.Wrap };
 
         // 图标格子（同状态屏）：「无」+ 16 个表情。
-        var dark = Theme.ElementTheme == ElementTheme.Dark;
+        var dark = Theme.EffectiveTheme == ElementTheme.Dark;
         var icons = new VariableSizedWrapGrid { Orientation = Orientation.Horizontal, MaximumRowsOrColumns = 9, ItemWidth = 44, ItemHeight = 44 };
         var iconButtons = new List<(string Id, Button Button)>();
         void SelectIcon(string id)
@@ -240,6 +249,16 @@ internal sealed partial class SettingsWindow
         status.SelectedIndex = Math.Max(0, presets.FindIndex(preset => preset.Id == draft.StatusID));
         var sound = new ComboBox { Header = "声音", ItemsSource = Reminders.Sounds.Select(Reminders.SoundTitle).ToList(), MinWidth = 160 };
         sound.SelectedIndex = Math.Max(0, Array.IndexOf(Reminders.Sounds, draft.Sound));
+        var chime = new ComboBox { Header = "提示音", ItemsSource = Reminders.WindowsChimes.Select(item => item.Title).ToList(), MinWidth = 160 };
+        chime.SelectedIndex = Math.Max(0, Array.FindIndex(Reminders.WindowsChimes, item => item.Name == draft.Chime));
+        chime.SelectionChanged += (_, _) =>
+        {
+            // 选了就试听一声（mac 同样）。
+            if (chime.SelectedIndex >= 0)
+            {
+                ReminderCenter.PlayChime(Reminders.WindowsChimes[chime.SelectedIndex].Name);
+            }
+        };
         var nag = new ComboBox
         {
             Header = "没理会时再催",
@@ -252,7 +271,7 @@ internal sealed partial class SettingsWindow
         foreach (var element in new UIElement[]
                  {
                      title, detail, new TextBlock { Text = "图标" }, icons, kind, date, days, time, until, monthDay, every, alert, alertNote,
-                     fullSeconds, status, sound, nag, SettingsUi.Footnote("催到第 3 次换成全屏；声音只响一声，提示音是系统的通知声。"), hint,
+                     fullSeconds, status, sound, chime, nag, SettingsUi.Footnote("催到第 3 次换成全屏；声音只响一声。"), hint,
                  })
         {
             panel.Children.Add(element);
@@ -295,6 +314,8 @@ internal sealed partial class SettingsWindow
             draft.FullSeconds = Reminders.FullChoices[Math.Max(0, fullSeconds.SelectedIndex)];
             draft.StatusID = presets.Count > 0 ? presets[Math.Max(0, status.SelectedIndex)].Id : string.Empty;
             draft.Sound = Reminders.Sounds[Math.Max(0, sound.SelectedIndex)];
+            draft.Chime = Reminders.WindowsChimes[Math.Max(0, chime.SelectedIndex)].Name;
+            chime.Visibility = Show(draft.Sound == Reminder.SoundChime);
             draft.NagMinutes = Reminders.NagChoices[Math.Max(0, nag.SelectedIndex)];
 
             // 按种类露出要填的那几样。
@@ -316,7 +337,7 @@ internal sealed partial class SettingsWindow
 
         title.TextChanged += (_, _) => Refresh();
         detail.TextChanged += (_, _) => Refresh();
-        foreach (var box in new[] { kind, monthDay, every, alert, fullSeconds, status, sound, nag })
+        foreach (var box in new[] { kind, monthDay, every, alert, fullSeconds, status, sound, chime, nag })
         {
             box.SelectionChanged += (_, _) => Refresh();
         }

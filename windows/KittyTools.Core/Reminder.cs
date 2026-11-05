@@ -148,7 +148,7 @@ public sealed class Reminder
 
     public string Sound { get; set; } = SoundChime;
 
-    /// <summary>mac 的提示音名（Reminders.Chimes 里的一个）：Windows 上一律放系统的通知声，名字照存（同步不丢）。</summary>
+    /// <summary>mac 的提示音名（Reminders.Chimes 里的一个）：Windows 上放 Reminders.WindowsChimes 里对应的那个声音，名字照存（同步不丢）。</summary>
     public string Chime { get; set; } = Reminders.DefaultChime;
 
     /// <summary>没理会时每隔几分钟再催一次（NagChoices 里的一个；0 = 不催）。</summary>
@@ -189,6 +189,32 @@ public static class Reminders
     };
 
     public const string DefaultChime = "Glass";
+
+    /// <summary>
+    /// Windows 上每个提示音名放哪个声音、界面上叫什么（PLAN-v12 第 7 批）：存的照旧是 mac 的名字（同步、导入两边认得），
+    /// 放的是 %WINDIR%\Media 里意思最接近的那个，叫法按 Windows 的声音起；文件不在（精简过的系统）就放系统的通知声。
+    /// </summary>
+    public static readonly (string Name, string Title, string File)[] WindowsChimes =
+    {
+        ("Glass", "通知（默认）", "Windows Notify System Generic.wav"),
+        ("Ping", "叮", "Windows Ding.wav"),
+        ("Tink", "叮当", "ding.wav"),
+        ("Pop", "消息", "Windows Notify Messaging.wav"),
+        ("Purr", "轻响", "Windows Background.wav"),
+        ("Hero", "喝彩", "tada.wav"),
+        ("Submarine", "靠近", "Windows Proximity Notification.wav"),
+        ("Bottle", "邮件", "Windows Notify Email.wav"),
+        ("Funk", "和弦", "chord.wav"),
+        ("Frog", "轻推", "Windows Message Nudge.wav"),
+        ("Morse", "日历", "Windows Notify Calendar.wav"),
+        ("Blow", "提示", "notify.wav"),
+        ("Basso", "低音", "Windows Critical Stop.wav"),
+        ("Sosumi", "风铃", "chimes.wav"),
+    };
+
+    /// <summary>提示音名 → Windows 的声音文件名（不认识的按默认的那个）。</summary>
+    public static string ChimeFile(string name)
+        => WindowsChimes.FirstOrDefault(chime => chime.Name == name) is { File: { } file } ? file : WindowsChimes[0].File;
 
     public static string AlertTitle(string alert) => alert switch
     {

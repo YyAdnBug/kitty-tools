@@ -23,9 +23,18 @@ internal sealed partial class SettingsWindow
         AddFeatureToggle(Feature.StatusScreen);
         var settings = SettingsService.Current;
         var presets = StatusScreenHost.Presets;
+        _shownStatuses = settings.StatusScreenPresets;
 
         void Persist(List<StatusPreset> next)
         {
+            // 页面开着时同步换了列表（PLAN-v12 第 7 批，同网页搜索 E19）：别拿建页时那份把别的电脑刚改的盖掉。
+            if (!ReferenceEquals(settings.StatusScreenPresets, _shownStatuses))
+            {
+                NoticeHost.Show("状态刚从别的电脑同步过来", "这一页换成了最新的，再改一次", NoticeTone.Warning);
+                BuildPage("statusScreen");
+                return;
+            }
+
             settings.StatusScreenPresets = StatusPresets.Sanitized(next);
             SettingsService.Save();
             BuildPage("statusScreen");
@@ -109,7 +118,7 @@ internal sealed partial class SettingsWindow
     private Border StatusPresetRow(List<StatusPreset> presets, int index, Action<List<StatusPreset>> persist)
     {
         var preset = presets[index];
-        var dark = _content.ActualTheme == ElementTheme.Dark || Theme.ElementTheme == ElementTheme.Dark;
+        var dark = _content.ActualTheme == ElementTheme.Dark || Theme.EffectiveTheme == ElementTheme.Dark;
         FrameworkElement leading = preset.Symbol.Length > 0
             ? StatusEmoji.Still(preset.Symbol, 24, dark)
             : KindTile.Create("statusScreen", "\uE8E4", 24);
@@ -201,7 +210,7 @@ internal sealed partial class SettingsWindow
         ends.SelectedIndex = Math.Max(0, Array.IndexOf(StatusPresets.AutoEndChoices, draft.AutoEndMinutes));
 
         // 图标格子：第一格「无」，后面 16 个表情的静止画面，选中的外面一圈强调色。
-        var dark = Theme.ElementTheme == ElementTheme.Dark;
+        var dark = Theme.EffectiveTheme == ElementTheme.Dark;
         var icons = new VariableSizedWrapGrid { Orientation = Orientation.Horizontal, MaximumRowsOrColumns = 9, ItemWidth = 44, ItemHeight = 44 };
         var iconButtons = new List<(string Id, Button Button)>();
         void SelectIcon(string id)

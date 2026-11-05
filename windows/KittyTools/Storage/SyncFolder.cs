@@ -267,6 +267,11 @@ internal sealed class Syncer
             sources.Add(new ServiceSource(_ledger));
         }
 
+        if (settings.SyncStatuses && Features.IsOn(Feature.StatusScreen))
+        {
+            sources.Add(new StatusSource(_ledger));
+        }
+
         if (settings.SyncReminders && Features.IsOn(Feature.Reminders))
         {
             sources.Add(new ReminderSource(_ledger));
@@ -419,6 +424,29 @@ internal sealed class Syncer
 
             // 先写设置、紧接着写账本（偏好没有事务，PLAN-v5 §4.1）。
             SettingsService.Current.LauncherSearchEngines = engines;
+            SettingsService.Save();
+            SaveLedger(data, library);
+            return null;
+        }
+    }
+
+    /// <summary>状态屏的状态列表（PLAN-v12 第 7 批，照 mac StatusPresetSync）：落下去之后托盘、启动器、设置页下次打开时跟上。</summary>
+    private sealed class StatusSource(SyncLedger ledger) : Source(ledger, StatusPresetSync.Kind)
+    {
+        public override string? JoinKey(string value) => StatusPresetSync.JoinKey(value);
+
+        public override IReadOnlyDictionary<string, string>? Values() => StatusPresetSync.Values(SettingsService.Current.StatusScreenPresets);
+
+        public override string? Apply(
+            IReadOnlyDictionary<string, string?> changes, SyncLedgerData data, string library)
+        {
+            var presets = StatusPresetSync.Plan(changes, SettingsService.Current.StatusScreenPresets, out var failure);
+            if (presets is null)
+            {
+                return failure;
+            }
+
+            SettingsService.Current.StatusScreenPresets = presets;
             SettingsService.Save();
             SaveLedger(data, library);
             return null;
