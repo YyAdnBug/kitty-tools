@@ -191,6 +191,8 @@ internal static class KindTile
         LauncherKind.Prompt when target.StartsWith("file-", StringComparison.Ordinal) => "general",
         LauncherKind.Prompt when target.StartsWith("system-", StringComparison.Ordinal) => "command",
         LauncherKind.Prompt when target == "translate-fy" => "translate",
+        // 汇率的用法提示、货币候选：同计算卡的橙（mac）。
+        LauncherKind.Prompt when target.StartsWith(ExchangeRates.PromptTarget, StringComparison.Ordinal) => "calculator",
         _ => FamilyOf(kind),
     };
 
@@ -211,6 +213,7 @@ internal static class KindTile
             "system-kill" => Glyphs.Stop,
             "system-port" => Glyphs.Port,
             "translate-fy" => FeatureIcons.Translate,
+            _ when target.StartsWith(ExchangeRates.PromptTarget, StringComparison.Ordinal) => Glyphs.Calculator,
             _ => Glyphs.Search,
         },
         _ => GlyphOf(kind),

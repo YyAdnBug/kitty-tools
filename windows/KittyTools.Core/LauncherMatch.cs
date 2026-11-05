@@ -47,6 +47,30 @@ public static class LauncherMatch
     }
 
     /// <summary>
+    /// 关键词提示行（汇率，以后 open / find / quit… / kill / port / fy 也照这个）对上了没有（mac LauncherMatch.promptMatch）：
+    /// 整个是关键词 = Exact（排在最前面）；关键词、中文叫法或它的全拼的开头 = Partial（排在本地结果后面、兜底搜索前面）。
+    /// 英文至少 2 个字母，有汉字时 1 个字就算（IsLongEnough）。keywords / aliases 都写小写、不带空格。
+    /// </summary>
+    public static PromptMatchKind PromptMatch(string query, IReadOnlyList<string> keywords, IReadOnlyList<string>? aliases = null)
+    {
+        var text = new string(Fold(query).Where(character => !char.IsWhiteSpace(character)).ToArray());
+        if (text.Length == 0)
+        {
+            return PromptMatchKind.None;
+        }
+
+        if (keywords.Contains(text))
+        {
+            return PromptMatchKind.Exact;
+        }
+
+        return IsLongEnough(text) && keywords.Concat(aliases ?? Array.Empty<string>())
+            .Any(keyword => keyword.StartsWith(text, StringComparison.Ordinal))
+            ? PromptMatchKind.Partial
+            : PromptMatchKind.None;
+    }
+
+    /// <summary>
     /// 书签、浏览历史、兜底搜索够不够长：至少 2 个字（1 个字母命中太多）；含中文（非 ASCII）时 1 个字就够
     /// （第四轮体检 U8，同 mac LauncherMatch.isLongEnough）。
     /// </summary>
@@ -178,4 +202,12 @@ public static class LauncherMatch
         Enumerable.Range(0, 128).Select(code => (char)code)
             .Where(ch => !char.IsLetterOrDigit(ch))
             .ToArray();
+}
+
+/// <summary>关键词提示行对上的程度（LauncherMatch.PromptMatch）。</summary>
+public enum PromptMatchKind
+{
+    None,
+    Exact,
+    Partial,
 }

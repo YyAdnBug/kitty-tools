@@ -8,5 +8,6 @@
   </PropertyGroup>
   <ItemGroup>
     <EmbeddedResource Include="Resources\pinyin.txt" />
+    <EmbeddedResource Include="Resources\currencies.txt" />
   </ItemGroup>
 </Project>

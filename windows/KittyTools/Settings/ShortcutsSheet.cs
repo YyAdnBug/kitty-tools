@@ -372,6 +372,7 @@ internal static class ShortcutsSheet
             new("cb", "在剪贴板历史里搜"),
             new("fy", "翻译输入的文字"),
             new("ip", "本机的局域网 / 内网地址和外网地址（外网要联网查）：Enter 粘贴，Ctrl+Enter 只复制"),
+            new("currency", "汇率换算；也可以直接输「100 美元 转 日元」（要联网取汇率）"),
             new(new[] { "g", "bing", "bd", "gh" }, "关键词 + 空格 + 要搜的字：网页搜索（设置 › 启动器 里能加能改）"),
             new(new[] { "lock", "sleep", "emptytrash" }, "系统命令（锁定、睡眠、关闭显示器、屏保、回收站、注销、重启、关机、音量）：中文、英文、拼音都能搜"),
         }),

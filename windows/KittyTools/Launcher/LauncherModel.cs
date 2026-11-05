@@ -53,6 +53,12 @@ internal sealed partial class LauncherModel
     private readonly Dictionary<IpService, IpLookup> _ipLookups = new();
     private readonly Dictionary<IpService, CancellationTokenSource> _ipTasks = new();
 
+    // 汇率换算（PLAN-v12 N1）：存着的汇率表（第一次用到时从数据目录读）、在等 / 在取的那一次、上一次取没取到。
+    private ExchangeRates.Table? _rates;
+    private bool _ratesLoaded;
+    private CancellationTokenSource? _ratesCts;
+    private bool _ratesFailed;
+
     public static LauncherModel Start()
     {
         Instance = new LauncherModel();
@@ -221,6 +227,12 @@ internal sealed partial class LauncherModel
             CancelIpLookups();
         }
 
+        // 不是汇率换算了：还在等的那次取汇率不要了（打字路过「100 u」不发请求）。
+        if (ExchangeRates.RequestFor(query) is null)
+        {
+            CancelRatesFetch();
+        }
+
         if (mode.IsFileMode())
         {
             SearchFiles();
@@ -267,6 +279,7 @@ internal sealed partial class LauncherModel
         var keywordItem = WebSearch.KeywordItem(trimmed, engines);
         var prompts = WebSearch.PromptItems(trimmed, engines);
         var commandPrompts = LauncherCommands.PromptItems(trimmed);
+        var currencyPrompts = ExchangeRates.PromptItems(trimmed);
         var top = new List<LauncherItem>();
         if (clipboardOn && LauncherCommands.ClipQuery(trimmed) is not null)
         {
@@ -278,6 +291,8 @@ internal sealed partial class LauncherModel
             top.AddRange(LauncherCommands.TranslatePrompts(trimmed));
         }
 
+        top.AddRange(currencyPrompts.Exact);
+
         // 「ip」排在 cb / fy 后面、直达前面（mac）。
         if (LauncherIp.Matches(trimmed))
         {
@@ -285,9 +300,15 @@ internal sealed partial class LauncherModel
         }
 
         top.AddRange(direct);
-        if (Calculator.ItemFor(trimmed) is { } calculation)
+        StartRatesFetchIfStale(trimmed);
+        if (CalculationRow(trimmed) is { } calculation)
         {
             top.Add(calculation);
+        }
+        else
+        {
+            // 货币打到一半（「100 美元 转 英」）列候选；有计算结果时（「10 km to m」）不出。
+            top.AddRange(ExchangeRates.Suggestions(trimmed, SettingsService.Current.LauncherRecentCurrencies));
         }
 
         if (keywordItem is not null)
@@ -336,7 +357,8 @@ internal sealed partial class LauncherModel
         var ordered = LauncherMatch.Promoting(local, top, item =>
             (LauncherUsageStore.Instance?.Boost(item, trimmed, now).Query ?? 0) > 0);
         var seen = new HashSet<string>();
-        return ordered.Concat(history).Concat(prompts.Partial).Concat(commandPrompts.Partial).Concat(fallback)
+        return ordered.Concat(history).Concat(prompts.Partial).Concat(commandPrompts.Partial).Concat(currencyPrompts.Partial)
+            .Concat(fallback)
             .Where(item => seen.Add(item.Id))
             .ToList();
     }
@@ -417,6 +439,139 @@ internal sealed partial class LauncherModel
         CancelIpLookups();
         _ipLookups.Clear();
         _ipLocal = null;
+        CancelRatesFetch();
+        _ratesFailed = false;
+    }
+
+    // ---- 汇率换算（PLAN-v12 N1，照 mac LauncherModel 的 rates / ratesTask）
+
+    private ExchangeRates.Table? Rates
+    {
+        get
+        {
+            if (!_ratesLoaded)
+            {
+                _ratesLoaded = true;
+                _rates = ExchangeRateStore.Load();
+            }
+
+            return _rates;
+        }
+    }
+
+    /// <summary>本机地区的货币（只写一种货币时换成它）：系统地区的货币不在表里时按人民币。</summary>
+    private static string HomeCurrency
+    {
+        get
+        {
+            try
+            {
+                return ExchangeRates.HomeOr(System.Globalization.RegionInfo.CurrentRegion.ISOCurrencySymbol);
+            }
+            catch (ArgumentException)
+            {
+                return ExchangeRates.HomeOr(null);
+            }
+        }
+    }
+
+    /// <summary>计算那一行：算得出来就是结果；是汇率换算、可还没有汇率表时是「正在取汇率…」/「没取到汇率」占位行（不能粘贴）。</summary>
+    private LauncherItem? CalculationRow(string query)
+    {
+        if (Calculator.ItemFor(query, Rates, HomeCurrency) is { } item)
+        {
+            return item;
+        }
+
+        return Rates is null && ExchangeRates.RequestFor(query) is not null
+            ? ExchangeRates.Placeholder(query, _ratesFailed)
+            : null;
+    }
+
+    /// <summary>
+    /// 是汇率换算、又没有表或表过期了：停 0.3 s 再取（还在打字就撤掉），取到存起来、换掉计算那一行；过期的表取到之前照旧用。
+    /// 没取到时占位行写「没取到汇率」，下次再打字再试。
+    /// </summary>
+    private void StartRatesFetchIfStale(string query)
+    {
+        if (_ratesCts is not null || ExchangeRates.RequestFor(query) is null ||
+            (Rates is { } table && !ExchangeRates.IsStale(table, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())))
+        {
+            return;
+        }
+
+        _ratesFailed = false;
+        var cts = new CancellationTokenSource();
+        _ratesCts = cts;
+        var dispatcher = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
+        _ = Task.Run(async () =>
+        {
+            ExchangeRates.Table? fetched;
+            try
+            {
+                await Task.Delay(ExchangeRates.FetchDelayMs, cts.Token).ConfigureAwait(false);
+                fetched = await ExchangeRateStore.FetchAsync(cts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+
+            if (fetched is not null)
+            {
+                ExchangeRateStore.Save(fetched);
+            }
+
+            dispatcher?.TryEnqueue(() =>
+            {
+                if (cts.IsCancellationRequested || _ratesCts != cts)
+                {
+                    return;
+                }
+
+                _ratesCts = null;
+                if (fetched is not null)
+                {
+                    _rates = fetched;
+                    _ratesLoaded = true;
+                }
+                else
+                {
+                    _ratesFailed = true;
+                }
+
+                // 计算那一行换成结果（或「没取到汇率」）；还在列表里才换，选中照旧。
+                var index = Results.FindIndex(item => item.Kind == LauncherKind.Calculation);
+                if (index < 0 || CalculationRow(Query.Trim()) is not { } row)
+                {
+                    return;
+                }
+
+                var updated = Results.ToList();
+                updated[index] = row;
+                Results = updated;
+                ResultsChanged(null);
+            });
+        });
+    }
+
+    private void CancelRatesFetch()
+    {
+        _ratesCts?.Cancel();
+        _ratesCts = null;
+    }
+
+    /// <summary>用了一次汇率换算（Enter 粘贴、复制）：它的两种货币记成用过的，候选里排最前（这台电脑自己的，不导出）。</summary>
+    private static void RememberCurrencies(string query)
+    {
+        var settings = SettingsService.Current;
+        var recents = settings.LauncherRecentCurrencies ?? new List<string>();
+        var updated = ExchangeRates.Remembering(query, recents, HomeCurrency);
+        if (!updated.SequenceEqual(recents))
+        {
+            settings.LauncherRecentCurrencies = updated;
+            SettingsService.Save();
+        }
     }
 
     /// <summary>
@@ -761,7 +916,17 @@ internal sealed partial class LauncherModel
         switch (item.Kind)
         {
             case LauncherKind.Calculation:
-                Paste(item.Payload ?? item.Title);
+                // 「正在取汇率…」「没取到汇率」那一行没有结果：只响一声。
+                if (item.Payload is { } value)
+                {
+                    RememberCurrencies(item.Target);
+                    Paste(value);
+                }
+                else
+                {
+                    Beep();
+                }
+
                 break;
             case LauncherKind.Ip:
                 // 外网还在查、没查到、没连上网络的那一行没有地址：只响一声。
@@ -1105,6 +1270,17 @@ internal sealed partial class LauncherModel
     /// <summary>复制路径 / 网址 / 结果（Ctrl+Enter 的计算也走这里）；网址另有 Markdown 链接、标题。面板收起，轻提示说复制了什么。</summary>
     public void Copy(LauncherItem item, CopyFormat format = CopyFormat.Value, CalcCopy? calculation = null)
     {
+        if (item.Kind == LauncherKind.Calculation && item.Payload is null && calculation is null)
+        {
+            Beep();
+            return;
+        }
+
+        if (item.Kind == LauncherKind.Calculation)
+        {
+            RememberCurrencies(item.Target);
+        }
+
         var (text, title) = calculation is { } extra
             ? (extra.Text, extra.Title)
             : format switch
@@ -1354,7 +1530,7 @@ internal sealed partial class LauncherModel
             actions.Add(new PaletteItem("复制标题", Glyphs.Text, 2, () => Copy(item, CopyFormat.Title)));
         }
 
-        if (item.Kind == LauncherKind.Calculation && Calculator.ResultFor(item.Target) is { } result)
+        if (item.Kind == LauncherKind.Calculation && Calculator.ResultFor(item.Target, Rates, HomeCurrency) is { } result)
         {
             foreach (var extra in result.Copies)
             {

@@ -260,6 +260,12 @@ internal sealed class Settings
     /// <summary>也搜浏览历史的浏览器 id（书签也开着才算）；null = 都没开。</summary>
     public List<string>? LauncherHistoryBrowsers { get; set; }
 
+    /// <summary>
+    /// 汇率换算用过的货币（PLAN-v12 N1，mac Prefs.launcherRecentCurrencies）：候选里排最前，最多 8 种。这台电脑自己的，
+    /// 不在导出清单里（ArchiveService.PreferencesOf 是白名单）。
+    /// </summary>
+    public List<string>? LauncherRecentCurrencies { get; set; }
+
     public List<HotKeySetting> HotKeys { get; set; } = new();
 
     /// <summary>

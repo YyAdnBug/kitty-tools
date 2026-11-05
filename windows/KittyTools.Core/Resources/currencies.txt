@@ -1,0 +1,159 @@
+AED	2	阿联酋迪拉姆	阿拉伯聯合大公國迪爾汗	United Arab Emirates Dirham	alianqiudilamu
+AFN	0	阿富汗尼	阿富汗尼	Afghan Afghani	afuhanni
+ALL	0	阿尔巴尼亚列克	阿爾巴尼亞列克	Albanian Lek	aerbaniyalieke
+AMD	2	亚美尼亚德拉姆	亞美尼亞德拉姆	Armenian Dram	yameiniyadelamu
+ANG	2	荷属安的列斯盾	荷屬安地列斯盾	Netherlands Antillean Guilder	heshuandeliesidun
+AOA	2	安哥拉宽扎	安哥拉寬扎	Angolan Kwanza	angelakuanzha
+ARS	2	阿根廷比索	阿根廷披索	Argentine Peso	agentingbisuo
+AUD	2	澳大利亚元	澳幣	Australian Dollar	aodaliyayuan
+AWG	2	阿鲁巴弗罗林	阿路巴盾	Aruban Florin	alubafuluolin
+AZN	2	阿塞拜疆马纳特	亞塞拜然馬納特	Azerbaijani Manat	asaibaijiangmanate
+BAM	2	波斯尼亚-黑塞哥维那可兑换马克	波士尼亞-赫塞哥維納可轉換馬克	Bosnia-Herzegovina Convertible Mark	bosiniya-heisaigeweinakeduihuanmake
+BBD	2	巴巴多斯元	巴貝多元	Barbadian Dollar	babaduosiyuan
+BDT	2	孟加拉塔卡	孟加拉塔卡	Bangladeshi Taka	mengjialataka
+BGN	2	保加利亚列弗	保加利亞新列弗	Bulgarian Lev	baojialiyaliefu
+BHD	3	巴林第纳尔	巴林第納爾	Bahraini Dinar	balindinaer
+BIF	0	布隆迪法郎	蒲隆地法郎	Burundian Franc	bulongdifalang
+BMD	2	百慕大元	百慕達幣	Bermudan Dollar	baimudayuan
+BND	2	文莱元	汶萊元	Brunei Dollar	wenlaiyuan
+BOB	2	玻利维亚诺	玻利維亞諾	Bolivian Boliviano	boliweiyanuo
+BRL	2	巴西雷亚尔	巴西雷亞爾	Brazilian Real	baxileiyaer
+BSD	2	巴哈马元	巴哈馬元	Bahamian Dollar	bahamayuan
+BTN	2	不丹努尔特鲁姆	不丹那特倫	Bhutanese Ngultrum	budannuertelumu
+BWP	2	博茨瓦纳普拉	波札那普拉	Botswanan Pula	bociwanapula
+BYN	2	白俄罗斯卢布	白俄羅斯盧布	Belarusian Ruble	baieluosilubu
+BZD	2	伯利兹元	貝里斯元	Belize Dollar	boliziyuan
+CAD	2	加拿大元	加幣	Canadian Dollar	jianadayuan
+CDF	2	刚果法郎	剛果法郎	Congolese Franc	gangguofalang
+CHF	2	瑞士法郎	瑞士法郎	Swiss Franc	ruishifalang
+CLP	0	智利比索	智利披索	Chilean Peso	zhilibisuo
+CNY	2	人民币	人民幣	Chinese Yuan	renminbi
+COP	0	哥伦比亚比索	哥倫比亞披索	Colombian Peso	gelunbiyabisuo
+CRC	2	哥斯达黎加科朗	哥斯大黎加科朗	Costa Rican Colón	gesidalijiakelang
+CUC	2	古巴可兑换比索	古巴可轉換披索	Cuban Convertible Peso	gubakeduihuanbisuo
+CUP	2	古巴比索	古巴披索	Cuban Peso	gubabisuo
+CVE	2	佛得角埃斯库多	維德角埃斯庫多	Cape Verdean Escudo	fudejiaoaisikuduo
+CZK	2	捷克克朗	捷克克朗	Czech Koruna	jiekekelang
+DJF	0	吉布提法郎	吉布地法郎	Djiboutian Franc	jibutifalang
+DKK	2	丹麦克朗	丹麥克朗	Danish Krone	danmaikelang
+DOP	2	多米尼加比索	多明尼加披索	Dominican Peso	duominijiabisuo
+DZD	2	阿尔及利亚第纳尔	阿爾及利亞第納爾	Algerian Dinar	aerjiliyadinaer
+EGP	2	埃及镑	埃及鎊	Egyptian Pound	aijibang
+ERN	2	厄立特里亚纳克法	厄利垂亞納可法	Eritrean Nakfa	eliteliyanakefa
+ETB	2	埃塞俄比亚比尔	衣索比亞比爾	Ethiopian Birr	aisaiebiyabier
+EUR	2	欧元	歐元	Euro	ouyuan
+FJD	2	斐济元	斐濟元	Fijian Dollar	feijiyuan
+FKP	2	福克兰群岛镑	福克蘭群島鎊	Falkland Islands Pound	fukelanqundaobang
+GBP	2	英镑	英鎊	British Pound	yingbang
+GEL	2	格鲁吉亚拉里	喬治亞拉里	Georgian Lari	gelujiyalali
+GHS	2	加纳塞地	迦納塞地	Ghanaian Cedi	jianasaide
+GIP	2	直布罗陀镑	直布羅陀鎊	Gibraltar Pound	zhibuluotuobang
+GMD	2	冈比亚达拉西	甘比亞達拉西	Gambian Dalasi	gangbiyadalaxi
+GNF	0	几内亚法郎	幾內亞法郎	Guinean Franc	jineiyafalang
+GTQ	2	危地马拉格查尔	瓜地馬拉格查爾	Guatemalan Quetzal	weidemalagechaer
+GYD	2	圭亚那元	圭亞那元	Guyanese Dollar	guiyanayuan
+HKD	2	港元	港幣	Hong Kong Dollar	gangyuan
+HNL	2	洪都拉斯伦皮拉	洪都拉斯倫皮拉	Honduran Lempira	hongdoulasilunpila
+HRK	2	克罗地亚库纳	克羅埃西亞庫納	Croatian Kuna	keluodeyakuna
+HTG	2	海地古德	海地古德	Haitian Gourde	haidegude
+HUF	0	匈牙利福林	匈牙利福林	Hungarian Forint	xiongyalifulin
+IDR	0	印度尼西亚卢比	印尼盾	Indonesian Rupiah	yindunixiyalubi
+ILS	2	以色列新谢克尔	以色列新謝克爾	Israeli New Shekel	yiseliexinxiekeer
+INR	2	印度卢比	印度盧比	Indian Rupee	yindulubi
+IQD	0	伊拉克第纳尔	伊拉克第納爾	Iraqi Dinar	yilakedinaer
+IRR	0	伊朗里亚尔	伊朗里亞爾	Iranian Rial	yilangliyaer
+ISK	0	冰岛克朗	冰島克朗	Icelandic Króna	bingdaokelang
+JMD	2	牙买加元	牙買加元	Jamaican Dollar	yamaijiayuan
+JOD	3	约旦第纳尔	約旦第納爾	Jordanian Dinar	yuedandinaer
+JPY	0	日元	日圓	Japanese Yen	riyuan
+KES	2	肯尼亚先令	肯尼亞先令	Kenyan Shilling	kenniyaxianling
+KGS	2	吉尔吉斯斯坦索姆	吉爾吉斯索姆	Kyrgyz Som	jierjisisitansuomu
+KHR	2	柬埔寨瑞尔	柬埔寨瑞爾	Cambodian Riel	jianbuzhairuier
+KMF	0	科摩罗法郎	科摩羅法郎	Comorian Franc	kemoluofalang
+KPW	0	朝鲜元	北韓元	North Korean Won	chaoxianyuan
+KRW	0	韩元	韓元	South Korean Won	hanyuan
+KWD	3	科威特第纳尔	科威特第納爾	Kuwaiti Dinar	keweitedinaer
+KYD	2	开曼元	開曼群島元	Cayman Islands Dollar	kaimanyuan
+KZT	2	哈萨克斯坦坚戈	哈薩克堅戈	Kazakhstani Tenge	hasakesitanjiange
+LAK	0	老挝基普	寮國基普	Laotian Kip	laowojipu
+LBP	0	黎巴嫩镑	黎巴嫩鎊	Lebanese Pound	libanenbang
+LKR	2	斯里兰卡卢比	斯里蘭卡盧比	Sri Lankan Rupee	sililankalubi
+LRD	2	利比里亚元	賴比瑞亞元	Liberian Dollar	libiliyayuan
+LSL	2	莱索托洛蒂	賴索托洛蒂	Lesotho Loti	laisuotuoluodi
+LYD	3	利比亚第纳尔	利比亞第納爾	Libyan Dinar	libiyadinaer
+MAD	2	摩洛哥迪拉姆	摩洛哥迪拉姆	Moroccan Dirham	moluogedilamu
+MDL	2	摩尔多瓦列伊	摩爾多瓦列伊	Moldovan Leu	moerduowalieyi
+MGA	0	马达加斯加阿里亚里	馬達加斯加阿里亞里	Malagasy Ariary	madajiasijiaaliyali
+MKD	2	马其顿第纳尔	馬其頓第納爾	Macedonian Denar	maqidundinaer
+MMK	0	缅甸元	緬甸元	Myanmar Kyat	miandianyuan
+MNT	2	蒙古图格里克	蒙古圖格里克	Mongolian Tugrik	menggutugelike
+MOP	2	澳门币	澳門元	Macanese Pataca	aomenbi
+MRU	2	毛里塔尼亚乌吉亚	茅利塔尼亞烏吉亞	Mauritanian Ouguiya	maolitaniyawujiya
+MUR	2	毛里求斯卢比	模里西斯盧比	Mauritian Rupee	maoliqiusilubi
+MVR	2	马尔代夫卢菲亚	馬爾地夫盧非亞	Maldivian Rufiyaa	maerdaifulufeiya
+MWK	2	马拉维克瓦查	馬拉維克瓦查	Malawian Kwacha	malaweikewacha
+MXN	2	墨西哥比索	墨西哥披索	Mexican Peso	moxigebisuo
+MYR	2	马来西亚林吉特	馬來西亞令吉	Malaysian Ringgit	malaixiyalinjite
+MZN	2	莫桑比克美提卡	莫三比克梅蒂卡爾	Mozambican Metical	mosangbikemeitika
+NAD	2	纳米比亚元	納米比亞元	Namibian Dollar	namibiyayuan
+NGN	2	尼日利亚奈拉	奈及利亞奈拉	Nigerian Naira	niriliyanaila
+NIO	2	尼加拉瓜科多巴	尼加拉瓜科多巴	Nicaraguan Córdoba	nijialaguakeduoba
+NOK	2	挪威克朗	挪威克朗	Norwegian Krone	nuoweikelang
+NPR	2	尼泊尔卢比	尼泊爾盧比	Nepalese Rupee	nipoerlubi
+NZD	2	新西兰元	紐西蘭幣	New Zealand Dollar	xinxilanyuan
+OMR	3	阿曼里亚尔	阿曼里亞爾	Omani Rial	amanliyaer
+PAB	2	巴拿马巴波亚	巴拿馬巴波亞	Panamanian Balboa	banamababoya
+PEN	2	秘鲁索尔	秘魯太陽幣	Peruvian Sol	bilusuoer
+PGK	2	巴布亚新几内亚基那	巴布亞紐幾內亞基那	Papua New Guinean Kina	babuyaxinjineiyajina
+PHP	2	菲律宾比索	菲律賓披索	Philippine Peso	feilubinbisuo
+PKR	0	巴基斯坦卢比	巴基斯坦盧比	Pakistani Rupee	bajisitanlubi
+PLN	2	波兰兹罗提	波蘭茲羅提	Polish Zloty	bolanziluoti
+PYG	0	巴拉圭瓜拉尼	巴拉圭瓜拉尼	Paraguayan Guarani	balaguigualani
+QAR	2	卡塔尔里亚尔	卡達里亞爾	Qatari Riyal	kataerliyaer
+RON	2	罗马尼亚列伊	羅馬尼亞列伊	Romanian Leu	luomaniyalieyi
+RSD	0	塞尔维亚第纳尔	塞爾維亞戴納	Serbian Dinar	saierweiyadinaer
+RUB	2	俄罗斯卢布	俄羅斯盧布	Russian Ruble	eluosilubu
+RWF	0	卢旺达法郎	盧安達法郎	Rwandan Franc	luwangdafalang
+SAR	2	沙特里亚尔	沙烏地里亞爾	Saudi Riyal	shateliyaer
+SBD	2	所罗门群岛元	索羅門群島元	Solomon Islands Dollar	suoluomenqundaoyuan
+SCR	2	塞舌尔卢比	塞席爾盧比	Seychellois Rupee	saisheerlubi
+SDG	2	苏丹镑	蘇丹鎊	Sudanese Pound	sudanbang
+SEK	2	瑞典克朗	瑞典克朗	Swedish Krona	ruidiankelang
+SGD	2	新加坡元	新加坡幣	Singapore Dollar	xinjiapoyuan
+SHP	2	圣赫勒拿群岛磅	聖赫勒拿鎊	St. Helena Pound	shengheleinaqundaobang
+SLE	2	塞拉利昂新利昂	獅子山利昂	Sierra Leonean Leone	sailaliangxinliang
+SLL	0	塞拉利昂利昂	獅子山利昂 (1964—2022)	Sierra Leonean Leone (1964—2022)	sailaliangliang
+SOS	0	索马里先令	索馬利亞先令	Somali Shilling	suomalixianling
+SRD	2	苏里南元	蘇利南元	Surinamese Dollar	sulinanyuan
+SSP	2	南苏丹镑	南蘇丹鎊	South Sudanese Pound	nansudanbang
+STN	2	圣多美和普林西比多布拉	聖多美島和普林西比島多布拉	São Tomé & Príncipe Dobra	shengduomeihepulinxibiduobula
+SYP	0	叙利亚镑	敘利亞鎊	Syrian Pound	xuliyabang
+SZL	2	斯威士兰里兰吉尼	史瓦帝尼朗吉尼	Swazi Lilangeni	siweishilanlilanjini
+THB	2	泰铢	泰銖	Thai Baht	taizhu
+TJS	2	塔吉克斯坦索莫尼	塔吉克索莫尼	Tajikistani Somoni	tajikesitansuomoni
+TMT	2	土库曼斯坦马纳特	土庫曼馬納特	Turkmenistani Manat	tukumansitanmanate
+TND	3	突尼斯第纳尔	突尼西亞第納爾	Tunisian Dinar	tunisidinaer
+TOP	2	汤加潘加	東加潘加	Tongan Paʻanga	tangjiapanjia
+TRY	2	土耳其里拉	土耳其里拉	Turkish Lira	tuerqilila
+TTD	2	特立尼达和多巴哥元	千里達及托巴哥元	Trinidad & Tobago Dollar	telinidaheduobageyuan
+TWD	2	新台币	新台幣	New Taiwan Dollar	xintaibi
+TZS	2	坦桑尼亚先令	坦尚尼亞先令	Tanzanian Shilling	tansangniyaxianling
+UAH	2	乌克兰格里夫纳	烏克蘭格里夫納	Ukrainian Hryvnia	wukelangelifuna
+UGX	0	乌干达先令	烏干達先令	Ugandan Shilling	wugandaxianling
+USD	2	美元	美元	US Dollar	meiyuan
+UYU	2	乌拉圭比索	烏拉圭披索	Uruguayan Peso	wulaguibisuo
+UZS	2	乌兹别克斯坦苏姆	烏茲別克索姆	Uzbekistani Som	wuzibiekesitansumu
+VEF	2	委内瑞拉玻利瓦尔 (2008–2018)	委內瑞拉玻利瓦 (2008–2018)	Venezuelan Bolívar (2008–2018)	weineiruilaboliwaer(2008–2018)
+VES	2	委内瑞拉玻利瓦尔	委內瑞拉玻利瓦	Venezuelan Bolívar	weineiruilaboliwaer
+VND	0	越南盾	越南盾	Vietnamese Dong	yuenandun
+VUV	0	瓦努阿图瓦图	萬那杜瓦圖	Vanuatu Vatu	wanuatuwatu
+WST	2	萨摩亚塔拉	西薩摩亞塔拉	Samoan Tala	samoyatala
+XAF	0	中非法郎	中非法郎	Central African CFA Franc	zhongfeifalang
+XCD	2	东加勒比元	格瑞那達元	East Caribbean Dollar	dongjialeibiyuan
+XCG	2	加勒比盾	加勒比盾	Caribbean guilder	jialeibidun
+XOF	0	西非法郎	西非法郎	West African CFA Franc	xifeifalang
+XPF	0	太平洋法郎	太平洋法郎	CFP Franc	taipingyangfalang
+YER	0	也门里亚尔	葉門里亞爾	Yemeni Rial	yemenliyaer
+ZAR	2	南非兰特	南非蘭特	South African Rand	nanfeilante
+ZMW	2	赞比亚克瓦查	尚比亞克瓦查	Zambian Kwacha	zanbiyakewacha
+ZWG	2	津巴布韦金元	辛巴威金	Zimbabwean Gold	jinbabuweijinyuan

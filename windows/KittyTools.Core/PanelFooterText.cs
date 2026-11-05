@@ -37,6 +37,8 @@ public static class PanelFooterText
         LauncherKind.Ip => "网络",
         LauncherKind.Prompt when target.StartsWith("system-", StringComparison.Ordinal) => "系统",
         LauncherKind.Prompt when target == "translate-fy" => "翻译",
+        LauncherKind.Prompt when target == ExchangeRates.PromptTarget => "汇率",
+        LauncherKind.Prompt when target.StartsWith(ExchangeRates.SuggestionPrefix, StringComparison.Ordinal) => "货币",
         LauncherKind.Prompt => "搜索",
         _ => string.Empty,
     };

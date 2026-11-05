@@ -8,6 +8,29 @@
 
 条目编号不复用。行号按条目里写的那个提交。
 
+## PLAN-v12（跟上 mac：先把没有的功能做出来，2026-11-05 用户「先把未实现的功能实现」）
+
+清单和分批在 `PLAN-v12.md`（不是拍板页，行为照 mac）；分工同 PLAN-v11 D10。
+
+### 第 1 批：启动器汇率换算（N1）→ 已写（审查方，`git log --grep "PLAN-v12 第 1 批"`，没编译）
+
+照 mac `ab0fab4a`、`cf621790`：
+- `Core/ExchangeRates.cs`：解析（连接词、口语、繁体、倍数、算式金额、货币在前、只问汇率）、换算和格式（小数位按币种、不到 1 的 4 位有效数字、金额 1 按汇率精度）、
+  用法提示、货币候选、用过的货币、汇率表的验（`FromReply`）和存（`Encode` / `Decode`）。货币表 `Core/Resources/currencies.txt` 是在 Mac 上用系统 Locale 生成的（`tools/currency-table.swift`，159 种）。
+- `Calculator`：`Result` 多一个 `Note`，`ItemFor` / `ResultFor` 收汇率表和本机货币（单位 → 进制 → 汇率 → 算式）；`IsUnit`；`Digits` 改 internal 给汇率用。
+  `LauncherItem.Note`（行右侧替掉种类名的小字），`LauncherMatch.PromptMatch` + `PromptMatchKind`（mac promptMatch，这次只有汇率用）。
+- `Launcher/ExchangeRateStore.cs`：联网取（两个源依次试，5 s，不带 Cookie，只收 gzip / deflate），存数据目录 `exchange-rates.json`。
+- `LauncherModel`：计算那一行先看汇率（没有表时「正在取汇率…」占位、停 0.3 s 再取，打字路过撤掉，取到换掉那一行）；没计算结果时列货币候选；用法提示的 Exact / Partial；
+  占位行 Enter / Ctrl+Enter 只响一声；粘贴、复制过的换算记进 `Settings.LauncherRecentCurrencies`；Ctrl+K 的复制项用汇率表。
+- 面板：`KindName` 先看 `item.Note`；`PanelFooterText` 汇率提示写「汇率」、候选写「货币」；`KindTile` 两种都是计算的橙、计算器图标；速查表加 currency 一行。
+- 单测 `ExchangeRatesTests`（11 个）。
+
+**你们做的**：
+1. 编译、零警告，`dotnet test` 全过（新加的 11 个）。要是 `currencies.txt` 没进程序集（`IsoCodes.Count` 不是 159），看 Core 的 csproj 里那行 `EmbeddedResource`。
+2. 走 HANDTEST 918–931（联网那几条用 Dev / 探针档）；927 断网可以拔网线或者临时关网卡，做完恢复。
+3. 截图：汇率结果、占位行、用法提示、货币候选（浅 / 深），推 `windows-shots` 的 `0.2.0-v12-batch-1/`。
+4. **别动 `83040384` 里长截图控速那半**：第 2 批照 mac 重做（速度放在长截图面板上、匀速小段滚动）；它的「剪贴板面板跟随鼠标」留着，第 2 批加「上次位置」和启动器那一行。这次先编译过它（在 REVIEW「用户反馈 2026-11-04」下面记一句）。
+
 ## PLAN-v11（0.1.0 之后还没做的，2026-11-03 用户「全部按推荐」）
 
 方案和分批在 `PLAN-v11.md` §3；分工照 D10（同 PLAN-v10 D5）。每批审查方写好的推上来、**没编译**，你们编译、单测、在屏幕上验，编译错直接修，在这一节对应那批下面记一句。

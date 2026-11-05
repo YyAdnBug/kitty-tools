@@ -6,7 +6,8 @@
 // 手写递归下降，半截表达式返回 null，不会崩；日期（2024-01-01）、单独一个数字不算算式。
 // 全部离线：单位换算「数字 单位 (to|in|=|转) 单位」（长度、质量、温度、数据、时间、面积、体积、速度；英文符号 + 中文名，
 // 系数照 Foundation 的 UnitLength 等，下面一张表）；进制「255 in hex / bin / oct」「0xff in dec」。结果大字按千分位分组，
-// Enter 粘贴、Tab 写回的仍是不分组的原值，Copies 里另有「复制原始数字」、输入带 0x / 0b 时「复制十六进制 / 二进制」。汇率要联网，不做。
+// Enter 粘贴、Tab 写回的仍是不分组的原值，Copies 里另有「复制原始数字」、输入带 0x / 0b 时「复制十六进制 / 二进制」。
+// 汇率换算（PLAN-v12 N1，要联网）在 ExchangeRates：排在单位换算和进制后面、算式前面，汇率表由调用方给。
 // 数字照 Foundation（ICU）的排法：取最短往返的十进制数字、四舍六入五成双，一律 en_US 样式，不受系统区域影响。
 using System.Globalization;
 using System.Runtime.CompilerServices;
@@ -20,8 +21,11 @@ public readonly record struct CalcCopy(string Title, string Text);
 
 public static partial class Calculator
 {
-    /// <summary>一条结果：卡片上的大字（千分位分组、带单位）、Enter 粘贴 / Tab 写回的（不分组）、动作列表里多出来的复制项。</summary>
-    public sealed record Result(string Display, string Payload, IReadOnlyList<CalcCopy> Copies);
+    /// <summary>
+    /// 一条结果：卡片上的大字（千分位分组、带单位）、Enter 粘贴 / Tab 写回的（不分组）、动作列表里多出来的复制项；
+    /// Note 是行右侧的小字（汇率换算写「人民币 · 11-03 汇率」），null 时照常写「计算」。
+    /// </summary>
+    public sealed record Result(string Display, string Payload, IReadOnlyList<CalcCopy> Copies, string? Note = null);
 
     /// <summary>2^53：再大的整数 double 不一定精确，按科学计数排，也不出进制。</summary>
     private const double MaxExactInteger = 9_007_199_254_740_992;
@@ -30,8 +34,10 @@ public static partial class Calculator
 
     private static readonly Dictionary<string, UnitName> Units = BuildUnits();
 
-    public static LauncherItem? ItemFor(string query) =>
-        ResultFor(query) is { } result
+    /// <param name="rates">汇率表（没有时汇率换算出不来，调用方另出「正在取汇率…」那一行）。</param>
+    /// <param name="home">本机地区的货币（只写一种货币时换成它）。</param>
+    public static LauncherItem? ItemFor(string query, ExchangeRates.Table? rates = null, string home = "CNY") =>
+        ResultFor(query, rates, home) is { } result
             ? new LauncherItem
             {
                 Kind = LauncherKind.Calculation,
@@ -40,15 +46,21 @@ public static partial class Calculator
                 Subtitle = "计算结果 · Enter 粘贴 · Tab 接着算",
                 Payload = result.Payload,
                 Completion = result.Payload,
+                Note = result.Note,
             }
             : null;
 
-    /// <summary>单位换算 → 进制 → 算式，都不是就 null。</summary>
-    public static Result? ResultFor(string query)
+    /// <summary>单位换算 → 进制 → 汇率（没有汇率表时 null）→ 算式，都不是就 null。</summary>
+    public static Result? ResultFor(string query, ExchangeRates.Table? rates = null, string home = "CNY")
     {
         if ((Convert(query) ?? ConvertRadix(query)) is { } converted)
         {
             return converted;
+        }
+
+        if (ExchangeRates.RequestFor(query) is { } request)
+        {
+            return rates is null ? null : ExchangeRates.Result(request, rates, home);
         }
 
         if (!LooksLikeMath(query) || Evaluate(query) is not { } value)
@@ -264,6 +276,9 @@ public static partial class Calculator
     private sealed record UnitName(string Family, string Symbol, double Coefficient, double Constant);
 
     /// <summary>单位名（不分大小写，两头的空格不算）→ 单位。</summary>
+    /// <summary>是不是单位换算认的单位名（汇率候选：「10 km」「100 g」是在换单位，不列货币）。</summary>
+    public static bool IsUnit(string name) => UnitFor(name) is not null;
+
     private static UnitName? UnitFor(string name) =>
         Units.TryGetValue(TrimSpaces(name).ToLowerInvariant(), out var unit) ? unit : null;
 
@@ -374,7 +389,7 @@ public static partial class Calculator
     /// 或 count 位小数，去掉末尾的 0。scientific 写成 1.5E20 / 9E-13（不分组）；不然整数部分按 grouped 每三位一个逗号。
     /// 6 万个随机数（含各位上的五）和 mac 的 format / quantity 逐字比过。
     /// </summary>
-    private static string Digits(double value, int count, bool significant, bool grouped, bool scientific)
+    internal static string Digits(double value, int count, bool significant, bool grouped, bool scientific)
     {
         if (!double.IsFinite(value))
         {

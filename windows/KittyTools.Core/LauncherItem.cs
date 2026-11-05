@@ -75,6 +75,9 @@ public sealed record LauncherItem
     /// <summary>粘贴 / 复制用的值（计算结果等）。</summary>
     public string? Payload { get; init; }
 
+    /// <summary>行右侧替掉种类名的小字（汇率换算写「人民币 · 11-03 汇率」，PLAN-v12 N1）；null 时照常写种类。</summary>
+    public string? Note { get; init; }
+
     /// <summary>同分时的先后：系统命令、退出本 App 这类不确认就执行的要排在后面。</summary>
     public int Priority { get; init; }
 

@@ -479,9 +479,9 @@ public sealed partial class LauncherPanel : UserControl
     }
 
     private static string KindName(LauncherItem item)
-        => item.Kind == LauncherKind.Path
+        => item.Note ?? (item.Kind == LauncherKind.Path
             ? LauncherText.FileKindTitle(item.Target, item.IsFolder)
-            : PanelFooterText.LauncherKindName(item.Kind, item.Target);
+            : PanelFooterText.LauncherKindName(item.Kind, item.Target));
 
     /// <summary>某一行的副标题 / 快捷键键帽按现在的选中、上膛、修饰键重算（不重建整行）。</summary>
     private void RefreshRow(int index)
