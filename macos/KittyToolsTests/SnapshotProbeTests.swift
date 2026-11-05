@@ -2940,6 +2940,18 @@ struct SnapshotProbeTests {
           ]
         }
       ),
+      // 双语词典（牛津英汉汉英排在最前，2026-11-05 反馈「没排版」）：按词性分组、义项后面跟注、拼音去掉、读音分英 / 美
+      (
+        "translate-word-bilingual",
+        { c in
+          c.sourceText = "stuff"
+          c.translatedSource = c.sourceText
+          c.detected = .en
+          c.target = .zhHans
+          c.dictionary = WordLookup.parse(WordLookupTests.bilingualStuff, query: "stuff")
+          c.cards = [.init(service: zhipu, state: .done("美 /stʌf/ 英 /stʌf/\nn. 东西；材料\nv. 塞满；填充"))]
+        }
+      ),
       (
         "translate-history",
         { c in
