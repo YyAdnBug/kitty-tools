@@ -47,6 +47,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
   /// 之前是整块白呼吸，白底窗口上几乎看不出来，改成扫光
   private let translatingPulse = CALayer()
   private let translatingBand = CAGradientLayer()
+  /// 这一轮扫光要走的距离（选区宽 + 光带宽）：拖边改了宽度要按新距离重启动画
+  private var translatingSweep: CGFloat = 0
   private var mode: SelectionView.Mode { session.mode }
   /// 截图、录屏：悬停窗口、单击选中、调整阶段（手柄、拖边、方向键、尺寸胶囊、比例）
   private var adjusts: Bool { mode != .quick }
@@ -230,7 +232,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
     addSubview(canvas)
     let root = canvas.layer!
     translatingPulse.masksToBounds = true
-    translatingPulse.backgroundColor = NSColor.white.withAlphaComponent(0.06).cgColor
+    // 底层压暗一点而不是提亮：纯白背景上白色叠白色是零变化，先压暗才有「扫过去变亮」的对比
+    translatingPulse.backgroundColor = NSColor.black.withAlphaComponent(0.10).cgColor
     translatingPulse.isHidden = true
     translatingBand.colors = [
       NSColor.white.withAlphaComponent(0).cgColor,
@@ -673,11 +676,17 @@ final class SelectionView: NSView, NSTextViewDelegate {
     translatingPulse.isHidden = !translating || shown == nil
     if translating, let shown {
       let band = max(60, shown.width * 0.5)
+      let distance = shown.width + band
       translatingBand.frame = CGRect(x: -band, y: 0, width: band, height: shown.height)
+      // 翻译期间还能拖选区边：宽度一变，扫动的距离跟着变，不然拉宽之后右边那段永远扫不到
+      if abs(translatingSweep - distance) > 0.5 {
+        translatingBand.removeAnimation(forKey: "sweep")
+        translatingSweep = distance
+      }
       if translatingBand.animation(forKey: "sweep") == nil {
         let sweep = CABasicAnimation(keyPath: "transform.translation.x")
         sweep.fromValue = 0
-        sweep.toValue = shown.width + band
+        sweep.toValue = distance
         sweep.duration = 1.1
         sweep.repeatCount = .infinity
         sweep.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
@@ -685,6 +694,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
       }
     } else {
       translatingBand.removeAnimation(forKey: "sweep")
+      translatingSweep = 0
     }
     hint.layer.isHidden = selection != nil && !hintFlashing
     if !hint.layer.isHidden {
