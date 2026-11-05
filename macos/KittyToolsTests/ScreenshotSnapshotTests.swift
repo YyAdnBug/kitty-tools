@@ -1048,6 +1048,27 @@ struct ScreenshotSnapshotTests {
     try write(try #require(bitmap.cgImage), to: "\(out)/shot-pin-zoom.png")
   }
 
+  // issue #4：剪贴板里的文字钉成卡片——一行、带缩进的几行代码、超过上限截掉的长段（浅 / 深色，2x）
+  @Test(.enabled(if: directory != nil)) func renderPinText() throws {
+    let out = try #require(Self.directory)
+    let limit = PinBoard.textCardLimit(visible: CGRect(x: 0, y: 0, width: 1440, height: 400))
+    for dark in [false, true] {
+      let appearance = try #require(NSAppearance(named: dark ? .darkAqua : .aqua))
+      for (name, text) in [
+        ("short", "会议室 3F-07，密码 kitty2026"),
+        ("code", "func pin(_ text: String) {\n    // 钉到屏幕上\n    board.pin(card(text))\n}"),
+        (
+          "long",
+          String(repeating: "剪贴板里是文字时，把文字排成一张卡片钉在屏幕上。Long English words wrap too. ", count: 30)
+        ),
+      ] {
+        let card = try #require(
+          PinBoard.textCard(text, scale: 2, limit: limit, appearance: appearance))
+        try write(card, to: "\(out)/shot-pin-text-\(name)\(dark ? "-dark" : "").png")
+      }
+    }
+  }
+
   private func write(_ image: CGImage, to path: String) throws {
     let data = try #require(
       NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]))

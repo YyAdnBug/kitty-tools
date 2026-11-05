@@ -9,6 +9,7 @@
 // 22 pt HUD 圆钮；缩放时中央 HUD 显示百分比、停手 0.7 s 淡出；关闭时缩到 0.92 并淡出 0.16 s。
 // 不做点击穿透（穿透要全局抢一个热键才能再点回来）、不做钉图历史；钉图会出现在之后的截图里。
 // 「钉住剪贴板里的图」（第二轮体检 F1）：从剪贴板取图（只读）、解码、找钉的位置在这里，AppDelegate.pinClipboard 串起来。
+// 剪贴板里是文字时（issue #4，同贴图工具）把文字排成一张卡片图再钉（clipboardText / textCard），之后就是一张普通的钉图。
 
 import AppKit
 import Carbon.HIToolbox
@@ -93,6 +94,76 @@ extension PinBoard {
     }
     let type = pasteboard.types?.first { UTType($0.rawValue)?.conforms(to: .image) == true }
     return type.flatMap { pasteboard.data(forType: $0) }.map(Source.data)
+  }
+
+  /// 剪贴板里要钉的文字（issue #4）：没有图片时才轮到它（AppDelegate 先问 clipboardImage）。有文件就不算（访达复制文件时
+  /// 字符串是文件名）；密码管理器标了 ConcealedType 的不钉（不把密码明着摆在屏幕上，同剪贴板历史不记它）。
+  /// 首尾的空行去掉，行首的缩进留着；只有空白 → nil
+  static func clipboardText(in pasteboard: NSPasteboard = .general) -> String? {
+    let options: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
+    if let files = pasteboard.readObjects(forClasses: [NSURL.self], options: options),
+      !files.isEmpty
+    {
+      return nil
+    }
+    guard pasteboard.types?.contains(.init("org.nspasteboard.ConcealedType")) != true,
+      let text = pasteboard.string(forType: .string)?.trimmingCharacters(in: .newlines),
+      !text.allSatisfy(\.isWhitespace)
+    else { return nil }
+    return text
+  }
+
+  /// 文字卡片最大多大（点）：宽 560、不超过可见区的六成；高到可见区的八成（clipboardFrame 超过八成才缩，卡片不会被缩小）
+  static func textCardLimit(visible: CGRect) -> CGSize {
+    CGSize(width: min(560, visible.width * 0.6), height: visible.height * 0.8)
+  }
+
+  /// 把文字排成一张卡片图（issue #4）：15 pt 系统字、行距 3.5（同翻译的阅读字号）、四周 12，底和字是系统的文本底色 / 文本色，
+  /// 按 appearance 定深浅（钉的那一刻；之后换深浅色不跟，钉图本来就是一张图）。宽按最长的那行、超过 limit 折行；
+  /// 高超过 limit 的截掉，最后一行末尾「…」。scale = 屏幕倍率（像素 ÷ 它 = 点，同钉图）。圆角由钉图自己裁。
+  /// ponytail: 只排纯文字（不读 RTF / HTML 的格式、不认色值）；正文先截到 2 万字再排，几屏长的文字只钉得下开头
+  static func textCard(
+    _ text: String, scale: CGFloat, limit: CGSize, appearance: NSAppearance
+  ) -> CGImage? {
+    let padding: CGFloat = 12
+    let font = NSFont.systemFont(ofSize: 15)
+    let paragraph = NSMutableParagraphStyle()
+    paragraph.lineSpacing = 3.5
+    let string = NSAttributedString(
+      string: String(text.prefix(20_000)),
+      attributes: [.font: font, .paragraphStyle: paragraph, .foregroundColor: NSColor.textColor])
+    let inner = CGSize(width: limit.width - padding * 2, height: limit.height - padding * 2)
+    let options: NSString.DrawingOptions = [.usesLineFragmentOrigin, .usesFontLeading]
+    let fitted = string.boundingRect(
+      with: CGSize(width: inner.width, height: .greatestFiniteMagnitude), options: options)
+    // 放不下就截到整行（行高 = 字体行高 + 行距），最后一行由 truncatesLastVisibleLine 补「…」
+    let line = NSLayoutManager().defaultLineHeight(for: font) + paragraph.lineSpacing
+    let height =
+      fitted.height <= inner.height ? fitted.height : (inner.height / line).rounded(.down) * line
+    let size = CGSize(
+      width: ceil(min(fitted.width, inner.width)) + padding * 2, height: ceil(height) + padding * 2)
+    let (width, pixelHeight) = (Int(size.width * scale), Int(size.height * scale))
+    guard width > 0, pixelHeight > 0,
+      let context = CGContext(
+        data: nil, width: width, height: pixelHeight, bitsPerComponent: 8, bytesPerRow: 0,
+        space: CGColorSpace(name: CGColorSpace.sRGB)!,
+        bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
+          | CGBitmapInfo.byteOrder32Little.rawValue)
+    else { return nil }
+    // 翻转成左上角原点，文字从上往下排
+    context.translateBy(x: 0, y: CGFloat(pixelHeight))
+    context.scaleBy(x: scale, y: -scale)
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
+    appearance.performAsCurrentDrawingAppearance {
+      NSColor.textBackgroundColor.setFill()
+      CGRect(origin: .zero, size: size).fill()
+      string.draw(
+        with: CGRect(x: padding, y: padding, width: inner.width, height: ceil(height)),
+        options: options.union(.truncatesLastVisibleLine))
+    }
+    NSGraphicsContext.restoreGraphicsState()
+    return context.makeImage()
   }
 
   /// 解码（mac-native §3 @concurrent 第 1 类）：缩略图接口按原尺寸整张解码，顺带按 EXIF 方向转正；GIF 取第一帧。

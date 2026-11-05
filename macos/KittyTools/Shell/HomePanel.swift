@@ -15,7 +15,7 @@ import SwiftUI
 enum Home {
   /// 一行几格
   static let columns = 5
-  /// 一格：最长的名字「钉住剪贴板里的图」11 pt 一行放得下
+  /// 一格：最长的名字（「钉住剪贴板内容」这类七八个字）11 pt 一行放得下
   static let tile = CGSize(width: 92, height: 76)
   /// 格子之间（横竖一样）
   static let gap: CGFloat = 2

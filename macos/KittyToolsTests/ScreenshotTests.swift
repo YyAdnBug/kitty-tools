@@ -681,6 +681,53 @@ struct ScreenshotTests {
     #expect(finder([notes, photo, shot]) == .file(photo))
   }
 
+  /// issue #4：剪贴板里是文字时钉文字。去掉首尾空行、留行首缩进；只有空白、有文件（访达复制文件时字符串是文件名）、
+  /// 标了 ConcealedType（密码管理器）的都不算
+  @Test func clipboardTextSource() throws {
+    let board = NSPasteboard.withUniqueName()
+    defer { board.releaseGlobally() }
+    func text(_ write: () -> Void) -> String? {
+      board.clearContents()
+      write()
+      return PinBoard.clipboardText(in: board)
+    }
+    #expect(text {} == nil)
+    #expect(
+      text { board.setString("\n  if x {\n    y()\n  }\n\n", forType: .string) }
+        == "  if x {\n    y()\n  }")
+    #expect(text { board.setString(" \n\t ", forType: .string) } == nil)
+    let file = FileManager.default.temporaryDirectory.appending(path: "notes.txt")
+    #expect(
+      text {
+        let item = NSPasteboardItem()
+        item.setString(file.absoluteString, forType: .fileURL)
+        item.setString("notes.txt", forType: .string)
+        board.writeObjects([item])
+      } == nil)
+    #expect(
+      text {
+        board.declareTypes([.string, .init("org.nspasteboard.ConcealedType")], owner: nil)
+        board.setString("hunter2", forType: .string)
+      } == nil)
+  }
+
+  /// issue #4：文字卡片的大小——短的一行按字宽、四周各 12；按屏幕倍率出像素；超过上限的宽折行、高截到整行（不超过上限）
+  @Test func textCardSize() throws {
+    let aqua = try #require(NSAppearance(named: .aqua))
+    let short = try #require(
+      PinBoard.textCard("你好", scale: 2, limit: CGSize(width: 560, height: 600), appearance: aqua))
+    #expect(short.width < 200 && short.width % 2 == 0 && short.height > 2 * 24)
+    let limit = CGSize(width: 300, height: 200)
+    let long = try #require(
+      PinBoard.textCard(
+        String(repeating: "很长的一段文字，", count: 200), scale: 1, limit: limit,
+        appearance: aqua))
+    #expect(long.width <= 300 && long.width > 270 && long.height <= 200 && long.height > 150)
+    #expect(
+      PinBoard.textCardLimit(visible: CGRect(x: 0, y: 0, width: 800, height: 500))
+        == CGSize(width: 480, height: 400))
+  }
+
   /// 解码：PNG 数据按原尺寸；JPEG 文件按 EXIF 方向转正（方向 6：存的是 40×20，转正后 20×40）；读不出、文件没了是 nil。
   /// 超过 ImageStore.maxPixels 的等比缩到它以内（只验算式，不真解一张几千万像素的图）
   @Test func clipboardImageDecodes() async throws {
