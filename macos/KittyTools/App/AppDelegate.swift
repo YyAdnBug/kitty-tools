@@ -2718,6 +2718,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       island.show("文字识别失败", detail: "请重试", tone: .error)
       return nil
     }
+    // 识别这段时间里会话可能已经被取消（用户按 Esc 收起截图）：这时不要再写剪贴板历史、也不往下翻
+    guard !Task.isCancelled else { return nil }
     guard !lines.isEmpty else {
       island.show("没有识别到文字", detail: "可以把选区框大一些再试", tone: .warning)
       return nil

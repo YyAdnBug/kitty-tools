@@ -41,6 +41,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
   var autoTranslates = false
   /// 正在就地翻译：选区上出脉冲、框选和工具栏暂时不动
   private var translating = false
+  /// 正在跑的就地翻译（Esc / 换屏框选时取消：不然剩下的段会继续打翻译服务）
+  private var translateTask: Task<Void, Never>?
   /// 选区上的呼吸脉冲（翻译中）
   private let translatingPulse = CALayer()
   private var mode: SelectionView.Mode { session.mode }
@@ -450,6 +452,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
 
   /// 回到待选（别的屏开始操作、右键重新框时）：标注一起清掉
   func reset() {
+    cancelTranslation()
     hudMenu?.dismiss()
     finishSizeEditing(commit: false)
     endEditing()
@@ -1364,6 +1367,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
       refreshCursor()
       announce("已收起工具")
     } else {
+      cancelTranslation()
       session.finish(nil)
     }
   }
@@ -1706,9 +1710,12 @@ final class SelectionView: NSView, NSTextViewDelegate {
     guard let cropped = image.cropping(to: pixels) else { return }
     translating = true
     refresh()
-    Task { @MainActor in
+    translateTask?.cancel()
+    translateTask = Task { @MainActor [weak self] in
       let result = await handler(cropped)
+      guard let self, !Task.isCancelled else { return }
       translating = false
+      translateTask = nil
       guard let patch = result.image else {
         refresh()
         return flashHint([result.message ?? "翻译失败"])
@@ -1718,19 +1725,36 @@ final class SelectionView: NSView, NSTextViewDelegate {
         return flashHint(["合成失败"])
       }
       image = replaced
-      // 标注层按新图重建（马赛克要读新图的像素），旧标注清掉
+      // 标注层按新图重建（马赛克要读新图的像素）。旧标注作废：它们画在旧图上，
+      // 不清的话预览里没了、导出却还带着
       annotationCanvas?.removeFromSuperview()
+      annotationCanvas = nil
+      annotations = []
+      undoStack = []
+      redoStack = []
+      selectedAnnotation = nil
       if annotates {
         let fresh = AnnotationCanvas(image: replaced, dim: spotlightDim)
         fresh.autoresizingMask = [.width, .height]
         addSubview(fresh, positioned: .below, relativeTo: canvas)
         annotationCanvas = fresh
         annotationCanvas?.selection = selection
+        syncAnnotations()
       }
       needsDisplay = true
       refresh()
       flashHint(["已替换为译文"])
     }
+  }
+
+  /// 停掉就地翻译：Esc 收起截图、这块屏被清掉时都要调，不然还在排队的那几段会继续往翻译服务发请求。
+  /// 任务的取消点在 TranslateSegments 的每段开头，取消后不会再发新请求
+  private func cancelTranslation() {
+    translateTask?.cancel()
+    translateTask = nil
+    guard translating else { return }
+    translating = false
+    refresh()
   }
 
   /// 把译文图贴回整屏冻结帧的选区位置。pixels 是图里的像素矩形（原点左上），源图尺寸不变

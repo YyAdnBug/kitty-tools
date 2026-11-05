@@ -73,21 +73,34 @@ nonisolated enum ScreenshotOverlay {
       let text = translations[index].trimmingCharacters(in: .whitespacesAndNewlines)
       guard !text.isEmpty else { continue }
       let pad = max(1, segment.lineHeight * 0.05)
+      let gap = max(2, segment.lineHeight * 0.3)
+      let margin = max(2, segment.lineHeight * 0.2)
 
-      // 往下能长到哪：这段下面、横向有重叠的那几段里最高的那个顶边，再留一点空；下面没东西就到图片底边
+      // 宽度照原段框，最多放宽 25%（长句少折几行）。放宽之前先让出**同高度、在右边**那一列的位置：
+      // 两列挨得近时，放宽出来的字会盖到隔壁那列的译文上
+      let neighbour = segments
+        .filter { candidate in
+          candidate.box.minX > segment.box.minX + 0.5
+            && candidate.box.minY < segment.box.maxY && candidate.box.maxY > segment.box.minY
+        }
+        .map(\.box.minX)
+        .min()
+      let rightRoom = (neighbour ?? imageSize.width) - margin - segment.box.minX
+      let width = max(8, min(max(segment.box.width, segment.box.width * 1.25), rightRoom))
+      let eraseWidth = max(segment.box.width + 2 * pad, width + pad)
+      let eraseMinX = segment.box.minX - pad
+
+      // 往下能长到哪：**抹掉的这一整条**（比原文宽）下面、横向有重叠的段里最高的那个顶边，再留一点空；
+      // 下面没东西就到图片底边。横向范围要用抹除宽度，不然放宽的部分会压到下面那列的字
       let below = segments
         .filter { candidate in
           candidate.box.maxY < segment.box.maxY - 0.5
-            && candidate.box.maxX > segment.box.minX && candidate.box.minX < segment.box.maxX
+            && candidate.box.maxX > eraseMinX && candidate.box.minX < eraseMinX + eraseWidth
         }
         .map(\.box.maxY)
         .max()
-      let gap = max(2, segment.lineHeight * 0.3)
       let bottom: CGFloat = if let below { max(0, min(segment.box.minY, below + gap)) } else { 0 }
 
-      // 宽度照原段框，最多放宽 25%（长句少折几行）；右边不越过图片
-      let rightRoom = imageSize.width - segment.box.minX - max(2, segment.lineHeight * 0.2)
-      let width = max(8, min(max(segment.box.width, segment.box.width * 1.25), rightRoom))
       var frame = CGRect(
         x: segment.box.minX, y: bottom, width: width,
         height: max(segment.box.height, segment.box.maxY - bottom))
@@ -105,9 +118,8 @@ nonisolated enum ScreenshotOverlay {
       let top = segment.box.maxY + pad
       let eraseHeight = min(
         top - frame.minY, max(segment.box.height + 2 * pad, fitted.height + pad))
-      let eraseWidth = max(segment.box.width + 2 * pad, width + pad)
       let erase = CGRect(
-        x: segment.box.minX - pad, y: top - eraseHeight, width: eraseWidth, height: eraseHeight
+        x: eraseMinX, y: top - eraseHeight, width: eraseWidth, height: eraseHeight
       ).intersection(CGRect(origin: .zero, size: imageSize))
       guard erase.width > 1, erase.height > 1 else { continue }
       spans.append(
@@ -176,15 +188,18 @@ nonisolated enum ScreenshotOverlay {
     context.draw(image, in: full)
     context.setShouldAntialias(true)
     let sampler = Sampler(image)
-    for span in spans {
-      // 底色从这一段框外一圈采样：原文是深底白字还是白底黑字，看这个就知道
-      let background = sampler?.ring(around: span.erase) ?? .light
+    // 底色从每一段框外一圈采样：原文是深底白字还是白底黑字，看这个就知道
+    let backgrounds = spans.map { sampler?.ring(around: $0.erase) ?? .light }
+    // 先把所有抹除区域填完，再统一画字：两段挨得近、抹除框有重叠时，后填的色块不会盖掉先画好的译文
+    for (span, background) in zip(spans, backgrounds) {
+      context.setFillColor(background.cgColor)
+      context.fill(span.erase)
+    }
+    for (span, background) in zip(spans, backgrounds) {
       let foreground =
         background.luminance > 0.55
         ? RGB(red: 0.08, green: 0.08, blue: 0.09)
         : RGB(red: 0.97, green: 0.97, blue: 0.97)
-      context.setFillColor(background.cgColor)
-      context.fill(span.erase)
       drawText(span, color: foreground, in: context)
     }
     return context.makeImage()
