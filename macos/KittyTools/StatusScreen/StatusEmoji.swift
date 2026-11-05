@@ -9,9 +9,8 @@
 // 0.02–1.2% CPU；边解边播（CGAnimateImageAtURLWithBlock）要 4%，TimelineView / 定时器逐帧换图更贵，都不用。
 // 解好的帧一个表情 10–19 MB（帧数 × 256 KB；连图层那边的一份，PLAN 里实测是 18–38 MB）：这里不缓存帧，谁要播谁拿着、
 // 不播了就放手（状态屏的会话 StatusScreen.frames、设置里那块预览 StatusPreview）。小图标一律用静止画面。
-// 另可以挑任意一个系统表情（2026-11-04 用户要多些图标；对标 Apple 提醒事项的清单图标、Slack 的状态：任意表情）：存的就是那个字
-// （isCustom）。它在动画表情包里有动画版的（2026-11-05，EmojiPack：746 个）用到时下载、缓存，之后和自带的一样动；还没下好、
-// 没有动画版时由系统的表情字体画、不动。url / still / decode 对这两种字一视同仁（下好了才有文件）。
+// 另有两个入口（2026-11-05）：「系统表情」挑的存那个字（isCustom），永远由系统的表情字体画、不动；「动画表情」挑的是 Fluent
+// 动画表情包里的（EmojiPack：746 个，存「pack:编号」），第一次用到时下载、缓存，之后和自带的一样动，没下好时垫缩略图。
 
 import AppKit
 import SwiftUI
@@ -104,9 +103,18 @@ enum StatusEmoji {
     return bundled
   }
 
-  /// 能存的图标值：空（不要图标）、自带的动画表情、动画表情包里的（「pack:编号」）、系统表情
+  /// 能存的图标值：空（不要图标）、自带的动画表情、动画表情包里的（「pack:编号」）、系统表情。「pack:」后面只看写法
+  /// （[a-z0-9-]，不超过 64 个）、不看这一版的对照表里有没有：更新版本的表情包多了编号，这里置空的话会当本机改动同步出去、
+  /// 把别的 Mac 上挑的抹掉（同 isCustom 认没收进 Unicode 表的字）；画和下载只认这一版有的
   nonisolated static func isValid(_ symbol: String) -> Bool {
-    symbol.isEmpty || ids.contains(symbol) || packID(symbol) != nil || isCustom(symbol)
+    symbol.isEmpty || ids.contains(symbol) || isPackSymbol(symbol) || isCustom(symbol)
+  }
+
+  nonisolated static func isPackSymbol(_ symbol: String) -> Bool {
+    guard symbol.hasPrefix(packPrefix) else { return false }
+    let id = symbol.dropFirst(packPrefix.count)
+    return (1...64).contains(id.count)
+      && id.allSatisfy { "abcdefghijklmnopqrstuvwxyz0123456789-".contains($0) }
   }
 
   /// 动画文件：自带的是包里的那个；动画表情包里的是下好了的缓存（EmojiPack）；系统表情、空的、乱写的、还没下好的是 nil
@@ -115,7 +123,7 @@ enum StatusEmoji {
       return Bundle.main.url(forResource: "status-emoji-" + id, withExtension: "heics")
     }
     guard let pack = packID(id) else { return nil }
-    if let bundled = EmojiPack.bundledID(for: pack) { return url(bundled) }
+    if let bundled = EmojiPack.bundledFile(for: pack) { return url(bundled) }
     return EmojiPack.cachedURL(pack)
   }
 
@@ -171,15 +179,7 @@ enum StatusEmoji {
   /// 动画表情包里一个的小缩略图（包里带的 Resources/emoji-thumb-<编号>.heic，96 × 96；还没下好动画时垫它，选择弹窗的格子也用它）。
   /// 按编号缓存，不是动画表情包里的是 nil
   static func thumbnail(_ symbol: String) -> CGImage? {
-    guard let pack = packID(symbol) else { return nil }
-    let key = "thumb:" + pack as NSString
-    if let cached = stills.object(forKey: key) { return cached }
-    guard let url = Bundle.main.url(forResource: "emoji-thumb-" + pack, withExtension: "heic"),
-      let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-      let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
-    else { return nil }
-    stills.setObject(image, forKey: key)
-    return image
+    packID(symbol).flatMap(EmojiPack.thumbnail)
   }
 
   /// 系统表情画成一张小图（菜单项）。nonisolated：同上，画图的闭包可能在任何线程上调
@@ -255,7 +255,7 @@ enum StatusEmoji {
   /// 第 index 帧解成一张现成的位图（预乘透明度的 BGRA，图层直接能用）。ImageIO 给的图是「用到再解」的，HEICS 的帧还每画
   /// 一次重解一次（实测：73 帧第一遍画 0.31 s，再画一遍还是 0.31 s，带 ShouldCacheImmediately 也一样）——所以当场画进
   /// 位图，播的时候只是换一张现成的图
-  nonisolated private static func bitmap(_ source: CGImageSource, _ index: Int) -> CGImage? {
+  nonisolated static func bitmap(_ source: CGImageSource, _ index: Int) -> CGImage? {
     guard let image = CGImageSourceCreateImageAtIndex(source, index, nil),
       let context = CGContext(
         data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: 0,
@@ -301,10 +301,13 @@ enum StatusEmoji {
 struct StatusEmojiView: View {
   let symbol: String
   var frames: StatusEmoji.Frames?
+  /// 显示到就下动画表情（选上的那个）；气泡 / 图标格子的悬停预览传 false：鼠标扫过去不下，停够了由预览自己下
+  var fetches = true
 
-  init(id: String, frames: StatusEmoji.Frames? = nil) {
+  init(id: String, frames: StatusEmoji.Frames? = nil, fetches: Bool = true) {
     symbol = id
     self.frames = frames
+    self.fetches = fetches
   }
 
   var body: some View {
@@ -328,7 +331,7 @@ struct StatusEmojiView: View {
       }
       if let frames { EmojiPlayer(frames: frames) }
     }
-    .task(id: symbol) { await EmojiPack.shared.fetch(symbol) }
+    .task(id: symbol) { if fetches { await EmojiPack.shared.fetch(symbol) } }
     .background {
       // 深色的表情垫一团亮光才看得见（只画一次的小渐变，比表情大一圈）
       if StatusEmoji.dim.contains(id) {

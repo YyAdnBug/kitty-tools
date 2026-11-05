@@ -44,7 +44,7 @@ macos/                       # 本分支唯一开发区
 ├── Config/                  # Base/Debug/Release.xcconfig、Info.plist（局部）、Secrets.xcconfig（不入库）
 ├── build-dmg.sh             # 打包：archive → 自检 → DMG + App 内更新用的 zip → notes
 ├── status-emoji.swift       # 状态屏的动画表情：下载好的动画 PNG → Resources/status-emoji-*.heics（只用 ImageIO）
-├── emoji-pack.swift         # 动画表情包：Fluent 动画全部 746 个 → 上传到 release emoji-pack-<版本> 的 HEICS + Resources/emoji-pack.json 对照表
+├── emoji-pack.swift         # 动画表情包：Fluent 动画全部 746 个 → 上传到 release emoji-pack-<版本> 的 HEICS + Resources/emoji-pack.json 对照表（中文名用 CLDR）+ Resources/emoji-thumbs/ 缩略图
 ├── brand-icons.swift        # 品牌图标：角色「探头」的 AppIcon 10 张 + 菜单栏剪影 StatusIcon + DMG 背景（CoreGraphics 生成）
 ├── .swift-format
 ├── PLAN.md                  # 仍有效的方案：§2 技术栈、§4 架构与文件表、§8 打包、§10 约束与决定、§11 实现原则、§12 现状与下一步

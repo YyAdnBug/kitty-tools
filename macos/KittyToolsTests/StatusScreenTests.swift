@@ -215,7 +215,10 @@ struct StatusScreenTests {
     #expect(Reminder.sanitized([reminder]).first?.symbol == "person-running")
     reminder.symbol = "pack:dog"
     #expect(Reminder.sanitized([reminder]).first?.symbol == "pack:dog")
+    // 这一版对照表里没有、写法对的（更新版本的表情包）留着，不置空（不然会当本机改动同步出去抹掉别的 Mac 上的）；写法不对的置空
     reminder.symbol = "pack:no-such-emoji"
+    #expect(Reminder.sanitized([reminder]).first?.symbol == "pack:no-such-emoji")
+    reminder.symbol = "pack:Bad_ID"
     #expect(Reminder.sanitized([reminder]).first?.symbol == "")
     reminder.symbol = "run"
     #expect(Reminder.sanitized([reminder]).first?.symbol == "")
@@ -224,11 +227,36 @@ struct StatusScreenTests {
   /// 动画表情包（2026-11-05）：表情字查编号时去掉表情变体符；包里自带的那几个（含编号不同的别名）不下载；缓存超了从最久没用的
   /// 删起；下下来的要是 256 × 256、两帧以上的动画才存；打进包里的对照表盖住自带的 28 个
   @Test func emojiPackLookup() throws {
+    func entry(_ id: String, _ glyph: String, _ group: String, _ name: String, _ words: [String])
+      -> EmojiPack.Entry
+    {
+      EmojiPack.Entry(id: id, glyph: glyph, group: group, name: name, keywords: words)
+    }
     let catalog = EmojiPack.Catalog(
-      tag: "emoji-pack-1", emoji: ["🚀": "rocket", "☺": "smiling-face", "🐶": "dog"])
-    #expect(EmojiPack.id(for: "🚀", in: catalog) == "rocket")
-    #expect(EmojiPack.id(for: "☺️", in: catalog) == "smiling-face")  // 带 U+FE0F 也认
-    #expect(EmojiPack.id(for: "🦄", in: catalog) == nil)
+      tag: "emoji-pack-1",
+      emoji: [
+        entry("rocket", "🚀", "travel", "火箭", ["发射", "太空", "rocket"]),
+        entry("smiling-face", "☺", "people", "微笑", ["开心", "smile"]),
+        entry("dog", "🐕", "nature", "狗", ["宠物", "小狗", "dog", "pet"]),
+      ])
+    // 带 U+FE0F 也搜得到
+    #expect(EmojiPack.search("☺️", in: catalog.emoji).map(\.id) == ["smiling-face"])
+    // 搜：中文名、关键词、英文、表情字都行，空格分开的词都要对上；不搜时按分类
+    #expect(EmojiPack.search("狗", in: catalog.emoji).map(\.id) == ["dog"])
+    #expect(EmojiPack.search("PET", in: catalog.emoji).map(\.id) == ["dog"])
+    #expect(EmojiPack.search("🚀", in: catalog.emoji).map(\.id) == ["rocket"])
+    #expect(EmojiPack.search("太空 发射", in: catalog.emoji).map(\.id) == ["rocket"])
+    #expect(EmojiPack.search("太空 狗", in: catalog.emoji).isEmpty)
+    #expect(EmojiPack.search("  ", in: catalog.emoji).count == 3)
+    // 气泡里的几段：「常用」（最近挑过的、对照表里还有的）在前，再照分类；空的段不画
+    #expect(
+      AnimatedEmojiPicker.sections(catalog.emoji, recent: ["dog", "gone"]).map(\.id)
+        == ["recent", "people", "nature", "travel"])
+    #expect(AnimatedEmojiPicker.sections(catalog.emoji, recent: []).first?.id == "people")
+    #expect(AnimatedEmojiPicker.recent(after: "dog", in: ["cat", "dog"]) == ["dog", "cat"])
+    #expect(
+      AnimatedEmojiPicker.recent(after: "x", in: (0..<30).map(String.init)).count
+        == AnimatedEmojiPicker.recentLimit)
     #expect(EmojiPack.bundledID(for: "rocket") == "rocket")
     #expect(EmojiPack.bundledID(for: "telephone-receiver") == "telephone")
     #expect(EmojiPack.bundledID(for: "dog") == nil)
@@ -266,12 +294,20 @@ struct StatusScreenTests {
     // 打进包里的对照表：自带的 28 个和眼睛都对得上一个表情字（挑系统表情挑到它们时直接用自带的文件）
     let bundled = try #require(EmojiPack.catalog)
     #expect(bundled.tag.hasPrefix("emoji-pack-") && bundled.emoji.count > 700)
-    let reachable = Set(bundled.emoji.values.compactMap(EmojiPack.bundledID(for:)))
+    let reachable = Set(bundled.emoji.map(\.id).compactMap(EmojiPack.bundledID(for:)))
     #expect(reachable == Set(StatusEmoji.ids))
     #expect(
-      bundled.emoji.values.allSatisfy {
-        $0.allSatisfy { "abcdefghijklmnopqrstuvwxyz0123456789-".contains($0) }
+      bundled.emoji.allSatisfy {
+        $0.id.allSatisfy { "abcdefghijklmnopqrstuvwxyz0123456789-".contains($0) }
       })
+    // 每一个都有中文名、分类在那五个里、包里带着它的缩略图（96 × 96）
+    let tabs = Set(AnimatedEmojiPicker.categories.dropFirst().map(\.id))
+    #expect(bundled.emoji.allSatisfy { !$0.name.isEmpty && tabs.contains($0.group) })
+    #expect(EmojiPack.name("dog") == "狗" && EmojiPack.name("no-such") == nil)
+    for entry in bundled.emoji {
+      let thumbnail = try #require(EmojiPack.thumbnail(entry.id), "\(entry.id)")
+      #expect(thumbnail.width == 96 && thumbnail.height == 96, "\(entry.id)")
+    }
     // 系统表情（字）永远是系统的样子：没有动画文件、不换成自带的；动画表情包里的「pack:编号」和自带同一个的换成自带的 id
     // （👥 的「开会」、黑猫要垫浅底 / 亮光，按 id 认），别的照旧
     #expect(StatusEmoji.url("🚀") == nil && StatusEmoji.canonical("🚀") == "🚀")
@@ -288,6 +324,13 @@ struct StatusScreenTests {
     #expect(StatusEmoji.symbol(forPack: "hourglass-not-done") == "hourglass")
     #expect(StatusEmoji.isValid("pack:dog") && !StatusEmoji.isValid("pack:../x"))
     #expect(
+      StatusEmoji.isValid("pack:from-a-newer-pack")
+        && StatusEmoji.packID("pack:from-a-newer-pack") == nil)
+    // 眼睛包里带着：不下载，用包里的
+    #expect(
+      EmojiPack.bundledFile(for: "eyes") == "eyes" && EmojiPack.bundledFile(for: "dog") == nil)
+    #expect(StatusEmoji.url("pack:eyes") == StatusEmoji.url("eyes"))
+    #expect(
       StatusPreset.emoji(for: "👥") == "👥" && StatusPreset.emoji(for: "pack:rocket") == "rocket")
     // 单测宿主里不联网下载
     #expect(!EmojiPack.isEnabled)
@@ -303,7 +346,7 @@ struct StatusScreenTests {
   @Test(.enabled(if: ProcessInfo.processInfo.environment["KITTY_LIVE_EMOJI_PACK"] != nil))
   func emojiPackReleaseServesFiles() async throws {
     let catalog = try #require(EmojiPack.catalog)
-    let ids = Array(Set(catalog.emoji.values)).sorted()
+    let ids = catalog.emoji.map(\.id).sorted()
     for id in [ids.first, ids.randomElement(), ids.last].compactMap({ $0 }) {
       let url = try #require(EmojiPack.remoteURL(id, tag: catalog.tag))
       let (data, response) = try await URLSession.shared.data(from: url)

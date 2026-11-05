@@ -137,8 +137,10 @@ struct SymbolGrid: View {
   /// 鼠标停在哪一格（截图自检可以直接给）
   @State var hovered: String?
   @Environment(\.colorScheme) private var scheme
-  /// 点一下「其他表情」+1：让看不见的接收框拿到焦点、打开系统的表情面板
+  /// 点一下「系统表情」+1：让看不见的接收框拿到焦点、打开系统的表情面板
   @State private var opensPicker = 0
+  /// 「动画表情」的气泡开着
+  @State private var showsAnimated = false
 
   private static let cell: CGFloat = 28
   private static let ring: CGFloat = 2
@@ -156,6 +158,7 @@ struct SymbolGrid: View {
     let column = GridItem(.fixed(Self.cell + Self.ring * 2), spacing: 4)
     return LazyVGrid(columns: Array(repeating: column, count: 7), spacing: 4) {
       ForEach([""] + StatusEmoji.ids, id: \.self) { cell($0) }
+      animatedCell
       customCell
     }
     .fixedSize()
@@ -215,7 +218,58 @@ struct SymbolGrid: View {
     }
   }
 
-  /// 最后一格：没挑过系统表情时是一个笑脸符号，挑过的画那个表情；点了都是打开系统的表情面板
+  /// 倒数第二格「动画表情」：挑过动画表情包里的（自带之外的）画它的静止画面 / 缩略图，没挑过是一个闪光符号；点开动画表情的气泡
+  private var animatedCell: some View {
+    let _ = EmojiPack.shared.generation  // 下好了换成它的静止画面
+    let current = StatusEmoji.canonical(selection)
+    let pack = StatusEmoji.packID(current) != nil ? current : nil
+    return Button {
+      showsAnimated = true
+    } label: {
+      Group {
+        if let pack, let image = StatusEmoji.still(pack) ?? StatusEmoji.thumbnail(pack) {
+          Image(decorative: image, scale: 1)
+            .resizable()
+            .interpolation(.high)
+            .frame(width: Self.cell - 6, height: Self.cell - 6)
+        } else {
+          Image(systemName: "sparkles").font(.system(size: 14, weight: .medium))
+            .foregroundStyle(.secondary)
+        }
+      }
+      .frame(width: Self.cell, height: Self.cell)
+      .background(
+        Style.controlFill,
+        in: RoundedRectangle(cornerRadius: Style.Radius.control, style: .continuous)
+      )
+      .padding(Self.ring)
+      .overlay {
+        if pack != nil {
+          RoundedRectangle(cornerRadius: Style.Radius.control + Self.ring, style: .continuous)
+            .strokeBorder(Style.brand, lineWidth: Self.ring)
+            .transition(.opacity)
+        }
+      }
+      .contentShape(.rect)
+    }
+    .buttonStyle(.plain)
+    .onHover { hover(pack ?? "", $0) }
+    .popover(isPresented: $showsAnimated, arrowEdge: .bottom) {
+      AnimatedEmojiPicker(
+        selection: selection,
+        pick: {
+          selection = $0
+          hovered = nil  // 移出时比的是挑之前那一格，对不上就清不掉：挑完先清
+          showsAnimated = false
+        },
+        section: StatusEmoji.packID(current).flatMap { EmojiPack.entries[$0]?.group })
+    }
+    .accessibilityLabel(pack.flatMap { StatusEmoji.name($0) }.map { "动画表情：\($0)" } ?? "动画表情")
+    .help("从动画表情里挑一个（会动，第一次用到时下载）")
+    .accessibilityAddTraits(pack != nil ? .isSelected : [])
+  }
+
+  /// 最后一格「系统表情」：没挑过系统表情时是一个笑脸符号，挑过的画那个表情；点了都是打开系统的表情面板
   private var customCell: some View {
     // 系统表情永远按系统的样子画（2026-11-05 用户：想用系统表情的就是要系统的样子），不换成动画版
     let custom = StatusEmoji.isCustom(selection) ? selection : nil
@@ -245,9 +299,12 @@ struct SymbolGrid: View {
       }
       .overlay(alignment: .bottomTrailing) {
         // 系统表情原样存那个字
-        EmojiCatcher(trigger: opensPicker) { selection = $0 }
-          .frame(width: 1, height: 1)
-          .allowsHitTesting(false)  // 点格子是按按钮，不是点进这个输入框
+        EmojiCatcher(trigger: opensPicker) {
+          selection = $0
+          hovered = nil
+        }
+        .frame(width: 1, height: 1)
+        .allowsHitTesting(false)  // 点格子是按按钮，不是点进这个输入框
       }
       .contentShape(.rect)
     }
@@ -262,31 +319,35 @@ struct SymbolGrid: View {
 
 /// 「图标」那一行中间的预览：120 pt 的表情（和告示上的表情差不多大）+ 名字。plays（鼠标停在格子上）时把那个动画表情的帧解出来放（停一下才解：鼠标扫过去
 /// 不白解；一个表情的帧十几到几十 MB，移开、换一格就放手）；减弱动态效果时不放。没选图标、也没停在格子上时什么都不画
-private struct EmojiPreview: View {
+struct EmojiPreview: View {
   let symbol: String
   let plays: Bool
+  /// 多大（图标那一行里 120，动画表情气泡底下那条 56）、写不写名字、停多久才解帧 / 下载
+  var side: CGFloat = 120
+  var showsCaption = true
+  var delay = Duration.milliseconds(150)
   @State private var frames: StatusEmoji.Frames?
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-  static let side: CGFloat = 120
 
   var body: some View {
     VStack(spacing: 6) {
       if !symbol.isEmpty {
-        StatusEmojiView(id: symbol, frames: frames)
-          .frame(width: Self.side, height: Self.side)
-        Text(StatusEmoji.caption(symbol))
-          .font(.callout)
-          .foregroundStyle(.secondary)
-          .lineLimit(1)
-          .truncationMode(.tail)
+        StatusEmojiView(id: symbol, frames: frames, fetches: !plays)
+          .frame(width: side, height: side)
+        if showsCaption {
+          Text(StatusEmoji.caption(symbol))
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .truncationMode(.tail)
+        }
       }
     }
     .accessibilityHidden(true)  // 每一格自己有名字，这里只是看的
     .task(id: plays ? symbol : "") {
       frames = nil
       guard plays, !reduceMotion, !symbol.isEmpty else { return }
-      try? await Task.sleep(for: .milliseconds(150))
+      try? await Task.sleep(for: delay)
       guard !Task.isCancelled, let decoded = await StatusEmoji.load(symbol), !Task.isCancelled
       else { return }
       frames = decoded

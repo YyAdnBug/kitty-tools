@@ -211,6 +211,8 @@ enum Prefs {
   /// 发表情包之前在本机试：从这台 Mac 上的临时服务器下（只认 http://127.0.0.1 / localhost，EmojiPack.remoteURL）。没有界面，
   /// defaults write 设、用完删；不注册默认值（不导出、不同步）
   nonisolated static let emojiPackTestServer = "emojiPackTestServer"
+  /// 「动画表情」气泡里最近挑过的（编号，新的在前，最多 18 个 = 三行；顶上「常用」那一段）。这台电脑自己的：不注册默认值、不导出不同步
+  static let emojiPackRecent = "emojiPackRecent"
 
   /// 全部便签窗口里正文的字号（设置 › 便签，pt；档位见 notesFontSizeChoices，默认 15）。读它走 Prefs.notesFontSize(_:)：
   /// 存了不在档位里的值（导入的文件、手改的偏好）按默认算

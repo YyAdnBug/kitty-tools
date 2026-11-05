@@ -1222,13 +1222,25 @@ struct SnapshotProbeTests {
     for (name, hovered, dark, width) in [
       ("hover", Optional("rocket"), false, 590.0), ("selected", nil, false, 590),
       ("hover-dark", "birthday-cake", true, 590), ("narrow", "rocket", false, 470),
-      ("custom-pack", "🐶", false, 590), ("custom-static", "👍🏽", false, 590),
+      ("custom-pack", "pack:dog", false, 590), ("custom-static", "👍🏽", false, 590),
     ] {
       try snapshot(
         Form { SymbolGrid(selection: .constant("hot-beverage"), hovered: hovered) }.formStyle(
           .grouped),
         size: NSSize(width: width, height: 330), dark: dark,
         to: "\(out)/reminders-icon-grid-\(name).png")
+    }
+    // 「动画表情」气泡：开头那几行（选着狗）、搜「狗」、深色。格子的缩略图平时在主线程外解，屏外只画一遍：先解进缓存
+    for entry in (EmojiPack.catalog?.emoji ?? []).prefix(60) { _ = EmojiPack.thumbnail(entry.id) }
+    for entry in EmojiPack.search("狗", in: EmojiPack.catalog?.emoji ?? []) {
+      _ = EmojiPack.thumbnail(entry.id)
+    }
+    for (name, query, dark) in [("smileys", "", false), ("search", "狗", false), ("dark", "", true)]
+    {
+      try snapshot(
+        AnimatedEmojiPicker(selection: "pack:dog", pick: { _ in }, query: query),
+        size: AnimatedEmojiPicker.size, dark: dark,
+        to: "\(out)/reminders-animated-picker-\(name).png")
     }
     // 刘海岛上挂着的提醒：一条（带说明）、几条合成一条、错过的；收着 / 展开，刘海屏 / 胶囊
     let notch = Island.Geometry.notch(width: 200, height: 32)

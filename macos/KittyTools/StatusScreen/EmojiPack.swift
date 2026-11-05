@@ -1,12 +1,15 @@
-// 动画表情包（2026-11-05 用户「所有图标按 URL 加载、缓存在本地」；PLAN §10「功能管理」下的记录）：挑的系统表情
-// （StatusEmoji.isCustom）在 Microsoft Fluent Emoji Animated 里有动画版（746 个，默认肤色），用到时下载那个动画、缓存在本机，
-// 之后就是动的。对标 Teams、Telegram：动画表情用到时从自己的服务器下载、存在本机。
-// - 对照表 Resources/emoji-pack.json（表情字 → 编号，去掉 U+FE0F；macos/emoji-pack.swift 生成）打进包里；文件在本仓库一个单独
-//   的 release（tag 写在对照表里，不标 latest：App 内更新只认 macos-v*），一个约 0.2 MB。包里自带的 28 个不下载（bundledID）。
+// 动画表情包（2026-11-05 用户「所有图标按 URL 加载、缓存在本地」，同日改成「动画表情」「系统表情」两个入口；PLAN §10
+// 「功能管理」下的记录）：「动画表情」气泡（AnimatedEmojiPicker）里挑的 Microsoft Fluent Emoji Animated（746 个，默认肤色，
+// 存「pack:编号」），第一次用到时下载那个动画、缓存在本机，之后就是动的。对标 Teams、Telegram：动画表情用到时从自己的服务器
+// 下载、存在本机。系统表情不走这里（永远系统样子）。
+// - 对照表 Resources/emoji-pack.json（每个一条：编号、表情字、分类、CLDR 中文名、关键词；macos/emoji-pack.swift 生成）和
+//   96 × 96 的缩略图 Resources/emoji-thumbs/ 打进包里；动画文件在本仓库一个单独的 release（tag 写在对照表里，不标 latest：
+//   App 内更新只认 macos-v*），一个约 0.2 MB。包里自带的 28 个和眼睛不下载（bundledID）。
 // - 缓存在数据目录的 emoji-pack/（<编号>.heics），不备份、不导出、不同步（另一台用到时自己下）；用一次把文件的修改时间碰成现在，
 //   超过 50 MB 删最久没用的（启动时、每下好一个之后）。
-// - 什么时候下：显示到它的时候（设置的图标格子、列表行、进入状态屏、全屏提醒）——还没下好、没联网时先画系统表情字（静态），
-//   下好了 generation 加一，画它的视图跟着换成动画的静止画面 / 帧。同一个同时只下一次；下不成的这次运行里 10 分钟内不再试。
+// - 什么时候下：选上的那个显示到的时候（设置的图标格子、列表行、进入状态屏、全屏提醒），和气泡里鼠标停在一格 0.4 s（预览）——
+//   还没下好、没联网时先垫缩略图，下好了 generation 加一，画它的视图跟着换成动画的静止画面 / 帧。同一个同时只下一次；下不成的
+//   这次运行里 10 分钟内不再试。
 // - 开关「自动下载动画表情」（Prefs.emojiPackDownloads，默认开，设置 › 状态屏 / 提醒两页各一行、同一个偏好）：关掉就不联网，
 //   已经下好的照用。
 // - 下下来的东西按不可信输入看：不超过 3 MB、解得出两帧以上、256 × 256 才存（主线程外，@concurrent 第 1 类：图片解码 / 写盘）。
@@ -24,9 +27,19 @@ import Observation
   @ObservationIgnored private var loading: [String: Task<Bool, Never>] = [:]
   @ObservationIgnored private var failedAt: [String: Date] = [:]
 
+  /// 对照表里的一个：编号、表情字（去掉了 U+FE0F）、分类（smileys / people / nature / travel / other）、中文名、搜索用的
+  /// 中文 / 英文关键词（Unicode CLDR 的中文注释 + Fluent 的英文）
+  nonisolated struct Entry: Decodable, Hashable, Sendable {
+    let id: String
+    let glyph: String
+    let group: String
+    let name: String
+    let keywords: [String]
+  }
+
   nonisolated struct Catalog: Decodable, Sendable {
     let tag: String
-    let emoji: [String: String]
+    let emoji: [Entry]
   }
 
   /// 包里的对照表；读不出来就当没有动画包（只画静态）
@@ -48,25 +61,77 @@ import Observation
     "hourglass-not-done": "hourglass", "person-in-lotus-position": "lotus-position",
   ]
 
-  /// 表情字 → 动画包里的编号（纯函数；去掉表情变体符再查）。没有动画版是 nil
-  nonisolated static func id(for glyph: String, in catalog: Catalog? = catalog) -> String? {
-    catalog?.emoji[glyph.replacingOccurrences(of: "\u{FE0F}", with: "")]
+  /// 编号 → 那一条
+  nonisolated static let entries: [String: Entry] = Dictionary(
+    (catalog?.emoji ?? []).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+
+  nonisolated static func contains(_ id: String) -> Bool { entries[id] != nil }
+
+  /// 一个编号的中文名
+  nonisolated static func name(_ id: String) -> String? { entries[id]?.name }
+
+  /// 包里带的小缩略图（Resources/emoji-thumbs/emoji-thumb-<编号>.heic，96 × 96，打进包里是平铺的）：还没下好动画时垫着用（一次
+  /// 一张，在主线程上现解约 3–5 ms）。解好画进位图再缓存（ImageIO 给的 HEIC 每画一次重解一次，同 StatusEmoji.bitmap 的注释）
+  static func thumbnail(_ id: String) -> CGImage? {
+    if let cached = thumbnails.object(forKey: id as NSString) { return cached }
+    guard let image = decodeThumbnail(id) else { return nil }
+    thumbnails.setObject(image, forKey: id as NSString)
+    return image
   }
 
-  /// 对照表里有的全部编号
-  nonisolated static let ids: Set<String> = Set(catalog?.emoji.values ?? [:].values)
+  /// 缓存里已经解好的（没有就 nil，不解）：气泡的格子一出来先拿它，再开过一次就不闪
+  static func cachedThumbnail(_ id: String) -> CGImage? {
+    thumbnails.object(forKey: id as NSString)
+  }
 
-  nonisolated static func contains(_ id: String) -> Bool { ids.contains(id) }
+  /// 气泡的格子用：缓存里有就直接给，没有在主线程外解（@concurrent 第 1 类：图片解码），一开气泡几十格不卡主线程
+  static func loadThumbnail(_ id: String) async -> CGImage? {
+    if let cached = thumbnails.object(forKey: id as NSString) { return cached }
+    guard let image = await decodeThumbnailInBackground(id) else { return nil }
+    thumbnails.setObject(image, forKey: id as NSString)
+    return image
+  }
 
-  /// 一个编号的名字（第 2 批换成中文名）
-  nonisolated static func name(_ id: String) -> String? {
-    contains(id) ? id.replacingOccurrences(of: "-", with: " ") : nil
+  @concurrent nonisolated private static func decodeThumbnailInBackground(_ id: String) async
+    -> CGImage?
+  { decodeThumbnail(id) }
+
+  nonisolated private static func decodeThumbnail(_ id: String) -> CGImage? {
+    guard contains(id),
+      let url = Bundle.main.url(forResource: "emoji-thumb-" + id, withExtension: "heic"),
+      let source = CGImageSourceCreateWithURL(url as CFURL, nil)
+    else { return nil }
+    return StatusEmoji.bitmap(source, 0)
+  }
+
+  /// 解好的一张约 36 KB：最多留 300 张（约 11 MB），内存吃紧时系统自己清
+  private static let thumbnails: NSCache<NSString, CGImage> = {
+    let cache = NSCache<NSString, CGImage>()
+    cache.countLimit = 300
+    return cache
+  }()
+
+  /// 「动画表情」弹窗里搜（纯函数）：空格分开的词都要对上中文名、关键词或表情字本身（不分大小写）；没写词就是全部
+  nonisolated static func search(_ query: String, in list: [Entry]) -> [Entry] {
+    // 对照表里的字去掉了 U+FE0F；系统表情面板插进来的「❤️」带着它
+    let words = query.replacingOccurrences(of: "\u{FE0F}", with: "").lowercased()
+      .split(whereSeparator: \.isWhitespace).map(String.init)
+    guard !words.isEmpty else { return list }
+    return list.filter { entry in
+      let haystack = ([entry.name, entry.glyph] + entry.keywords).map { $0.lowercased() }
+      return words.allSatisfy { word in haystack.contains { $0.contains(word) } }
+    }
   }
 
   /// 动画包的编号如果是包里自带的那 28 个之一，自带的 id（不下载）
   nonisolated static func bundledID(for packID: String) -> String? {
     let id = bundledAliases[packID] ?? packID
     return StatusEmoji.ids.contains(id) ? id : nil
+  }
+
+  /// 包里带着动画文件的（自带的 28 个、眼睛）：不下载，直接用包里的
+  nonisolated static func bundledFile(for packID: String) -> String? {
+    bundledID(for: packID) ?? (packID == StatusEmoji.eyes ? packID : nil)
   }
 
   /// 缓存里的那个文件（下好了才有）
@@ -87,7 +152,7 @@ import Observation
   /// 这个表情要用到了：是动画表情包里的（「pack:编号」）、不是自带的、还没下好、开关开着，就下它。下好了（或本来就有）是 true
   @discardableResult func fetch(_ symbol: String) async -> Bool {
     guard let catalog = Self.catalog, let id = StatusEmoji.packID(symbol),
-      Self.bundledID(for: id) == nil
+      Self.bundledFile(for: id) == nil
     else { return false }
     if let url = Self.cachedURL(id) {
       try? FileManager.default.setAttributes([.modificationDate: Date.now], ofItemAtPath: url.path)
