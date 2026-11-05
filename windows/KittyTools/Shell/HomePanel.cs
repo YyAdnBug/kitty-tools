@@ -386,6 +386,12 @@ internal sealed class HomePanel : Window
         {
             yield return new HomeSection("状态屏", new[] { Global(HotKeyActions.StatusScreen, "状态屏") });
         }
+
+        // 提醒（PLAN-v12 N6）：一格「新建提醒」，同它的快捷键（打开启动器填好「提醒 」）。
+        if (Features.IsOn(Feature.Reminders))
+        {
+            yield return new HomeSection("提醒", new[] { Global(HotKeyActions.ReminderNew, "新建提醒") });
+        }
     }
 
     private void Render()

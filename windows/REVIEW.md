@@ -12,6 +12,25 @@
 
 清单和分批在 `PLAN-v12.md`（不是拍板页，行为照 mac）；分工同 PLAN-v11 D10。
 
+### 给 Windows agent 的核验指令（PLAN-v12 第 1–6 批 + `83040384`，审查方 2026-11-05）
+
+这几批连同 `83040384`（用户反馈 2026-11-04 那一节）都是审查方在 Mac 上写的，**一行都没编译过**。2026-11-05 用户定：窗口、合成、输入钩子这次也在 Mac 上写，你们只编译、核验、修编译错和屏幕上不对的地方。按下面的顺序做，改了什么在对应那批下面记一句（改了什么、为什么）。
+
+1. **拿代码**：`git fetch origin && git rebase origin/windows`；`git log --oneline --grep "PLAN-v12"` 应该有第 1–6 批六个提交，`83040384` 也在。
+2. **编译零警告**：`dotnet build windows/KittyTools.slnx -c Debug -p:Platform=x64`；`dotnet publish windows/KittyTools/KittyTools.csproj -c Release -r win-x64` 和 `-r win-arm64`，零 trim / AOT 警告；
+   发布目录里有 `KittyTools.pri`、`Microsoft.UI.Xaml.Controls.pri`、`Resources\StatusEmoji\`（34 张 PNG + `manifest.txt` + `LICENSE.txt`）。各批「要特别看的编译点」写在那一批下面。
+3. **单测**：`dotnet test windows/KittyTools.Tests` 全过。新加 / 重写的：`ExchangeRatesTests` 11、`ScrollPacerTests` 13、`PlanV12Batch2Tests` 4、`StatusScreenTests` 15、`ReminderTests` 14。
+   `ReminderTests.Canonical_MatchesMacByteForByte` 是和 mac 互通的底线，过不了先把实际输出贴在第 5 批下面，别改 golden。**不许为了变绿删测试、改断言。**
+4. **状态屏只走自检**：`KittyTools.exe --status-screen-probe=<临时目录>`（测试档；Probe 模式只吞带标记的注入事件，真的键盘鼠标照常能用，屏幕会被盖住约 15 秒）。
+   任何测试、自检、截图脚本都**不许真的进入状态屏**；提醒的「进入状态屏」也一样。要真进入的手测条目留给用户，标「没测」。
+5. **手测**（`HANDTEST.md`）：906–917（`83040384`，自动滚动那半照 932 起那一节走）、918–931（第 1 批）、932–951（第 2 批）、952–976（第 3 批）、977–981（第 4 批）、982–999（第 5 批）、1000–1014（第 6 批）。
+   要真鼠标拖、真按键、等到点、第二块屏、真的 Mac 的，能做的做，做不了的标「没测」留给用户；结果写在那一条后面。同步（1013）只用临时文件夹和假数据，不碰用户真实的同步文件夹。
+6. **截图**：各批一个目录推到 `windows-shots`：`0.2.0-feedback-1104/`、`0.2.0-v12-batch-1/`、`0.2.0-v12-batch-2/`、`0.3.0-v12-batch-3/`、`0.3.0-v12-batch-4/`、`0.3.0-v12-batch-5/`、`0.3.0-v12-batch-6/`，要哪几张写在那批的「你们做的」里。
+   先在 `../kitty-shots` 里 `git fetch origin && git reset --hard origin/windows-shots`；只截自己的窗口（状态屏、提醒全屏的图用自检出的），推之前自己看一遍。
+7. **自查**：内存探针（`KITTY_MEMORY_PROBE=1`，和 `1986a4b5` 比，哪一项涨超过 5 MB 写原因）；只有托盘静置 60 s 空闲 CPU 为 0（有开着的间隔提醒时每分钟看一次空闲，不算）；
+   新日志里没有剪贴板内容、原文、译文、URL、提醒和状态的标题。
+8. **版本**：第 1–2 批是 0.2.0、第 3–6 批是 0.3.0；版本号、更新日志、`build-release.ps1` 等这几批核验完再一起定，**不发布、不打 tag**。
+
 ### 第 1 批：启动器汇率换算（N1）→ 已写（审查方，`git log --grep "PLAN-v12 第 1 批"`，没编译）
 
 照 mac `ab0fab4a`、`cf621790`：
@@ -118,7 +137,7 @@
 
 照 mac `Reminders/`（`ceaf2897`、`58f638f3`、`83f2dda5`）和 `macos/PLAN.md` §10「提醒」：
 
-- **Core**（单测 `ReminderTests` 14 个）：`Reminder.cs`（模型、示例、收拾、合并、列表操作、摘要、和 mac 一字不差的 JSON——同步用的那一行是 mac `SyncRecords.encoder` 的写法，
+- **Core**（单测 `ReminderTests` 13 个；第 6 批又加 1 个，共 14 个）：`Reminder.cs`（模型、示例、收拾、合并、列表操作、摘要、和 mac 一字不差的 JSON——同步用的那一行是 mac `SyncRecords.encoder` 的写法，
   测试里的 golden 是在 Mac 上用 mac 的结构体真编出来的；导出文件里时刻写 ISO 8601，同 mac `.iso8601`）、`ReminderSchedule.cs`（下一次什么时候响、间隔的时段、
   `ReminderState`、`ReminderCheck` 到点 / 错过 / 下一次、`ReminderAlerts` 方式和提示上写什么）、`ReminderPhrase.cs`（一句话建提醒，第 6 批启动器用）、
   `Sync/ReminderSync.cs`（第 6 批接进同步）。时刻存成 mac 的 Date（2001 起的秒数，double），当地日历用传进来的 `TimeZoneInfo`。
@@ -132,7 +151,7 @@
 - HANDTEST 982–999。
 
 **你们做的**：
-1. 编译零警告；`dotnet test` 全过（新加 `ReminderTests` 14 个——`Canonical_MatchesMacByteForByte` 是和 mac 互通的底线，过不了先别动别的，把实际输出贴在这里）。
+1. 编译零警告；`dotnet test` 全过（新加 `ReminderTests` 13 个，第 6 批后 14 个——`Canonical_MatchesMacByteForByte` 是和 mac 互通的底线，过不了先别动别的，把实际输出贴在这里）。
    要看的编译点：`Notice.cs` 新加的 `Pin` / `Unpin` / `Nudge`（`_pin` 是可空元组）；`ReminderCenter.NextUp` 里的可空元组；`SettingsWindow.Reminders.cs` 的 `DatePicker.Date`（DateTimeOffset）；
    `ReminderPhrase` 的三个 `GeneratedRegex`（零宽后顾 `(?<!点\s)`）。
 2. 手测 984–999 要等到点，先用「2 分钟后」的一次性提醒走一遍轻提醒、全屏、边框、进入状态屏；993 的空闲判断把间隔改成 15 分钟。
@@ -141,6 +160,31 @@
 
 **替用户定的**：提示音只有系统的通知声一种（mac 有 14 种，名字照存）；边框是实色细边、不呼吸（ponytail）；全屏又合进一条时整个重建；
 「暂停全部」和「N 分钟后提醒我」放在托盘子菜单（第 6 批）；编辑对话框里间隔的「到」用 0:00 表示到半夜。
+
+### 第 6 批：提醒的入口、导出导入、同步（N6）→ 已写（审查方，`git log --grep "PLAN-v12 第 6 批"`，没编译）
+
+照 mac `LauncherModel`「提醒 …」、`addReminderMenu`、`HomePanel`、`ReminderSync`：
+
+- **启动器**：`Core/ReminderPhrase.cs` 加 `ReminderLauncher`（行的目标、`Items`、`Prompts`）。「提醒 / tx / remind + 空格」只列提醒：认得出时间的先是「提醒我：…」（Enter 那一刻再解析一遍、
+  过了只响一声、建好收起启动器并提示），再是标题对得上的已有提醒（Enter = 打开 / 暂停，启动器不收、当场刷新那一行；Ctrl+Enter / Ctrl+K「在设置里编辑」），
+  认不出时间 / 写了重复的 / 时间过了末尾一行提示（Enter 只响一声）；单输关键词时本地结果后面一行「新建提醒…」（Tab / Enter 补全）。都不记使用。
+  三个关键词在 `WebSearch.ReservedKeywords` 里留给提醒。色块、图标：`LauncherActions.FamilyOf / GlyphOf`、`KindTile`（提示行）。动作菜单里的图标用 Segoe（`Clock` / `Pause` / `Play`），不是功能图标的路径。
+- **快捷键 `reminderNew`**（不设默认键）：`ShellRuntime.NewReminder` 打开启动器填好「提醒 」；启动器功能关着时打开 设置 › 提醒。
+- **托盘**「提醒 ›」子菜单：新建提醒…、下一个（`ReminderCenter.NextUp`）、5 / 10 / 25 分钟 / 1 小时后提醒我（标题「时间到了」）、暂停全部 1 小时 / 暂停到明天 ↔ 恢复提醒、管理提醒…。
+- **主界面**最后一节「提醒」一格（新建提醒）；**速查表**加「提醒」一类。
+- **导出导入**：`ArchiveService` 写 `remindersSnoozeMinutes` 和 `reminders`（`Reminders.WriteArchive`，时刻 ISO 8601，同 mac）；导入按编号合并（`Reminders.Merged`：本机独有的不删、过期的一次性提醒不加）。`RemindersState` 不导出。
+- **同步**：`SyncFolder.ReminderSource`（`ReminderSync.Values / JoinKey / Plan`，账本记在 `sync-ledger.json`，同网页搜索、翻译服务），`Settings.SyncReminders`（默认开）、
+  设置 › 通用 › 同步多一行「提醒」（提醒功能关着时不同步，同别的几类）；`SyncRunner.Title`、`SyncFolderRules.IsSyncedKind` 认 `reminders`；合在一起的说明里加了提醒。MAC-DIFF 同步那条改成五类。
+- 单测：`ReminderTests.Launcher_ItemsAndPrompts`（建一条、列全部、认不出时间、重复的、关键词提示、三个关键词留给提醒）。HANDTEST 1000–1014。
+
+**你们做的**：
+1. 编译零警告；`dotnet test` 全过（`ReminderTests` 14 个）。要看的编译点：`LauncherModel.Execute` 里 `case LauncherKind.Action when ReminderLauncher.IsReminder(item.Target):` 要排在普通 `case LauncherKind.Action:` 前面（已经是）；
+   `TrayMenu` 用的是 `Core.Reminders` / `Core.ReminderSchedule`（这个文件没有 `using KittyTools.Core;`）；`$"{until.ToLocalTime():H:mm}"` 的格式串；`ShowSettings(welcome: false, "reminders")` 的非尾随命名参数（别处已有同样写法）。
+2. 手测 1000–1014。1013 的同步用两个临时数据目录（`.Dev` 那一套）+ 临时文件夹；能拿到 mac 写的同步文件夹样本就对一下 `reminders.json` 里的行和 mac 一字不差（`ReminderTests` 的 golden 已经对过）。
+3. 截图：启动器「提醒 10分钟 喝水」、「提醒 」列全部、认不出时间那行、托盘「提醒」子菜单（只截菜单）、主界面那一格、速查表那一类、设置 › 通用 › 同步多出的那一行（浅 / 深），推 `windows-shots` 的 `0.3.0-v12-batch-6/`。
+
+**替用户定的**：「N 分钟后提醒我」「暂停全部」放在托盘子菜单（mac 在菜单栏菜单）；启动器里的提醒行是琥珀色块 + 提醒图标，不是每条自己的表情（同第 4 批状态行的 ponytail）；
+已有提醒按 Enter 是打开 / 暂停（不是打开编辑框，编辑走 Ctrl+Enter）；同步「提醒」默认开、跟着提醒功能的开关走。状态屏的状态列表（mac 也同步）这一版**没接进同步**，导出导入照第 3 批已有。
 
 ## PLAN-v11（0.1.0 之后还没做的，2026-11-03 用户「全部按推荐」）
 

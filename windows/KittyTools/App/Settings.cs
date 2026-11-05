@@ -141,7 +141,7 @@ internal sealed class Settings
     public bool TranslateWordLookup { get; set; } = true;
 
 
-    // 同步（第五版）：用户选的同步文件夹、开关和四类。
+    // 同步（第五版）：用户选的同步文件夹、开关和各类（PLAN-v12 加了提醒）。
     public bool SyncEnabled { get; set; }
 
     public string? SyncFolder { get; set; }
@@ -153,6 +153,9 @@ internal sealed class Settings
     public bool SyncEngines { get; set; } = true;
 
     public bool SyncServices { get; set; } = true;
+
+    /// <summary>同步提醒列表（PLAN-v12 N6）。</summary>
+    public bool SyncReminders { get; set; } = true;
 
     /// <summary>截图快速保存的文件夹；空 = 系统的「屏幕截图」文件夹。</summary>
     public string? ScreenshotSaveFolder { get; set; }

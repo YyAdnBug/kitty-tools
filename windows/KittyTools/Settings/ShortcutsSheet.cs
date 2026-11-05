@@ -44,6 +44,7 @@ internal static class ShortcutsSheet
         ("translate", "翻译", FeatureIcons.Translate),
         ("screenshot", "截图与录制", FeatureIcons.Screenshot),
         ("statusScreen", "状态屏", FeatureIcons.StatusScreen),
+        ("reminders", "提醒", FeatureIcons.Reminders),
         ("general", "设置窗", FeatureIcons.General),
     };
 
@@ -304,6 +305,7 @@ internal static class ShortcutsSheet
         "translate" => "translate",
         "screenshot" => "capture",
         "statusScreen" => "statusScreen",
+        "reminders" => "reminders",
         _ => "general",
     };
 
@@ -520,6 +522,15 @@ internal static class ShortcutsSheet
             new("Esc", "进入之后按住 2 秒：退出（设了退出密码时接着输密码）"),
             new(Array.Empty<string>(), "进入之后：动一下鼠标，再用鼠标按住屏幕底部的提示 2 秒，也能退出"),
             new("0–9", "设了退出密码时：输密码（主键盘那一排和小键盘都行），Backspace 删一位，Esc 不输了"),
+        }),
+
+        // Launcher/LauncherModel.cs 的「提醒 …」（Core 的 ReminderPhrase / ReminderLauncher）、Reminders/ReminderScreen.cs 的全屏。
+        new("reminders", "提醒", "reminders", FeatureIcons.Reminders, new[] { HotKeyActions.ReminderNew }, new ShortcutEntry[]
+        {
+            new("提醒 10分钟 喝水", "tx 明天9点 交周报", "启动器里一句话建一次性的提醒（也认 remind）"),
+            new("Enter", "建好提醒；已有的那条是打开 / 暂停"),
+            new("Ctrl+Enter", "已有的那条：到设置里编辑"),
+            new("Enter", "Esc", "全屏提醒：知道了（出来后 1 秒内不算）"),
         }),
 
         // Shell/HomePanel.cs（PLAN-v10 §5）：托盘左键打开；全局的「打开主界面」不设默认键。

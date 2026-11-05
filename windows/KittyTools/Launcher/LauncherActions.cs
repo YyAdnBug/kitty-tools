@@ -140,6 +140,7 @@ internal static class LauncherActions
             or Record or Audio => "capture",
         Shortcuts => "shortcut",
         _ when IsStatusPreset(target) => "statusScreen",
+        _ when ReminderLauncher.IsReminder(target) => "reminders",
         _ => "general",
     };
 
@@ -168,6 +169,7 @@ internal static class LauncherActions
         Update => Glyphs.Update,
         Quit => Glyphs.Close,
         _ when IsStatusPreset(target) => FeatureIcons.StatusScreen,
+        _ when ReminderLauncher.IsReminder(target) => FeatureIcons.Reminders,
         _ => Glyphs.Settings,
     };
 

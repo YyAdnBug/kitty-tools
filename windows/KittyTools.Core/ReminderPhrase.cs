@@ -324,3 +324,88 @@ public static partial class ReminderPhrase
         return info.LengthInTextElements <= Reminders.MaxTitle ? title : info.SubstringByTextElements(0, Reminders.MaxTitle);
     }
 }
+
+/// <summary>
+/// 启动器里「提醒 …」那几行（PLAN-v12 N6，mac LauncherModel.reminderItems / reminderPrompts，纯函数）：认出了时间的先是「建一条」，再是已有的提醒——
+/// 没写别的时全列，写了的只列标题里带着这些字的；认不出、已经过了、写的是重复的给一行提示，排在已有的后面。单输关键词出补全提示。
+/// 行都借现成的种类：「建一条」和已有的是内置动作（目标 reminder:new / reminder:&lt;id&gt;，右侧小字「提醒」），提示是补全提示。
+/// </summary>
+public static class ReminderLauncher
+{
+    public const string Prefix = "reminder:";
+    public const string NewTarget = "reminder:new";
+    public const string HintTarget = "reminder-hint";
+    public const string KeywordTarget = "reminder-new";
+
+    public const string EmptyText = "还没有提醒：在「提醒 」后面接着写时间和内容，如「10分钟 喝水」";
+
+    public static bool IsReminder(string target) => target.StartsWith(Prefix, StringComparison.Ordinal);
+
+    /// <summary>已有的那一条的 id（不是「建一条」）；别的目标给 null。</summary>
+    public static string? IdOf(string target)
+        => IsReminder(target) && target != NewTarget ? target[Prefix.Length..] : null;
+
+    /// <summary>单输「提醒」「tx」「remind」：Enter / Tab 补全关键词的提示。</summary>
+    public static IReadOnlyList<LauncherItem> Prompts(string query)
+        => ReminderPhrase.IsKeyword(query)
+            ? new[]
+            {
+                new LauncherItem
+                {
+                    Kind = LauncherKind.Prompt,
+                    Target = KeywordTarget,
+                    Title = "新建提醒…",
+                    Subtitle = "输入「提醒 空格 时间 内容」，如「提醒 10分钟 喝水」；Enter 或 Tab 补全关键词",
+                    Completion = query.Trim() + " ",
+                    Note = "提醒",
+                },
+            }
+            : Array.Empty<LauncherItem>();
+
+    public static List<LauncherItem> Items(string rest, IReadOnlyList<Reminder> list, DateTime nowUtc, TimeZoneInfo zone)
+    {
+        var create = new List<LauncherItem>();
+        var hint = new List<LauncherItem>();
+        if (rest.Length > 0)
+        {
+            var parsed = ReminderPhrase.Parse(rest, nowUtc, zone);
+            if (parsed is { } value && value.At > nowUtc)
+            {
+                var when = Reminders.ScheduleSummary(
+                    new ReminderSchedule { Kind = ReminderSchedule.Once, Date = ReminderTime.FromUtc(value.At) }, nowUtc, zone);
+                create.Add(new LauncherItem
+                {
+                    Kind = LauncherKind.Action, Target = NewTarget, Title = "提醒我：" + value.Title, Subtitle = when, Payload = rest, Note = "提醒",
+                });
+            }
+            else
+            {
+                var repeating = ReminderPhrase.IsRepeating(ReminderPhrase.HalfWidth(rest));
+                hint.Add(new LauncherItem
+                {
+                    Kind = LauncherKind.Prompt,
+                    Target = HintTarget,
+                    Title = repeating ? "重复的提醒到设置里建" : parsed is null ? "认不出时间" : "这个时间已经过了",
+                    Subtitle = repeating
+                        ? "这里只建一次的；每天、每周、每隔一阵的到 设置 › 提醒 里加"
+                        : "试试「10分钟 喝水」「明天9点 交周报」「下午3点半 开会」",
+                    Note = "提醒",
+                });
+            }
+        }
+
+        var folded = LauncherMatch.Fold(rest);
+        var existing = list
+            .Where(reminder => rest.Length == 0 || LauncherMatch.Fold(reminder.Title).Contains(folded, StringComparison.Ordinal))
+            .Select(reminder => new LauncherItem
+            {
+                Kind = LauncherKind.Action,
+                Target = Prefix + reminder.Id,
+                Title = reminder.Title,
+                Subtitle = Reminders.Summary(reminder, nowUtc, zone) + (reminder.IsOn ? string.Empty : " · 已暂停"),
+                Payload = reminder.IsOn ? "on" : "off",
+                Note = "提醒",
+            });
+        return create.Concat(existing).Concat(hint).ToList();
+    }
+}

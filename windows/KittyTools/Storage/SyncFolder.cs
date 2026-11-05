@@ -267,6 +267,11 @@ internal sealed class Syncer
             sources.Add(new ServiceSource(_ledger));
         }
 
+        if (settings.SyncReminders && Features.IsOn(Feature.Reminders))
+        {
+            sources.Add(new ReminderSource(_ledger));
+        }
+
         return sources;
     }
 
@@ -414,6 +419,30 @@ internal sealed class Syncer
 
             // 先写设置、紧接着写账本（偏好没有事务，PLAN-v5 §4.1）。
             SettingsService.Current.LauncherSearchEngines = engines;
+            SettingsService.Save();
+            SaveLedger(data, library);
+            return null;
+        }
+    }
+
+    /// <summary>提醒列表（PLAN-v12 N6，照 mac ReminderSync）：只同步列表；处理到哪一刻、暂停这些是这台电脑自己的。
+    /// 落下去之后 ReminderCenter 看着设置变化自己跟上（同设置页改了一条）。</summary>
+    private sealed class ReminderSource(SyncLedger ledger) : Source(ledger, ReminderSync.Kind)
+    {
+        public override string? JoinKey(string value) => ReminderSync.JoinKey(value);
+
+        public override IReadOnlyDictionary<string, string>? Values() => ReminderSync.Values(SettingsService.Current.Reminders);
+
+        public override string? Apply(
+            IReadOnlyDictionary<string, string?> changes, SyncLedgerData data, string library)
+        {
+            var reminders = ReminderSync.Plan(changes, SettingsService.Current.Reminders, out var failure);
+            if (reminders is null)
+            {
+                return failure;
+            }
+
+            SettingsService.Current.Reminders = reminders;
             SettingsService.Save();
             SaveLedger(data, library);
             return null;

@@ -268,6 +268,14 @@ internal sealed partial class LauncherModel
             return new List<LauncherItem> { LauncherCommands.ClipItem(keyword) };
         }
 
+        // 「提醒 …」（带空格）只列提醒（PLAN-v12 N6）：能认出时间的先是「建一条」，再是已有的提醒；单输「提醒」出补全提示（排在本地结果后面）。
+        var remindersOn = Features.IsOn(Feature.Reminders);
+        if (remindersOn && ReminderPhrase.Query(query) is { } rest)
+        {
+            EmptyText = ReminderLauncher.EmptyText;
+            return ReminderLauncher.Items(rest, ReminderCenter.List, DateTime.UtcNow, TimeZoneInfo.Local);
+        }
+
         var trimmed = query.Trim();
         if (trimmed.Length == 0)
         {
@@ -357,7 +365,10 @@ internal sealed partial class LauncherModel
         var ordered = LauncherMatch.Promoting(local, top, item =>
             (LauncherUsageStore.Instance?.Boost(item, trimmed, now).Query ?? 0) > 0);
         var seen = new HashSet<string>();
+        // 「新建提醒…」提示排在本地结果后面：输「提醒」想打开别的「提醒」应用的，Enter 照旧打开它（mac）。
+        var reminderPrompts = remindersOn ? ReminderLauncher.Prompts(trimmed) : Array.Empty<LauncherItem>();
         return ordered.Concat(history).Concat(prompts.Partial).Concat(commandPrompts.Partial).Concat(currencyPrompts.Partial)
+            .Concat(reminderPrompts)
             .Concat(fallback)
             .Where(item => seen.Add(item.Id))
             .ToList();
@@ -955,10 +966,18 @@ internal sealed partial class LauncherModel
                 {
                     ReplaceQuery(completion);
                 }
+                else if (item.Target == ReminderLauncher.HintTarget)
+                {
+                    // 「认不出时间」那一行：只响一声，改一下再建。
+                    Beep();
+                }
 
                 break;
             case LauncherKind.Search:
                 Open(item.Target, null);
+                break;
+            case LauncherKind.Action when ReminderLauncher.IsReminder(item.Target):
+                RunReminder(item);
                 break;
             case LauncherKind.Action:
                 // 退出本 App、进入状态屏不记使用：不进「常用」，也不会越用越排到别的前缀查询前面（Enter 不确认）。
@@ -1003,6 +1022,49 @@ internal sealed partial class LauncherModel
                 Open(item.Target, item);
                 break;
         }
+    }
+
+    /// <summary>
+    /// 「提醒 …」的行（PLAN-v12 N6，mac LauncherModel）：「建一条」按 Enter 的这一刻再解析一遍（「10分钟」要从现在算），时间过了只响一声；
+    /// 已有的那条 = 打开 / 暂停：启动器不收，摘要里的「已暂停」当场跟上，选中留在这一行。都不记使用。
+    /// </summary>
+    private void RunReminder(LauncherItem item)
+    {
+        var now = DateTime.UtcNow;
+        if (item.Target == ReminderLauncher.NewTarget)
+        {
+            if (item.Payload is not { } text || ReminderPhrase.Parse(text, now, TimeZoneInfo.Local) is not { } parsed || parsed.At <= now)
+            {
+                Beep();
+                return;
+            }
+
+            Close();
+            var schedule = new ReminderSchedule { Kind = ReminderSchedule.Once, Date = ReminderTime.FromUtc(parsed.At) };
+            ReminderCenter.Add(new Reminder { Id = Guid.NewGuid().ToString().ToUpperInvariant(), Title = parsed.Title, Schedule = schedule });
+            NoticeHost.Show("建好了提醒", Reminders.ScheduleSummary(schedule, now, TimeZoneInfo.Local) + " · " + parsed.Title, NoticeTone.Normal);
+            return;
+        }
+
+        if (ReminderLauncher.IdOf(item.Target) is not { } id)
+        {
+            return;
+        }
+
+        var settings = SettingsService.Current;
+        var list = Reminders.Load(settings.Reminders);
+        if (list.FirstOrDefault(reminder => reminder.Id == id) is not { } found)
+        {
+            Beep();
+            return;
+        }
+
+        found.IsOn = !found.IsOn;
+        settings.Reminders = list;
+        SettingsService.Save();
+        Search(Query);
+        ResultsChanged(item.Id);
+        Announce(found.IsOn ? $"已打开「{found.Title}」" : $"已暂停「{found.Title}」");
     }
 
     /// <summary>Ctrl+Enter（mac ⌘↩）：应用 / 文件在资源管理器中显示（find 反过来是打开）、计算只复制、网址用第二个浏览器打开；
@@ -1053,6 +1115,11 @@ internal sealed partial class LauncherModel
             case LauncherKind.Calculation:
             case LauncherKind.Ip when item.Payload is not null:
                 Copy(item);
+                break;
+            case LauncherKind.Action when ReminderLauncher.IdOf(item.Target) is not null:
+                // 已有的提醒：到设置里编辑。
+                Close();
+                ShellRuntime.Instance?.ShowSettings(welcome: false, "reminders");
                 break;
             default:
                 Beep();
@@ -1426,6 +1493,20 @@ internal sealed partial class LauncherModel
             return ("在资源管理器中显示", Glyphs.Folder, false);
         }
 
+        // 「提醒 …」的行（PLAN-v12 N6）：建好提醒 / 暂停 / 打开 / 改一下再建。
+        if (item.Kind == LauncherKind.Action && ReminderLauncher.IsReminder(item.Target))
+        {
+            // 图标给 Segoe 的（动作菜单里是字体图标，画不了功能图标的路径）。
+            return item.Target == ReminderLauncher.NewTarget ? ("建好提醒", Glyphs.Clock, false)
+                : item.Payload == "on" ? ("暂停", Glyphs.Pause, false)
+                : ("打开", Glyphs.Play, false);
+        }
+
+        if (item.Kind == LauncherKind.Prompt && item.Target == ReminderLauncher.HintTarget)
+        {
+            return ("改一下再建", Glyphs.Edit, false);
+        }
+
         var verb = PanelFooterText.LauncherVerb(item.Kind, item.Target, confirming, item.Title);
         return (verb.Text, Ui.KindTile.GlyphOf(item.Kind, item.Target), verb.Danger);
     }
@@ -1453,6 +1534,7 @@ internal sealed partial class LauncherModel
                 ? ("打开", Glyphs.OpenInNewWindow, false)
                 : ("在资源管理器中显示", Glyphs.Folder, false),
             LauncherKind.Calculation => ("只复制，不粘贴", Glyphs.Copy, false),
+            LauncherKind.Action when ReminderLauncher.IdOf(item.Target) is not null => ("在设置里编辑", Glyphs.Settings, false),
             LauncherKind.Ip when item.Payload is not null => ("只复制，不粘贴", Glyphs.Copy, false),
             _ => null,
         };

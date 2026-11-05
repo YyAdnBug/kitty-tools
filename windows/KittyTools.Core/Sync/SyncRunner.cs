@@ -58,6 +58,7 @@ public sealed class SyncRunner(
         VocabularySync.Kind => "生词本",
         EngineSync.Kind => "网页搜索",
         ServiceSync.Kind => "翻译服务",
+        ReminderSync.Kind => "提醒",
         _ => kind,
     };
 

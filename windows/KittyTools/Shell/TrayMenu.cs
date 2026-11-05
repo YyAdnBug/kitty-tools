@@ -277,6 +277,63 @@ internal static partial class TrayMenu
             menu.Add(new Item("状态屏", null, static () => { }, Children: children));
         }
 
+        // 提醒（PLAN-v12 N6，mac addReminderMenu）：一项「提醒」带子菜单——新建提醒…（快捷键）、下一个、几分钟后提醒我、暂停全部 / 恢复、管理提醒…。
+        if (Features.IsOn(Feature.Reminders))
+        {
+            AddSeparator(menu);
+            var children = new List<Item>
+            {
+                new("新建提醒…", runtime?.HotKeys.ShortcutFor(HotKeyActions.ReminderNew), () => runtime?.NewReminder()),
+            };
+            if (ReminderCenter.NextUp() is { } next)
+            {
+                var when = Core.Reminders.ScheduleSummary(
+                    new Core.ReminderSchedule { Kind = Core.ReminderSchedule.Once, Date = Core.ReminderTime.FromUtc(next.At) },
+                    DateTime.UtcNow, TimeZoneInfo.Local);
+                children.Add(new Item($"下一个：{next.Reminder.Title}（{when}）", null, () => runtime?.ShowSettings(welcome: false, "reminders")));
+            }
+
+            children.Add(new Item(null, null, static () => { }));
+            foreach (var minutes in new[] { 5, 10, 25, 60 })
+            {
+                children.Add(new Item(minutes == 60 ? "1 小时后提醒我" : $"{minutes} 分钟后提醒我", null, () => ReminderCenter.Add(new Core.Reminder
+                {
+                    Id = Guid.NewGuid().ToString().ToUpperInvariant(),
+                    Title = Core.ReminderPhrase.DefaultTitle,
+                    Schedule = new Core.ReminderSchedule
+                    {
+                        Kind = Core.ReminderSchedule.Once, Date = Core.ReminderTime.FromUtc(DateTime.UtcNow.AddMinutes(minutes)),
+                    },
+                })));
+            }
+
+            children.Add(new Item(null, null, static () => { }));
+            if (ReminderCenter.PausedUntil is { } until)
+            {
+                children.Add(new Item($"恢复提醒（暂停到 {until.ToLocalTime():H:mm}）", null, () =>
+                {
+                    ReminderCenter.Pause(null);
+                    NoticeHost.Show("提醒恢复了", string.Empty, NoticeTone.Normal);
+                }));
+            }
+            else
+            {
+                var tomorrow = DateTime.Today.AddDays(1).ToUniversalTime();
+                foreach (var (title, pauseUntil) in new[] { ("暂停全部提醒 1 小时", DateTime.UtcNow.AddHours(1)), ("暂停到明天", tomorrow) })
+                {
+                    children.Add(new Item(title, null, () =>
+                    {
+                        ReminderCenter.Pause(pauseUntil);
+                        NoticeHost.Show($"提醒暂停到 {pauseUntil.ToLocalTime():H:mm}", "这期间到点的，之后合成一条告诉你", NoticeTone.Normal);
+                    }));
+                }
+            }
+
+            children.Add(new Item(null, null, static () => { }));
+            children.Add(new Item("管理提醒…", null, () => runtime?.ShowSettings(welcome: false, "reminders")));
+            menu.Add(new Item("提醒", null, static () => { }, Children: children));
+        }
+
         AddSeparator(menu);
         menu.Add(new Item("设置…", null, () => runtime?.ShowSettings(welcome: false)));
         menu.Add(new Item("关于 Kitty Tools", null, () => runtime?.ShowSettings(welcome: false, "about")));

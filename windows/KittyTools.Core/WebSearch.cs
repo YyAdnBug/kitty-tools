@@ -163,7 +163,7 @@ public static class WebSearch
         return (exact, partial);
     }
 
-    /// <summary>关键词不能用的（值是设置里提示的占用者）：cb 剪贴板、fy 翻译、open / find 文件搜索、quit 这些系统命令。</summary>
+    /// <summary>关键词不能用的（值是设置里提示的占用者）：cb 剪贴板、fy 翻译、open / find 文件搜索、quit 这些系统命令、提醒 / tx / remind 提醒。</summary>
     public static readonly IReadOnlyDictionary<string, string> ReservedKeywords = new Dictionary<string, string>
     {
         ["cb"] = "剪贴板指令",
@@ -175,6 +175,10 @@ public static class WebSearch
         ["forcequit"] = "系统命令",
         ["kill"] = "系统命令",
         ["port"] = "系统命令",
+        // 一句话建提醒（PLAN-v12 N6，mac ReminderPhrase.keywords）。
+        ["提醒"] = "提醒",
+        ["tx"] = "提醒",
+        ["remind"] = "提醒",
     };
 
     /// <summary>设置里一行的名字（没填名称写「未命名」）。</summary>

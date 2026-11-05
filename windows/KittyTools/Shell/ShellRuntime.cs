@@ -1334,6 +1334,26 @@ internal sealed class ShellRuntime
             case HotKeyActions.StatusScreen:
                 StatusPicker.ToggleOrEnterFirst();
                 break;
+            case HotKeyActions.ReminderNew:
+                NewReminder();
+                break;
+        }
+    }
+
+    /// <summary>
+    /// 新建提醒（PLAN-v12 N6，mac reminderNew）：打开启动器填好「提醒 」，接着写时间和内容；启动器关着时打开 设置 › 提醒。
+    /// 托盘、主界面的「新建提醒…」也走这里。
+    /// </summary>
+    internal void NewReminder()
+    {
+        if (Features.IsOn(Feature.Launcher))
+        {
+            OverlayHost.SetLauncherQuery("提醒 ");
+            OverlayHost.Show(OverlayKind.Launcher);
+        }
+        else
+        {
+            ShowSettings(welcome: false, "reminders");
         }
     }
 

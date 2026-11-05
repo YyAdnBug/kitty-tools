@@ -332,4 +332,39 @@ public sealed class ReminderTests
         Assert.AreEqual("这个时间已经过了，不会再提醒", Reminders.Problem(created, Local(2026, 11, 5, 12, 1)));
         Assert.IsNull(Reminders.Problem(created, Now));
     }
+
+    [TestMethod]
+    public void Launcher_ItemsAndPrompts()
+    {
+        // 「提醒 10分钟 喝水」：第一行是建一条，后面没有同名的。
+        var list = Reminders.Examples();
+        var items = ReminderLauncher.Items("10分钟 喝水", list, Now, Zone);
+        Assert.AreEqual(ReminderLauncher.NewTarget, items[0].Target);
+        Assert.AreEqual("提醒我：喝水", items[0].Title);
+        Assert.AreEqual("10分钟 喝水", items[0].Payload);
+        Assert.IsNull(ReminderLauncher.IdOf(items[0].Target));
+
+        // 只写了「提醒 」：列出全部已有的，没有建一条也没有提示。
+        items = ReminderLauncher.Items(string.Empty, list, Now, Zone);
+        CollectionAssert.AreEqual(new[] { "reminder:water", "reminder:eyes", "reminder:walk" }, items.Select(item => item.Target).ToList());
+        Assert.AreEqual("off", items[0].Payload);
+        StringAssert.EndsWith(items[0].Subtitle, " · 已暂停");
+        Assert.AreEqual("water", ReminderLauncher.IdOf(items[0].Target));
+
+        // 认不出时间：按标题筛已有的，末尾一行提示；重复的叫去设置里建。
+        items = ReminderLauncher.Items("喝水", list, Now, Zone);
+        CollectionAssert.AreEqual(new[] { "reminder:water", ReminderLauncher.HintTarget }, items.Select(item => item.Target).ToList());
+        Assert.AreEqual("认不出时间", items[^1].Title);
+        Assert.AreEqual("重复的提醒到设置里建", ReminderLauncher.Items("每天9点 喝水", list, Now, Zone)[^1].Title);
+
+        Assert.AreEqual(1, ReminderLauncher.Prompts("TX").Count);
+        Assert.AreEqual("提醒 ", ReminderLauncher.Prompts(" 提醒 ")[0].Completion);
+        Assert.AreEqual(0, ReminderLauncher.Prompts("提醒 10分钟").Count);
+
+        // 三个关键词都留给提醒：网页搜索里不能再用。
+        foreach (var keyword in ReminderPhrase.Keywords)
+        {
+            Assert.AreEqual("提醒", WebSearch.ReservedKeywords[keyword]);
+        }
+    }
 }

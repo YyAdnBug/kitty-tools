@@ -449,6 +449,20 @@ internal static class ArchiveService
                 writer.WriteEndArray();
             }
 
+            // PLAN-v12 N6 提醒：同 mac Prefs.reminders（时刻写 ISO 8601，同 mac 导出的 .iso8601）、remindersSnoozeMinutes。
+            // 处理到哪一刻、推到几点（RemindersState）是这台电脑自己的，不导出。
+            writer.WriteNumber("remindersSnoozeMinutes", settings.RemindersSnoozeMinutes);
+            if (settings.Reminders is { } reminders)
+            {
+                writer.WriteStartArray("reminders");
+                foreach (var reminder in Reminders.Sanitized(reminders))
+                {
+                    Reminders.WriteArchive(writer, reminder);
+                }
+
+                writer.WriteEndArray();
+            }
+
             writer.WriteEndObject();
         }
 
@@ -526,6 +540,18 @@ internal static class ArchiveService
                     break;
                 case "statusScreenAnimations" when value.ValueKind is JsonValueKind.True or JsonValueKind.False:
                     settings.StatusScreenAnimations = value.GetBoolean();
+                    break;
+                case "remindersSnoozeMinutes" when value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var snooze) &&
+                                                   Reminders.SnoozeChoices.Contains(snooze):
+                    settings.RemindersSnoozeMinutes = snooze;
+                    break;
+                case "reminders":
+                    // 按 id 更新和添加、本机独有的不删；文件里本机没有、时间已经过了的一次性提醒不加（mac Reminder.merged）。
+                    if (Reminders.ReadList(value) is { } incomingReminders && Reminders.Sanitized(incomingReminders).Count > 0)
+                    {
+                        settings.Reminders = Reminders.Merged(incomingReminders, Reminders.Load(settings.Reminders), DateTime.UtcNow);
+                    }
+
                     break;
                 case "statusScreenPresets":
                     // 用户自己写的东西：按 id 更新和添加、本机独有的不删（mac StatusPreset.merged）；有一个解不出整组不导。

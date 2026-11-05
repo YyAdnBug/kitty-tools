@@ -1129,8 +1129,8 @@ internal sealed partial class SettingsWindow : Window
 
     /// <summary>
     /// 设置 › 通用 › 同步（PLAN-v5 §4.4；布局照 mac SyncSection）：没开时一行「选择文件夹…」；开着时文件夹 +「停止同步」+
-    /// 「立即同步」（等确认时换成「继续同步」），说明是状态，出了问题橙字；下面四类各一个开关，跟着的功能关着时说一声；最后是其他电脑。
-    /// mac 另外能同步设置、便签、状态屏和启动器收藏，Windows 这一版只有四类（MAC-DIFF.md）。
+    /// 「立即同步」（等确认时换成「继续同步」），说明是状态，出了问题橙字；下面各类（PLAN-v12 加了提醒，五类）各一个开关，跟着的功能关着时说一声；最后是其他电脑。
+    /// mac 另外能同步设置、便签、状态屏和启动器收藏，Windows 这一版只有这五类（MAC-DIFF.md）。
     /// </summary>
     private void BuildSyncSection()
     {
@@ -1206,6 +1206,8 @@ internal sealed partial class SettingsWindow : Window
                 settings.SyncEngines, value => settings.SyncEngines = value, others);
             AddSyncPart(Core.Sync.ServiceSync.Kind, "翻译服务", "哪几个服务、顺序和设置；密钥不同步，别的电脑上要自己填一次", Feature.Translate,
                 settings.SyncServices, value => settings.SyncServices = value, others);
+            AddSyncPart(Core.Sync.ReminderSync.Kind, "提醒", "提醒列表；推迟、暂停这些每台电脑各管各的", Feature.Reminders,
+                settings.SyncReminders, value => settings.SyncReminders = value, others);
 
             var peers = status is { Devices.Count: > 0 }
                 ? string.Join("、", status.Devices)
@@ -1248,7 +1250,7 @@ internal sealed partial class SettingsWindow : Window
 
     /// <summary>「合在一起后……」：第一次选文件夹时、勾上还没合过的一类时共用（mac SyncSection.joinNote，去掉 Windows 不同步的几类）。</summary>
     private const string JoinNote =
-        "合在一起后，这台电脑上的片段、收藏、生词、网页搜索和翻译服务会和它们的一起出现在每台电脑上（同样的不重复）；" +
+        "合在一起后，这台电脑上的片段、收藏、生词、网页搜索、翻译服务和提醒会和它们的一起出现在每台电脑上（同样的不重复）；" +
         "之后同一条两边都改过的，后改的留下。";
 
     private async Task<bool> ConfirmJoinAsync(string title, string? lead)

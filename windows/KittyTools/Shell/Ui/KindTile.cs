@@ -191,6 +191,8 @@ internal static class KindTile
         LauncherKind.Prompt when target.StartsWith("file-", StringComparison.Ordinal) => "general",
         LauncherKind.Prompt when target.StartsWith("system-", StringComparison.Ordinal) => "command",
         LauncherKind.Prompt when target == "translate-fy" => "translate",
+        // 「提醒 …」认不出时间的提示、单输「提醒」的补全提示：提醒的琥珀（PLAN-v12 N6）。
+        LauncherKind.Prompt when target is ReminderLauncher.HintTarget or ReminderLauncher.KeywordTarget => "reminders",
         // 汇率的用法提示、货币候选：同计算卡的橙（mac）。
         LauncherKind.Prompt when target.StartsWith(ExchangeRates.PromptTarget, StringComparison.Ordinal) => "calculator",
         _ => FamilyOf(kind),
@@ -213,6 +215,7 @@ internal static class KindTile
             "system-kill" => Glyphs.Stop,
             "system-port" => Glyphs.Port,
             "translate-fy" => FeatureIcons.Translate,
+            ReminderLauncher.HintTarget or ReminderLauncher.KeywordTarget => FeatureIcons.Reminders,
             _ when target.StartsWith(ExchangeRates.PromptTarget, StringComparison.Ordinal) => Glyphs.Calculator,
             _ => Glyphs.Search,
         },
