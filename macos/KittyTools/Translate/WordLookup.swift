@@ -5,6 +5,9 @@
 //   返回一整行纯文本，这里按实测的格式（词头 音节 | 音标 | 词性 (变形) 1 释义: 例句 | 例句 • 子义项 … PHRASES …）
 //   切成词性分组和义项。它会模糊匹配（look up 返回 lookup、give up 返回 give）：词头和原文对不上、
 //   又不是变形（ran → run）时一律不要。首查要加载词典（实测最多约 0.3 s），在 @concurrent 里调。
+// - 双语词典（「牛津英汉汉英词典」排在最前时，2026-11-05 用户反馈「没排版」）是另一种格式：A. B. 分词性、①② 分义项、
+//   ▸ 引出例句、英译中的每个中文释义后面带拼音；汉译英是「词 拼音 词性 释义」。拼音去掉（D2），语域标签和括号里的说明
+//   收成义项后面的一句注（D1），短语动词小节不要（D4）。
 
 import CoreServices
 import Foundation
@@ -21,7 +24,16 @@ nonisolated struct DictionaryEntry: Equatable, Sendable {
 
   struct Sense: Equatable, Sendable {
     var definition: String
-    var example: String?
+    /// 双语词典的注：语域标签（informal、British）、括号里的义项说明（personal items、指程度）、方括号里的注
+    var note: String?
+    var examples: [String] = []
+  }
+
+  /// 一个读音：双语词典分英音、美音（BrE / AmE），英英词典和汉语拼音不分（accent 为 nil）
+  struct Phonetic: Equatable, Sendable {
+    enum Accent: Sendable { case uk, us }
+    var accent: Accent?
+    var text: String
   }
 
   var headword: String
@@ -31,6 +43,7 @@ nonisolated struct DictionaryEntry: Equatable, Sendable {
   var groups: [Group]
 
   var senseCount: Int { groups.reduce(0) { $0 + $1.senses.count } }
+  var phonetics: [Phonetic] { phonetic.map(WordLookup.phonetics) ?? [] }
 }
 
 nonisolated enum WordLookup {
@@ -112,7 +125,7 @@ nonisolated enum WordLookup {
 
   /// 这些大写小节之后是短语、短语动词、派生词、词源、用法说明：查词卡片不要
   private static let sectionMarkers = [
-    " PHRASES ", " PHRASAL VERBS ", " DERIVATIVES ", " ORIGIN ", " USAGE ", " WORD FAMILY ",
+    " PHRASES ", " PHRASAL VERB", " DERIVATIVES ", " ORIGIN ", " USAGE ", " WORD FAMILY ",
     " NOTE ",
   ]
 
@@ -141,7 +154,8 @@ nonisolated enum WordLookup {
       phonetic = String(bar.output.1)
       body = String(text[bar.range.upperBound...])
     } else {
-      // 汉语：词 拼音 [词性] 释义
+      // 汉语：词 拼音 [词性] 释义；双语词典在词后面另写繁体（闰 （閏） rùn …），去掉
+      text = text.replacing(/^(\S+) （[^）]*）/) { String($0.output.1) }
       let parts = text.split(separator: " ", maxSplits: 2).map(String.init)
       guard parts.count >= 2 else { return nil }
       head = parts[0]
@@ -160,9 +174,25 @@ nonisolated enum WordLookup {
     let headword = words.joined(separator: " ")
     guard !headword.isEmpty else { return nil }
     body = body.trimmingCharacters(in: .whitespaces)
-    var entry = DictionaryEntry(
-      headword: headword, phonetic: phonetic,
-      groups: head.unicodeScalars.contains(where: isCJK) ? chineseGroups(body) : groups(body))
+    let chineseHead = head.unicodeScalars.contains(where: isCJK)
+    let groups: [DictionaryEntry.Group]
+    if chineseHead {
+      // 汉译英的双语词典：拼音后面是英文词性（名字 mínɡzi noun name▸ …）；拼音里的 ɡ 换成普通的 g
+      if bilingualStart.firstMatch(
+        in: body, range: NSRange(location: 0, length: (body as NSString).length)) != nil
+      {
+        phonetic = phonetic?.replacing("ɡ", with: "g")
+        groups = bilingualGroups(body, chineseGlosses: false)
+      } else {
+        groups = chineseGroups(body)
+      }
+    } else {
+      // 英译中的双语词典：正文里有汉字
+      groups =
+        body.unicodeScalars.contains(where: isCJK)
+        ? bilingualGroups(body, chineseGlosses: true) : self.groups(body)
+    }
+    var entry = DictionaryEntry(headword: headword, phonetic: phonetic, groups: groups)
     if headword.lowercased() != query.lowercased() {
       // 变形（ran → run、children → child）：原文出现在第一组的变形表里才算
       guard let forms = entry.groups.first?.forms,
@@ -217,7 +247,7 @@ nonisolated enum WordLookup {
     }
     let parts = rest.split(whereSeparator: { ("①"..."⑳").contains($0) })
       .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-    let senses = parts.map { DictionaryEntry.Sense(definition: $0, example: nil) }
+    let senses = parts.map { DictionaryEntry.Sense(definition: $0) }
     return senses.isEmpty ? [] : [.init(partOfSpeech: partOfSpeech, forms: nil, senses: senses)]
   }
 
@@ -239,18 +269,18 @@ nonisolated enum WordLookup {
     return parts.isEmpty ? [text] : parts
   }
 
-  /// 一个义项：只取主义项（第一个 • 之前），「释义: 例句 | 例句」拆成释义和第一个例句，去掉 [no object] 这类语法标签
+  /// 一个义项：只取主义项（第一个 • 之前），「释义: 例句 | 例句」拆成释义和例句，去掉 [no object] 这类语法标签
   private static func sense(_ raw: String) -> DictionaryEntry.Sense? {
     let main = raw.components(separatedBy: " • ")[0]
     var definition = main
-    var example: String?
+    var examples: [String] = []
     if let colon = main.range(of: ": ") {
       definition = String(main[..<colon.lowerBound])
       // 例句前面也可能挂着语法标签（[no object, with adverbial] : the rumor ran…）
-      example =
-        String(main[colon.upperBound...].components(separatedBy: " | ")[0])
-        .replacing(/\[[^\]]*\]/, with: "")
-        .trimmingCharacters(in: CharacterSet(charactersIn: " .:")).nilIfEmpty
+      examples = main[colon.upperBound...].components(separatedBy: " | ").compactMap {
+        $0.replacing(/\[[^\]]*\]/, with: "")
+          .trimmingCharacters(in: CharacterSet(charactersIn: " .:")).nilIfEmpty
+      }
     }
     definition =
       definition
@@ -258,7 +288,210 @@ nonisolated enum WordLookup {
       .replacing(/\s+/, with: " ")
       .trimmingCharacters(in: CharacterSet(charactersIn: " :;."))
     guard !definition.isEmpty else { return nil }
-    return DictionaryEntry.Sense(definition: definition, example: example)
+    return DictionaryEntry.Sense(definition: definition, examples: examples)
+  }
+
+  // MARK: 双语词典（牛津英汉汉英）
+
+  /// 双语词典的英文词性和显示用的中文名（长的在前：transitive verb 要先于 verb 认）
+  private static let bilingualPartsOfSpeech: [(english: String, chinese: String)] = [
+    ("transitive verb", "及物动词"), ("intransitive verb", "不及物动词"), ("reflexive verb", "反身动词"),
+    ("auxiliary verb", "助动词"), ("modal verb", "情态动词"), ("phrasal verb", "短语动词"),
+    ("measure word", "量词"), ("noun", "名词"), ("verb", "动词"), ("adjective", "形容词"),
+    ("adverb", "副词"), ("pronoun", "代词"), ("preposition", "介词"), ("conjunction", "连词"),
+    ("exclamation", "感叹词"), ("interjection", "感叹词"), ("determiner", "限定词"),
+    ("abbreviation", "缩略词"), ("prefix", "前缀"), ("suffix", "后缀"), ("numeral", "数词"),
+    ("number", "数词"), ("classifier", "量词"), ("particle", "助词"), ("modifier", "修饰语"),
+    ("article", "冠词"), ("onomatopoeia", "拟声词"),
+  ]
+
+  private static let bilingualPartOfSpeech = try! NSRegularExpression(
+    pattern: "\\b(" + bilingualPartsOfSpeech.map(\.english).joined(separator: "|") + ")\\b")
+
+  /// 汉译英词条的正文开头：（A. ）英文词性
+  private static let bilingualStart = try! NSRegularExpression(
+    pattern: "^(A\\. )?(" + bilingualPartsOfSpeech.map(\.english).joined(separator: "|") + ")\\b")
+
+  /// 读音：双语词典写成「BrE ˈapl, AmE ˈæp(ə)l」（同一种口音有几个读法时只取第一个），别的原样一个
+  static func phonetics(_ raw: String) -> [DictionaryEntry.Phonetic] {
+    guard raw.contains("BrE ") || raw.contains("AmE ") else {
+      return [.init(accent: nil, text: raw)]
+    }
+    var result: [DictionaryEntry.Phonetic] = []
+    for part in raw.components(separatedBy: ", ") {
+      let accent: DictionaryEntry.Phonetic.Accent
+      if part.hasPrefix("BrE ") {
+        accent = .uk
+      } else if part.hasPrefix("AmE ") {
+        accent = .us
+      } else {
+        continue
+      }
+      let text = part.dropFirst(4).trimmingCharacters(in: .whitespaces)
+      if !text.isEmpty, !result.contains(where: { $0.accent == accent }) {
+        result.append(.init(accent: accent, text: text))
+      }
+    }
+    return result.isEmpty ? [.init(accent: nil, text: raw)] : result
+  }
+
+  /// 双语词典的正文：按 A. B. C. 切成词性段（只认从 A 开始依次递增的），每段按 ①② 切义项。
+  /// chineseGlosses：释义是中文（英译中）——去拼音、把释义前面的英文语域标签收进注
+  private static func bilingualGroups(_ body: String, chineseGlosses: Bool) -> [DictionaryEntry
+    .Group]
+  {
+    lettered(body).compactMap { bilingualGroup($0, chineseGlosses: chineseGlosses) }
+  }
+
+  /// 按「A. 」「B. 」…切开；开头不是「A. 」就整段一个
+  private static func lettered(_ text: String) -> [String] {
+    guard text.hasPrefix("A. ") else { return [text] }
+    var parts: [String] = []
+    var letter = Character("B")
+    var start = text.index(text.startIndex, offsetBy: 3)
+    var cursor = start
+    while let found = text.range(of: " \(letter). ", range: cursor..<text.endIndex) {
+      parts.append(String(text[start..<found.lowerBound]))
+      start = found.upperBound
+      cursor = found.upperBound
+      guard let next = letter.asciiValue.map({ Character(UnicodeScalar($0 + 1)) }) else { break }
+      letter = next
+    }
+    parts.append(String(text[start...]))
+    return parts
+  }
+
+  /// 一个词性段：词性前面的（to stuff oneself）和后面的语法标签（uncountable、plural children）算变形表一栏
+  private static func bilingualGroup(_ chunk: String, chineseGlosses: Bool) -> DictionaryEntry
+    .Group?
+  {
+    var rest = chunk.trimmingCharacters(in: .whitespaces)
+    var forms: [String] = []
+    var partOfSpeech: String?
+    // 词性只在第一个义项、例句、括号、汉字之前找
+    let headEnd =
+      rest.firstIndex { "①▸(（".contains($0) || $0.unicodeScalars.contains(where: isCJK) }
+      ?? rest.endIndex
+    let head = String(rest[..<headEnd])
+    if let match = bilingualPartOfSpeech.firstMatch(
+      in: head, range: NSRange(location: 0, length: (head as NSString).length)),
+      let range = Range(match.range, in: head)
+    {
+      let english = String(head[range])
+      partOfSpeech = bilingualPartsOfSpeech.first { $0.english == english }?.chinese ?? english
+      let before = tidy(String(head[..<range.lowerBound]))
+      if !before.isEmpty { forms.append(before) }
+      rest = (String(head[range.upperBound...]) + rest[headEnd...])
+        .trimmingCharacters(in: .whitespaces)
+      // 只拿掉开头这几种语法标签，后面的字是释义
+      while let grammar = rest.prefixMatch(
+        of: /(uncountable|countable|singular|plural(?: [A-Za-z'’-]+(?= ))?)\s*/)
+      {
+        let word = String(grammar.output.1)
+        forms.append(
+          word == "uncountable"
+            ? "不可数"
+            : word == "countable"
+              ? "可数" : word == "singular" ? "单数" : word.replacing("plural", with: "复数"))
+        rest = String(rest[grammar.range.upperBound...])
+      }
+    }
+    var pieces = rest.split(whereSeparator: isCircledNumber).map(String.init)
+    if rest.contains(where: isCircledNumber), rest.first.map(isCircledNumber) == false,
+      let first = pieces.first, !first.unicodeScalars.contains(where: isCJK)
+    {
+      // ① 之前还有几个英文字（对整段都适用的标签）：并进变形表那一栏
+      let label = tidy(first)
+      if !label.isEmpty { forms.append(label) }
+      pieces.removeFirst()
+    }
+    let senses = pieces.compactMap { bilingualSense($0, chineseGlosses: chineseGlosses) }
+    guard !senses.isEmpty else { return nil }
+    return DictionaryEntry.Group(
+      partOfSpeech: partOfSpeech, forms: forms.isEmpty ? nil : forms.joined(separator: "，"),
+      senses: senses)
+  }
+
+  /// ①–⑳、㉑–㉟、㊱–㊿
+  private static func isCircledNumber(_ character: Character) -> Bool {
+    guard let value = character.unicodeScalars.first?.value, character.unicodeScalars.count == 1
+    else { return false }
+    return (0x2460...0x2473).contains(value) || (0x3251...0x325F).contains(value)
+      || (0x32B1...0x32BF).contains(value)
+  }
+
+  /// 一个义项：▸ 之后是例句；‹…› 搭配词去掉；圆括号 / 方括号里的说明和释义前面的英文标签收成注
+  static func bilingualSense(_ raw: String, chineseGlosses: Bool) -> DictionaryEntry.Sense? {
+    var parts = raw.components(separatedBy: "▸")
+    var text = parts.removeFirst().replacing(/‹[^›]*›/, with: " ")
+    let examples = parts.compactMap { tidy($0).nilIfEmpty }
+    var notes: [String] = []
+    for match in text.matches(of: /\(([^()]*)\)|（([^（）]*)）|\[([^\]]*)\]|［([^］]*)］/) {
+      if let note = (match.output.1 ?? match.output.2 ?? match.output.3 ?? match.output.4).map({
+        tidy(String($0))
+      }), !note.isEmpty {
+        notes.append(note)
+      }
+    }
+    text = tidy(text.replacing(/\([^()]*\)|（[^（）]*）|\[[^\]]*\]|［[^］]*］/, with: " "))
+    var definition = text
+    if chineseGlosses {
+      if let firstHan = text.firstIndex(where: { $0.unicodeScalars.contains(where: isCJK) }) {
+        // 汉字前面的英文是语域标签（informal、British、US Politics），排在注的最前面
+        let labels = tidy(String(text[..<firstHan]))
+        if !labels.isEmpty { notes.insert(labels, at: 0) }
+        definition = withoutPinyin(String(text[firstHan...]))
+          .replacing(/\s*[,，]\s*/, with: "，").replacing(/\s*[;；]\s*/, with: "；")
+      } else if let index = notes.firstIndex(where: { $0.unicodeScalars.contains(where: isCJK) }) {
+        // 中文释义写在方括号里（[表示不感兴趣或拒绝]）
+        definition = notes.remove(at: index)
+        if !text.isEmpty { notes.insert(text, at: 0) }
+      }
+    }
+    definition = definition.trimmingCharacters(in: CharacterSet(charactersIn: " ;,；，"))
+    if definition.isEmpty, !notes.isEmpty { definition = notes.removeFirst() }
+    guard !definition.isEmpty else { return nil }
+    return DictionaryEntry.Sense(
+      definition: definition, note: notes.isEmpty ? nil : notes.joined(separator: " · "),
+      examples: examples)
+  }
+
+  /// 去掉汉字后面的拼音（东西 dōngxi、美丽的 měilì de、把…塞进 bǎ… sāijìn）：紧跟在含汉字的词后面、
+  /// 一串只由拼音字母组成、至少一个带声调的词。词尾的逗号分号留下
+  static func withoutPinyin(_ text: String) -> String {
+    let tones = Set("āáǎàēéěèīíǐìōóǒòūúǔùǖǘǚǜńňǹ")
+    let letters = Set("abcdefghijklmnopqrstuvwxyzüɡ…-'’").union(tones)
+    var kept: [String] = []
+    var run: [(core: String, tail: String)] = []
+    func flush(afterHan: Bool) {
+      if afterHan, run.contains(where: { $0.core.contains(where: tones.contains) }) {
+        // 拼音整串去掉，标点挂回前一个词
+        let tail = run.map(\.tail).joined()
+        if !tail.isEmpty, let last = kept.indices.last { kept[last] += tail }
+      } else {
+        kept += run.map { $0.core + $0.tail }
+      }
+      run = []
+    }
+    var afterHan = false
+    for token in text.split(separator: " ").map(String.init) {
+      let core = token.trimmingCharacters(in: CharacterSet(charactersIn: ",;，；"))
+      let tail = String(token.dropFirst(core.count))
+      if !core.isEmpty, token.hasPrefix(core), core.lowercased().allSatisfy(letters.contains) {
+        run.append((core, tail))
+        continue
+      }
+      flush(afterHan: afterHan)
+      kept.append(token)
+      afterHan = token.unicodeScalars.contains(where: isCJK)
+    }
+    flush(afterHan: afterHan)
+    return kept.joined(separator: " ")
+  }
+
+  /// 空白收成一个、去掉首尾
+  private static func tidy(_ text: String) -> String {
+    text.replacing(/\s+/, with: " ").trimmingCharacters(in: .whitespaces)
   }
 
   /// 开头「(」对应的「)」（括号可以嵌套）
