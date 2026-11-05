@@ -72,6 +72,23 @@ struct LauncherBatch5Tests {
     #expect(!model.canFavorite(apps[9]))
   }
 
+  /// issue #2：关掉「空搜索框里列出常用」只列收藏；一行都没有时只剩搜索框（有更新提示时留着底栏）
+  @Test func frequentCanBeHidden() throws {
+    let usage = try LauncherUsage(db: try Database(path: ":memory:"))
+    let apps = ["Notes", "Numbers"].map(app)
+    let model = LauncherModel(usage: usage, apps: apps)
+    usage.record(apps[1], query: "")
+    model.query = ""
+    #expect(model.results == [apps[1]] && !LauncherPanelView.isBare(model, update: false))
+    model.showsFrequent = { false }
+    model.query = ""
+    #expect(model.results.isEmpty && LauncherPanelView.isBare(model, update: false))
+    #expect(LauncherPanelView.height(for: model) == LauncherPanelView.searchHeight)
+    #expect(LauncherPanelView.height(for: model, update: true) > LauncherPanelView.searchHeight)
+    model.toggleFavorite(apps[0])
+    #expect(model.results == [apps[0]] && model.groups.map(\.title) == ["收藏"])
+  }
+
   /// B38：「常用」里 ⌘⌫ 移除后底栏「已从常用中移除 · 撤销 ⌘Z」，⌘Z 原样放回并选中它；打字后 ⌘Z 交还输入框
   @Test func forgetCanBeUndone() throws {
     let usage = try LauncherUsage(db: Database(path: ":memory:"))

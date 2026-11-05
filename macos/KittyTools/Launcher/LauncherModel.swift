@@ -1,5 +1,5 @@
 // 启动器状态与操作：查询 → 结果。空查询先列「收藏」（⌘D 加，按加入顺序、⌥⌘↑↓ 调），再用「常用」（全局使用分）补足到
-// 8 行（体检 A22 D13）。结果顺序：这个查询选过的本地结果（第四轮体检 E8）、直达网址 / 路径、计算结果（含单位换算、
+// 8 行（体检 A22 D13；设置 › 启动器可以不列常用，issue #2）。结果顺序：这个查询选过的本地结果（第四轮体检 E8）、直达网址 / 路径、计算结果（含单位换算、
 // 进制，体检 D11）、关键词搜索，然后 App 目录
 // （含系统设置面板，体检 D9）+ 内置动作 + 快捷链接 / 搜索提示 + 书签 + 用过的网址 / 文件按匹配分排序（同分系统命令最后，
 // 体检 B36），再是浏览历史（各家开了「也搜浏览历史」才有，排在书签后、不和书签 / 用过的重复，最多 5 行，体检 D8），网页搜索兜底；
@@ -110,6 +110,10 @@ import UniformTypeIdentifiers
   @ObservationIgnored var runAction: (String) -> Void = { _ in }
   /// 内置动作此刻的状态（复制即译开没开、有没有钉图、能不能检查更新）
   @ObservationIgnored var actionState: () -> LauncherItem.ActionState = { .init() }
+  /// 空查询在收藏后面列不列「常用」（设置 › 启动器，issue #2）；单测 / 截图自检固定是 true，不读宿主 App 的偏好
+  @ObservationIgnored var showsFrequent: () -> Bool = {
+    UserDefaults.standard.bool(forKey: Prefs.launcherShowsFrequent)
+  }
   /// ⌘,：直达 设置 › 启动器（启动器已收起）。搜「设置」那个内置动作仍走 runAction，打开上次看的页
   @ObservationIgnored var openSettings: () -> Void = {}
   /// 面板按内容伸缩高度（顶边不动）
@@ -216,6 +220,7 @@ import UniformTypeIdentifiers
       processTargets = { _ in [] }
       historyItems = { [] }
       refreshHistory = { false }
+      showsFrequent = { true }
     }
   }
 
@@ -686,11 +691,12 @@ import UniformTypeIdentifiers
   }
 
   /// 空查询（体检 A22 D13）：先「收藏」（按加入顺序），再按全局使用分（14 天衰减）用「常用」补足到 8 行；
-  /// 都只留还能还原的（App 还在、文件还在）
+  /// 都只留还能还原的（App 还在、文件还在）。设置里关掉「列出常用」时只有收藏（issue #2；使用记录照记、照样给排序加成）
   private func home() -> [LauncherItem] {
     let actions = builtIns
     var items = favorites(actions)
     favoriteCount = items.count
+    guard showsFrequent() else { return items }
     // 全部按分排好再往下找：前面几条失效（App 已卸载、文件已删）时后面的补上
     for entry in usage.top(Int.max) where items.count < Self.recentLimit {
       guard let item = restore(entry.kind, entry.target, entry.title, actions),

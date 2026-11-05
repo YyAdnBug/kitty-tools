@@ -1,6 +1,6 @@
 // 设置 › 启动器：呼出时切英文输入法、文件搜索的文件夹授权、浏览器书签与历史（第 12 批：只列本机装了的，每家一行
 // 16 pt App 图标 + 名字 + 书签开关，写读到了几条 / 没找到书签文件 / 需要完全磁盘访问权限（体检 B39）；开着时下面缩进
-// 一行「也搜浏览历史」，默认关，体检 D8）、网页搜索与快捷链接
+// 一行「也搜浏览历史」，默认关，体检 D8）、网页搜索与快捷链接、使用记录（「空搜索框里列出常用」开关，issue #2；清空使用记录）
 // （N12：行 = 网站图标或种类色块 / 名称 / 状态 / 关键词键帽 / 兜底开关，拖动排序，「+ −」增删（自定义的先确认），
 // 单击一行推进到 SearchEngineDetail 编辑）、兜底时机、清空使用记录。页头画在自己的 NavigationStack 里，推进时一起换掉。
 // 按键说明不写在这里（N11，进快捷键速查表）；启动器没有固定，失焦就收起（N8）。
@@ -12,6 +12,7 @@ struct LauncherTab: View {
   var clearUsage: () -> Void = {}
   @AppStorage(Prefs.launcherRomanInput) private var romanInput = false
   @AppStorage(Prefs.launcherFallbackAlways) private var fallbackAlways = false
+  @AppStorage(Prefs.launcherShowsFrequent) private var showsFrequent = true
   /// 书签 / 浏览历史开着的浏览器 id（换行分隔，Browsers.ids 拆）
   @AppStorage(Prefs.launcherBrowserBookmarks) private var bookmarkIDs = Prefs.defaultBookmarkIDs
   @AppStorage(Prefs.launcherBrowserHistory) private var historyIDs = ""
@@ -127,6 +128,12 @@ struct LauncherTab: View {
       }
       .gated(by: .launcher)
       Section {
+        // 显示的开关跟着功能开关变灰；清空使用记录是管数据的，关着也能点（mac-native §1）
+        Toggle(isOn: $showsFrequent) {
+          Text("空搜索框里列出常用")
+          Text("关掉后打开启动器只有搜索框，有收藏时只列收藏；排序照样按用过的学")
+        }
+        .gated(by: .launcher)
         DangerButton("清空使用记录…") { confirmsClear = true }
       } header: {
         Text("使用记录")
