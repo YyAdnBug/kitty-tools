@@ -111,6 +111,35 @@ WIC 的 `BitmapDecoder.HeifDecoderId`、`DecoderInformation.CodecId`；`NoteStor
 **替用户定的**（MAC-DIFF 第 8 批一起记）：任务方框是存着的那个字本身（Segoe UI Symbol），不是 mac 自己画的圆角方框；引用块没有左边的竖线（只缩进 + 色条色的字）；
 代码块的底是一行行的字底色，不是整块圆角矩形；查找条是自己的一个输入框（Enter 下一个、Shift+Enter 上一个），不是系统的；撤销按 1 秒分组（mac 是系统默认）。
 
+### 第 5 批：窗口和入口 → 已写（审查方，`git log --grep "PLAN-v13 第 5 批"`，没编译）
+
+- `Notes/NoteCaptureWindow.cs`（快速记一条，`Alt+N`）：和剪贴板面板、启动器同位置同宽、同一套外壳，三块只开一个（`OverlayHost.Show` 先收起它）；目的地 = 新便签 + 最近改过的 8 条（Ctrl+1–9）；
+  Enter 记下、Shift+Enter 换行（组字时不提交）、Tab 去标题框；Esc 清空（轻提示「恢复」）、Ctrl+W / 再按快捷键 / 点别处留着草稿（`notes-draft.json`，停手 1 秒、收起、退出前存）。
+  规则在 `Core/Notes/NoteCaptureRules.cs`。
+- `Notes/NoteSheetView.cs`：一条打开着的便签（色条、纸色圆点、标题、任务 / 固定 / ⋯ / 关闭、正文 `NoteEditor`、底下小字）。**全部便签窗口的右栏、便签墙的编辑卡、那叠里打开的、浮动便签都是它**，
+  外面那层只给 `Host`（怎么关、浮不浮）。Ctrl+K 操作菜单（固定、颜色 ›、任务、归档、删除、浮在屏幕上 / 收回边缘、在全部便签里打开、导出为 Markdown…、便签设置）、Ctrl+P、Ctrl+Shift+A、
+  Ctrl+Shift+Delete、Ctrl+.、Ctrl+,。`Notes/NoteColorFlyout.cs`：颜色菜单末尾「其他颜色…」= `ColorPicker` 浮层（边拖边变、关掉落盘、最近 8 个记这台电脑）。
+- `Notes/NotesWindow.cs`：全部便签窗口（普通窗口、Mica）。全部 / 归档 / 最近删除 + 搜索；便签墙（瀑布流 `Core/Notes/NoteWall.cs`，分固定的 / 其他，点一张盖一层放大成编辑卡）/ 列表（左列 + 右栏，「全部」里拖动排序）；
+  右键菜单、删除 / 归档后能撤销，Ctrl+N / Ctrl+F / Ctrl+1 / Ctrl+2 / Delete / 焦点不在输入框时 Ctrl+Z 放回刚删的。规则在 `Core/Notes/NotesWindowRules.cs`。
+- 入口：热键三项（`ShellRuntime.OnHotKey`）、托盘一节（快速记一条、新建便签、全部便签）、主界面一节（三格，截图与录制之后、状态屏之前，同 mac）、启动器三项（`LauncherActions`，原定第 8 批，顺手做了）、
+  设置 › 快捷键「便签」一节、速查表「便签」一类四组（照 mac 的四组，只写 Windows 这边真有的键）、设置 › 便签（`Settings/SettingsWindow.Notes.cs`：正文字号、行距、Markdown 样式、屏幕边缘那一节、数据）。
+  `NotesHost.NewNote`（那叠开得了在那叠里，不然全部便签窗口里新建）/ `Open(id)` / `ApplyFeature`（关 = 落盘、收起快速记一条、关全部便签窗口、浮着的收起、那叠收起；开 = 固定着的浮回去）。
+  `Shell/Displays.cs` 多了 `All()`（每块屏的名字、整块、工作区、缩放、是不是主屏），设置页「显示器」和那叠 / 浮动便签用。
+- 单测：`NoteCaptureRulesTests`（草稿、目的地、接在后面、恢复、存前检查、选中跟随、拖动落点、相对时间、字数）、`NoteWallTests`（瀑布流、斜度、方向键、命中、拖动落点、编辑卡）。
+
+**单独这一批编译不过**：它引用第 6 批的 `NoteDeck`、`NoteFloats` 和第 7 批的 `NotesTransfer`（第 2 批起 `NotesHost` 就引用了 `NoteFloats`）。核验从最后一个提交起，不用逐个提交编译。
+
+**要特别看的编译点 / 屏幕上要看的**：
+1. 快速记一条和剪贴板面板、启动器、主界面互斥（呼出一块收起另外两块）；它是 `OverlayWindow` 那一套外壳吗、点外面收起、不进 Alt+Tab。
+2. `NoteSheetView` 在三种外面（列表右栏、编辑卡、浮动便签）里都能打字、Ctrl+K 弹得出菜单（`MenuFlyout.ShowAt` 挂在「⋯」按钮上）。
+3. 便签墙：卡片的高是按 `TextBlock.Measure` 量的（窗口代码里），窗口拉宽拉窄时列数跟着变、不闪；编辑卡收回后焦点回到墙上。
+4. `ColorPicker` 浮层：边拖边变不卡（仓库 `SetColor` 是攒着落盘），关掉后「最近用过」多一个。
+5. 设置 › 便签：屏幕边缘关着时那一节变灰；「显示器」只有一块屏时不出现；导出 / 导入在便签功能关着时也能点。
+6. 托盘、主界面、启动器、速查表里「便签」那几项的名字、顺序、快捷键和设置 › 快捷键一致；关掉便签功能后全部不见、Alt+N 交还系统。
+
+**替用户定的**：便签墙不能拖动排序、卡片一次全画（mac 能拖、分批建；几百条以内够用，文件头 ponytail）；托盘「便签」一节不画节标题（Windows 托盘菜单都不画）；
+全部便签窗口 Ctrl+Z 放回刚删的只认这次打开以来删的（mac 同）；速查表里 mac 有、Windows 还没有的键（便签墙上方向键挑卡片、Enter / 空格放大）没写，记在 MAC-DIFF（第 8 批）。
+
 ## PLAN-v12（跟上 mac：先把没有的功能做出来，2026-11-05 用户「先把未实现的功能实现」）
 
 清单和分批在 `PLAN-v12.md`（不是拍板页，行为照 mac）；分工同 PLAN-v11 D10。

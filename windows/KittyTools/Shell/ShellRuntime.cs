@@ -1022,6 +1022,8 @@ internal sealed class ShellRuntime
         {
             ReminderCenter.Stop();
         }
+
+        NotesHost.ApplyFeature();
     }
 
     /// <summary>后台跑一次每日备份（今天备过就直接返回）。</summary>
@@ -1346,6 +1348,15 @@ internal sealed class ShellRuntime
                 break;
             case HotKeyActions.ReminderNew:
                 NewReminder();
+                break;
+            case HotKeyActions.NoteCapture:
+                NoteCaptureWindow.Toggle();
+                break;
+            case HotKeyActions.NoteNew:
+                NotesHost.NewNote();
+                break;
+            case HotKeyActions.NoteAll:
+                NotesWindow.ShowWindow();
                 break;
         }
     }

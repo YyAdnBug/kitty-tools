@@ -28,6 +28,9 @@ internal static class LauncherActions
     public const string PinsClose = "action:pins-close";
     public const string Record = "action:record";
     public const string Audio = "action:audio";
+    public const string NoteCapture = "action:note-capture";
+    public const string NoteNew = "action:note-new";
+    public const string NoteAll = "action:note-all";
     public const string Home = "action:home";
     public const string Settings = "action:settings";
     public const string Shortcuts = "action:shortcuts";
@@ -94,6 +97,14 @@ internal static class LauncherActions
                 FeatureIcons.RecordAudio, "capture", HotKeyActions.Audio)));
         }
 
+        // 便签（PLAN-v13，同 mac 启动器里那三项：名字和托盘、快捷键页同名）。
+        if (Features.IsOn(Feature.Notes))
+        {
+            items.Add(Item(new(NoteCapture, "快速记一条", "Quick Note Capture", FeatureIcons.NotesCapture, "notes", HotKeyActions.NoteCapture)));
+            items.Add(Item(new(NoteNew, "新建便签", "New Note Sticky", FeatureIcons.NotesNew, "notes", HotKeyActions.NoteNew)));
+            items.Add(Item(new(NoteAll, "全部便签", "All Notes Sticky", FeatureIcons.Notes, "notes", HotKeyActions.NoteAll)));
+        }
+
         if (Features.IsOn(Feature.StatusScreen))
         {
             // 设置里开了「直接进入」时，第一个状态右边写状态屏的快捷键（按它进的就是这个）。
@@ -140,6 +151,7 @@ internal static class LauncherActions
         Screenshot or ScreenshotTranslate or ScreenshotLast or Ocr or ShotHistory or PinClipboard or PinsToggle or PinsClose
             or Record or Audio => "capture",
         Shortcuts => "shortcut",
+        NoteCapture or NoteNew or NoteAll => "notes",
         _ when IsStatusPreset(target) => "statusScreen",
         _ when ReminderLauncher.IsReminder(target) => "reminders",
         _ => "general",
@@ -166,6 +178,9 @@ internal static class LauncherActions
         Audio => FeatureIcons.RecordAudio,
         Shortcuts => Glyphs.Keyboard,
         Home => FeatureIcons.Home,
+        NoteCapture => FeatureIcons.NotesCapture,
+        NoteNew => FeatureIcons.NotesNew,
+        NoteAll => FeatureIcons.Notes,
         About => Glyphs.Info,
         Update => Glyphs.Update,
         Quit => Glyphs.Close,
@@ -224,6 +239,15 @@ internal static class LauncherActions
                 break;
             case Home:
                 HomePanel.ShowAtCursor();
+                break;
+            case NoteCapture:
+                NoteCaptureWindow.Toggle();
+                break;
+            case NoteNew:
+                NotesHost.NewNote();
+                break;
+            case NoteAll:
+                NotesWindow.ShowWindow();
                 break;
             case Settings:
                 runtime?.ShowSettings(welcome: false);

@@ -43,6 +43,7 @@ internal static class ShortcutsSheet
         ("launcher", "启动器", FeatureIcons.Launcher),
         ("translate", "翻译", FeatureIcons.Translate),
         ("screenshot", "截图与录制", FeatureIcons.Screenshot),
+        ("notes", "便签", FeatureIcons.Notes),
         ("statusScreen", "状态屏", FeatureIcons.StatusScreen),
         ("reminders", "提醒", FeatureIcons.Reminders),
         ("general", "设置窗", FeatureIcons.General),
@@ -305,6 +306,7 @@ internal static class ShortcutsSheet
         "launcher" => "launcher",
         "translate" => "translate",
         "screenshot" => "capture",
+        "notes" => "notes",
         "statusScreen" => "statusScreen",
         "reminders" => "reminders",
         _ => "general",
@@ -511,6 +513,56 @@ internal static class ShortcutsSheet
             new("Ctrl+F", "跳到搜索框"),
             new("Ctrl+1–4", "全部 / 截图 / 长截图 / 录制"),
             new("Delete", "删掉选中的（先问一次）"),
+        }),
+
+        // 便签（PLAN-v13，照 mac 速查表的四组）：快速记一条在 Notes/NoteCaptureWindow.cs 的 OnRootKeyDown / OnBodyKeyDown；
+        // 打开的便签（那叠、浮动、全部便签窗口共用）在 NoteSheetView.OnKeyDown + NoteEditor.Input.cs 的 OnPreviewKeyDown；
+        // 全部便签窗口自己的在 NotesWindow.OnKeyDown。新建便签、全部便签不设默认键，没设时那两行写「未设置」。
+        new("notes", "便签", "notes", FeatureIcons.Notes,
+            new[] { HotKeyActions.NoteCapture, HotKeyActions.NoteNew, HotKeyActions.NoteAll },
+            new ShortcutEntry[]
+            {
+                new("Enter", "快速记一条里：记下"),
+                new("Shift+Enter", "快速记一条里：换行"),
+                new("Tab", "快速记一条里：记成新便签时去填标题，再按一次（或 Enter）回到正文"),
+                new("Ctrl+1", "快速记一条里：记成新便签"),
+                new("Ctrl+2–9", "快速记一条里：接在最近改过的某一条便签后面"),
+                new("Esc", "快速记一条里：清空并关闭（点外面、再按一次全局快捷键、Ctrl+W 也是关闭，写了一半的留着）"),
+            }),
+        new("notes", "便签 · 屏幕边缘", "notes", FeatureIcons.Notes, Array.Empty<string>(), new ShortcutEntry[]
+        {
+            new("Esc", "Ctrl+W", "关掉打开的便签，那一列标签也一起收回"),
+            new("Ctrl+P", "固定 / 取消固定（固定的便签点别处不收起；浮在屏幕上的便签固定后重启还回到原处）"),
+            new("Ctrl+K", "操作菜单：固定、颜色、任务、归档、删除、浮在屏幕上、在「全部便签」里打开、导出为 Markdown、便签设置"),
+            new("Ctrl+.", "换成下一种纸色"),
+            new("Ctrl+Shift+A", "归档"),
+            new("Ctrl+Shift+Delete", "删除（进「最近删除」）"),
+            new("Ctrl+T", "任务：光标所在的行（选了几行就是那几行）变成任务，再按一次变回普通行；点行首的方框打勾"),
+            new("Enter", "Tab", "正文里：任务行、列表行回车接着下一条，空的那条上回车退出列表；Tab / Shift+Tab 缩进、退回"),
+            new("Ctrl+F", "在这条便签里查找（Esc 先关查找条，再按才关便签）"),
+            new(new[] { "Ctrl+Z", "Ctrl+Y", "Ctrl+Shift+Z" }, "撤销 / 重做打的字（勾任务、回车接出来的下一条也能撤）"),
+            new("Ctrl", "按住它点正文里的链接：打开（网址和邮件地址；不按 Ctrl 是放光标）"),
+            new("Ctrl+B", "Ctrl+I", "正文里：粗体、斜体（选区整段一种：不全是就全加上；全都是就去掉；没选字插一对，光标在中间）"),
+            new("Ctrl+Shift+X", "Ctrl+E", "正文里：删除线（同上）、代码（只在没选字时插一对；代码块里不加）"),
+            new("Ctrl+V", "选中一段字时粘贴一个网址：粘成链接，字不变；剪贴板里是图片时插一张（也可以把图片文件拖进来）"),
+            new(Array.Empty<string>(), "正文里右键：任务状态（五种）、文字颜色、格式、插入图片…；点在方框上只弹五种状态"),
+            new("Ctrl+,", "打开 设置 › 便签"),
+            new("Alt", "按住它拖边上的药丸：换边、换高度"),
+        }),
+        new("notes", "便签 · 浮在屏幕上", "notes", Glyphs.Pin, Array.Empty<string>(), new ShortcutEntry[]
+        {
+            new("Esc", "Ctrl+W", "收回边缘（固定着的也收）"),
+            new("Ctrl+K", "操作菜单里的「收回边缘」；别的键同屏幕边缘里打开的便签"),
+        }),
+        new("notes", "便签 · 全部便签", "notes", FeatureIcons.Notes, Array.Empty<string>(), new ShortcutEntry[]
+        {
+            new("Ctrl+1", "Ctrl+2", "便签墙 / 列表（同工具栏上的切换；下次打开是上次用的那种）"),
+            new("Esc", "便签墙上：收回编辑卡（点旁边变暗的地方也行）"),
+            new("Ctrl+N", "新建便签（便签墙上直接打开它的编辑卡）"),
+            new("Ctrl+F", "搜索便签；光标在正文里时是在这条便签里查找"),
+            new("Delete", "焦点在列表上时：删除选中的便签，进「最近删除」（在最近删除里是永久删除，要确认）"),
+            new("Ctrl+Z", "焦点不在输入框里时：放回刚删的便签（连着删了几条就一条条放回）"),
+            new(Array.Empty<string>(), "打开的便签里的键同「便签 · 屏幕边缘」"),
         }),
 
         // StatusScreen/StatusPicker.cs 的 OnKeyDown（选状态的面板）、StatusScreenHost（进入之后：Core 的 ExitHold / Passcode）。

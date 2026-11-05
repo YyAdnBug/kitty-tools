@@ -251,6 +251,15 @@ internal static partial class TrayMenu
             }
         }
 
+        // 便签（PLAN-v13，同 mac 那一节：节标题 + 三项，右边写快捷键）。
+        if (Features.IsOn(Feature.Notes))
+        {
+            AddSeparator(menu);
+            Add(menu, "快速记一条", HotKeyActions.NoteCapture, NoteCaptureWindow.Toggle);
+            Add(menu, "新建便签", HotKeyActions.NoteNew, NotesHost.NewNote);
+            Add(menu, "全部便签", HotKeyActions.NoteAll, NotesWindow.ShowWindow);
+        }
+
         // 状态屏（PLAN-v12 N5，mac buildStatusMenu）：不画节标题，一项「状态屏」带子菜单——「选择状态…」（全局快捷键，打开选状态的面板；
         // 设置里开了「直接进入」时没有它，键位写在第一个状态右边）、每个状态一行（点了直接进入）、「管理状态…」。
         if (Features.IsOn(Feature.StatusScreen))

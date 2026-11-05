@@ -573,6 +573,8 @@ internal static class OverlayHost
     public static void Show(OverlayKind kind)
     {
         TranslateHost.Hide(restoreForeground: false);
+        // 快速记一条（PLAN-v13）和剪贴板面板、启动器同位置，三块只开一个。
+        NoteCaptureWindow.HideIfOpen();
         _window ??= new OverlayWindow();
         _window.ShowOverlay(kind);
     }

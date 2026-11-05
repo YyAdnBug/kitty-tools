@@ -63,6 +63,70 @@ internal static class NotesHost
         }
 
         Log.Info($"notes.ready count={store.Book.All.Count}");
+        NoteFloats.RestoreAtLaunch();
+        NoteDeck.Refresh();
+    }
+
+    /// <summary>「新建便签」（快捷键、托盘、主界面、启动器、药丸的右键菜单；同 mac newNote）：屏幕边缘那叠开得了就建一条在那叠里打开，
+    /// 开不了（总开关关着、哪块屏都放不了）在全部便签窗口里新建。</summary>
+    public static void NewNote()
+    {
+        if (Usable() is null)
+        {
+            return;
+        }
+
+        if (!NoteDeck.OpenNew())
+        {
+            NotesWindow.NewNote();
+        }
+    }
+
+    /// <summary>打开某一条（快速记一条存完那句轻提示上的「打开」，可能是很久以后点的）：还在、那叠开得了就在那叠里，
+    /// 不然去全部便签窗口里它在的地方（没了就只打开窗口）。</summary>
+    public static void Open(string id)
+    {
+        if (Usable() is not { } store)
+        {
+            return;
+        }
+
+        if (store.Book.Find(id) is { IsActive: true } && NoteDeck.Open(id))
+        {
+            return;
+        }
+
+        NotesWindow.ShowNote(id);
+    }
+
+    /// <summary>功能开关改了（ShellRuntime.ApplyFeatures 调）：关 = 落盘、收起快速记一条、关掉全部便签窗口、浮着的收起（固定着的位置留着，
+    /// 打开后放回原处）、那叠收起；开 = 固定着的浮回去、那叠出来。数据层照旧（库开着、备份、到期清理）。</summary>
+    public static void ApplyFeature()
+    {
+        if (Features.IsOn(Feature.Notes))
+        {
+            NoteFloats.RestoreAtLaunch();
+        }
+        else
+        {
+            Flush();
+            NoteCaptureWindow.HideIfOpen();
+            NotesWindow.CloseIfOpen();
+            NoteFloats.CloseAll();
+        }
+
+        NoteDeck.Refresh();
+    }
+
+    /// <summary>便签这次用得了吗（用不了时说一句）。</summary>
+    private static NoteStore? Usable()
+    {
+        if (Store is null)
+        {
+            NoticeHost.Show("便签这次用不了", NotesRecovery.Unavailable ?? "便签的数据打不开", NoticeTone.Warning);
+        }
+
+        return Store;
     }
 
     /// <summary>锁屏、睡眠、退出前：把攒着的打字落下去。</summary>

@@ -51,7 +51,7 @@ internal sealed partial class SettingsWindow : Window
     private bool _stale;
     private bool _active;
 
-    // 侧栏顺序同 mac：通用 / 剪贴板 / 启动器 / 翻译 / 截图 / 录制 / 状态屏 / 提醒 / 快捷键 / 关于（mac 独有的几页没有）。
+    // 侧栏顺序同 mac：通用 / 剪贴板 / 启动器 / 翻译 / 截图 / 录制 / 便签 / 状态屏 / 提醒 / 快捷键 / 关于（mac 独有的几页没有）。
     // 色块是和 mac 共用的功能图标（FeatureIcons，PLAN-v10 §6）。
     private static readonly (string Tag, string Title, string Glyph)[] Pages =
     {
@@ -61,6 +61,7 @@ internal sealed partial class SettingsWindow : Window
         ("translate", "翻译", FeatureIcons.Translate),
         ("screenshot", "截图", FeatureIcons.Screenshot),
         ("record", "录制", FeatureIcons.Record),
+        ("notes", "便签", FeatureIcons.Notes),
         ("statusScreen", "状态屏", FeatureIcons.StatusScreen),
         ("reminders", "提醒", FeatureIcons.Reminders),
         ("hotkeys", "快捷键", FeatureIcons.Hotkeys),
@@ -108,6 +109,10 @@ internal sealed partial class SettingsWindow : Window
         {
             "告示", "清洁", "擦屏幕", "请勿触碰", "马上回来", "熄屏", "透出", "拦住", "键盘", "鼠标", "退出", "密码", "Esc", "动画", "表情",
             "不睡眠", "常亮", "自动结束",
+        },
+        ["notes"] = new[]
+        {
+            "便签", "笔记", "备忘", "快速记一条", "屏幕边缘", "药丸", "浮动", "Markdown", "字号", "行距", "任务", "导出", "导入", "最近删除", "归档",
         },
         ["reminders"] = new[]
         {
@@ -419,6 +424,9 @@ internal sealed partial class SettingsWindow : Window
                 break;
             case "statusScreen":
                 BuildStatusScreen();
+                break;
+            case "notes":
+                BuildNotes();
                 break;
             case "reminders":
                 BuildReminders();
@@ -2789,6 +2797,8 @@ internal sealed partial class SettingsWindow : Window
                 HotKeyActions.Screenshot, HotKeyActions.ScreenshotLast, HotKeyActions.Ocr, HotKeyActions.Record,
                 HotKeyActions.Audio, HotKeyActions.PinClipboard, HotKeyActions.ShotHistory,
             }),
+            // 便签（PLAN-v13）：三项同名同序（同 mac 那一节、托盘、速查表）。
+            ("便签", new List<string> { HotKeyActions.NoteCapture, HotKeyActions.NoteNew, HotKeyActions.NoteAll }),
             // 主界面（PLAN-v10 §5）：不归哪个功能、一直在（同 mac 那一节）。
             ("主界面", new List<string> { HotKeyActions.Home }),
         };
@@ -3559,6 +3569,7 @@ internal sealed partial class SettingsWindow : Window
             Feature.Translate => "translate",
             Feature.StatusScreen => "statusScreen",
             Feature.Reminders => "reminders",
+            Feature.Notes => "notes",
             _ => "capture",
         };
 
@@ -3580,6 +3591,9 @@ internal sealed partial class SettingsWindow : Window
             HotKeyActions.Home => FeatureIcons.Home,
             HotKeyActions.StatusScreen => FeatureIcons.StatusScreen,
             HotKeyActions.ReminderNew => FeatureIcons.Reminders,
+            HotKeyActions.NoteCapture => FeatureIcons.NotesCapture,
+            HotKeyActions.NoteNew => FeatureIcons.NotesNew,
+            HotKeyActions.NoteAll => FeatureIcons.Notes,
             _ => FeatureIcons.Screenshot,
         };
 
@@ -3592,6 +3606,7 @@ internal sealed partial class SettingsWindow : Window
         "screenshot" or "record" => "capture",
         "statusScreen" => "statusScreen",
         "reminders" => "reminders",
+        "notes" => "notes",
         "about" => "general",
         _ => "general",
     };
