@@ -9,6 +9,8 @@
 // 0.02–1.2% CPU；边解边播（CGAnimateImageAtURLWithBlock）要 4%，TimelineView / 定时器逐帧换图更贵，都不用。
 // 解好的帧一个表情 10–19 MB（帧数 × 256 KB；连图层那边的一份，PLAN 里实测是 18–38 MB）：这里不缓存帧，谁要播谁拿着、
 // 不播了就放手（状态屏的会话 StatusScreen.frames、设置里那块预览 StatusPreview）。小图标一律用静止画面。
+// 另可以挑任意一个系统表情（2026-11-04 用户要多些图标；对标 Apple 提醒事项的清单图标、Slack 的状态：任意表情）：存的就是那个字
+// （isCustom），静态、由系统的表情字体画，不占包；告示上、小图标、菜单里都照样画它，只是不动。
 
 import AppKit
 import SwiftUI
@@ -41,7 +43,30 @@ enum StatusEmoji {
     dark && plated.contains(id)
   }
 
-  nonisolated static func name(_ id: String) -> String? { choices.first { $0.id == id }?.name }
+  /// 旁白读的名字：自带的读中文名，自己挑的系统表情读它本身（旁白认得表情）
+  nonisolated static func name(_ id: String) -> String? {
+    choices.first { $0.id == id }?.name ?? (isCustom(id) ? id : nil)
+  }
+
+  /// 自己挑的系统表情（纯函数）：正好一个字、是表情（数字、#、© 这类「也能当表情」的普通字要带表情变体或组合才算），
+  /// 不长得离谱。存的值来自导入的文件、同步文件夹，按不可信输入认。这台系统的 Unicode 表还没收的字（别的 Mac 系统更新、
+  /// 表情面板的字体比 Swift 的表新）落在表情的码段（U+1F000–1FAFF）里也算——不然系统旧的那台会把它当成不认识的置空、
+  /// 再当本机改动同步出去，把别的 Mac 上挑的抹掉；最坏是画成一个方框
+  nonisolated static func isCustom(_ symbol: String) -> Bool {
+    guard symbol.count == 1, symbol.utf8.count <= 64, let first = symbol.unicodeScalars.first
+    else { return false }
+    let properties = first.properties
+    if properties.generalCategory == .unassigned {
+      return (0x1F000...0x1FAFF).contains(first.value)
+    }
+    guard properties.isEmoji else { return false }
+    return properties.isEmojiPresentation || symbol.unicodeScalars.count > 1
+  }
+
+  /// 能存的图标值：空（不要图标）、自带的动画表情、自己挑的系统表情
+  nonisolated static func isValid(_ symbol: String) -> Bool {
+    symbol.isEmpty || ids.contains(symbol) || isCustom(symbol)
+  }
 
   /// 包里的那个文件；不是清单里的 id（空、旧的符号名、乱写的）是 nil
   nonisolated static func url(_ id: String) -> URL? {
@@ -63,6 +88,7 @@ enum StatusEmoji {
   /// 菜单项用的小图（16 pt）。要垫浅底的那两个是一张现画的图：垫不垫看画的那一刻的外观（菜单跟的是系统外观，或
   /// 设置 › 通用里选的），不在这里定死
   static func menuImage(_ id: String) -> NSImage? {
+    if isCustom(id) { return customImage(id, side: 16) }
     guard let still = still(id) else { return nil }
     let size = NSSize(width: 16, height: 16)
     return plated.contains(id)
@@ -84,6 +110,17 @@ enum StatusEmoji {
       }
       NSGraphicsContext.current?.imageInterpolation = .high
       NSGraphicsContext.current?.cgContext.draw(still, in: frame)
+      return true
+    }
+  }
+
+  /// 自己挑的系统表情画成一张小图（菜单项）。nonisolated：同上，画图的闭包可能在任何线程上调
+  nonisolated private static func customImage(_ emoji: String, side: CGFloat) -> NSImage {
+    NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
+      let text = NSAttributedString(
+        string: emoji, attributes: [.font: NSFont.systemFont(ofSize: side * 0.8)])
+      let size = text.size()
+      text.draw(at: NSPoint(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2))
       return true
     }
   }
@@ -199,6 +236,15 @@ struct StatusEmojiView: View {
 
   var body: some View {
     ZStack {
+      if StatusEmoji.isCustom(id) {
+        // 自己挑的系统表情：静态，按给的大小画（表情字体在这么大时略软，可以接受）
+        GeometryReader { proxy in
+          Text(id)
+            .font(.system(size: min(proxy.size.width, proxy.size.height) * 0.82))
+            .frame(width: proxy.size.width, height: proxy.size.height)
+        }
+        .accessibilityHidden(true)
+      }
       if let still = StatusEmoji.still(id) {
         Image(decorative: still, scale: 1)
           .resizable()
@@ -256,7 +302,12 @@ struct StatusPresetIcon: View {
   @Environment(\.colorScheme) private var scheme
 
   var body: some View {
-    if let still = StatusEmoji.still(symbol) {
+    if StatusEmoji.isCustom(symbol) {
+      Text(symbol)
+        .font(.system(size: size * 0.82))
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
+    } else if let still = StatusEmoji.still(symbol) {
       let plated = StatusEmoji.needsPlate(symbol, dark: scheme == .dark)
       Image(decorative: still, scale: 1)
         .resizable()

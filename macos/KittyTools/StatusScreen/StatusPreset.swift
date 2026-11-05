@@ -57,7 +57,10 @@ nonisolated struct StatusPreset: Codable, Hashable, Identifiable {
   var id: String
   var title: String
   var detail: String?
-  /// 表情 id（StatusEmoji.ids 里的一个）；空 = 不要图标。字段名和 JSON 里的键是第 5 批之前留下的（那时是系统符号名）
+  /// 表情 id（StatusEmoji.ids 里的一个）或自己挑的系统表情（那个字，StatusEmoji.isCustom）；空 = 不要图标。
+  /// 字段名和 JSON 里的键是第 5 批之前留下的（那时是系统符号名）。自己挑的系统表情在 JSON 里另放在 emoji 键、symbol 写空
+  /// （encode）：0.7.x 落同步之前会收拾一遍、把认不得的 symbol 置空再当本机改动传回来，放在 symbol 里会把别的 Mac 上挑的抹掉；
+  /// 放在它不认识的键里，它的同步认出「更新版本写的」，这一类先停、不动数据（mac-native §2 decodeExact）
   var symbol: String
   /// 没选图标的状态在菜单栏子菜单、启动器、设置列表里垫的系统符号：「只有几行字」（菜单项没图会和别的行对不齐）。
   /// 不用 textformat：它在中文系统上画成「格式」两个字（mac-whisker §3「图标」，设置页的截图自检里看到的就是）
@@ -83,9 +86,53 @@ nonisolated struct StatusPreset: Codable, Hashable, Identifiable {
     "person.2.fill": "busts", "terminal.fill": "robot", "bolt.fill": "high-voltage",
   ]
 
-  /// 存着的图标值 → 现在的表情 id（纯函数）：清单里的原样留着，旧的系统符号名换成对应的表情，其余不认识的置空
+  /// 存着的图标值 → 现在的表情 id（纯函数）：清单里的、自己挑的系统表情原样留着，旧的系统符号名换成对应的表情，其余不认识的置空
   static func emoji(for symbol: String) -> String {
-    StatusEmoji.ids.contains(symbol) ? symbol : legacySymbols[symbol] ?? ""
+    StatusEmoji.isValid(symbol) ? symbol : legacySymbols[symbol] ?? ""
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case id, title, detail, symbol, style, power, autoEndMinutes, emoji
+  }
+
+  init(
+    id: String, title: String, detail: String? = nil, symbol: String, style: Look, power: Power,
+    autoEndMinutes: Int
+  ) {
+    self.id = id
+    self.title = title
+    self.detail = detail
+    self.symbol = symbol
+    self.style = style
+    self.power = power
+    self.autoEndMinutes = autoEndMinutes
+  }
+
+  /// 和自动生成的一样严（缺一个必需的键整个解不出），另外认 emoji 键：有就是自己挑的系统表情
+  init(from decoder: Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    id = try c.decode(String.self, forKey: .id)
+    title = try c.decode(String.self, forKey: .title)
+    detail = try c.decodeIfPresent(String.self, forKey: .detail)
+    symbol = try c.decode(String.self, forKey: .symbol)
+    style = try c.decode(Look.self, forKey: .style)
+    power = try c.decode(Power.self, forKey: .power)
+    autoEndMinutes = try c.decode(Int.self, forKey: .autoEndMinutes)
+    if let emoji = try c.decodeIfPresent(String.self, forKey: .emoji) { symbol = emoji }
+  }
+
+  /// 没挑系统表情的状态编出来和以前一个字节不差（旧版本照常同步它）；挑了的 symbol 写空、表情放在 emoji 键
+  func encode(to encoder: Encoder) throws {
+    var c = encoder.container(keyedBy: CodingKeys.self)
+    let custom = StatusEmoji.isCustom(symbol)
+    try c.encode(id, forKey: .id)
+    try c.encode(title, forKey: .title)
+    try c.encodeIfPresent(detail, forKey: .detail)
+    try c.encode(custom ? "" : symbol, forKey: .symbol)
+    try c.encode(style, forKey: .style)
+    try c.encode(power, forKey: .power)
+    try c.encode(autoEndMinutes, forKey: .autoEndMinutes)
+    if custom { try c.encode(symbol, forKey: .emoji) }
   }
 
   static let builtIn = [

@@ -135,7 +135,7 @@ nonisolated struct Reminder: Codable, Hashable, Identifiable {
   var id: String
   var title: String
   var detail: String?
-  /// 表情 id（StatusEmoji.ids 里的一个）；空 = 不要图标
+  /// 表情 id（StatusEmoji.ids 里的一个）或自己挑的系统表情（那个字）；空 = 不要图标
   var symbol: String
   var isOn: Bool
   var schedule: Schedule
@@ -234,7 +234,7 @@ nonisolated struct Reminder: Codable, Hashable, Identifiable {
       else { continue }
       let detail = String(oneLine(reminder.detail ?? "").prefix(maxDetail))
       reminder.detail = detail.isEmpty ? nil : detail
-      if !StatusEmoji.ids.contains(reminder.symbol) { reminder.symbol = "" }
+      if !StatusEmoji.isValid(reminder.symbol) { reminder.symbol = "" }
       reminder.schedule = reminder.schedule.sanitized
       if reminder.statusID.count > maxID { reminder.statusID = "" }
       if !fullChoices.contains(reminder.fullSeconds) { reminder.fullSeconds = 0 }

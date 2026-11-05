@@ -1209,10 +1209,11 @@ struct SnapshotProbeTests {
     try snapshot(
       ReminderDetail(id: "call", fixed: [late], now: now), size: NSSize(width: 590, height: 700),
       dark: false, to: "\(out)/reminders-detail-problem.png")
-    // 提示音是别的 Mac 上自己选的文件（这台没有）：那一行下面说到点响什么；自定义每 7 分钟催
+    // 提示音是别的 Mac 上自己选的文件（这台没有）：那一行下面说到点响什么；自定义每 7 分钟催；图标是自己挑的系统表情
     var bell = call
     bell.chime = "file:下课铃.mp3"
     bell.nagMinutes = 7
+    bell.symbol = "🏃"  // 自己挑的系统表情：页头和图标格子最后一格画它
     try snapshot(
       ReminderDetail(id: "call", fixed: [bell], now: now), size: NSSize(width: 590, height: 1100),
       dark: false, to: "\(out)/reminders-detail-sound.png")

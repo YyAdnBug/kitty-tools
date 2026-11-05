@@ -147,6 +147,57 @@ struct StatusScreenTests {
     #expect(StatusPreset.sanitized(loaded) == loaded)
   }
 
+  /// 自己挑的系统表情（2026-11-04）：正好一个表情字才认（数字、©、字母、两个表情、自带的 id 都不算）；状态里存着的
+  /// 表情在 JSON 里放在 emoji 键、symbol 写空（旧版本收拾 symbol 时抹不掉它），读回来还是它；没挑的编出来没有 emoji 键
+  @Test func customEmojiSymbols() throws {
+    for emoji in ["🍵", "👩‍💻", "🇨🇳", "❤️", "1️⃣", "👍🏽"] {
+      #expect(StatusEmoji.isCustom(emoji), "\(emoji)")
+      #expect(StatusEmoji.isValid(emoji) && StatusEmoji.name(emoji) == emoji)
+    }
+    for text in ["1", "©", "a", "🍵🍵", "zzz", "eyes", "", "🍵 "] {
+      #expect(!StatusEmoji.isCustom(text), "\(text)")
+    }
+    #expect(StatusEmoji.isValid("") && StatusEmoji.isValid("zzz") && !StatusEmoji.isValid("eyes"))
+
+    var tea = StatusPreset.builtIn[2]
+    tea.symbol = "🍵"
+    let data = try JSONEncoder().encode([tea, StatusPreset.builtIn[0]])
+    let objects = try #require(try JSONSerialization.jsonObject(with: data) as? [[String: Any]])
+    #expect(objects[0]["symbol"] as? String == "" && objects[0]["emoji"] as? String == "🍵")
+    #expect(objects[1]["emoji"] == nil && objects[1]["symbol"] as? String == "glowing-star")
+    #expect(Set(objects[1].keys) == ["id", "title", "symbol", "style", "power", "autoEndMinutes"])
+    let loaded = StatusPreset.decode(data)
+    #expect(loaded.first?.symbol == "🍵" && loaded.last == StatusPreset.builtIn[0])
+    #expect(StatusPreset.sanitized(loaded) == loaded)
+    // 旧版本写的（没有 emoji 键）照常读
+    let old = try JSONEncoder().encode(StatusPreset.builtIn)
+    #expect(StatusPreset.decode(old) == StatusPreset.builtIn)
+    // 系统的 Unicode 表还没收的表情码段里的字也认（别的 Mac 系统更新）；码段外没收的不认
+    #expect(StatusEmoji.isCustom(String(UnicodeScalar(0x1FAFE)!)))
+    #expect(!StatusEmoji.isCustom(String(UnicodeScalar(0x10FFF0)!)))
+
+    // 和 0.7.x 混用：没挑系统表情的状态编出来和 0.7.1 逐字一样（它照常同步）；挑了的，0.7.1 那种自动生成的编解码认不出
+    // （decodeExact 失败 = 它把这一类停下，不会把 symbol 收拾成空再传回来）
+    let cleanData = try SyncRecords.encoder.encode(StatusPreset.builtIn[0])
+    let clean = String(decoding: cleanData, as: UTF8.self)
+    #expect(
+      clean
+        == #"{"autoEndMinutes":5,"id":"clean","power":"normal","style":"blackout","#
+        + #""symbol":"glowing-star","title":"清洁屏幕"}"#
+    )
+    #expect(SyncRecords.decodeExact(OldPreset.self, from: clean) != nil)
+    let custom = String(decoding: try SyncRecords.encoder.encode(tea), as: UTF8.self)
+    #expect(SyncRecords.decodeExact(OldPreset.self, from: custom) == nil)
+    #expect(SyncRecords.decodeExact(StatusPreset.self, from: custom)?.symbol == "🍵")
+
+    // 提醒同样认
+    var reminder = Reminder.examples[0]
+    reminder.symbol = "🏃"
+    #expect(Reminder.sanitized([reminder]).first?.symbol == "🏃")
+    reminder.symbol = "run"
+    #expect(Reminder.sanitized([reminder]).first?.symbol == "")
+  }
+
   /// 存取走一个偏好键里的 JSON：存进去的是收拾过的，读回来一样；存了空列表读回来是自带的。
   /// 只测编解码这两个纯函数，不建偏好域（临时偏好域删了也会在偏好目录里留一个空文件）
   @Test func presetsRoundTrip() {
@@ -1729,4 +1780,15 @@ struct StatusScreenTests {
       }
     }
   }
+}
+
+/// 0.7.1 的状态：自动生成的编解码（照当时的 StatusPreset 写，没有 emoji 键）
+private struct OldPreset: Codable {
+  var id: String
+  var title: String
+  var detail: String?
+  var symbol: String
+  var style: StatusPreset.Look
+  var power: StatusPreset.Power
+  var autoEndMinutes: Int
 }
