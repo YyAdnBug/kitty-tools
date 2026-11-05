@@ -107,7 +107,7 @@ public sealed class SyncDisk(string root)
     /// 一轮要读的那几个文件现在的样子：标记、每台的 device.json 和这几类的文件，各记路径、修改时间、大小（没有的记 -）。
     /// 和上一轮什么都没剩下时的一样，这一轮就不用整份读、整份合（REVIEW R49）。只读属性，云盘的占位文件不会因此开始下载。
     /// </summary>
-    public string Fingerprint(IEnumerable<string> kinds)
+    public string Fingerprint(IEnumerable<string> kinds, bool notes = false)
     {
         var builder = new System.Text.StringBuilder();
         void Add(string relative)
@@ -120,13 +120,20 @@ public sealed class SyncDisk(string root)
 
         var wanted = kinds.ToList();
         Add(SyncFolderRules.MarkerFile);
-        foreach (var device in DeviceIds().OrderBy(id => id, StringComparer.Ordinal))
+        var devices = DeviceIds().OrderBy(id => id, StringComparer.Ordinal).ToList();
+        foreach (var device in devices)
         {
             Add(DevicePath(device));
             foreach (var kind in wanted)
             {
                 Add(KindPath(device, kind));
             }
+        }
+
+        // 便签（PLAN-v13）：每台的 notes/、erased.json 和共用的 images/ 也算进来
+        if (notes)
+        {
+            Notes.NoteSyncDisk.AddFingerprint(this, builder, devices);
         }
 
         return builder.ToString();

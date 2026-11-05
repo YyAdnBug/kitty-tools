@@ -411,13 +411,11 @@ internal sealed class NoteStore : IDisposable
         return saved;
     }
 
-    /// <summary>同步时认出便签库被退回去了：换一个新的电脑编号，bumping 里的每一条记一笔新编号的改动。先落这几条再记新编号；
-    /// 便签没落下去返回 false（这一轮先不合）。</summary>
-    public bool SwitchDevice(IReadOnlySet<string> bumping)
+    /// <summary>同步时认出便签库被退回去了：bumping 里的每一条去掉旧编号那一格、记一笔新编号的改动。先落这几条再记新编号
+    /// （反过来的话没落下去就退出，下次恢复后打的字没有新编号的改动）；便签没落下去返回 false（这一轮先不合）。</summary>
+    public bool SwitchDevice(IReadOnlySet<string> bumping, string oldId, string newId)
     {
-        var old = Book.DeviceId;
-        var id = NoteBook.NewId();
-        Book.SwitchDevice(bumping, old, id);
+        Book.SwitchDevice(bumping, oldId, newId);
         if (!Flush())
         {
             return false;
@@ -425,14 +423,14 @@ internal sealed class NoteStore : IDisposable
 
         if (SyncDevice.Instance is { } device)
         {
-            device.Rotate(id);
+            device.Rotate(newId);
         }
         else
         {
-            SetMeta("device", id);
+            SetMeta("device", newId);
         }
 
-        Log.Info("notes.device-switched");
+        Log.Info($"notes.device-switched count={bumping.Count}");
         Notify();
         return true;
     }

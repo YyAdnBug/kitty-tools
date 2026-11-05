@@ -12,7 +12,11 @@
 // 别的电脑的文件读不出来（写坏了、别的类别）：只扔那一版，这一类照合（Windows 一直这样；那台的墓碑这一轮看不到，
 // 下一轮读到了照样压得住）。更新版本写的：这一类停在「请更新」。
 // 线程：调用方在 UI 线程上 await；Values / Ledger / Apply 回到调用方的线程（仓库只在 UI 线程上用），读写文件和合在线程池。
+// 便签（PLAN-v13 第 3 批，notes 不为 null 时）：一轮里多一步，先后照 Core/Notes/NoteSyncPart.cs 文件头那张清单——认清文件夹之后、
+// 别的几类合之前先认「便签库被退回去了」（要换编号就在写任何东西之前换）；别的几类合完再合便签、落下去、写自己的 notes/ 和 erased.json；
+// 便签文件要动的那一轮同样算「写了东西」（epoch +1、device.json 最后写）。便签这部分出了问题只停它自己（同别的一类）。
 using System.Text;
+using KittyTools.Core.Notes;
 
 namespace KittyTools.Core.Sync;
 
@@ -44,7 +48,8 @@ public sealed class SyncRoundResult
 }
 
 public sealed class SyncRunner(
-    ISyncDevice device, IReadOnlyList<ISyncSource> sources, string deviceName, Action<string>? log = null)
+    ISyncDevice device, IReadOnlyList<ISyncSource> sources, string deviceName, Action<string>? log = null,
+    NoteSyncPart? notes = null)
 {
     public const string NewerFormat = "同步文件夹是新版本写的，请更新 Kitty Tools";
 
@@ -58,6 +63,7 @@ public sealed class SyncRunner(
         VocabularySync.Kind => "生词本",
         EngineSync.Kind => "网页搜索",
         ServiceSync.Kind => "翻译服务",
+        NoteSyncFolder.NotesPart => "便签",
         StatusPresetSync.Kind => "状态屏的状态",
         ReminderSync.Kind => "提醒",
         _ => kind,
@@ -68,7 +74,9 @@ public sealed class SyncRunner(
         var result = new SyncRoundResult();
         var disk = new SyncDisk(folder);
         var kinds = sources.Select(source => source.Kind).ToList();
-        var snapshot = await Task.Run(() => Snapshot.Read(disk, kinds));
+        // 便签：写进文件夹的必须是落下去了的
+        var notesSaved = notes?.Flush() ?? true;
+        var snapshot = await Task.Run(() => Snapshot.Read(disk, kinds, notes is not null));
         if (!snapshot.Usable)
         {
             return result.Stop("文件夹不在了");
@@ -77,6 +85,12 @@ public sealed class SyncRunner(
         var library = snapshot.Library;
         if (library is null)
         {
+            // 标记是更新的格式写的（SyncFolderRules.ParseMarker 只认格式 1，便签的读法分得出来）：整轮不动
+            if (snapshot.Notes?.Folder.Marker is { Format: > NoteSyncFolder.Format })
+            {
+                return result.Stop(NewerFormat);
+            }
+
             if (snapshot.MarkerPending)
             {
                 return result.Stop("同步文件夹还没下载完");
@@ -93,6 +107,13 @@ public sealed class SyncRunner(
             {
                 return result.Stop("同步文件夹写不进去");
             }
+
+            if (snapshot.Notes is { } fresh)
+            {
+                // 刚新建的标记：便签那部分读的时候还没有它
+                fresh.Folder.Marker = new NoteSyncFolder.Marker(library);
+                fresh.MarkerUnreadable = false;
+            }
         }
 
         if (device.Library != library)
@@ -101,11 +122,36 @@ public sealed class SyncRunner(
         }
 
         // 认出库被退回去了（从旧备份恢复过）：文件夹里本机的 epoch 比本机记着的大，就换一个新编号。
+        // 便签另外按钟认（便签库可能单独被恢复过）：要换编号就连那几条便签一起换（先落盘再换），都在写任何东西之前。
         var folderEpoch = snapshot.Epoch(device.Id);
-        if (device.Epoch > 0 && folderEpoch > device.Epoch)
+        var rolledBack = device.Epoch > 0 && folderEpoch > device.Epoch;
+        string? notesProblem = notes is null ? null : NotesBlocked(snapshot, notesSaved);
+        var oldId = device.Id;
+        var bump = notes is not null && notesProblem is null
+            ? Bumped(notes, snapshot.Notes!.Folder, oldId, rolledBack)
+            : new HashSet<string>(StringComparer.Ordinal);
+        if (bump.Count > 0)
+        {
+            log?.Invoke($"sync.notes-regressed count={bump.Count}");
+            var newId = Guid.NewGuid().ToString("D").ToUpperInvariant();
+            if (!notes!.SwitchDevice(bump, oldId, newId))
+            {
+                // 那几条没落下去：这一轮便签先不合（留在内存里照常重试），下一轮再认一遍
+                notesProblem = "便签没存上";
+                if (rolledBack)
+                {
+                    device.Rotate();
+                }
+            }
+        }
+        else if (rolledBack)
+        {
+            device.Rotate();
+        }
+
+        if (rolledBack || device.Id != oldId)
         {
             log?.Invoke($"sync.epoch-rollback folder={folderEpoch} local={device.Epoch}");
-            device.Rotate();
             device.SetLibrary(library);
             folderEpoch = snapshot.Epoch(device.Id);
             result.Rotated = true;
@@ -138,35 +184,90 @@ public sealed class SyncRunner(
             }
         }
 
+        // 便签：别的几类合完再合（合、刹车、落下去、算出要写的）
+        NoteSyncFolder.PublishPlan? notePlan = null;
+        if (notes is not null)
+        {
+            if (notesProblem is null)
+            {
+                var step = await MergeNotes(notes, snapshot.Notes!, library,
+                    allowance.TryGetValue(NoteSyncFolder.NotesPart, out var allowed) ? allowed : 0, now);
+                if (step.Braked > 0)
+                {
+                    result.Waiting[NoteSyncFolder.NotesPart] = step.Braked;
+                }
+                else
+                {
+                    notesProblem = step.Problem;
+                    notePlan = step.Plan;
+                }
+            }
+
+            if (notesProblem is not null)
+            {
+                log?.Invoke("sync.kind-stopped notes");
+                trouble ??= notesProblem;
+            }
+        }
+
+        var touchesNotes = notePlan is { TouchesNotes: true };
+        var imagesOnly = notePlan is { IsEmpty: false, TouchesNotes: false };
+
         // 第几轮：只在真的写了东西时 +1；不往小里写（文件夹里的大说明上面已经换过编号了）。
-        var next = Math.Max(device.Epoch, folderEpoch) + (writes.Count > 0 ? 1 : 0);
+        var next = Math.Max(device.Epoch, folderEpoch) + (writes.Count > 0 || touchesNotes ? 1 : 0);
         var deviceText = SyncFolderRules.DeviceJson(next, deviceName);
         var me = device.Id;
-        if (writes.Count > 0 || snapshot.DeviceText(me) != deviceText)
+        if (writes.Count > 0 || touchesNotes || imagesOnly || snapshot.DeviceText(me) != deviceText)
         {
             if (device.Epoch != next)
             {
                 device.SetEpoch(next);
             }
 
+            var zone = notes?.Zone ?? TimeZoneInfo.Local;
+            var imagesDirectory = notes?.ImagesDirectory;
             var written = await Task.Run(() =>
             {
                 foreach (var (kind, text) in writes)
                 {
                     if (!disk.WriteText(SyncDisk.KindPath(me, kind), text))
                     {
-                        return false;
+                        return (false, (List<string>?)null, (HashSet<Guid>?)null, (List<string>?)null);
                     }
                 }
 
-                return disk.WriteText(SyncDisk.DevicePath(me), deviceText);
+                List<string>? notesWritten = null;
+                HashSet<Guid>? downloaded = null;
+                List<string>? purged = null;
+                if (notePlan is { IsEmpty: false } plan)
+                {
+                    var (ok, done, arrived, deleted) = NoteSyncDisk.Write(disk, me, plan, imagesDirectory, zone);
+                    (notesWritten, downloaded, purged) = (done, arrived, deleted);
+                    if (!ok)
+                    {
+                        return (false, notesWritten, downloaded, purged);
+                    }
+                }
+
+                // device.json 最后写（前面都写成了、内容变了才写）
+                var deviceOk = snapshot.DeviceText(me) == deviceText || disk.WriteText(SyncDisk.DevicePath(me), deviceText);
+                return (deviceOk, notesWritten, downloaded, purged);
             });
-            if (!written)
+            if (notes is not null)
+            {
+                NotesWritten(notes, written.Item2, written.Item3, written.Item4);
+            }
+
+            if (!written.Item1)
             {
                 return result.Stop("同步文件夹写不进去");
             }
 
             result.Written.AddRange(writes.Keys.OrderBy(kind => kind, StringComparer.Ordinal));
+            if (touchesNotes)
+            {
+                result.Written.Add(NoteSyncFolder.NotesPart);
+            }
         }
 
         if (result.Waiting.Count > 0)
@@ -297,6 +398,148 @@ public sealed class SyncRunner(
         return new Merged(outcome, null, ToFile(kind, outcome.Own).Encode(), SyncLedgerText.Encode(outcome.Ledger));
     }
 
+    // ---- 便签（PLAN-v13 第 3 批）----
+
+    /// <summary>便签这部分这一轮能不能合：没落下去、标记读不出来（还在下载）、自己的 device.json 读不出来 → 停（认清文件夹之前不换编号、不合）。</summary>
+    private string? NotesBlocked(Snapshot snapshot, bool saved)
+    {
+        if (!saved)
+        {
+            return "便签没存上";
+        }
+
+        if (snapshot.Notes is not { } part || part.MarkerUnreadable || snapshot.BrokenDevices.Contains(device.Id))
+        {
+            return "同步文件夹还没下载完";
+        }
+
+        return null;
+    }
+
+    /// <summary>要换编号的几条：钟认出来的（Regressed），整个库的 epoch 被退回去时再加上和自己那份不一样的。</summary>
+    private static HashSet<string> Bumped(NoteSyncPart part, NoteSyncFolder.Folder folder, string me, bool rolledBack)
+    {
+        var local = part.Notes();
+        var bump = NoteSyncFolder.Regressed(local, folder, me);
+        if (rolledBack && folder.Devices.TryGetValue(me, out var own))
+        {
+            foreach (var note in local)
+            {
+                if (own.Notes.TryGetValue(note.Id, out var written) && written != note)
+                {
+                    bump.Add(note.Id);
+                }
+            }
+        }
+
+        return bump;
+    }
+
+    private readonly record struct NoteStep(int Braked, string? Problem, NoteSyncFolder.PublishPlan? Plan);
+
+    /// <summary>合便签：Round → 刹车 → 正在编辑的先不换 → 落下去 → 写的计划（正在编辑的也先不写）+ 共用图片的清理。</summary>
+    private async Task<NoteStep> MergeNotes(NoteSyncPart part, NoteSyncSnapshot snapshot, string library, int allowance, long now)
+    {
+        var local = part.Notes();
+        var erased = part.Erased();
+        var folder = snapshot.Folder;
+        var round = await Task.Run(() => NoteSyncFolder.Round(local, erased, folder, library, now));
+        if (round.Stop is { } stop)
+        {
+            return new NoteStep(0, stop.Kind switch
+            {
+                NoteSyncFolder.StopKind.NewerFormat => NewerFormat,
+                NoteSyncFolder.StopKind.UnreadableTombstones => "同步文件夹还没下载完",
+                _ => "这个文件夹不是这一组同步用的",
+            }, null);
+        }
+
+        if (round.Brakes && round.Trashing > allowance)
+        {
+            log?.Invoke($"sync.brake notes deleting={round.Trashing} allowance={allowance}");
+            return new NoteStep(round.Trashing, null, null);
+        }
+
+        var editing = part.Editing();
+        foreach (var id in editing)
+        {
+            round.Merges.Remove(id);
+        }
+
+        if (round.Merges.Count > 0 && !part.Apply(round.Merges, round.Tombstones))
+        {
+            return new NoteStep(0, "便签没存上", null);
+        }
+
+        var after = part.Notes();
+        var afterErased = part.Erased();
+        var me = device.Id;
+        folder.Devices.TryGetValue(me, out var own);
+        var localImages = NoteSyncDisk.LocalImages(part.ImagesDirectory);
+        var plan = await Task.Run(() => NoteSyncFolder.Publish(after, afterErased, own, localImages, folder.Images));
+        plan.Writes.RemoveAll(note => editing.Contains(note.Id));
+        if (part.ImagesDirectory is not null && part.ReadLedger is { } read && part.WriteLedger is { } write)
+        {
+            try
+            {
+                var referenced = new HashSet<Guid>();
+                foreach (var note in after)
+                {
+                    if (NoteImages.ContainsToken(note.Body))
+                    {
+                        referenced.UnionWith(NoteImages.Ids(note.Body));
+                    }
+                }
+
+                referenced.UnionWith(NoteSyncFolder.ReferencedImages(folder));
+                var localIds = localImages.Select(NoteImageRules.Identifier).OfType<Guid>().ToHashSet();
+                var purge = NoteSyncFolder.ImagePurge(folder.Images, referenced, localIds,
+                    NoteSyncFolder.LedgerFrom(read()), NoteSyncFolder.IsReadable(folder) && !snapshot.Pending, now);
+                plan.ImageDeletes = purge.Deletes.ToList();
+                write(NoteSyncFolder.LedgerText(purge.Ledger));
+            }
+            catch (Exception ex)
+            {
+                // 账读不出来：这一轮一张不删
+                log?.Invoke($"sync.notes-ledger-unreadable {ex.GetType().Name}");
+            }
+        }
+
+        return new NoteStep(0, null, plan);
+    }
+
+    /// <summary>写完：写成了的便签告诉仓库，拿下来的图告诉编辑器，删成了的共用图从账上去掉。</summary>
+    private void NotesWritten(NoteSyncPart part, List<string>? written, HashSet<Guid>? downloaded, List<string>? purged)
+    {
+        if (written is { Count: > 0 })
+        {
+            part.Published?.Invoke(written);
+        }
+
+        if (downloaded is { Count: > 0 })
+        {
+            part.ImagesArrived?.Invoke(downloaded);
+        }
+
+        if (purged is { Count: > 0 } && part.ReadLedger is { } read && part.WriteLedger is { } write)
+        {
+            try
+            {
+                var ledger = NoteSyncFolder.LedgerFrom(read());
+                foreach (var name in purged)
+                {
+                    ledger.Remove(name);
+                }
+
+                write(NoteSyncFolder.LedgerText(ledger));
+            }
+            catch (Exception ex)
+            {
+                log?.Invoke($"sync.notes-ledger-failed {ex.GetType().Name}");
+            }
+        }
+    }
+
     /// <summary>读出来的一份 → 引擎要的样子；结构不对、有一条不是规范写法（decodeExact）= null。</summary>
     private static SyncFileData? ToData(SyncFile? file, string kind)
     {
@@ -338,6 +581,12 @@ public sealed class SyncRunner(
     /// <summary>一轮开始时读到的文件夹（线程池上读，之后只读不改）。</summary>
     private sealed class Snapshot
     {
+        /// <summary>便签那部分（notes 不为 null 时读）。</summary>
+        public NoteSyncSnapshot? Notes { get; private init; }
+
+        /// <summary>每台的 device.json 有、却读不出来（便签那部分要看自己的）。</summary>
+        public HashSet<string> BrokenDevices { get; } = new(StringComparer.Ordinal);
+
         public bool Usable { get; private init; }
 
         public string? Library { get; private init; }
@@ -366,7 +615,7 @@ public sealed class SyncRunner(
         public string? File(string device, string kind)
             => Peers.TryGetValue(device, out var peer) && peer.Files.TryGetValue(kind, out var text) ? text : null;
 
-        public static Snapshot Read(SyncDisk disk, IReadOnlyList<string> kinds)
+        public static Snapshot Read(SyncDisk disk, IReadOnlyList<string> kinds, bool notes = false)
         {
             if (!disk.IsUsable)
             {
@@ -374,6 +623,7 @@ public sealed class SyncRunner(
             }
 
             var library = disk.Marker();
+            var ids = disk.DeviceIds();
             var snapshot = new Snapshot
             {
                 Usable = true,
@@ -381,11 +631,23 @@ public sealed class SyncRunner(
                 MarkerPending = library is null && disk.Exists(SyncFolderRules.MarkerFile) &&
                                 disk.ReadText(SyncFolderRules.MarkerFile) is null,
                 Foreign = library is null && disk.LooksForeign(),
+                Notes = notes ? NoteSyncDisk.Read(disk, ids) : null,
             };
-            foreach (var id in disk.DeviceIds())
+            foreach (var id in ids)
             {
                 var text = disk.ReadText(SyncDisk.DevicePath(id));
                 var parsed = text is null ? null : SyncFolderRules.ParseDevice(text);
+                if (parsed is null && disk.Exists(SyncDisk.DevicePath(id)))
+                {
+                    snapshot.BrokenDevices.Add(id);
+                }
+
+                if (snapshot.Notes?.Folder.Devices.TryGetValue(id, out var noteDevice) == true)
+                {
+                    noteDevice.Name = parsed?.Name;
+                    noteDevice.Epoch = parsed?.Epoch;
+                }
+
                 var peer = new Peer { DeviceText = text, Name = parsed?.Name, Epoch = parsed?.Epoch ?? 0 };
                 foreach (var kind in kinds)
                 {

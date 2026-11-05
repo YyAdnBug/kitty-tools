@@ -8,6 +8,7 @@
 // REVIEW R49：上一轮什么都没剩下之后，要读的那几个文件（SyncDisk.Fingerprint）和本机这几类（改一次 _revision 加一）都没动，
 // 这一轮就不读、不合，只把「上次同步」记成现在。
 using KittyTools.Core;
+using KittyTools.Core.Notes;
 using KittyTools.Core.Sync;
 using KittyTools.Infrastructure;
 using Microsoft.UI.Dispatching;
@@ -46,6 +47,7 @@ internal sealed class Syncer
     private long _revision;
     private ClipboardStore? _watchedClips;
     private TranslationHistory? _watchedHistory;
+    private NoteStore? _watchedNotes;
 
     /// <summary>上一轮什么都没剩下（合完、没等确认、没出错）时这一轮开始那一刻的样子；下一轮还是这样就跳过。</summary>
     private string? _quiet;
@@ -168,8 +170,9 @@ internal sealed class Syncer
         var sources = Sources();
         var kinds = sources.Select(source => source.Kind).ToList();
         var revision = _revision;
-        var fingerprint = await Task.Run(() => Fingerprint(folder, kinds));
-        var signature = fingerprint is null ? null : $"{folder}|{revision}|{string.Join(',', kinds)}|{fingerprint}";
+        var notes = NotesPart();
+        var fingerprint = await Task.Run(() => Fingerprint(folder, kinds, notes is not null));
+        var signature = fingerprint is null ? null : $"{folder}|{revision}|{string.Join(',', kinds)}|{notes is not null}|{fingerprint}";
         if (signature is not null && signature == _quiet && _confirmed.Count == 0)
         {
             Status.State = "idle";
@@ -179,7 +182,7 @@ internal sealed class Syncer
         }
 
         var allowance = _confirmed;
-        var runner = new SyncRunner(_device, sources, Environment.MachineName, message => Log.Warn(message));
+        var runner = new SyncRunner(_device, sources, Environment.MachineName, message => Log.Warn(message), notes);
         var started = Environment.TickCount64;
         var result = await runner.RunAsync(folder, allowance, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         Log.Info($"sync.round state={result.State} kinds={kinds.Count} written={result.Written.Count} ms={Environment.TickCount64 - started}");
@@ -227,13 +230,19 @@ internal sealed class Syncer
             _watchedHistory = history;
             history.Changed += () => _revision++;
         }
+
+        if (NoteStore.Instance is { } notes && !ReferenceEquals(notes, _watchedNotes))
+        {
+            _watchedNotes = notes;
+            notes.Changed += () => _revision++;
+        }
     }
 
-    private static string? Fingerprint(string folder, IReadOnlyList<string> kinds)
+    private static string? Fingerprint(string folder, IReadOnlyList<string> kinds, bool notes)
     {
         try
         {
-            return new SyncDisk(folder).Fingerprint(kinds);
+            return new SyncDisk(folder).Fingerprint(kinds, notes);
         }
         catch (Exception ex)
         {
@@ -241,6 +250,30 @@ internal sealed class Syncer
             Log.Warn($"sync.fingerprint-failed {ex.GetType().Name}");
             return null;
         }
+    }
+
+    /// <summary>便签那部分（PLAN-v13 第 3 批）：勾着「便签」、便签功能开着、便签库开着才有。</summary>
+    private static NoteSyncPart? NotesPart()
+    {
+        if (!SettingsService.Current.SyncNotes || !Features.IsOn(Feature.Notes) || NoteStore.Instance is not { } store)
+        {
+            return null;
+        }
+
+        return new NoteSyncPart
+        {
+            Flush = store.Flush,
+            Notes = () => store.Book.All.ToList(),
+            Erased = () => new Dictionary<string, NoteSync.Tombstone>(store.Book.Erased, StringComparer.Ordinal),
+            Editing = NoteEditing.Ids,
+            SwitchDevice = store.SwitchDevice,
+            Apply = store.ApplySync,
+            Published = ids => store.Book.Published(ids),
+            ImagesArrived = NoteEditing.ImagesArrived,
+            ImagesDirectory = store.Images?.Directory,
+            ReadLedger = () => store.Meta(NoteSyncFolder.ImageLedgerKey),
+            WriteLedger = text => store.SetMeta(NoteSyncFolder.ImageLedgerKey, text),
+        };
     }
 
     private List<ISyncSource> Sources()

@@ -1222,6 +1222,9 @@ internal sealed partial class SettingsWindow : Window
             _content.Children.Add(SettingsUi.Card("同步文件夹", trouble ?? SyncStatusLine(status), controls, problem: trouble is not null));
 
             var others = status?.Devices.Count ?? 0;
+            // 便签（PLAN-v13）：mac 那一行排第一；没有账本，第一次合在选文件夹时已经问过，勾上不再问
+            AddSyncPart(Core.Notes.NoteSyncFolder.NotesPart, "便签", "连同正文里的图片", Feature.Notes,
+                settings.SyncNotes, value => settings.SyncNotes = value, 0);
             AddSyncPart(Core.Sync.ClipSync.Kind, "片段与收藏", "文字的片段、收藏和收藏夹；图片和文件的收藏不同步", Feature.Clipboard,
                 settings.SyncClips, value => settings.SyncClips = value, others);
             AddSyncPart(Core.Sync.VocabularySync.Kind, "生词本", "翻译里收藏的词句", Feature.Translate,
@@ -1244,8 +1247,8 @@ internal sealed partial class SettingsWindow : Window
         }
 
         _content.Children.Add(SettingsUi.Footnote(
-            "勾上的几类在几台电脑之间保持一样，取消一类只是不再同步它。同步文件夹里放的是不加密的文本文件，能打开这个文件夹的人都看得到。" +
-            "每台电脑只往自己的那份里写、读所有电脑的，改动一般几十秒到几分钟传过去（看同步盘多快）。两台都改了同一条时，后改的留下；" +
+            "勾上的几类在几台电脑之间保持一样，取消一类只是不再同步它。同步文件夹里放的是不加密的文本文件和图片，能打开这个文件夹的人都看得到。" +
+            "每台电脑只往自己的那份里写、读所有电脑的，改动一般几十秒到几分钟传过去（看同步盘多快）。两台都改了同一条时，后改的留下（便签的另一版放进「最近删除」）；" +
             "一轮要删的太多会先停下来问。密钥不同步。停止同步后，文件夹里的东西留着，这台电脑上的也不动。"));
     }
 
@@ -1276,7 +1279,7 @@ internal sealed partial class SettingsWindow : Window
 
     /// <summary>「合在一起后……」：第一次选文件夹时、勾上还没合过的一类时共用（mac SyncSection.joinNote，去掉 Windows 不同步的几类）。</summary>
     private const string JoinNote =
-        "合在一起后，这台电脑上的片段、收藏、生词、网页搜索、翻译服务、状态屏的状态和提醒会和它们的一起出现在每台电脑上（同样的不重复）；" +
+        "合在一起后，这台电脑上的便签、片段、收藏、生词、网页搜索、翻译服务、状态屏的状态和提醒会和它们的一起出现在每台电脑上（同样的不重复）；" +
         "之后同一条两边都改过的，后改的留下。";
 
     private async Task<bool> ConfirmJoinAsync(string title, string? lead)

@@ -57,6 +57,35 @@ WIC 的 `BitmapDecoder.HeifDecoderId`、`DecoderInformation.CodecId`；`NoteStor
 图片的显示尺寸按 96 DPI = 1:1 算（mac 72 DPI）；`NoteStore` 不做 mac「正文超 64 KB 时字数和进度停手再算」（ponytail，写在 `NoteBook` 文件头）；
 打不开时的对话框问完不用重启（便签的库是单独的，开好就接着起便签那几样）。
 
+### 第 3 批：同步（和 mac 同一个文件夹）→ 已写（审查方，`git log --grep "PLAN-v13 第 3 批"`，没编译）
+
+照 mac `NoteSync.swift`、`NoteSyncFolder.swift`（逐函数移植，字节一字不差）、`NoteSyncDisk.swift` + `NoteSyncer.swift`（执行层，只取先后）：
+
+- **Core**：`Notes/NoteSync.cs`（合并：版本钟、冲突另存那条的编号、墓碑、状态 / 顺序各自后改的赢）、`NoteSyncFolder.cs`（标记、便签文件的写法和从严的读法、erased.json、
+  一轮 `Round`、刹车、写出去 `Publish`、共用图片的清理 `ImagePurge`、认出库被退回去了 `Regressed`）、`NoteFileHeader.cs`（Swift 的 JSON 字符串 / Double / ISO 写法）、
+  `NoteSyncPart.cs`（仓库交给同步的几样 + 读写文件夹的便签那部分 `NoteSyncDisk`）。
+- **golden**：`tools/notes-sync-golden.swift` 直接编 macos 分支的 `Note` / `NoteSync` / `NoteSyncFolder` / `NotePaper` / `NoteImages` / `NoteTasks`（加最少的桩）在 Mac 上跑出
+  `KittyTools.Tests/Fixtures/notes-sync-golden.json`（1830 个样本：哈希、另存编号、钟、Double、ISO、JSON 字符串、便签文件写 44 / 读 146、墓碑、标记、账、merge 149、round 51、
+  publish 7、regressed 5、imagePurge 8）。`NoteSyncTests` 逐个比（再加 mac `NoteSyncTests` / `NoteSyncFolderTests` 的用例和随机测试：`KITTY_NOTES_SYNC_FUZZ=<次数>` 多跑）。
+- **执行层**：`SyncRunner` 多一个可选的 `NoteSyncPart`（不传 = 和以前一样，现有的单测不用改）：认清文件夹 → 便签按钟认「库被退回去了」、要换编号就先换（在写任何东西之前）→
+  别的几类照常 → 合便签（Round → 刹车 → 正在编辑的先不换 → 落下去 → Publish）→ 写（便签文件要动的那一轮 epoch +1、device.json 最后写）。
+  标记是更新的格式写的：整轮停在「请更新」（以前 Windows 把它当成「别的东西」）。`SyncDisk.Fingerprint(kinds, notes)` 把每台的 notes/、erased.json、images/ 也算进去（不然只有便签变了的那一轮会被跳过）。
+- **App**：`Syncer.NotesPart()`（勾着「便签」、便签功能开着、便签库开着才有）；`NoteStore.SwitchDevice(ids, old, new)`（先落盘再 `SyncDevice.Rotate(new)`）；
+  `NoteEditing`（哪几条正在编辑：前台窗口里拿着焦点的编辑器、挂着组字的；同步拿下来的图通知编辑器）；设置 › 通用 › 同步第一行「便签 · 连同正文里的图片」（默认开）、页脚和「合在一起」的说法加上便签。
+- 单测：`NoteSyncTests`（golden + 移植）、`NoteSyncRunnerTests`（两台内存里的 NoteBook 共用临时文件夹：新建传过去、改了跟上、两边各改、永久删除、刹车、正在编辑的先不换、认出退回去了换编号）。
+
+**要特别看的编译点**：`NoteSyncFolder` 里大量 C# 12 写法（集合表达式 `[]`、`cond ? list : []`）；`NoteSync.Merge` 有个属性就叫 `Note`（和类型同名）；`SyncRunner.RunAsync` 里
+`Task.Run` 返回四元组（`(bool, List<string>?, HashSet<Guid>?, List<string>?)`）；`snapshot.Notes?.Folder.Devices.TryGetValue(id, out var noteDevice) == true` 之后用 `noteDevice`
+（C# 10 起的明确赋值）；`NoteEditor.IsInWindow` 用 `XamlRoot.ContentIslandEnvironment.AppWindowId`。**这几批的提交单独拿出来不一定编得过**（第 3 批用到第 4、6 批的 `NoteEditor` / `NoteFloats`），以最后一批为准。
+
+**替用户定的 / 和 mac 不一样**：
+- 电脑编号、epoch 全 App 一个（`SyncDevice`，mac 存在便签库里、只有便签文件动了才 +1）：只有便签库被单独恢复时 epoch 认不出来，靠钟（`Regressed`）认；整个数据目录被恢复（epoch 退回）时，
+  和自己那份不一样的便签也一起换编号（同 mac「自己子文件夹里记的比库里的大」那条）。
+- 便签那部分出了问题只停它自己（mac 是整轮停），别的几类照常同步。
+- 没有 mac「读的缓存按路径 + 文件号 + 时刻 + 大小认」：每轮把便签文件都读一遍（指纹没变的那轮整轮跳过，所以只在有变化时读）。ponytail，几千条便签一轮读几 MB。
+- `SyncFolderRules.ParseDevice` 比 mac 严（epoch 必须有、format 必须是 1）：更新版本写的 device.json 在 Windows 上算读不出来，便签这部分会停在「还没下载完」。留给 mac 真改了格式再说。
+- `NoteImageRules.Identifier`（本机图片目录）用 `Guid.TryParseExact("D")`，比 mac 的 UUID 解析宽一点点（.NET 认每段前的 `+`）；同步文件夹里的图片名用 `NoteSyncFolder.ImageId`（严格）。
+
 ## PLAN-v12（跟上 mac：先把没有的功能做出来，2026-11-05 用户「先把未实现的功能实现」）
 
 清单和分批在 `PLAN-v12.md`（不是拍板页，行为照 mac）；分工同 PLAN-v11 D10。

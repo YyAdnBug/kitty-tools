@@ -44,6 +44,8 @@ internal static class NotesHost
     private static void Ready(NoteStore store)
     {
         store.Images = new NoteImageStore(Paths.NotesImagesDirectory);
+        store.IsOpen = id => NoteEditing.IsOpen(id) || NoteFloats.IsFloating(id);
+        store.IsComposing = NoteEditing.IsComposing;
         Maintain(force: true);
         var settings = SettingsService.Current;
         var step = NoteSample.Next(settings.NotesSampleAdded, settings.NotesDeckEnabled, store.Book.All.Count);
