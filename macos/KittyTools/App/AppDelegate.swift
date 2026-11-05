@@ -2581,7 +2581,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     for (index, segment) in segments.enumerated() {
       try Task.checkCancellation()
       // 纯符号段不发请求（有道这类接口会回错误码，一段失败整张图就白翻了），原样占位；覆盖那一步也会跳过它
-      guard ScreenshotOverlay.worthTranslating(segment.text) else {
+      guard ScreenshotOverlay.hasTranslatableContent(segment.text) else {
         results.append(segment.text)
         continue
       }

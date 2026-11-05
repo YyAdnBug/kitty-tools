@@ -119,12 +119,12 @@ struct ScreenshotOverlayTests {
 
   @Test func symbolOnlyParagraphsAreNotTranslated() {
     // OCR 会把分隔线认成一行符号：这种段没有可翻的内容，有道网页版会直接回错误码 40
-    #expect(!ScreenshotOverlay.worthTranslating("——— ... !!!"))
-    #expect(!ScreenshotOverlay.worthTranslating("• • •"))
-    #expect(!ScreenshotOverlay.worthTranslating("   "))
-    #expect(ScreenshotOverlay.worthTranslating("Order shipped"))
-    #expect(ScreenshotOverlay.worthTranslating("订单已发货"))
-    #expect(ScreenshotOverlay.worthTranslating("第 12 条"))
+    #expect(!ScreenshotOverlay.hasTranslatableContent("——— ... !!!"))
+    #expect(!ScreenshotOverlay.hasTranslatableContent("• • •"))
+    #expect(!ScreenshotOverlay.hasTranslatableContent("   "))
+    #expect(ScreenshotOverlay.hasTranslatableContent("Order shipped"))
+    #expect(ScreenshotOverlay.hasTranslatableContent("订单已发货"))
+    #expect(ScreenshotOverlay.hasTranslatableContent("第 12 条"))
   }
 
   @Test func frameStaysInsideTheImage() {
