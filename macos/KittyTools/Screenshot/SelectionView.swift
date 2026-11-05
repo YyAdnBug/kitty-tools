@@ -29,10 +29,20 @@ final class SelectionView: NSView, NSTextViewDelegate {
     case record
   }
 
-  let image: CGImage
+  /// 冻结帧（原地翻译之后换成贴了译文的那张，所以不是 let）
+  private(set) var image: CGImage
   /// 冻结那一刻的窗口（本屏视图坐标，从前到后）
   let windows: [CGRect]
   private let session: SelectionSession
+  /// 截图工具栏「翻译」就地翻：给选区的图，返回覆盖了译文的图（失败带一句原因）。
+  /// 由 AppDelegate 经 SelectionSession 注入；nil = 现在不能就地翻（退回原来的「退出截图页再翻」）
+  var translateHandler: ((CGImage) async -> (image: CGImage?, message: String?))?
+  /// 框完松手就直接翻（⌥S：截图翻译 = 截图 + 自动点「翻译」，人还留在截图页）
+  var autoTranslates = false
+  /// 正在就地翻译：选区上出脉冲、框选和工具栏暂时不动
+  private var translating = false
+  /// 选区上的呼吸脉冲（翻译中）
+  private let translatingPulse = CALayer()
   private var mode: SelectionView.Mode { session.mode }
   /// 截图、录屏：悬停窗口、单击选中、调整阶段（手柄、拖边、方向键、尺寸胶囊、比例）
   private var adjusts: Bool { mode != .quick }
@@ -215,6 +225,9 @@ final class SelectionView: NSView, NSTextViewDelegate {
     canvas.autoresizingMask = [.width, .height]
     addSubview(canvas)
     let root = canvas.layer!
+    translatingPulse.backgroundColor = NSColor.white.withAlphaComponent(0.26).cgColor
+    translatingPulse.isHidden = true
+    root.addSublayer(translatingPulse)
     shade.fillRule = .evenOdd
     shade.fillColor = NSColor.black.withAlphaComponent(0.18).cgColor
     let pink = Style.Shot.accent
@@ -288,7 +301,10 @@ final class SelectionView: NSView, NSTextViewDelegate {
     let lastRegion = session.lastRegion == nil ? [] : ["D 上次区域"]
     return switch session.mode {
     case .quick: session.hint.components(separatedBy: " · ")
-    case .capture: ["拖动框选", "单击选中窗口", "双击直接拷贝"] + lastRegion + ["Esc 取消"]
+    case .capture:
+      session.hint.isEmpty
+        ? ["拖动框选", "单击选中窗口", "双击直接拷贝"] + lastRegion + ["Esc 取消"]
+        : session.hint.components(separatedBy: " · ")
     case .record: ["拖动框选要录的区域", "单击选中窗口区域", "单击桌面录整屏", "双击直接开始"] + lastRegion + ["Esc 取消"]
     }
   }
@@ -636,6 +652,22 @@ final class SelectionView: NSView, NSTextViewDelegate {
     }
     outlineOuter.path = shown.map {
       CGPath(rect: insideScreen($0.insetBy(dx: -2, dy: -2), by: 2), transform: nil)
+    }
+    // 就地翻译中：选区上盖一层呼吸的脉冲（白底轻微明暗，不挡文字），翻完就收
+    translatingPulse.frame = shown ?? .zero
+    translatingPulse.isHidden = !translating || shown == nil
+    if translating {
+      if translatingPulse.animation(forKey: "pulse") == nil {
+        let pulse = CABasicAnimation(keyPath: "opacity")
+        pulse.fromValue = 0.15
+        pulse.toValue = 0.42
+        pulse.duration = 0.55
+        pulse.autoreverses = true
+        pulse.repeatCount = .infinity
+        translatingPulse.add(pulse, forKey: "pulse")
+      }
+    } else {
+      translatingPulse.removeAnimation(forKey: "pulse")
     }
     hint.layer.isHidden = selection != nil && !hintFlashing
     if !hint.layer.isHidden {
@@ -1637,6 +1669,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
   // MARK: 输出
 
   private func output(_ action: RegionSelector.Action) {
+    // 翻译留在截图页里翻：选区上出脉冲、翻完把译文贴回选区，不像其它出图键那样收起遮罩
+    if case .translate = action { return translateInPlace() }
     endEditing()
     guard let selection, let window else { return }
     let pixels = RegionSelector.pixelRect(
@@ -1658,6 +1692,63 @@ final class SelectionView: NSView, NSTextViewDelegate {
         .init(
           image: result, frame: selection.offsetBy(dx: window.frame.minX, dy: window.frame.minY),
           action: action, original: original, annotations: moved)))
+  }
+
+  /// 就地翻译（工具栏「翻译」）：不收起遮罩——选区上出脉冲，翻完把译文图贴回选区，
+  /// 标注清掉（译文已经画进图里），人还留在截图页，可以接着标注 / 复制 / 保存
+  private func translateInPlace() {
+    guard !translating else { return }
+    guard let handler = translateHandler else { return flashHint(["这里不能翻译"]) }
+    guard let selection else { return }
+    endEditing()
+    let pixels = RegionSelector.pixelRect(
+      selection, viewSize: bounds.size, imageSize: CGSize(width: image.width, height: image.height))
+    guard let cropped = image.cropping(to: pixels) else { return }
+    translating = true
+    refresh()
+    Task { @MainActor in
+      let result = await handler(cropped)
+      translating = false
+      guard let patch = result.image else {
+        refresh()
+        return flashHint([result.message ?? "翻译失败"])
+      }
+      guard let replaced = Self.replacing(image, at: pixels, with: patch) else {
+        refresh()
+        return flashHint(["合成失败"])
+      }
+      image = replaced
+      // 标注层按新图重建（马赛克要读新图的像素），旧标注清掉
+      annotationCanvas?.removeFromSuperview()
+      if annotates {
+        let fresh = AnnotationCanvas(image: replaced, dim: spotlightDim)
+        fresh.autoresizingMask = [.width, .height]
+        addSubview(fresh, positioned: .below, relativeTo: canvas)
+        annotationCanvas = fresh
+        annotationCanvas?.selection = selection
+      }
+      needsDisplay = true
+      refresh()
+      flashHint(["已替换为译文"])
+    }
+  }
+
+  /// 把译文图贴回整屏冻结帧的选区位置。pixels 是图里的像素矩形（原点左上），源图尺寸不变
+  private static func replacing(_ image: CGImage, at pixels: CGRect, with patch: CGImage) -> CGImage? {
+    guard
+      let space = image.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB),
+      let context = CGContext(
+        data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: 0,
+        space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+    else { return nil }
+    context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+    // CGContext 原点在左下，pixels 的原点在左上：翻一下 y
+    context.draw(
+      patch,
+      in: CGRect(
+        x: pixels.minX, y: CGFloat(image.height) - pixels.maxY,
+        width: pixels.width, height: pixels.height))
+    return context.makeImage()
   }
 
   /// 长截图：只交出选区位置，边滚边截的是实时画面（标注不带过去，长图是重截的、坐标对不上；
@@ -2029,7 +2120,13 @@ final class SelectionView: NSView, NSTextViewDelegate {
         if let restore { select(restore) } else { self.selection = nil }
         return
       }
-      if mode == .quick { output(.copy) } else { isAdjusting = true }
+      if mode == .quick {
+        output(.copy)
+      } else {
+        isAdjusting = true
+        // ⌥S：框完自动翻，省掉再点一下工具栏
+        if autoTranslates { translateInPlace() }
+      }
     case .annotate?:
       let drawn = draft
       draft = nil

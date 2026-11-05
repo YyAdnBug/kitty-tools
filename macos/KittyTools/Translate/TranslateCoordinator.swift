@@ -348,8 +348,9 @@ import Observation
     return Lang.detect(trimmed, preferring: [first, second]) != nil
   }
 
-  /// 按浮窗上选的源 / 目标（全局记住的）和检测结果定这次的请求；wordMode：单个词时让大模型按词典格式回答
-  private static func plan(for text: String, wordMode: Bool = true) -> (
+  /// 按浮窗上选的源 / 目标（全局记住的）和检测结果定这次的请求；wordMode：单个词时让大模型按词典格式回答。
+  /// 截图翻译的原位覆盖按整图文字定一次方向，各段共用（TranslateSegments）
+  static func plan(for text: String, wordMode: Bool = true) -> (
     request: TranslateRequest, detected: Lang?, fixedSource: Lang?, abandonedTarget: Lang?
   ) {
     let defaults = UserDefaults.standard
