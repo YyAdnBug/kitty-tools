@@ -192,17 +192,21 @@ final class FileSearch {
   /// 单输（或拼到一半）「open」「find」时的补全提示，同网页搜索的关键词提示：正好是关键词的放最前，
   /// ≥ 2 个字的开头放本地结果后面
   static func promptItems(for query: String) -> (exact: [LauncherItem], partial: [LauncherItem]) {
-    let text = LauncherMatch.fold(query.trimmingCharacters(in: .whitespaces))
     var exact: [LauncherItem] = []
     var partial: [LauncherItem] = []
-    for (keyword, title) in [("open", "搜索文件并打开…"), ("find", "搜索文件并在访达中显示…")] {
+    // 中文叫法和全拼只算打了一半（LauncherMatch.promptMatch）
+    let prompts = [
+      ("open", "搜索文件并打开…", ["搜索文件", "打开文件", "文件", "sousuowenjian", "wenjian"]),
+      ("find", "搜索文件并在访达中显示…", ["查找文件", "在访达中显示", "chazhaowenjian", "chazhao"]),
+    ]
+    for (keyword, title, aliases) in prompts {
       let item = LauncherItem(
         kind: .prompt, target: "file-" + keyword, title: title,
         subtitle: "输入「\(keyword) 空格 文件名」，↩ 或 Tab 补全关键词", completion: keyword + " ")
-      if text == keyword {
-        exact.append(item)
-      } else if text.count >= 2, keyword.hasPrefix(text) {
-        partial.append(item)
+      switch LauncherMatch.promptMatch(query, keywords: [keyword], aliases: aliases) {
+      case .exact: exact.append(item)
+      case .partial: partial.append(item)
+      case nil: break
       }
     }
     return (exact, partial)

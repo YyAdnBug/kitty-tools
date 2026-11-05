@@ -66,6 +66,28 @@ struct SystemCommandsTests {
     let prompts = SystemCommands.promptItems(for: "quit")
     #expect(prompts.exact.map(\.completion) == ["quit "])
     #expect(SystemCommands.promptItems(for: "ej").partial.map(\.target) == ["system-eject"])
+    // 中文叫法和全拼（2026-11-04）：只算打了一半，排在本地结果后面
+    let partial = { SystemCommands.promptItems(for: $0).partial.map(\.target) }
+    #expect(partial("端口") == ["system-port"])
+    #expect(partial("duankou") == ["system-port"])
+    #expect(partial("进程") == ["system-kill"])
+    #expect(partial("强制") == ["system-forcequit"])
+    #expect(partial("弹出") == ["system-eject"])
+    #expect(partial("tuichu") == ["system-quit", "system-eject"])  // 退出、推出同音
+    #expect(SystemCommands.promptItems(for: "端口").exact.isEmpty)
+    #expect(partial("k").isEmpty && partial("口").isEmpty)
+  }
+
+  @Test func promptMatchRule() {
+    let match = { LauncherMatch.promptMatch($0, keywords: ["port"], aliases: ["端口", "duankou"]) }
+    #expect(match("port") == .exact && match(" PORT ") == .exact)
+    #expect(match("po") == .partial && match("端") == .partial && match("duan") == .partial)
+    #expect(match("p") == nil && match("ports") == nil && match("") == nil && match("口") == nil)
+    #expect(FileSearch.promptItems(for: "文件").partial.map(\.target) == ["file-open"])
+    #expect(FileSearch.promptItems(for: "查找").partial.map(\.target) == ["file-find"])
+    #expect(LauncherModel.translatePrompts(for: "翻译").partial.first?.completion == "fy ")
+    #expect(LauncherModel.translatePrompts(for: "fy").exact.first?.completion == "fy ")
+    #expect(LauncherModel.clipItem("").subtitle.contains("cb 空格 关键词"))
   }
 
   @Test func targetFilters() {
