@@ -224,6 +224,36 @@
    传 8 个文件（两个架构的安装包、zip 和各自的 `.sha256`）、说明用 `release-notes.md`，再发布；**不标 latest**、不是预发布。发布后用 0.1.1 的 Release 构建（探针档）
    检查更新要看到 `update.check newer=True version=0.1.2`。哪一步没过就别发，记在这里。结果记在这一节下面；`windows-0.1.x` 照旧别并进 `windows`，审查方并。
 
+**第二轮 Windows 验收（2026-11-04 / 05，`windows-0.1.x` 到 `45a487d`，已发布 `windows-v0.1.2`）**：
+
+- **提示闪：7d0b807 没过，按第 2 条的后备方案改成隐身露面（`45a487d`，已拣到 windows = `fb6e253`）**。探针同第一轮（临时，没提交）：Release AOT，主屏铺静态色块窗口（不激活），
+  `ScreenshotSession.StartSynthetic()` 开遮罩（合成冻结帧，不抓桌面），程序里调 `CopySelectionAsync`（ClipboardWriter 用环境变量短路），`KITTY_HUD_CAPTURE=1`，WGC 录整块主屏，
+  量提示窗口中间那块每帧的平均色。系统浅色不动，App 外观用设置里的浅色 / 深色。
+  - `0428a27`（7d0b807）：复制后提示**深浅两种外观都是一块白（255）约 120–135 ms**，再一帧黑、才是亚克力。同一探针拿 7d0b807 之前的 `Notice.cs` 对照：深色黑约 150 ms、浅色白约 170 ms。
+    原因：遮罩关掉后 UI 线程空了一拍，低优先级那一拍就排到了、窗口露出来，之后才建角落卡（又忙 120–170 ms），XAML 这段时间画不上。
+  - 改：`ShowCore` 第一次露面先 DWM 隐身再 `ShowWindow`，第一次 `CompositionTarget.Rendering` 之后再过 4 次合成且 ≥ 50 ms 才显形，300 ms 兜底，收起时还藏着就不再等；
+    藏着时内容淡到 0，显形后 `Motion.FadeIn`（`Appear` 只有终点关键帧，同一扇窗口第二次露面时从上回的 1 起步，等于不淡入，逐帧录到的）。
+  - 改后：浅色、深色各录两遍，每遍复制两次 + 一条空闲提示，另各两遍只弹空闲提示：**每一次第一帧都是空的亚克力（深 44–45、浅 247–249），再淡到 81 / 217，没有 0 / 255 的帧**。
+    只等 1 或 2 次合成（不要 50 ms）时，第一次复制仍有一帧 0（深）/ 255（浅），所以照遮罩留 4 次 + 50 ms。
+  - **代价（用户批准照发）**：空闲提示（托盘「暂停记录」那条）第一帧从 44–56 ms 变成 98–124 ms；原来那一帧是空白，到正常颜色是 80–100 ms。
+  - 只看了 WGC 逐帧录下来的，没请用户用眼睛看。探针退出时进程码 0xC000027B（`app.exit` 之后、`d3d.still-referenced`），7d0b807 之前那版探针也有，是探针自己收尾；正式包 `--smoke` 退出 0。
+- **编译**：Debug x64 0 警告，`dotnet test` 482 个全过（含 `FrameTimeFollowsTheCaptureClock`）；`build-release.ps1` 两个架构的 Release AOT 0 警告，x64 解压跑 `--smoke` → `smoke.ok`；
+  两个 zip 里的 exe 都是 `0.1.2+45a487d`，运行时 `10.0.14+0427b9a`，内置智谱 key 在（只数了出现次数）。打包是 2026-11-04 打的，日期没改；05 日没重打（重打要改日期、多一个提交，exe 就不是 45a487d 了）。
+- **录屏**：正式 x64 包 `--record-test=8`（系统声音开着，测试图案窗口带提示音）：`record.remux ok=True`、`record.saved`，loopback 832 包。文件 8.3 s，H.264 2560 × 1440 30 fps +
+  一路 AAC 48 kHz 双声道；用 windows 分支 Debug 的 `--video-frames` 逐帧解码 250 帧，间隔 33.3 ms 全匀、单调。截图历史这一条 `pixel_width × pixel_height` = 2560 × 1440（不是 480 × 270）。
+  `--record-test` 录完不退出，用同一探针档 `--quit` 收的（`app.exit-forced` 是 R53 的 2 秒兜底，原来就有）。
+- **更新**：新包 `--update-live=0.1.1` 过（32270403 字节，sha256 对得上）。0.1.1 的 x64 zip（sha256 和已发布的一致）解压到临时目录，`--update-test` + 假发布列表（`file://`）+
+  `KITTY_UPDATE_APPLY=1`：`update.check newer=True version=0.1.2` → `update.installed files=95` → `update.relaunched version=0.1.2 removed-old=72`，exe 变成 `0.1.2+45a487d`，23 个 `.old` 留到下次（同第一轮）。
+- **产物和 sha256**（`kitty-win-012\windows\build\release\0.1.2\`，第一轮那 4 个已被覆盖）：
+  - `KittyTools-0.1.2-windows-x64.zip`  `d2e4ea83dce229097bd08444fec111c825ac44a02925c83102e7858731bdb63a`
+  - `KittyTools-0.1.2-windows-x64-setup.exe`  `07b19f4ed7223a5a7fdfe5e7da3baeb705d94d8152ed0f7a650c90cca0637e95`
+  - `KittyTools-0.1.2-windows-arm64.zip`  `4c2b18d6d7175210a25c8c41e03a3b705ea9edfffe973e8917f23f50a64bdebe`
+  - `KittyTools-0.1.2-windows-arm64-setup.exe`  `22c0a80a47331847391ffc2e218a1a0fe80f0260ece00243e23cfa70ac021396`
+- **发布（2026-11-05，用户批准）**：tag `windows-v0.1.2` → `45a487d`（只推了这一个 tag），REST API 建草稿、传 8 个文件、说明用 `release-notes.md`、再发布：
+  https://github.com/YyAdnBug/kitty-tools/releases/tag/windows-v0.1.2 ，不是预发布、没标 latest（latest 仍是 `macos-v0.7.1`）；从发布页下回来的 x64 zip sha256 对得上。
+  0.1.1 的 Release 构建（`0.1.1+557181b`，探针档，真 GitHub）启动后 `update.check newer=True version=0.1.2 localFeed=False`。
+- 没碰 `D:\Apps\Kitty Tools`（用户那份一直开着）；`windows-0.1.x` 没并进 `windows`。
+
 ### 0.2.0 第 6 批：F4 F7 F8 F9 F10 + 录屏尺寸 → 已写（审查方，`git log --grep "PLAN-v11 第 6 批"`，没编译）
 
 用户 2026-11-03 定：0.2.0 先从第 6 批写（第 5 批 F1–F3 要和 mac 0.8.0 同一份规格，mac 还没开始，往后放）。
