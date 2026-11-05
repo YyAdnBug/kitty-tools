@@ -277,15 +277,20 @@ private struct EmojiPreview: View {
   static let side: CGFloat = 120
 
   var body: some View {
+    let _ = EmojiPack.shared.generation  // 下好了「有动画版，下好后会动」换成「动画版」
     VStack(spacing: 6) {
       if !symbol.isEmpty {
         StatusEmojiView(id: symbol, frames: frames)
           .frame(width: Self.side, height: Self.side)
-        Text(StatusEmoji.name(symbol) ?? "")
-          .font(.callout)
-          .foregroundStyle(.secondary)
-          .lineLimit(1)
-          .truncationMode(.tail)
+        Text(
+          StatusEmoji.caption(
+            symbol, animated: StatusEmoji.still(symbol) != nil,
+            hasAnimation: EmojiPack.id(for: symbol) != nil, downloads: EmojiPack.isEnabled)
+        )
+        .font(.callout)
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+        .truncationMode(.tail)
       }
     }
     .accessibilityHidden(true)  // 每一格自己有名字，这里只是看的

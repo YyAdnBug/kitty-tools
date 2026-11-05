@@ -1222,6 +1222,7 @@ struct SnapshotProbeTests {
     for (name, hovered, dark, width) in [
       ("hover", Optional("rocket"), false, 590.0), ("selected", nil, false, 590),
       ("hover-dark", "birthday-cake", true, 590), ("narrow", "rocket", false, 470),
+      ("custom-pack", "🐶", false, 590), ("custom-static", "👍🏽", false, 590),
     ] {
       try snapshot(
         Form { SymbolGrid(selection: .constant("hot-beverage"), hovered: hovered) }.formStyle(

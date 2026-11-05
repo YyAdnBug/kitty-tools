@@ -265,6 +265,17 @@ struct StatusScreenTests {
     #expect(StatusPreset.emoji(for: "👥") == "busts")
     // 单测宿主里不联网下载
     #expect(!EmojiPack.isEnabled)
+    // 预览下面那行字：自带的（含同款的字）写中文名，自己挑的写清楚是动画版还是系统表情
+    func caption(_ symbol: String, animated: Bool = false, pack: Bool = false, on: Bool = true)
+      -> String
+    {
+      StatusEmoji.caption(symbol, animated: animated, hasAnimation: pack, downloads: on)
+    }
+    #expect(caption("rocket") == "火箭" && caption("🚀") == "火箭" && caption("") == "")
+    #expect(caption("🐶", animated: true, pack: true) == "动画版")
+    #expect(caption("🐶", pack: true) == "有动画版，下好后会动")
+    #expect(caption("🐶", pack: true, on: false) == "系统表情，不会动")
+    #expect(caption("👍🏽") == "系统表情，不会动")
   }
 
   /// 动画表情包的 release 联网自检（按需：TEST_RUNNER_KITTY_LIVE_EMOJI_PACK=1；发了新的表情包之后跑）：对照表里随便挑几个，

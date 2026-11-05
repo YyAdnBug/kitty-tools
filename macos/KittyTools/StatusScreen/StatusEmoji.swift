@@ -68,6 +68,19 @@ enum StatusEmoji {
     return properties.isEmojiPresentation || symbol.unicodeScalars.count > 1
   }
 
+  /// 图标预览下面那行字（纯函数；2026-11-05 用户：挑的系统表情和系统的样子不一样，要说清楚）：自带的写中文名；自己挑的系统表情
+  /// 写清楚是哪一种——下好了的动画版、有动画版但还没下好、系统表情（没有动画版、带肤色的、自动下载关着）。不再写那个字本身：
+  /// 系统的字形和上面的动画版不是一个样子，摆在一起像两个东西
+  nonisolated static func caption(
+    _ symbol: String, animated: Bool, hasAnimation: Bool, downloads: Bool
+  ) -> String {
+    let id = canonical(symbol)
+    if let name = choices.first(where: { $0.id == id })?.name { return name }
+    guard isCustom(id) else { return "" }
+    if animated { return "动画版" }
+    return hasAnimation && downloads ? "有动画版，下好后会动" : "系统表情，不会动"
+  }
+
   /// 自己挑的系统表情正好是自带的那 28 个之一的同一个动画（🚀、👥、🐈‍⬛…）：换成自带的 id（纯函数）。存之前、收拾时、
   /// 画之前都换一次——自带的那几个要垫浅底 / 亮光（plated、dim 按 id 认）、格子里亮的是那一格；旧版本也认得自带的 id
   nonisolated static func canonical(_ symbol: String) -> String {
