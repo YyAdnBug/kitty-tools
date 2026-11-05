@@ -140,6 +140,29 @@ WIC 的 `BitmapDecoder.HeifDecoderId`、`DecoderInformation.CodecId`；`NoteStor
 **替用户定的**：便签墙不能拖动排序、卡片一次全画（mac 能拖、分批建；几百条以内够用，文件头 ponytail）；托盘「便签」一节不画节标题（Windows 托盘菜单都不画）；
 全部便签窗口 Ctrl+Z 放回刚删的只认这次打开以来删的（mac 同）；速查表里 mac 有、Windows 还没有的键（便签墙上方向键挑卡片、Enter / 空格放大）没写，记在 MAC-DIFF（第 8 批）。
 
+### 第 6 批：屏幕边缘那叠和浮动便签 → 已写（审查方，`git log --grep "PLAN-v13 第 6 批"`，没编译）
+
+- `Notes/NoteDeck.cs`：`NoteDeck`（几块屏：什么时候有、放哪、只展开一块、叫停、新建 / 打开、按住 Alt 拖药丸、全屏时收起）+ `NoteDeckBay`（一块屏：状态机 `Core NoteDeckState`
+  的 `EffectsOf` → 露出 / 收起 / 拿键盘 / 还键盘 / 落盘；扇着、开着时每 150 ms 看一眼鼠标——离开热区 150 ms 收、4 秒没动静收、没拿键盘的便签在别处按了左键收；静置时没有计时器）。
+- `Notes/NoteDeckWindows.cs`：药丸（亚克力小窗，一条便签一道色块）、标签列（纸色标签往下压、竖排标题、「+N」、「+」、拖动排序、右键菜单）、预览卡、打开的便签（`NoteSheetView`，
+  拿前台；失去前台 = 点了别处；按住头部空白处拖出 `NoteFloatLayout.Detaches` 那么远 = 浮到屏幕上）。四扇都是 `HudFrame.Apply`（置顶、不进 Alt+Tab、不抢焦点）或同样的外壳。
+- `Notes/NoteFloats.cs`：浮动便签（第 5 批起就被引用）：一张一扇窗、能拉大小、置顶、最多 5 张（最久没碰的收回）、按住头部挪、松手夹进工作区、固定着的重启后回原处。
+  规则在 `Core/Notes/NoteFloatLayout.cs`（+ `NoteFloatSet`），那叠的排法、热区、拖药丸、竖排标题、状态机在 `Core/Notes/NoteDeckLayout.cs`；单测 `NoteDeckLayoutTests`、`NoteFloatLayoutTests`。
+- 接线：`ShellRuntime` 显示器变了（`WM_DISPLAYCHANGE`）、工作区变了（`WM_SETTINGCHANGE` + `SPI_SETWORKAREA`）重摆，设置保存后那几项真变了才重摆；截图（框选 / 录屏选区留着打开的便签，识字、截图翻译收没固定的）、
+  长截图（收没固定的）、状态屏（全收）开始时 `NoteDeck.Suspend`；`Displays.All()` 改成主显示器排第一（那叠的摆法认第一块是主显示器）。
+
+**要特别看的编译点 / 屏幕上要看的**：
+1. `NoteDeck.UpdateHook` 用 `SetWinEventHook(EVENT_SYSTEM_FOREGROUND)` + `[UnmanagedCallersOnly]` 函数指针（同 `HiddenWindow` 的窗口过程写法）；AOT 下回调要能进来（全屏视频 / 游戏前台时药丸收起，切走后回来）。
+2. 药丸、标签列、预览卡是 `HudFrame.Apply` 的不抢焦点窗：点它们时原来的程序不该失去前台；`PointerEntered` 在不拿前台的窗口上要能来（来不了就把药丸改成 `WS_EX_NOACTIVATE` 之外的写法，记在这里）。
+3. 打开的便签 `Foreground.Restore` 之后真拿到键盘（直接能打字）；按 Esc 收回之后键盘回到原来的程序（`_previous`）。
+4. 标签上的竖排字：`RotateTransform` 90° + 按横排量的尺寸占位；中文一字一格、英文整段转过来；排不下有「…」。
+5. 拖动排序：按着标签上下拖，松手落到 `DragTarget` 那一格；没拖开就是点了一下。
+6. 拖出浮动便签：按住打开的便签头部空白处往外拖，浮动便签出来后系统接着挪（`WM_NCLBUTTONDOWN` + `HTCAPTION`，鼠标还按着）。
+
+**替用户定的**（MAC-DIFF 第 8 批一起记）：没有透明面板，四件各是一扇不透明小窗（药丸 / 标签列是亚克力）；「感应范围」= 药丸那扇窗的宽（mac 是药丸外面一圈看不见的感应区），
+「不显示药丸」= 只留亚克力的一条；扇出、打开、收回没有动画；全屏判定是「前台窗口盖满那块屏」（不是桌面、不是我们自己的窗口）；标签的倾斜（mac 微微斜着）没做；
+打开的便签旁边没有 mac 那张跟着它的标签（标签列里那张描粗边表示打开着）。
+
 ## PLAN-v12（跟上 mac：先把没有的功能做出来，2026-11-05 用户「先把未实现的功能实现」）
 
 清单和分批在 `PLAN-v12.md`（不是拍板页，行为照 mac）；分工同 PLAN-v11 D10。

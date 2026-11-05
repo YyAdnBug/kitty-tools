@@ -1249,8 +1249,14 @@ internal sealed class ShellRuntime
         }
         else if (msg == WmDisplayChange)
         {
-            // 显示器插拔、改分辨率：状态屏按现在的屏幕重摆（没在状态屏里什么都不做）。
+            // 显示器插拔、改分辨率：状态屏按现在的屏幕重摆（没在状态屏里什么都不做）；便签屏幕边缘那叠也重摆。
             StatusScreenHost.OnDisplaysChanged();
+            NoteDeck.Refresh();
+        }
+        else if (msg == 0x001A /* WM_SETTINGCHANGE */ && wParam.Value == 0x002F /* SPI_SETWORKAREA */)
+        {
+            // 任务栏挪了、自动隐藏开关了：工作区变了，那叠贴着它的边重摆。
+            NoteDeck.Refresh();
         }
         else if (msg == WmTimeChange)
         {
@@ -1423,6 +1429,8 @@ internal sealed class ShellRuntime
         }
 
         TranslateHost.ApplyCopyTranslate();
+        // 便签屏幕边缘那叠：设置里那几项真变了才重摆（导入、同步换了设置也走这里）。
+        NoteDeck.SettingsChanged();
     }
 
     private static string AppearanceSignature(Settings settings) => settings.Theme + "|" + settings.Accent;

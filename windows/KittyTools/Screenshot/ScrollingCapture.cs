@@ -80,6 +80,7 @@ internal static class ScrollingCapture
             return;
         }
 
+        NoteDeck.Suspend(NoteDeck.Suspension.UnlessPinned);
         _screen = screen;
         _rect = rect;
         _canvas = null;

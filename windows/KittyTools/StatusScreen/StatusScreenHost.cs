@@ -151,6 +151,12 @@ internal static partial class StatusScreenHost
 
         // 上一次退出后还在等按键松开的拦截：先撤，不叠两个。
         EndLinger();
+        // 便签屏幕边缘那叠连打开着的便签一起收（先落盘）；浮动便签不收（状态屏盖在它上面）。
+        if (!probe)
+        {
+            NoteDeck.Suspend(NoteDeck.Suspension.All);
+        }
+
         // 密码趁键盘鼠标还没被拦先读好。
         var passcode = probe ? null : LoadPasscode();
         _hold = new ExitHold();

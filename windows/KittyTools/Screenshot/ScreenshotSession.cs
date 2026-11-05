@@ -78,6 +78,8 @@ internal sealed class ScreenshotSession
 
         // 截图历史记来源（PLAN-v9 S13）：开遮罩之前、我们的面板还没收起时记下前台是谁（前台是我们自己就不记）。
         var source = ForegroundAppName();
+        // 便签屏幕边缘那叠（PLAN-v13 第 6 批）：扇着的收起；打开着的便签框选 / 录屏时留着（它是内容），识字、截图翻译时没固定的收。
+        NoteDeck.Suspend(mode is ScreenshotMode.Ocr or ScreenshotMode.Translate ? NoteDeck.Suspension.UnlessPinned : NoteDeck.Suspension.KeepsOpen);
         ShellRuntime.Instance?.HotKeys.UnregisterAll();
         OverlayHost.Hide(restoreForeground: false);
         TranslateHost.Hide(restoreForeground: false);

@@ -79,18 +79,21 @@ internal static unsafe class Displays
         return MonitorLayout.ScaleOf(dpiX);
     }
 
-    /// <summary>每块显示器（物理像素）：名字（「显示器 1」起，按左上排）、整块、工作区（去掉任务栏）、缩放、是不是主显示器。
-    /// 便签屏幕边缘那叠、浮动便签用（PLAN-v13）。</summary>
+    /// <summary>每块显示器（物理像素）：名字（「显示器 1」起，主显示器在最前、其余按左上排）、整块、工作区（去掉任务栏）、缩放、
+    /// 是不是主显示器。便签屏幕边缘那叠、浮动便签用（PLAN-v13；那叠的摆法认第一块是主显示器）。</summary>
     // ponytail: 名字按排列顺序起，不读系统里的显示器型号（DisplayConfig 的接口一大套）；换了排列，「指定的那块」可能指到另一块。
     public static List<(string Name, WorkArea Bounds, WorkArea Work, double Scale, bool Primary)> All()
     {
         var result = new List<(string Name, WorkArea Bounds, WorkArea Work, double Scale, bool Primary)>();
         var index = 1;
-        foreach (var (bounds, scale) in ScreenCapture.Monitors())
+        var monitors = ScreenCapture.Monitors()
+            .Select(monitor => (monitor.Bounds, monitor.Scale,
+                Primary: monitor.Bounds.Left <= 0 && monitor.Bounds.Top <= 0 && monitor.Bounds.Right > 0 && monitor.Bounds.Bottom > 0))
+            .OrderByDescending(monitor => monitor.Primary).ThenBy(monitor => monitor.Bounds.Left).ThenBy(monitor => monitor.Bounds.Top);
+        foreach (var (bounds, scale, primary) in monitors)
         {
             var display = AtPoint(bounds.Left + 1, bounds.Top + 1);
             var whole = new WorkArea(bounds.Left, bounds.Top, bounds.Right, bounds.Bottom);
-            var primary = bounds.Left <= 0 && bounds.Top <= 0 && bounds.Right > 0 && bounds.Bottom > 0;
             result.Add(($"显示器 {index++}", whole, display.Work, scale, primary));
         }
 
