@@ -273,6 +273,8 @@ internal static partial class StatusScreenHost
         {
             Log.Error("status.rearrange-failed", ex);
             Exit(StatusExitReason.Quit);
+            // Quit 是 App 要退出时的收场、不发 Exited；这里 App 还在跑：状态屏期间压着的提醒要当场再看一遍。
+            Exited?.Invoke();
         }
     }
 
@@ -284,6 +286,8 @@ internal static partial class StatusScreenHost
     /// <summary>每秒：小字、窗口再提到最上面；跨了分钟时告示挪个位置（防残影）、换一份新钩子（系统万一摘了旧的）。</summary>
     private static void Tick()
     {
+        // 报平安：UI 线程卡住超过 5 秒拦截自己放行（InputBlock.Heartbeat）。
+        InputBlock.Heartbeat();
         if (!Active || _locked)
         {
             return;
@@ -498,6 +502,12 @@ internal static partial class StatusScreenHost
         }
 
         _asking = false;
+        // 回到告示：指针再藏起来（mac closePrompt 的 hideCursor，挪一下鼠标又会出来）。自检不藏。
+        if (!_probe)
+        {
+            HideCursor();
+        }
+
         UpdateOverlays();
     }
 
@@ -541,6 +551,12 @@ internal static partial class StatusScreenHost
 
             _showsHint = false;
             _peek = null;
+            // 提示收了：指针再藏起来（mac startDwell 的 hideCursor）。自检不藏。
+            if (!_probe)
+            {
+                HideCursor();
+            }
+
             UpdateOverlays();
         });
     }

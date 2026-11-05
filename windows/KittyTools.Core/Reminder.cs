@@ -174,7 +174,10 @@ public static class Reminders
     public const int MaxDetail = 60;
     public const int MaxId = 64;
     public static readonly int[] FullChoices = { 0, 20, 60, 300 };
-    public static readonly int[] NagChoices = { 0, 5, 10, 15 };
+    /// <summary>「没理会时再催」菜单里的几档（同 mac nagChoices）；mac 另能「自定义…」填 1…MaxNag，同步来的这种值留着。</summary>
+    public static readonly int[] NagChoices = { 0, 1, 5, 10, 15, 30, 60 };
+
+    public const int MaxNag = 120;
 
     /// <summary>「稍后」推多久（设置 › 提醒）。</summary>
     public static readonly int[] SnoozeChoices = { 5, 10, 15, 30 };
@@ -189,6 +192,47 @@ public static class Reminders
     };
 
     public const string DefaultChime = "Glass";
+
+    /// <summary>mac 上自己选的音频文件存成「file:文件名」（mac ReminderSound.filePrefix）。</summary>
+    public const string ChimeFilePrefix = "file:";
+
+    private static readonly string[] ChimeExtensions = { "aiff", "aif", "aifc", "wav", "caf", "mp3", "m4a", "aac" };
+
+    /// <summary>
+    /// 提示音的编号认不认（mac ReminderSound.isValid）：声音名是一段不带 / : NUL、不以点开头、不超过 100 个字的字；「file:文件名」另要扩展名是认得的音频。
+    /// mac 个人「声音」文件夹里的、自己选的文件这台没有也留着（到点放默认的）：收拾掉的话下一轮当本机改动同步回去，把 mac 上选的抹掉。
+    /// </summary>
+    public static bool IsValidChime(string? id)
+    {
+        if (id is null)
+        {
+            return false;
+        }
+
+        var file = id.StartsWith(ChimeFilePrefix, StringComparison.Ordinal);
+        var name = file ? id[ChimeFilePrefix.Length..] : id;
+        if (name.Length == 0 || StatusPresets.Length(name) > 100 || name.StartsWith('.') || name.Contains('/') || name.Contains(':') ||
+            name.Contains('\0'))
+        {
+            return false;
+        }
+
+        var dot = name.LastIndexOf('.');
+        return !file || (dot >= 0 && ChimeExtensions.Contains(name[(dot + 1)..].ToLowerInvariant()));
+    }
+
+    /// <summary>编辑框里的叫法：Windows 对得上的用 WindowsChimes 的名字，别的（mac 上的个人声音、文件）用文件名，注明这台放默认的。</summary>
+    public static string ChimeTitle(string id)
+    {
+        if (WindowsChimes.FirstOrDefault(chime => chime.Name == id) is { Title: { } title })
+        {
+            return title;
+        }
+
+        var name = id.StartsWith(ChimeFilePrefix, StringComparison.Ordinal) ? id[ChimeFilePrefix.Length..] : id;
+        var dot = name.LastIndexOf('.');
+        return (dot > 0 ? name[..dot] : name) + "（这台电脑放通知声）";
+    }
 
     /// <summary>
     /// Windows 上每个提示音名放哪个声音、界面上叫什么（PLAN-v12 第 7 批）：存的照旧是 mac 的名字（同步、导入两边认得），
@@ -287,7 +331,8 @@ public static class Reminders
 
             var detail = Prefix(StatusPresets.OneLine(reminder.Detail), MaxDetail);
             reminder.Detail = detail.Length == 0 ? null : detail;
-            if (!StatusEmojiCatalog.Ids.Contains(reminder.Symbol))
+            // 认 mac 能存的全部（新加的 12 个、动画表情包、系统表情）：这一版画不出的不画，但不能置空再同步回去。
+            if (!StatusEmojiCatalog.IsStorable(reminder.Symbol))
             {
                 reminder.Symbol = string.Empty;
             }
@@ -314,12 +359,12 @@ public static class Reminders
                 reminder.FullSeconds = 0;
             }
 
-            if (!Chimes.Contains(reminder.Chime))
+            if (!IsValidChime(reminder.Chime))
             {
                 reminder.Chime = DefaultChime;
             }
 
-            if (!NagChoices.Contains(reminder.NagMinutes))
+            if (reminder.NagMinutes is < 0 or > MaxNag)
             {
                 reminder.NagMinutes = 0;
             }
@@ -682,10 +727,12 @@ public static class Reminders
             return seconds;
         }
 
+        // 「0001-01-01T00:00:00Z」是 mac 的 distantPast（mac 的公历在 1582 年之前按儒略历算，比 .NET 的 0001-01-01 早两天），
+        // 也是这边 Iso(DistantPast) 写出去的：读回 DistantPast，不然导入一次，间隔 / 每周的提醒在同步里个个都像改过。
         return date.ValueKind == JsonValueKind.String &&
                DateTime.TryParse(date.GetString(), CultureInfo.InvariantCulture,
                    DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out var parsed)
-            ? ReminderTime.FromUtc(DateTime.SpecifyKind(parsed, DateTimeKind.Utc))
+            ? parsed == DateTime.MinValue ? ReminderTime.DistantPast : ReminderTime.FromUtc(DateTime.SpecifyKind(parsed, DateTimeKind.Utc))
             : null;
     }
 

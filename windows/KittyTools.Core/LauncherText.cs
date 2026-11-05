@@ -136,6 +136,8 @@ public static class LauncherText
 
         return item.Kind switch
         {
+            // 提醒那几行借的是内置动作的种类：同 mac 的 .reminder 不补（补进标题「提醒我：…」就不再是「提醒 …」了）。
+            LauncherKind.Action when ReminderLauncher.IsReminder(item.Target) => null,
             LauncherKind.App or LauncherKind.Setting or LauncherKind.Action or LauncherKind.Url or LauncherKind.Command
                 => item.Title,
             LauncherKind.Path => item.IsFolder && !item.Target.EndsWith('\\') ? item.Target + "\\" : item.Target,

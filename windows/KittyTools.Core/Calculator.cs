@@ -99,6 +99,11 @@ public static partial class Calculator
                 >= '\uFF01' and <= '\uFF5E' => (char)(characters[i] - 0xFEE0),
                 '×' or '✕' => '*',
                 '÷' => '/',
+                // 全角的货币符号（微软拼音中文标点下 Shift+4 打出来的是 ￥）：mac widthInsensitive 同样折成半角。
+                '\uFFE0' => '¢',
+                '\uFFE1' => '£',
+                '\uFFE5' => '¥',
+                '\uFFE6' => '₩',
                 var other => other,
             };
         }
@@ -275,10 +280,10 @@ public static partial class Calculator
     /// <summary>同一类量才能换（Family）；值 × 系数 + 常数 = 基本单位；Symbol 是结果里写的符号。</summary>
     private sealed record UnitName(string Family, string Symbol, double Coefficient, double Constant);
 
-    /// <summary>单位名（不分大小写，两头的空格不算）→ 单位。</summary>
     /// <summary>是不是单位换算认的单位名（汇率候选：「10 km」「100 g」是在换单位，不列货币）。</summary>
     public static bool IsUnit(string name) => UnitFor(name) is not null;
 
+    /// <summary>单位名（不分大小写，两头的空格不算）→ 单位。</summary>
     private static UnitName? UnitFor(string name) =>
         Units.TryGetValue(TrimSpaces(name).ToLowerInvariant(), out var unit) ? unit : null;
 

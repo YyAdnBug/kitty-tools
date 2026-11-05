@@ -1,5 +1,6 @@
 // 提醒什么时候响（PLAN-v12 N6，照 mac Reminders/ReminderSchedule.swift），全是纯函数，单测锁住（ReminderTests）：
-// - 一次 / 每周 / 每月：严格晚于某一刻的下一次（按当地钟表时间算：换了时区还是当地的 9 点；夏令时跳过的那个钟点取它后面一小时）。
+// - 一次 / 每周 / 每月：严格晚于某一刻的下一次（按当地钟表时间算：换了时区还是当地的 9 点；夏令时跳过的那个钟点取它后面最近的有效时刻，
+//   重复的钟点取第一次）。
 // - 间隔：从「锚点」起数 every 分钟，那一刻落在勾了的那天的时段里才算；落在时段外就是下一个时段开始再数 every 分钟。
 //   锚点由 ReminderCenter 管：启动、醒来、解锁、离开电脑回来、点了「知道了」时设成那一刻。
 // - Check：此刻哪几条该响、哪几条算错过（晚了超过 5 分钟）、下一次最早什么时候要再看。间隔类晚了也不补；正挂着的不重复响；
@@ -9,16 +10,21 @@ namespace KittyTools.Core;
 
 public static class ReminderMath
 {
-    /// <summary>当地的墙上时刻 → UTC；夏令时跳过的那个钟点往后挪一小时。</summary>
+    /// <summary>
+    /// 当地的墙上时刻 → UTC（同 mac bySettingHour 的 .nextTime / .first）：夏令时跳过的钟点取跳过之后的第一刻（2:30 → 3:00），
+    /// 重复的钟点取第一次（夏令时那次，偏移大的那个；ConvertTimeToUtc 取的是标准时间那次，晚一小时）。时刻都是整分钟，逐分钟往后挪一定落在跳变那一刻。
+    /// </summary>
     public static DateTime LocalToUtc(DateTime local, TimeZoneInfo zone)
     {
         local = DateTime.SpecifyKind(local, DateTimeKind.Unspecified);
-        if (zone.IsInvalidTime(local))
+        while (zone.IsInvalidTime(local))
         {
-            local = local.AddHours(1);
+            local = local.AddMinutes(1);
         }
 
-        return TimeZoneInfo.ConvertTimeToUtc(local, zone);
+        return zone.IsAmbiguousTime(local)
+            ? DateTime.SpecifyKind(local - zone.GetAmbiguousTimeOffsets(local).Max(), DateTimeKind.Utc)
+            : TimeZoneInfo.ConvertTimeToUtc(local, zone);
     }
 
     /// <summary>UTC → 当地（很久以前 / 很久以后的夹住，不抛）。</summary>

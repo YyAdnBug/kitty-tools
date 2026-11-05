@@ -69,6 +69,11 @@ internal static class StatusEmoji
     /// </summary>
     public static FrameworkElement Still(string id, double side, bool dark)
     {
+        if (!HasArt(id))
+        {
+            return Fallback(id, side);
+        }
+
         var image = new Image
         {
             Source = new BitmapImage(StillUri(id)) { DecodePixelWidth = (int)Math.Ceiling(side * 2) },
@@ -96,6 +101,11 @@ internal static class StatusEmoji
     /// <summary>告示上的表情：animated 时播帧图集，否则（动画关着、减弱动态效果、预览）是静止画面。</summary>
     public static FrameworkElement Create(string id, double side, bool animated)
     {
+        if (!HasArt(id))
+        {
+            return Fallback(id, side);
+        }
+
         var still = new Image { Source = new BitmapImage(StillUri(id)), Width = side, Height = side, Stretch = Stretch.Uniform };
         var host = new Grid { Width = side, Height = side };
         host.Children.Add(still);
@@ -113,6 +123,28 @@ internal static class StatusEmoji
             }
         }
 
+        return host;
+    }
+
+    private static bool HasArt(string id) => StatusEmojiCatalog.Ids.Contains(id) || id == StatusEmojiCatalog.Eyes;
+
+    /// <summary>
+    /// 这一版没有素材的图标（同步、导入来的 mac 后来加的表情、动画表情包里的）：系统表情（那个字）照 mac 用系统的表情字体画，别的空着。
+    /// </summary>
+    private static FrameworkElement Fallback(string id, double side)
+    {
+        var custom = StatusEmojiCatalog.IsCustom(id);
+        var text = new TextBlock
+        {
+            Text = custom ? id : string.Empty,
+            FontFamily = new FontFamily("Segoe UI Emoji"),
+            FontSize = side * 0.75,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        var host = new Grid { Width = side, Height = side };
+        host.Children.Add(text);
+        AutomationProperties.SetName(host, custom ? id : "图标");
         return host;
     }
 
@@ -166,8 +198,17 @@ internal static class StatusEmoji
         ElementCompositionPreview.SetElementChildVisual(host, frame);
         host.Unloaded += (_, _) =>
         {
-            sprite.StopAnimation("Offset");
-            ElementCompositionPreview.SetElementChildVisual(host, null);
+            // 窗口关掉之后才来的 Unloaded 里摘合成层可能抛（事件里抛出去就是闪退）：抛了也接着放后面的。
+            try
+            {
+                sprite.StopAnimation("Offset");
+                ElementCompositionPreview.SetElementChildVisual(host, null);
+            }
+            catch (Exception ex)
+            {
+                Log.Warn($"status.emoji-release-failed {ex.GetType().Name}");
+            }
+
             animation.Dispose();
             sprite.Dispose();
             frame.Dispose();

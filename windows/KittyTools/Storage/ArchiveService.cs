@@ -547,17 +547,23 @@ internal static class ArchiveService
                     break;
                 case "reminders":
                     // 按 id 更新和添加、本机独有的不删；文件里本机没有、时间已经过了的一次性提醒不加（mac Reminder.merged）。
+                    // 本机没存过（还是示例）时直接用文件里的，不把示例并进去（mac `list ?? incoming`）。
                     if (Reminders.ReadList(value) is { } incomingReminders && Reminders.Sanitized(incomingReminders).Count > 0)
                     {
-                        settings.Reminders = Reminders.Merged(incomingReminders, Reminders.Load(settings.Reminders), DateTime.UtcNow);
+                        settings.Reminders = settings.Reminders is { } localReminders
+                            ? Reminders.Merged(incomingReminders, Reminders.Sanitized(localReminders), DateTime.UtcNow)
+                            : Reminders.Sanitized(incomingReminders);
                     }
 
                     break;
                 case "statusScreenPresets":
                     // 用户自己写的东西：按 id 更新和添加、本机独有的不删（mac StatusPreset.merged）；有一个解不出整组不导。
+                    // 本机没存过（还是自带的三个）时直接用文件里的（mac `list ?? incoming`）。
                     if (StatusPresets.ReadList(value) is { } incoming && StatusPresets.Sanitized(incoming).Count > 0)
                     {
-                        settings.StatusScreenPresets = StatusPresets.Merged(incoming, StatusPresets.Load(settings.StatusScreenPresets));
+                        settings.StatusScreenPresets = settings.StatusScreenPresets is null
+                            ? StatusPresets.Sanitized(incoming)
+                            : StatusPresets.Merged(incoming, StatusPresets.Load(settings.StatusScreenPresets));
                     }
 
                     break;

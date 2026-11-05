@@ -535,25 +535,28 @@ internal sealed partial class LauncherModel
 
             dispatcher?.TryEnqueue(() =>
             {
+                // 取到了就换上（已经写了盘），撤掉的那次也是：不然下一次打字又联网取一遍。
+                if (fetched is not null)
+                {
+                    _rates = fetched;
+                    _ratesLoaded = true;
+                }
+
                 if (cts.IsCancellationRequested || _ratesCts != cts)
                 {
                     return;
                 }
 
                 _ratesCts = null;
-                if (fetched is not null)
-                {
-                    _rates = fetched;
-                    _ratesLoaded = true;
-                }
-                else
-                {
-                    _ratesFailed = true;
-                }
+                _ratesFailed = fetched is null;
 
-                // 计算那一行换成结果（或「没取到汇率」）；还在列表里才换，选中照旧。
+                // 计算那一行换成结果（或「没取到汇率」）；还在列表里才换，选中照旧。取到的表里没有这种货币时也是「没取到汇率」
+                // （mac calculationRow(query) ?? placeholder(failed: true)；不然「正在取汇率…」一直挂着）。
                 var index = Results.FindIndex(item => item.Kind == LauncherKind.Calculation);
-                if (index < 0 || CalculationRow(Query.Trim()) is not { } row)
+                var current = Query.Trim();
+                if (index < 0 ||
+                    (CalculationRow(current) ?? (ExchangeRates.RequestFor(current) is not null ? ExchangeRates.Placeholder(current, true) : null))
+                    is not { } row)
                 {
                     return;
                 }
@@ -1371,8 +1374,9 @@ internal sealed partial class LauncherModel
 
     // ---- 收藏和常用
 
-    /// <summary>能收藏的：记使用的那几类，带对象模式里的不算。</summary>
-    public bool CanFavorite(LauncherItem item) => item.Kind.IsRecorded() && !Mode.ListsProcesses() && !Mode.ListsApps();
+    /// <summary>能收藏的：记使用的那几类，带对象模式里的不算；提醒那几行（reminder:…）借的是内置动作的种类，同 mac 的 .reminder 不能收藏。</summary>
+    public bool CanFavorite(LauncherItem item)
+        => item.Kind.IsRecorded() && !ReminderLauncher.IsReminder(item.Target) && !Mode.ListsProcesses() && !Mode.ListsApps();
 
     public bool IsFavorite(LauncherItem item) => LauncherFavorites.Instance?.IsFavorite(item.Target) == true;
 

@@ -429,8 +429,9 @@ internal sealed unsafe class OverlayWindow : Window
             PInvoke.GetCursorPos(out var cursor);
             rect = MonitorLayout.NearPointer(cursor.X, cursor.Y, display.Work, _scale, WidthDip, heightDip);
         }
-        else if (placement == PanelPlacement.Last && left is int x && top is int y)
+        else if (placement == PanelPlacement.Last && left is int x && top is int y && Displays.IsOnScreen(x, y))
         {
+            // 记着的那块屏拔掉了（左上角不在任何一块屏上）就退回屏幕上方，不夹到最近那块的边上（mac lastFrame 没重叠时也不用它）。
             var home = Displays.AtPoint(x, y);
             rect = MonitorLayout.Relocate(
                 x, y, home.Work, display.Work, MonitorLayout.Pixels(WidthDip, _scale), MonitorLayout.Pixels(heightDip, _scale));
@@ -522,12 +523,15 @@ internal sealed unsafe class OverlayWindow : Window
         Log.Info($"overlay.moved kind={_kind}");
     }
 
-    /// <summary>按在输入框、按钮、滚动条这类控件上：不拖（它们一般自己处理掉了按下，这里再挡一道）。</summary>
+    /// <summary>
+    /// 按在输入框、按钮、滚动条这类控件上：不拖（它们一般自己处理掉了按下，这里再挡一道）。列表（ScrollViewer 里）和能拖出去的条目
+    /// （CanDrag，剪贴板条目拖到别的 App）也不拖：行靠 Tapped、不处理按下，不挡的话按住一动就成了挪面板（mac 的列表行也挪不了面板）。
+    /// </summary>
     private static bool IsControl(DependencyObject? element)
     {
         while (element is not null)
         {
-            if (element is TextBox or Microsoft.UI.Xaml.Controls.Primitives.ButtonBase or
+            if (element is TextBox or ScrollViewer or UIElement { CanDrag: true } or Microsoft.UI.Xaml.Controls.Primitives.ButtonBase or
                 Microsoft.UI.Xaml.Controls.Primitives.ScrollBar or Microsoft.UI.Xaml.Controls.Primitives.Thumb)
             {
                 return true;

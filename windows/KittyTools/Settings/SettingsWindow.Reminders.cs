@@ -249,23 +249,37 @@ internal sealed partial class SettingsWindow
         status.SelectedIndex = Math.Max(0, presets.FindIndex(preset => preset.Id == draft.StatusID));
         var sound = new ComboBox { Header = "声音", ItemsSource = Reminders.Sounds.Select(Reminders.SoundTitle).ToList(), MinWidth = 160 };
         sound.SelectedIndex = Math.Max(0, Array.IndexOf(Reminders.Sounds, draft.Sound));
-        var chime = new ComboBox { Header = "提示音", ItemsSource = Reminders.WindowsChimes.Select(item => item.Title).ToList(), MinWidth = 160 };
-        chime.SelectedIndex = Math.Max(0, Array.FindIndex(Reminders.WindowsChimes, item => item.Name == draft.Chime));
+        // mac 上选的、这台没有的声音（个人「声音」文件夹里的、自己选的文件）和「自定义…」填的催促间隔：多列一项留着，
+        // 不然改个标题一保存就换成了默认的、再同步回去把 mac 上选的抹掉（审查方 2026-11-05）。
+        var chimeIds = Reminders.WindowsChimes.Select(item => item.Name).ToList();
+        if (!chimeIds.Contains(draft.Chime))
+        {
+            chimeIds.Add(draft.Chime);
+        }
+
+        var chime = new ComboBox { Header = "提示音", ItemsSource = chimeIds.Select(Reminders.ChimeTitle).ToList(), MinWidth = 160 };
+        chime.SelectedIndex = chimeIds.IndexOf(draft.Chime);
         chime.SelectionChanged += (_, _) =>
         {
             // 选了就试听一声（mac 同样）。
             if (chime.SelectedIndex >= 0)
             {
-                ReminderCenter.PlayChime(Reminders.WindowsChimes[chime.SelectedIndex].Name);
+                ReminderCenter.PlayChime(chimeIds[chime.SelectedIndex]);
             }
         };
+        var nagChoices = Reminders.NagChoices.ToList();
+        if (!nagChoices.Contains(draft.NagMinutes))
+        {
+            nagChoices.Add(draft.NagMinutes);
+        }
+
         var nag = new ComboBox
         {
             Header = "没理会时再催",
-            ItemsSource = Reminders.NagChoices.Select(minutes => minutes == 0 ? "不催" : $"每 {minutes} 分钟").ToList(),
+            ItemsSource = nagChoices.Select(minutes => minutes == 0 ? "不催" : $"每 {minutes} 分钟").ToList(),
             MinWidth = 160,
         };
-        nag.SelectedIndex = Math.Max(0, Array.IndexOf(Reminders.NagChoices, draft.NagMinutes));
+        nag.SelectedIndex = nagChoices.IndexOf(draft.NagMinutes);
 
         var panel = new StackPanel { Spacing = 10, MinWidth = 440 };
         foreach (var element in new UIElement[]
@@ -314,9 +328,9 @@ internal sealed partial class SettingsWindow
             draft.FullSeconds = Reminders.FullChoices[Math.Max(0, fullSeconds.SelectedIndex)];
             draft.StatusID = presets.Count > 0 ? presets[Math.Max(0, status.SelectedIndex)].Id : string.Empty;
             draft.Sound = Reminders.Sounds[Math.Max(0, sound.SelectedIndex)];
-            draft.Chime = Reminders.WindowsChimes[Math.Max(0, chime.SelectedIndex)].Name;
+            draft.Chime = chimeIds[Math.Max(0, chime.SelectedIndex)];
             chime.Visibility = Show(draft.Sound == Reminder.SoundChime);
-            draft.NagMinutes = Reminders.NagChoices[Math.Max(0, nag.SelectedIndex)];
+            draft.NagMinutes = nagChoices[Math.Max(0, nag.SelectedIndex)];
 
             // 按种类露出要填的那几样。
             date.Visibility = Show(next.Kind == ReminderSchedule.Once);

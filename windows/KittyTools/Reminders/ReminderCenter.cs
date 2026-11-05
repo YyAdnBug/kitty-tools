@@ -101,8 +101,16 @@ internal static partial class ReminderCenter
 
     // ---- 外面调的
 
-    /// <summary>状态屏退出后：在里面时到点的这会儿再看。</summary>
-    public static void Recheck() => Check();
+    /// <summary>状态屏退出后：在里面时收着的再摆出来（Present 在状态屏里不摆），在里面时到点的这会儿再看。</summary>
+    public static void Recheck()
+    {
+        if (_running && (Firing.Count > 0 || Missed.Count > 0))
+        {
+            Present();
+        }
+
+        Check();
+    }
 
     /// <summary>暂停全部提醒到 untilUtc（托盘，null = 恢复）：这期间一条都不响，之后晚了 5 分钟以内照常响、更晚的合成「错过了」。</summary>
     public static void Pause(DateTime? untilUtc)
@@ -158,8 +166,19 @@ internal static partial class ReminderCenter
         }
     }
 
-    /// <summary>醒来（PBT_APMRESUMESUSPEND）：同解锁。</summary>
-    public static void Resumed() => Unlocked();
+    /// <summary>
+    /// 醒来（PBT_APMRESUMESUSPEND）：间隔提醒算休息过了，再看一遍；锁没锁不碰（同 mac didWake 只清 isAway）——设了醒来要登录的，
+    /// 睡前就锁了，醒来时锁屏界面还在，清掉的话提示音在锁屏上响、全屏倒数到 0 没人看见就把一次性的删了。解锁时（WTS 8）再清。
+    /// </summary>
+    public static void Resumed()
+    {
+        _away = false;
+        if (_running)
+        {
+            RestartIntervals(DateTime.UtcNow);
+            Check();
+        }
+    }
 
     /// <summary>系统时间改了、换了时区（WM_TIMECHANGE）：记在「将来」的时刻收回来，不然要等真实时间追上才响。</summary>
     public static void ClockChanged()
@@ -388,6 +407,16 @@ internal static partial class ReminderCenter
     /// <summary>把挂着的（到点的 + 错过的）按现在的方式摆出来：全屏 / 边框 + 提示 / 提示；只剩错过的一律在提示上；都没有了就全收掉。</summary>
     private static void Present()
     {
+        // 在状态屏里先都收着（_mode、_note 不动）：全屏提醒和状态屏每秒都把自己提到最上面，会来回抢；拦截也让人点不到按钮。
+        // 退出状态屏时 Recheck 再摆出来。mac 的状态屏层级更高、盖得住，Windows 两边都是置顶。
+        if (StatusScreenHost.Active)
+        {
+            ReminderScreen.Dismiss();
+            ReminderGlow.Dismiss();
+            NoticeHost.Unpin();
+            return;
+        }
+
         var fired = Firing.Select(Find).Where(reminder => reminder is not null).Select(reminder => reminder!).ToList();
         var lost = Missed.Select(Find).Where(reminder => reminder is not null).Select(reminder => reminder!).ToList();
         if (ReminderAlerts.Notice(fired, lost) is not { } notice)

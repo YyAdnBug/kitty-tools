@@ -744,7 +744,11 @@ internal sealed unsafe partial class NoticeHost
         }
 
         host.ShowPin();
-        Motion.Shake(host._content);
+        // 露着的是别处来的提示时 ShowPin 不换上来：那就不晃（不然晃的是别人那条）。
+        if (host._showingPin && host._visible)
+        {
+            Motion.Shake(host._content);
+        }
     }
 
     private void ShowPin()

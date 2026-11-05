@@ -64,8 +64,11 @@ internal static class ExchangeRateStore
         {
             try
             {
+                // HttpClient.Timeout 在 ResponseHeadersRead 时只管到响应头：正文卡住也要 5 秒放弃，换下一家。
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+                timeout.CancelAfter(TimeSpan.FromSeconds(5));
                 using var response = await Http.GetAsync(
-                    ExchangeRates.Sources[index], HttpCompletionOption.ResponseHeadersRead, cancellation).ConfigureAwait(false);
+                    ExchangeRates.Sources[index], HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
                 if (response.StatusCode != HttpStatusCode.OK ||
                     response.Content.Headers.ContentLength is > MaxReplyBytes)
                 {
@@ -73,7 +76,7 @@ internal static class ExchangeRateStore
                     continue;
                 }
 
-                var bytes = await response.Content.ReadAsByteArrayAsync(cancellation).ConfigureAwait(false);
+                var bytes = await response.Content.ReadAsByteArrayAsync(timeout.Token).ConfigureAwait(false);
                 var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                 if (bytes.Length <= MaxReplyBytes &&
                     ExchangeRates.FromReply(Encoding.UTF8.GetString(bytes), now) is { } table)

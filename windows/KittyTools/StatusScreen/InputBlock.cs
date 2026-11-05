@@ -28,6 +28,10 @@ internal static unsafe class InputBlock
     private const int WmMouseWheel = 0x020A;
     private const int WmMouseHWheel = 0x020E;
     private const uint LlkhfExtended = 0x01;
+    private const uint LlkhfInjected = 0x10;
+
+    /// <summary>UI 线程多久没报平安就放行（Heartbeat）。</summary>
+    private const long AliveLimitMs = 5000;
 
     // 钩子线程上的自定义消息（WM_APP 起）：摘掉 / 装上 / 换一份新的。
     private const uint WmPause = 0x8001;
@@ -42,6 +46,12 @@ internal static unsafe class InputBlock
     private static volatile bool _swallowing;
     private static volatile bool _probe;
     private static long _lastMove;
+    private static long _alive;
+
+    /// <summary>哪些键、鼠标键的按下是这里吞的（只在钩子线程上读写；Start 起线程之前、WmResume 时清）：只吞它们的松开。</summary>
+    private static readonly bool[] KeysTaken = new bool[256];
+
+    private static readonly bool[] ButtonsTaken = new bool[4];
     private static Microsoft.UI.Dispatching.DispatcherQueue? _queue;
     private static Action<StatusInput>? _onInput;
     private static Action<int, int>? _onMove;
@@ -71,6 +81,9 @@ internal static unsafe class InputBlock
         _onMove = onMove;
         _probe = probe;
         Down.Clear();
+        Array.Clear(KeysTaken);
+        Array.Clear(ButtonsTaken);
+        Heartbeat();
         Swallowed = 0;
         _swallowing = true;
         _running = true;
@@ -128,6 +141,12 @@ internal static unsafe class InputBlock
     /// <summary>换一份新钩子（系统万一因为超时摘掉了旧的，不会通知）：先装新的再摘旧的。</summary>
     public static void Refresh() => Post(WmRefresh);
 
+    /// <summary>
+    /// UI 线程报平安（会话每秒 Tick 一次）。超过 AliveLimitMs 没报 = UI 线程卡住了：放行，不再吞。按住 Esc、密码这些退出的判断都在 UI 线程上，
+    /// 卡住时照吞的话谁也出不去（只剩 Ctrl+Alt+Del）；mac 的拦截挂在主线程上，卡住时系统自己停掉它，这里补上同样的保底。
+    /// </summary>
+    public static void Heartbeat() => Interlocked.Exchange(ref _alive, Environment.TickCount64);
+
     private static void Post(uint message)
     {
         if (_running && _threadId != 0)
@@ -156,6 +175,8 @@ internal static unsafe class InputBlock
                     Uninstall();
                     break;
                 case WmResume:
+                    Array.Clear(KeysTaken);
+                    Array.Clear(ButtonsTaken);
                     if (_keyboardHook == IntPtr.Zero)
                     {
                         Install();
@@ -221,8 +242,9 @@ internal static unsafe class InputBlock
         }
     }
 
-    /// <summary>这个事件吞不吞：暂停着不吞；自检时只吞带标记的。</summary>
-    private static bool Claims(nuint extraInfo) => _swallowing && (!_probe || extraInfo == ProbeMarker);
+    /// <summary>这个事件吞不吞：暂停着、UI 线程卡住了（Heartbeat）不吞；自检时只吞带标记的。</summary>
+    private static bool Claims(nuint extraInfo)
+        => _swallowing && Environment.TickCount64 - Interlocked.Read(ref _alive) < AliveLimitMs && (!_probe || extraInfo == ProbeMarker);
 
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvStdcall) })]
     private static IntPtr KeyboardProc(int code, IntPtr wParam, IntPtr lParam)
@@ -230,6 +252,13 @@ internal static unsafe class InputBlock
         try
         {
             var info = (KbdllHookStruct*)lParam;
+            // 自己拿前台时补的那一下 vkE8（Foreground.Restore → Paster.TapUnassigned，没分配的键）：放行、不报——
+            // 吞了的话第二次 SetForegroundWindow 照样拿不到前台，还被当成一次触碰。
+            if (code >= 0 && info->VirtualKey == ModifierRelease.TapVirtualKey && (info->Flags & LlkhfInjected) != 0)
+            {
+                return CallNextHookEx(IntPtr.Zero, code, wParam, lParam);
+            }
+
             if (code >= 0 && Claims(info->ExtraInfo))
             {
                 var message = (int)wParam;
@@ -240,6 +269,21 @@ internal static unsafe class InputBlock
                     var scan = (int)info->ScanCode;
                     var extended = (info->Flags & LlkhfExtended) != 0;
                     _queue?.TryEnqueue(() => DeliverKey(down, key, scan, extended));
+                    // 进入之前就按着的键（选状态时按的 Enter、快捷键里的 Ctrl、提醒进来时正按着的 Shift）：按下已经交给了前台程序，
+                    // 松开也放过去（照样报给会话），不然那个程序和系统的按键状态里它一直算按着。只吞按下也是这里吞的那些键的松开。
+                    var slot = key & 0xFF;
+                    if (down)
+                    {
+                        KeysTaken[slot] = true;
+                    }
+                    else if (KeysTaken[slot])
+                    {
+                        KeysTaken[slot] = false;
+                    }
+                    else
+                    {
+                        return CallNextHookEx(IntPtr.Zero, code, wParam, lParam);
+                    }
                 }
 
                 return 1;
@@ -276,6 +320,32 @@ internal static unsafe class InputBlock
                 }
                 else if (Claims(info->ExtraInfo))
                 {
+                    // 同键盘：按下也是这里吞的才吞松开，进入前就按着的（正在拖）松开放过去。
+                    var button = message switch
+                    {
+                        WmLButtonDown or WmLButtonUp => 0,
+                        0x0204 or 0x0205 => 1,
+                        0x0207 or 0x0208 => 2,
+                        0x020B or 0x020C => 3,
+                        _ => -1,
+                    };
+                    var passes = false;
+                    if (button >= 0)
+                    {
+                        if (message is not (WmLButtonUp or 0x0205 or 0x0208 or 0x020C))
+                        {
+                            ButtonsTaken[button] = true;
+                        }
+                        else if (ButtonsTaken[button])
+                        {
+                            ButtonsTaken[button] = false;
+                        }
+                        else
+                        {
+                            passes = true;
+                        }
+                    }
+
                     StatusInputKind? kind = message switch
                     {
                         WmLButtonDown => StatusInputKind.LeftDown,
@@ -293,7 +363,7 @@ internal static unsafe class InputBlock
                         _queue?.TryEnqueue(() => Swallowed++);
                     }
 
-                    return 1;
+                    return passes ? CallNextHookEx(IntPtr.Zero, code, wParam, lParam) : 1;
                 }
             }
         }

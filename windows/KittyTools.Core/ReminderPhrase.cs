@@ -29,7 +29,7 @@ public static partial class ReminderPhrase
         {
             if (text.StartsWith(keyword + " ", StringComparison.OrdinalIgnoreCase))
             {
-                return text[keyword.Length..].Trim(' ', '\t');
+                return text[keyword.Length..].Trim();
             }
         }
 
@@ -37,7 +37,7 @@ public static partial class ReminderPhrase
     }
 
     /// <summary>只输了关键词：出补全提示。</summary>
-    public static bool IsKeyword(string text) => Keywords.Contains(text.Trim(' ', '\t').ToLowerInvariant());
+    public static bool IsKeyword(string text) => Keywords.Contains(text.Trim().ToLowerInvariant());
 
     /// <summary>写的是重复的提醒：启动器只建一次性的，提示去设置里建。</summary>
     public static bool IsRepeating(string text)
@@ -312,9 +312,21 @@ public static partial class ReminderPhrase
     /// <summary>去掉时间那一段，剩下的收拾一下当标题；没剩下就是「时间到了」。</summary>
     private static string Title(string text, int start, int length)
     {
+        // 首尾一次去掉「空白 ∪ ，,、。:：」（mac trimmingCharacters(in: .whitespaces ∪ 这几个标点)：两种交错着也去干净）。
         var rest = text.Remove(start, length);
-        var trimmed = rest.Trim().Trim('，', ',', '、', '。', ':', '：', ' ', '\t', '\n', '\r', '\u3000').Trim();
-        var title = StatusPresets.OneLine(trimmed);
+        static bool Junk(char c) => char.IsWhiteSpace(c) || "，,、。:：".Contains(c);
+        int begin = 0, end = rest.Length;
+        while (begin < end && Junk(rest[begin]))
+        {
+            begin++;
+        }
+
+        while (end > begin && Junk(rest[end - 1]))
+        {
+            end--;
+        }
+
+        var title = StatusPresets.OneLine(rest[begin..end]);
         if (title.Length == 0)
         {
             return DefaultTitle;

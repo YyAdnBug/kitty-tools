@@ -18,7 +18,6 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Windows.Graphics;
 using Windows.System;
-using Windows.Win32.Foundation;
 
 namespace KittyTools;
 
@@ -58,6 +57,9 @@ internal static class ReminderScreen
     private static int _remaining;
     private static Microsoft.UI.Dispatching.DispatcherQueueTimer? _countdown;
 
+    /// <summary>自己在关（Close）：只有这时底板才让关。</summary>
+    private static bool _closing;
+
     public static bool IsShowing => Screens.Count > 0;
 
     /// <summary>出来；已经在了就原地换内容（时长和那 1 秒都从这一刻重新数）。</summary>
@@ -65,7 +67,9 @@ internal static class ReminderScreen
     {
         _onDone = onDone;
         _onSnooze = onSnooze;
-        if (_content == content && IsShowing)
+        // 内容一样就不重来（mac 的 == 按值比；record 比 Snoozes 比的是引用，每次新建的列表永远不等）。
+        if (IsShowing && _content is { } shown && shown with { Snoozes = content.Snoozes } == content &&
+            shown.Snoozes.SequenceEqual(content.Snoozes))
         {
             return;
         }
@@ -91,19 +95,21 @@ internal static class ReminderScreen
             else
             {
                 Windows.Win32.PInvoke.GetCursorPos(out var cursor);
-                foreach (var (bounds, scale) in ScreenCapture.Monitors())
+                var monitors = ScreenCapture.Monitors();
+                // 鼠标所在那块拿前台（Enter / Esc 才有人收）；鼠标不在任何一块上时第一块拿（mac 同样退到第一块）。
+                var keyIndex = Math.Max(0, monitors.FindIndex(monitor =>
+                    cursor.X >= monitor.Bounds.Left && cursor.X < monitor.Bounds.Right &&
+                    cursor.Y >= monitor.Bounds.Top && cursor.Y < monitor.Bounds.Bottom));
+                for (var index = 0; index < monitors.Count; index++)
                 {
-                    var key = cursor.X >= bounds.Left && cursor.X < bounds.Right && cursor.Y >= bounds.Top && cursor.Y < bounds.Bottom;
+                    var (bounds, scale) = monitors[index];
+                    var key = index == keyIndex;
                     var screen = Build(bounds, scale, key);
                     Screens.Add(screen);
                     Fill(screen, content);
-                    screen.Plate.AppWindow.Show(key);
-                    if (key)
-                    {
-                        Foreground.Restore((HWND)WinRT.Interop.WindowNative.GetWindowHandle(screen.Plate));
-                    }
-
-                    StatusScreenPanel.RaiseWindow(WinRT.Interop.WindowNative.GetWindowHandle(screen.Plate));
+                    // 先隐身露面、画上几帧再显形（同状态屏透出的底板）：不然先白一块半屏大的空窗，等排好才缩成底板。
+                    StatusScreenPanel.RevealWhenDrawn(
+                        screen.Plate, WinRT.Interop.WindowNative.GetWindowHandle(screen.Plate), key, () => !Screens.Contains(screen));
                 }
             }
         }
@@ -127,18 +133,26 @@ internal static class ReminderScreen
     {
         _countdown?.Stop();
         _countdown = null;
-        foreach (var screen in Screens)
+        _closing = true;
+        try
         {
-            try
+            foreach (var screen in Screens)
             {
-                screen.Plate.Close();
-            }
-            catch
-            {
-                // 已经关了。
-            }
+                try
+                {
+                    screen.Plate.Close();
+                }
+                catch
+                {
+                    // 已经关了。
+                }
 
-            StatusScreenPanel.DestroyScrim(screen.Scrim);
+                StatusScreenPanel.DestroyScrim(screen.Scrim);
+            }
+        }
+        finally
+        {
+            _closing = false;
         }
 
         Screens.Clear();
@@ -153,6 +167,13 @@ internal static class ReminderScreen
     {
         if (!IsShowing)
         {
+            return;
+        }
+
+        // 用户自己进了状态屏（快捷键、托盘）：先收着，退出后 ReminderCenter.Recheck 再摆出来——不然这边和状态屏每秒都往最上面提，来回抢。
+        if (StatusScreenHost.Active)
+        {
+            Close();
             return;
         }
 
@@ -224,6 +245,8 @@ internal static class ReminderScreen
         presenter.SetBorderAndTitleBar(true, false);
         plate.AppWindow.SetPresenter(presenter);
         plate.ExtendsContentIntoTitleBar = true;
+        // Alt+F4、系统菜单关不掉底板（同状态屏的窗）：关掉的话压暗层留在屏幕上、点了才收的那种再也收不掉，那块屏的鼠标一直被挡着。
+        plate.AppWindow.Closing += (_, args) => args.Cancel = !_closing;
         plate.Content = root;
         plate.AppWindow.MoveAndResize(new RectInt32(bounds.Left, bounds.Top, bounds.Width, bounds.Height / 2));
         return new Screen { Scrim = scrim, Plate = plate, Root = root, Board = board, Bounds = bounds, Scale = scale, Key = key };
@@ -233,7 +256,8 @@ internal static class ReminderScreen
     private static void Fill(Screen screen, Content content)
     {
         var (bounds, scale) = (screen.Bounds, screen.Scale);
-        var title = StatusScreenRules.TitleSize(bounds.Height / scale);
+        // 底板上的标题比状态屏的小一档（mac ReminderScreenView：titleSize × 0.8）。
+        var title = StatusScreenRules.TitleSize(bounds.Height / scale) * 0.8;
         var preset = new StatusPreset { Title = content.Title, Detail = content.Detail, Symbol = content.Symbol, Style = StatusPresets.Dim };
         var column = StatusScreenView.BuildColumn(
             preset, title, bounds.Width / scale * 0.7, animated: !Motion.Reduced, Footer());

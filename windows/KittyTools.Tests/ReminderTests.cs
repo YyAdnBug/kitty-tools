@@ -95,7 +95,7 @@ public sealed class ReminderTests
     {
         var list = Reminders.Sanitized(new Reminder?[]
         {
-            new() { Id = "a", Title = " 多行\n标题 ", Symbol = "nope", Alert = "popup", Sound = "beep", FullSeconds = 7, NagMinutes = 3, Chime = "Xylo",
+            new() { Id = "a", Title = " 多行\n标题 ", Symbol = "nope", Alert = "popup", Sound = "beep", FullSeconds = 7, NagMinutes = 121, Chime = "../Nope",
                 Schedule = new ReminderSchedule { Kind = ReminderSchedule.Interval, Time = 2000, Until = 10, Days = new() { 9, 3, 3 }, Day = 40, Every = 1 } },
             new() { Id = "a", Title = "重复" },
             new() { Id = "", Title = "没 id" },
@@ -124,6 +124,71 @@ public sealed class ReminderTests
         Assert.IsTrue(Reminders.IsPristine(on), "开没开不算");
         on.Title = "多喝水";
         Assert.IsFalse(Reminders.IsPristine(on));
+    }
+
+    /// <summary>
+    /// mac 能存、这一版用不上的值都留着（审查方 2026-11-05，照 mac ReminderTests.chimeIDs / StatusScreenTests.customEmojiSymbols）：
+    /// 收拾掉的话同步下一轮当本机改动传回去，把 mac 上选的声音、催促、表情抹掉。
+    /// </summary>
+    [TestMethod]
+    public void Sanitized_KeepsWhatMacCanStore()
+    {
+        Assert.IsTrue(Reminders.IsValidChime("Glass") && Reminders.IsValidChime("我的铃声"));
+        Assert.IsTrue(Reminders.IsValidChime("file:下课铃.mp3") && Reminders.IsValidChime("file:a.M4A"));
+        foreach (var bad in new[]
+                 {
+                     "", "../x", "a/b", ".hidden", "file:", "file:../x.mp3", "file:x.exe", "file:.x.mp3", "file:a/b.mp3", "file:x", "a:b",
+                     new string('长', 101),
+                 })
+        {
+            Assert.IsFalse(Reminders.IsValidChime(bad), bad);
+        }
+
+        CollectionAssert.AreEqual(new[] { 0, 1, 5, 10, 15, 30, 60 }, Reminders.NagChoices);
+        foreach (var (minutes, kept) in new[] { (7, 7), (120, 120), (121, 0), (-1, 0) })
+        {
+            var nag = new Reminder { Id = "n", Title = "催", NagMinutes = minutes };
+            Assert.AreEqual(kept, Reminders.Sanitized(new[] { nag })[0].NagMinutes, minutes.ToString());
+        }
+
+        foreach (var emoji in new[] { "🍵", "👩‍💻", "🇨🇳", "❤️", "1️⃣", "👍🏽", char.ConvertFromUtf32(0x1FAFE) })
+        {
+            Assert.IsTrue(StatusEmojiCatalog.IsCustom(emoji), emoji);
+        }
+
+        foreach (var text in new[] { "1", "©", "a", "🍵🍵", "zzz", "eyes", "", "🍵 ", char.ConvertFromUtf32(0x10FFF0) })
+        {
+            Assert.IsFalse(StatusEmojiCatalog.IsCustom(text), text);
+        }
+
+        Assert.IsTrue(StatusEmojiCatalog.IsStorable("pack:dog") && StatusEmojiCatalog.IsStorable("pack:from-a-newer-pack"));
+        Assert.IsFalse(StatusEmojiCatalog.IsStorable("pack:../x") || StatusEmojiCatalog.IsStorable("eyes"));
+        foreach (var (symbol, chime) in new[] { ("cook", "file:别的 Mac 上的.m4a"), ("pack:dog", "我的铃声"), ("🍵", "Glass") })
+        {
+            var other = new Reminder { Id = "x", Title = "别的 Mac 上的", Symbol = symbol, Chime = chime };
+            var clean = Reminders.Sanitized(new[] { other })[0];
+            Assert.AreEqual(symbol, clean.Symbol);
+            Assert.AreEqual(chime, clean.Chime);
+            Assert.AreEqual(Reminders.Canonical(other), Reminders.Canonical(clean), "收拾过编出来一样：同步不会当成本机改了");
+        }
+
+        Assert.AreEqual("下课铃（这台电脑放通知声）", Reminders.ChimeTitle("file:下课铃.mp3"));
+        Assert.AreEqual("叮", Reminders.ChimeTitle("Ping"));
+    }
+
+    /// <summary>夏令时（审查方 2026-11-05，同 mac bySettingHour 的 .nextTime / .first）：跳过的钟点取跳过之后的第一刻，重复的取第一次。</summary>
+    [TestMethod]
+    public void LocalToUtc_DaylightSavingLikeMac()
+    {
+        // 照美东定的：3 月第 2 个周日 2:00 拨快、11 月第 1 个周日 2:00 拨回（2026 年是 3 月 8 日、11 月 1 日）。
+        var rule = TimeZoneInfo.AdjustmentRule.CreateAdjustmentRule(
+            new DateTime(2000, 1, 1), new DateTime(9999, 12, 31), TimeSpan.FromHours(1),
+            TimeZoneInfo.TransitionTime.CreateFloatingDateRule(new DateTime(1, 1, 1, 2, 0, 0), 3, 2, DayOfWeek.Sunday),
+            TimeZoneInfo.TransitionTime.CreateFloatingDateRule(new DateTime(1, 1, 1, 2, 0, 0), 11, 1, DayOfWeek.Sunday));
+        var zone = TimeZoneInfo.CreateCustomTimeZone("Test/Eastern", TimeSpan.FromHours(-5), "Test/Eastern", "EST", "EDT", new[] { rule });
+        Assert.AreEqual(new DateTime(2026, 3, 8, 7, 0, 0, DateTimeKind.Utc), ReminderMath.LocalToUtc(new DateTime(2026, 3, 8, 2, 30, 0), zone));
+        Assert.AreEqual(new DateTime(2026, 11, 1, 5, 30, 0, DateTimeKind.Utc), ReminderMath.LocalToUtc(new DateTime(2026, 11, 1, 1, 30, 0), zone));
+        Assert.AreEqual(new DateTime(2026, 7, 1, 13, 0, 0, DateTimeKind.Utc), ReminderMath.LocalToUtc(new DateTime(2026, 7, 1, 9, 0, 0), zone));
     }
 
     [TestMethod]

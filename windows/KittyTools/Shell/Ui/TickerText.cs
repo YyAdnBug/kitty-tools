@@ -15,7 +15,7 @@ using Microsoft.UI.Xaml.Media;
 
 namespace KittyTools.Ui;
 
-internal sealed class TickerText : Grid
+internal sealed partial class TickerText : Grid
 {
     /// <summary>滑多远：行高的这么多倍（mac travel）。</summary>
     private const double Travel = 0.6;

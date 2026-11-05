@@ -224,25 +224,6 @@ internal sealed partial class SettingsWindow
             Refresh();
         }
 
-        foreach (var id in new[] { string.Empty }.Concat(StatusEmojiCatalog.Choices.Select(choice => choice.Id)))
-        {
-            var button = new Button
-            {
-                Width = 40,
-                Height = 40,
-                Padding = new Thickness(4),
-                BorderThickness = new Thickness(2),
-                Content = id.Length == 0
-                    ? new TextBlock { Text = "无", FontSize = 12, HorizontalAlignment = HorizontalAlignment.Center }
-                    : StatusEmoji.Still(id, 28, dark),
-            };
-            AutomationProperties.SetName(button, id.Length == 0 ? "不要图标" : "图标：" + StatusEmojiCatalog.Name(id));
-            var captured = id;
-            button.Click += (_, _) => SelectIcon(captured);
-            iconButtons.Add((id, button));
-            icons.Children.Add(button);
-        }
-
         var iconHeader = new TextBlock { Text = "图标", Margin = new Thickness(0, 4, 0, 0) };
         var panel = new StackPanel { Spacing = 10, MinWidth = 440 };
         panel.Children.Add(title);
@@ -266,6 +247,27 @@ internal sealed partial class SettingsWindow
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = _content.XamlRoot,
         };
+
+        // 图标按钮放在 dialog 建好之后：按钮的 lambda 调 SelectIcon → Refresh，Refresh 用到 dialog；lambda 写在 dialog 赋值之前
+        // 编译器判「使用了未赋值的局部变量」（CS0165）。
+        foreach (var id in new[] { string.Empty }.Concat(StatusEmojiCatalog.Choices.Select(choice => choice.Id)))
+        {
+            var button = new Button
+            {
+                Width = 40,
+                Height = 40,
+                Padding = new Thickness(4),
+                BorderThickness = new Thickness(2),
+                Content = id.Length == 0
+                    ? new TextBlock { Text = "无", FontSize = 12, HorizontalAlignment = HorizontalAlignment.Center }
+                    : StatusEmoji.Still(id, 28, dark),
+            };
+            AutomationProperties.SetName(button, id.Length == 0 ? "不要图标" : "图标：" + StatusEmojiCatalog.Name(id));
+            var captured = id;
+            button.Click += (_, _) => SelectIcon(captured);
+            iconButtons.Add((id, button));
+            icons.Children.Add(button);
+        }
 
         void Refresh()
         {

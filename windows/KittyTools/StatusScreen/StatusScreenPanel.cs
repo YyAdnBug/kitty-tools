@@ -68,6 +68,9 @@ internal sealed unsafe partial class StatusScreenPanel
     private bool _passcodeShown;
     private bool _closed;
 
+    /// <summary>露着的那双眼睛从哪条边探出来（收回去往那边退）。不挂在 Tag 上：C# 的枚举装进 WinRT 的 object 在 AOT 下没把握。</summary>
+    private PeekEdge _eyesEdge;
+
     public StatusScreenPanel(PixelBounds bounds, double scale, StatusPreset preset, bool animates, bool hasPasscode)
     {
         _hasPasscode = hasPasscode;
@@ -132,7 +135,8 @@ internal sealed unsafe partial class StatusScreenPanel
         window.Content = _surfaceRoot;
         window.AppWindow.MoveAndResize(new RectInt32(Bounds.Left, Bounds.Top, Bounds.Width, Bounds.Height));
         var hwnd = Handle(window);
-        RevealWhenDrawn(window, hwnd, activate: key);
+        FitClientToBounds(hwnd);
+        RevealWhenDrawn(window, hwnd, key, () => _closed);
         if (_column is not null && _animates)
         {
             PlayEntrance(_column);
@@ -169,7 +173,7 @@ internal sealed unsafe partial class StatusScreenPanel
                 PlayEntrance(column);
             }
         };
-        RevealWhenDrawn(plate, Handle(plate), activate: false);
+        RevealWhenDrawn(plate, Handle(plate), false, () => _closed);
     }
 
     /// <summary>透出：底板那扇窗按那一列量出来的大小摆到正中（再加上防残影的挪动）。</summary>
@@ -437,7 +441,7 @@ internal sealed unsafe partial class StatusScreenPanel
             }
 
             _eyes = null;
-            var (outX, outY) = StatusScreenRules.Outward(PeekEdgeOf(leaving), _title);
+            var (outX, outY) = StatusScreenRules.Outward(_eyesEdge, _title);
             Motion.SlideTo(leaving, outX, outY, MotionCurve.Retract);
             var timer = DispatcherQueueTimer(450);
             timer.Tick += (sender, _) =>
@@ -456,7 +460,7 @@ internal sealed unsafe partial class StatusScreenPanel
 
         var side = _title;
         var eyes = StatusEmoji.Create(StatusEmojiCatalog.Eyes, side, animated: true);
-        eyes.Tag = peek.Value.Edge;
+        _eyesEdge = peek.Value.Edge;
         eyes.RenderTransformOrigin = new Windows.Foundation.Point(0.5, 0.5);
         eyes.RenderTransform = new RotateTransform { Angle = StatusScreenRules.EyesDegrees(peek.Value.Edge) };
         var (x, y) = StatusScreenRules.EyesOrigin(_width, _height, side, peek.Value);
@@ -468,8 +472,6 @@ internal sealed unsafe partial class StatusScreenPanel
         var (dx, dy) = StatusScreenRules.Outward(peek.Value.Edge, side);
         Motion.SlideFrom(eyes, dx, dy, MotionCurve.Island);
     }
-
-    private static PeekEdge PeekEdgeOf(FrameworkElement eyes) => eyes.Tag is PeekEdge edge ? edge : PeekEdge.Bottom;
 
     // ---- 锁屏 / 退出
 
@@ -550,10 +552,30 @@ internal sealed unsafe partial class StatusScreenPanel
     private static IntPtr Handle(Window? window) => window is null ? IntPtr.Zero : WinRT.Interop.WindowNative.GetWindowHandle(window);
 
     /// <summary>
-    /// 先隐身再露面，画上第一帧、再过 4 次合成且 ≥ 50 ms 才显形（最多藏 300 ms）：同轻提示 Reveal 的做法，不然一露面先白一块。
-    /// activate：拿前台（全屏的前台窗口会把任务栏压下去）。
+    /// 没边框的 WinUI 窗还留一圈看不见的缩放边（第 0 批 e4e1d9cd 实测约 3 px；截图遮罩 SelectionOverlayWindow.FixClientArea 同样补）：
+    /// 不补的话熄屏 / 告示四边漏出桌面、底部提示的命中范围（按屏幕算）和画出来的错几个像素。按客户区比窗口小多少往外扩。
     /// </summary>
-    private void RevealWhenDrawn(Window window, IntPtr hwnd, bool activate)
+    private void FitClientToBounds(IntPtr hwnd)
+    {
+        WinRect window;
+        WinRect client;
+        var origin = default(WinPoint);
+        if (!GetWindowRect(hwnd, &window) || !GetClientRect(hwnd, &client) || !ClientToScreen(hwnd, &origin))
+        {
+            return;
+        }
+
+        SetWindowPos(
+            hwnd, new IntPtr(-1) /* HWND_TOPMOST */, Bounds.Left - (origin.X - window.Left), Bounds.Top - (origin.Y - window.Top),
+            Bounds.Width + (window.Right - window.Left) - client.Right, Bounds.Height + (window.Bottom - window.Top) - client.Bottom,
+            0x0010 /* SWP_NOACTIVATE */);
+    }
+
+    /// <summary>
+    /// 先隐身再露面，画上第一帧、再过 4 次合成且 ≥ 50 ms 才显形（最多藏 300 ms）：同轻提示 Reveal 的做法，不然一露面先白一块。
+    /// activate：拿前台（全屏的前台窗口会把任务栏压下去）。closed：窗口已经被关了（关了就不再显形）。提醒的全屏底板也用它。
+    /// </summary>
+    internal static void RevealWhenDrawn(Window window, IntPtr hwnd, bool activate, Func<bool> closed)
     {
         var cloak = 1;
         DwmSetWindowAttribute(hwnd, 13 /* DWMWA_CLOAK */, &cloak, sizeof(int));
@@ -571,7 +593,7 @@ internal sealed unsafe partial class StatusScreenPanel
         {
             CompositionTarget.Rendering -= OnRendering;
             fallback.Stop();
-            if (_closed)
+            if (closed())
             {
                 return;
             }
@@ -701,4 +723,32 @@ internal sealed unsafe partial class StatusScreenPanel
 
     [LibraryImport("dwmapi.dll")]
     private static partial int DwmSetWindowAttribute(IntPtr hwnd, int attribute, int* value, int size);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool GetWindowRect(IntPtr hwnd, WinRect* rect);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool GetClientRect(IntPtr hwnd, WinRect* rect);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool ClientToScreen(IntPtr hwnd, WinPoint* point);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct WinRect
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct WinPoint
+    {
+        public int X;
+        public int Y;
+    }
 }

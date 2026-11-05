@@ -342,7 +342,8 @@ public static partial class ExchangeRates
     /// </summary>
     public static List<LauncherItem> Suggestions(string query, IReadOnlyList<string>? recents = null)
     {
-        var used = recents?.ToList() ?? new List<string>();
+        // 设置文件里的用过的货币按不可信的读（mac loadRecents 也只留认得的）：不认得的代码后面 Currencies[code] 会抛。
+        var used = recents?.Where(code => code is not null && Currencies.ContainsKey(code)).ToList() ?? new List<string>();
         var raw = query.Trim();
         var text = Calculator.Normalize(raw);
         string? partial = null;

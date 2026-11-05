@@ -279,7 +279,8 @@ internal static class ShortcutsSheet
 
         Grid.SetColumn(keysPanel, 1);
         row.Children.Add(keysPanel);
-        AutomationProperties.SetName(row, keys is null || keys.Count == 0 ? $"{text}，未设置" : $"{text}，{string.Join(" 或 ", keys)}");
+        AutomationProperties.SetName(
+            row, keys is null || keys.Count == 0 ? global ? $"{text}，未设置" : text : $"{text}，{string.Join(" 或 ", keys)}");
         return row;
     }
 

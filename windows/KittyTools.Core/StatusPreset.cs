@@ -388,7 +388,10 @@ public static class StatusPresets
 
     // ---- 文字
 
-    /// <summary>换行当空格、去首尾空白（mac oneLine）。</summary>
+    /// <summary>
+    /// 换行当空格、去首尾空白（mac oneLine：components(separatedBy: .newlines) 按每个换行字符切，\r\n 是两个空格）。
+    /// U+2028 / U+2029 只能写成转义：原字符在 C# 里算换行，写在字符字面量里编不过。
+    /// </summary>
     public static string OneLine(string? text)
     {
         if (string.IsNullOrEmpty(text))
@@ -396,9 +399,13 @@ public static class StatusPresets
             return string.Empty;
         }
 
-        var joined = text.Replace("\r\n", " ").Replace('\r', ' ').Replace('\n', ' ')
-            .Replace(' ', ' ').Replace(' ', ' ').Replace('\u0085', ' ');
-        return joined.Trim();
+        var builder = new StringBuilder(text.Length);
+        foreach (var c in text)
+        {
+            builder.Append(c is '\n' or '\v' or '\f' or '\r' or '\u0085' or '\u2028' or '\u2029' ? ' ' : c);
+        }
+
+        return builder.ToString().Trim();
     }
 
     /// <summary>按「字」（字形簇，emoji 和带声调的字母算一个）数长度，同 mac 的 String.count。</summary>
@@ -424,6 +431,51 @@ public static class StatusEmojiCatalog
     };
 
     public static readonly HashSet<string> Ids = new(Choices.Select(choice => choice.Id), StringComparer.Ordinal);
+
+    /// <summary>
+    /// mac 后来加的 12 个（mac StatusEmoji.choices 的后 12 个，这一版没有素材）：提醒里存着它们时留着（画成色块）。
+    /// 状态不认它们：mac 把它们放在状态 JSON 的 emoji 键，这一版的状态只认 symbol 键（同 mac 0.7.x，那一类同步会停下、不动数据）。
+    /// </summary>
+    public static readonly HashSet<string> MacOnlyIds = new(StringComparer.Ordinal)
+    {
+        "cook", "person-running", "automobile", "health-worker", "droplet", "student", "lotus-position", "party-popper",
+        "office-worker", "person-walking", "birthday-cake", "thumbs-up",
+    };
+
+    /// <summary>mac 动画表情包里挑的存成「pack:编号」。</summary>
+    public const string PackPrefix = "pack:";
+
+    /// <summary>
+    /// 提醒的图标能存的值（mac StatusEmoji.isValid）：空、自带的、mac 后来加的、动画表情包（只看写法）、系统表情。
+    /// 同步、导入来的按不可信输入认；这一版画不出的不置空，不然收拾掉再同步回去会把 mac 上挑的抹掉。
+    /// </summary>
+    public static bool IsStorable(string symbol)
+        => symbol.Length == 0 || Ids.Contains(symbol) || MacOnlyIds.Contains(symbol) || IsPackSymbol(symbol) || IsCustom(symbol);
+
+    /// <summary>「pack:」后面 1…64 个 [a-z0-9-]（mac isPackSymbol：不看这一版有没有这个编号）。</summary>
+    public static bool IsPackSymbol(string symbol)
+        => symbol.StartsWith(PackPrefix, StringComparison.Ordinal) && symbol.Length - PackPrefix.Length is >= 1 and <= 64 &&
+           symbol.Skip(PackPrefix.Length).All(c => c is (>= 'a' and <= 'z') or (>= '0' and <= '9') or '-');
+
+    /// <summary>
+    /// mac 挑的系统表情（存的就是那个字，mac StatusEmoji.isCustom）：正好一个字、UTF-8 不超过 64 字节、是表情。
+    /// .NET 读不到 Unicode 的 Emoji 属性，这里放宽：一个码位的要是 U+2000 以上的符号（So）或在表情码段 U+1F000–1FAFF 里（含还没收进表的），
+    /// 多个码位的（变体、组合、肤色、旗子）首字是这种符号或带 U+FE0F / U+20E3 就算。宁可多留（mac 收拾掉再同步回来），不能少留。
+    /// </summary>
+    public static bool IsCustom(string symbol)
+    {
+        if (symbol.Length == 0 || Encoding.UTF8.GetByteCount(symbol) > 64 || StatusPresets.Length(symbol) != 1 ||
+            !Rune.TryGetRuneAt(symbol, 0, out var first))
+        {
+            return false;
+        }
+
+        var symbolic = (Rune.GetUnicodeCategory(first) == UnicodeCategory.OtherSymbol && first.Value >= 0x2000) ||
+                       first.Value is >= 0x1F000 and <= 0x1FAFF;
+        return first.Utf16SequenceLength == symbol.Length
+            ? symbolic
+            : symbolic || symbol.Contains('\uFE0F') || symbol.Contains('\u20E3');
+    }
 
     /// <summary>有人碰键盘鼠标时从屏幕边冒出来的那双眼睛：不在可选的里面。</summary>
     public const string Eyes = "eyes";
