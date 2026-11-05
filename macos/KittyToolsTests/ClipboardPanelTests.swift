@@ -220,9 +220,10 @@ struct ClipboardPanelTests {
     #expect(model.actions.map(\.title) == menu.map(\.title))
     #expect(
       menu.map(\.title) == [
-        "粘贴", "仅复制", "打开链接", "翻译", "放大预览", "收藏", "放进新收藏夹…", "存为片段", "备注…", "编辑内容…", "删除",
+        "粘贴", "仅复制", "打开链接", "钉到屏幕", "翻译", "放大预览", "收藏", "放进新收藏夹…", "存为片段", "备注…", "编辑内容…",
+        "删除",
       ])
-    #expect(menu.map(\.section) == [0, 0, 1, 1, 1, 2, 2, 2, 2, 2, 3])
+    #expect(menu.map(\.section) == [0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 2, 3])
     #expect(menu.first { $0.title == "打开链接" }?.shortcut == "⌘O")
     #expect(menu.first { $0.title == "翻译" }?.shortcut == "⌘T")
     #expect(menu.last?.isDestructive == true)
@@ -245,7 +246,7 @@ struct ClipboardPanelTests {
     #expect(files.first { $0.title == "打开" }?.shortcut == "⌘O")
     #expect(files.first { $0.title == "在访达中显示" }?.shortcut == "⌘R")
     #expect(files.first { $0.title == "复制路径" }?.shortcut == "⌥⌘C")
-    #expect(!files.contains { $0.title == "翻译" || $0.title == "编辑内容…" })
+    #expect(!files.contains { $0.title == "翻译" || $0.title == "编辑内容…" || $0.title == "钉到屏幕" })
     // 图片：钉到屏幕；多选时只给批量操作（没有备注、放大预览）
     var image = ClipItem(kind: .image)
     image.image = .init(width: 4, height: 2, byteCount: 1, sha256: "p")
@@ -255,6 +256,26 @@ struct ClipboardPanelTests {
     #expect(batch.first?.title == "依次粘贴")
     #expect(batch.contains { $0.title == "钉到屏幕" })
     #expect(!batch.contains { $0.title == "备注…" || $0.title == "放大预览" })
+  }
+
+  /// 文字条目也能钉到屏幕（2026-11-05，排成卡片，同「钉住剪贴板内容」）：只有空白的文字、文件不钉；
+  /// 多选里有能钉的就给批量的「钉到屏幕」，只钉能钉的那几条
+  @Test func pinsTextItems() async throws {
+    let (model, _) = try makeModel(["  缩进的一行\n\n"])
+    let text = try item(model, "  缩进的一行\n\n")
+    var blank = ClipItem(kind: .text)
+    blank.text = " \n\t "
+    var file = ClipItem(kind: .file)
+    file.filePaths = ["/tmp/a.txt"]
+    #expect(ClipboardPanelModel.isPinnable(text))
+    #expect(!ClipboardPanelModel.isPinnable(blank) && !ClipboardPanelModel.isPinnable(file))
+    #expect(!model.actions(for: blank, targets: [blank]).contains { $0.title == "钉到屏幕" })
+    #expect(model.actions(for: text, targets: [file, text]).contains { $0.title == "钉到屏幕" })
+    var pinned: [CGImage] = []
+    model.pinImage = { image, _ in pinned.append(image) }
+    model.pin([blank, file, text])
+    for _ in 0..<20 where pinned.isEmpty { await Task.yield() }
+    #expect(pinned.count == 1)
   }
 
   /// ⌘T 翻译单选且可翻译的条目，⌘K 行写 ⌘T（体检 B14）；只勾了一条时对着那一条
