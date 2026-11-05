@@ -93,7 +93,8 @@ import Observation
   /// 查单个词时系统词典的释义（不是单个词、查不到、设置关掉时为 nil）；setter 不设 private 只为截图自检
   var dictionary: DictionaryEntry?
   /// 这次原文是单个词、大模型按词典格式回答（结果是释义不是译文：不自动复制、不给「替换原文」）
-  private(set) var isWordLookup = false
+  /// setter 不设 private 只为截图自检（单词卡的读音行）
+  var isWordLookup = false
 
   let services: TranslateServiceStore
   let history: HistoryStore

@@ -16,6 +16,8 @@ struct TranslateTab: View {
   @AppStorage(Prefs.translateFontScale) private var fontScale = 1.0
   @AppStorage(Prefs.translateSystemDictionary) private var systemDictionary = true
   @AppStorage(Prefs.translateWordMode) private var wordMode = true
+  @AppStorage(Prefs.translateWordRecording) private var wordRecording = true
+  @AppStorage(Prefs.translateWordAccent) private var wordAccent = "us"
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(Island.self) private var island: Island?
   @AppStorage(Prefs.translateFirst) private var first = Lang.zhHans.rawValue
@@ -131,6 +133,19 @@ struct TranslateTab: View {
           Text("查词")
         } footer: {
           SectionFootnote("查单个词时不自动复制、不给「替换原文」。")
+        }
+        Section {
+          Toggle("英文单词用真人发音", isOn: $wordRecording)
+          Picker("英文单词发音", selection: $wordAccent) {
+            Text("美音").tag("us")
+            Text("英音").tag("uk")
+          }
+        } header: {
+          Text("朗读")
+        } footer: {
+          SectionFootnote(
+            "真人发音来自有道词典，会把要读的单词发给有道；取不到时用系统声音。句子用系统声音，可以在 系统设置 › 辅助功能 › 朗读内容 里下载音质更好的声音。"
+          )
         }
       }
       .gated(by: .translate)

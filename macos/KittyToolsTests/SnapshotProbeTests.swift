@@ -2940,6 +2940,24 @@ struct SnapshotProbeTests {
           ]
         }
       ),
+      // 单词卡的读音行换成带小喇叭的一行（2026-11-05 R2；没有词典卡，看得到大模型那张）
+      (
+        "translate-word-pronounce",
+        { c in
+          c.sourceText = "name"
+          c.translatedSource = c.sourceText
+          c.detected = .en
+          c.target = .zhHans
+          c.isWordLookup = true
+          c.cards = [
+            .init(
+              service: zhipu,
+              state: .done(
+                "美 /neɪm/  英 /neɪm/\nn. 名字；名称；名声\nv. 命名；说出……的名字；任命\n例：What is your name? 你叫什么名字？")
+            )
+          ]
+        }
+      ),
       // 双语词典（牛津英汉汉英排在最前，2026-11-05 反馈「没排版」）：按词性分组、义项后面跟注、拼音去掉、读音分英 / 美
       (
         "translate-word-bilingual",

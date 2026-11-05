@@ -104,6 +104,15 @@ struct TranslatePanelView: View {
   /// 浮窗的高：随内容，最矮 220；最高平时是屏幕可见区的 85%，再多就在卡片区里滚，但 mustFit 要放得下
   /// （三张写满 8 行的卡约 850 pt，85% 的上限会差一点、多出外层滚动条），这时最高到可见区减上下各 12。
   /// ponytail: 可见区比 mustFit 还矮（小屏、调大了字号）时照样在卡片区里滚；要保证三张都露全得按可见区压低卡片的 8 行上限
+  /// 原文是一个英文词（字母文字的一个词、检测或固定的源语言是英语）时返回它：朗读放真人发音
+  private func englishWord(_ text: String) -> String? {
+    let word = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard WordLookup.isWord(word), word.allSatisfy(\.isASCII),
+      (coordinator.fixedSource ?? coordinator.detected ?? .en) == .en
+    else { return nil }
+    return word
+  }
+
   static func panelHeight(_ height: CGFloat, mustFit: CGFloat, visible: CGFloat) -> CGFloat {
     min(max(height, 220), min(max(visible * 0.85, mustFit), visible - 24))
   }
@@ -303,18 +312,25 @@ struct TranslatePanelView: View {
       }
       HStack(spacing: 12) {
         Group {
+          // 原文是一个英文词时放真人发音（设置里的口音，R3），别的用系统声音
+          let word = englishWord(coordinator.sourceText)
+          let key =
+            word.map { Speaker.key(word: $0, accent: Speaker.preferredAccent) }
+            ?? coordinator.sourceText
           Button(
-            "朗读原文",
-            systemImage: speaker.speaking == coordinator.sourceText
-              ? "speaker.wave.2.fill" : "speaker.wave.2"
+            "朗读原文", systemImage: speaker.speaking == key ? "speaker.wave.2.fill" : "speaker.wave.2"
           ) {
-            speaker.toggle(
-              coordinator.sourceText,
-              language: coordinator.fixedSource ?? coordinator.detected)
+            if let word {
+              speaker.toggleWord(word)
+            } else {
+              speaker.toggle(
+                coordinator.sourceText,
+                language: coordinator.fixedSource ?? coordinator.detected)
+            }
           }
           .symbolEffect(
             .variableColor.iterative.reversing,
-            isActive: speaker.speaking == coordinator.sourceText && !coordinator.sourceText.isEmpty)
+            isActive: speaker.speaking == key && !coordinator.sourceText.isEmpty)
           Button("复制原文", systemImage: "doc.on.doc") {
             Paster.write(string: coordinator.sourceText, record: true)
             island?.show("已复制原文", detail: Island.excerpt(coordinator.sourceText))
@@ -435,9 +451,12 @@ struct TranslatePanelView: View {
             .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
           }
           ForEach(Array(coordinator.cards.enumerated()), id: \.element.id) { index, card in
+            let wordStyle = coordinator.isWordLookup && card.service.isStreaming
             ProviderCardView(
               card: card, index: index, language: coordinator.target, speaker: speaker,
-              fontScale: fontScale, isCollapsed: collapsed.contains(card.id),
+              fontScale: fontScale, wordStyle: wordStyle,
+              pronounce: wordStyle ? coordinator.translatedSource.flatMap(englishWord) : nil,
+              isCollapsed: collapsed.contains(card.id),
               copyTick: coordinator.copiedCard == card.id ? coordinator.copyTick : 0
             ) {
               coordinator.retry(card.id)

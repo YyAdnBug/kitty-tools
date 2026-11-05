@@ -49,13 +49,21 @@ struct DictionaryCardView: View {
       Text("系统词典").font(.system(size: 12, weight: .semibold)).opacity(0.85)
       Spacer(minLength: 6)
       CardActions {
+        // 英文词放真人发音（设置里的口音），别的用系统声音念词头
+        let key =
+          isEnglish
+          ? Speaker.key(word: entry.headword, accent: Speaker.preferredAccent) : entry.headword
         Button(
-          "朗读",
-          systemImage: speaker.speaking == entry.headword ? "speaker.wave.2.fill" : "speaker.wave.2"
-        ) { speaker.toggle(entry.headword, language: language) }
+          "朗读", systemImage: speaker.speaking == key ? "speaker.wave.2.fill" : "speaker.wave.2"
+        ) {
+          if isEnglish {
+            speaker.toggleWord(entry.headword)
+          } else {
+            speaker.toggle(entry.headword, language: language)
+          }
+        }
         .symbolEffect(
-          .variableColor.iterative.reversing,
-          isActive: speaker.speaking == entry.headword && !reduceMotion)
+          .variableColor.iterative.reversing, isActive: speaker.speaking == key && !reduceMotion)
         Button("在「词典」中打开", systemImage: "book") { openInDictionary() }
           .help("在「词典」App 里看完整释义")
       }
@@ -67,7 +75,13 @@ struct DictionaryCardView: View {
     HStack(alignment: .firstTextBaseline, spacing: 8) {
       Text(entry.headword).font(.system(size: 20 * fontScale, weight: .semibold))
       ForEach(Array(entry.phonetics.enumerated()), id: \.offset) { _, phonetic in
-        Text(Self.label(phonetic)).font(.system(size: 13 * fontScale)).foregroundStyle(.secondary)
+        HStack(alignment: .firstTextBaseline, spacing: 2) {
+          Text(Self.label(phonetic)).font(.system(size: 13 * fontScale)).foregroundStyle(.secondary)
+          // 英英词典的读音是美式的（不分口音），按美音放
+          if isEnglish {
+            PronounceButton(word: entry.headword, accent: phonetic.accent ?? .us, speaker: speaker)
+          }
+        }
       }
       if let query = entry.query {
         Text("\(query) 的原形").font(.system(size: 11)).foregroundStyle(.tertiary)
@@ -112,6 +126,9 @@ struct DictionaryCardView: View {
       }
     }
   }
+
+  /// 词头是英文（放真人发音）；汉语词条的读音是拼音，用系统声音念
+  private var isEnglish: Bool { entry.headword.allSatisfy { $0.isASCII } }
 
   /// 释义 14 × 字号；双语词典的注跟在同一段后面，11.5 × 字号 tertiary（折行时跟着释义一起排）
   private func definition(_ sense: DictionaryEntry.Sense) -> Text {
@@ -159,5 +176,34 @@ struct DictionaryCardView: View {
       entry.headword.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)
       ?? entry.headword
     if let url = URL(string: "dict://\(word)") { NSWorkspace.shared.open(url) }
+  }
+}
+
+/// 读音旁边的小喇叭（R2）：放这个英文词的美音 / 英音真人录音，词典卡和大模型单词卡的读音行共用。
+/// 跟卡片右上角的按钮一样平时 0.45 透明度，念的时候波纹动
+struct PronounceButton: View {
+  let word: String
+  let accent: Speaker.Accent
+  let speaker: Speaker
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  var body: some View {
+    let isSpeaking = speaker.speaking == Speaker.key(word: word, accent: accent)
+    let name = accent == .uk ? "英音" : "美音"
+    Button {
+      speaker.toggleWord(word, accent: accent)
+    } label: {
+      Image(systemName: isSpeaking ? "speaker.wave.2.fill" : "speaker.wave.2")
+        .font(.system(size: 11, weight: .medium))
+        .symbolRenderingMode(.hierarchical)
+        .symbolEffect(.variableColor.iterative.reversing, isActive: isSpeaking && !reduceMotion)
+        .frame(width: 18, height: 16)
+        .contentShape(.rect)
+    }
+    .buttonStyle(.plain)
+    .foregroundStyle(isSpeaking ? AnyShapeStyle(Style.brandInk) : AnyShapeStyle(.secondary))
+    .opacity(isSpeaking ? 1 : 0.7)
+    .help("读\(name)")
+    .accessibilityLabel("读 \(word) 的\(name)")
   }
 }

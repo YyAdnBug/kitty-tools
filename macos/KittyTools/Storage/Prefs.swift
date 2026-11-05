@@ -108,6 +108,10 @@ enum Prefs {
   static let translateSystemDictionary = "translateSystemDictionary"
   /// 查单个词时大模型按词典格式回答：读音、词性释义、例句（D4）
   static let translateWordMode = "translateWordMode"
+  /// 英文单词用真人发音（有道词典的录音；关掉或取不到时用系统声音，2026-11-05 拍板 R3）
+  static let translateWordRecording = "translateWordRecording"
+  /// 英文单词的发音：us（美音，默认）/ uk（英音）
+  static let translateWordAccent = "translateWordAccent"
 
   /// 截图 ⌘S 快速保存的目录（设置 › 截图「快速保存到」选的；「另存为」不改它，体检 A28）；没设 = 系统截屏的存储位置
   nonisolated static let screenshotSaveDirectory = "screenshotSaveDirectory"
@@ -399,6 +403,8 @@ enum Prefs {
       translateCopyToTranslate: false,
       translateSystemDictionary: true,
       translateWordMode: true,
+      translateWordRecording: true,
+      translateWordAccent: "us",
       translateFontScale: 1.0,
       translateCollapsedServices: "",
       ocrJoinLines: false,
