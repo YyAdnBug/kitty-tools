@@ -120,7 +120,7 @@ enum Prefs {
   /// 体检 D18 原来那样）/ clothesline 挂到屏幕顶上的晾衣绳上 / none 都不要（只进历史，飞行卡片落地停 0.9 s 就滑走）
   static let screenshotPlacement = "screenshotPlacement"
   /// 长截图自动滚动的速度（长截图面板按钮行上面那一行，记住上次；2026-11-04 用户反馈太快；ScrollSpeed 的 rawValue）：
-  /// 每步滚出选区高度的 10% / 20% / 40%，normal 是默认，fast 是以前唯一的速度
+  /// 每秒滚出 0.3 / 0.6 / 1.2 个选区高，normal 是默认
   static let scrollCaptureSpeed = "scrollCaptureSpeed"
   /// 旧键（0.7.0 之前是「留不留常驻缩略图」一个布尔）：migrate 里升成上面那个三选一，关过它的人升级后是「都不要」
   static let screenshotShelfLegacy = "screenshotShelf"
@@ -441,7 +441,7 @@ enum Prefs {
     }
   }
 
-  /// 长截图自动滚动的速度（scrollCaptureSpeed）：每步想滚出选区高度的多少，实际滚多少由 ScrollCapture 按上一步量出来的调
+  /// 长截图自动滚动的速度（scrollCaptureSpeed）：每秒想滚出几个选区高，实际发多少滚轮由 ScrollCapture 按量出来的位移校准
   enum ScrollSpeed: String, CaseIterable {
     case slow, normal, fast
 
@@ -453,12 +453,12 @@ enum Prefs {
       }
     }
 
-    /// 每步滚出选区高度的比例（快 = 2026-11-04 以前唯一的 40%）
-    var fraction: CGFloat {
+    /// 每秒滚出几个选区高（自动滚动是匀速的，2026-11-05；以前一步一跳、平均每秒一个半到两个选区高）
+    var heightsPerSecond: CGFloat {
       switch self {
-      case .slow: 0.1
-      case .normal: 0.2
-      case .fast: 0.4
+      case .slow: 0.3
+      case .normal: 0.6
+      case .fast: 1.2
       }
     }
 

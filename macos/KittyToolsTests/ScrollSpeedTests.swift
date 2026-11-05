@@ -1,5 +1,5 @@
 // 长截图自动滚动的速度（2026-11-04 用户反馈太快）和剪贴板面板、启动器的「面板位置」：
-// 三档的比例、认不出的值按标准、步长按实测位移收敛到目标、上下限；长截图面板上的速度那一行（屏外量布局、模拟点一下：
+// 三档的速度、认不出的值按标准、匀速滚动（2026-11-05）的每秒发多少、按实测位移校准倍率、每一帧发几点和零头；长截图面板上的速度那一行（屏外量布局、模拟点一下：
 // 26 起的玻璃屏外画不出来，截图自检看不到它）；面板位置三种怎么摆、跟随鼠标时在光标右下、放不下翻到另一侧。
 // 只读临时偏好域，不碰用户偏好。
 
@@ -11,9 +11,9 @@ import Testing
 @MainActor
 struct ScrollSpeedTests {
   @Test func speedsAndDefault() throws {
-    #expect(Prefs.ScrollSpeed.slow.fraction == 0.1)
-    #expect(Prefs.ScrollSpeed.normal.fraction == 0.2)
-    #expect(Prefs.ScrollSpeed.fast.fraction == 0.4)  // 以前唯一的速度
+    #expect(Prefs.ScrollSpeed.slow.heightsPerSecond == 0.3)
+    #expect(Prefs.ScrollSpeed.normal.heightsPerSecond == 0.6)
+    #expect(Prefs.ScrollSpeed.fast.heightsPerSecond == 1.2)
     #expect(Prefs.ScrollSpeed.allCases.map(\.title) == ["慢", "标准", "快"])
     let defaults = try #require(UserDefaults(suiteName: "ScrollSpeedTests"))
     defer { defaults.removePersistentDomain(forName: "ScrollSpeedTests") }
@@ -24,28 +24,52 @@ struct ScrollSpeedTests {
     #expect(Prefs.ScrollSpeed.current(defaults) == .slow)
   }
 
-  @Test func stepConvergesToTarget() {
-    // 选区 500 点高、2 倍屏；这个窗口每发 1 点滚 3 像素（滚轮加速）。标准档每步要滚出 500 × 2 × 0.2 = 200 像素
-    let (height, scale, gain): (CGFloat, CGFloat, CGFloat) = (500, 2, 3)
-    var step = height * Prefs.ScrollSpeed.normal.fraction
-    for _ in 0..<5 {
-      step = ScrollCapture.nextStep(
-        step, shift: step * gain, height: height, scale: scale, fraction: 0.2)
-    }
-    #expect(abs(step * gain - 200) < 0.5)
-    // 往上滚时位移是负的，一样按绝对值算
-    #expect(
-      ScrollCapture.nextStep(100, shift: -300, height: height, scale: scale, fraction: 0.2)
-        == ScrollCapture.nextStep(100, shift: 300, height: height, scale: scale, fraction: 0.2))
+  @Test func velocityFromSpeedAndGain() {
+    // 选区 500 点高、2 倍屏，1 点滚轮滚 2 像素：标准档每秒 0.6 × 500 × 2 = 600 像素 = 300 点
+    #expect(ScrollCapture.velocity(speed: .normal, height: 500, scale: 2, gain: 2) == 300)
+    // 这个窗口 1 点滚 4 像素：发一半就够
+    #expect(ScrollCapture.velocity(speed: .normal, height: 500, scale: 2, gain: 4) == 150)
+    // 快是标准的两倍、慢是一半
+    #expect(ScrollCapture.velocity(speed: .fast, height: 500, scale: 2, gain: 2) == 600)
+    #expect(ScrollCapture.velocity(speed: .slow, height: 500, scale: 2, gain: 2) == 150)
+    // 上下限：最少每秒 10 点，最多每秒三个选区高
+    #expect(ScrollCapture.velocity(speed: .slow, height: 20, scale: 1, gain: 8) == 10)
+    #expect(ScrollCapture.velocity(speed: .fast, height: 500, scale: 2, gain: 0.01) == 1500)
   }
 
-  @Test func stepClamps() {
-    // 慢档、窗口滚得特别多：不少于 20 点
-    #expect(ScrollCapture.nextStep(30, shift: 5000, height: 400, scale: 2, fraction: 0.1) == 20)
-    // 窗口几乎不动：不多于选区高度的 80%
-    #expect(ScrollCapture.nextStep(100, shift: 1, height: 400, scale: 2, fraction: 0.4) == 320)
-    // 没量到位移（0）：步长不变，不除以 0
-    #expect(ScrollCapture.nextStep(77, shift: 0, height: 400, scale: 2, fraction: 0.2) == 77)
+  @Test func calibrationConvergesAndIgnoresNoise() {
+    // 先按屏幕倍率猜 2，实际 1 点滚 3 像素：几段之后贴近 3
+    var gain: CGFloat = 2
+    for _ in 0..<8 { gain = ScrollCapture.calibrated(gain, shift: 300, sent: 100, scale: 2) }
+    #expect(abs(gain - 3) < 0.01)
+    // 发得太少、画面往回走：不动
+    #expect(ScrollCapture.calibrated(2, shift: 30, sent: 3, scale: 2) == 2)
+    #expect(ScrollCapture.calibrated(2, shift: -50, sent: 40, scale: 2) == 2)
+    // 夹在屏幕倍率的 1/4 到 8 倍
+    #expect(ScrollCapture.calibrated(0.5, shift: 1, sent: 1000, scale: 2) == 0.5)
+    #expect(ScrollCapture.calibrated(16, shift: 100_000, sent: 4, scale: 2) == 16)
+  }
+
+  @Test func tickPointsKeepTheRemainder() {
+    // 每秒 300 点、这一帧 25 ms：7.5 点 → 发 7 点，留 0.5 到下一帧
+    let first = ScrollCapture.tickPoints(velocity: 300, seconds: 0.025, carry: 0)
+    #expect(first.points == 7)
+    #expect(abs(first.carry - 0.5) < 0.001)
+    #expect(ScrollCapture.tickPoints(velocity: 300, seconds: 0.025, carry: first.carry).points == 8)
+    // 每秒 100 点：一帧不到 2 点，零头留着，一秒下来一共发 99–100 点、每帧 1 或 2 点（匀速，不攒成一大步）
+    var carry: CGFloat = 0
+    var total: CGFloat = 0
+    for _ in 0..<60 {
+      let next = ScrollCapture.tickPoints(velocity: 100, seconds: 1.0 / 60, carry: carry)
+      #expect(next.points == 1 || next.points == 2)
+      #expect(next.carry >= 0 && next.carry < 1)
+      carry = next.carry
+      total += next.points
+    }
+    #expect(total >= 99 && total <= 100)
+    // 卡了一秒才来下一帧：只按 50 ms 算，不猛冲一大段
+    #expect(ScrollCapture.tickPoints(velocity: 300, seconds: 1, carry: 0).points == 15)
+    #expect(ScrollCapture.tickPoints(velocity: 300, seconds: -1, carry: 0.5).points == 0)
   }
 
   @Test func hudSpeedRow() throws {

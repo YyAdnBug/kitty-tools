@@ -58,20 +58,30 @@ final class ScrollCapture {
   private var continuation: CheckedContinuation<Result?, Never>?
   private var loop: Task<Void, Never>?
 
-  // 自动滚动
+  // 自动滚动：跟着屏幕刷新每一帧发一小段像素滚轮，匀速滚（2026-11-05 用户：原来截一帧跳一大步，「一顿一顿」）；
+  // 抓帧照旧一帧接一帧，按实测位移校准滚轮的倍率，对不上就退回、放慢，连着几帧不动就是到头了
   private var isAutoScrolling = false
-  /// 每步滚多少点；按实际滚出的像素调，让每步滚出选区高度的 fraction
-  private var step: CGFloat
-  /// 每步想滚出选区高度的多少：面板按钮行上面的「慢 / 标准 / 快」，记住上次（2026-11-04 用户反馈太快，
-  /// 原来固定 40% = 现在的「快」；先放在设置里，用户说「放在预览的底部更好」）
-  private var fraction = Prefs.ScrollSpeed.current().fraction
+  /// 每秒滚出几个选区高：面板按钮行上面的「慢 / 标准 / 快」，记住上次（2026-11-04 用户反馈太快；先放在设置里，
+  /// 用户说「放在预览的底部更好」）
+  private var speed = Prefs.ScrollSpeed.current()
+  /// 发出去 1 点滚轮，画面实际滚几像素：开头按屏幕倍率猜，之后按实测校准（calibrated）
+  private var gain: CGFloat = 2
+  /// 现在每秒发多少点（沿 direction）
+  private var velocity: CGFloat = 0
+  /// 不到 1 点的零头，留到下一帧
+  private var carry: CGFloat = 0
+  /// 这一轮会话一共发了多少点（沿 direction 为正、往回退为负，只增减不清零）；和下面三个时刻的值相减，
+  /// 就是两帧之间发了多少，拿来和画面实际滚的比
+  private var posted: CGFloat = 0
+  /// 这一帧、上一帧开截时 posted 是多少；长图上一次接上的那一帧（拼接的参照帧）开截时是多少
+  private var postedAtCapture: CGFloat = 0
+  private var postedAtPreviousCapture: CGFloat = 0
+  private var postedAtReference: CGFloat = 0
   /// 往哪个方向滚（1 往下、-1 往上）：跟着用户手动滚的方向
   private var direction: CGFloat = 1
   /// 滚轮事件的正负号：实测位移和发出去的方向相反就翻过来（不依赖系统对合成事件怎么处理「自然滚动」）
   private var wheelSign: CGFloat = 1
-  /// 上一次发出去的滚动（点，沿 direction 为正、往回退为负）
-  private var lastPosted: CGFloat = 0
-  /// 连续几步画面都没动（到头了）、连续几帧对不上
+  /// 连续几帧发了滚轮画面却没动（到头了）、连续几帧对不上
   private var stalls = 0
   private var lostStreak = 0
   /// 截屏出错，抓帧循环已经停了（只剩拷贝、存储和取消）
@@ -115,7 +125,7 @@ final class ScrollCapture {
         maxHeight: min(Self.maxHeight, Self.maxPixels / max(first.width, 1)))
     else { throw CaptureError.tooSmall }
     self.stitcher = stitcher
-    step = self.region.height * fraction
+    gain = scale
   }
 
   private enum CaptureError: LocalizedError {
@@ -167,6 +177,8 @@ final class ScrollCapture {
   private func run() async {
     while continuation != nil {
       do {
+        postedAtPreviousCapture = postedAtCapture
+        postedAtCapture = posted
         let image = try await SCScreenshotManager.captureImage(
           contentFilter: filter, configuration: configuration)
         guard continuation != nil else { return }
@@ -191,7 +203,7 @@ final class ScrollCapture {
   /// 连着几帧画面没变
   private var quietFrames = 0
 
-  /// 下一帧隔多久截（纯函数，配单测）：自动滚动 160 ms（等画面画完）；手动时 40 ms，连着 5 帧没变化（停着看、去拿鼠标）
+  /// 下一帧隔多久截（纯函数，配单测）：自动滚动 160 ms（边滚边截，每帧滚出一两成选区高）；手动时 40 ms，连着 5 帧没变化（停着看、去拿鼠标）
   /// 放宽到 200 ms，一有变化就回到 40 ms（第四轮体检 F1：静止时原来也每秒在主线程上算 25 帧）
   static func interval(isAutoScrolling: Bool, quietFrames: Int) -> Duration {
     if isAutoScrolling { return .milliseconds(160) }
@@ -211,8 +223,12 @@ final class ScrollCapture {
   private var lastPreview = ContinuousClock.now - .seconds(1)
 
   private func handle(_ outcome: ScrollStitcher.Outcome) {
+    // 自上次接上以来、自上一帧以来各发了多少滚轮（自动滚动拿来校准、判断到头）
+    let sent = postedAtCapture - postedAtReference
+    let sentThisFrame = postedAtCapture - postedAtPreviousCapture
     switch outcome {
     case .moved(let grown):
+      postedAtReference = postedAtCapture
       isLost = false
       if grown != 0 {
         notice = nil
@@ -225,7 +241,7 @@ final class ScrollCapture {
       stopAutoScroll()
     case .unchanged: break
     }
-    if isAutoScrolling { autoScroll(after: outcome) }
+    if isAutoScrolling { autoScroll(after: outcome, sent: sent, sentThisFrame: sentThisFrame) }
     updateStatus()
     refreshPreview(force: false)
   }
@@ -331,80 +347,119 @@ final class ScrollCapture {
     direction = stitcher.isGrowingUp ? -1 : 1
     stalls = 0
     lostStreak = 0
+    carry = 0
+    postedAtReference = posted  // 停着时没发过滚轮：参照帧开截时就是现在这个数
+    velocity = Self.velocity(speed: speed, height: region.height, scale: scale, gain: gain)
     notice = nil
     isAutoScrolling = true
     panel.hudView.isAutoScrolling = true
+    panel.hudView.onFrame = { [unowned self] in tick($0) }
     updateStatus()
-    postScroll(step)  // 先滚一步，下一帧就看得出动没动
   }
 
-  /// 面板上换了速度：步子按比例换过去（正在自动滚就是下一步），记下来下次照用
+  /// 面板上换了速度：下一帧就按新的速度发，记下来下次照用
   private func setSpeed(_ speed: Prefs.ScrollSpeed) {
-    step = min(max(step * speed.fraction / fraction, 20), region.height * 0.8)
-    fraction = speed.fraction
+    self.speed = speed
+    velocity = Self.velocity(speed: speed, height: region.height, scale: scale, gain: gain)
     UserDefaults.standard.set(speed.rawValue, forKey: Prefs.scrollCaptureSpeed)
   }
 
   private func stopAutoScroll() {
     guard isAutoScrolling else { return }
     isAutoScrolling = false
+    panel.hudView.onFrame = nil
     panel.hudView.isAutoScrolling = false
     updateStatus()
   }
 
-  /// 拿到上一步的结果再滚下一步：滚过头（对不上）就退回、步子减半，连续对不上就停；连着几步不动就是到头了
-  private func autoScroll(after outcome: ScrollStitcher.Outcome) {
+  /// 屏幕每刷新一帧（自动滚动时）：按速度发这一帧的那一小段。光标在面板附近（去点 ⏸、看预览）先不发（滚轮会落到
+  /// 面板上），移出选区 = 想停下（也免得滚到别的窗口）
+  private func tick(_ seconds: CFTimeInterval) {
+    guard isAutoScrolling else { return }
     let mouse = NSEvent.mouseLocation
-    // 光标在面板附近（去点 ⏸、看预览）：先不滚（滚轮会落到面板上），也不算停
     if NSMouseInRect(mouse, panel.frame.insetBy(dx: -16, dy: -16), false) { return }
-    // 光标移出选区 = 想停下（也免得滚到别的窗口）
+    guard NSMouseInRect(mouse, region, false) else { return stopAutoScroll() }
+    let next = Self.tickPoints(velocity: velocity, seconds: seconds, carry: carry)
+    carry = next.carry
+    if next.points != 0 { postScroll(next.points) }
+  }
+
+  /// 每截一帧：按实测位移校准倍率和速度；对不上就退回自上次接上以来发的一半、先放慢一半（接上了再按速度算回来），
+  /// 连着 4 帧对不上停下；发了滚轮画面却连着 3 帧不动 = 到头了。sent / sentThisFrame：自上次接上、自上一帧以来发了多少点
+  private func autoScroll(
+    after outcome: ScrollStitcher.Outcome, sent: CGFloat, sentThisFrame: CGFloat
+  ) {
+    let mouse = NSEvent.mouseLocation
+    if NSMouseInRect(mouse, panel.frame.insetBy(dx: -16, dy: -16), false) { return }
     guard NSMouseInRect(mouse, region, false) else { return stopAutoScroll() }
     switch outcome {
     case .moved:
       stalls = 0
       lostStreak = 0
-      let shift = CGFloat(stitcher.lastShift)
-      if lastPosted != 0, (shift > 0) != (lastPosted * direction > 0) { wheelSign = -wheelSign }
-      step = Self.nextStep(
-        step, shift: shift, height: region.height, scale: scale, fraction: fraction)
+      let shift = CGFloat(stitcher.lastShift) * direction  // 沿 direction 为正（像素）
+      if abs(sent) >= 4, (shift > 0) != (sent > 0) { wheelSign = -wheelSign }
+      gain = Self.calibrated(gain, shift: shift, sent: sent, scale: scale)
+      velocity = Self.velocity(speed: speed, height: region.height, scale: scale, gain: gain)
     case .lost:
       lostStreak += 1
       if lostStreak >= 4 {
         notice = Status(text: "对不上，已停止自动滚动", tone: .lost)
         return stopAutoScroll()
       }
-      step = max(step / 2, 20)
-      return postScroll(-step)
+      let back = ((posted - postedAtReference) / 2).rounded()
+      if back > 0 { postScroll(-back) }
+      velocity /= 2
     case .full:
-      return stopAutoScroll()
+      stopAutoScroll()
     case .unchanged:
+      guard sentThisFrame >= 1 else { return }
       stalls += 1
       if stalls >= 3 {
         notice = Status(text: direction > 0 ? "已经滚到底了" : "已经滚到顶了")
-        return stopAutoScroll()
+        stopAutoScroll()
       }
     }
-    postScroll(step)
   }
 
-  /// 下一步滚多少点（纯函数配单测）：这一步发了 step 点、实际滚出 shift 像素，按比例换算成滚出选区高度 fraction 要发多少；
-  /// 最少 20 点，最多选区高度的 80%
-  static func nextStep(
-    _ step: CGFloat, shift: CGFloat, height: CGFloat, scale: CGFloat, fraction: CGFloat
+  /// 每秒发多少点（纯函数配单测）：每秒要滚出 speed 个选区高（像素），除以实测的倍率；最少 10 点，最多每秒三个选区高
+  static func velocity(
+    speed: Prefs.ScrollSpeed, height: CGFloat, scale: CGFloat, gain: CGFloat
   ) -> CGFloat {
-    guard shift != 0 else { return step }
-    return min(max(step * height * scale * fraction / abs(shift), 20), height * 0.8)
+    min(max(speed.heightsPerSecond * height * scale / max(gain, 0.01), 10), height * 3)
+  }
+
+  /// 按这一段实测校准倍率（纯函数配单测）：发了 sent 点、画面滚了 shift 像素。发得太少、画面往回走不算；
+  /// 新旧各取一半（滚轮发出去到画面画出来有延迟，单看一段会偏），夹在屏幕倍率的 1/4 到 8 倍之间
+  static func calibrated(_ gain: CGFloat, shift: CGFloat, sent: CGFloat, scale: CGFloat)
+    -> CGFloat
+  {
+    guard sent >= 4, shift > 0 else { return gain }
+    return min(max((gain + shift / sent) / 2, scale / 4), scale * 8)
+  }
+
+  /// 这一帧发几点（纯函数配单测）：速度 × 这一帧的时长再加上次的零头，发整数点，零头留到下一帧；
+  /// 一帧最多按 50 ms 算（卡了一下不猛冲一大段）
+  static func tickPoints(velocity: CGFloat, seconds: CFTimeInterval, carry: CGFloat) -> (
+    points: CGFloat, carry: CGFloat
+  ) {
+    let amount = velocity * CGFloat(min(max(seconds, 0), 0.05)) + carry
+    let whole = amount.rounded(.towardZero)
+    return (whole, amount - whole)
   }
 
   /// 按方向滚 points 点（负数往回滚）。像素级滚动事件，发到 HID 层：和真滚轮一样交给光标下的窗口
   private func postScroll(_ points: CGFloat) {
-    lastPosted = points
+    posted += points
     // wheel1 为负是内容往上走（往下滚）
     let delta = Int32((-points * direction * wheelSign).rounded())
-    CGEvent(
-      scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: delta, wheel2: 0,
-      wheel3: 0)?
-      .post(tap: .cghidEventTap)
+    guard
+      let event = CGEvent(
+        scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: delta, wheel2: 0,
+        wheel3: 0)
+    else { return }
+    // 标成连续的（同触控板）：App 按像素直接滚，不给每一小段各放一次平滑动画（那样会拖着、忽快忽慢）
+    event.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
+    event.post(tap: .cghidEventTap)
   }
 
   // MARK: 结束
@@ -414,6 +469,7 @@ final class ScrollCapture {
     self.continuation = nil
     loop?.cancel()
     isAutoScrolling = false
+    panel.hudView.onFrame = nil
     border.orderOut(nil)
     panel.orderOut(nil)
     let result = action.flatMap { action in
@@ -616,6 +672,21 @@ final class ScrollCaptureHUD: NSView {
       autoButton.contentTintColor = isAutoScrolling ? Style.Shot.accent : Style.HUD.text
     }
   }
+  /// 自动滚动时屏幕每刷新一帧调一次（参数是离上一帧的秒数，匀速发滚轮用）；设成 nil 停掉显示器回调
+  var onFrame: ((CFTimeInterval) -> Void)? {
+    didSet {
+      frameLink?.invalidate()
+      frameLink = nil
+      lastFrameTime = nil
+      guard onFrame != nil else { return }
+      let link = displayLink(target: self, selector: #selector(stepFrame(_:)))
+      link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 120, preferred: 60)
+      link.add(to: .main, forMode: .common)
+      frameLink = link
+    }
+  }
+  private var frameLink: CADisplayLink?
+  private var lastFrameTime: CFTimeInterval?
   /// 自动滚动的速度（按钮行上面那一行；会话开始时设成上次选的）
   var speed = Prefs.ScrollSpeed.normal {
     didSet {
@@ -1003,6 +1074,12 @@ final class ScrollCaptureHUD: NSView {
     flash.toValue = 0
     flash.duration = 0.4
     seam.add(flash, forKey: "flash")
+  }
+
+  @objc private func stepFrame(_ link: CADisplayLink) {
+    let seconds = lastFrameTime.map { link.timestamp - $0 } ?? link.duration
+    lastFrameTime = link.timestamp
+    onFrame?(seconds)
   }
 
   @objc private func speedChanged(_ sender: NSSegmentedControl) {
