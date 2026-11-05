@@ -2753,6 +2753,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var used: TranslateService?
     for (index, segment) in segments.enumerated() {
       try Task.checkCancellation()
+      // 纯符号段不发请求（有道这类接口会回错误码，一段失败整张图就白翻了），原样占位；覆盖那一步也会跳过它
+      guard ScreenshotOverlay.worthTranslating(segment.text) else {
+        results.append(segment.text)
+        continue
+      }
       island.progress(Self.overlayTitle, detail: "\(index + 1)/\(segments.count)")
       let request = TranslateRequest(text: segment.text, from: plan.from, to: plan.to)
       var failure: Error = TranslateError(message: "翻译失败")

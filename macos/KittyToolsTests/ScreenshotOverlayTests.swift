@@ -117,6 +117,16 @@ struct ScreenshotOverlayTests {
     #expect(spans[0].erase.minY < only.box.minY)
   }
 
+  @Test func symbolOnlyParagraphsAreNotTranslated() {
+    // OCR 会把分隔线认成一行符号：这种段没有可翻的内容，有道网页版会直接回错误码 40
+    #expect(!ScreenshotOverlay.worthTranslating("——— ... !!!"))
+    #expect(!ScreenshotOverlay.worthTranslating("• • •"))
+    #expect(!ScreenshotOverlay.worthTranslating("   "))
+    #expect(ScreenshotOverlay.worthTranslating("Order shipped"))
+    #expect(ScreenshotOverlay.worthTranslating("订单已发货"))
+    #expect(ScreenshotOverlay.worthTranslating("第 12 条"))
+  }
+
   @Test func frameStaysInsideTheImage() {
     let segment = segment(
       "右边贴边的一段", box: CGRect(x: 700, y: 400, width: 90, height: 30), lineHeight: 30)
