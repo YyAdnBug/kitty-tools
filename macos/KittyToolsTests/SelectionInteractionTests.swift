@@ -384,17 +384,28 @@ struct SelectionInteractionTests {
     #expect(h.view.selection == CGRect(x: 300, y: 150, width: 460, height: 350))
   }
 
-  // 工具栏：在选区下方 10 pt、水平居中；选区贴着屏幕底时翻到上方（D4）
-  @Test func toolbarCenteredUnderSelectionFlipsAboveNearBottom() throws {
+  // 工具栏：在选区下方 10 pt，默认右边线对齐选区右边线（设置 › 截图「工具栏位置」，2026-11-05）；选「居中」时水平居中；
+  // 选区贴着屏幕底时翻到上方，对齐方式不变（D4）
+  @Test func toolbarUnderSelectionFlipsAboveNearBottom() throws {
     let h = Harness()
     h.makeSelection()
     let toolbar = try #require(h.toolbar)
     #expect(toolbar.isShown)
-    #expect(abs(toolbar.frame.midX - Self.initial.midX) <= 0.5)
     #expect(toolbar.frame.maxY == Self.initial.minY - 10)
-    h.view.select(CGRect(x: 300, y: 20, width: 400, height: 300))
-    #expect(abs(toolbar.frame.midX - 500) <= 0.5)
-    #expect(toolbar.frame.minY == 330)
+    h.view.select(CGRect(x: 500, y: 200, width: 600, height: 300))
+    #expect(toolbar.frame.maxX == 1100 && toolbar.frame.maxY == 190)
+    h.view.select(CGRect(x: 500, y: 20, width: 600, height: 300))
+    #expect(toolbar.frame.maxX == 1100 && toolbar.frame.minY == 330)
+
+    let centered = Harness()
+    centered.view.styleDefaults.set("center", forKey: Prefs.screenshotToolbarAlign)
+    centered.makeSelection()
+    let bar = try #require(centered.toolbar)
+    #expect(abs(bar.frame.midX - Self.initial.midX) <= 0.5)
+    #expect(bar.frame.maxY == Self.initial.minY - 10)
+    centered.view.select(CGRect(x: 300, y: 20, width: 400, height: 300))
+    #expect(abs(bar.frame.midX - 500) <= 0.5)
+    #expect(bar.frame.minY == 330)
   }
 
   // 画标注时栏不动；只有拖动 / 缩放 / 平移选区时才淡出让位
@@ -905,7 +916,8 @@ struct SelectionInteractionTests {
     #expect(h.view.selection == window && h.view.isAdjusting)
     #expect(h.toolbar == nil && h.styleBar == nil)
     let bar = try #require(h.recordBar)
-    #expect(bar.isShown && abs(bar.frame.midX - window.midX) <= 0.5)
+    // 默认靠右：录制条的右边线对齐选区右边线（同截图工具栏）
+    #expect(bar.isShown && bar.frame.maxX == window.maxX)
     #expect(bar.frame.maxY == window.minY - 10)
     let outcome = await h.outcome { h.key(kVK_Return, "\r") }
     guard case .record(let region)? = outcome else {

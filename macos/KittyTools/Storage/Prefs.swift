@@ -121,6 +121,10 @@ enum Prefs {
   /// 截完图放哪（2026-10-26 晾衣绳拍板 B1，ShotPlacement 的 rawValue）：corner 右下角的常驻缩略图（默认，
   /// 体检 D18 原来那样）/ clothesline 挂到屏幕顶上的晾衣绳上 / none 都不要（只进历史，飞行卡片落地停 0.9 s 就滑走）
   static let screenshotPlacement = "screenshotPlacement"
+  /// 截图工具栏（和录屏的录制条、开录后的录制 HUD）贴选区哪边（2026-11-05 拍板，设置 › 截图「工具栏位置」）：
+  /// right 栏的右边线对齐选区右边线（默认：从左上往右下拖完，✓ 就在鼠标旁边）/ center 选区下方居中（0.7.1 及之前）。
+  /// 读它用 toolbarAlignsRight
+  static let screenshotToolbarAlign = "screenshotToolbarAlign"
   /// 长截图自动滚动的速度（长截图面板按钮行上面那一行，记住上次；2026-11-04 用户反馈太快；ScrollSpeed 的 rawValue）：
   /// 每秒滚出 0.3 / 0.6 / 1.2 个选区高，normal 是默认
   static let scrollCaptureSpeed = "scrollCaptureSpeed"
@@ -385,6 +389,7 @@ enum Prefs {
       ocrJoinLines: false,
       screenshotShutterSound: true,
       screenshotPlacement: ShotPlacement.corner.rawValue,
+      screenshotToolbarAlign: "right",
       scrollCaptureSpeed: ScrollSpeed.normal.rawValue,
       shotHistory: true,
       shotHistoryDays: 30,
@@ -421,6 +426,11 @@ enum Prefs {
       notesDeckOverFullScreen: false,
       notesDeckNoteSize: NoteDeckOptions.NoteSize.medium.rawValue,
     ].merging(Feature.allCases.map { ($0.prefsKey, $0.defaultOn as Any) }) { current, _ in current }
+  }
+
+  /// 截图工具栏贴选区右边（screenshotToolbarAlign 不是 center 都算靠右：没存过、认不出来按默认）
+  static func toolbarAlignsRight(_ defaults: UserDefaults = .standard) -> Bool {
+    defaults.string(forKey: screenshotToolbarAlign) != "center"
   }
 
   /// 截完图放哪（2026-10-26 晾衣绳拍板 B1）：右下角的常驻缩略图 / 挂到晾衣绳上 / 都不要（只进历史）。

@@ -56,6 +56,48 @@ struct ShotChromeTests {
     #expect(record.edge == .top)
   }
 
+  // 靠右（设置 › 截图「工具栏位置」，2026-11-05 拍板）：栏的右边线对齐选区右边线、夹在屏内 10 pt；翻到上方同样右对齐；
+  // 放进选区时离选区右边 10（不压能拖的边和角手柄）。长出来的锚点对着选区右边的角，够不着时取栏上离角最近的点；居中是中点
+  @Test func toolbarPlacementAlignsRight() throws {
+    let bounds = CGRect(x: 0, y: 0, width: 1200, height: 800)
+    let size = CGSize(width: 700, height: 40)
+    func place(_ selection: CGRect) -> (origin: CGPoint, edge: PopView.Edge, anchorX: CGFloat) {
+      SelectionView.toolbarPlacement(size: size, selection: selection, in: bounds, alignRight: true)
+    }
+    let below = place(CGRect(x: 600, y: 200, width: 400, height: 300))
+    #expect(below.origin == CGPoint(x: 300, y: 150) && below.edge == .top)
+    #expect(below.anchorX == 700)  // 栏的右头 = 选区右下角
+    // 选区右边线离屏幕左边不到 710：栏被屏幕左边顶住（同居中），锚点对着选区右下角
+    let pinned = place(CGRect(x: 100, y: 200, width: 300, height: 300))
+    #expect(pinned.origin == CGPoint(x: 10, y: 150) && pinned.anchorX == 390)
+    // 贴着屏幕右边的选区：栏夹在屏内 10，锚点不出栏
+    let flush = place(CGRect(x: 900, y: 200, width: 300, height: 300))
+    #expect(flush.origin == CGPoint(x: 490, y: 150) && flush.anchorX == 700)
+    let above = place(CGRect(x: 600, y: 20, width: 400, height: 300))
+    #expect(above.origin == CGPoint(x: 300, y: 330) && above.edge == .bottom)
+    let inside = place(bounds)
+    #expect(inside.origin == CGPoint(x: 490, y: 10) && inside.edge == .bottom)
+    #expect(inside.anchorX == 700)
+    let insideNarrow = place(CGRect(x: 100, y: 0, width: 900, height: 800))
+    #expect(insideNarrow.origin == CGPoint(x: 290, y: 10))  // 1000 − 10 − 700
+    // 小数点的选区落在整点上
+    let fractional = place(CGRect(x: 600.3, y: 200.6, width: 400.5, height: 300))
+    #expect(fractional.origin == CGPoint(x: 301, y: 151))
+    // 居中（默认参数）的锚点是中点、位置不变
+    let centered = SelectionView.toolbarPlacement(
+      size: size, selection: CGRect(x: 600, y: 200, width: 400, height: 300), in: bounds)
+    #expect(centered.origin == CGPoint(x: 450, y: 150) && centered.anchorX == 350)
+    // 偏好：没存过、认不出来都算靠右，只有 center 是居中
+    let suite = "kitty-test-toolbar-align-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    #expect(Prefs.toolbarAlignsRight(defaults))
+    defaults.set("center", forKey: Prefs.screenshotToolbarAlign)
+    #expect(!Prefs.toolbarAlignsRight(defaults))
+    defaults.set("left", forKey: Prefs.screenshotToolbarAlign)
+    #expect(Prefs.toolbarAlignsRight(defaults))
+  }
+
   // 纯图层画的 HUD 小控件（尺寸胶囊、提示、信息卡）也有外圈 0.5 pt black 0.5：边外 0.5、圆角大 0.5，跟着尺寸走，不重复加
   @Test func hudSkinHasOuterStroke() throws {
     let layer = CALayer()

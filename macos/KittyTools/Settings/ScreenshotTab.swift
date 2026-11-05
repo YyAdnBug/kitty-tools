@@ -1,6 +1,7 @@
 // 设置 › 截图：⌘S 快速保存的位置（文件夹图标 + 访达里的名字，选过的能恢复默认，体检 A28；录屏、录音也存这里，
 // 「录制」页的「保存到」是同一行 SaveDirectoryRow）、快门声（可试听）、截图后留不留常驻缩略图（体检 D18）、
-// 识字是否把同一段里的换行接起来（开关旁边实时对照效果，体检 A32）。截图历史改短保留期 / 改小占用会删掉东西时先问
+// 框选后工具栏靠右还是居中（2026-11-05，录屏的录制条同一个设置）、识字是否把同一段里的换行接起来（开关旁边实时对照效果，
+// 体检 A32）。截图历史改短保留期 / 改小占用会删掉东西时先问
 // （第四轮体检 E24，同剪贴板 E4），改了当场清一次。录屏、录音的设置在「录制」页（RecordTab，2026-10-03 拆出去）。
 // 框选、标注、长截图、录屏的按键不写进页里（N11）：一句话 +「查看全部快捷键…」打开速查表；全局快捷键在「快捷键」页。
 
@@ -16,6 +17,7 @@ struct ScreenshotTab: View {
   @AppStorage(Prefs.screenshotShutterSound) private var shutterSound = true
   @AppStorage(Prefs.screenshotPlacement) private var placement = Prefs.ShotPlacement.corner
     .rawValue
+  @AppStorage(Prefs.screenshotToolbarAlign) private var toolbarAlign = "right"
   @AppStorage(Prefs.shotHistory) private var keepsHistory = true
   @AppStorage(Prefs.shotHistoryDays) private var historyDays = 30
   @AppStorage(Prefs.shotHistoryMegabytes) private var historyMegabytes = 2 * 1024
@@ -75,6 +77,16 @@ struct ScreenshotTab: View {
           SectionFootnote(
             "截图、长截图、录屏录音都留在这里，能回头接着改标注（马赛克会直接打进存下的图）、再钉一次。超过保留期或占用的先删最旧的（已经存到文件夹里的文件不动）。历史只在这台 Mac 上，不跟着同步。"
           )
+        }
+        Section {
+          Picker(selection: $toolbarAlign) {
+            Text("靠右").tag("right")
+            Text("居中").tag("center")
+          } label: {
+            Text("工具栏位置")
+            Text("框选完工具栏贴在选区下方，放不下时在上方。靠右时从左上往右下拖完，✓ 就在鼠标旁边；录屏的录制条也这样摆")
+          }
+          .pickerStyle(.segmented)
         }
         Section {
           Picker("截完图放哪", selection: $placement) {

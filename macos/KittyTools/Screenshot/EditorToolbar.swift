@@ -20,10 +20,11 @@ class PopView: NSView {
 
   private(set) var isShown = false
 
-  /// 截图主栏、录制条：靠选区的那条边的中点长出来（栏在选区下方从顶边 .top，在上方或选区里时从底边），两条栏同一套参数
-  func grow(_ show: Bool, from edge: Edge = .top) {
+  /// 截图主栏、录制条：从靠选区的那条边长出来（栏在选区下方从顶边 .top，在上方或选区里时从底边），两条栏同一套参数；
+  /// anchorX 是那条边上的哪一点（自身坐标，SelectionView.toolbarPlacement 算：居中是中点，靠右对着选区右边的角），不给是中点
+  func grow(_ show: Bool, from edge: Edge = .top, anchorX: CGFloat? = nil) {
     setShown(
-      show, anchor: CGPoint(x: bounds.midX, y: edge == .top ? bounds.height : 0),
+      show, anchor: CGPoint(x: anchorX ?? bounds.midX, y: edge == .top ? bounds.height : 0),
       rise: edge == .top ? 8 : -8, scale: 0.94, delay: 0.04, bounce: 0.18)
   }
 
@@ -502,9 +503,9 @@ final class RecordBar: HUDBar {
   }
 
   /// 长出来时按偏好重画开关：多屏时每块屏的遮罩各有一根录制条，在别的屏上点过的开关这根还不知道
-  override func grow(_ show: Bool, from edge: Edge = .top) {
+  override func grow(_ show: Bool, from edge: Edge = .top, anchorX: CGFloat? = nil) {
     if show, !isShown { applyToggles(animated: false) }
-    super.grow(show, from: edge)
+    super.grow(show, from: edge, anchorX: anchorX)
   }
 
   /// 开关：写偏好、换图、播报新状态（不带设备名，不在点击路径上查设备）；也交给 onClick（点栏上的钮算点在 HUD 菜单外面、

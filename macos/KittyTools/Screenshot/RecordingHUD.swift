@@ -225,7 +225,8 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
   func present(region: CGRect, on screen: NSScreen, isFullScreen: Bool) {
     arrange(
       region: region, screen: screen.frame, visible: screen.visibleFrame,
-      display: screen.displayID, isFullScreen: isFullScreen)
+      display: screen.displayID, isFullScreen: isFullScreen,
+      alignRight: Prefs.toolbarAlignsRight(defaults))
     panel.orderFrontRegardless()
     // 录音没有录制条可接：同录制条的长出（pop bounce 0.18、rise −8、scale 0.94），减弱动态效果时只淡入
     if medium == .audio { return grow(true, from: .bottom) }
@@ -237,17 +238,18 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
     layer.add(fade, forKey: "appear")
   }
 
-  /// 只摆位置、不显示（present 的前半；单测直接调它：HUD 的窗口只建不显示）
+  /// 只摆位置、不显示（present 的前半；单测直接调它：HUD 的窗口只建不显示）。alignRight 同录制条（设置 › 截图「工具栏位置」）
   func arrange(
     region: CGRect, screen: CGRect, visible: CGRect, display: CGDirectDisplayID?,
-    isFullScreen: Bool
+    isFullScreen: Bool, alignRight: Bool = false
   ) {
     self.display = display
     self.visible = visible
     let origin = Self.origin(
       size: frame.size, region: region, screen: screen, visible: visible,
       isFullScreen: isFullScreen,
-      dragged: display.flatMap { Self.dragged[Spot(display: $0, medium: medium)] })
+      dragged: display.flatMap { Self.dragged[Spot(display: $0, medium: medium)] },
+      alignRight: alignRight)
     place(CGRect(origin: origin, size: frame.size))
   }
 
@@ -541,11 +543,11 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
 
   /// HUD 左下角放哪（全局坐标，取整）：这块屏这次运行里拖过就按拖到的地方（记的是右下角，夹进可见区）；整屏录制在可见区
   /// 底部居中、离底 24；选区录制接在录制条原来的位置——按录制条的宽 bar 走 SelectionView.toolbarPlacement（选区下方 10，
-  /// 放不下放上方，再放不下放进选区底部；没有样式托盘，tray 传 0），HUD 的右边线对着录制条的右边线：HUD 比录制条窄，
-  /// ✕ 和主圆钮就留在录制条上它们原来的位置
+  /// 放不下放上方，再放不下放进选区底部；没有样式托盘，tray 传 0；靠右 / 居中同录制条，alignRight），HUD 的右边线对着
+  /// 录制条的右边线：HUD 比录制条窄，✕ 和主圆钮就留在录制条上它们原来的位置
   static func origin(
     size: CGSize, region: CGRect, screen: CGRect, visible: CGRect, isFullScreen: Bool,
-    dragged: CGPoint?, bar: CGFloat = RecordBar.width
+    dragged: CGPoint?, bar: CGFloat = RecordBar.width, alignRight: Bool = false
   ) -> CGPoint {
     let origin: CGPoint
     if let dragged {
@@ -558,7 +560,7 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
       let placed = SelectionView.toolbarPlacement(
         size: CGSize(width: bar, height: size.height),
         selection: region.offsetBy(dx: -screen.minX, dy: -screen.minY),
-        in: CGRect(origin: .zero, size: screen.size), tray: 0
+        in: CGRect(origin: .zero, size: screen.size), tray: 0, alignRight: alignRight
       ).origin
       origin = CGPoint(x: placed.x + bar - size.width + screen.minX, y: placed.y + screen.minY)
     }

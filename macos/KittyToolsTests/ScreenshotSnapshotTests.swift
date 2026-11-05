@@ -55,7 +55,8 @@ struct ScreenshotSnapshotTests {
     h.begin(CGPoint(x: 200, y: 150), to: CGPoint(x: 517, y: 260), flags: .shift)
     try shoot(h.window, "draw-shift-snap", crop: CGRect(x: 150, y: 80, width: 600, height: 480))
 
-    // 调整：手柄、悬停右边（加粗 + 手柄放大）、下方工具栏、左上尺寸胶囊（可点、比例按钮），深浅色
+    // 调整：手柄、悬停右边（加粗 + 手柄放大）、下方工具栏（默认靠右：右边线对齐选区右边线，栏比选区宽、往左伸出去）、
+    // 左上尺寸胶囊（可点、比例按钮），深浅色
     let adjust = {
       let h = capture()
       // 鼠标给的是小数点（触控板）：边框、手柄要落在整像素上
@@ -65,14 +66,20 @@ struct ScreenshotSnapshotTests {
     }
     for dark in [false, true] {
       try shoot(
-        adjust().window, "adjust", dark: dark, crop: CGRect(x: 150, y: 190, width: 900, height: 420)
+        adjust().window, "adjust", dark: dark, crop: CGRect(x: 40, y: 190, width: 1010, height: 420)
       )
     }
+    // 设置 › 截图「工具栏位置」选居中（0.7.1 及之前的样子）
+    h = capture()
+    h.view.styleDefaults.set("center", forKey: Prefs.screenshotToolbarAlign)
+    h.drag(CGPoint(x: 300.3, y: 260.7), CGPoint(x: 800.4, y: 560.2))
+    h.move(CGPoint(x: 801, y: 420))
+    try shoot(h.window, "adjust-center", crop: CGRect(x: 40, y: 190, width: 1010, height: 420))
     // 工具栏放不下选区下方 → 上方（托盘在栏上方）；整屏选区 → 栏放进选区底部、尺寸胶囊放进左上角
     h = capture()
     h.drag(CGPoint(x: 250, y: 30), CGPoint(x: 850, y: 330))
     h.view.tool = .arrow
-    try shoot(h.window, "toolbar-above", crop: CGRect(x: 150, y: 0, width: 900, height: 460))
+    try shoot(h.window, "toolbar-above", crop: CGRect(x: 90, y: 0, width: 960, height: 460))
     h = capture()
     h.view.select(CGRect(x: 0, y: 0, width: 1200, height: 800))
     try shoot(h.window, "toolbar-inside")
@@ -119,7 +126,7 @@ struct ScreenshotSnapshotTests {
       h.view.tool = annotation.tool
       h.view.selectedAnnotation = annotation.id
       h.move(CGPoint(x: 1150, y: 760))
-      try shoot(h.window, name, crop: CGRect(x: 150, y: 150, width: 900, height: 460))
+      try shoot(h.window, name, crop: CGRect(x: 40, y: 150, width: 1010, height: 460))
     }
     // 弯箭头、弯直线各一套（同样的摆法）
     for (tool, noun) in [(Annotation.Tool.arrow, "arrow"), (.line, "line")] {

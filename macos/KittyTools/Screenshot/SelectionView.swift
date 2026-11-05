@@ -1154,10 +1154,11 @@ final class SelectionView: NSView, NSTextViewDelegate {
     recordBar = bar
   }
 
-  /// 工具栏在选区下方 10 pt、水平居中；样式托盘锚在当前工具（或选中标注的工具、输入中的文字）按钮外侧 6 pt，
-  /// 水平以按钮为中心（夹在屏内 10 pt），换工具时 settle 滑过去。出现 / 收起都带动画（PopView.setShown）。
-  /// 录屏只有录制条，位置同工具栏
+  /// 工具栏在选区下方 10 pt，水平按设置 › 截图「工具栏位置」靠右（右边线对齐选区右边线）或居中；样式托盘锚在当前工具
+  /// （或选中标注的工具、输入中的文字）按钮外侧 6 pt，水平以按钮为中心（夹在屏内 10 pt），换工具时 settle 滑过去。
+  /// 出现 / 收起都带动画（PopView.setShown）。录屏只有录制条，位置同工具栏
   private func placeBars(showing: Bool) {
+    let alignRight = Prefs.toolbarAlignsRight(styleDefaults)
     if let recordBar {
       guard showing, let selection else {
         recordBar.grow(false)
@@ -1165,10 +1166,11 @@ final class SelectionView: NSView, NSTextViewDelegate {
         return
       }
       // 录制条外侧没有样式托盘，不用给它留地方
-      let (origin, edge) = Self.toolbarPlacement(
-        size: recordBar.frame.size, selection: selection, in: bounds, tray: 0)
+      let (origin, edge, anchorX) = Self.toolbarPlacement(
+        size: recordBar.frame.size, selection: selection, in: bounds, tray: 0,
+        alignRight: alignRight)
       if recordBar.frame.origin != origin { recordBar.setFrameOrigin(origin) }
-      return recordBar.grow(true, from: edge)
+      return recordBar.grow(true, from: edge, anchorX: anchorX)
     }
     guard let toolbar, let styleBar else { return }
     guard showing, let selection else {
@@ -1180,11 +1182,11 @@ final class SelectionView: NSView, NSTextViewDelegate {
     // 输入文字时重做钮灰掉：点它会先收下文字（记一步、清空重做），什么也重做不了（⇧⌘Z 归输入框自己）
     toolbar.update(
       tool: tool, canUndo: !undoStack.isEmpty, canRedo: !redoStack.isEmpty && editor == nil)
-    let (origin, edge) = Self.toolbarPlacement(
-      size: toolbar.frame.size, selection: selection, in: bounds)
+    let (origin, edge, anchorX) = Self.toolbarPlacement(
+      size: toolbar.frame.size, selection: selection, in: bounds, alignRight: alignRight)
     let moved = toolbar.frame.origin != origin
     if moved { toolbar.setFrameOrigin(origin) }
-    toolbar.grow(true, from: edge)
+    toolbar.grow(true, from: edge, anchorX: anchorX)
     let owner: Annotation.Tool? = editor != nil ? .text : selected?.tool ?? tool
     guard let owner else { return styleBar.setShown(false) }
     styleBar.update(tool: owner, style: shownStyle)
@@ -1210,19 +1212,31 @@ final class SelectionView: NSView, NSTextViewDelegate {
   /// 工具栏放哪、从哪条边长出来：选区下方 10 pt（从顶边长出），放不下放上方，都放不下放进选区底部（这两种从底边长出）；
   /// 「放得下」连栏外侧的样式托盘（tray，6 + 34；录制条没有托盘传 0）一起算：托盘在栏外放不下只能翻到栏里侧，压住选区的边、
   /// 那段边就拖不动了。
-  /// 水平以选区为中心、夹在屏内 10 pt。选区是鼠标给的小数点，取整到整点，栏里的图标和描边才不发糊
+  /// 水平（夹在屏内 10 pt）：alignRight 时栏的右边线对齐选区右边线（2026-11-05 拍板：从左上往右下拖完，✓ 就在鼠标旁边），
+  /// 放进选区时往里收 10 pt（不压右边那条能拖的边和角手柄）；否则以选区为中心。选区是鼠标给的小数点，取整到整点，
+  /// 栏里的图标和描边才不发糊。
+  /// anchorX：长出来的那一点（栏自身坐标）。居中是中点；靠右对着选区右边的角，栏被屏幕顶住够不着时取栏上离角最近的点
   static func toolbarPlacement(
-    size: CGSize, selection: CGRect, in bounds: CGRect, tray: CGFloat = 6 + StyleBar.height
-  ) -> (origin: CGPoint, edge: PopView.Edge) {
+    size: CGSize, selection: CGRect, in bounds: CGRect, tray: CGFloat = 6 + StyleBar.height,
+    alignRight: Bool = false
+  ) -> (origin: CGPoint, edge: PopView.Edge, anchorX: CGFloat) {
     let margin: CGFloat = 10
-    let x = max(
-      bounds.minX + margin, min(selection.midX - size.width / 2, bounds.maxX - size.width - margin)
-    ).rounded()
+    func left(_ x: CGFloat) -> CGFloat {
+      max(bounds.minX + margin, min(x, bounds.maxX - size.width - margin)).rounded()
+    }
+    func placed(_ x: CGFloat, _ y: CGFloat, _ edge: PopView.Edge) -> (
+      CGPoint, PopView.Edge, CGFloat
+    ) {
+      let anchorX = alignRight ? min(max(selection.maxX - x, 0), size.width) : size.width / 2
+      return (CGPoint(x: x, y: y), edge, anchorX)
+    }
+    let x = left(alignRight ? selection.maxX - size.width : selection.midX - size.width / 2)
     let below = (selection.minY - margin - size.height).rounded()
-    if below - tray >= bounds.minY { return (CGPoint(x: x, y: below), .top) }
+    if below - tray >= bounds.minY { return placed(x, below, .top) }
     let above = (selection.maxY + margin).rounded()
-    if above + size.height + tray <= bounds.maxY { return (CGPoint(x: x, y: above), .bottom) }
-    return (CGPoint(x: x, y: (selection.minY + margin).rounded()), .bottom)
+    if above + size.height + tray <= bounds.maxY { return placed(x, above, .bottom) }
+    let inside = alignRight ? left(selection.maxX - margin - size.width) : x
+    return placed(inside, (selection.minY + margin).rounded(), .bottom)
   }
 
   /// 两个 HUD 菜单的名字（旁白读它，也用来认开着的是哪个）

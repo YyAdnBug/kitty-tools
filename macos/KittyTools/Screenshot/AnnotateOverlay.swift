@@ -243,9 +243,10 @@ import Carbon.HIToolbox
   /// 都放不下贴在图里底部。纯函数那一半在 SelectionView.toolbarPlacement，这里直接用它
   private func placeBar() {
     guard let content = panel.contentView else { return }
-    let (origin, _) = SelectionView.toolbarPlacement(
-      size: bar.frame.size, selection: box, in: content.bounds)
-    bar.frame.origin = origin
+    // 不跟「工具栏位置」走（2026-11-05 拍板 Q7）：图摆在屏幕正中、不是拖出来的，没有松手的那一点可贴
+    bar.frame.origin =
+      SelectionView.toolbarPlacement(size: bar.frame.size, selection: box, in: content.bounds)
+      .origin
   }
 
   // MARK: 出图

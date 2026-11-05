@@ -87,6 +87,25 @@ struct RecordingHUDTests {
 
   /// 右边线对齐（2026-10-12 视觉对齐）：录制条 → 倒数 → 录制态都接在同一条右边线上，✕ 三态同一个位置、■ 落在录制条的 ●
   /// 上；倒数没有圆钮，那个位置空着。之后计时多一位（10:00、1:00:00）HUD 往左长、右边线不动
+  /// 工具栏靠右时（设置 › 截图「工具栏位置」）录制条的右边线对齐选区右边线，HUD 跟着它的右边线
+  @Test func followsARightAlignedRecordBar() {
+    func origin(_ region: CGRect) -> CGPoint {
+      RecordingHUD.origin(
+        size: Self.size, region: region, screen: Self.screen, visible: Self.visible,
+        isFullScreen: false, dragged: nil, bar: Self.bar, alignRight: true)
+    }
+    #expect(origin(CGRect(x: 300, y: 300, width: 600, height: 400)) == CGPoint(x: 740, y: 250))
+    // 录制条被屏幕左边顶住（10…232）：同居中
+    #expect(origin(CGRect(x: 0, y: 400, width: 40, height: 100)).x == 72)
+    // 放进选区：录制条离选区右边 10（1208…1430）
+    #expect(origin(CGRect(x: 0, y: 20, width: 1440, height: 860)) == CGPoint(x: 1270, y: 30))
+    // 整屏不跟录制条
+    #expect(
+      RecordingHUD.origin(
+        size: Self.size, region: Self.screen, screen: Self.screen, visible: Self.visible,
+        isFullScreen: true, dragged: nil, alignRight: true) == CGPoint(x: 640, y: 94))
+  }
+
   @Test func formsShareTheRecordBarsRightEdge() throws {
     let suite = "kitty-test-hud-align-\(UUID().uuidString)"
     let defaults = try #require(UserDefaults(suiteName: suite))
