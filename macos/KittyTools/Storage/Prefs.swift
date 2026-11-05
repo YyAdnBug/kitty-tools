@@ -80,6 +80,9 @@ enum Prefs {
   /// 截图翻译时把识别出的原文也写进剪贴板（2026-10-23 用户要的，⌘V 就能贴原文）；默认关：照旧只记进剪贴板历史、
   /// 不换掉剪贴板里原来的东西
   static let translateCopyRecognized = "translateCopyRecognized"
+  /// 截图翻译（⌥S）和截图工具栏的「翻译」把译文直接盖回截图上、留在截图页里（2026-11-05，PR #5 + 用户要的开关）；
+  /// 默认关：照旧在翻译浮窗里看（多服务对比、能复制译文）
+  static let translateScreenshotOverlay = "translateScreenshotOverlay"
   static let translateHistoryEnabled = "translateHistoryEnabled"
   /// 翻译历史保留条数（收藏不算、永不淘汰），0 = 不限（体检 A18：1000 / 5000 / 不限，默认 5000）
   static let translateHistoryLimit = "translateHistoryLimit"
@@ -352,6 +355,7 @@ enum Prefs {
       translateRemoveNewlines: false,
       translateAutoCopy: false,
       translateCopyRecognized: false,
+      translateScreenshotOverlay: false,
       translateHistoryEnabled: true,
       translateHistoryLimit: 5000,
       translatePanelPosition: "top",

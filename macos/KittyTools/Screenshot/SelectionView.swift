@@ -671,10 +671,11 @@ final class SelectionView: NSView, NSTextViewDelegate {
     outlineOuter.path = shown.map {
       CGPath(rect: insideScreen($0.insetBy(dx: -2, dy: -2), by: 2), transform: nil)
     }
-    // 就地翻译中：选区上一条浅白渐变从左扫到右（1.1 秒一轮），衬着浅色底也看得出来
+    // 就地翻译中：选区上一条浅白渐变从左扫到右（1.1 秒一轮），衬着浅色底也看得出来；
+    // 减弱动态效果时不扫，光带停在选区外，只留压暗那一层
     translatingPulse.frame = shown ?? .zero
     translatingPulse.isHidden = !translating || shown == nil
-    if translating, let shown {
+    if translating, let shown, !Style.reduceMotion {
       let band = max(60, shown.width * 0.5)
       let distance = shown.width + band
       translatingBand.frame = CGRect(x: -band, y: 0, width: band, height: shown.height)
@@ -1683,8 +1684,9 @@ final class SelectionView: NSView, NSTextViewDelegate {
   // MARK: 输出
 
   private func output(_ action: RegionSelector.Action) {
-    // 翻译留在截图页里翻：选区上出脉冲、翻完把译文贴回选区，不像其它出图键那样收起遮罩
-    if case .translate = action { return translateInPlace() }
+    // 开着「把译文盖回截图上」（设置 › 翻译，有 translateHandler）时留在截图页里翻：选区上扫光、翻完把译文贴回选区，
+    // 不像其它出图键那样收起遮罩；关着时照旧交出去、走翻译浮窗
+    if case .translate = action, translateHandler != nil { return translateInPlace() }
     endEditing()
     guard let selection, let window else { return }
     let pixels = RegionSelector.pixelRect(
@@ -1708,12 +1710,10 @@ final class SelectionView: NSView, NSTextViewDelegate {
           action: action, original: original, annotations: moved)))
   }
 
-  /// 就地翻译（工具栏「翻译」）：不收起遮罩——选区上出脉冲，翻完把译文图贴回选区，
-  /// 标注清掉（译文已经画进图里），人还留在截图页，可以接着标注 / 复制 / 保存
+  /// 就地翻译（工具栏「翻译」）：不收起遮罩——选区上扫光，翻完把译文图贴回冻结帧的选区位置，
+  /// 已经画的标注留着（它们一直浮在图上面），人还留在截图页，可以接着标注 / 复制 / 保存
   private func translateInPlace() {
-    guard !translating else { return }
-    guard let handler = translateHandler else { return flashHint(["这里不能翻译"]) }
-    guard let selection else { return }
+    guard !translating, let handler = translateHandler, let selection else { return }
     endEditing()
     let pixels = RegionSelector.pixelRect(
       selection, viewSize: bounds.size, imageSize: CGSize(width: image.width, height: image.height))
@@ -1723,34 +1723,21 @@ final class SelectionView: NSView, NSTextViewDelegate {
     translateTask?.cancel()
     translateTask = Task { @MainActor [weak self] in
       let result = await handler(cropped)
+      var replaced: CGImage?
+      if let patch = result.image, let frame = self?.image {
+        // 整屏冻结帧（5K 屏约 60 MB）在主线程外合成
+        replaced = await ScreenshotOverlay.paste(patch, into: frame, at: pixels)
+      }
       guard let self, !Task.isCancelled else { return }
       translating = false
       translateTask = nil
-      guard let patch = result.image else {
+      guard let replaced else {
         refresh()
-        return flashHint([result.message ?? "翻译失败"])
-      }
-      guard let replaced = Self.replacing(image, at: pixels, with: patch) else {
-        refresh()
-        return flashHint(["合成失败"])
+        return flashHint([result.image == nil ? result.message ?? "翻译失败" : "合成失败"])
       }
       image = replaced
-      // 标注层按新图重建（马赛克要读新图的像素）。旧标注作废：它们画在旧图上，
-      // 不清的话预览里没了、导出却还带着
-      annotationCanvas?.removeFromSuperview()
-      annotationCanvas = nil
-      annotations = []
-      undoStack = []
-      redoStack = []
-      selectedAnnotation = nil
-      if annotates {
-        let fresh = AnnotationCanvas(image: replaced, dim: spotlightDim)
-        fresh.autoresizingMask = [.width, .height]
-        addSubview(fresh, positioned: .below, relativeTo: canvas)
-        annotationCanvas = fresh
-        annotationCanvas?.selection = selection
-        syncAnnotations()
-      }
+      // 标注不动：它们一直画在冻结帧上面，出图时照旧叠上去；马赛克读的是标注层手里那张图，换成新的
+      annotationCanvas?.image = replaced
       needsDisplay = true
       refresh()
       flashHint(["已替换为译文"])
@@ -1765,24 +1752,6 @@ final class SelectionView: NSView, NSTextViewDelegate {
     guard translating else { return }
     translating = false
     refresh()
-  }
-
-  /// 把译文图贴回整屏冻结帧的选区位置。pixels 是图里的像素矩形（原点左上），源图尺寸不变
-  private static func replacing(_ image: CGImage, at pixels: CGRect, with patch: CGImage) -> CGImage? {
-    guard
-      let space = image.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB),
-      let context = CGContext(
-        data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: 0,
-        space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
-    else { return nil }
-    context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
-    // CGContext 原点在左下，pixels 的原点在左上：翻一下 y
-    context.draw(
-      patch,
-      in: CGRect(
-        x: pixels.minX, y: CGFloat(image.height) - pixels.maxY,
-        width: pixels.width, height: pixels.height))
-    return context.makeImage()
   }
 
   /// 长截图：只交出选区位置，边滚边截的是实时画面（标注不带过去，长图是重截的、坐标对不上；
@@ -2495,7 +2464,8 @@ final class EditorField: NSTextView {
 /// 标注层：画全部标注，只重画变了的那块。遮罩和长图标注窗口共用——遮罩给 dim（聚光灯压暗画在下面那层，
 /// 它还要配合选区），长图不给（压暗在这一层自己画，范围就是整张图），选中框和手柄也只有长图这边画在这里（chrome）
 final class AnnotationCanvas: NSView {
-  let image: CGImage
+  /// 冻结帧（马赛克从它取像素）；截图页里就地翻译之后换成贴了译文的那张
+  var image: CGImage { didSet { needsDisplay = true } }
   private let dim: CAShapeLayer?
   var annotations: [Annotation] = [] {
     didSet {

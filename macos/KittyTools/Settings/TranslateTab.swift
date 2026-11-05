@@ -25,6 +25,7 @@ struct TranslateTab: View {
   @AppStorage(Prefs.translateCopyToTranslate) private var copyToTranslate = false
   @AppStorage(Prefs.translateAutoCopy) private var autoCopy = false
   @AppStorage(Prefs.translateCopyRecognized) private var copyRecognized = false
+  @AppStorage(Prefs.translateScreenshotOverlay) private var screenshotOverlay = false
   @AppStorage(Prefs.translateHistoryEnabled) private var historyEnabled = true
   @AppStorage(Prefs.translateHistoryLimit) private var historyLimit = 5000
   @AppStorage(Prefs.translatePanelPosition) private var panelPosition = "top"
@@ -152,6 +153,12 @@ struct TranslateTab: View {
           }
           Toggle("自动复制译文", isOn: $autoCopy)
             .help("复制即译弹出的翻译不会自动复制，免得覆盖你刚复制的原文")
+          Toggle(isOn: $screenshotOverlay) {
+            Text("截图翻译时把译文直接盖回截图上")
+            Text(
+              "截图翻译和截图工具栏里的「翻译」都留在截图页里，译文按原来的位置盖回图上，可以接着标注、复制、保存；关着时在翻译浮窗里看，能对比几个服务、复制译文"
+            )
+          }
           Toggle(isOn: $copyRecognized) {
             Text("截图翻译时复制识别出的原文")
             Text(

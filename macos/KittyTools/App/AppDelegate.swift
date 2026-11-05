@@ -1781,8 +1781,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
   }
 
-  /// 截图翻译（⌥S）：和截图同一个编辑页，只是框完松手自动翻译——译文贴在选区里，人可以接着标注、复制、保存
+  /// 截图翻译（⌥S）。默认：冻结各屏 → 框选 → 本机识别文字 → 原文记进剪贴板历史 → 翻译浮窗走现有的多服务翻译。
+  /// 设置 › 翻译 开着「把译文直接盖回截图上」（PR #5）时：和截图同一个编辑页，框完松手自动翻译——译文贴在选区里，
+  /// 人可以接着标注、复制、保存
   func screenshotTranslate() {
+    guard UserDefaults.standard.bool(forKey: Prefs.translateScreenshotOverlay) else {
+      return beginCapture(hidingPanels: true) { [self] in
+        guard
+          let region = await frozenSelection(
+            "截图翻译", { await RegionSelector.select($0, hint: "拖动框选要翻译的文字 · Esc 取消") })
+        else { return }
+        await translateInPanel(region)
+      }
+    }
     captureShots(
       feature: "截图翻译", hidingPanels: true,
       hint: "拖动框选要翻译的文字 · Esc 取消", autoTranslate: true)
@@ -1812,6 +1823,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     feature: String, hidingPanels: Bool, repeatingLastRegion: Bool = false,
     hint: String? = nil, autoTranslate: Bool = false
   ) {
+    // 工具栏「翻译」就地盖回截图上，还是交出去走翻译浮窗：看设置 › 翻译「把译文直接盖回截图上」
+    let overlays = UserDefaults.standard.bool(forKey: Prefs.translateScreenshotOverlay)
     beginCapture(hidingPanels: hidingPanels) { [self] in
       let lastRegion = UserDefaults.standard.string(forKey: Prefs.screenshotLastRegion).map(
         NSRectFromString)
@@ -1823,10 +1836,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               $0, lastRegion: lastRegion, preselect: repeatingLastRegion,
               hint: hint, autoTranslate: autoTranslate,
               recordingBlocker: { [weak self] in self?.recordingBlocker(.screen) },
-              translate: { [weak self] image in
-                guard let self else { return (nil, "翻译不可用") }
-                return await self.overlayTranslate(image)
-              })
+              translate: overlays
+                ? { [weak self] image in
+                  guard let self else { return (nil, "翻译不可用") }
+                  return await self.overlayTranslate(image)
+                } : nil)
           })
       else { return }
       await handleCapture(outcome)
@@ -1877,8 +1891,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           markSaved(remembered, at: saved)
         }
       case .recognize: await copyRecognizedText(in: capture.image)
-      // 就地翻译已经不交回这个动作了（只有 translateHandler 缺席时的退路）
-      case .translate: await translateImage(capture)
+      // 「把译文直接盖回截图上」关着时：工具栏的翻译交出来，走翻译浮窗（开着时在截图页里就地翻，不交回这个动作）
+      case .translate: await translateInPanel(capture.image)
       }
     }
   }
@@ -2370,10 +2384,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 长图标注（2026-10-26 拍板）：拼好的长图在自己的窗口里标注，出图走截图那条路、用刘海说结果（同钉图，不飞卡片：
   /// 这时选区多半已经不在眼前了）。一次只开一扇，再开一次就把前一扇换掉。
   /// history：它在历史里是哪一条（刚拼好的长截图是并行记的，出图时等它记完拿编号，R6）
-  /// noun：出图时岛上怎么说（「已复制长截图」/「已复制译文图」）
   private func openAnnotate(
     _ image: CGImage, scale: CGFloat, history: (() async -> UUID?)? = nil,
-    annotations: [Annotation] = [], noun: String = "长截图"
+    annotations: [Annotation] = []
   ) {
     annotateOverlay?.close()
     let original = image
@@ -2393,7 +2406,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch action {
         case .copy:
           guard await copyImage(image, scale: scale) != nil else { return }
-          island.show("已复制\(noun)", leading: Island.thumbnail(of: image))
+          island.show("已复制长截图", leading: Island.thumbnail(of: image))
         case .save:
           guard let saved = await saveImage(image, scale: scale, asking: false) else { return }
           markSaved(remembered, at: saved.url)
@@ -2496,27 +2509,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     presentTranslate()
   }
 
-  /// 截图翻译（原位覆盖）：识别 → 逐段翻译 → 把译文按原来的位置覆盖回图上 → 复制进剪贴板、记进截图历史。
-  /// 原文照旧记一份剪贴板历史（和浮窗那条一样），不会被译文图盖掉
-  private func translateImage(_ capture: RegionSelector.Capture) async {
-    island.show(
-      Self.overlayTitle, detail: "翻译中…", tone: .progress, symbol: "text.viewfinder")
-    let result = await overlayTranslate(capture.image)
-    guard let composed = result.image,
-      let png = await ScreenshotOutput.png(composed, scale: capture.scale)
-    else {
-      return island.show("翻译失败", detail: result.message ?? "请重试", tone: .error)
-    }
-    await copyPNG(png)
-    let remembered = await shotHistory.record(
-      composed, png: png, scale: capture.scale, kind: .shot, source: frontmostAppName(),
-      frame: capture.frame)
-    // 当场把覆盖后的图开在标注窗口里（和截图后的编辑页一样）：能直接看效果，也能继续标注 / 保存
-    openAnnotate(composed, scale: capture.scale, history: { remembered }, noun: "译文图")
-    island.show(
-      "已复制译文图", detail: "已存进截图历史", symbol: "text.viewfinder")
-  }
-
   /// 就地翻译（截图工具栏「翻译」用）：识别 + 逐段翻译 + 覆盖渲染，交回贴了译文的图。
   /// 失败时消息交回遮罩上的提示，岛上另外说一遍（收起遮罩后也能看到原因）
   private func overlayTranslate(_ image: CGImage) async -> (image: CGImage?, message: String?) {
@@ -2540,7 +2532,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   /// 截图翻译和钉图的翻译共用的那一半：识别 + 原文记进剪贴板历史（设置 › 翻译 开着「截图翻译时复制识别出的原文」
   /// 时同时写进剪贴板）。返回 nil 时岛上已经说过原因
-  private func recognizeForTranslation(_ image: CGImage) async -> (lines: [OCR.Line], text: String)? {
+  private func recognizeForTranslation(_ image: CGImage) async -> (lines: [OCR.Line], text: String)?
+  {
     guard let lines = await recognizing({ await OCR.recognizeLines(in: image) }) else {
       island.show("文字识别失败", detail: "请重试", tone: .error)
       return nil

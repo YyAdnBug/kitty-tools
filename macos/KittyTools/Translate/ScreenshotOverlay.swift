@@ -89,7 +89,8 @@ nonisolated enum ScreenshotOverlay {
 
       // 宽度照原段框，最多放宽 25%（长句少折几行）。放宽之前先让出**同高度、在右边**那一列的位置：
       // 两列挨得近时，放宽出来的字会盖到隔壁那列的译文上
-      let neighbour = segments
+      let neighbour =
+        segments
         .filter { candidate in
           candidate.box.minX > segment.box.minX + 0.5
             && candidate.box.minY < segment.box.maxY && candidate.box.maxY > segment.box.minY
@@ -103,7 +104,8 @@ nonisolated enum ScreenshotOverlay {
 
       // 往下能长到哪：**抹掉的这一整条**（比原文宽）下面、横向有重叠的段里最高的那个顶边，再留一点空；
       // 下面没东西就到图片底边。横向范围要用抹除宽度，不然放宽的部分会压到下面那列的字
-      let below = segments
+      let below =
+        segments
         .filter { candidate in
           candidate.box.maxY < segment.box.maxY - 0.5
             && candidate.box.maxX > eraseMinX && candidate.box.minX < eraseMinX + eraseWidth
@@ -186,15 +188,38 @@ nonisolated enum ScreenshotOverlay {
     return draw(image, spans: spans)
   }
 
+  /// 把译文图贴回整屏冻结帧的选区位置（截图页里就地翻译）。pixels 是图里的像素矩形（原点左上），冻结帧尺寸不变
+  @concurrent static func paste(_ patch: CGImage, into frame: CGImage, at pixels: CGRect) async
+    -> CGImage?
+  {
+    guard let context = canvas(like: frame) else { return nil }
+    context.draw(frame, in: CGRect(x: 0, y: 0, width: frame.width, height: frame.height))
+    // CGContext 原点在左下，pixels 的原点在左上：翻一下 y
+    context.draw(
+      patch,
+      in: CGRect(
+        x: pixels.minX, y: CGFloat(frame.height) - pixels.maxY, width: pixels.width,
+        height: pixels.height))
+    return context.makeImage()
+  }
+
+  /// 和原图同尺寸、同色彩空间的画布：冻结帧是屏幕的色彩空间（多半是 Display P3），换成 sRGB 画一遍
+  /// 选区里饱和的颜色会被压掉；原图的色彩空间建不了位图时才退回 sRGB
+  private static func canvas(like image: CGImage) -> CGContext? {
+    guard image.width > 0, image.height > 0 else { return nil }
+    let make = { (space: CGColorSpace) in
+      CGContext(
+        data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: 0,
+        space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+    }
+    return image.colorSpace.flatMap(make)
+      ?? CGColorSpace(name: CGColorSpace.sRGB).flatMap(make)
+  }
+
   private static func draw(_ image: CGImage, spans: [Span]) -> CGImage? {
     let width = image.width
     let height = image.height
-    guard width > 0, height > 0,
-      let space = CGColorSpace(name: CGColorSpace.sRGB),
-      let context = CGContext(
-        data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
-        space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
-    else { return nil }
+    guard let context = canvas(like: image) else { return nil }
     let full = CGRect(x: 0, y: 0, width: width, height: height)
     context.draw(image, in: full)
     context.setShouldAntialias(true)
