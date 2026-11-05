@@ -51,7 +51,7 @@ internal sealed partial class SettingsWindow : Window
     private bool _stale;
     private bool _active;
 
-    // 侧栏顺序同 mac：通用 / 剪贴板 / 启动器 / 翻译 / 截图 / 录制 / 状态屏 / 快捷键 / 关于（mac 独有的几页没有）。
+    // 侧栏顺序同 mac：通用 / 剪贴板 / 启动器 / 翻译 / 截图 / 录制 / 状态屏 / 提醒 / 快捷键 / 关于（mac 独有的几页没有）。
     // 色块是和 mac 共用的功能图标（FeatureIcons，PLAN-v10 §6）。
     private static readonly (string Tag, string Title, string Glyph)[] Pages =
     {
@@ -62,6 +62,7 @@ internal sealed partial class SettingsWindow : Window
         ("screenshot", "截图", FeatureIcons.Screenshot),
         ("record", "录制", FeatureIcons.Record),
         ("statusScreen", "状态屏", FeatureIcons.StatusScreen),
+        ("reminders", "提醒", FeatureIcons.Reminders),
         ("hotkeys", "快捷键", FeatureIcons.Hotkeys),
         ("about", "关于", FeatureIcons.About),
     };
@@ -107,6 +108,10 @@ internal sealed partial class SettingsWindow : Window
         {
             "告示", "清洁", "擦屏幕", "请勿触碰", "马上回来", "熄屏", "透出", "拦住", "键盘", "鼠标", "退出", "密码", "Esc", "动画", "表情",
             "不睡眠", "常亮", "自动结束",
+        },
+        ["reminders"] = new[]
+        {
+            "提醒", "定时", "闹钟", "喝水", "休息", "稍后", "催促", "全屏", "边框", "朗读", "每天", "每周", "工作日", "间隔", "暂停",
         },
         ["hotkeys"] = new[] { "快捷键", "热键", "冲突", "录制", "恢复默认", "速查", "按键", "钉图" },
         ["about"] = new[] { "版本", "更新", "日志", "发布", "检查更新", "自动检查" },
@@ -407,6 +412,9 @@ internal sealed partial class SettingsWindow : Window
                 break;
             case "statusScreen":
                 BuildStatusScreen();
+                break;
+            case "reminders":
+                BuildReminders();
                 break;
             case "about":
                 BuildAbout();
@@ -3518,6 +3526,7 @@ internal sealed partial class SettingsWindow : Window
             Feature.Launcher => "launcher",
             Feature.Translate => "translate",
             Feature.StatusScreen => "statusScreen",
+            Feature.Reminders => "reminders",
             _ => "capture",
         };
 
@@ -3538,6 +3547,7 @@ internal sealed partial class SettingsWindow : Window
             HotKeyActions.PinClipboard => FeatureIcons.Pin,
             HotKeyActions.Home => FeatureIcons.Home,
             HotKeyActions.StatusScreen => FeatureIcons.StatusScreen,
+            HotKeyActions.ReminderNew => FeatureIcons.Reminders,
             _ => FeatureIcons.Screenshot,
         };
 
@@ -3549,6 +3559,7 @@ internal sealed partial class SettingsWindow : Window
         "launcher" => "launcher",
         "screenshot" or "record" => "capture",
         "statusScreen" => "statusScreen",
+        "reminders" => "reminders",
         "about" => "general",
         _ => "general",
     };

@@ -101,6 +101,11 @@ internal sealed class ShellRuntime
 
         AppCatalog.Start();
         LauncherModel.Start();
+        // 提醒（PLAN-v12 N6）：起停跟着功能开关（ApplyFeatures）。
+        if (Features.IsOn(Feature.Reminders))
+        {
+            ReminderCenter.Start();
+        }
 
         HiddenWindow.Message += OnHiddenMessage;
         Tray.Add();
@@ -1005,6 +1010,15 @@ internal sealed class ShellRuntime
         {
             TranslateHost.Hide(restoreForeground: false);
         }
+
+        if (Features.IsOn(Feature.Reminders))
+        {
+            ReminderCenter.Start();
+        }
+        else
+        {
+            ReminderCenter.Stop();
+        }
     }
 
     /// <summary>后台跑一次每日备份（今天备过就直接返回）。</summary>
@@ -1163,6 +1177,7 @@ internal sealed class ShellRuntime
         const uint WmWtsSessionChange = 0x02B1;
         const uint WmPowerBroadcast = 0x0218;
         const uint WmDisplayChange = 0x007E;
+        const uint WmTimeChange = 0x001E;
         if (msg == PInvoke.WM_HOTKEY)
         {
             // 录屏倒数期间 Esc 取消（第四版）。
@@ -1203,6 +1218,7 @@ internal sealed class ShellRuntime
             if (wParam.Value == 7)
             {
                 StatusScreenHost.Locked();
+                ReminderCenter.Locked();
                 StopRecordingForSession(locking: true);
                 if (SettingsService.Current.ClipboardClearOnLock && Clipboard?.Store is { } locked)
                 {
@@ -1216,6 +1232,7 @@ internal sealed class ShellRuntime
             else if (wParam.Value == 8)
             {
                 StatusScreenHost.Unlocked();
+                ReminderCenter.Unlocked();
                 ScheduleBackup();
             }
         }
@@ -1224,10 +1241,16 @@ internal sealed class ShellRuntime
             // 显示器插拔、改分辨率：状态屏按现在的屏幕重摆（没在状态屏里什么都不做）。
             StatusScreenHost.OnDisplaysChanged();
         }
+        else if (msg == WmTimeChange)
+        {
+            // 改了系统时间、时区：提醒把记在「将来」的时刻收回来再看一遍。
+            ReminderCenter.ClockChanged();
+        }
         else if (msg == WmPowerBroadcast && wParam.Value is 7 or 0x12)
         {
             // 7 = 从睡眠唤醒（PBT_APMRESUMESUSPEND）、0x12 = 自动唤醒。
             ScheduleBackup();
+            ReminderCenter.Resumed();
             _ = Syncer.Instance?.RoundAsync();
         }
         else if (msg == WmPowerBroadcast && wParam.Value == 4)

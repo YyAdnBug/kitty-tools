@@ -93,42 +93,59 @@ internal static partial class StatusScreenHost
 
     // ---- 进入
 
-    /// <summary>按 id 进入（托盘、主界面、启动器的状态项）；找不到就不进。</summary>
-    public static void Enter(string id)
+    /// <summary>按 id 进入（托盘、主界面、启动器的状态项；提醒的「进入状态屏」找不到时用排在最前面的那个）。返回进不去的原因。</summary>
+    public static string? Enter(string id, bool quiet = false, bool fallbackToFirst = false)
     {
-        if (Presets.FirstOrDefault(preset => preset.Id == id) is { } preset)
-        {
-            Enter(preset);
-        }
+        var presets = Presets;
+        var preset = presets.FirstOrDefault(item => item.Id == id) ?? (fallbackToFirst ? presets.FirstOrDefault() : null);
+        return preset is null ? "找不到这个状态" : Enter(preset, quiet: quiet);
     }
 
     /// <summary>
     /// 进入一个状态。正在截图框选 / 长截图时不进（响一声）；正在录屏 / 录音时提示「先停止这一段」（录制条会被盖住、退出前停不了）；
     /// 拦截建不起来、窗口建不出来都不进。probe：自检（只拦带标记的注入事件，不记「上次进入」）。
+    /// 返回进不去的原因（null = 进去了 / 本来就在里面）；quiet：不响、不出提示（提醒「进入状态屏」进不去时退成全屏、把原因写在全屏上）。
     /// </summary>
-    public static void Enter(StatusPreset preset, bool probe = false)
+    public static string? Enter(StatusPreset preset, bool probe = false, bool quiet = false)
     {
-        if (Active || (!probe && !Features.IsOn(Feature.StatusScreen)))
+        if (Active)
         {
-            return;
+            return null;
+        }
+
+        if (!probe && !Features.IsOn(Feature.StatusScreen))
+        {
+            return "状态屏在 设置 › 通用 › 功能 里关着";
         }
 
         if (ScreenshotSession.IsActive || ScrollingCapture.Active)
         {
-            SystemSound.Beep();
-            return;
+            if (!quiet)
+            {
+                SystemSound.Beep();
+            }
+
+            return "正在截图";
         }
 
         if (RecordingHost.IsRecording || RecordingCountdown.Active)
         {
-            NoticeHost.Show("正在录屏", "先停止这一段再进入状态屏", NoticeTone.Warning);
-            return;
+            if (!quiet)
+            {
+                NoticeHost.Show("正在录屏", "先停止这一段再进入状态屏", NoticeTone.Warning);
+            }
+
+            return "正在录屏";
         }
 
         if (AudioHost.IsRecording || AudioHost.IsArmed)
         {
-            NoticeHost.Show("正在录音", "先停止这一段再进入状态屏", NoticeTone.Warning);
-            return;
+            if (!quiet)
+            {
+                NoticeHost.Show("正在录音", "先停止这一段再进入状态屏", NoticeTone.Warning);
+            }
+
+            return "正在录音";
         }
 
         // 上一次退出后还在等按键松开的拦截：先撤，不叠两个。
@@ -138,8 +155,12 @@ internal static partial class StatusScreenHost
         _hold = new ExitHold();
         if (!InputBlock.Start(OnInput, OnMouseMoved, probe))
         {
-            NoticeHost.Show("没能进入状态屏", "键盘鼠标的拦截没建起来", NoticeTone.Error);
-            return;
+            if (!quiet)
+            {
+                NoticeHost.Show("没能进入状态屏", "键盘鼠标的拦截没建起来", NoticeTone.Error);
+            }
+
+            return "键盘鼠标的拦截没建起来";
         }
 
         Active = true;
@@ -168,8 +189,12 @@ internal static partial class StatusScreenHost
         {
             Log.Error("status.panels-failed", ex);
             Exit(StatusExitReason.Quit);
-            NoticeHost.Show("没能进入状态屏", "屏幕上的告示没建起来", NoticeTone.Error);
-            return;
+            if (!quiet)
+            {
+                NoticeHost.Show("没能进入状态屏", "屏幕上的告示没建起来", NoticeTone.Error);
+            }
+
+            return "屏幕上的告示没建起来";
         }
 
         SetPower(preset.Power);
@@ -189,6 +214,7 @@ internal static partial class StatusScreenHost
         }
 
         Log.Info($"status.enter style={preset.Style} power={preset.Power} auto={preset.AutoEndMinutes} screens={Panels.Count} probe={probe}");
+        return null;
     }
 
     /// <summary>收起剪贴板、启动器、翻译浮窗、主界面、选状态的面板（固定的也收）。</summary>

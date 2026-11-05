@@ -1,4 +1,4 @@
-// 能单独关掉的功能（第三版 §2.3，照 mac 的 Shell/Feature.swift）：剪贴板、翻译、启动器、截图、录屏、状态屏（PLAN-v12 N5）。
+// 能单独关掉的功能（第三版 §2.3，照 mac 的 Shell/Feature.swift）：剪贴板、翻译、启动器、截图、录屏、状态屏（PLAN-v12 N5）、提醒（N6）。
 // 关掉 = 热键不注册、托盘里不显示、后台工作停掉、设置里那一页变灰并写明「已关闭」；
 // 数据层照常（库照开、每日备份照做），设置和快捷键原样留着，打开立即回来、不用重启。
 // 没存过 = 开（PLAN-v10 D2，2026-10-29：启动器、录屏都对齐 mac 了，0.1.0 默认打开；发版冒烟里哪样过不了就只把它改回默认关）。
@@ -14,6 +14,7 @@ internal enum Feature
     Screenshot,
     Recording,
     StatusScreen,
+    Reminders,
 }
 
 internal static class Features
@@ -25,6 +26,7 @@ internal static class Features
         Feature.Launcher => "launcher",
         Feature.Recording => "recording",
         Feature.StatusScreen => "statusScreen",
+        Feature.Reminders => "reminders",
         _ => "screenshot",
     };
 
@@ -35,6 +37,7 @@ internal static class Features
         Feature.Launcher => "启动器",
         Feature.Recording => "录屏",
         Feature.StatusScreen => "状态屏",
+        Feature.Reminders => "提醒",
         _ => "截图",
     };
 
@@ -45,6 +48,7 @@ internal static class Features
         Feature.Launcher => "一个搜索框：打开应用、设置和网页，顺手算算式",
         Feature.Recording => "把屏幕录成视频（Alt+R 开始 / 停止）",
         Feature.StatusScreen => "盖住屏幕、拦住键盘鼠标的告示",
+        Feature.Reminders => "到点提醒你：一次、每天、每周或每隔一阵",
         _ => "框选截图、识别图中文字、钉在屏幕上",
     };
 
@@ -71,6 +75,7 @@ internal static class Features
             or HotKeyActions.TranslateReplace => Feature.Translate,
         HotKeyActions.Record or HotKeyActions.Audio => Feature.Recording,
         HotKeyActions.StatusScreen => Feature.StatusScreen,
+        HotKeyActions.ReminderNew => Feature.Reminders,
         _ => Feature.Screenshot,
     };
 }

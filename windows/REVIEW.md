@@ -114,6 +114,34 @@
 
 **你们做的**：编译零警告、`dotnet test` 全过；手测 977–981（托盘子菜单要真点）；截图：托盘子菜单（只截菜单那一块）、主界面带状态屏那一格、启动器搜「状态屏」，推 `windows-shots` 的 `0.3.0-v12-batch-4/`。
 
+### 第 5 批：提醒（N6 的模型、执行层、各种方式、设置页）→ 已写（审查方，`git log --grep "PLAN-v12 第 5 批"`，没编译）
+
+照 mac `Reminders/`（`ceaf2897`、`58f638f3`、`83f2dda5`）和 `macos/PLAN.md` §10「提醒」：
+
+- **Core**（单测 `ReminderTests` 14 个）：`Reminder.cs`（模型、示例、收拾、合并、列表操作、摘要、和 mac 一字不差的 JSON——同步用的那一行是 mac `SyncRecords.encoder` 的写法，
+  测试里的 golden 是在 Mac 上用 mac 的结构体真编出来的；导出文件里时刻写 ISO 8601，同 mac `.iso8601`）、`ReminderSchedule.cs`（下一次什么时候响、间隔的时段、
+  `ReminderState`、`ReminderCheck` 到点 / 错过 / 下一次、`ReminderAlerts` 方式和提示上写什么）、`ReminderPhrase.cs`（一句话建提醒，第 6 批启动器用）、
+  `Sync/ReminderSync.cs`（第 6 批接进同步）。时刻存成 mac 的 Date（2001 起的秒数，double），当地日历用传进来的 `TimeZoneInfo`。
+- **执行层** `Reminders/ReminderCenter.cs`：一个计时器指向最近要响的那一刻；锁屏 / 解锁（WTS 7 / 8）、醒来（PBT_APMRESUMESUSPEND）、改系统时间（WM_TIMECHANGE）、
+  设置里的列表变了、退出状态屏（`StatusScreenHost.Exited`）时重看；有间隔提醒时每分钟 `GetLastInputInfo` 看空闲（5 分钟算离开）。
+  状态存 `Settings.RemindersState`（不导出、不同步）。声音：提示音一律 `PlaySound("SystemNotification")`（mac 的 14 种提示音名照存，同步不丢），朗读走现成的 `Speech`。
+- **方式**：轻提醒 = `NoticeHost.Pin`（新加的「挂着」模式：不自己收、× = 知道了、别处来的提示收起后再露出来、`Nudge` 晃一下）；边框 = `Reminders/ReminderGlow.cs`
+  （每屏四条 8 DIP 的分层窄窗，点穿）；全屏 = `Reminders/ReminderScreen.cs`（借状态屏的压暗层 + HUD 底板，按钮、1 秒内不算、倒数、Enter / Esc）；
+  进入状态屏 = `StatusScreenHost.Enter(id, quiet: true, fallbackToFirst: true)`（`Enter` 现在返回进不去的原因，进不去退成全屏写原因）。
+- `Feature.Reminders`、热键动作 `reminderNew`（不设默认键，处理在第 6 批）、家族色、设置 › 提醒（`SettingsWindow.Reminders.cs`：列表 + 每行开关 + 编辑对话框 + 「稍后」推多久）。
+- HANDTEST 982–999。
+
+**你们做的**：
+1. 编译零警告；`dotnet test` 全过（新加 `ReminderTests` 14 个——`Canonical_MatchesMacByteForByte` 是和 mac 互通的底线，过不了先别动别的，把实际输出贴在这里）。
+   要看的编译点：`Notice.cs` 新加的 `Pin` / `Unpin` / `Nudge`（`_pin` 是可空元组）；`ReminderCenter.NextUp` 里的可空元组；`SettingsWindow.Reminders.cs` 的 `DatePicker.Date`（DateTimeOffset）；
+   `ReminderPhrase` 的三个 `GeneratedRegex`（零宽后顾 `(?<!点\s)`）。
+2. 手测 984–999 要等到点，先用「2 分钟后」的一次性提醒走一遍轻提醒、全屏、边框、进入状态屏；993 的空闲判断把间隔改成 15 分钟。
+3. 截图：设置 › 提醒（浅 / 深）、编辑对话框（一次 / 间隔）、挂着的底部提示、全屏、边框（只截自己的窗口），推 `windows-shots` 的 `0.3.0-v12-batch-5/`。
+4. 内存：全屏出来、收掉各量一次；只有托盘静置时提醒不占 CPU（没有开着的间隔提醒时不轮询空闲）。
+
+**替用户定的**：提示音只有系统的通知声一种（mac 有 14 种，名字照存）；边框是实色细边、不呼吸（ponytail）；全屏又合进一条时整个重建；
+「暂停全部」和「N 分钟后提醒我」放在托盘子菜单（第 6 批）；编辑对话框里间隔的「到」用 0:00 表示到半夜。
+
 ## PLAN-v11（0.1.0 之后还没做的，2026-11-03 用户「全部按推荐」）
 
 方案和分批在 `PLAN-v11.md` §3；分工照 D10（同 PLAN-v10 D5）。每批审查方写好的推上来、**没编译**，你们编译、单测、在屏幕上验，编译错直接修，在这一节对应那批下面记一句。

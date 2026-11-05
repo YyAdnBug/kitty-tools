@@ -308,6 +308,17 @@ internal sealed class Settings
     /// <summary>上次进入的状态（选状态的面板默认选中它）。这台电脑自己的状态，不导出。</summary>
     public string? StatusScreenLastPreset { get; set; }
 
+    // 提醒（PLAN-v12 N6，mac Prefs.reminders / remindersState / remindersSnoozeMinutes）。
+
+    /// <summary>提醒列表（Core 的 Reminder）；null = 没存过（三条示例，都关着）。</summary>
+    public List<KittyTools.Core.Reminder>? Reminders { get; set; }
+
+    /// <summary>每条处理到哪一刻、推到几点、暂停到几点：这台电脑自己的，不导出、不同步。</summary>
+    public KittyTools.Core.ReminderState? RemindersState { get; set; }
+
+    /// <summary>「稍后」推几分钟（5 / 10 / 15 / 30，默认 5）。</summary>
+    public int RemindersSnoozeMinutes { get; set; } = 5;
+
     public List<HotKeySetting> HotKeys { get; set; } = new();
 
     /// <summary>

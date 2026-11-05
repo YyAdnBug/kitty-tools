@@ -7,6 +7,8 @@
 // 按钮全露出来、加 ×；离开合回一行、接着走剩下的时间（至少 1.5 s）。点卡片本身只执行「打开」类的按钮。
 // 鼠标在上面时来的新提示先排着（只留最新的），进行中那条的结果原地换。
 // 窗口不抢焦点：WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW，SW_SHOWNOACTIVATE；不进截图和录屏（WDA_EXCLUDEFROMCAPTURE）。
+// 挂着（Pin，PLAN-v12 N6 提醒的轻提醒，mac Island.pin）：不自己收，等点按钮或 ×（× = dismiss，「知道了」）；别处来的提示照常出，
+// 它收起之后挂着的那条再露出来；Nudge = 再出一次、左右晃一下（催促）；Unpin 撤下。
 using System.Runtime.InteropServices;
 using KittyTools.Core;
 using KittyTools.Infrastructure;
@@ -133,6 +135,12 @@ internal sealed unsafe partial class NoticeHost
     private readonly DispatcherQueueTimer _hideTimer;
 
     private bool _visible;
+
+    /// <summary>挂着的那一条（Pin）：标题、详情、按钮、点 × 时做什么。</summary>
+    private (string Title, string Detail, NoticeAction[] Actions, Action Dismiss)? _pin;
+
+    /// <summary>现在露着的就是挂着的那一条（不自己收）。</summary>
+    private bool _showingPin;
 
     /// <summary>隐身（DWM cloak）着等 XAML 画上：露面时先隐身再 ShowWindow，画好几帧才显形（见 Reveal）。</summary>
     private bool _cloaked;
@@ -309,6 +317,7 @@ internal sealed unsafe partial class NoticeHost
         _pending = null;
         _progress = fraction is not null;
         _actions = actions;
+        _showingPin = _pin is { } pin && pin.Title == title && pin.Detail == detail;
         BuildButtons();
         _root.RequestedTheme = Theme.ElementTheme;
         _title.Text = title;
@@ -342,9 +351,13 @@ internal sealed unsafe partial class NoticeHost
             // 悬停着（进行中那条原地换了结果）：计时停着，离开时再走。
             _remainingMs = (long)(dwell * 1000);
         }
-        else
+        else if (!_showingPin)
         {
             StartHideTimer((long)(dwell * 1000));
+        }
+        else
+        {
+            _hideTimer.Stop();
         }
 
         if (!quiet)
@@ -463,7 +476,17 @@ internal sealed unsafe partial class NoticeHost
             Visibility = Visibility.Collapsed,
         };
         AutomationProperties.SetName(button, "关闭提示");
-        button.Click += (_, _) => Hide();
+        button.Click += (_, _) =>
+        {
+            // 挂着的那条点 ×：算「知道了」（dismiss 自己会 Unpin）。
+            if (_showingPin && _pin is { } pin)
+            {
+                Run(new NoticeAction("知道了", pin.Dismiss));
+                return;
+            }
+
+            Hide();
+        };
         return button;
     }
 
@@ -556,7 +579,10 @@ internal sealed unsafe partial class NoticeHost
         Place(expanded: false);
         SlideFrom(before, MotionCurve.Retract);
         // 进行中的合回一行、继续挂着；别的接着走剩下的时间，至少 1.5 s。
-        StartHideTimer(_progress ? 60_000 : Math.Max(1500, _remainingMs));
+        if (!_showingPin)
+        {
+            StartHideTimer(_progress ? 60_000 : Math.Max(1500, _remainingMs));
+        }
     }
 
     /// <summary>
@@ -675,6 +701,58 @@ internal sealed unsafe partial class NoticeHost
         _pending = null;
         _actions = Array.Empty<NoticeAction>();
         _buttons.Children.Clear();
+        // 别处来的提示收起了、还有挂着的：再露出来（挂着的那条自己被收起是 Unpin / 按钮处理过了，_pin 已经是 null）。
+        var reshow = _pin is not null && !_showingPin;
+        _showingPin = false;
+        if (reshow)
+        {
+            _window.DispatcherQueue.TryEnqueue(ShowPin);
+        }
+    }
+
+    /// <summary>
+    /// 挂一条（提醒的轻提醒）：一直挂着，直到点了按钮或 ×（dismiss）。再挂一条换掉前一条。只在 UI 线程调。
+    /// </summary>
+    public static void Pin(string title, string detail, Action dismiss, params NoticeAction[] actions)
+    {
+        _current ??= new NoticeHost();
+        _current._pin = (title, detail, actions, dismiss);
+        _current.ShowPin();
+    }
+
+    /// <summary>撤下挂着的那一条（处理过了、功能关了）；正露着就收起。</summary>
+    public static void Unpin()
+    {
+        if (_current is not { } host || host._pin is null)
+        {
+            return;
+        }
+
+        host._pin = null;
+        if (host._showingPin && host._visible)
+        {
+            host.Hide();
+        }
+    }
+
+    /// <summary>催一下：挂着的那条再出一次（播报），卡片左右晃。</summary>
+    public static void Nudge()
+    {
+        if (_current is not { _pin: not null } host)
+        {
+            return;
+        }
+
+        host.ShowPin();
+        Motion.Shake(host._content);
+    }
+
+    private void ShowPin()
+    {
+        if (_pin is { } pin && !(_visible && !_showingPin))
+        {
+            ShowCore(pin.Title, pin.Detail, NoticeTone.Normal, null, pin.Actions);
+        }
     }
 
     private void Announce(string title, string detail)

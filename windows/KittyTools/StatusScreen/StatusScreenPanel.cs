@@ -141,7 +141,7 @@ internal sealed unsafe partial class StatusScreenPanel
 
     private void PresentDim(string footer)
     {
-        _scrim = CreateScrim(StatusScreenView.ScrimAlpha(HighContrast()));
+        _scrim = CreateScrim(Bounds, StatusScreenView.ScrimAlpha(HighContrast()));
         var column = StatusScreenView.BuildColumn(_preset, _title, _width * 0.8, _animates, footer);
         _column = column;
         column.Root.HorizontalAlignment = HorizontalAlignment.Left;
@@ -620,13 +620,16 @@ internal sealed unsafe partial class StatusScreenPanel
         return timer;
     }
 
-    /// <summary>透出样式的压暗层：一扇黑底的分层弹出窗，整体透明度 alpha，盖满整块屏（同 ShotFlash 的做法）。建不出来抛异常。</summary>
-    private IntPtr CreateScrim(byte alpha)
+    /// <summary>
+    /// 透出样式的压暗层：一扇黑底的分层弹出窗，整体透明度 alpha，盖满整块屏（同 ShotFlash 的做法）。建不出来抛异常。
+    /// 提醒的全屏（ReminderScreen）也用它；关掉用 DestroyScrim。
+    /// </summary>
+    internal static IntPtr CreateScrim(PixelBounds bounds, byte alpha)
     {
         EnsureScrimClass();
         var module = PInvoke.GetModuleHandle(default(PCWSTR));
         var hwnd = (IntPtr)Native.CreateWindowEx(
-            ScrimExStyle, ScrimClass, "状态屏", WsPopup, Bounds.Left, Bounds.Top, Bounds.Width, Bounds.Height,
+            ScrimExStyle, ScrimClass, "状态屏", WsPopup, bounds.Left, bounds.Top, bounds.Width, bounds.Height,
             default, IntPtr.Zero, new HINSTANCE(module.Value), (void*)0).Value;
         if (hwnd == IntPtr.Zero)
         {
@@ -666,7 +669,17 @@ internal sealed unsafe partial class StatusScreenPanel
         _scrimRegistered = true;
     }
 
-    private static bool HighContrast()
+    internal static void DestroyScrim(IntPtr hwnd)
+    {
+        if (hwnd != IntPtr.Zero)
+        {
+            DestroyWindow(hwnd);
+        }
+    }
+
+    internal static void RaiseWindow(IntPtr hwnd) => RaiseTopmost(hwnd);
+
+    internal static bool HighContrast()
     {
         try
         {

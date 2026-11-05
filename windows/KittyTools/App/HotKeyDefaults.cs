@@ -32,6 +32,9 @@ internal static class HotKeyActions
 
     /// <summary>状态屏（PLAN-v12 N5），默认不设键（同 mac statusScreen）：先出选状态的面板，设置里开了就直接进排在最前面的。</summary>
     public const string StatusScreen = "statusScreen";
+
+    /// <summary>新建提醒（PLAN-v12 N6），默认不设键（同 mac reminderNew）：打开启动器填好「提醒 」，启动器关着时打开 设置 › 提醒。</summary>
+    public const string ReminderNew = "reminderNew";
 }
 
 internal sealed record HotKeyDefault(
@@ -60,6 +63,7 @@ internal static class SettingsDefaults
         new(HotKeyActions.PinClipboard, "钉住剪贴板里的图", HotKeyModifiers.None, 0),
         new(HotKeyActions.Home, "打开主界面", HotKeyModifiers.None, 0),
         new(HotKeyActions.StatusScreen, "状态屏", HotKeyModifiers.None, 0),
+        new(HotKeyActions.ReminderNew, "新建提醒", HotKeyModifiers.None, 0),
     };
 
     public static void Apply(Settings settings)
