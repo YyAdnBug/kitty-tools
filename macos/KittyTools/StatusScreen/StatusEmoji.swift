@@ -30,6 +30,11 @@ enum StatusEmoji {
     ("birthday-cake", "生日蛋糕"), ("thumbs-up", "点赞"),
   ]
   nonisolated static let ids = choices.map(\.id)
+  /// 0.7.1 认得的那 16 个（前 16 个）：状态的 JSON 里只有它们放在 symbol 键，别的（新加的 12 个、动画表情包里的、系统表情）
+  /// 放在 emoji 键——0.7.x 收拾 symbol 时会把认不得的置空再同步回来（StatusPreset.encode）
+  nonisolated static let legacyIDs = Set(ids.prefix(16))
+  /// 动画表情包里挑的（「动画表情」弹窗）：「pack:编号」
+  nonisolated static let packPrefix = "pack:"
   /// 有人碰键盘鼠标时从屏幕底边冒出来的那双眼睛（Z17a）：不在可选的里面
   nonisolated static let eyes = "eyes"
   /// 颜色很深、在黑底和 HUD 底板上几乎看不见的表情（「开会」的两个人影是深紫色的剪影）：告示上给它垫一团柔和的亮光
@@ -48,12 +53,26 @@ enum StatusEmoji {
     dark && plated.contains(id)
   }
 
-  /// 旁白读的名字：自带的读中文名，自己挑的系统表情读它本身（旁白认得表情）
+  /// 旁白读的名字：自带的读中文名，动画表情包里的读对照表里的名字，系统表情读它本身（旁白认得表情）
   nonisolated static func name(_ id: String) -> String? {
-    choices.first { $0.id == id }?.name ?? (isCustom(id) ? id : nil)
+    if let name = choices.first(where: { $0.id == id })?.name { return name }
+    if let pack = packID(id) { return EmojiPack.name(pack) }
+    return isCustom(id) ? id : nil
   }
 
-  /// 自己挑的系统表情（纯函数）：正好一个字、是表情（数字、#、© 这类「也能当表情」的普通字要带表情变体或组合才算），
+  /// 「pack:编号」里的编号（编号要在打进包里的对照表里）；别的是 nil
+  nonisolated static func packID(_ symbol: String) -> String? {
+    guard symbol.hasPrefix(packPrefix) else { return nil }
+    let id = String(symbol.dropFirst(packPrefix.count))
+    return EmojiPack.contains(id) ? id : nil
+  }
+
+  /// 动画表情包里一个编号存成什么：自带的那 28 个之一就是自带的 id，别的是「pack:编号」
+  nonisolated static func symbol(forPack id: String) -> String {
+    EmojiPack.bundledID(for: id) ?? packPrefix + id
+  }
+
+  /// 系统表情（纯函数；「系统表情」那一格从系统表情面板挑的，存的就是那个字，永远按系统的样子画、不动）：正好一个字、是表情（数字、#、© 这类「也能当表情」的普通字要带表情变体或组合才算），
   /// 不长得离谱。存的值来自导入的文件、同步文件夹，按不可信输入认。这台系统的 Unicode 表还没收的字（别的 Mac 系统更新、
   /// 表情面板的字体比 Swift 的表新）落在表情的码段（U+1F000–1FAFF）里也算——不然系统旧的那台会把它当成不认识的置空、
   /// 再当本机改动同步出去，把别的 Mac 上挑的抹掉；最坏是画成一个方框
@@ -68,45 +87,39 @@ enum StatusEmoji {
     return properties.isEmojiPresentation || symbol.unicodeScalars.count > 1
   }
 
-  /// 图标预览下面那行字（纯函数；2026-11-05 用户：挑的系统表情和系统的样子不一样，要说清楚）：自带的写中文名；自己挑的系统表情
-  /// 写清楚是哪一种——下好了的动画版、有动画版但还没下好、系统表情（没有动画版、带肤色的、自动下载关着）。不再写那个字本身：
-  /// 系统的字形和上面的动画版不是一个样子，摆在一起像两个东西
-  nonisolated static func caption(
-    _ symbol: String, animated: Bool, hasAnimation: Bool, downloads: Bool
-  ) -> String {
+  /// 图标预览下面那行字（纯函数；2026-11-05 用户：系统表情和动画版要分清）：自带的、动画表情包里的写名字，系统表情写「系统表情」
+  nonisolated static func caption(_ symbol: String) -> String {
     let id = canonical(symbol)
     if let name = choices.first(where: { $0.id == id })?.name { return name }
-    guard isCustom(id) else { return "" }
-    if animated { return "动画版" }
-    return hasAnimation && downloads ? "有动画版，下好后会动" : "系统表情，不会动"
+    if let pack = packID(id) { return EmojiPack.name(pack) ?? "动画表情" }
+    return isCustom(id) ? "系统表情" : ""
   }
 
-  /// 自己挑的系统表情正好是自带的那 28 个之一的同一个动画（🚀、👥、🐈‍⬛…）：换成自带的 id（纯函数）。存之前、收拾时、
-  /// 画之前都换一次——自带的那几个要垫浅底 / 亮光（plated、dim 按 id 认）、格子里亮的是那一格；旧版本也认得自带的 id
+  /// 存的值整理成一种写法（纯函数）：「pack:编号」正好是自带的那 28 个之一的同一个动画（🚀、👥…）就换成自带的 id——
+  /// 自带的那几个要垫浅底 / 亮光（plated、dim 按 id 认）、格子里亮的是那一格。系统表情（字）不换：用户要的就是系统的样子
   nonisolated static func canonical(_ symbol: String) -> String {
-    guard isCustom(symbol), let packID = EmojiPack.id(for: symbol),
-      let bundled = EmojiPack.bundledID(for: packID)
-    else { return symbol }
+    guard let pack = packID(symbol), let bundled = EmojiPack.bundledID(for: pack) else {
+      return symbol
+    }
     return bundled
   }
 
-  /// 能存的图标值：空（不要图标）、自带的动画表情、自己挑的系统表情
+  /// 能存的图标值：空（不要图标）、自带的动画表情、动画表情包里的（「pack:编号」）、系统表情
   nonisolated static func isValid(_ symbol: String) -> Bool {
-    symbol.isEmpty || ids.contains(symbol) || isCustom(symbol)
+    symbol.isEmpty || ids.contains(symbol) || packID(symbol) != nil || isCustom(symbol)
   }
 
-  /// 动画文件：清单里的 id 是包里的那个；自己挑的系统表情有动画版时是包里自带的同一个，或者下好了的缓存（EmojiPack）；
-  /// 别的（空、旧的符号名、乱写的、还没下好的）是 nil
+  /// 动画文件：自带的是包里的那个；动画表情包里的是下好了的缓存（EmojiPack）；系统表情、空的、乱写的、还没下好的是 nil
   nonisolated static func url(_ id: String) -> URL? {
     if id == eyes || ids.contains(id) {
       return Bundle.main.url(forResource: "status-emoji-" + id, withExtension: "heics")
     }
-    guard isCustom(id), let packID = EmojiPack.id(for: id) else { return nil }
-    if let bundled = EmojiPack.bundledID(for: packID) { return url(bundled) }
-    return EmojiPack.cachedURL(packID)
+    guard let pack = packID(id) else { return nil }
+    if let bundled = EmojiPack.bundledID(for: pack) { return url(bundled) }
+    return EmojiPack.cachedURL(pack)
   }
 
-  /// 要放了：解得出（自带的、已经下好的）就直接解；自己挑的系统表情还没下好，先下（有动画版、开关开着时）再解
+  /// 要放了：解得出（自带的、已经下好的）就直接解；动画表情包里还没下好的先下（开关开着时）再解
   static func load(_ id: String) async -> Frames? {
     if let frames = await decode(id) { return frames }
     guard await EmojiPack.shared.fetch(id) else { return nil }
@@ -128,7 +141,9 @@ enum StatusEmoji {
   /// 设置 › 通用里选的），不在这里定死
   static func menuImage(_ symbol: String) -> NSImage? {
     let id = canonical(symbol)
-    guard let still = still(id) else { return isCustom(id) ? customImage(id, side: 16) : nil }
+    guard let still = still(id) ?? thumbnail(id) else {
+      return isCustom(id) ? customImage(id, side: 16) : nil
+    }
     let size = NSSize(width: 16, height: 16)
     return plated.contains(id)
       ? platedImage(still, size: size) : NSImage(cgImage: still, size: size)
@@ -153,7 +168,21 @@ enum StatusEmoji {
     }
   }
 
-  /// 自己挑的系统表情画成一张小图（菜单项）。nonisolated：同上，画图的闭包可能在任何线程上调
+  /// 动画表情包里一个的小缩略图（包里带的 Resources/emoji-thumb-<编号>.heic，96 × 96；还没下好动画时垫它，选择弹窗的格子也用它）。
+  /// 按编号缓存，不是动画表情包里的是 nil
+  static func thumbnail(_ symbol: String) -> CGImage? {
+    guard let pack = packID(symbol) else { return nil }
+    let key = "thumb:" + pack as NSString
+    if let cached = stills.object(forKey: key) { return cached }
+    guard let url = Bundle.main.url(forResource: "emoji-thumb-" + pack, withExtension: "heic"),
+      let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+      let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
+    else { return nil }
+    stills.setObject(image, forKey: key)
+    return image
+  }
+
+  /// 系统表情画成一张小图（菜单项）。nonisolated：同上，画图的闭包可能在任何线程上调
   nonisolated private static func customImage(_ emoji: String, side: CGFloat) -> NSImage {
     NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
       let text = NSAttributedString(
@@ -282,13 +311,14 @@ struct StatusEmojiView: View {
     let _ = EmojiPack.shared.generation  // 动画表情下好了跟着重画
     let id = StatusEmoji.canonical(symbol)
     ZStack {
-      if let still = StatusEmoji.still(id) {
+      if let still = StatusEmoji.still(id) ?? StatusEmoji.thumbnail(id) {
+        // 动画表情包里还没下好的先垫包里带的小缩略图（同一个样子，糊一点）
         Image(decorative: still, scale: 1)
           .resizable()
           .interpolation(.high)
           .opacity(frames == nil ? 1 : 0)
       } else if StatusEmoji.isCustom(id) {
-        // 自己挑的系统表情还没有动画（没有动画版、还没下好）：系统表情字体画，按给的大小（这么大时略软，可以接受）
+        // 系统表情：系统表情字体画、不动，按给的大小（这么大时略软，可以接受）
         GeometryReader { proxy in
           Text(id)
             .font(.system(size: min(proxy.size.width, proxy.size.height) * 0.82))
@@ -357,7 +387,7 @@ struct StatusPresetIcon: View {
     self.plainColor = plainColor
   }
 
-  /// 和自带的是同一个动画的系统表情按自带的画（要垫浅底的那两个才垫得上）
+  /// 动画表情包里和自带的是同一个动画的按自带的画（要垫浅底的那两个才垫得上）
   private var symbol: String { StatusEmoji.canonical(stored) }
 
   var body: some View {
@@ -366,7 +396,9 @@ struct StatusPresetIcon: View {
   }
 
   @ViewBuilder private var icon: some View {
-    if let still = StatusEmoji.still(symbol), StatusEmoji.isCustom(symbol) {
+    if StatusEmoji.packID(symbol) != nil,
+      let still = StatusEmoji.still(symbol) ?? StatusEmoji.thumbnail(symbol)
+    {
       Image(decorative: still, scale: 1)
         .resizable()
         .interpolation(.high)

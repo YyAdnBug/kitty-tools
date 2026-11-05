@@ -162,6 +162,16 @@ struct StatusScreenTests {
       #expect(!StatusEmoji.isCustom(text), "\(text)")
     }
     #expect(StatusEmoji.isValid("") && StatusEmoji.isValid("zzz") && !StatusEmoji.isValid("eyes"))
+    // 0.7.1 认得的 16 个照旧放 symbol 键；新加的 12 个、动画表情包里的也放 emoji 键（0.7.1 不认得）
+    for icon in ["cook", "pack:dog"] {
+      var preset = StatusPreset.builtIn[2]
+      preset.symbol = icon
+      let json = try #require(
+        try JSONSerialization.jsonObject(with: JSONEncoder().encode(preset)) as? [String: Any])
+      #expect(json["symbol"] as? String == "" && json["emoji"] as? String == icon, "\(icon)")
+      #expect(StatusPreset.decode(try JSONEncoder().encode([preset])).first?.symbol == icon)
+    }
+    #expect(StatusEmoji.legacyIDs.count == 16 && !StatusEmoji.legacyIDs.contains("cook"))
 
     var tea = StatusPreset.builtIn[2]
     tea.symbol = "🍵"
@@ -198,9 +208,15 @@ struct StatusScreenTests {
     var reminder = Reminder.examples[0]
     reminder.symbol = "🐶"
     #expect(Reminder.sanitized([reminder]).first?.symbol == "🐶")
-    // 和自带的是同一个动画的系统表情收拾成自带的 id（垫浅底、亮格子、旧版本都按 id 认）
+    // 系统表情原样留着（要的就是系统的样子，2026-11-05 用户）；动画表情包里和自带同一个的收拾成自带的 id
     reminder.symbol = "🏃"
+    #expect(Reminder.sanitized([reminder]).first?.symbol == "🏃")
+    reminder.symbol = "pack:person-running"
     #expect(Reminder.sanitized([reminder]).first?.symbol == "person-running")
+    reminder.symbol = "pack:dog"
+    #expect(Reminder.sanitized([reminder]).first?.symbol == "pack:dog")
+    reminder.symbol = "pack:no-such-emoji"
+    #expect(Reminder.sanitized([reminder]).first?.symbol == "")
     reminder.symbol = "run"
     #expect(Reminder.sanitized([reminder]).first?.symbol == "")
   }
@@ -256,26 +272,30 @@ struct StatusScreenTests {
       bundled.emoji.values.allSatisfy {
         $0.allSatisfy { "abcdefghijklmnopqrstuvwxyz0123456789-".contains($0) }
       })
-    // 挑到 🚀（系统表情）：画的是自带的火箭动画；和自带的同一个动画的字换成自带的 id（👥 是「开会」、🐈‍⬛ 是黑猫：
-    // 要垫浅底 / 亮光的那两个按 id 认），别的不动
-    #expect(StatusEmoji.url("🚀") == StatusEmoji.url("rocket"))
-    #expect(StatusEmoji.canonical("🚀") == "rocket" && StatusEmoji.canonical("👥") == "busts")
-    #expect(StatusEmoji.canonical("🐈‍⬛") == "black-cat" && StatusEmoji.canonical("📞") == "telephone")
-    #expect(StatusEmoji.canonical("🐶") == "🐶" && StatusEmoji.canonical("rocket") == "rocket")
-    #expect(StatusPreset.emoji(for: "👥") == "busts")
+    // 系统表情（字）永远是系统的样子：没有动画文件、不换成自带的；动画表情包里的「pack:编号」和自带同一个的换成自带的 id
+    // （👥 的「开会」、黑猫要垫浅底 / 亮光，按 id 认），别的照旧
+    #expect(StatusEmoji.url("🚀") == nil && StatusEmoji.canonical("🚀") == "🚀")
+    #expect(StatusEmoji.canonical("pack:rocket") == "rocket")
+    #expect(StatusEmoji.canonical("pack:busts-in-silhouette") == "busts")
+    #expect(StatusEmoji.canonical("pack:telephone-receiver") == "telephone")
+    #expect(
+      StatusEmoji.canonical("pack:dog") == "pack:dog" && StatusEmoji.canonical("rocket") == "rocket"
+    )
+    #expect(StatusEmoji.url("pack:rocket") == StatusEmoji.url("rocket"))
+    #expect(StatusEmoji.packID("pack:dog") == "dog" && StatusEmoji.packID("pack:nope") == nil)
+    #expect(StatusEmoji.packID("dog") == nil && StatusEmoji.packID("🐶") == nil)
+    #expect(StatusEmoji.symbol(forPack: "dog") == "pack:dog")
+    #expect(StatusEmoji.symbol(forPack: "hourglass-not-done") == "hourglass")
+    #expect(StatusEmoji.isValid("pack:dog") && !StatusEmoji.isValid("pack:../x"))
+    #expect(
+      StatusPreset.emoji(for: "👥") == "👥" && StatusPreset.emoji(for: "pack:rocket") == "rocket")
     // 单测宿主里不联网下载
     #expect(!EmojiPack.isEnabled)
-    // 预览下面那行字：自带的（含同款的字）写中文名，自己挑的写清楚是动画版还是系统表情
-    func caption(_ symbol: String, animated: Bool = false, pack: Bool = false, on: Bool = true)
-      -> String
-    {
-      StatusEmoji.caption(symbol, animated: animated, hasAnimation: pack, downloads: on)
-    }
-    #expect(caption("rocket") == "火箭" && caption("🚀") == "火箭" && caption("") == "")
-    #expect(caption("🐶", animated: true, pack: true) == "动画版")
-    #expect(caption("🐶", pack: true) == "有动画版，下好后会动")
-    #expect(caption("🐶", pack: true, on: false) == "系统表情，不会动")
-    #expect(caption("👍🏽") == "系统表情，不会动")
+    // 预览下面那行字：自带的写中文名，动画表情包里的写名字，系统表情写「系统表情」
+    #expect(StatusEmoji.caption("rocket") == "火箭" && StatusEmoji.caption("pack:rocket") == "火箭")
+    #expect(
+      StatusEmoji.caption("pack:dog") == EmojiPack.name("dog") && StatusEmoji.caption("") == "")
+    #expect(StatusEmoji.caption("🐶") == "系统表情" && StatusEmoji.caption("👍🏽") == "系统表情")
   }
 
   /// 动画表情包的 release 联网自检（按需：TEST_RUNNER_KITTY_LIVE_EMOJI_PACK=1；发了新的表情包之后跑）：对照表里随便挑几个，

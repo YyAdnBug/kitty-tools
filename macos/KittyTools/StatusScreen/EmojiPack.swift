@@ -53,6 +53,16 @@ import Observation
     catalog?.emoji[glyph.replacingOccurrences(of: "\u{FE0F}", with: "")]
   }
 
+  /// 对照表里有的全部编号
+  nonisolated static let ids: Set<String> = Set(catalog?.emoji.values ?? [:].values)
+
+  nonisolated static func contains(_ id: String) -> Bool { ids.contains(id) }
+
+  /// 一个编号的名字（第 2 批换成中文名）
+  nonisolated static func name(_ id: String) -> String? {
+    contains(id) ? id.replacingOccurrences(of: "-", with: " ") : nil
+  }
+
   /// 动画包的编号如果是包里自带的那 28 个之一，自带的 id（不下载）
   nonisolated static func bundledID(for packID: String) -> String? {
     let id = bundledAliases[packID] ?? packID
@@ -74,10 +84,10 @@ import Observation
   /// 下载用的会话：不进系统的网址缓存（文件自己存一份就够了）
   private static let session = URLSession(configuration: .ephemeral)
 
-  /// 这个表情要用到了：有动画版、不是自带的、还没下好、开关开着，就下它。下好了（或本来就有）是 true
-  @discardableResult func fetch(_ glyph: String) async -> Bool {
-    guard StatusEmoji.isCustom(glyph), let catalog = Self.catalog,
-      let id = Self.id(for: glyph, in: catalog), Self.bundledID(for: id) == nil
+  /// 这个表情要用到了：是动画表情包里的（「pack:编号」）、不是自带的、还没下好、开关开着，就下它。下好了（或本来就有）是 true
+  @discardableResult func fetch(_ symbol: String) async -> Bool {
+    guard let catalog = Self.catalog, let id = StatusEmoji.packID(symbol),
+      Self.bundledID(for: id) == nil
     else { return false }
     if let url = Self.cachedURL(id) {
       try? FileManager.default.setAttributes([.modificationDate: Date.now], ofItemAtPath: url.path)

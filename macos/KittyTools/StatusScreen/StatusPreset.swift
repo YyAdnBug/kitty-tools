@@ -121,10 +121,11 @@ nonisolated struct StatusPreset: Codable, Hashable, Identifiable {
     if let emoji = try c.decodeIfPresent(String.self, forKey: .emoji) { symbol = emoji }
   }
 
-  /// 没挑系统表情的状态编出来和以前一个字节不差（旧版本照常同步它）；挑了的 symbol 写空、表情放在 emoji 键
+  /// 图标是 0.7.1 认得的那 16 个之一（或没有）的状态编出来和以前一个字节不差（旧版本照常同步它）；别的（新加的 12 个、
+  /// 动画表情包里的、系统表情）symbol 写空、图标放在 emoji 键
   func encode(to encoder: Encoder) throws {
     var c = encoder.container(keyedBy: CodingKeys.self)
-    let custom = StatusEmoji.isCustom(symbol)
+    let custom = !symbol.isEmpty && !StatusEmoji.legacyIDs.contains(symbol)
     try c.encode(id, forKey: .id)
     try c.encode(title, forKey: .title)
     try c.encodeIfPresent(detail, forKey: .detail)

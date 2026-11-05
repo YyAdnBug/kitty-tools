@@ -217,19 +217,13 @@ struct SymbolGrid: View {
 
   /// 最后一格：没挑过系统表情时是一个笑脸符号，挑过的画那个表情；点了都是打开系统的表情面板
   private var customCell: some View {
-    let _ = EmojiPack.shared.generation  // 挑的表情的动画下好了换成静止画面
-    let custom = StatusEmoji.isCustom(StatusEmoji.canonical(selection)) ? selection : nil
+    // 系统表情永远按系统的样子画（2026-11-05 用户：想用系统表情的就是要系统的样子），不换成动画版
+    let custom = StatusEmoji.isCustom(selection) ? selection : nil
     return Button {
       opensPicker += 1
     } label: {
       Group {
-        if let custom, let still = StatusEmoji.still(custom) {
-          // 有动画版、已经下好了：和别的格子一样画静止画面
-          Image(decorative: still, scale: 1)
-            .resizable()
-            .interpolation(.high)
-            .frame(width: Self.cell - 6, height: Self.cell - 6)
-        } else if let custom {
+        if let custom {
           Text(custom).font(.system(size: Self.cell - 10))
         } else {
           Image(systemName: "face.smiling").font(.system(size: 14, weight: .medium))
@@ -250,8 +244,8 @@ struct SymbolGrid: View {
         }
       }
       .overlay(alignment: .bottomTrailing) {
-        // 挑到和自带的同一个动画（🚀）：存成自带的 id，亮的是那一格
-        EmojiCatcher(trigger: opensPicker) { selection = StatusEmoji.canonical($0) }
+        // 系统表情原样存那个字
+        EmojiCatcher(trigger: opensPicker) { selection = $0 }
           .frame(width: 1, height: 1)
           .allowsHitTesting(false)  // 点格子是按按钮，不是点进这个输入框
       }
@@ -260,8 +254,8 @@ struct SymbolGrid: View {
     .buttonStyle(.plain)
     .onHover { hover(custom ?? "", $0) }
     .animation(.easeOut(duration: Style.fadeIn), value: custom)
-    .accessibilityLabel(custom.map { "其他表情：\($0)" } ?? "其他表情")
-    .help("挑一个其他表情（不会动）")
+    .accessibilityLabel(custom.map { "系统表情：\($0)" } ?? "系统表情")
+    .help("从系统表情里挑一个（按系统的样子画，不会动）")
     .accessibilityAddTraits(custom != nil ? .isSelected : [])
   }
 }
@@ -277,20 +271,15 @@ private struct EmojiPreview: View {
   static let side: CGFloat = 120
 
   var body: some View {
-    let _ = EmojiPack.shared.generation  // 下好了「有动画版，下好后会动」换成「动画版」
     VStack(spacing: 6) {
       if !symbol.isEmpty {
         StatusEmojiView(id: symbol, frames: frames)
           .frame(width: Self.side, height: Self.side)
-        Text(
-          StatusEmoji.caption(
-            symbol, animated: StatusEmoji.still(symbol) != nil,
-            hasAnimation: EmojiPack.id(for: symbol) != nil, downloads: EmojiPack.isEnabled)
-        )
-        .font(.callout)
-        .foregroundStyle(.secondary)
-        .lineLimit(1)
-        .truncationMode(.tail)
+        Text(StatusEmoji.caption(symbol))
+          .font(.callout)
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+          .truncationMode(.tail)
       }
     }
     .accessibilityHidden(true)  // 每一格自己有名字，这里只是看的
@@ -310,13 +299,13 @@ struct EmojiPackToggle: View {
   @AppStorage(Prefs.emojiPackDownloads) private var downloads = true
 
   static let footnote =
-    "挑的「其他表情」有动画版时，从 Kitty Tools 在 GitHub 上的发布页下载那个动画（一个约 0.2 MB，不带任何个人信息），"
-    + "存在这台 Mac 上、最多 50 MB；没下好、没联网时先显示不动的表情。"
+    "在「动画表情」里挑的，第一次用到时从 Kitty Tools 在 GitHub 上的发布页下载那个动画（一个约 0.2 MB，不带任何个人信息），"
+    + "存在这台 Mac 上、最多 50 MB；没下好、没联网时先显示缩略图。"
 
   var body: some View {
     Toggle(isOn: $downloads) {
       Text("自动下载动画表情")
-      Text("关掉后挑的其他表情都不动，已经下好的照样动")
+      Text("关掉后还没下好的动画表情先显示缩略图、不动，已经下好的照样动")
     }
   }
 }
