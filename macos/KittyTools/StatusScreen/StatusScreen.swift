@@ -389,8 +389,14 @@ import Observation
     let ids = Self.emojiToDecode(preset, animates: animates)
     guard !ids.isEmpty else { return }
     decoding = Task { [weak self] in
+      // 先把解得出的都解了（自带的、下好了的、眼睛），自己挑的系统表情还没下好的再去下：眼睛不等下载
       for id in ids {
         let decoded = await StatusEmoji.decode(id)
+        guard !Task.isCancelled, let self else { return }
+        self.frames[id] = decoded
+      }
+      for id in ids where self?.frames[id] == nil {
+        let decoded = await StatusEmoji.load(id)
         guard !Task.isCancelled, let self else { return }
         self.frames[id] = decoded
       }

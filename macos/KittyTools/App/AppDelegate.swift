@@ -47,7 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   /// ~/Library/Application Support/<bundle id>/（Debug 与 Release 的 bundle id 不同，数据天然隔离）：两个库、图片、
   /// 每日备份都在这里；设置 › 通用「数据目录」在访达里打开它
-  static let supportDirectory = URL.applicationSupportDirectory.appending(
+  nonisolated static let supportDirectory = URL.applicationSupportDirectory.appending(
     path: Bundle.main.bundleIdentifier ?? "com.yy.kitty-tools.native")
   private let dataDirectory = AppDelegate.supportDirectory
   /// 库和读它的三个仓库：一起打开，哪一步（开库、建表、读表）抛错都算打不开，不留开到一半的连接
@@ -625,6 +625,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   private lazy var settingsWindow: SettingsWindow = {
     weak var created: SettingsWindow?
+    // 新功能标记：换到一页（打开设置窗也算）时记下碰过，再算设置窗里该标哪几个（看着的那页不闪掉，WhatsNew.shown）
+    settingsNavigation.visit = { [unowned self] page in
+      let fresh = WhatsNew.current()
+      WhatsNew.touch(page: page)
+      let shown = WhatsNew.shown(visiting: page, fresh: fresh, showing: settingsNavigation.fresh)
+      if shown != settingsNavigation.fresh { settingsNavigation.fresh = shown }
+    }
     let window = SettingsWindow(navigation: settingsNavigation) { [unowned self] page in
       switch page {
       case .general:
@@ -742,7 +749,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // 单测以本 App 为宿主运行：不碰真实数据、不起热键
     if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil { return }
     if yieldToOlderInstance() { return }
+    // 新装把功能开关明写进偏好（只开四个；升级上来的不碰），在注册默认值之前（功能管理拍板 M4 M5）
+    Feature.seedNewInstall()
     Prefs.registerDefaults()
+    Task { await EmojiPack.trim() }  // 动画表情的缓存收到上限以内（主线程外）
     Prefs.migrate()
     AppAppearance.apply()  // 在任何浮层、设置窗、菜单出现之前
     // 打开数据：打不开时就在这里问用户（用备份 / 重新开始 / 退出），这时还没有热键和菜单栏图标
@@ -979,8 +989,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if turnedOn.contains(.dockPreview) {
       dockPreview.start()
       // 运行中打开时缺授权就带去授权（拍板 A3）：先要辅助功能（没有它用不了），有了再要屏幕录制（没有只列标题）；
-      // 启动时不问（关着的人、早就给过的人都不打扰）
-      if !launching {
+      // 启动时不问（关着的人、早就给过的人都不打扰）；在欢迎引导第一屏勾上的也不当场问，交给引导的授权那一屏（功能管理 M6：
+      // 当场弹会盖住引导，还把「请求过」用掉，授权屏的「去授权」就只能开系统设置了）
+      if !launching, !settingsNavigation.showsOnboarding {
         if !Permissions.isAccessibilityTrusted {
           Permissions.requestAccessibility()
         } else if !Permissions.isScreenRecordingAllowed {
@@ -1287,11 +1298,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 按现在的状态重排主界面（关着的功能、开关、在不在录、钉图、当前生效的快捷键）。appearing：新呼出，直接定大小；
   /// 开着时（切了开关）高度变了带动画
   private func refreshHome(appearing: Bool) {
+    let fresh = WhatsNew.current()
     homeModel.update(
-      Home.sections(state: menuState, keys: hotKeys.bindings.mapValues(\.display)),
+      Home.sections(
+        state: menuState, keys: hotKeys.bindings.mapValues(\.display),
+        fresh: Set(fresh.flatMap(\.actions))),
       offCount: Home.offCount(
         enabled: Feature.enabled, available: Set(Feature.allCases.filter(\.isAvailable))),
-      appearing: appearing)
+      settingsIsNew: WhatsNew.inSettingsOnly(fresh), appearing: appearing)
     if appearing {
       homePanel.setContentSize(homeModel.size)
     } else {
@@ -1456,6 +1470,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   func run(_ action: HotKeyAction, byKey: Bool = false) {
     // 关着的功能（Feature）：入口都藏了，这里兜底一道（漏网的路——别处直接调过来的——也挡住）
     guard action.isActive else { return }
+    // 新功能标记：用过一次就各处一起没（菜单、主界面、快捷键、启动器都走这里）
+    WhatsNew.touch(action: action)
     // 启动台是全屏面板：按别的功能键时先收掉（它自己的键走 toggle）
     if action != .launchpad, launchpad.isOpen { launchpad.close(animated: false) }
     // 主界面开着时按了别的功能（快捷键）：先收起它（从主界面点的，它已经收了）
@@ -1515,16 +1531,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   /// 菜单栏「提醒」一项带子菜单（提醒 D6）：新建提醒…（带全局快捷键）、下一个是什么、几分钟后提醒我、
   /// 暂停全部 / 恢复、管理提醒…
-  private func addReminderMenu(to menu: NSMenu) {
+  /// isNew：提醒是这一版新加的、还没碰过（新功能标记）：「提醒」和「新建提醒…」都挂「新」（子菜单的父项跟着挂，拍板 A4）
+  private func addReminderMenu(to menu: NSMenu, isNew: Bool) {
     let family = HotKeyAction.reminderNew
     let color = NSColor(family.color)
     let item = menu.addAction(SettingsPage.reminders.title, symbol: family.symbol, color: color) {}
     let submenu = NSMenu()
     let hotKey = hotKeys.bindings[family]
-    submenu.addAction(
+    let create = submenu.addAction(
       family.title + "…", symbol: "plus", color: color, key: hotKey?.menuKeyEquivalent ?? "",
       modifiers: hotKey?.modifierFlags ?? []
     ) { [unowned self] in run(family) }
+    if isNew {
+      item.badge = WhatsNew.menuBadge
+      create.badge = WhatsNew.menuBadge
+    }
     if let next = reminders.nextUp() {
       let when = Reminder.Schedule(kind: .once, date: next.at).summary(
         now: .now, calendar: .current)
@@ -1537,6 +1558,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       submenu.addAction(
         minutes == 60 ? "1 小时后提醒我" : "\(minutes) 分钟后提醒我", symbol: "timer", color: color
       ) { [unowned self] in
+        // 子菜单里的快捷提醒也算用过提醒（新功能标记）
+        WhatsNew.touch(action: family)
         addReminder(
           Reminder(
             id: UUID().uuidString, title: ReminderPhrase.defaultTitle,
@@ -2075,6 +2098,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       self?.recorded($0, .audio)
     }
     audioRecorder = recorder
+    ReminderSound.stop()  // 正在放的长提示音别录进去（提醒 C11）
     if immediately { return recorder.start() }
     // 先出控制条：来源可能在控制条上改，真正开始那一刻（点 ●、再触发一次）才查
     recorder.allowsStart = { [weak self] in self?.allowsAudioRecording($0) ?? false }
@@ -2118,6 +2142,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     self.recorder = recorder
     updater.blocker = "录制结束后再更新"
+    ReminderSound.stop()  // 正在放的长提示音别录进去（提醒 C11）
     recorder.start()
   }
 
@@ -2653,7 +2678,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private func recognizing<T>(_ work: () async -> T) async -> T {
     // 进程内识过字，模型就留在内存里：这一路不一定开关面板（⌥O 识字、钉图上识字），自己记得回头放掉
     defer { idleReclaim.schedule() }
-    if !OCR.isPrepared {
+    if !OCR.isPrepared() {
       let note = "第一次识字要等一分钟左右，以后就快了"
       island.show(Self.preparingTitle, detail: note, tone: .progress, symbol: "text.viewfinder")
       let started = ContinuousClock.now
@@ -2906,12 +2931,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private func buildStatusMenu(_ menu: NSMenu) {
     let state = menuState
     let extras = MenuExtra.allCases.filter { $0.isAvailable(state) }
+    // 新功能标记（WhatsNew）：这一版新加、还没碰过的动作挂系统的菜单徽标「新」；只在设置里才有入口的，挂在「设置…」上
+    let fresh = WhatsNew.current()
+    let freshActions = Set(fresh.flatMap(\.actions))
     func addExtra(_ extra: MenuExtra) {
       let item = menu.addAction(
         extra.title(pinsHidden: state.pinsHidden == true), symbol: extra.symbol,
         color: NSColor(extra.color), key: extra == .settings ? "," : extra == .quit ? "q" : ""
       ) { [unowned self] in run(extra) }
       if let on = extra.isOn(state) { item.state = on ? .on : .off }
+      if extra == .settings, WhatsNew.inSettingsOnly(fresh) { item.badge = WhatsNew.menuBadge }
     }
     // 有新版本时最上面一项就是更新（强调色：现在该操作的东西）
     if let release = updater.available {
@@ -2924,13 +2953,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     for (index, section) in HotKeyAction.sections.filter({ $0.actions != [.home] }).enumerated() {
       if index > 0 { menu.addItem(.separator()) }
       if section.actions == [.reminderNew] {
-        addReminderMenu(to: menu)
+        addReminderMenu(to: menu, isNew: freshActions.contains(.reminderNew))
         continue
       }
       if section.actions == [.statusScreen] {
         let family = HotKeyAction.statusScreen
         let color = NSColor(family.color)
         let item = menu.addAction(family.title, symbol: family.symbol, color: color) {}
+        if freshActions.contains(family) { item.badge = WhatsNew.menuBadge }
         let submenu = NSMenu()
         let hotKey = hotKeys.bindings[family]
         if !state.statusEntersFirst {
@@ -2963,11 +2993,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       }
       for action in section.actions {
         let binding = hotKeys.bindings[action]
-        menu.addAction(
+        let item = menu.addAction(
           action.title(recording: state.recording == action), symbol: action.symbol,
           color: NSColor(action.color),
           key: binding?.menuKeyEquivalent ?? "", modifiers: binding?.modifierFlags ?? []
         ) { [unowned self] in run(action) }
+        if freshActions.contains(action) { item.badge = WhatsNew.menuBadge }
       }
       for extra in extras where section.actions.contains(where: { $0 == extra.section }) {
         addExtra(extra)
@@ -3001,12 +3032,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       firstInstall = true
       onboardingStart = OnboardingView.resume(
         reached: reached,
-        granted: Permissions.isAccessibilityTrusted && Permissions.isScreenRecordingAllowed)
+        granted: OnboardingView.granted(OnboardingView.permissions(for: Feature.enabled)))
       showSettings(page: .general, onboarding: true)
       return
     }
     // 从有「请求过」标记之前的版本升上来的：系统的授权框多半早弹过，标记补成请求过（U10）
     if let last { Permissions.adoptRequestFlags(upgradingFrom: last, defaults: defaults) }
+    // 新功能标记：上次打开的版本之后加的那几样从现在起标（新装走不到这里，不标）
+    WhatsNew.adopt(upgradingFrom: last, to: AboutTab.version, defaults: defaults)
     defaults.set(AboutTab.version, forKey: Prefs.lastSeenVersion)
     if last != AboutTab.version {
       let summary = AboutTab.releases.first { $0.version == AboutTab.version }?.summary

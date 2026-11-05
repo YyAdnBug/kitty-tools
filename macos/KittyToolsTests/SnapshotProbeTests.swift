@@ -1209,6 +1209,38 @@ struct SnapshotProbeTests {
     try snapshot(
       ReminderDetail(id: "call", fixed: [late], now: now), size: NSSize(width: 590, height: 700),
       dark: false, to: "\(out)/reminders-detail-problem.png")
+    // 提示音是别的 Mac 上自己选的文件（这台没有）：那一行下面说到点响什么；自定义每 7 分钟催；图标是自己挑的系统表情
+    var bell = call
+    bell.chime = "file:下课铃.mp3"
+    bell.nagMinutes = 7
+    bell.symbol = "🐶"  // 自己挑的系统表情（还没下好动画）：页头和图标格子最后一格画系统表情字
+    try snapshot(
+      ReminderDetail(id: "call", fixed: [bell], now: now), size: NSSize(width: 590, height: 1100),
+      dark: false, to: "\(out)/reminders-detail-sound.png")
+    // 图标格子的预览：选中的那个在标题和格子之间那块里居中放大（屏外画的是静止画面）；深色一张；设置窗最窄时（详情页约 470 宽）
+    // 放不放得下；选了动画表情包里的、系统表情
+    for (name, selection, dark, width) in [
+      ("selected", "hot-beverage", false, 590.0), ("dark", "birthday-cake", true, 590),
+      ("narrow", "rocket", false, 470), ("custom-pack", "pack:dog", false, 590),
+      ("custom-static", "👍🏽", false, 590),
+    ] {
+      try snapshot(
+        Form { SymbolGrid(selection: .constant(selection)) }.formStyle(.grouped),
+        size: NSSize(width: width, height: 330), dark: dark,
+        to: "\(out)/reminders-icon-grid-\(name).png")
+    }
+    // 「动画表情」气泡：开头那几行（选着狗）、搜「狗」、深色。格子的缩略图平时在主线程外解，屏外只画一遍：先解进缓存
+    for entry in (EmojiPack.catalog?.emoji ?? []).prefix(60) { _ = EmojiPack.thumbnail(entry.id) }
+    for entry in EmojiPack.search("狗", in: EmojiPack.catalog?.emoji ?? []) {
+      _ = EmojiPack.thumbnail(entry.id)
+    }
+    for (name, query, dark) in [("smileys", "", false), ("search", "狗", false), ("dark", "", true)]
+    {
+      try snapshot(
+        AnimatedEmojiPicker(selection: "pack:dog", pick: { _ in }, query: query),
+        size: AnimatedEmojiPicker.size, dark: dark,
+        to: "\(out)/reminders-animated-picker-\(name).png")
+    }
     // 刘海岛上挂着的提醒：一条（带说明）、几条合成一条、错过的；收着 / 展开，刘海屏 / 胶囊
     let notch = Island.Geometry.notch(width: 200, height: 32)
     let capsule = Island.Geometry.capsule(menuBar: 24)
@@ -4272,6 +4304,47 @@ struct SnapshotProbeTests {
     try snapshot(
       root(), size: NSSize(width: 780, height: 1120), dark: false,
       to: "\(out)/features-launchpad-off.png")
+  }
+
+  /// 新功能标记（Shell/WhatsNew.swift，2026-11-05）：设置窗停在通用页、提醒和「功能」那一节都标着（侧栏行尾的「新」、页里那一节
+  /// 标题后的「新」；浅 / 深，外加窗口是 key、选中行是强调色的那一张），主界面里「新建提醒」名字前的小圆点和底栏「设置」前的小圆点
+  /// （浅 / 深）。几秒，图以 whatsnew- 开头：-only-testing:'KittyToolsTests/SnapshotProbeTests/whatsNew()'。
+  /// 标记直接摆在 SettingsNavigation.fresh / Home.sections 的 fresh 上，不碰偏好；开关读临时偏好域
+  @Test(.enabled(if: directory != nil)) func whatsNew() throws {
+    let out = try #require(Self.directory)
+    try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
+    Prefs.registerDefaults()
+    let name = "kitty-snapshot-whatsnew-\(UUID().uuidString)"
+    let prefs = try #require(UserDefaults(suiteName: name))
+    defer { prefs.removePersistentDomain(forName: name) }
+    let navigation = SettingsNavigation(defaults: nil)  // 换页不写用户的偏好
+    navigation.page = .general
+    navigation.fresh = ["reminders", "features"]
+    func root() -> some View {
+      SettingsRoot(navigation: navigation) { _ in
+        AnyView(GeneralTab().defaultAppStorage(prefs))
+      } onboarding: {
+        AnyView(EmptyView())
+      }
+    }
+    for dark in [false, true] {
+      try snapshot(
+        root(), size: NSSize(width: 780, height: 600), dark: dark,
+        to: "\(out)/whatsnew-settings\(dark ? "-dark" : "").png")
+    }
+    try snapshot(
+      root().environment(\.controlActiveState, .key), size: NSSize(width: 780, height: 600),
+      dark: false, to: "\(out)/whatsnew-settings-key.png", prepare: Self.emphasizeTableRows)
+    var state = LauncherItem.ActionState()
+    state.features = Set(Feature.allCases)
+    let home = HomeModel(
+      sections: Home.sections(state: state, keys: [.screenshot: "⌥A"], fresh: [.reminderNew]),
+      settingsIsNew: true)
+    for dark in [false, true] {
+      try snapshot(
+        HomeView(model: home), size: home.size, dark: dark,
+        to: "\(out)/whatsnew-home\(dark ? "-dark" : "").png")
+    }
   }
 
   /// 设置 › 通用「同步」（2026-10-23，SyncSection）：没开、第一轮还没完 / 第一轮就停了、好了（两台别的 Mac、还在下载几个；

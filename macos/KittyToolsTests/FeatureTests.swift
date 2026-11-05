@@ -135,6 +135,37 @@ struct FeatureTests {
     #expect(ShortcutsSheet.groups(enabled: []).map(\.title) == ["刘海岛", "主界面", "设置"])
   }
 
+  /// 新装（没看过任何一版）第一次启动把开关明写进偏好：常用的四个开、别的关（功能管理拍板 M4 M5）；已经存过的不动
+  /// （引导里改过、中途退出再开）；升级上来的（看过某一版，或 0.7.1 开过引导）一个都不写，没动过的照旧按 defaultOn
+  @Test func seedsNewInstallOnly() throws {
+    let suite = "kitty-test-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    func stored() -> [String: Any] { defaults.persistentDomain(forName: suite) ?? [:] }
+    defaults.set(true, forKey: Feature.notes.prefsKey)
+    Feature.seedNewInstall(defaults, domainName: suite)
+    #expect(
+      Feature.allCases.filter { stored()[$0.prefsKey] as? Bool == true }
+        == [.clipboard, .launcher, .translate, .screenshot, .notes])
+    #expect(Feature.allCases.allSatisfy { stored()[$0.prefsKey] is Bool })
+    // 再来一次不变
+    defaults.set(false, forKey: Feature.clipboard.prefsKey)
+    Feature.seedNewInstall(defaults, domainName: suite)
+    #expect(stored()[Feature.clipboard.prefsKey] as? Bool == false)
+
+    let upgraded = "kitty-test-\(UUID().uuidString)"
+    let old = try #require(UserDefaults(suiteName: upgraded))
+    defer { old.removePersistentDomain(forName: upgraded) }
+    old.set("0.7.1", forKey: Prefs.lastSeenVersion)
+    Feature.seedNewInstall(old, domainName: upgraded)
+    #expect(old.persistentDomain(forName: upgraded)?.keys.sorted() == [Prefs.lastSeenVersion])
+    // 0.7.1 开过引导、没走完（看过哪一版还空着）：也算升级上来的
+    old.removeObject(forKey: Prefs.lastSeenVersion)
+    old.set(1, forKey: Prefs.onboardingScreen)
+    Feature.seedNewInstall(old, domainName: upgraded)
+    #expect(old.persistentDomain(forName: upgraded)?.keys.sorted() == [Prefs.onboardingScreen])
+  }
+
   /// 启动台原来的总开关（launchpadEnabled，没发布过）挪进功能开关一次：只在新键没存过时搬，旧键都删
   @Test func migratesLaunchpadSwitch() throws {
     let suite = "kitty-test-\(UUID().uuidString)"

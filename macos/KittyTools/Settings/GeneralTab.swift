@@ -27,13 +27,21 @@ struct GeneralTab: View {
   @State private var loginError: String?
   /// NSPasteboard.AccessBehavior 的 rawValue（这个类型 macOS 15.4 才有），窗口变成 key 时刷新
   @State private var pasteboardBehavior = Self.currentPasteboardBehavior
+  /// 新功能标记读它（截图自检单独画这一页时没有）
+  @Environment(SettingsNavigation.self) private var navigation: SettingsNavigation?
 
   var body: some View {
     Form {
       Section {
         ForEach(Feature.allCases.filter(\.isAvailable), id: \.self) { FeatureToggle(feature: $0) }
       } header: {
-        Text("功能")
+        HStack(spacing: 6) {
+          Text("功能")
+          // 新功能标记：0.8.0 加的这一节（WhatsNew），看着的时候留着、换页才没
+          if let navigation, WhatsNew.marks(section: "功能", of: .general, in: navigation.fresh) {
+            NewTag()
+          }
+        }
       } footer: {
         SectionFootnote("关掉的功能不出现在快捷键、菜单栏和启动器里，也不在后台运行；它的数据和设置都留着，打开就回来。")
       }
@@ -216,7 +224,7 @@ extension PermissionRow {
   /// 「去授权」只弹一个窗（U10）：没请求过弹系统授权框，请求过了才打开系统设置
   static func accessibility(granted: Bool) -> PermissionRow {
     PermissionRow(
-      title: "辅助功能", detail: "粘贴回原 App、划词翻译、长截图自动滚动、录屏显示按键、程序坞预览",
+      title: "辅助功能", detail: "粘贴回原 App、划词翻译、长截图自动滚动、录屏显示按键、状态屏拦住键鼠、程序坞预览",
       symbol: "hand.raised.fill", color: Style.Family.command, granted: granted
     ) { Permissions.grant(.accessibility) }
   }

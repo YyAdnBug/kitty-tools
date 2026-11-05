@@ -8,7 +8,7 @@
 // 全屏 = ReminderScreen（岛上不再挂），进入状态屏 = 到点直接进那个状态、算处理了（进不去时退成全屏，底板上说为什么，C12）。
 // 正在录屏、录音时全都降成轻提醒、也不出声（C11，不然录进去）；在状态屏里、锁着屏时一条都不响，退出 / 解锁后再看。
 // ponytail: 已经出来的边框 / 全屏，之后才开始录屏的不收（会录进去）；要的话在录屏开始时调一次 present。
-// 声音（C9）：提示音或朗读标题，只响一声。催促（C10）：岛上挂着没理的，每隔 N 分钟再响一声、岛晃一下，第 3 次换成全屏，
+// 声音（C9）：提示音或朗读标题，只响一声（提示音可以是自己选的文件，最多 30 秒、处理了就停，ReminderSound）。催促（C10）：岛上挂着没理的，每隔 N 分钟再响一声、岛晃一下，第 3 次换成全屏，
 // 之后不再催。
 // 状态（每条处理到哪一刻、推到几点）存在 Prefs.remindersState：这台电脑自己的，不导出；间隔的锚点只在内存里（重启就是重新数）。
 // 起停跟着功能开关（AppDelegate.applyFeatures）；关掉时岛上挂着的收掉，数据和状态不动。
@@ -97,6 +97,10 @@ import AppKit
     observe()
     listData = defaults.data(forKey: Prefs.reminders)
     list = Reminder.decode(listData)
+    // 没有提醒在用的提示音文件清掉（只在存过列表时：没存过 / 解不出来时 decode 给的是示例，不能拿它当准）
+    if let listData, (try? JSONSerialization.jsonObject(with: listData)) is [Any] {
+      ReminderSound.purge(keeping: Set(list.map(\.chime)))
+    }
     state = ReminderState.decode(defaults.data(forKey: Prefs.remindersState))
     restartIntervals(at: .now)
     reconcile()
@@ -113,6 +117,7 @@ import AppKit
     for (center, token) in observers { center.removeObserver(token) }
     observers = []
     if !firing.isEmpty || !missed.isEmpty { island?.unpin() }
+    ReminderSound.stop()
     hideSurfaces()
     firing = []
     missed = []
@@ -372,6 +377,7 @@ import AppKit
 
   /// 「知道了」：挂着的都算处理了
   private func acknowledge() {
+    ReminderSound.stop()  // 自己选的长音频：用户处理了才停（进入状态屏、只剩错过的那几条收面板时不停：刚响的那声还要响完）
     let handled = firing + missed
     firing = []
     missed = []
@@ -380,6 +386,7 @@ import AppKit
 
   /// 「稍后」：到点的推 N 分钟（岛上是设置里定的那个，全屏上能另选）；一起挂着的错过的算处理了
   private func snooze(minutes: Int? = nil) {
+    ReminderSound.stop()
     let until = Date.now.addingTimeInterval(TimeInterval((minutes ?? snoozeMinutes) * 60))
     for id in firing { state.snoozed[id] = until }
     let handled = missed
@@ -423,7 +430,7 @@ import AppKit
   private func sound(for reminders: [Reminder]) {
     guard !isRecording(), let first = reminders.first(where: { $0.sound != .none }) else { return }
     switch first.sound {
-    case .chime: NSSound(named: first.chime)?.play()
+    case .chime: ReminderSound.play(first.chime)
     case .speak: speak(reminders.map(\.title).joined(separator: "，"))
     case .none: break
     }

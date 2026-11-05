@@ -194,8 +194,8 @@ struct ReminderTests {
     bad.title = "  有\n换行  "
     bad.symbol = "not-an-emoji"
     bad.fullSeconds = 7
-    bad.nagMinutes = 3
-    bad.chime = "Nope"
+    bad.nagMinutes = 121
+    bad.chime = "../Nope"
     bad.schedule = Schedule(kind: .interval, time: 2000, until: 10, days: [], day: 40, every: 1)
     var dup = Self.weekly("x")
     dup.title = "重复的 id"
@@ -212,6 +212,65 @@ struct ReminderTests {
     #expect(clean.schedule.every == 5)
     let many = (0..<60).map { Self.weekly("r\($0)") }
     #expect(Reminder.sanitized(many).count == Reminder.maxCount)
+  }
+
+  /// 提示音编号（2026-11-04 用户反馈）：系统 / 个人「声音」文件夹里的声音名、自己选的文件「file:名字.扩展名」；别的 Mac 上的
+  /// 声音这台没有也留着；路径、隐藏文件、不认识的扩展名不认（导入的文件、同步文件夹里来的是不可信输入）
+  @Test func chimeIDs() {
+    #expect(ReminderSound.isValid("Glass") && ReminderSound.isValid("我的铃声"))
+    #expect(ReminderSound.isValid("file:下课铃.mp3") && ReminderSound.isValid("file:a.M4A"))
+    for bad in [
+      "", "../x", "a/b", ".hidden", "file:", "file:../x.mp3", "file:x.exe", "file:.x.mp3",
+      "file:a/b.mp3", "file:x", "a:b", String(repeating: "长", count: 101),
+    ] {
+      #expect(!ReminderSound.isValid(bad), "\(bad)")
+    }
+    #expect(ReminderSound.title(of: "Glass") == "玻璃")
+    #expect(ReminderSound.title(of: "file:下课铃.mp3") == "下课铃")
+    var other = Self.weekly("x")
+    other.chime = "file:别的 Mac 上的.m4a"
+    #expect(Reminder.sanitized([other]).first?.chime == "file:别的 Mac 上的.m4a")
+    // 没理会时再催：菜单照 Due 的一排，有 1 分钟；自定义的 1–120 留着，别的当不催
+    #expect(Reminder.nagChoices == [0, 1, 5, 10, 15, 30, 60])
+    for (minutes, kept) in [(7, 7), (120, 120), (121, 0), (-1, 0)] {
+      var nag = Self.weekly("n")
+      nag.nagMinutes = minutes
+      #expect(Reminder.sanitized([nag]).first?.nagMinutes == kept, "\(minutes)")
+    }
+  }
+
+  /// 选文件：拷进目录、编号用原名；同一个文件再选用已有的，同名不同内容的加数字；放不了的不收；没人用的清掉
+  @Test func importsAndPurgesChimeFiles() throws {
+    let manager = FileManager.default
+    let root = manager.temporaryDirectory.appending(path: "kitty-sounds-\(UUID().uuidString)")
+    defer { try? manager.removeItem(at: root) }
+    let dir = root.appending(path: "sounds")
+    let glass = URL(filePath: "/System/Library/Sounds/Glass.aiff")
+    let id = try ReminderSound.importFile(glass, into: dir)
+    #expect(id == "file:Glass.aiff")
+    #expect(try ReminderSound.importFile(glass, into: dir) == id)
+
+    let elsewhere = root.appending(path: "elsewhere")
+    try manager.createDirectory(at: elsewhere, withIntermediateDirectories: true)
+    let lookalike = elsewhere.appending(path: "Glass.aiff")
+    try manager.copyItem(at: URL(filePath: "/System/Library/Sounds/Ping.aiff"), to: lookalike)
+    let second = try ReminderSound.importFile(lookalike, into: dir)
+    #expect(second == "file:Glass 2.aiff")
+    // 盘不分大小写：同内容的 glass.aiff 用盘上那个 Glass.aiff 的名字（不然清理会把在用的当成没人用）
+    let lowerDir = root.appending(path: "lower")
+    try manager.createDirectory(at: lowerDir, withIntermediateDirectories: true)
+    let lower = lowerDir.appending(path: "glass.aiff")
+    try manager.copyItem(at: glass, to: lower)
+    #expect(try ReminderSound.importFile(lower, into: dir) == id)
+
+    let fake = elsewhere.appending(path: "不是声音.mp3")
+    try Data("hello".utf8).write(to: fake)
+    #expect(throws: ReminderSound.ImportError.unreadable) {
+      try ReminderSound.importFile(fake, into: dir)
+    }
+
+    ReminderSound.purge(keeping: [id, "Glass"], in: dir)
+    #expect(try manager.contentsOfDirectory(atPath: dir.path) == ["Glass.aiff"])
   }
 
   /// 逐个字段兜底：不认识的种类换成默认、缺的字段补上；一条缺标题只丢它；没存过是示例，存过空的就是空的
@@ -248,6 +307,38 @@ struct ReminderTests {
       Reminder.new(now: Self.at(2, 9, 20), calendar: Self.calendar).schedule.date == Self.at(2, 10))
     #expect(
       Reminder.new(now: Self.at(2, 9, 55), calendar: Self.calendar).schedule.date == Self.at(2, 11))
+  }
+
+  /// 「+」›「新提醒」先不存：详情页第一次改动时才加到末尾（开着），之后按 id 换；别的 id、满了都不加；
+  /// 列表里有的照旧按 id 换（2026-11-05 用户报「没开任何提醒，刘海却提示新提醒」：点开看了一眼就退回的那条
+  /// 原来已经存进去、开着，整点响了）
+  @Test func newReminderIsSavedOnFirstEdit() {
+    let fresh = Reminder.new(id: "n", now: Self.at(2, 9, 23), calendar: Self.calendar)
+    #expect(fresh.isOn)
+    let list = Reminder.examples
+    var titled = fresh
+    titled.title = "交周报"
+    let saved = Reminder.saving(titled, to: list, fresh: fresh)
+    #expect(saved == list + [titled])
+    // 第一下就把标题删光了：先用「新提醒」存上，接着打的字按 id 换
+    var blank = fresh
+    blank.title = " "
+    #expect(Reminder.saving(blank, to: list, fresh: fresh) == list + [fresh])
+    var moved = titled
+    moved.schedule.date = Self.at(2, 14, 30)
+    #expect(Reminder.saving(moved, to: saved, fresh: fresh) == list + [moved])
+    // 不是这一条的新提醒、没有新提醒（从列表点进来，那条已经被删掉 / 响过拿掉了）、满了：都不加
+    var other = titled
+    other.id = "x"
+    #expect(Reminder.saving(other, to: list, fresh: fresh) == list)
+    #expect(Reminder.saving(titled, to: list, fresh: nil) == list)
+    let full = (0..<Reminder.maxCount).map { index in
+      Reminder(id: "r\(index)", title: "第 \(index) 条", schedule: .init(kind: .weekly))
+    }
+    #expect(Reminder.saving(titled, to: full, fresh: fresh) == full)
+    var renamed = list[0]
+    renamed.title = "多喝水"
+    #expect(Reminder.saving(renamed, to: list, fresh: fresh)[0].title == "多喝水")
   }
 
   // MARK: 字

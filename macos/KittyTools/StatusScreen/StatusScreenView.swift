@@ -625,7 +625,7 @@ struct StatusPreview: View {
     .accessibilityHidden(true)
     .task(id: target) {
       if playing != nil { playing = nil }
-      guard !target.isEmpty, let frames = await StatusEmoji.decode(target), !Task.isCancelled
+      guard !target.isEmpty, let frames = await StatusEmoji.load(target), !Task.isCancelled
       else { return }
       playing = (target, frames)
     }

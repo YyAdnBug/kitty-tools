@@ -100,10 +100,12 @@ struct StatusScreenTab: View {
             Text("告示上的动画")
             Text("关掉后表情不动、进入时不做出场、屏幕边上不冒眼睛；标题照样晃一下")
           }
+          EmojiPackToggle()
         } header: {
           Text("动画")
         } footer: {
-          SectionFootnote("系统设置里打开了「减弱动态效果」时，这些动画都不做，标题也不晃。")
+          SectionFootnote(
+            "系统设置里打开了「减弱动态效果」时，这些动画都不做，标题也不晃。" + EmojiPackToggle.footnote)
         }
         Section {
           LabeledContent {

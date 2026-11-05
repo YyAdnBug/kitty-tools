@@ -1,7 +1,9 @@
 // 首次安装的欢迎引导（N14，Whisker 品牌时刻，对标 Apple 自家 App 的首次启动页 / Raycast）：盖在设置窗上的 sheet，奶油底，三屏。
-// 第一屏 = 品牌图标 + 大标题 + 全部功能两列（家族色块 + 名字 + Feature.blurb，这台系统上有的都列，加了功能这里自己跟上；
-// 2026-10-26 用户报引导还停在四件套）；
-// 第二屏「授权」= 辅助功能、屏幕录制两行（PermissionRow，同 设置 › 通用 › 权限，每秒刷新），别的授权用到时再问；
+// 第一屏 = 品牌图标 + 大标题 + 全部功能两列（勾选框 + 家族色块 + 名字 + Feature.blurb，这台系统上有的都列，加了功能这里自己跟上；
+// 2026-10-26 用户报引导还停在四件套）。勾选框就是功能开关（同 设置 › 通用 › 功能，立即生效）：新装时只勾着常用的四样
+// （Feature.seedNewInstall），用得上的勾上（2026-11-04 功能管理拍板 M6，对标 PowerToys / Raycast 的首次引导）；
+// 第二屏「授权」= 勾上的功能用得着的辅助功能、屏幕录制（OnboardingView.permissions；PermissionRow，同 设置 › 通用 › 权限，
+// 每秒刷新），一项都用不着就跳过这一屏，别的授权用到时再问；
 // 第三屏「按一下试试」= 主要全局快捷键一行一个（Whisker 键帽），用户真的按下、热键触发时（热键照常执行，面板照样弹出）
 // 那一行弹出品牌粉 ✓（pop）：热键弹出的面板 / 截图遮罩正盖在引导上，所以 ✓ 等引导所在的 sheet 重新成为 key
 // （用户关掉面板、截完图回来）再弹，播报是即时的。屏与屏之间 settle 滑过去，减弱动态效果时只淡入淡出；
@@ -22,7 +24,29 @@ struct OnboardingView: View {
     static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
   }
 
-  /// 没走完的引导下次接着开时从哪一屏起（纯函数，E1）：做到过第三屏的回第三屏；停在第二屏（授权）的，两项都已经授权了
+  /// 第二屏要开的授权（纯函数，M6）：勾上的功能里有用得着的才列，顺序固定（辅助功能在前）。辅助功能管粘贴回原 App（剪贴板、
+  /// 启动器）、划词、长截图自动滚动、录屏显示按键、状态屏拦键鼠、程序坞预览；屏幕录制管截图（截图翻译、识字也是）、录屏、
+  /// 程序坞预览的缩略图。便签、提醒、启动台用不着（提醒的「进入状态屏」到时候再问）
+  static func permissions(for features: Set<Feature>) -> [Permissions.Kind] {
+    let accessibility: Set<Feature> = [
+      .clipboard, .launcher, .translate, .screenshot, .record, .statusScreen, .dockPreview,
+    ]
+    let screenRecording: Set<Feature> = [.translate, .screenshot, .record, .dockPreview]
+    return [
+      features.isDisjoint(with: accessibility) ? nil : .accessibility,
+      features.isDisjoint(with: screenRecording) ? nil : .screenRecording,
+    ].compactMap { $0 }
+  }
+
+  /// 那几项授权都给了没有（没走完的引导接着开时用）
+  static func granted(_ kinds: [Permissions.Kind]) -> Bool {
+    kinds.allSatisfy {
+      $0 == .accessibility
+        ? Permissions.isAccessibilityTrusted : Permissions.isScreenRecordingAllowed
+    }
+  }
+
+  /// 没走完的引导下次接着开时从哪一屏起（纯函数，E1）：做到过第三屏的回第三屏；停在第二屏（授权）的，要的几项都已经授权了
   /// （多半是授权屏幕录制后系统让重开）就直接到第三屏，还缺的回第二屏接着授权；只看过第一屏、没记录的从头来
   static func resume(reached: Screen?, granted: Bool) -> Screen {
     switch reached {
@@ -74,7 +98,8 @@ struct OnboardingView: View {
       ZStack {
         switch screen {
         case .welcome: WelcomeScreen().transition(slide)
-        case .permissions: PermissionScreen().transition(slide)
+        case .permissions:
+          PermissionScreen(kinds: Self.permissions(for: Feature.enabled)).transition(slide)
         case .tryIt:
           TryScreen(center: center, tried: tried, launchAtLogin: $launchAtLogin).transition(slide)
         }
@@ -84,7 +109,8 @@ struct OnboardingView: View {
       Button {
         let next: Screen? =
           switch screen {
-          case .welcome: .permissions
+          // 勾上的功能一项授权都用不着：跳过授权那一屏
+          case .welcome: Self.permissions(for: Feature.enabled).isEmpty ? .tryIt : .permissions
           case .permissions: .tryIt
           case .tryIt: nil
           }
@@ -213,7 +239,7 @@ private struct RowCard<Item: Hashable, Row: View>: View {
   }
 }
 
-/// 第一屏：品牌图标 + 大标题 + 这台系统上有的全部功能，两列（名字、色块取设置页的，一句话是 Feature.blurb）
+/// 第一屏：品牌图标 + 大标题 + 这台系统上有的全部功能，两列，每格一个勾选框（名字、色块取设置页的，一句话是 Feature.blurb）
 private struct WelcomeScreen: View {
   var body: some View {
     let features = Feature.allCases.filter(\.isAvailable)
@@ -222,25 +248,14 @@ private struct WelcomeScreen: View {
       BrandIcon(size: 64)
       Heading(
         title: "欢迎使用 Kitty Tools",
-        subtitle: "这些小工具都住在菜单栏里，用快捷键随叫随到。\n用不上的可以到 设置 › 通用 › 功能 里关掉。"
+        subtitle: "这些小工具都住在菜单栏里，用快捷键随叫随到。\n勾上要用的，以后在 设置 › 通用 › 功能 里随时改。"
       )
       .padding(.top, 8)
-      Grid(alignment: .topLeading, horizontalSpacing: 16, verticalSpacing: 12) {
+      Grid(alignment: .topLeading, horizontalSpacing: 16, verticalSpacing: 10) {
         ForEach(Array(stride(from: 0, to: features.count, by: 2)), id: \.self) { start in
           GridRow {
-            ForEach(features[start..<min(start + 2, features.count)], id: \.self) { feature in
-              HStack(alignment: .top, spacing: 10) {
-                KindTile(symbol: feature.page.symbol, color: feature.page.color, size: 24)
-                VStack(alignment: .leading, spacing: 1) {
-                  Text(feature.title).fontWeight(.medium)
-                  Text(feature.defaultOn ? feature.blurb : "\(feature.blurb)（默认关）")
-                    .font(.subheadline).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 0)
-              }
-              .frame(maxWidth: .infinity, alignment: .leading)
-              .accessibilityElement(children: .combine)
+            ForEach(features[start..<min(start + 2, features.count)], id: \.self) {
+              FeatureChoice(feature: $0)
             }
           }
         }
@@ -249,23 +264,57 @@ private struct WelcomeScreen: View {
       .background(.background, in: shape)
       .overlay(shape.hairlineBorder())
       .padding(.horizontal, 36)
-      .padding(.top, 16)
+      .padding(.top, 14)
     }
   }
 }
 
-/// 第二屏：辅助功能、屏幕录制两行（同 设置 › 通用 › 权限），每秒刷新（在系统设置里打开开关后，回到这里马上变）
+/// 第一屏的一格：系统勾选框，标签是色块 + 名字 + 一句话（点哪里都勾）。绑功能开关的偏好，勾了立即生效（同 FeatureToggle）；
+/// 没勾的色块变淡（同设置侧栏「已关闭」那一行）
+private struct FeatureChoice: View {
+  let feature: Feature
+  @AppStorage private var isOn: Bool
+
+  init(feature: Feature) {
+    self.feature = feature
+    _isOn = AppStorage(wrappedValue: feature.defaultOn, feature.prefsKey)
+  }
+
+  var body: some View {
+    Toggle(isOn: $isOn) {
+      HStack(alignment: .top, spacing: 10) {
+        KindTile(symbol: feature.page.symbol, color: feature.page.color, size: 24)
+          .opacity(isOn ? 1 : Style.disabledOpacity)
+          .accessibilityHidden(true)
+        VStack(alignment: .leading, spacing: 1) {
+          Text(feature.title).fontWeight(.medium)
+          Text(feature.blurb)
+            .font(.subheadline).foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        Spacer(minLength: 0)
+      }
+      .contentShape(Rectangle())  // 色块、空白处也算点在勾选框上
+    }
+    .toggleStyle(.checkbox)
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+}
+
+/// 第二屏：勾上的功能用得着的辅助功能、屏幕录制（同 设置 › 通用 › 权限），每秒刷新（在系统设置里打开开关后，回到这里马上变）
 private struct PermissionScreen: View {
+  let kinds: [Permissions.Kind]
   @State private var trusted = Permissions.isAccessibilityTrusted
   @State private var screenRecording = Permissions.isScreenRecordingAllowed
 
   var body: some View {
     VStack(spacing: 0) {
       Heading(
-        title: "先开两项授权",
-        subtitle: "粘贴回原 App、截图都要靠它们。\n点「去授权」后在系统设置里打开开关，回到这里状态会自己变。")
-      RowCard(items: [true, false]) { isAccessibility in
-        if isAccessibility {
+        title: kinds.count > 1 ? "先开两项授权" : "先开一项授权",
+        subtitle: (kinds.count > 1 ? "勾上的功能要用到它们，各管什么写在下面。" : "勾上的功能要用到它，管什么写在下面。")
+          + "\n点「去授权」后在系统设置里打开开关，回到这里状态会自己变。")
+      RowCard(items: kinds) { kind in
+        if kind == .accessibility {
           PermissionRow.accessibility(granted: trusted)
         } else {
           PermissionRow.screenRecording(granted: screenRecording)
@@ -285,6 +334,7 @@ private struct PermissionScreen: View {
       }
     }
   }
+
 }
 
 /// 第三屏「按一下试试」：列的是设好的组合；注册失败的那一行下面橙字写原因（按了也不会响）
@@ -301,12 +351,21 @@ private struct TryScreen: View {
   ]
 
   var body: some View {
-    // 关着的功能（关于页里重看引导时可能有）的键不注册，按了也不会打勾：不列
+    // 关着的功能（第一屏没勾的）的键不注册，按了也不会打勾：不列
     let actions = Self.shown.filter { $0.isActive && $0.hotKey != nil }
     VStack(spacing: 0) {
-      Heading(title: "按一下试试", subtitle: "在任何 App 里按下这些键，对应的功能就会出来。\n现在按一下，按过的会打勾。")
-      RowCard(items: actions) { row($0) }
-        .padding(.top, 18)
+      if actions.isEmpty {
+        // 第一屏勾的功能都没有默认键（便签以外的提醒、状态屏、启动台……），或一个都没勾
+        Heading(
+          title: "都准备好了",
+          subtitle: Feature.enabled.isEmpty
+            ? "一个功能都没勾。以后用得上，到 设置 › 通用 › 功能 里打开。"
+            : "勾上的功能没有默认快捷键：点菜单栏图标就能用，\n想用键叫出来到 设置 › 快捷键 里设一个。")
+      } else {
+        Heading(title: "按一下试试", subtitle: "在任何 App 里按下这些键，对应的功能就会出来。\n现在按一下，按过的会打勾。")
+        RowCard(items: actions) { row($0) }
+          .padding(.top, 18)
+      }
       Group {
         if LaunchAtLogin.isInstalled {
           Toggle("登录时自动打开，开机后快捷键就能用", isOn: $launchAtLogin)

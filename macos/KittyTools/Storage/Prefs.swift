@@ -206,6 +206,13 @@ enum Prefs {
   nonisolated static let remindersState = "remindersState"
   /// 点「稍后」推几分钟（设置 › 提醒，默认 5，C8）
   static let remindersSnoozeMinutes = "remindersSnoozeMinutes"
+  /// 挑的系统表情有动画版时自动下载（EmojiPack，2026-11-05，默认开；设置 › 状态屏 / 提醒两页各一行）
+  nonisolated static let emojiPackDownloads = "emojiPackDownloads"
+  /// 发表情包之前在本机试：从这台 Mac 上的临时服务器下（只认 http://127.0.0.1 / localhost，EmojiPack.remoteURL）。没有界面，
+  /// defaults write 设、用完删；不注册默认值（不导出、不同步）
+  nonisolated static let emojiPackTestServer = "emojiPackTestServer"
+  /// 「动画表情」气泡里最近挑过的（编号，新的在前，最多 18 个 = 三行；顶上「常用」那一段）。这台电脑自己的：不注册默认值、不导出不同步
+  static let emojiPackRecent = "emojiPackRecent"
 
   /// 全部便签窗口里正文的字号（设置 › 便签，pt；档位见 notesFontSizeChoices，默认 15）。读它走 Prefs.notesFontSize(_:)：
   /// 存了不在档位里的值（导入的文件、手改的偏好）按默认算
@@ -308,10 +315,10 @@ enum Prefs {
 
   /// 看过的版本号：没有 = 首次安装（打开欢迎引导），和当前不同 = 刚更新（刘海岛「已更新到 x」+ 本版摘要，不开设置窗，体检 A29）。
   /// 首次安装时**引导走完才记**（点「开始使用」或关掉引导；第四轮体检 E1）：中途退出（授权屏幕录制后系统要求重开）下次接着开
-  static let lastSeenVersion = "lastSeenVersion"
+  nonisolated static let lastSeenVersion = "lastSeenVersion"
   /// 欢迎引导做到了第几屏（OnboardingView.Screen 的 rawValue）：没走完就退出、下次接着开时从哪一屏起（E1）；走完删掉。
   /// 这台电脑自己的状态，不注册默认值
-  static let onboardingScreen = "onboardingScreen"
+  nonisolated static let onboardingScreen = "onboardingScreen"
   /// 「去授权」请求过辅助功能 / 屏幕录制的系统授权框没有（第四轮体检 U10：系统只弹一次，请求过了再点就直接打开系统设置那一页，
   /// 不再两个窗一起出来）。这台电脑自己的状态，不注册默认值
   static let accessibilityRequested = "accessibilityRequested"
@@ -322,6 +329,14 @@ enum Prefs {
   static let updateNotifiedVersion = "updateNotifiedVersion"
   /// 设置窗上次看的页（SettingsPage.rawValue）
   static let settingsPage = "settingsPage"
+  /// 设置侧栏收起了哪几组（组标题，换行隔开；SettingsRoot）。这台电脑自己的界面状态：不注册默认值、不导出不同步
+  static let settingsCollapsedGroups = "settingsCollapsedGroups"
+  /// 设置侧栏底下「已关闭」那组展开着没有（默认收起；SettingsRoot）。这台电脑自己的界面状态：不注册默认值、不导出不同步
+  static let settingsShowsOffFeatures = "settingsShowsOffFeatures"
+  /// 新功能标记（Shell/WhatsNew.swift，2026-11-05）的账：各版本在这台 Mac 上第一次打开的时刻（版本号 → Date，从这一刻起挂 30 天）、
+  /// 碰过哪几个（WhatsNew.Entry.id 的数组）。这台电脑自己的状态：不注册默认值、不导出不同步
+  static let whatsNewStarted = "whatsNewStarted"
+  static let whatsNewTouched = "whatsNewTouched"
   /// 设置与数据的每日自动备份（Storage/SettingsBackup.swift，2026-10-08）。下面六个都是这台电脑自己的状态，**不注册默认值**：
   /// 不跟着导出 / 导入走（别人给的文件不该能关掉备份、改备份存到哪）。
   /// 开关：没存过 = 开——读它用 SettingsBackup.isEnabled 或 @AppStorage 的初值 true，别用 bool(forKey:)
@@ -410,6 +425,7 @@ enum Prefs {
       statusScreenHotKeyEntersFirst: false,
       statusScreenAnimations: true,
       remindersSnoozeMinutes: 5,
+      emojiPackDownloads: true,
       notesFontSize: 15,
       notesMarkdown: true,
       notesLineSpacing: NoteStyles.Spacing.standard.rawValue,

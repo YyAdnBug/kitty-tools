@@ -675,7 +675,7 @@ struct NotesWindowTests {
   // MARK: 入口
 
   /// 三个全局动作追加在末尾（注册 id 是下标；启动台、截图历史、刘海岛、晾衣绳、主界面又接在它们后面）；
-  /// 只有「快速记一条」有默认键 ⌥N；「便签」一节在「截图与录制」之后、「启动台」之前，三项按这个顺序
+  /// 只有「快速记一条」有默认键 ⌥N；「便签」一节在「截图与录制」之后、「提醒」之前（功能管理拍板 M3），三项按这个顺序
   @Test func hotKeyActions() throws {
     #expect(
       Array(HotKeyAction.allCases.suffix(9)) == [
@@ -687,7 +687,7 @@ struct NotesWindowTests {
     #expect(HotKeyAction.noteNew.defaultHotKey == nil && HotKeyAction.noteAll.defaultHotKey == nil)
     let titles = HotKeyAction.visibleSections(enabled: Set(Feature.allCases)).map(\.title)
     let index = try #require(titles.firstIndex(of: "便签"))
-    #expect(titles[index - 1] == "截图与录制" && titles[index + 1] == "启动台")
+    #expect(titles[index - 1] == "截图与录制" && titles[index + 1] == "提醒")
     let actions = HotKeyAction.visibleSections(enabled: Set(Feature.allCases))[index].actions
     #expect(actions == [.noteCapture, .noteNew, .noteAll])
     #expect(actions.map(\.title) == ["快速记一条", "新建便签", "全部便签"])
@@ -710,8 +710,8 @@ struct NotesWindowTests {
     #expect(Array(targets[start..<start + 3]) == ["noteCapture", "noteNew", "noteAll"])
     // 「截图与录制」那一节末尾是截图历史、晾衣绳（枚举里晾衣绳在最后，菜单和启动器按节排）
     #expect(
-      targets[start - 1] == "clothesline" && targets[start + 3] == "launchpad"
-        && targets[start + 4] == "reminderNew" && targets[start + 5] == "island"
+      targets[start - 1] == "clothesline" && targets[start + 3] == "reminderNew"
+        && targets[start + 4] == "launchpad" && targets[start + 5] == "island"
         && targets[start + 6] == "home" && targets[start + 7] == "settings")
     #expect(launcher[start..<start + 3].map(\.title) == ["快速记一条", "新建便签", "全部便签"])
     for item in launcher[start..<start + 3] {
@@ -732,9 +732,10 @@ struct NotesWindowTests {
     #expect(titles.firstIndex(of: "便签")! + 1 == titles.firstIndex(of: "便签 · 屏幕边缘")!)
     #expect(titles.firstIndex(of: "便签 · 屏幕边缘")! + 1 == titles.firstIndex(of: "便签 · 浮在屏幕上")!)
     #expect(titles.firstIndex(of: "便签 · 浮在屏幕上")! + 1 == titles.firstIndex(of: "便签 · 全部便签")!)
-    // 2026-10-18 起「启动台」一节排在便签之后、状态屏之前
-    #expect(titles.firstIndex(of: "便签 · 全部便签")! + 1 == titles.firstIndex(of: "启动台")!)
-    #expect(titles.firstIndex(of: "启动台")! + 1 == titles.firstIndex(of: "状态屏")!)
+    // 2026-11-04 起便签之后是提醒、状态屏、启动台（功能管理拍板 M3，和设置侧栏同序）
+    #expect(titles.firstIndex(of: "便签 · 全部便签")! + 1 == titles.firstIndex(of: "提醒")!)
+    #expect(titles.firstIndex(of: "提醒")! + 1 == titles.firstIndex(of: "状态屏")!)
+    #expect(titles.firstIndex(of: "状态屏")! + 1 == titles.firstIndex(of: "启动台")!)
     let keys = Set(
       ShortcutsSheet.groups(enabled: Set(Feature.allCases)).filter { $0.title.hasPrefix("便签") }
         .flatMap(\.entries).flatMap(\.keys))

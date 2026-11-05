@@ -620,20 +620,15 @@ struct ShortcutsSheet: View {
           Entry("⌘.", text: "换成下一种纸色"),
           Entry("⌘,", text: "打开 设置 › 便签（同工具栏的「便签设置」）"),
         ]),
-      // 启动台（第八族，2026-10-18；mac-launchpad）。全局键默认不设，没设时那一行写「未设置」；
-      // 面板里的按键入口在 LaunchpadPanel（⌘← / ⌘→ / ⌘W）和 LaunchpadView 的搜索框（doCommandBy）
+      // 提醒（PLAN §10「提醒」）：全局键不设默认，按了打开启动器、填好「提醒 」；全屏提醒上的按键在 ReminderScreenPanel。
+      // 便签、提醒、状态屏、启动台这个顺序和设置侧栏一样（功能管理拍板 M3）
       Group(
-        title: "启动台", symbol: HotKeyAction.launchpad.symbol,
-        color: Style.Family.launchpad, globals: [.launchpad],
+        title: "提醒", symbol: HotKeyAction.reminderNew.symbol, color: Style.Family.reminders,
+        globals: [.reminderNew],
         entries: [
-          Entry("←→", "↑↓", text: "在图标之间挪选中（鼠标指着不高亮），到页边接着翻页"),
-          Entry("↩", text: "打开选中的 App（鼠标单击同样；打开后启动台自己收起）"),
-          Entry("⌘←", "⌘→", text: "到第一页 / 最后一页"),
-          Entry("两指左右滑", text: "翻页，跟手；鼠标滚轮上下滚也行，点底下的圆点跳页"),
-          Entry(text: "一打开就直接打字：搜 App 的中文名、拼音、首字母或英文名，文件夹里的也算"),
-          Entry("↩", text: "搜索时：打开第一个（或方向键选中的）"),
-          Entry("Esc", text: "先清空搜索，再按一次收起；点空白处也收起"),
-          Entry("⌘W", text: "收起"),
+          Entry(text: "在启动器里输入「提醒 10分钟 喝水」「提醒 明天9点 交周报」：↩ 建好（tx、remind 也行）"),
+          Entry(text: "启动器里只输「提醒 」：列出全部提醒，↩ 打开 / 暂停那一条，⌘↩ 到设置里编辑"),
+          Entry("↩", "Esc", text: "全屏提醒：知道了（出现后 1 秒内按的不算）"),
         ]),
       // mac-overlay-panel §11 状态屏。全局键不设默认，没设时那一行写「未设置」；它先出选状态的面板（设置里可改成直接
       // 进排在最前面的状态，那一行的名字跟着变，HotKeyAction.rowTitle）。面板里的按键在 StatusPicker.key；
@@ -650,14 +645,20 @@ struct ShortcutsSheet: View {
           Entry(text: "进入之后用鼠标按住屏幕底部的提示 2 秒：退出（动一下鼠标，提示就出现）"),
           Entry("0–9", text: "设了退出密码时：按住满 2 秒后输入密码（⌫ 删一位，Esc 不输了）"),
         ]),
-      // 提醒（PLAN §10「提醒」）：全局键不设默认，按了打开启动器、填好「提醒 」；全屏提醒上的按键在 ReminderScreenPanel
+      // 启动台（第八族，2026-10-18；mac-launchpad）。全局键默认不设，没设时那一行写「未设置」；
+      // 面板里的按键入口在 LaunchpadPanel（⌘← / ⌘→ / ⌘W）和 LaunchpadView 的搜索框（doCommandBy）
       Group(
-        title: "提醒", symbol: HotKeyAction.reminderNew.symbol, color: Style.Family.reminders,
-        globals: [.reminderNew],
+        title: "启动台", symbol: HotKeyAction.launchpad.symbol,
+        color: Style.Family.launchpad, globals: [.launchpad],
         entries: [
-          Entry(text: "在启动器里输入「提醒 10分钟 喝水」「提醒 明天9点 交周报」：↩ 建好（tx、remind 也行）"),
-          Entry(text: "启动器里只输「提醒 」：列出全部提醒，↩ 打开 / 暂停那一条，⌘↩ 到设置里编辑"),
-          Entry("↩", "Esc", text: "全屏提醒：知道了（出现后 1 秒内按的不算）"),
+          Entry("←→", "↑↓", text: "在图标之间挪选中（鼠标指着不高亮），到页边接着翻页"),
+          Entry("↩", text: "打开选中的 App（鼠标单击同样；打开后启动台自己收起）"),
+          Entry("⌘←", "⌘→", text: "到第一页 / 最后一页"),
+          Entry("两指左右滑", text: "翻页，跟手；鼠标滚轮上下滚也行，点底下的圆点跳页"),
+          Entry(text: "一打开就直接打字：搜 App 的中文名、拼音、首字母或英文名，文件夹里的也算"),
+          Entry("↩", text: "搜索时：打开第一个（或方向键选中的）"),
+          Entry("Esc", text: "先清空搜索，再按一次收起；点空白处也收起"),
+          Entry("⌘W", text: "收起"),
         ]),
       // 刘海岛（mac-whisker S2，2026-10-26）：不属于哪个功能，一直列
       Group(

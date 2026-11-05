@@ -1,7 +1,7 @@
 // 设置 › 提醒（PLAN §10「提醒」D1，排在「状态屏」后面）：启用开关、提醒列表（行 = 表情的静止画面 / 标题 / 一行摘要 / 开关，
 // 拖动排序，「+ −」增删，单击一行推进到 ReminderDetail 编辑——和状态屏的状态同一套 OrderedList 交互）、「稍后」推多久。
 // 页头画在自己的 NavigationStack 里，推进时一起换掉。列表直接读写偏好里的 JSON（Prefs.reminders）：ReminderCenter 看着偏好变化跟上，
-// 它删掉响过的一次性提醒时这一页也跟着变。
+// 它删掉响过的一次性提醒时这一页也跟着变。「+」›「新提醒」先不存：推进详情页，第一次改动时才加进列表（Reminder.saving）。
 
 import SwiftUI
 
@@ -17,6 +17,8 @@ struct RemindersTab: View {
   @State private var selection: String?
   /// 等确认删除的（自己加的、改过的）
   @State private var removing: String?
+  /// 「+」›「新提醒」推进去、还没存的那一条（详情页第一次改动时才加进列表）
+  @State private var fresh: Reminder?
 
   var body: some View {
     NavigationStack(path: Bindable(navigation).path) {
@@ -26,7 +28,7 @@ struct RemindersTab: View {
       }
       .navigationTitle(SettingsPage.reminders.title)
       .navigationDestination(for: String.self) { id in
-        ReminderDetail(id: id, fixed: fixed, now: now)
+        ReminderDetail(id: id, fixed: fixed, now: now, fresh: fresh?.id == id ? fresh : nil)
       }
     }
     .task { await StatusEmoji.warmStills() }
@@ -74,6 +76,13 @@ struct RemindersTab: View {
               + (isFull ? "最多 \(Reminder.maxCount) 条，已经满了，删掉一条才能再加。" : ""))
         }
         Section {
+          EmojiPackToggle()
+        } header: {
+          Text("图标")
+        } footer: {
+          SectionFootnote(EmojiPackToggle.footnote)
+        }
+        Section {
           Picker(selection: $snooze) {
             ForEach(Reminder.snoozeChoices, id: \.self) { Text("\($0) 分钟").tag($0) }
           } label: {
@@ -95,7 +104,7 @@ struct RemindersTab: View {
 
   /// 单击一行推进详情页，↑↓ 选中（给「−」和 ⌫ 用）、↩ 推进，拖动排序（同状态屏的状态列表）
   private func reminderList(_ list: [Reminder], statuses: [StatusPreset]) -> some View {
-    List(selection: OrderedList.selection($selection, open: open)) {
+    List(selection: OrderedList.selection($selection) { open($0) }) {
       ForEach(list) { reminder in
         ReminderListRow(
           reminder: reminder,
@@ -140,13 +149,12 @@ struct RemindersTab: View {
     .onDeleteCommand(perform: removeSelected)
   }
 
-  /// 「+」：新建一条（加到末尾、直接推进详情页改），或把删掉的示例补回来；满 50 条时整个置灰
+  /// 「+」：新建一条（推进详情页改，第一次改动时才加到末尾），或把删掉的示例补回来；满 50 条时整个置灰
   private func addMenu(_ list: [Reminder], isFull: Bool) -> some View {
     Menu {
       Button("新提醒") {
         let reminder = Reminder.new(now: now ?? .now)
-        reminders = Reminder.adding(reminder, to: reminders)
-        open(reminder.id)
+        open(reminder.id, fresh: reminder)
       }
       Divider()
       Button("恢复示例提醒") { reminders = Reminder.restoringExamples(in: reminders) }
@@ -166,8 +174,9 @@ struct RemindersTab: View {
     nonmutating set { if fixed == nil { data = Reminder.encoded(newValue) } }
   }
 
-  private func open(_ id: String) {
+  private func open(_ id: String, fresh: Reminder? = nil) {
     selection = nil
+    self.fresh = fresh
     navigation.path = [id]
   }
 

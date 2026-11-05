@@ -7,7 +7,7 @@
 **kitty-tools 原生 macOS 版**：Swift 6 + SwiftUI / AppKit 写的纯原生菜单栏工具，替代 Tauri 版的 macOS 端；基本自用，只支持 Apple 芯片（arm64），最低 macOS 15.0。
 
 - **入口**：左键点菜单栏图标是主界面（`Shell/HomePanel.swift`，全部功能一格一格摆着），右键 / ⌃点是菜单（0.7.0，PLAN §10「主界面」）。
-- **功能**（括号里是加进来的版本；每个都能在 设置 › 通用 › 功能 里整个关掉，`Shell/Feature.swift`）：
+- **功能**（括号里是加进来的版本；每个都能在 设置 › 通用 › 功能 里整个关掉，`Shell/Feature.swift`；新装只开剪贴板、启动器、翻译、截图，侧栏分组、关着的标「已关闭」，PLAN §10「功能管理」）：
   - 剪贴板历史 `Clipboard/`（0.1.0）
   - 翻译 `Translate/`：划词 / 输入 / 复制即译 / 截图翻译（0.1.0）
   - 启动器 `Launcher/`：⌥Space 的搜索框（0.1.0）
@@ -44,6 +44,7 @@ macos/                       # 本分支唯一开发区
 ├── Config/                  # Base/Debug/Release.xcconfig、Info.plist（局部）、Secrets.xcconfig（不入库）
 ├── build-dmg.sh             # 打包：archive → 自检 → DMG + App 内更新用的 zip → notes
 ├── status-emoji.swift       # 状态屏的动画表情：下载好的动画 PNG → Resources/status-emoji-*.heics（只用 ImageIO）
+├── emoji-pack.swift         # 动画表情包：Fluent 动画全部 746 个 → 上传到 release emoji-pack-<版本> 的 HEICS + Resources/emoji-pack.json 对照表（中文名用 CLDR）+ Resources/emoji-thumbs/ 缩略图
 ├── brand-icons.swift        # 品牌图标：角色「探头」的 AppIcon 10 张 + 菜单栏剪影 StatusIcon + DMG 背景（CoreGraphics 生成）
 ├── .swift-format
 ├── PLAN.md                  # 仍有效的方案：§2 技术栈、§4 架构与文件表、§8 打包、§10 约束与决定、§11 实现原则、§12 现状与下一步

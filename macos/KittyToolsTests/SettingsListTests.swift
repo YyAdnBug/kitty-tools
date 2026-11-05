@@ -16,14 +16,51 @@ struct SettingsListTests {
   /// 便签、状态屏排在录制后面（状态屏 Z11，便签 2026-10-12；两页的先后同快捷键页的分节）；
   /// 启动台（第八族，2026-10-18）排在便签后面、状态屏前面（F38；和菜单栏、快捷键页同序）；
   /// 程序坞预览（第九族，2026-10-22）排在状态屏后面（它没有快捷键、菜单栏里没有它，拍板 D1）；
-  /// 提醒（2026-11-04）排在状态屏后面、程序坞预览前面
+  /// 提醒（2026-11-04）排在状态屏后面、程序坞预览前面。
+  /// 2026-11-04 功能管理拍板 M2 M3：分六组（组之间留空），便签、提醒、状态屏一组，启动台、程序坞预览一组
   @Test func sidebarOrderMatchesMenu() {
     let pages = SettingsPage.allCases
     #expect(
       pages == [
-        .general, .clipboard, .launcher, .translate, .screenshot, .record, .notes, .launchpad,
-        .statusScreen, .reminders, .dockPreview, .hotkeys, .about,
+        .general, .clipboard, .launcher, .translate, .screenshot, .record, .notes, .reminders,
+        .statusScreen, .launchpad, .dockPreview, .hotkeys, .about,
       ])
+    // 分组盖住每一页、和 allCases 同序
+    #expect(SettingsPage.groups.flatMap { $0 } == pages)
+    // 没有启动台（macOS 15）时那一组只剩程序坞预览；搜索只剩一组里的页时别的组不画
+    #expect(
+      SettingsPage.sidebar(SettingsPage.visible(launchpad: false), off: []).map(\.pages)
+        == [
+          [.general], [.clipboard, .launcher, .translate], [.screenshot, .record],
+          [.notes, .reminders, .statusScreen], [.dockPreview], [.hotkeys, .about],
+        ])
+    #expect(
+      SettingsPage.sidebar([.reminders, .about], off: []).map(\.pages) == [[.reminders], [.about]])
+    // 关着的功能挪进最底下「已关闭（N）」那组（照侧栏顺序）；整组都关了的组不画；组的标题不因为头一页挪走而丢
+    let closed = SettingsPage.sidebar(
+      SettingsPage.allCases, off: [.notes, .dockPreview, .launchpad, .record])
+    #expect(
+      closed.map(\.pages) == [
+        [.general], [.clipboard, .launcher, .translate], [.screenshot],
+        [.reminders, .statusScreen],
+        [.hotkeys, .about], [.record, .notes, .launchpad, .dockPreview],
+      ])
+    #expect(closed.map(\.title) == [nil, "文字与搜索", "截图与录制", "便签与提醒", nil, "已关闭（4）"])
+    #expect(closed.map(\.isOff) == [false, false, false, false, false, true])
+    #expect(Set(closed.map(\.id)).count == closed.count)
+    // 搜索时只剩对上的：关着的那页照样在「已关闭」里
+    #expect(SettingsPage.sidebar([.notes], off: [.notes]).map(\.title) == ["已关闭（1）"])
+    // 组标题（2026-11-04 真机反馈）：一组里的页同一个标题；功能那四组有，一头一尾两组没有
+    for group in SettingsPage.groups {
+      #expect(Set(group.map(\.groupTitle)).count == 1, "\(group)")
+    }
+    #expect(
+      SettingsPage.groups.map(\.first?.groupTitle) == [
+        nil, "文字与搜索", "截图与录制", "便签与提醒", "桌面", nil,
+      ])
+    // 功能页对得上功能，通用 / 快捷键 / 关于不是功能
+    #expect(pages.compactMap(\.feature) == Feature.allCases)
+    #expect(SettingsPage.general.feature == nil && SettingsPage.hotkeys.feature == nil)
     let sections = HotKeyAction.sections.map(\.title)
     #expect(sections.firstIndex(of: "翻译")! < sections.firstIndex(of: "截图与录制")!)
   }
@@ -195,6 +232,20 @@ struct SettingsListTests {
     #expect(Screen.welcome < .permissions && Screen.permissions < .tryIt)
     // 偏好里存的就是 rawValue：认得出来
     #expect(Screen(rawValue: Screen.tryIt.rawValue) == .tryIt && Screen(rawValue: 9) == nil)
+    // 停在授权那一屏、现在勾的功能一项授权都用不着：也直接第三屏
+    #expect(OnboardingView.granted([]))
+  }
+
+  /// 引导第二屏只讲勾上的功能用得着的授权（功能管理 M6）：新装那四样两项都要；只勾便签、提醒、启动台一项都不要（跳过这一屏）；
+  /// 状态屏只要辅助功能；顺序固定
+  @Test func onboardingAsksOnlyNeededPermissions() {
+    #expect(OnboardingView.permissions(for: Feature.core) == [.accessibility, .screenRecording])
+    #expect(OnboardingView.permissions(for: [.notes, .reminders, .launchpad]).isEmpty)
+    #expect(OnboardingView.permissions(for: []).isEmpty)
+    #expect(OnboardingView.permissions(for: [.statusScreen, .notes]) == [.accessibility])
+    #expect(OnboardingView.permissions(for: [.clipboard]) == [.accessibility])
+    #expect(
+      OnboardingView.permissions(for: [.dockPreview]) == [.accessibility, .screenRecording])
   }
 
   /// 点「开始使用」时登录项怎么改（E1）：动过勾选框才照它来（重看时状态是「要批准」、勾选框显示没勾，没动它不取消注册）；

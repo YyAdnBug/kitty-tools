@@ -6,7 +6,7 @@
 // 退出提示和 key 面板的范围、拦截对事件的分类、
 // 启动器里每个状态一条；设置 › 状态屏改列表的几个纯函数（加、删、挪、恢复自带的、详情页改一个、摘要）；选状态的面板
 // （第 4 批：选中怎么移动、按键、默认选中、排版、进入时给出去的卡片位置）和从卡片长到整屏的起始变换；告示上的动画
-// （第 5 批：表情的清单、17 个资源都在包里且解得出、旧符号名换成表情、每帧时长 → keyTimes、图层上挂的那段动画、
+// （第 5 批：表情的清单、全部资源都在包里且解得出、旧符号名换成表情、每帧时长 → keyTimes、图层上挂的那段动画、
 // 表情视图挂进屏外窗口真的在换帧、动不动 / 冒不冒眼睛 / 要解哪些帧的判断、表情和眼睛的尺寸位置、出场的时间表）。
 // 不进入状态屏、不建面板。
 //
@@ -109,9 +109,13 @@ struct StatusScreenTests {
     // 最多 20 个
     let many = (0..<30).map { preset("p\($0)", "状态 \($0)") }
     #expect(StatusPreset.sanitized(many).map(\.id) == (0..<20).map { "p\($0)" })
-    // 清单里的 16 个表情都留着；「眼睛」只在被碰时用，不能选
+    // 清单里的表情都留着；「眼睛」只在被碰时用，不能选
     let all = StatusEmoji.ids.enumerated().map { preset("e\($0.offset)", "状态", symbol: $0.element) }
-    #expect(StatusPreset.sanitized(all).map(\.symbol) == StatusEmoji.ids)
+    // （一张列表最多 20 个：表情比这多，按 20 个一组收拾）
+    for start in stride(from: 0, to: all.count, by: StatusPreset.maxCount) {
+      let group = Array(all[start..<min(start + StatusPreset.maxCount, all.count)])
+      #expect(StatusPreset.sanitized(group).map(\.symbol) == group.map(\.symbol))
+    }
     let peeking = StatusPreset.sanitized([preset("eyes", "状态", symbol: StatusEmoji.eyes)])
     #expect(peeking.map(\.symbol) == [""])
   }
@@ -145,6 +149,210 @@ struct StatusScreenTests {
     let loaded = StatusPreset.decode(try JSONEncoder().encode(old))
     #expect(loaded == StatusPreset.builtIn && loaded.allSatisfy(\.isPristine))
     #expect(StatusPreset.sanitized(loaded) == loaded)
+  }
+
+  /// 自己挑的系统表情（2026-11-04）：正好一个表情字才认（数字、©、字母、两个表情、自带的 id 都不算）；状态里存着的
+  /// 表情在 JSON 里放在 emoji 键、symbol 写空（旧版本收拾 symbol 时抹不掉它），读回来还是它；没挑的编出来没有 emoji 键
+  @Test func customEmojiSymbols() throws {
+    for emoji in ["🍵", "👩‍💻", "🇨🇳", "❤️", "1️⃣", "👍🏽"] {
+      #expect(StatusEmoji.isCustom(emoji), "\(emoji)")
+      #expect(StatusEmoji.isValid(emoji) && StatusEmoji.name(emoji) == emoji)
+    }
+    for text in ["1", "©", "a", "🍵🍵", "zzz", "eyes", "", "🍵 "] {
+      #expect(!StatusEmoji.isCustom(text), "\(text)")
+    }
+    #expect(StatusEmoji.isValid("") && StatusEmoji.isValid("zzz") && !StatusEmoji.isValid("eyes"))
+    // 0.7.1 认得的 16 个照旧放 symbol 键；新加的 12 个、动画表情包里的也放 emoji 键（0.7.1 不认得）
+    for icon in ["cook", "pack:dog"] {
+      var preset = StatusPreset.builtIn[2]
+      preset.symbol = icon
+      let json = try #require(
+        try JSONSerialization.jsonObject(with: JSONEncoder().encode(preset)) as? [String: Any])
+      #expect(json["symbol"] as? String == "" && json["emoji"] as? String == icon, "\(icon)")
+      #expect(StatusPreset.decode(try JSONEncoder().encode([preset])).first?.symbol == icon)
+    }
+    #expect(StatusEmoji.legacyIDs.count == 16 && !StatusEmoji.legacyIDs.contains("cook"))
+
+    var tea = StatusPreset.builtIn[2]
+    tea.symbol = "🍵"
+    let data = try JSONEncoder().encode([tea, StatusPreset.builtIn[0]])
+    let objects = try #require(try JSONSerialization.jsonObject(with: data) as? [[String: Any]])
+    #expect(objects[0]["symbol"] as? String == "" && objects[0]["emoji"] as? String == "🍵")
+    #expect(objects[1]["emoji"] == nil && objects[1]["symbol"] as? String == "glowing-star")
+    #expect(Set(objects[1].keys) == ["id", "title", "symbol", "style", "power", "autoEndMinutes"])
+    let loaded = StatusPreset.decode(data)
+    #expect(loaded.first?.symbol == "🍵" && loaded.last == StatusPreset.builtIn[0])
+    #expect(StatusPreset.sanitized(loaded) == loaded)
+    // 旧版本写的（没有 emoji 键）照常读
+    let old = try JSONEncoder().encode(StatusPreset.builtIn)
+    #expect(StatusPreset.decode(old) == StatusPreset.builtIn)
+    // 系统的 Unicode 表还没收的表情码段里的字也认（别的 Mac 系统更新）；码段外没收的不认
+    #expect(StatusEmoji.isCustom(String(UnicodeScalar(0x1FAFE)!)))
+    #expect(!StatusEmoji.isCustom(String(UnicodeScalar(0x10FFF0)!)))
+
+    // 和 0.7.x 混用：没挑系统表情的状态编出来和 0.7.1 逐字一样（它照常同步）；挑了的，0.7.1 那种自动生成的编解码认不出
+    // （decodeExact 失败 = 它把这一类停下，不会把 symbol 收拾成空再传回来）
+    let cleanData = try SyncRecords.encoder.encode(StatusPreset.builtIn[0])
+    let clean = String(decoding: cleanData, as: UTF8.self)
+    #expect(
+      clean
+        == #"{"autoEndMinutes":5,"id":"clean","power":"normal","style":"blackout","#
+        + #""symbol":"glowing-star","title":"清洁屏幕"}"#
+    )
+    #expect(SyncRecords.decodeExact(OldPreset.self, from: clean) != nil)
+    let custom = String(decoding: try SyncRecords.encoder.encode(tea), as: UTF8.self)
+    #expect(SyncRecords.decodeExact(OldPreset.self, from: custom) == nil)
+    #expect(SyncRecords.decodeExact(StatusPreset.self, from: custom)?.symbol == "🍵")
+
+    // 提醒同样认
+    var reminder = Reminder.examples[0]
+    reminder.symbol = "🐶"
+    #expect(Reminder.sanitized([reminder]).first?.symbol == "🐶")
+    // 系统表情原样留着（要的就是系统的样子，2026-11-05 用户）；动画表情包里和自带同一个的收拾成自带的 id
+    reminder.symbol = "🏃"
+    #expect(Reminder.sanitized([reminder]).first?.symbol == "🏃")
+    reminder.symbol = "pack:person-running"
+    #expect(Reminder.sanitized([reminder]).first?.symbol == "person-running")
+    reminder.symbol = "pack:dog"
+    #expect(Reminder.sanitized([reminder]).first?.symbol == "pack:dog")
+    // 这一版对照表里没有、写法对的（更新版本的表情包）留着，不置空（不然会当本机改动同步出去抹掉别的 Mac 上的）；写法不对的置空
+    reminder.symbol = "pack:no-such-emoji"
+    #expect(Reminder.sanitized([reminder]).first?.symbol == "pack:no-such-emoji")
+    reminder.symbol = "pack:Bad_ID"
+    #expect(Reminder.sanitized([reminder]).first?.symbol == "")
+    reminder.symbol = "run"
+    #expect(Reminder.sanitized([reminder]).first?.symbol == "")
+  }
+
+  /// 动画表情包（2026-11-05）：表情字查编号时去掉表情变体符；包里自带的那几个（含编号不同的别名）不下载；缓存超了从最久没用的
+  /// 删起；下下来的要是 256 × 256、两帧以上的动画才存；打进包里的对照表盖住自带的 28 个
+  @Test func emojiPackLookup() throws {
+    func entry(_ id: String, _ glyph: String, _ group: String, _ name: String, _ words: [String])
+      -> EmojiPack.Entry
+    {
+      EmojiPack.Entry(id: id, glyph: glyph, group: group, name: name, keywords: words)
+    }
+    let catalog = EmojiPack.Catalog(
+      tag: "emoji-pack-1",
+      emoji: [
+        entry("rocket", "🚀", "travel", "火箭", ["发射", "太空", "rocket"]),
+        entry("smiling-face", "☺", "people", "微笑", ["开心", "smile"]),
+        entry("dog", "🐕", "nature", "狗", ["宠物", "小狗", "dog", "pet"]),
+      ])
+    // 带 U+FE0F 也搜得到
+    #expect(EmojiPack.search("☺️", in: catalog.emoji).map(\.id) == ["smiling-face"])
+    // 搜：中文名、关键词、英文、表情字都行，空格分开的词都要对上；不搜时按分类
+    #expect(EmojiPack.search("狗", in: catalog.emoji).map(\.id) == ["dog"])
+    #expect(EmojiPack.search("PET", in: catalog.emoji).map(\.id) == ["dog"])
+    #expect(EmojiPack.search("🚀", in: catalog.emoji).map(\.id) == ["rocket"])
+    #expect(EmojiPack.search("太空 发射", in: catalog.emoji).map(\.id) == ["rocket"])
+    #expect(EmojiPack.search("太空 狗", in: catalog.emoji).isEmpty)
+    #expect(EmojiPack.search("  ", in: catalog.emoji).count == 3)
+    // 气泡里的几段：「常用」（最近挑过的、对照表里还有的）在前，再照分类；空的段不画
+    #expect(
+      AnimatedEmojiPicker.sections(catalog.emoji, recent: ["dog", "gone"]).map(\.id)
+        == ["recent", "people", "nature", "travel"])
+    #expect(AnimatedEmojiPicker.sections(catalog.emoji, recent: []).first?.id == "people")
+    #expect(AnimatedEmojiPicker.recent(after: "dog", in: ["cat", "dog"]) == ["dog", "cat"])
+    #expect(
+      AnimatedEmojiPicker.recent(after: "x", in: (0..<30).map(String.init)).count
+        == AnimatedEmojiPicker.recentLimit)
+    #expect(EmojiPack.bundledID(for: "rocket") == "rocket")
+    #expect(EmojiPack.bundledID(for: "telephone-receiver") == "telephone")
+    #expect(EmojiPack.bundledID(for: "dog") == nil)
+    #expect(EmojiPack.bundledAliases.values.allSatisfy(StatusEmoji.ids.contains))
+    #expect(
+      EmojiPack.remoteURL("dog", tag: "emoji-pack-1")?.absoluteString
+        == "https://github.com/YyAdnBug/kitty-tools/releases/download/emoji-pack-1/dog.heics")
+    // 本机测试服务器：只认 http 的 127.0.0.1 / localhost，别的地址照旧走 release
+    #expect(
+      EmojiPack.remoteURL("dog", tag: "emoji-pack-1", testServer: "http://127.0.0.1:8765")?
+        .absoluteString == "http://127.0.0.1:8765/dog.heics")
+    for other in ["https://127.0.0.1:8765", "http://example.com", "file:///tmp", "乱写"] {
+      #expect(
+        EmojiPack.remoteURL("dog", tag: "emoji-pack-1", testServer: other)?.host() == "github.com",
+        "\(other)")
+    }
+
+    let day: TimeInterval = 86400
+    let files = [
+      EmojiPack.CachedFile(
+        name: "a.heics", bytes: 30, usedAt: Date(timeIntervalSince1970: 3 * day)),
+      EmojiPack.CachedFile(name: "b.heics", bytes: 30, usedAt: Date(timeIntervalSince1970: day)),
+      EmojiPack.CachedFile(
+        name: "c.heics", bytes: 30, usedAt: Date(timeIntervalSince1970: 2 * day)),
+    ]
+    #expect(EmojiPack.overflow(files, limit: 100).isEmpty)
+    #expect(EmojiPack.overflow(files, limit: 60) == ["b.heics"])
+    #expect(EmojiPack.overflow(files, limit: 10) == ["b.heics", "c.heics", "a.heics"])
+
+    let rocket = try Data(contentsOf: try #require(StatusEmoji.url("rocket")))
+    #expect(EmojiPack.isPlayable(rocket))
+    #expect(!EmojiPack.isPlayable(Data("not an image".utf8)))
+    #expect(!EmojiPack.isPlayable(rocket + Data(count: EmojiPack.maxFileBytes)))
+
+    // 打进包里的对照表：自带的 28 个和眼睛都对得上一个表情字（挑系统表情挑到它们时直接用自带的文件）
+    let bundled = try #require(EmojiPack.catalog)
+    #expect(bundled.tag.hasPrefix("emoji-pack-") && bundled.emoji.count > 700)
+    let reachable = Set(bundled.emoji.map(\.id).compactMap(EmojiPack.bundledID(for:)))
+    #expect(reachable == Set(StatusEmoji.ids))
+    #expect(
+      bundled.emoji.allSatisfy {
+        $0.id.allSatisfy { "abcdefghijklmnopqrstuvwxyz0123456789-".contains($0) }
+      })
+    // 每一个都有中文名、分类在那五个里、包里带着它的缩略图（96 × 96）
+    let tabs = Set(AnimatedEmojiPicker.categories.dropFirst().map(\.id))
+    #expect(bundled.emoji.allSatisfy { !$0.name.isEmpty && tabs.contains($0.group) })
+    #expect(EmojiPack.name("dog") == "狗" && EmojiPack.name("no-such") == nil)
+    for entry in bundled.emoji {
+      let thumbnail = try #require(EmojiPack.thumbnail(entry.id), "\(entry.id)")
+      #expect(thumbnail.width == 96 && thumbnail.height == 96, "\(entry.id)")
+    }
+    // 系统表情（字）永远是系统的样子：没有动画文件、不换成自带的；动画表情包里的「pack:编号」和自带同一个的换成自带的 id
+    // （👥 的「开会」、黑猫要垫浅底 / 亮光，按 id 认），别的照旧
+    #expect(StatusEmoji.url("🚀") == nil && StatusEmoji.canonical("🚀") == "🚀")
+    #expect(StatusEmoji.canonical("pack:rocket") == "rocket")
+    #expect(StatusEmoji.canonical("pack:busts-in-silhouette") == "busts")
+    #expect(StatusEmoji.canonical("pack:telephone-receiver") == "telephone")
+    #expect(
+      StatusEmoji.canonical("pack:dog") == "pack:dog" && StatusEmoji.canonical("rocket") == "rocket"
+    )
+    #expect(StatusEmoji.url("pack:rocket") == StatusEmoji.url("rocket"))
+    #expect(StatusEmoji.packID("pack:dog") == "dog" && StatusEmoji.packID("pack:nope") == nil)
+    #expect(StatusEmoji.packID("dog") == nil && StatusEmoji.packID("🐶") == nil)
+    #expect(StatusEmoji.symbol(forPack: "dog") == "pack:dog")
+    #expect(StatusEmoji.symbol(forPack: "hourglass-not-done") == "hourglass")
+    #expect(StatusEmoji.isValid("pack:dog") && !StatusEmoji.isValid("pack:../x"))
+    #expect(
+      StatusEmoji.isValid("pack:from-a-newer-pack")
+        && StatusEmoji.packID("pack:from-a-newer-pack") == nil)
+    // 眼睛包里带着：不下载，用包里的
+    #expect(
+      EmojiPack.bundledFile(for: "eyes") == "eyes" && EmojiPack.bundledFile(for: "dog") == nil)
+    #expect(StatusEmoji.url("pack:eyes") == StatusEmoji.url("eyes"))
+    #expect(
+      StatusPreset.emoji(for: "👥") == "👥" && StatusPreset.emoji(for: "pack:rocket") == "rocket")
+    // 单测宿主里不联网下载
+    #expect(!EmojiPack.isEnabled)
+    // 预览下面那行字：自带的写中文名，动画表情包里的写名字，系统表情写「系统表情」
+    #expect(StatusEmoji.caption("rocket") == "火箭" && StatusEmoji.caption("pack:rocket") == "火箭")
+    #expect(
+      StatusEmoji.caption("pack:dog") == EmojiPack.name("dog") && StatusEmoji.caption("") == "")
+    #expect(StatusEmoji.caption("🐶") == "系统表情" && StatusEmoji.caption("👍🏽") == "系统表情")
+  }
+
+  /// 动画表情包的 release 联网自检（按需：TEST_RUNNER_KITTY_LIVE_EMOJI_PACK=1；发了新的表情包之后跑）：对照表里随便挑几个，
+  /// 下下来是能放的动画。只读网络，不写数据目录
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["KITTY_LIVE_EMOJI_PACK"] != nil))
+  func emojiPackReleaseServesFiles() async throws {
+    let catalog = try #require(EmojiPack.catalog)
+    let ids = catalog.emoji.map(\.id).sorted()
+    for id in [ids.first, ids.randomElement(), ids.last].compactMap({ $0 }) {
+      let url = try #require(EmojiPack.remoteURL(id, tag: catalog.tag))
+      let (data, response) = try await URLSession.shared.data(from: url)
+      #expect((response as? HTTPURLResponse)?.statusCode == 200, "\(id)")
+      #expect(EmojiPack.isPlayable(data), "\(id)")
+    }
   }
 
   /// 存取走一个偏好键里的 JSON：存进去的是收拾过的，读回来一样；存了空列表读回来是自带的。
@@ -856,9 +1064,10 @@ struct StatusScreenTests {
   @Test func entries() throws {
     #expect(HotKeyAction.allCases.firstIndex(of: .statusScreen) == 12)
     #expect(HotKeyAction.statusScreen.defaultHotKey == nil)
-    // 后面是「提醒」（2026-11-04）和不归功能的「刘海岛」（2026-10-26）、「主界面」（2026-10-29）两节
+    // 前面是「提醒」（2026-11-04），后面是「启动台」和不归功能的「刘海岛」（2026-10-26）、「主界面」（2026-10-29）两节
+    // （功能管理拍板 M3：便签、提醒、状态屏、启动台，和设置侧栏同序）
     let sections = HotKeyAction.visibleSections(enabled: Set(Feature.allCases))
-    #expect(sections.suffix(4).map(\.title) == ["状态屏", "提醒", "刘海岛", "主界面"])
+    #expect(sections.suffix(5).map(\.title) == ["提醒", "状态屏", "启动台", "刘海岛", "主界面"])
     #expect(sections.dropLast(3).last?.actions == [.statusScreen])
     #expect(LauncherItem.actions().allSatisfy { !$0.isStatusPreset })
     var presets = StatusPreset.builtIn
@@ -866,10 +1075,10 @@ struct StatusScreenTests {
     let items = LauncherItem.actions(.init(statusPresets: presets))
     let targets = items.map(\.target)
     let first = try #require(targets.firstIndex(of: "statusScreen:clean"))
-    // 前面是「启动台」一节的那一项（2026-10-18 起启动台排在便签之后、状态屏之前）
+    // 前面是「提醒」一节的那一项、后面是「启动台」（2026-11-04 功能管理拍板 M3）
     #expect(
       Array(targets[(first - 1)...(first + 4)]) == [
-        "launchpad", "statusScreen:clean", "statusScreen:busy", "statusScreen:back", "reminderNew",
+        "reminderNew", "statusScreen:clean", "statusScreen:busy", "statusScreen:back", "launchpad",
         "island",
       ])
     let statuses = items.filter(\.isStatusPreset)
@@ -906,20 +1115,22 @@ struct StatusScreenTests {
 
   // MARK: 告示上的动画（第 5 批）
 
-  /// 清单：可选的 16 个、id 不重复、顺序固定、各有中文名；「眼睛」另算，不在可选的里面
+  /// 清单：可选的 28 个（2026-11-04 在后面加了 12 个）、id 不重复、顺序固定（只能往后加）、各有中文名；「眼睛」另算，不在可选的里面
   @Test func emojiCatalog() {
     #expect(
       StatusEmoji.ids == [
         "raised-hand", "waving-hand", "glowing-star", "alarm-clock", "hourglass", "hot-beverage",
         "zzz", "sleeping-face", "shushing-face", "busts", "telephone", "rocket", "robot", "fire",
-        "high-voltage", "black-cat",
+        "high-voltage", "black-cat", "cook", "person-running", "automobile", "health-worker",
+        "droplet", "student", "lotus-position", "party-popper", "office-worker", "person-walking",
+        "birthday-cake", "thumbs-up",
       ])
     #expect(
       StatusEmoji.choices.map(\.name) == [
         "举手", "挥手", "发光的星", "闹钟", "沙漏", "热饮", "Zzz", "睡觉", "嘘", "开会", "电话", "火箭", "机器人", "火",
-        "闪电", "黑猫",
+        "闪电", "黑猫", "厨师", "跑步", "汽车", "医护", "水滴", "学生", "打坐", "礼花", "上班", "走路", "生日蛋糕", "点赞",
       ])
-    #expect(Set(StatusEmoji.ids).count == 16 && Set(StatusEmoji.choices.map(\.name)).count == 16)
+    #expect(Set(StatusEmoji.ids).count == 28 && Set(StatusEmoji.choices.map(\.name)).count == 28)
     #expect(StatusEmoji.eyes == "eyes" && !StatusEmoji.ids.contains(StatusEmoji.eyes))
     #expect(StatusEmoji.name("alarm-clock") == "闹钟" && StatusEmoji.name("eyes") == nil)
     #expect(StatusEmoji.name("") == nil)
@@ -929,7 +1140,7 @@ struct StatusScreenTests {
     }
   }
 
-  /// 17 个资源都在包里（测试宿主就是 App）而且解得出：每个都取得到文件，帧数大于 1、每帧 256 × 256、带透明通道
+  /// 29 个资源都在包里（测试宿主就是 App）而且解得出：每个都取得到文件，帧数大于 1、每帧 256 × 256、带透明通道
   /// （四角是透明的）、每帧时长大于 0；静止画面就是第一帧那么大，取第二次还是那张画面（比内容、不比对象：全量并行跑时
   /// 系统内存压力会把 NSCache 整个清掉，「再要一次是缓存里那一个」就偶发落空，第三轮体检 D1）
   @Test func emojiResourcesDecode() async throws {
@@ -1728,4 +1939,15 @@ struct StatusScreenTests {
       }
     }
   }
+}
+
+/// 0.7.1 的状态：自动生成的编解码（照当时的 StatusPreset 写，没有 emoji 键）
+private struct OldPreset: Codable {
+  var id: String
+  var title: String
+  var detail: String?
+  var symbol: String
+  var style: StatusPreset.Look
+  var power: StatusPreset.Power
+  var autoEndMinutes: Int
 }

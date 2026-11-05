@@ -67,7 +67,7 @@ struct StatusPresetDetail: View {
           } set: {
             binding.wrappedValue.detail = $0
           }, prompt: Text("可不填"))
-        LabeledContent("图标") { SymbolGrid(selection: binding.symbol) }
+        SymbolGrid(selection: binding.symbol)
       } footer: {
         SectionFootnote(
           "标题最多 \(StatusPreset.maxTitle) 个字，说明最多 \(StatusPreset.maxDetail) 个字。")
@@ -126,20 +126,38 @@ struct StatusPresetDetail: View {
   }
 }
 
-/// 图标格子：一格「无」+ StatusEmoji.choices 的 16 个表情（静止画面），一行 7 个；选中的外面一圈强调色
+/// 图标格子：一格「无」+ StatusEmoji.choices 的表情（静止画面）+ 最后一格「其他表情」，一行 7 个；选中的外面一圈强调色
 /// （同通用页的外观缩略图）。深色外观下颜色很深的那两个表情（开会、黑猫）的格子换成浅底（StatusEmoji.plated）。
-/// 提醒的详情页也用它（ReminderDetail）
+/// 「其他表情」打开系统的表情面板，挑哪个都行（静态，StatusEmoji.isCustom）；挑过的那一格就画它。提醒的详情页也用它（ReminderDetail）。
+/// 整个是一行「图标」：标题在左上（和别的行一样），格子靠右，中间空着的那一大块是预览（2026-11-04 用户要看得出动画是什么，
+/// 又说「左边位置大，放大居中」）——放大放选中的那个的动画、下面写它的名字（EmojiPreview），在空着的那块里居中。2026-11-05 用户
+/// 「选择后就自动播放动画，不要 hover」：预览只跟着选中的走、一直在播，鼠标停在格子上不换。格子本身一直是静止画面
 struct SymbolGrid: View {
   @Binding var selection: String
   @Environment(\.colorScheme) private var scheme
+  /// 点一下「系统表情」+1：让看不见的接收框拿到焦点、打开系统的表情面板
+  @State private var opensPicker = 0
+  /// 「动画表情」的气泡开着
+  @State private var showsAnimated = false
 
   private static let cell: CGFloat = 28
   private static let ring: CGFloat = 2
 
   var body: some View {
+    HStack(alignment: .top, spacing: 12) {
+      Text("图标")
+      EmojiPreview(symbol: selection)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)  // 标题和格子之间那一块里居中
+      grid
+    }
+  }
+
+  private var grid: some View {
     let column = GridItem(.fixed(Self.cell + Self.ring * 2), spacing: 4)
-    LazyVGrid(columns: Array(repeating: column, count: 7), spacing: 4) {
+    return LazyVGrid(columns: Array(repeating: column, count: 7), spacing: 4) {
       ForEach([""] + StatusEmoji.ids, id: \.self) { cell($0) }
+      animatedCell
+      customCell
     }
     .fixedSize()
     // 选中圈往外露：最右一列格子自己的右边贴着同组控件的右边线（同通用页的外观缩略图）
@@ -149,7 +167,7 @@ struct SymbolGrid: View {
   }
 
   private func cell(_ symbol: String) -> some View {
-    let selected = selection == symbol
+    let selected = StatusEmoji.canonical(selection) == symbol
     return Button {
       selection = symbol
     } label: {
@@ -186,5 +204,197 @@ struct SymbolGrid: View {
     .accessibilityLabel(StatusEmoji.name(symbol) ?? "无")
     .help(StatusEmoji.name(symbol) ?? "不要图标")
     .accessibilityAddTraits(selected ? .isSelected : [])
+  }
+
+  /// 倒数第二格「动画表情」：挑过动画表情包里的（自带之外的）画它的静止画面 / 缩略图，没挑过是一个闪光符号；点开动画表情的气泡
+  private var animatedCell: some View {
+    let _ = EmojiPack.shared.generation  // 下好了换成它的静止画面
+    let current = StatusEmoji.canonical(selection)
+    let pack = StatusEmoji.packID(current) != nil ? current : nil
+    return Button {
+      showsAnimated = true
+    } label: {
+      Group {
+        if let pack, let image = StatusEmoji.still(pack) ?? StatusEmoji.thumbnail(pack) {
+          Image(decorative: image, scale: 1)
+            .resizable()
+            .interpolation(.high)
+            .frame(width: Self.cell - 6, height: Self.cell - 6)
+        } else {
+          Image(systemName: "sparkles").font(.system(size: 14, weight: .medium))
+            .foregroundStyle(.secondary)
+        }
+      }
+      .frame(width: Self.cell, height: Self.cell)
+      .background(
+        Style.controlFill,
+        in: RoundedRectangle(cornerRadius: Style.Radius.control, style: .continuous)
+      )
+      .padding(Self.ring)
+      .overlay {
+        if pack != nil {
+          RoundedRectangle(cornerRadius: Style.Radius.control + Self.ring, style: .continuous)
+            .strokeBorder(Style.brand, lineWidth: Self.ring)
+            .transition(.opacity)
+        }
+      }
+      .contentShape(.rect)
+    }
+    .buttonStyle(.plain)
+    .popover(isPresented: $showsAnimated, arrowEdge: .bottom) {
+      AnimatedEmojiPicker(
+        selection: selection,
+        pick: {
+          selection = $0
+          showsAnimated = false
+        },
+        section: StatusEmoji.packID(current).flatMap { EmojiPack.entries[$0]?.group })
+    }
+    .accessibilityLabel(pack.flatMap { StatusEmoji.name($0) }.map { "动画表情：\($0)" } ?? "动画表情")
+    .help("从动画表情里挑一个（会动，第一次用到时下载）")
+    .accessibilityAddTraits(pack != nil ? .isSelected : [])
+  }
+
+  /// 最后一格「系统表情」：没挑过系统表情时是一个笑脸符号，挑过的画那个表情；点了都是打开系统的表情面板
+  private var customCell: some View {
+    // 系统表情永远按系统的样子画（2026-11-05 用户：想用系统表情的就是要系统的样子），不换成动画版
+    let custom = StatusEmoji.isCustom(selection) ? selection : nil
+    return Button {
+      opensPicker += 1
+    } label: {
+      Group {
+        if let custom {
+          Text(custom).font(.system(size: Self.cell - 10))
+        } else {
+          Image(systemName: "face.smiling").font(.system(size: 14, weight: .medium))
+            .foregroundStyle(.secondary)
+        }
+      }
+      .frame(width: Self.cell, height: Self.cell)
+      .background(
+        Style.controlFill,
+        in: RoundedRectangle(cornerRadius: Style.Radius.control, style: .continuous)
+      )
+      .padding(Self.ring)
+      .overlay {
+        if custom != nil {
+          RoundedRectangle(cornerRadius: Style.Radius.control + Self.ring, style: .continuous)
+            .strokeBorder(Style.brand, lineWidth: Self.ring)
+            .transition(.opacity)
+        }
+      }
+      .overlay(alignment: .bottomTrailing) {
+        // 系统表情原样存那个字
+        EmojiCatcher(trigger: opensPicker) { selection = $0 }
+          .frame(width: 1, height: 1)
+          .allowsHitTesting(false)  // 点格子是按按钮，不是点进这个输入框
+      }
+      .contentShape(.rect)
+    }
+    .buttonStyle(.plain)
+    .animation(.easeOut(duration: Style.fadeIn), value: custom)
+    .accessibilityLabel(custom.map { "系统表情：\($0)" } ?? "系统表情")
+    .help("从系统表情里挑一个（按系统的样子画，不会动）")
+    .accessibilityAddTraits(custom != nil ? .isSelected : [])
+  }
+}
+
+/// 「图标」那一行中间的预览：120 pt 的表情（和告示上的表情差不多大）+ 名字。选中的是动画表情就把它的帧解出来一直放（一个表情的帧
+/// 十几到几十 MB，换一个、离开这一页就放手；没下好先下、先垫缩略图）；减弱动态效果时不放。没选图标时什么都不画
+struct EmojiPreview: View {
+  let symbol: String
+  @State private var frames: StatusEmoji.Frames?
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  var body: some View {
+    VStack(spacing: 6) {
+      if !symbol.isEmpty {
+        StatusEmojiView(id: symbol, frames: frames)
+          .frame(width: 120, height: 120)
+        Text(StatusEmoji.caption(symbol))
+          .font(.callout)
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+          .truncationMode(.tail)
+      }
+    }
+    .accessibilityHidden(true)  // 每一格自己有名字，这里只是看的
+    .task(id: symbol) {  // load 没下好会先下
+      frames = nil
+      guard !reduceMotion, !symbol.isEmpty, let decoded = await StatusEmoji.load(symbol),
+        !Task.isCancelled
+      else { return }
+      frames = decoded
+    }
+  }
+}
+
+/// 「自动下载动画表情」（EmojiPack；设置 › 状态屏「动画」、设置 › 提醒「图标」两处，同一个偏好）
+struct EmojiPackToggle: View {
+  @AppStorage(Prefs.emojiPackDownloads) private var downloads = true
+
+  static let footnote =
+    "在「动画表情」里挑的，第一次用到时从 Kitty Tools 在 GitHub 上的发布页下载那个动画（一个约 0.2 MB，不带任何个人信息），"
+    + "存在这台 Mac 上、最多 50 MB；没下好、没联网时先显示缩略图。"
+
+  var body: some View {
+    Toggle(isOn: $downloads) {
+      Text("自动下载动画表情")
+      Text("关掉后还没下好的动画表情先显示缩略图、不动，已经下好的照样动")
+    }
+  }
+}
+
+/// 系统表情面板的接收框：一个看不见的 1 × 1 输入框。trigger 变了就让它拿到焦点、打开系统的表情面板（面板只往拿着焦点的
+/// 输入框里插字，SwiftUI 没有直接的接口）；插进来的是表情就交出去，别的字一律清掉
+private struct EmojiCatcher: NSViewRepresentable {
+  let trigger: Int
+  let picked: (String) -> Void
+
+  func makeCoordinator() -> Coordinator { Coordinator() }
+
+  func makeNSView(context: Context) -> NSTextField {
+    let field = Field()
+    field.isBordered = false
+    field.drawsBackground = false
+    field.focusRingType = .none
+    field.alphaValue = 0
+    field.delegate = context.coordinator
+    field.setAccessibilityElement(false)
+    context.coordinator.trigger = trigger
+    return field
+  }
+
+  func updateNSView(_ field: NSTextField, context: Context) {
+    context.coordinator.picked = picked
+    guard trigger != context.coordinator.trigger else { return }
+    context.coordinator.trigger = trigger
+    // 视图更新的中途不换焦点：下一轮再做
+    Task {
+      guard field.window?.makeFirstResponder(field) == true else { return }
+      NSApp.orderFrontCharacterPalette(field)
+    }
+  }
+
+  /// 不进 Tab 的顺序（看不见的框接了焦点，用户只会觉得焦点没了、打的字被清掉）；代码里 makeFirstResponder 照样给得进去
+  final class Field: NSTextField {
+    override var canBecomeKeyView: Bool { false }
+  }
+
+  final class Coordinator: NSObject, NSTextFieldDelegate {
+    var trigger = 0
+    var picked: (String) -> Void = { _ in }
+
+    func controlTextDidChange(_ note: Notification) {
+      guard let field = note.object as? NSTextField else { return }
+      let text = field.stringValue
+      field.stringValue = ""
+      guard let emoji = text.reversed().map(String.init).first(where: StatusEmoji.isCustom) else {
+        return
+      }
+      picked(emoji)
+      // 挑完把焦点交回窗口：不留在看不见的框里（旁白焦点、⌘Z 撤销到它清掉的字都会怪），结束编辑也丢掉那条撤销记录
+      Task { field.window?.makeFirstResponder(nil) }
+    }
   }
 }
