@@ -151,6 +151,8 @@ import Observation
   /// 纯函数，配单测
   static func primary(of cards: [Card]) -> (service: TranslateService, text: String)? {
     for card in cards {
+      // 词典类服务给的是释义，不是译文（S2）
+      if card.service.kind.isDictionary { continue }
       switch card.state {
       case .done(let text) where !text.isEmpty: return (card.service, text)
       case .waiting, .running: return nil
@@ -284,7 +286,11 @@ import Observation
     request = plan.request
     isWordLookup = plan.request.isWord
     recordedPrimary = nil
-    cards = services.enabled.map { Card(service: $0, state: .waiting) }
+    // 词典类服务只查单词和短语（S2）
+    let lookup = WordLookup.isWord(text) || WordLookup.isPhrase(text)
+    cards = services.enabled.filter { lookup || !$0.kind.isDictionary }.map {
+      Card(service: $0, state: .waiting)
+    }
     runAll(text)
   }
 
@@ -378,7 +384,7 @@ import Observation
     }
     let request = Self.plan(for: text, wordMode: false).request
     var failure: Error = TranslateError.config("没有启用的翻译服务")
-    for service in services.enabled {
+    for service in services.enabled where !service.kind.isDictionary {
       do {
         var latest = ""
         for try await partial in stream(service, request) { latest = partial }

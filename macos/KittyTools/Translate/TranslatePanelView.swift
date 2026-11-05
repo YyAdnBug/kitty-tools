@@ -451,7 +451,10 @@ struct TranslatePanelView: View {
             .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
           }
           ForEach(Array(coordinator.cards.enumerated()), id: \.element.id) { index, card in
-            let wordStyle = coordinator.isWordLookup && card.service.isStreaming
+            // 单词卡：大模型的单词模式、词典类服务（有道词典）
+            let wordStyle =
+              card.service.kind.isDictionary
+              || (coordinator.isWordLookup && card.service.isStreaming)
             ProviderCardView(
               card: card, index: index, language: coordinator.target, speaker: speaker,
               fontScale: fontScale, wordStyle: wordStyle,

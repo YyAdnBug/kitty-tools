@@ -466,7 +466,9 @@ struct HistoryListTests {
 
 struct ServiceLogoTests {
   @Test func logosExistInAssetCatalog() throws {
-    var services = TranslateService.Kind.allCases.filter { $0 != .ai }.map(TranslateService.builtin)
+    // 系统翻译没有官方 logo，用色块（2026-11-05）
+    var services = TranslateService.Kind.allCases.filter { $0 != .ai && $0 != .apple }.map(
+      TranslateService.builtin)
     for proto in [TranslateService.AIProtocol.anthropic, .azure] {
       var ai = TranslateService.newAI()
       ai.aiProtocol = proto

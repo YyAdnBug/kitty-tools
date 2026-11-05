@@ -2950,11 +2950,17 @@ struct SnapshotProbeTests {
           c.target = .zhHans
           c.isWordLookup = true
           c.cards = [
+            // 有道词典（S2）：和大模型单词卡同一个样子
+            .init(
+              service: .builtin(.youdaoDict),
+              state: .done(
+                "美 /neɪm/  英 /neɪm/\nn. 名字，名称；名声，名誉\nv. 命名，给……取名；说出……的名称\n变形：复数 names；过去式 named\n例：What's your name? 你叫什么名字？"
+              )),
             .init(
               service: zhipu,
               state: .done(
                 "美 /neɪm/  英 /neɪm/\nn. 名字；名称；名声\nv. 命名；说出……的名字；任命\n例：What is your name? 你叫什么名字？")
-            )
+            ),
           ]
         }
       ),
