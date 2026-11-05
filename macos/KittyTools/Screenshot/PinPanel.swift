@@ -350,7 +350,14 @@ private final class PinView: NSView {
         action: #selector(close), size: CGSize(width: side, height: side)))
     buttons.spacing = 6
     buttons.setViews([opacity, close], in: .trailing)
-    controls.frame.size = buttons.fittingSize
+    // 圆钮贴右上角、各让 6，百分比在 showZoom 里居中；之后窗口改尺寸（回弹、缩放、原始大小）都靠掩码跟着走。
+    // 别挪进 layout() 里摆（issue #6）：布局阶段改带 autoresizing 约束的子视图 frame 会让约束失效（layout() 的文档不许）；
+    // super.layout() 又把它们吸到像素格上，居中落在半点时 1x 屏上吸到整点、再摆回半点，来回到 AppKit 抛异常闪退
+    controls.frame = CGRect(
+      origin: CGPoint(
+        x: bounds.maxX - buttons.fittingSize.width - 6,
+        y: bounds.maxY - buttons.fittingSize.height - 6),
+      size: buttons.fittingSize)
     controls.autoresizingMask = [.minXMargin, .minYMargin]
     controls.alphaValue = 0
     controls.isHidden = true  // 看不见时也不能点到（点击不看透明度）
@@ -379,14 +386,6 @@ private final class PinView: NSView {
     bar.widthAnchor.constraint(equalToConstant: 22).isActive = true
     bar.heightAnchor.constraint(equalToConstant: 22).isActive = true
     return bar
-  }
-
-  override func layout() {
-    super.layout()
-    controls.frame.origin = CGPoint(
-      x: bounds.maxX - controls.frame.width - 6, y: bounds.maxY - controls.frame.height - 6)
-    zoomHUD.frame.origin = CGPoint(
-      x: (bounds.width - zoomHUD.frame.width) / 2, y: (bounds.height - zoomHUD.frame.height) / 2)
   }
 
   override func mouseEntered(with event: NSEvent) {
@@ -474,7 +473,8 @@ private final class PinView: NSView {
   private func showZoom(_ scale: CGFloat) {
     zoomLabel.stringValue = "\(Int((scale * 100).rounded()))%"
     zoomHUD.fit()
-    needsLayout = true
+    zoomHUD.frame.origin = CGPoint(
+      x: (bounds.width - zoomHUD.frame.width) / 2, y: (bounds.height - zoomHUD.frame.height) / 2)
     zoomHUD.isHidden = false
     zoomHUD.alphaValue = 1
     zoomGeneration += 1
