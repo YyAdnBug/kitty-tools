@@ -13,6 +13,7 @@
 // 规则是纯函数（单测喂账本和条目）；读写偏好的几个薄包装给 AppDelegate 用，界面只拿算好的结果（截图自检不碰偏好）。
 
 import AppKit
+import SwiftUI
 
 enum WhatsNew {
   /// 一个新功能：在哪几处标
@@ -164,5 +165,31 @@ enum WhatsNew {
   /// 打开了设置的一页
   static func touch(page: SettingsPage, defaults: UserDefaults = .standard) {
     update(defaults) { touching($0) { $0.page == page } }
+  }
+}
+
+/// 自己画的界面里的小圆点（主界面格子的名字前、底栏「设置」前、设置侧栏收起的组标题后；iOS 主屏新装 App 的那种）：6 pt 强调色
+struct NewDot: View {
+  var body: some View {
+    Circle()
+      .fill(Style.brand)
+      .frame(width: 6, height: 6)
+      .accessibilityLabel(WhatsNew.spoken)
+  }
+}
+
+/// 设置页里新的那一节，标题后面的「新」：强调色描边的小胶囊（菜单、侧栏行尾的是系统画的徽标）
+struct NewTag: View {
+  @Environment(\.colorSchemeContrast) private var contrast
+
+  var body: some View {
+    Text(WhatsNew.label)
+      .font(.system(size: 10, weight: .semibold))
+      .foregroundStyle(Style.brandInk)
+      .padding(.horizontal, 5)
+      .frame(height: 15)
+      .overlay(Capsule().strokeBorder(Style.brand, lineWidth: contrast == .increased ? 1.5 : 1))
+      .fixedSize()
+      .accessibilityLabel(WhatsNew.spoken)
   }
 }

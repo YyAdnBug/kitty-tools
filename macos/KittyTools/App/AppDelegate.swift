@@ -625,6 +625,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   private lazy var settingsWindow: SettingsWindow = {
     weak var created: SettingsWindow?
+    // 新功能标记：换到一页（打开设置窗也算）时记下碰过，再算设置窗里该标哪几个（看着的那页不闪掉，WhatsNew.shown）
+    settingsNavigation.visit = { [unowned self] page in
+      let fresh = WhatsNew.current()
+      WhatsNew.touch(page: page)
+      let shown = WhatsNew.shown(visiting: page, fresh: fresh, showing: settingsNavigation.fresh)
+      if shown != settingsNavigation.fresh { settingsNavigation.fresh = shown }
+    }
     let window = SettingsWindow(navigation: settingsNavigation) { [unowned self] page in
       switch page {
       case .general:
@@ -1291,11 +1298,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 按现在的状态重排主界面（关着的功能、开关、在不在录、钉图、当前生效的快捷键）。appearing：新呼出，直接定大小；
   /// 开着时（切了开关）高度变了带动画
   private func refreshHome(appearing: Bool) {
+    let fresh = WhatsNew.current()
     homeModel.update(
-      Home.sections(state: menuState, keys: hotKeys.bindings.mapValues(\.display)),
+      Home.sections(
+        state: menuState, keys: hotKeys.bindings.mapValues(\.display),
+        fresh: Set(fresh.flatMap(\.actions))),
       offCount: Home.offCount(
         enabled: Feature.enabled, available: Set(Feature.allCases.filter(\.isAvailable))),
-      appearing: appearing)
+      settingsIsNew: WhatsNew.inSettingsOnly(fresh), appearing: appearing)
     if appearing {
       homePanel.setContentSize(homeModel.size)
     } else {
@@ -1521,16 +1531,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   /// 菜单栏「提醒」一项带子菜单（提醒 D6）：新建提醒…（带全局快捷键）、下一个是什么、几分钟后提醒我、
   /// 暂停全部 / 恢复、管理提醒…
-  private func addReminderMenu(to menu: NSMenu) {
+  /// isNew：提醒是这一版新加的、还没碰过（新功能标记）：「提醒」和「新建提醒…」都挂「新」（子菜单的父项跟着挂，拍板 A4）
+  private func addReminderMenu(to menu: NSMenu, isNew: Bool) {
     let family = HotKeyAction.reminderNew
     let color = NSColor(family.color)
     let item = menu.addAction(SettingsPage.reminders.title, symbol: family.symbol, color: color) {}
     let submenu = NSMenu()
     let hotKey = hotKeys.bindings[family]
-    submenu.addAction(
+    let create = submenu.addAction(
       family.title + "…", symbol: "plus", color: color, key: hotKey?.menuKeyEquivalent ?? "",
       modifiers: hotKey?.modifierFlags ?? []
     ) { [unowned self] in run(family) }
+    if isNew {
+      item.badge = WhatsNew.menuBadge
+      create.badge = WhatsNew.menuBadge
+    }
     if let next = reminders.nextUp() {
       let when = Reminder.Schedule(kind: .once, date: next.at).summary(
         now: .now, calendar: .current)
@@ -2916,12 +2931,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private func buildStatusMenu(_ menu: NSMenu) {
     let state = menuState
     let extras = MenuExtra.allCases.filter { $0.isAvailable(state) }
+    // 新功能标记（WhatsNew）：这一版新加、还没碰过的动作挂系统的菜单徽标「新」；只在设置里才有入口的，挂在「设置…」上
+    let fresh = WhatsNew.current()
+    let freshActions = Set(fresh.flatMap(\.actions))
     func addExtra(_ extra: MenuExtra) {
       let item = menu.addAction(
         extra.title(pinsHidden: state.pinsHidden == true), symbol: extra.symbol,
         color: NSColor(extra.color), key: extra == .settings ? "," : extra == .quit ? "q" : ""
       ) { [unowned self] in run(extra) }
       if let on = extra.isOn(state) { item.state = on ? .on : .off }
+      if extra == .settings, WhatsNew.inSettingsOnly(fresh) { item.badge = WhatsNew.menuBadge }
     }
     // 有新版本时最上面一项就是更新（强调色：现在该操作的东西）
     if let release = updater.available {
@@ -2934,13 +2953,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     for (index, section) in HotKeyAction.sections.filter({ $0.actions != [.home] }).enumerated() {
       if index > 0 { menu.addItem(.separator()) }
       if section.actions == [.reminderNew] {
-        addReminderMenu(to: menu)
+        addReminderMenu(to: menu, isNew: freshActions.contains(.reminderNew))
         continue
       }
       if section.actions == [.statusScreen] {
         let family = HotKeyAction.statusScreen
         let color = NSColor(family.color)
         let item = menu.addAction(family.title, symbol: family.symbol, color: color) {}
+        if freshActions.contains(family) { item.badge = WhatsNew.menuBadge }
         let submenu = NSMenu()
         let hotKey = hotKeys.bindings[family]
         if !state.statusEntersFirst {
@@ -2973,11 +2993,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       }
       for action in section.actions {
         let binding = hotKeys.bindings[action]
-        menu.addAction(
+        let item = menu.addAction(
           action.title(recording: state.recording == action), symbol: action.symbol,
           color: NSColor(action.color),
           key: binding?.menuKeyEquivalent ?? "", modifiers: binding?.modifierFlags ?? []
         ) { [unowned self] in run(action) }
+        if freshActions.contains(action) { item.badge = WhatsNew.menuBadge }
       }
       for extra in extras where section.actions.contains(where: { $0 == extra.section }) {
         addExtra(extra)

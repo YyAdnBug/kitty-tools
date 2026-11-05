@@ -54,6 +54,7 @@
 
 ## 7. 发版
 - 版本号唯一数据源是 Base.xcconfig 的 `MARKETING_VERSION`。改它必须在 `macos/KittyTools/Resources/changelog.json` 追加该版本条目（`{version, date, summary, changes:[{type, scope, text}]}`），`type` 只允许 feat / fix / perf / ui；缺条目时 `build-dmg.sh` 会中止。
+- **新功能标记**（2026-11-05，`Shell/WhatsNew.swift`，PLAN §10「新功能标记」）：发版时在 `WhatsNew.entries` 里挑这一版最多 3 个有入口的新功能（新的一族、新动作、设置页里新的一节；修问题、改样子、没入口的不标），id 发布后别改；单测 `WhatsNewTests.entriesAreWellFormed` 查个数、版本和更新日志对得上。
 - 打包只用 `macos/build-dmg.sh`（arm64 DMG）；tag 用 `macos-v*`，打在 `macos` 分支（2026-10-30 前叫 `main`，2026-09-27 前叫 `macos-native`）。
 - 发布到本仓库 github.com/YyAdnBug/kitty-tools（2026-09-27 起；**和 Tauri 版的仓库无关**，不往那边发）：正式 release、标 latest，附 DMG 和 `_arm64.zip` 两个文件——App 内更新（`App/Updater.swift`）读 release 列表（`releases?per_page=20`，取版本号最大的 `macos-v*`、跳过草稿和预发布；第四轮体检 E13：Windows 版发在同一个仓库、windows-v* 可能是 latest）、下载 `_arm64.zip`，文件名后缀和 tag 前缀 `macos-v` 都别改；下载中能取消（E23），解包、验签、替换那一两秒不能停。细节见 `build-dmg.sh` 头部注释。
 - 应用内更新的红线：只认本团队签名（`Updater.requirement`：bundle id + `anchor apple generic` + `leaf[subject.OU] = HTX9F4KG39`）且版本号和 release 一致的包；解包、验签交给系统的 `ditto` / `codesign`（`Process`，进程外），不在主线程做重活；换证书（团队不变）也能更新，但签名要求变了授权会重新要一次。
