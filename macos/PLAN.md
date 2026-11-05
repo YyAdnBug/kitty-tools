@@ -619,6 +619,9 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
   同步 `Reminders/ReminderSync.swift`（`SyncRecords.Kind.reminders`，照状态屏的状态一条一条合）；自画图标 `kitty.reminders`
   （27 个了；Windows 那份 `FeatureIcons.cs` 要在 windows 分支上重新生成）；界面规范 `mac-whisker/reminders.md`。
   手测 `HANDTEST.md`「提醒手测」。
+- **2026-11-05 修**：用户报「没开任何提醒，刘海却提示新提醒」——是「+」›「新提醒」点开看了一眼就退回的那条：一点就存进去、开着、
+  定在下一个整点，整点真的响了，点了「知道了」又按 D7 自己删掉，列表里找不到。改成先不存，详情页第一次改动才加进列表
+  （`Reminder.saving`），没改就离开（退回、换页、关窗）的不留，同系统提醒事项里空着的那行。调度本身没问题（关着的不排不响）。
 
 ### 功能管理（2026-11-04 立项）
 

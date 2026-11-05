@@ -309,6 +309,38 @@ struct ReminderTests {
       Reminder.new(now: Self.at(2, 9, 55), calendar: Self.calendar).schedule.date == Self.at(2, 11))
   }
 
+  /// 「+」›「新提醒」先不存：详情页第一次改动时才加到末尾（开着），之后按 id 换；别的 id、满了都不加；
+  /// 列表里有的照旧按 id 换（2026-11-05 用户报「没开任何提醒，刘海却提示新提醒」：点开看了一眼就退回的那条
+  /// 原来已经存进去、开着，整点响了）
+  @Test func newReminderIsSavedOnFirstEdit() {
+    let fresh = Reminder.new(id: "n", now: Self.at(2, 9, 23), calendar: Self.calendar)
+    #expect(fresh.isOn)
+    let list = Reminder.examples
+    var titled = fresh
+    titled.title = "交周报"
+    let saved = Reminder.saving(titled, to: list, fresh: fresh)
+    #expect(saved == list + [titled])
+    // 第一下就把标题删光了：先用「新提醒」存上，接着打的字按 id 换
+    var blank = fresh
+    blank.title = " "
+    #expect(Reminder.saving(blank, to: list, fresh: fresh) == list + [fresh])
+    var moved = titled
+    moved.schedule.date = Self.at(2, 14, 30)
+    #expect(Reminder.saving(moved, to: saved, fresh: fresh) == list + [moved])
+    // 不是这一条的新提醒、没有新提醒（从列表点进来，那条已经被删掉 / 响过拿掉了）、满了：都不加
+    var other = titled
+    other.id = "x"
+    #expect(Reminder.saving(other, to: list, fresh: fresh) == list)
+    #expect(Reminder.saving(titled, to: list, fresh: nil) == list)
+    let full = (0..<Reminder.maxCount).map { index in
+      Reminder(id: "r\(index)", title: "第 \(index) 条", schedule: .init(kind: .weekly))
+    }
+    #expect(Reminder.saving(titled, to: full, fresh: fresh) == full)
+    var renamed = list[0]
+    renamed.title = "多喝水"
+    #expect(Reminder.saving(renamed, to: list, fresh: fresh)[0].title == "多喝水")
+  }
+
   // MARK: 字
 
   @Test func summaries() {

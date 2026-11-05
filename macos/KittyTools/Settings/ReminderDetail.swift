@@ -5,6 +5,7 @@
 // （和示例一模一样的直接删，自己加的、改过的先确认）。
 // 改动即时写回偏好里的 JSON 列表（和 RemindersTab 读写同一个键），存之前过 Reminder.sanitized。输入框绑的是一份草稿
 // （同 StatusPresetDetail：边打边收拾会吃掉正在打的空格）。有问题（没标题、超长、时间已经过了）时页头的摘要换成橙色说明。
+// 「+」›「新提醒」推进来的（fresh）还没存：画的是它，第一次改动时才加进列表（Reminder.saving），没改就离开的不留。
 
 import AppKit
 import SwiftUI
@@ -15,6 +16,8 @@ struct ReminderDetail: View {
   /// 截图自检传一份固定的列表：只画，不读不写偏好。正常使用是 nil = 偏好里那份
   var fixed: [Reminder]?
   var now: Date?
+  /// 「+」›「新提醒」推进来、还没存的那一条；从列表点进来的是 nil
+  var fresh: Reminder?
   @AppStorage(Prefs.reminders) private var data: Data?
   @Environment(\.dismiss) private var dismiss
   /// 正在改的这一份（输入框里的原样）；nil = 还没改过，用存着的
@@ -38,8 +41,9 @@ struct ReminderDetail: View {
 
   var body: some View {
     let list = fixed ?? Reminder.decode(data)
-    // 删掉之后、退回列表之前的这一帧（或者响过、点了「知道了」被拿掉了）没有这一条：什么都不画
-    if let stored = list.first(where: { $0.id == id }) {
+    // 删掉之后、退回列表之前的这一帧（或者响过、点了「知道了」被拿掉了）没有这一条：什么都不画。
+    // 还没存的新提醒画 fresh（改过一处就存进去了：之后不在列表里就是被删掉 / 拿掉了，不再画它）
+    if let stored = list.first(where: { $0.id == id }) ?? (draft == nil ? fresh : nil) {
       form(editing: draft ?? stored, stored: stored)
         .navigationTitle(stored.title)
         .toolbar { SettingsBackButton { dismiss() } }
@@ -290,9 +294,10 @@ struct ReminderDetail: View {
       guard response == .OK, let url = panel.url else { return }
       do throws(ReminderSound.ImportError) {
         let id = try ReminderSound.importFile(url)
-        guard var next = draft ?? Reminder.decode(data).first(where: { $0.id == self.id }) else {
-          return
-        }
+        // 还没存的新提醒第一下就选文件：拿 fresh 存进去（同 save 里的 Reminder.saving）
+        guard
+          var next = draft ?? Reminder.decode(data).first(where: { $0.id == self.id }) ?? fresh
+        else { return }
         next.chime = id
         draft = next
         save(next)
@@ -318,7 +323,7 @@ struct ReminderDetail: View {
 
   private func save(_ draft: Reminder) {
     guard fixed == nil else { return }
-    data = Reminder.encoded(Reminder.updating(Reminder.decode(data), with: draft))
+    data = Reminder.encoded(Reminder.saving(draft, to: Reminder.decode(data), fresh: fresh))
   }
 }
 

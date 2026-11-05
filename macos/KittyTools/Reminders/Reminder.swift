@@ -298,7 +298,8 @@ nonisolated struct Reminder: Codable, Hashable, Identifiable {
 
   // MARK: 设置 › 提醒（纯函数；存之前 encoded 再收拾一遍）
 
-  /// 新加的一条：标题「新提醒」、一次、下一个整点（离现在不到 10 分钟就再下一个）、轻提醒、提示音
+  /// 新加的一条：标题「新提醒」、一次、下一个整点（离现在不到 10 分钟就再下一个）、轻提醒、提示音、开着。
+  /// 「+」›「新提醒」先不存，详情页里第一次改动时才加进列表（saving）
   static func new(id: String = UUID().uuidString, now: Date = .now, calendar: Calendar = .current)
     -> Reminder
   {
@@ -339,6 +340,16 @@ nonisolated struct Reminder: Codable, Hashable, Identifiable {
     var off = self
     off.isOn = false
     return Self.examples.contains(off)
+  }
+
+  /// 详情页存一下：列表里有的按 id 换掉（updating）；还没存过的新提醒（fresh：「+」›「新提醒」推进来的那一条）
+  /// 第一次改动时才加到末尾，满了不加。没改就离开（退回、换页、关窗）的什么都不留——同系统提醒事项里点了「+」又点别处，
+  /// 空着的那行不留；原来一点「+」就存进去、开着，看一眼就退回的那条下一个整点平白响一次，点了「知道了」又自己删掉、
+  /// 列表里找不到是谁（2026-11-05 用户报「没开任何提醒，刘海却提示新提醒」）
+  static func saving(_ draft: Reminder, to list: [Reminder], fresh: Reminder?) -> [Reminder] {
+    if list.contains(where: { $0.id == draft.id }) { return updating(list, with: draft) }
+    guard let fresh, fresh.id == draft.id else { return list }
+    return adding(updating([fresh], with: draft)[0], to: list)
   }
 
   /// 详情页改了一条：按 id 换掉。标题只有空白时留着原来的标题（空标题存不下，输入框里删光了重打是常事）
