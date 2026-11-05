@@ -19,6 +19,14 @@ public readonly record struct PixelRect(int X, int Y, int Width, int Height)
     public bool IsEmpty => Width <= 0 || Height <= 0;
 }
 
+/// <summary>剪贴板面板、启动器这一次摆在哪（MonitorLayout.Placement）。</summary>
+public enum PanelPlacement
+{
+    Top,
+    Pointer,
+    Last,
+}
+
 public static class MonitorLayout
 {
     public const double ClipboardTopFraction = 0.2;
@@ -114,6 +122,32 @@ public static class MonitorLayout
         }
 
         return Clamp(new PixelRect(x, y, width, height), work);
+    }
+
+    /// <summary>
+    /// 剪贴板面板、启动器「面板位置」这一次怎么摆（PLAN-v12 N2，mac OverlayPanel.placement）：mouse 光标旁边 / last 上次拖到的地方
+    /// （没拖过按屏幕上方）/ 其余（top、认不出来）屏幕上方。
+    /// </summary>
+    public static PanelPlacement Placement(string? position, bool hasUserFrame) => position switch
+    {
+        "mouse" => PanelPlacement.Pointer,
+        "last" when hasUserFrame => PanelPlacement.Last,
+        _ => PanelPlacement.Top,
+    };
+
+    /// <summary>
+    /// 上次拖到的左上角 (x, y) 在 from 那块屏上，这次要出现在 to 那块屏（鼠标所在屏）：换算到同一相对位置（mac relocated），
+    /// 再按这次的尺寸夹进 to。同一块屏原样（只夹）。
+    /// </summary>
+    public static PixelRect Relocate(int x, int y, WorkArea from, WorkArea to, int width, int height)
+    {
+        if (from != to && from.Width > 0 && from.Height > 0)
+        {
+            x = to.Left + (int)Math.Round((double)(x - from.Left) / from.Width * to.Width);
+            y = to.Top + (int)Math.Round((double)(y - from.Top) / from.Height * to.Height);
+        }
+
+        return Clamp(new PixelRect(x, y, width, height), to);
     }
 
     /// <summary>把矩形夹进工作区；比工作区还大时贴左 / 上。</summary>

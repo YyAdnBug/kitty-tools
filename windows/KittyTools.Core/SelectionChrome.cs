@@ -29,14 +29,16 @@ public static class SelectionChrome
         => Ratios.FirstOrDefault(item => item.Value == ratio).Title ?? "自由";
 
     /// <summary>
-    /// 工具栏：选区下方 10、水平以选区为中心（夹在屏内 10），下方连栏外侧的样式托盘（tray，没有就 0）一起放不下放上方，
-    /// 都放不下放进选区底部（离底边 10）。坐标取整到整 DIP（图标和描边不发糊）。
+    /// 工具栏：选区下方 10，下方连栏外侧的样式托盘（tray，没有就 0）一起放不下放上方，都放不下放进选区底部（离底边 10）。
+    /// 水平（夹在屏内 10）：alignRight（设置 › 截图「工具栏位置」靠右，默认；PLAN-v12 N4，mac 0f83c117）时栏的右边线对齐选区右边线，
+    /// 放进选区时往里收 10（不压右边那条能拖的边和角手柄）；否则以选区为中心。坐标取整到整 DIP（图标和描边不发糊）。
     /// </summary>
     public static (double X, double Y, ToolbarSide Side) Toolbar(
-        RectD selection, double width, double height, double tray, double screenWidth, double screenHeight)
+        RectD selection, double width, double height, double tray, double screenWidth, double screenHeight,
+        bool alignRight = false)
     {
-        var x = Math.Round(Math.Clamp(
-            selection.MidX - width / 2, ToolbarGap, Math.Max(ToolbarGap, screenWidth - width - ToolbarGap)));
+        double Left(double x) => Math.Round(Math.Clamp(x, ToolbarGap, Math.Max(ToolbarGap, screenWidth - width - ToolbarGap)));
+        var x = Left(alignRight ? selection.X + selection.Width - width : selection.MidX - width / 2);
         var below = Math.Round(selection.Bottom + ToolbarGap);
         if (below + height + tray <= screenHeight - ToolbarGap)
         {
@@ -51,7 +53,8 @@ public static class SelectionChrome
 
         var inside = Math.Round(Math.Clamp(
             selection.Bottom - ToolbarGap - height, ToolbarGap, Math.Max(ToolbarGap, screenHeight - height - ToolbarGap)));
-        return (x, inside, ToolbarSide.Inside);
+        var insideX = alignRight ? Left(selection.X + selection.Width - ToolbarGap - width) : x;
+        return (insideX, inside, ToolbarSide.Inside);
     }
 
     /// <summary>

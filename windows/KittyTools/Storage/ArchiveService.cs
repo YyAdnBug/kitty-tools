@@ -430,6 +430,10 @@ internal static class ArchiveService
             writer.WriteString("translateSecondLanguage", settings.TranslateSecondLanguage);
             writer.WriteBoolean("translateAutoCopy", settings.TranslateAutoCopy);
             writer.WriteBoolean("ocrJoinLines", settings.OcrJoinLines);
+            // PLAN-v12 N2 / N4：键名和值同 mac Prefs（clipboardPanelPosition、launcherPanelPosition、screenshotToolbarAlign）。
+            writer.WriteString("clipboardPanelPosition", settings.ClipboardPanelPosition);
+            writer.WriteString("launcherPanelPosition", settings.LauncherPanelPosition);
+            writer.WriteString("screenshotToolbarAlign", settings.ScreenshotToolbarAlign);
             writer.WriteEndObject();
         }
 
@@ -489,6 +493,15 @@ internal static class ArchiveService
                     break;
                 case "ocrJoinLines" when value.ValueKind is JsonValueKind.True or JsonValueKind.False:
                     settings.OcrJoinLines = value.GetBoolean();
+                    break;
+                case "clipboardPanelPosition" when value.ValueKind == JsonValueKind.String && value.GetString() is "top" or "mouse" or "last":
+                    settings.ClipboardPanelPosition = value.GetString()!;
+                    break;
+                case "launcherPanelPosition" when value.ValueKind == JsonValueKind.String && value.GetString() is "top" or "mouse" or "last":
+                    settings.LauncherPanelPosition = value.GetString()!;
+                    break;
+                case "screenshotToolbarAlign" when value.ValueKind == JsonValueKind.String && value.GetString() is "right" or "center":
+                    settings.ScreenshotToolbarAlign = value.GetString()!;
                     break;
             }
         }

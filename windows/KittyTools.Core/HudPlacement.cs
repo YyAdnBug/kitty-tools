@@ -1,5 +1,6 @@
 // 录屏控制条的位置（纯函数，配单测；REVIEW R22）：
 // 尺寸按目标显示器缩放换算成物理像素，位置放在选区下方；下方放不下放上方，上方也放不下就贴选区里面下边。
+// 水平同截图工具栏的「工具栏位置」（PLAN-v12 N4）：靠右时右边线对齐选区右边线（贴在选区里面时往里收一个间距），居中时以选区为中心。
 // 工作区坐标是物理像素（Windows 的 GetMonitorInfo）。
 namespace KittyTools.Core;
 
@@ -13,20 +14,18 @@ public static class HudPlacement
 
     public readonly record struct Rect(int X, int Y, int Width, int Height);
 
-    /// <summary>widthDip：控制条的宽（录屏那条多了两个声音图标，PLAN-v9 R7，传 300）。</summary>
+    /// <summary>widthDip：控制条的宽（录屏那条多了两个声音图标，PLAN-v9 R7，传 300）；alignRight：设置 › 截图「工具栏位置」靠右。</summary>
     public static Rect Compute(
         int regionLeft, int regionTop, int regionRight, int regionBottom,
         int workLeft, int workTop, int workRight, int workBottom,
-        double scale, double widthDip = WidthDip)
+        double scale, double widthDip = WidthDip, bool alignRight = false)
     {
         scale = scale <= 0 ? 1 : scale;
         var width = (int)Math.Round(widthDip * scale);
         var height = (int)Math.Round(HeightDip * scale);
         var gap = (int)Math.Round(GapDip * scale);
 
-        var x = regionLeft + (regionRight - regionLeft - width) / 2;
-        x = Math.Clamp(x, workLeft, Math.Max(workLeft, workRight - width));
-
+        var x = alignRight ? regionRight - width : regionLeft + (regionRight - regionLeft - width) / 2;
         var y = regionBottom + gap;
         if (y + height > workBottom)
         {
@@ -36,7 +35,13 @@ public static class HudPlacement
         if (y < workTop)
         {
             y = regionBottom - height - gap;
+            if (alignRight)
+            {
+                x -= gap;
+            }
         }
+
+        x = Math.Clamp(x, workLeft, Math.Max(workLeft, workRight - width));
 
         y = Math.Clamp(y, workTop, Math.Max(workTop, workBottom - height));
         return new Rect(x, y, width, height);

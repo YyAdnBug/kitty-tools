@@ -1,11 +1,13 @@
-// 长截图自动滚动的步子（纯函数配单测；2026-11-04 用户反馈「自动滚动太快」）。
-// 以前每拍固定发一格滚轮（120）：一格滚多少像素各个程序不一样（浏览器约 100 DIP 再乘缩放、聊天窗口一格好几条、
-// 系统设成「一次滚一屏」就是整屏），选区矮时一格就滚出了选区，两帧没有重叠，之后一直对不上、页面照滚、长图不长。
-// 现在照 mac ScrollCapture.autoScroll 的做法（同类产品也是自己按画面控速，不让用户调「每次滚几格」）：
-// 按上一步实际拼上的行数换算「一个滚轮单位滚几像素」，下一步只发够滚出选区高度一个比例的量（WHEEL_DELTA 的分数，
-// 支持高精度滚轮的程序按比例滚）；比例就是设置 › 截图「自动滚动速度」的慢 / 标准 / 快（这一项 mac 没有，MAC-DIFF.md）。
-// 滚过头（对不上）往回退半步、步子减半，连着 4 次对不上停下；不到一格的量画面没动（老程序攒满 120 才滚）就加倍到一格；
-// 整格发了 3 次都没动 = 到头了。
+// 长截图自动滚动的速度和校准（纯函数配单测；照 mac ScrollCapture 389289d4：跟着屏幕刷新匀速顺滑地滚）。
+// 2026-11-04 用户反馈太快、11-05 嫌「一顿一顿」：现在屏幕每刷新一帧（CompositionTarget.Rendering）发一小段滚轮（Frame），
+// 速度是面板上的「慢 / 标准 / 快」= 每秒滚出 0.3 / 0.6 / 1.2 个选区高；抓帧照旧一帧接一帧（自动滚动时 160 ms），每帧拼完
+// 把「这段时间发了多少滚轮」和「画面实际滚了几像素」对账（After），校准一个滚轮单位滚几像素（Gain）。
+// 对不上（滚过头）退回自上次接上以来发的一半、先放慢一半，连着 4 帧对不上停下；发了滚轮画面却连着 3 帧不动 = 到头了。
+// Windows 和 mac 不一样的两处：
+// - 单位是滚轮单位（WHEEL_DELTA 120 = 一格），不是像素：一格滚多远各程序不一样，支持高精度滚轮的按比例滚，老程序攒满一格才滚。
+//   所以算「到头」时还要自上次接上以来发满一格（不然老程序攒着那几十个单位会被当成到头）。
+// - 不翻滚轮正负号（mac 的 wheelSign）：SendInput 的滚轮方向是定的，没有「自然滚动」对合成事件怎么处理的问题；
+//   Windows 的拼接按方向接（ScrollCanvas.Append），反方向滚只会对不上，走退回那一路。
 namespace KittyTools.Core;
 
 public enum ScrollSpeed
@@ -15,7 +17,7 @@ public enum ScrollSpeed
     Fast,
 }
 
-/// <summary>自动滚动一步之后画面怎样（同 mac ScrollStitcher.Outcome 去掉 full）。</summary>
+/// <summary>抓到的这一帧拼完后画面怎样（同 mac ScrollStitcher.Outcome 去掉 full）。</summary>
 public enum ScrollStep
 {
     /// <summary>拼上了新的行。</summary>
@@ -32,10 +34,10 @@ public enum ScrollStopReason
 {
     None,
 
-    /// <summary>整格滚了几次画面都不动：滚到底（顶）了。</summary>
+    /// <summary>发了滚轮画面却连着几帧不动：滚到底（顶）了。</summary>
     End,
 
-    /// <summary>退了几次还是对不上。</summary>
+    /// <summary>连着几帧对不上。</summary>
     Lost,
 }
 
@@ -44,27 +46,47 @@ public sealed class ScrollPacer
     /// <summary>滚轮一格（WHEEL_DELTA）。</summary>
     public const int Notch = 120;
 
-    public const int MinDelta = 12;
-
-    public const int MaxDelta = Notch * 10;
-
     private const int StallLimit = 3;
     private const int LostLimit = 4;
 
-    private int _last;
+    /// <summary>发得比这少的那一段不拿来校准（滚轮发出去到画面画出来有延迟，太短的段不准）。</summary>
+    private const double MinCalibrationUnits = Notch / 10.0;
+
+    private readonly int _height;
+    private readonly double _scale;
+    private double _carry;
     private int _stalls;
     private int _lost;
 
-    public ScrollPacer(int selectionHeight, ScrollSpeed speed)
+    /// <param name="height">选区高（物理像素）。</param>
+    /// <param name="scale">选区所在那块屏的缩放（1.0 = 100%）：开头按它猜一个滚轮单位滚几像素。</param>
+    public ScrollPacer(int height, double scale, ScrollSpeed speed)
     {
-        Target = TargetShift(selectionHeight, speed);
+        _height = Math.Max(1, height);
+        _scale = scale <= 0 ? 1 : scale;
+        // 开头按「一格约 100 DIP」猜（浏览器、大多数新程序）；之后按实测校准。
+        Gain = InitialGain(_scale);
+        Speed = speed;
+        Velocity = VelocityFor(speed, _height, Gain);
     }
 
-    /// <summary>每步想滚出多少像素。</summary>
-    public double Target { get; }
+    public ScrollSpeed Speed { get; private set; }
 
-    /// <summary>往前一步发多少滚轮单位（正数）。还没量过时半格；第一拍（还没发过）Next 直接给它。</summary>
-    public int Delta { get; private set; } = Notch / 2;
+    /// <summary>发出去 1 个滚轮单位，画面实际滚几像素（校准过的）。</summary>
+    public double Gain { get; private set; }
+
+    /// <summary>现在每秒发多少滚轮单位（沿滚动方向）。</summary>
+    public double Velocity { get; private set; }
+
+    /// <summary>这一轮一共发了多少单位（沿方向为正、往回退为负，只增减不清零）；和下面三个时刻的值相减就是两帧之间发了多少。</summary>
+    public double Posted { get; private set; }
+
+    /// <summary>这一帧、上一帧开抓时 Posted 是多少；长图上一次接上的那一帧（拼接的参照帧）开抓时是多少。</summary>
+    public double PostedAtCapture { get; private set; }
+
+    public double PostedAtPreviousCapture { get; private set; }
+
+    public double PostedAtReference { get; private set; }
 
     public ScrollStopReason Stopped { get; private set; }
 
@@ -76,69 +98,133 @@ public sealed class ScrollPacer
         _ => ScrollSpeed.Normal,
     };
 
-    /// <summary>每步滚出选区高度的多少（快 = mac 的 40%）。</summary>
-    public static double Fraction(ScrollSpeed speed) => speed switch
+    public static string Name(ScrollSpeed speed) => speed switch
     {
-        ScrollSpeed.Slow => 0.12,
-        ScrollSpeed.Fast => 0.4,
-        _ => 0.25,
+        ScrollSpeed.Slow => "slow",
+        ScrollSpeed.Fast => "fast",
+        _ => "normal",
     };
 
-    public static double TargetShift(int height, ScrollSpeed speed) => Math.Max(1, height * Fraction(speed));
+    /// <summary>每秒滚出几个选区高（同 mac Prefs.ScrollSpeed.heightsPerSecond）。</summary>
+    public static double HeightsPerSecond(ScrollSpeed speed) => speed switch
+    {
+        ScrollSpeed.Slow => 0.3,
+        ScrollSpeed.Fast => 1.2,
+        _ => 0.6,
+    };
 
-    /// <summary>暂停后接着滚：停着的时候用户可能自己滚过，下一拍不拿暂停前那一步量、计数清零（步子留着）。</summary>
-    public void Reset()
+    /// <summary>开头猜的倍率：一格约 100 DIP。</summary>
+    public static double InitialGain(double scale) => 100.0 * (scale <= 0 ? 1 : scale) / Notch;
+
+    /// <summary>每秒发多少单位：每秒要滚出 speed 个选区高（像素）除以倍率；最少每秒 10 个单位，最多每秒 30 格。</summary>
+    public static double VelocityFor(ScrollSpeed speed, int height, double gain)
+        => Math.Clamp(HeightsPerSecond(speed) * height / Math.Max(gain, 0.001), 10, Notch * 30);
+
+    /// <summary>
+    /// 按这一段实测校准倍率：发了 sent 个单位、画面滚了 shift 像素。发得太少、画面没往前走都不算；新旧各取一半
+    /// （滚轮发出去到画面画出来有延迟，单看一段会偏），夹在开头猜的 1/20 到 20 倍之间（一格几像素到「一次滚一屏」）。
+    /// </summary>
+    public static double Calibrated(double gain, double shift, double sent, double scale)
+    {
+        if (sent < MinCalibrationUnits || shift <= 0)
+        {
+            return gain;
+        }
+
+        var guess = InitialGain(scale);
+        return Math.Clamp((gain + shift / sent) / 2, guess / 20, guess * 20);
+    }
+
+    /// <summary>这一帧发几个单位：速度 × 这一帧的时长再加上次的零头，发整数，零头留到下一帧；一帧最多按 50 ms 算（卡了一下不猛冲一大段）。</summary>
+    public static (int Units, double Carry) FrameUnits(double velocity, double seconds, double carry)
+    {
+        var amount = velocity * Math.Clamp(seconds, 0, 0.05) + carry;
+        var whole = Math.Truncate(amount);
+        return ((int)whole, amount - whole);
+    }
+
+    /// <summary>开始 / 暂停后接着滚：清计数和零头；停着时没发过滚轮，参照帧开抓时就是现在这个数。</summary>
+    public void Begin()
     {
         _stalls = 0;
         _lost = 0;
-        _last = 0;
+        _carry = 0;
+        PostedAtReference = Posted;
         Stopped = ScrollStopReason.None;
+        Velocity = VelocityFor(Speed, _height, Gain);
+    }
+
+    /// <summary>面板上换了速度：下一帧就按新的速度发。</summary>
+    public void SetSpeed(ScrollSpeed speed)
+    {
+        Speed = speed;
+        Velocity = VelocityFor(speed, _height, Gain);
+    }
+
+    /// <summary>屏幕刷新了一帧（离上一帧 seconds 秒）：这一帧要发几个单位（0 = 这一帧不发），已经记进 Posted。</summary>
+    public int Frame(double seconds)
+    {
+        var (units, carry) = FrameUnits(Velocity, seconds, _carry);
+        _carry = carry;
+        Posted += units;
+        return units;
+    }
+
+    /// <summary>开抓这一帧之前调：记下这时一共发了多少（拼完 After 拿它对账）。</summary>
+    public void Captured()
+    {
+        PostedAtPreviousCapture = PostedAtCapture;
+        PostedAtCapture = Posted;
     }
 
     /// <summary>
-    /// 上一步的结果 → 这一步发多少滚轮单位：正数往前、负数往回退，0 = 停下（原因看 Stopped）。
-    /// shift：Moved 时这一拍拼上了几行（像素）。
+    /// 这一帧拼完：校准、判断要不要退回或停下。shift：Moved 时这一帧拼上了几行（像素）。
+    /// 返回要往回退几个单位（正数，0 = 不退，已经记进 Posted）；Stopped 不是 None 就是该停了。
     /// </summary>
-    public int Next(ScrollStep step, int shift)
+    public int After(ScrollStep step, int shift)
     {
-        var last = _last;
-        if (step == ScrollStep.Lost)
+        // 自上次接上以来、自上一帧以来各发了多少。
+        var sent = PostedAtCapture - PostedAtReference;
+        var sentThisFrame = PostedAtCapture - PostedAtPreviousCapture;
+        switch (step)
         {
-            if (++_lost >= LostLimit)
-            {
-                return Stop(ScrollStopReason.Lost);
-            }
+            case ScrollStep.Moved:
+                PostedAtReference = PostedAtCapture;
+                _stalls = 0;
+                _lost = 0;
+                Gain = Calibrated(Gain, shift, sent, _scale);
+                Velocity = VelocityFor(Speed, _height, Gain);
+                return 0;
+            case ScrollStep.Lost:
+                if (++_lost >= LostLimit)
+                {
+                    Stopped = ScrollStopReason.Lost;
+                    return 0;
+                }
 
-            // 往回退半步：画面回到拼过的那一截和新位置之间，下一拍多半就对上了（mac 同样）。
-            Delta = Math.Max(Delta / 2, MinDelta);
-            return _last = -Delta;
+                var back = (int)Math.Round((Posted - PostedAtReference) / 2);
+                Velocity /= 2;
+                if (back <= 0)
+                {
+                    return 0;
+                }
+
+                Posted -= back;
+                return back;
+            default:
+                // 这一帧没发滚轮（光标停在面板上、刚开始）不算；老程序攒满一格才滚，没发满一格也不算。
+                if (sentThisFrame < 1 || sent < Notch)
+                {
+                    return 0;
+                }
+
+                if (++_stalls >= StallLimit)
+                {
+                    Stopped = ScrollStopReason.End;
+                }
+
+                return 0;
         }
-
-        if (step == ScrollStep.Moved && shift > 0)
-        {
-            _stalls = 0;
-            _lost = 0;
-            if (last > 0)
-            {
-                // 这一步 last 个单位滚了 shift 像素：下一步按比例发够 Target 像素的量。
-                Delta = Math.Clamp((int)Math.Round(last * Target / shift), MinDelta, MaxDelta);
-            }
-
-            return _last = Delta;
-        }
-
-        // 画面没动。刚开始 / 刚往回退过：不算。
-        if (last > 0 && last < Notch)
-        {
-            // 不到一格：有的程序攒满一格才滚，加倍（最多一格）再看。
-            Delta = Math.Min(last * 2, Notch);
-        }
-        else if (last >= Notch && ++_stalls >= StallLimit)
-        {
-            return Stop(ScrollStopReason.End);
-        }
-
-        return _last = Delta;
     }
 
     /// <summary>和上一次拼上的那帧逐行一样（一样就不用拿去拼：整片纯色时随便哪个重叠都对得上，会凭空长出空白）。</summary>
@@ -146,7 +232,7 @@ public sealed class ScrollPacer
         => previous is not null && previous.AsSpan().SequenceEqual(current);
 
     /// <summary>
-    /// 拼过之后这一拍算哪种：拼上了却没长算没动；对不上但变的行不到一成（光标闪、悬停高亮）也算没动。
+    /// 拼过之后这一帧算哪种：拼上了却没长算没动；对不上但变的行不到一成（光标闪、悬停高亮）也算没动。
     /// previous：上一次拼上的那帧每行的哈希（第一帧之前是 null）。
     /// </summary>
     public static ScrollStep Classify(uint[]? previous, uint[] current, bool appended, int grown)
@@ -171,12 +257,5 @@ public sealed class ScrollPacer
         }
 
         return changed < current.Length * 0.1 ? ScrollStep.Unchanged : ScrollStep.Lost;
-    }
-
-    private int Stop(ScrollStopReason reason)
-    {
-        Stopped = reason;
-        _last = 0;
-        return 0;
     }
 }

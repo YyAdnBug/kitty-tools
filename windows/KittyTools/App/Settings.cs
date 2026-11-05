@@ -51,10 +51,26 @@ internal sealed class Settings
     public bool ClipboardPasteOnClick { get; set; }
 
     /// <summary>
-    /// 剪贴板面板出现在哪（2026-11-04 用户要求「像翻译浮窗一样能跟随鼠标」；mac 没有这一项，MAC-DIFF.md）：
-    /// top = 鼠标所在屏的上方正中（默认，同以前）/ pointer = 光标右下（放不下翻到左边 / 上边）。启动器总在屏幕上方。
+    /// 剪贴板面板出现在哪（PLAN-v12 N2，mac clipboardPanelPosition b923b882，值也同 mac，跟着导出导入）：
+    /// top = 鼠标所在屏的上方正中（默认）/ mouse = 光标右下（放不下翻到左边 / 上边）/ last = 上次拖到的地方（没拖过按屏幕上方）。
+    /// 启动器同一套（LauncherPanelPosition）。
     /// </summary>
     public string ClipboardPanelPosition { get; set; } = "top";
+
+    /// <summary>启动器出现在哪（mac launcherPanelPosition）：同 ClipboardPanelPosition。</summary>
+    public string LauncherPanelPosition { get; set; } = "top";
+
+    /// <summary>
+    /// 剪贴板面板、启动器上次被拖到的左上角（物理像素；null = 没拖过）。这台电脑自己的状态，不在导出清单里
+    /// （同 mac 的 frameName：只有用户拖过才记）。
+    /// </summary>
+    public int? ClipboardPanelLeft { get; set; }
+
+    public int? ClipboardPanelTop { get; set; }
+
+    public int? LauncherPanelLeft { get; set; }
+
+    public int? LauncherPanelTop { get; set; }
 
     /// <summary>默认粘贴为纯文本：打开后 Enter 粘纯文本、Shift+Enter 保留格式（mac clipboardPastePlainByDefault，默认关）。</summary>
     public bool ClipboardPastePlain { get; set; }
@@ -186,8 +202,17 @@ internal sealed class Settings
     /// <summary>截完图放哪（PLAN-v9 S7）：card = 角落缩略图（默认）/ none = 都不要（照样进截图历史）。</summary>
     public string ShotPlacement { get; set; } = "card";
 
-    /// <summary>长截图自动滚动的速度（2026-11-04 用户反馈太快）：slow / normal（默认）/ fast，每步滚出选区高度的 12% / 25% / 40%（Core ScrollPacer）。</summary>
+    /// <summary>
+    /// 长截图自动滚动的速度（PLAN-v12 N3，mac scrollCaptureSpeed）：slow / normal（默认）/ fast = 每秒滚出 0.3 / 0.6 / 1.2 个选区高
+    /// （Core ScrollPacer）。在长截图预览面板上换，记住上次；不在设置页里。
+    /// </summary>
     public string ScrollCaptureSpeed { get; set; } = "normal";
+
+    /// <summary>
+    /// 截图工具栏、录屏的录制条贴选区哪边（PLAN-v12 N4，mac screenshotToolbarAlign 0f83c117，跟着导出导入）：
+    /// right = 栏的右边线对齐选区右边线（默认：从左上往右下拖完，完成钮就在鼠标旁边）/ center = 选区下方居中。长图标注照旧居中。
+    /// </summary>
+    public string ScreenshotToolbarAlign { get; set; } = "right";
 
     // 录制（第四版）：帧率、保存目录、上次没写完的临时文件（闪退恢复用）。
     public int RecordFps { get; set; } = Core.RecorderRules.DefaultFps;

@@ -1,5 +1,6 @@
 // 长截图拍的时候选区旁边那块面板（PLAN-v9 S11，照 mac ScrollCapture.swift 的 ScrollCaptureHUD）：永远深色，宽 216，
-// 上面是拼好的长图预览（跟着最新那头长），下面是尺寸、状态行、「放弃」「标注」「完成」（标注 = 拼完不拷贝，开长图标注窗口，S12）。
+// 上面是拼好的长图预览（跟着最新那头长），下面是尺寸、状态行、自动滚动时一排速度「慢 / 标准 / 快」（照 mac b923b882：放在按钮行
+// 上面，记住上次，滚动中换档下一帧生效），最下面「放弃」「标注」「完成」（标注 = 拼完不拷贝，开长图标注窗口，S12）。
 // 预览上滚轮 = 往回看长图前面的内容，右边一条细指示条说在整张图的哪里；双击预览或滚回最新那头回到跟随（ScrollPreview 的纯函数）。
 // 预览直接从 ScrollCanvas 的条带取样（不另外拷整张图），只在没有正在拼的那一拍时取（ScrollingCapture.Idle），没赶上的下一拍补上。
 // 摆在选区右边，放不下放左边，都放不下贴选区里面；不抢焦点、不进 Alt+Tab，设「不进录屏」免得贴在选区里时被拍进去
@@ -15,6 +16,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Automation.Peers;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Media;
 using Windows.Graphics;
 using Windows.Graphics.DirectX;
@@ -37,6 +39,7 @@ internal sealed partial class ScrollPreviewPanel
     private readonly TextBlock _size;
     private readonly TextBlock _status;
     private readonly double _scale;
+    private readonly ToggleButton[] _speeds = Array.Empty<ToggleButton>();
     private CanvasBitmap? _bitmap;
 
     /// <summary>取好、还没建成位图的预览像素（下一次 Draw 里建）。</summary>
@@ -52,7 +55,12 @@ internal sealed partial class ScrollPreviewPanel
     /// <summary>上次画的：看的是哪一段、长图多高、预览里放得下几行。</summary>
     private (int Start, int Count, int Height, int Visible) _shown;
 
-    private ScrollPreviewPanel(PixelBounds region)
+    private static readonly (ScrollSpeed Speed, string Title)[] SpeedChoices =
+    {
+        (ScrollSpeed.Slow, "慢"), (ScrollSpeed.Normal, "标准"), (ScrollSpeed.Fast, "快"),
+    };
+
+    private ScrollPreviewPanel(PixelBounds region, ScrollSpeed? speed)
     {
         _window = new Window { Title = "长截图" };
         HudFrame.Apply(_window);
@@ -122,14 +130,44 @@ internal sealed partial class ScrollPreviewPanel
         layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         var previewFrame = new Border { CornerRadius = new CornerRadius(6), Child = _preview };
         Grid.SetRow(_size, 1);
         Grid.SetRow(_status, 2);
-        Grid.SetRow(buttons, 3);
+        Grid.SetRow(buttons, 4);
         layout.Children.Add(previewFrame);
         layout.Children.Add(_size);
         layout.Children.Add(_status);
         layout.Children.Add(buttons);
+
+        // 自动滚动的速度（只在自动滚动的这一轮有）：三个一组的切换钮，点了不放手（总有一个选中）。
+        if (speed is { } current)
+        {
+            var row = new Grid { ColumnSpacing = 2, Margin = new Thickness(0, 10, 0, 0) };
+            ToolTipService.SetToolTip(row, "自动滚动的速度");
+            _speeds = new ToggleButton[SpeedChoices.Length];
+            for (var index = 0; index < SpeedChoices.Length; index++)
+            {
+                var (value, title) = SpeedChoices[index];
+                row.ColumnDefinitions.Add(new ColumnDefinition());
+                var button = new ToggleButton
+                {
+                    Content = title,
+                    FontSize = 12,
+                    Padding = new Thickness(0, 3, 0, 4),
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    IsChecked = value == current,
+                };
+                AutomationProperties.SetName(button, $"自动滚动速度：{title}");
+                button.Click += (_, _) => SelectSpeed(value);
+                Grid.SetColumn(button, index);
+                row.Children.Add(button);
+                _speeds[index] = button;
+            }
+
+            Grid.SetRow(row, 3);
+            layout.Children.Add(row);
+        }
 
         // 永远深色（同 mac 的长截图 HUD）：圆角、阴影、发丝线由 DWM 画（HudFrame）。
         _window.Content = new Border
@@ -157,13 +195,13 @@ internal sealed partial class ScrollPreviewPanel
         }
     }
 
-    /// <summary>开始长截图时出面板；建不出来就没有预览，状态行退回轻提示。</summary>
-    public static void Show(PixelBounds region, string status)
+    /// <summary>开始长截图时出面板；建不出来就没有预览，状态行退回轻提示。speed：自动滚动时的速度（有它才出那一排）。</summary>
+    public static void Show(PixelBounds region, string status, ScrollSpeed? speed = null)
     {
         Hide();
         try
         {
-            _instance = new ScrollPreviewPanel(region);
+            _instance = new ScrollPreviewPanel(region, speed);
         }
         catch (Exception ex)
         {
@@ -192,6 +230,21 @@ internal sealed partial class ScrollPreviewPanel
         panel._size.Text = $"{canvas.Width} × {canvas.Height}";
         AutomationProperties.SetName(panel._size, $"已拼 {canvas.Height} 像素高");
         panel.Render();
+    }
+
+    /// <summary>(x, y)（物理像素）落在面板上、或离面板 marginDip 以内（自动滚动时光标在这里先不发滚轮）。</summary>
+    public static bool Contains(int x, int y, double marginDip)
+    {
+        if (_instance is not { } panel)
+        {
+            return false;
+        }
+
+        var position = panel._window.AppWindow.Position;
+        var size = panel._window.AppWindow.Size;
+        var margin = (int)Math.Round(marginDip * panel._scale);
+        return x >= position.X - margin && x < position.X + size.Width + margin &&
+            y >= position.Y - margin && y < position.Y + size.Height + margin;
     }
 
     /// <summary>状态行；没有面板时退回轻提示。</summary>
@@ -299,6 +352,17 @@ internal sealed partial class ScrollPreviewPanel
         {
             // 已经关了。
         }
+    }
+
+    /// <summary>点了一个速度：三个钮里只亮它（再点已选中的也不放手），交给 ScrollingCapture 换档、记住。</summary>
+    private void SelectSpeed(ScrollSpeed speed)
+    {
+        for (var index = 0; index < _speeds.Length; index++)
+        {
+            _speeds[index].IsChecked = SpeedChoices[index].Speed == speed;
+        }
+
+        ScrollingCapture.SetSpeed(speed);
     }
 
     private void ShowStatus()

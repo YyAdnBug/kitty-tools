@@ -31,6 +31,42 @@
 3. 截图：汇率结果、占位行、用法提示、货币候选（浅 / 深），推 `windows-shots` 的 `0.2.0-v12-batch-1/`。
 4. **别动 `83040384` 里长截图控速那半**：第 2 批照 mac 重做（速度放在长截图面板上、匀速小段滚动）；它的「剪贴板面板跟随鼠标」留着，第 2 批加「上次位置」和启动器那一行。这次先编译过它（在 REVIEW「用户反馈 2026-11-04」下面记一句）。
 
+### 第 2 批：面板位置、长截图控速、工具栏靠右（N2 N3 N4）→ 已写（审查方，`git log --grep "PLAN-v12 第 2 批"`，没编译）
+
+2026-11-05 用户定：这一版连窗口、合成、输入钩子都在 Mac 上写，Windows 只编译、核验、修编译错。照 mac `b923b882`、`389289d4`、`0f83c117`：
+
+- **N2 面板位置**：设置 › 剪贴板「面板」、设置 › 启动器第一组各一行「面板位置」：屏幕上方（默认）/ 跟随鼠标 / 上次位置（`Settings.ClipboardPanelPosition`、
+  `LauncherPanelPosition`，值同 mac `top / mouse / last`——`83040384` 写的 `pointer` 没发过，直接换掉）。`OverlayWindow.PositionAtPointer` 按
+  `MonitorLayout.Placement` 摆；上次位置用 `MonitorLayout.Relocate`（记着的那块屏不是鼠标所在屏时换算到同一相对位置，mac `relocated`）。
+  **面板能拖了**：`_host` 上收没被控件处理掉的按下（`AddHandler(…, handledEventsToo: false)`，再挡一道 TextBox / ButtonBase / ScrollBar / Thumb），
+  挪出 4 DIP 才抓指针、`AppWindow.Move`，松手记 `ClipboardPanelLeft/Top`、`LauncherPanelLeft/Top`（int?，这台电脑的状态，不导出）。
+- **N3 长截图控速**（重做 `83040384` 的那半）：`Core/ScrollPacer` 换成 mac 389289d4 的做法——`Frame(seconds)` 每帧按速度发一小段滚轮（零头留到下一帧、
+  一帧最多按 50 ms 算），`Captured()` 开抓前记一共发了多少，`After(step, shift)` 拼完对账校准倍率（新旧各半、夹在猜的 1/20–20 倍）、对不上退回一半并放慢一半、
+  连着 4 帧对不上停、发了滚轮却连着 3 帧不动 = 到头。和 mac 不同的两处写在文件头：单位是滚轮单位（到头还要自上次接上以来发满一格，老程序攒满一格才滚）、
+  不翻滚轮正负号。`ScrollingCapture`：自动滚动时 `CompositionTarget.Rendering` 每帧发（`SendWheel` 不再每次把光标挪进选区又挪回去）、抓帧 160 ms；
+  开始 / 按 A 接着滚时光标不在选区（或在面板上）才挪到选区中间；光标在面板附近 16 DIP 先不发，移出选区 = 暂停（按 A）。
+  速度在 `ScrollPreviewPanel` 按钮行上面一排三个 `ToggleButton`（只在自动滚动的那一轮有），点了 `ScrollingCapture.SetSpeed` 下一帧生效、存 `ScrollCaptureSpeed`；
+  设置 › 截图 里那一行删了。`ScrollStitcher` 的改进（重叠在整帧里找、`Similar` 提前返回、`Probe`）和「和上次拼上的一样就不拼」照留。
+- **N4 工具栏靠右**：`SelectionChrome.Toolbar(…, alignRight)`（栏右边线对齐选区右边线，翻到上方不变，放进选区往里收 10）、
+  `HudPlacement.Compute(…, alignRight)`（开录后的控制条，贴在选区里面时往里收一个间距）；设置 › 截图「工具栏位置」靠右（默认）/ 居中（`ScreenshotToolbarAlign`）。
+  长图标注不用这两个，照旧居中。
+- **导出导入**：`ArchiveService.PreferencesOf` / `ApplyPreferences` 加 `clipboardPanelPosition`、`launcherPanelPosition`、`screenshotToolbarAlign`（键名和值同 mac，
+  读的时候只认那几个值）。拖到的位置、长截图速度不导出。
+- 单测：`ScrollPacerTests` 重写（13 个：速度、校准、每帧零头、平滑窗口校准到目标速度、一次滚一屏、攒满一格的老程序、到头、对不上、不发不算停、换档；
+  模拟的期望值在 Mac 上用 Python 照抄一份跑过），新加 `PlanV12Batch2Tests` 4 个。`MAC-DIFF.md` 删掉 83040384 加的两条（mac 现在也有）。HANDTEST 932–951，
+  906–912、917 的自动滚动那半标成被取代。
+
+**你们做的**：
+1. 编译 Debug x64、Release AOT x64 / ARM64，零警告；`dotnet test` 全过（`ScrollPacerTests` 13 个、`PlanV12Batch2Tests` 4 个，原有的 `SelectionChromeTests`、
+   `HudPlacementTests`、`ScrollCanvasTests` 照旧过）。要特别看的编译点：`ScrollingCapture` 新加了 `using Microsoft.UI.Xaml.Media;`（和嵌套的 `record struct Tick`、
+   `_timer.Tick` 同名不该冲突，冲突就把记录改名 `Beat`）；`OverlayWindow` 里 `PInvoke.GetCursorPos(out _dragStartCursor)` 写的是 `System.Drawing.Point` 字段；
+   `ScrollPreviewPanel` 的 `readonly ToggleButton[] _speeds` 在构造函数里赋值。
+2. **先确认 `CompositionTarget.Rendering` 在自动滚动时真的每帧都来**：日志 `scroll.auto-stopped` / `scroll.done` 带了 `render-frames=`，滚 5 秒应该是 300 左右（60 Hz）。
+   要是只有几十（XAML 不重绘时不来），把 `BeginAutoScroll` 里挂 Rendering 换成一个 16 ms 的 `DispatcherQueueTimer`（`OnRendering` 本来就按两次之间的实际时长算），记在这里。
+3. 走 HANDTEST 932–951。944 要改系统的滚轮设置，测完改回；943 挑资源管理器详细信息视图。真鼠标拖面板、点速度钮这些自己走不了的，写「没测」留给用户。
+4. 截图：设置 › 剪贴板 / 启动器「面板位置」、设置 › 截图「工具栏位置」、靠右的工具栏、长截图面板带速度那一排（浅 / 深），推 `windows-shots` 的 `0.2.0-v12-batch-2/`；
+   自动滚动录 3–5 秒短视频（只录测试窗口 + 面板）。
+
 ## PLAN-v11（0.1.0 之后还没做的，2026-11-03 用户「全部按推荐」）
 
 方案和分批在 `PLAN-v11.md` §3；分工照 D10（同 PLAN-v10 D5）。每批审查方写好的推上来、**没编译**，你们编译、单测、在屏幕上验，编译错直接修，在这一节对应那批下面记一句。
@@ -405,6 +441,8 @@
 - **截图**：`windows-shots` 的 `0.2.0-batch-8/`：主界面高亮滑动的短视频、主界面浅 / 深。
 
 ### 用户反馈 2026-11-04：长截图自动滚动太快、剪贴板面板跟随鼠标 → 已写（审查方，`git log --grep "自动滚动按实际"`，没编译）
+
+> 长截图控速那半已被 PLAN-v12 第 2 批重做（速度挪到面板上、匀速顺滑地滚），下面「你们做的」第 2、3 条的自动滚动部分照 932 起那一节走；剪贴板位置换成三档。
 
 用户原话：「滚动截图滚动速度过快，添加支持速度控制，或者看看市面上的解决办法」「粘贴板期望翻译的浮窗一样可以跟随鼠标」。
 

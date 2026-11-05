@@ -4,13 +4,18 @@
 // 以前开始滚后什么框都没有）：线在选区外、又不进截图，抓的帧里没有它；
 // 选区旁边一块预览面板（ScrollPreviewPanel，PLAN-v9 S11）：拼好的长图跟着长、能往回看，下面是尺寸、状态和「放弃」「完成」；
 // Enter 用临时注册的全局热键（不带修饰键，只在长截图期间有效）；Esc 走只看不吞的低级钩子（EscapeKeyWatch，PLAN-v11 M13）。
-// 自动滚动（A / Shift+A）每拍发多少滚轮量由 Core 的 ScrollPacer 按上一拍实际拼上的行数定（2026-11-04 用户反馈太快：
-// 以前固定一格，矮选区一格就滚出了画面）；速度在 设置 › 截图「长截图自动滚动」。滚到头、退了几次还对不上就停下、状态行说。
+// 自动滚动（A / Shift+A，照 mac 389289d4）：屏幕每刷新一帧（CompositionTarget.Rendering）按速度发一小段滚轮，匀速顺滑地滚；
+// 速度在预览面板按钮行上面那一排「慢 / 标准 / 快」（每秒滚出 0.3 / 0.6 / 1.2 个选区高，记住上次，滚动中换档下一帧生效）。
+// 抓帧 160 ms 一帧、边滚边截，每帧拼完按发出去的量和画面实际滚的像素对账校准（Core ScrollPacer）；对不上退回、放慢，
+// 连着几帧不动 = 到头，停下、状态行说。滚轮交给光标下的窗口：开始 / 接着滚时光标不在选区里（或停在面板上）就挪到选区中间，
+// 之后光标停在面板附近先不发，移出选区 = 暂停（按 A 接着滚）。
 // REVIEW R43：每拍只 BitBlt 选区那一块（以前抓全部屏再裁），转像素、算行哈希、找重叠在线程池上做（一次只拼一拍，
 // 上一拍没拼完这一拍就跳过），拼接按条带存（ScrollCanvas）；「完成」等正在拼的那一拍拼完再合成。
+using System.Diagnostics;
 using KittyTools.Core;
 using KittyTools.Infrastructure;
 using Microsoft.UI.Dispatching;
+using Microsoft.UI.Xaml.Media;
 using Windows.Win32;
 using Windows.Win32.Foundation;
 using Windows.Win32.UI.Input.KeyboardAndMouse;
@@ -25,6 +30,9 @@ internal static class ScrollingCapture
 
     private static readonly TimeSpan Interval = TimeSpan.FromMilliseconds(600);
 
+    /// <summary>自动滚动时抓帧的间隔（同 mac：边滚边截，每帧滚出一两成选区高）。</summary>
+    private static readonly TimeSpan AutoInterval = TimeSpan.FromMilliseconds(160);
+
     private static DispatcherQueueTimer? _timer;
     private static FrozenScreen? _screen;
     private static PixelBounds _rect;
@@ -37,8 +45,15 @@ internal static class ScrollingCapture
     /// <summary>上一次拼上的那帧每行的哈希：判断这一拍是没动还是对不上（ScrollPacer.Classify）。</summary>
     private static uint[]? _reference;
 
-    /// <summary>自动滚动的步子；手动滚时是 null。</summary>
+    /// <summary>自动滚动的速度和校准；手动滚时是 null。</summary>
     private static ScrollPacer? _pacer;
+
+    /// <summary>上一次屏幕刷新的时刻（Stopwatch 计数；0 = 刚挂上帧回调）。</summary>
+    private static long _lastFrame;
+    private static bool _framesHooked;
+
+    /// <summary>这一轮来过几次屏幕刷新回调（日志里看帧回调是不是真的每帧都来）。</summary>
+    private static int _renderFrames;
 
     /// <summary>「完成」进行中：等着正在拼的那一拍，这时候不再抓新的、也不再进「完成」。</summary>
     private static bool _completing;
@@ -49,9 +64,6 @@ internal static class ScrollingCapture
     private static ScrollDirection _direction = ScrollDirection.Down;
     private static bool _autoScroll;
     private static bool _paused;
-    private static bool _hasRestore;
-    private static int _restoreX;
-    private static int _restoreY;
     private static bool _messageHooked;
 
     public static bool Active { get; private set; }
@@ -73,14 +85,17 @@ internal static class ScrollingCapture
         _canvas = null;
         _work = null;
         _reference = null;
-        _pacer = autoScroll ? new ScrollPacer(rect.Height, ScrollPacer.Parse(SettingsService.Current.ScrollCaptureSpeed)) : null;
+        var speed = ScrollPacer.Parse(SettingsService.Current.ScrollCaptureSpeed);
+        _pacer = autoScroll
+            ? new ScrollPacer(rect.Height, Displays.AtPoint(rect.Left + rect.Width / 2, rect.Top + rect.Height / 2).Scale, speed)
+            : null;
         _completing = false;
         _frames = 0;
+        _renderFrames = 0;
         _escapeArmedAt = 0;
         _direction = direction;
         _autoScroll = autoScroll;
         _paused = false;
-        _hasRestore = false;
         _onComplete = onComplete;
         _onCancel = onCancel;
         Active = true;
@@ -94,13 +109,32 @@ internal static class ScrollingCapture
         RecordingFrame.ShowScrolling(rect);
         CaptureFrame();
         _timer = DispatcherQueue.GetForCurrentThread()!.CreateTimer();
-        _timer.Interval = Interval;
+        _timer.Interval = autoScroll ? AutoInterval : Interval;
         _timer.IsRepeating = true;
         _timer.Tick += (_, _) => CaptureFrame();
         _timer.Start();
-        Log.Info($"scroll.begin {rect.Width}x{rect.Height} direction={direction} auto={autoScroll} speed={SettingsService.Current.ScrollCaptureSpeed}");
+        Log.Info($"scroll.begin {rect.Width}x{rect.Height} direction={direction} auto={autoScroll} speed={ScrollPacer.Name(speed)}");
         ScrollPreviewPanel.Show(
-            rect, autoScroll ? "自动滚动中，Enter 完成，Esc 放弃" : "滚动选区，Enter 完成，Esc 放弃");
+            rect, autoScroll ? "自动滚动中，Enter 完成，Esc 放弃" : "滚动选区，Enter 完成，Esc 放弃",
+            autoScroll ? speed : null);
+        if (autoScroll)
+        {
+            BeginAutoScroll();
+        }
+    }
+
+    /// <summary>面板上换了速度（慢 / 标准 / 快）：下一帧就按新的速度发，记下来下次照用。</summary>
+    public static void SetSpeed(ScrollSpeed speed)
+    {
+        _pacer?.SetSpeed(speed);
+        var name = ScrollPacer.Name(speed);
+        if (SettingsService.Current.ScrollCaptureSpeed != name)
+        {
+            SettingsService.Current.ScrollCaptureSpeed = name;
+            SettingsService.Save();
+        }
+
+        Log.Info($"scroll.speed {name}");
     }
 
     /// <summary>结束、合成整张；annotate = 面板上点了「标注」（拼完不拷贝，开长图标注窗口）。</summary>
@@ -140,7 +174,7 @@ internal static class ScrollingCapture
         var frame = canvas.Compose();
         var callback = _onComplete;
         Stop();
-        Log.Info($"scroll.done frames={_frames} height={frame.Height}");
+        Log.Info($"scroll.done frames={_frames} render-frames={_renderFrames} height={frame.Height}");
         callback?.Invoke(frame, annotate);
     }
 
@@ -199,7 +233,7 @@ internal static class ScrollingCapture
         }
 
         _paused = false;
-        _hasRestore = false;
+        UnhookFrames();
         _screen = null;
         _canvas = null;
         _work = null;
@@ -220,7 +254,9 @@ internal static class ScrollingCapture
         try
         {
             // 只抓选区那一块（屏幕内容会变，冻结帧不能再用）；GDI 的屏幕 DC 用的就是全局的物理像素坐标。
+            // 开抓前记下一共发了多少滚轮，拼完拿它和画面实际滚的对账。
             var rect = _rect;
+            _pacer?.Captured();
             var bgra = ScreenCapture.CaptureRegion(rect);
             if (bgra is null)
             {
@@ -280,14 +316,15 @@ internal static class ScrollingCapture
 
             if (_autoScroll && _pacer is { } pacer)
             {
-                var delta = pacer.Next(result.Step, result.Grown);
-                if (delta == 0)
+                var back = pacer.After(result.Step, result.Grown);
+                if (back > 0)
+                {
+                    SendWheel(-back);
+                }
+
+                if (pacer.Stopped != ScrollStopReason.None)
                 {
                     StopAutoScroll(pacer.Stopped);
-                }
-                else
-                {
-                    SendWheel(delta);
                 }
             }
         }
@@ -298,38 +335,107 @@ internal static class ScrollingCapture
         }
     }
 
+    /// <summary>开始 / 接着自动滚动：光标不在选区里、或停在面板上就挪到选区中间（滚轮交给光标下的窗口），挂上帧回调。</summary>
+    private static void BeginAutoScroll()
+    {
+        if (_pacer is not { } pacer)
+        {
+            return;
+        }
+
+        PInvoke.GetCursorPos(out var cursor);
+        if (!Inside(_rect, cursor.X, cursor.Y) || ScrollPreviewPanel.Contains(cursor.X, cursor.Y, 0))
+        {
+            SetCursorPos(_rect.Left + _rect.Width / 2, _rect.Top + _rect.Height / 2);
+        }
+
+        pacer.Begin();
+        _autoScroll = true;
+        if (_timer is { } timer)
+        {
+            timer.Interval = AutoInterval;
+        }
+
+        if (!_framesHooked)
+        {
+            _framesHooked = true;
+            _lastFrame = 0;
+            CompositionTarget.Rendering += OnRendering;
+        }
+    }
+
+    /// <summary>停掉帧回调、抓帧回到慢的间隔（手动滚、暂停、叫停之后）。</summary>
+    private static void UnhookFrames()
+    {
+        if (_framesHooked)
+        {
+            _framesHooked = false;
+            CompositionTarget.Rendering -= OnRendering;
+        }
+
+        if (_timer is { } timer)
+        {
+            timer.Interval = Interval;
+        }
+    }
+
     /// <summary>
-    /// 自动滚动：把光标放到选区中间滚 delta 个滚轮单位（120 = 一格；负数往回退），滚完放回原处，不点击。
-    /// 不到一格的量支持高精度滚轮的程序按比例滚，老程序攒满一格才滚（ScrollPacer 会把量加上去）。
+    /// 屏幕每刷新一帧（自动滚动时）：按速度发这一帧的那一小段。光标在面板附近（去点按钮、看预览）先不发（滚轮会落到面板上），
+    /// 移出选区 = 暂停（也免得滚到别的窗口）。
     /// </summary>
-    private static unsafe void SendWheel(int delta)
+    private static void OnRendering(object? sender, object args)
+    {
+        var now = Stopwatch.GetTimestamp();
+        var seconds = _lastFrame == 0 ? 1 / 60.0 : (double)(now - _lastFrame) / Stopwatch.Frequency;
+        _lastFrame = now;
+        _renderFrames++;
+        if (!Active || !_autoScroll || _pacer is not { } pacer || _completing)
+        {
+            return;
+        }
+
+        PInvoke.GetCursorPos(out var cursor);
+        if (ScrollPreviewPanel.Contains(cursor.X, cursor.Y, 16))
+        {
+            return;
+        }
+
+        if (!Inside(_rect, cursor.X, cursor.Y))
+        {
+            Pause();
+            return;
+        }
+
+        var units = pacer.Frame(seconds);
+        if (units != 0)
+        {
+            SendWheel(units);
+        }
+    }
+
+    private static bool Inside(PixelBounds rect, int x, int y)
+        => x >= rect.Left && x < rect.Right && y >= rect.Top && y < rect.Bottom;
+
+    /// <summary>
+    /// 往滚动方向发 units 个滚轮单位（120 = 一格；负数往回退），交给光标下的窗口。不到一格的量支持高精度滚轮的程序按比例滚，
+    /// 老程序攒满一格才滚（ScrollPacer 算「到头」时会等发满一格）。
+    /// </summary>
+    private static unsafe void SendWheel(int units)
     {
         try
         {
-            PInvoke.GetCursorPos(out var cursor);
-            if (_hasRestore && (cursor.X != _restoreX || cursor.Y != _restoreY))
-            {
-                Pause();
-                return;
-            }
-
-            SetCursorPos(_rect.Left + _rect.Width / 2, _rect.Top + _rect.Height / 2);
             var input = new INPUT { type = INPUT_TYPE.INPUT_MOUSE };
             input.Anonymous.mi = new MOUSEINPUT
             {
                 dx = 0,
                 dy = 0,
                 // 滚轮往下（内容往上走）是负数。
-                mouseData = unchecked((uint)(_direction == ScrollDirection.Down ? -delta : delta)),
+                mouseData = unchecked((uint)(_direction == ScrollDirection.Down ? -units : units)),
                 dwFlags = MOUSE_EVENT_FLAGS.MOUSEEVENTF_WHEEL,
                 time = 0,
                 dwExtraInfo = 0,
             };
             PInvoke.SendInput(1, &input, System.Runtime.InteropServices.Marshal.SizeOf<INPUT>());
-            SetCursorPos(cursor.X, cursor.Y);
-            _restoreX = cursor.X;
-            _restoreY = cursor.Y;
-            _hasRestore = true;
         }
         catch (Exception ex)
         {
@@ -337,17 +443,18 @@ internal static class ScrollingCapture
         }
     }
 
-    /// <summary>ScrollPacer 叫停：滚到头了、或者退了几次还是对不上。手动滚、Enter 完成照常。</summary>
+    /// <summary>ScrollPacer 叫停：滚到头了、或者连着几帧对不上。手动滚、Enter 完成照常。</summary>
     private static void StopAutoScroll(ScrollStopReason reason)
     {
         _autoScroll = false;
+        UnhookFrames();
         var end = _direction == ScrollDirection.Down ? "已经滚到底了" : "已经滚到顶了";
         ScrollPreviewPanel.SetStatus(
             reason == ScrollStopReason.Lost
                 ? "对不上，已停止自动滚动：可以自己慢慢滚，Enter 完成"
                 : $"{end}，Enter 完成，Esc 放弃",
             warning: reason == ScrollStopReason.Lost);
-        Log.Info($"scroll.auto-stopped reason={reason} frames={_frames}");
+        Log.Info($"scroll.auto-stopped reason={reason} frames={_frames} render-frames={_renderFrames} gain={_pacer?.Gain:F2}");
     }
 
     private static void OnHiddenMessage(uint message, WPARAM wParam, LPARAM lParam)
@@ -367,8 +474,9 @@ internal static class ScrollingCapture
 
         _paused = true;
         _autoScroll = false;
+        UnhookFrames();
         PInvoke.RegisterHotKey(HiddenWindow.Hwnd, ResumeId, 0, (uint)VIRTUAL_KEY.VK_A);
-        ScrollPreviewPanel.SetStatus("自动滚动暂停了（动了鼠标）：按 A 继续，Enter 完成", warning: true);
+        ScrollPreviewPanel.SetStatus("自动滚动暂停了（光标移出了选区）：按 A 继续，Enter 完成", warning: true);
         Log.Info("scroll.paused");
     }
 
@@ -380,9 +488,8 @@ internal static class ScrollingCapture
         }
 
         _paused = false;
-        _autoScroll = true;
-        // 停着的时候用户可能自己滚过：下一拍不拿暂停前那一步量。
-        _pacer?.Reset();
+        // 停着的时候用户可能自己滚过：Begin 把参照清成现在、计数清零。
+        BeginAutoScroll();
         PInvoke.UnregisterHotKey(HiddenWindow.Hwnd, ResumeId);
         ScrollPreviewPanel.SetStatus("自动滚动中，Enter 完成，Esc 放弃");
         Log.Info("scroll.resumed");

@@ -78,12 +78,13 @@ internal sealed partial class SettingsWindow : Window
         {
             "历史", "天数", "保留", "永久", "图片", "占用", "预览", "链接", "网页", "格式", "纯文本", "识别", "文字", "OCR", "隐私",
             "密钥", "银行卡", "清空", "退出", "锁屏", "排除", "应用", "收藏", "收藏夹", "片段", "密码", "敏感", "标题", "透镜", "单击",
-            "双击", "点击", "粘贴", "位置", "面板位置", "鼠标", "跟随鼠标",
+            "双击", "点击", "粘贴", "位置", "面板位置", "鼠标", "跟随鼠标", "上次位置",
         },
         ["launcher"] = new[]
         {
             "英文", "输入法", "书签", "浏览历史", "历史", "浏览器", "Edge", "Chrome", "Firefox", "Brave", "索引", "搜索", "引擎",
             "快捷链接", "关键词", "兜底", "使用记录", "常用", "最近", "收藏", "文件", "open", "find", "按键", "速查",
+            "位置", "面板位置", "鼠标", "跟随鼠标", "上次位置",
         },
         ["translate"] = new[]
         {
@@ -94,7 +95,7 @@ internal sealed partial class SettingsWindow : Window
         ["screenshot"] = new[]
         {
             "保存", "存储", "目录", "文件夹", "快门", "声音", "缩略图", "识字", "换行", "标注", "长截图", "钉图", "截图历史", "按键", "速查",
-            "滚动截图", "自动滚动", "滚动", "速度", "太快",
+            "工具栏", "靠右", "居中", "位置",
         },
         ["record"] = new[]
         {
@@ -1431,14 +1432,8 @@ internal sealed partial class SettingsWindow : Window
                 settings.ClipboardPasteOnClick = isOn;
                 SettingsService.Save();
             });
-        // 面板位置（2026-11-04 用户要求，同翻译「浮窗位置」的前两项；mac 没有，MAC-DIFF.md）：下次打开面板时生效。
-        var clipPositions = new[] { "top", "pointer" };
-        AddCombo("面板位置", "屏幕上方是鼠标所在屏幕的上方正中，跟随鼠标是光标旁边",
-            new[] { "屏幕上方", "跟随鼠标" }, Math.Max(0, Array.IndexOf(clipPositions, settings.ClipboardPanelPosition)), index =>
-            {
-                settings.ClipboardPanelPosition = clipPositions[index];
-                SettingsService.Save();
-            });
+        // 面板位置（PLAN-v12 N2，mac b923b882，同翻译「浮窗位置」）：下次打开面板时生效。
+        AddPanelPositionCombo(settings.ClipboardPanelPosition, value => settings.ClipboardPanelPosition = value);
 
         // 内容
         _content.Children.Add(SettingsUi.Section("内容"));
@@ -1753,6 +1748,7 @@ internal sealed partial class SettingsWindow : Window
                 settings.LauncherRomanInput = isOn;
                 SettingsService.Save();
             });
+        AddPanelPositionCombo(settings.LauncherPanelPosition, value => settings.LauncherPanelPosition = value);
         AddShortcutsRow("launcher", "启动器里的按键",
             "搜应用、系统设置、文件、书签、网址、路径、算式（也能换算单位和进制）和系统命令（lock、quit、kill 这些），" +
             "Enter 打开，Ctrl+K 看这一项的全部操作");
@@ -2408,6 +2404,19 @@ internal sealed partial class SettingsWindow : Window
             "截图、长截图、钉过的图和录屏录音都留在这里，能回头接着改标注、再钉一次。超过保留期或占用的先删最旧的（已经存到文件夹里的文件不动）。" +
             "历史只在这台电脑上，不跟着同步。"));
 
+        // 工具栏位置（PLAN-v12 N4，mac 0f83c117）：靠右（默认）/ 居中，录屏的录制条同一个设置。
+        _content.Children.Add(new Border { Height = 8 });
+        var aligns = new[] { "right", "center" };
+        AddCombo("工具栏位置",
+            "框选完工具栏贴在选区下方，放不下时在上方。靠右时从左上往右下拖完，✓ 就在鼠标旁边；录屏的录制条也这样摆",
+            new[] { "靠右", "居中" },
+            SettingsService.Current.ScreenshotToolbarAlign == "center" ? 1 : 0,
+            index =>
+            {
+                SettingsService.Current.ScreenshotToolbarAlign = aligns[index];
+                SettingsService.Save();
+            });
+
         // 截完图放哪（PLAN-v9 S7）：角落缩略图 / 都不要（mac 还有晾衣绳，Windows 不做）。
         _content.Children.Add(new Border { Height = 8 });
         var placements = new[] { "card", "none" };
@@ -2419,20 +2428,6 @@ internal sealed partial class SettingsWindow : Window
                 SettingsService.Save();
             });
         _content.Children.Add(SettingsUi.Footnote("角落的缩略图可以拖出、钉图、存储；选「都不要」后截完不出缩略图，仍然进截图历史。"));
-
-        // 长截图自动滚动的速度（2026-11-04 用户反馈太快；mac 没有这一项，MAC-DIFF.md）。
-        _content.Children.Add(new Border { Height = 8 });
-        var speeds = new[] { "slow", "normal", "fast" };
-        AddCombo("长截图自动滚动", string.Empty, new[] { "慢", "标准", "快" },
-            Math.Max(0, Array.IndexOf(speeds, SettingsService.Current.ScrollCaptureSpeed)),
-            index =>
-            {
-                SettingsService.Current.ScrollCaptureSpeed = speeds[index];
-                SettingsService.Save();
-            });
-        _content.Children.Add(SettingsUi.Footnote(
-            "长截图时按 A（往上是 Shift+A）自动滚动。每一步按实际滚了多少调整，不管那个窗口滚轮一格滚多远；" +
-            "滚过头会退回来再接，滚到底自动停。拼不上、或者想看清再滚，就选「慢」。"));
 
         // 识字
         _content.Children.Add(new Border { Height = 8 });
@@ -3699,6 +3694,18 @@ internal sealed partial class SettingsWindow : Window
         var card = SettingsUi.Card(title, subtitle, SettingsUi.Toggle(value, changed, title));
         _content.Children.Add(card);
         return card;
+    }
+
+    /// <summary>剪贴板、启动器的「面板位置」（mac 的值 top / mouse / last，认不出的按屏幕上方）：下次打开面板时生效。</summary>
+    private void AddPanelPositionCombo(string current, Action<string> store)
+    {
+        var positions = new[] { "top", "mouse", "last" };
+        AddCombo("面板位置", "屏幕上方是鼠标所在屏幕的上方正中，跟随鼠标是光标旁边，上次位置是上次拖到的地方",
+            new[] { "屏幕上方", "跟随鼠标", "上次位置" }, Math.Max(0, Array.IndexOf(positions, current)), index =>
+            {
+                store(positions[index]);
+                SettingsService.Save();
+            });
     }
 
     private void AddCombo(

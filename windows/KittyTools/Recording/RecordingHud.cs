@@ -185,7 +185,7 @@ internal sealed partial class RecordingHud
         var placement = HudPlacement.Compute(
             region.Left, region.Top, region.Right, region.Bottom,
             display.Work.Left, display.Work.Top, display.Work.Right, display.Work.Bottom,
-            display.Scale, WidthDip);
+            display.Scale, WidthDip, alignRight: SettingsService.Current.ScreenshotToolbarAlign != "center");
         _window.AppWindow.MoveAndResize(HudFrame.WithFrame(_window, new RectInt32(
             placement.X, placement.Y, placement.Width, placement.Height)));
         var hwnd = (IntPtr)WinRT.Interop.WindowNative.GetWindowHandle(_window);

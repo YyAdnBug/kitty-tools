@@ -354,7 +354,8 @@ internal sealed partial class SelectionOverlayWindow
     }
 
     /// <summary>
-    /// 工具栏放哪（U5）：选区下方 10、水平居中，下面连样式托盘放不下放上方，都放不下放进选区底部（SelectionChrome.Toolbar）。
+    /// 工具栏放哪（U5）：选区下方 10、水平按设置 › 截图「工具栏位置」靠右（默认，PLAN-v12 N4）或居中，下面连样式托盘放不下放上方，
+    /// 都放不下放进选区底部（SelectionChrome.Toolbar）。
     /// 拖动 / 缩放 / 平移选区时 0.10 s 淡出让位，松手 40 ms 后从靠选区那条边长出来（U4；画标注、拖标注时不动）。
     /// 截图和录屏（录制条）都有；识字、截图翻译没有。
     /// </summary>
@@ -382,7 +383,8 @@ internal sealed partial class SelectionOverlayWindow
         var dip = ToDip(_session.Selection);
         var tray = _session.Mode == ScreenshotMode.Capture ? 6 + 34 : 0;
         var (x, y, side) = SelectionChrome.Toolbar(
-            new RectD(dip.X, dip.Y, dip.Width, dip.Height), size.Width, size.Height, tray, _screen.Width / _scale, _screen.Height / _scale);
+            new RectD(dip.X, dip.Y, dip.Width, dip.Height), size.Width, size.Height, tray, _screen.Width / _scale, _screen.Height / _scale,
+            alignRight: SettingsService.Current.ScreenshotToolbarAlign != "center");
         _toolbarSide = side;
         Canvas.SetLeft(_toolbar, x);
         Canvas.SetTop(_toolbar, y);

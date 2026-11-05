@@ -2,6 +2,8 @@
 // WinUI Window + OverlappedPresenter：无标题栏、保留边框（系统圆角 / 阴影 / 细描边）。
 // 置顶、不可缩放、不进任务栏和 Alt+Tab；内容用亚克力。
 // 关闭：Esc、Ctrl+W、再按一次热键、失去激活（不还前台）。
+// 出现在哪（PLAN-v12 N2，mac b923b882）：设置 › 剪贴板 / 启动器「面板位置」——屏幕上方（默认）/ 跟随鼠标 / 上次位置；
+// 按住面板上没有控件的地方（底栏的字、空白处）拖动能挪，松手记下左上角（上次位置用它，没拖过按屏幕上方）。
 using KittyTools.Core;
 using KittyTools.Infrastructure;
 using Microsoft.UI;
@@ -44,6 +46,12 @@ internal sealed unsafe class OverlayWindow : Window
     /// <summary>这次出现在的那块屏的工作区（长高时夹进去）。</summary>
     private WorkArea _work = new(int.MinValue / 2, int.MinValue / 2, int.MaxValue / 2, int.MaxValue / 2);
     private double _heightDip = 520;
+
+    // 拖动挪面板：按下时记下光标和窗口的位置，挪出 4 DIP 才算拖（之前不抓指针，单击照常落到下面的元素上）。
+    private bool _dragArmed;
+    private bool _dragging;
+    private System.Drawing.Point _dragStartCursor;
+    private PointInt32 _dragStartWindow;
     private double _heightFrom;
     private double _heightTo;
     private long _heightStarted;
@@ -79,6 +87,12 @@ internal sealed unsafe class OverlayWindow : Window
         _heightTimer.Tick += (_, _) => StepHeight();
         _hwnd = (HWND)WinRT.Interop.WindowNative.GetWindowHandle(this);
         Activated += OnActivated;
+
+        // 只收没被控件处理掉的按下（输入框、按钮、列表项自己处理）；挪动、松手连处理过的也收（拖动中指针在 _host 上）。
+        _host.AddHandler(UIElement.PointerPressedEvent, new PointerEventHandler(OnHostPointerPressed), false);
+        _host.AddHandler(UIElement.PointerMovedEvent, new PointerEventHandler(OnHostPointerMoved), true);
+        _host.AddHandler(UIElement.PointerReleasedEvent, new PointerEventHandler((_, _) => EndDrag()), true);
+        _host.PointerCaptureLost += (_, _) => EndDrag();
     }
 
     public bool IsVisible => _visible;
@@ -393,8 +407,9 @@ internal sealed unsafe class OverlayWindow : Window
     }
 
     /// <summary>
-    /// 出现的位置：启动器、剪贴板默认在鼠标所在屏的上方正中；剪贴板选了「跟随鼠标」（设置 › 剪贴板「面板位置」）就在光标右下，
-    /// 放不下翻到左边 / 上边（同翻译浮窗）。按鼠标所在显示器自己的缩放比例算尺寸，不用窗口当前所在那块屏的 DPI
+    /// 出现的位置（设置 › 剪贴板 / 启动器「面板位置」，MonitorLayout.Placement）：屏幕上方 = 鼠标所在屏的上方正中；跟随鼠标 = 光标右下，
+    /// 放不下翻到左边 / 上边（同翻译浮窗）；上次位置 = 上次拖到的地方，换算到鼠标所在屏同一相对位置（没拖过按屏幕上方）。
+    /// 按鼠标所在显示器自己的缩放比例算尺寸，不用窗口当前所在那块屏的 DPI
     /// （两块屏缩放不同时，720 DIP 会算成一块屏的像素、摆到另一块屏上就缩水了）。
     /// </summary>
     private void PositionAtPointer(double heightDip)
@@ -402,11 +417,23 @@ internal sealed unsafe class OverlayWindow : Window
         var display = Displays.AtCursor();
         _scale = display.Scale <= 0 ? 1 : display.Scale;
         _work = display.Work;
+        var settings = SettingsService.Current;
+        var clipboard = _kind == OverlayKind.Clipboard;
+        var left = clipboard ? settings.ClipboardPanelLeft : settings.LauncherPanelLeft;
+        var top = clipboard ? settings.ClipboardPanelTop : settings.LauncherPanelTop;
+        var placement = MonitorLayout.Placement(
+            clipboard ? settings.ClipboardPanelPosition : settings.LauncherPanelPosition, left is not null && top is not null);
         PixelRect rect;
-        if (_kind == OverlayKind.Clipboard && SettingsService.Current.ClipboardPanelPosition == "pointer")
+        if (placement == PanelPlacement.Pointer)
         {
             PInvoke.GetCursorPos(out var cursor);
             rect = MonitorLayout.NearPointer(cursor.X, cursor.Y, display.Work, _scale, WidthDip, heightDip);
+        }
+        else if (placement == PanelPlacement.Last && left is int x && top is int y)
+        {
+            var home = Displays.AtPoint(x, y);
+            rect = MonitorLayout.Relocate(
+                x, y, home.Work, display.Work, MonitorLayout.Pixels(WidthDip, _scale), MonitorLayout.Pixels(heightDip, _scale));
         }
         else
         {
@@ -414,6 +441,102 @@ internal sealed unsafe class OverlayWindow : Window
         }
 
         AppWindow.MoveAndResize(new RectInt32(rect.X, rect.Y, rect.Width, rect.Height));
+    }
+
+    // ---- 拖动挪面板（上次位置记的就是这里）
+
+    private void OnHostPointerPressed(object sender, PointerRoutedEventArgs e)
+    {
+        if (!_visible || !e.GetCurrentPoint(_host).Properties.IsLeftButtonPressed ||
+            IsControl(e.OriginalSource as DependencyObject))
+        {
+            return;
+        }
+
+        PInvoke.GetCursorPos(out _dragStartCursor);
+        _dragStartWindow = AppWindow.Position;
+        _dragArmed = true;
+        _dragging = false;
+    }
+
+    private void OnHostPointerMoved(object sender, PointerRoutedEventArgs e)
+    {
+        if (!_dragArmed)
+        {
+            return;
+        }
+
+        if (!e.GetCurrentPoint(_host).Properties.IsLeftButtonPressed)
+        {
+            EndDrag();
+            return;
+        }
+
+        PInvoke.GetCursorPos(out var cursor);
+        var dx = cursor.X - _dragStartCursor.X;
+        var dy = cursor.Y - _dragStartCursor.Y;
+        if (!_dragging)
+        {
+            var threshold = 4 * _scale;
+            if (Math.Abs(dx) < threshold && Math.Abs(dy) < threshold)
+            {
+                return;
+            }
+
+            _dragging = true;
+            _host.CapturePointer(e.Pointer);
+        }
+
+        AppWindow.Move(new PointInt32(_dragStartWindow.X + dx, _dragStartWindow.Y + dy));
+    }
+
+    /// <summary>松手：拖过就记下左上角（剪贴板、启动器各一份），之后长高按挪到的那块屏夹。</summary>
+    private void EndDrag()
+    {
+        var dragged = _dragging;
+        _dragArmed = false;
+        _dragging = false;
+        if (!dragged)
+        {
+            return;
+        }
+
+        _host.ReleasePointerCaptures();
+        var display = Displays.AtWindow(_hwnd);
+        _work = display.Work;
+        _scale = display.Scale <= 0 ? 1 : display.Scale;
+        var position = AppWindow.Position;
+        var settings = SettingsService.Current;
+        if (_kind == OverlayKind.Clipboard)
+        {
+            settings.ClipboardPanelLeft = position.X;
+            settings.ClipboardPanelTop = position.Y;
+        }
+        else
+        {
+            settings.LauncherPanelLeft = position.X;
+            settings.LauncherPanelTop = position.Y;
+        }
+
+        SettingsService.Save();
+        Log.Info($"overlay.moved kind={_kind}");
+    }
+
+    /// <summary>按在输入框、按钮、滚动条这类控件上：不拖（它们一般自己处理掉了按下，这里再挡一道）。</summary>
+    private static bool IsControl(DependencyObject? element)
+    {
+        while (element is not null)
+        {
+            if (element is TextBox or Microsoft.UI.Xaml.Controls.Primitives.ButtonBase or
+                Microsoft.UI.Xaml.Controls.Primitives.ScrollBar or Microsoft.UI.Xaml.Controls.Primitives.Thumb)
+            {
+                return true;
+            }
+
+            element = VisualTreeHelper.GetParent(element);
+        }
+
+        return false;
     }
 }
 
