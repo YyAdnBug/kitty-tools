@@ -86,6 +86,9 @@ internal static class Theme
         /// <summary>提醒：自定义的琥珀色（mac 系统色用完了、红是危险色）。</summary>
         public static Color Reminders => Value(0xE69914, 0xF5AD38);
 
+        /// <summary>便签：系统黄（mac Style.Family.notes = systemYellow）；色块上的符号用黑（mac onTile）。</summary>
+        public static Color Notes => Value(0xFFCC00, 0xFFD60A);
+
         public static Color For(string key) => key switch
         {
             "clipboard" => Clipboard,
@@ -97,6 +100,7 @@ internal static class Theme
             "search" or "web" => Search,
             "statusScreen" => StatusScreen,
             "reminders" => Reminders,
+            "notes" => Notes,
             _ => General,
         };
 
@@ -272,6 +276,22 @@ internal static class Theme
             ? ElementTheme.Dark
             : ElementTheme.Light,
     };
+
+    /// <summary>系统开着高对比度（便签纸上的次要字、标记按「增强对比度」那一档取，PLAN-v13）。</summary>
+    public static bool IsHighContrast
+    {
+        get
+        {
+            try
+            {
+                return new Windows.UI.ViewManagement.AccessibilitySettings().HighContrast;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+    }
 
     private static string ThemeKey
     {

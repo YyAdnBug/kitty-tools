@@ -7,6 +7,7 @@
 using System.Text;
 using System.Text.Json;
 using KittyTools.Core;
+using KittyTools.Core.Notes;
 using KittyTools.Infrastructure;
 
 namespace KittyTools;
@@ -24,6 +25,16 @@ internal sealed class ArchiveOutcome
     public int ServicesAdded { get; set; }
 
     public int EnginesAdded { get; set; }
+
+    public int NotesAdded { get; set; }
+
+    public int NotesUpdated { get; set; }
+
+    /// <summary>便签这次用不了，文件里的便签没导（mac notesSkipped）。</summary>
+    public bool NotesSkipped { get; set; }
+
+    /// <summary>便签并进去了、没落下盘（mac notesUnsaved：仓库自己会再试，但不能说「新增 N 条」）。</summary>
+    public bool NotesUnsaved { get; set; }
 }
 
 internal static class ArchiveService
@@ -104,7 +115,25 @@ internal static class ArchiveService
         ClipGroups = sections.Contains(ArchiveSection.Clips) ? archive.ClipGroups : null,
         Vocabulary = sections.Contains(ArchiveSection.Vocabulary) ? archive.Vocabulary : null,
         Secrets = sections.Contains(ArchiveSection.Services) ? archive.Secrets : null,
+        Notes = sections.Contains(ArchiveSection.Notes) ? archive.Notes : null,
     };
+
+    /// <summary>手动导出前先看能不能带便签（mac exportProblem 的便签那两句）；null = 没问题。</summary>
+    public static string? ExportProblem(IReadOnlyCollection<ArchiveSection> sections)
+    {
+        if (!sections.Contains(ArchiveSection.Notes) || NoteStore.Instance is not { } notes)
+        {
+            return null;
+        }
+
+        var entries = notes.Book.Exportable.Select(NoteEntry.From).OfType<NoteEntry>().ToList();
+        if (entries.Count > NoteEntry.MaxNotes)
+        {
+            return $"便签超过 {NoteEntry.MaxNotes} 条，先取消勾选「便签」";
+        }
+
+        return NoteEntry.Fit(entries) ? null : "有便签的正文超过 1 MB，先取消勾选「便签」";
+    }
 
     public static string Encode(SettingsArchive archive)
         => JsonSerializer.Serialize(archive, ArchiveJsonContext.Default.SettingsArchive);
@@ -216,6 +245,21 @@ internal static class ArchiveService
                 .ToList();
         }
 
+        // 便签（PLAN-v13）：这次用不了（库没开成）就不带这一类（null），不能写一份空的；条数、单条正文超了上限也不带
+        // （手动导出时 ExportProblem 先拦下来说清楚）。
+        if (sections.Contains(ArchiveSection.Notes) && NoteStore.Instance is { } notes)
+        {
+            var entries = notes.Book.Exportable.Select(NoteEntry.From).OfType<NoteEntry>().ToList();
+            if (NoteEntry.Fit(entries))
+            {
+                archive.Notes = entries.Select(entry =>
+                {
+                    using var document = JsonDocument.Parse(entry.Json());
+                    return document.RootElement.Clone();
+                }).ToList();
+            }
+        }
+
         if (!string.IsNullOrEmpty(password) && archive.TranslateServices is { } services)
         {
             var secrets = SecretsOf(services);
@@ -293,6 +337,22 @@ internal static class ArchiveService
             if (archive.Vocabulary is { Count: > 0 } words && TranslationHistory.Instance is { } vocabulary)
             {
                 outcome.WordsAdded = vocabulary.AdoptFavorites(words);
+            }
+
+            // 便签：按编号并进便签库（mac NoteStore.adopt）；便签这次用不了时跳过、在结果里说。
+            if (archive.Notes is { Count: > 0 } rawNotes)
+            {
+                if (NoteStore.Instance is { } noteStore)
+                {
+                    var adopted = noteStore.Adopt(NoteEntry.Sanitized(rawNotes));
+                    outcome.NotesAdded = adopted.Added;
+                    outcome.NotesUpdated = adopted.Updated;
+                    outcome.NotesUnsaved = !adopted.Saved;
+                }
+                else
+                {
+                    outcome.NotesSkipped = true;
+                }
             }
 
             if (archive.Secrets is { } sealedSecrets && archive.TranslateServices is { Count: > 0 } secretServices)
@@ -691,7 +751,7 @@ internal static class ArchiveService
     }
 }
 
-/// <summary>能分开勾选的六类（Windows 这边只有六类，没有便签）。</summary>
+/// <summary>能分开勾选的七类（PLAN-v13 加了便签）。</summary>
 internal enum ArchiveSection
 {
     Preferences,
@@ -700,4 +760,5 @@ internal enum ArchiveSection
     Engines,
     Clips,
     Vocabulary,
+    Notes,
 }

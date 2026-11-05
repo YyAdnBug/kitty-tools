@@ -89,6 +89,9 @@ internal sealed class ShellRuntime
             NoticeHost.Show("剪贴板历史用不了", "数据库打不开，其它功能不受影响", NoticeTone.Error);
         }
 
+        // 便签（PLAN-v13）：单独的库，和剪贴板的库互不相干——那边打不开这边照样起。数据层不跟着功能开关走。
+        NotesHost.Start(DispatcherQueue.GetForCurrentThread()!);
+
         // 每日备份：启动时、锁屏 / 解锁、睡眠唤醒各看一眼今天备过没有（不另加定时器）。
         ScheduleBackup();
 
@@ -1032,6 +1035,9 @@ internal sealed class ShellRuntime
         }
 
         var directory = Paths.DataDirectory;
+        // 便签：先把攒着的打字落下去、做当天的到期清理（UI 线程），备份在下面的线程池里。
+        NotesHost.Flush();
+        NotesHost.Maintain();
         // 设置与数据的每日自动备份（第三版 §2.2），和数据库备份同一个 backups 文件夹。
         // REVIEW R47：快照在 UI 线程上取（剪贴板列表、翻译历史的库连接只许 UI 线程碰），后台只管写文件；
         // 以前整个在线程池上做，碰上正在复制东西就「集合已修改」，当天那份没备成。
@@ -1059,6 +1065,7 @@ internal sealed class ShellRuntime
             {
                 // 数据库那份自己开连接，照旧在后台。
                 Backup.Run(directory, DateTime.Now);
+                NotesHost.BackupIfDue(directory, DateTime.Now);
                 if (dailyPath is not null && archive is not null)
                 {
                     ArchiveService.WriteDaily(dailyPath, archive);
@@ -1158,6 +1165,8 @@ internal sealed class ShellRuntime
             Log.Error("record.exit-stop-failed", ex);
         }
 
+        // 便签：攒着的打字落下去（落不下去的，NoteStore 自己记着原因；关机时没法再问）。
+        NotesHost.Flush();
         Clipboard?.CommitDeletion();
         if (SettingsService.Current.ClipboardClearOnQuit && Clipboard?.Store is { } quitting)
         {
@@ -1255,8 +1264,9 @@ internal sealed class ShellRuntime
         }
         else if (msg == WmPowerBroadcast && wParam.Value == 4)
         {
-            // PBT_APMSUSPEND：睡之前把录屏 / 录音收尾。
+            // PBT_APMSUSPEND：睡之前把录屏 / 录音收尾，便签落盘。
             StopRecordingForSession(locking: false);
+            NotesHost.Flush();
         }
     }
 

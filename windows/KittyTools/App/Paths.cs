@@ -64,6 +64,13 @@ internal static class Paths
 
     public static string DatabaseFile => Path.Combine(DataDirectory, "kitty.sqlite3");
 
+    /// <summary>便签（PLAN-v13）：单独的库、图片目录、每日备份，和剪贴板的三样互不相干（同 mac）。</summary>
+    public static string NotesDatabaseFile => Path.Combine(DataDirectory, "notes.sqlite3");
+
+    public static string NotesImagesDirectory => Path.Combine(DataDirectory, "notes-images");
+
+    public static string NotesBackupsDirectory => Path.Combine(DataDirectory, "notes-backups");
+
     /// <summary>自动更新的下载目录（第二版 §5）。</summary>
     public static string UpdatesDirectory => Path.Combine(DataDirectory, "updates");
 

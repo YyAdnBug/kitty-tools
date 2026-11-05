@@ -359,3 +359,16 @@ mac 0.7.1（第四轮体检）修掉、Windows 也有的那几条，照 mac 同�
 
 1043. `dotnet test windows/KittyTools.Tests --filter "FullyQualifiedName~Note"`：`NoteTasksTests`、`NoteImagesTests`、`NotePaperTests`、`NoteMarkdownTests`、`NoteStylesTests` 全过（只有单测，这一批没有界面）。
 1044. 编出来的发布包里 `KittyTools.Core.dll` 没有 trim / AOT 警告（便签的 Core 只用 System.Text.Json 的 JsonDocument 读、自己写 JSON，不用序列化器）。
+
+## PLAN-v13 第 2 批：便签的仓库、备份、导出导入（1045–1053，审查方在 Mac 上写、没编译）
+
+1045. 新的数据目录（`.Dev` 那一套）第一次启动 → 数据目录里有 `notes.sqlite3`；屏幕边缘开着时有一条「欢迎使用便签」的示例（第 6 批有了那叠才看得见；全部便签窗口里能看到）。删掉它、重启 → 不再出来。
+1046. 新建、改标题和正文、换颜色、归档、删除 → 退出（托盘「退出」）再打开，都在；打字停手约 0.25 秒就落盘（任务管理器结束进程后再开，最后打的字也在，最多丢最后 2 秒）。
+1047. 删一条 → 「最近删除」里；把系统时间往后拨 31 天（只在测试账号 / Dev 数据上）再开 → 那条没了。没人引用的图片同样满 30 天才删（`notes-images\.orphans.json` 里有账）。
+1048. 每日备份：`notes-backups
+otes-<今天>\` 里有 `notes.sqlite3` 和 `images\`；只留 7 份；便签一条都没有的时候不备。
+1049. 关掉程序，把 `notes.sqlite3` 换成一个随便写了几个字的文件再开 → 弹「便签打不开了」：用备份 / 重新开始 / 这次先不用便签。选「用备份」→ 回到备份那天的样子；数据目录里多一个 `damaged-…-notes` 文件夹（原文件在里面）。剪贴板、翻译照常。
+1050. 同上选「这次先不用便签」→ 快速记一条按了提示「便签这次用不了」；下次启动再问。
+1051. 设置 › 通用 › 导出，勾「便签」→ 文件里有 `"notes": [...]`（每条带 id、title、body、color、createdAt、modifiedAt、revision、archived、pinned、order，自定义纸色多一个 tint）。
+1052. 把这个文件导回同一台 → 「便签新增 0 条、更新 0 条」；在另一台（或 Dev 数据）导入 → 便签都在、顺序和颜色一样；本机改过的那条被文件里更晚的换掉时，原来那版在「最近删除」里。
+1053. 能拿到 Mac 导出的带便签的文件时导进来：自定义纸色一样、任务方框和图片令牌原样（图片本身不在文件里，显示成空位）。

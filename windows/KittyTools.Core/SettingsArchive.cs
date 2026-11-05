@@ -1,5 +1,6 @@
 // 设置与数据的导出 / 导入（第三版 §2.2，格式跟 mac 的 Storage/SettingsArchive.swift 的 format 2 通用）：
-// 一个 JSON 文件，按类别分开（设置 / 快捷键 / 翻译服务 / 网页搜索 / 片段与收藏 / 生词本）。
+// 一个 JSON 文件，按类别分开（设置 / 快捷键 / 翻译服务 / 网页搜索 / 片段与收藏 / 生词本 / 便签）。
+// 便签（PLAN-v13，mac 第七类 NoteEntry）：一条一个对象，读的时候宽松（只丢写坏的那一条，Notes.NoteEntry.Sanitized），所以存成原样的 JsonElement。
 // - Windows 导出的文件多写一个 "platform": "windows"；导入时没有这个字段（Mac 导出的）或值不是 windows 的，
 //   跳过「设置」「快捷键」两类，其余照导（两边的设置和快捷键含义不一样）。
 // - 片段、收藏、生词本是**合并**：同样的正文不重复加，只补标记；不删本机已有的。
@@ -15,7 +16,7 @@ public sealed class SettingsArchive
 {
     public const string Marker = "Kitty Tools";
 
-    /// <summary>mac format 2（加了便签那一版；Windows 没有便签，只是写同一个格式号）。</summary>
+    /// <summary>mac format 2（加了便签那一版）。</summary>
     public const int CurrentFormat = 2;
 
     public const string WindowsPlatform = "windows";
@@ -63,6 +64,10 @@ public sealed class SettingsArchive
 
     [JsonPropertyName("secrets")]
     public ArchiveSecrets? Secrets { get; set; }
+
+    /// <summary>便签（没删的，含归档）：null = 这一类不在文件里（便签这次用不了时也是 null，不写一份空的把带着便签的备份顶掉）。</summary>
+    [JsonPropertyName("notes")]
+    public List<JsonElement>? Notes { get; set; }
 
     /// <summary>「设置」「快捷键」只有 Windows 导出的文件才导（mac 那边的含义不一样）。</summary>
     public bool AppliesWindowsSettings
@@ -181,6 +186,7 @@ public sealed class SettingsArchive
             Format = Format,
             Platform = Platform,
             Preferences = Preferences,
+            Notes = Notes,
             Hotkeys = Hotkeys is null
                 ? null
                 : Hotkeys

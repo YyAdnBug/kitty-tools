@@ -35,6 +35,13 @@ internal static class HotKeyActions
 
     /// <summary>新建提醒（PLAN-v12 N6），默认不设键（同 mac reminderNew）：打开启动器填好「提醒 」，启动器关着时打开 设置 › 提醒。</summary>
     public const string ReminderNew = "reminderNew";
+
+    /// <summary>便签（PLAN-v13，名字同 mac）：快速记一条默认 Alt+N（mac ⌥N）；新建便签、全部便签不设默认键。</summary>
+    public const string NoteCapture = "noteCapture";
+
+    public const string NoteNew = "noteNew";
+
+    public const string NoteAll = "noteAll";
 }
 
 internal sealed record HotKeyDefault(
@@ -64,6 +71,9 @@ internal static class SettingsDefaults
         new(HotKeyActions.Home, "打开主界面", HotKeyModifiers.None, 0),
         new(HotKeyActions.StatusScreen, "状态屏", HotKeyModifiers.None, 0),
         new(HotKeyActions.ReminderNew, "新建提醒", HotKeyModifiers.None, 0),
+        new(HotKeyActions.NoteCapture, "快速记一条", HotKeyModifiers.Alt, (uint)'N'),
+        new(HotKeyActions.NoteNew, "新建便签", HotKeyModifiers.None, 0),
+        new(HotKeyActions.NoteAll, "全部便签", HotKeyModifiers.None, 0),
     };
 
     public static void Apply(Settings settings)

@@ -32,6 +32,31 @@
 
 **替用户定的**：`NoteMarkdown.Url` 比 .NET 的 `Uri` 严（开头空白不认、http / https 后面必须是 `//`），对齐 mac `URL` 的结果。
 
+### 第 2 批：仓库、图片目录、备份、导出导入第七类 → 已写（审查方，`git log --grep "PLAN-v13 第 2 批"`，没编译）
+
+照 mac `NoteStore.swift`、`NoteImageStore.swift`、`NotesBackup.swift`、`NoteSample.swift`、`Storage/SettingsArchive.swift` 的便签那一类：
+
+- **Core**：`NoteBook`（仓库的内存那一半：视图、改动的全部规则——钟、状态 / 顺序时刻只往前走、挪顺序取中间值 / 整列重排、软删、墓碑、到期清理、
+  空白便签、导入合并 `Adopt`、同步落地 `ApplySync`、换编号 `SwitchDevice`、搜索的折叠缓存、摘要缓存；落盘交出 `PendingWrites`）、
+  `NoteEntry`（导出文件的一条：宽松读、收拾、写 JSON）、`NoteImageRules`（文件名、上限、孤儿 30 天的账 `.orphans.json`）、`NotesBackupPlan`（名字、留 7 份、恢复的对话框文字）、`NoteSample`。
+  单测 `NoteBookTests`（照 mac `NoteStoreTests` 的内存规则移植，期望值原样；要真库的那几条跳过，写在文件头）。
+- **App**：`Notes/NoteStore.cs`（notes.sqlite3，表结构照 mac：notes / note_erased / note_meta；停手 250 ms、连着改满 2 s 落盘，失败 5 s 起翻倍重试）、
+  `NoteImageStore.cs`（notes-images\，WIC 读宽高、别的格式转 PNG、裁切另存新图、30 天清理）、`NotesBackup.cs`（每日 7 份 + 打不开时问三选一）、
+  `NotesHost.cs`（启动、到期清理、示例便签、锁屏 / 睡眠 / 退出前落盘、每日备份）。`Sqlite.cs` 加了 `BindDouble` / `GetDouble` / `GetNullableInt64`；
+  `SyncDevice.Rotate(string id)`（便签认出库被退回去时用指定的新编号）。
+- **设置和接线**：`Settings` 加了便签的一组键（名字同 mac `Prefs.notes*`；这台电脑自己的状态不在导出白名单里）、`Feature.Notes`、热键 `noteCapture`（**Alt+N**）/
+  `noteNew` / `noteAll`（不设默认键）、`Theme.Family.Notes`（系统黄，色块上的符号用黑）、`ShellRuntime`（启动、锁屏 / 睡眠 / 退出前落盘、每日备份）。
+- **导出导入第七类「便签」**：`SettingsArchive.Notes`（原样的 JsonElement，读的时候逐条宽松解）、`ArchiveSection.Notes`、`ArchiveService.Build` / `Apply` / `ExportProblem`、
+  每日自动备份带便签（便签这次用不了时不带这一类）、导入对话框多一项、结果里说新增 / 更新 / 没存上 / 这次用不了。
+
+**要特别看的编译点**：`NoteBook` / `NoteStore` 用到第 3 批的 `NoteSync.Tombstone` / `Merge`；`NotesNewerException` 是带主构造函数的异常类；
+`NoteImageStore` 是主构造函数的类、属性名 `Directory` 盖住了 `System.IO.Directory`（文件里一律写全名）；`NoteImageStore.StoreFileAsync` 里 `Task.Run<StoreResult>(async () => …)`；
+WIC 的 `BitmapDecoder.HeifDecoderId`、`DecoderInformation.CodecId`；`NoteStore` 的 SQL 参数是 `?1`…`?16`（按位置绑）。
+
+**替用户定的**：电脑编号用同步那一个（`SyncDevice`，kitty.sqlite3），剪贴板的库打不开时用便签库 note_meta 里自己记的；图片孤儿的账写 `.orphans.json`（mac `.orphans.plist`，两边不互读）；
+图片的显示尺寸按 96 DPI = 1:1 算（mac 72 DPI）；`NoteStore` 不做 mac「正文超 64 KB 时字数和进度停手再算」（ponytail，写在 `NoteBook` 文件头）；
+打不开时的对话框问完不用重启（便签的库是单独的，开好就接着起便签那几样）。
+
 ## PLAN-v12（跟上 mac：先把没有的功能做出来，2026-11-05 用户「先把未实现的功能实现」）
 
 清单和分批在 `PLAN-v12.md`（不是拍板页，行为照 mac）；分工同 PLAN-v11 D10。

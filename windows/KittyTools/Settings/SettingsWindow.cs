@@ -767,6 +767,12 @@ internal sealed partial class SettingsWindow : Window
             }
 
             var selected = checks.Where(pair => pair.Value.IsChecked == true).Select(pair => pair.Key).ToList();
+            if (ArchiveService.ExportProblem(selected) is { } problem)
+            {
+                NoticeHost.Show("没能导出", problem, NoticeTone.Warning);
+                return;
+            }
+
             var secret = password.Password;
             if (secret.Length is > 0 and < SettingsArchive.MinPasswordLength)
             {
@@ -897,6 +903,10 @@ internal sealed partial class SettingsWindow : Window
         Offer(ArchiveSection.Engines, archive.SearchEngines is { Count: > 0 }, "同一个关键词的换成文件里的，没有的加进来");
         Offer(ArchiveSection.Clips, archive.Clips is { Count: > 0 }, "合并：同样的正文不重复加，只补标记；不删本机已有的");
         Offer(ArchiveSection.Vocabulary, archive.Vocabulary is { Count: > 0 }, "合并：同样的词句不重复加；不删本机已有的");
+        Offer(ArchiveSection.Notes, archive.Notes is { Count: > 0 },
+            NoteStore.Instance is null
+                ? "便签这次用不了，先不导"
+                : "按编号合并：文件里改得更晚的才换，被换掉的那一版留在「最近删除」里；不删本机已有的");
         if (checks.Count == 0)
         {
             NoticeHost.Show("这个文件里没有能导入的", "Mac 导出的文件里的设置和快捷键不导（两边的含义不一样）", NoticeTone.Warning);
@@ -1000,7 +1010,14 @@ internal sealed partial class SettingsWindow : Window
         NoticeHost.Show(
             restoring is null ? "已导入" : "已恢复",
             $"{chosen.Count} 类" + (outcome.Secrets > 0 ? "，含密钥" : string.Empty) +
-            (outcome.ClipsAdded + outcome.WordsAdded > 0 ? $"，新增片段 / 收藏 {outcome.ClipsAdded} 条、生词 {outcome.WordsAdded} 条" : string.Empty),
+            (outcome.ClipsAdded + outcome.WordsAdded > 0 ? $"，新增片段 / 收藏 {outcome.ClipsAdded} 条、生词 {outcome.WordsAdded} 条" : string.Empty) +
+            (outcome.NotesUnsaved
+                ? "；便签没存上，稍后会自动再试"
+                : outcome.NotesSkipped
+                    ? "；便签这次用不了，没导"
+                    : outcome.NotesAdded + outcome.NotesUpdated > 0
+                        ? $"，便签新增 {outcome.NotesAdded} 条、更新 {outcome.NotesUpdated} 条"
+                        : string.Empty),
             NoticeTone.Normal);
         BuildPage("general");
     }
@@ -1345,6 +1362,7 @@ internal sealed partial class SettingsWindow : Window
         ArchiveSection.Services => "翻译服务",
         ArchiveSection.Engines => "网页搜索与快捷链接",
         ArchiveSection.Clips => "片段与收藏",
+        ArchiveSection.Notes => "便签",
         _ => "生词本",
     };
 

@@ -325,6 +325,77 @@ internal sealed class Settings
     /// <summary>「稍后」推几分钟（5 / 10 / 15 / 30，默认 5）。</summary>
     public int RemindersSnoozeMinutes { get; set; } = 5;
 
+    // 便签（PLAN-v13，键名同 mac Prefs.notes*；设置窗、那叠、浮动便签、全部便签窗口读它们）。
+
+    /// <summary>正文字号（13 / 15 / 17 / 20，默认 15；不在档位里的按 15）。</summary>
+    public int NotesFontSize { get; set; } = 15;
+
+    /// <summary>Markdown 样式（默认开；关着时只认任务方框和文字颜色）。</summary>
+    public bool NotesMarkdown { get; set; } = true;
+
+    /// <summary>行距：compact 1.2 / standard 1.45（默认）/ relaxed 1.7。</summary>
+    public string NotesLineSpacing { get; set; } = "standard";
+
+    /// <summary>在屏幕边缘显示便签（默认开；有了第一条便签才出现）。</summary>
+    public bool NotesDeckEnabled { get; set; } = true;
+
+    /// <summary>right（默认）/ left。</summary>
+    public string NotesDeckEdge { get; set; } = "right";
+
+    /// <summary>main 主显示器（默认）/ all 所有显示器 / chosen 指定的那块（NotesDeckChosenDisplay）。</summary>
+    public string NotesDeckDisplay { get; set; } = "main";
+
+    /// <summary>tabs 带标题的标签（默认）/ chips 只有色块。</summary>
+    public string NotesDeckStyle { get; set; } = "tabs";
+
+    /// <summary>small / standard（默认）/ large。</summary>
+    public string NotesDeckSize { get; set; } = "standard";
+
+    /// <summary>鼠标离边多近算靠过去（DIP，默认 14）。</summary>
+    public int NotesDeckSense { get; set; } = 14;
+
+    public bool NotesDeckAlwaysFanned { get; set; }
+
+    public bool NotesDeckHidesPill { get; set; }
+
+    public bool NotesDeckPreview { get; set; } = true;
+
+    public bool NotesDeckOpensOnHover { get; set; }
+
+    public bool NotesDeckOverFullScreen { get; set; }
+
+    /// <summary>打开的便签多大：small / medium（默认）/ large / extraLarge。</summary>
+    public string NotesDeckNoteSize { get; set; } = "medium";
+
+    // 下面这几样是这台电脑自己的状态（mac 不注册默认值、不跟导出走；ArchiveService 的导出清单是白名单，本来就不带）。
+
+    /// <summary>药丸的纵向位置（0–1，工作区里从上往下的比例）；null = 默认（中间偏上）。</summary>
+    public double? NotesDeckPosition { get; set; }
+
+    /// <summary>指定的那块显示器（设备名）。</summary>
+    public string? NotesDeckChosenDisplay { get; set; }
+
+    /// <summary>「便签在屏幕右边缘」那句提示说过没有。</summary>
+    public bool NotesDeckHintShown { get; set; }
+
+    /// <summary>示例便签放过没有（只放一次）。</summary>
+    public bool NotesSampleAdded { get; set; }
+
+    /// <summary>浮动便签拉过的大小「宽,高」（DIP）。</summary>
+    public string? NotesFloatSize { get; set; }
+
+    /// <summary>固定着浮在屏幕上的每一张在哪：一组 {"id", "frame", "display"}（NoteFloatLayout.Place.ToStored / NoteFloatSet.Restorable，同 mac）。</summary>
+    public List<Dictionary<string, string>>? NotesFloatPlaces { get; set; }
+
+    /// <summary>最近用过的自定义纸色（「#RRGGBB」，最多 8 个；NotePaper.RecentColors 读）。</summary>
+    public List<string>? NotesRecentColors { get; set; }
+
+    /// <summary>全部便签窗口上次用的显示方式：wall 便签墙（默认）/ list 列表。</summary>
+    public string? NotesWindowLayout { get; set; }
+
+    /// <summary>同步便签（PLAN-v13 第 3 批；默认开，跟着便签功能开关）。</summary>
+    public bool SyncNotes { get; set; } = true;
+
     public List<HotKeySetting> HotKeys { get; set; } = new();
 
     /// <summary>

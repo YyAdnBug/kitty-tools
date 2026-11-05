@@ -67,6 +67,28 @@ internal sealed class SyncDevice
         Log.Info("sync.device-rotated");
     }
 
+    /// <summary>换成指定的新编号（便签认出库被退回去了：NoteStore.SwitchDevice 先把那几条便签记上新编号、落了盘，再换这里）。</summary>
+    public void Rotate(string id)
+    {
+        using (var statement = _database.Connection.Prepare("DELETE FROM sync_device;"))
+        {
+            statement.Step();
+        }
+
+        var library = Library;
+        Id = id;
+        using (var insert = _database.Connection.Prepare(
+                   "INSERT OR REPLACE INTO sync_device(id, machine_guid, library) VALUES ($id, $guid, $library);"))
+        {
+            insert.BindText(1, Id);
+            insert.BindText(2, MachineGuid());
+            insert.BindText(3, library ?? string.Empty);
+            insert.Step();
+        }
+
+        Log.Info("sync.device-rotated reason=notes");
+    }
+
     private void LoadOrCreate()
     {
         var guid = MachineGuid();

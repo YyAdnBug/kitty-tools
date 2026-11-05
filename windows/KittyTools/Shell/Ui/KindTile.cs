@@ -25,7 +25,9 @@ internal static class KindTile
     {
         var color = Theme.Family.For(family);
         var border = Create(color, size);
-        border.Child = Symbol(glyph ?? Glyphs.App, size);
+        // 便签的黄底上白字看不清：符号用黑 85%（mac Style.onTile）。
+        border.Child = Symbol(glyph ?? Glyphs.App, size,
+            family == "notes" ? Color.FromArgb(217, 0, 0, 0) : Colors.White);
         return border;
     }
 
@@ -33,9 +35,9 @@ internal static class KindTile
     /// 色块里的符号：功能图标（<see cref="FeatureIcons"/>）画成路径，24 格放进色块的 0.6（同 mac KindTile：20 → 12、24 → 14.4、
     /// 32 → 19.2）；Segoe 字形照旧，字号是色块的一半。
     /// </summary>
-    private static FrameworkElement Symbol(string glyph, double size)
+    private static FrameworkElement Symbol(string glyph, double size, Color ink)
     {
-        var white = new SolidColorBrush(Colors.White);
+        var white = new SolidColorBrush(ink);
         if (!glyph.StartsWith("F1 ", StringComparison.Ordinal))
         {
             return new FontIcon

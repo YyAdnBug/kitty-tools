@@ -222,6 +222,12 @@ internal sealed unsafe partial class SqliteStatement : IDisposable
     }
 
 
+    public SqliteStatement BindDouble(int index, double value)
+    {
+        Check(Sqlite3BindDouble(_statement, index, value));
+        return this;
+    }
+
     public SqliteStatement BindNull(int index)
     {
         Check(Sqlite3BindNull(_statement, index));
@@ -275,6 +281,11 @@ internal sealed unsafe partial class SqliteStatement : IDisposable
 
     public int GetInt32(int index) => (int)Sqlite3ColumnInt64(_statement, index);
 
+    public double GetDouble(int index) => Sqlite3ColumnDouble(_statement, index);
+
+    /// <summary>这一列是 NULL 时给 null（便签库的可空列）。</summary>
+    public long? GetNullableInt64(int index) => IsNull(index) ? null : Sqlite3ColumnInt64(_statement, index);
+
     public byte[]? GetBlob(int index)
     {
         if (IsNull(index))
@@ -324,6 +335,12 @@ internal sealed unsafe partial class SqliteStatement : IDisposable
 
     [LibraryImport("winsqlite3.dll", EntryPoint = "sqlite3_bind_blob")]
     private static partial int Sqlite3BindBlob(IntPtr statement, int index, byte* value, int bytes, IntPtr destructor);
+
+    [LibraryImport("winsqlite3.dll", EntryPoint = "sqlite3_bind_double")]
+    private static partial int Sqlite3BindDouble(IntPtr statement, int index, double value);
+
+    [LibraryImport("winsqlite3.dll", EntryPoint = "sqlite3_column_double")]
+    private static partial double Sqlite3ColumnDouble(IntPtr statement, int index);
 
     [LibraryImport("winsqlite3.dll", EntryPoint = "sqlite3_bind_null")]
     private static partial int Sqlite3BindNull(IntPtr statement, int index);
