@@ -49,14 +49,9 @@ enum RegionSelector {
 
   /// 截图翻译 / 识字：在冻结帧上框选，松手返回裁好的图；取消返回 nil。hint 是屏幕上方的提示
   static func select(_ shots: [ScreenCapture.Shot], hint: String) async -> CGImage? {
-    await selectCapture(shots, hint: hint)?.image
-  }
-
-  /// 同上，但连选区一起交回（截图翻译要 scale 和 frame：合成图编码时的 DPI、记进截图历史的那一条）
-  static func selectCapture(_ shots: [ScreenCapture.Shot], hint: String) async -> Capture? {
     guard case .capture(let capture)? = await run(shots, SelectionSession(mode: .quick, hint: hint))
     else { return nil }
-    return capture
+    return capture.image
   }
 
   /// 截图：lastRegion 是上次截图的区域（全局坐标，D 键选中）；preselect 时一开始就选中它（⌥X 截上次区域）；
