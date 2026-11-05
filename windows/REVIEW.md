@@ -103,6 +103,17 @@
 **替用户定的**：透出样式的做法和不冒眼睛（见上）；表情 160 像素 12 fps；不藏鼠标指针；标题整行入场、小字直接换、选中卡片不长成整屏（ponytail，MAC-DIFF 记了）；
 退出密码按扫描码认数字；拦截不放过注入事件（别的程序模拟按键也被挡，只有自检标记的例外——自检只在 Probe 模式里认它）；速查表里「用鼠标按住提示」那一行不画键帽。
 
+### 第 4 批：状态屏的入口（N5）→ 已写（审查方，`git log --grep "PLAN-v12 第 4 批"`，没编译）
+
+第 3 批已经带了选状态的面板、设置页、导出导入、速查表；这一批是剩下的三个入口（mac buildStatusMenu、HomePanel、LauncherItem.statusPreset）：
+
+- 托盘菜单：`TrayMenu` 支持子菜单（`Item.Children`，`MF_POPUP`；菜单项 id 改成平铺表里的位置，子菜单里的也排进来），「状态屏 ›」= 选择状态…（快捷键）/ 各状态 / 管理状态…。
+- 主界面：最后一节「状态屏」一格，同它的快捷键（`RunAction` → `StatusPicker.ToggleOrEnterFirst`）。
+- 启动器：每个状态一行（`LauncherActions.StatusPrefix` + id），右侧 `Note = "状态屏"`、`priority: 1`，名字里加「状态屏」和它的拼音；Enter 晚 200 ms 进入（启动器先收起）、不记使用。
+  ponytail：行里是木色色块，不是 mac 那样的表情静止画面（LauncherRowView 只认色块 / 图标），要做给 `LauncherItem` 加一个表情 id 再在行里画 `StatusEmoji.Still`。
+
+**你们做的**：编译零警告、`dotnet test` 全过；手测 977–981（托盘子菜单要真点）；截图：托盘子菜单（只截菜单那一块）、主界面带状态屏那一格、启动器搜「状态屏」，推 `windows-shots` 的 `0.3.0-v12-batch-4/`。
+
 ## PLAN-v11（0.1.0 之后还没做的，2026-11-03 用户「全部按推荐」）
 
 方案和分批在 `PLAN-v11.md` §3；分工照 D10（同 PLAN-v10 D5）。每批审查方写好的推上来、**没编译**，你们编译、单测、在屏幕上验，编译错直接修，在这一节对应那批下面记一句。

@@ -306,7 +306,7 @@ internal sealed class HomePanel : Window
         Render();
     }
 
-    /// <summary>三节，同托盘菜单（关着的功能不出现，开关和钉图项接在那一节末尾）；两个功能合一节的只剩一个时节名换成它的名字。</summary>
+    /// <summary>三节 + 状态屏一格，同托盘菜单（关着的功能不出现，开关和钉图项接在那一节末尾）；两个功能合一节的只剩一个时节名换成它的名字。</summary>
     private static IEnumerable<HomeSection> BuildSections()
     {
         var runtime = ShellRuntime.Instance;
@@ -380,6 +380,12 @@ internal sealed class HomePanel : Window
         }
 
         yield return new HomeSection(screenshot && recording ? "截图与录制" : screenshot ? "截图" : "录屏", third);
+
+        // 状态屏（PLAN-v12 N5）：一格，同它的快捷键（先出选状态的面板）；只有一格的节不画标题、和别的单格节并成一行（HomeLayout）。
+        if (Features.IsOn(Feature.StatusScreen))
+        {
+            yield return new HomeSection("状态屏", new[] { Global(HotKeyActions.StatusScreen, "状态屏") });
+        }
     }
 
     private void Render()

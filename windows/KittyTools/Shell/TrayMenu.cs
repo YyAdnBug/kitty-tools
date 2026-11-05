@@ -18,6 +18,7 @@ internal static partial class TrayMenu
     private const uint MfGrayed = 0x0001;
     private const uint MfChecked = 0x0008;
     private const uint MfSeparator = 0x0800;
+    private const uint MfPopup = 0x0010;
     private const uint TpmRightButton = 0x0002;
     private const uint TpmRightAlign = 0x0008;
     private const uint TpmReturnCmd = 0x0100;
@@ -53,23 +54,11 @@ internal static partial class TrayMenu
 
         Action? chosen = null;
         var capture = false;
+        // 菜单项的 id 是它在这张平铺表里的位置 + 1（子菜单里的项也排进来）。
+        var flat = new List<Item>();
         try
         {
-            for (var index = 0; index < items.Count; index++)
-            {
-                var item = items[index];
-                if (item.Text is null)
-                {
-                    AppendMenu(_menu, MfSeparator, 0, null);
-                    continue;
-                }
-
-                var flags = MfString | (item.Enabled ? 0 : MfGrayed) | (item.Checked ? MfChecked : 0);
-                // & 在菜单里是助记符，原样显示要写成 &&。
-                var text = item.Text.Replace("&", "&&") +
-                           (string.IsNullOrEmpty(item.Shortcut) ? string.Empty : "\t" + item.Shortcut);
-                AppendMenu(_menu, flags, (nuint)(index + 1), text);
-            }
+            Append(_menu, items, flat);
 
             ApplyMenuTheme();
             var hwnd = (IntPtr)HiddenWindow.Hwnd;
@@ -80,10 +69,10 @@ internal static partial class TrayMenu
             PostMessage(hwnd, 0, 0, 0);
             // REVIEW R67：收起后（选了、Esc、点外面都一样）把焦点还给通知区域，不然下一次点图标可能没反应。
             Tray.ReturnFocus();
-            if (command > 0 && command <= items.Count)
+            if (command > 0 && command <= flat.Count)
             {
-                chosen = items[command - 1].Run;
-                capture = items[command - 1].Capture;
+                chosen = flat[command - 1].Run;
+                capture = flat[command - 1].Capture;
             }
         }
         catch (Exception ex)
@@ -120,6 +109,39 @@ internal static partial class TrayMenu
         }
     }
 
+    /// <summary>把一层菜单项加进 menu；带 Children 的建成子菜单（MF_POPUP，DestroyMenu 时跟着父菜单一起销毁）。</summary>
+    private static void Append(IntPtr menu, IReadOnlyList<Item> items, List<Item> flat)
+    {
+        foreach (var item in items)
+        {
+            if (item.Text is null)
+            {
+                AppendMenu(menu, MfSeparator, 0, null);
+                continue;
+            }
+
+            // & 在菜单里是助记符，原样显示要写成 &&。
+            var text = item.Text.Replace("&", "&&") +
+                       (string.IsNullOrEmpty(item.Shortcut) ? string.Empty : "\t" + item.Shortcut);
+            if (item.Children is { } children)
+            {
+                var submenu = CreatePopupMenu();
+                if (submenu == IntPtr.Zero)
+                {
+                    continue;
+                }
+
+                Append(submenu, children, flat);
+                AppendMenu(menu, MfString | MfPopup | (item.Enabled ? 0 : MfGrayed), (nuint)submenu, text);
+                continue;
+            }
+
+            flat.Add(item);
+            var flags = MfString | (item.Enabled ? 0 : MfGrayed) | (item.Checked ? MfChecked : 0);
+            AppendMenu(menu, flags, (nuint)flat.Count, text);
+        }
+    }
+
     public static void Close()
     {
         if (_menu != IntPtr.Zero)
@@ -128,9 +150,10 @@ internal static partial class TrayMenu
         }
     }
 
-    /// <summary>Text 为 null 是分隔线；Capture = 要拍屏幕的（截图、识字、录屏），等菜单淡完再开始。</summary>
+    /// <summary>Text 为 null 是分隔线；Capture = 要拍屏幕的（截图、识字、录屏），等菜单淡完再开始；Children 不为 null 是子菜单（Run 不用）。</summary>
     private sealed record Item(
-        string? Text, string? Shortcut, Action Run, bool Enabled = true, bool Checked = false, bool Capture = false);
+        string? Text, string? Shortcut, Action Run, bool Enabled = true, bool Checked = false, bool Capture = false,
+        IReadOnlyList<Item>? Children = null);
 
     private static void Build(List<Item> menu)
     {
@@ -226,6 +249,32 @@ internal static partial class TrayMenu
             {
                 Add(menu, "录音", HotKeyActions.Audio, AudioHost.Toggle);
             }
+        }
+
+        // 状态屏（PLAN-v12 N5，mac buildStatusMenu）：不画节标题，一项「状态屏」带子菜单——「选择状态…」（全局快捷键，打开选状态的面板；
+        // 设置里开了「直接进入」时没有它，键位写在第一个状态右边）、每个状态一行（点了直接进入）、「管理状态…」。
+        if (Features.IsOn(Feature.StatusScreen))
+        {
+            AddSeparator(menu);
+            var shortcut = runtime?.HotKeys.ShortcutFor(HotKeyActions.StatusScreen);
+            var entersFirst = settings.StatusScreenHotKeyEntersFirst;
+            var children = new List<Item>();
+            if (!entersFirst)
+            {
+                children.Add(new Item("选择状态…", shortcut, StatusPicker.ToggleOrEnterFirst));
+                children.Add(new Item(null, null, static () => { }));
+            }
+
+            var presets = StatusScreenHost.Presets;
+            for (var index = 0; index < presets.Count; index++)
+            {
+                var preset = presets[index];
+                children.Add(new Item(preset.Title, entersFirst && index == 0 ? shortcut : null, () => StatusScreenHost.Enter(preset)));
+            }
+
+            children.Add(new Item(null, null, static () => { }));
+            children.Add(new Item("管理状态…", null, () => runtime?.ShowSettings(welcome: false, "statusScreen")));
+            menu.Add(new Item("状态屏", null, static () => { }, Children: children));
         }
 
         AddSeparator(menu);

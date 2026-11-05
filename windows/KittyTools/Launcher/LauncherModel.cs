@@ -961,8 +961,8 @@ internal sealed partial class LauncherModel
                 Open(item.Target, null);
                 break;
             case LauncherKind.Action:
-                // 退出本 App 不记使用：不进「常用」，也不会越用越排到别的前缀查询前面（Enter 不确认）。
-                if (item.Target != LauncherActions.Quit)
+                // 退出本 App、进入状态屏不记使用：不进「常用」，也不会越用越排到别的前缀查询前面（Enter 不确认）。
+                if (item.Target != LauncherActions.Quit && !LauncherActions.IsStatusPreset(item.Target))
                 {
                     Record(item);
                 }

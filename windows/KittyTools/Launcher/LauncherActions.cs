@@ -5,6 +5,8 @@
 // 关着的功能那一节不列（Feature）；启动器自己、划词翻译不列（点了启动器，原来的程序就不在前台了，取不到选中的字，同托盘 G1）。
 // 副标题只写「Kitty Tools」，英文名和拼音只进匹配；对得上全局快捷动作的，选中时右边显示它的键帽。
 // 退出排在最后（同系统命令），避免回车误退；退出不记使用。老的 9 个 id 不改（使用记录按 id 累计）。
+// 状态屏（PLAN-v12 N5，mac LauncherItem.statusPreset）：每个状态一行，id 是「statusScreen:」+ 状态的 id（收藏按它认），标题是状态的标题、
+// 右侧小字「状态屏」，输标题、「状态屏」、拼音都搜得到；Enter 直接进入、不确认，所以同分时排在别的结果后面、也不记使用。
 using KittyTools.Core;
 using KittyTools.Infrastructure;
 
@@ -32,6 +34,11 @@ internal static class LauncherActions
     public const string About = "action:about";
     public const string Update = "action:update";
     public const string Quit = "action:quit";
+
+    /// <summary>状态屏的一个状态：后面接 StatusPreset.Id。</summary>
+    public const string StatusPrefix = "statusScreen:";
+
+    public static bool IsStatusPreset(string target) => target.StartsWith(StatusPrefix, StringComparison.Ordinal);
 
     /// <summary>一个内置动作：标题、英文别名、图标、家族色、对得上的全局快捷动作。</summary>
     private sealed record Definition(string Target, string Title, string English, string Glyph, string Family, string? HotKey = null);
@@ -87,6 +94,29 @@ internal static class LauncherActions
                 FeatureIcons.RecordAudio, "capture", HotKeyActions.Audio)));
         }
 
+        if (Features.IsOn(Feature.StatusScreen))
+        {
+            // 设置里开了「直接进入」时，第一个状态右边写状态屏的快捷键（按它进的就是这个）。
+            var entersFirst = SettingsService.Current.StatusScreenHotKeyEntersFirst;
+            var presets = StatusScreenHost.Presets;
+            var family = Pinyin.For("状态屏");
+            for (var index = 0; index < presets.Count; index++)
+            {
+                var item = Item(
+                    new(StatusPrefix + presets[index].Id, presets[index].Title, "Status Screen", FeatureIcons.StatusScreen, "statusScreen",
+                        entersFirst && index == 0 ? HotKeyActions.StatusScreen : null),
+                    priority: 1);
+                item.Names.Add(LauncherMatch.Fold("状态屏"));
+                if (family is { } spelled)
+                {
+                    item.Names.Add(spelled.Full);
+                    item.Initials.Add(spelled.Initials);
+                }
+
+                items.Add(item with { Note = "状态屏" });
+            }
+        }
+
         items.Add(Item(new(Home, "打开主界面", "Home Panel All Features", FeatureIcons.Home, "general", HotKeyActions.Home)));
         items.Add(Item(new(Settings, "设置", "Settings Preferences", Glyphs.Settings, "general")));
         items.Add(Item(new(Shortcuts, "快捷键速查表", "Keyboard Shortcuts", Glyphs.Keyboard, "shortcut")));
@@ -109,6 +139,7 @@ internal static class LauncherActions
         Screenshot or ScreenshotTranslate or ScreenshotLast or Ocr or ShotHistory or PinClipboard or PinsToggle or PinsClose
             or Record or Audio => "capture",
         Shortcuts => "shortcut",
+        _ when IsStatusPreset(target) => "statusScreen",
         _ => "general",
     };
 
@@ -136,6 +167,7 @@ internal static class LauncherActions
         About => Glyphs.Info,
         Update => Glyphs.Update,
         Quit => Glyphs.Close,
+        _ when IsStatusPreset(target) => FeatureIcons.StatusScreen,
         _ => Glyphs.Settings,
     };
 
@@ -215,6 +247,14 @@ internal static class LauncherActions
                 break;
             case Quit:
                 runtime?.Exit(installUpdate: true);
+                break;
+            default:
+                if (IsStatusPreset(target))
+                {
+                    // 启动器先收起、键盘还回去，再盖上来。
+                    StartLater(() => StatusScreenHost.Enter(target[StatusPrefix.Length..]));
+                }
+
                 break;
         }
     }
