@@ -4295,6 +4295,47 @@ struct SnapshotProbeTests {
       to: "\(out)/features-launchpad-off.png")
   }
 
+  /// 新功能标记（Shell/WhatsNew.swift，2026-11-05）：设置窗停在通用页、提醒和「功能」那一节都标着（侧栏行尾的「新」、页里那一节
+  /// 标题后的「新」；浅 / 深，外加窗口是 key、选中行是强调色的那一张），主界面里「新建提醒」名字前的小圆点和底栏「设置」前的小圆点
+  /// （浅 / 深）。几秒，图以 whatsnew- 开头：-only-testing:'KittyToolsTests/SnapshotProbeTests/whatsNew()'。
+  /// 标记直接摆在 SettingsNavigation.fresh / Home.sections 的 fresh 上，不碰偏好；开关读临时偏好域
+  @Test(.enabled(if: directory != nil)) func whatsNew() throws {
+    let out = try #require(Self.directory)
+    try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
+    Prefs.registerDefaults()
+    let name = "kitty-snapshot-whatsnew-\(UUID().uuidString)"
+    let prefs = try #require(UserDefaults(suiteName: name))
+    defer { prefs.removePersistentDomain(forName: name) }
+    let navigation = SettingsNavigation(defaults: nil)  // 换页不写用户的偏好
+    navigation.page = .general
+    navigation.fresh = ["reminders", "features"]
+    func root() -> some View {
+      SettingsRoot(navigation: navigation) { _ in
+        AnyView(GeneralTab().defaultAppStorage(prefs))
+      } onboarding: {
+        AnyView(EmptyView())
+      }
+    }
+    for dark in [false, true] {
+      try snapshot(
+        root(), size: NSSize(width: 780, height: 600), dark: dark,
+        to: "\(out)/whatsnew-settings\(dark ? "-dark" : "").png")
+    }
+    try snapshot(
+      root().environment(\.controlActiveState, .key), size: NSSize(width: 780, height: 600),
+      dark: false, to: "\(out)/whatsnew-settings-key.png", prepare: Self.emphasizeTableRows)
+    var state = LauncherItem.ActionState()
+    state.features = Set(Feature.allCases)
+    let home = HomeModel(
+      sections: Home.sections(state: state, keys: [.screenshot: "⌥A"], fresh: [.reminderNew]),
+      settingsIsNew: true)
+    for dark in [false, true] {
+      try snapshot(
+        HomeView(model: home), size: home.size, dark: dark,
+        to: "\(out)/whatsnew-home\(dark ? "-dark" : "").png")
+    }
+  }
+
   /// 设置 › 通用「同步」（2026-10-23，SyncSection）：没开、第一轮还没完 / 第一轮就停了、好了（两台别的 Mac、还在下载几个；
   /// 浅 / 深）、还没有别的 Mac、等确认（刹车）、停了（文件夹不在、写不进去）、从只同步便签的版本升上来的（新加的几类没勾、
   /// 文件夹那一行多一句）、便签关着。几秒，图以 sync- 开头。
