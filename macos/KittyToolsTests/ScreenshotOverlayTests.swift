@@ -85,6 +85,38 @@ struct ScreenshotOverlayTests {
     #expect(spans[0].frame.minY > lower.box.maxY)
   }
 
+  @Test func widenedTranslationStopsBeforeTheNextColumn() {
+    // 两列并排、间距很窄：左列放宽译文时不能压到右列，也不该把右列的原文抹掉
+    let left = segment(
+      "Left column text", box: CGRect(x: 40, y: 300, width: 200, height: 30), lineHeight: 30)
+    let right = segment(
+      "Right column text", box: CGRect(x: 260, y: 300, width: 200, height: 30), lineHeight: 30)
+    let long = String(repeating: "左列这句译文很长，会想往右边放宽。", count: 3)
+    let spans = ScreenshotOverlay.spans(
+      segments: [left, right], translations: [long, "右边那列"],
+      imageSize: CGSize(width: 600, height: 600))
+    #expect(spans.count == 2)
+    // 左列抹掉的范围整个留在右列原文的左边
+    #expect(spans[0].erase.maxX <= right.box.minX)
+    #expect(spans[0].frame.maxX <= right.box.minX)
+    // 右列自己不受影响
+    #expect(abs(spans[1].frame.minX - right.box.minX) < 0.01)
+  }
+
+  @Test func eraseCoversTheTranslationWhenItGrowsPastTheParagraph() {
+    // 译文比原文多出几行：抹除框要跟着长，不能只盖原文那块（否则白字落到浅底上就看不见了）
+    let only = segment(
+      "One line", box: CGRect(x: 100, y: 400, width: 300, height: 28), lineHeight: 28)
+    let long = String(repeating: "译文比原文长很多，得多占几行。", count: 3)
+    let spans = ScreenshotOverlay.spans(
+      segments: [only], translations: [long], imageSize: CGSize(width: 800, height: 600))
+    #expect(spans.count == 1)
+    #expect(spans[0].erase.height > only.box.height + 2)
+    // 抹除从原文顶边（含 pad）往下，不能比原文还矮
+    #expect(spans[0].erase.maxY >= only.box.maxY)
+    #expect(spans[0].erase.minY < only.box.minY)
+  }
+
   @Test func frameStaysInsideTheImage() {
     let segment = segment(
       "右边贴边的一段", box: CGRect(x: 700, y: 400, width: 90, height: 30), lineHeight: 30)
