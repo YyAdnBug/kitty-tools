@@ -2,7 +2,7 @@
 // 「启动台」——总开关（关掉后快捷键、菜单栏、触发角、捏合都不打开）、按键速查；
 // 「排列」——一页几列几行（变少时挤不下的顺到下一页开头、页边界不动，岛上能撤销；E12）；
 // 「触控板」——手势 关闭 / 四指捏合 / 五指捏合、灵敏度三档，页脚说清怎么认（系统的开着时让给系统、唤醒后自己接上）；
-//   系统的捏合手势还开着时给一行提示和「打开触控板设置」（只读系统设置，不改）；私有框架加载不了时这一行灰掉写明；
+//   系统的捏合手势还开着时给关闭方法：26 复制命令供用户手动执行，其他版本打开触控板设置（只读，不代改）；私有框架加载不了时这一行灰掉写明；
 // 「触发角」——选一个屏幕角，鼠标推到那里停一下打开（默认关）；
 // 「排列数据」——从系统旧启动台导入（确认，导入前留一份可撤销）、恢复默认排列、撤销上一次导入或恢复默认（改行列数挤过的也算）。
 // 页头由 SettingsRoot 画（家族色薄荷绿）。布局本身不在这里改，拖动、文件夹、抖动删 App 全在面板里（R4–R6）。
@@ -211,12 +211,28 @@ struct LaunchpadTab: View {
         .pickerStyle(.segmented)
         .disabled(!enabled || off)
         if systemPinch, !off {
-          LabeledContent {
-            Button("打开触控板设置") { openTrackpadSettings() }
-          } label: {
-            Text("系统的捏合手势还开着")
-              .foregroundStyle(.orange)
-            Text("这时捏合会打开系统自己的应用程序视图。先在 系统设置 › 触控板 › 更多手势 里关掉「应用程序」那一行，再回来")
+          if TrackpadSystemGesture.usesDockPinchSetting {
+            LabeledContent {
+              Button("复制命令") {
+                Paster.write(string: TrackpadSystemGesture.disableSpotlightCommand, record: true)
+              }
+            } label: {
+              Text("系统的应用程序捏合还开着")
+                .foregroundStyle(.orange)
+              Text("macOS 26 没有独立的「应用程序」设置项。把命令粘贴到终端手动执行，可单独关闭应用程序捏合；命令会重启程序坞，「显示桌面」继续保留。")
+            }
+            Text(TrackpadSystemGesture.disableSpotlightCommand)
+              .font(.system(.caption, design: .monospaced))
+              .foregroundStyle(.secondary)
+              .textSelection(.enabled)
+          } else {
+            LabeledContent {
+              Button("打开触控板设置") { openTrackpadSettings() }
+            } label: {
+              Text("系统的捏合手势还开着")
+                .foregroundStyle(.orange)
+              Text("这时捏合会打开系统自己的应用程序视图。先在 系统设置 › 触控板 › 更多手势 里关掉「应用程序」那一行，再回来")
+            }
           }
         }
       } else {
@@ -231,8 +247,13 @@ struct LaunchpadTab: View {
       Text("触控板")
     } footer: {
       if pinchAvailable() {
+        let systemHelp =
+          TrackpadSystemGesture.usesDockPinchSetting
+          ? "系统的应用程序捏合开着时，捏合交给系统，启动台不响应；单独关掉后由 Kitty 识别。系统设置 › 触控板 › 更多手势 里的「显示桌面」可以保持开启。"
+          : "系统设置 › 触控板 › 更多手势 里的「应用程序」开着时，捏合交给系统，启动台不响应；关掉之后马上由 Kitty 自己读触控板来认。"
         SectionFootnote(
-          "系统设置 › 触控板 › 更多手势 里的「应用程序」开着时，捏合交给系统，启动台不响应；关掉之后马上由 Kitty 自己读触控板来认。四指捏合四根、五根手指都认（同系统），捏的时候多碰到一根也接着认；五指只认五根，和四指的横扫（切换桌面、调度中心）完全错开，不容易误开。Mac 从睡眠中唤醒后会自动重新接上触控板，不用重启。"
+          systemHelp
+            + "四指捏合四根、五根手指都认（同系统），捏的时候多碰到一根也接着认；五指只认五根，和四指的横扫（切换桌面、调度中心）完全错开，不容易误开。Mac 从睡眠中唤醒后会自动重新接上触控板，不用重启。"
         )
       }
     }
