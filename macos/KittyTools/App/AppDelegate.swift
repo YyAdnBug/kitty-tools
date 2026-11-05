@@ -2678,7 +2678,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private func recognizing<T>(_ work: () async -> T) async -> T {
     // 进程内识过字，模型就留在内存里：这一路不一定开关面板（⌥O 识字、钉图上识字），自己记得回头放掉
     defer { idleReclaim.schedule() }
-    if !OCR.isPrepared {
+    if !OCR.isPrepared() {
       let note = "第一次识字要等一分钟左右，以后就快了"
       island.show(Self.preparingTitle, detail: note, tone: .progress, symbol: "text.viewfinder")
       let started = ContinuousClock.now

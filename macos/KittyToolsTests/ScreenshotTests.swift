@@ -513,15 +513,15 @@ struct ScreenshotTests {
   }
 
   /// 准备识字模型（OCR.prepare）：没记过就起子进程拿那张小图识一次、记下系统版本，记过了 isPrepared 直接是真。
-  /// 那张小图得真识得出字（空白图子进程也成功退出，编不到识字的模型）。宿主的缓存早编好了，这里几秒钟
+  /// 那张小图得真识得出字（空白图子进程也成功退出，编不到识字的模型）。宿主的缓存早编好了，这里几秒钟。
+  /// 记在临时偏好域里：宿主是 Dev 版，碰 standard 就是写用户的真实偏好（连「先写再恢复」也不行，并行时还会抢）
   @Test func preparesModelOnce() async throws {
-    let key = Prefs.ocrPreparedSystem
-    let saved = UserDefaults.standard.string(forKey: key)
-    defer { UserDefaults.standard.set(saved, forKey: key) }
-    UserDefaults.standard.removeObject(forKey: key)
-    #expect(!OCR.isPrepared)
-    await OCR.prepare()
-    #expect(OCR.isPrepared)
+    let suite = "kitty-test-ocr-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    #expect(!OCR.isPrepared(defaults, domainName: suite))
+    await OCR.prepare(defaults, domainName: suite)
+    #expect(OCR.isPrepared(defaults, domainName: suite))
     let sample = try #require(OCR.writeSample())
     defer { try? FileManager.default.removeItem(at: sample) }
     #expect(await OCR.recognizeText(in: sample) == "Kitty")

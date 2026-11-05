@@ -199,8 +199,11 @@ nonisolated enum OCR {
   /// 所以启动时在子进程里拿这样一张小图先识一次（编好的留在缓存里，模型的内存跟着子进程退掉）；当场要识时还没好就等它
   /// （AppDelegate.recognizing 让刘海岛说在等什么），好了记下系统版本，以后启动不再做。
   /// ponytail: 只认系统版本，缓存被手动清掉时不知道——那一回照旧慢、只显示「识别中」；要准就改看缓存目录在不在（私有布局）
-  static var isPrepared: Bool {
-    UserDefaults.standard.string(forKey: Prefs.ocrPreparedSystem)
+  /// 偏好域可以传进来（单测用临时的，不碰宿主 = Dev 版的真实偏好）；只读持久域：临时的那个 suite 按键读会落到宿主 App 的域
+  static func isPrepared(
+    _ defaults: UserDefaults = .standard, domainName: String? = Bundle.main.bundleIdentifier
+  ) -> Bool {
+    domainName.flatMap(defaults.persistentDomain(forName:))?[Prefs.ocrPreparedSystem] as? String
       == ProcessInfo.processInfo.operatingSystemVersionString
   }
 
@@ -209,9 +212,14 @@ nonisolated enum OCR {
 
   @MainActor private static var preparing: Task<Void, Never>?
 
-  /// 没准备好就准备，同时来的等同一个；好了直接返回。子进程起不来、失败、超时都不记，接下来那次识字自己编（照样慢一回）
-  @MainActor static func prepare() async {
-    guard !isPrepared, let executable = Bundle.main.executablePath else { return }
+  /// 没准备好就准备，同时来的等同一个（记进先来的那个偏好域；只有单测传别的）；好了直接返回。
+  /// 子进程起不来、失败、超时都不记，接下来那次识字自己编（照样慢一回）
+  @MainActor static func prepare(
+    _ defaults: UserDefaults = .standard, domainName: String? = Bundle.main.bundleIdentifier
+  ) async {
+    guard !isPrepared(defaults, domainName: domainName),
+      let executable = Bundle.main.executablePath
+    else { return }
     let task =
       preparing
       ?? Task {
@@ -223,7 +231,7 @@ nonisolated enum OCR {
           environment: helperEnvironment(ProcessInfo.processInfo.environment),
           timeout: prepareTimeout, quality: .utility)
         if result?.status == 0 {
-          UserDefaults.standard.set(
+          defaults.set(
             ProcessInfo.processInfo.operatingSystemVersionString, forKey: Prefs.ocrPreparedSystem)
         } else {
           Log.clipboard.error("准备识字模型没成（状态 \(result?.status ?? -1)）")
