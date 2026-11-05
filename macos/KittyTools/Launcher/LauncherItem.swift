@@ -167,8 +167,9 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
     .screenshotLastRegion: "Capture Last Region", .recognizeText: "OCR Recognize Text QR",
     .screenRecord: "Screen Recording Record Video",
     .audioRecord: "Audio Recording Record Voice Microphone",
-    // 「钉图」：标题是「钉住…的图」，不放进来搜「钉图」找不到它（菜单里的另两项都叫「…钉图」）
-    .pinClipboard: "Pin Clipboard Image 钉图",
+    // 「钉图」：标题是「钉住剪贴板内容」，不放进来搜「钉图」找不到它（菜单里的另两项都叫「…钉图」）；剪贴板里的文字也能钉（issue #4），
+    // 别家叫「贴图」
+    .pinClipboard: "Pin Clipboard Image Text 钉图 贴图",
     // 「便签」：标题是「快速记一条」，不放进来搜「便签」找不到它（另两项标题里就有）
     .noteCapture: "Quick Note Capture 便签", .noteNew: "New Note", .noteAll: "All Notes",
     // 第八族：搜「启动台」「launchpad」「应用」都找得到它（和现有的「启动器」是两个东西，名字分开）

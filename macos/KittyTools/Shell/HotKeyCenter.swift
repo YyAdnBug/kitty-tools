@@ -162,7 +162,7 @@ enum HotKeyAction: String, CaseIterable {
     case .translateReplace: "划词翻译并替换"
     case .screenRecord: "录屏"
     case .audioRecord: "录音"
-    case .pinClipboard: "钉住剪贴板里的图"
+    case .pinClipboard: "钉住剪贴板内容"
     case .shotHistory: "截图历史"
     case .clothesline: "晾衣绳"
     case .statusScreen: "状态屏"

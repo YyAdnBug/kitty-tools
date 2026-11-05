@@ -1704,29 +1704,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   /// 钉住剪贴板里的图（第二轮体检 F1；快捷键默认不设、菜单栏、启动器）：剪贴板面板「钉到屏幕」的一步版，钉在鼠标所在屏
-  /// 可见区中央、连按依次错开（PinBoard.clipboardFrame）。只读剪贴板，不写、不记历史（不是新内容）；没有图片时提示音 + 岛
+  /// 可见区中央、连按依次错开（PinBoard.clipboardFrame）。没有图片、是文字时把文字排成卡片钉上去（issue #4）。
+  /// 只读剪贴板，不写、不记历史（不是新内容）；图片、文字都没有时提示音 + 岛
   private func pinClipboard() {
-    guard let source = PinBoard.clipboardImage() else {
-      NSSound.beep()
-      return island.show("剪贴板里没有图片", tone: .warning)
-    }
     let mouse = NSEvent.mouseLocation
     guard
       let screen = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) })
         ?? NSScreen.main
     else { return }
     let (scale, visible) = (screen.backingScaleFactor, screen.visibleFrame)
+    func place(_ image: CGImage) {
+      let pixels = CGSize(width: image.width, height: image.height)
+      pins.pin(
+        image,
+        frame: PinBoard.clipboardFrame(
+          pixels: pixels, scale: scale, visible: visible, pinned: pins.panels.map(\.frame)))
+    }
+    guard let source = PinBoard.clipboardImage() else {
+      if let text = PinBoard.clipboardText(),
+        let card = PinBoard.textCard(
+          text, scale: scale, limit: PinBoard.textCardLimit(visible: visible),
+          appearance: NSApp.effectiveAppearance)
+      {
+        return place(card)
+      }
+      NSSound.beep()
+      return island.show("剪贴板里没有图片或文字", tone: .warning)
+    }
     Task {
       guard let image = await PinBoard.decode(source) else {
         let name = if case .file(let url) = source { "「\(url.lastPathComponent)」" } else { "这张图片" }
         return island.show("没能钉到屏幕", detail: "读不出\(name)", tone: .error)
       }
       // 解码完才找空位：连按几下时，前一张这时已经钉上了
-      let pixels = CGSize(width: image.width, height: image.height)
-      pins.pin(
-        image,
-        frame: PinBoard.clipboardFrame(
-          pixels: pixels, scale: scale, visible: visible, pinned: pins.panels.map(\.frame)))
+      place(image)
     }
   }
 
