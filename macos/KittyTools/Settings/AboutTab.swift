@@ -1,7 +1,8 @@
 // 设置 › 关于（Whisker 品牌页）：128 pt 大图标（点一下摇一摇，悬停时跟着指针 3D 倾斜 ≤ 6°）+ 26 pt 圆体字标 +
 // 版本胶囊 + 应用内更新（Updater：检查更新、发现新版本时「更新并重新打开」、下载中「取消」、自动检查开关）+ 未来计划（随包的
 // roadmap.json：已知的小毛病在前、以后的新功能在后；做好了从那里拿掉、写进更新日志，2026-10-18 用户要求）+ 更新日志时间线
-// （随包分发的 changelog.json，最新版在前）；可以重看欢迎引导。更新后第一次启动不再自动打开这一页，只由刘海岛说
+// （随包分发的 changelog.json，最新版在前；只展开当前版本，别的折叠成一行、点了才排它的条目——2026-11-05 用户报全部展开太长、
+// 滚动卡）；可以重看欢迎引导。更新后第一次启动不再自动打开这一页，只由刘海岛说
 // 「已更新到 x」+ 本版摘要（AppDelegate 比较 lastSeenVersion，体检 A29），全文在这里。
 // 页面最底下两行小字是素材和参考产品的出处（状态屏的动画表情、便签参考的 Noty，都是 MIT，许可要求随包带着许可全文；
 // mac-whisker §11）。
@@ -42,6 +43,13 @@ struct AboutTab: View {
   private static let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
 
   static let releases: [Release] = load("changelog")
+  /// 更新日志一开始展开的那一版
+  static let expandedVersion = firstExpanded(in: releases, current: version)
+
+  /// 当前版本；changelog 里没有它（开发中的新版本号）就是最新的那一条（列表最新在前）
+  static func firstExpanded(in releases: [Release], current: String) -> String? {
+    releases.contains { $0.version == current } ? current : releases.first?.version
+  }
   static let roadmap: [Plan] = load("roadmap")
 
   /// 随包的一个 JSON 数组（读不出来就是空的：那一节不显示）
@@ -87,7 +95,8 @@ struct AboutTab: View {
           ForEach(Array(Self.releases.enumerated()), id: \.element.id) { index, release in
             ReleaseView(
               release: release, isCurrent: release.version == Self.version,
-              isLast: index == Self.releases.count - 1)
+              isFirst: index == 0, isLast: index == Self.releases.count - 1,
+              isExpanded: release.version == Self.expandedVersion)
           }
           credits
         }
@@ -251,44 +260,89 @@ struct BrandIcon: View {
   }
 }
 
-/// 时间线上的一个版本：左边竖线 + 圆点（当前版本是品牌粉），右边版本号、日期、摘要和逐条改动
+/// 时间线上的一个版本：左边竖线 + 圆点（当前版本是品牌粉），右边一行标题（版本号、日期、展开三角，整行能点）。
+/// 展开时下面是摘要和逐条改动；折叠时摘要截成一行夹在版本号和日期中间，条目不排
 private struct ReleaseView: View {
   let release: AboutTab.Release
   let isCurrent: Bool
+  let isFirst: Bool
   let isLast: Bool
+  @State private var isExpanded: Bool
+
+  init(
+    release: AboutTab.Release, isCurrent: Bool, isFirst: Bool, isLast: Bool, isExpanded: Bool
+  ) {
+    self.release = release
+    self.isCurrent = isCurrent
+    self.isFirst = isFirst
+    self.isLast = isLast
+    _isExpanded = State(initialValue: isExpanded)
+  }
 
   var body: some View {
     HStack(alignment: .top, spacing: 14) {
       VStack(spacing: 0) {
+        // 圆点上面这 5 pt 接着上一版的竖线（第一版不画）：折叠成一行时线不断开
+        Rectangle().fill(Style.hairline).frame(width: 1, height: 5).opacity(isFirst ? 0 : 1)
         Circle()
           .fill(isCurrent ? Style.brand : Color.secondary.opacity(0.4))
           .frame(width: 10, height: 10)
-          .padding(.top, 5)
         if !isLast { Rectangle().fill(Style.hairline).frame(width: 1) }
       }
       .frame(width: 10)
       VStack(alignment: .leading, spacing: 8) {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-          Text(release.version).font(.system(.headline, design: .rounded))
-          if isCurrent {
-            Text("当前版本")
-              .font(.caption.weight(.medium))
-              .padding(.horizontal, 6)
-              .padding(.vertical, 1)
-              .background(Style.brand.opacity(0.12), in: .capsule)
-              .foregroundStyle(Style.brandInk)
+        header
+        if isExpanded {
+          VStack(alignment: .leading, spacing: 8) {
+            Text(release.summary).foregroundStyle(.secondary)
+            ForEach(release.changes, id: \.self) { change in
+              ChangeRow(type: change.type, scope: change.scope, text: change.text)
+            }
           }
-          Spacer()
-          Text(release.date).font(.caption).foregroundStyle(.secondary)
-        }
-        Text(release.summary).foregroundStyle(.secondary)
-        ForEach(release.changes, id: \.self) { change in
-          ChangeRow(type: change.type, scope: change.scope, text: change.text)
+          .textSelection(.enabled)
+          .transition(.opacity)
         }
       }
-      .padding(.bottom, 22)
-      .textSelection(.enabled)
+      .padding(.bottom, isExpanded ? 22 : 12)
     }
+  }
+
+  private var header: some View {
+    Button {
+      withAnimation(Style.Motion.settle.animation()) { isExpanded.toggle() }
+    } label: {
+      HStack(alignment: .firstTextBaseline, spacing: 8) {
+        Text(release.version).font(.system(.headline, design: .rounded)).fixedSize()
+        if isCurrent {
+          Text("当前版本")
+            .font(.caption.weight(.medium))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1)
+            .background(Style.brand.opacity(0.12), in: .capsule)
+            .foregroundStyle(Style.brandInk)
+            .fixedSize()
+        }
+        if isExpanded {
+          Spacer(minLength: 8)
+        } else {
+          Text(release.summary)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        Text(release.date).font(.caption).monospacedDigit().foregroundStyle(.secondary)
+          .fixedSize()
+        Image(systemName: "chevron.right")
+          .font(.system(size: 11, weight: .semibold))
+          .foregroundStyle(.secondary)
+          .rotationEffect(.degrees(isExpanded ? 90 : 0))
+          .frame(width: 12)
+      }
+      .contentShape(.rect)
+    }
+    .buttonStyle(.plain)
+    .accessibilityValue(isExpanded ? "已展开" : "已折叠")
   }
 }
 
