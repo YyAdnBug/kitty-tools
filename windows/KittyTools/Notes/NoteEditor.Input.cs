@@ -54,9 +54,19 @@ internal sealed partial class NoteEditor
             return;
         }
 
+        // 只读（最近删除）：只认拷贝、查找、关
+        if (_readOnly && !(control && e.Key is VirtualKey.C or VirtualKey.Insert or VirtualKey.F or VirtualKey.W) && e.Key != VirtualKey.Escape)
+        {
+            return;
+        }
+
+        // 记下删除键：OnTextChanging 拿它认删的是哪一个字（几张图的 U+FFFC 一样）
+        _deleteKey = e.Key is VirtualKey.Back or VirtualKey.Delete && !control ? e.Key : null;
         e.Handled = (e.Key, control, shift) switch
         {
             (VirtualKey.Enter, false, false) => Newline(),
+            // Shift+Enter：普通换行（不续列表）；不交给 RichEdit——它插的是软换行 U+000B，存进正文就不是换行了
+            (VirtualKey.Enter, false, true) => Do(() => InsertText("\n")),
             (VirtualKey.Tab, false, _) => Indent(shift),
             (VirtualKey.Space, false, false) => Shorthand(),
             (VirtualKey.T, true, false) => ToggleTask(),
@@ -71,7 +81,18 @@ internal sealed partial class NoteEditor
             (VirtualKey.C, true, false) or (VirtualKey.Insert, true, false) => CopySelection(cut: false),
             (VirtualKey.X, true, false) => CopySelection(cut: true),
             (VirtualKey.Delete, false, true) => CopySelection(cut: true),
-            (VirtualKey.Escape, false, false) => Do(() => CloseRequested?.Invoke()),
+            // Esc：查找条开着先关它（同 mac），再按才关便签
+            (VirtualKey.Escape, false, false) => Do(() =>
+            {
+                if (IsFinding)
+                {
+                    HideFind();
+                }
+                else
+                {
+                    CloseRequested?.Invoke();
+                }
+            }),
             _ => false,
         };
     }
@@ -204,10 +225,14 @@ internal sealed partial class NoteEditor
             return true;
         }
 
-        var package = new DataPackage();
-        package.SetText(SelectedText);
-        Clipboard.SetContent(package);
-        if (cut)
+        // 剪贴板被别的程序占着时不抛出去（不然在按键处理里就是一个没接住的异常），也不剪
+        if (!ClipboardWriter.WriteText(SelectedText))
+        {
+            SystemSound.Beep();
+            return true;
+        }
+
+        if (cut && !_readOnly)
         {
             ApplyChange(new NoteTasks.Change(
                 new[] { new NoteTasks.Replacement(new NoteRange(0, selection.Length), string.Empty) },
@@ -227,23 +252,38 @@ internal sealed partial class NoteEditor
     {
         try
         {
-            var content = Clipboard.GetContent();
-            if (content.Contains(StandardDataFormats.Bitmap) || content.Contains(StandardDataFormats.StorageItems))
+            if (_readOnly)
             {
-                if (await PasteImagesAsync(content))
-                {
-                    return;
-                }
+                return;
             }
 
-            if (!content.Contains(StandardDataFormats.Text))
+            // 先后同 mac：图片文件 → 有字就粘字 → 位图（表格软件复制的单元格同时带字和位图，要的是字）
+            var content = Clipboard.GetContent();
+            var hasText = content.Contains(StandardDataFormats.Text);
+            if ((content.Contains(StandardDataFormats.StorageItems) || (!hasText && content.Contains(StandardDataFormats.Bitmap)))
+                && await PasteImagesAsync(content))
+            {
+                return;
+            }
+
+            if (!hasText)
             {
                 return;
             }
 
             var text = await content.GetTextAsync();
+            if (string.IsNullOrEmpty(text))
+            {
+                if (content.Contains(StandardDataFormats.Bitmap))
+                {
+                    await PasteImagesAsync(content);
+                }
+
+                return;
+            }
+
             var selection = Selection;
-            if (selection.Length > 0)
+            if (selection.Length > 0 && _markdown && !_text.AsSpan(selection.Location, selection.Length).Contains(ObjectChar))
             {
                 var (start, _, contentsEnd) = NoteText.Line(_text, selection.Location);
                 if (!InCodeBlock(start) && selection.End <= contentsEnd &&
@@ -326,6 +366,12 @@ internal sealed partial class NoteEditor
         menu.Opening += (_, _) =>
         {
             menu.Items.Clear();
+            if (_readOnly)
+            {
+                Add(menu.Items, "拷贝", Glyphs.Copy, () => CopySelection(cut: false), Selection.Length > 0, "Ctrl+C");
+                return;
+            }
+
             // 选区里有图：先是图片那几项（宽度五档、裁切…、拷贝图片，第 7 批）
             AddImageItems(menu.Items);
             Add(menu.Items, "剪切", Glyphs.Cut, () => CopySelection(cut: true), Selection.Length > 0, "Ctrl+X");

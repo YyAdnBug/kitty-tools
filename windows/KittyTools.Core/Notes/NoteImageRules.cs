@@ -144,7 +144,8 @@ public static class NoteImageRules
 
     public static ImageSize Size(int pixelWidth, int pixelHeight, double dpi, int orientation)
     {
-        var resolution = dpi > 0 && double.IsFinite(dpi) ? dpi : 96;
+        // 不在 24–2400 里的按 96 算（同 mac F22：JFIF 密度单位是 0 的 JPEG 会报出 1 之类的值，图被放大几十倍）
+        var resolution = double.IsFinite(dpi) && dpi is >= 24 and <= 2400 ? dpi : 96;
         var rotated = orientation is >= 5 and <= 8;
         var (width, height) = rotated ? (pixelHeight, pixelWidth) : (pixelWidth, pixelHeight);
         var scale = 96 / resolution;

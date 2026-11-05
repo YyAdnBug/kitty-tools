@@ -57,6 +57,37 @@ public sealed class NoteUndoTests
     }
 
     [TestMethod]
+    public void SameTextDifferentImagesAreSeparateSteps()
+    {
+        // 审查方复查：改图片宽度 / 裁切时字一样、图片不一样，两次各是一步
+        var undo = new NoteUndo<string>();
+        undo.Command(new NoteUndo<string>.State("x", new[] { "a" }, new NoteRange(0, 0)));
+        undo.Command(new NoteUndo<string>.State("x", new[] { "b" }, new NoteRange(0, 0)));
+        var back = undo.Undo(new NoteUndo<string>.State("x", new[] { "c" }, new NoteRange(0, 0)));
+        Assert.AreEqual("b", back?.Images[0]);
+        Assert.IsTrue(undo.CanUndo);
+    }
+
+    [TestMethod]
+    public void HugeStatesDropTheOldestFirst()
+    {
+        var undo = new NoteUndo<string>();
+        var big = new string('字', (int)(NoteUndo<string>.MaxChars / 3) + 1);
+        for (var step = 0; step < 4; step++)
+        {
+            undo.Command(new NoteUndo<string>.State(big + step, Array.Empty<string>(), new NoteRange(0, 0)));
+        }
+
+        var count = 0;
+        while (undo.Undo(new NoteUndo<string>.State("now", Array.Empty<string>(), new NoteRange(0, 0))) is not null)
+        {
+            count++;
+        }
+
+        Assert.AreEqual(2, count, "一共不超过 MaxChars：只留最近两步");
+    }
+
+    [TestMethod]
     public void CommandsAreTheirOwnStepAndNewEditsClearRedo()
     {
         var undo = new NoteUndo<string>();

@@ -52,19 +52,29 @@ internal sealed unsafe partial class SqliteConnection : IDisposable
         }
 
         _db = db;
-        Execute("PRAGMA busy_timeout = 5000;");
-        if (readOnly)
+        try
         {
-            Execute("PRAGMA query_only = ON;");
-            return;
-        }
+            Execute("PRAGMA busy_timeout = 5000;");
+            if (readOnly)
+            {
+                Execute("PRAGMA query_only = ON;");
+                return;
+            }
 
-        Execute("PRAGMA journal_mode = WAL;");
-        Execute("PRAGMA synchronous = NORMAL;");
-        Execute("PRAGMA foreign_keys = ON;");
-        // 删掉的行把内容抹成 0，不留在空闲页里（隐私：清空的剪贴板历史在库文件里也找不到；第四轮体检 E5，mac 同样用 ON——
-        // FAST 不清长正文的溢出页）。
-        Execute("PRAGMA secure_delete = ON;");
+            Execute("PRAGMA journal_mode = WAL;");
+            Execute("PRAGMA synchronous = NORMAL;");
+            Execute("PRAGMA foreign_keys = ON;");
+            // 删掉的行把内容抹成 0，不留在空闲页里（隐私：清空的剪贴板历史在库文件里也找不到；第四轮体检 E5，mac 同样用 ON——
+            // FAST 不清长正文的溢出页）。
+            Execute("PRAGMA secure_delete = ON;");
+        }
+        catch
+        {
+            // 文件头坏了（不是数据库）时第一句 PRAGMA 才报错：这时要把连接关掉，不然句柄留着、恢复时挪不开那个坏文件（PLAN-v13 复查）
+            Sqlite3CloseV2(db);
+            _db = IntPtr.Zero;
+            throw;
+        }
     }
 
     public long LastInsertRowId => Sqlite3LastInsertRowId(_db);

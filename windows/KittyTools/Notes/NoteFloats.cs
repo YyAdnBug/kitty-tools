@@ -219,10 +219,38 @@ internal static partial class NoteFloats
             list.Add(value.ToStored());
         }
 
-        SettingsService.Current.NotesFloatPlaces = list.Count == 0 ? null : list;
         var scale = Displays.AtPoint((int)center.X, (int)center.Y).Scale;
-        SettingsService.Current.NotesFloatSize = NoteFloatLayout.SizeText((frame.Width / scale, frame.Height / scale));
+        var size = NoteFloatLayout.SizeText((frame.Width / scale, frame.Height / scale));
+        var settings = SettingsService.Current;
+        // 没变就不存：Prune 跟着仓库每变一次都来一趟（打一个字一次），每次都写设置文件、发「设置变了」太重（PLAN-v13 复查）
+        if (SamePlaces(settings.NotesFloatPlaces, list) && settings.NotesFloatSize == size)
+        {
+            return;
+        }
+
+        settings.NotesFloatPlaces = list.Count == 0 ? null : list;
+        settings.NotesFloatSize = size;
         SettingsService.Save();
+    }
+
+    private static bool SamePlaces(List<Dictionary<string, string>>? stored, List<Dictionary<string, string>> next)
+    {
+        if ((stored?.Count ?? 0) != next.Count)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < next.Count; index++)
+        {
+            var a = stored![index];
+            var b = next[index];
+            if (a.Count != b.Count || a.Any(pair => !b.TryGetValue(pair.Key, out var value) || value != pair.Value))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static void Forget(string id)

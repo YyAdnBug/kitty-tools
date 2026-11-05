@@ -39,7 +39,7 @@ internal sealed class NoteStore : IDisposable
     private readonly SqliteConnection _db;
     private readonly DispatcherQueueTimer _saveTimer;
     private readonly DispatcherQueueTimer _retryTimer;
-    private readonly string _fallbackDevice;
+    private string _fallbackDevice;
     private long? _unsavedSince;
     private int _failures;
 
@@ -428,6 +428,7 @@ internal sealed class NoteStore : IDisposable
         else
         {
             SetMeta("device", newId);
+            _fallbackDevice = newId;
         }
 
         Log.Info($"notes.device-switched count={bumping.Count}");
@@ -549,25 +550,6 @@ internal sealed class NoteStore : IDisposable
         _saveTimer.Stop();
         _saveTimer.Interval = TimeSpan.FromMilliseconds(delay);
         _saveTimer.Start();
-    }
-
-    /// <summary>退出前把攒着的改动落下去。落不下去就问（ask 拿到原因，返回 0 再试一次 / 1 仍要退出 / 2 取消）。</summary>
-    public async Task<bool> FlushBeforeQuitAsync(Func<string, Task<int>> ask)
-    {
-        while (!Flush())
-        {
-            switch (await ask(SaveProblem ?? "原因不明"))
-            {
-                case 0:
-                    continue;
-                case 1:
-                    return true;
-                default:
-                    return false;
-            }
-        }
-
-        return true;
     }
 
     public void Dispose()

@@ -54,8 +54,8 @@ public sealed class NoteSyncRunnerTests
             Zone = TimeZoneInfo.Utc,
         };
 
-        public SyncRoundResult Round(string folder, long now, IReadOnlyDictionary<string, int>? allowance = null)
-            => new SyncRunner(Device, Array.Empty<ISyncSource>(), Name, notes: Part)
+        public SyncRoundResult Round(string folder, long now, IReadOnlyDictionary<string, int>? allowance = null, bool notes = true)
+            => new SyncRunner(Device, Array.Empty<ISyncSource>(), Name, notes: notes ? Part : null)
                 .RunAsync(folder, allowance ?? new Dictionary<string, int>(), now).GetAwaiter().GetResult();
     }
 
@@ -204,6 +204,63 @@ public sealed class NoteSyncRunnerTests
             b.Editing.Clear();
             b.Round(folder, T0 + 130);
             Assert.AreEqual("A 改的", b.Book.Find(note.Id)?.Body);
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public void EditingANoteStillPublishesIt()
+    {
+        // 审查方复查：正在编辑、这一轮没有要换进来的那条照常写出去（只扣下「正在编辑 ∩ 要合的」），也不算安静
+        var folder = NewFolder();
+        try
+        {
+            var a = new Node("WIN-A");
+            var b = new Node("MAC-B");
+            var note = a.Book.Create(T0, "原文");
+            Settle(folder, T0 + 10, a, b);
+            a.Editing.Add(note.Id);
+            a.Book.SetBody(note.Id, "正在打的字", T0 + 100);
+            a.Round(folder, T0 + 110);
+            b.Round(folder, T0 + 120);
+            Assert.AreEqual("正在打的字", b.Book.Find(note.Id)?.Body);
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public void RollbackSeenWithoutNotesIsCaughtUpLater()
+    {
+        // 审查方复查：认出库被退回去的那一轮便签没合（没勾 / 没准备好）——编号照样换（别的几类要），旧编号记下来，
+        // 便签能合的那一轮按它把恢复后改过的那条换到新编号名下
+        var folder = NewFolder();
+        try
+        {
+            var a = new Node("WIN-A");
+            var note = a.Book.Create(T0, "原文");
+            Settle(folder, T0 + 10, a);
+            var first = a.Book.Find(note.Id)!;
+            a.Book.SetBody(note.Id, "第二版", T0 + 50);
+            a.Round(folder, T0 + 60);
+            var epoch = a.Device.Epoch;
+            // 整个数据目录从备份恢复：便签退回第一版（钟也是那时的），本机记的 epoch 也退回去
+            var restored = new Node("WIN-A");
+            restored.Book.Load(first, first.Revision, false);
+            restored.Book.Saved();
+            restored.Device.Epoch = epoch - 1;
+            restored.Round(folder, T0 + 100, notes: false);
+            Assert.AreNotEqual("WIN-A", restored.Device.Id, "别的几类照样换编号");
+            Assert.AreEqual("WIN-A", restored.Device.NotesSwitchFrom, "记下旧编号");
+            restored.Book.SetBody(note.Id, "恢复后打的字", T0 + 200);
+            restored.Round(folder, T0 + 210);
+            Assert.IsNull(restored.Device.NotesSwitchFrom, "补认过了");
+            Assert.IsFalse(restored.Book.Find(note.Id)!.Clock.ContainsKey("WIN-A"), "旧编号那一格去掉了");
         }
         finally
         {

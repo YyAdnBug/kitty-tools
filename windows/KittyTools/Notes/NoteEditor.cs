@@ -20,6 +20,7 @@ using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Windows.System;
 using Windows.UI;
 
 namespace KittyTools;
@@ -47,12 +48,50 @@ internal sealed partial class NoteEditor
     private string _published = string.Empty;
     private IReadOnlyList<NoteMarkdown.CodeBlock> _blocks = Array.Empty<NoteMarkdown.CodeBlock>();
 
+    /// <summary>正在自己改正文 / 格式（不算用户打字）。可以嵌套；只读时这一会儿临时放开 RichEdit 的只读（它只读时拒绝 SetText、改格式）。</summary>
+    private bool _applying
+    {
+        get => _applyingDepth > 0;
+        set
+        {
+            _applyingDepth = Math.Max(_applyingDepth + (value ? 1 : -1), 0);
+            if (_readOnly)
+            {
+                _box.IsReadOnly = _applyingDepth == 0;
+            }
+        }
+    }
+
+    /// <summary>只读（最近删除里的便签）：用户改不了，自己的命令（回车续行、Ctrl+T、粘贴、撤销、图片宽度……）也都不做、不交出去。</summary>
+    public bool ReadOnly
+    {
+        get => _readOnly;
+        set
+        {
+            if (value && !_readOnly)
+            {
+                // 换成只读的那条之前，先把这条还没交出去的交出去
+                PublishPending();
+            }
+
+            _readOnly = value;
+            _box.IsReadOnly = value;
+        }
+    }
+
     /// <summary>上次排的时候代码块里每一行的角色（现在的位置：改字时跟着挪）；mac 记在字上的 roleKey。</summary>
     private List<(NoteRange Range, NoteMarkdown.Role Role)> _roles = new();
     private HashSet<int> _shownLines = new();
     private int _styledUntil;
-    private bool _applying;
+    private int _applyingDepth;
+    private bool _readOnly;
     private bool _composing;
+
+    // 组字这一回的第一下改字之前的样子（撤销只记这一份；确认后超了 1 MB 就退回它）
+    private NoteUndo<NoteImages.Image>.State? _composeStart;
+
+    // 刚按下的 Backspace / Delete（没有选区时认改了哪一个字：几个图片的 U+FFFC 长得一样，光比头尾分不出删的是哪一张）
+    private VirtualKey? _deleteKey;
     private bool _restyleQueued;
     private NoteRange _lastSelection;
     private NotePaper _paper = NotePaper.All[0];
@@ -99,11 +138,27 @@ internal sealed partial class NoteEditor
             SyncMarkers();
             Publish();
         };
-        _box.TextCompositionStarted += (_, _) => _composing = true;
+        _box.TextCompositionStarted += (_, _) =>
+        {
+            _composing = true;
+            _composeStart = null;
+        };
         _box.TextCompositionEnded += (_, _) =>
         {
             _composing = false;
+            var start = _composeStart;
+            _composeStart = null;
+            // 组字中不查上限：确认之后超了 1 MB 就整回退到这一回之前（同 mac settle）
+            if (start is not null && System.Text.Encoding.UTF8.GetByteCount(Body) > Note.MaxBodyBytes)
+            {
+                DispatcherQueueSafe(() => Restore(start));
+                Overflowed?.Invoke();
+                SystemSound.Beep();
+                return;
+            }
+
             Settle();
+            QueueRestOfStyling();
         };
         _box.PreviewKeyDown += OnPreviewKeyDown;
         _box.Paste += OnPaste;
@@ -170,20 +225,66 @@ internal sealed partial class NoteEditor
         }
 
         var sameNote = NoteId == note.Id;
-        NoteId = note.Id;
-        _published = note.Body;
         if (!sameNote)
         {
-            _undo.Clear();
+            // 换一条之前把上一条还没交出去的那点交出去（组字中也交：换走之后就没机会了）
+            PublishPending();
+            _imageBytes.Clear();
         }
-        else
-        {
-            _undo.Break();
-        }
+
+        NoteId = note.Id;
+        _published = note.Body;
+        // 外面换了正文（同步、导入）也清：撤销回去会把别的电脑改的悄悄退回去（同 mac replaceAll 时 removeAllActions）
+        _undo.Clear();
 
         var (text, images) = EditorForm(note.Body);
         var selection = sameNote ? Selection : new NoteRange(0, 0);
         Replace(text, images, new NoteRange(Math.Min(selection.Location, text.Length), 0));
+    }
+
+    /// <summary>不显示哪条了（窗口收起、编辑卡收回）：先交出去，再放掉——藏着的编辑器还拿着编号的话，空白便签删不掉。</summary>
+    public void Release()
+    {
+        if (NoteId is null)
+        {
+            return;
+        }
+
+        PublishPending();
+        NoteId = null;
+        _published = string.Empty;
+        _undo.Clear();
+        _imageBytes.Clear();
+        _composeStart = null;
+        Replace(string.Empty, Array.Empty<NoteImages.Image>(), new NoteRange(0, 0));
+    }
+
+    /// <summary>编辑器里的 U+FFFC 和图片表对得上（对不上时交出去的正文会把图片令牌整个丢掉、再被同步带走：宁可这一下不交，
+    /// 记一笔日志；PLAN-v13 复查，RichEdit 把占位的 U+FFFC 洗掉之类的情况在 Windows 上核验）。</summary>
+    private bool Aligned()
+    {
+        if (_text.AsSpan().Count(ObjectChar) == _images.Count)
+        {
+            return true;
+        }
+
+        Log.Warn($"notes.editor-images-misaligned objects={_text.AsSpan().Count(ObjectChar)} images={_images.Count}");
+        return false;
+    }
+
+    private void PublishPending()
+    {
+        if (_readOnly || NoteId is not { } id || !Aligned())
+        {
+            return;
+        }
+
+        var body = Body;
+        if (body != _published)
+        {
+            _published = body;
+            BodyChanged?.Invoke(id, body);
+        }
     }
 
     /// <summary>纸色、深浅、增强对比度；字号、Markdown 开关、行距（设置 › 便签）。变了就整篇重排。</summary>
@@ -359,6 +460,10 @@ internal sealed partial class NoteEditor
             suffix++;
         }
 
+        // 光比头尾分不出删的是哪一张图（U+FFFC 都一样）：按改之前的选区 / 刚按的 Backspace、Delete 定位，对得上就用它
+        (prefix, suffix) = Anchored(old, now, prefix, suffix);
+        _deleteKey = null;
+
         var removed = old.Substring(prefix, old.Length - prefix - suffix);
         var inserted = now.Substring(prefix, now.Length - prefix - suffix);
         // 图片表跟着挪：删掉的那段里的图拿掉；新冒出来的 U+FFFC 是别处来的（拖进来的富文本里的对象）：拿掉（我们自己插图走 InsertImages）
@@ -375,8 +480,7 @@ internal sealed partial class NoteEditor
             }
         }
 
-        if (!_composing && System.Text.Encoding.UTF8.GetByteCount(Stored(now, _images)) > Note.MaxBodyBytes &&
-            now.Length > old.Length)
+        if (!_composing && now.Length > old.Length && System.Text.Encoding.UTF8.GetByteCount(Stored(now, _images)) > Note.MaxBodyBytes)
         {
             // 超上限的那一次退回（只退让正文变长了的那一次）
             _images.Clear();
@@ -387,9 +491,17 @@ internal sealed partial class NoteEditor
             return;
         }
 
-        // 撤销：打字（连删带打、输入法确认、剪切、拖动）按 NoteUndo 的口径分组
-        _undo.Typing(new NoteUndo<NoteImages.Image>.State(old, previousImages, _lastSelection), _lastSelection.Location,
-            inserted.Length > 0 && inserted.All(char.IsWhiteSpace), NoteStore.Now);
+        // 撤销：打字（连删带打、输入法确认、剪切、拖动）按 NoteUndo 的口径分组；组字时只记这一回第一下之前的样子（中间的拼音不进撤销）
+        var before = new NoteUndo<NoteImages.Image>.State(old, previousImages, _lastSelection);
+        if (!_composing || _composeStart is null)
+        {
+            _undo.Typing(before, _lastSelection.Location, inserted.Length > 0 && inserted.All(char.IsWhiteSpace), NoteStore.Now);
+            if (_composing)
+            {
+                _composeStart = before;
+            }
+        }
+
         _undo.TypedTo(prefix + inserted.Length);
         _text = now;
         ShiftRoles(prefix, prefix + removed.Length, inserted.Length - removed.Length);
@@ -403,6 +515,36 @@ internal sealed partial class NoteEditor
         {
             Settle();
         }
+    }
+
+    /// <summary>改之前的选区 / 刚按的删除键给的那一段（对得上才用，不然照比头尾的结果）。</summary>
+    private (int Prefix, int Suffix) Anchored(string old, string now, int prefix, int suffix)
+    {
+        bool Fits(int p, int s)
+            => p >= 0 && s >= 0 && p + s <= old.Length && p + s <= now.Length
+               && old.AsSpan(0, p).SequenceEqual(now.AsSpan(0, p))
+               && old.AsSpan(old.Length - s).SequenceEqual(now.AsSpan(now.Length - s));
+
+        var selection = _lastSelection;
+        if (selection.End > old.Length)
+        {
+            return (prefix, suffix);
+        }
+
+        (int, int)? candidate = null;
+        if (selection.Length > 0)
+        {
+            candidate = (selection.Location, old.Length - selection.End);
+        }
+        else if (_deleteKey is { } key && old.Length > now.Length)
+        {
+            var removed = old.Length - now.Length;
+            candidate = key == VirtualKey.Back
+                ? (selection.Location - removed, old.Length - selection.Location)
+                : (selection.Location, old.Length - selection.Location - removed);
+        }
+
+        return candidate is var (p, s) && Fits(p, s) ? (p, s) : (prefix, suffix);
     }
 
     /// <summary>一次编辑收尾：排受影响的行、交出去（组字期间不做）。</summary>
@@ -431,7 +573,7 @@ internal sealed partial class NoteEditor
 
     private void Publish()
     {
-        if (_composing || NoteId is not { } id)
+        if (_composing || _readOnly || NoteId is not { } id || !Aligned())
         {
             return;
         }
@@ -473,6 +615,37 @@ internal sealed partial class NoteEditor
     /// <summary>在一段字上做一次改动（NoteTasks / NoteMarkdown 给的 Change；位置相对 baseOffset）：一步撤销。</summary>
     private void ApplyChange(NoteTasks.Change change, int baseOffset)
     {
+        if (_readOnly)
+        {
+            return;
+        }
+
+        // 先在内存里算出改完的字和图片表：被换掉的那段里的图按顺序给换上来的那段里的 U+FFFC（加标记包住一张图时还是它），
+        // 多出来的拿掉；超了 1 MB 就不改（同打字，PLAN-v13 复查）
+        var old = _text;
+        var images = _images.ToList();
+        var next = new System.Text.StringBuilder(old);
+        var placeholders = false;
+        foreach (var replacement in change.Replacements.Reverse())
+        {
+            var start = baseOffset + replacement.Range.Location;
+            var at = old.AsSpan(0, start).Count(ObjectChar);
+            var gone = old.AsSpan(start, replacement.Range.Length).Count(ObjectChar);
+            var kept = replacement.Text.AsSpan().Count(ObjectChar);
+            var removed = images.Skip(at).Take(gone).ToList();
+            images.RemoveRange(Math.Min(at, images.Count), Math.Min(gone, Math.Max(images.Count - at, 0)));
+            images.InsertRange(Math.Min(at, images.Count), removed.Take(kept));
+            placeholders |= kept > 0;
+            next.Remove(start, replacement.Range.Length).Insert(start, replacement.Text);
+        }
+
+        if (next.Length > old.Length && System.Text.Encoding.UTF8.GetByteCount(Stored(next.ToString(), images)) > Note.MaxBodyBytes)
+        {
+            Overflowed?.Invoke();
+            SystemSound.Beep();
+            return;
+        }
+
         _undo.Command(Snapshot());
         _applying = true;
         try
@@ -489,8 +662,15 @@ internal sealed partial class NoteEditor
             _applying = false;
         }
 
-        var old = _text;
+        _images.Clear();
+        _images.AddRange(images);
         _text = ReadText();
+        if (placeholders)
+        {
+            // 换上来的 U+FFFC 是字、不是图：一张张换回图
+            _ = LoadImagesAsync();
+        }
+
         if (change.Replacements.Count > 0)
         {
             var from = baseOffset + change.Replacements[0].Range.Location;
@@ -523,6 +703,11 @@ internal sealed partial class NoteEditor
 
     public void Undo()
     {
+        if (_readOnly)
+        {
+            return;
+        }
+
         if (_undo.Undo(Snapshot()) is { } state)
         {
             Restore(state);
@@ -535,6 +720,11 @@ internal sealed partial class NoteEditor
 
     public void Redo()
     {
+        if (_readOnly)
+        {
+            return;
+        }
+
         if (_undo.Redo(Snapshot()) is { } state)
         {
             Restore(state);
@@ -660,7 +850,13 @@ internal sealed partial class NoteEditor
 
         DispatcherQueueSafe(() =>
         {
-            if (_composing || _pending.Range is not null)
+            if (_composing)
+            {
+                // 组字中不排、也不再排队（不然整个组字过程都在空转）：确认之后 TextCompositionEnded 再接着排
+                return;
+            }
+
+            if (_pending.Range is not null)
             {
                 QueueRestOfStyling();
                 return;
@@ -729,7 +925,9 @@ internal sealed partial class NoteEditor
         baseFormat.Hidden = FormatEffect.Off;
         var paragraph = whole.ParagraphFormat;
         var lineHeight = NoteStyles.LineHeight(shape.Kind == NoteStyles.ShapeKind.Code ? _fontSize : size, _spacing);
-        paragraph.SetLineSpacing(LineSpacingRule.Exactly, (float)(lineHeight * PointsPerDip));
+        // 有图的行按「至少」：定死的行高不会为图长高，图会被压在一行里（mac 有图的行跟着图高）
+        var hasImage = _text.AsSpan(start, Math.Max(contentsEnd - start, 0)).Contains(ObjectChar);
+        paragraph.SetLineSpacing(hasImage ? LineSpacingRule.AtLeast : LineSpacingRule.Exactly, (float)(lineHeight * PointsPerDip));
         var before = shape.Kind switch
         {
             NoteStyles.ShapeKind.Heading => size * NoteStyles.HeadingBefore,
@@ -884,18 +1082,20 @@ internal sealed partial class NoteEditor
         {
             var selection = Selection;
             var lines = NoteText.LineRange(_text, selection);
-            foreach (var (start, _, end) in NoteText.Lines(_text))
+            // 只要选区碰到的那几行（从 lines.Location 一行行往下走到 lines.End；同 StyleRange）
+            var location = lines.Location;
+            do
             {
-                if (start > lines.End)
+                var (lineStart, lineEnd, _) = NoteText.Line(_text, location);
+                wanted.Add(lineStart);
+                if (lineEnd <= location)
                 {
                     break;
                 }
 
-                if (end >= lines.Location)
-                {
-                    wanted.Add(start);
-                }
+                location = lineEnd;
             }
+            while (location < lines.End);
 
             if (selection.Location == _text.Length)
             {

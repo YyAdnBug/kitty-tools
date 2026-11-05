@@ -11,6 +11,9 @@ public sealed class NoteUndo<TImage>
 
     public const long GroupMs = 1000;
 
+    /// <summary>两个栈里的字一共最多这么多（一条 1 MB 的便签 200 步就是 400 MB）：超了从最旧的扔（PLAN-v13 复查）。</summary>
+    public const long MaxChars = 8_000_000;
+
     public sealed record State(string Text, IReadOnlyList<TImage> Images, NoteRange Selection);
 
     private readonly List<State> _undo = new();
@@ -98,18 +101,21 @@ public sealed class NoteUndo<TImage>
 
     private void Push(State state)
     {
-        if (_undo.Count > 0 && _undo[^1].Text == state.Text && _undo[^1].Selection == state.Selection)
+        // 字、选区、图片都一样才算没变（改图片宽度、裁切时字一样、图片不一样，各是一步）
+        if (_undo.Count > 0 && _undo[^1].Text == state.Text && _undo[^1].Selection == state.Selection
+            && _undo[^1].Images.SequenceEqual(state.Images))
         {
             _redo.Clear();
             return;
         }
 
         _undo.Add(state);
-        if (_undo.Count > Limit)
+        _redo.Clear();
+        var total = _undo.Sum(item => (long)item.Text.Length);
+        while (_undo.Count > 1 && (_undo.Count > Limit || total > MaxChars))
         {
+            total -= _undo[0].Text.Length;
             _undo.RemoveAt(0);
         }
-
-        _redo.Clear();
     }
 }

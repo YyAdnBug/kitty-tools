@@ -35,7 +35,7 @@ internal static class NoteColorFlyout
             last = rgb;
             store.SetColor(noteId, Note.Picked(rgb), live: true);
         };
-        var flyout = new Flyout { Content = picker, Placement = FlyoutPlacementMode.Bottom };
+        var flyout = new Flyout { Content = picker, Placement = FlyoutPlacementMode.Bottom, ShouldConstrainToRootBounds = false };
         flyout.Closed += (_, _) =>
         {
             store.Flush();

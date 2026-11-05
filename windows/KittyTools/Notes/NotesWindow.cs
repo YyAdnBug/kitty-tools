@@ -187,6 +187,7 @@ internal sealed class NotesWindow : Window
                 store.Changed -= OnStoreChanged;
             }
 
+            _populateTimer?.Stop();
             _instance = null;
             IdleReclaimer.Schedule();
         };
@@ -260,7 +261,23 @@ internal sealed class NotesWindow : Window
         Foreground.Restore(hwnd);
     }
 
-    private void OnStoreChanged() => DispatcherQueue.TryEnqueue(Populate);
+    // 仓库变了：攒 250 ms 再整页重排（打一个字就是一次变化；每次都重建列表 / 便签墙太重，列表还会跳回顶上）
+    // ponytail: 还是整页重建；要更省就只换打字的那一行 / 那一张卡。
+    private Microsoft.UI.Dispatching.DispatcherQueueTimer? _populateTimer;
+
+    private void OnStoreChanged() => DispatcherQueue.TryEnqueue(() =>
+    {
+        if (_populateTimer is null)
+        {
+            _populateTimer = DispatcherQueue.CreateTimer();
+            _populateTimer.Interval = TimeSpan.FromMilliseconds(250);
+            _populateTimer.IsRepeating = false;
+            _populateTimer.Tick += (_, _) => Populate();
+        }
+
+        _populateTimer.Stop();
+        _populateTimer.Start();
+    });
 
     // ---- 视图、工具栏 ----
 
@@ -290,7 +307,7 @@ internal sealed class NotesWindow : Window
     private void BuildActions()
     {
         _actions.Children.Clear();
-        var note = Current;
+        var note = SelectedNote;
         if (_scope == NotesScope.Trash)
         {
             AddAction(Glyphs.Undo, NotesWindowRules.RestoreTitle, () => Run(id => NoteStore.Instance?.Restore(id)), note is not null);
@@ -341,7 +358,7 @@ internal sealed class NotesWindow : Window
         }
     }
 
-    private Note? Current
+    private Note? SelectedNote
         => _selection is { } id && NoteStore.Instance?.Book.Find(id) is { } note && NotesWindowRules.Belongs(note, _scope) ? note : null;
 
     private List<Note> Notes
@@ -384,8 +401,8 @@ internal sealed class NotesWindow : Window
             ArrangeWall();
             if (_editCard.Visibility == Visibility.Visible)
             {
-                _cardSheet.Show(Current?.Id);
-                if (Current is null)
+                _cardSheet.Show(SelectedNote?.Id);
+                if (SelectedNote is null)
                 {
                     CollapseCard();
                 }
@@ -516,7 +533,11 @@ internal sealed class NotesWindow : Window
         _selection = id;
         if (_wallMode)
         {
-            _cardSheet.Show(id);
+            // 编辑卡收着时不往里放（收着的编辑卡拿着编号，空白便签就删不掉）；放大时 ExpandCard 再放
+            if (_editCard.Visibility == Visibility.Visible)
+            {
+                _cardSheet.Show(id);
+            }
         }
         else
         {
@@ -905,11 +926,8 @@ internal sealed class NotesWindow : Window
 
         NoteStore.Instance?.Flush();
         _editCard.Visibility = Visibility.Collapsed;
-        if (_selection is { } id)
-        {
-            NoteStore.Instance?.Left(id);
-        }
-
+        // 放掉编辑卡里的那条（落盘、Left 都在 Show(null) 里）：收起来的编辑卡还拿着编号的话，空白便签删不掉
+        _cardSheet.Show(null);
         BuildActions();
     }
 

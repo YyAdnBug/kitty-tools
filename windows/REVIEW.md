@@ -11,7 +11,31 @@
 ## PLAN-v13（便签，2026-11-05 用户「继续新会话剩下的，现在不检查，最后一次性检查」）
 
 方案在 `PLAN-v13.md`（不是拍板页，行为照 mac 0.6.0 起的便签，`macos` b7a55e33；Windows 自己定的在 §3）。和 PLAN-v12 一样**全部在 Mac 上写、一行都没编译**，
-中间不交给你们核验；全部写完后统一核验（核验指令在这一节最后补全，覆盖 PLAN-v12 + PLAN-v13）。下面每批写清写了什么、要特别看的编译点、替用户定的。
+中间不交给你们核验；全部写完后统一核验（核验指令就在下面，覆盖 PLAN-v12 + PLAN-v13）。下面每批写清写了什么、要特别看的编译点、替用户定的。
+
+### 给 Windows agent 的核验指令（PLAN-v12 第 1–7 批 + 复查 + PLAN-v13 第 1–8 批 + 复查，审查方 2026-11-05）
+
+这一份**取代** PLAN-v12 那一节底下的核验指令（那份照旧有效，内容都并进来了）。PLAN-v12 第 1–7 批、`83040384`、`36aafcdf`（v12 复查）和 PLAN-v13 第 1–8 批、`git log --grep "PLAN-v13 审查方复查"`（v13 复查）
+都是审查方在 Mac 上写的，**一行都没编译过**。你们只编译、核验、修编译错和屏幕上不对的地方；改了什么在对应那批下面记一句（改了什么、为什么），不许为了变绿删测试、改断言、改 golden。
+
+1. **拿代码**：`git fetch origin && git rebase origin/windows`。`git log --oneline --grep "PLAN-v12"` 有第 1–7 批，`83040384`、`36aafcdf` 在；`git log --oneline --grep "PLAN-v13"` 有第 1–8 批和「审查方复查」那个提交。
+   PLAN-v13 中间几批单独编译不过（互相引用后面批次的类），**从最后一个提交起编译**，不用逐个提交编。
+2. **编译零警告**：`dotnet build windows/KittyTools.slnx -c Debug -p:Platform=x64`；`dotnet publish windows/KittyTools/KittyTools.csproj -c Release -r win-x64` 和 `-r win-arm64`，零 trim / AOT 警告；
+   发布目录里有 `KittyTools.pri`、`Microsoft.UI.Xaml.Controls.pri`、`Resources\StatusEmoji\`（34 张 PNG + `manifest.txt` + `LICENSE.txt`）。各批「要特别看的编译点」写在那一批下面（v12 在 PLAN-v12 一节，v13 在本节）。
+3. **单测**：`dotnet test windows/KittyTools.Tests` 全过。PLAN-v12 新加的见 PLAN-v12 那份指令第 3 条；PLAN-v13 新加的：`NoteTasksTests`、`NoteImagesTests`、`NotePaperTests`、`NoteMarkdownTests`、`NoteStylesTests`、
+   `NoteBookTests`、`NoteSyncTests`、`NoteSyncRunnerTests`、`NoteUndoTests`、`NoteCaptureRulesTests`、`NoteWallTests`、`NoteDeckLayoutTests`、`NoteFloatLayoutTests`、`NoteMarkdownFilesTests`。
+   **和 mac 互通的底线**：`NoteSyncTests` 的 golden（`Fixtures/notes-sync-golden.json`，1830 个样本逐字节）、`ReminderTests.Canonical_MatchesMacByteForByte`、`StatusScreenTests.Sync_MatchesMacAndPlans`——过不了先把实际输出贴在那一批下面，别改 golden。
+   再跑一遍随机测试：`$env:KITTY_NOTES_SYNC_FUZZ=2000`（报告里写耗时）。
+4. **先验便签的编辑器**（PLAN-v13 第 4 批那 7 个 RichEdit 行为点）：它决定便签能不能用。任何一条不对按那里写的退路改，记在第 4 批下面，再往下走。
+5. **状态屏只走自检**：`KittyTools.exe --status-screen-probe=<临时目录>`。任何测试、自检、截图都**不许真的进入状态屏**；要真进入的手测留给用户，标「没测」。
+6. **手测**（`HANDTEST.md`）：PLAN-v12 那几段（906–1042，见 PLAN-v12 那份指令第 5 条），PLAN-v13：1043–1044（第 1 批）、1045–1053（第 2 批）、1054–1063（第 3 批）、1064–1076（第 4 批）、1077–1096（第 5 批）、
+   1097–1118（第 6 批）、1119–1132（第 7 批）、1133–1139（第 8 批）、1140–1147（v13 复查）。要真鼠标拖、第二块屏、真的 Mac 的，能做的做，做不了的标「没测」；结果写在那一条后面。
+   同步、导入导出只用临时文件夹和 `.Dev` 的假数据，不碰用户真实的同步文件夹和便签。
+7. **截图**：v12 各批目录见 PLAN-v12 那份指令第 6 条；PLAN-v13：`0.4.0-v13-batch-4/`（正文：标题 / 粗斜体 / 任务五态 / 颜色 / 代码块 / 图片）、`0.4.0-v13-batch-5/`（快速记一条、全部便签窗口的墙和列表、设置 › 便签、速查表「便签」）、
+   `0.4.0-v13-batch-6/`（药丸、扇出的标签列、预览卡、打开的便签、浮动便签）、`0.4.0-v13-batch-7/`（裁切对话框、图片宽度菜单），浅色、深色、高对比度各一张。先在 `../kitty-shots` 里 `git fetch origin && git reset --hard origin/windows-shots`；只截自己的窗口。
+8. **自查**：内存探针（`KITTY_MEMORY_PROBE=1`，和 `1986a4b5` 比，涨超过 5 MB 写原因；便签窗口都关着时不该多出东西）；只有托盘静置 60 s 空闲 CPU 为 0——**屏幕边缘那叠静置时没有计时器**（扇着、开着时每 150 ms 看一次鼠标，收回后停），
+   提醒边框挂着时 30 Hz、收起后回到 0；新日志里没有剪贴板内容、原文、译文、URL、提醒和状态的标题、**便签的标题 / 正文 / 文件路径**。
+9. **版本**：PLAN-v12 第 1–2 批是 0.2.0、第 3–7 批是 0.3.0，PLAN-v13 是 0.4.0；版本号、更新日志、`build-release.ps1` 等核验完再一起定，**不发布、不打 tag**。
 
 ### 第 1 批：核心模型（Core）→ 已写（审查方，`git log --grep "PLAN-v13 第 1 批"`，没编译）
 
@@ -194,11 +218,45 @@ WIC 的 `BitmapDecoder.HeifDecoderId`、`DecoderInformation.CodecId`；`NoteStor
 2. 那叠里打开的便签：呼出剪贴板面板时它不收；面板关了之后焦点回到便签（`Foreground.Restore` 到便签那扇窗）。
 3. 翻译浮窗的「替换」粘回便签窗口时，`Paster.Paste` 的「目标是管理员程序」那一步对自己的窗口不误判。
 
+### 审查方复查（2026-11-05，`git log --grep "PLAN-v13 审查方复查"`，同样没编译）
+
+四个没写过这些代码的 agent 分头读了第 1–8 批（数据层、同步执行层、正文编辑器、窗口和入口），对照 mac。确定的错改在这个提交里，
+VERIFY（要在 Windows 上跑才知道）和没改的列在后面，核验时顺手看。
+
+**改了的**（编译错 4 处）：
+- 编译：`NoteSyncPart.cs` 少 `using KittyTools.Core.Sync;`；`NoteGeometry` 是 Core 的 internal（App 里用了）→ public；`NoteDeck.CheckFullScreen` 用了指针要 `unsafe`；
+  `NotesWindow` / `NoteCaptureWindow` 里叫 `Current` 的私有属性盖住了 `Window.Current`（CS0108）→ `SelectedNote` / `CurrentDraft`；`NotesHost._queue` 只写不读 → 删。
+- 同步：正在编辑的只扣下「这一轮要换进来的」那几条（以前正在打字的那条一直不写出去）；一轮有扣下的、没下载完 / 读不出来的、到期要删的共用图时不记成「安静」；
+  共用图片下载时云盘占位 / 刚没了 / 超过上限的跳过，不让整轮失败；认出库被退回去时，自己那份里**没有的**那条也换编号；那一轮便签没合（没勾、没准备好）时编号照换、
+  旧编号记在 `sync_ledger` 的 `~notes-switch-from`，便签能合的那一轮按它补认（`ISyncDevice.NotesSwitchFrom`）；自己的 device.json 读不出来时不认退回、不重写它。
+  新单测 `EditingANoteStillPublishesIt`、`RollbackSeenWithoutNotesIsCaughtUpLater`。
+- 数据：每日备份 / 导入前备份超过 32 MB 时依次去掉最大的一类（便签 / 剪贴板 / 生词本）再写（以前整份不写、导入也一直被拦）；SQLite 打开坏文件时把句柄关掉（不然恢复时挪不开坏文件）；
+  退出时便签落不下去先问（重试 / 继续 / 取消，`NotesHost.ConfirmQuit`，同 mac）；便签库备份里图片出错只记日志；裁切后的图带原图 DPI；不合理的 DPI 按 96；
+  编码结果用 DataReader 读；导入的便签编号只认标准 UUID 写法；剪贴板的库等着恢复时便签照常落盘、清理、备份；`SwitchDevice` 没有 SyncDevice 时的分支真换编号。
+- 编辑器：`ApplyChange`（剪切、粘贴、替换、Ctrl+T 这些命令）跟着改图片表、过 1 MB 上限；按删除键 / 有选区时按改之前的位置认改了哪一段（几张图的 U+FFFC 一样，删一张会对错）；
+  组字中间的拼音不进撤销、确认后超上限整回退；外面换了正文清撤销栈（同 mac）；换一条之前先交出去上一条；收起的窗口 / 编辑卡放掉编辑器里的那条（`NoteEditor.Release`，不然空白便签删不掉）；
+  只读（最近删除）时命令、粘贴、撤销都不做、不交出去，自己改格式时临时放开 RichEdit 的只读；有图的行行高用「至少」；粘贴先后同 mac（图片文件 → 字 → 位图）、粘成链接要开着 Markdown 且选区里没图；
+  标记只在选区碰到的那几行露；拷贝 / 剪切走 `ClipboardWriter`（剪贴板被占着不抛）；组字中不空转排版；撤销栈总字数封顶 800 万、改图片宽度各是一步；Shift+Enter 是普通换行；
+  查找条开着时 Esc 先关它；图片表和 U+FFFC 对不上时这一下不交出去（记日志 `notes.editor-images-misaligned`），免得把图片令牌整个丢掉。
+- 窗口：药丸放好后要露出来（以前启动后一直不出现）；那叠里 Esc / Ctrl+W 连那一列一起收、关闭钮 / 归档 / 删除回到那一列（以前反了）；标签列没变就不重建（拖动排序、按下后才出的预览卡不再丢指针，打字也不白重建）；
+  「一直展开」静置时不跑计时器；全屏判定用 DWM 的可见边框；全屏时「一直展开」那一列也收；菜单浮出去往里挪 48；浮动便签没挪没改大小时不存设置（以前打一个字存一次）；
+  全部便签窗口的整页重排攒 250 ms；菜单、取色浮层不限在窗口里；退出时存快速记一条的草稿；设置页脚的说法改对。
+
+**VERIFY / 没改的（核验时看，不对就记在这里）**：
+1. **编辑器的占位**：`Replace` / `InsertImages` 用 `SetText` 放的是普通的 U+FFFC 字，再 `InsertImage` 换成图。RichEdit 要是把普通的 U+FFFC 洗成空格，`Aligned()` 会一直拦着不交出去（日志里有
+   `notes.editor-images-misaligned`）：那就改成放一张 1×1 的占位图（`InsertImage`），而不是字。也看 `InsertImage` 对一个字的范围是替换还是插在前面、`GetText(None)` 会不会带最后那个段落符。
+2. 同步：云盘的「仅在线」文件（OneDrive 按需、iCloud for Windows）不会被要求下载——别人的 `erased.json` 是占位时便签那部分一直停（「还没下载完」）；指纹只看时刻和大小，占位下载完不变。
+   要的话用 `CfHydratePlaceholder` 在后台要下载、把占位属性也放进指纹。`device.Epoch > 0` 才认退回（mac 没这个条件）；标记换成别的库时 Windows 照样合（mac 停「不是那个文件夹」）；共用图的账每轮都写。
+3. 数据：便签的设置项（字号、行距、Markdown、屏幕边缘那几项）还没进设置导出的「设置」一类（mac 注册了默认值的都跟着走）；恢复流程里 `Needed = null` 早了一点、`ForgetDevice` 用的连接会开 WAL。
+4. 编辑器：复制带图的一段再粘回来，是令牌的字、重开才是图（mac 粘回附件）；`InsertImage` 给的是原图（mac 解缩略图）；组字中插图 / 同步来的图换上去没等组字结束；撤销 / 命令后不滚到光标处；
+   窗口变宽变窄时「铺满」的图不跟着变；多行选区碰到代码块时 Ctrl+T / 加标记只看第一行；图片位置挪了时异步放图只比那个位置是不是 U+FFFC。
+5. 窗口：标签右键「其他颜色…」挂在不拿焦点的标签列窗口上，十六进制那一栏可能打不了字；关掉的窗口里的 `NoteSheetView` 只在 `Unloaded` 时退订；感应范围 8 时药丸窗约 13 DIP 宽，看系统让不让窗口这么窄。
+
 ## PLAN-v12（跟上 mac：先把没有的功能做出来，2026-11-05 用户「先把未实现的功能实现」）
 
 清单和分批在 `PLAN-v12.md`（不是拍板页，行为照 mac）；分工同 PLAN-v11 D10。
 
-### 给 Windows agent 的核验指令（PLAN-v12 第 1–7 批 + `83040384`，审查方 2026-11-05）
+### 给 Windows agent 的核验指令（PLAN-v12 第 1–7 批 + `83040384`，审查方 2026-11-05）——已并进「PLAN-v13」一节顶上那份，照那份做
 
 这几批连同 `83040384`（用户反馈 2026-11-04 那一节）都是审查方在 Mac 上写的，**一行都没编译过**。2026-11-05 用户定：窗口、合成、输入钩子这次也在 Mac 上写，你们只编译、核验、修编译错和屏幕上不对的地方。按下面的顺序做，改了什么在对应那批下面记一句（改了什么、为什么）。
 

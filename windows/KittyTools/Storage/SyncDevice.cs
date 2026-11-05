@@ -205,6 +205,16 @@ internal sealed class SyncLedger
     public void WriteEpoch(int epoch) => WriteRaw("~epoch", epoch.ToString(
         System.Globalization.CultureInfo.InvariantCulture));
 
+    /// <summary>换了编号、便签那几条还没跟着换时记着的旧编号（PLAN-v13 复查；空 = 没有）。和 ~epoch 同一张表，从备份恢复时一起退回去。</summary>
+    public string? ReadNotesSwitch()
+    {
+        using var statement = _database.Connection.Prepare(
+            "SELECT ledger FROM sync_ledger WHERE kind = '~notes-switch-from';");
+        return statement.Step() && statement.GetText(0) is { Length: > 0 } value ? value : null;
+    }
+
+    public void WriteNotesSwitch(string? oldId) => WriteRaw("~notes-switch-from", oldId ?? string.Empty);
+
     private void WriteRaw(string kind, string value)
     {
         using var statement = _database.Connection.Prepare(

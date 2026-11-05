@@ -190,13 +190,22 @@ internal sealed partial class NoteEditor
     /// <summary>在选区那儿插几张已经存好的图（每张独占一行）：一步撤销。</summary>
     public void InsertImages(IReadOnlyList<NoteImageStore.Stored> stored)
     {
-        if (stored.Count == 0)
+        if (stored.Count == 0 || _readOnly)
         {
             return;
         }
 
         var selection = Selection;
         var plan = NoteImages.InsertionPlan(_text, selection, stored.Count);
+        // 令牌也算字节：插完超了 1 MB 就不插（同打字）
+        var tokens = stored.Sum(item => System.Text.Encoding.UTF8.GetByteCount(NoteImages.Token(item.Image)) + 1);
+        if (System.Text.Encoding.UTF8.GetByteCount(Body) + tokens > Note.MaxBodyBytes)
+        {
+            Overflowed?.Invoke();
+            SystemSound.Beep();
+            return;
+        }
+
         _undo.Command(Snapshot());
         foreach (var item in stored)
         {
@@ -313,7 +322,7 @@ internal sealed partial class NoteEditor
     /// <summary>改几张图的宽度（令牌里的宽度；字还是那几个 U+FFFC），一步撤销。</summary>
     private void SetImageWidth(int? width, IReadOnlyList<(int Index, int Position)> picked)
     {
-        if (picked.All(item => item.Index < _images.Count && _images[item.Index].Width == width))
+        if (_readOnly || picked.All(item => item.Index < _images.Count && _images[item.Index].Width == width))
         {
             return;
         }
@@ -356,7 +365,7 @@ internal sealed partial class NoteEditor
     /// <summary>裁切：对话框里拖出要留下的那块，另存一张新图换上去（一步撤销，撤回原图）。</summary>
     private async Task CropImageAsync((int Index, int Position) picked)
     {
-        if (Images is not { } store || picked.Index >= _images.Count || _box.XamlRoot is not { } root)
+        if (_readOnly || Images is not { } store || picked.Index >= _images.Count || _box.XamlRoot is not { } root)
         {
             return;
         }

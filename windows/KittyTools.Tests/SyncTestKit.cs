@@ -27,6 +27,10 @@ internal sealed class MemoryDevice : ISyncDevice
     }
 
     public void SetEpoch(int epoch) => Epoch = epoch;
+
+    public string? NotesSwitchFrom { get; set; }
+
+    public void SetNotesSwitchFrom(string? oldId) => NotesSwitchFrom = oldId;
 }
 
 /// <summary>四类共用：账本存在仓库自己身上（和数据一起改 = 同一个事务）。</summary>

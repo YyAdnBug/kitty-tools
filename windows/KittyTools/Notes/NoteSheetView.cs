@@ -35,7 +35,8 @@ internal sealed class NoteSheetView
     private bool _settingTitle;
     private string? _id;
 
-    /// <summary>外面那层：关（mouse = 用鼠标点的）、浮出去 / 收回来、这一份浮着吗、有没有屏幕边缘那叠可回。</summary>
+    /// <summary>外面那层：关（参数 = 用键盘关的：Esc、Ctrl+W；关闭钮、归档、删除之后是 false——那叠里键盘关连那一列一起收、别的回到那一列）、
+    /// 浮出去 / 收回来、这一份浮着吗、有没有屏幕边缘那叠可回。</summary>
     public sealed class Host
     {
         public Action<bool> Close { get; init; } = _ => { };
@@ -57,7 +58,7 @@ internal sealed class NoteSheetView
         _host = host;
         Editor = new NoteEditor();
         Editor.BodyChanged += (id, body) => NoteStore.Instance?.SetBody(id, body);
-        Editor.CloseRequested += () => _host.Close(false);
+        Editor.CloseRequested += () => _host.Close(true);
         Editor.Overflowed += () => NoticeHost.Show(NotesWindowRules.OverLimitText, string.Empty, NoticeTone.Warning);
 
         _strip = new Border { Height = 4, CornerRadius = new CornerRadius(8, 8, 0, 0) };
@@ -90,7 +91,7 @@ internal sealed class NoteSheetView
         _task = HeaderButton("\uE9D5", NotesWindowRules.TaskHelp, () => Editor.ToggleTask());
         _pin = HeaderButton(Glyphs.Pin, "固定（Ctrl+P）", TogglePin);
         _more = HeaderButton(Glyphs.More, "操作（Ctrl+K）", ShowActions);
-        _close = HeaderButton(Glyphs.Close, "关闭（Esc）", () => _host.Close(true));
+        _close = HeaderButton(Glyphs.Close, "关闭（Esc）", () => _host.Close(false));
         _close.Visibility = host.ShowsClose ? Visibility.Visible : Visibility.Collapsed;
 
         var header = new Grid { Padding = new Thickness(10, 6, 6, 0), ColumnSpacing = 2 };
@@ -204,6 +205,12 @@ internal sealed class NoteSheetView
         }
 
         _id = id;
+        if (id is null)
+        {
+            // 放掉编辑器里的那条（藏着的窗口里的编辑器还算「开着」，空白便签就删不掉了）
+            Editor.Release();
+        }
+
         Refresh();
     }
 
@@ -250,7 +257,7 @@ internal sealed class NoteSheetView
         var readOnly = note.DeletedAt is not null;
         _task.IsEnabled = !readOnly;
         _title.IsReadOnly = readOnly;
-        Editor.Box.IsReadOnly = readOnly;
+        Editor.ReadOnly = readOnly;
         if (_title.FocusState == FocusState.Unfocused && _title.Text != note.Title)
         {
             _settingTitle = true;
@@ -302,7 +309,7 @@ internal sealed class NoteSheetView
         {
             if (e.Key == VirtualKey.Escape && !Editor.IsFinding)
             {
-                _host.Close(false);
+                _host.Close(true);
                 e.Handled = true;
             }
 
@@ -318,7 +325,7 @@ internal sealed class NoteSheetView
             (VirtualKey.Delete, true) => Run(Delete),
             ((VirtualKey)190, false) => Run(() => NoteStore.Instance?.SetColor(id, Core.Notes.Note.NextPreset(Note?.Color ?? 0))),
             ((VirtualKey)188, false) => Run(() => ShellRuntime.Instance?.ShowSettings(false, "notes")),
-            (VirtualKey.W, false) => Run(() => _host.Close(false)),
+            (VirtualKey.W, false) => Run(() => _host.Close(true)),
             _ => false,
         };
     }
@@ -377,7 +384,7 @@ internal sealed class NoteSheetView
             return;
         }
 
-        var menu = new MenuFlyout();
+        var menu = new MenuFlyout { ShouldConstrainToRootBounds = false };
         Item(menu.Items, NotesWindowRules.PinTitle(note), note.IsPinned ? Glyphs.Unpin : Glyphs.Pin, "Ctrl+P", TogglePin);
         var colors = new MenuFlyoutSubItem { Text = NotesWindowRules.ColorTitle, Icon = new FontIcon { Glyph = "\uE790" } };
         FillColors(colors.Items, note, _dot);
@@ -423,7 +430,7 @@ internal sealed class NoteSheetView
             return;
         }
 
-        var menu = new MenuFlyout();
+        var menu = new MenuFlyout { ShouldConstrainToRootBounds = false };
         FillColors(menu.Items, note, _dot);
         menu.ShowAt(_dot);
     }

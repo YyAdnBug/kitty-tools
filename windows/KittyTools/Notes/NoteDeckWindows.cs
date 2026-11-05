@@ -264,6 +264,10 @@ internal sealed class NoteDeckColumnWindow : Window
     private FrameworkElement? _pressedView;
     private NoteDeckLayout? _layout;
 
+    // 上次画的那一列（标签的编号、颜色、标题、开着哪条、浮着哪几条、排法）：一样就只挪窗口、不重建——重建会拆掉正按着的那张标签
+    //（拖动排序、按下后才出的预览卡都会让它丢掉指针），打字时标题没变也不白重建
+    private string? _drawn;
+
     public NoteDeckColumnWindow(NoteDeckBay bay)
     {
         _bay = bay;
@@ -296,13 +300,26 @@ internal sealed class NoteDeckColumnWindow : Window
     public void Render(NoteDeckLayout layout, RectInt32 frame)
     {
         _layout = layout;
-        AppWindow.MoveAndResize(frame);
+        var position = AppWindow.Position;
+        var size = AppWindow.Size;
+        if (position.X != frame.X || position.Y != frame.Y || size.Width != frame.Width || size.Height != frame.Height)
+        {
+            AppWindow.MoveAndResize(frame);
+        }
+
         if (!_shown)
         {
             _shown = true;
             AppWindow.Show(activateWindow: false);
         }
 
+        var signature = Signature(layout);
+        if (signature == _drawn || _pressed is not null)
+        {
+            return;
+        }
+
+        _drawn = signature;
         _root.Children.Clear();
         var column = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
         var tabs = _bay.Tabs;
@@ -368,6 +385,22 @@ internal sealed class NoteDeckColumnWindow : Window
             _shown = false;
             AppWindow.Hide();
         }
+    }
+
+    private string Signature(NoteDeckLayout layout)
+    {
+        var builder = new System.Text.StringBuilder();
+        builder.Append(layout.Count).Append('|').Append(layout.Hidden).Append('|').Append(layout.Step).Append('|').Append(layout.ItemHeight)
+            .Append('|').Append(layout.Viewport).Append('|').Append(layout.Style).Append('|').Append(_bay.Edge).Append('|').Append(_bay.OpenId)
+            .Append('|').Append(Theme.EffectiveTheme);
+        var book = NoteStore.Instance?.Book;
+        foreach (var note in _bay.Tabs)
+        {
+            builder.Append('\n').Append(note.Id).Append(',').Append(note.Color).Append(',').Append(NoteFloats.IsFloating(note.Id))
+                .Append(',').Append(book?.SummaryOf(note).Title ?? note.DisplayTitle);
+        }
+
+        return builder.ToString();
     }
 
     private FrameworkElement Tab(Note note, int index, NoteDeckLayout layout)
@@ -444,6 +477,9 @@ internal sealed class NoteDeckColumnWindow : Window
             }
 
             tab.ReleasePointerCapture(e.Pointer);
+            // 拖过的那张放回原位（落到新格子由仓库改顺序之后重画）
+            tab.RenderTransform = null;
+            Canvas.SetZIndex(tab, index);
             var dragged = _dragging;
             var offset = Offset();
             _pressed = null;

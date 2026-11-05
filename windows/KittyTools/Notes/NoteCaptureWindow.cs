@@ -452,7 +452,7 @@ internal sealed class NoteCaptureWindow : Window
     /// <summary>Esc：清空并收起；清掉的不是空的，提示里能「恢复」。</summary>
     private void Cancel()
     {
-        var cleared = Current;
+        var cleared = CurrentDraft;
         Reset();
         Hide(clear: false);
         if (!cleared.IsEmpty)
@@ -464,13 +464,13 @@ internal sealed class NoteCaptureWindow : Window
 
     private void Restore(NoteCaptureRules.Draft cleared)
     {
-        Put(NoteCaptureRules.Restored(Current, cleared));
+        Put(NoteCaptureRules.Restored(CurrentDraft, cleared));
         Show();
     }
 
     // ---- 草稿 ----
 
-    private NoteCaptureRules.Draft Current
+    private NoteCaptureRules.Draft CurrentDraft
         => new(_title.Text, _body.Text.Replace("\r\n", "\n").Replace('\r', '\n'), _destination);
 
     private void Put(NoteCaptureRules.Draft draft)
@@ -498,7 +498,7 @@ internal sealed class NoteCaptureWindow : Window
     private void SaveDraft()
     {
         _draftTimer.Stop();
-        var draft = Current;
+        var draft = CurrentDraft;
         try
         {
             if (draft.IsEmpty)

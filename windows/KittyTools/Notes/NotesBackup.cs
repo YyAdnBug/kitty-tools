@@ -179,21 +179,32 @@ internal static class NotesBackup
         }
     }
 
+    /// <summary>图片尽力而为（同 mac）：列目录、建文件夹出错也只记日志，不让这份库备份作废。</summary>
     private static void CopyImages(string images, string copied)
     {
-        if (!Directory.Exists(images))
+        List<string> names;
+        try
         {
-            return;
-        }
+            if (!Directory.Exists(images))
+            {
+                return;
+            }
 
-        var names = Directory.EnumerateFiles(images).ToList();
-        if (names.Count == 0)
+            names = Directory.EnumerateFiles(images).ToList();
+            if (names.Count == 0)
+            {
+                return;
+            }
+
+            Directory.CreateDirectory(copied);
+        }
+        catch (Exception ex)
         {
+            Log.Warn($"notes.backup-images-failed {ex.GetType().Name}");
             return;
         }
 
         var failed = 0;
-        Directory.CreateDirectory(copied);
         foreach (var path in names)
         {
             try

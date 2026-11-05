@@ -15,6 +15,7 @@
 // **只写自己的子文件夹**（notes/、erased.json）和共用的 images/（只加不改；删只删满期没人引用的，宁可少删），别的电脑的一个字节都不碰。
 // 线程：委托回调都在调用方（UI）线程上；读写文件在线程池。
 using System.Text;
+using KittyTools.Core.Sync;
 
 namespace KittyTools.Core.Notes;
 
@@ -261,7 +262,14 @@ public static class NoteSyncDisk
 
             foreach (var image in plan.Downloads)
             {
-                if (CopyIn(Path.Combine(shared, image.FileName), Path.Combine(imagesDirectory, image.FileName)))
+                // 还没下载下来的（占位）、读完之后又没了的、比一张图的上限还大的：这一轮跳过，不算没写成（同 mac：只拿「在这儿」的）
+                var source = Path.Combine(shared, image.FileName);
+                if (!IsHere(source))
+                {
+                    continue;
+                }
+
+                if (CopyIn(source, Path.Combine(imagesDirectory, image.FileName)))
                 {
                     downloaded.Add(image.Id);
                 }
@@ -297,6 +305,20 @@ public static class NoteSyncDisk
             File.WriteAllBytes(temporary, bytes);
             File.Move(temporary, path, overwrite: true);
             return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>共用文件夹里的这张图真在这儿：是文件、不是云盘占位、不超过一张图的上限。</summary>
+    private static bool IsHere(string path)
+    {
+        try
+        {
+            var info = new FileInfo(path);
+            return info.Exists && !SyncDisk.IsPlaceholder(path) && info.Length <= NoteImageRules.MaxFileBytes;
         }
         catch
         {

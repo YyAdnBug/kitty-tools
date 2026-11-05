@@ -19,7 +19,8 @@ namespace KittyTools;
 
 internal static class NoteImageCrop
 {
-    private const double MaxWidth = 560;
+    // 对话框内容区约 500 宽（ContentDialog 最宽 548 减去边距）：再宽右边的把手就被裁掉了
+    private const double MaxWidth = 480;
     private const double MaxHeight = 400;
     private const double Handle = 12;
 
@@ -132,6 +133,7 @@ internal static class NoteImageCrop
             pressed = false;
             canvas.ReleasePointerCapture(e.Pointer);
         };
+        canvas.PointerCaptureLost += (_, _) => pressed = false;
         Layout();
 
         var dialog = new ContentDialog

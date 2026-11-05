@@ -125,7 +125,7 @@ public sealed record NoteEntry
         var result = new List<NoteEntry>();
         foreach (var element in raw.Take(MaxNotes))
         {
-            if (Read(element) is not { } entry || !Guid.TryParse(entry.Id, out var guid) ||
+            if (Read(element) is not { } entry || !Guid.TryParseExact(entry.Id, "D", out var guid) ||
                 !double.IsFinite(entry.Order))
             {
                 continue;

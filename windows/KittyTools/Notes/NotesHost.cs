@@ -4,15 +4,15 @@
 // - **数据层不跟着功能开关走**（mac-native §1「功能开关」）：便签功能关着时库照开、每日备份照做、到期照删，只是入口全藏。
 // - Flush：锁屏、睡眠、退出前把攒着的打字落下去。
 // - 每日维护（ScheduleBackup 时跟着走：启动、锁屏 / 解锁、睡眠唤醒）：到期清理 + 便签库的每日备份（线程池上）。
+using System.Runtime.InteropServices;
 using KittyTools.Core.Notes;
 using KittyTools.Infrastructure;
 using Microsoft.UI.Dispatching;
 
 namespace KittyTools;
 
-internal static class NotesHost
+internal static partial class NotesHost
 {
-    private static DispatcherQueue? _queue;
     private static DateTime _maintainedDay;
 
     public static NoteStore? Store => NoteStore.Instance;
@@ -20,7 +20,6 @@ internal static class NotesHost
     /// <summary>启动时调一次（UI 线程）。</summary>
     public static void Start(DispatcherQueue queue)
     {
-        _queue = queue;
         var store = NotesRecovery.OpenOrRecord(queue);
         if (store is not null)
         {
@@ -128,6 +127,39 @@ internal static class NotesHost
 
         return Store;
     }
+
+    /// <summary>退出前（托盘、主界面、启动器的「退出」，装更新重启）：攒着的改动落不下去就问一句（同 mac flushBeforeQuit）——
+    /// 重试 / 继续退出（这些改动会丢）/ 取消。返回 false = 不退了。关机、注销（WM_ENDSESSION）没法问，不走这里。</summary>
+    public static bool ConfirmQuit()
+    {
+        if (Store is not { } store)
+        {
+            return true;
+        }
+
+        while (!store.Flush())
+        {
+            // MB_CANCELTRYCONTINUE | MB_ICONWARNING | MB_SETFOREGROUND | MB_TOPMOST：没有窗口也能弹
+            var answer = MessageBox(IntPtr.Zero,
+                $"便签有改动没存上（{store.SaveProblem ?? "原因不明"}）。\n点「继续」退出的话，这些改动会丢。",
+                Paths.ProductName, 0x6 | 0x30 | 0x10000 | 0x40000);
+            switch (answer)
+            {
+                case 10: // IDTRYAGAIN
+                    continue;
+                case 11: // IDCONTINUE
+                    Log.Warn("notes.quit-unsaved");
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        return true;
+    }
+
+    [LibraryImport("user32.dll", EntryPoint = "MessageBoxW", StringMarshalling = StringMarshalling.Utf16)]
+    private static partial int MessageBox(IntPtr hwnd, string text, string caption, uint type);
 
     /// <summary>锁屏、睡眠、退出前：把攒着的打字落下去。</summary>
     public static void Flush() => Store?.Flush();

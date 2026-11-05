@@ -1030,16 +1030,28 @@ internal sealed class ShellRuntime
     /// <summary>每日备份（启动、解锁、唤醒时；设置页开了「每天自动备份」、选了另存的文件夹时也调一次）。</summary>
     internal static void ScheduleBackup()
     {
+        // 便签：先把攒着的打字落下去、做当天的到期清理（UI 线程），备份在下面的线程池里。便签库和剪贴板的库互不相干：
+        // 剪贴板的库等着恢复时便签照常落盘、清理、备份（PLAN-v13 复查）。
+        NotesHost.Flush();
+        NotesHost.Maintain();
+        var directory = Paths.DataDirectory;
+
         // 库打不开、还没问用户怎么恢复的时候不备份：别拿坏的库顶掉好的备份。
         if (Recovery.Needed is not null)
         {
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    NotesHost.BackupIfDue(directory, DateTime.Now);
+                }
+                catch (Exception ex)
+                {
+                    Log.Warn($"notes.backup-failed {ex.GetType().Name}");
+                }
+            });
             return;
         }
-
-        var directory = Paths.DataDirectory;
-        // 便签：先把攒着的打字落下去、做当天的到期清理（UI 线程），备份在下面的线程池里。
-        NotesHost.Flush();
-        NotesHost.Maintain();
         // 设置与数据的每日自动备份（第三版 §2.2），和数据库备份同一个 backups 文件夹。
         // REVIEW R47：快照在 UI 线程上取（剪贴板列表、翻译历史的库连接只许 UI 线程碰），后台只管写文件；
         // 以前整个在线程池上做，碰上正在复制东西就「集合已修改」，当天那份没备成。
@@ -1110,6 +1122,12 @@ internal sealed class ShellRuntime
     /// </summary>
     public void Exit(bool installUpdate = false)
     {
+        // 便签有改动落不下去：先问（同 mac）；选了取消就不退
+        if (!NotesHost.ConfirmQuit())
+        {
+            return;
+        }
+
         Log.Info("app.exit");
         FinishSession(installUpdate);
         HotKeys.UnregisterAll();
@@ -1167,7 +1185,8 @@ internal sealed class ShellRuntime
             Log.Error("record.exit-stop-failed", ex);
         }
 
-        // 便签：攒着的打字落下去（落不下去的，NoteStore 自己记着原因；关机时没法再问）。
+        // 便签：快速记一条的草稿、攒着的打字落下去（落不下去的，NoteStore 自己记着原因；关机时没法再问）。
+        NoteCaptureWindow.Flush();
         NotesHost.Flush();
         Clipboard?.CommitDeletion();
         if (SettingsService.Current.ClipboardClearOnQuit && Clipboard?.Store is { } quitting)

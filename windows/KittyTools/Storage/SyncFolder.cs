@@ -187,7 +187,7 @@ internal sealed class Syncer
         var result = await runner.RunAsync(folder, allowance, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         Log.Info($"sync.round state={result.State} kinds={kinds.Count} written={result.Written.Count} ms={Environment.TickCount64 - started}");
         // 用这一轮开始前取的样子：合的这一会儿别处写了、本机改了，下一轮看到的就不一样，照样整轮跑。
-        _quiet = result.State == "idle" && result.Waiting.Count == 0 ? signature : null;
+        _quiet = result.State == "idle" && result.Waiting.Count == 0 && !result.Unsettled ? signature : null;
         Status.State = result.State;
         Status.Message = result.Message;
         Status.Devices = result.Devices;
@@ -347,6 +347,10 @@ internal sealed class Syncer
         public int Epoch => ledger.ReadEpoch();
 
         public void SetEpoch(int epoch) => ledger.WriteEpoch(epoch);
+
+        public string? NotesSwitchFrom => ledger.ReadNotesSwitch();
+
+        public void SetNotesSwitchFrom(string? oldId) => ledger.WriteNotesSwitch(oldId);
     }
 
     /// <summary>四类共用：账本读写（是别的库的 = 第一次合；写坏了抛 FormatException，这一类先不合）。</summary>

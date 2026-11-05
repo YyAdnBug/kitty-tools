@@ -217,9 +217,7 @@ internal sealed class NoteImageStore(string directory)
         var encoder = await BitmapEncoder.CreateAsync(BitmapEncoder.PngEncoderId, output);
         encoder.SetSoftwareBitmap(pixels);
         await encoder.FlushAsync();
-        var bytes = new byte[output.Size];
-        output.Seek(0);
-        await output.ReadAsync(bytes.AsBuffer(), (uint)bytes.Length, InputStreamOptions.None);
+        var bytes = await ReadAllAsync(output);
         return bytes;
     }
 
@@ -238,6 +236,16 @@ internal sealed class NoteImageStore(string directory)
                 return null;
             }
         });
+
+    /// <summary>把编码好的流整个读出来（用 DataReader：ReadAsync 不保证写进传进去的那块缓冲）。</summary>
+    private static async Task<byte[]> ReadAllAsync(IRandomAccessStream output)
+    {
+        var bytes = new byte[output.Size];
+        using var reader = new DataReader(output.GetInputStreamAt(0));
+        await reader.LoadAsync((uint)output.Size);
+        reader.ReadBytes(bytes);
+        return bytes;
+    }
 
     // ---- 裁切（另存一张新图，同 mac：令牌写法不改，撤销回原图，原图没人用 30 天才删）----
 
@@ -268,6 +276,9 @@ internal sealed class NoteImageStore(string directory)
                 var jpeg = decoder.DecoderInformation.CodecId == BitmapDecoder.JpegDecoderId;
                 using var output = new InMemoryRandomAccessStream();
                 var encoder = await BitmapEncoder.CreateAsync(jpeg ? BitmapEncoder.JpegEncoderId : BitmapEncoder.PngEncoderId, output);
+                // DPI 照原图（同 mac）：不写的话新文件按 96 算，下次读文件头时 144 DPI 的截图显示成原来的 1.5 倍
+                pixels.DpiX = size.Dpi;
+                pixels.DpiY = size.Dpi;
                 encoder.SetSoftwareBitmap(pixels);
                 await encoder.FlushAsync();
                 if (output.Size > NoteImageRules.MaxFileBytes)
@@ -275,9 +286,7 @@ internal sealed class NoteImageStore(string directory)
                     return Fail(NoteImageRules.Rejection.TooLarge);
                 }
 
-                var bytes = new byte[output.Size];
-                output.Seek(0);
-                await output.ReadAsync(bytes.AsBuffer(), (uint)bytes.Length, InputStreamOptions.None);
+                var bytes = await ReadAllAsync(output);
                 var ext = jpeg ? "jpg" : "png";
                 var id = Guid.NewGuid();
                 var target = Path.Combine(directory, $"{NoteImages.IdText(id)}.{ext}");

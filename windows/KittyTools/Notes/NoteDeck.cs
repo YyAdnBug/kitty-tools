@@ -294,7 +294,7 @@ internal static partial class NoteDeck
         }
     }
 
-    private static void CheckFullScreen()
+    private static unsafe void CheckFullScreen()
     {
         var hwnd = PInvoke.GetForegroundWindow();
         foreach (var bay in Bays)
@@ -309,6 +309,12 @@ internal static partial class NoteDeck
         if (hwnd == IntPtr.Zero || hwnd == GetShellWindow() || Foreground.IsOurs(new Windows.Win32.Foundation.HWND(hwnd)) || !GetWindowRect(hwnd, out var rect))
         {
             return false;
+        }
+
+        // 窗口的可见边框（DWM）：GetWindowRect 带着约 8 px 看不见的边，任务栏自动隐藏时最大化的窗口也会被当成全屏
+        if (DwmGetWindowAttribute(hwnd, 9 /* DWMWA_EXTENDED_FRAME_BOUNDS */, out var visible, sizeof(WinRect)) == 0)
+        {
+            rect = visible;
         }
 
         var buffer = stackalloc char[32];
@@ -343,6 +349,9 @@ internal static partial class NoteDeck
 
     [LibraryImport("user32.dll")]
     private static partial IntPtr GetShellWindow();
+
+    [LibraryImport("dwmapi.dll")]
+    private static partial int DwmGetWindowAttribute(IntPtr hwnd, int attribute, out WinRect value, int size);
 
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -509,7 +518,9 @@ internal sealed partial class NoteDeckBay
             _openTop = NoteTop(Layout());
         }
 
+        UpdatePill();
         Render();
+        UpdateWatching();
     }
 
     /// <summary>按住 Alt 拖着的时候：只挪药丸，松手才写设置、整个重摆。</summary>
@@ -573,6 +584,8 @@ internal sealed partial class NoteDeckBay
         }
 
         UpdatePill();
+        // 「一直展开」时收回去还是那一列：要按 _covered 重画（藏起 / 露出）
+        Render();
     }
 
     public void Suspend(NoteDeck.Suspension kind)
@@ -654,18 +667,28 @@ internal sealed partial class NoteDeckBay
 
         if (_state.Phase == NoteDeckPhase.Rest)
         {
-            StopWatching();
             _column?.Hide();
             _preview?.Hide();
             IdleReclaimer.Schedule();
         }
-        else
+
+        UpdateWatching();
+        UpdatePill();
+        Render();
+    }
+
+    /// <summary>只在比「收回」多出来的时候看鼠标（扇着、开着、「+N」展开着、拖着）：「一直展开」静置的那一列不跑计时器（空闲 CPU 为 0）。
+    /// 那一列上有动静时（Activity）再起。</summary>
+    private void UpdateWatching()
+    {
+        if (_state.Phase != NoteDeckPhase.Rest && (_state.IsExpanded || _state.ShowsAll || _state.IsDragging))
         {
             StartWatching();
         }
-
-        UpdatePill();
-        Render();
+        else
+        {
+            StopWatching();
+        }
     }
 
     private void UpdatePill() => _pill?.SetShown(_state.Phase == NoteDeckPhase.Rest && !_covered);
@@ -896,7 +919,11 @@ internal sealed partial class NoteDeckBay
     }
 
     /// <summary>有动静（4 秒没动静才收回）。</summary>
-    public void Activity() => _lastActivity = Now;
+    public void Activity()
+    {
+        _lastActivity = Now;
+        UpdateWatching();
+    }
 
     // ---- 打开的便签（它的窗口调）----
 
@@ -929,7 +956,15 @@ internal sealed partial class NoteDeckBay
 
         // 键盘交给浮出去的那张，不还给原来的程序（还回去再抢回来会被系统的前台锁拦住）
         _previous = default;
-        NoteFloats.Float(id, from: _sheet.Frame, dragging);
+        var frame = _sheet.Frame;
+        if (!dragging)
+        {
+            // 从菜单浮出去：往屏幕里面挪 48（同 mac），一眼看得出它离开了边缘
+            var inset = 48 * _scale;
+            frame = frame with { X = frame.X + (_edge == NoteDeckEdge.Right ? -inset : inset), Y = frame.Y + inset };
+        }
+
+        NoteFloats.Float(id, from: frame, dragging);
     }
 
     // ---- 看着：离开热区、4 秒没动静、没拿键盘的便签点了别处 ----
@@ -956,7 +991,7 @@ internal sealed partial class NoteDeckBay
 
     private void Watch()
     {
-        if (_state.Phase == NoteDeckPhase.Rest)
+        if (_state.Phase == NoteDeckPhase.Rest || !(_state.IsExpanded || _state.ShowsAll || _state.IsDragging))
         {
             StopWatching();
             return;

@@ -265,7 +265,7 @@ public readonly record struct NoteDeckScreen(string Name, RectD Frame, RectD Wor
 public readonly record struct NoteDeckPlacement(int Screen, NoteDeckEdge Edge);
 
 /// <summary>几何的小工具（y 向下）。</summary>
-internal static class NoteGeometry
+public static class NoteGeometry
 {
     /// <summary>点在不在矩形里：左、上边算，右、下边不算（同 Windows 的 RECT；mac CGRect.contains 也是半开的）。</summary>
     public static bool Contains(RectD rect, PointD point)

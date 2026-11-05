@@ -84,7 +84,7 @@ txt / PDF 导出、CloudKit。
 - **图片裁切**：在这条便签的窗口里盖一层（同 mac「同一扇窗口，不另开」），Windows 用一个铺满编辑区的 Canvas。
 - **示例便签、「便签在屏幕右边缘」那句提示**：只放 / 说一次，记在设置里这台电脑的状态（不导出）。
 - **同步**：便签走现有的同步执行层（`SyncRunner` 多一步「便签」）；设置 › 通用 › 同步多一行「便签」（默认开、跟着便签功能开关）。PLAN-v5 §0 第 1 条「便签文件、`images/` 一个字节都不碰」
-  改成：**只写自己子文件夹里的 `notes/`、`erased.json`，`images/` 里只加不改不删**（同 mac：存了不改、同名同内容），别的电脑的照旧一个字节都不碰。
+  改成：**只写自己子文件夹里的 `notes/`、`erased.json`，`images/` 里只加不改**（同 mac：存了不改、同名同内容；没人引用满期限的照 mac 的清理规则删，`NoteSyncFolder.ImagePurge`），别的电脑的照旧一个字节都不碰。
 - **电脑编号**：mac 的便签钟用便签库里记的编号；Windows 只有一个编号（`kitty.sqlite3` 里的 `SyncDevice`），便签的钟也用它。便签库从备份恢复时换编号
   （mac `forgetDevice`），同步时认出文件夹里本机那一格比库里大（mac `regressed`）也换（`switchDevice`）。
 - **库**：winsqlite3（同 `kitty.sqlite3`），表结构照 mac 的 `notes` / `note_erased` / `note_meta`，列名一样（两边不互读库，但照抄省得出错）。

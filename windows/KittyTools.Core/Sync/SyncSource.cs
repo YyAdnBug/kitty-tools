@@ -44,4 +44,9 @@ public interface ISyncDevice
     int Epoch { get; }
 
     void SetEpoch(int epoch);
+
+    /// <summary>认出库被退回去、换了编号，便签那几条却没跟着换（那一轮便签没合）：旧编号，便签能合的那一轮按它补认（PLAN-v13 复查）。</summary>
+    string? NotesSwitchFrom { get; }
+
+    void SetNotesSwitchFrom(string? oldId);
 }

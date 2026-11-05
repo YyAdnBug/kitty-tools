@@ -389,7 +389,7 @@ internal static class ArchiveService
     /// </summary>
     public static string? WriteDaily(string path, SettingsArchive archive)
     {
-        var written = WriteFile(path, archive);
+        var written = WriteFile(path, Fitted(archive));
         if (written is not null)
         {
             Rotate(Folder, "Kitty Tools 自动备份 *.json", DailyKeep, written);
@@ -403,7 +403,7 @@ internal static class ArchiveService
     {
         var path = Path.Combine(
             Folder, $"Kitty Tools 导入前 {DateTime.Now:yyyy-MM-dd HH.mm.ss}.json");
-        var written = WriteFile(path, Build(Enum.GetValues<ArchiveSection>(), password: null));
+        var written = WriteFile(path, Fitted(Build(Enum.GetValues<ArchiveSection>(), password: null)));
         if (written is not null)
         {
             Rotate(Folder, "Kitty Tools 导入前 *.json", BeforeImportKeep, written);
@@ -439,6 +439,45 @@ internal static class ArchiveService
                 Log.Warn($"archive.rotate-failed {ex.GetType().Name}");
             }
         }
+    }
+
+    /// <summary>备份用（每日一份、导入前一份）：整个文件超过上限时，先去掉编出来最大的那一类，还大再去掉次大的（同 mac「每天自动备份」；
+    /// 便签加进来之后几千条长便签就可能超）。只记真去掉的（日志里只写类别名）。手动导出不走这里：超了由 ExportProblem 拦。</summary>
+    public static SettingsArchive Fitted(SettingsArchive archive)
+    {
+        if (Encoding.UTF8.GetByteCount(Encode(archive)) <= SettingsArchive.MaxFileBytes)
+        {
+            return archive;
+        }
+
+        var parts = new List<(string Name, Func<int> Size, Action Drop)>
+        {
+            ("notes", () => archive.Notes is { Count: > 0 } notes ? notes.Sum(note => note.GetRawText().Length) : 0, () => archive.Notes = null),
+            ("clips", () => archive.Clips is { Count: > 0 } clips ? clips.Sum(clip => (clip.Text?.Length ?? 0) + (clip.Note?.Length ?? 0)) : 0,
+                () =>
+                {
+                    archive.Clips = null;
+                    archive.ClipGroups = null;
+                }),
+            ("vocabulary", () => archive.Vocabulary is { Count: > 0 } words
+                ? words.Sum(word => (word.Source?.Length ?? 0) + (word.Result?.Length ?? 0)) : 0, () => archive.Vocabulary = null),
+        };
+        foreach (var part in parts.OrderByDescending(part => part.Size()))
+        {
+            if (part.Size() == 0)
+            {
+                continue;
+            }
+
+            part.Drop();
+            Log.Warn($"archive.backup-dropped kind={part.Name}");
+            if (Encoding.UTF8.GetByteCount(Encode(archive)) <= SettingsArchive.MaxFileBytes)
+            {
+                break;
+            }
+        }
+
+        return archive;
     }
 
     public static string? WriteFile(string path, SettingsArchive archive)
