@@ -88,7 +88,7 @@ nonisolated struct StatusPreset: Codable, Hashable, Identifiable {
 
   /// 存着的图标值 → 现在的表情 id（纯函数）：清单里的、自己挑的系统表情原样留着，旧的系统符号名换成对应的表情，其余不认识的置空
   static func emoji(for symbol: String) -> String {
-    StatusEmoji.isValid(symbol) ? symbol : legacySymbols[symbol] ?? ""
+    StatusEmoji.isValid(symbol) ? StatusEmoji.canonical(symbol) : legacySymbols[symbol] ?? ""
   }
 
   private enum CodingKeys: String, CodingKey {

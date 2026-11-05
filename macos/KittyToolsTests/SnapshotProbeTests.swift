@@ -1213,7 +1213,7 @@ struct SnapshotProbeTests {
     var bell = call
     bell.chime = "file:下课铃.mp3"
     bell.nagMinutes = 7
-    bell.symbol = "🏃"  // 自己挑的系统表情：页头和图标格子最后一格画它
+    bell.symbol = "🐶"  // 自己挑的系统表情（还没下好动画）：页头和图标格子最后一格画系统表情字
     try snapshot(
       ReminderDetail(id: "call", fixed: [bell], now: now), size: NSSize(width: 590, height: 1100),
       dark: false, to: "\(out)/reminders-detail-sound.png")

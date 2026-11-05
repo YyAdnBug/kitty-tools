@@ -196,10 +196,80 @@ struct StatusScreenTests {
 
     // 提醒同样认
     var reminder = Reminder.examples[0]
+    reminder.symbol = "🐶"
+    #expect(Reminder.sanitized([reminder]).first?.symbol == "🐶")
+    // 和自带的是同一个动画的系统表情收拾成自带的 id（垫浅底、亮格子、旧版本都按 id 认）
     reminder.symbol = "🏃"
-    #expect(Reminder.sanitized([reminder]).first?.symbol == "🏃")
+    #expect(Reminder.sanitized([reminder]).first?.symbol == "person-running")
     reminder.symbol = "run"
     #expect(Reminder.sanitized([reminder]).first?.symbol == "")
+  }
+
+  /// 动画表情包（2026-11-05）：表情字查编号时去掉表情变体符；包里自带的那几个（含编号不同的别名）不下载；缓存超了从最久没用的
+  /// 删起；下下来的要是 256 × 256、两帧以上的动画才存；打进包里的对照表盖住自带的 28 个
+  @Test func emojiPackLookup() throws {
+    let catalog = EmojiPack.Catalog(
+      tag: "emoji-pack-1", emoji: ["🚀": "rocket", "☺": "smiling-face", "🐶": "dog"])
+    #expect(EmojiPack.id(for: "🚀", in: catalog) == "rocket")
+    #expect(EmojiPack.id(for: "☺️", in: catalog) == "smiling-face")  // 带 U+FE0F 也认
+    #expect(EmojiPack.id(for: "🦄", in: catalog) == nil)
+    #expect(EmojiPack.bundledID(for: "rocket") == "rocket")
+    #expect(EmojiPack.bundledID(for: "telephone-receiver") == "telephone")
+    #expect(EmojiPack.bundledID(for: "dog") == nil)
+    #expect(EmojiPack.bundledAliases.values.allSatisfy(StatusEmoji.ids.contains))
+    #expect(
+      EmojiPack.remoteURL("dog", tag: "emoji-pack-1")?.absoluteString
+        == "https://github.com/YyAdnBug/kitty-tools/releases/download/emoji-pack-1/dog.heics")
+
+    let day: TimeInterval = 86400
+    let files = [
+      EmojiPack.CachedFile(
+        name: "a.heics", bytes: 30, usedAt: Date(timeIntervalSince1970: 3 * day)),
+      EmojiPack.CachedFile(name: "b.heics", bytes: 30, usedAt: Date(timeIntervalSince1970: day)),
+      EmojiPack.CachedFile(
+        name: "c.heics", bytes: 30, usedAt: Date(timeIntervalSince1970: 2 * day)),
+    ]
+    #expect(EmojiPack.overflow(files, limit: 100).isEmpty)
+    #expect(EmojiPack.overflow(files, limit: 60) == ["b.heics"])
+    #expect(EmojiPack.overflow(files, limit: 10) == ["b.heics", "c.heics", "a.heics"])
+
+    let rocket = try Data(contentsOf: try #require(StatusEmoji.url("rocket")))
+    #expect(EmojiPack.isPlayable(rocket))
+    #expect(!EmojiPack.isPlayable(Data("not an image".utf8)))
+    #expect(!EmojiPack.isPlayable(rocket + Data(count: EmojiPack.maxFileBytes)))
+
+    // 打进包里的对照表：自带的 28 个和眼睛都对得上一个表情字（挑系统表情挑到它们时直接用自带的文件）
+    let bundled = try #require(EmojiPack.catalog)
+    #expect(bundled.tag.hasPrefix("emoji-pack-") && bundled.emoji.count > 700)
+    let reachable = Set(bundled.emoji.values.compactMap(EmojiPack.bundledID(for:)))
+    #expect(reachable == Set(StatusEmoji.ids))
+    #expect(
+      bundled.emoji.values.allSatisfy {
+        $0.allSatisfy { "abcdefghijklmnopqrstuvwxyz0123456789-".contains($0) }
+      })
+    // 挑到 🚀（系统表情）：画的是自带的火箭动画；和自带的同一个动画的字换成自带的 id（👥 是「开会」、🐈‍⬛ 是黑猫：
+    // 要垫浅底 / 亮光的那两个按 id 认），别的不动
+    #expect(StatusEmoji.url("🚀") == StatusEmoji.url("rocket"))
+    #expect(StatusEmoji.canonical("🚀") == "rocket" && StatusEmoji.canonical("👥") == "busts")
+    #expect(StatusEmoji.canonical("🐈‍⬛") == "black-cat" && StatusEmoji.canonical("📞") == "telephone")
+    #expect(StatusEmoji.canonical("🐶") == "🐶" && StatusEmoji.canonical("rocket") == "rocket")
+    #expect(StatusPreset.emoji(for: "👥") == "busts")
+    // 单测宿主里不联网下载
+    #expect(!EmojiPack.isEnabled)
+  }
+
+  /// 动画表情包的 release 联网自检（按需：TEST_RUNNER_KITTY_LIVE_EMOJI_PACK=1；发了新的表情包之后跑）：对照表里随便挑几个，
+  /// 下下来是能放的动画。只读网络，不写数据目录
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["KITTY_LIVE_EMOJI_PACK"] != nil))
+  func emojiPackReleaseServesFiles() async throws {
+    let catalog = try #require(EmojiPack.catalog)
+    let ids = Array(Set(catalog.emoji.values)).sorted()
+    for id in [ids.first, ids.randomElement(), ids.last].compactMap({ $0 }) {
+      let url = try #require(EmojiPack.remoteURL(id, tag: catalog.tag))
+      let (data, response) = try await URLSession.shared.data(from: url)
+      #expect((response as? HTTPURLResponse)?.statusCode == 200, "\(id)")
+      #expect(EmojiPack.isPlayable(data), "\(id)")
+    }
   }
 
   /// 存取走一个偏好键里的 JSON：存进去的是收拾过的，读回来一样；存了空列表读回来是自带的。

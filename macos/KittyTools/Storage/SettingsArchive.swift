@@ -860,6 +860,11 @@ struct SettingsArchive: Codable, Equatable {
     if copiesAfter, !copiesNow {
       losses.append("会打开复制即译（复制的外语文字自动发给翻译服务）")
     }
+    // 动画表情包（EmojiPack）：从关变开 = 挑到有动画版的表情时会联网下载
+    let emoji = Prefs.emojiPackDownloads
+    if incoming(emoji) as? Bool != false, !local(emoji) {
+      losses.append("会自动下载挑的表情的动画")
+    }
     return losses
   }
 

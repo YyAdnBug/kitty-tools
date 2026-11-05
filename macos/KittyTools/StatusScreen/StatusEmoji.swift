@@ -10,7 +10,8 @@
 // 解好的帧一个表情 10–19 MB（帧数 × 256 KB；连图层那边的一份，PLAN 里实测是 18–38 MB）：这里不缓存帧，谁要播谁拿着、
 // 不播了就放手（状态屏的会话 StatusScreen.frames、设置里那块预览 StatusPreview）。小图标一律用静止画面。
 // 另可以挑任意一个系统表情（2026-11-04 用户要多些图标；对标 Apple 提醒事项的清单图标、Slack 的状态：任意表情）：存的就是那个字
-// （isCustom），静态、由系统的表情字体画，不占包；告示上、小图标、菜单里都照样画它，只是不动。
+// （isCustom）。它在动画表情包里有动画版的（2026-11-05，EmojiPack：746 个）用到时下载、缓存，之后和自带的一样动；还没下好、
+// 没有动画版时由系统的表情字体画、不动。url / still / decode 对这两种字一视同仁（下好了才有文件）。
 
 import AppKit
 import SwiftUI
@@ -67,20 +68,41 @@ enum StatusEmoji {
     return properties.isEmojiPresentation || symbol.unicodeScalars.count > 1
   }
 
+  /// 自己挑的系统表情正好是自带的那 28 个之一的同一个动画（🚀、👥、🐈‍⬛…）：换成自带的 id（纯函数）。存之前、收拾时、
+  /// 画之前都换一次——自带的那几个要垫浅底 / 亮光（plated、dim 按 id 认）、格子里亮的是那一格；旧版本也认得自带的 id
+  nonisolated static func canonical(_ symbol: String) -> String {
+    guard isCustom(symbol), let packID = EmojiPack.id(for: symbol),
+      let bundled = EmojiPack.bundledID(for: packID)
+    else { return symbol }
+    return bundled
+  }
+
   /// 能存的图标值：空（不要图标）、自带的动画表情、自己挑的系统表情
   nonisolated static func isValid(_ symbol: String) -> Bool {
     symbol.isEmpty || ids.contains(symbol) || isCustom(symbol)
   }
 
-  /// 包里的那个文件；不是清单里的 id（空、旧的符号名、乱写的）是 nil
+  /// 动画文件：清单里的 id 是包里的那个；自己挑的系统表情有动画版时是包里自带的同一个，或者下好了的缓存（EmojiPack）；
+  /// 别的（空、旧的符号名、乱写的、还没下好的）是 nil
   nonisolated static func url(_ id: String) -> URL? {
-    guard id == eyes || ids.contains(id) else { return nil }
-    return Bundle.main.url(forResource: "status-emoji-" + id, withExtension: "heics")
+    if id == eyes || ids.contains(id) {
+      return Bundle.main.url(forResource: "status-emoji-" + id, withExtension: "heics")
+    }
+    guard isCustom(id), let packID = EmojiPack.id(for: id) else { return nil }
+    if let bundled = EmojiPack.bundledID(for: packID) { return url(bundled) }
+    return EmojiPack.cachedURL(packID)
+  }
+
+  /// 要放了：解得出（自带的、已经下好的）就直接解；自己挑的系统表情还没下好，先下（有动画版、开关开着时）再解
+  static func load(_ id: String) async -> Frames? {
+    if let frames = await decode(id) { return frames }
+    guard await EmojiPack.shared.fetch(id) else { return nil }
+    return await decode(id)
   }
 
   // MARK: 静止画面
 
-  /// 静止画面：第一帧，按 id 缓存；没选（空）、不认识的 id 是 nil。一张 256 KB，29 个都用过约 4.4 MB，内存吃紧时
+  /// 静止画面：第一帧，按 id 缓存（自己挑的系统表情按那个字；下好之前是 nil、不进缓存）；没选（空）、不认识的 id 是 nil。一张 256 KB，29 个都用过约 4.4 MB，内存吃紧时
   /// 系统自己清（NSCache）。第一次要现解（约 5 ms 一张）
   static func still(_ id: String) -> CGImage? {
     if let cached = stills.object(forKey: id as NSString) { return cached }
@@ -91,9 +113,9 @@ enum StatusEmoji {
 
   /// 菜单项用的小图（16 pt）。要垫浅底的那两个是一张现画的图：垫不垫看画的那一刻的外观（菜单跟的是系统外观，或
   /// 设置 › 通用里选的），不在这里定死
-  static func menuImage(_ id: String) -> NSImage? {
-    if isCustom(id) { return customImage(id, side: 16) }
-    guard let still = still(id) else { return nil }
+  static func menuImage(_ symbol: String) -> NSImage? {
+    let id = canonical(symbol)
+    guard let still = still(id) else { return isCustom(id) ? customImage(id, side: 16) : nil }
     let size = NSSize(width: 16, height: 16)
     return plated.contains(id)
       ? platedImage(still, size: size) : NSImage(cgImage: still, size: size)
@@ -235,13 +257,25 @@ enum StatusEmoji {
 /// 告示上的一个表情（大小由用的地方定）：静止画面垫着——帧还没解好、动画关着、屏外截图里看到的就是它；帧来了换成在播的
 /// 图层，从第一帧开始，和静止画面是同一张，接得上。在播时静止画面藏起来：不藏的话帧的透明处会透出下面的第一帧
 struct StatusEmojiView: View {
-  let id: String
+  let symbol: String
   var frames: StatusEmoji.Frames?
 
+  init(id: String, frames: StatusEmoji.Frames? = nil) {
+    symbol = id
+    self.frames = frames
+  }
+
   var body: some View {
+    let _ = EmojiPack.shared.generation  // 动画表情下好了跟着重画
+    let id = StatusEmoji.canonical(symbol)
     ZStack {
-      if StatusEmoji.isCustom(id) {
-        // 自己挑的系统表情：静态，按给的大小画（表情字体在这么大时略软，可以接受）
+      if let still = StatusEmoji.still(id) {
+        Image(decorative: still, scale: 1)
+          .resizable()
+          .interpolation(.high)
+          .opacity(frames == nil ? 1 : 0)
+      } else if StatusEmoji.isCustom(id) {
+        // 自己挑的系统表情还没有动画（没有动画版、还没下好）：系统表情字体画，按给的大小（这么大时略软，可以接受）
         GeometryReader { proxy in
           Text(id)
             .font(.system(size: min(proxy.size.width, proxy.size.height) * 0.82))
@@ -249,14 +283,9 @@ struct StatusEmojiView: View {
         }
         .accessibilityHidden(true)
       }
-      if let still = StatusEmoji.still(id) {
-        Image(decorative: still, scale: 1)
-          .resizable()
-          .interpolation(.high)
-          .opacity(frames == nil ? 1 : 0)
-      }
       if let frames { EmojiPlayer(frames: frames) }
     }
+    .task(id: symbol) { await EmojiPack.shared.fetch(symbol) }
     .background {
       // 深色的表情垫一团亮光才看得见（只画一次的小渐变，比表情大一圈）
       if StatusEmoji.dim.contains(id) {
@@ -297,16 +326,39 @@ private struct EmojiPlayer: NSViewRepresentable {
 /// 列表里一个状态的小图标（设置的列表行和详情页页头、启动器的状态行）：选了表情的是表情的静止画面，没选的是家族色块里
 /// 「只有几行字」的符号。深色外观下颜色很深的那两个表情垫一块浅底（StatusEmoji.plated），不然看不见
 struct StatusPresetIcon: View {
-  /// StatusPreset.symbol：表情 id，空 = 没选
-  let symbol: String
+  /// StatusPreset.symbol：表情 id 或自己挑的系统表情，空 = 没选
+  let stored: String
   var size: CGFloat = 24
   /// 没选表情时家族色块里的符号和颜色（提醒用自己的，ReminderIcon）
   var plainSymbol = StatusPreset.plainSymbol
   var plainColor = Style.Family.statusScreen
   @Environment(\.colorScheme) private var scheme
 
+  init(
+    symbol: String, size: CGFloat = 24, plainSymbol: String = StatusPreset.plainSymbol,
+    plainColor: Color = Style.Family.statusScreen
+  ) {
+    stored = symbol
+    self.size = size
+    self.plainSymbol = plainSymbol
+    self.plainColor = plainColor
+  }
+
+  /// 和自带的是同一个动画的系统表情按自带的画（要垫浅底的那两个才垫得上）
+  private var symbol: String { StatusEmoji.canonical(stored) }
+
   var body: some View {
-    if StatusEmoji.isCustom(symbol) {
+    let _ = EmojiPack.shared.generation  // 动画表情下好了换成它的静止画面
+    icon.task(id: stored) { await EmojiPack.shared.fetch(stored) }
+  }
+
+  @ViewBuilder private var icon: some View {
+    if let still = StatusEmoji.still(symbol), StatusEmoji.isCustom(symbol) {
+      Image(decorative: still, scale: 1)
+        .resizable()
+        .interpolation(.high)
+        .frame(width: size, height: size)
+    } else if StatusEmoji.isCustom(symbol) {
       Text(symbol)
         .font(.system(size: size * 0.82))
         .frame(width: size, height: size)

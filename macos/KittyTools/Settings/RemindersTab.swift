@@ -74,6 +74,13 @@ struct RemindersTab: View {
               + (isFull ? "最多 \(Reminder.maxCount) 条，已经满了，删掉一条才能再加。" : ""))
         }
         Section {
+          EmojiPackToggle()
+        } header: {
+          Text("图标")
+        } footer: {
+          SectionFootnote(EmojiPackToggle.footnote)
+        }
+        Section {
           Picker(selection: $snooze) {
             ForEach(Reminder.snoozeChoices, id: \.self) { Text("\($0) 分钟").tag($0) }
           } label: {

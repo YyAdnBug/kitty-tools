@@ -234,7 +234,8 @@ nonisolated struct Reminder: Codable, Hashable, Identifiable {
       else { continue }
       let detail = String(oneLine(reminder.detail ?? "").prefix(maxDetail))
       reminder.detail = detail.isEmpty ? nil : detail
-      if !StatusEmoji.isValid(reminder.symbol) { reminder.symbol = "" }
+      reminder.symbol =
+        StatusEmoji.isValid(reminder.symbol) ? StatusEmoji.canonical(reminder.symbol) : ""
       reminder.schedule = reminder.schedule.sanitized
       if reminder.statusID.count > maxID { reminder.statusID = "" }
       if !fullChoices.contains(reminder.fullSeconds) { reminder.fullSeconds = 0 }

@@ -133,7 +133,7 @@ import SwiftUI
     model.frames = nil
     guard !symbol.isEmpty, !Style.reduceMotion else { return }
     framesTask = Task { [weak self] in
-      let frames = await StatusEmoji.decode(symbol)
+      let frames = await StatusEmoji.load(symbol)
       guard !Task.isCancelled, let self, self.model.content?.symbol == symbol else { return }
       self.model.frames = frames
     }

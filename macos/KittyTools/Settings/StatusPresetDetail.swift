@@ -166,7 +166,7 @@ struct SymbolGrid: View {
   }
 
   private func cell(_ symbol: String) -> some View {
-    let selected = selection == symbol
+    let selected = StatusEmoji.canonical(selection) == symbol
     return Button {
       selection = symbol
     } label: {
@@ -217,12 +217,19 @@ struct SymbolGrid: View {
 
   /// 最后一格：没挑过系统表情时是一个笑脸符号，挑过的画那个表情；点了都是打开系统的表情面板
   private var customCell: some View {
-    let custom = StatusEmoji.isCustom(selection) ? selection : nil
+    let _ = EmojiPack.shared.generation  // 挑的表情的动画下好了换成静止画面
+    let custom = StatusEmoji.isCustom(StatusEmoji.canonical(selection)) ? selection : nil
     return Button {
       opensPicker += 1
     } label: {
       Group {
-        if let custom {
+        if let custom, let still = StatusEmoji.still(custom) {
+          // 有动画版、已经下好了：和别的格子一样画静止画面
+          Image(decorative: still, scale: 1)
+            .resizable()
+            .interpolation(.high)
+            .frame(width: Self.cell - 6, height: Self.cell - 6)
+        } else if let custom {
           Text(custom).font(.system(size: Self.cell - 10))
         } else {
           Image(systemName: "face.smiling").font(.system(size: 14, weight: .medium))
@@ -243,7 +250,8 @@ struct SymbolGrid: View {
         }
       }
       .overlay(alignment: .bottomTrailing) {
-        EmojiCatcher(trigger: opensPicker) { selection = $0 }
+        // 挑到和自带的同一个动画（🚀）：存成自带的 id，亮的是那一格
+        EmojiCatcher(trigger: opensPicker) { selection = StatusEmoji.canonical($0) }
           .frame(width: 1, height: 1)
           .allowsHitTesting(false)  // 点格子是按按钮，不是点进这个输入框
       }
@@ -283,11 +291,27 @@ private struct EmojiPreview: View {
     .accessibilityHidden(true)  // 每一格自己有名字，这里只是看的
     .task(id: plays ? symbol : "") {
       frames = nil
-      guard plays, !reduceMotion, StatusEmoji.ids.contains(symbol) else { return }
+      guard plays, !reduceMotion, !symbol.isEmpty else { return }
       try? await Task.sleep(for: .milliseconds(150))
-      guard !Task.isCancelled, let decoded = await StatusEmoji.decode(symbol), !Task.isCancelled
+      guard !Task.isCancelled, let decoded = await StatusEmoji.load(symbol), !Task.isCancelled
       else { return }
       frames = decoded
+    }
+  }
+}
+
+/// 「自动下载动画表情」（EmojiPack；设置 › 状态屏「动画」、设置 › 提醒「图标」两处，同一个偏好）
+struct EmojiPackToggle: View {
+  @AppStorage(Prefs.emojiPackDownloads) private var downloads = true
+
+  static let footnote =
+    "挑的「其他表情」有动画版时，从 Kitty Tools 在 GitHub 上的发布页下载那个动画（一个约 0.2 MB，不带任何个人信息），"
+    + "存在这台 Mac 上、最多 50 MB；没下好、没联网时先显示不动的表情。"
+
+  var body: some View {
+    Toggle(isOn: $downloads) {
+      Text("自动下载动画表情")
+      Text("关掉后挑的其他表情都不动，已经下好的照样动")
     }
   }
 }
