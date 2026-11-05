@@ -9,7 +9,7 @@
 // 底栏 36（N8，对标 Raycast）：左边选中项的种类（16 pt 家族色块 + 种类名；收藏、移除常用时换成就地提示，移除带
 // 「撤销 ⌘Z」），右边「主动作 ↩」（品牌粉实心键帽）·「操作 ⌘K」，都能点；⌘K 动作菜单（共用 ActionMenu）锚在右下，
 // 开着时面板至少高到放得下它。没有图钉、齿轮（⌘, 照样开设置）。有新版本时左边种类后面常驻「更新到 x」（UpdateBarHint）。
-// 面板高度随行数伸缩（带动画），顶边不动。
+// 面板高度随行数伸缩（带动画），顶边不动。空搜索框里一行都没有时（没收藏、没用过，或关了「列出常用」）只剩搜索框（isBare）。
 // 状态和操作都在 LauncherModel。⌘Y 快速查看的预览卡（LauncherQuickLookView）也在这里。
 
 import AppKit
@@ -21,6 +21,8 @@ struct LauncherPanelView: View {
   /// 拖下边定的最多几行（W2，0 = 默认）
   @AppStorage(Prefs.launcherPanelRows) private var rows = 0.0
   @AppStorage(Prefs.launcherRomanInput) private var romanInput = false
+  /// 有新版本时底栏常驻「更新到 x」：只剩搜索框的时候也留着底栏
+  @Environment(Updater.self) private var updater: Updater?
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   /// 按住 ⌘ 超过 150 ms：类型标签换成键帽
   @State private var showsShortcuts = false
@@ -42,7 +44,7 @@ struct LauncherPanelView: View {
   var body: some View {
     VStack(spacing: 0) {
       searchBar.frame(height: Self.searchHeight)
-      Hairline()
+      if !bare { Hairline() }
       if let error = model.error {
         Label(error, systemImage: "exclamationmark.triangle.fill")
           .font(.system(size: 12))
@@ -59,10 +61,11 @@ struct LauncherPanelView: View {
         list
       }
       Spacer(minLength: 0)
-      bar
+      if !bare { bar }
     }
     .overlay(alignment: .bottomTrailing) { actionMenu }
-    .onChange(of: Self.height(for: model, rows: rows), initial: true) { _, height in
+    .onChange(of: Self.height(for: model, rows: rows, update: hasUpdate), initial: true) {
+      _, height in
       model.resize(height)
     }
     .onModifierKeysChanged(mask: [.command, .option, .control]) { _, keys in
@@ -81,6 +84,15 @@ struct LauncherPanelView: View {
   }
 
   private var showsNoResults: Bool { !model.isShowingRecent && model.results.isEmpty }
+  private var hasUpdate: Bool { updater?.available != nil }
+  private var bare: Bool { Self.isBare(model, update: hasUpdate) }
+
+  /// 只剩搜索框（issue #2）：空搜索框里一行都没有，底栏这时没有能「运行 / 操作」的东西，连同上面的发丝线收掉。
+  /// 有错误、底栏的就地提示、动作菜单、更新提示（update）时照旧
+  static func isBare(_ model: LauncherModel, update: Bool) -> Bool {
+    model.isShowingRecent && model.results.isEmpty && model.error == nil && model.notice == nil
+      && !model.showsActions && !update
+  }
 
   /// 行高：高亮的位置和面板高度都按它的前缀和算
   private func rowHeight(_ item: LauncherItem) -> CGFloat { Self.rowHeight(item) }
@@ -103,7 +115,8 @@ struct LauncherPanelView: View {
     return top - header...top + rowHeight(model.results[row])
   }
 
-  /// 面板高度 = 搜索栏 + 发丝线 +（错误）+ 列表（分组标题各 28 + 最多 8.5 行）+ 底栏；⌘K 菜单开着时至少放得下它
+  /// 面板高度 = 搜索栏 + 发丝线 +（错误）+ 列表（分组标题各 28 + 最多 8.5 行）+ 底栏；⌘K 菜单开着时至少放得下它；
+  /// 只剩搜索框（isBare）时就是搜索栏那么高
   /// rows：设置里拖出来的最多几行（0 = 默认 8.5）
   /// 拖下边时面板能多高（W2）：列表 6.5 到 14.5 行
   static func heightRange(for model: LauncherModel) -> ClosedRange<CGFloat> {
@@ -123,7 +136,10 @@ struct LauncherPanelView: View {
       + CGFloat(model.groups.count) * groupHeight
   }
 
-  static func height(for model: LauncherModel, rows limit: Double = 0) -> CGFloat {
+  static func height(for model: LauncherModel, rows limit: Double = 0, update: Bool = false)
+    -> CGFloat
+  {
+    if isBare(model, update: update) { return searchHeight }
     var height = searchHeight + 0.5 + barHeight
     if model.error != nil { height += 28 }
     if !model.isShowingRecent && model.results.isEmpty {

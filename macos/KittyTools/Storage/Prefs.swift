@@ -31,6 +31,8 @@ enum Prefs {
   static let launcherWebSearchEngines = "launcherWebSearchEngines"
   /// 兜底搜索在有本地结果时也附在最后（默认只在没有结果时出现）
   static let launcherFallbackAlways = "launcherFallbackAlways"
+  /// 空搜索框里在收藏后面列「常用」（默认开；issue #2：想要只有搜索框的关掉，有收藏时只列收藏）
+  static let launcherShowsFrequent = "launcherShowsFrequent"
   /// 启动器出现在哪（设置 › 启动器，2026-11-04）：同剪贴板面板的 clipboardPanelPosition（top / mouse / last）
   static let launcherPanelPosition = "launcherPanelPosition"
   /// 呼出启动器时搜索框只用英文输入法（Alfred 的 Force Keyboard；离开启动器后恢复）
@@ -380,6 +382,7 @@ enum Prefs {
       launcherBrowserBookmarks: defaultBookmarkIDs,
       launcherBrowserHistory: "",
       launcherFallbackAlways: false,
+      launcherShowsFrequent: true,
       launcherRomanInput: false,
       launchpadColumns: 7,
       launchpadRows: 5,

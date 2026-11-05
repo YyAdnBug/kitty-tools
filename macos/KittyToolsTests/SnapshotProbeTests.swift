@@ -3291,6 +3291,20 @@ struct SnapshotProbeTests {
         LauncherPanelView(model: model).environment(try Self.pendingUpdate()),
         size: NSSize(width: 720, height: LauncherPanelView.height(for: model)), dark: dark,
         to: "\(out)/launcher-update\(dark ? "-dark" : "").png")
+      // issue #2：关掉「空搜索框里列出常用」只列收藏；一个收藏都没有时只剩搜索框
+      model.showsFrequent = { false }
+      model.query = ""
+      try snapshot(
+        LauncherPanelView(model: model),
+        size: NSSize(width: 720, height: LauncherPanelView.height(for: model)), dark: dark,
+        to: "\(out)/launcher-favorites-only\(dark ? "-dark" : "").png")
+      model.showsFrequent = { true }
+      let bare = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [])
+      bare.query = ""
+      try snapshot(
+        LauncherPanelView(model: bare),
+        size: NSSize(width: 720, height: LauncherPanelView.height(for: bare)), dark: dark,
+        to: "\(out)/launcher-bare\(dark ? "-dark" : "").png")
     }
     let home = NSHomeDirectory()
     func hit(_ path: String, _ type: String, daysAgo: Double) -> FileSearch.Hit {
