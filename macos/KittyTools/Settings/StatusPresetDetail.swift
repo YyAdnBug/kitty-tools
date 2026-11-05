@@ -129,9 +129,9 @@ struct StatusPresetDetail: View {
 /// 图标格子：一格「无」+ StatusEmoji.choices 的表情（静止画面）+ 最后一格「其他表情」，一行 7 个；选中的外面一圈强调色
 /// （同通用页的外观缩略图）。深色外观下颜色很深的那两个表情（开会、黑猫）的格子换成浅底（StatusEmoji.plated）。
 /// 「其他表情」打开系统的表情面板，挑哪个都行（静态，StatusEmoji.isCustom）；挑过的那一格就画它。提醒的详情页也用它（ReminderDetail）。
-/// 整个是一行「图标」（LabeledContent）：左边标题下面空着的地方是预览（2026-11-04 用户要看得出动画是什么；同系统表情与符号面板、
-/// 网页上常见的表情选择器的预览区）——鼠标停在哪一格，那里就放它的动画、写它的名字（EmojiPreview）；没停在格子上时是选中的那个、
-/// 不动。格子本身一直是静止画面
+/// 整个是一行「图标」：标题在左上（和别的行一样），格子靠右，中间空着的那一大块是预览（2026-11-04 用户要看得出动画是什么，
+/// 又说「左边位置大，放大居中」；同系统表情与符号面板、网页上常见的表情选择器的预览区）——鼠标停在哪一格，那里就放大放它的动画、
+/// 下面写它的名字（EmojiPreview），在空着的那块里居中；没停在格子上时是选中的那个、不动。格子本身一直是静止画面
 struct SymbolGrid: View {
   @Binding var selection: String
   /// 鼠标停在哪一格（截图自检可以直接给）
@@ -144,13 +144,11 @@ struct SymbolGrid: View {
   private static let ring: CGFloat = 2
 
   var body: some View {
-    LabeledContent {
+    HStack(alignment: .top, spacing: 12) {
+      Text("图标")
+      EmojiPreview(symbol: hovered ?? selection, plays: hovered != nil)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)  // 标题和格子之间那一块里居中
       grid
-    } label: {
-      VStack(alignment: .leading, spacing: 10) {
-        Text("图标")
-        EmojiPreview(symbol: hovered ?? selection, plays: hovered != nil)
-      }
     }
   }
 
@@ -260,7 +258,7 @@ struct SymbolGrid: View {
   }
 }
 
-/// 「图标」标题下面的预览：72 pt 的表情 + 名字。plays（鼠标停在格子上）时把那个动画表情的帧解出来放（停一下才解：鼠标扫过去
+/// 「图标」那一行中间的预览：120 pt 的表情（和告示上的表情差不多大）+ 名字。plays（鼠标停在格子上）时把那个动画表情的帧解出来放（停一下才解：鼠标扫过去
 /// 不白解；一个表情的帧十几到几十 MB，移开、换一格就放手）；减弱动态效果时不放。没选图标、也没停在格子上时什么都不画
 private struct EmojiPreview: View {
   let symbol: String
@@ -268,21 +266,20 @@ private struct EmojiPreview: View {
   @State private var frames: StatusEmoji.Frames?
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-  static let side: CGFloat = 72
+  static let side: CGFloat = 120
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 4) {
+    VStack(spacing: 6) {
       if !symbol.isEmpty {
         StatusEmojiView(id: symbol, frames: frames)
           .frame(width: Self.side, height: Self.side)
         Text(StatusEmoji.name(symbol) ?? "")
-          .font(.system(size: 11))
+          .font(.callout)
           .foregroundStyle(.secondary)
           .lineLimit(1)
           .truncationMode(.tail)
       }
     }
-    .frame(width: Self.side, alignment: .leading)
     .accessibilityHidden(true)  // 每一格自己有名字，这里只是看的
     .task(id: plays ? symbol : "") {
       frames = nil
