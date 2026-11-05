@@ -56,6 +56,23 @@ final class OverlayPanel: NSPanel {
   private var lastDismiss: CFTimeInterval = 0
   /// 用户正在拖左右边改宽度：这期间改高度不做动画（动画结束会盖掉拖动设的帧）
   fileprivate var isUserResizing = false
+  /// 记宽度的偏好键（2026-11-05 拍板 W1；这台电脑自己的状态，不注册默认值、不跟导出走）：拖左右边松手时写，
+  /// 每次出现前按它摆宽度；没写过（0）就不动（翻译浮窗拖过的宽度以前记在 frameName 里，照旧用那份）。
+  /// 「恢复默认大小」写回默认宽度
+  var widthKey: String?
+  /// 拖下边改「最高多高」（W2）：设了才有下边的拖边。拖的时候窗口跟着鼠标、夹在 heightRange 里（不听内容改高度），
+  /// 松手交给 heightDragged 记下来，内容再按新的上限把高度改回去（内容少时照样缩回去）
+  var heightRange: (() -> ClosedRange<CGFloat>)? {
+    didSet {
+      guard oldValue == nil, heightRange != nil else { return }
+      host.superview?.addSubview(ResizeEdge(side: .bottom))
+    }
+  }
+  var heightDragged: ((CGFloat) -> Void)?
+  /// 正在拖下边：内容这时要改的高度先不做（松手后内容会按新的上限再改一次）
+  fileprivate var isDraggingHeight = false
+  /// 内容最近一次要的高度：拖下边松手后先回到它（新上限算出来的高度要是没变，内容不会再要一次）
+  fileprivate var requestedHeight: CGFloat?
   /// 每次出现 / 收起加一：缩回动画的收尾发现期间又被打开（或已被别处收起）就什么都不做
   private var showGeneration = 0
   /// 出现时用挤压入场（设置 › 通用「动效」的开关，剪贴板 / 启动器 / 翻译浮窗共用）；false 用标准的淡入 + 下落
@@ -628,6 +645,8 @@ final class OverlayPanel: NSPanel {
     if deferredUntilLaidOut({ [weak self] in self?.setContentHeight(height, animated: animated) }) {
       return
     }
+    requestedHeight = height
+    guard !isDraggingHeight else { return }
     // 挤压入场还在弹：改它的终点（顶边不动），别另起一段帧动画和它抢
     if var running = squeeze {
       running.end.origin.y = running.end.maxY - height
@@ -658,6 +677,17 @@ final class OverlayPanel: NSPanel {
   }
 
   private func placeForShow() {
+    // 记着的宽度（W1）先摆上：下面几种摆法都按当前的宽度算
+    if let widthKey, case let width = UserDefaults.standard.double(forKey: widthKey), width > 0 {
+      let minWidth = max(minSize.width, contentMinSize.width)
+      let clamped = min(max(width, minWidth), maxSize.width)
+      if abs(clamped - frame.width) > 0.5 {
+        setFrame(
+          NSRect(x: frame.minX, y: frame.minY, width: clamped, height: frame.height), display: false
+        )
+      }
+      if let user = userFrame { userFrame = (user.topLeft, clamped) }
+    }
     // 挂在图标下面时用图标所在的那块屏（键盘、旁白点开的，鼠标不一定在那儿）
     let point = below.map { NSPoint(x: $0.midX, y: $0.midY) } ?? NSEvent.mouseLocation
     let screen = NSScreen.screens.first { NSMouseInRect(point, $0.frame, false) } ?? NSScreen.main
@@ -855,10 +885,10 @@ private struct PanelRoot<Content: View>: View {
   }
 }
 
-/// 无边框窗口的左右拖边（改宽度，夹在 minSize / maxSize 之间，另一边不动）。
-/// 本 App 不激活，光标矩形不生效：用 activeAlways 的追踪区手动设光标
+/// 无边框窗口的拖边：左右改宽度（夹在 minSize / maxSize 之间，另一边不动），下边改「最高多高」（W2，顶边不动、
+/// 夹在 heightRange 里，松手交给 heightDragged）。本 App 不激活，光标矩形不生效：用 activeAlways 的追踪区手动设光标
 private final class ResizeEdge: NSView {
-  enum Side { case left, right }
+  enum Side { case left, right, bottom }
 
   private let side: Side
   private var start: (mouse: CGFloat, frame: NSRect)?
@@ -867,17 +897,34 @@ private final class ResizeEdge: NSView {
   init(side: Side) {
     self.side = side
     super.init(frame: .zero)
-    autoresizingMask = side == .left ? [.height, .maxXMargin] : [.height, .minXMargin]
+    autoresizingMask =
+      switch side {
+      case .left: [.height, .maxXMargin]
+      case .right: [.height, .minXMargin]
+      case .bottom: [.width, .maxYMargin]
+      }
   }
 
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
   override func viewDidMoveToSuperview() {
     super.viewDidMoveToSuperview()
-    guard let bounds = superview?.bounds else { return }
-    frame = NSRect(
-      x: side == .left ? 0 : bounds.maxX - Self.width, y: 0, width: Self.width,
-      height: bounds.height)
+    guard let superview else { return }
+    let bounds = superview.bounds
+    frame =
+      switch side {
+      case .left: NSRect(x: 0, y: 0, width: Self.width, height: bounds.height)
+      case .right:
+        NSRect(x: bounds.maxX - Self.width, y: 0, width: Self.width, height: bounds.height)
+      // 两头让开左右拖边的那 6 pt；父视图是翻转坐标时（没实测玻璃底的 contentView 是不是）底边在 maxY
+      case .bottom:
+        NSRect(
+          x: Self.width, y: superview.isFlipped ? bounds.maxY - Self.width : 0,
+          width: max(bounds.width - 2 * Self.width, 0), height: Self.width)
+      }
+    if side == .bottom {
+      autoresizingMask = [.width, superview.isFlipped ? .minYMargin : .maxYMargin]
+    }
   }
 
   override func updateTrackingAreas() {
@@ -889,20 +936,40 @@ private final class ResizeEdge: NSView {
         owner: self))
   }
 
-  override func mouseEntered(with event: NSEvent) { NSCursor.resizeLeftRight.set() }
+  override func mouseEntered(with event: NSEvent) {
+    (side == .bottom ? NSCursor.resizeUpDown : NSCursor.resizeLeftRight).set()
+  }
   override func mouseExited(with event: NSEvent) { if start == nil { NSCursor.arrow.set() } }
   override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
   override var mouseDownCanMoveWindow: Bool { false }
 
   override func mouseDown(with event: NSEvent) {
     guard let window else { return }
-    start = (NSEvent.mouseLocation.x, window.frame)
+    let mouse = NSEvent.mouseLocation
+    start = (side == .bottom ? mouse.y : mouse.x, window.frame)
     (window as? OverlayPanel)?.isUserResizing = true
+    if side == .bottom { (window as? OverlayPanel)?.isDraggingHeight = true }
   }
 
   /// 只改 x 和宽度；高度和 y 取当前的（宽度一变内容重排，高度会跟着 setContentHeight 变）
   override func mouseDragged(with event: NSEvent) {
     guard let window, let start else { return }
+    if side == .bottom {
+      // 往下拖 = 变高；顶边不动，夹在 heightRange 和屏幕可见区里
+      let range =
+        (window as? OverlayPanel)?.heightRange?() ?? start.frame.height...start.frame.height
+      let bottom = window.screen?.visibleFrame.minY ?? -.greatestFiniteMagnitude
+      let proposed = start.frame.height + start.mouse - NSEvent.mouseLocation.y
+      let height = min(max(proposed, range.lowerBound), range.upperBound, start.frame.maxY - bottom)
+      var frame = start.frame
+      frame.origin.y = start.frame.maxY - height
+      frame.size.height = height
+      NSAnimationContext.runAnimationGroup { context in
+        context.duration = 0
+        window.animator().setFrame(frame, display: true)
+      }
+      return
+    }
     let delta = NSEvent.mouseLocation.x - start.mouse
     let minWidth = max(window.minSize.width, window.contentMinSize.width)
     let maxWidth = min(
@@ -918,9 +985,19 @@ private final class ResizeEdge: NSView {
   }
 
   override func mouseUp(with event: NSEvent) {
+    guard let panel = window as? OverlayPanel else { return }
+    let dragged = start.map { $0.frame.size != panel.frame.size } ?? false
     start = nil
-    (window as? OverlayPanel)?.isUserResizing = false
+    panel.isUserResizing = false
     NSCursor.arrow.set()
+    if side == .bottom {
+      panel.isDraggingHeight = false
+      // 按住没拖就松手不改设置
+      if dragged { panel.heightDragged?(panel.frame.height) }
+      if let height = panel.requestedHeight { panel.setContentHeight(height, animated: true) }
+    } else if dragged, let key = panel.widthKey {
+      UserDefaults.standard.set(Double(panel.frame.width), forKey: key)
+    }
   }
 
   /// 拖边盖在内容的最左 / 最右 6 pt 上：滚轮转给下面的内容（结果列表的滚动条在这里）

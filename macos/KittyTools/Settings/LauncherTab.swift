@@ -77,6 +77,9 @@ struct LauncherTab: View {
             Text("呼出时切到英文输入法")
             Text("只在搜索框里生效，离开后恢复；要搜中文时先关掉")
           }
+          PanelSizeRow(
+            detail: "拖左右两边改宽度，拖下边改最多显示几行", widthKey: Prefs.launcherPanelWidth,
+            heightKey: Prefs.launcherPanelRows, defaultWidth: Style.listPanelWidth)
           LabeledContent {
             ShortcutsButton()
           } label: {

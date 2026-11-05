@@ -344,13 +344,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let model = launcherModel
     let panel = OverlayPanel(
       size: NSSize(width: Style.listPanelWidth, height: LauncherPanelView.searchHeight),
-      topAnchored: true,
+      minSize: NSSize(
+        width: Style.listPanelWidths.lowerBound, height: LauncherPanelView.searchHeight),
+      frameName: "LauncherPanel", topAnchored: true,
       // 启动器没有固定（N8）：点外面就收起
       autoHide: .clickOutside, isPinned: { false },
       // 包 AnyView：带了 environment 的是不透明类型，Swift 6.4 认为它的 View 遵循可能是隔离的、不让直接传进这个泛型 init
       // （编译警告）；根视图的类型不变，包一层没有重建的开销。剪贴板、翻译浮窗同
       content: AnyView(LauncherPanelView(model: model).environment(updater)))
     panel.keyEquivalentHandler = { [unowned model] in model.handleKeyEquivalent($0) }
+    // 拖左右边改宽度、拖下边改最多几行（2026-11-05 W1 W2）
+    panel.maxSize = NSSize(
+      width: Style.listPanelWidths.upperBound, height: .greatestFiniteMagnitude)
+    panel.widthKey = Prefs.launcherPanelWidth
+    panel.heightRange = { [unowned model] in LauncherPanelView.heightRange(for: model) }
+    panel.heightDragged = { [unowned model] height in
+      UserDefaults.standard.set(
+        LauncherPanelView.rows(forHeight: height, model: model), forKey: Prefs.launcherPanelRows)
+    }
     panel.onHide = { [unowned self, unowned model] in
       model.didHide()
       idleReclaim.schedule()
@@ -448,7 +459,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let panel = OverlayPanel(
       size: NSSize(
         width: ClipboardPanelView.width, height: ClipboardPanelView.height(for: model)),
-      topAnchored: true, autoHide: .clickOutside,
+      minSize: NSSize(
+        width: Style.listPanelWidths.lowerBound, height: ClipboardPanelView.searchHeight),
+      frameName: "ClipboardPanel", topAnchored: true, autoHide: .clickOutside,
       isPinned: { !UserDefaults.standard.bool(forKey: Prefs.clipboardHideOnUnfocus) },
       content: AnyView(ClipboardPanelView(model: model).environment(updater)))
     panel.keyEquivalentHandler = { [unowned model] in model.handleKeyEquivalent($0) }
@@ -460,6 +473,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     model.hidePanel = { [unowned panel] in panel.hide() }
     model.pasteTargetView = { [unowned panel] in panel.pasteTarget() }
     model.resize = { [unowned panel] in panel.setContentHeight($0, animated: true) }
+    panel.maxSize = NSSize(
+      width: Style.listPanelWidths.upperBound, height: .greatestFiniteMagnitude)
+    panel.widthKey = Prefs.clipboardPanelWidth
+    panel.heightRange = {
+      ClipboardPanelView.heightRange(banner: !Permissions.isAccessibilityTrusted)
+    }
+    panel.heightDragged = { height in
+      UserDefaults.standard.set(
+        ClipboardPanelView.rows(forHeight: height, banner: !Permissions.isAccessibilityTrusted),
+        forKey: Prefs.clipboardPanelRows)
+    }
     // 剪贴板面板保持打开（兄弟浮层），翻译浮窗出现在旁边。翻译关着（Feature）时面板里没有这一项，这里再挡一道
     model.openTranslate = { [unowned self] text in
       guard Feature.translate.isOn else { return }
@@ -510,7 +534,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // 视图在面板建好之前就可能要求改高度：用弱引用接，别在 lazy 初始化里回头访问 translatePanel
     weak var created: OverlayPanel?
     let panel = OverlayPanel(
-      size: NSSize(width: 420, height: 560), minSize: NSSize(width: 360, height: 200),
+      size: NSSize(width: TranslatePanelView.defaultWidth, height: 560),
+      minSize: NSSize(width: 360, height: 200),
       frameName: "TranslatePanel", autoHide: .resignKey,
       isPinned: { UserDefaults.standard.bool(forKey: Prefs.floatingPinned) },
       content: AnyView(
@@ -521,7 +546,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // 最小 / 最大高度都钉在这个值上：用户只能拖宽度，拖高度会和自动高度打架
             guard let panel = created else { return }
             let visible = (panel.screen ?? NSScreen.main)?.visibleFrame.height ?? 800
-            let height = TranslatePanelView.panelHeight(height, mustFit: mustFit, visible: visible)
+            let height = TranslatePanelView.panelHeight(
+              height, mustFit: mustFit, visible: visible,
+              cap: UserDefaults.standard.double(forKey: Prefs.translatePanelMaxHeight))
             panel.minSize = NSSize(width: 360, height: height)
             panel.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: height)
             // 变化 8 pt 以上才带动画：流式输出时每来几个字都会长一点，小变化直接设
@@ -531,6 +558,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           isShown: { created?.isVisible ?? false }
         ).environment(island)))
     created = panel
+    // 宽度记进偏好（W1；以前拖过的宽度在 frameName 里，没写过偏好时照旧用那份）、拖下边定最高多高（W2）
+    panel.widthKey = Prefs.translatePanelWidth
+    panel.heightRange = { [weak panel] in
+      let visible = (panel?.screen ?? NSScreen.main)?.visibleFrame.height ?? 800
+      return TranslatePanelView.minHeight...max(visible - 24, TranslatePanelView.minHeight)
+    }
+    panel.heightDragged = { height in
+      UserDefaults.standard.set(Double(height), forKey: Prefs.translatePanelMaxHeight)
+    }
     coordinator.historyList.island = island
     panel.keyEquivalentHandler = { [unowned self] in coordinator.handleKeyEquivalent($0) }
     // ⌘,、「⋯」菜单和空状态到设置 › 翻译；错误卡带服务 id，直达那个服务的详情页（体检 C5）

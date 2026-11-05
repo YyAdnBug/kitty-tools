@@ -23,6 +23,8 @@ struct ClipboardPanelView: View {
   @Bindable var model: ClipboardPanelModel
   @AppStorage(Prefs.clipboardHideOnUnfocus) private var hideOnUnfocus = true
   @AppStorage(Prefs.clipboardShowPreview) private var showsLens = true
+  /// 拖下边定的最多几行（W2，0 = 默认）
+  @AppStorage(Prefs.clipboardPanelRows) private var maxRows = 0.0
   /// 默认粘贴为纯文本：底栏按住 ⌥ 的提示、右键菜单的替代粘贴跟着换名字
   @AppStorage(Prefs.clipboardPastePlain) private var pastesPlain = false
   @State private var trusted = Permissions.isAccessibilityTrusted
@@ -50,6 +52,30 @@ struct ClipboardPanelView: View {
   static let inset: CGFloat = 6
   /// 列表区最高 427.5：连同搜索线、发丝线、底栏正好 520
   static let maxListHeight: CGFloat = 427.5
+  /// 拖下边能定的行数（W2）：默认 8.5 行就是 427.5；按半行吸附
+  static let rowRange = 6.5...14.5
+
+  /// 列表区最高多高：拖出来的行数（0 = 默认）每多一行加一行高
+  static func maxListHeight(rows: Double) -> CGFloat {
+    rows > 0 ? maxListHeight + CGFloat(rows - 8.5) * ClipRowView.height : maxListHeight
+  }
+
+  /// 面板里列表区以外的高度：搜索栏、发丝线、授权横幅、底栏
+  static func chrome(banner: Bool) -> CGFloat {
+    searchHeight + 0.5 + (banner ? bannerHeight : 0) + barHeight
+  }
+
+  /// 拖下边时面板能多高（W2）：列表区 6.5 到 14.5 行
+  static func heightRange(banner: Bool) -> ClosedRange<CGFloat> {
+    chrome(banner: banner) + maxListHeight(rows: rowRange.lowerBound)...chrome(banner: banner)
+      + maxListHeight(rows: rowRange.upperBound)
+  }
+
+  /// 拖到这么高对应最多几行：按半行吸附，夹在 rowRange 里（纯函数，配单测）
+  static func rows(forHeight height: CGFloat, banner: Bool) -> Double {
+    let rows = 8.5 + Double((height - chrome(banner: banner) - maxListHeight) / ClipRowView.height)
+    return min(max((rows - 0.5).rounded() + 0.5, rowRange.lowerBound), rowRange.upperBound)
+  }
   static let emptyListHeight: CGFloat = 140
   /// 筛选面板 / ⌘K 开着时列表区至少这么高（8.5 行菜单 + 上下余量），短列表时面板先长到放得下
   static let paletteListHeight: CGFloat = ActionMenu.rowHeight * 8.5 + 26
@@ -121,7 +147,8 @@ struct ClipboardPanelView: View {
     .onChange(
       of: Self.height(
         rows: items.count + (newSnippet ? 1 : 0), sections: sections.count,
-        reservesLens: showsLens && !items.isEmpty, banner: !trusted, model: model),
+        reservesLens: showsLens && !items.isEmpty, banner: !trusted, model: model,
+        maxRows: maxRows),
       initial: true
     ) { _, height in model.resize(height) }
     .onModifierKeysChanged(mask: [.command, .option]) { _, keys in heldKeys = keys }
@@ -144,37 +171,43 @@ struct ClipboardPanelView: View {
 
   /// 面板高度（窗口和截图自检同一个算法）：56 + 0.5 +（授权横幅）+ 列表区 + 36。列表区 =
   /// min(上下内缩 12 + 24 × 分组数 + 40 × 行数 + 透镜预留, 427.5)，空列表 140；对话框开着给满，浮起的菜单开着至少放得下 8.5 行
+  /// maxRows：拖下边定的最多几行（0 = 默认 8.5）
   static func height(
-    rows: Int, sections: Int, reservesLens: Bool, banner: Bool, model: ClipboardPanelModel
+    rows: Int, sections: Int, reservesLens: Bool, banner: Bool, model: ClipboardPanelModel,
+    maxRows: Double = 0
   ) -> CGFloat {
-    var list = listHeight(rows: rows, sections: sections, reservesLens: reservesLens)
+    var list = listHeight(
+      rows: rows, sections: sections, reservesLens: reservesLens, maxRows: maxRows)
     if model.dialog != nil {
-      list = maxListHeight
+      list = maxListHeight(rows: maxRows)
     } else if model.palette != nil {
       list = max(list, paletteListHeight)
     }
-    return searchHeight + 0.5 + (banner ? bannerHeight : 0) + list + barHeight
+    return chrome(banner: banner) + list
   }
 
-  static func listHeight(rows: Int, sections: Int, reservesLens: Bool) -> CGFloat {
+  static func listHeight(rows: Int, sections: Int, reservesLens: Bool, maxRows: Double = 0)
+    -> CGFloat
+  {
     guard rows > 0 else { return emptyListHeight }
     let content =
       inset * 2 + headerHeight * CGFloat(sections) + ClipRowView.height * CGFloat(rows)
       + (reservesLens ? Lens.reserve : 0)
-    return min(content, maxListHeight)
+    return min(content, maxListHeight(rows: maxRows))
   }
 
   /// 按模型现算（AppDelegate 建窗口、截图自检用）；视图里用上面那个，省一次搜索
   static func height(
     for model: ClipboardPanelModel,
     showsLens: Bool = UserDefaults.standard.bool(forKey: Prefs.clipboardShowPreview),
-    banner: Bool = !Permissions.isAccessibilityTrusted
+    banner: Bool = !Permissions.isAccessibilityTrusted,
+    maxRows: Double = UserDefaults.standard.double(forKey: Prefs.clipboardPanelRows)
   ) -> CGFloat {
     let items = model.visibleItems
     return height(
       rows: items.count + (model.showsNewSnippetRow(in: items) ? 1 : 0),
       sections: daySections(items).count,
-      reservesLens: showsLens && !items.isEmpty, banner: banner, model: model)
+      reservesLens: showsLens && !items.isEmpty, banner: banner, model: model, maxRows: maxRows)
   }
 
   // MARK: 搜索线
@@ -731,7 +764,9 @@ struct ListLayout {
   /// 滚动位置落在第 band 段时要画的项（ListWindow：上下各多画一些，可见区最高 maxListHeight）
   func window(band: Int) -> Range<Int> {
     ListWindow.range(
-      tops, band: band, inset: ClipboardPanelView.inset, viewport: ClipboardPanelView.maxListHeight)
+      tops, band: band, inset: ClipboardPanelView.inset,
+      // 按拖得最高的那么多行算：多画几行不碍事，省得每次读设置
+      viewport: ClipboardPanelView.maxListHeight(rows: ClipboardPanelView.rowRange.upperBound))
   }
 }
 

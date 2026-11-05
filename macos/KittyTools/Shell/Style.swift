@@ -33,6 +33,8 @@ enum Style {
 
   /// 列表型面板（剪贴板、启动器）的宽：两块面板同位置同宽（mac-whisker-clipboard「窗口」），只写这一处
   static let listPanelWidth: CGFloat = 720
+  /// 启动器、剪贴板面板拖左右边能拖到多宽（2026-11-05 W1）
+  static let listPanelWidths: ClosedRange<CGFloat> = 560...1200
 
   // MARK: 动效
 

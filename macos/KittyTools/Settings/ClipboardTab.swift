@@ -73,6 +73,9 @@ struct ClipboardTab: View {
           Text("单击条目直接粘贴")
           Text("关着时单击选中、双击粘贴；打开后点一下就粘贴，想先看内容用 ↑↓，⌘ 单击、⇧ 单击照常多选")
         }
+        PanelSizeRow(
+          detail: "拖左右两边改宽度，拖下边改最多显示几行", widthKey: Prefs.clipboardPanelWidth,
+          heightKey: Prefs.clipboardPanelRows, defaultWidth: Style.listPanelWidth)
       }
       .gated(by: .clipboard)
       Section("内容") {
