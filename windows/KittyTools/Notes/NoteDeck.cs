@@ -906,6 +906,13 @@ internal sealed partial class NoteDeckBay
     /// <summary>打开的便签失去了前台（点了别处）：没固定的收起。</summary>
     public void SheetDeactivated()
     {
+        // 前台换成了自己的窗口（剪贴板面板、启动器、翻译浮窗……）：不收——从它们粘回这条便签要它还在（第 8 批）。
+        // 之后在别处按了左键由 Watch 收（那时它已经没拿键盘）
+        if (Foreground.IsOurs(Foreground.Get()))
+        {
+            return;
+        }
+
         if (_state.Phase == NoteDeckPhase.Open)
         {
             Send(NoteDeckEvent.ClickedOutside(Current?.IsPinned ?? false));

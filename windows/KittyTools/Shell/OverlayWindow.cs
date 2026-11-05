@@ -158,7 +158,9 @@ internal sealed unsafe class OverlayWindow : Window
         _host.RequestedTheme = Theme.ElementTheme;
 
         var before = Foreground.Get();
-        if (before != default && !Foreground.IsOurs(before))
+        // 便签的正文拿着焦点（全部便签窗口、那叠里打开的、浮动便签）：粘进那条便签（PLAN-v13 第 8 批，同 mac「从剪贴板 / 启动器粘贴落进便签」；
+        // 还前台 + Ctrl+V，正文自己的粘贴接住：纯文本、图片照常）
+        if (before != default && (!Foreground.IsOurs(before) || NoteEditing.Focused() is not null))
         {
             _previousForeground = before;
         }

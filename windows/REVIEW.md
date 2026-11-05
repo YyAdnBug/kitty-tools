@@ -181,6 +181,19 @@ WIC 的 `BitmapDecoder.HeifDecoderId`、`DecoderInformation.CodecId`；`NoteStor
 **替用户定的**：「导入…」是两项的小菜单（Windows 的选择框不能同时选文件和文件夹）；裁切只有自由比例、用对话框（mac 原地一层、7 种比例）；没有拖右下角改宽的把手；
 文件名额外替换 Windows 不许的字符、设备名前加 `_`；导入时文件名排序用当前区域的不区分大小写比较（mac 是自然顺序）。
 
+### 第 8 批：和剪贴板、启动器、翻译打通，收尾 → 已写（审查方，`git log --grep "PLAN-v13 第 8 批"`，没编译）
+
+- 从剪贴板面板 / 启动器粘进便签：`OverlayWindow.ShowOverlay` 记粘贴目标时，前台是自己的窗口但便签正文拿着焦点（`NoteEditing.Focused()`）也认它；粘的时候照常还前台 + Ctrl+V，
+  正文自己的粘贴接住（纯文本、图片照第 4 批）。那叠里打开的便签：前台换成自己的窗口（剪贴板面板、启动器、翻译浮窗）不算点了别处（`NoteDeckBay.SheetDeactivated`）。
+- 便签里划词翻译：前台是便签、正文里选了字 → 直接读选区（`NoteEditor.SelectedText` 去掉图片令牌，不发 Ctrl+C、不碰剪贴板），替换照常粘回那扇便签窗口；
+  「划词翻译并替换」在便签里直接换掉选区（`TranslateHost.ReplaceInNoteAsync`：译完时还是那条、选的还是那段才换，不然只复制）。
+- 启动器三项在第 5 批已经做了；`MAC-DIFF.md` 加「便签」一节（长期例外 + 还没对齐），`STATUS.md` §1 加一段现状。
+
+**要特别看的**：
+1. 剪贴板面板从便签里呼出再粘：Ctrl+V 进的是 RichEditBox 自己的粘贴（`NoteEditor.PasteAsync`，纯文本），不是 RichEdit 默认的带格式粘贴。
+2. 那叠里打开的便签：呼出剪贴板面板时它不收；面板关了之后焦点回到便签（`Foreground.Restore` 到便签那扇窗）。
+3. 翻译浮窗的「替换」粘回便签窗口时，`Paster.Paste` 的「目标是管理员程序」那一步对自己的窗口不误判。
+
 ## PLAN-v12（跟上 mac：先把没有的功能做出来，2026-11-05 用户「先把未实现的功能实现」）
 
 清单和分批在 `PLAN-v12.md`（不是拍板页，行为照 mac）；分工同 PLAN-v11 D10。

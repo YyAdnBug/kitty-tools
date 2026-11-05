@@ -1,6 +1,7 @@
 // 翻译浮窗的入口：划词 / 输入 / 复制即译 / 截图翻译 / 剪贴板里的「翻译」，还有不开浮窗的「划词翻译并替换」。
 // 划词取到词之前不显示浮窗（先显示会抢走原窗口的焦点，选区就没了）。
 using KittyTools.Core;
+using KittyTools.Core.Notes;
 using KittyTools.Infrastructure;
 
 namespace KittyTools;
@@ -76,9 +77,11 @@ internal static class TranslateHost
             OverlayHost.Hide(restoreForeground: false);
             _window?.Hide(restoreForeground: false);
             // 取词时的前台：替换原文要粘回它，粘之前核对进程还是不是它（PLAN-v9-translate B7）。
+            // 前台是便签、正文里选了字（PLAN-v13 第 8 批，同 mac「便签里划词」）：直接读选区，不发 Ctrl+C；替换照常粘回那扇便签窗口。
             var source = Foreground.Get();
-            var target = Foreground.IsOurs(source) ? null : new ReplaceTarget(string.Empty, source, Foreground.PidOf(source));
-            var text = await SelectionReader.ReadAsync(CancellationToken.None);
+            var note = NoteEditing.Focused() is { } editor && editor.SelectedText.Length > 0 ? NoteSelection(editor) : null;
+            var target = Foreground.IsOurs(source) && note is null ? null : new ReplaceTarget(string.Empty, source, Foreground.PidOf(source));
+            var text = note ?? await SelectionReader.ReadAsync(CancellationToken.None);
             _window ??= new TranslateWindow();
             if (string.IsNullOrWhiteSpace(text))
             {
@@ -154,6 +157,9 @@ internal static class TranslateHost
         ShellRuntime.Instance?.ShowSettings(welcome: false, page: "translate", service: serviceId);
     }
 
+    /// <summary>便签正文里选的字（翻译用：图片令牌去掉，任务方框、标记照原样——同 mac 读的是存的形式）。</summary>
+    private static string NoteSelection(NoteEditor editor) => NoteImages.Stripping(editor.SelectedText);
+
     /// <summary>
     /// 划词翻译并替换（静默，照 mac translateAndReplace，PLAN-v9-translate F7）：取词 → 第一个启用的服务翻译（等完整结果）→
     /// 补回原选区首尾的空白 → 粘回替换选区。不开浮窗，用轻提示报进度和结果；翻译期间再按一次热键取消。默认不设快捷键。
@@ -171,6 +177,13 @@ internal static class TranslateHost
 
         if (_selectionBusy || ScreenshotSession.IsActive)
         {
+            return;
+        }
+
+        // 前台是便签、正文里选了字（PLAN-v13 第 8 批）：读选区、译完直接换掉选区（不经剪贴板）
+        if (NoteEditing.Focused() is { } noteEditor && noteEditor.SelectedText.Length > 0)
+        {
+            await ReplaceInNoteAsync(noteEditor);
             return;
         }
 
@@ -296,5 +309,62 @@ internal static class TranslateHost
         }
 
         ShowText(text, fromCopy: true);
+    }
+
+    /// <summary>便签里的「划词翻译并替换」：译完时还是那条便签、选的还是那段字才换（一步撤销，换的是存的形式）；不然只复制译文。</summary>
+    private static async Task ReplaceInNoteAsync(NoteEditor editor)
+    {
+        var noteId = editor.NoteId;
+        var selected = editor.SelectedText;
+        var text = NoteSelection(editor);
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            NoticeHost.Show("没有选中文字", string.Empty, NoticeTone.Warning);
+            return;
+        }
+
+        var cts = new CancellationTokenSource();
+        _replace = cts;
+        NoticeHost.Show("翻译中…", "再按一次快捷键取消", NoticeTone.Normal);
+        try
+        {
+            var result = TranslateSession.Rewrap(await TranslateCoordinator.TranslateOnceAsync(text, cts.Token), text);
+            if (cts.IsCancellationRequested)
+            {
+                return;
+            }
+
+            if (editor.NoteId == noteId && editor.SelectedText == selected)
+            {
+                editor.InsertText(result);
+                ClipboardService.Instance?.Store.RecordOwnText(result);
+                NoticeHost.Show("已替换为译文", TranslateSession.Excerpt(result), NoticeTone.Normal);
+            }
+            else if (ClipboardWriter.WriteText(result))
+            {
+                ClipboardService.Instance?.MarkOwnWrite();
+                ClipboardService.Instance?.Store.RecordOwnText(result);
+                NoticeHost.Show("已复制译文", "选区已经变了，没有替换", NoticeTone.Normal);
+            }
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            if (!cts.IsCancellationRequested)
+            {
+                NoticeHost.Show("翻译失败", ex.Message, NoticeTone.Error);
+            }
+        }
+        finally
+        {
+            if (_replace == cts)
+            {
+                _replace = null;
+            }
+
+            cts.Dispose();
+        }
     }
 }
