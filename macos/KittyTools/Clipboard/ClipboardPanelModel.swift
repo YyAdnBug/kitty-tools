@@ -8,7 +8,7 @@
 // ⌘K 或 →（光标在末尾）打开操作面板，← 关掉；两个面板开着时搜索框用来过滤条目，↑↓ ↩ 选择执行，Esc 关掉；
 // ⌘K 里「移到收藏夹 ›」→ / ↩ 进子列表、← / Esc 回来；右键菜单和 ⌘K 是同一份动作表（actions(for:targets:)）；
 // ⌘Y 放大预览（QuickLookView，单独的浮层，不抢键盘：↑↓ 照样在这里换条目）。
-// 按类型的动作：⌘T 翻译、⌘O 打开链接 / 文件、⌘R 在访达中显示、⌥⌘C 复制路径、图片钉到屏幕；行能拖到别的 App（dragItems）。
+// 按类型的动作：⌘T 翻译、⌘O 打开链接 / 文件、⌘R 在访达中显示、⌥⌘C 复制路径、图片和文字钉到屏幕；行能拖到别的 App（dragItems）。
 
 import AppKit
 import Carbon.HIToolbox
@@ -874,13 +874,23 @@ import Observation
     island.show("已复制", detail: Island.excerpt(text))
   }
 
+  /// 钉得了的条目：图片，和有字的文字条目（2026-11-05，同「钉住剪贴板内容」：排成卡片 PinBoard.textCard）。文件不钉（只有文件名）
+  static func isPinnable(_ item: ClipItem) -> Bool {
+    switch item.kind {
+    case .image: true
+    case .text: item.text.flatMap(PinBoard.pinnableText) != nil
+    case .file: false
+    }
+  }
+
   /// 钉到屏幕（体检 D1）：按像素 ÷ 鼠标所在屏的 backingScaleFactor 得点尺寸，超过可见区 80% 等比缩小，
   /// 钉在可见区中央；面板没固定就先收起。让开屏幕上已有的钉图（PinBoard.clipboardFrame：从中央往右下找第一个空格，
-  /// 同「钉住剪贴板里的图」）：同一张钉两次、多选的几张都依次错开，不叠在一起。整张解码在后台（缩略图接口按原尺寸取）
+  /// 同「钉住剪贴板里的图」）：同一张钉两次、多选的几张都依次错开，不叠在一起。图片整张解码在后台（缩略图接口按原尺寸取）；
+  /// 文字条目在主线程排成卡片（按这一刻的外观定深浅），只钉纯文字、不带格式
   func pin(_ items: [ClipItem]) {
-    let images = items.filter { $0.kind == .image }
-    guard !images.isEmpty else { return }
-    if let gone = unavailable(images) {
+    let pinnable = items.filter(Self.isPinnable)
+    guard !pinnable.isEmpty else { return }
+    if let gone = unavailable(pinnable) {
       island?.show("没能钉到屏幕", detail: gone, tone: .error)
       return
     }
@@ -891,12 +901,21 @@ import Observation
     if !isPinned { hidePanel() }
     let files = store.images
     let (pinImage, pinnedFrames) = (pinImage, pinnedFrames)
+    let appearance = NSApp.effectiveAppearance
     Task {
       // 一张一张钉：前一张钉上了才算下一张的位置，多选的几张也互相让开
-      for item in images {
-        guard let info = item.image,
-          let image = await files.thumbnail(for: item.id, maxPixel: max(info.width, info.height))
-        else { continue }
+      for item in pinnable {
+        let image: CGImage? =
+          if item.kind == .text, let text = item.text.flatMap(PinBoard.pinnableText) {
+            PinBoard.textCard(
+              text, scale: scale, limit: PinBoard.textCardLimit(visible: visible),
+              appearance: appearance)
+          } else if let info = item.image {
+            await files.thumbnail(for: item.id, maxPixel: max(info.width, info.height))
+          } else {
+            nil
+          }
+        guard let image else { continue }
         pinImage(
           image,
           PinBoard.clipboardFrame(
@@ -1235,7 +1254,7 @@ import Observation
       } else if let link = firstLink(of: single) {
         add("打开链接", "safari", "⌘O", section: 1) { [unowned self] in openLink(link) }
       }
-      if single.kind == .image, canPin {
+      if canPin, Self.isPinnable(single) {
         add("钉到屏幕", "pin", section: 1) { [unowned self] in pin([single]) }
       }
       if canTranslate(single) {
@@ -1250,7 +1269,7 @@ import Observation
         select(single)
         toggleQuickLook()
       }
-    } else if canPin, targets.contains(where: { $0.kind == .image }) {
+    } else if canPin, targets.contains(where: Self.isPinnable) {
       add("钉到屏幕", "pin", section: 1) { [unowned self] in pin(targets) }
     }
     // 2 收藏、收藏夹、片段、备注、编辑

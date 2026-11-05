@@ -98,7 +98,7 @@ extension PinBoard {
 
   /// 剪贴板里要钉的文字（issue #4）：没有图片时才轮到它（AppDelegate 先问 clipboardImage）。有文件就不算（访达复制文件时
   /// 字符串是文件名）；密码管理器标了 ConcealedType 的不钉（不把密码明着摆在屏幕上，同剪贴板历史不记它）。
-  /// 首尾的空行去掉，行首的缩进留着；只有空白 → nil
+  /// 收拾同 pinnableText
   static func clipboardText(in pasteboard: NSPasteboard = .general) -> String? {
     let options: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
     if let files = pasteboard.readObjects(forClasses: [NSURL.self], options: options),
@@ -106,11 +106,16 @@ extension PinBoard {
     {
       return nil
     }
-    guard pasteboard.types?.contains(.init("org.nspasteboard.ConcealedType")) != true,
-      let text = pasteboard.string(forType: .string)?.trimmingCharacters(in: .newlines),
-      !text.allSatisfy(\.isWhitespace)
-    else { return nil }
-    return text
+    guard pasteboard.types?.contains(.init("org.nspasteboard.ConcealedType")) != true else {
+      return nil
+    }
+    return pasteboard.string(forType: .string).flatMap(pinnableText)
+  }
+
+  /// 要钉的文字（纯函数；剪贴板、剪贴板历史里的文字条目共用）：首尾的空行去掉，行首的缩进留着；只有空白 → nil
+  nonisolated static func pinnableText(_ raw: String) -> String? {
+    let text = raw.trimmingCharacters(in: .newlines)
+    return text.allSatisfy(\.isWhitespace) ? nil : text
   }
 
   /// 文字卡片最大多大（点）：宽 560、不超过可见区的六成；高到可见区的八成（clipboardFrame 超过八成才缩，卡片不会被缩小）
