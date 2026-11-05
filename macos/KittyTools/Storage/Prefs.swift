@@ -331,6 +331,10 @@ enum Prefs {
   static let settingsCollapsedGroups = "settingsCollapsedGroups"
   /// 设置侧栏底下「已关闭」那组展开着没有（默认收起；SettingsRoot）。这台电脑自己的界面状态：不注册默认值、不导出不同步
   static let settingsShowsOffFeatures = "settingsShowsOffFeatures"
+  /// 新功能标记（Shell/WhatsNew.swift，2026-11-05）的账：各版本在这台 Mac 上第一次打开的时刻（版本号 → Date，从这一刻起挂 30 天）、
+  /// 碰过哪几个（WhatsNew.Entry.id 的数组）。这台电脑自己的状态：不注册默认值、不导出不同步
+  static let whatsNewStarted = "whatsNewStarted"
+  static let whatsNewTouched = "whatsNewTouched"
   /// 设置与数据的每日自动备份（Storage/SettingsBackup.swift，2026-10-08）。下面六个都是这台电脑自己的状态，**不注册默认值**：
   /// 不跟着导出 / 导入走（别人给的文件不该能关掉备份、改备份存到哪）。
   /// 开关：没存过 = 开——读它用 SettingsBackup.isEnabled 或 @AppStorage 的初值 true，别用 bool(forKey:)

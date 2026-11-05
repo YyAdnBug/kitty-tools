@@ -1460,6 +1460,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   func run(_ action: HotKeyAction, byKey: Bool = false) {
     // 关着的功能（Feature）：入口都藏了，这里兜底一道（漏网的路——别处直接调过来的——也挡住）
     guard action.isActive else { return }
+    // 新功能标记：用过一次就各处一起没（菜单、主界面、快捷键、启动器都走这里）
+    WhatsNew.touch(action: action)
     // 启动台是全屏面板：按别的功能键时先收掉（它自己的键走 toggle）
     if action != .launchpad, launchpad.isOpen { launchpad.close(animated: false) }
     // 主界面开着时按了别的功能（快捷键）：先收起它（从主界面点的，它已经收了）
@@ -1541,6 +1543,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       submenu.addAction(
         minutes == 60 ? "1 小时后提醒我" : "\(minutes) 分钟后提醒我", symbol: "timer", color: color
       ) { [unowned self] in
+        // 子菜单里的快捷提醒也算用过提醒（新功能标记）
+        WhatsNew.touch(action: family)
         addReminder(
           Reminder(
             id: UUID().uuidString, title: ReminderPhrase.defaultTitle,
@@ -3013,6 +3017,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     // 从有「请求过」标记之前的版本升上来的：系统的授权框多半早弹过，标记补成请求过（U10）
     if let last { Permissions.adoptRequestFlags(upgradingFrom: last, defaults: defaults) }
+    // 新功能标记：上次打开的版本之后加的那几样从现在起标（新装走不到这里，不标）
+    WhatsNew.adopt(upgradingFrom: last, to: AboutTab.version, defaults: defaults)
     defaults.set(AboutTab.version, forKey: Prefs.lastSeenVersion)
     if last != AboutTab.version {
       let summary = AboutTab.releases.first { $0.version == AboutTab.version }?.summary
