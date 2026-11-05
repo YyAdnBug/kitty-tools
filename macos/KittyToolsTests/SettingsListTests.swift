@@ -29,12 +29,27 @@ struct SettingsListTests {
     #expect(SettingsPage.groups.flatMap { $0 } == pages)
     // 没有启动台（macOS 15）时那一组只剩程序坞预览；搜索只剩一组里的页时别的组不画
     #expect(
-      SettingsPage.grouped(SettingsPage.visible(launchpad: false))
+      SettingsPage.sidebar(SettingsPage.visible(launchpad: false), off: []).map(\.pages)
         == [
           [.general], [.clipboard, .launcher, .translate], [.screenshot, .record],
           [.notes, .reminders, .statusScreen], [.dockPreview], [.hotkeys, .about],
         ])
-    #expect(SettingsPage.grouped([.reminders, .about]) == [[.reminders], [.about]])
+    #expect(
+      SettingsPage.sidebar([.reminders, .about], off: []).map(\.pages) == [[.reminders], [.about]])
+    // 关着的功能挪进最底下「已关闭（N）」那组（照侧栏顺序）；整组都关了的组不画；组的标题不因为头一页挪走而丢
+    let closed = SettingsPage.sidebar(
+      SettingsPage.allCases, off: [.notes, .dockPreview, .launchpad, .record])
+    #expect(
+      closed.map(\.pages) == [
+        [.general], [.clipboard, .launcher, .translate], [.screenshot],
+        [.reminders, .statusScreen],
+        [.hotkeys, .about], [.record, .notes, .launchpad, .dockPreview],
+      ])
+    #expect(closed.map(\.title) == [nil, "文字与搜索", "截图与录制", "便签与提醒", nil, "已关闭（4）"])
+    #expect(closed.map(\.isOff) == [false, false, false, false, false, true])
+    #expect(Set(closed.map(\.id)).count == closed.count)
+    // 搜索时只剩对上的：关着的那页照样在「已关闭」里
+    #expect(SettingsPage.sidebar([.notes], off: [.notes]).map(\.title) == ["已关闭（1）"])
     // 组标题（2026-11-04 真机反馈）：一组里的页同一个标题；功能那四组有，一头一尾两组没有
     for group in SettingsPage.groups {
       #expect(Set(group.map(\.groupTitle)).count == 1, "\(group)")

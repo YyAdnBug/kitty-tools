@@ -329,6 +329,8 @@ enum Prefs {
   static let settingsPage = "settingsPage"
   /// 设置侧栏收起了哪几组（组标题，换行隔开；SettingsRoot）。这台电脑自己的界面状态：不注册默认值、不导出不同步
   static let settingsCollapsedGroups = "settingsCollapsedGroups"
+  /// 设置侧栏底下「已关闭」那组展开着没有（默认收起；SettingsRoot）。这台电脑自己的界面状态：不注册默认值、不导出不同步
+  static let settingsShowsOffFeatures = "settingsShowsOffFeatures"
   /// 设置与数据的每日自动备份（Storage/SettingsBackup.swift，2026-10-08）。下面六个都是这台电脑自己的状态，**不注册默认值**：
   /// 不跟着导出 / 导入走（别人给的文件不该能关掉备份、改备份存到哪）。
   /// 开关：没存过 = 开——读它用 SettingsBackup.isEnabled 或 @AppStorage 的初值 true，别用 bool(forKey:)
