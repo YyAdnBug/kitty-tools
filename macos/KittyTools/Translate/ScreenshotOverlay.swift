@@ -64,7 +64,7 @@ nonisolated enum ScreenshotOverlay {
   /// 这段有没有值得翻译的内容：字母、数字、汉字都算；纯标点、分隔线、装饰符不算。
   /// OCR 常把一条分割线认成 `———`、把项目符号认成 `•`，这种送去有道网页版会直接回错误码 40，
   /// 一段失败就拖垮整张图（分段翻译是串行的）
-  static func worthTranslating(_ text: String) -> Bool {
+  static func hasTranslatableContent(_ text: String) -> Bool {
     text.unicodeScalars.contains {
       CharacterSet.letters.contains($0) || CharacterSet.decimalDigits.contains($0)
     }
@@ -82,7 +82,7 @@ nonisolated enum ScreenshotOverlay {
       let text = translations[index].trimmingCharacters(in: .whitespacesAndNewlines)
       // 纯符号的段（分隔线、装饰符，OCR 常认成 `———`）不覆盖：里面没有可翻译的内容，
       // 送去服务那边还会直接回错误码（有道网页版是 40）
-      guard !text.isEmpty, Self.worthTranslating(segment.text) else { continue }
+      guard !text.isEmpty, Self.hasTranslatableContent(segment.text) else { continue }
       let pad = max(1, segment.lineHeight * 0.05)
       let gap = max(2, segment.lineHeight * 0.3)
       let margin = max(2, segment.lineHeight * 0.2)
