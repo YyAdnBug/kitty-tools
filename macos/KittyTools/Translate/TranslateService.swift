@@ -1,4 +1,5 @@
-// 翻译服务配置：列表里只有加进来的服务（体检 B21）——8 个内置服务（智谱、百度、有道、Google、DeepL、微软、火山、腾讯）
+// 翻译服务配置：列表里只有加进来的服务（体检 B21）——10 个内置服务（智谱、百度、有道、Google、DeepL、微软、火山、腾讯，
+// 2026-11-05 加了不用 key 的系统翻译（macOS 26 起）和有道词典（只查单词））
 // 可删、在设置「+」里加回来，外加用户自建的 AI 实例（OpenAI 兼容 / Azure / Anthropic，「+」里有厂商预设，D15）。
 // 从没存过列表时默认只有智谱（启用）。列表顺序即结果卡片顺序。
 // 非密钥配置以 JSON 存 UserDefaults，密钥存钥匙串（账户名 "<服务 id>.<字段>"，字段名已定，改名会读不到已存的密钥）。
@@ -9,7 +10,11 @@ import Observation
 
 nonisolated struct TranslateService: Codable, Identifiable, Hashable, Sendable {
   enum Kind: String, Codable, CaseIterable, Sendable {
-    case zhipu, baidu, youdao, google, deepl, microsoft, volcengine, tencent, ai
+    // 新的种类只能加在 ai 前面的末尾：原值就是存下来的 id，顺序是设置「+」菜单的顺序
+    case zhipu, baidu, youdao, google, deepl, microsoft, volcengine, tencent, apple, youdaoDict, ai
+
+    /// 只查单词和短语的词典类服务：不是单词时不开卡片，不当主结果、不进静默替换（S2）
+    var isDictionary: Bool { self == .youdaoDict }
 
     var defaultName: String {
       switch self {
@@ -21,6 +26,8 @@ nonisolated struct TranslateService: Codable, Identifiable, Hashable, Sendable {
       case .microsoft: "微软翻译"
       case .volcengine: "火山翻译"
       case .tencent: "腾讯翻译"
+      case .apple: "系统翻译"
+      case .youdaoDict: "有道词典"
       case .ai: "AI 服务"
       }
     }
@@ -140,6 +147,7 @@ nonisolated struct TranslateService: Codable, Identifiable, Hashable, Sendable {
         SecretField(name: "secretId", label: "SecretId"),
         SecretField(name: "secretKey", label: "SecretKey"),
       ]
+    case .apple, .youdaoDict: []
     }
   }
 
@@ -155,6 +163,8 @@ nonisolated struct TranslateService: Codable, Identifiable, Hashable, Sendable {
     case .microsoft: Microsoft.stream(request, service: self)
     case .volcengine: Volcengine.stream(request, service: self)
     case .tencent: Tencent.stream(request, service: self)
+    case .apple: AppleTranslation.stream(request, service: self)
+    case .youdaoDict: YoudaoDict.stream(request, service: self)
     }
   }
 
@@ -209,6 +219,7 @@ nonisolated struct TranslateService: Codable, Identifiable, Hashable, Sendable {
   var missingBuiltins: [TranslateService.Kind] {
     TranslateService.Kind.allCases.filter { kind in
       kind != .ai && !services.contains { $0.id == kind.rawValue }
+        && (kind != .apple || AppleTranslation.isAvailable)
     }
   }
 

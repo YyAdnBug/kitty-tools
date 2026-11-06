@@ -71,15 +71,18 @@ struct TranslateServiceDetail: View {
         options(service)
         if current.kind == .ai { modelRow(service) }
       }
-      Section {
-        ForEach(current.secretFields, id: \.name) { field in
-          SecureField(field.label, text: secretBinding(field.name), prompt: Text(field.prompt))
-            .focused($focusedSecret, equals: field.name)
+      // 系统翻译、有道词典不用密钥
+      if !current.secretFields.isEmpty {
+        Section {
+          ForEach(current.secretFields, id: \.name) { field in
+            SecureField(field.label, text: secretBinding(field.name), prompt: Text(field.prompt))
+              .focused($focusedSecret, equals: field.name)
+          }
+        } header: {
+          Text("密钥")
+        } footer: {
+          SectionFootnote("只存在这台 Mac 的钥匙串里。")
         }
-      } header: {
-        Text("密钥")
-      } footer: {
-        SectionFootnote("只存在这台 Mac 的钥匙串里。")
       }
       Section {
         HStack(spacing: 8) {
@@ -97,7 +100,8 @@ struct TranslateServiceDetail: View {
           Spacer(minLength: 0)
         }
       } footer: {
-        SectionFootnote("用「Hello, world」做一次英译中。")
+        SectionFootnote(
+          current.kind.isDictionary ? "查一次 hello。" : "用「Hello, world」做一次英译中。")
       }
       if current.kind == .ai {
         Section {
@@ -234,7 +238,9 @@ struct TranslateServiceDetail: View {
     guard let service = store.services.first(where: { $0.id == id }) else { return }
     isBusy = true
     result = nil
-    let request = TranslateRequest(text: "Hello, world", from: .en, to: .zhHans)
+    // 词典类服务只查单词
+    let request = TranslateRequest(
+      text: service.kind.isDictionary ? "hello" : "Hello, world", from: .en, to: .zhHans)
     Task {
       defer { isBusy = false }
       do {
@@ -300,6 +306,8 @@ extension TranslateService {
           secret("authKey") == nil ? ("未填密钥", true) : ("官方 API", false)
         }
       case .microsoft: (secret("subscriptionKey") == nil ? "免费 Edge 接口" : "Azure 翻译", false)
+      case .apple: AppleTranslation.isAvailable ? ("离线 · 本机翻译", false) : ("要 macOS 26", true)
+      case .youdaoDict: ("免费 · 只查单词", false)
       default:
         secretFields.allSatisfy { secret($0.name) != nil } ? ("已填密钥", false) : ("未填密钥", true)
       }

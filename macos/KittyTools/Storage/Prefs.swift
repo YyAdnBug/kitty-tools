@@ -89,6 +89,9 @@ enum Prefs {
   /// 截图翻译时把识别出的原文也写进剪贴板（2026-10-23 用户要的，⌘V 就能贴原文）；默认关：照旧只记进剪贴板历史、
   /// 不换掉剪贴板里原来的东西
   static let translateCopyRecognized = "translateCopyRecognized"
+  /// 截图翻译（⌥S）和截图工具栏的「翻译」把译文直接盖回截图上、留在截图页里（2026-11-05，PR #5 + 用户要的开关）；
+  /// 默认关：照旧在翻译浮窗里看（多服务对比、能复制译文）
+  static let translateScreenshotOverlay = "translateScreenshotOverlay"
   static let translateHistoryEnabled = "translateHistoryEnabled"
   /// 翻译历史保留条数（收藏不算、永不淘汰），0 = 不限（体检 A18：1000 / 5000 / 不限，默认 5000）
   static let translateHistoryLimit = "translateHistoryLimit"
@@ -108,6 +111,18 @@ enum Prefs {
   static let translateSystemDictionary = "translateSystemDictionary"
   /// 查单个词时大模型按词典格式回答：读音、词性释义、例句（D4）
   static let translateWordMode = "translateWordMode"
+  /// 三块主面板拖出来的大小（2026-11-05 拍板 W1 W2）：宽度（pt）、启动器 / 剪贴板最多露几行（x.5）、翻译浮窗最高多高（pt）。
+  /// 都是这台电脑自己的状态（屏幕不一样大），**不注册默认值**、不跟导出走；0 / 没写过 = 默认
+  static let launcherPanelWidth = "launcherPanelWidth"
+  static let clipboardPanelWidth = "clipboardPanelWidth"
+  static let translatePanelWidth = "translatePanelWidth"
+  static let launcherPanelRows = "launcherPanelRows"
+  static let clipboardPanelRows = "clipboardPanelRows"
+  static let translatePanelMaxHeight = "translatePanelMaxHeight"
+  /// 英文单词用真人发音（有道词典的录音；关掉或取不到时用系统声音，2026-11-05 拍板 R3）
+  static let translateWordRecording = "translateWordRecording"
+  /// 英文单词的发音：us（美音，默认）/ uk（英音）
+  static let translateWordAccent = "translateWordAccent"
 
   /// 截图 ⌘S 快速保存的目录（设置 › 截图「快速保存到」选的；「另存为」不改它，体检 A28）；没设 = 系统截屏的存储位置
   nonisolated static let screenshotSaveDirectory = "screenshotSaveDirectory"
@@ -393,12 +408,15 @@ enum Prefs {
       translateRemoveNewlines: false,
       translateAutoCopy: false,
       translateCopyRecognized: false,
+      translateScreenshotOverlay: false,
       translateHistoryEnabled: true,
       translateHistoryLimit: 5000,
       translatePanelPosition: "top",
       translateCopyToTranslate: false,
       translateSystemDictionary: true,
       translateWordMode: true,
+      translateWordRecording: true,
+      translateWordAccent: "us",
       translateFontScale: 1.0,
       translateCollapsedServices: "",
       ocrJoinLines: false,

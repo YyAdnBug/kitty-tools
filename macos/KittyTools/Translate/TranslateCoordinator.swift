@@ -93,7 +93,8 @@ import Observation
   /// 查单个词时系统词典的释义（不是单个词、查不到、设置关掉时为 nil）；setter 不设 private 只为截图自检
   var dictionary: DictionaryEntry?
   /// 这次原文是单个词、大模型按词典格式回答（结果是释义不是译文：不自动复制、不给「替换原文」）
-  private(set) var isWordLookup = false
+  /// setter 不设 private 只为截图自检（单词卡的读音行）
+  var isWordLookup = false
 
   let services: TranslateServiceStore
   let history: HistoryStore
@@ -150,6 +151,8 @@ import Observation
   /// 纯函数，配单测
   static func primary(of cards: [Card]) -> (service: TranslateService, text: String)? {
     for card in cards {
+      // 词典类服务给的是释义，不是译文（S2）
+      if card.service.kind.isDictionary { continue }
       switch card.state {
       case .done(let text) where !text.isEmpty: return (card.service, text)
       case .waiting, .running: return nil
@@ -283,7 +286,11 @@ import Observation
     request = plan.request
     isWordLookup = plan.request.isWord
     recordedPrimary = nil
-    cards = services.enabled.map { Card(service: $0, state: .waiting) }
+    // 词典类服务只查单词和短语（S2）
+    let lookup = WordLookup.isWord(text) || WordLookup.isPhrase(text)
+    cards = services.enabled.filter { lookup || !$0.kind.isDictionary }.map {
+      Card(service: $0, state: .waiting)
+    }
     runAll(text)
   }
 
@@ -348,8 +355,9 @@ import Observation
     return Lang.detect(trimmed, preferring: [first, second]) != nil
   }
 
-  /// 按浮窗上选的源 / 目标（全局记住的）和检测结果定这次的请求；wordMode：单个词时让大模型按词典格式回答
-  private static func plan(for text: String, wordMode: Bool = true) -> (
+  /// 按浮窗上选的源 / 目标（全局记住的）和检测结果定这次的请求；wordMode：单个词时让大模型按词典格式回答。
+  /// 截图翻译的原位覆盖按整图文字定一次方向，各段共用（TranslateSegments）
+  static func plan(for text: String, wordMode: Bool = true) -> (
     request: TranslateRequest, detected: Lang?, fixedSource: Lang?, abandonedTarget: Lang?
   ) {
     let defaults = UserDefaults.standard
@@ -377,7 +385,7 @@ import Observation
     }
     let request = Self.plan(for: text, wordMode: false).request
     var failure: Error = TranslateError.config("没有启用的翻译服务")
-    for service in services.enabled {
+    for service in services.enabled where !service.kind.isDictionary {
       do {
         var latest = ""
         for try await partial in stream(service, request) { latest = partial }

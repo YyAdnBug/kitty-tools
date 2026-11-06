@@ -718,6 +718,39 @@ extension View {
   }
 }
 
+/// 「面板大小」一行（2026-11-05 W3）：启动器、剪贴板、翻译浮窗各一行。拖边改过的大小（宽度、最多几行 / 最高多高）
+/// 都是这台电脑自己的偏好；「恢复默认大小」把宽度写回默认（面板下次出现时按它摆）、高度上限清掉。没拖过时按钮是灰的
+struct PanelSizeRow: View {
+  let detail: String
+  let widthKey: String
+  let heightKey: String
+  let defaultWidth: CGFloat
+  @AppStorage private var width: Double
+  @AppStorage private var height: Double
+
+  init(detail: String, widthKey: String, heightKey: String, defaultWidth: CGFloat) {
+    self.detail = detail
+    self.widthKey = widthKey
+    self.heightKey = heightKey
+    self.defaultWidth = defaultWidth
+    _width = AppStorage(wrappedValue: 0, widthKey)
+    _height = AppStorage(wrappedValue: 0, heightKey)
+  }
+
+  var body: some View {
+    LabeledContent {
+      Button("恢复默认大小") {
+        width = Double(defaultWidth)
+        UserDefaults.standard.removeObject(forKey: heightKey)
+      }
+      .disabled((width == 0 || width == Double(defaultWidth)) && height == 0)
+    } label: {
+      Text("面板大小")
+      Text(detail)
+    }
+  }
+}
+
 /// 分组页脚：解释整组的说明小字，所有设置页和详情页共用（2026-10-12 视觉对齐前有五种写法，有的靠右、折行后参差）。
 /// caption secondary；一律靠左、折行也靠左（分组表单的页脚默认靠右排，折到第二行的字也是：两样都要写）；
 /// 左右各缩 10，和分组标题、卡片里的行文字同一条左边线（卡片的内边距是 10）。

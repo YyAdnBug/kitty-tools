@@ -25,6 +25,8 @@ struct TranslatePanelView: View {
   /// 和菜单栏的勾、设置 › 翻译读写同一个偏好
   @AppStorage(Prefs.translateCopyToTranslate) private var copyToTranslate = false
   @AppStorage(Prefs.translateFontScale) private var fontScale = 1.0
+  /// 拖下边定的最高多高（W2，0 = 自动）
+  @AppStorage(Prefs.translatePanelMaxHeight) private var maxHeight = 0.0
   /// 折叠着的服务 id（换行分隔）：跨重启记住
   @AppStorage(Prefs.translateCollapsedServices) private var collapsedServices = ""
   /// nil = 自动检测
@@ -72,7 +74,8 @@ struct TranslatePanelView: View {
     .padding(.bottom, coordinator.showsHistory ? 0 : 2)
     // 一次操作只重译一次（交换、撞同语言时两个值在同一次更新里一起改）
     .onChange(of: [source, target]) { retranslate() }
-    .onChange(of: [desiredHeight, mustFitHeight], initial: true) {
+    // 拖下边改了最高多高（W2）也再量一次：resize 按设置里的上限算
+    .onChange(of: [desiredHeight, mustFitHeight, maxHeight], initial: true) {
       resize(desiredHeight, mustFitHeight)
     }
     // 「⋯」菜单和历史 ⌘K 的「清空历史…」共用一个确认框
@@ -104,9 +107,29 @@ struct TranslatePanelView: View {
   /// 浮窗的高：随内容，最矮 220；最高平时是屏幕可见区的 85%，再多就在卡片区里滚，但 mustFit 要放得下
   /// （三张写满 8 行的卡约 850 pt，85% 的上限会差一点、多出外层滚动条），这时最高到可见区减上下各 12。
   /// ponytail: 可见区比 mustFit 还矮（小屏、调大了字号）时照样在卡片区里滚；要保证三张都露全得按可见区压低卡片的 8 行上限
-  static func panelHeight(_ height: CGFloat, mustFit: CGFloat, visible: CGFloat) -> CGFloat {
-    min(max(height, 220), min(max(visible * 0.85, mustFit), visible - 24))
+  /// 原文是一个英文词（字母文字的一个词、检测或固定的源语言是英语）时返回它：朗读放真人发音
+  private func englishWord(_ text: String) -> String? {
+    let word = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard WordLookup.isWord(word), word.allSatisfy(\.isASCII),
+      (coordinator.fixedSource ?? coordinator.detected ?? .en) == .en
+    else { return nil }
+    return word
   }
+
+  /// cap：拖下边定的最高多高（W2，0 = 自动：85% / 放得下前三张卡）；拖过的就照它，卡片区里滚
+  static func panelHeight(_ height: CGFloat, mustFit: CGFloat, visible: CGFloat, cap: CGFloat = 0)
+    -> CGFloat
+  {
+    let limit =
+      cap > 0
+      ? min(max(cap, minHeight), visible - 24) : min(max(visible * 0.85, mustFit), visible - 24)
+    return min(max(height, minHeight), limit)
+  }
+
+  /// 浮窗最矮多高（也是拖下边的下限）
+  static let minHeight: CGFloat = 220
+  /// 浮窗默认宽度（「恢复默认大小」回到它）
+  static let defaultWidth: CGFloat = 420
 
   // MARK: 顶栏
 
@@ -303,18 +326,25 @@ struct TranslatePanelView: View {
       }
       HStack(spacing: 12) {
         Group {
+          // 原文是一个英文词时放真人发音（设置里的口音，R3），别的用系统声音
+          let word = englishWord(coordinator.sourceText)
+          let key =
+            word.map { Speaker.key(word: $0, accent: Speaker.preferredAccent) }
+            ?? coordinator.sourceText
           Button(
-            "朗读原文",
-            systemImage: speaker.speaking == coordinator.sourceText
-              ? "speaker.wave.2.fill" : "speaker.wave.2"
+            "朗读原文", systemImage: speaker.speaking == key ? "speaker.wave.2.fill" : "speaker.wave.2"
           ) {
-            speaker.toggle(
-              coordinator.sourceText,
-              language: coordinator.fixedSource ?? coordinator.detected)
+            if let word {
+              speaker.toggleWord(word)
+            } else {
+              speaker.toggle(
+                coordinator.sourceText,
+                language: coordinator.fixedSource ?? coordinator.detected)
+            }
           }
           .symbolEffect(
             .variableColor.iterative.reversing,
-            isActive: speaker.speaking == coordinator.sourceText && !coordinator.sourceText.isEmpty)
+            isActive: speaker.speaking == key && !coordinator.sourceText.isEmpty)
           Button("复制原文", systemImage: "doc.on.doc") {
             Paster.write(string: coordinator.sourceText, record: true)
             island?.show("已复制原文", detail: Island.excerpt(coordinator.sourceText))
@@ -435,9 +465,15 @@ struct TranslatePanelView: View {
             .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
           }
           ForEach(Array(coordinator.cards.enumerated()), id: \.element.id) { index, card in
+            // 单词卡：大模型的单词模式、词典类服务（有道词典）
+            let wordStyle =
+              card.service.kind.isDictionary
+              || (coordinator.isWordLookup && card.service.isStreaming)
             ProviderCardView(
               card: card, index: index, language: coordinator.target, speaker: speaker,
-              fontScale: fontScale, isCollapsed: collapsed.contains(card.id),
+              fontScale: fontScale, wordStyle: wordStyle,
+              pronounce: wordStyle ? coordinator.translatedSource.flatMap(englishWord) : nil,
+              isCollapsed: collapsed.contains(card.id),
               copyTick: coordinator.copiedCard == card.id ? coordinator.copyTick : 0
             ) {
               coordinator.retry(card.id)

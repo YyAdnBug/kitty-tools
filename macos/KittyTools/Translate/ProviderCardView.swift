@@ -20,6 +20,10 @@ struct ProviderCardView: View {
   let language: Lang?
   let speaker: Speaker
   var fontScale = 1.0
+  /// 单词卡（大模型单词模式、词典类服务）：右上角的喇叭只读释义（R1）
+  var wordStyle = false
+  /// 单词卡第一行是「美 /…/ 英 /…/」时，读音旁边的小喇叭念的英文词（R2）；不是英文词时 nil
+  var pronounce: String?
   var isCollapsed = false
   /// 这张卡被复制时 = 协调器的复制计数（每次都不同，好重放闪光），平时 0
   var copyTick = 0
@@ -179,11 +183,14 @@ struct ProviderCardView: View {
       Spacer(minLength: 6)
       CardActions {
         if let text = card.state.text, !text.isEmpty {
+          // 只读译文：单词卡读第一行释义，别的去掉 Markdown 记号再读（R1）
+          let speech = Speaker.speechText(text, wordStyle: wordStyle)
           Button(
-            "朗读", systemImage: speaker.speaking == text ? "speaker.wave.2.fill" : "speaker.wave.2"
-          ) { speaker.toggle(text, language: language) }
+            "朗读", systemImage: speaker.speaking == speech ? "speaker.wave.2.fill" : "speaker.wave.2"
+          ) { speaker.toggle(speech, language: language) }
           .symbolEffect(
-            .variableColor.iterative.reversing, isActive: speaker.speaking == text && !reduceMotion
+            .variableColor.iterative.reversing,
+            isActive: speaker.speaking == speech && !reduceMotion
           )
           // 读屏名字带上服务名（第四轮体检 U12）：几张卡的按钮一样，光读「复制」分不清是哪一张的
           .accessibilityLabel("朗读\(name)的译文")
@@ -284,11 +291,35 @@ struct ProviderCardView: View {
   /// 完成那一下还是同一个视图（身份一变文字会整段重建、闪一下），只是光标收掉
   private var plain: (text: String, isStreaming: Bool)? {
     switch card.state {
-    case .running(let text) where !text.isEmpty: (text, true)
-    case .done(let text) where !(card.service.isStreaming && Self.rendered(text) != nil):
-      (text, false)
-    case .truncated(let text): (text, false)
+    case .running(let text) where !text.isEmpty: (shown(text), true)
+    case .done(let text) where !(card.service.isStreaming && Self.rendered(shown(text)) != nil):
+      (shown(text), false)
+    case .truncated(let text): (shown(text), false)
     default: nil
+    }
+  }
+
+  /// 单词卡第一行的读音（美 /…/ 英 /…/）：换成带小喇叭的一行（R2），正文从第二行起。第一行还没出完时照原样
+  private var phoneticLine: (phonetics: [DictionaryEntry.Phonetic], rest: String)? {
+    guard pronounce != nil, let text = card.state.text else { return nil }
+    return Speaker.phoneticLine(text)
+  }
+
+  private func shown(_ text: String) -> String { phoneticLine?.rest ?? text }
+
+  /// 读音行：「美 /rʌn/ 🔊  英 /rʌn/ 🔊」，字和正文一样大
+  @ViewBuilder private var pronunciationRow: some View {
+    if let pronounce, let line = phoneticLine {
+      HStack(alignment: .firstTextBaseline, spacing: 12) {
+        ForEach(Array(line.phonetics.enumerated()), id: \.offset) { _, phonetic in
+          HStack(alignment: .firstTextBaseline, spacing: 2) {
+            Text("\(phonetic.accent == .uk ? "英" : "美") /\(phonetic.text)/")
+              .font(.system(size: 15 * fontScale))
+              .textSelection(.enabled)
+            PronounceButton(word: pronounce, accent: phonetic.accent ?? .us, speaker: speaker)
+          }
+        }
+      }
     }
   }
 
@@ -304,6 +335,7 @@ struct ProviderCardView: View {
   @ViewBuilder private func stateView(_ state: TranslateCoordinator.CardState) -> some View {
     if let plain {
       VStack(alignment: .leading, spacing: 6) {
+        pronunciationRow
         ResultText(text: plain.text, isStreaming: plain.isStreaming, fontSize: 15 * fontScale)
           .textSelection(.enabled)
           .frame(maxWidth: .infinity, alignment: .leading)
@@ -322,11 +354,15 @@ struct ProviderCardView: View {
       .id(phase)
     } else if case .done(let text) = state {
       // 大模型输出里有 Markdown 才按 Markdown 渲染
-      Text(Self.rendered(text) ?? AttributedString(text)).font(.system(size: 15 * fontScale))
-        .lineSpacing(3.5)
-        .textSelection(.enabled)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .id(phase)
+      VStack(alignment: .leading, spacing: 6) {
+        pronunciationRow
+        Text(Self.rendered(shown(text)) ?? AttributedString(shown(text)))
+          .font(.system(size: 15 * fontScale))
+          .lineSpacing(3.5)
+          .textSelection(.enabled)
+          .frame(maxWidth: .infinity, alignment: .leading)
+      }
+      .id(phase)
     } else if case .failed(let error) = state {
       failureRow(error).id(phase)
     } else {
@@ -603,6 +639,9 @@ struct ServiceTile: View {
       switch service.kind {
       case .zhipu, .baidu, .youdao, .google, .deepl, .microsoft, .volcengine, .tencent:
         service.kind.rawValue
+      // 有道词典和有道翻译是同一个牌子；系统翻译没有 logo，用色块
+      case .youdaoDict: "youdao"
+      case .apple: nil
       case .ai: service.aiProtocol == .azure ? "microsoft" : AIVendor(service: service)?.rawValue
       }
     return name.map { ("ServiceLogo/" + $0, !fullBleed.contains($0)) }
@@ -625,6 +664,8 @@ struct ServiceTile: View {
       case .microsoft: 0x0078D4
       case .volcengine: 0x1664FF
       case .tencent: 0x0052D9
+      case .apple: 0x5E5CE6
+      case .youdaoDict: 0xE1251B
       case .ai:
         switch service.aiProtocol {
         case .anthropic: 0xD97757

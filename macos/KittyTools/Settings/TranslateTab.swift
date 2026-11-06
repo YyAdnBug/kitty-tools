@@ -16,6 +16,8 @@ struct TranslateTab: View {
   @AppStorage(Prefs.translateFontScale) private var fontScale = 1.0
   @AppStorage(Prefs.translateSystemDictionary) private var systemDictionary = true
   @AppStorage(Prefs.translateWordMode) private var wordMode = true
+  @AppStorage(Prefs.translateWordRecording) private var wordRecording = true
+  @AppStorage(Prefs.translateWordAccent) private var wordAccent = "us"
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(Island.self) private var island: Island?
   @AppStorage(Prefs.translateFirst) private var first = Lang.zhHans.rawValue
@@ -25,6 +27,7 @@ struct TranslateTab: View {
   @AppStorage(Prefs.translateCopyToTranslate) private var copyToTranslate = false
   @AppStorage(Prefs.translateAutoCopy) private var autoCopy = false
   @AppStorage(Prefs.translateCopyRecognized) private var copyRecognized = false
+  @AppStorage(Prefs.translateScreenshotOverlay) private var screenshotOverlay = false
   @AppStorage(Prefs.translateHistoryEnabled) private var historyEnabled = true
   @AppStorage(Prefs.translateHistoryLimit) private var historyLimit = 5000
   @AppStorage(Prefs.translatePanelPosition) private var panelPosition = "top"
@@ -132,6 +135,19 @@ struct TranslateTab: View {
         } footer: {
           SectionFootnote("查单个词时不自动复制、不给「替换原文」。")
         }
+        Section {
+          Toggle("英文单词用真人发音", isOn: $wordRecording)
+          Picker("英文单词发音", selection: $wordAccent) {
+            Text("美音").tag("us")
+            Text("英音").tag("uk")
+          }
+        } header: {
+          Text("朗读")
+        } footer: {
+          SectionFootnote(
+            "真人发音来自有道词典，会把要读的单词发给有道；取不到时用系统声音。句子用系统声音，可以在 系统设置 › 辅助功能 › 朗读内容 里下载音质更好的声音。"
+          )
+        }
       }
       .gated(by: .translate)
       Section {
@@ -145,6 +161,9 @@ struct TranslateTab: View {
             Text("划词、截图翻译、复制即译时出现的位置：屏幕上方是鼠标所在屏幕的上方正中，跟随鼠标是光标旁边；输入翻译总在上次拖到的位置")
           }
           .pickerStyle(.segmented)
+          PanelSizeRow(
+            detail: "拖左右两边改宽度，拖下边改最高多高（内容少时照样变矮）", widthKey: Prefs.translatePanelWidth,
+            heightKey: Prefs.translatePanelMaxHeight, defaultWidth: TranslatePanelView.defaultWidth)
           Toggle("翻译前把同一段里的换行接起来（适合 PDF 复制的文字）", isOn: $removeNewlines)
           Toggle(isOn: $copyToTranslate) {
             Text("复制即译")
@@ -152,6 +171,12 @@ struct TranslateTab: View {
           }
           Toggle("自动复制译文", isOn: $autoCopy)
             .help("复制即译弹出的翻译不会自动复制，免得覆盖你刚复制的原文")
+          Toggle(isOn: $screenshotOverlay) {
+            Text("截图翻译时把译文直接盖回截图上")
+            Text(
+              "截图翻译和截图工具栏里的「翻译」都留在截图页里，译文按原来的位置盖回图上，可以接着标注、复制、保存；关着时在翻译浮窗里看，能对比几个服务、复制译文"
+            )
+          }
           Toggle(isOn: $copyRecognized) {
             Text("截图翻译时复制识别出的原文")
             Text(

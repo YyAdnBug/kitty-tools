@@ -49,8 +49,7 @@ enum RegionSelector {
 
   /// 截图翻译 / 识字：在冻结帧上框选，松手返回裁好的图；取消返回 nil。hint 是屏幕上方的提示
   static func select(_ shots: [ScreenCapture.Shot], hint: String) async -> CGImage? {
-    guard
-      case .capture(let capture)? = await run(shots, SelectionSession(mode: .quick, hint: hint))
+    guard case .capture(let capture)? = await run(shots, SelectionSession(mode: .quick, hint: hint))
     else { return nil }
     return capture.image
   }
@@ -59,11 +58,16 @@ enum RegionSelector {
   /// recordingBlocker 见 SelectionSession
   static func capture(
     _ shots: [ScreenCapture.Shot], lastRegion: CGRect?, preselect: Bool,
-    recordingBlocker: @escaping () -> (title: String, detail: String)? = { nil }
+    hint: String? = nil, autoTranslate: Bool = false,
+    recordingBlocker: @escaping () -> (title: String, detail: String)? = { nil },
+    translate: ((CGImage) async -> (image: CGImage?, message: String?))? = nil
   ) async -> Outcome? {
-    let session = SelectionSession(mode: .capture, lastRegion: lastRegion)
+    let session = SelectionSession(
+      mode: .capture, hint: hint ?? "", lastRegion: lastRegion)
     session.preselectsLastRegion = preselect
     session.recordingBlocker = recordingBlocker
+    session.translate = translate
+    session.autoTranslates = autoTranslate
     return await run(shots, session)
   }
 
@@ -359,6 +363,11 @@ final class SelectionSession {
   /// 截图里按 R / 点「录屏」那一刻问现在能不能录屏（AppDelegate 给：正在录音、已经在录屏、正在装更新时返回岛的两段）：
   /// 不能就停在截图里提示，不切（C9-a，不等框完按 ● 才拒、丢掉选区）
   var recordingBlocker: () -> (title: String, detail: String)? = { nil }
+  /// 工具栏「翻译」的就地翻译（AppDelegate 给）：给选区的图，交回覆盖了译文的图；失败时带一句原因。
+  /// nil = 没有翻译能力，点翻译时退回原来的「收起遮罩、翻完再开编辑窗」
+  var translate: ((CGImage) async -> (image: CGImage?, message: String?))?
+  /// 框完松手就直接翻（⌥S：截图翻译 = 截图 + 自动点「翻译」）
+  var autoTranslates = false
   /// 尺寸胶囊里锁着的比例（宽 / 高，RegionSelector.ratios 里的一个）：之后框选、拖边都按它，选「自由」解锁。整个会话共用
   var lockedRatio: CGFloat?
   private var overlays: [SelectionOverlay] = []
@@ -380,6 +389,10 @@ final class SelectionSession {
     self.continuation = continuation
     overlays = shots.map { SelectionOverlay(shot: $0, session: self) }
     views = overlays.map(\.selectionView)
+    for view in views {
+      view.translateHandler = translate
+      view.autoTranslates = autoTranslates
+    }
     guard !overlays.isEmpty else { return finish(nil) }
     for overlay in overlays { overlay.orderFrontRegardless() }
     // 鼠标不动时收不到 mouseMoved：先设一次十字光标
@@ -436,6 +449,8 @@ final class SelectionSession {
   func finish(_ outcome: RegionSelector.Outcome?) {
     guard let continuation else { return }
     self.continuation = nil
+    // 会话收了：还在跑的翻译停掉，剩下的段不该继续往服务发请求（Esc 那条由 cancelTranslation 自己再兜一次）
+    for view in views { view.cancelTranslation() }
     let closing = overlays
     overlays = []
     views = []
