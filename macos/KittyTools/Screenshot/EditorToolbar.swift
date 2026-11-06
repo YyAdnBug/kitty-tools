@@ -381,17 +381,20 @@ final class EditorToolbar: PopView {
   /// 等新快捷键的那颗钮外面的一圈（setWaiting）
   private let waitingRing = CAShapeLayer()
 
-  /// 等新快捷键的那颗钮（2026-11-06 用户：只在屏幕顶上提示不够明显）：外面 3 pt 处一圈 2 pt 强调色，呼吸（0.7 s 一来回；
+  /// 等新快捷键的那颗钮（2026-11-06 用户：只在屏幕顶上提示不够明显）：外面 2 pt 处一圈 2 pt 强调色，呼吸（0.7 s 一来回；
   /// 减弱动态效果时不动），nil 收掉。同一时刻只有一颗
   func setWaiting(_ item: Item?) {
     waitingRing.removeAllAnimations()
     waitingRing.removeFromSuperlayer()
-    // 画在工具栏自己的图层上、两段栏的上面：挂在按钮或栏的图层里会被裁掉（截图自检里看不到圈）
-    guard let item, let button = button(for: item), let layer, let buttonLayer = button.layer
-    else { return }
-    let radius = buttonLayer.cornerRadius + 3
+    // 画在那颗钮所在那段栏的内容层里、按钮栈上面（同当前工具的底块 toolHighlight：那一层真机上看得到）。
+    // 不能挂在工具栏自己的图层上：屏外截图画得出来，真机（macOS 27）上看不见（2026-11-06 用户截图：等「椭圆」时没有圈）；
+    // 挂在按钮自己的图层里会被裁掉。外扩 2 pt、线宽 2：栏高 40、钮 32，上下各 4 pt 的边放得下
+    guard let item, let button = button(for: item), let buttonLayer = button.layer else { return }
+    let bar = button.isDescendant(of: tools) ? tools : outputs
+    guard let layer = bar.effect.layer else { return }
+    let radius = buttonLayer.cornerRadius + 2
     waitingRing.path = CGPath(
-      roundedRect: button.convert(button.bounds, to: self).insetBy(dx: -3, dy: -3),
+      roundedRect: button.convert(button.bounds, to: bar.effect).insetBy(dx: -2, dy: -2),
       cornerWidth: radius, cornerHeight: radius, transform: nil)
     waitingRing.fillColor = nil
     waitingRing.strokeColor = Style.Shot.accent.cgColor

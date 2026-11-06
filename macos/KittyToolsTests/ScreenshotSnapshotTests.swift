@@ -223,6 +223,18 @@ struct ScreenshotSnapshotTests {
     // 等着时：钉图钮一圈粉、提示挂在它下面（2026-11-06 用户：放在屏幕顶上不够明显）
     try shoot(
       h.window, "rebind-waiting", crop: toolbar.frame.insetBy(dx: -40, dy: -70))
+    // 左段的工具（用户截图里等的是「椭圆」）：圈画在那段栏的内容层里，同当前工具的底块
+    h = adjust()
+    let tools = try #require(h.toolbar)
+    let ellipse = try #require(tools.button(for: .tool(.ellipse)))
+    tools.rightMouseDown(
+      with: h.event(
+        .rightMouseDown,
+        ellipse.convert(CGPoint(x: ellipse.bounds.midX, y: ellipse.bounds.midY), to: nil)))
+    let toolMenu = try #require(h.menu)
+    _ = try #require(buttons(in: toolMenu).first).accessibilityPerformPress()
+    try shoot(
+      h.window, "rebind-waiting-tool", crop: tools.frame.insetBy(dx: -40, dy: -70))
 
     // 有标注时右键：不清空，顶部提示怎么退出
     h = adjust()
