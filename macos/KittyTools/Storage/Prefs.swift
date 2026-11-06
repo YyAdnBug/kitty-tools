@@ -142,6 +142,10 @@ enum Prefs {
   /// right 栏的右边线对齐选区右边线（默认：从左上往右下拖完，✓ 就在鼠标旁边）/ center 选区下方居中（0.7.1 及之前）。
   /// 读它用 toolbarAlignsRight
   static let screenshotToolbarAlign = "screenshotToolbarAlign"
+  /// 截图拷贝为（2026-11-06 拍板，设置 › 截图「截图拷贝为」）：image 剪贴板里放图像（默认）/ file 放一个 PNG 文件，
+  /// 同在访达里拷贝一个文件——只搬文字和文件的跨电脑剪贴板（USB 对拷线的配套软件、有的远程工具）也传得过去。
+  /// 读它用 copiesShotAsFile
+  static let screenshotCopyAs = "screenshotCopyAs"
   /// 长截图自动滚动的速度（长截图面板按钮行上面那一行，记住上次；2026-11-04 用户反馈太快；ScrollSpeed 的 rawValue）：
   /// 每秒滚出 0.3 / 0.6 / 1.2 个选区高，normal 是默认
   static let scrollCaptureSpeed = "scrollCaptureSpeed"
@@ -426,6 +430,7 @@ enum Prefs {
       screenshotShutterSound: true,
       screenshotPlacement: ShotPlacement.corner.rawValue,
       screenshotToolbarAlign: "right",
+      screenshotCopyAs: "image",
       scrollCaptureSpeed: ScrollSpeed.normal.rawValue,
       shotHistory: true,
       shotHistoryDays: 30,
@@ -468,6 +473,11 @@ enum Prefs {
   /// 截图工具栏贴选区右边（screenshotToolbarAlign 不是 center 都算靠右：没存过、认不出来按默认）
   static func toolbarAlignsRight(_ defaults: UserDefaults = .standard) -> Bool {
     defaults.string(forKey: screenshotToolbarAlign) != "center"
+  }
+
+  /// 截图拷贝成 PNG 文件（screenshotCopyAs 是 file；没存过、认不出来按默认的图像）
+  static func copiesShotAsFile(_ defaults: UserDefaults = .standard) -> Bool {
+    defaults.string(forKey: screenshotCopyAs) == "file"
   }
 
   /// 截完图放哪（2026-10-26 晾衣绳拍板 B1）：右下角的常驻缩略图 / 挂到晾衣绳上 / 都不要（只进历史）。

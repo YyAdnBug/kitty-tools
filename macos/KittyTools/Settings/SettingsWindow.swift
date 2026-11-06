@@ -134,7 +134,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .clipboard: "历史上限、面板、内容格式和隐私"
     case .launcher: "搜索 App、文件、书签与历史、网页搜索与快捷链接"
     case .launchpad: "全屏的图标网格：排法、翻页、搜索、文件夹、捏合"
-    case .screenshot: "快速保存、工具栏位置、快门声、缩略图和识字"
+    case .screenshot: "快速保存、拷贝为图像还是文件、工具栏位置、快门声、缩略图和识字"
     case .record: "录屏的画质、倒数和按键，录音的来源"
     case .notes: "留着看、接着改的东西：屏幕边缘的那一叠、字号和行距，存在哪、怎么备份"
     case .statusScreen: "拦住键盘鼠标的全屏告示：有哪些状态、各是什么样子、怎么退出"
@@ -184,6 +184,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
       [
         "保存", "存储", "目录", "文件夹", "快门", "声音", "缩略图", "识字", "换行", "二维码", "标注", "长截图", "钉图",
         "按键", "速查", "工具栏", "位置", "靠右", "居中", "录制条",
+        "拷贝", "复制", "文件", "PNG", "对拷线", "远程",
       ]
     case .record:
       [

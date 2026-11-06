@@ -2,11 +2,34 @@
 // 只出 PNG（修旧版 JPEG 透明变黑、WebP 无视质量，§11 #45）；重名追加序号，不覆盖（§11 #46）。
 // 快速保存的目录 = 设置 › 截图「快速保存到」选的文件夹 → 系统截屏的存储位置 → 桌面（不存在的跳过）。
 // 「另存为」不改它（体检 A28）：存储面板自己记住上次访问的文件夹。
+// 拷贝成 PNG 文件（设置 › 截图「截图拷贝为」，2026-11-06）：文件在拖出目录里（copyFile），剪贴板里只有这个文件。
 
 import AppKit
 import UniformTypeIdentifiers
 
 enum ScreenshotOutput {
+  /// 截图拷贝进剪贴板的是什么：图像，或者拖出目录里的这个 PNG 文件（设置 › 截图「截图拷贝为」）
+  enum Copied {
+    case image
+    case file(URL)
+
+    /// 刘海岛的小字：拷成文件时写文件名
+    var detail: String? {
+      guard case .file(let url) = self else { return nil }
+      return url.lastPathComponent
+    }
+  }
+
+  /// 拷贝成文件时的那一份：拖出目录（ShotShelf.dragDirectory）里一个新的子文件夹，各放各的不撞名；name 给了用给的
+  /// （历史里存过的借存的文件名），没给照快速保存起「截图 日期 时间.png」。**用的时候不删**：对方可能过一会儿才粘
+  /// （跨电脑的剪贴板工具粘的那一刻才来读），启动时清空、换日时删一天以前的（ShotShelf.purgeStaleDragFiles）。
+  /// 写盘在主线程外（ShotHistory.write）；写不成给 nil，调用方改放图像
+  static func copyFile(_ png: Data, name: String?) async -> URL? {
+    let folder = ShotShelf.dragDirectory.appending(path: UUID().uuidString)
+    let url = name.map { folder.appending(path: $0) } ?? availableURL(in: folder)
+    return await ShotHistory.write(png, to: url) ? url : nil
+  }
+
   /// 编码成 PNG（白名单第 1 类，@concurrent）。scale 是像素 / 点，写成 DPI（2x → 144）
   @concurrent nonisolated static func png(_ image: CGImage, scale: CGFloat) async -> Data? {
     let data = NSMutableData()

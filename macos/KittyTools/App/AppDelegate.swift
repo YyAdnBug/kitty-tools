@@ -276,8 +276,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       Task {
         switch action {
         case .copy:
-          guard await copyImage(image, scale: scale) != nil else { return }
-          island.show("已复制钉图", leading: Island.thumbnail(of: image))
+          guard let copied = await copyImage(image, scale: scale) else { return }
+          island.show("已复制钉图", detail: copied.detail, leading: Island.thumbnail(of: image))
         case .save:
           guard let saved = await saveImage(image, scale: scale, asking: false) else { return }
           island.show(
@@ -850,6 +850,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.purgeNotes()
         // 截图历史过了保留期的同样换日时清（原来只在记新的一条时清，一直不截图就一直留着，第四轮体检 E24）
         self.shotHistory.prune()
+        // 拷贝成文件、拖出去的那些临时文件：启动时整个清空，一直开着不退的换日时删一天以前的
+        ShotShelf.purgeStaleDragFiles()
         self.backupIfDue()
       }
     }
@@ -868,10 +870,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     hotKeys.reload()
     try? FileManager.default.removeItem(at: ShotShelf.dragDirectory)
-    shelf.copy = { [unowned self] png in
-      await copyPNG(png)
-      return true
-    }
+    shelf.copy = { [unowned self] png in await copyPNG(png) }
     shelf.island = island
     shelf.save = { [unowned self] in await savePNG($0, asking: false) }
     shelf.pin = { [unowned self] in pins.pin($0, frame: $1) }
@@ -2479,8 +2478,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           return
         }
         guard let image = await shotHistory.composed(item) else { return missingShot() }
-        guard await copyImage(image, scale: item.scale) != nil else { return }
-        island.show("已复制截图", leading: Island.thumbnail(of: image))
+        // 拷成文件时借存过的文件名（同拖出去的那份）
+        let name = shotHistory.dragName(for: item)
+        guard let copied = await copyImage(image, scale: item.scale, name: name) else { return }
+        island.show("已复制截图", detail: copied.detail, leading: Island.thumbnail(of: image))
       }
     }
     actions.save = { [unowned self] item in
@@ -2625,8 +2626,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       Task {
         switch action {
         case .copy:
-          guard await copyImage(image, scale: scale) != nil else { return }
-          island.show("已复制长截图", leading: Island.thumbnail(of: image))
+          guard let copied = await copyImage(image, scale: scale) else { return }
+          island.show("已复制长截图", detail: copied.detail, leading: Island.thumbnail(of: image))
         case .save:
           guard let saved = await saveImage(image, scale: scale, asking: false) else { return }
           markSaved(remembered, at: saved.url)
@@ -2891,21 +2892,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     return png
   }
 
-  /// 截图复制：PNG 写进剪贴板（经 Paster，watcher 会跳过），所以自己记进剪贴板历史。返回编码好的 PNG，失败 nil
-  @discardableResult
-  private func copyImage(_ image: CGImage, scale: CGFloat) async -> Data? {
+  /// 截图复制：编成 PNG 再 copyPNG。返回放进剪贴板的是图像还是文件，编码失败 nil
+  private func copyImage(_ image: CGImage, scale: CGFloat, name: String? = nil) async
+    -> ScreenshotOutput.Copied?
+  {
     guard let png = await encodePNG(image, scale: scale) else { return nil }
-    await copyPNG(png)
-    return png
+    return await copyPNG(png, name: name)
   }
 
-  private func copyPNG(_ png: Data) async {
-    Paster.write([.png: png])
-    guard recordsClipboard else { return }  // 菜单栏暂停了记录、剪贴板关着
+  /// 截图的每一种「拷贝」都走这里（截图、长截图、钉图、常驻缩略图、晾衣绳 / 历史、存储失败的兜底）：经 Paster 写进剪贴板
+  /// （watcher 会跳过），所以自己记进剪贴板历史。设置 › 截图「截图拷贝为」选了 PNG 文件时剪贴板里只放这个文件
+  /// （同在访达里拷贝一个文件，2026-11-06 拍板 Q3；name 见 ScreenshotOutput.copyFile），写不成就照旧放图像。
+  /// 剪贴板历史两种都记成图片（Q5：临时文件清掉以后这条照样能用）
+  @discardableResult
+  private func copyPNG(_ png: Data, name: String? = nil) async -> ScreenshotOutput.Copied {
+    var copied = ScreenshotOutput.Copied.image
+    if Prefs.copiesShotAsFile(), let file = await ScreenshotOutput.copyFile(png, name: name) {
+      Paster.write(files: [file])
+      copied = .file(file)
+    } else {
+      Paster.write([.png: png])
+    }
+    guard recordsClipboard else { return copied }  // 菜单栏暂停了记录、剪贴板关着
     var item = ClipItem(kind: .image)
-    guard let info = await clipboardStore.images.save(png, isPNG: true, id: item.id) else { return }
+    guard let info = await clipboardStore.images.save(png, isPNG: true, id: item.id) else {
+      return copied
+    }
     item.image = info
     clipboardStore.record(item)
+    return copied
   }
 
   /// ⌘S 快速保存 / 另存为（asking）；返回存到的文件和编码好的 PNG（取消、失败为 nil）
