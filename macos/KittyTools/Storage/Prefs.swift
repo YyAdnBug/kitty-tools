@@ -336,6 +336,10 @@ enum Prefs {
   nonisolated static let launchpadPinchSense = "launchpadPinchSense"
   /// 触发角（LaunchpadCornerOption 的 rawValue：off / topLeft / topRight / bottomLeft / bottomRight，默认关）
   nonisolated static let launchpadCorner = "launchpadCorner"
+  /// 程序坞预览：鼠标停在 App 图标上多久才弹出（毫秒；2026-11-06 用户「悬停一下再出预览」，设置 › 程序坞预览）。
+  /// 只管收着时第一次弹，弹着时换图标照旧停稳 80 毫秒就换；读它用 DockPreview.showDelay（认不出的值按 400）
+  nonisolated static let dockPreviewDelay = "dockPreviewDelay"
+  nonisolated static let dockPreviewDelayChoices = [200, 400, 700, 1000]
 
   /// 看过的版本号：没有 = 首次安装（打开欢迎引导），和当前不同 = 刚更新（刘海岛「已更新到 x」+ 本版摘要，不开设置窗，体检 A29）。
   /// 首次安装时**引导走完才记**（点「开始使用」或关掉引导；第四轮体检 E1）：中途退出（授权屏幕录制后系统要求重开）下次接着开
@@ -397,6 +401,7 @@ enum Prefs {
       launchpadPinchGesture: PinchFingers.four.rawValue,
       launchpadPinchSense: PinchRecognizer.Sensitivity.standard.rawValue,
       launchpadCorner: LaunchpadCornerOption.off.rawValue,
+      dockPreviewDelay: 400,
       panelSqueezeEntrance: false,
       floatingPinned: false,
       updateAutoCheck: true,

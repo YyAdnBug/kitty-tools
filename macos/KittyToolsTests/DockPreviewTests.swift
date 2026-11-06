@@ -1,5 +1,5 @@
 // 程序坞预览（第九族）的纯函数：两张窗口表怎么并、编号怎么配、坐标换算、缩略图尺寸、全透明判断、缩略图缓存（新鲜的不再截）、
-// 「当 key」事件的字节；关掉功能时面板放掉（只建不显示）。
+// 「当 key」事件的字节；关掉功能时面板放掉（只建不显示）；停多久再弹出（2026-11-06）的档位和设置页的写法。
 
 import AppKit
 import ApplicationServices
@@ -192,6 +192,17 @@ struct DockPreviewTests {
   }
 
   /// 关掉程序坞预览（R10）：弹过的面板跟着放掉，不留到退出
+  @Test func showDelayFollowsTheSetting() {
+    // 默认 0.4 秒；四档照用；没存过（integer 读出 0）、认不出的值都按 0.4 秒
+    #expect(Prefs.defaults[Prefs.dockPreviewDelay] as? Int == 400)
+    #expect(DockPreview.showDelay(200) == .milliseconds(200))
+    #expect(DockPreview.showDelay(1000) == .milliseconds(1000))
+    #expect(DockPreview.showDelay(0) == .milliseconds(400))
+    #expect(DockPreview.showDelay(5000) == .milliseconds(400))
+    #expect(
+      Prefs.dockPreviewDelayChoices.map(DockPreviewTab.title) == ["0.2 秒", "0.4 秒", "0.7 秒", "1 秒"])
+  }
+
   @Test func stopReleasesThePanel() {
     let preview = DockPreview()
     weak var panel: NSPanel?

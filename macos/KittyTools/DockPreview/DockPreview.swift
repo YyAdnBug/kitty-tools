@@ -1,5 +1,5 @@
 // 程序坞预览（第九族，2026-10-22；拍板页 build/research/dock-preview-2026-10-22/decisions.html，PLAN §10「程序坞预览」）：
-// 鼠标停在程序坞的 App 图标上 0.2 秒，图标上方弹出它所有窗口的缩略图；弹着时换到别的图标、停稳 80 毫秒就换（面板滑过去、
+// 鼠标停在程序坞的 App 图标上 0.4 秒（设置 › 程序坞预览能改成 0.2–1 秒），图标上方弹出它所有窗口的缩略图；弹着时换到别的图标、停稳 80 毫秒就换（面板滑过去、
 // 内容交叉淡变；0.3 秒内连着换的不淡变，直接换）；
 // 鼠标离开图标和面板 0.3 秒后收起（留时间从图标挪到面板上）；点程序坞图标、点别处立刻收（拍板 B1–B3）。
 // 点一张切到那扇窗口，点 ✕ 关掉那扇。没窗口的 App、不是 App 的图标不弹（B4）。启动台开着、状态屏、截图框选时不弹，
@@ -64,7 +64,12 @@ import SwiftUI
   /// 图标的 URL → bundle id（路径经过符号链接时按它配进程；读一次 Info.plist 就记下）
   private var bundleIDs: [URL: String] = [:]
 
-  static let showDelay: Duration = .milliseconds(200)
+  /// 收着时停多久才弹（纯函数配单测）：设置 › 程序坞预览「停多久再弹出」（Prefs.dockPreviewDelay，毫秒），认不出的值按 400。
+  /// 原来定死 0.2 秒（同 DockDoor 的默认），2026-11-06 用户嫌往程序坞点 App 时一路冒预览，要「悬停一下再出」：
+  /// 默认 0.4 秒（系统任务栏缩略图的默认也是 0.4 秒），能改成 0.2–1 秒
+  static func showDelay(_ stored: Int) -> Duration {
+    .milliseconds(Prefs.dockPreviewDelayChoices.contains(stored) ? stored : 400)
+  }
   /// 弹着时换到别的图标要停稳多久：路过的图标不换（不列窗口、不重排、不淡变）
   static let switchDelay: Duration = .milliseconds(80)
   /// 两次换 App 隔得比这短就不做交叉淡变（Whisker §1：连发瞬时），不然几段淡变叠在一起
@@ -138,10 +143,11 @@ import SwiftUI
     guard dismissedURL == nil, NSEvent.pressedMouseButtons == 0,
       let target = runningApp(at: item.bundleURL)
     else { return }
-    // 收着时停 0.2 秒才弹；弹着时停稳 80 毫秒才换：快速划过去的图标一个都不列、不画
+    // 收着时停 0.4 秒（设置里能改）才弹；弹着时停稳 80 毫秒才换：快速划过去的图标一个都不列、不画
     pendingItem = item
     let opening = shown == nil
     let start = CACurrentMediaTime()
+    let delay = Self.showDelay(UserDefaults.standard.integer(forKey: Prefs.dockPreviewDelay))
     // 等的这段时间里按过鼠标（点这个图标切 App、按住开始拖、右键开程序坞的菜单）：不弹，鼠标离开这个图标之前也不再弹
     // （同 DockDoor 按下就取消；弹着时的点击归 watchClicks 管，等的时候原来没人管，照样弹出来盖在刚切过来的 App 上）。
     // 点了的 App 正忙着把窗口拿到前面，这时也别去列它的窗口（辅助功能可能卡到超时）
@@ -152,7 +158,7 @@ import SwiftUI
       var prepared: Prepared?
       if opening {
         // 收着时停稳一半就列窗口、开始截图（路过的图标停不到这么久，不列），到点弹出来时图多半已经在了
-        try? await Task.sleep(for: Self.showDelay / 2)
+        try? await Task.sleep(for: delay / 2)
         guard !Task.isCancelled, let self else { return }
         guard !clicked() else {
           self.pendingItem = nil
@@ -161,7 +167,7 @@ import SwiftUI
         }
         prepared = self.prepare(target, at: item)
         if let prepared, prepared.showsThumbnails { self.capture(prepared) }
-        try? await Task.sleep(for: Self.showDelay / 2)
+        try? await Task.sleep(for: delay / 2)
       } else {
         try? await Task.sleep(for: Self.switchDelay)
         guard !Task.isCancelled, let self else { return }
