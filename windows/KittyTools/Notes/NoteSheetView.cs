@@ -73,6 +73,7 @@ internal sealed class NoteSheetView
             VerticalAlignment = VerticalAlignment.Center,
         };
         SearchLine.MakePlain(_title);
+        SearchLine.HideClearButton(_title);
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_title, "便签标题");
         _title.TextChanged += (_, _) =>
         {

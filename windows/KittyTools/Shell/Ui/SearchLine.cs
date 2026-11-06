@@ -88,6 +88,40 @@ public sealed partial class SearchLine : Grid
     public void ExtendHairline() => _hairline.Margin = new Thickness(-18, 0, -18, 0);
 
     /// <summary>输入框去掉自己的底色和描边（悬停、拿焦点时也不画）：底和焦点环由外面那一层画（翻译的原文框、历史搜索框也用）。</summary>
+    /// <summary>不要输入框自带的清除钮（×）：便签的标题框旁边就是关闭钮，两个 × 挨着（Windows 核验 PLAN-v13 第 5 批）。
+    /// 它的显隐是模板里的视觉状态用动画设的 Visibility，盖不住；把它压成 0 宽、透明、点不着。</summary>
+    public static void HideClearButton(TextBox box)
+    {
+        box.Loaded += (_, _) =>
+        {
+            if (Find(box, "DeleteButton") is { } button)
+            {
+                button.Width = 0;
+                button.Opacity = 0;
+                button.IsHitTestVisible = false;
+            }
+        };
+
+        static FrameworkElement? Find(DependencyObject parent, string name)
+        {
+            for (var index = 0; index < Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChildrenCount(parent); index++)
+            {
+                var child = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChild(parent, index);
+                if (child is FrameworkElement element && element.Name == name)
+                {
+                    return element;
+                }
+
+                if (Find(child, name) is { } found)
+                {
+                    return found;
+                }
+            }
+
+            return null;
+        }
+    }
+
     public static void MakePlain(TextBox box)
     {
         foreach (var key in new[]

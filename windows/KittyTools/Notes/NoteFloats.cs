@@ -24,6 +24,9 @@ internal static partial class NoteFloats
 
     public static bool IsFloating(string id) => Windows.ContainsKey(id);
 
+    /// <summary>自检（NotesUiProbe）：浮着的几扇。</summary>
+    internal static IEnumerable<Window> ProbeWindows => Windows.Values;
+
     public static IReadOnlyCollection<string> Floating => Windows.Keys;
 
     /// <summary>屏幕们（物理像素）。</summary>

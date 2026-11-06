@@ -637,6 +637,15 @@ internal static class UiSnapshotProbe
             settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 1300));
             settings.ShowPage(welcome: false, "hotkeys");
             await RenderWindowAsync(settings, "settings-hotkeys", dark, directory);
+            // PLAN-v12 第 3、5 批 / PLAN-v13 第 5 批：设置 › 状态屏、提醒、便签整页（真窗口的样子各拍一张上面一屏）。
+            foreach (var page in new[] { "statusScreen", "reminders", "notes" })
+            {
+                settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 1500));
+                settings.ShowPage(welcome: false, page);
+                await RenderWindowAsync(settings, "settings-" + page, dark, directory);
+                await ShootSettingsWindowAsync(settings, "settings-" + page, dark, directory);
+            }
+
             // 0.1.1 功能图标（HANDTEST 794）：关于页页头 32 的色块是猫头。
             settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 720));
             settings.ShowPage(welcome: false, "about");

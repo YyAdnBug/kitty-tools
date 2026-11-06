@@ -44,6 +44,9 @@ internal static partial class NoteDeck
 
     public static NoteDeckOptions Options { get; private set; } = new();
 
+    /// <summary>自检（NotesUiProbe）：第一块屏的那一叠。</summary>
+    internal static NoteDeckBay? ProbeBay => Bays.FirstOrDefault();
+
     /// <summary>有展开着的（扇着、开着便签）：空闲回收看它。</summary>
     public static bool IsExpanded => Bays.Any(bay => bay.IsExpanded);
 
@@ -395,6 +398,33 @@ internal sealed partial class NoteDeckBay
     private long _outsideSince;
     private (int X, int Y) _lastCursor;
     private Windows.Win32.Foundation.HWND _previous;
+
+    /// <summary>自检（NotesUiProbe）：扇着、开着时不看鼠标（真的鼠标不在那叠上，不然 150 ms 就收回），也不因为失去前台收起。</summary>
+    internal static bool ProbeHold { get; set; }
+
+    /// <summary>自检：这一叠现在开着的几扇窗（药丸、标签列、预览卡、打开的便签）。</summary>
+    internal IEnumerable<(string Name, Microsoft.UI.Xaml.Window Window)> ProbeWindows()
+    {
+        if (_pill is not null)
+        {
+            yield return ("pill", _pill);
+        }
+
+        if (_column is not null)
+        {
+            yield return ("column", _column);
+        }
+
+        if (_preview is not null)
+        {
+            yield return ("preview", _preview);
+        }
+
+        if (_sheet is not null)
+        {
+            yield return ("sheet", _sheet);
+        }
+    }
 
     public string ScreenName => _screen.Name;
 
@@ -933,6 +963,11 @@ internal sealed partial class NoteDeckBay
     /// <summary>打开的便签失去了前台（点了别处）：没固定的收起。</summary>
     public void SheetDeactivated()
     {
+        if (ProbeHold)
+        {
+            return;
+        }
+
         // 前台换成了自己的窗口（剪贴板面板、启动器、翻译浮窗……）：不收——从它们粘回这条便签要它还在（第 8 批）。
         // 之后在别处按了左键由 Watch 收（那时它已经没拿键盘）
         if (Foreground.IsOurs(Foreground.Get()))
@@ -994,6 +1029,11 @@ internal sealed partial class NoteDeckBay
         if (_state.Phase == NoteDeckPhase.Rest || !(_state.IsExpanded || _state.ShowsAll || _state.IsDragging))
         {
             StopWatching();
+            return;
+        }
+
+        if (ProbeHold)
+        {
             return;
         }
 

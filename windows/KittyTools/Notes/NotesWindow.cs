@@ -587,6 +587,17 @@ internal sealed class NotesWindow : Window
 
     // ---- 操作 ----
 
+    /// <summary>自检（NotesUiProbe）用的几个口子。</summary>
+    internal static NotesWindow? ProbeInstance => _instance;
+
+    internal bool ProbeWall => _wallMode;
+
+    internal void ProbeToggleLayout() => ToggleLayout();
+
+    internal void ProbeExpand(string id) => ExpandCard(id);
+
+    internal void ProbeCollapse() => CollapseCard();
+
     private void ToggleLayout()
     {
         _wallMode = !_wallMode;

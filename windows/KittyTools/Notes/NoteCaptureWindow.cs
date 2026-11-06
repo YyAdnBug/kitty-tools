@@ -46,6 +46,9 @@ internal sealed class NoteCaptureWindow : Window
 
     public static bool IsOpen => _instance?._visible == true;
 
+    /// <summary>自检（NotesUiProbe）：开着的那扇。</summary>
+    internal static Window? ProbeInstance => _instance;
+
     private static string DraftPath => System.IO.Path.Combine(Paths.DataDirectory, NoteCaptureRules.DraftName);
 
     private NoteCaptureWindow()
@@ -102,6 +105,7 @@ internal sealed class NoteCaptureWindow : Window
         _title = new TextBox { PlaceholderText = "标题（可不填）", FontSize = 13, VerticalAlignment = VerticalAlignment.Center };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_title, "新便签的标题");
         SearchLine.MakePlain(_title);
+        SearchLine.HideClearButton(_title);
         _title.TextChanged += (_, _) => DraftChanged();
         _title.KeyDown += OnTitleKeyDown;
         Grid.SetColumn(_title, 2);
