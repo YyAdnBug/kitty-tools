@@ -353,24 +353,10 @@ internal sealed partial class PinWindow : Window
 
     private async Task CopyAsync()
     {
-        // REVIEW R48：DIB 先在后台转好再写剪贴板；以前不带 DIB，WriteImagePng 在 UI 线程上干等转换，大图卡几百毫秒。
-        var prepared = await ClipboardWriter.PrepareImageAsync(_png);
-        if (ClipboardWriter.WriteImagePng(prepared.Png, prepared.Dib))
-        {
-            ClipboardService.Instance?.MarkOwnWrite();
-            // 尺寸按图本身的像素：长截图钉出来比选区长（同角落卡，PLAN-v11 M16）。
-            var (width, height) = KittyTools.Core.PngInfo.Size(_png) ?? (_origin.Width, _origin.Height);
-            if (ClipboardService.Instance is { } service)
-            {
-                _ = service.Store.RecordImageAsync(_png, width, height, null, "钉图");
-            }
-            NoticeHost.Show("已复制钉图", string.Empty, NoticeTone.Normal);
-        }
-        else
-        {
-            // REVIEW R63：剪贴板被别的程序占着时以前什么都不显示。
-            NoticeHost.Show("没能复制", "剪贴板被别的程序占着，稍后再试", NoticeTone.Error);
-        }
+        // 同框选后的拷贝（PLAN-v15）：设置里选了 PNG 文件时剪贴板里是文件；DIB 在那边后台转好再写（REVIEW R48）。
+        // 尺寸按图本身的像素：长截图钉出来比选区长（同角落卡，PLAN-v11 M16）。
+        var (width, height) = KittyTools.Core.PngInfo.Size(_png) ?? (_origin.Width, _origin.Height);
+        await ScreenshotOutput.CopyPngAsync(_png, width, height, "已复制钉图", "钉图", showSize: false);
     }
 
     private async Task SaveQuickAsync()

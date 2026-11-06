@@ -1,6 +1,7 @@
 // 截图历史的纯规则（PLAN-v8 H1–H4，照 mac ShotHistory.swift）：种类、该清掉哪些（30 天 / 2 GB，最新那条不按总量删）、
 // 标注的 JSON（Windows 自己的格式：tool 名和字段名进了磁盘，以后别改）、缩略图尺寸、按天分组的标题。配单测 ShotHistoryTests。
 // 历史窗口的多选（Ctrl / Shift 点、Shift + 方向键）、方向键挑图、多选时的那一行小结（照 mac 1ec2ca9a / 933c1dd9），配单测 ShotHistorySelectionTests。
+// 临时文件夹里一天以前的那些（StaleTemp，PLAN-v15）。
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -98,6 +99,13 @@ public static class ShotHistoryRules
 
         return doomed;
     }
+
+    /// <summary>
+    /// 临时文件夹（%TEMP%\kitty-shots：拖出去的、拷成文件的那些）里哪些算一天以前的，每日维护时删（PLAN-v15，同 mac
+    /// ShotShelf.stale）：改于比现在早 24 小时以上的；时间比现在还晚的（钟往回调过）不算，留给启动时清。
+    /// </summary>
+    public static List<string> StaleTemp(IEnumerable<(string Path, DateTime ModifiedUtc)> entries, DateTime nowUtc) =>
+        entries.Where(entry => nowUtc - entry.ModifiedUtc > TimeSpan.FromHours(24)).Select(entry => entry.Path).ToList();
 
     /// <summary>缩略图尺寸：最长边 side，等比，至少 1；本来就小的原样。</summary>
     public static (int Width, int Height) ThumbnailSize(int width, int height, int side = ThumbnailSide)

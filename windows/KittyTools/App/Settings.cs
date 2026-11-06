@@ -220,6 +220,12 @@ internal sealed class Settings
     /// </summary>
     public string ScreenshotToolbarAlign { get; set; } = "right";
 
+    /// <summary>
+    /// 截图拷贝为（PLAN-v15，mac screenshotCopyAs 2026-11-06，跟着导出导入）：image = 剪贴板里放图像（默认）/ file = 放一个 PNG 文件，
+    /// 同在资源管理器里复制一个文件——只搬文字和文件的跨电脑剪贴板（USB 对拷线的配套软件、有的远程工具）也传得过去。
+    /// </summary>
+    public string ScreenshotCopyAs { get; set; } = "image";
+
     // 录制（第四版）：帧率、保存目录、上次没写完的临时文件（闪退恢复用）。
     public int RecordFps { get; set; } = Core.RecorderRules.DefaultFps;
 

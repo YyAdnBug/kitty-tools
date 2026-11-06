@@ -8,6 +8,20 @@
 
 条目编号不复用。行号按条目里写的那个提交。
 
+## PLAN-v15（截图拷贝为文件，2026-11-06 用户「全部按推荐」，审查方在 Mac 上写、**没编译**）
+
+方案在 `PLAN-v15.md`（同 mac `copyfile-wip`）。一个提交，`git log --oneline --grep "PLAN-v15"`。你们只编译、核验、修编译错和屏幕上不对的地方，改了什么记在这一节下面。
+
+- **改了哪些文件**：`App/Settings.cs`（`ScreenshotCopyAs`）、`Storage/ArchiveService.cs`（导出导入 `screenshotCopyAs`，只认 `image` / `file`）、
+  `Screenshot/ScreenshotOutput.cs`（`CopyPngAsync` 多了 title / source / showSize / existingFile 四个可选参数和拷成文件那一支；`TempFolder`、`WriteCopyFileAsync`、`PurgeStaleTemp`）、
+  `Screenshot/ScreenshotCard.cs`、`PinWindow.cs`、`ShotHistoryWindow.cs`（三处拷贝改成调 `CopyPngAsync`）、`Shell/ShellRuntime.cs`（启动时多清 `copy\`；`ScheduleBackup` 里调 `PurgeStaleTemp`）、
+  `Settings/SettingsWindow.cs`（「截图拷贝为」一张卡、搜索词、页头说明）、Core `ShotHistoryRules.StaleTemp` + 单测 `ShotHistoryTests.StaleTempKeepsTheLastDay`。
+- **要特别看的编译点**：`PurgeStaleTemp` 里两种 `Select` 出来的元组（`(path, DateTime)`）拼成一个 `List` 再传给 `StaleTemp(IEnumerable<(string Path, DateTime ModifiedUtc)>)`，名字不同、类型一样；
+  三处调用方里 `ClipboardWriter` 可能只剩 `using` 没用上（`ShotHistoryWindow` 的多选拷贝、录制条目还在用 `WriteFiles`）；`ScreenshotCard.CopyAsync` 外面的 `try` / `catch` 留着。
+- **核验**：`dotnet build` 零警告、`dotnet test` 全过（新加 1 个）、Release AOT 两个架构零警告；设置 › 截图浅色 / 深色各截一张（「截图拷贝为」那张卡在「快速保存到」说明下面）；
+  然后走 `HANDTEST.md` 1148–1154（1150 对拷线标「没测」，留给用户）。
+- **替用户定的**：钉图拷成图像时提示照旧不写尺寸（原来就不写）；「剪贴板被别的程序占着」统一成角落卡原来那句「…，稍后再试」；清理挂在 `ScheduleBackup`（启动、解锁、唤醒）上，Windows 没有换日事件。
+
 ## PLAN-v13（便签，2026-11-05 用户「继续新会话剩下的，现在不检查，最后一次性检查」）
 
 方案在 `PLAN-v13.md`（不是拍板页，行为照 mac 0.6.0 起的便签，`macos` b7a55e33；Windows 自己定的在 §3）。和 PLAN-v12 一样**全部在 Mac 上写、一行都没编译**，

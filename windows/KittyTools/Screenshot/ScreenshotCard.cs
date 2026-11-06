@@ -553,22 +553,8 @@ internal sealed partial class ScreenshotCard : Window
 
         try
         {
-            var prepared = await ClipboardWriter.PrepareImageAsync(_png);
-            if (ClipboardWriter.WriteImagePng(prepared.Png, prepared.Dib))
-            {
-                ClipboardService.Instance?.MarkOwnWrite();
-                if (ClipboardService.Instance is { } service)
-                {
-                    _ = service.Store.RecordImageAsync(_png, _pixelSize.Width, _pixelSize.Height, null, "截图");
-                }
-
-                NoticeHost.Show("已复制截图", $"{_pixelSize.Width} × {_pixelSize.Height}", NoticeTone.Normal);
-            }
-            else
-            {
-                // REVIEW R63：剪贴板被别的程序占着时以前什么都不显示。
-                NoticeHost.Show("没能复制", "剪贴板被别的程序占着，稍后再试", NoticeTone.Error);
-            }
+            // 同框选后的拷贝（PLAN-v15）：设置里选了 PNG 文件时剪贴板里是文件；占着剪贴板的提示也在那里。
+            await ScreenshotOutput.CopyPngAsync(_png, _pixelSize.Width, _pixelSize.Height);
         }
         catch (Exception ex)
         {

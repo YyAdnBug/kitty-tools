@@ -146,11 +146,15 @@ internal sealed class ShellRuntime
                     File.Delete(file);
                 }
 
-                // 截图历史拖出去 / 一起拷贝的那几份（每条一个子文件夹，免得同一秒截的重名）。
-                var history = Path.Combine(temp, "history");
-                if (Directory.Exists(history))
+                // 截图历史拖出去 / 一起拷贝的那几份（每条一个子文件夹，免得同一秒截的重名），
+                // 和截图拷成文件的那些（PLAN-v15，每次一个子文件夹）。
+                foreach (var sub in new[] { "history", "copy" })
                 {
-                    Directory.Delete(history, recursive: true);
+                    var folder = Path.Combine(temp, sub);
+                    if (Directory.Exists(folder))
+                    {
+                        Directory.Delete(folder, recursive: true);
+                    }
                 }
             }
         }
@@ -1034,6 +1038,8 @@ internal sealed class ShellRuntime
         // 剪贴板的库等着恢复时便签照常落盘、清理、备份（PLAN-v13 复查）。
         NotesHost.Flush();
         NotesHost.Maintain();
+        // 拖出去、拷成文件的临时文件：启动时整个清空，一直开着不退的在这里删一天以前的（PLAN-v15）。
+        ScreenshotOutput.PurgeStaleTemp(DateTime.UtcNow);
         var directory = Paths.DataDirectory;
 
         // 库打不开、还没问用户怎么恢复的时候不备份：别拿坏的库顶掉好的备份。

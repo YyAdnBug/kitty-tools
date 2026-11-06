@@ -99,6 +99,7 @@ internal sealed partial class SettingsWindow : Window
         {
             "保存", "存储", "目录", "文件夹", "快门", "声音", "缩略图", "识字", "换行", "标注", "长截图", "钉图", "截图历史", "按键", "速查",
             "工具栏", "靠右", "居中", "位置",
+            "拷贝", "复制", "文件", "PNG", "对拷线", "远程",
         },
         ["record"] = new[]
         {
@@ -2324,12 +2325,12 @@ internal sealed partial class SettingsWindow : Window
             });
 
     /// <summary>
-    /// 设置 › 截图（照 mac ScreenshotTab）：启用截图 ｜ 快速保存到 ｜ 快门声 ｜ 截图历史 ｜ 截完图放哪 ｜ 识字 ｜
+    /// 设置 › 截图（照 mac ScreenshotTab）：启用截图 ｜ 快速保存到 ｜ 截图拷贝为 ｜ 快门声 ｜ 截图历史 ｜ 截完图放哪 ｜ 识字 ｜
     /// 框选、标注、长截图和录屏的按键。截图历史的保留天数和占用是 S8（MAC-DIFF.md）。
     /// </summary>
     private void BuildScreenshot()
     {
-        _content.Children.Add(Header("截图", "快速保存、快门声、缩略图和识字"));
+        _content.Children.Add(Header("截图", "快速保存、拷贝为图像还是文件、快门声、缩略图和识字"));
         AddFeatureToggle(Feature.Screenshot);
 
         // 快速保存到：功能关着也能改（mac 这一行在变灰的那块外面）
@@ -2344,6 +2345,19 @@ internal sealed partial class SettingsWindow : Window
         _content.Children.Add(Ungated(SettingsUi.Footnote(
             "按 Ctrl+S 或工具栏的「存储」存到这里，文件名是「截图 日期 时间.png」，重名自动加序号；Ctrl+Shift+S 每次另存为。" +
             "没选过时存到系统的「屏幕截图」文件夹。截图不会上传到任何服务。")));
+
+        // 截图拷贝为（PLAN-v15，同 mac 2026-11-06）：图像（默认）/ PNG 文件。截图里的每一种「拷贝」都看它。
+        _content.Children.Add(new Border { Height = 8 });
+        var copyKinds = new[] { "image", "file" };
+        AddCombo("截图拷贝为",
+            "选 PNG 文件时，剪贴板里是一个图片文件，和复制一个文件一样：能粘进聊天窗口和文件夹，只认文件的跨电脑剪贴板工具也传得过去；只收图像的程序粘不进去",
+            new[] { "图像", "PNG 文件" },
+            SettingsService.Current.ScreenshotCopyAs == "file" ? 1 : 0,
+            index =>
+            {
+                SettingsService.Current.ScreenshotCopyAs = copyKinds[index];
+                SettingsService.Save();
+            });
 
         // 快门声（PLAN-v9 S6）：右边先是「试听」，再是开关。
         _content.Children.Add(new Border { Height = 8 });

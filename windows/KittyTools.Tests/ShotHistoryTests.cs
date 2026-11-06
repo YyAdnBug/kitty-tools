@@ -1,4 +1,4 @@
-// PLAN-v8 第 1 批：截图历史的清理规则、标注 JSON 往返、缩略图尺寸、按天分组的标题。
+// PLAN-v8 第 1 批：截图历史的清理规则、标注 JSON 往返、缩略图尺寸、按天分组的标题；PLAN-v15：临时文件夹清哪些。
 using KittyTools.Core;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -29,6 +29,20 @@ public sealed class ShotHistoryTests
         // 上限比一张图还小：最新那条照样留着。
         CollectionAssert.AreEquivalent(
             new[] { "a", "b", "old" }, ShotHistoryRules.Stale(items, now, 0, 1));
+    }
+
+    // PLAN-v15：临时文件夹里一天以前的才删；钟往回调过、时间比现在还晚的不删（留给启动时清）。
+    [TestMethod]
+    public void StaleTempKeepsTheLastDay()
+    {
+        var now = new DateTime(2026, 11, 6, 12, 0, 0, DateTimeKind.Utc);
+        var entries = new[]
+        {
+            (@"C:\t\old", now.AddHours(-25)),
+            (@"C:\t\recent", now.AddHours(-23)),
+            (@"C:\t\future", now.AddHours(1)),
+        };
+        CollectionAssert.AreEqual(new[] { @"C:\t\old" }, ShotHistoryRules.StaleTemp(entries, now));
     }
 
     [TestMethod]

@@ -780,21 +780,10 @@ internal sealed partial class ShotHistoryWindow : Window
             return;
         }
 
-        var prepared = await ClipboardWriter.PrepareImageAsync(png);
-        if (!ClipboardWriter.WriteImagePng(prepared.Png, prepared.Dib))
-        {
-            NoticeHost.Show("没能复制", "剪贴板被别的程序占着", NoticeTone.Error);
-            return;
-        }
-
-        var service = ClipboardService.Instance;
-        service?.MarkOwnWrite();
-        if (service is not null)
-        {
-            _ = service.Store.RecordImageAsync(png, item.PixelWidth, item.PixelHeight, null, "截图历史");
-        }
-
-        NoticeHost.Show("已复制截图", $"{item.PixelWidth} × {item.PixelHeight}", NoticeTone.Normal);
+        // 同框选后的拷贝（PLAN-v15）：设置里选了 PNG 文件时拷的是拖出去的那一份（存过的就是存的那个文件），只在那时才做它。
+        var file = SettingsService.Current.ScreenshotCopyAs == "file" ? DragFile(item) : null;
+        await ScreenshotOutput.CopyPngAsync(
+            png, item.PixelWidth, item.PixelHeight, source: "截图历史", existingFile: file);
     }
 
     private static void CopyFile(ShotItem item)
