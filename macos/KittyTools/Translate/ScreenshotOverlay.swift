@@ -35,8 +35,9 @@ nonisolated enum ScreenshotOverlay {
 
   /// 行内代码块的样子，从原图量出来；译文里原样留着的代码词按它重画底框
   struct Code: Equatable, Sendable {
-    /// 原来在代码块里的词
-    var words: Set<String>
+    /// 每个代码块里的词（按原文顺序）：一个代码块常常不止一个词（`View Copilot Metrics`、
+    /// `pull_requests.total_copilot_applied_suggestions` 被 Vision 读成两个词），译文里整串出现才画
+    var phrases: [[String]]
     var fill: RGB
     /// 描边（代码块边上和底色不一样的那一圈）和它多宽；没有描边时 nil
     var border: RGB?
@@ -160,8 +161,11 @@ nonisolated enum ScreenshotOverlay {
     var spans: [Span] = []
     for (index, segment) in segments.enumerated() {
       guard index < translations.count else { continue }
-      let (marker, text) = listItem(
+      let (marker, translated) = listItem(
         translations[index].trimmingCharacters(in: .whitespacesAndNewlines), source: segment.text)
+      // 代码词换回原文的写法（服务常把句首的 `total_…` 改成 `Total_…`）
+      let text =
+        segment.code.map { codeSpans(in: translated, phrases: $0.phrases).text } ?? translated
       // 纯符号的段（分隔线、装饰符，OCR 常认成 `———`）不覆盖：里面没有可翻译的内容，
       // 送去服务那边还会直接回错误码（有道网页版是 40）
       guard !text.isEmpty, Self.hasTranslatableContent(segment.text) else { continue }
@@ -227,12 +231,23 @@ nonisolated enum ScreenshotOverlay {
         text, width: columnWidth, nominal: nominal, pitch: pitch, lineCount: segment.lineCount,
         baseline: baseline, bottom: bottom, code: segment.code)
 
+      // 有代码块的段：去字的范围至少盖到量出来的代码块那么高、那么宽（第一行代码块的顶边、最后一行的底边、左右留白）。
+      // 只靠段框往外扩一点不够：两段挨得近时扩出去的量按空隙的一半算，代码块的顶边会留下一条细线（2026-11-06）
+      var top = box.maxY + pad(above)
+      var floor = box.minY - pad(under)
+      var minX = eraseMinX
+      var maxX = eraseMaxX
+      if let code = segment.code {
+        let last = baseline - CGFloat(max(0, segment.lineCount - 1)) * pitch
+        top = max(top, baseline + code.above + 1)
+        floor = min(floor, last - code.below - 1)
+        minX = min(minX, box.minX - code.padding - 2)
+        maxX = max(maxX, box.maxX + code.padding + 2)
+      }
       // 去字的范围也要盖住译文多出来的行：那里可能压着别的笔画（比如分隔线），不去掉会和译文叠在一起
-      let eraseMinY = min(box.minY - pad(under), max(bottom, fitted.textBottom))
-      let erase = CGRect(
-        x: eraseMinX, y: eraseMinY, width: eraseMaxX - eraseMinX,
-        height: box.maxY + pad(above) - eraseMinY
-      ).intersection(bounds)
+      let eraseMinY = min(floor, max(bottom, fitted.textBottom))
+      let erase = CGRect(x: minX, y: eraseMinY, width: maxX - minX, height: top - eraseMinY)
+        .intersection(bounds)
       guard erase.width > 1, erase.height > 1 else { continue }
       spans.append(
         Span(
@@ -364,9 +379,18 @@ nonisolated enum ScreenshotOverlay {
     CFAttributedStringSetAttributes(string, whole, attributes as CFDictionary, true)
     if let code {
       let mono = monospacedFont(size: fontSize * codeScale)
-      for range in codeRanges(in: text, words: code.words) {
+      // 代码串前一个字后面、代码串最后一个字后面各加一个留白的宽度：底框的留白不压到旁边的字
+      // （中文译文里代码词前后没有空格，`：pull_requests` 的冒号、`high、medium` 两个底框会挤在一起）
+      let room = code.padding as CFNumber
+      for range in codeSpans(in: text, phrases: code.phrases).ranges {
         let cfRange = CFRange(location: range.location, length: range.length)
         CFAttributedStringSetAttribute(string, cfRange, kCTFontAttributeName, mono)
+        if range.location > 0 {
+          CFAttributedStringSetAttribute(
+            string, CFRange(location: range.location - 1, length: 1), kCTKernAttributeName, room)
+        }
+        CFAttributedStringSetAttribute(
+          string, CFRange(location: range.upperBound - 1, length: 1), kCTKernAttributeName, room)
         if let codeColor {
           CFAttributedStringSetAttribute(
             string, cfRange, kCTForegroundColorAttributeName, codeColor)
@@ -376,37 +400,46 @@ nonisolated enum ScreenshotOverlay {
     return string
   }
 
-  /// 译文里原样出现的代码词（前后不连着字母、数字、下划线，免得 `max` 认进 `maximum`）的位置（UTF-16），
-  /// 互相重叠的只留先出现、更长的那个
-  static func codeRanges(in text: String, words: Set<String>) -> [NSRange] {
+  /// 译文里的代码串：一个代码块里的词按原文顺序、中间隔着不超过三个空格或标点（`.` `-` `/` `:` `,`），
+  /// 前后不连着字母、数字、下划线（`max` 不认进 `maximum`、`max_size`）。不分大小写——服务常把句首的 `total_…`
+  /// 改成 `Total_…`——找到后换回原文的写法（只改大小写、空格换成不断行空格，长度不变，位置不动）。
+  /// 互相重叠的只留先出现、更长的那个。
+  /// 返回换好写法的译文和代码串的位置（UTF-16）
+  static func codeSpans(in text: String, phrases: [[String]]) -> (text: String, ranges: [NSRange]) {
     let string = text as NSString
-    func isWordCharacter(_ index: Int) -> Bool {
-      guard index >= 0, index < string.length,
-        let scalar = Unicode.Scalar(string.character(at: index))
-      else { return false }
-      return scalar.isASCII
-        && (scalar.properties.isAlphabetic || ("0"..."9").contains(scalar)
-          || scalar == "_")
-    }
-    var found: [NSRange] = []
-    for word in words where !word.isEmpty {
-      var search = NSRange(location: 0, length: string.length)
-      while search.length > 0 {
-        let range = string.range(of: word, options: .literal, range: search)
-        guard range.location != NSNotFound else { break }
-        if !isWordCharacter(range.location - 1), !isWordCharacter(range.upperBound) {
-          found.append(range)
+    var found: [(range: NSRange, replacement: String)] = []
+    for words in phrases where !words.isEmpty {
+      let pattern =
+        "(?<![A-Za-z0-9_])"
+        + words.map { "(" + NSRegularExpression.escapedPattern(for: $0) + ")" }
+        .joined(separator: "([\\s.,:/\\-]{0,3})") + "(?![A-Za-z0-9_])"
+      guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
+      else { continue }
+      for match in regex.matches(in: text, range: NSRange(location: 0, length: string.length)) {
+        var replacement = ""
+        for (index, word) in words.enumerated() {
+          replacement += word
+          if index < words.count - 1 {
+            // 词之间的空白换成不断行空格：一个代码块别在行尾被折成两截
+            replacement += string.substring(with: match.range(at: 2 * index + 2))
+              .replacingOccurrences(of: " ", with: "\u{00A0}")
+          }
         }
-        search = NSRange(location: range.upperBound, length: string.length - range.upperBound)
+        found.append((match.range, replacement))
       }
     }
-    var result: [NSRange] = []
-    for range in found.sorted(by: {
-      $0.location == $1.location ? $0.length > $1.length : $0.location < $1.location
-    }) where result.last.map({ $0.upperBound <= range.location }) ?? true {
-      result.append(range)
+    var kept: [(range: NSRange, replacement: String)] = []
+    for item in found.sorted(by: {
+      $0.range.location == $1.range.location
+        ? $0.range.length > $1.range.length : $0.range.location < $1.range.location
+    }) where kept.last.map({ $0.range.upperBound <= item.range.location }) ?? true {
+      kept.append(item)
     }
-    return result
+    let result = NSMutableString(string: string)
+    for item in kept where (item.replacement as NSString).length == item.range.length {
+      result.replaceCharacters(in: item.range, with: item.replacement)
+    }
+    return (result as String, kept.map(\.range))
   }
 
   // MARK: 出图
@@ -462,7 +495,7 @@ nonisolated enum ScreenshotOverlay {
     }
     let background = original.ring(around: segment.box) ?? .light
     result.code = original.code(
-      words: segment.words, baselines: baselines, lineHeight: segment.lineHeight,
+      words: segment.words, in: segment.box, baselines: baselines, lineHeight: segment.lineHeight,
       background: background)
     return result
   }
@@ -514,7 +547,7 @@ nonisolated enum ScreenshotOverlay {
       of: span.text, width: span.frame.width, fontSize: span.fontSize, color: color,
       code: span.code, codeColor: codeColor)
     if let code = span.code, let fill = cgColor(code.fill) {
-      let ranges = codeRanges(in: span.text, words: code.words)
+      let ranges = codeSpans(in: span.text, phrases: code.phrases).ranges
       for (index, item) in lines.enumerated() {
         let baseline = span.baseline - CGFloat(index) * span.pitch
         let lineRange = CTLineGetStringRange(item.line)
@@ -523,8 +556,11 @@ nonisolated enum ScreenshotOverlay {
           let end = min(range.upperBound, lineRange.location + lineRange.length)
           guard end > start else { continue }
           let x0 = span.frame.minX + item.x + CTLineGetOffsetForStringIndex(item.line, start, nil)
-          let x1 = span.frame.minX + item.x + CTLineGetOffsetForStringIndex(item.line, end, nil)
-          let padding = code.padding * span.scale
+          // 代码串最后一个字后面加过一个留白的宽度（见 attributed），量到的右边要扣回来
+          let x1 =
+            span.frame.minX + item.x + CTLineGetOffsetForStringIndex(item.line, end, nil)
+            - (end == range.upperBound ? code.padding : 0)
+          let padding = code.padding
           let rect = CGRect(
             x: x0 - padding, y: baseline - code.below * span.scale,
             width: x1 - x0 + 2 * padding, height: (code.above + code.below) * span.scale)
@@ -840,15 +876,19 @@ nonisolated enum ScreenshotOverlay {
     }
 
     /// 段里哪些词在行内代码块里、代码块长什么样（取第一个量到的）：词框中间那一半出现最多的颜色和页面底不一样，
-    /// 而且从词中间往两边走、穿过字和这块底色能走到页面底（被页面底围住的一块，不是整片面板）的，就是代码块。
+    /// 而且从词中间往两边走、穿过字和这块底色能在段框附近走到页面底（被页面底围住的一块，不是整片面板）的，就是代码块。
+    /// 一个代码块常常不止一个词（`View Copilot Metrics`）：落在已经量过的代码块里的词归进那一块，整串一起认。
     /// Vision 给的词框常常比代码块宽一点（`total_comments_addressed` 的框是 95…552、代码块是 103…547），
     /// 所以不从词框边上往外找，留白也按代码块边到第一笔字量
-    func code(words: [OCR.Word], baselines: [CGFloat], lineHeight: CGFloat, background: RGB)
-      -> Code?
-    {
-      var found = Set<String>()
+    func code(
+      words: [OCR.Word], in segment: CGRect, baselines: [CGFloat], lineHeight: CGFloat,
+      background: RGB
+    ) -> Code? {
+      var chips: [(left: Int, right: Int, bottom: Int, top: Int, words: [String])] = []
       var style: Code?
       let reach = Int(lineHeight.rounded())
+      let leftLimit = Int(segment.minX.rounded()) - reach
+      let rightLimit = Int(segment.maxX.rounded()) + reach
       func isFill(_ x: Int, _ y: Int) -> Bool {
         contains(x, y) && color(x: x, y: y).distance(to: background) > fillThreshold
       }
@@ -857,22 +897,27 @@ nonisolated enum ScreenshotOverlay {
         let bx1 = Int(word.box.maxX.rounded())
         let by0 = Int(word.box.minY.rounded())
         let by1 = Int(word.box.maxY.rounded())
+        let middle = (by0 + by1) / 2
+        let center = (bx0 + bx1) / 2
+        if let index = chips.firstIndex(where: {
+          center >= $0.left && center < $0.right && middle >= $0.bottom && middle <= $0.top
+        }) {
+          chips[index].words.append(word.text)
+          continue
+        }
         let quarter = (bx1 - bx0) / 4
         guard bx1 - bx0 >= 4, by1 - by0 >= 2,
           let fill = mode(x0: bx0 + quarter, x1: bx1 - quarter, y0: by0, y1: by1),
           fill.distance(to: background) > fillThreshold, fill.distance(to: background) < 0.5
         else { continue }
-        let middle = (by0 + by1) / 2
-        var left = (bx0 + bx1) / 2
-        while left > bx0 - reach, isFill(left - 1, middle) { left -= 1 }
-        var right = (bx0 + bx1) / 2
-        while right < bx1 + reach, isFill(right, middle) { right += 1 }
-        // 走到了上限还没碰到页面底：是一整片面板，不是代码块
-        guard left > bx0 - reach, right < bx1 + reach, right - left >= (bx1 - bx0) / 2 else {
+        var left = center
+        while left > leftLimit, isFill(left - 1, middle) { left -= 1 }
+        var right = center
+        while right < rightLimit, isFill(right, middle) { right += 1 }
+        // 走到了段框外一个行高还没碰到页面底：是一整片面板，不是代码块
+        guard left > leftLimit, right < rightLimit, right - left >= (bx1 - bx0) / 2 else {
           continue
         }
-        found.insert(word.text)
-        guard style == nil else { continue }
         // 字在代码块里从哪一列到哪一列（列里有和代码块底色差得多的像素）
         func hasInk(_ x: Int) -> Bool {
           (max(0, by0)..<min(height, by1)).contains {
@@ -905,17 +950,19 @@ nonisolated enum ScreenshotOverlay {
         }
         let top = edge(1)
         let bottom = edge(-1)
+        chips.append((left, right, bottom, top, [word.text]))
+        guard style == nil else { continue }
         let baseline =
           baselines.first { $0 > CGFloat(bottom) && $0 <= CGFloat(top + 1) }
           ?? word.box.maxY - word.box.height * baselineDrop
         // 描边：最上面一排和底色不一样就是描边，往下数几排一样的就是多宽
-        let edge = color(x: probe, y: top)
+        let rim = color(x: probe, y: top)
         var border: RGB?
         var borderWidth: CGFloat = 0
-        if edge.distance(to: fill) > 0.02 {
-          border = edge
+        if rim.distance(to: fill) > 0.02 {
+          border = rim
           var y = top
-          while y > bottom, color(x: probe, y: y).distance(to: edge) <= 0.03, borderWidth < 4 {
+          while y > bottom, color(x: probe, y: y).distance(to: rim) <= 0.03, borderWidth < 4 {
             borderWidth += 1
             y -= 1
           }
@@ -930,13 +977,13 @@ nonisolated enum ScreenshotOverlay {
           }
         }
         style = Code(
-          words: [], fill: fill, border: border, borderWidth: borderWidth,
+          phrases: [], fill: fill, border: border, borderWidth: borderWidth,
           text: ScreenshotOverlay.dominant(samples),
           padding: CGFloat(max(0, firstInk - left) + max(0, right - 1 - lastInk)) / 2,
           above: CGFloat(top + 1) - baseline, below: baseline - CGFloat(bottom))
       }
-      guard !found.isEmpty, var style else { return nil }
-      style.words = found
+      guard !chips.isEmpty, var style else { return nil }
+      style.phrases = chips.map(\.words)
       return style
     }
 

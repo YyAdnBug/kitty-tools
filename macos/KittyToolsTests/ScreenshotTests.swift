@@ -522,6 +522,34 @@ struct ScreenshotTests {
     #expect(OCR.listMarker("plain text") == nil)
   }
 
+  /// 句末短行后面跟着一个放不进这一行剩下地方的长词：是长词挤出来的折行，不是段落结尾，不断段（2026-11-06）
+  @Test func shortLineBeforeALongWordIsAWrap() {
+    func line(_ text: String, top: CGFloat, width: CGFloat, firstWord: CGFloat? = nil) -> OCR.Line {
+      let box = CGRect(x: 0.1, y: top - 0.05, width: width, height: 0.05)
+      let words =
+        firstWord.map {
+          [OCR.Word(text: "word", box: CGRect(x: 0.1, y: box.minY, width: $0, height: 0.05))]
+        } ?? []
+      return OCR.Line(text: text, box: box, words: words)
+    }
+    let wrapped = [
+      line(
+        "Bot pull requests: Copilot usually does not evaluate comments on pull", top: 0.9,
+        width: 0.85),
+      line("requests opened by bots, such as Copilot cloud agent.", top: 0.84, width: 0.6),
+      line(
+        "total_merged_no_human_change_request_after_review still includes", top: 0.78, width: 0.84,
+        firstWord: 0.7),
+      line("those pull requests.", top: 0.72, width: 0.2),
+    ]
+    #expect(OCR.paragraphs(wrapped).count == 1)
+    // 下一行的第一个词放得下（真的段落结尾）：照旧断开
+    var ended = wrapped
+    ended[2] = line(
+      "Next paragraph starts here and goes on", top: 0.78, width: 0.84, firstWord: 0.08)
+    #expect(OCR.paragraphs(ended).count == 2)
+  }
+
   @Test func recognizesMixedScripts() async throws {
     let image = try Self.render(["中文识别测试", "日本語のテキストです", "한국어 텍스트", "Привет мир", "Hello World"])
     let text = try #require(await OCR.recognizeLines(in: image).map { OCR.text($0, joined: false) })
