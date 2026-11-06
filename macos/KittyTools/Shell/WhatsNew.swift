@@ -48,6 +48,10 @@ enum WhatsNew {
     Entry(
       id: "screenshot-copy-as-file", version: "0.7.3", feature: .screenshot, page: .screenshot,
       section: "截图拷贝为"),
+    // 0.7.3：框选时保持屏幕原色（设置 › 截图，2026-11-06 用户：截图时像蒙了一层粉色滤镜）
+    Entry(
+      id: "screenshot-keeps-colors", version: "0.7.3", feature: .screenshot, page: .screenshot,
+      section: "框选时保持屏幕原色"),
   ]
 
   /// 一版最多标几个（拍板 B1：标多了到处都是「新」，等于没标）
