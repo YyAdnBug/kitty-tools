@@ -170,12 +170,22 @@ struct ScreenshotOverlayTests {
     #expect(abs(segments[0].inset - 32) < 0.01)
   }
 
-  /// 代码词：译文里原样出现、前后不连着字母数字下划线才算（`max` 不认进 `maximum`、`max_size`）；重叠的留长的
-  @Test func codeWordsMatchWholeWordsOnly() {
-    let text = "maximum 和 max、max_size 以及 total_count：total"
-    let ranges = ScreenshotOverlay.codeRanges(in: text, words: ["max", "total_count", "total"])
-    let found = ranges.map { (text as NSString).substring(with: $0) }
-    #expect(found == ["max", "total_count", "total"])
+  /// 代码串：前后不连着字母数字下划线才算（`max` 不认进 `maximum`、`max_size`）；重叠的留长的；
+  /// 一个代码块里的几个词整串出现才算（单独的 `Copilot` 不算）；不分大小写、换回原文的写法
+  @Test func codeSpansMatchWholePhrases() {
+    let text = "maximum 和 max、max_size 以及 Total_count：total，授予 View Copilot Metrics 权限的 Copilot"
+    let result = ScreenshotOverlay.codeSpans(
+      in: text, phrases: [["max"], ["total_count"], ["total"], ["View", "Copilot", "Metrics"]])
+    let found = result.ranges.map { (result.text as NSString).substring(with: $0) }
+    // 一个代码块里的词之间换成不断行空格（别在行尾折成两截）
+    #expect(found == ["max", "total_count", "total", "View\u{00A0}Copilot\u{00A0}Metrics"])
+    // 句首被服务改成大写的代码词换回原文的写法，别的字不动
+    #expect(result.text.contains("total_count：total") && !result.text.contains("Total_count"))
+    #expect(result.text.hasSuffix("权限的 Copilot"))
+    // 词之间隔着 `.` `-` 也认（Vision 把 `repos-1-day` 读成 `repos` `1-day`）
+    let joined = ScreenshotOverlay.codeSpans(
+      in: "每行 repos-1-day 报告", phrases: [["repos", "1-day"]])
+    #expect(joined.ranges.map { (joined.text as NSString).substring(with: $0) } == ["repos-1-day"])
   }
 
   /// 没认出代码块的段（比如整段在一块有颜色的面板上）只去字：底色、底框都留着；

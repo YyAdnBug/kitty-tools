@@ -173,7 +173,8 @@ nonisolated enum OCR {
   }
 
   /// 按行框切段（纯函数，配单测）：三种情况断段——① 这一行和上一行的纵向间距大于 1.2 倍中位行高（空了一行、段间距）；
-  /// ② 上一行以句末标点结尾、且不到中位行宽的 80%（段落最后一行）；③ 这一行以列表记号开头（listMarker：一条一段，
+  /// ② 上一行以句末标点结尾、且不到中位行宽的 80%（段落最后一行；但下一行的第一个词放不进上一行剩下的地方时
+  /// 是长词挤出来的折行，不断）；③ 这一行以列表记号开头（listMarker：一条一段，
   /// 列表项之间的间距常常不到 1.2 倍行高）。另外往回跳（这一行在上一行上面，换栏）、
   /// 和上一行并排（同一高度的另一块）也断开。ponytail: 不看缩进和左边界（容易误判列表、代码）；
   /// macOS 26 的 RecognizeDocumentsRequest 直接给段落，有 26 测试机再换
@@ -187,17 +188,24 @@ nonisolated enum OCR {
     guard !lines.isEmpty else { return [] }
     let heights = lines.map(\.box.height).sorted()
     let widths = lines.map(\.box.width).sorted()
+    let rights = lines.map(\.box.maxX).sorted()
     let lineHeight = heights[heights.count / 2]
     let lineWidth = widths[widths.count / 2]
+    let lineRight = rights[rights.count / 2]
     var result: [[Line]] = []
     var previous: Line?
     for line in lines {
       if let previous {
         let gap = previous.box.minY - line.box.maxY
         let endsSentence = previous.text.last.map { "。！？.!?".contains($0) } ?? false
+        // 句末短行：上一行剩下的地方连下一行的第一个词都放得下，才是段落结尾；放不下说明是被长词挤断的
+        // （「…Copilot cloud agent.」后面跟着一整行长的 `total_merged_no_human_change_request_after_review`，
+        // 2026-11-06）。下一行没有拉丁词（中日文随便哪个字都能断行）时照旧按短行算
+        let room = lineRight - previous.box.maxX
+        let wrapped = line.words.first.map { $0.box.width > room } ?? false
         let breaks =
           gap > 1.2 * lineHeight || gap < -0.5 * lineHeight
-          || (endsSentence && previous.box.width < 0.8 * lineWidth)
+          || (endsSentence && previous.box.width < 0.8 * lineWidth && !wrapped)
           || listMarker(line.text) != nil
         if breaks { result.append([]) }
       } else {
