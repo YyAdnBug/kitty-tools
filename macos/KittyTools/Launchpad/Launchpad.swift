@@ -61,6 +61,10 @@ final class Launchpad {
   private var screenObserver: NSObjectProtocol?
   /// 触控板捏合（SPEC §5.6，R7）：功能开着就注册回调；系统的捏合开着时认到也不打开（开始捏的那一刻读系统设置）
   private let touchpad = TouchpadWatcher()
+  /// 原生桌面显示时，捏合交给系统还原窗口。
+  private let desktopState = LaunchpadDesktopState()
+  /// 面板打开前就开始监听，按原生手势 began 的时刻锁存归属，收起后仍吞完本次结尾。
+  private let gestureGate = LaunchpadGestureGate()
   /// 触发角（SPEC §5.7，R8）
   private let corner = LaunchpadCorner()
   /// 现在这块面板的开 / 收进度（窗口透明度 + 上面那层的缩放）；收起时交给那块面板自己走完
@@ -82,6 +86,7 @@ final class Launchpad {
   init() {
     undoLayout = LaunchpadUndo.load(from: .standard)
     touchpad.onPinch = { [weak self] event in self?.pinch(event) }
+    gestureGate.isLaunchpadOpen = { [weak self] in self?.isOpen ?? false }
     corner.onTrigger = { [weak self] in
       guard let self, canOpen(), !isOpen else { return }
       open()
@@ -261,11 +266,23 @@ final class Launchpad {
     case .tell: owesPinchHint = false
     }
     UserDefaults.standard.set(true, forKey: Prefs.launchpadPinchYieldTold)
-    island?.show(
-      "捏合打开的是系统的应用程序视图",
-      detail: "要用捏合打开启动台，到 系统设置 › 触控板 › 更多手势 里关掉「应用程序」",
-      tone: .info, symbol: "hand.pinch",
-      actions: [.init("打开触控板设置", opens: true) { [weak self] in self?.openTrackpadSettings() }])
+    if TrackpadSystemGesture.usesDockPinchSetting {
+      island?.show(
+        "捏合打开的是系统的应用程序视图",
+        detail: "macOS 26 没有独立的「应用程序」设置项。复制命令到终端执行，可单独关闭它并重启程序坞；「显示桌面」继续保留。",
+        tone: .info, symbol: "hand.pinch",
+        actions: [
+          .init("复制命令") {
+            Paster.write(string: TrackpadSystemGesture.disableSpotlightCommand, record: true)
+          }
+        ])
+    } else {
+      island?.show(
+        "捏合打开的是系统的应用程序视图",
+        detail: "要用捏合打开启动台，到 系统设置 › 触控板 › 更多手势 里关掉「应用程序」",
+        tone: .info, symbol: "hand.pinch",
+        actions: [.init("打开触控板设置", opens: true) { [weak self] in self?.openTrackpadSettings() }])
+    }
   }
 
   /// 调度中心开着时打开的：它给窗口画的 ✕ 会盖在启动台上面、还点得到（调度中心不是普通窗口，层级调高也盖不住），所以先让它退；
@@ -385,6 +402,8 @@ final class Launchpad {
     switch event {
     case .began(.pinch):
       guard pinchTracking == nil, !isOpen, canOpen() else { return }
+      desktopState.start()
+      guard !desktopState.isShowingDesktop else { return }
       // 系统手势可能在监听起来之后才被打开：认到的那一刻再读一次（F13）；让给系统的，第一次记下、下次打开时说（U5）
       guard !systemPinchIsOn else {
         if !UserDefaults.standard.bool(forKey: Prefs.launchpadPinchYieldTold) {
@@ -683,8 +702,12 @@ final class Launchpad {
     // 系统的捏合还开着时我们认到也不打开（不然两个一起出来，SPEC R7）：在开始捏的那一刻读，不在这里挡
     if Self.pinchShouldRun(enabled: enabled, usePinch: fingers != .off, available: pinchAvailable) {
       touchpad.start(sensitivity: sensitivity, fingers: fingers)
+      desktopState.start()
+      gestureGate.start()
     } else {
       touchpad.stop()
+      desktopState.stop()
+      gestureGate.stop()
     }
     applyCorner()
   }

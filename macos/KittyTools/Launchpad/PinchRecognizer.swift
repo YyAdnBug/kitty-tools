@@ -278,11 +278,20 @@ nonisolated struct PinchRecognizer: Sendable {
   }
 }
 
-/// 系统的四指 / 五指捏合手势开没开（只读；SPEC §5.6）。`com.apple.AppleMultitouchTrackpad` 是内置触控板，
-/// 蓝牙妙控板在 `com.apple.driver.AppleBluetoothMultitouch.trackpad`。实测（27.0.1）两个键都是 2 = 开，
-/// 0 = 关；这里按「两个键都没存过 = 这个域没信息、显式 0 = 关」认，几个域合起来见 `combined`（F13 / G5）。
+/// 系统的应用程序捏合手势开没开（只读；SPEC §5.6）。macOS 26 由 Dock 的 `showSpotlightGestureEnabled`
+/// 独立控制，没存过默认开；它与「显示桌面」分开。其他版本沿用两个触控板域的四指 / 五指键（F13 / G5）。
 /// **只读，不写、不重启 Dock**。
 nonisolated enum TrackpadSystemGesture {
+  static let dockDomain = "com.apple.dock"
+  static let spotlightKey = "showSpotlightGestureEnabled"
+  /// 只供用户复制到终端手动执行：关闭应用程序捏合，保留系统的「显示桌面」。
+  static let disableSpotlightCommand =
+    "defaults write com.apple.dock showSpotlightGestureEnabled -bool false; killall Dock"
+
+  static var usesDockPinchSetting: Bool {
+    ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 26
+  }
+
   static let fourFingerKey = "TrackpadFourFingerPinchGesture"
   static let fiveFingerKey = "TrackpadFiveFingerPinchGesture"
   static let domains = [
@@ -308,8 +317,21 @@ nonisolated enum TrackpadSystemGesture {
     return true
   }
 
-  /// 本机的两个域
+  /// macOS 26 的应用程序捏合只看 Dock 的独立开关；旧四指 / 五指键和「显示桌面」不决定它。
+  /// 注入的偏好域让单测不读写宿主或系统设置。
+  static func systemPinchIsOn(majorVersion: Int, dock: UserDefaults?, trackpads: [UserDefaults])
+    -> Bool
+  {
+    if majorVersion == 26 {
+      return (dock?.object(forKey: spotlightKey) as? NSNumber)?.boolValue ?? true
+    }
+    return combined(trackpads.map(pinchSetting))
+  }
+
   static func systemPinchIsOn() -> Bool {
-    combined(domains.map { domain in UserDefaults(suiteName: domain).flatMap(pinchSetting) })
+    systemPinchIsOn(
+      majorVersion: ProcessInfo.processInfo.operatingSystemVersion.majorVersion,
+      dock: UserDefaults(suiteName: dockDomain),
+      trackpads: domains.compactMap { UserDefaults(suiteName: $0) })
   }
 }
