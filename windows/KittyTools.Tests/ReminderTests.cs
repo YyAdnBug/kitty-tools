@@ -85,7 +85,7 @@ public sealed class ReminderTests
         var planned = ReminderSync.Plan(changes, Reminders.Examples().Append(GoldenCases()[5]).ToList(), out var failure);
         Assert.IsNull(failure);
         CollectionAssert.AreEqual(new[] { "W1", "eyes", "walk" }, planned!.Select(reminder => reminder.Id).ToList());
-        Assert.AreEqual("周例会", planned[0].Title);
+        Assert.AreEqual("周例会", planned![0].Title);
         Assert.IsNull(ReminderSync.Plan(new Dictionary<string, string?> { ["x"] = "{" }, null, out failure));
         Assert.IsNotNull(failure);
     }

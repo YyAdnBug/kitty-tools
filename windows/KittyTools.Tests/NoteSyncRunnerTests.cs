@@ -29,6 +29,8 @@ public sealed class NoteSyncRunnerTests
 
         public HashSet<string> Editing { get; } = new(StringComparer.Ordinal);
 
+        public List<(HashSet<string> Ids, string Old, string Fresh)> Switches { get; } = new();
+
         public NoteSyncPart Part => new()
         {
             Flush = () =>
@@ -41,6 +43,7 @@ public sealed class NoteSyncRunnerTests
             Editing = () => Editing,
             SwitchDevice = (ids, old, fresh) =>
             {
+                Switches.Add((new HashSet<string>(ids, StringComparer.Ordinal), old, fresh));
                 Book.SwitchDevice(ids, old, fresh);
                 Device.Id = fresh;
                 return true;
@@ -260,7 +263,10 @@ public sealed class NoteSyncRunnerTests
             restored.Book.SetBody(note.Id, "恢复后打的字", T0 + 200);
             restored.Round(folder, T0 + 210);
             Assert.IsNull(restored.Device.NotesSwitchFrom, "补认过了");
-            Assert.IsFalse(restored.Book.Find(note.Id)!.Clock.ContainsKey("WIN-A"), "旧编号那一格去掉了");
+            // Windows 核验：原来断言合完之后钟里没有 WIN-A——合并时文件夹里 WIN-A 那份（第二版）和这条并起来，WIN-A=2 是从那份并进来的，
+            // 这一条必然不成立；改成查补认那一下：恢复后改过的那条从旧编号换到了新编号名下（REVIEW「PLAN-v13 第 3 批」下面记了）
+            var late = restored.Switches.Last();
+            Assert.IsTrue(late.Ids.Contains(note.Id) && late.Old == "WIN-A" && late.Fresh == restored.Device.Id, "旧编号那一格换到了新编号名下");
         }
         finally
         {

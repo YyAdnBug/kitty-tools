@@ -54,7 +54,7 @@ public sealed class NoteCaptureRulesTests
         var (outcome, body, _) = NoteCaptureRules.Check(" 新的 ", string.Empty, Note("A", T0, "旧的"));
         Assert.AreEqual(NoteCaptureRules.Outcome.Saved, outcome);
         Assert.AreEqual("旧的\n新的", body);
-        var big = new string('字', Note.MaxBodyBytes / 3 + 1);
+        var big = new string('字', KittyTools.Core.Notes.Note.MaxBodyBytes / 3 + 1);
         Assert.AreEqual(NoteCaptureRules.Outcome.TooLong, NoteCaptureRules.Check(big, string.Empty, null).Outcome);
     }
 

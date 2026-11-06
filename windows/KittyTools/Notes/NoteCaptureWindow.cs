@@ -46,7 +46,7 @@ internal sealed class NoteCaptureWindow : Window
 
     public static bool IsOpen => _instance?._visible == true;
 
-    private static string DraftPath => Path.Combine(Paths.DataDirectory, NoteCaptureRules.DraftName);
+    private static string DraftPath => System.IO.Path.Combine(Paths.DataDirectory, NoteCaptureRules.DraftName);
 
     private NoteCaptureWindow()
     {

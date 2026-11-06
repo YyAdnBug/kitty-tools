@@ -750,7 +750,8 @@ public sealed class NoteMarkdownTests
         Assert.AreEqual(3, NoteMarkdown.ColorOnlySpans("[字]{red} **粗**").Count);
         Assert.AreEqual(0, NoteMarkdown.ColorOnlySpans("**粗**").Count);
         // （这一条 mac 没有，移植时补的）标记在正文里的位置：行内代码里的不算，位置加上行首
-        CollectionAssert.AreEqual(new[] { R(15, 1), R(17, 6) }, NoteMarkdown.ColorMarkers("前\n `[字]{red}`\n[字]{red}").ToList());
+        // （Windows 核验：原写的 15 / 17 数错了一位，第三行行首是 14：「[」在 14、「]{red}」在 16）
+        CollectionAssert.AreEqual(new[] { R(14, 1), R(16, 6) }, NoteMarkdown.ColorMarkers("前\n `[字]{red}`\n[字]{red}").ToList());
         Assert.IsFalse(NoteMarkdown.HasColorMarker("[字] {red}"));
     }
 

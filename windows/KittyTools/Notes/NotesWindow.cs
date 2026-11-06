@@ -135,7 +135,7 @@ internal sealed class NotesWindow : Window
         _editCard = new Grid { Visibility = Visibility.Collapsed, Background = new SolidColorBrush(Color.FromArgb(64, 0, 0, 0)) };
         _editCard.PointerPressed += (_, e) =>
         {
-            if (e.OriginalSource == _editCard)
+            if (ReferenceEquals(e.OriginalSource, _editCard))
             {
                 CollapseCard();
             }

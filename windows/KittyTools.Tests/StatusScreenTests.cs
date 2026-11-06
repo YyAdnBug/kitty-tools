@@ -386,7 +386,7 @@ public sealed class StatusScreenTests
         var planned = StatusPresetSync.Plan(changes, null, out var failure);
         Assert.IsNull(failure);
         CollectionAssert.AreEqual(new[] { "7F3A-B", "back", "busy" }, planned!.Select(preset => preset.Id).ToList());
-        Assert.AreEqual("午饭去了", planned[1].Title);
+        Assert.AreEqual("午饭去了", planned![1].Title);
         Assert.IsNull(StatusPresetSync.Plan(new Dictionary<string, string?> { ["x"] = "{" }, null, out failure));
         Assert.IsNotNull(failure);
     }

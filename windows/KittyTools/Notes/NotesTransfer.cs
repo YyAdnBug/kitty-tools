@@ -479,6 +479,8 @@ internal static class NotesTransfer
             ? Task.FromResult((body, 0))
             : NoteMarkdownFiles.ConvertImagesAsync(body, image => StoreAsync(image, root, imageDirectory));
 
+    private static bool SameBytes(byte[] a, byte[] b) => a.AsSpan().SequenceEqual(b);
+
     /// <summary>一张图 → 令牌：认得出是仓库里已有的那张、字节也一样就沿用编号；否则存一份新的。路径不合法、不在、存不进去给 null。</summary>
     private static async Task<string?> StoreAsync(NoteMarkdownFiles.MarkdownImage image, string root, string directory)
     {
@@ -494,7 +496,7 @@ internal static class NotesTransfer
                 var ext = Path.GetExtension(path).TrimStart('.').ToLowerInvariant();
                 var existing = Path.Combine(directory, $"{NoteImages.IdText(id)}.{ext}");
                 if (File.Exists(existing) && new FileInfo(existing).Length == new FileInfo(path).Length
-                    && (await File.ReadAllBytesAsync(existing)).AsSpan().SequenceEqual(await File.ReadAllBytesAsync(path)))
+                    && SameBytes(await File.ReadAllBytesAsync(existing), await File.ReadAllBytesAsync(path)))
                 {
                     return NoteImages.Token(new NoteImages.Image(id, ext, image.Width));
                 }

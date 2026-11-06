@@ -8,6 +8,7 @@
 using KittyTools.Core;
 using KittyTools.Core.Notes;
 using KittyTools.Infrastructure;
+using KittyTools.Ui;
 using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -116,7 +117,7 @@ internal sealed class NoteSheetView
         header.Background = new SolidColorBrush(Colors.Transparent);
         header.PointerPressed += (_, e) =>
         {
-            if (e.OriginalSource == header)
+            if (ReferenceEquals(e.OriginalSource, header))
             {
                 _host.GripPressed?.Invoke(e);
             }
