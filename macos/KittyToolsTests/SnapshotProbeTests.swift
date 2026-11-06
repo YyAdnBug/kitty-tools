@@ -548,6 +548,16 @@ struct SnapshotProbeTests {
         size: NSSize(width: 780, height: 600), dark: dark,
         to: "\(out)/settings-\(page.rawValue)\(dark ? "-dark" : "").png")
     }
+    // 新功能标记（0.7.2）：侧栏行尾强调色的「新」，页里新的那一行开关后面也有（窗口拉高，露出那一行）
+    navigation.fresh = ["screenshot-overlay", "launcher-frequent"]
+    for (page, dark) in [(SettingsPage.translate, false), (.launcher, false), (.translate, true)] {
+      navigation.page = page
+      try snapshot(
+        SettingsRoot(navigation: navigation, page: pages) { AnyView(EmptyView()) },
+        size: NSSize(width: 780, height: 1500), dark: dark,
+        to: "\(out)/settings-new-\(page.rawValue)\(dark ? "-dark" : "").png")
+    }
+    navigation.fresh = []
     // 关于页的应用内更新：有新版本（强调色按钮）、正在更新（还不知道下了多少 / 下载到 42% / 下完在装）、装好了但退出被取消、
     // 已是最新、检查失败
     let release = Updater.Release(

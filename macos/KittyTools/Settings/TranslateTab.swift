@@ -157,7 +157,7 @@ struct TranslateTab: View {
           Toggle("自动复制译文", isOn: $autoCopy)
             .help("复制即译弹出的翻译不会自动复制，免得覆盖你刚复制的原文")
           Toggle(isOn: $screenshotOverlay) {
-            Text("截图翻译时把译文直接盖回截图上")
+            NewTitle("截图翻译时把译文直接盖回截图上", page: .translate, fresh: navigation.fresh)
             Text(
               "截图翻译和截图工具栏里的「翻译」都留在截图页里，译文按原来的位置盖回图上，可以接着标注、复制、保存；关着时在翻译浮窗里看，能对比几个服务、复制译文"
             )

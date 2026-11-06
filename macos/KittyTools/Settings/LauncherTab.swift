@@ -133,7 +133,7 @@ struct LauncherTab: View {
       Section {
         // 显示的开关跟着功能开关变灰；清空使用记录是管数据的，关着也能点（mac-native §1）
         Toggle(isOn: $showsFrequent) {
-          Text("空搜索框里列出常用")
+          NewTitle("空搜索框里列出常用", page: .launcher, fresh: navigation.fresh)
           Text("关掉后打开启动器只有搜索框，有收藏时只列收藏；排序照样按用过的学")
         }
         .gated(by: .launcher)
