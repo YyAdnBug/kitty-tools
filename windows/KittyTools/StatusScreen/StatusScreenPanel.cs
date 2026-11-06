@@ -148,15 +148,17 @@ internal sealed unsafe partial class StatusScreenPanel
         _scrim = CreateScrim(Bounds, StatusScreenView.ScrimAlpha(HighContrast()));
         var column = StatusScreenView.BuildColumn(_preset, _title, _width * 0.8, _animates, footer);
         _column = column;
-        column.Root.HorizontalAlignment = HorizontalAlignment.Left;
-        column.Root.VerticalAlignment = VerticalAlignment.Top;
+        // Windows 核验：窗口按量出来的大小摆好后，那一列在窗口里排得比量的窄，右边露出一条没画的白边（--status-screen-probe 的图）：
+        // 底板铺满整扇窗、那一列在里面居中，宽窄差一点也都是 HUD 的底色
+        column.Root.HorizontalAlignment = HorizontalAlignment.Center;
+        column.Root.VerticalAlignment = VerticalAlignment.Center;
         _plateContent = new Border
         {
             Background = new SolidColorBrush(StatusScreenView.HudFill),
             Padding = StatusScreenView.PlatePadding(_title),
             RequestedTheme = ElementTheme.Dark,
-            HorizontalAlignment = HorizontalAlignment.Left,
-            VerticalAlignment = VerticalAlignment.Top,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch,
             Child = column.Root,
         };
         AutomationProperties.SetName(_plateContent, AccessibleName());
