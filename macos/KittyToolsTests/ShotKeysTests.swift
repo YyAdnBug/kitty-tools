@@ -81,6 +81,21 @@ struct ShotKeysTests {
     #expect(!ShotKey.isUsable(HotKey(keyCode: UInt32(kVK_ANSI_T), modifiers: UInt32(1 << 20))))
   }
 
+  @MainActor @Test func toolbarButtonsMapToShotKeys() {
+    // 工具栏上有快捷键的钮（右键改键、悬停提示）：十种工具、撤销、重做、识字、钉图、存储、拷贝、▾ 是另存为、长截图、录屏；
+    // 翻译、取消没有。上次区域、取色不在工具栏上（只能在设置页改）
+    let items: [EditorToolbar.Item] =
+      Annotation.Tool.allCases.map { .tool($0) } + [
+        .undo, .redo, .output(.recognize), .output(.pin), .output(.save), .output(.copy), .saveMenu,
+        .scroll, .record,
+      ]
+    let mapped = items.compactMap(EditorToolbar.shotKey(for:))
+    #expect(mapped.count == items.count)
+    #expect(Set(mapped) == Set(ShotKey.allCases).subtracting([.lastRegion, .pickColor]))
+    #expect(EditorToolbar.shotKey(for: .output(.translate)) == nil)
+    #expect(EditorToolbar.shotKey(for: .cancel) == nil)
+  }
+
   @Test func archiveCarriesShotKeys() throws {
     let (source, sourceName) = try suite()
     defer { source.removePersistentDomain(forName: sourceName) }

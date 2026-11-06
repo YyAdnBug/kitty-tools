@@ -763,6 +763,8 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
   `ShotKey.matching` 认键；设置 › 快捷键「截图时」两组（录制框同一个，`KeyTarget`）+「全部恢复默认」，设置 › 截图 一行跳过去；
   导出文件里记 `shot.<名字>`、同步 `shotkey:<名字>`（不升格式，旧版本忽略）；工具栏悬停提示、HUD 菜单、速查表现写。⇧T 不再等于 T
   （按键比 ⇧，原来单字母键带 ⇧ 也算）。规矩在 mac-overlay-panel §8，手测「用户四条」10–14。
+  用户随后问「放在截图时去修改是不是更友好」，我建议设置页留着做总表、截图里加右键改键，用户「做右键改键」：工具栏有快捷键的钮右键 →
+  「改「X」的快捷键…」→ 等下一下按键（规矩同设置页），收下就生效；标注遮罩没接。手测「用户四条」22–24。
 - **第 3 批 ⌘Tab 预览（C）**：`DockPreview/SwitcherWatcher.swift`（按着 ⌘ 才找系统切换器 `AXProcessSwitcherList`、听它的选中）+
   `DockPreview` 的 `fromSwitcher` 模式（切换器上方居中、不按鼠标收、点一张先发 Esc 收起系统切换器）；设置 › 程序坞预览「按 ⌘Tab 时也显示」
   （`Prefs.dockPreviewCmdTab`，默认开）。**本机 macOS 27 上切换器的辅助功能结构没探过**：要人在场跑 `DockPreviewProbeTests/switcher()`

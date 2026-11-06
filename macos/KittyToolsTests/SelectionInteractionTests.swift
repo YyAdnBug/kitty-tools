@@ -666,6 +666,38 @@ struct SelectionInteractionTests {
     #expect(!empty.view.isAdjusting)
   }
 
+  // 工具栏按钮上右键改快捷键（2026-11-06）：右键钉图钮出「改「钉到屏幕」的快捷键…」，不回到待选；选了就等新的键，截图里重复的
+  // 键不收、接着等、也不当成选工具；Esc 只取消改键、不退出截图，之后按键照常。收下那一步会写用户偏好，这里不测（存法归 ShotKeysTests）
+  @Test func rightClickToolbarButtonOffersRebind() throws {
+    let h = Harness()
+    h.makeSelection()
+    let toolbar = try #require(h.toolbar)
+    let pin = try #require(toolbar.button(for: .output(.pin)))
+    let center = pin.convert(CGPoint(x: pin.bounds.midX, y: pin.bounds.midY), to: nil)
+    toolbar.rightMouseDown(with: h.event(.rightMouseDown, center))
+    #expect(h.view.selection == Self.initial)
+    let menu = try #require(h.menu)
+    #expect(menu.accessibilityLabel() == "快捷键")
+    func buttons(in view: NSView) -> [NSView] {
+      view.subviews.flatMap { $0.accessibilityRole() == .button ? [$0] : buttons(in: $0) }
+    }
+    let change = try #require(buttons(in: menu).first)
+    #expect(change.accessibilityPerformPress())
+    #expect(h.view.announcement == "按下新的键给「钉到屏幕」")
+    h.key(kVK_ANSI_1, "1")
+    #expect(h.view.announcement == "和截图里的「矩形」重复")
+    #expect(h.view.tool == nil)
+    h.key(kVK_Escape, "\u{1b}")
+    #expect(h.view.isAdjusting)
+    h.key(kVK_ANSI_1, "1")
+    #expect(h.view.tool == .rectangle)
+    // 翻译、取消这类没有快捷键的钮右键照旧交给遮罩（回到待选）
+    let cancel = try #require(toolbar.button(for: .cancel))
+    let away = cancel.convert(CGPoint(x: cancel.bounds.midX, y: cancel.bounds.midY), to: nil)
+    toolbar.rightMouseDown(with: h.event(.rightMouseDown, away))
+    #expect(h.menu?.accessibilityLabel() != "快捷键")
+  }
+
   // Esc 依次：HUD 菜单 → 尺寸输入（放弃输入的数）→ 选中的标注 → 工具 → 取消截图
   @Test func escapeOrder() async throws {
     let h = Harness()

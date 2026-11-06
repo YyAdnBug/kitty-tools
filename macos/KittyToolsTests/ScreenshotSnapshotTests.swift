@@ -205,6 +205,22 @@ struct ScreenshotSnapshotTests {
       h.window, "save-menu",
       crop: try #require(h.menu).frame.union(try #require(h.toolbar).frame).insetBy(
         dx: -30, dy: -30))
+    // 工具栏按钮上右键改快捷键（2026-11-06）：钉图钮的菜单（右边写现在的键），选了之后顶部提示等新的键
+    h = adjust()
+    let toolbar = try #require(h.toolbar)
+    let pin = try #require(toolbar.button(for: .output(.pin)))
+    toolbar.rightMouseDown(
+      with: h.event(
+        .rightMouseDown, pin.convert(CGPoint(x: pin.bounds.midX, y: pin.bounds.midY), to: nil)))
+    let rebindMenu = try #require(h.menu)
+    try shoot(
+      h.window, "rebind-menu", crop: rebindMenu.frame.union(toolbar.frame).insetBy(dx: -30, dy: -30)
+    )
+    func buttons(in view: NSView) -> [NSView] {
+      view.subviews.flatMap { $0.accessibilityRole() == .button ? [$0] : buttons(in: $0) }
+    }
+    _ = try #require(buttons(in: rebindMenu).first).accessibilityPerformPress()
+    try shoot(h.window, "rebind-waiting", crop: top)
 
     // 有标注时右键：不清空，顶部提示怎么退出
     h = adjust()

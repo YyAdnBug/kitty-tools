@@ -233,6 +233,8 @@ final class EditorToolbar: PopView {
   }
 
   var onClick: (Item) -> Void = { _ in }
+  /// 在有快捷键的按钮上右键（2026-11-06 用户：截图时改快捷键更友好）：截图遮罩弹「改快捷键…」。没接的（标注遮罩）照旧往上交
+  var onRightClick: ((Item) -> Void)?
   private let tools = HUDBar(radius: Style.Radius.panel, height: 40)
   private let outputs = HUDBar(radius: Style.Radius.panel, height: 40)
   private var buttons: [(item: Item, button: BarButton)] = []
@@ -246,23 +248,20 @@ final class EditorToolbar: PopView {
     // (item, 符号, 旁白名字, 悬停提示)
     typealias Spec = (Item, String, String, String)
     let left: [[Spec]] = [
-      // 悬停提示里的键照截图时的快捷键写（ShotKeys，能改；清除了就只写名字）
-      Annotation.Tool.allCases.map { (.tool($0), $0.symbol, $0.title, ShotKey($0).tip($0.title)) },
+      // 有快捷键的按钮悬停提示由 tip(for:name:) 现写（截图时的快捷键能改），这里的提示位先填名字
+      Annotation.Tool.allCases.map { (.tool($0), $0.symbol, $0.title, $0.title) },
       [
-        (.undo, "arrow.uturn.backward", "撤销", ShotKey.undo.tip("撤销")),
-        (.redo, "arrow.uturn.forward", "重做", ShotKey.redo.tip("重做")),
+        (.undo, "arrow.uturn.backward", "撤销", "撤销"),
+        (.redo, "arrow.uturn.forward", "重做", "重做"),
       ],
     ]
     let right: [[Spec]] = [
       ([
-        (.output(.recognize), "text.viewfinder", "识字并拷贝", ShotKey.recognize.tip("识字并拷贝")),
+        (.output(.recognize), "text.viewfinder", "识字并拷贝", "识字并拷贝"),
         (.output(.translate), "translate", "翻译", "翻译"),
-        (
-          .scroll, "rectangle.expand.vertical", "长截图",
-          ShotKey.scroll.label.map { "长截图（\($0)，不带标注）" } ?? "长截图（不带标注）"
-        ),
-        (.record, "record.circle", "录屏", ShotKey.record.tip("录屏")),
-        (.output(.pin), "pin", "钉到屏幕", ShotKey.pin.tip("钉到屏幕")),
+        (.scroll, "rectangle.expand.vertical", "长截图", "长截图"),
+        (.record, "record.circle", "录屏", "录屏"),
+        (.output(.pin), "pin", "钉到屏幕", "钉到屏幕"),
       ] as [Spec]).filter { spec in
         // 长图的标注窗口：这一组只留识字（翻译、长截图、录屏、钉图对一张长图没意义，拍板 C1）
         guard mode == .capture || spec.0 == .output(.recognize) else { return false }
@@ -271,11 +270,8 @@ final class EditorToolbar: PopView {
           && (spec.0 != .record || Feature.record.isOn)
       },
       [
-        (
-          .output(.save), "square.and.arrow.down", "存储",
-          ShotKey.save.tip(ScreenshotOutput.saveTitle)
-        ),
-        (.saveMenu, "chevron.down", "更多存储选项", ScreenshotOutput.saveTitle + " / 另存为…"),
+        (.output(.save), "square.and.arrow.down", "存储", "存储"),
+        (.saveMenu, "chevron.down", "更多存储选项", "更多存储选项"),
       ],
       [(.cancel, "xmark", "取消", "取消（Esc）"), (.output(.copy), "checkmark", "拷贝", "拷贝（↩）")],
     ]
@@ -326,7 +322,8 @@ final class EditorToolbar: PopView {
           default: CGSize(width: 32, height: 32)
           }
         let button = barButton(
-          NSImage(systemSymbolName: symbol, accessibilityDescription: label)!, tip: tip,
+          NSImage(systemSymbolName: symbol, accessibilityDescription: label)!,
+          tip: Self.shotKey(for: item) == nil ? tip : Self.tip(for: item, name: label),
           label: label, action: #selector(clicked(_:)), size: size)
         button.tag = buttons.count
         switch item {
@@ -351,6 +348,54 @@ final class EditorToolbar: PopView {
   }
 
   func button(for item: Item) -> NSButton? { buttons.first { $0.item == item }?.button }
+
+  /// 这颗按钮对应截图时的哪个快捷键（ShotKeys）；翻译、取消没有。纯函数，配单测
+  static func shotKey(for item: Item) -> ShotKey? {
+    switch item {
+    case .tool(let tool): ShotKey(tool)
+    case .undo: .undo
+    case .redo: .redo
+    case .output(.recognize): .recognize
+    case .output(.pin): .pin
+    case .output(.save): .save
+    case .output(.copy): .copy
+    case .saveMenu: .saveAs
+    case .scroll: .scroll
+    case .record: .record
+    default: nil
+    }
+  }
+
+  /// 有快捷键的按钮的悬停提示：名字 + 现在设的键（清除了只写名字）。拷贝写固定的 ↩；▾ 写存储和另存为两样、不带键
+  /// （键在它弹出的菜单里）
+  static func tip(for item: Item, name: String) -> String {
+    switch item {
+    case .scroll: ShotKey.scroll.label.map { "长截图（\($0)，不带标注）" } ?? "长截图（不带标注）"
+    case .output(.save): ShotKey.save.tip(ScreenshotOutput.saveTitle)
+    case .output(.copy): "拷贝（↩）"
+    case .saveMenu: ScreenshotOutput.saveTitle + " / 另存为…"
+    default: shotKey(for: item)?.tip(name) ?? name
+    }
+  }
+
+  /// 改了快捷键之后重写悬停提示（名字是按钮的旁白名）
+  func refreshTips() {
+    for (item, button) in buttons where Self.shotKey(for: item) != nil {
+      button.toolTip = Self.tip(for: item, name: button.accessibilityLabel() ?? "")
+    }
+  }
+
+  /// 右键落在有快捷键的按钮上交给 onRightClick；别处（间隙、翻译、取消）、没接的照旧往上交（遮罩：回到待选）
+  override func rightMouseDown(with event: NSEvent) {
+    let point = convert(event.locationInWindow, from: nil)
+    guard let onRightClick,
+      let hit = buttons.first(where: {
+        !$0.button.isHidden && $0.button.convert($0.button.bounds, to: self).contains(point)
+      }),
+      Self.shotKey(for: hit.item) != nil
+    else { return super.rightMouseDown(with: event) }
+    onRightClick(hit.item)
+  }
 
   /// 工具按钮在本视图里的位置（样式托盘锚在它下面）
   func toolButtonFrame(_ tool: Annotation.Tool) -> CGRect {
