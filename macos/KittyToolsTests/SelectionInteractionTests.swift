@@ -666,6 +666,40 @@ struct SelectionInteractionTests {
     #expect(!empty.view.isAdjusting)
   }
 
+  // 就地翻译的译文只属于翻的那个选区（2026-11-06 用户：翻完再框别处，上次的译文还留在「屏幕」上）：翻完冻结帧换成贴了
+  // 译文的那张；选区一动（方向键挪一下）就换回原图。再框一块也一样（右键回到待选）
+  @Test func translationStaysWithItsSelection() async throws {
+    let h = Harness()
+    let original = h.view.image
+    let context = try #require(
+      CGContext(
+        data: nil, width: 40, height: 30, bitsPerComponent: 8, bytesPerRow: 0,
+        space: CGColorSpace(name: CGColorSpace.sRGB)!,
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+    context.setFillColor(CGColor(red: 1, green: 0, blue: 0, alpha: 1))
+    context.fill(CGRect(x: 0, y: 0, width: 40, height: 30))
+    let patch = try #require(context.makeImage())
+    h.view.translateHandler = { _ in (patch, nil) }
+    h.makeSelection()
+    try #require(h.toolbar).onClick(.output(.translate))
+    for _ in 0..<500 where h.view.image === original {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(h.view.image !== original)
+    h.arrow(kVK_RightArrow)
+    #expect(h.view.image === original)
+
+    // 再翻一次、然后右键回到待选：也换回原图
+    try #require(h.toolbar).onClick(.output(.translate))
+    for _ in 0..<500 where h.view.image === original {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(h.view.image !== original)
+    h.rightClick(CGPoint(x: 1000, y: 700))
+    #expect(h.view.selection == nil)
+    #expect(h.view.image === original)
+  }
+
   // 工具栏按钮上右键改快捷键（2026-11-06）：右键钉图钮出「改「钉到屏幕」的快捷键…」，不回到待选；选了就等新的键，截图里重复的
   // 键不收、接着等、也不当成选工具；Esc 只取消改键、不退出截图，之后按键照常。收下那一步会写用户偏好，这里不测（存法归 ShotKeysTests）
   @Test func rightClickToolbarButtonOffersRebind() throws {

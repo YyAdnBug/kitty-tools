@@ -43,6 +43,9 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private var translating = false
   /// 正在跑的就地翻译（Esc / 换屏框选时取消：不然剩下的段会继续打翻译服务）
   private var translateTask: Task<Void, Never>?
+  /// 就地翻译之前的冻结帧，和译文贴在哪个选区上（2026-11-06 用户：翻完再框别处，上次的译文还留在「屏幕」上，像是
+  /// 上一张截图贴在了屏幕里）。译文只属于翻的那个选区：选区一变（重新框、挪、拉边、D、右键回到待选）就换回原图
+  private var untranslated: (image: CGImage, selection: CGRect)?
   /// 选区上的扫光（翻译中）：容器裁掉多余的部分，里面一条浅白渐变从左扫到右。
   /// 之前是整块白呼吸，白底窗口上几乎看不出来，改成扫光
   private let translatingPulse = CALayer()
@@ -61,6 +64,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
       annotationCanvas?.selection = selection
       // 选区一动（方向键、拖边）开着的 HUD 菜单就收起：它锚着的栏 / 胶囊跟着挪了
       if selection != oldValue { hudMenu?.dismiss() }
+      // 译文贴在原来那个选区上：选区变了就换回原图
+      if let untranslated, selection != untranslated.selection { restoreUntranslated() }
       refresh()
     }
   }
@@ -1895,6 +1900,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
     let pixels = RegionSelector.pixelRect(
       selection, viewSize: bounds.size, imageSize: CGSize(width: image.width, height: image.height))
     guard let cropped = image.cropping(to: pixels) else { return }
+    let translatedSelection = selection
     translating = true
     refresh()
     translateTask?.cancel()
@@ -1912,6 +1918,10 @@ final class SelectionView: NSView, NSTextViewDelegate {
         refresh()
         return flashHint([result.image == nil ? result.message ?? "翻译失败" : "合成失败"])
       }
+      // 翻的时候选区被换掉了（框选和工具栏这时不动，防万一）：这份译文贴不回去
+      guard selection == translatedSelection else { return refresh() }
+      // 同一个选区再翻一次：留着最早那张原图
+      untranslated = (untranslated?.image ?? image, translatedSelection)
       image = replaced
       // 标注不动：它们一直画在冻结帧上面，出图时照旧叠上去；马赛克读的是标注层手里那张图，换成新的
       annotationCanvas?.image = replaced
@@ -1919,6 +1929,16 @@ final class SelectionView: NSView, NSTextViewDelegate {
       refresh()
       flashHint(["已替换为译文"])
     }
+  }
+
+  /// 选区变了：把就地翻译贴上去的译文撤掉，冻结帧换回原图（标注不动，马赛克读的那张一起换），说一声
+  private func restoreUntranslated() {
+    guard let untranslated else { return }
+    self.untranslated = nil
+    image = untranslated.image
+    annotationCanvas?.image = untranslated.image
+    needsDisplay = true
+    flashHint(["选区变了，已换回原文"])
   }
 
   /// 停掉就地翻译：Esc 收起截图、这块屏被清掉时都要调，不然还在排队的那几段会继续往翻译服务发请求。
