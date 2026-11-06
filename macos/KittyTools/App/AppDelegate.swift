@@ -632,10 +632,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   private lazy var settingsWindow: SettingsWindow = {
     weak var created: SettingsWindow?
-    // 新功能标记：换到一页（打开设置窗也算）时记下碰过，再算设置窗里该标哪几个（看着的那页不闪掉，WhatsNew.shown）
+    // 新功能标记：换到一页（打开设置窗也算）时重算设置窗里该标哪几个。光打开不算碰过（拨了那一行开关才算，2026-11-06），
+    // 这一页上刚拨过的看着的时候不闪掉（WhatsNew.shown）
     settingsNavigation.visit = { [unowned self] page in
       let fresh = WhatsNew.current()
-      WhatsNew.touch(page: page)
       let shown = WhatsNew.shown(visiting: page, fresh: fresh, showing: settingsNavigation.fresh)
       if shown != settingsNavigation.fresh { settingsNavigation.fresh = shown }
     }

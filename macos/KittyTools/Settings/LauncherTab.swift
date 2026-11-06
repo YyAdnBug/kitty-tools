@@ -137,6 +137,8 @@ struct LauncherTab: View {
           Text("关掉后打开启动器只有搜索框，有收藏时只列收藏；排序照样按用过的学")
         }
         .gated(by: .launcher)
+        // 拨过这一行，「新」就算看过了（光点进这一页不算；WhatsNew）
+        .onChange(of: showsFrequent) { WhatsNew.touch(section: "空搜索框里列出常用", of: .launcher) }
         DangerButton("清空使用记录…") { confirmsClear = true }
       } header: {
         Text("使用记录")

@@ -92,6 +92,25 @@ struct WhatsNewTests {
     #expect(!WhatsNew.inSettingsOnly([]))
   }
 
+  /// 升到下一版：上次那一版（和更早）的不再标；同一版重开、退回旧版本不动
+  @Test func nextVersionClearsOlderMarks() {
+    let sample = [
+      WhatsNew.Entry(id: "old", version: "0.7.2", feature: nil, page: .launcher, section: "x"),
+      WhatsNew.Entry(id: "new", version: "0.8.0", feature: nil, actions: [.noteCapture]),
+    ]
+    let on072 = WhatsNew.adopting(.init(), from: "0.7.1", to: "0.7.2", now: t0, entries: sample)
+    #expect(on072.started == ["0.7.2": t0])
+    // 同一版重开：照旧
+    #expect(WhatsNew.adopting(on072, from: "0.7.2", to: "0.7.2", now: t0, entries: sample) == on072)
+    // 0.7.2 → 0.8.0：0.7.2 的没了，0.8.0 的开始标
+    let on080 = WhatsNew.adopting(on072, from: "0.7.2", to: "0.8.0", now: t0, entries: sample)
+    #expect(on080.started == ["0.8.0": t0])
+    #expect(WhatsNew.fresh(on080, enabled: [], now: t0, entries: sample).map(\.id) == ["new"])
+    // 从 0.7.1 直接跳到 0.8.0：两版的都标
+    let skipped = WhatsNew.adopting(.init(), from: "0.7.1", to: "0.8.0", now: t0, entries: sample)
+    #expect(skipped.started == ["0.7.2": t0, "0.8.0": t0])
+  }
+
   /// 换页：这一页原来标着的看着时留着，换到别的页才没；侧栏和页里那一节按这一份标
   @Test func visitedPageKeepsItsMarksUntilLeft() {
     let overlay = WhatsNew.entries.first { $0.id == "screenshot-overlay" }!
@@ -120,7 +139,7 @@ struct WhatsNewTests {
     #expect(WhatsNew.ledger(defaults).started == ["0.7.2": t0])
     WhatsNew.touch(action: .pinClipboard, defaults: defaults)
     #expect(WhatsNew.ledger(defaults).touched == ["pin-text"])
-    WhatsNew.touch(page: .launcher, defaults: defaults)
+    WhatsNew.touch(section: "空搜索框里列出常用", of: .launcher, defaults: defaults)
     #expect(WhatsNew.ledger(defaults).touched == ["pin-text", "launcher-frequent"])
     // 没变化不写：把存的值换成一个记号，再碰一次同样的，记号还在
     defaults.set(["pin-text", "launcher-frequent", "marker"], forKey: Prefs.whatsNewTouched)
