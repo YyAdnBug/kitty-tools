@@ -767,6 +767,9 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
   `DockPreview` 的 `fromSwitcher` 模式（切换器上方居中、不按鼠标收、点一张先发 Esc 收起系统切换器）；设置 › 程序坞预览「按 ⌘Tab 时也显示」
   （`Prefs.dockPreviewCmdTab`，默认开）。**本机 macOS 27 上切换器的辅助功能结构没探过**：要人在场跑 `DockPreviewProbeTests/switcher()`
   （`TEST_RUNNER_KITTY_SWITCHER_PROBE=1`，15 秒内按 ⌘Tab）。规矩在 mac-dock-preview §5½，手测「用户四条」15–19。
+- **别的桌面上全屏的 Chrome 多出两张扁卡片**（用户 2026-11-06，带截图和窗口信息）：全表里主窗口 1760 × 868 之外还有两扇没标题的
+  1508 × 178、1760 × 166，伸出主窗口上沿、只部分重叠，「整个套在里面才算表单」漏掉了。`DockWindows.merge` 加一条：没标题、宽 ≥ 高 × 4、
+  搭在同一 App 一扇更高的窗口上（相交或贴边）的不列。是 Chrome 的哪个控件没认（按形状认）。
 
 ## 11½. Whisker 设计语言改造（2026-09-25 起）
 

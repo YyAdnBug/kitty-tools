@@ -269,6 +269,26 @@ struct DockPreviewTests {
     #expect(windows.first?.title == "一")
   }
 
+  @Test func mergeDropsFlatStripsAttachedToATallerWindowElsewhere() {
+    // 2026-11-06 用户报：别的桌面上全屏的 Chrome，主窗口 1760 × 868，另有两扇没标题的扁条伸出它的上沿、只部分重叠
+    let main = CGRect(x: 0, y: 0, width: 1760, height: 868)
+    let windows = DockWindows.merge(
+      ax: [],
+      server: [
+        server(30, "LINUX DO - Google Chrome", frame: main),
+        server(31, "", frame: CGRect(x: 126, y: 790, width: 1508, height: 178)),
+        server(32, "", frame: CGRect(x: 0, y: 800, width: 1760, height: 166)),
+        // 贴着主窗口下沿的扁条（贴边也算搭上）
+        server(33, "", frame: CGRect(x: 0, y: -150, width: 1760, height: 150)),
+        // 有标题的扁窗口、离得远的扁条、不扁的没标题窗口：照列
+        server(34, "下载", frame: CGRect(x: 0, y: 800, width: 1600, height: 160)),
+        server(35, "", frame: CGRect(x: 3000, y: 0, width: 1600, height: 160)),
+        server(36, "", frame: CGRect(x: 1500, y: 600, width: 500, height: 400)),
+      ],
+      appHidden: false)
+    #expect(windows.map(\.id) == [30, 34, 35, 36])
+  }
+
   // MARK: 面板的排法（DockPreviewLayout）
 
   private let page = CGSize(width: 1600, height: 1000)

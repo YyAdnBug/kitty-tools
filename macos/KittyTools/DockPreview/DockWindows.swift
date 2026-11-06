@@ -166,7 +166,10 @@ struct DockWindow: Identifiable, Equatable {
   /// 两张表并成预览里的窗口：辅助功能的（普通窗口、有编号、不太小）在前，再加只在全表里、确定在别的桌面上的；
   /// 按编号排，最小化的放最后。全表里拿不到子角色：别的桌面上贴在文稿窗口上的表单（存储对话框）也是一扇层级 0 的窗口，
   /// 没标题、整个落在同一个 App 另一扇别的桌面上的窗口里面的，当它是那种，不列。没有屏幕录制授权时全表里的标题都是空的
-  /// （界面写 App 名）。
+  /// （界面写 App 名）。没标题、又扁又宽（宽至少是高的 4 倍）、搭在同一个 App 一扇更高的窗口上（相交或贴边）的也不列：
+  /// 2026-11-06 用户报别的桌面上全屏的 Chrome 多出两张扁扁的「Google Chrome」卡片——除了 1760 × 868 的主窗口，全表里
+  /// 还有 1508 × 178、1760 × 166 两扇没标题的，伸出主窗口上沿、只和它部分重叠，原来只认「整个套在里面」的漏掉了
+  /// （是 Chrome 的哪个控件分不清，按形状认）。
   /// ponytail: 表单是按「没标题 + 套在别的窗口里」猜的，别的桌面上没标题的小窗口恰好套在大窗口里会被漏掉；
   /// 要准得拿到它的辅助功能对象（AltTab 用 _AXUIElementCreateWithRemoteToken 逐个试），手测看了再说（HANDTEST「程序坞预览手测」3）。
   static func merge(ax: [AXEntry], server: [ServerEntry], appHidden: Bool) -> [DockWindow] {
@@ -185,12 +188,15 @@ struct DockWindow: Identifiable, Equatable {
       $0.layer == 0 && $0.alpha > 0 && $0.place == .other && isBigEnough($0.frame.size)
     }
     for entry in elsewhere {
-      let sheet =
+      let attached =
         entry.title.isEmpty
         && elsewhere.contains {
-          $0.id != entry.id && $0.frame.contains(entry.frame) && $0.frame != entry.frame
+          $0.id != entry.id && $0.frame != entry.frame
+            && ($0.frame.contains(entry.frame)
+              || (isStrip(entry.frame.size) && $0.frame.height > entry.frame.height
+                && $0.frame.insetBy(dx: -1, dy: -1).intersects(entry.frame)))
         }
-      guard !sheet, seen.insert(entry.id).inserted else { continue }
+      guard !attached, seen.insert(entry.id).inserted else { continue }
       result.append(
         DockWindow(id: entry.id, title: entry.title, state: .elsewhere, size: entry.frame.size))
     }
@@ -200,6 +206,9 @@ struct DockWindow: Identifiable, Equatable {
       return left != right ? right : $0.id < $1.id
     }
   }
+
+  /// 又扁又宽的条（工具栏、标签栏这类附属窗口的形状）
+  private static func isStrip(_ size: CGSize) -> Bool { size.width >= size.height * 4 }
 
   private static func isBigEnough(_ size: CGSize) -> Bool {
     size.width >= minimumSide && size.height >= minimumSide
