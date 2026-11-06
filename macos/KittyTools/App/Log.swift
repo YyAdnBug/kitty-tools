@@ -8,5 +8,4 @@ nonisolated enum Log {
   static let storage = Logger(subsystem: subsystem, category: "storage")
   static let clipboard = Logger(subsystem: subsystem, category: "clipboard")
   static let record = Logger(subsystem: subsystem, category: "record")
-  static let launchpad = Logger(subsystem: subsystem, category: "launchpad")
 }
