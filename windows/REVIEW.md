@@ -20,6 +20,8 @@
   三处调用方里 `ClipboardWriter` 可能只剩 `using` 没用上（`ShotHistoryWindow` 的多选拷贝、录制条目还在用 `WriteFiles`）；`ScreenshotCard.CopyAsync` 外面的 `try` / `catch` 留着。
 - **核验**：`dotnet build` 零警告、`dotnet test` 全过（新加 1 个）、Release AOT 两个架构零警告；设置 › 截图浅色 / 深色各截一张（「截图拷贝为」那张卡在「快速保存到」说明下面）；
   然后走 `HANDTEST.md` 1148–1154（1150 对拷线标「没测」，留给用户）。
+- **补（同日第二个提交）**：拷成文件后 `RewriteLaterAsync` 隔 0.5 s、再 1 s 原样补写两遍（mac 用户实测 ⌘C 传不过去、点按钮能传；同 mac `Paster.rewriteLater`）。
+  编译点：`ScreenshotOutput.cs` 加了 `using Windows.Win32;`（用 `PInvoke.GetClipboardSequenceNumber`），看和那个文件里的 `LibraryImport` 有没有冲突；手测 1155。
 - **替用户定的**：钉图拷成图像时提示照旧不写尺寸（原来就不写）；「剪贴板被别的程序占着」统一成角落卡原来那句「…，稍后再试」；清理挂在 `ScheduleBackup`（启动、解锁、唤醒）上，Windows 没有换日事件。
 
 ## PLAN-v13（便签，2026-11-05 用户「继续新会话剩下的，现在不检查，最后一次性检查」）

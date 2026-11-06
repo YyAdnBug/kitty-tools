@@ -4,6 +4,7 @@
 using System.Runtime.InteropServices;
 using KittyTools.Infrastructure;
 using Microsoft.Windows.Storage.Pickers;
+using Windows.Win32;
 
 namespace KittyTools;
 
@@ -58,6 +59,11 @@ internal static partial class ScreenshotOutput
 
         var service = ClipboardService.Instance;
         service?.MarkOwnWrite();
+        if (file is not null)
+        {
+            _ = RewriteLaterAsync(file);
+        }
+
         if (service is not null)
         {
             _ = service.Store.RecordImageAsync(png, width, height, null, source);
@@ -67,6 +73,27 @@ internal static partial class ScreenshotOutput
         NoticeHost.Show(title, detail, NoticeTone.Normal);
         Log.Info($"screenshot.copy ok=true {width}x{height} file={file is not null}");
         return true;
+    }
+
+    /// <summary>
+    /// 拷成文件后隔 0.5 s、再 1 s 原样补写两遍（PLAN-v15 补，同 mac Paster.rewriteLater）：跨电脑的剪贴板工具（USB 对拷线的软件）
+    /// 盯着复制快捷键，按下那一刻就读剪贴板，我们编码、写文件晚几百毫秒，写进去的那一下被它当成看过（mac 用户实测：按 ⌘C 拷传不过去、
+    /// 点工具栏的拷贝能传）。剪贴板的序号变了（用户又复制了别的）就停；监听靠 MarkOwnWrite 跳过，剪贴板历史只记第一次。
+    /// ponytail: 两次的间隔是猜的（没有对拷线可测）；不够再加长，或者改成只在按 Ctrl+C 拷的时候补写。
+    /// </summary>
+    private static async Task RewriteLaterAsync(string file)
+    {
+        foreach (var delay in new[] { 500, 1000 })
+        {
+            var sequence = PInvoke.GetClipboardSequenceNumber();
+            await Task.Delay(delay);
+            if (PInvoke.GetClipboardSequenceNumber() != sequence || !ClipboardWriter.WriteFiles(new[] { file }))
+            {
+                return;
+            }
+
+            ClipboardService.Instance?.MarkOwnWrite();
+        }
     }
 
     /// <summary>拖出去、拷成文件用的临时文件夹（启动时清空，ShellRuntime；每日维护时删一天以前的，PurgeStaleTemp）。</summary>
