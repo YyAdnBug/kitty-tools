@@ -16,8 +16,10 @@
   - 剪贴板里**只放这个文件**（`ClipboardWriter.WriteFiles`：`CF_HDROP` + `Preferred DropEffect` = 复制，同在资源管理器里复制一个文件；拍板 Q3）；写不成照旧放图像。
   - 文件是 `%TEMP%\kitty-shots\copy\<编号>\截图 日期 时间.png`，每次一个新子文件夹；截图历史那条用拖出去的那一份（`DragFile`：存过的就是存的那个文件，别的是 `history\<id>\` 下的成品）。
   - 剪贴板历史照旧记成图片（Q5：临时文件清掉以后这条照样能用）；提示的小字写文件名（拷成图像时照旧写尺寸，钉图照旧不写）。
-  - 写完隔 0.5 s、再 1 s 原样补写两遍（`RewriteLaterAsync`，剪贴板序号变了就停）：mac 用户实测按 ⌘C 拷对拷线传不过去、点工具栏的拷贝能传——
-    对拷线的软件盯着复制快捷键，按下那一刻就读剪贴板，我们晚几百毫秒写进去的那一下被它当成看过。Windows 的 Ctrl+C 按同样处理。
+  - **一次拷贝只写一次剪贴板**。mac 用户用对拷线实测：等编码完才写，按 ⌘C 拷传不过去、点工具栏的拷贝能传（对拷线的软件按下 ⌘C 后
+    很快就读剪贴板）；写完再补写两遍，连点按钮也传不过去了。mac 改成按下拷贝的那一刻就写好（承诺一个文件 URL、谁来读才给）。
+    Windows 先照原样（按钮、Ctrl+C 都是编码完写一次）；真机上 Ctrl+C 也传不过去时，同 mac 改成按下时就占好剪贴板
+    （延迟渲染：`SetClipboardData(CF_HDROP, NULL)` + 窗口处理 `WM_RENDERFORMAT` / `WM_RENDERALLFORMATS`），别用补写。
 - **临时文件夹的清理**（Q4）：启动时整个清空（原来就清第一层的 PNG 和 `history\`，加上 `copy\`）；`ScheduleBackup`（启动、解锁、唤醒时的每日维护）里删一天以前的
   （`ScreenshotOutput.PurgeStaleTemp` → Core `ShotHistoryRules.StaleTemp`：第一层的 PNG、`history` / `copy` 下的子文件夹，按改于认；时间比现在还晚的不删）。
 - **不跟这个设置**：识字、截图翻译（文字），剪贴板历史里的图片条目再粘贴，便签里的图片，截图历史多选拷贝（本来就是文件）。只做 PNG（Q8）。
