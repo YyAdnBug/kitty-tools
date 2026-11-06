@@ -47,8 +47,6 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
     }
 
     /// 数字键：第 10 个是 0
-    var key: String { String(rawValue % 10) }
-
     /// 马赛克、聚光灯没有颜色（托盘不出色点）
     var hasColor: Bool { self != .mosaic && self != .spotlight }
 

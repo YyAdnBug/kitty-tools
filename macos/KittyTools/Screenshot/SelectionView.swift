@@ -1341,9 +1341,12 @@ final class SelectionView: NSView, NSTextViewDelegate {
     present(
       HUDMenu(
         [
-          .init(title: ScreenshotOutput.saveTitle, key: "⌘S") { [weak self] in self?.output(.save)
+          .init(title: ScreenshotOutput.saveTitle, key: ShotKey.save.label ?? "") { [weak self] in
+            self?.output(.save)
           },
-          .init(title: "另存为…", key: "⇧⌘S") { [weak self] in self?.output(.saveAs) },
+          .init(title: "另存为…", key: ShotKey.saveAs.label ?? "") { [weak self] in
+            self?.output(.saveAs)
+          },
         ], label: Self.saveMenuLabel),
       anchor: body.convert(body.bounds, to: self).union(caret.convert(caret.bounds, to: self)))
   }
@@ -2300,15 +2303,6 @@ final class SelectionView: NSView, NSTextViewDelegate {
 
   // MARK: 键盘（输入文字时按键都归输入框，不到这里）
 
-  /// 数字键 1–9、0 依次对应 10 个工具（Tool.rawValue 1–10）
-  /// 数字键 1–9、0 对应十种工具（长图标注窗口共用）。ponytail: 按物理键位，Dvorak 等布局下位置不同
-  static let toolKeys: [Int: Annotation.Tool] = Dictionary(
-    uniqueKeysWithValues: zip(
-      [
-        kVK_ANSI_1, kVK_ANSI_2, kVK_ANSI_3, kVK_ANSI_4, kVK_ANSI_5, kVK_ANSI_6, kVK_ANSI_7,
-        kVK_ANSI_8, kVK_ANSI_9, kVK_ANSI_0,
-      ], Annotation.Tool.allCases))
-
   /// 方向键对应的选区边（AppKit 坐标 y 朝上：↑ 是上边 maxY）
   private static let arrowEdges: [Int: RegionSelector.Handle] = [
     kVK_LeftArrow: .left, kVK_RightArrow: .right, kVK_UpArrow: .top, kVK_DownArrow: .bottom,
@@ -2328,35 +2322,61 @@ final class SelectionView: NSView, NSTextViewDelegate {
     if adjusts, flags == .option, let edge = Self.arrowEdges[code] {
       return push(edge, by: -step)
     }
-    // 单字母键不带 ⌘ ⌃ ⌥（⌘C 之类走 performKeyEquivalent）。ponytail: 按物理键位，Dvorak 等布局下位置不同。
-    // 录屏只认 ↩ / D / C / 方向键：出图键、数字键（工具）、⌫（删标注）、R（切到录屏）都是截图的
-    guard adjusts, flags.isEmpty else { return super.keyDown(with: event) }
-    switch code {
-    case kVK_Return, kVK_ANSI_KeypadEnter:
-      if isAdjusting { confirm() }
-    case kVK_ANSI_T where annotates:
-      if isAdjusting { output(.pin) }
-    case kVK_ANSI_S where annotates:
-      if isAdjusting { startScroll() }
-    case kVK_ANSI_O where annotates:
-      if isAdjusting { output(.recognize) }
-    case kVK_ANSI_R where annotates && Feature.record.isOn:
-      if isAdjusting { switchToRecording() }
-    case kVK_ANSI_D:
-      if !session.selectLastRegion() { refuseWipe("有标注时不跳到别的屏") }
-    case kVK_ANSI_C:
-      if showsMagnifier, let sampled { session.finish(.color(sampled.hex)) }
-    case _ where annotates && Self.toolKeys[code] != nil:
-      if isAdjusting, let tool = Self.toolKeys[code] { choose(tool) }
-    case kVK_Delete where annotates, kVK_ForwardDelete where annotates:
-      deleteSelected()
-    case kVK_LeftArrow: nudge(-step, 0)
-    case kVK_RightArrow: nudge(step, 0)
-    case kVK_UpArrow: nudge(0, step)
-    case kVK_DownArrow: nudge(0, -step)
-    default:
-      super.keyDown(with: event)
+    guard adjusts else { return super.keyDown(with: event) }
+    // 固定的键（不带 ⌘ ⌃ ⌥；⇧ + 方向键是 10 点）：↩ 确认、⌫ 删标注、方向键微调。录屏只认 ↩ 和方向键
+    if flags.isEmpty {
+      switch code {
+      case kVK_Return, kVK_ANSI_KeypadEnter:
+        if isAdjusting { confirm() }
+        return
+      case kVK_Delete where annotates, kVK_ForwardDelete where annotates: return deleteSelected()
+      case kVK_LeftArrow: return nudge(-step, 0)
+      case kVK_RightArrow: return nudge(step, 0)
+      case kVK_UpArrow: return nudge(0, step)
+      case kVK_DownArrow: return nudge(0, -step)
+      default: break
+      }
     }
+    // 截图时的快捷键（ShotKeys，设置 › 快捷键里能改；带 ⌘ 的多半先到 performKeyEquivalent）。
+    // ponytail: 按物理键位，Dvorak 等布局下位置不同
+    if let key = ShotKey.matching(event), perform(key) { return }
+    super.keyDown(with: event)
+  }
+
+  /// 截图时的一个快捷键（ShotKeys）：这个模式用得上就做、返回 true（吃掉这一下）。录屏只认上次区域和取色：
+  /// 出图键、工具、撤销、切到录屏都是截图的
+  private func perform(_ key: ShotKey) -> Bool {
+    switch key {
+    case .lastRegion:
+      if !session.selectLastRegion() { refuseWipe("有标注时不跳到别的屏") }
+      return true
+    case .pickColor:
+      if showsMagnifier, let sampled { session.finish(.color(sampled.hex)) }
+      return true
+    case .record where !Feature.record.isOn:
+      return false
+    default:
+      break
+    }
+    guard annotates else { return false }
+    guard isAdjusting else { return true }
+    if let tool = key.tool {
+      choose(tool)
+      return true
+    }
+    switch key {
+    case .pin: output(.pin)
+    case .scroll: startScroll()
+    case .recognize: output(.recognize)
+    case .record: switchToRecording()
+    case .copy: output(.copy)
+    case .save: output(.save)
+    case .saveAs: output(.saveAs)
+    case .undo: undo()
+    case .redo: redo()
+    default: return false
+    }
+    return true
   }
 
   /// 修饰键按下 / 松开：⌘ 十字准线跟着出现 / 消失；框选、拖边、画 / 拖标注途中按上次的鼠标位置重算（⇧ ⌥ ⌃ 立刻生效）
@@ -2401,17 +2421,11 @@ final class SelectionView: NSView, NSTextViewDelegate {
       push(edge, by: flags.contains(.shift) ? 10 : 1)
       return true
     }
-    // ⌘C ⌘S ⇧⌘S ⌘Z ⌘D 都是截图的出图 / 标注键
-    guard annotates else { return super.performKeyEquivalent(with: event) }
-    switch (Int(event.keyCode), flags == .command, flags == [.command, .shift]) {
-    case (kVK_ANSI_C, true, _): output(.copy)
-    case (kVK_ANSI_S, true, _): output(.save)
-    case (kVK_ANSI_S, _, true): output(.saveAs)
-    case (kVK_ANSI_Z, true, _): undo()
-    case (kVK_ANSI_Z, _, true): redo()
-    case (kVK_ANSI_D, true, _) where selectedAnnotation != nil: duplicateSelected()
-    default: return super.performKeyEquivalent(with: event)
-    }
+    // 出图 / 撤销这些（ShotKeys，默认 ⌘C ⌘S ⇧⌘S ⌘Z ⇧⌘Z，能改）；⌘D 复制标注固定
+    if let key = ShotKey.matching(event), perform(key) { return true }
+    guard annotates, Int(event.keyCode) == kVK_ANSI_D, flags == .command, selectedAnnotation != nil
+    else { return super.performKeyEquivalent(with: event) }
+    duplicateSelected()
     return true
   }
 

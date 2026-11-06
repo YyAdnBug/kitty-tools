@@ -276,8 +276,12 @@ import Carbon.HIToolbox
     else { return }
     let next = HUDMenu(
       [
-        .init(title: ScreenshotOutput.saveTitle, key: "⌘S") { [weak self] in self?.emit(.save) },
-        .init(title: "另存为…", key: "⇧⌘S") { [weak self] in self?.emit(.saveAs) },
+        .init(title: ScreenshotOutput.saveTitle, key: ShotKey.save.label ?? "") { [weak self] in
+          self?.emit(.save)
+        },
+        .init(title: "另存为…", key: ShotKey.saveAs.label ?? "") { [weak self] in
+          self?.emit(.saveAs)
+        },
       ], label: "存储选项")
     saveMenu = next
     next.onDismiss = { [weak self, weak next] in
@@ -327,13 +331,17 @@ import Carbon.HIToolbox
   private func key(_ event: NSEvent) -> Bool {
     let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
     if panel.firstResponder is EditorField { return typing(event, flags: flags) }
+    // 识字、拷贝、存储、另存为照截图时的快捷键（ShotKeys，能改）；工具、撤销归画布（ScrollCanvas）
+    let outputs: [ShotKey: RegionSelector.Action] = [
+      .recognize: .recognize, .copy: .copy, .save: .save, .saveAs: .saveAs,
+    ]
+    if let action = ShotKey.matching(event).flatMap({ outputs[$0] }) {
+      emit(action)
+      return true
+    }
     switch (Int(event.keyCode), flags) {
     case (kVK_Escape, []): dismiss()
     case (kVK_Return, []), (kVK_ANSI_KeypadEnter, []): emit(.copy)
-    case (kVK_ANSI_O, []): emit(.recognize)
-    case (kVK_ANSI_C, .command): emit(.copy)
-    case (kVK_ANSI_S, .command): emit(.save)
-    case (kVK_ANSI_S, [.command, .shift]): emit(.saveAs)
     case (kVK_ANSI_0, .command): zoomToFit()
     case (kVK_ANSI_1, .command): setMagnification(1)
     case (kVK_ANSI_Equal, .command), (kVK_ANSI_Equal, [.command, .shift]),

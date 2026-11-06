@@ -658,13 +658,13 @@ struct SnapshotProbeTests {
     try snapshot(
       SettingsRoot(navigation: navigation, page: pages) { AnyView(EmptyView()) },
       size: NSSize(width: 700, height: 460), dark: false, to: "\(out)/settings-general-min.png")
-    // 快捷键页拉长看到底（最后的速查表入口），「划词翻译」那一行摆成正在录制（只改外观，不装按键监听）
+    // 快捷键页拉长看到底（截图时的两组、最后的速查表入口），「划词翻译」那一行摆成正在录制（只改外观，不装按键监听）
     navigation.page = .hotkeys
-    hotKeys.recording = .selectionTranslate
+    hotKeys.recording = .global(.selectionTranslate)
     for dark in [false, true] {
       try snapshot(
         SettingsRoot(navigation: navigation, page: pages) { AnyView(EmptyView()) },
-        size: NSSize(width: 780, height: 1000), dark: dark,
+        size: NSSize(width: 780, height: 2400), dark: dark,
         to: "\(out)/settings-hotkeys-recording\(dark ? "-dark" : "").png")
     }
     hotKeys.recording = nil

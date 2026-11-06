@@ -39,6 +39,8 @@ import Foundation
   ]
   private static let prefPrefix = "pref:"
   private static let hotkeyPrefix = "hotkey:"
+  /// 截图时的键（2026-11-06，ShotKeys）：另一个前缀，旧版本不认、放进透传
+  private static let shotkeyPrefix = "shotkey:"
   static let timesKey = "syncChangedAt.settings"
   static let passthroughKey = "syncPassthrough.settings"
 
@@ -111,6 +113,11 @@ import Foundation
         encodedHotKeys[action.rawValue] = (data, text)
       }
       values[Self.hotkeyPrefix + action.rawValue] = text
+    }
+    for key in ShotKey.allCases {
+      guard let data = domain[key.prefsKey] as? Data else { continue }
+      values[Self.shotkeyPrefix + key.rawValue] = Self.encoded(
+        try? JSONDecoder().decode(HotKey.self, from: data))
     }
     return values
   }
@@ -253,6 +260,17 @@ import Foundation
         hotKey?.isUsable != false
       else { return nil }
       return (action.prefsKey, HotKeyAction.stored(hotKey))
+    }
+    if id.hasPrefix(shotkeyPrefix) {
+      guard let key = ShotKey(rawValue: String(id.dropFirst(shotkeyPrefix.count))) else {
+        return nil
+      }
+      guard let value else { return (key.prefsKey, nil) }
+      // 固定的键、范围外的不落（文件夹是信任边界）
+      guard let hotKey = SyncRecords.decodeExact(HotKey?.self, from: value),
+        hotKey.map(ShotKey.isUsable) != false
+      else { return nil }
+      return (key.prefsKey, HotKeyAction.stored(hotKey))
     }
     return nil
   }

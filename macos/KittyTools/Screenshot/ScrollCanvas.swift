@@ -627,6 +627,8 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
       }
       return
     }
+    // 十种工具照截图时的快捷键（ShotKeys，能改，再按一次收起）
+    if let tool = ShotKey.matching(event)?.tool { return choose(tool) }
     let flags = event.modifierFlags.intersection([.command, .control, .option])
     let step: CGFloat = event.modifierFlags.contains(.shift) ? 10 : 1
     guard flags.isEmpty else { return super.keyDown(with: event) }
@@ -640,8 +642,6 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
         return
       }
       super.keyDown(with: event)
-    case _ where SelectionView.toolKeys[code] != nil:
-      if let next = SelectionView.toolKeys[code] { choose(next) }
     case kVK_Delete, kVK_ForwardDelete: deleteSelected()
     case kVK_LeftArrow: nudge(-step, 0)
     case kVK_RightArrow: nudge(step, 0)
@@ -662,11 +662,16 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
 
   override func performKeyEquivalent(with event: NSEvent) -> Bool {
     let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
-    switch (Int(event.keyCode), flags) {
-    case (kVK_ANSI_Z, .command): undo()
-    case (kVK_ANSI_Z, [.command, .shift]): redo()
-    case (kVK_ANSI_D, .command): duplicateSelected()
-    default: return super.performKeyEquivalent(with: event)
+    // 撤销、重做和带 ⌘ 的工具键照截图时的快捷键（ShotKeys）；⌘D 复制标注固定
+    switch ShotKey.matching(event) {
+    case .undo?: undo()
+    case .redo?: redo()
+    case let key? where key.tool != nil: choose(key.tool)
+    default:
+      guard Int(event.keyCode) == kVK_ANSI_D, flags == .command else {
+        return super.performKeyEquivalent(with: event)
+      }
+      duplicateSelected()
     }
     return true
   }

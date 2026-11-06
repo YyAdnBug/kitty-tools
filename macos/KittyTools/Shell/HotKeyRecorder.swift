@@ -6,13 +6,43 @@
 // 并主动发 VoiceOver 播报。
 // 录制时快速按两下同一个修饰键 = 连按两下（拍板 B7，ModifierTaps 认；显示两个键帽「⌘ ⌘」），录上后那一行下面提醒一句
 // 可能和谁撞（B6：⇧ 是输入法切中英文，别的是系统听写）。一个动作只有一个快捷键，组合和连按二选一。
+// 也录截图时的快捷键（2026-11-06 拍板 A，KeyTarget.shot）：单个键、带不带修饰键都行，规矩在 ShotKey.problem；
+// 不认连按。录的时候全局热键同样停着（不然按 ⌥A 会开截图）。
 
 import AppKit
 import Carbon.HIToolbox
 import SwiftUI
 
+/// 录制框录的是哪一个：全局动作，或截图时的一个键
+enum KeyTarget: Hashable {
+  case global(HotKeyAction)
+  case shot(ShotKey)
+
+  var title: String {
+    switch self {
+    case .global(let action): action.title
+    case .shot(let key): key.title
+    }
+  }
+
+  /// 现在的键（nil = 没设 / 清除了）
+  var current: HotKey? {
+    switch self {
+    case .global(let action): action.hotKey
+    case .shot(let key): key.key()
+    }
+  }
+
+  var defaultKey: HotKey? {
+    switch self {
+    case .global(let action): action.defaultHotKey
+    case .shot(let key): key.defaultKey
+    }
+  }
+}
+
 struct HotKeyRecorder: View {
-  let action: HotKeyAction
+  let target: KeyTarget
   let center: HotKeyCenter
   /// 录制时的提示，显示在那一行下面
   @Binding var message: String?
@@ -24,14 +54,14 @@ struct HotKeyRecorder: View {
   /// 录制中认连按两下修饰键
   @State private var taps = ModifierTaps()
 
-  init(action: HotKeyAction, center: HotKeyCenter, message: Binding<String?>) {
-    self.action = action
+  init(target: KeyTarget, center: HotKeyCenter, message: Binding<String?>) {
+    self.target = target
     self.center = center
     _message = message
-    _current = State(initialValue: action.hotKey)
+    _current = State(initialValue: target.current)
   }
 
-  private var isRecording: Bool { center.recording == action }
+  private var isRecording: Bool { center.recording == target }
 
   var body: some View {
     HStack(spacing: 2) {
@@ -53,7 +83,7 @@ struct HotKeyRecorder: View {
         .contentShape(.rect)
       }
       .buttonStyle(.plain)
-      .accessibilityLabel("\(action.title)的快捷键")
+      .accessibilityLabel("\(target.title)的快捷键")
       .accessibilityValue(isRecording ? "正在录制" : current?.display ?? "未设置")
       .accessibilityHint(isRecording ? "按下新的组合，Esc 取消" : "按下后录制新的快捷键")
       if isRecording || current != nil {
@@ -72,15 +102,15 @@ struct HotKeyRecorder: View {
     // 录制中就是拿着焦点：和其它输入框同一个焦点环（Whisker §3「输入框焦点」）
     .modifier(InputBox(isFocused: isRecording))
     .contextMenu {
-      Button("恢复默认") { save(action.defaultHotKey) }
-        .disabled(current == action.defaultHotKey)
+      Button("恢复默认") { save(target.defaultKey) }
+        .disabled(current == target.defaultKey)
       Button("清除") { save(nil) }
         .disabled(current == nil)
     }
-    .onChange(of: center.generation) { current = action.hotKey }
+    .onChange(of: center.generation) { current = target.current }
     .onChange(of: center.recording) { _, recording in
       // 点了别的录制框：这里停止监听、收掉这一行录错的提示，热键由那一个录完再恢复
-      if recording != action, monitor != nil {
+      if recording != target, monitor != nil {
         removeMonitor()
         message = nil
       }
@@ -110,7 +140,7 @@ struct HotKeyRecorder: View {
     message = nil
     held = ""
     taps = ModifierTaps()
-    center.recording = action
+    center.recording = target
     center.suspend()
     monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { event in
       // 录制中从菜单栏开了截图框选：按键归遮罩（Esc 取消框选），不录进快捷键
@@ -124,7 +154,9 @@ struct HotKeyRecorder: View {
     let flags = event.modifierFlags.intersection([.control, .option, .shift, .command])
     if event.type == .flagsChanged {
       held = Self.symbols(flags)
-      if let tap = taps.handle(flags: event.modifierFlags, at: event.timestamp) {
+      if case .global = target,
+        let tap = taps.handle(flags: event.modifierFlags, at: event.timestamp)
+      {
         save(HotKey(doubleTap: tap.key))
       }
       return
@@ -136,6 +168,10 @@ struct HotKeyRecorder: View {
     case kVK_Delete where flags.isEmpty, kVK_ForwardDelete where flags.isEmpty:
       save(nil)
     default:
+      // 截图时的键：单个键也行，固定的键、重复的由 save 里的 ShotKey.problem 拒
+      if case .shot = target {
+        return save(HotKey(keyCode: event.keyCode, flags: event.modifierFlags))
+      }
       if let hotKey = HotKey(event: event) {
         save(hotKey)
       } else {
@@ -159,6 +195,19 @@ struct HotKeyRecorder: View {
   }
 
   private func save(_ hotKey: HotKey?) {
+    guard case .global(let action) = target else {
+      if case .shot(let key) = target {
+        if let hotKey, let problem = ShotKey.problem(with: hotKey, for: key) {
+          message = problem
+          return
+        }
+        key.set(hotKey)
+      }
+      current = hotKey
+      message = nil
+      if isRecording { stop() } else if center.recording == nil { center.reload() }
+      return
+    }
     // ⌘C、⌘V 这类各 App 通用的键设成全局热键，会在所有 App 里被吞掉：拒绝，继续录
     if let hotKey, hotKey.isReservedEditKey {
       message = "这是各 App 通用的快捷键，设成全局会让它在所有 App 里失效"

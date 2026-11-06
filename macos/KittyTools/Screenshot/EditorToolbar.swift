@@ -246,19 +246,23 @@ final class EditorToolbar: PopView {
     // (item, 符号, 旁白名字, 悬停提示)
     typealias Spec = (Item, String, String, String)
     let left: [[Spec]] = [
-      Annotation.Tool.allCases.map { (.tool($0), $0.symbol, $0.title, "\($0.title)（\($0.key)）") },
+      // 悬停提示里的键照截图时的快捷键写（ShotKeys，能改；清除了就只写名字）
+      Annotation.Tool.allCases.map { (.tool($0), $0.symbol, $0.title, ShotKey($0).tip($0.title)) },
       [
-        (.undo, "arrow.uturn.backward", "撤销", "撤销（⌘Z）"),
-        (.redo, "arrow.uturn.forward", "重做", "重做（⇧⌘Z）"),
+        (.undo, "arrow.uturn.backward", "撤销", ShotKey.undo.tip("撤销")),
+        (.redo, "arrow.uturn.forward", "重做", ShotKey.redo.tip("重做")),
       ],
     ]
     let right: [[Spec]] = [
       ([
-        (.output(.recognize), "text.viewfinder", "识字并拷贝", "识字并拷贝（O）"),
+        (.output(.recognize), "text.viewfinder", "识字并拷贝", ShotKey.recognize.tip("识字并拷贝")),
         (.output(.translate), "translate", "翻译", "翻译"),
-        (.scroll, "rectangle.expand.vertical", "长截图", "长截图（S，不带标注）"),
-        (.record, "record.circle", "录屏", "录屏（R）"),
-        (.output(.pin), "pin", "钉到屏幕", "钉到屏幕（T）"),
+        (
+          .scroll, "rectangle.expand.vertical", "长截图",
+          ShotKey.scroll.label.map { "长截图（\($0)，不带标注）" } ?? "长截图（不带标注）"
+        ),
+        (.record, "record.circle", "录屏", ShotKey.record.tip("录屏")),
+        (.output(.pin), "pin", "钉到屏幕", ShotKey.pin.tip("钉到屏幕")),
       ] as [Spec]).filter { spec in
         // 长图的标注窗口：这一组只留识字（翻译、长截图、录屏、钉图对一张长图没意义，拍板 C1）
         guard mode == .capture || spec.0 == .output(.recognize) else { return false }
@@ -267,7 +271,10 @@ final class EditorToolbar: PopView {
           && (spec.0 != .record || Feature.record.isOn)
       },
       [
-        (.output(.save), "square.and.arrow.down", "存储", ScreenshotOutput.saveTitle + "（⌘S）"),
+        (
+          .output(.save), "square.and.arrow.down", "存储",
+          ShotKey.save.tip(ScreenshotOutput.saveTitle)
+        ),
         (.saveMenu, "chevron.down", "更多存储选项", ScreenshotOutput.saveTitle + " / 另存为…"),
       ],
       [(.cancel, "xmark", "取消", "取消（Esc）"), (.output(.copy), "checkmark", "拷贝", "拷贝（↩）")],

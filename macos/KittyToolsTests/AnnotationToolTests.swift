@@ -17,7 +17,9 @@ struct AnnotationToolTests {
 
   @Test func toolMetadata() {
     #expect(
-      Annotation.Tool.allCases.map(\.key) == ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"])
+      Annotation.Tool.allCases.map { ShotKey($0).defaultKey.display } == [
+        "1", "2", "3", "4", "5", "6", "7", "8", "9", "0",
+      ])
     #expect(
       Annotation.Tool.allCases.first == .rectangle && Annotation.Tool.allCases.last == .spotlight)
     for tool in Annotation.Tool.allCases {

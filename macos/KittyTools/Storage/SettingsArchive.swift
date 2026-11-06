@@ -10,7 +10,8 @@
 // 文件里有什么（format 2，七类都可以不带；format 1 是没有便签时的样子，照常读）：
 // - preferences：Prefs.defaults 里的键 + 三个没有默认值的键（kinds：翻译浮窗顶上选的源 / 目标语言，和状态屏的状态列表——
 //   它在偏好里是一段 JSON，文件里写成一组状态），只写用户改过的（持久域里有的）；
-// - hotkeys：存过的全局快捷键（动作 → 组合，null = 清除了）；没存过的不写，跟默认；
+// - hotkeys：存过的全局快捷键（动作 → 组合，null = 清除了）；没存过的不写，跟默认。截图时能改的键（2026-11-06，ShotKeys）
+//   也在这里，键名是「shot.<名字>」（旧版本只认动作名，原样忽略它们；不升 format）；
 // - translateServices / searchEngines：两张列表现在的样子；
 // - clips + clipGroups：片段和文字类的收藏（正文、备注、所在收藏夹的名字、复制时间），收藏夹的名字按顺序；
 // - vocabulary：生词本（收藏的翻译）；
@@ -280,8 +281,9 @@ struct SettingsArchive: Codable, Equatable {
   var version: String
   var exportedAt: Date
   var preferences: [String: Value]?
-  /// 动作（HotKeyAction.rawValue）→ 组合；null = 清除了
+  /// 动作（HotKeyAction.rawValue）→ 组合；null = 清除了。截图时的键记成 shotPrefix + ShotKey.rawValue
   var hotkeys: [String: HotKey?]?
+  static let shotPrefix = "shot."
   var translateServices: [TranslateService]?
   var searchEngines: [SearchEngine]?
   /// 片段和文字类的收藏（新→旧）
@@ -367,6 +369,11 @@ struct SettingsArchive: Codable, Equatable {
       // 解不出来的当清除了（同 HotKeyAction.resolve）
       hotkeys.updateValue(
         try? JSONDecoder().decode(HotKey.self, from: data), forKey: action.rawValue)
+    }
+    for key in ShotKey.allCases {
+      guard let data = domain[key.prefsKey] as? Data else { continue }
+      hotkeys.updateValue(
+        try? JSONDecoder().decode(HotKey.self, from: data), forKey: Self.shotPrefix + key.rawValue)
     }
     return SettingsArchive(
       version: version, exportedAt: now, preferences: preferences, hotkeys: hotkeys,
@@ -594,6 +601,15 @@ struct SettingsArchive: Codable, Equatable {
         }
         kept.updateValue(entry, forKey: action.rawValue)
       }
+      // 截图时的键：单个键也行，固定的键（ShotKey.isUsable）和截图里重复的不收
+      var takenShots: Set<HotKey> = []
+      for key in ShotKey.allCases {
+        guard let entry = entries[Self.shotPrefix + key.rawValue] else { continue }
+        if let hotKey = entry {
+          guard ShotKey.isUsable(hotKey), takenShots.insert(hotKey).inserted else { continue }
+        }
+        kept.updateValue(entry, forKey: Self.shotPrefix + key.rawValue)
+      }
       return kept
     }
     clean.translateServices = translateServices.map { services in
@@ -729,6 +745,13 @@ struct SettingsArchive: Codable, Equatable {
           defaults.set(HotKeyAction.stored(entry), forKey: action.prefsKey)
         } else {
           defaults.removeObject(forKey: action.prefsKey)
+        }
+      }
+      for key in ShotKey.allCases {
+        if let entry = hotkeys[Self.shotPrefix + key.rawValue] {
+          defaults.set(HotKeyAction.stored(entry), forKey: key.prefsKey)
+        } else {
+          defaults.removeObject(forKey: key.prefsKey)
         }
       }
     }

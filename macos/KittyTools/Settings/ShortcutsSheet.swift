@@ -268,7 +268,22 @@ struct ShortcutsSheet: View {
     }
   }
 
-  /// 每次打开现算：录屏组里「停止」那行写当前设的录屏快捷键
+  /// 截图时能改的键（ShotKeys，设置 › 快捷键「截图时」）现在写成什么；清除了写「未设置」
+  private static func key(_ shot: ShotKey) -> String { shot.label ?? "未设置" }
+
+  /// 「截图 · 标注」的工具：还是默认的 1–0 就一行，改过就逐个列
+  private static var toolEntries: [Entry] {
+    guard !ShotKey.toolsAreDefault() else {
+      return [
+        Entry(
+          "1–0",
+          text: "1 矩形 · 2 椭圆 · 3 箭头 · 4 直线 · 5 画笔 · 6 荧光笔 · 7 文字 · 8 序号 · 9 马赛克 · 0 聚光灯；再按一次收起")
+      ]
+    }
+    return ShotKey.tools.map { Entry(key($0), text: $0.title + "（再按一次收起）") }
+  }
+
+  /// 每次打开现算：录屏组里「停止」那行写当前设的录屏快捷键、截图里能改的键写现在设的
   private static var allGroups: [Group] {
     [
       // mac-clipboard §4 面板交互表（Lens Bar，N1–N4）；代码在 ClipboardPanelModel
@@ -396,39 +411,36 @@ struct ShortcutsSheet: View {
           Entry("空格", text: "按住平移选区"),
           Entry("⌃", text: "暂停吸附"),
           Entry("⌘", text: "按住显示十字准线"),
-          Entry("D", text: "选中上次的区域"),
+          Entry(key(.lastRegion), text: "选中上次的区域"),
           Entry("方向键", text: "移动选区 1 点（按住 ⇧ 10 点）"),
           Entry("⌘方向键", text: "把那条边往外推（按住 ⇧ 10 点）"),
           Entry("⌥方向键", text: "把那条边往里收（按住 ⇧ 10 点）"),
-          Entry("C", text: "复制放大镜里的色值"),
+          Entry(key(.pickColor), text: "复制放大镜里的色值"),
           Entry("Esc", text: "逐级退出，最后取消截图"),
         ]),
       // mac-whisker §6 截图「工具」「标注编辑」
       Group(
         title: "截图 · 标注", symbol: "pencil.tip.crop.circle", color: Style.Family.screenshot,
         features: [.screenshot],
-        entries: [
-          Entry(
-            "1–0",
-            text: "1 矩形 · 2 椭圆 · 3 箭头 · 4 直线 · 5 画笔 · 6 荧光笔 · 7 文字 · 8 序号 · 9 马赛克 · 0 聚光灯；再按一次收起"),
+        entries: toolEntries + [
           Entry("⇧", text: "画正方形、正圆、45° 线"),
           Entry("⌫", text: "删除选中的标注"),
           Entry("⌘D", text: "复制一份选中的标注（按住 ⌥ 拖动同样）"),
           Entry("方向键", text: "移动选中的标注"),
-          Entry("⌘Z", "⇧⌘Z", text: "撤销 / 重做"),
+          Entry(key(.undo), key(.redo), text: "撤销 / 重做"),
         ]),
       // mac-whisker §6 截图「出图」
       Group(
         title: "截图 · 出图", symbol: "square.and.arrow.down.fill", color: Style.Family.screenshot,
         features: [.screenshot],
         entries: [
-          Entry("↩", "⌘C", text: "拷贝（双击选区同样）"),
-          Entry("⌘S", text: "快速保存"),
-          Entry("⇧⌘S", text: "另存为…"),
-          Entry("T", text: "钉在屏幕上"),
-          Entry("S", text: "长截图"),
-          Entry("R", text: "录屏（选区不变；有标注时不切）", needs: .record),
-          Entry("O", text: "识字并拷贝"),
+          Entry("↩", key(.copy), text: "拷贝（双击选区同样）"),
+          Entry(key(.save), text: "快速保存"),
+          Entry(key(.saveAs), text: "另存为…"),
+          Entry(key(.pin), text: "钉在屏幕上"),
+          Entry(key(.scroll), text: "长截图"),
+          Entry(key(.record), text: "录屏（选区不变；有标注时不切）", needs: .record),
+          Entry(key(.recognize), text: "识字并拷贝"),
         ]),
       // mac-overlay-panel §10 长截图；代码在 ScrollCapturePanel.keyDown
       Group(
@@ -481,17 +493,19 @@ struct ShortcutsSheet: View {
         title: "标注", symbol: "pencil.tip.crop.circle", color: Style.Family.screenshot,
         features: [.screenshot],
         entries: [
-          Entry("1", "0", text: "十种标注工具（再按一次收起）"),
+          ShotKey.toolsAreDefault()
+            ? Entry("1", "0", text: "十种标注工具（再按一次收起）")
+            : Entry(key(.rectangle), key(.spotlight), text: "十种标注工具，各自的键见「截图 · 标注」（再按一次收起）"),
           Entry("⌫", text: "删除选中的标注"),
           Entry("⌘D", text: "复制选中的标注"),
-          Entry("⌘Z", "⇧⌘Z", text: "撤销 / 重做"),
+          Entry(key(.undo), key(.redo), text: "撤销 / 重做"),
           Entry("空格", text: "按住拖动平移画面"),
           Entry("⌘0", "⌘1", text: "适配 / 原始大小"),
           Entry("⌘+", "⌘-", text: "放大 / 缩小"),
-          Entry("↩", "⌘C", text: "拷贝"),
-          Entry("⌘S", text: "快速保存"),
-          Entry("⇧⌘S", text: "另存为…"),
-          Entry("O", text: "识字并拷贝"),
+          Entry("↩", key(.copy), text: "拷贝"),
+          Entry(key(.save), text: "快速保存"),
+          Entry(key(.saveAs), text: "另存为…"),
+          Entry(key(.recognize), text: "识字并拷贝"),
           Entry("Esc", text: "收起工具 / 退出（画过要按两下）"),
         ]),
       // mac-whisker §6 截图「录屏」（录屏第 1、2 批）；框选、拖边、方向键同「截图 · 框选」，代码在 SelectionView.keyDown，

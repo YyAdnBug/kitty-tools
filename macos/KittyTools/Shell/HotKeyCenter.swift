@@ -428,8 +428,8 @@ enum HotKeyAction: String, CaseIterable {
   /// 最近一次触发的动作和累计触发次数（引导「按一下试试」看次数变化打勾：同一个键再按一次也要算）
   private(set) var lastFired: HotKeyAction?
   private(set) var fireCount = 0
-  /// 正在录制的动作（设置 › 快捷键）：同一时刻只录一个，点了别的录制框，前一个就停下
-  var recording: HotKeyAction?
+  /// 正在录制的那一个（设置 › 快捷键：全局动作或截图时的键）：同一时刻只录一个，点了别的录制框，前一个就停下
+  var recording: KeyTarget?
   /// 按偏好重新注册过几次：同步、导入改了快捷键后都会 reload，开着的录制框据此重读自己的组合（第四轮体检 E19）
   private(set) var generation = 0
   @ObservationIgnored private var handlers: [HotKeyAction: () -> Void] = [:]
