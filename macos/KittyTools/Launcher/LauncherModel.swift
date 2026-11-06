@@ -149,6 +149,8 @@ import UniformTypeIdentifiers
   @ObservationIgnored private var processTask: (verb: SystemCommands.Verb, task: Task<Void, Never>)?
   /// 浏览历史的行（开着「也搜浏览历史」的各家合起来；开关一关 refresh 就扔掉）；单测、截图自检换成固定的
   @ObservationIgnored var historyItems: () -> [LauncherItem] = { BrowserHistory.shared.items }
+  /// 浏览器书签的行（开着书签开关、装着的各家合起来，按文件修改时间缓存）；单测、截图自检换成固定的
+  @ObservationIgnored var bookmarkItems: () -> [LauncherItem] = { Bookmarks.items() }
   /// 呼出时读 / 重读浏览历史和 Firefox 书签（进程外，读完才返回；返回换没换上新的）；单测、截图自检里什么都不做
   @ObservationIgnored var refreshHistory: () async -> Bool = {
     await BrowserHistory.shared.refresh()
@@ -230,6 +232,7 @@ import UniformTypeIdentifiers
       engines = { WebSearch.defaults }
       processTargets = { _ in [] }
       historyItems = { [] }
+      bookmarkItems = { [] }
       refreshHistory = { false }
       fetchRates = { nil }
       showsFrequent = { true }
@@ -439,7 +442,7 @@ import UniformTypeIdentifiers
       + currencyHints + [keyword].compactMap { $0 } + exactPrompts
     // 书签、浏览历史至少 2 个字才搜（1 个字母命中太多；含中文时 1 个字就搜，U8）
     let longEnough = LauncherMatch.isLongEnough(query)
-    let bookmarks = longEnough && !isFixture ? Bookmarks.items() : []
+    let bookmarks = longEnough ? bookmarkItems() : []
     let used = usedLocations(excluding: bookmarks)
     // 书签先粗筛（几千个每敲一个字都完整打分太慢，P3；同 visited）
     let tokens = LauncherMatch.tokens(query)
@@ -750,12 +753,13 @@ import UniformTypeIdentifiers
   }
 
   /// 用过的网址 / 文件：不在任何目录里，靠使用记录找回来；和书签同一网址（不分大小写）时只留书签。
-  /// 系统设置面板在 App 目录里，不另列
+  /// 系统设置面板在 App 目录里，不另列；从书签 / 快捷链接打开的（listed）不在这里找回——还在的那份列表自己会列，
+  /// 浏览器里删了就该搜不到（issue #10）
   private func usedLocations(excluding bookmarks: [LauncherItem]) -> [LauncherItem] {
     let bookmarked = Set(bookmarks.map { $0.target.lowercased() })
     return usage.entries.values
       .filter {
-        $0.query.isEmpty && ($0.kind == .url || $0.kind == .path)
+        $0.query.isEmpty && ($0.kind == .url || $0.kind == .path) && !$0.listed
           && !bookmarked.contains($0.target.lowercased()) && !AppCatalog.isSettingsPane($0.target)
       }
       .map(Self.item(for:))
@@ -780,11 +784,15 @@ import UniformTypeIdentifiers
     var items = favorites(actions)
     favoriteCount = items.count
     guard showsFrequent() else { return items }
-    // 全部按分排好再往下找：前面几条失效（App 已卸载、文件已删）时后面的补上
+    // 从书签 / 快捷链接打开的只从它们现在的列表里找（issue #10）：源头删了就不列，记录留着、加回来照旧
+    lazy var listed = bookmarkItems() + WebSearch.quicklinkItems(engines: engines())
+    // 全部按分排好再往下找：前面几条失效（App 已卸载、文件已删、书签删了）时后面的补上
     for entry in usage.top(Int.max) where items.count < Self.recentLimit {
-      guard let item = restore(entry.kind, entry.target, entry.title, actions),
-        !items.contains(where: { $0.id == item.id })
-      else { continue }
+      let restored =
+        entry.listed
+        ? listed.first { $0.kind == entry.kind && $0.target == entry.target }
+        : restore(entry.kind, entry.target, entry.title, actions)
+      guard let item = restored, !items.contains(where: { $0.id == item.id }) else { continue }
       items.append(item)
     }
     return items
