@@ -3,8 +3,8 @@
 // 用户主动的复制不加，照常进别的剪贴板工具。
 // 本 App 生成的新文字（译文、原文、计算结果、路径 / 网址、替换原文、识字、取色…）用 write(string:record: true)
 // 写并同时记进剪贴板历史（recordText）；从历史取出的已有条目、划词还原、剪贴板面板里的色值块不记。
-// 文件（录屏卡的「拷贝」）用 write(files:)，调用方自己记进历史（同截图的图片）；截图拷贝成 PNG 文件后再 rewriteLater
-// 补写两遍（跨电脑的剪贴板工具会漏掉按 ⌘C 拷的那一下）。
+// 文件（录屏卡的「拷贝」）用 write(files:)，调用方自己记进历史（同截图的图片）；截图拷贝成 PNG 文件用 write(promising:)：
+// 按下拷贝时只承诺一个文件 URL、谁来读才给（跨电脑的剪贴板工具按 ⌘C 那一刻就读，只能写一次、而且要马上写）。
 
 import AppKit
 import Carbon.HIToolbox
@@ -40,22 +40,15 @@ enum Paster {
     write(items(files: files))
   }
 
-  /// 截图拷贝成 PNG 文件后，过一会儿把同样的文件再写两遍（2026-11-06 用户报：按 ⌘C 拷，USB 对拷线传不到另一台；
-  /// 点工具栏的拷贝就能传）。这类跨电脑的剪贴板工具盯着 ⌘C：按下那一刻就去读剪贴板、把那一下当成这次拷贝，我们编码、
-  /// 写文件要几百毫秒，写进去时它已经处理完了，这次改动被当成看过；点按钮没有这一下按键，它走平常的变化检测就传了。
-  /// 再写一遍让剪贴板的计数再动一次，它当成新的一次拷贝去传。中间剪贴板变了（用户又拷了别的）就停，别的情况多写两遍无害
-  /// （watcher 跳过自家写入，剪贴板历史只在第一次记）。
-  /// ponytail: 0.5 s、再 1 s 两次是猜的（没有对拷线可测）；用户试出来还不够再加长，或者改成只在按 ⌘C 拷的时候补写
-  static func rewriteLater(files: [URL]) {
-    Task {
-      for delay in [0.5, 1.0] {
-        let count = ownChangeCount
-        try? await Task.sleep(for: .seconds(delay))
-        guard NSPasteboard.general.changeCount == count else { return }
-        write(files: files)
-      }
-    }
+  /// 一个文件，先承诺、谁来读才给（截图拷贝成 PNG 文件：ScreenshotOutput.FileOffer）。provider 留在这里，直到下一次承诺
+  /// （pasteboard item 不保证留着它；写好之后它只剩一个 URL）
+  static func write(promising provider: some NSPasteboardItemDataProvider) {
+    let item = NSPasteboardItem()
+    item.setDataProvider(provider, forTypes: [.fileURL])
+    write([item])
+    promised = provider
   }
+  private static var promised: (any NSPasteboardItemDataProvider)?
 
   /// 文件写进剪贴板的样子（剪贴板历史里的文件条目还原时也用它）
   static func items(files: [URL]) -> [NSPasteboardItem] {
