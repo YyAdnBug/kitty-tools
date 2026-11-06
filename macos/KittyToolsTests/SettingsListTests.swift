@@ -25,6 +25,44 @@ struct SettingsListTests {
       ])
     let sections = HotKeyAction.sections.map(\.title)
     #expect(sections.firstIndex(of: "翻译")! < sections.firstIndex(of: "截图与录制")!)
+    // 侧栏分组（0.7.2 从功能管理搬来）：盖住每一页、不重复
+    let grouped = SettingsPage.groups.flatMap { $0 }
+    #expect(grouped.count == pages.count && Set(grouped) == Set(pages))
+    // 没有启动台（macOS 15）时那一组只剩程序坞预览；搜索只剩一组里的页时别的组不画
+    #expect(
+      SettingsPage.sidebar(SettingsPage.visible(launchpad: false), off: []).map(\.pages)
+        == [
+          [.general], [.clipboard, .launcher, .translate], [.screenshot, .record],
+          [.notes, .statusScreen], [.dockPreview], [.hotkeys, .about],
+        ])
+    #expect(
+      SettingsPage.sidebar([.statusScreen, .about], off: []).map(\.pages) == [
+        [.statusScreen], [.about],
+      ])
+    // 关着的功能挪进最底下「已关闭（N）」那组（照侧栏顺序）；整组都关了的组不画；组的标题不因为头一页挪走而丢
+    let closed = SettingsPage.sidebar(
+      SettingsPage.allCases, off: [.notes, .dockPreview, .launchpad, .record])
+    #expect(
+      closed.map(\.pages) == [
+        [.general], [.clipboard, .launcher, .translate], [.screenshot], [.statusScreen],
+        [.hotkeys, .about], [.record, .notes, .launchpad, .dockPreview],
+      ])
+    #expect(closed.map(\.title) == [nil, "文字与搜索", "截图与录制", "便签与状态屏", nil, "已关闭（4）"])
+    #expect(closed.map(\.isOff) == [false, false, false, false, false, true])
+    #expect(Set(closed.map(\.id)).count == closed.count)
+    // 搜索时只剩对上的：关着的那页照样在「已关闭」里
+    #expect(SettingsPage.sidebar([.notes], off: [.notes]).map(\.title) == ["已关闭（1）"])
+    // 组标题：一组里的页同一个标题；功能那四组有，一头一尾两组没有
+    for group in SettingsPage.groups {
+      #expect(Set(group.map(\.groupTitle)).count == 1, "\(group)")
+    }
+    #expect(
+      SettingsPage.groups.map(\.first?.groupTitle) == [
+        nil, "文字与搜索", "截图与录制", "便签与状态屏", "桌面", nil,
+      ])
+    // 功能页对得上功能，通用 / 快捷键 / 关于不是功能
+    #expect(Set(pages.compactMap(\.feature)) == Set(Feature.allCases))
+    #expect(SettingsPage.general.feature == nil && SettingsPage.hotkeys.feature == nil)
   }
 
   /// 侧栏搜索按改名后的叫法也找得到：启动器的「常用」「收藏」，翻译的「浮窗位置」「清空」

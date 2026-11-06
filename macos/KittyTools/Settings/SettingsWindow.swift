@@ -25,6 +25,48 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   /// 侧栏和搜索里列的页：macOS 15 上没有启动台（`Launchpad.isAvailable`）
   static let visible = visible(launchpad: Launchpad.isAvailable)
 
+  /// 侧栏的分组（0.7.2 从 0.8.0 的功能管理搬来，2026-11-06）：通用 ｜ 文字与搜索 ｜ 截图与录制 ｜ 便签与状态屏 ｜ 桌面 ｜
+  /// 快捷键、关于。功能那四组带标题、能折叠（groupTitle）。ponytail: 侧栏里状态屏排到了启动台前面，菜单栏、快捷键页还是
+  /// allCases 的老顺序；0.8.0 全 App 一起改了顺序，这一版只动侧栏
+  static let groups: [[SettingsPage]] = [
+    [.general], [.clipboard, .launcher, .translate], [.screenshot, .record],
+    [.notes, .statusScreen], [.launchpad, .dockPreview], [.hotkeys, .about],
+  ]
+
+  /// 侧栏的一组：标题（没有就不画）、组里的页；isOff 是最底下「已关闭」那组
+  struct SidebarGroup: Equatable, Identifiable {
+    let title: String?
+    let pages: [SettingsPage]
+    var isOff = false
+    var id: String { isOff ? "off" : title ?? pages.first?.rawValue ?? "" }
+  }
+
+  /// 侧栏这一刻怎么分组（纯函数）：只留 pages 里有的（搜索匹配、这台系统有），空了的组不画；关着的功能（off）不在原来的组里，
+  /// 照侧栏顺序挪进最底下默认收起的「已关闭（N）」组（对标 VS Code 扩展栏底下折叠着的「已停用」）
+  static func sidebar(_ pages: [SettingsPage], off: Set<SettingsPage>) -> [SidebarGroup] {
+    let shown = groups.compactMap { group -> SidebarGroup? in
+      let kept = group.filter { pages.contains($0) && !off.contains($0) }
+      return kept.isEmpty ? nil : SidebarGroup(title: group.first?.groupTitle, pages: kept)
+    }
+    let closed = groups.joined().filter { pages.contains($0) && off.contains($0) }
+    return closed.isEmpty
+      ? shown : shown + [SidebarGroup(title: "已关闭（\(closed.count)）", pages: closed, isOff: true)]
+  }
+
+  /// 侧栏组标题（同访达、邮件侧栏的小标题，点一下收起 / 展开）。通用、快捷键与关于两组不写：一头一尾，收起来也省不了地方
+  var groupTitle: String? {
+    switch self {
+    case .clipboard, .launcher, .translate: "文字与搜索"
+    case .screenshot, .record: "截图与录制"
+    case .notes, .statusScreen: "便签与状态屏"
+    case .launchpad, .dockPreview: "桌面"
+    case .general, .hotkeys, .about: nil
+    }
+  }
+
+  /// 这一页是哪个功能的设置（通用、快捷键、关于不是）：功能关着时侧栏里这一行的色块变淡
+  var feature: Feature? { Feature(rawValue: rawValue) }
+
   /// 单测喂 false 看 macOS 15 上的样子
   static func visible(launchpad: Bool) -> [SettingsPage] {
     allCases.filter { launchpad || $0 != .launchpad }
@@ -355,19 +397,87 @@ struct SettingsRoot: View {
   let page: (SettingsPage) -> AnyView
   let onboarding: () -> AnyView
   @State private var query = ""
+  /// 收起了的组（组标题，换行隔开；这台电脑自己的）
+  @AppStorage(Prefs.settingsCollapsedGroups) private var collapsedGroups = ""
+  /// 底下「已关闭」那组展开着没有（默认收起）
+  @AppStorage(Prefs.settingsShowsOffFeatures) private var showsOff = false
+  /// 关着的功能的页：开关一变（偏好变化的通知）跟着挪组
+  @State private var off = Self.offPages()
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+  static func offPages() -> Set<SettingsPage> {
+    Set(Feature.allCases.filter { $0.isAvailable && !$0.isOn }.map(\.page))
+  }
+
+  /// 「已关闭」那组：搜索时、当前页就在里面时一直展开（不然对上的、正看着的那页藏在收起的组里）
+  private var offExpanded: Binding<Bool> {
+    Binding {
+      !query.isEmpty || showsOff || off.contains(navigation.page)
+    } set: {
+      showsOff = $0
+    }
+  }
+
   private var matches: [SettingsPage] { SettingsPage.visible.filter { $0.matches(query) } }
+
+  /// 一组展开没有：搜索时都展开（不然对上的页藏在收起的组里）
+  private func expanded(_ title: String) -> Binding<Bool> {
+    Binding {
+      !query.isEmpty || !collapsed.contains(title)
+    } set: { open in
+      var titles = collapsed
+      if open { titles.remove(title) } else { titles.insert(title) }
+      collapsedGroups = titles.sorted().joined(separator: "\n")
+    }
+  }
+
+  private var collapsed: Set<String> {
+    Set(collapsedGroups.split(separator: "\n").map(String.init))
+  }
+
+  private func rows(_ group: [SettingsPage]) -> some View {
+    ForEach(group) { page in
+      SidebarRow(
+        page: page, isSelected: page == navigation.page,
+        isNew: WhatsNew.marks(page, in: navigation.fresh)
+      )
+      .tag(page)
+    }
+  }
+
+  /// 功能组的小标题；收起着、里面有新功能时后面一个小圆点（标记藏在收起的组里等于没标）
+  private func header(_ title: String, _ pages: [SettingsPage]) -> some View {
+    HStack(spacing: 5) {
+      Text(title)
+      if !expanded(title).wrappedValue,
+        pages.contains(where: { WhatsNew.marks($0, in: navigation.fresh) })
+      {
+        NewDot()
+      }
+    }
+  }
 
   var body: some View {
     NavigationSplitView {
       List(selection: selection) {
-        ForEach(matches) { page in
-          SidebarRow(
-            page: page, isSelected: page == navigation.page,
-            isNew: WhatsNew.marks(page, in: navigation.fresh)
-          )
-          .tag(page)
+        // 分组：功能那四组带小标题、点标题收起 / 展开（同访达的侧栏）；通用、快捷键与关于不写标题；关着的功能在最底下
+        // 「已关闭」那组（默认收起）
+        ForEach(SettingsPage.sidebar(matches, off: off)) { group in
+          if group.isOff, let title = group.title {
+            Section(isExpanded: offExpanded) {
+              rows(group.pages)
+            } header: {
+              Text(title)
+            }
+          } else if let title = group.title {
+            Section(isExpanded: expanded(title)) {
+              rows(group.pages)
+            } header: {
+              header(title, group.pages)
+            }
+          } else {
+            Section { rows(group.pages) }
+          }
         }
       }
       .overlay {
@@ -395,10 +505,21 @@ struct SettingsRoot: View {
       let page = SettingsPage.page(for: query, current: navigation.page)
       if page != navigation.page { navigation.page = page }
     }
-    // 从菜单栏等处直接跳到一页，而旧搜索词把它筛掉了：清掉搜索词（侧栏不留一个没选中的残局）
+    // 从菜单栏等处直接跳到一页，而旧搜索词把它筛掉了：清掉搜索词（侧栏不留一个没选中的残局）；那一页在收起的组里就展开
     .onChange(of: navigation.page) {
       navigation.visit(navigation.page)
       if !matches.contains(navigation.page) { query = "" }
+      if let title = navigation.page.groupTitle, collapsed.contains(title) {
+        expanded(title).wrappedValue = true
+      }
+    }
+    .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
+      let now = Self.offPages()
+      if now != off {
+        off = now
+        // 开关变了：关着的功能不标，重算一遍
+        navigation.visit(navigation.page)
+      }
     }
     .sheet(isPresented: $navigation.showsOnboarding) {
       onboarding().symbolEffectsRemoved(reduceMotion).appAccent()
@@ -451,14 +572,18 @@ private struct SidebarRow: View {
     .listRowBackground(isSelected ? highlight(emphasized: emphasized) : nil)
   }
 
-  private var label: some View {
-    Label {
-      Text(page.title)
-    } icon: {
-      if page == .about {
-        Image(nsImage: Self.aboutIcon)
-      } else {
-        KindTile(symbol: page.symbol, color: page.color, size: 20)
+  @ViewBuilder private var label: some View {
+    if let feature = page.feature {
+      FeatureSidebarLabel(page: page, feature: feature)
+    } else {
+      Label {
+        Text(page.title)
+      } icon: {
+        if page == .about {
+          Image(nsImage: Self.aboutIcon)
+        } else {
+          KindTile(symbol: page.symbol, color: page.color, size: 20)
+        }
       }
     }
   }
@@ -473,6 +598,29 @@ private struct SidebarRow: View {
     return shape.fill(emphasized ? Style.brand : Style.selectedFill)
       .overlay { if !emphasized { shape.contrastSelectionBorder() } }
       .padding(.horizontal, Self.inset)
+  }
+}
+
+/// 功能页那一行：看着它的开关（@AppStorage，开关一变就跟上）。关着时色块变淡、读屏念「已关闭」；关着的都在最底下「已关闭」
+/// 那组里。名字不另设字色：选中时的 onBrand、后台窗口变灰都由外面那层管
+private struct FeatureSidebarLabel: View {
+  let page: SettingsPage
+  @AppStorage private var isOn: Bool
+
+  init(page: SettingsPage, feature: Feature) {
+    self.page = page
+    _isOn = AppStorage(wrappedValue: feature.defaultOn, feature.prefsKey)
+  }
+
+  var body: some View {
+    Label {
+      Text(page.title).lineLimit(1).truncationMode(.tail)
+    } icon: {
+      KindTile(symbol: page.symbol, color: page.color, size: 20)
+        .opacity(isOn ? 1 : Style.disabledOpacity)
+    }
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(isOn ? page.title : page.title + "，已关闭")
   }
 }
 
