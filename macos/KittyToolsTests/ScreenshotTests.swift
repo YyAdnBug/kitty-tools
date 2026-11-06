@@ -497,6 +497,75 @@ struct ScreenshotTests {
     #expect(OCR.paragraphs([]).isEmpty)
   }
 
+  /// Vision 在行内代码块、单独的项目符号处把一行拆成几块（2026-11-06 截图翻译排版问题，坐标取自那张 GitHub 文档截图）：
+  /// 挨着的同一行碎块接回一行；隔得远的（并排的另一栏）、下一行的不接
+  @Test func fragmentsOfOneRowMergeBack() {
+    let size = CGSize(width: 1231, height: 1034)
+    // 像素、原点左上 → Vision 的归一化、原点左下
+    func line(_ text: String, x: ClosedRange<CGFloat>, y: ClosedRange<CGFloat>) -> OCR.Line {
+      OCR.Line(
+        text: text,
+        box: CGRect(
+          x: x.lowerBound / size.width, y: (size.height - y.upperBound) / size.height,
+          width: (x.upperBound - x.lowerBound) / size.width,
+          height: (y.upperBound - y.lowerBound) / size.height))
+    }
+    let merged = OCR.mergingRows(
+      [
+        line("•", x: 69...93, y: 129...153),
+        line("total_comments_evaluated : The number of", x: 114...1229, y: 123...165),
+        line("checked to see whether", x: 101...889, y: 173...208),
+        line("(e.g., high, medium", x: 99...405, y: 635...670),
+        line("low ), review tier (e.g., lite ,", x: 443...883, y: 629...671),
+        line("balanced,", x: 875...1051, y: 631...668),
+        line("max ),", x: 1059...1154, y: 635...668),
+      ], imageSize: size)
+    #expect(
+      merged.map(\.text) == [
+        "• total_comments_evaluated : The number of", "checked to see whether",
+        "(e.g., high, medium low ), review tier (e.g., lite , balanced, max ),",
+      ])
+    // 框是并集
+    #expect(abs(merged[2].box.minX * size.width - 99) < 0.5)
+    #expect(abs(merged[2].box.maxX * size.width - 1154) < 0.5)
+    // Vision 先给字、后给左边的记号：照样按左右顺序接
+    let reversed = OCR.mergingRows(
+      [line("item text", x: 114...600, y: 123...165), line("•", x: 69...93, y: 129...153)],
+      imageSize: size)
+    #expect(reversed.map(\.text) == ["• item text"])
+    // 并排两栏（栏间距三倍行高）：不接
+    let columns = OCR.mergingRows(
+      [
+        line("left column", x: 20...500, y: 100...140),
+        line("right column", x: 620...1200, y: 100...140),
+      ], imageSize: size)
+    #expect(columns.count == 2)
+  }
+
+  /// 列表项另起一段（间距不到 1.2 倍行高也断）；记号要像记号：`-5` 这种负数、`3.14` 不算
+  @Test func listItemsStartNewParagraphs() {
+    func line(_ text: String, top: CGFloat) -> OCR.Line {
+      OCR.Line(text: text, box: CGRect(x: 0.1, y: top - 0.05, width: 0.8, height: 0.05))
+    }
+    let items = [
+      line("• first item that wraps", top: 0.9), line("onto a second line", top: 0.84),
+      line("• second item", top: 0.78), line("1. numbered", top: 0.72), line("2、第二条", top: 0.66),
+    ]
+    #expect(
+      OCR.paragraphs(items) == [
+        ["• first item that wraps", "onto a second line"], ["• second item"], ["1. numbered"],
+        ["2、第二条"],
+      ])
+    #expect(OCR.listMarker("• foo") == "• ")
+    #expect(OCR.listMarker("•foo") == "•")
+    #expect(OCR.listMarker("- item") == "- ")
+    #expect(OCR.listMarker("12) item") == "12) ")
+    #expect(OCR.listMarker("① 第一") == "① ")
+    #expect(OCR.listMarker("-5 degrees") == nil)
+    #expect(OCR.listMarker("3.14 is pi") == nil)
+    #expect(OCR.listMarker("plain text") == nil)
+  }
+
   @Test func recognizesMixedScripts() async throws {
     let image = try Self.render(["中文识别测试", "日本語のテキストです", "한국어 텍스트", "Привет мир", "Hello World"])
     let text = try #require(await OCR.recognizeLines(in: image).map { OCR.text($0, joined: false) })
