@@ -4,6 +4,8 @@
 // 不按组合一刀切：直接尝试注册，注册失败的原因由那一行自己显示（HotKeyCenter.failureMessage）；
 // 录制时的提示（缺修饰键、各 App 通用的编辑键如 ⌘C、和别的动作重复）经 message 交给那一行，同样显示在行下面，
 // 并主动发 VoiceOver 播报。
+// 录制时快速按两下同一个修饰键 = 连按两下（拍板 B7，ModifierTaps 认；显示两个键帽「⌘ ⌘」），录上后那一行下面提醒一句
+// 可能和谁撞（B6：⇧ 是输入法切中英文，别的是系统听写）。一个动作只有一个快捷键，组合和连按二选一。
 
 import AppKit
 import Carbon.HIToolbox
@@ -19,6 +21,8 @@ struct HotKeyRecorder: View {
   @State private var monitor: Any?
   /// 录制中按住的修饰键（例如「⌥⇧」）
   @State private var held = ""
+  /// 录制中认连按两下修饰键
+  @State private var taps = ModifierTaps()
 
   init(action: HotKeyAction, center: HotKeyCenter, message: Binding<String?>) {
     self.action = action
@@ -105,6 +109,7 @@ struct HotKeyRecorder: View {
   private func start() {
     message = nil
     held = ""
+    taps = ModifierTaps()
     center.recording = action
     center.suspend()
     monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { event in
@@ -119,8 +124,12 @@ struct HotKeyRecorder: View {
     let flags = event.modifierFlags.intersection([.control, .option, .shift, .command])
     if event.type == .flagsChanged {
       held = Self.symbols(flags)
+      if let tap = taps.handle(flags: event.modifierFlags, at: event.timestamp) {
+        save(HotKey(doubleTap: tap.key))
+      }
       return
     }
+    taps = ModifierTaps()  // 按了别的键：前面按过的修饰键不算连按的第一下
     switch Int(event.keyCode) {
     case kVK_Escape where flags.isEmpty:
       stop()
@@ -130,7 +139,7 @@ struct HotKeyRecorder: View {
       if let hotKey = HotKey(event: event) {
         save(hotKey)
       } else {
-        message = "要带 ⌘、⌃ 或 ⌥（F1–F20 可以单独用）"
+        message = "要带 ⌘、⌃ 或 ⌥（F1–F20 可以单独用），或者连按两下一个修饰键"
       }
     }
   }
@@ -171,6 +180,7 @@ struct HotKeyRecorder: View {
     message = nil
     // 别的行正在录（点了这一行的 ⓧ 或右键菜单）：热键先别恢复，等那一行录完 stop 时一起重新注册
     if isRecording { stop() } else if center.recording == nil { center.reload() }
+    if let key = hotKey?.doubleTap { message = key.hint }
   }
 
   /// 修饰键按系统菜单的顺序：⌃⌥⇧⌘

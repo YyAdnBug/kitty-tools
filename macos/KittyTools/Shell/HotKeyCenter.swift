@@ -4,6 +4,8 @@
 // 另外给界面用：动作的分组 / 色块（快捷键页、速查表、引导、菜单栏共用）、注册失败的原因、最近一次触发（引导「按一下试试」）。
 // 本 App 自己的菜单开着时热键事件会压在队列里、关了才派发，所以看到热键就先关菜单（watch(_:)）。
 // 录屏倒数期间临时注册一个不带修饰键的 Esc（registerEscape，录制 HUD 不当 key、收不到按键；和各动作的热键分开记）。
+// 连按两下修饰键（2026-11-06 拍板 B）不走 Carbon：全局 + 本地监听修饰键变化，交给 ModifierTaps 认，只听不拦；
+// 要「辅助功能」授权（没有时那一行写橙字 + 去授权，别的快捷键照常），授权变了跟着重来。
 
 import AppKit
 import Carbon.HIToolbox
@@ -24,6 +26,18 @@ struct HotKey: Codable, Hashable {
     self = key
   }
 
+  /// 连按两下这个修饰键（拍板 B）：键位是修饰键自己的（左边那个）、不带修饰键位。0.7.2 及之前的版本读到它是一个
+  /// 「没有修饰键的修饰键」，isUsable 不认，导入、同步都会丢掉；注册了也永远按不出来
+  init(doubleTap key: ModifierTaps.Key) {
+    self.init(keyCode: key.keyCode, modifiers: 0)
+  }
+
+  /// 是连按两下哪个修饰键（不是返回 nil）
+  var doubleTap: ModifierTaps.Key? {
+    guard modifiers == 0 else { return nil }
+    return ModifierTaps.Key.allCases.first { $0.keyCode == Int(keyCode) }
+  }
+
   /// 带 ⌘ / ⌃ / ⌥，或者是 F1–F20：能当全局热键的最低要求（录制框、导入设置同一条）
   var hasGlobalModifier: Bool {
     modifiers & UInt32(cmdKey | optionKey | controlKey) != 0
@@ -33,7 +47,7 @@ struct HotKey: Codable, Hashable {
   /// 文件里读进来的组合能不能用（导入设置，SettingsArchive）：键码、修饰键位都在范围里，录制框会拒绝的这里也拒绝
   var isUsable: Bool {
     keyCode < 128 && modifiers & ~UInt32(cmdKey | shiftKey | optionKey | controlKey) == 0
-      && hasGlobalModifier && !isReservedEditKey
+      && (doubleTap != nil || (hasGlobalModifier && !isReservedEditKey))
   }
 
   /// 算不算一次「快捷键」（录屏「只显示快捷键」，InputOverlay）：带 ⌘ / ⌃ / ⌥ 的组合，或者不带它们的 F 键、Esc——这两样
@@ -78,14 +92,16 @@ struct HotKey: Codable, Hashable {
 
   var isReservedEditKey: Bool { Self.reservedEditKeys.contains(self) }
 
-  /// 例如 ⌘⇧V
+  /// 例如 ⌘⇧V；连按两下是两个同样的修饰键「⌘⌘」（KeyCombo 画成两个键帽）
   var display: String {
+    if let doubleTap { return doubleTap.symbol + doubleTap.symbol }
     let symbols = [(controlKey, "⌃"), (optionKey, "⌥"), (shiftKey, "⇧"), (cmdKey, "⌘")]
     return symbols.filter { modifiers & UInt32($0.0) != 0 }.map(\.1).joined() + keyName
   }
 
   /// 菜单里显示用；按当前键盘布局取字符，取不到返回 nil
   var keyEquivalent: KeyEquivalent? {
+    if doubleTap != nil { return nil }  // 系统菜单画不出连按
     if Int(keyCode) == kVK_Space { return .space }
     guard keyName.count == 1, let character = keyName.lowercased().first else { return nil }
     return KeyEquivalent(character)
@@ -428,6 +444,17 @@ enum HotKeyAction: String, CaseIterable {
   private static let signature: OSType = 0x4B54_5459  // 'KTTY'
   /// 临时 Esc 的热键 id：不和动作的下标（allCases）撞
   private static let escapeID: UInt32 = 0xE5C
+  /// 连按两下要辅助功能授权、还没有（failures 里的值，不是 Carbon 的错误码）
+  static let needsAccessibility: OSStatus = 1
+  /// 连按两下：哪个修饰键归哪个动作，和认连按的状态机、两个监听（全局：别的 App 在前台；本地：本 App 的面板拿着键盘）
+  @ObservationIgnored private var tapActions: [ModifierTaps.Key: HotKeyAction] = [:]
+  @ObservationIgnored private var taps = ModifierTaps()
+  @ObservationIgnored private var tapMonitors: [Any] = []
+  /// 设了连按时盯着辅助功能授权的变化（系统改授权列表时发的分布式通知）：给了就装上监听，收回了就写橙字
+  @ObservationIgnored private var trustObserver: NSObjectProtocol?
+  @ObservationIgnored private var trustedWhenLoaded = false
+  /// 热键停着（录快捷键、截图框选、状态屏）：授权变了也先不重新注册，等停的那一方自己 reload
+  @ObservationIgnored private var suspended = false
 
   func setHandler(for action: HotKeyAction, _ handler: @escaping () -> Void) {
     handlers[action] = handler
@@ -436,10 +463,22 @@ enum HotKeyAction: String, CaseIterable {
   /// 按偏好重新注册全部热键
   func reload() {
     suspend()
+    suspended = false
     generation += 1
     installHandlerIfNeeded()
+    let trusted = Permissions.isAccessibilityTrusted
+    trustedWhenLoaded = trusted
     for (index, action) in HotKeyAction.allCases.enumerated() {
       guard action.isActive, let hotKey = action.hotKey else { continue }
+      if let key = hotKey.doubleTap {
+        if trusted {
+          tapActions[key] = action
+          bindings[action] = hotKey
+        } else {
+          failures[action] = Self.needsAccessibility
+        }
+        continue
+      }
       var ref: EventHotKeyRef?
       let status = RegisterEventHotKey(
         hotKey.keyCode, hotKey.modifiers,
@@ -452,14 +491,79 @@ enum HotKeyAction: String, CaseIterable {
         failures[action] = status
       }
     }
+    watchTaps()
+    watchTrust(HotKeyAction.allCases.contains { $0.isActive && $0.hotKey?.doubleTap != nil })
   }
 
   /// 注销全部（录制快捷键期间，免得按到现有组合就触发）
   func suspend() {
     for ref in refs { UnregisterEventHotKey(ref) }
     refs = []
+    suspended = true
     bindings = [:]
     failures = [:]
+    tapActions = [:]
+    watchTaps()
+  }
+
+  /// 设了连按两下（有授权）才挂两个监听，否则摘掉；换了一批就从头认
+  private func watchTaps() {
+    for monitor in tapMonitors { NSEvent.removeMonitor(monitor) }
+    tapMonitors = []
+    taps = ModifierTaps()
+    guard !tapActions.isEmpty else { return }
+    let global = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+      MainActor.assumeIsolated { self?.flagsChanged(event) }
+    }
+    let local = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+      MainActor.assumeIsolated { self?.flagsChanged(event) }
+      return event
+    }
+    tapMonitors = [global, local].compactMap { $0 }
+  }
+
+  /// 修饰键变了：连按成了，而且第一下按下以来没按过别的键、鼠标（B3 B5：⌘C、⌘ 点击这些都不算），就触发那个动作
+  private func flagsChanged(_ event: NSEvent) {
+    guard let tap = taps.handle(flags: event.modifierFlags, at: event.timestamp),
+      let action = tapActions[tap.key],
+      Self.quiet(since: tap.since, now: ProcessInfo.processInfo.systemUptime)
+    else { return }
+    fire(UInt32(HotKeyAction.allCases.firstIndex(of: action) ?? 0))
+  }
+
+  /// 从 since（开机以来的秒数，同事件的时刻）到 now 之间没按过键盘上的键、鼠标键
+  private static func quiet(since: TimeInterval, now: TimeInterval) -> Bool {
+    let types: [CGEventType] = [.keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown]
+    let latest =
+      types.map {
+        CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: $0)
+      }.min() ?? .infinity
+    return latest > now - since
+  }
+
+  /// 设了连按两下时盯着辅助功能授权：系统改授权列表时发一个分布式通知（不带是谁），等一下再读（立刻读可能还是旧的），
+  /// 变了就重新注册一遍（录快捷键时热键停着，录完自己会重来）
+  private func watchTrust(_ needed: Bool) {
+    guard needed != (trustObserver != nil) else { return }
+    if let trustObserver { DistributedNotificationCenter.default().removeObserver(trustObserver) }
+    trustObserver = nil
+    guard needed else { return }
+    trustObserver = DistributedNotificationCenter.default().addObserver(
+      forName: Notification.Name("com.apple.accessibility.api"), object: nil, queue: .main
+    ) { [weak self] _ in
+      Task { @MainActor [weak self] in
+        try? await Task.sleep(for: .milliseconds(500))
+        guard let self, !self.suspended,
+          Permissions.isAccessibilityTrusted != self.trustedWhenLoaded
+        else { return }
+        self.reload()
+      }
+    }
+  }
+
+  /// 这一行是连按两下、缺辅助功能授权（快捷键页那一行给「去授权」）
+  func needsAccessibility(_ action: HotKeyAction) -> Bool {
+    failures[action] == Self.needsAccessibility
   }
 
   /// 录屏倒数期间临时抢一个不带修饰键的 Esc（mac-overlay-panel §4）：录制 HUD 永不当 key，按键到不了它。只在倒数那几秒
@@ -499,6 +603,7 @@ enum HotKeyAction: String, CaseIterable {
       modifiers & UInt32(cmdKey | controlKey) == 0 && modifiers & UInt32(optionKey) != 0
     // 15.0–15.1 上只带 ⌥（或 ⌥⇧）的组合返回 -9868（eventInternalErr，M1 实测；以前按 eventHotKeyInvalidErr
     // -9879 判断，从来没对上过），两个都认，但只在组合确实只带 ⌥ 时才这么说
+    if status == needsAccessibility { return "连按两下要「辅助功能」授权" }
     return switch Int(status) {
     case eventInternalErr where optionOnly, eventHotKeyInvalidErr where optionOnly:
       "macOS 15.0 / 15.1 不支持只带 ⌥ 的组合，加上 ⌘ 或 ⌃ 再录一次"
