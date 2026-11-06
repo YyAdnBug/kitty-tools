@@ -20,6 +20,9 @@
 // 按住拖、右键开菜单）就不弹（原来照样弹出来、盖在刚切过来的 App 上）；收着时停稳一半就列窗口、开始截图，弹出来时图多半已经
 // 截到了（原来先摆一排 App 图标、再一张张蹦成缩略图），晚到的淡入；面板直接出现、不淡入（同系统菜单：淡入那 0.12 秒里程序坞
 // 自己的名字提示会从半透明的面板里透出来）。
+// ⌘Tab（2026-11-06 拍板 C1–C5）：系统的切换器照旧，SwitcherWatcher 报它选中了哪个 App，停稳 switchDelay 就在切换器上方
+// 弹同一块面板（对着那一排居中、底边在它上面 12 点）；切换器开着时不看鼠标在哪，松开 ⌘ / Esc（切换器收起）就收。
+// 点一张：先给系统切换器发一个 Esc 取消它，再切到那扇窗口。不受「停多久再弹出」那一档影响。
 // ponytail: 换一次还是在主线程同步列一次窗口（中位约 20 ms、最长约 50 ms，PLAN §10）；缩略图一扇扇串行截（一扇约
 // 15 ms，二十扇约 0.3 s，先显示上次的图；2 秒内截过的不再截，WindowShots.fresh）。停稳了换还嫌顿，再把列窗口挪到
 // 截图那样的后台、截图开两三路并发。
@@ -34,6 +37,9 @@ import SwiftUI
   var onHide: () -> Void = {}
 
   private let watcher = DockWatcher()
+  private let switcher = SwitcherWatcher()
+  /// 现在弹着的是跟着 ⌘Tab 切换器的那一块（不按鼠标位置收，切换器收起就收）
+  private var fromSwitcher = false
   private let lister = DockWindows()
   private let shots = WindowShots()
   /// 探针在屏上量面板时直接填它（DockPreviewProbeTests/memory()）
@@ -105,11 +111,14 @@ import SwiftUI
     WindowServer.prepare()
     watcher.onChange = { [unowned self] in dockChanged($0) }
     watcher.start()
+    switcher.onChange = { [unowned self] in switcherChanged($0) }
+    switcher.start()
   }
 
   /// 停：摘掉程序坞、收起，缩略图缓存和面板跟着还（关掉功能 = 占着的都放掉；R10：原来面板留到退出）
   func stop() {
     watcher.stop()
+    switcher.stop()
     hide(animated: false)
     reclaim()
   }
@@ -129,6 +138,8 @@ import SwiftUI
   // MARK: 什么时候弹
 
   private func dockChanged(_ item: DockWatcher.Item?) {
+    // ⌘Tab 切换器开着时归它管（鼠标顺路划过程序坞别打断）
+    guard !switcher.isActive else { return }
     pendingShow?.cancel()
     // 离开了程序坞、停在不是 App 的图标上：收不收由 watch 按鼠标在哪定
     pendingItem = nil
@@ -196,6 +207,34 @@ import SwiftUI
     }
   }
 
+  /// ⌘Tab 切换器选中的 App 变了（nil = 切换器收起）：停稳 switchDelay 就在切换器上方弹 / 换（拍板 C3），
+  /// 收着时也不等「停多久再弹出」那一档；没窗口的 App 收起
+  private func switcherChanged(_ selection: SwitcherWatcher.Selection?) {
+    pendingShow?.cancel()
+    pendingItem = nil
+    guard let selection else {
+      if fromSwitcher { hide(animated: true) }
+      return
+    }
+    guard let target = runningApp(at: selection.bundleURL) else {
+      if fromSwitcher { hide(animated: true) }
+      return
+    }
+    // 不带辅助功能对象：位置就是切换器那一排（prepare / present 不重读）
+    let item = DockWatcher.Item(
+      title: "", bundleURL: selection.bundleURL,
+      frame: DockPreviewLayout.switcherAnchor(selection.listFrame), element: nil)
+    pendingShow = Task { [weak self] in
+      try? await Task.sleep(for: Self.switchDelay)
+      guard !Task.isCancelled, let self else { return }
+      guard let prepared = self.prepare(target, at: item, edge: .bottom) else {
+        return self.hide(animated: true)
+      }
+      self.fromSwitcher = true
+      self.present(prepared)
+    }
+  }
+
   /// 离上一次按下鼠标（左键、右键、别的键）过了几秒
   private static func secondsSinceClick() -> TimeInterval {
     let types: [CGEventType] = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
@@ -221,7 +260,10 @@ import SwiftUI
   // MARK: 弹出、换、收
 
   /// 列窗口（主线程，中位约 20 ms）、排好。没窗口、找不到屏、别的功能占着屏幕时是 nil
-  private func prepare(_ target: NSRunningApplication, at item: DockWatcher.Item) -> Prepared? {
+  /// edge：程序坞在哪一边（nil = 照系统设置读）；⌘Tab 切换器的面板一律按「在下面」摆
+  private func prepare(
+    _ target: NSRunningApplication, at item: DockWatcher.Item, edge: DockPreviewLayout.Edge? = nil
+  ) -> Prepared? {
     guard !isSuppressed() else { return nil }
     // 停稳了，放大、自动隐藏滑出的动画大多走完了：图标的位置重读一次
     var item = item
@@ -232,7 +274,7 @@ import SwiftUI
       let index = DockPreviewLayout.screenIndex(for: item.frame, in: screens.map(\.frame))
     else { return nil }
     let screen = screens[index]
-    let edge = DockPreviewLayout.Edge(orientation: Self.dockOrientation())
+    let edge = edge ?? DockPreviewLayout.Edge(orientation: Self.dockOrientation())
     let showsThumbnails = Permissions.isScreenRecordingAllowed
     let (plan, frame) = layout(
       windows, item: item, edge: edge, screen: screen, compact: !showsThumbnails)
@@ -381,6 +423,7 @@ import SwiftUI
     capturing?.cancel()
     stopWatching()
     shown = nil
+    fromSwitcher = false
     guard let panel, panel.isVisible else { return clearContent() }
     onHide()
     guard animated, !Style.reduceMotion else {
@@ -441,6 +484,8 @@ import SwiftUI
   private func check() {
     guard let shown, let panel else { return stopWatching() }
     if isSuppressed() { return hide(animated: false) }
+    // 跟着 ⌘Tab 切换器的：切换器开着就留着，收起由 switcherChanged(nil) 管
+    if fromSwitcher { return }
     let inside = DockPreviewLayout.keepsOpen(
       mouse: NSEvent.mouseLocation, panel: panel.frame, item: shown.item.frame, edge: model.edge,
       pending: pendingItem?.frame)
@@ -473,6 +518,8 @@ import SwiftUI
   private func open(_ window: DockWindow) {
     // 换 App 交叉淡变时点到的可能是旧那排的卡片：不是现在列着的就不理
     guard let shown, model.windows.contains(where: { $0.id == window.id }) else { return }
+    // 从 ⌘Tab 弹出来的：先让系统的切换器收起（不然松开 ⌘ 时它再切一次 App）
+    if fromSwitcher { SwitcherWatcher.dismissSystemSwitcher() }
     lister.focus(window, of: shown.app)
     hide(animated: false)
   }

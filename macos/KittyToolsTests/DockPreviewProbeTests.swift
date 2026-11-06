@@ -20,6 +20,36 @@ struct DockPreviewProbeTests {
 
   private func say(_ line: String) { print("dock-probe \(line)") }
 
+  /// ⌘Tab 切换器读不读得到（2026-11-06 拍板 C）：要人在场——开跑后 15 秒内按住 ⌘ 按几下 Tab 再松开。只读：每 0.1 秒找一次
+  /// 程序坞里子角色 AXProcessSwitcherList 的列表，打出找没找到、几项、选中那项的标题 / AXURL、那一排的位置。
+  /// `TEST_RUNNER_KITTY_SWITCHER_PROBE=1`（和上面的分开开关：它要人按键）
+  @Test(.enabled(if: ProcessInfo.processInfo.environment["KITTY_SWITCHER_PROBE"] == "1"))
+  func switcher() async throws {
+    say("授权：辅助功能 \(Permissions.isAccessibilityTrusted)；15 秒内按住 ⌘ 按几下 Tab")
+    var seen = 0
+    for _ in 0..<150 {
+      try await Task.sleep(for: .milliseconds(100))
+      guard let dock = DockWatcher.dockElement() else { continue }
+      let children = DockWatcher.value(dock, kAXChildrenAttribute) as? [AXUIElement] ?? []
+      for child in children {
+        let subrole = DockWatcher.value(child, kAXSubroleAttribute) as? String ?? "-"
+        guard subrole == SwitcherWatcher.subrole else { continue }
+        let items = DockWatcher.value(child, kAXChildrenAttribute) as? [AXUIElement] ?? []
+        let selected = (DockWatcher.value(child, kAXSelectedChildrenAttribute) as? [AXUIElement])?
+          .first
+        let title = selected.flatMap { DockWatcher.value($0, kAXTitleAttribute) as? String } ?? "-"
+        let url = selected.flatMap { DockWatcher.value($0, kAXURLAttribute) as? URL }
+        let origin = DockWatcher.point(child, kAXPositionAttribute)
+        let size = DockWatcher.size(child, kAXSizeAttribute)
+        seen += 1
+        say(
+          "切换器：\(items.count) 项，选中「\(title)」URL \(url?.lastPathComponent ?? "无")，"
+            + "位置 \(origin.map { "\($0)" } ?? "无") 大小 \(size.map { "\($0)" } ?? "无")")
+      }
+    }
+    say(seen > 0 ? "切换器读到 \(seen) 次" : "没读到切换器（顶层子元素里没有 \(SwitcherWatcher.subrole)）")
+  }
+
   @Test(.enabled(if: DockPreviewProbeTests.isEnabled)) func measure() async throws {
     say(
       "授权：辅助功能 \(Permissions.isAccessibilityTrusted) 屏幕录制 \(Permissions.isScreenRecordingAllowed)")

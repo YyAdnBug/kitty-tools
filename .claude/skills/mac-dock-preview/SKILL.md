@@ -14,3 +14,4 @@ description: 程序坞预览（第九族）的行为红线速查：私有接口�
 - 不在任何桌面上的窗口不列；缩略图一扇扇串行截；配进程先解开链接（Safari 是链接）。
 - 功能开关默认关；空闲回收时收着的面板整块放掉。
 - 单测只测纯函数；探针 `TEST_RUNNER_KITTY_DOCK_PROBE=1`（内存那项在屏幕右上角放一块几乎透明的面板约两秒）；截图自检 `SnapshotProbeTests.dockPreview()`；不切 / 关窗口、不挪鼠标。
+- ⌘Tab 时（`SwitcherWatcher`）：系统切换器照旧、只读它的选中（`AXProcessSwitcherList`），只在按着 ⌘ 时找；切换器开着时不按鼠标位置收，点一张先发 Esc 收起系统切换器。

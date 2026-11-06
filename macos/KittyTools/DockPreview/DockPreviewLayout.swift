@@ -176,6 +176,16 @@ enum DockPreviewLayout {
   }
 
   /// 这一边能用多长、往屏幕里能用多深（plan 的 along / across）
+  /// ⌘Tab 切换器上方留的缝（2026-11-06 拍板 C5）：面板对着切换器那一排居中、底边在它上面这么远
+  static let switcherGap: CGFloat = 12
+
+  /// 把切换器那一排当成「图标」时用的框：往上加高，让按程序坞在下面摆（origin 的 .bottom，item.maxY + gap）时面板底边
+  /// 正好在切换器上面 switcherGap（程序坞那边的 gap 是负的，要压住程序坞的名字提示；切换器没有提示）。纯函数，配单测
+  static func switcherAnchor(_ list: CGRect) -> CGRect {
+    CGRect(
+      x: list.minX, y: list.minY, width: list.width, height: list.height + switcherGap - gap)
+  }
+
   static func room(item: CGRect, edge: Edge, screen: CGRect, visible: CGRect) -> (
     along: CGFloat, across: CGFloat
   ) {

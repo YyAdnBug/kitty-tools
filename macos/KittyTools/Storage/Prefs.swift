@@ -340,6 +340,8 @@ enum Prefs {
   /// 只管收着时第一次弹，弹着时换图标照旧停稳 80 毫秒就换；读它用 DockPreview.showDelay（认不出的值按 400）
   nonisolated static let dockPreviewDelay = "dockPreviewDelay"
   nonisolated static let dockPreviewDelayChoices = [200, 400, 700, 1000]
+  /// 程序坞预览：按 ⌘Tab 切换时也在切换器上方弹窗口预览（2026-11-06 拍板 C2，默认开；程序坞预览关着时不生效）
+  nonisolated static let dockPreviewCmdTab = "dockPreviewCmdTab"
 
   /// 看过的版本号：没有 = 首次安装（打开欢迎引导），和当前不同 = 刚更新（刘海岛「已更新到 x」+ 本版摘要，不开设置窗，体检 A29）。
   /// 首次安装时**引导走完才记**（点「开始使用」或关掉引导；第四轮体检 E1）：中途退出（授权屏幕录制后系统要求重开）下次接着开
@@ -402,6 +404,7 @@ enum Prefs {
       launchpadPinchSense: PinchRecognizer.Sensitivity.standard.rawValue,
       launchpadCorner: LaunchpadCornerOption.off.rawValue,
       dockPreviewDelay: 400,
+      dockPreviewCmdTab: true,
       panelSqueezeEntrance: false,
       floatingPinned: false,
       updateAutoCheck: true,

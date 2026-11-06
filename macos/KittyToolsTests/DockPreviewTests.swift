@@ -203,6 +203,24 @@ struct DockPreviewTests {
       Prefs.dockPreviewDelayChoices.map(DockPreviewTab.title) == ["0.2 秒", "0.4 秒", "0.7 秒", "1 秒"])
   }
 
+  @Test func switcherPanelSitsCenteredAboveTheSwitcher() {
+    // ⌘Tab 切换器那一排在屏幕中间（拍板 C5）：面板对着它居中，底边在它上面 12 点；默认开
+    let list = CGRect(x: 500, y: 400, width: 600, height: 120)
+    let screen = CGRect(x: 0, y: 0, width: 1600, height: 1000)
+    let anchor = DockPreviewLayout.switcherAnchor(list)
+    let panel = CGSize(width: 300, height: 200)
+    let origin = DockPreviewLayout.origin(
+      panel: panel, item: anchor, edge: .bottom, screen: screen, visible: screen)
+    #expect(origin.y == list.maxY + DockPreviewLayout.switcherGap)
+    #expect(origin.x + panel.width / 2 == list.midX)
+    // 能用的高是切换器上面到屏幕顶（留边）
+    let room = DockPreviewLayout.room(item: anchor, edge: .bottom, screen: screen, visible: screen)
+    #expect(
+      room.across
+        == screen.maxY - DockPreviewLayout.screenInset - list.maxY - DockPreviewLayout.switcherGap)
+    #expect(Prefs.defaults[Prefs.dockPreviewCmdTab] as? Bool == true)
+  }
+
   @Test func stopReleasesThePanel() {
     let preview = DockPreview()
     weak var panel: NSPanel?

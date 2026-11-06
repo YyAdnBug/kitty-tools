@@ -65,6 +65,20 @@ Dock Preview；开源的 DockDoor、AltTab 是 GPL，**只借做法、一行代�
   没开放大时屏上量的，左右两边和开着放大的要手测。
 - 程序坞的 AXURL 和进程的 bundleURL **都解开链接再比**（/Applications/Safari.app 是链接），比不上按 bundle id。
 
+## 5½. ⌘Tab 切换时（2026-11-06 拍板 C1–C5，`SwitcherWatcher.swift`）
+- **系统的 ⌘Tab 照旧**，不拦截、不换掉（拦截只许状态屏建，mac-native §3）。系统切换器是程序坞进程画的，辅助功能里是子角色
+  `AXProcessSwitcherList` 的列表、只在切换器开着时有，选中的那项和程序坞图标一样带 AXURL（DockDoor 同样这么读）。
+- **只在按着 ⌘ 时找**：全局 + 本地监听修饰键变化（只听不拦），按下 ⌘ 才每 0.1 秒在程序坞的辅助功能树里找那个列表（只往不是列表的
+  元素里钻、最多三层：程序坞自己的图标列表也是 AXList，钻进去要读几十个图标），找到就挂观察者听选中变化（和列表没了），不再找；
+  松开 ⌘ / 列表没了 = 切换器收起，报 nil。每按一次 ⌘ 现读 `Prefs.dockPreviewCmdTab`（设置 › 程序坞预览「按 ⌘Tab 时也显示」，
+  默认开），关着不找。
+- 面板是程序坞预览那一块，一律按「程序坞在下面」摆，锚点是切换器那一排加高后的框（`DockPreviewLayout.switcherAnchor`：底边在它上面
+  `switcherGap` 12 点、对着它居中；放不下就换行缩小，不翻到下面——ponytail）。选中停稳 `switchDelay`（80 毫秒）就弹 / 换，
+  不等「停多久再弹出」那一档。**切换器开着时不按鼠标位置收**（`fromSwitcher`，`check` 里跳过 keepsOpen），收起就收；它开着时
+  程序坞的选中变化不理。点一张：先给系统切换器发一个带 ⌘ 的 Esc（取消它，松开 ⌘ 时不会再切一次 App），再切到那扇窗口。
+- 读不到那个列表（哪个系统版本改了结构）就一直不弹、不崩；设置页不提示（ponytail：按着 ⌘ 分不清「没按 Tab」和「读不到」）。
+  探针 `TEST_RUNNER_KITTY_SWITCHER_PROBE=1` 跑 `DockPreviewProbeTests/switcher()`：要人在场按 ⌘Tab，只读、打出读到的结构。
+
 ## 6. 开关、授权、内存
 - 功能开关 `Feature.dockPreview`，**默认关**（`Feature.defaultOn`，拍板 A3）；没有全局快捷键、菜单栏、启动器入口（D1）。
   运行中打开时缺辅助功能就弹系统授权框，有了再要屏幕录制；启动时不问。没有屏幕录制时面板最底下那行是按钮（宿主接第一下点击），点了去授权（`Permissions.grant`）、面板收起（第四轮体检 U12③）。

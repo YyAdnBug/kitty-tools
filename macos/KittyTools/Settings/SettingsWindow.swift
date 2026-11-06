@@ -210,7 +210,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
       ]
     case .dockPreview:
       [
-        "程序坞", "Dock", "预览", "缩略图", "窗口", "切换", "悬停", "延迟", "多久", "最小化", "桌面", "全屏", "辅助功能",
+        "程序坞", "Dock", "预览", "缩略图", "窗口", "切换", "悬停", "延迟", "多久", "⌘Tab", "Command Tab", "切换器",
+        "最小化", "桌面", "全屏", "辅助功能",
         "屏幕录制",
       ]
     case .translate:
