@@ -575,10 +575,11 @@ private struct SidebarRow: View {
       // 只在强调色上设字色：显式设了前景（哪怕是 .foreground）会盖掉侧栏自己的字色（后台窗口变灰那套）
       if emphasized { label.foregroundStyle(Style.onBrand) } else { label }
     }
-    // 徽标在外面那层字色之外：强调色的选中行上跟着页名换成 onBrand，别处不设（系统徽标自己的颜色）
+    // 徽标在外面那层字色之外：强调色的选中行上跟着页名换成 onBrand，别处用强调色的字（系统默认是灰的，不显眼；
+    // 和主界面的小圆点、页里的「新」同一个颜色，2026-11-06 用户要的）
     .badge(
       isNew
-        ? emphasized ? Text(WhatsNew.label).foregroundStyle(Style.onBrand) : Text(WhatsNew.label)
+        ? Text(WhatsNew.label).foregroundStyle(emphasized ? Style.onBrand : Style.brandInk)
         : nil
     )
     .background(NativeHighlightOff())

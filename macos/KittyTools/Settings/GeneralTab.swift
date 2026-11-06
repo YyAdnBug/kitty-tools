@@ -37,7 +37,7 @@ struct GeneralTab: View {
       } header: {
         HStack(spacing: 6) {
           Text("功能")
-          // 新功能标记：0.8.0 加的这一节（WhatsNew），看着的时候留着、换页才没
+          // 新功能标记：0.8.0 加的这一节（WhatsNew），拨过其中一个开关、换页之后才没
           if let navigation, WhatsNew.marks(section: "功能", of: .general, in: navigation.fresh) {
             NewTag()
           }
@@ -474,6 +474,8 @@ struct FeatureToggle: View {
         }
       }
     }
+    // 通用页「功能」那一节新加的（WhatsNew 的 features）：拨过其中一个开关才算看过，光点进页面不算（2026-11-06）
+    .onChange(of: isOn) { if !inPage { WhatsNew.touch(section: "功能", of: .general) } }
   }
 }
 

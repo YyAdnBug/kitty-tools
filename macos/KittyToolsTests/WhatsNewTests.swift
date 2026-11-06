@@ -49,7 +49,8 @@ struct WhatsNewTests {
     #expect(upgraded.started == ["0.7.0": t0, "0.8.0": t0])
     let later = t0.addingTimeInterval(5 * day)
     let again = WhatsNew.adopting(upgraded, from: "0.8.0", to: "0.9.0", now: later, entries: sample)
-    #expect(again.started == ["0.7.0": t0, "0.8.0": t0, "0.9.0": later])
+    // 升到下一版：上一版和更早的记成很久以前（不再标，2026-11-06），这一版从现在起算
+    #expect(again.started == ["0.7.0": .distantPast, "0.8.0": .distantPast, "0.9.0": later])
     // 退回 0.7.0 再升回来：时刻不重新算
     #expect(
       WhatsNew.adopting(again, from: "0.7.0", to: "0.9.0", now: later + day, entries: sample)
@@ -92,6 +93,25 @@ struct WhatsNewTests {
     #expect(!WhatsNew.inSettingsOnly([]))
   }
 
+  /// 升到下一版：上次那一版（和更早）的不再标；同一版重开、退回旧版本不动
+  @Test func nextVersionClearsOlderMarks() {
+    let sample = [
+      WhatsNew.Entry(id: "old", version: "0.7.2", feature: nil, page: .launcher, section: "x"),
+      WhatsNew.Entry(id: "new", version: "0.8.0", feature: nil, actions: [.noteCapture]),
+    ]
+    let on072 = WhatsNew.adopting(.init(), from: "0.7.1", to: "0.7.2", now: t0, entries: sample)
+    #expect(on072.started == ["0.7.2": t0])
+    // 同一版重开：照旧
+    #expect(WhatsNew.adopting(on072, from: "0.7.2", to: "0.7.2", now: t0, entries: sample) == on072)
+    // 0.7.2 → 0.8.0：0.7.2 的没了，0.8.0 的开始标
+    let on080 = WhatsNew.adopting(on072, from: "0.7.2", to: "0.8.0", now: t0, entries: sample)
+    #expect(on080.started == ["0.7.2": .distantPast, "0.8.0": t0])
+    #expect(WhatsNew.fresh(on080, enabled: [], now: t0, entries: sample).map(\.id) == ["new"])
+    // 从 0.7.1 直接跳到 0.8.0：两版的都标
+    let skipped = WhatsNew.adopting(.init(), from: "0.7.1", to: "0.8.0", now: t0, entries: sample)
+    #expect(skipped.started == ["0.7.2": t0, "0.8.0": t0])
+  }
+
   /// 换页：这一页原来标着的看着时留着，换到别的页才没；侧栏和页里那一节按这一份标
   @Test func visitedPageKeepsItsMarksUntilLeft() {
     let reminders = WhatsNew.entries.first { $0.id == "reminders" }!
@@ -119,10 +139,11 @@ struct WhatsNewTests {
     WhatsNew.adopt(upgradingFrom: nil, to: "0.8.0", defaults: defaults, now: t0)
     #expect(defaults.object(forKey: Prefs.whatsNewStarted) == nil)
     WhatsNew.adopt(upgradingFrom: "0.7.1", to: "0.8.0", defaults: defaults, now: t0)
-    #expect(WhatsNew.ledger(defaults).started == ["0.8.0": t0])
+    // 从 0.7.1 跳上来：0.7.2 的三样（GitHub 上来的）和 0.8.0 的一起开始标
+    #expect(WhatsNew.ledger(defaults).started == ["0.7.2": t0, "0.8.0": t0])
     WhatsNew.touch(action: .reminderNew, defaults: defaults)
     #expect(WhatsNew.ledger(defaults).touched == ["reminders"])
-    WhatsNew.touch(page: .general, defaults: defaults)
+    WhatsNew.touch(section: "功能", of: .general, defaults: defaults)
     #expect(WhatsNew.ledger(defaults).touched == ["reminders", "features"])
     // 没变化不写：把存的值换成一个记号，再碰一次同样的，记号还在
     defaults.set(["reminders", "features", "marker"], forKey: Prefs.whatsNewTouched)

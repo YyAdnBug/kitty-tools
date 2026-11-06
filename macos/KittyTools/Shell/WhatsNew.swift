@@ -6,8 +6,10 @@
 //   没有入口的（启动器的汇率这种）不标，交给刘海岛「已更新到 x」和更新日志。发版时挑好写进来；id 发布后别改（「碰过」按它记）。
 // - 什么时候出：只有从旧版本升上来的（adopt：上次打开的版本之后、这一版及以前加的都算，跳着升级的中间几版一起标），新装不标；
 //   功能关着不标，「已关闭」那组也不汇总（计时照走，过后再打开不补标）。
-// - 什么时候没：碰过一次就各处一起没——执行了它的动作（AppDelegate.run(action) 一个口子：菜单、主界面、快捷键、启动器都走它）、
-//   打开过它的设置页（看着的时候不闪掉，换页才没：shown(visiting:)）；一直没碰，从这台 Mac 第一次打开那一版起挂 30 天（lifetime）。
+// - 什么时候没（2026-11-06 用户改：光点进设置页不算）：真用过一次就各处一起没——执行了它的动作（AppDelegate.run(action) 一个
+//   口子：菜单、主界面、快捷键、启动器都走它）、拨过它那一节 / 那一行的开关（touch(section:of:)；看着的时候不闪掉，换页才没：
+//   shown(visiting:)）；升到下一版时上一版（和更早）的一起没（adopting）；一直没碰、也没升级，从这台 Mac 第一次打开那一版起最多挂
+//   30 天（lifetime）。
 // - 记账是这台 Mac 自己的（Prefs.whatsNewStarted / whatsNewTouched 不注册默认值：不导出、不同步、不进自动备份）。没有开关、
 //   没有「全部标为已看」（拍板 B6）。
 // 规则是纯函数（单测喂账本和条目）；读写偏好的几个薄包装给 AppDelegate 用，界面只拿算好的结果（截图自检不碰偏好）。
@@ -28,12 +30,21 @@ enum WhatsNew {
     var actions: [HotKeyAction] = []
     /// 它的设置页：侧栏那一行挂标记，打开过就算碰过
     var page: SettingsPage?
-    /// 设置页里新的那一节的标题（那一节的标题后面挂「新」）；nil = 只标页
+    /// 设置页里新的那一节（或那一行开关）的标题：标题后面挂「新」，进了页面知道新的是哪个；nil = 只标页
     var section: String?
   }
 
   /// 清单（新的版本往后加）
   static let entries: [Entry] = [
+    // 0.7.2（GitHub 上来的，release-0.7.2 发布分支上同一份）：截图翻译盖回截图上（设置 › 翻译 的开关，PR #5）、
+    // 启动器不列常用（设置 › 启动器，issue #2）、钉住剪贴板内容能钉文字（issue #4）。从 0.7.1 直接跳到 0.8.0 的也标
+    Entry(
+      id: "screenshot-overlay", version: "0.7.2", feature: .translate, page: .translate,
+      section: "截图翻译时把译文直接盖回截图上"),
+    Entry(
+      id: "launcher-frequent", version: "0.7.2", feature: .launcher, page: .launcher,
+      section: "空搜索框里列出常用"),
+    Entry(id: "pin-text", version: "0.7.2", feature: .screenshot, actions: [.pinClipboard]),
     Entry(
       id: "reminders", version: "0.8.0", feature: .reminders, actions: [.reminderNew],
       page: .reminders),
@@ -68,6 +79,13 @@ enum WhatsNew {
   ) -> Ledger {
     guard let last else { return ledger }
     var ledger = ledger
+    // 真升了一版：上次打开的那一版和更早的不再标（「新」只留到下一版，2026-11-06 用户要的）。记成很久以前开始的（过了 30 天），
+    // 不删：删了的话退回旧版本再升上来，中间那版会重新挂一遍。同一版重开、退回旧版本都不动
+    if Updater.isNewer(current, than: last) {
+      for version in ledger.started.keys where !Updater.isNewer(version, than: last) {
+        ledger.started[version] = .distantPast
+      }
+    }
     for version in Set(entries.map(\.version))
     where Updater.isNewer(version, than: last) && !Updater.isNewer(version, than: current)
       && ledger.started[version] == nil
@@ -162,9 +180,9 @@ enum WhatsNew {
     update(defaults) { touching($0) { $0.actions.contains(action) } }
   }
 
-  /// 打开了设置的一页
-  static func touch(page: SettingsPage, defaults: UserDefaults = .standard) {
-    update(defaults) { touching($0) { $0.page == page } }
+  /// 拨了设置页里新的那一节 / 那一行的开关（Entry.section 是它的标题）。光打开那一页不算（2026-11-06）
+  static func touch(section: String, of page: SettingsPage, defaults: UserDefaults = .standard) {
+    update(defaults) { touching($0) { $0.page == page && $0.section == section } }
   }
 }
 
@@ -175,6 +193,26 @@ struct NewDot: View {
       .fill(Style.brand)
       .frame(width: 6, height: 6)
       .accessibilityLabel(WhatsNew.spoken)
+  }
+}
+
+/// 设置页里一行开关的标题，这一版新加、还没换过页时后面跟一个「新」（WhatsNew.Entry.section 写的就是这个标题）
+struct NewTitle: View {
+  let title: String
+  let page: SettingsPage
+  let fresh: Set<String>
+
+  init(_ title: String, page: SettingsPage, fresh: Set<String>) {
+    self.title = title
+    self.page = page
+    self.fresh = fresh
+  }
+
+  var body: some View {
+    HStack(spacing: 6) {
+      Text(title)
+      if WhatsNew.marks(section: title, of: page, in: fresh) { NewTag() }
+    }
   }
 }
 
