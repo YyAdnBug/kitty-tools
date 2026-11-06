@@ -1,5 +1,6 @@
-// 截图翻译「原位覆盖」的单测：分段（行框并集成段）、字号拟合（正文统一一个字号）、抹除范围、不压到下一段、
-// 邻栏只认整个在右边的；抹除框按像素往外长那一步用合成的小图看像素。真实截图的效果交给手测（HANDTEST）
+// 截图翻译「原位覆盖」的单测：分段（行框并集成段）、字号拟合（正文统一一个字号）、行距照原文、去字范围、不压到下一段、
+// 邻栏只认整个在右边的、列表记号另画、代码词的匹配；去字（只换字的像素）、取原文字色、行内代码块跟着词走
+// 用合成的小图看像素。真实截图的效果交给手测（HANDTEST）
 
 import CoreGraphics
 import Foundation
@@ -54,8 +55,8 @@ struct ScreenshotOverlayTests {
       segments: [segment], translations: ["短译文"], imageSize: CGSize(width: 800, height: 600))
     #expect(spans.count == 1)
     let span = spans[0]
-    // 塞得下就按「行高的 0.82 倍」排，不缩
-    #expect(abs(span.fontSize - 30 * 0.82) < 0.01)
+    // 塞得下就按基准（行高的 fontPerLineHeight 倍）排，不缩
+    #expect(abs(span.fontSize - 30 * ScreenshotOverlay.fontPerLineHeight) < 0.01)
     // 文字从原文顶边往下排，抹掉的范围比原文大一圈（盖得住毛边）
     #expect(abs(span.frame.maxY - segment.box.maxY) < 0.01)
     #expect(span.erase.minY < segment.box.minY && span.erase.maxY > segment.box.maxY)
@@ -70,9 +71,10 @@ struct ScreenshotOverlayTests {
     let spans = ScreenshotOverlay.spans(
       segments: [segment], translations: [long], imageSize: CGSize(width: 800, height: 600))
     #expect(spans.count == 1)
-    #expect(spans[0].fontSize < 30 * 0.82)
+    let nominal = 30 * ScreenshotOverlay.fontPerLineHeight
+    #expect(spans[0].fontSize < nominal)
     // 最多缩到基准的四分之三，再多就借下方的空白（下面没东西，空白够用）：不会一路缩到最小字号
-    #expect(spans[0].fontSize >= 30 * 0.82 * 0.75 - 0.01)
+    #expect(spans[0].fontSize >= nominal * 0.75 - 0.01)
     #expect(spans[0].frame.minY < segment.box.minY)
   }
 
@@ -117,24 +119,70 @@ struct ScreenshotOverlayTests {
     #expect(spans[0].fontSize == spans[1].fontSize)
   }
 
-  /// 列表项：原文的记号会跟着被抹掉，译文得带着它——服务丢了记号就从原文补，`•译文` 补一个空格
+  /// 行距照原文：多行的段按自己量出来的行距（基线到基线），一行的段用全图正文的；第一行的基线落在原文第一行的基线上
+  @Test func translationFollowsTheOriginalLinePitch() {
+    let paragraph = segment(
+      "Three lines of text", box: CGRect(x: 40, y: 600, width: 900, height: 142), lineHeight: 40,
+      lineCount: 3)
+    let single = segment(
+      "One line", box: CGRect(x: 40, y: 400, width: 900, height: 40), lineHeight: 40)
+    let spans = ScreenshotOverlay.spans(
+      segments: [paragraph, single], translations: ["三行", "一行"],
+      imageSize: CGSize(width: 1000, height: 1000))
+    #expect(spans.count == 2)
+    #expect(abs(spans[0].pitch - 51) < 0.01)
+    #expect(abs(spans[1].pitch - 51) < 0.01)
+    // 没从像素里量基线时按行框估：落在第一行行框里
+    #expect(spans[0].baseline < 742 && spans[0].baseline > 742 - 40)
+    // 量过的基线、行距优先
+    var measured = paragraph
+    measured.baseline = 710
+    measured.pitch = 49
+    let fromPixels = ScreenshotOverlay.spans(
+      segments: [measured], translations: ["三行"], imageSize: CGSize(width: 1000, height: 1000))
+    #expect(fromPixels.first?.baseline == 710 && fromPixels.first?.pitch == 49)
+  }
+
+  /// 列表项：原文的记号会跟着被去掉，所以另画一个——译文里有就用译文的，服务丢了就用原文的；
+  /// 正文从原文的正文列起（第二行起的左边界），不和记号挤在一起
   @Test func listItemKeepsItsMarker() {
-    let item = segment(
-      "• total_comments_evaluated: The number", box: CGRect(x: 69, y: 400, width: 900, height: 40),
-      lineHeight: 40)
+    var item = segment(
+      "• total_comments_evaluated: The number", box: CGRect(x: 69, y: 400, width: 900, height: 91),
+      lineHeight: 40, lineCount: 2)
+    item.inset = 32
     let size = CGSize(width: 1000, height: 600)
     let dropped = ScreenshotOverlay.spans(
       segments: [item], translations: ["评论数"], imageSize: size)
-    #expect(dropped.first?.text == "• 评论数")
+    #expect(dropped.first?.marker == "•")
+    #expect(dropped.first?.text == "评论数")
+    #expect(dropped.first?.frame.minX == 101)
     let tight = ScreenshotOverlay.spans(
       segments: [item], translations: ["•评论数"], imageSize: size)
-    #expect(tight.first?.text == "• 评论数")
+    #expect(tight.first?.marker == "•")
+    #expect(tight.first?.text == "评论数")
+    // 分段时从第二行起的左边界量出正文列
+    let segments = ScreenshotOverlay.segments(
+      of: [
+        line("• first item", top: 0.9, width: 0.8, x: 0.069),
+        line("continues here", top: 0.84, width: 0.7, x: 0.101),
+      ], imageSize: CGSize(width: 1000, height: 1000))
+    #expect(segments.count == 1)
+    #expect(abs(segments[0].inset - 32) < 0.01)
   }
 
-  /// 抹除框按像素往外长：深色页里行内代码块的底 (22,27,34) 比 Vision 的行框高出一截，顶边那条描边以前会留下来。
-  /// 长到外面都是底色就停：隔着空白的另一条线不被抹掉
-  @Test func eraseGrowsOverInlineCodeBackground() async throws {
-    let width = 400
+  /// 代码词：译文里原样出现、前后不连着字母数字下划线才算（`max` 不认进 `maximum`、`max_size`）；重叠的留长的
+  @Test func codeWordsMatchWholeWordsOnly() {
+    let text = "maximum 和 max、max_size 以及 total_count：total"
+    let ranges = ScreenshotOverlay.codeRanges(in: text, words: ["max", "total_count", "total"])
+    let found = ranges.map { (text as NSString).substring(with: $0) }
+    #expect(found == ["max", "total_count", "total"])
+  }
+
+  /// 没认出代码块的段（比如整段在一块有颜色的面板上）只去字：底色、底框都留着；
+  /// 去字只换字的像素：深色页里行内代码块的底 (22,27,34)、描边都留着，代码块里的白字换成代码块的底色；
+  /// 隔着空白的另一条线不动。译文用原文正文的字色（页面底上的灰字），不是一律白字
+  @Test func inpaintingKeepsInlineCodeAndTakesTheTextColour() async throws {
+    let width = 420
     let height = 200
     let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
     let context = try #require(
@@ -146,28 +194,86 @@ struct ScreenshotOverlayTests {
         CGColor(srgbRed: rgb.0 / 255, green: rgb.1 / 255, blue: rgb.2 / 255, alpha: 1))
       context.fill(rect)
     }
-    let page: (CGFloat, CGFloat, CGFloat) = (1, 4, 9)
-    fill(CGRect(x: 0, y: 0, width: width, height: height), page)
-    // 代码块：比文字框上面高出 10 像素、左右各宽 10 像素，顶上一条 2 像素的浅描边
+    fill(CGRect(x: 0, y: 0, width: width, height: height), (1, 4, 9))
+    // 代码块：比文字框上面高出 10 像素，顶上一条 2 像素的浅描边；块里几笔白字
     fill(CGRect(x: 40, y: 90, width: 260, height: 40), (22, 27, 34))
     fill(CGRect(x: 40, y: 128, width: 260, height: 2), (33, 38, 45))
-    // 文字框上方隔着空白的一条线（在外扩上限之外）：不能被抹掉
-    fill(CGRect(x: 40, y: 160, width: 260, height: 2), (120, 120, 120))
+    for x in stride(from: CGFloat(200), to: 290, by: 12) {
+      fill(CGRect(x: x, y: 100, width: 4, height: 18), (230, 237, 243))
+    }
+    // 代码块右边、页面底上的几笔灰字（正文）
+    for x in stride(from: CGFloat(320), to: 400, by: 10) {
+      fill(CGRect(x: x, y: 100, width: 4, height: 18), (139, 148, 158))
+    }
+    // 文字框上方隔着空白的一条线：不能被动
+    fill(CGRect(x: 40, y: 170, width: 260, height: 2), (120, 120, 120))
     let image = try #require(context.makeImage())
-    let box = CGRect(x: 50, y: 95, width: 240, height: 25)
+    let box = CGRect(x: 50, y: 95, width: 360, height: 25)
     let composed = try #require(
       await ScreenshotOverlay.render(
-        image, segments: [segment("inline code", box: box, lineHeight: 25)],
+        image, segments: [segment("inline code and text", box: box, lineHeight: 25)],
         translations: ["译"]))
     let pixels = try Self.pixels(composed)
-    // 代码块的底、描边、左右多出来的那截都抹成了页面底色（避开左上角画字的地方）
-    for (x, y) in [(200, 129), (200, 125), (45, 100), (295, 100), (200, 92)] {
-      let color = pixels(x, y)
-      #expect(
-        abs(color.0 - 1) <= 3 && abs(color.1 - 4) <= 3 && abs(color.2 - 9) <= 3,
-        "(\(x), \(y)) 是 \(color)")
+    func near(_ color: (Int, Int, Int), _ rgb: (Int, Int, Int)) -> Bool {
+      abs(color.0 - rgb.0) <= 4 && abs(color.1 - rgb.1) <= 4 && abs(color.2 - rgb.2) <= 4
     }
-    #expect(pixels(200, 161).0 > 100)
+    // 白字的地方补成代码块的底，代码块本身、描边都还在（避开左边画译文的地方）
+    for (x, y) in [(202, 110), (250, 105), (150, 125), (150, 92)] {
+      #expect(near(pixels(x, y), (22, 27, 34)), "(\(x), \(y)) 是 \(pixels(x, y))")
+    }
+    #expect(near(pixels(150, 129), (33, 38, 45)))
+    // 灰字的地方补成页面底；隔着空白的线没动
+    #expect(near(pixels(322, 110), (1, 4, 9)), "\(pixels(322, 110))")
+    #expect(pixels(150, 171).0 > 100)
+    // 译文的字色是原文正文的灰，不是白：译文那几个像素里最亮的也不超过灰字
+    var brightest = 0
+    for y in 90..<125 { for x in 50..<90 { brightest = max(brightest, pixels(x, y).0) } }
+    #expect(brightest > 100 && brightest <= 150, "最亮 \(brightest)")
+  }
+
+  /// 行内代码块跟着词走（2026-11-06 用户：底框有的偏移了，微信也没做好）：原来的底框连字一起去掉，
+  /// 译文里还留着的代码词在新位置按原来的样子（底色、描边、上下高度）重画底框
+  @Test func codeChipFollowsTheWord() async throws {
+    let width = 420
+    let height = 200
+    let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+    let context = try #require(
+      CGContext(
+        data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+    func fill(_ rect: CGRect, _ rgb: (CGFloat, CGFloat, CGFloat)) {
+      context.setFillColor(
+        CGColor(srgbRed: rgb.0 / 255, green: rgb.1 / 255, blue: rgb.2 / 255, alpha: 1))
+      context.fill(rect)
+    }
+    fill(CGRect(x: 0, y: 0, width: width, height: height), (1, 4, 9))
+    // 原来的代码块在右边：底 (22,27,34)，顶上 2 像素的描边，里面几笔白字
+    fill(CGRect(x: 250, y: 92, width: 150, height: 38), (22, 27, 34))
+    fill(CGRect(x: 250, y: 128, width: 150, height: 2), (33, 38, 45))
+    for x in stride(from: CGFloat(262), to: 388, by: 12) {
+      fill(CGRect(x: x, y: 100, width: 4, height: 18), (230, 237, 243))
+    }
+    let image = try #require(context.makeImage())
+    var segment = segment(
+      "foo_bar here", box: CGRect(x: 20, y: 95, width: 380, height: 30), lineHeight: 25)
+    segment.words = [OCR.Word(text: "foo_bar", box: CGRect(x: 260, y: 98, width: 130, height: 26))]
+    // 译文里代码词跑到了最前面
+    let composed = try #require(
+      await ScreenshotOverlay.render(image, segments: [segment], translations: ["foo_bar 在左边"]))
+    let pixels = try Self.pixels(composed)
+    func near(_ color: (Int, Int, Int), _ rgb: (Int, Int, Int)) -> Bool {
+      abs(color.0 - rgb.0) <= 4 && abs(color.1 - rgb.1) <= 4 && abs(color.2 - rgb.2) <= 4
+    }
+    // 原来的位置：底框和描边都没了，是页面底
+    for (x, y) in [(395, 110), (395, 129), (255, 95)] {
+      #expect(near(pixels(x, y), (1, 4, 9)), "(\(x), \(y)) 是 \(pixels(x, y))")
+    }
+    // 新位置（译文最前面，左边留出原来那么宽的边）：代码块的底色
+    #expect(near(pixels(14, 120), (22, 27, 34)), "\(pixels(14, 120))")
+    // 底框上下和原来一样高：基线（100）下 8 像素到基线上 30 像素
+    #expect(near(pixels(16, 97), (22, 27, 34)), "\(pixels(16, 97))")
+    #expect(near(pixels(14, 86), (1, 4, 9)))
+    #expect(near(pixels(14, 134), (1, 4, 9)))
   }
 
   /// 读出图里一颗像素的 sRGB 值（0–255），坐标原点左下（和覆盖层的几何一致）
