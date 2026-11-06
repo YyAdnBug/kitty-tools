@@ -59,7 +59,8 @@ final class ScrollCapture {
   private var loop: Task<Void, Never>?
 
   // 自动滚动：跟着屏幕刷新每一帧发一小段像素滚轮，匀速滚（2026-11-05 用户：原来截一帧跳一大步，「一顿一顿」）；
-  // 抓帧照旧一帧接一帧，按实测位移校准滚轮的倍率，对不上就退回、放慢，连着几帧不动就是到头了
+  // 抓帧照旧一帧接一帧，按实测位移校准滚轮的倍率，对不上就退回、放慢，连着几帧不动就是到头了；
+  // 比上次接上的那一帧最多领先半个选区高（maxLead），拼不过来就先等着
   private var isAutoScrolling = false
   /// 每秒滚出几个选区高：面板按钮行上面的「慢 / 标准 / 快」，记住上次（2026-11-04 用户反馈太快；先放在设置里，
   /// 用户说「放在预览的底部更好」）
@@ -379,7 +380,10 @@ final class ScrollCapture {
     let mouse = NSEvent.mouseLocation
     if NSMouseInRect(mouse, panel.frame.insetBy(dx: -16, dy: -16), false) { return }
     guard NSMouseInRect(mouse, region, false) else { return stopAutoScroll() }
-    let next = Self.tickPoints(velocity: velocity, seconds: seconds, carry: carry)
+    let next = Self.tickPoints(
+      velocity: velocity, seconds: seconds, carry: carry,
+      room: Self.room(
+        lead: posted - postedAtReference, height: region.height, scale: scale, gain: gain))
     carry = next.carry
     if next.points != 0 { postScroll(next.points) }
   }
@@ -412,7 +416,8 @@ final class ScrollCapture {
     case .full:
       stopAutoScroll()
     case .unchanged:
-      guard sentThisFrame >= 1 else { return }
+      // 领先到头时这一帧可能一点没发（room 是 0），但上次接上以来发过、画面没动，照样算
+      guard sentThisFrame >= 1 || sent >= 1 else { return }
       stalls += 1
       if stalls >= 3 {
         notice = Status(text: direction > 0 ? "已经滚到底了" : "已经滚到顶了")
@@ -438,13 +443,27 @@ final class ScrollCapture {
   }
 
   /// 这一帧发几点（纯函数配单测）：速度 × 这一帧的时长再加上次的零头，发整数点，零头留到下一帧；
-  /// 一帧最多按 50 ms 算（卡了一下不猛冲一大段）
-  static func tickPoints(velocity: CGFloat, seconds: CFTimeInterval, carry: CGFloat) -> (
-    points: CGFloat, carry: CGFloat
-  ) {
+  /// 一帧最多按 50 ms 算（卡了一下不猛冲一大段）；最多发 room 点（领先到头了：发不完的扔掉，零头清零）
+  static func tickPoints(
+    velocity: CGFloat, seconds: CFTimeInterval, carry: CGFloat, room: CGFloat = .infinity
+  ) -> (points: CGFloat, carry: CGFloat) {
     let amount = velocity * CGFloat(min(max(seconds, 0), 0.05)) + carry
     let whole = amount.rounded(.towardZero)
+    let allowed = max(room, 0).rounded(.towardZero)
+    if whole > allowed { return (allowed, 0) }
     return (whole, amount - whole)
+  }
+
+  /// 自上次接上的那一帧开截以来，滚出去的最多占选区高的这么多：两帧之间要有重叠才拼得上（离线实测大小选区都能接上
+  /// 八成高的位移，留出吸顶栏、页脚和 App 画得慢的余量）
+  static let maxLead: CGFloat = 0.5
+
+  /// 还能再发几点（纯函数配单测）：lead 是自上次接上的那一帧开截以来发了多少点（往回退过可以是负数）。
+  /// 匀速滚动不等抓帧，两帧之间滚了多远 = 速度 × 抓帧、算帧、拼接的时间，后者跟着选区面积涨（2026-11-06 用户：选区框大了
+  /// 反复「对不上」；实测整屏一帧 Debug 构建要 2 秒多、Release 约 0.3 秒，小选区 0.2 秒），不封顶时选区越大越容易
+  /// 两帧之间滚过一整屏，退回、接上、再全速又滚过头，反反复复。到顶就停发，下一帧接上了再接着滚
+  static func room(lead: CGFloat, height: CGFloat, scale: CGFloat, gain: CGFloat) -> CGFloat {
+    max(maxLead * height * scale / max(gain, 0.01) - lead, 0)
   }
 
   /// 按方向滚 points 点（负数往回滚）。像素级滚动事件，发到 HID 层：和真滚轮一样交给光标下的窗口

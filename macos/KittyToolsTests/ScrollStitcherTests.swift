@@ -2,7 +2,8 @@
 // 带闪烁光标的页脚和随滚动移动的滚动条，喂给 ScrollStitcher，逐字节核对拼出的长图。
 // 覆盖：往下 / 往上拼、页脚光标闪烁（锁住页脚不能估小）、滚太快对不上后往回滚接着拼、画面不动与小变化、
 // 滚到底回弹（单帧、多帧）、往回滚不丢有字的行、长度上限、整页重复行时宁可不接、悬停高亮原地变了一块不算对不上、
-// 和上一帧没有重叠时在已拼的画布里重新找到位置、小数像素滚动、电脑上的移动端网页（两边留白、旁边不动的面板）。
+// 和上一帧没有重叠时在已拼的画布里重新找到位置、小数像素滚动、电脑上的移动端网页（两边留白、旁边不动的面板）、
+// 整屏那么高的大选区每步滚出自动滚动允许的最大领先（半个选区高）。
 
 import CoreGraphics
 import Foundation
@@ -32,7 +33,9 @@ struct ScrollStitcherTests {
   }()
 
   /// 滚到 offset 的一帧；chrome 时盖上吸顶栏和页脚（caret 控制页脚里的光标），右边画滚动条
-  private static func frame(at offset: Int, chrome: Bool = true, caret: Bool = false) -> [UInt8] {
+  private static func frame(
+    at offset: Int, chrome: Bool = true, caret: Bool = false, rows height: Int = height
+  ) -> [UInt8] {
     let rowBytes = width * 4
     var bytes = Array(page[offset * rowBytes..<(offset + height) * rowBytes])
     func fill(_ rows: Range<Int>, _ columns: Range<Int>, _ value: UInt8) {
@@ -83,7 +86,7 @@ struct ScrollStitcherTests {
   /// 滚动条那几列跟着各帧走，不核对
   private static func expect(
     _ result: CGImage?, top: Int, bottom: Int, topFrame: [UInt8], bottomFrame: [UInt8],
-    chrome: Bool = true
+    chrome: Bool = true, rows height: Int = height
   ) {
     let header = chrome ? header : 0
     let footer = chrome ? footer : 0
@@ -125,6 +128,30 @@ struct ScrollStitcherTests {
     }
     Self.expect(
       stitcher.makeImage(), top: 100, bottom: 470 + Self.height, topFrame: first, bottomFrame: last)
+  }
+
+  @Test func stitchesLargeRegionAtMaxLead() throws {
+    // 2026-11-06 用户：选区框大了反复「对不上」。根因在自动滚动不等拼接（ScrollCapture.room），这里锁住另一头：
+    // 整屏那么高的选区（2 倍屏约 1400 像素），每步滚出允许的最大领先（半个选区高）或差一点，吸顶栏、闪烁的页脚照样
+    // 一步步接上、逐字节对得上
+    let rows = 1400
+    let lead = Int(ScrollCapture.maxLead * CGFloat(rows))
+    let first = Self.frame(at: 0, rows: rows)
+    var stitcher = try #require(
+      ScrollStitcher(
+        first: Self.image(first, rows: rows), scrollbarWidth: Self.scrollbar, maxHeight: 100_000))
+    var last = first
+    for (index, offset) in [lead, lead + lead - 37, 1600].enumerated() {
+      last = Self.frame(at: offset, caret: index % 2 == 0, rows: rows)
+      guard case .moved(let grown) = stitcher.add(Self.image(last, rows: rows)) else {
+        Issue.record("滚到 \(offset) 没对上")
+        return
+      }
+      #expect(grown > 0)
+    }
+    Self.expect(
+      stitcher.makeImage(), top: 0, bottom: 1600 + rows, topFrame: first, bottomFrame: last,
+      rows: rows)
   }
 
   /// 长截图会话在主线程外算帧（第四轮体检 F1：ScrollStitcher.frame）再接：每一帧的结果和拼出来的长图，和当场算帧的一模一样

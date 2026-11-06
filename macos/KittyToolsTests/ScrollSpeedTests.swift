@@ -1,5 +1,6 @@
 // 长截图自动滚动的速度（2026-11-04 用户反馈太快）和剪贴板面板、启动器的「面板位置」：
-// 三档的速度、认不出的值按标准、匀速滚动（2026-11-05）的每秒发多少、按实测位移校准倍率、每一帧发几点和零头；长截图面板上的速度那一行（屏外量布局、模拟点一下：
+// 三档的速度、认不出的值按标准、匀速滚动（2026-11-05）的每秒发多少、按实测位移校准倍率、每一帧发几点和零头、
+// 比上次接上的那一帧最多领先半个选区高（2026-11-06 大选区反复对不上）；长截图面板上的速度那一行（屏外量布局、模拟点一下：
 // 26 起的玻璃屏外画不出来，截图自检看不到它）；面板位置三种怎么摆、跟随鼠标时在光标右下、放不下翻到另一侧。
 // 只读临时偏好域，不碰用户偏好。
 
@@ -70,6 +71,40 @@ struct ScrollSpeedTests {
     // 卡了一秒才来下一帧：只按 50 ms 算，不猛冲一大段
     #expect(ScrollCapture.tickPoints(velocity: 300, seconds: 1, carry: 0).points == 15)
     #expect(ScrollCapture.tickPoints(velocity: 300, seconds: -1, carry: 0.5).points == 0)
+  }
+
+  @Test func leadIsCappedAtHalfARegion() {
+    // 选区 1000 点高、2 倍屏、1 点滚 2 像素：最多领先 500 点（半个选区高 = 1000 像素）
+    #expect(ScrollCapture.room(lead: 0, height: 1000, scale: 2, gain: 2) == 500)
+    #expect(ScrollCapture.room(lead: 480, height: 1000, scale: 2, gain: 2) == 20)
+    #expect(ScrollCapture.room(lead: 700, height: 1000, scale: 2, gain: 2) == 0)
+    // 1 点滚 4 像素：发一半就到半个选区高；往回退过（lead 是负的）可以多发
+    #expect(ScrollCapture.room(lead: 0, height: 1000, scale: 2, gain: 4) == 250)
+    #expect(ScrollCapture.room(lead: -100, height: 1000, scale: 2, gain: 2) == 600)
+    // 每一帧最多发 room 点：发不完的扔掉、零头清零，到顶了一点不发
+    let capped = ScrollCapture.tickPoints(velocity: 600, seconds: 0.025, carry: 0.5, room: 9.7)
+    #expect(capped.points == 9)
+    #expect(capped.carry == 0)
+    #expect(ScrollCapture.tickPoints(velocity: 600, seconds: 0.025, carry: 0, room: 0).points == 0)
+    // 没到顶：和不封顶一样，零头照留
+    let free = ScrollCapture.tickPoints(velocity: 300, seconds: 0.025, carry: 0, room: 100)
+    #expect(free.points == 7 && abs(free.carry - 0.5) < 0.001)
+    // 整屏大选区、快档、一轮抓帧拼接要 2 秒（Debug 构建实测）：不封顶的话两帧之间滚出两个多选区高；
+    // 封顶后不管等多久，两帧之间最多半个选区高
+    let height: CGFloat = 1050
+    let velocity = ScrollCapture.velocity(speed: .fast, height: height, scale: 2, gain: 2)
+    var lead: CGFloat = 0
+    var carry: CGFloat = 0
+    for _ in 0..<120 {
+      let next = ScrollCapture.tickPoints(
+        velocity: velocity, seconds: 1.0 / 60, carry: carry,
+        room: ScrollCapture.room(lead: lead, height: height, scale: 2, gain: 2))
+      lead += next.points
+      carry = next.carry
+    }
+    #expect(velocity * 2 > height * 2)
+    #expect(lead <= height * ScrollCapture.maxLead)
+    #expect(lead >= height * ScrollCapture.maxLead - 1)
   }
 
   @Test func hudSpeedRow() throws {
