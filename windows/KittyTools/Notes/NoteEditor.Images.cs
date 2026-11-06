@@ -19,6 +19,37 @@ namespace KittyTools;
 
 internal sealed partial class NoteEditor
 {
+    /// <summary>1×1 的透明 PNG：占位的图片对象（真图读到之前、读不到的那张）。</summary>
+    private static readonly byte[] PlaceholderPng = Convert.FromBase64String(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg==");
+
+    /// <summary>要交给 SetText 的字：换行换成段落符，U+FFFC 先换成空格（PlacePlaceholders 再换成占位图）。</summary>
+    private static string PlainForm(string text) => text.Replace('\n', '\r').Replace(ObjectChar, ' ');
+
+    /// <summary>text（刚从 start 起用 PlainForm 放进去的）里每个 U+FFFC 的位置插一张 1×1 的占位图。
+    /// Windows 核验（PLAN-v13 复查 VERIFY 1）：RichEdit 的 SetText 把普通的 U+FFFC 洗成空格，图片表就和正文对不上了；
+    /// 插进去的图片对象在 GetText 里是 U+FFFC，InsertImage 对一个字的范围是替换（长度不变），之后 PlaceImage 再换成真图。</summary>
+    private void PlacePlaceholders(int start, string text)
+    {
+        for (var index = 0; index < text.Length; index++)
+        {
+            if (text[index] != ObjectChar)
+            {
+                continue;
+            }
+
+            try
+            {
+                _box.Document.GetRange(start + index, start + index + 1).InsertImage(
+                    1, 1, 1, VerticalCharacterAlignment.Baseline, "图片", new MemoryStream(PlaceholderPng, false).AsRandomAccessStream());
+            }
+            catch (Exception ex)
+            {
+                Log.Warn($"notes.image-placeholder-failed {ex.GetType().Name}");
+            }
+        }
+    }
+
     /// <summary>这一行能放多宽的图（正文框的宽减去内边距）。</summary>
     private double AvailableWidth => Math.Max((_box.ActualWidth > 0 ? _box.ActualWidth : 360) - _box.Padding.Left - _box.Padding.Right - 8, 40);
 
@@ -220,7 +251,8 @@ internal sealed partial class NoteEditor
         _applying = true;
         try
         {
-            _box.Document.GetRange(selection.Location, selection.End).SetText(TextSetOptions.None, text.Replace('\n', '\r'));
+            _box.Document.GetRange(selection.Location, selection.End).SetText(TextSetOptions.None, PlainForm(text));
+            PlacePlaceholders(selection.Location, text);
             _text = ReadText();
         }
         finally

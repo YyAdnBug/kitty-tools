@@ -365,7 +365,8 @@ internal sealed partial class NoteEditor
         _applying = true;
         try
         {
-            _box.Document.SetText(TextSetOptions.None, text.Replace('\n', '\r'));
+            _box.Document.SetText(TextSetOptions.None, PlainForm(text));
+            PlacePlaceholders(0, text);
             _text = ReadText();
             _images.Clear();
             _images.AddRange(images);
@@ -390,7 +391,13 @@ internal sealed partial class NoteEditor
     private string ReadText()
     {
         _box.Document.GetText(TextGetOptions.None, out var raw);
-        // RichEdit 的段落符是 \r；它总会在末尾补一个段落符，GetText 不带它（TextGetOptions.None）
+        // RichEdit 的段落符是 \r；它总会在末尾补一个段落符，GetText(None) 也带着它（Windows 核验：空文档读出来是 "\r"、
+        // SetText("a\r") 读出来是 "a\r\r"）：去掉那一个，不然每读一次正文末尾多一个换行
+        if (raw.EndsWith('\r'))
+        {
+            raw = raw[..^1];
+        }
+
         return raw.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n');
     }
 
@@ -654,7 +661,8 @@ internal sealed partial class NoteEditor
             {
                 var start = baseOffset + replacement.Range.Location;
                 _box.Document.GetRange(start, start + replacement.Range.Length)
-                    .SetText(TextSetOptions.None, replacement.Text.Replace('\n', '\r'));
+                    .SetText(TextSetOptions.None, PlainForm(replacement.Text));
+                PlacePlaceholders(start, replacement.Text);
             }
         }
         finally
@@ -1005,8 +1013,9 @@ internal sealed partial class NoteEditor
                 format.Name = "Segoe UI Symbol";
                 format.Size = (float)(_fontSize * NoteStyles.BoxScale * PointsPerDip);
                 format.Strikethrough = FormatEffect.Off;
+                // 紧急：方框就是这个字本身，画成 mac 那个方框的红底色（TaskUrgentMark 是 mac 红底上感叹号的颜色，Windows 核验时照它画成了白 / 黑）
                 format.ForegroundColor = state == NoteTaskState.Urgent
-                    ? Rgb(_paper.TaskUrgentMark(_dark))
+                    ? Shade(NotePaper.TextColor(NoteColor.Red, _dark, faded: false, _contrast))
                     : NoteTasks.IsClosed(state)
                         ? Shade(_paper.TaskDone(_dark, _contrast))
                         : Shade(_paper.TaskStroke(_dark, _contrast));

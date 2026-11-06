@@ -304,6 +304,40 @@ internal sealed partial class NoteEditor
 
     // ---- 点击 ----
 
+    private ScrollViewer? _scroller;
+
+    /// <summary>相对 RichEditBox 的点 → GetRangeFromPoint(ClientCoordinates) 要的点。Windows 核验（第 4 批第 7 条）：ClientCoordinates 的原点
+    /// 是正文第一个字（在内边距里面），而且是整篇的坐标（滚了 500 之后第一个字的 y 还是 0）——就是 RichEditBox 里那个 ScrollViewer 的内容的坐标。</summary>
+    internal Windows.Foundation.Point TextPoint(Windows.Foundation.Point inBox)
+    {
+        _scroller ??= FindScroller(_box);
+        if (_scroller is { Content: UIElement content })
+        {
+            return _box.TransformToVisual(content).TransformPoint(inBox);
+        }
+
+        return new Windows.Foundation.Point(inBox.X - _box.Padding.Left - _box.BorderThickness.Left, inBox.Y - _box.Padding.Top - _box.BorderThickness.Top);
+    }
+
+    private static ScrollViewer? FindScroller(DependencyObject parent)
+    {
+        for (var index = 0; index < Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChildrenCount(parent); index++)
+        {
+            var child = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChild(parent, index);
+            if (child is ScrollViewer scroller)
+            {
+                return scroller;
+            }
+
+            if (FindScroller(child) is { } found)
+            {
+                return found;
+            }
+        }
+
+        return null;
+    }
+
     private void OnPointerPressed(object sender, PointerRoutedEventArgs e)
     {
         var point = e.GetCurrentPoint(_box);
@@ -315,7 +349,7 @@ internal sealed partial class NoteEditor
         int position;
         try
         {
-            position = _box.Document.GetRangeFromPoint(point.Position, PointOptions.ClientCoordinates).StartPosition;
+            position = _box.Document.GetRangeFromPoint(TextPoint(point.Position), PointOptions.ClientCoordinates).StartPosition;
         }
         catch
         {

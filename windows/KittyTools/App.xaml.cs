@@ -94,6 +94,13 @@ public partial class App : Application
                     return;
                 }
             }
+            if (NoteEditorProbe.IsRequested(commandLine) && NoteEditorProbe.DirectoryFrom(commandLine) is { } noteProbe)
+            {
+                // PLAN-v13 第 4 批：便签正文编辑器那 7 条 RichEdit 行为的自检（只在测试档），跑完就退。
+                _ = NoteEditorProbe.RunAsync(noteProbe);
+                return;
+            }
+
             if (Environment.GetCommandLineArgs().Contains("--crash-test", StringComparer.OrdinalIgnoreCase))
             {
                 throw new InvalidOperationException("--crash-test");
