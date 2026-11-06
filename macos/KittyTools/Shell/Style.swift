@@ -496,6 +496,24 @@ struct Hairline: View {
   }
 }
 
+@available(macOS 26, *)
+extension NSGlassEffectView {
+  /// 建一块玻璃，图层按同一个圆角（连续曲线）再裁一遍。**AppKit 里建玻璃一律走这里**：macOS 27 上玻璃所在的窗口当 key 时，
+  /// 玻璃会在圆角外面（到它自己的方角）画一层很淡的黑（透明度约 4%–20%），四个角露出方形的黑边，窗口的系统阴影也按它算成
+  /// 方的（2026-10-19 先在浮层上修了，e0c05c8f；2026-11-06 用户又在长截图面板上看到：那次只修了浮层，长截图面板、
+  /// 截图工具栏、尺寸胶囊各自建玻璃，漏了）。不当 key 时没有。裁了之后圆角外全透明（独立小程序比过，
+  /// build/research/launchpad/probe/border/）
+  static func clipped(cornerRadius: CGFloat) -> NSGlassEffectView {
+    let glass = NSGlassEffectView()
+    glass.cornerRadius = cornerRadius
+    glass.wantsLayer = true
+    glass.layer?.cornerRadius = cornerRadius
+    glass.layer?.cornerCurve = .continuous
+    glass.layer?.masksToBounds = true
+    return glass
+  }
+}
+
 extension InsettableShape {
   /// 沿形状内侧描一圈发丝线：0.5 pt（增强对比度 1 pt）；color 默认 `Style.hairline`（错误卡等传自己的颜色）
   func hairlineBorder(_ color: Color = Style.hairline) -> some View {

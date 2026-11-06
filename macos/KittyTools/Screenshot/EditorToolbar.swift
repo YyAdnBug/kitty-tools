@@ -118,8 +118,8 @@ class HUDBar: PopView {
     self.height = height
     if #available(macOS 26, *) {
       // HUD 永远深色；两个无障碍开关交给玻璃
-      let glass = NSGlassEffectView()
-      glass.cornerRadius = radius
+      // 截图遮罩当 key：圆角外的黑边见 NSGlassEffectView.clipped
+      let glass = NSGlassEffectView.clipped(cornerRadius: radius)
       glass.appearance = NSAppearance(named: .darkAqua)
       effect = NSView()
       effect.wantsLayer = true  // 当前工具的底块是加在它图层上的子图层

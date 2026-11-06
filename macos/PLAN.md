@@ -765,6 +765,9 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
   （按键比 ⇧，原来单字母键带 ⇧ 也算）。规矩在 mac-overlay-panel §8，手测「用户四条」10–14。
   用户随后问「放在截图时去修改是不是更友好」，我建议设置页留着做总表、截图里加右键改键，用户「做右键改键」：工具栏有快捷键的钮右键 →
   「改「X」的快捷键…」→ 等下一下按键（规矩同设置页），收下就生效；标注遮罩没接。手测「用户四条」22–24。
+- **长截图面板四周的黑边**（用户 2026-11-06 看测试包，说「之前其窗口也有这个问题」）：就是 10-19 修过的 macOS 27 玻璃当 key 时圆角外
+  画一层淡黑（e0c05c8f），那次只修了 `OverlayPanel`；长截图面板（当 key 收按键）、截图工具栏和尺寸胶囊（在当 key 的截图遮罩里）各自建玻璃、
+  漏了。四处都改走 `NSGlassEffectView.clipped(cornerRadius:)`。手测「用户四条」27。
 - **第 3 批 ⌘Tab 预览（C）**：`DockPreview/SwitcherWatcher.swift`（按着 ⌘ 才找系统切换器 `AXProcessSwitcherList`、听它的选中）+
   `DockPreview` 的 `fromSwitcher` 模式（切换器上方居中、不按鼠标收、点一张先发 Esc 收起系统切换器）；设置 › 程序坞预览「按 ⌘Tab 时也显示」
   （`Prefs.dockPreviewCmdTab`，默认开）。**本机 macOS 27 上切换器的辅助功能结构没探过**：要人在场跑 `DockPreviewProbeTests/switcher()`

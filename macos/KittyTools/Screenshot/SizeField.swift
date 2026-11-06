@@ -44,8 +44,8 @@ final class SizeField: NSView, NSTextFieldDelegate {
     var glass: NSView?
     if #available(macOS 26, *) {
       // 圆角交给玻璃；两个无障碍开关交给玻璃（mac-whisker §7）
-      let effect = NSGlassEffectView()
-      effect.cornerRadius = Style.Radius.control
+      // 截图遮罩当 key：圆角外的黑边见 NSGlassEffectView.clipped
+      let effect = NSGlassEffectView.clipped(cornerRadius: Style.Radius.control)
       effect.autoresizingMask = [.width, .height]
       let content = NSView()
       content.wantsLayer = true  // 焦点环是加在它图层上的子图层
