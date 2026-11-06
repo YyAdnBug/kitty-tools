@@ -149,6 +149,9 @@ enum Prefs {
   /// 长截图自动滚动的速度（长截图面板按钮行上面那一行，记住上次；2026-11-04 用户反馈太快；ScrollSpeed 的 rawValue）：
   /// 每秒滚出 0.3 / 0.6 / 1.2 个选区高，normal 是默认
   static let scrollCaptureSpeed = "scrollCaptureSpeed"
+  /// 框选时保持屏幕原色（2026-11-06 用户：截图时像蒙了一层粉色滤镜，取色不友好）：打开后不压暗、悬停的窗口只描边不染色、
+  /// 放大镜的十字带只描边。默认关（照 Whisker 压暗 + 粉色高亮）；截图、截图翻译 / 识字、录屏的框选都管
+  static let screenshotKeepsColors = "screenshotKeepsColors"
   /// 旧键（0.7.0 之前是「留不留常驻缩略图」一个布尔）：migrate 里升成上面那个三选一，关过它的人升级后是「都不要」
   static let screenshotShelfLegacy = "screenshotShelf"
   /// 保留截图历史（2026-10-26 拍板 B3，默认开）：关掉之后不再往历史里记，已经记下的留着（设置里另有「现在清空」）
@@ -432,6 +435,7 @@ enum Prefs {
       screenshotToolbarAlign: "right",
       screenshotCopyAs: "image",
       scrollCaptureSpeed: ScrollSpeed.normal.rawValue,
+      screenshotKeepsColors: false,
       shotHistory: true,
       shotHistoryDays: 30,
       shotHistoryMegabytes: 2 * 1024,

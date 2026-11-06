@@ -45,6 +45,16 @@ struct ScreenshotSnapshotTests {
     h = capture()
     h.move(CGPoint(x: 1000, y: 700))
     try shoot(h.window, "idle-desktop", crop: top)
+    // 设置 › 截图「框选时保持屏幕原色」（2026-11-06）：不压暗、悬停的窗口只描边、放大镜的十字带只描边；框好之后洞外也不压
+    h = Harness(windows: Self.windows, image: desktop, keepsColors: true)
+    h.move(CGPoint(x: 330, y: 520))
+    try shoot(
+      h.window, "idle-window-original-colors", crop: CGRect(x: 100, y: 340, width: 620, height: 460)
+    )
+    h = Harness(windows: Self.windows, image: desktop, keepsColors: true)
+    h.drag(CGPoint(x: 300.3, y: 260.7), CGPoint(x: 800.4, y: 560.2))
+    try shoot(
+      h.window, "adjust-original-colors", crop: CGRect(x: 40, y: 190, width: 1010, height: 420))
     h = capture()
     h.move(CGPoint(x: 300.4, y: 300.6))
     h.modifiers(.command)

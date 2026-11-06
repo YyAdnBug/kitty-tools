@@ -37,7 +37,7 @@ struct SelectionInteractionTests {
     init(
       mode: SelectionView.Mode = .capture, windows: [CGRect] = [], image: CGImage? = nil,
       hint: String = "", session: SelectionSession? = nil,
-      origin: CGPoint = CGPoint(x: -20000, y: -20000)
+      origin: CGPoint = CGPoint(x: -20000, y: -20000), keepsColors: Bool = false
     ) {
       let size = CGSize(width: 1200, height: 800)
       let context = CGContext(
@@ -48,7 +48,8 @@ struct SelectionInteractionTests {
       context.fill(CGRect(origin: .zero, size: size))
       self.session = session ?? SelectionSession(mode: mode, hint: hint)
       view = SelectionView(
-        image: image ?? context.makeImage()!, windows: windows, session: self.session)
+        image: image ?? context.makeImage()!, windows: windows, session: self.session,
+        keepsColors: keepsColors)
       styles = UserDefaults(suiteName: styleSuite)!
       view.styleDefaults = styles
       window = KeyWindow(

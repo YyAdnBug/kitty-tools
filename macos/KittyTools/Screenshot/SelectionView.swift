@@ -190,6 +190,13 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private var hintParts: [String]
   /// 顶部提示临时换了一句（右键不清空）：有选区时也显示
   private var hintFlashing = false
+  /// 框选时保持屏幕原色（设置 › 截图，Prefs.screenshotKeepsColors）：每次框选新建遮罩时读一次（单测、截图自检直接给）
+  private let keepsColors: Bool
+
+  /// 遮罩压多暗（纯函数，配单测）：待选整屏 0.18，有洞（选区、悬停的窗口）时洞外 0.45；保持原色时不压
+  static func shadeAlpha(hasHole: Bool, keepsColors: Bool) -> CGFloat {
+    keepsColors ? 0 : hasHole ? 0.45 : 0.18
+  }
   /// 上一次主动播报的话（交互测试读它）
   private(set) var announcement: String?
   /// 待选时单击选中了窗口 / 整屏、栏又正好长在按下的地方（整屏、贴着屏幕底的窗口）：双击间隔内的第二下归自己（hitTest），
@@ -211,10 +218,14 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private static let loupeCell: CGFloat = 9
   private static let infoHeight: CGFloat = 40
 
-  init(image: CGImage, windows: [CGRect] = [], session: SelectionSession) {
+  init(
+    image: CGImage, windows: [CGRect] = [], session: SelectionSession,
+    keepsColors keeps: Bool? = nil
+  ) {
     self.image = image
     self.windows = windows
     self.session = session
+    keepsColors = keeps ?? UserDefaults.standard.bool(forKey: Prefs.screenshotKeepsColors)
     hintParts = Self.hintParts(for: session)
     super.init(frame: .zero)
     wantsLayer = true
@@ -246,7 +257,9 @@ final class SelectionView: NSView, NSTextViewDelegate {
     translatingPulse.addSublayer(translatingBand)
     root.addSublayer(translatingPulse)
     shade.fillRule = .evenOdd
-    shade.fillColor = NSColor.black.withAlphaComponent(0.18).cgColor
+    shade.fillColor =
+      NSColor.black.withAlphaComponent(Self.shadeAlpha(hasHole: false, keepsColors: keepsColors))
+      .cgColor
     let pink = Style.Shot.accent
     outline.fillColor = nil
     outline.strokeColor = pink.cgColor
@@ -258,7 +271,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
     edgeHighlight.strokeColor = pink.cgColor
     edgeHighlight.lineWidth = 2.5
     edgeHighlight.lineCap = .round
-    highlight.fillColor = pink.withAlphaComponent(0.12).cgColor
+    highlight.fillColor = keepsColors ? nil : pink.withAlphaComponent(0.12).cgColor
     highlight.strokeColor = pink.cgColor
     highlight.lineWidth = 2
     for (handle, layer) in handleLayers {
@@ -375,7 +388,14 @@ final class SelectionView: NSView, NSTextViewDelegate {
     bands.addRect(CGRect(x: middle, y: 0, width: cell, height: side))
     loupeBands.frame = loupe.bounds
     loupeBands.path = bands
-    loupeBands.fillColor = Style.Shot.accent.withAlphaComponent(0.18).cgColor
+    // 保持原色时十字带只描边：填上粉色，正中那个要取的像素也被染了
+    if keepsColors {
+      loupeBands.fillColor = nil
+      loupeBands.strokeColor = Style.Shot.accent.cgColor
+      loupeBands.lineWidth = 1
+    } else {
+      loupeBands.fillColor = Style.Shot.accent.withAlphaComponent(0.18).cgColor
+    }
     loupeCenter.frame = loupe.bounds
     loupeCenter.path = CGPath(
       rect: CGRect(x: middle, y: middle, width: cell, height: cell), transform: nil)
@@ -807,9 +827,11 @@ final class SelectionView: NSView, NSTextViewDelegate {
     if frame == nil { highlight.removeAnimation(forKey: "morph") }
     shownHover = hovered
     holeIsSelection = selection != nil
-    // 待选时整屏轻暗 0.18；有选区（或悬停的窗口）时洞外 0.45，切换时过渡 0.12 s
+    // 待选时整屏轻暗 0.18；有选区（或悬停的窗口）时洞外 0.45，切换时过渡 0.12 s（保持原色时都不压）
     let hasHole = selection != nil || hovered != nil
-    let fill = NSColor.black.withAlphaComponent(hasHole ? 0.45 : 0.18).cgColor
+    let fill = NSColor.black.withAlphaComponent(
+      Self.shadeAlpha(hasHole: hasHole, keepsColors: keepsColors)
+    ).cgColor
     if hasHole != hadHole {
       let fade = CABasicAnimation(keyPath: "fillColor")
       fade.fromValue = shade.presentation()?.fillColor ?? shade.fillColor

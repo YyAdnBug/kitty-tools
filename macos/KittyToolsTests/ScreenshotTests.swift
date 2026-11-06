@@ -352,6 +352,15 @@ struct ScreenshotTests {
     #expect(stale == [old])
   }
 
+  @Test func keepingColorsDropsTheShade() {
+    // 框选时保持屏幕原色（2026-11-06）：平常待选 0.18、有洞 0.45；打开后都不压。默认关
+    #expect(SelectionView.shadeAlpha(hasHole: false, keepsColors: false) == 0.18)
+    #expect(SelectionView.shadeAlpha(hasHole: true, keepsColors: false) == 0.45)
+    #expect(SelectionView.shadeAlpha(hasHole: false, keepsColors: true) == 0)
+    #expect(SelectionView.shadeAlpha(hasHole: true, keepsColors: true) == 0)
+    #expect(Prefs.defaults[Prefs.screenshotKeepsColors] as? Bool == false)
+  }
+
   @Test func annotationHitTesting() {
     let rectangle = Annotation(shape: .rectangle(CGRect(x: 100, y: 100, width: 200, height: 100)))
     #expect(rectangle.contains(CGPoint(x: 101, y: 150)))  // 左边线上
