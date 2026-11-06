@@ -279,7 +279,10 @@ nonisolated struct PinchRecognizer: Sendable {
 }
 
 /// 系统的应用程序捏合手势开没开（只读；SPEC §5.6）。macOS 26 由 Dock 的 `showSpotlightGestureEnabled`
-/// 独立控制，没存过默认开；它与「显示桌面」分开。其他版本沿用两个触控板域的四指 / 五指键（F13 / G5）。
+/// 独立控制，没存过默认开，和「显示桌面」是两个开关；系统设置里没有它那一行（PR #1，作者在 26.6 上查的）。
+/// 其他版本读四指 / 五指捏合两个键：`com.apple.AppleMultitouchTrackpad` 是内置触控板，蓝牙妙控板在
+/// `com.apple.driver.AppleBluetoothMultitouch.trackpad`。实测（27.0.1）两个键都是 2 = 开，0 = 关；这里按
+/// 「两个键都没存过 = 这个域没信息、显式 0 = 关」认，几个域合起来见 `combined`（F13 / G5）。
 /// **只读，不写、不重启 Dock**。
 nonisolated enum TrackpadSystemGesture {
   static let dockDomain = "com.apple.dock"

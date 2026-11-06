@@ -264,13 +264,9 @@ final class Launchpad {
     if TrackpadSystemGesture.usesDockPinchSetting {
       island?.show(
         "捏合打开的是系统的应用程序视图",
-        detail: "macOS 26 没有独立的「应用程序」设置项。复制命令到终端执行，可单独关闭它并重启程序坞；「显示桌面」继续保留。",
+        detail: "要用捏合打开启动台，复制命令到「终端」里运行，关掉系统的应用程序捏合",
         tone: .info, symbol: "hand.pinch",
-        actions: [
-          .init("复制命令") {
-            Paster.write(string: TrackpadSystemGesture.disableSpotlightCommand, record: true)
-          }
-        ])
+        actions: [.init("复制命令") { [weak self] in self?.copyPinchCommand() }])
     } else {
       island?.show(
         "捏合打开的是系统的应用程序视图",
@@ -278,6 +274,14 @@ final class Launchpad {
         tone: .info, symbol: "hand.pinch",
         actions: [.init("打开触控板设置", opens: true) { [weak self] in self?.openTrackpadSettings() }])
     }
+  }
+
+  /// macOS 26 关掉系统应用程序捏合的命令，复制给用户自己去「终端」里运行（Kitty 不替用户执行、不自己重启程序坞）。
+  /// 设置 › 启动台的「复制命令」也走这里
+  func copyPinchCommand() {
+    Paster.write(string: TrackpadSystemGesture.disableSpotlightCommand, record: true)
+    island?.show(
+      "已复制命令", detail: "粘贴到「终端」里运行，程序坞会重启一下", tone: .info, symbol: "doc.on.doc")
   }
 
   /// 调度中心开着时打开的：它给窗口画的 ✕ 会盖在启动台上面、还点得到（调度中心不是普通窗口，层级调高也盖不住），所以先让它退；

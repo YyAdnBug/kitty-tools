@@ -149,7 +149,7 @@ Kitty 的第八族「启动台」（SPEC 在 `macos/build/research/launchpad/SPE
   `TrackpadFourFingerPinchGesture` / `TrackpadFiveFingerPinchGesture`；几个域合起来（`combined`，G5）：任一域显式开 = 开；有域显式关、没有显式开 = 关；所有域都没信息才默认开。
   设置页每次出现、要被捏合打开时读一次，**不轮询、不写系统设置、不重启 Dock**；设置页只在读到的值变了时重起监听（G8）。
   系统的应用程序捏合还开着时，识别到了也不打开。**26 没有独立的「应用程序」设置行**，设置页显示命令并给「复制命令」：
-  `defaults write com.apple.dock showSpotlightGestureEnabled -bool false; killall Dock`，由用户自行在终端执行；说明会重启程序坞、保留原生「显示桌面」，不引导关闭它。
+  `defaults write com.apple.dock showSpotlightGestureEnabled -bool false; killall Dock`，由用户自行在终端执行（`Launchpad.copyPinchCommand`：写剪贴板、岛上说「已复制命令」，设置页和岛上的按钮都走它；**不替用户执行**）；说明会重启程序坞、「显示桌面」不受影响，不引导关闭它。
   其他版本仍给「打开触控板设置」，引导关闭「应用程序」。**第一次让给系统时刘海岛说一次**（第四轮体检 U5，`Prefs.launchpadPinchYieldTold`，不注册默认值）：
   不当场说（系统的应用程序视图正盖着），下次打开启动台再说；26 带「复制命令」，其他版本带「打开触控板设置」。
   那次岛上已有读不出来的提示或第一次导入时就再等一次（在 `autoImportIfNeeded` 前判断）；系统的应用程序捏合已经关掉就不说（`Launchpad.pinchHint`）。
