@@ -54,7 +54,6 @@ internal sealed class NoteCaptureWindow : Window
     private NoteCaptureWindow()
     {
         Title = Paths.ProductName + " 快速记一条";
-        SystemBackdrop = new AcrylicBackdrop();
         ExtendsContentIntoTitleBar = true;
         var presenter = OverlappedPresenter.Create();
         presenter.IsAlwaysOnTop = true;
@@ -150,6 +149,8 @@ internal sealed class NoteCaptureWindow : Window
         _root.Children.Add(_footer);
         _root.KeyDown += OnRootKeyDown;
         Content = _root;
+        // 亚克力放在 Content 之后：AcrylicBackdrop 连上时按内容的 ActualTheme 定深浅、挂主题变化；先设它的话那时还没有内容，深色下也是浅的（Windows 核验 PLAN-v13）
+        SystemBackdrop = new AcrylicBackdrop();
 
         _draftTimer = DispatcherQueue.CreateTimer();
         _draftTimer.Interval = TimeSpan.FromMilliseconds(NoteCaptureRules.DraftDelayMs);

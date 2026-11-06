@@ -134,7 +134,6 @@ internal sealed class NoteDeckPillWindow : Window
         _bay = bay;
         Title = Paths.ProductName + " 便签";
         HudFrame.Apply(this);
-        SystemBackdrop = new AcrylicBackdrop();
         _dashes = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
         _root = NoteDeckUi.Root();
         _root.Children.Add(_dashes);
@@ -156,6 +155,8 @@ internal sealed class NoteDeckPillWindow : Window
             NoteDeckUi.ShowEdgeMenu(_bay, _root, e.GetPosition(_root));
         };
         Content = _root;
+        // 亚克力放在 Content 之后：AcrylicBackdrop 连上时按内容的 ActualTheme 定深浅、挂主题变化；先设它的话那时还没有内容，深色下也是浅的（Windows 核验 PLAN-v13）
+        SystemBackdrop = new AcrylicBackdrop();
     }
 
     /// <summary>摆好、画上每条便签的色块（hides：不显示药丸，只留那一条底）。</summary>
@@ -273,7 +274,6 @@ internal sealed class NoteDeckColumnWindow : Window
         _bay = bay;
         Title = Paths.ProductName + " 便签";
         HudFrame.Apply(this);
-        SystemBackdrop = new AcrylicBackdrop();
         _root = NoteDeckUi.Root();
         _root.RightTapped += (_, e) =>
         {
@@ -285,6 +285,8 @@ internal sealed class NoteDeckColumnWindow : Window
         };
         _root.PointerMoved += (_, _) => _bay.Activity();
         Content = _root;
+        // 亚克力放在 Content 之后：AcrylicBackdrop 连上时按内容的 ActualTheme 定深浅、挂主题变化；先设它的话那时还没有内容，深色下也是浅的（Windows 核验 PLAN-v13）
+        SystemBackdrop = new AcrylicBackdrop();
     }
 
     /// <summary>一段字占多长（正着放的一格按这个字的宽算——中日韩文字是方的；转着放的是这段横排的宽）。</summary>
