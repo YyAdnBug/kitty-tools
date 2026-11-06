@@ -378,38 +378,38 @@ final class EditorToolbar: PopView {
     }
   }
 
-  /// 等新快捷键的那颗钮外面的一圈（setWaiting）
-  private let waitingRing = CAShapeLayer()
+  /// 等新快捷键的那颗钮里的粉底（setWaiting）
+  private let waitingFill = CALayer()
 
-  /// 等新快捷键的那颗钮（2026-11-06 用户：只在屏幕顶上提示不够明显）：外面 2 pt 处一圈 2 pt 强调色，呼吸（0.7 s 一来回；
-  /// 减弱动态效果时不动），nil 收掉。同一时刻只有一颗
+  /// 等新快捷键的那颗钮（2026-11-06 用户：只在屏幕顶上提示不够明显）：钮里一块强调色的底，和悬停底、当前工具的底块同一个
+  /// 形状（圆角 12，和栏的圆角同心），透明度 0.55 ↔ 0.22 呼吸（0.7 s 一来回；减弱动态效果时停在 0.4），图标照常在上面。
+  /// 原来是钮外面一圈描边：和悬停的底叠成框里套框，呼吸到淡的那头粉色发灰（用户 2026-11-06 第二次截图）。nil 收掉，同一时刻只有一颗
   func setWaiting(_ item: Item?) {
-    waitingRing.removeAllAnimations()
-    waitingRing.removeFromSuperlayer()
-    // 画在那颗钮所在那段栏的内容层里、按钮栈上面（同当前工具的底块 toolHighlight：那一层真机上看得到）。
-    // 不能挂在工具栏自己的图层上：屏外截图画得出来，真机（macOS 27）上看不见（2026-11-06 用户截图：等「椭圆」时没有圈）；
-    // 挂在按钮自己的图层里会被裁掉。外扩 2 pt、线宽 2：栏高 40、钮 32，上下各 4 pt 的边放得下
+    waitingFill.removeAllAnimations()
+    waitingFill.removeFromSuperlayer()
+    // 放在那颗钮所在那段栏的内容层里、按钮栈下面（同当前工具的底块 toolHighlight：那一层真机上看得到；挂在工具栏自己的
+    // 图层上屏外截图画得出来、真机 macOS 27 上看不见，挂在按钮自己的图层里会被裁掉）
     guard let item, let button = button(for: item), let buttonLayer = button.layer else { return }
     let bar = button.isDescendant(of: tools) ? tools : outputs
     guard let layer = bar.effect.layer else { return }
-    let radius = buttonLayer.cornerRadius + 2
-    waitingRing.path = CGPath(
-      roundedRect: button.convert(button.bounds, to: bar.effect).insetBy(dx: -2, dy: -2),
-      cornerWidth: radius, cornerHeight: radius, transform: nil)
-    waitingRing.fillColor = nil
-    waitingRing.strokeColor = Style.Shot.accent.cgColor
-    waitingRing.lineWidth = 2
-    waitingRing.contentsScale = window?.backingScaleFactor ?? 2
-    layer.addSublayer(waitingRing)
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    waitingFill.frame = button.convert(button.bounds, to: bar.effect)
+    waitingFill.cornerRadius = buttonLayer.cornerRadius
+    waitingFill.cornerCurve = .continuous
+    waitingFill.backgroundColor = Style.Shot.accent.cgColor
+    waitingFill.opacity = Style.reduceMotion ? 0.4 : 0.55
+    layer.insertSublayer(waitingFill, below: bar.stack.layer)
+    CATransaction.commit()
     guard !Style.reduceMotion else { return }
     let pulse = CABasicAnimation(keyPath: "opacity")
-    pulse.fromValue = 1
-    pulse.toValue = 0.35
+    pulse.fromValue = 0.55
+    pulse.toValue = 0.22
     pulse.duration = 0.7
     pulse.autoreverses = true
     pulse.repeatCount = .infinity
     pulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-    waitingRing.add(pulse, forKey: "pulse")
+    waitingFill.add(pulse, forKey: "pulse")
   }
 
   /// 改了快捷键之后重写悬停提示（名字是按钮的旁白名）
@@ -1169,7 +1169,9 @@ class BarButton: NSButton {
   override init(frame: NSRect) {
     super.init(frame: frame)
     wantsLayer = true
-    layer?.cornerRadius = Style.Radius.control
+    // 悬停底的圆角：和当前工具的底块同一个（12）——栏圆角 16、钮离栏边 4，12 才和栏的圆角同心；原来是 control（6），
+    // 栏两头的钮悬停时方角套在圆头里，缝一头宽一头窄（2026-11-06 用户截图）
+    layer?.cornerRadius = Style.Shot.toolRadius
     layer?.cornerCurve = .continuous
     (cell as? NSButtonCell)?.imageDimsWhenDisabled = false  // 禁用时整体 0.35，不再叠系统的变灰
     addTrackingArea(
