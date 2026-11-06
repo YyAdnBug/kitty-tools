@@ -129,6 +129,10 @@ enum Prefs {
   /// 截完图放哪（2026-10-26 晾衣绳拍板 B1，ShotPlacement 的 rawValue）：corner 右下角的常驻缩略图（默认，
   /// 体检 D18 原来那样）/ clothesline 挂到屏幕顶上的晾衣绳上 / none 都不要（只进历史，飞行卡片落地停 0.9 s 就滑走）
   static let screenshotPlacement = "screenshotPlacement"
+  /// 截图拷贝为（2026-11-06 拍板，设置 › 截图「截图拷贝为」）：image 剪贴板里放图像（默认）/ file 放一个 PNG 文件，
+  /// 同在访达里拷贝一个文件——只搬文字和文件的跨电脑剪贴板（USB 对拷线的配套软件、有的远程工具）也传得过去。
+  /// 读它用 copiesShotAsFile
+  static let screenshotCopyAs = "screenshotCopyAs"
   /// 旧键（0.7.0 之前是「留不留常驻缩略图」一个布尔）：migrate 里升成上面那个三选一，关过它的人升级后是「都不要」
   static let screenshotShelfLegacy = "screenshotShelf"
   /// 保留截图历史（2026-10-26 拍板 B3，默认开）：关掉之后不再往历史里记，已经记下的留着（设置里另有「现在清空」）
@@ -390,6 +394,7 @@ enum Prefs {
       ocrJoinLines: false,
       screenshotShutterSound: true,
       screenshotPlacement: ShotPlacement.corner.rawValue,
+      screenshotCopyAs: "image",
       shotHistory: true,
       shotHistoryDays: 30,
       shotHistoryMegabytes: 2 * 1024,
@@ -424,6 +429,11 @@ enum Prefs {
       notesDeckOverFullScreen: false,
       notesDeckNoteSize: NoteDeckOptions.NoteSize.medium.rawValue,
     ].merging(Feature.allCases.map { ($0.prefsKey, $0.defaultOn as Any) }) { current, _ in current }
+  }
+
+  /// 截图拷贝成 PNG 文件（screenshotCopyAs 是 file；没存过、认不出来按默认的图像）
+  static func copiesShotAsFile(_ defaults: UserDefaults = .standard) -> Bool {
+    defaults.string(forKey: screenshotCopyAs) == "file"
   }
 
   /// 截完图放哪（2026-10-26 晾衣绳拍板 B1）：右下角的常驻缩略图 / 挂到晾衣绳上 / 都不要（只进历史）。

@@ -65,10 +65,12 @@ struct SettingsListTests {
     #expect(SettingsPage.general.feature == nil && SettingsPage.hotkeys.feature == nil)
   }
 
-  /// 侧栏搜索按改名后的叫法也找得到：启动器的「常用」「收藏」，翻译的「浮窗位置」「清空」
+  /// 侧栏搜索按改名后的叫法也找得到：启动器的「常用」「收藏」，翻译的「浮窗位置」「清空」，截图的「PNG」「对拷线」
   @Test func sidebarSearchFindsNewNames() {
     #expect(SettingsPage.launcher.matches("常用") && SettingsPage.launcher.matches("收藏"))
     #expect(SettingsPage.translate.matches("浮窗位置") && SettingsPage.translate.matches("清空"))
+    // 截图拷贝为 PNG 文件（2026-11-06）
+    #expect(SettingsPage.screenshot.matches("PNG") && SettingsPage.screenshot.matches("对拷线"))
   }
 
   /// 搜页名停在那一页：「录制」也是通用页（屏幕录制）、快捷键页里的说法，「快捷键」也是录制页里的（只显示快捷键）；

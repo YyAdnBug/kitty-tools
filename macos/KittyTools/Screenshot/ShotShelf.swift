@@ -23,8 +23,9 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 final class ShotShelf {
-  /// 再拷贝一次 / 快速保存（都用编码好的 PNG）/ 钉到原来的位置 / 拷贝录屏文件（AppDelegate 给）
-  var copy: (Data) async -> Bool = { _ in false }
+  /// 再拷贝一次 / 快速保存（都用编码好的 PNG）/ 钉到原来的位置 / 拷贝录屏文件（AppDelegate 给）。
+  /// copy 回答放进剪贴板的是图像还是文件（nil = 没接上）
+  var copy: (Data) async -> ScreenshotOutput.Copied? = { _ in nil }
   var save: (Data) async -> URL? = { _ in nil }
   var pin: (CGImage, CGRect) -> Void = { _, _ in }
   var copyFile: (URL) -> Void = { _ in }
@@ -44,9 +45,29 @@ final class ShotShelf {
   static let margin: CGFloat = 24
   private static let gap: CGFloat = 10
   private static let maxPerScreen = 3
-  /// 拖出去用的 PNG 放在这里；启动时清空（拖进邮件、聊天的附件可能还在读，用的时候不删）
+  /// 拖出去用的 PNG 放在这里（截图拷贝成文件的那份也是，ScreenshotOutput.copyFile）；启动时清空、换日时删一天以前的
+  /// （拖进邮件、聊天的附件可能还在读，用的时候不删）
   nonisolated static let dragDirectory = FileManager.default.temporaryDirectory.appending(
     path: "Kitty Tools 截图")
+
+  /// 换日时清拖出目录（2026-11-06 拍板 Q4：菜单栏 App 一开几周，只靠启动时清空会越攒越多）：第一层里改于一天以前的删掉
+  /// （每次拷贝、拖出是一个子文件夹，常驻缩略图那份是一个文件）。临时目录在本机，几十上百项，主线程上删
+  static func purgeStaleDragFiles(now: Date = .now) {
+    let files = FileManager.default
+    let entries =
+      (try? files.contentsOfDirectory(
+        at: dragDirectory, includingPropertiesForKeys: [.contentModificationDateKey])) ?? []
+    let dated = entries.compactMap { url in
+      (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+        .map { (url: url, modified: $0) }
+    }
+    for url in stale(dated, now: now) { try? files.removeItem(at: url) }
+  }
+
+  /// 哪些算一天以前的（纯函数，配单测）：改于比现在早 24 小时以上的；时间比现在还晚的（钟往回调过）不算，留给启动时清
+  nonisolated static func stale(_ entries: [(url: URL, modified: Date)], now: Date) -> [URL] {
+    entries.filter { now.timeIntervalSince($0.modified) > 24 * 60 * 60 }.map(\.url)
+  }
 
   /// 接手一张截图：png 是复制 / 保存时编码好的，rect 是落地位置（屏幕坐标），source 是选区（钉图钉回那里）
   func add(
@@ -422,8 +443,9 @@ final class ShotShelf {
     isBusy = true
     Task {
       // 角标不换（存过的还要留着文件夹和「在访达中显示」），缩略图看不出拷没拷上：用刘海说（岛自己也播报）
-      if let png = await encoded(), await shelf.copy(png) {
-        shelf.island?.show("已复制截图", leading: shown.map(Island.thumbnail(of:)) ?? .tone)
+      if let png = await encoded(), let copied = await shelf.copy(png) {
+        shelf.island?.show(
+          "已复制截图", detail: copied.detail, leading: shown.map(Island.thumbnail(of:)) ?? .tone)
       }
       isBusy = false
     }

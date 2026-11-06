@@ -1,7 +1,8 @@
 // 截图 / 截图翻译单测：选区（点）→ 冻结帧像素矩形的换算（各种缩放、y 翻转、夹边）、窗口快照（Z 序、坐标翻转、过滤）、
 // 手柄调整与平移、上次区域落到哪块屏、放大镜取色（sRGB、y 方向）、快速保存不覆盖，以及 Vision 识别多语种
 // （锁住 §11 #21：写死一组语言、或给语言提示时，混排图里日文假名、韩文、俄文会丢）；
-// 钉住剪贴板里的图（第二轮体检 F1）：从剪贴板取图、解码、钉在哪（用临时的具名剪贴板，不碰系统剪贴板）。
+// 钉住剪贴板里的图（第二轮体检 F1）：从剪贴板取图、解码、钉在哪（用临时的具名剪贴板，不碰系统剪贴板）；
+// 截图拷贝为 PNG 文件（2026-11-06）：偏好、那份文件放哪叫什么、换日删哪些。
 
 import AppKit
 import CoreImage.CIFilterBuiltins
@@ -279,6 +280,49 @@ struct ScreenshotTests {
     #expect(
       ScreenshotOutput.availableURL(in: directory, date: date, prefix: "录屏", ext: "mp4")
         .lastPathComponent == "录屏 2026-09-04 08.05.03 2.mp4")
+  }
+
+  // 截图拷贝为 PNG 文件（2026-11-06 拍板）：默认图像，没存过、认不出来都按图像；拷成文件的那份放在拖出目录的新子文件夹里，
+  // 名字照快速保存或用给的；换日时只删一天以前的（钟往回调过、时间比现在还晚的不删）
+  @Test func copyAsFile() async throws {
+    #expect(Prefs.defaults[Prefs.screenshotCopyAs] as? String == "image")
+    let suite = "kitty-test-copy-as-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    #expect(!Prefs.copiesShotAsFile(defaults))
+    defaults.set("file", forKey: Prefs.screenshotCopyAs)
+    #expect(Prefs.copiesShotAsFile(defaults))
+    defaults.set("什么", forKey: Prefs.screenshotCopyAs)
+    #expect(!Prefs.copiesShotAsFile(defaults))
+
+    let png = Data([0x89, 0x50, 0x4E, 0x47])
+    let named = try #require(
+      await ScreenshotOutput.copyFile(png, name: "截图 2026-11-06 14.03.22.png"))
+    let fresh = try #require(await ScreenshotOutput.copyFile(png, name: nil))
+    defer {
+      for url in [named, fresh] {
+        try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
+      }
+    }
+    #expect(named.lastPathComponent == "截图 2026-11-06 14.03.22.png")
+    #expect(fresh.lastPathComponent.hasPrefix("截图 ") && fresh.pathExtension == "png")
+    #expect(try Data(contentsOf: named) == png)
+    // 每次一个新子文件夹，在拖出目录里（拖进废纸篓许可那一条认得它）
+    #expect(named.deletingLastPathComponent() != fresh.deletingLastPathComponent())
+    #expect(ShotHistory.isDisposable(named) && ShotHistory.isDisposable(fresh))
+    #expect(ScreenshotOutput.Copied.file(named).detail == "截图 2026-11-06 14.03.22.png")
+    #expect(ScreenshotOutput.Copied.image.detail == nil)
+
+    let now = Date(timeIntervalSinceReferenceDate: 800_000_000)
+    let old = URL(filePath: "/tmp/old")
+    let recent = URL(filePath: "/tmp/recent")
+    let future = URL(filePath: "/tmp/future")
+    let stale = ShotShelf.stale(
+      [
+        (old, now.addingTimeInterval(-25 * 3600)), (recent, now.addingTimeInterval(-23 * 3600)),
+        (future, now.addingTimeInterval(3600)),
+      ], now: now)
+    #expect(stale == [old])
   }
 
   @Test func annotationHitTesting() {

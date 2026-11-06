@@ -1,6 +1,7 @@
 // 设置 › 截图：⌘S 快速保存的位置（文件夹图标 + 访达里的名字，选过的能恢复默认，体检 A28；录屏、录音也存这里，
-// 「录制」页的「保存到」是同一行 SaveDirectoryRow）、快门声（可试听）、截图后留不留常驻缩略图（体检 D18）、
-// 识字是否把同一段里的换行接起来（开关旁边实时对照效果，体检 A32）。截图历史改短保留期 / 改小占用会删掉东西时先问
+// 「录制」页的「保存到」是同一行 SaveDirectoryRow）、截图拷贝为图像还是 PNG 文件（2026-11-06）、快门声（可试听）、
+// 截图后留不留常驻缩略图（体检 D18）、识字是否把同一段里的换行接起来（开关旁边实时对照效果，体检 A32）。
+// 截图历史改短保留期 / 改小占用会删掉东西时先问
 // （第四轮体检 E24，同剪贴板 E4），改了当场清一次。录屏、录音的设置在「录制」页（RecordTab，2026-10-03 拆出去）。
 // 框选、标注、长截图、录屏的按键不写进页里（N11）：一句话 +「查看全部快捷键…」打开速查表；全局快捷键在「快捷键」页。
 
@@ -16,6 +17,7 @@ struct ScreenshotTab: View {
   @AppStorage(Prefs.screenshotShutterSound) private var shutterSound = true
   @AppStorage(Prefs.screenshotPlacement) private var placement = Prefs.ShotPlacement.corner
     .rawValue
+  @AppStorage(Prefs.screenshotCopyAs) private var copyAs = "image"
   @AppStorage(Prefs.shotHistory) private var keepsHistory = true
   @AppStorage(Prefs.shotHistoryDays) private var historyDays = 30
   @AppStorage(Prefs.shotHistoryMegabytes) private var historyMegabytes = 2 * 1024
@@ -37,6 +39,16 @@ struct ScreenshotTab: View {
         )
       }
       Group {
+        Section {
+          Picker(selection: $copyAs) {
+            Text("图像").tag("image")
+            Text("PNG 文件").tag("file")
+          } label: {
+            Text("截图拷贝为")
+            Text("选 PNG 文件时，剪贴板里是一个图片文件，和拷贝一个文件一样：能粘进聊天窗口和文件夹，只认文件的跨电脑剪贴板工具也传得过去；只收图像的程序粘不进去")
+          }
+          .pickerStyle(.segmented)
+        }
         Section {
           Toggle(isOn: $shutterSound) {
             HStack(spacing: 6) {
