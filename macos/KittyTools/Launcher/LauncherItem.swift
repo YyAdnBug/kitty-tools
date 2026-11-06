@@ -61,6 +61,9 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
   /// 状态屏列表里排在最前面的那个状态，而且设置里打开了「按快捷键直接进入排在最前面的状态」：全局快捷键进的就是它，
   /// 选中时右侧显示键帽（同别的带全局快捷键的内置动作）。开关关着时（默认）快捷键是先出选状态的面板，哪一行都不带键帽
   var isFirstStatusPreset = false
+  /// 来自每次搜索都从源头重新列出来的列表（浏览器书签、快捷链接）：使用记录不靠自己把它找回来，源头删了就不再出现
+  /// （issue #10：以前打开过的书签在浏览器里删了，还以「用过的网址」搜得到）
+  var listed = false
 
   var id: String { kind.rawValue + "\n" + target }
 

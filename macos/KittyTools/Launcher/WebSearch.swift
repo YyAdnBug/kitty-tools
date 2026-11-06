@@ -107,7 +107,8 @@ enum WebSearch {
         subtitle: engine.keyword.isEmpty ? target : "\(engine.keyword) · \(target)",
         names: [engine.name, engine.keyword, pinyin?.full].compactMap { $0 }.filter { !$0.isEmpty }
           .map(LauncherMatch.fold),
-        initials: [LauncherMatch.initials(engine.name), pinyin?.initials].compactMap { $0 })
+        initials: [LauncherMatch.initials(engine.name), pinyin?.initials].compactMap { $0 },
+        listed: true)
     }
   }
 

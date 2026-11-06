@@ -17,6 +17,9 @@ final class LauncherUsage {
     var title: String
     var score: Double
     var usedAt: Date
+    /// 最后一次是从书签 / 快捷链接打开的（LauncherItem.listed）：启动器只在它还在那份列表里时列出来，
+    /// 不当「用过的网址」自己找回来（issue #10）
+    var listed = false
   }
 
   static let globalTimeConstant: TimeInterval = 14 * 86_400
@@ -49,15 +52,22 @@ final class LauncherUsage {
         query TEXT NOT NULL, kind TEXT NOT NULL, target TEXT NOT NULL, title TEXT NOT NULL DEFAULT '',
         score REAL NOT NULL, used_at REAL NOT NULL, PRIMARY KEY(query, kind, target))
       """)
-    let rows = try db.query("SELECT query, kind, target, title, score, used_at FROM launcher_usage")
-    {
+    // listed（issue #10，0.7.3）：带默认值的一列。旧版本的读写都写明列名、碰不到它（旧版本再记一次会写回默认的 0，
+    // 只是又能当「用过的网址」搜到），所以不用别的迁移
+    let columns = try db.query("PRAGMA table_info(launcher_usage)") { $0.text(1) }
+    if !columns.contains("listed") {
+      try db.execute("ALTER TABLE launcher_usage ADD COLUMN listed INTEGER NOT NULL DEFAULT 0")
+    }
+    let rows = try db.query(
+      "SELECT query, kind, target, title, score, used_at, listed FROM launcher_usage"
+    ) {
       row -> Entry? in
       guard let query = row.text(0), let kind = row.text(1).flatMap(LauncherItem.Kind.init),
         let target = row.text(2), let score = row.double(4), let usedAt = row.double(5)
       else { return nil }
       return Entry(
         query: query, kind: kind, target: target, title: row.text(3) ?? "", score: score,
-        usedAt: Date(timeIntervalSinceReferenceDate: usedAt))
+        usedAt: Date(timeIntervalSinceReferenceDate: usedAt), listed: row.int(6) == 1)
     }
     for entry in rows.compactMap({ $0 }) { entries[Self.key(entry)] = entry }
     try db.execute(
@@ -98,7 +108,7 @@ final class LauncherUsage {
       }
       let entry = Entry(
         query: query, kind: item.kind, target: item.target, title: item.title,
-        score: (previous ?? 0) + 1, usedAt: now)
+        score: (previous ?? 0) + 1, usedAt: now, listed: item.listed)
       entries[key] = entry
       write(entry)
     }
@@ -232,12 +242,12 @@ final class LauncherUsage {
     catchingErrors {
       try db.execute(
         """
-        INSERT OR REPLACE INTO launcher_usage(query, kind, target, title, score, used_at)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT OR REPLACE INTO launcher_usage(query, kind, target, title, score, used_at, listed)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
         [
           entry.query, entry.kind.rawValue, entry.target, entry.title, entry.score,
-          entry.usedAt.timeIntervalSinceReferenceDate,
+          entry.usedAt.timeIntervalSinceReferenceDate, entry.listed,
         ])
     }
   }

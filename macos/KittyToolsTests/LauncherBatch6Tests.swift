@@ -620,4 +620,63 @@ struct LauncherBatch6Tests {
     #expect(model.results.first?.subtitle.hasPrefix("历史") == true)
     #expect(model.results.last?.kind == .search)
   }
+
+  // MARK: issue #10 浏览器里删了的书签
+
+  /// 打开过的书签记进使用记录；浏览器里删掉之后，搜索和空搜索框的「常用」里都不再出现（记录留着，加回来照旧），
+  /// 手输打开的网址照旧靠使用记录搜得到
+  @Test func deletedBookmarkStaysGone() throws {
+    let (model, usage) = try model()
+    let url = "https://example.com/kitty-docs"
+    var bookmarks = [Bookmarks.item(("Kitty Docs", url), browser: "Chrome")]
+    model.bookmarkItems = { bookmarks }
+    model.query = "kitty docs"
+    let bookmark = try #require(model.results.first { $0.target == url })
+    #expect(bookmark.listed)
+    usage.record(bookmark, query: "kitty docs")
+    let typed = try #require(DirectItems.items(for: "typedsite.org").first)
+    usage.record(typed, query: "typedsite.org")
+    model.query = ""
+    #expect(Set(model.results.map(\.target)) == [url, typed.target])
+    // 浏览器里删掉：搜不到、常用里也没有
+    bookmarks = []
+    model.query = "kitty docs"
+    #expect(!model.results.contains { $0.target == url })
+    model.query = ""
+    #expect(model.results.map(\.target) == [typed.target])
+    // 手输打开的照旧搜得到
+    model.query = "typedsite"
+    #expect(model.results.contains { $0.target == typed.target })
+    // 加回来：常用里回来，是书签那一行
+    bookmarks = [bookmark]
+    model.query = ""
+    #expect(model.results.first { $0.target == url }?.subtitle.hasPrefix("书签 · Chrome") == true)
+  }
+
+  /// 0.7.2 及以前的库没有 listed 这一列：照样打开，旧记录当手输的（照旧能当用过的网址搜到），新记的存得下
+  @Test func usageWithoutListedColumnStillOpens() throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let path = directory.appending(path: "kitty.sqlite3").path
+    do {
+      let db = try Database(path: path)
+      try db.execute(
+        """
+        CREATE TABLE launcher_usage(
+          query TEXT NOT NULL, kind TEXT NOT NULL, target TEXT NOT NULL,
+          title TEXT NOT NULL DEFAULT '', score REAL NOT NULL, used_at REAL NOT NULL,
+          PRIMARY KEY(query, kind, target))
+        """)
+      try db.execute(
+        "INSERT INTO launcher_usage VALUES ('', 'url', 'https://example.com/old', 'Old', 1, 0)")
+    }
+    let usage = try LauncherUsage(db: Database(path: path))
+    #expect(usage.entries.values.map(\.listed) == [false])
+    usage.record(Bookmarks.item(("New", "https://example.com/new"), browser: "Chrome"), query: "")
+    let reopened = try LauncherUsage(db: Database(path: path))
+    #expect(
+      reopened.entries.values.first { $0.target == "https://example.com/new" }?.listed == true)
+    #expect(
+      reopened.entries.values.first { $0.target == "https://example.com/old" }?.listed == false)
+  }
 }

@@ -141,7 +141,7 @@ enum Bookmarks {
     return result
   }
 
-  private static func item(_ bookmark: Bookmark, browser: String) -> LauncherItem {
+  static func item(_ bookmark: Bookmark, browser: String) -> LauncherItem {
     let host = URL(string: bookmark.url)?.host() ?? bookmark.url
     let pinyin = AppCatalog.pinyin(bookmark.title)
     // 网址只拿去掉协议和参数的部分参与匹配
@@ -150,6 +150,6 @@ enum Bookmarks {
       kind: .url, target: bookmark.url, title: bookmark.title.isEmpty ? host : bookmark.title,
       subtitle: "书签 · \(browser) · \(host)",
       names: [bookmark.title, bare, pinyin?.full].compactMap { $0.map(LauncherMatch.fold) },
-      initials: [pinyin?.initials].compactMap { $0 })
+      initials: [pinyin?.initials].compactMap { $0 }, listed: true)
   }
 }
