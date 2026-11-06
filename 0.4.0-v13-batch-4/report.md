@@ -1,0 +1,26 @@
+# 便签编辑器自检（PLAN-v13 第 4 批的 7 条）
+
+- 0 空文档 GetText：[000D]
+- 0 SetText(a)：[0061 000D]
+- 0 SetText(a\r)：[0061 000D 000D]
+- 0 SetText(a FFFC b)：[0061 0020 0062 000D]
+- 0 在 1..2 InsertImage(1×1)：[0061 FFFC 0062 000D]
+- 0 再在 1..2 InsertImage(40×20)（换掉对象）：[0061 FFFC 0062 000D]
+- 0 在空范围 0..0 InsertImage：[FFFC 0061 FFFC 0062 000D]
+- 0 GetRange(0,4).GetText：[FFFC 0061 FFFC 0062]；Selection 现在 0
+- 1 GetText(None) 带着藏着的字（去掉末尾段落符、\r 换回 \n 后和存的一样）：True；末尾带段落符：True；NoteEditor.Body 和存的一样：True
+- 1 没焦点时「# 」Hidden=On、「**」Hidden=On
+- 1 SetRange(6) 落在藏着的「**」中间 → 读回 7
+- 1 从行尾 4 往右挪一个字 → 5（5 = 停在藏着的字前面，7 = 跳过了）
+- 1 拿着焦点、光标在第二行：「**」Hidden=Off（该 Off）、第一行「# 」Hidden=On（该 On）
+- 2 正文 15 DIP：Size=11.25 磅（该 11.25）；屏上「普」宽 15、高 22；同字号 TextBlock 宽 15、高 20
+- 3 只改格式：TC-（不该有 TC+）
+- 5 TypeText 的事件顺序：TC+ TC- TC- TC- TC- TC- TC- TC- TC- TC- TC- TC- TC- TC- TC- TC- TC- TC- TC- TC- TC- TC- TC- TC- TC- TC- TC- TC- TC- TC- TC- TC- TC- SC（TC+ 要在 SC 前）；交出去的正文末尾是 x：True（末尾 [4E00 884C 0078]）
+- 4 刚放字：U+FFFC 有 1 个（该 1，被洗成空格就是 0），长度 9（该 9）
+- 4 换成图之后：U+FFFC 1 个、长度 9（替换 = 9，插在前面 = 10）；选区 2（该 2）；存的正文和原来一样：True
+- 6 DisabledFormattingAccelerators=All；Ctrl+B / I / U 能不能到 PreviewKeyDown 要真按键，留给手测
+- 7 第一个字的框 (0, 0) 15×22（内边距 16, 8：≈(16, 8) = 相对 RichEditBox，≈(0, 0) = 相对里面的 ScrollViewer）；点它的中心 → 0（该 0）；按相对 RichEditBox 点第二行开头 → 6（该 5）
+- 7 滚到底之后最后一行「第」的框 (0, 1738)（在框里 = 相对看得见的那块），点回去 → 544（该 544）
+- 7 换算后（TextPoint）：没滚点第一行开头 → 0（该 0）、第二行开头 → 6（该 6）；滚 500 后点看得见的第一行 → 第 24 行（该 ≈ 23）
+- 7 里面的 ScrollViewer：在 RichEditBox 的 (0, 0)、Padding 16,8,16,16、滚了 0；第一个字的 y：没滚 0、滚 500 后 0（−500 = 相对看得见的那块）；滚着时点 (2, 11) → 0
+- 日志里的 notes.editor-images-misaligned：去看 Log（自检本身没法读）
