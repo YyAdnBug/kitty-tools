@@ -37,6 +37,27 @@
    提醒边框挂着时 30 Hz、收起后回到 0；新日志里没有剪贴板内容、原文、译文、URL、提醒和状态的标题、**便签的标题 / 正文 / 文件路径**。
 9. **版本**：PLAN-v12 第 1–2 批是 0.2.0、第 3–7 批是 0.3.0，PLAN-v13 是 0.4.0；版本号、更新日志、`build-release.ps1` 等核验完再一起定，**不发布、不打 tag**。
 
+
+### Windows 核验结果（2026-11-06，Claude 在 Windows 上，worktree 基于 origin/windows `7d226f9`）
+
+一次性核验 PLAN-v12 第 1–7 批 + 复查、PLAN-v13 第 1–8 批 + 复查（git log 里没有 PLAN-v15，第 8 条不适用）。改了什么记在各批下面，提交：
+`a2d4885`（编译错、两条测试的期望值）、`4be88e7`（便签编辑器）、`8cfa2f1`（状态屏底板白边）、`2bc9e3a`（标题框多一个 ×、便签截图自检）、`6710a33`（深色下快速记一条 / 那叠是浅色亚克力）。
+
+1. **编译**：从 `7d226f9` 起编，Debug 有 6 处编译错（都在 PLAN-v13：`Path` 撞名、少 `using KittyTools.Ui`、两处 `OriginalSource ==` 引用比较 CS0252、`Span` 跨 `await` CS4007、
+   测试里三处可空警告和 `Note` 方法 / 类型同名），改完 Debug x64、Release AOT x64 / ARM64 **零警告**。发布目录里有 `KittyTools.pri`、`Microsoft.UI.Xaml.Controls.pri`、
+   `Resources\StatusEmoji\`（34 张 PNG + `manifest.txt` + `LICENSE.txt`）。Release AOT 的 exe 跑过内存探针（能起、能走完）。
+2. **单测**：788 个全过。三处 golden（`NoteSyncTests` 1830 个样本、`ReminderTests.Canonical_MatchesMacByteForByte`、`StatusScreenTests.Sync_MatchesMacAndPlans`）**没动、一次就过**。
+   `KITTY_NOTES_SYNC_FUZZ=2000`：两个随机测试共约 0.26 s。**改了两条审查方新写的断言**（不是 golden，期望值本身错了，理由在 PLAN-v13 第 1、3 批下面），请审查方看一眼。
+3. **便签编辑器**：新加 `--note-editor-probe=<目录>`（测试档，`App/NoteEditorProbe.cs`）用 TOM 走那 7 条，结果见第 4 批下面。**有三处真不对、已修**：占位的 U+FFFC 被 RichEdit 洗成空格
+   （图放不上、交出去的正文丢令牌——复查 VERIFY 1 的退路：1×1 占位图）、`GetText` 带末尾段落符（正文每读一次多一个换行）、点方框的坐标原点不对。
+4. **状态屏**：只跑了 `--status-screen-probe`，三种样式都 swallowed=2、touches=1、active-after-hold=False；透出样式底板右边一条白边修了。没真的进入过。
+5. **手测**：HANDTEST 906–1147 里验过的 34 条写了「Windows 11-06」，其余要真按键 / 真拖 / 等到点 / 第二块屏 / Mac 的都没测（每节开头写了）。
+   同步只用临时文件夹 + 两份 `.Dev` 数据（1055、1056 过），没碰真实的同步文件夹和便签。
+6. **截图**：windows-shots `0.2.0-v12-batch-1/` `0.2.0-v12-batch-2/` `0.3.0-v12-batch-3/` … `0.3.0-v12-batch-6/`、`0.4.0-v13-batch-4/` … `0.4.0-v13-batch-7/`，浅 / 深各一张；高对比度没截（要改系统主题，我们不动系统设置；编辑器那张用的是便签自己的「增强对比度」）。`0.2.0-feedback-1104/`、`0.3.0-v12-batch-7/` 没有新图（要真的长截图、等到点的边框）（目录和缺的见各批）。
+7. **自查**：内存（Release AOT、专用工作集、`KITTY_MEMORY_PROBE=1`，和 `1986a4b5` 同一台机器先后跑）：只有托盘 54.3 / 67.6 MB、5000 条剪贴板 58.8 / 71.8、剪贴板面板 59.6 / 71.6、启动器 64.0 / 73.0、翻译窗 65.1 / 76.2、截图 78.0 / 92.2、截图五次 85.4 / 93.9、设置窗开过 98.1 / 93.9（**+4.2 MB**：多了状态屏 / 提醒 / 便签三页）、静置 99.0 / 94.6（+4.4）。前面几步现在反而低 9–13 MB，原因没查（两边都是新的探针档、第一次启动）；没有一项涨超过 5 MB。只有托盘那一步里便签的药丸已经建着（示例便签），便签的其他窗口都关着。探针最后「录屏之后两分钟」那一步被我的 15 分钟超时截掉了，没读到。 空闲 CPU（Release、只有托盘 + 药丸，静置 30 s 后量 120 s）：46.9 ms / 120 s（0.039 % 单核），`1986a4b5` 同样量 15.6 ms（0.013 %）；`1986a4b5` 第一次启动那回也有 46.9 ms / 60 s，差在一两次唤醒、在测量粒度（15.6 ms）上，没找到新的周期计时器（提醒没开的时候不排计时器，那叠静置时 Watch 不跑）。 日志：全部测试档的日志里搜不到示例便签的标题 / 正文 / 图片路径、启动器的查询、汇率、网址（HANDTEST 1139、929）。
+8. **安装包**：`build-release.ps1`（版本号没改，产物名还是 0.1.2，只用来比大小，没发布）和 GitHub 上 windows-v0.1.2 的附件比：x64 安装包 23.67 → 34.72 MB（**+11.05 MB，+47 %**）、x64 zip 32.28 → 43.92 MB（+11.64 MB）；ARM64 安装包 23.35 → 34.39 MB（+11.04 MB）、zip 31.36 → 42.92 MB（+11.56 MB）。发布目录 82 → 96 MB（x64），差不多全是状态屏的动画表情 `Resources\StatusEmoji\`（10 MB 的 PNG，本来就压过，打包几乎不再变小）；exe 29.9 MB。要压就减帧（24 → 12 fps 已经减过）或者换成 WebP / 首次用时再下载。
+9. 版本号、更新日志、`build-release.ps1` 没动，没发布、没打 tag。
+
 ### 第 1 批：核心模型（Core）→ 已写（审查方，`git log --grep "PLAN-v13 第 1 批"`，没编译）
 
 照 mac `Notes/Note.swift`、`NoteTasks.swift`、`NoteImages.swift`、`NotePaper.swift`、`NoteMarkdown.swift`、`NoteStyles.swift`（纯函数那一半）：
@@ -55,6 +76,11 @@
 `NoteMarkdown.Url` 用 `Uri.TryCreate`（Windows 上 `/usr/bin` 这种会被当成文件路径，测试里有这一条，过不了先看实际返回）；`NoteMarkdownTests` 有三条 0.5 秒的计时断言（Debug，线性的活，慢机器上可能紧）。
 
 **替用户定的**：`NoteMarkdown.Url` 比 .NET 的 `Uri` 严（开头空白不认、http / https 后面必须是 `//`），对齐 mac `URL` 的结果。
+
+
+**Windows 核验（2026-11-06）**：编译过；源码里没有原样的 U+2028 / U+2029。`NoteMarkdownTests.PlainAndStrippingRemoveColorMarkers` 最后那条（注明 mac 没有、移植时补的）
+期望 `R(15, 1), R(17, 6)`，实际 `R(14, 1), R(16, 6)`：`"前\n `[字]{red}`\n[字]{red}"` 第三行行首是 14，「[」在 14、「]{red}」在 16，代码对、期望数错一位——**改了期望值**（`a2d4885`）。
+`NoteMarkdown.Url` 那几条、三条 0.5 s 计时都过。
 
 ### 第 2 批：仓库、图片目录、备份、导出导入第七类 → 已写（审查方，`git log --grep "PLAN-v13 第 2 批"`，没编译）
 
@@ -80,6 +106,10 @@ WIC 的 `BitmapDecoder.HeifDecoderId`、`DecoderInformation.CodecId`；`NoteStor
 **替用户定的**：电脑编号用同步那一个（`SyncDevice`，kitty.sqlite3），剪贴板的库打不开时用便签库 note_meta 里自己记的；图片孤儿的账写 `.orphans.json`（mac `.orphans.plist`，两边不互读）；
 图片的显示尺寸按 96 DPI = 1:1 算（mac 72 DPI）；`NoteStore` 不做 mac「正文超 64 KB 时字数和进度停手再算」（ponytail，写在 `NoteBook` 文件头）；
 打不开时的对话框问完不用重启（便签的库是单独的，开好就接着起便签那几样）。
+
+
+**Windows 核验（2026-11-06）**：编译过、没改。新的 `.Dev` 数据第一次启动有 `notes.sqlite3`、示例便签、`notes-backups\notes-<今天>\`（库 + images\）。
+打不开时的三选一、导出导入的便签一类、退出时落不下去的对话框没测（要真点）。
 
 ### 第 3 批：同步（和 mac 同一个文件夹）→ 已写（审查方，`git log --grep "PLAN-v13 第 3 批"`，没编译）
 
@@ -110,6 +140,13 @@ WIC 的 `BitmapDecoder.HeifDecoderId`、`DecoderInformation.CodecId`；`NoteStor
 - `SyncFolderRules.ParseDevice` 比 mac 严（epoch 必须有、format 必须是 1）：更新版本写的 device.json 在 Windows 上算读不出来，便签这部分会停在「还没下载完」。留给 mac 真改了格式再说。
 - `NoteImageRules.Identifier`（本机图片目录）用 `Guid.TryParseExact("D")`，比 mac 的 UUID 解析宽一点点（.NET 认每段前的 `+`）；同步文件夹里的图片名用 `NoteSyncFolder.ImageId`（严格）。
 
+
+**Windows 核验（2026-11-06）**：golden 1830 个样本一次对上。`NoteSyncRunnerTests.RollbackSeenWithoutNotesIsCaughtUpLater` 最后一条断言「合完之后钟里没有 WIN-A」必然不成立：
+补认（`~notes-switch-from`）那一下确实把那条从 WIN-A 换到了新编号，但同一轮接着合并时，文件夹里 WIN-A 那份（「第二版」）和它是并发的两版，冲突另存一条、钟并起来，
+WIN-A=2 是从文件夹那份并进来的（实际：`{新编号=2, WIN-A=2}`，另存的「第二版」一条）。**改成查补认那一下**：节点记下 `SwitchDevice` 的调用，断言最后一次是
+（含这条, "WIN-A", 新编号）（`a2d4885`）。另外这条用例分辨不出「有没有补认」：书的编号是 `() => Device.Id`，恢复后打的字本来就记在新编号名下，不补认合出来也一样——要测补认得另设场景，留给审查方。
+真跑：两份 `.Dev` 数据 + 临时文件夹，A 上 8 条示例便签一两轮后 B 上都有（标题、纸色、固定一样），文件夹里是 `devices\<编号>\notes\<便签编号>.md`。
+
 ### 第 4 批：正文编辑器（RichEditBox）→ 已写（审查方，`git log --grep "PLAN-v13 第 4 批"`，没编译）
 
 照 mac `NoteTextView.swift`（+Images）的行为，做法是 PLAN-v13 §3.1：
@@ -134,6 +171,21 @@ WIC 的 `BitmapDecoder.HeifDecoderId`、`DecoderInformation.CodecId`；`NoteStor
 
 **替用户定的**（MAC-DIFF 第 8 批一起记）：任务方框是存着的那个字本身（Segoe UI Symbol），不是 mac 自己画的圆角方框；引用块没有左边的竖线（只缩进 + 色条色的字）；
 代码块的底是一行行的字底色，不是整块圆角矩形；查找条是自己的一个输入框（Enter 下一个、Shift+Enter 上一个），不是系统的；撤销按 1 秒分组（mac 是系统默认）。
+
+
+**Windows 核验（2026-11-06，`--note-editor-probe`，`4be88e7`）**：
+1. `Hidden` **真藏**：没焦点时「# 」「**」Hidden=On，光标在那一行时露出、别的行照藏；`GetText(None)` 带着藏着的字。`SetRange` 落在藏着的字中间会被挪到后面（6 → 7），往右挪一格停在藏着的字前面（不进去）。
+   **但 `GetText(None)` 带着 RichEdit 末尾那个段落符**（空文档读出来是 `\r`、`SetText("a\r")` 读出来是 `a\r\r`），原来的 `ReadText` 以为不带：正文每读一次末尾多一个换行、交出去就存下了。修：去掉末尾那一个。
+2. 字号：正文 15 DIP 时 `Size` 是 11.25 磅，屏上一个汉字宽 15、和同字号的 TextBlock 一样——**0.75 对**。
+3. 只改格式时 `TextChanging` 来，`IsContentChanging=false`：对。
+4. **`SetText` 把普通的 U+FFFC 洗成空格**（`a FFFC b` → `0061 0020 0062`）：图片表 1 张、字里 0 个：图放不上，`Body` 里没有令牌（修前自检读到的 `Body` 和原来不一样），`Aligned()` 拦着一直不交出去。
+   照复查 VERIFY 1 的退路改成放 1×1 的透明占位图：`InsertImage` 对一个字的范围**是替换**（长度不变、读出来是 U+FFFC），再换真图也是替换；选区不乱跳。改了 `Replace`、`ApplyChange`、`InsertImages` 三处（`PlainForm` + `PlacePlaceholders`）。修后：载入带图的正文 → 一个 U+FFFC、真图换上、`Body` 和原来一字不差。
+5. 顺序：`TypeText` 时先 `TextChanging`（IsContentChanging=true）、再一串我们自己排版的 TextChanging（false）、最后 `SelectionChanged`：对。
+6. `DisabledFormattingAccelerators=All` 设上了；Ctrl+B / I / U 能不能到 `PreviewKeyDown` 要真按键，**没测**。
+7. **`GetRangeFromPoint(ClientCoordinates)` 的原点是正文第一个字**（内边距里面，第一个字的框是 (0, 0)），而且是**整篇的坐标**（滚了 500 之后第一个字的 y 还是 0）：按相对 RichEditBox 的点去取，横竖都差一个内边距、滚动后差得更多。
+   修：`TextPoint` 按 RichEditBox 里那个 ScrollViewer 的内容取点；自检里没滚 / 滚了都点中了。
+另外：紧急的方框用了 `TaskUrgentMark`（mac 红底上感叹号的颜色，白 / 黑），Windows 的方框就是那个字本身，深色纸上几乎看不见——改成红色。
+截图（`0.4.0-v13-batch-4/`）：标题、粗斜体、划线、行内代码、红 / 蓝字、五种任务、引用、代码块、图片，浅色 / 深色 / 增强对比度（`Configure` 的 contrast，不是系统高对比度主题：系统主题我们不改）。
 
 ### 第 5 批：窗口和入口 → 已写（审查方，`git log --grep "PLAN-v13 第 5 批"`，没编译）
 
@@ -164,6 +216,13 @@ WIC 的 `BitmapDecoder.HeifDecoderId`、`DecoderInformation.CodecId`；`NoteStor
 **替用户定的**：便签墙不能拖动排序、卡片一次全画（mac 能拖、分批建；几百条以内够用，文件头 ponytail）；托盘「便签」一节不画节标题（Windows 托盘菜单都不画）；
 全部便签窗口 Ctrl+Z 放回刚删的只认这次打开以来删的（mac 同）；速查表里 mac 有、Windows 还没有的键（便签墙上方向键挑卡片、Enter / 空格放大）没写，记在 MAC-DIFF（第 8 批）。
 
+
+**Windows 核验（2026-11-06）**：编译错（`a2d4885`）：`NoteCaptureWindow` 的 `Path` 和 `Shapes.Path` 撞名、`NoteSheetView` 少 `using KittyTools.Ui`（`SearchLine`）、`NoteSheetView` / `NotesWindow` 的
+`e.OriginalSource == header` 是 CS0252（换 `ReferenceEquals`）。屏幕上：便签的标题框拿到焦点时 TextBox 自带的清除钮（×）挨着关闭钮，两个 × ——`SearchLine.HideClearButton` 压掉（`2bc9e3a`，打开的便签、浮动便签、快速记一条三处）。**深色下快速记一条是浅色亚克力、白字看不清**：`NoteCaptureWindow` 在设 `Content` 之前就设了 `AcrylicBackdrop`，它连上时没有内容、按浅色定死、也挂不上主题变化；挪到 `Content` 之后（`6710a33`，第 6 批的药丸、标签列同样）。
+新加 `--notes-ui-probe=<目录>`（测试档，`App/NotesUiProbe.cs`）放示例便签、依次打开各扇窗、只抓自己的窗口；截图 `0.4.0-v13-batch-5/`：快速记一条、便签墙、编辑卡、列表、设置 › 便签（浅 / 深）。
+看到的（没改）：便签墙卡片上标题行的「# 」「## 」留着（加粗、列表的标记去掉了）——和 mac `plain` 一样（mac 也不去标题），mac 的卡片是带样式画的，要不要对齐留给审查方；编辑器里「- 」列表就是原样的「- 」，没有换成圆点。
+要真按键 / 真拖的（互斥、Esc、拖动排序、Ctrl+K、取色浮层）都没测。
+
 ### 第 6 批：屏幕边缘那叠和浮动便签 → 已写（审查方，`git log --grep "PLAN-v13 第 6 批"`，没编译）
 
 - `Notes/NoteDeck.cs`：`NoteDeck`（几块屏：什么时候有、放哪、只展开一块、叫停、新建 / 打开、按住 Alt 拖药丸、全屏时收起）+ `NoteDeckBay`（一块屏：状态机 `Core NoteDeckState`
@@ -187,6 +246,12 @@ WIC 的 `BitmapDecoder.HeifDecoderId`、`DecoderInformation.CodecId`；`NoteStor
 「不显示药丸」= 只留亚克力的一条；扇出、打开、收回没有动画；全屏判定是「前台窗口盖满那块屏」（不是桌面、不是我们自己的窗口）；标签的倾斜（mac 微微斜着）没做；
 打开的便签旁边没有 mac 那张跟着它的标签（标签列里那张描粗边表示打开着）。
 
+
+**Windows 核验（2026-11-06）**：编译过。自检加了几个测试用的口子（`NoteDeck.ProbeBay`、`NoteDeckBay.ProbeHold` / `ProbeWindows`、`NoteFloats.ProbeWindows`）：
+扇着时每 150 ms 看鼠标，真的鼠标不在那叠上会立刻收回，`ProbeHold` 挡住这一下。`PillEntered` → 标签列、`Hover` → 预览卡、`TapTab` → 打开的便签、`NoteFloats.Float` → 浮动便签都出得来，
+深色下药丸、标签列也是浅色亚克力（同第 5 批，`6710a33` 修了）。截图 `0.4.0-v13-batch-6/`（浅 / 深）。药丸那扇窗是带系统细边框的白底小卡（约 122×127 px），里面一列色块，比 mac 的药丸宽得多（「感应范围 = 药丸那扇窗的宽」）。
+`SetWinEventHook` 的全屏判定、不抢焦点、Esc 还键盘、拖出浮动便签、竖排字以外的真鼠标操作都没测。
+
 ### 第 7 批：Markdown 导出导入、图片的宽度和裁切 → 已写（审查方，`git log --grep "PLAN-v13 第 7 批"`，没编译）
 
 - `Core/Notes/NoteMarkdownFiles.cs`（agent 照 mac `NoteMarkdownFiles.swift` 的纯函数移植、我对过 API）：文件名（清理、截断、重名加号；另外替换 Windows 不许的字符、给 CON / NUL 这类设备名加 `_`）、
@@ -205,6 +270,10 @@ WIC 的 `BitmapDecoder.HeifDecoderId`、`DecoderInformation.CodecId`；`NoteStor
 **替用户定的**：「导入…」是两项的小菜单（Windows 的选择框不能同时选文件和文件夹）；裁切只有自由比例、用对话框（mac 原地一层、7 种比例）；没有拖右下角改宽的把手；
 文件名额外替换 Windows 不许的字符、设备名前加 `_`；导入时文件名排序用当前区域的不区分大小写比较（mac 是自然顺序）。
 
+
+**Windows 核验（2026-11-06）**：编译错 1 处（`NotesTransfer.StoreAsync` 里 `AsSpan().SequenceEqual(await …)` 跨 await，CS4007；拆成 `SameBytes`，`a2d4885`）。
+裁切对话框截图（`0.4.0-v13-batch-7/`，挂在全部便签窗口上）。图片宽度菜单是 `MenuFlyout`，弹在窗口外面的单独弹出窗里，WindowShot 抓不到，没截；导出 / 导入要选文件夹，没测。
+
 ### 第 8 批：和剪贴板、启动器、翻译打通，收尾 → 已写（审查方，`git log --grep "PLAN-v13 第 8 批"`，没编译）
 
 - 从剪贴板面板 / 启动器粘进便签：`OverlayWindow.ShowOverlay` 记粘贴目标时，前台是自己的窗口但便签正文拿着焦点（`NoteEditing.Focused()`）也认它；粘的时候照常还前台 + Ctrl+V，
@@ -217,6 +286,9 @@ WIC 的 `BitmapDecoder.HeifDecoderId`、`DecoderInformation.CodecId`；`NoteStor
 1. 剪贴板面板从便签里呼出再粘：Ctrl+V 进的是 RichEditBox 自己的粘贴（`NoteEditor.PasteAsync`，纯文本），不是 RichEdit 默认的带格式粘贴。
 2. 那叠里打开的便签：呼出剪贴板面板时它不收；面板关了之后焦点回到便签（`Foreground.Restore` 到便签那扇窗）。
 3. 翻译浮窗的「替换」粘回便签窗口时，`Paster.Paste` 的「目标是管理员程序」那一步对自己的窗口不误判。
+
+
+**Windows 核验（2026-11-06）**：编译过、没改；三条都要真按键（粘回、划词），没测。启动器搜「便签」的三项见第 5 批。
 
 ### 审查方复查（2026-11-05，`git log --grep "PLAN-v13 审查方复查"`，同样没编译）
 
@@ -251,6 +323,10 @@ VERIFY（要在 Windows 上跑才知道）和没改的列在后面，核验时�
 4. 编辑器：复制带图的一段再粘回来，是令牌的字、重开才是图（mac 粘回附件）；`InsertImage` 给的是原图（mac 解缩略图）；组字中插图 / 同步来的图换上去没等组字结束；撤销 / 命令后不滚到光标处；
    窗口变宽变窄时「铺满」的图不跟着变；多行选区碰到代码块时 Ctrl+T / 加标记只看第一行；图片位置挪了时异步放图只比那个位置是不是 U+FFFC。
 5. 窗口：标签右键「其他颜色…」挂在不拿焦点的标签列窗口上，十六进制那一栏可能打不了字；关掉的窗口里的 `NoteSheetView` 只在 `Unloaded` 时退订；感应范围 8 时药丸窗约 13 DIP 宽，看系统让不让窗口这么窄。
+
+
+**Windows 核验（2026-11-06）**：VERIFY 1 **确实如此**——RichEdit 把普通的 U+FFFC 洗成空格，按写的退路改成 1×1 占位图（第 4 批下面）；`InsertImage` 对一个字的范围是替换；`GetText(None)` 带最后那个段落符（也修了）。
+VERIFY 2–5 没测。
 
 ## PLAN-v12（跟上 mac：先把没有的功能做出来，2026-11-05 用户「先把未实现的功能实现」）
 
@@ -307,6 +383,10 @@ VERIFY（要在 Windows 上跑才知道）和没改的列在后面，核验时�
 `ExchangeRateStore` 读正文也 5 秒超时（`ResponseHeadersRead` 时 `HttpClient.Timeout` 只管到响应头）；「提醒 …」那几行不能收藏、Tab 不补
 （`CanFavorite`、`LauncherText.Completion`，mac 的 `.reminder` 两样都没有）。HANDTEST 1041、1042。
 
+
+**Windows 核验（2026-11-06）**：编译过、11 个单测过（`IsoCodes.Count` 159）。Dev 档联网取到 11-05 的汇率：「100 usd to cny」「100 usd」出大字结果、右侧「人民币 · 11-05 汇率」；「汇率」出提示行。
+截图 `0.2.0-v12-batch-1/`（结果、提示行，浅 / 深）；货币候选那张的查询写错了（「jp」不触发候选）、而且拍进了真实浏览器的书签，没推。断网、6 小时缓存、Ctrl+K 没测。
+
 ### 第 2 批：面板位置、长截图控速、工具栏靠右（N2 N3 N4）→ 已写（审查方，`git log --grep "PLAN-v12 第 2 批"`，没编译）
 
 2026-11-05 用户定：这一版连窗口、合成、输入钩子都在 Mac 上写，Windows 只编译、核验、修编译错。照 mac `b923b882`、`389289d4`、`0f83c117`：
@@ -352,6 +432,10 @@ VERIFY（要在 Windows 上跑才知道）和没改的列在后面，核验时�
   （R43 起就这样，只走模糊兜底那条路）；`ScrollCanvasTests` 要是哪天对不上先看这里。去掉 800 行上限后对不上的帧要试整帧高那么多位置，量一下 4K 选区的耗时。
 - `CompositionTarget.Rendering` 在长截图面板没建出来时可能一帧都不来（看日志 `render-frames=`，是 0 就换 16 ms 的计时器）。
 - 自动滚动到头 / 对不上停下后按 A 接不着（A 只在暂停时注册），mac 有 ▶ 能重来；`HudPlacement` 的间距 8 和录制条的 10 差 2 DIP。
+
+
+**Windows 核验（2026-11-06）**：编译过（那几个担心的编译点都没出错）、`ScrollPacerTests` 13 个 / `PlanV12Batch2Tests` 4 个过。`render-frames=` 要真的长截图自动滚动才有，**没测**；拖面板、点速度钮没测。
+截图 `0.2.0-v12-batch-2/`：设置 › 剪贴板、截图（浅 / 深）。
 
 ### 第 3 批：状态屏（N5）→ 已写（审查方，`git log --grep "PLAN-v12 第 3 批"`，没编译）
 
@@ -404,6 +488,11 @@ VERIFY（要在 Windows 上跑才知道）和没改的列在后面，核验时�
 **替用户定的**：透出样式的做法和不冒眼睛（见上）；表情 160 像素 12 fps；不藏鼠标指针；标题整行入场、小字直接换、选中卡片不长成整屏（ponytail，MAC-DIFF 记了）；
 退出密码按扫描码认数字；拦截不放过注入事件（别的程序模拟按键也被挡，只有自检标记的例外——自检只在 Probe 模式里认它）；速查表里「用鼠标按住提示」那一行不画键帽。
 
+
+**Windows 核验（2026-11-06）**：编译过；`StatusScreenTests` 过（`a2d4885` 里给 `planned[1]` 补了 `!`，可空警告）。`--status-screen-probe` 三种样式：status.probe-key swallowed=2 touches=1、
+status.probe-hold active-after-hold=False，日志没有 `status.emoji-load-failed`，两帧之间表情的姿势不一样（在动）。**透出样式的底板窗口比那一列宽、右边约 35 px 没画（白）**：底板铺满整扇窗、那一列居中（`8cfa2f1`）。
+截图 `0.3.0-v12-batch-3/`：三种样式（自检的图）、设置 › 状态屏（浅 / 深）。压暗层、任务栏、白闪这些要看整块屏的，自检只抓自己的窗口，没看；编辑对话框、选状态的面板没截。
+
 ### 第 4 批：状态屏的入口（N5）→ 已写（审查方，`git log --grep "PLAN-v12 第 4 批"`，没编译）
 
 第 3 批已经带了选状态的面板、设置页、导出导入、速查表；这一批是剩下的三个入口（mac buildStatusMenu、HomePanel、LauncherItem.statusPreset）：
@@ -416,6 +505,9 @@ VERIFY（要在 Windows 上跑才知道）和没改的列在后面，核验时�
 **你们做的**：编译零警告、`dotnet test` 全过；手测 977–981（托盘子菜单要真点）；截图：托盘子菜单（只截菜单那一块）、主界面带状态屏那一格、启动器搜「状态屏」，推 `windows-shots` 的 `0.3.0-v12-batch-4/`。
 
 **审查方复查（2026-11-05）**：这一批（托盘子菜单、主界面、启动器的状态行）没找到要改的。
+
+
+**Windows 核验（2026-11-06）**：编译过。启动器搜「状态屏」三个状态各一行（表情、右侧「状态屏」）、主界面截图在 `0.3.0-v12-batch-4/`；托盘子菜单要真点，没测没截。
 
 ### 第 5 批：提醒（N6 的模型、执行层、各种方式、设置页）→ 已写（审查方，`git log --grep "PLAN-v12 第 5 批"`，没编译）
 
@@ -457,6 +549,10 @@ HANDTEST 1031、1037–1039。**留给你们确认**（没改）：全屏提醒�
 回不到原来的程序就在 Show 时记下 `Foreground.Get()`、Close 后还回去）；挂着那条每次重新露面都会被读屏再念一遍；呼吸曲线是 `(1 − cos πt) / 2`、mac 是
 easeInEaseOut（差不到 0.01）。
 
+
+**Windows 核验（2026-11-06）**：编译过、`ReminderTests` 过（`Canonical_MatchesMacByteForByte` 没动；`a2d4885` 给 `planned[0]` 补了 `!`）。设置 › 提醒截图 `0.3.0-v12-batch-5/`（浅 / 深）。
+到点的几种方式要等到点，没测没截（挂着的提示、全屏、边框）。
+
 ### 第 6 批：提醒的入口、导出导入、同步（N6）→ 已写（审查方，`git log --grep "PLAN-v12 第 6 批"`，没编译）
 
 照 mac `LauncherModel`「提醒 …」、`addReminderMenu`、`HomePanel`、`ReminderSync`：
@@ -487,6 +583,9 @@ easeInEaseOut（差不到 0.01）。
 间隔 / 每周的提醒在同步里个个像改过）；`ReminderPhrase` 关键词和去首尾按全部空白认（全角空格），标题首尾一次去掉空白和「，,、。:：」。
 单测 `Sanitized_AndLoad` 的两个输入换成 mac 现在单测里的（催促 121、提示音 "../Nope"；原来的 3、"Xylo" 在 mac 现在的规则下合法），断言没改；
 新加 `Sanitized_KeepsWhatMacCanStore`、`LocalToUtc_DaylightSavingLikeMac`。golden 没动（两行用真 Swift 重编核对过）。HANDTEST 1032、1033。
+
+
+**Windows 核验（2026-11-06）**：编译过。启动器「提醒 10分钟 喝水」「提醒 」「提醒 随便几个字」三张截图 `0.3.0-v12-batch-6/`（浅 / 深）；同步那一节在两份 `.Dev` 数据的真同步里写出了 `reminders.json` / `statuses.json`。Enter、托盘子菜单没测。
 
 ### 第 7 批：补齐状态屏和提醒剩下的 → 已写（审查方，`git log --grep "PLAN-v12 第 7 批"`，没编译）
 
@@ -528,6 +627,9 @@ easeInEaseOut（差不到 0.01）。
 
 **审查方复查（2026-11-05，`36aafcdf`）**：这一批里改到的（详见第 3、5、6 批下面那几段）：`TickerText` 补 partial；指针在提示、密码框收起后再藏；
 全屏提醒原地换内容时按值比；`StatusEmoji` 画不出的图标的退路。
+
+
+**Windows 核验（2026-11-06）**：编译过（`TickerText`、`ReminderGlow` 的位图头、`LibraryImport` 都没出错）。启动器状态 / 提醒行前面是各自的表情（截图在第 4、6 批的目录）。边框呼吸、标题逐字浮现、小字滚动没录（边框要等到点；逐字浮现在自检里只拍了静止的两张）。
 
 ## PLAN-v11（0.1.0 之后还没做的，2026-11-03 用户「全部按推荐」）
 
