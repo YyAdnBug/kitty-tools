@@ -34,10 +34,11 @@ enum WhatsNew {
 
   /// 清单（新的版本往后加）
   static let entries: [Entry] = [
-    Entry(
-      id: "reminders", version: "0.8.0", feature: .reminders, actions: [.reminderNew],
-      page: .reminders),
-    Entry(id: "features", version: "0.8.0", feature: nil, page: .general, section: "功能"),
+    // 0.7.2（GitHub 上来的）：截图翻译盖回截图上（设置 › 翻译 的开关，PR #5）、启动器不列常用（设置 › 启动器，issue #2）、
+    // 钉住剪贴板内容能钉文字（issue #4）
+    Entry(id: "screenshot-overlay", version: "0.7.2", feature: .translate, page: .translate),
+    Entry(id: "launcher-frequent", version: "0.7.2", feature: .launcher, page: .launcher),
+    Entry(id: "pin-text", version: "0.7.2", feature: .screenshot, actions: [.pinClipboard]),
   ]
 
   /// 一版最多标几个（拍板 B1：标多了到处都是「新」，等于没标）

@@ -17,7 +17,7 @@ struct WhatsNewTests {
     Entry(id: "a", version: "0.7.0", feature: .clipboard, actions: [.pinClipboard]),
     Entry(id: "b", version: "0.8.0", feature: nil, page: .general, section: "功能"),
     Entry(
-      id: "c", version: "0.9.0", feature: .reminders, actions: [.reminderNew], page: .reminders),
+      id: "c", version: "0.9.0", feature: .notes, actions: [.noteCapture], page: .notes),
   ]
 
   /// 清单本身：id 不重复、每版不超过 3 个、每个都有地方标（动作或设置页）、写了节就得写页、动作归它说的那个功能；
@@ -81,7 +81,7 @@ struct WhatsNewTests {
     #expect(WhatsNew.touching(touched, entries: sample) { $0.id == "a" } == touched)
     // 0.9.0 还没开始标：碰它的动作不记
     #expect(
-      WhatsNew.touching(ledger, entries: sample) { $0.actions.contains(.reminderNew) } == ledger)
+      WhatsNew.touching(ledger, entries: sample) { $0.actions.contains(.noteCapture) } == ledger)
   }
 
   /// 设置里只有它才有入口的（没有动作、有页）：菜单「设置…」、主界面「设置」跟着标
@@ -94,20 +94,18 @@ struct WhatsNewTests {
 
   /// 换页：这一页原来标着的看着时留着，换到别的页才没；侧栏和页里那一节按这一份标
   @Test func visitedPageKeepsItsMarksUntilLeft() {
-    let reminders = WhatsNew.entries.first { $0.id == "reminders" }!
-    let features = WhatsNew.entries.first { $0.id == "features" }!
-    // 打开设置时停在提醒页：两个都标（提醒页这时已经碰过，但看着的时候不闪掉）
-    let first = WhatsNew.shown(visiting: .reminders, fresh: [reminders, features], showing: [])
-    #expect(first == ["reminders", "features"])
-    #expect(WhatsNew.marks(.reminders, in: first))
-    // 换到通用页：提醒碰过了、不再标；通用页里「功能」那一节标着
-    let second = WhatsNew.shown(visiting: .general, fresh: [features], showing: first)
-    #expect(second == ["features"])
-    #expect(!WhatsNew.marks(.reminders, in: second))
-    #expect(WhatsNew.marks(.general, in: second))
-    #expect(WhatsNew.marks(section: "功能", of: .general, in: second))
-    #expect(!WhatsNew.marks(section: "外观", of: .general, in: second))
-    // 再换到关于：通用也碰过了，什么都不标
+    let overlay = WhatsNew.entries.first { $0.id == "screenshot-overlay" }!
+    let frequent = WhatsNew.entries.first { $0.id == "launcher-frequent" }!
+    // 打开设置时停在翻译页：两个都标（翻译页这时已经碰过，但看着的时候不闪掉）
+    let first = WhatsNew.shown(visiting: .translate, fresh: [overlay, frequent], showing: [])
+    #expect(first == ["screenshot-overlay", "launcher-frequent"])
+    #expect(WhatsNew.marks(.translate, in: first))
+    // 换到启动器页：翻译碰过了、不再标；启动器页标着
+    let second = WhatsNew.shown(visiting: .launcher, fresh: [frequent], showing: first)
+    #expect(second == ["launcher-frequent"])
+    #expect(!WhatsNew.marks(.translate, in: second))
+    #expect(WhatsNew.marks(.launcher, in: second))
+    // 再换到关于：启动器也碰过了，什么都不标
     #expect(WhatsNew.shown(visiting: .about, fresh: [], showing: second).isEmpty)
   }
 
@@ -116,17 +114,17 @@ struct WhatsNewTests {
     let suite = "kitty-whatsnew-\(UUID().uuidString)"
     let defaults = try #require(UserDefaults(suiteName: suite))
     defer { defaults.removePersistentDomain(forName: suite) }
-    WhatsNew.adopt(upgradingFrom: nil, to: "0.8.0", defaults: defaults, now: t0)
+    WhatsNew.adopt(upgradingFrom: nil, to: "0.7.2", defaults: defaults, now: t0)
     #expect(defaults.object(forKey: Prefs.whatsNewStarted) == nil)
-    WhatsNew.adopt(upgradingFrom: "0.7.1", to: "0.8.0", defaults: defaults, now: t0)
-    #expect(WhatsNew.ledger(defaults).started == ["0.8.0": t0])
-    WhatsNew.touch(action: .reminderNew, defaults: defaults)
-    #expect(WhatsNew.ledger(defaults).touched == ["reminders"])
-    WhatsNew.touch(page: .general, defaults: defaults)
-    #expect(WhatsNew.ledger(defaults).touched == ["reminders", "features"])
+    WhatsNew.adopt(upgradingFrom: "0.7.1", to: "0.7.2", defaults: defaults, now: t0)
+    #expect(WhatsNew.ledger(defaults).started == ["0.7.2": t0])
+    WhatsNew.touch(action: .pinClipboard, defaults: defaults)
+    #expect(WhatsNew.ledger(defaults).touched == ["pin-text"])
+    WhatsNew.touch(page: .launcher, defaults: defaults)
+    #expect(WhatsNew.ledger(defaults).touched == ["pin-text", "launcher-frequent"])
     // 没变化不写：把存的值换成一个记号，再碰一次同样的，记号还在
-    defaults.set(["reminders", "features", "marker"], forKey: Prefs.whatsNewTouched)
-    WhatsNew.touch(action: .reminderNew, defaults: defaults)
+    defaults.set(["pin-text", "launcher-frequent", "marker"], forKey: Prefs.whatsNewTouched)
+    WhatsNew.touch(action: .pinClipboard, defaults: defaults)
     #expect(defaults.stringArray(forKey: Prefs.whatsNewTouched)?.contains("marker") == true)
   }
 }
