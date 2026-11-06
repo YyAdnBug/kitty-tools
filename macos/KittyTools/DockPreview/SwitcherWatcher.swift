@@ -1,6 +1,7 @@
 // ⌘Tab 切换时也弹窗口预览（2026-11-06 用户：「command+tab 切换时也添加预览窗口，和 dock-preview 一致」；拍板页 C1–C5
 // 全部按推荐）：系统的 ⌘Tab 照旧，这里只看它选中了哪个 App。系统的切换器是程序坞进程画的，辅助功能里是一个子角色
-// AXProcessSwitcherList 的列表（只在切换器开着时有；DockDoor 也这么读），选中的那一项和程序坞图标一样带 AXURL。
+// AXProcessSwitcherList 的列表（只在切换器开着时有；DockDoor 也这么读）。选中的那一项旧系统上和程序坞图标一样带 AXURL，
+// macOS 27 上只有标题（2026-11-06 本机探针），按标题配开着的 App。
 // - 按下 ⌘（全局 + 本地监听修饰键变化，只听不拦；要辅助功能，程序坞预览本来就要）才开始每 0.1 秒找一次那个列表，找到就
 //   挂观察者听它的选中变化，不再找；松开 ⌘、列表没了就报 nil（切换器收起）。平时不找。
 // - 找的时候只往不是列表的元素里钻（程序坞自己的图标列表也是 AXList，钻进去要读几十个图标），最多三层。
@@ -16,6 +17,9 @@ import Carbon.HIToolbox
   /// 切换器里选中的 App，和切换器那一排在屏幕上的位置（AppKit 全局坐标）
   struct Selection: Equatable {
     let bundleURL: URL?
+    /// 那一项的标题：macOS 27 上切换器的项没有 AXURL（2026-11-06 本机探针：只有 AXTitle、AXPosition 这些），
+    /// 只能按它配开着的 App（DockPreview.runningApp(titled:)）
+    let title: String
     let listFrame: CGRect
   }
 
@@ -77,7 +81,7 @@ import Carbon.HIToolbox
   }
 
   /// 程序坞里那个切换器列表：只往不是列表的元素里钻
-  private static func findList(in element: AXUIElement, depth: Int) -> AXUIElement? {
+  static func findList(in element: AXUIElement, depth: Int) -> AXUIElement? {
     guard depth > 0 else { return nil }
     let children = DockWatcher.value(element, kAXChildrenAttribute) as? [AXUIElement] ?? []
     for child in children {
@@ -138,6 +142,7 @@ import Carbon.HIToolbox
     {
       next = Selection(
         bundleURL: DockWatcher.value(selected, kAXURLAttribute) as? URL,
+        title: DockWatcher.value(selected, kAXTitleAttribute) as? String ?? "",
         listFrame: DockWatcher.appKitFrame(origin: origin, size: size, primaryHeight: primaryHeight)
       )
     }

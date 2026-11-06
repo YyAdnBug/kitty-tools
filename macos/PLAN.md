@@ -768,6 +768,9 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 - **长截图面板四周的黑边**（用户 2026-11-06 看测试包，说「之前其窗口也有这个问题」）：就是 10-19 修过的 macOS 27 玻璃当 key 时圆角外
   画一层淡黑（e0c05c8f），那次只修了 `OverlayPanel`；长截图面板（当 key 收按键）、截图工具栏和尺寸胶囊（在当 key 的截图遮罩里）各自建玻璃、
   漏了。四处都改走 `NSGlassEffectView.clipped(cornerRadius:)`。手测「用户四条」27。
+- **⌘Tab 预览在 27 上没生效**（用户 2026-11-06 看测试包）：本机探针（用户按了 ⌘Tab）——切换器列表照旧在程序坞里、选中变化也收得到，
+  但**项没有 AXURL**，只有标题（DingTalk、WeChat、WPS Office），第一版只按 URL 配 App 就一直配不上。改成没有 URL 时按标题配（显示名、
+  包名、.app 文件名）。探针 `DockPreviewProbeTests/switcher()` 加了打顶层结构、选中项的全部属性名、按着 ⌘ 时谁的窗口在哪一层。
 - **第 3 批 ⌘Tab 预览（C）**：`DockPreview/SwitcherWatcher.swift`（按着 ⌘ 才找系统切换器 `AXProcessSwitcherList`、听它的选中）+
   `DockPreview` 的 `fromSwitcher` 模式（切换器上方居中、不按鼠标收、点一张先发 Esc 收起系统切换器）；设置 › 程序坞预览「按 ⌘Tab 时也显示」
   （`Prefs.dockPreviewCmdTab`，默认开）。**本机 macOS 27 上切换器的辅助功能结构没探过**：要人在场跑 `DockPreviewProbeTests/switcher()`

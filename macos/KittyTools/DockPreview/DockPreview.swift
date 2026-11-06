@@ -69,6 +69,8 @@ import SwiftUI
   private var dismissedURL: URL?
   /// 图标的 URL → bundle id（路径经过符号链接时按它配进程；读一次 Info.plist 就记下）
   private var bundleIDs: [URL: String] = [:]
+  /// App 的路径 → 包里的名字（⌘Tab 切换器按标题配 App 用；读一次 Info.plist 就记下）
+  private var appNames: [URL: [String]] = [:]
 
   /// 收着时停多久才弹（纯函数配单测）：设置 › 程序坞预览「停多久再弹出」（Prefs.dockPreviewDelay，毫秒），认不出的值按 400。
   /// 原来定死 0.2 秒（同 DockDoor 的默认），2026-11-06 用户嫌往程序坞点 App 时一路冒预览，要「悬停一下再出」：
@@ -216,7 +218,10 @@ import SwiftUI
       if fromSwitcher { hide(animated: true) }
       return
     }
-    guard let target = runningApp(at: selection.bundleURL) else {
+    // 有 AXURL 按它配（旧系统），没有按标题配（macOS 27：切换器的项只有标题）
+    guard
+      let target = runningApp(at: selection.bundleURL) ?? runningApp(titled: selection.title)
+    else {
       if fromSwitcher { hide(animated: true) }
       return
     }
@@ -233,6 +238,34 @@ import SwiftUI
       self.fromSwitcher = true
       self.present(prepared)
     }
+  }
+
+  /// 标题是 title 的那个开着的普通 App（⌘Tab 切换器的项在 macOS 27 上没有 AXURL，2026-11-06 本机探针）：
+  /// 切换器写的不一定是界面上的名字（中文系统里标题是「DingTalk」「WeChat」，显示名是钉钉、微信），所以显示名、
+  /// 包里的 CFBundleDisplayName / CFBundleName、.app 的文件名哪个对上都算；包里的名字按 App 的路径记下
+  private func runningApp(titled title: String) -> NSRunningApplication? {
+    guard !title.isEmpty else { return nil }
+    return NSWorkspace.shared.runningApplications.first { app in
+      guard app.activationPolicy == .regular else { return false }
+      let url = app.bundleURL
+      if let url, appNames[url] == nil {
+        appNames[url] = Self.names(
+          localizedName: nil, info: Bundle(url: url)?.infoDictionary, url: url)
+      }
+      let names = [app.localizedName].compactMap(\.self) + (url.flatMap { appNames[$0] } ?? [])
+      return names.contains(title)
+    }
+  }
+
+  /// 一个 App 能被切换器叫成什么（纯函数，配单测）：显示名、CFBundleDisplayName、CFBundleName、.app 的文件名
+  nonisolated static func names(localizedName: String?, info: [String: Any]?, url: URL?)
+    -> [String]
+  {
+    let candidates: [String?] = [
+      localizedName, info?["CFBundleDisplayName"] as? String, info?["CFBundleName"] as? String,
+      url?.deletingPathExtension().lastPathComponent,
+    ]
+    return candidates.compactMap { $0?.isEmpty == false ? $0 : nil }
   }
 
   /// 离上一次按下鼠标（左键、右键、别的键）过了几秒

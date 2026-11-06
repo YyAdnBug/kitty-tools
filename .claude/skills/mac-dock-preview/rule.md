@@ -68,7 +68,11 @@ Dock Preview；开源的 DockDoor、AltTab 是 GPL，**只借做法、一行代�
 
 ## 5½. ⌘Tab 切换时（2026-11-06 拍板 C1–C5，`SwitcherWatcher.swift`）
 - **系统的 ⌘Tab 照旧**，不拦截、不换掉（拦截只许状态屏建，mac-native §3）。系统切换器是程序坞进程画的，辅助功能里是子角色
-  `AXProcessSwitcherList` 的列表、只在切换器开着时有，选中的那项和程序坞图标一样带 AXURL（DockDoor 同样这么读）。
+  `AXProcessSwitcherList` 的列表、只在切换器开着时有（DockDoor 同样这么读）。**macOS 27 上切换器的项没有 AXURL**（2026-11-06
+  本机探针：列表是程序坞顶层的第二个 AXList，项只有 AXTitle、AXPosition、AXSize 这些，标题是「DingTalk」「WeChat」这种包名、
+  不是界面上的钉钉、微信；切换器窗口在程序坞的层 20）：有 AXURL 按它配，没有按标题配（`DockPreview.runningApp(titled:)`：
+  普通 App 的显示名、CFBundleDisplayName、CFBundleName、.app 文件名哪个对上都算，包里的名字按路径记下）。第一版只认 AXURL，
+  27 上一直不弹。
 - **只在按着 ⌘ 时找**：全局 + 本地监听修饰键变化（只听不拦），按下 ⌘ 才每 0.1 秒在程序坞的辅助功能树里找那个列表（只往不是列表的
   元素里钻、最多三层：程序坞自己的图标列表也是 AXList，钻进去要读几十个图标），找到就挂观察者听选中变化（和列表没了），不再找；
   松开 ⌘ / 列表没了 = 切换器收起，报 nil。每按一次 ⌘ 现读 `Prefs.dockPreviewCmdTab`（设置 › 程序坞预览「按 ⌘Tab 时也显示」，

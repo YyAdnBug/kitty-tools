@@ -20,34 +20,72 @@ struct DockPreviewProbeTests {
 
   private func say(_ line: String) { print("dock-probe \(line)") }
 
-  /// ⌘Tab 切换器读不读得到（2026-11-06 拍板 C）：要人在场——开跑后 15 秒内按住 ⌘ 按几下 Tab 再松开。只读：每 0.1 秒找一次
-  /// 程序坞里子角色 AXProcessSwitcherList 的列表，打出找没找到、几项、选中那项的标题 / AXURL、那一排的位置。
+  /// ⌘Tab 切换器读不读得到（2026-11-06 拍板 C；同日用户报 27 上没生效）：要人在场——开跑后三分钟内按住 ⌘ 按几下 Tab、
+  /// 停在切换器上一两秒再松开。只读：按着 ⌘ 时每 0.1 秒看一次——程序坞顶层子元素的角色 / 子角色（变了才打）、按
+  /// SwitcherWatcher 的找法找 AXProcessSwitcherList、找到了打选中那项的标题 / AXURL / 全部属性名、那一排的位置，
+  /// 屏上层级不是 0 的窗口里新出现的（谁画的切换器）。看到切换器累计 3 秒或三分钟到了就停。
   /// `TEST_RUNNER_KITTY_SWITCHER_PROBE=1`（和上面的分开开关：它要人按键）
   @Test(.enabled(if: ProcessInfo.processInfo.environment["KITTY_SWITCHER_PROBE"] == "1"))
   func switcher() async throws {
-    say("授权：辅助功能 \(Permissions.isAccessibilityTrusted)；15 秒内按住 ⌘ 按几下 Tab")
-    var seen = 0
-    for _ in 0..<150 {
+    say("授权：辅助功能 \(Permissions.isAccessibilityTrusted)；三分钟内按住 ⌘ 按几下 Tab，停一两秒再松开")
+    var lastTop = ""
+    var seenWindows = Set<String>()
+    var printedAttributes = false
+    var lastSelection = ""
+    var found = 0
+    var held = 0
+    for _ in 0..<1800 {
       try await Task.sleep(for: .milliseconds(100))
-      guard let dock = DockWatcher.dockElement() else { continue }
-      let children = DockWatcher.value(dock, kAXChildrenAttribute) as? [AXUIElement] ?? []
-      for child in children {
-        let subrole = DockWatcher.value(child, kAXSubroleAttribute) as? String ?? "-"
-        guard subrole == SwitcherWatcher.subrole else { continue }
-        let items = DockWatcher.value(child, kAXChildrenAttribute) as? [AXUIElement] ?? []
-        let selected = (DockWatcher.value(child, kAXSelectedChildrenAttribute) as? [AXUIElement])?
-          .first
-        let title = selected.flatMap { DockWatcher.value($0, kAXTitleAttribute) as? String } ?? "-"
-        let url = selected.flatMap { DockWatcher.value($0, kAXURLAttribute) as? URL }
-        let origin = DockWatcher.point(child, kAXPositionAttribute)
-        let size = DockWatcher.size(child, kAXSizeAttribute)
-        seen += 1
-        say(
-          "切换器：\(items.count) 项，选中「\(title)」URL \(url?.lastPathComponent ?? "无")，"
-            + "位置 \(origin.map { "\($0)" } ?? "无") 大小 \(size.map { "\($0)" } ?? "无")")
+      guard NSEvent.modifierFlags.contains(.command) else { continue }
+      held += 1
+      // 屏上层级不是 0 的窗口（切换器是谁画的、在哪一层）
+      let windows =
+        CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+      for info in windows {
+        let layer = info[kCGWindowLayer as String] as? Int ?? 0
+        guard layer != 0 else { continue }
+        let owner = info[kCGWindowOwnerName as String] as? String ?? "?"
+        let bounds = info[kCGWindowBounds as String] as? [String: Double] ?? [:]
+        let key = "\(owner) 层 \(layer) \(Int(bounds["Width"] ?? 0))×\(Int(bounds["Height"] ?? 0))"
+        if seenWindows.insert(key).inserted { say("按着 ⌘ 时的窗口：\(key)") }
       }
+      guard let dock = DockWatcher.dockElement() else {
+        say("拿不到程序坞（没授权？）")
+        continue
+      }
+      let children = DockWatcher.value(dock, kAXChildrenAttribute) as? [AXUIElement] ?? []
+      let top = children.map {
+        "\(DockWatcher.value($0, kAXRoleAttribute) as? String ?? "-")/\(DockWatcher.value($0, kAXSubroleAttribute) as? String ?? "-")"
+      }.joined(separator: " ")
+      if top != lastTop {
+        say("程序坞顶层：\(top)")
+        lastTop = top
+      }
+      guard let list = SwitcherWatcher.findList(in: dock, depth: 3) else { continue }
+      found += 1
+      let items = DockWatcher.value(list, kAXChildrenAttribute) as? [AXUIElement] ?? []
+      let selected = (DockWatcher.value(list, kAXSelectedChildrenAttribute) as? [AXUIElement])?
+        .first
+      let title = selected.flatMap { DockWatcher.value($0, kAXTitleAttribute) as? String } ?? "-"
+      let url = selected.flatMap { DockWatcher.value($0, kAXURLAttribute) as? URL }
+      let origin = DockWatcher.point(list, kAXPositionAttribute)
+      let size = DockWatcher.size(list, kAXSizeAttribute)
+      let line =
+        "切换器：\(items.count) 项，选中「\(title)」URL \(url?.lastPathComponent ?? "无")，"
+        + "位置 \(origin.map { "\($0)" } ?? "无") 大小 \(size.map { "\($0)" } ?? "无")"
+      if line != lastSelection {
+        say(line)
+        lastSelection = line
+      }
+      if !printedAttributes, let element = selected ?? items.first {
+        var names: CFArray?
+        AXUIElementCopyAttributeNames(element, &names)
+        say("选中那项的属性：\((names as? [String] ?? []).joined(separator: " "))")
+        printedAttributes = true
+      }
+      if found >= 30 { break }
     }
-    say(seen > 0 ? "切换器读到 \(seen) 次" : "没读到切换器（顶层子元素里没有 \(SwitcherWatcher.subrole)）")
+    say("按着 ⌘ 共 \(held / 10) 秒，读到切换器 \(found) 次")
   }
 
   @Test(.enabled(if: DockPreviewProbeTests.isEnabled)) func measure() async throws {

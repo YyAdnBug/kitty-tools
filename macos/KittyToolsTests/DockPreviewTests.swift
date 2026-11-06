@@ -221,6 +221,20 @@ struct DockPreviewTests {
     #expect(Prefs.defaults[Prefs.dockPreviewCmdTab] as? Bool == true)
   }
 
+  @Test func switcherTitleMatchesBundleNames() {
+    // macOS 27 上 ⌘Tab 切换器的项没有 AXURL、只有标题（2026-11-06 探针：「DingTalk」「WeChat」，界面上叫钉钉、微信）：
+    // 显示名、CFBundleDisplayName、CFBundleName、.app 文件名都拿来配，空的不算
+    let names = DockPreview.names(
+      localizedName: "钉钉", info: ["CFBundleName": "DingTalk", "CFBundleDisplayName": ""],
+      url: URL(fileURLWithPath: "/Applications/DingTalk.app"))
+    #expect(names == ["钉钉", "DingTalk", "DingTalk"])
+    #expect(names.contains("DingTalk") && !names.contains(""))
+    #expect(
+      DockPreview.names(
+        localizedName: nil, info: nil, url: URL(fileURLWithPath: "/A/WPS Office.app"))
+        == ["WPS Office"])
+  }
+
   @Test func stopReleasesThePanel() {
     let preview = DockPreview()
     weak var panel: NSPanel?
