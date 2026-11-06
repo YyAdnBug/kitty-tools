@@ -192,6 +192,12 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private var hintFlashing = false
   /// 正在给这个快捷键录新的键（工具栏按钮上右键「改快捷键…」之后）：下一下按键就是它，Esc / 点一下取消
   private var rebinding: ShotKey?
+  /// 右键的是哪颗钮：改快捷键的提示挂在它旁边、等着时它带一圈呼吸的粉圈
+  private var rebindItem: EditorToolbar.Item?
+  /// 改快捷键的提示（2026-11-06 用户：放在屏幕顶上不够明显）：挂在那颗钮旁边，工具栏离选区远的那一侧，放不下换另一侧
+  private let rebindTip = Pill(
+    font: .systemFont(ofSize: 13, weight: .medium), padding: CGSize(width: 12, height: 7))
+  private var rebindTipGeneration = 0
   /// 框选时保持屏幕原色（设置 › 截图，Prefs.screenshotKeepsColors）：每次框选新建遮罩时读一次（单测、截图自检直接给）
   private let keepsColors: Bool
 
@@ -313,10 +319,11 @@ final class SelectionView: NSView, NSTextViewDelegate {
       shade, highlight, outlineOuter, outline, guideLayer, edgeHighlight, crossDark, crossLight,
     ]
       + Self.handleOrder.compactMap({ handleLayers[$0] })
-      + [annotationOutline, annotationHandles, hint.layer, magnifier]
+      + [annotationOutline, annotationHandles, hint.layer, rebindTip.layer, magnifier]
     {
       root.addSublayer(layer)
     }
+    rebindTip.layer.isHidden = true
     sizeField.isHidden = true
     sizeField.onEdit = { [unowned self] which in beginSizeEditing(which) }
     sizeField.onCommit = { [unowned self] in finishSizeEditing(commit: true) }
@@ -574,6 +581,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
       layer.contentsScale = scale
     }
     hint.scale = scale
+    rebindTip.scale = scale
   }
 
   /// 出场：蒙层 0.15 s 淡入；提示浮上来，3 s 后淡出。同时挂上跟手的显示链（见 followPointer）
@@ -639,8 +647,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
     hint.layer.add(fade, forKey: "leave")
   }
 
-  /// 顶部提示临时换一句（右键不清空、改快捷键）：有选区时也显示，seconds 秒后淡出
-  private func flashHint(_ parts: [String], seconds: Double = 1.5) {
+  /// 顶部提示临时换一句（右键不清空）：有选区时也显示，1.5 s 后淡出
+  private func flashHint(_ parts: [String]) {
     // 换字时胶囊的宽、圆角、阴影不做隐式动画（它挂在 layer-hosting 的图层树上，默认会补 0.25 s）
     CATransaction.begin()
     CATransaction.setDisableActions(true)
@@ -648,7 +656,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
     CATransaction.commit()
     hintFlashing = true
     refresh()
-    showHint(for: seconds)
+    showHint(for: 1.5)
   }
 
   /// 按状态摆好全部图层（关掉隐式动画，拖动时跟手；只有换悬停窗口、单击选中窗口、蒙层深浅切换、手柄出现 / 悬停放大、
@@ -1337,6 +1345,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
     guard let key = EditorToolbar.shotKey(for: item), let toolbar,
       let button = toolbar.button(for: item)
     else { return }
+    rebindItem = item
     var entries: [HUDMenu.Entry] = [
       .init(title: "改「\(key.title)」的快捷键…", key: key.label) { [weak self] in
         self?.startRebind(key)
@@ -1353,18 +1362,71 @@ final class SelectionView: NSView, NSTextViewDelegate {
       anchor: button.convert(button.bounds, to: self))
   }
 
-  /// 开始等新的键：顶部提示一直在（rebindWait 秒），输入着的文字、尺寸先收下（不然按键归它们）
+  /// 开始等新的键：那颗钮带粉圈、旁边的提示一直在（最多 rebindWait 秒），输入着的文字、尺寸先收下（不然按键归它们）
   private func startRebind(_ key: ShotKey) {
     finishSizeEditing(commit: true)
     endEditing()
     rebinding = key
+    toolbar?.setWaiting(rebindItem)
     let text = "按下新的键给「\(key.title)」"
     announce(text)
-    flashHint([text, "Esc 取消"], seconds: Self.rebindWait)
+    showRebindTip([text, "Esc 取消"])
     Task { [weak self] in
       try? await Task.sleep(for: .seconds(Self.rebindWait))
-      if self?.rebinding == key { self?.rebinding = nil }
+      if let self, self.rebinding == key { self.stopRebind() }
     }
+  }
+
+  /// 不等了：粉圈、提示都收掉
+  private func stopRebind() {
+    rebinding = nil
+    toolbar?.setWaiting(nil)
+    hideRebindTip()
+  }
+
+  /// 提示挂在 rebindItem 那颗钮旁边：工具栏在选区下面就挂在工具栏下面，在上面就挂在上面，那一侧放不下换另一侧；
+  /// 横向对着钮、夹在屏幕里。seconds 为 nil 一直在（等着的时候）
+  private func showRebindTip(_ parts: [String], seconds: Double? = nil) {
+    guard let toolbar, let item = rebindItem, let button = toolbar.button(for: item) else { return }
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    rebindTip.setParts(parts)
+    let size = rebindTip.size
+    let anchor = button.convert(button.bounds, to: self)
+    let bar = toolbar.frame
+    let below = bar.minY - 8 - size.height
+    let above = bar.maxY + 8
+    let prefersBelow = bar.midY < (selection?.midY ?? bounds.midY)
+    let y =
+      prefersBelow
+      ? (below >= bounds.minY + 8 ? below : above)
+      : (above + size.height <= bounds.maxY - 8 ? above : below)
+    let x = min(
+      max(anchor.midX - size.width / 2, bounds.minX + 8), bounds.maxX - 8 - size.width)
+    rebindTip.place(at: CGPoint(x: x, y: y))
+    let appearing = rebindTip.layer.isHidden
+    rebindTip.layer.isHidden = false
+    CATransaction.commit()
+    if appearing, !Style.reduceMotion {
+      let fade = CABasicAnimation(keyPath: "opacity")
+      fade.fromValue = 0
+      fade.toValue = 1
+      fade.duration = Style.fadeIn
+      rebindTip.layer.add(fade, forKey: "enter")
+    }
+    rebindTipGeneration += 1
+    let generation = rebindTipGeneration
+    guard let seconds else { return }
+    Task { [weak self] in
+      try? await Task.sleep(for: .seconds(seconds))
+      guard let self, self.rebindTipGeneration == generation else { return }
+      self.hideRebindTip()
+    }
+  }
+
+  private func hideRebindTip() {
+    rebindTipGeneration += 1
+    rebindTip.layer.isHidden = true
   }
 
   /// 等着新的键时按了一下：Esc 取消；规矩同设置页（ShotKey.problem：固定的键、截图里重复、和全局快捷键一样的不收，
@@ -1373,7 +1435,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
     let flags = event.modifierFlags.intersection([.command, .control, .option, .shift])
     if Int(event.keyCode) == kVK_Escape, flags.isEmpty {
       rebinding = nil
-      return flashHint(["没改，「\(key.title)」还是 \(key.label ?? "未设置")"])
+      toolbar?.setWaiting(nil)
+      return showRebindTip(["没改，还是 \(key.label ?? "未设置")"], seconds: 1.5)
     }
     setShotKey(key, to: HotKey(keyCode: event.keyCode, flags: event.modifierFlags))
   }
@@ -1384,18 +1447,19 @@ final class SelectionView: NSView, NSTextViewDelegate {
       announce(problem)
       // 从右键菜单「恢复默认」来的（没在等）不接着等
       if rebinding == key {
-        flashHint([problem, "换一个键，Esc 取消"], seconds: Self.rebindWait)
+        showRebindTip([problem, "换一个键", "Esc 取消"])
       } else {
-        flashHint([problem])
+        showRebindTip([problem], seconds: 2.5)
       }
       return
     }
     rebinding = nil
+    toolbar?.setWaiting(nil)
     key.set(hotKey)
     toolbar?.refreshTips()
     let done = "「\(key.title)」的快捷键改成了 \(hotKey.display)"
     announce(done)
-    flashHint([done])
+    showRebindTip([done], seconds: 1.8)
   }
   private static let ratioMenuLabel = "比例"
 
@@ -1979,11 +2043,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
   }
 
   override func mouseDown(with event: NSEvent) {
-    // 等着新的快捷键时点了一下：不改了
-    if rebinding != nil {
-      rebinding = nil
-      dismissHint()
-    }
+    // 等着新的快捷键时点了一下：不改了（刚改完的那句提示也收掉）
+    if rebinding != nil || !rebindTip.layer.isHidden { stopRebind() }
     let point = point(event)
     modifiers = event.modifierFlags
     isSpaceDown = false  // 按下前就按着的空格不算平移（见 isSpaceDown）

@@ -220,7 +220,9 @@ struct ScreenshotSnapshotTests {
       view.subviews.flatMap { $0.accessibilityRole() == .button ? [$0] : buttons(in: $0) }
     }
     _ = try #require(buttons(in: rebindMenu).first).accessibilityPerformPress()
-    try shoot(h.window, "rebind-waiting", crop: top)
+    // 等着时：钉图钮一圈粉、提示挂在它下面（2026-11-06 用户：放在屏幕顶上不够明显）
+    try shoot(
+      h.window, "rebind-waiting", crop: toolbar.frame.insetBy(dx: -40, dy: -70))
 
     // 有标注时右键：不清空，顶部提示怎么退出
     h = adjust()

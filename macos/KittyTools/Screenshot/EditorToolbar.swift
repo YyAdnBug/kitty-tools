@@ -378,6 +378,37 @@ final class EditorToolbar: PopView {
     }
   }
 
+  /// 等新快捷键的那颗钮外面的一圈（setWaiting）
+  private let waitingRing = CAShapeLayer()
+
+  /// 等新快捷键的那颗钮（2026-11-06 用户：只在屏幕顶上提示不够明显）：外面 3 pt 处一圈 2 pt 强调色，呼吸（0.7 s 一来回；
+  /// 减弱动态效果时不动），nil 收掉。同一时刻只有一颗
+  func setWaiting(_ item: Item?) {
+    waitingRing.removeAllAnimations()
+    waitingRing.removeFromSuperlayer()
+    // 画在工具栏自己的图层上、两段栏的上面：挂在按钮或栏的图层里会被裁掉（截图自检里看不到圈）
+    guard let item, let button = button(for: item), let layer, let buttonLayer = button.layer
+    else { return }
+    let radius = buttonLayer.cornerRadius + 3
+    waitingRing.path = CGPath(
+      roundedRect: button.convert(button.bounds, to: self).insetBy(dx: -3, dy: -3),
+      cornerWidth: radius, cornerHeight: radius, transform: nil)
+    waitingRing.fillColor = nil
+    waitingRing.strokeColor = Style.Shot.accent.cgColor
+    waitingRing.lineWidth = 2
+    waitingRing.contentsScale = window?.backingScaleFactor ?? 2
+    layer.addSublayer(waitingRing)
+    guard !Style.reduceMotion else { return }
+    let pulse = CABasicAnimation(keyPath: "opacity")
+    pulse.fromValue = 1
+    pulse.toValue = 0.35
+    pulse.duration = 0.7
+    pulse.autoreverses = true
+    pulse.repeatCount = .infinity
+    pulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+    waitingRing.add(pulse, forKey: "pulse")
+  }
+
   /// 改了快捷键之后重写悬停提示（名字是按钮的旁白名）
   func refreshTips() {
     for (item, button) in buttons where Self.shotKey(for: item) != nil {
