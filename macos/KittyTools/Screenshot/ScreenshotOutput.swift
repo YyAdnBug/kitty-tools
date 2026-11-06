@@ -2,9 +2,11 @@
 // 只出 PNG（修旧版 JPEG 透明变黑、WebP 无视质量，§11 #45）；重名追加序号，不覆盖（§11 #46）。
 // 快速保存的目录 = 设置 › 截图「快速保存到」选的文件夹 → 系统截屏的存储位置 → 桌面（不存在的跳过）。
 // 「另存为」不改它（体检 A28）：存储面板自己记住上次访问的文件夹。
-// 拷贝成 PNG 文件（设置 › 截图「截图拷贝为」，2026-11-06）：文件在拖出目录里（copyFile），剪贴板里只有这个文件。
+// 拷贝成 PNG 文件（设置 › 截图「截图拷贝为」，2026-11-06）：按下拷贝的那一刻剪贴板里就承诺好一个文件（FileOffer），
+// 文件在拖出目录里，编码、写盘在后面做。
 
 import AppKit
+import Synchronization
 import UniformTypeIdentifiers
 
 enum ScreenshotOutput {
@@ -20,18 +22,21 @@ enum ScreenshotOutput {
     }
   }
 
-  /// 拷贝成文件时的那一份：拖出目录（ShotShelf.dragDirectory）里一个新的子文件夹，各放各的不撞名；name 给了用给的
+  /// 拷贝成文件时那一份放哪：拖出目录（ShotShelf.dragDirectory）里一个新的子文件夹，各放各的不撞名；name 给了用给的
   /// （历史里存过的借存的文件名），没给照快速保存起「截图 日期 时间.png」。**用的时候不删**：对方可能过一会儿才粘
-  /// （跨电脑的剪贴板工具粘的那一刻才来读），启动时清空、换日时删一天以前的（ShotShelf.purgeStaleDragFiles）。
-  /// 写盘在主线程外（ShotHistory.write）；写不成给 nil，调用方改放图像
-  static func copyFile(_ png: Data, name: String?) async -> URL? {
+  /// （跨电脑的剪贴板工具粘的那一刻才来读），启动时清空、换日时删一天以前的（ShotShelf.purgeStaleDragFiles）
+  static func copyFileURL(name: String?) -> URL {
     let folder = ShotShelf.dragDirectory.appending(path: UUID().uuidString)
-    let url = name.map { folder.appending(path: $0) } ?? availableURL(in: folder)
-    return await ShotHistory.write(png, to: url) ? url : nil
+    return name.map { folder.appending(path: $0) } ?? availableURL(in: folder)
   }
 
   /// 编码成 PNG（白名单第 1 类，@concurrent）。scale 是像素 / 点，写成 DPI（2x → 144）
   @concurrent nonisolated static func png(_ image: CGImage, scale: CGFloat) async -> Data? {
+    encode(image, scale: scale)
+  }
+
+  /// 同上，当场编（FileOffer 被读到、文件还没写好时用）
+  nonisolated static func encode(_ image: CGImage, scale: CGFloat) -> Data? {
     let data = NSMutableData()
     guard
       let destination = CGImageDestinationCreateWithData(
@@ -152,5 +157,61 @@ enum ScreenshotOutput {
     guard response == .OK, let url = panel.url else { return nil }
     try await write(png, to: url, options: .atomic)
     return url
+  }
+}
+
+extension ScreenshotOutput {
+  /// 截图拷贝成 PNG 文件：按下拷贝的那一刻就把剪贴板写好——剪贴板里承诺一个文件 URL，谁来读才给；PNG 编码、写盘在后面做
+  /// （fulfill），赶在写好之前来读的当场编码写好再给。**一次拷贝只写一次剪贴板。**
+  /// 为什么（2026-11-06 用户用 USB 对拷线实测）：原来等编码完才写剪贴板，按 ⌘C 拷传不过去、点按钮能传——对拷线的软件按下 ⌘C
+  /// 后很快就去读剪贴板，读到的还是旧的；改成写完再补写两遍，连点按钮也传不过去了（短时间里连着变几次它就乱了）。
+  /// 所以像别的 App 的 ⌘C 一样：按下时就写好、只写一次。
+  /// 提供数据的回调可能不在主线程（SDK 标了 nonisolated），整个类型 nonisolated，没写好的那一份放在 Mutex 里
+  nonisolated final class FileOffer: NSObject, NSPasteboardItemDataProvider, Sendable {
+    enum Source: Sendable {
+      case image(CGImage, scale: CGFloat)
+      case png(Data)
+    }
+
+    let url: URL
+    /// 还没写到盘上的那一份；写好了是 nil（同时放掉图）
+    private let pending: Mutex<Source?>
+
+    init(url: URL, source: Source) {
+      self.url = url
+      pending = Mutex(source)
+    }
+
+    /// 后台编好了：用这份写盘（来读时已经当场写过就不再写）。写好了（或早就写好了）返回 true
+    @concurrent func fulfill(_ png: Data) async -> Bool {
+      write { _ in png }
+    }
+
+    func pasteboard(
+      _ pasteboard: NSPasteboard?, item: NSPasteboardItem,
+      provideDataForType type: NSPasteboard.PasteboardType
+    ) {
+      // 有人来读、还没写好：当场编码写（只有赶在后台编完之前来读才碰得上，几十到几百毫秒）。写不成就不给
+      let written = write { source in
+        switch source {
+        case .png(let data): data
+        case .image(let image, let scale): ScreenshotOutput.encode(image, scale: scale)
+        }
+      }
+      if written { item.setString(url.absoluteString, forType: type) }
+    }
+
+    /// 没写过才写；拿不到数据、写不成返回 false，留着下次再试
+    private func write(_ data: (Source) -> Data?) -> Bool {
+      pending.withLock { pending in
+        guard let source = pending else { return true }
+        guard let png = data(source) else { return false }
+        try? FileManager.default.createDirectory(
+          at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        guard (try? png.write(to: url, options: .atomic)) != nil else { return false }
+        pending = nil
+        return true
+      }
+    }
   }
 }

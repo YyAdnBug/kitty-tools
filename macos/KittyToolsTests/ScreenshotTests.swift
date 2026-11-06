@@ -283,7 +283,7 @@ struct ScreenshotTests {
   }
 
   // 截图拷贝为 PNG 文件（2026-11-06 拍板）：默认图像，没存过、认不出来都按图像；拷成文件的那份放在拖出目录的新子文件夹里，
-  // 名字照快速保存或用给的；换日时只删一天以前的（钟往回调过、时间比现在还晚的不删）
+  // 名字照快速保存或用给的；剪贴板里先承诺、读的时候才写；换日时只删一天以前的（钟往回调过、时间比现在还晚的不删）
   @Test func copyAsFile() async throws {
     #expect(Prefs.defaults[Prefs.screenshotCopyAs] as? String == "image")
     let suite = "kitty-test-copy-as-\(UUID().uuidString)"
@@ -295,10 +295,9 @@ struct ScreenshotTests {
     defaults.set("什么", forKey: Prefs.screenshotCopyAs)
     #expect(!Prefs.copiesShotAsFile(defaults))
 
-    let png = Data([0x89, 0x50, 0x4E, 0x47])
-    let named = try #require(
-      await ScreenshotOutput.copyFile(png, name: "截图 2026-11-06 14.03.22.png"))
-    let fresh = try #require(await ScreenshotOutput.copyFile(png, name: nil))
+    // 拷成文件那一份放哪：拖出目录里每次一个新子文件夹（拖进废纸篓许可那一条认得它），名字照快速保存或用给的
+    let named = ScreenshotOutput.copyFileURL(name: "截图 2026-11-06 14.03.22.png")
+    let fresh = ScreenshotOutput.copyFileURL(name: nil)
     defer {
       for url in [named, fresh] {
         try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
@@ -306,12 +305,40 @@ struct ScreenshotTests {
     }
     #expect(named.lastPathComponent == "截图 2026-11-06 14.03.22.png")
     #expect(fresh.lastPathComponent.hasPrefix("截图 ") && fresh.pathExtension == "png")
-    #expect(try Data(contentsOf: named) == png)
-    // 每次一个新子文件夹，在拖出目录里（拖进废纸篓许可那一条认得它）
     #expect(named.deletingLastPathComponent() != fresh.deletingLastPathComponent())
     #expect(ShotHistory.isDisposable(named) && ShotHistory.isDisposable(fresh))
     #expect(ScreenshotOutput.Copied.file(named).detail == "截图 2026-11-06 14.03.22.png")
     #expect(ScreenshotOutput.Copied.image.detail == nil)
+
+    // 按下拷贝时剪贴板里只承诺一个文件：没人读就不写盘；有人读了当场编码写好、给 URL；后台编好的那份晚到就不再写
+    // （临时的具名剪贴板，不碰系统剪贴板）
+    let context = try #require(
+      CGContext(
+        data: nil, width: 4, height: 4, bitsPerComponent: 8, bytesPerRow: 0,
+        space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+    context.setFillColor(red: 1, green: 0, blue: 0, alpha: 1)
+    context.fill(CGRect(x: 0, y: 0, width: 4, height: 4))
+    let image = try #require(context.makeImage())
+    let pasteboard = NSPasteboard(name: .init("kitty-test-offer-\(UUID().uuidString)"))
+    defer { pasteboard.releaseGlobally() }
+    let offer = ScreenshotOutput.FileOffer(url: named, source: .image(image, scale: 2))
+    let item = NSPasteboardItem()
+    item.setDataProvider(offer, forTypes: [.fileURL])
+    pasteboard.clearContents()
+    pasteboard.writeObjects([item])
+    #expect(!FileManager.default.fileExists(atPath: named.path))
+    #expect(pasteboard.string(forType: .fileURL) == named.absoluteString)
+    let written = try Data(contentsOf: named)
+    let source = try #require(CGImageSourceCreateWithData(written as CFData, nil))
+    #expect(CGImageSourceGetType(source) as String? == UTType.png.identifier)
+    #expect(await offer.fulfill(Data([1, 2, 3])))  // 已经写好：不再写
+    #expect(try Data(contentsOf: named) == written)
+    // 后台先编好：写的就是这一份
+    let png = Data([0x89, 0x50, 0x4E, 0x47])
+    let early = ScreenshotOutput.FileOffer(url: fresh, source: .png(png))
+    #expect(await early.fulfill(png))
+    #expect(try Data(contentsOf: fresh) == png)
 
     let now = Date(timeIntervalSinceReferenceDate: 800_000_000)
     let old = URL(filePath: "/tmp/old")

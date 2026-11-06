@@ -2083,10 +2083,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       // 拷贝 / 存储编好的那份 PNG 历史直接拿去当原图，不再编一遍
       switch capture.action {
       case .copy:
+        // 拷成文件时先占好剪贴板，再飞卡片、编码（按 ⌘C 的那一刻就得写好，见 offerShotFile）
+        let offer = offerShotFile(.image(capture.image, scale: capture.scale))
         let land = captured(capture.image, scale: capture.scale, frame: capture.frame)
         guard let png = await encodePNG(capture.image, scale: capture.scale) else { return }
         let remembered = remember(capture, png: png)
-        await copyPNG(png)
+        await copyPNG(png, offer: offer)
         land(.copied, png, remembered)
       case .pin:
         FlyCard.playShutter()
@@ -2356,10 +2358,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       // 同截图：先出图、历史在后面并行记，拷贝 / 存储编好的那份历史直接用（R6，长图编一遍要好几百毫秒）
       switch result.action {
       case .copy:
+        let offer = offerShotFile(.image(result.image, scale: result.scale))
         let land = captured(result.image, scale: result.scale, frame: region)
         guard let png = await encodePNG(result.image, scale: result.scale) else { return }
         let remembered = rememberScroll(result, png: png, region: region)
-        await copyPNG(png)
+        await copyPNG(png, offer: offer)
         land(.copied, png, remembered)
       case .save:
         let land = captured(result.image, scale: result.scale, frame: region)
@@ -2892,25 +2895,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     return png
   }
 
-  /// 截图复制：编成 PNG 再 copyPNG。返回放进剪贴板的是图像还是文件，编码失败 nil
+  /// 截图复制：先占好剪贴板（拷成文件时），再编成 PNG、copyPNG。返回放进剪贴板的是图像还是文件，编码失败 nil
   private func copyImage(_ image: CGImage, scale: CGFloat, name: String? = nil) async
     -> ScreenshotOutput.Copied?
   {
+    let offer = offerShotFile(.image(image, scale: scale), name: name)
     guard let png = await encodePNG(image, scale: scale) else { return nil }
-    return await copyPNG(png, name: name)
+    return await copyPNG(png, name: name, offer: offer)
+  }
+
+  /// 设置 › 截图「截图拷贝为」选了 PNG 文件：**按下拷贝的那一刻**就把剪贴板写好（承诺一个文件，谁来读才给，
+  /// ScreenshotOutput.FileOffer），编码、写盘在后面；不是这个设置给 nil。一次拷贝只调一次——跨电脑的剪贴板工具按 ⌘C
+  /// 那一刻就读、剪贴板短时间里连着变几次它就乱（2026-11-06 用户用 USB 对拷线实测）
+  private func offerShotFile(_ source: ScreenshotOutput.FileOffer.Source, name: String? = nil)
+    -> ScreenshotOutput.FileOffer?
+  {
+    guard Prefs.copiesShotAsFile() else { return nil }
+    let offer = ScreenshotOutput.FileOffer(
+      url: ScreenshotOutput.copyFileURL(name: name), source: source)
+    Paster.write(promising: offer)
+    return offer
   }
 
   /// 截图的每一种「拷贝」都走这里（截图、长截图、钉图、常驻缩略图、晾衣绳 / 历史、存储失败的兜底）：经 Paster 写进剪贴板
-  /// （watcher 会跳过），所以自己记进剪贴板历史。设置 › 截图「截图拷贝为」选了 PNG 文件时剪贴板里只放这个文件
-  /// （同在访达里拷贝一个文件，2026-11-06 拍板 Q3；name 见 ScreenshotOutput.copyFile），写不成就照旧放图像。
-  /// 剪贴板历史两种都记成图片（Q5：临时文件清掉以后这条照样能用）
+  /// （watcher 会跳过），所以自己记进剪贴板历史。设置 › 截图「截图拷贝为」选了 PNG 文件时剪贴板里只有一个文件
+  /// （同在访达里拷贝一个文件，2026-11-06 拍板 Q3）：offer 是按下时已经占好的（offerShotFile），没给就在这里占；
+  /// 写不成文件就改放图像。剪贴板历史两种都记成图片（Q5：临时文件清掉以后这条照样能用）
   @discardableResult
-  private func copyPNG(_ png: Data, name: String? = nil) async -> ScreenshotOutput.Copied {
+  private func copyPNG(
+    _ png: Data, name: String? = nil, offer: ScreenshotOutput.FileOffer? = nil
+  ) async -> ScreenshotOutput.Copied {
     var copied = ScreenshotOutput.Copied.image
-    if Prefs.copiesShotAsFile(), let file = await ScreenshotOutput.copyFile(png, name: name) {
-      Paster.write(files: [file])
-      Paster.rewriteLater(files: [file])  // 按 ⌘C 拷时跨电脑的剪贴板工具会漏掉这一下，见那里
-      copied = .file(file)
+    if let offer = offer ?? offerShotFile(.png(png), name: name), await offer.fulfill(png) {
+      copied = .file(offer.url)
     } else {
       Paster.write([.png: png])
     }
