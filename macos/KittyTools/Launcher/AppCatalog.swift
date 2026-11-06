@@ -202,7 +202,7 @@ enum AppCatalog {
     let sidebar = keys.compactMap { localizable["zh_CN"]?[$0] as? String }
       .reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }
     guard
-      let chinese = ["zh_CN", "zh-Hans", "zh_Hans"].lazy.compactMap(name).first
+      let chinese = ["zh_CN", "zh-Hans", "zh_Hans"].firstNonNil(name)
         ?? (sidebar.isEmpty ? nil : sidebar.joined(separator: " / "))
     else { return nil }
     let english = name("en") ?? info["CFBundleDisplayName"] as? String ?? ""

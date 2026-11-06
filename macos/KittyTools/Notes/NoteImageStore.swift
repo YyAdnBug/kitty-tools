@@ -244,9 +244,9 @@ final class NoteImageStore {
       default: [("png", .png)]
       }
     guard
-      let (ext, encoded) = types.lazy.compactMap({ item in
+      let (ext, encoded) = types.firstNonNil({ item in
         encode(cropped, as: item.type, dpi: size.dpi).map { (item.ext, $0) }
-      }).first
+      })
     else { return .failure(.unsaved) }
     guard encoded.count <= maxFileBytes else { return .failure(.tooLarge) }
     let id = UUID()

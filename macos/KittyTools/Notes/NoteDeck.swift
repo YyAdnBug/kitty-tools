@@ -443,7 +443,7 @@ final class NoteDeck: NSObject {
   static func editor(for id: String, in view: NSView?) -> NoteTextView? {
     guard let view else { return nil }
     if let editor = view as? NoteTextView, editor.identifier?.rawValue == id { return editor }
-    return view.subviews.lazy.compactMap { editor(for: id, in: $0) }.first
+    return view.subviews.firstNonNil { editor(for: id, in: $0) }
   }
 
   /// 操作菜单开着时焦点放到面板自己身上（↑↓ ↩ 走面板的 keyDown，不进正文）；关了还给正文
