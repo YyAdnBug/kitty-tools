@@ -2909,6 +2909,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var copied = ScreenshotOutput.Copied.image
     if Prefs.copiesShotAsFile(), let file = await ScreenshotOutput.copyFile(png, name: name) {
       Paster.write(files: [file])
+      Paster.rewriteLater(files: [file])  // 按 ⌘C 拷时跨电脑的剪贴板工具会漏掉这一下，见那里
       copied = .file(file)
     } else {
       Paster.write([.png: png])
