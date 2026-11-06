@@ -74,9 +74,12 @@ enum WhatsNew {
   ) -> Ledger {
     guard let last else { return ledger }
     var ledger = ledger
-    // 真升了一版：上次打开的那一版和更早的不再标（「新」只留到下一版，2026-11-06 用户要的）；同一版重开、退回旧版本都不动
+    // 真升了一版：上次打开的那一版和更早的不再标（「新」只留到下一版，2026-11-06 用户要的）。记成很久以前开始的（过了 30 天），
+    // 不删：删了的话退回旧版本再升上来，中间那版会重新挂一遍。同一版重开、退回旧版本都不动
     if Updater.isNewer(current, than: last) {
-      ledger.started = ledger.started.filter { Updater.isNewer($0.key, than: last) }
+      for version in ledger.started.keys where !Updater.isNewer(version, than: last) {
+        ledger.started[version] = .distantPast
+      }
     }
     for version in Set(entries.map(\.version))
     where Updater.isNewer(version, than: last) && !Updater.isNewer(version, than: current)

@@ -49,7 +49,8 @@ struct WhatsNewTests {
     #expect(upgraded.started == ["0.7.0": t0, "0.8.0": t0])
     let later = t0.addingTimeInterval(5 * day)
     let again = WhatsNew.adopting(upgraded, from: "0.8.0", to: "0.9.0", now: later, entries: sample)
-    #expect(again.started == ["0.7.0": t0, "0.8.0": t0, "0.9.0": later])
+    // 升到下一版：上一版和更早的记成很久以前（不再标，2026-11-06），这一版从现在起算
+    #expect(again.started == ["0.7.0": .distantPast, "0.8.0": .distantPast, "0.9.0": later])
     // 退回 0.7.0 再升回来：时刻不重新算
     #expect(
       WhatsNew.adopting(again, from: "0.7.0", to: "0.9.0", now: later + day, entries: sample)
@@ -104,7 +105,7 @@ struct WhatsNewTests {
     #expect(WhatsNew.adopting(on072, from: "0.7.2", to: "0.7.2", now: t0, entries: sample) == on072)
     // 0.7.2 → 0.8.0：0.7.2 的没了，0.8.0 的开始标
     let on080 = WhatsNew.adopting(on072, from: "0.7.2", to: "0.8.0", now: t0, entries: sample)
-    #expect(on080.started == ["0.8.0": t0])
+    #expect(on080.started == ["0.7.2": .distantPast, "0.8.0": t0])
     #expect(WhatsNew.fresh(on080, enabled: [], now: t0, entries: sample).map(\.id) == ["new"])
     // 从 0.7.1 直接跳到 0.8.0：两版的都标
     let skipped = WhatsNew.adopting(.init(), from: "0.7.1", to: "0.8.0", now: t0, entries: sample)
