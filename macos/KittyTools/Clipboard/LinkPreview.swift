@@ -440,7 +440,7 @@ extension LinkPreview {
     result.image =
       [
         "og:image:secure_url", "og:image", "og:image:url", "twitter:image", "twitter:image:src",
-      ].lazy.compactMap { meta[$0].flatMap { resolve($0, base) } }.first
+      ].firstNonNil { meta[$0].flatMap { resolve($0, base) } }
     var icons: [(priority: Int, size: Int, url: URL)] = []
     for tag in head.matches(of: /<link\b[^>]*>/.ignoresCase()) {
       let attributes = attributes(of: String(tag.output))

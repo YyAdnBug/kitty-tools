@@ -146,8 +146,8 @@ import ApplicationServices
 
   fileprivate func selectionChanged() {
     let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
-    let item = lists.lazy.compactMap { Self.selectedItem(in: $0, primaryHeight: primaryHeight) }
-      .first
+    // 每个列表只读一次（firstNonNil）：惰性 compactMap 的 first 会读两次，程序坞的选中在两次之间变了就闪退
+    let item = lists.firstNonNil { Self.selectedItem(in: $0, primaryHeight: primaryHeight) }
     guard item != current else { return }
     current = item
     onChange?(item)
