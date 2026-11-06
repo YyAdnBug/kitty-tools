@@ -32,11 +32,18 @@ nonisolated enum OCR {
     defer { leave() }
     guard let observations = try? await request().perform(on: image) else { return nil }
     let lines = observations.compactMap { observation -> Line? in
-      guard
-        let text = observation.topCandidates(1).first?.string
-          .trimmingCharacters(in: .whitespaces), !text.isEmpty
-      else { return nil }
-      return Line(text: text, box: observation.boundingBox.cgRect)
+      guard let candidate = observation.topCandidates(1).first else { return nil }
+      let text = candidate.string.trimmingCharacters(in: .whitespaces)
+      guard !text.isEmpty else { return nil }
+      // 每个拉丁字母 / 数字组成的词各自的框：截图翻译要知道哪些词原来在行内代码块里（看词底下的颜色），
+      // 译文里还留着这个词时把代码块跟着画过去
+      let words = candidate.string.matches(of: wordPattern).compactMap { match -> Word? in
+        guard let box = candidate.boundingBox(for: match.range)?.boundingBox.cgRect else {
+          return nil
+        }
+        return Word(text: String(match.output), box: box)
+      }
+      return Line(text: text, box: observation.boundingBox.cgRect, words: words)
     }
     return mergingRows(lines, imageSize: CGSize(width: image.width, height: image.height))
   }
@@ -69,7 +76,8 @@ nonisolated enum OCR {
       }
       let ordered = touches(rightGap) ? [last, line] : [line, last]
       result[result.count - 1] = Line(
-        text: joinLine(ordered.map(\.text)), box: last.box.union(line.box))
+        text: joinLine(ordered.map(\.text)), box: last.box.union(line.box),
+        words: ordered.flatMap(\.words))
     }
     return result
   }
@@ -81,10 +89,23 @@ nonisolated enum OCR {
       of: /(?:[•◦▪▫‣●○■□·・]|[-*–]\s|\d{1,3}[.)]\s|\d{1,3}、|[(（]\d{1,3}[)）]|[①-⑳])\s*/)?.0
   }
 
-  /// 识别出的一行：文字 + 行框（归一化坐标、原点左下，同 Vision）
+  /// 识别出的一行：文字 + 行框（归一化坐标、原点左下，同 Vision）+ 其中拉丁字母 / 数字组成的词各自的框
   struct Line: Equatable, Sendable {
     var text: String
     var box: CGRect
+    var words: [Word] = []
+  }
+
+  /// 一个词和它的框（Vision 给的框是归一化坐标；截图翻译换成像素后用同一个类型）
+  struct Word: Equatable, Sendable {
+    var text: String
+    var box: CGRect
+  }
+
+  /// 词：拉丁字母、数字、下划线开头和结尾，中间可以有 `.` `-`（`total_comments_evaluated`、`v1.2`、`dark-mode`）
+  /// （Regex 不是 Sendable，存成静态常量过不了 Swift 6 的并发检查，每次现做一个）
+  private static var wordPattern: Regex<Substring> {
+    /[A-Za-z0-9_](?:[A-Za-z0-9_.\-]*[A-Za-z0-9_])?/
   }
 
   /// 只开自动识别语种、不给语言提示。实测：写死简中 / 繁中 / 英文会丢日文假名、韩文识别为空、
