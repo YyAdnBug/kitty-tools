@@ -2,7 +2,7 @@
 // 剪贴板图片的后台识字放在子进程里（第二轮体检 M2，文件末尾「子进程识字」）：识字模型一加载就常驻 45–52 MB，
 // 让它跟着子进程退掉；截图翻译、识字、钉图这些当场要结果的照旧在进程内识——连着识的时候模型留着（热的 0.2 s，
 // 重新加载 0.4–0.6 s），闲下来由空闲回收放掉（「放掉识字模型」一节，2026-10-07）。
-// 分段（体检 A32）：按行框的纵向间距和句末短行切段，段内的行按中日文 / 其它文字的规则接起来；截图翻译总是按段送去翻，
+// 分段（体检 A32）：先把 Vision 拆开的同一行接回去，再按行框的纵向间距、句末短行和列表记号切段，段内的行按中日文 / 其它文字的规则接起来；截图翻译总是按段送去翻，
 // 识字按设置 › 截图的开关；翻译的「把同一段里的换行接起来」调这里的 joiningLines（纯文本按空行分段），段内接行和识字同一个 joinLine。
 
 import CoreText
@@ -25,18 +25,60 @@ nonisolated enum OCR {
     return String(join(observations).prefix(maxCharacters))
   }
 
-  /// 截图翻译、识字：带行框的一行行（Vision 顺序，左右分栏时先左栏后右栏）；识别失败 nil、没有文字 []
+  /// 截图翻译、识字：带行框的一行行（Vision 顺序，左右分栏时先左栏后右栏；同一行被拆开的碎块已经接回去，见 mergingRows）；
+  /// 识别失败 nil、没有文字 []
   @concurrent static func recognizeLines(in image: CGImage) async -> [Line]? {
     enter()
     defer { leave() }
     guard let observations = try? await request().perform(on: image) else { return nil }
-    return observations.compactMap { observation in
+    let lines = observations.compactMap { observation -> Line? in
       guard
         let text = observation.topCandidates(1).first?.string
           .trimmingCharacters(in: .whitespaces), !text.isEmpty
       else { return nil }
       return Line(text: text, box: observation.boundingBox.cgRect)
     }
+    return mergingRows(lines, imageSize: CGSize(width: image.width, height: image.height))
+  }
+
+  /// 把同一视觉行里被 Vision 拆开的碎块接回一行（纯函数，配单测）。Vision 在底色、间距变的地方会把一行切开：
+  /// 网页里的行内代码块（`(e.g., high, medium` / `low ), review tier` / `balanced,` / `max ),` 是同一行的四块）、
+  /// 单独认出来的项目符号 `•`。不接的话后面切段一碰到「和上一块并排」就断，一句话碎成几段，段框、行高、行宽的中位数也跟着歪
+  /// （2026-11-06 截图翻译的排版问题）。只接 Vision 顺序里**挨着**的两块，且要同时满足：纵向重叠过半（同一行）、
+  /// 横向空隙不超过 1.2 倍行高（隔得更远的是并排的另一栏，照旧分开）。文字按左右顺序用 joinLine 接，框取并集。
+  /// 比较空隙要用像素：归一化坐标横竖两个方向的单位不一样
+  static func mergingRows(_ lines: [Line], imageSize: CGSize) -> [Line] {
+    guard imageSize.width > 0, imageSize.height > 0 else { return lines }
+    var result: [Line] = []
+    for line in lines {
+      guard let last = result.last else {
+        result.append(line)
+        continue
+      }
+      let overlap = min(last.box.maxY, line.box.maxY) - max(last.box.minY, line.box.minY)
+      let sameRow = overlap >= 0.5 * min(last.box.height, line.box.height)
+      let height = max(last.box.height, line.box.height) * imageSize.height
+      // 两块之间的横向空隙（像素）：在右边是 line.minX - last.maxX，在左边是 last.minX - line.maxX；
+      // 稍微叠在一起（行框的毛边）算挨着，叠得多的不是左右关系
+      let rightGap = (line.box.minX - last.box.maxX) * imageSize.width
+      let leftGap = (last.box.minX - line.box.maxX) * imageSize.width
+      let touches = { (gap: CGFloat) in gap >= -0.5 * height && gap <= 1.2 * height }
+      guard sameRow, touches(rightGap) || touches(leftGap) else {
+        result.append(line)
+        continue
+      }
+      let ordered = touches(rightGap) ? [last, line] : [line, last]
+      result[result.count - 1] = Line(
+        text: joinLine(ordered.map(\.text)), box: last.box.union(line.box))
+    }
+    return result
+  }
+
+  /// 行首的列表记号（`•`、`-`、`1.`、`①` 这类）连同后面的空白；不是列表项返回 nil。切段时列表项另起一段，
+  /// 截图翻译排译文时按它的宽度做悬挂缩进
+  static func listMarker(_ text: String) -> Substring? {
+    text.prefixMatch(
+      of: /(?:[•◦▪▫‣●○■□·・]|[-*–]\s|\d{1,3}[.)]\s|\d{1,3}、|[(（]\d{1,3}[)）]|[①-⑳])\s*/)?.0
   }
 
   /// 识别出的一行：文字 + 行框（归一化坐标、原点左下，同 Vision）
@@ -109,8 +151,9 @@ nonisolated enum OCR {
     }
   }
 
-  /// 按行框切段（纯函数，配单测）：两种情况断段——① 这一行和上一行的纵向间距大于 1.2 倍中位行高（空了一行、段间距）；
-  /// ② 上一行以句末标点结尾、且不到中位行宽的 80%（段落最后一行）。另外往回跳（这一行在上一行上面，换栏）、
+  /// 按行框切段（纯函数，配单测）：三种情况断段——① 这一行和上一行的纵向间距大于 1.2 倍中位行高（空了一行、段间距）；
+  /// ② 上一行以句末标点结尾、且不到中位行宽的 80%（段落最后一行）；③ 这一行以列表记号开头（listMarker：一条一段，
+  /// 列表项之间的间距常常不到 1.2 倍行高）。另外往回跳（这一行在上一行上面，换栏）、
   /// 和上一行并排（同一高度的另一块）也断开。ponytail: 不看缩进和左边界（容易误判列表、代码）；
   /// macOS 26 的 RecognizeDocumentsRequest 直接给段落，有 26 测试机再换
   static func paragraphs(_ lines: [Line]) -> [[String]] {
@@ -134,6 +177,7 @@ nonisolated enum OCR {
         let breaks =
           gap > 1.2 * lineHeight || gap < -0.5 * lineHeight
           || (endsSentence && previous.box.width < 0.8 * lineWidth)
+          || listMarker(line.text) != nil
         if breaks { result.append([]) }
       } else {
         result.append([])
