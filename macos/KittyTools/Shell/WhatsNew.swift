@@ -44,6 +44,10 @@ enum WhatsNew {
       id: "launcher-frequent", version: "0.7.2", feature: .launcher, page: .launcher,
       section: "空搜索框里列出常用"),
     Entry(id: "pin-text", version: "0.7.2", feature: .screenshot, actions: [.pinClipboard]),
+    // 0.7.3：截图拷贝为 PNG 文件（设置 › 截图，2026-11-06 用户转来的需求：USB 对拷线粘不过去截图）
+    Entry(
+      id: "screenshot-copy-as-file", version: "0.7.3", feature: .screenshot, page: .screenshot,
+      section: "截图拷贝为"),
   ]
 
   /// 一版最多标几个（拍板 B1：标多了到处都是「新」，等于没标）

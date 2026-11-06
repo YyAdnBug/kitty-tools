@@ -548,9 +548,11 @@ struct SnapshotProbeTests {
         size: NSSize(width: 780, height: 600), dark: dark,
         to: "\(out)/settings-\(page.rawValue)\(dark ? "-dark" : "").png")
     }
-    // 新功能标记（0.7.2）：侧栏行尾强调色的「新」，页里新的那一行开关后面也有（窗口拉高，露出那一行）
-    navigation.fresh = ["screenshot-overlay", "launcher-frequent"]
-    for (page, dark) in [(SettingsPage.translate, false), (.launcher, false), (.translate, true)] {
+    // 新功能标记（0.7.2、0.7.3）：侧栏行尾强调色的「新」，页里新的那一行开关后面也有（窗口拉高，露出那一行）
+    navigation.fresh = ["screenshot-overlay", "launcher-frequent", "screenshot-copy-as-file"]
+    for (page, dark) in [
+      (SettingsPage.translate, false), (.launcher, false), (.translate, true), (.screenshot, false),
+    ] {
       navigation.page = page
       try snapshot(
         SettingsRoot(navigation: navigation, page: pages) { AnyView(EmptyView()) },
@@ -609,7 +611,7 @@ struct SnapshotProbeTests {
     shotPrefs.set(true, forKey: Prefs.audioRecordStartsImmediately)
     for dark in [false, true] {
       try snapshot(
-        ScreenshotTab(shots: nil).defaultAppStorage(shotPrefs),
+        ScreenshotTab(shots: nil).defaultAppStorage(shotPrefs).environment(navigation),
         size: NSSize(width: 640, height: 720),
         dark: dark, to: "\(out)/settings-screenshot-custom\(dark ? "-dark" : "").png")
       try snapshot(

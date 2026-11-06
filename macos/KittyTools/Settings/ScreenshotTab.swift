@@ -18,6 +18,8 @@ struct ScreenshotTab: View {
   @AppStorage(Prefs.screenshotPlacement) private var placement = Prefs.ShotPlacement.corner
     .rawValue
   @AppStorage(Prefs.screenshotCopyAs) private var copyAs = "image"
+  /// 「截图拷贝为」那一行的「新」（0.7.3，WhatsNew）
+  @Environment(SettingsNavigation.self) private var navigation
   @AppStorage(Prefs.shotHistory) private var keepsHistory = true
   @AppStorage(Prefs.shotHistoryDays) private var historyDays = 30
   @AppStorage(Prefs.shotHistoryMegabytes) private var historyMegabytes = 2 * 1024
@@ -44,10 +46,12 @@ struct ScreenshotTab: View {
             Text("图像").tag("image")
             Text("PNG 文件").tag("file")
           } label: {
-            Text("截图拷贝为")
+            NewTitle("截图拷贝为", page: .screenshot, fresh: navigation.fresh)
             Text("选 PNG 文件时，剪贴板里是一个图片文件，和拷贝一个文件一样：能粘进聊天窗口和文件夹，只认文件的跨电脑剪贴板工具也传得过去；只收图像的程序粘不进去")
           }
           .pickerStyle(.segmented)
+          // 拨过这一行，「新」就算看过了（光点进这一页不算；WhatsNew）
+          .onChange(of: copyAs) { WhatsNew.touch(section: "截图拷贝为", of: .screenshot) }
         }
         Section {
           Toggle(isOn: $shutterSound) {
