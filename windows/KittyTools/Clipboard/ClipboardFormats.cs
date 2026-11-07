@@ -486,6 +486,24 @@ internal static unsafe partial class ClipboardFormats
         return false;
     }
 
+    /// <summary>自检用（--copy-file-probe）：一次打开读出这几种格式的原字节，没有的给 null；打不开剪贴板给 null。</summary>
+    internal static Dictionary<uint, byte[]?>? ReadForProbe(params uint[] formats)
+    {
+        if (!OpenClipboard())
+        {
+            return null;
+        }
+
+        try
+        {
+            return formats.ToDictionary(format => format, format => Has(format) ? ReadBlobWithin(format, MaxImageBytes) : null);
+        }
+        finally
+        {
+            PInvoke.CloseClipboard();
+        }
+    }
+
     private static bool Has(uint format) => format != 0 && PInvoke.IsClipboardFormatAvailable(format);
 
     private static void* Lock(uint format, out nuint size, out IntPtr local)

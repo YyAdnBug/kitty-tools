@@ -29,6 +29,25 @@
   Ctrl+C 和点按钮各自能不能传；Ctrl+C 不行的话照 PLAN-v15 那段改成延迟渲染，交审查方。
 - **替用户定的**：钉图拷成图像时提示照旧不写尺寸（原来就不写）；「剪贴板被别的程序占着」统一成角落卡原来那句「…，稍后再试」；清理挂在 `ScheduleBackup`（启动、解锁、唤醒）上，Windows 没有换日事件。
 
+### Windows 核验结果（2026-11-07，Claude 在 Windows 上，基于 origin/windows `80af19a`）
+
+1. **编译**：一次就过，没有编译错。Debug x64、Release AOT x64 / ARM64 **零警告**（加了自检之后两个架构又发了一遍，照样零警告）；审查方说的几处编译点都没事
+   （`PurgeStaleTemp` 的元组名字不同、类型一样，能拼；三处调用方没有多余的 `using` 警告）。
+2. **单测**：789 个全过（788 + `ShotHistoryTests.StaleTempKeepsTheLastDay`）。
+3. **设置 › 截图**：浅色 / 深色各一张真窗口（`--ui-snapshots` 里给截图页加了一张 WGC 的 `settings-screenshot-*-window.png`），「截图拷贝为」那张卡在「快速保存到」说明下面，默认「图像」，
+   深色下字和下拉都看得清。截图在 windows-shots `0.4.0-v15/`。
+4. **自检 `--copy-file-probe=<目录>`**（新加，只在测试档，`App/CopyFileProbe.cs`）：不开截图界面、不发按键，直接调 `CopyPngAsync` 的几组参数，每步读回剪贴板，提示卡各拍一张。
+   Debug 23 条全过、Release AOT x64 的 exe 也跑了一遍（同样全过）。测了：默认 image；图像 = PNG + DIBV5、没有 HDROP；文件 = 只有 CF_HDROP 一个文件 + Preferred DropEffect 1、
+   文件在 `copy\<编号>\截图 日期 时间.png`、内容就是这张、同一秒再拷是新子文件夹；剪贴板历史两种都记成图片、来源对（截图 / 截图历史 / 钉图）；截图历史给的现成文件原样用、不在了另写；
+   钉图提示「已复制钉图」（文件时小字是文件名、图像时没有小字）；另一根线程开着剪贴板时两种都返回 false、提示「没能复制 / 剪贴板被别的程序占着，稍后再试」；导出导入带着走、不认识的值不改；
+   `PurgeStaleTemp` 删两天前的、留新的；Dev 重启后 `copy\`、`history\` 都清空了。
+   - **怎么没碰用户的剪贴板**：自检开头备份剪贴板、结束写回去；自检期间每次写入都带 `ExcludeClipboardContentFromMonitorProcessing` + `CanIncludeInClipboardHistory = 0`
+     （`ClipboardWriter.QuietForProbe`，只在测试档生效），用户开着的正式版和 Win+V 都不记；`TMP` 指到临时目录，正式版拖出去的 `%TEMP%\kitty-shots` 没动。
+   - 为了自检加的产品代码只有两处：`ClipboardWriter.QuietForProbe`（测试档以外不生效）、`ClipboardFormats.ReadForProbe`（只读）。
+5. **手测**：HANDTEST 1148、1151–1154 能用自检和代码验的那部分写了「Windows 11-07」；1149（聊天程序 / 画图）、1150 / 1155（对拷线）、真按 Ctrl+C、资源管理器里粘、Win+V、
+   真锁屏解锁都**没测**，留给用户。没补写剪贴板（照旧编码完写一次）。
+6. **没改审查方的代码**：PLAN-v15 的产品代码原样能用，这次只加了自检和截图。
+
 ## PLAN-v13（便签，2026-11-05 用户「继续新会话剩下的，现在不检查，最后一次性检查」）
 
 方案在 `PLAN-v13.md`（不是拍板页，行为照 mac 0.6.0 起的便签，`macos` b7a55e33；Windows 自己定的在 §3）。和 PLAN-v12 一样**全部在 Mac 上写、一行都没编译**，

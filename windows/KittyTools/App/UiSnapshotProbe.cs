@@ -631,6 +631,9 @@ internal static class UiSnapshotProbe
             settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 1900));
             settings.ShowPage(welcome: false, "screenshot");
             await RenderWindowAsync(settings, "settings-screenshot", dark, directory);
+            // PLAN-v15：「截图拷贝为」那张卡在上面一屏里，真窗口的样子拍一张。
+            await ShootSettingsWindowAsync(settings, "settings-screenshot", dark, directory);
+            settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 1900));
             settings.ShowPage(welcome: false, "record");
             await RenderWindowAsync(settings, "settings-record", dark, directory);
 

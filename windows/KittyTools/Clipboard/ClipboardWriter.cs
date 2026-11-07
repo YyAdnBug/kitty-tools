@@ -148,6 +148,7 @@ internal static class ClipboardWriter
             SetBytes(ClipboardFormats.CF_DIBV5, dib);
         }
 
+        MarkQuietForProbe();
         return true;
     }
 
@@ -187,12 +188,30 @@ internal static class ClipboardWriter
                 SetBytes(ClipboardFormats.PreferredDropEffectFormat, effect);
             }
 
+            MarkQuietForProbe();
             return true;
         }
         finally
         {
             PInvoke.CloseClipboard();
         }
+    }
+
+    /// <summary>
+    /// 自检（--copy-file-probe，只在测试档）写的每一次都带上「别记」的两个标记：用户自己开着的 Kitty Tools 和 Win+V
+    /// 都不记自检写进系统剪贴板的东西（同 ClipboardFormats.IsPrivateCore 认的那两样）。
+    /// </summary>
+    internal static bool QuietForProbe { get; set; }
+
+    private static void MarkQuietForProbe()
+    {
+        if (!QuietForProbe || !Paths.IsTestProfile)
+        {
+            return;
+        }
+
+        SetBytes(ClipboardFormats.ExcludeFromMonitorFormat, new byte[4]);
+        SetBytes(ClipboardFormats.CanIncludeInHistoryFormat, new byte[4]);
     }
 
     /// <summary>DROPFILES 头 + 宽字符文件表（双 \0 结尾）。</summary>

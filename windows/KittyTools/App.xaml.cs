@@ -108,6 +108,13 @@ public partial class App : Application
                 return;
             }
 
+            if (CopyFileProbe.IsRequested(commandLine) && CopyFileProbe.DirectoryFrom(commandLine) is { } copyProbe)
+            {
+                // PLAN-v15：截图拷贝为文件的自检（只在测试档），跑完就退。
+                _ = CopyFileProbe.RunAsync(copyProbe);
+                return;
+            }
+
             if (Environment.GetCommandLineArgs().Contains("--crash-test", StringComparer.OrdinalIgnoreCase))
             {
                 throw new InvalidOperationException("--crash-test");
