@@ -94,4 +94,15 @@ public static class LauncherHome
         (result[from], result[to]) = (result[to], result[from]);
         return result;
     }
+
+    /// <summary>
+    /// 使用记录里这一行算不算「用过的网址 / 文件」（mac usedLocations）：全局那一行、网址或路径、不是当前书签里的同一网址；
+    /// 从书签 / 快捷链接打开的（listed，PLAN-v16 L2，issue #10）不在这里找回——还在的那份列表自己会列，浏览器里删了就该搜不到。
+    /// </summary>
+    public static bool IsUsedLocation(string query, string kind, string target, bool listed, ISet<string> bookmarked)
+        => query.Length == 0 && kind is "url" or "path" && !listed && !bookmarked.Contains(target);
+
+    /// <summary>「常用」里 listed 的那一行只从现在的书签 / 快捷链接里找（找不到就不列，记录留着，加回来照旧，副标题是书签那一行的）。</summary>
+    public static LauncherItem? RestoreListed(LauncherKind kind, string target, IEnumerable<LauncherItem> listed)
+        => listed.FirstOrDefault(item => item.Kind == kind && item.Target == target);
 }

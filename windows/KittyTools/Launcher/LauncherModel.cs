@@ -613,7 +613,10 @@ internal sealed partial class LauncherModel
             .ToList();
     }
 
-    /// <summary>用过的网址 / 文件（mac usedLocations）：靠使用记录找回来；和书签同一网址时只留书签。</summary>
+    /// <summary>
+    /// 用过的网址 / 文件（mac usedLocations）：靠使用记录找回来；和书签同一网址时只留书签；从书签 / 快捷链接打开的不找回
+    /// （PLAN-v16 L2：浏览器里删了就搜不到）。
+    /// </summary>
     private static List<LauncherItem> UsedLocations(IReadOnlyList<LauncherItem> bookmarks)
     {
         if (LauncherUsageStore.Instance is not { } store)
@@ -623,7 +626,7 @@ internal sealed partial class LauncherModel
 
         var bookmarked = new HashSet<string>(bookmarks.Select(item => item.Target), StringComparer.OrdinalIgnoreCase);
         return store.UsedLocations()
-            .Where(row => !bookmarked.Contains(row.Target))
+            .Where(row => LauncherHome.IsUsedLocation(row.Query, row.Kind, row.Target, row.Listed, bookmarked))
             .Select(row => Location(LauncherUsageStore.KindFromText(row.Kind), row.Target, row.Title))
             .ToList();
     }
@@ -639,14 +642,21 @@ internal sealed partial class LauncherModel
         IsFolder = kind == LauncherKind.Path && Directory.Exists(target),
     };
 
-    /// <summary>空查询：先收藏（藏起还原不出来的），再按全局使用分用常用补足 8 行。</summary>
+    /// <summary>
+    /// 空查询：先收藏（藏起还原不出来的），再按全局使用分用常用补足 8 行。设置里关掉「空搜索框里列出常用」时只有收藏
+    /// （PLAN-v16 L1，issue #2；使用记录照记、照样给排序加成）。从书签 / 快捷链接打开的只从它们现在的列表里找（L2）。
+    /// </summary>
     private List<LauncherItem> Home()
     {
         var store = LauncherUsageStore.Instance;
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        var frequent = store is null
+        List<LauncherItem>? listed = null;
+        List<LauncherItem> Listed() => listed ??= BrowserIndex.Bookmarks.Concat(WebSearch.QuicklinkItems(Engines)).ToList();
+        var frequent = store is null || !SettingsService.Current.LauncherShowsFrequent
             ? Enumerable.Empty<LauncherItem?>()
-            : store.Top(64, now).Select(row => Restore(LauncherUsageStore.KindFromText(row.Kind), row.Target, row.Title));
+            : store.Top(64, now).Select(row => row.Listed
+                ? LauncherHome.RestoreListed(LauncherUsageStore.KindFromText(row.Kind), row.Target, Listed())
+                : Restore(LauncherUsageStore.KindFromText(row.Kind), row.Target, row.Title));
         var (items, favoriteCount) = LauncherHome.Merge(VisibleFavorites(), frequent);
         FavoriteCount = favoriteCount;
         return items;
@@ -990,6 +1000,11 @@ internal sealed partial class LauncherModel
                 }
 
                 Close();
+                if (item.HotKeyAction is { } hotKeyAction)
+                {
+                    WhatsNewHost.Touch(hotKeyAction);
+                }
+
                 LauncherActions.Execute(item.Target);
                 break;
             case LauncherKind.Command:

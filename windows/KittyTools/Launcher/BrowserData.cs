@@ -327,6 +327,7 @@ internal static class BrowserIndex
                 .Where(name => !string.IsNullOrEmpty(name)).Select(name => name!).Distinct().ToList(),
             Initials = new[] { LauncherMatch.Initials(shown), pinyin?.Initials }
                 .Where(value => !string.IsNullOrEmpty(value)).Select(value => value!).Distinct().ToList(),
+            Listed = true,
         };
     }
 

@@ -1330,6 +1330,7 @@ internal sealed class ShellRuntime
             return;
         }
 
+        WhatsNewHost.Touch(action);
         switch (action)
         {
             case HotKeyActions.Clipboard:

@@ -12,7 +12,8 @@ internal readonly record struct LauncherUsageRow(
     string Target,
     string Title,
     double Score,
-    long UsedAt);
+    long UsedAt,
+    bool Listed = false);
 
 internal sealed class LauncherUsageStore
 {
@@ -124,7 +125,8 @@ internal sealed class LauncherUsageStore
         var previous = _entries.TryGetValue(key, out var old)
             ? LauncherUsageMath.Decayed(old.Score, old.UsedAt, now, timeConstantDays)
             : 0;
-        var row = new LauncherUsageRow(query, KindText(item.Kind), item.Target, item.Title, previous + 1, now);
+        // 最后一次是从书签 / 快捷链接打开的：只在它还在那份列表里时列出来（PLAN-v16 L2）
+        var row = new LauncherUsageRow(query, KindText(item.Kind), item.Target, item.Title, previous + 1, now, item.Listed);
         _entries[key] = row;
         try
         {

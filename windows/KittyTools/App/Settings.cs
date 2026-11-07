@@ -72,6 +72,9 @@ internal sealed class Settings
 
     public int? LauncherPanelTop { get; set; }
 
+    /// <summary>空搜索框里在收藏后面列「常用」（PLAN-v16 L1，mac launcherShowsFrequent，默认开，跟着导出导入）。</summary>
+    public bool LauncherShowsFrequent { get; set; } = true;
+
     /// <summary>
     /// 三块主面板拖出来的大小（PLAN-v14 V11，同 mac 不注册默认值）：剪贴板 / 启动器的宽（DIP，560–1200）、最多露几行（x.5，6.5–14.5）、
     /// 翻译浮窗最高多高（DIP）。都是这台电脑自己的状态，不在导出清单里；null = 默认（720 宽、8.5 行、自动）。
@@ -442,6 +445,22 @@ internal sealed class Settings
     /// 没存过的当开；关掉只停入口和后台工作，数据层照常。
     /// </summary>
     public Dictionary<string, bool>? Features { get; set; }
+
+    /// <summary>设置侧栏收起了的组（组标题；PLAN-v16 G2，这台电脑自己的，不导出不同步）。</summary>
+    public List<string>? SettingsCollapsedGroups { get; set; }
+
+    /// <summary>设置侧栏最底下「已关闭」那组展开着没有（默认收起）。</summary>
+    public bool SettingsShowsOffFeatures { get; set; }
+
+    /// <summary>
+    /// 新功能标记的账（PLAN-v16 G3，这台电脑自己的，不导出不同步）：各版本第一次打开的时刻（Unix 毫秒，0 = 很久以前）、碰过哪几个；
+    /// 上次运行的版本（升级上来才标，新装不标）。
+    /// </summary>
+    public Dictionary<string, long>? WhatsNewStarted { get; set; }
+
+    public List<string>? WhatsNewTouched { get; set; }
+
+    public string? LastRunVersion { get; set; }
 }
 
 /// <summary>一个翻译服务的非密钥配置（密钥在凭据管理器，字段名见 SecretField）。</summary>
@@ -517,6 +536,13 @@ internal static class SettingsService
                     _current = new Settings();
                     IsNew = true;
                     SettingsDefaults.Apply(_current);
+                    // 新装只开剪贴板、启动器、翻译、截图（PLAN-v16 G2，同 mac seedNewInstall）：默认值不变，把各个开关明写进设置。
+                    // 测试档要 KITTY_SEED_FEATURES=1 才写（自检、截图的新档照旧全开）。
+                    if (!Paths.IsTestProfile || Environment.GetEnvironmentVariable("KITTY_SEED_FEATURES") == "1")
+                    {
+                        _current.Features = Core.SettingsSidebar.SeedNewInstall(KittyTools.Features.AllKeys, _current.Features);
+                    }
+
                     return;
                 }
 

@@ -116,6 +116,7 @@ public static class WebSearch
                     .Where(name => !string.IsNullOrEmpty(name)).Select(name => LauncherMatch.Fold(name!)).Distinct().ToList(),
                 Initials = new[] { LauncherMatch.Initials(engine.Name), pinyin?.Initials }
                     .Where(value => !string.IsNullOrEmpty(value)).Select(value => value!).Distinct().ToList(),
+                Listed = true,
             });
         }
 

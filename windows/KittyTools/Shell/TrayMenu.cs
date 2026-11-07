@@ -44,6 +44,7 @@ internal static partial class TrayMenu
         }
 
         var items = new List<Item>();
+        _fresh = WhatsNewHost.Current();
         Build(items);
         _menu = CreatePopupMenu();
         if (_menu == IntPtr.Zero)
@@ -120,8 +121,8 @@ internal static partial class TrayMenu
                 continue;
             }
 
-            // & 在菜单里是助记符，原样显示要写成 &&。
-            var text = item.Text.Replace("&", "&&") +
+            // & 在菜单里是助记符，原样显示要写成 &&。新功能（PLAN-v16 G3）文字后面跟一个「新」：系统菜单画不了强调色的小圆点。
+            var text = item.Text.Replace("&", "&&") + (item.IsNew ? "　" + Core.WhatsNew.Label : string.Empty) +
                        (string.IsNullOrEmpty(item.Shortcut) ? string.Empty : "\t" + item.Shortcut);
             if (item.Children is { } children)
             {
@@ -153,7 +154,12 @@ internal static partial class TrayMenu
     /// <summary>Text 为 null 是分隔线；Capture = 要拍屏幕的（截图、识字、录屏），等菜单淡完再开始；Children 不为 null 是子菜单（Run 不用）。</summary>
     private sealed record Item(
         string? Text, string? Shortcut, Action Run, bool Enabled = true, bool Checked = false, bool Capture = false,
-        IReadOnlyList<Item>? Children = null);
+        IReadOnlyList<Item>? Children = null, bool IsNew = false);
+
+    /// <summary>这次弹菜单时要标「新」的（PLAN-v16 G3）。</summary>
+    private static List<Core.WhatsNewEntry> _fresh = new();
+
+    private static bool IsNew(string action) => Core.WhatsNew.MarksAction(action, _fresh);
 
     private static void Build(List<Item> menu)
     {
@@ -270,7 +276,11 @@ internal static partial class TrayMenu
             var children = new List<Item>();
             if (!entersFirst)
             {
-                children.Add(new Item("选择状态…", shortcut, StatusPicker.ToggleOrEnterFirst));
+                children.Add(new Item("选择状态…", shortcut, () =>
+                {
+                    WhatsNewHost.Touch(HotKeyActions.StatusScreen);
+                    StatusPicker.ToggleOrEnterFirst();
+                }, IsNew: IsNew(HotKeyActions.StatusScreen)));
                 children.Add(new Item(null, null, static () => { }));
             }
 
@@ -278,12 +288,16 @@ internal static partial class TrayMenu
             for (var index = 0; index < presets.Count; index++)
             {
                 var preset = presets[index];
-                children.Add(new Item(preset.Title, entersFirst && index == 0 ? shortcut : null, () => StatusScreenHost.Enter(preset)));
+                children.Add(new Item(preset.Title, entersFirst && index == 0 ? shortcut : null, () =>
+                {
+                    WhatsNewHost.Touch(HotKeyActions.StatusScreen);
+                    StatusScreenHost.Enter(preset);
+                }));
             }
 
             children.Add(new Item(null, null, static () => { }));
             children.Add(new Item("管理状态…", null, () => runtime?.ShowSettings(welcome: false, "statusScreen")));
-            menu.Add(new Item("状态屏", null, static () => { }, Children: children));
+            menu.Add(new Item("状态屏", null, static () => { }, Children: children, IsNew: IsNew(HotKeyActions.StatusScreen)));
         }
 
         // 提醒（PLAN-v12 N6，mac addReminderMenu）：一项「提醒」带子菜单——新建提醒…（快捷键）、下一个、几分钟后提醒我、暂停全部 / 恢复、管理提醒…。
@@ -292,7 +306,11 @@ internal static partial class TrayMenu
             AddSeparator(menu);
             var children = new List<Item>
             {
-                new("新建提醒…", runtime?.HotKeys.ShortcutFor(HotKeyActions.ReminderNew), () => runtime?.NewReminder()),
+                new("新建提醒…", runtime?.HotKeys.ShortcutFor(HotKeyActions.ReminderNew), () =>
+                {
+                    WhatsNewHost.Touch(HotKeyActions.ReminderNew);
+                    runtime?.NewReminder();
+                }, IsNew: IsNew(HotKeyActions.ReminderNew)),
             };
             if (ReminderCenter.NextUp() is { } next)
             {
@@ -340,11 +358,11 @@ internal static partial class TrayMenu
 
             children.Add(new Item(null, null, static () => { }));
             children.Add(new Item("管理提醒…", null, () => runtime?.ShowSettings(welcome: false, "reminders")));
-            menu.Add(new Item("提醒", null, static () => { }, Children: children));
+            menu.Add(new Item("提醒", null, static () => { }, Children: children, IsNew: IsNew(HotKeyActions.ReminderNew)));
         }
 
         AddSeparator(menu);
-        menu.Add(new Item("设置…", null, () => runtime?.ShowSettings(welcome: false)));
+        menu.Add(new Item("设置…", null, () => runtime?.ShowSettings(welcome: false), IsNew: Core.WhatsNew.InSettingsOnly(_fresh)));
         menu.Add(new Item("关于 Kitty Tools", null, () => runtime?.ShowSettings(welcome: false, "about")));
         // 下载中这一项是「正在下载 37% · 取消」，点了就取消（第四轮体检 E23）。
         var updateText = AutoUpdater.ProgressMenuText is { } progress
@@ -375,7 +393,11 @@ internal static partial class TrayMenu
 
     private static void Add(
         List<Item> menu, string text, string action, Action run, bool enabled = true, bool capture = false)
-        => menu.Add(new Item(text, ShellRuntime.Instance?.HotKeys.ShortcutFor(action), run, enabled, Capture: capture));
+        => menu.Add(new Item(text, ShellRuntime.Instance?.HotKeys.ShortcutFor(action), () =>
+        {
+            WhatsNewHost.Touch(action);
+            run();
+        }, enabled, Capture: capture, IsNew: action.Length > 0 && IsNew(action)));
 
     /// <summary>某一节整个没有（功能关了）时不留连着的两条分隔线，也不在最前面放一条。</summary>
     private static void AddSeparator(List<Item> menu)

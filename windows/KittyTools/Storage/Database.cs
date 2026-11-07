@@ -392,7 +392,7 @@ internal sealed class Database : IDisposable
     {
         var rows = new List<LauncherUsageRow>();
         using var statement = _connection.Prepare(
-            "SELECT query, kind, target, title, score, used_at FROM launcher_usage");
+            "SELECT query, kind, target, title, score, used_at, listed FROM launcher_usage");
         while (statement.Step())
         {
             rows.Add(new LauncherUsageRow(
@@ -401,7 +401,8 @@ internal sealed class Database : IDisposable
                 statement.GetText(2) ?? string.Empty,
                 statement.GetText(3) ?? string.Empty,
                 statement.GetInt64(4) == 0 ? 0 : BitConverter.Int64BitsToDouble(statement.GetInt64(4)),
-                statement.GetInt64(5)));
+                statement.GetInt64(5),
+                statement.GetInt64(6) == 1));
         }
 
         return rows;
@@ -411,15 +412,16 @@ internal sealed class Database : IDisposable
     {
         using var statement = _connection.Prepare(
             """
-            INSERT OR REPLACE INTO launcher_usage(query, kind, target, title, score, used_at)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            INSERT OR REPLACE INTO launcher_usage(query, kind, target, title, score, used_at, listed)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
             """);
         statement.BindText(1, row.Query)
             .BindText(2, row.Kind)
             .BindText(3, row.Target)
             .BindText(4, row.Title)
             .BindInt64(5, BitConverter.DoubleToInt64Bits(row.Score))
-            .BindInt64(6, row.UsedAt);
+            .BindInt64(6, row.UsedAt)
+            .BindInt64(7, row.Listed ? 1 : 0);
         statement.Step();
     }
 

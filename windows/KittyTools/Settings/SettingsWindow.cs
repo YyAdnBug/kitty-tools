@@ -51,7 +51,7 @@ internal sealed partial class SettingsWindow : Window
     private bool _stale;
     private bool _active;
 
-    // 侧栏顺序同 mac：通用 / 剪贴板 / 启动器 / 翻译 / 截图 / 录制 / 便签 / 状态屏 / 提醒 / 快捷键 / 关于（mac 独有的几页没有）。
+    // 侧栏顺序同 mac：通用 ｜ 剪贴板 / 启动器 / 翻译 ｜ 截图 / 录制 ｜ 便签 / 提醒 / 状态屏 ｜ 快捷键 / 关于（mac 独有的几页没有；分组见 Core SettingsSidebar）。
     // 色块是和 mac 共用的功能图标（FeatureIcons，PLAN-v10 §6）。
     private static readonly (string Tag, string Title, string Glyph)[] Pages =
     {
@@ -62,11 +62,21 @@ internal sealed partial class SettingsWindow : Window
         ("screenshot", "截图", FeatureIcons.Screenshot),
         ("record", "录制", FeatureIcons.Record),
         ("notes", "便签", FeatureIcons.Notes),
-        ("statusScreen", "状态屏", FeatureIcons.StatusScreen),
         ("reminders", "提醒", FeatureIcons.Reminders),
+        ("statusScreen", "状态屏", FeatureIcons.StatusScreen),
         ("hotkeys", "快捷键", FeatureIcons.Hotkeys),
         ("about", "关于", FeatureIcons.About),
     };
+
+    /// <summary>侧栏每一页那一行（建一次，侧栏重排时挪来挪去）：色块（关着的功能变淡）、名字、新功能的小圆点。</summary>
+    private readonly Dictionary<string, (NavigationViewItem Item, FrameworkElement Tile, FrameworkElement Dot, string Title)> _pageItems = new();
+
+    /// <summary>侧栏「搜索设置」里的字；侧栏上次按什么排的（没变就不重排）。</summary>
+    private string _sidebarQuery = string.Empty;
+    private string _sidebarSignature = string.Empty;
+
+    /// <summary>设置窗里此刻标「新」的（PLAN-v16 G3：看着的那页不闪掉，换页才没）。</summary>
+    private HashSet<string> _whatsNewShown = new();
 
     /// <summary>侧栏「搜索设置」按页名和这些词筛（同 mac SettingsPage.keywords，换成 Windows 上的说法）。</summary>
     private static readonly Dictionary<string, string[]> PageKeywords = new()
@@ -173,17 +183,17 @@ internal sealed partial class SettingsWindow : Window
                 VerticalAlignment = VerticalAlignment.Center,
             };
             // 关于用 App 图标（mac：裁掉四周留白的 App 图标，和别的色块一样大）。
-            row.Children.Add(tag == "about" ? AppIconImage(20) : (FrameworkElement)KindTile.Create(FamilyForPage(tag), glyph, 20));
+            var tile = tag == "about" ? AppIconImage(20) : (FrameworkElement)KindTile.Create(FamilyForPage(tag), glyph, 20);
+            row.Children.Add(tile);
             row.Children.Add(new TextBlock
             {
                 Text = title,
                 VerticalAlignment = VerticalAlignment.Center,
             });
-            _nav.MenuItems.Add(new NavigationViewItem
-            {
-                Content = row,
-                Tag = tag,
-            });
+            var dot = NewMark.Dot();
+            dot.Visibility = Visibility.Collapsed;
+            row.Children.Add(dot);
+            _pageItems[tag] = (new NavigationViewItem { Content = row, Tag = tag }, tile, dot, title);
         }
 
         _noMatch = new NavigationViewItem
@@ -193,7 +203,33 @@ internal sealed partial class SettingsWindow : Window
             SelectsOnInvoked = false,
             Visibility = Visibility.Collapsed,
         };
-        _nav.MenuItems.Add(_noMatch);
+        RebuildSidebar(force: true);
+        // 组标题（不选中，点了收起 / 展开；PLAN-v16 G2）
+        _nav.ItemInvoked += (_, args) =>
+        {
+            if (args.InvokedItemContainer?.Tag is not string tag || !tag.StartsWith("group:", StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            var settings = SettingsService.Current;
+            var name = tag["group:".Length..];
+            if (name == "off")
+            {
+                settings.SettingsShowsOffFeatures = !settings.SettingsShowsOffFeatures;
+            }
+            else
+            {
+                var collapsed = settings.SettingsCollapsedGroups ??= new List<string>();
+                if (!collapsed.Remove(name))
+                {
+                    collapsed.Add(name);
+                }
+            }
+
+            SettingsService.Save();
+            RebuildSidebar();
+        };
 
         _nav.SelectionChanged += (_, args) =>
         {
@@ -442,7 +478,113 @@ internal sealed partial class SettingsWindow : Window
         }
 
         ApplyGate();
+        // 新功能标记：换到这一页时算一遍（看着的这页原来标着的留着，换页才没）
+        _whatsNewShown = WhatsNew.Shown(_currentPage, WhatsNewHost.Current(), _whatsNewShown);
+        RebuildSidebar();
         UpdateNavSelection();
+    }
+
+    /// <summary>
+    /// 侧栏按此刻的样子重排（PLAN-v16 G2 / G3，同 mac SettingsRoot）：分组（功能那三组带小标题、点标题收起 / 展开，收起了哪几组记在这台电脑），
+    /// 搜索时全展开、当前页所在的组自己展开；关着的功能挪进最底下默认收起的「已关闭（N）」，色块变淡、读屏「X，已关闭」；
+    /// 新功能那一行行尾一个小圆点，收起的组标题后也一个。没变化就不重排。
+    /// </summary>
+    private void RebuildSidebar(bool force = false)
+    {
+        var settings = SettingsService.Current;
+        var query = _sidebarQuery;
+        var matches = Pages
+            .Where(page => query.Length == 0 || page.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                           PageKeywords[page.Tag].Any(word => word.Contains(query, StringComparison.OrdinalIgnoreCase)))
+            .Select(page => page.Tag)
+            .ToList();
+        var off = Pages.Select(page => page.Tag).Where(tag => Features.ForPage(tag) is { } feature && !Features.IsOn(feature)).ToHashSet();
+        var collapsed = (settings.SettingsCollapsedGroups ?? new List<string>()).ToHashSet();
+        var groups = SettingsSidebar.Build(matches, off);
+        var layout = groups.Select(group =>
+        {
+            var expanded = SettingsSidebar.IsExpanded(group, query.Length > 0, collapsed, settings.SettingsShowsOffFeatures, _currentPage);
+            var marked = group.Pages.Where(page => WhatsNew.Marks(page, _whatsNewShown)).ToList();
+            return (Group: group, Expanded: expanded, Marked: marked);
+        }).ToList();
+        var signature = string.Join("|", layout.Select(item =>
+            $"{item.Group.Title}:{item.Expanded}:{string.Join(",", item.Group.Pages)}:{string.Join(",", item.Marked)}"));
+        if (!force && signature == _sidebarSignature)
+        {
+            return;
+        }
+
+        _sidebarSignature = signature;
+        _suppressNav = true;
+        _nav.MenuItems.Clear();
+        foreach (var (group, expanded, marked) in layout)
+        {
+            if (group.Title is { } title)
+            {
+                _nav.MenuItems.Add(GroupHeader(group, expanded, marked.Count > 0 && !expanded));
+            }
+
+            if (!expanded)
+            {
+                continue;
+            }
+
+            foreach (var page in group.Pages)
+            {
+                var (item, tile, dot, pageTitle) = _pageItems[page];
+                tile.Opacity = group.IsOff ? 0.45 : 1;
+                dot.Visibility = marked.Contains(page) ? Visibility.Visible : Visibility.Collapsed;
+                AutomationProperties.SetName(item,
+                    pageTitle + (group.IsOff ? "，已关闭" : string.Empty) + (marked.Contains(page) ? "，" + WhatsNew.Spoken : string.Empty));
+                _nav.MenuItems.Add(item);
+            }
+        }
+
+        _noMatch.Visibility = matches.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        _nav.MenuItems.Add(_noMatch);
+        _suppressNav = false;
+    }
+
+    /// <summary>组标题那一行：小字标题（收起着、里面有新功能时后面一个小圆点）+ 展开 / 收起的箭头；点了不选中。</summary>
+    private static NavigationViewItem GroupHeader(SidebarGroup group, bool expanded, bool dot)
+    {
+        var grid = new Grid { ColumnSpacing = 6 };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var title = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5 };
+        title.Children.Add(new TextBlock
+        {
+            Text = group.Title,
+            FontSize = 12,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Foreground = Theme.SecondaryText(),
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        if (dot)
+        {
+            title.Children.Add(NewMark.Dot());
+        }
+
+        grid.Children.Add(title);
+        var chevron = new FontIcon
+        {
+            Glyph = expanded ? Glyphs.ChevronDown : Glyphs.ChevronRight,
+            FontSize = 10,
+            Foreground = Theme.SecondaryText(),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        Grid.SetColumn(chevron, 2);
+        grid.Children.Add(chevron);
+        var item = new NavigationViewItem
+        {
+            Content = grid,
+            Tag = "group:" + (group.IsOff ? "off" : group.Title),
+            SelectsOnInvoked = false,
+            MinHeight = 28,
+        };
+        AutomationProperties.SetName(item, $"{group.Title}，{(expanded ? "已展开" : "已折叠")}");
+        return item;
     }
 
     /// <summary>
@@ -457,15 +599,8 @@ internal sealed partial class SettingsWindow : Window
                            PageKeywords[page.Tag].Any(word => word.Contains(query, StringComparison.OrdinalIgnoreCase)))
             .Select(page => page.Tag)
             .ToList();
-        foreach (var item in _nav.MenuItems.OfType<NavigationViewItem>())
-        {
-            if (item.Tag is string tag)
-            {
-                item.Visibility = matches.Contains(tag) ? Visibility.Visible : Visibility.Collapsed;
-            }
-        }
-
-        _noMatch.Visibility = matches.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        _sidebarQuery = query;
+        RebuildSidebar();
         var exact = Pages.FirstOrDefault(page => page.Title == query).Tag;
         var target = exact ?? (matches.Contains(_currentPage) ? null : matches.FirstOrDefault());
         if (target is not null && target != _currentPage && _recordingAction is null)
@@ -623,7 +758,9 @@ internal sealed partial class SettingsWindow : Window
                 {
                     // 不重建这一页：这一页只有这排开关跟着功能变，它自己已经拨过去了（以前重建两遍，整页的开关都闪）。
                     // 热键、托盘菜单在 ShellRuntime.OnSettingsChanged 里跟着换；功能自己那一页是点进去时才建的。
+                    // 侧栏跟着挪组（关着的进「已关闭」，PLAN-v16 G2）。
                     Features.Set(feature, isOn);
+                    RebuildSidebar();
                 }, Features.Title(feature)),
                 leading: FeatureTile(feature)));
         }
@@ -1938,8 +2075,14 @@ internal sealed partial class SettingsWindow : Window
         _content.Children.Add(SettingsUi.Footnote(
             "网址里有 {query} 的是搜索（「关键词 空格 内容」直达，开关 = 没有本地结果时兜底），没有的是快捷链接。搜索的关键词重复时用靠前的，拖动一行改顺序；点一行改名称、关键词和网址，右键可以上移、下移和删除。"));
 
-        // 使用记录：功能关着也能清（同 mac）
+        // 使用记录：「空搜索框里列出常用」跟着功能开关变灰（PLAN-v16 L1，mac adc47977）；清空是管数据的，功能关着也能清（同 mac）
         _content.Children.Add(Ungated(SettingsUi.Section("使用记录")));
+        AddToggle("空搜索框里列出常用", "关掉后打开启动器只有搜索框，有收藏时只列收藏；排序照样按用过的学",
+            settings.LauncherShowsFrequent, isOn =>
+            {
+                settings.LauncherShowsFrequent = isOn;
+                SettingsService.Save();
+            });
         var clear = new Button { Content = "清空使用记录…", Foreground = Theme.Critical() };
         clear.Click += async (_, _) =>
         {
@@ -3319,7 +3462,11 @@ internal sealed partial class SettingsWindow : Window
         _updateTicker.Start();
     }
 
-    /// <summary>更新日志时间线（mac ReleaseView）：左边竖线 + 圆点（当前版本品牌粉），右边版本号、「当前版本」、日期、摘要和逐条改动。</summary>
+    /// <summary>
+    /// 更新日志时间线（mac ReleaseView）：左边竖线 + 圆点（当前版本品牌粉），右边一行标题（版本号、「当前版本」、日期、展开三角，整行能点）。
+    /// PLAN-v16 G1（mac 02e74ee1）：只展开当前版本（changelog 里没有当前版本号就展开最新那条），别的折叠成一行——摘要截成一行夹在版本号和
+    /// 日期中间，条目不排，点开才排；再点收起。读屏念「已展开 / 已折叠」。减弱动态效果时只换不淡。
+    /// </summary>
     private static UIElement ChangelogBlock(string currentVersion, Brush ink)
     {
         try
@@ -3344,44 +3491,59 @@ internal sealed partial class SettingsWindow : Window
                 return panel;
             }
 
-            var releases = entries.EnumerateArray().Take(6).ToList();
+            var releases = entries.EnumerateArray().Select(entry => entry.Clone()).ToList();
+            string Field(JsonElement entry, string name)
+                => entry.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() ?? string.Empty : string.Empty;
+            var expandedVersion = ChangelogRules.FirstExpanded(releases.Select(entry => Field(entry, "version")).ToList(), currentVersion);
             var hairline = Theme.Brush("Kitty.Hairline", Color.FromArgb(20, 0, 0, 0));
             for (var index = 0; index < releases.Count; index++)
             {
                 var entry = releases[index];
-                var version = entry.TryGetProperty("version", out var v) ? v.GetString() ?? string.Empty : string.Empty;
-                var date = entry.TryGetProperty("date", out var d) ? d.GetString() ?? string.Empty : string.Empty;
-                var summary = entry.TryGetProperty("summary", out var s) ? s.GetString() ?? string.Empty : string.Empty;
+                var version = Field(entry, "version");
+                var date = Field(entry, "date");
+                var summary = Field(entry, "summary");
                 var current = version == currentVersion;
+                var expanded = version == expandedVersion;
 
                 var release = new Grid { ColumnSpacing = 14 };
                 release.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(10) });
                 release.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
                 var rail = new Grid();
+                rail.RowDefinitions.Add(new RowDefinition { Height = new GridLength(5) });
                 rail.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
                 rail.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-                rail.Children.Add(new Border
+                // 圆点上面这 5 接着上一版的竖线（第一版不画）：折叠成一行时线不断开
+                if (index > 0)
+                {
+                    rail.Children.Add(new Border { Width = 1, Background = hairline, HorizontalAlignment = HorizontalAlignment.Center });
+                }
+
+                var dot = new Border
                 {
                     Width = 10,
                     Height = 10,
                     CornerRadius = new CornerRadius(5),
-                    Margin = new Thickness(0, 6, 0, 0),
+                    Margin = new Thickness(0, 1, 0, 0),
                     Background = current ? new SolidColorBrush(Theme.BrandPink) : Theme.TertiaryText(),
-                });
+                };
+                Grid.SetRow(dot, 1);
+                rail.Children.Add(dot);
                 if (index < releases.Count - 1)
                 {
                     var line = new Border { Width = 1, Background = hairline, HorizontalAlignment = HorizontalAlignment.Center };
-                    Grid.SetRow(line, 1);
+                    Grid.SetRow(line, 2);
                     rail.Children.Add(line);
                 }
 
                 release.Children.Add(rail);
 
-                var body = new StackPanel { Spacing = 8, Padding = new Thickness(0, 0, 0, 22) };
+                var body = new StackPanel { Spacing = 8, Padding = new Thickness(0, 0, 0, expanded ? 22 : 12) };
                 var head = new Grid { ColumnSpacing = 8 };
                 head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                 head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                 head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(12) });
                 head.Children.Add(new TextBlock { Text = version, FontSize = 15, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
                 if (current)
                 {
@@ -3397,6 +3559,18 @@ internal sealed partial class SettingsWindow : Window
                     head.Children.Add(badge);
                 }
 
+                // 折叠时摘要截成一行夹在中间
+                var oneLine = new TextBlock
+                {
+                    Text = summary,
+                    Foreground = Theme.SecondaryText(),
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                    TextWrapping = TextWrapping.NoWrap,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Visibility = expanded ? Visibility.Collapsed : Visibility.Visible,
+                };
+                Grid.SetColumn(oneLine, 2);
+                head.Children.Add(oneLine);
                 var when = new TextBlock
                 {
                     Text = date,
@@ -3405,43 +3579,102 @@ internal sealed partial class SettingsWindow : Window
                     HorizontalAlignment = HorizontalAlignment.Right,
                     VerticalAlignment = VerticalAlignment.Center,
                 };
-                Grid.SetColumn(when, 2);
+                Grid.SetColumn(when, 3);
                 head.Children.Add(when);
-                body.Children.Add(head);
-                if (summary.Length > 0)
+                var chevron = new FontIcon
                 {
-                    body.Children.Add(new TextBlock
-                    {
-                        Text = summary,
-                        TextWrapping = TextWrapping.Wrap,
-                        Foreground = Theme.SecondaryText(),
-                        IsTextSelectionEnabled = true,
-                    });
-                }
+                    Glyph = Glyphs.ChevronRight,
+                    FontSize = 11,
+                    Foreground = Theme.SecondaryText(),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    RenderTransformOrigin = new Windows.Foundation.Point(0.5, 0.5),
+                    RenderTransform = new RotateTransform { Angle = expanded ? 90 : 0 },
+                };
+                Grid.SetColumn(chevron, 4);
+                head.Children.Add(chevron);
+                var toggle = new Button
+                {
+                    Content = head,
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                    Padding = new Thickness(0),
+                    BorderThickness = new Thickness(0),
+                    Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+                };
+                AutomationProperties.SetName(toggle, ChangelogRules.AccessibleName(version, date, current, expanded));
+                body.Children.Add(toggle);
 
-                if (entry.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array)
+                // 展开的部分：摘要 + 逐条改动；折叠的那几版点开才排
+                var details = new StackPanel { Spacing = 8, Visibility = expanded ? Visibility.Visible : Visibility.Collapsed };
+                var built = false;
+                void Build()
                 {
-                    foreach (var item in items.EnumerateArray())
+                    if (built)
                     {
-                        var type = item.TryGetProperty("type", out var t) ? t.GetString() : null;
-                        var text = item.TryGetProperty("text", out var itemText) ? itemText.GetString() : null;
-                        if (type is not ("feat" or "fix" or "perf" or "ui") || string.IsNullOrEmpty(text))
+                        return;
+                    }
+
+                    built = true;
+                    if (summary.Length > 0)
+                    {
+                        details.Children.Add(new TextBlock
                         {
-                            continue;
-                        }
+                            Text = summary,
+                            TextWrapping = TextWrapping.Wrap,
+                            Foreground = Theme.SecondaryText(),
+                            IsTextSelectionEnabled = true,
+                        });
+                    }
 
-                        var change = new Grid { ColumnSpacing = 8 };
-                        change.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                        change.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                        var tag = SettingsUi.TypeTag(type);
-                        tag.Margin = new Thickness(0, 2, 0, 0);
-                        change.Children.Add(tag);
-                        var line = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true };
-                        Grid.SetColumn(line, 1);
-                        change.Children.Add(line);
-                        body.Children.Add(change);
+                    if (entry.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var item in items.EnumerateArray())
+                        {
+                            var type = item.TryGetProperty("type", out var t) ? t.GetString() : null;
+                            var text = item.TryGetProperty("text", out var itemText) ? itemText.GetString() : null;
+                            if (type is not ("feat" or "fix" or "perf" or "ui") || string.IsNullOrEmpty(text))
+                            {
+                                continue;
+                            }
+
+                            var change = new Grid { ColumnSpacing = 8 };
+                            change.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                            change.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                            var tag = SettingsUi.TypeTag(type);
+                            tag.Margin = new Thickness(0, 2, 0, 0);
+                            change.Children.Add(tag);
+                            var changeText = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, IsTextSelectionEnabled = true };
+                            Grid.SetColumn(changeText, 1);
+                            change.Children.Add(changeText);
+                            details.Children.Add(change);
+                        }
                     }
                 }
+
+                if (expanded)
+                {
+                    Build();
+                }
+
+                body.Children.Add(details);
+                toggle.Click += (_, _) =>
+                {
+                    expanded = !expanded;
+                    if (expanded)
+                    {
+                        Build();
+                    }
+
+                    details.Visibility = expanded ? Visibility.Visible : Visibility.Collapsed;
+                    oneLine.Visibility = expanded ? Visibility.Collapsed : Visibility.Visible;
+                    ((RotateTransform)chevron.RenderTransform).Angle = expanded ? 90 : 0;
+                    body.Padding = new Thickness(0, 0, 0, expanded ? 22 : 12);
+                    AutomationProperties.SetName(toggle, ChangelogRules.AccessibleName(version, date, current, expanded));
+                    if (expanded && !Motion.Reduced)
+                    {
+                        Motion.FadeIn(details, 0.18);
+                    }
+                };
 
                 Grid.SetColumn(body, 1);
                 release.Children.Add(body);

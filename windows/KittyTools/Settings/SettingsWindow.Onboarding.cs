@@ -1,6 +1,7 @@
 // 首次打开的欢迎引导（MAC-DIFF「三屏欢迎引导」，照 mac Settings/OnboardingView.swift，N14）：盖在设置窗上的对话框，三屏，
 // 只有一个主按钮（继续 / 开始使用），Esc 关。
 // 第一屏：App 图标 + 大标题 + 全部功能两列（家族色块 + 名字 + 说明，就是 设置 › 通用 › 功能 那一份，加了功能这里自己跟上）；
+//   PLAN-v16 G2（mac d80c09b5）：每个功能一个勾选框，就是功能开关、立即生效（新装只勾着剪贴板、启动器、翻译、截图）；
 // 第二屏：它住在托盘里（mac 这一屏是两项授权；Windows 上截图、粘贴回原程序都不用授权，换成托盘在哪）；
 // 第三屏「按一下试试」：主要的全局快捷键一行一个（关着的功能、没设键的不列），真按下的那一行打勾（热键照常执行，面板照样弹出）；
 // 底下「登录时自动打开」：首次默认勾，安装程序装的照安装时选的（R37），重看时跟着现在的状态；点「开始使用」时勾着才去开，
@@ -196,7 +197,7 @@ internal sealed partial class SettingsWindow
         panel.Children.Add(icon);
         panel.Children.Add(OnboardingHeading(
             "欢迎使用 Kitty Tools",
-            "这些小工具都住在托盘里，用快捷键随叫随到。\n用不上的可以到 设置 › 通用 › 功能 里关掉。"));
+            "这些小工具都住在托盘里，用快捷键随叫随到。\n勾上要用的，以后在 设置 › 通用 › 功能 里随时改。"));
 
         var grid = new Grid { ColumnSpacing = 16, RowSpacing = 12 };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -212,9 +213,12 @@ internal sealed partial class SettingsWindow
             var feature = features[index];
             var item = new Grid { ColumnSpacing = 10 };
             item.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            item.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             item.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             var tile = FeatureTile(feature);
             tile.VerticalAlignment = VerticalAlignment.Top;
+            tile.Opacity = Features.IsOn(feature) ? 1 : 0.45;
+            Grid.SetColumn(tile, 1);
             item.Children.Add(tile);
             var text = new StackPanel { Spacing = 1 };
             text.Children.Add(new TextBlock { Text = Features.Title(feature), FontWeight = Microsoft.UI.Text.FontWeights.Medium });
@@ -225,8 +229,20 @@ internal sealed partial class SettingsWindow
                 Foreground = Theme.SecondaryText(),
                 TextWrapping = TextWrapping.Wrap,
             });
-            Grid.SetColumn(text, 1);
+            Grid.SetColumn(text, 2);
             item.Children.Add(text);
+            // 勾选框就是功能开关（立即生效，热键、托盘跟着换）
+            var choice = new CheckBox { IsChecked = Features.IsOn(feature), MinWidth = 0, Padding = new Thickness(0), VerticalAlignment = VerticalAlignment.Top };
+            AutomationProperties.SetName(choice, $"{Features.Title(feature)}：{Features.Blurb(feature)}");
+            void Changed(bool on)
+            {
+                Features.Set(feature, on);
+                tile.Opacity = on ? 1 : 0.45;
+            }
+
+            choice.Checked += (_, _) => Changed(true);
+            choice.Unchecked += (_, _) => Changed(false);
+            item.Children.Add(choice);
             Grid.SetRow(item, index / 2);
             Grid.SetColumn(item, index % 2);
             grid.Children.Add(item);
@@ -246,7 +262,11 @@ internal sealed partial class SettingsWindow
         panel.Children.Add(OnboardingHeading(
             "它住在托盘里",
             "Windows 11 默认把新图标收进任务栏右下角的「^」里。\n点开「^」找到 Kitty Tools，可以把它拖到任务栏上；点它看全部功能。"));
-        panel.Children.Add(OnboardingCaption("麦克风这类授权等用到时再问；以后都在 设置 › 通用 › 权限 里"));
+        // 只问勾上的功能要的（PLAN-v16 G2）：Windows 只有录音要麦克风，没勾录制就不提
+        if (Features.IsOn(Feature.Recording))
+        {
+            panel.Children.Add(OnboardingCaption("麦克风这类授权等用到时再问；以后都在 设置 › 通用 › 权限 里"));
+        }
         return panel;
     }
 

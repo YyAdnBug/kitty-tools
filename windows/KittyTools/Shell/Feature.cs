@@ -6,16 +6,17 @@ using KittyTools.Infrastructure;
 
 namespace KittyTools;
 
+// 顺序 = 设置侧栏、通用页「功能」、引导、快捷键页的顺序（PLAN-v16 G2，同 mac M3）；存的是 Key，不是序号。
 internal enum Feature
 {
     Clipboard,
-    Translate,
     Launcher,
+    Translate,
     Screenshot,
     Recording,
     Notes,
-    StatusScreen,
     Reminders,
+    StatusScreen,
 }
 
 internal static class Features
@@ -54,6 +55,25 @@ internal static class Features
         Feature.StatusScreen => "盖住屏幕、拦住键盘鼠标的告示",
         Feature.Reminders => "到点提醒你：一次、每天、每周或每隔一阵",
         _ => "框选截图、识别图中文字、钉在屏幕上",
+    };
+
+    public static IEnumerable<string> AllKeys => Enum.GetValues<Feature>().Select(Key);
+
+    /// <summary>开着的功能的键（新功能标记：功能关着不标）。</summary>
+    public static HashSet<string> EnabledKeys => Enum.GetValues<Feature>().Where(IsOn).Select(Key).ToHashSet();
+
+    /// <summary>设置侧栏的页对应哪个功能（通用、快捷键、关于不是）。</summary>
+    public static Feature? ForPage(string page) => page switch
+    {
+        "clipboard" => Feature.Clipboard,
+        "launcher" => Feature.Launcher,
+        "translate" => Feature.Translate,
+        "screenshot" => Feature.Screenshot,
+        "record" => Feature.Recording,
+        "notes" => Feature.Notes,
+        "reminders" => Feature.Reminders,
+        "statusScreen" => Feature.StatusScreen,
+        _ => null,
     };
 
     /// <summary>没存过 = 开；拨过的照用户的。</summary>

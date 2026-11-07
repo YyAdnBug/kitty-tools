@@ -56,6 +56,8 @@ public partial class App : Application
         {
             Log.Initialize();
             SettingsService.Load();
+            // 新功能标记（PLAN-v16 G3）：记「看过这一版」之前先按上次运行的版本记账（新装不标）
+            WhatsNewHost.Adopt();
             CrashLog.CheckOnStartup();
             Theme.ApplyAccent();
             Theme.WatchSystemAccent();

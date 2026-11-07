@@ -155,6 +155,12 @@ public static class Schema
             """
             CREATE INDEX IF NOT EXISTS translations_source_target ON translations(source, target_lang);
             """),
+        new SchemaStep(
+            10,
+            "launcher_usage.listed：从书签 / 快捷链接打开的（PLAN-v16 L2，issue #10；旧版本读写都写明列名、碰不到它）",
+            """
+            ALTER TABLE launcher_usage ADD COLUMN listed INTEGER NOT NULL DEFAULT 0;
+            """),
     };
 
     /// <summary>从 currentVersion 开始还要跑的步骤（升序）。比代码新的库（用户装过更新的版本）一步都不跑。</summary>

@@ -59,6 +59,9 @@ internal sealed class HomePanel : Window
     private readonly HWND _hwnd;
     private List<HomeSection> _sections = new();
     private List<HomeTile> _tiles = new();
+
+    /// <summary>这次打开时要标「新」的（PLAN-v16 G3）。</summary>
+    private List<Core.WhatsNewEntry> _fresh = new();
     private int _offCount;
     private int? _selection;
     private bool _visible;
@@ -291,6 +294,7 @@ internal sealed class HomePanel : Window
     /// <summary>按此刻的状态重排。appearing：新打开（选中清掉）；开关切完原地刷新时选中留着。</summary>
     private void Rebuild(bool appearing)
     {
+        _fresh = WhatsNewHost.Current();
         _sections = HomeLayout.Sections(BuildSections());
         _tiles = _sections.SelectMany(section => section.Tiles).ToList();
         _offCount = Enum.GetValues<Feature>().Count(feature => !Features.IsOn(feature));
@@ -491,16 +495,31 @@ internal sealed class HomePanel : Window
         icon.Margin = new Thickness(0, 9, 0, 0);
         var stack = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
         stack.Children.Add(icon);
-        stack.Children.Add(new TextBlock
+        var title = new TextBlock
         {
             Text = tile.Title,
             FontSize = Theme.FontSize("Kitty.FontSize.Meta"),
             TextWrapping = TextWrapping.NoWrap,
             TextTrimming = TextTrimming.CharacterEllipsis,
             MaxWidth = HomeLayout.TileWidth - 6,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            Margin = new Thickness(3, 6, 3, 0),
-        });
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        // 新功能（PLAN-v16 G3）：名字前一个 6 px 强调色小圆点（iOS 主屏新装 App 那种），读屏念「新功能」
+        var isNew = Core.WhatsNew.MarksAction(tile.Id, _fresh);
+        if (isNew)
+        {
+            title.MaxWidth = HomeLayout.TileWidth - 16;
+            var line = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(3, 6, 3, 0) };
+            line.Children.Add(Ui.NewMark.Dot());
+            line.Children.Add(title);
+            stack.Children.Add(line);
+        }
+        else
+        {
+            title.HorizontalAlignment = HorizontalAlignment.Center;
+            title.Margin = new Thickness(3, 6, 3, 0);
+            stack.Children.Add(title);
+        }
         stack.Children.Add(new TextBlock
         {
             Text = detail,
@@ -531,7 +550,7 @@ internal sealed class HomePanel : Window
             ShowSelection();
         };
         ToolTipService.SetToolTip(button, tile.Key is { } key ? $"{tile.Title}  {key}" : tile.Title);
-        AutomationProperties.SetName(button, tile.Title);
+        AutomationProperties.SetName(button, isNew ? $"{tile.Title}，{Core.WhatsNew.Spoken}" : tile.Title);
         if (tile.Key is { } shortcut)
         {
             AutomationProperties.SetHelpText(button, "快捷键 " + shortcut);

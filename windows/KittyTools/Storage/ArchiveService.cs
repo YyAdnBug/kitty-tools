@@ -535,6 +535,7 @@ internal static class ArchiveService
             // PLAN-v12 N2 / N4：键名和值同 mac Prefs（clipboardPanelPosition、launcherPanelPosition、screenshotToolbarAlign）。
             writer.WriteString("clipboardPanelPosition", settings.ClipboardPanelPosition);
             writer.WriteString("launcherPanelPosition", settings.LauncherPanelPosition);
+            writer.WriteBoolean("launcherShowsFrequent", settings.LauncherShowsFrequent); // PLAN-v16 L1，键名同 mac
             writer.WriteString("screenshotToolbarAlign", settings.ScreenshotToolbarAlign);
             writer.WriteString("screenshotCopyAs", settings.ScreenshotCopyAs); // PLAN-v15，键名和值同 mac
             // PLAN-v16 S1 / S2，键名同 mac
@@ -640,6 +641,9 @@ internal static class ArchiveService
                     break;
                 case "launcherPanelPosition" when value.ValueKind == JsonValueKind.String && value.GetString() is "top" or "mouse" or "last":
                     settings.LauncherPanelPosition = value.GetString()!;
+                    break;
+                case "launcherShowsFrequent" when value.ValueKind is JsonValueKind.True or JsonValueKind.False:
+                    settings.LauncherShowsFrequent = value.GetBoolean();
                     break;
                 case "screenshotToolbarAlign" when value.ValueKind == JsonValueKind.String && value.GetString() is "right" or "center":
                     settings.ScreenshotToolbarAlign = value.GetString()!;

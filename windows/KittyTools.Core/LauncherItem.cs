@@ -108,6 +108,12 @@ public sealed record LauncherItem
     /// <summary>对得上的全局快捷动作（HotKeyActions 的名字）：选中时右边显示它的键帽；没有是 null。</summary>
     public string? HotKeyAction { get; init; }
 
+    /// <summary>
+    /// 来自每次搜索都从源头重新列出来的列表（浏览器书签、快捷链接；PLAN-v16 L2，mac listed）：使用记录不靠自己把它找回来，
+    /// 源头删了就不再出现（issue #10）。
+    /// </summary>
+    public bool Listed { get; init; }
+
     /// <summary>身份：类型 + 目标（使用记录、收藏、选中项保持都按它认）。</summary>
     public string Id => Kind + "\n" + Target;
 }

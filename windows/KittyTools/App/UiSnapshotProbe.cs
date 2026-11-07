@@ -649,10 +649,19 @@ internal static class UiSnapshotProbe
                 await ShootSettingsWindowAsync(settings, "settings-" + page, dark, directory);
             }
 
+            // PLAN-v16 L1 / V12：设置 › 启动器滚到底（使用记录的「空搜索框里列出常用」）。
+            settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 1500));
+            settings.ShowPage(welcome: false, "launcher");
+            settings.ScrollToEndForProbe();
+            await RenderWindowAsync(settings, "settings-launcher-end", dark, directory);
+
             // 0.1.1 功能图标（HANDTEST 794）：关于页页头 32 的色块是猫头。
             settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 720));
             settings.ShowPage(welcome: false, "about");
             await RenderWindowAsync(settings, "settings-about", dark, directory);
+            // PLAN-v16 G1：更新日志只展开当前版本，滚到底看折叠成一行的那几版。
+            settings.ScrollToEndForProbe();
+            await RenderWindowAsync(settings, "settings-about-end", dark, directory);
         }
         catch (Exception ex)
         {
