@@ -444,11 +444,14 @@ internal sealed class TranslateCoordinator
     }
 
     /// <summary>去首尾空白、换行统一成 \n（输入框给的是 \r）；开着就把同一段里的换行接起来（段间空一行，同识字）。</summary>
-    private static string Preprocess(string source, bool joinLines)
+    internal static string Preprocess(string source, bool joinLines)
     {
         var text = source.ReplaceLineEndings("\n").Trim();
         return joinLines ? OcrText.JoiningLines(text, "\n\n") : text;
     }
+
+    /// <summary>截图翻译原位覆盖（PLAN-v16 S1）：整段原文定一次方向（不接行、不用单词模式），各段用同一个方向。</summary>
+    internal static TranslateRequest PlanRequest(string text) => PlanFor(Preprocess(text, joinLines: false), wordMode: false).Request;
 
     /// <summary>按浮窗上选的源 / 目标（全局记住的）和检测结果定这次的请求；wordMode：单个词时让大模型按词典格式回答。</summary>
     private static (TranslateRequest Request, Lang? Detected, Lang? FixedSource, Lang? AbandonedTarget) PlanFor(

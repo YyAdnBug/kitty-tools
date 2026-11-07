@@ -24,7 +24,7 @@ internal static class HotKeyActions
     /// <summary>录音（PLAN-v9 F2），默认不设键；录着时按是停止，待录时按是开始（同 mac audioRecord）。</summary>
     public const string Audio = "audioRecord";
 
-    /// <summary>钉住剪贴板里的图（PLAN-v9 F3），默认不设键（同 mac pinClipboard）。</summary>
+    /// <summary>钉住剪贴板内容（PLAN-v9 F3；PLAN-v16 S3 文字也能钉，改了名、id 不变），默认不设键（同 mac pinClipboard）。</summary>
     public const string PinClipboard = "pinClipboard";
 
     /// <summary>打开主界面（PLAN-v10 §5），默认不设键、不归哪个功能（同 mac home）；托盘菜单里不放。</summary>
@@ -67,7 +67,7 @@ internal static class SettingsDefaults
         new(HotKeyActions.ShotHistory, "截图历史", HotKeyModifiers.None, 0),
         new(HotKeyActions.TranslateReplace, "划词翻译并替换", HotKeyModifiers.None, 0),
         new(HotKeyActions.Audio, "录音（再按一次停止）", HotKeyModifiers.None, 0),
-        new(HotKeyActions.PinClipboard, "钉住剪贴板里的图", HotKeyModifiers.None, 0),
+        new(HotKeyActions.PinClipboard, "钉住剪贴板内容", HotKeyModifiers.None, 0),
         new(HotKeyActions.Home, "打开主界面", HotKeyModifiers.None, 0),
         new(HotKeyActions.StatusScreen, "状态屏", HotKeyModifiers.None, 0),
         new(HotKeyActions.ReminderNew, "新建提醒", HotKeyModifiers.None, 0),

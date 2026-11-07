@@ -55,6 +55,11 @@ internal sealed class ScreenshotSession
     /// <summary>截图调整时按 R / 点「录屏」会切成 Record（SwitchToRecording），别的时候不变。</summary>
     public ScreenshotMode Mode { get; private set; }
 
+    /// <summary>
+    /// 截图翻译、设置 › 翻译开着「把译文直接盖回截图上」（PLAN-v16 S1）：会话按截图开（同一个编辑页），框完松手自动就地翻译。
+    /// </summary>
+    public bool AutoTranslate { get; private init; }
+
     /// <summary>尺寸胶囊锁住的比例（宽 / 高），null = 自由；框选、拖手柄都按它（mac session.lockedRatio，PLAN-v9 S4）。</summary>
     public double? LockedRatio { get; set; }
 
@@ -106,7 +111,12 @@ internal sealed class ScreenshotSession
         }
 
         var windows = WindowList.Capture();
-        var session = new ScreenshotSession(mode, screens, windows) { _sourceName = source };
+        var overlays = mode == ScreenshotMode.Translate && SettingsService.Current.TranslateScreenshotOverlay;
+        var session = new ScreenshotSession(overlays ? ScreenshotMode.Capture : mode, screens, windows)
+        {
+            _sourceName = source,
+            AutoTranslate = overlays,
+        };
         _current = session;
         Log.Info($"screenshot.begin mode={mode} screens={screens.Count}");
         session.ShowOverlays();
@@ -727,6 +737,14 @@ internal sealed class ScreenshotSession
     {
         if (!HasSelection || SelectionScreen is not { } screen)
         {
+            return;
+        }
+
+        // 开着「把译文直接盖回截图上」：留在截图页里就地翻（PLAN-v16 S1）；关着照旧交给翻译浮窗
+        if (SettingsService.Current.TranslateScreenshotOverlay &&
+            _overlays.FirstOrDefault(item => item.Screen == screen) is { } overlay)
+        {
+            overlay.TranslateInPlace();
             return;
         }
 

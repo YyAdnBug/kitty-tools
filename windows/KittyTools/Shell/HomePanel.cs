@@ -370,7 +370,7 @@ internal sealed class HomePanel : Window
 
         if (screenshot)
         {
-            third.Add(Global(HotKeyActions.PinClipboard, "钉住剪贴板里的图"));
+            third.Add(Global(HotKeyActions.PinClipboard, "钉住剪贴板内容"));
             third.Add(Global(HotKeyActions.ShotHistory, "截图历史"));
             if (PinHost.Count > 0)
             {

@@ -306,6 +306,34 @@ internal static unsafe partial class ClipboardFormats
         }
     }
 
+    /// <summary>
+    /// 「钉住剪贴板内容」没有图时的文字（PLAN-v16 S3，mac PinBoard.clipboardText）：有文件就不算（资源管理器复制文件时也带着文件名）；
+    /// 标了隐私的（密码管理器：ExcludeClipboardContentFromMonitorProcessing、CanIncludeInClipboardHistory = 0）不钉，不把密码明着摆在
+    /// 屏幕上（同剪贴板历史不记它）；首尾空行去掉、缩进留着，只有空白 → null。只读。
+    /// </summary>
+    public static string? ReadTextForPin()
+    {
+        if (!OpenClipboard())
+        {
+            Log.Warn("clipboard.pin-open-failed");
+            return null;
+        }
+
+        try
+        {
+            if (Has(CF_HDROP) || IsPrivateCore() || !Has(CF_UNICODETEXT))
+            {
+                return null;
+            }
+
+            return PinText.Clean(ReadText());
+        }
+        finally
+        {
+            PInvoke.CloseClipboard();
+        }
+    }
+
     /// <summary>剪贴板写入方（拿不到时用当时的前台窗口，标成推测值）。本 App 自己的窗口返回 null。</summary>
     public static (string? Exe, string? Name, uint Pid) Source()
     {

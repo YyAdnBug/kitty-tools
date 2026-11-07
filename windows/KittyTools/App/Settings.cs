@@ -155,6 +155,12 @@ internal sealed class Settings
     /// <summary>查词（单词模式）开关（第三版 §3.4）。</summary>
     public bool TranslateWordLookup { get; set; } = true;
 
+    /// <summary>
+    /// 截图翻译时把译文直接盖回截图上（PLAN-v16 S1，mac translateScreenshotOverlay，跟着导出导入）：截图翻译和截图工具栏的「翻译」
+    /// 都留在截图页里、译文按原来的位置盖回图上。默认关：照旧在翻译浮窗里看（能对比几个服务、复制译文）。
+    /// </summary>
+    public bool TranslateScreenshotOverlay { get; set; }
+
     /// <summary>英文单词用真人发音（有道词典的录音；关掉或取不到时用系统声音，PLAN-v14 V8，键名同 mac translateWordRecording）。</summary>
     public bool TranslateWordRecording { get; set; } = true;
 
@@ -246,6 +252,12 @@ internal sealed class Settings
     /// 同在资源管理器里复制一个文件——只搬文字和文件的跨电脑剪贴板（USB 对拷线的配套软件、有的远程工具）也传得过去。
     /// </summary>
     public string ScreenshotCopyAs { get; set; } = "image";
+
+    /// <summary>
+    /// 框选时保持屏幕原色（PLAN-v16 S2，mac screenshotKeepsColors，跟着导出导入）：打开后框选不压暗（整屏和洞外都不压）、
+    /// 悬停的窗口只描边不填粉、放大镜的十字带只描线。默认关。截图、截图翻译 / 识字、录屏的框选都管。
+    /// </summary>
+    public bool ScreenshotKeepsColors { get; set; }
 
     // 录制（第四版）：帧率、保存目录、上次没写完的临时文件（闪退恢复用）。
     public int RecordFps { get; set; } = Core.RecorderRules.DefaultFps;

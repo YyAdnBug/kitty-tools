@@ -208,7 +208,7 @@ internal static partial class TrayMenu
 
             Add(menu, "识字", HotKeyActions.Ocr, () => ScreenshotSession.Start(ScreenshotMode.Ocr), capture: true);
             Add(menu, "截图历史", HotKeyActions.ShotHistory, ShotHistoryWindow.ShowWindow);
-            Add(menu, "钉住剪贴板里的图", HotKeyActions.PinClipboard, () => _ = PinHost.PinClipboardAsync());
+            Add(menu, "钉住剪贴板内容", HotKeyActions.PinClipboard, () => _ = PinHost.PinClipboardAsync());
             if (PinHost.Count > 0)
             {
                 Add(menu, PinHost.AllHidden ? "显示全部钉图" : "隐藏全部钉图", string.Empty, PinHost.ToggleHidden);

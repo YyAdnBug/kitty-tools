@@ -537,6 +537,9 @@ internal static class ArchiveService
             writer.WriteString("launcherPanelPosition", settings.LauncherPanelPosition);
             writer.WriteString("screenshotToolbarAlign", settings.ScreenshotToolbarAlign);
             writer.WriteString("screenshotCopyAs", settings.ScreenshotCopyAs); // PLAN-v15，键名和值同 mac
+            // PLAN-v16 S1 / S2，键名同 mac
+            writer.WriteBoolean("translateScreenshotOverlay", settings.TranslateScreenshotOverlay);
+            writer.WriteBoolean("screenshotKeepsColors", settings.ScreenshotKeepsColors);
             // PLAN-v12 N5 状态屏：同 mac Prefs（状态列表是一组对象，导入时按 id 并进本机的、不删本机独有的）。
             writer.WriteBoolean("statusScreenExitHint", settings.StatusScreenExitHint);
             writer.WriteBoolean("statusScreenHotKeyEntersFirst", settings.StatusScreenHotKeyEntersFirst);
@@ -643,6 +646,12 @@ internal static class ArchiveService
                     break;
                 case "screenshotCopyAs" when value.ValueKind == JsonValueKind.String && value.GetString() is "image" or "file":
                     settings.ScreenshotCopyAs = value.GetString()!;
+                    break;
+                case "translateScreenshotOverlay" when value.ValueKind is JsonValueKind.True or JsonValueKind.False:
+                    settings.TranslateScreenshotOverlay = value.GetBoolean();
+                    break;
+                case "screenshotKeepsColors" when value.ValueKind is JsonValueKind.True or JsonValueKind.False:
+                    settings.ScreenshotKeepsColors = value.GetBoolean();
                     break;
                 case "statusScreenExitHint" when value.ValueKind is JsonValueKind.True or JsonValueKind.False:
                     settings.StatusScreenExitHint = value.GetBoolean();

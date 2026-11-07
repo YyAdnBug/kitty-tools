@@ -1,6 +1,6 @@
 // 启动器里本 App 自己的动作（PLAN-v9-launcher R12 = PLAN-v9 L8，照 mac LauncherItem.actions）：和托盘菜单同名同序——
 // 剪贴板历史、暂停记录剪贴板（副标题写正在记录 / 已暂停）｜输入翻译、复制即译（已开启 / 已关闭）｜截图、截图翻译、截取上次区域、
-// 识字、截图历史、钉住剪贴板里的图、隐藏 / 显示全部钉图和关闭全部钉图（有钉图时，PLAN-v9 S10）、录屏、录音｜打开主界面（PLAN-v10 §5）、设置、快捷键速查表、
+// 识字、截图历史、钉住剪贴板内容、隐藏 / 显示全部钉图和关闭全部钉图（有钉图时，PLAN-v9 S10）、录屏、录音｜打开主界面（PLAN-v10 §5）、设置、快捷键速查表、
 // 关于 Kitty Tools、检查更新（有新版本时「更新到 x」）、退出 Kitty Tools。
 // 关着的功能那一节不列（Feature）；启动器自己、划词翻译不列（点了启动器，原来的程序就不在前台了，取不到选中的字，同托盘 G1）。
 // 副标题只写「Kitty Tools」，英文名和拼音只进匹配；对得上全局快捷动作的，选中时右边显示它的键帽。
@@ -44,7 +44,8 @@ internal static class LauncherActions
     public static bool IsStatusPreset(string target) => target.StartsWith(StatusPrefix, StringComparison.Ordinal);
 
     /// <summary>一个内置动作：标题、英文别名、图标、家族色、对得上的全局快捷动作。</summary>
-    private sealed record Definition(string Target, string Title, string English, string Glyph, string Family, string? HotKey = null);
+    private sealed record Definition(
+        string Target, string Title, string English, string Glyph, string Family, string? HotKey = null, string[]? Aliases = null);
 
     /// <summary>按此刻的状态列（暂停没有、复制即译开没开、在不在录、有没有新版本、哪些功能开着）。</summary>
     public static List<LauncherItem> Items()
@@ -79,8 +80,9 @@ internal static class LauncherActions
             items.Add(Item(new(ScreenshotLast, "截取上次区域", "Capture Last Region", FeatureIcons.ScreenshotLast, "capture", HotKeyActions.ScreenshotLast)));
             items.Add(Item(new(Ocr, "识字", "OCR Recognize Text", FeatureIcons.ScreenshotText, "capture", HotKeyActions.Ocr)));
             items.Add(Item(new(ShotHistory, "截图历史", "Screenshot History", FeatureIcons.ScreenshotHistory, "capture", HotKeyActions.ShotHistory)));
-            items.Add(Item(new(PinClipboard, "钉住剪贴板里的图", "Pin Clipboard Image", FeatureIcons.Pin, "capture",
-                HotKeyActions.PinClipboard)));
+            // 搜「钉图」「贴图」也找得到它（标题是「钉住…」；别家把钉文字叫贴图，mac 同）
+            items.Add(Item(new(PinClipboard, "钉住剪贴板内容", "Pin Clipboard Image Text", FeatureIcons.Pin, "capture",
+                HotKeyActions.PinClipboard, new[] { "钉图", "贴图" })));
             if (PinHost.Count > 0)
             {
                 items.Add(Item(new(PinsToggle, PinHost.AllHidden ? "显示全部钉图" : "隐藏全部钉图", "Show Hide All Pins",
@@ -310,7 +312,9 @@ internal static class LauncherActions
                 LauncherMatch.Fold(definition.Title),
                 LauncherMatch.Fold(definition.English),
                 pinyin?.Full,
-            }.Where(name => !string.IsNullOrEmpty(name)).Select(name => name!).Distinct().ToList(),
+            }.Concat((definition.Aliases ?? System.Array.Empty<string>())
+                    .SelectMany(alias => new[] { LauncherMatch.Fold(alias), Pinyin.For(alias)?.Full }))
+            .Where(name => !string.IsNullOrEmpty(name)).Select(name => name!).Distinct().ToList(),
             Initials = new[]
             {
                 LauncherMatch.Initials(definition.English),

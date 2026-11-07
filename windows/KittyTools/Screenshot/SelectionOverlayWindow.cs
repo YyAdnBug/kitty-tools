@@ -28,6 +28,14 @@ internal sealed partial class SelectionOverlayWindow : Window
 {
     private static readonly Color Accent = Theme.Shot.Accent;
     private static readonly Color Dim = Theme.Shot.Dim;
+
+    /// <summary>
+    /// 框选时保持屏幕原色（设置 › 截图，PLAN-v16 S2）：每次建遮罩时读一次，开着时整屏和洞外都不压暗（悬停的窗口照旧只描边，
+    /// 放大镜本来就只描中间那一格）。截图、截图翻译 / 识字、录屏的框选都走这里。
+    /// </summary>
+    private readonly bool _keepsColors = SettingsService.Current.ScreenshotKeepsColors;
+
+    private Color Shade => _keepsColors ? Microsoft.UI.Colors.Transparent : Dim;
     private static readonly Color HandleFill = Theme.Shot.HandleFill;
 
     private readonly FrozenScreen _screen;
@@ -187,6 +195,7 @@ internal sealed partial class SelectionOverlayWindow : Window
     public void Release()
     {
         CompositionTarget.Rendering -= OnRenderingWhileCloaked;
+        CancelTranslation();
         _timer?.Stop();
         _timer = null;
         _canvas.Draw -= OnDraw;
@@ -1535,10 +1544,10 @@ internal sealed partial class SelectionOverlayWindow : Window
             var bottom = Math.Min(_screen.Height, area.Bottom) / _scale;
             var left = Math.Max(0, area.X) / _scale;
             var right = Math.Min(_screen.Width, area.Right) / _scale;
-            ds.FillRectangle(0, 0, width, (float)top, Dim);
-            ds.FillRectangle(0, (float)bottom, width, height - (float)bottom, Dim);
-            ds.FillRectangle(0, (float)top, (float)left, (float)(bottom - top), Dim);
-            ds.FillRectangle((float)right, (float)top, width - (float)right, (float)(bottom - top), Dim);
+            ds.FillRectangle(0, 0, width, (float)top, Shade);
+            ds.FillRectangle(0, (float)bottom, width, height - (float)bottom, Shade);
+            ds.FillRectangle(0, (float)top, (float)left, (float)(bottom - top), Shade);
+            ds.FillRectangle((float)right, (float)top, width - (float)right, (float)(bottom - top), Shade);
             var outline = new Windows.Foundation.Rect(
                 left, top, Math.Max(0, right - left), Math.Max(0, bottom - top));
             if (selection is null)
@@ -1548,11 +1557,12 @@ internal sealed partial class SelectionOverlayWindow : Window
         }
         else
         {
-            ds.FillRectangle(0, 0, width, height, Dim);
+            ds.FillRectangle(0, 0, width, height, Shade);
         }
 
         if (selection is { } own)
         {
+            DrawTranslating(ds, own);
             DrawAnnotations(sender, ds, own, width, height);
             DrawTextEditor(ds);
             DrawSelection(ds, own);
@@ -1737,6 +1747,7 @@ internal sealed partial class SelectionOverlayWindow : Window
         {
             ScreenshotMode.Ocr => "拖动框选要识别的区域 · Esc 取消",
             ScreenshotMode.Translate => "拖动框选要翻译的区域 · Esc 取消",
+            _ when _session.AutoTranslate && !_session.HasSelection => "拖动框选要翻译的文字 · Esc 取消",
             ScreenshotMode.Record when _session.HasSelection => "Enter / 双击选区开始录制 · D 上次区域 · Esc 取消",
             ScreenshotMode.Record => "拖动框选要录的区域 · 单击窗口录这个窗口 · D 上次区域 · Esc 取消",
             _ when _session.HasSelection =>
@@ -2023,6 +2034,8 @@ internal sealed partial class SelectionOverlayWindow : Window
             return;
         }
 
+        CancelTranslation();
+
         if (HasAnnotations || _session.HasAnnotations(besides: this))
         {
             RefuseWipe("有标注时右键不清空");
@@ -2307,6 +2320,11 @@ internal sealed partial class SelectionOverlayWindow : Window
         if (_session.Mode is ScreenshotMode.Ocr or ScreenshotMode.Translate)
         {
             _session.ConfirmQuick();
+        }
+        else if (wasDraw && _session.AutoTranslate && _session.Mode == ScreenshotMode.Capture)
+        {
+            // 截图翻译开着「把译文直接盖回截图上」：框完自动翻，省掉再点一下工具栏（mac autoTranslates）
+            TranslateInPlace();
         }
 
         e.Handled = true;
@@ -2635,6 +2653,8 @@ internal sealed partial class SelectionOverlayWindow : Window
     public unsafe void CloseCloaked()
     {
         CompositionTarget.Rendering -= OnRenderingWhileCloaked;
+        // 收起遮罩的每条路都停掉就地翻译（还在排队的那几段别再往服务发请求）
+        CancelTranslation();
         _cloaked = true;
         var value = 1;
         DwmSetWindowAttribute(_hwnd, 13 /* DWMWA_CLOAK */, &value, sizeof(int));

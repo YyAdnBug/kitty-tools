@@ -174,6 +174,14 @@ internal sealed partial class SettingsWindow
                 SettingsUi.SetDescription(copyRecognizedCard, CopyRecognizedNote(isOn));
             }
         });
+        // PLAN-v16 S1（mac d4901574）：默认关
+        AddToggle("截图翻译时把译文直接盖回截图上",
+            "截图翻译和截图工具栏里的「翻译」都留在截图页里，译文按原来的位置盖回图上，可以接着标注、复制、保存；关着时在翻译浮窗里看，能对比几个服务、复制译文",
+            settings.TranslateScreenshotOverlay, isOn =>
+            {
+                settings.TranslateScreenshotOverlay = isOn;
+                SettingsService.Save();
+            });
         copyRecognizedCard = AddToggle("截图翻译时复制识别出的原文",
             CopyRecognizedNote(settings.TranslateAutoCopy),
             settings.TranslateCopyRecognized, isOn =>

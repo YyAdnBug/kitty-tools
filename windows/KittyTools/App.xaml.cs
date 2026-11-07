@@ -122,6 +122,13 @@ public partial class App : Application
                 return;
             }
 
+            if (OverlayTranslateProbe.IsRequested(commandLine) && OverlayTranslateProbe.DirectoryFrom(commandLine) is { } overlayProbe)
+            {
+                // PLAN-v16 第 2 批：截图翻译原位覆盖、文字钉图的自检（只在测试档），跑完就退。
+                _ = OverlayTranslateProbe.RunAsync(overlayProbe);
+                return;
+            }
+
             if (Environment.GetCommandLineArgs().Contains("--crash-test", StringComparer.OrdinalIgnoreCase))
             {
                 throw new InvalidOperationException("--crash-test");

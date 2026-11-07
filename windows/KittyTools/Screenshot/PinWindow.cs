@@ -13,6 +13,7 @@ using Windows.Graphics;
 using Windows.Storage.Streams;
 using Windows.System;
 using Windows.UI;
+using KittyTools.Core;
 using KittyTools.Infrastructure;
 using Windows.Win32;
 using Windows.Win32.Foundation;
@@ -507,7 +508,7 @@ internal static class PinHost
     }
 
     /// <summary>
-    /// 钉到鼠标所在屏、以鼠标为中心（剪贴板面板的钉图、「钉住剪贴板里的图」共用）：最大占可见区 80%，夹在可见区里。
+    /// 钉到鼠标所在屏、以鼠标为中心（剪贴板面板的钉图、「钉住剪贴板内容」共用）：最大占可见区 80%，夹在可见区里。
     /// offset 是连钉几张时往右下错开的量；那个位置已经有一张钉图时再错开 24（连按几下快捷键不叠成一张，同 mac clipboardFrame）。
     /// </summary>
     public static void ShowNearCursor(byte[] png, int imageWidth, int imageHeight, int offset = 0)
@@ -535,14 +536,20 @@ internal static class PinHost
     }
 
     /// <summary>
-    /// 「钉住剪贴板里的图」（PLAN-v9 F3，同 mac AppDelegate.pinClipboard）：剪贴板里是图（或复制的是图片文件）就钉到鼠标旁边，
-    /// 不是图就提示；剪贴板只读。
+    /// 「钉住剪贴板内容」（PLAN-v9 F3，同 mac AppDelegate.pinClipboard）：剪贴板里是图（或复制的是图片文件）就钉到鼠标旁边；
+    /// 没有图、是文字时把文字排成卡片钉上去（PLAN-v16 S3，issue #4）；都没有就提示。剪贴板只读、不记历史。
     /// </summary>
     public static async Task PinClipboardAsync()
     {
         if (ClipboardFormats.ReadImageForPin() is not { } source)
         {
-            NoticeHost.Show("剪贴板里没有图片", string.Empty, NoticeTone.Warning);
+            if (ClipboardFormats.ReadTextForPin() is { } text)
+            {
+                await PinTextAsync(text);
+                return;
+            }
+
+            NoticeHost.Show("剪贴板里没有图片或文字", string.Empty, NoticeTone.Warning);
             return;
         }
 
@@ -563,6 +570,36 @@ internal static class PinHost
         catch (Exception ex)
         {
             Log.Error("pin.clipboard-failed", ex);
+            NoticeHost.Show("没能钉到屏幕", ex.GetType().Name, NoticeTone.Error);
+        }
+    }
+
+    /// <summary>
+    /// 把一段文字排成卡片钉到鼠标旁边（「钉住剪贴板内容」、剪贴板历史里文字条目的「钉到屏幕」）：卡片最大宽 560、不超过可见区六成，
+    /// 高到可见区八成；按鼠标所在屏的缩放出像素。offset 同 ShowNearCursor（连钉几条依次错开）。
+    /// </summary>
+    public static async Task PinTextAsync(string text, int offset = 0)
+    {
+        try
+        {
+            PInvoke.GetCursorPos(out var cursor);
+            var display = Displays.AtPoint(cursor.X, cursor.Y);
+            var scale = display.Scale <= 0 ? 1 : display.Scale;
+            var (limitWidth, limitHeight) = PinText.CardLimit(
+                (display.Work.Right - display.Work.Left) / scale, (display.Work.Bottom - display.Work.Top) / scale);
+            var card = await PinTextCard.RenderAsync(text, scale, limitWidth, limitHeight, Theme.EffectiveTheme == ElementTheme.Dark);
+            if (card is not { } image)
+            {
+                NoticeHost.Show("没能钉到屏幕", "排不出这段文字", NoticeTone.Error);
+                return;
+            }
+
+            ShowNearCursor(image.Png, image.Width, image.Height, offset);
+            Log.Info("pin.text");
+        }
+        catch (Exception ex)
+        {
+            Log.Error("pin.text-failed", ex);
             NoticeHost.Show("没能钉到屏幕", ex.GetType().Name, NoticeTone.Error);
         }
     }

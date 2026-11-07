@@ -466,7 +466,7 @@ internal static class ShortcutsSheet
             new("Enter", "拼好，拷贝"),
             new("Esc", "放弃"),
         }),
-        // 全局的「钉住剪贴板里的图」（PLAN-v9 F3）不设默认键，没设时那一行写「未设置」（同 mac）。
+        // 全局的「钉住剪贴板内容」（PLAN-v9 F3）不设默认键，没设时那一行写「未设置」（同 mac）。
         new("screenshot", "钉图", "capture", FeatureIcons.Pin, new[] { HotKeyActions.PinClipboard }, new ShortcutEntry[]
         {
             new("滚轮", "缩放（10%–500%）"),

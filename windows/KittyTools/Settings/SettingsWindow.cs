@@ -94,12 +94,12 @@ internal sealed partial class SettingsWindow : Window
             "语言", "第一语言", "第二语言", "字号", "换行", "自动复制", "复制即译", "历史", "导出", "CSV", "Anki", "位置", "浮窗位置",
             "鼠标", "清空", "服务", "密钥", "查词", "词典", "单词", "音标", "例句", "生词本", "收藏", "智谱", "OpenAI", "Anthropic",
             "DeepL", "Google", "百度", "有道", "微软", "火山", "腾讯", "AI", "模型", "按键", "速查",
-            "面板大小", "恢复默认大小", "朗读", "真人发音", "发音", "美音", "英音", "有道词典",
+            "面板大小", "恢复默认大小", "朗读", "真人发音", "发音", "美音", "英音", "有道词典", "截图翻译", "盖回", "原位",
         },
         ["screenshot"] = new[]
         {
             "保存", "存储", "目录", "文件夹", "快门", "声音", "缩略图", "识字", "换行", "标注", "长截图", "钉图", "截图历史", "按键", "速查",
-            "工具栏", "靠右", "居中", "位置",
+            "工具栏", "靠右", "居中", "位置", "原色", "压暗", "取色", "粉色",
             "拷贝", "复制", "文件", "PNG", "对拷线", "远程",
         },
         ["record"] = new[]
@@ -2500,6 +2500,15 @@ internal sealed partial class SettingsWindow : Window
             index =>
             {
                 SettingsService.Current.ScreenshotToolbarAlign = aligns[index];
+                SettingsService.Save();
+            });
+
+        // 框选时保持屏幕原色（PLAN-v16 S2，mac 77733a0c：在「工具栏位置」下面）
+        _content.Children.Add(new Border { Height = 8 });
+        AddToggle("框选时保持屏幕原色", "不压暗屏幕：框选时、选区外和悬停的窗口都是原来的颜色。取色、对比颜色时打开",
+            SettingsService.Current.ScreenshotKeepsColors, value =>
+            {
+                SettingsService.Current.ScreenshotKeepsColors = value;
                 SettingsService.Save();
             });
 

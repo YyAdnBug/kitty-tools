@@ -1778,12 +1778,18 @@ public sealed partial class ClipboardPanel : UserControl
         TranslateHost.ShowTextKeepOverlay(text);
     }
 
-    /// <summary>钉到屏幕：多张依次往右下错开 24，不叠在一起（mac）；没固定就先收起面板。</summary>
+    /// <summary>钉到屏幕：多张依次往右下错开 24，不叠在一起（mac）；没固定就先收起面板。文字条目排成卡片钉（PLAN-v16 S4）。</summary>
     private async Task PinImagesAsync(IReadOnlyList<ClipEntry> entries)
     {
         CloseUnlessPinned();
         for (var index = 0; index < entries.Count; index++)
         {
+            if (entries[index].Kind == ClipKind.Text && PinText.Clean(entries[index].Text) is { } text)
+            {
+                await PinHost.PinTextAsync(text, index * 24);
+                continue;
+            }
+
             await PinImageAsync(entries[index], index * 24);
         }
     }
@@ -2032,7 +2038,8 @@ public sealed partial class ClipboardPanel : UserControl
                 items.Add(new PaletteItem("打开链接", Glyphs.Globe, 1, () => OpenTarget(single), "Ctrl+O"));
             }
 
-            if (single.Kind == ClipKind.Image)
+            // 图片和不只是空白的文字都能钉（PLAN-v16 S4：文字排成卡片），在「翻译」前面
+            if (PinText.CanPin(single.Kind, single.Text))
             {
                 items.Add(new PaletteItem("钉到屏幕", Glyphs.Pin, 1, () => _ = PinImagesAsync(new[] { single })));
             }
@@ -2052,9 +2059,9 @@ public sealed partial class ClipboardPanel : UserControl
                 }));
             }
         }
-        else if (targets.Any(entry => entry.Kind == ClipKind.Image))
+        else if (targets.Any(entry => PinText.CanPin(entry.Kind, entry.Text)))
         {
-            items.Add(new PaletteItem("钉到屏幕", Glyphs.Pin, 1, () => _ = PinImagesAsync(targets.Where(entry => entry.Kind == ClipKind.Image).ToList())));
+            items.Add(new PaletteItem("钉到屏幕", Glyphs.Pin, 1, () => _ = PinImagesAsync(targets.Where(entry => PinText.CanPin(entry.Kind, entry.Text)).ToList())));
         }
 
         var favorite = targets.All(entry => entry.Favorite);

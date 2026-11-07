@@ -81,7 +81,13 @@ internal static class OcrService
             }
 
             var box = Union(line);
-            lines.Add(new CoreOcrLine(text, RectD.FromLtrb(box.X / scale, box.Y / scale, box.Right / scale, box.Bottom / scale)));
+            // 各个词的框（截图翻译认行内代码块、判断被长词挤断的行；PLAN-v16 S1b）
+            var words = line.Words
+                .Select(word => new KittyTools.Core.OcrWord(word.Text, RectD.FromLtrb(
+                    word.BoundingRect.X / scale, word.BoundingRect.Y / scale,
+                    word.BoundingRect.Right / scale, word.BoundingRect.Bottom / scale)))
+                .ToList();
+            lines.Add(new CoreOcrLine(text, RectD.FromLtrb(box.X / scale, box.Y / scale, box.Right / scale, box.Bottom / scale), words));
         }
 
         return (OcrText.Text(lines, joined, separator), lines);
