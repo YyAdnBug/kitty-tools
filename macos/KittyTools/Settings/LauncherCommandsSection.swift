@@ -89,7 +89,7 @@ struct LauncherCommandsSection: View {
           ForEach(rows) { row in
             CommandRow(
               row: row, alias: aliasBinding(row), isOn: onBinding(row),
-              conflicted: conflicts.contains(row.id)
+              conflicted: conflicts.contains(row.id), refresh: { library?.refresh() }
             )
             .disabled(row.script != nil && !scriptsOn)
           }
@@ -148,6 +148,8 @@ private struct CommandRow: View {
   @Binding var alias: String
   @Binding var isOn: Bool
   let conflicted: Bool
+  /// 复制、移到废纸篓之后重读脚本库
+  var refresh: () -> Void = {}
 
   var body: some View {
     HStack(spacing: 10) {
@@ -196,10 +198,20 @@ private struct CommandRow: View {
           NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: script.path)])
         }
         Button("用文本编辑器打开") { ScriptLibrary.edit(script.path) }
-        if !script.isBundled {
+        if script.isBundled {
+          // 复制出来的那份和自带的同一个关键词：把自带的关掉，启动器里只剩自己那份（拍板 D2「用你的」）
+          Button("复制一份到我的脚本") {
+            if ScriptLibrary.copyBundled(script) != nil {
+              isOn = false
+              refresh()
+            }
+          }
+        } else {
           Divider()
           Button("移到废纸篓", role: .destructive) {
-            NSWorkspace.shared.recycle([URL(filePath: script.path)]) { _, _ in }
+            NSWorkspace.shared.recycle([URL(filePath: script.path)]) { _, _ in
+              Task { @MainActor in refresh() }
+            }
           }
         }
       }

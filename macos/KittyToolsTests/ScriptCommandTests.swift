@@ -558,3 +558,66 @@ struct ScriptRunTests {
     #expect(model.results.first?.title == "隐藏的脚本")
   }
 }
+
+/// 自带的 9 个脚本（Resources/scripts，拍板 D1）：都读得出来、都标着自带；会改系统设置的两个（深色模式、防止睡眠）只读不跑，
+/// 别的真跑一遍（只用 zsh 和 osascript，PATH 给最小的）。正则测试给第二个参数，不读剪贴板
+struct BundledScriptTests {
+  private func bundled() async throws -> [String: ScriptCommand] {
+    let scan = await ScriptLibrary.scan([], bundled: ScriptLibrary.bundledFiles)
+    return Dictionary(uniqueKeysWithValues: scan.scripts.map { ($0.keyword ?? "", $0) })
+  }
+
+  private func run(_ script: ScriptCommand?, _ arguments: [String]) async throws
+    -> ScriptRunner.Outcome
+  {
+    await ScriptRunner.run(try #require(script), arguments: arguments, path: "/usr/bin:/bin")
+  }
+
+  @Test func allNineParse() async throws {
+    let scripts = try await bundled()
+    #expect(
+      Set(scripts.keys) == ["time", "json", "uuid", "bcvt", "url", "b64", "regt", "dark", "awake"])
+    #expect(scripts.values.allSatisfy { $0.isBundled && !$0.isDownloaded })
+    #expect(scripts["time"]?.mode == .list && scripts["json"]?.mode == .full)
+    #expect(scripts["uuid"]?.mode == .paste && scripts["dark"]?.mode == .island)
+    #expect(
+      LauncherItem.script(try #require(scripts["uuid"]), alias: "uuid").subtitle.contains("UUID"))
+  }
+
+  @Test func listScripts() async throws {
+    let scripts = try await bundled()
+    let seconds = try await run(scripts["time"], ["1700000000"])
+    #expect(ScriptCommand.lines(seconds.output).contains { $0.title == "2023-11-14T22:13:20Z" })
+    let now = ScriptCommand.lines(try await run(scripts["time"], []).output)
+    #expect(now.count == 4 && now[0].subtitle == "秒" && now[1].title.count == 13)
+    #expect(try await run(scripts["time"], ["不是时间"]).end == .finished(1))
+    let bases = ScriptCommand.lines(try await run(scripts["bcvt"], ["0xff"]).output)
+    #expect(bases.map(\.title) == ["255", "0xFF", "0b11111111", "0o377"])
+    #expect(try await run(scripts["bcvt"], ["zz"]).end == .finished(1))
+    let url = ScriptCommand.lines(try await run(scripts["url"], ["a b&c=中"]).output)
+    #expect(url.map(\.value) == ["a%20b%26c%3D%E4%B8%AD", "a b&c=中"])
+    let b64 = ScriptCommand.lines(try await run(scripts["b64"], ["aGk="]).output)
+    #expect(b64.map(\.value) == ["YUdrPQ==", "hi"])
+    let notB64 = ScriptCommand.lines(try await run(scripts["b64"], ["你好"]).output)
+    #expect(notB64.count == 2 && !notB64[1].isValid)
+    let regex = ScriptCommand.lines(
+      try await run(scripts["regt"], ["(\\d)(\\d+)", "订单 123 和 456"]).output)
+    #expect(regex.map(\.value) == ["123", "456"])
+    #expect(regex[0].subtitle == "第 1 处 · 位置 3 · 分组：1，23")
+    let broken = ScriptCommand.lines(try await run(scripts["regt"], ["(", "x"]).output)
+    #expect(broken.first?.title == "正则写错了" && broken.first?.isValid == false)
+  }
+
+  @Test func pasteAndFullScripts() async throws {
+    let scripts = try await bundled()
+    let uuid = ScriptCommand.payload(try await run(scripts["uuid"], []).output)
+    #expect(
+      uuid.wholeMatch(of: /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/) != nil)
+    let json = try await run(scripts["json"], [#"{"a":[1,2],"b":"中"}"#])
+    #expect(
+      ScriptCommand.payload(json.output) == "{\n  \"a\": [\n    1,\n    2\n  ],\n  \"b\": \"中\"\n}")
+    let bad = try await run(scripts["json"], ["{oops"])
+    #expect(bad.end == .finished(1))
+    #expect(ScriptCommand.lastLine(bad.error)?.hasPrefix("不是有效的 JSON：") == true)
+  }
+}

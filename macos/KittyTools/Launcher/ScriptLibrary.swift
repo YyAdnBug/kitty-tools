@@ -1,5 +1,7 @@
-// 脚本命令从哪来（2026-11-07 拍板 A1，PLAN §10「脚本命令」）：数据目录里的默认文件夹 scripts，加上自己添加的文件夹
-// （Prefs.scriptFolders，这台电脑自己的路径，不注册默认值、不导出；只读，不往里写，不扫子文件夹）。
+// 脚本命令从哪来（2026-11-07 拍板 A1 D1 D2，PLAN §10「脚本命令」）：数据目录里的默认文件夹 scripts，加上自己添加的文件夹
+// （Prefs.scriptFolders，这台电脑自己的路径，不注册默认值、不导出；只读，不往里写，不扫子文件夹），最后是随 App 带的
+// 自带脚本（Resources/scripts/script-*.sh，打进包里是平铺的；只读、跟着 App 更新，「命令」表里能关、能复制一份出来改）。
+// 自己的排在自带的前面：同一个关键词时用自己的。
 // 每次呼出启动器在主线程外重读一遍（几个小文件的开头，几毫秒；另加的文件夹可能在网络盘、同步盘上，碰它的都不在主线程，
 // mac-native §3），读完换上、通知启动器按新的重搜；读的时候再要不重复起。读不成的记下原因（设置页列出来）。
 // ponytail: 每次呼出都整个重读，不比修改时间；脚本多到几百个、或文件夹在很慢的网络盘上时，改成按文件夹修改时间 + 文件修改时间认。
@@ -50,11 +52,24 @@ import UniformTypeIdentifiers
 
   static var folders: [URL] { [defaultFolder] + addedFolders }
 
+  /// 自带脚本的文件名前缀（打进包里和别的资源平铺在一起）
+  nonisolated static let bundledPrefix = "script-"
+
+  /// 包里的自带脚本：资源目录里 script- 开头、.sh 结尾的（App 跑着时不会变，列一次）
+  nonisolated static let bundledFiles: [URL] = {
+    guard let resources = Bundle.main.resourceURL,
+      let names = try? FileManager.default.contentsOfDirectory(atPath: resources.path)
+    else { return [] }
+    return names.filter { $0.hasPrefix(bundledPrefix) && $0.hasSuffix(".sh") }.sorted()
+      .map { resources.appending(path: $0) }
+  }()
+
   /// 重读（在主线程外）；正在读就不重复起
-  func refresh(folders: [URL] = ScriptLibrary.folders) {
+  func refresh(folders: [URL] = ScriptLibrary.folders, bundled: [URL] = ScriptLibrary.bundledFiles)
+  {
     guard task == nil else { return }
     task = Task {
-      let scan = await Self.scan(folders)
+      let scan = await Self.scan(folders, bundled: bundled)
       task = nil
       let changed = scan.scripts != scripts || scan.problems != problems
       scripts = scan.scripts
@@ -69,7 +84,7 @@ import UniformTypeIdentifiers
 
   /// 读几个文件夹：每个文件只读开头（ScriptCommand.headerBytes），不进子文件夹；同一个文件出现两次（添加了默认文件夹
   /// 自己、符号链接）只算一次。按文件名排
-  @concurrent static func scan(_ folders: [URL]) async -> Scan {
+  @concurrent static func scan(_ folders: [URL], bundled: [URL] = []) async -> Scan {
     var scan = Scan()
     var seen = Set<String>()
     let manager = FileManager.default
@@ -96,6 +111,14 @@ import UniformTypeIdentifiers
         case nil: break
         }
       }
+    }
+    // 自带的：随 App 签过名，不看下载标记
+    for file in bundled {
+      guard let head = readHead(file),
+        case .success(var script)? = ScriptCommand.parse(head, path: file.path)
+      else { continue }
+      script.isBundled = true
+      scan.scripts.append(script)
     }
     return scan
   }
@@ -190,6 +213,16 @@ extension ScriptLibrary {
     return target
   }
 
+  /// 自带的复制一份到默认文件夹（去掉 script- 前缀），用文本编辑器打开；返回复制出来的位置
+  static func copyBundled(_ script: ScriptCommand) -> URL? {
+    let name = String(script.fileName.dropFirst(bundledPrefix.count))
+    let url = freeURL(in: ensureDefaultFolder(), name: name.isEmpty ? script.fileName : name)
+    guard (try? FileManager.default.copyItem(at: URL(filePath: script.path), to: url)) != nil
+    else { return nil }
+    edit(url.path(percentEncoded: false))
+    return url
+  }
+
   /// 打开脚本给人改：用默认的纯文本编辑器（不按 .sh 的默认 App 开——那可能是终端，一开就跑了）
   static func edit(_ path: String) {
     let url = URL(filePath: path)
@@ -209,8 +242,10 @@ extension LauncherItem {
   static func script(_ script: ScriptCommand, alias: String?) -> LauncherItem {
     let pinyin = AppCatalog.pinyin(script.title)
     let folder =
-      script.folder == ScriptLibrary.defaultFolder.path(percentEncoded: false).trimmingSuffix("/")
-      ? "我的脚本" : (script.folder as NSString).lastPathComponent
+      script.isBundled
+      ? "自带"
+      : script.folder == ScriptLibrary.defaultFolder.path(percentEncoded: false).trimmingSuffix("/")
+        ? "我的脚本" : (script.folder as NSString).lastPathComponent
     var item = LauncherItem(
       kind: .script, target: script.path, title: script.title,
       subtitle: script.summary ?? script.package ?? folder,

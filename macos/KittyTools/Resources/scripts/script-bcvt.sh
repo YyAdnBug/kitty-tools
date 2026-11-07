@@ -1,0 +1,28 @@
+#!/bin/zsh
+# @kitty.title 进制转换
+# @kitty.keyword bcvt
+# @kitty.icon number
+# @kitty.mode list
+# @kitty.description 十进制、十六进制、二进制、八进制一起列
+# @kitty.argument1 数字
+#
+# 写成 255、0xff、0b1010 或 0o17，四种进制各一行，↩ 粘贴选中的那条。
+
+n=${${1:l}//[[:space:]_]/}
+row() { print -r -- "$1"$'\t'"$2" }
+if [[ $n =~ '^0x[0-9a-f]+$' ]]; then
+  value=$(( 16#${n#0x} ))
+elif [[ $n =~ '^0b[01]+$' ]]; then
+  value=$(( 2#${n#0b} ))
+elif [[ $n =~ '^0o[0-7]+$' ]]; then
+  value=$(( 8#${n#0o} ))
+elif [[ $n == <-> ]]; then
+  value=$n
+else
+  print -u2 -r -- "认不出「$1」：写成 255、0xff、0b1010 或 0o17"
+  exit 1
+fi
+row $value "十进制"
+row "0x$(( [##16] value ))" "十六进制"
+row "0b$(( [##2] value ))" "二进制"
+row "0o$(( [##8] value ))" "八进制"
