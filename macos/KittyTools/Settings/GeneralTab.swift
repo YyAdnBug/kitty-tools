@@ -1,4 +1,5 @@
-// 设置 › 通用：功能（各功能一个开关（2026-10-23 加了程序坞预览，九个），最上面一组，2026-10-21；关掉的功能入口全藏、后台不干活，Shell/Feature.swift）、
+// 设置 › 通用：功能（各功能一个开关，最上面一组，2026-10-21；关掉的功能入口全藏、后台不干活，Shell/Feature.swift。2026-11-07 用户嫌
+// 占了整页，收成一行「功能 ›」写开着几个、关着哪几个，开关推进 FeaturesPage；页头画在自己的 NavigationStack 里，推进时一起换掉）、
 // 外观（跟随系统 / 浅色 / 深色三张缩略图）与强调色（跟随系统 + 系统设置那一排 8 色，都是改了立刻生效）、
 // 动效：呼出面板时挤压弹开（剪贴板 / 启动器 / 翻译浮窗共用，2026-09-29 从启动器页挪来；2026-10-03 用户定转正：去掉「实验」、
 // 单独成组，默认仍关）、
@@ -27,23 +28,48 @@ struct GeneralTab: View {
   @State private var loginError: String?
   /// NSPasteboard.AccessBehavior 的 rawValue（这个类型 macOS 15.4 才有），窗口变成 key 时刷新
   @State private var pasteboardBehavior = Self.currentPasteboardBehavior
+  /// 此刻开着的功能（「功能」那一行的小字）：偏好变了跟着重算
+  @State private var enabled = Feature.enabled
   /// 新功能标记读它（截图自检单独画这一页时没有）
   @Environment(SettingsNavigation.self) private var navigation: SettingsNavigation?
 
   var body: some View {
+    // 截图自检单独画这一页时没有导航状态：给一个自己的栈
+    if let navigation {
+      NavigationStack(path: Bindable(navigation).path) { page }
+    } else {
+      NavigationStack { page }
+    }
+  }
+
+  private var page: some View {
+    VStack(spacing: 0) {
+      PageHeader(page: .general)
+      form
+    }
+    .navigationTitle(SettingsPage.general.title)
+    .navigationDestination(for: String.self) { route in
+      if route == FeaturesPage.route { FeaturesPage() }
+    }
+    .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
+      let now = Feature.enabled
+      if now != enabled { enabled = now }
+    }
+  }
+
+  private var form: some View {
     Form {
       Section {
-        ForEach(Feature.allCases.filter(\.isAvailable), id: \.self) { FeatureToggle(feature: $0) }
-      } header: {
-        HStack(spacing: 6) {
-          Text("功能")
-          // 新功能标记：0.8.0 加的这一节（WhatsNew），拨过其中一个开关、换页之后才没
-          if let navigation, WhatsNew.marks(section: "功能", of: .general, in: navigation.fresh) {
-            NewTag()
-          }
+        SettingsPushRow(
+          title: "功能",
+          detail: FeaturesPage.summary(
+            on: enabled, available: Feature.allCases.filter(\.isAvailable)),
+          // 新功能标记：0.8.0 加的（WhatsNew），拨过其中一个开关、换页之后才没
+          isNew: navigation.map { WhatsNew.marks(section: "功能", of: .general, in: $0.fresh) }
+            ?? false
+        ) {
+          navigation?.path = [FeaturesPage.route]
         }
-      } footer: {
-        SectionFootnote("关掉的功能不出现在快捷键、菜单栏和启动器里，也不在后台运行；它的数据和设置都留着，打开就回来。")
       }
       Section {
         LabeledContent("外观") { AppearancePicker(selection: $appearance) }

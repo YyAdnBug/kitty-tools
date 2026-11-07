@@ -725,6 +725,14 @@ struct SnapshotProbeTests {
         LauncherTab().defaultAppStorage(engines).environment(navigation),
         size: NSSize(width: 590, height: 2900),
         dark: dark, to: "\(out)/settings-launcher-list\(suffix).png")
+      // 推进去的那一页（2026-11-07 从启动器页挪进来）
+      try snapshot(
+        NavigationStack { WebSearchPage() }.defaultAppStorage(engines).environment(navigation),
+        size: NSSize(width: 590, height: 760), dark: dark,
+        to: "\(out)/settings-launcher-websearch\(suffix).png")
+      try snapshot(
+        NavigationStack { FeaturesPage() }, size: NSSize(width: 590, height: 900), dark: dark,
+        to: "\(out)/settings-general-features\(suffix).png")
       try snapshot(
         SearchEngineDetail(id: "scholar").defaultAppStorage(engines),
         size: NSSize(width: 590, height: 400), dark: dark,

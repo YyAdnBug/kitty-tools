@@ -134,6 +134,27 @@ struct SettingsListTests {
     #expect(problem(engine("a", url: "https://a.com/?q={query}", fallback: true), []) == nil)
   }
 
+  /// 启动器页「网页搜索与快捷链接」那一行的小字
+  @Test func engineSummary() {
+    let google = engine(
+      "g", name: "Google", keyword: "g", url: "https://g.com/?q={query}", fallback: true)
+    let bing = engine(
+      "b", name: "Bing", keyword: "b", url: "https://b.com/?q={query}", fallback: true)
+    let wiki = engine("w", name: "维基", keyword: "w", url: "https://w.com/?q={query}")
+    let docs = engine("d", name: "文档", url: "https://d.com")
+    #expect(WebSearchPage.summary([]) == "还没有，点进去添加")
+    #expect(WebSearchPage.summary([google, bing, wiki, docs]) == "3 个搜索、1 个快捷链接；兜底：Google、Bing")
+    #expect(WebSearchPage.summary([wiki]) == "1 个搜索，不兜底")
+    let more = (1...4).map {
+      engine(
+        "e\($0)", name: "E\($0)", keyword: "k\($0)", url: "https://e.com/?q={query}", fallback: true
+      )
+    }
+    #expect(WebSearchPage.summary(more) == "4 个搜索；兜底：E1、E2、E3 等 4 个")
+    let broken = engine("x", name: "  ", url: "https://")
+    #expect(WebSearchPage.summary([google, broken]) == "1 个搜索、1 个快捷链接；兜底：Google；1 条要改一下")
+  }
+
   @Test func engineListCoding() throws {
     #expect(SearchEngineDetail.decode(nil) == WebSearch.defaults)
     #expect(SearchEngineDetail.decode(Data("garbage".utf8)) == WebSearch.defaults)

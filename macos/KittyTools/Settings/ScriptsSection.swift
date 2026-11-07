@@ -248,6 +248,8 @@ struct ScriptsSection: View {
 struct SettingsPushRow: View {
   let title: String
   let detail: String
+  /// 名字后面挂「新」（WhatsNew）
+  var isNew = false
   let action: () -> Void
 
   var body: some View {
@@ -257,7 +259,10 @@ struct SettingsPushRow: View {
           .font(.system(size: 11, weight: .semibold))
           .foregroundStyle(.secondary)
       } label: {
-        Text(title)
+        HStack(spacing: 6) {
+          Text(title)
+          if isNew { NewTag() }
+        }
         Text(detail)
       }
       .contentShape(.rect)

@@ -10,6 +10,19 @@ import Testing
 struct FeatureTests {
   private let all = Set(Feature.allCases)
 
+  /// 通用页「功能」那一行的小字：关着的少列关着的，开着的少列开着的
+  @Test func featuresSummary() {
+    let list: [Feature] = [.clipboard, .launcher, .translate, .screenshot, .record, .notes]
+    #expect(FeaturesPage.summary(on: Set(list), available: list) == "6 个功能都开着")
+    #expect(FeaturesPage.summary(on: [], available: list) == "都关着")
+    #expect(
+      FeaturesPage.summary(on: Set(list).subtracting([.notes]), available: list)
+        == "开着 5 个；关着：便签")
+    #expect(
+      FeaturesPage.summary(on: [.clipboard, .launcher], available: list)
+        == "开着：剪贴板、启动器；另外 4 个关着")
+  }
+
   /// 每个动作恰好归一个功能，就是它所在那一节里的；每个功能至少一个动作（程序坞预览除外：它停在程序坞上就弹，
   /// 没有快捷键，拍板 D1）；和设置页同名。打开刘海岛（岛关不掉，2026-10-26）、打开主界面（全部功能的入口，2026-10-29）
   /// 不归哪个功能
