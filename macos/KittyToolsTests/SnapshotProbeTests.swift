@@ -4709,7 +4709,8 @@ struct SnapshotProbeTests {
 
   /// 启动器的脚本命令（2026-11-07，PLAN §10「脚本命令」）。单独一个测试函数，几秒，图都以 launcher-scripts 开头：
   ///   -only-testing:'KittyToolsTests/SnapshotProbeTests/launcherScripts()'
-  /// 出：搜到的几条脚本（emoji / SF 符号 / 默认色块的图标，浅深）、写了 confirm 的上了膛、下载来的脚本先看全文那一页（浅深）
+  /// 出：搜到的几条脚本（emoji / SF 符号 / 默认色块的图标，浅深）、写了 confirm 的上了膛、下载来的脚本先看全文那一页（浅深）、
+  /// 参数没填的提示行、列表脚本的结果、全文输出那一页（浅深）
   @Test(.enabled(if: directory != nil)) func launcherScripts() async throws {
     let out = try #require(Self.directory)
     try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
@@ -4733,11 +4734,30 @@ struct SnapshotProbeTests {
       script("清空下载文件夹", "cleandl", nil, confirm: "再按 ↩ 清空下载文件夹，不能撤销"),
       script("记到 flomo", "fl", nil, summary: "把一句话发到 flomo", downloaded: true),
     ]
+    var weather = script("天气", "tq", .emoji("⛅"))
+    weather.arguments = [.init(placeholder: "城市")]
+    var base64 = script("Base64 编码 & 解码", "b64", .symbol("character.textbox"))
+    base64.mode = .list
+    var json = script("JSON 格式化", "json", .symbol("curlybraces"))
+    json.mode = .full
+    json.arguments = [.init(placeholder: "JSON", isOptional: true)]
+    let all = scripts + [weather, base64, json]
     let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [])
     model.engines = { [] }
     model.boundHotKey = { $0.defaultHotKey }
-    model.scripts = { scripts }
-    model.runScript = { _, _ in .init(end: .finished(0)) }
+    model.scripts = { all }
+    model.runScript = { script, _ in
+      switch script.mode {
+      case .list: .init(end: .finished(0), output: "YUdrPQ==\t编码\nhi\t解码\n")
+      case .full:
+        .init(
+          end: .finished(0),
+          output:
+            "{\n  \"name\": \"Kitty Tools\",\n  \"version\": \"0.8.0\",\n  \"features\": [\"启动器\", \"剪贴板\"]\n}\n"
+        )
+      default: .init(end: .finished(0))
+      }
+    }
     model.readScript = { _ in
       """
       #!/bin/zsh
@@ -4771,6 +4791,25 @@ struct SnapshotProbeTests {
         size: NSSize(width: 720, height: LauncherPanelView.height(for: model)), dark: dark,
         to: "\(out)/launcher-scripts-review\(suffix).png")
       model.cancelReview()
+      model.query = "tq "
+      try snapshot(
+        LauncherPanelView(model: model),
+        size: NSSize(width: 720, height: LauncherPanelView.height(for: model)), dark: dark,
+        to: "\(out)/launcher-scripts-argument\(suffix).png")
+      model.query = "b64 aGk="
+      await model.listRun()
+      try snapshot(
+        LauncherPanelView(model: model),
+        size: NSSize(width: 720, height: LauncherPanelView.height(for: model)), dark: dark,
+        to: "\(out)/launcher-scripts-list\(suffix).png")
+      model.query = "json "
+      if let item = model.results.first { model.execute(item) }
+      await model.scriptRun(json.path)
+      try snapshot(
+        LauncherPanelView(model: model),
+        size: NSSize(width: 720, height: LauncherPanelView.height(for: model)), dark: dark,
+        to: "\(out)/launcher-scripts-output\(suffix).png")
+      model.closeOutput()
     }
   }
 

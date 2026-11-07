@@ -13,7 +13,8 @@
 // 状态和操作都在 LauncherModel。⌘Y 快速查看的预览卡（LauncherQuickLookView）也在这里。
 // 脚本命令（2026-11-07）：行图标是头部写的 emoji / SF 符号 / 图片，没写是命令家族紫的 terminal 色块，右侧「脚本」；
 // 从网上下载的脚本第一次跑之前，列表换成它的全文（ScriptReviewView：等宽字、能滚，上面一句写明以用户的身份运行、
-// 能用本 App 已有的授权），底栏「运行 ↩」「返回 esc」。
+// 能用本 App 已有的授权），底栏「运行 ↩」「返回 esc」；全文输出的脚本跑起来后列表换成输出那一页（同一个 ScriptPageView），
+// 底栏「粘贴 ↩」「复制 ⌘C」「返回 esc」（还在跑时只有「停止 esc」）。列表脚本的结果行同脚本的图标、右侧「脚本」。
 
 import AppKit
 import SwiftUI
@@ -58,8 +59,22 @@ struct LauncherPanelView: View {
           .padding(.horizontal, 16)
       }
       if let review = model.review {
-        ScriptReviewView(review: review)
-          .frame(height: Self.reviewHeight)
+        ScriptPageView(
+          title: review.script.title,
+          subtitle: (review.script.path as NSString).abbreviatingWithTildeInPath,
+          note: "这个脚本是从网上下载的，第一次运行前先看一眼。它会以你的身份运行，能用 Kitty Tools 已有的辅助功能、屏幕录制、完全磁盘访问授权。",
+          noteColor: Color(nsColor: .systemOrange), text: review.text, placeholder: "正在读取…"
+        )
+        .frame(height: Self.reviewHeight)
+      } else if let output = model.output {
+        ScriptPageView(
+          title: output.script.title,
+          subtitle: output.isRunning ? "正在运行…" : output.failure == nil ? "运行完了" : "没有跑成",
+          note: output.failure, noteColor: Style.danger,
+          text: output.isRunning || output.text.isEmpty ? nil : output.text,
+          placeholder: output.isRunning ? "正在运行…" : "（没有输出）"
+        )
+        .frame(height: Self.reviewHeight)
       } else if showsNoResults {
         Text(model.emptyText)
           .font(.system(size: 13))
@@ -99,7 +114,7 @@ struct LauncherPanelView: View {
   /// 有错误、底栏的就地提示、动作菜单、更新提示（update）时照旧
   static func isBare(_ model: LauncherModel, update: Bool) -> Bool {
     model.isShowingRecent && model.results.isEmpty && model.error == nil && model.notice == nil
-      && !model.showsActions && !update && model.review == nil
+      && !model.showsActions && !update && model.review == nil && model.output == nil
   }
 
   /// 行高：高亮的位置和面板高度都按它的前缀和算
@@ -148,7 +163,9 @@ struct LauncherPanelView: View {
     -> CGFloat
   {
     if isBare(model, update: update) { return searchHeight }
-    if model.review != nil { return searchHeight + 0.5 + reviewHeight + barHeight }
+    if model.review != nil || model.output != nil {
+      return searchHeight + 0.5 + reviewHeight + barHeight
+    }
     var height = searchHeight + 0.5 + barHeight
     if model.error != nil { height += 28 }
     if !model.isShowingRecent && model.results.isEmpty {
@@ -310,6 +327,8 @@ struct LauncherPanelView: View {
     HStack(spacing: 12) {
       if model.review != nil {
         reviewBar
+      } else if let output = model.output {
+        outputBar(output)
       } else {
         resultBar
       }
@@ -347,6 +366,49 @@ struct LauncherPanelView: View {
       }
     }
     .accessibilityLabel("返回")
+  }
+
+  /// 全文输出那一页的底栏：跑完是「粘贴 ↩」「复制 ⌘C」「返回 esc」，还在跑时只有「停止 esc」
+  @ViewBuilder private func outputBar(_ output: LauncherModel.ScriptOutput) -> some View {
+    HStack(spacing: 8) {
+      KindTile(symbol: "terminal.fill", color: Style.Family.command, size: 16)
+      Text("脚本输出").foregroundStyle(.secondary)
+    }
+    .accessibilityElement(children: .combine)
+    Spacer(minLength: 8)
+    if output.isRunning {
+      Button(action: model.closeOutput) {
+        HStack(spacing: 6) {
+          Text("停止")
+          KeyCap("esc")
+        }
+      }
+      .accessibilityLabel("停止")
+    } else {
+      if !output.text.isEmpty {
+        Button(action: model.pasteOutput) {
+          HStack(spacing: 6) {
+            Text("粘贴")
+            KeyCap("↩", primary: true).accessibilityHidden(true)
+          }
+        }
+        .accessibilityLabel("粘贴")
+        Button(action: model.copyOutput) {
+          HStack(spacing: 6) {
+            Text("复制")
+            KeyCap("⌘C")
+          }
+        }
+        .accessibilityLabel("复制")
+      }
+      Button(action: model.closeOutput) {
+        HStack(spacing: 6) {
+          Text("返回")
+          KeyCap("esc")
+        }
+      }
+      .accessibilityLabel("返回")
+    }
   }
 
   @ViewBuilder private var resultBar: some View {
@@ -391,36 +453,42 @@ struct LauncherPanelView: View {
   }
 }
 
-/// 从网上下载的脚本第一次跑之前的那一页（拍板 B5）：标题和位置、一句写明会以用户的身份运行、整段脚本（等宽字，能滚、能选）
-private struct ScriptReviewView: View {
-  let review: LauncherModel.ScriptReview
+/// 脚本的一整页（启动器里原地换掉列表）：从网上下载的脚本第一次跑之前的全文（拍板 B5），全文输出的脚本的输出（B1）。
+/// 标题和一行小字、可选的一句提示（橙色 / 危险色）、等宽字的正文（能滚、能选）；正文没有时写 placeholder
+private struct ScriptPageView: View {
+  let title: String
+  let subtitle: String
+  let note: String?
+  let noteColor: Color
+  let text: String?
+  let placeholder: String
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
       VStack(alignment: .leading, spacing: 2) {
-        Text(review.script.title).font(.system(size: 14, weight: .medium)).lineLimit(1)
-        Text((review.script.path as NSString).abbreviatingWithTildeInPath)
+        Text(title).font(.system(size: 14, weight: .medium)).lineLimit(1)
+        Text(subtitle)
           .font(.system(size: 12))
           .foregroundStyle(.secondary)
           .lineLimit(1)
           .truncationMode(.middle)
       }
-      Text(
-        "这个脚本是从网上下载的，第一次运行前先看一眼。它会以你的身份运行，能用 Kitty Tools 已有的辅助功能、屏幕录制、完全磁盘访问授权。"
-      )
-      .font(.system(size: 12))
-      .foregroundStyle(Color(nsColor: .systemOrange))
-      .fixedSize(horizontal: false, vertical: true)
+      if let note {
+        Text(note)
+          .font(.system(size: 12))
+          .foregroundStyle(noteColor)
+          .fixedSize(horizontal: false, vertical: true)
+      }
       ScrollView {
-        Text(review.text ?? "正在读取…")
+        Text(text ?? placeholder)
           .font(.system(size: 12, design: .monospaced))
-          .foregroundStyle(review.text == nil ? .secondary : .primary)
+          .foregroundStyle(text == nil ? .secondary : .primary)
           .textSelection(.enabled)
           .frame(maxWidth: .infinity, alignment: .topLeading)
           .padding(10)
       }
       .background(Style.hoverFill, in: .rect(cornerRadius: Style.Radius.card, style: .continuous))
-      .accessibilityLabel("脚本内容")
+      .accessibilityLabel(text == nil ? placeholder : "内容")
     }
     .padding(.horizontal, 16)
     .padding(.vertical, 12)
@@ -623,7 +691,7 @@ extension LauncherItem {
     case .prompt where target.hasPrefix(ExchangeRates.suggestionPrefix): Style.Family.keyboard
     case .reminder: Style.Family.reminders
     case .prompt where target.hasPrefix("reminder-"): Style.Family.reminders
-    case .system, .process, .ip, .script: Style.Family.command
+    case .system, .process, .ip, .script, .scriptResult: Style.Family.command
     case .prompt where target.hasPrefix("system-"): Style.Family.command
     case .url where isSettingsPane: Style.Family.general
     case .url: Style.Family.url
@@ -662,7 +730,7 @@ extension LauncherItem {
     case .process: "进程"
     case .ip: "网络"
     case .reminder: "提醒"
-    case .script: "脚本"
+    case .script, .scriptResult: "脚本"
     }
   }
 }

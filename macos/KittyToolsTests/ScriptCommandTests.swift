@@ -1,6 +1,8 @@
-// 启动器脚本命令的单测（2026-11-07，PLAN §10「脚本命令」）：开头注释的两种写法、图标 / 参数 / 确认、输出的收拾、环境和 PATH；
+// 启动器脚本命令的单测（2026-11-07，PLAN §10「脚本命令」）：开头注释的两种写法、图标 / 参数 / 确认、输出的收拾、环境和 PATH、
+// 「关键词 空格 文字」怎么切、列表输出怎么读；
 // 真跑临时文件夹里的假脚本（输出、退出码、超时、停止、工作目录、只给几样环境变量）；读文件夹（.template. 不列、没有 #! 的记原因、
-// 下载标记）；启动器里的行（搜得到、别名排第一、↩ 跑、上膛、下载来的先看一眼）。不读写用户的偏好：PATH 由测试传进去。
+// 下载标记）；启动器里的行（搜得到、别名排第一、↩ 跑、上膛、下载来的先看一眼、参数、全文、列表）。不读写用户的偏好：
+// PATH 由测试传进去；不碰剪贴板（粘贴 / 复制的路子不在这里按）。
 
 import Foundation
 import Testing
@@ -127,6 +129,69 @@ struct ScriptCommandTests {
       ])
     #expect(ScriptCommand.language(Locale(identifier: "zh_CN")) == "zh_CN.UTF-8")
   }
+
+  @Test func invocations() {
+    func script(
+      _ title: String, _ keyword: String?, args: Int = 1, optional: Bool = false, list: Bool = false
+    )
+      -> ScriptCommand
+    {
+      var script = ScriptCommand(path: "/s/\(title).sh", title: title, interpreter: ["/bin/sh"])
+      script.keyword = keyword
+      script.arguments = (0..<args).map { .init(placeholder: "参数\($0 + 1)", isOptional: optional) }
+      if list { script.mode = .list }
+      return script
+    }
+    let weather = script("天气", "tq")
+    let pair = script("Unix 时间戳", "t", args: 2)
+    let plain = script("说你好", "hi", args: 0)
+    let base = script("Base64", "b64", args: 0, list: true)
+    let scripts = [weather, pair, plain, base]
+    let alias: (ScriptCommand) -> String? = { $0.keyword }
+    let tq = ScriptCommand.invocation(for: "TQ  北京 海淀", in: scripts, alias: alias)
+    #expect(tq?.script == weather && tq?.keyword == "TQ" && tq?.arguments == ["北京 海淀"])
+    // 标题也认（取长的）、两个参数按空白切、最后一段拿剩下的
+    let unix = ScriptCommand.invocation(for: "unix 时间戳 1700000000 毫秒 本地", in: scripts, alias: alias)
+    #expect(unix?.script == pair && unix?.arguments == ["1700000000", "毫秒 本地"])
+    // 只打了关键词（没有空格）、关键词后面紧跟字、不要参数的脚本：都不算
+    #expect(ScriptCommand.invocation(for: "tq", in: scripts, alias: alias) == nil)
+    #expect(ScriptCommand.invocation(for: "tqx 北京", in: scripts, alias: alias) == nil)
+    #expect(ScriptCommand.invocation(for: "hi there", in: scripts, alias: alias) == nil)
+    // 列表脚本没声明参数也收；空着的不算一个参数、算「没填够」
+    #expect(
+      ScriptCommand.invocation(for: "b64 aGk=", in: scripts, alias: alias)?.arguments == ["aGk="])
+    let empty = ScriptCommand.invocation(for: "tq ", in: scripts, alias: alias)
+    #expect(empty?.arguments == [] && empty?.isMissing == true)
+    #expect(ScriptCommand.invocation(for: "b64 ", in: scripts, alias: alias)?.isMissing == false)
+    // 改过的别名：原来的词不再认
+    #expect(ScriptCommand.invocation(for: "tq 北京", in: scripts, alias: { _ in "w" }) == nil)
+    #expect(ScriptCommand.split("a  b c", into: 2) == ["a", "b c"])
+    #expect(ScriptCommand.split("  ", into: 3) == [])
+  }
+
+  @Test func listLines() {
+    #expect(
+      ScriptCommand.lines("YUdrPQ==\t编码\n\nhi\t解码\n  只有标题  \n")
+        == [
+          .init(title: "YUdrPQ==", subtitle: "编码"), .init(title: "hi", subtitle: "解码"),
+          .init(title: "只有标题"),
+        ])
+    let json = """
+      {"items": [
+        {"title": "第一条", "subtitle": "说明", "arg": "要粘贴的", "uid": "x"},
+        {"title": "不能选", "valid": false},
+        {"title": "数组", "arg": ["a", "b"]},
+        {"subtitle": "没有标题的不要"}
+      ]}
+      """
+    #expect(
+      ScriptCommand.lines(json) == [
+        .init(title: "第一条", subtitle: "说明", arg: "要粘贴的"),
+        .init(title: "不能选", isValid: false), .init(title: "数组", arg: "a\nb"),
+      ])
+    #expect(ScriptCommand.lines(json)[0].value == "要粘贴的")
+    #expect(ScriptCommand.lines(String(repeating: "x\n", count: 500)).count == 200)
+  }
 }
 
 /// 真跑脚本、读文件夹：每个测试一个临时文件夹
@@ -252,7 +317,8 @@ struct ScriptRunTests {
     #expect(model.results.first?.title == "时间戳")
     #expect(
       LauncherModel.aliased(
-        [.script(script("A", keyword: "a"))], scripts: [script("A", keyword: "a")], query: " A "
+        [.script(script("A", keyword: "a"), alias: "a")], scripts: [script("A", keyword: "a")],
+        query: " A "
       ).count == 1)
     // 副标题没写说明时是文件夹名
     #expect(model.results.first?.subtitle == "s")
@@ -301,5 +367,102 @@ struct ScriptRunTests {
     #expect(model.review == nil)
     await model.scriptRun(downloaded.path)
     #expect(ran.filter { $0 == "网上的" }.count == 2)
+  }
+}
+
+@MainActor struct LauncherScriptInputTests {
+  private func model(_ scripts: [ScriptCommand]) throws -> LauncherModel {
+    let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [])
+    model.scripts = { scripts }
+    return model
+  }
+
+  private func script(
+    _ title: String, _ keyword: String, mode: ScriptCommand.Mode = .island,
+    arguments: [ScriptCommand.Argument] = []
+  ) -> ScriptCommand {
+    var script = ScriptCommand(path: "/tmp/s/\(keyword).sh", title: title, interpreter: ["/bin/sh"])
+    script.keyword = keyword
+    script.mode = mode
+    script.arguments = arguments
+    return script
+  }
+
+  @Test func argumentsCompleteThenRun() async throws {
+    let weather = script("天气", "tq", arguments: [.init(placeholder: "城市")])
+    let model = try model([weather])
+    var given: [[String]] = []
+    model.runScript = { _, arguments in
+      given.append(arguments)
+      return .init(end: .finished(0), output: "晴\n")
+    }
+    // 只打了关键词：普通那一行，↩ 先补「tq 空格」
+    model.query = "tq"
+    let row = try #require(model.results.first)
+    #expect(model.primaryAction(for: row).title == "补全关键词")
+    model.execute(row)
+    #expect(model.query == "tq " && given.isEmpty)
+    // 没填参数：副标题写要填什么，↩ 不跑
+    #expect(model.results.first?.subtitle == "输入「tq 空格 城市」")
+    #expect(model.primaryAction(for: try #require(model.results.first)).title == "先填参数")
+    model.execute(try #require(model.results.first))
+    #expect(given.isEmpty)
+    model.query = "tq 北京"
+    #expect(model.results.count == 1 && model.results.first?.subtitle == "「北京」")
+    model.execute(try #require(model.results.first))
+    await model.scriptRun(weather.path)
+    #expect(given == [["北京"]])
+  }
+
+  @Test func listRerunsAndShowsRows() async throws {
+    let base = script("Base64", "b64", mode: .list)
+    let model = try model([base])
+    var runs = 0
+    model.runScript = { _, arguments in
+      runs += 1
+      if arguments == ["bad"] { return .init(end: .finished(1), error: "不是 Base64\n") }
+      return .init(end: .finished(0), output: "YUdrPQ==\t编码\nhi\t解码\n")
+    }
+    model.query = "b64 a"
+    model.query = "b64 aGk="  // 撤掉上一次：只跑最后一次
+    #expect(model.results.isEmpty && model.emptyText == "正在运行「Base64」…")
+    await model.listRun()
+    #expect(runs == 1)
+    #expect(model.results.map(\.title) == ["YUdrPQ==", "hi"])
+    #expect(model.results.map(\.payload) == ["YUdrPQ==", "hi"])
+    #expect(model.primaryAction(for: model.results[0]).title == "粘贴")
+    #expect(model.copyTitle(for: model.results[0]) == "复制结果")
+    // 再打一个字：跑完之前留着这条脚本上一次的结果
+    model.query = "b64 bad"
+    #expect(model.results.count == 2)
+    await model.listRun()
+    #expect(model.results.map(\.title) == ["「Base64」出错了"])
+    #expect(model.results.first?.subtitle == "不是 Base64" && model.results.first?.payload == nil)
+  }
+
+  @Test func fullOutputPage() async throws {
+    let json = script(
+      "JSON 格式化", "json", mode: .full, arguments: [.init(placeholder: "JSON", isOptional: true)])
+    let model = try model([json])
+    model.runScript = { _, arguments in
+      arguments.isEmpty
+        ? .init(end: .finished(0), output: "{\n  \"a\": 1\n}\n")
+        : .init(end: .finished(2), output: "", error: "SyntaxError: JSON Parse error\n")
+    }
+    model.query = "json "
+    model.execute(try #require(model.results.first))
+    #expect(model.output?.isRunning == true)
+    await model.scriptRun(json.path)
+    #expect(model.output == .init(script: json, text: "{\n  \"a\": 1\n}", isRunning: false))
+    model.closeOutput()
+    #expect(model.output == nil)
+    model.query = "json {oops"
+    model.execute(try #require(model.results.first))
+    await model.scriptRun(json.path)
+    #expect(model.output?.text == "SyntaxError: JSON Parse error")
+    #expect(model.output?.failure == "「JSON 格式化」出错了：SyntaxError: JSON Parse error")
+    // 打字回到结果
+    model.query = "json"
+    #expect(model.output == nil)
   }
 }

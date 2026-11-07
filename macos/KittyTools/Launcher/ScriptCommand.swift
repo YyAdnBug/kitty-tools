@@ -222,6 +222,102 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
     }
   }
 
+  // MARK: 参数（B2）
+
+  /// 这条脚本要不要参数：声明了参数的、列表的（打字时重跑），打了关键词之后先补「关键词 空格」，不直接跑
+  var takesInput: Bool { !arguments.isEmpty || mode == .list }
+
+  /// 必填的参数有几个（排在可选的前面那几个）
+  var requiredCount: Int { arguments.prefix { !$0.isOptional }.count }
+
+  /// 「别名 空格 文字」/「标题 空格 文字」：后面的字交给这条脚本
+  struct Invocation: Equatable, Sendable {
+    let script: ScriptCommand
+    /// 打的是哪个词（别名或标题，原样）：补全、提示里用
+    let keyword: String
+    let arguments: [String]
+
+    /// 必填的没填够
+    var isMissing: Bool { arguments.count < script.requiredCount }
+  }
+
+  /// 输入是不是在给某条脚本传参数：要参数的脚本里，别名或标题（不分大小写）后面跟着空白的；几条都对得上时取词长的。
+  /// alias：这条脚本此刻的别名（「命令」表里改过的，没有就是 nil）。纯函数，配单测
+  static func invocation(
+    for query: String, in scripts: [ScriptCommand], alias: (ScriptCommand) -> String?
+  ) -> Invocation? {
+    let folded = LauncherMatch.fold(query)
+    var best: (script: ScriptCommand, length: Int)?
+    for script in scripts where script.takesInput {
+      for key in [alias(script), LauncherMatch.fold(script.title)].compactMap({ $0 })
+      where !key.isEmpty && key.count > (best?.length ?? 0) && folded.hasPrefix(key) {
+        let next = folded.dropFirst(key.count).first
+        if next?.isWhitespace == true { best = (script, key.count) }
+      }
+    }
+    guard let best else { return nil }
+    let rest = query.dropFirst(best.length).drop(while: \.isWhitespace)
+    return Invocation(
+      script: best.script, keyword: String(query.prefix(best.length)),
+      arguments: split(String(rest), into: best.script.arguments.count))
+  }
+
+  /// 按空白切成最多 count 段，最后一段拿剩下的全部（同社区写法）；没声明参数的列表脚本整段当一个；空的不算
+  static func split(_ text: String, into count: Int) -> [String] {
+    let trimmed = text.trimmingCharacters(in: .whitespaces)
+    guard !trimmed.isEmpty else { return [] }
+    guard count > 1 else { return [trimmed] }
+    return trimmed.split(maxSplits: count - 1, whereSeparator: \.isWhitespace).map {
+      $0.trimmingCharacters(in: .whitespaces)
+    }
+  }
+
+  // MARK: 列表（C2）
+
+  /// 列表脚本的一条结果：title 显示、arg 是 ↩ 粘贴 / ⌘C 复制的（没写就是 title）；valid = false 的按了只响提示音
+  struct Line: Equatable, Sendable {
+    var title: String
+    var subtitle = ""
+    var arg: String?
+    var isValid = true
+
+    var value: String { arg ?? title }
+  }
+
+  /// 最多列这么多条
+  static let lineLimit = 200
+
+  /// 列表脚本的输出 → 一条条结果：开头是 { 的按 Script Filter 的 JSON 读（items 的 title、subtitle、arg、valid，别的忽略），
+  /// 否则一行一条「标题⇥副标题」（⇥ 和后面可以省）。纯函数，配单测
+  static func lines(_ output: String) -> [Line] {
+    let text = clean(output).trimmingCharacters(in: .whitespacesAndNewlines)
+    if text.hasPrefix("{"),
+      let object = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any],
+      let items = object["items"] as? [[String: Any]]
+    {
+      return items.prefix(lineLimit).compactMap { item in
+        guard let title = item["title"] as? String, !title.isEmpty else { return nil }
+        let arg: String? =
+          switch item["arg"] {
+          case let text as String: text
+          case let texts as [String]: texts.joined(separator: "\n")
+          case let number as NSNumber: number.stringValue
+          default: nil
+          }
+        return Line(
+          title: title, subtitle: item["subtitle"] as? String ?? "", arg: arg,
+          isValid: item["valid"] as? Bool ?? true)
+      }
+    }
+    return text.split(whereSeparator: \.isNewline).prefix(lineLimit).compactMap { line in
+      let parts = line.split(separator: "\t", maxSplits: 1, omittingEmptySubsequences: false)
+      let title = parts[0].trimmingCharacters(in: .whitespaces)
+      guard !title.isEmpty else { return nil }
+      let subtitle = parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespaces) : ""
+      return Line(title: title, subtitle: subtitle)
+    }
+  }
+
   // MARK: 输出
 
   /// 去掉终端颜色码（CSI、OSC）和回车，脚本给的颜色在岛上、启动器里都画不出来

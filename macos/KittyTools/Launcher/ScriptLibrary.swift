@@ -99,9 +99,10 @@ import AppKit
 }
 
 extension LauncherItem {
-  /// 脚本命令的一行（拍板 C1）：标题、关键词、包名、拼音都搜得到；副标题写 description，没有就写包名或所在文件夹的名字
-  /// （默认文件夹写「我的脚本」）；命令家族紫的色块，头部写了图标的用它的
-  static func script(_ script: ScriptCommand) -> LauncherItem {
+  /// 脚本命令的一行（拍板 C1）：标题、别名、包名、拼音都搜得到；副标题写 description，没有就写包名或所在文件夹的名字
+  /// （默认文件夹写「我的脚本」）；命令家族紫的色块，头部写了图标的用它的。要参数的（B2）Tab / ↩ 补「别名 空格」
+  /// （没有别名补标题）
+  static func script(_ script: ScriptCommand, alias: String?) -> LauncherItem {
     let pinyin = AppCatalog.pinyin(script.title)
     let folder =
       script.folder == ScriptLibrary.defaultFolder.path(percentEncoded: false).trimmingSuffix("/")
@@ -109,10 +110,11 @@ extension LauncherItem {
     var item = LauncherItem(
       kind: .script, target: script.path, title: script.title,
       subtitle: script.summary ?? script.package ?? folder,
-      names: [script.title, script.keyword, script.package, pinyin?.full].compactMap {
+      names: [script.title, alias, script.package, pinyin?.full].compactMap {
         $0.map(LauncherMatch.fold)
       },
-      initials: [LauncherMatch.initials(script.title), pinyin?.initials].compactMap { $0 })
+      initials: [LauncherMatch.initials(script.title), pinyin?.initials].compactMap { $0 },
+      completion: script.takesInput ? (alias ?? script.title) + " " : nil)
     item.scriptIcon = script.icon
     return item
   }

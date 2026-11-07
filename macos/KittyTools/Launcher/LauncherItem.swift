@@ -32,6 +32,9 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
     case reminder
     /// 脚本命令（2026-11-07，ScriptCommand；目标是脚本文件的路径）：↩ 跑它，输出按它写的 mode 交出去
     case script
+    /// 列表脚本给出的一条结果（目标是「脚本路径⏎第几条」）：↩ 粘贴 payload、⌘↩ / ⌘C 只复制；payload 是 nil 的（脚本标了不能选、
+    /// 出错的那一行）按了只响提示音
+    case scriptResult
 
     /// 只有这些记使用、能出现在「常用」里、能收藏
     var isRecorded: Bool { [.app, .action, .url, .path, .system, .script].contains(self) }
@@ -65,6 +68,8 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
   var isFirstStatusPreset = false
   /// 脚本命令头部写的图标（emoji、SF 符号、图片）；别的结果是 nil
   var scriptIcon: ScriptCommand.Icon?
+  /// 「关键词 空格 文字」那一行（脚本命令）：交给脚本的参数；nil = 普通的一行（要参数的脚本 ↩ 先补关键词）
+  var arguments: [String]?
   /// 来自每次搜索都从源头重新列出来的列表（浏览器书签、快捷链接）：使用记录不靠自己把它找回来，源头删了就不再出现
   /// （issue #10：以前打开过的书签在浏览器里删了，还以「用过的网址」搜得到）
   var listed = false
@@ -204,7 +209,7 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
     case (.action, _): MenuExtra(rawValue: target)?.symbol ?? "gearshape"
     case (.translate, _): SettingsPage.translate.symbol
     case (.system, _): SystemCommand(rawValue: target)?.symbol ?? "power"
-    case (.process, _), (.script, _): "terminal.fill"
+    case (.process, _), (.script, _), (.scriptResult, _): "terminal.fill"
     case (.ip, let target):
       target.hasPrefix("public")
         ? "globe.asia.australia.fill" : IPAddresses.isVPN(target) ? "lock.shield.fill" : "network"
