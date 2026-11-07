@@ -3892,6 +3892,53 @@ internal sealed partial class SettingsWindow : Window
         _scroll.ChangeView(null, _scroll.ScrollableHeight, null, disableAnimation: true);
     }
 
+    /// <summary>
+    /// UI 截图自检（PLAN-v16 E1 / E2）：弹状态或提醒的编辑框（不等它关；图标是一个系统表情，提醒的提示音是这台没有的文件、催促是自定义的 7 分钟），
+    /// 滚到底用 ScrollDialogForProbe，关它用 CloseDialogsForProbe。
+    /// </summary>
+    internal void OpenEditorForProbe(bool reminder)
+    {
+        if (reminder)
+        {
+            var draft = Reminders.Examples()[0].Copy();
+            draft.Symbol = "🍵";
+            draft.Sound = Reminder.SoundChime;
+            draft.Chime = Reminders.ChimeFilePrefix + "下课铃.mp3";
+            draft.NagMinutes = 7;
+            _ = EditReminderAsync(draft, isNew: false);
+        }
+        else
+        {
+            var draft = StatusPresets.BuiltIn()[2].Copy();
+            draft.Symbol = "🍵";
+            _ = EditStatusPresetAsync(draft, isNew: false);
+        }
+    }
+
+    /// <summary>UI 截图自检：开着的编辑框里滚到底。</summary>
+    internal void ScrollDialogForProbe()
+    {
+        foreach (var popup in VisualTreeHelper.GetOpenPopupsForXamlRoot(_content.XamlRoot))
+        {
+            if (popup.Child is ContentDialog { Content: ScrollViewer scroll })
+            {
+                scroll.UpdateLayout();
+                scroll.ChangeView(null, scroll.ScrollableHeight, null, disableAnimation: true);
+            }
+        }
+    }
+
+    internal void CloseDialogsForProbe()
+    {
+        foreach (var popup in VisualTreeHelper.GetOpenPopupsForXamlRoot(_content.XamlRoot))
+        {
+            if (popup.Child is ContentDialog dialog)
+            {
+                dialog.Hide();
+            }
+        }
+    }
+
     /// <summary>启动器的「快捷键速查表」：设置窗排好版之后弹（ContentDialog 要 XamlRoot）。</summary>
     public void ShowShortcutsSheet()
     {

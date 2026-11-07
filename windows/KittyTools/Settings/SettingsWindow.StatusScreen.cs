@@ -218,7 +218,7 @@ internal sealed partial class SettingsWindow
             draft.Symbol = id;
             foreach (var (value, button) in iconButtons)
             {
-                button.BorderBrush = value == id ? new SolidColorBrush(Theme.AccentColor) : new SolidColorBrush(Colors.Transparent);
+                button.BorderBrush = EmojiChoice.Selected(value, id) ? new SolidColorBrush(Theme.AccentColor) : new SolidColorBrush(Colors.Transparent);
             }
 
             Refresh();
@@ -268,6 +268,11 @@ internal sealed partial class SettingsWindow
             iconButtons.Add((id, button));
             icons.Children.Add(button);
         }
+
+        // 最后一格「其他表情」：从系统的表情面板挑任意一个（PLAN-v16 E1）
+        var otherEmoji = EmojiChoice.Create(() => draft.Symbol, SelectIcon);
+        iconButtons.Add((EmojiChoice.Key, otherEmoji));
+        icons.Children.Add(otherEmoji);
 
         void Refresh()
         {

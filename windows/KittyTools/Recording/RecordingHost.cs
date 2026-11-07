@@ -92,6 +92,8 @@ internal static class RecordingHost
             return;
         }
 
+        // 提醒的长提示音别录进去（PLAN-v16 E2）
+        ReminderSound.Stop();
         var settings = SettingsService.Current;
         // 录一块区域时整段藏起桌面图标（PLAN-v11 F6）；录一扇窗口时画面里本来就没有桌面。
         var icons = window == IntPtr.Zero ? DesktopIcons.HideIfEnabled() : null;

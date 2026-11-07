@@ -131,6 +131,13 @@ public partial class App : Application
                 return;
             }
 
+            if (ReminderSoundProbe.IsRequested(commandLine) && ReminderSoundProbe.DirectoryFrom(commandLine) is { } soundProbe)
+            {
+                // PLAN-v16 第 4 批：提醒提示音文件的自检（只在测试档），跑完就退。
+                _ = ReminderSoundProbe.RunAsync(soundProbe);
+                return;
+            }
+
             if (Environment.GetCommandLineArgs().Contains("--crash-test", StringComparer.OrdinalIgnoreCase))
             {
                 throw new InvalidOperationException("--crash-test");

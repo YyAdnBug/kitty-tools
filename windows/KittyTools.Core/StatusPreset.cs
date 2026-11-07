@@ -4,6 +4,9 @@
 // 字段叫 Symbol、JSON 里的键 symbol 同 mac（mac 第 5 批之前存的是系统符号名，Emoji 里换过来）。
 // 样式、电源存字符串（blackout / sign / dim、normal / awake / displayOn），和 mac 的 JSON 一字不差：设置导出文件、同步文件夹两边互读。
 // 设置 › 状态屏改列表用的几个纯函数（加、删、挪、恢复自带的、详情改一个）和列表行的摘要也在这里。
+// PLAN-v16 E1（mac 0aea7ec8 / 7c203b88）：图标还能是任意一个系统表情（那个字，由系统表情字体画）。JSON 里自带的 16 个照旧放 symbol 键，
+// 别的（系统表情、mac 后来加的 12 个、动画表情包的「pack:编号」）放新的 emoji 键、symbol 写空——mac 0.7.x / Windows 旧版收拾 symbol 时会把
+// 认不得的置空再同步回来；放在它们不认识的键里，它们的同步认出是更新版本写的、这一类先停。没挑的编出来和以前逐字一样。
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -20,7 +23,7 @@ public sealed class StatusPreset
 
     public string? Detail { get; set; }
 
-    /// <summary>表情 id（StatusEmojiCatalog.Ids 里的一个）；空 = 不要图标。</summary>
+    /// <summary>表情 id（StatusEmojiCatalog.Ids 里的一个）、系统表情（那个字）或 mac 那边的别的图标值（IsStorable）；空 = 不要图标。</summary>
     public string Symbol { get; set; } = string.Empty;
 
     /// <summary>blackout 熄屏（纯黑，什么都不显示）/ sign 告示（黑底大字）/ dim 透出（屏幕压暗 + 大字）。</summary>
@@ -113,11 +116,17 @@ public static class StatusPresets
         _ => "不睡眠",
     };
 
-    /// <summary>存着的图标值 → 现在的表情 id：清单里的原样留着，旧的系统符号名换成对应的表情，其余不认识的置空。</summary>
+    /// <summary>
+    /// 存着的图标值 → 现在的写法（mac emoji(for:)）：能存的（自带的、系统表情、mac 后来加的、动画表情包的）原样留着，旧的系统符号名换成
+    /// 对应的表情，其余不认识的置空。
+    /// </summary>
     public static string Emoji(string? symbol)
         => symbol is null ? string.Empty
-            : StatusEmojiCatalog.Ids.Contains(symbol) ? symbol
+            : StatusEmojiCatalog.IsStorable(symbol) ? symbol
             : LegacySymbols.GetValueOrDefault(symbol, string.Empty);
+
+    /// <summary>JSON 里放在 emoji 键的图标（mac encode：不是自带的那 16 个、也不是空的）。</summary>
+    public static bool UsesEmojiKey(string symbol) => symbol.Length > 0 && !StatusEmojiCatalog.Ids.Contains(symbol);
 
     /// <summary>
     /// 把一张列表收拾成能用的：标题去首尾空白、换行当空格，空的整条丢掉、超过 30 个字截断；说明同样收拾、最多 60 个字、空了就是没有；
@@ -289,6 +298,13 @@ public static class StatusPresets
             CanonicalJson.WriteString(detail, builder);
         }
 
+        var custom = UsesEmojiKey(preset.Symbol);
+        if (custom)
+        {
+            builder.Append(",\"emoji\":");
+            CanonicalJson.WriteString(preset.Symbol, builder);
+        }
+
         builder.Append(",\"id\":");
         CanonicalJson.WriteString(preset.Id, builder);
         builder.Append(",\"power\":");
@@ -296,7 +312,7 @@ public static class StatusPresets
         builder.Append(",\"style\":");
         CanonicalJson.WriteString(preset.Style, builder);
         builder.Append(",\"symbol\":");
-        CanonicalJson.WriteString(preset.Symbol, builder);
+        CanonicalJson.WriteString(custom ? string.Empty : preset.Symbol, builder);
         builder.Append(",\"title\":");
         CanonicalJson.WriteString(preset.Title, builder);
         builder.Append('}');
@@ -313,10 +329,16 @@ public static class StatusPresets
             writer.WriteString("detail", detail);
         }
 
-        writer.WriteString("symbol", preset.Symbol);
+        var custom = UsesEmojiKey(preset.Symbol);
+        writer.WriteString("symbol", custom ? string.Empty : preset.Symbol);
         writer.WriteString("style", preset.Style);
         writer.WriteString("power", preset.Power);
         writer.WriteNumber("autoEndMinutes", preset.AutoEndMinutes);
+        if (custom)
+        {
+            writer.WriteString("emoji", preset.Symbol);
+        }
+
         writer.WriteEndObject();
     }
 
@@ -344,6 +366,17 @@ public static class StatusPresets
             {
                 return null;
             }
+        }
+
+        // emoji 键（PLAN-v16 E1）：有就是它（系统表情、mac 后来加的、动画表情包的）
+        if (element.TryGetProperty("emoji", out var emojiElement))
+        {
+            if (emojiElement.ValueKind != JsonValueKind.String)
+            {
+                return null;
+            }
+
+            symbol = emojiElement.GetString() ?? string.Empty;
         }
 
         return new StatusPreset
@@ -434,7 +467,7 @@ public static class StatusEmojiCatalog
 
     /// <summary>
     /// mac 后来加的 12 个（mac StatusEmoji.choices 的后 12 个，这一版没有素材）：提醒里存着它们时留着（画成色块）。
-    /// 状态不认它们：mac 把它们放在状态 JSON 的 emoji 键，这一版的状态只认 symbol 键（同 mac 0.7.x，那一类同步会停下、不动数据）。
+    /// 状态里也认（PLAN-v16 E1 起读 emoji 键），画成空格子。
     /// </summary>
     public static readonly HashSet<string> MacOnlyIds = new(StringComparer.Ordinal)
     {

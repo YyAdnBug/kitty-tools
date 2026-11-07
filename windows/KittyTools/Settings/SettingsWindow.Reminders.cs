@@ -11,6 +11,7 @@ using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.Windows.Storage.Pickers;
 
 namespace KittyTools;
 
@@ -170,7 +171,7 @@ internal sealed partial class SettingsWindow
         var detail = new TextBox { Header = "说明", Text = draft.Detail ?? string.Empty, PlaceholderText = "可不填" };
         var hint = new TextBlock { FontSize = Theme.FontSize("Kitty.FontSize.Label"), TextWrapping = TextWrapping.Wrap };
 
-        // 图标格子（同状态屏）：「无」+ 16 个表情。
+        // 图标格子（同状态屏）：「无」+ 16 个表情 +「其他表情」（PLAN-v16 E1）。
         var dark = Theme.EffectiveTheme == ElementTheme.Dark;
         var icons = new VariableSizedWrapGrid { Orientation = Orientation.Horizontal, MaximumRowsOrColumns = 9, ItemWidth = 44, ItemHeight = 44 };
         var iconButtons = new List<(string Id, Button Button)>();
@@ -179,7 +180,7 @@ internal sealed partial class SettingsWindow
             draft.Symbol = id;
             foreach (var (value, button) in iconButtons)
             {
-                button.BorderBrush = new SolidColorBrush(value == id ? Theme.AccentColor : Colors.Transparent);
+                button.BorderBrush = new SolidColorBrush(EmojiChoice.Selected(value, id) ? Theme.AccentColor : Colors.Transparent);
             }
         }
 
@@ -201,6 +202,11 @@ internal sealed partial class SettingsWindow
             iconButtons.Add((id, button));
             icons.Children.Add(button);
         }
+
+        // 最后一格「其他表情」：从系统的表情面板挑任意一个（PLAN-v16 E1）
+        var otherEmoji = EmojiChoice.Create(() => draft.Symbol, SelectIcon);
+        iconButtons.Add((EmojiChoice.Key, otherEmoji));
+        icons.Children.Add(otherEmoji);
 
         // 什么时候
         string[] kindTitles = { "一次", "每周", "每月", "间隔" };
@@ -251,41 +257,122 @@ internal sealed partial class SettingsWindow
         sound.SelectedIndex = Math.Max(0, Array.IndexOf(Reminders.Sounds, draft.Sound));
         // mac 上选的、这台没有的声音（个人「声音」文件夹里的、自己选的文件）和「自定义…」填的催促间隔：多列一项留着，
         // 不然改个标题一保存就换成了默认的、再同步回去把 mac 上选的抹掉（审查方 2026-11-05）。
+        // 提示音（PLAN-v16 E2）：系统的 ｜ 自己选过的文件 ｜ 末尾「选择文件…」（不是一个声音，选了弹文件框、选中回到原来那个）。
         var chimeIds = Reminders.WindowsChimes.Select(item => item.Name).ToList();
+        chimeIds.AddRange(ReminderSound.Files().Where(id => !chimeIds.Contains(id)));
         if (!chimeIds.Contains(draft.Chime))
         {
             chimeIds.Add(draft.Chime);
         }
 
-        var chime = new ComboBox { Header = "提示音", ItemsSource = chimeIds.Select(Reminders.ChimeTitle).ToList(), MinWidth = 160 };
+        List<string> ChimeTitles()
+            => chimeIds.Select(id => Reminders.ChimeTitle(id, ReminderSound.Exists(id))).Append("选择文件…").ToList();
+
+        var chime = new ComboBox { Header = "提示音", ItemsSource = ChimeTitles(), MinWidth = 160 };
         chime.SelectedIndex = chimeIds.IndexOf(draft.Chime);
+        var chimeNote = new TextBlock
+        {
+            FontSize = Theme.FontSize("Kitty.FontSize.Label"),
+            Foreground = Theme.Caution(),
+            TextWrapping = TextWrapping.Wrap,
+            Visibility = Visibility.Collapsed,
+        };
+        var chimeIndex = chime.SelectedIndex;
+        var quiet = false;
         chime.SelectionChanged += (_, _) =>
         {
-            // 选了就试听一声（mac 同样）。
-            if (chime.SelectedIndex >= 0)
+            if (quiet || chime.SelectedIndex < 0)
             {
-                ReminderCenter.PlayChime(chimeIds[chime.SelectedIndex]);
+                return;
             }
+
+            if (chime.SelectedIndex < chimeIds.Count)
+            {
+                // 选了就试听一声（mac 同样）。
+                chimeIndex = chime.SelectedIndex;
+                chimeNote.Visibility = Visibility.Collapsed;
+                ReminderSound.Play(chimeIds[chimeIndex], preview: true);
+                return;
+            }
+
+            // 「选择文件…」：先回到原来那个（取消了就是它），选好了再换
+            quiet = true;
+            chime.SelectedIndex = chimeIndex;
+            quiet = false;
+            PickChime();
         };
-        var nagChoices = Reminders.NagChoices.ToList();
-        if (!nagChoices.Contains(draft.NagMinutes))
+
+        async void PickChime()
         {
-            nagChoices.Add(draft.NagMinutes);
+            try
+            {
+                var picker = new FileOpenPicker(AppWindow.Id);
+                foreach (var extension in Reminders.ChimeFileExtensions)
+                {
+                    picker.FileTypeFilter.Add("." + extension);
+                }
+
+                var file = await picker.PickSingleFileAsync();
+                if (file is null || string.IsNullOrEmpty(file.Path))
+                {
+                    return;
+                }
+
+                var id = await ReminderSound.ImportAsync(file.Path);
+                if (!chimeIds.Contains(id))
+                {
+                    chimeIds.Add(id);
+                }
+
+                quiet = true;
+                chime.ItemsSource = ChimeTitles();
+                chime.SelectedIndex = chimeIndex = chimeIds.IndexOf(id);
+                quiet = false;
+                chimeNote.Visibility = Visibility.Collapsed;
+                ReminderSound.Play(id, preview: true);
+            }
+            catch (InvalidOperationException ex)
+            {
+                chimeNote.Text = ex.Message;
+                chimeNote.Visibility = Visibility.Visible;
+            }
+            catch (Exception ex)
+            {
+                Log.Error("reminder.sound-pick-failed", ex);
+                chimeNote.Text = "没能打开这个文件";
+                chimeNote.Visibility = Visibility.Visible;
+            }
         }
 
+        // 没理会时再催：菜单那几档 + 末尾「自定义…」（下面露一个 1–120 的数字框；mac 同样能填，同步来的这种值落在这里）
+        var nagChoices = Reminders.NagChoices.ToList();
         var nag = new ComboBox
         {
             Header = "没理会时再催",
-            ItemsSource = nagChoices.Select(minutes => minutes == 0 ? "不催" : $"每 {minutes} 分钟").ToList(),
+            ItemsSource = nagChoices.Select(minutes => minutes == 0 ? "不催" : $"每 {minutes} 分钟").Append("自定义…").ToList(),
             MinWidth = 160,
         };
-        nag.SelectedIndex = nagChoices.IndexOf(draft.NagMinutes);
+        nag.SelectedIndex = nagChoices.Contains(draft.NagMinutes) ? nagChoices.IndexOf(draft.NagMinutes) : nagChoices.Count;
+        var nagCustom = new NumberBox
+        {
+            Header = $"每几分钟催一次（1–{Reminders.MaxNag}）",
+            Minimum = 1,
+            Maximum = Reminders.MaxNag,
+            SmallChange = 1,
+            LargeChange = 5,
+            SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline,
+            Value = Reminders.IsValidNag(draft.NagMinutes) && draft.NagMinutes > 0 ? draft.NagMinutes : 20,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            MinWidth = 160,
+        };
+        int CustomNag() => double.IsNaN(nagCustom.Value) ? 20 : Math.Clamp((int)Math.Round(nagCustom.Value), 1, Reminders.MaxNag);
 
         var panel = new StackPanel { Spacing = 10, MinWidth = 440 };
         foreach (var element in new UIElement[]
                  {
                      title, detail, new TextBlock { Text = "图标" }, icons, kind, date, days, time, until, monthDay, every, alert, alertNote,
-                     fullSeconds, status, sound, chime, nag, SettingsUi.Footnote("催到第 3 次换成全屏；声音只响一声。"), hint,
+                     fullSeconds, status, sound, chime, chimeNote, nag, nagCustom,
+                     SettingsUi.Footnote("催到第 3 次换成全屏；声音只响一遍，自己选的文件最多放 30 秒。"), hint,
                  })
         {
             panel.Children.Add(element);
@@ -328,9 +415,20 @@ internal sealed partial class SettingsWindow
             draft.FullSeconds = Reminders.FullChoices[Math.Max(0, fullSeconds.SelectedIndex)];
             draft.StatusID = presets.Count > 0 ? presets[Math.Max(0, status.SelectedIndex)].Id : string.Empty;
             draft.Sound = Reminders.Sounds[Math.Max(0, sound.SelectedIndex)];
-            draft.Chime = chimeIds[Math.Max(0, chime.SelectedIndex)];
+            if (chime.SelectedIndex >= 0 && chime.SelectedIndex < chimeIds.Count)
+            {
+                draft.Chime = chimeIds[chime.SelectedIndex];
+            }
+
             chime.Visibility = Show(draft.Sound == Reminder.SoundChime);
-            draft.NagMinutes = nagChoices[Math.Max(0, nag.SelectedIndex)];
+            if (chime.Visibility == Visibility.Collapsed)
+            {
+                chimeNote.Visibility = Visibility.Collapsed;
+            }
+
+            var customNag = nag.SelectedIndex >= nagChoices.Count;
+            nagCustom.Visibility = Show(customNag);
+            draft.NagMinutes = customNag ? CustomNag() : nagChoices[Math.Max(0, nag.SelectedIndex)];
 
             // 按种类露出要填的那几样。
             date.Visibility = Show(next.Kind == ReminderSchedule.Once);
@@ -357,6 +455,7 @@ internal sealed partial class SettingsWindow
         }
 
         date.DateChanged += (_, _) => Refresh();
+        nagCustom.ValueChanged += (_, _) => Refresh();
         time.TimeChanged += (_, _) => Refresh();
         until.TimeChanged += (_, _) => Refresh();
         foreach (var (_, toggle) in dayToggles)
@@ -366,6 +465,8 @@ internal sealed partial class SettingsWindow
 
         SelectIcon(draft.Symbol);
         Refresh();
-        return await dialog.ShowAsync() == ContentDialogResult.Primary;
+        var saved = await dialog.ShowAsync() == ContentDialogResult.Primary;
+        ReminderSound.StopPreview();
+        return saved;
     }
 }

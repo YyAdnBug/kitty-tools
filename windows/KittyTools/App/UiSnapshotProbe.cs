@@ -649,6 +649,33 @@ internal static class UiSnapshotProbe
                 await ShootSettingsWindowAsync(settings, "settings-" + page, dark, directory);
             }
 
+            // PLAN-v16 E1 / E2：状态、提醒的编辑框（图标格子最后一格「其他表情」选着一个系统表情；提醒滚到底看提示音和自定义催促）。
+            // ContentDialog 在弹出层里，RenderTargetBitmap 画不出，只用 WGC 拍真窗口。
+            foreach (var (name, reminder, end) in new[] { ("settings-status-editor", false, false), ("settings-reminder-editor", true, false), ("settings-reminder-editor-end", true, true) })
+            {
+                if (!Wanted(name))
+                {
+                    continue;
+                }
+
+                settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 760));
+                settings.ShowPage(welcome: false, reminder ? "reminders" : "statusScreen");
+                await Task.Delay(300);
+                settings.OpenEditorForProbe(reminder);
+                await Task.Delay(900);
+                if (end)
+                {
+                    settings.ScrollDialogForProbe();
+                    await Task.Delay(400);
+                }
+
+                await WindowShot.SaveAsync(
+                    WinRT.Interop.WindowNative.GetWindowHandle(settings),
+                    Path.Combine(directory, $"{name}-{(dark ? "dark" : "light")}-window.png"));
+                settings.CloseDialogsForProbe();
+                await Task.Delay(400);
+            }
+
             // PLAN-v16 L1 / V12：设置 › 启动器滚到底（使用记录的「空搜索框里列出常用」）。
             settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 1500));
             settings.ShowPage(welcome: false, "launcher");

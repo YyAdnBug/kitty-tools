@@ -65,6 +65,12 @@ internal static partial class ReminderCenter
         _state = SettingsService.Current.RemindersState?.Copy() ?? new ReminderState();
         SettingsService.Changed += OnSettingsChanged;
         StatusScreenHost.Exited += Recheck;
+        if (SettingsService.Current.Reminders is not null)
+        {
+            // 自己选过的提示音文件，没有提醒在用的清掉（PLAN-v16 E2）
+            ReminderSound.Purge(_list.Select(reminder => reminder.Chime));
+        }
+
         RestartIntervals(DateTime.UtcNow);
         Reconcile();
         Check();
@@ -85,6 +91,7 @@ internal static partial class ReminderCenter
         _wake?.Stop();
         _idlePoll?.Stop();
         _idlePoll = null;
+        ReminderSound.Stop();
         if (Firing.Count > 0 || Missed.Count > 0)
         {
             NoticeHost.Unpin();
@@ -532,6 +539,7 @@ internal static partial class ReminderCenter
     /// <summary>「知道了」：挂着的都算处理了。</summary>
     private static void Acknowledge()
     {
+        ReminderSound.Stop();
         var handled = Firing.Concat(Missed).ToList();
         Firing.Clear();
         Missed.Clear();
@@ -541,6 +549,7 @@ internal static partial class ReminderCenter
     /// <summary>「稍后」：到点的推 N 分钟（提示上是设置里定的那个，全屏上能另选）；一起挂着的错过的算处理了。</summary>
     private static void Snooze(int? minutes)
     {
+        ReminderSound.Stop();
         var until = ReminderTime.FromUtc(DateTime.UtcNow.AddMinutes(minutes ?? SnoozeMinutes));
         foreach (var id in Firing)
         {
@@ -618,18 +627,7 @@ internal static partial class ReminderCenter
         }
         else
         {
-            PlayChime(first.Chime);
-        }
-    }
-
-    /// <summary>放一个提示音（设置里选的时候试听也走这里）：%WINDIR%\Media 里对应的那个文件，没有就放系统的通知声。</summary>
-    public static void PlayChime(string name)
-    {
-        const uint flags = 0x0001 /* SND_ASYNC */ | 0x0002 /* SND_NODEFAULT */;
-        var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Media", Reminders.ChimeFile(name));
-        if (!File.Exists(path) || !PlaySound(path, IntPtr.Zero, 0x00020000 /* SND_FILENAME */ | flags))
-        {
-            PlaySound("SystemNotification", IntPtr.Zero, 0x00010000 /* SND_ALIAS */ | flags);
+            ReminderSound.Play(first.Chime);
         }
     }
 
@@ -707,8 +705,4 @@ internal static partial class ReminderCenter
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool GetLastInputInfo(ref LastInputInfo info);
-
-    [LibraryImport("winmm.dll", EntryPoint = "PlaySoundW", StringMarshalling = StringMarshalling.Utf16)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static partial bool PlaySound(string sound, IntPtr module, uint flags);
 }

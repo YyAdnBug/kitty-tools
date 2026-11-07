@@ -104,6 +104,8 @@ internal static class AudioHost
             return;
         }
 
+        // 提醒的长提示音别录进去（PLAN-v16 E2）
+        ReminderSound.Stop();
         var settings = SettingsService.Current;
         var (systemAudio, microphone) = RecorderRules.AudioSource(settings.AudioSource);
         var recorder = AudioRecorder.Start(RecordingHost.Folder, systemAudio, microphone, out var error, out var note);

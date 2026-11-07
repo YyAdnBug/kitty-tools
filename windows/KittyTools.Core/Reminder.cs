@@ -221,6 +221,68 @@ public static class Reminders
         return !file || (dot >= 0 && ChimeExtensions.Contains(name[(dot + 1)..].ToLowerInvariant()));
     }
 
+    /// <summary>
+    /// 自己选的提示音文件（PLAN-v16 E2，mac ReminderSound）：拷进数据目录的 reminder-sounds\，20 MB 以内，最多放 30 秒；编号「file:文件名」
+    /// 跟着提醒导出、同步，文件不跟（别的电脑上没有时放默认的）。
+    /// </summary>
+    public const string ChimeFolder = "reminder-sounds";
+
+    public const long MaxChimeBytes = 20L * 1024 * 1024;
+
+    public const int MaxChimeSeconds = 30;
+
+    public static IReadOnlyList<string> ChimeFileExtensions => ChimeExtensions;
+
+    /// <summary>
+    /// 编号是自己选的文件时的文件名（只认一段、扩展名认得的）；别的 null。mac 认的名字里能有反斜杠、星号这类 Windows 文件名不许的字（编号照存、
+    /// 同步不丢），这里不认：这台不会有那样的文件，也绝不拼成目录外的路径。
+    /// </summary>
+    public static string? ChimeFileName(string id)
+    {
+        if (!id.StartsWith(ChimeFilePrefix, StringComparison.Ordinal) || !IsValidChime(id))
+        {
+            return null;
+        }
+
+        var name = id[ChimeFilePrefix.Length..];
+        return name.Contains('\\') || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || name.EndsWith('.') || name.EndsWith(' ') ? null : name;
+    }
+
+    /// <summary>
+    /// 拷进来时用的名字的主干（mac importFile）：冒号换成空格、去掉首尾的点和空格、最多 60 个字；空了叫「提示音」。
+    /// 斜杠、反斜杠这类路径字符也换成空格（Windows 的文件名不能带，编号里也不认）。
+    /// </summary>
+    public static string ChimeStem(string stem)
+    {
+        var cleaned = new string(stem.Select(ch => ch is ':' or '/' or '\\' or '\0' || Path.GetInvalidFileNameChars().Contains(ch) ? ' ' : ch).ToArray())
+            .Trim('.', ' ');
+        if (cleaned.Length > 60)
+        {
+            cleaned = cleaned[..60].Trim('.', ' ');
+        }
+
+        return cleaned.Length == 0 ? "提示音" : cleaned;
+    }
+
+    /// <summary>第 index 个候选名（1 = 原名；同名不同内容时 2、3…，mac「下课铃 2.mp3」）。</summary>
+    public static string ChimeCandidate(string stem, string extension, int index)
+        => (index == 1 ? stem : $"{stem} {index}") + "." + extension.ToLowerInvariant();
+
+    /// <summary>「没理会时再催」能存的值：0 = 不催，或者 1–120（菜单里那几档以外是「自定义…」填的）。</summary>
+    public static bool IsValidNag(int minutes) => minutes == 0 || minutes is >= 1 and <= MaxNag;
+
+    /// <summary>编辑框里的叫法；available：自己选的文件这台电脑上有（就只写文件名，不注明放默认的）。</summary>
+    public static string ChimeTitle(string id, bool available)
+    {
+        if (available && ChimeFileName(id) is { } file)
+        {
+            var dot = file.LastIndexOf('.');
+            return dot > 0 ? file[..dot] : file;
+        }
+
+        return ChimeTitle(id);
+    }
+
     /// <summary>编辑框里的叫法：Windows 对得上的用 WindowsChimes 的名字，别的（mac 上的个人声音、文件）用文件名，注明这台放默认的。</summary>
     public static string ChimeTitle(string id)
     {
