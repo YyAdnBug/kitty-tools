@@ -4811,8 +4811,8 @@ struct SnapshotProbeTests {
         to: "\(out)/launcher-scripts-output\(suffix).png")
       model.closeOutput()
     }
-    // 设置 › 启动器「脚本命令」「命令」两节：改过别名的（kill → k）、和网页搜索撞了的（g）、关掉的（端口），
-    // 一个读不成的脚本；偏好用临时的域（不碰宿主 App 的）
+    // 设置 › 启动器「脚本命令」「命令」两节、推进去的「命令和别名」表（改过别名的 kill → k、和网页搜索撞了的 g、关掉的端口）
+    // 和「怎么写脚本」；一个读不成的脚本；偏好用临时的域（不碰宿主 App 的）
     let suite = "kitty-snapshot-scripts-\(UUID().uuidString)"
     let defaults = try #require(UserDefaults(suiteName: suite))
     defer { defaults.removePersistentDomain(forName: suite) }
@@ -4830,15 +4830,19 @@ struct SnapshotProbeTests {
       scripts: [bundled] + all,
       problems: [.init(path: "/Users/me/脚本/backup.py", problem: .noShebang)])
     for dark in [false, true] {
+      let suffix = dark ? "-dark" : ""
       try snapshot(
-        Form {
-          ScriptsSection(library: library)
-          LauncherCommandsSection(library: library)
-        }
-        .formStyle(.grouped)
-        .defaultAppStorage(defaults),
-        size: NSSize(width: 590, height: 2300), dark: dark,
-        to: "\(out)/settings-launcher-scripts\(dark ? "-dark" : "").png")
+        Form { ScriptsSection(library: library) }.formStyle(.grouped).defaultAppStorage(defaults),
+        size: NSSize(width: 590, height: 720), dark: dark,
+        to: "\(out)/settings-launcher-scripts\(suffix).png")
+      try snapshot(
+        NavigationStack { LauncherCommandsPage(library: library) }.defaultAppStorage(defaults),
+        size: NSSize(width: 590, height: 2420), dark: dark,
+        to: "\(out)/settings-launcher-commands\(suffix).png")
+      try snapshot(
+        NavigationStack { ScriptGuidePage(library: library) }.defaultAppStorage(defaults),
+        size: NSSize(width: 590, height: 2050), dark: dark,
+        to: "\(out)/settings-launcher-script-guide\(suffix).png")
     }
   }
 

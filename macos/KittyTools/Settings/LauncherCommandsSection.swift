@@ -1,5 +1,6 @@
-// 设置 › 启动器「命令」那一节（2026-11-07 拍板 C3 C4，PLAN §10「脚本命令」）：一张「名称 / 别名 / 启用」的表，分四组——
-// 关键词命令（open、kill、ip、cb、fy、提醒…）、系统命令（lock、sleep…）、自带脚本、我的脚本；上面能搜。
+// 设置 › 启动器 › 命令和别名（2026-11-07 拍板 C3 C4，PLAN §10「脚本命令」；真机反馈嫌长，从启动器页挪进推进去的这一页，
+// LauncherCommandsPage）：一张「名称 / 别名 / 启用」的表，分四组——关键词命令（open、kill、ip、cb、fy、提醒、汇率…）、
+// 系统命令（lock、sleep…）、自带脚本、我的脚本；上面能搜。
 // 别名就是在启动器里要打的那个词：改了旧词不再认，清空就只能按名字搜；和别的命令、网页搜索的关键词撞了那一格描橙框
 // （运行时用靠前的那个）。关掉 = 不出现在搜索里、关键词也不认。只存改过的（LauncherCommands.Settings，跟着设置导出、同步）。
 // 脚本那几行：点名字在访达中显示，右键用文本编辑器打开、（我的脚本）移到废纸篓。脚本命令整个关着时脚本那两组变灰。
@@ -98,8 +99,6 @@ struct LauncherCommandsSection: View {
       if shown.isEmpty {
         Text("没有找到「\(filter)」").foregroundStyle(.secondary)
       }
-    } header: {
-      Text("命令")
     } footer: {
       SectionFootnote(
         conflicts.isEmpty
@@ -139,6 +138,25 @@ struct LauncherCommandsSection: View {
       settings.set(on, for: row.id)
       offText = settings.offText
     }
+  }
+}
+
+/// 推进去的那一页：页头 + 那张表
+struct LauncherCommandsPage: View {
+  static let route = "page:launcher-commands"
+  let library: ScriptLibrary?
+  @Environment(\.dismiss) private var dismiss
+
+  var body: some View {
+    VStack(spacing: 0) {
+      DetailHeader(title: "命令和别名", status: "改在启动器里要打的词，关掉用不上的") {
+        KindTile(symbol: "command", color: Style.Family.command, size: 40)
+      }
+      Form { LauncherCommandsSection(library: library) }
+        .formStyle(.grouped)
+    }
+    .navigationTitle("命令和别名")
+    .toolbar { SettingsBackButton { dismiss() } }
   }
 }
 

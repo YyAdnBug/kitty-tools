@@ -4,8 +4,8 @@
 // （N12：行 = 网站图标或种类色块 / 名称 / 状态 / 关键词键帽 / 兜底开关，拖动排序，「+ −」增删（自定义的先确认），
 // 单击一行推进到 SearchEngineDetail 编辑）、兜底时机、清空使用记录。页头画在自己的 NavigationStack 里，推进时一起换掉。
 // 按键说明不写在这里（N11，进快捷键速查表）；启动器没有固定，失焦就收起（N8）。
-// 2026-11-07 脚本命令：网页搜索后面是「脚本命令」（ScriptsSection：开关、文件夹、导入、新建）和「命令」那张
-// 名称 / 别名 / 启用的表（LauncherCommandsSection）。
+// 2026-11-07 脚本命令：网页搜索后面是「脚本命令」「命令」两节（ScriptsSection），「怎么写脚本」（ScriptGuidePage）和
+// 「命令和别名」那张表（LauncherCommandsPage）推进去看，同网页搜索的详情页。
 
 import SwiftUI
 
@@ -45,7 +45,13 @@ struct LauncherTab: View {
         form
       }
       .navigationTitle(SettingsPage.launcher.title)
-      .navigationDestination(for: String.self) { id in SearchEngineDetail(id: id) }
+      .navigationDestination(for: String.self) { id in
+        switch id {
+        case LauncherCommandsPage.route: LauncherCommandsPage(library: scripts)
+        case ScriptGuidePage.route: ScriptGuidePage(library: scripts)
+        default: SearchEngineDetail(id: id)
+        }
+      }
     }
     .onAppear(perform: recheck)
     .onSettingsBecameKey(perform: recheck)
@@ -144,11 +150,8 @@ struct LauncherTab: View {
         }
       }
       .gated(by: .launcher)
-      Group {
-        ScriptsSection(library: scripts)
-        LauncherCommandsSection(library: scripts)
-      }
-      .gated(by: .launcher)
+      ScriptsSection(library: scripts)
+        .gated(by: .launcher)
       Section {
         // 显示的开关跟着功能开关变灰；清空使用记录是管数据的，关着也能点（mac-native §1）
         Toggle(isOn: $showsFrequent) {

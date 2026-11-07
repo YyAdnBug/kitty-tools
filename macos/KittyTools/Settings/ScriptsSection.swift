@@ -1,7 +1,9 @@
-// 设置 › 启动器「脚本命令」那一节（2026-11-07 拍板 A1 A2 B3 B5 E2，PLAN §10「脚本命令」）：总开关（默认开）、脚本文件夹
-// （默认的在数据目录里，「在访达中打开」；另外添加的只读、能移除）、「新建脚本」（照模板建一个、用文本编辑器打开）、
-// 把脚本文件拖进来导入（先看一眼全文，写明以你的身份运行、能用本 App 已有的授权，点「导入」才复制进默认文件夹）、
-// 读不成的脚本和原因（橙字）、跑脚本用的 PATH（第一次跑脚本时从终端读的，「重新读取」）。
+// 设置 › 启动器「脚本命令」和「命令」两节（2026-11-07 拍板 A1 A2 B5 C3 E2，PLAN §10「脚本命令」；真机反馈后收紧：
+// 那张 40 行的表、写法说明、查找路径都挪进推进去的详情页，这一页只留几行）。
+// 「脚本命令」：总开关（默认开）、「怎么写脚本」（推进 ScriptGuidePage）、脚本文件夹（新建脚本 / 在访达中打开）、
+// 另加的文件夹（只读、能移除）和「添加文件夹…」、把脚本文件拖进来导入（先看一眼全文，写明以你的身份运行、能用本 App 已有的
+// 授权，点「导入」才复制进默认文件夹）、读不成的脚本和原因（橙字）。
+// 「命令」：一行「命令和别名」推进 LauncherCommandsPage（那张名称 / 别名 / 启用的表），行里写各有几条、关了几条。
 // 选文件夹的面板挂成设置窗上的表单（同全局同步的「选择文件夹…」）。
 
 import SwiftUI
@@ -11,11 +13,12 @@ struct ScriptsSection: View {
   let library: ScriptLibrary?
   @AppStorage(Prefs.launcherScripts) private var scriptsOn = true
   @AppStorage(Prefs.scriptFolders) private var foldersText = ""
-  @AppStorage(Prefs.scriptShellPath) private var shellPath: String?
+  @AppStorage(Prefs.launcherCommandsOff) private var offText = ""
+  @Environment(SettingsNavigation.self) private var navigation: SettingsNavigation?
+  @Environment(Island.self) private var island: Island?
   /// 拖进来、等着看一眼再导入的那个
   @State private var pending: Candidate?
   @State private var isTargeted = false
-  @State private var readingPath = false
 
   struct Candidate: Identifiable {
     let url: URL
@@ -27,18 +30,27 @@ struct ScriptsSection: View {
     Section {
       Toggle(isOn: $scriptsOn) {
         Text("启用脚本命令")
-        Text("脚本文件夹里的每个脚本就是启动器里的一条命令，开头几行注释写它叫什么、关键词、结果给谁")
+        Text("脚本文件夹里的每个脚本就是启动器里的一条命令")
       }
       Group {
+        SettingsPushRow(title: "怎么写脚本", detail: "三步上手、开头几行怎么写、结果给谁，带一个能直接用的例子") {
+          navigation?.path = [ScriptGuidePage.route]
+        }
         LabeledContent {
-          Button("在访达中打开") {
-            NSWorkspace.shared.open(ScriptLibrary.ensureDefaultFolder())
+          HStack {
+            Button("新建脚本", action: newScript)
+            Button("在访达中打开") {
+              NSWorkspace.shared.open(ScriptLibrary.ensureDefaultFolder())
+            }
           }
         } label: {
           Text("脚本文件夹")
           Text(
             (ScriptLibrary.defaultFolder.path(percentEncoded: false) as NSString)
-              .abbreviatingWithTildeInPath)
+              .abbreviatingWithTildeInPath
+          )
+          .lineLimit(1)
+          .truncationMode(.middle)
         }
         ForEach(addedFolders, id: \.self) { folder in
           LabeledContent {
@@ -49,17 +61,15 @@ struct ScriptsSection: View {
           } label: {
             Text(folder.lastPathComponent)
             Text((folder.path(percentEncoded: false) as NSString).abbreviatingWithTildeInPath)
+              .lineLimit(1)
+              .truncationMode(.middle)
           }
         }
-        HStack {
+        LabeledContent {
           Button("添加文件夹…", action: addFolder)
-          Button("新建脚本") {
-            if let url = ScriptLibrary.newScript() {
-              ScriptLibrary.edit(url.path(percentEncoded: false))
-              library?.refresh()
-            }
-          }
-          Spacer()
+        } label: {
+          Text("其他文件夹")
+          Text("比如放在 iCloud 云盘里、几台 Mac 共用的脚本文件夹（只读，不往里写）")
         }
         dropZone
         ForEach(library?.problems ?? [], id: \.path) { problem in
@@ -72,33 +82,13 @@ struct ScriptsSection: View {
             Text(problem.problem.text).foregroundStyle(Color(nsColor: .systemOrange))
           }
         }
-        LabeledContent {
-          Button(readingPath ? "正在读取…" : "重新读取") {
-            readingPath = true
-            ScriptRunner.forgetSearchPath()
-            Task {
-              _ = await ScriptRunner.searchPath()
-              readingPath = false
-            }
-          }
-          .disabled(readingPath)
-        } label: {
-          Text("命令的查找路径")
-          Text(
-            shellPath.map { "从终端里读到的：\($0)" }
-              ?? "第一次运行脚本时从终端里读一遍，nvm、pyenv 装的命令也找得到"
-          )
-          .lineLimit(2)
-          .truncationMode(.middle)
-        }
       }
       .disabled(!scriptsOn)
     } header: {
       Text("脚本命令")
     } footer: {
       SectionFootnote(
-        "脚本以你的身份运行，能用 Kitty Tools 已有的辅助功能、屏幕录制、完全磁盘访问授权，只放你信得过的脚本。"
-          + "从网上下载的脚本，第一次运行前会先给你看一眼全文。脚本文件不跟着同步，几台 Mac 共用就把文件夹放进 iCloud 云盘、在每台添加。")
+        "脚本以你的身份运行，能用 Kitty Tools 已有的辅助功能、屏幕录制等授权，只放你信得过的脚本；从网上下载的，第一次运行前会先给你看一眼全文。")
     }
     .sheet(item: $pending) { candidate in
       ScriptImportSheet(candidate: candidate) {
@@ -111,6 +101,15 @@ struct ScriptsSection: View {
         }
       }
     }
+    Section {
+      SettingsPushRow(title: "命令和别名", detail: commandsSummary) {
+        navigation?.path = [LauncherCommandsPage.route]
+      }
+    } header: {
+      Text("命令")
+    } footer: {
+      SectionFootnote("给内置命令和脚本改在启动器里要打的词，关掉用不上的。")
+    }
   }
 
   private var addedFolders: [URL] {
@@ -118,15 +117,39 @@ struct ScriptsSection: View {
     return ScriptLibrary.addedFolders
   }
 
+  /// 「命令和别名」那一行的小字：各有几条、关了几条
+  private var commandsSummary: String {
+    let rows = LauncherCommandsSection.rows(scripts: scriptsOn ? library?.scripts ?? [] : [])
+    let count = { (group: LauncherCommandsSection.Row.Group) in
+      rows.filter { $0.group == group }.count
+    }
+    var parts = ["\(count(.keyword)) 个关键词命令", "\(count(.system)) 个系统命令"]
+    if count(.bundled) > 0 { parts.append("\(count(.bundled)) 个自带脚本") }
+    if count(.mine) > 0 { parts.append("\(count(.mine)) 个我的脚本") }
+    let off = LauncherCommands.Settings(aliasesText: "", offText: offText).off
+    let closed = rows.filter { off.contains($0.id) }.count
+    return parts.joined(separator: "、") + (closed > 0 ? "，关了 \(closed) 个" : "")
+  }
+
+  /// 「新建脚本」：照模板建一个、用文本编辑器打开，岛上说接下来怎么做
+  private func newScript() {
+    guard let url = ScriptLibrary.newScript() else { return }
+    ScriptLibrary.edit(url.path(percentEncoded: false))
+    library?.refresh()
+    island?.show(
+      "已新建「\(url.lastPathComponent)」",
+      detail: "改好开头几行保存，在启动器里输 hello 就能跑", actions: [.reveal(url)])
+  }
+
   /// 拖脚本文件进来：先看一眼再导入（一次一个；拖了几个只看第一个）
   private var dropZone: some View {
     HStack(spacing: 8) {
       Image(systemName: "square.and.arrow.down")
-      Text("把脚本文件拖到这里导入")
+      Text("把别人给的脚本文件拖到这里导入（导入前先看一眼全文）")
     }
     .font(.system(size: 12))
     .foregroundStyle(isTargeted ? AnyShapeStyle(Style.brandInk) : AnyShapeStyle(.secondary))
-    .frame(maxWidth: .infinity, minHeight: 44)
+    .frame(maxWidth: .infinity, minHeight: 34)
     .background {
       RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
         .strokeBorder(
@@ -164,6 +187,29 @@ struct ScriptsSection: View {
     } else {
       FilePanel.begin(panel, completion: done)
     }
+  }
+}
+
+/// 设置里推进一页的那种行：标题 + 一行小字 + 右边 ›（整行能点）
+struct SettingsPushRow: View {
+  let title: String
+  let detail: String
+  let action: () -> Void
+
+  var body: some View {
+    Button(action: action) {
+      LabeledContent {
+        Image(systemName: "chevron.right")
+          .font(.system(size: 11, weight: .semibold))
+          .foregroundStyle(.secondary)
+      } label: {
+        Text(title)
+        Text(detail)
+      }
+      .contentShape(.rect)
+    }
+    .buttonStyle(.plain)
+    .accessibilityHint("打开「\(title)」")
   }
 }
 

@@ -709,7 +709,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             island.show(
               "已清空启动器使用记录", detail: "「常用」和排序会从头开始学，收藏不动",
               symbol: "clock.arrow.circlepath")
-          })
+          }
+          .environment(island))
       case .launchpad:
         AnyView(
           LaunchpadTab(

@@ -557,6 +557,29 @@ struct ScriptRunTests {
     model.query = "隐藏"
     #expect(model.results.first?.title == "隐藏的脚本")
   }
+
+  /// 汇率换算（真机反馈：表里要有它）：别名出用法提示、补全的示例不动；关掉后不换算货币、没有候选
+  @Test func currencyFollowsTheTable() throws {
+    let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [])
+    var settings = LauncherCommands.Settings(aliases: ["builtin:currency": "hl"])
+    model.commandSettings = { settings }
+    model.query = "hl"
+    let prompt = try #require(model.results.first)
+    #expect(prompt.target == ExchangeRates.promptTarget && prompt.completion == "100 美元 转 日元")
+    model.query = "汇率"
+    #expect(!model.results.contains { $0.target == ExchangeRates.promptTarget })
+    model.query = "100 usd to cny"
+    #expect(model.results.first?.kind == .calculation)  // 还没有汇率表：占位行
+    settings = .init(off: ["builtin:currency"])
+    model.query = "100 usd to cny"
+    #expect(!model.results.contains { $0.kind == .calculation })
+    model.query = "100 美元 转 英"
+    #expect(!model.results.contains { $0.target.hasPrefix(ExchangeRates.suggestionPrefix) })
+    model.query = "12*3"
+    #expect(model.results.first?.kind == .calculation)  // 算式照算
+    #expect(
+      LauncherCommands.builtIns.contains { $0.id == "builtin:currency" && $0.keyword == "汇率" })
+  }
 }
 
 /// 自带的 9 个脚本（Resources/scripts，拍板 D1）：都读得出来、都标着自带；会改系统设置的两个（深色模式、防止睡眠）只读不跑，

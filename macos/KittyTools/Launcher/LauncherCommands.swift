@@ -1,5 +1,6 @@
 // 启动器的「命令」表（2026-11-07 拍板 C3 C4，PLAN §10「脚本命令」；纯函数，配单测）：内置的关键词命令（open / find /
-// quit / hide / forcequit / eject / kill / port / ip / cb / fy / 提醒）、14 个系统命令、脚本命令，每条一个别名、一个开关。
+// quit / hide / forcequit / eject / kill / port / ip / cb / fy / 提醒 / 汇率）、14 个系统命令、脚本命令，每条一个别名、一个开关。
+// 汇率换算（真机反馈，用户要在表里看到它）：别名是出用法提示的那个词，关掉 = 计算器不再换算货币、不取汇率表。
 // 别名就是要打的那个词：改了以后旧词不再认（名字和拼音照样搜得到），清空 = 只能按名字搜；关掉 = 不出现在搜索、常用、收藏里，
 // 关键词也不认（收藏不删，打开就回来）。只存改过的（Prefs.launcherCommandAliases / launcherCommandsOff，跟着设置导出、同步）：
 // 没改过的跟着新版的默认走。
@@ -35,6 +36,7 @@ nonisolated enum LauncherCommands {
     BuiltIn(id: "builtin:cb", title: "在剪贴板历史里搜索", keyword: "cb", symbol: "doc.on.clipboard.fill"),
     BuiltIn(id: "builtin:fy", title: "翻译", keyword: "fy", symbol: "character.bubble.fill"),
     BuiltIn(id: "builtin:reminder", title: "新建提醒", keyword: "提醒", symbol: "alarm.fill"),
+    BuiltIn(id: "builtin:currency", title: "汇率换算", keyword: "汇率", symbol: "banknote"),
   ]
 
   static func systemID(_ keyword: String) -> String { "system:" + keyword }
@@ -135,7 +137,8 @@ nonisolated enum LauncherCommands {
     guard let alias else { return nil }
     var item = item
     item.subtitle = item.subtitle.replacing("「\(command.keyword) 空格", with: "「\(alias) 空格")
-    item.completion = alias + " "
+    // 补全的是「关键词 空格」的才换（汇率补的是一句示例，不动）
+    if item.completion?.hasPrefix(command.keyword + " ") == true { item.completion = alias + " " }
     return item
   }
 
@@ -147,6 +150,7 @@ nonisolated enum LauncherCommands {
       case _ where target.hasPrefix("file-"): String(target.dropFirst("file-".count))
       case "translate-fy": "fy"
       case _ where target.hasPrefix("reminder-"): "提醒"
+      case ExchangeRates.promptTarget: "汇率"
       default: ""
       }
     return builtIns.first { $0.keyword == keyword }

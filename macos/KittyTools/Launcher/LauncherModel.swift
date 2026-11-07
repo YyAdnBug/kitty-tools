@@ -521,8 +521,9 @@ import UniformTypeIdentifiers
     func allowed(_ id: String) -> Bool { settings.isOn(id) && !blocked.contains(id) }
     // 打字路过 ip（「iphone」）时还没查完的不要了
     if !(allowed("builtin:ip") && IPAddresses.matches(command)) { cancelIPLookups() }
-    // 汇率同样：还在等那 0.3 s 的撤掉
-    if ExchangeRates.request(for: query) == nil {
+    // 汇率同样：还在等那 0.3 s 的撤掉（「命令」表里关掉了汇率换算也撤掉）
+    let currencyOn = settings.isOn("builtin:currency")
+    if !currencyOn || ExchangeRates.request(for: query) == nil {
       ratesTask?.cancel()
       ratesTask = nil
     }
@@ -599,20 +600,21 @@ import UniformTypeIdentifiers
       features.contains(.clipboard) && allowed("builtin:cb") && Self.clipQuery(typed) != nil
       ? [Self.clipItem("")] : []
     let fy = Self.translatePrompts(for: features.contains(.translate) ? typed : "")
-    let currency = ExchangeRates.promptItems(for: query)
+    let currency = ExchangeRates.promptItems(for: typed)
     // 「新建提醒…」提示排在本地结果后面：输「提醒」想打开系统「提醒事项」的，↩ 照旧打开它
     let tx = features.contains(.reminders) ? labeled(Self.reminderPrompts(for: typed)) : []
     let exactPrompts: [LauncherItem] =
       prompts.exact + labeled(filePrompts.exact + systemPrompts.exact)
     let partialPrompts: [LauncherItem] =
-      prompts.partial + labeled(filePrompts.partial + systemPrompts.partial + fy.partial)
-      + currency.partial
-    let calculation = calculationItem(query)
+      prompts.partial
+      + labeled(filePrompts.partial + systemPrompts.partial + fy.partial + currency.partial)
+    let calculation = calculationItem(query, currency: currencyOn)
     // 货币打到一半（「100 美元 转 英」）：紧跟在计算结果的位置列候选；有计算结果时不列（单位换算、打全了的汇率）
     let currencyHints =
-      calculation == nil ? ExchangeRates.suggestions(for: query, recents: recentCurrencies) : []
+      calculation == nil && currencyOn
+      ? ExchangeRates.suggestions(for: query, recents: recentCurrencies) : []
     let top: [LauncherItem] =
-      clip + labeled(fy.exact) + currency.exact + ip + direct + [calculation].compactMap { $0 }
+      clip + labeled(fy.exact + currency.exact) + ip + direct + [calculation].compactMap { $0 }
       + currencyHints + [keyword].compactMap { $0 } + exactPrompts
     // 书签、浏览历史至少 2 个字才搜（1 个字母命中太多；含中文时 1 个字就搜，U8）
     let longEnough = LauncherMatch.isLongEnough(query)
@@ -937,7 +939,9 @@ import UniformTypeIdentifiers
 
   /// 计算结果那一行。是汇率换算时顺带看要不要取汇率表：一份都没有、或者存着的过了 6 小时，停 0.3 s 再取（打字路过不发请求），
   /// 取到了原地换掉那一行（id 不变，选中不跳）；一份都没有时先是占位行（正在取 / 没取到），存着旧的就先用旧的
-  private func calculationItem(_ query: String) -> LauncherItem? {
+  /// currency：「命令」表里汇率换算开着（关着时只算算式、单位、进制，不换算货币、不取汇率表）
+  private func calculationItem(_ query: String, currency: Bool = true) -> LauncherItem? {
+    guard currency else { return Calculator.item(for: query, rates: nil) }
     if ExchangeRates.request(for: query) != nil,
       ratesTask == nil, rates.map({ ExchangeRates.isStale($0, now: .now) }) ?? true
     {
