@@ -1,6 +1,8 @@
 // 脚本命令头部写的图片图标（2026-11-07；第二轮拍板 B1 B2 加了 https 网址、深色主题的图标和出错原因，PLAN §10「脚本命令」）：
-// 同文件夹 / 绝对路径的图片第一次要画时在主线程外读（最多 2 MB）；https 网址第一次要画时在后台下载一次（必须是图片、不超过 1 MB；
-// http 不认），存进数据目录的 script-icons/（按网址的 SHA-256 起名），以后直接读缓存、不再联网——网址改了才是另一张。
+// 同文件夹 / 绝对路径的图片第一次要画时在主线程外读（只读普通文件、最多 2 MB）；https 网址第一次要画时在后台下载一次（必须是
+// 图片、边收边数不超过 1 MB、整次 10 秒；http 和跳到 http 的不认），存进数据目录的 script-icons/（按网址的 SHA-256 起名），以后
+// 直接读缓存、不再联网——网址改了才是另一张。读到的都在主线程外解成 96 像素的小图再交出来（1 MB 的图可以是几万像素见方）。
+// 下载来、还没看过的脚本不碰网址和别的文件夹里的图（ScriptCommand.dropUntrustedIcons，扫描时就去掉）。
 // 读不出来、下不下来的记下原因（「命令和别名」那一行写橙字），这次运行里不再试。画图标的 ScriptIconView 也在这里（启动器的行、
 // 设置的表共用）：emoji 直接画、SF 符号放进命令家族紫的色块、图片读到了换上，深色主题有 iconDark 的用它。
 // ponytail: 缓存不清理（图标少、每张不过 1 MB）；真攒多了再按最近用到的删。
@@ -74,8 +76,8 @@ import SwiftUI
         }
       switch result {
       case .success(let data):
-        if let image = NSImage(data: data) {
-          images[key] = image
+        if let image = await Self.thumbnail(data) {
+          images[key] = NSImage(cgImage: image, size: .zero)
         } else {
           failures[key] = Failure.notImage.text
         }
@@ -84,32 +86,62 @@ import SwiftUI
     }
   }
 
-  /// 本地图片：在不在、多大、是不是图片
+  /// 本地图片：在不在、多大、是不是图片。符号链接看它指向的，只读普通文件（管道、设备一读就卡住），最多读上限 + 1 字节
+  /// （看到的大小和真读的时候可能不一样）
   @concurrent static func readLocal(_ path: String) async -> Result<Data, Failure> {
-    let url = URL(filePath: path)
-    guard let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize else {
-      return .failure(.missing((path as NSString).lastPathComponent))
-    }
-    guard size <= localLimit else { return .failure(.tooBig) }
-    guard let data = try? Data(contentsOf: url) else {
-      return .failure(.missing((path as NSString).lastPathComponent))
-    }
+    let name = (path as NSString).lastPathComponent
+    let url = URL(filePath: path).resolvingSymlinksInPath()
+    guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]),
+      values.isRegularFile == true, let handle = try? FileHandle(forReadingFrom: url)
+    else { return .failure(.missing(name)) }
+    defer { try? handle.close() }
+    guard (values.fileSize ?? 0) <= localLimit else { return .failure(.tooBig) }
+    let data = (try? handle.read(upToCount: localLimit + 1)) ?? Data()
+    guard data.count <= localLimit else { return .failure(.tooBig) }
     return isImage(data) ? .success(data) : .failure(.notImage)
   }
 
-  /// 网址图标：缓存里有就用缓存；没有就下载一次（https、10 秒、不超过 1 MB、是图片）存进缓存
+  /// 下载网址图标的会话：不留缓存和 Cookie，整次最多 10 秒（请求的 timeoutInterval 只管两次收到数据之间）
+  nonisolated static let session: URLSession = {
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.timeoutIntervalForResource = 10
+    configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+    return URLSession(configuration: configuration)
+  }()
+
+  /// 网址图标：缓存里有就用缓存；没有就下载一次（https、整次 10 秒、边收边数不超过 1 MB、是图片）存进缓存
   @concurrent static func fetch(_ address: String, cache: URL) async -> Result<Data, Failure> {
     let file = cache.appending(path: cacheName(address))
-    if let data = try? Data(contentsOf: file), isImage(data) { return .success(data) }
+    if let data = try? Data(contentsOf: file), data.count <= remoteLimit, isImage(data) {
+      return .success(data)
+    }
     guard let url = URL(string: address), url.scheme?.lowercased() == "https" else {
       return .failure(.download)
     }
-    var request = URLRequest(url: url, timeoutInterval: 10)
-    request.cachePolicy = .reloadIgnoringLocalCacheData
-    guard let (data, response) = try? await URLSession.shared.data(for: request),
-      (response as? HTTPURLResponse)?.statusCode == 200
-    else { return .failure(.download) }
-    guard data.count <= remoteLimit else { return .failure(.tooBig) }
+    var data = Data()
+    do {
+      let (bytes, response) = try await session.bytes(from: url)
+      // 跳到 http 的不要（这个 App 允许明文请求，系统不拦）
+      guard let http = response as? HTTPURLResponse, http.statusCode == 200,
+        http.url?.scheme?.lowercased() == "https"
+      else {
+        bytes.task.cancel()
+        return .failure(.download)
+      }
+      guard http.expectedContentLength <= Int64(remoteLimit) else {
+        bytes.task.cancel()
+        return .failure(.tooBig)
+      }
+      for try await byte in bytes {
+        data.append(byte)
+        guard data.count <= remoteLimit else {
+          bytes.task.cancel()
+          return .failure(.tooBig)
+        }
+      }
+    } catch {
+      return .failure(.download)
+    }
     guard isImage(data) else { return .failure(.notImage) }
     try? FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
     try? data.write(to: file, options: .atomic)
@@ -119,6 +151,17 @@ import SwiftUI
   /// 缓存的文件名：网址的 SHA-256（不把网址原样当文件名）
   nonisolated static func cacheName(_ address: String) -> String {
     SHA256.hash(data: Data(address.utf8)).map { String(format: "%02x", $0) }.joined()
+  }
+
+  /// 解成小图：图标最大画 24 pt，96 像素够 Retina 用
+  @concurrent static func thumbnail(_ data: Data) async -> CGImage? {
+    guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+    let options: [CFString: Any] = [
+      kCGImageSourceCreateThumbnailFromImageAlways: true,
+      kCGImageSourceCreateThumbnailWithTransform: true,
+      kCGImageSourceThumbnailMaxPixelSize: 96,
+    ]
+    return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
   }
 
   nonisolated static func isImage(_ data: Data) -> Bool {

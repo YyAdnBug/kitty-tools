@@ -72,11 +72,15 @@ struct ScriptGuidePage: View {
           Text("让 AI 来写")
         }
         Section {
-          step(1, "在「脚本命令」里点「新建脚本」", "脚本文件夹里多一个照模板写好的脚本，用文本编辑打开")
+          step(1, "在「脚本命令」里点「新建脚本」", "脚本文件夹里多一个照模板写好的脚本，用编辑器打开")
           step(2, "改开头几行，下面写要跑的命令", "开头几行写它叫什么、关键词、结果给谁；下面就是普通的 shell 命令")
           step(3, "保存，在启动器里输关键词，按 ↩", "不用重启、不用给可执行权限；改了随时生效")
         } header: {
           Text("三步上手")
+        } footer: {
+          SectionFootnote(
+            "脚本用 .sh 文件的默认 App 打开（默认的是终端时改用文本编辑）。想换编辑器：在访达里选一个 .sh 文件，⌘I 显示简介，「打开方式」选好后点「全部更改…」。启动器里选中一条脚本，⌘E 就能改它。"
+          )
         }
         Section {
           code(Self.example)
@@ -195,7 +199,7 @@ struct ScriptGuidePage: View {
       .background(Style.hoverFill, in: .rect(cornerRadius: Style.Radius.card, style: .continuous))
   }
 
-  /// 「用它新建」：例子存成脚本文件夹里的「查天气.sh」（重名加数字），用文本编辑器打开
+  /// 「用它新建」：例子存成脚本文件夹里的「查天气.sh」（重名加数字），用编辑器打开
   private func createExample() {
     let url = ScriptLibrary.freeURL(in: ScriptLibrary.ensureDefaultFolder(), name: "查天气.sh")
     guard (try? Self.example.write(to: url, atomically: true, encoding: .utf8)) != nil else {

@@ -119,6 +119,7 @@ import UniformTypeIdentifiers
         switch ScriptCommand.parse(head, path: file.path) {
         case .success(var script):
           script.isDownloaded = ScriptRunner.isDownloaded(file)
+          if script.isDownloaded { script.dropUntrustedIcons() }
           scan.scripts.append(script)
         case .failure(let problem): scan.problems.append(Problem(path: file.path, problem: problem))
         case nil: break
@@ -262,7 +263,7 @@ extension ScriptLibrary {
     return target
   }
 
-  /// 自带的复制一份到默认文件夹（去掉 script- 前缀），用文本编辑器打开；返回复制出来的位置
+  /// 自带的复制一份到默认文件夹（去掉 script- 前缀），用编辑器打开；返回复制出来的位置
   static func copyBundled(_ script: ScriptCommand) -> URL? {
     let name = String(script.fileName.dropFirst(bundledPrefix.count))
     let url = freeURL(in: ensureDefaultFolder(), name: name.isEmpty ? script.fileName : name)
@@ -277,15 +278,28 @@ extension ScriptLibrary {
     return url
   }
 
-  /// 打开脚本给人改：用默认的纯文本编辑器（不按 .sh 的默认 App 开——那可能是终端，一开就跑了）
+  /// 打开脚本给人改（第二轮 D4）：用这个文件的默认 App（装了别的编辑器、给 .sh 设了默认的就用它）；默认的不是能开纯文本的
+  /// App（终端、Python Launcher 这类一开就跑了），或者没有，退回默认的纯文本编辑器
   static func edit(_ path: String) {
     let url = URL(filePath: path)
-    guard let editor = NSWorkspace.shared.urlForApplication(toOpen: .plainText) else {
-      return NSWorkspace.shared.activateFileViewerSelecting([url])
-    }
+    let workspace = NSWorkspace.shared
+    guard
+      let editor = editor(
+        workspace.urlForApplication(toOpen: url),
+        among: workspace.urlsForApplications(toOpen: .plainText),
+        fallback: workspace.urlForApplication(toOpen: .plainText))
+    else { return workspace.activateFileViewerSelecting([url]) }
     NSWorkspace.shared.open(
       [url], withApplicationAt: editor, configuration: NSWorkspace.OpenConfiguration()
     ) { _, _ in }
+  }
+
+  /// 用哪个 App 打开脚本来改：默认的那个也在「能开纯文本」的名单里（编辑器、文本编辑…）才用它，名单外的（终端、
+  /// Python Launcher）一开就把脚本跑了，用 fallback。白名单而不是列终端：没见过的终端也挡得住
+  nonisolated static func editor(_ own: URL?, among editors: [URL], fallback: URL?) -> URL? {
+    guard let own, editors.contains(where: { $0.standardizedFileURL == own.standardizedFileURL })
+    else { return fallback }
+    return own
   }
 }
 

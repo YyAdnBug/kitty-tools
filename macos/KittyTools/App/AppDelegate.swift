@@ -307,6 +307,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 设置 › 启动器「脚本命令」开着（关着时自带的和自己的脚本都不出现）
   private static var scriptsOn: Bool { UserDefaults.standard.bool(forKey: Prefs.launcherScripts) }
 
+  /// 「命令和别名」里开 / 关一条（启动器 ⌘K「关掉这条命令」和它的「撤销」、复制自带的之后关掉自带的）：写偏好，
+  /// 启动器和设置页都现读
+  private static func setLauncherCommand(_ id: String, on: Bool) {
+    var settings = LauncherModel.savedCommandSettings()
+    settings.set(on, for: id)
+    UserDefaults.standard.set(settings.offText, forKey: Prefs.launcherCommandsOff)
+  }
+
+  /// 启动器 ⌘K「改别名…」（第二轮 D1）：打开 设置 › 启动器 › 命令和别名，只列这一条、别名框拿着焦点
+  private func openCommandSettings(_ id: String) {
+    showSettings(page: .launcher)
+    // 设置窗开着速查表 / 确认框时不换页（SettingsWindow.show）：没到启动器页就不推
+    guard settingsNavigation.page == .launcher else { return }
+    settingsNavigation.focusedCommand = id
+    settingsNavigation.path = [LauncherCommandsPage.route]
+  }
+
+  /// 启动器 ⌘K「复制一份到我的脚本」：复制出来的和自带的同一个关键词，自带的关掉（同设置里右键的那一项，拍板 D2「用你的」）
+  private func copyBundledScript(_ script: ScriptCommand) {
+    guard let url = ScriptLibrary.copyBundled(script) else {
+      return island.show("没复制成「\(script.title)」", detail: "脚本文件夹写不进去", tone: .error)
+    }
+    Self.setLauncherCommand(LauncherCommands.scriptID(script), on: false)
+    scriptLibrary.refresh()
+    island.show(
+      "已复制到我的脚本：\(url.lastPathComponent)", detail: "自带的那条关掉了，改这一份就行",
+      actions: [.reveal(url)])
+  }
+
   /// 看过、确认要跑的下载来的脚本：去掉隔离标记，重读脚本库
   private func approveDownloadedScript(_ script: ScriptCommand) async {
     _ = await ScriptRunner.clearDownloaded(script.path)
@@ -445,6 +474,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     model.scripts = { [unowned self] in Self.scriptsOn ? scriptLibrary.scripts : [] }
     model.scriptsOn = { Self.scriptsOn }
     model.approveScript = { [unowned self] in await approveDownloadedScript($0) }
+    model.editScript = { ScriptLibrary.edit($0.path) }
+    model.openCommandSettings = { [unowned self] in openCommandSettings($0) }
+    model.setCommandOn = { Self.setLauncherCommand($0, on: $1) }
+    model.copyBundledScript = { [unowned self] in copyBundledScript($0) }
+    model.showPanel = { [unowned self] in
+      // 那一张里留着的「看输出」：启动器关掉了就不叫（关掉 = 入口全藏）
+      guard Feature.launcher.isOn else { return }
+      if !(launcherPanel.isVisible && launcherPanel.isKeyWindow) { toggleLauncher() }
+    }
     builtLauncherPanel = panel
     return panel
   }()

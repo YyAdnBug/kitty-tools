@@ -4811,6 +4811,14 @@ struct SnapshotProbeTests {
         size: NSSize(width: 720, height: LauncherPanelView.height(for: model)), dark: dark,
         to: "\(out)/launcher-scripts-output\(suffix).png")
       model.closeOutput()
+      // 脚本行的 ⌘K（第二轮 D1）
+      model.query = "tq"
+      model.toggleActions()
+      try snapshot(
+        LauncherPanelView(model: model),
+        size: NSSize(width: 720, height: LauncherPanelView.height(for: model)), dark: dark,
+        to: "\(out)/launcher-scripts-actions\(suffix).png")
+      model.toggleActions()
     }
     // 设置 › 启动器「脚本命令」「命令」两节、推进去的「命令和别名」表（改过别名的 kill → k、和网页搜索撞了的 g、关掉的端口）
     // 和「怎么写脚本」；一个读不成的脚本；偏好用临时的域（不碰宿主 App 的）
@@ -4840,6 +4848,14 @@ struct SnapshotProbeTests {
         NavigationStack { LauncherCommandsPage(library: library) }.defaultAppStorage(defaults),
         size: NSSize(width: 590, height: 2420), dark: dark,
         to: "\(out)/settings-launcher-commands\(suffix).png")
+      // 启动器 ⌘K「改别名…」推进来：只列那一条
+      let navigation = SettingsNavigation(defaults: nil)
+      navigation.focusedCommand = LauncherCommands.scriptID(weather)
+      try snapshot(
+        NavigationStack { LauncherCommandsPage(library: library) }.defaultAppStorage(defaults)
+          .environment(navigation),
+        size: NSSize(width: 590, height: 420), dark: dark,
+        to: "\(out)/settings-launcher-commands-focused\(suffix).png")
       try snapshot(
         NavigationStack { ScriptGuidePage(library: library) }.defaultAppStorage(defaults),
         size: NSSize(width: 590, height: 2050), dark: dark,

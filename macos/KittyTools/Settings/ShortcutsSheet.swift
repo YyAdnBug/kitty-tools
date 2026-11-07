@@ -335,6 +335,7 @@ struct ShortcutsSheet: View {
           Entry("⌘D", text: "加入 / 取消收藏（收藏排在空搜索框的最上面）"),
           Entry("⌥⌘↑↓", text: "空搜索框里调整选中的收藏的顺序"),
           Entry("⌘Y", text: "快速查看选中的文件"),
+          Entry("⌘E", text: "编辑选中的脚本（自带的先复制一份到我的脚本）"),
           Entry("⌘1–9", text: "打开第 1–9 项"),
           Entry("↑↓", text: "移动选中"),
           Entry("⌘⌫", text: "从「常用」里移除"),

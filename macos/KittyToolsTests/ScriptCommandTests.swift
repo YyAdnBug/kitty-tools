@@ -914,6 +914,15 @@ struct SubprocessStopTests {
     let text = folder.appending(path: "a.png")
     try Data("hello".utf8).write(to: text)
     #expect(await ScriptIcons.readLocal(text.path(percentEncoded: false)) == .failure(.notImage))
+    // 链接到一个大文件：按它指向的算大小；文件夹不是图
+    let big = folder.appending(path: "big.bin")
+    try Data(count: ScriptIcons.localLimit + 1).write(to: big)
+    let link = folder.appending(path: "link.png")
+    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: big)
+    #expect(await ScriptIcons.readLocal(link.path(percentEncoded: false)) == .failure(.tooBig))
+    #expect(
+      await ScriptIcons.readLocal(folder.path(percentEncoded: false))
+        == .failure(.missing(folder.lastPathComponent)))
     // http 不下载；缓存里有就直接用（不联网）
     #expect(
       await ScriptIcons.fetch("http://example.com/a.png", cache: folder) == .failure(.download))
@@ -923,6 +932,9 @@ struct SubprocessStopTests {
     let address = "https://example.invalid/a.png"
     try png.write(to: folder.appending(path: ScriptIcons.cacheName(address)))
     #expect(await ScriptIcons.fetch(address, cache: folder) == .success(png))
+    // 画之前解成小图
+    let image = try #require(await ScriptIcons.thumbnail(png))
+    #expect(image.width <= 96 && image.height <= 96)
   }
 
   @Test func tableOrderAndFilters() {
@@ -958,5 +970,113 @@ struct SubprocessStopTests {
       .contains { $0.id == "system:lock" })
     #expect(
       LauncherCommandsSection.filter(rows, by: "zz", scope: .bundled, settings: settings).isEmpty)
+  }
+}
+
+/// 第二轮第 3 批：脚本行的 ⌘K（D1）、出错「看输出」（D3）、编辑器跟 .sh 的默认 App（D4）
+@MainActor struct ScriptRoundThreeTests {
+  private func model(_ scripts: [ScriptCommand]) throws -> LauncherModel {
+    let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [])
+    model.scripts = { scripts }
+    return model
+  }
+
+  @Test func scriptRowsGetManageActions() throws {
+    var mine = ScriptCommand(path: "/tmp/s/tq.sh", title: "查天气", interpreter: ["/bin/sh"])
+    mine.keyword = "tq"
+    var bundled = ScriptCommand(
+      path: "/b/script-uuid.sh", title: "UUID 生成器", interpreter: ["/bin/sh"])
+    bundled.keyword = "uuid"
+    bundled.isBundled = true
+    let model = try model([mine, bundled])
+    var opened: [String] = []
+    model.openCommandSettings = { opened.append($0) }
+    model.query = "tq"
+    let row = try #require(model.results.first { $0.kind == .script })
+    let titles = model.actions(for: row).map(\.title)
+    #expect(titles.contains("编辑脚本") && titles.contains("改别名…") && titles.contains("关掉这条命令"))
+    #expect(!titles.contains("复制一份到我的脚本"))
+    #expect(model.actions(for: row).first { $0.title == "编辑脚本" }?.shortcut == "⌘E")
+    try #require(model.actions(for: row).first { $0.title == "改别名…" }).run()
+    #expect(opened == [LauncherCommands.scriptID(mine)])
+    model.query = "uuid"
+    let bundledRow = try #require(model.results.first { $0.kind == .script })
+    // 自带的在 App 包里：没有「编辑脚本」，⌘E 是复制一份
+    let bundledActions = model.actions(for: bundledRow)
+    #expect(bundledActions.first { $0.title == "复制一份到我的脚本" }?.shortcut == "⌘E")
+    #expect(!bundledActions.map(\.title).contains("编辑脚本"))
+    // 别的行没有这几项
+    model.query = "lock"
+    let lock = try #require(model.results.first)
+    #expect(!model.actions(for: lock).map(\.title).contains("编辑脚本"))
+  }
+
+  @Test func disableTakesItOutOfSearch() throws {
+    var mine = ScriptCommand(path: "/tmp/s/tq.sh", title: "查天气", interpreter: ["/bin/sh"])
+    mine.keyword = "tq"
+    let model = try model([mine])
+    var settings = LauncherCommands.Settings()
+    model.commandSettings = { settings }
+    model.setCommandOn = { settings.set($1, for: $0) }
+    model.query = "tq"
+    #expect(model.results.first?.kind == .script)
+    model.disable(mine)
+    #expect(!settings.isOn(LauncherCommands.scriptID(mine)))
+    #expect(!model.results.contains { $0.kind == .script })
+  }
+
+  @Test func failureKeepsTheLastOutput() async throws {
+    var broken = ScriptCommand(path: "/tmp/s/bad.sh", title: "坏的", interpreter: ["/bin/sh"])
+    broken.keyword = "bad"
+    let model = try model([broken])
+    model.runScript = { _, _ in .init(end: .finished(2), output: "第一行\n第二行", error: "出错了：x") }
+    var shown = 0
+    model.showPanel = { shown += 1 }
+    model.query = "bad"
+    model.execute(try #require(model.results.first { $0.kind == .script }))
+    await model.scriptRun(broken.path)
+    let (id, page) = try #require(model.lastFailure)
+    #expect(page.text == "第一行\n第二行\n\n出错了：x")
+    #expect(page.failure?.hasPrefix("「坏的」出错了") == true && !page.isRunning)
+    model.showFailure(id)
+    #expect(model.output == page && shown == 1)
+    model.closeOutput()
+    // 后来又出过错：早先那座岛上的按钮不再打开
+    model.execute(try #require(model.results.first { $0.kind == .script }))
+    await model.scriptRun(broken.path)
+    #expect(model.lastFailure?.id != id)
+    model.showFailure(id)
+    #expect(model.output == nil && shown == 1)
+    // 自己停的不留
+    model.runScript = { _, _ in .init(end: .stopped, output: "半截") }
+    let last = model.lastFailure?.id
+    model.execute(try #require(model.results.first { $0.kind == .script }))
+    await model.scriptRun(broken.path)
+    #expect(model.lastFailure?.id == last)
+  }
+
+  @Test func editorSkipsAppsThatRunScripts() {
+    let term = URL(filePath: "/Applications/iTerm.app")
+    let code = URL(filePath: "/Applications/Visual Studio Code.app")
+    let text = URL(filePath: "/System/Applications/TextEdit.app")
+    let editors = [code, text]
+    #expect(ScriptLibrary.editor(term, among: editors, fallback: text) == text)
+    #expect(ScriptLibrary.editor(code, among: editors, fallback: text) == code)
+    #expect(ScriptLibrary.editor(nil, among: editors, fallback: text) == text)
+  }
+
+  @Test func downloadedScriptsKeepOnlyNearbyIcons() {
+    var script = ScriptCommand(path: "/tmp/s/a.sh", title: "A", interpreter: ["/bin/sh"])
+    script.icon = .remote("https://example.com/a.png")
+    script.iconDark = .image("/tmp/s/images/dark.png")
+    script.dropUntrustedIcons()
+    #expect(script.icon == nil && script.iconDark == .image("/tmp/s/images/dark.png"))
+    script.icon = .image("/Users/me/Documents/x.png")
+    script.iconDark = .image("/tmp/s2/x.png")
+    script.dropUntrustedIcons()
+    #expect(script.icon == nil && script.iconDark == nil)
+    script.icon = .emoji("⛅")
+    script.dropUntrustedIcons()
+    #expect(script.icon == .emoji("⛅"))
   }
 }

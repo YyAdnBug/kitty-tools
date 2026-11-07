@@ -84,6 +84,21 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
   ]
 
   var folder: String { (path as NSString).deletingLastPathComponent }
+
+  /// 下载来、还没看过的脚本（第二轮评审）：网址图标（能当信标，知道你什么时候列出了它）和脚本文件夹外面的图片（会弹文件夹
+  /// 授权框）不用；emoji、符号、同文件夹里的图照常。看过、去掉下载标记后重读就有了
+  mutating func dropUntrustedIcons() {
+    let inside = (folder as NSString).standardizingPath + "/"
+    func keep(_ icon: Icon?) -> Icon? {
+      switch icon {
+      case .remote: nil
+      case .image(let path) where !path.hasPrefix(inside): nil
+      default: icon
+      }
+    }
+    icon = keep(icon)
+    iconDark = keep(iconDark)
+  }
   var fileName: String { (path as NSString).lastPathComponent }
   /// 真正用的超时（秒，0 = 不限）
   var limit: Int { timeout ?? Self.defaultTimeout }

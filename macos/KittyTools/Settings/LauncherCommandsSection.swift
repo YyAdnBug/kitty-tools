@@ -4,7 +4,9 @@
 // 一排筛选「全部 / 我的脚本 / 自带脚本 / 内置」和「只看开着的」。脚本的图标读不出来、下不下来时名字下面写橙字原因（B2）。
 // 别名就是在启动器里要打的那个词：改了旧词不再认，清空就只能按名字搜；和别的命令、网页搜索的关键词撞了那一格描橙框
 // （运行时用靠前的那个）。关掉 = 不出现在搜索里、关键词也不认。只存改过的（LauncherCommands.Settings，跟着设置导出、同步）。
-// 脚本那几行：点名字在访达中显示，右键用文本编辑器打开、（我的脚本）移到废纸篓。脚本命令整个关着时脚本那两组变灰。
+// 脚本那几行：点名字在访达中显示，右键编辑、（我的脚本）移到废纸篓。脚本命令整个关着时脚本那两组变灰。
+// 启动器 ⌘K「改别名…」推进来时（SettingsNavigation.focusedCommand）只列那一条（按 id，同名的复制品不跟着出来）、别名框拿着
+// 焦点，上面一行「显示全部」；动一下搜索框或筛选就回到全部（第二轮 D1）。
 
 import SwiftUI
 
@@ -18,6 +20,10 @@ struct LauncherCommandsSection: View {
   @State private var filter = ""
   @State private var scope = Scope.all
   @State private var onlyOn = false
+  @FocusState private var focusedAlias: String?
+  /// 「改别名…」要的那一行：只列它
+  @State private var only: String?
+  @Environment(SettingsNavigation.self) private var navigation: SettingsNavigation?
 
   /// 上面那一排筛选
   enum Scope: String, CaseIterable {
@@ -92,21 +98,30 @@ struct LauncherCommandsSection: View {
     let conflicts = LauncherCommands.conflicts(
       all.map { ($0.id, settings.alias($0.id, default: $0.keyword)) },
       engineKeywords: SearchEngineDetail.decode(enginesData).map(\.keyword))
-    let shown = Self.filter(all, by: filter, scope: scope, onlyOn: onlyOn, settings: settings)
+    let shown =
+      only.map { id in all.filter { $0.id == id } }
+      ?? Self.filter(all, by: filter, scope: scope, onlyOn: onlyOn, settings: settings)
     Section {
-      TextField("搜索命令", text: $filter, prompt: Text("按名字或别名找"))
+      TextField("搜索命令", text: showingAll($filter), prompt: Text("按名字或别名找"))
         .textFieldStyle(.roundedBorder)
         .labelsHidden()
       HStack {
-        Picker("显示", selection: $scope) {
+        Picker("显示", selection: showingAll($scope)) {
           ForEach(Scope.allCases, id: \.self) { Text($0.rawValue).tag($0) }
         }
         .pickerStyle(.segmented)
         .labelsHidden()
         .fixedSize()
         Spacer()
-        Toggle("只看开着的", isOn: $onlyOn)
+        Toggle("只看开着的", isOn: showingAll($onlyOn))
           .toggleStyle(.checkbox)
+      }
+      if let row = shown.first, only != nil {
+        HStack {
+          Text("只列出了「\(row.title)」").foregroundStyle(.secondary)
+          Spacer()
+          Button("显示全部") { only = nil }
+        }
       }
       HStack {
         Text("名称")
@@ -127,7 +142,8 @@ struct LauncherCommandsSection: View {
           ForEach(rows) { row in
             CommandRow(
               row: row, alias: aliasBinding(row), isOn: onBinding(row),
-              conflicted: conflicts.contains(row.id), refresh: { library?.refresh() }
+              conflicted: conflicts.contains(row.id), focus: $focusedAlias,
+              refresh: { library?.refresh() }
             )
             .disabled(row.script != nil && !scriptsOn)
           }
@@ -138,9 +154,33 @@ struct LauncherCommandsSection: View {
       }
     } footer: {
       SectionFootnote(
-        conflicts.isEmpty
+        !shown.contains { conflicts.contains($0.id) }
           ? "别名就是在启动器里要打的那个词，改了以后原来的词不再认；清空就只能按名字搜。关掉的不出现在搜索里。"
           : "描了橙框的别名重复了（也算网页搜索的关键词），启动器里用排在前面的那个，改一个吧。")
+    }
+    .onAppear { focus(in: all) }
+    .onChange(of: navigation?.focusedCommand) { focus(in: all) }
+  }
+
+  /// 搜索框、筛选被人动了：不再只列「改别名…」那一行
+  private func showingAll<Value>(_ binding: Binding<Value>) -> Binding<Value> {
+    Binding {
+      binding.wrappedValue
+    } set: {
+      only = nil
+      binding.wrappedValue = $0
+    }
+  }
+
+  /// 启动器 ⌘K「改别名…」要的那一行：只列它，等这一行出来再把焦点给它的别名框
+  private func focus(in rows: [Row]) {
+    guard let id = navigation?.focusedCommand else { return }
+    navigation?.focusedCommand = nil
+    guard rows.contains(where: { $0.id == id }) else { return }
+    only = id
+    Task {
+      await Task.yield()
+      focusedAlias = id
     }
   }
 
@@ -208,6 +248,7 @@ private struct CommandRow: View {
   @Binding var alias: String
   @Binding var isOn: Bool
   let conflicted: Bool
+  var focus: FocusState<String?>.Binding
   /// 复制、移到废纸篓之后重读脚本库
   var refresh: () -> Void = {}
 
@@ -244,6 +285,7 @@ private struct CommandRow: View {
         .textFieldStyle(.roundedBorder)
         .font(.system(size: 12, design: .monospaced))
         .frame(width: LauncherCommandsSection.aliasWidth)
+        .focused(focus, equals: row.id)
         .overlay {
           if conflicted {
             RoundedRectangle(cornerRadius: 5, style: .continuous)
@@ -266,7 +308,6 @@ private struct CommandRow: View {
         Button("在访达中显示") {
           NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: script.path)])
         }
-        Button("用文本编辑器打开") { ScriptLibrary.edit(script.path) }
         if script.isBundled {
           // 复制出来的那份和自带的同一个关键词：把自带的关掉，启动器里只剩自己那份（拍板 D2「用你的」）
           Button("复制一份到我的脚本") {
@@ -276,6 +317,8 @@ private struct CommandRow: View {
             }
           }
         } else {
+          // 自带的在 App 包里，不在原地改（复制一份再改）
+          Button("编辑脚本") { ScriptLibrary.edit(script.path) }
           Divider()
           Button("移到废纸篓", role: .destructive) {
             NSWorkspace.shared.recycle([URL(filePath: script.path)]) { _, _ in

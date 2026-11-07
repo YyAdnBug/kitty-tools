@@ -267,6 +267,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   }
   /// 欢迎引导关掉了（「开始使用」、Esc、关掉设置窗都算走完）：AppDelegate 这时才记「看过这一版」（第四轮体检 E1）
   @ObservationIgnored var onboardingClosed: () -> Void = {}
+  /// 启动器 ⌘K「改别名…」要的那一行（「命令和别名」页只列它、别名框拿焦点，用过就清掉）
+  var focusedCommand: String?
   /// 快捷键速查表（启动器里的「快捷键速查表」打开设置窗时盖上；页面里的「查看全部快捷键…」按钮自己管）
   var showsShortcuts = false
   /// 设置窗是 key（SettingsWindow 的窗口代理写）。开着 sheet（确认框、速查表、引导）或别的面板在前时不是

@@ -232,6 +232,16 @@ import UniformTypeIdentifiers
   static let listTimeout = 10
   /// 看过、确认要跑的下载来的脚本：去掉隔离标记、重读脚本库
   @ObservationIgnored var approveScript: @MainActor (ScriptCommand) async -> Void = { _ in }
+  /// 脚本行的 ⌘K（第二轮 D1）：编辑、到设置里改别名（命令表那一行的 id）、开关一条命令、把自带的复制一份到我的脚本。
+  /// AppDelegate 接上；单测 / 截图自检是空的——不开编辑器、不写偏好、不写文件
+  @ObservationIgnored var editScript: (ScriptCommand) -> Void = { _ in }
+  @ObservationIgnored var openCommandSettings: (_ id: String) -> Void = { _ in }
+  @ObservationIgnored var setCommandOn: (_ id: String, _ isOn: Bool) -> Void = { _, _ in }
+  @ObservationIgnored var copyBundledScript: (ScriptCommand) -> Void = { _ in }
+  /// 出错的岛上「看输出」（第二轮 D3）：把启动器叫出来（已经开着、在前就不动）
+  @ObservationIgnored var showPanel: () -> Void = {}
+  /// 最近一次出错的全部输出（只留这一次，不记日志）；id 给岛上「看输出」认是不是这一次
+  @ObservationIgnored private(set) var lastFailure: (id: UUID, page: ScriptOutput)?
   /// 这次运行里确认过的（去不掉隔离标记的文件夹：只读的、别人的）
   @ObservationIgnored private var approvedScripts: Set<String> = []
   /// 正在跑的脚本（按路径）：「停止」按钮取消它；同一个还在跑时再按 ↩ 不重复起
@@ -1365,17 +1375,39 @@ import UniformTypeIdentifiers
       let outcome = await runScript(script, arguments)
       runningScripts[path] = nil
       guard output?.script.path == path else { return }
-      var text = ScriptCommand.payload(outcome.output)
-      let error = ScriptCommand.payload(outcome.error)
-      if !outcome.succeeded, !error.isEmpty { text += (text.isEmpty ? "" : "\n\n") + error }
-      let failure = Self.failure(outcome, of: script)
-      output?.text = text
+      let page = Self.outputPage(outcome, of: script)
+      output?.text = page.text
       output?.isRunning = false
-      output?.failure = failure.map {
-        [$0.title, $0.detail].filter { !$0.isEmpty }.joined(separator: "：")
-      }
-      Island.announce(failure?.title ?? "「\(script.title)」运行完了")
+      output?.failure = page.failure
+      Island.announce(page.failure ?? "「\(script.title)」运行完了")
     }
+  }
+
+  /// 全文那一页上的东西：输出，没跑成时接上错误输出；没跑成的那一句（红字）。全文输出和岛上「看输出」同一份
+  static func outputPage(_ outcome: ScriptRunner.Outcome, of script: ScriptCommand) -> ScriptOutput
+  {
+    var text = ScriptCommand.payload(outcome.output)
+    let error = ScriptCommand.payload(outcome.error)
+    if !outcome.succeeded, !error.isEmpty { text += (text.isEmpty ? "" : "\n\n") + error }
+    let failure = Self.failure(outcome, of: script).map {
+      [$0.title, $0.detail].filter { !$0.isEmpty }.joined(separator: "：")
+    }
+    return ScriptOutput(script: script, text: text, isRunning: false, failure: failure)
+  }
+
+  /// 岛上「看输出」：叫出启动器，原地显示那一次的全部输出（同全文输出那一页：↩ 粘贴、⌘C 复制、Esc 回到结果）。
+  /// 只留着最近一次出错的：后来又有脚本出过错，早先那座岛上的按钮就说没留着
+  func showFailure(_ id: UUID) {
+    guard let lastFailure, lastFailure.id == id else {
+      island?.show("那次的输出没留着", detail: "只留最近一次出错的输出", tone: .info)
+      return
+    }
+    // 先叫出来再换上：收起着时呼出会按「过了 60 秒」清掉查询，那会顺手关掉输出页；正在跑的全文脚本停掉（同 Esc）
+    if output != nil { closeOutput() }
+    showPanel()
+    review = nil
+    showsActions = false
+    output = lastFailure.page
   }
 
   /// 输出那一页：回到结果（还在跑就停掉）
@@ -1414,9 +1446,16 @@ import UniformTypeIdentifiers
     let name = "「\(script.title)」"
     if let failure = Self.failure(outcome, of: script) {
       let stopped = outcome.end == .stopped
+      // 出错了带「看输出」（D3）：前面几行才说得清为什么；自己停的、什么都没输出的不带
+      let page = Self.outputPage(outcome, of: script)
+      let keeps = !stopped && !page.text.isEmpty
+      let id = UUID()
+      if keeps { lastFailure = (id, page) }
       island?.show(
         failure.title, detail: failure.detail.isEmpty ? nil : failure.detail,
-        tone: stopped ? .info : .error)
+        tone: stopped ? .info : .error,
+        actions: keeps
+          ? [Island.Action("看输出", opens: true) { [weak self] in self?.showFailure(id) }] : [])
       return
     }
     let text = ScriptCommand.payload(outcome.output)
@@ -1435,7 +1474,7 @@ import UniformTypeIdentifiers
       }
     case .none:
       island?.dismiss(ifShowing: progress)
-    // ponytail: full / list 第 2 批做，先按岛上一行
+    // full、list 平时不走这里（全文那一页、列表行）；万一走到了按岛上一行
     case .island, .full, .list:
       if let line = ScriptCommand.lastLine(outcome.output) {
         island?.show(line, detail: script.title)
@@ -1478,7 +1517,7 @@ import UniformTypeIdentifiers
 
   /// 看过了（↩ / 「运行」）：记下、去掉隔离标记，然后照常跑（写了 confirm 的不再上膛：看全文就是确认）
   func approveReview() {
-    // 全文还没读到、或者没显示全：不跑（看不全的脚本别运行；去文本编辑器里看）
+    // 全文还没读到、或者没显示全：不跑（看不全的脚本别运行；去编辑器里看）
     guard let review, review.text != nil, !review.isTruncated else { return NSSound.beep() }
     let script = review.script
     self.review = nil
@@ -2191,6 +2230,9 @@ import UniformTypeIdentifiers
       toggleFavorite(item)
     case kVK_ANSI_Y:
       toggleQuickLook()
+    case kVK_ANSI_E:
+      guard let item = selectedItem, let script = script(of: item) else { return false }
+      edit(script)
     case kVK_ANSI_Comma:
       close()
       openSettings()
@@ -2295,7 +2337,7 @@ import UniformTypeIdentifiers
   var actions: [ActionMenu.Item] { selectedItem.map(actions(for:)) ?? [] }
 
   /// 一项能做的全部动作（N8；右键菜单同一份，体检 C8）：主动作 ↩ 在最前，每行写上键位，执行的和按键是同一段代码。
-  /// 分节：打开 ｜ 用别的 App 打开 ｜ 复制 ｜ 搜索框（补全、⌥↩、⌃↩）｜ 收藏、移除、废纸篓
+  /// 分节：打开 ｜ 用别的 App 打开（脚本是编辑、改别名、关掉）｜ 复制 ｜ 搜索框（补全、⌥↩、⌃↩）｜ 收藏、移除、废纸篓
   func actions(for item: LauncherItem) -> [ActionMenu.Item] {
     var actions: [ActionMenu.Item] = []
     func add(
@@ -2323,6 +2365,23 @@ import UniformTypeIdentifiers
     }
     if isFile(item) {
       add("快速查看", "eye", "⌘Y", section: 0) { [unowned self] in quickLook(item) }
+    }
+    // 1 脚本（第二轮 D1）：发现一条不对劲，就地改它、换个词、关掉；自带的复制一份成自己的。
+    // 脚本没有「用别的 App 打开」，接在打开后面，不用滚就看得到
+    if let script = script(of: item) {
+      // 自带的在 App 包里（改了会被更新盖掉、坏签名）：⌘E 是复制一份成自己的再改
+      if script.isBundled {
+        add("复制一份到我的脚本", "plus.square.on.square", "⌘E", section: 1) { [unowned self] in
+          edit(script)
+        }
+      } else {
+        add("编辑脚本", "pencil", "⌘E", section: 1) { [unowned self] in edit(script) }
+      }
+      add("改别名…", "keyboard", section: 1) { [unowned self] in
+        close()
+        openCommandSettings(LauncherCommands.scriptID(script))
+      }
+      add("关掉这条命令", "nosign", section: 1) { [unowned self] in disable(script) }
     }
     // 1 用别的 App 打开：网址是默认浏览器以外的浏览器（第一个是 ⌘↩），文件是能开这种类型的 App（默认的排第一）
     let web = isWebLink(item)
@@ -2390,6 +2449,35 @@ import UniformTypeIdentifiers
       }
     }
     return actions
+  }
+
+  /// 选中的是一条脚本命令（不是列表脚本给的结果行）
+  private func script(of item: LauncherItem) -> ScriptCommand? {
+    guard item.kind == .script else { return nil }
+    return activeScripts.first { $0.path == item.target }
+  }
+
+  /// ⌘E / ⌘K「编辑脚本」：收起，用编辑器打开；自带的复制一份到我的脚本再打开（同时关掉自带那条）
+  private func edit(_ script: ScriptCommand) {
+    close()
+    if script.isBundled { copyBundledScript(script) } else { editScript(script) }
+  }
+
+  /// ⌘K「关掉这条命令」：从搜索里拿掉（就是 设置 › 启动器「命令和别名」里那个开关），启动器留着、重搜；岛上带「撤销」
+  func disable(_ script: ScriptCommand) {
+    let id = LauncherCommands.scriptID(script)
+    setCommandOn(id, false)
+    search()
+    island?.show(
+      "已关掉「\(script.title)」", detail: "设置 › 启动器「命令和别名」里能再打开",
+      actions: [
+        Island.Action("撤销") { [weak self] in
+          guard let self else { return }
+          setCommandOn(id, true)
+          // 收起着就不搜（留着的查询可能正好会跑一个列表脚本）；下次呼出自己会搜
+          if isShown { search() }
+        }
+      ])
   }
 
   /// 按 actionQuery 过滤（和剪贴板的两个菜单同一个 ActionMenu.filter：子串 + 中文标题的拼音前缀）
