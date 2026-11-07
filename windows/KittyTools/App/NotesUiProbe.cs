@@ -190,6 +190,11 @@ internal static class NotesUiProbe
             if (window.AppWindow.IsVisible)
             {
                 await Shoot(window, directory, $"{name}-{part}", report);
+                if (window is NoteDeckPillWindow pill)
+                {
+                    // PLAN-v16 V1：药丸窗口的实际大小（物理像素；12 宽 × 缩放，不该被系统的最小宽撑大）
+                    report.Append($"  - 药丸窗口 {pill.ProbeSize.Width} × {pill.ProbeSize.Height}\n");
+                }
             }
         }
     }

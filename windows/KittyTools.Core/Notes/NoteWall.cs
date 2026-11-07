@@ -5,8 +5,8 @@
 // - 方向键在卡片之间怎么走、指针下面是哪张、拖动排序落到哪（只看拖动开始时那份排法）、落成仓库的哪个下标；
 //   编辑卡多大、它那块纸从哪长出来 / 缩回哪。
 // - 卡片上那段字（Excerpt：标题之后的开头几行 + 这一段里的代码块）和卡片多高（Card：字的高由窗口代码量好传进来——
-//   mac 用 NSFont 量，这里不碰字体）。卡片上的字要删掉藏着的 Markdown 标记、代码块的围栏行，那一步在窗口代码里
-//   （样式和正文编辑器同一套）。
+//   mac 用 NSFont 量，这里不碰字体）。卡片上的字一行一种（CardLines，PLAN-v16 V2）：标题去掉 # 记号、按几级标题的字号画，
+//   无序列表的符号画成淡色圆点，代码块的围栏行不要、块里的行原样，别的行去掉行内标记；字号和颜色在窗口代码里。
 // 坐标：墙的坐标，滚动内容的左上角是原点、y 向下（mac 也是这么算的，不用换算）。
 using System.Text;
 
@@ -373,6 +373,61 @@ public static class NoteWall
         }
 
         return ExcerptScan;
+    }
+
+    public enum CardLineKind
+    {
+        Plain,
+        Heading,
+        Bullet,
+        Code,
+    }
+
+    /// <summary>卡片上的一行：哪种、几级标题（Heading）、列表符号前面缩进几个空白（Bullet）、去掉记号之后的字。</summary>
+    public readonly record struct CardLine(CardLineKind Kind, string Text, int Level = 0, int Indent = 0);
+
+    /// <summary>
+    /// 卡片上那段字一行一行（照 mac NoteWallCard.make：样式同正文编辑器，藏着的标记和代码块的围栏行删掉）：标题行去掉 # 和后面的空白、
+    /// 行内的标记照样去；无序列表的 - * + 换成圆点（窗口代码画淡色，mac 是淡色的原符号，PLAN-v16 V2 要圆点）；代码块里的行原样；
+    /// 别的行同列表里的摘要（NoteMarkdown.Plain，引用的 &gt; 也去）。
+    /// </summary>
+    public static List<CardLine> CardLines(Note note)
+    {
+        var (text, blocks) = Excerpt(note);
+        var lines = new List<CardLine>();
+        foreach (var (start, contentsEnd, _) in NoteText.Lines(text))
+        {
+            var line = text[start..contentsEnd];
+            switch (NoteMarkdown.RoleAt(start, blocks))
+            {
+                case NoteMarkdown.Role.Open or NoteMarkdown.Role.Close:
+                    continue;
+                case NoteMarkdown.Role.Content:
+                    lines.Add(new CardLine(CardLineKind.Code, line));
+                    continue;
+            }
+
+            if (NoteMarkdown.Heading(line) is { } heading)
+            {
+                lines.Add(new CardLine(CardLineKind.Heading, NoteMarkdown.Plain(line[heading.Marker.End..], blocks: false), heading.Level));
+            }
+            else if (NoteTasks.PrefixOf(line) is { Lead.Kind: NoteTasks.LeadKind.Bullet } prefix)
+            {
+                lines.Add(new CardLine(CardLineKind.Bullet, NoteMarkdown.Plain(line[prefix.ContentStart..], blocks: false), Indent: prefix.Indent));
+            }
+            else
+            {
+                lines.Add(new CardLine(CardLineKind.Plain, NoteMarkdown.Plain(line, blocks: true)));
+            }
+        }
+
+        // 末尾的空行不要（收尾的围栏删了之后，不然多出一行空的高）
+        while (lines.Count > 0 && lines[^1].Kind != CardLineKind.Code && lines[^1].Text.Length == 0)
+        {
+            lines.RemoveAt(lines.Count - 1);
+        }
+
+        return lines;
     }
 
     /// <summary>卡片上带的正文：标题之后的开头几行（原文，连着的一段）和这一段里的代码块（位置相对这一段）。没自己起标题的，标题就是

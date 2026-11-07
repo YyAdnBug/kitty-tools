@@ -1,12 +1,13 @@
 // 屏幕边缘那叠的四扇窗（PLAN-v13 第 6 批，照 mac Notes/NoteDeckPill.swift + NoteDeckView.swift + NoteDeckPanel.swift；逻辑在 NoteDeck.cs 的 NoteDeckBay）：
-// - 药丸：贴边的一小条（不拿前台、置顶、不进 Alt+Tab，亚克力底），一条便签一道色块，超过 14 条合成一道；鼠标进来 / 点一下扇出，
-//   按住 Alt 拖 = 换边、换高度。「不显示药丸」时只留亚克力的那一条（Windows 没有透明窗口）。
+// - 药丸：贴边隔 1 的一小条，12 宽（PLAN-v16 V1：没有系统边框，圆角交给 DWM，亚克力底；不拿前台、置顶、不进 Alt+Tab），一条便签一道色块，
+//   超过 14 条合成一道；感应范围另由一条看不见的窗口管（NoteDeckSense，压在药丸下面）。鼠标进来 / 点一下扇出，按住 Alt 拖 = 换边、换高度。
+//   「不显示药丸」时药丸收起、只留那条看不见的感应条（同 mac）。
 // - 标签列：一张接一张往下压的纸色标签（标题竖排：中日韩文字正着、别的整段转 90°，排不下截断加「…」），「+N」展开全部、「+」新建；
 //   点一张打开、停一会儿出预览卡、按着上下拖排序；右键标签 = 这条的操作，右键空白处 / 「+」/ 药丸 = 新建便签、全部便签、设置…。
 // - 预览卡：标签旁边的一张小纸（标题 + 开头几行），鼠标挪上去不收、点它打开。
 // - 打开的便签：挨着标签列，里面是 NoteSheetView（同全部便签窗口、浮动便签）。要打字，所以拿前台；失去前台 = 点了别处（没固定的收起）。
 //   按住头部空白处往外拖过一段 = 浮到屏幕上（NoteFloats，接着由系统挪窗口）。
-// 只用到系统画的东西：圆角、阴影、边框是 DWM 的（HudFrame），菜单是 MenuFlyout。动效没有（Windows 的窗口退场不淡出，PLAN-v7 §1）。
+// 只用到系统画的东西：圆角、阴影、边框是 DWM 的（HudFrame；药丸不要边框），菜单是 MenuFlyout。动效没有（Windows 的窗口退场不淡出，PLAN-v7 §1）。
 using System.Runtime.InteropServices;
 using KittyTools.Core;
 using KittyTools.Core.Notes;
@@ -116,8 +117,27 @@ internal static partial class NoteDeckUi
         return item;
     }
 
+    /// <summary>药丸的外壳（PLAN-v16 V1）：不抢焦点；DWM 的圆角，不要 DWM 在 Windows 11 上画的那圈细边框。</summary>
+    public static void Pill(IntPtr hwnd)
+    {
+        SetWindowLong(hwnd, -20, GetWindowLong(hwnd, -20) | 0x08000000 /* WS_EX_NOACTIVATE */);
+        var round = 2; // DWMWCP_ROUND
+        DwmSetWindowAttribute(hwnd, 33 /* DWMWA_WINDOW_CORNER_PREFERENCE */, ref round, sizeof(int));
+        var none = unchecked((int)0xFFFFFFFE); // DWMWA_COLOR_NONE
+        DwmSetWindowAttribute(hwnd, 34 /* DWMWA_BORDER_COLOR */, ref none, sizeof(int));
+    }
+
     [LibraryImport("user32.dll")]
     private static partial short GetAsyncKeyState(int key);
+
+    [LibraryImport("user32.dll", EntryPoint = "GetWindowLongW")]
+    private static partial int GetWindowLong(IntPtr hwnd, int index);
+
+    [LibraryImport("user32.dll", EntryPoint = "SetWindowLongW")]
+    private static partial int SetWindowLong(IntPtr hwnd, int index, int value);
+
+    [LibraryImport("dwmapi.dll", EntryPoint = "DwmSetWindowAttribute")]
+    private static partial int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
 }
 
 /// <summary>边上的药丸。</summary>
@@ -126,14 +146,37 @@ internal sealed class NoteDeckPillWindow : Window
     private readonly NoteDeckBay _bay;
     private readonly Grid _root;
     private readonly StackPanel _dashes;
+    private readonly IntPtr _hwnd;
+    private readonly IntPtr _sense;
+    private RectInt32 _senseFrame;
     private bool _shown;
+    private bool _hides;
     private bool _dragging;
 
     public NoteDeckPillWindow(NoteDeckBay bay)
     {
         _bay = bay;
         Title = Paths.ProductName + " 便签";
-        HudFrame.Apply(this);
+        // 没有系统边框（带边框的窗口有系统定的最小宽，12 宽的药丸会被撑成一张小卡，PLAN-v16 V1）：置顶、不能改大小、不进 Alt+Tab、不抢焦点
+        AppWindow.IsShownInSwitchers = false;
+        var presenter = OverlappedPresenter.Create();
+        presenter.IsAlwaysOnTop = true;
+        presenter.IsResizable = false;
+        presenter.IsMaximizable = false;
+        presenter.IsMinimizable = false;
+        presenter.SetBorderAndTitleBar(false, false);
+        AppWindow.SetPresenter(presenter);
+        _hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+        NoteDeckUi.Pill(_hwnd);
+        NoteDeckTiny.Allow(_hwnd);
+        _sense = NoteDeckSense.Create(() =>
+        {
+            if (!_dragging)
+            {
+                _bay.PillEntered(NoteDeckUi.KeyDown(0x12 /* VK_MENU */));
+            }
+        });
+        Closed += (_, _) => NoteDeckSense.Destroy(_sense);
         _dashes = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
         _root = NoteDeckUi.Root();
         _root.Children.Add(_dashes);
@@ -159,10 +202,13 @@ internal sealed class NoteDeckPillWindow : Window
         SystemBackdrop = new AcrylicBackdrop();
     }
 
-    /// <summary>摆好、画上每条便签的色块（hides：不显示药丸，只留那一条底）。</summary>
-    public void Update(RectInt32 frame, IReadOnlyList<int> colors, bool hides)
+    /// <summary>摆好（sense：感应范围那块，body：药丸本身，物理像素）、画上每条便签的色块（hides：不显示药丸，只留看不见的感应条）。</summary>
+    public void Update(RectInt32 sense, RectInt32 body, IReadOnlyList<int> colors, bool hides)
     {
-        AppWindow.MoveAndResize(frame);
+        _hides = hides;
+        _senseFrame = sense;
+        AppWindow.MoveAndResize(body);
+        ApplyShown();
         _dashes.Children.Clear();
         if (hides)
         {
@@ -187,7 +233,13 @@ internal sealed class NoteDeckPillWindow : Window
         }
     }
 
-    public void Move(RectInt32 frame) => AppWindow.MoveAndResize(frame);
+    /// <summary>按住 Alt 拖着的时候：只挪（显示 / 收起不动）。</summary>
+    public void Move(RectInt32 sense, RectInt32 body)
+    {
+        _senseFrame = sense;
+        AppWindow.MoveAndResize(body);
+        NoteDeckSense.Place(_sense, _senseFrame, _hwnd, _shown);
+    }
 
     public void SetShown(bool shown)
     {
@@ -197,15 +249,26 @@ internal sealed class NoteDeckPillWindow : Window
         }
 
         _shown = shown;
-        if (shown)
+        ApplyShown();
+    }
+
+    private void ApplyShown()
+    {
+        var visible = _shown && !_hides;
+        if (visible && !AppWindow.IsVisible)
         {
             AppWindow.Show(activateWindow: false);
         }
-        else
+        else if (!visible && AppWindow.IsVisible)
         {
             AppWindow.Hide();
         }
+
+        NoteDeckSense.Place(_sense, _senseFrame, _hwnd, _shown);
     }
+
+    /// <summary>自检用：药丸窗口实际多大（物理像素）。</summary>
+    internal SizeInt32 ProbeSize => AppWindow.Size;
 
     private void OnPressed(object sender, PointerRoutedEventArgs e)
     {
@@ -780,4 +843,38 @@ internal sealed partial class NoteDeckSheetWindow : Window
             _bay.FloatOpen(dragging: true);
         }
     }
+}
+
+/// <summary>
+/// 药丸窗口放开系统给顶层窗口定的最小宽高（PLAN-v16 V1）：没边框、PreferredMinimumWidth 设 1 都还被撑到约 136 × 134，
+/// 只好接 WM_GETMINMAXINFO，先让后面的窗口过程填完，再把最小跟踪尺寸改成 1 × 1。
+/// </summary>
+internal static unsafe partial class NoteDeckTiny
+{
+    private const uint WmGetMinMaxInfo = 0x0024;
+
+    public static void Allow(IntPtr hwnd) => SetWindowSubclass(hwnd, &Proc, 1, 0);
+
+    [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvStdcall) })]
+    private static IntPtr Proc(IntPtr hwnd, uint message, IntPtr wParam, IntPtr lParam, UIntPtr id, UIntPtr data)
+    {
+        var result = DefSubclassProc(hwnd, message, wParam, lParam);
+        if (message == WmGetMinMaxInfo && lParam != IntPtr.Zero)
+        {
+            // MINMAXINFO：ptReserved、ptMaxSize、ptMaxPosition、ptMinTrackSize（第 4 个 POINT，偏移 24）、ptMaxTrackSize
+            var info = (int*)lParam;
+            info[6] = 1;
+            info[7] = 1;
+        }
+
+        return result;
+    }
+
+    [LibraryImport("comctl32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool SetWindowSubclass(
+        IntPtr hwnd, delegate* unmanaged[Stdcall]<IntPtr, uint, IntPtr, IntPtr, UIntPtr, UIntPtr, IntPtr> proc, nuint id, nuint data);
+
+    [LibraryImport("comctl32.dll")]
+    private static partial IntPtr DefSubclassProc(IntPtr hwnd, uint message, IntPtr wParam, IntPtr lParam);
 }

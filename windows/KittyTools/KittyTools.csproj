@@ -82,7 +82,8 @@
          不标 CopyToOutputDirectory 的话发布包里一张都没有，设置和卡片上全是色块首字（2026-10-28 真机反馈的「logo 缺」）。 -->
     <Content Update="Resources\ServiceLogo\*.png" CopyToOutputDirectory="PreserveNewest" />
     <!-- 状态屏的动画表情（PLAN-v12 N5）：帧图集 + 静止画面（ms-appx:///Resources/StatusEmoji/*.png，同上要标 PreserveNewest 才进发布包）、
-         帧时长清单（按路径读）和素材的 MIT 许可全文（关于页「许可」打开它）。在 Mac 上用 tools/status-emoji.swift 生成。 -->
+         帧时长清单（按路径读）和素材的 MIT 许可全文（关于页「许可」打开它）。在 Mac 上用 tools/status-emoji.swift 生成，
+         再用 tools/png-squeeze.cs 无损压一遍（PLAN-v16 V4，-22 %）。 -->
     <Content Update="Resources\StatusEmoji\*.png" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Resources\StatusEmoji\manifest.txt" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Resources\StatusEmoji\LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />

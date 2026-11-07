@@ -251,22 +251,27 @@ public sealed class NoteSyncRunnerTests
             var first = a.Book.Find(note.Id)!;
             a.Book.SetBody(note.Id, "第二版", T0 + 50);
             a.Round(folder, T0 + 60);
+            a.Book.SetBody(note.Id, "第三版", T0 + 70);
+            a.Round(folder, T0 + 80);
             var epoch = a.Device.Epoch;
             // 整个数据目录从备份恢复：便签退回第一版（钟也是那时的），本机记的 epoch 也退回去
             var restored = new Node("WIN-A");
             restored.Book.Load(first, first.Revision, false);
             restored.Book.Saved();
             restored.Device.Epoch = epoch - 1;
+            // 恢复后、同步认出来之前先改了一笔：还记在旧编号名下，钟是 WIN-A=2，比文件夹里那份「第三版」（WIN-A=3）小（PLAN-v16 V3：
+            // 认出来之后才改的那笔本来就记在新编号名下，补不补认合出来都一样，分不出来；这一笔不补认就会被当成「第三版是在它之上改的」、悄悄丢掉）
+            restored.Book.SetBody(note.Id, "恢复后打的字", T0 + 90);
             restored.Round(folder, T0 + 100, notes: false);
             Assert.AreNotEqual("WIN-A", restored.Device.Id, "别的几类照样换编号");
             Assert.AreEqual("WIN-A", restored.Device.NotesSwitchFrom, "记下旧编号");
-            restored.Book.SetBody(note.Id, "恢复后打的字", T0 + 200);
             restored.Round(folder, T0 + 210);
             Assert.IsNull(restored.Device.NotesSwitchFrom, "补认过了");
-            // Windows 核验：原来断言合完之后钟里没有 WIN-A——合并时文件夹里 WIN-A 那份（第二版）和这条并起来，WIN-A=2 是从那份并进来的，
-            // 这一条必然不成立；改成查补认那一下：恢复后改过的那条从旧编号换到了新编号名下（REVIEW「PLAN-v13 第 3 批」下面记了）
             var late = restored.Switches.Last();
             Assert.IsTrue(late.Ids.Contains(note.Id) && late.Old == "WIN-A" && late.Fresh == restored.Device.Id, "旧编号那一格换到了新编号名下");
+            // 换过去之后两版谁都盖不住谁：后改的（恢复后打的字）赢，第三版进回收站，两边的字都在
+            Assert.AreEqual("恢复后打的字", restored.Book.Find(note.Id)?.Body);
+            CollectionAssert.Contains(restored.Book.Trashed.Select(item => item.Body).ToArray(), "第三版");
         }
         finally
         {

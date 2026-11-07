@@ -331,6 +331,23 @@ public sealed class NoteDeckLayoutTests
 
     // ---- 位置 ----
 
+    /// <summary>药丸本身（PLAN-v16 V1，mac NoteDeckPill.draw）：感应范围那块里贴边隔 1、12 宽，高同那块；大一号的 15 宽。</summary>
+    [TestMethod]
+    public void PillBodySitsOnePointInFromTheEdge()
+    {
+        var screen = Screen();
+        var options = new NoteDeckOptions();
+        var metrics = new NoteDeckMetrics(1);
+        var right = NoteDeckLayout.PillFrame(screen, NoteDeckEdge.Right, 6, options);
+        Assert.AreEqual(new RectD(1440 - 1 - 12, right.Y, 12, right.Height), NoteDeckLayout.PillBody(right, NoteDeckEdge.Right, metrics));
+        var left = NoteDeckLayout.PillFrame(screen, NoteDeckEdge.Left, 6, options with { Sense = 44 });
+        Assert.AreEqual(new RectD(1, left.Y, 12, left.Height), NoteDeckLayout.PillBody(left, NoteDeckEdge.Left, metrics));
+        // 感应范围 8（窗口 13 宽）照样画得下整条药丸
+        var narrow = NoteDeckLayout.PillFrame(screen, NoteDeckEdge.Right, 1, options with { Sense = 8 });
+        Assert.AreEqual(12, NoteDeckLayout.PillBody(narrow, NoteDeckEdge.Right, metrics).Width);
+        Assert.AreEqual(15, NoteDeckLayout.PillBody(left, NoteDeckEdge.Left, new NoteDeckMetrics(1.25)).Width);
+    }
+
     /// <summary>药丸那块窗口：贴着工作区的边，宽 = 感应范围，高 = 药丸高；纵向 0 = 最上、1 = 最下（各留 8）。</summary>
     [TestMethod]
     public void PillFrameHugsTheEdge()

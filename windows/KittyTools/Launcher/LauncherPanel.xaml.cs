@@ -343,6 +343,10 @@ public sealed partial class LauncherPanel : UserControl
             case "launcher-icons-fy":
                 SetQuery("fy hello");
                 break;
+            // PLAN-v12 N1 货币候选（HANDTEST 924，PLAN-v16 V5 补拍）：「转」后面打了一半的货币名。
+            case "launcher-currency":
+                SetQuery("100 美元 转 英");
+                break;
             default:
                 SetQuery("a");
                 break;

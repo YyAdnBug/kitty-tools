@@ -153,6 +153,29 @@ public sealed class NoteWallTests
 
     // ---- 拖动排序 ----
 
+    [TestMethod]
+    public void CardLinesDrawHeadingsAndBulletsWithoutMarkers()
+    {
+        // PLAN-v16 V2：标题去掉 # 按几级画、列表符号换成圆点（缩进留着）、代码块的围栏行不要、块里的行原样、别的行去掉行内标记
+        var lines = NoteWall.CardLines(Make("# 周末\n- 前端改两处\n  * 子项 **粗**\n## 行李\n> 记得同步\n```\ngit log -5\n```\n普通 `代码`\n", "会议纪要"));
+        CollectionAssert.AreEqual(new[]
+        {
+            new NoteWall.CardLine(NoteWall.CardLineKind.Heading, "周末", Level: 1),
+            new NoteWall.CardLine(NoteWall.CardLineKind.Bullet, "前端改两处"),
+            new NoteWall.CardLine(NoteWall.CardLineKind.Bullet, "子项 粗", Indent: 2),
+            new NoteWall.CardLine(NoteWall.CardLineKind.Heading, "行李", Level: 2),
+            new NoteWall.CardLine(NoteWall.CardLineKind.Plain, "记得同步"),
+            new NoteWall.CardLine(NoteWall.CardLineKind.Code, "git log -5"),
+            new NoteWall.CardLine(NoteWall.CardLineKind.Plain, "普通 代码"),
+        }, lines);
+        // 没自己起标题时第一行当标题，卡片上不重复；「#标签」不是标题、任务行原样
+        CollectionAssert.AreEqual(new[]
+        {
+            new NoteWall.CardLine(NoteWall.CardLineKind.Plain, "#标签"),
+            new NoteWall.CardLine(NoteWall.CardLineKind.Plain, "☐ 买菜"),
+        }, NoteWall.CardLines(Make("# 标题\n#标签\n☐ 买菜")));
+    }
+
     private static NoteWall.Layout TwoSections() => NoteWall.Arrange(new[]
     {
         Section(new[] { "p", "q" }, new double[] { 100, 100 }, "已固定"), Section(new[] { "x", "y", "z" }, new double[] { 100, 100, 100 }),

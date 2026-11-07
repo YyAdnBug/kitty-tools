@@ -449,6 +449,14 @@ public sealed record NoteDeckLayout
         return new RectD(edge == NoteDeckEdge.Right ? visible.Right - width : visible.X, y, width, height);
     }
 
+    /// <summary>药丸本身画在哪（mac NoteDeckPill.draw）：感应范围那块里贴着屏幕边、隔 1 画 PillWidth 宽的一条，高同那块
+    /// （PLAN-v16 V1：Windows 的药丸窗口就是这么大，感应范围另由一条看不见的窗口管）。</summary>
+    public static RectD PillBody(RectD frame, NoteDeckEdge edge, NoteDeckMetrics metrics)
+    {
+        var width = Math.Min(metrics.PillWidth, Math.Max(frame.Width - 1, 1));
+        return new RectD(edge == NoteDeckEdge.Right ? frame.Right - width - 1 : frame.X + 1, frame.Y, width, frame.Height);
+    }
+
     // ---- 放哪块屏、哪条边 ----
 
     /// <summary>这块屏的这条边是不是和别的屏相接（那边贴着另一块屏、纵向有重叠）：相接的边鼠标一过就到了另一块屏，不放。</summary>

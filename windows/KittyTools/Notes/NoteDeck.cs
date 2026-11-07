@@ -532,7 +532,9 @@ internal sealed partial class NoteDeckBay
         else
         {
             _pill ??= new NoteDeckPillWindow(this);
-            _pill.Update(Pixels(pill), Notes.Select(note => note.Color).ToList(), options.HidesPill);
+            _pill.Update(
+                Pixels(pill), Pixels(NoteDeckLayout.PillBody(pill, edge, new NoteDeckMetrics(options.Size.Scale()))),
+                Notes.Select(note => note.Color).ToList(), options.HidesPill);
         }
 
         if (always)
@@ -557,10 +559,13 @@ internal sealed partial class NoteDeckBay
     public void MovePill(NoteDeckScreen screen, double scale, NoteDeckEdge edge, NoteDeckOptions options)
     {
         var frame = NoteDeckLayout.PillFrame(Dip(screen, scale), edge, Notes.Count, options);
-        _pill?.Move(new RectInt32(
-            (int)Math.Round(frame.X * scale), (int)Math.Round(frame.Y * scale),
-            Math.Max((int)Math.Round(frame.Width * scale), 1), Math.Max((int)Math.Round(frame.Height * scale), 1)));
+        var body = NoteDeckLayout.PillBody(frame, edge, new NoteDeckMetrics(options.Size.Scale()));
+        _pill?.Move(Scaled(frame, scale), Scaled(body, scale));
     }
+
+    private static RectInt32 Scaled(RectD rect, double scale) => new(
+        (int)Math.Round(rect.X * scale), (int)Math.Round(rect.Y * scale),
+        Math.Max((int)Math.Round(rect.Width * scale), 1), Math.Max((int)Math.Round(rect.Height * scale), 1));
 
     private static NoteDeckScreen Dip(NoteDeckScreen screen, double scale)
         => new(screen.Name, Divide(screen.Frame, scale), Divide(screen.WorkArea, scale));

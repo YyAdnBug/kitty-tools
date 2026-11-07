@@ -76,6 +76,13 @@ internal static class UiSnapshotProbe
                 // 先切设置里的外观：代码里建的画刷（Theme.Brush、垫底的 Kitty.CardSolid）按它取色，
                 // 只改 RequestedTheme 的话深色图会是浅底白字。
                 SettingsService.Current.Theme = dark ? "dark" : "light";
+                if (Paths.IsTestProfile)
+                {
+                    // PLAN-v16 V5：启动器不读浏览器的书签和历史（默认读 Edge / Chrome 的，测试档也会拍进这台电脑真实的书签）
+                    SettingsService.Current.LauncherBookmarkBrowsers = new List<string>();
+                    SettingsService.Current.LauncherHistoryBrowsers = new List<string>();
+                }
+
                 SettingsService.Save();
                 root.RequestedTheme = theme;
                 // PLAN-v9-launcher 7b：收藏 + 常用、计算卡、kill / port 列表、补全提示、空结果、Ctrl+K 菜单、按住 Ctrl 的键帽。
@@ -84,7 +91,7 @@ internal static class UiSnapshotProbe
                              "launcher", "launcher-home", "launcher-calc", "launcher-kill", "launcher-port", "launcher-prompt",
                              "launcher-empty", "launcher-actions", "launcher-calc-actions", "launcher-keys",
                              "launcher-icons-shot", "launcher-icons-clip", "launcher-icons-record", "launcher-icons-home",
-                             "launcher-icons-fy",
+                             "launcher-icons-fy", "launcher-currency",
                          })
                 {
                     await SafeRenderAsync(root, () => new LauncherPanel(), state, dark, directory);

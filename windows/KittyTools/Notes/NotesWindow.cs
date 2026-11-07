@@ -820,22 +820,30 @@ internal sealed class NotesWindow : Window
             Foreground = ink,
             Width = NoteWall.TitleWidthFor(note.IsPinned),
         };
-        var excerpt = note.DeletedAt is null ? CardText(note) : NoteImages.Display(note.Body);
         var body = new TextBlock
         {
-            Text = excerpt,
             FontSize = NoteWall.BodySize,
             TextWrapping = TextWrapping.Wrap,
             Foreground = ink,
             Width = NoteWall.TextWidth,
         };
+        if (note.DeletedAt is null)
+        {
+            CardText(body, note, secondary);
+        }
+        else if (NoteImages.Display(note.Body) is { Length: > 0 } deleted)
+        {
+            body.Inlines.Add(new Microsoft.UI.Xaml.Documents.Run { Text = deleted });
+        }
+
+        var hasText = body.Inlines.Count > 0;
         title.Measure(new Windows.Foundation.Size(title.Width, double.PositiveInfinity));
         body.Measure(new Windows.Foundation.Size(body.Width, double.PositiveInfinity));
-        var metrics = NoteWall.Card(note.IsPinned, title.DesiredSize.Height, excerpt.Length > 0 ? body.DesiredSize.Height : 0);
+        var metrics = NoteWall.Card(note.IsPinned, title.DesiredSize.Height, hasText ? body.DesiredSize.Height : 0);
         body.MaxHeight = metrics.BodyRoom;
         var stack = new StackPanel { Spacing = NoteWall.TitleGap, Padding = new Thickness(NoteWall.Padding, NoteWall.TopInset, NoteWall.Padding, 0) };
         stack.Children.Add(title);
-        if (excerpt.Length > 0)
+        if (hasText)
         {
             stack.Children.Add(body);
         }
@@ -887,28 +895,41 @@ internal sealed class NotesWindow : Window
         return (card, metrics.Height);
     }
 
-    /// <summary>卡片上那段字：标题之后的开头几行（NoteWall.Excerpt），每行去掉藏着的 Markdown 标记、代码块的围栏行不要。</summary>
-    private static string CardText(Note note)
+    /// <summary>
+    /// 卡片上那段字：标题之后的开头几行（NoteWall.CardLines，PLAN-v16 V2）——标题按几级标题的字号加粗（同正文编辑器）、
+    /// 无序列表前面一个淡色圆点、代码块里的行用等宽字，别的行去掉行内标记。
+    /// </summary>
+    private static void CardText(TextBlock block, Note note, Brush faded)
     {
-        var (text, blocks) = NoteWall.Excerpt(note);
-        var builder = new System.Text.StringBuilder(text.Length);
-        foreach (var (start, contentsEnd, _) in NoteText.Lines(text))
+        foreach (var line in NoteWall.CardLines(note))
         {
-            var line = text[start..contentsEnd];
-            switch (NoteMarkdown.RoleAt(start, blocks))
+            if (block.Inlines.Count > 0)
             {
-                case NoteMarkdown.Role.Open or NoteMarkdown.Role.Close:
-                    continue;
-                case NoteMarkdown.Role.Content:
-                    builder.Append(line).Append('\n');
+                block.Inlines.Add(new Microsoft.UI.Xaml.Documents.LineBreak());
+            }
+
+            switch (line.Kind)
+            {
+                case NoteWall.CardLineKind.Heading:
+                    block.Inlines.Add(new Microsoft.UI.Xaml.Documents.Run
+                    {
+                        Text = line.Text,
+                        FontSize = NoteStyles.HeadingSize(line.Level, NoteWall.BodySize),
+                        FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                    });
+                    break;
+                case NoteWall.CardLineKind.Bullet:
+                    block.Inlines.Add(new Microsoft.UI.Xaml.Documents.Run { Text = new string(' ', line.Indent) + "•  ", Foreground = faded });
+                    block.Inlines.Add(new Microsoft.UI.Xaml.Documents.Run { Text = line.Text });
+                    break;
+                case NoteWall.CardLineKind.Code:
+                    block.Inlines.Add(new Microsoft.UI.Xaml.Documents.Run { Text = line.Text, FontFamily = new FontFamily("Cascadia Mono, Consolas") });
                     break;
                 default:
-                    builder.Append(NoteMarkdown.Plain(line, blocks: true)).Append('\n');
+                    block.Inlines.Add(new Microsoft.UI.Xaml.Documents.Run { Text = line.Text });
                     break;
             }
         }
-
-        return builder.ToString().TrimEnd('\n');
     }
 
     private void ExpandCard(string id)
