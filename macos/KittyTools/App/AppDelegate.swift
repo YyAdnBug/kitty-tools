@@ -443,6 +443,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     model.perform = { [unowned self] in SystemControl.perform($0, island: island) }
     model.island = island
     model.scripts = { [unowned self] in Self.scriptsOn ? scriptLibrary.scripts : [] }
+    model.scriptsOn = { Self.scriptsOn }
     model.approveScript = { [unowned self] in await approveDownloadedScript($0) }
     builtLauncherPanel = panel
     return panel
@@ -1470,6 +1471,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   /// 启动器里的内置动作（id 见 LauncherItem.actions，体检 A26）；启动器已收起。和菜单栏走同一个 run
   private func runLauncherAction(_ id: String) {
+    // 脚本命令的两条（第二轮 D2）
+    if id == LauncherItem.newScriptID {
+      guard let url = ScriptLibrary.newScriptAndEdit() else { return }
+      scriptLibrary.refresh()
+      island.show(
+        "已新建「\(url.lastPathComponent)」", detail: "改好开头几行保存，在启动器里输 hello 就能跑",
+        actions: [.reveal(url)])
+      return
+    }
+    if id == LauncherItem.scriptGuideID {
+      Paster.write(string: ScriptAIGuide.text, record: true)
+      island.show(
+        "已复制脚本写法说明",
+        detail: "贴给你常用的 AI、写上想做什么；它给的脚本到 设置 › 启动器「从剪贴板新建」",
+        actions: [
+          Island.Action("打开设置", opens: true) { [unowned self] in showSettings(page: .launcher) }
+        ])
+      return
+    }
     if id.hasPrefix(LauncherItem.statusPresetPrefix) {
       // 状态屏的某个状态：按 id 现找（列表可能刚在设置里改过），没了就不做
       let presets = StatusPreset.load()

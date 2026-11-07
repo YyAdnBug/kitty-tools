@@ -697,6 +697,7 @@ extension LauncherItem {
     switch kind {
     // 内置动作按菜单栏的家族色（体检 A26）：对得上全局热键的用它的，其余用 MenuExtra 的（跟着菜单里所在那一节）
     case .action where isStatusPreset: Style.Family.statusScreen
+    case .action where target.hasPrefix("scripts-"): Style.Family.command
     case .action:
       hotKeyAction?.color ?? MenuExtra(rawValue: target)?.color ?? Style.Family.general
     case .translate: Style.Family.translate

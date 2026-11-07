@@ -209,6 +209,42 @@ extension ScriptLibrary {
     }
   }
 
+  /// 剪贴板里的一段文字是不是一个脚本（AI 给回来的）：去掉两头空白和 Markdown 代码块的 ``` 围栏，第一行是 #! 才算。
+  /// 纯函数，配单测
+  nonisolated static func scriptText(fromClipboard text: String) -> String? {
+    var lines = text.trimmingCharacters(in: .whitespacesAndNewlines)
+      .split(omittingEmptySubsequences: false, whereSeparator: \.isNewline).map(String.init)
+    if lines.first?.hasPrefix("```") == true { lines.removeFirst() }
+    if lines.last?.hasPrefix("```") == true { lines.removeLast() }
+    let script = lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+    return script.hasPrefix("#!") ? script + "\n" : nil
+  }
+
+  /// 从剪贴板新建时起的文件名：关键词.sh，没写关键词用「新脚本.sh」（只留字母、数字、短横线、下划线）
+  nonisolated static func suggestedName(for text: String) -> String {
+    var keyword = ""
+    if case .success(let script)? = ScriptCommand.parse(text, path: "/x.sh") {
+      keyword = script.keyword ?? ""
+    }
+    let safe = keyword.filter {
+      $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_")
+    }
+    return safe.isEmpty ? "新脚本.sh" : safe + ".sh"
+  }
+
+  /// 存一段确认过的脚本文字（从剪贴板新建）：默认文件夹里起一个没用过的名字
+  static func save(_ text: String, name: String) -> URL? {
+    let url = freeURL(in: ensureDefaultFolder(), name: name)
+    return (try? text.write(to: url, atomically: true, encoding: .utf8)) == nil ? nil : url
+  }
+
+  /// 「新建脚本」：照模板建一个、用编辑器打开（设置里的按钮、启动器里的命令同一个）
+  static func newScriptAndEdit() -> URL? {
+    guard let url = newScript() else { return nil }
+    edit(url.path(percentEncoded: false))
+    return url
+  }
+
   /// 导入（看过全文、点了「导入」）：复制进默认文件夹（重名的加数字），去掉下载标记（已经看过了）；在主线程外做
   /// （拖进来的文件可能在网络盘上）
   @concurrent static func importScript(_ source: URL, into folder: URL) async -> URL? {

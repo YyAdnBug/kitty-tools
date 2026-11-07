@@ -165,6 +165,8 @@ import UniformTypeIdentifiers
   @ObservationIgnored var island: Island?
   /// 脚本命令（ScriptLibrary 读到的；启动器的「脚本命令」关着时是空的）
   @ObservationIgnored var scripts: () -> [ScriptCommand] = { [] }
+  /// 设置 › 启动器「脚本命令」开着：「新建脚本」「复制脚本写法说明」两条内置动作跟着它
+  @ObservationIgnored var scriptsOn: () -> Bool = { true }
   /// 跑一条脚本（单测换成假的）
   @ObservationIgnored var runScript:
     @MainActor (ScriptCommand, [String]) async -> ScriptRunner.Outcome = {
@@ -631,7 +633,7 @@ import UniformTypeIdentifiers
     let tokens = LauncherMatch.tokens(query)
     let scriptItems = scriptItems
     let local = LauncherMatch.rank(
-      apps + builtIns + systemItems + scriptItems
+      apps + builtIns + (scriptsOn() ? LauncherItem.scriptActions : []) + systemItems + scriptItems
         + WebSearch.quicklinkItems(engines: engines)
         + bookmarks.filter { LauncherMatch.mayMatch(tokens, $0) } + used, query: query
     ) { usage.boost(for: $0, query: query) }
@@ -1070,7 +1072,9 @@ import UniformTypeIdentifiers
       if let app = apps.first(where: { $0.target == target }) { return app }
       // 应用程序目录以外的 App
       return FileManager.default.fileExists(atPath: target) ? AppCatalog.item(path: target) : nil
-    case .action: return actions.first { $0.target == target }
+    case .action:
+      return actions.first { $0.target == target }
+        ?? (scriptsOn() ? LauncherItem.scriptActions.first { $0.target == target } : nil)
     case .system: return systemItems.first { $0.target == target }
     // 文件删了、脚本命令关了：藏起来，收藏不删（同 App）
     case .script: return scriptItems.first { $0.target == target }

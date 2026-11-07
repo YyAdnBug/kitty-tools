@@ -822,3 +822,51 @@ struct SubprocessStopTests {
     #expect(scan.scripts.map(\.title) == ["链接来的"])
   }
 }
+
+/// 第二轮（2026-11-07）：给 AI 的写法说明、从剪贴板新建、启动器里的两条内置动作
+@MainActor struct ScriptRoundTwoTests {
+  @Test func guideMatchesTheParser() throws {
+    let guide = ScriptAIGuide.text
+    // 写法说明里要有代码认的每个字段、每种结果方式（改了写法要同步改说明）
+    for field in [
+      "title", "keyword", "mode", "argument1", "description", "icon", "confirm", "timeout",
+    ] {
+      #expect(guide.contains("@kitty.\(field)"), "说明里缺 @kitty.\(field)")
+    }
+    for mode in ScriptCommand.Mode.allCases {
+      #expect(guide.contains("`\(mode.rawValue)`"), "说明里缺 mode \(mode.rawValue)")
+    }
+    // 说明里的例子本身能用
+    let start = try #require(guide.range(of: "```zsh\n"))
+    let end = try #require(guide.range(of: "\n```", range: start.upperBound..<guide.endIndex))
+    let example = String(guide[start.upperBound..<end.lowerBound])
+    let script = try #require(ScriptCommand.parse(example, path: "/s/tq.sh")).get()
+    #expect(script.title == "查天气" && script.keyword == "tq" && script.arguments.count == 1)
+    #expect(script.icon == .emoji("⛅"))
+  }
+
+  @Test func scriptFromClipboard() {
+    let fenced = "这是脚本：\n```zsh\n#!/bin/zsh\n# @kitty.keyword short-url\necho hi\n```\n"
+    #expect(ScriptLibrary.scriptText(fromClipboard: fenced) == nil)  // 前面还有别的话：不认
+    let block = "```zsh\n#!/bin/zsh\n# @kitty.keyword short-url\necho hi\n```"
+    let text = ScriptLibrary.scriptText(fromClipboard: block)
+    #expect(text == "#!/bin/zsh\n# @kitty.keyword short-url\necho hi\n")
+    #expect(
+      ScriptLibrary.scriptText(fromClipboard: "  #!/bin/sh\necho 1  ") == "#!/bin/sh\necho 1\n")
+    #expect(ScriptLibrary.scriptText(fromClipboard: "echo 1") == nil)
+    #expect(ScriptLibrary.suggestedName(for: text ?? "") == "short-url.sh")
+    #expect(ScriptLibrary.suggestedName(for: "#!/bin/sh\n# @kitty.keyword ../../x\n") == "x.sh")
+    #expect(ScriptLibrary.suggestedName(for: "#!/bin/sh\n") == "新脚本.sh")
+  }
+
+  @Test func launcherHasNewScriptActions() throws {
+    let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [])
+    model.query = "新建脚本"
+    #expect(model.results.first?.target == LauncherItem.newScriptID)
+    model.query = "写法说明"
+    #expect(model.results.first?.target == LauncherItem.scriptGuideID)
+    model.scriptsOn = { false }
+    model.query = "新建脚本"
+    #expect(!model.results.contains { $0.target == LauncherItem.newScriptID })
+  }
+}

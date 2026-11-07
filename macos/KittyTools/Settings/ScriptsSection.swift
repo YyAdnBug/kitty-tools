@@ -1,6 +1,7 @@
 // 设置 › 启动器「脚本命令」和「命令」两节（2026-11-07 拍板 A1 A2 B5 C3 E2，PLAN §10「脚本命令」；真机反馈后收紧：
 // 那张 40 行的表、写法说明、查找路径都挪进推进去的详情页，这一页只留几行）。
-// 「脚本命令」：总开关（默认开）、「怎么写脚本」（推进 ScriptGuidePage）、脚本文件夹（新建脚本 / 在访达中打开）、
+// 「脚本命令」：总开关（默认开）、「怎么写脚本」（推进 ScriptGuidePage）、「让 AI 来写」（第二轮 A2：复制给 AI 的写法说明、
+// 把 AI 给的脚本从剪贴板新建——同样先看一眼全文再存）、脚本文件夹（新建脚本 / 在访达中打开）、
 // 另加的文件夹（只读、能移除）和「添加文件夹…」、把脚本文件拖进来导入（先看一眼全文，写明以你的身份运行、能用本 App 已有的
 // 授权，点「导入」才复制进默认文件夹）、读不成的脚本和原因（橙字）。
 // 「命令」：一行「命令和别名」推进 LauncherCommandsPage（那张名称 / 别名 / 启用的表），行里写各有几条、关了几条。
@@ -21,11 +22,14 @@ struct ScriptsSection: View {
   @State private var isTargeted = false
 
   struct Candidate: Identifiable {
-    let url: URL
+    /// 拖进来的文件；从剪贴板新建的是 nil
+    let url: URL?
+    /// 存进脚本文件夹时的文件名
+    let name: String
     let text: String
     /// 比能显示的长：没看全，不让导入
     var isTruncated = false
-    var id: String { url.path(percentEncoded: false) }
+    var id: String { url?.path(percentEncoded: false) ?? "clipboard:" + name }
   }
 
   var body: some View {
@@ -37,6 +41,15 @@ struct ScriptsSection: View {
       Group {
         SettingsPushRow(title: "怎么写脚本", detail: "三步上手、开头几行怎么写、结果给谁，带一个能直接用的例子") {
           navigation?.path = [ScriptGuidePage.route]
+        }
+        LabeledContent {
+          HStack {
+            Button("复制写法说明", action: copyGuide)
+            Button("从剪贴板新建", action: newFromClipboard)
+          }
+        } label: {
+          Text("让 AI 来写")
+          Text("把写法说明贴给你常用的 AI、在最后写上想做什么；它给的脚本复制下来，点「从剪贴板新建」")
         }
         LabeledContent {
           HStack {
@@ -97,9 +110,18 @@ struct ScriptsSection: View {
         pending = nil
       } confirm: {
         pending = nil
-        Task {
-          _ = await ScriptLibrary.importScript(candidate.url, into: ScriptLibrary.defaultFolder)
+        if let url = candidate.url {
+          Task {
+            _ = await ScriptLibrary.importScript(url, into: ScriptLibrary.defaultFolder)
+            library?.refresh()
+          }
+        } else if let url = ScriptLibrary.save(candidate.text, name: candidate.name) {
           library?.refresh()
+          let keyword = (url.lastPathComponent as NSString).deletingPathExtension
+          island?.show(
+            "已存成「\(url.lastPathComponent)」",
+            detail: candidate.name == "新脚本.sh" ? "在启动器里按名字找它" : "在启动器里输 \(keyword) 试试",
+            actions: [.reveal(url)])
         }
       }
     }
@@ -133,10 +155,29 @@ struct ScriptsSection: View {
     return parts.joined(separator: "、") + (closed > 0 ? "，关了 \(closed) 个" : "")
   }
 
-  /// 「新建脚本」：照模板建一个、用文本编辑器打开，岛上说接下来怎么做
+  /// 「复制写法说明」：给 AI 的那一份（ScriptAIGuide）
+  private func copyGuide() {
+    Paster.write(string: ScriptAIGuide.text, record: true)
+    island?.show("已复制脚本写法说明", detail: "贴给你常用的 AI，在最后一段写上想做什么")
+  }
+
+  /// 「从剪贴板新建」：剪贴板里是一整个脚本（#! 开头，带不带 ``` 都行）就先给看全文，点了才存
+  private func newFromClipboard() {
+    guard let raw = NSPasteboard.general.string(forType: .string),
+      let text = ScriptLibrary.scriptText(fromClipboard: raw)
+    else {
+      island?.show(
+        "剪贴板里不是脚本", detail: "要第一行是 #! 的一整个脚本：先把 AI 给的脚本复制下来", tone: .warning)
+      return
+    }
+    pending = Candidate(
+      url: nil, name: ScriptLibrary.suggestedName(for: text), text: text,
+      isTruncated: text.utf8.count > ScriptRunner.reviewLimit)
+  }
+
+  /// 「新建脚本」：照模板建一个、用编辑器打开，岛上说接下来怎么做
   private func newScript() {
-    guard let url = ScriptLibrary.newScript() else { return }
-    ScriptLibrary.edit(url.path(percentEncoded: false))
+    guard let url = ScriptLibrary.newScriptAndEdit() else { return }
     library?.refresh()
     island?.show(
       "已新建「\(url.lastPathComponent)」",
@@ -162,7 +203,8 @@ struct ScriptsSection: View {
       guard let url = urls.first(where: \.isFileURL) else { return false }
       Task {
         let read = await ScriptRunner.text(of: url.path(percentEncoded: false))
-        pending = Candidate(url: url, text: read.text, isTruncated: read.isTruncated)
+        pending = Candidate(
+          url: url, name: url.lastPathComponent, text: read.text, isTruncated: read.isTruncated)
       }
       return true
     } isTargeted: {
@@ -222,10 +264,10 @@ private struct ScriptImportSheet: View {
   let confirm: () -> Void
 
   var body: some View {
-    let script = ScriptCommand.parse(
-      candidate.text, path: candidate.url.path(percentEncoded: false))
+    let script = ScriptCommand.parse(candidate.text, path: "/脚本/" + candidate.name)
     VStack(alignment: .leading, spacing: 12) {
-      Text("导入「\(candidate.url.lastPathComponent)」？").font(.headline)
+      Text(candidate.url == nil ? "把剪贴板里的脚本存成「\(candidate.name)」？" : "导入「\(candidate.name)」？")
+        .font(.headline)
       switch script {
       case .success(let script)?:
         Text(
@@ -245,18 +287,21 @@ private struct ScriptImportSheet: View {
           .fixedSize(horizontal: false, vertical: true)
       }
       ScrollView {
-        Text(candidate.text.isEmpty ? "读不出来" : candidate.text)
-          .font(.system(size: 12, design: .monospaced))
-          .textSelection(.enabled)
-          .frame(maxWidth: .infinity, alignment: .topLeading)
-          .padding(10)
+        Text(
+          candidate.text.isEmpty ? "读不出来" : String(candidate.text.prefix(ScriptRunner.reviewLimit))
+        )
+        .font(.system(size: 12, design: .monospaced))
+        .textSelection(.enabled)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .padding(10)
       }
       .frame(height: 280)
       .background(Style.hoverFill, in: .rect(cornerRadius: Style.Radius.card, style: .continuous))
       HStack {
         Spacer()
         Button("取消", role: .cancel, action: cancel).keyboardShortcut(.cancelAction)
-        Button("导入", action: confirm).keyboardShortcut(.defaultAction)
+        Button(candidate.url == nil ? "存进脚本文件夹" : "导入", action: confirm)
+          .keyboardShortcut(.defaultAction)
           .disabled(candidate.isTruncated)
       }
     }

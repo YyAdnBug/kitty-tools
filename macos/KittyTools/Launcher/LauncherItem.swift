@@ -171,6 +171,15 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
     }
   }
 
+  /// 脚本命令的两条内置动作（2026-11-07 第二轮 D2）：新建脚本（照模板、用编辑器打开）、复制给 AI 的写法说明；
+  /// 脚本命令关着时不列（LauncherModel.scriptsOn）
+  static let newScriptID = "scripts-new"
+  static let scriptGuideID = "scripts-ai-guide"
+  static let scriptActions: [LauncherItem] = [
+    action(newScriptID, "新建脚本", "New Script Command 脚本命令"),
+    action(scriptGuideID, "复制脚本写法说明（给 AI）", "Copy Script Guide AI 脚本写法 提示词"),
+  ]
+
   /// 英文别名（只进 names）
   private static let aliases: [HotKeyAction: String] = [
     .clipboard: "Clipboard History", .selectionTranslate: "Selection Translate",
@@ -206,6 +215,8 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
     // 对得上全局热键的内置动作（和 cb 那一行）用 HotKeyAction 的符号：和菜单栏、快捷键页是同一个图标
     if kind == .action || kind == .clip, let action = hotKeyAction { return action.symbol }
     return switch (kind, target) {
+    case (.action, Self.newScriptID): "plus.square.fill"
+    case (.action, Self.scriptGuideID): "doc.on.clipboard.fill"
     case (.action, _): MenuExtra(rawValue: target)?.symbol ?? "gearshape"
     case (.translate, _): SettingsPage.translate.symbol
     case (.system, _): SystemCommand(rawValue: target)?.symbol ?? "power"
