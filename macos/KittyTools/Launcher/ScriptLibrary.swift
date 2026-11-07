@@ -27,6 +27,8 @@ import UniformTypeIdentifiers
   /// 换上新读的之后（启动器开着时重搜）
   @ObservationIgnored var onChange: () -> Void = {}
   @ObservationIgnored private var task: Task<Void, Never>?
+  /// 读的时候又要读（刚添加了文件夹、导入、确认过）：这一遍读完再读一遍
+  @ObservationIgnored private var needsAnother = false
 
   init() {}
 
@@ -67,10 +69,19 @@ import UniformTypeIdentifiers
   /// 重读（在主线程外）；正在读就不重复起
   func refresh(folders: [URL] = ScriptLibrary.folders, bundled: [URL] = ScriptLibrary.bundledFiles)
   {
-    guard task == nil else { return }
+    guard task == nil else {
+      needsAnother = true
+      return
+    }
     task = Task {
       let scan = await Self.scan(folders, bundled: bundled)
       task = nil
+      defer {
+        if needsAnother {
+          needsAnother = false
+          refresh()
+        }
+      }
       let changed = scan.scripts != scripts || scan.problems != problems
       scripts = scan.scripts
       problems = scan.problems
@@ -95,9 +106,11 @@ import UniformTypeIdentifiers
           options: [.skipsHiddenFiles, .skipsSubdirectoryDescendants])
       else { continue }
       for file in files.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
-        guard (try? file.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true
+        // 符号链接看它指向的（别的工具装脚本常用链接）
+        let target = file.resolvingSymlinksInPath()
+        guard (try? target.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true
         else { continue }
-        let path = file.resolvingSymlinksInPath().path
+        let path = target.path
         guard seen.insert(path).inserted else { continue }
         guard let head = readHead(file) else {
           scan.problems.append(Problem(path: file.path, problem: .unreadable))
@@ -219,6 +232,11 @@ extension ScriptLibrary {
     let url = freeURL(in: ensureDefaultFolder(), name: name.isEmpty ? script.fileName : name)
     guard (try? FileManager.default.copyItem(at: URL(filePath: script.path), to: url)) != nil
     else { return nil }
+    // 从下载的 DMG 装的 App，包里的文件可能带着隔离标记；复制出来的是自己的，不用再看一眼
+    var copy = url
+    var values = URLResourceValues()
+    values.quarantineProperties = nil
+    try? copy.setResourceValues(values)
     edit(url.path(percentEncoded: false))
     return url
   }
@@ -289,5 +307,12 @@ extension String {
     guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
     defer { try? handle.close() }
     return (try? handle.read(upToCount: 2 << 20)) ?? nil
+  }
+}
+
+extension LauncherItem {
+  /// 列表脚本给出的结果行（含「正在运行…」那一行）是不是这条脚本的
+  nonisolated func isResult(of script: ScriptCommand) -> Bool {
+    kind == .scriptResult && target.hasPrefix(script.path + "\n")
   }
 }

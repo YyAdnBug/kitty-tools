@@ -46,6 +46,8 @@ struct LauncherPanelView: View {
   static let rowRange = 6.5...14.5
   /// 看脚本全文那一页的高度（不含搜索栏和底栏）
   static let reviewHeight: CGFloat = 320
+  /// 全文输出那一页最多显示这么多字（再多 Text 排不动、卡主线程）；↩ 粘贴、⌘C 复制的照旧是全部
+  static let outputDisplayLimit = 100_000
 
   var body: some View {
     VStack(spacing: 0) {
@@ -63,7 +65,10 @@ struct LauncherPanelView: View {
           title: review.script.title,
           subtitle: (review.script.path as NSString).abbreviatingWithTildeInPath,
           note: "这个脚本是从网上下载的，第一次运行前先看一眼。它会以你的身份运行，能用 Kitty Tools 已有的辅助功能、屏幕录制、完全磁盘访问授权。",
-          noteColor: Color(nsColor: .systemOrange), text: review.text, placeholder: "正在读取…"
+          noteColor: Color(nsColor: .systemOrange), text: review.text, placeholder: "正在读取…",
+          warning: review.isTruncated
+            ? "这个脚本超过 \(ScriptRunner.reviewLimit / 1024) KB，下面只显示了开头。看不全的脚本不能在这里运行，用文本编辑器打开看完再说。"
+            : nil
         )
         .frame(height: Self.reviewHeight)
       } else if let output = model.output {
@@ -71,7 +76,8 @@ struct LauncherPanelView: View {
           title: output.script.title,
           subtitle: output.isRunning ? "正在运行…" : output.failure == nil ? "运行完了" : "没有跑成",
           note: output.failure, noteColor: Style.danger,
-          text: output.isRunning || output.text.isEmpty ? nil : output.text,
+          text: output.isRunning || output.text.isEmpty
+            ? nil : String(output.text.prefix(LauncherPanelView.outputDisplayLimit)),
           placeholder: output.isRunning ? "正在运行…" : "（没有输出）"
         )
         .frame(height: Self.reviewHeight)
@@ -462,6 +468,8 @@ private struct ScriptPageView: View {
   let noteColor: Color
   let text: String?
   let placeholder: String
+  /// 正文上面一句危险色的（没显示全的脚本）
+  var warning: String?
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
@@ -477,6 +485,12 @@ private struct ScriptPageView: View {
         Text(note)
           .font(.system(size: 12))
           .foregroundStyle(noteColor)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+      if let warning {
+        Text(warning)
+          .font(.system(size: 12))
+          .foregroundStyle(Style.danger)
           .fixedSize(horizontal: false, vertical: true)
       }
       ScrollView {

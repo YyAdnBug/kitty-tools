@@ -170,6 +170,8 @@ struct SettingsArchive: Codable, Equatable {
   /// 一个偏好键存的是哪种值（取自它的默认值）
   nonisolated enum Kind {
     case bool, int, double, string, strings
+    /// 长一点的文字（启动器「命令」表的别名和关掉的：脚本的编号是路径，几十条就过了 string 的 4096 字）：上限 64 KB
+    case text
     /// 状态屏的状态列表：偏好里是一段 JSON（Data），文件里是一组状态
     case statuses
     /// 提醒列表：同上，文件里是一组提醒
@@ -192,7 +194,7 @@ struct SettingsArchive: Codable, Equatable {
       case .bool: (stored as? Bool).map(Value.bool)
       case .int: (stored as? Int).map(Value.int)
       case .double: (stored as? Double).map(Value.double)
-      case .string: (stored as? String).map(Value.string)
+      case .string, .text: (stored as? String).map(Value.string)
       case .strings: (stored as? [String]).map(Value.strings)
       case .statuses: (stored as? Data).map { .statuses(StatusPreset.decode($0)) }
       case .reminders: (stored as? Data).map { .reminders(Reminder.decode($0)) }
@@ -209,6 +211,7 @@ struct SettingsArchive: Codable, Equatable {
       case (.double, .double(let number)) where number.isFinite: number
       case (.double, .int(let number)): Double(number)
       case (.string, .string(let text)) where text.count <= 4096: text
+      case (.text, .string(let text)) where text.count <= 65_536: text
       case (.strings, .strings(let list))
       where list.count <= 1000 && list.allSatisfy({ $0.count <= 512 }):
         list
@@ -304,6 +307,8 @@ struct SettingsArchive: Codable, Equatable {
     for key in [Prefs.translateSource, Prefs.translateTarget] { kinds[key] = .string }
     kinds[Prefs.statusScreenPresets] = .statuses
     kinds[Prefs.reminders] = .reminders
+    kinds[Prefs.launcherCommandAliases] = .text
+    kinds[Prefs.launcherCommandsOff] = .text
     // 启动台的布局是用户的数据，不按字符串的 4096 字上限走，也不「文件里没有就删本机的」：单独收（capture / sanitized /
     // apply 里那三处），和状态屏的状态列表一个待遇
     kinds[Prefs.launchpadLayout] = nil

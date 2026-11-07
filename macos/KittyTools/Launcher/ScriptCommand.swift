@@ -389,11 +389,16 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
     return environment
   }
 
-  /// LANG：跟系统的语言和地区（zh_CN.UTF-8）；取不到用 en_US.UTF-8
-  static func language(_ locale: Locale) -> String {
+  /// LANG：跟系统的语言和地区（zh_CN.UTF-8）；系统里没有这个组合（en_CN、zh_US 这类，评审实测会退回 C、中文按字节算）
+  /// 时用 en_US.UTF-8——要紧的是 UTF-8。exists 问 /usr/share/locale 里有没有（单测换成假的）
+  static func language(
+    _ locale: Locale,
+    exists: (String) -> Bool = { FileManager.default.fileExists(atPath: "/usr/share/locale/" + $0) }
+  ) -> String {
     guard let code = locale.language.languageCode?.identifier,
       let region = locale.region?.identifier
     else { return "en_US.UTF-8" }
-    return "\(code)_\(region).UTF-8"
+    let name = "\(code)_\(region).UTF-8"
+    return exists(name) ? name : "en_US.UTF-8"
   }
 }

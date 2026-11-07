@@ -18,6 +18,8 @@ enum ScriptRunner {
       case stopped
       /// 起不来（解释器不在）：原因
       case failedToStart(String)
+      /// 输出写得太多（上限的 4 倍）被停掉
+      case tooMuchOutput
     }
 
     var end: End
@@ -51,6 +53,9 @@ enum ScriptRunner {
       if Task.isCancelled {
         return Outcome(end: .stopped, output: result.output, error: result.error)
       }
+      if result.overflowed {
+        return Outcome(end: .tooMuchOutput, output: result.output, error: result.error)
+      }
       // 被信号结束、而且已经到点：是超时停掉的（脚本自己被别人杀了的算出错）
       if result.signaled, limit > 0,
         ContinuousClock.now - started >= .seconds(limit) - .milliseconds(200)
@@ -74,6 +79,8 @@ enum ScriptRunner {
 
   /// 这次运行里读过、没读到：不再每跑一个脚本都等 3 秒
   private static var loginReadFailed = false
+  /// 正在读的那一次：几个脚本一起等它，不各起一个 shell；不跟着哪个脚本被撤掉（列表打字时一直在撤）
+  private static var loginRead: Task<String?, Never>?
 
   /// 给脚本的 PATH：终端里的（偏好里记着的，没有就读一遍）+ 固定目录
   static func searchPath() async -> String {
@@ -81,7 +88,10 @@ enum ScriptRunner {
       return ScriptCommand.searchPath(login: saved)
     }
     guard !loginReadFailed else { return ScriptCommand.searchPath(login: nil) }
-    let login = await readLoginPath()
+    let read = loginRead ?? Task { await readLoginPath() }
+    loginRead = read
+    let login = await read.value
+    loginRead = nil
     if let login {
       UserDefaults.standard.set(login, forKey: Prefs.scriptShellPath)
     } else {
@@ -110,12 +120,16 @@ enum ScriptRunner {
     return result.flatMap { ScriptCommand.shellPath(fromOutput: $0.output) }
   }
 
-  /// 脚本全文（给用户看一眼的那一页）：最多读 64 KB，在主线程外读（文件夹可能在网络盘上）
-  @concurrent static func text(of path: String) async -> String {
-    guard let handle = FileHandle(forReadingAtPath: path) else { return "" }
+  /// 给用户看一眼的那一页最多显示这么多（再多 SwiftUI 的 Text 排不动；比这还大的脚本写明没显示全、别运行）
+  nonisolated static let reviewLimit = 256 * 1024
+
+  /// 脚本全文（给用户看一眼的那一页）：最多读 reviewLimit，多出来的标 isTruncated；在主线程外读（文件夹可能在网络盘上）
+  @concurrent static func text(of path: String) async -> (text: String, isTruncated: Bool) {
+    guard let handle = FileHandle(forReadingAtPath: path) else { return ("", false) }
     defer { try? handle.close() }
-    let data = (try? handle.read(upToCount: 64 * 1024)) ?? nil
-    return String(decoding: data ?? Data(), as: UTF8.self)
+    let data = (try? handle.read(upToCount: reviewLimit + 1)) ?? Data()
+    let truncated = data.count > reviewLimit
+    return (String(decoding: data.prefix(reviewLimit), as: UTF8.self), truncated)
   }
 
   // MARK: 从网上下载的

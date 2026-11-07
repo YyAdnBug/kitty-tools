@@ -23,6 +23,8 @@ struct ScriptsSection: View {
   struct Candidate: Identifiable {
     let url: URL
     let text: String
+    /// 比能显示的长：没看全，不让导入
+    var isTruncated = false
     var id: String { url.path(percentEncoded: false) }
   }
 
@@ -159,8 +161,8 @@ struct ScriptsSection: View {
     .dropDestination(for: URL.self) { urls, _ in
       guard let url = urls.first(where: \.isFileURL) else { return false }
       Task {
-        let text = await ScriptRunner.text(of: url.path(percentEncoded: false))
-        pending = Candidate(url: url, text: text)
+        let read = await ScriptRunner.text(of: url.path(percentEncoded: false))
+        pending = Candidate(url: url, text: read.text, isTruncated: read.isTruncated)
       }
       return true
     } isTargeted: {
@@ -237,6 +239,11 @@ private struct ScriptImportSheet: View {
       Text("它会以你的身份运行，能用 Kitty Tools 已有的辅助功能、屏幕录制、完全磁盘访问授权。只导入你信得过的脚本。")
         .foregroundStyle(.secondary)
         .fixedSize(horizontal: false, vertical: true)
+      if candidate.isTruncated {
+        Text("这个文件超过 \(ScriptRunner.reviewLimit / 1024) KB，下面只显示了开头，看不全的脚本不能在这里导入。")
+          .foregroundStyle(Style.danger)
+          .fixedSize(horizontal: false, vertical: true)
+      }
       ScrollView {
         Text(candidate.text.isEmpty ? "读不出来" : candidate.text)
           .font(.system(size: 12, design: .monospaced))
@@ -250,6 +257,7 @@ private struct ScriptImportSheet: View {
         Spacer()
         Button("取消", role: .cancel, action: cancel).keyboardShortcut(.cancelAction)
         Button("导入", action: confirm).keyboardShortcut(.defaultAction)
+          .disabled(candidate.isTruncated)
       }
     }
     .padding(20)

@@ -53,18 +53,19 @@ nonisolated enum LauncherCommands {
     var aliases: [String: String] = [:]
     var off: Set<String> = []
 
-    /// 这一条此刻的别名：改过的用改过的（"" 是 nil），没改过的是原来的
+    /// 这一条此刻的别名（折叠过、去掉空白，拿来比的）：改过的用改过的（空的是 nil），没改过的是原来的
     func alias(_ id: String, default fallback: String?) -> String? {
       guard let custom = aliases[id] else { return fallback }
-      return custom.isEmpty ? nil : custom
+      let alias = LauncherCommands.normalized(custom)
+      return alias.isEmpty ? nil : alias
     }
 
     func isOn(_ id: String) -> Bool { !off.contains(id) }
 
-    /// 改一条的别名：和原来的一样就不存（跟着新版的默认走）
+    /// 改一条的别名：存打的原样（输入框里光标不跳、组字不断；比的时候再折叠），和原来的一样就不存（跟着新版的默认走）
     mutating func setAlias(_ text: String, for id: String, default fallback: String?) {
-      let alias = LauncherCommands.normalized(text)
-      aliases[id] = alias == (fallback ?? "") ? nil : alias
+      let raw = String(text.prefix(LauncherCommands.aliasLimit))
+      aliases[id] = LauncherCommands.normalized(raw) == (fallback ?? "") ? nil : raw
     }
 
     mutating func set(_ on: Bool, for id: String) {
@@ -87,7 +88,9 @@ nonisolated enum LauncherCommands {
     }
 
     var aliasesText: String {
-      guard !aliases.isEmpty, let data = try? JSONEncoder().encode(aliases) else { return "" }
+      let encoder = JSONEncoder()
+      encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+      guard !aliases.isEmpty, let data = try? encoder.encode(aliases) else { return "" }
       return String(decoding: data, as: UTF8.self)
     }
 
@@ -113,6 +116,12 @@ nonisolated enum LauncherCommands {
     let rest = query.dropFirst(token.count)
     var blocked = Set<String>()
     var rewritten: String?
+    // 打的正好是另一条开着、没改名的命令自己的关键词：它优先（同「撞了用排在前面的」），不改写成别名的那条
+    let own = builtIns.filter {
+      settings.isOn($0.id) && settings.alias($0.id, default: $0.keyword) == $0.keyword
+    }
+    .map(\.keyword)
+    if own.contains(folded) { rewritten = query }
     for command in builtIns {
       guard settings.isOn(command.id) else {
         blocked.insert(command.id)

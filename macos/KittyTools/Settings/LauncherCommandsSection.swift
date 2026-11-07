@@ -121,8 +121,9 @@ struct LauncherCommandsSection: View {
   }
 
   private func aliasBinding(_ row: Row) -> Binding<String> {
+    // 显示存着的原样（打字时光标不跳）；比的时候才折叠
     Binding {
-      settings.alias(row.id, default: row.keyword) ?? ""
+      settings.aliases[row.id] ?? row.keyword ?? ""
     } set: { text in
       var settings = settings
       settings.setAlias(text, for: row.id, default: row.keyword)

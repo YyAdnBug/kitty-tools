@@ -128,6 +128,9 @@ struct ScriptCommandTests {
         "KITTY_SCRIPT_DIR": "/tmp/scripts", "KITTY_DATA_DIR": "/data", "KITTY_VERSION": "0.8.0",
       ])
     #expect(ScriptCommand.language(Locale(identifier: "zh_CN")) == "zh_CN.UTF-8")
+    // 系统里没有的组合（en_CN）退回 en_US.UTF-8：要紧的是 UTF-8
+    #expect(
+      ScriptCommand.language(Locale(identifier: "en_CN"), exists: { _ in false }) == "en_US.UTF-8")
   }
 
   @Test func invocations() {
@@ -334,7 +337,7 @@ struct ScriptRunTests {
       ran.append(script.title)
       return .init(end: .finished(0), output: "hello\n")
     }
-    model.readScript = { _ in "#!/bin/sh\nrm -rf ~/Downloads/*\n" }
+    model.readScript = { _ in ("#!/bin/sh\nrm -rf ~/Downloads/*\n", false) }
 
     model.query = "hi"
     model.execute(try #require(model.results.first))
@@ -360,6 +363,7 @@ struct ScriptRunTests {
     model.cancelReview()
     #expect(model.review == nil && ran.count == 2)
     model.execute(try #require(model.results.first))
+    for _ in 0..<20 where model.review?.text == nil { await Task.yield() }
     model.approveReview()
     await model.scriptRun(downloaded.path)
     #expect(ran.last == "网上的" && model.review == nil)
@@ -408,7 +412,7 @@ struct ScriptRunTests {
     model.execute(try #require(model.results.first))
     #expect(given.isEmpty)
     model.query = "tq 北京"
-    #expect(model.results.count == 1 && model.results.first?.subtitle == "「北京」")
+    #expect(model.results.first?.subtitle == "「北京」")
     model.execute(try #require(model.results.first))
     await model.scriptRun(weather.path)
     #expect(given == [["北京"]])
@@ -425,18 +429,19 @@ struct ScriptRunTests {
     }
     model.query = "b64 a"
     model.query = "b64 aGk="  // 撤掉上一次：只跑最后一次
-    #expect(model.results.isEmpty && model.emptyText == "正在运行「Base64」…")
+    #expect(model.results.first?.title == "正在运行「Base64」…")
     await model.listRun()
     #expect(runs == 1)
-    #expect(model.results.map(\.title) == ["YUdrPQ==", "hi"])
-    #expect(model.results.map(\.payload) == ["YUdrPQ==", "hi"])
+    #expect(model.results.prefix(2).map(\.title) == ["YUdrPQ==", "hi"])
+    #expect(model.results.prefix(2).map(\.payload) == ["YUdrPQ==", "hi"])
     #expect(model.primaryAction(for: model.results[0]).title == "粘贴")
     #expect(model.copyTitle(for: model.results[0]) == "复制结果")
     // 再打一个字：跑完之前留着这条脚本上一次的结果
     model.query = "b64 bad"
-    #expect(model.results.count == 2)
+    #expect(model.results.prefix(2).map(\.title) == ["YUdrPQ==", "hi"])
     await model.listRun()
-    #expect(model.results.map(\.title) == ["「Base64」出错了"])
+    // 下面只有网页搜索的兜底：留着错误那行
+    #expect(model.results.first?.title == "「Base64」出错了")
     #expect(model.results.first?.subtitle == "不是 Base64" && model.results.first?.payload == nil)
   }
 
@@ -476,7 +481,7 @@ struct ScriptRunTests {
     settings.setAlias("quit", for: "builtin:quit", default: "quit")  // 改回原来的：不存
     settings.setAlias("", for: "system:lock", default: "lock")  // 清空：不要别名
     settings.set(false, for: "builtin:ip")
-    #expect(settings.aliases == ["builtin:kill": "k", "system:lock": ""])
+    #expect(settings.aliases == ["builtin:kill": " K ", "system:lock": ""])  // 存原样，比的时候折叠
     #expect(settings.alias("builtin:kill", default: "kill") == "k")
     #expect(settings.alias("system:lock", default: "lock") == nil)
     #expect(settings.alias("builtin:port", default: "port") == "port")
@@ -621,6 +626,16 @@ struct BundledScriptTests {
     #expect(url.map(\.value) == ["a%20b%26c%3D%E4%B8%AD", "a b&c=中"])
     let b64 = ScriptCommand.lines(try await run(scripts["b64"], ["aGk="]).output)
     #expect(b64.map(\.value) == ["YUdrPQ==", "hi"])
+    #expect(try await run(scripts["bcvt"], ["99999999999999999999"]).end == .finished(1))
+    #expect(try await run(scripts["bcvt"], ["0x8000000000000000"]).end == .finished(1))
+    let maxValue = ScriptCommand.lines(
+      try await run(scripts["bcvt"], ["0x7fffffffffffffff"]).output)
+    #expect(maxValue.first?.title == "9223372036854775807")
+    #expect(try await run(scripts["time"], ["12345678901234567890"]).end == .finished(1))
+    let utc = ScriptCommand.lines(try await run(scripts["time"], ["2026-11-07T06:01:43Z"]).output)
+    let offset = ScriptCommand.lines(
+      try await run(scripts["time"], ["2026-11-07T14:01:43+08:00"]).output)
+    #expect(utc.first?.title == "1794031303" && offset.first?.title == "1794031303")
     let notB64 = ScriptCommand.lines(try await run(scripts["b64"], ["你好"]).output)
     #expect(notB64.count == 2 && !notB64[1].isValid)
     let regex = ScriptCommand.lines(
@@ -642,5 +657,168 @@ struct BundledScriptTests {
     let bad = try await run(scripts["json"], ["{oops"])
     #expect(bad.end == .finished(1))
     #expect(ScriptCommand.lastLine(bad.error)?.hasPrefix("不是有效的 JSON：") == true)
+    // 有系统的 jq 时大整数不丢精度（macOS 15 上有没有没核实，没有就退回 JavaScript）
+    if FileManager.default.isExecutableFile(atPath: "/usr/bin/jq") {
+      let big = try await run(scripts["json"], [#"{"n":1234567890123456789}"#])
+      #expect(ScriptCommand.payload(big.output).contains("1234567890123456789"))
+    }
+  }
+}
+
+/// 端到端：启动器里打字 → 真跑包里的自带脚本 → 列表行 / 全文页 / 补关键词（PATH 固定、不读写偏好、不碰剪贴板）
+@MainActor struct LauncherScriptEndToEndTests {
+  @Test func bundledScriptsThroughTheLauncher() async throws {
+    let scan = await ScriptLibrary.scan([], bundled: ScriptLibrary.bundledFiles)
+    let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [])
+    model.scripts = { scan.scripts }
+    model.runScript = { await ScriptRunner.run($0, arguments: $1, path: "/usr/bin:/bin") }
+    // 脚本给的那几行（下面还接着普通结果和网页搜索兜底）
+    var rows: [LauncherItem] { model.results.filter { $0.kind == .scriptResult } }
+
+    model.query = "b64 aGk="
+    await model.listRun()
+    #expect(rows.map(\.payload) == ["YUdrPQ==", "hi"])
+    model.query = "bcvt 0b1010"
+    await model.listRun()
+    #expect(rows.map(\.title) == ["10", "0xA", "0b1010", "0o12"])
+    model.query = #"regt \d+ 订单 7 和 42"#
+    await model.listRun()
+    #expect(rows.map(\.title) == ["7", "42"])
+    model.query = "url 中 文"
+    await model.listRun()
+    #expect(rows.map(\.payload) == ["%E4%B8%AD%20%E6%96%87", "中 文"])
+
+    // 只打了关键词：↩ 先补「time 」，补上就跑、列出 4 行
+    model.query = "time"
+    let row = try #require(model.results.first { $0.kind == .script })
+    #expect(model.primaryAction(for: row).title == "补全关键词")
+    model.execute(row)
+    #expect(model.query == "time ")
+    await model.listRun()
+    #expect(rows.count == 4 && rows[0].subtitle == "秒" && model.results.first == rows.first)
+
+    // 全文：JSON 排好放在输出页；坏的 JSON 红字写原因
+    model.query = #"json {"a":[1,"中"]}"#
+    let json = try #require(scan.scripts.first { $0.keyword == "json" })
+    model.execute(try #require(model.results.first))
+    await model.scriptRun(json.path)
+    #expect(model.output?.text == "{\n  \"a\": [\n    1,\n    \"中\"\n  ]\n}")
+    #expect(model.output?.failure == nil)
+    model.closeOutput()
+    model.query = "json {oops"
+    model.execute(try #require(model.results.first))
+    await model.scriptRun(json.path)
+    #expect(model.output?.failure?.hasPrefix("「JSON 格式化」出错了：不是有效的 JSON") == true)
+  }
+}
+
+/// 评审（2026-11-07）发现的问题：每条一个回归
+@MainActor struct ScriptReviewFixTests {
+  @Test func listRowsDoNotSwallowNormalResults() async throws {
+    var time = ScriptCommand(path: "/tmp/s/time.sh", title: "Unix 时间戳", interpreter: ["/bin/sh"])
+    time.keyword = "time"
+    time.mode = .list
+    time.arguments = [.init(placeholder: "时间戳", isOptional: true)]
+    let machine = LauncherItem(
+      kind: .app, target: "/Applications/Time Machine.app", title: "Time Machine", subtitle: "",
+      names: ["time machine"].map(LauncherMatch.fold))
+    let model = LauncherModel(
+      usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [machine])
+    model.scripts = { [time] }
+    model.runScript = { _, arguments in
+      arguments == ["machine"]
+        ? .init(end: .finished(1), error: "认不出「machine」\n")
+        : .init(end: .finished(0), output: "1\t秒\n")
+    }
+    // 结果到之前：「正在运行…」一行在最上面，时间机器照样在下面
+    model.query = "time machine"
+    #expect(model.results.first?.title == "正在运行「Unix 时间戳」…")
+    #expect(model.results.contains { $0.title == "Time Machine" })
+    // 跑失败了、下面有别的结果：不留错误那行
+    await model.listRun()
+    #expect(model.results.first?.title == "Time Machine")
+    #expect(!model.results.contains { $0.kind == .scriptResult })
+    // 跑成了：结果在最上面
+    model.query = "time 1"
+    await model.listRun()
+    #expect(model.results.first?.title == "1")
+  }
+
+  @Test func reviewCannotBeSkipped() async throws {
+    var script = ScriptCommand(path: "/tmp/s/big.sh", title: "大脚本", interpreter: ["/bin/sh"])
+    script.keyword = "big"
+    script.isDownloaded = true
+    let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [])
+    model.scripts = { [script] }
+    var ran = 0
+    model.runScript = { _, _ in
+      ran += 1
+      return .init(end: .finished(0))
+    }
+    var truncated = true
+    model.readScript = { _ in ("#!/bin/sh\n# 前面全是注释", truncated) }
+    model.query = "big"
+    model.execute(try #require(model.results.first))
+    // 全文还没读到：↩ 不放行
+    model.approveReview()
+    #expect(ran == 0)
+    model.execute(try #require(model.results.first))
+    for _ in 0..<20 where model.review?.text == nil { await Task.yield() }
+    // 没显示全：不放行
+    #expect(model.review?.isTruncated == true)
+    model.approveReview()
+    #expect(ran == 0 && model.review != nil)
+    truncated = false
+    model.cancelReview()
+    model.execute(try #require(model.results.first))
+    for _ in 0..<20 where model.review?.text == nil { await Task.yield() }
+    model.approveReview()
+    await model.scriptRun(script.path)
+    #expect(ran == 1)
+  }
+
+  @Test func aliasEqualToAnotherKeywordKeepsTheOriginal() {
+    let settings = LauncherCommands.Settings(aliases: ["builtin:find": "open"])
+    #expect(LauncherCommands.canonical("open 报告", settings: settings).query == "open 报告")
+    #expect(LauncherCommands.canonical("find 报告", settings: settings).blocked == ["builtin:find"])
+  }
+
+  @Test func longAliasListsSurviveExport() {
+    #expect(SettingsArchive.kinds[Prefs.launcherCommandAliases] == .text)
+    #expect(SettingsArchive.kinds[Prefs.launcherCommandsOff] == .text)
+    let long = String(
+      repeating: "script:~/Library/Application Support/x/scripts/a.sh\n", count: 300)
+    #expect(SettingsArchive.Kind.text.plist(.string(long)) as? String == long)
+    #expect(SettingsArchive.Kind.string.plist(.string(long)) == nil)
+  }
+}
+
+/// 子进程：不理 SIGTERM 的到点也停得掉，输出写太多的停掉
+struct SubprocessStopTests {
+  @Test func stopsStubbornAndChattyProcesses() async throws {
+    // 不量用了多久：看门狗和补 SIGKILL 的任务在主线程上（Subprocess 的超时只当兜底用），全量单测时主线程被别的测试
+    // 占着会晚到一两分钟（单独跑约 1.3 秒）。所以脚本自己要撑得比那久（sleep 600），写得也要慢（不然晚到的这段时间里
+    // 把临时目录写满）
+    let stubborn = try await Subprocess.run(
+      "/bin/sh", ["-c", "trap '' TERM; sleep 600"], captures: true, timeout: .milliseconds(300))
+    #expect(stubborn.signaled && stubborn.status == SIGKILL)
+    let chatty = try await Subprocess.run(
+      "/bin/sh", ["-c", "while :; do printf '%0999d\\n' 0; sleep 0.01; done"], captures: true,
+      timeout: .seconds(600), outputLimit: 1024)
+    #expect(chatty.overflowed && chatty.output.utf8.count == 1024)
+  }
+
+  @Test func scansSymlinkedScripts() async throws {
+    let folder = FileManager.default.temporaryDirectory.appending(path: "kitty-link-\(UUID())")
+    let other = FileManager.default.temporaryDirectory.appending(path: "kitty-real-\(UUID())")
+    for url in [folder, other] {
+      try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+    }
+    try "#!/bin/sh\n# @kitty.title 链接来的\n".write(
+      to: other.appending(path: "real.sh"), atomically: true, encoding: .utf8)
+    try FileManager.default.createSymbolicLink(
+      at: folder.appending(path: "link.sh"), withDestinationURL: other.appending(path: "real.sh"))
+    let scan = await ScriptLibrary.scan([folder])
+    #expect(scan.scripts.map(\.title) == ["链接来的"])
   }
 }

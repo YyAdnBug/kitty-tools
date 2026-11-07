@@ -4759,16 +4759,17 @@ struct SnapshotProbeTests {
       }
     }
     model.readScript = { _ in
-      """
-      #!/bin/zsh
-      # @kitty.title 记到 flomo
-      # @kitty.keyword fl
-      # @kitty.argument1 想记的话
-      # 把下面这行换成你自己的 API 地址（flomo › 设置 › API）
-      api="https://flomoapp.com/iwh/xxxx/yyyy/"
-      curl -sS -X POST "$api" -H 'Content-Type: application/json' \\
-        -d "$(jq -n --arg c "$1" '{content: $c}')"
-      """
+      let text = """
+        #!/bin/zsh
+        # @kitty.title 记到 flomo
+        # @kitty.keyword fl
+        # @kitty.argument1 想记的话
+        # 把下面这行换成你自己的 API 地址（flomo › 设置 › API）
+        api="https://flomoapp.com/iwh/xxxx/yyyy/"
+        curl -sS -X POST "$api" -H 'Content-Type: application/json' \\
+          -d "$(jq -n --arg c "$1" '{content: $c}')"
+        """
+      return (text, false)
     }
     for dark in [false, true] {
       let suffix = dark ? "-dark" : ""
