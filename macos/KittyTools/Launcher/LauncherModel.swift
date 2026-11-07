@@ -1243,6 +1243,7 @@ import UniformTypeIdentifiers
       kind: .scriptResult, target: script.path + "\n…", title: "正在运行「\(script.title)」…",
       subtitle: "")
     pending.scriptIcon = script.icon
+    pending.scriptIconDark = script.iconDark
     return [pending]
   }
 
@@ -1292,6 +1293,7 @@ import UniformTypeIdentifiers
         kind: .scriptResult, target: script.path + "\n\(index)", title: title, subtitle: subtitle,
         payload: payload)
       item.scriptIcon = script.icon
+      item.scriptIconDark = script.iconDark
       return item
     }
     if let failure = failure(outcome, of: script) {

@@ -4,6 +4,7 @@
 // 下载标记）；启动器里的行（搜得到、别名排第一、↩ 跑、上膛、下载来的先看一眼、参数、全文、列表）。不读写用户的偏好：
 // PATH 由测试传进去；不碰剪贴板（粘贴 / 复制的路子不在这里按）。
 
+import AppKit
 import Foundation
 import Testing
 
@@ -95,7 +96,9 @@ struct ScriptCommandTests {
     #expect(ScriptCommand.icon("clock.fill", folder: "/s") == .symbol("clock.fill"))
     #expect(ScriptCommand.icon("icon.png", folder: "/s") == .image("/s/icon.png"))
     #expect(ScriptCommand.icon("/abs/a.png", folder: "/s") == .image("/abs/a.png"))
-    #expect(ScriptCommand.icon("https://x.com/a.png", folder: "/s") == nil)
+    #expect(
+      ScriptCommand.icon("https://x.com/a.png", folder: "/s") == .remote("https://x.com/a.png"))
+    #expect(ScriptCommand.icon("http://x.com/a.png", folder: "/s") == nil)
     #expect(ScriptCommand.icon("  ", folder: "/s") == nil)
   }
 
@@ -755,8 +758,7 @@ struct BundledScriptTests {
       ran += 1
       return .init(end: .finished(0))
     }
-    var truncated = true
-    model.readScript = { _ in ("#!/bin/sh\n# 前面全是注释", truncated) }
+    model.readScript = { _ in ("#!/bin/sh\n# 前面全是注释", true) }
     model.query = "big"
     model.execute(try #require(model.results.first))
     // 全文还没读到：↩ 不放行
@@ -768,7 +770,7 @@ struct BundledScriptTests {
     #expect(model.review?.isTruncated == true)
     model.approveReview()
     #expect(ran == 0 && model.review != nil)
-    truncated = false
+    model.readScript = { _ in ("#!/bin/sh\n# 前面全是注释", false) }
     model.cancelReview()
     model.execute(try #require(model.results.first))
     for _ in 0..<20 where model.review?.text == nil { await Task.yield() }
@@ -868,5 +870,93 @@ struct SubprocessStopTests {
     model.scriptsOn = { false }
     model.query = "新建脚本"
     #expect(!model.results.contains { $0.target == LauncherItem.newScriptID })
+  }
+}
+
+/// 第二轮第 2 批：网址图标、深色图标、命令表的排法和筛选
+@MainActor struct ScriptIconTests {
+  @Test func parsesDarkAndRemoteIcons() throws {
+    let script = try #require(
+      ScriptCommand.parse(
+        """
+        #!/bin/zsh
+        # @kitty.title 图标
+        # @kitty.icon https://example.com/a.png
+        # @kitty.iconDark dark.png
+        """, path: "/tmp/s/a.sh")
+    ).get()
+    #expect(script.icon == .remote("https://example.com/a.png"))
+    #expect(script.iconDark == .image("/tmp/s/dark.png"))
+    let community = try #require(
+      ScriptCommand.parse(
+        "#!/bin/sh\n# @raycast.title A\n# @raycast.iconDark 🌙\n", path: "/tmp/s/b.sh")
+    ).get()
+    #expect(community.iconDark == .emoji("🌙"))
+  }
+
+  @Test func cacheNamesAndImageCheck() throws {
+    let name = ScriptIcons.cacheName("https://example.com/a.png")
+    #expect(name.count == 64 && name.allSatisfy(\.isHexDigit))
+    #expect(name != ScriptIcons.cacheName("https://example.com/b.png"))
+    #expect(!ScriptIcons.isImage(Data("not an image".utf8)))
+    let png = try #require(
+      NSImage(size: NSSize(width: 4, height: 4), flipped: false) { _ in true }
+        .tiffRepresentation)
+    #expect(ScriptIcons.isImage(png))
+  }
+
+  @Test func localAndRemoteFailures() async throws {
+    let folder = FileManager.default.temporaryDirectory.appending(path: "script-icons-\(UUID())")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let missing = folder.appending(path: "nope.png").path(percentEncoded: false)
+    #expect(await ScriptIcons.readLocal(missing) == .failure(.missing("nope.png")))
+    let text = folder.appending(path: "a.png")
+    try Data("hello".utf8).write(to: text)
+    #expect(await ScriptIcons.readLocal(text.path(percentEncoded: false)) == .failure(.notImage))
+    // http 不下载；缓存里有就直接用（不联网）
+    #expect(
+      await ScriptIcons.fetch("http://example.com/a.png", cache: folder) == .failure(.download))
+    let png = try #require(
+      NSImage(size: NSSize(width: 4, height: 4), flipped: false) { _ in true }
+        .tiffRepresentation)
+    let address = "https://example.invalid/a.png"
+    try png.write(to: folder.appending(path: ScriptIcons.cacheName(address)))
+    #expect(await ScriptIcons.fetch(address, cache: folder) == .success(png))
+  }
+
+  @Test func tableOrderAndFilters() {
+    var mine = ScriptCommand(path: "/tmp/s/z.sh", title: "测试", interpreter: ["/bin/sh"])
+    mine.keyword = "zz"
+    let other = ScriptCommand(path: "/tmp/s/a.sh", title: "Alpha", interpreter: ["/bin/sh"])
+    var bundled = ScriptCommand(path: "/b/script-time.sh", title: "时间戳", interpreter: ["/bin/sh"])
+    bundled.isBundled = true
+    let rows = LauncherCommandsSection.rows(scripts: [mine, bundled, other])
+    // 我的脚本 → 自带脚本 → 关键词命令 → 系统命令；组里按名字
+    #expect(rows.prefix(3).map(\.title) == ["Alpha", "测试", "时间戳"])
+    let groups = rows.map(\.group)
+    #expect(
+      groups
+        == groups.sorted { a, b in
+          let order = LauncherCommandsSection.Row.Group.allCases
+          return order.firstIndex(of: a)! < order.firstIndex(of: b)!
+        })
+    let settings = LauncherCommands.Settings(off: [LauncherCommands.scriptID(mine), "system:lock"])
+    #expect(
+      LauncherCommandsSection.filter(rows, by: "", scope: .mine, settings: settings).map(\.title)
+        == ["Alpha", "测试"])
+    #expect(
+      LauncherCommandsSection.filter(rows, by: "", scope: .mine, onlyOn: true, settings: settings)
+        .map(\.title) == ["Alpha"])
+    let builtIn = LauncherCommandsSection.filter(rows, by: "", scope: .builtIn, settings: settings)
+    #expect(builtIn.allSatisfy { $0.group == .keyword || $0.group == .system })
+    #expect(builtIn.contains { $0.id == "system:lock" })
+    #expect(
+      !LauncherCommandsSection.filter(
+        rows, by: "", scope: .builtIn, onlyOn: true, settings: settings
+      )
+      .contains { $0.id == "system:lock" })
+    #expect(
+      LauncherCommandsSection.filter(rows, by: "zz", scope: .bundled, settings: settings).isEmpty)
   }
 }

@@ -66,8 +66,9 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
   /// 状态屏列表里排在最前面的那个状态，而且设置里打开了「按快捷键直接进入排在最前面的状态」：全局快捷键进的就是它，
   /// 选中时右侧显示键帽（同别的带全局快捷键的内置动作）。开关关着时（默认）快捷键是先出选状态的面板，哪一行都不带键帽
   var isFirstStatusPreset = false
-  /// 脚本命令头部写的图标（emoji、SF 符号、图片）；别的结果是 nil
+  /// 脚本命令头部写的图标（emoji、SF 符号、图片、https 网址）和深色主题用的；别的结果是 nil
   var scriptIcon: ScriptCommand.Icon?
+  var scriptIconDark: ScriptCommand.Icon?
   /// 「关键词 空格 文字」那一行（脚本命令）：交给脚本的参数；nil = 普通的一行（要参数的脚本 ↩ 先补关键词）
   var arguments: [String]?
   /// 来自每次搜索都从源头重新列出来的列表（浏览器书签、快捷链接）：使用记录不靠自己把它找回来，源头删了就不再出现

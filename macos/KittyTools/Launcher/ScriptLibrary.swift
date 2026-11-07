@@ -309,6 +309,7 @@ extension LauncherItem {
       initials: [LauncherMatch.initials(script.title), pinyin?.initials].compactMap { $0 },
       completion: script.takesInput ? (alias ?? script.title) + " " : nil)
     item.scriptIcon = script.icon
+    item.scriptIconDark = script.iconDark
     return item
   }
 }
@@ -316,33 +317,6 @@ extension LauncherItem {
 extension String {
   fileprivate func trimmingSuffix(_ suffix: String) -> String {
     hasSuffix(suffix) ? String(dropLast(suffix.count)) : self
-  }
-}
-
-/// 脚本头部写的图片图标（同文件夹里的 png 这类）：第一次要画时在主线程外读（文件夹可能在网络盘上），读到了换上、按路径记着；
-/// 读不出来的不再试（这次运行里）
-@Observable final class ScriptIcons {
-  static let shared = ScriptIcons()
-  private(set) var images: [String: NSImage] = [:]
-  @ObservationIgnored private var requested: Set<String> = []
-
-  func image(_ path: String) -> NSImage? {
-    if let image = images[path] { return image }
-    if requested.insert(path).inserted {
-      Task {
-        if let data = await Self.read(path), let image = NSImage(data: data) {
-          images[path] = image
-        }
-      }
-    }
-    return nil
-  }
-
-  /// 图标最多 2 MB
-  @concurrent private static func read(_ path: String) async -> Data? {
-    guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
-    defer { try? handle.close() }
-    return (try? handle.read(upToCount: 2 << 20)) ?? nil
   }
 }
 

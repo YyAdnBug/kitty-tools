@@ -793,31 +793,3 @@ extension LauncherItem {
   /// 列表里的身份：计算结果行跨按键保持同一个（id 含算式，每敲一个字都会变），结果数字才能滚动变化
   fileprivate var rowID: String { kind == .calculation ? "calculation" : id }
 }
-
-/// 脚本命令头部写的图标（24 pt）：emoji 直接画；SF 符号放进命令家族紫的色块（同系统命令）；图片在主线程外读、读到了再换上
-/// （ScriptIcons）。符号名不认识、图片读不出来时用 fallback（默认的 terminal 色块）
-private struct ScriptIconView<Fallback: View>: View {
-  let icon: ScriptCommand.Icon
-  let fallback: Fallback
-
-  var body: some View {
-    switch icon {
-    case .emoji(let emoji):
-      Text(emoji)
-        .font(.system(size: 19))
-        .frame(width: 24, height: 24)
-        .accessibilityHidden(true)
-    case .symbol(let name)
-    where NSImage(systemSymbolName: name, accessibilityDescription: nil) != nil:
-      KindTile(symbol: name, color: Style.Family.command)
-    case .image(let path):
-      if let image = ScriptIcons.shared.image(path) {
-        Image(nsImage: image).resizable().interpolation(.high).frame(width: 24, height: 24)
-      } else {
-        fallback
-      }
-    default:
-      fallback
-    }
-  }
-}

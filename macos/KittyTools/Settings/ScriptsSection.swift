@@ -147,9 +147,10 @@ struct ScriptsSection: View {
     let count = { (group: LauncherCommandsSection.Row.Group) in
       rows.filter { $0.group == group }.count
     }
-    var parts = ["\(count(.keyword)) 个关键词命令", "\(count(.system)) 个系统命令"]
-    if count(.bundled) > 0 { parts.append("\(count(.bundled)) 个自带脚本") }
+    var parts: [String] = []
     if count(.mine) > 0 { parts.append("\(count(.mine)) 个我的脚本") }
+    if count(.bundled) > 0 { parts.append("\(count(.bundled)) 个自带脚本") }
+    parts += ["\(count(.keyword)) 个关键词命令", "\(count(.system)) 个系统命令"]
     let off = LauncherCommands.Settings(aliasesText: "", offText: offText).off
     let closed = rows.filter { off.contains($0.id) }.count
     return parts.joined(separator: "、") + (closed > 0 ? "，关了 \(closed) 个" : "")

@@ -25,11 +25,12 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
     case none
   }
 
-  /// 头部写的图标：emoji、SF 符号名、同文件夹里的图片（网址不认：不联网）
+  /// 头部写的图标：emoji、SF 符号名、同文件夹里的 / 绝对路径的图片、https 网址（第二轮 B1：下载一次存本机，ScriptIcons）
   enum Icon: Hashable, Sendable {
     case emoji(String)
     case symbol(String)
     case image(String)
+    case remote(String)
   }
 
   struct Argument: Hashable, Sendable {
@@ -56,6 +57,8 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
   /// 头部写的关键词（「命令」表里的默认别名）：折叠过、不带空白
   var keyword: String?
   var icon: Icon?
+  /// 深色主题用的图标（@kitty.iconDark / @raycast.iconDark，第二轮 B2）
+  var iconDark: Icon?
   var mode = Mode.island
   var summary: String?
   var package: String?
@@ -113,9 +116,9 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
     let title = fields["title"].flatMap { $0.isEmpty ? nil : $0 } ?? fileTitle
     var script = ScriptCommand(path: path, title: title, interpreter: interpreter)
     script.keyword = fields["keyword"].flatMap(keyword)
-    script.icon = fields["icon"].flatMap {
-      icon($0, folder: (path as NSString).deletingLastPathComponent)
-    }
+    let folder = (path as NSString).deletingLastPathComponent
+    script.icon = fields["icon"].flatMap { icon($0, folder: folder) }
+    script.iconDark = fields["iconDark"].flatMap { icon($0, folder: folder) }
     script.mode = fields["mode"].flatMap(mode) ?? .island
     script.summary = fields["description"].flatMap { $0.isEmpty ? nil : $0 }
     script.package = fields["package"].flatMap { $0.isEmpty ? nil : $0 }
@@ -154,7 +157,7 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
           // 最后一行弹提示 / 关掉窗口后 HUD / 显示在条目上定时刷新：都当岛上一行
           default: Mode.island.rawValue
           }
-      case "title", "icon", "description", "argument1", "argument2", "argument3":
+      case "title", "icon", "iconDark", "description", "argument1", "argument2", "argument3":
         fields[key] = value
       default: break
       }
@@ -176,7 +179,11 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
 
   static func icon(_ value: String, folder: String) -> Icon? {
     let text = value.trimmingCharacters(in: .whitespaces)
-    guard !text.isEmpty, !text.lowercased().hasPrefix("http") else { return nil }
+    guard !text.isEmpty else { return nil }
+    // https 网址下载一次存本机（ScriptIcons）；http 不认
+    let lower = text.lowercased()
+    if lower.hasPrefix("https://") { return URL(string: text) == nil ? nil : .remote(text) }
+    if lower.hasPrefix("http:") { return nil }
     let ext = (text as NSString).pathExtension.lowercased()
     if imageExtensions.contains(ext) || text.contains("/") {
       let expanded = (text as NSString).expandingTildeInPath

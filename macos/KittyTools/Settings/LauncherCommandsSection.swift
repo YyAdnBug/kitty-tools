@@ -1,6 +1,7 @@
 // 设置 › 启动器 › 命令和别名（2026-11-07 拍板 C3 C4，PLAN §10「脚本命令」；真机反馈嫌长，从启动器页挪进推进去的这一页，
-// LauncherCommandsPage）：一张「名称 / 别名 / 启用」的表，分四组——关键词命令（open、kill、ip、cb、fy、提醒、汇率…）、
-// 系统命令（lock、sleep…）、自带脚本、我的脚本；上面能搜。
+// LauncherCommandsPage）：一张「名称 / 别名 / 启用」的表，分四组——我的脚本、自带脚本、关键词命令（open、kill、ip、cb、fy、
+// 提醒、汇率…）、系统命令（lock、sleep…），组里按名字排（第二轮 C1：来这一页多半是管自己的脚本，我的排最前）；上面能搜，
+// 一排筛选「全部 / 我的脚本 / 自带脚本 / 内置」和「只看开着的」。脚本的图标读不出来、下不下来时名字下面写橙字原因（B2）。
 // 别名就是在启动器里要打的那个词：改了旧词不再认，清空就只能按名字搜；和别的命令、网页搜索的关键词撞了那一格描橙框
 // （运行时用靠前的那个）。关掉 = 不出现在搜索里、关键词也不认。只存改过的（LauncherCommands.Settings，跟着设置导出、同步）。
 // 脚本那几行：点名字在访达中显示，右键用文本编辑器打开、（我的脚本）移到废纸篓。脚本命令整个关着时脚本那两组变灰。
@@ -15,14 +16,33 @@ struct LauncherCommandsSection: View {
   @AppStorage(Prefs.launcherScripts) private var scriptsOn = true
   @AppStorage(Prefs.launcherWebSearchEngines) private var enginesData: Data?
   @State private var filter = ""
+  @State private var scope = Scope.all
+  @State private var onlyOn = false
+
+  /// 上面那一排筛选
+  enum Scope: String, CaseIterable {
+    case all = "全部"
+    case mine = "我的脚本"
+    case bundled = "自带脚本"
+    case builtIn = "内置"
+
+    func contains(_ group: Row.Group) -> Bool {
+      switch self {
+      case .all: true
+      case .mine: group == .mine
+      case .bundled: group == .bundled
+      case .builtIn: group == .keyword || group == .system
+      }
+    }
+  }
 
   /// 表里的一行
   struct Row: Identifiable {
     enum Group: String, CaseIterable {
+      case mine = "我的脚本"
+      case bundled = "自带脚本"
       case keyword = "关键词命令"
       case system = "系统命令"
-      case bundled = "自带脚本"
-      case mine = "我的脚本"
     }
 
     let id: String
@@ -31,6 +51,7 @@ struct LauncherCommandsSection: View {
     var detail: String?
     let symbol: String
     var icon: ScriptCommand.Icon?
+    var iconDark: ScriptCommand.Icon?
     /// 原来的别名（关键词命令的关键词、脚本头部写的 keyword）
     let keyword: String?
     let group: Group
@@ -41,7 +62,7 @@ struct LauncherCommandsSection: View {
     LauncherCommands.Settings(aliasesText: aliasesText, offText: offText)
   }
 
-  /// 全部的行（纯函数，配单测）
+  /// 全部的行：我的脚本、自带脚本、关键词命令、系统命令，组里按名字排（纯函数，配单测）
   static func rows(scripts: [ScriptCommand]) -> [Row] {
     let keyword = LauncherCommands.builtIns.map {
       Row(id: $0.id, title: $0.title, symbol: $0.symbol, keyword: $0.keyword, group: .keyword)
@@ -54,10 +75,15 @@ struct LauncherCommandsSection: View {
     let scripts = scripts.map {
       Row(
         id: LauncherCommands.scriptID($0), title: $0.title, detail: $0.fileName,
-        symbol: "terminal.fill", icon: $0.icon, keyword: $0.keyword,
+        symbol: "terminal.fill", icon: $0.icon, iconDark: $0.iconDark, keyword: $0.keyword,
         group: $0.isBundled ? .bundled : .mine, script: $0)
     }
-    return keyword + system + scripts
+    let all = scripts + keyword + system
+    return Row.Group.allCases.flatMap { group in
+      all.filter { $0.group == group }.sorted {
+        $0.title.localizedStandardCompare($1.title) == .orderedAscending
+      }
+    }
   }
 
   var body: some View {
@@ -66,11 +92,22 @@ struct LauncherCommandsSection: View {
     let conflicts = LauncherCommands.conflicts(
       all.map { ($0.id, settings.alias($0.id, default: $0.keyword)) },
       engineKeywords: SearchEngineDetail.decode(enginesData).map(\.keyword))
-    let shown = Self.filter(all, by: filter, settings: settings)
+    let shown = Self.filter(all, by: filter, scope: scope, onlyOn: onlyOn, settings: settings)
     Section {
       TextField("搜索命令", text: $filter, prompt: Text("按名字或别名找"))
         .textFieldStyle(.roundedBorder)
         .labelsHidden()
+      HStack {
+        Picker("显示", selection: $scope) {
+          ForEach(Scope.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .fixedSize()
+        Spacer()
+        Toggle("只看开着的", isOn: $onlyOn)
+          .toggleStyle(.checkbox)
+      }
       HStack {
         Text("名称")
         Spacer()
@@ -97,7 +134,7 @@ struct LauncherCommandsSection: View {
         }
       }
       if shown.isEmpty {
-        Text("没有找到「\(filter)」").foregroundStyle(.secondary)
+        Text(filter.isEmpty ? "这里还没有" : "没有找到「\(filter)」").foregroundStyle(.secondary)
       }
     } footer: {
       SectionFootnote(
@@ -110,8 +147,12 @@ struct LauncherCommandsSection: View {
   static let aliasWidth: CGFloat = 110
   static let toggleWidth: CGFloat = 44
 
-  /// 搜索框：名字、别名、文件名里带着这几个字的（不分大小写）
-  static func filter(_ rows: [Row], by text: String, settings: LauncherCommands.Settings) -> [Row] {
+  /// 筛选：哪几组、只看开着的、搜索框（名字、别名、文件名里带着这几个字的，不分大小写）
+  static func filter(
+    _ rows: [Row], by text: String, scope: Scope = .all, onlyOn: Bool = false,
+    settings: LauncherCommands.Settings
+  ) -> [Row] {
+    let rows = rows.filter { scope.contains($0.group) && (!onlyOn || settings.isOn($0.id)) }
     let needle = LauncherMatch.fold(text.trimmingCharacters(in: .whitespaces))
     guard !needle.isEmpty else { return rows }
     return rows.filter { row in
@@ -173,14 +214,23 @@ private struct CommandRow: View {
   var body: some View {
     HStack(spacing: 10) {
       icon
-      HStack(spacing: 6) {
-        Text(row.title).lineLimit(1).truncationMode(.tail)
-        if let detail = row.detail {
-          Text(detail)
+      VStack(alignment: .leading, spacing: 1) {
+        HStack(spacing: 6) {
+          Text(row.title).lineLimit(1).truncationMode(.tail)
+          if let detail = row.detail {
+            Text(detail)
+              .font(.system(size: 11))
+              .foregroundStyle(.secondary)
+              .lineLimit(1)
+              .truncationMode(.middle)
+          }
+        }
+        if let iconProblem {
+          Text(iconProblem)
             .font(.system(size: 11))
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Color(nsColor: .systemOrange))
             .lineLimit(1)
-            .truncationMode(.middle)
+            .truncationMode(.tail)
         }
       }
       .contentShape(.rect)
@@ -238,14 +288,16 @@ private struct CommandRow: View {
   }
 
   @ViewBuilder private var icon: some View {
-    switch row.icon {
-    case .emoji(let emoji)?:
-      Text(emoji).font(.system(size: 14)).frame(width: 20, height: 20)
-    case .symbol(let name)?
-    where NSImage(systemSymbolName: name, accessibilityDescription: nil) != nil:
-      KindTile(symbol: name, color: Style.Family.command, size: 20)
-    default:
-      KindTile(symbol: row.symbol, color: Style.Family.command, size: 20)
+    let fallback = KindTile(symbol: row.symbol, color: Style.Family.command, size: 20)
+    if let icon = row.icon {
+      ScriptIconView(icon: icon, dark: row.iconDark, size: 20, fallback: fallback)
+    } else {
+      fallback
     }
+  }
+
+  /// 脚本的图标读不出来、下不下来的原因（B2）
+  private var iconProblem: String? {
+    [row.icon, row.iconDark].compactMap { $0.flatMap(ScriptIcons.shared.failure(for:)) }.first
   }
 }
