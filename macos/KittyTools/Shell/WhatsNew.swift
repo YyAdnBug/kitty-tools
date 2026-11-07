@@ -45,6 +45,13 @@ enum WhatsNew {
       id: "launcher-frequent", version: "0.7.2", feature: .launcher, page: .launcher,
       section: "空搜索框里列出常用"),
     Entry(id: "pin-text", version: "0.7.2", feature: .screenshot, actions: [.pinClipboard]),
+    // 0.7.3（release-0.7.3 发布分支上同一份）：截图拷贝为 PNG 文件、框选时保持屏幕原色（都在 设置 › 截图）
+    Entry(
+      id: "screenshot-copy-as-file", version: "0.7.3", feature: .screenshot, page: .screenshot,
+      section: "截图拷贝为"),
+    Entry(
+      id: "screenshot-keeps-colors", version: "0.7.3", feature: .screenshot, page: .screenshot,
+      section: "框选时保持屏幕原色"),
     Entry(
       id: "reminders", version: "0.8.0", feature: .reminders, actions: [.reminderNew],
       page: .reminders),

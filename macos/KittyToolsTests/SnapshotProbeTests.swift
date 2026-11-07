@@ -601,7 +601,7 @@ struct SnapshotProbeTests {
     shotPrefs.set(true, forKey: Prefs.audioRecordStartsImmediately)
     for dark in [false, true] {
       try snapshot(
-        ScreenshotTab(shots: nil).defaultAppStorage(shotPrefs),
+        ScreenshotTab(shots: nil).defaultAppStorage(shotPrefs).environment(navigation),
         size: NSSize(width: 640, height: 720),
         dark: dark, to: "\(out)/settings-screenshot-custom\(dark ? "-dark" : "").png")
       try snapshot(

@@ -139,8 +139,8 @@ struct WhatsNewTests {
     WhatsNew.adopt(upgradingFrom: nil, to: "0.8.0", defaults: defaults, now: t0)
     #expect(defaults.object(forKey: Prefs.whatsNewStarted) == nil)
     WhatsNew.adopt(upgradingFrom: "0.7.1", to: "0.8.0", defaults: defaults, now: t0)
-    // 从 0.7.1 跳上来：0.7.2 的三样（GitHub 上来的）和 0.8.0 的一起开始标
-    #expect(WhatsNew.ledger(defaults).started == ["0.7.2": t0, "0.8.0": t0])
+    // 从 0.7.1 跳上来：0.7.2 的三样（GitHub 上来的）、0.7.3 的两样（截图）和 0.8.0 的一起开始标
+    #expect(WhatsNew.ledger(defaults).started == ["0.7.2": t0, "0.7.3": t0, "0.8.0": t0])
     WhatsNew.touch(action: .reminderNew, defaults: defaults)
     #expect(WhatsNew.ledger(defaults).touched == ["reminders"])
     WhatsNew.touch(section: "功能", of: .general, defaults: defaults)

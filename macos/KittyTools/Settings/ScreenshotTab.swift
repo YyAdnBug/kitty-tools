@@ -20,6 +20,8 @@ struct ScreenshotTab: View {
   @AppStorage(Prefs.screenshotToolbarAlign) private var toolbarAlign = "right"
   @AppStorage(Prefs.screenshotCopyAs) private var copyAs = "image"
   @AppStorage(Prefs.screenshotKeepsColors) private var keepsColors = false
+  /// 「截图拷贝为」「框选时保持屏幕原色」那两行的「新」（0.7.3，WhatsNew）
+  @Environment(SettingsNavigation.self) private var navigation
   @AppStorage(Prefs.shotHistory) private var keepsHistory = true
   @AppStorage(Prefs.shotHistoryDays) private var historyDays = 30
   @AppStorage(Prefs.shotHistoryMegabytes) private var historyMegabytes = 2 * 1024
@@ -46,10 +48,12 @@ struct ScreenshotTab: View {
             Text("图像").tag("image")
             Text("PNG 文件").tag("file")
           } label: {
-            Text("截图拷贝为")
+            NewTitle("截图拷贝为", page: .screenshot, fresh: navigation.fresh)
             Text("选 PNG 文件时，剪贴板里是一个图片文件，和拷贝一个文件一样：能粘进聊天窗口和文件夹，只认文件的跨电脑剪贴板工具也传得过去；只收图像的程序粘不进去")
           }
           .pickerStyle(.segmented)
+          // 拨过这一行，「新」就算看过了（光点进这一页不算；WhatsNew）
+          .onChange(of: copyAs) { WhatsNew.touch(section: "截图拷贝为", of: .screenshot) }
         }
         Section {
           Toggle(isOn: $shutterSound) {
@@ -100,9 +104,11 @@ struct ScreenshotTab: View {
           }
           .pickerStyle(.segmented)
           Toggle(isOn: $keepsColors) {
-            Text("框选时保持屏幕原色")
+            NewTitle("框选时保持屏幕原色", page: .screenshot, fresh: navigation.fresh)
             Text("不压暗屏幕，悬停的窗口只描边、不染色，放大镜正中的像素也不染色。取色、对比颜色时打开")
           }
+          // 拨过这一行，「新」就算看过了（光点进这一页不算；WhatsNew）
+          .onChange(of: keepsColors) { WhatsNew.touch(section: "框选时保持屏幕原色", of: .screenshot) }
         }
         Section {
           Picker("截完图放哪", selection: $placement) {
