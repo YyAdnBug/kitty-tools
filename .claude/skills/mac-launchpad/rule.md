@@ -143,11 +143,22 @@ Kitty 的第八族「启动台」（SPEC 在 `macos/build/research/launchpad/SPE
   `Launchpad.release` 是松手之后走到哪的纯函数（四种：走完 / 退回 × 捏合 / 张开），单测锁住。**单测里不注册回调、不读真触点**；「真的读得到」是按需探针
   `TEST_RUNNER_KITTY_LIVE_TOUCH=1`（真的注册回调、读这台机器的触控板；跑的时候放四根手指捏一下；测试进程里读到的键是
   `KITTY_LIVE_TOUCH`——xcodebuild 去掉 `TEST_RUNNER_` 前缀，G16）。
-- 系统手势开没开：只读 `com.apple.AppleMultitouchTrackpad`（蓝牙触控板是 `com.apple.driver.AppleBluetoothMultitouch.trackpad`）的
-  `TrackpadFourFingerPinchGesture` / `TrackpadFiveFingerPinchGesture`；设置页每次出现、要被捏合打开时读一次，**不轮询、不写系统设置**。
-  几个域合起来（`TrackpadSystemGesture.combined`，G5）：任一域显式开 = 开；有域显式关、没有显式开 = 关；所有域都没信息才按系统默认开。
-  设置页只在读到的值**变了**时重起监听（G8）。
-  系统的还开着时我们认到捏合也不打开，设置页给提示和「打开触控板设置」。**第一次这样让给系统时刘海岛说一次**（第四轮体检 U5，`Prefs.launchpadPinchYieldTold`，不注册默认值）：不当场说（系统的「应用程序」那一屏正盖着），**下次打开启动台时**说，带「打开触控板设置」；那次打开岛上已经有别的话（读不出来的提示、本机有旧库的第一次导入——**要在 `autoImportIfNeeded` 之前判断**，它一起来就清掉 `pendingAutoImport`）就再等一次；到时候系统的已经关了就不说（`Launchpad.pinchHint`）。
+- 系统的应用程序捏合开没开（`TrackpadSystemGesture`）：**macOS 26 只读 `com.apple.dock` 的 `showSpotlightGestureEnabled`，没存过默认开**。
+  26 的旧四指 / 五指键不再决定这个手势，`showDesktopGestureEnabled` 只管原生「显示桌面」，不能拿它当应用程序开关。
+  其他版本沿用 `com.apple.AppleMultitouchTrackpad`（蓝牙触控板是 `com.apple.driver.AppleBluetoothMultitouch.trackpad`）的
+  `TrackpadFourFingerPinchGesture` / `TrackpadFiveFingerPinchGesture`；几个域合起来（`combined`，G5）：任一域显式开 = 开；有域显式关、没有显式开 = 关；所有域都没信息才默认开。
+  设置页每次出现、要被捏合打开时读一次，**不轮询、不写系统设置、不重启 Dock**；设置页只在读到的值变了时重起监听（G8）。
+  系统的应用程序捏合还开着时，识别到了也不打开。**26 没有独立的「应用程序」设置行**，设置页显示命令并给「复制命令」：
+  `defaults write com.apple.dock showSpotlightGestureEnabled -bool false; killall Dock`，由用户自行在终端执行；说明会重启程序坞、保留原生「显示桌面」，不引导关闭它。
+  其他版本仍给「打开触控板设置」，引导关闭「应用程序」。**第一次让给系统时刘海岛说一次**（第四轮体检 U5，`Prefs.launchpadPinchYieldTold`，不注册默认值）：
+  不当场说（系统的应用程序视图正盖着），下次打开启动台再说；26 带「复制命令」，其他版本带「打开触控板设置」。
+  那次岛上已有读不出来的提示或第一次导入时就再等一次（在 `autoImportIfNeeded` 前判断）；系统的应用程序捏合已经关掉就不说（`Launchpad.pinchHint`）。
+
+- 原生「显示桌面」继续由系统识别和动画，Kitty 收着时不接管张开。macOS 26 用 `LaunchpadDesktopState` 只读 Dock 的 AX 桌面通知，已知正在显示桌面时把捏合还原窗口让给系统，避免同时打开 Kitty；不发送桌面动作、不调用 CoreDock，不读「显示桌面」开关来推断当前状态（热键、触发角也能显示桌面）。
+  只使用已有辅助功能授权，不自动请求、不把它变成捏合或其他入口的强制门槛。没有授权、连接失败、启动时桌面已显示或重新连接后尚未收到通知时，状态是未知，不猜窗口层级，不能保证那一次捏合还原与 Kitty 打开不会重叠；收到下一轮通知后恢复协调。Dock 重启、睡眠 / 唤醒、会话和空间变化时清掉旧状态并按需重连，不轮询。
+
+- macOS 26 的 `LaunchpadGestureGate` 用已有辅助功能授权建会话头插事件拦截，掩码只含 29 / 30；仅系统 Dock 的 HID 23、轴低16位 3 在 began 锁存归属：Kitty 已打开则整段吞完（Kitty 收起后也吞结尾），原来关闭则整段放行（中途打开也不追吞）。29 仅 HID 60 是取消封套，清归属且只在原来归 Kitty 时吞；其他轴、缩放 / 旋转、未知阶段都放行。缺权限或建不起来不申请、不拦其他入口；不收键鼠、不合成事件、不修改原始触点识别算法或系统桌面动画。
+
 
 ## 7. 触发角（第 3 批）
 - 触发后要等真的离开才重新武装（`CornerArm`）；启动台开着时全屏面板盖住了角，那时的离开收不到也不算——**收起时鼠标已经不在角里就当离开过**

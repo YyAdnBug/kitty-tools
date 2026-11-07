@@ -376,15 +376,19 @@ extension NSViewController {
 }
 
 extension NSApplication {
-  /// 普通窗口（设置窗、全部便签窗口）关掉时调：别的普通窗口都不开着了才切回 .accessory（收起程序坞图标）——
-  /// 两个窗口都开着时关掉一个，另一个还要留在程序坞和 ⌘⇥ 里
+  /// 普通窗口关闭时共用：macOS 26 从启动起保持 .regular 到退出，避免切换策略后浮层丢键盘；
+  /// 其他系统等最后一扇普通窗口关闭后切回 .accessory，收起程序坞图标。
   func leaveDockIfNoWindows(closing: NSWindow) {
+    if ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 26 {
+      // Tahoe 在 SwiftUI 启动前已设为 regular，运行中不再降策略，保留 Dock / ⌘⇥。
+      return
+    }
     if !Self.hasOrdinaryWindow(in: windows, besides: closing) { setActivationPolicy(.accessory) }
   }
 
   /// 除了正在关的那个，还有没有开着的普通窗口（纯函数）：看得见、能当主窗口的（带标题栏的）；浮层、岛、遮罩、钉图都是
   /// 面板或无边框窗口，当不了主窗口；挂着的表单（sheet）不算
-  static func hasOrdinaryWindow(in windows: [NSWindow], besides closing: NSWindow) -> Bool {
+  static func hasOrdinaryWindow(in windows: [NSWindow], besides closing: NSWindow?) -> Bool {
     windows.contains { $0 !== closing && $0.isVisible && $0.canBecomeMain && !$0.isSheet }
   }
 }

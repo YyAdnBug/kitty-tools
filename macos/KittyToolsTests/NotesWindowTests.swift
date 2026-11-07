@@ -792,6 +792,15 @@ struct NotesWindowTests {
     #expect(!NSApplication.hasOrdinaryWindow(in: all, besides: settings))
     #expect(!NSApplication.hasOrdinaryWindow(in: [settings, panel], besides: settings))
     #expect(NSApplication.hasOrdinaryWindow(in: all, besides: notes))
+
+    // 关闭流程结束后的重验不排除任何窗口：全关了才退出程序坞；另一扇还在或原窗口重开都保留。
+    settings.close()
+    #expect(!NSApplication.hasOrdinaryWindow(in: all, besides: nil))
+    notes.orderFront(nil)
+    #expect(NSApplication.hasOrdinaryWindow(in: all, besides: nil))
+    notes.orderOut(nil)
+    settings.orderFront(nil)
+    #expect(NSApplication.hasOrdinaryWindow(in: all, besides: nil))
   }
 
   /// 键盘（NotesWindowView 里看不见的按钮上挂着的那几个键）真的到得了模型，工具栏的项和右键菜单同名：
