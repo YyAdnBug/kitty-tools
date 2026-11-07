@@ -11,6 +11,9 @@
 // 开着时面板至少高到放得下它。没有图钉、齿轮（⌘, 照样开设置）。有新版本时左边种类后面常驻「更新到 x」（UpdateBarHint）。
 // 面板高度随行数伸缩（带动画），顶边不动。空搜索框里一行都没有时（没收藏、没用过，或关了「列出常用」）只剩搜索框（isBare）。
 // 状态和操作都在 LauncherModel。⌘Y 快速查看的预览卡（LauncherQuickLookView）也在这里。
+// 脚本命令（2026-11-07）：行图标是头部写的 emoji / SF 符号 / 图片，没写是命令家族紫的 terminal 色块，右侧「脚本」；
+// 从网上下载的脚本第一次跑之前，列表换成它的全文（ScriptReviewView：等宽字、能滚，上面一句写明以用户的身份运行、
+// 能用本 App 已有的授权），底栏「运行 ↩」「返回 esc」。
 
 import AppKit
 import SwiftUI
@@ -40,6 +43,8 @@ struct LauncherPanelView: View {
   static let visibleRows = 8.5
   /// 拖下边能定的行数（W2）：按半行吸附，露半行提示下面还有
   static let rowRange = 6.5...14.5
+  /// 看脚本全文那一页的高度（不含搜索栏和底栏）
+  static let reviewHeight: CGFloat = 320
 
   var body: some View {
     VStack(spacing: 0) {
@@ -52,7 +57,10 @@ struct LauncherPanelView: View {
           .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
           .padding(.horizontal, 16)
       }
-      if showsNoResults {
+      if let review = model.review {
+        ScriptReviewView(review: review)
+          .frame(height: Self.reviewHeight)
+      } else if showsNoResults {
         Text(model.emptyText)
           .font(.system(size: 13))
           .foregroundStyle(.secondary)
@@ -91,7 +99,7 @@ struct LauncherPanelView: View {
   /// 有错误、底栏的就地提示、动作菜单、更新提示（update）时照旧
   static func isBare(_ model: LauncherModel, update: Bool) -> Bool {
     model.isShowingRecent && model.results.isEmpty && model.error == nil && model.notice == nil
-      && !model.showsActions && !update
+      && !model.showsActions && !update && model.review == nil
   }
 
   /// 行高：高亮的位置和面板高度都按它的前缀和算
@@ -140,6 +148,7 @@ struct LauncherPanelView: View {
     -> CGFloat
   {
     if isBare(model, update: update) { return searchHeight }
+    if model.review != nil { return searchHeight + 0.5 + reviewHeight + barHeight }
     var height = searchHeight + 0.5 + barHeight
     if model.error != nil { height += 28 }
     if !model.isShowingRecent && model.results.isEmpty {
@@ -299,43 +308,10 @@ struct LauncherPanelView: View {
   /// （有新版本时只剩「更新到 x」）
   private var bar: some View {
     HStack(spacing: 12) {
-      if let notice = model.notice {
-        BarNoticeView(notice: notice, undo: model.undoForget)
-          .transition(reduceMotion ? .opacity : AnyTransition(.blurReplace))
-          .id(notice)
-      }
-      if let selected = model.selectedItem, model.notice == nil {
-        HStack(spacing: 8) {
-          KindTile(symbol: selected.familySymbol, color: selected.familyColor, size: 16)
-          Text(selected.kindTitle).foregroundStyle(.secondary)
-        }
-        .accessibilityElement(children: .combine)
-        .transition(reduceMotion ? .opacity : AnyTransition(.blurReplace))
-      }
-      // 有新版本：种类后面常驻「更新到 x」（没有选中项时也在）；就地提示出来时让开
-      if model.notice == nil { UpdateBarHint { model.hidePanel() } }
-      Spacer(minLength: 8)
-      if let selected = model.selectedItem {
-        let primary = model.primaryAction(for: selected).title
-        // 等着再按一次确认、强制退出：字和 ↩ 键帽换危险色（mac-whisker §3「危险色」）
-        let danger = model.isDangerous(selected, commandKey: false)
-        Button {
-          model.execute(selected)
-        } label: {
-          HStack(spacing: 6) {
-            Text(primary)
-              .foregroundStyle(danger ? AnyShapeStyle(Style.danger) : AnyShapeStyle(.foreground))
-            KeyCap("↩", primary: true, danger: danger).accessibilityHidden(true)
-          }
-        }
-        .accessibilityLabel(primary)
-        Button(action: model.toggleActions) {
-          HStack(spacing: 6) {
-            Text("操作")
-            KeyCap("⌘K")
-          }
-        }
-        .accessibilityLabel("操作")
+      if model.review != nil {
+        reviewBar
+      } else {
+        resultBar
       }
     }
     .animation(Style.Motion.settle.animation(reduced: reduceMotion), value: model.notice)
@@ -346,6 +322,108 @@ struct LauncherPanelView: View {
     .padding(.horizontal, 16)
     .frame(height: Self.barHeight)
     .overlay(alignment: .top) { Hairline() }
+  }
+
+  /// 看脚本全文时的底栏：左边写这是什么，右边「运行 ↩」「返回 esc」
+  @ViewBuilder private var reviewBar: some View {
+    HStack(spacing: 8) {
+      KindTile(
+        symbol: "exclamationmark.shield.fill", color: Color(nsColor: .systemOrange), size: 16)
+      Text("从网上下载的脚本").foregroundStyle(.secondary)
+    }
+    .accessibilityElement(children: .combine)
+    Spacer(minLength: 8)
+    Button(action: model.approveReview) {
+      HStack(spacing: 6) {
+        Text("运行")
+        KeyCap("↩", primary: true).accessibilityHidden(true)
+      }
+    }
+    .accessibilityLabel("运行")
+    Button(action: model.cancelReview) {
+      HStack(spacing: 6) {
+        Text("返回")
+        KeyCap("esc")
+      }
+    }
+    .accessibilityLabel("返回")
+  }
+
+  @ViewBuilder private var resultBar: some View {
+    if let notice = model.notice {
+      BarNoticeView(notice: notice, undo: model.undoForget)
+        .transition(reduceMotion ? .opacity : AnyTransition(.blurReplace))
+        .id(notice)
+    }
+    if let selected = model.selectedItem, model.notice == nil {
+      HStack(spacing: 8) {
+        KindTile(symbol: selected.familySymbol, color: selected.familyColor, size: 16)
+        Text(selected.kindTitle).foregroundStyle(.secondary)
+      }
+      .accessibilityElement(children: .combine)
+      .transition(reduceMotion ? .opacity : AnyTransition(.blurReplace))
+    }
+    // 有新版本：种类后面常驻「更新到 x」（没有选中项时也在）；就地提示出来时让开
+    if model.notice == nil { UpdateBarHint { model.hidePanel() } }
+    Spacer(minLength: 8)
+    if let selected = model.selectedItem {
+      let primary = model.primaryAction(for: selected).title
+      // 等着再按一次确认、强制退出：字和 ↩ 键帽换危险色（mac-whisker §3「危险色」）
+      let danger = model.isDangerous(selected, commandKey: false)
+      Button {
+        model.execute(selected)
+      } label: {
+        HStack(spacing: 6) {
+          Text(primary)
+            .foregroundStyle(danger ? AnyShapeStyle(Style.danger) : AnyShapeStyle(.foreground))
+          KeyCap("↩", primary: true, danger: danger).accessibilityHidden(true)
+        }
+      }
+      .accessibilityLabel(primary)
+      Button(action: model.toggleActions) {
+        HStack(spacing: 6) {
+          Text("操作")
+          KeyCap("⌘K")
+        }
+      }
+      .accessibilityLabel("操作")
+    }
+  }
+}
+
+/// 从网上下载的脚本第一次跑之前的那一页（拍板 B5）：标题和位置、一句写明会以用户的身份运行、整段脚本（等宽字，能滚、能选）
+private struct ScriptReviewView: View {
+  let review: LauncherModel.ScriptReview
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      VStack(alignment: .leading, spacing: 2) {
+        Text(review.script.title).font(.system(size: 14, weight: .medium)).lineLimit(1)
+        Text((review.script.path as NSString).abbreviatingWithTildeInPath)
+          .font(.system(size: 12))
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+          .truncationMode(.middle)
+      }
+      Text(
+        "这个脚本是从网上下载的，第一次运行前先看一眼。它会以你的身份运行，能用 Kitty Tools 已有的辅助功能、屏幕录制、完全磁盘访问授权。"
+      )
+      .font(.system(size: 12))
+      .foregroundStyle(Color(nsColor: .systemOrange))
+      .fixedSize(horizontal: false, vertical: true)
+      ScrollView {
+        Text(review.text ?? "正在读取…")
+          .font(.system(size: 12, design: .monospaced))
+          .foregroundStyle(review.text == nil ? .secondary : .primary)
+          .textSelection(.enabled)
+          .frame(maxWidth: .infinity, alignment: .topLeading)
+          .padding(10)
+      }
+      .background(Style.hoverFill, in: .rect(cornerRadius: Style.Radius.card, style: .continuous))
+      .accessibilityLabel("脚本内容")
+    }
+    .padding(.horizontal, 16)
+    .padding(.vertical, 12)
   }
 }
 
@@ -463,6 +541,9 @@ private struct LauncherRow: View {
       let image = LauncherIcons.icon(for: AppCatalog.systemSettingsPath)
     {
       Image(nsImage: image).resizable().frame(width: 24, height: 24)
+    } else if let icon = item.scriptIcon {
+      ScriptIconView(
+        icon: icon, fallback: KindTile(symbol: item.tileSymbol, color: item.familyColor))
     } else if item.kind == .url || item.kind == .search, let host = SiteIcons.host(of: item.target)
     {
       SiteIcon(host: host, fallback: KindTile(symbol: item.tileSymbol, color: item.familyColor))
@@ -542,7 +623,7 @@ extension LauncherItem {
     case .prompt where target.hasPrefix(ExchangeRates.suggestionPrefix): Style.Family.keyboard
     case .reminder: Style.Family.reminders
     case .prompt where target.hasPrefix("reminder-"): Style.Family.reminders
-    case .system, .process, .ip: Style.Family.command
+    case .system, .process, .ip, .script: Style.Family.command
     case .prompt where target.hasPrefix("system-"): Style.Family.command
     case .url where isSettingsPane: Style.Family.general
     case .url: Style.Family.url
@@ -581,6 +662,7 @@ extension LauncherItem {
     case .process: "进程"
     case .ip: "网络"
     case .reminder: "提醒"
+    case .script: "脚本"
     }
   }
 }
@@ -627,4 +709,32 @@ private struct RevealKey: Equatable {
 extension LauncherItem {
   /// 列表里的身份：计算结果行跨按键保持同一个（id 含算式，每敲一个字都会变），结果数字才能滚动变化
   fileprivate var rowID: String { kind == .calculation ? "calculation" : id }
+}
+
+/// 脚本命令头部写的图标（24 pt）：emoji 直接画；SF 符号放进命令家族紫的色块（同系统命令）；图片在主线程外读、读到了再换上
+/// （ScriptIcons）。符号名不认识、图片读不出来时用 fallback（默认的 terminal 色块）
+private struct ScriptIconView<Fallback: View>: View {
+  let icon: ScriptCommand.Icon
+  let fallback: Fallback
+
+  var body: some View {
+    switch icon {
+    case .emoji(let emoji):
+      Text(emoji)
+        .font(.system(size: 19))
+        .frame(width: 24, height: 24)
+        .accessibilityHidden(true)
+    case .symbol(let name)
+    where NSImage(systemSymbolName: name, accessibilityDescription: nil) != nil:
+      KindTile(symbol: name, color: Style.Family.command)
+    case .image(let path):
+      if let image = ScriptIcons.shared.image(path) {
+        Image(nsImage: image).resizable().interpolation(.high).frame(width: 24, height: 24)
+      } else {
+        fallback
+      }
+    default:
+      fallback
+    }
+  }
 }

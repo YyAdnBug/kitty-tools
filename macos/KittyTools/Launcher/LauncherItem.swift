@@ -1,4 +1,4 @@
-// 启动器的一条结果：App、内置动作、网址（含系统设置面板、浏览历史）、文件路径、系统命令（这五类记使用、能收藏），
+// 启动器的一条结果：App、内置动作、网址（含系统设置面板、浏览历史）、文件路径、系统命令、脚本命令（这六类记使用、能收藏），
 // 以及网页搜索、关键词提示、计算结果、「cb」「fy」那一行、kill / port 列的进程、「ip」列的地址（不记）。
 // id = 类型 + 目标，使用记录按它累计。内置动作和菜单栏同一份（体检 A26）：副标题只写「Kitty Tools」（两个开关写开没开），
 // 英文别名只进 names 参与匹配（N10）。
@@ -30,9 +30,11 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
     /// 「提醒 …」列的提醒（2026-11-04，PLAN §10「提醒」D2 D4）：目标是提醒的 id，↩ 打开 / 暂停、⌘↩ 到设置里编辑；
     /// 目标空着的是「建一条」那一行（payload 是关键词后面那句话），↩ 建好
     case reminder
+    /// 脚本命令（2026-11-07，ScriptCommand；目标是脚本文件的路径）：↩ 跑它，输出按它写的 mode 交出去
+    case script
 
     /// 只有这些记使用、能出现在「常用」里、能收藏
-    var isRecorded: Bool { [.app, .action, .url, .path, .system].contains(self) }
+    var isRecorded: Bool { [.app, .action, .url, .path, .system, .script].contains(self) }
   }
 
   let kind: Kind
@@ -61,6 +63,8 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
   /// 状态屏列表里排在最前面的那个状态，而且设置里打开了「按快捷键直接进入排在最前面的状态」：全局快捷键进的就是它，
   /// 选中时右侧显示键帽（同别的带全局快捷键的内置动作）。开关关着时（默认）快捷键是先出选状态的面板，哪一行都不带键帽
   var isFirstStatusPreset = false
+  /// 脚本命令头部写的图标（emoji、SF 符号、图片）；别的结果是 nil
+  var scriptIcon: ScriptCommand.Icon?
   /// 来自每次搜索都从源头重新列出来的列表（浏览器书签、快捷链接）：使用记录不靠自己把它找回来，源头删了就不再出现
   /// （issue #10：以前打开过的书签在浏览器里删了，还以「用过的网址」搜得到）
   var listed = false
@@ -200,7 +204,7 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
     case (.action, _): MenuExtra(rawValue: target)?.symbol ?? "gearshape"
     case (.translate, _): SettingsPage.translate.symbol
     case (.system, _): SystemCommand(rawValue: target)?.symbol ?? "power"
-    case (.process, _): "terminal.fill"
+    case (.process, _), (.script, _): "terminal.fill"
     case (.ip, let target):
       target.hasPrefix("public")
         ? "globe.asia.australia.fill" : IPAddresses.isVPN(target) ? "lock.shield.fill" : "network"

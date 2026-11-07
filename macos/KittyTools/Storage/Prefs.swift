@@ -41,6 +41,12 @@ enum Prefs {
   static let launcherExchangeRates = "launcherExchangeRates"
   /// 计算器汇率换算用过的货币（代码，最近的在前，最多 8 种）：货币候选排前面；这台电脑自己的，**不注册默认值**
   static let launcherRecentCurrencies = "launcherRecentCurrencies"
+  /// 启动器的脚本命令（2026-11-07 拍板 E2，默认开）：关掉后自带的和自己的脚本都不出现，内置命令不受影响
+  static let launcherScripts = "launcherScripts"
+  /// 脚本命令另外添加的文件夹（换行分隔的路径，ScriptLibrary）：这台电脑自己的路径，**不注册默认值**（不导出、不同步）
+  static let scriptFolders = "scriptFolders"
+  /// 跑脚本用的 PATH：从用户的登录 shell 读到的那一份（ScriptRunner）；这台电脑自己的，**不注册默认值**
+  static let scriptShellPath = "scriptShellPath"
   /// 剪贴板、启动器、翻译浮窗呼出时用挤压入场（设置 › 通用「动效」，默认关；2026-09-29 用户要求三块面板统一，设置从启动器页
   /// 挪到通用页；2026-10-03 转正，去掉「实验」）
   static let panelSqueezeEntrance = "panelSqueezeEntrance"
@@ -397,6 +403,7 @@ enum Prefs {
       launcherFallbackAlways: false,
       launcherShowsFrequent: true,
       launcherRomanInput: false,
+      launcherScripts: true,
       launchpadColumns: 7,
       launchpadRows: 5,
       launchpadLayout: "",

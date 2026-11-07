@@ -297,6 +297,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   private lazy var clipboardModel = ClipboardPanelModel(store: clipboardStore)
   private lazy var launcherModel = LauncherModel(usage: launcherUsage)
+  /// 启动器的脚本命令（2026-11-07）：每次呼出启动器在主线程外重读一遍，换上了新的就让启动器重搜
+  private lazy var scriptLibrary: ScriptLibrary = {
+    let library = ScriptLibrary()
+    library.onChange = { [unowned self] in launcherModel.scriptsChanged() }
+    return library
+  }()
+
+  /// 设置 › 启动器「脚本命令」开着（关着时自带的和自己的脚本都不出现）
+  private static var scriptsOn: Bool { UserDefaults.standard.bool(forKey: Prefs.launcherScripts) }
+
+  /// 看过、确认要跑的下载来的脚本：去掉隔离标记，重读脚本库
+  private func approveDownloadedScript(_ script: ScriptCommand) async {
+    _ = await ScriptRunner.clearDownloaded(script.path)
+    scriptLibrary.refresh()
+  }
 
   /// 空闲回收（常驻内存，2026-10-07，PLAN §10）：三块主面板哪块收起、进程内识完一次字、全部便签窗口关掉、屏幕边缘
   /// 那叠收起、浮动便签收回（2026-10-18）都重新计时，过了 Memory.idleDelay 还闲着（isIdle），就把闲着白占的还回去——
@@ -427,6 +442,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     model.requestFolderAccess = { [unowned self] in requestFolderAccess() }
     model.perform = { [unowned self] in SystemControl.perform($0, island: island) }
     model.island = island
+    model.scripts = { [unowned self] in Self.scriptsOn ? scriptLibrary.scripts : [] }
+    model.approveScript = { [unowned self] in await approveDownloadedScript($0) }
     builtLauncherPanel = panel
     return panel
   }()
@@ -1300,7 +1317,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       noteCapture?.panel.hide()
     }
     let appearing = !launcherPanel.isVisible
-    if appearing { launcherModel.prepareForShow() }
+    if appearing {
+      if Self.scriptsOn { scriptLibrary.refresh() }
+      launcherModel.prepareForShow()
+    }
     // 设置 › 启动器「面板位置」：同剪贴板面板（2026-11-04）
     let place = OverlayPanel.placement(
       UserDefaults.standard.string(forKey: Prefs.launcherPanelPosition),

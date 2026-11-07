@@ -4707,6 +4707,73 @@ struct SnapshotProbeTests {
     return try #require(context.makeImage())
   }
 
+  /// 启动器的脚本命令（2026-11-07，PLAN §10「脚本命令」）。单独一个测试函数，几秒，图都以 launcher-scripts 开头：
+  ///   -only-testing:'KittyToolsTests/SnapshotProbeTests/launcherScripts()'
+  /// 出：搜到的几条脚本（emoji / SF 符号 / 默认色块的图标，浅深）、写了 confirm 的上了膛、下载来的脚本先看全文那一页（浅深）
+  @Test(.enabled(if: directory != nil)) func launcherScripts() async throws {
+    let out = try #require(Self.directory)
+    try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
+    func script(
+      _ title: String, _ keyword: String, _ icon: ScriptCommand.Icon?, summary: String? = nil,
+      confirm: String? = nil, downloaded: Bool = false
+    ) -> ScriptCommand {
+      var script = ScriptCommand(
+        path: "/Users/me/脚本/\(keyword).sh", title: title, interpreter: ["/bin/zsh"])
+      script.keyword = keyword
+      script.icon = icon
+      script.summary = summary
+      script.package = "示例"
+      script.confirmation = confirm
+      script.isDownloaded = downloaded
+      return script
+    }
+    let scripts = [
+      script("Unix 时间戳", "time", .emoji("⏱"), summary: "时间戳和日期互转"),
+      script("切换深色模式", "dark", .symbol("circle.lefthalf.filled")),
+      script("清空下载文件夹", "cleandl", nil, confirm: "再按 ↩ 清空下载文件夹，不能撤销"),
+      script("记到 flomo", "fl", nil, summary: "把一句话发到 flomo", downloaded: true),
+    ]
+    let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [])
+    model.engines = { [] }
+    model.boundHotKey = { $0.defaultHotKey }
+    model.scripts = { scripts }
+    model.runScript = { _, _ in .init(end: .finished(0)) }
+    model.readScript = { _ in
+      """
+      #!/bin/zsh
+      # @kitty.title 记到 flomo
+      # @kitty.keyword fl
+      # @kitty.argument1 想记的话
+      # 把下面这行换成你自己的 API 地址（flomo › 设置 › API）
+      api="https://flomoapp.com/iwh/xxxx/yyyy/"
+      curl -sS -X POST "$api" -H 'Content-Type: application/json' \\
+        -d "$(jq -n --arg c "$1" '{content: $c}')"
+      """
+    }
+    for dark in [false, true] {
+      let suffix = dark ? "-dark" : ""
+      model.query = "示例"
+      try snapshot(
+        LauncherPanelView(model: model),
+        size: NSSize(width: 720, height: LauncherPanelView.height(for: model)), dark: dark,
+        to: "\(out)/launcher-scripts\(suffix).png")
+      model.query = "cleandl"
+      if let item = model.results.first { model.execute(item) }
+      try snapshot(
+        LauncherPanelView(model: model),
+        size: NSSize(width: 720, height: LauncherPanelView.height(for: model)), dark: dark,
+        to: "\(out)/launcher-scripts-armed\(suffix).png")
+      model.query = "fl"
+      if let item = model.results.first { model.execute(item) }
+      for _ in 0..<20 where model.review?.text == nil { await Task.yield() }
+      try snapshot(
+        LauncherPanelView(model: model),
+        size: NSSize(width: 720, height: LauncherPanelView.height(for: model)), dark: dark,
+        to: "\(out)/launcher-scripts-review\(suffix).png")
+      model.cancelReview()
+    }
+  }
+
   private func snapshot(
     _ view: some View, size: NSSize, dark: Bool, to path: String,
     prepare: ((NSView) -> Void)? = nil

@@ -100,9 +100,10 @@ nonisolated enum LauncherMatch {
   /// 「sl」会把没用过的 Slack 排到「睡眠」后面，↩ 下去电脑就睡了。内置动作「退出 Kitty Tools」（MenuExtra.quit）
   /// 同理：↩ 不确认，「退出」「qu」同分时要排在「全部退出」、QuickTime Player 后面。状态屏的各个状态也一样：
   /// ↩ 下去键盘鼠标就被拦住了（它们的英文名首字母 ss 还和 System Settings 撞）
+  /// 脚本命令同理（2026-11-07 拍板 C1）：↩ 就跑，同分时排在 App、内置动作后面
   static func priority(_ item: LauncherItem) -> Int {
-    item.kind == .system || (item.kind == .action && item.target == "quit") || item.isStatusPreset
-      ? 1 : 0
+    item.kind == .system || item.kind == .script || (item.kind == .action && item.target == "quit")
+      || item.isStatusPreset ? 1 : 0
   }
 
   /// 匹配、加使用加成、排序；同分先按 priority（系统命令、退出本 App 最后），再标题短的在前，再按原顺序

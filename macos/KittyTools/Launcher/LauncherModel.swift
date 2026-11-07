@@ -21,6 +21,9 @@
 // 单击选中、双击执行（和剪贴板面板一致）。打开 App / 文件 / 网址 / 搜索页：↩ 当下就收起，系统在后台打开，不等 App
 // 启动完（2026-09-27 用户要求）；打开成功才记使用，打不开用刘海岛说。其余先执行、成功才收起（失败在面板里显示，§11 #33）。
 // 启动器没有固定：点外面就收起（N8）；没执行就收起的，60 秒内再呼出保留查询和选中项（体检 A27）。
+// 脚本命令（2026-11-07，ScriptCommand / ScriptLibrary / ScriptRunner）：一个脚本一行，和系统命令一样搜、排、记使用、收藏，
+// 别名一字不差时排第一；↩ 跑它（写了 confirm 的先上膛），从网上下载的第一次先在面板里给用户看一眼全文（review，↩ 运行、
+// Esc 回去）；超过 1 秒没跑完岛上出「正在运行」带「停止」；输出按它的 mode：岛上一行 / 粘贴 / 复制 / 不显示。
 
 import AppKit
 import Carbon.HIToolbox
@@ -32,6 +35,7 @@ import UniformTypeIdentifiers
   var query = "" {
     didSet {
       forgotten = nil  // 打字就不能再撤销移除
+      review = nil
       search()
     }
   }
@@ -69,6 +73,14 @@ import UniformTypeIdentifiers
   }
   var actionQuery = "" { didSet { actionSelection = 0 } }
   var actionSelection = 0
+  /// 正在看的脚本（拍板 B5：从网上下载的，第一次跑之前先给用户看一眼全文）：列表换成脚本全文，↩ 运行、Esc 回去
+  private(set) var review: ScriptReview?
+
+  struct ScriptReview: Equatable {
+    let script: ScriptCommand
+    /// 读到之前是 nil
+    var text: String?
+  }
 
   enum Alternate {
     case none, command, option, control
@@ -133,6 +145,25 @@ import UniformTypeIdentifiers
   @ObservationIgnored var requestFolderAccess: () -> Void = {}
   /// 刘海岛（单测里是 nil）：只复制不粘贴时面板同时收起，结果看不见，用它说
   @ObservationIgnored var island: Island?
+  /// 脚本命令（ScriptLibrary 读到的；启动器的「脚本命令」关着时是空的）
+  @ObservationIgnored var scripts: () -> [ScriptCommand] = { [] }
+  /// 跑一条脚本（单测换成假的）
+  @ObservationIgnored var runScript:
+    @MainActor (ScriptCommand, [String]) async -> ScriptRunner.Outcome = {
+      await ScriptRunner.run($0, arguments: $1)
+    }
+  /// 读脚本全文（review 那一页；单测换成假的）
+  @ObservationIgnored var readScript: @MainActor (ScriptCommand) async -> String = {
+    await ScriptRunner.text(of: $0.path)
+  }
+  /// 看过、确认要跑的下载来的脚本：去掉隔离标记、重读脚本库
+  @ObservationIgnored var approveScript: @MainActor (ScriptCommand) async -> Void = { _ in }
+  /// 这次运行里确认过的（去不掉隔离标记的文件夹：只读的、别人的）
+  @ObservationIgnored private var approvedScripts: Set<String> = []
+  /// 正在跑的脚本（按路径）：「停止」按钮取消它；同一个还在跑时再按 ↩ 不重复起
+  @ObservationIgnored private var runningScripts: [String: Task<Void, Never>] = [:]
+  /// 脚本行的缓存：每敲一个字都要列一遍，拼音转写不便宜（同内置动作）
+  @ObservationIgnored private var scriptCache: (scripts: [ScriptCommand], items: [LauncherItem])?
   /// 文件结果最后一行的授权提示：每次呼出后第一次进文件搜索时算一次（要读受保护目录，问过之前不读）。
   /// ponytail: 授权被重置（tccutil reset、撤掉完全磁盘访问）后，第一次进文件搜索时系统会弹框
   @ObservationIgnored var folderHint: LauncherItem?
@@ -274,6 +305,24 @@ import UniformTypeIdentifiers
 
   /// 内置动作（按此刻的状态）
   private var builtIns: [LauncherItem] { LauncherItem.actions(actionState()) }
+
+  /// 脚本命令的行（按此刻的脚本库）
+  private var scriptItems: [LauncherItem] {
+    let scripts = scripts()
+    if let scriptCache, scriptCache.scripts == scripts { return scriptCache.items }
+    let items = scripts.map(LauncherItem.script)
+    scriptCache = (scripts, items)
+    return items
+  }
+
+  /// 脚本库重读完、换上了新的：开着、用户还没挑过选中项时按新的重搜（同后台扫完 App 目录）
+  func scriptsChanged() {
+    if isShown, !userMovedSelection, armed == nil, review == nil, fileRequest == nil,
+      commandRequest == nil
+    {
+      search()
+    }
+  }
   /// 开着的功能（Feature）：cb 那一行要剪贴板开着、fy 那一行要翻译开着
   private var features: Set<Feature> { actionState().features }
 
@@ -347,6 +396,7 @@ import UniformTypeIdentifiers
     showsActions = false
     error = nil
     armed = nil
+    review = nil
     forgotten = nil
     notice = nil
     definitionTask?.cancel()
@@ -459,10 +509,14 @@ import UniformTypeIdentifiers
     let used = usedLocations(excluding: bookmarks)
     // 书签先粗筛（几千个每敲一个字都完整打分太慢，P3；同 visited）
     let tokens = LauncherMatch.tokens(query)
+    let scriptItems = scriptItems
     let local = LauncherMatch.rank(
-      apps + builtIns + SystemCommands.items + WebSearch.quicklinkItems(engines: engines)
+      apps + builtIns + SystemCommands.items + scriptItems
+        + WebSearch.quicklinkItems(engines: engines)
         + bookmarks.filter { LauncherMatch.mayMatch(tokens, $0) } + used, query: query
     ) { usage.boost(for: $0, query: query) }
+    // 脚本的别名一字不差：排第一（拍板 C1）
+    let aliased = Self.aliased(scriptItems, scripts: scripts(), query: query)
     let history = longEnough ? visited(query, excluding: bookmarks + used) : []
     // 兜底默认只在没有本地结果时出现（和 Alfred 一样；以前带空格的查询把兜底排到匹配的 App 前面），
     // 设置里可改成总是附在最后。已经有网址 / 路径直达项、或明写了 http(s):// 的就不再兜底（体检 B35：
@@ -478,9 +532,19 @@ import UniformTypeIdentifiers
     // 直达项和书签 / 用过的网址可能是同一项：按 id 去重，保留靠前的
     var seen = Set<String>()
     let ordered = Self.promoting(local, over: top) { usage.boost(for: $0, query: query).query > 0 }
-    results = (ordered + tx + history + partialPrompts + fallback).filter {
+    results = (aliased + ordered + tx + history + partialPrompts + fallback).filter {
       seen.insert($0.id).inserted
     }
+  }
+
+  /// 别名（关键词）和输入一字不差的脚本行（不分大小写、去掉两头空白）。纯函数，配单测
+  static func aliased(_ items: [LauncherItem], scripts: [ScriptCommand], query: String)
+    -> [LauncherItem]
+  {
+    let text = LauncherMatch.fold(query.trimmingCharacters(in: .whitespaces))
+    guard !text.isEmpty else { return [] }
+    let paths = Set(scripts.filter { $0.keyword == text }.map(\.path))
+    return items.filter { paths.contains($0.target) }
   }
 
   /// 本地结果里在完全相同的输入下选过的（使用记录里这个查询的分 > 0）排到固定行（剪贴板、翻译、ip、直达、计算、
@@ -884,6 +948,8 @@ import UniformTypeIdentifiers
       return FileManager.default.fileExists(atPath: target) ? AppCatalog.item(path: target) : nil
     case .action: return actions.first { $0.target == target }
     case .system: return SystemCommands.items.first { $0.target == target }
+    // 文件删了、脚本命令关了：藏起来，收藏不删（同 App）
+    case .script: return scriptItems.first { $0.target == target }
     // 系统设置面板从目录里取（副标题「系统设置」、图标）；目录里没有的（系统更新后没了、自己建的这类链接）退回普通网址，
     // 不删收藏
     case .url:
@@ -989,8 +1055,143 @@ import UniformTypeIdentifiers
       }
       open(url, item)
     case .process: break  // 只在 kill / port 模式里出现，上面已经处理
+    case .script:
+      guard let script = scripts().first(where: { $0.path == item.target }) else {
+        return NSSound.beep()
+      }
+      // 从网上下载、还没看过的：先给用户看一眼（B5）
+      if script.isDownloaded, !approvedScripts.contains(script.path) { return showReview(script) }
+      if let text = script.confirmation, !confirm(item, commandKey: false, text: text) { return }
+      usage.record(item, query: query)
+      start(script, arguments: [])
     }
   }
+
+  // MARK: 脚本命令
+
+  /// 跑一条脚本（B1 B4）：先收起再跑，粘贴的目标在收起前定（焦点原本在自家便签里时直接粘进去）；
+  /// 超过 1 秒还没完，岛上出「正在运行」带「停止」。同一个还在跑：不重复起，岛上说一声
+  private func start(_ script: ScriptCommand, arguments: [String]) {
+    let name = "「\(script.title)」"
+    guard runningScripts[script.path] == nil else {
+      close()
+      island?.show(name + "还在运行", detail: "等它跑完，或者在岛上点「停止」", tone: .info)
+      return
+    }
+    let target = script.mode == .paste ? pasteTargetView() : nil
+    close()
+    let path = script.path
+    let progress = "正在运行" + name
+    runningScripts[path] = Task { [weak self] in
+      guard let self else { return }
+      let outcome = await Island.whenSlow(after: .seconds(1)) { [weak self] in
+        self?.island?.show(
+          progress, tone: .progress, symbol: "terminal.fill",
+          actions: [Island.Action("停止") { [weak self] in self?.runningScripts[path]?.cancel() }])
+      } work: {
+        await self.runScript(script, arguments)
+      }
+      runningScripts[path] = nil
+      deliver(outcome, of: script, into: target, progress: progress)
+    }
+  }
+
+  /// 等脚本跑完（单测）
+  func scriptRun(_ path: String) async { await runningScripts[path]?.value }
+
+  /// 把结果交出去（B1）：出错的一律岛上红字（最后一行；没有就写退出码），成功的按 mode
+  private func deliver(
+    _ outcome: ScriptRunner.Outcome, of script: ScriptCommand, into target: NSTextView?,
+    progress: String
+  ) {
+    let name = "「\(script.title)」"
+    switch outcome.end {
+    case .stopped:
+      island?.show("已停止" + name, tone: .info)
+      return
+    case .timedOut:
+      island?.show(
+        name + "超时，已停止", detail: "跑了 \(script.limit) 秒还没完；脚本里写 @kitty.timeout 能改",
+        tone: .error)
+      return
+    case .failedToStart(let reason):
+      island?.show("运行不了" + name, detail: reason, tone: .error)
+      return
+    case .finished(let status) where status != 0:
+      let reason =
+        ScriptCommand.lastLine(outcome.error) ?? ScriptCommand.lastLine(outcome.output)
+        ?? "退出码 \(status)"
+      island?.show(name + "出错了", detail: reason, tone: .error)
+      return
+    case .finished: break
+    }
+    let text = ScriptCommand.payload(outcome.output)
+    switch script.mode {
+    case .paste, .copy:
+      guard !text.isEmpty else {
+        island?.show(name + "没有输出", tone: .warning)
+        return
+      }
+      if script.mode == .copy {
+        Paster.write(string: text, record: true)
+        island?.show("已复制" + name + "的输出", detail: Island.excerpt(text))
+      } else {
+        island?.dismiss(ifShowing: progress)
+        pasteOutput(text, into: target)
+      }
+    case .none:
+      island?.dismiss(ifShowing: progress)
+    // ponytail: full / list 第 2 批做，先按岛上一行
+    case .island, .full, .list:
+      if let line = ScriptCommand.lastLine(outcome.output) {
+        island?.show(line, detail: script.title)
+      } else {
+        island?.show("已运行" + name)
+      }
+    }
+  }
+
+  /// 粘贴脚本的输出（同计算结果的粘贴：自家便签直接粘进去；没有辅助功能授权时只复制、岛上说去授权）。脚本的输出是本 App
+  /// 给出的新文字，同时记进剪贴板历史（mac-native §5）
+  private func pasteOutput(_ text: String, into target: NSTextView?) {
+    if let target {
+      Paster.paste(into: target) { Paster.write(string: text, record: true) }
+      return
+    }
+    Paster.write(string: text, record: true)
+    guard Permissions.isAccessibilityTrusted else {
+      island?.show(
+        "已复制到剪贴板", detail: "授权辅助功能后才能直接粘贴", tone: .warning,
+        actions: [.settings(for: .accessibility)])
+      return
+    }
+    _ = Paster.pasteToFrontmost()
+  }
+
+  /// 从网上下载的脚本：面板里换成它的全文（读到之前写「正在读取…」）
+  private func showReview(_ script: ScriptCommand) {
+    armed = nil
+    showsActions = false
+    review = ScriptReview(script: script)
+    Task {
+      let text = await readScript(script)
+      if review?.script.path == script.path { review?.text = text }
+    }
+    Island.announce("这个脚本是从网上下载的，先看一眼再运行。按回车运行，按 Esc 返回")
+  }
+
+  /// 看过了（↩ / 「运行」）：记下、去掉隔离标记，然后照常跑（写了 confirm 的不再上膛：看全文就是确认）
+  func approveReview() {
+    guard let script = review?.script else { return }
+    review = nil
+    approvedScripts.insert(script.path)
+    Task { await approveScript(script) }
+    usage.record(LauncherItem.script(script), query: query)
+    start(script, arguments: [])
+  }
+
+  /// 不跑了（Esc / 「返回」）：回到结果
+  func cancelReview() { review = nil }
 
   /// 执行了东西、面板跟着收起：这次的查询不留
   private func close() {
@@ -1173,6 +1374,7 @@ import UniformTypeIdentifiers
       let exists = FileManager.default.fileExists(atPath: item.target, isDirectory: &isDirectory)
       let path = (item.target as NSString).abbreviatingWithTildeInPath
       return exists && isDirectory.boolValue && !path.hasSuffix("/") ? path + "/" : path
+    case .script: return item.title
     case .search, .calculation, .clip, .prompt, .translate, .process, .ip, .reminder: return nil
     }
   }
@@ -1223,6 +1425,7 @@ import UniformTypeIdentifiers
     case .reminder:
       reminders().first { $0.id == item.target }?.isOn == true
         ? ("暂停", "pause.circle") : ("打开", "play.circle")
+    case .script: (confirming ? "确认运行" : "运行", "play")
     }
   }
 
@@ -1245,6 +1448,7 @@ import UniformTypeIdentifiers
     case .calculation where item.payload != nil, .ip where item.payload != nil:
       ("只复制，不粘贴", "doc.on.doc")
     case .reminder where !item.target.isEmpty: ("在设置里编辑", "gearshape")
+    case .script: ("在访达中显示", "folder")
     default: nil
     }
   }
@@ -1252,7 +1456,7 @@ import UniformTypeIdentifiers
   /// ⌘C 复制什么；内置动作、提示、cb / fy 那一行、进程、系统设置面板没有，⌘C 交给输入框
   func copyTitle(for item: LauncherItem) -> String? {
     switch item.kind {
-    case .app, .path: "复制路径"
+    case .app, .path, .script: "复制路径"
     case .url where AppCatalog.isSettingsPane(item.target): nil
     case .url, .search: "复制网址"
     case .calculation: item.payload == nil ? nil : "复制结果"
@@ -1506,6 +1710,7 @@ import UniformTypeIdentifiers
 
   func handleCommand(_ selector: Selector) -> Bool {
     if showsActions { return handleMenuCommand(selector) }
+    if review != nil { return handleReviewCommand(selector) }
     switch selector {
     case #selector(NSResponder.moveUp(_:)): move(by: -1)
     case #selector(NSResponder.moveDown(_:)): move(by: 1)
@@ -1538,6 +1743,22 @@ import UniformTypeIdentifiers
         guard !query.isEmpty else { return false }  // 没有查询：交给窗口关闭
         query = ""
       }
+    default: return false
+    }
+    return true
+  }
+
+  /// 看脚本全文那一页：↩ 运行、Esc 回去，↑↓ 吞掉（没有可选的），打字照常（会回到结果）
+  private func handleReviewCommand(_ selector: Selector) -> Bool {
+    switch selector {
+    case #selector(NSResponder.insertNewline(_:)):
+      if Style.isReturnKey { approveReview() }
+    case #selector(NSResponder.cancelOperation(_:)): cancelReview()
+    case #selector(NSResponder.moveUp(_:)), #selector(NSResponder.moveDown(_:)),
+      #selector(NSResponder.insertTab(_:)),
+      #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)),
+      #selector(NSResponder.insertLineBreak(_:)):
+      break
     default: return false
     }
     return true
@@ -1658,6 +1879,9 @@ import UniformTypeIdentifiers
     case .reminder where !item.target.isEmpty:
       close()
       openReminder(item.target)
+    case .script:
+      close()
+      NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: item.target)])
     default:
       NSSound.beep()  // 以前吞掉这个键、什么都不响
     }
@@ -1770,7 +1994,7 @@ import UniformTypeIdentifiers
     }
     // 2 复制（计算结果、ip 的 ⌘C 和 ⌘↩ 一样，不重复列）；复制路径和剪贴板 ⌘K 的「复制路径」同一个符号 link（mac-whisker §3）
     if ![.calculation, .ip].contains(item.kind), let title = copyTitle(for: item) {
-      let symbol = item.kind == .app || item.kind == .path ? "link" : "doc.on.doc"
+      let symbol = [.app, .path, .script].contains(item.kind) ? "link" : "doc.on.doc"
       add(title, symbol, "⌘C", section: 2) { [unowned self] in copy(item) }
     }
     if web {
@@ -1825,7 +2049,7 @@ import UniformTypeIdentifiers
   /// ⌘K / 底栏「动作」：没有选中项时不打开。⌘Y 预览开着时先缩回它：菜单画在被预览盖住的启动器里，
   /// 不然搜索框悄悄变成过滤动作、↑↓ 改的是看不见的菜单
   func toggleActions() {
-    guard showsActions || selectedItem != nil else { return }
+    guard showsActions || selectedItem != nil, review == nil else { return }
     if isQuickLooking { toggleQuickLook() }
     showsActions.toggle()
   }
