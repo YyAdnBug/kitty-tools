@@ -126,3 +126,10 @@ Release x64（Native AOT）的 exe 用 `KITTY_PROBE_PROFILE` 跑 `--ui-snapshots
 - home-light.png / home-dark.png：主界面（暂停记录、复制即译照旧是圆里的 Segoe 符号）
 - launcher-icons-shot-light.png / launcher-icons-shot-dark.png：启动器搜「截图」，内置动作行首的色块
 - icons-scale-light.png：用到的 18 个图标在 20 / 32 的色块里按 1、1.5、2 倍各排两行（看边缘和居中）
+
+## 0.4.0-v15（PLAN-v15 截图拷贝为文件，Windows 核验）
+
+Debug 的 Dev 档跑的：
+
+- settings-screenshot-light-window.png / settings-screenshot-dark-window.png：设置 › 截图，「截图拷贝为」那张卡在「快速保存到」说明下面（`--ui-snapshots`，真窗口）
+- notice-*.png：`--copy-file-probe` 每一步的提示卡（1 图像写尺寸、2 文件写文件名、4 钉图文件 / 图像、5 剪贴板被占着）
