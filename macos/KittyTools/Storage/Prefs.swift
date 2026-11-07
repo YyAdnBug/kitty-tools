@@ -47,6 +47,11 @@ enum Prefs {
   static let scriptFolders = "scriptFolders"
   /// 跑脚本用的 PATH：从用户的登录 shell 读到的那一份（ScriptRunner）；这台电脑自己的，**不注册默认值**
   static let scriptShellPath = "scriptShellPath"
+  /// 启动器「命令」表里改过的别名（JSON：编号 → 别名，"" = 不要别名；LauncherCommands.Settings）：注册默认值 ""，跟着设置
+  /// 导出、同步（拍板 E1：只是设置；别的 Mac 上没有那个脚本就先留着不用）
+  static let launcherCommandAliases = "launcherCommandAliases"
+  /// 启动器「命令」表里关掉的（一行一个编号）：同上
+  static let launcherCommandsOff = "launcherCommandsOff"
   /// 剪贴板、启动器、翻译浮窗呼出时用挤压入场（设置 › 通用「动效」，默认关；2026-09-29 用户要求三块面板统一，设置从启动器页
   /// 挪到通用页；2026-10-03 转正，去掉「实验」）
   static let panelSqueezeEntrance = "panelSqueezeEntrance"
@@ -404,6 +409,8 @@ enum Prefs {
       launcherShowsFrequent: true,
       launcherRomanInput: false,
       launcherScripts: true,
+      launcherCommandAliases: "",
+      launcherCommandsOff: "",
       launchpadColumns: 7,
       launchpadRows: 5,
       launchpadLayout: "",

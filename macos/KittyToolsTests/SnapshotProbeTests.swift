@@ -723,7 +723,7 @@ struct SnapshotProbeTests {
         to: "\(out)/settings-translate-detail\(suffix).png")
       try snapshot(
         LauncherTab().defaultAppStorage(engines).environment(navigation),
-        size: NSSize(width: 590, height: 1400),
+        size: NSSize(width: 590, height: 2900),
         dark: dark, to: "\(out)/settings-launcher-list\(suffix).png")
       try snapshot(
         SearchEngineDetail(id: "scholar").defaultAppStorage(engines),
@@ -4810,6 +4810,35 @@ struct SnapshotProbeTests {
         size: NSSize(width: 720, height: LauncherPanelView.height(for: model)), dark: dark,
         to: "\(out)/launcher-scripts-output\(suffix).png")
       model.closeOutput()
+    }
+    // 设置 › 启动器「脚本命令」「命令」两节：改过别名的（kill → k）、和网页搜索撞了的（g）、关掉的（端口），
+    // 一个读不成的脚本；偏好用临时的域（不碰宿主 App 的）
+    let suite = "kitty-snapshot-scripts-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    var settings = LauncherCommands.Settings(
+      aliases: ["builtin:kill": "k", LauncherCommands.scriptID(json): "g"], off: ["builtin:port"])
+    settings.set(false, for: LauncherCommands.scriptID(scripts[2]))
+    defaults.set(settings.aliasesText, forKey: Prefs.launcherCommandAliases)
+    defaults.set(settings.offText, forKey: Prefs.launcherCommandsOff)
+    defaults.set(true, forKey: Prefs.launcherScripts)
+    defaults.set(
+      SearchEngineDetail.encode(WebSearch.defaults), forKey: Prefs.launcherWebSearchEngines)
+    var bundled = script("UUID 生成器", "uuid", .emoji("🆔"))
+    bundled.isBundled = true
+    let library = ScriptLibrary(
+      scripts: [bundled] + all,
+      problems: [.init(path: "/Users/me/脚本/backup.py", problem: .noShebang)])
+    for dark in [false, true] {
+      try snapshot(
+        Form {
+          ScriptsSection(library: library)
+          LauncherCommandsSection(library: library)
+        }
+        .formStyle(.grouped)
+        .defaultAppStorage(defaults),
+        size: NSSize(width: 590, height: 2300), dark: dark,
+        to: "\(out)/settings-launcher-scripts\(dark ? "-dark" : "").png")
     }
   }
 

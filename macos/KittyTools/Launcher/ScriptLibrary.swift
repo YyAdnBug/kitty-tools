@@ -5,6 +5,7 @@
 // ponytail: 每次呼出都整个重读，不比修改时间；脚本多到几百个、或文件夹在很慢的网络盘上时，改成按文件夹修改时间 + 文件修改时间认。
 
 import AppKit
+import UniformTypeIdentifiers
 
 @Observable final class ScriptLibrary {
   nonisolated struct Problem: Hashable, Sendable {
@@ -24,6 +25,15 @@ import AppKit
   /// 换上新读的之后（启动器开着时重搜）
   @ObservationIgnored var onChange: () -> Void = {}
   @ObservationIgnored private var task: Task<Void, Never>?
+
+  init() {}
+
+  /// 截图自检：固定的脚本和问题，不读文件夹
+  init(scripts: [ScriptCommand], problems: [Problem] = []) {
+    self.scripts = scripts
+    self.problems = problems
+    isLoaded = true
+  }
 
   /// 默认文件夹：数据目录里的 scripts（不弹文件夹授权框；设置页给「在访达中打开」）
   nonisolated static var defaultFolder: URL {
@@ -95,6 +105,100 @@ import AppKit
     defer { try? handle.close() }
     guard let data = try? handle.read(upToCount: ScriptCommand.headerBytes) else { return nil }
     return String(decoding: data, as: UTF8.self)
+  }
+}
+
+// MARK: 设置页用的：文件夹、新建、导入（拍板 A1 A2）
+
+extension ScriptLibrary {
+  /// 默认文件夹（不在就建）：设置页「在访达中打开」「新建脚本」「导入」都往这里放
+  @discardableResult static func ensureDefaultFolder() -> URL {
+    try? FileManager.default.createDirectory(at: defaultFolder, withIntermediateDirectories: true)
+    return defaultFolder
+  }
+
+  /// 加一个文件夹（已经有的不重复）
+  static func addFolder(_ url: URL) {
+    let path = url.path(percentEncoded: false)
+    var paths = addedFolders.map { $0.path(percentEncoded: false) }
+    guard !paths.contains(path), path != defaultFolder.path(percentEncoded: false) else { return }
+    paths.append(path)
+    UserDefaults.standard.set(paths.joined(separator: "\n"), forKey: Prefs.scriptFolders)
+  }
+
+  static func removeFolder(_ url: URL) {
+    let paths = addedFolders.map { $0.path(percentEncoded: false) }
+      .filter { $0 != url.path(percentEncoded: false) }
+    UserDefaults.standard.set(paths.joined(separator: "\n"), forKey: Prefs.scriptFolders)
+  }
+
+  /// 文件夹里一个还没用过的名字：「新脚本.sh」「新脚本 2.sh」…
+  nonisolated static func freeURL(in folder: URL, name: String) -> URL {
+    let base = (name as NSString).deletingPathExtension
+    let ext = (name as NSString).pathExtension
+    var url = folder.appending(path: name)
+    var index = 2
+    while FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) {
+      url = folder.appending(path: ext.isEmpty ? "\(base) \(index)" : "\(base) \(index).\(ext)")
+      index += 1
+    }
+    return url
+  }
+
+  /// 「新建脚本」的模板：开头几行写清楚每个字段怎么写，照着改就行
+  static let template = """
+    #!/bin/zsh
+    # @kitty.title 新脚本
+    # @kitty.keyword hello
+    # @kitty.mode island
+    # @kitty.description 这一行写它是做什么的
+    #
+    # mode：island 岛上显示最后一行、paste 粘贴、copy 复制、full 启动器里看全部输出、list 每行一条结果（标题⇥副标题）、none 不显示
+    # 要参数就加一行「# @kitty.argument1 城市」，在启动器里输入「hello 空格 北京」，「北京」在 $1 里
+    # 要先确认再跑就加一行「# @kitty.confirm 再按 ↩ 清空下载文件夹」
+    # 在启动器里出现的就是上面写的名字和关键词，保存后下次呼出启动器就能用
+
+    echo "你好，$(id -un)"
+
+    """
+
+  /// 新建一个脚本（模板），返回它的位置
+  static func newScript() -> URL? {
+    let url = freeURL(in: ensureDefaultFolder(), name: "新脚本.sh")
+    do {
+      try template.write(to: url, atomically: true, encoding: .utf8)
+      return url
+    } catch {
+      return nil
+    }
+  }
+
+  /// 导入（看过全文、点了「导入」）：复制进默认文件夹（重名的加数字），去掉下载标记（已经看过了）；在主线程外做
+  /// （拖进来的文件可能在网络盘上）
+  @concurrent static func importScript(_ source: URL, into folder: URL) async -> URL? {
+    try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let target = freeURL(in: folder, name: source.lastPathComponent)
+    do {
+      try FileManager.default.copyItem(at: source, to: target)
+    } catch {
+      return nil
+    }
+    var url = target
+    var values = URLResourceValues()
+    values.quarantineProperties = nil
+    try? url.setResourceValues(values)
+    return target
+  }
+
+  /// 打开脚本给人改：用默认的纯文本编辑器（不按 .sh 的默认 App 开——那可能是终端，一开就跑了）
+  static func edit(_ path: String) {
+    let url = URL(filePath: path)
+    guard let editor = NSWorkspace.shared.urlForApplication(toOpen: .plainText) else {
+      return NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+    NSWorkspace.shared.open(
+      [url], withApplicationAt: editor, configuration: NSWorkspace.OpenConfiguration()
+    ) { _, _ in }
   }
 }
 

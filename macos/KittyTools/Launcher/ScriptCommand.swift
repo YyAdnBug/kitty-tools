@@ -68,6 +68,8 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
   var interpreter: [String]
   /// 带着下载来的隔离标记（ScriptLibrary 读的时候看）：第一次跑之前先给用户看一眼（B5）
   var isDownloaded = false
+  /// 随 App 带的自带脚本（D2，只读、跟着更新）
+  var isBundled = false
 
   static let defaultTimeout = 60
   /// 只读开头这么多字节找元数据（几家的头部都在前几十行）

@@ -172,8 +172,52 @@ import UniformTypeIdentifiers
   @ObservationIgnored var readScript: @MainActor (ScriptCommand) async -> String = {
     await ScriptRunner.text(of: $0.path)
   }
-  /// 一条脚本此刻的别名（关键词）：头部写的；「命令」表里改过的用改过的（第 3 批接上）
-  @ObservationIgnored var scriptAlias: (ScriptCommand) -> String? = { $0.keyword }
+  /// 「命令」表里改过的别名和关掉的（拍板 C3 C4）；单测 / 截图自检是空的，不读宿主 App 的偏好
+  @ObservationIgnored var commandSettings: () -> LauncherCommands.Settings = {
+    LauncherModel.savedCommandSettings()
+  }
+  @ObservationIgnored private static var settingsCache:
+    (aliases: String, off: String, settings: LauncherCommands.Settings)?
+
+  /// 偏好里的那份（按原文缓存：每敲一个字都要读）
+  static func savedCommandSettings() -> LauncherCommands.Settings {
+    let defaults = UserDefaults.standard
+    let aliases = defaults.string(forKey: Prefs.launcherCommandAliases) ?? ""
+    let off = defaults.string(forKey: Prefs.launcherCommandsOff) ?? ""
+    if let cached = settingsCache, cached.aliases == aliases, cached.off == off {
+      return cached.settings
+    }
+    let settings = LauncherCommands.Settings(aliasesText: aliases, offText: off)
+    settingsCache = (aliases, off, settings)
+    return settings
+  }
+
+  /// 一条脚本此刻的别名：「命令」表里改过的用改过的，没改过的是头部写的 keyword
+  func scriptAlias(_ script: ScriptCommand) -> String? {
+    commandSettings().alias(LauncherCommands.scriptID(script), default: script.keyword)
+  }
+
+  /// 开着的脚本（「命令」表里关掉的不算）
+  private var activeScripts: [ScriptCommand] {
+    let settings = commandSettings()
+    return scripts().filter { settings.isOn(LauncherCommands.scriptID($0)) }
+  }
+
+  /// 系统命令（锁定屏幕…）：「命令」表里关掉的不列，改了别名的把原来的英文关键词换成别名（副标题也写别名）
+  private var systemItems: [LauncherItem] {
+    let settings = commandSettings()
+    guard !settings.aliases.isEmpty || !settings.off.isEmpty else { return SystemCommands.items }
+    return SystemCommands.items.compactMap { item in
+      let id = LauncherCommands.systemID(item.target)
+      guard settings.isOn(id) else { return nil }
+      let alias = settings.alias(id, default: item.target)
+      guard alias != item.target else { return item }
+      var item = item
+      item.names = item.names.filter { $0 != item.target } + [alias].compactMap { $0 }
+      item.subtitle = alias ?? ""
+      return item
+    }
+  }
   /// 列表脚本打字时重跑（停手 listDelay 再跑；新的一跑就撤掉上一次）
   @ObservationIgnored private var listTask: Task<Void, Never>?
   static let listDelay = Duration.milliseconds(150)
@@ -186,7 +230,8 @@ import UniformTypeIdentifiers
   /// 正在跑的脚本（按路径）：「停止」按钮取消它；同一个还在跑时再按 ↩ 不重复起
   @ObservationIgnored private var runningScripts: [String: Task<Void, Never>] = [:]
   /// 脚本行的缓存：每敲一个字都要列一遍，拼音转写不便宜（同内置动作）
-  @ObservationIgnored private var scriptCache: (scripts: [ScriptCommand], items: [LauncherItem])?
+  @ObservationIgnored private var scriptCache:
+    (scripts: [ScriptCommand], settings: LauncherCommands.Settings, items: [LauncherItem])?
   /// 文件结果最后一行的授权提示：每次呼出后第一次进文件搜索时算一次（要读受保护目录，问过之前不读）。
   /// ponytail: 授权被重置（tccutil reset、撤掉完全磁盘访问）后，第一次进文件搜索时系统会弹框
   @ObservationIgnored var folderHint: LauncherItem?
@@ -295,6 +340,7 @@ import UniformTypeIdentifiers
       refreshHistory = { false }
       fetchRates = { nil }
       showsFrequent = { true }
+      commandSettings = { .init() }
     } else {
       rates = ExchangeRates.load()
       recentCurrencies = ExchangeRates.loadRecents()
@@ -331,10 +377,13 @@ import UniformTypeIdentifiers
 
   /// 脚本命令的行（按此刻的脚本库）
   private var scriptItems: [LauncherItem] {
-    let scripts = scripts()
-    if let scriptCache, scriptCache.scripts == scripts { return scriptCache.items }
+    let scripts = activeScripts
+    let settings = commandSettings()
+    if let scriptCache, scriptCache.scripts == scripts, scriptCache.settings == settings {
+      return scriptCache.items
+    }
     let items = scripts.map { LauncherItem.script($0, alias: scriptAlias($0)) }
-    scriptCache = (scripts, items)
+    scriptCache = (scripts, settings, items)
     return items
   }
 
@@ -466,15 +515,25 @@ import UniformTypeIdentifiers
     shownFileRequest = nil
     favoriteCount = 0
     definitionTask?.cancel()
+    // 「命令」表（拍板 C3 C4）：开头是改过的别名的换回原关键词交给原来那一套；原关键词改掉了 / 关掉的挡掉
+    let settings = commandSettings()
+    let (command, blocked) = LauncherCommands.canonical(query, settings: settings)
+    func allowed(_ id: String) -> Bool { settings.isOn(id) && !blocked.contains(id) }
     // 打字路过 ip（「iphone」）时还没查完的不要了
-    if !IPAddresses.matches(query) { cancelIPLookups() }
+    if !(allowed("builtin:ip") && IPAddresses.matches(command)) { cancelIPLookups() }
     // 汇率同样：还在等那 0.3 s 的撤掉
     if ExchangeRates.request(for: query) == nil {
       ratesTask?.cancel()
       ratesTask = nil
     }
-    fileRequest = FileSearch.request(for: query)
-    commandRequest = fileRequest == nil ? SystemCommands.request(for: query) : nil
+    fileRequest = FileSearch.request(for: command).flatMap {
+      allowed($0.mode == .open ? "builtin:open" : "builtin:find") ? $0 : nil
+    }
+    commandRequest =
+      fileRequest == nil
+      ? SystemCommands.request(for: command).flatMap {
+        allowed("builtin:" + $0.verb.rawValue) ? $0 : nil
+      } : nil
     if commandRequest == nil { commandItems = nil }
     if let fileRequest {
       searchFiles(fileRequest)
@@ -487,29 +546,45 @@ import UniformTypeIdentifiers
     }
     emptyText = "没有匹配的结果"
     let features = features
-    if features.contains(.translate), let text = Self.translateQuery(query) {
+    if features.contains(.translate), allowed("builtin:fy"), let text = Self.translateQuery(command)
+    {
       results = [Self.translateItem(text)]
       lookUpDefinition(text)
       return
     }
     // 「cb 词」（带空格）只有这一行（N9）；单输 cb 时它排第一，后面照常接本地结果（体检 B33）
-    if features.contains(.clipboard), let keyword = Self.clipQuery(query), query.count > 2 {
+    if features.contains(.clipboard), allowed("builtin:cb"), let keyword = Self.clipQuery(command),
+      command.count > 2
+    {
       results = [Self.clipItem(keyword)]
       return
     }
     // 「提醒 …」（带空格）只列提醒：能认出时间的先是「建一条」，再是已有的提醒（D2 D4）；单输「提醒」出补全提示
-    if features.contains(.reminders), let rest = ReminderPhrase.query(query) {
+    if features.contains(.reminders), allowed("builtin:reminder"),
+      let rest = ReminderPhrase.query(command)
+    {
       emptyText = "还没有提醒：在「提醒 」后面接着写时间和内容，如「10分钟 喝水」"
       results = Self.reminderItems(rest, list: reminders(), now: .now)
       return
     }
     // 「别名 空格 文字」：交给那条脚本（B2）
-    if let invocation = ScriptCommand.invocation(for: query, in: scripts(), alias: scriptAlias) {
+    if let invocation = ScriptCommand.invocation(for: query, in: activeScripts, alias: scriptAlias)
+    {
       showInvocation(invocation)
       return
     }
     let query = query.trimmingCharacters(in: .whitespaces)
-    let ip = IPAddresses.matches(query) ? ipItems() : []
+    let typed = command.trimmingCharacters(in: .whitespaces)
+    let ip = allowed("builtin:ip") && IPAddresses.matches(typed) ? ipItems() : []
+    // 内置命令的提示行：关掉的、原关键词改掉了的不出，改了别名的把「kill 空格」换成别名
+    func labeled(_ items: [LauncherItem]) -> [LauncherItem] {
+      items.compactMap { item in
+        if let id = LauncherCommands.builtIn(forPrompt: item.target)?.id, blocked.contains(id) {
+          return nil
+        }
+        return LauncherCommands.relabel(item, settings: settings)
+      }
+    }
     if query.isEmpty {
       results = home()
       return
@@ -518,23 +593,26 @@ import UniformTypeIdentifiers
     let direct = DirectItems.items(for: query)
     let keyword = WebSearch.keywordItem(for: query, engines: engines)
     let prompts = WebSearch.promptItems(for: query, engines: engines)
-    let filePrompts = FileSearch.promptItems(for: query)
-    let systemPrompts = SystemCommands.promptItems(for: query)
+    let filePrompts = FileSearch.promptItems(for: typed)
+    let systemPrompts = SystemCommands.promptItems(for: typed)
     let clip =
-      features.contains(.clipboard) && Self.clipQuery(query) != nil ? [Self.clipItem("")] : []
-    let fy = Self.translatePrompts(for: features.contains(.translate) ? query : "")
+      features.contains(.clipboard) && allowed("builtin:cb") && Self.clipQuery(typed) != nil
+      ? [Self.clipItem("")] : []
+    let fy = Self.translatePrompts(for: features.contains(.translate) ? typed : "")
     let currency = ExchangeRates.promptItems(for: query)
     // 「新建提醒…」提示排在本地结果后面：输「提醒」想打开系统「提醒事项」的，↩ 照旧打开它
-    let tx = features.contains(.reminders) ? Self.reminderPrompts(for: query) : []
-    let exactPrompts: [LauncherItem] = prompts.exact + filePrompts.exact + systemPrompts.exact
+    let tx = features.contains(.reminders) ? labeled(Self.reminderPrompts(for: typed)) : []
+    let exactPrompts: [LauncherItem] =
+      prompts.exact + labeled(filePrompts.exact + systemPrompts.exact)
     let partialPrompts: [LauncherItem] =
-      prompts.partial + filePrompts.partial + systemPrompts.partial + fy.partial + currency.partial
+      prompts.partial + labeled(filePrompts.partial + systemPrompts.partial + fy.partial)
+      + currency.partial
     let calculation = calculationItem(query)
     // 货币打到一半（「100 美元 转 英」）：紧跟在计算结果的位置列候选；有计算结果时不列（单位换算、打全了的汇率）
     let currencyHints =
       calculation == nil ? ExchangeRates.suggestions(for: query, recents: recentCurrencies) : []
     let top: [LauncherItem] =
-      clip + fy.exact + currency.exact + ip + direct + [calculation].compactMap { $0 }
+      clip + labeled(fy.exact) + currency.exact + ip + direct + [calculation].compactMap { $0 }
       + currencyHints + [keyword].compactMap { $0 } + exactPrompts
     // 书签、浏览历史至少 2 个字才搜（1 个字母命中太多；含中文时 1 个字就搜，U8）
     let longEnough = LauncherMatch.isLongEnough(query)
@@ -544,12 +622,13 @@ import UniformTypeIdentifiers
     let tokens = LauncherMatch.tokens(query)
     let scriptItems = scriptItems
     let local = LauncherMatch.rank(
-      apps + builtIns + SystemCommands.items + scriptItems
+      apps + builtIns + systemItems + scriptItems
         + WebSearch.quicklinkItems(engines: engines)
         + bookmarks.filter { LauncherMatch.mayMatch(tokens, $0) } + used, query: query
     ) { usage.boost(for: $0, query: query) }
     // 脚本的别名一字不差：排第一（拍板 C1）
-    let aliased = Self.aliased(scriptItems, scripts: scripts(), query: query, alias: scriptAlias)
+    let aliased = Self.aliased(
+      scriptItems, scripts: activeScripts, query: query, alias: scriptAlias)
     let history = longEnough ? visited(query, excluding: bookmarks + used) : []
     // 兜底默认只在没有本地结果时出现（和 Alfred 一样；以前带空格的查询把兜底排到匹配的 App 前面），
     // 设置里可改成总是附在最后。已经有网址 / 路径直达项、或明写了 http(s):// 的就不再兜底（体检 B35：
@@ -981,7 +1060,7 @@ import UniformTypeIdentifiers
       // 应用程序目录以外的 App
       return FileManager.default.fileExists(atPath: target) ? AppCatalog.item(path: target) : nil
     case .action: return actions.first { $0.target == target }
-    case .system: return SystemCommands.items.first { $0.target == target }
+    case .system: return systemItems.first { $0.target == target }
     // 文件删了、脚本命令关了：藏起来，收藏不删（同 App）
     case .script: return scriptItems.first { $0.target == target }
     // 系统设置面板从目录里取（副标题「系统设置」、图标）；目录里没有的（系统更新后没了、自己建的这类链接）退回普通网址，
@@ -1092,7 +1171,7 @@ import UniformTypeIdentifiers
       open(url, item)
     case .process: break  // 只在 kill / port 模式里出现，上面已经处理
     case .script:
-      guard let script = scripts().first(where: { $0.path == item.target }) else {
+      guard let script = activeScripts.first(where: { $0.path == item.target }) else {
         return NSSound.beep()
       }
       // 从网上下载、还没看过的：先给用户看一眼（B5）；列表脚本也是（看过之前不会打一个字跑一次）
@@ -1606,7 +1685,7 @@ import UniformTypeIdentifiers
     // 参数没填够：↩ 只响提示音，副标题写着要填什么
     case .script
     where (item.arguments?.count ?? .max)
-      < (scripts().first { $0.path == item.target }?.requiredCount ?? 0):
+      < (activeScripts.first { $0.path == item.target }?.requiredCount ?? 0):
       ("先填参数", "text.cursor")
     case .script: (confirming ? "确认运行" : "运行", "play")
     case .scriptResult: ("粘贴", "arrow.turn.down.left")

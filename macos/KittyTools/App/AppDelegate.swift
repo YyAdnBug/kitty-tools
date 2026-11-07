@@ -703,7 +703,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       case .clipboard: AnyView(ClipboardTab(store: clipboardStore).environment(island))
       case .launcher:
         AnyView(
-          LauncherTab { [unowned self] in
+          LauncherTab(scripts: scriptLibrary) { [unowned self] in
             launcherUsage.clearAll()
             // 设置页上不显示条数，清完看不出变化
             island.show(

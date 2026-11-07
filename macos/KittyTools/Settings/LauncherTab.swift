@@ -4,10 +4,14 @@
 // （N12：行 = 网站图标或种类色块 / 名称 / 状态 / 关键词键帽 / 兜底开关，拖动排序，「+ −」增删（自定义的先确认），
 // 单击一行推进到 SearchEngineDetail 编辑）、兜底时机、清空使用记录。页头画在自己的 NavigationStack 里，推进时一起换掉。
 // 按键说明不写在这里（N11，进快捷键速查表）；启动器没有固定，失焦就收起（N8）。
+// 2026-11-07 脚本命令：网页搜索后面是「脚本命令」（ScriptsSection：开关、文件夹、导入、新建）和「命令」那张
+// 名称 / 别名 / 启用的表（LauncherCommandsSection）。
 
 import SwiftUI
 
 struct LauncherTab: View {
+  /// 脚本库（脚本命令那两节列脚本、读不成的原因；截图自检给固定的或 nil）
+  var scripts: ScriptLibrary? = nil
   /// 清空使用记录（LauncherUsage.clearAll）
   var clearUsage: () -> Void = {}
   @AppStorage(Prefs.launcherRomanInput) private var romanInput = false
@@ -138,6 +142,11 @@ struct LauncherTab: View {
             "网址里有 {query} 的是搜索（「关键词 空格 内容」直达，开关 = 没有本地结果时兜底），没有的是快捷链接。"
               + "拖动调整顺序，搜索的关键词重复时用靠前的；点一行编辑。")
         }
+      }
+      .gated(by: .launcher)
+      Group {
+        ScriptsSection(library: scripts)
+        LauncherCommandsSection(library: scripts)
       }
       .gated(by: .launcher)
       Section {
@@ -275,6 +284,8 @@ struct LauncherTab: View {
     deniedFolders = Permissions.deniedFolders()
     browsers = Browsers.installed()
     checks += 1
+    // 设置窗回到前台：脚本文件夹可能刚在访达里改过
+    if UserDefaults.standard.bool(forKey: Prefs.launcherScripts) { scripts?.refresh() }
   }
 
   /// 一家浏览器：图标 + 名字 + 书签开关，开着时下面写读到了几条，没读到（没有书签文件、文件里一条都没有、没授权）

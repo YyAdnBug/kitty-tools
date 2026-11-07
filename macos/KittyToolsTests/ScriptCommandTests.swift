@@ -466,3 +466,95 @@ struct ScriptRunTests {
     #expect(model.output == nil)
   }
 }
+
+/// 启动器的「命令」表：别名换回原关键词、原关键词改掉 / 关掉的挡掉、撞词、脚本的别名和开关
+@MainActor struct LauncherCommandsTests {
+  @Test func settingsRoundTrip() {
+    var settings = LauncherCommands.Settings()
+    settings.setAlias(" K ", for: "builtin:kill", default: "kill")
+    settings.setAlias("kill", for: "builtin:quit", default: "quit")
+    settings.setAlias("quit", for: "builtin:quit", default: "quit")  // 改回原来的：不存
+    settings.setAlias("", for: "system:lock", default: "lock")  // 清空：不要别名
+    settings.set(false, for: "builtin:ip")
+    #expect(settings.aliases == ["builtin:kill": "k", "system:lock": ""])
+    #expect(settings.alias("builtin:kill", default: "kill") == "k")
+    #expect(settings.alias("system:lock", default: "lock") == nil)
+    #expect(settings.alias("builtin:port", default: "port") == "port")
+    #expect(!settings.isOn("builtin:ip") && settings.isOn("builtin:kill"))
+    let restored = LauncherCommands.Settings(
+      aliasesText: settings.aliasesText, offText: settings.offText)
+    #expect(restored == settings)
+    #expect(LauncherCommands.Settings(aliasesText: "不是 JSON", offText: "") == .init())
+    #expect(LauncherCommands.Settings().aliasesText == "")
+  }
+
+  @Test func canonicalAndPrompts() throws {
+    let settings = LauncherCommands.Settings(
+      aliases: ["builtin:kill": "k", "builtin:fy": ""], off: ["builtin:ip"])
+    #expect(LauncherCommands.canonical("K chrome", settings: settings).query == "kill chrome")
+    let old = LauncherCommands.canonical("kill chrome", settings: settings)
+    #expect(old.query == "kill chrome" && old.blocked.contains("builtin:kill"))
+    #expect(LauncherCommands.canonical("ip", settings: settings).blocked.contains("builtin:ip"))
+    #expect(
+      LauncherCommands.canonical("fy hello", settings: settings).blocked.contains("builtin:fy"))
+    #expect(LauncherCommands.canonical("open a", settings: .init()) == ("open a", []))
+    // 提示行：改了别名的换词，清空的、关掉的不出
+    let kill = try #require(SystemCommands.promptItems(for: "kill").exact.first)
+    let relabeled = try #require(LauncherCommands.relabel(kill, settings: settings))
+    #expect(relabeled.subtitle == "输入「k 空格 进程名或 :端口」，↩ 或 Tab 补全关键词")
+    #expect(relabeled.completion == "k ")
+    let fy = try #require(LauncherModel.translatePrompts(for: "fy").exact.first)
+    #expect(LauncherCommands.relabel(fy, settings: settings) == nil)
+    let port = try #require(SystemCommands.promptItems(for: "port").exact.first)
+    #expect(LauncherCommands.relabel(port, settings: settings) == port)
+  }
+
+  @Test func conflicts() {
+    let found = LauncherCommands.conflicts(
+      [("a", "k"), ("b", "k"), ("c", "gh"), ("d", nil), ("e", "x")], engineKeywords: ["GH"])
+    #expect(found == ["a", "b", "c"])
+    let rows = LauncherCommandsSection.rows(scripts: [])
+    #expect(rows.count == LauncherCommands.builtIns.count + SystemCommand.allCases.count)
+    #expect(Set(rows.map(\.id)).count == rows.count)
+    #expect(
+      LauncherCommandsSection.filter(rows, by: "KILL", settings: .init()).map(\.id)
+        == ["builtin:kill"])
+  }
+
+  @Test func launcherFollowsTheTable() throws {
+    var weather = ScriptCommand(path: "/tmp/s/tq.sh", title: "天气", interpreter: ["/bin/sh"])
+    weather.keyword = "tq"
+    weather.arguments = [.init(placeholder: "城市")]
+    var hidden = ScriptCommand(path: "/tmp/s/x.sh", title: "隐藏的脚本", interpreter: ["/bin/sh"])
+    hidden.keyword = "xx"
+    let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [])
+    model.scripts = { [weather, hidden] }
+    var settings = LauncherCommands.Settings(
+      aliases: [
+        "builtin:kill": "k", LauncherCommands.scriptID(weather): "w", "system:lock": "suo",
+      ],
+      off: ["builtin:port", LauncherCommands.scriptID(hidden), "system:sleep"])
+    model.commandSettings = { settings }
+    model.query = "k chrome"
+    #expect(model.commandRequest?.verb == .kill)
+    model.query = "kill chrome"
+    #expect(model.commandRequest == nil)
+    model.query = "port 3000"
+    #expect(model.commandRequest == nil)
+    // 系统命令：改了别名的按别名搜得到、副标题写别名；关掉的搜不到
+    model.query = "suo"
+    #expect(model.results.first?.target == "lock" && model.results.first?.subtitle == "suo")
+    model.query = "sleep"
+    #expect(!model.results.contains { $0.kind == .system && $0.target == "sleep" })
+    // 脚本：改了别名的用新别名传参数，旧的不认；关掉的不出现
+    model.query = "w 北京"
+    #expect(model.results.first?.arguments == ["北京"])
+    model.query = "tq 北京"
+    #expect(model.results.first?.arguments == nil)
+    model.query = "隐藏"
+    #expect(!model.results.contains { $0.kind == .script })
+    settings = .init()
+    model.query = "隐藏"
+    #expect(model.results.first?.title == "隐藏的脚本")
+  }
+}
