@@ -14,18 +14,6 @@ struct ScriptGuidePage: View {
   @Environment(\.dismiss) private var dismiss
   @State private var readingPath = false
 
-  /// 例子：查天气（带一个参数，岛上显示一行）
-  static let example = """
-    #!/bin/zsh
-    # @kitty.title 查天气
-    # @kitty.keyword tq
-    # @kitty.icon ⛅
-    # @kitty.argument1 城市
-    # @kitty.description 输入「tq 空格 城市」，岛上显示天气
-
-    curl -s --max-time 8 "https://wttr.in/${1// /+}?format=3&lang=zh"
-    """
-
   /// 开头能写的字段：写法、做什么、怎么填
   static let fields: [(name: String, title: String, detail: String)] = [
     ("@kitty.title", "名字", "启动器里显示的名字，不写就用文件名"),
@@ -83,13 +71,13 @@ struct ScriptGuidePage: View {
           )
         }
         Section {
-          code(Self.example)
+          code(ScriptLibrary.example)
           HStack {
             Button("复制这个例子") {
-              Paster.write(string: Self.example, record: true)
+              Paster.write(string: ScriptLibrary.example, record: true)
               island?.show("已复制例子", detail: "贴进脚本文件夹里的一个 .sh 文件就能用")
             }
-            Button("用它新建") { createExample() }
+            Button("用它新建") { library?.newExample(island: island) }
             Spacer()
           }
         } header: {
@@ -197,17 +185,5 @@ struct ScriptGuidePage: View {
       .frame(maxWidth: .infinity, alignment: .leading)
       .padding(10)
       .background(Style.hoverFill, in: .rect(cornerRadius: Style.Radius.card, style: .continuous))
-  }
-
-  /// 「用它新建」：例子存成脚本文件夹里的「查天气.sh」（重名加数字），用编辑器打开
-  private func createExample() {
-    let url = ScriptLibrary.freeURL(in: ScriptLibrary.ensureDefaultFolder(), name: "查天气.sh")
-    guard (try? Self.example.write(to: url, atomically: true, encoding: .utf8)) != nil else {
-      return
-    }
-    ScriptLibrary.edit(url.path(percentEncoded: false))
-    library?.refresh()
-    island?.show(
-      "已新建「\(url.lastPathComponent)」", detail: "在启动器里输「tq 空格 北京」试试", actions: [.reveal(url)])
   }
 }

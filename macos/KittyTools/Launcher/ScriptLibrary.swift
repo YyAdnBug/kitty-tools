@@ -199,6 +199,34 @@ extension ScriptLibrary {
 
     """
 
+  /// 例子：查天气（带一个参数，岛上显示一行；说明页、没有自己的脚本时那一行「用例子新建」）
+  static let example = """
+    #!/bin/zsh
+    # @kitty.title 查天气
+    # @kitty.keyword tq
+    # @kitty.icon ⛅
+    # @kitty.argument1 城市
+    # @kitty.description 输入「tq 空格 城市」，岛上显示天气
+
+    curl -s --max-time 8 "https://wttr.in/${1// /+}?format=3&lang=zh"
+    """
+
+  /// 新建查天气的例子：存成「查天气.sh」（重名加数字）、用编辑器打开、重读，岛上说怎么试
+  func newExample(island: Island?) {
+    let url = Self.freeURL(in: Self.ensureDefaultFolder(), name: "查天气.sh")
+    guard (try? Self.example.write(to: url, atomically: true, encoding: .utf8)) != nil else {
+      island?.show("没建成「查天气.sh」", detail: "脚本文件夹写不进去", tone: .error)
+      return
+    }
+    Self.edit(url.path(percentEncoded: false))
+    refresh()
+    island?.show(
+      "已新建「\(url.lastPathComponent)」", detail: "在启动器里输「tq 空格 北京」试试", actions: [.reveal(url)])
+  }
+
+  /// 读完了、一个自己的脚本都没有（自带的不算）：设置里出「还没有自己的脚本」那一行
+  var hasNoOwnScripts: Bool { isLoaded && !scripts.contains { !$0.isBundled } }
+
   /// 新建一个脚本（模板），返回它的位置
   static func newScript() -> URL? {
     let url = freeURL(in: ensureDefaultFolder(), name: "新脚本.sh")

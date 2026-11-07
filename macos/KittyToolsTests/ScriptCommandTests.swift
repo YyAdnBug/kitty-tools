@@ -1080,3 +1080,20 @@ struct SubprocessStopTests {
     #expect(script.icon == .emoji("⛅"))
   }
 }
+
+/// 没有自己的脚本时的空状态：读完了、自带的不算
+@MainActor struct ScriptEmptyStateTests {
+  @Test func noOwnScripts() throws {
+    var bundled = ScriptCommand(path: "/b/script-uuid.sh", title: "UUID", interpreter: ["/bin/sh"])
+    bundled.isBundled = true
+    let mine = ScriptCommand(path: "/tmp/s/a.sh", title: "A", interpreter: ["/bin/sh"])
+    #expect(ScriptLibrary(scripts: [bundled]).hasNoOwnScripts)
+    #expect(!ScriptLibrary(scripts: [bundled, mine]).hasNoOwnScripts)
+    // 还没读完不说「没有」
+    #expect(!ScriptLibrary().hasNoOwnScripts)
+    // 例子本身能读、带参数
+    let example = try #require(ScriptCommand.parse(ScriptLibrary.example, path: "/tmp/s/查天气.sh"))
+      .get()
+    #expect(example.keyword == "tq" && example.arguments.count == 1)
+  }
+}

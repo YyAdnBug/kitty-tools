@@ -2,6 +2,7 @@
 // 那张 40 行的表、写法说明、查找路径都挪进推进去的详情页，这一页只留几行）。
 // 「脚本命令」：总开关（默认开）、「怎么写脚本」（推进 ScriptGuidePage）、「让 AI 来写」（第二轮 A2：复制给 AI 的写法说明、
 // 把 AI 给的脚本从剪贴板新建——同样先看一眼全文再存）、脚本文件夹（新建脚本 / 在访达中打开）、
+// 一个自己的脚本都没有时一行「还没有自己的脚本」带「用例子新建」（查天气，建好就能跑），
 // 另加的文件夹（只读、能移除）和「添加文件夹…」、把脚本文件拖进来导入（先看一眼全文，写明以你的身份运行、能用本 App 已有的
 // 授权，点「导入」才复制进默认文件夹）、读不成的脚本和原因（橙字）。
 // 「命令」：一行「命令和别名」推进 LauncherCommandsPage（那张名称 / 别名 / 启用的表），行里写各有几条、关了几条。
@@ -66,6 +67,14 @@ struct ScriptsSection: View {
           )
           .lineLimit(1)
           .truncationMode(.middle)
+        }
+        if library?.hasNoOwnScripts == true {
+          LabeledContent {
+            Button("用例子新建") { library?.newExample(island: island) }
+          } label: {
+            Text("还没有自己的脚本")
+            Text("用查天气的例子新建一个，在启动器里输「tq 空格 北京」就能跑；或者点上面的「新建脚本」照模板写")
+          }
         }
         ForEach(addedFolders, id: \.self) { folder in
           LabeledContent {

@@ -5,6 +5,7 @@
 // 别名就是在启动器里要打的那个词：改了旧词不再认，清空就只能按名字搜；和别的命令、网页搜索的关键词撞了那一格描橙框
 // （运行时用靠前的那个）。关掉 = 不出现在搜索里、关键词也不认。只存改过的（LauncherCommands.Settings，跟着设置导出、同步）。
 // 脚本那几行：点名字在访达中显示，右键编辑、（我的脚本）移到废纸篓。脚本命令整个关着时脚本那两组变灰。
+// 一个自己的脚本都没有时，「我的脚本」组照样列出来，一行「还没有自己的脚本」带「用例子新建」（只在没搜、没筛「只看开着的」时）。
 // 启动器 ⌘K「改别名…」推进来时（SettingsNavigation.focusedCommand）只列那一条（按 id，同名的复制品不跟着出来）、别名框拿着
 // 焦点，上面一行「显示全部」；动一下搜索框或筛选就回到全部（第二轮 D1）。
 
@@ -24,6 +25,7 @@ struct LauncherCommandsSection: View {
   /// 「改别名…」要的那一行：只列它
   @State private var only: String?
   @Environment(SettingsNavigation.self) private var navigation: SettingsNavigation?
+  @Environment(Island.self) private var island: Island?
 
   /// 上面那一排筛选
   enum Scope: String, CaseIterable {
@@ -132,8 +134,23 @@ struct LauncherCommandsSection: View {
       .font(.system(size: 11, weight: .semibold))
       .foregroundStyle(.secondary)
       .accessibilityHidden(true)
+      let emptyMine =
+        library?.hasNoOwnScripts == true && only == nil && !onlyOn
+        && filter.trimmingCharacters(in: .whitespaces).isEmpty && scope.contains(.mine)
       ForEach(Row.Group.allCases, id: \.self) { group in
         let rows = shown.filter { $0.group == group }
+        if group == .mine, emptyMine {
+          Text(group.rawValue)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.tertiary)
+            .accessibilityAddTraits(.isHeader)
+          HStack {
+            Text("还没有自己的脚本").foregroundStyle(.secondary)
+            Spacer()
+            Button("用例子新建") { library?.newExample(island: island) }
+          }
+          .disabled(!scriptsOn)
+        }
         if !rows.isEmpty {
           Text(group.rawValue)
             .font(.system(size: 11, weight: .semibold))
@@ -149,7 +166,7 @@ struct LauncherCommandsSection: View {
           }
         }
       }
-      if shown.isEmpty {
+      if shown.isEmpty, !emptyMine {
         Text(filter.isEmpty ? "这里还没有" : "没有找到「\(filter)」").foregroundStyle(.secondary)
       }
     } footer: {

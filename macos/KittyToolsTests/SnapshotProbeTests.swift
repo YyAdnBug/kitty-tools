@@ -4848,6 +4848,16 @@ struct SnapshotProbeTests {
         NavigationStack { LauncherCommandsPage(library: library) }.defaultAppStorage(defaults),
         size: NSSize(width: 590, height: 2420), dark: dark,
         to: "\(out)/settings-launcher-commands\(suffix).png")
+      // 一个自己的脚本都没有：两处的空状态
+      let empty = ScriptLibrary(scripts: [bundled])
+      try snapshot(
+        Form { ScriptsSection(library: empty) }.formStyle(.grouped).defaultAppStorage(defaults),
+        size: NSSize(width: 590, height: 720), dark: dark,
+        to: "\(out)/settings-launcher-scripts-empty\(suffix).png")
+      try snapshot(
+        NavigationStack { LauncherCommandsPage(library: empty) }.defaultAppStorage(defaults),
+        size: NSSize(width: 590, height: 560), dark: dark,
+        to: "\(out)/settings-launcher-commands-empty\(suffix).png")
       // 启动器 ⌘K「改别名…」推进来：只列那一条
       let navigation = SettingsNavigation(defaults: nil)
       navigation.focusedCommand = LauncherCommands.scriptID(weather)
