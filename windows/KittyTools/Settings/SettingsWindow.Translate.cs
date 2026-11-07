@@ -115,6 +115,22 @@ internal sealed partial class SettingsWindow
         });
         _content.Children.Add(SettingsUi.Footnote("查单个词时不自动复制、不给「替换原文」。"));
 
+        // ---- 朗读（PLAN-v14 V8，mac R3 R4）
+        _content.Children.Add(SettingsUi.Section("朗读"));
+        AddToggle("英文单词用真人发音", "单词会发给有道词典取录音；取不到时用系统声音", settings.TranslateWordRecording, isOn =>
+        {
+            settings.TranslateWordRecording = isOn;
+            SettingsService.Save();
+        });
+        var accents = new[] { "us", "uk" };
+        AddCombo("英文单词发音", string.Empty, new[] { "美音", "英音" },
+            settings.TranslateWordAccent == "uk" ? 1 : 0, index =>
+            {
+                settings.TranslateWordAccent = accents[index];
+                SettingsService.Save();
+            });
+        _content.Children.Add(SettingsUi.Footnote("句子用系统声音：在 Windows 设置 › 时间和语言 › 语音 里添加语音，可以换更自然的声音。"));
+
         // ---- 行为
         _content.Children.Add(SettingsUi.Section("行为"));
         var positions = new[] { "top", "pointer", "last" };
@@ -124,6 +140,13 @@ internal sealed partial class SettingsWindow
             {
                 settings.TranslateWindowPosition = positions[index];
                 SettingsService.Save();
+            });
+        AddPanelSizeCard(
+            () => Math.Abs(settings.TranslateWindowWidth - TranslateSession.DefaultWidth) > 0.5 || settings.TranslateWindowMaxHeight is not null,
+            () =>
+            {
+                settings.TranslateWindowWidth = TranslateSession.DefaultWidth;
+                settings.TranslateWindowMaxHeight = null;
             });
         AddToggle("翻译前把同一段里的换行接起来（适合 PDF 复制的文字）", string.Empty, settings.TranslateJoinLines, isOn =>
         {
@@ -430,6 +453,10 @@ internal sealed partial class SettingsWindow
                 ? string.IsNullOrWhiteSpace(service.BaseUrl) ? ("未填 DeepLX 地址", true) : ("DeepLX（自建）", false)
                 : store.Secret(service) is null ? ("未填密钥", true) : ("官方 API", false),
             TranslateKinds.Microsoft => (store.Secret(service) is null ? "免费 Edge 接口" : "Azure 翻译", false),
+            TranslateKinds.YoudaoDict => ("免费 · 只查单词", false),
+            // 系统翻译、不认识的种类：留在列表里（同步、导出原样带回去），翻译时不开卡（V2、V3）
+            TranslateKinds.Apple => ("只在 Mac 上能用", false),
+            _ when !TranslateKinds.IsRunnable(service.Kind) => ("这一版不认识这个服务，更新后可用", false),
             _ => TranslateKinds.SecretFields(service.Kind).All(field => store.Secret(service, field) is not null)
                 ? ("已填密钥", false)
                 : ("未填密钥", true),
@@ -624,9 +651,23 @@ internal sealed partial class SettingsWindow
                 break;
         }
 
-        // ---- 密钥：预先填好已存的（掩码显示），改了就存；清空就删掉
-        _content.Children.Add(SettingsUi.Section("密钥"));
-        foreach (var field in TranslateKinds.SecretFields(service.Kind))
+        // 系统翻译、不认识的种类：只有启用开关（V2、V3）
+        if (!TranslateKinds.IsRunnable(service.Kind))
+        {
+            _content.Children.Add(SettingsUi.Footnote(service.Kind == TranslateKinds.Apple
+                ? "系统翻译用的是 Mac 自带的翻译，这台电脑上用不了；留着是为了同步和导出时原样带回 Mac。"
+                : "这一版不认识这个服务（可能来自更新版本或 Mac），更新后可用；留着是为了同步和导出时原样带回去。"));
+            return;
+        }
+
+        // ---- 密钥：预先填好已存的（掩码显示），改了就存；清空就删掉。不用 key 的（有道词典）没有这一节
+        var secretFields = TranslateKinds.SecretFields(service.Kind);
+        if (secretFields.Length > 0)
+        {
+            _content.Children.Add(SettingsUi.Section("密钥"));
+        }
+
+        foreach (var field in secretFields)
         {
             var box = new PasswordBox
             {
@@ -647,7 +688,10 @@ internal sealed partial class SettingsWindow
             apiKey ??= box;
         }
 
-        _content.Children.Add(SettingsUi.Footnote("只存在这台电脑的凭据管理器里。"));
+        if (secretFields.Length > 0)
+        {
+            _content.Children.Add(SettingsUi.Footnote("只存在这台电脑的凭据管理器里。"));
+        }
 
         // ---- 测试连接
         _content.Children.Add(SettingsUi.Section("测试"));
@@ -699,7 +743,9 @@ internal sealed partial class SettingsWindow
         testRow.Children.Add(resultIcon);
         testRow.Children.Add(resultText);
         _content.Children.Add(testRow);
-        _content.Children.Add(SettingsUi.Footnote("用「Hello, world」做一次英译中。"));
+        _content.Children.Add(SettingsUi.Footnote(TranslateKinds.IsDictionary(service.Kind)
+            ? "查一次 hello。"
+            : "用「Hello, world」做一次英译中。"));
 
         if (service.Kind == TranslateKinds.Ai)
         {
@@ -845,7 +891,10 @@ internal sealed partial class SettingsWindow
         try
         {
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
-            var request = new TranslateRequest("Hello, world", Lang.En, Lang.ZhHans);
+            // 有道词典只查单词：测试查 hello
+            var request = TranslateKinds.IsDictionary(service.Kind)
+                ? new TranslateRequest("hello", Lang.En, Lang.ZhHans, true)
+                : new TranslateRequest("Hello, world", Lang.En, Lang.ZhHans);
             var latest = string.Empty;
             await foreach (var piece in TranslateServiceStore.Translate(service, request, cts.Token))
             {

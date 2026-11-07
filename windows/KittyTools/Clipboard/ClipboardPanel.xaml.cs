@@ -165,12 +165,14 @@ public sealed partial class ClipboardPanel : UserControl
     {
         get
         {
+            // 拖下边定的最多几行（PLAN-v14 V10，null = 默认 8.5）
+            var rows = PanelMetrics.StoredRows(SettingsService.Current.ClipboardPanelRows);
             var height = PanelMetrics.ClipboardHeightFor(
-                _visible.Count + (ShowsNewSnippetRow ? 1 : 0), _list.Layout.SectionTops.Count, reservesLens: LensEnabled);
+                _visible.Count + (ShowsNewSnippetRow ? 1 : 0), _list.Layout.SectionTops.Count, reservesLens: LensEnabled, maxRows: rows);
             // 对话框开着给满；浮起的菜单开着时至少放得下 8.5 行（mac）。
             if (_dialogs.IsOpen)
             {
-                return PanelMetrics.MaxHeightDip;
+                return PanelMetrics.ClipboardMaxHeight(rows);
             }
 
             return _palette.IsOpen

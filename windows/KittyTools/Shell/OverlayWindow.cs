@@ -4,6 +4,8 @@
 // 关闭：Esc、Ctrl+W、再按一次热键、失去激活（不还前台）。
 // 出现在哪（PLAN-v12 N2，mac b923b882）：设置 › 剪贴板 / 启动器「面板位置」——屏幕上方（默认）/ 跟随鼠标 / 上次位置；
 // 按住面板上没有控件的地方（底栏的字、空白处）拖动能挪，松手记下左上角（上次位置用它，没拖过按屏幕上方）。
+// 拖边改大小（PLAN-v14 V9–V11，mac 3e94388d）：系统的拖边（PanelResize），左右改宽（560–1200）、下边改最多几行（6.5–14.5，按半行吸附）、
+// 下面两个角两样一起；顶边不动。拖的时候内容改高度先不做，松手记进设置（这台电脑自己的，不导出）、再按新上限改一次高度。
 using KittyTools.Core;
 using KittyTools.Infrastructure;
 using Microsoft.UI;
@@ -27,9 +29,11 @@ internal enum OverlayKind
 
 internal sealed unsafe class OverlayWindow : Window
 {
-    private const int WidthDip = 720;
-
     private readonly Grid _host;
+    private readonly PanelResize _resize;
+
+    /// <summary>这次的宽（DIP）：设置里记着的（拖左右边改的），夹在 560–1200 和工作区里；没记过 720。</summary>
+    private double _widthDip = PanelMetrics.DefaultPanelWidth;
     private readonly Microsoft.UI.Dispatching.DispatcherQueueTimer _heightTimer;
 
     private ClipboardPanel? _clipboard;
@@ -46,6 +50,7 @@ internal sealed unsafe class OverlayWindow : Window
     /// <summary>这次出现在的那块屏的工作区（长高时夹进去）。</summary>
     private WorkArea _work = new(int.MinValue / 2, int.MinValue / 2, int.MaxValue / 2, int.MaxValue / 2);
     private double _heightDip = 520;
+    private bool _heightRequestedWhileSizing;
 
     // 拖动挪面板：按下时记下光标和窗口的位置，挪出 4 DIP 才算拖（之前不抓指针，单击照常落到下面的元素上）。
     private bool _dragArmed;
@@ -67,7 +72,7 @@ internal sealed unsafe class OverlayWindow : Window
 
         var presenter = OverlappedPresenter.Create();
         presenter.IsAlwaysOnTop = true;
-        presenter.IsResizable = false;
+        presenter.IsResizable = true;
         presenter.IsMaximizable = false;
         presenter.IsMinimizable = false;
         presenter.SetBorderAndTitleBar(true, false);
@@ -87,6 +92,13 @@ internal sealed unsafe class OverlayWindow : Window
         _heightTimer.Tick += (_, _) => StepHeight();
         _hwnd = (HWND)WinRT.Interop.WindowNative.GetWindowHandle(this);
         Activated += OnActivated;
+        _resize = new PanelResize(_hwnd, SizeLimits);
+        _resize.Started += () =>
+        {
+            _heightTimer.Stop();
+            _heightRequestedWhileSizing = false;
+        };
+        _resize.Ended += OnResized;
 
         // 只收没被控件处理掉的按下（输入框、按钮、列表项自己处理）；挪动、松手连处理过的也收（拖动中指针在 _host 上）。
         _host.AddHandler(UIElement.PointerPressedEvent, new PointerEventHandler(OnHostPointerPressed), false);
@@ -314,6 +326,13 @@ internal sealed unsafe class OverlayWindow : Window
     /// </summary>
     private void RequestHeight(double dip, bool animated)
     {
+        // 正在拖边：内容要的高度先不做（松手后按新上限再改一次）
+        if (_resize.IsSizing)
+        {
+            _heightRequestedWhileSizing = true;
+            return;
+        }
+
         if (!_visible || Math.Abs(dip - _heightDip) < 1)
         {
             return;
@@ -353,12 +372,93 @@ internal sealed unsafe class OverlayWindow : Window
 
     private void ApplyHeight(double dip)
     {
-        var widthPx = MonitorLayout.Pixels(WidthDip, _scale);
+        var widthPx = MonitorLayout.Pixels(_widthDip, _scale);
         var heightPx = MonitorLayout.Pixels(dip, _scale);
         var position = AppWindow.Position;
         // 顶边不动；长高了会出工作区底边（跟随鼠标时贴着屏幕下沿出现）就整体往上挪。
         var rect = MonitorLayout.Clamp(new PixelRect(position.X, position.Y, widthPx, heightPx), _work);
         AppWindow.MoveAndResize(new RectInt32(rect.X, rect.Y, rect.Width, rect.Height));
+    }
+
+    /// <summary>拖边的范围：宽 560–1200；高是列表 6.5 到 14.5 行（启动器按这次的分组数算）。</summary>
+    private PanelSizeLimits SizeLimits()
+    {
+        var (min, max) = _kind == OverlayKind.Clipboard
+            ? PanelMetrics.ClipboardHeightRange()
+            : LauncherListLayout.HeightRange(_launcher?.GroupCount ?? 0);
+        return new PanelSizeLimits(PanelMetrics.MinPanelWidth, PanelMetrics.MaxPanelWidth, min, max);
+    }
+
+    /// <summary>松手：宽记成 DIP、高记成最多几行（按半行吸附）；拖左边挪了左边，「上次位置」也跟着记。然后按新上限改一次高度。</summary>
+    private void OnResized(bool widthChanged, bool heightChanged)
+    {
+        var display = Displays.AtWindow(_hwnd);
+        _scale = display.Scale <= 0 ? 1 : display.Scale;
+        _work = display.Work;
+        var size = AppWindow.Size;
+        var settings = SettingsService.Current;
+        var clipboard = _kind == OverlayKind.Clipboard;
+        if (widthChanged)
+        {
+            _widthDip = Math.Round(size.Width / _scale);
+            if (clipboard)
+            {
+                settings.ClipboardPanelWidth = _widthDip;
+            }
+            else
+            {
+                settings.LauncherPanelWidth = _widthDip;
+            }
+        }
+
+        if (heightChanged)
+        {
+            var heightDip = size.Height / _scale;
+            if (clipboard)
+            {
+                settings.ClipboardPanelRows = PanelMetrics.ClipboardRowsFor(heightDip);
+            }
+            else
+            {
+                settings.LauncherPanelRows = LauncherListLayout.RowsFor(heightDip, _launcher?.GroupCount ?? 0);
+            }
+        }
+
+        if (widthChanged || heightChanged)
+        {
+            if ((clipboard ? settings.ClipboardPanelPosition : settings.LauncherPanelPosition) == "last")
+            {
+                var position = AppWindow.Position;
+                if (clipboard)
+                {
+                    settings.ClipboardPanelLeft = position.X;
+                    settings.ClipboardPanelTop = position.Y;
+                }
+                else
+                {
+                    settings.LauncherPanelLeft = position.X;
+                    settings.LauncherPanelTop = position.Y;
+                }
+            }
+
+            SettingsService.Save();
+            Log.Info($"overlay.resized kind={_kind} width={widthChanged} height={heightChanged}");
+        }
+
+        if (!_visible)
+        {
+            return;
+        }
+
+        // 松手后回到内容要的高度（拖得比内容高、或者拖的时候内容变了）
+        _heightDip = size.Height / _scale;
+        var wanted = clipboard ? _clipboard?.ContentHeightDip : _launcher?.ContentHeightDip;
+        if (wanted is { } dip && (heightChanged || _heightRequestedWhileSizing))
+        {
+            RequestHeight(dip, animated: true);
+        }
+
+        _heightRequestedWhileSizing = false;
     }
 
     [System.Runtime.InteropServices.DllImport("user32.dll")]
@@ -421,6 +521,8 @@ internal sealed unsafe class OverlayWindow : Window
         _work = display.Work;
         var settings = SettingsService.Current;
         var clipboard = _kind == OverlayKind.Clipboard;
+        _widthDip = PanelMetrics.PanelWidth(
+            clipboard ? settings.ClipboardPanelWidth : settings.LauncherPanelWidth, (display.Work.Right - display.Work.Left) / _scale);
         var left = clipboard ? settings.ClipboardPanelLeft : settings.LauncherPanelLeft;
         var top = clipboard ? settings.ClipboardPanelTop : settings.LauncherPanelTop;
         var placement = MonitorLayout.Placement(
@@ -429,18 +531,18 @@ internal sealed unsafe class OverlayWindow : Window
         if (placement == PanelPlacement.Pointer)
         {
             PInvoke.GetCursorPos(out var cursor);
-            rect = MonitorLayout.NearPointer(cursor.X, cursor.Y, display.Work, _scale, WidthDip, heightDip);
+            rect = MonitorLayout.NearPointer(cursor.X, cursor.Y, display.Work, _scale, _widthDip, heightDip);
         }
         else if (placement == PanelPlacement.Last && left is int x && top is int y && Displays.IsOnScreen(x, y))
         {
             // 记着的那块屏拔掉了（左上角不在任何一块屏上）就退回屏幕上方，不夹到最近那块的边上（mac lastFrame 没重叠时也不用它）。
             var home = Displays.AtPoint(x, y);
             rect = MonitorLayout.Relocate(
-                x, y, home.Work, display.Work, MonitorLayout.Pixels(WidthDip, _scale), MonitorLayout.Pixels(heightDip, _scale));
+                x, y, home.Work, display.Work, MonitorLayout.Pixels(_widthDip, _scale), MonitorLayout.Pixels(heightDip, _scale));
         }
         else
         {
-            rect = MonitorLayout.Overlay(display.Work, _scale, WidthDip, heightDip, MonitorLayout.ClipboardTopFraction);
+            rect = MonitorLayout.Overlay(display.Work, _scale, _widthDip, heightDip, MonitorLayout.ClipboardTopFraction);
         }
 
         AppWindow.MoveAndResize(new RectInt32(rect.X, rect.Y, rect.Width, rect.Height));

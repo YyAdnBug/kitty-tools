@@ -81,19 +81,20 @@ internal sealed partial class SettingsWindow : Window
         {
             "历史", "天数", "保留", "永久", "图片", "占用", "预览", "链接", "网页", "格式", "纯文本", "识别", "文字", "OCR", "隐私",
             "密钥", "银行卡", "清空", "退出", "锁屏", "排除", "应用", "收藏", "收藏夹", "片段", "密码", "敏感", "标题", "透镜", "单击",
-            "双击", "点击", "粘贴", "位置", "面板位置", "鼠标", "跟随鼠标", "上次位置",
+            "双击", "点击", "粘贴", "位置", "面板位置", "鼠标", "跟随鼠标", "上次位置", "面板大小", "恢复默认大小", "宽度", "行数",
         },
         ["launcher"] = new[]
         {
             "英文", "输入法", "书签", "浏览历史", "历史", "浏览器", "Edge", "Chrome", "Firefox", "Brave", "索引", "搜索", "引擎",
             "快捷链接", "关键词", "兜底", "使用记录", "常用", "最近", "收藏", "文件", "open", "find", "按键", "速查",
-            "位置", "面板位置", "鼠标", "跟随鼠标", "上次位置",
+            "位置", "面板位置", "鼠标", "跟随鼠标", "上次位置", "面板大小", "恢复默认大小", "宽度", "行数",
         },
         ["translate"] = new[]
         {
             "语言", "第一语言", "第二语言", "字号", "换行", "自动复制", "复制即译", "历史", "导出", "CSV", "Anki", "位置", "浮窗位置",
             "鼠标", "清空", "服务", "密钥", "查词", "词典", "单词", "音标", "例句", "生词本", "收藏", "智谱", "OpenAI", "Anthropic",
             "DeepL", "Google", "百度", "有道", "微软", "火山", "腾讯", "AI", "模型", "按键", "速查",
+            "面板大小", "恢复默认大小", "朗读", "真人发音", "发音", "美音", "英音", "有道词典",
         },
         ["screenshot"] = new[]
         {
@@ -1492,6 +1493,13 @@ internal sealed partial class SettingsWindow : Window
             });
         // 面板位置（PLAN-v12 N2，mac b923b882，同翻译「浮窗位置」）：下次打开面板时生效。
         AddPanelPositionCombo(settings.ClipboardPanelPosition, value => settings.ClipboardPanelPosition = value);
+        AddPanelSizeCard(
+            () => settings.ClipboardPanelWidth is not null || settings.ClipboardPanelRows is not null,
+            () =>
+            {
+                settings.ClipboardPanelWidth = null;
+                settings.ClipboardPanelRows = null;
+            });
 
         // 内容
         _content.Children.Add(SettingsUi.Section("内容"));
@@ -1807,6 +1815,13 @@ internal sealed partial class SettingsWindow : Window
                 SettingsService.Save();
             });
         AddPanelPositionCombo(settings.LauncherPanelPosition, value => settings.LauncherPanelPosition = value);
+        AddPanelSizeCard(
+            () => settings.LauncherPanelWidth is not null || settings.LauncherPanelRows is not null,
+            () =>
+            {
+                settings.LauncherPanelWidth = null;
+                settings.LauncherPanelRows = null;
+            });
         AddShortcutsRow("launcher", "启动器里的按键",
             "搜应用、系统设置、文件、书签、网址、路径、算式（也能换算单位和进制）和系统命令（lock、quit、kill 这些），" +
             "Enter 打开，Ctrl+K 看这一项的全部操作");
@@ -3804,6 +3819,23 @@ internal sealed partial class SettingsWindow : Window
                 store(positions[index]);
                 SettingsService.Save();
             });
+    }
+
+    /// <summary>
+    /// 「面板大小」一行（PLAN-v14 V12，mac W3）：右边「恢复默认大小」——宽写回默认、行数和最高多高清成 null，没拖过时是灰的。
+    /// 下次呼出生效（开着的那块不跟着动）。
+    /// </summary>
+    private void AddPanelSizeCard(Func<bool> customized, Action reset)
+    {
+        var button = new Button { Content = "恢复默认大小", IsEnabled = customized() };
+        AutomationProperties.SetName(button, "恢复默认大小");
+        button.Click += (_, _) =>
+        {
+            reset();
+            SettingsService.Save();
+            button.IsEnabled = false;
+        };
+        _content.Children.Add(SettingsUi.Card("面板大小", "拖面板的左右边改宽、拖下边改高", button));
     }
 
     private void AddCombo(

@@ -72,6 +72,21 @@ internal sealed class Settings
 
     public int? LauncherPanelTop { get; set; }
 
+    /// <summary>
+    /// 三块主面板拖出来的大小（PLAN-v14 V11，同 mac 不注册默认值）：剪贴板 / 启动器的宽（DIP，560–1200）、最多露几行（x.5，6.5–14.5）、
+    /// 翻译浮窗最高多高（DIP）。都是这台电脑自己的状态，不在导出清单里；null = 默认（720 宽、8.5 行、自动）。
+    /// 翻译浮窗的宽照旧 TranslateWindowWidth。
+    /// </summary>
+    public double? ClipboardPanelWidth { get; set; }
+
+    public double? LauncherPanelWidth { get; set; }
+
+    public double? ClipboardPanelRows { get; set; }
+
+    public double? LauncherPanelRows { get; set; }
+
+    public double? TranslateWindowMaxHeight { get; set; }
+
     /// <summary>默认粘贴为纯文本：打开后 Enter 粘纯文本、Shift+Enter 保留格式（mac clipboardPastePlainByDefault，默认关）。</summary>
     public bool ClipboardPastePlain { get; set; }
 
@@ -139,6 +154,12 @@ internal sealed class Settings
 
     /// <summary>查词（单词模式）开关（第三版 §3.4）。</summary>
     public bool TranslateWordLookup { get; set; } = true;
+
+    /// <summary>英文单词用真人发音（有道词典的录音；关掉或取不到时用系统声音，PLAN-v14 V8，键名同 mac translateWordRecording）。</summary>
+    public bool TranslateWordRecording { get; set; } = true;
+
+    /// <summary>英文单词的发音：us（美音，默认）/ uk（英音），同 mac translateWordAccent。</summary>
+    public string TranslateWordAccent { get; set; } = "us";
 
 
     // 同步（第五版）：用户选的同步文件夹、开关和各类（PLAN-v12 加了提醒）。

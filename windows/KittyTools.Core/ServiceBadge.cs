@@ -17,6 +17,8 @@ public static class ServiceBadge
             "microsoft" => "微",
             "volcengine" => "火",
             "tencent" => "腾",
+            "youdaoDict" => "有",
+            "apple" => "系",
             "ai" => ProtocolLetter(protocol, name),
             _ => FirstLetter(name),
         };
@@ -49,9 +51,13 @@ public static class ServiceBadge
     {
         if (kind != "ai")
         {
-            return kind is "zhipu" or "baidu" or "youdao" or "google" or "deepl" or "microsoft" or "volcengine" or "tencent"
-                ? kind
-                : null;
+            // 有道词典和有道翻译是同一个牌子（mac）；系统翻译没有 logo，用色块
+            return kind switch
+            {
+                "zhipu" or "baidu" or "youdao" or "google" or "deepl" or "microsoft" or "volcengine" or "tencent" => kind,
+                "youdaoDict" => "youdao",
+                _ => null,
+            };
         }
 
         var aiProtocol = AiEndpoint.ParseProtocol(protocol);

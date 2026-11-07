@@ -46,6 +46,26 @@ public static class WordLookup
     }
 
     /// <summary>
+    /// 字母文字 2–3 个词（ice cream、look up；mac WordLookup.isPhrase）：只给有道词典这种词典类服务开卡（PLAN-v14 V4），
+    /// 不改单词模式的判断。一行、≤ 40 字，每个词字母开头、只含字母 / 连字符 / 撇号。
+    /// </summary>
+    public static bool IsPhrase(string? text) => Words(text) is { Length: >= 2 and <= 3 };
+
+    private static string[]? Words(string? text)
+    {
+        var value = text?.Trim() ?? string.Empty;
+        if (value.Length == 0 || value.Length > MaxLatinLength || value.Contains('\n') || value.Contains('\r'))
+        {
+            return null;
+        }
+
+        var words = value.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return words.All(word => char.IsLetter(word[0]) && word.All(ch => char.IsLetter(ch) || ch is '-' or '\'' or '’'))
+            ? words
+            : null;
+    }
+
+    /// <summary>
     /// 单词模式提示词里的示例词条（mac WordLookup.example：照着示例写比照着说明写稳得多，免费的 glm-4-flash 会把说明原样抄出来）。
     /// 释义是中文时拿英文词 run 做例子，其它语言拿中文词 苹果 做例子。
     /// </summary>

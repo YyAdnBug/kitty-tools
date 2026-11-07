@@ -142,10 +142,15 @@ public sealed partial class LauncherPanel : UserControl
             }
 
             var heights = model.Results.Select(item => LauncherListLayout.HeightOf(item.Kind)).ToList();
+            // 拖下边定的最多几行（PLAN-v14 V10，null = 默认 8.5）
             return LauncherListLayout.PanelHeight(
-                heights, model.Groups.Count, model.ShowsEmptyText, _palette.IsOpen ? _paletteHeight : 0);
+                heights, model.Groups.Count, model.ShowsEmptyText, _palette.IsOpen ? _paletteHeight : 0,
+                PanelMetrics.StoredRows(SettingsService.Current.LauncherPanelRows) ?? LauncherListLayout.VisibleRows);
         }
     }
+
+    /// <summary>这次结果的分组数（拖下边换算行数用）。</summary>
+    public int GroupCount => Model?.Groups.Count ?? 0;
 
     /// <summary>
     /// 底栏露不露：空首页（第一次用、收藏和常用都没有）没有选中项可说，留着就是搜索线下面一截空白，整条收起、

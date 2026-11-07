@@ -127,10 +127,18 @@ internal sealed class TranslateCoordinator
     {
         get
         {
-            var index = TranslateSession.Primary(_cards.Select(card => (card.State, card.Text)).ToList());
+            // 词典类服务给的是释义，不是译文（PLAN-v14 V4）
+            var index = TranslateSession.Primary(
+                _cards.Select(card => (card.State, card.Text, TranslateKinds.IsDictionary(card.Service.Kind))).ToList());
             return index >= 0 ? _cards[index] : null;
         }
     }
+
+    /// <summary>这次翻译的原文（预处理后的）；没开会话是 null。卡片的读音行拿它当要念的词。</summary>
+    public string? RequestText => _request?.Text;
+
+    /// <summary>这次检测出 / 固定的源语言（读音行、原文框喇叭判断是不是英文词）。</summary>
+    public Lang? SourceLanguage => FixedSource ?? Detected;
 
     /// <summary>这次翻译收藏了没有（星标）。</summary>
     public bool IsFavorite
@@ -232,7 +240,11 @@ internal sealed class TranslateCoordinator
         _cards.Clear();
         if (TranslateServiceStore.Instance is { } store)
         {
-            _cards.AddRange(store.Enabled.Select(service => new TranslateCard { Service = service }));
+            // 系统翻译、不认识的种类不开卡（V2、V3）；词典类服务只查单词和短语（V4）
+            var lookup = WordLookup.IsWord(text) || WordLookup.IsPhrase(text);
+            _cards.AddRange(store.Enabled
+                .Where(service => TranslateKinds.IsRunnable(service.Kind) && (lookup || !TranslateKinds.IsDictionary(service.Kind)))
+                .Select(service => new TranslateCard { Service = service }));
         }
 
         Changed?.Invoke();
@@ -363,7 +375,10 @@ internal sealed class TranslateCoordinator
             throw new TranslateError("原文为空或太长");
         }
 
-        var services = TranslateServiceStore.Instance?.Enabled.ToList() ?? new List<TranslateServiceConfig>();
+        // 词典类服务不进静默替换；系统翻译、不认识的种类不跑
+        var services = TranslateServiceStore.Instance?.Enabled
+            .Where(service => TranslateKinds.IsRunnable(service.Kind) && !TranslateKinds.IsDictionary(service.Kind))
+            .ToList() ?? new List<TranslateServiceConfig>();
         if (services.Count == 0)
         {
             throw TranslateError.Config("没有启用的翻译服务");
@@ -408,7 +423,7 @@ internal sealed class TranslateCoordinator
     }
 
     /// <summary>UI 截图自检（--ui-snapshots）：直接摆出一组卡片（不发请求）。正常入口不碰。</summary>
-    internal void ShowProbe(string source, Lang detected, Lang target, IReadOnlyList<TranslateCard> cards)
+    internal void ShowProbe(string source, Lang detected, Lang target, IReadOnlyList<TranslateCard> cards, bool isWord = false)
     {
         Cancel();
         SourceText = source;
@@ -420,8 +435,8 @@ internal sealed class TranslateCoordinator
         Target = target;
         FixedSource = null;
         AbandonedTarget = null;
-        IsWordLookup = false;
-        _request = new TranslateRequest(source.Trim(), null, target);
+        IsWordLookup = isWord;
+        _request = new TranslateRequest(source.Trim(), null, target, isWord);
         _recordedPrimary = null;
         _cards.Clear();
         _cards.AddRange(cards);

@@ -18,9 +18,18 @@ public static class TranslateSession
     /// 排在它前面的都得已经没成（出错、截断、中断）才轮到它——前面的还在跑就先等（-1），免得先认了第二个、第一个出来又换。
     /// </summary>
     public static int Primary(IReadOnlyList<(CardState State, string Text)> cards)
+        => Primary(cards.Select(card => (card.State, card.Text, false)).ToList());
+
+    /// <summary>skip：词典类服务（有道词典）给的是释义、不是译文，不当主结果，也不挡后面的（PLAN-v14 V4，mac Kind.isDictionary）。</summary>
+    public static int Primary(IReadOnlyList<(CardState State, string Text, bool Skip)> cards)
     {
         for (var index = 0; index < cards.Count; index++)
         {
+            if (cards[index].Skip)
+            {
+                continue;
+            }
+
             switch (cards[index].State)
             {
                 case CardState.Done when cards[index].Text.Length > 0:
@@ -66,10 +75,22 @@ public static class TranslateSession
         return head.Length < trimmed.Length ? head + "…" : head;
     }
 
+    /// <summary>浮窗最矮多高（也是拖下边的下限）。</summary>
+    public const double MinHeight = 220;
+
+    /// <summary>浮窗默认宽度（「恢复默认大小」回到它）。</summary>
+    public const double DefaultWidth = 420;
+
     /// <summary>
     /// 浮窗的高（mac TranslatePanelView.panelHeight）：随内容、最矮 220；平时最高到可见区的 85%，
     /// 但 mustFit（结果卡多于三张时到第三张的下沿）要放得下，这时最高到可见区减 24。
+    /// cap：拖下边定的最高多高（PLAN-v14 V10，null / 0 = 自动）；拖过的就照它（前三张卡也不例外，卡片区里滚），内容少时照样变矮。
     /// </summary>
-    public static double PanelHeight(double height, double mustFit, double visible)
-        => Math.Min(Math.Max(height, 220), Math.Min(Math.Max(visible * 0.85, mustFit), visible - 24));
+    public static double PanelHeight(double height, double mustFit, double visible, double? cap = null)
+    {
+        var limit = cap is > 0
+            ? Math.Min(Math.Max(cap.Value, MinHeight), visible - 24)
+            : Math.Min(Math.Max(visible * 0.85, mustFit), visible - 24);
+        return Math.Min(Math.Max(height, MinHeight), limit);
+    }
 }

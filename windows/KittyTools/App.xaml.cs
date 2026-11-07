@@ -115,6 +115,13 @@ public partial class App : Application
                 return;
             }
 
+            if (PanelResizeProbe.IsRequested(commandLine) && PanelResizeProbe.DirectoryFrom(commandLine) is { } resizeProbe)
+            {
+                // PLAN-v16 第 1 批：拖边改大小的自检（只在测试档），跑完就退。
+                _ = PanelResizeProbe.RunAsync(resizeProbe);
+                return;
+            }
+
             if (Environment.GetCommandLineArgs().Contains("--crash-test", StringComparer.OrdinalIgnoreCase))
             {
                 throw new InvalidOperationException("--crash-test");

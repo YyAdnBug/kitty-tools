@@ -82,6 +82,7 @@ internal sealed partial class TranslateWindow : Window
     private bool _hiding;
     private bool _noActivate;
     private bool _resizing;
+    private readonly PanelResize _resize;
     private bool _quietSource;
     private bool _composing;
     private bool _historyVisible;
@@ -214,8 +215,18 @@ internal sealed partial class TranslateWindow : Window
 
         _speakIcon = new FontIcon { Glyph = Glyphs.Volume, FontSize = 13 };
         _speakSource = IconButton(_speakIcon, "朗读原文");
-        _speakSource.Click += (_, _) => Speech.Toggle(
-            _coordinator.SourceText, (_coordinator.FixedSource ?? _coordinator.Detected)?.Code() ?? SettingsService.Current.TranslateSource);
+        // 原文是一个英文词时放真人发音（设置里的口音，PLAN-v14 V7），别的用系统声音
+        _speakSource.Click += (_, _) =>
+        {
+            if (SpeechText.EnglishWord(_coordinator.SourceText, _coordinator.SourceLanguage) is { } word)
+            {
+                Speech.ToggleWord(word);
+                return;
+            }
+
+            Speech.Toggle(
+                _coordinator.SourceText, _coordinator.SourceLanguage?.Code() ?? SettingsService.Current.TranslateSource);
+        };
         _copySource = IconButton(new FontIcon { Glyph = Glyphs.Copy, FontSize = 13 }, "复制原文");
         _copySource.Click += (_, _) => CopySource();
         _clearSource = IconButton(new FontIcon { Glyph = Glyphs.ClearInput, FontSize = 13 }, "清空");
@@ -333,6 +344,26 @@ internal sealed partial class TranslateWindow : Window
         _hwnd = (HWND)WinRT.Interop.WindowNative.GetWindowHandle(this);
         Activated += OnActivated;
         AppWindow.Changed += OnWindowChanged;
+        // 拖边改大小（PLAN-v14 V9 V10）：左右改宽（420 起）、下边定「最高多高」，顶边不动；拖的时候不按内容改高度
+        _resize = new PanelResize(_hwnd, () =>
+        {
+            var display = Displays.AtWindow(_hwnd);
+            var visible = display.Work.Height / display.Scale;
+            return new PanelSizeLimits(MinWidthDip, double.MaxValue, TranslateSession.MinHeight, visible - 24);
+        });
+        _resize.Ended += (_, heightChanged) =>
+        {
+            if (heightChanged)
+            {
+                var scale = Displays.AtWindow(_hwnd).Scale;
+                SettingsService.Current.TranslateWindowMaxHeight = Math.Round(AppWindow.Size.Height / (scale <= 0 ? 1 : scale));
+                SettingsService.Save();
+                Log.Info("translate.resized height=True");
+            }
+
+            SaveGeometry();
+            ResizeToContent();
+        };
         _coordinator.Changed += OnCoordinatorChanged;
         _coordinator.Copied += id =>
         {
@@ -549,6 +580,12 @@ internal sealed partial class TranslateWindow : Window
         var before = Foreground.Get();
         _previousForeground = before != default && !Foreground.IsOurs(before) ? before : default;
         ApplyFontScale();
+        // 收着时可能在设置里「恢复默认大小」过：宽照设置里的
+        if (!_visible)
+        {
+            _widthDip = Math.Max(MinWidthDip, (int)Math.Round(SettingsService.Current.TranslateWindowWidth));
+        }
+
         RefreshAll();
         Place(placement);
         if (!_visible)
@@ -937,7 +974,10 @@ internal sealed partial class TranslateWindow : Window
         _note.Visibility = note is null ? Visibility.Collapsed : Visibility.Visible;
         var hasSource = _coordinator.SourceText.Length > 0;
         _speakSource.IsEnabled = _copySource.IsEnabled = _clearSource.IsEnabled = hasSource;
-        var speaking = hasSource && Speech.Speaking == _coordinator.SourceText;
+        var sourceKey = SpeechText.EnglishWord(_coordinator.SourceText, _coordinator.SourceLanguage) is { } sourceWord
+            ? SpeechText.Key(sourceWord, Speech.PreferredAccent)
+            : _coordinator.SourceText;
+        var speaking = hasSource && Speech.Speaking == sourceKey;
         _speakIcon.Glyph = speaking ? Glyphs.VolumeOn : Glyphs.Volume;
         _speakIcon.Foreground = speaking ? new SolidColorBrush(Theme.AccentColor) : Theme.SecondaryText();
         var favorite = _coordinator.IsFavorite;
@@ -1169,8 +1209,12 @@ internal sealed partial class TranslateWindow : Window
             var card = cards[index];
             if (_cardViews.TryGetValue(card.Service.Id, out var view))
             {
+                // 单词卡：大模型的单词模式、词典类服务（有道词典）
+                var wordStyle = TranslateKinds.IsDictionary(card.Service.Kind) ||
+                                (_coordinator.IsWordLookup && TranslateCardView.IsStreamingKind(card.Service.Kind));
                 view.Update(card, index, SettingsService.Current.TranslateFontScale, collapsed.Contains(card.Service.Id),
-                    _coordinator.CopiedCard == card.Service.Id, _coordinator.Target);
+                    _coordinator.CopiedCard == card.Service.Id, _coordinator.Target, wordStyle,
+                    wordStyle ? SpeechText.EnglishWord(_coordinator.TranslatedSource, _coordinator.SourceLanguage) : null);
             }
         }
     }
@@ -1246,9 +1290,29 @@ internal sealed partial class TranslateWindow : Window
         };
         const string done = "敏捷的棕色狐狸跳过了那只懒狗。那是最好的时代，也是最坏的时代。";
         ShowHistory(false);
-        SetSourceQuietly(state == "translate-empty" ? string.Empty : source);
+        SetSourceQuietly(state == "translate-empty" ? string.Empty : state == "translate-word" ? "stuff" : source);
         switch (state)
         {
+            case "translate-word":
+                // PLAN-v14：有道词典卡 + 大模型单词卡，第一行换成带小喇叭的读音行
+                var dict = new TranslateServiceConfig { Id = "probe-dict", Kind = TranslateKinds.YoudaoDict, Name = "有道词典" };
+                _coordinator.ShowProbe("stuff", Lang.En, Lang.ZhHans, new[]
+                {
+                    new TranslateCard
+                    {
+                        Service = dict,
+                        State = CardState.Done,
+                        Text = "美 /stʌf/  英 /stʌf/\nn. 东西，物品；基本特征，特质\nv. 塞进，填进；填满，装满\n变形：现在分词 stuffing；过去式 stuffed\n" +
+                               "例：It's amazing how people collect so much stuff over the years. 人们这些年下来竟能收集到这么多东西，真令人惊奇。",
+                    },
+                    new TranslateCard
+                    {
+                        Service = zhipu,
+                        State = CardState.Done,
+                        Text = "美 /stʌf/  英 /stʌf/\nn. 东西；材料；填充物\nv. 塞满；填塞\n例：Put your stuff in the car. 把你的东西放进车里。",
+                    },
+                }, isWord: true);
+                break;
             case "translate-empty":
                 _coordinator.BeginInput();
                 break;
@@ -1342,7 +1406,7 @@ internal sealed partial class TranslateWindow : Window
 
     private void ResizeToContent()
     {
-        if (!_visible)
+        if (!_visible || _resize.IsSizing)
         {
             return;
         }
@@ -1351,7 +1415,7 @@ internal sealed partial class TranslateWindow : Window
         {
             var display = Displays.AtWindow(_hwnd);
             var (desired, mustFit) = MeasureHeights();
-            var heightDip = TranslateSession.PanelHeight(desired, mustFit, display.Work.Height / display.Scale);
+            var heightDip = TranslateSession.PanelHeight(desired, mustFit, display.Work.Height / display.Scale, SettingsService.Current.TranslateWindowMaxHeight);
             var widthPx = MonitorLayout.Pixels(_widthDip, display.Scale);
             var heightPx = MonitorLayout.Pixels(heightDip, display.Scale);
             if (Math.Abs(AppWindow.Size.Height - heightPx) < 2 && Math.Abs(AppWindow.Size.Width - widthPx) < 2)
@@ -1390,7 +1454,7 @@ internal sealed partial class TranslateWindow : Window
             var x = (int)settings.TranslateWindowX;
             var y = (int)settings.TranslateWindowY;
             var display = Displays.AtPoint(x, y);
-            var height = TranslateSession.PanelHeight(desired, mustFit, display.Work.Height / display.Scale);
+            var height = TranslateSession.PanelHeight(desired, mustFit, display.Work.Height / display.Scale, SettingsService.Current.TranslateWindowMaxHeight);
             var rect = MonitorLayout.Clamp(
                 new PixelRect(x, y, MonitorLayout.Pixels(_widthDip, display.Scale), MonitorLayout.Pixels(height, display.Scale)),
                 display.Work);
@@ -1401,14 +1465,14 @@ internal sealed partial class TranslateWindow : Window
         if (placement == Placement.Top || (placement == Placement.Last && ConfiguredPlacement == Placement.Top))
         {
             var screen = Displays.AtCursor();
-            var topHeight = TranslateSession.PanelHeight(desired, mustFit, screen.Work.Height / screen.Scale);
+            var topHeight = TranslateSession.PanelHeight(desired, mustFit, screen.Work.Height / screen.Scale, SettingsService.Current.TranslateWindowMaxHeight);
             var top = MonitorLayout.Overlay(screen.Work, screen.Scale, _widthDip, topHeight, MonitorLayout.ClipboardTopFraction);
             AppWindow.MoveAndResize(new RectInt32(top.X, top.Y, top.Width, top.Height));
             return;
         }
 
         var pointer = Displays.AtCursor();
-        var pointerHeight = TranslateSession.PanelHeight(desired, mustFit, pointer.Work.Height / pointer.Scale);
+        var pointerHeight = TranslateSession.PanelHeight(desired, mustFit, pointer.Work.Height / pointer.Scale, SettingsService.Current.TranslateWindowMaxHeight);
         PInvoke.GetCursorPos(out var cursor);
         var placed = MonitorLayout.NearPointer(cursor.X, cursor.Y, pointer.Work, pointer.Scale, _widthDip, pointerHeight);
         AppWindow.MoveAndResize(new RectInt32(placed.X, placed.Y, placed.Width, placed.Height));

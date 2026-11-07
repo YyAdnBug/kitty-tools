@@ -528,6 +528,9 @@ internal static class ArchiveService
             writer.WriteString("translateFirstLanguage", settings.TranslateFirstLanguage);
             writer.WriteString("translateSecondLanguage", settings.TranslateSecondLanguage);
             writer.WriteBoolean("translateAutoCopy", settings.TranslateAutoCopy);
+            // PLAN-v14 V8：朗读两项，键名和值同 mac Prefs（mac 注册了默认值，会导出）。
+            writer.WriteBoolean("translateWordRecording", settings.TranslateWordRecording);
+            writer.WriteString("translateWordAccent", settings.TranslateWordAccent == "uk" ? "uk" : "us");
             writer.WriteBoolean("ocrJoinLines", settings.OcrJoinLines);
             // PLAN-v12 N2 / N4：键名和值同 mac Prefs（clipboardPanelPosition、launcherPanelPosition、screenshotToolbarAlign）。
             writer.WriteString("clipboardPanelPosition", settings.ClipboardPanelPosition);
@@ -622,6 +625,12 @@ internal static class ArchiveService
                     break;
                 case "ocrJoinLines" when value.ValueKind is JsonValueKind.True or JsonValueKind.False:
                     settings.OcrJoinLines = value.GetBoolean();
+                    break;
+                case "translateWordRecording" when value.ValueKind is JsonValueKind.True or JsonValueKind.False:
+                    settings.TranslateWordRecording = value.GetBoolean();
+                    break;
+                case "translateWordAccent" when value.ValueKind == JsonValueKind.String && value.GetString() is "us" or "uk":
+                    settings.TranslateWordAccent = value.GetString()!;
                     break;
                 case "clipboardPanelPosition" when value.ValueKind == JsonValueKind.String && value.GetString() is "top" or "mouse" or "last":
                     settings.ClipboardPanelPosition = value.GetString()!;

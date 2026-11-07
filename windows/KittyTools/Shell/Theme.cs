@@ -382,6 +382,8 @@ internal static class Theme
             "microsoft" => Color.FromArgb(255, 0, 120, 212),
             "volcengine" => Color.FromArgb(255, 22, 93, 255),
             "tencent" => Color.FromArgb(255, 0, 91, 234),
+            "youdaoDict" => Color.FromArgb(255, 0xE1, 0x25, 0x1B),
+            "apple" => Color.FromArgb(255, 0x5E, 0x5C, 0xE6),
             "ai:azure" => Color.FromArgb(255, 0, 120, 212),
             "ai:anthropic" => Color.FromArgb(255, 209, 128, 69),
             "ai:openai" => Color.FromArgb(255, 16, 163, 127),

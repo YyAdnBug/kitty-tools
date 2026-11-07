@@ -92,29 +92,43 @@ public sealed class LauncherListLayout
         return null;
     }
 
-    /// <summary>列表区的高：上下内缩 + 分组标题 + 最多 8.5 行（多的那半行按第 9 行的一半算）。</summary>
-    public static double ListHeight(IReadOnlyList<double> rowHeights, int groups)
+    /// <summary>
+    /// 列表区的高：上下内缩 + 分组标题 + 最多 visibleRows 行（默认 8.5；拖下边定的 6.5–14.5，PLAN-v14 V10），
+    /// 多的那半行按下一行的一半算。分组标题、计算卡那种高行照实际高度算，「行」= 第几行。
+    /// </summary>
+    public static double ListHeight(IReadOnlyList<double> rowHeights, int groups, double visibleRows = VisibleRows)
     {
         if (rowHeights.Count == 0)
         {
             return 0;
         }
 
-        var full = (int)VisibleRows;
+        var full = (int)Math.Floor(visibleRows);
         var rows = rowHeights.Take(full).Sum();
-        if (rowHeights.Count > full)
+        if (rowHeights.Count > full && visibleRows > full)
         {
-            rows += rowHeights[full] / 2;
+            rows += rowHeights[full] * (visibleRows - full);
         }
 
         return 2 * Inset + groups * GroupHeight + rows;
     }
 
+    /// <summary>面板里除了行以外的高度：搜索线、底栏、列表上下内缩、分组标题（mac listChrome）。</summary>
+    public static double ListChrome(int groups) => SearchHeight + BarHeight + 2 * Inset + groups * GroupHeight;
+
+    /// <summary>拖下边时面板能多高：列表 6.5 到 14.5 行（mac heightRange(for:)）。</summary>
+    public static (double Min, double Max) HeightRange(int groups)
+        => (ListChrome(groups) + PanelMetrics.MinRows * RowHeight, ListChrome(groups) + PanelMetrics.MaxRows * RowHeight);
+
+    /// <summary>拖到这么高对应最多几行：按半行吸附，夹在 6.5–14.5 里（mac rows(forHeight:model:)）。</summary>
+    public static double RowsFor(double height, int groups) => PanelMetrics.SnapRows((height - ListChrome(groups)) / RowHeight);
+
     /// <summary>
     /// 面板高度（mac height(for:)）：showsEmpty = 有查询却没有结果（显示一行字）；menuHeight = Ctrl+K 菜单的高（没开是 0），
     /// 菜单锚在底栏上方 4、离搜索线至少 8。
     /// </summary>
-    public static double PanelHeight(IReadOnlyList<double> rowHeights, int groups, bool showsEmpty, double menuHeight = 0)
+    public static double PanelHeight(
+        IReadOnlyList<double> rowHeights, int groups, bool showsEmpty, double menuHeight = 0, double visibleRows = VisibleRows)
     {
         var height = SearchHeight + BarHeight;
         if (showsEmpty)
@@ -123,7 +137,7 @@ public sealed class LauncherListLayout
         }
         else
         {
-            height += ListHeight(rowHeights, groups);
+            height += ListHeight(rowHeights, groups, visibleRows);
         }
 
         if (menuHeight > 0)

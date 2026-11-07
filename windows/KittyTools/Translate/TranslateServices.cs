@@ -1,5 +1,7 @@
 // 翻译服务的配置列表：默认只有内置智谱（启用）；可在设置里加回内置服务或新建 AI 服务。
 // 非密钥配置存 settings.json，密钥只进凭据管理器（目标名 <id>.<字段>）。
+// PLAN-v14：加了不用 key 的有道词典（youdaoDict，只查单词和短语）；mac 的系统翻译（apple）和以后不认识的种类
+// 留在列表里（同步、导出原样带回去），翻译时不开它们的卡，设置里灰字说明（V2、V3）。
 using KittyTools.Core;
 using KittyTools.Infrastructure;
 
@@ -15,12 +17,22 @@ internal static class TranslateKinds
     public const string Youdao = "youdao";
     public const string Volcengine = "volcengine";
     public const string Tencent = "tencent";
+    public const string YoudaoDict = "youdaoDict";
+
+    /// <summary>mac 的系统翻译（Translation 框架）：Windows 用不了，只认得它（V2）。</summary>
+    public const string Apple = "apple";
     public const string Ai = "ai";
 
     public static readonly string[] All =
     {
-        Zhipu, Google, DeepL, Microsoft, Baidu, Youdao, Volcengine, Tencent, Ai,
+        Zhipu, Google, DeepL, Microsoft, Baidu, Youdao, Volcengine, Tencent, YoudaoDict, Ai,
     };
+
+    /// <summary>词典类服务（有道词典）：只查单词和短语，不当主结果、不进静默替换（mac Kind.isDictionary）。</summary>
+    public static bool IsDictionary(string kind) => kind == YoudaoDict;
+
+    /// <summary>这一版能跑的种类：内置的和 AI 服务。系统翻译、不认识的种类不开卡（V2、V3）。</summary>
+    public static bool IsRunnable(string kind) => IsBuiltin(kind) || kind == Ai;
 
     public static string DefaultName(string kind) => kind switch
     {
@@ -32,23 +44,30 @@ internal static class TranslateKinds
         Youdao => "有道翻译",
         Volcengine => "火山翻译",
         Tencent => "腾讯翻译",
+        YoudaoDict => "有道词典",
+        Apple => "系统翻译",
         _ => "AI 服务",
     };
 
-    /// <summary>内置服务要存进凭据管理器的字段（有的是两个）；AI 服务固定是 apiKey。</summary>
+    /// <summary>
+    /// 内置服务要存进凭据管理器的字段（有的是两个）；AI 服务固定是 apiKey。不用 key 的（有道词典、系统翻译）和
+    /// 不认识的种类没有字段（空数组）：取第一个的地方用 SecretField，它有兜底。
+    /// </summary>
     public static string[] SecretFields(string kind) => kind switch
     {
+        YoudaoDict or Apple => System.Array.Empty<string>(),
+        Zhipu or Google or Ai => new[] { "apiKey" },
         DeepL => new[] { "authKey" },
         Microsoft => new[] { "subscriptionKey" },
         Baidu => new[] { "appId", "secret" },
         Youdao => new[] { "appKey", "appSecret" },
         Volcengine => new[] { "accessKey", "secretKey" },
         Tencent => new[] { "secretId", "secretKey" },
-        _ => new[] { "apiKey" },
+        _ => System.Array.Empty<string>(),
     };
 
-    /// <summary>第一个字段（单字段的服务的旧写法都还用它）。</summary>
-    public static string SecretField(string kind) => SecretFields(kind)[0];
+    /// <summary>第一个字段（单字段的服务的旧写法都还用它）；没有字段的种类给 apiKey（读出来总是空的，不会越界）。</summary>
+    public static string SecretField(string kind) => SecretFields(kind) is { Length: > 0 } fields ? fields[0] : "apiKey";
 
     public static string SecretLabel(string kind, string field) => (kind, field) switch
     {
@@ -69,7 +88,7 @@ internal static class TranslateKinds
     public static string SecretLabel(string kind) => SecretLabel(kind, SecretField(kind));
 
     public static bool IsBuiltin(string kind)
-        => kind is Zhipu or Google or DeepL or Microsoft or Baidu or Youdao or Volcengine or Tencent;
+        => kind is Zhipu or Google or DeepL or Microsoft or Baidu or Youdao or Volcengine or Tencent or YoudaoDict;
 }
 
 internal sealed record AiPreset(string Name, AiProtocol Protocol, string BaseUrl)
@@ -247,11 +266,15 @@ internal sealed class TranslateServiceStore
         }
     }
 
-    public bool HasAnyUsableService => Enabled.Any(service => service.Kind != TranslateKinds.Zhipu
-                                                              || Secret(service) is not null
-                                                              || BuiltinZhipuKey is not null);
+    public bool HasAnyUsableService => Enabled.Any(service => TranslateKinds.IsRunnable(service.Kind)
+                                                              && (service.Kind != TranslateKinds.Zhipu
+                                                                  || Secret(service) is not null
+                                                                  || BuiltinZhipuKey is not null));
 
-    /// <summary>服务分发只有一个 switch（加服务 = 一个 Provider 文件 + 一个 case）。</summary>
+    /// <summary>
+    /// 服务分发只有一个 switch（加服务 = 一个 Provider 文件 + 一个 case）。AI 服务明写（以前 _ 一律当 AI 服务跑）；
+    /// 系统翻译和不认识的种类不该走到这里（不开卡），走到了就报配置错误。
+    /// </summary>
     public static IAsyncEnumerable<string> Translate(
         TranslateServiceConfig service,
         TranslateRequest request,
@@ -265,6 +288,19 @@ internal sealed class TranslateServiceStore
         TranslateKinds.Youdao => YoudaoProvider.StreamAsync(service, request, cancellationToken),
         TranslateKinds.Volcengine => VolcengineProvider.StreamAsync(service, request, cancellationToken),
         TranslateKinds.Tencent => TencentProvider.StreamAsync(service, request, cancellationToken),
-        _ => AiServiceProvider.StreamAsync(service, request, cancellationToken),
+        TranslateKinds.YoudaoDict => YoudaoDictProvider.StreamAsync(service, request, cancellationToken),
+        TranslateKinds.Ai => AiServiceProvider.StreamAsync(service, request, cancellationToken),
+        _ => Unsupported(service),
     };
+
+    private static async IAsyncEnumerable<string> Unsupported(TranslateServiceConfig service)
+    {
+        await Task.CompletedTask;
+        throw TranslateError.Config(service.Kind == TranslateKinds.Apple
+            ? "系统翻译只在 Mac 上能用"
+            : "这一版不认识这个服务，更新后可用");
+#pragma warning disable CS0162 // 迭代器要有 yield 才算迭代器
+        yield break;
+#pragma warning restore CS0162
+    }
 }

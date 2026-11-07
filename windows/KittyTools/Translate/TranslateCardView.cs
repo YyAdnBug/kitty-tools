@@ -5,6 +5,8 @@
 // 自建 AI 另给「打开设置」），整张卡染橙 / 红。大模型生成中边框上一段强调色光绕行（2.4 s 一圈，同一条描边上叠几层虚线、合成器上动），完成时整圈闪一下；
 // 复制时整卡闪一下。换状态时正文淡变 0.18 s；重新翻译时骨架先撑到上次正文的高。正文最多 8 行，再长在卡里滚（不做上下渐隐，见构造函数里的说明）。
 // 大模型的结果有 Markdown 时按 Markdown 显示（Core 的 InlineMarkdown：行内记号 + 标题、列表、引用、代码块）。
+// 单词卡（大模型单词模式、有道词典，PLAN-v14 V5 V6）：右上角的喇叭只读第一行释义；第一行整行是「美 /…/ 英 /…/」时换成一行
+// 「美 /rʌn/ 🔊  英 /rʌn/ 🔊」，小喇叭放那个口音的真人发音（Speech.ToggleWord），正文从第二行起。
 using System.Numerics;
 using System.Text.RegularExpressions;
 using KittyTools.Core;
@@ -52,6 +54,7 @@ internal sealed partial class TranslateCardView
     private readonly Paragraph _paragraph = new();
     private readonly Border _cursor;
     private readonly StackPanel _textPanel;
+    private readonly StackPanel _phonetics;
     private readonly StackPanel _truncated;
     private readonly Grid _failure;
     private readonly StackPanel _skeleton;
@@ -84,6 +87,10 @@ internal sealed partial class TranslateCardView
     private bool _blinking;
     private double _settledHeight;
     private Lang? _language;
+    private bool _wordStyle;
+    private string? _pronounce;
+    private string _phoneticKey = string.Empty;
+    private IReadOnlyList<Phonetic> _shownPhonetics = System.Array.Empty<Phonetic>();
 
     public TranslateCardView(
         TranslateServiceConfig service, Action retry, Action copy, Action toggleCollapse, Action openSettings)
@@ -168,6 +175,8 @@ internal sealed partial class TranslateCardView
             TextWrapping = TextWrapping.Wrap,
         });
         _textPanel = new StackPanel { Spacing = 6, Padding = new Thickness(SideInset, 0, SideInset, 0) };
+        _phonetics = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, Visibility = Visibility.Collapsed };
+        _textPanel.Children.Add(_phonetics);
         _textPanel.Children.Add(textLayer);
         _textPanel.Children.Add(_truncated);
         _scroll = new ScrollViewer
@@ -248,7 +257,9 @@ internal sealed partial class TranslateCardView
     };
 
     /// <summary>流式的服务（大模型：智谱、AI）：彗星边框、完成闪一下、Markdown 都只给它们。</summary>
-    private bool IsStreaming => _service.Kind is TranslateKinds.Zhipu or TranslateKinds.Ai;
+    private bool IsStreaming => IsStreamingKind(_service.Kind);
+
+    public static bool IsStreamingKind(string kind) => kind is TranslateKinds.Zhipu or TranslateKinds.Ai;
 
     private double FontSize => 15 * _fontScale;
 
@@ -256,11 +267,17 @@ internal sealed partial class TranslateCardView
 
     private double BodyCap => BodyLines * LineHeight;
 
-    public void Update(TranslateCard card, int index, double fontScale, bool collapsed, bool copied, Lang? language)
+    /// <param name="wordStyle">单词卡：喇叭只读释义（V5）。</param>
+    /// <param name="pronounce">单词卡第一行是读音时，小喇叭念的英文词（V6）；不是英文词时 null。</param>
+    public void Update(
+        TranslateCard card, int index, double fontScale, bool collapsed, bool copied, Lang? language,
+        bool wordStyle = false, string? pronounce = null)
     {
         var previous = _last?.State;
         _last = card;
         _language = language;
+        _wordStyle = wordStyle;
+        _pronounce = pronounce;
         var styleChanged = Math.Abs(fontScale - _fontScale) > 0.001;
         _fontScale = fontScale;
         _text.FontSize = FontSize;
@@ -296,9 +313,13 @@ internal sealed partial class TranslateCardView
         _failure.Visibility = phase == 3 ? Visibility.Visible : Visibility.Collapsed;
         _truncated.Visibility = card.State == CardState.Truncated ? Visibility.Visible : Visibility.Collapsed;
         _thinking.Visibility = card.Thinking ? Visibility.Visible : Visibility.Collapsed;
+        // 读音行：流式中第一行没出完照原样
+        var phonetic = pronounce is not null && phase is 1 or 2 ? SpeechText.PhoneticLine(card.Text) : null;
+        _shownPhonetics = phonetic?.Phonetics ?? System.Array.Empty<Phonetic>();
+        BuildPhonetics();
         if (phase is 1 or 2)
         {
-            SetText(card.Text, markdown);
+            SetText(phonetic?.Body ?? card.Text, markdown);
             if (follow && card.State == CardState.Running)
             {
                 _scroll.UpdateLayout();
@@ -355,6 +376,55 @@ internal sealed partial class TranslateCardView
         if (_last is { } card)
         {
             BuildActions(card, _lastIndex, _copied);
+            BuildPhonetics();
+        }
+    }
+
+    /// <summary>读音行「美 /rʌn/ 🔊  英 /rʌn/ 🔊」：音标正文字号、次级颜色，小喇叭 12 号，正在读的那个填实变强调色。</summary>
+    private void BuildPhonetics()
+    {
+        var word = _pronounce;
+        var key = word is null || _shownPhonetics.Count == 0
+            ? string.Empty
+            : $"{word}|{FontSize}|{Speech.Speaking}|" + string.Join(",", _shownPhonetics.Select(item => $"{item.Accent}{item.Text}"));
+        if (key == _phoneticKey)
+        {
+            return;
+        }
+
+        _phoneticKey = key;
+        _phonetics.Children.Clear();
+        _phonetics.Visibility = key.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+        if (word is null)
+        {
+            return;
+        }
+
+        foreach (var phonetic in _shownPhonetics)
+        {
+            var accent = phonetic.Accent;
+            var label = accent == Accent.Uk ? "英" : "美";
+            var speaking = Speech.Speaking == SpeechText.Key(word, accent);
+            var group = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
+            group.Children.Add(new TextBlock
+            {
+                Text = $"{label} /{phonetic.Text}/",
+                FontSize = FontSize,
+                Foreground = Theme.SecondaryText(),
+                IsTextSelectionEnabled = true,
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+            var button = IconAction(speaking ? Glyphs.VolumeOn : Glyphs.Volume,
+                $"{label}音朗读 {word}", () => Speech.ToggleWord(word, accent));
+            ((FontIcon)button.Content).FontSize = 12;
+            button.VerticalAlignment = VerticalAlignment.Center;
+            if (speaking)
+            {
+                button.Foreground = new SolidColorBrush(Theme.AccentColor);
+            }
+
+            group.Children.Add(button);
+            _phonetics.Children.Add(group);
         }
     }
 
@@ -372,8 +442,10 @@ internal sealed partial class TranslateCardView
     {
         _lastIndex = index;
         var hasText = card.Text.Length > 0;
-        var speaking = hasText && Speech.Speaking == card.Text;
-        var key = $"{hasText}|{speaking}|{copied}|{index}|{_collapsed}";
+        // 只读译文：单词卡读第一行释义，别的去掉 Markdown 记号再读（V5）；拿读的那段比「在不在读这张」
+        var speech = hasText ? SpeechText.ForCard(card.Text, _wordStyle) : string.Empty;
+        var speaking = hasText && Speech.Speaking == speech;
+        var key = $"{hasText}|{speaking}|{copied}|{index}|{_collapsed}|{_wordStyle}";
         if (key == _actionsKey)
         {
             return;
@@ -384,7 +456,7 @@ internal sealed partial class TranslateCardView
         if (hasText)
         {
             var speak = IconAction(speaking ? Glyphs.VolumeOn : Glyphs.Volume, speaking ? "停止朗读" : "朗读",
-                () => Speech.Toggle(_last?.Text ?? string.Empty, _language?.Code()));
+                () => Speech.Toggle(SpeechText.ForCard(_last?.Text ?? string.Empty, _wordStyle), _language?.Code()));
             if (speaking)
             {
                 speak.Foreground = new SolidColorBrush(Theme.AccentColor);
