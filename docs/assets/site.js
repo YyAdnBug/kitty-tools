@@ -215,10 +215,25 @@
   if (log) changelog(log);
 
   function changelog(root) {
+    // 读最新那个发版 tag 上的 changelog.json（2026-11-07：0.7.3 从发布分支打的 tag，macos 分支上的日志还没搬回来，
+    // 首页显示 0.7.3、这里还停在 0.7.2）。tag 上的就是发出去的那一版，分支上可能还没搬回来、也可能有还没发的版本；
+    // 发布列表读不到时退回分支
     var SOURCES = {
-      mac: API + "/contents/macos/KittyTools/Resources/changelog.json?ref=macos",
-      windows: API + "/contents/windows/KittyTools/Resources/changelog.json?ref=windows",
+      mac: { path: "macos/KittyTools/Resources/changelog.json", prefix: "macos-v", branch: "macos" },
+      windows: { path: "windows/KittyTools/Resources/changelog.json", prefix: "windows-v", branch: "windows" },
     };
+    function ref(platform) {
+      var source = SOURCES[platform];
+      return releases().then(
+        function (list) {
+          var release = latest(list, source.prefix);
+          return release ? release.tag : source.branch;
+        },
+        function () {
+          return source.branch;
+        }
+      );
+    }
     var TYPES = [
       ["feat", "新功能"],
       ["ui", "界面"],
@@ -294,9 +309,14 @@
       });
       if (loaded[platform]) return;
       loaded[platform] = true;
-      cached("kt-log-" + platform, function () {
-        return getJSON(SOURCES[platform], true).then(normalize);
-      })
+      ref(platform)
+        .then(function (at) {
+          // 按 tag 记缓存：发了新版就换一个键，不会拿着旧版的日志等 10 分钟
+          return cached("kt-log-" + platform + "@" + at, function () {
+            var url = API + "/contents/" + SOURCES[platform].path + "?ref=" + encodeURIComponent(at);
+            return getJSON(url, true).then(normalize);
+          });
+        })
         .then(function (versions) {
           render(platform, versions);
         })
