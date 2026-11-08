@@ -949,8 +949,9 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 
 **2026-11-08：截图翻译盖回的小字（0.8.0）**（§10「截图翻译盖回的小字」）：第一轮 9 项、第二轮 6 项都「全部按推荐」；检出
 `kitty-tools-macos-overlay`（分支 `overlay-wip`，从 macos `15bcac45`）第一轮三个提交（排版、卡片、复查）、第二轮三个提交
-（E1 窄栏、F1–F3 识字分段连同复查、G1 同时 3 段），没 push、没打包、没动版本号和更新日志（0.8.0 发版时写一条 fix）。
-待手测 HANDTEST「截图翻译盖回的小字」1–21；并回 macos 等用户说（第 2 批动了 SelectionView，和 `element-wip` 可能撞上，后并的 rebase）。
+（E1 窄栏、F1–F3 识字分段连同复查、G1 同时 3 段）；2026-11-08 用户说并，变基到 macos `6449e5f6` 之后快进并回（全量 1987 过），
+没 push、没打包、没动版本号和更新日志（0.8.0 发版时写一条 fix）。待手测 HANDTEST「截图翻译盖回的小字」1–21。
+截图页（SelectionView）改得多，`element-wip` 并回时要变基到这之后。
 
 **2026-11-07：启动器脚本命令（0.8.0）**（§10「脚本命令」）：拍板 17 项「全部按推荐」；检出 `kitty-tools-macos-scripts`
 （分支 `scripts-wip`，从 macos `29c2d080`）四批各一个提交，没 push、没打包、没动版本号和更新日志（0.8.0 发版时一起写，
