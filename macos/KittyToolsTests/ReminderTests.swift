@@ -479,7 +479,7 @@ struct ReminderTests {
   }
 
   /// 启动器「提醒 …」那几行：认出时间的先是「建一条」，认不出 / 已经过了是一行提示，后面是已有的（写了字的只列标题里带着的）
-  @Test func launcherRows() {
+  @Test func launcherRows() throws {
     let now = Self.at(2, 10)
     var water = Reminder.examples[0]
     water.isOn = true
@@ -501,6 +501,13 @@ struct ReminderTests {
     let past = LauncherModel.reminderItems("今天上午8点", list: [], now: now, calendar: Self.calendar)
     #expect(past.map(\.title) == ["这个时间已经过了"])
     #expect(LauncherModel.reminderPrompts(for: "tx").first?.completion == "tx ")
+    // 用法里写打的那个词；默认别名 remind，表里改了别名时提示跟着换（例子里的也换）
+    #expect(LauncherModel.reminderPrompts(for: "提醒").first?.subtitle.hasPrefix("输入「提醒 空格") == true)
+    let relabeled = LauncherCommands.relabel(
+      try #require(LauncherModel.reminderPrompts(for: "remind").first),
+      settings: .init(aliases: ["builtin:reminder": "rm"]))
+    #expect(relabeled?.subtitle == "输入「rm 空格 时间 内容」，如「rm 10分钟 喝水」；↩ 或 Tab 补全关键词")
+    #expect(relabeled?.completion == "rm ")
     #expect(LauncherModel.reminderPrompts(for: "txt").isEmpty)
     // 这三个词不能再当网页搜索的关键词（不然「tx 关键词」被提醒拿走）
     #expect(ReminderPhrase.keywords.allSatisfy { WebSearch.reservedKeywords[$0] == "提醒" })

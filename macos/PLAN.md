@@ -864,6 +864,9 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
     只留一行，列表进 `Settings/WebSearchPage.swift`（编辑页从它再推进一层）；通用页「功能」只留一行，开关进
     `Settings/FeaturesPage.swift`，通用页的页头挪进自己的 NavigationStack。规矩写进 mac-whisker settings「一页里列不完的一组
     东西收成一行推进去」。
+  - 默认别名统一英文（2026-11-08 用户：「为什么这两个是中文，不应该统一英文吗」）：「命令」表里新建提醒的默认别名 提醒 → remind、
+    汇率换算 汇率 → currency（都是原来就认的词，不用切输入法）；中文和 tx、huilv 照旧认。提醒的用法提示写打的那个词，表里改了
+    别名时例子里的关键词也跟着换（`LauncherCommands.relabel` 换「「关键词 」」）。
   不做（拍板页「不做的」）：外部 AI 直接读写脚本（要开本地接口）、官网 llms.txt、AI 写完直接运行、自动加执行权限、调试日志页。
 
 ## 11½. Whisker 设计语言改造（2026-09-25 起）

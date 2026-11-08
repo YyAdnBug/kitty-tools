@@ -865,11 +865,13 @@ import UniformTypeIdentifiers
   /// 单输「提醒」「tx」「remind」：↩ / Tab 补全关键词的提示（同 fy）
   static func reminderPrompts(for query: String) -> [LauncherItem] {
     guard ReminderPhrase.isKeyword(query) else { return [] }
+    // 用法里写打的那个词（「提醒」「tx」「remind」都认）
+    let typed = query.trimmingCharacters(in: .whitespaces)
     return [
       LauncherItem(
         kind: .prompt, target: "reminder-new", title: "新建提醒…",
-        subtitle: "输入「提醒 空格 时间 内容」，如「提醒 10分钟 喝水」；↩ 或 Tab 补全关键词",
-        completion: query.trimmingCharacters(in: .whitespaces) + " ")
+        subtitle: "输入「\(typed) 空格 时间 内容」，如「\(typed) 10分钟 喝水」；↩ 或 Tab 补全关键词",
+        completion: typed + " ")
     ]
   }
 

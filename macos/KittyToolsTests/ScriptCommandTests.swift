@@ -574,7 +574,8 @@ struct ScriptRunTests {
     model.query = "hl"
     let prompt = try #require(model.results.first)
     #expect(prompt.target == ExchangeRates.promptTarget && prompt.completion == "100 美元 转 日元")
-    model.query = "汇率"
+    // 原来的默认词改了别名就不认（中文的「汇率」这类同义词照旧认，ponytail 记在 PLAN）
+    model.query = "currency"
     #expect(!model.results.contains { $0.target == ExchangeRates.promptTarget })
     model.query = "100 usd to cny"
     #expect(model.results.first?.kind == .calculation)  // 还没有汇率表：占位行
@@ -586,7 +587,8 @@ struct ScriptRunTests {
     model.query = "12*3"
     #expect(model.results.first?.kind == .calculation)  // 算式照算
     #expect(
-      LauncherCommands.builtIns.contains { $0.id == "builtin:currency" && $0.keyword == "汇率" })
+      LauncherCommands.builtIns.contains { $0.id == "builtin:currency" && $0.keyword == "currency" }
+    )
   }
 }
 
