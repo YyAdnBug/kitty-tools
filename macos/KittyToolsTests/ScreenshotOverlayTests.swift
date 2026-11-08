@@ -250,6 +250,49 @@ struct ScreenshotOverlayTests {
     #expect(brightest > 100 && brightest <= 150, "最亮 \(brightest)")
   }
 
+  /// 色块里的字（选中的按钮、标签；2026-11-08 复查：设置页选中的「单色」按钮）：底色按原文框贴身那一圈取。
+  /// 放不下的不往色块外面排（以前第二行排到了按钮下面的灰底上），交给卡片；放得下的字色照原文的白字，不取成色块的粉
+  @Test func textInsideAChipStaysInTheChip() async throws {
+    let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+    let context = try #require(
+      CGContext(
+        data: nil, width: 420, height: 200, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+    func fill(_ rect: CGRect, _ rgb: (CGFloat, CGFloat, CGFloat)) {
+      context.setFillColor(
+        CGColor(srgbRed: rgb.0 / 255, green: rgb.1 / 255, blue: rgb.2 / 255, alpha: 1))
+      context.fill(rect)
+    }
+    fill(CGRect(x: 0, y: 0, width: 420, height: 200), (236, 236, 236))
+    // 粉色按钮比字框上下各高 6 像素：去字范围外面那一圈已经出了按钮
+    fill(CGRect(x: 100, y: 86, width: 100, height: 32), (255, 77, 126))
+    for x in stride(from: CGFloat(125), to: 175, by: 8) {
+      fill(CGRect(x: x, y: 95, width: 3, height: 15), (255, 255, 255))
+    }
+    let image = try #require(context.makeImage())
+    let chip = [segment("单色", box: CGRect(x: 122, y: 92, width: 56, height: 20), lineHeight: 20)]
+    let long = await ScreenshotOverlay.render(
+      image, segments: chip, translations: ["Hide the icon from the menu bar for a while"])
+    #expect(long.image == nil && long.leftovers.count == 1)
+    let short = try #require(
+      await ScreenshotOverlay.render(image, segments: chip, translations: ["One"]).image)
+    let pixels = try Self.pixels(short)
+    var white = 0
+    var dark = 0
+    for y in 86..<118 {
+      for x in 100..<200 {
+        let (r, g, b) = pixels(x, y)
+        if min(r, g, b) > 230 { white += 1 }
+        if max(r, g, b) < 120 { dark += 1 }
+      }
+    }
+    #expect(white > 10 && dark == 0, "白 \(white)、深 \(dark)")
+    // 按钮外面一个像素都没动
+    for (x, y) in [(150, 80), (150, 122), (96, 100), (204, 100)] {
+      #expect(pixels(x, y) == (236, 236, 236), "(\(x), \(y)) 是 \(pixels(x, y))")
+    }
+  }
+
   /// 行内代码块跟着词走（2026-11-06 用户：底框有的偏移了，微信也没做好）：原来的底框连字一起去掉，
   /// 译文里还留着的代码词在新位置按原来的样子（底色、描边、上下高度）重画底框
   @Test func codeChipFollowsTheWord() async throws {

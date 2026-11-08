@@ -2819,7 +2819,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private func overlayTranslate(_ image: CGImage, pixelsPerPoint: CGFloat) async
     -> ScreenshotOverlay.Outcome
   {
-    guard let recognized = await recognizeForTranslation(image) else {
+    // 图标被认成的单字（首页的剪贴板图标认成「目」）不翻、不擦（拍板 F1）
+    guard let recognized = await recognizeForTranslation(image, droppingIcons: true) else {
       return .init(message: "识别失败")
     }
     let segments = ScreenshotOverlay.segments(
@@ -2849,9 +2850,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   /// 截图翻译和钉图的翻译共用的那一半：识别 + 原文记进剪贴板历史（设置 › 翻译 开着「截图翻译时复制识别出的原文」
   /// 时同时写进剪贴板）。返回 nil 时岛上已经说过原因
-  private func recognizeForTranslation(_ image: CGImage) async -> (lines: [OCR.Line], text: String)?
+  private func recognizeForTranslation(_ image: CGImage, droppingIcons: Bool = false) async
+    -> (lines: [OCR.Line], text: String)?
   {
-    guard let lines = await recognizing({ await OCR.recognizeLines(in: image) }) else {
+    guard
+      let lines = await recognizing({
+        await OCR.recognizeLines(in: image, droppingIcons: droppingIcons)
+      })
+    else {
       island.show("文字识别失败", detail: "请重试", tone: .error)
       return nil
     }

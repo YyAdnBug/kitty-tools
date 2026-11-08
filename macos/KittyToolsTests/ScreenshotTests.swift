@@ -630,6 +630,114 @@ struct ScreenshotTests {
     #expect(OCR.paragraphs(ended).count == 2)
   }
 
+  /// 图标被认成字（2026-11-08 拍板 F1）：整行一个字、方的、比正文高出三成以上（首页的剪贴板图标认成「目」）去掉；
+  /// 正文大小的单字、单个大写字母（表格列标、选项字母，Vision 给的字框也近乎方的）、窄的字都留着
+  @Test func iconLinesAreDropped() {
+    let size = CGSize(width: 1000, height: 500)
+    func line(_ text: String, x: CGFloat, width: CGFloat, height: CGFloat) -> OCR.Line {
+      OCR.Line(
+        text: text,
+        box: CGRect(
+          x: x / size.width, y: 0.5, width: width / size.width, height: height / size.height))
+    }
+    let kept = OCR.droppingIconLines(
+      [
+        line("剪贴板与启动器", x: 10, width: 78, height: 12), line("目", x: 10, width: 18, height: 18),
+        line("启动器", x: 100, width: 33, height: 13), line("剪", x: 200, width: 12, height: 12),
+        line("M", x: 300, width: 13, height: 13), line("I", x: 320, width: 5, height: 18),
+        line("翻译", x: 400, width: 24, height: 12),
+      ], imageSize: size)
+    #expect(kept.map(\.text) == ["剪贴板与启动器", "启动器", "剪", "M", "I", "翻译"])
+  }
+
+  /// 一列短标签各成一段（2026-11-08 拍板 F2，设置窗的侧栏）：三行以上、都短、对齐（至多四分之一的行例外）、宽窄差得多。
+  /// 窄栏里折行的一段话（每行几乎一样宽，行距再宽也一样）、小写开头接着往下说的、逗号结尾的不拆。
+  /// 估出来的字号差三成以上断开（F3：标题和下面的小字；只比同一种字的两行）；Vision 的行框高低不齐（同一字号差到 1.5 倍）、
+  /// 最后一行只有一个字的不拆（评审在便签墙截图上实测过这两种）
+  @Test func labelColumnsAndHeadingsSplit() throws {
+    func line(
+      _ text: String, top: CGFloat, height: CGFloat = 0.03, x: CGFloat = 0.05, width: CGFloat
+    ) -> OCR.Line {
+      OCR.Line(text: text, box: CGRect(x: x, y: top - height, width: width, height: height))
+    }
+    // 侧栏：行高 0.03、行距 0.06（空一个行高）、左对齐、宽窄不一；一个字宽 0.026
+    let sidebar = [
+      line("通用", top: 0.9, width: 0.052), line("剪贴板", top: 0.84, width: 0.078),
+      line("程序坞预览", top: 0.78, width: 0.13), line("启动器", top: 0.72, width: 0.078),
+    ]
+    #expect(OCR.paragraphs(sidebar) == [["通用"], ["剪贴板"], ["程序坞预览"], ["启动器"]])
+    // 第一行前面粘着一个被认成字的图标（深色设置窗认成「涼通用」）：左边界歪了，其余对齐照样拆；
+    // 歪出去的那个字去掉、框收回对齐的那条边（截图翻译不擦图标）
+    var icon = sidebar
+    icon[0] = line("涼通用", top: 0.9, x: 0.02, width: 0.082)
+    #expect(OCR.paragraphs(icon) == [["通用"], ["剪贴板"], ["程序坞预览"], ["启动器"]])
+    let trimmed = try #require(OCR.groups(icon).first?.first)
+    #expect(abs(trimmed.box.minX - 0.05) < 0.0001 && abs(trimmed.box.maxX - 0.102) < 0.0001)
+    // 最后一行前面粘着图标字、宽出一截（2 倍图上的「8关于」：按字数估的字号大了四成，框也高一点）：不当标题切开，照样拆、去掉图标字
+    let poked =
+      Array(sidebar.prefix(3)) + [line("8启动器", top: 0.72, height: 0.033, x: 0, width: 0.128)]
+    #expect(OCR.paragraphs(poked) == [["通用"], ["剪贴板"], ["程序坞预览"], ["启动器"]])
+    // 八行里两行带图标前缀（2 倍图上认成「合状态屏」「0程序坞预览」）：四分之一以内的行歪了照样拆
+    let names = ["通用", "剪贴板", "启动器", "翻译", "截图", "状态屏", "程序坞预览", "关于"]
+    let long = names.enumerated().map { index, name in
+      let prefixed = index == 5 || index == 6
+      return line(
+        prefixed ? "合" + name : name, top: 0.95 - CGFloat(index) * 0.06,
+        x: prefixed ? 0.02 : 0.05, width: CGFloat(name.count + (prefixed ? 1 : 0)) * 0.026)
+    }
+    #expect(OCR.paragraphs(long) == names.map { [$0] })
+    // 窄栏里折行的一段话：每行十个字、一样宽，行距宽（空 0.75 个行高）
+    let narrow = [
+      line("窄栏里的一段话折成了", top: 0.9, width: 0.26), line("好几行每一行都一样宽", top: 0.8475, width: 0.26),
+      line("行距也比较宽松一点儿", top: 0.795, width: 0.26), line("最后一行短", top: 0.7425, width: 0.13),
+    ]
+    #expect(OCR.paragraphs(narrow).count == 1)
+    // 英文窄栏：宽窄参差，但下一行小写开头（接着往下说）
+    let wrapped = [
+      line("Short lines", top: 0.9, width: 0.11), line("wrap in a very", top: 0.84, width: 0.14),
+      line("narrow column", top: 0.78, width: 0.13), line("of text.", top: 0.72, width: 0.08),
+    ]
+    #expect(OCR.paragraphs(wrapped).count == 1)
+    // 上一行逗号结尾：接着往下说，不拆
+    let continued = [
+      line("如果打开，", top: 0.9, width: 0.13), line("就会这样", top: 0.84, width: 0.104),
+      line("挺好的", top: 0.78, width: 0.078),
+    ]
+    #expect(OCR.paragraphs(continued).count == 1)
+    // 标题（一个字宽 0.03）和下面一行小字（0.02）：断开
+    let heading = [
+      line("通用", top: 0.9, height: 0.045, width: 0.06),
+      line("外观、菜单栏图标、登录时打开、权限、设置的导出与导入", top: 0.85, width: 0.52),
+    ]
+    #expect(OCR.paragraphs(heading).count == 2)
+    // 英文标题和下面的小字（一个字宽 0.03 对 0.02）：同样断开
+    let english = [
+      line("General", top: 0.9, height: 0.045, width: 0.101),
+      line("Appearance and login items", top: 0.85, width: 0.248),
+    ]
+    #expect(OCR.paragraphs(english).count == 2)
+    // 中文行接一行 i、l、t 多的英文（同一字号，中文的框还高一点）：中西文不比字号，不断
+    let mixed = [
+      line("设置里打开这个开关之后", top: 0.9, height: 0.032, width: 0.286),
+      line("little utility list", top: 0.86, width: 0.166),
+    ]
+    #expect(OCR.paragraphs(mixed).count == 1)
+    // 同一字号、行框高低差 1.5 倍（「《小王子》…用眼睛 / 是看不见的。」）；最后一行一个字（「…下期封 / 面」）：不断
+    let uneven = [
+      line("《小王子》：真正重要的东西用眼睛", top: 0.9, height: 0.06, width: 0.32),
+      line("是看不见的。适合做下期封", top: 0.835, height: 0.04, width: 0.24),
+      line("面", top: 0.79, height: 0.02, width: 0.02),
+    ]
+    #expect(OCR.paragraphs(uneven).count == 1)
+    // 带行内代码块的行（框高两成）和普通行：不断
+    let chips = [
+      line(
+        "total_comments_evaluated : The number of comments", top: 0.9, height: 0.036, width: 0.8),
+      line("checked to see whether they were addressed", top: 0.86, width: 0.68),
+    ]
+    #expect(OCR.paragraphs(chips).count == 1)
+  }
+
   @Test func recognizesMixedScripts() async throws {
     let image = try Self.render(["中文识别测试", "日本語のテキストです", "한국어 텍스트", "Привет мир", "Hello World"])
     let text = try #require(await OCR.recognizeLines(in: image).map { OCR.text($0, joined: false) })

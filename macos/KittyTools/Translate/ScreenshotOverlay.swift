@@ -181,11 +181,11 @@ nonisolated enum ScreenshotOverlay {
   /// 每段用多大字号、画在哪：只算几何，不碰像素（基线、代码块在 render 里先量好放进 Segment）。
   /// pixelsPerPoint 是图里每点几个像素（Retina 屏 2），字号下限按点算。到下限也放不下的段不画、不去字，
   /// 下标放进 leftovers（图上留原文，截图页把译文放进卡片）。
-  /// isBlank(区域, 除去的框)：原图里这块（除去原文那块）是不是空的——往外借的地方要先问它（render 按像素答；
-  /// 纯几何的单测不给，当处处都空）。纯函数，配单测
+  /// isBlank(区域, 除去的框, 原文的框)：原图里这块（除去原文那块）是不是空的——往外借的地方要先问它（render 按像素答，
+  /// 底色按原文的框贴身那一圈取；纯几何的单测不给，当处处都空）。纯函数，配单测
   static func layout(
     segments: [Segment], translations: [String], imageSize: CGSize, pixelsPerPoint: CGFloat = 1,
-    isBlank: (CGRect, CGRect) -> Bool = { _, _ in true }
+    isBlank: (CGRect, CGRect, CGRect) -> Bool = { _, _, _ in true }
   ) -> (spans: [Span], leftovers: [Int]) {
     let body = bodyLineHeight(segments)
     let bodyPitch = bodyPitch(segments, body: body)
@@ -282,7 +282,7 @@ nonisolated enum ScreenshotOverlay {
       func usable(_ rect: CGRect) -> Bool {
         let probe = rect.insetBy(dx: 0.5, dy: 0.5)
         return bounds.insetBy(dx: -0.5, dy: -0.5).contains(rect)
-          && !obstacles.contains { $0.intersects(probe) } && isBlank(rect, own)
+          && !obstacles.contains { $0.intersects(probe) } && isBlank(rect, own, box)
       }
 
       // 先照原文的基线排（缩到下限、往下借空白）；不行就用上这段周围的空白（拍板 A2）；还不行图上留原文（B1）
@@ -646,8 +646,8 @@ nonisolated enum ScreenshotOverlay {
     let (spans, skipped) = layout(
       segments: measured, translations: translations, imageSize: size,
       pixelsPerPoint: pixelsPerPoint
-    ) { area, own in
-      original.isBlank(area, except: own, background: original.ring(around: own) ?? .light)
+    ) { area, own, box in
+      original.isBlank(area, except: own, background: original.background(of: box, erasing: own))
     }
     let leftovers = skipped.map {
       Leftover(
@@ -661,7 +661,7 @@ nonisolated enum ScreenshotOverlay {
       .map { $0.insetBy(dx: -1, dy: -1) }
     var colors: [RGB] = []
     for span in spans {
-      let background = original.ring(around: span.erase) ?? .light
+      let background = original.background(of: span.source, erasing: span.erase)
       let ink = pixels.inpaint(
         span.erase, from: original, lineHeight: span.lineHeight, background: background,
         sampling: span.source, protecting: kept, clearFills: span.code != nil)
@@ -1226,9 +1226,18 @@ nonisolated enum ScreenshotOverlay {
       return inked * 100 <= total * 3
     }
 
+    /// 一段原文的底色：原文框贴身那一圈八成以上是同一种颜色时就是它——字整个包在一块色块里（按钮、标签）：
+    /// 去字的范围往外扩、扩出了色块，那一圈是色块外面的灰白，拿它当底色的话色块外面也算「空」、译文的第二行排到
+    /// 色块外面去，色块里的白字也取不到、字色取成色块的颜色（2026-11-08 复查：设置页选中的「单色」按钮）。
+    /// 不够八成（段落一部分压在代码块、面板上）还按去字范围外面那一圈
+    func background(of box: CGRect, erasing erase: CGRect) -> RGB {
+      ring(around: box, minimumShare: 0.8) ?? ring(around: erase) ?? .light
+    }
+
     /// 框外一圈的采样，出现最多的那种颜色：原文的底色。不用亮度中位数——列表第一行常常整行都是行内代码块，
-    /// 框外那一圈有一大半落在代码块的灰底上，中位数会取成代码块的颜色（2026-11-06 对照微信时撞上的）
-    func ring(around box: CGRect) -> RGB? {
+    /// 框外那一圈有一大半落在代码块的灰底上，中位数会取成代码块的颜色（2026-11-06 对照微信时撞上的）。
+    /// minimumShare：这种颜色占不到这么多就当没取到
+    func ring(around box: CGRect, minimumShare: CGFloat = 0) -> RGB? {
       let outset = max(3, box.height * 0.12)
       let outer = box.insetBy(dx: -outset, dy: -outset)
       let x0 = Int(outer.minX.rounded(.down))
@@ -1255,7 +1264,9 @@ nonisolated enum ScreenshotOverlay {
         collect(x0, y)
         collect(x1 - 1, y)
       }
-      guard let best = counts.values.max(by: { $0.count < $1.count }) else { return nil }
+      guard let best = counts.values.max(by: { $0.count < $1.count }),
+        CGFloat(best.count) >= minimumShare * CGFloat(counts.values.reduce(0) { $0 + $1.count })
+      else { return nil }
       let n = CGFloat(best.count) * 255
       return RGB(
         red: CGFloat(best.red) / n, green: CGFloat(best.green) / n, blue: CGFloat(best.blue) / n)

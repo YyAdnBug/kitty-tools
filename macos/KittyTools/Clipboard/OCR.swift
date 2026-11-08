@@ -27,7 +27,10 @@ nonisolated enum OCR {
 
   /// 截图翻译、识字：带行框的一行行（Vision 顺序，左右分栏时先左栏后右栏；同一行被拆开的碎块已经接回去，见 mergingRows）；
   /// 识别失败 nil、没有文字 []
-  @concurrent static func recognizeLines(in image: CGImage) async -> [Line]? {
+  /// droppingIcons：先去掉图标被认成的单字（droppingIconLines，只有截图翻译盖回截图上时要）
+  @concurrent static func recognizeLines(in image: CGImage, droppingIcons: Bool = false) async
+    -> [Line]?
+  {
     enter()
     defer { leave() }
     guard let observations = try? await request().perform(on: image) else { return nil }
@@ -45,7 +48,28 @@ nonisolated enum OCR {
       }
       return Line(text: text, box: observation.boundingBox.cgRect, words: words)
     }
-    return mergingRows(lines, imageSize: CGSize(width: image.width, height: image.height))
+    let size = CGSize(width: image.width, height: image.height)
+    // 去图标要在接回同一行的碎块之前：不然图标先并进旁边的字里
+    return mergingRows(
+      droppingIcons ? droppingIconLines(lines, imageSize: size) : lines, imageSize: size)
+  }
+
+  /// 整行只有一个字、字框接近正方形（宽高差不到两成）、又比正文（中位行高）高出三成以上的：多半是图标被认成了字
+  /// （首页的剪贴板图标认成「目」，2026-11-08 拍板 F1），去掉——不然它跟着去字，图标就被擦了。
+  /// 正文大小的单字标签不受影响。只在截图翻译盖回截图上时用（recognizeLines 的 droppingIcons）：那边去掉只是不翻、不擦，原样留着；
+  /// 截图识字不用——大号的单字（章节的「序」、评级的「A」）是真字，复制结果里少了它就丢了东西（评审实测）。纯函数，配单测。
+  /// 拍板时还有「行首单独一个拉丁字母、方、和后面隔得开」（放大镜认成「Q 搜索设置」）：评审在真截图上实测 Vision 把
+  /// 两个词中间的空白分给两边的框，隔开多少量不出来，方不方也分不出「A」「M」这类真字母，会删掉表格列标、选项字母，没做
+  static func droppingIconLines(_ lines: [Line], imageSize: CGSize) -> [Line] {
+    let heights = lines.map(\.box.height).sorted()
+    guard !heights.isEmpty else { return lines }
+    let median = heights[heights.count / 2]
+    return lines.filter { line in
+      guard line.text.count == 1, line.box.height > 1.3 * median else { return true }
+      let width = line.box.width * imageSize.width
+      let height = line.box.height * imageSize.height
+      return abs(width - height) > 0.2 * max(width, height)
+    }
   }
 
   /// 把同一视觉行里被 Vision 拆开的碎块接回一行（纯函数，配单测）。Vision 在底色、间距变的地方会把一行切开：
@@ -175,8 +199,10 @@ nonisolated enum OCR {
   /// 按行框切段（纯函数，配单测）：三种情况断段——① 这一行和上一行的纵向间距大于 1.2 倍中位行高（空了一行、段间距）；
   /// ② 上一行以句末标点结尾、且不到中位行宽的 80%（段落最后一行；但下一行的第一个词放不进上一行剩下的地方时
   /// 是长词挤出来的折行，不断）；③ 这一行以列表记号开头（listMarker：一条一段，
-  /// 列表项之间的间距常常不到 1.2 倍行高）。另外往回跳（这一行在上一行上面，换栏）、
-  /// 和上一行并排（同一高度的另一块）也断开。ponytail: 不看缩进和左边界（容易误判列表、代码）；
+  /// 列表项之间的间距常常不到 1.2 倍行高）；④ 相邻两行估出来的字号差三成以上（标题和下面的小字，differsInSize，
+  /// 2026-11-08）；⑤ 一段里是一列短标签就一行一段（splittingLabelColumn，2026-11-08）。另外往回跳（这一行在上一行
+  /// 上面，换栏）、和上一行并排（同一高度的另一块）也断开。ponytail: 正文段落不看缩进和左边界（容易误判列表、代码），
+  /// 只有一列短标签时才看对齐；
   /// macOS 26 的 RecognizeDocumentsRequest 直接给段落，有 26 测试机再换
   static func paragraphs(_ lines: [Line]) -> [[String]] {
     groups(lines).map { $0.map(\.text) }
@@ -206,7 +232,7 @@ nonisolated enum OCR {
         let breaks =
           gap > 1.2 * lineHeight || gap < -0.5 * lineHeight
           || (endsSentence && previous.box.width < 0.8 * lineWidth && !wrapped)
-          || listMarker(line.text) != nil
+          || listMarker(line.text) != nil || differsInSize(previous, line)
         if breaks { result.append([]) }
       } else {
         result.append([])
@@ -214,7 +240,100 @@ nonisolated enum OCR {
       result[result.count - 1].append(line)
       previous = line
     }
-    return result
+    return result.flatMap(splittingLabelColumn)
+  }
+
+  /// 一行字按「宽 ÷ 字数」估的字号（归一化的横向单位）和这行主要是不是中日韩的字。Vision 的行框高度上下浮动能差到
+  /// 1.45 倍（便签墙里同一字号的「…适合做下期封 / 面」），不能拿来比字号；宽度和字数成比例，稳得多。字宽按系统字体
+  /// 大约估：汉字 1、空格 0.3、i l j t f r I 和标点 0.3、m w M W 0.85、别的大写 0.65、别的 0.53（一律按 0.55 的话
+  /// i、l 多的英文行估小了，评审实测会被拆开）。不到 2 个字宽的行估不准，nil
+  private static func emSize(_ line: Line) -> (size: CGFloat, cjk: Bool)? {
+    var units: CGFloat = 0
+    var cjk: CGFloat = 0
+    for scalar in line.text.unicodeScalars {
+      let width: CGFloat =
+        if scalar.value >= 0x2E80 {
+          1
+        } else if scalar.properties.isWhitespace
+          || "iljtfrI.,:;!'|()[]".unicodeScalars.contains(scalar)
+        { 0.3 } else if "mwMW".unicodeScalars.contains(scalar) {
+          0.85
+        } else if scalar.properties.isUppercase { 0.65 } else { 0.53 }
+      units += width
+      if scalar.value >= 0x2E80 { cjk += width }
+    }
+    return units >= 2 ? (line.box.width / units, cjk * 2 >= units) : nil
+  }
+
+  /// 标题和下面的小字（2026-11-08 拍板 F3）：相邻两行按宽 ÷ 字数估出来的字号差三成以上，而且字号大的那行框也确实高一些
+  /// （行框高度单独不可信，但方向得对上：宽度随手给的、字数和宽度对不上的行不会因为估错被拆开）。
+  /// 只比同一种字的两行（中文行比中文行、西文行比西文行）：中西文的字宽估算各有偏差，混着比容易估错。
+  /// 字号大的那行比另一行往左多出一个字以上的不拆：那是行前粘着图标字（侧栏的「8关于」，宽度多出一截、字号估大了四成；
+  /// 框也高 8%，和设置页标题「通用」比下面那行小字高的一样，靠高度分不开）
+  private static func differsInSize(_ a: Line, _ b: Line) -> Bool {
+    guard let x = emSize(a), let y = emSize(b), x.cjk == y.cjk, x.size > 0, y.size > 0 else {
+      return false
+    }
+    let (big, small) = x.size > y.size ? (a, b) : (b, a)
+    return max(x.size, y.size) > 1.3 * min(x.size, y.size)
+      && big.box.height > 1.05 * small.box.height
+      && small.box.minX - big.box.minX <= 0.8 * min(x.size, y.size)
+  }
+
+  /// 一列一行一个的短标签（侧栏、列表、一排按钮；2026-11-08 拍板 F2）：一段里三行以上、每行都短（按字数：汉字算 2、
+  /// 别的算 1，不超过 24）、左边 / 右边 / 中线对齐（至多四分之一的行例外）、宽窄差得多（除最后一行外最宽的超过最窄的一半以上——窄栏里折行的
+  /// 一段话除了最后一行几乎一样宽）、没有一行接着上一行往下说（上一行逗号顿号这类结尾、下一行小写字母开头），就一行一段。
+  /// 两两比行距、比宽度分不开：行距宽的窄栏正文和侧栏的行间空白一样大（评审实测）
+  private static func splittingLabelColumn(_ group: [Line]) -> [[Line]] {
+    guard group.count >= 3 else { return [group] }
+    func isShort(_ text: String) -> Bool {
+      text.unicodeScalars.reduce(0) { $0 + ($1.value >= 0x2E80 ? 2 : 1) } <= 24
+    }
+    guard group.allSatisfy({ isShort($0.text) }) else { return [group] }
+    let boxes = group.map(\.box)
+    let tolerance = max(0.01, 0.1 * (boxes.map(\.width).min() ?? 0))
+    // 对齐的那条边；至多四分之一的行例外（至少允许一行）：图标被认成字粘在行前面（「涼通用」「合状态屏」「0程序坞预览」）
+    // 时那几行的左边界歪了
+    func alignedEdge(_ edge: (CGRect) -> CGFloat) -> CGFloat? {
+      let values = boxes.map(edge).sorted()
+      let spare = max(1, values.count / 4)
+      let span = values.count - spare
+      return (0...spare).first { values[$0 + span - 1] - values[$0] <= tolerance }.map {
+        values[$0]
+      }
+    }
+    let left = alignedEdge(\.minX)
+    guard left != nil || alignedEdge(\.maxX) != nil || alignedEdge(\.midX) != nil else {
+      return [group]
+    }
+    let widths = group.dropLast().map(\.box.width)
+    guard let widest = widths.max(), let thinnest = widths.min(), widest > 1.5 * thinnest else {
+      return [group]
+    }
+    for (previous, line) in zip(group, group.dropFirst()) {
+      if let last = previous.text.last, "，、,;；：:-—–".contains(last) { return [group] }
+      if let first = line.text.first, first.isLowercase { return [group] }
+    }
+    return group.map { line in
+      guard let left else { return [line] }
+      return [trimmingIcon(line, edge: left, tolerance: tolerance)]
+    }
+  }
+
+  /// 左对齐的一列标签里左边界往左歪出去约一个字（估出的字宽的 0.8 倍以上）的行：歪出去的那个「字」是行前的图标
+  /// （「合状态屏」「0程序坞预览」），去掉它、框收到对齐的那条边——不然截图翻译把它当字翻、连图标一起擦掉，
+  /// 识字的结果里也多一个乱字
+  private static func trimmingIcon(_ line: Line, edge: CGFloat, tolerance: CGFloat) -> Line {
+    let offset = edge - line.box.minX
+    let rest = line.text.dropFirst().drop(while: \.isWhitespace)
+    guard offset > tolerance, !rest.isEmpty, let em = emSize(line), offset >= 0.8 * em.size else {
+      return line
+    }
+    return Line(
+      text: String(rest),
+      box: CGRect(
+        x: edge, y: line.box.minY, width: line.box.maxX - edge, height: line.box.height),
+      words: line.words.filter { $0.box.midX >= edge })
   }
 
   /// 识别结果写成文字：joined = 段内的行接起来、段间用 separator（识字「接起来」开着时 \n，截图翻译 \n\n）；
