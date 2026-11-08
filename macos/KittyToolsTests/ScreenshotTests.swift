@@ -449,6 +449,8 @@ struct ScreenshotTests {
     #expect(SelectionView.shadeAlpha(hasHole: false, keepsColors: true) == 0)
     #expect(SelectionView.shadeAlpha(hasHole: true, keepsColors: true) == 0)
     #expect(Prefs.defaults[Prefs.screenshotKeepsColors] as? Bool == false)
+    // 悬停时识别窗口里的元素：同样默认关（2026-11-08 用户：两个都默认不打开）
+    #expect(Prefs.defaults[Prefs.screenshotFindsElements] as? Bool == false)
   }
 
   @Test func annotationHitTesting() {
