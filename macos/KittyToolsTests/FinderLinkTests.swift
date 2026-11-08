@@ -275,6 +275,9 @@ import UniformTypeIdentifiers
       #expect(source.contains("\"\(item.prefsKey)\", default: \(item.defaultOn)"), "\(item)")
     }
     #expect(source.contains("maxFiles = \(FinderLink.maxFiles)"))
+    // 收进子菜单：键名和默认值（扩展读不到注册的默认值）
+    #expect(Prefs.defaults[Prefs.finderMenuGrouped] as? Bool == false)
+    #expect(source.contains("\"\(Prefs.finderMenuGrouped)\", default: false"))
     // 哈希的几种（扩展里按序号对应）
     let hashes = FileHash.Kind.allCases.map { "(\"\($0.rawValue)\", \"\($0.title)\")" }
     #expect(source.contains("[" + hashes.joined(separator: ", ") + "]"))

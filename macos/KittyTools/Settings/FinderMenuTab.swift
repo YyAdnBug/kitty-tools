@@ -1,6 +1,6 @@
 // 设置 › 访达右键（第十一族，2026-11-08 拍板，PLAN §10「访达右键」；页头由 SettingsRoot 画，家族色石板蓝）。几组：
 // 「访达右键」——启用开关（Feature.finderMenu，默认关）；系统里扩展开没开（FIFinderSyncController.isExtensionEnabled）和
-//   「去打开…」（拍板 D3：直接到 系统设置 › 通用 › 登录项与扩展）。15.0、15.1 的系统设置里没有扩展的入口，那两版上给一条
+//   「去打开…」；「收进一个子菜单」（Prefs.finderMenuGrouped，默认关）（拍板 D3：直接到 系统设置 › 通用 › 登录项与扩展）。15.0、15.1 的系统设置里没有扩展的入口，那两版上给一条
 //   终端命令和「拷贝命令」（不替用户跑）。页脚说在哪右键、哪里不出现。
 // 「新建文件」——右键里显示不显示、模板文件夹一行 +「在访达中显示」，页脚说菜单里有什么、建好后怎样。
 // 「拷贝」「整理文件」「压缩和解压」「隐藏、哈希、删除」——每一项一个开关（FinderMenuItem，2026-11-08 右键扩充拍板 A2；同几家成熟产品每项能单独关），页脚说做法。
@@ -21,6 +21,7 @@ struct FinderMenuTab: View {
   @State private var apps = Self.storedApps
   @State private var selection: String?
   @State private var copied = false
+  @AppStorage(Prefs.finderMenuGrouped) private var grouped = false
 
   var body: some View {
     // 从系统设置打开扩展回来，设置窗重新当 key 时刷新那一行（同程序坞预览页的授权）
@@ -36,6 +37,11 @@ struct FinderMenuTab: View {
           symbol: "puzzlepiece.extension.fill", color: Style.Family.finderMenu,
           granted: extensionEnabled ?? enabled, button: "去打开…"
         ) { Self.openExtensionSettings() }
+        .gated(by: .finderMenu)
+        Toggle(isOn: $grouped) {
+          Text("收进一个子菜单")
+          Text("右键第一层只多一项「Kitty Tools」，下面开着的这几项都在它里面")
+        }
         .gated(by: .finderMenu)
       } header: {
         Text("访达右键")

@@ -6,6 +6,7 @@
 //   「发送替身到桌面」、「彻底删除…」（App 那边先问）。
 // - 文件夹空白处右键：最前面「新建文件 ▸」（自带五种、模板文件夹里放的每个文件、「自定义后缀…」、「打开模板文件夹」），
 //   剪切过、剪贴板还没换过时多一项「粘贴 N 项」，然后「拷贝路径」「在“X”中打开」「显示 / 隐藏 隐藏文件」，对着的是这个文件夹。
+// 设置里打开「收进一个子菜单」时，这些都收进第一层的一项「Kitty Tools ▸」里（默认关、平铺）。
 // 每一项在 App 设置里能单独关（App 的 FinderMenuItem；同几家成熟产品），默认开关照 2026-11-08 右键扩充拍板 A2。
 // 扩展只画菜单、不碰文件（拍板 C2）：点了用 App 自己的网址把动作交给常驻菜单栏的 Kitty Tools，
 // <App 的 bundle id>://finder?do=<动作>&key=<凭证>&…&file=/a，App 那边是 FinderLink（网址的写法在那边的文件头）；
@@ -214,8 +215,8 @@ final class FinderMenu: FIFinderSync {
 
   /// 扩展刚起来：把两种菜单各搭一遍（不交出去），第一次右键时图标、符号字体、App 的位置都已经备好
   private static func warmUp() {
-    _ = build(container: 0, selected: [])
-    _ = build(container: containerTag, selected: [])
+    _ = grouped(build(container: 0, selected: []))
+    _ = grouped(build(container: containerTag, selected: []))
   }
 
   // 访达在主线程上要菜单、点菜单项
@@ -233,11 +234,21 @@ final class FinderMenu: FIFinderSync {
     let start = clock.now
     let selected =
       container == 0 ? FIFinderSyncController.default().selectedItemURLs() ?? [] : []
-    let menu = Self.build(container: container, selected: selected)
+    let menu = Self.grouped(Self.build(container: container, selected: selected))
     // 手测量耗时：log stream --level debug --predicate 'subsystem == "com.yy.kitty-tools.native"'
     let elapsed = (clock.now - start) / .milliseconds(1)
     log.debug("菜单搭好用了 \(elapsed, format: .fixed(precision: 1)) ms")
     return menu.items.isEmpty ? nil : menu
+  }
+
+  /// 设置里选了「收进一个子菜单」（App 的 Prefs.finderMenuGrouped，默认关）：第一层只放一项「Kitty Tools ▸」
+  private static func grouped(_ menu: NSMenu) -> NSMenu {
+    guard shows("finderMenuGrouped", default: false), !menu.items.isEmpty else { return menu }
+    let outer = NSMenu()
+    let group = outer.addItem(withTitle: "Kitty Tools", action: nil, keyEquivalent: "")
+    group.image = tile("pawprint.fill", color: Tint.brand)
+    group.submenu = menu
+    return outer
   }
 
   /// 搭菜单。不加分隔线：macOS 26 上扩展菜单里的分隔线会画成一行空白（2026-09 开发者论坛，没解答）
@@ -369,6 +380,7 @@ final class FinderMenu: FIFinderSync {
   /// 每一类的颜色（彩色方块，2026-11-08 用户在三种样子里选的 A：方块里白色符号，访达高亮那一行的蓝底上也看得清；
   /// 彩色符号直接压在蓝底上看不清）。取浅色外观下的系统色，画成位图后深浅色都用这一份
   private enum Tint {
+    static let brand = rgb(255, 77, 126)  // 收起来的「Kitty Tools ▸」：品牌粉（AccentColor）
     static let copy = rgb(0, 122, 255)  // 拷贝：蓝
     static let create = rgb(52, 199, 89)  // 新建：绿
     static let organize = rgb(255, 149, 0)  // 移动、复制、剪切、粘贴：橙
