@@ -60,6 +60,12 @@ internal static unsafe partial class NoteDeckSense
             return;
         }
 
+        if (!shown)
+        {
+            // 收起时鼠标可能正停在上面（扇出那一下就收起了），收不到 WM_MOUSELEAVE 的话下次进来就不算了：这里先忘掉
+            Inside.Remove(hwnd);
+        }
+
         const uint noActivate = 0x0010;
         var flags = noActivate | (shown ? 0x0040u /* SHOWWINDOW */ : 0x0080u /* HIDEWINDOW */);
         // 插在药丸后面：两扇都在置顶那一层，感应条在药丸下面；药丸还没有句柄时放到置顶层最上面

@@ -83,7 +83,14 @@ internal static partial class EmojiChoice
             box.Text = string.Empty;
             box.Focus(FocusState.Programmatic);
             // 输入框拿到焦点之后再叫面板，面板插的字才落进它
-            box.DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, OpenEmojiPanel);
+            box.DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+            {
+                // 浮层已经关了、焦点没落进输入框（点得太快、被别处抢走）就不发：不然面板会开在别的程序上
+                if (flyout.IsOpen && box.FocusState != FocusState.Unfocused)
+                {
+                    OpenEmojiPanel();
+                }
+            });
         };
         button.Click += (_, _) => flyout.ShowAt(button);
         return button;

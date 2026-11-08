@@ -94,7 +94,15 @@ internal static class Speech
             data = await FetchAsync(url, cts.Token);
         }
 
-        if (cts.IsCancellationRequested || Speaking != key)
+        // 下载完了：取消源用不着了（Stop 只取消还挂在 _download 上的那个）
+        var cancelled = cts.IsCancellationRequested;
+        if (ReferenceEquals(_download, cts))
+        {
+            _download = null;
+        }
+
+        cts.Dispose();
+        if (cancelled || Speaking != key)
         {
             return;
         }

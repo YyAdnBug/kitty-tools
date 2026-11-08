@@ -539,7 +539,7 @@ internal static partial class ReminderCenter
     /// <summary>「知道了」：挂着的都算处理了。</summary>
     private static void Acknowledge()
     {
-        ReminderSound.Stop();
+        StopSound();
         var handled = Firing.Concat(Missed).ToList();
         Firing.Clear();
         Missed.Clear();
@@ -549,7 +549,7 @@ internal static partial class ReminderCenter
     /// <summary>「稍后」：到点的推 N 分钟（提示上是设置里定的那个，全屏上能另选）；一起挂着的错过的算处理了。</summary>
     private static void Snooze(int? minutes)
     {
-        ReminderSound.Stop();
+        StopSound();
         var until = ReminderTime.FromUtc(DateTime.UtcNow.AddMinutes(minutes ?? SnoozeMinutes));
         foreach (var id in Firing)
         {
@@ -560,6 +560,16 @@ internal static partial class ReminderCenter
         Firing.Clear();
         Missed.Clear();
         Finish(handled);
+    }
+
+    /// <summary>处理了就别再响：自己选的长提示音停下，念标题的也停（Speaker 里正在念的只会是它，或者用户自己点的朗读，一并停掉）。</summary>
+    private static void StopSound()
+    {
+        ReminderSound.Stop();
+        if (Speech.Speaking is not null)
+        {
+            Speech.Stop();
+        }
     }
 
     /// <summary>处理完：一次的从列表里删掉（推过的不删，它还要再响），间隔的从这一刻重新数，提示收掉，再看一遍。</summary>

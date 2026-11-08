@@ -134,7 +134,8 @@ internal static partial class NoteDeckUi
         window.AppWindow.SetPresenter(presenter);
         var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(window);
         SetWindowLong(hwnd, -20, GetWindowLong(hwnd, -20) | 0x08000000 /* WS_EX_NOACTIVATE */);
-        var round = 2; // DWMWCP_ROUND
+        // 药丸只有 12 宽，DWM 的大圆角（8）超过了一半宽：用小圆角（4）；标签列用大圆角
+        var round = outline ? 2 /* DWMWCP_ROUND */ : 3 /* DWMWCP_ROUNDSMALL */;
         DwmSetWindowAttribute(hwnd, 33 /* DWMWA_WINDOW_CORNER_PREFERENCE */, ref round, sizeof(int));
         if (!outline)
         {

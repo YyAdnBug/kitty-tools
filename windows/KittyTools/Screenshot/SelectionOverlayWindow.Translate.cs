@@ -79,8 +79,8 @@ internal sealed partial class SelectionOverlayWindow
         catch (Exception ex)
         {
             Log.Warn($"screenshot.overlay-failed {ex.GetType().Name}");
+            // 人还在截图页：只在遮罩顶上说一句（不另弹屏幕底部的提示，同 Failure 那条路）
             message = ex is TranslateError ? ex.Message : "翻译失败";
-            NoticeHost.Show("翻译失败", message, NoticeTone.Error);
         }
         finally
         {
