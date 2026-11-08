@@ -1,4 +1,4 @@
-// 访达右键「压缩 ▸ ZIP、7Z」「解压到这里」（2026-11-08 右键扩充第 2 批，拍板 D1 D2）。都交给系统自带的 tar（bsdtar；另起进程，
+// 访达右键「压缩为 ▸ ZIP、7Z」「解压到这里」（2026-11-08 右键扩充第 2 批，拍板 D1 D2）。都交给系统自带的 tar（bsdtar；另起进程，
 // 不卡主线程、停得住），不带第三方：
 // - 压缩：一样东西叫「名字.zip」，几样叫「归档.zip」（同访达），放在第一样所在的文件夹、重名加「 2」。zip 里的名字标上 UTF-8
 //   （zip:hdrcharset=UTF-8；访达和 ditto 打的不标，别的系统解开中文名会乱码，2026-11-08 实测），不带 __MACOSX、._*、.DS_Store
@@ -186,7 +186,7 @@ import AppKit
       if !items.contains(where: { FileMoves.plainPath($0) == path }) { items.append(file) }
     }
     guard let first = items.first else {
-      NSSound.beep()
+      island?.show("没有压缩", detail: "选中的东西不在了", tone: .warning)
       return
     }
     if let name = clash(in: items) {
@@ -263,7 +263,7 @@ import AppKit
   static func extract(_ files: [URL], island: Island?) {
     let archives = files.filter { isArchive($0) && FileMoves.occupied($0) }
     guard !archives.isEmpty else {
-      NSSound.beep()
+      island?.show("没有解压", detail: "压缩包不在了，或者不是能解的格式", tone: .warning)
       return
     }
     for archive in archives { extract(archive, retry: nil, island: island) }

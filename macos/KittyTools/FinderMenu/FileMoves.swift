@@ -221,17 +221,41 @@ import AppKit
 
   /// 移动 / 复制到 folder，刘海岛报进度和结果
   static func transfer(_ files: [URL], to folder: URL, move: Bool, island: Island?) {
-    guard files.contains(where: { occupied($0) && movable($0, into: folder, move: move) }) else {
-      NSSound.beep()
-      return
-    }
     let verb = move ? "移动" : "复制"
     let place = FileManager.default.displayName(atPath: folder.path(percentEncoded: false))
+    if let reason = refusal(files, into: folder, move: move, place: place) {
+      island?.show("没有\(verb)", detail: reason, tone: .warning)
+      return
+    }
     enqueue("正在\(verb) \(files.count) 项…", detail: "到「\(place)」", island: island) {
       await execute(files, into: folder, move: move)
     } finish: { outcome in
       report(outcome, verb: verb, place: place, island: island)
     }
+  }
+
+  /// 一样都做不了时的原因（给人看，同访达碰到这些会说为什么）；有能做的是 nil。文件夹不在了不替它建回来
+  /// （不查的话 ditto 会把缺的上一层建出来、还报「已移到」，评审实测）；卷的根、系统文件夹、主目录只能复制、不能移动
+  /// （同访达：拖一块盘永远是复制）
+  static func refusal(_ files: [URL], into folder: URL, move: Bool, place: String) -> String? {
+    var isDirectory: ObjCBool = false
+    guard
+      FileManager.default.fileExists(
+        atPath: folder.path(percentEncoded: false), isDirectory: &isDirectory),
+      isDirectory.boolValue
+    else { return "「\(place)」不在了（删掉、改了名，或者那块盘没接上）" }
+    let present = files.filter(occupied)
+    if present.isEmpty { return "选中的东西不在了" }
+    let isProtected = protection()
+    let candidates = move ? present.filter { !isProtected($0) } : present
+    if candidates.isEmpty { return "整块盘、系统文件夹、主目录不能移动，可以复制" }
+    if candidates.contains(where: { movable($0, into: folder, move: move) }) { return nil }
+    let destination = plainPath(folder.resolvingSymlinksInPath()).lowercased()
+    let already = candidates.allSatisfy {
+      plainPath($0.deletingLastPathComponent().resolvingSymlinksInPath()).lowercased()
+        == destination
+    }
+    return move && already ? "已经在「\(place)」里了" : "不能放进它自己里面"
   }
 
   private static func report(
@@ -270,6 +294,7 @@ import AppKit
       move ? "把选中的 \(files.count) 项移到哪个文件夹" : "把选中的 \(files.count) 项复制到哪个文件夹"
     Task {
       guard await FilePanel.begin(panel) == .OK, let folder = panel.url else { return }
+      remember(folder)
       transfer(files, to: folder, move: move, island: island)
     }
   }
@@ -278,10 +303,25 @@ import AppKit
 
   /// 设置里的常用文件夹（偏好里存 ~ 开头的写法），展开成真的位置。这台电脑自己的、不注册默认值（同截图的存储文件夹：
   /// 别人给的设置文件不该能往右键菜单里加一个文件夹）
+  /// 后面接最近用「选择文件夹…」选过的（Prefs.finderRecentFolders，常用里有的不重复，列 3 个；同几家成熟产品的文件夹历史），
+  /// 扩展里列的和这里一样（那边抄了一份）
   static var folders: [URL] {
-    (UserDefaults.standard.stringArray(forKey: Prefs.finderTransferFolders)
-      ?? Prefs.finderTransferDefault)
-      .map { URL(filePath: expand($0), directoryHint: .isDirectory) }
+    let favorites =
+      UserDefaults.standard.stringArray(forKey: Prefs.finderTransferFolders)
+      ?? Prefs.finderTransferDefault
+    let recent = (UserDefaults.standard.stringArray(forKey: Prefs.finderRecentFolders) ?? [])
+      .filter { !favorites.contains($0) }.prefix(3)
+    return (favorites + recent).map { URL(filePath: expand($0), directoryHint: .isDirectory) }
+  }
+
+  /// 记下用「选择文件夹…」选的（~ 开头的写法，最近的在前，存 5 个）
+  static func remember(_ folder: URL) {
+    let path = (plainPath(folder) as NSString).abbreviatingWithTildeInPath
+    let list =
+      [path]
+      + (UserDefaults.standard.stringArray(forKey: Prefs.finderRecentFolders) ?? [])
+      .filter { $0 != path }
+    UserDefaults.standard.set(Array(list.prefix(5)), forKey: Prefs.finderRecentFolders)
   }
 
   // MARK: 剪切 / 粘贴
@@ -315,7 +355,7 @@ import AppKit
     let items = cutChange == NSPasteboard.general.changeCount ? cutList.filter(occupied) : []
     forgetCut()
     guard !items.isEmpty else {
-      NSSound.beep()
+      island?.show("剪切已经作废了", detail: "剪切之后又拷了别的东西，或者剪切的已经不在了；再剪切一次", tone: .warning)
       return
     }
     transfer(items, to: folder, move: true, island: island)
@@ -327,21 +367,28 @@ import AppKit
   /// 除了按路径，还按文件的身份比（fileResourceIdentifier）：「/users/yy」「/System/Volumes/Data/Users/yy」和主目录是
   /// 同一个文件夹，按字符串比不上（评审实测）
   nonisolated static func protected(_ url: URL, home: String = NSHomeDirectory()) -> Bool {
-    let path = plainPath(url)
-    if URL(filePath: path).pathComponents.count <= 2 || path == plainPath(URL(filePath: home)) {
-      return true
-    }
-    let values = try? url.resourceValues(forKeys: [.isVolumeKey, .fileResourceIdentifierKey])
-    if values?.isVolume == true { return true }
-    guard let id = values?.fileResourceIdentifier as? NSObject else { return false }
+    protection(home: home)(url)
+  }
+
+  /// 同 protected，先把要比的那几样的身份取好（一批几千样时不用每样都列一遍根目录）
+  nonisolated static func protection(home: String = NSHomeDirectory()) -> (URL) -> Bool {
     let root = URL(filePath: "/")
+    let homePath = plainPath(URL(filePath: home))
+    let identity = { (url: URL) in
+      (try? url.resourceValues(forKeys: [.fileResourceIdentifierKey]))?.fileResourceIdentifier
+        as? NSObject
+    }
     let guarded =
-      [root, URL(filePath: home)]
+      ([root, URL(filePath: home)]
       + ((try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil))
-      ?? []).map { $0.resolvingSymlinksInPath() }
-    return guarded.contains {
-      (try? $0.resourceValues(forKeys: [.fileResourceIdentifierKey]))?.fileResourceIdentifier
-        as? NSObject == id
+      ?? []).map { $0.resolvingSymlinksInPath() }).compactMap(identity)
+    return { url in
+      let path = plainPath(url)
+      if URL(filePath: path).pathComponents.count <= 2 || path == homePath { return true }
+      let values = try? url.resourceValues(forKeys: [.isVolumeKey, .fileResourceIdentifierKey])
+      if values?.isVolume == true { return true }
+      guard let id = values?.fileResourceIdentifier as? NSObject else { return false }
+      return guarded.contains(id)
     }
   }
 
@@ -349,11 +396,16 @@ import AppKit
   /// 默认按钮是「取消」，删除按钮是危险色（交给系统画）；不提供跳过确认的办法。符号链接只删链接本身。
   /// 删得久时同样能停（已经删掉的找不回来，说清楚）
   static func erase(_ files: [URL], island: Island?) {
-    let items = files.filter { occupied($0) && !protected($0) }
-    guard !items.isEmpty, confirmErase(items) else {
-      if items.isEmpty { NSSound.beep() }
+    let isProtected = protection()
+    let present = files.filter(occupied)
+    let items = present.filter { !isProtected($0) }
+    guard !items.isEmpty else {
+      island?.show(
+        "没有彻底删除",
+        detail: present.isEmpty ? "选中的东西不在了" : "整块盘、系统文件夹、主目录不能彻底删除", tone: .warning)
       return
     }
+    guard confirmErase(items) else { return }
     enqueue("正在彻底删除 \(items.count) 项…", island: island) {
       var done = 0
       for item in items {
@@ -417,7 +469,7 @@ import AppKit
   static func aliasToDesktop(_ files: [URL], island: Island?) {
     let made = makeAliases(files.filter(occupied))
     guard !made.isEmpty else {
-      NSSound.beep()
+      island?.show("没能放替身", detail: "选中的东西不在了，或者桌面上写不进去", tone: .warning)
       return
     }
     island?.show(

@@ -369,6 +369,9 @@ enum Prefs {
   /// **不注册默认值**（同截图的存储文件夹：别人给的设置文件不该能往右键菜单里加一个文件夹）。扩展读同一个键（键名和默认值
   /// 在 KittyToolsFinder/FinderMenu 里抄了一份）
   nonisolated static let finderTransferFolders = "finderTransferFolders"
+  /// 最近用「移动到 / 复制到 ▸ 选择文件夹…」选过的（~ 开头的写法，最近的在前，存 5 个、子菜单里列 3 个；FileMoves.remember）。
+  /// 这台电脑自己的、不注册默认值（同常用文件夹）；扩展读同一个键
+  nonisolated static let finderRecentFolders = "finderRecentFolders"
   nonisolated static let finderTransferDefault = ["~/Desktop", "~/Documents", "~/Downloads"]
   /// 访达右键「剪切」了几样、那一刻剪贴板的 changeCount（FileMoves.cut）：扩展看到剪贴板没换过才列「粘贴 N 项」。剪切的清单
   /// 本身只在 App 内存里（别的程序改偏好塞不进要搬的东西）。这台电脑自己的、**不注册默认值**，App 启动时清掉

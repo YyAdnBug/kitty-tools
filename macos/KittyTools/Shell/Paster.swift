@@ -98,7 +98,7 @@ enum Paster {
   }
 
   /// 向前台 App 按一下某个键，修饰键只带 flags（热键里还按着的 ⌥ / ⇧ 不混进来）。未授权返回 false。
-  /// 访达右键新建文件后按回车进入改名（NewFile.revealForRename）、「显示 / 隐藏 隐藏文件」按 ⇧⌘.（FileFlags）用
+  /// 访达右键新建文件后按回车进入改名（NewFile.revealForRename）、「切换隐藏文件」按 ⇧⌘.（FileFlags）用
   @discardableResult static func press(_ key: Int, flags: CGEventFlags = []) -> Bool {
     guard Permissions.isAccessibilityTrusted else { return false }
     let source = CGEventSource(stateID: .combinedSessionState)

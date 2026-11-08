@@ -1,5 +1,5 @@
-// 访达右键「显示 / 隐藏 隐藏文件」「隐藏」「取消隐藏」「隐藏扩展名」「显示扩展名」（2026-11-08 右键扩充第 3 批，拍板 E1 E2，默认都关）。
-// - 显示 / 隐藏 隐藏文件：替用户在访达里按一下 ⇧⌘.（要辅助功能授权，没有就刘海岛说一声、带「去授权」），不重启访达——
+// 访达右键「切换隐藏文件」「隐藏」「取消隐藏」「隐藏扩展名」「显示扩展名」（2026-11-08 右键扩充第 3 批，拍板 E1 E2，默认都关）。
+// - 切换隐藏文件：替用户在访达里按一下 ⇧⌘.（要辅助功能授权，没有就刘海岛说一声、带「去授权」），不重启访达——
 //   重启会打断正在进行的拷贝。访达不在最前面就先叫到前面、等它到了再按（同 NewFile.revealForRename）。
 //   ponytail: 菜单里只有一项切换，不分「显示」「不显示」：没查实 ⇧⌘. 会不会写进访达的 AppleShowAllFiles 偏好（扩展也读不到），
 //   真机确认了再按状态分两种叫法（HANDTEST「访达右键手测」）。
@@ -33,7 +33,7 @@ import Carbon.HIToolbox
         }
       }
       guard finderIsFront() else {
-        NSSound.beep()
+        island?.show("访达不在最前面", detail: "回到访达窗口再右键一次", tone: .warning)
         return
       }
       Paster.press(kVK_ANSI_Period, flags: [.maskCommand, .maskShift])
@@ -48,7 +48,9 @@ import Carbon.HIToolbox
       $0.isHidden = hidden
     }
     guard changed > 0 else {
-      NSSound.beep()
+      island?.show(
+        hidden ? "没有隐藏" : "没有取消隐藏", detail: "点开头的、整块盘、系统文件夹不动，或者没有权限",
+        tone: .warning)
       return
     }
     island?.show(
@@ -62,7 +64,7 @@ import Carbon.HIToolbox
       $0.hasHiddenExtension = hidden
     }
     guard changed > 0 else {
-      NSSound.beep()
+      island?.show("没能改扩展名", detail: "选中的没有扩展名，或者没有权限", tone: .warning)
       return
     }
     island?.show(

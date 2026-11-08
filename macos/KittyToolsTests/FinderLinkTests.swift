@@ -24,7 +24,7 @@ import UniformTypeIdentifiers
   @Test func copyAndOpenParse() {
     let copy = parse(
       link("do=copy&key=K-123&file=/Users/a/My%20Folder&file=/Users/a/%E4%B8%AD%E6%96%87.txt"))
-    #expect(copy?.action == .copyPaths)
+    #expect(copy?.action == .copyPaths(shell: false))
     #expect(
       copy?.files.map { $0.path(percentEncoded: false) } == [
         "/Users/a/My Folder", "/Users/a/中文.txt",
@@ -98,7 +98,14 @@ import UniformTypeIdentifiers
       FinderLink.parse(
         self.link(query), scheme: self.scheme, key: self.key, apps: self.apps, folders: [downloads])
     }
-    #expect(parse("do=name&key=K-123&file=/a/b.txt")?.action == .copyNames)
+    #expect(parse("do=name&key=K-123&file=/a/b.txt")?.action == .copyNames(stem: false))
+    #expect(
+      parse("do=name&key=K-123&style=stem&file=/a/b.txt")?.action == .copyNames(stem: true))
+    #expect(
+      parse("do=copy&key=K-123&style=shell&file=/a/b.txt")?.action == .copyPaths(shell: true))
+    #expect(parse("do=toomany&key=K-123")?.action == .tooMany)
+    #expect(parse("do=toomany&key=K-123&file=/a") == nil)
+    #expect(parse("do=stale&key=K-123") == nil)
     #expect(
       parse("do=move&key=K-123&to=/Users/a/Downloads&file=/a/b.txt")?.action
         == .transfer(move: true, to: downloads))
@@ -127,8 +134,19 @@ import UniformTypeIdentifiers
     #expect(parse("do=erase&key=K-123&file=/a/b")?.action == .erase)
     #expect(parse("do=erase&key=K-123&file=/a/b/..") == nil)
     #expect(parse("do=erase&key=K-123&file=/a/./b") == nil)
-    #expect(parse("do=copy&key=K-123&file=/a/b..c")?.action == .copyPaths)
+    #expect(parse("do=copy&key=K-123&file=/a/b..c")?.action == .copyPaths(shell: false))
     #expect(FinderLink.nameText([URL(filePath: "/a/b.txt"), URL(filePath: "/c/d")]) == "b.txt\nd")
+    // 不带扩展名：文件夹照原名
+    #expect(
+      FinderLink.nameText(
+        [URL(filePath: "/a/报告.final.pdf"), URL(filePath: "/a/项目 v1.2")], stem: true,
+        isDirectory: { $0.lastPathComponent.hasPrefix("项目") }) == "报告.final\n项目 v1.2")
+    // 终端写法：安全的原样，别的加单引号，里面的单引号转开，几个用空格连
+    #expect(
+      FinderLink.shellText([
+        URL(filePath: "/a/b-c_1.txt"), URL(filePath: "/a/b c"), URL(filePath: "/a/it's"),
+        URL(filePath: "/a/中文"),
+      ]) == "/a/b-c_1.txt '/a/b c' '/a/it'\\''s' '/a/中文'")
   }
 
   /// 发送方核对：拿本进程（测试宿主就是 App，本团队签名）的审计令牌，按 App 自己的 id 认得出、按扩展的 id 不认
@@ -256,12 +274,14 @@ import UniformTypeIdentifiers
     let names = [
       Feature.finderMenu.prefsKey, Prefs.finderMenuKey, Prefs.finderOpenWithApps,
       Prefs.finderTransferFolders, Prefs.finderCutCount, Prefs.finderCutChange,
+      Prefs.finderRecentFolders,
     ]
     let words = [
       "do", "key", "app", "file", "copy", "open", "new", "template", "mine", "suffix", "name",
       "move",
       "copyto", "to", "choose", "cut", "paste", "alias", "zip", "7z", "extract", "fixnames",
-      "hiddenfiles", "hide", "ext", "on", "hash", "algo", "erase",
+      "hiddenfiles", "hide", "ext", "on", "hash", "algo", "erase", "style", "shell", "stem",
+      "toomany", "stale",
     ]
     let literals =
       names + Prefs.finderOpenWithDefault + Prefs.finderTransferDefault + NewFile.builtIn

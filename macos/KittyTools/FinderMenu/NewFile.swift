@@ -39,11 +39,14 @@ nonisolated enum NewFile {
   /// 没人用的名字：重名加「 2」「 3」（扩展名前面加）
   static func freeName(_ name: String, taken: (String) -> Bool) -> String {
     guard taken(name) else { return name }
-    let stem = (name as NSString).deletingPathExtension
+    var stem = (name as NSString).deletingPathExtension
     let ext = (name as NSString).pathExtension
     var number = 2
     while true {
-      let candidate = "\(stem) \(number)" + (ext.isEmpty ? "" : "." + ext)
+      // 名字最长 255 字节：加了「 2」超长的，把前面截短（不然超长的名字被当成空位，建的时候才失败）
+      let tail = " \(number)" + (ext.isEmpty ? "" : "." + ext)
+      while !stem.isEmpty, (stem + tail).utf8.count > 255 { stem.removeLast() }
+      let candidate = stem + tail
       if !taken(candidate) { return candidate }
       number += 1
     }
@@ -71,7 +74,7 @@ nonisolated enum NewFile {
 
   /// 用模板建一个（mine：模板文件夹里的；否则随 App 的）。返回建好的位置
   @discardableResult @MainActor static func create(
-    template name: String, mine: Bool, in folder: URL
+    template name: String, mine: Bool, in folder: URL, island: Island? = nil
   )
     -> URL?
   {
@@ -79,15 +82,20 @@ nonisolated enum NewFile {
       mine
       ? templatesFolder().appending(path: name)
       : Bundle.main.url(forResource: resourcePrefix + name, withExtension: nil)
-    guard let source, FileManager.default.fileExists(atPath: source.path(percentEncoded: false)),
-      !mine || noAliases([AppDelegate.supportDirectory, templatesFolder(), source])
+    guard let source, FileManager.default.fileExists(atPath: source.path(percentEncoded: false))
     else {
-      NSSound.beep()
+      island?.show("找不到模板「\(name)」", detail: "模板文件夹里的它可能被删了或改了名", tone: .warning)
+      return nil
+    }
+    guard !mine || noAliases([AppDelegate.supportDirectory, templatesFolder(), source]) else {
+      island?.show("没有新建", detail: "模板文件夹里不认替身", tone: .warning)
       return nil
     }
     // ponytail: 查替身和拷贝之间有一小段空当（查完再换成替身还拷得过去），文件夹模板在主线程上一次拷完、不限大小——
     // 真碰上再改成 O_NOFOLLOW_ANY 打开再写、文件夹放到主线程外
-    return place(name, in: folder) { try FileManager.default.copyItem(at: source, to: $0) }
+    return place(name, in: folder, island: island) {
+      try FileManager.default.copyItem(at: source, to: $0)
+    }
   }
 
   /// 这几层没有一层是替身（符号链接），拷文件夹模板时里面的替身照原样拷成替身、不跟过去
@@ -109,16 +117,20 @@ nonisolated enum NewFile {
     return path != library && !path.hasPrefix(library + "/")
   }
 
-  /// 拷进 / 写进 folder，名字让开已有的，日期改成现在；建不成响一声
+  /// 拷进 / 写进 folder，名字让开已有的，日期改成现在；建不成刘海岛说原因（同访达建不成时会说为什么）
   @MainActor private static func place(
-    _ name: String, in folder: URL, write: (URL) throws -> Void
+    _ name: String, in folder: URL, island: Island?, write: (URL) throws -> Void
   ) -> URL? {
     let manager = FileManager.default
     var isDirectory: ObjCBool = false
     guard manager.fileExists(atPath: folder.path(percentEncoded: false), isDirectory: &isDirectory),
-      isDirectory.boolValue, allowsNewFiles(in: folder)
+      isDirectory.boolValue
     else {
-      NSSound.beep()
+      island?.show("没有新建", detail: "这个文件夹不在了", tone: .warning)
+      return nil
+    }
+    guard allowsNewFiles(in: folder) else {
+      island?.show("没有新建", detail: "资源库里放的是各个 App 的数据，这里不新建文件", tone: .warning)
       return nil
     }
     // 按替身本身看占没占（fileExists 会跟过去：断了的替身被当成空位，写的时候才撞上、只能响一声）
@@ -136,16 +148,32 @@ nonisolated enum NewFile {
       return target
     } catch {
       Log.finder.error("新建文件失败：\((error as NSError).code)")
-      NSSound.beep()
+      island?.show("没能新建", detail: writeProblem(error), tone: .error)
       return nil
     }
   }
 
-  /// 建好后同访达的「新建文件夹」：在访达里选中它、进入改名（按一下回车）。按回车要辅助功能授权，没有就只选中。
+  /// 写不进去的原因（给人看）
+  static func writeProblem(_ error: Error) -> String {
+    switch (error as NSError).code {
+    case NSFileWriteVolumeReadOnlyError: "这个位置是只读的"
+    case NSFileWriteNoPermissionError: "没有权限写这个文件夹"
+    case NSFileWriteOutOfSpaceError: "磁盘空间不够了"
+    default: "写不进去（可能没有权限）"
+    }
+  }
+
+  /// 建好后同访达的「新建文件夹」：在访达里选中它、进入改名（按一下回车）。建在桌面上的不这么做：选中桌面上的东西会
+  /// 另开一个「桌面」窗口（同几家成熟产品：桌面上新建不弹窗），只建好放在那里。按回车要辅助功能授权，没有就只选中。
   /// 照 RClick 的做法等访达到了前台再按（它的更新记录：固定延时在慢的文件夹里会漏掉）：每 50 ms 看一次、最多 2 秒，
   /// 到了再等 0.1 秒。ponytail: 按回车时看不到访达里选中的是不是新文件（要控制访达的自动化授权），选中还没落下时
   /// 会让原来选中的那个进入改名——只是进入改名、不会改掉名字，按 Esc 就退出
   @MainActor static func revealForRename(_ url: URL) {
+    let desktop = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask)[0]
+    guard
+      FileMoves.plainPath(url.deletingLastPathComponent().resolvingSymlinksInPath())
+        != FileMoves.plainPath(desktop.resolvingSymlinksInPath())
+    else { return }
     NSWorkspace.shared.activateFileViewerSelecting([url])
     guard Permissions.isAccessibilityTrusted else { return }
     let finderIsFront = {
@@ -171,7 +199,7 @@ nonisolated enum NewFile {
   // MARK: 自定义后缀
 
   /// 弹框问后缀（FinderLink.ask），在 folder 里建一个空文件
-  @MainActor static func askSuffix(in folder: URL) {
+  @MainActor static func askSuffix(in folder: URL, island: Island? = nil) {
     let field = NSTextField(
       string: UserDefaults.standard.string(forKey: Prefs.finderLastSuffix) ?? "")
     field.placeholderString = "比如 json、yaml、tar.gz"
@@ -193,13 +221,15 @@ nonisolated enum NewFile {
     alert.accessoryView = stack
     guard FinderLink.ask(alert, focus: field) == .alertFirstButtonReturn else { return }
     guard let suffix = cleanSuffix(field.stringValue) else {
-      NSSound.beep()
+      island?.show("后缀不对", detail: "不能有 / 和 :，比如 json、tar.gz", tone: .warning)
       return
     }
     UserDefaults.standard.set(suffix, forKey: Prefs.finderLastSuffix)
     let name = customName(suffix: suffix)
     guard
-      place(name, in: folder, write: { try Data().write(to: $0, options: .withoutOverwriting) })
+      place(
+        name, in: folder, island: island,
+        write: { try Data().write(to: $0, options: .withoutOverwriting) })
         != nil
     else { return }
     if remember.state == .on { addTemplate(name, suffix: suffix) }

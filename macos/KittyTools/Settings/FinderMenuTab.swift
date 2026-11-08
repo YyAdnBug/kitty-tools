@@ -131,7 +131,8 @@ struct FinderMenuTab: View {
       } header: {
         Text("「移动到」「复制到」的常用文件夹")
       } footer: {
-        SectionFootnote("子菜单里按这个顺序列，最后总有「选择文件夹…」。")
+        SectionFootnote(
+          "子菜单里按这个顺序列（拖动调整），后面接最近用「选择文件夹…」选过的 3 个；这次用不上的会变灰。")
       }
       .gated(by: .finderMenu)
       Section {
@@ -140,6 +141,13 @@ struct FinderMenuTab: View {
           removeTitle: "移除所选的 App", canRemove: selection != nil, remove: removeSelected
         ) {
           Menu {
+            if !installedTools.isEmpty {
+              Menu("这台 Mac 上的终端和编辑器") {
+                ForEach(installedTools, id: \.bundleID) { app in
+                  Button(app.name) { add(app.bundleID) }.disabled(apps.contains(app.bundleID))
+                }
+              }
+            }
             Menu("正在运行的 App") {
               ForEach(runningApps, id: \.bundleID) { app in
                 Button(app.name) { add(app.bundleID) }.disabled(apps.contains(app.bundleID))
@@ -184,6 +192,7 @@ struct FinderMenuTab: View {
         Text("只有「选择文件夹…」").foregroundStyle(.secondary)
       }
       ForEach(folders, id: \.self) { FolderRow(path: $0).tag($0) }
+        .onMove { from, to in changeFolders { $0.move(fromOffsets: from, toOffset: to) } }
     }
     .listStyle(.plain)
     .scrollContentBackground(.hidden)
@@ -268,6 +277,7 @@ struct FinderMenuTab: View {
         Text("右键里不列「在“X”中打开」").foregroundStyle(.secondary)
       }
       ForEach(apps, id: \.self) { AppListRow(bundleID: $0).tag($0) }
+        .onMove { from, to in change { $0.move(fromOffsets: from, toOffset: to) } }
     }
     .listStyle(.plain)
     .scrollContentBackground(.hidden)
@@ -312,6 +322,17 @@ struct FinderMenuTab: View {
   }
 
   /// 正在运行的普通 App（有程序坞图标的），按名称排序
+  /// 这台 Mac 上装着的常用终端和编辑器（FinderLink.knownTools 里找得到的，同几家成熟产品加 App 时给的预设）
+  private var installedTools: [(bundleID: String, name: String)] {
+    FinderLink.knownTools.compactMap { id in
+      NSWorkspace.shared.urlForApplication(withBundleIdentifier: id).map { url in
+        var name = FileManager.default.displayName(atPath: url.path(percentEncoded: false))
+        if name.hasSuffix(".app") { name.removeLast(4) }
+        return (id, name)
+      }
+    }
+  }
+
   private var runningApps: [(bundleID: String, name: String)] {
     NSWorkspace.shared.runningApplications
       .filter { $0.activationPolicy == .regular && $0 != .current }

@@ -41,6 +41,30 @@ import Testing
         == FileMoves.plainPath(URL(filePath: "/a/b")))
   }
 
+  /// 做不了时说原因：文件夹不在了（不替它建回来）、已经在那里、放进自己里面、主目录只能复制
+  @Test func refusalReasons() throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let file = root.appending(path: "a.txt")
+    try Data().write(to: file)
+    let folder = root.appending(path: "文件夹")
+    try FileManager.default.createDirectory(
+      at: folder.appending(path: "子"), withIntermediateDirectories: true)
+    let gone = root.appending(path: "没了")
+    #expect(
+      FileMoves.refusal([file], into: gone, move: true, place: "没了")?.hasPrefix("「没了」不在了") == true)
+    #expect(!FileMoves.occupied(gone))
+    #expect(FileMoves.refusal([file], into: root, move: true, place: "根") == "已经在「根」里了")
+    #expect(FileMoves.refusal([file], into: root, move: false, place: "根") == nil)
+    #expect(
+      FileMoves.refusal([folder], into: folder.appending(path: "子"), move: false, place: "子")
+        == "不能放进它自己里面")
+    let home = URL(filePath: NSHomeDirectory())
+    #expect(
+      FileMoves.refusal([home], into: root, move: true, place: "根")?.contains("可以复制") == true)
+    #expect(FileMoves.refusal([file], into: folder, move: true, place: "文件夹") == nil)
+  }
+
   /// 复制：重名加「 2」、不覆盖、拷进已有的同名文件夹不合并；原件还在
   @Test func copyNeverOverwritesOrMerges() async throws {
     let root = try makeRoot()

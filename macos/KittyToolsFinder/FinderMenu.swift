@@ -1,11 +1,13 @@
 // 访达扩展（第十一族「访达右键」，2026-11-08 拍板，PLAN §10「访达右键」）：在访达的右键菜单第一层加几项。
 // - 选中文件 / 文件夹右键：「拷贝路径」「拷贝名称」、设置里选的每个 App 一项「在“X”中打开」（默认只有终端；叫法照访达
-//   自己的「在“照片”中打开」）、「移动到 ▸」「复制到 ▸」（常用文件夹 + 选择文件夹…）、「剪切」、「压缩 ▸」（ZIP、7Z）、
+//   自己的「在“照片”中打开」）、「移动到 ▸」「复制到 ▸」（常用文件夹 + 选择文件夹…）、「剪切」、「压缩为 ▸」（ZIP、7Z）、
 //   「解压到这里」（选中的都是压缩包时）、「修复乱码文件名」（选中的有名字像乱码、还原得出来的时候）、「隐藏」/「取消隐藏」、
 //   「隐藏扩展名」/「显示扩展名」（看选中的现在是什么样；读不到就当没隐藏）、「拷贝哈希 ▸」（选中的都是文件时）、
 //   「发送替身到桌面」、「彻底删除…」（App 那边先问）。
+//   按住 ⌥ 右键时「拷贝路径」「拷贝名称」换成终端写法、不带扩展名；「移动到」「复制到」里这次用不上的文件夹变灰，后面接最近
+//   用「选择文件夹…」选过的。侧边栏右键当空白处。点不成的（列表变了、一次超过上限）交给 App 在刘海岛上说原因。
 // - 文件夹空白处右键：最前面「新建文件 ▸」（自带五种、模板文件夹里放的每个文件、「自定义后缀…」、「打开模板文件夹」），
-//   剪切过、剪贴板还没换过时多一项「粘贴 N 项」，然后「拷贝路径」「在“X”中打开」「显示 / 隐藏 隐藏文件」，对着的是这个文件夹。
+//   剪切过、剪贴板还没换过时多一项「粘贴 N 项」，然后「拷贝路径」「在“X”中打开」「切换隐藏文件」，对着的是这个文件夹。
 // 设置里打开「收进一个子菜单」时，这些都收进第一层的一项「Kitty Tools ▸」里（默认关、平铺）。
 // 每一项在 App 设置里能单独关（App 的 FinderMenuItem；同几家成熟产品），默认开关照 2026-11-08 右键扩充拍板 A2。
 // 扩展只画菜单、不碰文件（拍板 C2）：点了用 App 自己的网址把动作交给常驻菜单栏的 Kitty Tools，
@@ -125,14 +127,20 @@ final class FinderMenu: FIFinderSync {
     getpwuid(getuid())?.pointee.pw_dir.map { String(cString: $0) }
   }
 
-  /// 「移动到」「复制到」的常用文件夹（App 的 Prefs.finderTransferFolders，~ 开头的写法；ponytail: 键名和默认值抄的那边）
+  /// 「移动到」「复制到」子菜单里列的：常用文件夹（App 的 Prefs.finderTransferFolders，~ 开头的写法），后面接最近用
+  /// 「选择文件夹…」选过的（Prefs.finderRecentFolders，最多 3 个，常用里有的不重复列）。ponytail: 键名和默认值抄的 App 那边，
+  /// 去重和条数同 App 的 FileMoves.folders
   private static var transferFolders: [URL] {
     guard let home else { return [] }
-    return
+    let expand = { (path: String) in
+      path == "~" || path.hasPrefix("~/") ? home + path.dropFirst() : path
+    }
+    let favorites =
       (appDefaults?.stringArray(forKey: "finderTransferFolders")
-      ?? ["~/Desktop", "~/Documents", "~/Downloads"])
-      .map { $0 == "~" || $0.hasPrefix("~/") ? home + $0.dropFirst() : $0 }
-      .map { URL(filePath: $0, directoryHint: .isDirectory) }
+      ?? ["~/Desktop", "~/Documents", "~/Downloads"]).map(expand)
+    let recent = (appDefaults?.stringArray(forKey: "finderRecentFolders") ?? []).map(expand)
+      .filter { !favorites.contains($0) }.prefix(3)
+    return (favorites + recent).map { URL(filePath: $0, directoryHint: .isDirectory) }
   }
 
   /// 剪切了、剪贴板还没换过的有几样（App 的 FileMoves.cut 记的；剪贴板换过了就不列「粘贴」，同 Windows）
@@ -249,7 +257,8 @@ final class FinderMenu: FIFinderSync {
     let container: Int
     switch menuKind {
     case .contextualMenuForItems: container = 0
-    case .contextualMenuForContainer: container = Self.containerTag
+    // 侧边栏右键当空白处：对着的是那一项（targetedURL）
+    case .contextualMenuForContainer, .contextualMenuForSidebar: container = Self.containerTag
     default: return nil
     }
     let clock = ContinuousClock()
@@ -301,15 +310,21 @@ final class FinderMenu: FIFinderSync {
         "粘贴 \(Self.cutCount) 项", #selector(paste(_:)), symbol: "doc.on.clipboard.fill",
         color: Tint.organize, to: menu)
     }
+    // 按住 ⌥ 右键：拷贝路径换成终端里能直接用的写法、拷贝名称不带扩展名（同访达按住 ⌥ 换项的习惯；菜单项跨进程交出去不带
+    // 「备选项」，只能在搭菜单这一刻看修饰键）
+    let option = NSEvent.modifierFlags.contains(.option)
     if Self.shows("finderMenuCopyPath", default: true) {
       let copy = menu.addItem(
-        withTitle: "拷贝路径", action: #selector(copyPath(_:)), keyEquivalent: "")
+        withTitle: option ? "拷贝路径（终端写法）" : "拷贝路径",
+        action: option ? #selector(copyShellPath(_:)) : #selector(copyPath(_:)), keyEquivalent: "")
       copy.tag = container
       copy.image = Self.tile("kitty.finder.copy.path", custom: true, color: Tint.copy)
     }
     if items, Self.shows("finderMenuCopyName", default: true) {
       Self.add(
-        "拷贝名称", #selector(copyName(_:)), symbol: "textformat", color: Tint.copy, to: menu)
+        option ? "拷贝名称（不带扩展名）" : "拷贝名称",
+        option ? #selector(copyStem(_:)) : #selector(copyName(_:)), symbol: "textformat",
+        color: Tint.copy, to: menu)
     }
     if Self.shows("finderMenuHash", default: false), !selected.isEmpty,
       !selected.contains(where: \.hasDirectoryPath)
@@ -331,11 +346,11 @@ final class FinderMenu: FIFinderSync {
       Self.add(
         "移动到", nil, symbol: "arrowshape.turn.up.right.fill", color: Tint.organize, to: menu
       ).submenu =
-        Self.transferMenu(#selector(moveTo(_:)))
+        Self.transferMenu(#selector(moveTo(_:)), move: true, selected: selected)
       Self.add(
         "复制到", nil, symbol: "plus.square.fill.on.square.fill", color: Tint.organize, to: menu
       ).submenu =
-        Self.transferMenu(#selector(copyTo(_:)))
+        Self.transferMenu(#selector(copyTo(_:)), move: false, selected: selected)
     }
     if items, Self.shows("finderMenuCut", default: true) {
       Self.add("剪切", #selector(cut(_:)), symbol: "scissors", color: Tint.organize, to: menu)
@@ -344,7 +359,8 @@ final class FinderMenu: FIFinderSync {
       let formats = NSMenu()
       formats.addItem(withTitle: "ZIP", action: #selector(compressZip(_:)), keyEquivalent: "")
       formats.addItem(withTitle: "7Z", action: #selector(compress7z(_:)), keyEquivalent: "")
-      Self.add("压缩", nil, symbol: "doc.zipper", color: Tint.archive, to: menu).submenu = formats
+      // 「压缩为」：访达自己的「压缩“X”」在同一个菜单里，两项都叫压缩分不开
+      Self.add("压缩为", nil, symbol: "doc.zipper", color: Tint.archive, to: menu).submenu = formats
     }
     if Self.shows("finderMenuExtract", default: true), !selected.isEmpty,
       selected.allSatisfy({ Self.isArchive($0) })
@@ -368,7 +384,7 @@ final class FinderMenu: FIFinderSync {
     }
     if !items, Self.shows("finderMenuShowHidden", default: false) {
       let toggle = Self.add(
-        "显示 / 隐藏 隐藏文件", #selector(toggleHidden(_:)), symbol: "eye.fill", color: Tint.hide,
+        "切换隐藏文件", #selector(toggleHidden(_:)), symbol: "eye.fill", color: Tint.hide,
         to: menu)
       toggle.tag = container
     }
@@ -516,18 +532,50 @@ final class FinderMenu: FIFinderSync {
     return image
   }
 
-  /// 「移动到 ▸」「复制到 ▸」：常用文件夹（访达里的名字和图标），最后「选择文件夹…」
-  private static func transferMenu(_ action: Selector) -> NSMenu {
+  /// 「移动到 ▸」「复制到 ▸」：常用文件夹和最近选过的（访达里的名字和图标），这次用不上的变灰，最后「选择文件夹…」
+  private static func transferMenu(_ action: Selector, move: Bool, selected: [URL]) -> NSMenu {
     let menu = NSMenu()
+    menu.autoenablesItems = false
+    let sources = selected.map {
+      (
+        plain($0.resolvingSymlinksInPath()),
+        plain($0.deletingLastPathComponent().resolvingSymlinksInPath())
+      )
+    }
     for (index, folder) in transferFolders.enumerated() {
       let path = folder.path(percentEncoded: false)
       let item = menu.addItem(
         withTitle: displayName(path), action: action, keyEquivalent: "")
       item.tag = index
       item.image = fileIcon(path)
+      item.isEnabled = usable(folder, sources: sources, move: move)
     }
     add("选择文件夹…", action, symbol: "ellipsis", color: Tint.hide, to: menu).tag = chooseTag
     return menu
+  }
+
+  /// 这个文件夹这次用不用得上（用不上的变灰，同几家成熟产品）：不在了、选中的都是它自己或它的上层、移动时都已经在里面。
+  /// /Volumes 下的（外接盘、网络盘）不查：断开的网络盘上查一下要等系统超时，交给 App 去说。同 App 的 FileMoves.movable
+  private static func usable(
+    _ folder: URL, sources: [(path: String, parent: String)], move: Bool
+  ) -> Bool {
+    if plain(folder).hasPrefix("/volumes/") { return true }
+    var isDirectory: ObjCBool = false
+    guard FileManager.default.fileExists(atPath: folder.path, isDirectory: &isDirectory),
+      isDirectory.boolValue
+    else { return false }
+    let destination = plain(folder.resolvingSymlinksInPath())
+    return sources.contains { source in
+      destination != source.path && !destination.hasPrefix(source.path + "/")
+        && (!move || source.parent != destination)
+    }
+  }
+
+  /// 比路径用的写法：标准化、去掉结尾的「/」、小写（APFS 默认不分大小写）
+  private static func plain(_ url: URL) -> String {
+    var path = url.standardizedFileURL.path(percentEncoded: false)
+    while path.count > 1, path.hasSuffix("/") { path.removeLast() }
+    return path.lowercased()
   }
 
   /// 「新建文件 ▸」：自带五种（图标按类型取）、模板文件夹里的（图标按文件取）、自定义后缀、打开模板文件夹
@@ -609,6 +657,17 @@ final class FinderMenu: FIFinderSync {
     hand("name", container: false)
   }
 
+  @objc private func copyShellPath(_ sender: AnyObject?) {
+    let tag = (sender as? NSMenuItem)?.tag ?? 0
+    hand(
+      "copy", extra: [URLQueryItem(name: "style", value: "shell")],
+      container: tag >= Self.containerTag)
+  }
+
+  @objc private func copyStem(_ sender: AnyObject?) {
+    hand("name", extra: [URLQueryItem(name: "style", value: "stem")], container: false)
+  }
+
   @objc private func moveTo(_ sender: AnyObject?) {
     transfer("move", sender)
   }
@@ -630,7 +689,8 @@ final class FinderMenu: FIFinderSync {
         Self.displayName(folders[tag].path(percentEncoded: false))
           == (sender as? NSMenuItem)?.title
       else {
-        NSSound.beep()
+        // 菜单弹出来之后列表变了：交给 App 说一声（它认不出这个动作，会说「再右键一次」）
+        hand("stale", files: [])
         return
       }
       to = folders[tag].path(percentEncoded: false)
@@ -707,7 +767,8 @@ final class FinderMenu: FIFinderSync {
       let index = tag - Self.mineTag
       guard mine.indices.contains(index), Self.titles(mine)[index] == (sender as? NSMenuItem)?.title
       else {
-        NSSound.beep()
+        // 菜单弹出来之后列表变了：交给 App 说一声（它认不出这个动作，会说「再右键一次」）
+        hand("stale", files: [])
         return
       }
       name = mine[index].lastPathComponent
@@ -762,9 +823,13 @@ final class FinderMenu: FIFinderSync {
 
   private func hand(_ action: String, app: String? = nil, extra: [URLQueryItem] = [], files: [URL])
   {
-    guard let key = Self.key, !files.isEmpty || action == "templates" else { return }
+    guard let key = Self.key, !files.isEmpty || ["templates", "toomany", "stale"].contains(action)
+    else {
+      return
+    }
+    // 太多了：交给 App 在刘海岛上说一声（扩展自己弹不出东西）
     guard files.count <= Self.maxFiles else {
-      NSSound.beep()
+      hand("toomany", files: [])
       return
     }
     var link = URLComponents()

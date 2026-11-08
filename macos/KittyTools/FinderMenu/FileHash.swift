@@ -62,7 +62,7 @@ nonisolated enum FileHash {
         .isRegularFile == true
     }
     guard !regular.isEmpty else {
-      NSSound.beep()
+      island?.show("没有算 \(kind.title)", detail: "只给文件算（文件夹不算），或者选中的不在了", tone: .warning)
       return
     }
     FileMoves.enqueue(

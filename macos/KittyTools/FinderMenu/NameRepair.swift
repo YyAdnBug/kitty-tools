@@ -103,7 +103,7 @@ extension NameRepair {
   @MainActor static func fix(_ files: [URL], island: Island?) {
     let renamed = rename(files)
     guard !renamed.isEmpty else {
-      NSSound.beep()
+      island?.show("没有改名", detail: "名字已经不像乱码了，或者没有权限改", tone: .warning)
       return
     }
     island?.show(
