@@ -1,6 +1,7 @@
 // 设置 › 截图：⌘S 快速保存的位置（文件夹图标 + 访达里的名字，选过的能恢复默认，体检 A28；录屏、录音也存这里，
 // 「录制」页的「保存到」是同一行 SaveDirectoryRow）、截图拷贝为图像还是 PNG 文件（2026-11-06）、快门声（可试听）、截图后留不留常驻缩略图（体检 D18）、
-// 框选后工具栏靠右还是居中（2026-11-05，录屏的录制条同一个设置）、框选时保持屏幕原色（2026-11-06，不压暗不染色）、识字是否把同一段里的换行接起来（开关旁边实时对照效果，
+// 框选后工具栏靠右还是居中（2026-11-05，录屏的录制条同一个设置）、框选时保持屏幕原色（2026-11-06，不压暗不染色）、
+// 悬停时识别窗口里的元素（2026-11-08，要辅助功能授权：没授权时开关下面出授权那一行）、识字是否把同一段里的换行接起来（开关旁边实时对照效果，
 // 体检 A32）。截图历史改短保留期 / 改小占用会删掉东西时先问
 // （第四轮体检 E24，同剪贴板 E4），改了当场清一次。录屏、录音的设置在「录制」页（RecordTab，2026-10-03 拆出去）。
 // 框选、标注、长截图、录屏的按键不写进页里（N11）：一句话 +「查看全部快捷键…」打开速查表；全局快捷键和截图时能改的键
@@ -21,6 +22,9 @@ struct ScreenshotTab: View {
   @AppStorage(Prefs.screenshotToolbarAlign) private var toolbarAlign = "right"
   @AppStorage(Prefs.screenshotCopyAs) private var copyAs = "image"
   @AppStorage(Prefs.screenshotKeepsColors) private var keepsColors = false
+  @AppStorage(Prefs.screenshotFindsElements) private var findsElements = true
+  /// 认元素要辅助功能授权（拍板 D2：没授权只在这里说，不弹框）；从系统设置授权回来、设置窗重新当 key 时刷新
+  @State private var trusted = Permissions.isAccessibilityTrusted
   /// 「截图拷贝为」「框选时保持屏幕原色」那两行的「新」（0.7.3，WhatsNew）
   @Environment(SettingsNavigation.self) private var navigation
   @AppStorage(Prefs.shotHistory) private var keepsHistory = true
@@ -110,6 +114,16 @@ struct ScreenshotTab: View {
           }
           // 拨过这一行，「新」就算看过了（光点进这一页不算；WhatsNew）
           .onChange(of: keepsColors) { WhatsNew.touch(section: "框选时保持屏幕原色", of: .screenshot) }
+          Toggle(isOn: $findsElements) {
+            Text("悬停时识别窗口里的元素")
+            Text("鼠标停在侧栏、列表、按钮这些上面就框出那一块，单击截下；滚轮往上换大一块、往下换小一块，Tab 只认整扇窗口。网页内容、游戏这类认不出来的照旧只认窗口")
+          }
+          if findsElements, !trusted {
+            PermissionRow(
+              title: "辅助功能", detail: "识别窗口里的元素要它；没授权时只认窗口",
+              symbol: "hand.raised.fill", color: Style.Family.command, granted: trusted
+            ) { Permissions.grant(.accessibility) }
+          }
         }
         Section {
           Picker("截完图放哪", selection: $placement) {
@@ -157,6 +171,8 @@ struct ScreenshotTab: View {
       .gated(by: .screenshot)
     }
     .formStyle(.grouped)
+    // 从系统设置授权回来（只认设置窗自己，同通用页）
+    .onSettingsBecameKey { trusted = Permissions.isAccessibilityTrusted }
     .confirmationDialog("清空截图历史？", isPresented: $confirmClear) {
       Button("清空", role: .destructive) { shots?.clear() }
     } message: {

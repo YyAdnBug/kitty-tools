@@ -412,6 +412,8 @@ struct ShortcutsSheet: View {
           Entry("空格", text: "按住平移选区"),
           Entry("⌃", text: "暂停吸附"),
           Entry("⌘", text: "按住显示十字准线"),
+          Entry("滚轮", text: "悬停时换大一块 / 小一块（窗口里的元素）"),
+          Entry("Tab", text: "悬停时在「认元素 / 只认窗口」之间切"),
           Entry(key(.lastRegion), text: "选中上次的区域"),
           Entry("方向键", text: "移动选区 1 点（按住 ⇧ 10 点）"),
           Entry("⌘方向键", text: "把那条边往外推（按住 ⇧ 10 点）"),
