@@ -30,6 +30,25 @@ struct ScriptsSection: View {
     /// 看的和存的是同一份（第三轮评审：不再回头复制源文件——链接、预览开着时被换掉的文件都绕不过去）
     let reading: ScriptReading
     var id: String { url?.path(percentEncoded: false) ?? "clipboard:" + name }
+
+    /// 名字里带 .template.（社区惯例：要先填值的模板）：能导入，但填好、改了名字才会列出来
+    var isTemplate: Bool { name.contains(".template.") }
+
+    /// 读成一条命令（模板按去掉 .template. 的名字读，才看得出能不能跑）；nil = 第一行不是 #!，不是脚本
+    var parsed: Result<ScriptCommand, ScriptCommand.Problem>? {
+      ScriptCommand.parse(reading.text, path: "/脚本/" + name.replacing(".template.", with: "."))
+    }
+
+    /// 存好之后岛上那一句：接下来怎么用（读不成的、模板不会列在启动器里）
+    var nextStep: String {
+      if isTemplate { return "填好里面要填的值、把名字里的 .template. 去掉，才会列在启动器里" }
+      switch parsed {
+      case .success(let script)?:
+        return script.keyword.map { "在启动器里输 \($0) 试试" } ?? "在启动器里按名字找它"
+      case .failure(let problem)?: return "现在还跑不了：\(problem.text)；改好就能用"
+      case nil: return ""
+      }
+    }
   }
 
   var body: some View {
@@ -123,13 +142,8 @@ struct ScriptsSection: View {
           return
         }
         library?.refresh()
-        let script = ScriptCommand.parse(
-          candidate.reading.text, path: url.path(percentEncoded: false))
-        let keyword = (try? script?.get())?.keyword
         island?.show(
-          "已存成「\(url.lastPathComponent)」",
-          detail: keyword.map { "在启动器里输 \($0) 试试" } ?? "在启动器里按名字找它",
-          actions: [.reveal(url)])
+          "已存成「\(url.lastPathComponent)」", detail: candidate.nextStep, actions: [.reveal(url)])
       }
     }
     Section {
@@ -227,7 +241,9 @@ struct ScriptsSection: View {
   private func review(_ url: URL) {
     Task {
       let read = await ScriptRunner.read(url.path(percentEncoded: false))
-      pending = Candidate(url: url, name: url.lastPathComponent, reading: read)
+      // 点开头的是隐藏文件、存进去不会列出来：存的时候去掉开头的点
+      let name = String(url.lastPathComponent.drop { $0 == "." })
+      pending = Candidate(url: url, name: name.isEmpty ? "导入的脚本.sh" : name, reading: read)
     }
   }
 
@@ -308,7 +324,7 @@ private struct ScriptImportSheet: View {
 
   var body: some View {
     let reading = candidate.reading
-    let script = ScriptCommand.parse(reading.text, path: "/脚本/" + candidate.name)
+    let script = candidate.parsed
     VStack(alignment: .leading, spacing: 12) {
       Text(candidate.url == nil ? "把剪贴板里的脚本存成「\(candidate.name)」？" : "导入「\(candidate.name)」？")
         .font(.headline)
@@ -323,6 +339,11 @@ private struct ScriptImportSheet: View {
           .fixedSize(horizontal: false, vertical: true)
       case nil:
         Text("这个文件第一行不是 #!，不是脚本，不能导入。").foregroundStyle(Color(nsColor: .systemOrange))
+      }
+      if candidate.isTemplate {
+        Text("名字里带 .template.：这是要先填值的模板，导入后不会列在启动器里；填好、把名字里的 .template. 去掉才会列出来。")
+          .foregroundStyle(Color(nsColor: .systemOrange))
+          .fixedSize(horizontal: false, vertical: true)
       }
       Text("它会以你的身份运行，能用 Kitty Tools 已有的辅助功能、屏幕录制、完全磁盘访问授权。只导入你信得过的脚本。")
         .foregroundStyle(.secondary)

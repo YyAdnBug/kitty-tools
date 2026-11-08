@@ -176,8 +176,10 @@ nonisolated struct ScriptReading: Equatable, Sendable {
   let text: String
   /// 比能显示的长：没看全
   let isTruncated: Bool
-  /// 藏着会打乱显示顺序的字符
+  /// 藏着看不见、或者会打乱显示的字符（ScriptCommand.Hidden.block）
   let hasHidden: Bool
+  /// 有不是 UTF-8 的字节（显示成「�」，看不出原来是什么）
+  let isMalformed: Bool
   /// 读不出来
   let isUnreadable: Bool
 
@@ -187,6 +189,8 @@ nonisolated struct ScriptReading: Equatable, Sendable {
     isUnreadable = data == nil
     isTruncated = bytes.count > limit
     self.data = bytes.prefix(limit)
+    // 截断的那一截可能切在一个字中间：那种已经因为没看全不放行了，不另算
+    isMalformed = !isTruncated && String(bytes: self.data, encoding: .utf8) == nil
     (text, hasHidden) = ScriptCommand.revealed(String(decoding: self.data, as: UTF8.self))
   }
 
@@ -194,8 +198,9 @@ nonisolated struct ScriptReading: Equatable, Sendable {
   var problem: String? {
     if isUnreadable { return "读不出这个文件。" }
     if hasHidden {
-      return "这个文件里藏着会打乱显示顺序的字符（下面标成了 ⟦U+202E⟧ 这样），看到的和真正会跑的可能不一样。"
+      return "这个文件里藏着看不见、或者会打乱显示的字符（下面标成了 ⟦U+200B⟧ 这样），看到的和真正会跑的可能不一样。"
     }
+    if isMalformed { return "这个文件里有不是 UTF-8 的字节，显示出来的和真正会跑的可能不一样。" }
     if isTruncated { return "这个文件超过 \(ScriptRunner.reviewLimit / 1024) KB，下面只显示了开头。" }
     return nil
   }

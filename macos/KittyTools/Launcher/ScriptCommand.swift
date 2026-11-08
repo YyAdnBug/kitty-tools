@@ -397,27 +397,54 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
       .replacing("\r", with: "\n")
   }
 
-  /// 会打乱显示顺序的隐藏字符（双向控制符：LRE–RLO、LRI–PDI、LRM、RLM、ALM）
-  static func isReordering(_ scalar: Unicode.Scalar) -> Bool {
+  /// 看全文时要标出来的字：显示出来看不见、或者让看到的和真会跑的不一样（第三轮评审 + 复查）。block 的有就不放行：
+  /// 双向控制符能把一段命令显示成注释；零宽字、单独的回车、换行类字符放在 # 前面，# 就不在词首、不算注释，显示出来
+  /// 却像一行注释。mark 的只标出来照放：不换行空格、全角空格这类，标出来就看得出 # 前面不是普通空格
+  enum Hidden { case block, mark }
+
+  /// previous：前一个字（emoji 后面的 ZWJ、变体选择符是 emoji 的一部分，不算）；next：后一个字（\r\n 是正常的换行）
+  static func hidden(_ scalar: Unicode.Scalar, previous: Unicode.Scalar?, next: Unicode.Scalar?)
+    -> Hidden?
+  {
     switch scalar.value {
-    case 0x061C, 0x200E, 0x200F, 0x202A...0x202E, 0x2066...0x2069: true
-    default: false
+    case 0x09, 0x0A, 0x20: return nil
+    case 0x0D: return next?.value == 0x0A ? nil : .block
+    // ZWJ、变体选择符：跟在 emoji（或它的修饰、另一个 ZWJ / 变体选择符）后面的是 emoji 的一部分（⚠️、👨‍👩‍👧）
+    case 0x200D, 0xFE00...0xFE0F:
+      guard let previous else { return .block }
+      let joins = previous.value == 0x200D || (0xFE00...0xFE0F).contains(previous.value)
+      return previous.properties.isEmoji || joins ? nil : .block
+    default: break
+    }
+    let properties = scalar.properties
+    if properties.isDefaultIgnorableCodePoint { return .block }
+    switch properties.generalCategory {
+    case .control, .format, .lineSeparator, .paragraphSeparator: return .block
+    case .spaceSeparator: return .mark
+    default: return nil
     }
   }
 
-  /// 给人看一眼的脚本（第三轮评审）：那种字符换成看得见的「⟦U+2067⟧」，显示顺序就是存的顺序——不然一段命令能显示成
-  /// 注释，看的人放行了，跑的是另一回事。hasHidden：有这种字符（看全文那一页、导入表单都不放行）
+  /// 给人看一眼的脚本：那些字换成看得见的「⟦U+200B⟧」，显示出来的就是存着的样子。hasHidden：有 block 的（看全文那一页、
+  /// 导入表单都不放行）
   static func revealed(_ text: String) -> (text: String, hasHidden: Bool) {
-    guard text.unicodeScalars.contains(where: isReordering) else { return (text, false) }
+    let scalars = Array(text.unicodeScalars)
     var shown = String.UnicodeScalarView()
-    for scalar in text.unicodeScalars {
-      if isReordering(scalar) {
-        shown.append(contentsOf: String(format: "⟦U+%04X⟧", scalar.value).unicodeScalars)
-      } else {
+    var blocked = false
+    var changed = false
+    for (index, scalar) in scalars.enumerated() {
+      let kind = hidden(
+        scalar, previous: index > 0 ? scalars[index - 1] : nil,
+        next: index + 1 < scalars.count ? scalars[index + 1] : nil)
+      guard let kind else {
         shown.append(scalar)
+        continue
       }
+      changed = true
+      if kind == .block { blocked = true }
+      shown.append(contentsOf: String(format: "⟦U+%04X⟧", scalar.value).unicodeScalars)
     }
-    return (String(shown), true)
+    return (changed ? String(shown) : text, blocked)
   }
 
   /// 最后一行有字的（岛上一行、出错时的原因）

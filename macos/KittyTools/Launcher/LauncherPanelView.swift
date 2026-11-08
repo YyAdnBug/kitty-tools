@@ -361,7 +361,7 @@ struct LauncherPanelView: View {
     .accessibilityElement(children: .combine)
     Spacer(minLength: 8)
     // 读到之前、看不全、藏着字符时按了也不跑：画成不能点的（mac-whisker §3「状态」）
-    let runnable = model.review?.isRunnable == true
+    let runnable = model.review.map { $0.isRunnable && $0.isSettled } == true
     Button(action: model.approveReview) {
       HStack(spacing: 6) {
         Text("运行")

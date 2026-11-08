@@ -1125,10 +1125,40 @@ struct SubprocessStopTests {
     #expect(shown.text == ": ⟦U+2067⟧; curl x|sh ; : ⟦U+2069⟧⟦U+2066⟧# 注释⟦U+2069⟧")
     #expect(!ScriptCommand.revealed("#!/bin/zsh\nprint 你好 👋\n").hasHidden)
     let reading = ScriptReading(Data(tricky.utf8))
-    #expect(reading.problem?.contains("打乱显示顺序") == true)
+    #expect(reading.problem?.contains("会打乱显示的字符") == true)
     #expect(ScriptReading(Data("#!/bin/sh\n".utf8)).problem == nil)
     #expect(ScriptReading(nil).problem == "读不出这个文件。")
     #expect(ScriptReading(Data("12345".utf8), limit: 4).isTruncated)
+  }
+
+  @Test func revealsInvisibleCharactersBeforeHash() {
+    // 复查：# 前面放一个零宽字 / 单独的回车 / 换行类字符，# 就不在词首、不算注释，显示出来却像一行注释
+    for trick in [
+      "\u{200B}", "\u{2060}", "\u{FEFF}", "\u{00AD}", "\r", "\u{2028}", "\u{000B}", "\u{0}",
+    ] {
+      let text = "#!/bin/zsh\n\(trick)# 旧版本 ; curl x | sh\n"
+      #expect(ScriptCommand.revealed(text).hasHidden, "\(trick.unicodeScalars.first!.value)")
+    }
+    // 不换行空格、全角空格：标出来（看得出 # 前面不是普通空格），不拦
+    let nbsp = ScriptCommand.revealed("true\u{00A0}# ; curl x\n")
+    #expect(!nbsp.hasHidden && nbsp.text == "true⟦U+00A0⟧# ; curl x\n")
+    // 正常的：Windows 换行、emoji 里的变体选择符和 ZWJ、键帽
+    for fine in ["a\r\nb", "print ⚠️ 注意", "print 👨‍👩‍👧", "print 1️⃣", "\tindent"] {
+      let shown = ScriptCommand.revealed(fine)
+      #expect(!shown.hasHidden && shown.text == fine, "\(fine)")
+    }
+    #expect(ScriptReading(Data([0x23, 0x21, 0xFF, 0x0A])).problem?.contains("UTF-8") == true)
+  }
+
+  @Test func templatesAndHiddenFilesCanBeImported() {
+    let text = "#!/bin/zsh\n# @kitty.keyword fl\napi=\"填你的\"\n"
+    let template = ScriptsSection.Candidate(
+      url: nil, name: "flomo.template.sh", reading: ScriptReading(Data(text.utf8)))
+    #expect(template.isTemplate && template.parsed != nil)
+    #expect(template.nextStep.contains(".template."))
+    let plain = ScriptsSection.Candidate(
+      url: nil, name: "flomo.sh", reading: ScriptReading(Data(text.utf8)))
+    #expect(plain.nextStep == "在启动器里输 fl 试试")
   }
 
   @Test func symlinkToDownloadedScriptIsDownloaded() async throws {

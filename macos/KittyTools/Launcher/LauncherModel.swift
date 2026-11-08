@@ -85,6 +85,8 @@ import UniformTypeIdentifiers
     var reading: ScriptReading?
     /// 全文显示出来的那一刻：之后 reviewDwell 之内的 ↩ 不算（第三轮评审：照习惯连按两下 ↩ 不能直接放行）
     var shownAt: ContinuousClock.Instant?
+    /// 过了 reviewDwell：底栏的「运行」这时才画成能点的（复查：那 1 秒里看着能点、点了只响提示音）
+    var isSettled = false
     /// 看过之后要交给它的参数（「关键词 空格 文字」那一行按的 ↩）；nil = 普通那一行
     var arguments: [String]?
 
@@ -613,6 +615,12 @@ import UniformTypeIdentifiers
     // 「别名 空格 文字」：交给那条脚本（B2），它的那几行排在普通结果前面
     let invocation = ScriptCommand.invocation(for: query, in: activeScripts, alias: scriptAlias)
     let invocationRows = invocation.map(invocationRows) ?? []
+    // 下载来、还没看过的：那一行（↩ 先看全文）不排在最前，接在普通结果后面（复查：同别名一字不差的那一处）
+    let trusted = invocation.map {
+      !$0.script.isDownloaded || approvedScripts.contains($0.script.path)
+    }
+    let leading = trusted == false ? [] : invocationRows
+    let trailing = trusted == false ? invocationRows : []
     let query = query.trimmingCharacters(in: .whitespaces)
     let typed = command.trimmingCharacters(in: .whitespaces)
     let ip = allowed("builtin:ip") && IPAddresses.matches(typed) ? ipItems() : []
@@ -687,7 +695,7 @@ import UniformTypeIdentifiers
     // 直达项和书签 / 用过的网址可能是同一项：按 id 去重，保留靠前的
     var seen = Set<String>()
     let ordered = Self.promoting(local, over: top) { usage.boost(for: $0, query: query).query > 0 }
-    results = (invocationRows + aliased + ordered + tx + history + partialPrompts + fallback)
+    results = (leading + aliased + ordered + trailing + tx + history + partialPrompts + fallback)
       .filter { seen.insert($0.id).inserted }
     if let invocation { startList(invocation) }
   }
@@ -1563,6 +1571,9 @@ import UniformTypeIdentifiers
       guard review?.script.path == script.path else { return }
       review?.reading = read
       review?.shownAt = .now
+      try? await Task.sleep(for: reviewDwell)
+      guard review?.script.path == script.path else { return }
+      review?.isSettled = true
     }
     Island.announce("这个脚本是从网上下载的，先看一眼再运行。按回车运行，按 Esc 返回")
   }

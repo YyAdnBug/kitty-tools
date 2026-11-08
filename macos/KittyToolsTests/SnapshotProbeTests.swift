@@ -4793,8 +4793,9 @@ struct SnapshotProbeTests {
         size: NSSize(width: 720, height: LauncherPanelView.height(for: model)), dark: dark,
         to: "\(out)/launcher-scripts-armed\(suffix).png")
       model.query = "fl"
+      model.reviewDwell = .zero
       if let item = model.results.first { model.execute(item) }
-      for _ in 0..<20 where model.review?.text == nil { await Task.yield() }
+      for _ in 0..<40 where model.review?.isSettled != true { await Task.yield() }
       try snapshot(
         LauncherPanelView(model: model),
         size: NSSize(width: 720, height: LauncherPanelView.height(for: model)), dark: dark,
