@@ -86,14 +86,22 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
   var folder: String { (path as NSString).deletingLastPathComponent }
 
   /// 下载来、还没看过的脚本（第二轮评审）：网址图标（能当信标，知道你什么时候列出了它）和脚本文件夹外面的图片（会弹文件夹
-  /// 授权框）不用；emoji、符号、同文件夹里的图照常。看过、去掉下载标记后重读就有了
-  mutating func dropUntrustedIcons() {
-    let inside = (folder as NSString).standardizingPath + "/"
+  /// 授权框）不用；emoji、符号、就放在脚本旁边的图照常。看过、去掉下载标记后重读就有了。第三轮评审：子文件夹里的、
+  /// 本身是符号链接的图也不用（zip 里能带一个指到桌面的链接）；isLink 在扫描时（主线程外）问文件系统，单测换成假的
+  mutating func dropUntrustedIcons(
+    isLink: (String) -> Bool = {
+      (try? FileManager.default.attributesOfItem(atPath: $0)[.type] as? FileAttributeType)
+        == .typeSymbolicLink
+    }
+  ) {
+    let folder = (folder as NSString).standardizingPath
     func keep(_ icon: Icon?) -> Icon? {
       switch icon {
-      case .remote: nil
-      case .image(let path) where !path.hasPrefix(inside): nil
-      default: icon
+      case .remote: return nil
+      case .image(let path):
+        let beside = (path as NSString).deletingLastPathComponent == folder
+        return beside && !isLink(path) ? icon : nil
+      default: return icon
       }
     }
     icon = keep(icon)
@@ -352,6 +360,29 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
       .replacing(/\u{1B}[@-_]/, with: "")
       .replacing("\r\n", with: "\n")
       .replacing("\r", with: "\n")
+  }
+
+  /// 会打乱显示顺序的隐藏字符（双向控制符：LRE–RLO、LRI–PDI、LRM、RLM、ALM）
+  static func isReordering(_ scalar: Unicode.Scalar) -> Bool {
+    switch scalar.value {
+    case 0x061C, 0x200E, 0x200F, 0x202A...0x202E, 0x2066...0x2069: true
+    default: false
+    }
+  }
+
+  /// 给人看一眼的脚本（第三轮评审）：那种字符换成看得见的「⟦U+2067⟧」，显示顺序就是存的顺序——不然一段命令能显示成
+  /// 注释，看的人放行了，跑的是另一回事。hasHidden：有这种字符（看全文那一页、导入表单都不放行）
+  static func revealed(_ text: String) -> (text: String, hasHidden: Bool) {
+    guard text.unicodeScalars.contains(where: isReordering) else { return (text, false) }
+    var shown = String.UnicodeScalarView()
+    for scalar in text.unicodeScalars {
+      if isReordering(scalar) {
+        shown.append(contentsOf: String(format: "⟦U+%04X⟧", scalar.value).unicodeScalars)
+      } else {
+        shown.append(scalar)
+      }
+    }
+    return (String(shown), true)
   }
 
   /// 最后一行有字的（岛上一行、出错时的原因）

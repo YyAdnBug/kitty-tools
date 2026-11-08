@@ -261,10 +261,10 @@ extension ScriptLibrary {
     return safe.isEmpty ? "新脚本.sh" : safe + ".sh"
   }
 
-  /// 存一段确认过的脚本文字（从剪贴板新建）：默认文件夹里起一个没用过的名字
-  static func save(_ text: String, name: String) -> URL? {
+  /// 存一段看过的脚本（导入、从剪贴板新建）：默认文件夹里起一个没用过的名字。自己写出来的文件不带下载标记
+  static func save(_ data: Data, name: String) -> URL? {
     let url = freeURL(in: ensureDefaultFolder(), name: name)
-    return (try? text.write(to: url, atomically: true, encoding: .utf8)) == nil ? nil : url
+    return (try? data.write(to: url, options: .atomic)) == nil ? nil : url
   }
 
   /// 「新建脚本」：照模板建一个、用编辑器打开（设置里的按钮、启动器里的命令同一个）
@@ -272,23 +272,6 @@ extension ScriptLibrary {
     guard let url = newScript() else { return nil }
     edit(url.path(percentEncoded: false))
     return url
-  }
-
-  /// 导入（看过全文、点了「导入」）：复制进默认文件夹（重名的加数字），去掉下载标记（已经看过了）；在主线程外做
-  /// （拖进来的文件可能在网络盘上）
-  @concurrent static func importScript(_ source: URL, into folder: URL) async -> URL? {
-    try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-    let target = freeURL(in: folder, name: source.lastPathComponent)
-    do {
-      try FileManager.default.copyItem(at: source, to: target)
-    } catch {
-      return nil
-    }
-    var url = target
-    var values = URLResourceValues()
-    values.quarantineProperties = nil
-    try? url.setResourceValues(values)
-    return target
   }
 
   /// 自带的复制一份到默认文件夹（去掉 script- 前缀），用编辑器打开；返回复制出来的位置

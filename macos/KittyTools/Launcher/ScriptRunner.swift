@@ -36,7 +36,13 @@ enum ScriptRunner {
   static func run(_ script: ScriptCommand, arguments: [String], path: String? = nil) async
     -> Outcome
   {
+    // 扫描之后才换成了下载来的（用下载的新版本盖掉了同名的、还没重读）：不跑，重读之后先给人看全文（第三轮评审）
+    if !script.isDownloaded, !script.isBundled, await isDownloadedNow(script.path) {
+      return Outcome(end: .failedToStart("这个脚本刚换成了从网上下载的：重新打开启动器，先看一眼全文再运行"))
+    }
     let path = if let path { path } else { await searchPath() }
+    // 等读 PATH（第一次用时最多 3 秒）那会儿被撤掉的（列表打字）：不再起进程
+    if Task.isCancelled { return Outcome(end: .stopped) }
     let environment = ScriptCommand.environment(
       inherited: ProcessInfo.processInfo.environment, path: path, script: script,
       dataDirectory: AppDelegate.supportDirectory.path, version: version,
@@ -123,32 +129,73 @@ enum ScriptRunner {
   /// 给用户看一眼的那一页最多显示这么多（再多 SwiftUI 的 Text 排不动；比这还大的脚本写明没显示全、别运行）
   nonisolated static let reviewLimit = 256 * 1024
 
-  /// 脚本全文（给用户看一眼的那一页）：最多读 reviewLimit，多出来的标 isTruncated；在主线程外读（文件夹可能在网络盘上）
-  @concurrent static func text(of path: String) async -> (text: String, isTruncated: Bool) {
-    guard let handle = FileHandle(forReadingAtPath: path) else { return ("", false) }
+  /// 脚本全文（给用户看一眼的那一页、导入前的表单）：最多读 reviewLimit + 1 字节；在主线程外读（文件夹可能在网络盘上）
+  @concurrent static func read(_ path: String) async -> ScriptReading {
+    guard let handle = FileHandle(forReadingAtPath: path) else { return ScriptReading(nil) }
     defer { try? handle.close() }
-    let data = (try? handle.read(upToCount: reviewLimit + 1)) ?? Data()
-    let truncated = data.count > reviewLimit
-    return (String(decoding: data.prefix(reviewLimit), as: UTF8.self), truncated)
+    do {
+      return ScriptReading(try handle.read(upToCount: reviewLimit + 1) ?? Data())
+    } catch {
+      return ScriptReading(nil)
+    }
   }
 
   // MARK: 从网上下载的
 
-  /// 带隔离标记（浏览器、聊天软件下载的文件系统都会打上）：第一次跑之前先给用户看一眼
+  /// 带隔离标记（浏览器、聊天软件下载的文件系统都会打上）：第一次跑之前先给用户看一眼。符号链接本身和它指向的文件都看
+  /// （第三轮评审：读标记不跟着链接走，`ln -s ~/Downloads/x.sh` 放进来的会被当成自己写的）
   nonisolated static func isDownloaded(_ url: URL) -> Bool {
-    (try? url.resourceValues(forKeys: [.quarantinePropertiesKey]))?.quarantineProperties != nil
+    [url, url.resolvingSymlinksInPath()].contains {
+      (try? $0.resourceValues(forKeys: [.quarantinePropertiesKey]))?.quarantineProperties != nil
+    }
   }
 
-  /// 确认过：去掉隔离标记（文件夹只读、去不掉的，由调用方这次运行里记着）
+  /// 同上，在主线程外问（跑之前再看一眼：文件夹可能在网络盘上）
+  @concurrent static func isDownloadedNow(_ path: String) async -> Bool {
+    isDownloaded(URL(filePath: path))
+  }
+
+  /// 确认过：去掉隔离标记，链接本身和它指向的都去（文件夹只读、去不掉的，由调用方这次运行里记着）
   @concurrent static func clearDownloaded(_ path: String) async -> Bool {
-    var url = URL(filePath: path)
-    var values = URLResourceValues()
-    values.quarantineProperties = nil
-    do {
-      try url.setResourceValues(values)
-      return !isDownloaded(url)
-    } catch {
-      return false
+    let link = URL(filePath: path)
+    for var url in Set([link, link.resolvingSymlinksInPath()]) {
+      var values = URLResourceValues()
+      values.quarantineProperties = nil
+      try? url.setResourceValues(values)
     }
+    return !isDownloaded(link)
+  }
+}
+
+/// 读出来给人看一眼的脚本（看全文那一页、导入前的表单；第三轮评审）：存的字节、显示的文字，和不能放行的原因
+nonisolated struct ScriptReading: Equatable, Sendable {
+  /// 原样的字节（最多 reviewLimit）：导入、从剪贴板新建存的就是这一份，不再回头去复制源文件——看的和存的是同一份
+  let data: Data
+  /// 显示用：会打乱显示顺序的隐藏字符换成看得见的（ScriptCommand.revealed）
+  let text: String
+  /// 比能显示的长：没看全
+  let isTruncated: Bool
+  /// 藏着会打乱显示顺序的字符
+  let hasHidden: Bool
+  /// 读不出来
+  let isUnreadable: Bool
+
+  /// data 是 nil：读不出来
+  init(_ data: Data?, limit: Int = ScriptRunner.reviewLimit) {
+    let bytes = data ?? Data()
+    isUnreadable = data == nil
+    isTruncated = bytes.count > limit
+    self.data = bytes.prefix(limit)
+    (text, hasHidden) = ScriptCommand.revealed(String(decoding: self.data, as: UTF8.self))
+  }
+
+  /// 看完了也不能运行 / 导入的原因（后面由调用方接「不能在这里运行」「不能导入」）；nil = 可以
+  var problem: String? {
+    if isUnreadable { return "读不出这个文件。" }
+    if hasHidden {
+      return "这个文件里藏着会打乱显示顺序的字符（下面标成了 ⟦U+202E⟧ 这样），看到的和真正会跑的可能不一样。"
+    }
+    if isTruncated { return "这个文件超过 \(ScriptRunner.reviewLimit / 1024) KB，下面只显示了开头。" }
+    return nil
   }
 }

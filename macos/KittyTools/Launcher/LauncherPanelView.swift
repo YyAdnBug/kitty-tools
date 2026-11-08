@@ -66,9 +66,7 @@ struct LauncherPanelView: View {
           subtitle: (review.script.path as NSString).abbreviatingWithTildeInPath,
           note: "这个脚本是从网上下载的，第一次运行前先看一眼。它会以你的身份运行，能用 Kitty Tools 已有的辅助功能、屏幕录制、完全磁盘访问授权。",
           noteColor: Color(nsColor: .systemOrange), text: review.text, placeholder: "正在读取…",
-          warning: review.isTruncated
-            ? "这个脚本超过 \(ScriptRunner.reviewLimit / 1024) KB，下面只显示了开头。看不全的脚本不能在这里运行，用编辑器打开看完再说。"
-            : nil
+          warning: review.reading?.problem.map { $0 + "不能在这里运行，用编辑器打开看完再说。" }
         )
         .frame(height: Self.reviewHeight)
       } else if let output = model.output {
@@ -358,12 +356,16 @@ struct LauncherPanelView: View {
     }
     .accessibilityElement(children: .combine)
     Spacer(minLength: 8)
+    // 读到之前、看不全、藏着字符时按了也不跑：画成不能点的（mac-whisker §3「状态」）
+    let runnable = model.review?.isRunnable == true
     Button(action: model.approveReview) {
       HStack(spacing: 6) {
         Text("运行")
-        KeyCap("↩", primary: true).accessibilityHidden(true)
+        KeyCap("↩", primary: runnable).accessibilityHidden(true)
       }
     }
+    .disabled(!runnable)
+    .opacity(runnable ? 1 : Style.disabledOpacity)
     .accessibilityLabel("运行")
     Button(action: model.cancelReview) {
       HStack(spacing: 6) {
@@ -487,10 +489,11 @@ private struct ScriptPageView: View {
           .foregroundStyle(noteColor)
           .fixedSize(horizontal: false, vertical: true)
       }
+      // 限制（没看全、藏着字符）不是错误、也不是危险操作：同设置页的提醒用橙色（mac-whisker §3）
       if let warning {
         Text(warning)
           .font(.system(size: 12))
-          .foregroundStyle(Style.danger)
+          .foregroundStyle(Color(nsColor: .systemOrange))
           .fixedSize(horizontal: false, vertical: true)
       }
       ScrollView {

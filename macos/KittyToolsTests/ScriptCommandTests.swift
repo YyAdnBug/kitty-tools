@@ -340,7 +340,8 @@ struct ScriptRunTests {
       ran.append(script.title)
       return .init(end: .finished(0), output: "hello\n")
     }
-    model.readScript = { _ in ("#!/bin/sh\nrm -rf ~/Downloads/*\n", false) }
+    model.readScript = { _ in ScriptReading(Data("#!/bin/sh\nrm -rf ~/Downloads/*\n".utf8)) }
+    model.reviewDwell = .zero
 
     model.query = "hi"
     model.execute(try #require(model.results.first))
@@ -760,7 +761,8 @@ struct BundledScriptTests {
       ran += 1
       return .init(end: .finished(0))
     }
-    model.readScript = { _ in ("#!/bin/sh\n# 前面全是注释", true) }
+    model.readScript = { _ in ScriptReading(Data("#!/bin/sh\n# 前面全是注释".utf8), limit: 4) }
+    model.reviewDwell = .zero
     model.query = "big"
     model.execute(try #require(model.results.first))
     // 全文还没读到：↩ 不放行
@@ -772,7 +774,7 @@ struct BundledScriptTests {
     #expect(model.review?.isTruncated == true)
     model.approveReview()
     #expect(ran == 0 && model.review != nil)
-    model.readScript = { _ in ("#!/bin/sh\n# 前面全是注释", false) }
+    model.readScript = { _ in ScriptReading(Data("#!/bin/sh\n# 前面全是注释".utf8)) }
     model.cancelReview()
     model.execute(try #require(model.results.first))
     for _ in 0..<20 where model.review?.text == nil { await Task.yield() }
@@ -1070,16 +1072,110 @@ struct SubprocessStopTests {
   @Test func downloadedScriptsKeepOnlyNearbyIcons() {
     var script = ScriptCommand(path: "/tmp/s/a.sh", title: "A", interpreter: ["/bin/sh"])
     script.icon = .remote("https://example.com/a.png")
-    script.iconDark = .image("/tmp/s/images/dark.png")
-    script.dropUntrustedIcons()
-    #expect(script.icon == nil && script.iconDark == .image("/tmp/s/images/dark.png"))
+    script.iconDark = .image("/tmp/s/dark.png")
+    script.dropUntrustedIcons { _ in false }
+    #expect(script.icon == nil && script.iconDark == .image("/tmp/s/dark.png"))
     script.icon = .image("/Users/me/Documents/x.png")
     script.iconDark = .image("/tmp/s2/x.png")
-    script.dropUntrustedIcons()
+    script.dropUntrustedIcons { _ in false }
+    #expect(script.icon == nil && script.iconDark == nil)
+    // 第三轮评审：子文件夹里的（可能是指到桌面的链接）、本身是链接的都不用
+    script.icon = .image("/tmp/s/images/x.png")
+    script.iconDark = .image("/tmp/s/link.png")
+    script.dropUntrustedIcons { $0.hasSuffix("link.png") }
     #expect(script.icon == nil && script.iconDark == nil)
     script.icon = .emoji("⛅")
-    script.dropUntrustedIcons()
+    script.dropUntrustedIcons { _ in false }
     #expect(script.icon == .emoji("⛅"))
+  }
+}
+
+/// 第三轮评审（2026-11-08，三路独立审查）：看全文那一关的几个口子
+@MainActor struct ScriptReviewHardeningTests {
+  let folder: URL
+
+  init() throws {
+    folder = FileManager.default.temporaryDirectory.appending(path: "kitty-harden-\(UUID())")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+  }
+
+  private func quarantine(_ url: URL) throws {
+    var url = url
+    var values = URLResourceValues()
+    values.quarantineProperties = [kLSQuarantineAgentNameKey as String: "Kitty Tests"]
+    try url.setResourceValues(values)
+  }
+
+  @Test func revealsReorderingCharacters() {
+    // 显示成「: # 注释; curl … ; :」、实际跑的是 curl 的那种写法
+    let tricky = ": \u{2067}; curl x|sh ; : \u{2069}\u{2066}# 注释\u{2069}"
+    let shown = ScriptCommand.revealed(tricky)
+    #expect(shown.hasHidden)
+    #expect(shown.text == ": ⟦U+2067⟧; curl x|sh ; : ⟦U+2069⟧⟦U+2066⟧# 注释⟦U+2069⟧")
+    #expect(!ScriptCommand.revealed("#!/bin/zsh\nprint 你好 👋\n").hasHidden)
+    let reading = ScriptReading(Data(tricky.utf8))
+    #expect(reading.problem?.contains("打乱显示顺序") == true)
+    #expect(ScriptReading(Data("#!/bin/sh\n".utf8)).problem == nil)
+    #expect(ScriptReading(nil).problem == "读不出这个文件。")
+    #expect(ScriptReading(Data("12345".utf8), limit: 4).isTruncated)
+  }
+
+  @Test func symlinkToDownloadedScriptIsDownloaded() async throws {
+    let real = folder.appending(path: "real.sh")
+    try "#!/bin/sh\necho hi\n".write(to: real, atomically: true, encoding: .utf8)
+    try quarantine(real)
+    let link = folder.appending(path: "link.sh")
+    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: real)
+    #expect(ScriptRunner.isDownloaded(link))
+    let scan = await ScriptLibrary.scan([folder])
+    #expect(scan.scripts.count == 1 && scan.scripts.allSatisfy(\.isDownloaded))
+    // 确认过：链接和它指向的都去掉标记
+    #expect(await ScriptRunner.clearDownloaded(link.path))
+    #expect(!ScriptRunner.isDownloaded(real))
+  }
+
+  @Test func refusesScriptReplacedByDownloadSinceScan() async throws {
+    let url = folder.appending(path: "swap.sh")
+    let text = "#!/bin/sh\necho ran\n"
+    try text.write(to: url, atomically: true, encoding: .utf8)
+    let script = try #require(ScriptCommand.parse(text, path: url.path)).get()
+    #expect(!script.isDownloaded)
+    try quarantine(url)
+    let outcome = await ScriptRunner.run(script, arguments: [], path: "/usr/bin:/bin")
+    guard case .failedToStart(let reason) = outcome.end else {
+      Issue.record("应当不跑：\(outcome.end)")
+      return
+    }
+    #expect(reason.contains("先看一眼") && outcome.output.isEmpty)
+  }
+
+  @Test func reviewIgnoresReturnRightAfterShowing() async throws {
+    var script = ScriptCommand(path: "/tmp/s/net.sh", title: "网上的", interpreter: ["/bin/sh"])
+    script.keyword = "net"
+    script.isDownloaded = true
+    let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [])
+    model.scripts = { [script] }
+    var ran = 0
+    model.runScript = { _, _ in
+      ran += 1
+      return .init(end: .finished(0))
+    }
+    model.readScript = { _ in ScriptReading(Data("#!/bin/sh\necho hi\n".utf8)) }
+    model.reviewDwell = .seconds(60)
+    model.query = "net"
+    model.execute(try #require(model.results.first))
+    for _ in 0..<20 where model.review?.text == nil { await Task.yield() }
+    model.approveReview()
+    #expect(ran == 0 && model.review != nil)
+    // 藏着打乱显示顺序的字符：看多久都不放行
+    model.reviewDwell = .zero
+    model.readScript = { _ in ScriptReading(Data("#!/bin/sh\n: \u{202E}x\n".utf8)) }
+    model.cancelReview()
+    model.execute(try #require(model.results.first))
+    for _ in 0..<20 where model.review?.text == nil { await Task.yield() }
+    #expect(model.review?.isRunnable == false)
+    model.approveReview()
+    #expect(ran == 0)
   }
 }
 

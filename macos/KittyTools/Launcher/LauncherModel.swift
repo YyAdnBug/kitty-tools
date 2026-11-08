@@ -82,11 +82,17 @@ import UniformTypeIdentifiers
   struct ScriptReview: Equatable {
     let script: ScriptCommand
     /// 读到之前是 nil
-    var text: String?
-    /// 脚本比能显示的长（ScriptRunner.reviewLimit）：没看全，不在这里运行
-    var isTruncated = false
+    var reading: ScriptReading?
+    /// 全文显示出来的那一刻：之后 reviewDwell 之内的 ↩ 不算（第三轮评审：照习惯连按两下 ↩ 不能直接放行）
+    var shownAt: ContinuousClock.Instant?
     /// 看过之后要交给它的参数（「关键词 空格 文字」那一行按的 ↩）；nil = 普通那一行
     var arguments: [String]?
+
+    var text: String? { reading?.text }
+    /// 脚本比能显示的长（ScriptRunner.reviewLimit）：没看全，不在这里运行
+    var isTruncated: Bool { reading?.isTruncated ?? false }
+    /// 现在能不能放行：读到了、没有不能放行的原因（没看全、藏着字符、读不出来）
+    var isRunnable: Bool { reading != nil && reading?.problem == nil }
   }
 
   /// 全文输出的脚本（B1 full）：列表换成它的输出，↩ 粘贴、⌘C 复制、Esc 返回（还在跑时 Esc 停掉）
@@ -173,10 +179,9 @@ import UniformTypeIdentifiers
       await ScriptRunner.run($0, arguments: $1)
     }
   /// 读脚本全文（review 那一页；单测换成假的）
-  @ObservationIgnored var readScript:
-    @MainActor (ScriptCommand) async -> (text: String, isTruncated: Bool) = {
-      await ScriptRunner.text(of: $0.path)
-    }
+  @ObservationIgnored var readScript: @MainActor (ScriptCommand) async -> ScriptReading = {
+    await ScriptRunner.read($0.path)
+  }
   /// 「命令」表里改过的别名和关掉的（拍板 C3 C4）；单测 / 截图自检是空的，不读宿主 App 的偏好
   @ObservationIgnored var commandSettings: () -> LauncherCommands.Settings = {
     LauncherModel.savedCommandSettings()
@@ -232,6 +237,8 @@ import UniformTypeIdentifiers
   static let listTimeout = 10
   /// 看过、确认要跑的下载来的脚本：去掉隔离标记、重读脚本库
   @ObservationIgnored var approveScript: @MainActor (ScriptCommand) async -> Void = { _ in }
+  /// 看全文那一页显示出来之后多久的 ↩ 才算放行（单测设成 0）
+  @ObservationIgnored var reviewDwell = Duration.seconds(1)
   /// 脚本行的 ⌘K（第二轮 D1）：编辑、到设置里改别名（命令表那一行的 id）、开关一条命令、把自带的复制一份到我的脚本。
   /// AppDelegate 接上；单测 / 截图自检是空的——不开编辑器、不写偏好、不写文件
   @ObservationIgnored var editScript: (ScriptCommand) -> Void = { _ in }
@@ -647,9 +654,11 @@ import UniformTypeIdentifiers
         + WebSearch.quicklinkItems(engines: engines)
         + bookmarks.filter { LauncherMatch.mayMatch(tokens, $0) } + used, query: query
     ) { usage.boost(for: $0, query: query) }
-    // 脚本的别名一字不差：排第一（拍板 C1）
+    // 脚本的别名一字不差：排第一（拍板 C1）。下载来、还没看过的不算（第三轮评审：头部写个 safari、ip 就能抢走第一行）
     let aliased = Self.aliased(
-      scriptItems, scripts: activeScripts, query: query, alias: scriptAlias)
+      scriptItems,
+      scripts: activeScripts.filter { !$0.isDownloaded || approvedScripts.contains($0.path) },
+      query: query, alias: scriptAlias)
     let history = longEnough ? visited(query, excluding: bookmarks + used) : []
     // 兜底默认只在没有本地结果时出现（和 Alfred 一样；以前带空格的查询把兜底排到匹配的 App 前面），
     // 设置里可改成总是附在最后。已经有网址 / 路径直达项、或明写了 http(s):// 的就不再兜底（体检 B35：
@@ -1511,16 +1520,19 @@ import UniformTypeIdentifiers
     Task {
       let read = await readScript(script)
       guard review?.script.path == script.path else { return }
-      review?.text = read.text
-      review?.isTruncated = read.isTruncated
+      review?.reading = read
+      review?.shownAt = .now
     }
     Island.announce("这个脚本是从网上下载的，先看一眼再运行。按回车运行，按 Esc 返回")
   }
 
   /// 看过了（↩ / 「运行」）：记下、去掉隔离标记，然后照常跑（写了 confirm 的不再上膛：看全文就是确认）
   func approveReview() {
-    // 全文还没读到、或者没显示全：不跑（看不全的脚本别运行；去编辑器里看）
-    guard let review, review.text != nil, !review.isTruncated else { return NSSound.beep() }
+    // 全文还没读到、没显示全、藏着打乱显示顺序的字符：不跑（看不全的脚本别运行；去编辑器里看）。刚显示出来那 1 秒的 ↩
+    // 也不算：呼出时照习惯连按两下 ↩ 的第二下不能直接放行（第三轮评审）
+    guard let review, review.isRunnable, let shown = review.shownAt,
+      ContinuousClock.now - shown >= reviewDwell
+    else { return NSSound.beep() }
     let script = review.script
     self.review = nil
     approvedScripts.insert(script.path)

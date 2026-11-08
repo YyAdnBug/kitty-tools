@@ -4777,7 +4777,7 @@ struct SnapshotProbeTests {
         curl -sS -X POST "$api" -H 'Content-Type: application/json' \\
           -d "$(jq -n --arg c "$1" '{content: $c}')"
         """
-      return (text, false)
+      return ScriptReading(Data(text.utf8))
     }
     for dark in [false, true] {
       let suffix = dark ? "-dark" : ""

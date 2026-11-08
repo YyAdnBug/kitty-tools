@@ -27,9 +27,8 @@ struct ScriptsSection: View {
     let url: URL?
     /// 存进脚本文件夹时的文件名
     let name: String
-    let text: String
-    /// 比能显示的长：没看全，不让导入
-    var isTruncated = false
+    /// 看的和存的是同一份（第三轮评审：不再回头复制源文件——链接、预览开着时被换掉的文件都绕不过去）
+    let reading: ScriptReading
     var id: String { url?.path(percentEncoded: false) ?? "clipboard:" + name }
   }
 
@@ -119,19 +118,18 @@ struct ScriptsSection: View {
         pending = nil
       } confirm: {
         pending = nil
-        if let url = candidate.url {
-          Task {
-            _ = await ScriptLibrary.importScript(url, into: ScriptLibrary.defaultFolder)
-            library?.refresh()
-          }
-        } else if let url = ScriptLibrary.save(candidate.text, name: candidate.name) {
-          library?.refresh()
-          let keyword = (url.lastPathComponent as NSString).deletingPathExtension
-          island?.show(
-            "已存成「\(url.lastPathComponent)」",
-            detail: candidate.name == "新脚本.sh" ? "在启动器里按名字找它" : "在启动器里输 \(keyword) 试试",
-            actions: [.reveal(url)])
+        guard let url = ScriptLibrary.save(candidate.reading.data, name: candidate.name) else {
+          island?.show("没存上「\(candidate.name)」", detail: "脚本文件夹写不进去", tone: .error)
+          return
         }
+        library?.refresh()
+        let script = ScriptCommand.parse(
+          candidate.reading.text, path: url.path(percentEncoded: false))
+        let keyword = (try? script?.get())?.keyword
+        island?.show(
+          "已存成「\(url.lastPathComponent)」",
+          detail: keyword.map { "在启动器里输 \($0) 试试" } ?? "在启动器里按名字找它",
+          actions: [.reveal(url)])
       }
     }
     Section {
@@ -181,8 +179,8 @@ struct ScriptsSection: View {
       return
     }
     pending = Candidate(
-      url: nil, name: ScriptLibrary.suggestedName(for: text), text: text,
-      isTruncated: text.utf8.count > ScriptRunner.reviewLimit)
+      url: nil, name: ScriptLibrary.suggestedName(for: text),
+      reading: ScriptReading(Data(text.utf8)))
   }
 
   /// 「新建脚本」：照模板建一个、用编辑器打开，岛上说接下来怎么做
@@ -212,9 +210,8 @@ struct ScriptsSection: View {
     .dropDestination(for: URL.self) { urls, _ in
       guard let url = urls.first(where: \.isFileURL) else { return false }
       Task {
-        let read = await ScriptRunner.text(of: url.path(percentEncoded: false))
-        pending = Candidate(
-          url: url, name: url.lastPathComponent, text: read.text, isTruncated: read.isTruncated)
+        let read = await ScriptRunner.read(url.path(percentEncoded: false))
+        pending = Candidate(url: url, name: url.lastPathComponent, reading: read)
       }
       return true
     } isTargeted: {
@@ -279,7 +276,8 @@ private struct ScriptImportSheet: View {
   let confirm: () -> Void
 
   var body: some View {
-    let script = ScriptCommand.parse(candidate.text, path: "/脚本/" + candidate.name)
+    let reading = candidate.reading
+    let script = ScriptCommand.parse(reading.text, path: "/脚本/" + candidate.name)
     VStack(alignment: .leading, spacing: 12) {
       Text(candidate.url == nil ? "把剪贴板里的脚本存成「\(candidate.name)」？" : "导入「\(candidate.name)」？")
         .font(.headline)
@@ -289,26 +287,26 @@ private struct ScriptImportSheet: View {
           "启动器里叫「\(script.title)」"
             + (script.keyword.map { "，关键词「\($0)」" } ?? "") + "。")
       case .failure(let problem)?:
-        Text("这个文件现在还跑不了：\(problem.text)。").foregroundStyle(Color(nsColor: .systemOrange))
+        Text("这个文件现在还跑不了：\(problem.text)。导入后会列在「读不成的脚本」里，改好就能用。")
+          .foregroundStyle(Color(nsColor: .systemOrange))
+          .fixedSize(horizontal: false, vertical: true)
       case nil:
-        Text("这个文件第一行不是 #!，不像脚本。").foregroundStyle(Color(nsColor: .systemOrange))
+        Text("这个文件第一行不是 #!，不是脚本，不能导入。").foregroundStyle(Color(nsColor: .systemOrange))
       }
       Text("它会以你的身份运行，能用 Kitty Tools 已有的辅助功能、屏幕录制、完全磁盘访问授权。只导入你信得过的脚本。")
         .foregroundStyle(.secondary)
         .fixedSize(horizontal: false, vertical: true)
-      if candidate.isTruncated {
-        Text("这个文件超过 \(ScriptRunner.reviewLimit / 1024) KB，下面只显示了开头，看不全的脚本不能在这里导入。")
-          .foregroundStyle(Style.danger)
+      if let problem = reading.problem {
+        Text(problem + "不能导入。")
+          .foregroundStyle(Color(nsColor: .systemOrange))
           .fixedSize(horizontal: false, vertical: true)
       }
       ScrollView {
-        Text(
-          candidate.text.isEmpty ? "读不出来" : String(candidate.text.prefix(ScriptRunner.reviewLimit))
-        )
-        .font(.system(size: 12, design: .monospaced))
-        .textSelection(.enabled)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .padding(10)
+        Text(reading.text.isEmpty ? "（空的）" : reading.text)
+          .font(.system(size: 12, design: .monospaced))
+          .textSelection(.enabled)
+          .frame(maxWidth: .infinity, alignment: .topLeading)
+          .padding(10)
       }
       .frame(height: 280)
       .background(Style.hoverFill, in: .rect(cornerRadius: Style.Radius.card, style: .continuous))
@@ -316,8 +314,9 @@ private struct ScriptImportSheet: View {
         Spacer()
         Button("取消", role: .cancel, action: cancel).keyboardShortcut(.cancelAction)
         Button(candidate.url == nil ? "存进脚本文件夹" : "导入", action: confirm)
+          .buttonStyle(BrandButtonStyle())
           .keyboardShortcut(.defaultAction)
-          .disabled(candidate.isTruncated)
+          .disabled(reading.problem != nil || script == nil)
       }
     }
     .padding(20)
