@@ -75,9 +75,9 @@ struct LauncherPanelView: View {
           subtitle: output.isRunning ? "正在运行…" : output.failure == nil ? "运行完了" : "没有跑成",
           since: output.isRunning ? output.startedAt : nil,
           note: output.failure, noteColor: Color(nsColor: .systemRed),
-          text: nil, styled: output.text.isEmpty ? nil : output.styled,
+          text: nil, styled: output.styled.characters.isEmpty ? nil : output.styled,
           placeholder: output.isRunning ? "正在运行…" : "（没有输出）",
-          warning: output.text.count > LauncherModel.outputDisplayLimit
+          warning: output.isCut
             ? "只显示了前 \(LauncherModel.outputDisplayLimit / 10_000) 万字；粘贴、复制的是全部。" : nil,
           label: "脚本输出", scroll: model.pageScroll, follows: true
         )

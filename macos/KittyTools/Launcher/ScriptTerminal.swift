@@ -19,7 +19,7 @@ nonisolated enum ScriptTerminal {
   }
 
   static func styled(_ output: String) -> AttributedString {
-    let text = ScriptCommand.carriageReturns(output)
+    let text = droppingPartialEscape(ScriptCommand.carriageReturns(output))
     guard text.utf8.contains(0x1B) else { return AttributedString(text) }
     var result = AttributedString()
     var pen = Pen()
@@ -36,6 +36,25 @@ nonisolated enum ScriptTerminal {
     }
     append(text[start...], pen, to: &result)
     return result
+  }
+
+  /// 截在一个控制码中间的（边跑边显示时写到一半、只显示前一截时切开的）：末尾那半截先不要，不把参数当字显示出来
+  static func droppingPartialEscape(_ text: String) -> String {
+    guard let escape = text.lastIndex(of: "\u{1B}") else { return text }
+    let rest = text[escape...].dropFirst()
+    let complete =
+      switch rest.first {
+      case nil: false
+      // CSI：参数和中间字节之后要有一个结尾字节（@ 到 ~）
+      case "[":
+        rest.dropFirst().contains {
+          $0.unicodeScalars.first.map { (0x40...0x7E).contains($0.value) } == true
+        }
+      // OSC：BEL 或 ESC \ 结尾
+      case "]": rest.contains("\u{07}")
+      default: true
+      }
+    return complete ? text : String(text[..<escape])
   }
 
   /// 一个 SGR（ESC [ … m）改笔：0 重来；38 / 48 带 5;n（256 色）或 2;r;g;b（24 位）；认不出的跳过

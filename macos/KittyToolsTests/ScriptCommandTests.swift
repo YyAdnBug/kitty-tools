@@ -1336,7 +1336,13 @@ struct SubprocessStopTests {
   @Test func carriageReturnsOverwriteTheLine() {
     #expect(ScriptCommand.clean("10%\r50%\r100%\ndone\n") == "100%\ndone\n")
     #expect(ScriptCommand.clean("a\r\nb\r") == "a\nb")
-    #expect(ScriptCommand.clean("\u{1B}[32m1/3\r\u{1B}[32m3/3\u{1B}[0m") == "3/3")
+    #expect(ScriptCommand.clean("go\n\u{1B}[32m1/3\r\u{1B}[32m3/3\u{1B}[0m") == "go\n3/3")
+    // 第 1 批评审：只拿 \r 分行的（AppleScript 的 return、这样分行的 JSON）是换行，不是重画
+    #expect(ScriptCommand.clean("a\rb\rc\n") == "a\nb\nc\n")
+    #expect(ScriptCommand.lines("{\r\"items\": [{\"title\": \"x\"}]\r}").map(\.title) == ["x"])
+    // \r 后面只跟着颜色码、或者 \r\e[K 清行再写：前者不盖、后者盖
+    #expect(ScriptCommand.clean("go\n50%\r\u{1B}[0m") == "go\n50%")
+    #expect(ScriptCommand.clean("go\n50%\r\u{1B}[K100%\n") == "go\n100%\n")
     // 子参数写法的颜色码整个去掉，不留半截
     #expect(ScriptCommand.clean("\u{1B}[38:2::255:0:0mx") == "x")
   }
@@ -1368,6 +1374,10 @@ struct SubprocessStopTests {
     #expect(ScriptTerminal.indexed(231) == ScriptTerminal.rgb(255, 255, 255))
     #expect(ScriptTerminal.indexed(232) == ScriptTerminal.rgb(8, 8, 8))
     #expect(ScriptTerminal.indexed(256) == nil && ScriptTerminal.rgb(0, 300, 0) == nil)
+    // 截在控制码中间的（边跑边显示写到一半）：那半截先不显示
+    #expect(String(ScriptTerminal.styled("x\u{1B}[3").characters) == "x")
+    #expect(String(ScriptTerminal.styled("x\u{1B}]0;ti").characters) == "x")
+    #expect(String(ScriptTerminal.styled("x\u{1B}[31my").characters) == "xy")
   }
 
   @Test func runnerStreamsOutputWithErrorsMerged() async throws {
@@ -1416,7 +1426,7 @@ struct SubprocessStopTests {
     model.execute(try #require(model.results.first))
     for _ in 0..<20 where resume == nil { await Task.yield() }
     #expect(model.output?.isRunning == true)
-    #expect(model.output?.text == "==> step 1")
+    #expect(model.output.map { String($0.styled.characters) } == "==> step 1")
     #expect(runs(try #require(model.output?.styled)).first?.1 == Color(nsColor: .systemGreen))
     resume?.resume()
     await model.scriptRun(script.path)
@@ -1458,6 +1468,48 @@ struct SubprocessStopTests {
     model.rerunOutput()
     await model.scriptRun(script.path)
     #expect(model.output?.text == "boom" && model.output?.failure != nil)
+  }
+
+  @Test func displayCutsVisibleLinesAndLiveShowsTheTail() {
+    let script = ScriptCommand(path: "/s/p.sh", title: "进度", interpreter: ["/bin/sh"])
+    // 两万帧进度条收成一行：显示的不该被截掉，也不写「只显示了前 10 万字」
+    let frames = (1...20_000).map { "progress \($0)%" }.joined(separator: "\r")
+    var page = LauncherModel.outputPage(
+      .init(end: .finished(0), output: "start\n" + frames + "\nDONE\n"), of: script, arguments: [])
+    #expect(String(page.styled.characters) == "start\nprogress 20000%\nDONE" && !page.isCut)
+    #expect(page.text == "start\nprogress 20000%\nDONE")
+    page = LauncherModel.outputPage(
+      .init(end: .finished(0), output: String(repeating: "一二三四五\n", count: 30_000)),
+      of: script, arguments: [])
+    #expect(page.isCut && page.styled.characters.count <= LauncherModel.outputDisplayLimit)
+    // 跑着时只排最后一截、从一行的开头起
+    var live = LauncherModel.ScriptOutput(script: script)
+    live.showLive((1...10_000).map { "line \($0)" }.joined(separator: "\n"))
+    let shown = String(live.styled.characters)
+    #expect(shown.hasSuffix("line 10000") && shown.hasPrefix("line ") && shown.count <= 20_000)
+    #expect(live.text.isEmpty)
+  }
+
+  @Test func rerunOfAPasteScriptAfterHideIsDeliveredAsOutput() async throws {
+    var script = ScriptCommand(path: "/s/paste.sh", title: "粘贴", interpreter: ["/bin/sh"])
+    script.keyword = "ps"
+    script.mode = .paste
+    let model = try model(script)
+    model.runScript = { _, _, _ in .init(end: .finished(1), output: "", error: "坏了\n") }
+    model.query = "ps"
+    model.execute(try #require(model.results.first))
+    await model.scriptRun(script.path)
+    model.showOutput(try #require(model.lastOutput?.id))
+    let first = model.lastOutput?.id
+    // 这次成功了，但启动器先收起了：不能按粘贴模式往前台 App 粘，按全文留给「看输出」
+    model.runScript = { _, _, _ in
+      try? await Task.sleep(for: .milliseconds(30))
+      return .init(end: .finished(0), output: "好了\n")
+    }
+    model.rerunOutput()
+    model.didHide()
+    await model.scriptRun(script.path)
+    #expect(model.lastOutput?.id != first && model.lastOutput?.page.text == "好了")
   }
 
   @Test func confirmedScriptsDoNotRerun() async throws {

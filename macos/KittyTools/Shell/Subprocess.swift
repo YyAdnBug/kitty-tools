@@ -92,6 +92,8 @@ enum Subprocess {
         var shown = 0
         while !Task.isCancelled {
           try? await Task.sleep(for: .milliseconds(250))
+          // 进程结束了（这个任务被撤掉）：临时文件可能已经删了，别再交一个空的出去（第 1 批评审）
+          guard !Task.isCancelled else { return }
           let sizes = files.map {
             (try? FileManager.default.attributesOfItem(atPath: $0.path)[.size] as? Int) ?? 0
           }
@@ -99,7 +101,8 @@ enum Subprocess {
             running.overflowed = true
             return stop(process)
           }
-          // ponytail: 每次从头读（最多 outputLimit），1 MB 一秒读 4 遍；真碰上慢了再只读新增的那段
+          // ponytail: 每次从头读（最多 outputLimit），1 MB 一秒读 4 遍（几毫秒）；真碰上慢了再只读新增的那段。错误输出并进来后
+          // 和标准输出共用这 1 MB（写在错误输出里的进度条也算），真把结果挤出去了再分开读
           if let live, let size = sizes.first, size != shown, shown <= limit {
             shown = size
             live(decodedPrefix(of: files[0], limit: limit))

@@ -475,14 +475,18 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
       .replacing(/\u{1B}[@-_]/, with: "")
   }
 
-  /// 回车同终端：\r\n 是换行；单独的 \r 回到行首，后面再写字就盖掉这一行（进度条一帧帧地重画，只留最后一帧；第三轮 A1），
-  /// 行尾的 \r 不算
+  /// 回车：\r\n 是换行。只有 \r 当换行、没有别的换行（末尾的不算）的是老式 Mac 的换行（AppleScript 的 return、
+  /// 列表 JSON 也可能这么分行），当换行；否则同终端：单独的 \r 回到行首，后面再写出字来就盖掉这一行（进度条一帧帧地重画，
+  /// 只留最后一帧；第三轮 A1），后面只跟着颜色码、或者在行尾的 \r 不算
   static func carriageReturns(_ text: String) -> String {
     guard text.utf8.contains(0x0D) else { return text }
+    let unified = text.replacing("\r\n", with: "\n")
+    var body = unified[...]
+    while body.last == "\n" { body = body.dropLast() }
+    guard body.contains("\n") else { return unified.replacing("\r", with: "\n") }
     return
-      text
-      .replacing("\r\n", with: "\n")
-      .replacing(/[^\n\r]*\r+(?=[^\n\r])/, with: "")
+      unified
+      .replacing(/[^\n\r]*\r+(?=(?:\u{1B}\[[0-9;:?]*[ -\/]*[@-~])*[^\n\r\u{1B}])/, with: "")
       .replacing("\r", with: "")
   }
 

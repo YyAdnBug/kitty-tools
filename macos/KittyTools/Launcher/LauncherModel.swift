@@ -114,25 +114,46 @@ import UniformTypeIdentifiers
     var arguments: [String] = []
     /// 粘贴、复制的：去掉颜色码的纯文字
     var text = ""
-    /// 显示的：认颜色（ScriptTerminal，第三轮 A2），最多 LauncherModel.outputDisplayLimit 字
+    /// 显示的：认颜色（ScriptTerminal，第三轮 A2）。跑完是开头最多 outputDisplayLimit 字，跑着是最后 liveDisplayLimit 字
     var styled = AttributedString()
+    /// 跑完的那一页只显示了开头一截（正文上面写一句）
+    var isCut = false
     var isRunning = true
     /// 开始跑的时刻：跑着时副标题写「已 12 秒」（第三轮 A1）
     var startedAt = Date.now
     /// 出错 / 超时 / 停了：那一句（红字）
     var failure: String?
 
-    /// 换上脚本写出来的（没收拾过的）输出
+    /// 跑完：换上脚本写出来的（没收拾过的）输出——粘贴、复制的纯文字，显示开头一截（先按回车收好再数字数，数的是看得见的行）
     mutating func show(_ raw: String) {
       text = ScriptCommand.payload(raw)
-      var shown = String(raw.prefix(LauncherModel.outputDisplayLimit))
-      while shown.last?.isNewline == true { shown.removeLast() }
-      styled = ScriptTerminal.styled(shown)
+      let lines = ScriptCommand.carriageReturns(raw)
+      let head = lines.prefix(LauncherModel.outputDisplayLimit)
+      isCut = head.endIndex != lines.endIndex
+      styled = ScriptTerminal.styled(Self.trimmed(head))
+    }
+
+    /// 跑着（一秒四次）：只排最后一截，从一行的开头起（第 1 批评审：每次把 1 MB 全收拾一遍、排 10 万字，主线程跟不上）；
+    /// 纯文字跑完再算
+    mutating func showLive(_ raw: String) {
+      var tail = raw.suffix(LauncherModel.liveDisplayLimit)
+      if tail.startIndex != raw.startIndex, let newline = tail.firstIndex(where: \.isNewline) {
+        tail = tail[tail.index(after: newline)...]
+      }
+      styled = ScriptTerminal.styled(Self.trimmed(tail))
+    }
+
+    private static func trimmed(_ text: Substring) -> String {
+      var text = text
+      while text.last?.isNewline == true { text = text.dropLast() }
+      return String(text)
     }
   }
 
-  /// 全文输出那一页最多显示这么多字（再多 Text 排不动、卡主线程）；↩ 粘贴、⌘C 复制的照旧是全部
+  /// 全文输出那一页跑完最多显示这么多字（再多 Text 排不动、卡主线程）；↩ 粘贴、⌘C 复制的照旧是全部
   static let outputDisplayLimit = 100_000
+  /// 跑着时只显示最后这么多字（一秒排四次）
+  static let liveDisplayLimit = 20_000
 
   enum Alternate {
     case none, command, option, control
@@ -1516,13 +1537,16 @@ import UniformTypeIdentifiers
       guard let self else { return }
       let outcome = await runScript(script, arguments) { [weak self] raw in
         guard let self, output?.startedAt == started, output?.isRunning == true else { return }
-        output?.show(raw)
+        output?.showLive(raw)
       }
       runningScripts[path] = nil
-      // 跑着时启动器收起了：岛上说结果、带「看输出」；Esc 停掉的、换成别的页的不说
+      // 跑着时启动器收起了：岛上说结果、带「看输出」；Esc 停掉的、换成别的页的不说。⌘R 重跑的别的模式的脚本也按全文交
+      // （第 1 批评审：按它自己的模式交，粘贴脚本会把结果粘进收起后在前面的 App）
       if detachedOutputs.remove(path) != nil {
+        var shown = script
+        shown.mode = .full
         return deliver(
-          outcome, of: script, arguments: arguments, into: nil,
+          outcome, of: shown, arguments: arguments, into: nil,
           progress: "正在运行「\(script.title)」")
       }
       guard output?.startedAt == started else { return }
@@ -1571,7 +1595,7 @@ import UniformTypeIdentifiers
     var raw = outcome.output
     if !outcome.succeeded, !ScriptCommand.payload(outcome.error).isEmpty {
       while raw.last?.isNewline == true { raw.removeLast() }
-      raw += (ScriptCommand.payload(raw).isEmpty ? "" : "\n\n") + outcome.error
+      raw += (raw.isEmpty ? "" : "\n\n") + outcome.error
     }
     let failure = Self.failure(outcome, of: script).map {
       [$0.title, $0.detail].filter { !$0.isEmpty }.joined(separator: "：")
@@ -2427,7 +2451,8 @@ import UniformTypeIdentifiers
     if output != nil {
       guard modifiers == .command else { return false }
       if key == kVK_ANSI_R {
-        rerunOutput()
+        // 按住不放的自动连发不算：一秒起十几个进程（第 1 批评审）
+        if !event.isARepeat { rerunOutput() }
         return true
       }
       guard key == kVK_ANSI_C, !Self.fieldHasSelection(event) else { return false }
