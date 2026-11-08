@@ -8,6 +8,8 @@
 // 可能和谁撞（B6：⇧ 是输入法切中英文，别的是系统听写）。一个动作只有一个快捷键，组合和连按二选一。
 // 也录截图时的快捷键（2026-11-06 拍板 A，KeyTarget.shot）：单个键、带不带修饰键都行，规矩在 ShotKey.problem；
 // 不认连按。录的时候全局热键同样停着（不然按 ⌥A 会开截图）。
+// 也录启动器「命令和别名」里每条命令的快捷键（脚本命令第三轮 D1，KeyTarget.command）：规矩同全局动作（要带修饰键、不收通用
+// 编辑键），不认连按；和全局动作、别的命令一起查重（两边都查）。
 
 import AppKit
 import Carbon.HIToolbox
@@ -17,11 +19,14 @@ import SwiftUI
 enum KeyTarget: Hashable {
   case global(HotKeyAction)
   case shot(ShotKey)
+  /// 「命令和别名」里的一条命令（编号、名字）
+  case command(id: String, title: String)
 
   var title: String {
     switch self {
     case .global(let action): action.title
     case .shot(let key): key.title
+    case .command(_, let title): title
     }
   }
 
@@ -30,6 +35,7 @@ enum KeyTarget: Hashable {
     switch self {
     case .global(let action): action.hotKey
     case .shot(let key): key.key()
+    case .command(let id, _): LauncherModel.savedCommandHotKeys()[id]
     }
   }
 
@@ -37,6 +43,7 @@ enum KeyTarget: Hashable {
     switch self {
     case .global(let action): action.defaultHotKey
     case .shot(let key): key.defaultKey
+    case .command: nil
     }
   }
 }
@@ -54,9 +61,15 @@ struct HotKeyRecorder: View {
   /// 录制中认连按两下修饰键
   @State private var taps = ModifierTaps()
 
-  init(target: KeyTarget, center: HotKeyCenter, message: Binding<String?>) {
+  /// 框的宽（「命令和别名」的表里窄一些）
+  var width: CGFloat = 164
+
+  init(
+    target: KeyTarget, center: HotKeyCenter, message: Binding<String?>, width: CGFloat = 164
+  ) {
     self.target = target
     self.center = center
+    self.width = width
     _message = message
     _current = State(initialValue: target.current)
   }
@@ -98,7 +111,7 @@ struct HotKeyRecorder: View {
       }
     }
     .font(.system(size: 12))
-    .frame(width: 164, height: 26)
+    .frame(width: width, height: 26)
     // 录制中就是拿着焦点：和其它输入框同一个焦点环（Whisker §3「输入框焦点」）
     .modifier(InputBox(isFocused: isRecording))
     .contextMenu {
@@ -195,6 +208,7 @@ struct HotKeyRecorder: View {
   }
 
   private func save(_ hotKey: HotKey?) {
+    if case .command(let id, _) = target { return saveCommand(hotKey, id: id) }
     guard case .global(let action) = target else {
       if case .shot(let key) = target {
         if let hotKey, let problem = ShotKey.problem(with: hotKey, for: key) {
@@ -224,12 +238,46 @@ struct HotKeyRecorder: View {
         ? "和「\(other.title)」重复" : "和「\(other.title)」重复（\(other.feature?.title ?? "它")已关闭）"
       return
     }
+    // 和「命令和别名」里某条命令的快捷键重复（第三轮 D1）
+    if let hotKey, let other = Self.commandOwner(of: hotKey, except: nil) {
+      message = "和启动器命令「\(other)」重复"
+      return
+    }
     action.hotKey = hotKey
     current = hotKey
     message = nil
     // 别的行正在录（点了这一行的 ⓧ 或右键菜单）：热键先别恢复，等那一行录完 stop 时一起重新注册
     if isRecording { stop() } else if center.recording == nil { center.reload() }
     if let key = hotKey?.doubleTap { message = key.hint }
+  }
+
+  /// 命令的快捷键：同全局动作的规矩，和全局动作、别的命令查重；存进「命令和别名」的那段 JSON
+  private func saveCommand(_ hotKey: HotKey?, id: String) {
+    if let hotKey, hotKey.isReservedEditKey {
+      message = "这是各 App 通用的快捷键，设成全局会让它在所有 App 里失效"
+      return
+    }
+    if let hotKey,
+      let other = HotKeyAction.allCases.first(where: { $0.isAvailable && $0.hotKey == hotKey })
+    {
+      message = "和「\(other.title)」重复"
+      return
+    }
+    if let hotKey, let other = Self.commandOwner(of: hotKey, except: id) {
+      message = "和「\(other)」重复"
+      return
+    }
+    LauncherModel.setCommandHotKey(hotKey, for: id)
+    current = hotKey
+    message = nil
+    if isRecording { stop() } else if center.recording == nil { center.reload() }
+  }
+
+  /// 哪条命令用了这个组合（名字）
+  private static func commandOwner(of hotKey: HotKey, except id: String?) -> String? {
+    LauncherModel.savedCommandHotKeys()
+      .first { $0.key != id && $0.value == hotKey }
+      .map { LauncherModel.commandTitle($0.key) }
   }
 
   /// 修饰键按系统菜单的顺序：⌃⌥⇧⌘

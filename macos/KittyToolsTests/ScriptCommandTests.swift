@@ -5,6 +5,7 @@
 // PATH 由测试传进去；不碰剪贴板（粘贴 / 复制的路子不在这里按）。
 
 import AppKit
+import Carbon.HIToolbox
 import Foundation
 import SwiftUI
 import Testing
@@ -1998,5 +1999,91 @@ struct SubprocessStopTests {
   @Test func listTemplateDoesNotSuggestConfirm() throws {
     let text = ScriptLibrary.template(title: "x", keyword: "x", mode: .list, language: .zsh)
     #expect(!text.contains("@kitty.confirm") && text.contains("@kitty.filter"))
+  }
+}
+
+/// 第三轮 D1：「命令和别名」里每条命令的快捷键（读偏好的那段 JSON、哪些能注册、按下做什么）。不真注册热键（会吞用户的按键）
+@MainActor struct CommandHotKeyTests {
+  private func model(_ scripts: [ScriptCommand]) throws -> LauncherModel {
+    let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [])
+    model.scripts = { scripts }
+    // 不看 Dev 版偏好里改过的别名 / 关掉的
+    model.commandSettings = { .init() }
+    return model
+  }
+
+  @Test func storedHotKeysAreCheckedLikeTheRecorder() {
+    let good = HotKey(keyCode: kVK_ANSI_K, modifiers: cmdKey | optionKey)
+    let text = LauncherModel.text(of: [
+      "script:~/a.sh": good,
+      // 缺修饰键、通用编辑键、连按两下：都不认
+      "system:lock": HotKey(keyCode: kVK_ANSI_L, modifiers: 0),
+      "builtin:ip": HotKey(keyCode: kVK_ANSI_C, modifiers: cmdKey),
+      "builtin:cb": HotKey(doubleTap: .command),
+    ])
+    #expect(LauncherModel.commandHotKeys(fromText: text) == ["script:~/a.sh": good])
+    #expect(LauncherModel.commandHotKeys(fromText: "{bad json").isEmpty)
+    let many = Dictionary(uniqueKeysWithValues: (0..<300).map { ("script:\($0)", good) })
+    #expect(LauncherModel.commandHotKeys(fromText: LauncherModel.text(of: many)).count == 200)
+    #expect(LauncherModel.text(of: [:]).isEmpty)
+  }
+
+  @Test func onlyRunnableCommandsRegister() throws {
+    var script = ScriptCommand(
+      path: NSHomeDirectory() + "/s/a.sh", title: "甲", interpreter: ["/bin/sh"])
+    script.keyword = "a"
+    let model = try model([script])
+    let id = LauncherCommands.scriptID(script)
+    #expect(model.canRunHotKey(id))
+    #expect(!model.canRunHotKey("script:~/s/gone.sh"))
+    #expect(model.canRunHotKey("system:lock") && !model.canRunHotKey("system:nothing"))
+    #expect(model.canRunHotKey("builtin:kill"))
+    // 关掉的、别名清空了的关键词命令不注册
+    var settings = LauncherCommands.Settings()
+    settings.set(false, for: id)
+    settings.setAlias("", for: "builtin:kill", default: "kill")
+    model.commandSettings = { settings }
+    #expect(!model.canRunHotKey(id) && !model.canRunHotKey("builtin:kill"))
+  }
+
+  @Test func pressingRunsOrOpensTheLauncher() async throws {
+    var plain = ScriptCommand(path: "/s/plain.sh", title: "直接跑", interpreter: ["/bin/sh"])
+    plain.keyword = "pl"
+    var input = ScriptCommand(path: "/s/in.sh", title: "要参数", interpreter: ["/bin/sh"])
+    input.keyword = "tq"
+    input.arguments = [.init(placeholder: "城市")]
+    var guarded = ScriptCommand(path: "/s/rm.sh", title: "清空", interpreter: ["/bin/sh"])
+    guarded.keyword = "rm"
+    guarded.confirmation = "再按 ↩ 清空"
+    let model = try model([plain, input, guarded])
+    var shown = 0
+    model.showPanel = {
+      shown += 1
+      return true
+    }
+    var ran: [String] = []
+    model.runScript = { script, _, _ in
+      ran.append(script.title)
+      return .init(end: .finished(0))
+    }
+    var performed: [SystemControl.Action] = []
+    model.perform = { performed.append($0) }
+    // 不要参数、不用确认的：不打开启动器，直接跑
+    model.runHotKey(LauncherCommands.scriptID(plain))
+    await model.scriptRun(plain.path)
+    #expect(ran == ["直接跑"] && shown == 0)
+    // 要参数的：打开启动器、填好「关键词 空格」
+    model.runHotKey(LauncherCommands.scriptID(input))
+    #expect(shown == 1 && model.query == "tq ")
+    // 要确认的：打开启动器、选中它并上膛，不跑
+    model.runHotKey(LauncherCommands.scriptID(guarded))
+    #expect(shown == 2 && model.alternateSubtitle(for: model.results[model.selection]) == "再按 ↩ 清空")
+    #expect(ran == ["直接跑"])
+    // 关键词命令：打开启动器、填好关键词
+    model.runHotKey("builtin:kill")
+    #expect(model.query == "kill ")
+    // 不用确认的系统命令直接做
+    model.runHotKey("system:lock")
+    #expect(performed.count == 1)
   }
 }

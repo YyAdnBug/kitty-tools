@@ -6,6 +6,8 @@
 // （只打这个词时脚本排第一；后面接了空格和文字时内置命令先认，其次脚本，网页搜索的关键词最后）。关掉 = 不出现在搜索里、关键词也不认。只存改过的（LauncherCommands.Settings，跟着设置导出、同步）。
 // 脚本那几行：点名字在访达中显示，右键编辑、（我的脚本）移到废纸篓。脚本命令整个关着时脚本那两组变灰。
 // 一个自己的脚本都没有时，「我的脚本」组照样列出来，一行「还没有自己的脚本」带「用例子新建」（只在没搜、没筛「只看开着的」时）。
+// 每条命令还能设一个快捷键（第三轮 D1，「快捷键」那一列：同快捷键页的录制框，窄一些；和全局快捷键、别的命令一起查重，
+// 录错、注册不上的原因写在那一行下面）；按了直接跑，要参数 / 要确认 / 没看过全文的打开启动器做那一步（LauncherModel.runHotKey）。
 // 启动器 ⌘K「改别名…」推进来时（SettingsNavigation.focusedCommand）只列那一条（按 id，同名的复制品不跟着出来）、别名框拿着
 // 焦点，上面一行「显示全部」；动一下搜索框或筛选就回到全部（第二轮 D1）。
 
@@ -26,6 +28,8 @@ struct LauncherCommandsSection: View {
   @State private var only: String?
   @Environment(SettingsNavigation.self) private var navigation: SettingsNavigation?
   @Environment(Island.self) private var island: Island?
+  /// 快捷键的录制框要它（单测 / 截图自检里没有：那一列空着）
+  @Environment(HotKeyCenter.self) private var center: HotKeyCenter?
 
   /// 上面那一排筛选
   enum Scope: String, CaseIterable {
@@ -129,6 +133,9 @@ struct LauncherCommandsSection: View {
         Text("名称")
         Spacer()
         Text("别名").frame(width: Self.aliasWidth, alignment: .leading)
+        if center != nil {
+          Text("快捷键").frame(width: Self.hotKeyWidth, alignment: .leading)
+        }
         Text("启用").frame(width: Self.toggleWidth, alignment: .trailing)
       }
       .font(.system(size: 11, weight: .semibold))
@@ -159,7 +166,7 @@ struct LauncherCommandsSection: View {
           ForEach(rows) { row in
             CommandRow(
               row: row, alias: aliasBinding(row), isOn: onBinding(row),
-              conflicted: conflicts.contains(row.id), focus: $focusedAlias,
+              conflicted: conflicts.contains(row.id), focus: $focusedAlias, center: center,
               refresh: { library?.refresh() }
             )
             .disabled(row.script != nil && !scriptsOn)
@@ -177,6 +184,10 @@ struct LauncherCommandsSection: View {
     }
     .onAppear { focus(in: all) }
     .onChange(of: navigation?.focusedCommand) { focus(in: all) }
+    // 开关、别名（关键词命令的别名清空了就打不出它）、脚本命令的总开关变了：快捷键跟着注册 / 注销
+    .onChange(of: offText) { center?.reloadCommandsIfChanged() }
+    .onChange(of: aliasesText) { center?.reloadCommandsIfChanged() }
+    .onChange(of: scriptsOn) { center?.reloadCommandsIfChanged() }
   }
 
   /// 搜索框、筛选被人动了：不再只列「改别名…」那一行
@@ -202,6 +213,7 @@ struct LauncherCommandsSection: View {
   }
 
   static let aliasWidth: CGFloat = 110
+  static let hotKeyWidth: CGFloat = 116
   static let toggleWidth: CGFloat = 44
 
   /// 筛选：哪几组、只看开着的、搜索框（名字、别名、文件名里带着这几个字的，不分大小写）
@@ -259,17 +271,38 @@ struct LauncherCommandsPage: View {
   }
 }
 
-/// 表里的一行：图标 + 名字（脚本另有文件名），别名输入框（撞了描橙框），开关
+/// 表里的一行：图标 + 名字（脚本另有文件名），别名输入框（撞了描橙框），快捷键录制框，开关；录错、注册不上的原因写在下面
 private struct CommandRow: View {
   let row: LauncherCommandsSection.Row
   @Binding var alias: String
   @Binding var isOn: Bool
   let conflicted: Bool
   var focus: FocusState<String?>.Binding
+  let center: HotKeyCenter?
   /// 复制、移到废纸篓之后重读脚本库
   var refresh: () -> Void = {}
+  /// 录快捷键时的提示（缺修饰键、重复）
+  @State private var message: String?
 
   var body: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      line
+      if let problem {
+        Text(problem)
+          .font(.system(size: 11))
+          .foregroundStyle(Color(nsColor: .systemOrange))
+          .fixedSize(horizontal: false, vertical: true)
+          .frame(maxWidth: .infinity, alignment: .trailing)
+      }
+    }
+  }
+
+  /// 先录制时的提示、再注册不上的原因（开着的才看）
+  private var problem: String? {
+    message ?? (isOn ? center?.failureMessage(forCommand: row.id) : nil)
+  }
+
+  private var line: some View {
     HStack(spacing: 10) {
       icon
       VStack(alignment: .leading, spacing: 1) {
@@ -314,6 +347,11 @@ private struct CommandRow: View {
         .labelsHidden()
         .accessibilityLabel("「\(row.title)」的别名")
         .accessibilityValue(conflicted ? "\(alias)，和别的重复了" : alias)
+      if let center {
+        HotKeyRecorder(
+          target: .command(id: row.id, title: row.title), center: center, message: $message,
+          width: LauncherCommandsSection.hotKeyWidth)
+      }
       Toggle("启用「\(row.title)」", isOn: $isOn)
         .toggleStyle(.switch)
         .controlSize(.mini)

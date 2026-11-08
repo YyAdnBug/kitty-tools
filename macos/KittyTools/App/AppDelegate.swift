@@ -300,7 +300,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 启动器的脚本命令（2026-11-07）：每次呼出启动器在主线程外重读一遍，换上了新的就让启动器重搜
   private lazy var scriptLibrary: ScriptLibrary = {
     let library = ScriptLibrary()
-    library.onChange = { [unowned self] in launcherModel.scriptsChanged() }
+    library.onChange = { [unowned self] in
+      launcherModel.scriptsChanged()
+      // 脚本加了 / 删了：给它们设的快捷键跟着注册 / 注销（第三轮 D1）
+      hotKeys.reloadCommandsIfChanged()
+    }
     return library
   }()
 
@@ -756,7 +760,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               "已清空启动器使用记录", detail: "「常用」和排序会从头开始学，收藏不动",
               symbol: "clock.arrow.circlepath")
           }
-          .environment(island))
+          .environment(island)
+          // 「命令和别名」里每条命令的快捷键录制框（第三轮 D1）
+          .environment(hotKeys))
       case .launchpad:
         AnyView(
           LaunchpadTab(
@@ -931,6 +937,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard !statusScreen.isActive else { return }
         run(action, byKey: true)
       }
+    }
+    // 启动器「命令和别名」里每条命令的快捷键（脚本命令第三轮 D1）：只注册此刻能做事的（启动器开着、那条开着、脚本这台 Mac
+    // 上有）。启动器的模型在建面板时接好，设了命令快捷键才提前建；脚本还没读过的先读一遍，读完 onChange 再注册
+    hotKeys.commandHotKeys = { [unowned self] in
+      let saved = LauncherModel.savedCommandHotKeys()
+      guard Feature.launcher.isOn, !saved.isEmpty else { return [] }
+      _ = launcherPanel
+      if Self.scriptsOn, !scriptLibrary.isLoaded { scriptLibrary.refresh() }
+      return saved.filter { launcherModel.canRunHotKey($0.key) }.sorted { $0.key < $1.key }
+        .map { ($0.key, $0.value) }
+    }
+    hotKeys.onCommand = { [unowned self] id in
+      guard Feature.launcher.isOn, !statusScreen.isActive else { return }
+      launcherModel.runHotKey(id)
     }
     hotKeys.reload()
     try? FileManager.default.removeItem(at: ShotShelf.dragDirectory)

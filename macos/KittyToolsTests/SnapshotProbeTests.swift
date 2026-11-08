@@ -4942,8 +4942,10 @@ struct SnapshotProbeTests {
         Form { ScriptsSection(library: library) }.formStyle(.grouped).defaultAppStorage(defaults),
         size: NSSize(width: 590, height: 720), dark: dark,
         to: "\(out)/settings-launcher-scripts\(suffix).png")
+      // 快捷键那一列（第三轮 D1）：给一个没注册过的热键中心，录制框画出来、不碰真热键
       try snapshot(
-        NavigationStack { LauncherCommandsPage(library: library) }.defaultAppStorage(defaults),
+        NavigationStack { LauncherCommandsPage(library: library) }.defaultAppStorage(defaults)
+          .environment(HotKeyCenter()),
         size: NSSize(width: 590, height: 2420), dark: dark,
         to: "\(out)/settings-launcher-commands\(suffix).png")
       // 一个自己的脚本都没有：两处的空状态
