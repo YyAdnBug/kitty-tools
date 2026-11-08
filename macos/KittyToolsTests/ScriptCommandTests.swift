@@ -650,6 +650,14 @@ struct BundledScriptTests {
     #expect(regex[0].subtitle == "第 1 处 · 位置 3 · 分组：1，23")
     let broken = ScriptCommand.lines(try await run(scripts["regt"], ["(", "x"]).output)
     #expect(broken.first?.title == "正则写错了" && broken.first?.isValid == false)
+    // 第三轮评审：非交互的 zsh 不开 extended_glob 时前导零、时区前的空白去不掉
+    let padded = ScriptCommand.lines(
+      try await run(scripts["bcvt"], ["0x00000000000000000001"]).output)
+    #expect(padded.first?.title == "1")
+    let zulu = ScriptCommand.lines(try await run(scripts["time"], ["2026-11-07 06:01:43 Z"]).output)
+    let spaced = ScriptCommand.lines(
+      try await run(scripts["time"], ["2026-11-07 14:01:43 +08:00"]).output)
+    #expect(zulu.first?.title == "1794031303" && spaced.first?.title == "1794031303")
   }
 
   @Test func pasteAndFullScripts() async throws {
@@ -1035,28 +1043,31 @@ struct SubprocessStopTests {
     let model = try model([broken])
     model.runScript = { _, _ in .init(end: .finished(2), output: "第一行\n第二行", error: "出错了：x") }
     var shown = 0
-    model.showPanel = { shown += 1 }
+    model.showPanel = {
+      shown += 1
+      return true
+    }
     model.query = "bad"
     model.execute(try #require(model.results.first { $0.kind == .script }))
     await model.scriptRun(broken.path)
-    let (id, page) = try #require(model.lastFailure)
+    let (id, page) = try #require(model.lastOutput)
     #expect(page.text == "第一行\n第二行\n\n出错了：x")
     #expect(page.failure?.hasPrefix("「坏的」出错了") == true && !page.isRunning)
-    model.showFailure(id)
+    model.showOutput(id)
     #expect(model.output == page && shown == 1)
     model.closeOutput()
     // 后来又出过错：早先那座岛上的按钮不再打开
     model.execute(try #require(model.results.first { $0.kind == .script }))
     await model.scriptRun(broken.path)
-    #expect(model.lastFailure?.id != id)
-    model.showFailure(id)
+    #expect(model.lastOutput?.id != id)
+    model.showOutput(id)
     #expect(model.output == nil && shown == 1)
     // 自己停的不留
     model.runScript = { _, _ in .init(end: .stopped, output: "半截") }
-    let last = model.lastFailure?.id
+    let last = model.lastOutput?.id
     model.execute(try #require(model.results.first { $0.kind == .script }))
     await model.scriptRun(broken.path)
-    #expect(model.lastFailure?.id == last)
+    #expect(model.lastOutput?.id == last)
   }
 
   @Test func editorSkipsAppsThatRunScripts() {
@@ -1193,5 +1204,80 @@ struct SubprocessStopTests {
     let example = try #require(ScriptCommand.parse(ScriptLibrary.example, path: "/tmp/s/查天气.sh"))
       .get()
     #expect(example.keyword == "tq" && example.arguments.count == 1)
+  }
+}
+
+/// 第三轮评审：正确性那一路
+@MainActor struct ScriptCorrectnessTests {
+  @Test func listScriptsCannotConfirm() {
+    let text = "#!/bin/sh\n# @kitty.mode list\n# @kitty.confirm 确定吗\n"
+    #expect(ScriptCommand.parse(text, path: "/s/a.sh") == .failure(.confirmInList))
+  }
+
+  @Test func foldedKeywordCutsTheOriginalQuery() throws {
+    var script = ScriptCommand(path: "/s/f.sh", title: "Fußgängerstraße", interpreter: ["/bin/sh"])
+    script.arguments = [.init(placeholder: "城市")]
+    let invocation = try #require(
+      ScriptCommand.invocation(for: "Fußgängerstraße Berlin", in: [script]) { _ in nil })
+    #expect(invocation.keyword == "Fußgängerstraße" && invocation.arguments == ["Berlin"])
+  }
+
+  @Test func percentEncodedArguments() throws {
+    let text = """
+      #!/bin/sh
+      # @raycast.argument1 { "type": "text", "placeholder": "from", "percentEncoded": true }
+      # @raycast.argument2 { "type": "text", "placeholder": "to", "optional": true }
+      """
+    let script = try #require(ScriptCommand.parse(text, path: "/s/f.sh")).get()
+    #expect(script.passed(["a b&c=中", "x y"]) == ["a%20b%26c%3D%E4%B8%AD", "x y"])
+  }
+
+  private func model(_ script: ScriptCommand) throws -> LauncherModel {
+    let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [])
+    model.scripts = { [script] }
+    return model
+  }
+
+  @Test func tabKeepsTypedArguments() throws {
+    var script = ScriptCommand(path: "/s/tq.sh", title: "查天气", interpreter: ["/bin/sh"])
+    script.keyword = "tq"
+    script.arguments = [.init(placeholder: "城市")]
+    let model = try model(script)
+    model.query = "tq 北京"
+    #expect(model.results.first?.arguments == ["北京"])
+    model.complete()
+    #expect(model.query == "tq 北京")
+    #expect(
+      !model.actions(for: try #require(model.results.first)).contains { $0.title == "补全到搜索框" })
+  }
+
+  @Test func listTimeoutSaysTheSecondsItGot() async throws {
+    var script = ScriptCommand(path: "/s/ls.sh", title: "慢列表", interpreter: ["/bin/sh"])
+    script.keyword = "ls"
+    script.mode = .list
+    let model = try model(script)
+    model.runScript = { _, _ in .init(end: .timedOut) }
+    model.query = "ls x"
+    await model.listRun()
+    #expect(model.results.first?.subtitle.contains("跑了 10 秒") == true)
+  }
+
+  @Test func fullScriptKeepsRunningAfterHide() async throws {
+    var script = ScriptCommand(path: "/s/full.sh", title: "全文", interpreter: ["/bin/sh"])
+    script.keyword = "full"
+    script.mode = .full
+    let model = try model(script)
+    model.runScript = { _, _ in
+      try? await Task.sleep(for: .milliseconds(30))
+      return .init(end: .finished(0), output: "done\n")
+    }
+    model.query = "full"
+    model.execute(try #require(model.results.first))
+    #expect(model.output?.isRunning == true)
+    model.didHide()
+    #expect(model.output == nil)
+    await model.scriptRun(script.path)
+    // 没被停掉：跑完的输出留给岛上的「看输出」
+    #expect(model.lastOutput?.page.text == "done")
   }
 }

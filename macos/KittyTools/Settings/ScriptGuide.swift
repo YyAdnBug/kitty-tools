@@ -24,14 +24,14 @@ struct ScriptGuidePage: View {
     ),
     (
       "@kitty.argument1", "参数（最多 3 个）",
-      "写参数的名字，如「城市」；在启动器里输「关键词 空格 文字」，文字在 $1 里。可以不填的写成 {\"placeholder\": \"城市\", \"optional\": true}"
+      "写参数的名字，如「城市」；在启动器里输「关键词 空格 文字」，文字在 $1 里。可以不填的写成 {\"placeholder\": \"城市\", \"optional\": true}；要直接拼进网址的再加 \"percentEncoded\": true（先做网址编码）"
     ),
     ("@kitty.description", "副标题", "启动器里名字后面的那行小字"),
     (
       "@kitty.icon", "图标",
       "一个 emoji、SF 符号的名字、同一个文件夹里的图片文件名，或者 https 开头的图片网址（第一次用时下载一次，以后不再联网）；深色主题换一张写在 @kitty.iconDark"
     ),
-    ("@kitty.confirm", "先确认再跑", "写一句话：↩ 第一下只显示这句（红字），再按一次才跑"),
+    ("@kitty.confirm", "先确认再跑", "写一句话：↩ 第一下只显示这句（红字），再按一次才跑；列表脚本打字时就跑，不能写"),
     ("@kitty.timeout", "超时", "秒数，不写是 60 秒，写 0 不限"),
   ]
 

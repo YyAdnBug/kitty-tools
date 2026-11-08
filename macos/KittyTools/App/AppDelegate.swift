@@ -480,8 +480,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     model.copyBundledScript = { [unowned self] in copyBundledScript($0) }
     model.showPanel = { [unowned self] in
       // 那一张里留着的「看输出」：启动器关掉了就不叫（关掉 = 入口全藏）
-      guard Feature.launcher.isOn else { return }
+      guard Feature.launcher.isOn else { return false }
       if !(launcherPanel.isVisible && launcherPanel.isKeyWindow) { toggleLauncher() }
+      return true
     }
     builtLauncherPanel = panel
     return panel

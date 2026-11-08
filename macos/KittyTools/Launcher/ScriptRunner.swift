@@ -52,7 +52,8 @@ enum ScriptRunner {
     let started = ContinuousClock.now
     do {
       let result = try await Subprocess.run(
-        tool, Array(script.interpreter.dropFirst()) + [script.path] + arguments, captures: true,
+        tool, Array(script.interpreter.dropFirst()) + [script.path] + script.passed(arguments),
+        captures: true,
         environment: environment, timeout: limit > 0 ? .seconds(limit) : nil,
         quality: .userInitiated, directory: URL(filePath: script.folder), stopsOnCancel: true,
         outputLimit: outputLimit)

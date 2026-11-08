@@ -245,10 +245,12 @@ import UniformTypeIdentifiers
   @ObservationIgnored var openCommandSettings: (_ id: String) -> Void = { _ in }
   @ObservationIgnored var setCommandOn: (_ id: String, _ isOn: Bool) -> Void = { _, _ in }
   @ObservationIgnored var copyBundledScript: (ScriptCommand) -> Void = { _ in }
-  /// 出错的岛上「看输出」（第二轮 D3）：把启动器叫出来（已经开着、在前就不动）
-  @ObservationIgnored var showPanel: () -> Void = {}
-  /// 最近一次出错的全部输出（只留这一次，不记日志）；id 给岛上「看输出」认是不是这一次
-  @ObservationIgnored private(set) var lastFailure: (id: UUID, page: ScriptOutput)?
+  /// 岛上「看输出」（第二轮 D3）：把启动器叫出来（已经开着、在前就不动）；false = 没叫出来（启动器功能关着）
+  @ObservationIgnored var showPanel: () -> Bool = { true }
+  /// 最近一次要「看输出」的全部输出（出错的、收起后接着跑完的全文脚本；只留这一次，不记日志）；id 给岛上「看输出」认
+  @ObservationIgnored private(set) var lastOutput: (id: UUID, page: ScriptOutput)?
+  /// 全文脚本还在跑时启动器收起了：接着跑，跑完在岛上说（第三轮评审：原来悄悄停掉、输出也丢了）
+  @ObservationIgnored private var detachedOutputs: Set<String> = []
   /// 这次运行里确认过的（去不掉隔离标记的文件夹：只读的、别人的）
   @ObservationIgnored private var approvedScripts: Set<String> = []
   /// 正在跑的脚本（按路径）：「停止」按钮取消它；同一个还在跑时再按 ↩ 不重复起
@@ -496,7 +498,10 @@ import UniformTypeIdentifiers
     error = nil
     armed = nil
     review = nil
-    if output != nil { closeOutput() }
+    if let output {
+      self.output = nil
+      if output.isRunning { detach(output.script) }
+    }
     listTask?.cancel()
     listTask = nil
     runsWhenListed = false
@@ -1234,8 +1239,6 @@ import UniformTypeIdentifiers
     }
   }
 
-  /// 「关键词 空格 文字」那一行（B2）：参数没填够时副标题写「输入「tq 空格 城市」」；列表脚本停手 0.15 s 跑一遍、
-  /// 每行一条结果，跑完之前留着这条脚本上一次的结果（不闪），新的一跑就撤掉上一次（C2）
   /// 「关键词 空格 文字」那几行（B2），排在普通结果前面（不吞掉普通结果：「time machine」照样搜得到时间机器）：参数没填够时
   /// 副标题写「输入「tq 空格 城市」」；列表脚本是它的结果行——跑完之前留着这条脚本上一次的结果（不闪），第一次是一行
   /// 「正在运行…」（↩ 按在它上面等结果到了再执行，不落到下面的网页搜索上）
@@ -1243,6 +1246,8 @@ import UniformTypeIdentifiers
     let script = invocation.script
     var row = LauncherItem.script(script, alias: scriptAlias(script))
     row.arguments = invocation.arguments
+    // 已经在传参数了：Tab 不补全（第三轮评审：补成「tq 」把打好的「北京」清掉了）
+    row.completion = nil
     if invocation.isMissing {
       let missing = script.arguments[invocation.arguments.count..<script.requiredCount]
       row.subtitle =
@@ -1286,9 +1291,10 @@ import UniformTypeIdentifiers
       listTask = nil
       let selected = userMovedSelection ? selectedItem?.id : nil
       let rest = results.filter { !$0.isResult(of: script) }
-      let rows = Self.resultRows(outcome, of: script)
+      // 传 quick：超时说的秒数是这次真用的（列表最多 10 秒）
+      let rows = Self.resultRows(outcome, of: quick)
       // 只有网页搜索、提示这些兜底的行不算：那时留着错误那行，让人知道脚本为什么没给结果
-      let failed = Self.failure(outcome, of: script) != nil
+      let failed = Self.failure(outcome, of: quick) != nil
       let found = rest.contains { ![.search, .prompt].contains($0.kind) }
       results = (failed && found ? [] : rows) + rest
       selection = selected.flatMap { id in results.firstIndex { $0.id == id } } ?? 0
@@ -1354,7 +1360,11 @@ import UniformTypeIdentifiers
     let name = "「\(script.title)」"
     guard runningScripts[script.path] == nil else {
       close()
-      island?.show(name + "还在运行", detail: "等它跑完，或者在岛上点「停止」", tone: .info)
+      // 岛上那条「正在运行」会被这一条换掉、挂满 60 秒也会收：这里再给一个「停止」（第三轮评审）
+      let path = script.path
+      island?.show(
+        name + "还在运行", detail: "等它跑完，或者点「停止」", tone: .info,
+        actions: [Island.Action("停止") { [weak self] in self?.runningScripts[path]?.cancel() }])
       return
     }
     if script.mode == .full { return startFull(script, arguments: arguments) }
@@ -1385,6 +1395,10 @@ import UniformTypeIdentifiers
       guard let self else { return }
       let outcome = await runScript(script, arguments)
       runningScripts[path] = nil
+      // 跑着时启动器收起了：岛上说结果、带「看输出」；Esc 停掉的、换成别的页的不说
+      if detachedOutputs.remove(path) != nil {
+        return deliver(outcome, of: script, into: nil, progress: "正在运行「\(script.title)」")
+      }
       guard output?.script.path == path else { return }
       let page = Self.outputPage(outcome, of: script)
       output?.text = page.text
@@ -1392,6 +1406,15 @@ import UniformTypeIdentifiers
       output?.failure = page.failure
       Island.announce(page.failure ?? "「\(script.title)」运行完了")
     }
+  }
+
+  /// 全文脚本跑着时启动器收起了：接着跑，岛上挂「正在运行」带「停止」，跑完由 startFull 交给 deliver
+  private func detach(_ script: ScriptCommand) {
+    let path = script.path
+    detachedOutputs.insert(path)
+    island?.show(
+      "正在运行「\(script.title)」", tone: .progress, symbol: "terminal.fill",
+      actions: [Island.Action("停止") { [weak self] in self?.runningScripts[path]?.cancel() }])
   }
 
   /// 全文那一页上的东西：输出，没跑成时接上错误输出；没跑成的那一句（红字）。全文输出和岛上「看输出」同一份
@@ -1407,18 +1430,19 @@ import UniformTypeIdentifiers
   }
 
   /// 岛上「看输出」：叫出启动器，原地显示那一次的全部输出（同全文输出那一页：↩ 粘贴、⌘C 复制、Esc 回到结果）。
-  /// 只留着最近一次出错的：后来又有脚本出过错，早先那座岛上的按钮就说没留着
-  func showFailure(_ id: UUID) {
-    guard let lastFailure, lastFailure.id == id else {
-      island?.show("那次的输出没留着", detail: "只留最近一次出错的输出", tone: .info)
+  /// 只留着最近一次的：后来又有脚本要看输出，早先那座岛上的按钮就说没留着
+  func showOutput(_ id: UUID) {
+    guard let lastOutput, lastOutput.id == id else {
+      island?.show("那次的输出没留着", detail: "只留最近一次的输出", tone: .info)
       return
     }
-    // 先叫出来再换上：收起着时呼出会按「过了 60 秒」清掉查询，那会顺手关掉输出页；正在跑的全文脚本停掉（同 Esc）
+    // 先叫出来再换上：收起着时呼出会按「过了 60 秒」清掉查询，那会顺手关掉输出页；正在跑的全文脚本停掉（同 Esc）。
+    // 启动器功能关着叫不出来：不留一张过期的输出页（第三轮评审）
     if output != nil { closeOutput() }
-    showPanel()
+    guard showPanel() else { return }
     review = nil
     showsActions = false
-    output = lastFailure.page
+    output = lastOutput.page
   }
 
   /// 输出那一页：回到结果（还在跑就停掉）
@@ -1461,12 +1485,12 @@ import UniformTypeIdentifiers
       let page = Self.outputPage(outcome, of: script)
       let keeps = !stopped && !page.text.isEmpty
       let id = UUID()
-      if keeps { lastFailure = (id, page) }
+      if keeps { lastOutput = (id, page) }
       island?.show(
         failure.title, detail: failure.detail.isEmpty ? nil : failure.detail,
         tone: stopped ? .info : .error,
         actions: keeps
-          ? [Island.Action("看输出", opens: true) { [weak self] in self?.showFailure(id) }] : [])
+          ? [Island.Action("看输出", opens: true) { [weak self] in self?.showOutput(id) }] : [])
       return
     }
     let text = ScriptCommand.payload(outcome.output)
@@ -1485,8 +1509,17 @@ import UniformTypeIdentifiers
       }
     case .none:
       island?.dismiss(ifShowing: progress)
-    // full、list 平时不走这里（全文那一页、列表行）；万一走到了按岛上一行
-    case .island, .full, .list:
+    // 全文：跑着时启动器收起了的才走这里（detach）。岛上说一声，带「看输出」
+    case .full:
+      let page = Self.outputPage(outcome, of: script)
+      let id = UUID()
+      if !page.text.isEmpty { lastOutput = (id, page) }
+      island?.show(
+        name + "运行完了", detail: ScriptCommand.lastLine(outcome.output),
+        actions: page.text.isEmpty
+          ? [] : [Island.Action("看输出", opens: true) { [weak self] in self?.showOutput(id) }])
+    // list 平时不走这里（列表行）；万一走到了按岛上一行
+    case .island, .list:
       if let line = ScriptCommand.lastLine(outcome.output) {
         island?.show(line, detail: script.title)
       } else {
@@ -1732,7 +1765,7 @@ import UniformTypeIdentifiers
       let exists = FileManager.default.fileExists(atPath: item.target, isDirectory: &isDirectory)
       let path = (item.target as NSString).abbreviatingWithTildeInPath
       return exists && isDirectory.boolValue && !path.hasSuffix("/") ? path + "/" : path
-    case .script: return item.title
+    case .script: return item.arguments == nil ? item.title : nil
     case .search, .calculation, .clip, .prompt, .translate, .process, .ip, .reminder,
       .scriptResult:
       return nil
@@ -2138,8 +2171,9 @@ import UniformTypeIdentifiers
   /// 全文输出那一页：↩ 粘贴、Esc 返回（还在跑就停掉），↑↓ 吞掉，打字照常（会回到结果）
   private func handleOutputCommand(_ selector: Selector) -> Bool {
     switch selector {
+    // 按住 ↩ 的自动连发不算：跑得快的脚本跑完时连发过来的那一下不能直接粘贴出去
     case #selector(NSResponder.insertNewline(_:)):
-      if Style.isReturnKey { pasteOutput() }
+      if Style.isReturnKey, !Style.isKeyRepeat { pasteOutput() }
     case #selector(NSResponder.cancelOperation(_:)): closeOutput()
     case #selector(NSResponder.moveUp(_:)), #selector(NSResponder.moveDown(_:)),
       #selector(NSResponder.insertTab(_:)),
@@ -2252,7 +2286,12 @@ import UniformTypeIdentifiers
       openSettings()
     default:
       guard let digit = Self.digitKeys.firstIndex(of: Int(event.keyCode)) else { return false }
-      if digit < results.count { execute(results[digit]) }
+      // 列表脚本正在重跑时的结果行：⌘N 会落到新结果的第一条上，不执行
+      if digit < results.count, results[digit].kind != .scriptResult || listTask == nil {
+        execute(results[digit])
+      } else if digit < results.count {
+        NSSound.beep()
+      }
     }
     return true
   }
@@ -2305,6 +2344,8 @@ import UniformTypeIdentifiers
   /// ⌘C：复制路径 / 网址 / 计算结果（⌘↩ 的计算结果也走这里）；网址另有 Markdown 链接、标题。面板同时收起，用刘海说
   /// 复制了什么；这些是本 App 给出的新文字，同时记进剪贴板历史（mac-native §5）
   func copy(_ item: LauncherItem, _ format: CopyFormat = .value) {
+    // 列表脚本正在按新输入重跑：看得见的是上一次的结果，不拷它（同 ↩ 等结果的那一处，第三轮评审）
+    if item.kind == .scriptResult, listTask != nil { return NSSound.beep() }
     rememberCurrencies(item)
     let text: String
     let title: String?
@@ -2433,8 +2474,11 @@ import UniformTypeIdentifiers
         }
       }
     }
-    // 3 搜索框：提示行的主动作就是补全
-    if item.kind != .prompt, Self.completion(for: item) != nil {
+    // 3 搜索框：提示行、要参数的脚本那一行的主动作就是补全
+    let completesOnReturn =
+      item.kind == .prompt
+      || (item.kind == .script && item.arguments == nil && item.completion != nil)
+    if !completesOnReturn, Self.completion(for: item) != nil {
       add("补全到搜索框", "arrow.right.to.line", "⇥", section: 3) { [unowned self] in
         complete(item)
       }

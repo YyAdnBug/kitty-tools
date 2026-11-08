@@ -36,17 +36,22 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
   struct Argument: Hashable, Sendable {
     var placeholder: String
     var isOptional = false
+    /// 交给脚本之前先做网址编码（社区写法 percentEncoded：直接拼进网址查询的那种，有空格、& 也不坏）
+    var isPercentEncoded = false
   }
 
   /// 读不成一条命令的原因（设置页列出来）
   enum Problem: Error, Hashable, Sendable {
     case noShebang
     case unreadable
+    /// 列表脚本打字时就会跑，确认不了（第三轮评审：写了 confirm 也照跑，说明里「按两次回车才运行」就不成立了）
+    case confirmInList
 
     var text: String {
       switch self {
       case .noShebang: "第一行没有 #!，不知道用什么跑"
       case .unreadable: "读不出来"
+      case .confirmInList: "列表脚本打字时就会运行，不能写 confirm"
       }
     }
   }
@@ -148,6 +153,7 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
     script.arguments = arguments(fields)
     script.confirmation = fields["confirm"].flatMap { confirmation($0, title: title) }
     script.timeout = fields["timeout"].flatMap { Int($0) }.map { min(max($0, 0), 3600) }
+    if script.mode == .list, script.confirmation != nil { return .failure(.confirmInList) }
     return .success(script)
   }
 
@@ -237,7 +243,9 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
       {
         let placeholder = (object["placeholder"] as? String) ?? "参数\(index)"
         result.append(
-          Argument(placeholder: placeholder, isOptional: object["optional"] as? Bool ?? false))
+          Argument(
+            placeholder: placeholder, isOptional: object["optional"] as? Bool ?? false,
+            isPercentEncoded: object["percentEncoded"] as? Bool ?? false))
       } else {
         result.append(Argument(placeholder: value))
       }
@@ -288,10 +296,34 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
       }
     }
     guard let best else { return nil }
-    let rest = query.dropFirst(best.length).drop(while: \.isWhitespace)
+    let typed = prefix(of: query, foldedLength: best.length)
+    let rest = query[typed.endIndex...].drop(while: \.isWhitespace)
     return Invocation(
-      script: best.script, keyword: String(query.prefix(best.length)),
+      script: best.script, keyword: String(typed),
       arguments: split(String(rest), into: best.script.arguments.count))
+  }
+
+  /// 原样的输入里对上「折叠后 length 个字」的那一截：折叠会把 ß 变成 ss、ﬁ 变成 fi，不能拿折叠后的长度直接切原样的
+  /// （第三轮评审：「Fußgängerstraße Berlin」切出来的参数是「erlin」）
+  static func prefix(of query: String, foldedLength: Int) -> Substring {
+    var end = query.startIndex
+    while end < query.endIndex, LauncherMatch.fold(String(query[..<end])).count < foldedLength {
+      end = query.index(after: end)
+    }
+    return query[..<end]
+  }
+
+  /// 网址编码时原样留下的字（RFC 3986 的 unreserved）
+  static let unreserved = CharacterSet(
+    charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
+
+  /// 真交给脚本的参数：声明了 percentEncoded 的先做网址编码（第三轮对标：社区脚本里有一百多个这么写，原来没认，
+  /// 带空格的参数拼出来的网址是坏的）
+  func passed(_ values: [String]) -> [String] {
+    values.enumerated().map { index, value in
+      guard index < arguments.count, arguments[index].isPercentEncoded else { return value }
+      return value.addingPercentEncoding(withAllowedCharacters: Self.unreserved) ?? value
+    }
   }
 
   /// 按空白切成最多 count 段，最后一段拿剩下的全部（同社区写法）；没声明参数的列表脚本整段当一个；空的不算
@@ -354,7 +386,10 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
 
   /// 去掉终端颜色码（CSI、OSC）和回车，脚本给的颜色在岛上、启动器里都画不出来
   static func clean(_ output: String) -> String {
-    output
+    // 绝大多数输出既没有颜色码也没有回车：不过正则（1 MB 过一遍要 0.1–0.4 s，在主线程上；第三轮评审）
+    guard output.utf8.contains(where: { $0 == 0x1B || $0 == 0x0D }) else { return output }
+    return
+      output
       .replacing(/\u{1B}\][^\u{07}\u{1B}]*(\u{07}|\u{1B}\\)?/, with: "")
       .replacing(/\u{1B}\[[0-9;?]*[ -\/]*[@-~]/, with: "")
       .replacing(/\u{1B}[@-_]/, with: "")

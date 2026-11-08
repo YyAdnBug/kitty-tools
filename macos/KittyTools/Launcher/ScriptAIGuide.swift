@@ -24,10 +24,10 @@ nonisolated enum ScriptAIGuide {
         - `full`：在启动器里显示全部输出（适合查看较长的结果）
         - `list`：每行一条结果让用户挑，选中按回车粘贴（见下面「列表」）
         - `none`：什么都不显示
-      - `@kitty.argument1` 参数的名字，如 `城市`。用户在启动器里输「关键词 空格 文字」，文字在 `$1` 里；最多 3 个（`argument1`–`argument3`，按空格切开，最后一个拿剩下的全部）。可以不填的写成 `{"placeholder": "城市", "optional": true}`。
+      - `@kitty.argument1` 参数的名字，如 `城市`。用户在启动器里输「关键词 空格 文字」，文字在 `$1` 里；最多 3 个（`argument1`–`argument3`，按空格切开，最后一个拿剩下的全部）。可以不填的写成 `{"placeholder": "城市", "optional": true}`；要直接拼进网址的再加 `"percentEncoded": true`（Kitty 先做网址编码再交给脚本）。
       - `@kitty.description` 一句话说明它做什么。
       - `@kitty.icon` 一个 emoji，或者 SF Symbols 的符号名（优先用这两种；也可以写脚本同一个文件夹里的图片文件名，或 https 开头的图片网址）。
-      - `@kitty.confirm` 一句确认的话。**会删文件、改系统设置、关机、发消息这类，必须写**：用户要按两次回车才运行。
+      - `@kitty.confirm` 一句确认的话。**会删文件、改系统设置、关机、发消息这类，必须写**：用户要按两次回车才运行。列表（`list`）打字时就会运行，确认不了，写了 confirm 的列表脚本不会出现。
       - `@kitty.timeout` 超时秒数，不写是 60；只有确实要跑很久时才写。
 
     ## 列表（mode 是 list 时）
