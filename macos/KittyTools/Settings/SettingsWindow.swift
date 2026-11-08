@@ -272,8 +272,11 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   var focusedCommand: String?
   /// 快捷键速查表（启动器里的「快捷键速查表」打开设置窗时盖上；页面里的「查看全部快捷键…」按钮自己管）
   var showsShortcuts = false
-  /// 「新建脚本」的小表单（脚本命令第三轮 D2：设置里的按钮、启动器里的「新建脚本」都打开它；挂在启动器页的 ScriptsSection 上）
+  /// 「新建脚本」的小表单（脚本命令第三轮 D2：设置里的按钮、启动器里的「新建脚本」都打开它；挂在窗口根上，同速查表——
+  /// 第 3 批评审：挂在启动器页那一节上时，那一节不在屏上就出不来、标记一直留着）
   var showsNewScript = false
+  /// 新建好了（文件的位置）：AppDelegate 重读脚本、岛上说一声
+  @ObservationIgnored var newScriptCreated: (URL) -> Void = { _ in }
   /// 设置窗是 key（SettingsWindow 的窗口代理写）。开着 sheet（确认框、速查表、引导）或别的面板在前时不是
   var isKey = false
   /// 新功能标记（Shell/WhatsNew.swift）：设置窗里此刻要标的那几个（WhatsNew.Entry.id）——侧栏那一行、收起的组、页里那一节。
@@ -549,6 +552,15 @@ struct SettingsRoot: View {
     }
     .sheet(isPresented: $navigation.showsShortcuts) {
       ShortcutsButton.sheet().symbolEffectsRemoved(reduceMotion).appAccent()
+    }
+    .sheet(isPresented: $navigation.showsNewScript) {
+      NewScriptSheet { url in
+        navigation.showsNewScript = false
+        navigation.newScriptCreated(url)
+      } cancel: {
+        navigation.showsNewScript = false
+      }
+      .appAccent()
     }
     .symbolEffectsRemoved(reduceMotion)
     .appAccent()

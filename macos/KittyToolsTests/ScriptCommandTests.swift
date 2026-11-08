@@ -1695,9 +1695,10 @@ struct SubprocessStopTests {
     #expect(ScriptCommand.split("“纽 约” 伦敦 东", into: 2) == ["纽 约", "伦敦 东"])
     #expect(ScriptCommand.split(#"a "b c""#, into: 2) == ["a", "b c"])
     #expect(ScriptCommand.split(#""a b" "c" d"#, into: 3) == ["a b", "c", "d"])
-    // 一个参数的照旧整段；没配上的引号当普通字
+    // 一个参数的照旧整段
     #expect(ScriptCommand.split(#""a b""#, into: 1) == [#""a b""#])
-    #expect(ScriptCommand.split(#""a b"#, into: 2) == [#""a"#, "b"])
+    // 没配上的引号：后面的都算这一段（还在打引号里的字）
+    #expect(ScriptCommand.split(#""a b"#, into: 2) == ["a b"])
     #expect(ScriptCommand.quoted("New York") == #""New York""# && ScriptCommand.quoted("x") == "x")
     #expect(ScriptCommand.quoted(#"say "hi" now"#) == #"“say "hi" now”"#)
   }
@@ -1906,5 +1907,96 @@ struct SubprocessStopTests {
     let rows = LauncherModel.resultRows(.init(end: .finished(0), output: json), of: script)
     // 不能选的不当能打开的
     #expect(rows[4].opens == nil && rows[4].payload == nil)
+  }
+}
+
+/// 第 3 批评审：一个参数的下拉、列表里的下拉、选项按标题认、打到第几个、密码不拿去搜
+@MainActor struct ScriptArgumentReviewTests {
+  private func model(_ script: ScriptCommand) throws -> LauncherModel {
+    let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [])
+    model.scripts = { [script] }
+    model.engines = { WebSearch.defaults }
+    return model
+  }
+
+  private func dropdown(_ titles: [(String, String)], placeholder: String = "设备")
+    -> ScriptCommand.Argument
+  {
+    .init(placeholder: placeholder, options: titles.map { .init(title: $0.0, value: $0.1) })
+  }
+
+  @Test func singleArgumentChoiceIsNotQuoted() async throws {
+    var script = ScriptCommand(path: "/s/out.sh", title: "输出", interpreter: ["/bin/sh"])
+    script.keyword = "out"
+    script.arguments = [dropdown([("Studio Display", "display"), ("耳机", "hp")])]
+    let model = try model(script)
+    var passed: [[String]] = []
+    model.runScript = { script, arguments, _ in
+      passed.append(script.passed(arguments))
+      return .init(end: .finished(0))
+    }
+    model.query = "out "
+    model.execute(try #require(model.results.first))
+    #expect(model.query == "out Studio Display")
+    let row = try #require(model.results.first)
+    #expect(row.kind == .script && !model.isMissingArguments(row))
+    model.execute(row)
+    await model.scriptRun(script.path)
+    #expect(passed == [["display"]])
+  }
+
+  @Test func listScriptWaitsForAValidChoice() async throws {
+    var script = ScriptCommand(path: "/s/l.sh", title: "列表", interpreter: ["/bin/sh"])
+    script.keyword = "ls"
+    script.mode = .list
+    script.arguments = [dropdown([("耳机", "hp"), ("音箱", "sp")])]
+    let model = try model(script)
+    var runs = 0
+    model.runScript = { _, _, _ in
+      runs += 1
+      return .init(end: .finished(0), output: "结果\n")
+    }
+    model.query = "ls e"
+    await model.listRun()
+    #expect(runs == 0 && model.results.first?.title == "耳机")
+    model.query = "ls 耳机"
+    await model.listRun()
+    #expect(runs == 1 && model.results.first?.title == "结果")
+  }
+
+  @Test func optionsMatchTitlesBeforeValuesAndTypingIndex() {
+    let argument = dropdown([("a", "b"), ("b", "c"), ("Dev", "1"), ("dev", "2")])
+    #expect(argument.option(for: "b")?.value == "c")
+    #expect(argument.option(for: "dev")?.value == "2" && argument.option(for: "DEV")?.value == "1")
+    var script = ScriptCommand(path: "/s/f.sh", title: "航班", interpreter: ["/bin/sh"])
+    script.keyword = "fly"
+    script.arguments = [.init(placeholder: "从"), .init(placeholder: "到")]
+    func typing(_ query: String) -> Int? {
+      ScriptCommand.invocation(for: query, in: [script], alias: { $0.keyword })?.typing
+    }
+    // 引号还没配上：还在第一个；最后一个参数里有空格：一直是最后一个
+    #expect(typing(#"fly "New "#) == 0)
+    #expect(ScriptCommand.split(#""New Yo"#, into: 2) == ["New Yo"])
+    #expect(typing("fly a New ") == 1 && typing("fly a ") == 1 && typing("fly ") == 0)
+    #expect(ScriptCommand.quoted("") == #""""#)
+  }
+
+  @Test func secretIsNotSearchedElsewhere() throws {
+    var script = ScriptCommand(path: "/s/t.sh", title: "令牌", interpreter: ["/bin/sh"])
+    script.keyword = "tok"
+    script.arguments = [.init(placeholder: "令牌", isSecret: true)]
+    let model = try model(script)
+    model.query = "tok s3cret"
+    let row = try #require(model.results.first)
+    model.alternate = .control
+    #expect(model.alternateSubtitle(for: row) == nil)
+    model.alternate = .option
+    #expect(model.alternateSubtitle(for: row) == nil)
+    model.alternate = .none
+  }
+
+  @Test func listTemplateDoesNotSuggestConfirm() throws {
+    let text = ScriptLibrary.template(title: "x", keyword: "x", mode: .list, language: .zsh)
+    #expect(!text.contains("@kitty.confirm") && text.contains("@kitty.filter"))
   }
 }

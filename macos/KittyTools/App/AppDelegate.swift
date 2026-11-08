@@ -718,6 +718,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   private lazy var settingsWindow: SettingsWindow = {
     weak var created: SettingsWindow?
+    settingsNavigation.newScriptCreated = { [unowned self] url in
+      scriptLibrary.refresh()
+      island.show(
+        "已新建「\(url.lastPathComponent)」", detail: "改好保存，下次呼出启动器就能用",
+        actions: [.reveal(url)])
+    }
     // 新功能标记：换到一页（打开设置窗也算）时重算设置窗里该标哪几个。光打开不算碰过（拨了那一节 / 那一行开关才算，2026-11-06），
     // 这一页上刚拨过的看着的时候不闪掉（WhatsNew.shown）
     settingsNavigation.visit = { [unowned self] page in
@@ -1514,8 +1520,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // 新建脚本：打开 设置 › 启动器，盖上新建的小表单（第三轮 D2，和设置里的按钮同一张）
     if id == LauncherItem.newScriptID {
       showSettings(page: .launcher)
-      guard settingsNavigation.page == .launcher else { return }
-      settingsNavigation.path = []
+      // 速查表、欢迎引导盖着时不再叠一张（关了它也不会冒出来）
+      guard settingsNavigation.page == .launcher, !settingsNavigation.showsShortcuts,
+        !settingsNavigation.showsOnboarding
+      else { return }
       settingsNavigation.showsNewScript = true
       return
     }

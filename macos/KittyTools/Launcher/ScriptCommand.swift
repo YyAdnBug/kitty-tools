@@ -50,10 +50,13 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
       var value: String
     }
 
-    /// 打的这个值对应的选项：标题（不分大小写）或 value 一样的
+    /// 打的这个值对应的选项：标题一字不差的先认，再是不分大小写的标题，最后是 value（第 3 批评审：一个的标题正好是另一个的
+    /// value 时，不能按 value 认错）
     func option(for value: String) -> Option? {
       let folded = LauncherMatch.fold(value)
-      return options.first { LauncherMatch.fold($0.title) == folded || $0.value == value }
+      return options.first { $0.title == value }
+        ?? options.first { LauncherMatch.fold($0.title) == folded }
+        ?? options.first { $0.value == value }
     }
   }
 
@@ -351,11 +354,13 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
     guard let best else { return nil }
     let typed = prefix(of: query, foldedLength: best.length)
     let rest = String(query[typed.endIndex...].drop(while: \.isWhitespace))
-    let arguments = split(rest, into: best.script.arguments.count)
+    let count = best.script.arguments.count
+    let (arguments, open) = tokens(rest, into: count)
+    // 正在打第几个：最后一个字是空白、又不在没配上的引号里，算下一个；最后一个参数拿剩下的全部，打到它就一直是它
+    let next = !rest.isEmpty && (rest.last?.isWhitespace != true || open)
     return Invocation(
       script: best.script, keyword: String(typed), arguments: arguments,
-      typing: rest.isEmpty || rest.last?.isWhitespace == true
-        ? arguments.count : arguments.count - 1)
+      typing: min(next ? arguments.count - 1 : arguments.count, max(count - 1, 0)))
   }
 
   /// 原样的输入里对上「折叠后 length 个字」的那一截：折叠会把 ß 变成 ss、ﬁ 变成 fi，不能拿折叠后的长度直接切原样的
@@ -389,16 +394,21 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
 
   /// 按空白切成最多 count 段，最后一段拿剩下的全部（同社区写法）；没声明参数的列表脚本整段当一个；空的不算。
   /// 不止一个参数时，引号括起来的算一段（第三轮 C2：「航班 "New York" London」），最后一段整个括着的去掉引号
-  static func split(_ text: String, into count: Int) -> [String] {
+  static func split(_ text: String, into count: Int) -> [String] { tokens(text, into: count).parts }
+
+  /// 同 split；open：最后一段是没配上的引号开头的（还在打引号里的字：它拿走剩下的全部，算一段）
+  static func tokens(_ text: String, into count: Int) -> (parts: [String], open: Bool) {
     let trimmed = text.trimmingCharacters(in: .whitespaces)
-    guard !trimmed.isEmpty else { return [] }
-    guard count > 1 else { return [trimmed] }
+    guard !trimmed.isEmpty else { return ([], false) }
+    guard count > 1 else { return ([trimmed], false) }
     var parts: [String] = []
     var rest = trimmed[...]
     while parts.count < count - 1, !rest.isEmpty {
-      if let open = rest.first, let close = quotes[open],
-        let end = rest.dropFirst().firstIndex(of: close)
-      {
+      if let open = rest.first, let close = quotes[open] {
+        guard let end = rest.dropFirst().firstIndex(of: close) else {
+          // 没配上的引号：后面的都算这一段（第 3 批评审：打着「"New 」时还在这一个参数里）
+          return (parts + [String(rest.dropFirst())], true)
+        }
         parts.append(String(rest[rest.index(after: rest.startIndex)..<end]))
         rest = rest[rest.index(after: end)...]
       } else {
@@ -409,7 +419,7 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
       rest = rest.drop(while: \.isWhitespace)
     }
     if !rest.isEmpty { parts.append(unquoted(String(rest))) }
-    return parts
+    return (parts, false)
   }
 
   /// 整个括在一对引号里的去掉引号（里面没有别的同样的引号）
@@ -422,6 +432,7 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
 
   /// 填进搜索框时：带空白的（或者开头是引号的）括上引号
   static func quoted(_ text: String) -> String {
+    guard !text.isEmpty else { return "\"\"" }
     guard text.contains(where: \.isWhitespace) || text.first.map({ quotes[$0] != nil }) == true
     else { return text }
     return text.contains("\"") ? "“\(text)”" : "\"\(text)\""

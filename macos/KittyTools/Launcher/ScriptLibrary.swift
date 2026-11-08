@@ -234,7 +234,11 @@ extension ScriptLibrary {
       "\(c) @kitty.description 这一行写它是做什么的",
       c,
       "\(c) 要参数就加一行「\(c) @kitty.argument1 城市」，在启动器里输「关键词 空格 北京」，「北京」是第一个参数",
-      "\(c) 要先确认再跑就加一行「\(c) @kitty.confirm 再按 ↩ 运行」；别的字段看 设置 › 启动器「怎么写脚本」",
+      // 列表打字时就跑，确认不了（写了 confirm 的列表读不成；第 3 批评审）
+      mode == .list
+        ? "\(c) 结果不随输入变的，加一行「\(c) @kitty.filter」：只跑一次，打的字由启动器过滤"
+        : "\(c) 要先确认再跑就加一行「\(c) @kitty.confirm 再按 ↩ 运行」",
+      "\(c) 别的字段看 设置 › 启动器「怎么写脚本」",
     ]
     if language == .python { lines.append("\(c) 要先装好 python3（终端里输 python3 --version 看看）") }
     if mode == .list { lines.append("\(c) 每行一条结果：标题、一个 Tab、说明；↩ 粘贴选中那条的标题") }

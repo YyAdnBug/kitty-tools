@@ -590,10 +590,6 @@ import UniformTypeIdentifiers
     ratesTask = nil
     ratesFailed = false
     // 打着密码参数没跑就收起的也不留（第三轮 C3：60 秒内再呼出时还看得见）
-    let holdsSecret =
-      ScriptCommand.invocation(for: query, in: activeScripts, alias: scriptAlias).map {
-        $0.script.hasSecret && !$0.arguments.isEmpty
-      } ?? false
     if executed || query.isEmpty || holdsSecret {
       keptAt = nil
       if !query.isEmpty { query = "" }
@@ -1402,7 +1398,10 @@ import UniformTypeIdentifiers
     guard !argument.options.isEmpty, argument.option(for: typed) == nil || typed.isEmpty else {
       return []
     }
-    let before = invocation.arguments.prefix(index).map(ScriptCommand.quoted)
+    // 只有一个参数的脚本整段就是它，不括引号（第 3 批评审：括了的话「"New York"」连引号交给脚本、也对不上选项）
+    let quotes = script.arguments.count > 1
+    func quote(_ text: String) -> String { quotes ? ScriptCommand.quoted(text) : text }
+    let before = invocation.arguments.prefix(index).map(quote)
     let rows = argument.options.enumerated().map { number, option in
       var row = Self.searchable(
         LauncherItem(
@@ -1410,7 +1409,7 @@ import UniformTypeIdentifiers
           title: option.title, subtitle: ""))
       row.subtitle = argument.placeholder
       row.completion =
-        ([invocation.keyword] + before + [ScriptCommand.quoted(option.title)])
+        ([invocation.keyword] + before + [quote(option.title)])
         .joined(separator: " ") + (index + 1 < script.arguments.count ? " " : "")
       row.scriptIcon = script.icon
       row.scriptIconDark = script.iconDark
@@ -1423,7 +1422,9 @@ import UniformTypeIdentifiers
   /// 跑失败了、下面又有别的结果：不留那行错误（「time machine」不是在给时间戳传参数）
   private func startList(_ invocation: ScriptCommand.Invocation) {
     let script = invocation.script
+    // 下拉参数还没对上选项时不跑（第 3 批评审：打一个字跑一次，结果还挤在选项前面）
     guard script.mode == .list, !invocation.isMissing,
+      script.invalidChoice(invocation.arguments) == nil,
       !script.isDownloaded || approvedScripts.contains(script.path)
     else { return }
     if script.filters { return startFilter(invocation) }
@@ -1578,6 +1579,14 @@ import UniformTypeIdentifiers
   }
 
   // MARK: 脚本命令
+
+  /// 搜索框里打着密码参数（第三轮 C3）：不留到下次呼出；⌥↩ / ⌃↩ 不拿它去访达、网页里搜（第 3 批评审：按住 ⌃ 时的说明还会
+  /// 把整句连密码显示出来）
+  private var holdsSecret: Bool {
+    ScriptCommand.invocation(for: query, in: activeScripts, alias: scriptAlias).map {
+      $0.script.hasSecret && !$0.arguments.isEmpty
+    } ?? false
+  }
 
   /// 记一次使用。有密码参数的（第三轮 C3）：查询里有密码，按关键词记，不把打的字存进使用记录；搜索框先清空（全文输出时
   /// 启动器留着，不清就一直看得见）
@@ -1849,7 +1858,7 @@ import UniformTypeIdentifiers
       return
     }
     guard arguments.count >= script.requiredCount, script.invalidChoice(arguments) == nil else {
-      return
+      return NSSound.beep()
     }
     if script.mode == .list { return search() }
     record(script, LauncherItem.script(script, alias: scriptAlias(script)))
@@ -2010,7 +2019,8 @@ import UniformTypeIdentifiers
   /// ⌥↩：在访达里用 Spotlight 搜当前查询（不需要额外授权）
   private func searchInFinder() {
     let text = searchText
-    guard !text.isEmpty, NSWorkspace.shared.showSearchResults(forQueryString: text) else {
+    guard !text.isEmpty, !holdsSecret, NSWorkspace.shared.showSearchResults(forQueryString: text)
+    else {
       return NSSound.beep()
     }
     close()
@@ -2019,7 +2029,7 @@ import UniformTypeIdentifiers
   /// ⌃↩：不管有没有本地结果，用第一个兜底搜索搜当前查询
   private func searchWeb() {
     let text = searchText
-    guard !text.isEmpty, let engine = WebSearch.primary(in: engines()),
+    guard !text.isEmpty, !holdsSecret, let engine = WebSearch.primary(in: engines()),
       let url = URL(string: WebSearch.url(engine, text))
     else { return NSSound.beep() }
     open(url, nil)
@@ -2164,12 +2174,14 @@ import UniformTypeIdentifiers
   /// ⌥↩ / ⌃↩ 做什么：没有查询（或没有兜底搜索）时 nil
   private var finderSearchTitle: String? {
     let text = searchText
-    return text.isEmpty ? nil : "在访达里搜索「\(text)」"
+    return text.isEmpty || holdsSecret ? nil : "在访达里搜索「\(text)」"
   }
 
   private var webSearchTitle: String? {
     let text = searchText
-    guard !text.isEmpty, let engine = WebSearch.primary(in: engines()) else { return nil }
+    guard !text.isEmpty, !holdsSecret, let engine = WebSearch.primary(in: engines()) else {
+      return nil
+    }
     return "用 \(engine.name) 搜索「\(text)」"
   }
 

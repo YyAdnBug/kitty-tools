@@ -132,15 +132,6 @@ struct ScriptsSection: View {
       SectionFootnote(
         "脚本以你的身份运行，能用 Kitty Tools 已有的辅助功能、屏幕录制等授权，只放你信得过的脚本；从网上下载的，第一次运行前会先给你看一眼全文。")
     }
-    .sheet(
-      isPresented: Binding {
-        navigation?.showsNewScript == true
-      } set: {
-        navigation?.showsNewScript = $0
-      }
-    ) {
-      NewScriptSheet(created: created) { navigation?.showsNewScript = false }
-    }
     .sheet(item: $pending) { candidate in
       ScriptImportSheet(candidate: candidate) {
         pending = nil
@@ -206,16 +197,8 @@ struct ScriptsSection: View {
       reading: ScriptReading(Data(text.utf8)))
   }
 
-  /// 「新建脚本」：先出小表单（第三轮 D2），建好用编辑器打开，岛上说接下来怎么做
+  /// 「新建脚本」：先出小表单（第三轮 D2，挂在设置窗根上），建好用编辑器打开，岛上说接下来怎么做（AppDelegate）
   private func newScript() { navigation?.showsNewScript = true }
-
-  private func created(_ url: URL) {
-    navigation?.showsNewScript = false
-    library?.refresh()
-    island?.show(
-      "已新建「\(url.lastPathComponent)」", detail: "改好保存，下次呼出启动器就能用",
-      actions: [.reveal(url)])
-  }
 
   /// 拖脚本文件进来：先看一眼再导入（一次一个；拖了几个只看第一个）。键盘、读屏用右边的「选择文件…」（第三轮评审）
   private var dropZone: some View {
