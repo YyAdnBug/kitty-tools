@@ -2,7 +2,8 @@
 // 启动器系统命令的 pmset / osascript、kill 列进程的 ps / lsof、读浏览器浏览历史（和 Firefox 书签）的 sqlite3 都走这里
 // （mac-native §3：进程外 + continuation）。剪贴板后台识字起的子进程（本 App 自己带 --ocr，OCR.recognizeTextInHelper）也走这里。
 // 启动器的脚本命令（ScriptRunner）也走这里：多了工作目录、任务取消时停掉子进程、只读输出的前一截（写得比上限的 4 倍还多就停掉，
-// 不让 `yes` 这种把临时目录写满）。停掉是先 SIGTERM、1 秒后还在就 SIGKILL（交互模式的 zsh 不理 SIGTERM，评审实测）。
+// 不让 `yes` 这种把临时目录写满）。访达右键的压缩、解压、复制要进度条：watch 在跑着的时候每 0.25 秒给一次子进程的进程号
+// 和标准错误里新写的那几行（同样是看临时文件，不接管道）。停掉是先 SIGTERM、1 秒后还在就 SIGKILL（交互模式的 zsh 不理 SIGTERM，评审实测）。
 // 标准输入一律接空设备：等输入的脚本读到的是文件结尾，不会一直挂着。
 
 import Foundation
@@ -41,19 +42,20 @@ enum Subprocess {
   /// 主线程卡着时会晚到，只当兜底用）；
   /// quality：子进程的优先级（不急的活给 .utility）；directory：工作目录（不给就继承）；
   /// stopsOnCancel：调用它的任务被取消时停掉子进程（SIGTERM；脚本的「停止」、列表打字时撤掉上一次）——别的调用方
-  /// 照旧跑完（应用内更新解包、验签那一两秒不能停）；outputLimit：输出只读前这么多字节
+  /// 照旧跑完（应用内更新解包、验签那一两秒不能停）；outputLimit：输出只读前这么多字节；
+  /// watch：跑着的时候每 0.25 秒叫一次，给子进程的进程号和标准错误里新写完的几行（要 captures；半行留到下一次）
   static func run(
     _ tool: String, _ arguments: [String], captures: Bool = false,
     environment: [String: String]? = nil, timeout: Duration? = nil,
     quality: QualityOfService = .default, directory: URL? = nil, stopsOnCancel: Bool = false,
-    outputLimit: Int? = nil
+    outputLimit: Int? = nil, watch: ((pid_t, String) -> Void)? = nil
   ) async throws -> Result {
     let running = Running()
     return try await withTaskCancellationHandler {
       try await run(
         tool, arguments, captures: captures, environment: environment, timeout: timeout,
         quality: quality, directory: directory, outputLimit: outputLimit, running: running,
-        stopsOnCancel: stopsOnCancel)
+        stopsOnCancel: stopsOnCancel, watch: watch)
     } onCancel: {
       if stopsOnCancel { Task { @MainActor in running.process.map(stop) } }
     }
@@ -62,7 +64,7 @@ enum Subprocess {
   private static func run(
     _ tool: String, _ arguments: [String], captures: Bool, environment: [String: String]?,
     timeout: Duration?, quality: QualityOfService, directory: URL?, outputLimit: Int?,
-    running: Running, stopsOnCancel: Bool
+    running: Running, stopsOnCancel: Bool, watch: ((pid_t, String) -> Void)?
   ) async throws -> Result {
     let process = Process()
     process.executableURL = URL(filePath: tool)
@@ -98,6 +100,32 @@ enum Subprocess {
       }
     }
     defer { sizeWatch?.cancel() }
+    // 进度：读标准错误新写的那一截，按整行交出去（多字节的字被切在半中间时留到下一次）
+    let progressWatch = (captures ? watch : nil).map { watch in
+      Task {
+        var offset: UInt64 = 0
+        var partial = Data()
+        while !Task.isCancelled {
+          try? await Task.sleep(for: .milliseconds(250))
+          guard process.isRunning else { continue }
+          if let handle = try? FileHandle(forReadingFrom: files[1]) {
+            try? handle.seek(toOffset: offset)
+            if let data = try? handle.readToEnd() {
+              offset += UInt64(data.count)
+              partial.append(data)
+            }
+            try? handle.close()
+          }
+          var lines = ""
+          if let end = partial.lastIndex(of: UInt8(ascii: "\n")) {
+            lines = String(decoding: partial[...end], as: UTF8.self)
+            partial.removeSubrange(...end)
+          }
+          watch(process.processIdentifier, lines)
+        }
+      }
+    }
+    defer { progressWatch?.cancel() }
     if captures {
       for file in files { FileManager.default.createFile(atPath: file.path, contents: nil) }
       process.standardOutput = try FileHandle(forWritingTo: files[0])

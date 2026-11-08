@@ -178,7 +178,10 @@ import AppKit
   }
 
   /// 搬一样：失败 / 被停时 url 是 nil（原件、别人的文件不动，只清掉自己的临时名）
-  static func move(_ file: URL, into folder: URL, named name: String, copy: Bool) async -> Moved {
+  static func move(
+    _ file: URL, into folder: URL, named name: String, copy: Bool, meter: ByteMeter? = nil,
+    report: @escaping Report = { _, _ in }
+  ) async -> Moved {
     let manager = FileManager.default
     let target = folder.appending(path: name)
     // 同一个卷（目标文件夹是替身时按它指向的那个比）：改名；内核说其实不在同一个卷上（EXDEV）就改走拷贝
@@ -204,10 +207,22 @@ import AppKit
     if link {
       copied = (try? manager.copyItem(at: file, to: temporary)) != nil
     } else {
+      let folder = (try? file.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+      // -V：每拷完一个文件报「N bytes for 名字」，进度条用
       let result = try? await Subprocess.run(
         "/usr/bin/ditto",
-        ["--noacl", file.path(percentEncoded: false), temporary.path(percentEncoded: false)],
-        stopsOnCancel: true)
+        ["-V", "--noacl", file.path(percentEncoded: false), temporary.path(percentEncoded: false)],
+        captures: true, stopsOnCancel: true,
+        watch: meter.map { meter in
+          { pid, lines in
+            // 同一个卷上是克隆：ditto 只报「hardlinked 名字」，按名字看多大（名字相对拷的那一样）
+            meter.feed(lines) { name in
+              ByteMeter.fileSize(FileMoves.plainPath(file) + (folder ? "/" + name : ""))
+            }
+            let value = meter.value(current: ByteMeter.reading(pid: pid))
+            report(meter.fraction(value), meter.detail(value))
+          }
+        })
       copied = result?.status == 0 && !Task.isCancelled
     }
     // 拷完再数一遍：少了就当没拷成（不报成功、移动的不删原件）。拷到 FAT 这类盘会多出 ._ 开头的，多了不算
@@ -330,17 +345,30 @@ import AppKit
   }
 
   /// 一批：真正动手时才算名字；被停了就不再开始下一样。移动时卷的根、系统文件夹、主目录不动（refusal 已经说过）
-  static func execute(_ files: [URL], into folder: URL, move: Bool) async -> Outcome {
+  static func execute(
+    _ files: [URL], into folder: URL, move: Bool, report: @escaping Report = { _, _ in }
+  ) async -> Outcome {
     var outcome = Outcome()
     var used = Set<String>()
     let isProtected = protection()
-    for file in files
-    where occupied(file) && movable(file, into: folder, move: move) && !(move && isProtected(file))
-    {
+    let list = files.filter {
+      occupied($0) && movable($0, into: folder, move: move) && !(move && isProtected($0))
+    }
+    // 进度按字节算：要拷的（复制、跨卷移动）先数一共多大；同一个卷上的移动是改名，一下就好，不数
+    let copies = !move || list.contains { !sameVolume($0, folder.resolvingSymlinksInPath()) }
+    let sizes = copies ? await ByteMeter.sizes(of: list) : list.map { _ in 0 }
+    let meter = ByteMeter(total: sizes.reduce(0, +))
+    for (index, file) in list.enumerated() {
       if Task.isCancelled { break }
       let name = freeName(file.lastPathComponent, in: folder, used: used)
       used.insert(name.lowercased())
-      let moved = await self.move(file, into: folder, named: name, copy: !move)
+      let moved = await self.move(
+        file, into: folder, named: name, copy: !move, meter: meter, report: report)
+      meter.finishItem(sizes[index])
+      if copies {
+        let value = meter.value(current: 0)
+        report(meter.fraction(value), meter.detail(value))
+      }
       if let url = moved.url {
         outcome.done.append(url)
         if moved.keptOriginal { outcome.kept += 1 }
@@ -352,22 +380,28 @@ import AppKit
     return outcome
   }
 
-  /// 一批的任务（「停止」停的是它自己，不是排在后面的那一批）
+  /// 一批的任务（「停止」停的是它自己，不是排在后面的那一批）和最近报的进度（每 50 秒再挂时用最新的）
   private final class Batch {
     var task: Task<Void, Never>?
+    var fraction: Double?
+    var detail: String?
   }
+
+  /// 报进度：进度条（0…1，不知道是 nil）和小字，刘海岛上「正在…」那一条原地改（ByteMeter 算）
+  typealias Report = (Double?, String) -> Void
 
   /// 最后排进来的那一批（新的一批等它做完再开始）
   private static var last: Task<Void, Never>?
 
   /// 动文件的一批（移动、复制、压缩、解压）排进同一条队，挨个来；超过 1 秒在刘海岛上挂 notice 带「停止」（停的是这一批自己，
-  /// work 里的子进程要 stopsOnCancel），做完交给 finish
+  /// work 里的子进程要 stopsOnCancel）和进度条（work 拿到的 report 报进度），做完交给 finish
   static func enqueue<T>(
-    _ notice: String, detail: String? = nil, island: Island?, work: @escaping () async -> T,
-    finish: @escaping (T) -> Void
+    _ notice: String, detail: String? = nil, island: Island?,
+    work: @escaping (_ report: @escaping Report) async -> T, finish: @escaping (T) -> Void
   ) {
     let previous = last
     let batch = Batch()
+    batch.detail = detail
     batch.task = Task {
       await previous?.value
       // 超过 1 秒挂「正在…」带「停止」；进行中的那一条刘海岛 60 秒后会收起，每 50 秒再挂一次，做得久的也一直停得了
@@ -377,13 +411,17 @@ import AppKit
           // 再挂时不抢别的：岛上空着、或者正挂着这一条才挂（别的提示、挂着的提醒照常露出来）
           if island?.content == nil || island?.content?.title == notice {
             island?.show(
-              notice, detail: detail, tone: .progress,
+              notice, detail: batch.detail, tone: .progress, fraction: batch.fraction,
               actions: [Island.Action("停止") { batch.task?.cancel() }])
           }
           try? await Task.sleep(for: .seconds(50))
         }
       }
-      let result = await work()
+      let result = await work { fraction, detail in
+        batch.fraction = fraction
+        batch.detail = detail
+        island?.progress(notice, detail: detail, fraction: fraction)
+      }
       ticker.cancel()
       finish(result)
     }
@@ -398,8 +436,8 @@ import AppKit
       island?.show("没有\(verb)", detail: reason, tone: .warning)
       return
     }
-    enqueue("正在\(verb) \(files.count) 项…", detail: "到「\(place)」", island: island) {
-      await execute(files, into: folder, move: move)
+    enqueue("正在\(verb) \(files.count) 项到「\(place)」…", detail: "准备中", island: island) { report in
+      await execute(files, into: folder, move: move, report: report)
     } finish: { outcome in
       report(outcome, verb: verb, place: place, island: island)
     }
@@ -601,7 +639,7 @@ import AppKit
       return
     }
     guard confirmErase(items) else { return }
-    enqueue("正在彻底删除 \(items.count) 项…", island: island) {
+    enqueue("正在彻底删除 \(items.count) 项…", island: island) { _ in
       var done = 0
       for item in items {
         if Task.isCancelled { break }

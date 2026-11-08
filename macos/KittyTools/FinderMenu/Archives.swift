@@ -11,6 +11,8 @@
 //   拿不到键盘，打的字会进访达。先解进包旁边一个隐藏的临时文件夹，里面只有一样东西就把它放到包旁边，几样就把
 //   临时文件夹改成包的名字（同归档实用工具），重名加「 2」；出错、停了只删临时文件夹。包带着「从网上下载」的隔离标记时，
 //   系统 tar 自己会给解出来的每样东西也带上（实测），不另外做；它默认也不解绝对路径、带 .. 的路径，不顺着包里的符号链接往外写。
+// - 进度条（ByteMeter）：压缩按读过的字节（tar -v / ditto -V 报做完的文件，加上正读着的那个读到哪了），解压按压缩包读到第几个
+//   字节，刘海岛上「42% · 1.2 GB / 2.9 GB」。
 // - 落到正式名字都用「目标已存在就报错」的改名（FileMoves.land），算完名字到落下之间别人占了也盖不掉；和移动、复制排在同一条队
 //   （FileMoves.enqueue）：超过 1 秒在刘海岛上挂「正在…」带「停止」，做完说一声、带「在访达中显示」。
 // 名字、tar 的参数、出错原因是纯函数（ArchivesTests，另在临时文件夹里真压、真解一遍）。
@@ -99,7 +101,8 @@ import AppKit
     -> [String]
   {
     var arguments = [
-      "-c", "-f", archive.path(percentEncoded: false), "--format", format == .zip ? "zip" : "7zip",
+      "-c", "-v", "-f", archive.path(percentEncoded: false), "--format",
+      format == .zip ? "zip" : "7zip",
       "--options", format == .zip ? "zip:hdrcharset=UTF-8" : "7zip:compression=lzma2",
       "--no-mac-metadata", "-s", "|^\\./||S",
     ]
@@ -166,27 +169,47 @@ import AppKit
   // MARK: 压缩
 
   /// 打一个包：先写到 archive 旁边的隐藏临时名，打完落到 archive（重名换「 2」）
-  static func pack(_ items: [URL], format: Format, to archive: URL) async -> Outcome {
+  static func pack(
+    _ items: [URL], format: Format, to archive: URL,
+    report: @escaping FileMoves.Report = { _, _ in }
+  ) async -> Outcome {
     let temporary = FileMoves.temporary(in: archive.deletingLastPathComponent())
     let package =
       format == .zip && items.count == 1
       && (try? items[0].resourceValues(forKeys: [.isPackageKey]))?.isPackage == true
+    // 进度（ByteMeter）：一共多大先数好；tar -v 每开始一个文件报「a 名字」，名字按它所在的文件夹拼回去看多大；
+    // ditto -V 每打完一个报「N bytes for 名字」
+    let meter = ByteMeter(total: await ByteMeter.sizes(of: items).reduce(0, +))
+    var parents: [String: String] = [:]
+    for item in items {
+      parents[item.lastPathComponent] =
+        (FileMoves.plainPath(item) as NSString).deletingLastPathComponent
+    }
+    let size = { (name: String) -> Int64? in
+      parents[String(name.prefix { $0 != "/" })].flatMap { ByteMeter.fileSize($0 + "/" + name) }
+    }
+    let watch = { (pid: pid_t, lines: String) in
+      meter.feed(lines, size: size)
+      let value = meter.value(current: ByteMeter.reading(pid: pid))
+      report(meter.fraction(value), meter.detail(value))
+    }
     let result =
       package
       ? try? await Subprocess.run(
         "/usr/bin/ditto",
         [
-          "-c", "-k", "--sequesterRsrc", "--keepParent", items[0].path(percentEncoded: false),
+          "-c", "-k", "-V", "--sequesterRsrc", "--keepParent", items[0].path(percentEncoded: false),
           temporary.path(percentEncoded: false),
-        ], captures: true, quality: .userInitiated, stopsOnCancel: true)
+        ], captures: true, quality: .userInitiated, stopsOnCancel: true, watch: watch)
       : try? await Subprocess.run(
         "/usr/bin/tar", compressArguments(items, format: format, to: temporary), captures: true,
-        quality: .userInitiated, stopsOnCancel: true)
+        environment: ByteMeter.utf8Environment, quality: .userInitiated, stopsOnCancel: true,
+        watch: watch)
     let failure: Outcome
     if Task.isCancelled {
       failure = .stopped
     } else if let result, result.status != 0 {
-      let problem = placeProblem(result.error)
+      let problem = placeProblem(ByteMeter.errors(result.error))
       failure = .failed(
         format == .sevenZip && problem == "磁盘空间不够了"
           ? "磁盘空间不够了（7z 还要先在启动盘上暂存一份）"
@@ -222,12 +245,10 @@ import AppKit
       filePath: (FileMoves.plainPath(first) as NSString).deletingLastPathComponent,
       directoryHint: .isDirectory)
     let name = archiveName(for: items, format: format)
-    FileMoves.enqueue(
-      "正在压缩 \(items.count) 项…", detail: "打成「\(name)」", island: island
-    ) {
+    FileMoves.enqueue("正在压缩成「\(name)」…", detail: "准备中", island: island) { report in
       await pack(
         items, format: format,
-        to: folder.appending(path: FileMoves.freeName(name, in: folder, used: [])))
+        to: folder.appending(path: FileMoves.freeName(name, in: folder, used: [])), report: report)
     } finish: { outcome in
       report(outcome, verb: "压缩", island: island)
     }
@@ -236,8 +257,18 @@ import AppKit
   // MARK: 解压
 
   /// 解一个包到它旁边
-  static func unpack(_ archive: URL, password: String?, gbk: Bool) async -> Outcome {
+  static func unpack(
+    _ archive: URL, password: String?, gbk: Bool, report: @escaping FileMoves.Report = { _, _ in }
+  ) async -> Outcome {
     let manager = FileManager.default
+    // 进度：压缩包读到第几个字节 ÷ 包有多大（ByteMeter，看子进程开着的那个包）
+    let meter = ByteMeter(
+      total: Int64((try? archive.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0))
+    let name = archive.lastPathComponent
+    let watch = { (pid: pid_t, _: String) in
+      let value = meter.archiveValue(ByteMeter.reading(pid: pid, named: name))
+      report(meter.fraction(value), meter.detail(value))
+    }
     let parent = archive.deletingLastPathComponent()
     let work = FileMoves.temporary(in: parent)
     guard (try? manager.createDirectory(at: work, withIntermediateDirectories: false)) != nil else {
@@ -253,7 +284,7 @@ import AppKit
         [
           "-c", "exec \"$0\" -c -- \"$1\" > \"$2\"", tool, archive.path(percentEncoded: false),
           output.path(percentEncoded: false),
-        ], captures: true, quality: .userInitiated, stopsOnCancel: true)
+        ], captures: true, quality: .userInitiated, stopsOnCancel: true, watch: watch)
       // 包末尾有补零 / 垃圾时 gunzip 解完整了、只说一句「trailing garbage ignored」、退出码 2（评审实测）：算成了
       if var finished = result, finished.status == 2,
         case let lines = finished.error.split(whereSeparator: \.isNewline), !lines.isEmpty,
@@ -275,7 +306,7 @@ import AppKit
     } else {
       result = try? await Subprocess.run(
         "/usr/bin/tar", extractArguments(archive, into: work, gbk: gbk, password: password),
-        captures: true, quality: .userInitiated, stopsOnCancel: true)
+        captures: true, quality: .userInitiated, stopsOnCancel: true, watch: watch)
     }
     let failure: Outcome
     if Task.isCancelled {
@@ -361,8 +392,9 @@ import AppKit
       }
       password = given
     }
-    FileMoves.enqueue("正在解压「\(archive.lastPathComponent)」…", island: island) {
-      await unpack(archive, password: password, gbk: gbk)
+    FileMoves.enqueue("正在解压「\(archive.lastPathComponent)」…", detail: "准备中", island: island) {
+      report in
+      await unpack(archive, password: password, gbk: gbk, report: report)
     } finish: { outcome in
       if outcome == .wrongPassword || outcome == .needsPassword {
         // 这一批先收尾，再另起一个去问：框开着的时候别堵住后面排着的

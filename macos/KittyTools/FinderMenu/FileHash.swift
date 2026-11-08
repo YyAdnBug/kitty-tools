@@ -79,7 +79,7 @@ nonisolated enum FileHash {
       "正在算 \(kind.title)…",
       detail: regular.count == 1 ? regular[0].lastPathComponent : "\(regular.count) 个文件",
       island: island
-    ) {
+    ) { _ in
       var results: [(file: URL, hex: String)] = []
       for file in regular {
         if Task.isCancelled { return (results, stopped: true) }
