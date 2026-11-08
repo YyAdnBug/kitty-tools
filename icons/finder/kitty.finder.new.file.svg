@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <title>新建文件</title>
+  <path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" d="M13.6 2.6H7.3A2.2 2.2 0 0 0 5.1 4.8V19.2A2.2 2.2 0 0 0 7.3 21.4H16.7A2.2 2.2 0 0 0 18.9 19.2V7.9Z"/>
+  <path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" d="M13.6 2.6V6.4A1.5 1.5 0 0 0 15.1 7.9H18.9"/>
+  <path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" d="M12 11.4V17.6M8.9 14.5H15.1"/>
+</svg>

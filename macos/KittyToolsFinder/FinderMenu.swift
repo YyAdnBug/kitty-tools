@@ -6,6 +6,8 @@
 // <App 的 bundle id>://finder?do=<动作>&key=<凭证>&…&file=/a，App 那边是 FinderLink（网址的写法在那边的文件头）；
 // App 被退出了的话网址会把它打开。凭证、开关、「用 App 打开」的列表从 App 的偏好里读，模板文件夹只为列菜单读一下
 // （Finder.entitlements 的两条只读例外，没有别的）；功能关着（或者 App 还没生成凭证）时一项都不加。
+// 图标：每一项都带（没图标的项文字会和带图标的错开一截）。拷贝路径、新建文件是自己画的（icons/finder/，
+// swift icons/build-icons.swift finder 生成到本 target 的 Assets.xcassets），线宽照 SF Symbols 常规粗细；另两项用系统符号。
 // 看所有位置（directoryURLs 设成根目录）；iCloud 云盘、网盘这类文件提供程序管的文件夹里系统不给扩展菜单。
 // 要用户在 系统设置 › 通用 › 登录项与扩展 里打开它（App 设置 › 访达右键 有「去打开…」）。
 // ponytail: 这个 target 用 Swift 5 语言模式（Config/Finder.xcconfig），FinderSync 加上并发标注后改回 6。
@@ -98,11 +100,13 @@ final class FinderMenu: FIFinderSync {
     // 不加分隔线：macOS 26 上扩展菜单里的分隔线会画成一行空白（2026-09 开发者论坛，没解答）
     let menu = NSMenu()
     if container != 0 {
-      menu.addItem(withTitle: "新建文件", action: nil, keyEquivalent: "").submenu = Self.newFileMenu()
+      let new = menu.addItem(withTitle: "新建文件", action: nil, keyEquivalent: "")
+      new.submenu = Self.newFileMenu()
+      new.image = Self.drawn("kitty.finder.new.file")
     }
     let copy = menu.addItem(withTitle: "拷贝路径", action: #selector(copyPath(_:)), keyEquivalent: "")
     copy.tag = container
-    copy.image = NSImage(systemSymbolName: "doc.on.doc", accessibilityDescription: nil)
+    copy.image = Self.drawn("kitty.finder.copy.path")
     for (index, app) in Self.openWithApps.enumerated() {
       let item = menu.addItem(
         withTitle: Self.openTitle(app.url), action: #selector(open(_:)), keyEquivalent: "")
@@ -111,6 +115,35 @@ final class FinderMenu: FIFinderSync {
       item.image?.size = NSSize(width: 16, height: 16)
     }
     return menu
+  }
+
+  /// 自己画的图标（Assets.xcassets/FinderIcons）：按菜单的字号（13 pt、常规）画成 1x / 2x 的模板位图再交出去——
+  /// 菜单项要跨进程交给访达，本扩展资源目录里的符号到了访达那边不一定认得，位图一定认得；模板图让访达按菜单的字色、
+  /// 高亮、深色模式上色
+  private static func drawn(_ name: String) -> NSImage? {
+    guard
+      let symbol = NSImage(named: name)?.withSymbolConfiguration(
+        NSImage.SymbolConfiguration(pointSize: 13, weight: .regular))
+    else { return nil }
+    let size = symbol.size
+    let image = NSImage(size: size)
+    for scale in [1.0, 2.0] {
+      guard
+        let rep = NSBitmapImageRep(
+          bitmapDataPlanes: nil, pixelsWide: Int((size.width * scale).rounded(.up)),
+          pixelsHigh: Int((size.height * scale).rounded(.up)), bitsPerSample: 8, samplesPerPixel: 4,
+          hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0,
+          bitsPerPixel: 0)
+      else { continue }
+      rep.size = size
+      NSGraphicsContext.saveGraphicsState()
+      NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+      symbol.draw(in: NSRect(origin: .zero, size: size))
+      NSGraphicsContext.restoreGraphicsState()
+      image.addRepresentation(rep)
+    }
+    image.isTemplate = true
+    return image
   }
 
   /// 「新建文件 ▸」：自带五种（图标按类型取）、模板文件夹里的（图标按文件取）、自定义后缀、打开模板文件夹
@@ -131,7 +164,9 @@ final class FinderMenu: FIFinderSync {
       add(title, mineTag + index, NSWorkspace.shared.icon(forFile: mine[index].path))
     }
     menu.addItem(withTitle: "自定义后缀…", action: #selector(createCustom(_:)), keyEquivalent: "")
+      .image = NSImage(systemSymbolName: "character.cursor.ibeam", accessibilityDescription: nil)
     menu.addItem(withTitle: "打开模板文件夹", action: #selector(showTemplates(_:)), keyEquivalent: "")
+      .image = NSImage(systemSymbolName: "folder", accessibilityDescription: nil)
     return menu
   }
 

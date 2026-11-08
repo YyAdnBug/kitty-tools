@@ -155,6 +155,26 @@ import UniformTypeIdentifiers
     #expect(SettingsSync.localKeys.contains(Feature.finderMenu.prefsKey))
   }
 
+  /// 扩展的菜单图标：icons/finder/ 的源和扩展资源目录里生成的对得上，扩展里用到的名字都有
+  @Test func extensionIconsAreGenerated() throws {
+    let macos = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+      .deletingLastPathComponent()
+    let names = { (folder: URL, suffix: String) in
+      Set(
+        try FileManager.default.contentsOfDirectory(atPath: folder.path(percentEncoded: false))
+          .filter { $0.hasSuffix(suffix) }.map { String($0.dropLast(suffix.count)) })
+    }
+    let sources = try names(
+      macos.deletingLastPathComponent().appending(path: "icons/finder"), ".svg")
+    let assets = try names(
+      macos.appending(path: "KittyToolsFinder/Assets.xcassets/FinderIcons"), ".symbolset")
+    #expect(sources == ["kitty.finder.copy.path", "kitty.finder.new.file"])
+    #expect(sources == assets)
+    let source = try String(
+      contentsOf: macos.appending(path: "KittyToolsFinder/FinderMenu.swift"), encoding: .utf8)
+    for name in sources { #expect(source.contains("\"\(name)\""), "\(name)") }
+  }
+
   /// 扩展那边抄的字面量（键名、默认 App、网址的写法）真的在它的源码里：扩展没有单测，读源文件比对
   @Test func extensionSourceUsesTheSameNames() throws {
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
