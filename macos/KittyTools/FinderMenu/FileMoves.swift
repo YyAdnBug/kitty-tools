@@ -161,9 +161,12 @@ import AppKit
     return placed
   }
 
-  /// 删掉一整棵（另起 rm：几万个文件的文件夹在主线程上删要好几秒）
-  static func remove(_ url: URL) async {
-    _ = try? await Subprocess.run("/bin/rm", ["-rf", "--", url.path(percentEncoded: false)])
+  /// 删掉一整棵（另起 rm：几万个文件的文件夹在主线程上删要好几秒）。路径去掉结尾的「/」：指向文件夹的符号链接写成
+  /// 「链接/」时，rm 会顺着它把那边文件夹里的东西删光；-x 不穿过挂载点（文件夹里挂着网盘、磁盘映像时，不删到那个卷里去，
+  /// 评审）。stops：任务被取消时停掉 rm（只有彻底删除要；扔临时名的时候任务往往已经取消了，不能停）
+  static func remove(_ url: URL, stops: Bool = false) async {
+    _ = try? await Subprocess.run(
+      "/bin/rm", ["-rfx", "--", plainPath(url)], stopsOnCancel: stops)
   }
 
   /// 一批：真正动手时才算名字；被停了就不再开始下一样
@@ -316,6 +319,80 @@ import AppKit
       return
     }
     transfer(items, to: folder, move: true, island: island)
+  }
+
+  // MARK: 彻底删除
+
+  /// 不让彻底删除（也不让隐藏）的：根目录、第一层的系统文件夹（/Users、/Applications 这种）、主目录本身、卷的根。
+  /// 除了按路径，还按文件的身份比（fileResourceIdentifier）：「/users/yy」「/System/Volumes/Data/Users/yy」和主目录是
+  /// 同一个文件夹，按字符串比不上（评审实测）
+  nonisolated static func protected(_ url: URL, home: String = NSHomeDirectory()) -> Bool {
+    let path = plainPath(url)
+    if URL(filePath: path).pathComponents.count <= 2 || path == plainPath(URL(filePath: home)) {
+      return true
+    }
+    let values = try? url.resourceValues(forKeys: [.isVolumeKey, .fileResourceIdentifierKey])
+    if values?.isVolume == true { return true }
+    guard let id = values?.fileResourceIdentifier as? NSObject else { return false }
+    let root = URL(filePath: "/")
+    let guarded =
+      [root, URL(filePath: home)]
+      + ((try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil))
+      ?? []).map { $0.resolvingSymlinksInPath() }
+    return guarded.contains {
+      (try? $0.resourceValues(forKeys: [.fileResourceIdentifierKey]))?.fileResourceIdentifier
+        as? NSObject == id
+    }
+  }
+
+  /// 「彻底删除…」（2026-11-08 右键扩充拍板 E4，默认关）：一定先问——列前 5 个名字和总数，写明不进废纸篓、删了找不回来，
+  /// 默认按钮是「取消」，删除按钮是危险色（交给系统画）；不提供跳过确认的办法。符号链接只删链接本身。
+  /// 删得久时同样能停（已经删掉的找不回来，说清楚）
+  static func erase(_ files: [URL], island: Island?) {
+    let items = files.filter { occupied($0) && !protected($0) }
+    guard !items.isEmpty, confirmErase(items) else {
+      if items.isEmpty { NSSound.beep() }
+      return
+    }
+    enqueue("正在彻底删除 \(items.count) 项…", island: island) {
+      var done = 0
+      for item in items {
+        if Task.isCancelled { break }
+        if (try? item.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink == true {
+          try? FileManager.default.removeItem(at: item)
+        } else {
+          await remove(item, stops: true)
+        }
+        if !occupied(item) { done += 1 }
+      }
+      return done
+    } finish: { done in
+      if done == items.count {
+        island?.show("已彻底删除" + (done == 1 ? "「\(items[0].lastPathComponent)」" : " \(done) 项"))
+      } else {
+        island?.show(
+          "删了 \(done) 项，\(items.count - done) 项没删完",
+          detail: "停下了，或者里面有没有权限删的；已经删掉的找不回来",
+          tone: .warning)
+      }
+    }
+  }
+
+  /// 问一下；点了「彻底删除」才是 true
+  private static func confirmErase(_ items: [URL]) -> Bool {
+    let alert = NSAlert()
+    alert.alertStyle = .warning
+    alert.messageText =
+      items.count == 1 ? "彻底删除「\(items[0].lastPathComponent)」？" : "彻底删除这 \(items.count) 项？"
+    var names =
+      items.count == 1
+      ? "" : items.prefix(5).map { "「\($0.lastPathComponent)」" }.joined(separator: "\n")
+    if items.count > 5 { names += "\n……一共 \(items.count) 项" }
+    alert.informativeText = (names.isEmpty ? "" : names + "\n\n") + "不进废纸篓，删了无法恢复。"
+    // 第一个按钮是默认的（回车）：取消
+    let cancel = alert.addButton(withTitle: "取消")
+    alert.addButton(withTitle: "彻底删除").hasDestructiveAction = true
+    return FinderLink.ask(alert, focus: cancel) == .alertSecondButtonReturn
   }
 
   // MARK: 替身

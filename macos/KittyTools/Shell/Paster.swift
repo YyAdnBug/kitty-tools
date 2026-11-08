@@ -97,14 +97,14 @@ enum Paster {
     for _ in 0..<moves { view.moveLeft(nil) }
   }
 
-  /// 向前台 App 按一下某个键（不带修饰键：热键里还按着的 ⌥ / ⇧ 不混进来）。未授权返回 false。
-  /// 访达右键新建文件后按回车进入改名用（NewFile.revealForRename）
-  @discardableResult static func press(_ key: Int) -> Bool {
+  /// 向前台 App 按一下某个键，修饰键只带 flags（热键里还按着的 ⌥ / ⇧ 不混进来）。未授权返回 false。
+  /// 访达右键新建文件后按回车进入改名（NewFile.revealForRename）、「显示 / 隐藏 隐藏文件」按 ⇧⌘.（FileFlags）用
+  @discardableResult static func press(_ key: Int, flags: CGEventFlags = []) -> Bool {
     guard Permissions.isAccessibilityTrusted else { return false }
     let source = CGEventSource(stateID: .combinedSessionState)
     for keyDown in [true, false] {
       let event = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(key), keyDown: keyDown)
-      event?.flags = []
+      event?.flags = flags
       event?.post(tap: .cgSessionEventTap)
     }
     return true

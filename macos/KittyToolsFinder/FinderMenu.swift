@@ -1,9 +1,11 @@
 // 访达扩展（第十一族「访达右键」，2026-11-08 拍板，PLAN §10「访达右键」）：在访达的右键菜单第一层加几项。
 // - 选中文件 / 文件夹右键：「拷贝路径」「拷贝名称」、设置里选的每个 App 一项「在“X”中打开」（默认只有终端；叫法照访达
 //   自己的「在“照片”中打开」）、「移动到 ▸」「复制到 ▸」（常用文件夹 + 选择文件夹…）、「剪切」、「压缩 ▸」（ZIP、7Z）、
-//   「解压到这里」（选中的都是压缩包时）、「修复乱码文件名」（选中的有名字像乱码、还原得出来的时候）、「发送替身到桌面」。
+//   「解压到这里」（选中的都是压缩包时）、「修复乱码文件名」（选中的有名字像乱码、还原得出来的时候）、「隐藏」/「取消隐藏」、
+//   「隐藏扩展名」/「显示扩展名」（看选中的现在是什么样；读不到就当没隐藏）、「拷贝哈希 ▸」（选中的都是文件时）、
+//   「发送替身到桌面」、「彻底删除…」（App 那边先问）。
 // - 文件夹空白处右键：最前面「新建文件 ▸」（自带五种、模板文件夹里放的每个文件、「自定义后缀…」、「打开模板文件夹」），
-//   剪切过、剪贴板还没换过时多一项「粘贴 N 项」，然后「拷贝路径」「在“X”中打开」，对着的是这个文件夹。
+//   剪切过、剪贴板还没换过时多一项「粘贴 N 项」，然后「拷贝路径」「在“X”中打开」「显示 / 隐藏 隐藏文件」，对着的是这个文件夹。
 // 每一项在 App 设置里能单独关（App 的 FinderMenuItem；同几家成熟产品），默认开关照 2026-11-08 右键扩充拍板 A2。
 // 扩展只画菜单、不碰文件（拍板 C2）：点了用 App 自己的网址把动作交给常驻菜单栏的 Kitty Tools，
 // <App 的 bundle id>://finder?do=<动作>&key=<凭证>&…&file=/a，App 那边是 FinderLink（网址的写法在那边的文件头）；
@@ -172,6 +174,9 @@ final class FinderMenu: FIFinderSync {
   /// 模板文件夹里的那几项 tag 从这里起
   private static let mineTag = 100
 
+  /// 「拷贝哈希 ▸」的几种（tag 是序号；ponytail: 抄的 App 的 FileHash.Kind，FinderLinkTests 比对）
+  private static let hashes = [("sha256", "SHA-256"), ("md5", "MD5"), ("sha1", "SHA-1")]
+
   /// 「解压到这里」认的扩展名（ponytail: 抄的 App 的 Archives.suffixes，FinderLinkTests 比对）
   private static let archiveSuffixes = [
     ".zip", ".7z", ".tar", ".tar.gz", ".tgz", ".tar.xz", ".txz", ".tar.bz2", ".tbz", ".tbz2",
@@ -226,6 +231,17 @@ final class FinderMenu: FIFinderSync {
     if items, Self.shows("finderMenuCopyName", default: true) {
       Self.add("拷贝名称", #selector(copyName(_:)), symbol: "textformat", to: menu)
     }
+    let selected = items ? FIFinderSyncController.default().selectedItemURLs() ?? [] : []
+    if Self.shows("finderMenuHash", default: false), !selected.isEmpty,
+      !selected.contains(where: \.hasDirectoryPath)
+    {
+      let kinds = NSMenu()
+      for (index, kind) in Self.hashes.enumerated() {
+        kinds.addItem(withTitle: kind.1, action: #selector(copyHash(_:)), keyEquivalent: "").tag =
+          index
+      }
+      Self.add("拷贝哈希", nil, symbol: "number", to: menu).submenu = kinds
+    }
     for (index, app) in Self.openWithApps.enumerated() {
       let item = menu.addItem(
         withTitle: Self.openTitle(app.url), action: #selector(open(_:)), keyEquivalent: "")
@@ -242,7 +258,6 @@ final class FinderMenu: FIFinderSync {
     if items, Self.shows("finderMenuCut", default: true) {
       Self.add("剪切", #selector(cut(_:)), symbol: "scissors", to: menu)
     }
-    let selected = items ? FIFinderSyncController.default().selectedItemURLs() ?? [] : []
     if items, Self.shows("finderMenuCompress", default: true) {
       let formats = NSMenu()
       formats.addItem(withTitle: "ZIP", action: #selector(compressZip(_:)), keyEquivalent: "")
@@ -259,10 +274,47 @@ final class FinderMenu: FIFinderSync {
     {
       Self.add("修复乱码文件名", #selector(fixNames(_:)), symbol: "wand.and.stars", to: menu)
     }
+    if Self.shows("finderMenuHide", default: false) {
+      Self.addHideItems(for: selected, to: menu)
+    }
     if items, Self.shows("finderMenuDeskAlias", default: false) {
       Self.add("发送替身到桌面", #selector(alias(_:)), symbol: "arrow.up.right.square", to: menu)
     }
+    if !items, Self.shows("finderMenuShowHidden", default: false) {
+      let toggle = Self.add(
+        "显示 / 隐藏 隐藏文件", #selector(toggleHidden(_:)), symbol: "eye", to: menu)
+      toggle.tag = container
+    }
+    if items, Self.shows("finderMenuErase", default: false) {
+      Self.add("彻底删除…", #selector(erase(_:)), symbol: "trash.slash", to: menu)
+    }
     return menu.items.isEmpty ? nil : menu
+  }
+
+  /// 「隐藏」/「取消隐藏」（点开头的本来就隐藏，不算）和「隐藏扩展名」/「显示扩展名」（有扩展名的才算）：
+  /// 都已经是那样了才出反过来的那个
+  private static func addHideItems(for selected: [URL], to menu: NSMenu) {
+    let flag = { (url: URL, key: URLResourceKey) in
+      (try? url.resourceValues(forKeys: [key]))?.allValues[key] as? Bool == true
+    }
+    let plain = selected.filter { !$0.lastPathComponent.hasPrefix(".") }
+    if !plain.isEmpty {
+      let hidden = plain.allSatisfy { flag($0, .isHiddenKey) }
+      add(
+        hidden ? "取消隐藏" : "隐藏",
+        hidden ? #selector(FinderMenu.unhideItems(_:)) : #selector(FinderMenu.hideItems(_:)),
+        symbol: hidden ? "eye" : "eye.slash", to: menu)
+    }
+    let named = selected.filter { !$0.pathExtension.isEmpty }
+    if !named.isEmpty {
+      let hidden = named.allSatisfy { flag($0, .hasHiddenExtensionKey) }
+      add(
+        hidden ? "显示扩展名" : "隐藏扩展名",
+        hidden
+          ? #selector(FinderMenu.showExtensions(_:)) : #selector(FinderMenu.hideExtensions(_:)),
+        symbol: "textformat.abc",
+        to: menu)
+    }
   }
 
   /// 加一项带系统符号（模板图）的
@@ -429,6 +481,37 @@ final class FinderMenu: FIFinderSync {
     hand("alias", container: false)
   }
 
+  @objc private func copyHash(_ sender: AnyObject?) {
+    guard let tag = (sender as? NSMenuItem)?.tag, Self.hashes.indices.contains(tag) else { return }
+    hand(
+      "hash", extra: [URLQueryItem(name: "algo", value: Self.hashes[tag].0)], container: false)
+  }
+
+  @objc private func hideItems(_ sender: AnyObject?) {
+    hand("hide", extra: [URLQueryItem(name: "on", value: "1")], container: false)
+  }
+
+  @objc private func unhideItems(_ sender: AnyObject?) {
+    hand("hide", extra: [URLQueryItem(name: "on", value: "0")], container: false)
+  }
+
+  @objc private func hideExtensions(_ sender: AnyObject?) {
+    hand("ext", extra: [URLQueryItem(name: "on", value: "1")], container: false)
+  }
+
+  @objc private func showExtensions(_ sender: AnyObject?) {
+    hand("ext", extra: [URLQueryItem(name: "on", value: "0")], container: false)
+  }
+
+  @objc private func toggleHidden(_ sender: AnyObject?) {
+    hand("hiddenfiles", container: true)
+  }
+
+  /// 确认框由 App 弹：要激活 App，框才能直接用键盘
+  @objc private func erase(_ sender: AnyObject?) {
+    hand("erase", container: false)
+  }
+
   @objc private func compressZip(_ sender: AnyObject?) {
     hand("zip", container: false)
   }
@@ -501,7 +584,7 @@ final class FinderMenu: FIFinderSync {
       + files.map { URLQueryItem(name: "file", value: $0.path) }
     guard let url = link.url else { return }
     let chooses = extra.contains { $0.name == "to" && $0.value == "choose" }
-    let activates = ["open", "suffix", "templates"].contains(action) || chooses
+    let activates = ["open", "suffix", "templates", "erase"].contains(action) || chooses
     let configuration = NSWorkspace.OpenConfiguration()
     configuration.activates = activates
     // 沙盒里也能直接投给指定的 App，前提是它登记了这个 scheme（App 的 CFBundleURLTypes；没登记的系统回

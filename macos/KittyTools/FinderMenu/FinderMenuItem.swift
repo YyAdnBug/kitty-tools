@@ -16,11 +16,15 @@ nonisolated enum FinderMenuItem: String, CaseIterable {
   case compress = "Compress"
   case extract = "Extract"
   case fixNames = "FixNames"
+  case showHidden = "ShowHidden"
+  case hide = "Hide"
+  case hash = "Hash"
+  case erase = "Erase"
 
   var prefsKey: String { "finderMenu" + rawValue }
 
-  /// 没存过时开不开（拍板 A2：替身到桌面用的人少，默认关）
-  var defaultOn: Bool { self != .deskAlias }
+  /// 没存过时开不开（拍板 A2：替身到桌面用的人少，默认关；E1–E4：隐藏文件、隐藏 / 扩展名、哈希、彻底删除也默认关）
+  var defaultOn: Bool { ![.deskAlias, .showHidden, .hide, .hash, .erase].contains(self) }
 
   /// 设置里那一行
   var title: String {
@@ -34,6 +38,10 @@ nonisolated enum FinderMenuItem: String, CaseIterable {
     case .compress: "显示「压缩」"
     case .extract: "显示「解压到这里」"
     case .fixNames: "显示「修复乱码文件名」"
+    case .showHidden: "显示「显示 / 隐藏 隐藏文件」"
+    case .hide: "显示「隐藏」和「隐藏扩展名」"
+    case .hash: "显示「拷贝哈希」"
+    case .erase: "显示「彻底删除…」"
     }
   }
 
@@ -49,6 +57,10 @@ nonisolated enum FinderMenuItem: String, CaseIterable {
     case .compress: "右键文件、文件夹：打成 zip 或 7z 放在旁边"
     case .extract: "右键 zip、7z、tar.gz 这类压缩包；带密码的 zip 会先问密码"
     case .fixNames: "只在名字像「ÖÐÎÄ」「╓╨╬─」这种乱码时出现，改回中文"
+    case .showHidden: "文件夹窗口的空白处右键：替你在访达里按 ⇧⌘.，要「辅助功能」授权"
+    case .hide: "右键文件、文件夹：隐藏 / 取消隐藏它，隐藏 / 显示扩展名"
+    case .hash: "右键文件：算 SHA-256、MD5 或 SHA-1 拷进剪贴板，几个文件一行一个"
+    case .erase: "不进废纸篓、删了找不回来；一定先问一遍"
     }
   }
 

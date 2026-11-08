@@ -118,6 +118,16 @@ import UniformTypeIdentifiers
     #expect(parse("do=zip&key=K-123") == nil)
     #expect(parse("do=extract&key=K-123&file=/a/b.zip")?.action == .extract)
     #expect(parse("do=fixnames&key=K-123&file=/a/b")?.action == .fixNames)
+    #expect(parse("do=hiddenfiles&key=K-123&file=/a")?.action == .toggleHiddenFiles)
+    #expect(parse("do=hide&key=K-123&on=1&file=/a/b")?.action == .setHidden(true))
+    #expect(parse("do=ext&key=K-123&on=0&file=/a/b.txt")?.action == .setExtensionHidden(false))
+    #expect(parse("do=hide&key=K-123&on=yes&file=/a/b") == nil)
+    #expect(parse("do=hash&key=K-123&algo=md5&file=/a/b")?.action == .copyHash(.md5))
+    #expect(parse("do=hash&key=K-123&algo=crc32&file=/a/b") == nil)
+    #expect(parse("do=erase&key=K-123&file=/a/b")?.action == .erase)
+    #expect(parse("do=erase&key=K-123&file=/a/b/..") == nil)
+    #expect(parse("do=erase&key=K-123&file=/a/./b") == nil)
+    #expect(parse("do=copy&key=K-123&file=/a/b..c")?.action == .copyPaths)
     #expect(FinderLink.nameText([URL(filePath: "/a/b.txt"), URL(filePath: "/c/d")]) == "b.txt\nd")
   }
 
@@ -251,6 +261,7 @@ import UniformTypeIdentifiers
       "do", "key", "app", "file", "copy", "open", "new", "template", "mine", "suffix", "name",
       "move",
       "copyto", "to", "choose", "cut", "paste", "alias", "zip", "7z", "extract", "fixnames",
+      "hiddenfiles", "hide", "ext", "on", "hash", "algo", "erase",
     ]
     let literals =
       names + Prefs.finderOpenWithDefault + Prefs.finderTransferDefault + NewFile.builtIn
@@ -264,6 +275,9 @@ import UniformTypeIdentifiers
       #expect(source.contains("\"\(item.prefsKey)\", default: \(item.defaultOn)"), "\(item)")
     }
     #expect(source.contains("maxFiles = \(FinderLink.maxFiles)"))
+    // 哈希的几种（扩展里按序号对应）
+    let hashes = FileHash.Kind.allCases.map { "(\"\($0.rawValue)\", \"\($0.title)\")" }
+    #expect(source.contains("[" + hashes.joined(separator: ", ") + "]"))
     // 解压认的扩展名
     let suffixes = Archives.suffixes.map { "\"\($0)\"" }.joined(separator: ", ")
     #expect(source.contains(suffixes))

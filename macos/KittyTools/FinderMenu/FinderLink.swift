@@ -3,10 +3,11 @@
 // copy（拷贝路径）、name（拷贝名称）、open（app=bundle id，用 App 打开）、new（template=模板名，mine=1 是模板文件夹里的；
 // file 是右键的文件夹）、suffix（自定义后缀，file 是文件夹）、templates（打开模板文件夹）、move / copyto（to=常用文件夹的路径，
 // 或 choose 另选）、cut（剪切）、paste（file 是右键的文件夹）、alias（发送替身到桌面）、zip / 7z（压缩）、extract（解压到这里）、
-// fixnames（修复乱码文件名）。
+// fixnames（修复乱码文件名）、hiddenfiles（显示 / 隐藏 隐藏文件）、hide / ext（on=1 / 0：隐藏、取消隐藏、隐藏 / 显示扩展名）、
+// hash（algo=sha256 / md5 / sha1）、erase（彻底删除，先问）。
 // 解析、拷贝的文字、交给别的 App 打开哪些都是纯函数（FinderLinkTests）；perform 做那一步：拷贝路径 / 名称走 Paster.write 并记进
 // 剪贴板历史（mac-native §5：算本 App 生成的新文字），用 App 打开交给 NSWorkspace，新建文件交给 NewFile，整理文件交给 FileMoves，
-// 压缩和解压交给 Archives，修复乱码文件名交给 NameRepair。
+// 压缩和解压交给 Archives，修复乱码文件名交给 NameRepair，隐藏的几样交给 FileFlags，哈希交给 FileHash。
 // 谁都能打开这个网址（网页、别的 App），所以一层层挡：
 // - 发送方必须是本团队签名的自家访达扩展（fromOwnExtension，2026-11-08 右键扩充拍板 A1，同 finder-menu 核对发送方签名；
 //   冷启动和已在运行两种情况下，苹果事件里的发送方都是发网址的扩展本身，沙盒小程序实测）；
@@ -40,6 +41,11 @@ nonisolated struct FinderLink: Equatable {
     case compress(Archives.Format)
     case extract
     case fixNames
+    case toggleHiddenFiles
+    case setHidden(Bool)
+    case setExtensionHidden(Bool)
+    case copyHash(FileHash.Kind)
+    case erase
 
     /// 对应设置里的哪一项（nil：不归哪一项管，「在“X”中打开」跟着 App 列表）
     var item: FinderMenuItem? {
@@ -54,6 +60,10 @@ nonisolated struct FinderLink: Equatable {
       case .compress: .compress
       case .extract: .extract
       case .fixNames: .fixNames
+      case .toggleHiddenFiles: .showHidden
+      case .setHidden, .setExtensionHidden: .hide
+      case .copyHash: .hash
+      case .erase: .erase
       }
     }
   }
@@ -78,8 +88,12 @@ nonisolated struct FinderLink: Equatable {
       return values.count == 1 ? values[0].value : nil
     }
     let paths = items.filter { $0.name == "file" }.compactMap(\.value)
+    // 路径里不能有「.」「..」这一段：比路径时会被化简掉，确认框上的名字和真删的对不上（访达也不会给这种）
     guard one("key") == key, paths.count <= maxFiles,
-      paths.allSatisfy({ $0.hasPrefix("/") && !$0.contains("\0") })
+      paths.allSatisfy({
+        $0.hasPrefix("/") && !$0.contains("\0")
+          && !$0.split(separator: "/").contains { $0 == "." || $0 == ".." }
+      })
     else { return nil }
     let files = paths.map { URL(filePath: $0) }
     let action: Action
@@ -127,6 +141,16 @@ nonisolated struct FinderLink: Equatable {
       action = .extract
     case "fixnames" where !files.isEmpty:
       action = .fixNames
+    case "hiddenfiles":
+      action = .toggleHiddenFiles
+    case let verb? where (verb == "hide" || verb == "ext") && !files.isEmpty:
+      guard let on = one("on"), on == "1" || on == "0" else { return nil }
+      action = verb == "hide" ? .setHidden(on == "1") : .setExtensionHidden(on == "1")
+    case "hash" where !files.isEmpty:
+      guard let kind = one("algo").flatMap(FileHash.Kind.init(rawValue:)) else { return nil }
+      action = .copyHash(kind)
+    case "erase" where !files.isEmpty:
+      action = .erase
     default:
       return nil
     }
@@ -307,6 +331,16 @@ nonisolated struct FinderLink: Equatable {
       Archives.extract(link.files, island: island)
     case .fixNames:
       NameRepair.fix(link.files, island: island)
+    case .toggleHiddenFiles:
+      FileFlags.toggleHiddenFiles(island: island)
+    case .setHidden(let hidden):
+      FileFlags.setHidden(link.files, hidden, island: island)
+    case .setExtensionHidden(let hidden):
+      FileFlags.setExtensionHidden(link.files, hidden, island: island)
+    case .copyHash(let kind):
+      FileHash.copy(link.files, kind: kind, island: island)
+    case .erase:
+      FileMoves.erase(link.files, island: island)
     }
   }
 }
