@@ -19,12 +19,13 @@
 // 符号字体、App 的位置这些第一次要几十毫秒的先备好。我们自己的每一项都是彩色方块里一个白色符号（tile，
 // 2026-11-08 用户在三种样子里选的；颜色按类分，见 Tint），「在“X”中打开」、常用文件夹、新建文件的类型用它们自己的图标。
 // 拷贝路径、新建文件的符号是自己画的（icons/finder/，swift icons/build-icons.swift finder 生成到本 target 的 Assets.xcassets）。
-// 看所有位置（directoryURLs 设成根目录）；iCloud 云盘、网盘这类文件提供程序管的文件夹里系统不给扩展菜单。
+// 看所有位置（directoryURLs 是根目录加上每个挂着的卷，挂上 / 推出时跟着换）；拿不到对着什么、废纸篓的空白处不出菜单；iCloud 云盘、网盘这类文件提供程序管的文件夹里系统不给扩展菜单。
 // 要用户在 系统设置 › 通用 › 登录项与扩展 里打开它（App 设置 › 访达右键 有「去打开…」）。
 // ponytail: 这个 target 用 Swift 5 语言模式（Config/Finder.xcconfig），FinderSync 加上并发标注后改回 6。
 
 import AppKit
 import FinderSync
+import Security
 import UniformTypeIdentifiers
 import os
 
@@ -209,8 +210,29 @@ final class FinderMenu: FIFinderSync {
 
   override init() {
     super.init()
-    FIFinderSyncController.default().directoryURLs = [URL(filePath: "/")]
+    Self.watchVolumes()
     Task { @MainActor in Self.warmUp() }
+  }
+
+  private static var watching = false
+
+  /// 看的位置：根目录和每个挂着的卷（只给根目录的话，U 盘、磁盘映像、网络盘上可能没有菜单，开源的访达扩展都另外补上卷）；
+  /// 挂上、推出时跟着换
+  private static func watchVolumes() {
+    let update = {
+      let volumes =
+        FileManager.default.mountedVolumeURLs(
+          includingResourceValuesForKeys: nil, options: [.skipHiddenVolumes]) ?? []
+      FIFinderSyncController.default().directoryURLs = Set([URL(filePath: "/")] + volumes)
+    }
+    update()
+    guard !watching else { return }
+    watching = true
+    for name in [NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification] {
+      NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) {
+        _ in update()
+      }
+    }
   }
 
   /// 扩展刚起来：把两种菜单各搭一遍（不交出去），第一次右键时图标、符号字体、App 的位置都已经备好
@@ -232,13 +254,27 @@ final class FinderMenu: FIFinderSync {
     }
     let clock = ContinuousClock()
     let start = clock.now
-    let selected =
-      container == 0 ? FIFinderSyncController.default().selectedItemURLs() ?? [] : []
+    // 拿不到对着什么（搜索结果、「最近使用」的空白处这类）就不出菜单：出了点了也没反应。废纸篓的空白处也不出
+    // （新建、粘贴到废纸篓里没意义）
+    let controller = FIFinderSyncController.default()
+    let selected = container == 0 ? controller.selectedItemURLs() ?? [] : []
+    if container == 0 {
+      guard !selected.isEmpty else { return nil }
+    } else {
+      guard let target = controller.targetedURL(), !Self.inTrash(target) else { return nil }
+    }
     let menu = Self.grouped(Self.build(container: container, selected: selected))
     // 手测量耗时：log stream --level debug --predicate 'subsystem == "com.yy.kitty-tools.native"'
     let elapsed = (clock.now - start) / .milliseconds(1)
     log.debug("菜单搭好用了 \(elapsed, format: .fixed(precision: 1)) ms")
     return menu.items.isEmpty ? nil : menu
+  }
+
+  /// 在不在废纸篓里（主目录的 .Trash，别的卷上的 .Trashes）
+  private static func inTrash(_ url: URL) -> Bool {
+    let path = url.standardizedFileURL.path(percentEncoded: false)
+    return path.contains("/.Trashes/") || path.hasSuffix("/.Trashes")
+      || home.map { path == $0 + "/.Trash" || path.hasPrefix($0 + "/.Trash/") } == true
   }
 
   /// 设置里选了「收进一个子菜单」（App 的 Prefs.finderMenuGrouped，默认关）：第一层只放一项「Kitty Tools ▸」
@@ -440,6 +476,15 @@ final class FinderMenu: FIFinderSync {
     return made
   }
 
+  /// 常用文件夹在访达里的名字（按路径记着：文件夹在卡住的网络盘上时，不让每次右键都等它；点的时候也用这一份对标题）
+  private static var names: [String: String] = [:]
+  private static func displayName(_ path: String) -> String {
+    if let name = names[path] { return name }
+    let name = FileManager.default.displayName(atPath: path)
+    names[path] = name
+    return name
+  }
+
   /// 文件、文件夹、App 的图标：画成 16 pt 的小位图（按路径缓存）
   private static func fileIcon(_ path: String) -> NSImage? {
     icon("file:" + path) {
@@ -477,7 +522,7 @@ final class FinderMenu: FIFinderSync {
     for (index, folder) in transferFolders.enumerated() {
       let path = folder.path(percentEncoded: false)
       let item = menu.addItem(
-        withTitle: FileManager.default.displayName(atPath: path), action: action, keyEquivalent: "")
+        withTitle: displayName(path), action: action, keyEquivalent: "")
       item.tag = index
       item.image = fileIcon(path)
     }
@@ -582,7 +627,7 @@ final class FinderMenu: FIFinderSync {
       // 点的时候重新读一遍：菜单弹出来之后设置里改过列表，序号就对不上了，名字也对上才搬
       let folders = Self.transferFolders
       guard folders.indices.contains(tag),
-        FileManager.default.displayName(atPath: folders[tag].path(percentEncoded: false))
+        Self.displayName(folders[tag].path(percentEncoded: false))
           == (sender as? NSMenuItem)?.title
       else {
         NSSound.beep()
@@ -692,6 +737,29 @@ final class FinderMenu: FIFinderSync {
   /// 交给 App。拷贝、新建文件、搬文件不激活它（菜单栏 App，激活了只会把前台从访达抢走）；用 X 打开、打开模板文件夹要激活：
   /// macOS 14 起不在前台的 App 叫别的 App 打开时，那个 App 不一定能到前面（协作式激活），这一下是用户在访达里点的，
   /// App 借着它把前台交给要打开的 App；自定义后缀、选择文件夹…要激活，框 / 面板才能直接用
+  /// 投给哪一份 App：正在运行的那一份（同 id、本团队签名）；没在运行才投给包着这个扩展的那份。机器上有两份时（挂着新版的
+  /// 磁盘映像），系统用的可能是另一份里的扩展：投给它的话会再起一个进程，它让位给正在运行的那份时这次动作就丢了（评审实测）。
+  /// 核对不了签名（沙盒里查不了那个进程）就照旧投给包着扩展的那份
+  private static var target: URL {
+    let text =
+      "identifier \"\(appID)\" and anchor apple generic and certificate leaf[subject.OU] = \"HTX9F4KG39\""
+    var requirement: SecRequirement?
+    guard SecRequirementCreateWithString(text as CFString, [], &requirement) == errSecSuccess,
+      let requirement
+    else { return appURL }
+    for app in NSRunningApplication.runningApplications(withBundleIdentifier: appID) {
+      var code: SecCode?
+      guard let url = app.bundleURL,
+        SecCodeCopyGuestWithAttributes(
+          nil, [kSecGuestAttributePid: app.processIdentifier] as CFDictionary, [], &code)
+          == errSecSuccess,
+        let code, SecCodeCheckValidity(code, [], requirement) == errSecSuccess
+      else { continue }
+      return url
+    }
+    return appURL
+  }
+
   private func hand(_ action: String, app: String? = nil, extra: [URLQueryItem] = [], files: [URL])
   {
     guard let key = Self.key, !files.isEmpty || action == "templates" else { return }
@@ -714,7 +782,7 @@ final class FinderMenu: FIFinderSync {
     // 沙盒里也能直接投给指定的 App，前提是它登记了这个 scheme（App 的 CFBundleURLTypes；没登记的系统回
     // kLSAppDoesNotClaimTypeErr，2026-11-08 用沙盒里的小程序实测）。不退回按 scheme 找：那样会被别的 App 截走，
     // 第一次其实送到了的话还会做两遍。只记错误码：错误说明里带着网址（凭证和路径）
-    NSWorkspace.shared.open([url], withApplicationAt: Self.appURL, configuration: configuration) {
+    NSWorkspace.shared.open([url], withApplicationAt: Self.target, configuration: configuration) {
       _, error in
       if let error { log.error("交给 App 失败：\((error as NSError).code)") }
     }

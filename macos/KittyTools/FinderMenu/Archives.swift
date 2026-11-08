@@ -5,8 +5,9 @@
 //   （--no-mac-metadata 加排除）；7z 用 LZMA2。只选了一个包（App 这类）时 zip 改用 ditto（同访达的压缩：带着扩展属性，
 //   签名不坏）。不同文件夹里的同名东西包里只放得下一个，不打。不做带密码的压缩（拍板）。
 // - 解压：zip、7z、tar 一族（.tar、.tar.gz / .tgz、.tar.xz / .txz、.tar.bz2 / .tbz）。zip 先读一遍中央目录（ZipNames）：
-//   没标 UTF-8、名字又不是合法 UTF-8 的按 GB18030 解（不说的话 tar 直接报错，ditto 解出来是乱码，实测）；有加密的条目先弹框
-//   问密码（tar 认 ZipCrypto 和 AES；不对再问）。先解进包旁边一个隐藏的临时文件夹，里面只有一样东西就把它放到包旁边，几样就把
+//   没标 UTF-8、名字又不是合法 UTF-8 的按 GB18030 解（不说的话 tar 直接报错，ditto 解出来是乱码，实测）；有加密的条目先问密码
+//   （tar 认 ZipCrypto 和 AES；不对再问）：本 App 不在前台时先在刘海岛说「有密码」带「输入密码…」，点了再弹框——直接弹的框
+//   拿不到键盘，打的字会进访达。先解进包旁边一个隐藏的临时文件夹，里面只有一样东西就把它放到包旁边，几样就把
 //   临时文件夹改成包的名字（同归档实用工具），重名加「 2」；出错、停了只删临时文件夹。包带着「从网上下载」的隔离标记时，
 //   系统 tar 自己会给解出来的每样东西也带上（实测），不另外做；它默认也不解绝对路径、带 .. 的路径，不顺着包里的符号链接往外写。
 // - 落到正式名字都用「目标已存在就报错」的改名（FileMoves.land），算完名字到落下之间别人占了也盖不掉；和移动、复制排在同一条队
@@ -271,13 +272,27 @@ import AppKit
   /// 排一个包进队。有加密条目的 zip 先问密码（排队之前问：框开着的时候别挂「正在解压」）。retry：上一回 tar 说要密码
   /// （needsPassword：中央目录没读出来，包前面多了一截这种）或者密码不对——这时不管认没认出来都问，每一回都要用户点，
   /// 取消就停（评审：不问就重排会一直转下去、把队堵死）
-  private static func extract(_ archive: URL, retry: Outcome?, island: Island?) {
+  private static func extract(
+    _ archive: URL, retry: Outcome?, island: Island?, askNow: Bool = false
+  ) {
     var password: String?
     var gbk = false
     var encrypted = retry != nil
     if ZipNames.isZip(archive), let entries = ZipNames.entries(of: archive) {
       gbk = ZipNames.charset(for: entries) == .gb18030
       encrypted = encrypted || entries.contains(where: \.encrypted)
+    }
+    // 本 App 不在前台时直接弹的框拿不到键盘（打的字进了访达，评审）：先在刘海岛说一声，点了按钮（点的是本 App）再弹
+    if encrypted, !askNow, let island, !NSApp.isActive {
+      island.show(
+        retry == .wrongPassword ? "密码不对" : "「\(archive.lastPathComponent)」有密码",
+        detail: "点「输入密码」再解压", tone: .info,
+        actions: [
+          Island.Action("输入密码…") {
+            extract(archive, retry: retry, island: island, askNow: true)
+          }
+        ])
+      return
     }
     if encrypted {
       guard let given = askPassword(for: archive, wrong: retry == .wrongPassword) else {

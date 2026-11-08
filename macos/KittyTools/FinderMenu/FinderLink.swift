@@ -269,7 +269,10 @@ nonisolated struct FinderLink: Equatable {
       }
     }
     let response = alert.runModal()
-    previous?.activate()
+    // 原来就是本 App 在前面（扩展唤起 App 时先激活了它）：框都是从访达右键来的，还给访达
+    (previous
+      ?? NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.finder").first)?
+      .activate()
     return response
   }
 
