@@ -11,7 +11,11 @@
 // <App 的 bundle id>://finder?do=<动作>&key=<凭证>&…&file=/a，App 那边是 FinderLink（网址的写法在那边的文件头）；
 // App 被退出了的话网址会把它打开。凭证、开关、「用 App 打开」的列表从 App 的偏好里读，模板文件夹只为列菜单读一下
 // （Finder.entitlements 的两条只读例外，没有别的）；功能关着（或者 App 还没生成凭证）时一项都不加。
-// 图标：每一项都带（没图标的项文字会和带图标的错开一截）。拷贝路径、新建文件是自己画的（icons/finder/，
+// 图标：每一项都带（没图标的项文字会和带图标的错开一截）。
+// 交给访达的图一律先画成 16 pt 的 1x / 2x 小位图、按名字缓存（icon）：
+// NSWorkspace 给的文件 / App 图标带着 32 种尺寸，菜单项跨进程交给访达时整个编过去——一个 App 图标 72 MB、一个文件夹图标 36 MB，
+// 编一次 20–90 ms（2026-11-08 实测，右键菜单出来慢的根源）；小位图约 10 KB。扩展一起来就把菜单搭一遍（warmUp），
+// 符号字体、App 的位置这些第一次要几十毫秒的先备好。拷贝路径、新建文件是自己画的（icons/finder/，
 // swift icons/build-icons.swift finder 生成到本 target 的 Assets.xcassets），线宽照 SF Symbols 常规粗细；另两项用系统符号。
 // 看所有位置（directoryURLs 设成根目录）；iCloud 云盘、网盘这类文件提供程序管的文件夹里系统不给扩展菜单。
 // 要用户在 系统设置 › 通用 › 登录项与扩展 里打开它（App 设置 › 访达右键 有「去打开…」）。
@@ -97,7 +101,7 @@ final class FinderMenu: FIFinderSync {
 
   /// App 的偏好（只读例外）。ponytail: 下面三个键名和默认值、网址的写法、maxFiles 抄的 App 的 Feature.finderMenu.prefsKey
   /// （defaultOn 是关）、Prefs.finderMenuKey、Prefs.finderOpenWithApps、FinderLink，那边改了这里跟着改（FinderLinkTests 读这个文件比对）
-  private static var appDefaults: UserDefaults? { UserDefaults(suiteName: appID) }
+  private static let appDefaults = UserDefaults(suiteName: appID)
 
   /// 功能开着、App 生成过凭证才出菜单
   private static var key: String? {
@@ -187,17 +191,30 @@ final class FinderMenu: FIFinderSync {
     return archiveSuffixes.contains { name.hasSuffix($0) && name.count > $0.count }
   }
 
-  /// 设置里选的 App（bundle id，这台 Mac 上找得到的）
+  /// 设置里选的 App（bundle id，这台 Mac 上找得到的）。找过的记着（问一次 LaunchServices 要几毫秒），App 被删了再找
   private static var openWithApps: [(id: String, url: URL)] {
     (appDefaults?.stringArray(forKey: "finderOpenWithApps") ?? ["com.apple.Terminal"])
       .compactMap { id in
-        NSWorkspace.shared.urlForApplication(withBundleIdentifier: id).map { (id, $0) }
+        if let url = appURLs[id], FileManager.default.fileExists(atPath: url.path) {
+          return (id, url)
+        }
+        let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id)
+        appURLs[id] = url
+        return url.map { (id, $0) }
       }
   }
+  private static var appURLs: [String: URL] = [:]
 
   override init() {
     super.init()
     FIFinderSyncController.default().directoryURLs = [URL(filePath: "/")]
+    Task { @MainActor in Self.warmUp() }
+  }
+
+  /// 扩展刚起来：把两种菜单各搭一遍（不交出去），第一次右键时图标、符号字体、App 的位置都已经备好
+  private static func warmUp() {
+    _ = build(container: 0, selected: [])
+    _ = build(container: containerTag, selected: [])
   }
 
   // 访达在主线程上要菜单、点菜单项
@@ -211,13 +228,25 @@ final class FinderMenu: FIFinderSync {
     case .contextualMenuForContainer: container = Self.containerTag
     default: return nil
     }
-    // 不加分隔线：macOS 26 上扩展菜单里的分隔线会画成一行空白（2026-09 开发者论坛，没解答）
+    let clock = ContinuousClock()
+    let start = clock.now
+    let selected =
+      container == 0 ? FIFinderSyncController.default().selectedItemURLs() ?? [] : []
+    let menu = Self.build(container: container, selected: selected)
+    // 手测量耗时：log stream --level debug --predicate 'subsystem == "com.yy.kitty-tools.native"'
+    let elapsed = (clock.now - start) / .milliseconds(1)
+    log.debug("菜单搭好用了 \(elapsed, format: .fixed(precision: 1)) ms")
+    return menu.items.isEmpty ? nil : menu
+  }
+
+  /// 搭菜单。不加分隔线：macOS 26 上扩展菜单里的分隔线会画成一行空白（2026-09 开发者论坛，没解答）
+  private static func build(container: Int, selected: [URL]) -> NSMenu {
     let menu = NSMenu()
     let items = container == 0
     if !items, Self.shows("finderMenuNewFile", default: true) {
       let new = menu.addItem(withTitle: "新建文件", action: nil, keyEquivalent: "")
       new.submenu = Self.newFileMenu()
-      new.image = Self.drawn("kitty.finder.new.file")
+      new.image = Self.icon("kitty.finder.new.file") { Self.drawn("kitty.finder.new.file") }
     }
     if !items, Self.shows("finderMenuCut", default: true), Self.cutCount > 0 {
       Self.add("粘贴 \(Self.cutCount) 项", #selector(paste(_:)), symbol: "doc.on.clipboard", to: menu)
@@ -226,12 +255,11 @@ final class FinderMenu: FIFinderSync {
       let copy = menu.addItem(
         withTitle: "拷贝路径", action: #selector(copyPath(_:)), keyEquivalent: "")
       copy.tag = container
-      copy.image = Self.drawn("kitty.finder.copy.path")
+      copy.image = Self.icon("kitty.finder.copy.path") { Self.drawn("kitty.finder.copy.path") }
     }
     if items, Self.shows("finderMenuCopyName", default: true) {
       Self.add("拷贝名称", #selector(copyName(_:)), symbol: "textformat", to: menu)
     }
-    let selected = items ? FIFinderSyncController.default().selectedItemURLs() ?? [] : []
     if Self.shows("finderMenuHash", default: false), !selected.isEmpty,
       !selected.contains(where: \.hasDirectoryPath)
     {
@@ -246,8 +274,7 @@ final class FinderMenu: FIFinderSync {
       let item = menu.addItem(
         withTitle: Self.openTitle(app.url), action: #selector(open(_:)), keyEquivalent: "")
       item.tag = container + index
-      item.image = NSWorkspace.shared.icon(forFile: app.url.path)
-      item.image?.size = NSSize(width: 16, height: 16)
+      item.image = Self.fileIcon(app.url.path)
     }
     if items, Self.shows("finderMenuTransfer", default: true) {
       Self.add("移动到", nil, symbol: "arrowshape.turn.up.right", to: menu).submenu =
@@ -288,7 +315,7 @@ final class FinderMenu: FIFinderSync {
     if items, Self.shows("finderMenuErase", default: false) {
       Self.add("彻底删除…", #selector(erase(_:)), symbol: "trash.slash", to: menu)
     }
-    return menu.items.isEmpty ? nil : menu
+    return menu
   }
 
   /// 「隐藏」/「取消隐藏」（点开头的本来就隐藏，不算）和「隐藏扩展名」/「显示扩展名」（有扩展名的才算）：
@@ -322,34 +349,39 @@ final class FinderMenu: FIFinderSync {
     _ title: String, _ action: Selector?, symbol: String, to menu: NSMenu
   ) -> NSMenuItem {
     let item = menu.addItem(withTitle: title, action: action, keyEquivalent: "")
-    item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+    item.image = symbolIcon(symbol)
     return item
   }
 
-  /// 「移动到 ▸」「复制到 ▸」：常用文件夹（访达里的名字和图标），最后「选择文件夹…」
-  private static func transferMenu(_ action: Selector) -> NSMenu {
-    let menu = NSMenu()
-    for (index, folder) in transferFolders.enumerated() {
-      let path = folder.path(percentEncoded: false)
-      let item = menu.addItem(
-        withTitle: FileManager.default.displayName(atPath: path), action: action, keyEquivalent: "")
-      item.tag = index
-      item.image = NSWorkspace.shared.icon(forFile: path)
-      item.image?.size = NSSize(width: 16, height: 16)
-    }
-    add("选择文件夹…", action, symbol: "ellipsis.circle", to: menu).tag = chooseTag
-    return menu
+  /// 画好的小位图，按名字缓存（见文件头：交出去的图越小越快）
+  private static var icons: [String: NSImage] = [:]
+  private static func icon(_ key: String, make: () -> NSImage?) -> NSImage? {
+    if let cached = icons[key] { return cached }
+    let made = make()
+    icons[key] = made
+    return made
   }
 
-  /// 自己画的图标（Assets.xcassets/FinderIcons）：按菜单的字号（13 pt、常规）画成 1x / 2x 的模板位图再交出去——
-  /// 菜单项要跨进程交给访达，本扩展资源目录里的符号到了访达那边不一定认得，位图一定认得；模板图让访达按菜单的字色、
-  /// 高亮、深色模式上色
-  private static func drawn(_ name: String) -> NSImage? {
-    guard
-      let symbol = NSImage(named: name)?.withSymbolConfiguration(
-        NSImage.SymbolConfiguration(pointSize: 13, weight: .regular))
-    else { return nil }
-    let size = symbol.size
+  /// 系统符号：按菜单的字号（13 pt、常规）画成模板位图
+  private static func symbolIcon(_ name: String) -> NSImage? {
+    icon("symbol:" + name) {
+      NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+        .withSymbolConfiguration(.init(pointSize: 13, weight: .regular))
+        .map { bitmap($0, size: $0.size, template: true) }
+    }
+  }
+
+  /// 文件、文件夹、App 的图标：画成 16 pt 的小位图（按路径缓存）
+  private static func fileIcon(_ path: String) -> NSImage? {
+    icon("file:" + path) {
+      bitmap(
+        NSWorkspace.shared.icon(forFile: path), size: NSSize(width: 16, height: 16), template: false
+      )
+    }
+  }
+
+  /// 画成 1x、2x 两张位图的图
+  private static func bitmap(_ source: NSImage, size: NSSize, template: Bool) -> NSImage {
     let image = NSImage(size: size)
     for scale in [1.0, 2.0] {
       guard
@@ -362,35 +394,62 @@ final class FinderMenu: FIFinderSync {
       rep.size = size
       NSGraphicsContext.saveGraphicsState()
       NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
-      symbol.draw(in: NSRect(origin: .zero, size: size))
+      source.draw(in: NSRect(origin: .zero, size: size))
       NSGraphicsContext.restoreGraphicsState()
       image.addRepresentation(rep)
     }
-    image.isTemplate = true
+    image.isTemplate = template
     return image
+  }
+
+  /// 「移动到 ▸」「复制到 ▸」：常用文件夹（访达里的名字和图标），最后「选择文件夹…」
+  private static func transferMenu(_ action: Selector) -> NSMenu {
+    let menu = NSMenu()
+    for (index, folder) in transferFolders.enumerated() {
+      let path = folder.path(percentEncoded: false)
+      let item = menu.addItem(
+        withTitle: FileManager.default.displayName(atPath: path), action: action, keyEquivalent: "")
+      item.tag = index
+      item.image = fileIcon(path)
+    }
+    add("选择文件夹…", action, symbol: "ellipsis.circle", to: menu).tag = chooseTag
+    return menu
+  }
+
+  /// 自己画的图标（Assets.xcassets/FinderIcons）：按菜单的字号（13 pt、常规）画成 1x / 2x 的模板位图再交出去——
+  /// 菜单项要跨进程交给访达，本扩展资源目录里的符号到了访达那边不一定认得，位图一定认得；模板图让访达按菜单的字色、
+  /// 高亮、深色模式上色
+  private static func drawn(_ name: String) -> NSImage? {
+    NSImage(named: name)?.withSymbolConfiguration(.init(pointSize: 13, weight: .regular))
+      .map { bitmap($0, size: $0.size, template: true) }
   }
 
   /// 「新建文件 ▸」：自带五种（图标按类型取）、模板文件夹里的（图标按文件取）、自定义后缀、打开模板文件夹
   private static func newFileMenu() -> NSMenu {
     let menu = NSMenu()
-    let add = { (title: String, tag: Int, icon: NSImage) in
+    let add = { (title: String, tag: Int, icon: NSImage?) in
       let item = menu.addItem(withTitle: title, action: #selector(create(_:)), keyEquivalent: "")
       item.tag = tag
       item.image = icon
-      item.image?.size = NSSize(width: 16, height: 16)
     }
     for (index, name) in builtIn.enumerated() {
-      let type = UTType(filenameExtension: (name as NSString).pathExtension) ?? .data
-      add((name as NSString).deletingPathExtension, index, NSWorkspace.shared.icon(for: type))
+      let ext = (name as NSString).pathExtension
+      add(
+        (name as NSString).deletingPathExtension, index,
+        icon("type:" + ext) {
+          bitmap(
+            NSWorkspace.shared.icon(for: UTType(filenameExtension: ext) ?? .data),
+            size: NSSize(width: 16, height: 16), template: false)
+        })
     }
     let mine = myTemplates
     for (index, title) in titles(mine).enumerated() {
-      add(title, mineTag + index, NSWorkspace.shared.icon(forFile: mine[index].path))
+      add(title, mineTag + index, fileIcon(mine[index].path))
     }
     menu.addItem(withTitle: "自定义后缀…", action: #selector(createCustom(_:)), keyEquivalent: "")
-      .image = NSImage(systemSymbolName: "character.cursor.ibeam", accessibilityDescription: nil)
+      .image = symbolIcon("character.cursor.ibeam")
     menu.addItem(withTitle: "打开模板文件夹", action: #selector(showTemplates(_:)), keyEquivalent: "")
-      .image = NSImage(systemSymbolName: "folder", accessibilityDescription: nil)
+      .image = symbolIcon("folder")
     return menu
   }
 
