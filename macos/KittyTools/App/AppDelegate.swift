@@ -303,7 +303,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 启动器的脚本命令（2026-11-07）：每次呼出启动器在主线程外重读一遍，换上了新的就让启动器重搜
   private lazy var scriptLibrary: ScriptLibrary = {
     let library = ScriptLibrary()
-    library.onChange = { [unowned self] in launcherModel.scriptsChanged() }
+    library.onChange = { [unowned self] in
+      launcherModel.scriptsChanged()
+      // 脚本加了 / 删了：给它们设的快捷键跟着注册 / 注销（第三轮 D1）
+      hotKeys.reloadCommandsIfChanged()
+    }
     return library
   }()
 
@@ -483,8 +487,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     model.copyBundledScript = { [unowned self] in copyBundledScript($0) }
     model.showPanel = { [unowned self] in
       // 那一张里留着的「看输出」：启动器关掉了就不叫（关掉 = 入口全藏）
-      guard Feature.launcher.isOn else { return }
+      guard Feature.launcher.isOn else { return false }
       if !(launcherPanel.isVisible && launcherPanel.isKeyWindow) { toggleLauncher() }
+      return true
     }
     builtLauncherPanel = panel
     return panel
@@ -720,6 +725,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   private lazy var settingsWindow: SettingsWindow = {
     weak var created: SettingsWindow?
+    settingsNavigation.newScriptCreated = { [unowned self] url in
+      scriptLibrary.refresh()
+      island.show(
+        "已新建「\(url.lastPathComponent)」", detail: "改好保存，下次呼出启动器就能用",
+        actions: [.reveal(url)])
+    }
     // 新功能标记：换到一页（打开设置窗也算）时重算设置窗里该标哪几个。光打开不算碰过（拨了那一节 / 那一行开关才算，2026-11-06），
     // 这一页上刚拨过的看着的时候不闪掉（WhatsNew.shown）
     settingsNavigation.visit = { [unowned self] page in
@@ -752,7 +763,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               "已清空启动器使用记录", detail: "「常用」和排序会从头开始学，收藏不动",
               symbol: "clock.arrow.circlepath")
           }
-          .environment(island))
+          .environment(island)
+          // 「命令和别名」里每条命令的快捷键录制框（第三轮 D1）
+          .environment(hotKeys))
       case .launchpad:
         AnyView(
           LaunchpadTab(
@@ -933,6 +946,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         run(action, byKey: true)
       }
     }
+    // 启动器「命令和别名」里每条命令的快捷键（脚本命令第三轮 D1）：只注册此刻能做事的（启动器开着、那条开着、脚本这台 Mac
+    // 上有）。启动器的模型在建面板时接好，设了命令快捷键才提前建；脚本还没读过的先读一遍，读完 onChange 再注册
+    hotKeys.commandHotKeys = { [unowned self] in
+      let saved = LauncherModel.savedCommandHotKeys()
+      guard Feature.launcher.isOn, !saved.isEmpty else { return [] }
+      _ = launcherPanel
+      if Self.scriptsOn, !scriptLibrary.isLoaded { scriptLibrary.refresh() }
+      return saved.filter { launcherModel.canRunHotKey($0.key) }.sorted { $0.key < $1.key }
+        .map { ($0.key, $0.value) }
+    }
+    hotKeys.onCommand = { [unowned self] id in
+      guard Feature.launcher.isOn, !statusScreen.isActive else { return }
+      // 录屏「显示按键」：同各动作的快捷键，补给按键提示
+      if let key = hotKeys.commandBindings[id] { recorder?.inputOverlay?.showKey(key.display) }
+      launcherModel.runHotKey(id)
+    }
+    hotKeys.knowsCommand = { [unowned self] id in
+      _ = launcherPanel
+      return launcherModel.hasCommand(id)
+    }
     hotKeys.reload()
     try? FileManager.default.removeItem(at: ShotShelf.dragDirectory)
     shelf.copy = { [unowned self] png in await copyPNG(png) }
@@ -1018,6 +1051,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       MainActor.assumeIsolated {
         guard let self else { return }
         self.applyFeatures()
+        // 命令的快捷键跟着「命令和别名」的开关和别名、脚本命令总开关、⌘K「关掉这条命令」走（第 4 批评审：只在那一页的
+        // onChange 里跟，别处改的不注销）；没变不动
+        self.hotKeys.reloadCommandsIfChanged()
         // 提醒列表在偏好里：设置页改了、导入了、它自己删掉响过的一次性提醒，都从这里跟上（只比列表那一个键）
         if Feature.reminders.isOn { self.reminders.defaultsChanged() }
       }
@@ -1544,12 +1580,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 启动器里的内置动作（id 见 LauncherItem.actions，体检 A26）；启动器已收起。和菜单栏走同一个 run
   private func runLauncherAction(_ id: String) {
     // 脚本命令的两条（第二轮 D2）
+    // 新建脚本：打开 设置 › 启动器，盖上新建的小表单（第三轮 D2，和设置里的按钮同一张）
     if id == LauncherItem.newScriptID {
-      guard let url = ScriptLibrary.newScriptAndEdit() else { return }
-      scriptLibrary.refresh()
-      island.show(
-        "已新建「\(url.lastPathComponent)」", detail: "改好开头几行保存，在启动器里输 hello 就能跑",
-        actions: [.reveal(url)])
+      showSettings(page: .launcher)
+      // 速查表、欢迎引导盖着时不再叠一张（关了它也不会冒出来）
+      guard settingsNavigation.page == .launcher, !settingsNavigation.showsShortcuts,
+        !settingsNavigation.showsOnboarding
+      else { return }
+      settingsNavigation.showsNewScript = true
       return
     }
     if id == LauncherItem.scriptGuideID {
@@ -2167,9 +2205,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               hint: hint, autoTranslate: autoTranslate,
               recordingBlocker: { [weak self] in self?.recordingBlocker(.screen) },
               translate: overlays
-                ? { [weak self] image in
-                  guard let self else { return (nil, "翻译不可用") }
-                  return await self.overlayTranslate(image)
+                ? { [weak self] image, pixelsPerPoint in
+                  guard let self else { return .init(message: "翻译不可用") }
+                  return await self.overlayTranslate(image, pixelsPerPoint: pixelsPerPoint)
                 } : nil)
           })
       else { return }
@@ -2826,7 +2864,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       island.show("截屏失败", detail: error.localizedDescription, tone: .error)
       return nil
     }
-    let hotKeysWereActive = !hotKeys.bindings.isEmpty
+    let hotKeysWereActive = hotKeys.isActive
     hotKeys.suspend()
     defer { if hotKeysWereActive { hotKeys.reload() } }
     let previousKey = NSApp.keyWindow
@@ -2846,32 +2884,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     presentTranslate()
   }
 
-  /// 就地翻译（截图工具栏「翻译」用）：识别 + 逐段翻译 + 覆盖渲染，交回贴了译文的图。
+  /// 就地翻译（截图工具栏「翻译」用）：识别 + 逐段翻译 + 覆盖渲染，交回贴了译文的图和放不下的段。
+  /// pixelsPerPoint 是选区图每点几个像素（字号下限按点算）。
   /// 失败时消息交回遮罩上的提示，岛上另外说一遍（收起遮罩后也能看到原因）
-  private func overlayTranslate(_ image: CGImage) async -> (image: CGImage?, message: String?) {
-    guard let recognized = await recognizeForTranslation(image) else { return (nil, "识别失败") }
+  private func overlayTranslate(_ image: CGImage, pixelsPerPoint: CGFloat) async
+    -> ScreenshotOverlay.Outcome
+  {
+    // 图标被认成的单字（首页的剪贴板图标认成「目」）不翻、不擦（拍板 F1）
+    guard let recognized = await recognizeForTranslation(image, droppingIcons: true) else {
+      return .init(message: "识别失败")
+    }
     let segments = ScreenshotOverlay.segments(
       of: recognized.lines, imageSize: CGSize(width: image.width, height: image.height))
-    guard !segments.isEmpty else { return (nil, "没有识别到文字") }
+    guard !segments.isEmpty else { return .init(message: "没有识别到文字") }
     do {
       let translations = try await translateSegments(segments, source: recognized.text)
-      guard
-        let composed = await ScreenshotOverlay.render(
-          image, segments: segments, translations: translations)
-      else { return (nil, "合成失败") }
-      return (composed, nil)
+      var composed = await ScreenshotOverlay.render(
+        image, segments: segments, translations: translations, pixelsPerPoint: pixelsPerPoint)
+      guard composed.image != nil || !composed.leftovers.isEmpty else {
+        return .init(message: "合成失败")
+      }
+      // 卡片的「拷贝译文」拷全部段（纯符号段原样占位，不算）
+      composed.translation = zip(segments, translations)
+        .filter { ScreenshotOverlay.hasTranslatableContent($0.0.text) }
+        .map { $0.1.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .joined(separator: "\n\n")
+      return composed
     } catch {
-      guard !Task.isCancelled, !(error is CancellationError) else { return (nil, "已取消") }
+      guard !Task.isCancelled, !(error is CancellationError) else {
+        return .init(message: "已取消")
+      }
       island.show("翻译失败", detail: error.localizedDescription, tone: .error)
-      return (nil, error.localizedDescription)
+      return .init(message: error.localizedDescription)
     }
   }
 
   /// 截图翻译和钉图的翻译共用的那一半：识别 + 原文记进剪贴板历史（设置 › 翻译 开着「截图翻译时复制识别出的原文」
   /// 时同时写进剪贴板）。返回 nil 时岛上已经说过原因
-  private func recognizeForTranslation(_ image: CGImage) async -> (lines: [OCR.Line], text: String)?
+  private func recognizeForTranslation(_ image: CGImage, droppingIcons: Bool = false) async
+    -> (lines: [OCR.Line], text: String)?
   {
-    guard let lines = await recognizing({ await OCR.recognizeLines(in: image) }) else {
+    guard
+      let lines = await recognizing({
+        await OCR.recognizeLines(in: image, droppingIcons: droppingIcons)
+      })
+    else {
       island.show("文字识别失败", detail: "请重试", tone: .error)
       return nil
     }
@@ -2894,9 +2951,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     return (lines, text)
   }
 
-  private static let overlayTitle = "翻译中…"
+  /// 截图翻译盖回时的进度岛：和划词翻译并替换那条「翻译中…」分开（同名的话进度会写到那条上）
+  private static let overlayTitle = "截图翻译中…"
 
-  /// 逐段翻译（原位覆盖用）：整段原文检测一次语种，各段用同一个方向；每段按顺序试启用的服务。
+  /// 逐段翻译（原位覆盖用）：整段原文检测一次语种，各段用同一个方向；同时最多 3 段一起请求（inParallel），
+  /// 每段按顺序试启用的服务。
   /// 不走 coordinator.translate：那条路按服务写翻译历史，一块图拆成十几段会往历史里塞十几条碎片
   private func translateSegments(
     _ segments: [ScreenshotOverlay.Segment], source: String
@@ -2906,38 +2965,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       throw TranslateError(message: "没有启用的翻译服务，先在设置 › 翻译里开一个")
     }
     let plan = TranslateCoordinator.plan(for: source, wordMode: false).request
-    var results: [String] = []
-    var used: TranslateService?
-    for (index, segment) in segments.enumerated() {
-      try Task.checkCancellation()
-      // 纯符号段不发请求（有道这类接口会回错误码，一段失败整张图就白翻了），原样占位；覆盖那一步也会跳过它
-      guard ScreenshotOverlay.hasTranslatableContent(segment.text) else {
-        results.append(segment.text)
-        continue
-      }
-      island.progress(Self.overlayTitle, detail: "\(index + 1)/\(segments.count)")
-      let request = TranslateRequest(text: segment.text, from: plan.from, to: plan.to)
-      var failure: Error = TranslateError(message: "翻译失败")
-      var translated: (text: String, service: TranslateService)?
-      for service in services {
-        do {
-          var latest = ""
-          for try await partial in service.translate(request) { latest = partial }
-          try Task.checkCancellation()
-          guard !latest.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw TranslateError.emptyResult
-          }
-          translated = (latest, service)
-          break
-        } catch {
-          if error is CancellationError || Task.isCancelled { throw error }
-          failure = error
-        }
-      }
-      guard let translated else { throw failure }
-      used = used ?? translated.service
-      results.append(translated.text)
+    // 纯符号段不发请求（有道这类接口会回错误码，一段失败整张图就白翻了），原样占位；覆盖那一步也会跳过它
+    var results = segments.map(\.text)
+    let pending = segments.indices.filter {
+      ScreenshotOverlay.hasTranslatableContent(segments[$0].text)
     }
+    // 同时最多 3 段一起请求（2026-11-08 第二轮拍板 G1：以前一段一段等，整屏十几段要十秒上下）：免费服务会限流，不开太多。
+    // 每段自己按启用顺序换服务，所有服务都失败才算整张图失败（同原来）
+    let requests = pending.map {
+      TranslateRequest(text: segments[$0].text, from: plan.from, to: plan.to)
+    }
+    // 要翻好几轮（段数多过同时请求的数）才出进度岛：一轮就翻完的不弹，免得一闪而过；翻完、失败、取消都收掉
+    let showsProgress = requests.count > Self.overlayConcurrency
+    if showsProgress {
+      island.show(
+        Self.overlayTitle, detail: "0/\(requests.count)", tone: .progress, symbol: "translate")
+    }
+    defer { if showsProgress { island.dismiss(ifShowing: Self.overlayTitle) } }
+    let outputs = try await Self.inParallel(
+      requests.count, limit: Self.overlayConcurrency,
+      finished: { [island] done in
+        if showsProgress { island.progress(Self.overlayTitle, detail: "\(done)/\(requests.count)") }
+      },
+      work: { index in try await Self.translateSegment(requests[index], services: services) })
+    for (index, output) in zip(pending, outputs) { results[index] = output.text }
+    // 历史里记的服务：按段的顺序第一个用上的那个（同原来串行时）
+    let used = outputs.first?.service
     // 和浮窗那条一样记一份翻译历史（整段原文 + 整段译文），不然截图翻译在翻译历史里会凭空消失
     if let used, UserDefaults.standard.bool(forKey: Prefs.translateHistoryEnabled) {
       coordinator.history.add(
@@ -2946,6 +2999,61 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         limit: UserDefaults.standard.integer(forKey: Prefs.translateHistoryLimit))
     }
     return results
+  }
+
+  /// 截图翻译盖回时同时最多请求几段（第二轮 G1）
+  private static let overlayConcurrency = 3
+
+  /// 最多 limit 个一起跑、一个完成补下一个，结果按下标放回（第二轮 G1）；任何一个抛错就整个抛（其余的取消）。
+  /// finished(完成了几个) 每完成一个调一次（在调用方这边，可以直接动界面）。纯调度，配单测
+  static func inParallel<T: Sendable>(
+    _ count: Int, limit: Int, finished: (Int) -> Void = { _ in },
+    work: @escaping @Sendable (Int) async throws -> T
+  ) async throws -> [T] {
+    var results = [T?](repeating: nil, count: count)
+    try await withThrowingTaskGroup(of: (Int, T).self) { group in
+      var next = 0
+      var done = 0
+      func launch() {
+        guard next < count else { return }
+        let index = next
+        next += 1
+        group.addTask { (index, try await work(index)) }
+      }
+      for _ in 0..<max(1, limit) { launch() }
+      while let (index, value) = try await group.next() {
+        results[index] = value
+        done += 1
+        finished(done)
+        launch()
+      }
+    }
+    // 没抛错就每个位置都有值；真少了一个是这里写错了，别让它悄悄变短、对应的段留成原文
+    assert(!results.contains { $0 == nil }, "inParallel 有位置没填上")
+    return results.compactMap { $0 }
+  }
+
+  /// 一段：按启用顺序试服务，第一个出了非空译文的就用；都失败抛最后一个错误，取消照样往外抛
+  private nonisolated static func translateSegment(
+    _ request: TranslateRequest, services: [TranslateService]
+  ) async throws -> (text: String, service: TranslateService) {
+    var failure: Error = TranslateError(message: "翻译失败")
+    for service in services {
+      try Task.checkCancellation()
+      do {
+        var latest = ""
+        for try await partial in service.translate(request) { latest = partial }
+        try Task.checkCancellation()
+        guard !latest.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+          throw TranslateError.emptyResult
+        }
+        return (latest, service)
+      } catch {
+        if error is CancellationError || Task.isCancelled { throw error }
+        failure = error
+      }
+    }
+    throw failure
   }
 
   /// 识字慢的时候先出「识别中」（第二轮体检 R3）：常见选区 0.04–0.13 s，不出；整屏密集文字约 0.9 s，过了 0.3 s 还没出结果

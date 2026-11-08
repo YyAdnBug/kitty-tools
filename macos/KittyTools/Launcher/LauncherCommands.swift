@@ -35,8 +35,10 @@ nonisolated enum LauncherCommands {
     BuiltIn(id: "builtin:ip", title: "IP 地址", keyword: "ip", symbol: "network"),
     BuiltIn(id: "builtin:cb", title: "在剪贴板历史里搜索", keyword: "cb", symbol: "doc.on.clipboard.fill"),
     BuiltIn(id: "builtin:fy", title: "翻译", keyword: "fy", symbol: "character.bubble.fill"),
-    BuiltIn(id: "builtin:reminder", title: "新建提醒", keyword: "提醒", symbol: "alarm.fill"),
-    BuiltIn(id: "builtin:currency", title: "汇率换算", keyword: "汇率", symbol: "banknote"),
+    // 默认别名一律英文（不用切输入法；2026-11-08 用户「为什么这两个是中文，不应该统一英文吗」）。中文的「提醒」「汇率」和
+    // tx、huilv 这些照旧认（ReminderPhrase.keywords、ExchangeRates.keywords）
+    BuiltIn(id: "builtin:reminder", title: "新建提醒", keyword: "remind", symbol: "alarm.fill"),
+    BuiltIn(id: "builtin:currency", title: "汇率换算", keyword: "currency", symbol: "banknote"),
   ]
 
   static func systemID(_ keyword: String) -> String { "system:" + keyword }
@@ -145,7 +147,8 @@ nonisolated enum LauncherCommands {
     guard alias != command.keyword else { return item }
     guard let alias else { return nil }
     var item = item
-    item.subtitle = item.subtitle.replacing("「\(command.keyword) 空格", with: "「\(alias) 空格")
+    // 「kill 空格 进程名」和例子「remind 10分钟 喝水」里的关键词都换
+    item.subtitle = item.subtitle.replacing("「\(command.keyword) ", with: "「\(alias) ")
     // 补全的是「关键词 空格」的才换（汇率补的是一句示例，不动）
     if item.completion?.hasPrefix(command.keyword + " ") == true { item.completion = alias + " " }
     return item
@@ -158,8 +161,8 @@ nonisolated enum LauncherCommands {
       case _ where target.hasPrefix("system-"): String(target.dropFirst("system-".count))
       case _ where target.hasPrefix("file-"): String(target.dropFirst("file-".count))
       case "translate-fy": "fy"
-      case _ where target.hasPrefix("reminder-"): "提醒"
-      case ExchangeRates.promptTarget: "汇率"
+      case _ where target.hasPrefix("reminder-"): "remind"
+      case ExchangeRates.promptTarget: "currency"
       default: ""
       }
     return builtIns.first { $0.keyword == keyword }

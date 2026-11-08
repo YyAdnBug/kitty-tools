@@ -14,7 +14,7 @@ struct FeatureTests {
   @Test func featuresSummary() {
     let list: [Feature] = [.clipboard, .launcher, .translate, .screenshot, .record, .notes]
     #expect(FeaturesPage.summary(on: Set(list), available: list) == "6 个功能都开着")
-    #expect(FeaturesPage.summary(on: [], available: list) == "都关着")
+    #expect(FeaturesPage.summary(on: [], available: list) == "\(list.count) 个功能都关着")
     #expect(
       FeaturesPage.summary(on: Set(list).subtracting([.notes]), available: list)
         == "开着 5 个；关着：便签")

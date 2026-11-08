@@ -82,23 +82,78 @@ import UniformTypeIdentifiers
   struct ScriptReview: Equatable {
     let script: ScriptCommand
     /// 读到之前是 nil
-    var text: String?
-    /// 脚本比能显示的长（ScriptRunner.reviewLimit）：没看全，不在这里运行
-    var isTruncated = false
+    var reading: ScriptReading?
+    /// 全文显示出来的那一刻：之后 reviewDwell 之内的 ↩ 不算（第三轮评审：照习惯连按两下 ↩ 不能直接放行）
+    var shownAt: ContinuousClock.Instant?
+    /// 过了 reviewDwell：底栏的「运行」这时才画成能点的（复查：那 1 秒里看着能点、点了只响提示音）
+    var isSettled = false
     /// 看过之后要交给它的参数（「关键词 空格 文字」那一行按的 ↩）；nil = 普通那一行
     var arguments: [String]?
+
+    var text: String? { reading?.text }
+    /// 脚本比能显示的长（ScriptRunner.reviewLimit）：没看全，不在这里运行
+    var isTruncated: Bool { reading?.isTruncated ?? false }
+    /// 现在能不能放行：读到了、没有不能放行的原因（没看全、藏着字符、读不出来）
+    var isRunnable: Bool { reading != nil && reading?.problem == nil }
   }
 
-  /// 全文输出的脚本（B1 full）：列表换成它的输出，↩ 粘贴、⌘C 复制、Esc 返回（还在跑时 Esc 停掉）
+  /// 看全文 / 输出那一页的键盘滚动（第三轮评审：焦点一直在搜索框里，长脚本只能拿鼠标滚）：step ±1 一小段、±2 一屏，
+  /// tick 让连按同一个方向也算变了
+  struct PageScroll: Equatable {
+    var step = 0
+    var tick = 0
+  }
+  private(set) var pageScroll = PageScroll()
+
+  /// 全文输出的脚本（B1 full）：列表换成它的输出，↩ 粘贴、⌘C 复制、⌘R 重跑、Esc 返回（还在跑时 Esc 停掉）
   private(set) var output: ScriptOutput?
 
   struct ScriptOutput: Equatable {
     let script: ScriptCommand
+    /// 跑它时给的参数：⌘R 照这些再跑一次（第三轮 A3）
+    var arguments: [String] = []
+    /// 粘贴、复制的：去掉颜色码的纯文字
     var text = ""
+    /// 显示的：认颜色（ScriptTerminal，第三轮 A2）。跑完是开头最多 outputDisplayLimit 字，跑着是最后 liveDisplayLimit 字
+    var styled = AttributedString()
+    /// 跑完的那一页只显示了开头一截（正文上面写一句）
+    var isCut = false
     var isRunning = true
+    /// 开始跑的时刻：跑着时副标题写「已 12 秒」（第三轮 A1）
+    var startedAt = Date.now
     /// 出错 / 超时 / 停了：那一句（红字）
     var failure: String?
+
+    /// 跑完：换上脚本写出来的（没收拾过的）输出——粘贴、复制的纯文字，显示开头一截（先按回车收好再数字数，数的是看得见的行）
+    mutating func show(_ raw: String) {
+      text = ScriptCommand.payload(raw)
+      let lines = ScriptCommand.carriageReturns(raw)
+      let head = lines.prefix(LauncherModel.outputDisplayLimit)
+      isCut = head.endIndex != lines.endIndex
+      styled = ScriptTerminal.styled(Self.trimmed(head))
+    }
+
+    /// 跑着（一秒四次）：只排最后一截，从一行的开头起（第 1 批评审：每次把 1 MB 全收拾一遍、排 10 万字，主线程跟不上）；
+    /// 纯文字跑完再算
+    mutating func showLive(_ raw: String) {
+      var tail = raw.suffix(LauncherModel.liveDisplayLimit)
+      if tail.startIndex != raw.startIndex, let newline = tail.firstIndex(where: \.isNewline) {
+        tail = tail[tail.index(after: newline)...]
+      }
+      styled = ScriptTerminal.styled(Self.trimmed(tail))
+    }
+
+    private static func trimmed(_ text: Substring) -> String {
+      var text = text
+      while text.last?.isNewline == true { text = text.dropLast() }
+      return String(text)
+    }
   }
+
+  /// 全文输出那一页跑完最多显示这么多字（再多 Text 排不动、卡主线程）；↩ 粘贴、⌘C 复制的照旧是全部
+  static let outputDisplayLimit = 100_000
+  /// 跑着时只显示最后这么多字（一秒排四次）
+  static let liveDisplayLimit = 20_000
 
   enum Alternate {
     case none, command, option, control
@@ -167,16 +222,15 @@ import UniformTypeIdentifiers
   @ObservationIgnored var scripts: () -> [ScriptCommand] = { [] }
   /// 设置 › 启动器「脚本命令」开着：「新建脚本」「复制脚本写法说明」两条内置动作跟着它
   @ObservationIgnored var scriptsOn: () -> Bool = { true }
-  /// 跑一条脚本（单测换成假的）
+  /// 跑一条脚本（单测换成假的）；第三个是边跑边交输出的（全文输出，别的模式是 nil）
   @ObservationIgnored var runScript:
-    @MainActor (ScriptCommand, [String]) async -> ScriptRunner.Outcome = {
-      await ScriptRunner.run($0, arguments: $1)
+    @MainActor (ScriptCommand, [String], ((String) -> Void)?) async -> ScriptRunner.Outcome = {
+      await ScriptRunner.run($0, arguments: $1, live: $2)
     }
   /// 读脚本全文（review 那一页；单测换成假的）
-  @ObservationIgnored var readScript:
-    @MainActor (ScriptCommand) async -> (text: String, isTruncated: Bool) = {
-      await ScriptRunner.text(of: $0.path)
-    }
+  @ObservationIgnored var readScript: @MainActor (ScriptCommand) async -> ScriptReading = {
+    await ScriptRunner.read($0.path)
+  }
   /// 「命令」表里改过的别名和关掉的（拍板 C3 C4）；单测 / 截图自检是空的，不读宿主 App 的偏好
   @ObservationIgnored var commandSettings: () -> LauncherCommands.Settings = {
     LauncherModel.savedCommandSettings()
@@ -195,6 +249,161 @@ import UniformTypeIdentifiers
     let settings = LauncherCommands.Settings(aliasesText: aliases, offText: off)
     settingsCache = (aliases, off, settings)
     return settings
+  }
+
+  // MARK: 命令的快捷键（第三轮 D1）
+
+  /// 最多这么多条（文件、同步来的再多也不读）
+  static let maxCommandHotKeys = 200
+
+  /// 偏好里那段 JSON → 编号 → 组合：读不出来的、过不了录制框规矩的（缺修饰键、通用编辑键）、连按两下的（命令的快捷键
+  /// 只认组合）都丢掉。纯函数，配单测
+  static func commandHotKeys(fromText text: String) -> [String: HotKey] {
+    guard let data = text.data(using: .utf8),
+      let decoded = try? JSONDecoder().decode([String: HotKey].self, from: data)
+    else { return [:] }
+    let usable = decoded.filter {
+      !$0.key.isEmpty && $0.value.isUsable && $0.value.doubleTap == nil
+    }
+    return Dictionary(
+      uniqueKeysWithValues: usable.sorted { $0.key < $1.key }.prefix(maxCommandHotKeys).map {
+        ($0.key, $0.value)
+      })
+  }
+
+  static func text(of hotKeys: [String: HotKey]) -> String {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+    guard !hotKeys.isEmpty, let data = try? encoder.encode(hotKeys) else { return "" }
+    return String(decoding: data, as: UTF8.self)
+  }
+
+  /// 一条命令给人看的名字（查重的提示里）：关键词命令、系统命令的名字，脚本的文件名
+  static func commandTitle(_ id: String) -> String {
+    if let builtIn = LauncherCommands.builtIns.first(where: { $0.id == id }) {
+      return builtIn.title
+    }
+    let system = LauncherCommands.systemID("")
+    if id.hasPrefix(system),
+      let command = SystemCommand(rawValue: String(id.dropFirst(system.count)))
+    {
+      return command.title
+    }
+    return (id as NSString).lastPathComponent
+  }
+
+  /// 偏好里存着的（录制框、热键中心读）
+  static func savedCommandHotKeys(_ defaults: UserDefaults = .standard) -> [String: HotKey] {
+    commandHotKeys(fromText: defaults.string(forKey: Prefs.launcherCommandHotKeys) ?? "")
+  }
+
+  /// 改一条（nil = 清除）
+  static func setCommandHotKey(
+    _ hotKey: HotKey?, for id: String, _ defaults: UserDefaults = .standard
+  ) {
+    var all = savedCommandHotKeys(defaults)
+    all[id] = hotKey
+    defaults.set(text(of: all), forKey: Prefs.launcherCommandHotKeys)
+  }
+
+  /// 这条命令在这台 Mac 上有（关着的也算；录制框查重只算有的）
+  func hasCommand(_ id: String) -> Bool {
+    let system = LauncherCommands.systemID("")
+    return LauncherCommands.builtIns.contains { $0.id == id }
+      || (id.hasPrefix(system)
+        && SystemCommand(rawValue: String(id.dropFirst(system.count))) != nil)
+      || scripts().contains { LauncherCommands.scriptID($0) == id }
+  }
+
+  /// 这条命令此刻按快捷键能不能做事：开着；脚本在（这台 Mac 上有、脚本命令开着）；关键词命令的功能开着、还有别名（别名清空了
+  /// 打不出它）；系统命令都在。热键中心只注册这些
+  func canRunHotKey(_ id: String) -> Bool {
+    let settings = commandSettings()
+    guard settings.isOn(id) else { return false }
+    if activeScripts.contains(where: { LauncherCommands.scriptID($0) == id }) { return true }
+    if let builtIn = LauncherCommands.builtIns.first(where: { $0.id == id }) {
+      let needs: Feature? =
+        switch builtIn.keyword {
+        case "cb": .clipboard
+        case "fy": .translate
+        case "remind": .reminders
+        default: nil
+        }
+      return needs.map(features.contains) != false
+        && settings.alias(id, default: builtIn.keyword) != nil
+    }
+    return id.hasPrefix(LauncherCommands.systemID(""))
+      && SystemCommand(rawValue: String(id.dropFirst(LauncherCommands.systemID("").count))) != nil
+  }
+
+  /// 「命令和别名」里给一条命令设的快捷键按下了（第三轮 D1）。脚本：从网上下载没看过的、要参数的（含列表）、写了 confirm 的
+  /// 打开启动器，做在启动器里按 ↩ 的那一步（先看全文 / 填好「关键词 空格」/ 选中并上膛）；全文输出的打开启动器看输出；
+  /// 别的直接跑（粘贴的粘进眼前的 App）。关键词命令打开启动器、填好「关键词 空格」。系统命令要确认的同脚本，别的直接做。
+  /// 使用只记总数，不记在当时搜索框里的字上
+  func runHotKey(_ id: String) {
+    guard canRunHotKey(id) else { return }
+    let settings = commandSettings()
+    if let script = activeScripts.first(where: { LauncherCommands.scriptID($0) == id }) {
+      let item = LauncherItem.script(script, alias: scriptAlias(script))
+      let unreviewed = script.isDownloaded && !approvedScripts.contains(script.path)
+      if unreviewed || script.takesInput || script.confirmation != nil {
+        return showAndExecute(item, word: scriptAlias(script) ?? script.title)
+      }
+      if script.mode == .full {
+        guard showPanel() else { return }
+        showsActions = false
+        // 它自己还在跑：start 会在岛上说「还在运行」，不动眼前那一页（清空搜索框会停掉它）
+        if runningScripts[script.path] == nil {
+          // 别的全文脚本的那一页还在跑：交给岛（跑完说一声带「看输出」），不停掉它（第 4 批评审）
+          if let current = output, current.isRunning {
+            output = nil
+            detach(current.script)
+          }
+          query = ""
+        }
+      }
+      usage.record(item, query: "")
+      runWithoutPanel { start(script, arguments: []) }
+      return
+    }
+    if let builtIn = LauncherCommands.builtIns.first(where: { $0.id == id }),
+      let alias = settings.alias(id, default: builtIn.keyword)
+    {
+      guard showPanel() else { return }
+      showsActions = false
+      query = alias + " "
+      return
+    }
+    let keyword = String(id.dropFirst(LauncherCommands.systemID("").count))
+    guard let command = SystemCommand(rawValue: keyword),
+      let item = systemItems.first(where: { $0.target == keyword })
+    else { return }
+    if command.confirmation != nil {
+      return showAndExecute(item, word: settings.alias(id, default: keyword) ?? command.title)
+    }
+    usage.record(item, query: "")
+    runWithoutPanel {
+      close()
+      perform(.command(command))
+    }
+  }
+
+  /// 打开启动器、打 word、选中那一行按一下 ↩（上膛、补关键词、先看全文都在 execute 里）
+  private func showAndExecute(_ item: LauncherItem, word: String) {
+    guard showPanel() else { return }
+    // ⌘K 菜单开着时收起：不然上了膛的那句压在菜单下面，菜单第一项（执行）再按一下 ↩ 就跑了（第 4 批评审）
+    showsActions = false
+    query = word
+    guard let index = results.firstIndex(where: { $0.id == item.id }) else { return }
+    selection = index
+    execute(results[index])
+  }
+
+  /// 启动器没开着时直接做：close() 会记「执行过」（下次收起清掉查询），没开着就不该记
+  private func runWithoutPanel(_ work: () -> Void) {
+    let wasShown = isShown
+    work()
+    if !wasShown { executed = false }
   }
 
   /// 一条脚本此刻的别名：「命令」表里改过的用改过的，没改过的是头部写的 keyword
@@ -225,6 +434,21 @@ import UniformTypeIdentifiers
   }
   /// 列表脚本打字时重跑（停手 listDelay 再跑；新的一跑就撤掉上一次）
   @ObservationIgnored private var listTask: Task<Void, Never>?
+  /// 只跑一次、自己过滤的列表脚本（第三轮 B3，@kitty.filter）：这次呼出里跑出来的结果（按脚本路径；failed = 没跑成，那一行不过滤），
+  /// 收起时清掉；正在跑的那一次不跟着打字撤掉（打字只是过滤）
+  @ObservationIgnored private var filterRows: [String: (rows: [LauncherItem], failed: Bool)] = [:]
+  @ObservationIgnored private var filterTask: (path: String, task: Task<Void, Never>)?
+  /// 正在跑的那条普通列表脚本（listTask 的）
+  @ObservationIgnored private var listPath: String?
+
+  /// 这一行是不是还在等结果的那条列表脚本的（看得见的是上一次的、或者「正在运行…」）。按脚本分：一条在跑不挡别的脚本的行
+  /// （第 2 批评审）
+  private func isPending(_ item: LauncherItem) -> Bool {
+    guard item.kind == .scriptResult else { return false }
+    return [listTask == nil ? nil : listPath, filterTask?.path].contains {
+      $0.map { item.target.hasPrefix($0 + "\n") } ?? false
+    }
+  }
   /// 列表结果到之前按了 ↩：到了就执行第一条（打字、收起就作罢）
   @ObservationIgnored private var runsWhenListed = false
   static let listDelay = Duration.milliseconds(150)
@@ -232,16 +456,20 @@ import UniformTypeIdentifiers
   static let listTimeout = 10
   /// 看过、确认要跑的下载来的脚本：去掉隔离标记、重读脚本库
   @ObservationIgnored var approveScript: @MainActor (ScriptCommand) async -> Void = { _ in }
+  /// 看全文那一页显示出来之后多久的 ↩ 才算放行（单测设成 0）
+  @ObservationIgnored var reviewDwell = Duration.seconds(1)
   /// 脚本行的 ⌘K（第二轮 D1）：编辑、到设置里改别名（命令表那一行的 id）、开关一条命令、把自带的复制一份到我的脚本。
   /// AppDelegate 接上；单测 / 截图自检是空的——不开编辑器、不写偏好、不写文件
   @ObservationIgnored var editScript: (ScriptCommand) -> Void = { _ in }
   @ObservationIgnored var openCommandSettings: (_ id: String) -> Void = { _ in }
   @ObservationIgnored var setCommandOn: (_ id: String, _ isOn: Bool) -> Void = { _, _ in }
   @ObservationIgnored var copyBundledScript: (ScriptCommand) -> Void = { _ in }
-  /// 出错的岛上「看输出」（第二轮 D3）：把启动器叫出来（已经开着、在前就不动）
-  @ObservationIgnored var showPanel: () -> Void = {}
-  /// 最近一次出错的全部输出（只留这一次，不记日志）；id 给岛上「看输出」认是不是这一次
-  @ObservationIgnored private(set) var lastFailure: (id: UUID, page: ScriptOutput)?
+  /// 岛上「看输出」（第二轮 D3）：把启动器叫出来（已经开着、在前就不动）；false = 没叫出来（启动器功能关着）
+  @ObservationIgnored var showPanel: () -> Bool = { true }
+  /// 最近一次要「看输出」的全部输出（出错的、收起后接着跑完的全文脚本；只留这一次，不记日志）；id 给岛上「看输出」认
+  @ObservationIgnored private(set) var lastOutput: (id: UUID, page: ScriptOutput)?
+  /// 全文脚本还在跑时启动器收起了：接着跑，跑完在岛上说（第三轮评审：原来悄悄停掉、输出也丢了）
+  @ObservationIgnored private var detachedOutputs: Set<String> = []
   /// 这次运行里确认过的（去不掉隔离标记的文件夹：只读的、别人的）
   @ObservationIgnored private var approvedScripts: Set<String> = []
   /// 正在跑的脚本（按路径）：「停止」按钮取消它；同一个还在跑时再按 ↩ 不重复起
@@ -489,9 +717,15 @@ import UniformTypeIdentifiers
     error = nil
     armed = nil
     review = nil
-    if output != nil { closeOutput() }
+    if let output {
+      self.output = nil
+      if output.isRunning { detach(output.script) }
+    }
     listTask?.cancel()
     listTask = nil
+    filterTask?.task.cancel()
+    filterTask = nil
+    filterRows = [:]
     runsWhenListed = false
     forgotten = nil
     notice = nil
@@ -510,7 +744,8 @@ import UniformTypeIdentifiers
     ratesTask?.cancel()
     ratesTask = nil
     ratesFailed = false
-    if executed || query.isEmpty {
+    // 打着密码参数没跑就收起的也不留（第三轮 C3：60 秒内再呼出时还看得见）
+    if executed || query.isEmpty || holdsSecret {
       keptAt = nil
       if !query.isEmpty { query = "" }
     } else {
@@ -593,6 +828,17 @@ import UniformTypeIdentifiers
     // 「别名 空格 文字」：交给那条脚本（B2），它的那几行排在普通结果前面
     let invocation = ScriptCommand.invocation(for: query, in: activeScripts, alias: scriptAlias)
     let invocationRows = invocation.map(invocationRows) ?? []
+    // 下载来、还没看过的：那一行（↩ 先看全文）不排在最前，接在普通结果后面（复查：同别名一字不差的那一处）
+    let trusted = invocation.map {
+      !$0.script.isDownloaded || approvedScripts.contains($0.script.path)
+    }
+    // 自己过滤的没跑成、下面又有别的结果：不留那行错误（同普通列表）；不再打这条脚本时忘掉没跑成的，再打到它重跑一次
+    let filterFailed = invocation.map { filterRows[$0.script.path]?.failed == true } ?? false
+    for (path, cached) in filterRows where cached.failed && path != invocation?.script.path {
+      filterRows[path] = nil
+    }
+    var leading = trusted == false ? [] : invocationRows
+    let trailing = trusted == false ? invocationRows : []
     let query = query.trimmingCharacters(in: .whitespaces)
     let typed = command.trimmingCharacters(in: .whitespaces)
     let ip = allowed("builtin:ip") && IPAddresses.matches(typed) ? ipItems() : []
@@ -647,9 +893,11 @@ import UniformTypeIdentifiers
         + WebSearch.quicklinkItems(engines: engines)
         + bookmarks.filter { LauncherMatch.mayMatch(tokens, $0) } + used, query: query
     ) { usage.boost(for: $0, query: query) }
-    // 脚本的别名一字不差：排第一（拍板 C1）
+    // 脚本的别名一字不差：排第一（拍板 C1）。下载来、还没看过的不算（第三轮评审：头部写个 safari、ip 就能抢走第一行）
     let aliased = Self.aliased(
-      scriptItems, scripts: activeScripts, query: query, alias: scriptAlias)
+      scriptItems,
+      scripts: activeScripts.filter { !$0.isDownloaded || approvedScripts.contains($0.path) },
+      query: query, alias: scriptAlias)
     let history = longEnough ? visited(query, excluding: bookmarks + used) : []
     // 兜底默认只在没有本地结果时出现（和 Alfred 一样；以前带空格的查询把兜底排到匹配的 App 前面），
     // 设置里可改成总是附在最后。已经有网址 / 路径直达项、或明写了 http(s):// 的就不再兜底（体检 B35：
@@ -665,7 +913,11 @@ import UniformTypeIdentifiers
     // 直达项和书签 / 用过的网址可能是同一项：按 id 去重，保留靠前的
     var seen = Set<String>()
     let ordered = Self.promoting(local, over: top) { usage.boost(for: $0, query: query).query > 0 }
-    results = (invocationRows + aliased + ordered + tx + history + partialPrompts + fallback)
+    if filterFailed, (aliased + ordered).contains(where: { ![.search, .prompt].contains($0.kind) })
+    {
+      leading = []
+    }
+    results = (leading + aliased + ordered + trailing + tx + history + partialPrompts + fallback)
       .filter { seen.insert($0.id).inserted }
     if let invocation { startList(invocation) }
   }
@@ -865,11 +1117,13 @@ import UniformTypeIdentifiers
   /// 单输「提醒」「tx」「remind」：↩ / Tab 补全关键词的提示（同 fy）
   static func reminderPrompts(for query: String) -> [LauncherItem] {
     guard ReminderPhrase.isKeyword(query) else { return [] }
+    // 用法里写打的那个词（「提醒」「tx」「remind」都认）
+    let typed = query.trimmingCharacters(in: .whitespaces)
     return [
       LauncherItem(
         kind: .prompt, target: "reminder-new", title: "新建提醒…",
-        subtitle: "输入「提醒 空格 时间 内容」，如「提醒 10分钟 喝水」；↩ 或 Tab 补全关键词",
-        completion: query.trimmingCharacters(in: .whitespaces) + " ")
+        subtitle: "输入「\(typed) 空格 时间 内容」，如「\(typed) 10分钟 喝水」；↩ 或 Tab 补全关键词",
+        completion: typed + " ")
     ]
   }
 
@@ -915,6 +1169,8 @@ import UniformTypeIdentifiers
 
   /// 「提醒 …」认不出时那一行提示的目标（↩ 什么都不做，只响提示音）
   static let reminderHint = "reminder-hint"
+  /// 下拉参数的一个选项那一行（第三轮 C1）：目标是「前缀 脚本路径⏎第几个参数⏎第几个选项」
+  static let choicePrefix = "script-choice\n"
 
   /// 「fy 单词」：系统词典的第一条释义，到了再换副标题，不改行高（体检 D10；首查约 0.3 s）
   private func lookUpDefinition(_ text: String) {
@@ -1208,23 +1464,29 @@ import UniformTypeIdentifiers
         query = (scriptAlias(script) ?? script.title) + " "
         return
       }
-      guard arguments.count >= script.requiredCount else { return NSSound.beep() }
+      // 参数没填够、下拉参数填的不是选项（第三轮 C1）：只响提示音，副标题写着
+      guard arguments.count >= script.requiredCount, script.invalidChoice(arguments) == nil else {
+        return NSSound.beep()
+      }
       if let text = script.confirmation, !confirm(item, commandKey: false, text: text) { return }
-      usage.record(item, query: query)
+      record(script, item)
       start(script, arguments: arguments)
     case .scriptResult:
       // 这一次还在跑（显示的是上一次的、或者「正在运行…」）：等结果到了执行第一条
-      if listTask != nil {
+      if isPending(item) {
         runsWhenListed = true
         return
       }
       guard let payload = item.payload else { return NSSound.beep() }
-      paste { Paster.write(string: payload, record: true) }
+      // 写了 url / path 的打开它（第三轮 B1；不记使用：结果每次由脚本重新列）
+      switch item.opens {
+      case .url(let url): open(url, nil)
+      case .file(let path): open(URL(filePath: path), nil)
+      case nil: paste { Paster.write(string: payload, record: true) }
+      }
     }
   }
 
-  /// 「关键词 空格 文字」那一行（B2）：参数没填够时副标题写「输入「tq 空格 城市」」；列表脚本停手 0.15 s 跑一遍、
-  /// 每行一条结果，跑完之前留着这条脚本上一次的结果（不闪），新的一跑就撤掉上一次（C2）
   /// 「关键词 空格 文字」那几行（B2），排在普通结果前面（不吞掉普通结果：「time machine」照样搜得到时间机器）：参数没填够时
   /// 副标题写「输入「tq 空格 城市」」；列表脚本是它的结果行——跑完之前留着这条脚本上一次的结果（不闪），第一次是一行
   /// 「正在运行…」（↩ 按在它上面等结果到了再执行，不落到下面的网页搜索上）
@@ -1232,10 +1494,25 @@ import UniformTypeIdentifiers
     let script = invocation.script
     var row = LauncherItem.script(script, alias: scriptAlias(script))
     row.arguments = invocation.arguments
+    // 已经在传参数了：Tab 不补全（第三轮评审：补成「tq 」把打好的「北京」清掉了）
+    row.completion = nil
+    // 正在打的是下拉参数、还没对上一个选项：选项排在前面，↩ / ⇥ 填进去（第三轮 C1）
+    let choices = choiceRows(invocation)
+    if !choices.isEmpty {
+      row.subtitle = "从下面选一个「\(script.arguments[invocation.typing].placeholder)」"
+      return choices + [row]
+    }
     if invocation.isMissing {
       let missing = script.arguments[invocation.arguments.count..<script.requiredCount]
       row.subtitle =
         "输入「\(invocation.keyword) 空格 \(missing.map(\.placeholder).joined(separator: " "))」"
+      return [row]
+    }
+    if let bad = script.invalidChoice(invocation.arguments) {
+      let argument = script.arguments[bad]
+      row.subtitle =
+        "「\(invocation.arguments[bad])」不是「\(argument.placeholder)」能选的："
+        + argument.options.map(\.title).joined(separator: " / ")
       return [row]
     }
     let downloaded = script.isDownloaded && !approvedScripts.contains(script.path)
@@ -1243,9 +1520,17 @@ import UniformTypeIdentifiers
       if downloaded {
         row.subtitle = "从网上下载的脚本，↩ 先看一眼"
       } else if !invocation.arguments.isEmpty {
-        row.subtitle = invocation.arguments.map { "「\($0)」" }.joined(separator: " ")
+        // 密码参数不回显（第三轮 C3）
+        row.subtitle = invocation.arguments.enumerated().map { index, value in
+          index < script.arguments.count && script.arguments[index].isSecret ? "•••" : "「\(value)」"
+        }.joined(separator: " ")
       }
       return [row]
+    }
+    // 自己过滤的：跑过了就按关键词后面的字过滤这一次的结果，不再跑（第三轮 B3）
+    if script.filters, let cached = filterRows[script.path] {
+      return cached.failed
+        ? cached.rows : Self.filtered(cached.rows, by: invocation.arguments.first ?? "")
     }
     let kept = results.filter { $0.isResult(of: script) && $0.payload != nil }
     guard kept.isEmpty else { return kept }
@@ -1257,27 +1542,63 @@ import UniformTypeIdentifiers
     return [pending]
   }
 
+  /// 下拉参数的选项（第三轮 C1）：正在打的那个参数有选项、打的还没对上某一个时，按打的字过滤（认拼音）；↩ / ⇥ 把它填进
+  /// 搜索框（带空白的括上引号，后面还有参数的接一个空格）。交给脚本的是选项的 value（ScriptCommand.passed）
+  private func choiceRows(_ invocation: ScriptCommand.Invocation) -> [LauncherItem] {
+    let script = invocation.script
+    let index = invocation.typing
+    guard index < script.arguments.count else { return [] }
+    let argument = script.arguments[index]
+    let typed = index < invocation.arguments.count ? invocation.arguments[index] : ""
+    guard !argument.options.isEmpty, argument.option(for: typed) == nil || typed.isEmpty else {
+      return []
+    }
+    // 只有一个参数的脚本整段就是它，不括引号（第 3 批评审：括了的话「"New York"」连引号交给脚本、也对不上选项）
+    let quotes = script.arguments.count > 1
+    func quote(_ text: String) -> String { quotes ? ScriptCommand.quoted(text) : text }
+    let before = invocation.arguments.prefix(index).map(quote)
+    let rows = argument.options.enumerated().map { number, option in
+      var row = Self.searchable(
+        LauncherItem(
+          kind: .prompt, target: Self.choicePrefix + script.path + "\n\(index)\n\(number)",
+          title: option.title, subtitle: ""))
+      row.subtitle = argument.placeholder
+      row.completion =
+        ([invocation.keyword] + before + [quote(option.title)])
+        .joined(separator: " ") + (index + 1 < script.arguments.count ? " " : "")
+      row.scriptIcon = script.icon
+      row.scriptIconDark = script.iconDark
+      return row
+    }
+    return Self.filtered(rows, by: typed)
+  }
+
   /// 列表脚本（C2）：停手 0.15 s 跑一遍，新的一跑就撤掉上一次；结果换掉这条脚本的那几行，下面的普通结果不动。
   /// 跑失败了、下面又有别的结果：不留那行错误（「time machine」不是在给时间戳传参数）
   private func startList(_ invocation: ScriptCommand.Invocation) {
     let script = invocation.script
+    // 下拉参数还没对上选项时不跑（第 3 批评审：打一个字跑一次，结果还挤在选项前面）
     guard script.mode == .list, !invocation.isMissing,
+      script.invalidChoice(invocation.arguments) == nil,
       !script.isDownloaded || approvedScripts.contains(script.path)
     else { return }
+    if script.filters { return startFilter(invocation) }
     let key = query
+    listPath = script.path
     listTask = Task { [weak self] in
       try? await Task.sleep(for: Self.listDelay)
       guard let self, !Task.isCancelled else { return }
       var quick = script
       quick.timeout = min(script.limit == 0 ? Self.listTimeout : script.limit, Self.listTimeout)
-      let outcome = await runScript(quick, invocation.arguments)
+      let outcome = await runScript(quick, invocation.arguments, nil)
       guard !Task.isCancelled, query == key else { return }
       listTask = nil
       let selected = userMovedSelection ? selectedItem?.id : nil
       let rest = results.filter { !$0.isResult(of: script) }
-      let rows = Self.resultRows(outcome, of: script)
+      // 传 quick：超时说的秒数是这次真用的（列表最多 10 秒）
+      let rows = Self.resultRows(outcome, of: quick, keyword: invocation.keyword)
       // 只有网页搜索、提示这些兜底的行不算：那时留着错误那行，让人知道脚本为什么没给结果
-      let failed = Self.failure(outcome, of: script) != nil
+      let failed = Self.failure(outcome, of: quick) != nil
       let found = rest.contains { ![.search, .prompt].contains($0.kind) }
       results = (failed && found ? [] : rows) + rest
       selection = selected.flatMap { id in results.firstIndex { $0.id == id } } ?? 0
@@ -1290,13 +1611,73 @@ import UniformTypeIdentifiers
     }
   }
 
-  /// 等列表脚本这一次跑完（单测）
-  func listRun() async { await listTask?.value }
+  /// 自己过滤的列表脚本（第三轮 B3）：这次呼出里第一次打到「关键词 空格」时跑一次（不带参数），之后打字不撤它、也不再跑；
+  /// 结果到了重搜一次（按那时打的字过滤），结果到之前按了 ↩ 的执行第一条
+  private func startFilter(_ invocation: ScriptCommand.Invocation) {
+    let script = invocation.script
+    guard filterRows[script.path] == nil, filterTask?.path != script.path else { return }
+    filterTask?.task.cancel()
+    let task = Task { [weak self] in
+      guard let self else { return }
+      var quick = script
+      quick.timeout = min(script.limit == 0 ? Self.listTimeout : script.limit, Self.listTimeout)
+      let outcome = await runScript(quick, [], nil)
+      guard !Task.isCancelled else { return }
+      filterTask = nil
+      let rows = Self.resultRows(outcome, of: quick, keyword: invocation.keyword)
+      let failed = Self.failure(outcome, of: quick) != nil
+      filterRows[script.path] = (failed ? rows : rows.map(Self.searchable), failed)
+      // 现在打的已经不是在用这条脚本了：结果先记着，不动眼前的列表（第 2 批评审：选中跳回第一行、上膛被撤、
+      // 别的列表脚本被重跑）
+      guard
+        ScriptCommand.invocation(for: query, in: activeScripts, alias: scriptAlias)?.script.path
+          == script.path
+      else { return }
+      let runs = runsWhenListed
+      let selected = userMovedSelection ? selectedItem?.id : nil
+      search()
+      if let selected, let index = results.firstIndex(where: { $0.id == selected }) {
+        selection = index
+        userMovedSelection = true
+      }
+      emptyText = "「\(script.title)」没有给出结果"
+      if runs, let first = results.first, first.isResult(of: script) { execute(first) }
+    }
+    filterTask = (script.path, task)
+  }
 
-  /// 列表脚本跑完 → 一条条结果；出错的是一行写原因（↩ 只响提示音）。纯函数，配单测
-  static func resultRows(_ outcome: ScriptRunner.Outcome, of script: ScriptCommand)
-    -> [LauncherItem]
-  {
+  /// 过滤用的名字：标题、说明，中文标题的全拼和首字母（同搜 App）
+  static func searchable(_ row: LauncherItem) -> LauncherItem {
+    var row = row
+    let pinyin = AppCatalog.pinyin(row.title)
+    row.names = [row.title, row.subtitle, pinyin?.full].compactMap { $0.map(LauncherMatch.fold) }
+    row.initials = [LauncherMatch.initials(row.title), pinyin?.initials].compactMap { $0 }
+    return row
+  }
+
+  /// 按打的字过滤：对得上的按匹配分排，同分按脚本给的顺序；没打字就是全部。纯函数，配单测
+  static func filtered(_ rows: [LauncherItem], by text: String) -> [LauncherItem] {
+    guard !text.trimmingCharacters(in: .whitespaces).isEmpty else { return rows }
+    return rows.enumerated()
+      .compactMap { index, row -> (LauncherItem, Double, Int)? in
+        let score = LauncherMatch.score(text, item: row)
+        return score > 0 ? (row, score, index) : nil
+      }
+      .sorted { $0.1 != $1.1 ? $0.1 > $1.1 : $0.2 < $1.2 }
+      .map(\.0)
+  }
+
+  /// 等列表脚本这一次跑完（单测）
+  func listRun() async {
+    await listTask?.value
+    await filterTask?.task.value
+  }
+
+  /// 列表脚本跑完 → 一条条结果；出错的是一行写原因（↩ 只响提示音）。keyword：打的关键词（结果的 autocomplete 接在它后面
+  /// 填进搜索框）。纯函数，配单测
+  static func resultRows(
+    _ outcome: ScriptRunner.Outcome, of script: ScriptCommand, keyword: String = ""
+  ) -> [LauncherItem] {
     func row(_ index: Int, _ title: String, _ subtitle: String, _ payload: String?) -> LauncherItem
     {
       var item = LauncherItem(
@@ -1309,8 +1690,25 @@ import UniformTypeIdentifiers
     if let failure = failure(outcome, of: script) {
       return [row(0, failure.title, failure.detail, nil)]
     }
-    return ScriptCommand.lines(outcome.output).enumerated().map { index, line in
-      row(index, line.title, line.subtitle, line.isValid ? line.value : nil)
+    return ScriptCommand.lines(outcome.output, folder: script.folder).enumerated().map {
+      index, line in
+      var item = row(index, line.title, line.subtitle, line.isValid ? line.value : nil)
+      // 不能选的不写「网址」「文件」、不当能打开的（↩ 只响提示音）
+      item.opens = line.isValid ? line.opens : nil
+      item.copyText = line.copyText
+      // 这一条自己的图标；没写、是文件的用它在访达里的图标（同启动器里的文件行）
+      if let icon = line.icon
+        ?? line.opens.flatMap({
+          if case .file(let path) = $0 { .file(path) } else { nil }
+        })
+      {
+        item.scriptIcon = icon
+        item.scriptIconDark = nil
+      }
+      if let text = line.autocomplete {
+        item.completion = keyword.isEmpty ? text : keyword + " " + text
+      }
+      return item
     }
   }
 
@@ -1337,13 +1735,33 @@ import UniformTypeIdentifiers
 
   // MARK: 脚本命令
 
+  /// 搜索框里打着密码参数（第三轮 C3）：不留到下次呼出；⌥↩ / ⌃↩ 不拿它去访达、网页里搜（第 3 批评审：按住 ⌃ 时的说明还会
+  /// 把整句连密码显示出来）
+  private var holdsSecret: Bool {
+    ScriptCommand.invocation(for: query, in: activeScripts, alias: scriptAlias).map {
+      $0.script.hasSecret && !$0.arguments.isEmpty
+    } ?? false
+  }
+
+  /// 记一次使用。有密码参数的（第三轮 C3）：查询里有密码，按关键词记，不把打的字存进使用记录；搜索框先清空（全文输出时
+  /// 启动器留着，不清就一直看得见）
+  private func record(_ script: ScriptCommand, _ item: LauncherItem) {
+    guard script.hasSecret else { return usage.record(item, query: query) }
+    usage.record(item, query: scriptAlias(script) ?? script.title)
+    query = ""
+  }
+
   /// 跑一条脚本（B1 B4）：先收起再跑，粘贴的目标在收起前定（焦点原本在自家便签里时直接粘进去）；
   /// 超过 1 秒还没完，岛上出「正在运行」带「停止」。同一个还在跑：不重复起，岛上说一声
   private func start(_ script: ScriptCommand, arguments: [String]) {
     let name = "「\(script.title)」"
     guard runningScripts[script.path] == nil else {
       close()
-      island?.show(name + "还在运行", detail: "等它跑完，或者在岛上点「停止」", tone: .info)
+      // 岛上那条「正在运行」会被这一条换掉、挂满 60 秒也会收：这里再给一个「停止」（第三轮评审）
+      let path = script.path
+      island?.show(
+        name + "还在运行", detail: "等它跑完，或者点「停止」", tone: .info,
+        actions: [Island.Action("停止") { [weak self] in self?.runningScripts[path]?.cancel() }])
       return
     }
     if script.mode == .full { return startFull(script, arguments: arguments) }
@@ -1358,56 +1776,107 @@ import UniformTypeIdentifiers
           progress, tone: .progress, symbol: "terminal.fill",
           actions: [Island.Action("停止") { [weak self] in self?.runningScripts[path]?.cancel() }])
       } work: {
-        await self.runScript(script, arguments)
+        await self.runScript(script, arguments, nil)
       }
       runningScripts[path] = nil
-      deliver(outcome, of: script, into: target, progress: progress)
+      deliver(outcome, of: script, arguments: arguments, into: target, progress: progress)
     }
   }
 
-  /// 全文输出（B1 full）：启动器留着，列表换成输出那一页；跑完把输出（出错时连同错误输出）放上去
+  /// 全文输出（B1 full）：启动器留着，列表换成输出那一页；边跑边把写到现在的放上去（第三轮 A1，错误输出并在里面、
+  /// 同终端），跑完换成最终的那一份。⌘R 重跑也走这里（第三轮 A3：别的模式的脚本从「看输出」那一页重跑，同样在这一页上看结果）
   private func startFull(_ script: ScriptCommand, arguments: [String]) {
     let path = script.path
     showsActions = false
-    output = ScriptOutput(script: script)
+    output = ScriptOutput(script: script, arguments: arguments)
+    let started = output?.startedAt
     runningScripts[path] = Task { [weak self] in
       guard let self else { return }
-      let outcome = await runScript(script, arguments)
+      let outcome = await runScript(script, arguments) { [weak self] raw in
+        guard let self, output?.startedAt == started, output?.isRunning == true else { return }
+        output?.showLive(raw)
+      }
       runningScripts[path] = nil
-      guard output?.script.path == path else { return }
-      let page = Self.outputPage(outcome, of: script)
-      output?.text = page.text
-      output?.isRunning = false
-      output?.failure = page.failure
+      // 跑着时启动器收起了：岛上说结果、带「看输出」；Esc 停掉的、换成别的页的不说。⌘R 重跑的别的模式的脚本也按全文交
+      // （第 1 批评审：按它自己的模式交，粘贴脚本会把结果粘进收起后在前面的 App）
+      if detachedOutputs.remove(path) != nil {
+        var shown = script
+        shown.mode = .full
+        return deliver(
+          outcome, of: shown, arguments: arguments, into: nil,
+          progress: "正在运行「\(script.title)」")
+      }
+      guard output?.startedAt == started else { return }
+      var page = Self.outputPage(outcome, of: script, arguments: arguments)
+      page.startedAt = started ?? page.startedAt
+      output = page
       Island.announce(page.failure ?? "「\(script.title)」运行完了")
     }
   }
 
+  /// 输出那一页的 ⌘R：用同样的参数再跑一次（第三轮 A3）。按的是脚本现在的样子（改完脚本再跑一次看结果）；还在跑的、
+  /// 写了 confirm 的（重跑不该绕过「按两次」）、已经不在了的不跑
+  func rerunOutput() {
+    guard let output, !output.isRunning, runningScripts[output.script.path] == nil else {
+      return NSSound.beep()
+    }
+    guard let script = activeScripts.first(where: { $0.path == output.script.path }),
+      !script.isDownloaded || approvedScripts.contains(script.path)
+    else {
+      island?.show("「\(output.script.title)」不在了", detail: "脚本被删掉、关掉或者换过了", tone: .info)
+      return NSSound.beep()
+    }
+    guard script.confirmation == nil else { return NSSound.beep() }
+    startFull(script, arguments: output.arguments)
+  }
+
+  /// 这一页能不能 ⌘R：底栏的「重跑」跟着它
+  var canRerunOutput: Bool {
+    guard let output else { return false }
+    return !output.isRunning && output.script.confirmation == nil
+  }
+
+  /// 全文脚本跑着时启动器收起了：接着跑，岛上挂「正在运行」带「停止」，跑完由 startFull 交给 deliver
+  private func detach(_ script: ScriptCommand) {
+    let path = script.path
+    detachedOutputs.insert(path)
+    island?.show(
+      "正在运行「\(script.title)」", tone: .progress, symbol: "terminal.fill",
+      actions: [Island.Action("停止") { [weak self] in self?.runningScripts[path]?.cancel() }])
+  }
+
   /// 全文那一页上的东西：输出，没跑成时接上错误输出；没跑成的那一句（红字）。全文输出和岛上「看输出」同一份
-  static func outputPage(_ outcome: ScriptRunner.Outcome, of script: ScriptCommand) -> ScriptOutput
-  {
-    var text = ScriptCommand.payload(outcome.output)
-    let error = ScriptCommand.payload(outcome.error)
-    if !outcome.succeeded, !error.isEmpty { text += (text.isEmpty ? "" : "\n\n") + error }
+  static func outputPage(
+    _ outcome: ScriptRunner.Outcome, of script: ScriptCommand, arguments: [String]
+  ) -> ScriptOutput {
+    var raw = outcome.output
+    if !outcome.succeeded, !ScriptCommand.payload(outcome.error).isEmpty {
+      while raw.last?.isNewline == true { raw.removeLast() }
+      raw += (raw.isEmpty ? "" : "\n\n") + outcome.error
+    }
     let failure = Self.failure(outcome, of: script).map {
       [$0.title, $0.detail].filter { !$0.isEmpty }.joined(separator: "：")
     }
-    return ScriptOutput(script: script, text: text, isRunning: false, failure: failure)
+    var page = ScriptOutput(
+      script: script, arguments: arguments, isRunning: false, failure: failure)
+    page.show(raw)
+    return page
   }
 
   /// 岛上「看输出」：叫出启动器，原地显示那一次的全部输出（同全文输出那一页：↩ 粘贴、⌘C 复制、Esc 回到结果）。
-  /// 只留着最近一次出错的：后来又有脚本出过错，早先那座岛上的按钮就说没留着
-  func showFailure(_ id: UUID) {
-    guard let lastFailure, lastFailure.id == id else {
-      island?.show("那次的输出没留着", detail: "只留最近一次出错的输出", tone: .info)
+  /// 只留着最近一次的：后来又有脚本要看输出，早先那座岛上的按钮就说没留着
+  func showOutput(_ id: UUID) {
+    guard let lastOutput, lastOutput.id == id else {
+      island?.show("那次的输出没留着", detail: "只留最近一次的输出", tone: .info)
       return
     }
-    // 先叫出来再换上：收起着时呼出会按「过了 60 秒」清掉查询，那会顺手关掉输出页；正在跑的全文脚本停掉（同 Esc）
+    // 先叫出来再换上：收起着时呼出会按「过了 60 秒」清掉查询，那会顺手关掉输出页；正在跑的全文脚本停掉（同 Esc）。
+    // 启动器功能关着叫不出来：不留一张过期的输出页（第三轮评审）
     if output != nil { closeOutput() }
-    showPanel()
+    guard showPanel() else { return }
     review = nil
     showsActions = false
-    output = lastFailure.page
+    output = lastOutput.page
   }
 
   /// 输出那一页：回到结果（还在跑就停掉）
@@ -1440,22 +1909,22 @@ import UniformTypeIdentifiers
 
   /// 把结果交出去（B1）：出错的一律岛上红字（最后一行；没有就写退出码），成功的按 mode
   private func deliver(
-    _ outcome: ScriptRunner.Outcome, of script: ScriptCommand, into target: NSTextView?,
-    progress: String
+    _ outcome: ScriptRunner.Outcome, of script: ScriptCommand, arguments: [String],
+    into target: NSTextView?, progress: String
   ) {
     let name = "「\(script.title)」"
     if let failure = Self.failure(outcome, of: script) {
       let stopped = outcome.end == .stopped
       // 出错了带「看输出」（D3）：前面几行才说得清为什么；自己停的、什么都没输出的不带
-      let page = Self.outputPage(outcome, of: script)
+      let page = Self.outputPage(outcome, of: script, arguments: arguments)
       let keeps = !stopped && !page.text.isEmpty
       let id = UUID()
-      if keeps { lastFailure = (id, page) }
+      if keeps { lastOutput = (id, page) }
       island?.show(
         failure.title, detail: failure.detail.isEmpty ? nil : failure.detail,
         tone: stopped ? .info : .error,
         actions: keeps
-          ? [Island.Action("看输出", opens: true) { [weak self] in self?.showFailure(id) }] : [])
+          ? [Island.Action("看输出", opens: true) { [weak self] in self?.showOutput(id) }] : [])
       return
     }
     let text = ScriptCommand.payload(outcome.output)
@@ -1474,8 +1943,17 @@ import UniformTypeIdentifiers
       }
     case .none:
       island?.dismiss(ifShowing: progress)
-    // full、list 平时不走这里（全文那一页、列表行）；万一走到了按岛上一行
-    case .island, .full, .list:
+    // 全文：跑着时启动器收起了的才走这里（detach）。岛上说一声，带「看输出」
+    case .full:
+      let page = Self.outputPage(outcome, of: script, arguments: arguments)
+      let id = UUID()
+      if !page.text.isEmpty { lastOutput = (id, page) }
+      island?.show(
+        name + "运行完了", detail: ScriptCommand.lastLine(outcome.output),
+        actions: page.text.isEmpty
+          ? [] : [Island.Action("看输出", opens: true) { [weak self] in self?.showOutput(id) }])
+    // list 平时不走这里（列表行）；万一走到了按岛上一行
+    case .island, .list:
       if let line = ScriptCommand.lastLine(outcome.output) {
         island?.show(line, detail: script.title)
       } else {
@@ -1509,16 +1987,22 @@ import UniformTypeIdentifiers
     Task {
       let read = await readScript(script)
       guard review?.script.path == script.path else { return }
-      review?.text = read.text
-      review?.isTruncated = read.isTruncated
+      review?.reading = read
+      review?.shownAt = .now
+      try? await Task.sleep(for: reviewDwell)
+      guard review?.script.path == script.path else { return }
+      review?.isSettled = true
     }
     Island.announce("这个脚本是从网上下载的，先看一眼再运行。按回车运行，按 Esc 返回")
   }
 
   /// 看过了（↩ / 「运行」）：记下、去掉隔离标记，然后照常跑（写了 confirm 的不再上膛：看全文就是确认）
   func approveReview() {
-    // 全文还没读到、或者没显示全：不跑（看不全的脚本别运行；去编辑器里看）
-    guard let review, review.text != nil, !review.isTruncated else { return NSSound.beep() }
+    // 全文还没读到、没显示全、藏着打乱显示顺序的字符：不跑（看不全的脚本别运行；去编辑器里看）。刚显示出来那 1 秒的 ↩
+    // 也不算：呼出时照习惯连按两下 ↩ 的第二下不能直接放行（第三轮评审）
+    guard let review, review.isRunnable, let shown = review.shownAt,
+      ContinuousClock.now - shown >= reviewDwell
+    else { return NSSound.beep() }
     let script = review.script
     self.review = nil
     approvedScripts.insert(script.path)
@@ -1528,9 +2012,11 @@ import UniformTypeIdentifiers
       query = (scriptAlias(script) ?? script.title) + " "
       return
     }
-    guard arguments.count >= script.requiredCount else { return }
+    guard arguments.count >= script.requiredCount, script.invalidChoice(arguments) == nil else {
+      return NSSound.beep()
+    }
     if script.mode == .list { return search() }
-    usage.record(LauncherItem.script(script, alias: scriptAlias(script)), query: query)
+    record(script, LauncherItem.script(script, alias: scriptAlias(script)))
     start(script, arguments: arguments)
   }
 
@@ -1688,7 +2174,8 @@ import UniformTypeIdentifiers
   /// ⌥↩：在访达里用 Spotlight 搜当前查询（不需要额外授权）
   private func searchInFinder() {
     let text = searchText
-    guard !text.isEmpty, NSWorkspace.shared.showSearchResults(forQueryString: text) else {
+    guard !text.isEmpty, !holdsSecret, NSWorkspace.shared.showSearchResults(forQueryString: text)
+    else {
       return NSSound.beep()
     }
     close()
@@ -1697,7 +2184,7 @@ import UniformTypeIdentifiers
   /// ⌃↩：不管有没有本地结果，用第一个兜底搜索搜当前查询
   private func searchWeb() {
     let text = searchText
-    guard !text.isEmpty, let engine = WebSearch.primary(in: engines()),
+    guard !text.isEmpty, !holdsSecret, let engine = WebSearch.primary(in: engines()),
       let url = URL(string: WebSearch.url(engine, text))
     else { return NSSound.beep() }
     open(url, nil)
@@ -1718,7 +2205,7 @@ import UniformTypeIdentifiers
       let exists = FileManager.default.fileExists(atPath: item.target, isDirectory: &isDirectory)
       let path = (item.target as NSString).abbreviatingWithTildeInPath
       return exists && isDirectory.boolValue && !path.hasSuffix("/") ? path + "/" : path
-    case .script: return item.title
+    case .script: return item.arguments == nil ? item.title : nil
     case .search, .calculation, .clip, .prompt, .translate, .process, .ip, .reminder,
       .scriptResult:
       return nil
@@ -1756,6 +2243,7 @@ import UniformTypeIdentifiers
     case .url: ("打开网址", "safari")
     case .search: ("搜索", "magnifyingglass")
     case .prompt where item.target == Self.reminderHint: ("改一下再建", "pencil")
+    case .prompt where item.target.hasPrefix(Self.choicePrefix): ("选这个", "text.cursor")
     case .prompt:
       item.target == FileSearch.accessTarget
         ? ("授权", "lock.open")
@@ -1773,16 +2261,26 @@ import UniformTypeIdentifiers
         ? ("暂停", "pause.circle") : ("打开", "play.circle")
     case .script where item.arguments == nil && item.completion != nil: ("补全关键词", "text.cursor")
     // 参数没填够：↩ 只响提示音，副标题写着要填什么
-    case .script
-    where (item.arguments?.count ?? .max)
-      < (activeScripts.first { $0.path == item.target }?.requiredCount ?? 0):
-      ("先填参数", "text.cursor")
+    case .script where isMissingArguments(item): ("先填参数", "text.cursor")
     case .script: (confirming ? "确认运行" : "运行", "play")
-    case .scriptResult: ("粘贴", "arrow.turn.down.left")
+    case .scriptResult:
+      switch item.opens {
+      case .url: ("打开", "safari")
+      case .file: ("打开", "arrow.up.forward.app")
+      case nil: ("粘贴", "arrow.turn.down.left")
+      }
     }
   }
 
   /// ⌘↩ 做什么；没有就是 nil（网址没有第二个浏览器时也是 nil：副标题不写，按了只响提示音）
+  /// 「关键词 空格」后参数没填够的那一行：↩ 只响提示音（底栏的 ↩ 不画成能按的主按钮）
+  func isMissingArguments(_ item: LauncherItem) -> Bool {
+    guard item.kind == .script, let arguments = item.arguments,
+      let script = activeScripts.first(where: { $0.path == item.target })
+    else { return false }
+    return arguments.count < script.requiredCount || script.invalidChoice(arguments) != nil
+  }
+
   func commandReturnAction(for item: LauncherItem) -> (title: String, symbol: String)? {
     let confirming = armed?.id == item.id && armed?.commandKey == true
     if let request = commandRequest, [.app, .process].contains(item.kind) {
@@ -1798,8 +2296,13 @@ import UniformTypeIdentifiers
     return switch item.kind {
     case .app, .path:
       revealsOnReturn(item) ? ("打开", "arrow.up.forward.app") : ("在访达中显示", "folder")
-    case .calculation where item.payload != nil, .ip where item.payload != nil,
-      .scriptResult where item.payload != nil:
+    case .scriptResult where item.payload != nil:
+      switch item.opens {
+      case .url: ("复制网址", "doc.on.doc")
+      case .file: ("在访达中显示", "folder")
+      case nil: ("只复制，不粘贴", "doc.on.doc")
+      }
+    case .calculation where item.payload != nil, .ip where item.payload != nil:
       ("只复制，不粘贴", "doc.on.doc")
     case .reminder where !item.target.isEmpty: ("在设置里编辑", "gearshape")
     case .script: ("在访达中显示", "folder")
@@ -1815,7 +2318,10 @@ import UniformTypeIdentifiers
     case .url, .search: "复制网址"
     case .calculation: item.payload == nil ? nil : "复制结果"
     case .ip: item.payload == nil ? nil : "复制地址"
-    case .scriptResult: item.payload == nil ? nil : "复制结果"
+    case .scriptResult where item.payload == nil: nil
+    case .scriptResult where item.copyText == nil && item.opens != nil:
+      if case .url = item.opens { "复制网址" } else { "复制路径" }
+    case .scriptResult: "复制结果"
     case .action, .system, .prompt, .clip, .translate, .process, .reminder: nil
     }
   }
@@ -1823,12 +2329,14 @@ import UniformTypeIdentifiers
   /// ⌥↩ / ⌃↩ 做什么：没有查询（或没有兜底搜索）时 nil
   private var finderSearchTitle: String? {
     let text = searchText
-    return text.isEmpty ? nil : "在访达里搜索「\(text)」"
+    return text.isEmpty || holdsSecret ? nil : "在访达里搜索「\(text)」"
   }
 
   private var webSearchTitle: String? {
     let text = searchText
-    guard !text.isEmpty, let engine = WebSearch.primary(in: engines()) else { return nil }
+    guard !text.isEmpty, !holdsSecret, let engine = WebSearch.primary(in: engines()) else {
+      return nil
+    }
     return "用 \(engine.name) 搜索「\(text)」"
   }
 
@@ -1966,7 +2474,7 @@ import UniformTypeIdentifiers
     if isQuickLooking {
       isQuickLooking = false
       closeQuickLook(true)
-    } else if let item = selectedItem, isFile(item) {
+    } else if let item = selectedItem, isFile(item) || Self.resultFile(item) != nil {
       isQuickLooking = true
       showsQuickLookContent = true
       openQuickLook()
@@ -1983,8 +2491,18 @@ import UniformTypeIdentifiers
 
   /// 预览的文件：选中的不是文件时 nil（浮层里写「没有可预览的文件」）
   var quickLookURL: URL? {
-    guard let item = selectedItem, isFile(item) else { return nil }
+    guard let item = selectedItem else { return nil }
+    if let path = Self.resultFile(item) { return URL(filePath: path) }
+    guard isFile(item) else { return nil }
     return URL(filePath: item.target)
+  }
+
+  /// 列表脚本给的文件结果（第三轮 B1）：⌘Y 快速查看它；不能选的（payload 是 nil）不算
+  static func resultFile(_ item: LauncherItem) -> String? {
+    guard item.kind == .scriptResult, item.payload != nil, case .file(let path) = item.opens else {
+      return nil
+    }
+    return path
   }
 
   /// 右键菜单里的「快速查看」：先选中被点的那一行
@@ -2104,15 +2622,29 @@ import UniformTypeIdentifiers
     return true
   }
 
-  /// 看脚本全文那一页：↩ 运行、Esc 回去，↑↓ 吞掉（没有可选的），打字照常（会回到结果）
+  /// 看全文 / 输出那一页的 ↑↓、PageUp / PageDown：滚正文（是这几个键就接了，返回 true）
+  private func scrollsPage(_ selector: Selector) -> Bool {
+    let step: Int
+    switch selector {
+    case #selector(NSResponder.moveUp(_:)): step = -1
+    case #selector(NSResponder.moveDown(_:)): step = 1
+    case #selector(NSResponder.scrollPageUp(_:)), #selector(NSResponder.pageUp(_:)): step = -2
+    case #selector(NSResponder.scrollPageDown(_:)), #selector(NSResponder.pageDown(_:)): step = 2
+    default: return false
+    }
+    pageScroll = PageScroll(step: step, tick: pageScroll.tick + 1)
+    return true
+  }
+
+  /// 看脚本全文那一页：↩ 运行、Esc 回去，↑↓ / PageUp / PageDown 滚正文，打字照常（会回到结果）
   private func handleReviewCommand(_ selector: Selector) -> Bool {
     switch selector {
     // 按住 ↩ 的自动连发不算：打开这一页的那一下连发过来不能直接放行
     case #selector(NSResponder.insertNewline(_:)):
       if Style.isReturnKey, !Style.isKeyRepeat { approveReview() }
     case #selector(NSResponder.cancelOperation(_:)): cancelReview()
-    case #selector(NSResponder.moveUp(_:)), #selector(NSResponder.moveDown(_:)),
-      #selector(NSResponder.insertTab(_:)),
+    case _ where scrollsPage(selector): break
+    case #selector(NSResponder.insertTab(_:)),
       #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)),
       #selector(NSResponder.insertLineBreak(_:)):
       break
@@ -2121,14 +2653,15 @@ import UniformTypeIdentifiers
     return true
   }
 
-  /// 全文输出那一页：↩ 粘贴、Esc 返回（还在跑就停掉），↑↓ 吞掉，打字照常（会回到结果）
+  /// 全文输出那一页：↩ 粘贴、Esc 返回（还在跑就停掉），↑↓ / PageUp / PageDown 滚正文，打字照常（会回到结果）
   private func handleOutputCommand(_ selector: Selector) -> Bool {
     switch selector {
+    // 按住 ↩ 的自动连发不算：跑得快的脚本跑完时连发过来的那一下不能直接粘贴出去
     case #selector(NSResponder.insertNewline(_:)):
-      if Style.isReturnKey { pasteOutput() }
+      if Style.isReturnKey, !Style.isKeyRepeat { pasteOutput() }
     case #selector(NSResponder.cancelOperation(_:)): closeOutput()
-    case #selector(NSResponder.moveUp(_:)), #selector(NSResponder.moveDown(_:)),
-      #selector(NSResponder.insertTab(_:)),
+    case _ where scrollsPage(selector): break
+    case #selector(NSResponder.insertTab(_:)),
       #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)),
       #selector(NSResponder.insertLineBreak(_:)):
       break
@@ -2178,11 +2711,15 @@ import UniformTypeIdentifiers
       return !(modifiers == .command && editing.contains(key))
         && !(modifiers == [.command, .shift] && key == kVK_ANSI_Z)
     }
-    // 全文输出那一页：⌘C 全部复制（搜索框里选着字时交还输入框）
+    // 全文输出那一页：⌘C 全部复制（搜索框里选着字时交还输入框）、⌘R 重跑
     if output != nil {
-      guard modifiers == .command, key == kVK_ANSI_C, !Self.fieldHasSelection(event) else {
-        return false
+      guard modifiers == .command else { return false }
+      if key == kVK_ANSI_R {
+        // 按住不放的自动连发不算：一秒起十几个进程（第 1 批评审）
+        if !event.isARepeat { rerunOutput() }
+        return true
       }
+      guard key == kVK_ANSI_C, !Self.fieldHasSelection(event) else { return false }
       copyOutput()
       return true
     }
@@ -2238,7 +2775,12 @@ import UniformTypeIdentifiers
       openSettings()
     default:
       guard let digit = Self.digitKeys.firstIndex(of: Int(event.keyCode)) else { return false }
-      if digit < results.count { execute(results[digit]) }
+      // 列表脚本正在重跑时的结果行：⌘N 会落到新结果的第一条上，不执行
+      if digit < results.count, !isPending(results[digit]) {
+        execute(results[digit])
+      } else if digit < results.count {
+        NSSound.beep()
+      }
     }
     return true
   }
@@ -2264,8 +2806,17 @@ import UniformTypeIdentifiers
       if revealsOnReturn(item) { return open(URL(filePath: item.target), item) }
       close()
       NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: item.target)])
-    case .calculation where item.payload != nil, .ip where item.payload != nil,
-      .scriptResult where item.payload != nil:
+    case .scriptResult where item.payload != nil:
+      // 文件结果在访达中显示（同文件行）；别的只复制 ↩ 会打开 / 粘贴的那个（text.copy 归 ⌘C）
+      if isPending(item) { return NSSound.beep() }
+      guard case .file(let path) = item.opens else {
+        var plain = item
+        plain.copyText = nil
+        return copy(plain)
+      }
+      close()
+      NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: path)])
+    case .calculation where item.payload != nil, .ip where item.payload != nil:
       copy(item)
     case .reminder where !item.target.isEmpty:
       close()
@@ -2291,11 +2842,17 @@ import UniformTypeIdentifiers
   /// ⌘C：复制路径 / 网址 / 计算结果（⌘↩ 的计算结果也走这里）；网址另有 Markdown 链接、标题。面板同时收起，用刘海说
   /// 复制了什么；这些是本 App 给出的新文字，同时记进剪贴板历史（mac-native §5）
   func copy(_ item: LauncherItem, _ format: CopyFormat = .value) {
+    // 列表脚本正在按新输入重跑：看得见的是上一次的结果，不拷它（同 ↩ 等结果的那一处，第三轮评审）
+    if isPending(item) { return NSSound.beep() }
     rememberCurrencies(item)
     let text: String
     let title: String?
     switch format {
-    case .value: (text, title) = (item.payload ?? item.target, copyTitle(for: item))
+    // 列表结果：text.copy 写了的复制它，写了 url / path 的复制网址 / 路径（第三轮 B1 B2）
+    case .value:
+      (text, title) = (
+        item.copyText ?? item.opens?.text ?? item.payload ?? item.target, copyTitle(for: item)
+      )
     case .markdown:
       (text, title) = (Self.markdownLink(title: item.title, url: item.target), "复制为 Markdown 链接")
     case .title: (text, title) = (item.title, "复制标题")
@@ -2363,7 +2920,7 @@ import UniformTypeIdentifiers
         destructive: isDangerous(item, commandKey: true)
       ) { [unowned self] in commandReturn(item) }
     }
-    if isFile(item) {
+    if isFile(item) || Self.resultFile(item) != nil {
       add("快速查看", "eye", "⌘Y", section: 0) { [unowned self] in quickLook(item) }
     }
     // 1 脚本（第二轮 D1）：发现一条不对劲，就地改它、换个词、关掉；自带的复制一份成自己的。
@@ -2401,8 +2958,14 @@ import UniformTypeIdentifiers
       }
     }
     // 2 复制（计算结果、ip 的 ⌘C 和 ⌘↩ 一样，不重复列）；复制路径和剪贴板 ⌘K 的「复制路径」同一个符号 link（mac-whisker §3）
-    if ![.calculation, .ip, .scriptResult].contains(item.kind), let title = copyTitle(for: item) {
-      let symbol = [.app, .path, .script].contains(item.kind) ? "link" : "doc.on.doc"
+    // 列表结果的 ⌘↩ 是在访达中显示（文件）、或者另给了 ⌘C 复制的（text.copy）：⌘C 另列
+    let copiesOnCommandReturn =
+      [.calculation, .ip].contains(item.kind)
+      || (item.kind == .scriptResult && Self.resultFile(item) == nil && item.copyText == nil)
+    if !copiesOnCommandReturn, let title = copyTitle(for: item) {
+      let symbol =
+        [.app, .path, .script].contains(item.kind) || Self.resultFile(item) != nil
+        ? "link" : "doc.on.doc"
       add(title, symbol, "⌘C", section: 2) { [unowned self] in copy(item) }
     }
     if web {
@@ -2419,8 +2982,11 @@ import UniformTypeIdentifiers
         }
       }
     }
-    // 3 搜索框：提示行的主动作就是补全
-    if item.kind != .prompt, Self.completion(for: item) != nil {
+    // 3 搜索框：提示行、要参数的脚本那一行的主动作就是补全
+    let completesOnReturn =
+      item.kind == .prompt
+      || (item.kind == .script && item.arguments == nil && item.completion != nil)
+    if !completesOnReturn, Self.completion(for: item) != nil {
       add("补全到搜索框", "arrow.right.to.line", "⇥", section: 3) { [unowned self] in
         complete(item)
       }

@@ -31,7 +31,7 @@ struct FeaturesPage: View {
     let opened = available.filter(on.contains)
     let closed = available.filter { !on.contains($0) }
     if closed.isEmpty { return "\(available.count) 个功能都开着" }
-    if opened.isEmpty { return "都关着" }
+    if opened.isEmpty { return "\(available.count) 个功能都关着" }
     if closed.count <= opened.count {
       return "开着 \(opened.count) 个；关着：" + closed.map(\.title).joined(separator: "、")
     }

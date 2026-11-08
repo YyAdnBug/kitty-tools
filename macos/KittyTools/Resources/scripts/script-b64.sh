@@ -1,7 +1,7 @@
 #!/bin/zsh
 # @kitty.title Base64 编码 & 解码
 # @kitty.keyword b64
-# @kitty.icon character.textbox
+# @kitty.icon arrow.left.arrow.right.square
 # @kitty.mode list
 # @kitty.description 编码和解码各一条
 # @kitty.argument1 文字

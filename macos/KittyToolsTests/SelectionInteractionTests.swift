@@ -203,6 +203,7 @@ struct SelectionInteractionTests {
     var toolbar: EditorToolbar? { view.subviews.lazy.compactMap { $0 as? EditorToolbar }.first }
     var recordBar: RecordBar? { view.subviews.lazy.compactMap { $0 as? RecordBar }.first }
     var menu: HUDMenu? { view.subviews.lazy.compactMap { $0 as? HUDMenu }.first }
+    var card: TranslationCard? { view.subviews.lazy.compactMap { $0 as? TranslationCard }.first }
     var sizeField: SizeField? { view.subviews.lazy.compactMap { $0 as? SizeField }.first }
 
     /// 点尺寸胶囊：宽的数字 / 高的数字 / 比例按钮
@@ -679,7 +680,7 @@ struct SelectionInteractionTests {
     context.setFillColor(CGColor(red: 1, green: 0, blue: 0, alpha: 1))
     context.fill(CGRect(x: 0, y: 0, width: 40, height: 30))
     let patch = try #require(context.makeImage())
-    h.view.translateHandler = { _ in (patch, nil) }
+    h.view.translateHandler = { _, _ in .init(image: patch) }
     h.makeSelection()
     try #require(h.toolbar).onClick(.output(.translate))
     for _ in 0..<500 where h.view.image === original {
@@ -698,6 +699,206 @@ struct SelectionInteractionTests {
     h.rightClick(CGPoint(x: 1000, y: 700))
     #expect(h.view.selection == nil)
     #expect(h.view.image === original)
+  }
+
+  // 到字号下限也放不下的段（2026-11-08 拍板 B1–B4）：图不换，选区外出译文卡片（工具栏在下面就挂上面）；
+  // 卡片里的字拿着焦点时按的键交还给遮罩；Esc 先收卡片、截图页还在；选区一动卡片也收
+  @Test func leftoversGoToTheCard() async throws {
+    let h = Harness()
+    let original = h.view.image
+    let leftover = ScreenshotOverlay.Leftover(source: "识别元素", translation: "Recognize elements")
+    h.view.translateHandler = { _, _ in .init(leftovers: [leftover]) }
+    h.makeSelection()
+    try #require(h.toolbar).onClick(.output(.translate))
+    for _ in 0..<500 where h.card == nil { try await Task.sleep(for: .milliseconds(10)) }
+    let card = try #require(h.card)
+    #expect(h.view.image === original)
+    #expect(card.leftovers == [leftover])
+    #expect(card.frame.minY >= Self.initial.maxY)
+    #expect(abs(card.frame.minX - Self.initial.minX) < 1)
+    // 焦点在卡片的字上时按 Esc：交还给遮罩，收卡片，焦点回到遮罩；截图页还在
+    func texts(in view: NSView) -> [NSTextView] {
+      view.subviews.flatMap { ($0 as? NSTextView).map { [$0] } ?? texts(in: $0) }
+    }
+    let text = try #require(texts(in: card).first)
+    #expect(text.string == "Recognize elements")
+    h.window.makeFirstResponder(text)
+    let escape = try #require(
+      NSEvent.keyEvent(
+        with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+        windowNumber: h.window.windowNumber, context: nil, characters: "\u{1b}",
+        charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: UInt16(kVK_Escape)))
+    // 方向键（带不带 ⌘ ⇧）在字里挪选中范围：不挪选区、卡片还在
+    func arrow(_ code: Int, _ scalar: Int, _ flags: NSEvent.ModifierFlags) throws -> NSEvent {
+      let characters = String(Character(UnicodeScalar(UInt32(scalar))!))
+      return try #require(
+        NSEvent.keyEvent(
+          with: .keyDown, location: .zero, modifierFlags: flags.union([.numericPad, .function]),
+          timestamp: 0, windowNumber: h.window.windowNumber, context: nil,
+          characters: characters, charactersIgnoringModifiers: characters, isARepeat: false,
+          keyCode: UInt16(code)))
+    }
+    text.setSelectedRange(NSRange(location: 0, length: 3))
+    text.keyDown(with: try arrow(kVK_RightArrow, NSRightArrowFunctionKey, .shift))
+    #expect(
+      !h.view.performKeyEquivalent(
+        with: try arrow(kVK_RightArrow, NSRightArrowFunctionKey, .command)))
+    #expect(h.card === card)
+    #expect(h.view.selection == Self.initial)
+    #expect(text.selectedRange().length == 4)
+    // 卡片的空白处按下、松手：不重新框、卡片还在
+    let blank = card.convert(CGPoint(x: 4, y: card.bounds.midY), to: h.view)
+    let hit = try #require(h.view.hitTest(blank))
+    #expect(hit !== h.view)
+    hit.mouseDown(with: h.event(.leftMouseDown, blank))
+    h.view.mouseUp(with: h.event(.leftMouseUp, blank))
+    #expect(h.view.selection == Self.initial)
+    #expect(h.card === card)
+    h.window.makeFirstResponder(text)
+    text.keyDown(with: escape)
+    #expect(h.card == nil)
+    #expect(h.window.firstResponder === h.view)
+    #expect(h.view.selection == Self.initial)
+    // 再翻一次，焦点在字上时点 ✕：卡片收起、焦点回到遮罩
+    try #require(h.toolbar).onClick(.output(.translate))
+    for _ in 0..<500 where h.card == nil { try await Task.sleep(for: .milliseconds(10)) }
+    let again = try #require(h.card)
+    h.window.makeFirstResponder(try #require(texts(in: again).first))
+    func buttons(in view: NSView) -> [NSButton] {
+      view.subviews.flatMap { ($0 as? NSButton).map { [$0] } ?? buttons(in: $0) }
+    }
+    try #require(buttons(in: again).first { $0.accessibilityLabel() == "关闭" }).performClick(nil)
+    #expect(h.card == nil)
+    #expect(h.window.firstResponder === h.view)
+    // 再翻一次，挪一下选区：卡片收起
+    try #require(h.toolbar).onClick(.output(.translate))
+    for _ in 0..<500 where h.card == nil { try await Task.sleep(for: .milliseconds(10)) }
+    #expect(h.card != nil)
+    h.arrow(kVK_RightArrow)
+    #expect(h.card == nil)
+  }
+
+  // 全部排得下时翻完也挂一条窄栏（第二轮 E1）：「看原文」点一下图上换回原文、再点换回译文，不重新请求；
+  // 看原文时挪选区 / 关掉窄栏都回到正常；重翻一律从原图截（不翻译文）；重翻失败时原来的卡片和图照旧；窄栏不拦 Esc
+  @Test func barTogglesTheOriginal() async throws {
+    let h = Harness()
+    let original = h.view.image
+    let context = try #require(
+      CGContext(
+        data: nil, width: 40, height: 30, bitsPerComponent: 8, bytesPerRow: 0,
+        space: CGColorSpace(name: CGColorSpace.sRGB)!,
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+    context.setFillColor(CGColor(red: 1, green: 0, blue: 0, alpha: 1))
+    context.fill(CGRect(x: 0, y: 0, width: 40, height: 30))
+    let patch = try #require(context.makeImage())
+    // 交给翻译的那块是不是红的（红 = 贴过译文的图；原图是蓝底）
+    func isRed(_ image: CGImage) -> Bool {
+      var pixel = [UInt8](repeating: 0, count: 4)
+      let probe = CGContext(
+        data: &pixel, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+        space: CGColorSpace(name: CGColorSpace.sRGB)!,
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+      probe?.draw(image, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+      return pixel[0] > 200 && pixel[2] < 100
+    }
+    var inputs: [Bool] = []
+    var failNext = false
+    h.view.translateHandler = { image, _ in
+      inputs.append(isRed(image))
+      if failNext { return .init(message: "翻译失败") }
+      return .init(image: patch, translation: "Translated text")
+    }
+    func buttons(in view: NSView) -> [NSButton] {
+      view.subviews.flatMap { ($0 as? NSButton).map { [$0] } ?? buttons(in: $0) }
+    }
+    func translate() async throws {
+      let before = inputs.count
+      try #require(h.toolbar).onClick(.output(.translate))
+      for _ in 0..<500 where inputs.count == before { try await Task.sleep(for: .milliseconds(10)) }
+      // 结果回到主线程、合成贴回要几轮
+      for _ in 0..<20 { try await Task.sleep(for: .milliseconds(10)) }
+    }
+    let canvas = try #require(h.view.subviews.lazy.compactMap { $0 as? AnnotationCanvas }.first)
+    h.makeSelection()
+    try await translate()
+    let card = try #require(h.card)
+    #expect(card.leftovers.isEmpty)
+    #expect(card.translation == "Translated text")
+    let translated = h.view.image
+    #expect(translated !== original)
+    let toggle = try #require(buttons(in: card).first { $0.accessibilityLabel() == "看原文" })
+    toggle.performClick(nil)
+    #expect(h.view.image === original)
+    #expect(canvas.image === h.view.image)
+    #expect(toggle.accessibilityLabel() == "看译文")
+    toggle.performClick(nil)
+    #expect(h.view.image === translated)
+    #expect(canvas.image === translated)
+    #expect(inputs == [false])
+    // 看着原文时挪选区：卡片收起、图是原图
+    toggle.performClick(nil)
+    h.arrow(kVK_RightArrow)
+    #expect(h.card == nil)
+    #expect(h.view.image === original)
+    // 再翻、看原文、关掉窄栏：图换回译文
+    try await translate()
+    let again = try #require(h.card)
+    let second = h.view.image
+    try #require(buttons(in: again).first { $0.accessibilityLabel() == "看原文" }).performClick(nil)
+    try #require(buttons(in: again).first { $0.accessibilityLabel() == "关闭" }).performClick(nil)
+    #expect(h.card == nil)
+    #expect(h.view.image === second)
+    // 看着译文再翻同一个选区：交给翻译的是原图那块，不是译文
+    try await translate()
+    #expect(inputs == [false, false, false])
+    let third = h.view.image
+    let card3 = try #require(h.card)
+    // 这次失败：原来的卡片和图照旧
+    failNext = true
+    try await translate()
+    #expect(h.card === card3)
+    #expect(h.view.image === third)
+    // 窄栏不拦 Esc：直接退出截图
+    let outcome = await h.outcome { h.key(kVK_Escape, "\u{1b}") }
+    #expect(outcome == nil)
+  }
+
+  /// 译文卡片放哪（拍板 B3）：工具栏的另一侧；那一侧放不下挂到栏外面（让出样式托盘 6 + 34）；整屏放进选区左下角，
+  /// 压到栏就挪到栏和托盘上面
+  @Test func translationCardPlacement() {
+    let bounds = CGRect(x: 0, y: 0, width: 1000, height: 800)
+    let size = CGSize(width: 400, height: 80)
+    let selection = CGRect(x: 300, y: 300, width: 400, height: 100)
+    func place(_ selection: CGRect, _ toolbar: CGRect?) -> (CGPoint, PopView.Edge) {
+      let result = SelectionView.cardPlacement(
+        size: size, selection: selection, toolbar: toolbar, in: bounds)
+      return (result.origin, result.edge)
+    }
+    let barBelow = CGRect(x: 300, y: 250, width: 400, height: 40)
+    #expect(place(selection, barBelow) == (CGPoint(x: 300, y: 410), .bottom))
+    let barAbove = CGRect(x: 300, y: 410, width: 400, height: 40)
+    #expect(place(selection, barAbove) == (CGPoint(x: 300, y: 210), .top))
+    // 选区贴着屏幕顶：上面放不下，挂到栏（和托盘）外面
+    let top = CGRect(x: 300, y: 700, width: 400, height: 100)
+    #expect(
+      place(top, CGRect(x: 300, y: 650, width: 400, height: 40))
+        == (CGPoint(x: 300, y: 650 - 40 - 6 - 80), .top))
+    // 上面、栏外面都放不下：放进选区左下角；栏在选区下面时托盘在栏下面，左下角压不到它
+    #expect(
+      place(
+        CGRect(x: 100, y: 60, width: 800, height: 650),
+        CGRect(x: 100, y: 10, width: 400, height: 40)) == (CGPoint(x: 108, y: 68), .bottom))
+    // 整屏：选区里左下角离边 8；栏在选区里靠下，压到了就挪到栏和托盘上面
+    #expect(place(bounds, nil) == (CGPoint(x: 10, y: 10), .bottom))
+    #expect(
+      place(bounds, CGRect(x: 0, y: 10, width: 600, height: 40))
+        == (CGPoint(x: 10, y: 50 + 40 + 6), .bottom))
+    // 贴着屏幕右边的窄竖条：卡片比选区宽，夹回屏内（✕ 和拷贝在右上角，不能跑出屏幕）
+    let narrow = SelectionView.cardPlacement(
+      size: CGSize(width: 240, height: 80),
+      selection: CGRect(x: 850, y: 5, width: 150, height: 790),
+      toolbar: nil, in: bounds)
+    #expect(narrow.origin == CGPoint(x: 750, y: 13))
   }
 
   // 工具栏按钮上右键改快捷键（2026-11-06）：右键钉图钮出「改「钉到屏幕」的快捷键…」，不回到待选；选了就等新的键，截图里重复的

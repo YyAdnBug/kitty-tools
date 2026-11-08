@@ -98,13 +98,13 @@
 | `Storage/` | `Database.swift`、`Backup.swift`（数据库的每日备份 `Backup` + 打不开时的恢复 `Recovery`，第二轮体检 S2）、`Keychain.swift`、`Prefs.swift`、`SettingsArchive.swift`（设置与数据的导出与导入：文件格式、读文件时的校验、整类替换 / 按 id 合并、密钥的加解密，片段 / 文字收藏 / 生词本的导出，2026-10-07；2026-10-12 加第七类「便签」`NoteEntry`、格式 2：逐条宽松解码、按编号并进便签库）、`SettingsBackup.swift`（设置与数据的每日自动备份：导出文件每天存一份、导入前存一份，起名、列出、写、轮换，2026-10-08）、`SyncRecords.swift`（全局同步里一条一条的数据的合并规则和文件写法：账本比出本机改动、版本钟、墓碑、后改的赢，纯函数；2026-10-23）、`SyncLedger.swift`（`SyncSource` 协议：仓库交出该同步的那份、落合并结果；账本存法，2026-10-24）、`SettingsSync.swift`（设置、全局快捷键、功能开关接进全局同步：一项一条、留在本机的键、透传，2026-10-24）（~~`LegacyImport.swift`~~ 2026-09-26 随旧版导入删掉） |
 | `Clipboard/` | `ClipboardWatcher.swift`、`ClipboardStore.swift`、`ClipItem.swift`、`ClipboardFilter.swift`、`ContentForm.swift`、`Search.swift`、`ImageStore.swift`、`OCR.swift`、`ClipboardPanelModel.swift`（面板状态与操作：筛选标签、选中 / 多选、键盘命令、粘贴 / 复制 / 删除撤销栈、⌘K）、`ClipboardPanelView.swift`、`ClipRowView.swift`、`LensView.swift`（透镜：选中行原地展开的预览）、`PreviewView.swift`、`Dialogs.swift`、`Snippet.swift`（片段占位符展开）、`LinkPreview.swift`（链接富预览：按块读网页 og 标签、isFetchable、内存缓存；头图的缩略图空闲时丢掉、照留着的字节重解）、`QuickLookView.swift`（⌘Y 放大预览）、`ClipDrag.swift`（行拖到别的 App：AppKit 拖放会话 + 行首图标块和标题的预览，体检 D3） |
 | `Translate/` | `TranslateCoordinator.swift`、`TranslateService.swift`（服务列表与配置：内置 8 家可删可加回、自建 AI 实例、厂商预设）、`Language.swift`（应用内语言、语种检测、源 / 目标解析）、`SelectionReader.swift`、`SourceTextView.swift`（多行输入框：翻译原文、剪贴板编辑正文 / 新建片段、便签的快速记一条；便签的正文不用它，用 `Notes/NoteTextView.swift`）、`HTTP.swift`（JSON POST、SSE 读取、中文错误信息）、`SSE.swift`、`Providers/`（`FreeProviders.swift`（不用 key 的系统翻译、有道词典，2026-11-05）、`Zhipu.swift`、`AIService.swift`（OpenAI 兼容 / Azure / Anthropic，也给智谱复用流式请求；按地址认厂商的表 `AIVendor`，第 13 批）、`RESTProviders.swift`（百度、有道、Google、DeepL / DeepLX、微软）、`CloudProviders.swift`（火山、腾讯，请求签名）、`Signing.swift`（摘要工具、非流式请求包装））、`TranslatePanelView.swift`、`ProviderCardView.swift`（含服务身份 `ServiceTile`：官方 logo、官网图标或品牌色块，彗星边框、骨架扫光）、`ServiceIcons.swift`（自建 AI 服务的官网图标：推官网、经 `LinkPreview.siteIcon` 取、磁盘缓存，第 13 批）、`ResultText.swift`（结果卡片的正文：普通 Text + 生成中的光标；原 RevealText 的显影第二轮体检第 1c 批拿掉）、`HistoryStore.swift`、`HistoryView.swift`（含历史 ⌘K 的动作和 `HistoryMenu`：导出、清空，浮窗「⋯」菜单 / 历史 ⌘K / 设置 › 翻译共用）、`Speaker.swift`（朗读：收起即停、挑高音质声线；英文单词放有道真人发音、卡片读哪段字、单词卡的读音行，2026-11-05）、`WordLookup.swift`（查词：是不是一个词、系统词典查询与解析（英英、汉语、牛津英汉汉英三种格式）、单词模式示例，D4）、`DictionaryCardView.swift`（系统词典卡）、`TranslateServiceSync.swift`（翻译服务列表接进全局同步，密钥不同步；2026-10-24）、`ScreenshotOverlay.swift`（截图翻译「把译文直接盖回截图上」：按段抹底色、排译文、贴回冻结帧，2026-11-05 PR #5） |
-| `Settings/` | `FinderMenuTab.swift`（设置 › 访达右键：开关、系统里扩展开没开、「用 App 打开」的列表，2026-11-08）、`RemindersTab.swift`、`ReminderDetail.swift`（设置 › 提醒的列表和详情，2026-11-04）、`GeneralTab.swift`、`FeaturesPage.swift`（通用 › 功能推进去的那一页，2026-11-07）、`WebSearchPage.swift`（启动器 › 网页搜索与快捷链接推进去的那张列表，2026-11-07）、`HotkeysTab.swift`、`ClipboardTab.swift`、`TranslateTab.swift`、`AboutTab.swift`（关于页：更新日志读 `Resources/changelog.json`；2026-10-18 起「未来计划」读 `Resources/roadmap.json`——两个都是随包的 JSON、一条一行，`ChangelogTests` 锁格式）、`LauncherTab.swift`、`ScreenshotTab.swift`（另有截图页、录制页共用的快速保存一行 `SaveDirectoryRow`）、`RecordTab.swift`（录制页：录屏、录音，2026-10-03 从截图页拆出来）、`SettingsTransfer.swift`（通用页最后一组「导出与导入」和两张表单，2026-10-07）、`SyncSection.swift`（通用页「同步」一节：选文件夹、状态、停止 / 立即同步、其他 Mac；2026-10-23 从便签页挪来）、`SettingsWindow.swift`（D 阶段从 Shell 搬来：NavigationSplitView 侧栏 + 搜索 + 页头）、`OnboardingView.swift`（首次安装的欢迎引导：欢迎 + 按一下试试）、`ShortcutsSheet.swift`（快捷键速查表 + `ShortcutsButton`）、`OrderedList.swift`（可拖动排序列表共用的「+ −」按钮条、行高、详情页页头）、`TranslateServiceDetail.swift`（翻译服务详情页）、`SearchEngineDetail.swift`（网页搜索 / 快捷链接详情页）；`StatusScreenTab.swift`（设置 › 状态屏：状态列表的加、删、排序、恢复自带的，退出提示的开关）、`StatusPresetDetail.swift`（改一个状态的详情页：六项 + 图标格子 + 缩小的预览）；`LaunchpadTab.swift`（设置 › 启动台，2026-10-18：总开关、触控板捏合（开关 / 灵敏度 / 系统手势提示）、触发角（带系统冲突提示）、行列数（显示当前值）、从系统启动台导入 / 恢复默认排列 / 撤销、排列数据说明）、`NotesTab.swift`（设置 › 便签，2026-10-12 第 2 批的骨架：正文字号、打开全部便签、数据怎么存的说明）、`ScriptsSection.swift`（设置 › 启动器「脚本命令」「命令」两节：开关、怎么写脚本、文件夹、新建、拖进来导入先看全文、读不成的原因、「命令和别名」那一行，2026-11-07）、`LauncherCommandsSection.swift`（推进去的「命令和别名」页 `LauncherCommandsPage`：名称 / 别名 / 启用的表）、`ScriptGuide.swift`（推进去的「怎么写脚本」说明页 `ScriptGuidePage`，含命令的查找路径）。`SettingsWindow.swift` 里另有两个普通窗口共用的 `NSApplication.leaveDockIfNoWindows`（关掉一个时别的普通窗口都不开着了才切回 accessory）、`DockPreviewTab.swift`（程序坞预览：启用、两项授权，私有接口缺了时橙字说后果；2026-10-22） |
-| `Launcher/` | `LauncherItem.swift`（结果项与内置动作）、`AppCatalog.swift`（App 目录 + 中文名 + 拼音）、`LauncherMatch.swift`（匹配与排序纯函数）、`LauncherUsage.swift`（使用记录表 + 收藏表 launcher_favorites，体检 D13）、`LauncherModel.swift`、`LauncherPanelView.swift`、`FileSearch.swift`（文件搜索：open / find / 空格开头，NSMetadataQuery 查询、排除、排序、最近的文件、授权提示，M13）、`SystemCommands.swift`（系统命令目录、quit / hide / forcequit / eject / kill / port 解析与只读列举，D2）、`SystemControl.swift`（系统命令的执行：锁屏、pmset、osascript、退出 App、推出、给进程发信号）、`Processes.swift`（kill 列的后台进程：ps / lsof 输出解析与排序，体检 D12；port 的端口行也在这里，2026-10-08）、`IPAddresses.swift`（「ip」：本机网卡地址、两家外网地址查询、拼行，2026-10-28）、`ExchangeRates.swift`（计算器的汇率换算：「100 usd」解析、按表换算、取汇率表和存进偏好，2026-11-04）、`SiteIcons.swift`（网址行的网站图标：读本机 Chromium 系浏览器的 Favicons 库 + 链接预览，按主机缓存，体检 D6）、`BrowserHistory.swift`（各家浏览历史 + Firefox 书签：克隆后 sqlite3 导出、解析、行，体检 D8、第 12 批）、`Bookmarks.swift`（浏览器书签：Chromium 系 JSON、Safari plist，Firefox 取 BrowserHistory 读好的）、`Browsers.swift`（第 12 批：浏览器表、装没装、数据目录与多配置、偏好里开着的、克隆别人的库、读失败分「没授权 / 没有文件」）、`DirectItems.swift`（网址 / 路径直达，纯函数）、`WebSearch.swift`（网页搜索与快捷链接列表）；`AppCatalog.swift` 顺带扫系统设置面板（体检 D9），`Calculator.swift` 含单位换算表和进制（体检 D11）、`WebSearchSync.swift`（网页搜索与快捷链接接进全局同步；2026-10-24）；脚本命令（2026-11-07，§10「脚本命令」）：`ScriptCommand.swift`（一个脚本 = 一条命令：开头注释的两种写法、参数切分、列表输出解析、输出收拾、给脚本的环境，纯函数）、`ScriptLibrary.swift`（从哪读：默认文件夹 / 另加的 / 包里的自带脚本，主线程外读、看下载标记；设置页用的新建 / 导入 / 复制自带的）、`ScriptIcons.swift`（图片 / https 网址图标：主线程外读、下载一次存进缓存，出错原因；启动器和设置的表共用的 `ScriptIconView`，2026-11-07 第二轮 B1 B2）、`ScriptAIGuide.swift`（给 AI 的脚本写法说明，第二轮 A1）、`ScriptRunner.swift`（怎么跑：按 #! 调解释器、登录 shell 的 PATH、超时和停止、去下载标记）、`LauncherCommands.swift`（「命令」表：内置关键词命令 / 系统命令 / 脚本的别名和开关、别名换回原关键词） |
+| `Settings/` | `FinderMenuTab.swift`（设置 › 访达右键：开关、系统里扩展开没开、「用 App 打开」的列表，2026-11-08）、`RemindersTab.swift`、`ReminderDetail.swift`（设置 › 提醒的列表和详情，2026-11-04）、`GeneralTab.swift`、`FeaturesPage.swift`（通用 › 功能推进去的那一页，2026-11-07）、`WebSearchPage.swift`（启动器 › 网页搜索与快捷链接推进去的那张列表，2026-11-07）、`HotkeysTab.swift`、`ClipboardTab.swift`、`TranslateTab.swift`、`AboutTab.swift`（关于页：更新日志读 `Resources/changelog.json`；2026-10-18 起「未来计划」读 `Resources/roadmap.json`——两个都是随包的 JSON、一条一行，`ChangelogTests` 锁格式）、`LauncherTab.swift`、`ScreenshotTab.swift`（另有截图页、录制页共用的快速保存一行 `SaveDirectoryRow`）、`RecordTab.swift`（录制页：录屏、录音，2026-10-03 从截图页拆出来）、`SettingsTransfer.swift`（通用页最后一组「导出与导入」和两张表单，2026-10-07）、`SyncSection.swift`（通用页「同步」一节：选文件夹、状态、停止 / 立即同步、其他 Mac；2026-10-23 从便签页挪来）、`SettingsWindow.swift`（D 阶段从 Shell 搬来：NavigationSplitView 侧栏 + 搜索 + 页头）、`OnboardingView.swift`（首次安装的欢迎引导：欢迎 + 按一下试试）、`ShortcutsSheet.swift`（快捷键速查表 + `ShortcutsButton`）、`OrderedList.swift`（可拖动排序列表共用的「+ −」按钮条、行高、详情页页头）、`TranslateServiceDetail.swift`（翻译服务详情页）、`SearchEngineDetail.swift`（网页搜索 / 快捷链接详情页）；`StatusScreenTab.swift`（设置 › 状态屏：状态列表的加、删、排序、恢复自带的，退出提示的开关）、`StatusPresetDetail.swift`（改一个状态的详情页：六项 + 图标格子 + 缩小的预览）；`LaunchpadTab.swift`（设置 › 启动台，2026-10-18：总开关、触控板捏合（开关 / 灵敏度 / 系统手势提示）、触发角（带系统冲突提示）、行列数（显示当前值）、从系统启动台导入 / 恢复默认排列 / 撤销、排列数据说明）、`NotesTab.swift`（设置 › 便签，2026-10-12 第 2 批的骨架：正文字号、打开全部便签、数据怎么存的说明）、`ScriptsSection.swift`（设置 › 启动器「脚本命令」「命令」两节：开关、怎么写脚本、文件夹、新建、拖进来导入先看全文、读不成的原因、「命令和别名」那一行，2026-11-07）、`LauncherCommandsSection.swift`（推进去的「命令和别名」页 `LauncherCommandsPage`：名称 / 别名 / 启用的表）、`ScriptGuide.swift`（推进去的「怎么写脚本」说明页 `ScriptGuidePage`，含命令的查找路径）、`NewScriptSheet.swift`（「新建脚本」的小表单：名字、关键词、结果给谁、用什么写，2026-11-08 第三轮 D2）。`SettingsWindow.swift` 里另有两个普通窗口共用的 `NSApplication.leaveDockIfNoWindows`（关掉一个时别的普通窗口都不开着了才切回 accessory）、`DockPreviewTab.swift`（程序坞预览：启用、两项授权，私有接口缺了时橙字说后果；2026-10-22） |
+| `Launcher/` | `LauncherItem.swift`（结果项与内置动作）、`AppCatalog.swift`（App 目录 + 中文名 + 拼音）、`LauncherMatch.swift`（匹配与排序纯函数）、`LauncherUsage.swift`（使用记录表 + 收藏表 launcher_favorites，体检 D13）、`LauncherModel.swift`、`LauncherPanelView.swift`、`FileSearch.swift`（文件搜索：open / find / 空格开头，NSMetadataQuery 查询、排除、排序、最近的文件、授权提示，M13）、`SystemCommands.swift`（系统命令目录、quit / hide / forcequit / eject / kill / port 解析与只读列举，D2）、`SystemControl.swift`（系统命令的执行：锁屏、pmset、osascript、退出 App、推出、给进程发信号）、`Processes.swift`（kill 列的后台进程：ps / lsof 输出解析与排序，体检 D12；port 的端口行也在这里，2026-10-08）、`IPAddresses.swift`（「ip」：本机网卡地址、两家外网地址查询、拼行，2026-10-28）、`ExchangeRates.swift`（计算器的汇率换算：「100 usd」解析、按表换算、取汇率表和存进偏好，2026-11-04）、`SiteIcons.swift`（网址行的网站图标：读本机 Chromium 系浏览器的 Favicons 库 + 链接预览，按主机缓存，体检 D6）、`BrowserHistory.swift`（各家浏览历史 + Firefox 书签：克隆后 sqlite3 导出、解析、行，体检 D8、第 12 批）、`Bookmarks.swift`（浏览器书签：Chromium 系 JSON、Safari plist，Firefox 取 BrowserHistory 读好的）、`Browsers.swift`（第 12 批：浏览器表、装没装、数据目录与多配置、偏好里开着的、克隆别人的库、读失败分「没授权 / 没有文件」）、`DirectItems.swift`（网址 / 路径直达，纯函数）、`WebSearch.swift`（网页搜索与快捷链接列表）；`AppCatalog.swift` 顺带扫系统设置面板（体检 D9），`Calculator.swift` 含单位换算表和进制（体检 D11）、`WebSearchSync.swift`（网页搜索与快捷链接接进全局同步；2026-10-24）；脚本命令（2026-11-07，§10「脚本命令」）：`ScriptCommand.swift`（一个脚本 = 一条命令：开头注释的两种写法、参数切分、列表输出解析、输出收拾、给脚本的环境，纯函数）、`ScriptLibrary.swift`（从哪读：默认文件夹 / 另加的 / 包里的自带脚本，主线程外读、看下载标记；设置页用的新建 / 导入 / 复制自带的）、`ScriptIcons.swift`（图片 / https 网址图标：主线程外读、下载一次存进缓存，出错原因；启动器和设置的表共用的 `ScriptIconView`，2026-11-07 第二轮 B1 B2）、`ScriptAIGuide.swift`（给 AI 的脚本写法说明，第二轮 A1）、`ScriptRunner.swift`（怎么跑：按 #! 调解释器、登录 shell 的 PATH、超时和停止、去下载标记）、`ScriptTerminal.swift`（全文输出那一页认终端颜色：SGR → AttributedString，纯函数；2026-11-08 第三轮 A2）、`LauncherCommands.swift`（「命令」表：内置关键词命令 / 系统命令 / 脚本的别名和开关、别名换回原关键词） |
 | `Launchpad/` | （启动台，第八族，0.6.0，2026-10-18 第 1 批起；拍板和做法在 §10「启动台」，规矩在 `mac-launchpad`）`LaunchpadLayout.swift`（模型和全部纯函数：页 / 格子 / 文件夹、合并本机 App、默认排法、挪格子、建 / 加 / 拖出 / 解散文件夹、按行列数重新分页、存偏好；不变式由 `LaunchpadFuzzTests` 锁住）、`LaunchpadCatalog.swift`（App 目录：复用 `AppCatalog.scan()`，只留 .app、不要访达和系统设置面板；bundle id、分类、App Store 收据；`LaunchpadIcons` 后台画、常驻的图标位图）、`LaunchpadWallpaper.swift`（背景：那块屏的壁纸在后台裁好、模糊，缓存一张）、`LaunchpadModel.swift`（一块屏的状态：当前页、搜索、选中、拖动 / 落点 / 停留合成 / 跨页让位、文件夹页、Esc 取消、抖动、滚轮）、`LaunchpadMetrics.swift`（按屏幕大小和行列数算的网格尺寸，界面和拖动判定共用）、`LaunchpadPager.swift`（翻页的纯状态机）、`LaunchpadDrag.swift`（拖动的时长、正在拖的那一格、滑进落点的那一份，落点 / 第几格的纯函数）、`LaunchpadPanel.swift`（全屏面板 `LaunchpadPanel`，第七个自建窗口例外；深色外观、滚轮 / 两指滑、⌘← / ⌘→ / ⌘W、方向键入口、失去 key 的判断、窗口簿记）、`LaunchpadView.swift`（模糊的壁纸、照 macOS 15 比例的 7 × 5 网格、居中占位的搜索框、页点、各层的层次和文件夹开关的时机、按下 / 选中、VoiceOver）、`LaunchpadFolderView.swift`（打开的文件夹：后面糊掉的那层、从方块长出来 / 缩回去的纸、名字 / 图标 / 页点、改名）、`LaunchpadIconView.swift`（图层抖动的 App 图标、文件夹面板里的图标、文件夹方块）、`Launchpad.swift`（总控：开关、后台 App 目录、布局读写 / 读不出来时保护、打开 App、回收、导入 / 恢复 / 撤销、捏合和触发角的起停、收起后放掉）、`LaunchpadRecycle.swift`（抖动模式删 App 的确认，`NSWorkspace.recycle` 可注入）、`LaunchpadImport.swift`（系统旧库只读拷贝 + `mode=ro` 读 WAL）、`PinchRecognizer.swift`（纯状态机：开始 / 每帧进度 / 松手（进度 + 速度）/ 取消，松手走完还是退回）、`TouchpadWatcher.swift`（96 字节触点、Mutex 桥（每帧的进度也在里面）、唤醒重注册）、`LaunchpadMissionControl.swift`（打开前认调度中心、开着就让它退：只认 macOS 27 的 WindowManager 整屏 19 层窗口）、`LaunchpadZoom.swift`（开 / 收那一个数：窗口透明度 + 上面那层的缩放，跟手时屏幕刷新回调每帧取进度，松手和按键入口走同一条临界阻尼弹簧）、`LaunchpadCorner.swift`（每屏一个状态栏层级的透明 `NSPanel`、重新武装、系统触发角只读） |
 | `DockPreview/` | （程序坞预览，第九族，0.7.0，2026-10-22 第 1 批起；拍板和做法在 §10「程序坞预览」）`WindowServer.swift`（窗口服务器的私有接口：窗口编号、截窗口、在哪个桌面、按编号切过去；运行时取，取不到退回公开做法）、`DockWatcher.swift`、`SwitcherWatcher.swift`（⌘Tab 时读系统切换器的选中，2026-11-06）（听程序坞：图标列表的选中变化 → 停在哪个 App 图标上；辅助功能坐标换算；读属性的小函数）、`DockWindows.swift`（一个 App 的窗口：辅助功能表 + 别的桌面上的，并表的纯函数 `merge` / `resolveIDs`；切过去、关掉）、`WindowShots.swift`（缩略图：当场截、主线程外缩小、最多留 20 张）、`DockPreview.swift`（控制器：什么时候弹、换、收，点了切过去 / 关掉；面板是普通 NSPanel + `PreviewHost`）、`DockPreviewView.swift`（面板内容和 `DockPreviewModel`）、`DockPreviewLayout.swift`（纯函数：缩略图多大、一排放不下就缩再换行、面板摆哪、选哪块屏、鼠标还算不算在附近 `keepsOpen`、离开后的倒计时 `Linger`） |
 | `FinderMenu/` | （访达右键，第十一族，2026-11-08；拍板和做法在 §10「访达右键」）`FinderLink.swift`（扩展交过来的网址：解析和凭证、拷贝的字、交给 App 打开哪些都是纯函数，`perform` 做那一步）、`NewFile.swift`（新建文件：自带五种模板在 `Resources/new-file/`、数据目录「新建文件模板」文件夹、重名让开、自定义后缀的框）、`FinderMenuItem.swift`（每一项的开关和默认值）、`FileMoves.swift`（移动到 / 复制到、剪切 / 粘贴、替身、彻底删除；动文件的一条队 `enqueue`、不覆盖的改名 `land`、记账的临时名 `temporary`）、`Archives.swift`（压缩、解压到这里，系统 tar / ditto）、`ZipNames.swift`（读 zip 的中央目录：名字的编码、加没加密）、`NameRepair.swift`（修复乱码文件名，扩展里有一份逐字一样的）、`FileFlags.swift`（显示 / 隐藏 隐藏文件、隐藏所选项、扩展名）、`FileHash.swift`（拷贝哈希） |
 | `macos/KittyToolsFinder/` | 访达扩展 target（不在 `KittyTools/` 里）：`FinderMenu.swift`（只画菜单，点了用 App 的网址交过去）；设置在 `Config/Finder.xcconfig`、`Finder-Info.plist`、`Finder.entitlements` |
-| `Screenshot/` | `ScreenCapture.swift`（逐屏冻结帧 + 同一刻的窗口 Z 序快照）、`RegionSelector.swift`（框选会话、每屏一个遮罩、选区几何纯函数）、`SelectionView.swift`（遮罩画面与交互：图层绘制、窗口悬停、手柄、放大镜、工具栏）、`ScreenshotOutput.swift`（PNG、快速保存、另存为）、`PinPanel.swift`（钉图；第二轮体检 F1 起还有「钉住剪贴板里的图」的取图、解码、找位置）、`Annotation.swift`（标注模型，显示与导出共用 draw，M10）、`EditorToolbar.swift`（HUD 主工具栏 + 样式托盘，M10，Whisker 重做）、`FlyCard.swift`（截图飞入右下角 + 快门声，Whisker S1；录屏第 3 批起录屏的最后一帧也从这里飞，落地多播放符号和时长 `VideoMarks`）、`ScrollCapture.swift`（长截图会话：边框、侧边面板、抓帧循环、自动滚动）、`ScrollStitcher.swift`（长截图拼接，纯逻辑）、`ShotKeys.swift`（截图时能改的 21 个键，2026-11-06）、`AnnotateOverlay.swift`（标注遮罩：整屏压暗、图居中、滚动与缩放、工具栏和样式托盘、出图；长截图按 A 和截图历史里双击都用它，2026-10-26）、`ScrollCanvas.swift`（长图画布：只画看得见的那一段 + 标注交互，标注层复用 `AnnotationCanvas`）、`ShotHistory.swift`（截图历史：原图 + 标注 + 缩略图存 <数据目录>/shots/，记录在主库的 shots 表，按天数和总量清理，2026-10-26）、`ShotHistoryWindow.swift`（历史窗口和模型：筛选、按天分组、每条的操作、缩略图缓存）、`ShotHistoryView.swift`（历史窗口的界面：网格 + 预览 + 操作）、`Clothesline.swift`（晾衣绳：面板、什么时候滑下来 / 收起、挂上 / 取下、卡片上的动作，第十族 2026-10-26）、`ClotheslineLayout.swift`（晾衣绳的几何与时机：排法、垂度、菜单栏那一条、收不收，纯函数）、`ClotheslineRope.swift`（绳子的物理：verlet 质点 + 重力 + 阻尼 + 距离约束，纯值类型）、`ClotheslineView.swift`（晾衣绳的内容：绳子、卡片、夹子、悬停和鼠标 `CardMouse`）、`ShotShelf.swift`（CleanShot 式常驻缩略图，Whisker D；录屏第 3 批加视频卡 `ShelfCard.Kind.video`，右键菜单 / 旁白动作同一份 `ShelfCard.menu`）、`SizeField.swift`（遮罩里的尺寸胶囊：就地输入宽高、比例菜单）、`ScreenRecorder.swift`（录屏会话：SCRecordingOutput 先写到同卷、系统不清理的地方再挪进快速保存目录、白名单面板的例外过滤器、选区边框、菜单栏停止项、中断与闪退恢复，录屏第 1 批；第 2 批加倒数、放弃、帧率 / 倒数 / 光标设置；第 3 批挪好后取最后一帧 `poster`；第 4 批按录制条开关配声音 / 麦克风 / 点按（`Options`、`configure`）、开录前问麦克风授权、麦克风断开；录制条（四个开关：系统声音、麦克风、显示点按、显示按键） `RecordBar` 在 `EditorToolbar.swift`、框选是 `SelectionView` 的 `.record` 模式；手测反馈第 1 批起点按圈由 `InputOverlay` 画，`configure` 只管声音，过滤器例外多并一个它的窗口号 `exceptedOwnWindows`）、`InputOverlay.swift`（录屏里显示用户的输入，手测反馈第 1 批 2026-10-01：显示点按开着时盖在被录区域上的透明 NSPanel（普通实例、不接鼠标、层级 popUpMenu + 2），global / local 鼠标监听，按下圆盘 / 右键空心环 / 拖动跟随 / 松开涟漪都是 CALayer 动画；坐标换算、形状、哪些自家窗口上不画是纯函数；手测反馈第 2 批加按键提示：录制条「显示按键」开着时同一块窗口底部居中的 HUD 胶囊，global / local 的 keyDown 监听（global 要辅助功能授权），键名复用 `HotKey.display`，内容和停手清空是纯状态 `Keys`，位置是纯函数；显示点按 / 显示按键任一开着就建窗口）、`RecordingHUD.swift`（录制 HUD：倒数 / 录制中两态、红点呼吸、计时、放弃两下、停止，普通 NSPanel 状态栏层级、能拖，录屏第 2 批；第 4 批录制态加只读声音状态（系统声音 / 麦克风，开录时的麦克风断开变橙）；录音第 5 批加录音形态 `medium = .audio`：电平 `LevelMeter`、暂停 / 继续、「没听到声音」、底部居中从底边长出来；手测反馈第 3 批加录音的待录态 `State.ready`：[系统声音][麦克风] ｜ [✕][●]，来源开关读写 `Prefs.audioRecordSource`，开始后原地换成录制态）、`VideoExport.swift`（录屏转成 GIF，录屏录音第 7 批：15 fps、宽 ≤ 960、最长前 60 s，`AVAssetImageGenerator` 逐帧取、`CGImageDestination` 逐帧编（关全局调色板）、`@concurrent`；帧时刻 / 输出尺寸 / 存盘名是纯函数；常驻缩略图的 GIF 卡是 `ShelfCard.Kind.gif`，入口是视频卡的「转成 GIF」`ShelfCard.convertToGIF`）、`AudioRecorder.swift`（录音会话，录音第 5 批：AVAudioRecorder 录 m4a、授权、暂停续写、20 Hz 电平与 `Levels` 历史、「没听到声音」、中断（系统睡眠 / 输入设备断开 / 磁盘）、停止后画波形 poster；收尾挪文件、闪退恢复、结果岛、菜单栏停止项和录屏共用 `ScreenRecorder` 的 `settle` / `recover` / `summary` / `makeStopItem`（`ScreenRecorder.Medium`），常驻缩略图的录音卡是 `ShelfCard.Kind.audio`；第 6 批加来源 `Source`（麦克风 / 系统声音 / 两者），后两种用 `ScreenRecorder` 的只录声音模式 `audioOnly` 当引擎，电平由它的样本回调算好投过来；手测反馈第 3 批分成两个阶段：`open()` 待录只出控制条，`start()` 才读来源、问 `allowsStart`、开录） |
+| `Screenshot/` | `ScreenCapture.swift`（逐屏冻结帧 + 同一刻的窗口 Z 序快照）、`RegionSelector.swift`（框选会话、每屏一个遮罩、选区几何纯函数）、`SelectionView.swift`（遮罩画面与交互：图层绘制、窗口悬停、手柄、放大镜、工具栏）、`ScreenshotOutput.swift`（PNG、快速保存、另存为）、`PinPanel.swift`（钉图；第二轮体检 F1 起还有「钉住剪贴板里的图」的取图、解码、找位置）、`Annotation.swift`（标注模型，显示与导出共用 draw，M10）、`EditorToolbar.swift`（HUD 主工具栏 + 样式托盘，M10，Whisker 重做）、`TranslationCard.swift`（截图翻译盖回截图上时放不下的段：选区外的译文卡片，2026-11-08）、`FlyCard.swift`（截图飞入右下角 + 快门声，Whisker S1；录屏第 3 批起录屏的最后一帧也从这里飞，落地多播放符号和时长 `VideoMarks`）、`ScrollCapture.swift`（长截图会话：边框、侧边面板、抓帧循环、自动滚动）、`ScrollStitcher.swift`（长截图拼接，纯逻辑）、`ShotKeys.swift`（截图时能改的 21 个键，2026-11-06）、`AnnotateOverlay.swift`（标注遮罩：整屏压暗、图居中、滚动与缩放、工具栏和样式托盘、出图；长截图按 A 和截图历史里双击都用它，2026-10-26）、`ScrollCanvas.swift`（长图画布：只画看得见的那一段 + 标注交互，标注层复用 `AnnotationCanvas`）、`ShotHistory.swift`（截图历史：原图 + 标注 + 缩略图存 <数据目录>/shots/，记录在主库的 shots 表，按天数和总量清理，2026-10-26）、`ShotHistoryWindow.swift`（历史窗口和模型：筛选、按天分组、每条的操作、缩略图缓存）、`ShotHistoryView.swift`（历史窗口的界面：网格 + 预览 + 操作）、`Clothesline.swift`（晾衣绳：面板、什么时候滑下来 / 收起、挂上 / 取下、卡片上的动作，第十族 2026-10-26）、`ClotheslineLayout.swift`（晾衣绳的几何与时机：排法、垂度、菜单栏那一条、收不收，纯函数）、`ClotheslineRope.swift`（绳子的物理：verlet 质点 + 重力 + 阻尼 + 距离约束，纯值类型）、`ClotheslineView.swift`（晾衣绳的内容：绳子、卡片、夹子、悬停和鼠标 `CardMouse`）、`ShotShelf.swift`（CleanShot 式常驻缩略图，Whisker D；录屏第 3 批加视频卡 `ShelfCard.Kind.video`，右键菜单 / 旁白动作同一份 `ShelfCard.menu`）、`SizeField.swift`（遮罩里的尺寸胶囊：就地输入宽高、比例菜单）、`ScreenRecorder.swift`（录屏会话：SCRecordingOutput 先写到同卷、系统不清理的地方再挪进快速保存目录、白名单面板的例外过滤器、选区边框、菜单栏停止项、中断与闪退恢复，录屏第 1 批；第 2 批加倒数、放弃、帧率 / 倒数 / 光标设置；第 3 批挪好后取最后一帧 `poster`；第 4 批按录制条开关配声音 / 麦克风 / 点按（`Options`、`configure`）、开录前问麦克风授权、麦克风断开；录制条（四个开关：系统声音、麦克风、显示点按、显示按键） `RecordBar` 在 `EditorToolbar.swift`、框选是 `SelectionView` 的 `.record` 模式；手测反馈第 1 批起点按圈由 `InputOverlay` 画，`configure` 只管声音，过滤器例外多并一个它的窗口号 `exceptedOwnWindows`）、`InputOverlay.swift`（录屏里显示用户的输入，手测反馈第 1 批 2026-10-01：显示点按开着时盖在被录区域上的透明 NSPanel（普通实例、不接鼠标、层级 popUpMenu + 2），global / local 鼠标监听，按下圆盘 / 右键空心环 / 拖动跟随 / 松开涟漪都是 CALayer 动画；坐标换算、形状、哪些自家窗口上不画是纯函数；手测反馈第 2 批加按键提示：录制条「显示按键」开着时同一块窗口底部居中的 HUD 胶囊，global / local 的 keyDown 监听（global 要辅助功能授权），键名复用 `HotKey.display`，内容和停手清空是纯状态 `Keys`，位置是纯函数；显示点按 / 显示按键任一开着就建窗口）、`RecordingHUD.swift`（录制 HUD：倒数 / 录制中两态、红点呼吸、计时、放弃两下、停止，普通 NSPanel 状态栏层级、能拖，录屏第 2 批；第 4 批录制态加只读声音状态（系统声音 / 麦克风，开录时的麦克风断开变橙）；录音第 5 批加录音形态 `medium = .audio`：电平 `LevelMeter`、暂停 / 继续、「没听到声音」、底部居中从底边长出来；手测反馈第 3 批加录音的待录态 `State.ready`：[系统声音][麦克风] ｜ [✕][●]，来源开关读写 `Prefs.audioRecordSource`，开始后原地换成录制态）、`VideoExport.swift`（录屏转成 GIF，录屏录音第 7 批：15 fps、宽 ≤ 960、最长前 60 s，`AVAssetImageGenerator` 逐帧取、`CGImageDestination` 逐帧编（关全局调色板）、`@concurrent`；帧时刻 / 输出尺寸 / 存盘名是纯函数；常驻缩略图的 GIF 卡是 `ShelfCard.Kind.gif`，入口是视频卡的「转成 GIF」`ShelfCard.convertToGIF`）、`AudioRecorder.swift`（录音会话，录音第 5 批：AVAudioRecorder 录 m4a、授权、暂停续写、20 Hz 电平与 `Levels` 历史、「没听到声音」、中断（系统睡眠 / 输入设备断开 / 磁盘）、停止后画波形 poster；收尾挪文件、闪退恢复、结果岛、菜单栏停止项和录屏共用 `ScreenRecorder` 的 `settle` / `recover` / `summary` / `makeStopItem`（`ScreenRecorder.Medium`），常驻缩略图的录音卡是 `ShelfCard.Kind.audio`；第 6 批加来源 `Source`（麦克风 / 系统声音 / 两者），后两种用 `ScreenRecorder` 的只录声音模式 `audioOnly` 当引擎，电平由它的样本回调算好投过来；手测反馈第 3 批分成两个阶段：`open()` 待录只出控制条，`start()` 才读来源、问 `allowsStart`、开录） |
 | `StatusScreen/` | `StatusPreset.swift`（一个状态：标题、说明、图标、样式、电源、自动结束；自带的三个；偏好里的 JSON 和 `sanitized`）、`InputBlock.swift`（事件拦截，全仓库唯一碰 `CGEvent.tapCreate` 的地方；会话是不是锁着 `isSessionAway`）、`ExitHold.swift`（退出判断：按住 esc / 按住退出提示 2 秒，纯状态）、`Passcode.swift`（退出密码：4–8 位数字、钥匙串里的条目、密码框的输入状态，纯状态）、`StatusScreen.swift`（一次会话：进入、触碰、锁屏时让开、退出、退出后拦截的留守）、`StatusScreenView.swift`（每屏一张全屏面板 `StatusScreenPanel` 和画面）、`StatusEmoji.swift`（动画表情：16 个可选 + 眼睛的清单、静止画面、解帧、按帧换图层内容的播放；素材 `Resources/status-emoji-<id>.heics` 由 `macos/status-emoji.swift` 从 Microsoft Fluent Emoji Animated 转来）、`StatusPicker.swift`（按全局快捷键时先出的选状态面板：一排预览卡片、键盘选择、把选中卡片的位置交给会话让画面从它长到整屏）；规矩见 mac-overlay-panel §11、`StatusPresetSync.swift`（状态屏的状态接进全局同步：一个一条 + 顺序一条；2026-10-24） |
 | `StatusScreen/`（2026-11-05 补） | `EmojiPack.swift`（动画表情包：挑的系统表情有 Fluent 动画版时按对照表 `Resources/emoji-pack.json` 从本仓库 release `emoji-pack-<版本>` 下载、缓存在数据目录 `emoji-pack/`（上限 50 MB，删最久没用的），开关 `Prefs.emojiPackDownloads`；表情包由 `macos/emoji-pack.swift` 生成） |
 | `Reminders/` | `ReminderSound.swift`（提示音：系统的、个人「声音」文件夹里的、自己选的文件（拷进数据目录 `reminder-sounds/`），播放最多 30 秒、处理了就停；编号的校验，2026-11-04 用户反馈）、`ReminderPhrase.swift`（启动器一句话建提醒的解析，纯函数）、`ReminderSync.swift`（提醒列表接进全局同步）、`ReminderScreen.swift`（全屏提醒，面板 `ReminderScreenPanel`）、`ReminderGlow.swift`（边框：每屏四条贴边窄窗口）、`Reminder.swift`（一条提醒：标题、说明、表情、开关、时间规则 `Schedule`、提醒方式、全屏多久、声音、催促；三条示例；偏好里的 JSON、逐字段兜底的解码和 `sanitized`；设置页的列表纯函数和摘要）、`ReminderSchedule.swift`（纯函数：一次 / 每周 / 每月的下一次、间隔按锚点和时段、`ReminderCheck.check` 此刻哪几条响 / 算错过 / 下次几点看、`reconciled`；这台电脑的状态 `ReminderState`）、`ReminderCenter.swift`（执行层：一个睡到下一刻的计时任务、锁屏 / 解锁 / 醒来 / 改时钟的监听、间隔提醒的空闲检查、挂在刘海岛上的那一条、知道了 / 稍后）；2026-11-04，§10「提醒」 |
@@ -786,6 +786,42 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
   1508 × 178、1760 × 166，伸出主窗口上沿、只部分重叠，「整个套在里面才算表单」漏掉了。`DockWindows.merge` 加一条：没标题、宽 ≥ 高 × 4、
   搭在同一 App 一扇更高的窗口上（相交或贴边）的不列。是 Chrome 的哪个控件没认（按形状认）。
 
+### 截图翻译盖回的小字（0.8.0，2026-11-08）
+
+- 用户 2026-11-08 报：开着「截图翻译时把译文直接盖回截图上」，选区小的时候贴回去的译文特别小、看不清（一行中文翻成英文，挤成一行
+  3 pt 左右的小字），「你看看市面上成熟的产品是怎么实现优化的」。根因：译文只画在选区那张图里，排不下先缩到 3/4、再往下借空白，
+  还放不下就一路缩到 6.5 **像素**（没按屏幕倍率，Retina 上 3.25 pt）；第一行压在原文的基线上，原文上方的空白、右边多出来的空白都不用。
+- 调研（只看网页）：Google 镜头 / 翻译（重分行选字号；卡片拖上看全文；显示原文、复制文字）、苹果「翻译」App 相机（放大看；点一块看详情）、
+  DeepL（手机盖回 + 一键关盖层 + 原文译文分开看 + 拷贝；桌面版不盖回）、PixPin（图到图 / 图到文字两种模式）、沉浸式翻译（区域翻译把译文
+  放在旁边的卡片）、HIG（macOS 最小 10 pt）。都是「图上尽量排，排不下给一个看全文的地方」，没有一家只靠一直缩小。拍板页 9 项
+  https://claude.ai/artifact/FzAKP28tPx2xusoQ7ofJuM （源文件 `build/research/overlay-small-text-2026-11-08/decisions.html`），用户「全部按推荐」。
+- 做法：A1 字号下限按点算（3/4、不小于 10 pt，原文不到 10 pt 的不缩）；A2 照原文基线排不下时用周围空白（右到邻栏、上下到别的段和已排好的段），
+  整块居中、行距 1.25 倍字号；B1 还放不下的段图上留原文，原文和译文交给选区外的译文卡片（B2 只列放不下的段、每段一行原文 + 能选中的译文、
+  拷贝译文和 ✕；B3 挂在工具栏另一侧，选区一变 / ✕ / Esc 收；B4 不进出图）；C1 字色不改、C2 不做看原文开关（记进未来计划）。
+  规矩在 mac-translate「截图翻译」、mac-whisker capture.md「译文卡片」，手测 HANDTEST「截图翻译盖回的小字」1–21。
+- 在检出 `kitty-tools-macos-overlay`（分支 `overlay-wip`，从 macos `15bcac45`）两批各一个提交：第 1 批排版（`ScreenshotOverlay.layout`
+  交回 leftovers、`render` 交回 `Outcome`，截图页传每点几个像素），第 2 批卡片和文档。更新日志 0.8.0 发版时一起写（截图翻译一条 fix）。
+- 用户随后「多检查几遍，看看还有没有能优化的地方，统一对标成熟产品」：第三个提交是复查修正。一是真截图探针
+  （测试工程里临时的 `OverlayProbeTests`，留档在 `build/research/overlay-small-text-2026-11-08/`，用官网的应用截图 + 离线假译文），
+  看出往外借空白会排到图标、色点、开关上去字擦花（识字框看不见它们）、字色取到旁边图标的颜色、窄栏里英文词按字母拆开；
+  二是不看前面思路的独立复查（随机 3000 个版面叠字 14 次：排好的段按去字外接框、按方向筛障碍会漏掉跨边的；留原文的段会被
+  邻段去字擦掉一条）。改成：每个排法都查「译文实际占的地方」（`Span.area`）和别的段原文、已排好译文逐个相交，伸出原文的地方
+  原图里得是空的（`isBlank`）；词被拆开算放不下；用空白排的段译文那块另外去字（`Span.cover`）；留原文的段去字时一个像素都不动；
+  字色只在原文框里取。单测加了复查复现的两种叠字、400 个随机版面的不变式、图标不被擦、留原文的段不被擦（改坏实测会失败）。
+- 第二轮拍板（同一页第 2 版）6 项「全部按推荐」：E1 翻完总挂窄栏（看原文开关、拷全部译文；只有窄栏时不拦 Esc、看着原文
+  关窄栏换回译文——这两处是我定的）；F1–F3 识字分段；G1 同时 3 段；H1 随 0.8.0。做的时候评审用真 Vision 实测推翻了 F1–F3
+  的原始写法，改成：F1 只去「整行一个字、方、比正文高出三成」的（「Q 搜索设置」这种行首图标字分不出来，没做；单个大写字母
+  的框也近乎方，按方不方删会删掉表格列标）；F3 按「宽 ÷ 加权字数」估字号、差三成且字号大的那行框也高才断（行框高度单独
+  能差 1.45 倍）；F2 改成看整段（≥3 行、都短、对齐至多一行例外、宽窄差一半以上、没有接着往下说的），两两比分不开行距宽的
+  窄栏正文。E1 评审另修了：重翻同一个选区从原图截（以前读的是译文）、失败时旧卡片照旧、马赛克缓存按图认。
+- 第二轮做完又用真 Vision 复查了一遍（官网 1x / 2x 设置截图、合成的中英文对）：2 倍图侧栏三行粘着图标字（「合状态屏」「0程序坞预览」
+  「8关于」）超出「至多一行例外」拆不开 → 放宽到四分之一的行，并把左对齐一列里往左歪出一个字的行首字去掉、框收回对齐线
+  （截图翻译不再把这几个图标擦掉，识字结果里也没有乱字）；「8关于」宽出一截、字号估大四成被当成标题切开（框只高 8%，和设置页
+  标题「通用」一样，靠高度分不开）→ 字号大的那行往左多出一个字以上的不拆；i、l 多的英文行接中文行被误拆（28 对里 4 对）→
+  字宽按字估、只比同一种字的两行；大号单字（「序」「A」）在截图识字里被删 → 去图标只在截图翻译盖回时做。探针图上另看出
+  选中的粉色按钮里的字译文排到按钮外、字色取成粉的（底色按去字范围外面那圈取，那圈已经出了按钮）→ 贴身那一圈八成同色时用它。
+- Windows 的盖回（PLAN-v16 S1 / S1b）还没做，windows 分支的 PLAN-v16 补了一句照这次的规则。
+
 ### 脚本命令（0.8.0，2026-11-07）
 
 - 用户 2026-10-28 问能不能自己写脚本加启动器的命令，当时出了两份拍板页（脚本命令 13 项、模块化总路线 19 项）说先不做；
@@ -869,6 +905,119 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
     只留一行，列表进 `Settings/WebSearchPage.swift`（编辑页从它再推进一层）；通用页「功能」只留一行，开关进
     `Settings/FeaturesPage.swift`，通用页的页头挪进自己的 NavigationStack。规矩写进 mac-whisker settings「一页里列不完的一组
     东西收成一行推进去」。
+  - 默认别名统一英文（2026-11-08 用户：「为什么这两个是中文，不应该统一英文吗」）：「命令」表里新建提醒的默认别名 提醒 → remind、
+    汇率换算 汇率 → currency（都是原来就认的词，不用切输入法）；中文和 tx、huilv 照旧认。提醒的用法提示写打的那个词，表里改了
+    别名时例子里的关键词也跟着换（`LauncherCommands.relabel` 换「「关键词 」」）。
+- **第三轮评审**（2026-11-08，用户「多检查几遍，然后看看有没有还能优化的地方，统一对标成熟产品」）：三路独立审查（正确性 /
+  安全 / 界面，各一个没看过我结论的 agent）合起来 37 处，全部修了，三个提交：
+  - 安全（`42b2244e`）：双向文字控制符（U+202A–202E、2066–2069、200E、200F、061C）能把一段命令显示成注释——看全文那一页
+    和导入表单把它们标成「⟦U+2067⟧」、有就不放行（`ScriptCommand.revealed`、`ScriptReading`）；读下载标记跟着符号链接看
+    两头、去标记两头都去；导入存的是看的时候读到的字节（`ScriptLibrary.save(Data)`，删掉 `importScript`：原来会把链接原样
+    复制、预览开着时文件能被换掉）；没看过的下载脚本不靠别名抢第一行、全文显示出来 1 秒内的 ↩ 不算（`reviewDwell`）；没看过
+    的下载脚本子文件夹里的、本身是链接的图标也不用；扫描之后才换成下载来的，跑之前（主线程外）再看一眼标记、不跑。
+  - 正确性（`39201035`）：列表脚本写 confirm 解析成读不成的原因（打字就跑，确认不了）；已经在传参数的行 ⇥ 不补全；列表重跑时
+    ⌘C / ⌘↩ / ⌘N 不对着旧结果；列表超时说真用的秒数；自带进制、时间戳加 `setopt extended_glob`（非交互 zsh 默认不开）；
+    折叠后变长的标题（ß）按原样输入切参数；输出页 ↩ 挡连发；启动器关着时「看输出」不留过期页；读 PATH 时被撤掉的列表不起进程；
+    **全文脚本跑着时启动器收起了接着跑**（岛上「正在运行」带「停止」，跑完说一声带「看输出」；`lastFailure` 改名 `lastOutput`）；
+    「还在运行」那座岛也带「停止」；去颜色码前先看有没有 ESC / 回车。对标时补上参数 JSON 的 `percentEncoded`
+    （社区库 110 个脚本这么写；`ScriptCommand.passed`，RFC 3986 unreserved 以外都编码）。
+  - 界面：报错用红字（systemRed，不取 `Style.danger`）、看不全 / 藏着字符 / 输出截断是橙字；看全文 / 输出那一页 ↑↓ 滚一小段、
+    PageUp / PageDown 滚一屏（`LauncherModel.PageScroll`），读屏名「脚本全文」「脚本输出」；「运行」在不能放行时禁用、
+    「先填参数」不画成主按钮；Esc 键帽大写；「命令和别名」页脚写实际的优先级、开关 mini、
+    名字悬停提示「在访达中显示」并给读屏动作；`SettingsPushRow` 的 › 同可排序列表（`chevron.forward` tertiary）；设置侧栏
+    搜脚本 / 别名 / AI 能到启动器页；导入表单主按钮 `BrandButtonStyle`、第一行不是 #! 的不让导入、加「选择文件…」；两处
+    「查天气」例子合成一份（`ScriptLibrary.example`，写法说明直接引用；`curl -sS --max-time 10`、出错写 stderr）；速查表补
+    全文 / 输出页的 ↩ ↑↓ Esc；Base64 换不带字的符号；功能全关时「N 个功能都关着」。
+  - 复查（一个没看过改法的 agent 审这三个提交，修在第四个提交里）：只拦双向控制符不够——零宽字（200B、2060、FEFF、00AD、标签字符）、
+    单独的回车、换行类字符（2028、2029、0085、\v、\f）、NUL 放在 # 前面，# 就不在词首、不算注释，显示出来却像注释（zsh、bash
+    实跑过）：改成 `ScriptCommand.hidden` 按类别判断（默认可忽略、控制、格式、换行类拦；\r\n、emoji 里的 ZWJ 和变体选择符不拦；
+    不换行空格、全角空格只标出来不拦），不是 UTF-8 的字节也不放行；下载来没看过的「关键词 空格 参数」那一行也不排最前；
+    导入 `.template.` 的模板说清楚要填值改名才列出来、点开头的去掉点；「命令和别名」页脚写准（只打这个词时脚本排第一，接了空格
+    和文字时内置命令先认）；看全文那 1 秒里「运行」画成禁用（`ScriptReview.isSettled`）；导入后岛上那句按能不能跑说。
+  - 没改（设计层面，记在这里）：信任只认下载标记——git clone、curl、Homebrew 拿到的脚本没有标记、不先看全文；同一个用户下的
+    别的程序能往脚本文件夹放脚本、借 Kitty 的授权（「以你的身份运行」这个拍板本身的代价）；看全文只覆盖这一个文件，`source`
+    进来的同目录文件看不到。符号链接的脚本工作目录、相对图标按链接所在的文件夹算（不按真文件）。
+  - 对标（Raycast 脚本命令官方说明、Alfred Script Filter、社区脚本库计数）后的差距出了第三轮拍板页 https://claude.ai/artifact/3JNjBqx61xWRT4nrwoWA3S（源文件在主检出
+    `macos/build/research/script-commands-round3-2026-11-08/decisions.html`）：全文边跑边显示 / 颜色 / ⌘R，列表 url、path、
+    icon、autocomplete、text.copy、只跑一次自己过滤，下拉 / 引号 / 密码参数，每条命令的快捷键，新建表单。
+- **第三轮对标**（2026-11-08，用户「全部按推荐」：11 项按推荐答案做，四批各一个提交，在 `scripts-wip`）：
+  - 第 1 批 全文那一页（A1–A3）：**边跑边显示**——`Subprocess.run(live:)` 给了就把错误输出并进标准输出（同一个句柄，先后
+    同终端；结果的 error 是空的，出错那一句从输出的最后一行取），每 0.25 秒（和看输出大小的那一轮一起）交一次写到现在的，
+    末尾写到一半的 UTF-8 字先不交（不闪「�」）；页上正文原来停在底部就跟到新的底部、往上翻了不跟（`ScriptPageView.follows`），
+    小字「正在运行… 已 12 秒」（`TimelineView` 一秒一次的普通文字）。**认终端颜色**——`Launcher/ScriptTerminal.swift`（纯函数）：
+    SGR 的 16 色用系统色（黑白换成文字主次色、浅色里黄压暗）、256 色、24 位、背景（淡 0.25）、粗体 / 斜体（`inlinePresentationIntent`）、
+    暗、下划线、删除线；冒号子参数的写法整段去掉不认。单独的回车同终端回到行首、后面写的盖掉这一行（`ScriptCommand.carriageReturns`，
+    `clean` 也改成这样：进度条只留最后一帧，岛上一行、列表行、粘贴的都跟着）。页上只排前 10 万字（`LauncherModel.outputDisplayLimit`
+    挪到模型里，`ScriptOutput.show` 一次算好纯文字和带颜色的）。**⌘R 重跑**——全文那一页和「看输出」打开的那一页都能，用同样的
+    参数（`ScriptOutput.arguments`）、按脚本现在的样子（改完再跑一次），结果都在这一页上看（不是全文模式的也一样）；还在跑、写了
+    confirm 的（重跑不该绕过「按两次」）不跑，脚本不在了岛上说一声；底栏「重跑 ⌘R」，速查表补一行。`runScript` 多一个 live 参数。
+    ponytail：边跑边看每次从头读临时文件（最多 1 MB，一秒 4 遍），慢了再只读新增的。
+    评审（一个没看过改法的 agent，7 处，修在单独一个提交）：⌘R 重跑的粘贴 / 复制脚本跑着时启动器收起了，按它自己的模式交、会把
+    结果粘进前台 App——收起后一律按全文交（岛上「看输出」）；`clean` 改成回车盖行后，只拿 \r 分行的输出（AppleScript 的
+    `return`、这样分行的 JSON）只剩最后一行——没有别的换行时 \r 当换行，\r 后面只跟着颜色码的不盖（\r\e[K 清行再写照盖）；
+    显示截断按收拾前的字数算、提示按收拾后的算——先收回车再截、`ScriptOutput.isCut` 记截没截；截在控制码中间显示出参数——
+    `ScriptTerminal.droppingPartialEscape`；**每 0.25 秒把 1 MB 全收拾一遍、排 10 万字，主线程跟不上**——跑着时只排最后
+    2 万字（`showLive`、`liveDisplayLimit`，从一行开头起）、纯文字跑完再算；进程结束后还交出一个空的——睡醒先看撤没撤；
+    按住 ⌘R 连发——不算连发。没改：错误输出并进来后和标准输出共用 1 MB（写在错误输出里的进度条也占），ponytail。
+  - 第 2 批 列表结果（B1–B3）：JSON 每条多认 `url`（有协议的；`file:` 当文件）、`path`（~ 展开、相对的按脚本文件夹算；社区写法
+    `type: file` 的 arg 也当路径）→ ↩ 打开（不记使用），网址行 ⌘↩ / ⌘C 复制网址，文件行 ⌘↩ 在访达中显示、⌘Y 快速查看、⌘C 复制路径、
+    ⌘K 多「快速查看」；行右侧写「网址」「文件」（拍板写的是「打开」，做出来和底栏左边的种类名重复成两个「打开」，改成种类、↩ 打开写在
+    底栏主动作上）。`icon`（字符串同 `@kitty.icon` 但不认网址：一列几十条各下载一次、还能当信标；对象 `{"type": "fileicon", "path"}`
+    取那个文件在访达里的图标——新的 `ScriptCommand.Icon.file`，`ScriptIcons.fileIcon` 主线程外取 `effectiveIcon` 画成 96 像素，
+    超过 300 张整批忘掉重取；`{"path"}` 是图片），文件结果没写图标时用它自己的图标；`autocomplete`（⇥ 填成「打的关键词 空格 它」，
+    普通列表接着重跑）；`text.copy`（⌘C 复制它；⌘↩ 仍复制 ↩ 会用的那个，所以 ⌘K 另列「复制结果」）。**`@kitty.filter`**（只认列表，
+    写了就不收参数）：这次呼出里第一次打到「关键词 空格」跑一次（`filterTask`，打字不撤它），结果按标题、说明、拼音全拼和首字母过滤
+    （`LauncherModel.filtered`：`LauncherMatch.score` 大于 0 的按分排、同分按脚本给的顺序），收起时清掉；没跑成的那一行不过滤。
+    两份写法说明（给 AI 的、设置里的）补上这些字段。
+    评审（一个没看过改法的 agent，9 处，修在单独一个提交）：**自己过滤的脚本结果晚到时一律重搜**——眼前已经换成别的查询时选中
+    跳回第一行、上膛被撤、另一条列表脚本被重跑：现在只在还在打这条脚本时才重搜（并留住手动选的那一行）；**「还在等结果」不分
+    脚本**——一条在跑时别的脚本的行 ↩ / ⌘C / ⌘N 都不认：按脚本分（`isPending`，`listPath`）、⌘↩ 也看；**没跑成的那行一直挡在
+    前面**——下面有别的结果时不留它（同普通列表），不再打这条脚本时忘掉、再打到它重跑一次；文件图标并排取，断了的网络盘会
+    占满共用线程——排队一张一张取（`fileQueue`）；图标缓存在画图标时清、会清掉正在显示的、图片图标不限——改成在读完时清最早的
+    （`settle`，最近 300 张）、读完时已被挤掉的不放；`file:` 网址不展开 ~ 和相对路径、`/` 或 ~ 开头的网址不认、`"path": ""`
+    挡住 arg、不能选的行也写「网址」——都修了。没改：网址什么协议都交给系统（同在访达里点链接，要 ↩），评审建议只放 http(s)，
+    `raycast://`、`obsidian://` 这类要能开，没收紧。
+  - 第 3 批 参数和新建（C1–C3、D2）：**下拉**——参数 JSON 的 `"type": "dropdown"` 带 `data`（title 给人看、value 交给脚本；
+    一个选项都没有的当普通文字）：正在打的是它、还没对上某个选项时（`Invocation.typing`，最后一个字是空白算下一个），选项按打的字
+    过滤（认拼音）排在脚本那一行前面（`.prompt` 行，目标前缀 `LauncherModel.choicePrefix`，右侧「选项」，主动作「选这个」），
+    ↩ / ⇥ 填进搜索框（带空白的括上引号，后面还有参数的接空格）；填的不是选项时那一行写能选什么、↩ 只响提示音
+    （`ScriptCommand.invalidChoice`）；交给脚本前换成 value（`passed`，先换再做网址编码）。**引号**——不止一个参数时
+    `"…"`、`“…”` 括起来的算一段，最后一段整个括着的去掉引号；一个参数的照旧整段（`split`）。**密码**——`"type": "password"`：
+    行上写「•••」、跑之前清空搜索框（全文输出时启动器留着，不清一直看得见）、使用记录按关键词记不按打的字（`record`）、
+    打着没跑就收起的也不留到下次呼出；说明页写明打的时候搜索框里看得见。没做真遮挡（拍板的推荐）。**新建表单**——
+    `Settings/NewScriptSheet.swift`：名字、关键词、结果给谁（六种）、用什么写（zsh、JavaScript、AppleScript、Python），
+    `ScriptLibrary.template` 生成开头几行 + 一段能直接跑的示例（各语言 × 各模式单测里都能读成命令，zsh / JavaScript /
+    AppleScript 真跑过），文件名按关键词（没有按名字）、扩展名按语言；设置里的按钮和启动器里的「新建脚本」
+    （`SettingsNavigation.showsNewScript`，打开 设置 › 启动器 再盖上）是同一张。删掉原来的固定模板和 `newScriptAndEdit`。
+    评审（一个没看过改法的 agent，9 处，修在单独一个提交）：**只有一个参数的下拉，选了带空格的选项填进去括着引号**，一个参数的
+    不去引号，对不上选项、↩ 只响——一个参数的不括引号；列表脚本的下拉没对上选项也每打一个字跑一次——不跑；表单挂在启动器页
+    那一节上，那一节不在屏上就出不来、标记一直留着——挂到设置窗根上（同速查表），速查表 / 欢迎引导盖着时启动器那条不叠；
+    一个选项的标题正好是另一个的 value 时认错——先认一字不差的标题、再不分大小写、最后 value；没配上的引号里打空格就算到下一个
+    参数、最后一个参数里有空格就出界——没配上的引号拿走剩下的全部、打到最后一个就一直是它；`""` 填回去变成空的——`quoted("")`
+    是 `""`；按住 ⌃ / ⌥ 时的说明连密码一起显示、⌃↩ / ⌥↩ 拿密码去网页 / 访达里搜——打着密码时这两样都没有；看全文后下拉不对
+    不响——响；列表模板的提示教人写 confirm（列表写了读不成）——列表的提示换成 `@kitty.filter`。没改：`"a"b` 这种引号在词中间的
+    切成两段（和 shell 不一样，少见）。
+  - 第 4 批 每条命令的快捷键（D1）：「命令和别名」表多一列「快捷键」（同快捷键页的 `HotKeyRecorder`，`KeyTarget.command`，
+    宽 116；规矩同全局动作——要带修饰键、不收通用编辑键、不认连按两下；和全局动作、别的命令两边一起查重；录错 / 注册不上的
+    原因写在那一行下面）。存在 `Prefs.launcherCommandHotKeys`（编号 → 组合的 JSON，注册默认值 ""，`.text`，跟着设置导出、同步；
+    读的时候 `LauncherModel.commandHotKeys(fromText:)` 按录制框的规矩过一遍、最多 200 条——文件和同步来的是不可信输入）。
+    注册在 `HotKeyCenter`（各动作之后注册：撞了的是命令这边失败；热键 id 从 `commandBase` 起；`commandFailures`），
+    只注册此刻能做事的（`LauncherModel.canRunHotKey`：启动器功能开着、那条开着、脚本这台 Mac 上有且脚本命令开着、关键词命令
+    的功能开着且还有别名、系统命令都在）——别的 Mac 上没有那条脚本就不注册；脚本加了 / 删了（`ScriptLibrary.onChange`）、
+    表里开关 / 别名 / 脚本命令总开关变了时 `reloadCommandsIfChanged`。按下（`LauncherModel.runHotKey`）：不要参数、不用确认、
+    看过全文的脚本直接跑（不打开启动器，粘贴的粘进眼前的 App；全文输出的打开启动器看）；要参数的、列表的、写了 confirm 的、
+    下载来没看过的打开启动器做按 ↩ 的那一步（填好「关键词 空格」/ 上膛 / 先看全文）；关键词命令打开启动器填好「关键词 空格」；
+    系统命令要确认的上膛、别的直接做；使用只记总数。设了命令快捷键时启动器的面板在启动时就建好（模型在建面板时接线），没设的不建。
+    没做：速查表里不列这些（表本身就是它们的清单）；快捷键不认连按两下修饰键。
+    评审（一个没看过改法的 agent，8 处，修在单独一个提交）：**注册会过时**——只有那一页的 onChange 跟，⌘K「关掉这条命令」、
+    「启用脚本命令」改了不注销（关掉的脚本的组合还在所有 App 里吞键）：改成 AppDelegate 看着偏好变化调 `reloadCommandsIfChanged`；
+    **删掉的脚本、别的 Mac 同步来的组合留在偏好里一直挡着查重**（没有那一行、清不掉）：查重只算这台 Mac 上有的命令
+    （`HotKeyCenter.knowsCommand` → `LauncherModel.hasCommand`；偏好里的不删，那台 Mac 还要用）；截图框选、状态屏停热键前只看
+    动作的热键，只设了命令快捷键的人截一次图就全没了：看 `HotKeyCenter.isActive`；有一条注册不上时每次都当变了、整个重注册：
+    和上次要注册的比（`commandAttempts`）；**热键 id 按排在第几**，重新注册后排着队的事件会落到别的命令上：每条命令这次运行里
+    一个固定的号、不复用，只认此刻注册着的；全文脚本的快捷键会停掉眼前在跑的那一页：它自己在跑就交给「还在运行」，别的在跑
+    就交给岛；⌘K 菜单开着时按，上膛的那句压在菜单下面、菜单第一项一按就跑：先收起菜单；录屏「显示按键」不显示命令的快捷键：
+    补上。没改：超过 200 条时多出来的读不进（按编号排前 200 条，ponytail）。
   不做（拍板页「不做的」）：外部 AI 直接读写脚本（要开本地接口）、官网 llms.txt、AI 写完直接运行、自动加执行权限、调试日志页。
 
 ### 访达右键（第十一族，2026-11-08 立项）
@@ -995,15 +1144,24 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 
 > 2026-10-28（第三轮体检第 7 批）：2026-10-22 及更早的进度记录、做完的「已知的小毛病」、旧的「现状」「下一步」原样挪到 `docs/archive/PLAN-batches-2026-10.md` §12；AGENTS.md「项目概述」原来的长段原样挪到本节末尾「各族进度摘要（原 AGENTS 项目概述）」。
 
-**2026-11-08：访达右键（第十一族，0.8.0 之后的下一版）**（§10「访达右键」）：拍板「全部按推荐」；检出
-`kitty-tools-macos-finder`（分支 `finder-wip`），最早两批 + 和业界对齐 + 右键扩充三批（11 项）都已提交，没 push、没动版本号，
-测试包在主检出 `macos/build/`。待手测 HANDTEST「访达右键手测」。
+**2026-11-08：访达右键（第十一族）**（§10「访达右键」）：两张拍板页都「全部按推荐」；检出 `kitty-tools-macos-finder`
+（分支 `finder-wip`，从 macos `8bbc2f8d`）做完最早两批、和业界对齐、右键扩充三批（11 项）、六轮独立检查的修正、4 个新功能、
+刘海岛进度条；同日用户说「提交并合并到 macos」，以合并提交并进 macos（全量单测过），没 push、没动版本号和更新日志。
+用户真机试过一轮没发现问题；待手测 HANDTEST「访达右键手测」1–53。
+
+**2026-11-08：截图翻译盖回的小字（0.8.0）**（§10「截图翻译盖回的小字」）：第一轮 9 项、第二轮 6 项都「全部按推荐」；检出
+`kitty-tools-macos-overlay`（分支 `overlay-wip`，从 macos `15bcac45`）第一轮三个提交（排版、卡片、复查）、第二轮三个提交
+（E1 窄栏、F1–F3 识字分段连同复查、G1 同时 3 段）；2026-11-08 用户说并，变基到 macos `6449e5f6` 之后快进并回（全量 1987 过），
+没 push、没打包、没动版本号和更新日志（0.8.0 发版时写一条 fix）。待手测 HANDTEST「截图翻译盖回的小字」1–21。
+截图页（SelectionView）改得多，`element-wip` 并回时要变基到这之后。
 
 **2026-11-07：启动器脚本命令（0.8.0）**（§10「脚本命令」）：拍板 17 项「全部按推荐」；检出 `kitty-tools-macos-scripts`
 （分支 `scripts-wip`，从 macos `29c2d080`）四批各一个提交，没 push、没打包、没动版本号和更新日志（0.8.0 发版时一起写，
 发版时 `WhatsNew.entries` 可挑「脚本命令」）。待手测 HANDTEST「启动器脚本命令」；并回 macos 等用户说。
 同日真机反馈 + 评审修正已并回本地 macos（`776554be`）；第二轮（给 AI 的写法说明、网址 / 深色图标、命令表我的在前、⌘K 管理、
 看输出、编辑器）三批 + 独立评审在 `scripts-wip` 做完，待手测 HANDTEST「启动器脚本命令」29–42。
+2026-11-08 第三轮评审（三路独立审查 37 处 + 复查 5 处，四个提交）修完，待手测 47–57；对标后的第三轮拍板页用户「全部按推荐」，
+四批在 `scripts-wip` 做完（§10「脚本命令」第三轮对标，各批一个提交、各一次独立评审，评审修在单独的提交里），待手测 58–71。
 
 **2026-11-06：用户四条 + ⌘Tab 预览**（§10「用户四条 + ⌘Tab 预览」）：检出 `kitty-tools-macos-four`（分支 `four-wip`）；长截图大选区反复对不上、
 程序坞预览悬停时间各一个提交，截图工具条快捷键、连按两下修饰键、⌘Tab 预览先出拍板页等用户回复；没 push、没打包。待手测 HANDTEST「用户四条（2026-11-06）」。

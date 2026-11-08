@@ -52,6 +52,9 @@ enum Prefs {
   static let launcherCommandAliases = "launcherCommandAliases"
   /// 启动器「命令」表里关掉的（一行一个编号）：同上
   static let launcherCommandsOff = "launcherCommandsOff"
+  /// 启动器「命令」表里每条命令的快捷键（JSON：编号 → 组合；脚本命令第三轮 D1，LauncherModel.commandHotKeys）：同上，
+  /// 读的时候按录制框的规矩过一遍（文件、同步来的是不可信输入）；别的 Mac 上没有那条脚本就不注册
+  static let launcherCommandHotKeys = "launcherCommandHotKeys"
   /// 剪贴板、启动器、翻译浮窗呼出时用挤压入场（设置 › 通用「动效」，默认关；2026-09-29 用户要求三块面板统一，设置从启动器页
   /// 挪到通用页；2026-10-03 转正，去掉「实验」）
   static let panelSqueezeEntrance = "panelSqueezeEntrance"
@@ -440,6 +443,7 @@ enum Prefs {
       launcherScripts: true,
       launcherCommandAliases: "",
       launcherCommandsOff: "",
+      launcherCommandHotKeys: "",
       launchpadColumns: 7,
       launchpadRows: 5,
       launchpadLayout: "",

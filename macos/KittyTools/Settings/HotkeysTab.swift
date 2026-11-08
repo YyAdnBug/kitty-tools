@@ -99,6 +99,7 @@ private struct HotKeyRow: View {
     switch target {
     case .global(let action): action.rowTitle
     case .shot(let key): key.title
+    case .command(_, let title): title
     }
   }
 
@@ -106,6 +107,7 @@ private struct HotKeyRow: View {
     switch target {
     case .global(let action): action.symbol
     case .shot(let key): key.symbol
+    case .command: "terminal.fill"
     }
   }
 
@@ -113,6 +115,7 @@ private struct HotKeyRow: View {
     switch target {
     case .global(let action): action.color
     case .shot: Style.Family.screenshot
+    case .command: Style.Family.command
     }
   }
 

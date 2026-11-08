@@ -24,17 +24,23 @@ nonisolated enum ScriptAIGuide {
         - `full`：在启动器里显示全部输出（适合查看较长的结果）
         - `list`：每行一条结果让用户挑，选中按回车粘贴（见下面「列表」）
         - `none`：什么都不显示
-      - `@kitty.argument1` 参数的名字，如 `城市`。用户在启动器里输「关键词 空格 文字」，文字在 `$1` 里；最多 3 个（`argument1`–`argument3`，按空格切开，最后一个拿剩下的全部）。可以不填的写成 `{"placeholder": "城市", "optional": true}`。
+      - `@kitty.argument1` 参数的名字，如 `城市`。用户在启动器里输「关键词 空格 文字」，文字在 `$1` 里；最多 3 个（`argument1`–`argument3`，按空格切开，最后一个拿剩下的全部）。带空格的参数用户会用引号括起来。可以不填的写成 `{"placeholder": "城市", "optional": true}`；要直接拼进网址的再加 `"percentEncoded": true`（Kitty 先做网址编码再交给脚本）；只能从几个值里挑的写 `{"placeholder": "设备", "type": "dropdown", "data": [{"title": "耳机", "value": "headphones"}, {"title": "音箱", "value": "speakers"}]}`（用户挑 title，脚本收到 value）；密码、令牌写 `"type": "password"`。
       - `@kitty.description` 一句话说明它做什么。
       - `@kitty.icon` 一个 emoji，或者 SF Symbols 的符号名（优先用这两种；也可以写脚本同一个文件夹里的图片文件名，或 https 开头的图片网址）。
-      - `@kitty.confirm` 一句确认的话。**会删文件、改系统设置、关机、发消息这类，必须写**：用户要按两次回车才运行。
+      - `@kitty.confirm` 一句确认的话。**会删文件、改系统设置、关机、发消息这类，必须写**：用户要按两次回车才运行。列表（`list`）打字时就会运行，确认不了，写了 confirm 的列表脚本不会出现。
       - `@kitty.timeout` 超时秒数，不写是 60；只有确实要跑很久时才写。
+      - `@kitty.filter` 只给列表（`list`）用，见下面「列表」。
 
     ## 列表（mode 是 list 时）
 
     - 每打印一行就是一条结果，写成「结果<Tab>说明」（中间是一个制表符），用户选中按回车粘贴「结果」。
-    - 要显示的和粘贴的不一样时，改成打印一段 JSON：`{"items": [{"title": "显示的", "subtitle": "说明", "arg": "粘贴的"}]}`，不能选的那条加 `"valid": false`。
+    - 要显示的和粘贴的不一样时，改成打印一段 JSON：`{"items": [{"title": "显示的", "subtitle": "说明", "arg": "粘贴的"}]}`，不能选的那条加 `"valid": false`。每条还可以写：
+      - `"url"`：回车用浏览器打开这个网址（不粘贴）；`"path"`：回车打开这个文件或文件夹（⌘↩ 在访达中显示、⌘Y 快速查看）。
+      - `"icon"`：这一条自己的图标，写法同 `@kitty.icon`（不认网址）；`{"type": "fileicon", "path": "~/Desktop"}` 用那个文件在访达里的图标。
+      - `"autocomplete"`：按 ⇥ 时填进搜索框（接在关键词后面）的文字，适合一层一层往下选。
+      - `"text": {"copy": "…"}`：按 ⌘C 复制的（不写就复制 arg、网址或路径）。
     - 用户每打一个字会重新运行一次，最多等 10 秒，所以要快。
+    - 结果不随输入变（比如列出固定的几个项目）时，加一行 `@kitty.filter`：只在用户打完「关键词 空格」时运行一次，之后打的字由启动器按标题和说明过滤（认拼音和首字母），脚本收不到参数。
 
     ## 运行环境
 
@@ -55,18 +61,7 @@ nonisolated enum ScriptAIGuide {
     ## 例子
 
     ```zsh
-    #!/bin/zsh
-    # @kitty.title 查天气
-    # @kitty.keyword tq
-    # @kitty.icon ⛅
-    # @kitty.argument1 城市
-    # @kitty.description 输入「tq 空格 城市」，提示里显示天气
-
-    city="$1"
-    curl -sS --max-time 8 "https://wttr.in/${city// /+}?format=3&lang=zh" || {
-      print -u2 "没查到：检查一下网络"
-      exit 1
-    }
+    \(ScriptLibrary.example)
     ```
 
     ## 我要的脚本

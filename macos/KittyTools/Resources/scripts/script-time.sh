@@ -10,6 +10,8 @@
 # （没写时区按本地时间算；结尾是 Z 按 UTC，+08:00 这类按写的时区）。每打印一行「结果⇥说明」就是启动器里的一条，↩ 粘贴选中的那条。
 
 zmodload zsh/datetime
+# 下面的 ##0#、%%[[:space:]]# 要它（非交互的 zsh 默认不开）
+setopt extended_glob
 input=${${1##[[:space:]]#}%%[[:space:]]#}
 
 row() { print -r -- "$1"$'\t'"$2" }
@@ -43,7 +45,7 @@ else
   offset=0
   if [[ $text == *[Zz] ]]; then
     zone=UTC
-    text=${text%?}
+    text=${${text%?}%%[[:space:]]#}
   elif [[ $text =~ '([+-])([0-9]{2}):?([0-9]{2})$' ]]; then
     zone=UTC
     sign=1
