@@ -472,12 +472,7 @@ struct ScreenshotOverlayTests {
     // 上面那段往下借了三行；下面那段要是只看上面那段的原文框（不看它借过之后的范围），会排到它借的那几行里
     #expect(result.leftovers.isEmpty)
     #expect(result.spans.count == 2)
-    for (a, b) in zip(result.spans, result.spans.dropFirst()) {
-      #expect(!a.erase.insetBy(dx: 0.5, dy: 0.5).intersects(b.erase), "\(a.erase) 和 \(b.erase)")
-    }
-    for span in result.spans {
-      #expect(span.erase.minY >= 0 && span.erase.maxY <= 300)
-    }
+    Self.checkInvariants(result, [upper, lower], CGSize(width: 800, height: 300))
   }
 
   /// 两栏错开（右栏在左栏的右上方）：左栏用满右边的空白时不能压到右栏借下来的译文，右栏往下借时也不能压到左栏用过的空白；
@@ -499,11 +494,7 @@ struct ScreenshotOverlayTests {
       let result = ScreenshotOverlay.layout(
         segments: order, translations: translations, imageSize: CGSize(width: 1000, height: 400))
       #expect(result.leftovers.isEmpty)
-      for (i, a) in result.spans.enumerated() {
-        for b in result.spans.dropFirst(i + 1) {
-          #expect(!a.erase.insetBy(dx: 0.5, dy: 0.5).intersects(b.erase), "\(a.erase) 和 \(b.erase)")
-        }
-      }
+      Self.checkInvariants(result, order, CGSize(width: 1000, height: 400))
     }
   }
 
@@ -555,5 +546,184 @@ struct ScreenshotOverlayTests {
       ], translations: ["  \(english)\n"])
     #expect(outcome.image == nil)
     #expect(outcome.leftovers == [.init(source: chinese, translation: english)])
+  }
+
+  /// 窄栏里一个英文词都放不下：不按字母把词拆成两截（「Eleme / nt.」读不了），放不下就交给卡片
+  @Test func wordsAreNotSplitAcrossLines() {
+    let label = segment(
+      "验证", box: CGRect(x: 740, y: 400, width: 50, height: 30), lineHeight: 30)
+    let result = ScreenshotOverlay.layout(
+      segments: [label], translations: ["Verification"], imageSize: CGSize(width: 800, height: 600))
+    #expect(result.spans.isEmpty)
+    #expect(result.leftovers == [0])
+  }
+
+  /// 往外借的地方压着图标（识字框看不见它）：不排过去、不去字，图标原样留着，这段交给卡片
+  /// （2026-11-08 真截图探针：首页的应用图标被抹花、色点被擦掉）
+  @Test func renderLeavesIconsBesideTheTextAlone() async throws {
+    let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+    let context = try #require(
+      CGContext(
+        data: nil, width: 600, height: 64, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+    context.setFillColor(CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1))
+    context.fill(CGRect(x: 0, y: 0, width: 600, height: 64))
+    // 原文右边紧挨着的一个图标（落在译文放宽的那一截里）
+    context.setFillColor(CGColor(srgbRed: 0.2, green: 0.4, blue: 0.9, alpha: 1))
+    context.fill(CGRect(x: 230, y: 38, width: 30, height: 24))
+    let image = try #require(context.makeImage())
+    let outcome = await ScreenshotOverlay.render(
+      image,
+      segments: [
+        segment("一行原文", box: CGRect(x: 20, y: 40, width: 200, height: 20), lineHeight: 20)
+      ],
+      translations: ["The translated line is much longer than the original and wants more room"])
+    #expect(outcome.image == nil)
+    #expect(outcome.leftovers.count == 1)
+    // 用排得下的短译文再合成一次：图标那块原样
+    let short = try #require(
+      await ScreenshotOverlay.render(
+        image,
+        segments: [
+          segment("一行原文", box: CGRect(x: 20, y: 40, width: 200, height: 20), lineHeight: 20)
+        ],
+        translations: ["Short line"]
+      ).image)
+    let pixels = try Self.pixels(short)
+    #expect(pixels(245, 50) == (51, 102, 230), "\(pixels(245, 50))")
+  }
+
+  // MARK: 不变式（2026-11-08 独立复查：按方向筛障碍会漏掉跨过本段边的，随机版面里两段译文叠过 14 次）
+
+  /// 排出来的每段：译文占的地方在图里、互不相交、不碰别的段的原文；每段不是画了就是进了卡片
+  private static func checkInvariants(
+    _ result: (spans: [ScreenshotOverlay.Span], leftovers: [Int]),
+    _ segments: [ScreenshotOverlay.Segment], _ size: CGSize,
+    sourceLocation: SourceLocation = #_sourceLocation
+  ) {
+    let bounds = CGRect(origin: .zero, size: size).insetBy(dx: -0.5, dy: -0.5)
+    for (i, span) in result.spans.enumerated() {
+      #expect(bounds.contains(span.area), "\(span.area) 出了图", sourceLocation: sourceLocation)
+      let probe = span.area.insetBy(dx: 0.5, dy: 0.5)
+      for other in segments where other.box != span.source {
+        #expect(
+          !other.box.intersects(probe), "\(span.area) 压到了 \(other.box)",
+          sourceLocation: sourceLocation)
+      }
+      for later in result.spans.dropFirst(i + 1) {
+        #expect(
+          !later.area.intersects(probe), "\(span.area) 和 \(later.area) 叠在一起",
+          sourceLocation: sourceLocation)
+      }
+    }
+    #expect(
+      result.spans.count + result.leftovers.count == segments.count, sourceLocation: sourceLocation)
+  }
+
+  /// 独立复查复现过的两种叠字：栏缝只有 8 像素的两栏（右栏先排、往下借）；错开的阶梯（上一段用空白排、跨过了右下那段的顶边）
+  @Test func reviewerOverlapCasesStayApart() {
+    let long =
+      "Change the default value of the recognition element to off, and keep the original color for verification."
+    let narrow = [
+      segment("右栏", box: CGRect(x: 600, y: 250, width: 200, height: 30), lineHeight: 30),
+      segment("左栏", box: CGRect(x: 100, y: 150, width: 492, height: 30), lineHeight: 30),
+    ]
+    Self.checkInvariants(
+      ScreenshotOverlay.layout(
+        segments: narrow, translations: [long, long], imageSize: CGSize(width: 1000, height: 400),
+        pixelsPerPoint: 2), narrow, CGSize(width: 1000, height: 400))
+    let stairs = [
+      segment("上面一段", box: CGRect(x: 40, y: 200, width: 300, height: 30), lineHeight: 30),
+      segment("右下", box: CGRect(x: 360, y: 174, width: 120, height: 24), lineHeight: 24),
+      segment(
+        "再右边", box: CGRect(x: 490, y: 150, width: 300, height: 48), lineHeight: 24, lineCount: 2),
+      segment("下面", box: CGRect(x: 360, y: 120, width: 120, height: 24), lineHeight: 24),
+    ]
+    Self.checkInvariants(
+      ScreenshotOverlay.layout(
+        segments: stairs, translations: Array(repeating: long, count: 4),
+        imageSize: CGSize(width: 800, height: 260), pixelsPerPoint: 2), stairs,
+      CGSize(width: 800, height: 260))
+  }
+
+  /// 随机版面（种子固定）：几段不重叠的原文框、长短不一的英文译文、1x 和 Retina，排出来都守住不变式
+  @Test func randomLayoutsKeepTheInvariants() {
+    var random = SplitMix(seed: 2026_1108)
+    let words = "the quick brown fox jumps over lazy dog recognition element default value color"
+      .split(separator: " ").map(String.init)
+    for _ in 0..<400 {
+      let size = CGSize(
+        width: CGFloat(Int.random(in: 300...1400, using: &random)),
+        height: CGFloat(Int.random(in: 60...500, using: &random)))
+      var segments: [ScreenshotOverlay.Segment] = []
+      for _ in 0..<Int.random(in: 1...6, using: &random) {
+        let lineHeight = CGFloat(Int.random(in: 14...44, using: &random))
+        let lines = Int.random(in: 1...3, using: &random)
+        let height = lineHeight * CGFloat(lines)
+        let width = CGFloat(Int.random(in: 30...500, using: &random))
+        guard size.width > width + 2, size.height > height + 2 else { continue }
+        let box = CGRect(
+          x: CGFloat(Int.random(in: 1...Int(size.width - width - 1), using: &random)),
+          y: CGFloat(Int.random(in: 1...Int(size.height - height - 1), using: &random)),
+          width: width, height: height)
+        guard !segments.contains(where: { $0.box.insetBy(dx: -2, dy: -2).intersects(box) }) else {
+          continue
+        }
+        segments.append(segment("一段原文", box: box, lineHeight: lineHeight, lineCount: lines))
+      }
+      let translations = segments.map { _ in
+        (0..<Int.random(in: 1...24, using: &random)).map { _ in
+          words[Int.random(in: 0..<words.count, using: &random)]
+        }
+        .joined(separator: " ")
+      }
+      let pixelsPerPoint: CGFloat = Bool.random(using: &random) ? 2 : 1
+      let result = ScreenshotOverlay.layout(
+        segments: segments, translations: translations, imageSize: size,
+        pixelsPerPoint: pixelsPerPoint)
+      Self.checkInvariants(result, segments, size)
+      for span in result.spans {
+        // 字号：不小于 10 pt，除非原文本来就更小（基准不缩）
+        #expect(span.fontSize >= 10 * pixelsPerPoint - 0.01 || span.scale >= 0.999)
+      }
+    }
+  }
+
+  /// 图上留原文的段（这里是纯符号段）一个像素都不动：右上方贴着的一条，正好在左边那段放宽的译文上方、去字的边扩得到的地方
+  @Test func renderLeavesKeptParagraphsUntouched() async throws {
+    let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+    let context = try #require(
+      CGContext(
+        data: nil, width: 400, height: 80, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+    context.setFillColor(CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1))
+    context.fill(CGRect(x: 0, y: 0, width: 400, height: 80))
+    context.setFillColor(CGColor(srgbRed: 0.1, green: 0.1, blue: 0.1, alpha: 1))
+    context.fill(CGRect(x: 230, y: 62, width: 40, height: 10))
+    let image = try #require(context.makeImage())
+    let outcome = await ScreenshotOverlay.render(
+      image,
+      segments: [
+        segment("一行原文", box: CGRect(x: 20, y: 40, width: 200, height: 20), lineHeight: 20),
+        segment("★★★", box: CGRect(x: 230, y: 62, width: 40, height: 10), lineHeight: 10),
+      ], translations: ["The translated line is longer and wraps onto a second", "★★★"])
+    let composed = try #require(outcome.image)
+    let pixels = try Self.pixels(composed)
+    for (x, y) in [(232, 62), (250, 63), (268, 64), (250, 70)] {
+      #expect(pixels(x, y) == (26, 26, 26), "(\(x), \(y)) 是 \(pixels(x, y))")
+    }
+  }
+}
+
+/// 单测用的可重放随机数（SplitMix64）：同一个种子每次出同样的版面
+private struct SplitMix: RandomNumberGenerator {
+  var state: UInt64
+  init(seed: UInt64) { state = seed }
+  mutating func next() -> UInt64 {
+    state &+= 0x9E37_79B9_7F4A_7C15
+    var z = state
+    z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+    z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+    return z ^ (z >> 31)
   }
 }

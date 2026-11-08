@@ -1942,7 +1942,10 @@ final class SelectionView: NSView, NSTextViewDelegate {
       }
       refresh()
       showTranslationCard(result.leftovers)
-      flashHint([Self.translatedHint(leftovers: result.leftovers.count, drewAny: replaced != nil)])
+      let hint = Self.translatedHint(leftovers: result.leftovers.count, drewAny: replaced != nil)
+      flashHint([hint])
+      // 出了卡片读屏要知道（顶部提示只是看的）
+      if !result.leftovers.isEmpty { announce(hint) }
     }
   }
 

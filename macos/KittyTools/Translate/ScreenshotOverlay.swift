@@ -63,6 +63,10 @@ nonisolated enum ScreenshotOverlay {
     var source: CGRect
     /// 要去字的范围：里面只换掉字的像素（有代码块的段连代码块的底框一起换），底色留着
     var erase: CGRect
+    /// 用周围空白排的段（拍板 A2），译文那块另外去字（和原文不一定挨着，不并进 erase 的外接框）
+    var cover: CGRect? = nil
+    /// 译文实际占的地方（字、列表记号、重画的代码块）：段与段之间、和别的段的原文都不相交
+    var area: CGRect = .zero
     /// 正文排在哪：左边界和宽度（画的时候按这个宽度折行）；底边是最多往下长到哪（下一段之前）
     var frame: CGRect
     /// 第一行的基线、行距（基线到基线）：一般和原文第一行的基线齐平、行距照原文；
@@ -174,9 +178,12 @@ nonisolated enum ScreenshotOverlay {
 
   /// 每段用多大字号、画在哪：只算几何，不碰像素（基线、代码块在 render 里先量好放进 Segment）。
   /// pixelsPerPoint 是图里每点几个像素（Retina 屏 2），字号下限按点算。到下限也放不下的段不画、不去字，
-  /// 下标放进 leftovers（图上留原文，截图页把译文放进卡片）。纯函数，配单测
+  /// 下标放进 leftovers（图上留原文，截图页把译文放进卡片）。
+  /// isBlank(区域, 除去的框)：原图里这块（除去原文那块）是不是空的——往外借的地方要先问它（render 按像素答；
+  /// 纯几何的单测不给，当处处都空）。纯函数，配单测
   static func layout(
-    segments: [Segment], translations: [String], imageSize: CGSize, pixelsPerPoint: CGFloat = 1
+    segments: [Segment], translations: [String], imageSize: CGSize, pixelsPerPoint: CGFloat = 1,
+    isBlank: (CGRect, CGRect) -> Bool = { _, _ in true }
   ) -> (spans: [Span], leftovers: [Int]) {
     let body = bodyLineHeight(segments)
     let bodyPitch = bodyPitch(segments, body: body)
@@ -213,9 +220,10 @@ nonisolated enum ScreenshotOverlay {
       // 右边**整个在本段右边**、高度上有重叠的那一栏：放宽译文时要让出它的位置。只看左边界在不在本段右边界之外——
       // 原来是「左边界比本段的靠右」就算，段框是几行的并集、又高又宽，同一栏里下一段的段框（或者被拆开的半行）
       // 左边界只要缩进一点就被当成邻栏，宽度被截成二十几像素，字号一路缩到最小（2026-11-06）。
-      // 已经排好的段按它去字的范围算：它可能往下借了空白、借到了这段旁边（评审复现过两栏叠字，2026-11-08）
-      let placed = spans.map(\.erase)
-      let column = (others + placed).filter {
+      // 已经排好的段按它的译文实际占的地方算（它可能借了空白、排到了这段旁边；2026-11-08 评审复现过两栏叠字）
+      let placed = spans.map(\.area)
+      let obstacles = others + placed
+      let column = obstacles.filter {
         $0.minX >= box.maxX - 0.5 && overlaps($0, box, vertically: true)
       }
       .map(\.minX).min()
@@ -226,13 +234,16 @@ nonisolated enum ScreenshotOverlay {
         segment.inset > 0
         ? segment.inset : marker.map { textWidth($0 + " ", fontSize: nominal) } ?? 0
       let columnWidth = max(8, width - inset)
+      let left = box.minX + inset
 
       // 去字的范围：段框四边各往外扩一点，但不超过和那一边最近的另一段之间空隙的一半，别动到人家
       func pad(_ room: CGFloat?) -> CGFloat {
         max(1, min(segment.lineHeight * erasePad, (room ?? .infinity) / 2))
       }
-      let left = others.filter { $0.maxX <= box.minX + 0.5 && overlaps($0, box, vertically: true) }
-        .map { box.minX - $0.maxX }.min()
+      let leftGap = others.filter {
+        $0.maxX <= box.minX + 0.5 && overlaps($0, box, vertically: true)
+      }
+      .map { box.minX - $0.maxX }.min()
       let above = others.filter {
         $0.minY >= box.maxY - 0.5 && overlaps($0, box, vertically: false)
       }
@@ -241,43 +252,64 @@ nonisolated enum ScreenshotOverlay {
         $0.maxY <= box.minY + 0.5 && overlaps($0, box, vertically: false)
       }
       .map { box.minY - $0.maxY }.min()
-      let eraseMinX = box.minX - pad(left)
+      let eraseMinX = box.minX - pad(leftGap)
       let padRight = box.maxX + pad(column.map { $0 - box.maxX })
-      // 照原文的框排时，放宽出来的那截也要去字；用周围空白排的段在下面换成只盖原文框（译文那块另外并进来）
-      var eraseMaxX = max(padRight, box.minX + width)
 
       // 往下能长到哪：**这一整条**（比原文宽）下面、横向有重叠的段里最高的那个顶边，再留一点空；
-      // 下面没东西就到图片底边。横向范围要用放宽后的宽度，不然放宽的部分会压到下面那列的字。
-      // 已经排好的段按它去字的范围算：它可能用周围的空白排到了这段下面（拍板 A2）
-      let below = (others + placed).filter {
-        $0.maxY < box.maxY - 0.5 && $0.maxX > eraseMinX && $0.minX < eraseMaxX
+      // 下面没东西就到图片底边。横向范围要用放宽后的宽度，不然放宽的部分会压到下面那列的字
+      let below = obstacles.filter {
+        $0.maxY < box.maxY - 0.5 && $0.maxX > eraseMinX && $0.minX < box.minX + width
       }
       .map(\.maxY).max()
       let bottom: CGFloat = if let below { max(0, min(box.minY, below + gap)) } else { 0 }
 
       let originalBaseline = segment.baseline ?? box.maxY - segment.lineHeight * baselineDrop
       let floorSize = smallestFontSize(nominal: nominal, pixelsPerPoint: pixelsPerPoint)
+      // 译文实际占的地方（字、列表记号、重画的代码块）：照原文基线排的，顶边就是原文的顶边（字号按原文的行高定，
+      // 字面落在原文那一行里；不往上多算，挨得很紧的上一段、贴着图片顶边的段才不会被当成放不下）
+      func area(_ used: CGFloat, top: CGFloat? = nil, bottom: CGFloat) -> CGRect {
+        let x0 = marker == nil ? left : min(left, box.minX)
+        let top = top ?? box.maxY
+        return CGRect(x: x0, y: bottom, width: left + used - x0, height: top - bottom)
+      }
+      // 一个排法能不能用：译文占的地方不碰别的段的原文、不碰已经排好的段的译文（每个都查相交，不按方向筛——
+      // 跨过本段边的那种按方向筛会漏掉，2026-11-08 独立复查 3000 个随机版面里叠了 14 次）；伸出原文那块的地方，
+      // 原图里得是空的（只有底色、顶多一两条细线）：图标、色点、开关这些不是字，识字框看不见它们，排过去去字会把
+      // 它们擦掉、译文也压在上面（2026-11-08 真截图探针：首页的应用图标被抹花）
+      let own = box.insetBy(dx: -segment.lineHeight * erasePad, dy: -segment.lineHeight * erasePad)
+      func usable(_ rect: CGRect) -> Bool {
+        let probe = rect.insetBy(dx: 0.5, dy: 0.5)
+        return bounds.insetBy(dx: -0.5, dy: -0.5).contains(rect)
+          && !obstacles.contains { $0.intersects(probe) } && isBlank(rect, own)
+      }
+
       // 先照原文的基线排（缩到下限、往下借空白）；不行就用上这段周围的空白（拍板 A2）；还不行图上留原文（B1）
-      var frame = CGRect(
-        x: box.minX + inset, y: bottom, width: columnWidth,
-        height: max(box.height, box.maxY - bottom))
-      var baseline = originalBaseline
-      let fitted: (fontSize: CGFloat, pitch: CGFloat, textBottom: CGFloat)
-      // 用周围空白排时，译文实际占的那一块：去字的范围要盖到
-      var block: CGRect?
+      let placement:
+        (
+          fitted: (fontSize: CGFloat, pitch: CGFloat, textBottom: CGFloat), baseline: CGFloat,
+          frame: CGRect, area: CGRect, aligned: Bool
+        )
       if let aligned = fit(
         text, width: columnWidth, nominal: nominal, floor: floorSize, pitch: pitch,
         lineCount: segment.lineCount, baseline: originalBaseline, bottom: bottom, code: segment.code
-      ) {
-        fitted = aligned
+      ),
+        case let taken = area(
+          extent(text, width: columnWidth, fontSize: aligned.fontSize, code: segment.code),
+          bottom: aligned.textBottom),
+        usable(taken)
+      {
+        placement = (
+          aligned, originalBaseline,
+          CGRect(
+            x: left, y: bottom, width: columnWidth, height: max(box.height, box.maxY - bottom)),
+          taken, true
+        )
       } else {
-        // 用上这段周围的空白（拍板 A2）。拦路的：别的段的原文，和已经排好的段去字的范围（它可能用了空白）。
-        // 右边到邻栏：高度上和这段有重叠、整个在它右边的最近那个；上下到这一整条横向范围里最近的，没有就到图片边；
-        // 这段自己的框总是用得上（邻段挨得比 gap 还近时不扣成比自己还矮）。左边界不动（和原文的正文列对齐）
-        let blockers = others + placed
-        let left = box.minX + inset
+        // 用上这段周围的空白（拍板 A2）：右边到邻栏（或图片右边），上下到这一整条横向范围里最近的别的段、已经排好的段
+        // （没有就到图片边）；这段自己的框总是用得上（邻段挨得比 gap 还近时不扣成比自己还矮）。左边界不动（和原文的
+        // 正文列对齐）。这里只是先划个范围，用不用得上最后还要过 usable
         let right = (column ?? imageSize.width) - margin
-        let across = blockers.filter { $0.maxX > left && $0.minX < right }
+        let across = obstacles.filter { $0.maxX > left && $0.minX < right }
         let ceiling = max(
           box.maxY,
           across.filter { $0.minY >= box.maxY - 0.5 }.map(\.minY).min().map { $0 - gap }
@@ -286,47 +318,41 @@ nonisolated enum ScreenshotOverlay {
           box.minY,
           across.filter { $0.maxY <= box.minY + 0.5 }.map(\.maxY).max().map { $0 + gap } ?? margin)
         let room = right - left
-        let used: CGFloat
-        let blockTop: CGFloat
+        let frame = CGRect(x: left, y: ground, width: room, height: ceiling - ground)
         // 先在原文的基线上用满右边的空白（行距照原文，同样缩到下限、往下借），基线还对得上；
-        // 不行再整块居中、用上下的空白；还不行图上留原文（B1）
+        // 不行再整块居中、用上下的空白
         if let wide = fit(
           text, width: room, nominal: nominal, floor: floorSize, pitch: pitch,
           lineCount: segment.lineCount, baseline: originalBaseline, bottom: ground,
-          code: segment.code)
+          code: segment.code),
+          case let taken = area(
+            extent(text, width: room, fontSize: wide.fontSize, code: segment.code),
+            bottom: wide.textBottom),
+          usable(taken)
         {
-          fitted = wide
-          used = extent(text, width: room, fontSize: wide.fontSize, code: segment.code)
-          blockTop = box.maxY
+          placement = (wide, originalBaseline, frame, taken, false)
         } else if let blank = fitInBlank(
           text, width: room, nominal: nominal, floor: floorSize, top: ceiling, bottom: ground,
-          center: box.midY, code: segment.code)
+          center: box.midY, code: segment.code),
+          case let taken = area(blank.block.width, top: blank.block.maxY, bottom: blank.block.minY),
+          usable(taken)
         {
-          fitted = (blank.fontSize, blank.pitch, blank.block.minY)
-          baseline = blank.baseline
-          used = blank.block.width
-          blockTop = blank.block.maxY
+          placement = (
+            (blank.fontSize, blank.pitch, blank.block.minY), blank.baseline, frame, taken, false
+          )
         } else {
           leftovers.append(index)
           continue
         }
-        frame = CGRect(x: left, y: ground, width: room, height: ceiling - ground)
-        // 去字的范围是「原文框 + 一点边距」和「译文那块」的外接框：原文那部分不能再按放宽 1.25 倍的宽度算，
-        // 那截没让过右边的栏（已经排好的段也算），外接框会伸进去、把那一栏留着的原文擦掉
-        eraseMaxX = max(box.maxX, min(padRight, right + margin / 2))
-        // 译文占的那一块（记号画在原文段框左边，也要盖到）；右边只多盖半个边距，不碰到邻栏的字
-        block = CGRect(
-          x: box.minX, y: fitted.textBottom,
-          width: min(left + used + margin, right + margin / 2) - box.minX,
-          height: blockTop - fitted.textBottom)
       }
 
-      // 有代码块的段：去字的范围至少盖到量出来的代码块那么高、那么宽（第一行代码块的顶边、最后一行的底边、左右留白）。
-      // 只靠段框往外扩一点不够：两段挨得近时扩出去的量按空隙的一半算，代码块的顶边会留下一条细线（2026-11-06）
+      // 去字的范围（原文那块）：段框四边各扩一点。有代码块的段至少盖到量出来的代码块那么高、那么宽（第一行代码块的
+      // 顶边、最后一行的底边、左右留白）：只靠段框往外扩一点不够，两段挨得近时扩出去的量按空隙的一半算，代码块的顶边会
+      // 留下一条细线（2026-11-06）
       var top = box.maxY + pad(above)
       var floor = box.minY - pad(under)
       var minX = eraseMinX
-      var maxX = eraseMaxX
+      var maxX = padRight
       if let code = segment.code {
         // 原文代码块的位置按原文的基线、行距算（去的是原文的底框）
         let last = originalBaseline - CGFloat(max(0, segment.lineCount - 1)) * pitch
@@ -335,17 +361,25 @@ nonisolated enum ScreenshotOverlay {
         minX = min(minX, box.minX - code.padding - 2)
         maxX = max(maxX, box.maxX + code.padding + 2)
       }
-      // 去字的范围也要盖住译文多出来的行：那里可能压着别的笔画（比如分隔线），不去掉会和译文叠在一起
-      let eraseMinY = min(floor, max(bottom, fitted.textBottom))
-      var erase = CGRect(x: minX, y: eraseMinY, width: maxX - minX, height: top - eraseMinY)
-      if let block { erase = erase.union(block) }
+      var erase = CGRect(x: minX, y: floor, width: maxX - minX, height: top - floor)
+      // 照原文基线排的：译文伸出原文的那截（多出来的行、放宽的那截）和原文连成一块，一起去字——那里可能压着别的笔画
+      // （比如分隔线），不去掉会和译文叠在一起。用周围空白排的：译文那块和原文不一定挨着，另外去字（cover），
+      // 不并成一个外接框（外接框的角上可能压着别的东西）
+      var cover: CGRect?
+      let reach = placement.area.insetBy(dx: -margin / 2, dy: -margin / 2)
+      if placement.aligned {
+        erase = erase.union(reach)
+      } else {
+        cover = reach.intersection(bounds)
+      }
       erase = erase.intersection(bounds)
       guard erase.width > 1, erase.height > 1 else { continue }
       spans.append(
         Span(
-          text: text, marker: marker, source: box, erase: erase, frame: frame,
-          baseline: baseline, pitch: fitted.pitch, fontSize: fitted.fontSize,
-          scale: fitted.fontSize / max(1, nominal), lineHeight: segment.lineHeight,
+          text: text, marker: marker, source: box, erase: erase, cover: cover,
+          area: placement.area, frame: placement.frame, baseline: placement.baseline,
+          pitch: placement.fitted.pitch, fontSize: placement.fitted.fontSize,
+          scale: placement.fitted.fontSize / max(1, nominal), lineHeight: segment.lineHeight,
           code: segment.code))
     }
     return (spans, leftovers)
@@ -400,26 +434,28 @@ nonisolated enum ScreenshotOverlay {
 
   /// 照原文的基线排：从基准字号起，① 译文行数不多于原文、也没超出可用的高度，就用它；不然一档档缩，缩到 floor 为止；
   /// ② 到 floor 还多出行来，就用 floor 借下方的空白（行距不变，接着原文的行往下排）。
-  /// 返回字号、行距和最后一行字的底边（去字的范围要盖到那里）；借完还放不下 nil
+  /// 返回字号、行距和最后一行字的底边（去字的范围要盖到那里）；借完还放不下 nil。
+  /// 折行把一个英文词拆成两截（窄栏里一个词都放不下）也算这个字号放不下
   private static func fit(
     _ text: String, width: CGFloat, nominal: CGFloat, floor: CGFloat, pitch: CGFloat,
     lineCount: Int, baseline: CGFloat, bottom: CGFloat, code: Code?
   ) -> (fontSize: CGFloat, pitch: CGFloat, textBottom: CGFloat)? {
-    func textBottom(_ size: CGFloat) -> (lines: Int, bottom: CGFloat) {
-      let lines = lines(of: text, width: width, fontSize: size, color: nil, code: code).count
-      return (lines, baseline - CGFloat(max(0, lines - 1)) * pitch - descent(size, nominal, code))
+    func textBottom(_ size: CGFloat) -> (lines: Int, bottom: CGFloat, splits: Bool) {
+      let laid = lines(of: text, width: width, fontSize: size, color: nil, code: code)
+      let bottom = baseline - CGFloat(max(0, laid.count - 1)) * pitch - descent(size, nominal, code)
+      return (laid.count, bottom, splitsWord(text, laid))
     }
     var size = nominal
     while true {
       let measured = textBottom(size)
-      if measured.lines <= max(1, lineCount), measured.bottom >= bottom {
+      if measured.lines <= max(1, lineCount), measured.bottom >= bottom, !measured.splits {
         return (size, pitch, measured.bottom)
       }
       if size <= floor { break }
       size = max(floor, size * 0.92)
     }
     let borrowed = textBottom(size)
-    return borrowed.bottom >= bottom ? (size, pitch, borrowed.bottom) : nil
+    return borrowed.bottom >= bottom && !borrowed.splits ? (size, pitch, borrowed.bottom) : nil
   }
 
   /// 用周围的空白排（拍板 A2）：宽度给满，从基准字号起一档档缩到 floor，整块译文高度放得进 top…bottom 就用；
@@ -438,7 +474,7 @@ nonisolated enum ScreenshotOverlay {
       let ascent = max(CTFontGetAscent(font(size: size)), (code?.above ?? 0) * size / nominal)
       let below = descent(size, nominal, code)
       let height = ascent + CGFloat(max(0, laid.count - 1)) * pitch + below
-      if !laid.isEmpty, height <= top - bottom {
+      if !laid.isEmpty, height <= top - bottom, !splitsWord(text, laid) {
         let blockTop = min(top, max(bottom + height, center + height / 2))
         let used = extent(of: laid)
         return (
@@ -448,6 +484,23 @@ nonisolated enum ScreenshotOverlay {
       }
       if size <= floor { return nil }
       size = max(floor, size * 0.92)
+    }
+  }
+
+  /// 折行有没有把一个词拆成两截：一行的最后一个字和下一行的第一个字都是拉丁、希腊、西里尔字母或数字。
+  /// 有词断行时 CoreText 只在一个词比整行还宽时才按字母断（「Eleme / nt.」），这种排法读不了；
+  /// 中日韩的字按字断行是正常的，不算
+  static func splitsWord(_ text: String, _ laid: [(line: CTLine, x: CGFloat)]) -> Bool {
+    let string = text as NSString
+    func isWordCharacter(_ unit: unichar) -> Bool {
+      guard let scalar = Unicode.Scalar(unit), scalar.value < 0x2E80 else { return false }
+      return CharacterSet.alphanumerics.contains(scalar)
+    }
+    return laid.dropLast().contains { item in
+      let range = CTLineGetStringRange(item.line)
+      let end = range.location + range.length
+      return end > 0 && end < string.length && isWordCharacter(string.character(at: end - 1))
+        && isWordCharacter(string.character(at: end))
     }
   }
 
@@ -590,19 +643,31 @@ nonisolated enum ScreenshotOverlay {
     let size = CGSize(width: image.width, height: image.height)
     let (spans, skipped) = layout(
       segments: measured, translations: translations, imageSize: size,
-      pixelsPerPoint: pixelsPerPoint)
+      pixelsPerPoint: pixelsPerPoint
+    ) { area, own in
+      original.isBlank(area, except: own, background: original.ring(around: own) ?? .light)
+    }
     let leftovers = skipped.map {
       Leftover(
         source: segments[$0].text,
         translation: translations[$0].trimmingCharacters(in: .whitespacesAndNewlines))
     }
     guard !spans.isEmpty else { return Outcome(leftovers: leftovers) }
+    // 图上留原文的段（放不下的、纯符号的）一个像素都不动：别的段去字的范围扩出去的边、放宽的那截可能压到它们
+    // （2026-11-08 独立复查：以前每段都会重画，擦掉一点看不出来；现在它们留着原文，擦掉一条就看得见）
+    let kept = measured.map(\.box).filter { box in !spans.contains { $0.source == box } }
+      .map { $0.insetBy(dx: -1, dy: -1) }
     var colors: [RGB] = []
     for span in spans {
       let background = original.ring(around: span.erase) ?? .light
       let ink = pixels.inpaint(
         span.erase, from: original, lineHeight: span.lineHeight, background: background,
-        clearFills: span.code != nil)
+        sampling: span.source, protecting: kept, clearFills: span.code != nil)
+      if let cover = span.cover {
+        _ = pixels.inpaint(
+          cover, from: original, lineHeight: span.lineHeight, background: background,
+          sampling: .null, protecting: kept, clearFills: false)
+      }
       colors.append(textColor(ink: ink, background: background))
     }
     context.setShouldAntialias(true)
@@ -782,9 +847,11 @@ nonisolated enum ScreenshotOverlay {
     /// ② 和所在小块的底色差过 inkThreshold 的像素算字（clearFills 时和页面底色有一点不一样的也算：代码块的底框
     ///    要连字一起去掉，在新位置重画），再往外扩一两像素盖住抗锯齿的毛边；
     /// ③ 字的像素用同一行左右、同一列上下最近的非字像素插值补上——底色、渐变、边框都接得上，不会整块抹平。
-    /// 字色取页面底上（不在代码块里）的字：浓的那些像素里出现最多的颜色
+    /// 字色取页面底上（不在代码块里）、原文那块里（sampling）的字：浓的那些像素里出现最多的颜色。
+    /// protecting 里的（图上留原文的段）一个像素都不动
     func inpaint(
       _ rect: CGRect, from original: Snapshot, lineHeight: CGFloat, background: RGB,
+      sampling source: CGRect, protecting kept: [CGRect],
       clearFills: Bool
     ) -> RGB? {
       let x0 = max(0, Int(rect.minX.rounded(.down)))
@@ -805,14 +872,28 @@ nonisolated enum ScreenshotOverlay {
           let distance = color.distance(to: local)
           if distance > inkThreshold {
             ink[(y - y0) * w + (x - x0)] = true
-            if local.distance(to: background) < 0.06 { samples.append((distance, color)) }
+            // 字色只在原文那块里取：去字的范围可能伸到旁边的图标、色点上，取到它们的颜色译文就成了紫的、粉的
+            if local.distance(to: background) < 0.06, source.contains(CGPoint(x: x, y: y)) {
+              samples.append((distance, color))
+            }
           } else if clearFills, color.distance(to: background) > fillThreshold {
             ink[(y - y0) * w + (x - x0)] = true
           }
         }
       }
       let radius = max(1, Int((lineHeight * 0.06).rounded()))
-      let mask = Self.dilate(ink, width: w, height: h, radius: radius)
+      var mask = Self.dilate(ink, width: w, height: h, radius: radius)
+      // 留原文的段一个像素都不动（扩毛边扩进去的也撤掉）
+      for rect in kept {
+        let kx0 = max(x0, Int(rect.minX.rounded(.down)))
+        let kx1 = min(x1, Int(rect.maxX.rounded(.up)))
+        let ky0 = max(y0, Int(rect.minY.rounded(.down)))
+        let ky1 = min(y1, Int(rect.maxY.rounded(.up)))
+        guard kx1 > kx0, ky1 > ky0 else { continue }
+        for y in ky0..<ky1 {
+          for x in kx0..<kx1 { mask[(y - y0) * w + (x - x0)] = false }
+        }
+      }
       // ③ 插值补上：横着、竖着各补一遍，取平均
       var fills = [RGB?](repeating: nil, count: w * h)
       for y in 0..<h {
@@ -1122,6 +1203,25 @@ nonisolated enum ScreenshotOverlay {
       guard !chips.isEmpty, var style else { return nil }
       style.phrases = chips.map(\.words)
       return style
+    }
+
+    /// 原图里这块（除去 except）是不是空的：和底色差过 0.12 的像素不到 3%（一两条细分隔线、抗锯齿的毛边过得去，
+    /// 图标、色点、开关、别的字过不去）。隔一个像素取一个
+    func isBlank(_ area: CGRect, except: CGRect, background: RGB) -> Bool {
+      let x0 = max(0, Int(area.minX.rounded(.down)))
+      let x1 = min(width, Int(area.maxX.rounded(.up)))
+      let y0 = max(0, Int(area.minY.rounded(.down)))
+      let y1 = min(height, Int(area.maxY.rounded(.up)))
+      guard x1 > x0, y1 > y0 else { return true }
+      var total = 0
+      var inked = 0
+      for y in stride(from: y0, to: y1, by: 2) {
+        for x in stride(from: x0, to: x1, by: 2) where !except.contains(CGPoint(x: x, y: y)) {
+          total += 1
+          if color(x: x, y: y).distance(to: background) > 0.12 { inked += 1 }
+        }
+      }
+      return inked * 100 <= total * 3
     }
 
     /// 框外一圈的采样，出现最多的那种颜色：原文的底色。不用亮度中位数——列表第一行常常整行都是行内代码块，

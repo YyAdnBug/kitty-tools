@@ -173,7 +173,9 @@ private final class CardText: NSTextView {
   }
 
   override func mouseDown(with event: NSEvent) {
+    // 先让截图页收下输入中的标注、尺寸（收尺寸时它会把焦点要回遮罩），再把焦点拿回来
     onFocus()
+    window?.makeFirstResponder(self)
     super.mouseDown(with: event)
   }
 
