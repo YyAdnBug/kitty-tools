@@ -813,6 +813,7 @@ extension LauncherItem {
     case .prompt where target == ExchangeRates.promptTarget: "汇率"
     case .prompt where target.hasPrefix(ExchangeRates.suggestionPrefix): "货币"
     case .prompt where target.hasPrefix("reminder-"): "提醒"
+    case .prompt where target.hasPrefix(LauncherModel.choicePrefix): "选项"
     case .search, .prompt: "搜索"
     // 计算卡不显示副标题：汇率换算的副标题（「人民币 · 11-03 汇率」，ExchangeRates）写在这里，别的是空的
     case .calculation: subtitle.isEmpty ? "计算" : subtitle

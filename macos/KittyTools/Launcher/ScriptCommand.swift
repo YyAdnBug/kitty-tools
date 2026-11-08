@@ -40,6 +40,21 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
     var isOptional = false
     /// 交给脚本之前先做网址编码（社区写法 percentEncoded：直接拼进网址查询的那种，有空格、& 也不坏）
     var isPercentEncoded = false
+    /// 下拉参数的选项（社区写法 type: dropdown 的 data，第三轮 C1）：打到这个参数时列出来挑；交给脚本的是 value
+    var options: [Option] = []
+    /// 密码参数（type: password，第三轮 C3）：行上不回显、跑完清空搜索框、不记使用
+    var isSecret = false
+
+    struct Option: Hashable, Sendable {
+      var title: String
+      var value: String
+    }
+
+    /// 打的这个值对应的选项：标题（不分大小写）或 value 一样的
+    func option(for value: String) -> Option? {
+      let folded = LauncherMatch.fold(value)
+      return options.first { LauncherMatch.fold($0.title) == folded || $0.value == value }
+    }
   }
 
   /// 读不成一条命令的原因（设置页列出来）
@@ -251,10 +266,21 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
         let object = try? JSONSerialization.jsonObject(with: Data(value.utf8)) as? [String: Any]
       {
         let placeholder = (object["placeholder"] as? String) ?? "参数\(index)"
+        let type = object["type"] as? String
+        // 下拉的选项：title 给人看（没写就用 value），value 交给脚本；一个都没有的当普通文字
+        let options = (type == "dropdown" ? object["data"] as? [[String: Any]] : nil)?.compactMap {
+          item -> Argument.Option? in
+          guard let value = item["value"] as? String ?? (item["title"] as? String) else {
+            return nil
+          }
+          let title = (item["title"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? value
+          return Argument.Option(title: title, value: value)
+        }
         result.append(
           Argument(
             placeholder: placeholder, isOptional: object["optional"] as? Bool ?? false,
-            isPercentEncoded: object["percentEncoded"] as? Bool ?? false))
+            isPercentEncoded: object["percentEncoded"] as? Bool ?? false,
+            options: options ?? [], isSecret: type == "password"))
       } else {
         result.append(Argument(placeholder: value))
       }
@@ -284,12 +310,25 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
   /// 必填的参数有几个（排在可选的前面那几个）
   var requiredCount: Int { arguments.prefix { !$0.isOptional }.count }
 
+  /// 有密码参数（第三轮 C3）
+  var hasSecret: Bool { arguments.contains { $0.isSecret } }
+
+  /// 第一个填了、却不是可选值之一的下拉参数（第三轮 C1）；nil = 都对得上
+  func invalidChoice(_ values: [String]) -> Int? {
+    values.indices.first { index in
+      index < arguments.count && !arguments[index].options.isEmpty
+        && arguments[index].option(for: values[index]) == nil
+    }
+  }
+
   /// 「别名 空格 文字」/「标题 空格 文字」：后面的字交给这条脚本
   struct Invocation: Equatable, Sendable {
     let script: ScriptCommand
     /// 打的是哪个词（别名或标题，原样）：补全、提示里用
     let keyword: String
     let arguments: [String]
+    /// 正在打第几个参数（下拉参数这时列出选项，第三轮 C1）：最后一个字是空白的算下一个
+    var typing = 0
 
     /// 必填的没填够
     var isMissing: Bool { arguments.count < script.requiredCount }
@@ -311,10 +350,12 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
     }
     guard let best else { return nil }
     let typed = prefix(of: query, foldedLength: best.length)
-    let rest = query[typed.endIndex...].drop(while: \.isWhitespace)
+    let rest = String(query[typed.endIndex...].drop(while: \.isWhitespace))
+    let arguments = split(rest, into: best.script.arguments.count)
     return Invocation(
-      script: best.script, keyword: String(typed),
-      arguments: split(String(rest), into: best.script.arguments.count))
+      script: best.script, keyword: String(typed), arguments: arguments,
+      typing: rest.isEmpty || rest.last?.isWhitespace == true
+        ? arguments.count : arguments.count - 1)
   }
 
   /// 原样的输入里对上「折叠后 length 个字」的那一截：折叠会把 ß 变成 ss、ﬁ 变成 fi，不能拿折叠后的长度直接切原样的
@@ -331,23 +372,59 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
   static let unreserved = CharacterSet(
     charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
 
-  /// 真交给脚本的参数：声明了 percentEncoded 的先做网址编码（第三轮对标：社区脚本里有一百多个这么写，原来没认，
-  /// 带空格的参数拼出来的网址是坏的）
+  /// 真交给脚本的参数：下拉的换成选项的 value（第三轮 C1）；声明了 percentEncoded 的先做网址编码（第三轮对标：社区脚本里
+  /// 有一百多个这么写，原来没认，带空格的参数拼出来的网址是坏的）
   func passed(_ values: [String]) -> [String] {
     values.enumerated().map { index, value in
-      guard index < arguments.count, arguments[index].isPercentEncoded else { return value }
+      guard index < arguments.count else { return value }
+      let argument = arguments[index]
+      let value = argument.option(for: value)?.value ?? value
+      guard argument.isPercentEncoded else { return value }
       return value.addingPercentEncoding(withAllowedCharacters: Self.unreserved) ?? value
     }
   }
 
-  /// 按空白切成最多 count 段，最后一段拿剩下的全部（同社区写法）；没声明参数的列表脚本整段当一个；空的不算
+  /// 引号：英文的 "…"、中文的 “…”
+  static let quotes: [Character: Character] = ["\"": "\"", "“": "”"]
+
+  /// 按空白切成最多 count 段，最后一段拿剩下的全部（同社区写法）；没声明参数的列表脚本整段当一个；空的不算。
+  /// 不止一个参数时，引号括起来的算一段（第三轮 C2：「航班 "New York" London」），最后一段整个括着的去掉引号
   static func split(_ text: String, into count: Int) -> [String] {
     let trimmed = text.trimmingCharacters(in: .whitespaces)
     guard !trimmed.isEmpty else { return [] }
     guard count > 1 else { return [trimmed] }
-    return trimmed.split(maxSplits: count - 1, whereSeparator: \.isWhitespace).map {
-      $0.trimmingCharacters(in: .whitespaces)
+    var parts: [String] = []
+    var rest = trimmed[...]
+    while parts.count < count - 1, !rest.isEmpty {
+      if let open = rest.first, let close = quotes[open],
+        let end = rest.dropFirst().firstIndex(of: close)
+      {
+        parts.append(String(rest[rest.index(after: rest.startIndex)..<end]))
+        rest = rest[rest.index(after: end)...]
+      } else {
+        let end = rest.firstIndex(where: \.isWhitespace) ?? rest.endIndex
+        parts.append(String(rest[..<end]))
+        rest = rest[end...]
+      }
+      rest = rest.drop(while: \.isWhitespace)
     }
+    if !rest.isEmpty { parts.append(unquoted(String(rest))) }
+    return parts
+  }
+
+  /// 整个括在一对引号里的去掉引号（里面没有别的同样的引号）
+  static func unquoted(_ text: String) -> String {
+    guard text.count >= 2, let first = text.first, let close = quotes[first], text.last == close,
+      !text.dropFirst().dropLast().contains(close)
+    else { return text }
+    return String(text.dropFirst().dropLast())
+  }
+
+  /// 填进搜索框时：带空白的（或者开头是引号的）括上引号
+  static func quoted(_ text: String) -> String {
+    guard text.contains(where: \.isWhitespace) || text.first.map({ quotes[$0] != nil }) == true
+    else { return text }
+    return text.contains("\"") ? "“\(text)”" : "\"\(text)\""
   }
 
   // MARK: 列表（C2）

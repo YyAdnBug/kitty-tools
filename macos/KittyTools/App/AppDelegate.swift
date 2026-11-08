@@ -1511,12 +1511,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 启动器里的内置动作（id 见 LauncherItem.actions，体检 A26）；启动器已收起。和菜单栏走同一个 run
   private func runLauncherAction(_ id: String) {
     // 脚本命令的两条（第二轮 D2）
+    // 新建脚本：打开 设置 › 启动器，盖上新建的小表单（第三轮 D2，和设置里的按钮同一张）
     if id == LauncherItem.newScriptID {
-      guard let url = ScriptLibrary.newScriptAndEdit() else { return }
-      scriptLibrary.refresh()
-      island.show(
-        "已新建「\(url.lastPathComponent)」", detail: "改好开头几行保存，在启动器里输 hello 就能跑",
-        actions: [.reveal(url)])
+      showSettings(page: .launcher)
+      guard settingsNavigation.page == .launcher else { return }
+      settingsNavigation.path = []
+      settingsNavigation.showsNewScript = true
       return
     }
     if id == LauncherItem.scriptGuideID {

@@ -24,7 +24,7 @@ struct ScriptGuidePage: View {
     ),
     (
       "@kitty.argument1", "参数（最多 3 个）",
-      "写参数的名字，如「城市」；在启动器里输「关键词 空格 文字」，文字在 $1 里。可以不填的写成 `{\"placeholder\": \"城市\", \"optional\": true}`；要直接拼进网址的再加 `\"percentEncoded\": true`（先做网址编码）"
+      "写参数的名字，如「城市」；在启动器里输「关键词 空格 文字」，文字在 $1 里，带空格的用引号括起来（\"New York\"）。可以不填的写成 `{\"placeholder\": \"城市\", \"optional\": true}`；要直接拼进网址的再加 `\"percentEncoded\": true`（先做网址编码）；只能从几个里挑的写 `\"type\": \"dropdown\", \"data\": [{\"title\": \"耳机\", \"value\": \"headphones\"}]`（打到这里时列出来挑，交给脚本的是 value）；密码写 `\"type\": \"password\"`（行上不显示、跑完清空搜索框、不记进使用记录，但打的时候搜索框里看得见，别在有人看着时用）"
     ),
     ("@kitty.description", "副标题", "启动器里名字后面的那行小字"),
     (

@@ -176,7 +176,7 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
     }
   }
 
-  /// 脚本命令的两条内置动作（2026-11-07 第二轮 D2）：新建脚本（照模板、用编辑器打开）、复制给 AI 的写法说明；
+  /// 脚本命令的两条内置动作（2026-11-07 第二轮 D2）：新建脚本（第三轮 D2 起打开设置里那张小表单）、复制给 AI 的写法说明；
   /// 脚本命令关着时不列（LauncherModel.scriptsOn）
   static let newScriptID = "scripts-new"
   static let scriptGuideID = "scripts-ai-guide"

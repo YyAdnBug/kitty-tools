@@ -4775,7 +4775,18 @@ struct SnapshotProbeTests {
     // 列表结果写了 url / path、每条自己的图标（第三轮 B1 B2）
     var pulls = script("我的 PR", "pr", .symbol("arrow.triangle.pull"))
     pulls.mode = .list
-    let all = scripts + [weather, base64, json, upgrade, pulls]
+    // 下拉参数（第三轮 C1）
+    var output = script("切换声音输出", "out", .symbol("speaker.wave.2.fill"))
+    output.arguments = [
+      .init(
+        placeholder: "设备",
+        options: [
+          .init(title: "AirPods Pro", value: "airpods"),
+          .init(title: "Studio Display", value: "display"),
+          .init(title: "MacBook 扬声器", value: "builtin"),
+        ])
+    ]
+    let all = scripts + [weather, base64, json, upgrade, pulls, output]
     let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [])
     model.engines = { [] }
     model.boundHotKey = { $0.defaultHotKey }
@@ -4866,6 +4877,15 @@ struct SnapshotProbeTests {
         LauncherPanelView(model: model),
         size: NSSize(width: 720, height: LauncherPanelView.height(for: model)), dark: dark,
         to: "\(out)/launcher-scripts-links\(suffix).png")
+      model.query = "out "
+      try snapshot(
+        LauncherPanelView(model: model),
+        size: NSSize(width: 720, height: LauncherPanelView.height(for: model)), dark: dark,
+        to: "\(out)/launcher-scripts-choices\(suffix).png")
+      // 新建脚本的小表单（第三轮 D2）
+      try snapshot(
+        NewScriptSheet(created: { _ in }, cancel: {}), size: NSSize(width: 420, height: 330),
+        dark: dark, to: "\(out)/launcher-scripts-new\(suffix).png")
       model.query = "json "
       if let item = model.results.first { model.execute(item) }
       await model.scriptRun(json.path)

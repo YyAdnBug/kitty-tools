@@ -580,7 +580,12 @@ import UniformTypeIdentifiers
     ratesTask?.cancel()
     ratesTask = nil
     ratesFailed = false
-    if executed || query.isEmpty {
+    // 打着密码参数没跑就收起的也不留（第三轮 C3：60 秒内再呼出时还看得见）
+    let holdsSecret =
+      ScriptCommand.invocation(for: query, in: activeScripts, alias: scriptAlias).map {
+        $0.script.hasSecret && !$0.arguments.isEmpty
+      } ?? false
+    if executed || query.isEmpty || holdsSecret {
       keptAt = nil
       if !query.isEmpty { query = "" }
     } else {
@@ -995,6 +1000,8 @@ import UniformTypeIdentifiers
 
   /// 「提醒 …」认不出时那一行提示的目标（↩ 什么都不做，只响提示音）
   static let reminderHint = "reminder-hint"
+  /// 下拉参数的一个选项那一行（第三轮 C1）：目标是「前缀 脚本路径⏎第几个参数⏎第几个选项」
+  static let choicePrefix = "script-choice\n"
 
   /// 「fy 单词」：系统词典的第一条释义，到了再换副标题，不改行高（体检 D10；首查约 0.3 s）
   private func lookUpDefinition(_ text: String) {
@@ -1288,9 +1295,12 @@ import UniformTypeIdentifiers
         query = (scriptAlias(script) ?? script.title) + " "
         return
       }
-      guard arguments.count >= script.requiredCount else { return NSSound.beep() }
+      // 参数没填够、下拉参数填的不是选项（第三轮 C1）：只响提示音，副标题写着
+      guard arguments.count >= script.requiredCount, script.invalidChoice(arguments) == nil else {
+        return NSSound.beep()
+      }
       if let text = script.confirmation, !confirm(item, commandKey: false, text: text) { return }
-      usage.record(item, query: query)
+      record(script, item)
       start(script, arguments: arguments)
     case .scriptResult:
       // 这一次还在跑（显示的是上一次的、或者「正在运行…」）：等结果到了执行第一条
@@ -1317,10 +1327,23 @@ import UniformTypeIdentifiers
     row.arguments = invocation.arguments
     // 已经在传参数了：Tab 不补全（第三轮评审：补成「tq 」把打好的「北京」清掉了）
     row.completion = nil
+    // 正在打的是下拉参数、还没对上一个选项：选项排在前面，↩ / ⇥ 填进去（第三轮 C1）
+    let choices = choiceRows(invocation)
+    if !choices.isEmpty {
+      row.subtitle = "从下面选一个「\(script.arguments[invocation.typing].placeholder)」"
+      return choices + [row]
+    }
     if invocation.isMissing {
       let missing = script.arguments[invocation.arguments.count..<script.requiredCount]
       row.subtitle =
         "输入「\(invocation.keyword) 空格 \(missing.map(\.placeholder).joined(separator: " "))」"
+      return [row]
+    }
+    if let bad = script.invalidChoice(invocation.arguments) {
+      let argument = script.arguments[bad]
+      row.subtitle =
+        "「\(invocation.arguments[bad])」不是「\(argument.placeholder)」能选的："
+        + argument.options.map(\.title).joined(separator: " / ")
       return [row]
     }
     let downloaded = script.isDownloaded && !approvedScripts.contains(script.path)
@@ -1328,7 +1351,10 @@ import UniformTypeIdentifiers
       if downloaded {
         row.subtitle = "从网上下载的脚本，↩ 先看一眼"
       } else if !invocation.arguments.isEmpty {
-        row.subtitle = invocation.arguments.map { "「\($0)」" }.joined(separator: " ")
+        // 密码参数不回显（第三轮 C3）
+        row.subtitle = invocation.arguments.enumerated().map { index, value in
+          index < script.arguments.count && script.arguments[index].isSecret ? "•••" : "「\(value)」"
+        }.joined(separator: " ")
       }
       return [row]
     }
@@ -1345,6 +1371,34 @@ import UniformTypeIdentifiers
     pending.scriptIcon = script.icon
     pending.scriptIconDark = script.iconDark
     return [pending]
+  }
+
+  /// 下拉参数的选项（第三轮 C1）：正在打的那个参数有选项、打的还没对上某一个时，按打的字过滤（认拼音）；↩ / ⇥ 把它填进
+  /// 搜索框（带空白的括上引号，后面还有参数的接一个空格）。交给脚本的是选项的 value（ScriptCommand.passed）
+  private func choiceRows(_ invocation: ScriptCommand.Invocation) -> [LauncherItem] {
+    let script = invocation.script
+    let index = invocation.typing
+    guard index < script.arguments.count else { return [] }
+    let argument = script.arguments[index]
+    let typed = index < invocation.arguments.count ? invocation.arguments[index] : ""
+    guard !argument.options.isEmpty, argument.option(for: typed) == nil || typed.isEmpty else {
+      return []
+    }
+    let before = invocation.arguments.prefix(index).map(ScriptCommand.quoted)
+    let rows = argument.options.enumerated().map { number, option in
+      var row = Self.searchable(
+        LauncherItem(
+          kind: .prompt, target: Self.choicePrefix + script.path + "\n\(index)\n\(number)",
+          title: option.title, subtitle: ""))
+      row.subtitle = argument.placeholder
+      row.completion =
+        ([invocation.keyword] + before + [ScriptCommand.quoted(option.title)])
+        .joined(separator: " ") + (index + 1 < script.arguments.count ? " " : "")
+      row.scriptIcon = script.icon
+      row.scriptIconDark = script.iconDark
+      return row
+    }
+    return Self.filtered(rows, by: typed)
   }
 
   /// 列表脚本（C2）：停手 0.15 s 跑一遍，新的一跑就撤掉上一次；结果换掉这条脚本的那几行，下面的普通结果不动。
@@ -1493,6 +1547,14 @@ import UniformTypeIdentifiers
   }
 
   // MARK: 脚本命令
+
+  /// 记一次使用。有密码参数的（第三轮 C3）：查询里有密码，按关键词记，不把打的字存进使用记录；搜索框先清空（全文输出时
+  /// 启动器留着，不清就一直看得见）
+  private func record(_ script: ScriptCommand, _ item: LauncherItem) {
+    guard script.hasSecret else { return usage.record(item, query: query) }
+    usage.record(item, query: scriptAlias(script) ?? script.title)
+    query = ""
+  }
 
   /// 跑一条脚本（B1 B4）：先收起再跑，粘贴的目标在收起前定（焦点原本在自家便签里时直接粘进去）；
   /// 超过 1 秒还没完，岛上出「正在运行」带「停止」。同一个还在跑：不重复起，岛上说一声
@@ -1755,9 +1817,11 @@ import UniformTypeIdentifiers
       query = (scriptAlias(script) ?? script.title) + " "
       return
     }
-    guard arguments.count >= script.requiredCount else { return }
+    guard arguments.count >= script.requiredCount, script.invalidChoice(arguments) == nil else {
+      return
+    }
     if script.mode == .list { return search() }
-    usage.record(LauncherItem.script(script, alias: scriptAlias(script)), query: query)
+    record(script, LauncherItem.script(script, alias: scriptAlias(script)))
     start(script, arguments: arguments)
   }
 
@@ -1983,6 +2047,7 @@ import UniformTypeIdentifiers
     case .url: ("打开网址", "safari")
     case .search: ("搜索", "magnifyingglass")
     case .prompt where item.target == Self.reminderHint: ("改一下再建", "pencil")
+    case .prompt where item.target.hasPrefix(Self.choicePrefix): ("选这个", "text.cursor")
     case .prompt:
       item.target == FileSearch.accessTarget
         ? ("授权", "lock.open")
@@ -2014,9 +2079,10 @@ import UniformTypeIdentifiers
   /// ⌘↩ 做什么；没有就是 nil（网址没有第二个浏览器时也是 nil：副标题不写，按了只响提示音）
   /// 「关键词 空格」后参数没填够的那一行：↩ 只响提示音（底栏的 ↩ 不画成能按的主按钮）
   func isMissingArguments(_ item: LauncherItem) -> Bool {
-    item.kind == .script
-      && (item.arguments?.count ?? .max)
-        < (activeScripts.first { $0.path == item.target }?.requiredCount ?? 0)
+    guard item.kind == .script, let arguments = item.arguments,
+      let script = activeScripts.first(where: { $0.path == item.target })
+    else { return false }
+    return arguments.count < script.requiredCount || script.invalidChoice(arguments) != nil
   }
 
   func commandReturnAction(for item: LauncherItem) -> (title: String, symbol: String)? {

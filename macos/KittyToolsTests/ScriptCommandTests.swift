@@ -1681,3 +1681,136 @@ struct SubprocessStopTests {
     #expect(calls == [[], ["src/"]])
   }
 }
+
+/// 第三轮 C1–C3、D2：下拉 / 引号 / 密码参数，新建脚本的模板
+@MainActor struct ScriptArgumentRoundThreeTests {
+  private func model(_ script: ScriptCommand) throws -> LauncherModel {
+    let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [])
+    model.scripts = { [script] }
+    return model
+  }
+
+  @Test func quotedArguments() {
+    #expect(ScriptCommand.split(#""New York" London"#, into: 2) == ["New York", "London"])
+    #expect(ScriptCommand.split("“纽 约” 伦敦 东", into: 2) == ["纽 约", "伦敦 东"])
+    #expect(ScriptCommand.split(#"a "b c""#, into: 2) == ["a", "b c"])
+    #expect(ScriptCommand.split(#""a b" "c" d"#, into: 3) == ["a b", "c", "d"])
+    // 一个参数的照旧整段；没配上的引号当普通字
+    #expect(ScriptCommand.split(#""a b""#, into: 1) == [#""a b""#])
+    #expect(ScriptCommand.split(#""a b"#, into: 2) == [#""a"#, "b"])
+    #expect(ScriptCommand.quoted("New York") == #""New York""# && ScriptCommand.quoted("x") == "x")
+    #expect(ScriptCommand.quoted(#"say "hi" now"#) == #"“say "hi" now”"#)
+  }
+
+  @Test func parsesDropdownAndPassword() throws {
+    let text = #"""
+      #!/bin/sh
+      # @raycast.argument1 {"type": "dropdown", "placeholder": "设备", "data": [{"title": "耳机", "value": "headphones"}, {"title": "Studio Display", "value": "display"}]}
+      # @raycast.argument2 {"type": "password", "placeholder": "令牌"}
+      # @raycast.argument3 {"type": "dropdown", "placeholder": "空的", "data": []}
+      """#
+    let script = try #require(ScriptCommand.parse(text, path: "/s/out.sh")).get()
+    #expect(script.arguments[0].options.map(\.value) == ["headphones", "display"])
+    #expect(script.arguments[1].isSecret && script.hasSecret)
+    #expect(script.arguments[2].options.isEmpty)
+    #expect(script.passed(["studio display", "t0k", "x"]) == ["display", "t0k", "x"])
+    #expect(script.invalidChoice(["耳机", "t"]) == nil && script.invalidChoice(["音箱", "t"]) == 0)
+  }
+
+  @Test func dropdownOffersChoicesThenRuns() async throws {
+    var script = ScriptCommand(path: "/s/out.sh", title: "切换输出", interpreter: ["/bin/sh"])
+    script.keyword = "out"
+    script.arguments = [
+      .init(
+        placeholder: "设备",
+        options: [
+          .init(title: "耳机", value: "headphones"), .init(title: "Studio Display", value: "display"),
+        ]),
+      .init(placeholder: "音量", isOptional: true),
+    ]
+    let model = try model(script)
+    var passed: [[String]] = []
+    model.runScript = { script, arguments, _ in
+      passed.append(script.passed(arguments))
+      return .init(end: .finished(0))
+    }
+    model.query = "out "
+    // 选项排在前面，脚本那一行在后面写着要选
+    #expect(model.results.prefix(3).map(\.title) == ["耳机", "Studio Display", "切换输出"])
+    #expect(model.results[2].subtitle == "从下面选一个「设备」")
+    model.query = "out stu"
+    #expect(model.results.first?.title == "Studio Display")
+    model.execute(try #require(model.results.first))
+    #expect(model.query == #"out "Studio Display" "#)
+    model.query = #"out "Studio Display""#
+    let row = try #require(model.results.first)
+    #expect(row.kind == .script && row.arguments == ["Studio Display"])
+    model.execute(row)
+    await model.scriptRun(script.path)
+    #expect(passed == [["display"]])
+    // 不是选项的：只响提示音，副标题写能选什么
+    model.query = "out 音箱 5"
+    #expect(model.results.first?.subtitle == "「音箱」不是「设备」能选的：耳机 / Studio Display")
+    #expect(model.isMissingArguments(try #require(model.results.first)))
+  }
+
+  @Test func passwordIsMaskedClearedAndNotRecorded() async throws {
+    var script = ScriptCommand(path: "/s/tok.sh", title: "存令牌", interpreter: ["/bin/sh"])
+    script.keyword = "tok"
+    script.mode = .full
+    script.arguments = [.init(placeholder: "名字"), .init(placeholder: "令牌", isSecret: true)]
+    let model = try model(script)
+    model.runScript = { _, _, _ in .init(end: .finished(0), output: "ok\n") }
+    model.query = "tok github s3cret"
+    let row = try #require(model.results.first)
+    #expect(row.subtitle == "「github」 •••")
+    model.execute(row)
+    // 全文输出时启动器留着：搜索框已经清空，密码不留在上面
+    #expect(model.query.isEmpty && model.output?.isRunning == true)
+    await model.scriptRun(script.path)
+    #expect(model.usage.boost(for: row, query: "tok github s3cret").query == 0)
+    #expect(model.usage.boost(for: row, query: "tok").query > 0)
+    // 打着密码没跑就收起：不留到下次呼出
+    model.closeOutput()
+    model.query = "tok github s3cret"
+    model.didHide()
+    #expect(model.query.isEmpty)
+  }
+
+  @Test func templatesParseAndRun() async throws {
+    let folder = FileManager.default.temporaryDirectory.appending(path: "kitty-new-\(UUID())")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    for language in ScriptLibrary.Language.allCases {
+      for mode in ScriptCommand.Mode.allCases {
+        let text = ScriptLibrary.template(
+          title: "试试", keyword: "try", mode: mode, language: language)
+        let parsed = try #require(ScriptCommand.parse(text, path: "/s/try.sh")).get()
+        #expect(parsed.title == "试试" && parsed.keyword == "try" && parsed.mode == mode)
+        #expect(ScriptCommand.revealed(text).hasHidden == false)
+      }
+    }
+    // 自带解释器的三种真跑一遍：岛上那句、列表两条
+    for language in [ScriptLibrary.Language.zsh, .javascript, .applescript] {
+      for mode in [ScriptCommand.Mode.island, .list] {
+        let text = ScriptLibrary.template(title: "试试", keyword: nil, mode: mode, language: language)
+        let url = folder.appending(
+          path: "\(language.rawValue)-\(mode.rawValue).\(language.fileExtension)")
+        try text.write(to: url, atomically: true, encoding: .utf8)
+        let script = try #require(ScriptCommand.parse(text, path: url.path)).get()
+        let outcome = await ScriptRunner.run(script, arguments: [], path: "/usr/bin:/bin")
+        #expect(outcome.succeeded, "\(language) \(mode)：\(outcome.error)")
+        if mode == .list {
+          #expect(
+            ScriptCommand.lines(outcome.output).map(\.title) == ["第一条", "第二条"], "\(language)")
+        } else {
+          #expect(ScriptCommand.lastLine(outcome.output)?.hasPrefix("你好") == true, "\(language)")
+        }
+      }
+    }
+    #expect(ScriptLibrary.newFileName(title: "查/天气", keyword: nil, language: .python) == "查-天气.py")
+    #expect(
+      ScriptLibrary.newFileName(title: "x", keyword: "ip-v4", language: .javascript) == "ip-v4.js")
+    #expect(ScriptLibrary.newFileName(title: "..", keyword: "中文", language: .zsh) == "新脚本.sh")
+  }
+}

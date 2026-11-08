@@ -182,22 +182,99 @@ extension ScriptLibrary {
     return url
   }
 
-  /// 「新建脚本」的模板：开头几行写清楚每个字段怎么写，照着改就行
-  static let template = """
-    #!/bin/zsh
-    # @kitty.title 新脚本
-    # @kitty.keyword hello
-    # @kitty.mode island
-    # @kitty.description 这一行写它是做什么的
-    #
-    # mode：island 岛上显示最后一行、paste 粘贴、copy 复制、full 启动器里看全部输出、list 每行一条结果（标题⇥副标题）、none 不显示
-    # 要参数就加一行「# @kitty.argument1 城市」，在启动器里输入「hello 空格 北京」，「北京」在 $1 里
-    # 要先确认再跑就加一行「# @kitty.confirm 再按 ↩ 清空下载文件夹」
-    # 在启动器里出现的就是上面写的名字和关键词，保存后下次呼出启动器就能用
+  /// 新建脚本表单里「用什么写」（第三轮 D2）：#! 那一行、注释符号、扩展名
+  nonisolated enum Language: String, CaseIterable, Sendable {
+    case zsh, javascript, applescript, python
 
-    echo "你好，$(id -un)"
+    var title: String {
+      switch self {
+      case .zsh: "zsh"
+      case .javascript: "JavaScript"
+      case .applescript: "AppleScript"
+      case .python: "Python"
+      }
+    }
 
-    """
+    var shebang: String {
+      switch self {
+      case .zsh: "#!/bin/zsh"
+      case .javascript: "#!/usr/bin/osascript -l JavaScript"
+      case .applescript: "#!/usr/bin/osascript"
+      case .python: "#!/usr/bin/env python3"
+      }
+    }
+
+    var comment: String {
+      switch self {
+      case .zsh, .python: "#"
+      case .javascript: "//"
+      case .applescript: "--"
+      }
+    }
+
+    var fileExtension: String {
+      switch self {
+      case .zsh: "sh"
+      case .javascript: "js"
+      case .applescript: "applescript"
+      case .python: "py"
+      }
+    }
+  }
+
+  /// 新建脚本表单生成的文件（第三轮 D2）：#!、开头几行元数据、几行写法提示，和一段按选的语言、结果方式能直接跑的示例。纯函数，配单测
+  nonisolated static func template(
+    title: String, keyword: String?, mode: ScriptCommand.Mode, language: Language
+  ) -> String {
+    let c = language.comment
+    var lines = [language.shebang, "\(c) @kitty.title \(title)"]
+    if let keyword { lines.append("\(c) @kitty.keyword \(keyword)") }
+    lines += [
+      "\(c) @kitty.mode \(mode.rawValue)",
+      "\(c) @kitty.description 这一行写它是做什么的",
+      c,
+      "\(c) 要参数就加一行「\(c) @kitty.argument1 城市」，在启动器里输「关键词 空格 北京」，「北京」是第一个参数",
+      "\(c) 要先确认再跑就加一行「\(c) @kitty.confirm 再按 ↩ 运行」；别的字段看 设置 › 启动器「怎么写脚本」",
+    ]
+    if language == .python { lines.append("\(c) 要先装好 python3（终端里输 python3 --version 看看）") }
+    if mode == .list { lines.append("\(c) 每行一条结果：标题、一个 Tab、说明；↩ 粘贴选中那条的标题") }
+    return (lines + ["", sample(mode, language), ""]).joined(separator: "\n")
+  }
+
+  /// 能直接跑的示例：岛上 / 粘贴 / 复制 / 全文打一句话，列表列两条，不显示的放一声提示音
+  nonisolated static func sample(_ mode: ScriptCommand.Mode, _ language: Language) -> String {
+    switch (language, mode) {
+    case (.zsh, .list): "printf '%s\\t%s\\n' 第一条 说明一 第二条 说明二"
+    case (.zsh, .full): "print -r -- \"你好，$(id -un)\"\nsw_vers"
+    case (.zsh, .none): "afplay /System/Library/Sounds/Glass.aiff"
+    case (.zsh, _): "print -r -- \"你好，$(id -un)\""
+    case (.javascript, .list):
+      "function run(argv) {\n  return [\"第一条\\t说明一\", \"第二条\\t说明二\"].join(\"\\n\")\n}"
+    case (.javascript, .none):
+      "function run(argv) {\n  const app = Application.currentApplication()\n  app.includeStandardAdditions = true\n  app.beep()\n}"
+    case (.javascript, _): "function run(argv) {\n  return \"你好\"\n}"
+    case (.applescript, .list):
+      "on run argv\n  return \"第一条\" & tab & \"说明一\" & linefeed & \"第二条\" & tab & \"说明二\"\nend run"
+    case (.applescript, .none): "on run argv\n  beep\nend run"
+    case (.applescript, _): "on run argv\n  return \"你好\"\nend run"
+    case (.python, .list): "print(\"第一条\\t说明一\")\nprint(\"第二条\\t说明二\")"
+    case (.python, .none):
+      "import subprocess\n\nsubprocess.run([\"afplay\", \"/System/Library/Sounds/Glass.aiff\"])"
+    case (.python, _): "import getpass\n\nprint(f\"你好，{getpass.getuser()}\")"
+    }
+  }
+
+  /// 新建脚本的文件名：关键词（只留字母、数字、短横线、下划线），没写关键词用名字（去掉 / 和开头的点）；扩展名按语言
+  nonisolated static func newFileName(title: String, keyword: String?, language: Language)
+    -> String
+  {
+    let safe = (keyword ?? "").filter {
+      $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_")
+    }
+    var name = safe.isEmpty ? title.replacing("/", with: "-") : safe
+    while name.hasPrefix(".") { name.removeFirst() }
+    return (name.isEmpty ? "新脚本" : name) + "." + language.fileExtension
+  }
 
   /// 例子：查天气（带一个参数，岛上显示一行；说明页、没有自己的脚本时那一行「用例子新建」）
   nonisolated static let example = """
@@ -231,15 +308,16 @@ extension ScriptLibrary {
   /// 读完了、一个自己的脚本都没有（自带的不算）：设置里出「还没有自己的脚本」那一行
   var hasNoOwnScripts: Bool { isLoaded && !scripts.contains { !$0.isBundled } }
 
-  /// 新建一个脚本（模板），返回它的位置
-  static func newScript() -> URL? {
-    let url = freeURL(in: ensureDefaultFolder(), name: "新脚本.sh")
-    do {
-      try template.write(to: url, atomically: true, encoding: .utf8)
-      return url
-    } catch {
-      return nil
-    }
+  /// 新建一个脚本（表单填的），存进默认文件夹（重名加数字）、用编辑器打开；返回它的位置
+  static func newScript(
+    title: String, keyword: String?, mode: ScriptCommand.Mode, language: Language
+  ) -> URL? {
+    let name = newFileName(title: title, keyword: keyword, language: language)
+    let url = freeURL(in: ensureDefaultFolder(), name: name)
+    let text = template(title: title, keyword: keyword, mode: mode, language: language)
+    guard (try? text.write(to: url, atomically: true, encoding: .utf8)) != nil else { return nil }
+    edit(url.path(percentEncoded: false))
+    return url
   }
 
   /// 剪贴板里的一段文字是不是一个脚本（AI 给回来的）：去掉两头空白和 Markdown 代码块的 ``` 围栏，第一行是 #! 才算。
@@ -269,13 +347,6 @@ extension ScriptLibrary {
   static func save(_ data: Data, name: String) -> URL? {
     let url = freeURL(in: ensureDefaultFolder(), name: name)
     return (try? data.write(to: url, options: .atomic)) == nil ? nil : url
-  }
-
-  /// 「新建脚本」：照模板建一个、用编辑器打开（设置里的按钮、启动器里的命令同一个）
-  static func newScriptAndEdit() -> URL? {
-    guard let url = newScript() else { return nil }
-    edit(url.path(percentEncoded: false))
-    return url
   }
 
   /// 自带的复制一份到默认文件夹（去掉 script- 前缀），用编辑器打开；返回复制出来的位置
