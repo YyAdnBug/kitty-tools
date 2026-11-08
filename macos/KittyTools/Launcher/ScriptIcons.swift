@@ -6,7 +6,8 @@
 // 读不出来、下不下来的记下原因（「命令和别名」那一行写橙字），这次运行里不再试。画图标的 ScriptIconView 也在这里（启动器的行、
 // 设置的表共用）：emoji 直接画、SF 符号放进命令家族紫的色块、图片读到了换上，深色主题有 iconDark 的用它。
 // 列表脚本的结果另有某个文件在访达里的图标（第三轮 B1 B2，.file）：主线程外取、画成小图。
-// ponytail: 缓存不清理（图标少、每张不过 1 MB）；真攒多了再按最近用到的删。文件图标例外：一列一列地换，超过 300 张整批忘掉重取。
+// 文件图标一张一张地取（第 2 批评审：断了的网络盘上取一张要卡到超时，并排取会占满共用的线程，别的后台活都停）。
+// 图片和文件图标（列表的每一行都可能有自己的）只记最近的 recentLimit 张，多了忘掉最早的（再要时重读）；网址图标不忘（有磁盘缓存）。
 
 import AppKit
 import CryptoKit
@@ -18,9 +19,11 @@ import SwiftUI
   private(set) var images: [String: NSImage] = [:]
   private(set) var failures: [String: String] = [:]
   @ObservationIgnored private var requested: Set<String> = []
-  /// 取过的文件图标（按先后）：超过 fileLimit 就整批忘掉
-  @ObservationIgnored private var fileKeys: [String] = []
-  nonisolated static let fileLimit = 300
+  /// 图片、文件图标按要的先后：超过 recentLimit 忘掉最早的
+  @ObservationIgnored private var recentKeys: [String] = []
+  nonisolated static let recentLimit = 300
+  /// 文件图标排着队一张一张取
+  @ObservationIgnored private var fileQueue: Task<Void, Never>?
 
   nonisolated static let localLimit = 2 << 20
   nonisolated static let remoteLimit = 1 << 20
@@ -72,6 +75,7 @@ import SwiftUI
 
   private func load(_ icon: ScriptCommand.Icon, key: String) {
     guard requested.insert(key).inserted else { return }
+    if case .remote = icon {} else { recentKeys.append(key) }
     if case .file(let path) = icon { return loadFile(path, key: key) }
     Task {
       let result: Result<Data, Failure> =
@@ -82,32 +86,37 @@ import SwiftUI
         }
       switch result {
       case .success(let data):
-        if let image = await Self.thumbnail(data) {
-          images[key] = NSImage(cgImage: image, size: .zero)
-        } else {
-          failures[key] = Failure.notImage.text
-        }
-      case .failure(let failure): failures[key] = failure.text
+        let image = await Self.thumbnail(data)
+        settle(key, image, failure: Failure.notImage)
+      case .failure(let failure): settle(key, nil, failure: failure)
       }
     }
   }
 
-  private func loadFile(_ path: String, key: String) {
-    fileKeys.append(key)
-    if fileKeys.count > Self.fileLimit {
-      for old in fileKeys.dropLast() {
-        images[old] = nil
-        failures[old] = nil
-        requested.remove(old)
-      }
-      fileKeys = [key]
+  /// 读到了（或者读不成）：放进去，再把多出来的最早几张忘掉。已经被忘掉的不放（读的时候正好被挤出去了，再要会重读）。
+  /// 都在 Task 里改，不在画图标时改
+  private func settle(_ key: String, _ image: CGImage?, failure: Failure) {
+    guard requested.contains(key) else { return }
+    if let image {
+      images[key] = NSImage(cgImage: image, size: .zero)
+    } else {
+      failures[key] = failure.text
     }
-    Task {
-      if let image = await Self.fileIcon(path) {
-        images[key] = NSImage(cgImage: image, size: .zero)
-      } else {
-        failures[key] = Failure.missing((path as NSString).lastPathComponent).text
-      }
+    guard recentKeys.count > Self.recentLimit else { return }
+    for old in recentKeys.prefix(recentKeys.count - Self.recentLimit) {
+      images[old] = nil
+      failures[old] = nil
+      requested.remove(old)
+    }
+    recentKeys.removeFirst(recentKeys.count - Self.recentLimit)
+  }
+
+  private func loadFile(_ path: String, key: String) {
+    let previous = fileQueue
+    fileQueue = Task {
+      await previous?.value
+      let image = await Self.fileIcon(path)
+      settle(key, image, failure: .missing((path as NSString).lastPathComponent))
     }
   }
 

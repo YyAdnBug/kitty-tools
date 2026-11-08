@@ -1814,3 +1814,97 @@ struct SubprocessStopTests {
     #expect(ScriptLibrary.newFileName(title: "..", keyword: "中文", language: .zsh) == "新脚本.sh")
   }
 }
+
+/// 第 2 批评审：自己过滤的列表脚本的结果晚到、跑失败，不打扰别的查询和别的脚本
+@MainActor struct ScriptFilterRaceTests {
+  private func filterScript(_ keyword: String, path: String) -> ScriptCommand {
+    var script = ScriptCommand(path: path, title: "项目", interpreter: ["/bin/sh"])
+    script.keyword = keyword
+    script.mode = .list
+    script.filters = true
+    return script
+  }
+
+  @Test func lateFilterResultLeavesOtherQueriesAlone() async throws {
+    let slow = filterScript("pj", path: "/s/pj.sh")
+    var other = ScriptCommand(path: "/s/b64.sh", title: "编码", interpreter: ["/bin/sh"])
+    other.keyword = "b64"
+    other.mode = .list
+    let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [])
+    model.scripts = { [slow, other] }
+    var hold: CheckedContinuation<Void, Never>?
+    var otherRuns = 0
+    model.runScript = { script, _, _ in
+      if script.path == slow.path {
+        await withCheckedContinuation { hold = $0 }
+        return .init(end: .finished(0), output: "猫咪\n")
+      }
+      otherRuns += 1
+      return .init(end: .finished(0), output: "a\nb\nc\n")
+    }
+    model.query = "pj "
+    for _ in 0..<40 where hold == nil { await Task.yield() }
+    model.query = "b64 x"
+    // listRun 也等那条还压着的过滤脚本：这里只等另一条的结果出来
+    for _ in 0..<300 where model.results.first?.title != "a" {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(model.results.prefix(3).map(\.title) == ["a", "b", "c"])
+    model.selection = 2
+    hold?.resume()
+    await model.listRun()
+    for _ in 0..<20 { await Task.yield() }
+    // 晚到的过滤结果不重搜：选中还在第三行，另一条列表脚本没被重跑
+    #expect(model.selection == 2 && otherRuns == 1)
+    // 结果记下了：再打回来不用再跑
+    model.query = "pj 猫"
+    #expect(model.results.first?.title == "猫咪")
+  }
+
+  @Test func failedFilterGivesWayAndRetries() async throws {
+    let time = filterScript("time", path: "/s/time.sh")
+    let app = LauncherItem(
+      kind: .app, target: "/System/Applications/Time Machine.app", title: "Time Machine",
+      subtitle: "", names: [LauncherMatch.fold("Time Machine")])
+    let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [app])
+    model.scripts = { [time] }
+    var runs = 0
+    model.runScript = { _, _, _ in
+      runs += 1
+      return .init(end: .timedOut)
+    }
+    model.query = "time machine"
+    await model.listRun()
+    // 下面有别的结果：不留那行错误（↩ 打开时间机器，不是响提示音）
+    #expect(model.results.first?.title == "Time Machine")
+    // 接着打不重跑（这次呼出里记着没跑成）
+    model.query = "time mach"
+    #expect(runs == 1)
+    // 离开这条脚本再打回来：重跑一次
+    model.query = "t"
+    model.query = "time "
+    await model.listRun()
+    #expect(runs == 2)
+  }
+
+  @Test func openTargetsParseFromLooseInput() {
+    let json = """
+      {"items": [
+        {"title": "a", "url": "/tmp/a.txt"},
+        {"title": "b", "url": "file:~/b"},
+        {"title": "c", "type": "file", "path": "", "arg": "/tmp/c"},
+        {"title": "d", "url": "github.com"},
+        {"title": "e", "url": "https://x.y", "valid": false}
+      ]}
+      """
+    let lines = ScriptCommand.lines(json, folder: "/s")
+    #expect(lines[0].opens == .file("/tmp/a.txt"))
+    #expect(lines[1].opens == .file(NSHomeDirectory() + "/b"))
+    #expect(lines[2].opens == .file("/tmp/c"))
+    #expect(lines[3].opens == nil)
+    let script = ScriptCommand(path: "/s/l.sh", title: "列表", interpreter: ["/bin/sh"])
+    let rows = LauncherModel.resultRows(.init(end: .finished(0), output: json), of: script)
+    // 不能选的不当能打开的
+    #expect(rows[4].opens == nil && rows[4].payload == nil)
+  }
+}

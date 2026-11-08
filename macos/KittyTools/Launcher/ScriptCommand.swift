@@ -501,15 +501,19 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
     }
   }
 
-  /// 一条结果打开什么：url（有协议的；file: 当文件）> path > 社区写法 type 是 file 的 arg
+  /// 一条结果打开什么：url（有协议的；file: 和写成 / 或 ~ 开头的当文件）> path > 社区写法 type 是 file 的 arg。
+  /// 什么协议都交给系统（同 Alfred 的打开网址：raycast://、obsidian:// 这类也要能开），要 ↩ 才打开
   static func opens(_ item: [String: Any], arg: String?, folder: String) -> Line.Opens? {
-    if let text = item["url"] as? String, let url = URL(string: text),
-      let scheme = url.scheme, !scheme.isEmpty
-    {
-      return url.isFileURL ? .file(url.path) : .url(url)
+    if let text = (item["url"] as? String)?.trimmingCharacters(in: .whitespaces), !text.isEmpty {
+      if text.hasPrefix("/") || text.hasPrefix("~") { return .file(absolute(text, folder: folder)) }
+      if let url = URL(string: text), let scheme = url.scheme, !scheme.isEmpty {
+        return url.isFileURL ? .file(absolute(url.path, folder: folder)) : .url(url)
+      }
     }
     let type = item["type"] as? String
-    let path = item["path"] as? String ?? (type?.hasPrefix("file") == true ? arg : nil)
+    let path =
+      (item["path"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+      ?? (type?.hasPrefix("file") == true ? arg : nil)
     guard let path, !path.isEmpty else { return nil }
     return .file(absolute(path, folder: folder))
   }

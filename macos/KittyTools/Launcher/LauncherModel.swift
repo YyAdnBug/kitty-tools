@@ -283,8 +283,17 @@ import UniformTypeIdentifiers
   /// 收起时清掉；正在跑的那一次不跟着打字撤掉（打字只是过滤）
   @ObservationIgnored private var filterRows: [String: (rows: [LauncherItem], failed: Bool)] = [:]
   @ObservationIgnored private var filterTask: (path: String, task: Task<Void, Never>)?
-  /// 列表脚本的结果还没到（看得见的是上一次的、或者「正在运行…」）
-  private var listPending: Bool { listTask != nil || filterTask != nil }
+  /// 正在跑的那条普通列表脚本（listTask 的）
+  @ObservationIgnored private var listPath: String?
+
+  /// 这一行是不是还在等结果的那条列表脚本的（看得见的是上一次的、或者「正在运行…」）。按脚本分：一条在跑不挡别的脚本的行
+  /// （第 2 批评审）
+  private func isPending(_ item: LauncherItem) -> Bool {
+    guard item.kind == .scriptResult else { return false }
+    return [listTask == nil ? nil : listPath, filterTask?.path].contains {
+      $0.map { item.target.hasPrefix($0 + "\n") } ?? false
+    }
+  }
   /// 列表结果到之前按了 ↩：到了就执行第一条（打字、收起就作罢）
   @ObservationIgnored private var runsWhenListed = false
   static let listDelay = Duration.milliseconds(150)
@@ -672,7 +681,12 @@ import UniformTypeIdentifiers
     let trusted = invocation.map {
       !$0.script.isDownloaded || approvedScripts.contains($0.script.path)
     }
-    let leading = trusted == false ? [] : invocationRows
+    // 自己过滤的没跑成、下面又有别的结果：不留那行错误（同普通列表）；不再打这条脚本时忘掉没跑成的，再打到它重跑一次
+    let filterFailed = invocation.map { filterRows[$0.script.path]?.failed == true } ?? false
+    for (path, cached) in filterRows where cached.failed && path != invocation?.script.path {
+      filterRows[path] = nil
+    }
+    var leading = trusted == false ? [] : invocationRows
     let trailing = trusted == false ? invocationRows : []
     let query = query.trimmingCharacters(in: .whitespaces)
     let typed = command.trimmingCharacters(in: .whitespaces)
@@ -748,6 +762,10 @@ import UniformTypeIdentifiers
     // 直达项和书签 / 用过的网址可能是同一项：按 id 去重，保留靠前的
     var seen = Set<String>()
     let ordered = Self.promoting(local, over: top) { usage.boost(for: $0, query: query).query > 0 }
+    if filterFailed, (aliased + ordered).contains(where: { ![.search, .prompt].contains($0.kind) })
+    {
+      leading = []
+    }
     results = (leading + aliased + ordered + trailing + tx + history + partialPrompts + fallback)
       .filter { seen.insert($0.id).inserted }
     if let invocation { startList(invocation) }
@@ -1304,7 +1322,7 @@ import UniformTypeIdentifiers
       start(script, arguments: arguments)
     case .scriptResult:
       // 这一次还在跑（显示的是上一次的、或者「正在运行…」）：等结果到了执行第一条
-      if listPending {
+      if isPending(item) {
         runsWhenListed = true
         return
       }
@@ -1410,6 +1428,7 @@ import UniformTypeIdentifiers
     else { return }
     if script.filters { return startFilter(invocation) }
     let key = query
+    listPath = script.path
     listTask = Task { [weak self] in
       try? await Task.sleep(for: Self.listDelay)
       guard let self, !Task.isCancelled else { return }
@@ -1452,8 +1471,19 @@ import UniformTypeIdentifiers
       let rows = Self.resultRows(outcome, of: quick, keyword: invocation.keyword)
       let failed = Self.failure(outcome, of: quick) != nil
       filterRows[script.path] = (failed ? rows : rows.map(Self.searchable), failed)
+      // 现在打的已经不是在用这条脚本了：结果先记着，不动眼前的列表（第 2 批评审：选中跳回第一行、上膛被撤、
+      // 别的列表脚本被重跑）
+      guard
+        ScriptCommand.invocation(for: query, in: activeScripts, alias: scriptAlias)?.script.path
+          == script.path
+      else { return }
       let runs = runsWhenListed
+      let selected = userMovedSelection ? selectedItem?.id : nil
       search()
+      if let selected, let index = results.firstIndex(where: { $0.id == selected }) {
+        selection = index
+        userMovedSelection = true
+      }
       emptyText = "「\(script.title)」没有给出结果"
       if runs, let first = results.first, first.isResult(of: script) { execute(first) }
     }
@@ -1507,7 +1537,8 @@ import UniformTypeIdentifiers
     return ScriptCommand.lines(outcome.output, folder: script.folder).enumerated().map {
       index, line in
       var item = row(index, line.title, line.subtitle, line.isValid ? line.value : nil)
-      item.opens = line.opens
+      // 不能选的不写「网址」「文件」、不当能打开的（↩ 只响提示音）
+      item.opens = line.isValid ? line.opens : nil
       item.copyText = line.copyText
       // 这一条自己的图标；没写、是文件的用它在访达里的图标（同启动器里的文件行）
       if let icon = line.icon
@@ -2578,7 +2609,7 @@ import UniformTypeIdentifiers
     default:
       guard let digit = Self.digitKeys.firstIndex(of: Int(event.keyCode)) else { return false }
       // 列表脚本正在重跑时的结果行：⌘N 会落到新结果的第一条上，不执行
-      if digit < results.count, results[digit].kind != .scriptResult || !listPending {
+      if digit < results.count, !isPending(results[digit]) {
         execute(results[digit])
       } else if digit < results.count {
         NSSound.beep()
@@ -2610,6 +2641,7 @@ import UniformTypeIdentifiers
       NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: item.target)])
     case .scriptResult where item.payload != nil:
       // 文件结果在访达中显示（同文件行）；别的只复制 ↩ 会打开 / 粘贴的那个（text.copy 归 ⌘C）
+      if isPending(item) { return NSSound.beep() }
       guard case .file(let path) = item.opens else {
         var plain = item
         plain.copyText = nil
@@ -2644,7 +2676,7 @@ import UniformTypeIdentifiers
   /// 复制了什么；这些是本 App 给出的新文字，同时记进剪贴板历史（mac-native §5）
   func copy(_ item: LauncherItem, _ format: CopyFormat = .value) {
     // 列表脚本正在按新输入重跑：看得见的是上一次的结果，不拷它（同 ↩ 等结果的那一处，第三轮评审）
-    if item.kind == .scriptResult, listPending { return NSSound.beep() }
+    if isPending(item) { return NSSound.beep() }
     rememberCurrencies(item)
     let text: String
     let title: String?
