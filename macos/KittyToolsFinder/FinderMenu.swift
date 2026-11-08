@@ -15,8 +15,9 @@
 // 交给访达的图一律先画成 16 pt 的 1x / 2x 小位图、按名字缓存（icon）：
 // NSWorkspace 给的文件 / App 图标带着 32 种尺寸，菜单项跨进程交给访达时整个编过去——一个 App 图标 72 MB、一个文件夹图标 36 MB，
 // 编一次 20–90 ms（2026-11-08 实测，右键菜单出来慢的根源）；小位图约 10 KB。扩展一起来就把菜单搭一遍（warmUp），
-// 符号字体、App 的位置这些第一次要几十毫秒的先备好。拷贝路径、新建文件是自己画的（icons/finder/，
-// swift icons/build-icons.swift finder 生成到本 target 的 Assets.xcassets），线宽照 SF Symbols 常规粗细；另两项用系统符号。
+// 符号字体、App 的位置这些第一次要几十毫秒的先备好。我们自己的每一项都是彩色方块里一个白色符号（tile，
+// 2026-11-08 用户在三种样子里选的；颜色按类分，见 Tint），「在“X”中打开」、常用文件夹、新建文件的类型用它们自己的图标。
+// 拷贝路径、新建文件的符号是自己画的（icons/finder/，swift icons/build-icons.swift finder 生成到本 target 的 Assets.xcassets）。
 // 看所有位置（directoryURLs 设成根目录）；iCloud 云盘、网盘这类文件提供程序管的文件夹里系统不给扩展菜单。
 // 要用户在 系统设置 › 通用 › 登录项与扩展 里打开它（App 设置 › 访达右键 有「去打开…」）。
 // ponytail: 这个 target 用 Swift 5 语言模式（Config/Finder.xcconfig），FinderSync 加上并发标注后改回 6。
@@ -246,19 +247,22 @@ final class FinderMenu: FIFinderSync {
     if !items, Self.shows("finderMenuNewFile", default: true) {
       let new = menu.addItem(withTitle: "新建文件", action: nil, keyEquivalent: "")
       new.submenu = Self.newFileMenu()
-      new.image = Self.icon("kitty.finder.new.file") { Self.drawn("kitty.finder.new.file") }
+      new.image = Self.tile("kitty.finder.new.file", custom: true, color: Tint.create)
     }
     if !items, Self.shows("finderMenuCut", default: true), Self.cutCount > 0 {
-      Self.add("粘贴 \(Self.cutCount) 项", #selector(paste(_:)), symbol: "doc.on.clipboard", to: menu)
+      Self.add(
+        "粘贴 \(Self.cutCount) 项", #selector(paste(_:)), symbol: "doc.on.clipboard.fill",
+        color: Tint.organize, to: menu)
     }
     if Self.shows("finderMenuCopyPath", default: true) {
       let copy = menu.addItem(
         withTitle: "拷贝路径", action: #selector(copyPath(_:)), keyEquivalent: "")
       copy.tag = container
-      copy.image = Self.icon("kitty.finder.copy.path") { Self.drawn("kitty.finder.copy.path") }
+      copy.image = Self.tile("kitty.finder.copy.path", custom: true, color: Tint.copy)
     }
     if items, Self.shows("finderMenuCopyName", default: true) {
-      Self.add("拷贝名称", #selector(copyName(_:)), symbol: "textformat", to: menu)
+      Self.add(
+        "拷贝名称", #selector(copyName(_:)), symbol: "textformat", color: Tint.copy, to: menu)
     }
     if Self.shows("finderMenuHash", default: false), !selected.isEmpty,
       !selected.contains(where: \.hasDirectoryPath)
@@ -268,7 +272,7 @@ final class FinderMenu: FIFinderSync {
         kinds.addItem(withTitle: kind.1, action: #selector(copyHash(_:)), keyEquivalent: "").tag =
           index
       }
-      Self.add("拷贝哈希", nil, symbol: "number", to: menu).submenu = kinds
+      Self.add("拷贝哈希", nil, symbol: "number", color: Tint.hash, to: menu).submenu = kinds
     }
     for (index, app) in Self.openWithApps.enumerated() {
       let item = menu.addItem(
@@ -277,43 +281,53 @@ final class FinderMenu: FIFinderSync {
       item.image = Self.fileIcon(app.url.path)
     }
     if items, Self.shows("finderMenuTransfer", default: true) {
-      Self.add("移动到", nil, symbol: "arrowshape.turn.up.right", to: menu).submenu =
+      Self.add(
+        "移动到", nil, symbol: "arrowshape.turn.up.right.fill", color: Tint.organize, to: menu
+      ).submenu =
         Self.transferMenu(#selector(moveTo(_:)))
-      Self.add("复制到", nil, symbol: "plus.square.on.square", to: menu).submenu =
+      Self.add(
+        "复制到", nil, symbol: "plus.square.fill.on.square.fill", color: Tint.organize, to: menu
+      ).submenu =
         Self.transferMenu(#selector(copyTo(_:)))
     }
     if items, Self.shows("finderMenuCut", default: true) {
-      Self.add("剪切", #selector(cut(_:)), symbol: "scissors", to: menu)
+      Self.add("剪切", #selector(cut(_:)), symbol: "scissors", color: Tint.organize, to: menu)
     }
     if items, Self.shows("finderMenuCompress", default: true) {
       let formats = NSMenu()
       formats.addItem(withTitle: "ZIP", action: #selector(compressZip(_:)), keyEquivalent: "")
       formats.addItem(withTitle: "7Z", action: #selector(compress7z(_:)), keyEquivalent: "")
-      Self.add("压缩", nil, symbol: "doc.zipper", to: menu).submenu = formats
+      Self.add("压缩", nil, symbol: "doc.zipper", color: Tint.archive, to: menu).submenu = formats
     }
     if Self.shows("finderMenuExtract", default: true), !selected.isEmpty,
       selected.allSatisfy({ Self.isArchive($0) })
     {
-      Self.add("解压到这里", #selector(extract(_:)), symbol: "archivebox", to: menu)
+      Self.add(
+        "解压到这里", #selector(extract(_:)), symbol: "archivebox.fill", color: Tint.archive,
+        to: menu)
     }
     if Self.shows("finderMenuFixNames", default: true),
       selected.contains(where: { NameRepair.repair($0.lastPathComponent) != nil })
     {
-      Self.add("修复乱码文件名", #selector(fixNames(_:)), symbol: "wand.and.stars", to: menu)
+      Self.add(
+        "修复乱码文件名", #selector(fixNames(_:)), symbol: "wand.and.stars", color: Tint.repair,
+        to: menu)
     }
     if Self.shows("finderMenuHide", default: false) {
       Self.addHideItems(for: selected, to: menu)
     }
     if items, Self.shows("finderMenuDeskAlias", default: false) {
-      Self.add("发送替身到桌面", #selector(alias(_:)), symbol: "arrow.up.right.square", to: menu)
+      Self.add("发送替身到桌面", #selector(alias(_:)), symbol: "link", color: Tint.alias, to: menu)
     }
     if !items, Self.shows("finderMenuShowHidden", default: false) {
       let toggle = Self.add(
-        "显示 / 隐藏 隐藏文件", #selector(toggleHidden(_:)), symbol: "eye", to: menu)
+        "显示 / 隐藏 隐藏文件", #selector(toggleHidden(_:)), symbol: "eye.fill", color: Tint.hide,
+        to: menu)
       toggle.tag = container
     }
     if items, Self.shows("finderMenuErase", default: false) {
-      Self.add("彻底删除…", #selector(erase(_:)), symbol: "trash.slash", to: menu)
+      Self.add(
+        "彻底删除…", #selector(erase(_:)), symbol: "trash.slash.fill", color: Tint.erase, to: menu)
     }
     return menu
   }
@@ -330,7 +344,7 @@ final class FinderMenu: FIFinderSync {
       add(
         hidden ? "取消隐藏" : "隐藏",
         hidden ? #selector(FinderMenu.unhideItems(_:)) : #selector(FinderMenu.hideItems(_:)),
-        symbol: hidden ? "eye" : "eye.slash", to: menu)
+        symbol: hidden ? "eye.fill" : "eye.slash.fill", color: Tint.hide, to: menu)
     }
     let named = selected.filter { !$0.pathExtension.isEmpty }
     if !named.isEmpty {
@@ -339,18 +353,70 @@ final class FinderMenu: FIFinderSync {
         hidden ? "显示扩展名" : "隐藏扩展名",
         hidden
           ? #selector(FinderMenu.showExtensions(_:)) : #selector(FinderMenu.hideExtensions(_:)),
-        symbol: "textformat.abc",
-        to: menu)
+        symbol: "textformat.abc", color: Tint.hide, to: menu)
     }
   }
 
-  /// 加一项带系统符号（模板图）的
+  /// 加一项，图标是 color 的方块里一个白色的系统符号
   @discardableResult private static func add(
-    _ title: String, _ action: Selector?, symbol: String, to menu: NSMenu
+    _ title: String, _ action: Selector?, symbol: String, color: NSColor, to menu: NSMenu
   ) -> NSMenuItem {
     let item = menu.addItem(withTitle: title, action: action, keyEquivalent: "")
-    item.image = symbolIcon(symbol)
+    item.image = tile(symbol, color: color)
     return item
+  }
+
+  /// 每一类的颜色（彩色方块，2026-11-08 用户在三种样子里选的 A：方块里白色符号，访达高亮那一行的蓝底上也看得清；
+  /// 彩色符号直接压在蓝底上看不清）。取浅色外观下的系统色，画成位图后深浅色都用这一份
+  private enum Tint {
+    static let copy = rgb(0, 122, 255)  // 拷贝：蓝
+    static let create = rgb(52, 199, 89)  // 新建：绿
+    static let organize = rgb(255, 149, 0)  // 移动、复制、剪切、粘贴：橙
+    static let archive = rgb(162, 132, 94)  // 压缩、解压：棕
+    static let repair = rgb(175, 82, 222)  // 修复乱码：紫
+    static let hash = rgb(48, 176, 199)  // 哈希：青
+    static let hide = rgb(142, 142, 147)  // 隐藏、扩展名、选择文件夹：灰
+    static let alias = rgb(88, 86, 214)  // 替身：靛
+    static let erase = rgb(255, 59, 48)  // 彻底删除：红
+
+    static func rgb(_ red: CGFloat, _ green: CGFloat, _ blue: CGFloat) -> NSColor {
+      NSColor(srgbRed: red / 255, green: green / 255, blue: blue / 255, alpha: 1)
+    }
+  }
+
+  /// 彩色方块图标（16 pt、圆角 4、上浅下深的渐变、一道很淡的描边），中间白色符号（9.5 pt 半粗；自己画的只有一种粗细，大一号；太宽的缩进 11 pt 见方）；
+  /// custom：自己画的符号（Assets.xcassets/FinderIcons），否则是系统符号。画成位图、按名字缓存
+  private static func tile(_ name: String, custom: Bool = false, color: NSColor) -> NSImage? {
+    icon("tile:" + name) {
+      let source =
+        custom
+        ? NSImage(named: name) : NSImage(systemSymbolName: name, accessibilityDescription: nil)
+      guard
+        let glyph = source?.withSymbolConfiguration(
+          NSImage.SymbolConfiguration(pointSize: custom ? 10.5 : 9.5, weight: .semibold)
+            .applying(.init(paletteColors: [.white])))
+      else { return nil }
+      let size = NSSize(width: 16, height: 16)
+      let art = NSImage(size: size, flipped: false) { rect in
+        let shape = NSBezierPath(
+          roundedRect: rect.insetBy(dx: 0.25, dy: 0.25), xRadius: 4, yRadius: 4)
+        NSGradient(
+          starting: color.blended(withFraction: 0.18, of: .white) ?? color,
+          ending: color.blended(withFraction: 0.08, of: .black) ?? color)?
+          .draw(in: shape, angle: -90)
+        NSColor.black.withAlphaComponent(0.12).setStroke()
+        shape.lineWidth = 0.5
+        shape.stroke()
+        let fit = min(1, 11 / max(glyph.size.width, glyph.size.height, 1))
+        let width = glyph.size.width * fit
+        let height = glyph.size.height * fit
+        glyph.draw(
+          in: NSRect(
+            x: rect.midX - width / 2, y: rect.midY - height / 2, width: width, height: height))
+        return true
+      }
+      return bitmap(art, size: size, template: false)
+    }
   }
 
   /// 画好的小位图，按名字缓存（见文件头：交出去的图越小越快）
@@ -360,15 +426,6 @@ final class FinderMenu: FIFinderSync {
     let made = make()
     icons[key] = made
     return made
-  }
-
-  /// 系统符号：按菜单的字号（13 pt、常规）画成模板位图
-  private static func symbolIcon(_ name: String) -> NSImage? {
-    icon("symbol:" + name) {
-      NSImage(systemSymbolName: name, accessibilityDescription: nil)?
-        .withSymbolConfiguration(.init(pointSize: 13, weight: .regular))
-        .map { bitmap($0, size: $0.size, template: true) }
-    }
   }
 
   /// 文件、文件夹、App 的图标：画成 16 pt 的小位图（按路径缓存）
@@ -412,16 +469,8 @@ final class FinderMenu: FIFinderSync {
       item.tag = index
       item.image = fileIcon(path)
     }
-    add("选择文件夹…", action, symbol: "ellipsis.circle", to: menu).tag = chooseTag
+    add("选择文件夹…", action, symbol: "ellipsis", color: Tint.hide, to: menu).tag = chooseTag
     return menu
-  }
-
-  /// 自己画的图标（Assets.xcassets/FinderIcons）：按菜单的字号（13 pt、常规）画成 1x / 2x 的模板位图再交出去——
-  /// 菜单项要跨进程交给访达，本扩展资源目录里的符号到了访达那边不一定认得，位图一定认得；模板图让访达按菜单的字色、
-  /// 高亮、深色模式上色
-  private static func drawn(_ name: String) -> NSImage? {
-    NSImage(named: name)?.withSymbolConfiguration(.init(pointSize: 13, weight: .regular))
-      .map { bitmap($0, size: $0.size, template: true) }
   }
 
   /// 「新建文件 ▸」：自带五种（图标按类型取）、模板文件夹里的（图标按文件取）、自定义后缀、打开模板文件夹
@@ -447,9 +496,13 @@ final class FinderMenu: FIFinderSync {
       add(title, mineTag + index, fileIcon(mine[index].path))
     }
     menu.addItem(withTitle: "自定义后缀…", action: #selector(createCustom(_:)), keyEquivalent: "")
-      .image = symbolIcon("character.cursor.ibeam")
+      .image = tile("character.cursor.ibeam", color: Tint.create)
     menu.addItem(withTitle: "打开模板文件夹", action: #selector(showTemplates(_:)), keyEquivalent: "")
-      .image = symbolIcon("folder")
+      .image = icon("type:folder") {
+        bitmap(
+          NSWorkspace.shared.icon(for: .folder), size: NSSize(width: 16, height: 16),
+          template: false)
+      }
     return menu
   }
 
