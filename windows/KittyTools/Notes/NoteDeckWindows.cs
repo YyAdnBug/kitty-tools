@@ -7,7 +7,7 @@
 // - 预览卡：标签旁边的一张小纸（标题 + 开头几行），鼠标挪上去不收、点它打开。
 // - 打开的便签：挨着标签列，里面是 NoteSheetView（同全部便签窗口、浮动便签）。要打字，所以拿前台；失去前台 = 点了别处（没固定的收起）。
 //   按住头部空白处往外拖过一段 = 浮到屏幕上（NoteFloats，接着由系统挪窗口）。
-// 只用到系统画的东西：圆角、阴影、边框是 DWM 的（HudFrame；药丸不要边框），菜单是 MenuFlyout。动效没有（Windows 的窗口退场不淡出，PLAN-v7 §1）。
+// 只用到系统画的东西：圆角、阴影、边框是 DWM 的（药丸和标签列用 NoteDeckUi.Shell，药丸不要边框；预览卡、打开的便签用 HudFrame），菜单是 MenuFlyout。动效没有（Windows 的窗口退场不淡出，PLAN-v7 §1）。
 using System.Runtime.InteropServices;
 using KittyTools.Core;
 using KittyTools.Core.Notes;
@@ -117,14 +117,33 @@ internal static partial class NoteDeckUi
         return item;
     }
 
-    /// <summary>药丸的外壳（PLAN-v16 V1）：不抢焦点；DWM 的圆角，不要 DWM 在 Windows 11 上画的那圈细边框。</summary>
-    public static void Pill(IntPtr hwnd)
+    /// <summary>
+    /// 药丸和标签列的外壳（PLAN-v16 V1）：没有系统边框和标题栏（带边框、内容伸进标题栏的窗口有系统和 WinUI 定的最小宽，
+    /// 12 宽的药丸会被撑成一张小卡、三十来宽的标签列会撑到七十、往屏幕外伸）；置顶、不能改大小、不进 Alt+Tab、不抢焦点，
+    /// DWM 的圆角，最小宽高放开（NoteDeckTiny）。outline：留着 DWM 在 Windows 11 上画的那圈细边框（标签列要，药丸不要）。返回窗口句柄。
+    /// </summary>
+    public static IntPtr Shell(Window window, bool outline)
     {
+        window.AppWindow.IsShownInSwitchers = false;
+        var presenter = OverlappedPresenter.Create();
+        presenter.IsAlwaysOnTop = true;
+        presenter.IsResizable = false;
+        presenter.IsMaximizable = false;
+        presenter.IsMinimizable = false;
+        presenter.SetBorderAndTitleBar(false, false);
+        window.AppWindow.SetPresenter(presenter);
+        var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(window);
         SetWindowLong(hwnd, -20, GetWindowLong(hwnd, -20) | 0x08000000 /* WS_EX_NOACTIVATE */);
         var round = 2; // DWMWCP_ROUND
         DwmSetWindowAttribute(hwnd, 33 /* DWMWA_WINDOW_CORNER_PREFERENCE */, ref round, sizeof(int));
-        var none = unchecked((int)0xFFFFFFFE); // DWMWA_COLOR_NONE
-        DwmSetWindowAttribute(hwnd, 34 /* DWMWA_BORDER_COLOR */, ref none, sizeof(int));
+        if (!outline)
+        {
+            var none = unchecked((int)0xFFFFFFFE); // DWMWA_COLOR_NONE
+            DwmSetWindowAttribute(hwnd, 34 /* DWMWA_BORDER_COLOR */, ref none, sizeof(int));
+        }
+
+        NoteDeckTiny.Allow(hwnd);
+        return hwnd;
     }
 
     [LibraryImport("user32.dll")]
@@ -157,18 +176,7 @@ internal sealed class NoteDeckPillWindow : Window
     {
         _bay = bay;
         Title = Paths.ProductName + " 便签";
-        // 没有系统边框（带边框的窗口有系统定的最小宽，12 宽的药丸会被撑成一张小卡，PLAN-v16 V1）：置顶、不能改大小、不进 Alt+Tab、不抢焦点
-        AppWindow.IsShownInSwitchers = false;
-        var presenter = OverlappedPresenter.Create();
-        presenter.IsAlwaysOnTop = true;
-        presenter.IsResizable = false;
-        presenter.IsMaximizable = false;
-        presenter.IsMinimizable = false;
-        presenter.SetBorderAndTitleBar(false, false);
-        AppWindow.SetPresenter(presenter);
-        _hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
-        NoteDeckUi.Pill(_hwnd);
-        NoteDeckTiny.Allow(_hwnd);
+        _hwnd = NoteDeckUi.Shell(this, outline: false);
         _sense = NoteDeckSense.Create(() =>
         {
             if (!_dragging)
@@ -267,9 +275,6 @@ internal sealed class NoteDeckPillWindow : Window
         NoteDeckSense.Place(_sense, _senseFrame, _hwnd, _shown);
     }
 
-    /// <summary>自检用：药丸窗口实际多大（物理像素）。</summary>
-    internal SizeInt32 ProbeSize => AppWindow.Size;
-
     private void OnPressed(object sender, PointerRoutedEventArgs e)
     {
         if (!e.GetCurrentPoint(_root).Properties.IsLeftButtonPressed)
@@ -336,7 +341,9 @@ internal sealed class NoteDeckColumnWindow : Window
     {
         _bay = bay;
         Title = Paths.ProductName + " 便签";
-        HudFrame.Apply(this);
+        // 一列标签只有三十来宽：用带边框的外壳（HudFrame）时窗口被撑到七十（以前一百三十六）、往屏幕外伸，居中的标签整列落到屏幕外面，
+        // 边上只剩一块空的亚克力（2026-11-08 用户反馈「便签看不到、点不了」）
+        NoteDeckUi.Shell(this, outline: true);
         _root = NoteDeckUi.Root();
         _root.RightTapped += (_, e) =>
         {
@@ -846,7 +853,7 @@ internal sealed partial class NoteDeckSheetWindow : Window
 }
 
 /// <summary>
-/// 药丸窗口放开系统给顶层窗口定的最小宽高（PLAN-v16 V1）：没边框、PreferredMinimumWidth 设 1 都还被撑到约 136 × 134，
+/// 药丸和标签列放开系统给顶层窗口定的最小宽（约 136，PLAN-v16 V1）：没边框、PreferredMinimumWidth 设 1 都还被撑大，
 /// 只好接 WM_GETMINMAXINFO，先让后面的窗口过程填完，再把最小跟踪尺寸改成 1 × 1。
 /// </summary>
 internal static unsafe partial class NoteDeckTiny

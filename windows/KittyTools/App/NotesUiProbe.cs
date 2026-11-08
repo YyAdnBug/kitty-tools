@@ -190,11 +190,14 @@ internal static class NotesUiProbe
             if (window.AppWindow.IsVisible)
             {
                 await Shoot(window, directory, $"{name}-{part}", report);
-                if (window is NoteDeckPillWindow pill)
-                {
-                    // PLAN-v16 V1：药丸窗口的实际大小（物理像素；12 宽 × 缩放，不该被系统的最小宽撑大）
-                    report.Append($"  - 药丸窗口 {pill.ProbeSize.Width} × {pill.ProbeSize.Height}\n");
-                }
+                // PLAN-v16 V1：窗口的实际位置和大小（物理像素）；药丸、标签列不该被系统的最小宽撑大、伸到屏幕外面
+                var at = window.AppWindow.Position;
+                var size = window.AppWindow.Size;
+                var screen = Microsoft.UI.Windowing.DisplayArea.GetFromWindowId(window.AppWindow.Id, Microsoft.UI.Windowing.DisplayAreaFallback.Nearest).OuterBounds;
+                var inside = at.X >= screen.X && at.Y >= screen.Y &&
+                             at.X + size.Width <= screen.X + screen.Width && at.Y + size.Height <= screen.Y + screen.Height;
+                // 截图拍的是整扇窗口，伸到屏幕外的那截照样拍得到：只能这样查（2026-11-08 标签列就是这么漏掉的）
+                report.Append($"  - {part} 窗口 {at.X},{at.Y} {size.Width} × {size.Height}{(inside ? string.Empty : " **伸到屏幕外**")}\n");
             }
         }
     }
