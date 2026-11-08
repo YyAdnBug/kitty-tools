@@ -33,6 +33,7 @@ struct ScriptGuidePage: View {
     ),
     ("@kitty.confirm", "先确认再跑", "写一句话：↩ 第一下只显示这句（红字），再按一次才跑；列表脚本打字时就跑，不能写"),
     ("@kitty.timeout", "超时", "秒数，不写是 60 秒，写 0 不限"),
+    ("@kitty.filter", "只跑一次", "列表脚本才写：打完「关键词 空格」时跑一次，之后打的字由启动器按标题、说明过滤（认拼音、首字母），脚本收不到参数"),
   ]
 
   var body: some View {
@@ -117,6 +118,11 @@ struct ScriptGuidePage: View {
           code(#"{"items": [{"title": "显示的", "subtitle": "说明", "arg": "↩ 粘贴的"}]}"#)
           Text("要显示的和粘贴的不一样时，打印上面这样一段 JSON。")
             .foregroundStyle(.secondary)
+          Text(
+            "每条还可以写 url（↩ 用浏览器打开）、path（↩ 打开文件，⌘↩ 在访达中显示，⌘Y 快速查看）、icon（这一条的图标，写法同 @kitty.icon；{\"type\": \"fileicon\", \"path\": …} 用那个文件的图标）、autocomplete（⇥ 填进搜索框，接在关键词后面）、text 里的 copy（⌘C 复制的）。"
+          )
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
         } header: {
           Text("列出几条结果让人挑")
         }

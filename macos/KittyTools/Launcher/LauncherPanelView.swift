@@ -14,7 +14,8 @@
 // 脚本命令（2026-11-07）：行图标是头部写的 emoji / SF 符号 / 图片，没写是命令家族紫的 terminal 色块，右侧「脚本」；
 // 从网上下载的脚本第一次跑之前，列表换成它的全文（ScriptReviewView：等宽字、能滚，上面一句写明以用户的身份运行、
 // 能用本 App 已有的授权），底栏「运行 ↩」「返回 Esc」；全文输出的脚本跑起来后列表换成输出那一页（同一个 ScriptPageView），
-// 底栏「粘贴 ↩」「复制 ⌘C」「重跑 ⌘R」「返回 Esc」（还在跑时只有「停止 Esc」；第三轮：边跑边显示、认终端颜色）。列表脚本的结果行同脚本的图标、右侧「脚本」。
+// 底栏「粘贴 ↩」「复制 ⌘C」「重跑 ⌘R」「返回 Esc」（还在跑时只有「停止 Esc」；第三轮：边跑边显示、认终端颜色）。列表脚本的结果行同脚本的图标、右侧「脚本」；
+// 第三轮：结果写了 url / path 的右侧「网址」「文件」，自己写了图标的用它，文件没写图标的用它在访达里的图标。
 
 import AppKit
 import SwiftUI
@@ -819,7 +820,14 @@ extension LauncherItem {
     case .process: "进程"
     case .ip: "网络"
     case .reminder: "提醒"
-    case .script, .scriptResult: "脚本"
+    // 列表结果写了 url / path 的：同网址行、文件行（↩ 打开写在底栏的主动作上，第三轮 B1）
+    case .scriptResult:
+      switch opens {
+      case .url: "网址"
+      case .file: "文件"
+      case nil: "脚本"
+      }
+    case .script: "脚本"
     }
   }
 }

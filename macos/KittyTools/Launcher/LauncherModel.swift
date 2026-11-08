@@ -258,6 +258,12 @@ import UniformTypeIdentifiers
   }
   /// 列表脚本打字时重跑（停手 listDelay 再跑；新的一跑就撤掉上一次）
   @ObservationIgnored private var listTask: Task<Void, Never>?
+  /// 只跑一次、自己过滤的列表脚本（第三轮 B3，@kitty.filter）：这次呼出里跑出来的结果（按脚本路径；failed = 没跑成，那一行不过滤），
+  /// 收起时清掉；正在跑的那一次不跟着打字撤掉（打字只是过滤）
+  @ObservationIgnored private var filterRows: [String: (rows: [LauncherItem], failed: Bool)] = [:]
+  @ObservationIgnored private var filterTask: (path: String, task: Task<Void, Never>)?
+  /// 列表脚本的结果还没到（看得见的是上一次的、或者「正在运行…」）
+  private var listPending: Bool { listTask != nil || filterTask != nil }
   /// 列表结果到之前按了 ↩：到了就执行第一条（打字、收起就作罢）
   @ObservationIgnored private var runsWhenListed = false
   static let listDelay = Duration.milliseconds(150)
@@ -532,6 +538,9 @@ import UniformTypeIdentifiers
     }
     listTask?.cancel()
     listTask = nil
+    filterTask?.task.cancel()
+    filterTask = nil
+    filterRows = [:]
     runsWhenListed = false
     forgotten = nil
     notice = nil
@@ -1264,12 +1273,17 @@ import UniformTypeIdentifiers
       start(script, arguments: arguments)
     case .scriptResult:
       // 这一次还在跑（显示的是上一次的、或者「正在运行…」）：等结果到了执行第一条
-      if listTask != nil {
+      if listPending {
         runsWhenListed = true
         return
       }
       guard let payload = item.payload else { return NSSound.beep() }
-      paste { Paster.write(string: payload, record: true) }
+      // 写了 url / path 的打开它（第三轮 B1；不记使用：结果每次由脚本重新列）
+      switch item.opens {
+      case .url(let url): open(url, nil)
+      case .file(let path): open(URL(filePath: path), nil)
+      case nil: paste { Paster.write(string: payload, record: true) }
+      }
     }
   }
 
@@ -1297,6 +1311,11 @@ import UniformTypeIdentifiers
       }
       return [row]
     }
+    // 自己过滤的：跑过了就按关键词后面的字过滤这一次的结果，不再跑（第三轮 B3）
+    if script.filters, let cached = filterRows[script.path] {
+      return cached.failed
+        ? cached.rows : Self.filtered(cached.rows, by: invocation.arguments.first ?? "")
+    }
     let kept = results.filter { $0.isResult(of: script) && $0.payload != nil }
     guard kept.isEmpty else { return kept }
     var pending = LauncherItem(
@@ -1314,6 +1333,7 @@ import UniformTypeIdentifiers
     guard script.mode == .list, !invocation.isMissing,
       !script.isDownloaded || approvedScripts.contains(script.path)
     else { return }
+    if script.filters { return startFilter(invocation) }
     let key = query
     listTask = Task { [weak self] in
       try? await Task.sleep(for: Self.listDelay)
@@ -1326,7 +1346,7 @@ import UniformTypeIdentifiers
       let selected = userMovedSelection ? selectedItem?.id : nil
       let rest = results.filter { !$0.isResult(of: script) }
       // 传 quick：超时说的秒数是这次真用的（列表最多 10 秒）
-      let rows = Self.resultRows(outcome, of: quick)
+      let rows = Self.resultRows(outcome, of: quick, keyword: invocation.keyword)
       // 只有网页搜索、提示这些兜底的行不算：那时留着错误那行，让人知道脚本为什么没给结果
       let failed = Self.failure(outcome, of: quick) != nil
       let found = rest.contains { ![.search, .prompt].contains($0.kind) }
@@ -1341,13 +1361,62 @@ import UniformTypeIdentifiers
     }
   }
 
-  /// 等列表脚本这一次跑完（单测）
-  func listRun() async { await listTask?.value }
+  /// 自己过滤的列表脚本（第三轮 B3）：这次呼出里第一次打到「关键词 空格」时跑一次（不带参数），之后打字不撤它、也不再跑；
+  /// 结果到了重搜一次（按那时打的字过滤），结果到之前按了 ↩ 的执行第一条
+  private func startFilter(_ invocation: ScriptCommand.Invocation) {
+    let script = invocation.script
+    guard filterRows[script.path] == nil, filterTask?.path != script.path else { return }
+    filterTask?.task.cancel()
+    let task = Task { [weak self] in
+      guard let self else { return }
+      var quick = script
+      quick.timeout = min(script.limit == 0 ? Self.listTimeout : script.limit, Self.listTimeout)
+      let outcome = await runScript(quick, [], nil)
+      guard !Task.isCancelled else { return }
+      filterTask = nil
+      let rows = Self.resultRows(outcome, of: quick, keyword: invocation.keyword)
+      let failed = Self.failure(outcome, of: quick) != nil
+      filterRows[script.path] = (failed ? rows : rows.map(Self.searchable), failed)
+      let runs = runsWhenListed
+      search()
+      emptyText = "「\(script.title)」没有给出结果"
+      if runs, let first = results.first, first.isResult(of: script) { execute(first) }
+    }
+    filterTask = (script.path, task)
+  }
 
-  /// 列表脚本跑完 → 一条条结果；出错的是一行写原因（↩ 只响提示音）。纯函数，配单测
-  static func resultRows(_ outcome: ScriptRunner.Outcome, of script: ScriptCommand)
-    -> [LauncherItem]
-  {
+  /// 过滤用的名字：标题、说明，中文标题的全拼和首字母（同搜 App）
+  static func searchable(_ row: LauncherItem) -> LauncherItem {
+    var row = row
+    let pinyin = AppCatalog.pinyin(row.title)
+    row.names = [row.title, row.subtitle, pinyin?.full].compactMap { $0.map(LauncherMatch.fold) }
+    row.initials = [LauncherMatch.initials(row.title), pinyin?.initials].compactMap { $0 }
+    return row
+  }
+
+  /// 按打的字过滤：对得上的按匹配分排，同分按脚本给的顺序；没打字就是全部。纯函数，配单测
+  static func filtered(_ rows: [LauncherItem], by text: String) -> [LauncherItem] {
+    guard !text.trimmingCharacters(in: .whitespaces).isEmpty else { return rows }
+    return rows.enumerated()
+      .compactMap { index, row -> (LauncherItem, Double, Int)? in
+        let score = LauncherMatch.score(text, item: row)
+        return score > 0 ? (row, score, index) : nil
+      }
+      .sorted { $0.1 != $1.1 ? $0.1 > $1.1 : $0.2 < $1.2 }
+      .map(\.0)
+  }
+
+  /// 等列表脚本这一次跑完（单测）
+  func listRun() async {
+    await listTask?.value
+    await filterTask?.task.value
+  }
+
+  /// 列表脚本跑完 → 一条条结果；出错的是一行写原因（↩ 只响提示音）。keyword：打的关键词（结果的 autocomplete 接在它后面
+  /// 填进搜索框）。纯函数，配单测
+  static func resultRows(
+    _ outcome: ScriptRunner.Outcome, of script: ScriptCommand, keyword: String = ""
+  ) -> [LauncherItem] {
     func row(_ index: Int, _ title: String, _ subtitle: String, _ payload: String?) -> LauncherItem
     {
       var item = LauncherItem(
@@ -1360,8 +1429,24 @@ import UniformTypeIdentifiers
     if let failure = failure(outcome, of: script) {
       return [row(0, failure.title, failure.detail, nil)]
     }
-    return ScriptCommand.lines(outcome.output).enumerated().map { index, line in
-      row(index, line.title, line.subtitle, line.isValid ? line.value : nil)
+    return ScriptCommand.lines(outcome.output, folder: script.folder).enumerated().map {
+      index, line in
+      var item = row(index, line.title, line.subtitle, line.isValid ? line.value : nil)
+      item.opens = line.opens
+      item.copyText = line.copyText
+      // 这一条自己的图标；没写、是文件的用它在访达里的图标（同启动器里的文件行）
+      if let icon = line.icon
+        ?? line.opens.flatMap({
+          if case .file(let path) = $0 { .file(path) } else { nil }
+        })
+      {
+        item.scriptIcon = icon
+        item.scriptIconDark = nil
+      }
+      if let text = line.autocomplete {
+        item.completion = keyword.isEmpty ? text : keyword + " " + text
+      }
+      return item
     }
   }
 
@@ -1893,7 +1978,12 @@ import UniformTypeIdentifiers
     // 参数没填够：↩ 只响提示音，副标题写着要填什么
     case .script where isMissingArguments(item): ("先填参数", "text.cursor")
     case .script: (confirming ? "确认运行" : "运行", "play")
-    case .scriptResult: ("粘贴", "arrow.turn.down.left")
+    case .scriptResult:
+      switch item.opens {
+      case .url: ("打开", "safari")
+      case .file: ("打开", "arrow.up.forward.app")
+      case nil: ("粘贴", "arrow.turn.down.left")
+      }
     }
   }
 
@@ -1920,8 +2010,13 @@ import UniformTypeIdentifiers
     return switch item.kind {
     case .app, .path:
       revealsOnReturn(item) ? ("打开", "arrow.up.forward.app") : ("在访达中显示", "folder")
-    case .calculation where item.payload != nil, .ip where item.payload != nil,
-      .scriptResult where item.payload != nil:
+    case .scriptResult where item.payload != nil:
+      switch item.opens {
+      case .url: ("复制网址", "doc.on.doc")
+      case .file: ("在访达中显示", "folder")
+      case nil: ("只复制，不粘贴", "doc.on.doc")
+      }
+    case .calculation where item.payload != nil, .ip where item.payload != nil:
       ("只复制，不粘贴", "doc.on.doc")
     case .reminder where !item.target.isEmpty: ("在设置里编辑", "gearshape")
     case .script: ("在访达中显示", "folder")
@@ -1937,7 +2032,10 @@ import UniformTypeIdentifiers
     case .url, .search: "复制网址"
     case .calculation: item.payload == nil ? nil : "复制结果"
     case .ip: item.payload == nil ? nil : "复制地址"
-    case .scriptResult: item.payload == nil ? nil : "复制结果"
+    case .scriptResult where item.payload == nil: nil
+    case .scriptResult where item.copyText == nil && item.opens != nil:
+      if case .url = item.opens { "复制网址" } else { "复制路径" }
+    case .scriptResult: "复制结果"
     case .action, .system, .prompt, .clip, .translate, .process, .reminder: nil
     }
   }
@@ -2088,7 +2186,7 @@ import UniformTypeIdentifiers
     if isQuickLooking {
       isQuickLooking = false
       closeQuickLook(true)
-    } else if let item = selectedItem, isFile(item) {
+    } else if let item = selectedItem, isFile(item) || Self.resultFile(item) != nil {
       isQuickLooking = true
       showsQuickLookContent = true
       openQuickLook()
@@ -2105,8 +2203,18 @@ import UniformTypeIdentifiers
 
   /// 预览的文件：选中的不是文件时 nil（浮层里写「没有可预览的文件」）
   var quickLookURL: URL? {
-    guard let item = selectedItem, isFile(item) else { return nil }
+    guard let item = selectedItem else { return nil }
+    if let path = Self.resultFile(item) { return URL(filePath: path) }
+    guard isFile(item) else { return nil }
     return URL(filePath: item.target)
+  }
+
+  /// 列表脚本给的文件结果（第三轮 B1）：⌘Y 快速查看它；不能选的（payload 是 nil）不算
+  static func resultFile(_ item: LauncherItem) -> String? {
+    guard item.kind == .scriptResult, item.payload != nil, case .file(let path) = item.opens else {
+      return nil
+    }
+    return path
   }
 
   /// 右键菜单里的「快速查看」：先选中被点的那一行
@@ -2379,7 +2487,7 @@ import UniformTypeIdentifiers
     default:
       guard let digit = Self.digitKeys.firstIndex(of: Int(event.keyCode)) else { return false }
       // 列表脚本正在重跑时的结果行：⌘N 会落到新结果的第一条上，不执行
-      if digit < results.count, results[digit].kind != .scriptResult || listTask == nil {
+      if digit < results.count, results[digit].kind != .scriptResult || !listPending {
         execute(results[digit])
       } else if digit < results.count {
         NSSound.beep()
@@ -2409,8 +2517,16 @@ import UniformTypeIdentifiers
       if revealsOnReturn(item) { return open(URL(filePath: item.target), item) }
       close()
       NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: item.target)])
-    case .calculation where item.payload != nil, .ip where item.payload != nil,
-      .scriptResult where item.payload != nil:
+    case .scriptResult where item.payload != nil:
+      // 文件结果在访达中显示（同文件行）；别的只复制 ↩ 会打开 / 粘贴的那个（text.copy 归 ⌘C）
+      guard case .file(let path) = item.opens else {
+        var plain = item
+        plain.copyText = nil
+        return copy(plain)
+      }
+      close()
+      NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: path)])
+    case .calculation where item.payload != nil, .ip where item.payload != nil:
       copy(item)
     case .reminder where !item.target.isEmpty:
       close()
@@ -2437,12 +2553,16 @@ import UniformTypeIdentifiers
   /// 复制了什么；这些是本 App 给出的新文字，同时记进剪贴板历史（mac-native §5）
   func copy(_ item: LauncherItem, _ format: CopyFormat = .value) {
     // 列表脚本正在按新输入重跑：看得见的是上一次的结果，不拷它（同 ↩ 等结果的那一处，第三轮评审）
-    if item.kind == .scriptResult, listTask != nil { return NSSound.beep() }
+    if item.kind == .scriptResult, listPending { return NSSound.beep() }
     rememberCurrencies(item)
     let text: String
     let title: String?
     switch format {
-    case .value: (text, title) = (item.payload ?? item.target, copyTitle(for: item))
+    // 列表结果：text.copy 写了的复制它，写了 url / path 的复制网址 / 路径（第三轮 B1 B2）
+    case .value:
+      (text, title) = (
+        item.copyText ?? item.opens?.text ?? item.payload ?? item.target, copyTitle(for: item)
+      )
     case .markdown:
       (text, title) = (Self.markdownLink(title: item.title, url: item.target), "复制为 Markdown 链接")
     case .title: (text, title) = (item.title, "复制标题")
@@ -2510,7 +2630,7 @@ import UniformTypeIdentifiers
         destructive: isDangerous(item, commandKey: true)
       ) { [unowned self] in commandReturn(item) }
     }
-    if isFile(item) {
+    if isFile(item) || Self.resultFile(item) != nil {
       add("快速查看", "eye", "⌘Y", section: 0) { [unowned self] in quickLook(item) }
     }
     // 1 脚本（第二轮 D1）：发现一条不对劲，就地改它、换个词、关掉；自带的复制一份成自己的。
@@ -2548,8 +2668,14 @@ import UniformTypeIdentifiers
       }
     }
     // 2 复制（计算结果、ip 的 ⌘C 和 ⌘↩ 一样，不重复列）；复制路径和剪贴板 ⌘K 的「复制路径」同一个符号 link（mac-whisker §3）
-    if ![.calculation, .ip, .scriptResult].contains(item.kind), let title = copyTitle(for: item) {
-      let symbol = [.app, .path, .script].contains(item.kind) ? "link" : "doc.on.doc"
+    // 列表结果的 ⌘↩ 是在访达中显示（文件）、或者另给了 ⌘C 复制的（text.copy）：⌘C 另列
+    let copiesOnCommandReturn =
+      [.calculation, .ip].contains(item.kind)
+      || (item.kind == .scriptResult && Self.resultFile(item) == nil && item.copyText == nil)
+    if !copiesOnCommandReturn, let title = copyTitle(for: item) {
+      let symbol =
+        [.app, .path, .script].contains(item.kind) || Self.resultFile(item) != nil
+        ? "link" : "doc.on.doc"
       add(title, symbol, "⌘C", section: 2) { [unowned self] in copy(item) }
     }
     if web {

@@ -25,12 +25,14 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
     case none
   }
 
-  /// 头部写的图标：emoji、SF 符号名、同文件夹里的 / 绝对路径的图片、https 网址（第二轮 B1：下载一次存本机，ScriptIcons）
+  /// 头部写的图标：emoji、SF 符号名、同文件夹里的 / 绝对路径的图片、https 网址（第二轮 B1：下载一次存本机，ScriptIcons）；
+  /// 列表结果另有某个文件在访达里的图标（第三轮 B1 B2：结果写了 path、或 icon 写 {"type": "fileicon"}）
   enum Icon: Hashable, Sendable {
     case emoji(String)
     case symbol(String)
     case image(String)
     case remote(String)
+    case file(String)
   }
 
   struct Argument: Hashable, Sendable {
@@ -78,6 +80,8 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
   var isDownloaded = false
   /// 随 App 带的自带脚本（D2，只读、跟着更新）
   var isBundled = false
+  /// 列表脚本只跑一次、打的字由启动器过滤（第三轮 B3，@kitty.filter）：不收参数
+  var filters = false
 
   static let defaultTimeout = 60
   /// 只读开头这么多字节找元数据（几家的头部都在前几十行）
@@ -154,6 +158,11 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
     script.confirmation = fields["confirm"].flatMap { confirmation($0, title: title) }
     script.timeout = fields["timeout"].flatMap { Int($0) }.map { min(max($0, 0), 3600) }
     if script.mode == .list, script.confirmation != nil { return .failure(.confirmInList) }
+    // 只有列表脚本能写；写了就不收参数（打的字是拿来过滤的）
+    if script.mode == .list, let value = fields["filter"], isYes(value) {
+      script.filters = true
+      script.arguments = []
+    }
     return .success(script)
   }
 
@@ -253,6 +262,11 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
     return result
   }
 
+  /// 开关类的字段（@kitty.filter）：空或 true / yes / 1 算开
+  static func isYes(_ value: String) -> Bool {
+    ["", "true", "yes", "1"].contains(value.lowercased())
+  }
+
   /// confirm / needsConfirmation：空或 true = 默认那句，false = 不确认，别的就是自己写的那句
   static func confirmation(_ value: String, title: String) -> String? {
     switch value.lowercased() {
@@ -338,22 +352,43 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
 
   // MARK: 列表（C2）
 
-  /// 列表脚本的一条结果：title 显示、arg 是 ↩ 粘贴 / ⌘C 复制的（没写就是 title）；valid = false 的按了只响提示音
+  /// 列表脚本的一条结果：title 显示、arg 是 ↩ 粘贴 / ⌘C 复制的（没写就是 title）；valid = false 的按了只响提示音。
+  /// 第三轮 B1 B2：写了 url / path 的 ↩ 打开它；icon 是这一条自己的图标，autocomplete 是 ⇥ 填进搜索框的（接在关键词后面），
+  /// text.copy 是 ⌘C 复制的
   struct Line: Equatable, Sendable {
     var title: String
     var subtitle = ""
     var arg: String?
     var isValid = true
+    var opens: Opens?
+    var icon: Icon?
+    var autocomplete: String?
+    var copyText: String?
 
     var value: String { arg ?? title }
+
+    /// ↩ 打开的：网址用浏览器（任何协议都交给系统，同在访达里点链接），文件同启动器里的文件行
+    enum Opens: Hashable, Sendable {
+      case url(URL)
+      case file(String)
+
+      /// ⌘C 默认复制的（网址、路径）
+      var text: String {
+        switch self {
+        case .url(let url): url.absoluteString
+        case .file(let path): path
+        }
+      }
+    }
   }
 
   /// 最多列这么多条
   static let lineLimit = 200
 
-  /// 列表脚本的输出 → 一条条结果：开头是 { 的按 Script Filter 的 JSON 读（items 的 title、subtitle、arg、valid，别的忽略），
-  /// 否则一行一条「标题⇥副标题」（⇥ 和后面可以省）。纯函数，配单测
-  static func lines(_ output: String) -> [Line] {
+  /// 列表脚本的输出 → 一条条结果：开头是 { 的按 Script Filter 的 JSON 读（items 的 title、subtitle、arg、valid，
+  /// 第三轮加 url、path、icon、autocomplete、text.copy，社区写法 type: file 的 arg 当路径；别的忽略），
+  /// 否则一行一条「标题⇥副标题」（⇥ 和后面可以省）。folder：脚本所在的文件夹（图标、路径写相对的时按它算）。纯函数，配单测
+  static func lines(_ output: String, folder: String = "/") -> [Line] {
     let text = clean(output).trimmingCharacters(in: .whitespacesAndNewlines)
     if text.hasPrefix("{"),
       let object = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any],
@@ -368,9 +403,16 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
           case let number as NSNumber: number.stringValue
           default: nil
           }
-        return Line(
+        var line = Line(
           title: title, subtitle: item["subtitle"] as? String ?? "", arg: arg,
           isValid: item["valid"] as? Bool ?? true)
+        line.opens = opens(item, arg: arg, folder: folder)
+        line.icon = rowIcon(item["icon"], folder: folder)
+        line.autocomplete = (item["autocomplete"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        line.copyText = ((item["text"] as? [String: Any])?["copy"] as? String).flatMap {
+          $0.isEmpty ? nil : $0
+        }
+        return line
       }
     }
     return text.split(whereSeparator: \.isNewline).prefix(lineLimit).compactMap { line in
@@ -380,6 +422,44 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
       let subtitle = parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespaces) : ""
       return Line(title: title, subtitle: subtitle)
     }
+  }
+
+  /// 一条结果打开什么：url（有协议的；file: 当文件）> path > 社区写法 type 是 file 的 arg
+  static func opens(_ item: [String: Any], arg: String?, folder: String) -> Line.Opens? {
+    if let text = item["url"] as? String, let url = URL(string: text),
+      let scheme = url.scheme, !scheme.isEmpty
+    {
+      return url.isFileURL ? .file(url.path) : .url(url)
+    }
+    let type = item["type"] as? String
+    let path = item["path"] as? String ?? (type?.hasPrefix("file") == true ? arg : nil)
+    guard let path, !path.isEmpty else { return nil }
+    return .file(absolute(path, folder: folder))
+  }
+
+  /// ~ 展开；相对路径按脚本所在的文件夹算
+  static func absolute(_ path: String, folder: String) -> String {
+    let expanded = (path as NSString).expandingTildeInPath
+    return expanded.hasPrefix("/")
+      ? (expanded as NSString).standardizingPath
+      : ((folder as NSString).appendingPathComponent(expanded) as NSString).standardizingPath
+  }
+
+  /// 一条结果自己的图标：字符串同 @kitty.icon（emoji、SF 符号、图片；网址不认——一列几十条各下载一次，还能当信标）；
+  /// 对象是社区写法：{"type": "fileicon", "path": …} 取那个文件在访达里的图标，{"path": …} 是图片
+  static func rowIcon(_ value: Any?, folder: String) -> Icon? {
+    let found: Icon? =
+      switch value {
+      case let text as String: icon(text, folder: folder)
+      case let object as [String: Any]:
+        (object["path"] as? String).flatMap { path in
+          object["type"] as? String == "fileicon"
+            ? .file(absolute(path, folder: folder)) : icon(path, folder: folder)
+        }
+      default: nil
+      }
+    if case .remote = found { return nil }
+    return found
   }
 
   // MARK: 输出

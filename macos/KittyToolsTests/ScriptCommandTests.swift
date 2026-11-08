@@ -846,6 +846,7 @@ struct SubprocessStopTests {
     // 写法说明里要有代码认的每个字段、每种结果方式（改了写法要同步改说明）
     for field in [
       "title", "keyword", "mode", "argument1", "description", "icon", "confirm", "timeout",
+      "filter",
     ] {
       #expect(guide.contains("@kitty.\(field)"), "说明里缺 @kitty.\(field)")
     }
@@ -1479,5 +1480,152 @@ struct SubprocessStopTests {
     model.rerunOutput()
     await model.scriptRun(script.path)
     #expect(count == 1)
+  }
+}
+
+/// 第三轮 B1–B3：列表结果的 url / path / icon / autocomplete / text.copy，只跑一次、启动器自己过滤
+@MainActor struct ScriptListResultTests {
+  private func model(_ script: ScriptCommand) throws -> LauncherModel {
+    let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [])
+    model.scripts = { [script] }
+    return model
+  }
+
+  @Test func readsOpenIconAutocompleteAndCopy() {
+    let json = """
+      {"items": [
+        {"title": "PR", "url": "https://github.com/a/b/pull/1", "icon": "🔀", "text": {"copy": "#1"}},
+        {"title": "项目", "path": "~/Code/kitty", "icon": {"type": "fileicon", "path": "~/Code"}},
+        {"title": "相对", "path": "notes/a.md", "icon": {"path": "a.png"}},
+        {"title": "社区写法", "type": "file", "arg": "/tmp/x.txt", "icon": "https://x/y.png"},
+        {"title": "文件网址", "url": "file:///tmp/y.txt", "autocomplete": "子目录 "},
+        {"title": "没协议", "url": "github.com", "icon": "star"}
+      ]}
+      """
+    let home = NSHomeDirectory()
+    let lines = ScriptCommand.lines(json, folder: "/s")
+    #expect(lines[0].opens == .url(URL(string: "https://github.com/a/b/pull/1")!))
+    #expect(lines[0].icon == .emoji("🔀") && lines[0].copyText == "#1")
+    #expect(lines[1].opens == .file(home + "/Code/kitty") && lines[1].icon == .file(home + "/Code"))
+    #expect(lines[2].opens == .file("/s/notes/a.md") && lines[2].icon == .image("/s/a.png"))
+    // 网址图标不认（一列几十条各下载一次）
+    #expect(lines[3].opens == .file("/tmp/x.txt") && lines[3].icon == nil)
+    #expect(lines[4].opens == .file("/tmp/y.txt") && lines[4].autocomplete == "子目录 ")
+    #expect(lines[5].opens == nil && lines[5].icon == .symbol("star"))
+  }
+
+  @Test func filterOnlyForLists() throws {
+    let list = try #require(
+      ScriptCommand.parse(
+        "#!/bin/sh\n# @kitty.mode list\n# @kitty.filter\n# @kitty.argument1 词\n", path: "/s/a.sh"
+      )
+    ).get()
+    #expect(list.filters && list.arguments.isEmpty && list.takesInput)
+    let island = try #require(
+      ScriptCommand.parse("#!/bin/sh\n# @kitty.filter true\n", path: "/s/b.sh")
+    ).get()
+    #expect(!island.filters)
+    let off = try #require(
+      ScriptCommand.parse("#!/bin/sh\n# @kitty.mode list\n# @kitty.filter no\n", path: "/s/c.sh")
+    ).get()
+    #expect(!off.filters)
+  }
+
+  @Test func rowsOpenRevealAndCopyTheRightThing() throws {
+    var script = ScriptCommand(path: "/s/pr.sh", title: "我的 PR", interpreter: ["/bin/sh"])
+    script.keyword = "pr"
+    script.mode = .list
+    script.icon = .symbol("arrow.triangle.pull")
+    let output = """
+      {"items": [
+        {"title": "修好小字", "url": "https://github.com/a/b/pull/12", "autocomplete": "12"},
+        {"title": "说明.md", "path": "/tmp/说明.md"},
+        {"title": "纯文字", "arg": "粘贴的", "text": {"copy": "复制的"}}
+      ]}
+      """
+    let rows = LauncherModel.resultRows(
+      .init(end: .finished(0), output: output), of: script, keyword: "PR")
+    let model = try model(script)
+    #expect(rows.map { model.primaryAction(for: $0).title } == ["打开", "打开", "粘贴"])
+    #expect(
+      rows.map { model.commandReturnAction(for: $0)?.title } == ["复制网址", "在访达中显示", "只复制，不粘贴"])
+    #expect(rows.map { model.copyTitle(for: $0) } == ["复制网址", "复制路径", "复制结果"])
+    // ⇥ 接在打的关键词后面；文件结果没写图标时用它在访达里的图标
+    #expect(LauncherModel.completion(for: rows[0]) == "PR 12")
+    #expect(rows[0].scriptIcon == .symbol("arrow.triangle.pull"))
+    #expect(rows[1].scriptIcon == .file("/tmp/说明.md"))
+    #expect(
+      LauncherModel.resultFile(rows[1]) == "/tmp/说明.md" && LauncherModel.resultFile(rows[0]) == nil)
+    // ⌘K：文件有快速查看、复制路径另列；纯文字写了 text.copy 的复制也另列
+    let fileActions = model.actions(for: rows[1]).map(\.title)
+    #expect(fileActions.contains("快速查看") && fileActions.contains("复制路径"))
+    #expect(model.actions(for: rows[2]).map(\.title).contains("复制结果"))
+    // 网址的 ⌘↩ 就是复制网址：不重复列
+    #expect(model.actions(for: rows[0]).filter { $0.title == "复制网址" }.count == 1)
+  }
+
+  @Test func filterRunsOnceAndFiltersWithPinyin() async throws {
+    var script = ScriptCommand(path: "/s/proj.sh", title: "项目", interpreter: ["/bin/sh"])
+    script.keyword = "pj"
+    script.mode = .list
+    script.filters = true
+    let model = try model(script)
+    var runs: [[String]] = []
+    model.runScript = { _, arguments, _ in
+      runs.append(arguments)
+      return .init(end: .finished(0), output: "猫咪工具\tkitty-tools\n网站\tsite\nKitty Clear\tclear\n")
+    }
+    model.query = "pj "
+    await model.listRun()
+    #expect(model.results.prefix(3).map(\.title) == ["猫咪工具", "网站", "Kitty Clear"])
+    model.query = "pj m"
+    model.query = "pj mmgj"
+    await model.listRun()
+    // 拼音首字母
+    #expect(model.results.first?.title == "猫咪工具")
+    model.query = "pj clear"
+    #expect(model.results.first?.title == "Kitty Clear")
+    #expect(!model.results.contains { $0.title == "网站" })
+    #expect(runs == [[]])
+    // 收起后下次呼出重跑
+    model.didHide()
+    model.query = "pj "
+    await model.listRun()
+    #expect(runs.count == 2)
+  }
+
+  @Test func filterFailureIsNotFiltered() async throws {
+    var script = ScriptCommand(path: "/s/f.sh", title: "过滤", interpreter: ["/bin/sh"])
+    script.keyword = "ff"
+    script.mode = .list
+    script.filters = true
+    let model = try model(script)
+    model.runScript = { _, _, _ in .init(end: .finished(3), output: "", error: "没网\n") }
+    model.query = "ff abc"
+    #expect(model.results.first?.title == "正在运行「过滤」…")
+    await model.listRun()
+    // 没跑成的那一行不按打的字过滤
+    #expect(model.results.first?.title == "「过滤」出错了" && model.results.first?.subtitle == "没网")
+    model.query = "ff xyz"
+    #expect(model.results.first?.title == "「过滤」出错了")
+  }
+
+  @Test func autocompleteRerunsNormalLists() async throws {
+    var script = ScriptCommand(path: "/s/dir.sh", title: "目录", interpreter: ["/bin/sh"])
+    script.keyword = "dir"
+    script.mode = .list
+    let model = try model(script)
+    var calls: [[String]] = []
+    model.runScript = { _, arguments, _ in
+      calls.append(arguments)
+      return .init(
+        end: .finished(0), output: #"{"items": [{"title": "src", "autocomplete": "src/"}]}"#)
+    }
+    model.query = "dir "
+    await model.listRun()
+    model.complete()
+    #expect(model.query == "dir src/")
+    await model.listRun()
+    #expect(calls == [[], ["src/"]])
   }
 }

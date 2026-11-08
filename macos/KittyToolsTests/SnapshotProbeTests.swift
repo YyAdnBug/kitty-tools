@@ -4772,7 +4772,10 @@ struct SnapshotProbeTests {
     // 全文输出带终端颜色、边跑边显示（第三轮 A1 A2）：先交一截、停在那儿等截完「正在运行」那张
     var upgrade = script("更新 Homebrew", "up", .emoji("🍺"))
     upgrade.mode = .full
-    let all = scripts + [weather, base64, json, upgrade]
+    // 列表结果写了 url / path、每条自己的图标（第三轮 B1 B2）
+    var pulls = script("我的 PR", "pr", .symbol("arrow.triangle.pull"))
+    pulls.mode = .list
+    let all = scripts + [weather, base64, json, upgrade, pulls]
     let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [])
     model.engines = { [] }
     model.boundHotKey = { $0.defaultHotKey }
@@ -4786,6 +4789,17 @@ struct SnapshotProbeTests {
     var hold: CheckedContinuation<Void, Never>?
     model.runScript = { script, _, live in
       switch script.mode {
+      case .list where script.keyword == "pr":
+        return .init(
+          end: .finished(0),
+          output: """
+            {"items": [
+              {"title": "修好截图翻译的小字", "subtitle": "kitty-tools #12 · 2 小时前", "url": "https://github.com/a/b/pull/12", "icon": "🟢"},
+              {"title": "启动台捏合跟手", "subtitle": "kitty-tools #9 · 已合并", "url": "https://github.com/a/b/pull/9", "icon": "🟣"},
+              {"title": "网速指示器", "subtitle": "kitty-clear #8 · 草稿", "url": "https://github.com/a/c/pull/8", "icon": "⚪️"},
+              {"title": "发版说明.md", "subtitle": "~/Desktop", "path": "/System/Applications/Calculator.app"}
+            ]}
+            """)
       case .list: return .init(end: .finished(0), output: "YUdrPQ==\t编码\nhi\t解码\n")
       case .full where script.keyword == "up":
         live?(brew.prefix(4).joined(separator: "\n") + "\n")
@@ -4846,6 +4860,12 @@ struct SnapshotProbeTests {
         LauncherPanelView(model: model),
         size: NSSize(width: 720, height: LauncherPanelView.height(for: model)), dark: dark,
         to: "\(out)/launcher-scripts-list\(suffix).png")
+      model.query = "pr "
+      await model.listRun()
+      try snapshot(
+        LauncherPanelView(model: model),
+        size: NSSize(width: 720, height: LauncherPanelView.height(for: model)), dark: dark,
+        to: "\(out)/launcher-scripts-links\(suffix).png")
       model.query = "json "
       if let item = model.results.first { model.execute(item) }
       await model.scriptRun(json.path)

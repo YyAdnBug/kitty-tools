@@ -5,7 +5,8 @@
 // 下载来、还没看过的脚本不碰网址和别的文件夹里的图（ScriptCommand.dropUntrustedIcons，扫描时就去掉）。
 // 读不出来、下不下来的记下原因（「命令和别名」那一行写橙字），这次运行里不再试。画图标的 ScriptIconView 也在这里（启动器的行、
 // 设置的表共用）：emoji 直接画、SF 符号放进命令家族紫的色块、图片读到了换上，深色主题有 iconDark 的用它。
-// ponytail: 缓存不清理（图标少、每张不过 1 MB）；真攒多了再按最近用到的删。
+// 列表脚本的结果另有某个文件在访达里的图标（第三轮 B1 B2，.file）：主线程外取、画成小图。
+// ponytail: 缓存不清理（图标少、每张不过 1 MB）；真攒多了再按最近用到的删。文件图标例外：一列一列地换，超过 300 张整批忘掉重取。
 
 import AppKit
 import CryptoKit
@@ -17,6 +18,9 @@ import SwiftUI
   private(set) var images: [String: NSImage] = [:]
   private(set) var failures: [String: String] = [:]
   @ObservationIgnored private var requested: Set<String> = []
+  /// 取过的文件图标（按先后）：超过 fileLimit 就整批忘掉
+  @ObservationIgnored private var fileKeys: [String] = []
+  nonisolated static let fileLimit = 300
 
   nonisolated static let localLimit = 2 << 20
   nonisolated static let remoteLimit = 1 << 20
@@ -47,6 +51,7 @@ import SwiftUI
     switch icon {
     case .image(let path): path
     case .remote(let url): url
+    case .file(let path): "file:" + path
     case .emoji, .symbol: nil
     }
   }
@@ -67,12 +72,13 @@ import SwiftUI
 
   private func load(_ icon: ScriptCommand.Icon, key: String) {
     guard requested.insert(key).inserted else { return }
+    if case .file(let path) = icon { return loadFile(path, key: key) }
     Task {
       let result: Result<Data, Failure> =
         switch icon {
         case .image(let path): await Self.readLocal(path)
         case .remote(let url): await Self.fetch(url, cache: Self.cacheFolder)
-        case .emoji, .symbol: .failure(.notImage)
+        case .emoji, .symbol, .file: .failure(.notImage)
         }
       switch result {
       case .success(let data):
@@ -84,6 +90,35 @@ import SwiftUI
       case .failure(let failure): failures[key] = failure.text
       }
     }
+  }
+
+  private func loadFile(_ path: String, key: String) {
+    fileKeys.append(key)
+    if fileKeys.count > Self.fileLimit {
+      for old in fileKeys.dropLast() {
+        images[old] = nil
+        failures[old] = nil
+        requested.remove(old)
+      }
+      fileKeys = [key]
+    }
+    Task {
+      if let image = await Self.fileIcon(path) {
+        images[key] = NSImage(cgImage: image, size: .zero)
+      } else {
+        failures[key] = Failure.missing((path as NSString).lastPathComponent).text
+      }
+    }
+  }
+
+  /// 某个文件 / 文件夹在访达里的图标，画成 96 像素的小图（文件可能在网络盘上，不在主线程取）
+  @concurrent static func fileIcon(_ path: String) async -> CGImage? {
+    guard
+      let icon = (try? URL(filePath: path).resourceValues(forKeys: [.effectiveIconKey]))?
+        .effectiveIcon as? NSImage
+    else { return nil }
+    var rect = CGRect(x: 0, y: 0, width: 96, height: 96)
+    return icon.cgImage(forProposedRect: &rect, context: nil, hints: nil)
   }
 
   /// 本地图片：在不在、多大、是不是图片。符号链接看它指向的，只读普通文件（管道、设备一读就卡住），最多读上限 + 1 字节
