@@ -636,6 +636,66 @@ struct ScreenshotOverlayTests {
     #expect(pixels(245, 50) == (51, 102, 230), "\(pixels(245, 50))")
   }
 
+  // MARK: 同时翻几段（第二轮 G1）
+
+  /// 一次最多跑 3 个、一个完成补下一个；结果按下标放回（先完成的不会排到前面）；每完成一个回调一次。
+  /// 按条件等、不按时间等：全量跑时主线程忙，「睡 100 ms 就该起了」不成立（2026-11-08 全量里挂过一次）
+  @Test func segmentsTranslateThreeAtATime() async throws {
+    actor Gauge {
+      var current = 0
+      var peak = 0
+      var started = 0
+      func enter() {
+        current += 1
+        started += 1
+        peak = max(peak, current)
+      }
+      func leave() { current -= 1 }
+      /// 凑满 3 个同时在跑再往下走（最后剩不到 3 个时不等）：上限写错成更多时 peak 会超过 3
+      func full(of total: Int) -> Bool { current >= 3 || started == total }
+    }
+    let gauge = Gauge()
+    var finished: [Int] = []
+    let results = try await AppDelegate.inParallel(
+      8, limit: 3, finished: { finished.append($0) },
+      work: { index in
+        await gauge.enter()
+        while await !gauge.full(of: 8) { await Task.yield() }
+        // 前面的跑得久：完成的顺序和下标不一样
+        try await Task.sleep(for: .milliseconds(8 - index))
+        await gauge.leave()
+        return index * 10
+      })
+    #expect(results == [0, 10, 20, 30, 40, 50, 60, 70])
+    #expect(await gauge.peak == 3)
+    #expect(finished == Array(1...8))
+    // 外面取消（截图页 Esc、选区变了）：已经起的那几个跟着停，后面的不再起
+    actor Calls {
+      var count = 0
+      func add() { count += 1 }
+    }
+    let calls = Calls()
+    let task = Task {
+      try await AppDelegate.inParallel(10, limit: 3) { (index: Int) -> Int in
+        await calls.add()
+        try await Task.sleep(for: .seconds(30))
+        return index
+      }
+    }
+    while await calls.count < 3 { await Task.yield() }
+    task.cancel()
+    await #expect(throws: CancellationError.self) { _ = try await task.value }
+    #expect(await calls.count == 3)
+    // 有一个失败：整个抛出来
+    struct Failure: Error {}
+    await #expect(throws: Failure.self) {
+      _ = try await AppDelegate.inParallel(5, limit: 3) { (index: Int) -> Int in
+        if index == 2 { throw Failure() }
+        return index
+      }
+    }
+  }
+
   // MARK: 不变式（2026-11-08 独立复查：按方向筛障碍会漏掉跨过本段边的，随机版面里两段译文叠过 14 次）
 
   /// 排出来的每段：译文占的地方在图里、互不相交、不碰别的段的原文；每段不是画了就是进了卡片

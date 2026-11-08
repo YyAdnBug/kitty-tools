@@ -2880,9 +2880,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     return (lines, text)
   }
 
-  private static let overlayTitle = "翻译中…"
+  /// 截图翻译盖回时的进度岛：和划词翻译并替换那条「翻译中…」分开（同名的话进度会写到那条上）
+  private static let overlayTitle = "截图翻译中…"
 
-  /// 逐段翻译（原位覆盖用）：整段原文检测一次语种，各段用同一个方向；每段按顺序试启用的服务。
+  /// 逐段翻译（原位覆盖用）：整段原文检测一次语种，各段用同一个方向；同时最多 3 段一起请求（inParallel），
+  /// 每段按顺序试启用的服务。
   /// 不走 coordinator.translate：那条路按服务写翻译历史，一块图拆成十几段会往历史里塞十几条碎片
   private func translateSegments(
     _ segments: [ScreenshotOverlay.Segment], source: String
@@ -2892,38 +2894,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       throw TranslateError(message: "没有启用的翻译服务，先在设置 › 翻译里开一个")
     }
     let plan = TranslateCoordinator.plan(for: source, wordMode: false).request
-    var results: [String] = []
-    var used: TranslateService?
-    for (index, segment) in segments.enumerated() {
-      try Task.checkCancellation()
-      // 纯符号段不发请求（有道这类接口会回错误码，一段失败整张图就白翻了），原样占位；覆盖那一步也会跳过它
-      guard ScreenshotOverlay.hasTranslatableContent(segment.text) else {
-        results.append(segment.text)
-        continue
-      }
-      island.progress(Self.overlayTitle, detail: "\(index + 1)/\(segments.count)")
-      let request = TranslateRequest(text: segment.text, from: plan.from, to: plan.to)
-      var failure: Error = TranslateError(message: "翻译失败")
-      var translated: (text: String, service: TranslateService)?
-      for service in services {
-        do {
-          var latest = ""
-          for try await partial in service.translate(request) { latest = partial }
-          try Task.checkCancellation()
-          guard !latest.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw TranslateError.emptyResult
-          }
-          translated = (latest, service)
-          break
-        } catch {
-          if error is CancellationError || Task.isCancelled { throw error }
-          failure = error
-        }
-      }
-      guard let translated else { throw failure }
-      used = used ?? translated.service
-      results.append(translated.text)
+    // 纯符号段不发请求（有道这类接口会回错误码，一段失败整张图就白翻了），原样占位；覆盖那一步也会跳过它
+    var results = segments.map(\.text)
+    let pending = segments.indices.filter {
+      ScreenshotOverlay.hasTranslatableContent(segments[$0].text)
     }
+    // 同时最多 3 段一起请求（2026-11-08 第二轮拍板 G1：以前一段一段等，整屏十几段要十秒上下）：免费服务会限流，不开太多。
+    // 每段自己按启用顺序换服务，所有服务都失败才算整张图失败（同原来）
+    let requests = pending.map {
+      TranslateRequest(text: segments[$0].text, from: plan.from, to: plan.to)
+    }
+    // 要翻好几轮（段数多过同时请求的数）才出进度岛：一轮就翻完的不弹，免得一闪而过；翻完、失败、取消都收掉
+    let showsProgress = requests.count > Self.overlayConcurrency
+    if showsProgress {
+      island.show(
+        Self.overlayTitle, detail: "0/\(requests.count)", tone: .progress, symbol: "translate")
+    }
+    defer { if showsProgress { island.dismiss(ifShowing: Self.overlayTitle) } }
+    let outputs = try await Self.inParallel(
+      requests.count, limit: Self.overlayConcurrency,
+      finished: { [island] done in
+        if showsProgress { island.progress(Self.overlayTitle, detail: "\(done)/\(requests.count)") }
+      },
+      work: { index in try await Self.translateSegment(requests[index], services: services) })
+    for (index, output) in zip(pending, outputs) { results[index] = output.text }
+    // 历史里记的服务：按段的顺序第一个用上的那个（同原来串行时）
+    let used = outputs.first?.service
     // 和浮窗那条一样记一份翻译历史（整段原文 + 整段译文），不然截图翻译在翻译历史里会凭空消失
     if let used, UserDefaults.standard.bool(forKey: Prefs.translateHistoryEnabled) {
       coordinator.history.add(
@@ -2932,6 +2928,61 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         limit: UserDefaults.standard.integer(forKey: Prefs.translateHistoryLimit))
     }
     return results
+  }
+
+  /// 截图翻译盖回时同时最多请求几段（第二轮 G1）
+  private static let overlayConcurrency = 3
+
+  /// 最多 limit 个一起跑、一个完成补下一个，结果按下标放回（第二轮 G1）；任何一个抛错就整个抛（其余的取消）。
+  /// finished(完成了几个) 每完成一个调一次（在调用方这边，可以直接动界面）。纯调度，配单测
+  static func inParallel<T: Sendable>(
+    _ count: Int, limit: Int, finished: (Int) -> Void = { _ in },
+    work: @escaping @Sendable (Int) async throws -> T
+  ) async throws -> [T] {
+    var results = [T?](repeating: nil, count: count)
+    try await withThrowingTaskGroup(of: (Int, T).self) { group in
+      var next = 0
+      var done = 0
+      func launch() {
+        guard next < count else { return }
+        let index = next
+        next += 1
+        group.addTask { (index, try await work(index)) }
+      }
+      for _ in 0..<max(1, limit) { launch() }
+      while let (index, value) = try await group.next() {
+        results[index] = value
+        done += 1
+        finished(done)
+        launch()
+      }
+    }
+    // 没抛错就每个位置都有值；真少了一个是这里写错了，别让它悄悄变短、对应的段留成原文
+    assert(!results.contains { $0 == nil }, "inParallel 有位置没填上")
+    return results.compactMap { $0 }
+  }
+
+  /// 一段：按启用顺序试服务，第一个出了非空译文的就用；都失败抛最后一个错误，取消照样往外抛
+  private nonisolated static func translateSegment(
+    _ request: TranslateRequest, services: [TranslateService]
+  ) async throws -> (text: String, service: TranslateService) {
+    var failure: Error = TranslateError(message: "翻译失败")
+    for service in services {
+      try Task.checkCancellation()
+      do {
+        var latest = ""
+        for try await partial in service.translate(request) { latest = partial }
+        try Task.checkCancellation()
+        guard !latest.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+          throw TranslateError.emptyResult
+        }
+        return (latest, service)
+      } catch {
+        if error is CancellationError || Task.isCancelled { throw error }
+        failure = error
+      }
+    }
+    throw failure
   }
 
   /// 识字慢的时候先出「识别中」（第二轮体检 R3）：常见选区 0.04–0.13 s，不出；整屏密集文字约 0.9 s，过了 0.3 s 还没出结果
