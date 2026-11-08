@@ -200,15 +200,19 @@ extension ScriptLibrary {
     """
 
   /// 例子：查天气（带一个参数，岛上显示一行；说明页、没有自己的脚本时那一行「用例子新建」）
-  static let example = """
+  nonisolated static let example = """
     #!/bin/zsh
     # @kitty.title 查天气
     # @kitty.keyword tq
     # @kitty.icon ⛅
     # @kitty.argument1 城市
-    # @kitty.description 输入「tq 空格 城市」，岛上显示天气
+    # @kitty.description 输入「tq 空格 城市」，提示里显示天气
 
-    curl -s --max-time 8 "https://wttr.in/${1// /+}?format=3&lang=zh"
+    city="$1"
+    curl -sS --max-time 10 "https://wttr.in/${city// /+}?format=3&lang=zh" || {
+      print -u2 "没查到：检查一下网络"
+      exit 1
+    }
     """
 
   /// 新建查天气的例子：存成「查天气.sh」（重名加数字）、用编辑器打开、重读，岛上说怎么试

@@ -3,7 +3,7 @@
 // 提醒、汇率…）、系统命令（lock、sleep…），组里按名字排（第二轮 C1：来这一页多半是管自己的脚本，我的排最前）；上面能搜，
 // 一排筛选「全部 / 我的脚本 / 自带脚本 / 内置」和「只看开着的」。脚本的图标读不出来、下不下来时名字下面写橙字原因（B2）。
 // 别名就是在启动器里要打的那个词：改了旧词不再认，清空就只能按名字搜；和别的命令、网页搜索的关键词撞了那一格描橙框
-// （运行时用靠前的那个）。关掉 = 不出现在搜索里、关键词也不认。只存改过的（LauncherCommands.Settings，跟着设置导出、同步）。
+// （运行时内置命令先认，其次脚本，网页搜索的关键词最后）。关掉 = 不出现在搜索里、关键词也不认。只存改过的（LauncherCommands.Settings，跟着设置导出、同步）。
 // 脚本那几行：点名字在访达中显示，右键编辑、（我的脚本）移到废纸篓。脚本命令整个关着时脚本那两组变灰。
 // 一个自己的脚本都没有时，「我的脚本」组照样列出来，一行「还没有自己的脚本」带「用例子新建」（只在没搜、没筛「只看开着的」时）。
 // 启动器 ⌘K「改别名…」推进来时（SettingsNavigation.focusedCommand）只列那一条（按 id，同名的复制品不跟着出来）、别名框拿着
@@ -173,7 +173,7 @@ struct LauncherCommandsSection: View {
       SectionFootnote(
         !shown.contains { conflicts.contains($0.id) }
           ? "别名就是在启动器里要打的那个词，改了以后原来的词不再认；清空就只能按名字搜。关掉的不出现在搜索里。"
-          : "描了橙框的别名重复了（也算网页搜索的关键词），启动器里用排在前面的那个，改一个吧。")
+          : "描了橙框的别名重复了（也算网页搜索的关键词）：启动器里内置命令先认，其次脚本，网页搜索的关键词最后。改一个吧。")
     }
     .onAppear { focus(in: all) }
     .onChange(of: navigation?.focusedCommand) { focus(in: all) }
@@ -292,10 +292,11 @@ private struct CommandRow: View {
         }
       }
       .contentShape(.rect)
-      .onTapGesture {
-        if let script = row.script {
-          NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: script.path)])
-        }
+      // 点脚本的名字在访达中显示（拍板 C3）；悬停有提示、读屏能当动作用（第三轮评审：原来事先看不出来）
+      .onTapGesture { reveal() }
+      .help(row.script == nil ? "" : "在访达中显示")
+      .accessibilityActions {
+        if row.script != nil { Button("在访达中显示", action: reveal) }
       }
       Spacer(minLength: 8)
       TextField("别名", text: $alias, prompt: Text("无"))
@@ -315,16 +316,14 @@ private struct CommandRow: View {
         .accessibilityValue(conflicted ? "\(alias)，和别的重复了" : alias)
       Toggle("启用「\(row.title)」", isOn: $isOn)
         .toggleStyle(.switch)
-        .controlSize(.small)
+        .controlSize(.mini)
         .labelsHidden()
         .frame(width: LauncherCommandsSection.toggleWidth, alignment: .trailing)
     }
     .opacity(isOn ? 1 : 0.55)
     .contextMenu {
       if let script = row.script {
-        Button("在访达中显示") {
-          NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: script.path)])
-        }
+        Button("在访达中显示", action: reveal)
         if script.isBundled {
           // 复制出来的那份和自带的同一个关键词：把自带的关掉，启动器里只剩自己那份（拍板 D2「用你的」）
           Button("复制一份到我的脚本") {
@@ -345,6 +344,11 @@ private struct CommandRow: View {
         }
       }
     }
+  }
+
+  private func reveal() {
+    guard let script = row.script else { return }
+    NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: script.path)])
   }
 
   @ViewBuilder private var icon: some View {

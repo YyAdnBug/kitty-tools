@@ -20,7 +20,11 @@ struct WebSearchPage: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      DetailHeader(title: "网页搜索与快捷链接", status: Self.summary(engines)) {
+      // 页里的说法不说「点进去」（人已经在这一页了）
+      DetailHeader(
+        title: "网页搜索与快捷链接",
+        status: engines.isEmpty ? "还没有，点下面的 + 添加" : Self.summary(engines)
+      ) {
         KindTile(symbol: "globe", color: Style.Family.search, size: 40)
       }
       Form {

@@ -192,12 +192,18 @@ struct ScriptsSection: View {
       detail: "改好开头几行保存，在启动器里输 hello 就能跑", actions: [.reveal(url)])
   }
 
-  /// 拖脚本文件进来：先看一眼再导入（一次一个；拖了几个只看第一个）
+  /// 拖脚本文件进来：先看一眼再导入（一次一个；拖了几个只看第一个）。键盘、读屏用右边的「选择文件…」（第三轮评审）
   private var dropZone: some View {
     HStack(spacing: 8) {
-      Image(systemName: "square.and.arrow.down")
+      Image(systemName: "square.and.arrow.down").accessibilityHidden(true)
       Text("把别人给的脚本文件拖到这里导入（导入前先看一眼全文）")
+        .accessibilityLabel("把脚本文件拖到这里导入")
+      Spacer(minLength: 8)
+      Button("选择文件…", action: chooseFile)
+        .controlSize(.small)
+        .foregroundStyle(.primary)
     }
+    .padding(.horizontal, 10)
     .font(.system(size: 12))
     .foregroundStyle(isTargeted ? AnyShapeStyle(Style.brandInk) : AnyShapeStyle(.secondary))
     .frame(maxWidth: .infinity, minHeight: 34)
@@ -209,15 +215,39 @@ struct ScriptsSection: View {
     }
     .dropDestination(for: URL.self) { urls, _ in
       guard let url = urls.first(where: \.isFileURL) else { return false }
-      Task {
-        let read = await ScriptRunner.read(url.path(percentEncoded: false))
-        pending = Candidate(url: url, name: url.lastPathComponent, reading: read)
-      }
+      review(url)
       return true
     } isTargeted: {
       isTargeted = $0
     }
-    .accessibilityLabel("把脚本文件拖到这里导入")
+    .accessibilityElement(children: .contain)
+  }
+
+  /// 读一个要导入的文件、出「先看一眼」那张表单
+  private func review(_ url: URL) {
+    Task {
+      let read = await ScriptRunner.read(url.path(percentEncoded: false))
+      pending = Candidate(url: url, name: url.lastPathComponent, reading: read)
+    }
+  }
+
+  /// 「选择文件…」：挂在设置窗上的选文件面板，选好同拖进来
+  private func chooseFile() {
+    let panel = NSOpenPanel()
+    panel.canChooseFiles = true
+    panel.canChooseDirectories = false
+    panel.allowsMultipleSelection = false
+    panel.prompt = "导入"
+    panel.message = "选一个别人给的脚本文件，导入前先看一眼全文"
+    let done: (NSApplication.ModalResponse) -> Void = { response in
+      guard response == .OK, let url = panel.url else { return }
+      review(url)
+    }
+    if let window = NSApp.keyWindow {
+      panel.beginSheetModal(for: window, completionHandler: done)
+    } else {
+      FilePanel.begin(panel, completion: done)
+    }
   }
 
   /// 「添加文件夹…」：挂在设置窗上的选文件夹面板
@@ -252,9 +282,10 @@ struct SettingsPushRow: View {
   var body: some View {
     Button(action: action) {
       LabeledContent {
-        Image(systemName: "chevron.right")
-          .font(.system(size: 11, weight: .semibold))
-          .foregroundStyle(.secondary)
+        // 同可排序列表里推进的那种箭头（翻译服务、网页搜索、提醒）
+        Image(systemName: "chevron.forward")
+          .foregroundStyle(.tertiary)
+          .accessibilityHidden(true)
       } label: {
         HStack(spacing: 6) {
           Text(title)
@@ -304,6 +335,7 @@ private struct ScriptImportSheet: View {
       ScrollView {
         Text(reading.text.isEmpty ? "（空的）" : reading.text)
           .font(.system(size: 12, design: .monospaced))
+          .lineSpacing(2)
           .textSelection(.enabled)
           .frame(maxWidth: .infinity, alignment: .topLeading)
           .padding(10)

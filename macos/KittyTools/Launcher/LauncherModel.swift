@@ -95,6 +95,14 @@ import UniformTypeIdentifiers
     var isRunnable: Bool { reading != nil && reading?.problem == nil }
   }
 
+  /// 看全文 / 输出那一页的键盘滚动（第三轮评审：焦点一直在搜索框里，长脚本只能拿鼠标滚）：step ±1 一小段、±2 一屏，
+  /// tick 让连按同一个方向也算变了
+  struct PageScroll: Equatable {
+    var step = 0
+    var tick = 0
+  }
+  private(set) var pageScroll = PageScroll()
+
   /// 全文输出的脚本（B1 full）：列表换成它的输出，↩ 粘贴、⌘C 复制、Esc 返回（还在跑时 Esc 停掉）
   private(set) var output: ScriptOutput?
 
@@ -1820,16 +1828,20 @@ import UniformTypeIdentifiers
         ? ("暂停", "pause.circle") : ("打开", "play.circle")
     case .script where item.arguments == nil && item.completion != nil: ("补全关键词", "text.cursor")
     // 参数没填够：↩ 只响提示音，副标题写着要填什么
-    case .script
-    where (item.arguments?.count ?? .max)
-      < (activeScripts.first { $0.path == item.target }?.requiredCount ?? 0):
-      ("先填参数", "text.cursor")
+    case .script where isMissingArguments(item): ("先填参数", "text.cursor")
     case .script: (confirming ? "确认运行" : "运行", "play")
     case .scriptResult: ("粘贴", "arrow.turn.down.left")
     }
   }
 
   /// ⌘↩ 做什么；没有就是 nil（网址没有第二个浏览器时也是 nil：副标题不写，按了只响提示音）
+  /// 「关键词 空格」后参数没填够的那一行：↩ 只响提示音（底栏的 ↩ 不画成能按的主按钮）
+  func isMissingArguments(_ item: LauncherItem) -> Bool {
+    item.kind == .script
+      && (item.arguments?.count ?? .max)
+        < (activeScripts.first { $0.path == item.target }?.requiredCount ?? 0)
+  }
+
   func commandReturnAction(for item: LauncherItem) -> (title: String, symbol: String)? {
     let confirming = armed?.id == item.id && armed?.commandKey == true
     if let request = commandRequest, [.app, .process].contains(item.kind) {
@@ -2151,15 +2163,29 @@ import UniformTypeIdentifiers
     return true
   }
 
-  /// 看脚本全文那一页：↩ 运行、Esc 回去，↑↓ 吞掉（没有可选的），打字照常（会回到结果）
+  /// 看全文 / 输出那一页的 ↑↓、PageUp / PageDown：滚正文（是这几个键就接了，返回 true）
+  private func scrollsPage(_ selector: Selector) -> Bool {
+    let step: Int
+    switch selector {
+    case #selector(NSResponder.moveUp(_:)): step = -1
+    case #selector(NSResponder.moveDown(_:)): step = 1
+    case #selector(NSResponder.scrollPageUp(_:)), #selector(NSResponder.pageUp(_:)): step = -2
+    case #selector(NSResponder.scrollPageDown(_:)), #selector(NSResponder.pageDown(_:)): step = 2
+    default: return false
+    }
+    pageScroll = PageScroll(step: step, tick: pageScroll.tick + 1)
+    return true
+  }
+
+  /// 看脚本全文那一页：↩ 运行、Esc 回去，↑↓ / PageUp / PageDown 滚正文，打字照常（会回到结果）
   private func handleReviewCommand(_ selector: Selector) -> Bool {
     switch selector {
     // 按住 ↩ 的自动连发不算：打开这一页的那一下连发过来不能直接放行
     case #selector(NSResponder.insertNewline(_:)):
       if Style.isReturnKey, !Style.isKeyRepeat { approveReview() }
     case #selector(NSResponder.cancelOperation(_:)): cancelReview()
-    case #selector(NSResponder.moveUp(_:)), #selector(NSResponder.moveDown(_:)),
-      #selector(NSResponder.insertTab(_:)),
+    case _ where scrollsPage(selector): break
+    case #selector(NSResponder.insertTab(_:)),
       #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)),
       #selector(NSResponder.insertLineBreak(_:)):
       break
@@ -2168,15 +2194,15 @@ import UniformTypeIdentifiers
     return true
   }
 
-  /// 全文输出那一页：↩ 粘贴、Esc 返回（还在跑就停掉），↑↓ 吞掉，打字照常（会回到结果）
+  /// 全文输出那一页：↩ 粘贴、Esc 返回（还在跑就停掉），↑↓ / PageUp / PageDown 滚正文，打字照常（会回到结果）
   private func handleOutputCommand(_ selector: Selector) -> Bool {
     switch selector {
     // 按住 ↩ 的自动连发不算：跑得快的脚本跑完时连发过来的那一下不能直接粘贴出去
     case #selector(NSResponder.insertNewline(_:)):
       if Style.isReturnKey, !Style.isKeyRepeat { pasteOutput() }
     case #selector(NSResponder.cancelOperation(_:)): closeOutput()
-    case #selector(NSResponder.moveUp(_:)), #selector(NSResponder.moveDown(_:)),
-      #selector(NSResponder.insertTab(_:)),
+    case _ where scrollsPage(selector): break
+    case #selector(NSResponder.insertTab(_:)),
       #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)),
       #selector(NSResponder.insertLineBreak(_:)):
       break

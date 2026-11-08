@@ -24,7 +24,7 @@ struct ScriptGuidePage: View {
     ),
     (
       "@kitty.argument1", "参数（最多 3 个）",
-      "写参数的名字，如「城市」；在启动器里输「关键词 空格 文字」，文字在 $1 里。可以不填的写成 {\"placeholder\": \"城市\", \"optional\": true}；要直接拼进网址的再加 \"percentEncoded\": true（先做网址编码）"
+      "写参数的名字，如「城市」；在启动器里输「关键词 空格 文字」，文字在 $1 里。可以不填的写成 `{\"placeholder\": \"城市\", \"optional\": true}`；要直接拼进网址的再加 `\"percentEncoded\": true`（先做网址编码）"
     ),
     ("@kitty.description", "副标题", "启动器里名字后面的那行小字"),
     (
@@ -67,7 +67,7 @@ struct ScriptGuidePage: View {
           Text("三步上手")
         } footer: {
           SectionFootnote(
-            "脚本用 .sh 文件的默认 App 打开（默认的是终端时改用文本编辑）。想换编辑器：在访达里选一个 .sh 文件，⌘I 显示简介，「打开方式」选好后点「全部更改…」。启动器里选中一条脚本，⌘E 就能改它。"
+            "脚本用 .sh 文件的默认 App 打开；默认的那个不是编辑器（比如终端，一开就跑了）时，改用打开纯文本的那个编辑器。想换编辑器：在访达里选一个 .sh 文件，⌘I 显示简介，「打开方式」选好后点「全部更改…」。启动器里选中一条脚本，⌘E 就能改它。"
           )
         }
         Section {
@@ -93,10 +93,13 @@ struct ScriptGuidePage: View {
                   Style.brandInk)
                 Text(field.title).font(.system(size: 13, weight: .medium))
               }
-              Text(field.detail)
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+              // 反引号里的（JSON、取值）是等宽字，和左边的字段名一样
+              Text(
+                (try? AttributedString(markdown: field.detail)) ?? AttributedString(field.detail)
+              )
+              .font(.system(size: 12))
+              .foregroundStyle(.secondary)
+              .fixedSize(horizontal: false, vertical: true)
             }
             .accessibilityElement(children: .combine)
           }
@@ -181,6 +184,7 @@ struct ScriptGuidePage: View {
   private func code(_ text: String) -> some View {
     Text(text)
       .font(.system(size: 12, design: .monospaced))
+      .lineSpacing(2)
       .textSelection(.enabled)
       .frame(maxWidth: .infinity, alignment: .leading)
       .padding(10)

@@ -55,18 +55,7 @@ nonisolated enum ScriptAIGuide {
     ## 例子
 
     ```zsh
-    #!/bin/zsh
-    # @kitty.title 查天气
-    # @kitty.keyword tq
-    # @kitty.icon ⛅
-    # @kitty.argument1 城市
-    # @kitty.description 输入「tq 空格 城市」，提示里显示天气
-
-    city="$1"
-    curl -sS --max-time 8 "https://wttr.in/${city// /+}?format=3&lang=zh" || {
-      print -u2 "没查到：检查一下网络"
-      exit 1
-    }
+    \(ScriptLibrary.example)
     ```
 
     ## 我要的脚本

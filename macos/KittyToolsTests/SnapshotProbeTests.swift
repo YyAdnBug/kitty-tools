@@ -4737,14 +4737,14 @@ struct SnapshotProbeTests {
       return script
     }
     let scripts = [
-      script("Unix 时间戳", "time", .emoji("⏱"), summary: "时间戳和日期互转"),
+      script("Unix 时间戳", "time", .emoji("⏱\u{FE0F}"), summary: "时间戳和日期互转"),
       script("切换深色模式", "dark", .symbol("circle.lefthalf.filled")),
       script("清空下载文件夹", "cleandl", nil, confirm: "再按 ↩ 清空下载文件夹，不能撤销"),
       script("记到 flomo", "fl", nil, summary: "把一句话发到 flomo", downloaded: true),
     ]
     var weather = script("天气", "tq", .emoji("⛅"))
     weather.arguments = [.init(placeholder: "城市")]
-    var base64 = script("Base64 编码 & 解码", "b64", .symbol("character.textbox"))
+    var base64 = script("Base64 编码 & 解码", "b64", .symbol("arrow.left.arrow.right.square"))
     base64.mode = .list
     var json = script("JSON 格式化", "json", .symbol("curlybraces"))
     json.mode = .full
