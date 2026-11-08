@@ -8,6 +8,7 @@
 // 一个自己的脚本都没有时，「我的脚本」组照样列出来，一行「还没有自己的脚本」带「用例子新建」（只在没搜、没筛「只看开着的」时）。
 // 每条命令还能设一个快捷键（第三轮 D1，「快捷键」那一列：同快捷键页的录制框，窄一些；和全局快捷键、别的命令一起查重，
 // 录错、注册不上的原因写在那一行下面）；按了直接跑，要参数 / 要确认 / 没看过全文的打开启动器做那一步（LauncherModel.runHotKey）。
+// 开关、别名变了快捷键怎么跟：AppDelegate 看着偏好变化调 HotKeyCenter.reloadCommandsIfChanged（这一页不另外接）。
 // 启动器 ⌘K「改别名…」推进来时（SettingsNavigation.focusedCommand）只列那一条（按 id，同名的复制品不跟着出来）、别名框拿着
 // 焦点，上面一行「显示全部」；动一下搜索框或筛选就回到全部（第二轮 D1）。
 
@@ -184,10 +185,6 @@ struct LauncherCommandsSection: View {
     }
     .onAppear { focus(in: all) }
     .onChange(of: navigation?.focusedCommand) { focus(in: all) }
-    // 开关、别名（关键词命令的别名清空了就打不出它）、脚本命令的总开关变了：快捷键跟着注册 / 注销
-    .onChange(of: offText) { center?.reloadCommandsIfChanged() }
-    .onChange(of: aliasesText) { center?.reloadCommandsIfChanged() }
-    .onChange(of: scriptsOn) { center?.reloadCommandsIfChanged() }
   }
 
   /// 搜索框、筛选被人动了：不再只列「改别名…」那一行

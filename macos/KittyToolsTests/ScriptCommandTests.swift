@@ -2086,4 +2086,40 @@ struct SubprocessStopTests {
     model.runHotKey("system:lock")
     #expect(performed.count == 1)
   }
+
+  @Test func hotKeyClosesTheMenuAndKeepsOtherRuns() async throws {
+    var guarded = ScriptCommand(path: "/s/rm.sh", title: "清空", interpreter: ["/bin/sh"])
+    guarded.keyword = "rm"
+    guarded.confirmation = "再按 ↩ 清空"
+    var slow = ScriptCommand(path: "/s/slow.sh", title: "慢的", interpreter: ["/bin/sh"])
+    slow.keyword = "slow"
+    slow.mode = .full
+    var quick = ScriptCommand(path: "/s/quick.sh", title: "快的", interpreter: ["/bin/sh"])
+    quick.keyword = "quick"
+    quick.mode = .full
+    let model = try model([guarded, slow, quick])
+    #expect(model.hasCommand(LauncherCommands.scriptID(slow)) && model.hasCommand("builtin:ip"))
+    #expect(!model.hasCommand("script:~/nowhere.sh") && !model.hasCommand("system:nothing"))
+    // ⌘K 菜单开着时按：菜单收起，上膛的那句看得见
+    model.query = "slow"
+    model.toggleActions()
+    #expect(model.showsActions)
+    model.runHotKey(LauncherCommands.scriptID(guarded))
+    #expect(!model.showsActions)
+    // 另一条全文脚本的那一页还在跑：交给岛，不停掉它
+    var hold: CheckedContinuation<Void, Never>?
+    model.runScript = { script, _, _ in
+      if script.path == slow.path { await withCheckedContinuation { hold = $0 } }
+      return .init(end: .finished(0), output: script.title + "\n")
+    }
+    model.query = "slow"
+    model.execute(try #require(model.results.first))
+    for _ in 0..<40 where hold == nil { await Task.yield() }
+    model.runHotKey(LauncherCommands.scriptID(quick))
+    await model.scriptRun(quick.path)
+    #expect(model.output?.text == "快的")
+    hold?.resume()
+    await model.scriptRun(slow.path)
+    #expect(model.lastOutput?.page.text == "慢的")
+  }
 }

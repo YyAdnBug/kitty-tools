@@ -5,7 +5,8 @@
 // 本 App 自己的菜单开着时热键事件会压在队列里、关了才派发，所以看到热键就先关菜单（watch(_:)）。
 // 录屏倒数期间临时注册一个不带修饰键的 Esc（registerEscape，录制 HUD 不当 key、收不到按键；和各动作的热键分开记）。
 // 启动器「命令和别名」里每条命令的快捷键（脚本命令第三轮 D1）也在这里注册：哪些由 commandHotKeys 给（AppDelegate 只给此刻
-// 能做事的），按下交给 onCommand；热键 id 从 commandBase 起，和动作的下标、临时 Esc 不撞；注册失败的原因记在 commandFailures。
+// 能做事的），按下交给 onCommand；热键 id 从 commandBase 起，每条命令这次运行里一个固定的号（不按排在第几：重新注册后，
+// 按旧号排着队的事件不能落到别的命令上），和动作的下标、临时 Esc 不撞；注册失败的原因记在 commandFailures。
 // 连按两下修饰键（2026-11-06 拍板 B）不走 Carbon：全局 + 本地监听修饰键变化，交给 ModifierTaps 认，只听不拦；
 // 要「辅助功能」授权（没有时那一行写橙字 + 去授权，别的快捷键照常），授权变了跟着重来。
 
@@ -451,10 +452,18 @@ enum HotKeyAction: String, CaseIterable {
   /// 要注册的命令的快捷键（编号、组合；按编号排好）和按下时做什么
   @ObservationIgnored var commandHotKeys: () -> [(id: String, hotKey: HotKey)] = { [] }
   @ObservationIgnored var onCommand: (String) -> Void = { _ in }
-  /// 注册上的命令（下标 = 热键 id − commandBase）、它们的组合，没注册上的和原因（-9878：和本 App 别的快捷键重复）
-  @ObservationIgnored private var commandIDs: [String] = []
+  /// 这次要注册的（注册没注册上都算）、注册上的组合，没注册上的和原因（-9878：和本 App 别的快捷键重复）
+  @ObservationIgnored private var commandAttempts: [(id: String, hotKey: HotKey)] = []
   private(set) var commandBindings: [String: HotKey] = [:]
   private(set) var commandFailures: [String: OSStatus] = [:]
+  /// 每条命令的热键 id（这次运行里不变、不复用）和反查
+  @ObservationIgnored private var commandNumbers: [String: UInt32] = [:]
+  @ObservationIgnored private var commandsByNumber: [UInt32: String] = [:]
+  /// 这条命令在这台 Mac 上有没有（录制框查重只算有的：同步来的、删掉的脚本留下的组合没有那一行，改不掉，不该挡别人）
+  @ObservationIgnored var knowsCommand: (String) -> Bool = { _ in true }
+
+  /// 有生效的热键（动作的或命令的）：截图框选、状态屏停热键前看它，结束时才重新注册
+  var isActive: Bool { !bindings.isEmpty || !commandBindings.isEmpty }
   /// 连按两下要辅助功能授权、还没有（failures 里的值，不是 Carbon 的错误码）
   static let needsAccessibility: OSStatus = 1
   /// 连按两下：哪个修饰键归哪个动作，和认连按的状态机、两个监听（全局：别的 App 在前台；本地：本 App 的面板拿着键盘）
@@ -509,9 +518,16 @@ enum HotKeyAction: String, CaseIterable {
 
   /// 命令的快捷键（在各动作之后注册：和动作撞了的是命令这边失败）
   private func registerCommands() {
-    for (id, hotKey) in commandHotKeys() {
-      let number = Self.commandBase + UInt32(commandIDs.count)
-      commandIDs.append(id)
+    commandAttempts = commandHotKeys()
+    for (id, hotKey) in commandAttempts {
+      let number =
+        commandNumbers[id]
+        ?? {
+          let next = Self.commandBase + UInt32(commandNumbers.count)
+          commandNumbers[id] = next
+          commandsByNumber[next] = id
+          return next
+        }()
       var ref: EventHotKeyRef?
       let status = RegisterEventHotKey(
         hotKey.keyCode, hotKey.modifiers, EventHotKeyID(signature: Self.signature, id: number),
@@ -529,8 +545,10 @@ enum HotKeyAction: String, CaseIterable {
   func reloadCommandsIfChanged() {
     guard recording == nil, !suspended else { return }
     let wanted = commandHotKeys()
-    let registered = commandIDs.map { ($0, commandBindings[$0]) }
-    guard wanted.map(\.id) != registered.map(\.0) || wanted.map(\.hotKey) != registered.map(\.1)
+    // 和上次要注册的比（不只比注册上的：有一条没注册上时，不该每次都当变了）
+    guard
+      wanted.map(\.id) != commandAttempts.map(\.id)
+        || wanted.map(\.hotKey) != commandAttempts.map(\.hotKey)
     else { return }
     reload()
   }
@@ -550,7 +568,7 @@ enum HotKeyAction: String, CaseIterable {
     bindings = [:]
     failures = [:]
     tapActions = [:]
-    commandIDs = []
+    commandAttempts = []
     commandBindings = [:]
     commandFailures = [:]
     watchTaps()
@@ -665,8 +683,8 @@ enum HotKeyAction: String, CaseIterable {
   private func fire(_ id: UInt32) {
     if id == Self.escapeID { return escapePressed() }
     if id >= Self.commandBase {
-      let index = Int(id - Self.commandBase)
-      if index < commandIDs.count { onCommand(commandIDs[index]) }
+      // 只认此刻注册着的：注销了的号上排着队的事件不做
+      if let command = commandsByNumber[id], commandBindings[command] != nil { onCommand(command) }
       return
     }
     guard Int(id) < HotKeyAction.allCases.count else { return }

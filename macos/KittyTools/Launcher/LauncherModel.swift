@@ -306,6 +306,15 @@ import UniformTypeIdentifiers
     defaults.set(text(of: all), forKey: Prefs.launcherCommandHotKeys)
   }
 
+  /// 这条命令在这台 Mac 上有（关着的也算；录制框查重只算有的）
+  func hasCommand(_ id: String) -> Bool {
+    let system = LauncherCommands.systemID("")
+    return LauncherCommands.builtIns.contains { $0.id == id }
+      || (id.hasPrefix(system)
+        && SystemCommand(rawValue: String(id.dropFirst(system.count))) != nil)
+      || scripts().contains { LauncherCommands.scriptID($0) == id }
+  }
+
   /// 这条命令此刻按快捷键能不能做事：开着；脚本在（这台 Mac 上有、脚本命令开着）；关键词命令的功能开着、还有别名（别名清空了
   /// 打不出它）；系统命令都在。热键中心只注册这些
   func canRunHotKey(_ id: String) -> Bool {
@@ -342,7 +351,16 @@ import UniformTypeIdentifiers
       }
       if script.mode == .full {
         guard showPanel() else { return }
-        query = ""
+        showsActions = false
+        // 它自己还在跑：start 会在岛上说「还在运行」，不动眼前那一页（清空搜索框会停掉它）
+        if runningScripts[script.path] == nil {
+          // 别的全文脚本的那一页还在跑：交给岛（跑完说一声带「看输出」），不停掉它（第 4 批评审）
+          if let current = output, current.isRunning {
+            output = nil
+            detach(current.script)
+          }
+          query = ""
+        }
       }
       usage.record(item, query: "")
       runWithoutPanel { start(script, arguments: []) }
@@ -352,6 +370,7 @@ import UniformTypeIdentifiers
       let alias = settings.alias(id, default: builtIn.keyword)
     {
       guard showPanel() else { return }
+      showsActions = false
       query = alias + " "
       return
     }
@@ -372,6 +391,8 @@ import UniformTypeIdentifiers
   /// 打开启动器、打 word、选中那一行按一下 ↩（上膛、补关键词、先看全文都在 execute 里）
   private func showAndExecute(_ item: LauncherItem, word: String) {
     guard showPanel() else { return }
+    // ⌘K 菜单开着时收起：不然上了膛的那句压在菜单下面，菜单第一项（执行）再按一下 ↩ 就跑了（第 4 批评审）
+    showsActions = false
     query = word
     guard let index = results.firstIndex(where: { $0.id == item.id }) else { return }
     selection = index

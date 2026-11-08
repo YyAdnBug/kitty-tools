@@ -239,7 +239,7 @@ struct HotKeyRecorder: View {
       return
     }
     // 和「命令和别名」里某条命令的快捷键重复（第三轮 D1）
-    if let hotKey, let other = Self.commandOwner(of: hotKey, except: nil) {
+    if let hotKey, let other = commandOwner(of: hotKey, except: nil) {
       message = "和启动器命令「\(other)」重复"
       return
     }
@@ -263,7 +263,7 @@ struct HotKeyRecorder: View {
       message = "和「\(other.title)」重复"
       return
     }
-    if let hotKey, let other = Self.commandOwner(of: hotKey, except: id) {
+    if let hotKey, let other = commandOwner(of: hotKey, except: id) {
       message = "和「\(other)」重复"
       return
     }
@@ -273,10 +273,10 @@ struct HotKeyRecorder: View {
     if isRecording { stop() } else if center.recording == nil { center.reload() }
   }
 
-  /// 哪条命令用了这个组合（名字）
-  private static func commandOwner(of hotKey: HotKey, except id: String?) -> String? {
+  /// 哪条命令用了这个组合（名字）：这台 Mac 上没有的那条不算（第 4 批评审：没有那一行、清不掉，会一直挡着）
+  private func commandOwner(of hotKey: HotKey, except id: String?) -> String? {
     LauncherModel.savedCommandHotKeys()
-      .first { $0.key != id && $0.value == hotKey }
+      .first { $0.key != id && $0.value == hotKey && center.knowsCommand($0.key) }
       .map { LauncherModel.commandTitle($0.key) }
   }
 

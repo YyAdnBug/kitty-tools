@@ -950,7 +950,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     hotKeys.onCommand = { [unowned self] id in
       guard Feature.launcher.isOn, !statusScreen.isActive else { return }
+      // 录屏「显示按键」：同各动作的快捷键，补给按键提示
+      if let key = hotKeys.commandBindings[id] { recorder?.inputOverlay?.showKey(key.display) }
       launcherModel.runHotKey(id)
+    }
+    hotKeys.knowsCommand = { [unowned self] id in
+      _ = launcherPanel
+      return launcherModel.hasCommand(id)
     }
     hotKeys.reload()
     try? FileManager.default.removeItem(at: ShotShelf.dragDirectory)
@@ -1037,6 +1043,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       MainActor.assumeIsolated {
         guard let self else { return }
         self.applyFeatures()
+        // 命令的快捷键跟着「命令和别名」的开关和别名、脚本命令总开关、⌘K「关掉这条命令」走（第 4 批评审：只在那一页的
+        // onChange 里跟，别处改的不注销）；没变不动
+        self.hotKeys.reloadCommandsIfChanged()
         // 提醒列表在偏好里：设置页改了、导入了、它自己删掉响过的一次性提醒，都从这里跟上（只比列表那一个键）
         if Feature.reminders.isOn { self.reminders.defaultsChanged() }
       }
@@ -2821,7 +2830,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       island.show("截屏失败", detail: error.localizedDescription, tone: .error)
       return nil
     }
-    let hotKeysWereActive = !hotKeys.bindings.isEmpty
+    let hotKeysWereActive = hotKeys.isActive
     hotKeys.suspend()
     defer { if hotKeysWereActive { hotKeys.reload() } }
     let previousKey = NSApp.keyWindow
