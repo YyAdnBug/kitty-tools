@@ -2,6 +2,7 @@
 // 就不出这一项）。一块一块读（1 MB），大文件不占内存；算在主线程外（mac-native §3 允许的第 1 类：hash），和移动、压缩排在同一条队
 // （FileMoves.enqueue）：超过 1 秒刘海岛挂「正在算…」带「停止」。算完拷进剪贴板并记进剪贴板历史（mac-native §5：本 App 生成的
 // 新文字）：一个文件只有哈希值，几个文件按 shasum 的格式一行一个「哈希值␣␣文件名」。读不到的那几个跳过、说一声。
+// 剪贴板里原来就是一串同样长的哈希值（网页上拷来的校验值）时，顺带比一下、在刘海岛上说一致还是不一致（同几家校验工具）。
 
 import AppKit
 import CryptoKit
@@ -48,6 +49,15 @@ nonisolated enum FileHash {
     return nil
   }
 
+  /// 剪贴板里原来的字是不是一串同样长的十六进制（前后的空白不算、不分大小写）：是就比一下（一致是 true），不是是 nil
+  static func compare(_ hex: String, with clipboard: String?) -> Bool? {
+    // 先看长度（剪贴板里是一大段文字时不在主线程上整段处理，评审实测 68 MB 要 1 秒多）
+    guard let clipboard, clipboard.utf8.count <= hex.count + 64 else { return nil }
+    let text = clipboard.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    guard text.count == hex.count, text.allSatisfy(\.isHexDigit) else { return nil }
+    return text == hex.lowercased()
+  }
+
   /// 拷进剪贴板的字：一个文件只有哈希值，几个一行一个「哈希值␣␣文件名」（同 shasum）
   static func text(_ results: [(file: URL, hex: String)]) -> String {
     results.count == 1
@@ -86,8 +96,21 @@ nonisolated enum FileHash {
         island?.show("没能算 \(kind.title)", detail: "文件读不到（被移走了，或者没有权限）", tone: .error)
         return
       }
+      // 剪贴板里原来就是一串同样长的哈希值（网页上拷来的校验值）：顺带比一下，说一致还是不一致
+      // 剪贴板里是本 App 自己刚写的（上一次拷的哈希）不比：不然连着算几个文件，第二个起每次都报「不一致」
+      let board = NSPasteboard.general
+      let previous =
+        board.changeCount == Paster.ownChangeCount ? nil : board.string(forType: .string)
+      let match = regular.count == 1 ? compare(results[0].hex, with: previous) : nil
       Paster.write(string: text(results), record: true)
       let missed = regular.count - results.count
+      if let match {
+        island?.show(
+          match ? "\(kind.title) 和剪贴板里的一致" : "\(kind.title) 和剪贴板里的不一致",
+          detail: "已拷贝新算的：" + String(results[0].hex.prefix(16)) + "…",
+          tone: match ? .success : .warning)
+        return
+      }
       island?.show(
         "已拷贝 \(kind.title)",
         detail: missed > 0

@@ -132,6 +132,8 @@ import UniformTypeIdentifiers
     #expect(parse("do=hash&key=K-123&algo=md5&file=/a/b")?.action == .copyHash(.md5))
     #expect(parse("do=hash&key=K-123&algo=crc32&file=/a/b") == nil)
     #expect(parse("do=erase&key=K-123&file=/a/b")?.action == .erase)
+    #expect(parse("do=clip&key=K-123&file=/a")?.action == .newFromClipboard)
+    #expect(parse("do=clip&key=K-123&file=/a&file=/b") == nil)
     #expect(parse("do=erase&key=K-123&file=/a/b/..") == nil)
     #expect(parse("do=erase&key=K-123&file=/a/./b") == nil)
     #expect(parse("do=copy&key=K-123&file=/a/b..c")?.action == .copyPaths(shell: false))
@@ -288,7 +290,7 @@ import UniformTypeIdentifiers
       "move",
       "copyto", "to", "choose", "cut", "paste", "alias", "zip", "7z", "extract", "fixnames",
       "hiddenfiles", "hide", "ext", "on", "hash", "algo", "erase", "style", "shell", "stem",
-      "toomany", "stale",
+      "toomany", "stale", "clip",
     ]
     let literals =
       names + Prefs.finderOpenWithDefault + Prefs.finderTransferDefault + NewFile.builtIn
@@ -309,8 +311,12 @@ import UniformTypeIdentifiers
     let hashes = FileHash.Kind.allCases.map { "(\"\($0.rawValue)\", \"\($0.title)\")" }
     #expect(source.contains("[" + hashes.joined(separator: ", ") + "]"))
     // 解压认的扩展名
-    let suffixes = Archives.suffixes.map { "\"\($0)\"" }.joined(separator: ", ")
-    #expect(source.contains(suffixes))
+    let start = try #require(source.range(of: "archiveSuffixes = ["))
+    let end = try #require(source[start.upperBound...].range(of: "]"))
+    let listed = source[start.upperBound..<end.lowerBound].matches(of: /"([^"]+)"/).map {
+      String($0.output.1)
+    }
+    #expect(listed == Archives.suffixes)
     // 乱码判断两份逐字一样
     let app = try String(
       contentsOf: root.appending(path: "KittyTools/FinderMenu/NameRepair.swift"), encoding: .utf8)

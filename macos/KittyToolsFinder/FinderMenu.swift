@@ -7,7 +7,8 @@
 //   按住 ⌥ 右键时「拷贝路径」「拷贝名称」换成终端写法、不带扩展名；「移动到」「复制到」里这次用不上的文件夹变灰，后面接最近
 //   用「选择文件夹…」选过的。侧边栏右键当空白处。点不成的（列表变了、一次超过上限）交给 App 在刘海岛上说原因。
 // - 文件夹空白处右键：最前面「新建文件 ▸」（自带五种、模板文件夹里放的每个文件、「自定义后缀…」、「打开模板文件夹」），
-//   剪切过、剪贴板还没换过时多一项「粘贴 N 项」，然后「拷贝路径」「在“X”中打开」「切换隐藏文件」，对着的是这个文件夹。
+//   「从剪贴板新建」（剪贴板里的图存成 PNG、文字存成 .txt，App 看剪贴板）；剪切过、剪贴板还没换过时多一项「粘贴 N 项」
+//   （选中的是一个文件夹时右键它也有「粘贴 N 项到这个文件夹」），然后「拷贝路径」「在“X”中打开」「切换隐藏文件」，对着的是这个文件夹。
 // 设置里打开「收进一个子菜单」时，这些都收进第一层的一项「Kitty Tools ▸」里（默认关、平铺）。
 // 每一项在 App 设置里能单独关（App 的 FinderMenuItem；同几家成熟产品），默认开关照 2026-11-08 右键扩充拍板 A2。
 // 扩展只画菜单、不碰文件（拍板 C2）：点了用 App 自己的网址把动作交给常驻菜单栏的 Kitty Tools，
@@ -194,7 +195,8 @@ final class FinderMenu: FIFinderSync {
 
   /// 「解压到这里」认的扩展名（ponytail: 抄的 App 的 Archives.suffixes，FinderLinkTests 比对）
   private static let archiveSuffixes = [
-    ".zip", ".7z", ".tar", ".tar.gz", ".tgz", ".tar.xz", ".txz", ".tar.bz2", ".tbz", ".tbz2",
+    ".zip", ".7z", ".tar", ".tar.gz", ".tgz", ".tar.xz", ".txz", ".tar.bz2", ".tbz", ".tbz2", ".gz",
+    ".bz2",
   ]
 
   private static func isArchive(_ url: URL) -> Bool {
@@ -279,6 +281,12 @@ final class FinderMenu: FIFinderSync {
     return menu.items.isEmpty ? nil : menu
   }
 
+  /// 是文件夹、不是 App 这类包（只看路径的写法和扩展名，不碰文件）
+  private static func isFolder(_ url: URL) -> Bool {
+    url.hasDirectoryPath
+      && UTType(filenameExtension: url.pathExtension).map { $0.conforms(to: .package) } != true
+  }
+
   /// 在不在废纸篓里（主目录的 .Trash，别的卷上的 .Trashes）
   private static func inTrash(_ url: URL) -> Bool {
     let path = url.standardizedFileURL.path(percentEncoded: false)
@@ -354,6 +362,14 @@ final class FinderMenu: FIFinderSync {
     }
     if items, Self.shows("finderMenuCut", default: true) {
       Self.add("剪切", #selector(cut(_:)), symbol: "scissors", color: Tint.organize, to: menu)
+      // 右键的是一个文件夹、剪切过：直接粘进它里面（不用先打开它，同 Windows 右键文件夹的「粘贴」）
+      if Self.cutCount > 0, selected.count == 1, Self.isFolder(selected[0]),
+        !Self.inTrash(selected[0])
+      {
+        Self.add(
+          "粘贴 \(Self.cutCount) 项到这个文件夹", #selector(pasteInto(_:)),
+          symbol: "doc.on.clipboard.fill", color: Tint.organize, to: menu)
+      }
     }
     if items, Self.shows("finderMenuCompress", default: true) {
       let formats = NSMenu()
@@ -614,6 +630,10 @@ final class FinderMenu: FIFinderSync {
     for (index, title) in titles(mine).enumerated() {
       add(title, mineTag + index, fileIcon(mine[index].path))
     }
+    // 剪贴板里有什么由 App 看（扩展不读剪贴板的内容）
+    menu.addItem(
+      withTitle: "从剪贴板新建", action: #selector(createFromClipboard(_:)), keyEquivalent: ""
+    ).image = tile("doc.on.clipboard.fill", color: Tint.create)
     menu.addItem(withTitle: "自定义后缀…", action: #selector(createCustom(_:)), keyEquivalent: "")
       .image = tile("character.cursor.ibeam", color: Tint.create)
     menu.addItem(withTitle: "打开模板文件夹", action: #selector(showTemplates(_:)), keyEquivalent: "")
@@ -718,6 +738,14 @@ final class FinderMenu: FIFinderSync {
 
   @objc private func paste(_ sender: AnyObject?) {
     hand("paste", container: true)
+  }
+
+  @objc private func pasteInto(_ sender: AnyObject?) {
+    hand("paste", container: false)
+  }
+
+  @objc private func createFromClipboard(_ sender: AnyObject?) {
+    hand("clip", container: true)
   }
 
   @objc private func alias(_ sender: AnyObject?) {

@@ -34,6 +34,16 @@ import Testing
     #expect(await FileHash.digest(of: root.appending(path: "没有"), kind: .sha256) == nil)
   }
 
+  /// 剪贴板里原来的是同样长的哈希值才比；大小写、前后空白不算
+  @Test func compareWithClipboard() {
+    let hex = "d41d8cd98f00b204e9800998ecf8427e"
+    #expect(FileHash.compare(hex, with: "  D41D8CD98F00B204E9800998ECF8427E\n") == true)
+    #expect(FileHash.compare(hex, with: "d41d8cd98f00b204e9800998ecf8427f") == false)
+    #expect(FileHash.compare(hex, with: "hello") == nil)
+    #expect(FileHash.compare(hex, with: nil) == nil)
+    #expect(FileHash.compare(hex, with: "zz1d8cd98f00b204e9800998ecf8427e") == nil)
+  }
+
   @Test func clipboardText() {
     let a = URL(filePath: "/x/a.dmg")
     let b = URL(filePath: "/y/b c.zip")

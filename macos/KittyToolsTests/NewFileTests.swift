@@ -1,7 +1,7 @@
 // 访达右键「新建文件」：重名让开、后缀收拾、自定义后缀的名字、已有模板的判断、自带模板真打进了包里。
 // 不碰 Dev 版的数据目录（模板文件夹）：只测纯函数和包里的资源。
 
-import Foundation
+import AppKit
 import Testing
 
 @testable import KittyTools
@@ -85,5 +85,18 @@ struct NewFileTests {
     }
     #expect(
       NewFile.templatesFolder(in: URL(filePath: "/d")).path(percentEncoded: false) == "/d/新建文件模板/")
+  }
+
+  /// 「从剪贴板新建」：剪贴板里的 TIFF 转成 PNG
+  @Test func clipboardImageBecomesPNG() async throws {
+    let image = NSImage(size: NSSize(width: 4, height: 3))
+    image.lockFocus()
+    NSColor.systemPink.setFill()
+    NSRect(x: 0, y: 0, width: 4, height: 3).fill()
+    image.unlockFocus()
+    let tiff = try #require(image.tiffRepresentation)
+    let png = try #require(await NewFile.pngData(from: tiff))
+    #expect(png.starts(with: [0x89, 0x50, 0x4E, 0x47]))
+    #expect(await NewFile.pngData(from: Data("not an image".utf8)) == nil)
   }
 }

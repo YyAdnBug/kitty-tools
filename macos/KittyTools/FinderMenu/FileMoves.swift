@@ -528,6 +528,9 @@ import AppKit
       "已剪切 \(files.count) 项", detail: "到别的文件夹空白处右键「粘贴」，或者在访达里按 ⌥⌘V", tone: .info)
   }
 
+  /// 剪切了、剪贴板还没换过
+  static var hasCut: Bool { cutChange == NSPasteboard.general.changeCount && !cutList.isEmpty }
+
   /// 忘掉剪切（粘贴之后、App 启动时：剪贴板的 changeCount 每次登录从头数，留着的会在几天后「复活」）
   static func forgetCut() {
     cutList = []

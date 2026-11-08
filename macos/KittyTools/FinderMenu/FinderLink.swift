@@ -3,7 +3,7 @@
 // copy（拷贝路径）、name（拷贝名称）、open（app=bundle id，用 App 打开）、new（template=模板名，mine=1 是模板文件夹里的；
 // file 是右键的文件夹）、suffix（自定义后缀，file 是文件夹）、templates（打开模板文件夹）、move / copyto（to=常用文件夹的路径，
 // 或 choose 另选）、cut（剪切）、paste（file 是右键的文件夹）、alias（发送替身到桌面）、zip / 7z（压缩）、extract（解压到这里）、
-// copy 带 style=shell 是按住 ⌥ 时的「拷贝路径（终端写法）」、name 带 style=stem 是「拷贝名称（不带扩展名）」，toomany（一次选了
+// clip（从剪贴板新建，file 是右键的文件夹）、copy 带 style=shell 是按住 ⌥ 时的「拷贝路径（终端写法）」、name 带 style=stem 是「拷贝名称（不带扩展名）」，toomany（一次选了
 // 超过上限，扩展交过来让 App 说一声，不带文件）、fixnames（修复乱码文件名）、hiddenfiles（切换隐藏文件）、hide / ext（on=1 / 0：隐藏、取消隐藏、隐藏 / 显示扩展名）、
 // hash（algo=sha256 / md5 / sha1）、erase（彻底删除，先问）。
 // 解析、拷贝的文字、交给别的 App 打开哪些都是纯函数（FinderLinkTests）；perform 做那一步：拷贝路径 / 名称走 Paster.write 并记进
@@ -37,6 +37,8 @@ nonisolated struct FinderLink: Equatable {
     case customSuffix
     /// 打开模板文件夹
     case showTemplates
+    /// 剪贴板里的图 / 文字存成文件，放进 files 那一个文件夹
+    case newFromClipboard
     /// 移动 / 复制到 to；to 是 nil = 弹面板另选
     case transfer(move: Bool, to: URL?)
     case cut
@@ -58,7 +60,7 @@ nonisolated struct FinderLink: Equatable {
       case .copyPaths: .copyPath
       case .copyNames: .copyName
       case .open, .tooMany: nil
-      case .newFile, .customSuffix, .showTemplates: .newFile
+      case .newFile, .customSuffix, .showTemplates, .newFromClipboard: .newFile
       case .transfer: .transfer
       case .cut, .paste: .cut
       case .aliasToDesktop: .deskAlias
@@ -120,6 +122,8 @@ nonisolated struct FinderLink: Equatable {
       action = .newFile(template: name, mine: mine)
     case "suffix" where files.count == 1:
       action = .customSuffix
+    case "clip" where files.count == 1:
+      action = .newFromClipboard
     case "templates" where files.isEmpty:
       action = .showTemplates
     case let verb? where (verb == "move" || verb == "copyto") && !files.isEmpty:
@@ -371,6 +375,8 @@ nonisolated struct FinderLink: Equatable {
       NewFile.askSuffix(in: link.files[0], island: island)
     case .showTemplates:
       NewFile.showTemplates()
+    case .newFromClipboard:
+      NewFile.fromClipboard(in: link.files[0], island: island)
     case .transfer(let move, let folder?):
       FileMoves.transfer(link.files, to: folder, move: move, island: island)
     case .transfer(let move, nil):

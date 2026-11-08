@@ -52,14 +52,14 @@ nonisolated enum FinderMenuItem: String, CaseIterable {
     case .copyPath: "右键文件、文件夹，或者文件夹窗口的空白处"
     case .copyName: "右键文件、文件夹；几样就一行一个，带扩展名"
     case .transfer: "右键文件、文件夹：送到下面的常用文件夹，或者另选一个"
-    case .cut: "剪切之后，到别的文件夹空白处右键「粘贴」，或者在访达里按 ⌥⌘V"
+    case .cut: "剪切之后，到别的文件夹空白处（或者右键那个文件夹）「粘贴」，或者在访达里按 ⌥⌘V"
     case .deskAlias: "在桌面上放一个替身，原件挪了也照样打得开"
     case .compress: "右键文件、文件夹：打成 zip 或 7z 放在旁边"
-    case .extract: "右键 zip、7z、tar.gz 这类压缩包；带密码的 zip 会先问密码"
+    case .extract: "右键 zip、7z、tar.gz、gz 这类压缩包；带密码的 zip 会先问密码"
     case .fixNames: "只在名字像「ÖÐÎÄ」「╓╨╬─」这种乱码时出现，改回中文"
     case .showHidden: "文件夹窗口的空白处右键：替你在访达里按 ⇧⌘.，要「辅助功能」授权"
     case .hide: "右键文件、文件夹：隐藏 / 取消隐藏它，隐藏 / 显示扩展名"
-    case .hash: "右键文件：算 SHA-256、MD5 或 SHA-1 拷进剪贴板，几个文件一行一个"
+    case .hash: "右键文件：算 SHA-256、MD5 或 SHA-1 拷进剪贴板；剪贴板里原来有校验值就顺带比一下"
     case .erase: "不进废纸篓、删了找不回来；一定先问一遍"
     }
   }

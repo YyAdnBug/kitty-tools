@@ -4,7 +4,8 @@
 //   （zip:hdrcharset=UTF-8；访达和 ditto 打的不标，别的系统解开中文名会乱码，2026-11-08 实测），不带 __MACOSX、._*、.DS_Store
 //   （--no-mac-metadata 加排除）；7z 用 LZMA2。只选了一个包（App 这类）时 zip 改用 ditto（同访达的压缩：带着扩展属性，
 //   签名不坏）。不同文件夹里的同名东西包里只放得下一个，不打。不做带密码的压缩（拍板）。
-// - 解压：zip、7z、tar 一族（.tar、.tar.gz / .tgz、.tar.xz / .txz、.tar.bz2 / .tbz）。zip 先读一遍中央目录（ZipNames）：
+// - 解压：zip、7z、tar 一族（.tar、.tar.gz / .tgz、.tar.xz / .txz、.tar.bz2 / .tbz），和只压了一个文件的 .gz / .bz2
+//   （系统的 gunzip / bunzip2，解出来的叫包名去掉 .gz，带上包的隔离标记）。zip 先读一遍中央目录（ZipNames）：
 //   没标 UTF-8、名字又不是合法 UTF-8 的按 GB18030 解（不说的话 tar 直接报错，ditto 解出来是乱码，实测）；有加密的条目先问密码
 //   （tar 认 ZipCrypto 和 AES；不对再问）：本 App 不在前台时先在刘海岛说「有密码」带「输入密码…」，点了再弹框——直接弹的框
 //   拿不到键盘，打的字会进访达。先解进包旁边一个隐藏的临时文件夹，里面只有一样东西就把它放到包旁边，几样就把
@@ -43,8 +44,19 @@ import AppKit
 
   /// 「解压到这里」认的（扩展里抄了一份，FinderLinkTests 比对）
   nonisolated static let suffixes = [
-    ".zip", ".7z", ".tar", ".tar.gz", ".tgz", ".tar.xz", ".txz", ".tar.bz2", ".tbz", ".tbz2",
+    ".zip", ".7z", ".tar", ".tar.gz", ".tgz", ".tar.xz", ".txz", ".tar.bz2", ".tbz", ".tbz2", ".gz",
+    ".bz2",
   ]
+
+  /// 只压了一个文件的 .gz / .bz2（不是 tar 包）交给系统的 gunzip / bunzip2（tar 不认这种，实测）；别的是 nil。
+  /// 单文件的 .xz 不认（系统的 gunzip 据说也解得了，但本机造不出样本来验）
+  nonisolated static func decompressor(for archive: URL) -> String? {
+    switch suffix(of: archive) {
+    case ".gz": "/usr/bin/gunzip"
+    case ".bz2": "/usr/bin/bunzip2"
+    default: nil
+    }
+  }
 
   /// 认得的扩展名里最长的那个（.tar.gz 不当成 .gz）；光有扩展名、前面没名字的不算
   nonisolated static func suffix(of url: URL) -> String? {
@@ -142,7 +154,10 @@ import AppKit
       ("ncrypt", "这个包加了密码，这里只解得开 zip 的密码"),
       ("runcated", "压缩包不完整，可能没下载完"),
       ("nexpected end", "压缩包不完整，可能没下载完"),
+      ("ends unexpectedly", "压缩包不完整，可能没下载完"),
       ("Unrecognized archive format", "不是压缩包，或者是不支持的格式"),
+      ("not in gzip format", "不是压缩包，或者是不支持的格式"),
+      ("is not a bzip2 file", "不是压缩包，或者是不支持的格式"),
     ]
     return .failed(
       damaged.first { error.localizedCaseInsensitiveContains($0.0) }?.1 ?? "压缩包可能坏了")
@@ -229,9 +244,39 @@ import AppKit
       FileMoves.release(work)
       return .failed("没有权限写这个位置")
     }
-    let result = try? await Subprocess.run(
-      "/usr/bin/tar", extractArguments(archive, into: work, gbk: gbk, password: password),
-      captures: true, quality: .userInitiated, stopsOnCancel: true)
+    var result: Subprocess.Result?
+    let output = work.appending(path: stem(of: archive))
+    if let tool = decompressor(for: archive) {
+      // 解到临时文件夹里一个和包同名（去掉 .gz）的文件；参数按位置传给 sh，名字里有什么都不会被当成命令
+      result = try? await Subprocess.run(
+        "/bin/sh",
+        [
+          "-c", "exec \"$0\" -c -- \"$1\" > \"$2\"", tool, archive.path(percentEncoded: false),
+          output.path(percentEncoded: false),
+        ], captures: true, quality: .userInitiated, stopsOnCancel: true)
+      // 包末尾有补零 / 垃圾时 gunzip 解完整了、只说一句「trailing garbage ignored」、退出码 2（评审实测）：算成了
+      if var finished = result, finished.status == 2,
+        case let lines = finished.error.split(whereSeparator: \.isNewline), !lines.isEmpty,
+        lines.allSatisfy({ $0.hasSuffix("trailing garbage ignored") })
+      {
+        finished.status = 0
+        result = finished
+      }
+      // gunzip 不管「从网上下载」的隔离标记（tar 会）：照包上的给解出来的那个也带上
+      if result?.status == 0,
+        let quarantine = try? archive.resourceValues(forKeys: [.quarantinePropertiesKey])
+          .quarantineProperties
+      {
+        var file = output
+        var values = URLResourceValues()
+        values.quarantineProperties = quarantine
+        try? file.setResourceValues(values)
+      }
+    } else {
+      result = try? await Subprocess.run(
+        "/usr/bin/tar", extractArguments(archive, into: work, gbk: gbk, password: password),
+        captures: true, quality: .userInitiated, stopsOnCancel: true)
+    }
     let failure: Outcome
     if Task.isCancelled {
       failure = .stopped

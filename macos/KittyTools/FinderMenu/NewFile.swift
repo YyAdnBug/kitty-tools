@@ -15,7 +15,9 @@
 
 import AppKit
 import Carbon.HIToolbox
+import ImageIO
 import OSLog
+import UniformTypeIdentifiers
 
 nonisolated enum NewFile {
   /// 随 App 的五个（显示的文件名；扩展那边抄了一份，FinderLinkTests 读源码比对）
@@ -119,7 +121,7 @@ nonisolated enum NewFile {
   }
 
   /// 拷进 / 写进 folder，名字让开已有的，日期改成现在；建不成刘海岛说原因（同访达建不成时会说为什么）
-  @MainActor private static func place(
+  @discardableResult @MainActor private static func place(
     _ name: String, in folder: URL, island: Island?, write: (URL) throws -> Void
   ) -> URL? {
     let manager = FileManager.default
@@ -192,6 +194,77 @@ nonisolated enum NewFile {
       try? await Task.sleep(for: .milliseconds(100))
       Paster.press(kVK_Return)
     }
+  }
+
+  // MARK: 从剪贴板新建
+
+  /// 「从剪贴板新建」（2026-11-08，同几家成熟产品）：剪贴板里是图就存成「剪贴板图片.png」，是文字就存成「剪贴板文字.txt」
+  /// （UTF-8），重名加「 2」、建好照样选中进入改名；剪贴板里是文件的那是访达 ⌘V 的事，说一声。TIFF 转 PNG 在主线程外
+  @MainActor static func fromClipboard(in folder: URL, island: Island?) {
+    let board = NSPasteboard.general
+    let types = board.types ?? []
+    // 密码管理器这类标了「隐私」的不写成文件（剪贴板历史也不记它们）
+    if types.contains(.init("org.nspasteboard.ConcealedType")) {
+      island?.show("没有新建", detail: "剪贴板里是密码这类隐私内容，不存成文件", tone: .warning)
+      return
+    }
+    if types.contains(.fileURL) {
+      island?.show(
+        "剪贴板里是文件",
+        detail: FileMoves.hasCut ? "剪切的：右键空白处「粘贴」，或者按 ⌥⌘V" : "在访达里按 ⌘V 就能粘贴",
+        tone: .info)
+      return
+    }
+    // 图和文字都有时按来源 App 给的顺序取（它把哪个放前面就是哪个）
+    let image = types.firstIndex { $0 == .png || $0 == .tiff }
+    let text = types.firstIndex(of: .string)
+    if let text, image.map({ text < $0 }) ?? true,
+      let string = board.string(forType: .string), !string.isEmpty
+    {
+      place("剪贴板文字.txt", in: folder, island: island) {
+        try Data(string.utf8).write(to: $0, options: .withoutOverwriting)
+      }
+      return
+    }
+    if let png = board.data(forType: .png) {
+      place("剪贴板图片.png", in: folder, island: island) {
+        try png.write(to: $0, options: .withoutOverwriting)
+      }
+      return
+    }
+    if let tiff = board.data(forType: .tiff) {
+      Task {
+        guard let png = await pngData(from: tiff) else {
+          island?.show("没能新建", detail: "剪贴板里的图转不成 PNG", tone: .error)
+          return
+        }
+        place("剪贴板图片.png", in: folder, island: island) {
+          try png.write(to: $0, options: .withoutOverwriting)
+        }
+      }
+      return
+    }
+    if let text = board.string(forType: .string), !text.isEmpty {
+      place("剪贴板文字.txt", in: folder, island: island) {
+        try Data(text.utf8).write(to: $0, options: .withoutOverwriting)
+      }
+      return
+    }
+    island?.show("剪贴板里没有文字或图片", detail: "先拷贝一段文字或一张图", tone: .warning)
+  }
+
+  /// 图转成 PNG（ImageIO，主线程外：mac-native §3 第 1 类）；带着原图的 DPI、方向这些（不然高分屏截图在预览里大一倍）
+  @concurrent nonisolated static func pngData(from data: Data) async -> Data? {
+    guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+      CGImageSourceGetCount(source) > 0
+    else { return nil }
+    let output = NSMutableData()
+    guard
+      let destination = CGImageDestinationCreateWithData(
+        output, UTType.png.identifier as CFString, 1, nil)
+    else { return nil }
+    CGImageDestinationAddImageFromSource(destination, source, 0, nil)
+    return CGImageDestinationFinalize(destination) ? output as Data : nil
   }
 
   /// 打开模板文件夹（没有就建）

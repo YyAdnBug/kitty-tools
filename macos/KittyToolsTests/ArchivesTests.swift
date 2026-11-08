@@ -27,7 +27,8 @@ import Testing
   @Test func namesAndSuffixes() {
     #expect(Archives.isArchive(URL(filePath: "/a/资料.ZIP")))
     #expect(Archives.isArchive(URL(filePath: "/a/b.tar.gz")))
-    #expect(!Archives.isArchive(URL(filePath: "/a/b.gz")))
+    #expect(Archives.isArchive(URL(filePath: "/a/b.gz")))  // 单文件的 .gz 也认
+    #expect(!Archives.isArchive(URL(filePath: "/a/b.xz")))
     #expect(!Archives.isArchive(URL(filePath: "/a/.zip")))
     #expect(!Archives.isArchive(URL(filePath: "/a/b.zipx")))
     #expect(Archives.stem(of: URL(filePath: "/a/项目 v1.2.tar.gz")) == "项目 v1.2")
@@ -247,6 +248,50 @@ import Testing
     #expect(list.isEmpty)
     #expect(!FileMoves.occupied(left))
     #expect(FileMoves.occupied(mine.appending(path: "留着.txt")))
+  }
+
+  /// 只压了一个文件的 .gz / .bz2：解出来叫包名去掉扩展名，放在旁边；.tar.gz 照旧是 tar 包；坏的说原因、不留东西
+  @Test func singleFileCompressed() async throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    #expect(Archives.decompressor(for: URL(filePath: "/a/b.txt.gz")) == "/usr/bin/gunzip")
+    #expect(Archives.decompressor(for: URL(filePath: "/a/b.tar.gz")) == nil)
+    #expect(Archives.isArchive(URL(filePath: "/a/b.bz2")))
+    let source = root.appending(path: "源")
+    try write("你好 $HOME `x`", to: source.appending(path: "说明 '1'.txt"))
+    for tool in ["/usr/bin/gzip", "/usr/bin/bzip2"] {
+      let made = try await Subprocess.run(
+        tool, ["-k", source.appending(path: "说明 '1'.txt").path(percentEncoded: false)])
+      try #require(made.status == 0)
+    }
+    for ext in ["gz", "bz2"] {
+      let archive = source.appending(path: "说明 '1'.txt.\(ext)")
+      let placed = try #require(await Archives.unpack(archive, password: nil, gbk: false).url)
+      #expect(
+        placed.lastPathComponent == "说明 '1' 2.txt" || placed.lastPathComponent == "说明 '1' 3.txt")
+      #expect(try String(contentsOf: placed, encoding: .utf8) == "你好 $HOME `x`")
+    }
+    // 末尾补了零的 .gz：gunzip 解完整了、退出码 2，算成了
+    let padded = source.appending(path: "补零.txt")
+    try write("内容", to: padded)
+    _ = try await Subprocess.run("/usr/bin/gzip", [padded.path(percentEncoded: false)])
+    let paddedArchive = source.appending(path: "补零.txt.gz")
+    let handle = try FileHandle(forWritingTo: paddedArchive)
+    try handle.seekToEnd()
+    try handle.write(contentsOf: Data(count: 512))
+    try handle.close()
+    let unpadded = try #require(await Archives.unpack(paddedArchive, password: nil, gbk: false).url)
+    #expect(try String(contentsOf: unpadded, encoding: .utf8) == "内容")
+    #expect(
+      Archives.outcome(ofFailure: "gunzip: x.gz: not in gzip format", password: false)
+        == .failed("不是压缩包，或者是不支持的格式"))
+    let bad = root.appending(path: "坏.gz")
+    try Data("not gzip".utf8).write(to: bad)
+    #expect(await Archives.unpack(bad, password: nil, gbk: false).url == nil)
+    #expect(!FileMoves.occupied(root.appending(path: "坏")))
+    #expect(
+      try FileManager.default.contentsOfDirectory(atPath: root.path(percentEncoded: false))
+        .allSatisfy { !$0.hasPrefix(".kitty-") })
   }
 
   /// 坏的包：说原因，不留临时文件夹
