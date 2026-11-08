@@ -679,7 +679,7 @@ struct SelectionInteractionTests {
     context.setFillColor(CGColor(red: 1, green: 0, blue: 0, alpha: 1))
     context.fill(CGRect(x: 0, y: 0, width: 40, height: 30))
     let patch = try #require(context.makeImage())
-    h.view.translateHandler = { _ in (patch, nil) }
+    h.view.translateHandler = { _, _ in .init(image: patch) }
     h.makeSelection()
     try #require(h.toolbar).onClick(.output(.translate))
     for _ in 0..<500 where h.view.image === original {

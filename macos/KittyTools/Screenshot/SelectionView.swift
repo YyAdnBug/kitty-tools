@@ -34,9 +34,9 @@ final class SelectionView: NSView, NSTextViewDelegate {
   /// 冻结那一刻的窗口（本屏视图坐标，从前到后）
   let windows: [CGRect]
   private let session: SelectionSession
-  /// 截图工具栏「翻译」就地翻：给选区的图，返回覆盖了译文的图（失败带一句原因）。
+  /// 截图工具栏「翻译」就地翻：给选区的图和它每点几个像素，返回覆盖了译文的图、放不下的段（失败带一句原因）。
   /// 由 AppDelegate 经 SelectionSession 注入；nil = 现在不能就地翻（退回原来的「退出截图页再翻」）
-  var translateHandler: ((CGImage) async -> (image: CGImage?, message: String?))?
+  var translateHandler: ((CGImage, CGFloat) async -> ScreenshotOverlay.Outcome)?
   /// 框完松手就直接翻（⌥S：截图翻译 = 截图 + 自动点「翻译」，人还留在截图页）
   var autoTranslates = false
   /// 正在就地翻译：选区上出脉冲、框选和工具栏暂时不动
@@ -1901,11 +1901,13 @@ final class SelectionView: NSView, NSTextViewDelegate {
       selection, viewSize: bounds.size, imageSize: CGSize(width: image.width, height: image.height))
     guard let cropped = image.cropping(to: pixels) else { return }
     let translatedSelection = selection
+    // 字号下限按点算：冻结帧每点几个像素（Retina 屏 2）
+    let pixelsPerPoint = CGFloat(image.width) / max(1, bounds.width)
     translating = true
     refresh()
     translateTask?.cancel()
     translateTask = Task { @MainActor [weak self] in
-      let result = await handler(cropped)
+      let result = await handler(cropped, pixelsPerPoint)
       var replaced: CGImage?
       if let patch = result.image, let frame = self?.image {
         // 整屏冻结帧（5K 屏约 60 MB）在主线程外合成
@@ -1914,21 +1916,33 @@ final class SelectionView: NSView, NSTextViewDelegate {
       guard let self, !Task.isCancelled else { return }
       translating = false
       translateTask = nil
-      guard let replaced else {
+      guard result.image != nil || !result.leftovers.isEmpty else {
         refresh()
-        return flashHint([result.image == nil ? result.message ?? "翻译失败" : "合成失败"])
+        return flashHint([result.message ?? "翻译失败"])
+      }
+      if result.image != nil, replaced == nil {
+        refresh()
+        return flashHint(["合成失败"])
       }
       // 翻的时候选区被换掉了（框选和工具栏这时不动，防万一）：这份译文贴不回去
       guard selection == translatedSelection else { return refresh() }
-      // 同一个选区再翻一次：留着最早那张原图
-      untranslated = (untranslated?.image ?? image, translatedSelection)
-      image = replaced
-      // 标注不动：它们一直画在冻结帧上面，出图时照旧叠上去；马赛克读的是标注层手里那张图，换成新的
-      annotationCanvas?.image = replaced
-      needsDisplay = true
+      if let replaced {
+        // 同一个选区再翻一次：留着最早那张原图
+        untranslated = (untranslated?.image ?? image, translatedSelection)
+        image = replaced
+        // 标注不动：它们一直画在冻结帧上面，出图时照旧叠上去；马赛克读的是标注层手里那张图，换成新的
+        annotationCanvas?.image = replaced
+        needsDisplay = true
+      }
       refresh()
-      flashHint(["已替换为译文"])
+      flashHint([Self.translatedHint(leftovers: result.leftovers.count, drewAny: replaced != nil)])
     }
+  }
+
+  /// 就地翻译完的顶部提示：到字号下限也放不下的段图上留着原文
+  private static func translatedHint(leftovers: Int, drewAny: Bool) -> String {
+    guard leftovers > 0 else { return "已替换为译文" }
+    return drewAny ? "有 \(leftovers) 段放不下，图上留着原文" : "选区太小，译文放不下"
   }
 
   /// 选区变了：把就地翻译贴上去的译文撤掉，冻结帧换回原图（标注不动，马赛克读的那张一起换），说一声

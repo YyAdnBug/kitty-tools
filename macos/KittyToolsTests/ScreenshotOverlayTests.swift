@@ -51,8 +51,9 @@ struct ScreenshotOverlayTests {
   @Test func shortTranslationKeepsTheOriginalSize() {
     let segment = segment(
       "原文", box: CGRect(x: 100, y: 400, width: 300, height: 30), lineHeight: 30)
-    let spans = ScreenshotOverlay.spans(
-      segments: [segment], translations: ["短译文"], imageSize: CGSize(width: 800, height: 600))
+    let spans = ScreenshotOverlay.layout(
+      segments: [segment], translations: ["短译文"], imageSize: CGSize(width: 800, height: 600)
+    ).spans
     #expect(spans.count == 1)
     let span = spans[0]
     // 塞得下就按基准（行高的 fontPerLineHeight 倍）排，不缩
@@ -68,8 +69,9 @@ struct ScreenshotOverlayTests {
     let segment = segment(
       "原文", box: CGRect(x: 100, y: 400, width: 300, height: 30), lineHeight: 30)
     let long = String(repeating: "这是一段很长的译文，得折成好几行才放得下。", count: 4)
-    let spans = ScreenshotOverlay.spans(
-      segments: [segment], translations: [long], imageSize: CGSize(width: 800, height: 600))
+    let spans = ScreenshotOverlay.layout(
+      segments: [segment], translations: [long], imageSize: CGSize(width: 800, height: 600)
+    ).spans
     #expect(spans.count == 1)
     let nominal = 30 * ScreenshotOverlay.fontPerLineHeight
     #expect(spans[0].fontSize < nominal)
@@ -91,9 +93,10 @@ struct ScreenshotOverlayTests {
         lineCount: 3),
       segment("Third", box: CGRect(x: 40, y: 400, width: 900, height: 39), lineHeight: 39),
     ]
-    let spans = ScreenshotOverlay.spans(
+    let spans = ScreenshotOverlay.layout(
       segments: segments, translations: ["标题", "第一段", "第二段", "第三段"],
-      imageSize: CGSize(width: 1000, height: 1000))
+      imageSize: CGSize(width: 1000, height: 1000)
+    ).spans
     #expect(spans.count == 4)
     let body = Set(spans.dropFirst().map(\.fontSize))
     #expect(body.count == 1)
@@ -110,9 +113,10 @@ struct ScreenshotOverlayTests {
       "max ), comment type (e.g., bug, security …",
       box: CGRect(x: 101, y: 206, width: 1113, height: 193), lineHeight: 40, lineCount: 4)
     let long = String(repeating: "开发者处理过的已评估评论数，", count: 12)
-    let spans = ScreenshotOverlay.spans(
+    let spans = ScreenshotOverlay.layout(
       segments: [upper, lower], translations: [long, "评论类型"],
-      imageSize: CGSize(width: 1231, height: 1034))
+      imageSize: CGSize(width: 1231, height: 1034)
+    ).spans
     #expect(spans.count == 2)
     // 宽度只被图片右边界收一点（以前是 24 像素）
     #expect(spans[0].frame.width > upper.box.width * 0.95)
@@ -126,9 +130,10 @@ struct ScreenshotOverlayTests {
       lineCount: 3)
     let single = segment(
       "One line", box: CGRect(x: 40, y: 400, width: 900, height: 40), lineHeight: 40)
-    let spans = ScreenshotOverlay.spans(
+    let spans = ScreenshotOverlay.layout(
       segments: [paragraph, single], translations: ["三行", "一行"],
-      imageSize: CGSize(width: 1000, height: 1000))
+      imageSize: CGSize(width: 1000, height: 1000)
+    ).spans
     #expect(spans.count == 2)
     #expect(abs(spans[0].pitch - 51) < 0.01)
     #expect(abs(spans[1].pitch - 51) < 0.01)
@@ -138,8 +143,9 @@ struct ScreenshotOverlayTests {
     var measured = paragraph
     measured.baseline = 710
     measured.pitch = 49
-    let fromPixels = ScreenshotOverlay.spans(
-      segments: [measured], translations: ["三行"], imageSize: CGSize(width: 1000, height: 1000))
+    let fromPixels = ScreenshotOverlay.layout(
+      segments: [measured], translations: ["三行"], imageSize: CGSize(width: 1000, height: 1000)
+    ).spans
     #expect(fromPixels.first?.baseline == 710 && fromPixels.first?.pitch == 49)
   }
 
@@ -151,13 +157,15 @@ struct ScreenshotOverlayTests {
       lineHeight: 40, lineCount: 2)
     item.inset = 32
     let size = CGSize(width: 1000, height: 600)
-    let dropped = ScreenshotOverlay.spans(
-      segments: [item], translations: ["评论数"], imageSize: size)
+    let dropped = ScreenshotOverlay.layout(
+      segments: [item], translations: ["评论数"], imageSize: size
+    ).spans
     #expect(dropped.first?.marker == "•")
     #expect(dropped.first?.text == "评论数")
     #expect(dropped.first?.frame.minX == 101)
-    let tight = ScreenshotOverlay.spans(
-      segments: [item], translations: ["•评论数"], imageSize: size)
+    let tight = ScreenshotOverlay.layout(
+      segments: [item], translations: ["•评论数"], imageSize: size
+    ).spans
     #expect(tight.first?.marker == "•")
     #expect(tight.first?.text == "评论数")
     // 分段时从第二行起的左边界量出正文列
@@ -222,7 +230,8 @@ struct ScreenshotOverlayTests {
     let composed = try #require(
       await ScreenshotOverlay.render(
         image, segments: [segment("inline code and text", box: box, lineHeight: 25)],
-        translations: ["译"]))
+        translations: ["译"]
+      ).image)
     let pixels = try Self.pixels(composed)
     func near(_ color: (Int, Int, Int), _ rgb: (Int, Int, Int)) -> Bool {
       abs(color.0 - rgb.0) <= 4 && abs(color.1 - rgb.1) <= 4 && abs(color.2 - rgb.2) <= 4
@@ -269,7 +278,8 @@ struct ScreenshotOverlayTests {
     segment.words = [OCR.Word(text: "foo_bar", box: CGRect(x: 260, y: 98, width: 130, height: 26))]
     // 译文里代码词跑到了最前面
     let composed = try #require(
-      await ScreenshotOverlay.render(image, segments: [segment], translations: ["foo_bar 在左边"]))
+      await ScreenshotOverlay.render(image, segments: [segment], translations: ["foo_bar 在左边"])
+        .image)
     let pixels = try Self.pixels(composed)
     func near(_ color: (Int, Int, Int), _ rgb: (Int, Int, Int)) -> Bool {
       abs(color.0 - rgb.0) <= 4 && abs(color.1 - rgb.1) <= 4 && abs(color.2 - rgb.2) <= 4
@@ -315,9 +325,10 @@ struct ScreenshotOverlayTests {
     let lower = segment(
       "下面的原文", box: CGRect(x: 100, y: 400, width: 300, height: 30), lineHeight: 30)
     let long = String(repeating: "这一段译文很长，会想往下长。", count: 4)
-    let spans = ScreenshotOverlay.spans(
+    let spans = ScreenshotOverlay.layout(
       segments: [upper, lower], translations: [long, "下面那段"],
-      imageSize: CGSize(width: 800, height: 600))
+      imageSize: CGSize(width: 800, height: 600)
+    ).spans
     #expect(spans.count == 2)
     // 上面那段的排字矩形不会伸进下面那段（留出间隙）
     #expect(spans[0].frame.minY >= lower.box.maxY)
@@ -331,9 +342,10 @@ struct ScreenshotOverlayTests {
     let right = segment(
       "Right column text", box: CGRect(x: 260, y: 300, width: 200, height: 30), lineHeight: 30)
     let long = String(repeating: "左列这句译文很长，会想往右边放宽。", count: 3)
-    let spans = ScreenshotOverlay.spans(
+    let spans = ScreenshotOverlay.layout(
       segments: [left, right], translations: [long, "右边那列"],
-      imageSize: CGSize(width: 600, height: 600))
+      imageSize: CGSize(width: 600, height: 600)
+    ).spans
     #expect(spans.count == 2)
     // 左列抹掉的范围整个留在右列原文的左边
     #expect(spans[0].erase.maxX <= right.box.minX)
@@ -347,8 +359,9 @@ struct ScreenshotOverlayTests {
     let only = segment(
       "One line", box: CGRect(x: 100, y: 400, width: 300, height: 28), lineHeight: 28)
     let long = String(repeating: "译文比原文长很多，得多占几行。", count: 3)
-    let spans = ScreenshotOverlay.spans(
-      segments: [only], translations: [long], imageSize: CGSize(width: 800, height: 600))
+    let spans = ScreenshotOverlay.layout(
+      segments: [only], translations: [long], imageSize: CGSize(width: 800, height: 600)
+    ).spans
     #expect(spans.count == 1)
     #expect(spans[0].erase.height > only.box.height + 2)
     // 抹除从原文顶边（含 pad）往下，不能比原文还矮
@@ -369,8 +382,9 @@ struct ScreenshotOverlayTests {
   @Test func frameStaysInsideTheImage() {
     let segment = segment(
       "右边贴边的一段", box: CGRect(x: 700, y: 400, width: 90, height: 30), lineHeight: 30)
-    let spans = ScreenshotOverlay.spans(
-      segments: [segment], translations: ["贴在右边"], imageSize: CGSize(width: 800, height: 600))
+    let spans = ScreenshotOverlay.layout(
+      segments: [segment], translations: ["贴在右边"], imageSize: CGSize(width: 800, height: 600)
+    ).spans
     #expect(spans.count == 1)
     #expect(spans[0].frame.maxX <= 800)
     #expect(spans[0].erase.maxX <= 800)
@@ -381,8 +395,165 @@ struct ScreenshotOverlayTests {
     let segment = segment(
       "原文", box: CGRect(x: 100, y: 400, width: 300, height: 30), lineHeight: 30)
     #expect(
-      ScreenshotOverlay.spans(
+      ScreenshotOverlay.layout(
         segments: [segment], translations: ["   "], imageSize: CGSize(width: 800, height: 600)
-      ).isEmpty)
+      ).spans.isEmpty)
+  }
+
+  // MARK: 小选区（2026-11-08 用户报：贴回去的译文特别小、看不清；拍板 A1 A2 B1）
+
+  private let chinese = "识别元素的默认值改为关闭，保留原色以便验证"
+  private let english =
+    "Change the default value of the recognition element to off, and keep the original color for verification."
+
+  /// 用户的例子：一行中文翻成长英文，照原文的基线排不下；选区上下还有空白（约三行高）——用上空白居中排，
+  /// 不交给卡片。以前一路缩到 6.5 像素（Retina 上 3 pt 多）
+  @Test func shortSelectionUsesTheBlankAroundTheLine() throws {
+    // Retina：图 1200 × 124 像素（600 × 62 点），一行字行高 40 像素（20 点），在选区竖直中间
+    let line = segment(chinese, box: CGRect(x: 40, y: 42, width: 760, height: 40), lineHeight: 40)
+    let result = ScreenshotOverlay.layout(
+      segments: [line], translations: [english], imageSize: CGSize(width: 1200, height: 124),
+      pixelsPerPoint: 2)
+    #expect(result.leftovers.isEmpty)
+    let span = try #require(result.spans.first)
+    // 不小于基准的四分之三（这里也就不小于 10 pt）
+    #expect(span.fontSize >= 40 * ScreenshotOverlay.fontPerLineHeight * 0.75 - 0.01)
+    #expect(span.fontSize >= 20)
+    // 第一行的上沿不出图片顶边；去字的范围盖住原文
+    #expect(span.baseline + span.fontSize * 0.95 <= 124)
+    #expect(span.erase.contains(line.box))
+    // 同样的几何在 1x 屏上（每个数都是一半）：按点算一样大
+    let oneX = ScreenshotOverlay.layout(
+      segments: [
+        segment(chinese, box: CGRect(x: 20, y: 21, width: 380, height: 20), lineHeight: 20)
+      ], translations: [english], imageSize: CGSize(width: 600, height: 62))
+    let small = try #require(oneX.spans.first)
+    #expect(abs(span.fontSize - small.fontSize * 2) < 0.5)
+  }
+
+  /// 选区紧贴着一行字：到 10 pt 也放不下，不再缩成看不清的小字——不画、不去字，交给截图页的卡片
+  @Test func tightSelectionLeavesTheParagraphToTheCard() {
+    let retina = ScreenshotOverlay.layout(
+      segments: [
+        segment(chinese, box: CGRect(x: 40, y: 4, width: 760, height: 40), lineHeight: 40)
+      ], translations: [english], imageSize: CGSize(width: 1200, height: 48), pixelsPerPoint: 2)
+    #expect(retina.spans.isEmpty)
+    #expect(retina.leftovers == [0])
+    let oneX = ScreenshotOverlay.layout(
+      segments: [
+        segment(chinese, box: CGRect(x: 20, y: 2, width: 380, height: 20), lineHeight: 20)
+      ], translations: [english], imageSize: CGSize(width: 600, height: 24))
+    #expect(oneX.leftovers == [0])
+  }
+
+  /// 原文本来就不到 10 pt：不往下缩（和原文一样大），放不下就借空白
+  @Test func smallOriginalIsNotShrunk() throws {
+    // Retina 上行高 18 像素：基准 16.2 像素 ≈ 8 pt
+    let line = segment("小字", box: CGRect(x: 40, y: 400, width: 200, height: 18), lineHeight: 18)
+    let result = ScreenshotOverlay.layout(
+      segments: [line], translations: [english], imageSize: CGSize(width: 800, height: 600),
+      pixelsPerPoint: 2)
+    let span = try #require(result.spans.first)
+    #expect(abs(span.fontSize - 18 * ScreenshotOverlay.fontPerLineHeight) < 0.01)
+  }
+
+  /// 用周围空白排的段不压到别的段：上面那段已经往下借了空白，下面那段往上找空白时按借过之后的范围让
+  @Test func blankLayoutNeverOverlapsAnotherParagraph() {
+    let upper = segment(
+      "上面一段", box: CGRect(x: 40, y: 200, width: 700, height: 30), lineHeight: 30)
+    let lower = segment(
+      "贴着图片底边的一段", box: CGRect(x: 40, y: 10, width: 700, height: 30), lineHeight: 30)
+    let result = ScreenshotOverlay.layout(
+      segments: [upper, lower],
+      translations: [
+        String(repeating: "上面那段的译文比原文长，", count: 8),
+        String(repeating: "下面那段的译文长得多，下方又没有地方可借，", count: 7),
+      ], imageSize: CGSize(width: 800, height: 300))
+    // 上面那段往下借了三行；下面那段要是只看上面那段的原文框（不看它借过之后的范围），会排到它借的那几行里
+    #expect(result.leftovers.isEmpty)
+    #expect(result.spans.count == 2)
+    for (a, b) in zip(result.spans, result.spans.dropFirst()) {
+      #expect(!a.erase.insetBy(dx: 0.5, dy: 0.5).intersects(b.erase), "\(a.erase) 和 \(b.erase)")
+    }
+    for span in result.spans {
+      #expect(span.erase.minY >= 0 && span.erase.maxY <= 300)
+    }
+  }
+
+  /// 两栏错开（右栏在左栏的右上方）：左栏用满右边的空白时不能压到右栏借下来的译文，右栏往下借时也不能压到左栏用过的空白；
+  /// 两种排的顺序都一样（评审时独立小程序复现过：以前块会排过栏缝、和右栏的译文叠在一起）
+  @Test func blankLayoutDoesNotCrossIntoAnotherColumn() {
+    let left = segment(
+      "左栏一行原文", box: CGRect(x: 40, y: 200, width: 400, height: 30), lineHeight: 30)
+    let leftBelow = segment(
+      "左栏下面一行", box: CGRect(x: 40, y: 150, width: 400, height: 30), lineHeight: 30)
+    let right = segment(
+      "右栏一行原文", box: CGRect(x: 520, y: 250, width: 400, height: 30), lineHeight: 30)
+    let leftText =
+      "The quick brown fox jumps over the lazy dog and keeps running far beyond the column edge"
+    let rightText = String(repeating: "右栏的译文很长，得往下借好几行，", count: 4)
+    for order in [[left, leftBelow, right], [right, left, leftBelow]] {
+      let translations = order.map {
+        $0 == left ? leftText : $0 == right ? rightText : "短译文"
+      }
+      let result = ScreenshotOverlay.layout(
+        segments: order, translations: translations, imageSize: CGSize(width: 1000, height: 400))
+      #expect(result.leftovers.isEmpty)
+      for (i, a) in result.spans.enumerated() {
+        for b in result.spans.dropFirst(i + 1) {
+          #expect(!a.erase.insetBy(dx: 0.5, dy: 0.5).intersects(b.erase), "\(a.erase) 和 \(b.erase)")
+        }
+      }
+    }
+  }
+
+  /// 列表项挨得很近（比留空还近）：照原文的基线、用满右边的空白一行就放得下，不该进卡片（评审时复现过）
+  @Test func closeParagraphsStillUseTheRoomOnTheRight() throws {
+    let items = [200, 152, 104].map {
+      segment("列表项", box: CGRect(x: 40, y: CGFloat($0), width: 600, height: 40), lineHeight: 40)
+    }
+    let result = ScreenshotOverlay.layout(
+      segments: items,
+      translations: [
+        "First item", "The middle item is translated into a sentence of about seventy letters",
+        "Last",
+      ], imageSize: CGSize(width: 1400, height: 300), pixelsPerPoint: 2)
+    #expect(result.leftovers.isEmpty)
+    let middle = try #require(result.spans.first { $0.source == items[1].box })
+    // 基线还压在原文上（量不到基线时按行框估：顶边往下 0.72 个行高）
+    #expect(abs(middle.baseline - (192 - 40 * 0.72)) < 0.01)
+    #expect(middle.frame.width > 600 * 1.25)
+  }
+
+  /// 字号下限 10 pt 压过「四分之三」：基准 22 像素（Retina 11 pt），四分之三是 16.5 像素，不能小于 20 像素
+  @Test func floorOfTenPointsWinsOverThreeQuarters() throws {
+    let line = segment(
+      "原文",
+      box: CGRect(x: 40, y: 400, width: 300, height: 22 / ScreenshotOverlay.fontPerLineHeight),
+      lineHeight: 22 / ScreenshotOverlay.fontPerLineHeight)
+    let result = ScreenshotOverlay.layout(
+      segments: [line], translations: [String(repeating: "这是一段很长的译文，得折成好几行才放得下。", count: 4)],
+      imageSize: CGSize(width: 800, height: 600), pixelsPerPoint: 2)
+    let span = try #require(result.spans.first)
+    #expect(abs(span.fontSize - 20) < 0.01)
+  }
+
+  /// 合成：一段都画不下时不出图，放不下的段带着原文和译文交回去（截图页放进卡片）
+  @Test func renderHandsBackTheLeftovers() async throws {
+    let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+    let context = try #require(
+      CGContext(
+        data: nil, width: 600, height: 24, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+    context.setFillColor(CGColor(srgbRed: 1, green: 1, blue: 1, alpha: 1))
+    context.fill(CGRect(x: 0, y: 0, width: 600, height: 24))
+    let image = try #require(context.makeImage())
+    let outcome = await ScreenshotOverlay.render(
+      image,
+      segments: [
+        segment(chinese, box: CGRect(x: 20, y: 2, width: 380, height: 20), lineHeight: 20)
+      ], translations: ["  \(english)\n"])
+    #expect(outcome.image == nil)
+    #expect(outcome.leftovers == [.init(source: chinese, translation: english)])
   }
 }

@@ -2134,9 +2134,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               hint: hint, autoTranslate: autoTranslate,
               recordingBlocker: { [weak self] in self?.recordingBlocker(.screen) },
               translate: overlays
-                ? { [weak self] image in
-                  guard let self else { return (nil, "翻译不可用") }
-                  return await self.overlayTranslate(image)
+                ? { [weak self] image, pixelsPerPoint in
+                  guard let self else { return .init(message: "翻译不可用") }
+                  return await self.overlayTranslate(image, pixelsPerPoint: pixelsPerPoint)
                 } : nil)
           })
       else { return }
@@ -2813,24 +2813,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     presentTranslate()
   }
 
-  /// 就地翻译（截图工具栏「翻译」用）：识别 + 逐段翻译 + 覆盖渲染，交回贴了译文的图。
+  /// 就地翻译（截图工具栏「翻译」用）：识别 + 逐段翻译 + 覆盖渲染，交回贴了译文的图和放不下的段。
+  /// pixelsPerPoint 是选区图每点几个像素（字号下限按点算）。
   /// 失败时消息交回遮罩上的提示，岛上另外说一遍（收起遮罩后也能看到原因）
-  private func overlayTranslate(_ image: CGImage) async -> (image: CGImage?, message: String?) {
-    guard let recognized = await recognizeForTranslation(image) else { return (nil, "识别失败") }
+  private func overlayTranslate(_ image: CGImage, pixelsPerPoint: CGFloat) async
+    -> ScreenshotOverlay.Outcome
+  {
+    guard let recognized = await recognizeForTranslation(image) else {
+      return .init(message: "识别失败")
+    }
     let segments = ScreenshotOverlay.segments(
       of: recognized.lines, imageSize: CGSize(width: image.width, height: image.height))
-    guard !segments.isEmpty else { return (nil, "没有识别到文字") }
+    guard !segments.isEmpty else { return .init(message: "没有识别到文字") }
     do {
       let translations = try await translateSegments(segments, source: recognized.text)
-      guard
-        let composed = await ScreenshotOverlay.render(
-          image, segments: segments, translations: translations)
-      else { return (nil, "合成失败") }
-      return (composed, nil)
+      let composed = await ScreenshotOverlay.render(
+        image, segments: segments, translations: translations, pixelsPerPoint: pixelsPerPoint)
+      guard composed.image != nil || !composed.leftovers.isEmpty else {
+        return .init(message: "合成失败")
+      }
+      return composed
     } catch {
-      guard !Task.isCancelled, !(error is CancellationError) else { return (nil, "已取消") }
+      guard !Task.isCancelled, !(error is CancellationError) else {
+        return .init(message: "已取消")
+      }
       island.show("翻译失败", detail: error.localizedDescription, tone: .error)
-      return (nil, error.localizedDescription)
+      return .init(message: error.localizedDescription)
     }
   }
 
