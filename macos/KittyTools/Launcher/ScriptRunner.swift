@@ -32,10 +32,12 @@ enum ScriptRunner {
   /// 输出最多读这么多（B4）
   static let outputLimit = 1 << 20
 
-  /// path：给脚本的 PATH（单测传固定的，不读写偏好）；不给就用 searchPath()
-  static func run(_ script: ScriptCommand, arguments: [String], path: String? = nil) async
-    -> Outcome
-  {
+  /// path：给脚本的 PATH（单测传固定的，不读写偏好）；不给就用 searchPath()。live：边跑边拿输出（全文输出那一页，第三轮 A1；
+  /// 错误输出并进输出，同终端）
+  static func run(
+    _ script: ScriptCommand, arguments: [String], path: String? = nil,
+    live: ((String) -> Void)? = nil
+  ) async -> Outcome {
     // 扫描之后才换成了下载来的（用下载的新版本盖掉了同名的、还没重读）：不跑，重读之后先给人看全文（第三轮评审）
     if !script.isDownloaded, !script.isBundled, await isDownloadedNow(script.path) {
       return Outcome(end: .failedToStart("这个脚本刚换成了从网上下载的：重新打开启动器，先看一眼全文再运行"))
@@ -56,7 +58,7 @@ enum ScriptRunner {
         captures: true,
         environment: environment, timeout: limit > 0 ? .seconds(limit) : nil,
         quality: .userInitiated, directory: URL(filePath: script.folder), stopsOnCancel: true,
-        outputLimit: outputLimit)
+        outputLimit: outputLimit, live: live)
       if Task.isCancelled {
         return Outcome(end: .stopped, output: result.output, error: result.error)
       }

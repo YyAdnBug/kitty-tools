@@ -6,6 +6,7 @@
 
 import AppKit
 import Foundation
+import SwiftUI
 import Testing
 
 @testable import KittyTools
@@ -336,7 +337,7 @@ struct ScriptRunTests {
     let downloaded = script("网上的", keyword: "net", downloaded: true)
     let model = try model([plain, guarded, downloaded])
     var ran: [String] = []
-    model.runScript = { script, _ in
+    model.runScript = { script, _, _ in
       ran.append(script.title)
       return .init(end: .finished(0), output: "hello\n")
     }
@@ -400,7 +401,7 @@ struct ScriptRunTests {
     let weather = script("天气", "tq", arguments: [.init(placeholder: "城市")])
     let model = try model([weather])
     var given: [[String]] = []
-    model.runScript = { _, arguments in
+    model.runScript = { _, arguments, _ in
       given.append(arguments)
       return .init(end: .finished(0), output: "晴\n")
     }
@@ -426,7 +427,7 @@ struct ScriptRunTests {
     let base = script("Base64", "b64", mode: .list)
     let model = try model([base])
     var runs = 0
-    model.runScript = { _, arguments in
+    model.runScript = { _, arguments, _ in
       runs += 1
       if arguments == ["bad"] { return .init(end: .finished(1), error: "不是 Base64\n") }
       return .init(end: .finished(0), output: "YUdrPQ==\t编码\nhi\t解码\n")
@@ -453,7 +454,7 @@ struct ScriptRunTests {
     let json = script(
       "JSON 格式化", "json", mode: .full, arguments: [.init(placeholder: "JSON", isOptional: true)])
     let model = try model([json])
-    model.runScript = { _, arguments in
+    model.runScript = { _, arguments, _ in
       arguments.isEmpty
         ? .init(end: .finished(0), output: "{\n  \"a\": 1\n}\n")
         : .init(end: .finished(2), output: "", error: "SyntaxError: JSON Parse error\n")
@@ -462,7 +463,8 @@ struct ScriptRunTests {
     model.execute(try #require(model.results.first))
     #expect(model.output?.isRunning == true)
     await model.scriptRun(json.path)
-    #expect(model.output == .init(script: json, text: "{\n  \"a\": 1\n}", isRunning: false))
+    #expect(model.output?.text == "{\n  \"a\": 1\n}" && model.output?.isRunning == false)
+    #expect(model.output?.failure == nil && model.output?.arguments == [])
     model.closeOutput()
     #expect(model.output == nil)
     model.query = "json {oops"
@@ -685,7 +687,7 @@ struct BundledScriptTests {
     let scan = await ScriptLibrary.scan([], bundled: ScriptLibrary.bundledFiles)
     let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [])
     model.scripts = { scan.scripts }
-    model.runScript = { await ScriptRunner.run($0, arguments: $1, path: "/usr/bin:/bin") }
+    model.runScript = { await ScriptRunner.run($0, arguments: $1, path: "/usr/bin:/bin", live: $2) }
     // 脚本给的那几行（下面还接着普通结果和网页搜索兜底）
     var rows: [LauncherItem] { model.results.filter { $0.kind == .scriptResult } }
 
@@ -739,7 +741,7 @@ struct BundledScriptTests {
     let model = LauncherModel(
       usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [machine])
     model.scripts = { [time] }
-    model.runScript = { _, arguments in
+    model.runScript = { _, arguments, _ in
       arguments == ["machine"]
         ? .init(end: .finished(1), error: "认不出「machine」\n")
         : .init(end: .finished(0), output: "1\t秒\n")
@@ -765,7 +767,7 @@ struct BundledScriptTests {
     let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [])
     model.scripts = { [script] }
     var ran = 0
-    model.runScript = { _, _ in
+    model.runScript = { _, _, _ in
       ran += 1
       return .init(end: .finished(0))
     }
@@ -1041,7 +1043,7 @@ struct SubprocessStopTests {
     var broken = ScriptCommand(path: "/tmp/s/bad.sh", title: "坏的", interpreter: ["/bin/sh"])
     broken.keyword = "bad"
     let model = try model([broken])
-    model.runScript = { _, _ in .init(end: .finished(2), output: "第一行\n第二行", error: "出错了：x") }
+    model.runScript = { _, _, _ in .init(end: .finished(2), output: "第一行\n第二行", error: "出错了：x") }
     var shown = 0
     model.showPanel = {
       shown += 1
@@ -1063,7 +1065,7 @@ struct SubprocessStopTests {
     model.showOutput(id)
     #expect(model.output == nil && shown == 1)
     // 自己停的不留
-    model.runScript = { _, _ in .init(end: .stopped, output: "半截") }
+    model.runScript = { _, _, _ in .init(end: .stopped, output: "半截") }
     let last = model.lastOutput?.id
     model.execute(try #require(model.results.first { $0.kind == .script }))
     await model.scriptRun(broken.path)
@@ -1197,7 +1199,7 @@ struct SubprocessStopTests {
     let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [])
     model.scripts = { [script] }
     var ran = 0
-    model.runScript = { _, _ in
+    model.runScript = { _, _, _ in
       ran += 1
       return .init(end: .finished(0))
     }
@@ -1286,7 +1288,7 @@ struct SubprocessStopTests {
     script.keyword = "ls"
     script.mode = .list
     let model = try model(script)
-    model.runScript = { _, _ in .init(end: .timedOut) }
+    model.runScript = { _, _, _ in .init(end: .timedOut) }
     model.query = "ls x"
     await model.listRun()
     #expect(model.results.first?.subtitle.contains("跑了 10 秒") == true)
@@ -1297,7 +1299,7 @@ struct SubprocessStopTests {
     script.keyword = "full"
     script.mode = .full
     let model = try model(script)
-    model.runScript = { _, _ in
+    model.runScript = { _, _, _ in
       try? await Task.sleep(for: .milliseconds(30))
       return .init(end: .finished(0), output: "done\n")
     }
@@ -1309,5 +1311,173 @@ struct SubprocessStopTests {
     await model.scriptRun(script.path)
     // 没被停掉：跑完的输出留给岛上的「看输出」
     #expect(model.lastOutput?.page.text == "done")
+  }
+}
+
+/// 第三轮 A1–A3：全文那一页边跑边显示、认终端颜色、⌘R 重跑
+@MainActor struct ScriptOutputPageTests {
+  private func model(_ script: ScriptCommand) throws -> LauncherModel {
+    let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [])
+    model.scripts = { [script] }
+    return model
+  }
+
+  /// 每一段的（文字、颜色、粗体）
+  private func runs(_ text: AttributedString) -> [(String, Color?, Bool)] {
+    text.runs.map {
+      (
+        String(text[$0.range].characters), $0.swiftUI.foregroundColor,
+        $0.inlinePresentationIntent?.contains(.stronglyEmphasized) == true
+      )
+    }
+  }
+
+  @Test func carriageReturnsOverwriteTheLine() {
+    #expect(ScriptCommand.clean("10%\r50%\r100%\ndone\n") == "100%\ndone\n")
+    #expect(ScriptCommand.clean("a\r\nb\r") == "a\nb")
+    #expect(ScriptCommand.clean("\u{1B}[32m1/3\r\u{1B}[32m3/3\u{1B}[0m") == "3/3")
+    // 子参数写法的颜色码整个去掉，不留半截
+    #expect(ScriptCommand.clean("\u{1B}[38:2::255:0:0mx") == "x")
+  }
+
+  @Test func colorsBoldAndReset() {
+    let text = ScriptTerminal.styled(
+      "\u{1B}[1;31mFAIL\u{1B}[0m ok \u{1B}[38;5;196mred\u{1B}[39m \u{1B}[38;2;0;128;255mrgb\u{1B}]0;title\u{07}\u{1B}[m."
+    )
+    let parts = runs(text)
+    #expect(String(text.characters) == "FAIL ok red rgb.")
+    #expect(parts.map(\.0) == ["FAIL", " ok ", "red", " ", "rgb", "."])
+    #expect(parts[0].1 == Color(nsColor: .systemRed) && parts[0].2)
+    #expect(parts[1].1 == nil && !parts[1].2)
+    #expect(parts[2].1 == ScriptTerminal.rgb(255, 0, 0))
+    #expect(parts[3].1 == nil)
+    #expect(parts[4].1 == ScriptTerminal.rgb(0, 128, 255))
+    #expect(parts[5].1 == nil)
+    // 没有颜色码的原样一段
+    #expect(runs(ScriptTerminal.styled("plain")).count == 1)
+    // 写坏了的 38 不认，也不把后面的字当颜色码
+    var pen = ScriptTerminal.Pen()
+    ScriptTerminal.apply("38;5", to: &pen)
+    #expect(pen == ScriptTerminal.Pen())
+    ScriptTerminal.apply("4;9;2", to: &pen)
+    #expect(pen.underline && pen.strike && pen.dim)
+    ScriptTerminal.apply("24;29;22", to: &pen)
+    #expect(pen == ScriptTerminal.Pen())
+    #expect(ScriptTerminal.indexed(16) == ScriptTerminal.rgb(0, 0, 0))
+    #expect(ScriptTerminal.indexed(231) == ScriptTerminal.rgb(255, 255, 255))
+    #expect(ScriptTerminal.indexed(232) == ScriptTerminal.rgb(8, 8, 8))
+    #expect(ScriptTerminal.indexed(256) == nil && ScriptTerminal.rgb(0, 300, 0) == nil)
+  }
+
+  @Test func runnerStreamsOutputWithErrorsMerged() async throws {
+    let folder = FileManager.default.temporaryDirectory.appending(path: "kitty-live-\(UUID())")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    // 脚本写一截后等「看到了」的记号文件（测试在 live 里看到那一截才建它），不按时间猜：全量单测时主线程会忙上一两分钟
+    let mark = folder.appending(path: "seen")
+    let text = """
+      #!/bin/sh
+      # @kitty.timeout 0
+      printf 'one\\n'
+      echo warn >&2
+      n=0
+      while [ ! -f "$1" ] && [ $n -lt 6000 ]; do sleep 0.05; n=$((n+1)); done
+      printf '中文'
+
+      """
+    let url = folder.appending(path: "live.sh")
+    try text.write(to: url, atomically: true, encoding: .utf8)
+    let script = try #require(ScriptCommand.parse(text, path: url.path)).get()
+    var seen: [String] = []
+    let outcome = await ScriptRunner.run(script, arguments: [mark.path], path: "/usr/bin:/bin") {
+      seen.append($0)
+      if $0 == "one\nwarn\n" { FileManager.default.createFile(atPath: mark.path, contents: nil) }
+    }
+    #expect(outcome.succeeded)
+    // 错误输出并在里面，先后同终端；跑完之前就交过一次「one」那一截
+    #expect(outcome.output == "one\nwarn\n中文" && outcome.error.isEmpty)
+    #expect(seen.contains("one\nwarn\n"))
+    #expect(seen.allSatisfy { !$0.contains("\u{FFFD}") })
+  }
+
+  @Test func pageGrowsWhileRunning() async throws {
+    var script = ScriptCommand(path: "/s/up.sh", title: "更新", interpreter: ["/bin/sh"])
+    script.keyword = "up"
+    script.mode = .full
+    let model = try model(script)
+    var resume: CheckedContinuation<Void, Never>?
+    model.runScript = { _, _, live in
+      live?("\u{1B}[32m==>\u{1B}[0m step 1\n")
+      await withCheckedContinuation { resume = $0 }
+      return .init(end: .finished(0), output: "\u{1B}[32m==>\u{1B}[0m step 1\nall done\n")
+    }
+    model.query = "up"
+    model.execute(try #require(model.results.first))
+    for _ in 0..<20 where resume == nil { await Task.yield() }
+    #expect(model.output?.isRunning == true)
+    #expect(model.output?.text == "==> step 1")
+    #expect(runs(try #require(model.output?.styled)).first?.1 == Color(nsColor: .systemGreen))
+    resume?.resume()
+    await model.scriptRun(script.path)
+    #expect(model.output?.isRunning == false && model.output?.text == "==> step 1\nall done")
+  }
+
+  @Test func commandRRerunsWithTheSameArguments() async throws {
+    var script = ScriptCommand(path: "/s/echo.sh", title: "回声", interpreter: ["/bin/sh"])
+    script.keyword = "echo"
+    script.mode = .full
+    script.arguments = [.init(placeholder: "文字")]
+    let model = try model(script)
+    var calls: [[String]] = []
+    model.runScript = { _, arguments, _ in
+      calls.append(arguments)
+      return .init(end: .finished(0), output: "run \(calls.count)\n")
+    }
+    model.query = "echo 你好 世界"
+    model.execute(try #require(model.results.first))
+    await model.scriptRun(script.path)
+    #expect(model.canRerunOutput)
+    model.rerunOutput()
+    #expect(model.output?.isRunning == true)
+    await model.scriptRun(script.path)
+    #expect(calls == [["你好 世界"], ["你好 世界"]])
+    #expect(model.output?.text == "run 2" && model.output?.arguments == ["你好 世界"])
+    // 出错后从「看输出」打开的那一页（不是全文脚本）也能重跑，结果留在这一页上
+    var quiet = script
+    quiet.mode = .island
+    model.scripts = { [quiet] }
+    model.closeOutput()
+    model.runScript = { _, _, _ in .init(end: .finished(1), output: "", error: "boom\n") }
+    model.query = "echo x"
+    model.execute(try #require(model.results.first))
+    await model.scriptRun(script.path)
+    let id = try #require(model.lastOutput?.id)
+    model.showPanel = { true }
+    model.showOutput(id)
+    model.rerunOutput()
+    await model.scriptRun(script.path)
+    #expect(model.output?.text == "boom" && model.output?.failure != nil)
+  }
+
+  @Test func confirmedScriptsDoNotRerun() async throws {
+    var script = ScriptCommand(path: "/s/rm.sh", title: "清空", interpreter: ["/bin/sh"])
+    script.keyword = "rm"
+    script.mode = .full
+    script.confirmation = "再按 ↩ 清空"
+    let model = try model(script)
+    var count = 0
+    model.runScript = { _, _, _ in
+      count += 1
+      return .init(end: .finished(0), output: "ok\n")
+    }
+    model.query = "rm"
+    let row = try #require(model.results.first)
+    model.execute(row)
+    model.execute(row)
+    await model.scriptRun(script.path)
+    #expect(count == 1 && !model.canRerunOutput)
+    model.rerunOutput()
+    await model.scriptRun(script.path)
+    #expect(count == 1)
   }
 }

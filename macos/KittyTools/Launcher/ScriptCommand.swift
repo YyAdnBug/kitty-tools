@@ -384,17 +384,26 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
 
   // MARK: 输出
 
-  /// 去掉终端颜色码（CSI、OSC）和回车，脚本给的颜色在岛上、启动器里都画不出来
+  /// 去掉终端颜色码（CSI、OSC）和回车：岛上、粘贴、复制、列表行都是纯文字（全文那一页另认颜色，ScriptTerminal）
   static func clean(_ output: String) -> String {
     // 绝大多数输出既没有颜色码也没有回车：不过正则（1 MB 过一遍要 0.1–0.4 s，在主线程上；第三轮评审）
     guard output.utf8.contains(where: { $0 == 0x1B || $0 == 0x0D }) else { return output }
     return
-      output
+      carriageReturns(output)
       .replacing(/\u{1B}\][^\u{07}\u{1B}]*(\u{07}|\u{1B}\\)?/, with: "")
-      .replacing(/\u{1B}\[[0-9;?]*[ -\/]*[@-~]/, with: "")
+      .replacing(/\u{1B}\[[0-9;:?]*[ -\/]*[@-~]/, with: "")
       .replacing(/\u{1B}[@-_]/, with: "")
+  }
+
+  /// 回车同终端：\r\n 是换行；单独的 \r 回到行首，后面再写字就盖掉这一行（进度条一帧帧地重画，只留最后一帧；第三轮 A1），
+  /// 行尾的 \r 不算
+  static func carriageReturns(_ text: String) -> String {
+    guard text.utf8.contains(0x0D) else { return text }
+    return
+      text
       .replacing("\r\n", with: "\n")
-      .replacing("\r", with: "\n")
+      .replacing(/[^\n\r]*\r+(?=[^\n\r])/, with: "")
+      .replacing("\r", with: "")
   }
 
   /// 看全文时要标出来的字：显示出来看不见、或者让看到的和真会跑的不一样（第三轮评审 + 复查）。block 的有就不放行：

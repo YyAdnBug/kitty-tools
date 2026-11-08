@@ -105,16 +105,34 @@ import UniformTypeIdentifiers
   }
   private(set) var pageScroll = PageScroll()
 
-  /// 全文输出的脚本（B1 full）：列表换成它的输出，↩ 粘贴、⌘C 复制、Esc 返回（还在跑时 Esc 停掉）
+  /// 全文输出的脚本（B1 full）：列表换成它的输出，↩ 粘贴、⌘C 复制、⌘R 重跑、Esc 返回（还在跑时 Esc 停掉）
   private(set) var output: ScriptOutput?
 
   struct ScriptOutput: Equatable {
     let script: ScriptCommand
+    /// 跑它时给的参数：⌘R 照这些再跑一次（第三轮 A3）
+    var arguments: [String] = []
+    /// 粘贴、复制的：去掉颜色码的纯文字
     var text = ""
+    /// 显示的：认颜色（ScriptTerminal，第三轮 A2），最多 LauncherModel.outputDisplayLimit 字
+    var styled = AttributedString()
     var isRunning = true
+    /// 开始跑的时刻：跑着时副标题写「已 12 秒」（第三轮 A1）
+    var startedAt = Date.now
     /// 出错 / 超时 / 停了：那一句（红字）
     var failure: String?
+
+    /// 换上脚本写出来的（没收拾过的）输出
+    mutating func show(_ raw: String) {
+      text = ScriptCommand.payload(raw)
+      var shown = String(raw.prefix(LauncherModel.outputDisplayLimit))
+      while shown.last?.isNewline == true { shown.removeLast() }
+      styled = ScriptTerminal.styled(shown)
+    }
   }
+
+  /// 全文输出那一页最多显示这么多字（再多 Text 排不动、卡主线程）；↩ 粘贴、⌘C 复制的照旧是全部
+  static let outputDisplayLimit = 100_000
 
   enum Alternate {
     case none, command, option, control
@@ -183,10 +201,10 @@ import UniformTypeIdentifiers
   @ObservationIgnored var scripts: () -> [ScriptCommand] = { [] }
   /// 设置 › 启动器「脚本命令」开着：「新建脚本」「复制脚本写法说明」两条内置动作跟着它
   @ObservationIgnored var scriptsOn: () -> Bool = { true }
-  /// 跑一条脚本（单测换成假的）
+  /// 跑一条脚本（单测换成假的）；第三个是边跑边交输出的（全文输出，别的模式是 nil）
   @ObservationIgnored var runScript:
-    @MainActor (ScriptCommand, [String]) async -> ScriptRunner.Outcome = {
-      await ScriptRunner.run($0, arguments: $1)
+    @MainActor (ScriptCommand, [String], ((String) -> Void)?) async -> ScriptRunner.Outcome = {
+      await ScriptRunner.run($0, arguments: $1, live: $2)
     }
   /// 读脚本全文（review 那一页；单测换成假的）
   @ObservationIgnored var readScript: @MainActor (ScriptCommand) async -> ScriptReading = {
@@ -1302,7 +1320,7 @@ import UniformTypeIdentifiers
       guard let self, !Task.isCancelled else { return }
       var quick = script
       quick.timeout = min(script.limit == 0 ? Self.listTimeout : script.limit, Self.listTimeout)
-      let outcome = await runScript(quick, invocation.arguments)
+      let outcome = await runScript(quick, invocation.arguments, nil)
       guard !Task.isCancelled, query == key else { return }
       listTask = nil
       let selected = userMovedSelection ? selectedItem?.id : nil
@@ -1395,33 +1413,61 @@ import UniformTypeIdentifiers
           progress, tone: .progress, symbol: "terminal.fill",
           actions: [Island.Action("停止") { [weak self] in self?.runningScripts[path]?.cancel() }])
       } work: {
-        await self.runScript(script, arguments)
+        await self.runScript(script, arguments, nil)
       }
       runningScripts[path] = nil
-      deliver(outcome, of: script, into: target, progress: progress)
+      deliver(outcome, of: script, arguments: arguments, into: target, progress: progress)
     }
   }
 
-  /// 全文输出（B1 full）：启动器留着，列表换成输出那一页；跑完把输出（出错时连同错误输出）放上去
+  /// 全文输出（B1 full）：启动器留着，列表换成输出那一页；边跑边把写到现在的放上去（第三轮 A1，错误输出并在里面、
+  /// 同终端），跑完换成最终的那一份。⌘R 重跑也走这里（第三轮 A3：别的模式的脚本从「看输出」那一页重跑，同样在这一页上看结果）
   private func startFull(_ script: ScriptCommand, arguments: [String]) {
     let path = script.path
     showsActions = false
-    output = ScriptOutput(script: script)
+    output = ScriptOutput(script: script, arguments: arguments)
+    let started = output?.startedAt
     runningScripts[path] = Task { [weak self] in
       guard let self else { return }
-      let outcome = await runScript(script, arguments)
+      let outcome = await runScript(script, arguments) { [weak self] raw in
+        guard let self, output?.startedAt == started, output?.isRunning == true else { return }
+        output?.show(raw)
+      }
       runningScripts[path] = nil
       // 跑着时启动器收起了：岛上说结果、带「看输出」；Esc 停掉的、换成别的页的不说
       if detachedOutputs.remove(path) != nil {
-        return deliver(outcome, of: script, into: nil, progress: "正在运行「\(script.title)」")
+        return deliver(
+          outcome, of: script, arguments: arguments, into: nil,
+          progress: "正在运行「\(script.title)」")
       }
-      guard output?.script.path == path else { return }
-      let page = Self.outputPage(outcome, of: script)
-      output?.text = page.text
-      output?.isRunning = false
-      output?.failure = page.failure
+      guard output?.startedAt == started else { return }
+      var page = Self.outputPage(outcome, of: script, arguments: arguments)
+      page.startedAt = started ?? page.startedAt
+      output = page
       Island.announce(page.failure ?? "「\(script.title)」运行完了")
     }
+  }
+
+  /// 输出那一页的 ⌘R：用同样的参数再跑一次（第三轮 A3）。按的是脚本现在的样子（改完脚本再跑一次看结果）；还在跑的、
+  /// 写了 confirm 的（重跑不该绕过「按两次」）、已经不在了的不跑
+  func rerunOutput() {
+    guard let output, !output.isRunning, runningScripts[output.script.path] == nil else {
+      return NSSound.beep()
+    }
+    guard let script = activeScripts.first(where: { $0.path == output.script.path }),
+      !script.isDownloaded || approvedScripts.contains(script.path)
+    else {
+      island?.show("「\(output.script.title)」不在了", detail: "脚本被删掉、关掉或者换过了", tone: .info)
+      return NSSound.beep()
+    }
+    guard script.confirmation == nil else { return NSSound.beep() }
+    startFull(script, arguments: output.arguments)
+  }
+
+  /// 这一页能不能 ⌘R：底栏的「重跑」跟着它
+  var canRerunOutput: Bool {
+    guard let output else { return false }
+    return !output.isRunning && output.script.confirmation == nil
   }
 
   /// 全文脚本跑着时启动器收起了：接着跑，岛上挂「正在运行」带「停止」，跑完由 startFull 交给 deliver
@@ -1434,15 +1480,21 @@ import UniformTypeIdentifiers
   }
 
   /// 全文那一页上的东西：输出，没跑成时接上错误输出；没跑成的那一句（红字）。全文输出和岛上「看输出」同一份
-  static func outputPage(_ outcome: ScriptRunner.Outcome, of script: ScriptCommand) -> ScriptOutput
-  {
-    var text = ScriptCommand.payload(outcome.output)
-    let error = ScriptCommand.payload(outcome.error)
-    if !outcome.succeeded, !error.isEmpty { text += (text.isEmpty ? "" : "\n\n") + error }
+  static func outputPage(
+    _ outcome: ScriptRunner.Outcome, of script: ScriptCommand, arguments: [String]
+  ) -> ScriptOutput {
+    var raw = outcome.output
+    if !outcome.succeeded, !ScriptCommand.payload(outcome.error).isEmpty {
+      while raw.last?.isNewline == true { raw.removeLast() }
+      raw += (ScriptCommand.payload(raw).isEmpty ? "" : "\n\n") + outcome.error
+    }
     let failure = Self.failure(outcome, of: script).map {
       [$0.title, $0.detail].filter { !$0.isEmpty }.joined(separator: "：")
     }
-    return ScriptOutput(script: script, text: text, isRunning: false, failure: failure)
+    var page = ScriptOutput(
+      script: script, arguments: arguments, isRunning: false, failure: failure)
+    page.show(raw)
+    return page
   }
 
   /// 岛上「看输出」：叫出启动器，原地显示那一次的全部输出（同全文输出那一页：↩ 粘贴、⌘C 复制、Esc 回到结果）。
@@ -1491,14 +1543,14 @@ import UniformTypeIdentifiers
 
   /// 把结果交出去（B1）：出错的一律岛上红字（最后一行；没有就写退出码），成功的按 mode
   private func deliver(
-    _ outcome: ScriptRunner.Outcome, of script: ScriptCommand, into target: NSTextView?,
-    progress: String
+    _ outcome: ScriptRunner.Outcome, of script: ScriptCommand, arguments: [String],
+    into target: NSTextView?, progress: String
   ) {
     let name = "「\(script.title)」"
     if let failure = Self.failure(outcome, of: script) {
       let stopped = outcome.end == .stopped
       // 出错了带「看输出」（D3）：前面几行才说得清为什么；自己停的、什么都没输出的不带
-      let page = Self.outputPage(outcome, of: script)
+      let page = Self.outputPage(outcome, of: script, arguments: arguments)
       let keeps = !stopped && !page.text.isEmpty
       let id = UUID()
       if keeps { lastOutput = (id, page) }
@@ -1527,7 +1579,7 @@ import UniformTypeIdentifiers
       island?.dismiss(ifShowing: progress)
     // 全文：跑着时启动器收起了的才走这里（detach）。岛上说一声，带「看输出」
     case .full:
-      let page = Self.outputPage(outcome, of: script)
+      let page = Self.outputPage(outcome, of: script, arguments: arguments)
       let id = UUID()
       if !page.text.isEmpty { lastOutput = (id, page) }
       island?.show(
@@ -2263,11 +2315,14 @@ import UniformTypeIdentifiers
       return !(modifiers == .command && editing.contains(key))
         && !(modifiers == [.command, .shift] && key == kVK_ANSI_Z)
     }
-    // 全文输出那一页：⌘C 全部复制（搜索框里选着字时交还输入框）
+    // 全文输出那一页：⌘C 全部复制（搜索框里选着字时交还输入框）、⌘R 重跑
     if output != nil {
-      guard modifiers == .command, key == kVK_ANSI_C, !Self.fieldHasSelection(event) else {
-        return false
+      guard modifiers == .command else { return false }
+      if key == kVK_ANSI_R {
+        rerunOutput()
+        return true
       }
+      guard key == kVK_ANSI_C, !Self.fieldHasSelection(event) else { return false }
       copyOutput()
       return true
     }

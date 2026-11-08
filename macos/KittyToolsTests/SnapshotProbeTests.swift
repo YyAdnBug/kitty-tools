@@ -4769,21 +4769,35 @@ struct SnapshotProbeTests {
     var json = script("JSON 格式化", "json", .symbol("curlybraces"))
     json.mode = .full
     json.arguments = [.init(placeholder: "JSON", isOptional: true)]
-    let all = scripts + [weather, base64, json]
+    // 全文输出带终端颜色、边跑边显示（第三轮 A1 A2）：先交一截、停在那儿等截完「正在运行」那张
+    var upgrade = script("更新 Homebrew", "up", .emoji("🍺"))
+    upgrade.mode = .full
+    let all = scripts + [weather, base64, json, upgrade]
     let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [])
     model.engines = { [] }
     model.boundHotKey = { $0.defaultHotKey }
     model.scripts = { all }
-    model.runScript = { script, _ in
+    let brew = [
+      "\u{1B}[1;34m==>\u{1B}[0m \u{1B}[1mUpgrading 3 outdated packages:\u{1B}[0m",
+      "node 22.1.0 -> 22.2.0", "\u{1B}[32m✔\u{1B}[0m ripgrep 14.1.1 已是最新",
+      "\u{1B}[31mError:\u{1B}[0m python@3.13: 下载超时，重试中…",
+      "\u{1B}[33mWarning:\u{1B}[0m \u{1B}[4m3 个旧版本\u{1B}[24m可以清理 \u{1B}[90m(brew cleanup)\u{1B}[0m",
+    ]
+    var hold: CheckedContinuation<Void, Never>?
+    model.runScript = { script, _, live in
       switch script.mode {
-      case .list: .init(end: .finished(0), output: "YUdrPQ==\t编码\nhi\t解码\n")
+      case .list: return .init(end: .finished(0), output: "YUdrPQ==\t编码\nhi\t解码\n")
+      case .full where script.keyword == "up":
+        live?(brew.prefix(4).joined(separator: "\n") + "\n")
+        await withCheckedContinuation { hold = $0 }
+        return .init(end: .finished(0), output: brew.joined(separator: "\n") + "\n")
       case .full:
-        .init(
+        return .init(
           end: .finished(0),
           output:
             "{\n  \"name\": \"Kitty Tools\",\n  \"version\": \"0.8.0\",\n  \"features\": [\"启动器\", \"剪贴板\"]\n}\n"
         )
-      default: .init(end: .finished(0))
+      default: return .init(end: .finished(0))
       }
     }
     model.readScript = { _ in
@@ -4839,6 +4853,21 @@ struct SnapshotProbeTests {
         LauncherPanelView(model: model),
         size: NSSize(width: 720, height: LauncherPanelView.height(for: model)), dark: dark,
         to: "\(out)/launcher-scripts-output\(suffix).png")
+      model.closeOutput()
+      model.query = "up"
+      if let item = model.results.first { model.execute(item) }
+      for _ in 0..<40 where hold == nil { await Task.yield() }
+      try snapshot(
+        LauncherPanelView(model: model),
+        size: NSSize(width: 720, height: LauncherPanelView.height(for: model)), dark: dark,
+        to: "\(out)/launcher-scripts-running\(suffix).png")
+      hold?.resume()
+      hold = nil
+      await model.scriptRun(upgrade.path)
+      try snapshot(
+        LauncherPanelView(model: model),
+        size: NSSize(width: 720, height: LauncherPanelView.height(for: model)), dark: dark,
+        to: "\(out)/launcher-scripts-colors\(suffix).png")
       model.closeOutput()
       // 脚本行的 ⌘K（第二轮 D1）
       model.query = "tq"

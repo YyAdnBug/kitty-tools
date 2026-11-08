@@ -14,7 +14,7 @@
 // 脚本命令（2026-11-07）：行图标是头部写的 emoji / SF 符号 / 图片，没写是命令家族紫的 terminal 色块，右侧「脚本」；
 // 从网上下载的脚本第一次跑之前，列表换成它的全文（ScriptReviewView：等宽字、能滚，上面一句写明以用户的身份运行、
 // 能用本 App 已有的授权），底栏「运行 ↩」「返回 Esc」；全文输出的脚本跑起来后列表换成输出那一页（同一个 ScriptPageView），
-// 底栏「粘贴 ↩」「复制 ⌘C」「返回 Esc」（还在跑时只有「停止 Esc」）。列表脚本的结果行同脚本的图标、右侧「脚本」。
+// 底栏「粘贴 ↩」「复制 ⌘C」「重跑 ⌘R」「返回 Esc」（还在跑时只有「停止 Esc」；第三轮：边跑边显示、认终端颜色）。列表脚本的结果行同脚本的图标、右侧「脚本」。
 
 import AppKit
 import SwiftUI
@@ -46,8 +46,6 @@ struct LauncherPanelView: View {
   static let rowRange = 6.5...14.5
   /// 看脚本全文那一页的高度（不含搜索栏和底栏）
   static let reviewHeight: CGFloat = 320
-  /// 全文输出那一页最多显示这么多字（再多 Text 排不动、卡主线程）；↩ 粘贴、⌘C 复制的照旧是全部
-  static let outputDisplayLimit = 100_000
 
   var body: some View {
     VStack(spacing: 0) {
@@ -74,13 +72,13 @@ struct LauncherPanelView: View {
         ScriptPageView(
           title: output.script.title,
           subtitle: output.isRunning ? "正在运行…" : output.failure == nil ? "运行完了" : "没有跑成",
+          since: output.isRunning ? output.startedAt : nil,
           note: output.failure, noteColor: Color(nsColor: .systemRed),
-          text: output.isRunning || output.text.isEmpty
-            ? nil : String(output.text.prefix(LauncherPanelView.outputDisplayLimit)),
+          text: nil, styled: output.text.isEmpty ? nil : output.styled,
           placeholder: output.isRunning ? "正在运行…" : "（没有输出）",
-          warning: output.text.count > LauncherPanelView.outputDisplayLimit
-            ? "只显示了前 \(LauncherPanelView.outputDisplayLimit / 10_000) 万字；粘贴、复制的是全部。" : nil,
-          label: "脚本输出", scroll: model.pageScroll
+          warning: output.text.count > LauncherModel.outputDisplayLimit
+            ? "只显示了前 \(LauncherModel.outputDisplayLimit / 10_000) 万字；粘贴、复制的是全部。" : nil,
+          label: "脚本输出", scroll: model.pageScroll, follows: true
         )
         .frame(height: Self.reviewHeight)
       } else if showsNoResults {
@@ -413,6 +411,15 @@ struct LauncherPanelView: View {
         }
         .accessibilityLabel("复制")
       }
+      if model.canRerunOutput {
+        Button(action: model.rerunOutput) {
+          HStack(spacing: 6) {
+            Text("重跑")
+            KeyCap("⌘R")
+          }
+        }
+        .accessibilityLabel("重跑")
+      }
       Button(action: model.closeOutput) {
         HStack(spacing: 6) {
           Text("返回")
@@ -472,19 +479,26 @@ struct LauncherPanelView: View {
 
 /// 脚本的一整页（启动器里原地换掉列表）：从网上下载的脚本第一次跑之前的全文（拍板 B5），全文输出的脚本的输出（B1）。
 /// 标题和一行小字、可选的一句提示（橙色 / 红字）、等宽字的正文（能滚、能选，↑↓ / PageUp / PageDown 跟着模型的
-/// pageScroll 滚：焦点一直在搜索框里）；正文没有时写 placeholder
+/// pageScroll 滚：焦点一直在搜索框里）；正文没有时写 placeholder。输出边跑边长时（follows）正文跟着最后一行走，
+/// 往上翻了就不跟、翻回底部再跟（第三轮 A1）
 private struct ScriptPageView: View {
   let title: String
   let subtitle: String
+  /// 跑着的：小字后面接「已 12 秒」
+  var since: Date?
   let note: String?
   let noteColor: Color
   let text: String?
+  /// 认了颜色的正文（输出那一页，ScriptTerminal）；有它就不用 text
+  var styled: AttributedString?
   let placeholder: String
   /// 正文上面一句橙色的（没显示全、藏着字符、输出只显示了一部分）
   var warning: String?
   /// 正文的读屏名
   let label: String
   let scroll: LauncherModel.PageScroll
+  /// 正文变长时，原来在底部就跟到新的底部
+  var follows = false
   @State private var position = ScrollPosition(edge: .top)
   @State private var geometry: ScrollGeometry?
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -493,11 +507,20 @@ private struct ScriptPageView: View {
     VStack(alignment: .leading, spacing: 10) {
       VStack(alignment: .leading, spacing: 2) {
         Text(title).font(.system(size: 14, weight: .medium)).lineLimit(1)
-        Text(subtitle)
-          .font(.system(size: 12))
-          .foregroundStyle(.secondary)
-          .lineLimit(1)
-          .truncationMode(.middle)
+        Group {
+          if let since {
+            // 一秒换一次的普通文字（不做数字滚动的过渡，开销很小）
+            TimelineView(.periodic(from: since, by: 1)) { context in
+              Text(subtitle + " " + Self.elapsed(context.date.timeIntervalSince(since)))
+            }
+          } else {
+            Text(subtitle)
+          }
+        }
+        .font(.system(size: 12))
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+        .truncationMode(.middle)
       }
       if let note {
         Text(note)
@@ -513,26 +536,40 @@ private struct ScriptPageView: View {
           .fixedSize(horizontal: false, vertical: true)
       }
       ScrollView {
-        Text(text ?? placeholder)
-          .font(.system(size: 12, design: .monospaced))
-          .lineSpacing(2)
-          .foregroundStyle(text == nil ? .secondary : .primary)
-          .textSelection(.enabled)
-          .frame(maxWidth: .infinity, alignment: .topLeading)
-          .padding(10)
+        Group {
+          if let styled { Text(styled) } else { Text(text ?? placeholder) }
+        }
+        .font(.system(size: 12, design: .monospaced))
+        .lineSpacing(2)
+        .foregroundStyle(text == nil && styled == nil ? .secondary : .primary)
+        .textSelection(.enabled)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .padding(10)
       }
       .scrollPosition($position)
       .onScrollGeometryChange(for: ScrollGeometry.self) {
         $0
-      } action: {
-        geometry = $1
+      } action: { old, new in
+        geometry = new
+        // 正文长了、之前停在底部（差 4 pt 以内）：跟到新的底部
+        if follows, new.contentSize.height > old.contentSize.height,
+          old.contentOffset.y >= old.contentSize.height - old.containerSize.height - 4
+        {
+          position.scrollTo(edge: .bottom)
+        }
       }
       .onChange(of: scroll) { _, scroll in move(scroll.step) }
       .background(Style.hoverFill, in: .rect(cornerRadius: Style.Radius.card, style: .continuous))
-      .accessibilityLabel(text == nil ? placeholder : label)
+      .accessibilityLabel(text == nil && styled == nil ? placeholder : label)
     }
     .padding(.horizontal, 16)
     .padding(.vertical, 12)
+  }
+
+  /// 「已 12 秒」「已 2 分 5 秒」
+  static func elapsed(_ interval: TimeInterval) -> String {
+    let seconds = max(Int(interval), 0)
+    return seconds < 60 ? "已 \(seconds) 秒" : "已 \(seconds / 60) 分 \(seconds % 60) 秒"
   }
 
   /// ±1 一小段（三行），±2 一屏（留一行接上）
