@@ -13,6 +13,9 @@ nonisolated enum FinderMenuItem: String, CaseIterable {
   case transfer = "Transfer"
   case cut = "Cut"
   case deskAlias = "DeskAlias"
+  case compress = "Compress"
+  case extract = "Extract"
+  case fixNames = "FixNames"
 
   var prefsKey: String { "finderMenu" + rawValue }
 
@@ -28,6 +31,9 @@ nonisolated enum FinderMenuItem: String, CaseIterable {
     case .transfer: "显示「移动到」「复制到」"
     case .cut: "显示「剪切」和「粘贴」"
     case .deskAlias: "显示「发送替身到桌面」"
+    case .compress: "显示「压缩」"
+    case .extract: "显示「解压到这里」"
+    case .fixNames: "显示「修复乱码文件名」"
     }
   }
 
@@ -40,6 +46,9 @@ nonisolated enum FinderMenuItem: String, CaseIterable {
     case .transfer: "右键文件、文件夹：送到下面的常用文件夹，或者另选一个"
     case .cut: "剪切之后，到别的文件夹空白处右键「粘贴」，或者在访达里按 ⌥⌘V"
     case .deskAlias: "在桌面上放一个替身，原件挪了也照样打得开"
+    case .compress: "右键文件、文件夹：打成 zip 或 7z 放在旁边"
+    case .extract: "右键 zip、7z、tar.gz 这类压缩包；带密码的 zip 会先问密码"
+    case .fixNames: "只在名字像「ÖÐÎÄ」「╓╨╬─」这种乱码时出现，改回中文"
     }
   }
 

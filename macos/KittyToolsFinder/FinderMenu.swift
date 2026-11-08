@@ -1,6 +1,7 @@
 // 访达扩展（第十一族「访达右键」，2026-11-08 拍板，PLAN §10「访达右键」）：在访达的右键菜单第一层加几项。
 // - 选中文件 / 文件夹右键：「拷贝路径」「拷贝名称」、设置里选的每个 App 一项「在“X”中打开」（默认只有终端；叫法照访达
-//   自己的「在“照片”中打开」）、「移动到 ▸」「复制到 ▸」（常用文件夹 + 选择文件夹…）、「剪切」、「发送替身到桌面」。
+//   自己的「在“照片”中打开」）、「移动到 ▸」「复制到 ▸」（常用文件夹 + 选择文件夹…）、「剪切」、「压缩 ▸」（ZIP、7Z）、
+//   「解压到这里」（选中的都是压缩包时）、「修复乱码文件名」（选中的有名字像乱码、还原得出来的时候）、「发送替身到桌面」。
 // - 文件夹空白处右键：最前面「新建文件 ▸」（自带五种、模板文件夹里放的每个文件、「自定义后缀…」、「打开模板文件夹」），
 //   剪切过、剪贴板还没换过时多一项「粘贴 N 项」，然后「拷贝路径」「在“X”中打开」，对着的是这个文件夹。
 // 每一项在 App 设置里能单独关（App 的 FinderMenuItem；同几家成熟产品），默认开关照 2026-11-08 右键扩充拍板 A2。
@@ -21,6 +22,70 @@ import os
 
 /// 交给 App 失败这类记一笔（扩展没有界面，Console 里按 subsystem 看）
 private let log = Logger(subsystem: "com.yy.kitty-tools.native", category: "finder")
+
+/// 名字像不像乱码、还原成什么：App 的 NameRepair 原样抄过来（FinderLinkTests 逐字比对 BEGIN / END 之间）
+// BEGIN NameRepair
+nonisolated enum NameRepair {
+  /// 名字像乱码、能还原成中日韩文字时给出还原后的名字；不像、还原不了是 nil
+  static func repair(_ name: String) -> String? {
+    let name = name.precomposedStringWithCanonicalMapping
+    guard !name.unicodeScalars.contains(where: isCJK) else { return nil }
+    var runs: [Int] = []
+    var current = 0
+    for scalar in name.unicodeScalars {
+      if scalar.isASCII {
+        if current > 0 { runs.append(current) }
+        current = 0
+      } else {
+        current += 1
+      }
+    }
+    if current > 0 { runs.append(current) }
+    for (wrong, right, unit) in tries
+    where runs.contains(where: { $0 >= 2 * unit }) && runs.allSatisfy({ $0 % unit == 0 }) {
+      guard let bytes = name.data(using: wrong),
+        right == .utf8 || String(data: bytes, encoding: .utf8) == nil,
+        let fixed = String(data: bytes, encoding: right), fixed != name, looksRight(fixed)
+      else { continue }
+      return fixed
+    }
+    return nil
+  }
+
+  /// 还原出来的像样：有中日韩文字，非 ASCII 的全是中日韩文字和全角符号，没有控制字符、/、:
+  private static func looksRight(_ name: String) -> Bool {
+    let scalars = name.unicodeScalars
+    return scalars.contains(where: isCJK)
+      && scalars.allSatisfy { $0.isASCII ? $0.value >= 0x20 && $0 != "/" && $0 != ":" : isCJK($0) }
+  }
+
+  /// 中日韩文字、假名、谚文、中日韩标点、全角符号
+  private static func isCJK(_ scalar: Unicode.Scalar) -> Bool {
+    switch scalar.value {
+    case 0x3000...0x303F, 0x3040...0x30FF, 0x3400...0x4DBF, 0x4E00...0x9FFF, 0xAC00...0xD7AF,
+      0xF900...0xFAFF, 0xFF00...0xFFEF, 0x20000...0x2FA1F:
+      true
+    default: false
+    }
+  }
+
+  private static func encoding(_ cf: CFStringEncodings) -> String.Encoding {
+    String.Encoding(
+      rawValue: CFStringConvertEncodingToNSStringEncoding(CFStringEncoding(cf.rawValue)))
+  }
+
+  /// 依次试：（被当成的错编码，本来的编码，一个字几个错字）。UTF-8 校验更严，先试；中文这一路按 GB2312（EUC-CN）读
+  private static let tries: [(String.Encoding, String.Encoding, Int)] = {
+    let gb2312 = encoding(.EUC_CN)
+    let cp437 = encoding(.dosLatinUS)
+    return [
+      (.windowsCP1252, .utf8, 3), (.isoLatin1, .utf8, 3), (.macOSRoman, .utf8, 3),
+      (cp437, gb2312, 2), (.macOSRoman, gb2312, 2), (.windowsCP1252, gb2312, 2),
+      (.isoLatin1, gb2312, 2),
+    ]
+  }()
+}
+// END NameRepair
 
 final class FinderMenu: FIFinderSync {
   /// App 的 id：扩展的 id 是 App 的 id 加 .finder（Debug、Release 各认各的），App 拿它当网址的 scheme
@@ -107,6 +172,16 @@ final class FinderMenu: FIFinderSync {
   /// 模板文件夹里的那几项 tag 从这里起
   private static let mineTag = 100
 
+  /// 「解压到这里」认的扩展名（ponytail: 抄的 App 的 Archives.suffixes，FinderLinkTests 比对）
+  private static let archiveSuffixes = [
+    ".zip", ".7z", ".tar", ".tar.gz", ".tgz", ".tar.xz", ".txz", ".tar.bz2", ".tbz", ".tbz2",
+  ]
+
+  private static func isArchive(_ url: URL) -> Bool {
+    let name = url.lastPathComponent.lowercased()
+    return archiveSuffixes.contains { name.hasSuffix($0) && name.count > $0.count }
+  }
+
   /// 设置里选的 App（bundle id，这台 Mac 上找得到的）
   private static var openWithApps: [(id: String, url: URL)] {
     (appDefaults?.stringArray(forKey: "finderOpenWithApps") ?? ["com.apple.Terminal"])
@@ -166,6 +241,23 @@ final class FinderMenu: FIFinderSync {
     }
     if items, Self.shows("finderMenuCut", default: true) {
       Self.add("剪切", #selector(cut(_:)), symbol: "scissors", to: menu)
+    }
+    let selected = items ? FIFinderSyncController.default().selectedItemURLs() ?? [] : []
+    if items, Self.shows("finderMenuCompress", default: true) {
+      let formats = NSMenu()
+      formats.addItem(withTitle: "ZIP", action: #selector(compressZip(_:)), keyEquivalent: "")
+      formats.addItem(withTitle: "7Z", action: #selector(compress7z(_:)), keyEquivalent: "")
+      Self.add("压缩", nil, symbol: "doc.zipper", to: menu).submenu = formats
+    }
+    if Self.shows("finderMenuExtract", default: true), !selected.isEmpty,
+      selected.allSatisfy({ Self.isArchive($0) })
+    {
+      Self.add("解压到这里", #selector(extract(_:)), symbol: "archivebox", to: menu)
+    }
+    if Self.shows("finderMenuFixNames", default: true),
+      selected.contains(where: { NameRepair.repair($0.lastPathComponent) != nil })
+    {
+      Self.add("修复乱码文件名", #selector(fixNames(_:)), symbol: "wand.and.stars", to: menu)
     }
     if items, Self.shows("finderMenuDeskAlias", default: false) {
       Self.add("发送替身到桌面", #selector(alias(_:)), symbol: "arrow.up.right.square", to: menu)
@@ -335,6 +427,22 @@ final class FinderMenu: FIFinderSync {
 
   @objc private func alias(_ sender: AnyObject?) {
     hand("alias", container: false)
+  }
+
+  @objc private func compressZip(_ sender: AnyObject?) {
+    hand("zip", container: false)
+  }
+
+  @objc private func compress7z(_ sender: AnyObject?) {
+    hand("7z", container: false)
+  }
+
+  @objc private func extract(_ sender: AnyObject?) {
+    hand("extract", container: false)
+  }
+
+  @objc private func fixNames(_ sender: AnyObject?) {
+    hand("fixnames", container: false)
   }
 
   @objc private func create(_ sender: AnyObject?) {

@@ -853,6 +853,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     Prefs.migrate()
     FinderLink.ensureKey()  // 访达右键的凭证（扩展从偏好里读）：功能开没开都先备好
     FileMoves.forgetCut()  // 上次的剪切作废（清单只在内存里，偏好里那两个数留着会在几天后「复活」）
+    FileMoves.ledger = .standard  // 访达右键的临时名记进偏好；上次退出时没收尾的删掉（单测里不接）
+    FileMoves.cleanLeftovers()
     AppAppearance.apply()  // 在任何浮层、设置窗、菜单出现之前
     // 打开数据：打不开时就在这里问用户（用备份 / 重新开始 / 退出），这时还没有热键和菜单栏图标
     _ = stores

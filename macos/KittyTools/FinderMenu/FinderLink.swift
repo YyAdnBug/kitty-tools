@@ -2,9 +2,11 @@
 // 点了用 App 自己的网址把动作交过来：<App 的 bundle id>://finder?do=<动作>&key=<凭证>&…&file=/a&file=/b，动作是
 // copy（拷贝路径）、name（拷贝名称）、open（app=bundle id，用 App 打开）、new（template=模板名，mine=1 是模板文件夹里的；
 // file 是右键的文件夹）、suffix（自定义后缀，file 是文件夹）、templates（打开模板文件夹）、move / copyto（to=常用文件夹的路径，
-// 或 choose 另选）、cut（剪切）、paste（file 是右键的文件夹）、alias（发送替身到桌面）。
+// 或 choose 另选）、cut（剪切）、paste（file 是右键的文件夹）、alias（发送替身到桌面）、zip / 7z（压缩）、extract（解压到这里）、
+// fixnames（修复乱码文件名）。
 // 解析、拷贝的文字、交给别的 App 打开哪些都是纯函数（FinderLinkTests）；perform 做那一步：拷贝路径 / 名称走 Paster.write 并记进
-// 剪贴板历史（mac-native §5：算本 App 生成的新文字），用 App 打开交给 NSWorkspace，新建文件交给 NewFile，整理文件交给 FileMoves。
+// 剪贴板历史（mac-native §5：算本 App 生成的新文字），用 App 打开交给 NSWorkspace，新建文件交给 NewFile，整理文件交给 FileMoves，
+// 压缩和解压交给 Archives，修复乱码文件名交给 NameRepair。
 // 谁都能打开这个网址（网页、别的 App），所以一层层挡：
 // - 发送方必须是本团队签名的自家访达扩展（fromOwnExtension，2026-11-08 右键扩充拍板 A1，同 finder-menu 核对发送方签名；
 //   冷启动和已在运行两种情况下，苹果事件里的发送方都是发网址的扩展本身，沙盒小程序实测）；
@@ -35,6 +37,9 @@ nonisolated struct FinderLink: Equatable {
     /// 把剪切的移进 files 那一个文件夹
     case paste
     case aliasToDesktop
+    case compress(Archives.Format)
+    case extract
+    case fixNames
 
     /// 对应设置里的哪一项（nil：不归哪一项管，「在“X”中打开」跟着 App 列表）
     var item: FinderMenuItem? {
@@ -46,6 +51,9 @@ nonisolated struct FinderLink: Equatable {
       case .transfer: .transfer
       case .cut, .paste: .cut
       case .aliasToDesktop: .deskAlias
+      case .compress: .compress
+      case .extract: .extract
+      case .fixNames: .fixNames
       }
     }
   }
@@ -111,6 +119,14 @@ nonisolated struct FinderLink: Equatable {
       action = .paste
     case "alias" where !files.isEmpty:
       action = .aliasToDesktop
+    case "zip" where !files.isEmpty:
+      action = .compress(.zip)
+    case "7z" where !files.isEmpty:
+      action = .compress(.sevenZip)
+    case "extract" where !files.isEmpty:
+      action = .extract
+    case "fixnames" where !files.isEmpty:
+      action = .fixNames
     default:
       return nil
     }
@@ -201,6 +217,38 @@ nonisolated struct FinderLink: Equatable {
     return SecCodeCheckValidity(code, [], requirement) == errSecSuccess
   }
 
+  // MARK: 弹框
+
+  /// 正在弹着：再来一次（框落在后面时用户又点了一回）不再弹第二个
+  @MainActor private static var asking = false
+
+  /// 弹一个框（自定义后缀、zip 的密码；扩展是后台进程，框在 App 里弹），focus 是一打开就能输入的那个框。照 FilePanel：
+  /// macOS 27 上激活常被系统驳回、框会开在访达后面，所以框弹出来后提到 .modalPanel 这一层、拿到最前；关了把前台还给原来的
+  /// App。已经弹着一个时是 nil
+  @MainActor static func ask(_ alert: NSAlert, focus: NSView) -> NSApplication.ModalResponse? {
+    guard !asking else { return nil }
+    asking = true
+    defer { asking = false }
+    alert.window.initialFirstResponder = focus
+    let me = NSRunningApplication.current.processIdentifier
+    let front = NSWorkspace.shared.frontmostApplication
+    let previous = front?.processIdentifier == me ? nil : front
+    NSApp.activate()
+    if !NSApp.isActive { NSApp.activate(ignoringOtherApps: true) }
+    // runModal 开始之后再提层级（之前设的会被它改回去）；模态循环里排队的块在主线程上跑
+    let window = alert.window
+    RunLoop.main.perform(inModes: [.modalPanel]) {
+      MainActor.assumeIsolated {
+        window.level = .modalPanel
+        window.orderFrontRegardless()
+        window.makeKey()
+      }
+    }
+    let response = alert.runModal()
+    previous?.activate()
+    return response
+  }
+
   // MARK: 做
 
   /// App 收到网址（AppDelegate.application(_:open:)，发送方已经核对过）：认得出来就做，认不出来什么都不做
@@ -253,6 +301,12 @@ nonisolated struct FinderLink: Equatable {
       FileMoves.paste(into: link.files[0], island: island)
     case .aliasToDesktop:
       FileMoves.aliasToDesktop(link.files, island: island)
+    case .compress(let format):
+      Archives.compress(link.files, format: format, island: island)
+    case .extract:
+      Archives.extract(link.files, island: island)
+    case .fixNames:
+      NameRepair.fix(link.files, island: island)
     }
   }
 }

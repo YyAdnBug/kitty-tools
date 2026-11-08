@@ -113,6 +113,11 @@ import UniformTypeIdentifiers
     #expect(parse("do=paste&key=K-123&file=/x")?.action == .paste)
     #expect(parse("do=paste&key=K-123&file=/x&file=/y") == nil)
     #expect(parse("do=alias&key=K-123&file=/a/b.txt")?.action == .aliasToDesktop)
+    #expect(parse("do=zip&key=K-123&file=/a/b.txt")?.action == .compress(.zip))
+    #expect(parse("do=7z&key=K-123&file=/a/b.txt&file=/a/c")?.action == .compress(.sevenZip))
+    #expect(parse("do=zip&key=K-123") == nil)
+    #expect(parse("do=extract&key=K-123&file=/a/b.zip")?.action == .extract)
+    #expect(parse("do=fixnames&key=K-123&file=/a/b")?.action == .fixNames)
     #expect(FinderLink.nameText([URL(filePath: "/a/b.txt"), URL(filePath: "/c/d")]) == "b.txt\nd")
   }
 
@@ -245,7 +250,7 @@ import UniformTypeIdentifiers
     let words = [
       "do", "key", "app", "file", "copy", "open", "new", "template", "mine", "suffix", "name",
       "move",
-      "copyto", "to", "choose", "cut", "paste", "alias",
+      "copyto", "to", "choose", "cut", "paste", "alias", "zip", "7z", "extract", "fixnames",
     ]
     let literals =
       names + Prefs.finderOpenWithDefault + Prefs.finderTransferDefault + NewFile.builtIn
@@ -259,5 +264,19 @@ import UniformTypeIdentifiers
       #expect(source.contains("\"\(item.prefsKey)\", default: \(item.defaultOn)"), "\(item)")
     }
     #expect(source.contains("maxFiles = \(FinderLink.maxFiles)"))
+    // 解压认的扩展名
+    let suffixes = Archives.suffixes.map { "\"\($0)\"" }.joined(separator: ", ")
+    #expect(source.contains(suffixes))
+    // 乱码判断两份逐字一样
+    let app = try String(
+      contentsOf: root.appending(path: "KittyTools/FinderMenu/NameRepair.swift"), encoding: .utf8)
+    let block = { (text: String) -> Substring? in
+      guard let start = text.range(of: "// BEGIN NameRepair"),
+        let end = text.range(of: "// END NameRepair")
+      else { return nil }
+      return text[start.lowerBound..<end.upperBound]
+    }
+    #expect(block(app) != nil)
+    #expect(block(app) == block(source))
   }
 }

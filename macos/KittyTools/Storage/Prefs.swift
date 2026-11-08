@@ -371,6 +371,9 @@ enum Prefs {
   /// 本身只在 App 内存里（别的程序改偏好塞不进要搬的东西）。这台电脑自己的、**不注册默认值**，App 启动时清掉
   nonisolated static let finderCutCount = "finderCutCount"
   nonisolated static let finderCutChange = "finderCutChange"
+  /// 访达右键移动、复制、压缩、解压用着的隐藏临时名（路径；FileMoves.temporary）：App 退出时没收尾的，下次启动删掉。
+  /// 这台电脑自己的状态、不注册默认值
+  nonisolated static let finderTemporaries = "finderTemporaries"
   /// 访达右键「新建文件 ▸ 自定义后缀…」上次填的后缀（框里先填好它）。这台电脑自己的、不注册默认值
   nonisolated static let finderLastSuffix = "finderLastSuffix"
 

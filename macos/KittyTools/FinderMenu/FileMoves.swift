@@ -58,48 +58,112 @@ import AppKit
     return first == second
   }
 
+  /// 改名落到 target：目标已存在就报错（不覆盖）；撞上了在同一个文件夹里换一个没人用的名字再试一次。返回落下的位置
+  /// （压缩、解压、修复乱码文件名也用它）
+  nonisolated static func land(_ item: URL, at target: URL) -> URL? {
+    let manager = FileManager.default
+    if (try? manager.moveItem(at: item, to: target)) != nil { return target }
+    let folder = target.deletingLastPathComponent()
+    let other = folder.appending(path: freeName(target.lastPathComponent, in: folder, used: []))
+    return (try? manager.moveItem(at: item, to: other)) != nil ? other : nil
+  }
+
+  // MARK: 临时名
+
+  /// 记临时名的偏好（Prefs.finderTemporaries，这台电脑自己的、不注册默认值；App 启动时接上，单测里是 nil、不写偏好）
+  static var ledger: UserDefaults?
+
+  /// 在 folder 里要一个隐藏的临时名（不带原名：名字长的再加一截会超过 255 字节），记进偏好：App 退出、崩溃、更新重启时，
+  /// 子进程（ditto、tar）不跟着走、会把它写完，可再没人把它改成正式名字，下次启动删掉（cleanLeftovers）
+  static func temporary(in folder: URL) -> URL {
+    let url = folder.appending(path: ".kitty-\(UUID().uuidString)")
+    note(url, using: true)
+    return url
+  }
+
+  /// 临时名用完了（落成了正式名字，或者删掉了）
+  static func release(_ url: URL) { note(url, using: false) }
+
+  private static func note(_ url: URL, using: Bool) {
+    guard let ledger else { return }
+    let path = plainPath(url)
+    var list = (ledger.stringArray(forKey: Prefs.finderTemporaries) ?? []).filter { $0 != path }
+    if using { list.append(path) }
+    if list.isEmpty {
+      ledger.removeObject(forKey: Prefs.finderTemporaries)
+    } else {
+      ledger.set(list, forKey: Prefs.finderTemporaries)
+    }
+  }
+
+  /// 是不是自己的临时名：「.kitty-<UUID>」（偏好别的程序也写得进，启动时只删这种名字的）
+  nonisolated static func isTemporary(_ url: URL) -> Bool {
+    let name = url.lastPathComponent
+    return name.hasPrefix(".kitty-") && UUID(uuidString: String(name.dropFirst(7))) != nil
+  }
+
+  /// 扔掉一个临时名：符号链接只删链接本身；文件夹先把权限放开（包里解出来的 000 的文件夹，rm 删不进去，评审实测）
+  static func discard(_ url: URL) async {
+    let path = url.path(percentEncoded: false)
+    if (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink == true {
+      try? FileManager.default.removeItem(at: url)
+    } else {
+      _ = try? await Subprocess.run("/bin/chmod", ["-R", "u+rwx", path])
+      await remove(url)
+    }
+    release(url)
+  }
+
+  /// 启动时：上次没收尾的临时名删掉
+  static func cleanLeftovers() {
+    guard let list = ledger?.stringArray(forKey: Prefs.finderTemporaries) else { return }
+    Task {
+      for path in list {
+        let url = URL(filePath: path)
+        if isTemporary(url), occupied(url) { await discard(url) } else { release(url) }
+      }
+    }
+  }
+
   /// 搬一样：返回新位置，失败 / 被停是 nil（原件、别人的文件不动，只清掉自己的临时名）
   static func move(_ file: URL, into folder: URL, named name: String, copy: Bool) async -> URL? {
     let manager = FileManager.default
-    var target = folder.appending(path: name)
-    if !copy, sameVolume(file, folder) {
-      // 同一个卷：改名，目标已存在会报错（不覆盖）；撞上了换下一个名字再试一次
-      if (try? manager.moveItem(at: file, to: target)) != nil { return target }
-      target = folder.appending(path: freeName(name, in: folder, used: []))
-      return (try? manager.moveItem(at: file, to: target)) != nil ? target : nil
-    }
+    let target = folder.appending(path: name)
+    // 同一个卷：改名
+    if !copy, sameVolume(file, folder) { return land(file, at: target) }
     // 拷到目标文件夹里的隐藏临时名
-    let temporary = folder.appending(path: ".kitty-\(UUID().uuidString)-\(name)")
+    let temporary = temporary(in: folder)
     let link = (try? file.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink == true
+    var copied: Bool
     if link {
-      guard (try? manager.copyItem(at: file, to: temporary)) != nil else { return nil }
+      copied = (try? manager.copyItem(at: file, to: temporary)) != nil
     } else {
       let result = try? await Subprocess.run(
         "/usr/bin/ditto",
         [file.path(percentEncoded: false), temporary.path(percentEncoded: false)],
         stopsOnCancel: true)
-      guard result?.status == 0, !Task.isCancelled else {
-        try? manager.removeItem(at: temporary)
-        return nil
-      }
+      copied = result?.status == 0 && !Task.isCancelled
     }
-    // 落到正式名字：目标已存在就报错；撞上了换一个名字再试一次，还不行就扔掉临时名
-    if (try? manager.moveItem(at: temporary, to: target)) == nil {
-      target = folder.appending(path: freeName(name, in: folder, used: []))
-      guard (try? manager.moveItem(at: temporary, to: target)) != nil else {
-        try? manager.removeItem(at: temporary)
-        return nil
-      }
+    // 落到正式名字，没拷成、落不下就扔掉临时名（拷了一半的那棵可能很大：另起进程删）
+    guard copied, let placed = land(temporary, at: target) else {
+      await discard(temporary)
+      return nil
     }
+    release(temporary)
     // 跨卷移动：新的已经完整落下，这时才删原件（删不掉的照旧留着，新的那份不动）
     if !copy {
       if link {
         try? manager.removeItem(at: file)
       } else {
-        _ = try? await Subprocess.run("/bin/rm", ["-rf", "--", file.path(percentEncoded: false)])
+        await remove(file)
       }
     }
-    return target
+    return placed
+  }
+
+  /// 删掉一整棵（另起 rm：几万个文件的文件夹在主线程上删要好几秒）
+  static func remove(_ url: URL) async {
+    _ = try? await Subprocess.run("/bin/rm", ["-rf", "--", url.path(percentEncoded: false)])
   }
 
   /// 一批：真正动手时才算名字；被停了就不再开始下一样
@@ -130,6 +194,28 @@ import AppKit
   /// 最后排进来的那一批（新的一批等它做完再开始）
   private static var last: Task<Void, Never>?
 
+  /// 动文件的一批（移动、复制、压缩、解压）排进同一条队，挨个来；超过 1 秒在刘海岛上挂 notice 带「停止」（停的是这一批自己，
+  /// work 里的子进程要 stopsOnCancel），做完交给 finish
+  static func enqueue<T>(
+    _ notice: String, detail: String? = nil, island: Island?, work: @escaping () async -> T,
+    finish: @escaping (T) -> Void
+  ) {
+    let previous = last
+    let batch = Batch()
+    batch.task = Task {
+      await previous?.value
+      let result = await Island.whenSlow(after: .seconds(1)) {
+        island?.show(
+          notice, detail: detail, tone: .progress,
+          actions: [Island.Action("停止") { batch.task?.cancel() }])
+      } work: {
+        await work()
+      }
+      finish(result)
+    }
+    last = batch.task
+  }
+
   /// 移动 / 复制到 folder，刘海岛报进度和结果
   static func transfer(_ files: [URL], to folder: URL, move: Bool, island: Island?) {
     guard files.contains(where: { occupied($0) && movable($0, into: folder, move: move) }) else {
@@ -138,20 +224,11 @@ import AppKit
     }
     let verb = move ? "移动" : "复制"
     let place = FileManager.default.displayName(atPath: folder.path(percentEncoded: false))
-    let previous = last
-    let batch = Batch()
-    batch.task = Task {
-      await previous?.value
-      let outcome = await Island.whenSlow(after: .seconds(1)) {
-        island?.show(
-          "正在\(verb) \(files.count) 项…", detail: "到「\(place)」", tone: .progress,
-          actions: [Island.Action("停止") { batch.task?.cancel() }])
-      } work: {
-        await execute(files, into: folder, move: move)
-      }
+    enqueue("正在\(verb) \(files.count) 项…", detail: "到「\(place)」", island: island) {
+      await execute(files, into: folder, move: move)
+    } finish: { outcome in
       report(outcome, verb: verb, place: place, island: island)
     }
-    last = batch.task
   }
 
   private static func report(

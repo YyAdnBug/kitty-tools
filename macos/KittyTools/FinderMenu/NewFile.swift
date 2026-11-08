@@ -170,15 +170,8 @@ nonisolated enum NewFile {
 
   // MARK: 自定义后缀
 
-  /// 正在问：再来一次（框落在后面时用户又点了一回）不再弹第二个
-  @MainActor private static var asking = false
-
-  /// 弹框问后缀，在 folder 里建一个空文件。框在 App 里弹（扩展是后台进程）。照 FilePanel：macOS 27 上激活常被系统驳回，
-  /// 框会开在访达后面，所以框弹出来后提到 .modalPanel 这一层、拿到最前；关了把前台还给原来的 App
+  /// 弹框问后缀（FinderLink.ask），在 folder 里建一个空文件
   @MainActor static func askSuffix(in folder: URL) {
-    guard !asking else { return }
-    asking = true
-    defer { asking = false }
     let field = NSTextField(
       string: UserDefaults.standard.string(forKey: Prefs.finderLastSuffix) ?? "")
     field.placeholderString = "比如 json、yaml、tar.gz"
@@ -198,24 +191,7 @@ nonisolated enum NewFile {
     // Esc = 取消
     alert.addButton(withTitle: "取消").keyEquivalent = "\u{1b}"
     alert.accessoryView = stack
-    alert.window.initialFirstResponder = field
-    let me = NSRunningApplication.current.processIdentifier
-    let front = NSWorkspace.shared.frontmostApplication
-    let previous = front?.processIdentifier == me ? nil : front
-    NSApp.activate()
-    if !NSApp.isActive { NSApp.activate(ignoringOtherApps: true) }
-    // runModal 开始之后再提层级（之前设的会被它改回去）；模态循环里排队的块在主线程上跑
-    let window = alert.window
-    RunLoop.main.perform(inModes: [.modalPanel]) {
-      MainActor.assumeIsolated {
-        window.level = .modalPanel
-        window.orderFrontRegardless()
-        window.makeKey()
-      }
-    }
-    let response = alert.runModal()
-    defer { previous?.activate() }
-    guard response == .alertFirstButtonReturn else { return }
+    guard FinderLink.ask(alert, focus: field) == .alertFirstButtonReturn else { return }
     guard let suffix = cleanSuffix(field.stringValue) else {
       NSSound.beep()
       return
