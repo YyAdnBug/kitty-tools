@@ -852,6 +852,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     Task { await EmojiPack.trim() }  // 动画表情的缓存收到上限以内（主线程外）
     Prefs.migrate()
     FinderLink.ensureKey()  // 访达右键的凭证（扩展从偏好里读）：功能开没开都先备好
+    FileMoves.forgetCut()  // 上次的剪切作废（清单只在内存里，偏好里那两个数留着会在几天后「复活」）
     AppAppearance.apply()  // 在任何浮层、设置窗、菜单出现之前
     // 打开数据：打不开时就在这里问用户（用备份 / 重新开始 / 退出），这时还没有热键和菜单栏图标
     _ = stores
@@ -1317,8 +1318,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
   }
 
-  /// 访达右键的扩展把动作交过来（App 自己的网址，Info.plist 的 CFBundleURLTypes）；别的网址、对不上凭证的都不做
+  /// 访达右键的扩展把动作交过来（App 自己的网址，Info.plist 的 CFBundleURLTypes）。先看发送方是不是自家的访达扩展
+  /// （本团队签名；这一刻的苹果事件里带着发送方，冷启动时存起来的也是在这里核对过的）；别的网址、对不上凭证的都不做
   func application(_ application: NSApplication, open urls: [URL]) {
+    guard FinderLink.fromOwnExtension(NSAppleEventManager.shared().currentAppleEvent) else {
+      Log.finder.notice("网址不是自家访达扩展发来的，没理")
+      return
+    }
     guard isRunning else {
       pendingLinks += urls
       return

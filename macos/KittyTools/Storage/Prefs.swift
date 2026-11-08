@@ -361,10 +361,16 @@ enum Prefs {
   /// 键名和默认值在 KittyToolsFinder/FinderMenu 里抄了一份
   nonisolated static let finderOpenWithApps = "finderOpenWithApps"
   nonisolated static let finderOpenWithDefault = ["com.apple.Terminal"]
-  /// 访达右键里显示不显示「新建文件」「拷贝路径」（设置 › 访达右键，默认都显示；同几家成熟产品每项能单独关）。
-  /// 扩展读同样的键（注册的默认值它读不到，没存过当开）
-  nonisolated static let finderMenuNewFile = "finderMenuNewFile"
-  nonisolated static let finderMenuCopyPath = "finderMenuCopyPath"
+  /// 访达右键里每一项显示不显示：键是「finderMenu<名字>」，见 FinderMenu/FinderMenuItem（默认值按项，下面 defaults 里一起注册）。
+  /// 访达右键「移动到」「复制到」的常用文件夹（~ 开头的写法；设置 › 访达右键，没存过是桌面、文稿、下载）。这台电脑自己的、
+  /// **不注册默认值**（同截图的存储文件夹：别人给的设置文件不该能往右键菜单里加一个文件夹）。扩展读同一个键（键名和默认值
+  /// 在 KittyToolsFinder/FinderMenu 里抄了一份）
+  nonisolated static let finderTransferFolders = "finderTransferFolders"
+  nonisolated static let finderTransferDefault = ["~/Desktop", "~/Documents", "~/Downloads"]
+  /// 访达右键「剪切」了几样、那一刻剪贴板的 changeCount（FileMoves.cut）：扩展看到剪贴板没换过才列「粘贴 N 项」。剪切的清单
+  /// 本身只在 App 内存里（别的程序改偏好塞不进要搬的东西）。这台电脑自己的、**不注册默认值**，App 启动时清掉
+  nonisolated static let finderCutCount = "finderCutCount"
+  nonisolated static let finderCutChange = "finderCutChange"
   /// 访达右键「新建文件 ▸ 自定义后缀…」上次填的后缀（框里先填好它）。这台电脑自己的、不注册默认值
   nonisolated static let finderLastSuffix = "finderLastSuffix"
 
@@ -434,8 +440,6 @@ enum Prefs {
       dockPreviewDelay: 400,
       dockPreviewCmdTab: true,
       finderOpenWithApps: finderOpenWithDefault,
-      finderMenuNewFile: true,
-      finderMenuCopyPath: true,
       panelSqueezeEntrance: false,
       floatingPinned: false,
       updateAutoCheck: true,
@@ -511,6 +515,9 @@ enum Prefs {
       notesDeckOverFullScreen: false,
       notesDeckNoteSize: NoteDeckOptions.NoteSize.medium.rawValue,
     ].merging(Feature.allCases.map { ($0.prefsKey, $0.defaultOn as Any) }) { current, _ in current }
+      .merging(FinderMenuItem.allCases.map { ($0.prefsKey, $0.defaultOn as Any) }) { current, _ in
+        current
+      }
   }
 
   /// 截图工具栏贴选区右边（screenshotToolbarAlign 不是 center 都算靠右：没存过、认不出来按默认）

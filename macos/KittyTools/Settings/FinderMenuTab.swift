@@ -1,9 +1,10 @@
-// 设置 › 访达右键（第十一族，2026-11-08 拍板，PLAN §10「访达右键」；页头由 SettingsRoot 画，家族色石板蓝）。四组：
+// 设置 › 访达右键（第十一族，2026-11-08 拍板，PLAN §10「访达右键」；页头由 SettingsRoot 画，家族色石板蓝）。几组：
 // 「访达右键」——启用开关（Feature.finderMenu，默认关）；系统里扩展开没开（FIFinderSyncController.isExtensionEnabled）和
 //   「去打开…」（拍板 D3：直接到 系统设置 › 通用 › 登录项与扩展）。15.0、15.1 的系统设置里没有扩展的入口，那两版上给一条
 //   终端命令和「拷贝命令」（不替用户跑）。页脚说在哪右键、哪里不出现。
-// 「新建文件」——右键里显示不显示（Prefs.finderMenuNewFile）、模板文件夹一行 +「在访达中显示」，页脚说菜单里有什么、建好后怎样。
-// 「拷贝路径」——右键里显示不显示（Prefs.finderMenuCopyPath），页脚说拷出来什么样。各项能单独关，同几家成熟产品。
+// 「新建文件」——右键里显示不显示、模板文件夹一行 +「在访达中显示」，页脚说菜单里有什么、建好后怎样。
+// 「拷贝」「整理文件」——每一项一个开关（FinderMenuItem，2026-11-08 右键扩充拍板 A2；同几家成熟产品每项能单独关），页脚说做法。
+// 「「移动到」「复制到」的常用文件夹」——Prefs.finderTransferFolders（~ 开头的写法，默认桌面、文稿、下载）：加、移除。
 // 「在 App 中打开」——访达右键里列哪几个 App（菜单项照访达自己的写法「在“终端”中打开」）（Prefs.finderOpenWithApps，默认只有终端）：加（正在运行的 / 从「应用程序」里选）、移除；
 //   列表的写法同 剪贴板 › 不记录这些 App（从偏好现读再改、写回）。功能关着时这一组变灰。
 
@@ -14,9 +15,9 @@ import UniformTypeIdentifiers
 struct FinderMenuTab: View {
   /// 系统里扩展开没开（截图自检传固定的：屏外问不到真的状态）
   var extensionEnabled: Bool?
-  @AppStorage(Prefs.finderMenuNewFile) private var showsNewFile = true
-  @AppStorage(Prefs.finderMenuCopyPath) private var showsCopyPath = true
   @State private var enabled = FIFinderSyncController.isExtensionEnabled
+  @State private var folders = Self.storedFolders
+  @State private var folderSelection: String?
   @State private var apps = Self.storedApps
   @State private var selection: String?
   @State private var copied = false
@@ -41,16 +42,13 @@ struct FinderMenuTab: View {
       } footer: {
         VStack(alignment: .leading, spacing: 6) {
           SectionFootnote(
-            "在访达里右键文件、文件夹，或者文件夹窗口的空白处：「拷贝路径」，和下面每个 App 一项「在“X”中打开」；空白处还有「新建文件」。iCloud 云盘和网盘的文件夹里，系统不显示这些项。"
+            "在访达里右键文件、文件夹，或者文件夹窗口的空白处，就有下面开着的这几项。iCloud 云盘和网盘的文件夹里，系统不显示这些项。"
           )
           if !Self.settingsHaveEntry { oldSystemHint }
         }
       }
       Section {
-        Toggle(isOn: $showsNewFile) {
-          Text("显示「新建文件」")
-          Text("文件夹窗口的空白处右键")
-        }
+        ItemToggle(.newFile)
         LabeledContent {
           Button("在访达中显示") { NewFile.showTemplates() }
         } label: {
@@ -66,14 +64,43 @@ struct FinderMenuTab: View {
       }
       .gated(by: .finderMenu)
       Section {
-        Toggle(isOn: $showsCopyPath) {
-          Text("显示「拷贝路径」")
-          Text("右键文件、文件夹，或者文件夹窗口的空白处")
+        ItemToggle(.copyPath)
+        ItemToggle(.copyName)
+      } header: {
+        Text("拷贝")
+      } footer: {
+        SectionFootnote("路径是完整路径、不加引号，选了几个就一行一个，空白处是这个文件夹的路径；拷好后刘海岛说一声，剪贴板历史里也有。")
+      }
+      .gated(by: .finderMenu)
+      Section {
+        ItemToggle(.transfer)
+        ItemToggle(.cut)
+        ItemToggle(.deskAlias)
+      } header: {
+        Text("整理文件")
+      } footer: {
+        SectionFootnote(
+          "不会覆盖：重名的自动加「 2」。搬得久时刘海岛显示进度、能停下，做完带「在访达中显示」。剪切之后又拷了别的东西，剪切就作废（同 Windows）。"
+        )
+      }
+      .gated(by: .finderMenu)
+      Section {
+        folderList
+        ListEditBar(
+          removeTitle: "移除所选的文件夹", canRemove: folderSelection != nil, remove: removeFolder
+        ) {
+          Button {
+            chooseFolders()
+          } label: {
+            Image(systemName: "plus")
+          }
+          .buttonStyle(.borderless)
+          .help("添加文件夹")
         }
       } header: {
-        Text("拷贝路径")
+        Text("「移动到」「复制到」的常用文件夹")
       } footer: {
-        SectionFootnote("拷的是完整路径、不加引号，选了几个就一行一个，空白处是这个文件夹的路径；拷好后刘海岛说一声，剪贴板历史里也有。")
+        SectionFootnote("子菜单里按这个顺序列，最后总有「选择文件夹…」。")
       }
       .gated(by: .finderMenu)
       Section {
@@ -112,6 +139,59 @@ struct FinderMenuTab: View {
       {
         let stored = Self.storedApps
         if stored != apps { apps = stored }
+        let storedFolders = Self.storedFolders
+        if storedFolders != folders { folders = storedFolders }
+      }
+    }
+  }
+
+  // MARK: 常用文件夹
+
+  private var folderList: some View {
+    List(selection: $folderSelection) {
+      if folders.isEmpty {
+        Text("只有「选择文件夹…」").foregroundStyle(.secondary)
+      }
+      ForEach(folders, id: \.self) { FolderRow(path: $0).tag($0) }
+    }
+    .listStyle(.plain)
+    .scrollContentBackground(.hidden)
+    .orderedListFrame(rows: folders.count)
+    .onDeleteCommand(perform: removeFolder)
+  }
+
+  private static var storedFolders: [String] {
+    UserDefaults.standard.stringArray(forKey: Prefs.finderTransferFolders)
+      ?? Prefs.finderTransferDefault
+  }
+
+  /// 改列表：从偏好现读再改、写回
+  private func changeFolders(_ edit: (inout [String]) -> Void) {
+    var list = Self.storedFolders
+    edit(&list)
+    UserDefaults.standard.set(list, forKey: Prefs.finderTransferFolders)
+    folders = list
+  }
+
+  private func removeFolder() {
+    guard let path = folderSelection else { return }
+    changeFolders { $0.removeAll { $0 == path } }
+    folderSelection = nil
+  }
+
+  /// 选文件夹（可多选），存成 ~ 开头的写法
+  private func chooseFolders() {
+    let panel = NSOpenPanel()
+    panel.canChooseFiles = false
+    panel.canChooseDirectories = true
+    panel.allowsMultipleSelection = true
+    panel.prompt = "添加"
+    panel.message = "选择的文件夹会出现在访达右键的「移动到」「复制到」里"
+    guard panel.runModal() == .OK else { return }
+    changeFolders { list in
+      for url in panel.urls {
+        let path = (url.path(percentEncoded: false) as NSString).abbreviatingWithTildeInPath
+        if !list.contains(path) { list.append(path) }
       }
     }
   }
@@ -206,5 +286,48 @@ struct FinderMenuTab: View {
       .filter { $0.activationPolicy == .regular && $0 != .current }
       .compactMap { app in app.bundleIdentifier.map { ($0, app.localizedName ?? $0) } }
       .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+  }
+}
+
+/// 访达右键里一项的开关（FinderMenuItem：偏好键、默认值、名字和小字都从它取）
+private struct ItemToggle: View {
+  let item: FinderMenuItem
+  @AppStorage private var isOn: Bool
+
+  init(_ item: FinderMenuItem) {
+    self.item = item
+    _isOn = AppStorage(wrappedValue: item.defaultOn, item.prefsKey)
+  }
+
+  var body: some View {
+    Toggle(isOn: $isOn) {
+      Text(item.title)
+      Text(item.detail)
+    }
+  }
+}
+
+/// 常用文件夹的一行：访达里的图标和名字，小字是路径；这台 Mac 上没有的写出来
+private struct FolderRow: View {
+  let path: String
+
+  var body: some View {
+    let full = FileMoves.expand(path)
+    let exists = FileManager.default.fileExists(atPath: full)
+    HStack(spacing: 8) {
+      Image(nsImage: NSWorkspace.shared.icon(forFile: full)).resizable().frame(
+        width: 16, height: 16)
+      Text(FileManager.default.displayName(atPath: full))
+        .lineLimit(1)
+        .truncationMode(.tail)
+      Text(exists ? path : "这台 Mac 上没有")
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+        .truncationMode(.middle)
+      Spacer(minLength: 0)
+    }
+    .frame(height: OrderedList.rowHeight - 8)
+    .help(path)
+    .accessibilityElement(children: .combine)
   }
 }

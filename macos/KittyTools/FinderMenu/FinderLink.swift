@@ -1,21 +1,26 @@
 // 访达扩展交过来的一次动作（第十一族「访达右键」，2026-11-08 拍板，PLAN §10「访达右键」）。扩展只画菜单（KittyToolsFinder/FinderMenu），
 // 点了用 App 自己的网址把动作交过来：<App 的 bundle id>://finder?do=<动作>&key=<凭证>&…&file=/a&file=/b，动作是
-// copy（拷贝路径）、open（app=bundle id，用 App 打开）、new（template=模板名，mine=1 是模板文件夹里的；file 是右键的文件夹）、
-// suffix（自定义后缀，file 是文件夹）、templates（打开模板文件夹）。
-// 解析、拷贝的文字、交给别的 App 打开哪些都是纯函数（FinderLinkTests）；perform 做那一步：拷贝路径走 Paster.write 并记进剪贴板历史
-// （mac-native §5：路径算本 App 生成的新文字），用 App 打开交给 NSWorkspace，新建文件交给 NewFile。
-// 谁都能打开这个网址（网页、别的 App）：功能关着、凭证对不上、路径不是绝对路径、要用的 App 不在设置的列表里，一律不认、什么都不做。
-// 凭证是 App 第一次启动时生成、存在偏好里的随机串（ensureKey），扩展从 App 的偏好里读（沙盒的只读例外）；挡的是网页。
-// 本机别的程序读得到凭证，所以这里做的事不能借本 App 的授权（桌面 / 文稿 / 下载、完全磁盘访问）做到它自己做不到的：
-// 拷贝路径只是文字；用 App 打开交给的是用户设置里的 App，会被运行的文件只交给编辑器；新建文件见 NewFile 文件头。
+// copy（拷贝路径）、name（拷贝名称）、open（app=bundle id，用 App 打开）、new（template=模板名，mine=1 是模板文件夹里的；
+// file 是右键的文件夹）、suffix（自定义后缀，file 是文件夹）、templates（打开模板文件夹）、move / copyto（to=常用文件夹的路径，
+// 或 choose 另选）、cut（剪切）、paste（file 是右键的文件夹）、alias（发送替身到桌面）。
+// 解析、拷贝的文字、交给别的 App 打开哪些都是纯函数（FinderLinkTests）；perform 做那一步：拷贝路径 / 名称走 Paster.write 并记进
+// 剪贴板历史（mac-native §5：算本 App 生成的新文字），用 App 打开交给 NSWorkspace，新建文件交给 NewFile，整理文件交给 FileMoves。
+// 谁都能打开这个网址（网页、别的 App），所以一层层挡：
+// - 发送方必须是本团队签名的自家访达扩展（fromOwnExtension，2026-11-08 右键扩充拍板 A1，同 finder-menu 核对发送方签名；
+//   冷启动和已在运行两种情况下，苹果事件里的发送方都是发网址的扩展本身，沙盒小程序实测）；
+// - 凭证对得上（App 第一次启动时生成、存在偏好里的随机串，ensureKey；扩展从 App 的偏好里读）；
+// - 功能开着、这一项在设置里开着；路径是绝对路径；要用的 App、常用文件夹在设置的列表里。
+// 新建文件那边另有一层（模板路径上不认替身、不往 ~/Library 里建，见 NewFile 文件头）。
 
 import AppKit
 import OSLog
+import Security
 import UniformTypeIdentifiers
 
 nonisolated struct FinderLink: Equatable {
   enum Action: Equatable {
     case copyPaths
+    case copyNames
     /// 交给这个 App 打开（bundle id）
     case open(app: String)
     /// 用模板在 files 那一个文件夹里新建（mine：模板文件夹里的，否则随 App 的 NewFile.builtIn）
@@ -24,6 +29,25 @@ nonisolated struct FinderLink: Equatable {
     case customSuffix
     /// 打开模板文件夹
     case showTemplates
+    /// 移动 / 复制到 to；to 是 nil = 弹面板另选
+    case transfer(move: Bool, to: URL?)
+    case cut
+    /// 把剪切的移进 files 那一个文件夹
+    case paste
+    case aliasToDesktop
+
+    /// 对应设置里的哪一项（nil：不归哪一项管，「在“X”中打开」跟着 App 列表）
+    var item: FinderMenuItem? {
+      switch self {
+      case .copyPaths: .copyPath
+      case .copyNames: .copyName
+      case .open: nil
+      case .newFile, .customSuffix, .showTemplates: .newFile
+      case .transfer: .transfer
+      case .cut, .paste: .cut
+      case .aliasToDesktop: .deskAlias
+      }
+    }
   }
 
   let action: Action
@@ -33,8 +57,10 @@ nonisolated struct FinderLink: Equatable {
   /// 一次最多这么多个：访达里全选几万个文件再右键，网址长得离谱，拷贝的字也没人要
   static let maxFiles = 2000
 
-  /// 解析网址；scheme 是本 App 的 bundle id，key 是偏好里的凭证，apps 是设置里「用 App 打开」的列表
-  static func parse(_ url: URL, scheme: String, key: String?, apps: [String]) -> FinderLink? {
+  /// 解析网址；scheme 是本 App 的 bundle id，key 是偏好里的凭证，apps 是设置里「用 App 打开」的列表，folders 是常用文件夹
+  static func parse(
+    _ url: URL, scheme: String, key: String?, apps: [String], folders: [URL] = []
+  ) -> FinderLink? {
     guard url.scheme?.caseInsensitiveCompare(scheme) == .orderedSame, url.host() == host,
       let key, !key.isEmpty,
       let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems
@@ -52,6 +78,8 @@ nonisolated struct FinderLink: Equatable {
     switch one("do") {
     case "copy" where !files.isEmpty:
       action = .copyPaths
+    case "name" where !files.isEmpty:
+      action = .copyNames
     case "open" where !files.isEmpty:
       guard let app = one("app"), apps.contains(app) else { return nil }
       action = .open(app: app)
@@ -65,6 +93,24 @@ nonisolated struct FinderLink: Equatable {
       action = .customSuffix
     case "templates" where files.isEmpty:
       action = .showTemplates
+    case let verb? where (verb == "move" || verb == "copyto") && !files.isEmpty:
+      guard let to = one("to") else { return nil }
+      if to == "choose" {
+        action = .transfer(move: verb == "move", to: nil)
+      } else {
+        // 只认设置里的常用文件夹（按展开后的路径比）
+        let wanted = FileMoves.plainPath(URL(filePath: to))
+        guard let folder = folders.first(where: { FileMoves.plainPath($0) == wanted }) else {
+          return nil
+        }
+        action = .transfer(move: verb == "move", to: folder)
+      }
+    case "cut" where !files.isEmpty:
+      action = .cut
+    case "paste" where files.count == 1:
+      action = .paste
+    case "alias" where !files.isEmpty:
+      action = .aliasToDesktop
     default:
       return nil
     }
@@ -74,6 +120,11 @@ nonisolated struct FinderLink: Equatable {
   /// 「拷贝路径」写什么：一个一行
   static func pathText(_ files: [URL]) -> String {
     files.map { $0.path(percentEncoded: false) }.joined(separator: "\n")
+  }
+
+  /// 「拷贝名称」写什么：带扩展名，一个一行
+  static func nameText(_ files: [URL]) -> String {
+    files.map(\.lastPathComponent).joined(separator: "\n")
   }
 
   /// 交给 App 打开哪些：文件夹原样给；文件给那个 App 认得的（系统登记的它能开的类型），认不得的改给所在的文件夹，
@@ -123,30 +174,54 @@ nonisolated struct FinderLink: Equatable {
       : "\(files.count) 个路径"
   }
 
-  /// 这个动作对应的那一项在设置里关着（扩展的菜单里已经没有它，这里再挡一次）
-  @MainActor static func isHidden(_ action: Action) -> Bool {
-    let key: String? =
-      switch action {
-      case .copyPaths: Prefs.finderMenuCopyPath
-      case .newFile, .customSuffix, .showTemplates: Prefs.finderMenuNewFile
-      case .open: nil
-      }
-    return key.map { UserDefaults.standard.object(forKey: $0) as? Bool == false } ?? false
+  // MARK: 发送方
+
+  /// 发这个网址的是不是自家的访达扩展：苹果事件里带着发送方的审计令牌，按它找到那个进程、核对签名
+  @MainActor static func fromOwnExtension(_ event: NSAppleEventDescriptor?) -> Bool {
+    guard let id = Bundle.main.bundleIdentifier,
+      let token = event?.attributeDescriptor(forKeyword: AEKeyword(keySenderAuditTokenAttr))?.data
+    else { return false }
+    return signed(auditToken: token, as: id + ".finder")
   }
 
-  /// App 收到网址（AppDelegate.application(_:open:)）：认得出来就做，认不出来什么都不做
+  /// 这个审计令牌对应的进程是本团队签名、id 是 identifier 的（同 Updater.requirement 的写法）
+  static func signed(auditToken: Data, as identifier: String) -> Bool {
+    var code: SecCode?
+    guard
+      SecCodeCopyGuestWithAttributes(
+        nil, [kSecGuestAttributeAudit: auditToken] as CFDictionary, [], &code) == errSecSuccess,
+      let code
+    else { return false }
+    var requirement: SecRequirement?
+    let text =
+      "identifier \"\(identifier)\" and anchor apple generic and certificate leaf[subject.OU] = \"HTX9F4KG39\""
+    guard SecRequirementCreateWithString(text as CFString, [], &requirement) == errSecSuccess,
+      let requirement
+    else { return false }
+    return SecCodeCheckValidity(code, [], requirement) == errSecSuccess
+  }
+
+  // MARK: 做
+
+  /// App 收到网址（AppDelegate.application(_:open:)，发送方已经核对过）：认得出来就做，认不出来什么都不做
   @MainActor static func perform(_ url: URL, island: Island?) {
     guard Feature.finderMenu.isOn,
       let link = parse(
         url, scheme: Bundle.main.bundleIdentifier ?? "",
-        key: UserDefaults.standard.string(forKey: Prefs.finderMenuKey), apps: openWithApps),
-      !isHidden(link.action)
+        key: UserDefaults.standard.string(forKey: Prefs.finderMenuKey), apps: openWithApps,
+        folders: FileMoves.folders),
+      link.action.item?.isOn != false
     else { return }
     switch link.action {
     case .copyPaths:
       Paster.write(string: pathText(link.files), record: true)
       // 拷贝是转一手交给本 App 做的，访达那边看不出成没成：说一声（同几家成熟产品拷完的提示）
       island?.show("已拷贝路径", detail: copiedDetail(link.files))
+    case .copyNames:
+      let text = nameText(link.files)
+      Paster.write(string: text, record: true)
+      island?.show(
+        "已拷贝名称", detail: link.files.count == 1 ? text : "\(link.files.count) 个名称")
     case .open(let id):
       guard let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) else { return }
       let existing = link.files.filter { FileManager.default.fileExists(atPath: $0.path) }
@@ -168,6 +243,16 @@ nonisolated struct FinderLink: Equatable {
       NewFile.askSuffix(in: link.files[0])
     case .showTemplates:
       NewFile.showTemplates()
+    case .transfer(let move, let folder?):
+      FileMoves.transfer(link.files, to: folder, move: move, island: island)
+    case .transfer(let move, nil):
+      FileMoves.chooseAndTransfer(link.files, move: move, island: island)
+    case .cut:
+      FileMoves.cut(link.files, island: island)
+    case .paste:
+      FileMoves.paste(into: link.files[0], island: island)
+    case .aliasToDesktop:
+      FileMoves.aliasToDesktop(link.files, island: island)
     }
   }
 }

@@ -91,6 +91,50 @@ import UniformTypeIdentifiers
     #expect(parse(link("do=templates")) == nil)  // 没凭证
   }
 
+  /// 整理文件的几种：常用文件夹只认设置里的；选择文件夹；剪切；粘贴只能一个文件夹；替身
+  @Test func fileMoveLinks() {
+    let downloads = URL(filePath: "/Users/a/Downloads", directoryHint: .isDirectory)
+    let parse = { (query: String) in
+      FinderLink.parse(
+        self.link(query), scheme: self.scheme, key: self.key, apps: self.apps, folders: [downloads])
+    }
+    #expect(parse("do=name&key=K-123&file=/a/b.txt")?.action == .copyNames)
+    #expect(
+      parse("do=move&key=K-123&to=/Users/a/Downloads&file=/a/b.txt")?.action
+        == .transfer(move: true, to: downloads))
+    #expect(
+      parse("do=copyto&key=K-123&to=/Users/a/Downloads/&file=/a/b.txt")?.action
+        == .transfer(move: false, to: downloads))
+    #expect(parse("do=move&key=K-123&to=/etc&file=/a/b.txt") == nil)  // 不是常用文件夹
+    #expect(parse("do=move&key=K-123&file=/a/b.txt") == nil)
+    #expect(
+      parse("do=move&key=K-123&to=choose&file=/a/b.txt")?.action == .transfer(move: true, to: nil))
+    #expect(parse("do=cut&key=K-123&file=/a/b.txt")?.action == .cut)
+    #expect(parse("do=paste&key=K-123&file=/x")?.action == .paste)
+    #expect(parse("do=paste&key=K-123&file=/x&file=/y") == nil)
+    #expect(parse("do=alias&key=K-123&file=/a/b.txt")?.action == .aliasToDesktop)
+    #expect(FinderLink.nameText([URL(filePath: "/a/b.txt"), URL(filePath: "/c/d")]) == "b.txt\nd")
+  }
+
+  /// 发送方核对：拿本进程（测试宿主就是 App，本团队签名）的审计令牌，按 App 自己的 id 认得出、按扩展的 id 不认
+  @Test func senderSignatureIsChecked() throws {
+    var token = audit_token_t()
+    var count = mach_msg_type_number_t(
+      MemoryLayout<audit_token_t>.size / MemoryLayout<natural_t>.size)
+    let status = withUnsafeMutablePointer(to: &token) { pointer in
+      pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+        task_info(mach_task_self_, task_flavor_t(TASK_AUDIT_TOKEN), $0, &count)
+      }
+    }
+    #expect(status == KERN_SUCCESS)
+    let data = withUnsafeBytes(of: &token) { Data($0) }
+    let id = try #require(Bundle.main.bundleIdentifier)
+    #expect(FinderLink.signed(auditToken: data, as: id))
+    #expect(!FinderLink.signed(auditToken: data, as: id + ".finder"))
+    #expect(!FinderLink.signed(auditToken: Data(repeating: 0, count: 32), as: id))
+    #expect(!FinderLink.fromOwnExtension(nil))
+  }
+
   @Test func pathTextIsOnePerLine() {
     #expect(FinderLink.pathText([URL(filePath: "/a b/c"), URL(filePath: "/d")]) == "/a b/c\n/d")
   }
@@ -196,14 +240,23 @@ import UniformTypeIdentifiers
       contentsOf: root.appending(path: "KittyToolsFinder/FinderMenu.swift"), encoding: .utf8)
     let names = [
       Feature.finderMenu.prefsKey, Prefs.finderMenuKey, Prefs.finderOpenWithApps,
-      Prefs.finderMenuNewFile, Prefs.finderMenuCopyPath,
+      Prefs.finderTransferFolders, Prefs.finderCutCount, Prefs.finderCutChange,
     ]
-    let words = ["do", "key", "app", "file", "copy", "open", "new", "template", "mine", "suffix"]
+    let words = [
+      "do", "key", "app", "file", "copy", "open", "new", "template", "mine", "suffix", "name",
+      "move",
+      "copyto", "to", "choose", "cut", "paste", "alias",
+    ]
     let literals =
-      names + Prefs.finderOpenWithDefault + NewFile.builtIn + [FinderLink.host, "templates"] + words
+      names + Prefs.finderOpenWithDefault + Prefs.finderTransferDefault + NewFile.builtIn
+      + [FinderLink.host, "templates"] + words
     #expect(source.contains("/\(NewFile.folderName)\""))
     for literal in literals {
       #expect(source.contains("\"\(literal)\""), "\(literal)")
+    }
+    // 每一项的键和默认值（扩展读不到注册的默认值，自己抄了一份）
+    for item in FinderMenuItem.allCases {
+      #expect(source.contains("\"\(item.prefsKey)\", default: \(item.defaultOn)"), "\(item)")
     }
     #expect(source.contains("maxFiles = \(FinderLink.maxFiles)"))
   }

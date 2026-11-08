@@ -1,8 +1,9 @@
 // 访达扩展（第十一族「访达右键」，2026-11-08 拍板，PLAN §10「访达右键」）：在访达的右键菜单第一层加几项。
-// - 选中文件 / 文件夹右键：「拷贝路径」、设置里选的每个 App 一项「在“X”中打开」（默认只有终端；叫法照访达自己的
-//   「在“照片”中打开」）。「新建文件」「拷贝路径」在 App 设置里各能单独关掉（同几家成熟产品）。
-// - 文件夹空白处右键：最前面多一个「新建文件 ▸」（第 2 批：自带五种、模板文件夹里放的每个文件、「自定义后缀…」、
-//   「打开模板文件夹」），后面同样两种，对着的是这个文件夹。
+// - 选中文件 / 文件夹右键：「拷贝路径」「拷贝名称」、设置里选的每个 App 一项「在“X”中打开」（默认只有终端；叫法照访达
+//   自己的「在“照片”中打开」）、「移动到 ▸」「复制到 ▸」（常用文件夹 + 选择文件夹…）、「剪切」、「发送替身到桌面」。
+// - 文件夹空白处右键：最前面「新建文件 ▸」（自带五种、模板文件夹里放的每个文件、「自定义后缀…」、「打开模板文件夹」），
+//   剪切过、剪贴板还没换过时多一项「粘贴 N 项」，然后「拷贝路径」「在“X”中打开」，对着的是这个文件夹。
+// 每一项在 App 设置里能单独关（App 的 FinderMenuItem；同几家成熟产品），默认开关照 2026-11-08 右键扩充拍板 A2。
 // 扩展只画菜单、不碰文件（拍板 C2）：点了用 App 自己的网址把动作交给常驻菜单栏的 Kitty Tools，
 // <App 的 bundle id>://finder?do=<动作>&key=<凭证>&…&file=/a，App 那边是 FinderLink（网址的写法在那边的文件头）；
 // App 被退出了的话网址会把它打开。凭证、开关、「用 App 打开」的列表从 App 的偏好里读，模板文件夹只为列菜单读一下
@@ -39,11 +40,37 @@ final class FinderMenu: FIFinderSync {
     return defaults.string(forKey: "finderMenuKey").flatMap { $0.isEmpty ? nil : $0 }
   }
 
-  /// 「新建文件」「拷贝路径」各自开没开（App 的 Prefs.finderMenuNewFile / finderMenuCopyPath，注册的默认值是开；
-  /// 注册的默认值不在偏好文件里，扩展读不到，没存过就当开）
-  private static func shows(_ key: String) -> Bool {
-    appDefaults?.object(forKey: key) as? Bool ?? true
+  /// 某一项开没开（App 的 FinderMenuItem：键「finderMenu<名字>」；注册的默认值不在偏好文件里、扩展读不到，没存过就用
+  /// 这里抄的默认值 on，FinderLinkTests 读这个文件比对）
+  private static func shows(_ key: String, default on: Bool) -> Bool {
+    appDefaults?.object(forKey: key) as? Bool ?? on
   }
+
+  /// 真的主目录（沙盒里 FileManager / ~ 给的是容器）
+  private static var home: String? {
+    getpwuid(getuid())?.pointee.pw_dir.map { String(cString: $0) }
+  }
+
+  /// 「移动到」「复制到」的常用文件夹（App 的 Prefs.finderTransferFolders，~ 开头的写法；ponytail: 键名和默认值抄的那边）
+  private static var transferFolders: [URL] {
+    guard let home else { return [] }
+    return
+      (appDefaults?.stringArray(forKey: "finderTransferFolders")
+      ?? ["~/Desktop", "~/Documents", "~/Downloads"])
+      .map { $0 == "~" || $0.hasPrefix("~/") ? home + $0.dropFirst() : $0 }
+      .map { URL(filePath: $0, directoryHint: .isDirectory) }
+  }
+
+  /// 剪切了、剪贴板还没换过的有几样（App 的 FileMoves.cut 记的；剪贴板换过了就不列「粘贴」，同 Windows）
+  private static var cutCount: Int {
+    guard let defaults = appDefaults,
+      defaults.object(forKey: "finderCutChange") as? Int == NSPasteboard.general.changeCount
+    else { return 0 }
+    return defaults.integer(forKey: "finderCutCount")
+  }
+
+  /// 「移动到」「复制到」子菜单里「选择文件夹…」的 tag
+  private static let chooseTag = 999
 
   /// 一次最多交这么多个：再多 App 不认，这里先响一声
   private static let maxFiles = 2000
@@ -106,16 +133,23 @@ final class FinderMenu: FIFinderSync {
     }
     // 不加分隔线：macOS 26 上扩展菜单里的分隔线会画成一行空白（2026-09 开发者论坛，没解答）
     let menu = NSMenu()
-    if container != 0, Self.shows("finderMenuNewFile") {
+    let items = container == 0
+    if !items, Self.shows("finderMenuNewFile", default: true) {
       let new = menu.addItem(withTitle: "新建文件", action: nil, keyEquivalent: "")
       new.submenu = Self.newFileMenu()
       new.image = Self.drawn("kitty.finder.new.file")
     }
-    if Self.shows("finderMenuCopyPath") {
+    if !items, Self.shows("finderMenuCut", default: true), Self.cutCount > 0 {
+      Self.add("粘贴 \(Self.cutCount) 项", #selector(paste(_:)), symbol: "doc.on.clipboard", to: menu)
+    }
+    if Self.shows("finderMenuCopyPath", default: true) {
       let copy = menu.addItem(
         withTitle: "拷贝路径", action: #selector(copyPath(_:)), keyEquivalent: "")
       copy.tag = container
       copy.image = Self.drawn("kitty.finder.copy.path")
+    }
+    if items, Self.shows("finderMenuCopyName", default: true) {
+      Self.add("拷贝名称", #selector(copyName(_:)), symbol: "textformat", to: menu)
     }
     for (index, app) in Self.openWithApps.enumerated() {
       let item = menu.addItem(
@@ -124,7 +158,43 @@ final class FinderMenu: FIFinderSync {
       item.image = NSWorkspace.shared.icon(forFile: app.url.path)
       item.image?.size = NSSize(width: 16, height: 16)
     }
+    if items, Self.shows("finderMenuTransfer", default: true) {
+      Self.add("移动到", nil, symbol: "arrowshape.turn.up.right", to: menu).submenu =
+        Self.transferMenu(#selector(moveTo(_:)))
+      Self.add("复制到", nil, symbol: "plus.square.on.square", to: menu).submenu =
+        Self.transferMenu(#selector(copyTo(_:)))
+    }
+    if items, Self.shows("finderMenuCut", default: true) {
+      Self.add("剪切", #selector(cut(_:)), symbol: "scissors", to: menu)
+    }
+    if items, Self.shows("finderMenuDeskAlias", default: false) {
+      Self.add("发送替身到桌面", #selector(alias(_:)), symbol: "arrow.up.right.square", to: menu)
+    }
     return menu.items.isEmpty ? nil : menu
+  }
+
+  /// 加一项带系统符号（模板图）的
+  @discardableResult private static func add(
+    _ title: String, _ action: Selector?, symbol: String, to menu: NSMenu
+  ) -> NSMenuItem {
+    let item = menu.addItem(withTitle: title, action: action, keyEquivalent: "")
+    item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+    return item
+  }
+
+  /// 「移动到 ▸」「复制到 ▸」：常用文件夹（访达里的名字和图标），最后「选择文件夹…」
+  private static func transferMenu(_ action: Selector) -> NSMenu {
+    let menu = NSMenu()
+    for (index, folder) in transferFolders.enumerated() {
+      let path = folder.path(percentEncoded: false)
+      let item = menu.addItem(
+        withTitle: FileManager.default.displayName(atPath: path), action: action, keyEquivalent: "")
+      item.tag = index
+      item.image = NSWorkspace.shared.icon(forFile: path)
+      item.image?.size = NSSize(width: 16, height: 16)
+    }
+    add("选择文件夹…", action, symbol: "ellipsis.circle", to: menu).tag = chooseTag
+    return menu
   }
 
   /// 自己画的图标（Assets.xcassets/FinderIcons）：按菜单的字号（13 pt、常规）画成 1x / 2x 的模板位图再交出去——
@@ -222,6 +292,51 @@ final class FinderMenu: FIFinderSync {
     hand("open", app: apps[index].id, container: container)
   }
 
+  @objc private func copyName(_ sender: AnyObject?) {
+    hand("name", container: false)
+  }
+
+  @objc private func moveTo(_ sender: AnyObject?) {
+    transfer("move", sender)
+  }
+
+  @objc private func copyTo(_ sender: AnyObject?) {
+    transfer("copyto", sender)
+  }
+
+  /// 移动 / 复制：tag 是常用文件夹的序号（点的时候重新读一遍，对不上就响一声），选择文件夹…交给 App 弹面板（要激活）
+  private func transfer(_ action: String, _ sender: AnyObject?) {
+    guard let tag = (sender as? NSMenuItem)?.tag else { return }
+    let to: String
+    if tag == Self.chooseTag {
+      to = "choose"
+    } else {
+      // 点的时候重新读一遍：菜单弹出来之后设置里改过列表，序号就对不上了，名字也对上才搬
+      let folders = Self.transferFolders
+      guard folders.indices.contains(tag),
+        FileManager.default.displayName(atPath: folders[tag].path(percentEncoded: false))
+          == (sender as? NSMenuItem)?.title
+      else {
+        NSSound.beep()
+        return
+      }
+      to = folders[tag].path(percentEncoded: false)
+    }
+    hand(action, extra: [URLQueryItem(name: "to", value: to)], container: false)
+  }
+
+  @objc private func cut(_ sender: AnyObject?) {
+    hand("cut", container: false)
+  }
+
+  @objc private func paste(_ sender: AnyObject?) {
+    hand("paste", container: true)
+  }
+
+  @objc private func alias(_ sender: AnyObject?) {
+    hand("alias", container: false)
+  }
+
   @objc private func create(_ sender: AnyObject?) {
     guard let tag = (sender as? NSMenuItem)?.tag else { return }
     let name: String
@@ -259,9 +374,9 @@ final class FinderMenu: FIFinderSync {
     hand(action, app: app, extra: extra, files: Self.targets(container: container))
   }
 
-  /// 交给 App。拷贝路径、新建文件不激活它（菜单栏 App，激活了只会把前台从访达抢走）；用 X 打开、打开模板文件夹要激活：
+  /// 交给 App。拷贝、新建文件、搬文件不激活它（菜单栏 App，激活了只会把前台从访达抢走）；用 X 打开、打开模板文件夹要激活：
   /// macOS 14 起不在前台的 App 叫别的 App 打开时，那个 App 不一定能到前面（协作式激活），这一下是用户在访达里点的，
-  /// App 借着它把前台交给要打开的 App；自定义后缀要激活，框才能打字
+  /// App 借着它把前台交给要打开的 App；自定义后缀、选择文件夹…要激活，框 / 面板才能直接用
   private func hand(_ action: String, app: String? = nil, extra: [URLQueryItem] = [], files: [URL])
   {
     guard let key = Self.key, !files.isEmpty || action == "templates" else { return }
@@ -277,7 +392,8 @@ final class FinderMenu: FIFinderSync {
       + (app.map { [URLQueryItem(name: "app", value: $0)] } ?? []) + extra
       + files.map { URLQueryItem(name: "file", value: $0.path) }
     guard let url = link.url else { return }
-    let activates = ["open", "suffix", "templates"].contains(action)
+    let chooses = extra.contains { $0.name == "to" && $0.value == "choose" }
+    let activates = ["open", "suffix", "templates"].contains(action) || chooses
     let configuration = NSWorkspace.OpenConfiguration()
     configuration.activates = activates
     // 沙盒里也能直接投给指定的 App，前提是它登记了这个 scheme（App 的 CFBundleURLTypes；没登记的系统回
