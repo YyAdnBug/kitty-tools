@@ -894,6 +894,15 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
   窗口、不弹框（D2）。
 - 不做：图像兜底、替网页 / Electron 打开辅助功能、元素检测边距、W/A/S/D 挪光标、右键自动标注元素、「不检测」一档、拖框吸到
   元素边。Windows 版用 UI Automation 能做（拍板页最后一节），没出方案。
+- 第二轮（同日用户：「识别窗口再优化一下，对照业界的标准，或者 github 开源类似项目」「截图移动到 dock 和顶部菜单的整个区域无法截图」）：
+  调研了 ShareX（截图开始时建好整张矩形表，只认 HWND 子窗口）、Greenshot（指针在窗口边上 = 整扇窗口）、macshot（原生 Swift，
+  App 级命中后按框往下钻、取面积最小，35 ms / 8 层 / 48 个上限，后台线程只留最新的点）、cindy（核对 AXWindow 和 CG 窗口一致）、
+  Thaw（27 上菜单栏图标只能走 AX：各 App 的 `AXExtrasMenuBar`，每个 App 最多 400 ms）、axe-windows（指针停住才查）。做了：
+  ① 往下钻（照 macshot，见 mac-overlay-panel §8「往下钻」）：访达列表视图从「滚动区」变成能认到每一行和格，一次 1–8 ms；
+  ② 程序坞和菜单栏能整块悬停、单击选中（⌘⇧4 + 空格同样），认元素时程序坞是每个图标、菜单栏是各个菜单和系统图标
+  （`ScreenCapture.hoverWindows`、`ElementFinder.dockBar`；第一次读程序坞 42 ms、之后 0.6 ms）；③ 一层的下限 24 → 20 点
+  （菜单栏图标高 22）。评审后又改：缓存按进程分开、钻过的只在指针还在最里面那块时用（不然同一个大容器里换一行还给旧的）、往下钻的超时封在一半里、主菜单层级只认 WindowServer 的那一条、菜单栏看不见时不收。没做：AX 挪出主线程（现在有总时限和命中缓存，够用）、第三方菜单栏图标（要挨个问所有 App，第一次几百毫秒）、
+  核对 AXWindow、窗口边上 = 整扇窗口、替 Chromium / Electron 临时打开辅助功能（拍板 B2；macshot 是开、结束时只撤自己开的那次）。
 
 ## 11½. Whisker 设计语言改造（2026-09-25 起）
 
@@ -906,7 +915,7 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 > 2026-10-28（第三轮体检第 7 批）：2026-10-22 及更早的进度记录、做完的「已知的小毛病」、旧的「现状」「下一步」原样挪到 `docs/archive/PLAN-batches-2026-10.md` §12；AGENTS.md「项目概述」原来的长段原样挪到本节末尾「各族进度摘要（原 AGENTS 项目概述）」。
 
 **2026-11-08：截图识别元素（下一版）**（§10「截图识别元素」）：拍板 15 项「全部按推荐」；检出 `kitty-tools-macos-element`
-（分支 `element-wip`，从 macos `15bcac45`）两批各一个提交（第 1 批 `8e0ab3c1`），没 push、没打包、没动版本号和更新日志；0.8.0 发布之后再并回 macos，
+（分支 `element-wip`，从 macos `15bcac45`）两批各一个提交（第 1 批 `8e0ab3c1`），同日第二轮（往下钻、程序坞和菜单栏）一个提交，没 push、没打包、没动版本号和更新日志；0.8.0 发布之后再并回 macos，
 发版时 `WhatsNew.entries` 可挑「悬停时识别窗口里的元素」。待手测 HANDTEST「截图识别元素」。
 
 **2026-11-07：启动器脚本命令（0.8.0）**（§10「脚本命令」）：拍板 17 项「全部按推荐」；检出 `kitty-tools-macos-scripts`

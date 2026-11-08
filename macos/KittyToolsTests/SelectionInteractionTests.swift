@@ -35,7 +35,7 @@ struct SelectionInteractionTests {
     /// image：冻结帧（默认 1200 × 800 纯色；截图自检传一张假桌面）；hint：松手即确认模式的顶部提示；
     /// session / origin：多屏时几块「屏幕」共用一个会话，窗口摆在各自的位置（见 screens）
     init(
-      mode: SelectionView.Mode = .capture, windows: [CGRect] = [], owners: [pid_t] = [],
+      mode: SelectionView.Mode = .capture, windows: [CGRect] = [], owners: [[pid_t]] = [],
       findsElements: Bool = false, image: CGImage? = nil, hint: String = "",
       session: SelectionSession? = nil,
       origin: CGPoint = CGPoint(x: -20000, y: -20000), keepsColors: Bool = false
@@ -509,7 +509,7 @@ struct SelectionInteractionTests {
   // 认元素（2026-11-08 拍板）：悬停停在最小那层，滚轮往上大一层、往下小一层（到窗口为止），单击选中停着的那层
   @Test func hoverPicksSmallestElementAndWheelChangesLayer() {
     let window = CGRect(x: 100, y: 100, width: 600, height: 500)
-    let h = Harness(windows: [window], owners: [4242], findsElements: true)
+    let h = Harness(windows: [window], owners: [[4242]], findsElements: true)
     let row = CGRect(x: 120, y: 300, width: 300, height: 30)
     let list = CGRect(x: 110, y: 120, width: 320, height: 440)
     // 最里面在前：一个太小的图标、行、列表、窗口
@@ -539,7 +539,7 @@ struct SelectionInteractionTests {
   // 评审：换到大的那层之后移到桌面再回来，回到最小那层；单击时手抖出了那层（没到拖动的 3 点）也选按下时那层
   @Test func hoverResetsOffWindowAndClickKeepsPressedLayer() {
     let window = CGRect(x: 100, y: 100, width: 600, height: 500)
-    let h = Harness(windows: [window], owners: [4242], findsElements: true)
+    let h = Harness(windows: [window], owners: [[4242]], findsElements: true)
     let list = CGRect(x: 110, y: 120, width: 320, height: 440)
     _ = h.fakeElements(
       [CGRect(x: 120, y: 300, width: 300, height: 30), list, window], names: ["行", "列表", "窗口"])
@@ -555,10 +555,38 @@ struct SelectionInteractionTests {
     #expect(h.view.selection == list)
   }
 
+  // 菜单栏那条依次问前台 App 和控制中心：前台 App 在右边只答得出整条菜单栏，就问下一个（时钟高 22 也算一层）
+  @Test func menuBarAsksEachOwnerInTurn() {
+    let bar = CGRect(x: 0, y: 762, width: 1200, height: 38)
+    let h = Harness(windows: [bar], owners: [[100, 200]], findsElements: true)
+    let origin = h.window.frame.origin
+    var asked: [pid_t] = []
+    h.session.findElements = { pid, point in
+      asked.append(pid)
+      // 前台 App 答得出左边自己的菜单，右边只答得出整条；控制中心答得出时钟
+      let chain =
+        pid == 100
+        ? (point.x - origin.x < 300 ? [CGRect(x: 40, y: 762, width: 66, height: 38), bar] : [bar])
+        : [CGRect(x: 1000, y: 770, width: 126, height: 22), bar]
+      return .chain(
+        chain.map {
+          ElementFinder.Layer(frame: $0.offsetBy(dx: origin.x, dy: origin.y), name: "菜单栏项")
+        })
+    }
+    h.move(CGPoint(x: 1050, y: 780))
+    #expect(asked.prefix(2) == [100, 200])
+    #expect(h.view.accessibilityLabel() == "待选，菜单栏项 126 × 22 像素")
+    // 前台 App 答出来了就不再问控制中心
+    asked = []
+    h.move(CGPoint(x: 60, y: 780))
+    #expect(asked == [100])
+    #expect(h.view.accessibilityLabel() == "待选，菜单栏项 66 × 38 像素")
+  }
+
   // Tab 在「认元素 / 只认窗口」之间切，顶部提示（旁白的帮助）跟着换
   @Test func tabTogglesWindowOnly() {
     let window = CGRect(x: 100, y: 100, width: 600, height: 500)
-    let h = Harness(windows: [window], owners: [4242], findsElements: true)
+    let h = Harness(windows: [window], owners: [[4242]], findsElements: true)
     _ = h.fakeElements([CGRect(x: 120, y: 300, width: 300, height: 30), window])
     h.move(CGPoint(x: 200, y: 312))
     #expect(h.view.accessibilityHelp()?.contains("Tab 只认窗口") == true)
@@ -579,7 +607,7 @@ struct SelectionInteractionTests {
   // 问超时的 App 这次框选不再问、只认窗口；本 App 自己的窗口不问；不认元素时提示照旧
   @Test func silentAppsAndOwnWindowsStayWindowOnly() {
     let window = CGRect(x: 100, y: 100, width: 600, height: 500)
-    var h = Harness(windows: [window], owners: [4242])
+    var h = Harness(windows: [window], owners: [[4242]])
     h.session.findsElements = true
     var asked = 0
     h.session.findElements = { _, _ in
@@ -591,13 +619,13 @@ struct SelectionInteractionTests {
     #expect(h.session.silentApps == [4242])
     #expect(h.view.accessibilityLabel() == "待选，窗口 600 × 500 像素")
 
-    h = Harness(windows: [window], owners: [getpid()])
+    h = Harness(windows: [window], owners: [[getpid()]])
     let count = h.fakeElements([CGRect(x: 120, y: 300, width: 300, height: 30)])
     h.move(CGPoint(x: 200, y: 312))
     #expect(count() == 0)
     #expect(h.view.accessibilityLabel() == "待选，窗口 600 × 500 像素")
 
-    h = Harness(windows: [window], owners: [4242])
+    h = Harness(windows: [window], owners: [[4242]])
     #expect(h.view.accessibilityHelp()?.contains("单击选中窗口") == true)
     #expect(h.view.accessibilityHelp()?.contains("Tab") == false)
   }

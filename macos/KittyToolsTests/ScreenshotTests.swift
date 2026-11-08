@@ -71,7 +71,7 @@ struct ScreenshotTests {
     let windows = ScreenCapture.windowFrames(info, ownPID: own, keeping: [5], primaryHeight: 1000)
     let frames = windows.map(\.frame)
     // 每扇窗口记着归哪个进程（悬停时问它窗口里的元素）
-    #expect(windows.map(\.pid) == [7, 7, own, 7])
+    #expect(windows.map(\.pids) == [[7], [7], [own], [7]])
     // CG 原点在左上、y 向下 → AppKit 原点在左下
     #expect(
       frames == [
@@ -82,6 +82,37 @@ struct ScreenshotTests {
       ])
     // 命中按 Z 序：点在两个窗口里取前面的小窗（旧版按面积排会选中被挡住的，§11 #41）
     #expect(frames.first { $0.contains(CGPoint(x: 150, y: 850)) } == frames[0])
+  }
+
+  // 2026-11-08 用户：程序坞和菜单栏截不到。菜单栏那条（主菜单层级）进悬停列表、问前台 App 和控制中心；程序坞那一条
+  // 插在比它层级低的第一扇窗口前面
+  @Test func hoverWindowsAddMenuBarAndDock() {
+    func window(_ rect: CGRect, layer: Int, pid: Int32, owner: String = "App") -> [String: Any] {
+      [
+        kCGWindowBounds as String: rect.dictionaryRepresentation, kCGWindowLayer as String: layer,
+        kCGWindowOwnerPID as String: pid, kCGWindowNumber as String: 1,
+        kCGWindowAlpha as String: 1.0, kCGWindowOwnerName as String: owner,
+      ]
+    }
+    let info = [
+      window(CGRect(x: 100, y: 40, width: 200, height: 300), layer: 101, pid: 7),  // 展开的菜单
+      window(
+        CGRect(x: 0, y: 0, width: 1710, height: 38), layer: 24, pid: 395, owner: "Window Server"),
+      // 别的 App 放在主菜单层级的窗口：不收（只认 WindowServer 的那一条）
+      window(CGRect(x: 0, y: 0, width: 1710, height: 1112), layer: 24, pid: 77),
+      window(CGRect(x: 0, y: 0, width: 1710, height: 1112), layer: 20, pid: 648),  // 程序坞：盖满整屏，不收
+      window(CGRect(x: 300, y: 200, width: 800, height: 600), layer: 0, pid: 9),
+    ]
+    let windows = ScreenCapture.windowFrames(info, ownPID: 42, keeping: [], primaryHeight: 1112)
+    #expect(windows.map(\.layer) == [101, 24, 0])
+    #expect(windows[1].frame == CGRect(x: 0, y: 1074, width: 1710, height: 38))
+    let dock = ScreenCapture.Window(
+      frame: CGRect(x: 528, y: 10, width: 654, height: 77), pids: [648], layer: 20)
+    let hover = ScreenCapture.hoverWindows(windows, menuBar: [500, 649], dock: dock)
+    #expect(hover.map(\.layer) == [101, 24, 20, 0])
+    #expect(hover.map(\.pids) == [[7], [500, 649], [648], [9]])
+    #expect(
+      ScreenCapture.hoverWindows(windows, menuBar: [], dock: nil).map(\.pids) == [[7], [], [9]])
   }
 
   // 截图认元素（2026-11-08）：原始的一串（最里面在前）→ 指针下能选的几层，从小到大

@@ -34,8 +34,9 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private(set) var image: CGImage
   /// 冻结那一刻的窗口（本屏视图坐标，从前到后）
   let windows: [CGRect]
-  /// 和 windows 一一对应：每扇窗口归哪个进程（悬停时问它窗口里的元素）；空的 = 不认元素（单测、截图自检的默认）
-  let owners: [pid_t]
+  /// 和 windows 一一对应：悬停时问哪几个进程要窗口里的元素（按顺序，第一个问出东西的算：菜单栏那条先问前台 App、
+  /// 再问控制中心）；空的 = 不认元素（单测、截图自检的默认）
+  let owners: [[pid_t]]
   private let session: SelectionSession
   /// 截图工具栏「翻译」就地翻：给选区的图，返回覆盖了译文的图（失败带一句原因）。
   /// 由 AppDelegate 经 SelectionSession 注入；nil = 现在不能就地翻（退回原来的「退出截图页再翻」）
@@ -243,7 +244,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private static let infoHeight: CGFloat = 40
 
   init(
-    image: CGImage, windows: [CGRect] = [], owners: [pid_t] = [], session: SelectionSession,
+    image: CGImage, windows: [CGRect] = [], owners: [[pid_t]] = [], session: SelectionSession,
     keepsColors keeps: Bool? = nil
   ) {
     self.image = image
@@ -2093,13 +2094,13 @@ final class SelectionView: NSView, NSTextViewDelegate {
   /// （主线程问自己要等到超时，拍板 B5）时 nil；问超时的 App 记下、这次不再问，只给窗口那一层
   private func findLayers(at point: CGPoint, window index: Int) -> HoverStack? {
     guard session.findsElements, !session.windowOnly, index < owners.count else { return nil }
-    let pid = owners[index]
-    guard pid != getpid() else { return nil }
+    let pids = owners[index].filter { $0 != getpid() }
+    guard !pids.isEmpty else { return nil }
     let window = windows[index].intersection(bounds)
     var layers: [ElementFinder.Layer] = []
-    if !session.silentApps.contains(pid) {
-      // 遮罩铺满整块屏：视图坐标 + 屏幕原点 = AppKit 全局坐标
-      let origin = self.window?.frame.origin ?? .zero
+    // 遮罩铺满整块屏：视图坐标 + 屏幕原点 = AppKit 全局坐标
+    let origin = self.window?.frame.origin ?? .zero
+    for pid in pids where layers.isEmpty && !session.silentApps.contains(pid) {
       switch session.findElements(pid, CGPoint(x: point.x + origin.x, y: point.y + origin.y)) {
       case .unresponsive:
         session.silentApps.insert(pid)

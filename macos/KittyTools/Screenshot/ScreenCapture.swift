@@ -15,14 +15,16 @@ enum ScreenCapture {
     let image: CGImage
     /// 冻结那一刻与该屏相交的窗口（该屏视图坐标，点，原点左下），从前到后
     var windows: [CGRect] = []
-    /// 和 windows 一一对应：每扇窗口归哪个进程（悬停时问它窗口里的元素，ElementFinder）
-    var owners: [pid_t] = []
+    /// 和 windows 一一对应：悬停时问哪几个进程要窗口里的元素（ElementFinder；按顺序，第一个问出东西的算）
+    var owners: [[pid_t]] = []
   }
 
-  /// windowFrames 的一扇窗口：矩形（AppKit 全局坐标）和归哪个进程
+  /// 悬停列表里的一扇窗口：矩形（AppKit 全局坐标）、问哪几个进程要里面的元素（一般就是窗口的主人；菜单栏那条见
+  /// hoverWindows），和窗口层级（程序坞那一条按它插进去）
   struct Window: Equatable {
     var frame: CGRect
-    var pid: pid_t
+    var pids: [pid_t]
+    var layer = 0
   }
 
   /// 本 App 窗口的几项特征（取自 NSApp.windows），决定它留不留在冻结帧里
@@ -48,13 +50,24 @@ enum ScreenCapture {
     let own = ownWindows()
     let kept = keptOwnWindows(own)
     let known = Set(own.map(\.id))
-    let windows = windowFrames(
+    let listed = windowFrames(
       CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
         as? [[String: Any]] ?? [],
       ownPID: getpid(), keeping: kept, primaryHeight: NSScreen.screens.first?.frame.height ?? 0,
       contents: Dictionary(
         own.compactMap { window in window.content.map { (window.id, $0) } },
         uniquingKeysWith: { first, _ in first }))
+    // 菜单栏那条问前台 App（它自己的菜单）和控制中心（Wi‑Fi、时钟这些系统图标）；程序坞那一条要辅助功能才读得到
+    let menuBar = [
+      NSWorkspace.shared.frontmostApplication?.processIdentifier,
+      NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.controlcenter")
+        .first?.processIdentifier,
+    ].compactMap { $0 }
+    // 菜单栏自动隐藏、全屏 App 的桌面上，那一条还在窗口列表里却看不见：不收，免得挡住窗口顶上
+    let mainMenu = Int(CGWindowLevelForKey(.mainMenuWindow))
+    let windows = hoverWindows(
+      listed.filter { $0.layer != mainMenu || isReserved($0.frame) }, menuBar: menuBar,
+      dock: Permissions.isAccessibilityTrusted ? ElementFinder.dockBar() : nil)
     // 不在 NSApp.windows 里的自家窗口（系统画的快照等）也排除；只有状态栏层级的照旧留（菜单栏图标，以防它不在列表里）
     let ownWindows = content.windows.filter {
       $0.owningApplication?.processID == getpid() && !kept.contains($0.windowID)
@@ -93,7 +106,7 @@ enum ScreenCapture {
       return Shot(
         screen: screen, image: image,
         windows: here.map { $0.frame.offsetBy(dx: -origin.x, dy: -origin.y) },
-        owners: here.map(\.pid))
+        owners: here.map(\.pids))
     }
   }
 
@@ -186,7 +199,7 @@ enum ScreenCapture {
   /// （状态栏层级、类名带 StatusBar）。其余排除：刚 orderOut 的（不可见或全透明）、面板淡出中的替身（PanelStandIn）、状态栏层级及以上的
   /// 截图装饰（刘海岛、飞行卡片、常驻缩略图、长截图 / 录屏的边框、上一次的遮罩、菜单），以及按类名认的遮罩、长截图面板、
   /// 菜单、工具提示。录屏时菜单栏的停止项（NSStatusBarWindow）同菜单栏图标一样留在冻结帧里（它本来就在菜单栏上，
-  /// 不在悬停列表里：windowFrames 只要程序坞以下的层），可以接受。纯函数，配单测
+  /// 不在悬停列表里：windowFrames 只收程序坞以下的层、弹出菜单和菜单栏那一条），可以接受。纯函数，配单测
   static func keptOwnWindows(_ windows: [OwnWindow]) -> Set<CGWindowID> {
     let status = NSWindow.Level.statusBar.rawValue
     let chrome = ["SelectionOverlay", "ScrollCapturePanel", "PanelStandIn", "Menu", "ToolTip"]
@@ -224,7 +237,8 @@ enum ScreenCapture {
   }
 
   /// 窗口列表（CGWindowListCopyWindowInfo 的结果，从前到后）→ 可截的窗口矩形（AppKit 全局坐标，原点在主屏左下）和
-  /// 归哪个进程，顺序不变。只要普通层到浮动面板（低于程序坞）和展开着的弹出菜单；去掉全透明、太小的和自家窗口
+  /// 归哪个进程，顺序不变。只要普通层到浮动面板（低于程序坞）、展开着的弹出菜单和菜单栏那一条（主菜单层级，归 WindowServer，
+  /// 2026-11-08 用户：程序坞和菜单栏截不到；程序坞那扇是盖满整屏的透明窗口，不在这里收，见 hoverWindows）；去掉全透明、太小的和自家窗口
   /// （keeping 里的除外：keptOwnWindows 留下的）。contents：自家窗口里只算哪一块（OwnWindow.content，已经是 AppKit
   /// 全局坐标；太小的同样不要）。纯函数，配单测
   static func windowFrames(
@@ -233,9 +247,13 @@ enum ScreenCapture {
   ) -> [Window] {
     let popUpMenu = Int(CGWindowLevelForKey(.popUpMenuWindow))
     let dock = Int(CGWindowLevelForKey(.dockWindow))
+    let mainMenu = Int(CGWindowLevelForKey(.mainMenuWindow))
     return info.compactMap { window in
       guard let layer = window[kCGWindowLayer as String] as? Int,
-        (0..<dock).contains(layer) || layer == popUpMenu,
+        (0..<dock).contains(layer) || layer == popUpMenu
+          // 主菜单层级只要 WindowServer 的那一条（别的 App 也能把窗口放在这一层）
+          || (layer == mainMenu
+            && window[kCGWindowOwnerName as String] as? String == "Window Server"),
         (window[kCGWindowAlpha as String] as? Double ?? 1) > 0,
         let bounds = window[kCGWindowBounds as String] as? [String: Any],
         let rect = CGRect(dictionaryRepresentation: bounds as CFDictionary),
@@ -245,14 +263,37 @@ enum ScreenCapture {
       let id = window[kCGWindowNumber as String] as? Int ?? 0
       if pid == ownPID, !keeping.contains(CGWindowID(id)) { return nil }
       if pid == ownPID, let content = contents[CGWindowID(id)] {
-        return content.width >= 20 && content.height >= 20 ? Window(frame: content, pid: pid) : nil
+        return content.width >= 20 && content.height >= 20
+          ? Window(frame: content, pids: [pid], layer: layer) : nil
       }
       // CG 全局坐标原点在主屏左上、y 向下
       return Window(
         frame: CGRect(
           x: rect.minX, y: primaryHeight - rect.maxY, width: rect.width, height: rect.height),
-        pid: pid)
+        pids: [pid], layer: layer)
     }
+  }
+
+  /// 这一块（AppKit 全局坐标）是不是屏幕给菜单栏、程序坞留出来的地方：它的中心在某块屏里、又在那块屏的可用区外面。
+  /// 菜单栏、程序坞自动隐藏（或者全屏 App 的桌面上）时可用区不给它们留地方，冻结时多半也看不见，悬停列表不收
+  static func isReserved(_ frame: CGRect) -> Bool {
+    let center = CGPoint(x: frame.midX, y: frame.midY)
+    return NSScreen.screens.contains {
+      $0.frame.contains(center) && !$0.visibleFrame.contains(center)
+    }
+  }
+
+  /// 悬停列表的最后一步（纯函数，配单测）：菜单栏那条（主菜单层级）归 WindowServer，问它没用，换成 menuBar 这几个进程；
+  /// 程序坞那一条（dock，ElementFinder.dockBar 读的）插在第一扇比它层级低的窗口前面（在菜单栏、弹出菜单后面）
+  static func hoverWindows(_ windows: [Window], menuBar: [pid_t], dock: Window?) -> [Window] {
+    let mainMenu = Int(CGWindowLevelForKey(.mainMenuWindow))
+    var result = windows.map {
+      $0.layer == mainMenu ? Window(frame: $0.frame, pids: menuBar, layer: $0.layer) : $0
+    }
+    if let dock {
+      result.insert(dock, at: result.firstIndex { $0.layer < dock.layer } ?? result.endIndex)
+    }
+    return result
   }
 }
 
