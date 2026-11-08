@@ -18,7 +18,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   // 和菜单栏、快捷键页、引导、速查表同序（记住的上次页存的是 rawValue，调顺序不受影响）。2026-11-04 功能管理拍板 M3：
   // 便签、提醒、状态屏一组，启动台、程序坞预览一组（启动台原来在便签后面）
   case general, clipboard, launcher, translate, screenshot, record, notes, reminders, statusScreen,
-    launchpad, dockPreview, hotkeys, about
+    launchpad, dockPreview, finderMenu, hotkeys, about
 
   var id: String { rawValue }
 
@@ -29,7 +29,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   /// 单测锁住。功能那四组带标题、能折叠（groupTitle）
   static let groups: [[SettingsPage]] = [
     [.general], [.clipboard, .launcher, .translate], [.screenshot, .record],
-    [.notes, .reminders, .statusScreen], [.launchpad, .dockPreview], [.hotkeys, .about],
+    [.notes, .reminders, .statusScreen], [.launchpad, .dockPreview, .finderMenu],
+    [.hotkeys, .about],
   ]
 
   /// 侧栏的一组：标题（没有就不画）、组里的页；isOff 是最底下「已关闭」那组
@@ -59,7 +60,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .clipboard, .launcher, .translate: "文字与搜索"
     case .screenshot, .record: "截图与录制"
     case .notes, .reminders, .statusScreen: "便签与提醒"
-    case .launchpad, .dockPreview: "桌面"
+    case .launchpad, .dockPreview, .finderMenu: "桌面"
     case .general, .hotkeys, .about: nil
     }
   }
@@ -84,6 +85,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .statusScreen: "状态屏"
     case .reminders: "提醒"
     case .dockPreview: "程序坞预览"
+    case .finderMenu: "访达右键"
     case .translate: "翻译"
     case .hotkeys: "快捷键"
     case .about: "关于"
@@ -103,6 +105,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     // 自己画的闹钟（拍板 F2；icons/feature/kitty.reminders.svg）
     case .reminders: "kitty.reminders"
     case .dockPreview: "kitty.dock.preview"
+    case .finderMenu: "kitty.finder.menu"
     case .translate: "kitty.translate"
     case .hotkeys: "kitty.hotkeys"
     case .about: "kitty.about"  // 品牌页：猫头
@@ -121,6 +124,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .statusScreen: Style.Family.statusScreen
     case .reminders: Style.Family.reminders
     case .dockPreview: Style.Family.dockPreview
+    case .finderMenu: Style.Family.finderMenu
     case .translate: Style.Family.translate
     case .hotkeys: Style.Family.keyboard
     case .about: Color(nsColor: AccentPalette.brandPink)  // 关于是品牌页，不随强调色变
@@ -132,7 +136,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     switch self {
     case .general: "功能、外观、菜单栏、登录时打开、权限、同步、导出与导入、数据目录"
     case .clipboard: "历史上限、面板、内容格式和隐私"
-    case .launcher: "搜索 App、文件、书签与历史、网页搜索与快捷链接"
+    case .launcher: "搜索 App、文件、书签与历史、网页搜索与快捷链接、脚本命令、命令和别名"
     case .launchpad: "全屏的图标网格：排法、翻页、搜索、文件夹、捏合"
     case .screenshot: "快速保存、拷贝为图像还是文件、工具栏位置、快门声、缩略图和识字"
     case .record: "录屏的画质、倒数和按键，录音的来源"
@@ -140,6 +144,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .statusScreen: "拦住键盘鼠标的全屏告示：有哪些状态、各是什么样子、怎么退出"
     case .reminders: "到点提醒你：什么时候响、用什么方式、点了「稍后」推多久"
     case .dockPreview: "停在程序坞图标上时弹出的窗口缩略图：开关和要给的授权"
+    case .finderMenu: "在访达里右键：新建文件、拷贝路径、移动复制、压缩解压"
     case .translate: "语言、翻译服务与密钥、历史"
     case .hotkeys: "所有全局快捷键"
     case .about: "版本与更新内容"
@@ -173,6 +178,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         "完全磁盘访问", "搜索", "引擎", "快捷链接", "关键词",
         "兜底", "使用记录", "常用", "最近", "收藏", "文件", "open", "find", "Spotlight",
         "位置", "面板位置", "鼠标", "跟随鼠标", "上次位置",
+        "脚本", "脚本命令", "命令", "别名", "写法", "AI", "新建脚本", "导入",
       ]
     case .launchpad:
       [
@@ -213,6 +219,13 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         "程序坞", "Dock", "预览", "缩略图", "窗口", "切换", "悬停", "延迟", "多久", "⌘Tab", "Command Tab", "切换器",
         "最小化", "桌面", "全屏", "辅助功能",
         "屏幕录制",
+      ]
+    case .finderMenu:
+      [
+        "访达", "Finder", "右键", "右键菜单", "上下文菜单", "拷贝路径", "复制路径", "路径", "终端", "Terminal",
+        "编辑器", "打开方式", "用 App 打开", "在 App 中打开", "改名", "扩展", "登录项与扩展", "新建文件", "新建", "模板", "后缀",
+        "Word",
+        "Excel", "PPT", "Markdown", "文本",
       ]
     case .translate:
       [
@@ -271,6 +284,11 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   var focusedCommand: String?
   /// 快捷键速查表（启动器里的「快捷键速查表」打开设置窗时盖上；页面里的「查看全部快捷键…」按钮自己管）
   var showsShortcuts = false
+  /// 「新建脚本」的小表单（脚本命令第三轮 D2：设置里的按钮、启动器里的「新建脚本」都打开它；挂在窗口根上，同速查表——
+  /// 第 3 批评审：挂在启动器页那一节上时，那一节不在屏上就出不来、标记一直留着）
+  var showsNewScript = false
+  /// 新建好了（文件的位置）：AppDelegate 重读脚本、岛上说一声
+  @ObservationIgnored var newScriptCreated: (URL) -> Void = { _ in }
   /// 设置窗是 key（SettingsWindow 的窗口代理写）。开着 sheet（确认框、速查表、引导）或别的面板在前时不是
   var isKey = false
   /// 新功能标记（Shell/WhatsNew.swift）：设置窗里此刻要标的那几个（WhatsNew.Entry.id）——侧栏那一行、收起的组、页里那一节。
@@ -546,6 +564,15 @@ struct SettingsRoot: View {
     }
     .sheet(isPresented: $navigation.showsShortcuts) {
       ShortcutsButton.sheet().symbolEffectsRemoved(reduceMotion).appAccent()
+    }
+    .sheet(isPresented: $navigation.showsNewScript) {
+      NewScriptSheet { url in
+        navigation.showsNewScript = false
+        navigation.newScriptCreated(url)
+      } cancel: {
+        navigation.showsNewScript = false
+      }
+      .appAccent()
     }
     .symbolEffectsRemoved(reduceMotion)
     .appAccent()

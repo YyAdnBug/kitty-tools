@@ -534,6 +534,7 @@ struct SnapshotProbeTests {
       case .reminders: AnyView(RemindersTab(fixed: Reminder.examples))
       // 私有接口在不在按固定的「都在」画（图不跟着机器变）
       case .dockPreview: AnyView(DockPreviewTab(missing: []))
+      case .finderMenu: AnyView(FinderMenuTab(extensionEnabled: false))
       case .translate:
         AnyView(TranslateTab(services: services, history: history, speaker: speaker))
       case .hotkeys: AnyView(HotkeysTab(center: hotKeys))
@@ -3605,6 +3606,23 @@ struct SnapshotProbeTests {
       view.tool = .rectangle
       view.selectedAnnotation = arrow.id
     }
+    // 截图翻译盖回截图上时放不下的段：选区外的译文卡片（2026-11-08 拍板 B1–B4）
+    let translateCard: (SelectionView) -> Void = { view in
+      view.select(selection)
+      view.showTranslationCard(
+        [
+          .init(
+            source: "识别元素的默认值改为关闭，保留原色以便验证",
+            translation:
+              "Change the default value of the recognition element to off, and keep the original color for verification."
+          )
+        ], translation: "", toggles: false)
+    }
+    // 全部排得下时翻完挂的窄栏（第二轮 E1）：看原文、拷贝、✕
+    let translateBar: (SelectionView) -> Void = { view in
+      view.select(selection)
+      view.showTranslationCard([], translation: "Translated text", toggles: true)
+    }
     let capture: [(String, Bool, (SelectionView) -> Void)] = [
       ("capture-hover", false, { $0.mouse = CGPoint(x: 150, y: 330) }),
       (
@@ -3629,6 +3647,9 @@ struct SnapshotProbeTests {
       ),
       ("capture-adjust", false, { $0.select(selection) }),
       ("capture-adjust-dark", true, { $0.select(selection) }),
+      ("capture-translate-card", false, translateCard),
+      ("capture-translate-card-dark", true, translateCard),
+      ("capture-translate-bar", false, translateBar),
       ("capture-annotate", false, annotate),
       ("capture-annotate-dark", true, annotate),
       (
@@ -4737,33 +4758,72 @@ struct SnapshotProbeTests {
       return script
     }
     let scripts = [
-      script("Unix 时间戳", "time", .emoji("⏱"), summary: "时间戳和日期互转"),
+      script("Unix 时间戳", "time", .emoji("⏱\u{FE0F}"), summary: "时间戳和日期互转"),
       script("切换深色模式", "dark", .symbol("circle.lefthalf.filled")),
       script("清空下载文件夹", "cleandl", nil, confirm: "再按 ↩ 清空下载文件夹，不能撤销"),
       script("记到 flomo", "fl", nil, summary: "把一句话发到 flomo", downloaded: true),
     ]
     var weather = script("天气", "tq", .emoji("⛅"))
     weather.arguments = [.init(placeholder: "城市")]
-    var base64 = script("Base64 编码 & 解码", "b64", .symbol("character.textbox"))
+    var base64 = script("Base64 编码 & 解码", "b64", .symbol("arrow.left.arrow.right.square"))
     base64.mode = .list
     var json = script("JSON 格式化", "json", .symbol("curlybraces"))
     json.mode = .full
     json.arguments = [.init(placeholder: "JSON", isOptional: true)]
-    let all = scripts + [weather, base64, json]
+    // 全文输出带终端颜色、边跑边显示（第三轮 A1 A2）：先交一截、停在那儿等截完「正在运行」那张
+    var upgrade = script("更新 Homebrew", "up", .emoji("🍺"))
+    upgrade.mode = .full
+    // 列表结果写了 url / path、每条自己的图标（第三轮 B1 B2）
+    var pulls = script("我的 PR", "pr", .symbol("arrow.triangle.pull"))
+    pulls.mode = .list
+    // 下拉参数（第三轮 C1）
+    var output = script("切换声音输出", "out", .symbol("speaker.wave.2.fill"))
+    output.arguments = [
+      .init(
+        placeholder: "设备",
+        options: [
+          .init(title: "AirPods Pro", value: "airpods"),
+          .init(title: "Studio Display", value: "display"),
+          .init(title: "MacBook 扬声器", value: "builtin"),
+        ])
+    ]
+    let all = scripts + [weather, base64, json, upgrade, pulls, output]
     let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [])
     model.engines = { [] }
     model.boundHotKey = { $0.defaultHotKey }
     model.scripts = { all }
-    model.runScript = { script, _ in
+    let brew = [
+      "\u{1B}[1;34m==>\u{1B}[0m \u{1B}[1mUpgrading 3 outdated packages:\u{1B}[0m",
+      "node 22.1.0 -> 22.2.0", "\u{1B}[32m✔\u{1B}[0m ripgrep 14.1.1 已是最新",
+      "\u{1B}[31mError:\u{1B}[0m python@3.13: 下载超时，重试中…",
+      "\u{1B}[33mWarning:\u{1B}[0m \u{1B}[4m3 个旧版本\u{1B}[24m可以清理 \u{1B}[90m(brew cleanup)\u{1B}[0m",
+    ]
+    var hold: CheckedContinuation<Void, Never>?
+    model.runScript = { script, _, live in
       switch script.mode {
-      case .list: .init(end: .finished(0), output: "YUdrPQ==\t编码\nhi\t解码\n")
+      case .list where script.keyword == "pr":
+        return .init(
+          end: .finished(0),
+          output: """
+            {"items": [
+              {"title": "修好截图翻译的小字", "subtitle": "kitty-tools #12 · 2 小时前", "url": "https://github.com/a/b/pull/12", "icon": "🟢"},
+              {"title": "启动台捏合跟手", "subtitle": "kitty-tools #9 · 已合并", "url": "https://github.com/a/b/pull/9", "icon": "🟣"},
+              {"title": "网速指示器", "subtitle": "kitty-clear #8 · 草稿", "url": "https://github.com/a/c/pull/8", "icon": "⚪️"},
+              {"title": "发版说明.md", "subtitle": "~/Desktop", "path": "/System/Applications/Calculator.app"}
+            ]}
+            """)
+      case .list: return .init(end: .finished(0), output: "YUdrPQ==\t编码\nhi\t解码\n")
+      case .full where script.keyword == "up":
+        live?(brew.prefix(4).joined(separator: "\n") + "\n")
+        await withCheckedContinuation { hold = $0 }
+        return .init(end: .finished(0), output: brew.joined(separator: "\n") + "\n")
       case .full:
-        .init(
+        return .init(
           end: .finished(0),
           output:
             "{\n  \"name\": \"Kitty Tools\",\n  \"version\": \"0.8.0\",\n  \"features\": [\"启动器\", \"剪贴板\"]\n}\n"
         )
-      default: .init(end: .finished(0))
+      default: return .init(end: .finished(0))
       }
     }
     model.readScript = { _ in
@@ -4777,7 +4837,7 @@ struct SnapshotProbeTests {
         curl -sS -X POST "$api" -H 'Content-Type: application/json' \\
           -d "$(jq -n --arg c "$1" '{content: $c}')"
         """
-      return (text, false)
+      return ScriptReading(Data(text.utf8))
     }
     for dark in [false, true] {
       let suffix = dark ? "-dark" : ""
@@ -4793,8 +4853,9 @@ struct SnapshotProbeTests {
         size: NSSize(width: 720, height: LauncherPanelView.height(for: model)), dark: dark,
         to: "\(out)/launcher-scripts-armed\(suffix).png")
       model.query = "fl"
+      model.reviewDwell = .zero
       if let item = model.results.first { model.execute(item) }
-      for _ in 0..<20 where model.review?.text == nil { await Task.yield() }
+      for _ in 0..<40 where model.review?.isSettled != true { await Task.yield() }
       try snapshot(
         LauncherPanelView(model: model),
         size: NSSize(width: 720, height: LauncherPanelView.height(for: model)), dark: dark,
@@ -4811,6 +4872,21 @@ struct SnapshotProbeTests {
         LauncherPanelView(model: model),
         size: NSSize(width: 720, height: LauncherPanelView.height(for: model)), dark: dark,
         to: "\(out)/launcher-scripts-list\(suffix).png")
+      model.query = "pr "
+      await model.listRun()
+      try snapshot(
+        LauncherPanelView(model: model),
+        size: NSSize(width: 720, height: LauncherPanelView.height(for: model)), dark: dark,
+        to: "\(out)/launcher-scripts-links\(suffix).png")
+      model.query = "out "
+      try snapshot(
+        LauncherPanelView(model: model),
+        size: NSSize(width: 720, height: LauncherPanelView.height(for: model)), dark: dark,
+        to: "\(out)/launcher-scripts-choices\(suffix).png")
+      // 新建脚本的小表单（第三轮 D2）
+      try snapshot(
+        NewScriptSheet(created: { _ in }, cancel: {}), size: NSSize(width: 420, height: 330),
+        dark: dark, to: "\(out)/launcher-scripts-new\(suffix).png")
       model.query = "json "
       if let item = model.results.first { model.execute(item) }
       await model.scriptRun(json.path)
@@ -4818,6 +4894,21 @@ struct SnapshotProbeTests {
         LauncherPanelView(model: model),
         size: NSSize(width: 720, height: LauncherPanelView.height(for: model)), dark: dark,
         to: "\(out)/launcher-scripts-output\(suffix).png")
+      model.closeOutput()
+      model.query = "up"
+      if let item = model.results.first { model.execute(item) }
+      for _ in 0..<40 where hold == nil { await Task.yield() }
+      try snapshot(
+        LauncherPanelView(model: model),
+        size: NSSize(width: 720, height: LauncherPanelView.height(for: model)), dark: dark,
+        to: "\(out)/launcher-scripts-running\(suffix).png")
+      hold?.resume()
+      hold = nil
+      await model.scriptRun(upgrade.path)
+      try snapshot(
+        LauncherPanelView(model: model),
+        size: NSSize(width: 720, height: LauncherPanelView.height(for: model)), dark: dark,
+        to: "\(out)/launcher-scripts-colors\(suffix).png")
       model.closeOutput()
       // 脚本行的 ⌘K（第二轮 D1）
       model.query = "tq"
@@ -4852,8 +4943,10 @@ struct SnapshotProbeTests {
         Form { ScriptsSection(library: library) }.formStyle(.grouped).defaultAppStorage(defaults),
         size: NSSize(width: 590, height: 720), dark: dark,
         to: "\(out)/settings-launcher-scripts\(suffix).png")
+      // 快捷键那一列（第三轮 D1）：给一个没注册过的热键中心，录制框画出来、不碰真热键
       try snapshot(
-        NavigationStack { LauncherCommandsPage(library: library) }.defaultAppStorage(defaults),
+        NavigationStack { LauncherCommandsPage(library: library) }.defaultAppStorage(defaults)
+          .environment(HotKeyCenter()),
         size: NSSize(width: 590, height: 2420), dark: dark,
         to: "\(out)/settings-launcher-commands\(suffix).png")
       // 一个自己的脚本都没有：两处的空状态

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<!-- 生成的文件，别手改：源在仓库根的 icons/feature/，改完跑 swift icons/build-icons.swift mac -->
+<svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="3300" height="2200">
+ <g id="Notes">
+  <rect height="2200" id="artboard" style="fill:white;opacity:1" width="3300" x="0" y="0"/>
+  <text id="template-version" style="stroke:none;fill:black;font-family:sans-serif;font-size:13;text-anchor:end;" transform="matrix(1 0 0 1 3036 1933)">Template v.3.0</text>
+ </g>
+ <g id="Guides">
+  <line id="Baseline-S" style="fill:none;stroke:#27AAE1;opacity:1;stroke-width:0.5;" x1="263" x2="3036" y1="696" y2="696"/>
+  <line id="Capline-S" style="fill:none;stroke:#27AAE1;opacity:1;stroke-width:0.5;" x1="263" x2="3036" y1="625.541" y2="625.541"/>
+  <line id="Baseline-M" style="fill:none;stroke:#27AAE1;opacity:1;stroke-width:0.5;" x1="263" x2="3036" y1="1126" y2="1126"/>
+  <line id="Capline-M" style="fill:none;stroke:#27AAE1;opacity:1;stroke-width:0.5;" x1="263" x2="3036" y1="1055.54" y2="1055.54"/>
+  <line id="Baseline-L" style="fill:none;stroke:#27AAE1;opacity:1;stroke-width:0.5;" x1="263" x2="3036" y1="1556" y2="1556"/>
+  <line id="Capline-L" style="fill:none;stroke:#27AAE1;opacity:1;stroke-width:0.5;" x1="263" x2="3036" y1="1485.54" y2="1485.54"/>
+  <line id="left-margin-Regular-M" style="fill:none;stroke:#00AEEF;stroke-width:0.5;opacity:1.0;" y1="1030.79" y2="1150.12" x1="1440" x2="1440"/>
+  <line id="right-margin-Regular-M" style="fill:none;stroke:#00AEEF;stroke-width:0.5;opacity:1.0;" y1="1030.79" y2="1150.12" x1="1560" x2="1560"/>
+ </g>
+ <g id="Symbols">
+  <g id="Regular-M" transform="matrix(1 0 0 1 1440 1126)">
+   <path d="M69.917 -34.537L105.417 -5.037C107.577 -3.243 106.308 0.27 103.5 0.27L92.789 0.27L98.699 12.461C99.428 13.964 98.789 15.773 97.277 16.484L88.777 20.484C87.291 21.184 85.517 20.557 84.801 19.079L78.554 6.196L70.023 13.985C68.097 15.744 65 14.378 65 11.77L65 -32.23C65 -34.772 67.963 -36.162 69.917 -34.537ZM88 -67.23L88 -44.23C88 -40.916 85.314 -38.23 82 -38.23C78.686 -38.23 76 -40.916 76 -44.23L76 -67.23C76 -72.201 71.971 -76.23 67 -76.23L28 -76.23C23.029 -76.23 19 -72.201 19 -67.23L19 -23.23C19 -18.259 23.029 -14.23 28 -14.23L56 -14.23C59.314 -14.23 62 -11.544 62 -8.23C62 -4.916 59.314 -2.23 56 -2.23L28 -2.23C16.402 -2.23 7 -11.632 7 -23.23L7 -67.23C7 -78.828 16.402 -88.23 28 -88.23L67 -88.23C78.598 -88.23 88 -78.828 88 -67.23ZM49 -25.23C49 -21.916 46.314 -19.23 43 -19.23L33 -19.23C29.686 -19.23 27 -21.916 27 -25.23C27 -28.544 29.686 -31.23 33 -31.23L43 -31.23C46.314 -31.23 49 -28.544 49 -25.23ZM57 -42.23C57 -38.916 54.314 -36.23 51 -36.23L33 -36.23C29.686 -36.23 27 -38.916 27 -42.23C27 -45.544 29.686 -48.23 33 -48.23L51 -48.23C54.314 -48.23 57 -45.544 57 -42.23ZM68 -59.23C68 -55.916 65.314 -53.23 62 -53.23L33 -53.23C29.686 -53.23 27 -55.916 27 -59.23C27 -62.544 29.686 -65.23 33 -65.23L62 -65.23C65.314 -65.23 68 -62.544 68 -59.23Z"/>
+  </g>
+ </g>
+</svg>

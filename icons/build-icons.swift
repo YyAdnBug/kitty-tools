@@ -2,6 +2,8 @@
 // 这里把每个图标里的填充、线条和虚线都描成面、合成一条路径，再出两边要的格式：
 //   mac      → macos/KittyTools/Resources/Assets.xcassets/FeatureIcons/<名字>.symbolset（自定义符号模板，只放 Regular-M）
 //   windows  → windows/KittyTools/Shell/FeatureIcons.cs（24 格坐标的路径数据）
+//   finder   → icons/finder/*.svg（访达右键菜单里的图标，2026-11-08；线宽照 SF Symbols 常规粗细画，比功能图标细）
+//              → macos/KittyToolsFinder/Assets.xcassets/FinderIcons/<名字>.symbolset（扩展自己的资源目录）
 // 用法（仓库根目录）：swift icons/build-icons.swift mac | windows | mac windows
 // （main 上的 windows/ 是旧快照，只在 windows-wip 上出 windows 那份）
 // 只用 Foundation + CoreGraphics（路径的并集要 macOS 13）。自检：每个图标合成后的路径和逐个元素直接画的样子逐像素比，
@@ -399,7 +401,7 @@ func pathData(_ path: CGPath, map: (CGPoint) -> CGPoint = { $0 }) -> String {
 
 /// 自定义符号模板（Template v.3.0）：中号的基线在 1126、大写高 70.46；24 格放大 5 倍成 120 宽，
 /// 格子中心对着大写高的中线（同 SF Symbols 的垂直居中）。左右边距就是格子两边，所有图标一样宽
-func symbolTemplate(_ path: CGPath) -> String {
+func symbolTemplate(_ path: CGPath, source: String = "icons/feature/", target: String = "mac") -> String {
   let left = 1440.0
   let data = pathData(path) { CGPoint(x: $0.x * 5, y: $0.y * 5 - 95.23) }
   let guide = "style=\"fill:none;stroke:#27AAE1;opacity:1;stroke-width:0.5;\" x1=\"263\" x2=\"3036\""
@@ -407,7 +409,7 @@ func symbolTemplate(_ path: CGPath) -> String {
   return """
     <?xml version="1.0" encoding="UTF-8"?>
     <!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
-    <!-- 生成的文件，别手改：源在仓库根的 icons/feature/，改完跑 swift icons/build-icons.swift mac -->
+    <!-- 生成的文件，别手改：源在仓库根的 \(source)，改完跑 swift icons/build-icons.swift \(target) -->
     <svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="3300" height="2200">
      <g id="Notes">
       <rect height="2200" id="artboard" style="fill:white;opacity:1" width="3300" x="0" y="0"/>
@@ -435,8 +437,11 @@ func symbolTemplate(_ path: CGPath) -> String {
 
 let contentsInfo = "\"info\" : {\n    \"author\" : \"xcode\",\n    \"version\" : 1\n  }"
 
-func writeMac(_ icons: [(name: String, title: String, path: CGPath)]) throws {
-  let folder = URL(fileURLWithPath: "macos/KittyTools/Resources/Assets.xcassets/FeatureIcons")
+func writeMac(
+  _ icons: [(name: String, title: String, path: CGPath)],
+  folder: URL = URL(fileURLWithPath: "macos/KittyTools/Resources/Assets.xcassets/FeatureIcons"),
+  source: String = "icons/feature/", target: String = "mac"
+) throws {
   // 整个重出：改名、删掉的不留旧的
   try? FileManager.default.removeItem(at: folder)
   try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -445,7 +450,7 @@ func writeMac(_ icons: [(name: String, title: String, path: CGPath)]) throws {
   for icon in icons {
     let set = folder.appending(path: "\(icon.name).symbolset")
     try FileManager.default.createDirectory(at: set, withIntermediateDirectories: true)
-    try symbolTemplate(icon.path).write(
+    try symbolTemplate(icon.path, source: source, target: target).write(
       to: set.appending(path: "\(icon.name).svg"), atomically: true, encoding: .utf8)
     let contents = """
       {
@@ -461,7 +466,7 @@ func writeMac(_ icons: [(name: String, title: String, path: CGPath)]) throws {
       """
     try contents.write(to: set.appending(path: "Contents.json"), atomically: true, encoding: .utf8)
   }
-  print("mac: \(icons.count) 个 → \(folder.path)")
+  print("\(target): \(icons.count) 个 → \(folder.path)")
 }
 
 /// kitty.translate.selection → TranslateSelection
@@ -497,26 +502,42 @@ func writeWindows(_ icons: [(name: String, title: String, path: CGPath)]) throws
 // MARK: 主流程
 
 let targets = Set(CommandLine.arguments.dropFirst())
-guard !targets.isEmpty, targets.isSubset(of: ["mac", "windows"]) else {
-  fail("用法：swift icons/build-icons.swift mac | windows | mac windows（在仓库根目录跑）")
+guard !targets.isEmpty, targets.isSubset(of: ["mac", "windows", "finder"]) else {
+  fail("用法：swift icons/build-icons.swift mac | windows | finder（可以几个一起；在仓库根目录跑）")
 }
-let source = URL(fileURLWithPath: "icons/feature")
-guard
-  let files = try? FileManager.default.contentsOfDirectory(at: source, includingPropertiesForKeys: nil)
-    .filter({ $0.pathExtension == "svg" }).sorted(by: { $0.lastPathComponent < $1.lastPathComponent }),
-  !files.isEmpty
-else { fail("找不到 icons/feature/*.svg（要在仓库根目录跑）") }
 
-let icons = files.map { file -> (name: String, title: String, path: CGPath) in
-  let name = file.deletingPathExtension().lastPathComponent
-  guard name.hasPrefix("kitty.") else { fail("\(name)：文件名要以 kitty. 开头") }
-  let reader = Reader()
-  let parser = XMLParser(contentsOf: file)!
-  parser.delegate = reader
-  guard parser.parse() else { fail("\(name)：SVG 读不了 \(parser.parserError.map { "\($0)" } ?? "")") }
-  let merged = merge(reader.pieces)
-  check(name, reader.pieces, merged)
-  return (name, reader.title.trimmingCharacters(in: .whitespacesAndNewlines), merged)
+/// 读一个文件夹里的 kitty.*.svg，描成一条路径并自检
+func load(_ folder: String) -> [(name: String, title: String, path: CGPath)] {
+  let source = URL(fileURLWithPath: folder)
+  guard
+    let files = try? FileManager.default.contentsOfDirectory(at: source, includingPropertiesForKeys: nil)
+      .filter({ $0.pathExtension == "svg" }).sorted(by: { $0.lastPathComponent < $1.lastPathComponent }),
+    !files.isEmpty
+  else { fail("找不到 \(folder)/*.svg（要在仓库根目录跑）") }
+  return files.map { file -> (name: String, title: String, path: CGPath) in
+    let name = file.deletingPathExtension().lastPathComponent
+    guard name.hasPrefix("kitty.") else { fail("\(name)：文件名要以 kitty. 开头") }
+    let reader = Reader()
+    let parser = XMLParser(contentsOf: file)!
+    parser.delegate = reader
+    guard parser.parse() else { fail("\(name)：SVG 读不了 \(parser.parserError.map { "\($0)" } ?? "")") }
+    let merged = merge(reader.pieces)
+    check(name, reader.pieces, merged)
+    return (name, reader.title.trimmingCharacters(in: .whitespacesAndNewlines), merged)
+  }
 }
-if targets.contains("mac") { try writeMac(icons) }
-if targets.contains("windows") { try writeWindows(icons) }
+
+if !targets.isDisjoint(with: ["mac", "windows"]) {
+  let icons = load("icons/feature")
+  if targets.contains("mac") { try writeMac(icons) }
+  if targets.contains("windows") { try writeWindows(icons) }
+}
+if targets.contains("finder") {
+  try writeMac(
+    load("icons/finder"),
+    folder: URL(fileURLWithPath: "macos/KittyToolsFinder/Assets.xcassets/FinderIcons"),
+    source: "icons/finder/", target: "finder")
+  // 扩展的资源目录本身要一个根 Contents.json（App 的那个本来就有）
+  try "{\n  \(contentsInfo)\n}\n".write(
+    toFile: "macos/KittyToolsFinder/Assets.xcassets/Contents.json", atomically: true, encoding: .utf8)
+}

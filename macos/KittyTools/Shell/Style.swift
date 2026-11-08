@@ -218,6 +218,11 @@ enum Style {
       light: NSColor(srgbRed: 0.90, green: 0.60, blue: 0.08, alpha: 1),
       dark: NSColor(srgbRed: 0.96, green: 0.68, blue: 0.22, alpha: 1))
 
+    /// 访达右键（2026-11-08）：系统色用完了，自定义的石板蓝（访达文件夹的蓝压暗、去饱和），和剪贴板的系统蓝、通用的灰分得开
+    static let finderMenu = Style.dynamic(
+      light: NSColor(srgbRed: 0.33, green: 0.47, blue: 0.62, alpha: 1),
+      dark: NSColor(srgbRed: 0.47, green: 0.61, blue: 0.76, alpha: 1))
+
     /// 种类色块上的符号色：白；便签的黄上白色只有约 1.5:1，换成 black 0.85（同强调色选黄时 onBrand 的做法）
     static func onTile(_ color: Color) -> Color { color == notes ? .black.opacity(0.85) : .white }
   }

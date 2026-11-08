@@ -1,0 +1,24 @@
+// 访达扩展 target（KittyToolsFinder，第十一族「访达右键」）：只覆盖和 App 不同的，其余沿用 project 层的
+// Debug / Release.xcconfig（Base.xcconfig：版本号、签名团队、强化运行时、arm64、macOS 15.0 都一样）
+PRODUCT_NAME = KittyToolsFinder
+PRODUCT_MODULE_NAME = KittyToolsFinder
+// App 的 id 加 .finder：扩展靠它反推 App 网址的 scheme（FinderMenu）
+PRODUCT_BUNDLE_IDENTIFIER = $(APP_BUNDLE_ID)$(BUNDLE_ID_SUFFIX).finder
+INFOPLIST_FILE = Config/Finder-Info.plist
+// 系统设置的扩展列表里显示的名字（Debug 是 Kitty Tools Dev）
+INFOPLIST_KEY_CFBundleDisplayName = $(APP_PRODUCT_NAME)
+INFOPLIST_KEY_LSUIElement =
+INFOPLIST_KEY_LSApplicationCategoryType =
+ASSETCATALOG_COMPILER_APPICON_NAME =
+ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME =
+ENABLE_PREVIEWS = NO
+// ponytail: 这个 target 用 Swift 5 语言模式（App 是 Swift 6，mac-native §3 的例外）。Xcode 27.1 的 SDK 里 FinderSync 的头文件
+// 还是没有并发标注：访达要菜单的 menu(for:) 不在主线程隔离里，菜单（NSMenu）却只能在主线程上建，Swift 6 下只有
+// nonisolated(unsafe) / @unchecked Sendable 绕得过去（红线禁止）。Swift 5 模式照 Xcode 的访达扩展模板，访达确实在主线程上调。
+// 等 FinderSync 加上 MainActor 标注再改回 6.0。只有一个文件、不碰并发
+SWIFT_VERSION = 5.0
+// 访达扩展必须在沙盒里；唯一的例外（读 App 的偏好）写在 entitlements 里
+ENABLE_APP_SANDBOX = YES
+CODE_SIGN_ENTITLEMENTS = Config/Finder.entitlements
+SKIP_INSTALL = YES
+LD_RUNPATH_SEARCH_PATHS = $(inherited) @executable_path/../Frameworks @executable_path/../../../../Frameworks

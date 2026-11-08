@@ -13,8 +13,9 @@
 // 状态和操作都在 LauncherModel。⌘Y 快速查看的预览卡（LauncherQuickLookView）也在这里。
 // 脚本命令（2026-11-07）：行图标是头部写的 emoji / SF 符号 / 图片，没写是命令家族紫的 terminal 色块，右侧「脚本」；
 // 从网上下载的脚本第一次跑之前，列表换成它的全文（ScriptReviewView：等宽字、能滚，上面一句写明以用户的身份运行、
-// 能用本 App 已有的授权），底栏「运行 ↩」「返回 esc」；全文输出的脚本跑起来后列表换成输出那一页（同一个 ScriptPageView），
-// 底栏「粘贴 ↩」「复制 ⌘C」「返回 esc」（还在跑时只有「停止 esc」）。列表脚本的结果行同脚本的图标、右侧「脚本」。
+// 能用本 App 已有的授权），底栏「运行 ↩」「返回 Esc」；全文输出的脚本跑起来后列表换成输出那一页（同一个 ScriptPageView），
+// 底栏「粘贴 ↩」「复制 ⌘C」「重跑 ⌘R」「返回 Esc」（还在跑时只有「停止 Esc」；第三轮：边跑边显示、认终端颜色）。列表脚本的结果行同脚本的图标、右侧「脚本」；
+// 第三轮：结果写了 url / path 的右侧「网址」「文件」，自己写了图标的用它，文件没写图标的用它在访达里的图标。
 
 import AppKit
 import SwiftUI
@@ -46,8 +47,6 @@ struct LauncherPanelView: View {
   static let rowRange = 6.5...14.5
   /// 看脚本全文那一页的高度（不含搜索栏和底栏）
   static let reviewHeight: CGFloat = 320
-  /// 全文输出那一页最多显示这么多字（再多 Text 排不动、卡主线程）；↩ 粘贴、⌘C 复制的照旧是全部
-  static let outputDisplayLimit = 100_000
 
   var body: some View {
     VStack(spacing: 0) {
@@ -66,19 +65,21 @@ struct LauncherPanelView: View {
           subtitle: (review.script.path as NSString).abbreviatingWithTildeInPath,
           note: "这个脚本是从网上下载的，第一次运行前先看一眼。它会以你的身份运行，能用 Kitty Tools 已有的辅助功能、屏幕录制、完全磁盘访问授权。",
           noteColor: Color(nsColor: .systemOrange), text: review.text, placeholder: "正在读取…",
-          warning: review.isTruncated
-            ? "这个脚本超过 \(ScriptRunner.reviewLimit / 1024) KB，下面只显示了开头。看不全的脚本不能在这里运行，用编辑器打开看完再说。"
-            : nil
+          warning: review.reading?.problem.map { $0 + "不能在这里运行，用编辑器打开看完再说。" },
+          label: "脚本全文", scroll: model.pageScroll
         )
         .frame(height: Self.reviewHeight)
       } else if let output = model.output {
         ScriptPageView(
           title: output.script.title,
           subtitle: output.isRunning ? "正在运行…" : output.failure == nil ? "运行完了" : "没有跑成",
-          note: output.failure, noteColor: Style.danger,
-          text: output.isRunning || output.text.isEmpty
-            ? nil : String(output.text.prefix(LauncherPanelView.outputDisplayLimit)),
-          placeholder: output.isRunning ? "正在运行…" : "（没有输出）"
+          since: output.isRunning ? output.startedAt : nil,
+          note: output.failure, noteColor: Color(nsColor: .systemRed),
+          text: nil, styled: output.styled.characters.isEmpty ? nil : output.styled,
+          placeholder: output.isRunning ? "正在运行…" : "（没有输出）",
+          warning: output.isCut
+            ? "只显示了前 \(LauncherModel.outputDisplayLimit / 10_000) 万字；粘贴、复制的是全部。" : nil,
+          label: "脚本输出", scroll: model.pageScroll, follows: true
         )
         .frame(height: Self.reviewHeight)
       } else if showsNoResults {
@@ -349,7 +350,7 @@ struct LauncherPanelView: View {
     .overlay(alignment: .top) { Hairline() }
   }
 
-  /// 看脚本全文时的底栏：左边写这是什么，右边「运行 ↩」「返回 esc」
+  /// 看脚本全文时的底栏：左边写这是什么，右边「运行 ↩」「返回 Esc」
   @ViewBuilder private var reviewBar: some View {
     HStack(spacing: 8) {
       KindTile(
@@ -358,23 +359,27 @@ struct LauncherPanelView: View {
     }
     .accessibilityElement(children: .combine)
     Spacer(minLength: 8)
+    // 读到之前、看不全、藏着字符时按了也不跑：画成不能点的（mac-whisker §3「状态」）
+    let runnable = model.review.map { $0.isRunnable && $0.isSettled } == true
     Button(action: model.approveReview) {
       HStack(spacing: 6) {
         Text("运行")
-        KeyCap("↩", primary: true).accessibilityHidden(true)
+        KeyCap("↩", primary: runnable).accessibilityHidden(true)
       }
     }
+    .disabled(!runnable)
+    .opacity(runnable ? 1 : Style.disabledOpacity)
     .accessibilityLabel("运行")
     Button(action: model.cancelReview) {
       HStack(spacing: 6) {
         Text("返回")
-        KeyCap("esc")
+        KeyCap("Esc")
       }
     }
     .accessibilityLabel("返回")
   }
 
-  /// 全文输出那一页的底栏：跑完是「粘贴 ↩」「复制 ⌘C」「返回 esc」，还在跑时只有「停止 esc」
+  /// 全文输出那一页的底栏：跑完是「粘贴 ↩」「复制 ⌘C」「返回 Esc」，还在跑时只有「停止 Esc」
   @ViewBuilder private func outputBar(_ output: LauncherModel.ScriptOutput) -> some View {
     HStack(spacing: 8) {
       KindTile(symbol: "terminal.fill", color: Style.Family.command, size: 16)
@@ -386,7 +391,7 @@ struct LauncherPanelView: View {
       Button(action: model.closeOutput) {
         HStack(spacing: 6) {
           Text("停止")
-          KeyCap("esc")
+          KeyCap("Esc")
         }
       }
       .accessibilityLabel("停止")
@@ -407,10 +412,19 @@ struct LauncherPanelView: View {
         }
         .accessibilityLabel("复制")
       }
+      if model.canRerunOutput {
+        Button(action: model.rerunOutput) {
+          HStack(spacing: 6) {
+            Text("重跑")
+            KeyCap("⌘R")
+          }
+        }
+        .accessibilityLabel("重跑")
+      }
       Button(action: model.closeOutput) {
         HStack(spacing: 6) {
           Text("返回")
-          KeyCap("esc")
+          KeyCap("Esc")
         }
       }
       .accessibilityLabel("返回")
@@ -438,13 +452,18 @@ struct LauncherPanelView: View {
       let primary = model.primaryAction(for: selected).title
       // 等着再按一次确认、强制退出：字和 ↩ 键帽换危险色（mac-whisker §3「危险色」）
       let danger = model.isDangerous(selected, commandKey: false)
+      // 参数没填够：↩ 只响提示音，不画成该按的主按钮（只提示键位，同 secondary 的那种）
+      let inert = model.isMissingArguments(selected)
       Button {
         model.execute(selected)
       } label: {
         HStack(spacing: 6) {
           Text(primary)
-            .foregroundStyle(danger ? AnyShapeStyle(Style.danger) : AnyShapeStyle(.foreground))
-          KeyCap("↩", primary: true, danger: danger).accessibilityHidden(true)
+            .foregroundStyle(
+              danger
+                ? AnyShapeStyle(Style.danger)
+                : inert ? AnyShapeStyle(.secondary) : AnyShapeStyle(.foreground))
+          KeyCap("↩", primary: !inert, danger: danger).accessibilityHidden(true)
         }
       }
       .accessibilityLabel(primary)
@@ -460,26 +479,49 @@ struct LauncherPanelView: View {
 }
 
 /// 脚本的一整页（启动器里原地换掉列表）：从网上下载的脚本第一次跑之前的全文（拍板 B5），全文输出的脚本的输出（B1）。
-/// 标题和一行小字、可选的一句提示（橙色 / 危险色）、等宽字的正文（能滚、能选）；正文没有时写 placeholder
+/// 标题和一行小字、可选的一句提示（橙色 / 红字）、等宽字的正文（能滚、能选，↑↓ / PageUp / PageDown 跟着模型的
+/// pageScroll 滚：焦点一直在搜索框里）；正文没有时写 placeholder。输出边跑边长时（follows）正文跟着最后一行走，
+/// 往上翻了就不跟、翻回底部再跟（第三轮 A1）
 private struct ScriptPageView: View {
   let title: String
   let subtitle: String
+  /// 跑着的：小字后面接「已 12 秒」
+  var since: Date?
   let note: String?
   let noteColor: Color
   let text: String?
+  /// 认了颜色的正文（输出那一页，ScriptTerminal）；有它就不用 text
+  var styled: AttributedString?
   let placeholder: String
-  /// 正文上面一句危险色的（没显示全的脚本）
+  /// 正文上面一句橙色的（没显示全、藏着字符、输出只显示了一部分）
   var warning: String?
+  /// 正文的读屏名
+  let label: String
+  let scroll: LauncherModel.PageScroll
+  /// 正文变长时，原来在底部就跟到新的底部
+  var follows = false
+  @State private var position = ScrollPosition(edge: .top)
+  @State private var geometry: ScrollGeometry?
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
       VStack(alignment: .leading, spacing: 2) {
         Text(title).font(.system(size: 14, weight: .medium)).lineLimit(1)
-        Text(subtitle)
-          .font(.system(size: 12))
-          .foregroundStyle(.secondary)
-          .lineLimit(1)
-          .truncationMode(.middle)
+        Group {
+          if let since {
+            // 一秒换一次的普通文字（不做数字滚动的过渡，开销很小）
+            TimelineView(.periodic(from: since, by: 1)) { context in
+              Text(subtitle + " " + Self.elapsed(context.date.timeIntervalSince(since)))
+            }
+          } else {
+            Text(subtitle)
+          }
+        }
+        .font(.system(size: 12))
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+        .truncationMode(.middle)
       }
       if let note {
         Text(note)
@@ -487,25 +529,58 @@ private struct ScriptPageView: View {
           .foregroundStyle(noteColor)
           .fixedSize(horizontal: false, vertical: true)
       }
+      // 限制（没看全、藏着字符）不是错误、也不是危险操作：同设置页的提醒用橙色（mac-whisker §3）
       if let warning {
         Text(warning)
           .font(.system(size: 12))
-          .foregroundStyle(Style.danger)
+          .foregroundStyle(Color(nsColor: .systemOrange))
           .fixedSize(horizontal: false, vertical: true)
       }
       ScrollView {
-        Text(text ?? placeholder)
-          .font(.system(size: 12, design: .monospaced))
-          .foregroundStyle(text == nil ? .secondary : .primary)
-          .textSelection(.enabled)
-          .frame(maxWidth: .infinity, alignment: .topLeading)
-          .padding(10)
+        Group {
+          if let styled { Text(styled) } else { Text(text ?? placeholder) }
+        }
+        .font(.system(size: 12, design: .monospaced))
+        .lineSpacing(2)
+        .foregroundStyle(text == nil && styled == nil ? .secondary : .primary)
+        .textSelection(.enabled)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .padding(10)
       }
+      .scrollPosition($position)
+      .onScrollGeometryChange(for: ScrollGeometry.self) {
+        $0
+      } action: { old, new in
+        geometry = new
+        // 正文长了、之前停在底部（差 4 pt 以内）：跟到新的底部
+        if follows, new.contentSize.height > old.contentSize.height,
+          old.contentOffset.y >= old.contentSize.height - old.containerSize.height - 4
+        {
+          position.scrollTo(edge: .bottom)
+        }
+      }
+      .onChange(of: scroll) { _, scroll in move(scroll.step) }
       .background(Style.hoverFill, in: .rect(cornerRadius: Style.Radius.card, style: .continuous))
-      .accessibilityLabel(text == nil ? placeholder : "内容")
+      .accessibilityLabel(text == nil && styled == nil ? placeholder : label)
     }
     .padding(.horizontal, 16)
     .padding(.vertical, 12)
+  }
+
+  /// 「已 12 秒」「已 2 分 5 秒」
+  static func elapsed(_ interval: TimeInterval) -> String {
+    let seconds = max(Int(interval), 0)
+    return seconds < 60 ? "已 \(seconds) 秒" : "已 \(seconds / 60) 分 \(seconds % 60) 秒"
+  }
+
+  /// ±1 一小段（三行），±2 一屏（留一行接上）
+  private func move(_ step: Int) {
+    guard let geometry, step != 0 else { return }
+    let page = max(geometry.containerSize.height - 24, 48)
+    let delta = (abs(step) == 1 ? 48 : page) * (step < 0 ? -1 : 1)
+    let bottom = max(geometry.contentSize.height - geometry.containerSize.height, 0)
+    let target = min(max(geometry.contentOffset.y + delta, 0), bottom)
+    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.15)) { position.scrollTo(y: target) }
   }
 }
 
@@ -738,6 +813,7 @@ extension LauncherItem {
     case .prompt where target == ExchangeRates.promptTarget: "汇率"
     case .prompt where target.hasPrefix(ExchangeRates.suggestionPrefix): "货币"
     case .prompt where target.hasPrefix("reminder-"): "提醒"
+    case .prompt where target.hasPrefix(LauncherModel.choicePrefix): "选项"
     case .search, .prompt: "搜索"
     // 计算卡不显示副标题：汇率换算的副标题（「人民币 · 11-03 汇率」，ExchangeRates）写在这里，别的是空的
     case .calculation: subtitle.isEmpty ? "计算" : subtitle
@@ -745,7 +821,14 @@ extension LauncherItem {
     case .process: "进程"
     case .ip: "网络"
     case .reminder: "提醒"
-    case .script, .scriptResult: "脚本"
+    // 列表结果写了 url / path 的：同网址行、文件行（↩ 打开写在底栏的主动作上，第三轮 B1）
+    case .scriptResult:
+      switch opens {
+      case .url: "网址"
+      case .file: "文件"
+      case nil: "脚本"
+      }
+    case .script: "脚本"
     }
   }
 }

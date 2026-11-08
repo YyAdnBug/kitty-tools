@@ -1023,13 +1023,15 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
     context.draw(blocks, in: frame)
   }
 
-  /// 最近画过的马赛克缩小图（按 id、范围、粗细、像素 / 模糊认；id 不会重复，换了冻结帧也认不错）：在它上面画箭头、
+  /// 最近画过的马赛克缩小图（按 id、范围、粗细、像素 / 模糊和冻结帧本身认：截图翻译换上贴了译文的图、看原文换回原图时，
+  /// 同一块马赛克要按新图重算，2026-11-08）：在它上面画箭头、
   /// 写字时局部重画不用每次都从冻结帧重新裁一大块、重新缩小（2000 × 1100 的一次 5–7 ms）。
   /// ponytail: 只留 8 张；拖着马赛克本身改范围时每下还是要重算，要更快就拖动中用图层预览
   private static var mosaicCache: [(key: MosaicKey, blocks: CGImage, frame: CGRect)] = []
 
   private struct MosaicKey: Equatable {
     let id: UUID
+    let image: ObjectIdentifier
     let rect: CGRect
     let weight: Weight
     let option: Int
@@ -1039,7 +1041,9 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
   private func mosaicBlocks(_ rect: CGRect, image: CGImage, viewSize: CGSize) -> (
     CGImage, CGRect
   )? {
-    let key = MosaicKey(id: id, rect: rect, weight: style.weight, option: style.option)
+    let key = MosaicKey(
+      id: id, image: ObjectIdentifier(image), rect: rect, weight: style.weight,
+      option: style.option)
     if let hit = Self.mosaicCache.first(where: { $0.key == key }) { return (hit.blocks, hit.frame) }
     guard case (let crop, let frame)? = Self.frozen(rect, image: image, viewSize: viewSize) else {
       return nil

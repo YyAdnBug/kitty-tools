@@ -52,6 +52,9 @@ enum Prefs {
   static let launcherCommandAliases = "launcherCommandAliases"
   /// 启动器「命令」表里关掉的（一行一个编号）：同上
   static let launcherCommandsOff = "launcherCommandsOff"
+  /// 启动器「命令」表里每条命令的快捷键（JSON：编号 → 组合；脚本命令第三轮 D1，LauncherModel.commandHotKeys）：同上，
+  /// 读的时候按录制框的规矩过一遍（文件、同步来的是不可信输入）；别的 Mac 上没有那条脚本就不注册
+  static let launcherCommandHotKeys = "launcherCommandHotKeys"
   /// 剪贴板、启动器、翻译浮窗呼出时用挤压入场（设置 › 通用「动效」，默认关；2026-09-29 用户要求三块面板统一，设置从启动器页
   /// 挪到通用页；2026-10-03 转正，去掉「实验」）
   static let panelSqueezeEntrance = "panelSqueezeEntrance"
@@ -357,6 +360,35 @@ enum Prefs {
   /// 程序坞预览：按 ⌘Tab 切换时也在切换器上方弹窗口预览（2026-11-06 拍板 C2，默认开；程序坞预览关着时不生效）
   nonisolated static let dockPreviewCmdTab = "dockPreviewCmdTab"
 
+  /// 访达右键（第十一族，2026-11-08，FinderLink）：扩展把动作交过来时带的凭证（App 第一次启动时生成，FinderLink.ensureKey；
+  /// 扩展从 App 的偏好里读）。这台电脑自己的、**不注册默认值**：不跟着导出 / 导入、同步走
+  nonisolated static let finderMenuKey = "finderMenuKey"
+  /// 访达右键「用 X 打开」列哪几个 App（bundle id 的数组，默认只有终端；设置 › 访达右键）。扩展读同一个键，
+  /// 键名和默认值在 KittyToolsFinder/FinderMenu 里抄了一份
+  nonisolated static let finderOpenWithApps = "finderOpenWithApps"
+  nonisolated static let finderOpenWithDefault = ["com.apple.Terminal"]
+  /// 访达右键把我们的项都收进一个「Kitty Tools ▸」子菜单（默认关、平铺在第一层；设置 › 访达右键，2026-11-08 用户同意的建议）。
+  /// 扩展读同一个键，键名和默认值在 KittyToolsFinder/FinderMenu 里抄了一份
+  nonisolated static let finderMenuGrouped = "finderMenuGrouped"
+  /// 访达右键里每一项显示不显示：键是「finderMenu<名字>」，见 FinderMenu/FinderMenuItem（默认值按项，下面 defaults 里一起注册）。
+  /// 访达右键「移动到」「复制到」的常用文件夹（~ 开头的写法；设置 › 访达右键，没存过是桌面、文稿、下载）。这台电脑自己的、
+  /// **不注册默认值**（同截图的存储文件夹：别人给的设置文件不该能往右键菜单里加一个文件夹）。扩展读同一个键（键名和默认值
+  /// 在 KittyToolsFinder/FinderMenu 里抄了一份）
+  nonisolated static let finderTransferFolders = "finderTransferFolders"
+  /// 最近用「移动到 / 复制到 ▸ 选择文件夹…」选过的（~ 开头的写法，最近的在前，存 5 个、子菜单里列 3 个；FileMoves.remember）。
+  /// 这台电脑自己的、不注册默认值（同常用文件夹）；扩展读同一个键
+  nonisolated static let finderRecentFolders = "finderRecentFolders"
+  nonisolated static let finderTransferDefault = ["~/Desktop", "~/Documents", "~/Downloads"]
+  /// 访达右键「剪切」了几样、那一刻剪贴板的 changeCount（FileMoves.cut）：扩展看到剪贴板没换过才列「粘贴 N 项」。剪切的清单
+  /// 本身只在 App 内存里（别的程序改偏好塞不进要搬的东西）。这台电脑自己的、**不注册默认值**，App 启动时清掉
+  nonisolated static let finderCutCount = "finderCutCount"
+  nonisolated static let finderCutChange = "finderCutChange"
+  /// 访达右键移动、复制、压缩、解压用着的隐藏临时名（路径；FileMoves.temporary）：App 退出时没收尾的，下次启动删掉。
+  /// 这台电脑自己的状态、不注册默认值
+  nonisolated static let finderTemporaries = "finderTemporaries"
+  /// 访达右键「新建文件 ▸ 自定义后缀…」上次填的后缀（框里先填好它）。这台电脑自己的、不注册默认值
+  nonisolated static let finderLastSuffix = "finderLastSuffix"
+
   /// 看过的版本号：没有 = 首次安装（打开欢迎引导），和当前不同 = 刚更新（刘海岛「已更新到 x」+ 本版摘要，不开设置窗，体检 A29）。
   /// 首次安装时**引导走完才记**（点「开始使用」或关掉引导；第四轮体检 E1）：中途退出（授权屏幕录制后系统要求重开）下次接着开
   nonisolated static let lastSeenVersion = "lastSeenVersion"
@@ -414,6 +446,7 @@ enum Prefs {
       launcherScripts: true,
       launcherCommandAliases: "",
       launcherCommandsOff: "",
+      launcherCommandHotKeys: "",
       launchpadColumns: 7,
       launchpadRows: 5,
       launchpadLayout: "",
@@ -422,6 +455,7 @@ enum Prefs {
       launchpadCorner: LaunchpadCornerOption.off.rawValue,
       dockPreviewDelay: 400,
       dockPreviewCmdTab: true,
+      finderOpenWithApps: finderOpenWithDefault,
       panelSqueezeEntrance: false,
       floatingPinned: false,
       updateAutoCheck: true,
@@ -497,7 +531,11 @@ enum Prefs {
       notesDeckOpensOnHover: false,
       notesDeckOverFullScreen: false,
       notesDeckNoteSize: NoteDeckOptions.NoteSize.medium.rawValue,
+      finderMenuGrouped: false,
     ].merging(Feature.allCases.map { ($0.prefsKey, $0.defaultOn as Any) }) { current, _ in current }
+      .merging(FinderMenuItem.allCases.map { ($0.prefsKey, $0.defaultOn as Any) }) { current, _ in
+        current
+      }
   }
 
   /// 截图工具栏贴选区右边（screenshotToolbarAlign 不是 center 都算靠右：没存过、认不出来按默认）

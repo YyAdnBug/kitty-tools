@@ -223,7 +223,9 @@ enum ElementFinder {
   }
 
   /// 包在 AXValue 里的点 / 尺寸；不是这一种（属性取不到时是错误）给 nil
-  private static func value<T>(_ object: AnyObject, _ type: AXValueType, _ empty: T) -> T? {
+  private static func value<T: BitwiseCopyable>(
+    _ object: AnyObject, _ type: AXValueType, _ empty: T
+  ) -> T? {
     guard CFGetTypeID(object) == AXValueGetTypeID() else { return nil }
     var result = empty
     return AXValueGetValue(object as! AXValue, type, &result) ? result : nil  // 上一行认过类型

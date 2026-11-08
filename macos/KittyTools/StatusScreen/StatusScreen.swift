@@ -355,7 +355,7 @@ import Observation
       reduceMotion: Style.reduceMotion)
     self.preset = preset
     hidePanels()
-    hotKeysWereActive = hotKeys.map { !$0.bindings.isEmpty } ?? false
+    hotKeysWereActive = hotKeys?.isActive ?? false
     hotKeys?.suspend()
     arrangePanels(growingFrom: card)
     setActivity(preset.power)

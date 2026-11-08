@@ -24,15 +24,16 @@ struct ScriptGuidePage: View {
     ),
     (
       "@kitty.argument1", "参数（最多 3 个）",
-      "写参数的名字，如「城市」；在启动器里输「关键词 空格 文字」，文字在 $1 里。可以不填的写成 {\"placeholder\": \"城市\", \"optional\": true}"
+      "写参数的名字，如「城市」；在启动器里输「关键词 空格 文字」，文字在 $1 里，带空格的用引号括起来（\"New York\"）。可以不填的写成 `{\"placeholder\": \"城市\", \"optional\": true}`；要直接拼进网址的再加 `\"percentEncoded\": true`（先做网址编码）；只能从几个里挑的写 `\"type\": \"dropdown\", \"data\": [{\"title\": \"耳机\", \"value\": \"headphones\"}]`（打到这里时列出来挑，交给脚本的是 value）；密码写 `\"type\": \"password\"`（行上不显示、跑完清空搜索框、不记进使用记录，但打的时候搜索框里看得见，别在有人看着时用）"
     ),
     ("@kitty.description", "副标题", "启动器里名字后面的那行小字"),
     (
       "@kitty.icon", "图标",
       "一个 emoji、SF 符号的名字、同一个文件夹里的图片文件名，或者 https 开头的图片网址（第一次用时下载一次，以后不再联网）；深色主题换一张写在 @kitty.iconDark"
     ),
-    ("@kitty.confirm", "先确认再跑", "写一句话：↩ 第一下只显示这句（红字），再按一次才跑"),
+    ("@kitty.confirm", "先确认再跑", "写一句话：↩ 第一下只显示这句（红字），再按一次才跑；列表脚本打字时就跑，不能写"),
     ("@kitty.timeout", "超时", "秒数，不写是 60 秒，写 0 不限"),
+    ("@kitty.filter", "只跑一次", "列表脚本才写：打完「关键词 空格」时跑一次，之后打的字由启动器按标题、说明过滤（认拼音、首字母），脚本收不到参数"),
   ]
 
   var body: some View {
@@ -67,7 +68,7 @@ struct ScriptGuidePage: View {
           Text("三步上手")
         } footer: {
           SectionFootnote(
-            "脚本用 .sh 文件的默认 App 打开（默认的是终端时改用文本编辑）。想换编辑器：在访达里选一个 .sh 文件，⌘I 显示简介，「打开方式」选好后点「全部更改…」。启动器里选中一条脚本，⌘E 就能改它。"
+            "脚本用 .sh 文件的默认 App 打开；默认的那个不是编辑器（比如终端，一开就跑了）时，改用打开纯文本的那个编辑器。想换编辑器：在访达里选一个 .sh 文件，⌘I 显示简介，「打开方式」选好后点「全部更改…」。启动器里选中一条脚本，⌘E 就能改它。"
           )
         }
         Section {
@@ -93,10 +94,13 @@ struct ScriptGuidePage: View {
                   Style.brandInk)
                 Text(field.title).font(.system(size: 13, weight: .medium))
               }
-              Text(field.detail)
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+              // 反引号里的（JSON、取值）是等宽字，和左边的字段名一样
+              Text(
+                (try? AttributedString(markdown: field.detail)) ?? AttributedString(field.detail)
+              )
+              .font(.system(size: 12))
+              .foregroundStyle(.secondary)
+              .fixedSize(horizontal: false, vertical: true)
             }
             .accessibilityElement(children: .combine)
           }
@@ -114,6 +118,11 @@ struct ScriptGuidePage: View {
           code(#"{"items": [{"title": "显示的", "subtitle": "说明", "arg": "↩ 粘贴的"}]}"#)
           Text("要显示的和粘贴的不一样时，打印上面这样一段 JSON。")
             .foregroundStyle(.secondary)
+          Text(
+            "每条还可以写 url（↩ 用浏览器打开）、path（↩ 打开文件，⌘↩ 在访达中显示，⌘Y 快速查看）、icon（这一条的图标，写法同 @kitty.icon；{\"type\": \"fileicon\", \"path\": …} 用那个文件的图标）、autocomplete（⇥ 填进搜索框，接在关键词后面）、text 里的 copy（⌘C 复制的）。"
+          )
+          .foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
         } header: {
           Text("列出几条结果让人挑")
         }
@@ -181,6 +190,7 @@ struct ScriptGuidePage: View {
   private func code(_ text: String) -> some View {
     Text(text)
       .font(.system(size: 12, design: .monospaced))
+      .lineSpacing(2)
       .textSelection(.enabled)
       .frame(maxWidth: .infinity, alignment: .leading)
       .padding(10)

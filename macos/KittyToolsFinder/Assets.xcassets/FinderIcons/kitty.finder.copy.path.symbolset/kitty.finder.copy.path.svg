@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<!-- 生成的文件，别手改：源在仓库根的 icons/finder/，改完跑 swift icons/build-icons.swift finder -->
+<svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="3300" height="2200">
+ <g id="Notes">
+  <rect height="2200" id="artboard" style="fill:white;opacity:1" width="3300" x="0" y="0"/>
+  <text id="template-version" style="stroke:none;fill:black;font-family:sans-serif;font-size:13;text-anchor:end;" transform="matrix(1 0 0 1 3036 1933)">Template v.3.0</text>
+ </g>
+ <g id="Guides">
+  <line id="Baseline-S" style="fill:none;stroke:#27AAE1;opacity:1;stroke-width:0.5;" x1="263" x2="3036" y1="696" y2="696"/>
+  <line id="Capline-S" style="fill:none;stroke:#27AAE1;opacity:1;stroke-width:0.5;" x1="263" x2="3036" y1="625.541" y2="625.541"/>
+  <line id="Baseline-M" style="fill:none;stroke:#27AAE1;opacity:1;stroke-width:0.5;" x1="263" x2="3036" y1="1126" y2="1126"/>
+  <line id="Capline-M" style="fill:none;stroke:#27AAE1;opacity:1;stroke-width:0.5;" x1="263" x2="3036" y1="1055.54" y2="1055.54"/>
+  <line id="Baseline-L" style="fill:none;stroke:#27AAE1;opacity:1;stroke-width:0.5;" x1="263" x2="3036" y1="1556" y2="1556"/>
+  <line id="Capline-L" style="fill:none;stroke:#27AAE1;opacity:1;stroke-width:0.5;" x1="263" x2="3036" y1="1485.54" y2="1485.54"/>
+  <line id="left-margin-Regular-M" style="fill:none;stroke:#00AEEF;stroke-width:0.5;opacity:1.0;" y1="1030.79" y2="1150.12" x1="1440" x2="1440"/>
+  <line id="right-margin-Regular-M" style="fill:none;stroke:#00AEEF;stroke-width:0.5;opacity:1.0;" y1="1030.79" y2="1150.12" x1="1560" x2="1560"/>
+ </g>
+ <g id="Symbols">
+  <g id="Regular-M" transform="matrix(1 0 0 1 1440 1126)">
+   <path d="M82.25 -49.23L82.25 1.27C82.25 9.968 75.198 17.02 66.5 17.02L28.5 17.02C19.802 17.02 12.75 9.968 12.75 1.27L12.75 -49.23C12.75 -57.928 19.802 -64.98 28.5 -64.98L66.5 -64.98C75.198 -64.98 82.25 -57.928 82.25 -49.23ZM28.5 -55.48C25.048 -55.48 22.25 -52.682 22.25 -49.23L22.25 1.27C22.25 4.722 25.048 7.52 28.5 7.52L66.5 7.52C69.952 7.52 72.75 4.722 72.75 1.27L72.75 -49.23C72.75 -52.682 69.952 -55.48 66.5 -55.48ZM58.005 -46.536C60.384 -45.428 61.413 -42.603 60.306 -40.225L43.306 -3.725C42.198 -1.346 39.373 -0.317 36.995 -1.424C34.616 -2.532 33.587 -5.357 34.694 -7.735L51.694 -44.235C52.802 -46.614 55.627 -47.643 58.005 -46.536ZM107.25 -71.73L107.25 -18.73C107.25 -10.032 100.198 -2.98 91.5 -2.98L88 -2.98C85.377 -2.98 83.25 -5.107 83.25 -7.73C83.25 -10.353 85.377 -12.48 88 -12.48L91.5 -12.48C94.952 -12.48 97.75 -15.278 97.75 -18.73L97.75 -71.73C97.75 -75.182 94.952 -77.98 91.5 -77.98L54 -77.98C50.548 -77.98 47.75 -75.182 47.75 -71.73C47.75 -69.107 45.623 -66.98 43 -66.98C40.377 -66.98 38.25 -69.107 38.25 -71.73C38.25 -80.428 45.302 -87.48 54 -87.48L91.5 -87.48C100.198 -87.48 107.25 -80.428 107.25 -71.73Z"/>
+  </g>
+ </g>
+</svg>

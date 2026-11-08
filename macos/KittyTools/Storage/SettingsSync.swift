@@ -30,7 +30,8 @@ import Foundation
     Prefs.launchpadColumns, Prefs.launchpadRows, Prefs.launchpadPinchGesture,
     Prefs.launchpadPinchSense, Prefs.launchpadCorner, Feature.launchpad.prefsKey,
     Prefs.screenRecordMicrophone, Prefs.audioRecordSource, Prefs.screenRecordShowsKeys,
-    Feature.dockPreview.prefsKey, Prefs.notesDeckDisplay, Prefs.statusItemVisible,
+    Feature.dockPreview.prefsKey, Feature.finderMenu.prefsKey, Prefs.notesDeckDisplay,
+    Prefs.statusItemVisible,
     Prefs.clipboardHideOnUnfocus, Prefs.floatingPinned,
     // 另走一类（StatusPresetSync）
     Prefs.statusScreenPresets,

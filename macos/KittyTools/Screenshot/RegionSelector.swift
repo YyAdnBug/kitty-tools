@@ -61,7 +61,7 @@ enum RegionSelector {
     _ shots: [ScreenCapture.Shot], lastRegion: CGRect?, preselect: Bool,
     hint: String? = nil, autoTranslate: Bool = false,
     recordingBlocker: @escaping () -> (title: String, detail: String)? = { nil },
-    translate: ((CGImage) async -> (image: CGImage?, message: String?))? = nil
+    translate: ((CGImage, CGFloat) async -> ScreenshotOverlay.Outcome)? = nil
   ) async -> Outcome? {
     let session = SelectionSession(
       mode: .capture, hint: hint ?? "", lastRegion: lastRegion)
@@ -370,7 +370,7 @@ final class SelectionSession {
   var recordingBlocker: () -> (title: String, detail: String)? = { nil }
   /// 工具栏「翻译」的就地翻译（AppDelegate 给）：给选区的图，交回覆盖了译文的图；失败时带一句原因。
   /// nil = 没有翻译能力，点翻译时退回原来的「收起遮罩、翻完再开编辑窗」
-  var translate: ((CGImage) async -> (image: CGImage?, message: String?))?
+  var translate: ((CGImage, CGFloat) async -> ScreenshotOverlay.Outcome)?
   /// 框完松手就直接翻（⌥S：截图翻译 = 截图 + 自动点「翻译」）
   var autoTranslates = false
   /// 尺寸胶囊里锁着的比例（宽 / 高，RegionSelector.ratios 里的一个）：之后框选、拖边都按它，选「自由」解锁。整个会话共用

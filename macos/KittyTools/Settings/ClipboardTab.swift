@@ -273,7 +273,7 @@ struct ClipboardTab: View {
       if excluded.isEmpty {
         Text("没有排除的 App").foregroundStyle(.secondary)
       }
-      ForEach(excluded, id: \.self) { ExcludedAppRow(bundleID: $0).tag($0) }
+      ForEach(excluded, id: \.self) { AppListRow(bundleID: $0).tag($0) }
     }
     .listStyle(.plain)
     .scrollContentBackground(.hidden)
@@ -328,8 +328,8 @@ struct ClipboardTab: View {
   }
 }
 
-/// 排除列表的一行：16 pt App 图标 + 名字；本机找不到这个 App 时显示 bundle ID（secondary）
-private struct ExcludedAppRow: View {
+/// App 列表的一行（剪贴板的排除列表、访达右键的「用 App 打开」）：16 pt App 图标 + 名字；本机找不到这个 App 时显示 bundle ID（secondary）
+struct AppListRow: View {
   let bundleID: String
 
   var body: some View {

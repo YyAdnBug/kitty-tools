@@ -1,8 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- 局部 Info.plist：构建时与 GENERATE_INFOPLIST_FILE 生成的内容合并，只放 INFOPLIST_KEY_* 表达不了的键（PLAN §8.1） -->
+<!-- 局部 Info.plist：构建时与 GENERATE_INFOPLIST_FILE 生成的内容合并，只放 INFOPLIST_KEY_* 表达不了的键（PLAN §8.1）。
+     CFBundleURLTypes：App 自己的网址（scheme 就是 bundle id，Debug、Release 各认各的），访达扩展把右键的动作交过来（FinderLink） -->
 <plist version="1.0">
 <dict>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleLocalizations</key>
 	<array>
 		<string>zh-Hans</string>
@@ -15,11 +27,11 @@
 		<true/>
 	</dict>
 	<key>NSDesktopFolderUsageDescription</key>
-	<string>用于打开、显示你在启动器和剪贴板历史里选中的桌面文件</string>
+	<string>用于打开、显示你在启动器和剪贴板历史里选中的桌面文件，和在访达右键里新建文件</string>
 	<key>NSDocumentsFolderUsageDescription</key>
-	<string>用于打开、显示你在启动器和剪贴板历史里选中的文稿文件</string>
+	<string>用于打开、显示你在启动器和剪贴板历史里选中的文稿文件，和在访达右键里新建文件</string>
 	<key>NSDownloadsFolderUsageDescription</key>
-	<string>用于打开、显示你在启动器和剪贴板历史里选中的下载文件</string>
+	<string>用于打开、显示你在启动器和剪贴板历史里选中的下载文件，和在访达右键里新建文件</string>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>用于启动器的系统命令：让访达清倒废纸篓，弹出退出登录、重新启动、关机的系统确认框</string>
 	<key>NSMicrophoneUsageDescription</key>

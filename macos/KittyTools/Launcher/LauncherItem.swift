@@ -33,7 +33,7 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
     /// 脚本命令（2026-11-07，ScriptCommand；目标是脚本文件的路径）：↩ 跑它，输出按它写的 mode 交出去
     case script
     /// 列表脚本给出的一条结果（目标是「脚本路径⏎第几条」）：↩ 粘贴 payload、⌘↩ / ⌘C 只复制；payload 是 nil 的（脚本标了不能选、
-    /// 出错的那一行）按了只响提示音
+    /// 出错的那一行）按了只响提示音。写了 url / path 的（opens）↩ 打开，文件另有 ⌘↩ 在访达中显示、⌘Y 快速查看
     case scriptResult
 
     /// 只有这些记使用、能出现在「常用」里、能收藏
@@ -71,6 +71,10 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
   var scriptIconDark: ScriptCommand.Icon?
   /// 「关键词 空格 文字」那一行（脚本命令）：交给脚本的参数；nil = 普通的一行（要参数的脚本 ↩ 先补关键词）
   var arguments: [String]?
+  /// 列表脚本的结果写了 url / path（第三轮 B1）：↩ 打开它，不粘贴
+  var opens: ScriptCommand.Line.Opens?
+  /// 列表脚本的结果写了 text.copy（第三轮 B2）：⌘C 复制它
+  var copyText: String?
   /// 来自每次搜索都从源头重新列出来的列表（浏览器书签、快捷链接）：使用记录不靠自己把它找回来，源头删了就不再出现
   /// （issue #10：以前打开过的书签在浏览器里删了，还以「用过的网址」搜得到）
   var listed = false
@@ -172,7 +176,7 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
     }
   }
 
-  /// 脚本命令的两条内置动作（2026-11-07 第二轮 D2）：新建脚本（照模板、用编辑器打开）、复制给 AI 的写法说明；
+  /// 脚本命令的两条内置动作（2026-11-07 第二轮 D2）：新建脚本（第三轮 D2 起打开设置里那张小表单）、复制给 AI 的写法说明；
   /// 脚本命令关着时不列（LauncherModel.scriptsOn）
   static let newScriptID = "scripts-new"
   static let scriptGuideID = "scripts-ai-guide"

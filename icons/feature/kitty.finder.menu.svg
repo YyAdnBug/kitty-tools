@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <title>访达右键</title>
+  <path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" d="M11.2 17.4H5.6A3 3 0 0 1 2.6 14.4V5.6A3 3 0 0 1 5.6 2.6H13.4A3 3 0 0 1 16.4 5.6V10.2"/>
+  <path fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" d="M6.6 7.2H12.4M6.6 10.6H10.2M6.6 14H8.6"/>
+  <path fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round" d="M13.6 12.6V21.4L15.9 19.3L17.5 22.6L19.2 21.8L17.6 18.5H20.7Z"/>
+</svg>

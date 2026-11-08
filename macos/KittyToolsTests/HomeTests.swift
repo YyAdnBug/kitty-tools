@@ -85,10 +85,11 @@ struct HomeTests {
       none.count == 1 && none[0].title == nil && none[0].tiles.map(\.target) == [.action(.island)])
   }
 
-  /// 关着的功能有几个：只算这台系统上有、而且有入口的（程序坞预览没有全局动作，关着不算；macOS 15 没有启动台，不算）
+  /// 关着的功能有几个：只算这台系统上有、而且有入口的（程序坞预览、访达右键没有全局动作，关着不算；macOS 15 没有启动台，不算）
   @Test func offCount() {
     #expect(Home.offCount(enabled: all, available: all) == 0)
-    #expect(Home.offCount(enabled: all.subtracting([.dockPreview]), available: all) == 0)
+    #expect(
+      Home.offCount(enabled: all.subtracting([.dockPreview, .finderMenu]), available: all) == 0)
     #expect(Home.offCount(enabled: all.subtracting([.notes, .record]), available: all) == 2)
     let noLaunchpad = all.subtracting([.launchpad])
     #expect(Home.offCount(enabled: noLaunchpad, available: noLaunchpad) == 0)
