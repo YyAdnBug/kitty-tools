@@ -1119,13 +1119,16 @@ struct NoteDeckTests {
       window(CGRect(x: 0, y: 100, width: 1440, height: 700), pid: 1, id: 6),
     ]
     let whole = ScreenCapture.windowFrames(info, ownPID: own, keeping: [5], primaryHeight: 900)
+      .map(\.frame)
     #expect(whole.first == panel)
     let frames = ScreenCapture.windowFrames(
-      info, ownPID: own, keeping: [5], primaryHeight: 900, contents: [5: note])
+      info, ownPID: own, keeping: [5], primaryHeight: 900, contents: [5: note]
+    ).map(\.frame)
     #expect(frames == [note, CGRect(x: 0, y: 100, width: 1440, height: 700)])
     // 里面那一块小得选不中（或者没有）：这扇窗口不进列表；别的进程的窗口不看 contents
     let none = ScreenCapture.windowFrames(
-      info, ownPID: own, keeping: [5], primaryHeight: 900, contents: [5: .zero, 6: note])
+      info, ownPID: own, keeping: [5], primaryHeight: 900, contents: [5: .zero, 6: note]
+    ).map(\.frame)
     #expect(none == [CGRect(x: 0, y: 100, width: 1440, height: 700)])
   }
 

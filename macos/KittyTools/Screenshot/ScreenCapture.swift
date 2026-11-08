@@ -1,7 +1,8 @@
 // 截图与截图翻译的冻结帧：按下热键时先把每块屏幕截成静止图，框选、裁剪、取色都只读这一帧（先截后选，PLAN §10）。
 // ScreenCaptureKit 逐屏截：各屏的缩放比例可以不同，一屏一张、各按自己的像素尺寸（修旧版混合缩放错位，§11 #14）；
 // 几块屏同时截（体检 B47：以前一块截完才截下一块，热键到遮罩的等待随屏幕数线性增加）。
-// 同一时刻拍一份窗口快照（CGWindowList，从前到后），截图模式悬停高亮、单击截整窗都按它命中（§11 #41）。
+// 同一时刻拍一份窗口快照（CGWindowList，从前到后），截图模式悬停高亮、单击截整窗都按它命中（§11 #41）；每扇窗口记着
+// 归哪个进程，悬停时只问那个 App 窗口里的元素（ElementFinder，2026-11-08）。
 // 本 App 开着的窗口（浮层、设置窗、引导、钉图）照常截进去、能悬停选中；截图自己的装饰排除（keptOwnWindows）。
 
 import AppKit
@@ -14,6 +15,14 @@ enum ScreenCapture {
     let image: CGImage
     /// 冻结那一刻与该屏相交的窗口（该屏视图坐标，点，原点左下），从前到后
     var windows: [CGRect] = []
+    /// 和 windows 一一对应：每扇窗口归哪个进程（悬停时问它窗口里的元素，ElementFinder）
+    var owners: [pid_t] = []
+  }
+
+  /// windowFrames 的一扇窗口：矩形（AppKit 全局坐标）和归哪个进程
+  struct Window: Equatable {
+    var frame: CGRect
+    var pid: pid_t
   }
 
   /// 本 App 窗口的几项特征（取自 NSApp.windows），决定它留不留在冻结帧里
@@ -80,11 +89,11 @@ enum ScreenCapture {
     return zip(jobs, images).map { job, image in
       let screen = job.0
       let origin = screen.frame.origin
+      let here = windows.filter { $0.frame.intersects(screen.frame) }
       return Shot(
         screen: screen, image: image,
-        windows: windows.filter { $0.intersects(screen.frame) }.map {
-          $0.offsetBy(dx: -origin.x, dy: -origin.y)
-        })
+        windows: here.map { $0.frame.offsetBy(dx: -origin.x, dy: -origin.y) },
+        owners: here.map(\.pid))
     }
   }
 
@@ -214,14 +223,14 @@ enum ScreenCapture {
     }
   }
 
-  /// 窗口列表（CGWindowListCopyWindowInfo 的结果，从前到后）→ 可截的窗口矩形（AppKit 全局坐标，原点在主屏左下），
-  /// 顺序不变。只要普通层到浮动面板（低于程序坞）和展开着的弹出菜单；去掉全透明、太小的和自家窗口
+  /// 窗口列表（CGWindowListCopyWindowInfo 的结果，从前到后）→ 可截的窗口矩形（AppKit 全局坐标，原点在主屏左下）和
+  /// 归哪个进程，顺序不变。只要普通层到浮动面板（低于程序坞）和展开着的弹出菜单；去掉全透明、太小的和自家窗口
   /// （keeping 里的除外：keptOwnWindows 留下的）。contents：自家窗口里只算哪一块（OwnWindow.content，已经是 AppKit
   /// 全局坐标；太小的同样不要）。纯函数，配单测
   static func windowFrames(
     _ info: [[String: Any]], ownPID: pid_t, keeping: Set<CGWindowID>, primaryHeight: CGFloat,
     contents: [CGWindowID: CGRect] = [:]
-  ) -> [CGRect] {
+  ) -> [Window] {
     let popUpMenu = Int(CGWindowLevelForKey(.popUpMenuWindow))
     let dock = Int(CGWindowLevelForKey(.dockWindow))
     return info.compactMap { window in
@@ -232,15 +241,17 @@ enum ScreenCapture {
         let rect = CGRect(dictionaryRepresentation: bounds as CFDictionary),
         rect.width >= 20, rect.height >= 20
       else { return nil }
-      let pid = window[kCGWindowOwnerPID as String] as? Int32
+      let pid = window[kCGWindowOwnerPID as String] as? Int32 ?? 0
       let id = window[kCGWindowNumber as String] as? Int ?? 0
       if pid == ownPID, !keeping.contains(CGWindowID(id)) { return nil }
       if pid == ownPID, let content = contents[CGWindowID(id)] {
-        return content.width >= 20 && content.height >= 20 ? content : nil
+        return content.width >= 20 && content.height >= 20 ? Window(frame: content, pid: pid) : nil
       }
       // CG 全局坐标原点在主屏左上、y 向下
-      return CGRect(
-        x: rect.minX, y: primaryHeight - rect.maxY, width: rect.width, height: rect.height)
+      return Window(
+        frame: CGRect(
+          x: rect.minX, y: primaryHeight - rect.maxY, width: rect.width, height: rect.height),
+        pid: pid)
     }
   }
 }

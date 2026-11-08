@@ -1,6 +1,7 @@
 // 框选会话：每块屏幕盖一个全屏遮罩（SelectionOverlay）画冻结帧，选区只在一块屏上。两种用法：
 // - 截图翻译 / 识字 select：拖动框选（⇧ 正方形、⌥ 从中心、空格平移、吸附窗口边），松手确认，Esc / 右键取消；
-// - 截图 capture：悬停高亮窗口 / 单击截整窗、确认后可调整选区和标注，↩ 复制、⌘S 保存、⇧⌘S 另存为、T 钉图、
+// - 截图 capture：悬停高亮窗口，或窗口里指针下的元素（设置 › 截图开着、有辅助功能授权时：滚轮换大小、Tab 只认窗口，
+//   ElementFinder）/ 单击截下那一块、确认后可调整选区和标注，↩ 复制、⌘S 保存、⇧⌘S 另存为、T 钉图、
 //   S 长截图、工具栏识字 / 翻译，C 复制放大镜中心的色值，D 选中上次的区域；
 // - 录屏 record：框选同截图（悬停、单击窗口 / 整屏、调整、尺寸胶囊、D），没有标注和出图键，↩ / 双击 / 录制条的 ● 交回选区；
 //   截图调整时按 R / 工具栏「录屏」也会切到它（选区不变，录屏第 2 批）。
@@ -64,6 +65,8 @@ enum RegionSelector {
   ) async -> Outcome? {
     let session = SelectionSession(
       mode: .capture, hint: hint ?? "", lastRegion: lastRegion)
+    // ⌥S 截图翻译（autoTranslate）照拍板 C3 不认元素：它的顶部提示也没写滚轮和 Tab
+    session.findsElements = !autoTranslate && SelectionSession.elementsAllowed
     session.preselectsLastRegion = preselect
     session.recordingBlocker = recordingBlocker
     session.translate = translate
@@ -73,7 +76,9 @@ enum RegionSelector {
 
   /// 录屏：框选同截图（lastRegion 同截图共用，D 键选中），交回 .record(选区)；C 复制色值时交回 .color，取消 nil
   static func record(_ shots: [ScreenCapture.Shot], lastRegion: CGRect?) async -> Outcome? {
-    await run(shots, SelectionSession(mode: .record, lastRegion: lastRegion))
+    let session = SelectionSession(mode: .record, lastRegion: lastRegion)
+    session.findsElements = SelectionSession.elementsAllowed
+    return await run(shots, session)
   }
 
   private static func run(_ shots: [ScreenCapture.Shot], _ session: SelectionSession) async
@@ -370,6 +375,23 @@ final class SelectionSession {
   var autoTranslates = false
   /// 尺寸胶囊里锁着的比例（宽 / 高，RegionSelector.ratios 里的一个）：之后框选、拖边都按它，选「自由」解锁。整个会话共用
   var lockedRatio: CGFloat?
+  /// 悬停时认窗口里的元素（截图、录屏开始时按 elementsAllowed 定；单测、截图自检直接设）
+  var findsElements = false
+  /// Tab 切成了只认窗口（只管这一次框选，几块屏共用）
+  var windowOnly = false
+  /// 问元素的那个函数（单测、截图自检换成假的，不碰真的 App）；默认的带着这次框选的缓存
+  lazy var findElements: (pid_t, CGPoint) -> ElementFinder.Answer = { [hits] pid, point in
+    ElementFinder.query(pid: pid, at: point, cache: hits)
+  }
+  private let hits = ElementFinder.Cache()
+  /// 问过超时的 App：这次框选不再问它，只认窗口（卡住的 App 每动一下鼠标都等一次就卡成幻灯片了）
+  var silentApps: Set<pid_t> = []
+
+  /// 设置 › 截图开着、且有辅助功能授权（没授权照旧只认窗口，不弹框、不催：拍板 D2）
+  static var elementsAllowed: Bool {
+    UserDefaults.standard.bool(forKey: Prefs.screenshotFindsElements)
+      && Permissions.isAccessibilityTrusted
+  }
   private var overlays: [SelectionOverlay] = []
   /// 各屏的画面（start 时填上；单测直接放几个屏外窗口里的视图进来，不弹遮罩）
   var views: [SelectionView] = []
@@ -469,7 +491,8 @@ final class SelectionOverlay: NSPanel {
   let selectionView: SelectionView
 
   init(shot: ScreenCapture.Shot, session: SelectionSession) {
-    selectionView = SelectionView(image: shot.image, windows: shot.windows, session: session)
+    selectionView = SelectionView(
+      image: shot.image, windows: shot.windows, owners: shot.owners, session: session)
     // styleMask 必须在 init 里一次写全：.nonactivatingPanel 初始化后再加不生效
     super.init(
       contentRect: shot.screen.frame, styleMask: [.borderless, .nonactivatingPanel],

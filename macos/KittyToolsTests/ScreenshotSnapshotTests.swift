@@ -42,6 +42,23 @@ struct ScreenshotSnapshotTests {
     var h = capture()
     h.move(CGPoint(x: 330, y: 520))
     try shoot(h.window, "idle-window", crop: CGRect(x: 100, y: 340, width: 620, height: 460))
+    // 认窗口里的元素（2026-11-08）：悬停停在指针下最小的那层（备忘录的第三行），滚轮往上大一层（正文区），尺寸胶囊跟着换
+    let element = {
+      let h = Harness(
+        windows: Self.windows, owners: [4242, 4243], findsElements: true, image: desktop)
+      _ = h.fakeElements([
+        CGRect(x: 150, y: 536, width: 420, height: 32),
+        CGRect(x: 140, y: 380, width: 460, height: 272), Self.windows[0],
+      ])
+      h.move(CGPoint(x: 330, y: 552))
+      return h
+    }
+    try shoot(element().window, "idle-element", crop: CGRect(x: 100, y: 340, width: 620, height: 460))
+    h = element()
+    h.scroll(up: true)
+    try shoot(h.window, "idle-element-parent", crop: CGRect(x: 100, y: 340, width: 620, height: 460))
+    h = element()
+    try shoot(h.window, "idle-element-hint", crop: top)
     h = capture()
     h.move(CGPoint(x: 1000, y: 700))
     try shoot(h.window, "idle-desktop", crop: top)

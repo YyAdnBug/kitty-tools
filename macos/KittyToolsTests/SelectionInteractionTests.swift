@@ -35,8 +35,9 @@ struct SelectionInteractionTests {
     /// image：冻结帧（默认 1200 × 800 纯色；截图自检传一张假桌面）；hint：松手即确认模式的顶部提示；
     /// session / origin：多屏时几块「屏幕」共用一个会话，窗口摆在各自的位置（见 screens）
     init(
-      mode: SelectionView.Mode = .capture, windows: [CGRect] = [], image: CGImage? = nil,
-      hint: String = "", session: SelectionSession? = nil,
+      mode: SelectionView.Mode = .capture, windows: [CGRect] = [], owners: [pid_t] = [],
+      findsElements: Bool = false, image: CGImage? = nil, hint: String = "",
+      session: SelectionSession? = nil,
       origin: CGPoint = CGPoint(x: -20000, y: -20000), keepsColors: Bool = false
     ) {
       let size = CGSize(width: 1200, height: 800)
@@ -47,9 +48,10 @@ struct SelectionInteractionTests {
       context.setFillColor(CGColor(red: 0.2, green: 0.5, blue: 0.9, alpha: 1))
       context.fill(CGRect(origin: .zero, size: size))
       self.session = session ?? SelectionSession(mode: mode, hint: hint)
+      if findsElements { self.session.findsElements = true }
       view = SelectionView(
-        image: image ?? context.makeImage()!, windows: windows, session: self.session,
-        keepsColors: keepsColors)
+        image: image ?? context.makeImage()!, windows: windows, owners: owners,
+        session: self.session, keepsColors: keepsColors)
       styles = UserDefaults(suiteName: styleSuite)!
       view.styleDefaults = styles
       window = KeyWindow(
@@ -123,6 +125,36 @@ struct SelectionInteractionTests {
     /// 鼠标移到 point（不按下）
     func move(_ point: CGPoint) {
       view.mouseMoved(with: event(.mouseMoved, point))
+    }
+
+    /// 滚轮转一格：up 是物理上往上（合成的事件要是被系统按「自然滚动」标成反向，就把数值反过来，保证方向）
+    func scroll(up: Bool) {
+      let probe = NSEvent(
+        cgEvent: CGEvent(
+          scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: 1, wheel2: 0,
+          wheel3: 0)!)!
+      let sign: Int32 = (probe.isDirectionInvertedFromDevice ? -1 : 1) * (up ? 1 : -1)
+      let event = NSEvent(
+        cgEvent: CGEvent(
+          scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: sign, wheel2: 0,
+          wheel3: 0)!)!
+      view.scrollWheel(with: event)
+    }
+
+    /// 认元素：假的 App（pid 4242）在这扇窗口里，问哪一点都答 chain（视图坐标，换成全局坐标再给），记下问了几次
+    func fakeElements(_ chain: [CGRect], names: [String]? = nil) -> () -> Int {
+      session.findsElements = true
+      let origin = window.frame.origin
+      var asked = 0
+      session.findElements = { pid, _ in
+        asked += 1
+        return .chain(
+          chain.enumerated().map { index, frame in
+            ElementFinder.Layer(
+              frame: frame.offsetBy(dx: origin.x, dy: origin.y), name: names?[index] ?? "组")
+          })
+      }
+      return { asked }
     }
 
     private func keyEvent(_ code: Int, _ characters: String, _ flags: NSEvent.ModifierFlags)
@@ -472,6 +504,102 @@ struct SelectionInteractionTests {
       #expect(toolbar.isShown)
     }
     #expect(h.view.selection == Self.initial)
+  }
+
+  // 认元素（2026-11-08 拍板）：悬停停在最小那层，滚轮往上大一层、往下小一层（到窗口为止），单击选中停着的那层
+  @Test func hoverPicksSmallestElementAndWheelChangesLayer() {
+    let window = CGRect(x: 100, y: 100, width: 600, height: 500)
+    let h = Harness(windows: [window], owners: [4242], findsElements: true)
+    let row = CGRect(x: 120, y: 300, width: 300, height: 30)
+    let list = CGRect(x: 110, y: 120, width: 320, height: 440)
+    // 最里面在前：一个太小的图标、行、列表、窗口
+    _ = h.fakeElements(
+      [CGRect(x: 130, y: 305, width: 16, height: 16), row, list, window],
+      names: ["图像", "行", "列表", "窗口"])
+    h.move(CGPoint(x: 200, y: 312))
+    #expect(h.view.accessibilityLabel() == "待选，行 300 × 30 像素")
+    h.scroll(up: true)
+    #expect(h.view.accessibilityLabel() == "待选，列表 320 × 440 像素")
+    #expect(h.view.announcement == "列表 320 × 440")
+    h.scroll(up: true)
+    #expect(h.view.accessibilityLabel() == "待选，窗口 600 × 500 像素")
+    h.scroll(up: true)  // 到头了：不动
+    #expect(h.view.accessibilityLabel() == "待选，窗口 600 × 500 像素")
+    h.scroll(up: false)
+    #expect(h.view.accessibilityLabel() == "待选，列表 320 × 440 像素")
+    // 换到大的那层之后，指针在那层里挪：停在那层
+    h.move(CGPoint(x: 250, y: 200))
+    #expect(h.view.accessibilityLabel() == "待选，列表 320 × 440 像素")
+    h.down(CGPoint(x: 250, y: 200))
+    h.release(CGPoint(x: 250, y: 200))
+    #expect(h.view.selection == list)
+    #expect(h.view.isAdjusting)
+  }
+
+  // 评审：换到大的那层之后移到桌面再回来，回到最小那层；单击时手抖出了那层（没到拖动的 3 点）也选按下时那层
+  @Test func hoverResetsOffWindowAndClickKeepsPressedLayer() {
+    let window = CGRect(x: 100, y: 100, width: 600, height: 500)
+    let h = Harness(windows: [window], owners: [4242], findsElements: true)
+    let list = CGRect(x: 110, y: 120, width: 320, height: 440)
+    _ = h.fakeElements(
+      [CGRect(x: 120, y: 300, width: 300, height: 30), list, window], names: ["行", "列表", "窗口"])
+    h.move(CGPoint(x: 200, y: 312))
+    h.scroll(up: true)
+    #expect(h.view.accessibilityLabel() == "待选，列表 320 × 440 像素")
+    h.move(CGPoint(x: 50, y: 50))
+    h.move(CGPoint(x: 200, y: 312))
+    #expect(h.view.accessibilityLabel() == "待选，行 300 × 30 像素")
+    h.scroll(up: true)
+    h.begin(CGPoint(x: 429, y: 200), to: CGPoint(x: 431, y: 200))
+    h.release(CGPoint(x: 431, y: 200))
+    #expect(h.view.selection == list)
+  }
+
+  // Tab 在「认元素 / 只认窗口」之间切，顶部提示（旁白的帮助）跟着换
+  @Test func tabTogglesWindowOnly() {
+    let window = CGRect(x: 100, y: 100, width: 600, height: 500)
+    let h = Harness(windows: [window], owners: [4242], findsElements: true)
+    _ = h.fakeElements([CGRect(x: 120, y: 300, width: 300, height: 30), window])
+    h.move(CGPoint(x: 200, y: 312))
+    #expect(h.view.accessibilityHelp()?.contains("Tab 只认窗口") == true)
+    #expect(h.view.accessibilityLabel() == "待选，组 300 × 30 像素")
+    h.key(kVK_Tab, "\t")
+    #expect(h.session.windowOnly)
+    #expect(h.view.accessibilityLabel() == "待选，窗口 600 × 500 像素")
+    #expect(h.view.accessibilityHelp()?.contains("Tab 认元素") == true)
+    h.down(CGPoint(x: 200, y: 312))
+    h.release(CGPoint(x: 200, y: 312))
+    #expect(h.view.selection == window)
+    h.view.reset()
+    h.key(kVK_Tab, "\t")
+    h.move(CGPoint(x: 201, y: 312))
+    #expect(h.view.accessibilityLabel() == "待选，组 300 × 30 像素")
+  }
+
+  // 问超时的 App 这次框选不再问、只认窗口；本 App 自己的窗口不问；不认元素时提示照旧
+  @Test func silentAppsAndOwnWindowsStayWindowOnly() {
+    let window = CGRect(x: 100, y: 100, width: 600, height: 500)
+    var h = Harness(windows: [window], owners: [4242])
+    h.session.findsElements = true
+    var asked = 0
+    h.session.findElements = { _, _ in
+      asked += 1
+      return .unresponsive
+    }
+    for x in [200, 260, 320] { h.move(CGPoint(x: x, y: 312)) }
+    #expect(asked == 1)
+    #expect(h.session.silentApps == [4242])
+    #expect(h.view.accessibilityLabel() == "待选，窗口 600 × 500 像素")
+
+    h = Harness(windows: [window], owners: [getpid()])
+    let count = h.fakeElements([CGRect(x: 120, y: 300, width: 300, height: 30)])
+    h.move(CGPoint(x: 200, y: 312))
+    #expect(count() == 0)
+    #expect(h.view.accessibilityLabel() == "待选，窗口 600 × 500 像素")
+
+    h = Harness(windows: [window], owners: [4242])
+    #expect(h.view.accessibilityHelp()?.contains("单击选中窗口") == true)
+    #expect(h.view.accessibilityHelp()?.contains("Tab") == false)
   }
 
   // 进场时光标就在窗口上：洞和粉框从光标处的零尺寸占位长出来，不从屏幕左下角 (0, 0) 飞过来

@@ -791,7 +791,7 @@ struct NoteFloatTests {
       ]
     ]
     #expect(
-      ScreenCapture.windowFrames(info, ownPID: 42, keeping: [9], primaryHeight: 900)
+      ScreenCapture.windowFrames(info, ownPID: 42, keeping: [9], primaryHeight: 900).map(\.frame)
         == [CGRect(x: 100, y: 320, width: 460, height: 380)])
   }
 

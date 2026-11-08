@@ -3,8 +3,9 @@
 // 不重画整屏）→ 尺寸胶囊（SizeField）→ 文字输入框 → 工具栏、样式托盘、HUD 菜单（EditorToolbar.swift）。外观是 Whisker §6
 // 截图的品牌粉。框选、拖边：⇧ 锁比例（新框正方形，或按锁着的比例）、⌥ 从中心、空格平移、⌃ 暂停吸附（6 pt 内吸到冻结时的
 // 窗口边和屏幕边，吸上时画粉色虚线参考线），拖动中按下 / 松开修饰键立刻重算。
-// 截图翻译 / 识字：拖动框选、松手即确认（同样的放大镜、修饰键和吸附）。截图：悬停窗口（洞和粉框磁吸变形、显示窗口尺寸）、
-// 单击选中窗口，拖出或单击后进入调整：整条边和四角都能拖（悬停的边加粗、手柄放大）、拖动平移、方向键微调（⇧ 10 点）、
+// 截图翻译 / 识字：拖动框选、松手即确认（同样的放大镜、修饰键和吸附）。截图：悬停窗口（洞和粉框磁吸变形、显示窗口尺寸；
+// 认元素时是窗口里指针下最小的那一层，滚轮往上大一层、往下小一层，Tab 只认窗口，见 hoverStack）、单击选中悬停的那块，
+// 拖出或单击后进入调整：整条边和四角都能拖（悬停的边加粗、手柄放大）、拖动平移、方向键微调（⇧ 10 点）、
 // ⌘ / ⌥ + 方向键推 / 收那条边；尺寸胶囊点数字输入像素宽高、比例菜单锁比例；右键没有标注时回到待选，有标注时只提示；
 // 放大镜显示中心像素的色值（C 复制），按住 ⌘ 出整屏十字准线；S 长截图、T 钉图、O 识字；
 // 标注 1–0（矩形、椭圆、箭头、直线、画笔、荧光笔、文字、序号、马赛克、聚光灯，⇧ 画正方形 / 45° 线，再按一次收起；
@@ -33,6 +34,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private(set) var image: CGImage
   /// 冻结那一刻的窗口（本屏视图坐标，从前到后）
   let windows: [CGRect]
+  /// 和 windows 一一对应：每扇窗口归哪个进程（悬停时问它窗口里的元素）；空的 = 不认元素（单测、截图自检的默认）
+  let owners: [pid_t]
   private let session: SelectionSession
   /// 截图工具栏「翻译」就地翻：给选区的图，返回覆盖了译文的图（失败带一句原因）。
   /// 由 AppDelegate 经 SelectionSession 注入；nil = 现在不能就地翻（退回原来的「退出截图页再翻」）
@@ -64,6 +67,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
       annotationCanvas?.selection = selection
       // 选区一动（方向键、拖边）开着的 HUD 菜单就收起：它锚着的栏 / 胶囊跟着挪了
       if selection != oldValue { hudMenu?.dismiss() }
+      // 有了选区，悬停停在哪一层就作废：回到待选时从最小那层重新来
+      if selection != nil { stack = nil }
       // 译文贴在原来那个选区上：选区变了就换回原图
       if let untranslated, selection != untranslated.selection { restoreUntranslated() }
       refresh()
@@ -179,6 +184,12 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private var sampled: (x: Int, y: Int, hex: String)?
   /// 上次画的悬停窗口：换到别的窗口 / 桌面时，洞和高亮框磁吸变形过去（S5）
   private var shownHover: CGRect?
+  /// 指针下这一点上的几层（认元素时，见 hoverStack）
+  private var stack: HoverStack?
+  /// 触控板换层攒着的量（ElementFinder.step）
+  private var scrollPending: CGFloat = 0
+  /// 待选时按下那一刻悬停的那块：单击松手就选它（按下后手抖出了换大的那层，重问会落回最小那层，评审）
+  private var pressedHover: CGRect?
   /// 没悬停窗口时洞缩成光标处的零尺寸占位（路径元素数恒定，桌面 ↔ 窗口也能变形）
   private var placeholder = CGPoint.zero
   /// 上次的洞是不是选区（单击窗口选中时洞圆角 10 → 0 用 pop）
@@ -232,11 +243,12 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private static let infoHeight: CGFloat = 40
 
   init(
-    image: CGImage, windows: [CGRect] = [], session: SelectionSession,
+    image: CGImage, windows: [CGRect] = [], owners: [pid_t] = [], session: SelectionSession,
     keepsColors keeps: Bool? = nil
   ) {
     self.image = image
     self.windows = windows
+    self.owners = owners
     self.session = session
     keepsColors = keeps ?? UserDefaults.standard.bool(forKey: Prefs.screenshotKeepsColors)
     hintParts = Self.hintParts(for: session)
@@ -343,13 +355,20 @@ final class SelectionView: NSView, NSTextViewDelegate {
   /// 待选时顶部提示的几段（按会话的模式）
   private static func hintParts(for session: SelectionSession) -> [String] {
     let lastRegion = session.lastRegion == nil ? [] : ["D 上次区域"]
+    // 认元素时单击选中的是指针下那一块，滚轮换大小、Tab 切只认窗口；切成只认窗口后提示怎么切回来
+    let elements = session.findsElements && !session.windowOnly
+    let layers =
+      !session.findsElements ? [] : session.windowOnly ? ["Tab 认元素"] : ["滚轮 换大小", "Tab 只认窗口"]
     return switch session.mode {
     case .quick: session.hint.components(separatedBy: " · ")
     case .capture:
       session.hint.isEmpty
-        ? ["拖动框选", "单击选中窗口", "双击直接拷贝"] + lastRegion + ["Esc 取消"]
+        ? ["拖动框选", elements ? "单击选中" : "单击选中窗口"] + layers + ["双击直接拷贝"] + lastRegion
+          + ["Esc 取消"]
         : session.hint.components(separatedBy: " · ")
-    case .record: ["拖动框选要录的区域", "单击选中窗口区域", "单击桌面录整屏", "双击直接开始"] + lastRegion + ["Esc 取消"]
+    case .record:
+      ["拖动框选要录的区域", elements ? "单击选中" : "单击选中窗口区域"] + layers + ["单击桌面录整屏", "双击直接开始"]
+        + lastRegion + ["Esc 取消"]
     }
   }
 
@@ -512,6 +531,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
     selection = nil
     isAdjusting = false
     mouse = nil
+    stack = nil
     isSpaceDown = false
     tool = nil
     selectedAnnotation = nil
@@ -530,7 +550,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
   /// 旁白读的状态：待选（悬停着窗口时带窗口尺寸）/ 选区像素尺寸，调整时加当前工具、锁着的比例
   private var accessibilityState: String {
     guard let selection else {
-      return mouse.flatMap(windowRect(at:)).map { "待选，窗口 \(sizeText($0)) 像素" } ?? "待选"
+      guard let mouse, let hovered = hoverRect(at: mouse) else { return "待选" }
+      return "待选，\(hoverName ?? "窗口") \(sizeText(hovered)) 像素"
     }
     var parts = ["选区 \(sizeText(selection)) 像素"]
     if adjusts, isAdjusting {
@@ -672,7 +693,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
     CATransaction.setDisableActions(true)
     defer { CATransaction.commit() }
     // 悬停窗口只有待选时有；占位跟着光标走的规矩同 refresh
-    let hovered = selection == nil ? mouse.flatMap(windowRect(at:)) : nil
+    let hovered = selection == nil ? mouse.flatMap(hoverRect(at:)) : nil
     if let mouse, hovered != nil || shownHover != nil || shade.animation(forKey: "morph") != nil {
       placeholder = mouse
     }
@@ -690,7 +711,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     defer { CATransaction.commit() }
-    let hovered = selection == nil ? mouse.flatMap(windowRect(at:)) : nil
+    let hovered = selection == nil ? mouse.flatMap(hoverRect(at:)) : nil
     // 零尺寸的占位看不见，只在要用它时跟着光标：悬停着窗口（离开时从这里变形）、刚离开窗口或正在变形回桌面（终点追着光标）。
     // 桌面上闲晃（截图翻译 / 识字时一直是）不动它：整屏蒙层的路径没变就不重设
     if let mouse, hovered != nil || shownHover != nil || shade.animation(forKey: "morph") != nil {
@@ -2027,10 +2048,117 @@ final class SelectionView: NSView, NSTextViewDelegate {
     if mode == .record { startRecording() } else { output(.copy) }
   }
 
-  /// 本屏在 point 下最前面的窗口（夹在本屏内）
-  private func windowRect(at point: CGPoint) -> CGRect? {
-    guard adjusts else { return nil }
-    return windows.first { $0.contains(point) }?.intersection(bounds)
+  /// 指针下这一点上能选的几层（从小到大，最后一层是那扇窗口，都夹在本屏内）和停在第几层
+  struct HoverStack {
+    /// 哪扇窗口（windows 的下标）
+    let window: Int
+    let layers: [ElementFinder.Layer]
+    var index = 0
+  }
+
+  /// 本屏在 point 下悬停的那一块（夹在本屏内）：最前面的窗口；认元素时是那扇窗口里停着的那一层
+  private func hoverRect(at point: CGPoint) -> CGRect? {
+    guard adjusts, let index = windows.firstIndex(where: { $0.contains(point) }) else {
+      stack = nil  // 移到桌面上再回来：回到最小那层
+      return nil
+    }
+    guard let stack = hoverStack(at: point, window: index) else {
+      return windows[index].intersection(bounds)
+    }
+    return stack.layers[stack.index].frame
+  }
+
+  /// 悬停的那一层的种类名（旁白）：窗口那层、只认窗口时 nil
+  private var hoverName: String? {
+    stack.flatMap { $0.layers[$0.index].name }
+  }
+
+  /// 指针下的几层。换到大的那层之后，指针还在那一层里就停在那层、不重问；否则每动一下都问（指针还在同一个元素上时
+  /// ElementFinder 的缓存只做一次命中测试，约 0.1 ms），问出来的一串没变就留着原来的。移出去了回到最小那层。不认元素时 nil
+  private func hoverStack(at point: CGPoint, window index: Int) -> HoverStack? {
+    if let stack, stack.window == index, stack.index > 0,
+      stack.layers[stack.index].frame.contains(point)
+    {
+      return stack
+    }
+    let fresh = findLayers(at: point, window: index)
+    if let fresh, let stack, stack.window == index, stack.index == 0, stack.layers == fresh.layers {
+      return stack
+    }
+    stack = fresh
+    return stack
+  }
+
+  /// 问那扇窗口的主人 point 上的几层。设置关着 / 没授权（findsElements）、Tab 切成只认窗口、本 App 自己的窗口
+  /// （主线程问自己要等到超时，拍板 B5）时 nil；问超时的 App 记下、这次不再问，只给窗口那一层
+  private func findLayers(at point: CGPoint, window index: Int) -> HoverStack? {
+    guard session.findsElements, !session.windowOnly, index < owners.count else { return nil }
+    let pid = owners[index]
+    guard pid != getpid() else { return nil }
+    let window = windows[index].intersection(bounds)
+    var layers: [ElementFinder.Layer] = []
+    if !session.silentApps.contains(pid) {
+      // 遮罩铺满整块屏：视图坐标 + 屏幕原点 = AppKit 全局坐标
+      let origin = self.window?.frame.origin ?? .zero
+      switch session.findElements(pid, CGPoint(x: point.x + origin.x, y: point.y + origin.y)) {
+      case .unresponsive:
+        session.silentApps.insert(pid)
+      case .chain(let chain):
+        let local = chain.map {
+          ElementFinder.Layer(frame: $0.frame.offsetBy(dx: -origin.x, dy: -origin.y), name: $0.name)
+        }
+        layers = ElementFinder.layers(local, at: point, in: window)
+      }
+    }
+    return HoverStack(
+      window: index, layers: layers + [ElementFinder.Layer(frame: window, name: nil)])
+  }
+
+  /// 滚轮 / 触控板双指：待选、悬停着元素时换层，往上（按手指 / 滚轮的方向，不跟着「自然滚动」反过来）大一层、往下小一层，
+  /// 最大到那扇窗口；到头了不动。惯性那一段不算
+  override func scrollWheel(with event: NSEvent) {
+    guard selection == nil, drag == nil, event.momentumPhase.isEmpty, let mouse,
+      hoverRect(at: mouse) != nil, var current = stack, current.layers.count > 1
+    else { return super.scrollWheel(with: event) }
+    if event.phase == .began { scrollPending = 0 }
+    let (step, pending) = ElementFinder.step(
+      deltaY: event.scrollingDeltaY, inverted: event.isDirectionInvertedFromDevice,
+      precise: event.hasPreciseScrollingDeltas, pending: scrollPending)
+    scrollPending = pending
+    guard step != 0 else { return }
+    // 换到大的那层之后指针挪过（没重问）：小的那几层是在原来那一点上问的，往小换之前按现在的位置重问，停回同一块。
+    // 重问没问出元素（超时了）就还用原来那一串：不然想换小一层却一下跳到整扇窗口
+    if step < 0, !current.layers[0].frame.contains(mouse),
+      let fresh = findLayers(at: mouse, window: current.window), fresh.layers.count > 1
+    {
+      let shown = current.layers[current.index].frame
+      current = fresh
+      current.index = ElementFinder.position(of: shown, in: fresh.layers.map(\.frame))
+    }
+    let index = min(max(current.index + step, 0), current.layers.count - 1)
+    current.index = index
+    stack = current
+    refresh()
+    let layer = current.layers[index]
+    announce("\(layer.name ?? "窗口") \(sizeText(layer.frame))")
+  }
+
+  /// Tab：在「认窗口里的元素 / 只认窗口」之间切（只管这一次框选，几块屏一起换），顶部提示跟着换一下
+  private func toggleWindowOnly() {
+    session.windowOnly.toggle()
+    for view in session.views.isEmpty ? [self] : session.views { view.elementModeChanged() }
+    announce(session.windowOnly ? "只认窗口" : "认窗口里的元素")
+  }
+
+  private func elementModeChanged() {
+    stack = nil
+    hintParts = Self.hintParts(for: session)
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    hint.setParts(hintParts)
+    CATransaction.commit()
+    refresh()
+    if mouse != nil { showHint(for: 1.5) }
   }
 
   // MARK: 鼠标
@@ -2164,6 +2292,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
       }
     }
     drag = .pending(point)
+    pressedHover = isAdjusting ? nil : hoverRect(at: point)
   }
 
   override func mouseDragged(with event: NSEvent) {
@@ -2312,7 +2441,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
       // 单击：截鼠标下最前面的窗口，没有窗口就截整屏；已有选区（本屏或别的屏）时点选区外什么也不做，
       // 免得误点丢掉选区
       if !isAdjusting, !session.hasSelection(besides: self) {
-        select(windowRect(at: point) ?? bounds)
+        select(pressedHover ?? hoverRect(at: point) ?? bounds)
         if isOverBars(point) { clickSelected = (event.timestamp, point) }
       }
     case .draw(_, _, let restore)?:
@@ -2491,6 +2620,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
         if isAdjusting { confirm() }
         return
       case kVK_Delete where annotates, kVK_ForwardDelete where annotates: return deleteSelected()
+      case kVK_Tab where selection == nil && session.findsElements: return toggleWindowOnly()
       case kVK_LeftArrow: return nudge(-step, 0)
       case kVK_RightArrow: return nudge(step, 0)
       case kVK_UpArrow: return nudge(0, step)

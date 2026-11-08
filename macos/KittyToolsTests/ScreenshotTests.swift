@@ -68,7 +68,10 @@ struct ScreenshotTests {
       window(CGRect(x: 500, y: 500, width: 100, height: 100), pid: own, id: 5),
       window(CGRect(x: 10, y: 10, width: 120, height: 200), layer: 101),  // 展开的菜单：要
     ]
-    let frames = ScreenCapture.windowFrames(info, ownPID: own, keeping: [5], primaryHeight: 1000)
+    let windows = ScreenCapture.windowFrames(info, ownPID: own, keeping: [5], primaryHeight: 1000)
+    let frames = windows.map(\.frame)
+    // 每扇窗口记着归哪个进程（悬停时问它窗口里的元素）
+    #expect(windows.map(\.pid) == [7, 7, own, 7])
     // CG 原点在左上、y 向下 → AppKit 原点在左下
     #expect(
       frames == [
@@ -79,6 +82,62 @@ struct ScreenshotTests {
       ])
     // 命中按 Z 序：点在两个窗口里取前面的小窗（旧版按面积排会选中被挡住的，§11 #41）
     #expect(frames.first { $0.contains(CGPoint(x: 150, y: 850)) } == frames[0])
+  }
+
+  // 截图认元素（2026-11-08）：原始的一串（最里面在前）→ 指针下能选的几层，从小到大
+  @Test func elementLayersClipFilterAndMerge() {
+    typealias Layer = ElementFinder.Layer
+    let window = CGRect(x: 0, y: 0, width: 800, height: 600)
+    let point = CGPoint(x: 100, y: 400)
+    let chain = [
+      Layer(frame: CGRect(x: 90, y: 395, width: 12, height: 12), name: "图像"),  // 太小：不要
+      Layer(frame: CGRect(x: 20, y: 390, width: 200, height: 28), name: "行"),
+      Layer(frame: CGRect(x: 19, y: 389, width: 202, height: 30), name: "单元格外框"),  // 和行差不到 4 点：并成一层，留外面的
+      // 滚动内容报得比看得见的大：裁进下面的滚动区
+      Layer(frame: CGRect(x: 10, y: -300, width: 220, height: 1200), name: "列表"),
+      Layer(frame: CGRect(x: 10, y: 50, width: 220, height: 500), name: "滚动区"),
+      Layer(frame: CGRect(x: 600, y: 0, width: 100, height: 100), name: "不包住指针"),
+      Layer(frame: CGRect(x: 1, y: 1, width: 798, height: 598), name: "和窗口差不多"),  // 窗口那层调用方接
+      Layer(frame: window, name: "窗口"),
+    ]
+    let layers = ElementFinder.layers(chain, at: point, in: window)
+    #expect(
+      layers == [
+        Layer(frame: CGRect(x: 19, y: 389, width: 202, height: 30), name: "单元格外框"),
+        // 列表裁进滚动区之后和滚动区一样大：并成一层
+        Layer(frame: CGRect(x: 10, y: 50, width: 220, height: 500), name: "滚动区"),
+      ])
+    // 窗口外的部分也裁掉；什么都没有时空的
+    #expect(
+      ElementFinder.layers(
+        [Layer(frame: CGRect(x: -50, y: 380, width: 300, height: 40), name: nil)], at: point,
+        in: window) == [Layer(frame: CGRect(x: 0, y: 380, width: 250, height: 40), name: nil)])
+    #expect(ElementFinder.layers([], at: point, in: window).isEmpty)
+  }
+
+  @Test func elementLayerPositionAndScrollSteps() {
+    let frames = [
+      CGRect(x: 10, y: 10, width: 50, height: 30), CGRect(x: 0, y: 0, width: 200, height: 100),
+      CGRect(x: 0, y: 0, width: 800, height: 600),
+    ]
+    #expect(ElementFinder.position(of: CGRect(x: 1, y: 1, width: 198, height: 99), in: frames) == 1)
+    #expect(
+      ElementFinder.position(of: CGRect(x: 20, y: 20, width: 60, height: 40), in: frames) == 1)
+    #expect(
+      ElementFinder.position(of: CGRect(x: 0, y: 0, width: 900, height: 900), in: frames) == 2)
+    // 滚轮一格一层；触控板攒够 24 点一层，剩下的清零
+    let step = { (deltaY: CGFloat, inverted: Bool, precise: Bool, pending: CGFloat) in
+      ElementFinder.step(deltaY: deltaY, inverted: inverted, precise: precise, pending: pending)
+    }
+    #expect(step(1, false, false, 0) == (1, 0))
+    #expect(step(-3, false, false, 5) == (-1, 0))
+    #expect(step(10, false, true, 0) == (0, 10))
+    #expect(step(15, false, true, 10) == (1, 0))
+    #expect(step(-30, false, true, 10) == (0, -20))
+    // 「自然滚动」开着：事件的数是反的，按物理方向算——手指往上推（事件给负数）照样是大一层
+    #expect(step(-1, true, false, 0) == (1, 0))
+    #expect(step(-30, true, true, 0) == (1, 0))
+    #expect(step(5, true, true, -10) == (0, -15))
   }
 
   /// 用户 2026-09-26：截图要能截到本 App 开着的窗口（能悬停、单击选中），截图自己的装饰和收起中的窗口不截
