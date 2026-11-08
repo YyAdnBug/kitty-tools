@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		6A000000000000000000003A /* KittyToolsFinder.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 6A0000000000000000000030 /* KittyToolsFinder.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		6A000000000000000000002A /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -14,9 +18,32 @@
 			remoteGlobalIDString = 6A000000000000000000000B;
 			remoteInfo = KittyTools;
 		};
+		6A000000000000000000003D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 6A0000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 6A0000000000000000000033;
+			remoteInfo = KittyToolsFinder;
+		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		6A000000000000000000003B /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				6A000000000000000000003A /* KittyToolsFinder.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		6A0000000000000000000030 /* KittyToolsFinder.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = KittyToolsFinder.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		6A0000000000000000000031 /* Finder.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Finder.xcconfig; sourceTree = "<group>"; };
 		6A0000000000000000000021 /* KittyToolsTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = KittyToolsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		6A0000000000000000000022 /* Tests.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Tests.xcconfig; sourceTree = "<group>"; };
 		6A0000000000000000000006 /* Kitty Tools.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Kitty Tools.app"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -27,6 +54,11 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		6A0000000000000000000032 /* KittyToolsFinder */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = KittyToolsFinder;
+			sourceTree = "<group>";
+		};
 		6A0000000000000000000020 /* KittyToolsTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = KittyToolsTests;
@@ -40,6 +72,13 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		6A0000000000000000000036 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		6A0000000000000000000024 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -62,6 +101,7 @@
 			children = (
 				6A0000000000000000000005 /* KittyTools */,
 				6A0000000000000000000020 /* KittyToolsTests */,
+				6A0000000000000000000032 /* KittyToolsFinder */,
 				6A0000000000000000000004 /* Config */,
 				6A0000000000000000000003 /* Products */,
 			);
@@ -72,6 +112,7 @@
 			children = (
 				6A0000000000000000000006 /* Kitty Tools.app */,
 				6A0000000000000000000021 /* KittyToolsTests.xctest */,
+				6A0000000000000000000030 /* KittyToolsFinder.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -84,6 +125,7 @@
 				6A0000000000000000000009 /* Release.xcconfig */,
 				6A000000000000000000000A /* Info.plist */,
 				6A0000000000000000000022 /* Tests.xcconfig */,
+				6A0000000000000000000031 /* Finder.xcconfig */,
 			);
 			path = Config;
 			sourceTree = "<group>";
@@ -121,10 +163,12 @@
 				6A000000000000000000000C /* Sources */,
 				6A000000000000000000000D /* Frameworks */,
 				6A000000000000000000000E /* Resources */,
+				6A000000000000000000003B /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				6A000000000000000000003C /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				6A0000000000000000000005 /* KittyTools */,
@@ -135,6 +179,28 @@
 			productName = KittyTools;
 			productReference = 6A0000000000000000000006 /* Kitty Tools.app */;
 			productType = "com.apple.product-type.application";
+		};
+		6A0000000000000000000033 /* KittyToolsFinder */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 6A0000000000000000000034 /* Build configuration list for PBXNativeTarget "KittyToolsFinder" */;
+			buildPhases = (
+				6A0000000000000000000035 /* Sources */,
+				6A0000000000000000000036 /* Frameworks */,
+				6A0000000000000000000037 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				6A0000000000000000000032 /* KittyToolsFinder */,
+			);
+			name = KittyToolsFinder;
+			packageProductDependencies = (
+			);
+			productName = KittyToolsFinder;
+			productReference = 6A0000000000000000000030 /* KittyToolsFinder.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -152,6 +218,9 @@
 					6A0000000000000000000026 = {
 						CreatedOnToolsVersion = 26.3;
 						TestTargetID = 6A000000000000000000000B;
+					};
+					6A0000000000000000000033 = {
+						CreatedOnToolsVersion = 27.1;
 					};
 				};
 			};
@@ -171,11 +240,19 @@
 			targets = (
 				6A000000000000000000000B /* KittyTools */,
 				6A0000000000000000000026 /* KittyToolsTests */,
+				6A0000000000000000000033 /* KittyToolsFinder */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		6A0000000000000000000037 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		6A0000000000000000000025 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -193,6 +270,13 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		6A0000000000000000000035 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		6A0000000000000000000023 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -214,6 +298,11 @@
 			isa = PBXTargetDependency;
 			target = 6A000000000000000000000B /* KittyTools */;
 			targetProxy = 6A000000000000000000002A /* PBXContainerItemProxy */;
+		};
+		6A000000000000000000003C /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 6A0000000000000000000033 /* KittyToolsFinder */;
+			targetProxy = 6A000000000000000000003D /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -258,6 +347,20 @@
 			};
 			name = Release;
 		};
+		6A0000000000000000000038 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 6A0000000000000000000031 /* Finder.xcconfig */;
+			buildSettings = {
+			};
+			name = Debug;
+		};
+		6A0000000000000000000039 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 6A0000000000000000000031 /* Finder.xcconfig */;
+			buildSettings = {
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -284,6 +387,15 @@
 			buildConfigurations = (
 				6A0000000000000000000013 /* Debug */,
 				6A0000000000000000000014 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		6A0000000000000000000034 /* Build configuration list for PBXNativeTarget "KittyToolsFinder" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				6A0000000000000000000038 /* Debug */,
+				6A0000000000000000000039 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

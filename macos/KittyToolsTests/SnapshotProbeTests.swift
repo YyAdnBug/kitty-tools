@@ -534,6 +534,7 @@ struct SnapshotProbeTests {
       case .reminders: AnyView(RemindersTab(fixed: Reminder.examples))
       // 私有接口在不在按固定的「都在」画（图不跟着机器变）
       case .dockPreview: AnyView(DockPreviewTab(missing: []))
+      case .finderMenu: AnyView(FinderMenuTab(extensionEnabled: false))
       case .translate:
         AnyView(TranslateTab(services: services, history: history, speaker: speaker))
       case .hotkeys: AnyView(HotkeysTab(center: hotKeys))

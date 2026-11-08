@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- 访达扩展：必须在沙盒里。它只画菜单、把动作交给 App，不碰文件（拍板 C2），所以只开一条例外：读 App 的偏好
+     （功能开关、凭证、「用 App 打开」的列表；Debug、Release 各读各的）。不上架 App Store，例外可以用 -->
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<key>com.apple.security.temporary-exception.shared-preference.read-only</key>
+	<array>
+		<string>$(APP_BUNDLE_ID)$(BUNDLE_ID_SUFFIX)</string>
+	</array>
+</dict>
+</plist>

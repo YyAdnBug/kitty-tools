@@ -8,4 +8,6 @@ nonisolated enum Log {
   static let storage = Logger(subsystem: subsystem, category: "storage")
   static let clipboard = Logger(subsystem: subsystem, category: "clipboard")
   static let record = Logger(subsystem: subsystem, category: "record")
+  /// 访达右键（FinderLink）：交给别的 App 打开没成
+  static let finder = Logger(subsystem: subsystem, category: "finder")
 }

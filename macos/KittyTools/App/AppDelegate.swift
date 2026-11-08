@@ -11,6 +11,7 @@
 // 功能开关（Shell/Feature.swift，2026-10-21）：启动时只起开着的功能，偏好一变就按开关起停（applyFeatures）。
 
 import AppKit
+import FinderSync
 import OSLog
 import SwiftUI
 
@@ -18,6 +19,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 数据打开之后才算跑起来，才做退出清理、才响应「再打开一次」：让位退出的重复实例、还停在「数据打不开」弹框上的
   /// 都不能碰数据库（弹框开着时去读 stores 会把打开流程再跑一遍）
   private var isRunning = false
+  /// 网址把 App 冷启动时，系统可能在 applicationDidFinishLaunching 之前就把网址交过来：先存着，起来了再做（访达右键）
+  private var pendingLinks: [URL] = []
   /// 划词取词进行中：重复按热键直接忽略
   private var isReadingSelection = false
   /// 进行中的「划词翻译并替换」：再按一次热键取消
@@ -777,6 +780,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       case .statusScreen: AnyView(StatusScreenTab())
       case .reminders: AnyView(RemindersTab())
       case .dockPreview: AnyView(DockPreviewTab())
+      case .finderMenu: AnyView(FinderMenuTab())
       case .translate:
         AnyView(
           TranslateTab(services: serviceStore, history: historyStore, speaker: speaker)
@@ -847,6 +851,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     Prefs.registerDefaults()
     Task { await EmojiPack.trim() }  // 动画表情的缓存收到上限以内（主线程外）
     Prefs.migrate()
+    FinderLink.ensureKey()  // 访达右键的凭证（扩展从偏好里读）：功能开没开都先备好
     AppAppearance.apply()  // 在任何浮层、设置窗、菜单出现之前
     // 打开数据：打不开时就在这里问用户（用备份 / 重新开始 / 退出），这时还没有热键和菜单栏图标
     _ = stores
@@ -1019,6 +1024,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if !Feature.enabled.isDisjoint(with: [.clipboard, .translate, .screenshot]) {
       Task { await OCR.prepare() }
     }
+    // 访达右键把 App 冷启动时交过来的动作：剪贴板历史、偏好都起来了再做（拷贝的路径才记得进历史）
+    for url in pendingLinks { FinderLink.perform(url) }
+    pendingLinks = []
   }
 
   /// 剪贴板历史现在记不记（剪贴板这个功能开着、没在菜单栏暂停）：本 App 自己写剪贴板的几处（Paster.recordText、截图、
@@ -1077,6 +1085,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if Feature.screenshot.isOn { clothesline.start() }
 
     if turnedOn.contains(.reminders) { reminders.start() }
+
+    // 访达右键（拍板 D3）：运行中打开、系统里扩展还没打开时直接带去 系统设置 › 登录项与扩展；启动时、欢迎引导里勾上的不当场弹
+    // （同程序坞预览要授权）。扩展自己读开关，这边没有后台活要起停
+    if turnedOn.contains(.finderMenu), !launching, !settingsNavigation.showsOnboarding,
+      !FIFinderSyncController.isExtensionEnabled
+    {
+      FinderMenuTab.openExtensionSettings()
+    }
 
     if turnedOn.contains(.dockPreview) {
       dockPreview.start()
@@ -1299,6 +1315,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if UserDefaults.standard.bool(forKey: Prefs.clipboardClearOnQuit) {
       clipboardStore.clearOrdinary()
     }
+  }
+
+  /// 访达右键的扩展把动作交过来（App 自己的网址，Info.plist 的 CFBundleURLTypes）；别的网址、对不上凭证的都不做
+  func application(_ application: NSApplication, open urls: [URL]) {
+    guard isRunning else {
+      pendingLinks += urls
+      return
+    }
+    for url in urls { FinderLink.perform(url) }
   }
 
   /// 再打开一次本 App：点程序坞图标（设置窗等普通窗口开着时才有）、在访达或启动器里打开已经在运行的它。
@@ -3341,6 +3366,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     settingsNavigation.onboardingClosed = {}
     UserDefaults.standard.set(AboutTab.version, forKey: Prefs.lastSeenVersion)
     UserDefaults.standard.removeObject(forKey: Prefs.onboardingScreen)
+    // 引导里勾上了访达右键：引导的授权屏不管系统里的扩展（applyFeatures 那时也不弹），走完了说一声、带「去打开」
+    if Feature.finderMenu.isOn, !FIFinderSyncController.isExtensionEnabled {
+      island.show(
+        "访达右键还要在系统设置里打开一次", detail: "打开后在访达里右键就能看到", tone: .warning,
+        actions: [.init("去打开", opens: true) { FinderMenuTab.openExtensionSettings() }])
+    }
   }
 
   /// LaunchServices 不保证同一 bundle id 只跑一份（例如 DMG 里一份、/Applications 里又一份）：

@@ -354,6 +354,14 @@ enum Prefs {
   /// 程序坞预览：按 ⌘Tab 切换时也在切换器上方弹窗口预览（2026-11-06 拍板 C2，默认开；程序坞预览关着时不生效）
   nonisolated static let dockPreviewCmdTab = "dockPreviewCmdTab"
 
+  /// 访达右键（第十一族，2026-11-08，FinderLink）：扩展把动作交过来时带的凭证（App 第一次启动时生成，FinderLink.ensureKey；
+  /// 扩展从 App 的偏好里读）。这台电脑自己的、**不注册默认值**：不跟着导出 / 导入、同步走
+  nonisolated static let finderMenuKey = "finderMenuKey"
+  /// 访达右键「用 X 打开」列哪几个 App（bundle id 的数组，默认只有终端；设置 › 访达右键）。扩展读同一个键，
+  /// 键名和默认值在 KittyToolsFinder/FinderMenu 里抄了一份
+  nonisolated static let finderOpenWithApps = "finderOpenWithApps"
+  nonisolated static let finderOpenWithDefault = ["com.apple.Terminal"]
+
   /// 看过的版本号：没有 = 首次安装（打开欢迎引导），和当前不同 = 刚更新（刘海岛「已更新到 x」+ 本版摘要，不开设置窗，体检 A29）。
   /// 首次安装时**引导走完才记**（点「开始使用」或关掉引导；第四轮体检 E1）：中途退出（授权屏幕录制后系统要求重开）下次接着开
   nonisolated static let lastSeenVersion = "lastSeenVersion"
@@ -419,6 +427,7 @@ enum Prefs {
       launchpadCorner: LaunchpadCornerOption.off.rawValue,
       dockPreviewDelay: 400,
       dockPreviewCmdTab: true,
+      finderOpenWithApps: finderOpenWithDefault,
       panelSqueezeEntrance: false,
       floatingPinned: false,
       updateAutoCheck: true,

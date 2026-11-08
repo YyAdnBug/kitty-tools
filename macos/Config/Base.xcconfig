@@ -42,6 +42,8 @@ COMBINE_HIDPI_IMAGES = YES
 ENABLE_PREVIEWS = YES
 ENABLE_USER_SCRIPT_SANDBOXING = YES
 LD_RUNPATH_SEARCH_PATHS = $(inherited) @executable_path/../Frameworks
+// 嵌访达扩展时不 strip：签过名的扩展 strip 不了，每次构建多三条警告；App 自己 archive 时照常 strip（STRIP_INSTALLED_PRODUCT）
+COPY_PHASE_STRIP = NO
 
 // 内置智谱 key 等不入库的值（ZHIPU_BUILTIN_KEY）；文件不存在时静默跳过
 #include? "Secrets.xcconfig"

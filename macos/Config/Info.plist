@@ -1,8 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- 局部 Info.plist：构建时与 GENERATE_INFOPLIST_FILE 生成的内容合并，只放 INFOPLIST_KEY_* 表达不了的键（PLAN §8.1） -->
+<!-- 局部 Info.plist：构建时与 GENERATE_INFOPLIST_FILE 生成的内容合并，只放 INFOPLIST_KEY_* 表达不了的键（PLAN §8.1）。
+     CFBundleURLTypes：App 自己的网址（scheme 就是 bundle id，Debug、Release 各认各的），访达扩展把右键的动作交过来（FinderLink） -->
 <plist version="1.0">
 <dict>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleLocalizations</key>
 	<array>
 		<string>zh-Hans</string>

@@ -18,7 +18,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   // 和菜单栏、快捷键页、引导、速查表同序（记住的上次页存的是 rawValue，调顺序不受影响）。2026-11-04 功能管理拍板 M3：
   // 便签、提醒、状态屏一组，启动台、程序坞预览一组（启动台原来在便签后面）
   case general, clipboard, launcher, translate, screenshot, record, notes, reminders, statusScreen,
-    launchpad, dockPreview, hotkeys, about
+    launchpad, dockPreview, finderMenu, hotkeys, about
 
   var id: String { rawValue }
 
@@ -29,7 +29,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   /// 单测锁住。功能那四组带标题、能折叠（groupTitle）
   static let groups: [[SettingsPage]] = [
     [.general], [.clipboard, .launcher, .translate], [.screenshot, .record],
-    [.notes, .reminders, .statusScreen], [.launchpad, .dockPreview], [.hotkeys, .about],
+    [.notes, .reminders, .statusScreen], [.launchpad, .dockPreview, .finderMenu],
+    [.hotkeys, .about],
   ]
 
   /// 侧栏的一组：标题（没有就不画）、组里的页；isOff 是最底下「已关闭」那组
@@ -59,7 +60,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .clipboard, .launcher, .translate: "文字与搜索"
     case .screenshot, .record: "截图与录制"
     case .notes, .reminders, .statusScreen: "便签与提醒"
-    case .launchpad, .dockPreview: "桌面"
+    case .launchpad, .dockPreview, .finderMenu: "桌面"
     case .general, .hotkeys, .about: nil
     }
   }
@@ -84,6 +85,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .statusScreen: "状态屏"
     case .reminders: "提醒"
     case .dockPreview: "程序坞预览"
+    case .finderMenu: "访达右键"
     case .translate: "翻译"
     case .hotkeys: "快捷键"
     case .about: "关于"
@@ -103,6 +105,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     // 自己画的闹钟（拍板 F2；icons/feature/kitty.reminders.svg）
     case .reminders: "kitty.reminders"
     case .dockPreview: "kitty.dock.preview"
+    case .finderMenu: "kitty.finder.menu"
     case .translate: "kitty.translate"
     case .hotkeys: "kitty.hotkeys"
     case .about: "kitty.about"  // 品牌页：猫头
@@ -121,6 +124,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .statusScreen: Style.Family.statusScreen
     case .reminders: Style.Family.reminders
     case .dockPreview: Style.Family.dockPreview
+    case .finderMenu: Style.Family.finderMenu
     case .translate: Style.Family.translate
     case .hotkeys: Style.Family.keyboard
     case .about: Color(nsColor: AccentPalette.brandPink)  // 关于是品牌页，不随强调色变
@@ -140,6 +144,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .statusScreen: "拦住键盘鼠标的全屏告示：有哪些状态、各是什么样子、怎么退出"
     case .reminders: "到点提醒你：什么时候响、用什么方式、点了「稍后」推多久"
     case .dockPreview: "停在程序坞图标上时弹出的窗口缩略图：开关和要给的授权"
+    case .finderMenu: "在访达里右键文件或文件夹：拷贝路径，用终端或编辑器打开"
     case .translate: "语言、翻译服务与密钥、历史"
     case .hotkeys: "所有全局快捷键"
     case .about: "版本与更新内容"
@@ -213,6 +218,11 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         "程序坞", "Dock", "预览", "缩略图", "窗口", "切换", "悬停", "延迟", "多久", "⌘Tab", "Command Tab", "切换器",
         "最小化", "桌面", "全屏", "辅助功能",
         "屏幕录制",
+      ]
+    case .finderMenu:
+      [
+        "访达", "Finder", "右键", "右键菜单", "上下文菜单", "拷贝路径", "复制路径", "路径", "终端", "Terminal",
+        "编辑器", "打开方式", "用 App 打开", "扩展", "登录项与扩展",
       ]
     case .translate:
       [
