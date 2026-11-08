@@ -43,9 +43,10 @@ nonisolated enum NewFile {
     let ext = (name as NSString).pathExtension
     var number = 2
     while true {
-      // 名字最长 255 字节：加了「 2」超长的，把前面截短（不然超长的名字被当成空位，建的时候才失败）
+      // 名字最长 255 个字符（APFS 按字符，FAT / HFS+ 按 UTF-16）：加了「 2」超长的，把前面截短（不然超长的名字被当成空位，
+      // 建的时候才失败）
       let tail = " \(number)" + (ext.isEmpty ? "" : "." + ext)
-      while !stem.isEmpty, (stem + tail).utf8.count > 255 { stem.removeLast() }
+      while !stem.isEmpty, (stem + tail).utf16.count > 255 { stem.removeLast() }
       let candidate = stem + tail
       if !taken(candidate) { return candidate }
       number += 1
@@ -123,10 +124,13 @@ nonisolated enum NewFile {
   ) -> URL? {
     let manager = FileManager.default
     var isDirectory: ObjCBool = false
-    guard manager.fileExists(atPath: folder.path(percentEncoded: false), isDirectory: &isDirectory),
-      isDirectory.boolValue
+    guard manager.fileExists(atPath: folder.path(percentEncoded: false), isDirectory: &isDirectory)
     else {
       island?.show("没有新建", detail: "这个文件夹不在了", tone: .warning)
+      return nil
+    }
+    guard isDirectory.boolValue else {
+      island?.show("没有新建", detail: "右键的不是文件夹", tone: .warning)
       return nil
     }
     guard allowsNewFiles(in: folder) else {
@@ -164,7 +168,8 @@ nonisolated enum NewFile {
   }
 
   /// 建好后同访达的「新建文件夹」：在访达里选中它、进入改名（按一下回车）。建在桌面上的不这么做：选中桌面上的东西会
-  /// 另开一个「桌面」窗口（同几家成熟产品：桌面上新建不弹窗），只建好放在那里。按回车要辅助功能授权，没有就只选中。
+  /// 另开一个「桌面」窗口（同几家成熟产品：桌面上新建不弹窗），只建好放在那里。ponytail: 在访达窗口里打开着「桌面」文件夹
+  /// 新建时也不进入改名（分不出右键的是桌面还是那个窗口，要控制访达的自动化授权）按回车要辅助功能授权，没有就只选中。
   /// 照 RClick 的做法等访达到了前台再按（它的更新记录：固定延时在慢的文件夹里会漏掉）：每 50 ms 看一次、最多 2 秒，
   /// 到了再等 0.1 秒。ponytail: 按回车时看不到访达里选中的是不是新文件（要控制访达的自动化授权），选中还没落下时
   /// 会让原来选中的那个进入改名——只是进入改名、不会改掉名字，按 Esc 就退出

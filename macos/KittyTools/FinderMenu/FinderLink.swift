@@ -169,14 +169,18 @@ nonisolated struct FinderLink: Equatable {
     files.map { $0.path(percentEncoded: false) }.joined(separator: "\n")
   }
 
-  /// 「拷贝名称」写什么：带扩展名，一个一行；stem：去掉扩展名（文件夹照原名，「项目 v1.2」不截）
+  /// 「拷贝名称」写什么：带扩展名，一个一行；stem：去掉扩展名——只去系统认得的扩展名（「报告 v2.0 最终版」「Release v1.2」
+  /// 的「.0 最终版」「.2」不是扩展名，同访达「隐藏扩展名」的口径），文件夹照原名，App 这类包去掉 .app
   static func nameText(
     _ files: [URL], stem: Bool = false, isDirectory: (URL) -> Bool = { _ in false }
   )
     -> String
   {
-    files.map {
-      stem && !isDirectory($0) ? $0.deletingPathExtension().lastPathComponent : $0.lastPathComponent
+    files.map { file in
+      let ext = file.pathExtension
+      let known = !ext.isEmpty && UTType(filenameExtension: ext).map { !$0.isDynamic } == true
+      return stem && known && !isDirectory(file)
+        ? file.deletingPathExtension().lastPathComponent : file.lastPathComponent
     }.joined(separator: "\n")
   }
 
@@ -332,7 +336,8 @@ nonisolated struct FinderLink: Equatable {
       island?.show(shell ? "已拷贝终端写法的路径" : "已拷贝路径", detail: copiedDetail(link.files))
     case .copyNames(let stem):
       let text = nameText(link.files, stem: stem) {
-        (try? $0.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+        let values = try? $0.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey])
+        return values?.isDirectory == true && values?.isPackage != true
       }
       Paster.write(string: text, record: true)
       island?.show(

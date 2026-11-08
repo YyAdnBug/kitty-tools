@@ -496,9 +496,28 @@ final class FinderMenu: FIFinderSync {
   private static var names: [String: String] = [:]
   private static func displayName(_ path: String) -> String {
     if let name = names[path] { return name }
-    let name = FileManager.default.displayName(atPath: path)
+    let name =
+      inHome(path)
+      ? FileManager.default.displayName(atPath: path) : (path as NSString).lastPathComponent
     names[path] = name
     return name
+  }
+
+  /// 是主目录下面第一层（桌面、文稿、下载这些）：只有这几个去取访达里的名字和图标。更深的不碰——扩展在沙盒里，去看
+  /// 文稿、桌面里面的东西可能让系统替它要一次文件夹授权（评审提醒；没实测，宁可用名字最后一段和通用的文件夹图标）
+  private static func inHome(_ path: String) -> Bool {
+    home.map { (path as NSString).deletingLastPathComponent == $0 } == true
+  }
+
+  /// 常用文件夹的图标：主目录第一层的用它自己的，别的用通用的文件夹图标（见 inHome）
+  private static func folderIcon(_ path: String) -> NSImage? {
+    inHome(path)
+      ? fileIcon(path)
+      : icon("type:folder") {
+        bitmap(
+          NSWorkspace.shared.icon(for: .folder), size: NSSize(width: 16, height: 16),
+          template: false)
+      }
   }
 
   /// 文件、文件夹、App 的图标：画成 16 pt 的小位图（按路径缓存）
@@ -536,37 +555,32 @@ final class FinderMenu: FIFinderSync {
   private static func transferMenu(_ action: Selector, move: Bool, selected: [URL]) -> NSMenu {
     let menu = NSMenu()
     menu.autoenablesItems = false
-    let sources = selected.map {
-      (
-        plain($0.resolvingSymlinksInPath()),
-        plain($0.deletingLastPathComponent().resolvingSymlinksInPath())
-      )
-    }
+    // 只按路径的字面比（不碰文件、不解开替身：见 inHome；几千个选中的时候也快）。比不准的（替身、大小写写法不同）
+    // 照样可点，App 那边会说原因；一次超过上限的不比，点了 App 会说「一次最多」
+    let sources =
+      selected.count > maxFiles
+      ? nil : selected.map { (plain($0), plain($0.deletingLastPathComponent())) }
     for (index, folder) in transferFolders.enumerated() {
       let path = folder.path(percentEncoded: false)
       let item = menu.addItem(
         withTitle: displayName(path), action: action, keyEquivalent: "")
       item.tag = index
-      item.image = fileIcon(path)
-      item.isEnabled = usable(folder, sources: sources, move: move)
+      item.image = folderIcon(path)
+      item.isEnabled = sources.map { usable(folder, sources: $0, move: move) } ?? true
     }
     add("选择文件夹…", action, symbol: "ellipsis", color: Tint.hide, to: menu).tag = chooseTag
     return menu
   }
 
-  /// 这个文件夹这次用不用得上（用不上的变灰，同几家成熟产品）：不在了、选中的都是它自己或它的上层、移动时都已经在里面。
-  /// /Volumes 下的（外接盘、网络盘）不查：断开的网络盘上查一下要等系统超时，交给 App 去说。同 App 的 FileMoves.movable
+  /// 这个文件夹这次用不用得上（用不上的变灰，同几家成熟产品）：选中的都是它自己或它的上层、移动时都已经在里面。
+  /// 文件夹不在了这里不查（不碰文件，见上），点了 App 会说。同 App 的 FileMoves.movable（那边解开替身再比）
   private static func usable(
     _ folder: URL, sources: [(path: String, parent: String)], move: Bool
   ) -> Bool {
-    if plain(folder).hasPrefix("/volumes/") { return true }
-    var isDirectory: ObjCBool = false
-    guard FileManager.default.fileExists(atPath: folder.path, isDirectory: &isDirectory),
-      isDirectory.boolValue
-    else { return false }
-    let destination = plain(folder.resolvingSymlinksInPath())
+    let destination = plain(folder)
     return sources.contains { source in
-      destination != source.path && !destination.hasPrefix(source.path + "/")
+      destination != source.path
+        && !destination.hasPrefix(source.path == "/" ? "/" : source.path + "/")
         && (!move || source.parent != destination)
     }
   }

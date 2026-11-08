@@ -14,6 +14,11 @@
 //   （FileMoves.enqueue）：超过 1 秒在刘海岛上挂「正在…」带「停止」，做完说一声、带「在访达中显示」。
 // 名字、tar 的参数、出错原因是纯函数（ArchivesTests，另在临时文件夹里真压、真解一遍）。
 // ponytail: 读 zip 的中央目录在主线程上（几万条的包要几十毫秒，在卡住的网络盘上会跟着卡）；真遇到再挪到主线程外。
+//   iCloud 云盘这类还没下载下来的包不读（一读就要整个下载、主线程卡到下完）：不认 GBK、不预先问密码，tar 说要密码时再问。
+// ponytail: tar 打的 zip / 7z 里不带访达的标签、替身、上锁、自定义图标（bsdtar 的 zip 写入不存这些，评审实测；设置页写明了，
+//   在 Mac 之间原样传用访达自带的「压缩」）。叫「._*」「__MACOSX」的普通文件也会被当成杂文件跳过。
+// ponytail: 解区分大小写的 tar 包（Linux 的源码）到不分大小写的盘上，只差大小写的会少一个、tar 照样退出 0；有人报了再对 tar -t 的条数。
+// ponytail: 7z 是先把整份压缩数据暂存在启动盘的临时目录里再写到目标（bsdtar 的做法），空间不够说的是启动盘。
 // ponytail: zip 的密码放在 tar 的命令行上（--passphrase，本机同一个用户的进程用 ps 看得到）：tar 只认它和终端输入。
 
 import AppKit
@@ -58,10 +63,10 @@ import AppKit
   }
 
   /// 打出来的包叫什么：一样东西用它的名字，几样叫「归档」（同访达）。名字太长的截短：加上扩展名、重名时的「 99」
-  /// 还在 255 字节以内（不然白打完一整包、落不下来）
+  /// 还在 255 个字符以内（同 NewFile.freeName；不然白打完一整包、落不下来）
   nonisolated static func archiveName(for items: [URL], format: Format) -> String {
     var base = items.count == 1 ? items[0].lastPathComponent : "归档"
-    while (base + " 99." + format.rawValue).utf8.count > 255 { base.removeLast() }
+    while (base + " 99." + format.rawValue).utf16.count > 255 { base.removeLast() }
     return base + "." + format.rawValue
   }
 
@@ -166,7 +171,11 @@ import AppKit
     if Task.isCancelled {
       failure = .stopped
     } else if let result, result.status != 0 {
-      failure = .failed(placeProblem(result.error) ?? "有文件读不到（被移走、改名了，或者没有权限）")
+      let problem = placeProblem(result.error)
+      failure = .failed(
+        format == .sevenZip && problem == "磁盘空间不够了"
+          ? "磁盘空间不够了（7z 还要先在启动盘上暂存一份）"
+          : problem ?? "有文件读不到（被移走、改名了，或者没有权限）")
     } else if result == nil {
       failure = .failed("系统的工具没能运行")
     } else if let placed = FileMoves.land(temporary, at: archive) {
@@ -278,7 +287,12 @@ import AppKit
     var password: String?
     var gbk = false
     var encrypted = retry != nil
-    if ZipNames.isZip(archive), let entries = ZipNames.entries(of: archive) {
+    let cloud = try? archive.resourceValues(forKeys: [
+      .isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey,
+    ])
+    let offline =
+      cloud?.isUbiquitousItem == true && cloud?.ubiquitousItemDownloadingStatus == .notDownloaded
+    if !offline, ZipNames.isZip(archive), let entries = ZipNames.entries(of: archive) {
       gbk = ZipNames.charset(for: entries) == .gb18030
       encrypted = encrypted || entries.contains(where: \.encrypted)
     }

@@ -98,7 +98,7 @@ struct FinderMenuTab: View {
         Text("压缩和解压")
       } footer: {
         SectionFootnote(
-          "压缩包放在旁边，重名的自动加「 2」；zip 里的中文名到别的系统上解开也不乱码，也不夹带 Mac 的隐藏文件。解压时只有一样东西就直接放在包旁边，几样就放进和包同名的文件夹；别的系统打的 zip，中文名也解得对。修复乱码文件名之后，刘海岛上能撤销。"
+          "压缩包放在旁边，重名的自动加「 2」；zip 里的中文名到别的系统上解开也不乱码，也不夹带 Mac 的隐藏文件。解压时只有一样东西就直接放在包旁边，几样就放进和包同名的文件夹；别的系统打的 zip，中文名也解得对。修复乱码文件名之后，刘海岛上能撤销。包里不带访达的标签、替身和自定义图标，要在 Mac 之间原样传，用访达自带的「压缩」。"
         )
       }
       .gated(by: .finderMenu)
@@ -189,7 +189,7 @@ struct FinderMenuTab: View {
   private var folderList: some View {
     List(selection: $folderSelection) {
       if folders.isEmpty {
-        Text("只有「选择文件夹…」").foregroundStyle(.secondary)
+        Text("没有常用文件夹：子菜单里只有最近选过的和「选择文件夹…」").foregroundStyle(.secondary)
       }
       ForEach(folders, id: \.self) { FolderRow(path: $0).tag($0) }
         .onMove { from, to in changeFolders { $0.move(fromOffsets: from, toOffset: to) } }
@@ -321,7 +321,6 @@ struct FinderMenuTab: View {
     }
   }
 
-  /// 正在运行的普通 App（有程序坞图标的），按名称排序
   /// 这台 Mac 上装着的常用终端和编辑器（FinderLink.knownTools 里找得到的，同几家成熟产品加 App 时给的预设）
   private var installedTools: [(bundleID: String, name: String)] {
     FinderLink.knownTools.compactMap { id in
@@ -333,6 +332,7 @@ struct FinderMenuTab: View {
     }
   }
 
+  /// 正在运行的普通 App（有程序坞图标的），按名称排序
   private var runningApps: [(bundleID: String, name: String)] {
     NSWorkspace.shared.runningApplications
       .filter { $0.activationPolicy == .regular && $0 != .current }

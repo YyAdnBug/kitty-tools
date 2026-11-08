@@ -36,10 +36,10 @@ import Testing
     #expect(
       Archives.archiveName(for: [URL(filePath: "/a/b"), URL(filePath: "/a/c")], format: .sevenZip)
         == "归档.7z")
-    // 名字太长：截到加上「 99.zip」还在 255 字节以内
-    let long = String(repeating: "长", count: 84)
+    // 名字太长：截到加上「 99.zip」还在 255 个字符以内（按 UTF-16 数，同 FAT / HFS+；APFS 按字符）
+    let long = String(repeating: "长", count: 300)
     let name = Archives.archiveName(for: [URL(filePath: "/a/\(long)")], format: .zip)
-    #expect(name.hasSuffix(".zip") && (name.utf8.count + 3) <= 255 && name.hasPrefix("长长"))
+    #expect(name.hasSuffix(".zip") && (name.utf16.count + 3) <= 255 && name.hasPrefix("长长"))
     #expect(Archives.clash(in: [URL(filePath: "/a/x"), URL(filePath: "/b/y")]) == nil)
     #expect(
       Archives.clash(in: [URL(filePath: "/a/Readme"), URL(filePath: "/b/README")]) == "README")
@@ -239,7 +239,7 @@ import Testing
     var list = ledger.stringArray(forKey: Prefs.finderTemporaries) ?? []
     #expect(list == [FileMoves.plainPath(left)])
     ledger.set(list + [FileMoves.plainPath(mine)], forKey: Prefs.finderTemporaries)
-    FileMoves.cleanLeftovers()
+    FileMoves.cleanLeftovers(after: .zero)
     for _ in 0..<200 where ledger.stringArray(forKey: Prefs.finderTemporaries) != nil {
       try await Task.sleep(for: .milliseconds(20))
     }

@@ -1,16 +1,22 @@
 // 访达右键整理文件（2026-11-08 右键扩充第 1 批，拍板 C1 C2 C3）：移动到 / 复制到（常用文件夹 + 选择文件夹…）、剪切 / 粘贴、
 // 发送替身到桌面。对标几家成熟产品的通行做法，另外守住「不丢用户的东西」（2026-11-08 独立评审后重写）：
-// - 不覆盖：叫什么在真正动手时才算（前一批做完之后），重名加「 2」（不分大小写）；落到正式名字那一步用「目标已存在就报错」
-//   的改名，算完到落下之间别人占了这个名字也盖不掉，再让一个名字。
+// - 不覆盖：叫什么在真正动手时才算（前一批做完之后），重名加「 2」（不分大小写）；落到正式名字那一步用
+//   renamex_np(RENAME_EXCL)——「目标已存在就报错」和改名是同一步，算完到落下之间别人占了这个名字也盖不掉，再让一个名字
+//   （FileManager.moveItem 是先看再改、跨卷时还会在主线程上偷偷整份拷贝，第三轮评审实测）。
 // - 同一个卷上移动 = 直接改名（原子的）。跨卷移动、复制 = 先用 ditto 拷到目标文件夹里一个隐藏的临时名，拷完改成正式名字，
 //   移动的这时才删原件。「停止」只停拷贝那一步（ditto 是单个进程，停得住），停了、失败了只删临时名——原件、别人的文件都不碰。
 //   （不用 mv：它跨卷搬文件夹时另起 cp、rm 两个子进程，停不住，停在 rm 那一步原件和新的都会没，评审 H1。）
 // - 符号链接复制的是链接本身（ditto 会顺着链接整棵拷过去）；不许挪进自己里面（解开替身、不分大小写比）；移动时本来就在那里的跳过。
+// - 拷之前看一遍（preflight，另起 find）：里面有命名管道、套接字的不拷（ditto 碰到管道一直卡着、把整条队堵死）；从分大小写的盘
+//   拷到不分的盘时，同一层只差大小写的两个只能留一个，不拷（ditto 会悄悄盖掉一个、还报成功）。跨卷移动拷完再数一遍，
+//   少了就不删原件；原件没删掉（只读的盘、上了锁）照实说。ACL 不跟着拷（--noacl：文稿、桌面这些文件夹带「不许删」的 ACL，
+//   拷过去后临时名改不了名、也删不掉）；上了锁的先解锁、落下后再锁上。都是第三轮评审实测出来的。
 // - 超过 1 秒才在刘海岛上挂「正在…」带「停止」（每一批停自己），做完说一声、带「在访达中显示」。不做撤销（访达的 ⌘Z 管不到）。
 // - 剪切：清单只在内存里（偏好里只给扩展留「几项 + 剪贴板 changeCount」，别的程序改偏好也塞不进要搬的东西；App 启动时清掉），
 //   同时像 ⌘C 一样把文件放进剪贴板（访达里按 ⌥⌘V 也能移过去）；剪贴板换过了剪切就作废（同 Windows）。
 // - 替身：bookmarkData(.suitableForBookmarkFile) + writeBookmarkData，和访达 ⌥⌘ 拖出来的一样，原件挪了也打得开。
 // ponytail: 查重名、比卷、改名都在主线程上（快，但目标在卡住的网络盘上会跟着卡）；真遇到再挪到主线程外。
+// ponytail: preflight 把 find 列出的路径读进主线程按层比（十万个文件约几十毫秒）；更大的再挪出去。
 
 import AppKit
 
@@ -37,7 +43,10 @@ import AppKit
   nonisolated static func movable(_ file: URL, into folder: URL, move: Bool) -> Bool {
     let source = plainPath(file.resolvingSymlinksInPath()).lowercased()
     let destination = plainPath(folder.resolvingSymlinksInPath()).lowercased()
-    if destination == source || destination.hasPrefix(source + "/") { return false }
+    // 根目录「/」的下层也是「/」开头（不能拿「//」比，评审）
+    if destination == source || destination.hasPrefix(source == "/" ? "/" : source + "/") {
+      return false
+    }
     let parent = plainPath(file.deletingLastPathComponent().resolvingSymlinksInPath()).lowercased()
     return !move || parent != destination
   }
@@ -61,11 +70,34 @@ import AppKit
   /// 改名落到 target：目标已存在就报错（不覆盖）；撞上了在同一个文件夹里换一个没人用的名字再试一次。返回落下的位置
   /// （压缩、解压、修复乱码文件名也用它）
   nonisolated static func land(_ item: URL, at target: URL) -> URL? {
-    let manager = FileManager.default
-    if (try? manager.moveItem(at: item, to: target)) != nil { return target }
+    landing(item, at: target).url
+  }
+
+  /// 同 land，另外给出失败的原因（errno：EXDEV 是不在同一个卷上，调用方改走拷贝）
+  nonisolated static func landing(_ item: URL, at target: URL) -> (url: URL?, error: Int32) {
+    var error = rename(item, to: target)
+    if error == 0 { return (target, 0) }
+    guard error == EEXIST || error == ENOTEMPTY else { return (nil, error) }
     let folder = target.deletingLastPathComponent()
     let other = folder.appending(path: freeName(target.lastPathComponent, in: folder, used: []))
-    return (try? manager.moveItem(at: item, to: other)) != nil ? other : nil
+    error = rename(item, to: other)
+    return error == 0 ? (other, 0) : (nil, error)
+  }
+
+  /// renamex_np(RENAME_EXCL)：成了是 0，不然是 errno。exFAT 这类盘不支持 RENAME_EXCL（报 ENOTSUP，评审在 exFAT 映像上
+  /// 实测；网络盘、第三方文件系统多半一样）：退回「先看在不在、再普通改名」。
+  /// ponytail: 退回的那条路看完到改名之间有极短的空当，别人恰好落下同名的会被盖掉；这些盘上没有别的原子做法
+  nonisolated static func rename(_ from: URL, to: URL) -> Int32 {
+    from.withUnsafeFileSystemRepresentation { source in
+      to.withUnsafeFileSystemRepresentation { destination in
+        guard let source, let destination else { return EINVAL }
+        if renamex_np(source, destination, UInt32(RENAME_EXCL)) == 0 { return 0 }
+        let error = errno
+        guard error == ENOTSUP || error == EINVAL else { return error }
+        if occupied(to) { return EEXIST }
+        return Darwin.rename(source, destination) == 0 ? 0 : errno
+      }
+    }
   }
 
   // MARK: 临时名
@@ -102,35 +134,69 @@ import AppKit
     return name.hasPrefix(".kitty-") && UUID(uuidString: String(name.dropFirst(7))) != nil
   }
 
-  /// 扔掉一个临时名：符号链接只删链接本身；文件夹先把权限放开（包里解出来的 000 的文件夹，rm 删不进去，评审实测）
+  /// 扔掉一个临时名：符号链接只删链接本身；别的先把锁、ACL、权限都放开（上了锁的文件、带「不许删」ACL 的文件夹、
+  /// 包里解出来的 000 的文件夹，rm 都删不掉，评审实测）。真删掉了才销账，删不掉的留着下次启动再试
   static func discard(_ url: URL) async {
-    let path = url.path(percentEncoded: false)
+    let path = plainPath(url)
     if (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink == true {
       try? FileManager.default.removeItem(at: url)
     } else {
+      _ = try? await Subprocess.run("/usr/bin/chflags", ["-R", "nouchg,nouappnd", path])
+      _ = try? await Subprocess.run("/bin/chmod", ["-R", "-N", path])
       _ = try? await Subprocess.run("/bin/chmod", ["-R", "u+rwx", path])
       await remove(url)
     }
-    release(url)
+    if !occupied(url) { release(url) }
   }
 
-  /// 启动时：上次没收尾的临时名删掉
-  static func cleanLeftovers() {
+  /// 启动时：上次没收尾的临时名删掉。等半分钟再动：更新重启、退出后马上重开时，上一次的 ditto / tar 可能还在往里写，
+  /// 一起删会删不干净。所在的文件夹不在（盘没接上）的留着账，下次再看
+  static func cleanLeftovers(after delay: Duration = .seconds(30)) {
     guard let list = ledger?.stringArray(forKey: Prefs.finderTemporaries) else { return }
     Task {
+      try? await Task.sleep(for: delay)
       for path in list {
         let url = URL(filePath: path)
-        if isTemporary(url), occupied(url) { await discard(url) } else { release(url) }
+        if !isTemporary(url) {
+          release(url)
+        } else if occupied(url) {
+          await discard(url)
+        } else if occupied(url.deletingLastPathComponent()) {
+          release(url)
+        }
       }
     }
   }
 
-  /// 搬一样：返回新位置，失败 / 被停是 nil（原件、别人的文件不动，只清掉自己的临时名）
-  static func move(_ file: URL, into folder: URL, named name: String, copy: Bool) async -> URL? {
+  /// 搬一样的结果
+  struct Moved {
+    var url: URL?
+    /// 拷不了的原因（给人看）
+    var problem: String?
+    /// 跨卷移动：新的落下了，原件没删掉（或只删了一部分）
+    var keptOriginal = false
+  }
+
+  /// 搬一样：失败 / 被停时 url 是 nil（原件、别人的文件不动，只清掉自己的临时名）
+  static func move(_ file: URL, into folder: URL, named name: String, copy: Bool) async -> Moved {
     let manager = FileManager.default
     let target = folder.appending(path: name)
-    // 同一个卷：改名
-    if !copy, sameVolume(file, folder) { return land(file, at: target) }
+    // 同一个卷（目标文件夹是替身时按它指向的那个比）：改名；内核说其实不在同一个卷上（EXDEV）就改走拷贝
+    if !copy, sameVolume(file, folder.resolvingSymlinksInPath()) {
+      let landed = landing(file, at: target)
+      if let url = landed.url { return Moved(url: url) }
+      guard landed.error == EXDEV else { return Moved() }
+    }
+    let check = await preflight(file, into: folder)
+    if let problem = check.problem { return Moved(problem: problem) }
+    if Task.isCancelled { return Moved() }
+    // 排在前一批后面等的时候目标文件夹被删了：不拷（ditto 会把缺的上一层建出来）
+    var isDirectory: ObjCBool = false
+    guard
+      FileManager.default.fileExists(
+        atPath: folder.path(percentEncoded: false), isDirectory: &isDirectory),
+      isDirectory.boolValue
+    else { return Moved(problem: "要放进去的文件夹不在了") }
     // 拷到目标文件夹里的隐藏临时名
     let temporary = temporary(in: folder)
     let link = (try? file.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink == true
@@ -140,25 +206,109 @@ import AppKit
     } else {
       let result = try? await Subprocess.run(
         "/usr/bin/ditto",
-        [file.path(percentEncoded: false), temporary.path(percentEncoded: false)],
+        ["--noacl", file.path(percentEncoded: false), temporary.path(percentEncoded: false)],
         stopsOnCancel: true)
       copied = result?.status == 0 && !Task.isCancelled
     }
+    // 拷完再数一遍：少了就当没拷成（不报成功、移动的不删原件）。拷到 FAT 这类盘会多出 ._ 开头的，多了不算
+    var problem: String?
+    if copied, let expected = check.count, let got = await count(temporary), got < expected {
+      copied = false
+      problem = "拷过去少了 \(expected - got) 样，原件没动"
+    }
+    // 上了锁的改不了名：先解锁，落下后再锁上（同访达拷出来的照样锁着）
+    let locked = immutable(temporary)
+    if copied, locked { setImmutable(temporary, false) }
     // 落到正式名字，没拷成、落不下就扔掉临时名（拷了一半的那棵可能很大：另起进程删）
-    guard copied, let placed = land(temporary, at: target) else {
+    guard copied, !Task.isCancelled, let placed = land(temporary, at: target) else {
       await discard(temporary)
-      return nil
+      return Moved(problem: problem)
     }
     release(temporary)
-    // 跨卷移动：新的已经完整落下，这时才删原件（删不掉的照旧留着，新的那份不动）
-    if !copy {
-      if link {
-        try? manager.removeItem(at: file)
-      } else {
-        await remove(file)
-      }
+    if locked { setImmutable(placed, true) }
+    // 跨卷移动：新的已经完整落下，这时才删原件；删不掉的（只读的盘、上了锁、没有权限）照旧留着，照实说
+    guard !copy else { return Moved(url: placed) }
+    if link {
+      try? manager.removeItem(at: file)
+    } else {
+      await remove(file)
     }
-    return placed
+    return Moved(url: placed, keptOriginal: occupied(file))
+  }
+
+  /// 拷之前看一遍（见文件头）：返回拷不了的原因，和文件夹里一共几样（拷完对数用；不是文件夹、数不全时是 nil）
+  static func preflight(_ file: URL, into folder: URL) async -> (problem: String?, count: Int?) {
+    let values = try? file.resourceValues(forKeys: [
+      .fileResourceTypeKey, .isDirectoryKey, .isSymbolicLinkKey,
+    ])
+    let name = file.lastPathComponent
+    if values?.fileResourceType == .namedPipe || values?.fileResourceType == .socket {
+      return ("「\(name)」是管道、套接字这类特殊文件，没法拷", nil)
+    }
+    guard values?.isDirectory == true, values?.isSymbolicLink != true else { return (nil, nil) }
+    let path = plainPath(file)
+    let special = try? await Subprocess.run(
+      "/usr/bin/find", [path, "(", "-type", "p", "-o", "-type", "s", ")", "-print", "-quit"],
+      captures: true, quality: .userInitiated, stopsOnCancel: true)
+    if let line = special?.output.split(separator: "\n").first {
+      return (
+        "「\(name)」里有管道、套接字这类特殊文件（\((String(line) as NSString).lastPathComponent)），没法拷", nil
+      )
+    }
+    guard
+      let listing = try? await Subprocess.run(
+        "/usr/bin/find", [path, "!", "-name", "._*", "-print0"], captures: true,
+        quality: .userInitiated, stopsOnCancel: true), listing.status == 0
+    else { return (nil, nil) }
+    let entries = listing.output.split(separator: "\0").map(String.init)
+    if caseSensitive(file), !caseSensitive(folder), let clash = caseClash(entries) {
+      return ("「\(name)」里有只差大小写的同名文件（「\(clash.0)」和「\(clash.1)」），拷到这里只能留一个", nil)
+    }
+    return (nil, entries.count)
+  }
+
+  /// 同一层里只差大小写（和 NFC / NFD 写法）的头一对；没有是 nil
+  nonisolated static func caseClash(_ paths: [String]) -> (String, String)? {
+    var seen: [String: String] = [:]
+    for path in paths {
+      let key = path.precomposedStringWithCanonicalMapping.lowercased()
+      // 按字节比（Swift 的 == 认为 NFC、NFD 两种写法相等，网络盘上它们是两个文件）
+      if let other = seen[key], !other.unicodeScalars.elementsEqual(path.unicodeScalars) {
+        return ((other as NSString).lastPathComponent, (path as NSString).lastPathComponent)
+      }
+      seen[key] = path
+    }
+    return nil
+  }
+
+  /// 一棵里一共几样（find 数的，含它自己）；数不全是 nil。「._」开头的不数：FAT 这类盘上每个文件旁边都有一个存扩展属性的，
+  /// ditto 拷的时候把它们并回扩展属性、不单独拷（评审实测：从 U 盘拷文件夹两边数不上）
+  static func count(_ url: URL) async -> Int? {
+    guard
+      let listing = try? await Subprocess.run(
+        "/usr/bin/find", [plainPath(url), "!", "-name", "._*", "-print0"], captures: true,
+        quality: .userInitiated, stopsOnCancel: true),
+      listing.status == 0
+    else { return nil }
+    return listing.output.split(separator: "\0").count
+  }
+
+  /// 所在的卷分不分大小写
+  nonisolated static func caseSensitive(_ url: URL) -> Bool {
+    (try? url.resourceValues(forKeys: [.volumeSupportsCaseSensitiveNamesKey]))?
+      .volumeSupportsCaseSensitiveNames == true
+  }
+
+  /// 上了锁（访达「显示简介」里的「已锁定」）
+  nonisolated static func immutable(_ url: URL) -> Bool {
+    (try? url.resourceValues(forKeys: [.isUserImmutableKey]))?.isUserImmutable == true
+  }
+
+  nonisolated static func setImmutable(_ url: URL, _ locked: Bool) {
+    var url = url
+    var values = URLResourceValues()
+    values.isUserImmutable = locked
+    try? url.setResourceValues(values)
   }
 
   /// 删掉一整棵（另起 rm：几万个文件的文件夹在主线程上删要好几秒）。路径去掉结尾的「/」：指向文件夹的符号链接写成
@@ -169,24 +319,37 @@ import AppKit
       "/bin/rm", ["-rfx", "--", plainPath(url)], stopsOnCancel: stops)
   }
 
-  /// 一批：真正动手时才算名字；被停了就不再开始下一样
-  static func execute(_ files: [URL], into folder: URL, move: Bool) async -> (
-    done: [URL], failed: Int
-  ) {
+  /// 一批做下来怎样
+  struct Outcome {
     var done: [URL] = []
     var failed = 0
+    /// 头一个拷不了的原因（给人看）
+    var problem: String?
+    /// 跨卷移动里原件没删掉的几样
+    var kept = 0
+  }
+
+  /// 一批：真正动手时才算名字；被停了就不再开始下一样。移动时卷的根、系统文件夹、主目录不动（refusal 已经说过）
+  static func execute(_ files: [URL], into folder: URL, move: Bool) async -> Outcome {
+    var outcome = Outcome()
     var used = Set<String>()
-    for file in files where occupied(file) && movable(file, into: folder, move: move) {
+    let isProtected = protection()
+    for file in files
+    where occupied(file) && movable(file, into: folder, move: move) && !(move && isProtected(file))
+    {
       if Task.isCancelled { break }
       let name = freeName(file.lastPathComponent, in: folder, used: used)
       used.insert(name.lowercased())
-      if let target = await self.move(file, into: folder, named: name, copy: !move) {
-        done.append(target)
+      let moved = await self.move(file, into: folder, named: name, copy: !move)
+      if let url = moved.url {
+        outcome.done.append(url)
+        if moved.keptOriginal { outcome.kept += 1 }
       } else if !Task.isCancelled {
-        failed += 1
+        outcome.failed += 1
+        outcome.problem = outcome.problem ?? moved.problem
       }
     }
-    return (done, failed)
+    return outcome
   }
 
   /// 一批的任务（「停止」停的是它自己，不是排在后面的那一批）
@@ -207,13 +370,21 @@ import AppKit
     let batch = Batch()
     batch.task = Task {
       await previous?.value
-      let result = await Island.whenSlow(after: .seconds(1)) {
-        island?.show(
-          notice, detail: detail, tone: .progress,
-          actions: [Island.Action("停止") { batch.task?.cancel() }])
-      } work: {
-        await work()
+      // 超过 1 秒挂「正在…」带「停止」；进行中的那一条刘海岛 60 秒后会收起，每 50 秒再挂一次，做得久的也一直停得了
+      let ticker = Task {
+        try? await Task.sleep(for: .seconds(1))
+        while !Task.isCancelled {
+          // 再挂时不抢别的：岛上空着、或者正挂着这一条才挂（别的提示、挂着的提醒照常露出来）
+          if island?.content == nil || island?.content?.title == notice {
+            island?.show(
+              notice, detail: detail, tone: .progress,
+              actions: [Island.Action("停止") { batch.task?.cancel() }])
+          }
+          try? await Task.sleep(for: .seconds(50))
+        }
       }
+      let result = await work()
+      ticker.cancel()
       finish(result)
     }
     last = batch.task
@@ -258,9 +429,7 @@ import AppKit
     return move && already ? "已经在「\(place)」里了" : "不能放进它自己里面"
   }
 
-  private static func report(
-    _ outcome: (done: [URL], failed: Int), verb: String, place: String, island: Island?
-  ) {
+  private static func report(_ outcome: Outcome, verb: String, place: String, island: Island?) {
     let reveal = Island.Action("在访达中显示", opens: true) {
       NSWorkspace.shared.activateFileViewerSelecting(outcome.done)
     }
@@ -268,7 +437,13 @@ import AppKit
     case (true, 0):
       island?.show("已停止\(verb)", tone: .info)
     case (true, _):
-      island?.show("没能\(verb)到「\(place)」", detail: "可能是没有权限，或者那里放不下", tone: .error)
+      island?.show(
+        "没能\(verb)到「\(place)」", detail: outcome.problem ?? "可能是没有权限，或者那里放不下",
+        tone: .error)
+    case (false, 0) where outcome.kept > 0:
+      island?.show(
+        "已复制到「\(place)」，\(outcome.kept) 项的原件没能删掉", detail: "原件在只读的盘上、上了锁，或者没有权限",
+        tone: .warning, actions: [reveal])
     case (false, 0):
       island?.show(
         (verb == "移动" ? "已移到" : "已复制到") + "「\(place)」",
@@ -277,8 +452,11 @@ import AppKit
         actions: [reveal])
     case (false, let failed):
       island?.show(
-        "\(verb)了 \(outcome.done.count) 项，\(failed) 项没成", detail: "到「\(place)」", tone: .warning,
-        actions: [reveal])
+        "\(verb)了 \(outcome.done.count) 项，\(failed) 项没成",
+        detail: outcome.kept > 0
+          ? "\(outcome.kept) 项的原件没能删掉；" + (outcome.problem ?? "到「\(place)」")
+          : outcome.problem ?? "到「\(place)」",
+        tone: .warning, actions: [reveal])
     }
   }
 
@@ -331,6 +509,13 @@ import AppKit
   private static var cutChange: Int?
 
   static func cut(_ files: [URL], island: Island?) {
+    // 整块盘、系统文件夹、主目录不剪切（粘贴就是移动，同访达不移动一块盘）
+    let isProtected = protection()
+    let files = files.filter { !isProtected($0) }
+    guard !files.isEmpty else {
+      island?.show("没有剪切", detail: "整块盘、系统文件夹、主目录不能移动，可以复制", tone: .warning)
+      return
+    }
     Paster.write(files: files)
     cutList = files
     let change = NSPasteboard.general.changeCount
@@ -353,11 +538,18 @@ import AppKit
 
   static func paste(into folder: URL, island: Island?) {
     let items = cutChange == NSPasteboard.general.changeCount ? cutList.filter(occupied) : []
-    forgetCut()
     guard !items.isEmpty else {
+      forgetCut()
       island?.show("剪切已经作废了", detail: "剪切之后又拷了别的东西，或者剪切的已经不在了；再剪切一次", tone: .warning)
       return
     }
+    // 这里放不了（比如就是原来那个文件夹）：说原因，剪切留着，换个地方再粘贴
+    let place = FileManager.default.displayName(atPath: folder.path(percentEncoded: false))
+    if let reason = refusal(items, into: folder, move: true, place: place) {
+      island?.show("没有移动", detail: reason, tone: .warning)
+      return
+    }
+    forgetCut()
     transfer(items, to: folder, move: true, island: island)
   }
 

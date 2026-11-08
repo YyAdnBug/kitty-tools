@@ -141,6 +141,13 @@ import UniformTypeIdentifiers
       FinderLink.nameText(
         [URL(filePath: "/a/报告.final.pdf"), URL(filePath: "/a/项目 v1.2")], stem: true,
         isDirectory: { $0.lastPathComponent.hasPrefix("项目") }) == "报告.final\n项目 v1.2")
+    // 系统不认得的「扩展名」不去掉；App 去掉 .app
+    #expect(
+      FinderLink.nameText(
+        [
+          URL(filePath: "/a/报告 v2.0 最终版"), URL(filePath: "/a/Release v1.2"),
+          URL(filePath: "/a/Safari.app"),
+        ], stem: true) == "报告 v2.0 最终版\nRelease v1.2\nSafari")
     // 终端写法：安全的原样，别的加单引号，里面的单引号转开，几个用空格连
     #expect(
       FinderLink.shellText([
