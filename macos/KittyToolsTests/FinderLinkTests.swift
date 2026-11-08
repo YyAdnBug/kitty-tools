@@ -69,6 +69,28 @@ import UniformTypeIdentifiers
     #expect(parse(link("do=copy&key=K-123&" + many)) == nil)
   }
 
+  /// 新建文件的三种：模板名只能是一个文件名、自带的要在名单里；文件夹只能一个；打开模板文件夹不带文件
+  @Test func newFileLinks() {
+    let home = [URL(filePath: "/Users/a")]
+    #expect(
+      parse(link("do=new&key=K-123&template=Word%20%E6%96%87%E6%A1%A3.docx&file=/Users/a"))
+        == FinderLink(action: .newFile(template: "Word 文档.docx", mine: false), files: home))
+    #expect(
+      parse(link("do=new&key=K-123&template=report.key&mine=1&file=/Users/a"))?.action
+        == .newFile(template: "report.key", mine: true))
+    #expect(parse(link("do=new&key=K-123&template=evil.sh&file=/Users/a")) == nil)  // 不是自带的
+    #expect(parse(link("do=new&key=K-123&template=../x&mine=1&file=/Users/a")) == nil)
+    #expect(parse(link("do=new&key=K-123&template=a/b&mine=1&file=/Users/a")) == nil)
+    #expect(parse(link("do=new&key=K-123&template=.hidden&mine=1&file=/Users/a")) == nil)
+    #expect(parse(link("do=new&key=K-123&template=Markdown.md&file=/a&file=/b")) == nil)
+    #expect(parse(link("do=new&key=K-123&template=Markdown.md")) == nil)
+    #expect(parse(link("do=suffix&key=K-123&file=/Users/a"))?.action == .customSuffix)
+    #expect(parse(link("do=suffix&key=K-123")) == nil)
+    #expect(parse(link("do=templates&key=K-123"))?.action == .showTemplates)
+    #expect(parse(link("do=templates&key=K-123&file=/a")) == nil)
+    #expect(parse(link("do=templates")) == nil)  // 没凭证
+  }
+
   @Test func pathTextIsOnePerLine() {
     #expect(FinderLink.pathText([URL(filePath: "/a b/c"), URL(filePath: "/d")]) == "/a b/c\n/d")
   }
@@ -139,12 +161,11 @@ import UniformTypeIdentifiers
       .deletingLastPathComponent()
     let source = try String(
       contentsOf: root.appending(path: "KittyToolsFinder/FinderMenu.swift"), encoding: .utf8)
+    let names = [Feature.finderMenu.prefsKey, Prefs.finderMenuKey, Prefs.finderOpenWithApps]
+    let words = ["do", "key", "app", "file", "copy", "open", "new", "template", "mine", "suffix"]
     let literals =
-      [
-        Feature.finderMenu.prefsKey, Prefs.finderMenuKey, Prefs.finderOpenWithApps,
-      ] + Prefs.finderOpenWithDefault + [
-        FinderLink.host, "do", "key", "app", "file", "copy", "open",
-      ]
+      names + Prefs.finderOpenWithDefault + NewFile.builtIn + [FinderLink.host, "templates"] + words
+    #expect(source.contains("/\(NewFile.folderName)\""))
     for literal in literals {
       #expect(source.contains("\"\(literal)\""), "\(literal)")
     }

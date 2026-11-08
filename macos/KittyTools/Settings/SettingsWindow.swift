@@ -144,7 +144,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .statusScreen: "拦住键盘鼠标的全屏告示：有哪些状态、各是什么样子、怎么退出"
     case .reminders: "到点提醒你：什么时候响、用什么方式、点了「稍后」推多久"
     case .dockPreview: "停在程序坞图标上时弹出的窗口缩略图：开关和要给的授权"
-    case .finderMenu: "在访达里右键文件或文件夹：拷贝路径，用终端或编辑器打开"
+    case .finderMenu: "在访达里右键：新建文件、拷贝路径，用终端或编辑器打开"
     case .translate: "语言、翻译服务与密钥、历史"
     case .hotkeys: "所有全局快捷键"
     case .about: "版本与更新内容"
@@ -222,7 +222,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .finderMenu:
       [
         "访达", "Finder", "右键", "右键菜单", "上下文菜单", "拷贝路径", "复制路径", "路径", "终端", "Terminal",
-        "编辑器", "打开方式", "用 App 打开", "扩展", "登录项与扩展",
+        "编辑器", "打开方式", "用 App 打开", "扩展", "登录项与扩展", "新建文件", "新建", "模板", "后缀", "Word",
+        "Excel", "PPT", "Markdown", "文本",
       ]
     case .translate:
       [

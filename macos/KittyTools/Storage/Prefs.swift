@@ -361,6 +361,8 @@ enum Prefs {
   /// 键名和默认值在 KittyToolsFinder/FinderMenu 里抄了一份
   nonisolated static let finderOpenWithApps = "finderOpenWithApps"
   nonisolated static let finderOpenWithDefault = ["com.apple.Terminal"]
+  /// 访达右键「新建文件 ▸ 自定义后缀…」上次填的后缀（框里先填好它）。这台电脑自己的、不注册默认值
+  nonisolated static let finderLastSuffix = "finderLastSuffix"
 
   /// 看过的版本号：没有 = 首次安装（打开欢迎引导），和当前不同 = 刚更新（刘海岛「已更新到 x」+ 本版摘要，不开设置窗，体检 A29）。
   /// 首次安装时**引导走完才记**（点「开始使用」或关掉引导；第四轮体检 E1）：中途退出（授权屏幕录制后系统要求重开）下次接着开

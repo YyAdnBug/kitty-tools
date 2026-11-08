@@ -1,10 +1,13 @@
 // 访达扩展交过来的一次动作（第十一族「访达右键」，2026-11-08 拍板，PLAN §10「访达右键」）。扩展只画菜单（KittyToolsFinder/FinderMenu），
-// 点了用 App 自己的网址把动作交过来：<App 的 bundle id>://finder?do=copy|open&key=<凭证>&app=<bundle id>&file=/a&file=/b。
+// 点了用 App 自己的网址把动作交过来：<App 的 bundle id>://finder?do=<动作>&key=<凭证>&…&file=/a&file=/b，动作是
+// copy（拷贝路径）、open（app=bundle id，用 App 打开）、new（template=模板名，mine=1 是模板文件夹里的；file 是右键的文件夹）、
+// suffix（自定义后缀，file 是文件夹）、templates（打开模板文件夹）。
 // 解析、拷贝的文字、交给别的 App 打开哪些都是纯函数（FinderLinkTests）；perform 做那一步：拷贝路径走 Paster.write 并记进剪贴板历史
-// （mac-native §5：路径算本 App 生成的新文字），用 App 打开交给 NSWorkspace。
+// （mac-native §5：路径算本 App 生成的新文字），用 App 打开交给 NSWorkspace，新建文件交给 NewFile。
 // 谁都能打开这个网址（网页、别的 App）：功能关着、凭证对不上、路径不是绝对路径、要用的 App 不在设置的列表里，一律不认、什么都不做。
-// 凭证是 App 第一次启动时生成、存在偏好里的随机串（ensureKey），扩展从 App 的偏好里读（沙盒的只读例外）；挡的是网页，
-// 本机别的程序本来就读得到偏好、也本来就能自己做这些事。
+// 凭证是 App 第一次启动时生成、存在偏好里的随机串（ensureKey），扩展从 App 的偏好里读（沙盒的只读例外）；挡的是网页。
+// 本机别的程序读得到凭证，所以这里做的事不能借本 App 的授权（桌面 / 文稿 / 下载、完全磁盘访问）做到它自己做不到的：
+// 拷贝路径只是文字；用 App 打开交给的是用户设置里的 App，会被运行的文件只交给编辑器；新建文件见 NewFile 文件头。
 
 import AppKit
 import OSLog
@@ -15,6 +18,12 @@ nonisolated struct FinderLink: Equatable {
     case copyPaths
     /// 交给这个 App 打开（bundle id）
     case open(app: String)
+    /// 用模板在 files 那一个文件夹里新建（mine：模板文件夹里的，否则随 App 的 NewFile.builtIn）
+    case newFile(template: String, mine: Bool)
+    /// 问后缀、在 files 那一个文件夹里建空文件
+    case customSuffix
+    /// 打开模板文件夹
+    case showTemplates
   }
 
   let action: Action
@@ -35,19 +44,31 @@ nonisolated struct FinderLink: Equatable {
       return values.count == 1 ? values[0].value : nil
     }
     let paths = items.filter { $0.name == "file" }.compactMap(\.value)
-    guard one("key") == key, !paths.isEmpty, paths.count <= maxFiles,
+    guard one("key") == key, paths.count <= maxFiles,
       paths.allSatisfy({ $0.hasPrefix("/") && !$0.contains("\0") })
     else { return nil }
     let files = paths.map { URL(filePath: $0) }
+    let action: Action
     switch one("do") {
-    case "copy":
-      return FinderLink(action: .copyPaths, files: files)
-    case "open":
+    case "copy" where !files.isEmpty:
+      action = .copyPaths
+    case "open" where !files.isEmpty:
       guard let app = one("app"), apps.contains(app) else { return nil }
-      return FinderLink(action: .open(app: app), files: files)
+      action = .open(app: app)
+    case "new" where files.count == 1:
+      let mine = one("mine") == "1"
+      guard let name = one("template"), NewFile.isPlainName(name),
+        mine || NewFile.builtIn.contains(name)
+      else { return nil }
+      action = .newFile(template: name, mine: mine)
+    case "suffix" where files.count == 1:
+      action = .customSuffix
+    case "templates" where files.isEmpty:
+      action = .showTemplates
     default:
       return nil
     }
+    return FinderLink(action: action, files: files)
   }
 
   /// 「拷贝路径」写什么：一个一行
@@ -118,6 +139,12 @@ nonisolated struct FinderLink: Equatable {
         // 只记错误码：错误说明里带着路径
         if let error { Log.finder.error("用 App 打开失败：\((error as NSError).code)") }
       }
+    case .newFile(let name, let mine):
+      NewFile.create(template: name, mine: mine, in: link.files[0])
+    case .customSuffix:
+      NewFile.askSuffix(in: link.files[0])
+    case .showTemplates:
+      NewFile.showTemplates()
     }
   }
 }

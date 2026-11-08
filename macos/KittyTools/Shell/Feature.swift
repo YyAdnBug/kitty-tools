@@ -36,7 +36,7 @@ nonisolated enum Feature: String, CaseIterable {
     case .statusScreen: "盖住屏幕、拦住键盘鼠标的告示"
     case .reminders: "到点提醒你：一次、每天、每周或每隔一阵"
     case .dockPreview: "鼠标停在程序坞的 App 图标上，看它所有窗口的缩略图"
-    case .finderMenu: "在访达里右键：拷贝路径，用终端或编辑器打开"
+    case .finderMenu: "在访达里右键：新建文件、拷贝路径，用终端或编辑器打开"
     }
   }
 

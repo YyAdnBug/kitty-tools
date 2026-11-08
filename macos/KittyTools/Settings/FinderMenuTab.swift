@@ -2,6 +2,7 @@
 // 「访达右键」——启用开关（Feature.finderMenu，默认关）；系统里扩展开没开（FIFinderSyncController.isExtensionEnabled）和
 //   「去打开…」（拍板 D3：直接到 系统设置 › 通用 › 登录项与扩展）。15.0、15.1 的系统设置里没有扩展的入口，那两版上给一条
 //   终端命令和「拷贝命令」（不替用户跑）。页脚说在哪右键、哪里不出现。
+// 「新建文件」——模板文件夹（数据目录里的「新建文件模板」）一行 +「在访达中显示」，页脚说菜单里有什么（第 2 批）。
 // 「用 App 打开」——访达右键里列哪几个 App（Prefs.finderOpenWithApps，默认只有终端）：加（正在运行的 / 从「应用程序」里选）、移除；
 //   列表的写法同 剪贴板 › 不记录这些 App（从偏好现读再改、写回）。功能关着时这一组变灰。
 
@@ -37,11 +38,26 @@ struct FinderMenuTab: View {
       } footer: {
         VStack(alignment: .leading, spacing: 6) {
           SectionFootnote(
-            "在访达里右键文件、文件夹，或者文件夹窗口的空白处：「拷贝路径」，和下面每个 App 一项「用 X 打开」。iCloud 云盘和网盘的文件夹里，系统不显示这些项。"
+            "在访达里右键文件、文件夹，或者文件夹窗口的空白处：「拷贝路径」，和下面每个 App 一项「用 X 打开」；空白处还有「新建文件」。iCloud 云盘和网盘的文件夹里，系统不显示这些项。"
           )
           if !Self.settingsHaveEntry { oldSystemHint }
         }
       }
+      Section {
+        LabeledContent {
+          Button("在访达中显示") { NewFile.showTemplates() }
+        } label: {
+          Text("模板文件夹")
+          Text("放进去的任何文件，右键「新建文件」里就多一项")
+        }
+      } header: {
+        Text("新建文件")
+      } footer: {
+        SectionFootnote(
+          "文件夹窗口的空白处右键「新建文件」：文本文件、Markdown、Word 文档、Excel 表格、PPT 演示文稿，和模板文件夹里放的文件；「自定义后缀…」建一个任意后缀的空文件，可以顺手记进菜单。重名的自动加「 2」。"
+        )
+      }
+      .gated(by: .finderMenu)
       Section {
         appList
         ListEditBar(
@@ -64,7 +80,9 @@ struct FinderMenuTab: View {
       } header: {
         Text("用 App 打开")
       } footer: {
-        SectionFootnote("文件夹原样交给 App；文件交给认得它的 App，不认得的（比如终端只认文件夹）改成打开它所在的文件夹。")
+        SectionFootnote(
+          "文件夹原样交给 App；文件交给认得它的 App，不认得的改成打开它所在的文件夹。脚本和可执行文件只交给编辑器，交给终端的是它所在的文件夹，不会运行它。"
+        )
       }
       .gated(by: .finderMenu)
     }
