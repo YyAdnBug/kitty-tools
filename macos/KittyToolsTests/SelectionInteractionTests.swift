@@ -778,6 +778,91 @@ struct SelectionInteractionTests {
     #expect(h.card == nil)
   }
 
+  // 全部排得下时翻完也挂一条窄栏（第二轮 E1）：「看原文」点一下图上换回原文、再点换回译文，不重新请求；
+  // 看原文时挪选区 / 关掉窄栏都回到正常；重翻一律从原图截（不翻译文）；重翻失败时原来的卡片和图照旧；窄栏不拦 Esc
+  @Test func barTogglesTheOriginal() async throws {
+    let h = Harness()
+    let original = h.view.image
+    let context = try #require(
+      CGContext(
+        data: nil, width: 40, height: 30, bitsPerComponent: 8, bytesPerRow: 0,
+        space: CGColorSpace(name: CGColorSpace.sRGB)!,
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+    context.setFillColor(CGColor(red: 1, green: 0, blue: 0, alpha: 1))
+    context.fill(CGRect(x: 0, y: 0, width: 40, height: 30))
+    let patch = try #require(context.makeImage())
+    // 交给翻译的那块是不是红的（红 = 贴过译文的图；原图是蓝底）
+    func isRed(_ image: CGImage) -> Bool {
+      var pixel = [UInt8](repeating: 0, count: 4)
+      let probe = CGContext(
+        data: &pixel, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+        space: CGColorSpace(name: CGColorSpace.sRGB)!,
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+      probe?.draw(image, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+      return pixel[0] > 200 && pixel[2] < 100
+    }
+    var inputs: [Bool] = []
+    var failNext = false
+    h.view.translateHandler = { image, _ in
+      inputs.append(isRed(image))
+      if failNext { return .init(message: "翻译失败") }
+      return .init(image: patch, translation: "Translated text")
+    }
+    func buttons(in view: NSView) -> [NSButton] {
+      view.subviews.flatMap { ($0 as? NSButton).map { [$0] } ?? buttons(in: $0) }
+    }
+    func translate() async throws {
+      let before = inputs.count
+      try #require(h.toolbar).onClick(.output(.translate))
+      for _ in 0..<500 where inputs.count == before { try await Task.sleep(for: .milliseconds(10)) }
+      // 结果回到主线程、合成贴回要几轮
+      for _ in 0..<20 { try await Task.sleep(for: .milliseconds(10)) }
+    }
+    let canvas = try #require(h.view.subviews.lazy.compactMap { $0 as? AnnotationCanvas }.first)
+    h.makeSelection()
+    try await translate()
+    let card = try #require(h.card)
+    #expect(card.leftovers.isEmpty)
+    #expect(card.translation == "Translated text")
+    let translated = h.view.image
+    #expect(translated !== original)
+    let toggle = try #require(buttons(in: card).first { $0.accessibilityLabel() == "看原文" })
+    toggle.performClick(nil)
+    #expect(h.view.image === original)
+    #expect(canvas.image === h.view.image)
+    #expect(toggle.accessibilityLabel() == "看译文")
+    toggle.performClick(nil)
+    #expect(h.view.image === translated)
+    #expect(canvas.image === translated)
+    #expect(inputs == [false])
+    // 看着原文时挪选区：卡片收起、图是原图
+    toggle.performClick(nil)
+    h.arrow(kVK_RightArrow)
+    #expect(h.card == nil)
+    #expect(h.view.image === original)
+    // 再翻、看原文、关掉窄栏：图换回译文
+    try await translate()
+    let again = try #require(h.card)
+    let second = h.view.image
+    try #require(buttons(in: again).first { $0.accessibilityLabel() == "看原文" }).performClick(nil)
+    try #require(buttons(in: again).first { $0.accessibilityLabel() == "关闭" }).performClick(nil)
+    #expect(h.card == nil)
+    #expect(h.view.image === second)
+    // 看着译文再翻同一个选区：交给翻译的是原图那块，不是译文
+    try await translate()
+    #expect(inputs == [false, false, false])
+    let third = h.view.image
+    let card3 = try #require(h.card)
+    // 这次失败：原来的卡片和图照旧
+    failNext = true
+    try await translate()
+    #expect(h.card === card3)
+    #expect(h.view.image === third)
+    // 窄栏不拦 Esc：直接退出截图
+    let outcome = await h.outcome { h.key(kVK_Escape, "\u{1b}") }
+    #expect(outcome == nil)
+  }
+
   /// 译文卡片放哪（拍板 B3）：工具栏的另一侧；那一侧放不下挂到栏外面（让出样式托盘 6 + 34）；整屏放进选区左下角，
   /// 压到栏就挪到栏和托盘上面
   @Test func translationCardPlacement() {

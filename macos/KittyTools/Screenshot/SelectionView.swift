@@ -48,6 +48,9 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private var untranslated: (image: CGImage, selection: CGRect)?
   /// 就地翻译到字号下限也放不下的段：挂在选区外的译文卡片（2026-11-08 拍板 B1–B4）；选区一变、✕、Esc 收起
   private var translationCard: TranslationCard?
+  /// 贴了译文的那张冻结帧、现在图上是不是换回了原文在看（卡片上的「看原文」，第二轮 E1；不重新请求）
+  private var translated: CGImage?
+  private var showingOriginal = false
   /// 选区上的扫光（翻译中）：容器裁掉多余的部分，里面一条浅白渐变从左扫到右。
   /// 之前是整块白呼吸，白底窗口上几乎看不出来，改成扫光
   private let translatingPulse = CALayer()
@@ -1552,7 +1555,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private func escape() {
     if let hudMenu {
       hudMenu.dismiss()
-    } else if translationCard != nil {
+    } else if let translationCard, !translationCard.leftovers.isEmpty {
+      // 列着放不下的段的卡片先收；只有一条窄栏时不拦 Esc，照常往下走（退出截图）
       closeTranslationCard()
     } else if sizeField.isEditing {
       finishSizeEditing(commit: false)
@@ -1902,22 +1906,25 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private func translateInPlace() {
     guard !translating, let handler = translateHandler, let selection else { return }
     endEditing()
+    // 同一个选区再翻：从没贴过译文的那张原图截、贴回那张上（不然识字读的是盖了译文的图，等于把译文再翻一遍）。
+    // 选区一变 untranslated 就清掉了，有它时它的选区就是这一个
+    let base = untranslated?.image ?? image
     let pixels = RegionSelector.pixelRect(
-      selection, viewSize: bounds.size, imageSize: CGSize(width: image.width, height: image.height))
-    guard let cropped = image.cropping(to: pixels) else { return }
+      selection, viewSize: bounds.size, imageSize: CGSize(width: base.width, height: base.height))
+    guard let cropped = base.cropping(to: pixels) else { return }
     let translatedSelection = selection
     // 字号下限按点算：冻结帧每点几个像素（Retina 屏 2）
-    let pixelsPerPoint = CGFloat(image.width) / max(1, bounds.width)
-    closeTranslationCard()
+    let pixelsPerPoint = CGFloat(base.width) / max(1, bounds.width)
+    // 原来的卡片等结果回来再换：这次失败的话它和图上的译文都照旧，看原文、拷贝还能用
     translating = true
     refresh()
     translateTask?.cancel()
     translateTask = Task { @MainActor [weak self] in
       let result = await handler(cropped, pixelsPerPoint)
       var replaced: CGImage?
-      if let patch = result.image, let frame = self?.image {
+      if let patch = result.image {
         // 整屏冻结帧（5K 屏约 60 MB）在主线程外合成
-        replaced = await ScreenshotOverlay.paste(patch, into: frame, at: pixels)
+        replaced = await ScreenshotOverlay.paste(patch, into: base, at: pixels)
       }
       guard let self, !Task.isCancelled else { return }
       translating = false
@@ -1932,20 +1939,27 @@ final class SelectionView: NSView, NSTextViewDelegate {
       }
       // 翻的时候选区被换掉了（框选和工具栏这时不动，防万一）：这份译文贴不回去
       guard selection == translatedSelection else { return refresh() }
+      showingOriginal = false
       if let replaced {
-        // 同一个选区再翻一次：留着最早那张原图
-        untranslated = (untranslated?.image ?? image, translatedSelection)
+        untranslated = (base, translatedSelection)
+        translated = replaced
         image = replaced
-        // 标注不动：它们一直画在冻结帧上面，出图时照旧叠上去；马赛克读的是标注层手里那张图，换成新的
-        annotationCanvas?.image = replaced
-        needsDisplay = true
+      } else {
+        // 这次一段都没画（全进了卡片）：图回到原图，没有可换的
+        untranslated = nil
+        translated = nil
+        image = base
       }
+      // 标注不动：它们一直画在冻结帧上面，出图时照旧叠上去；马赛克读的是标注层手里那张图，换成新的
+      annotationCanvas?.image = image
+      needsDisplay = true
       refresh()
-      showTranslationCard(result.leftovers)
+      showTranslationCard(
+        result.leftovers, translation: result.translation, toggles: translated != nil)
       let hint = Self.translatedHint(leftovers: result.leftovers.count, drewAny: replaced != nil)
       flashHint([hint])
       // 出了卡片读屏要知道（顶部提示只是看的）
-      if !result.leftovers.isEmpty { announce(hint) }
+      announce(hint)
     }
   }
 
@@ -1955,17 +1969,24 @@ final class SelectionView: NSView, NSTextViewDelegate {
     return drewAny ? "有 \(leftovers) 段放不下，译文放在卡片里" : "选区太小，译文放在卡片里"
   }
 
-  /// 放不下的段的译文卡片（截图自检也直接调）：宽同选区、夹在 240–420 pt，高最多到屏幕的四成；
-  /// 放在工具栏的另一侧（cardPlacement），从靠选区的那条边长出来。没有放不下的段就什么都不做
-  func showTranslationCard(_ leftovers: [ScreenshotOverlay.Leftover]) {
+  /// 翻完挂的译文卡片（截图自检也直接调；第二轮 E1 起总挂）：宽同选区、夹在 240–420 pt，高最多到屏幕的四成；
+  /// 放在工具栏的另一侧（cardPlacement），从靠选区的那条边长出来。没有放不下的段时只是一条窄栏（看原文、拷贝、✕）；
+  /// 译文和放不下的段都没有就什么都不做。toggles：图上画了译文、能换回原文看
+  func showTranslationCard(
+    _ leftovers: [ScreenshotOverlay.Leftover], translation: String, toggles: Bool
+  ) {
     closeTranslationCard()
-    guard let selection, !leftovers.isEmpty else { return }
+    let text =
+      translation.isEmpty ? leftovers.map(\.translation).joined(separator: "\n\n") : translation
+    guard let selection, !text.isEmpty else { return }
     let width = min(
       max(selection.width, TranslationCard.minWidth), TranslationCard.maxWidth, bounds.width - 20)
     let card = TranslationCard(
-      leftovers, selection: selection, width: width, maxHeight: bounds.height * 0.4)
-    card.onCopy = { [unowned self] in copyLeftovers() }
+      leftovers, translation: text, toggles: toggles, selection: selection, width: width,
+      maxHeight: bounds.height * 0.4)
+    card.onCopy = { [unowned self] in copyTranslation() }
     card.onClose = { [unowned self] in closeTranslationCard() }
+    if toggles { card.onToggle = { [unowned self] in toggleOriginal() } }
     // 卡片里的字拿着焦点时按的键交还给遮罩：Esc 收卡片、↩ 拷贝截图、工具键照常
     card.onKey = { [unowned self] event in
       window?.makeFirstResponder(self)
@@ -1985,20 +2006,32 @@ final class SelectionView: NSView, NSTextViewDelegate {
     refresh()
   }
 
-  /// 收起译文卡片：焦点在卡片的字上就还给遮罩（不然按键没人接）
+  /// 收起译文卡片：焦点在卡片的字上就还给遮罩（不然按键没人接）；正换回原文在看时图换回译文（开关跟着卡片走了）
   private func closeTranslationCard() {
     guard let card = translationCard else { return }
     translationCard = nil
+    if showingOriginal { toggleOriginal() }
     if card.owns(window?.firstResponder) { window?.makeFirstResponder(self) }
     card.removeFromSuperview()
     refresh()
   }
 
-  /// 卡片上的「拷贝译文」：放不下的那几段的译文（段间空一行），本 App 生成的新文字，记进剪贴板历史
-  private func copyLeftovers() {
+  /// 卡片上的「拷贝译文」：全部段的译文（段间空一行），本 App 生成的新文字，记进剪贴板历史
+  private func copyTranslation() {
     guard let card = translationCard else { return }
-    Paster.write(string: card.leftovers.map(\.translation).joined(separator: "\n\n"), record: true)
+    Paster.write(string: card.translation, record: true)
     flashHint(["已拷贝译文"])
+  }
+
+  /// 卡片上的「看原文」：图上换回原文 / 再换回译文，不重新请求；出图按当时看到的那张
+  private func toggleOriginal() {
+    guard let untranslated, let translated else { return }
+    showingOriginal.toggle()
+    image = showingOriginal ? untranslated.image : translated
+    annotationCanvas?.image = image
+    needsDisplay = true
+    translationCard?.showOriginal(showingOriginal)
+    if translationCard != nil { flashHint([showingOriginal ? "正在看原文" : "已换回译文"]) }
   }
 
   /// 译文卡片放哪（拍板 B3，纯函数，配单测）：选区外、工具栏的另一侧（栏在下面挂上面、栏在上面挂下面），离选区 10，
@@ -2046,6 +2079,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private func restoreUntranslated() {
     guard let untranslated else { return }
     self.untranslated = nil
+    translated = nil
+    showingOriginal = false
     image = untranslated.image
     annotationCanvas?.image = untranslated.image
     needsDisplay = true

@@ -3608,13 +3608,19 @@ struct SnapshotProbeTests {
     // 截图翻译盖回截图上时放不下的段：选区外的译文卡片（2026-11-08 拍板 B1–B4）
     let translateCard: (SelectionView) -> Void = { view in
       view.select(selection)
-      view.showTranslationCard([
-        .init(
-          source: "识别元素的默认值改为关闭，保留原色以便验证",
-          translation:
-            "Change the default value of the recognition element to off, and keep the original color for verification."
-        )
-      ])
+      view.showTranslationCard(
+        [
+          .init(
+            source: "识别元素的默认值改为关闭，保留原色以便验证",
+            translation:
+              "Change the default value of the recognition element to off, and keep the original color for verification."
+          )
+        ], translation: "", toggles: false)
+    }
+    // 全部排得下时翻完挂的窄栏（第二轮 E1）：看原文、拷贝、✕
+    let translateBar: (SelectionView) -> Void = { view in
+      view.select(selection)
+      view.showTranslationCard([], translation: "Translated text", toggles: true)
     }
     let capture: [(String, Bool, (SelectionView) -> Void)] = [
       ("capture-hover", false, { $0.mouse = CGPoint(x: 150, y: 330) }),
@@ -3642,6 +3648,7 @@ struct SnapshotProbeTests {
       ("capture-adjust-dark", true, { $0.select(selection) }),
       ("capture-translate-card", false, translateCard),
       ("capture-translate-card-dark", true, translateCard),
+      ("capture-translate-bar", false, translateBar),
       ("capture-annotate", false, annotate),
       ("capture-annotate-dark", true, annotate),
       (

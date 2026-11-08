@@ -2827,11 +2827,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     guard !segments.isEmpty else { return .init(message: "没有识别到文字") }
     do {
       let translations = try await translateSegments(segments, source: recognized.text)
-      let composed = await ScreenshotOverlay.render(
+      var composed = await ScreenshotOverlay.render(
         image, segments: segments, translations: translations, pixelsPerPoint: pixelsPerPoint)
       guard composed.image != nil || !composed.leftovers.isEmpty else {
         return .init(message: "合成失败")
       }
+      // 卡片的「拷贝译文」拷全部段（纯符号段原样占位，不算）
+      composed.translation = zip(segments, translations)
+        .filter { ScreenshotOverlay.hasTranslatableContent($0.0.text) }
+        .map { $0.1.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .joined(separator: "\n\n")
       return composed
     } catch {
       guard !Task.isCancelled, !(error is CancellationError) else {

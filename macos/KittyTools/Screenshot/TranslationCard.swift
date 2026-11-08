@@ -1,7 +1,8 @@
-// 截图翻译盖回截图上时，到字号下限也放不下的段（2026-11-08 拍板 B1–B4）：挂在选区外、工具栏另一侧的一张 HUD 卡片。
-// 每段一行原文（次要色、一行、末尾省略）+ 译文全文（13 pt，能选中）；右上「拷贝译文」和 ✕；最高到屏幕高度的四成，
-// 再多在卡片里滚动。只在截图页上，不进出图（拷贝、保存、钉图出的还是选区那张图，放不下的那段是原文）。
-// 什么时候出、放哪（SelectionView.cardPlacement）、什么时候收（选区一变、✕、Esc）都归 SelectionView 管。
+// 截图翻译盖回截图上之后挂在选区外、工具栏另一侧的一张 HUD 卡片（2026-11-08 拍板 B1–B4、第二轮 E1）。
+// 翻完总挂着：全部排得下时只是一条窄栏——「译文」｜看原文（点一下图上换回原文、再点换回译文）｜拷贝全部译文｜✕；
+// 有到字号下限也放不下的段时，标题换成「放不下的 N 段译文」，下面每段一行原文（次要色、一行、末尾省略）+ 译文全文
+// （13 pt，能选中），最高到屏幕高度的四成，再多在卡片里滚动。只在截图页上，不进出图（出的是当时看到的那张图）。
+// 什么时候出、放哪（SelectionView.cardPlacement）、什么时候收（选区一变、✕、Esc）、看原文怎么换图都归 SelectionView 管。
 // HUD 皮肤同工具栏、HUD 菜单（HUDBar：15 是深色材质 + 描边 + 阴影，26 起是深色玻璃）
 
 import AppKit
@@ -10,13 +11,18 @@ final class TranslationCard: HUDBar {
   /// 翻的是哪个选区：选区一变卡片就收（和「换回原文」同时）
   let selection: CGRect
   let leftovers: [ScreenshotOverlay.Leftover]
+  /// 全部段的译文（段间空一行）：「拷贝译文」拷它
+  let translation: String
   var onCopy: () -> Void = {}
   var onClose: () -> Void = {}
+  /// 「看原文」开关：nil = 图上一段都没画（没有可换的）
+  var onToggle: (() -> Void)?
   /// 卡片里的字拿着焦点时按下的键（方向键除外）：交还给截图页（Esc 收卡片、↩ 拷贝截图、工具键照常）
   var onKey: (NSEvent) -> Void = { _ in }
   /// 点进卡片的字之前：截图页先收下输入中的文字标注、尺寸（不然接着打的字会被当成截图的快捷键）
   var onFocus: () -> Void = {}
   private var texts: [CardText] = []
+  private var toggle: BarButton?
 
   /// 宽同选区、夹在这两个数之间
   static let minWidth: CGFloat = 240
@@ -26,17 +32,22 @@ final class TranslationCard: HUDBar {
   private static let sourceFont = NSFont.systemFont(ofSize: 11)
   private static let textFont = NSFont.systemFont(ofSize: 13)
 
-  /// 两段的旁白名、标题
-  static func title(count: Int) -> String { count > 1 ? "放不下的 \(count) 段译文" : "放不下的译文" }
+  /// 标题（也是旁白名）：没有放不下的段时就是「译文」
+  static func title(count: Int) -> String {
+    count > 1 ? "放不下的 \(count) 段译文" : count == 1 ? "放不下的译文" : "译文"
+  }
 
+  /// toggles：图上画了译文、可以换回原文看
   init(
-    _ leftovers: [ScreenshotOverlay.Leftover], selection: CGRect, width: CGFloat,
-    maxHeight: CGFloat
+    _ leftovers: [ScreenshotOverlay.Leftover], translation: String, toggles: Bool,
+    selection: CGRect, width: CGFloat, maxHeight: CGFloat
   ) {
     self.selection = selection
     self.leftovers = leftovers
+    self.translation = translation
     super.init(radius: Style.Radius.card, height: 0)
-    let pad = Self.padding
+    // 只有窄栏时四边留得少一点
+    let pad = leftovers.isEmpty ? 8 : Self.padding
     let inner = width - 2 * pad
     // 正文：每段一行原文 + 译文，排在一个从上往下的文档视图里
     let document = FlippedView()
@@ -62,8 +73,10 @@ final class TranslationCard: HUDBar {
       y = text.frame.maxY
     }
     document.frame = CGRect(x: 0, y: 0, width: inner, height: ceil(y))
-    let bodyHeight = min(document.frame.height, max(40, maxHeight - Self.headerHeight - 3 * pad))
-    let height = ceil(pad + Self.headerHeight + 6 + bodyHeight + pad)
+    let bodyHeight =
+      leftovers.isEmpty
+      ? 0 : min(document.frame.height, max(40, maxHeight - Self.headerHeight - 3 * pad))
+    let height = ceil(pad + Self.headerHeight + (leftovers.isEmpty ? 0 : 6 + bodyHeight) + pad)
     frame.size = CGSize(width: width, height: height)
     applyGeometry()
 
@@ -86,23 +99,34 @@ final class TranslationCard: HUDBar {
     let copy = barButton(
       NSImage(systemSymbolName: "doc.on.doc", accessibilityDescription: nil) ?? NSImage(),
       tip: "拷贝译文", action: #selector(copyTapped), size: button)
-    // 右上角从右往左：关闭、拷贝，间隔 2
+    var controls = [close, copy]
+    if toggles {
+      let original = barButton(
+        NSImage(systemSymbolName: "eye", accessibilityDescription: nil) ?? NSImage(),
+        tip: "看原文", action: #selector(toggleTapped), size: button)
+      original.setAccessibilityValue("图上是译文")
+      toggle = original
+      controls.append(original)
+    }
+    // 右上角从右往左：关闭、拷贝、看原文，间隔 2
     let buttonY = top - Self.headerHeight / 2 - button.height / 2
-    for (index, control) in [close, copy].enumerated() {
+    for (index, control) in controls.enumerated() {
       let x = area.width - edge - CGFloat(index + 1) * button.width - CGFloat(index) * 2
       control.translatesAutoresizingMaskIntoConstraints = true
       control.frame = CGRect(origin: CGPoint(x: x, y: buttonY), size: button)
       control.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 12, weight: .medium)
       effect.addSubview(control)
     }
-    let scroll = NSScrollView(
-      frame: CGRect(x: edge, y: edge, width: inner, height: bodyHeight))
-    scroll.drawsBackground = false
-    scroll.hasVerticalScroller = document.frame.height > bodyHeight
-    scroll.autohidesScrollers = true
-    scroll.scrollerStyle = .overlay
-    scroll.documentView = document
-    effect.addSubview(scroll)
+    if !leftovers.isEmpty {
+      let scroll = NSScrollView(
+        frame: CGRect(x: edge, y: edge, width: inner, height: bodyHeight))
+      scroll.drawsBackground = false
+      scroll.hasVerticalScroller = document.frame.height > bodyHeight
+      scroll.autohidesScrollers = true
+      scroll.scrollerStyle = .overlay
+      scroll.documentView = document
+      effect.addSubview(scroll)
+    }
 
     setAccessibilityElement(true)
     setAccessibilityRole(.group)
@@ -126,8 +150,19 @@ final class TranslationCard: HUDBar {
     texts.contains { $0.visibleRect.contains($0.convert(point, from: view)) }
   }
 
+  /// 看原文开关的样子跟着图走：看着原文时眼睛是实心的强调色，提示和旁白换成「看译文」
+  func showOriginal(_ on: Bool) {
+    guard let toggle else { return }
+    toggle.image = NSImage(systemSymbolName: on ? "eye.fill" : "eye", accessibilityDescription: nil)
+    toggle.contentTintColor = on ? Style.Shot.accent : Style.HUD.text
+    toggle.toolTip = on ? "看译文" : "看原文"
+    toggle.setAccessibilityLabel(on ? "看译文" : "看原文")
+    toggle.setAccessibilityValue(on ? "图上是原文" : "图上是译文")
+  }
+
   @objc private func copyTapped() { onCopy() }
   @objc private func closeTapped() { onClose() }
+  @objc private func toggleTapped() { onToggle?() }
 
   /// 原文那行：换行、连续空白并成一个空格（一行显示）
   private static func oneLine(_ text: String) -> String {

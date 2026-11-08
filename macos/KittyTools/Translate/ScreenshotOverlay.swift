@@ -87,10 +87,12 @@ nonisolated enum ScreenshotOverlay {
     var translation: String
   }
 
-  /// 截图页就地翻译交回的结果：贴了译文的选区图（一段都没画时 nil）、放不下的段、失败时的原因
+  /// 截图页就地翻译交回的结果：贴了译文的选区图（一段都没画时 nil）、放不下的段、全部段的译文（段间空一行，
+  /// 卡片的「拷贝译文」拷它）、失败时的原因
   struct Outcome: Sendable {
     var image: CGImage?
     var leftovers: [Leftover] = []
+    var translation = ""
     var message: String?
   }
 
