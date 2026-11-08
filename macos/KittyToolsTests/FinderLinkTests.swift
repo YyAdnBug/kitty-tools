@@ -104,9 +104,22 @@ import UniformTypeIdentifiers
     let parent = URL(filePath: "/p")
     let targets = FinderLink.targets(
       [folder, text, script, other, parent], isDirectory: { $0 == folder || $0 == parent },
-      opens: { $0 == text }, runs: { _ in false }, appEdits: false)
+      opens: { $0 == text }, runs: { _ in false }, appEdits: true)
     // 选中的文件夹和别的文件「所在的文件夹」是同一个时也只给一次
     #expect(targets == [folder, text, parent, URL(filePath: "/q")])
+    // 不是编辑器的（终端）只给第一个：选了几十个不弹出一串窗口
+    let toTerminal = FinderLink.targets(
+      [script, other, folder], isDirectory: { $0 == folder }, opens: { _ in false },
+      runs: { _ in false }, appEdits: false)
+    #expect(toTerminal == [parent])
+  }
+
+  /// 拷贝路径后刘海岛上的小字
+  @Test func copiedDetailIsShort() {
+    let home = FileManager.default.homeDirectoryForCurrentUser
+    #expect(
+      FinderLink.copiedDetail([home.appending(path: "Desktop/a b.txt")]) == "~/Desktop/a b.txt")
+    #expect(FinderLink.copiedDetail([URL(filePath: "/a"), URL(filePath: "/b")]) == "2 个路径")
   }
 
   /// 交过去就会被运行的（终端认得 .command、可执行文件）：给终端的是所在文件夹，给编辑器的才是文件本身
@@ -181,7 +194,10 @@ import UniformTypeIdentifiers
       .deletingLastPathComponent()
     let source = try String(
       contentsOf: root.appending(path: "KittyToolsFinder/FinderMenu.swift"), encoding: .utf8)
-    let names = [Feature.finderMenu.prefsKey, Prefs.finderMenuKey, Prefs.finderOpenWithApps]
+    let names = [
+      Feature.finderMenu.prefsKey, Prefs.finderMenuKey, Prefs.finderOpenWithApps,
+      Prefs.finderMenuNewFile, Prefs.finderMenuCopyPath,
+    ]
     let words = ["do", "key", "app", "file", "copy", "open", "new", "template", "mine", "suffix"]
     let literals =
       names + Prefs.finderOpenWithDefault + NewFile.builtIn + [FinderLink.host, "templates"] + words

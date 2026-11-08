@@ -97,6 +97,19 @@ enum Paster {
     for _ in 0..<moves { view.moveLeft(nil) }
   }
 
+  /// 向前台 App 按一下某个键（不带修饰键：热键里还按着的 ⌥ / ⇧ 不混进来）。未授权返回 false。
+  /// 访达右键新建文件后按回车进入改名用（NewFile.revealForRename）
+  @discardableResult static func press(_ key: Int) -> Bool {
+    guard Permissions.isAccessibilityTrusted else { return false }
+    let source = CGEventSource(stateID: .combinedSessionState)
+    for keyDown in [true, false] {
+      let event = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(key), keyDown: keyDown)
+      event?.flags = []
+      event?.post(tap: .cgSessionEventTap)
+    }
+    return true
+  }
+
   /// 向前台 App 发 ⌘V。浮层不激活本 App，前台一直是原 App，所以不用等待、不用切前台。
   /// movingLeft：片段 {cursor}，⌘V 之后紧接着按这么多次 ←，把光标挪回占位符处（超过 maxCaretMoves 不挪）。
   /// 未授权返回 false，内容仍留在剪贴板里

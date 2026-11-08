@@ -361,6 +361,10 @@ enum Prefs {
   /// 键名和默认值在 KittyToolsFinder/FinderMenu 里抄了一份
   nonisolated static let finderOpenWithApps = "finderOpenWithApps"
   nonisolated static let finderOpenWithDefault = ["com.apple.Terminal"]
+  /// 访达右键里显示不显示「新建文件」「拷贝路径」（设置 › 访达右键，默认都显示；同几家成熟产品每项能单独关）。
+  /// 扩展读同样的键（注册的默认值它读不到，没存过当开）
+  nonisolated static let finderMenuNewFile = "finderMenuNewFile"
+  nonisolated static let finderMenuCopyPath = "finderMenuCopyPath"
   /// 访达右键「新建文件 ▸ 自定义后缀…」上次填的后缀（框里先填好它）。这台电脑自己的、不注册默认值
   nonisolated static let finderLastSuffix = "finderLastSuffix"
 
@@ -430,6 +434,8 @@ enum Prefs {
       dockPreviewDelay: 400,
       dockPreviewCmdTab: true,
       finderOpenWithApps: finderOpenWithDefault,
+      finderMenuNewFile: true,
+      finderMenuCopyPath: true,
       panelSqueezeEntrance: false,
       floatingPinned: false,
       updateAutoCheck: true,

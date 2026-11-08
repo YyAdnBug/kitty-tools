@@ -1025,7 +1025,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       Task { await OCR.prepare() }
     }
     // 访达右键把 App 冷启动时交过来的动作：剪贴板历史、偏好都起来了再做（拷贝的路径才记得进历史）
-    for url in pendingLinks { FinderLink.perform(url) }
+    for url in pendingLinks { FinderLink.perform(url, island: island) }
     pendingLinks = []
   }
 
@@ -1323,7 +1323,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       pendingLinks += urls
       return
     }
-    for url in urls { FinderLink.perform(url) }
+    for url in urls { FinderLink.perform(url, island: island) }
   }
 
   /// 再打开一次本 App：点程序坞图标（设置窗等普通窗口开着时才有）、在访达或启动器里打开已经在运行的它。

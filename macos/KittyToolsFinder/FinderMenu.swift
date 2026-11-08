@@ -1,5 +1,6 @@
 // 访达扩展（第十一族「访达右键」，2026-11-08 拍板，PLAN §10「访达右键」）：在访达的右键菜单第一层加几项。
-// - 选中文件 / 文件夹右键：「拷贝路径」、设置里选的每个 App 一项「用 X 打开」（默认只有终端）。
+// - 选中文件 / 文件夹右键：「拷贝路径」、设置里选的每个 App 一项「在“X”中打开」（默认只有终端；叫法照访达自己的
+//   「在“照片”中打开」）。「新建文件」「拷贝路径」在 App 设置里各能单独关掉（同几家成熟产品）。
 // - 文件夹空白处右键：最前面多一个「新建文件 ▸」（第 2 批：自带五种、模板文件夹里放的每个文件、「自定义后缀…」、
 //   「打开模板文件夹」），后面同样两种，对着的是这个文件夹。
 // 扩展只画菜单、不碰文件（拍板 C2）：点了用 App 自己的网址把动作交给常驻菜单栏的 Kitty Tools，
@@ -36,6 +37,12 @@ final class FinderMenu: FIFinderSync {
       return nil
     }
     return defaults.string(forKey: "finderMenuKey").flatMap { $0.isEmpty ? nil : $0 }
+  }
+
+  /// 「新建文件」「拷贝路径」各自开没开（App 的 Prefs.finderMenuNewFile / finderMenuCopyPath，注册的默认值是开；
+  /// 注册的默认值不在偏好文件里，扩展读不到，没存过就当开）
+  private static func shows(_ key: String) -> Bool {
+    appDefaults?.object(forKey: key) as? Bool ?? true
   }
 
   /// 一次最多交这么多个：再多 App 不认，这里先响一声
@@ -99,14 +106,17 @@ final class FinderMenu: FIFinderSync {
     }
     // 不加分隔线：macOS 26 上扩展菜单里的分隔线会画成一行空白（2026-09 开发者论坛，没解答）
     let menu = NSMenu()
-    if container != 0 {
+    if container != 0, Self.shows("finderMenuNewFile") {
       let new = menu.addItem(withTitle: "新建文件", action: nil, keyEquivalent: "")
       new.submenu = Self.newFileMenu()
       new.image = Self.drawn("kitty.finder.new.file")
     }
-    let copy = menu.addItem(withTitle: "拷贝路径", action: #selector(copyPath(_:)), keyEquivalent: "")
-    copy.tag = container
-    copy.image = Self.drawn("kitty.finder.copy.path")
+    if Self.shows("finderMenuCopyPath") {
+      let copy = menu.addItem(
+        withTitle: "拷贝路径", action: #selector(copyPath(_:)), keyEquivalent: "")
+      copy.tag = container
+      copy.image = Self.drawn("kitty.finder.copy.path")
+    }
     for (index, app) in Self.openWithApps.enumerated() {
       let item = menu.addItem(
         withTitle: Self.openTitle(app.url), action: #selector(open(_:)), keyEquivalent: "")
@@ -114,7 +124,7 @@ final class FinderMenu: FIFinderSync {
       item.image = NSWorkspace.shared.icon(forFile: app.url.path)
       item.image?.size = NSSize(width: 16, height: 16)
     }
-    return menu
+    return menu.items.isEmpty ? nil : menu
   }
 
   /// 自己画的图标（Assets.xcassets/FinderIcons）：按菜单的字号（13 pt、常规）画成 1x / 2x 的模板位图再交出去——
@@ -181,12 +191,11 @@ final class FinderMenu: FIFinderSync {
     }
   }
 
-  /// 「用终端打开」「用 Visual Studio Code 打开」：西文名两边空一格
+  /// 「在“终端”中打开」「在“Visual Studio Code”中打开」：照访达自己给 App 的写法（「在“照片”中打开」）
   private static func openTitle(_ app: URL) -> String {
     var name = FileManager.default.displayName(atPath: app.path)
     if name.hasSuffix(".app") { name.removeLast(4) }
-    let gap = { (end: Character?) in end?.isASCII == true ? " " : "" }
-    return "用" + gap(name.first) + name + gap(name.last) + "打开"
+    return "在“\(name)”中打开"
   }
 
   /// 空白处那份菜单的 tag 从这里起（App 不会有这么多个）

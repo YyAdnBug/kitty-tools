@@ -51,7 +51,7 @@
 | Foundation `URLSession.download`、`Process`（调系统的 `/usr/bin/ditto`、`/usr/bin/codesign`、`/bin/chmod`；启动器 kill / port 列进程的 `/bin/ps`、`/usr/sbin/lsof`；浏览历史 / Firefox 书签的 `/usr/bin/sqlite3 -readonly -json -init /dev/null`；共用 `Shell/Subprocess.swift`，要的输出写临时文件） | — | 应用内更新：下载更新包、解包、验签（D8）；kill 列后台进程和监听端口（体检 D12）、port 列在监听的端口和进程的工作目录（2026-10-08）；导出各家浏览器的浏览历史和 Firefox 书签（体检 D8、第 12 批） |
 | 启动台触控板捏合（第八族，2026-10-18）：运行时 `dlopen` / `dlsym` 系统私有 `MultitouchSupport.framework`（不链接、不写进工程设置；找不到符号 / 设备就退回，别的入口照常），只用 `MTDeviceCreateList` / `MTRegisterContactFrameCallback` / `MTDeviceStart` / `MTDeviceStop`；**不是依赖**，跑起来才加载 | 10.x | 触控板捏合打开 / 收起启动台 |
 | 程序坞预览（第九族，2026-10-22，§10「程序坞预览」）：运行时 `dlopen` / `dlsym` 系统私有 `SkyLight.framework` 的 `_SLPSSetFrontProcessWithOptions` / `SLPSPostEventRecordTo`、CoreGraphics 没公开的 `CGSMainConnectionID` / `CGSHWCaptureWindowList` / `CGSCopySpacesForWindows`、ApplicationServices 的 `_AXUIElementGetWindow` 和已废弃的 `GetProcessForPID`（不链接、不写进工程设置；取不到就退回公开做法，全在 `DockPreview/WindowServer.swift`）；**不是依赖**，跑起来才加载 | 10.x | 窗口编号、截别的桌面上的窗口、查窗口在哪个桌面、按编号切窗口并当 key |
-| FinderSync：`FIFinderSync`、`FIFinderSyncController`（访达扩展 target `KittyToolsFinder`；App 里只用 `isExtensionEnabled` / `showExtensionManagementInterface()`） | 10.10 / 10.14 | 访达右键（第十一族，2026-11-08，§10「访达右键」）：访达右键菜单第一层的「拷贝路径」「用 X 打开」 |
+| FinderSync：`FIFinderSync`、`FIFinderSyncController`（访达扩展 target `KittyToolsFinder`；App 里只用 `isExtensionEnabled` / `showExtensionManagementInterface()`） | 10.10 / 10.14 | 访达右键（第十一族，2026-11-08，§10「访达右键」）：访达右键菜单第一层的「新建文件」「拷贝路径」「在“X”中打开」 |
 | 启动器「ip」（2026-10-28）：Darwin `getifaddrs`；SystemConfiguration `SCDynamicStoreCopyValue`（`State:/Network/Global/IPv4` 的 PrimaryInterface）、`SCNetworkInterfaceCopyAll` / `SCNetworkInterfaceGetLocalizedDisplayName`；`URLSession` 问两家外网地址查询服务（`myip.ipip.net/s`、`api.ipify.org`，只在输了 ip 停 0.3 s 后问） | 10.x | 本机的局域网 / 内网地址和网卡名，外网地址（开着代理时国内、国外看到的常不一样，两家都问） |
 | 启动器系统命令（D2，2026-09-27）：`Process` 调 `/usr/bin/pmset`（睡眠、关闭显示器）和 `/usr/bin/osascript`（访达清倒废纸篓、loginwindow 的退出登录 / 重新启动 / 关机 Apple Event、`set volume`）；`NSRunningApplication` 的 `terminate` / `forceTerminate` / `hide`；`FileManager.unmountVolume`；`dlopen` / `dlsym` 系统私有 `login.framework` 的 `SACLockScreenImmediate`（锁屏，用户拍板的私有 API，找不到退回 `CGEvent` 模拟 ⌃⌘Q）；entitlement `com.apple.security.automation.apple-events` + `NSAppleEventsUsageDescription`；`kill(2)` 给 kill 列的进程发 SIGTERM / SIGKILL（体检 D12） | 10.x | 锁屏、睡眠、屏保、废纸篓、退出登录 / 重启 / 关机、退出 / 隐藏 / 强制退出 App、推出磁盘、音量、结束进程 |
 | 系统 libsqlite3（`import SQLite3`；本机 3.43.2，带 FTS5） | — | 剪贴板历史和翻译历史 |
@@ -905,6 +905,13 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
     （要控制访达的自动化授权）。Info.plist 里桌面 / 文稿 / 下载的授权说明加了「在访达右键里新建文件」。
   - 真机反馈（11-08，用户装了测试包、菜单出来了）：「拷贝路径」的图标要设计一下 → 自己画了「拷贝路径」「新建文件」两个
     （`icons/finder/`，`build-icons.swift` 加了 finder 出口），子菜单里两项补上系统符号——没图标的项文字会错开一截。
+  - 用户：「访达右键的操作功能都要和业界的标准对齐」→ 查了访达和终端自己的做法、Windows、RClick（开源，读源码）、
+    OpenInTerminal（读源码）、Raycast Copy Path（读源码）、超级右键、Menuist、New File Menu、Easy New File Creator，
+    几家一致而我们不一样的照着改：建好新文件后在访达里选中、按回车进入改名（同访达「新建文件夹」、Windows；做法同 RClick：
+    等访达到前台再按，要辅助功能授权，没有就只选中）；「用 X 打开」改叫访达自己的「在“X”中打开」；多选时终端只开第一个、
+    编辑器全给（同 OpenInTerminal）；拷贝路径后刘海岛说「已拷贝路径」（同 Raycast、Menuist 拷完有提示）；「新建文件」
+    「拷贝路径」在设置里各能单独关（四五家都有）。各家不一致的不动：默认文件名、重名加「 2」、路径不加引号 / 不转义、
+    文件夹路径不带结尾的「/」。没做（几家有、算不上必须）：访达工具栏按钮、平铺 / 子菜单切换、关掉菜单图标、建好后打开。
 
 ## 11½. Whisker 设计语言改造（2026-09-25 起）
 

@@ -222,7 +222,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .finderMenu:
       [
         "访达", "Finder", "右键", "右键菜单", "上下文菜单", "拷贝路径", "复制路径", "路径", "终端", "Terminal",
-        "编辑器", "打开方式", "用 App 打开", "扩展", "登录项与扩展", "新建文件", "新建", "模板", "后缀", "Word",
+        "编辑器", "打开方式", "用 App 打开", "在 App 中打开", "改名", "扩展", "登录项与扩展", "新建文件", "新建", "模板", "后缀",
+        "Word",
         "Excel", "PPT", "Markdown", "文本",
       ]
     case .translate:

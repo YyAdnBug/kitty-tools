@@ -77,7 +77,8 @@ nonisolated struct FinderLink: Equatable {
   }
 
   /// 交给 App 打开哪些：文件夹原样给；文件给那个 App 认得的（系统登记的它能开的类型），认不得的改给所在的文件夹，
-  /// 几个落到同一个文件夹只给一次。**交过去就会被运行的文件**（runs：脚本、可执行文件、终端的配置——终端登记了
+  /// 几个落到同一个文件夹只给一次；不是编辑器的（终端这类）只给第一个——选了几十个文件时不弹出一串终端窗口
+  /// （同 OpenInTerminal：终端只取第一个、编辑器全给）。**交过去就会被运行的文件**（runs：脚本、可执行文件、终端的配置——终端登记了
   /// .command、.tool、没有扩展名的可执行文件和 .terminal，给它就跑；.sh 它没登记）只交给编辑器（appEdits：这个 App
   /// 能开纯文本，同 ScriptLibrary.editor 的白名单），别的 App 拿到的是所在的文件夹：右键「用终端打开」是想在那里开终端
   static func targets(
@@ -91,6 +92,7 @@ nonisolated struct FinderLink: Equatable {
       let whole = isDirectory(file) || (opens(file) && (appEdits || !runs(file)))
       let target = whole ? file : URL(filePath: parent)
       if !targets.contains(target) { targets.append(target) }
+      if !appEdits { break }
     }
     return targets
   }
@@ -114,16 +116,37 @@ nonisolated struct FinderLink: Equatable {
       ?? Prefs.finderOpenWithDefault
   }
 
+  /// 「拷贝路径」之后刘海岛上那一句的小字：一个是路径（主目录写成 ~），几个是「N 个路径」
+  static func copiedDetail(_ files: [URL]) -> String {
+    files.count == 1
+      ? (files[0].path(percentEncoded: false) as NSString).abbreviatingWithTildeInPath
+      : "\(files.count) 个路径"
+  }
+
+  /// 这个动作对应的那一项在设置里关着（扩展的菜单里已经没有它，这里再挡一次）
+  @MainActor static func isHidden(_ action: Action) -> Bool {
+    let key: String? =
+      switch action {
+      case .copyPaths: Prefs.finderMenuCopyPath
+      case .newFile, .customSuffix, .showTemplates: Prefs.finderMenuNewFile
+      case .open: nil
+      }
+    return key.map { UserDefaults.standard.object(forKey: $0) as? Bool == false } ?? false
+  }
+
   /// App 收到网址（AppDelegate.application(_:open:)）：认得出来就做，认不出来什么都不做
-  @MainActor static func perform(_ url: URL) {
+  @MainActor static func perform(_ url: URL, island: Island?) {
     guard Feature.finderMenu.isOn,
       let link = parse(
         url, scheme: Bundle.main.bundleIdentifier ?? "",
-        key: UserDefaults.standard.string(forKey: Prefs.finderMenuKey), apps: openWithApps)
+        key: UserDefaults.standard.string(forKey: Prefs.finderMenuKey), apps: openWithApps),
+      !isHidden(link.action)
     else { return }
     switch link.action {
     case .copyPaths:
       Paster.write(string: pathText(link.files), record: true)
+      // 拷贝是转一手交给本 App 做的，访达那边看不出成没成：说一声（同几家成熟产品拷完的提示）
+      island?.show("已拷贝路径", detail: copiedDetail(link.files))
     case .open(let id):
       guard let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) else { return }
       let existing = link.files.filter { FileManager.default.fileExists(atPath: $0.path) }

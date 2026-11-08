@@ -6,6 +6,7 @@
 // - 「自定义后缀…」：App 弹框问后缀（扩展是后台进程，弹不出窗口），建一个空的「JSON 文件.json」；框里「以后列在「新建文件」里」
 //   默认勾着：模板文件夹里也放一个同名的空文件，已经有这个后缀的模板（含自带的）就不放。
 // 拷一份到右键的那个文件夹，名字同模板，重名加「 2」；新文件的日期是现在（拷贝会带着模板的旧日期）；建不成响一声、记错误码。
+// 建好后同访达的「新建文件夹」、Windows 的新建：在访达里选中它、进入改名（revealForRename，按回车要辅助功能授权）。
 // 名字、后缀的收拾是纯函数（NewFileTests）。
 // 安全（2026-11-08 评审）：凭证在偏好里，本机别的程序读得到、也能投网址过来，但它没有本 App 的文件夹授权（桌面 / 文稿 / 下载，
 // 用户给过的话还有完全磁盘访问）。所以：模板只认真放在模板文件夹里的——数据目录、模板文件夹、模板本身都不能是替身（符号链接），
@@ -13,6 +14,7 @@
 // 的数据、容器都在那里，用户也不会在那里右键新建）；只新建、不覆盖。
 
 import AppKit
+import Carbon.HIToolbox
 import OSLog
 
 nonisolated enum NewFile {
@@ -130,11 +132,32 @@ nonisolated enum NewFile {
       try? manager.setAttributes(
         [.creationDate: Date.now, .modificationDate: Date.now],
         ofItemAtPath: target.path(percentEncoded: false))
+      revealForRename(target)
       return target
     } catch {
       Log.finder.error("新建文件失败：\((error as NSError).code)")
       NSSound.beep()
       return nil
+    }
+  }
+
+  /// 建好后同访达的「新建文件夹」：在访达里选中它、进入改名（按一下回车）。按回车要辅助功能授权，没有就只选中。
+  /// 照 RClick 的做法等访达到了前台再按（它的更新记录：固定延时在慢的文件夹里会漏掉）：每 50 ms 看一次、最多 2 秒，
+  /// 到了再等 0.1 秒。ponytail: 按回车时看不到访达里选中的是不是新文件（要控制访达的自动化授权），选中还没落下时
+  /// 会让原来选中的那个进入改名——只是进入改名、不会改掉名字，按 Esc 就退出
+  @MainActor static func revealForRename(_ url: URL) {
+    NSWorkspace.shared.activateFileViewerSelecting([url])
+    guard Permissions.isAccessibilityTrusted else { return }
+    let finderIsFront = {
+      NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.apple.finder"
+    }
+    Task {
+      for _ in 0..<40 where !finderIsFront() {
+        try? await Task.sleep(for: .milliseconds(50))
+      }
+      guard finderIsFront() else { return }
+      try? await Task.sleep(for: .milliseconds(100))
+      Paster.press(kVK_Return)
     }
   }
 
