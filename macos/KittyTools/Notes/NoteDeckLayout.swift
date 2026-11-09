@@ -2,7 +2,7 @@
 // 全是纯函数，单测 NoteDeckTests 锁住（设置在 NoteDeckOptions.swift）：
 // - NoteDeckMetrics：药丸和标签的各个尺寸，按大小档（0.85 / 1 / 1.25）一起缩放、取整到整点（叠着的标签不出缝）；
 // - NoteDeckLayout：一列标签怎么排（每张露出多长、要不要压短、「+N」、放不下时在视口里滚），加上一组算 frame 的函数——
-//   药丸多高、放哪块屏哪条边（两块屏相接的那条边不放）、药丸 / 那叠 / 打开的便签摆在哪、⌥ 拖药丸落在哪、
+//   药丸多高、放哪块屏哪条边、药丸 / 那叠 / 打开的便签摆在哪、⌥ 拖药丸落在哪、
 //   拖动排序落在第几格、鼠标离开多远算走了（热区）；
 // - NoteDeckLabel：竖排的标题——哪些字正着放、怎么分段、太长怎么截。
 // 交互和数值借自 Noty（MIT；只借数值和思路、一行代码都不拷，mac-whisker §11），长相按 Whisker 自己画。
@@ -205,27 +205,9 @@ nonisolated struct NoteDeckLayout: Equatable, Sendable {
 
   // MARK: 放哪块屏、哪条边
 
-  /// 这块屏的这条边是不是和别的屏相接（那边贴着另一块屏、纵向有重叠）：相接的边鼠标一过就到了另一块屏，不放
-  static func isJoined(
-    _ edge: NoteDeckOptions.Edge, of index: Int, in screens: [NoteDeckScreen]
-  ) -> Bool {
-    let own = screens[index].frame
-    let x = edge == .right ? own.maxX : own.minX
-    return screens.enumerated().contains { offset, other in
-      let facing = edge == .right ? other.frame.minX : other.frame.maxX
-      return offset != index && abs(facing - x) < 1 && other.frame.minY < own.maxY
-        && other.frame.maxY > own.minY
-    }
-  }
-
-  /// 想放 edge：它和别的屏相接就换另一侧，两侧都相接这块屏不放（nil）
-  static func freeEdge(
-    of index: Int, in screens: [NoteDeckScreen], preferring edge: NoteDeckOptions.Edge
-  ) -> NoteDeckOptions.Edge? {
-    [edge, edge.opposite].first { !isJoined($0, of: index, in: screens) }
-  }
-
-  /// 每块屏放不放、放哪边。screens 的第一块是主显示器（NSScreen.screens 的顺序）
+  /// 每块屏放不放、放哪边。screens 的第一块是主显示器（NSScreen.screens 的顺序）。
+  /// **选了哪边就放哪边**，和另一块屏相接的那条边也放（issue #11，2026-11-09 用户定）：原来相接的边换到另一侧，外接屏当主屏、
+  /// 笔记本在左边时选「左边」那叠却在主屏右边，像是设置没生效。代价是鼠标甩快了会越过那条边到另一块屏上（感应范围可以放宽）
   static func placements(
     _ screens: [NoteDeckScreen], options: NoteDeckOptions
   ) -> [NoteDeckPlacement] {
@@ -236,11 +218,7 @@ nonisolated struct NoteDeckLayout: Equatable, Sendable {
     case .all: targets = Array(screens.indices)
     case .named(let name): targets = [screens.firstIndex { $0.name == name } ?? 0]
     }
-    return targets.compactMap { index in
-      freeEdge(of: index, in: screens, preferring: options.edge).map {
-        NoteDeckPlacement(screen: index, edge: $0)
-      }
-    }
+    return targets.map { NoteDeckPlacement(screen: $0, edge: options.edge) }
   }
 
   /// 显示器的名字去重：同名的第二块起加序号（「DELL」「DELL 2」「DELL 3」），顺序不变。设置页的菜单和
@@ -262,25 +240,20 @@ nonisolated struct NoteDeckLayout: Equatable, Sendable {
     return false
   }
 
-  /// 按住 ⌥ 拖药丸到 mouse：贴鼠标所在那一半的边（那条边和别的屏相接就换另一侧），高度跟着鼠标。
-  /// crossesScreens：能不能拖到别的屏（只有「指定某一块」时能）；鼠标所在的屏两侧都放不了就留在原来那块屏。
-  /// 原来那块屏也放不了时是 nil
+  /// 按住 ⌥ 拖药丸到 mouse：贴鼠标所在那一半的边（和别的屏相接也贴，同 placements），高度跟着鼠标。
+  /// crossesScreens：能不能拖到别的屏（只有「指定某一块」时能；鼠标不在任何一块屏上就留在原来那块）。index 不对时是 nil
   static func dragged(
     to mouse: CGPoint, screens: [NoteDeckScreen], from index: Int, crossesScreens: Bool,
     pillHeight: CGFloat
   ) -> (placement: NoteDeckPlacement, position: Double)? {
     guard screens.indices.contains(index) else { return nil }
-    let under = crossesScreens ? screens.firstIndex { $0.frame.contains(mouse) } : nil
-    for target in [under, index].compactMap({ $0 }) {
-      let wanted: NoteDeckOptions.Edge = mouse.x < screens[target].frame.midX ? .left : .right
-      guard let edge = freeEdge(of: target, in: screens, preferring: wanted) else { continue }
-      let visible = screens[target].visibleFrame
-      let top = visible.maxY - pillMargin - pillHeight
-      let span = top - (visible.minY + pillMargin)
-      let ratio = span > 0 ? (top - (mouse.y - pillHeight / 2)) / span : 0.5
-      return (NoteDeckPlacement(screen: target, edge: edge), Double(min(max(ratio, 0), 1)))
-    }
-    return nil
+    let target = (crossesScreens ? screens.firstIndex { $0.frame.contains(mouse) } : nil) ?? index
+    let edge: NoteDeckOptions.Edge = mouse.x < screens[target].frame.midX ? .left : .right
+    let visible = screens[target].visibleFrame
+    let top = visible.maxY - pillMargin - pillHeight
+    let span = top - (visible.minY + pillMargin)
+    let ratio = span > 0 ? (top - (mouse.y - pillHeight / 2)) / span : 0.5
+    return (NoteDeckPlacement(screen: target, edge: edge), Double(min(max(ratio, 0), 1)))
   }
 
   // MARK: 那叠

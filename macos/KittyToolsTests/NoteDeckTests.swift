@@ -282,62 +282,55 @@ struct NoteDeckTests {
     #expect(Layout.placements([], options: options).isEmpty)
   }
 
-  /// 左右相接：相接的那条边不放、换到另一侧
-  @Test func joinedEdgeMovesToTheOtherSide() {
-    let screens = [Self.screen(), Self.screen("副屏", x: 1440)]
-    #expect(
-      Layout.isJoined(.right, of: 0, in: screens) && !Layout.isJoined(.left, of: 0, in: screens))
-    #expect(
-      Layout.isJoined(.left, of: 1, in: screens) && !Layout.isJoined(.right, of: 1, in: screens))
-    var options = NoteDeckOptions()
-    // 主屏的右边贴着副屏：换到左边
-    #expect(Layout.placements(screens, options: options) == [.init(screen: 0, edge: .left)])
-    options.display = .all
-    #expect(
-      Layout.placements(screens, options: options) == [
-        .init(screen: 0, edge: .left), .init(screen: 1, edge: .right),
-      ])
-    options.edge = .left
-    #expect(
-      Layout.placements(screens, options: options) == [
-        .init(screen: 0, edge: .left), .init(screen: 1, edge: .right),
-      ])
-    // 副屏在左边
-    let mirrored = [Self.screen(), Self.screen("副屏", x: -1440)]
-    options = NoteDeckOptions()
-    #expect(Layout.placements(mirrored, options: options) == [.init(screen: 0, edge: .right)])
-    options.edge = .left
-    #expect(Layout.placements(mirrored, options: options) == [.init(screen: 0, edge: .right)])
-  }
-
-  /// 上下相接不碍左右两条边；斜着摆（纵向没有重叠）也不算相接；只错开一部分算
-  @Test func stackedScreensKeepBothEdges() {
-    let stacked = [Self.screen(), Self.screen("上面", y: 900)]
-    var options = NoteDeckOptions()
-    options.display = .all
-    #expect(
-      Layout.placements(stacked, options: options) == [
-        .init(screen: 0, edge: .right), .init(screen: 1, edge: .right),
-      ])
-    let diagonal = [Self.screen(), Self.screen("右上", x: 1440, y: 900)]
-    #expect(!Layout.isJoined(.right, of: 0, in: diagonal))
-    let offset = [Self.screen(), Self.screen("错开", x: 1440, y: 600)]
-    #expect(Layout.isJoined(.right, of: 0, in: offset) && Layout.isJoined(.left, of: 1, in: offset))
-  }
-
-  /// 三块屏一排：中间那块两侧都相接，不放
-  @Test func middleOfThreeScreensGetsNothing() {
+  /// 三块屏一排：中间那块两侧都和别的屏相接，照样放在选的那一边
+  @Test func middleOfThreeScreensStillGetsTheDeck() {
     let screens = [
       Self.screen(), Self.screen("左", x: -1440), Self.screen("右", x: 1440),
     ]
     var options = NoteDeckOptions()
-    #expect(Layout.freeEdge(of: 0, in: screens, preferring: .right) == nil)
-    #expect(Layout.placements(screens, options: options).isEmpty)
+    #expect(Layout.placements(screens, options: options) == [.init(screen: 0, edge: .right)])
     options.display = .all
+    options.edge = .left
     #expect(
       Layout.placements(screens, options: options) == [
-        .init(screen: 1, edge: .left), .init(screen: 2, edge: .right),
+        .init(screen: 0, edge: .left), .init(screen: 1, edge: .left), .init(screen: 2, edge: .left),
       ])
+  }
+
+  /// issue #11：外接屏当主显示器（screens[0]、原点在 0,0），笔记本在它左边 / 右边 / 上边——选了哪边就放哪边，和另一块屏
+  /// 相接也放（2026-11-09 用户定；原来相接的边换到另一侧，主屏选「左边」却出现在右边）。主显示器、所有显示器、指定那一块都一样
+  @Test func externalMainKeepsTheChosenEdge() {
+    let external = Self.screen("DELL", width: 2560, height: 1440)
+    let arrangements = [
+      ("左", Self.screen("内建", x: -1512, y: 200, width: 1512, height: 982)),
+      ("右", Self.screen("内建", x: 2560, width: 1512, height: 982)),
+      ("上", Self.screen("内建", x: 500, y: 1440, width: 1512, height: 982)),
+    ]
+    for (side, builtIn) in arrangements {
+      let screens = [external, builtIn]
+      for edge in Edge.allCases {
+        var options = NoteDeckOptions()
+        options.edge = edge
+        let label = "笔记本在主屏\(side)边，选\(edge.name)边"
+        #expect(
+          Layout.placements(screens, options: options) == [.init(screen: 0, edge: edge)], "\(label)"
+        )
+        options.display = .all
+        #expect(
+          Layout.placements(screens, options: options) == [
+            .init(screen: 0, edge: edge), .init(screen: 1, edge: edge),
+          ], "\(label)，所有显示器")
+        options.display = .named("内建")
+        #expect(
+          Layout.placements(screens, options: options) == [.init(screen: 1, edge: edge)], "\(label)"
+        )
+        // 药丸贴着那块屏自己的那条边（全局坐标，原点不是 0 的那块也对）
+        let pill = Layout.pillFrame(on: builtIn, edge: edge, count: 3, options: options)
+        #expect(
+          edge == .left
+            ? pill.minX == builtIn.visibleFrame.minX : pill.maxX == builtIn.visibleFrame.maxX)
+      }
+    }
   }
 
   /// 指定某一块：按名字认；它没接着时退回主显示器
@@ -448,7 +441,7 @@ struct NoteDeckTests {
     #expect(Layout.dragTarget(from: 0, offset: 50, step: 70, count: 0) == 0)
   }
 
-  /// 按住 ⌥ 拖药丸：贴鼠标所在那一半的边，高度跟着鼠标；相接的边换另一侧；只有「指定某一块」时能拖到别的屏
+  /// 按住 ⌥ 拖药丸：贴鼠标所在那一半的边（和别的屏相接也贴），高度跟着鼠标；只有「指定某一块」时能拖到别的屏
   @Test func draggingThePillPicksEdgeAndHeight() throws {
     let screens = [Self.screen(), Self.screen("副屏", x: 1440)]
     func drag(_ x: CGFloat, _ y: CGFloat, from: Int = 0, crosses: Bool = false) -> (
@@ -463,28 +456,22 @@ struct NoteDeckTests {
     #expect(result.placement == .init(screen: 0, edge: .left))
     // 可见区 0…875，药丸高 92：顶 = 775、底 = 8；鼠标对着药丸的中线
     #expect(abs(result.position - (775 - (400 - 46)) / 767) < 0.0001)
-    // 主屏右半边：右边贴着副屏，换回左边
-    #expect(try #require(drag(1300, 400)).placement == .init(screen: 0, edge: .left))
+    // 主屏右半边：右边（贴着副屏也是右边，#11）
+    #expect(try #require(drag(1300, 400)).placement == .init(screen: 0, edge: .right))
     // 拖到最上、最下：夹在 0…1
     #expect(try #require(drag(200, 2000)).position == 0)
     #expect(try #require(drag(200, -500)).position == 1)
-    // 不许换屏时鼠标到了副屏也还在主屏；许换屏时跟过去（副屏右半边 = 右边，左半边贴着主屏 = 也是右边）
-    #expect(try #require(drag(2600, 400)).placement == .init(screen: 0, edge: .left))
+    // 不许换屏时鼠标到了副屏也还在主屏（在主屏中线右边 = 右边）；许换屏时跟过去，按副屏自己的中线分左右
+    #expect(try #require(drag(2600, 400)).placement == .init(screen: 0, edge: .right))
     #expect(
       try #require(drag(2600, 400, crosses: true)).placement == .init(screen: 1, edge: .right))
     #expect(
-      try #require(drag(1500, 400, crosses: true)).placement == .init(screen: 1, edge: .right))
-    #expect(drag(100, 100, from: 9) == nil)
-    // 三块屏一排，从右边那块拖进中间那块（两侧都相接）：留在原来那块
-    let row = [Self.screen(), Self.screen("左", x: -1440), Self.screen("右", x: 1440)]
-    let stuck = try #require(
-      Layout.dragged(
-        to: CGPoint(x: 700, y: 400), screens: row, from: 2, crossesScreens: true, pillHeight: 92))
-    #expect(stuck.placement == .init(screen: 2, edge: .right))
+      try #require(drag(1500, 400, crosses: true)).placement == .init(screen: 1, edge: .left))
+    // 鼠标不在任何一块屏上：留在原来那块
     #expect(
-      Layout.dragged(
-        to: CGPoint(x: 700, y: 400), screens: row, from: 0, crossesScreens: false, pillHeight: 92)
-        == nil)
+      try #require(drag(5000, 400, from: 1, crosses: true)).placement
+        == .init(screen: 1, edge: .right))
+    #expect(drag(100, 100, from: 9) == nil)
   }
 
   // MARK: 竖排标题

@@ -1719,7 +1719,7 @@ struct NoteFloatTests {
     }
   }
 
-  /// 两块屏相接、那叠被换到左边缘（偏好还是右）：从它里面拖出来，标签在右侧（朝屏幕里面）、右上角不动（纸不跳）；
+  /// 那叠实际在左边缘、偏好还是右（⌥ 拖药丸还没松手；issue #11 之前两块屏相接时也这样）：从它里面拖出来，标签在右侧（朝屏幕里面）、右上角不动（纸不跳）；
   /// 从它的菜单浮出来往屏幕里面（右）挪、不压着那叠；「收回边缘」朝左。没有原处的按它所在那块屏的那叠
   @Test func floatFollowsTheEdgeTheDeckIsActuallyOn() throws {
     let (defaults, suite) = try prefs()

@@ -256,7 +256,7 @@ import SwiftUI
   static func floatTitle(isFloating: Bool, hasEdge: Bool = true) -> String {
     isFloating ? (hasEdge ? "收回边缘" : "取消浮动") : "浮在屏幕上"
   }
-  /// 符号：「收回边缘」朝那一叠实际在的那条边（edge；两块屏相接时那叠会换到另一侧）
+  /// 符号：「收回边缘」朝那一叠实际在的那条边（edge）
   static func floatSymbol(
     isFloating: Bool, hasEdge: Bool = true, edge: NoteDeckOptions.Edge = .right
   ) -> String {
