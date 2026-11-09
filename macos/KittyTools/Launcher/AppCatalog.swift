@@ -78,7 +78,8 @@ enum AppCatalog {
       initials: [
         LauncherMatch.initials(display), LauncherMatch.initials(fileName), pinyin?.initials,
       ]
-      .compactMap { $0 }.reduce(into: []) { if !$0.contains($1) { $0.append($1) } })
+      .compactMap { $0 }.reduce(into: []) { if !$0.contains($1) { $0.append($1) } },
+      appBundleID: Bundle(url: URL(filePath: path))?.bundleIdentifier)
   }
 
   /// App 不在标准目录（应用程序目录及其一层子文件夹、访达所在处）时的位置（~ 缩写的父目录）；在标准目录里是空的

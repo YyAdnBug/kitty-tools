@@ -308,6 +308,7 @@ struct SettingsArchive: Codable, Equatable {
     kinds[Prefs.statusScreenPresets] = .statuses
     kinds[Prefs.reminders] = .reminders
     kinds[Prefs.launcherCommandAliases] = .text
+    kinds[Prefs.launcherAppAliases] = .text
     kinds[Prefs.launcherCommandsOff] = .text
     kinds[Prefs.launcherCommandHotKeys] = .text
     // 启动台的布局是用户的数据，不按字符串的 4096 字上限走，也不「文件里没有就删本机的」：单独收（capture / sanitized /

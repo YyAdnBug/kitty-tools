@@ -50,6 +50,8 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
   var names: [String] = []
   /// 首字母缩写（已折叠）：Visual Studio Code → vsc，活动监视器 → hdjsq
   var initials: [String] = []
+  /// 应用别名用的稳定标识（AppCatalog 在后台读）；不参与结果 id、打开目标或使用记录。
+  var appBundleID: String?
   /// ↩ 粘贴的内容（计算结果）
   var payload: String?
   /// Tab 补进输入框的文字（计算结果、目录路径、「关键词 」）；nil 时 App、动作、网址补标题
