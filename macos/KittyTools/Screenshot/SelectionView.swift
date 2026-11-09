@@ -800,19 +800,21 @@ final class SelectionView: NSView, NSTextViewDelegate {
     if let origin, sizeField.frame.origin != origin { sizeField.setFrameOrigin(origin) }
   }
 
-  /// 尺寸胶囊放哪（左下角，取整到整点：选区给的是小数点，文字落在半像素上会糊）：左上角外 8 pt → 选区里离左边、上边各 8 pt
-  /// （选区四周都留得出 8 pt 才放：不盖角手柄和能拖的边）→ 选区右侧、左侧外 8 pt（和上边对齐；比胶囊矮的选区竖直居中，
-  /// 免得碰到上下的栏）。出屏、挡到栏或顶部提示的不要；都不行时 nil
+  /// 尺寸胶囊放哪（左下角，取整到整点：选区给的是小数点，文字落在半像素上会糊）：先放选区外面——左上角外 8 pt →
+  /// 选区右侧、左侧外 8 pt（和上边对齐；比胶囊矮的选区竖直居中，免得碰到上下的栏）→ 左下角外 8 pt；外面都放不下才进选区，
+  /// 离左边、上边各 8 pt（选区四周都留得出 8 pt 才放：不盖角手柄和能拖的边）。2026-11-09 用户：上面被译文栏占着时它进了
+  /// 选区、挡住要截的字（原来选区里排在左右两侧前面）。出屏、挡到栏或顶部提示的不要；都不行时 nil
   private func sizeFieldOrigin(for measured: CGRect, size: CGSize) -> CGPoint? {
-    let above = max(bounds.minX, min(measured.minX, bounds.maxX - size.width))
+    let left = max(bounds.minX, min(measured.minX, bounds.maxX - size.width))
     let side = min(measured.maxY - size.height, measured.midY - size.height / 2)
-    var candidates = [CGPoint(x: above, y: measured.maxY + 8)]
+    var candidates = [
+      CGPoint(x: left, y: measured.maxY + 8),
+      CGPoint(x: measured.maxX + 8, y: side), CGPoint(x: measured.minX - 8 - size.width, y: side),
+      CGPoint(x: left, y: measured.minY - 8 - size.height),
+    ]
     if measured.width >= size.width + 16, measured.height >= size.height + 16 {
       candidates.append(CGPoint(x: measured.minX + 8, y: measured.maxY - 8 - size.height))
     }
-    candidates += [
-      CGPoint(x: measured.maxX + 8, y: side), CGPoint(x: measured.minX - 8 - size.width, y: side),
-    ]
     let showsHint = !hint.layer.isHidden && hint.layer.opacity > 0
     return candidates.lazy.map { CGPoint(x: $0.x.rounded(), y: $0.y.rounded()) }.first {
       let frame = CGRect(origin: $0, size: size)

@@ -745,12 +745,10 @@ final class ScrollCaptureHUD: NSView {
     if #available(macOS 26, *) {
       // 液态玻璃：圆角交给玻璃，不画描边（两个无障碍开关交给它）；HUD 永远深色
       // 面板当 key（收按键）：圆角外的黑边见 NSGlassEffectView.clipped（2026-11-06 用户看到的就是这里）
-      let glass = NSGlassEffectView.clipped(cornerRadius: Style.Radius.panel)
-      glass.appearance = NSAppearance(named: .darkAqua)
+      // 玻璃里垫 HUD 底色：面板压在亮的窗口上时，「透明」的液态玻璃几乎全透（见 Style.HUD.glass）
       surface = NSView()
       surface.autoresizingMask = [.width, .height]  // 玻璃按 Auto Layout 撑满它；掩码和那组约束一致
-      glass.contentView = surface
-      material = glass
+      material = Style.HUD.glass(cornerRadius: Style.Radius.panel, content: surface)
     } else {
       let effect = NSVisualEffectView()
       effect.material = .hudWindow

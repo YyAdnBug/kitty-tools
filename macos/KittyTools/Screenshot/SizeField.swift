@@ -4,7 +4,7 @@
 // 状态和几何归 SelectionView：这里只显示、收点击、把 ↩ / Esc / Tab 交出去。输入框当第一响应者时按键归它；收下时
 // SelectionView 先把第一响应者要回去、再调 endEditing（同文字标注的 EditorField，反过来单键快捷键全失灵）。
 // 旁白：宽、高两个数字各有名字（按下 = 点数字开始输入），比例按钮是按钮（按下弹菜单），「×」不读。
-// macOS 26 起底是深色液态玻璃（mac-whisker §2「26 分支」）：零件都放进玻璃的 contentView，不画 HUD 皮肤和阴影。
+// macOS 26 起底是深色液态玻璃（mac-whisker §2「26 分支」，玻璃里垫 HUD 底色）：零件都放进玻璃的 contentView，不画 HUD 皮肤和阴影。
 
 import AppKit
 
@@ -43,14 +43,12 @@ final class SizeField: NSView, NSTextFieldDelegate {
   init() {
     var glass: NSView?
     if #available(macOS 26, *) {
-      // 圆角交给玻璃；两个无障碍开关交给玻璃（mac-whisker §7）
+      // 圆角交给玻璃，玻璃里垫底色（见 Style.HUD.glass）；两个无障碍开关交给玻璃（mac-whisker §7）
       // 截图遮罩当 key：圆角外的黑边见 NSGlassEffectView.clipped
-      let effect = NSGlassEffectView.clipped(cornerRadius: Style.Radius.control)
-      effect.autoresizingMask = [.width, .height]
-      let content = NSView()
-      content.wantsLayer = true  // 焦点环是加在它图层上的子图层
+      let content = NSView()  // Style.HUD.glass 会给它图层：焦点环是加在它图层上的子图层
       content.autoresizingMask = [.width, .height]  // 玻璃按 Auto Layout 撑满它；掩码和那组约束一致
-      effect.contentView = content
+      let effect = Style.HUD.glass(cornerRadius: Style.Radius.control, content: content)
+      effect.autoresizingMask = [.width, .height]
       glassContent = content
       glass = effect
     } else {

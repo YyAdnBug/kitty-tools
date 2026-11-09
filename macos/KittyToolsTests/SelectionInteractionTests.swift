@@ -1193,6 +1193,27 @@ struct SelectionInteractionTests {
     #expect(dock.view.selection == CGRect(x: 530, y: 25, width: 60, height: 60))
   }
 
+  // 贴着屏幕顶、上面放不下尺寸胶囊（2026-11-09 用户：上面被译文栏占着时它进了选区、挡住要截的字）：先去选区右侧外面，
+  // 左右都贴边时去左下角外面，外面都放不下（整屏）才进选区
+  @Test func sizeFieldPrefersOutsideSelection() throws {
+    let top = CGRect(x: 100, y: 690, width: 600, height: 100)
+    let h = Harness()
+    h.view.select(top)
+    let field = try #require(h.sizeField)
+    #expect(!field.frame.intersects(top), "\(field.frame)")
+    #expect(field.frame.minX == top.maxX + 8, "\(field.frame)")
+    #expect(field.isInteractive)
+    let wide = Harness()
+    let band = CGRect(x: 0, y: 600, width: 1200, height: 200)
+    wide.view.select(band)
+    let below = try #require(wide.sizeField)
+    #expect(!below.frame.intersects(band), "\(below.frame)")
+    let full = Harness()
+    full.view.select(CGRect(x: 0, y: 0, width: 1200, height: 800))
+    let inside = try #require(full.sizeField)
+    #expect(inside.frame.origin == CGPoint(x: 8, y: 800 - 8 - inside.frame.height))
+  }
+
   // 选区底边离屏幕底不到一个工具栏加托盘：工具栏不放下面（托盘会翻进选区、压住下边），下边照样拖得动
   @Test func styleTrayStaysOffSelectionEdges() throws {
     let selection = CGRect(x: 100, y: 70, width: 1000, height: 650)

@@ -117,15 +117,11 @@ class HUDBar: PopView {
     self.radius = radius
     self.height = height
     if #available(macOS 26, *) {
-      // HUD 永远深色；两个无障碍开关交给玻璃
+      // HUD 永远深色（玻璃里垫底色，见 Style.HUD.glass）；两个无障碍开关交给玻璃
       // 截图遮罩当 key：圆角外的黑边见 NSGlassEffectView.clipped
-      let glass = NSGlassEffectView.clipped(cornerRadius: radius)
-      glass.appearance = NSAppearance(named: .darkAqua)
-      effect = NSView()
-      effect.wantsLayer = true  // 当前工具的底块是加在它图层上的子图层
+      effect = NSView()  // Style.HUD.glass 会给它图层：当前工具的底块是加在它图层上的子图层
       effect.autoresizingMask = [.width, .height]  // 玻璃按 Auto Layout 撑满它，掩码和那组约束一致
-      glass.contentView = effect
-      material = glass
+      material = Style.HUD.glass(cornerRadius: radius, content: effect)
     } else {
       let effect = NSVisualEffectView()
       effect.material = .hudWindow

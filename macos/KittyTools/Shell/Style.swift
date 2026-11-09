@@ -255,8 +255,9 @@ enum Style {
   /// HUD 皮肤（永远深色，mac-whisker §2）：截图工具栏、样式托盘、尺寸胶囊、提示、放大镜信息卡、钉图圆钮、
   /// 常驻缩略图胶囊、长截图面板共用。有材质的用 NSVisualEffectView（`.hudWindow` + vibrantDark），
   /// 纯图层画的小控件用 fill；降低透明度时不透明、增强对比度时内描边加粗、小底块和分隔线加深。
-  /// macOS 26 起 HUDBar、尺寸胶囊、长截图面板、常驻缩略图的胶囊与圆钮换液态玻璃（darkAqua），不用 fill、内外描边和
-  /// applyShadow（两个无障碍开关交给玻璃）；提示、放大镜信息卡 26 上照旧用 fill + applySkin。
+  /// macOS 26 起 HUDBar、尺寸胶囊、长截图面板、常驻缩略图的胶囊与圆钮换液态玻璃（darkAqua，`Style.HUD.glass`），
+  /// 玻璃里照样垫 fill（2026-11-09：液态玻璃「透明」时深色玻璃在亮底上几乎全透），不用内外描边和 applyShadow
+  /// （两个无障碍开关交给玻璃）；提示、放大镜信息卡 26 上照旧用 fill + applySkin。
   /// ponytail: 提示和信息卡是遮罩 Canvas 里的 CALayer、放不了 NSGlassEffectView，换玻璃得改成 SelectionView 里的视图、
   /// 另写布局（超出「只换材质」）；26 实测和玻璃栏不搭时再改（mac-whisker §2「26 分支」）。
   /// 截图家族里自绘的半透明 HUD 零件一律从这里取色，不写字面量（不然两个无障碍开关管不到）
@@ -303,6 +304,22 @@ enum Style {
       layer.shadowRadius = 9
       layer.shadowOffset = CGSize(width: 0, height: -6)
       layer.shadowPath = path
+    }
+
+    /// HUD 的深色玻璃（截图工具栏和它的托盘 / 菜单 / 录制条、尺寸胶囊、钉图的圆钮、长截图面板，都走这里）：clipped + darkAqua，
+    /// content 当 contentView 并垫一层 fill。HUD 的字和图标写死是白的，深色外观的玻璃却不保证自己是暗的：
+    /// 系统设置 › 外观 › 液态玻璃选「透明」（系统默认）时，压在亮底上的玻璃几乎全透，白字白图标看不见（2026-11-09 用户反馈
+    /// 截图工具栏「几乎透明」：开了「框选时保持屏幕原色」、或者栏落进选区里时，栏下面就是没压暗的亮页面）。屏上实录对比度
+    /// 1.8 → 垫了之后 8.7 以上（build/research/toolbar-transparent-2026-11-09/）；玻璃的 tintColor 染深色反而更浅，不用。
+    /// 开发机选的是「着色」，那样玻璃自己发灰，所以一直没看出来
+    @available(macOS 26, *)
+    static func glass(cornerRadius: CGFloat, content: NSView) -> NSGlassEffectView {
+      let glass = NSGlassEffectView.clipped(cornerRadius: cornerRadius)
+      glass.appearance = NSAppearance(named: .darkAqua)
+      content.wantsLayer = true
+      content.layer?.backgroundColor = fill.cgColor
+      glass.contentView = content
+      return glass
     }
 
     /// 纯图层画的 HUD 小控件（尺寸胶囊、提示、信息卡）：底色 + 内描边 + 圆角，外圈 0.5 pt black 0.5 是边外 0.5 的子图层
@@ -738,7 +755,9 @@ extension View {
   /// 「26 上仍是填充」那一条处理：这几件小控件留在填充皮肤上
   @ViewBuilder func hudSkin<S: InsettableShape>(_ shape: S, glass: Bool = true) -> some View {
     if #available(macOS 26, *), glass {
+      // 垫 HUD 底色：液态玻璃「透明」时深色玻璃压在亮底上几乎全透（见 Style.HUD.glass）
       foregroundStyle(Color(nsColor: Style.HUD.text))
+        .background(Color(nsColor: Style.HUD.fill), in: shape)
         .glassEffect(.regular, in: shape)
         .environment(\.colorScheme, .dark)
         .contentShape(shape)
