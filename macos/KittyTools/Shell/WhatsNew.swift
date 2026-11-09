@@ -56,6 +56,9 @@ enum WhatsNew {
       id: "reminders", version: "0.8.0", feature: .reminders, actions: [.reminderNew],
       page: .reminders),
     Entry(id: "features", version: "0.8.0", feature: nil, page: .general, section: "功能"),
+    Entry(
+      id: "launcher-scripts", version: "0.8.0", feature: .launcher, page: .launcher,
+      section: "脚本命令"),
   ]
 
   /// 一版最多标几个（拍板 B1：标多了到处都是「新」，等于没标）

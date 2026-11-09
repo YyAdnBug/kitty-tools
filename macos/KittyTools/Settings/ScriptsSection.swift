@@ -57,6 +57,8 @@ struct ScriptsSection: View {
         Text("启用脚本命令")
         Text("脚本文件夹里的每个脚本就是启动器里的一条命令")
       }
+      // 拨过开关、新建过脚本，「新」就算看过了（光点进这一页不算；WhatsNew）
+      .onChange(of: scriptsOn) { touchNew() }
       Group {
         SettingsPushRow(title: "怎么写脚本", detail: "三步上手、开头几行怎么写、结果给谁，带一个能直接用的例子") {
           navigation?.path = [ScriptGuidePage.route]
@@ -88,7 +90,10 @@ struct ScriptsSection: View {
         }
         if library?.hasNoOwnScripts == true {
           LabeledContent {
-            Button("用例子新建") { library?.newExample(island: island) }
+            Button("用例子新建") {
+              touchNew()
+              library?.newExample(island: island)
+            }
           } label: {
             Text("还没有自己的脚本")
             Text("用查天气的例子新建一个，在启动器里输「tq 空格 北京」就能跑；或者点上面的「新建脚本」选好语言和结果方式")
@@ -127,7 +132,7 @@ struct ScriptsSection: View {
       }
       .disabled(!scriptsOn)
     } header: {
-      Text("脚本命令")
+      NewTitle("脚本命令", page: .launcher, fresh: navigation?.fresh ?? [])
     } footer: {
       SectionFootnote(
         "脚本以你的身份运行，能用 Kitty Tools 已有的辅助功能、屏幕录制等授权，只放你信得过的脚本；从网上下载的，第一次运行前会先给你看一眼全文。")
@@ -185,6 +190,7 @@ struct ScriptsSection: View {
 
   /// 「从剪贴板新建」：剪贴板里是一整个脚本（#! 开头，带不带 ``` 都行）就先给看全文，点了才存
   private func newFromClipboard() {
+    touchNew()
     guard let raw = NSPasteboard.general.string(forType: .string),
       let text = ScriptLibrary.scriptText(fromClipboard: raw)
     else {
@@ -198,7 +204,12 @@ struct ScriptsSection: View {
   }
 
   /// 「新建脚本」：先出小表单（第三轮 D2，挂在设置窗根上），建好用编辑器打开，岛上说接下来怎么做（AppDelegate）
-  private func newScript() { navigation?.showsNewScript = true }
+  private func newScript() {
+    touchNew()
+    navigation?.showsNewScript = true
+  }
+
+  private func touchNew() { WhatsNew.touch(section: "脚本命令", of: .launcher) }
 
   /// 拖脚本文件进来：先看一眼再导入（一次一个；拖了几个只看第一个）。键盘、读屏用右边的「选择文件…」（第三轮评审）
   private var dropZone: some View {
