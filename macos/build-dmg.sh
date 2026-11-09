@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
-# 原生版打包（路径 B：Apple Development 签名、不公证，D7）：archive → 自检 → arm64 DMG + 更新用 zip → notes
+# 原生版打包（路径 B：Apple Development 签名、不公证，D7）：archive → 自检 → arm64 DMG + 更新用 zip + 更新清单 → notes
 # 发布（2026-09-27 起，和 Tauri 版的仓库无关）：发到本仓库 github.com/YyAdnBug/kitty-tools，tag macos-v<版本>、
-#   正式 release（标 latest；App 内更新读 release 列表、取版本号最大的 macos-v*，第四轮体检 E13），附两个文件：DMG（首次安装）和 <名字>_<版本>_arm64.zip
-#   （App 内更新下载它，文件名后缀 _arm64.zip 别改）。发布说明固定附「系统设置 › 隐私与安全 › 仍要打开」步骤
-#   （只有第一次安装要；之后 App 内更新下载的包不带隔离标记，不用再放行）。
+#   正式 release、**标 latest**，附三个文件：DMG（首次安装）、<名字>_<版本>_arm64.zip（App 内更新下载它，文件名后缀 _arm64.zip 别改）、
+#   更新清单 macos-update.json（2026-11-09，issue #12）。App 内更新先读 releases/latest/download/macos-update.json（静态文件，
+#   不走 API、不受没登录时每个 IP 每小时 60 次的限制），读不到才读 API 的 release 列表、取版本号最大的 macos-v*（第四轮体检 E13）——
+#   所以 latest 必须一直是 mac 版（Windows 版、表情包这些 release 一律 --latest=false），清单必须传上去。清单里是版本号、zip 的下载地址
+#   （按 GitHub 上传后的名字：空格换成「.」）、sha256、大小、发布页；**格式发布后别改**（已装的版本会读它，见
+#   Updater.release(fromManifest:)：只加新键，要改已有键的意思就换文件名、旧名字的照发）。传完核一遍（两条都要 200）：
+#     curl -fsSL https://github.com/YyAdnBug/kitty-tools/releases/latest/download/macos-update.json
+#     curl -fsIL "$(curl -fsSL https://github.com/YyAdnBug/kitty-tools/releases/latest/download/macos-update.json | jq -r .url)"
+#   发布说明固定附「系统设置 › 隐私与安全 › 仍要打开」步骤（只有第一次安装要；之后 App 内更新下载的包不带隔离标记，不用再放行）。
 # 产物名跟 PRODUCT_NAME 走（N16：Kitty Tools.app、卷名 Kitty Tools、Kitty Tools_<版本>_arm64.dmg，之前叫 Kitty Tools Native）。
 #   和 Tauri 旧版同名，发布说明还要附：安装前先删掉（或让访达替换）/Applications 里旧版的 Kitty Tools.app；
 #   从 Kitty Tools Native 升上来的，把旧的 Kitty Tools Native.app 也删掉（同一个 bundle id，留着会让开机自启指错），
@@ -94,7 +100,15 @@ codesign --verify --deep --strict \
   -R '=identifier "com.yy.kitty-tools.native" and anchor apple generic and certificate leaf[subject.OU] = "HTX9F4KG39"' \
   "$CHECK/$NAME.app"
 rm -rf "$CHECK"
+# 更新清单（#12，说明见文件头）：文件名和 Updater.manifestName 一样（单测比对）
+ZIPNAME=$(basename "$ZIP") && TAG="macos-v$VERSION" && REL="https://github.com/YyAdnBug/kitty-tools/releases"
+MANIFEST="$OUT/macos-update.json"
+jq -n --arg version "$VERSION" --arg url "$REL/download/$TAG/${ZIPNAME// /.}" \
+  --arg sha256 "$(shasum -a 256 "$ZIP" | cut -d' ' -f1)" --argjson size "$(stat -f%z "$ZIP")" \
+  --arg page "$REL/tag/$TAG" '{version: $version, url: $url, sha256: $sha256, size: $size, page: $page}' \
+  > "$MANIFEST"
 jq -r --arg v "$VERSION" '.[] | select(.version == $v) | .summary, (.changes[] | "- \(.scope)：\(.text)")' \
   "$CHANGELOG" > "$OUT/notes.txt"
 echo "$DMG"
 echo "$ZIP"
+echo "$MANIFEST"

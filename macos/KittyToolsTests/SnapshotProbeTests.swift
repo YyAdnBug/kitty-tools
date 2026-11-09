@@ -566,6 +566,8 @@ struct SnapshotProbeTests {
       ("installed", .installed(release), false, nil),
       ("latest", .upToDate, false, nil),
       ("failed", .failed("检查更新失败：网络连接已中断。"), false, nil),
+      // GitHub 限流（#12）：那一行只有一行宽，看话放不放得下
+      ("failed-limited", .failed("检查更新失败：\(Updater.apiFailure(403))"), false, nil),
     ]
     navigation.page = .about
     for (name, state, dark, progress) in updateStates {

@@ -90,6 +90,119 @@ struct UpdaterTests {
     }
   }
 
+  /// 更新清单（#12，build-dmg.sh 写的那个形状）：认得出就是那一版、校验值收成小写；网址不是 https、校验值不是 64 位
+  /// 十六进制、版本号带别的字、缺键、不是 JSON 都是 nil（退回 API），多出来的键不管
+  @Test func parsesManifest() throws {
+    func manifest(
+      version: String = "0.8.1",
+      url: String =
+        "https://github.com/YyAdnBug/kitty-tools/releases/download/macos-v0.8.1/Kitty.Tools_0.8.1_arm64.zip",
+      sha256: String = String(repeating: "AB", count: 32), extra: String = #","size":123"#
+    ) -> Data {
+      Data(
+        #"{"version":"\#(version)","url":"\#(url)","sha256":"\#(sha256)","page":"https://github.com/YyAdnBug/kitty-tools/releases/tag/macos-v\#(version)"\#(extra)}"#
+          .utf8)
+    }
+    let release = try #require(Updater.release(fromManifest: manifest()))
+    #expect(release.version == "0.8.1")
+    #expect(release.archive.absoluteString.hasSuffix("/macos-v0.8.1/Kitty.Tools_0.8.1_arm64.zip"))
+    #expect(release.page.absoluteString.hasSuffix("/tag/macos-v0.8.1"))
+    #expect(release.sha256 == String(repeating: "ab", count: 32))
+    #expect(Updater.release(fromManifest: manifest(extra: #","notes":"新的键","size":1"#)) != nil)
+    #expect(Updater.release(fromManifest: manifest(url: "http://example.com/K_arm64.zip")) == nil)
+    #expect(Updater.release(fromManifest: manifest(sha256: "abc")) == nil)
+    #expect(
+      Updater.release(fromManifest: manifest(sha256: String(repeating: "g", count: 64))) == nil)
+    #expect(Updater.release(fromManifest: manifest(version: "0.8.1-beta")) == nil)
+    #expect(Updater.release(fromManifest: manifest(version: "")) == nil)
+    #expect(Updater.release(fromManifest: Data(#"{"version":"0.8.1"}"#.utf8)) == nil)
+    #expect(Updater.release(fromManifest: Data("<html>404</html>".utf8)) == nil)
+  }
+
+  /// 先读清单、读到就不碰 API；清单 404（老 release 没有它）、连不上、解不出来时读 API 的列表；API 限流（403 / 429）时
+  /// 报的是「限流了」、指到发布页，不是笼统的「返回 403」（#12）。全是假的网络，不联网
+  @MainActor @Test func latestReadsManifestThenFallsBackToAPI() async throws {
+    let sha = String(repeating: "0", count: 64)
+    let manifest = Data(
+      #"{"version":"0.9.0","url":"https://github.com/x/y/K_0.9.0_arm64.zip","sha256":"\#(sha)","page":"https://github.com/x/y"}"#
+        .utf8)
+    let list = Data(
+      "[\(Self.entry(tag: "macos-v0.8.5", assets: [("K_0.8.5_arm64.zip", "https://github.com/x/y/b.zip")]))]"
+        .utf8)
+    struct Offline: Error {}
+    /// 清单那一头怎么答（nil = 连不上），API 那一头怎么答；记下问了哪几个
+    func latest(manifest: (Data, Int)?, api: (Data, Int)) async throws -> (
+      Updater.Release?, [String]
+    ) {
+      var asked: [String] = []
+      let release = try await Updater.latest { url in
+        asked.append(url.host() ?? "")
+        if url.host() == "api.github.com" { return api }
+        guard let manifest else { throw Offline() }
+        return manifest
+      }
+      return (release, asked)
+    }
+    let (fromManifest, asked) = try await latest(manifest: (manifest, 200), api: (list, 200))
+    #expect(fromManifest?.version == "0.9.0" && fromManifest?.sha256 == sha)
+    #expect(asked == ["github.com"], "读到清单就不再问 API")
+    for reply in [(Data("Not Found".utf8), 404), (Data("{}".utf8), 200), nil] as [(Data, Int)?] {
+      let (fromAPI, asked) = try await latest(manifest: reply, api: (list, 200))
+      #expect(fromAPI?.version == "0.8.5" && fromAPI?.sha256 == nil)
+      #expect(asked == ["github.com", "api.github.com"])
+    }
+    #expect(try await latest(manifest: nil, api: (Data(), 404)).0 == nil, "还没有 release")
+    for status in [403, 429] {
+      await #expect(throws: UpdateError.self) {
+        try await latest(manifest: nil, api: (Data(), status))
+      }
+      let words = Updater.apiFailure(status)
+      #expect(words.contains("限流") && words.contains("发布页"), "\(words)")
+    }
+    #expect(Updater.apiFailure(500) == "GitHub 返回 500")
+  }
+
+  /// 清单给了校验值：下好的包对不上就在解包之前拒绝（包随后删掉）；对得上才往下走（这里是个假包，走到 ditto 解不开）
+  @Test func checksArchiveDigestBeforeUnpacking() async throws {
+    let work = FileManager.default.temporaryDirectory.appending(path: "UpdaterTests-\(UUID())")
+    defer { try? FileManager.default.removeItem(at: work) }
+    let target = work.appending(path: "Apps/Kitty Tools.app")
+    try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+    let archive = try #require(URL(string: "https://github.com/x/y/K_arm64.zip"))
+    let ok = try #require(
+      HTTPURLResponse(url: archive, statusCode: 200, httpVersion: nil, headerFields: nil))
+    func attempt(sha256: String) async throws -> String? {
+      let zip = work.appending(path: "\(UUID()).zip")
+      try Data("not a zip".utf8).write(to: zip)
+      do {
+        try await Updater.replace(
+          target,
+          with: .init(
+            version: "0.9.0", archive: archive, page: Updater.releasesPage, sha256: sha256),
+          zip: zip, response: ok)
+      } catch let error as UpdateError {
+        #expect(!FileManager.default.fileExists(atPath: zip.path), "下好的包用完就删")
+        return error.errorDescription
+      }
+      return nil
+    }
+    #expect(try await attempt(sha256: String(repeating: "0", count: 64))?.contains("校验值") == true)
+    // printf 'not a zip' | shasum -a 256
+    let real = "a3989126344744ef800dbc88bf7e744853f3f2eac75c9ab3301f4e845ef22078"
+    #expect(try await attempt(sha256: real) == "更新包解不开")
+  }
+
+  /// build-dmg.sh 写的清单和 App 读的是同一个文件名、同几个键（发版后才会发现对不上，单测先比对）
+  @Test func buildScriptWritesTheManifestTheAppReads() throws {
+    let script = try String(
+      contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        .deletingLastPathComponent().appending(path: "build-dmg.sh"),
+      encoding: .utf8)
+    #expect(script.contains("/\(Updater.manifestName)\""))
+    #expect(
+      script.contains("{version: $version, url: $url, sha256: $sha256, size: $size, page: $page}"))
+  }
+
   @Test func comparesVersionsNumerically() {
     #expect(Updater.isNewer("0.1.10", than: "0.1.9"))
     #expect(Updater.isNewer("0.2.0", than: "0.1.0"))

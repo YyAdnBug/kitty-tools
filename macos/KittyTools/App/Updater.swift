@@ -1,6 +1,8 @@
-// 应用内更新（PLAN D8，2026-09-27 改为做）：读本仓库（github.com/YyAdnBug/kitty-tools，不碰 Tauri 版的仓库）的
-// release 列表，取版本号最大的 macos-v*（跳过草稿和预发布；第四轮体检 E13：同一个仓库里还发 Windows 版，windows-v* 标成
-// latest 时读 releases/latest 就找不到 mac 的新版）。有更新的版本：刘海岛提示一次（每个版本一次；只停 2 秒、不接点击，错过就没了），
+// 应用内更新（PLAN D8，2026-09-27 改为做）：先读本仓库（github.com/YyAdnBug/kitty-tools，不碰 Tauri 版的仓库）latest 那个
+// release 上的更新清单 macos-update.json（build-dmg.sh 生成，一个静态文件：不走 API，不受没登录时每个 IP 每小时 60 次的限制——
+// 公司、学校共用出口时一下就用完、报 403，issue #12）；读不到（老 release 没有它、Windows 版被误标成 latest、网络问题）再读
+// API 的 release 列表，取版本号最大的 macos-v*（跳过草稿和预发布；第四轮体检 E13：同一个仓库里还发 Windows 版，windows-v* 标成
+// latest 时读 releases/latest 就找不到 mac 的新版）；API 也限流时说清是限流（apiFailure）。有更新的版本：刘海岛提示一次（每个版本一次；只停 2 秒、不接点击，错过就没了），
 // 所以另有常驻到更新为止的入口（2026-10-06，对标 Alfred 窗口底部的小提示 / Raycast 根搜索顶上那一行 / Sparkle 给后台 App 的
 // 「温和提醒」）：菜单栏图标右上角的小圆点（StatusItem.updateVersion）+ 菜单顶上「更新到 x…」、剪贴板面板和启动器底栏的
 // 「更新到 x」（UpdateBarHint）、关于页的「更新并重新打开」。更新 = 下载 release 里的 *_arm64.zip → ditto 解到 App 所在卷的临时目录 →
@@ -20,6 +22,8 @@ import AppKit
     let archive: URL
     /// 发布页（看更新内容）
     let page: URL
+    /// 更新包的 SHA-256（小写十六进制）：清单里有，下完先核一遍；API 那条路没有
+    var sha256: String? = nil
   }
 
   enum State: Equatable {
@@ -66,6 +70,11 @@ import AppKit
 
   static let bundleID = "com.yy.kitty-tools.native"
   static let releasesPage = URL(string: "https://github.com/YyAdnBug/kitty-tools/releases")!
+  /// 更新清单的文件名（build-dmg.sh 写同一个名字，UpdaterTests 比对）
+  static let manifestName = "macos-update.json"
+  /// latest 那个 release 上的清单：github.com 的下载地址，302 到附件，不算 API 的次数
+  private static let manifest = URL(
+    string: "https://github.com/YyAdnBug/kitty-tools/releases/latest/download/\(manifestName)")!
   /// 最近 20 个 release（mac 和 Windows 混在一起，按发布时间倒序）：从里面挑 macos-v*
   private static let releases = URL(
     string: "https://api.github.com/repos/YyAdnBug/kitty-tools/releases?per_page=20")!
@@ -122,19 +131,12 @@ import AppKit
     let previous = state
     state = .checking
     do {
-      var request = URLRequest(url: Self.releases)
-      request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-      let (data, response) = try await URLSession.shared.data(for: request)
-      let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-      // 仓库还没有 release 时列表是空的（200）；404 当成没有
-      guard status == 200 || status == 404 else { throw UpdateError("GitHub 返回 \(status)") }
+      let latest = try await Self.latest()
       let toMenu = trigger == .menu || menuWaiting
       menuWaiting = false
       // 检查还在路上时点了「更新到 x」（入口在复查期间留着）：已经在装了，这次的结果不要
       guard case .checking = state else { return true }
-      if status == 200, let release = try Self.release(from: data),
-        Self.isNewer(release.version, than: AboutTab.version)
-      {
+      if let release = latest, Self.isNewer(release.version, than: AboutTab.version) {
         state = .available(release)
         let notified = UserDefaults.standard.string(forKey: Prefs.updateNotifiedVersion)
         if toMenu || (trigger == .schedule && notified != release.version) {
@@ -314,6 +316,59 @@ import AppKit
     }
   }
 
+  /// 最新的 mac 版（没有 = nil）：先读清单，没读到 200、解不出来就读 API 的 release 列表；API 不是 200 / 404 时抛出说给人听的原因。
+  /// fetch：取一个网址，给回正文和状态码（单测换成假的，不联网）
+  static func latest(
+    fetch: (URL) async throws -> (data: Data, status: Int) = Updater.fetch
+  ) async throws -> Release? {
+    if let reply = try? await fetch(manifest), reply.status == 200,
+      let release = Self.release(fromManifest: reply.data)
+    {
+      return release
+    }
+    let reply = try await fetch(releases)
+    // 仓库还没有 release 时列表是空的（200）；404 当成没有
+    guard reply.status == 200 || reply.status == 404 else {
+      throw UpdateError(apiFailure(reply.status))
+    }
+    return reply.status == 200 ? try release(from: reply.data) : nil
+  }
+
+  /// 不读缓存（一天才查一次；清单在同一个网址上换内容）；API 要带它的 Accept
+  private static func fetch(_ url: URL) async throws -> (data: Data, status: Int) {
+    var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
+    request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+    let (data, response) = try await URLSession.shared.data(for: request)
+    return (data, (response as? HTTPURLResponse)?.statusCode ?? 0)
+  }
+
+  /// API 没给 200 / 404 时怎么说：403 / 429 是限流——没登录的 API 每个 IP 每小时 60 次，公司、学校共用一个出口时
+  /// 别人就替你用完了（#12；关于页那一行只有一行宽，话要短，下面就是「打开发布页」）
+  static func apiFailure(_ status: Int) -> String {
+    status == 403 || status == 429
+      ? "GitHub 限流了（这个网络查得太频繁），稍后再试或到发布页下载" : "GitHub 返回 \(status)"
+  }
+
+  /// 更新清单（build-dmg.sh 生成）→ 那一版。认 version（只有数字和点）、url 和 page（https）、sha256（64 位十六进制），
+  /// 缺一样、不对就 nil（退回 API）；别的键不管（size 现在没用上）。**格式发布后别改**（已装的老版本会读 latest 上的它）：
+  /// 只加新键；要改已有键的意思就换一个文件名，旧名字的照发
+  static func release(fromManifest data: Data) -> Release? {
+    struct Manifest: Decodable {
+      let version: String
+      let url: URL
+      let sha256: String
+      let page: URL
+    }
+    guard let manifest = try? JSONDecoder().decode(Manifest.self, from: data) else { return nil }
+    let sha256 = manifest.sha256.lowercased()
+    guard manifest.version.wholeMatch(of: /[0-9]+(\.[0-9]+)*/) != nil,
+      manifest.url.scheme == "https", manifest.page.scheme == "https",
+      sha256.wholeMatch(of: /[0-9a-f]{64}/) != nil
+    else { return nil }
+    return Release(
+      version: manifest.version, archive: manifest.url, page: manifest.page, sha256: sha256)
+  }
+
   /// GitHub release 列表的 JSON → 版本号最大的那个 mac 版（版本、更新包、发布页）。只认 macos-v* 的 tag、带 https 的
   /// *_arm64.zip 的；草稿、预发布跳过（E13：windows-v* 可能是 latest、也可能排在最前）。一个都没有时 nil
   static func release(from data: Data) throws -> Release? {
@@ -383,6 +438,10 @@ import AppKit
     defer { try? FileManager.default.removeItem(at: zip) }
     if let status = (response as? HTTPURLResponse)?.statusCode, status != 200 {
       throw UpdateError("下载失败（\(status)）")
+    }
+    // 清单里给了校验值（#12）：下得不全、被换过的包在这里就拦下，不等解包
+    if let sha256 = release.sha256, await FileHash.digest(of: zip, kind: .sha256) != sha256 {
+      throw UpdateError("更新包下载得不完整（校验值对不上），请重试")
     }
     let staging = try FileManager.default.url(
       for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: target, create: true)
