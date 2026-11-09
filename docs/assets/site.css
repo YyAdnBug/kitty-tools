@@ -34,6 +34,8 @@
   --cyan: #55bef0;
   --brown: #a2845e;
   --gray: #8e8e93;
+  --amber: #e69914;
+  --slate: #54789e;
 
   --sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI",
     "Microsoft YaHei", "Noto Sans SC", "Segoe UI", sans-serif;
@@ -82,6 +84,8 @@
     --cyan: #5ac8f5;
     --brown: #ac8e68;
     --gray: #98989d;
+  --amber: #f5ad38;
+  --slate: #789cc2;
     color-scheme: dark;
   }
 }
@@ -112,6 +116,8 @@
   --cyan: #5ac8f5;
   --brown: #ac8e68;
   --gray: #98989d;
+  --amber: #f5ad38;
+  --slate: #789cc2;
   color-scheme: dark;
 }
 
@@ -746,6 +752,9 @@ body::before {
 .i-dock-preview {
   --i: url("icons/kitty.dock.preview.svg");
 }
+.i-finder-menu {
+  --i: url("icons/kitty.finder.menu.svg");
+}
 .i-general {
   --i: url("icons/kitty.general.svg");
 }
@@ -766,6 +775,9 @@ body::before {
 }
 .i-record {
   --i: url("icons/kitty.record.svg");
+}
+.i-reminders {
+  --i: url("icons/kitty.reminders.svg");
 }
 .i-screenshot {
   --i: url("icons/kitty.screenshot.svg");

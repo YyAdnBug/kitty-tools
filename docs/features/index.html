@@ -45,7 +45,7 @@
 
 <nav class="subnav" aria-label="功能目录">
   <div class="wrap subnav-in">
-    <a href="#home">主界面</a><a href="#clipboard">剪贴板</a><a href="#launcher">启动器</a><a href="#translate">翻译</a><a href="#screenshot">截图</a><a href="#record">录屏录音</a><a href="#notes">便签</a><a href="#launchpad">启动台</a><a href="#status-screen">状态屏</a><a href="#dock-preview">程序坞预览</a><a href="#island">刘海岛</a><a href="#settings">设置与同步</a><a href="#shortcuts">快捷键</a>
+    <a href="#home">主界面</a><a href="#clipboard">剪贴板</a><a href="#launcher">启动器</a><a href="#translate">翻译</a><a href="#screenshot">截图</a><a href="#record">录屏录音</a><a href="#notes">便签</a><a href="#reminders">提醒</a><a href="#launchpad">启动台</a><a href="#status-screen">状态屏</a><a href="#dock-preview">程序坞预览</a><a href="#finder-menu">访达右键</a><a href="#island">刘海岛</a><a href="#settings">设置与同步</a><a href="#shortcuts">快捷键</a>
   </div>
 </nav>
 
@@ -59,7 +59,7 @@
       <li>左键是主界面，右键是菜单</li>
       <li>每个功能的开关就在格子上，原地切换</li>
       <li>菜单栏图标可以换成彩色的，也可以整个藏起来，快捷键照常能用</li>
-      <li>第一次打开有欢迎引导，带你给权限、试一下快捷键；关于页里能重看</li>
+      <li>第一次打开有欢迎引导：先挑要用的功能，再只给挑了的功能要的权限、试一下快捷键；关于页里能重看</li>
     </ul>
   </div>
   <div class="stage feature-stage"><picture><source srcset="../assets/shots/home-dark.avif" media="(prefers-color-scheme: dark)" type="image/avif"><source srcset="../assets/shots/home-light.avif" type="image/avif"><img class="shot" src="../assets/shots/home-light.png" width="488" height="606" alt="主界面：各个功能一格一格摆着" loading="lazy"></picture></div>
@@ -74,7 +74,8 @@
       <li>选中哪条就原地展开预览：代码带行号和着色，颜色给出 HEX / RGB / HSL，链接带标题和头图，⌘Y 放大看</li>
       <li>正文、图片里的字（本机识别）、文件路径、备注、来源 App 都能搜；Tab 按类型、来源、收藏夹筛选</li>
       <li>收藏夹、片段和备注；片段能带日期、时间、光标位置、前几条剪贴板这类占位符；收藏和片段不会被自动清理</li>
-      <li>文件 ⌘O 打开、⌘R 在访达中显示，⌘T 翻译这一条，图片钉到屏幕上，条目直接拖进别的 App</li>
+      <li>文件 ⌘O 打开、⌘R 在访达中显示，⌘T 翻译这一条，图片和文字都能钉到屏幕上，条目直接拖进别的 App</li>
+      <li>面板出现在屏幕上方、跟着鼠标，或停在上次拖到的地方；拖边改大小</li>
       <li>跳过密码管理器和带隐私标记的内容，拦下看着像密钥、银行卡号的文本；能排除 App、暂停记录，退出或锁屏时清空</li>
     </ul>
   </div>
@@ -88,8 +89,10 @@
     <ul class="points">
       <li>搜 App：中文名、拼音全拼和首字母都认（「hdjsq」就是活动监视器），按使用频率排，收藏的排最前</li>
       <li>搜文件：「open 文件名」打开，「find 文件名」在访达里选中；⌘Y 快速查看，⌘K 换个 App 打开</li>
-      <li>计算和换算：四则运算、百分比、函数；「10 km to mi」「30 摄氏度 转 华氏度」「255 in hex」，↩ 把结果粘出去</li>
-      <li>系统命令：锁屏、睡眠、清空废纸篓、静音；退出或强制退出 App、推出磁盘；「kill」结束进程，「port 3000」看端口被谁占着</li>
+      <li>计算和换算：四则运算、百分比、函数；「10 km to mi」「30 摄氏度 转 华氏度」「255 in hex」，汇率「100 usd」「100美元转人民币」，↩ 把结果粘出去</li>
+      <li>脚本命令：脚本文件夹里的每个脚本就是一条命令，能带参数，结果拷贝、粘贴、显示全文或列成列表；自带 9 个（时间戳、Base64、JSON 格式化、UUID……），AI 写好的脚本复制过来就能用</li>
+      <li>内置命令和脚本都能改要打的词、关掉不用的，每条命令还能设一个快捷键</li>
+      <li>系统命令：锁屏、睡眠、清空废纸篓、静音；退出或强制退出 App、推出磁盘；「kill」结束进程，「port 3000」看端口被谁占着，「ip」看本机地址</li>
       <li>搜「蓝牙」「显示器」直达那一页系统设置；「g 关键词」搜网页，预置十几个常用网站，也能自己加</li>
       <li>本机浏览器的书签和历史，带网站图标；输网址或 ~/ 开头的路径直接打开</li>
     </ul>
@@ -102,10 +105,10 @@
     <div class="fsec-head"><span class="ico lg i-translate" style="--c:var(--green)"></span><div><h2>翻译 <kbd>⌥D</kbd></h2><p class="plat"><span>Mac</span><span>Windows</span></p></div></div>
     <p class="fsec-lead">选中就翻，不用切窗口。输入翻译 <kbd>⌥T</kbd>、截图翻译 <kbd>⌥S</kbd>，也能打开复制即译。</p>
     <ul class="points">
-      <li>划词翻译：在任何 App 里选中文字按快捷键，浮窗跟着鼠标出来；取不到选区时自动改用拷贝取词，用完把剪贴板还原</li>
-      <li>截图翻译：框一块屏幕，在本机认出字再翻译</li>
-      <li>内置服务开箱即用；另有百度、有道、Google、DeepL、微软、火山、腾讯，以及各家大模型，填好密钥就能用；几家一起出结果，大模型边生成边显示</li>
-      <li>查单个词给词典释义；译文能直接替换原文，也能设一个快捷键一按就替换</li>
+      <li>划词翻译：在任何 App 里选中文字按快捷键，浮窗出现在屏幕上方（也能改成跟着鼠标）；取不到选区时自动改用拷贝取词，用完把剪贴板还原</li>
+      <li>截图翻译：框一块屏幕，在本机认出字再翻译；译文也能直接盖回截图上</li>
+      <li>内置服务开箱即用，系统翻译和有道词典也不用密钥；另有百度、有道、Google、DeepL、微软、火山、腾讯，以及各家大模型，填好密钥就能用；几家一起出结果，大模型边生成边显示</li>
+      <li>查单个词给词典释义，英文单词放真人发音；译文能直接替换原文，也能设一个快捷键一按就替换</li>
       <li>翻译历史和生词本：能搜、能收藏，导出成表格或背单词卡片</li>
       <li>11 种语言；目标语言选「自动」时在你的第一、第二语言之间互译；能朗读、自动复制译文</li>
     </ul>
@@ -119,10 +122,11 @@
     <p class="fsec-lead">截下来，标清楚，再送出去。截取上次的区域 <kbd>⌥X</kbd>，识字 <kbd>⌥O</kbd>。</p>
     <ul class="points cols">
       <li>先冻结屏幕再框选，悬停自动认出窗口，吸附窗口边和屏幕边；尺寸能直接输，比例能锁</li>
+      <li>还能认出窗口里的按钮、输入框、侧栏，滚轮往里钻或退出来（默认关，在设置里打开）</li>
       <li>放大镜取色，按 C 复制光标处的色值</li>
       <li>十种标注：矩形、椭圆、箭头、直线、画笔、荧光笔、文字、序号、马赛克、聚光灯，数字键切换；画完还能挪、能改、能撤销</li>
-      <li>↩ 拷贝，⌘S 存储，钉在屏幕上当参考；识字（也认二维码）、截图翻译</li>
-      <li>长截图：框好后按 S，在选区里往下滚就自动拼接，按空格自动滚；拼完照样能标注</li>
+      <li>↩ 拷贝，⌘S 存储，钉在屏幕上当参考；识字（也认二维码）、截图翻译；截图时的快捷键在工具栏上右键就能改</li>
+      <li>长截图：框好后按 S，在选区里往下滚就自动拼接，按空格自动滚（速度能调）；拼完照样能标注</li>
       <li>截图历史：截图、长截图、钉过的图、录屏录音都收在一处，能搜能筛；双击一张接着改标注</li>
     </ul>
   </div>
@@ -167,6 +171,21 @@
   </div>
 </section>
 
+<section class="fsec wide" id="reminders">
+  <div class="fsec-copy">
+    <div class="fsec-head"><span class="ico lg i-reminders" style="--c:var(--amber)"></span><div><h2>提醒</h2><p class="plat"><span>仅 Mac</span></p></div></div>
+    <p class="fsec-lead">设好时间，到点挂在刘海岛上，点「知道了」或「稍后」。</p>
+    <ul class="points cols">
+      <li>只响一次，或每天、工作日、每周、每月、隔一段时间重复</li>
+      <li>每条可以选全屏、闪屏幕边框、读出来，也能到点直接进入状态屏</li>
+      <li>没理会时隔一阵再催，间隔自己定，第 3 次换成全屏</li>
+      <li>启动器里一句话建好：「remind 10分钟 喝水」「提醒 明天9点 交周报」</li>
+      <li>提示音能选系统声音、自己放的声音或任意音频文件</li>
+      <li>菜单栏和主界面有「新提醒」，也能设快捷键；开着同步时跟着同步</li>
+    </ul>
+  </div>
+</section>
+
 <section class="fsec" id="launchpad">
   <div class="fsec-copy">
     <div class="fsec-head"><span class="ico lg i-launchpad" style="--c:var(--mint)"></span><div><h2>启动台</h2><p class="plat"><span>仅 Mac</span><span>macOS 26 起</span></p></div></div>
@@ -188,7 +207,7 @@
     <p class="fsec-lead">一键把所有屏幕盖上一块告示，同时拦住键盘和鼠标。擦屏幕、电脑在跑任务不想被人碰、离开座位时用。</p>
     <ul class="points">
       <li>自带「清洁屏幕」「请勿触碰」「马上回来」</li>
-      <li>告示的文字、动画表情、样式都能改，可以存好几个状态，按快捷键先选一个再进</li>
+      <li>告示的文字、图标、样式都能改，图标能挑任意系统表情；可以存好几个状态，按快捷键先选一个再进</li>
       <li>按住 Esc 2 秒，或者用鼠标按住屏幕底部的提示退出</li>
       <li>还可以加一道退出密码</li>
     </ul>
@@ -203,10 +222,26 @@
     <ul class="points">
       <li>最小化的、隐藏的、在别的桌面上的窗口也列出来</li>
       <li>点一张切过去；悬停时点 ✕ 关掉那扇窗</li>
+      <li>按 ⌘Tab 切换 App 时也弹预览；停多久再弹能调</li>
       <li>在 设置 › 程序坞预览 里打开；要辅助功能授权，有屏幕录制授权才有缩略图</li>
     </ul>
   </div>
   <div class="stage feature-stage"><picture><source srcset="../assets/shots/dock-preview-dark.avif" media="(prefers-color-scheme: dark)" type="image/avif"><source srcset="../assets/shots/dock-preview-light.avif" type="image/avif"><img class="shot" src="../assets/shots/dock-preview-light.png" width="687" height="217" alt="程序坞预览：一个 App 的几扇窗口缩略图" loading="lazy"></picture></div>
+</section>
+
+<section class="fsec wide" id="finder-menu">
+  <div class="fsec-copy">
+    <div class="fsec-head"><span class="ico lg i-finder-menu" style="--c:var(--slate)"></span><div><h2>访达右键</h2><p class="plat"><span>仅 Mac</span><span>默认关</span></p></div></div>
+    <p class="fsec-lead">在访达里右键，常用的文件操作一步到位。</p>
+    <ul class="points cols">
+      <li>拷贝路径和名称，用指定的 App 打开</li>
+      <li>新建文本、Markdown、文档、表格、演示文稿，或者用剪贴板里的文字、图片新建</li>
+      <li>移动、复制到常用文件夹，剪切粘贴，做替身</li>
+      <li>压缩成 zip、7z，解压 zip、7z、tar、gz 等，带密码的会问；刘海岛上看进度、能停</li>
+      <li>修复乱码文件名，拷贝 SHA-256、MD5，切换隐藏文件和扩展名，彻底删除</li>
+      <li>在 设置 › 访达右键 里打开，再按提示到系统设置里打开一次访达扩展</li>
+    </ul>
+  </div>
 </section>
 
 <section class="fsec" id="island">
@@ -232,8 +267,8 @@
     <ul class="points">
       <li>外观跟随系统，或固定浅色、深色；强调色可以自己挑</li>
       <li>功能开关：用不上的功能整个关掉，它的入口、快捷键和后台工作一起停，打开立刻回来</li>
-      <li>全局快捷键都能改；快捷键速查表按功能分类、能搜</li>
-      <li>同步：选一个同步盘文件夹（比如 iCloud 云盘），设置、片段和收藏、生词本、便签等在几台电脑之间同步，每类一个开关；密钥不同步。Mac 和 Windows 之间也能互通片段、收藏、生词本、网页搜索和翻译服务</li>
+      <li>全局快捷键都能改，也能设成连按两下某个修饰键；快捷键速查表按功能分类、能搜</li>
+      <li>同步：选一个同步盘文件夹（比如 iCloud 云盘），设置、片段和收藏、生词本、便签、提醒等在几台电脑之间同步，每类一个开关；密钥不同步。Mac 和 Windows 之间也能互通片段、收藏、生词本、网页搜索和翻译服务</li>
       <li>每天自动备份一份；设置与数据能导出成一个文件，再导入</li>
       <li>有新版本时菜单栏里提示，一键更新</li>
     </ul>
@@ -244,7 +279,7 @@
 <section class="fsec-table" id="shortcuts">
   <div class="section-head">
     <h2>默认快捷键</h2>
-    <p class="muted">都能在 设置 › 快捷键 里改。没列出来的（录音、截图历史、划词翻译并替换、新建便签、启动台、状态屏……）默认不设，需要时自己录一个。</p>
+    <p class="muted">都能在 设置 › 快捷键 里改。没列出来的（录音、截图历史、划词翻译并替换、新建便签、新建提醒、启动台、状态屏……）默认不设，需要时自己录一个。功能关着时它的快捷键不生效，Mac 版新装默认只开剪贴板、启动器、翻译、截图。</p>
   </div>
   <div class="table-scroll">
     <table class="keys">
