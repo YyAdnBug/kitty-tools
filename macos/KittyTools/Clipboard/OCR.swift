@@ -107,10 +107,13 @@ nonisolated enum OCR {
   }
 
   /// 行首的列表记号（`•`、`-`、`1.`、`①` 这类）连同后面的空白；不是列表项返回 nil。切段时列表项另起一段，
-  /// 截图翻译排译文时按它的宽度做悬挂缩进
+  /// 截图翻译排译文时按它的宽度做悬挂缩进。「1.」后面没有空格也算（Vision 在中文里常把它丢掉：「1.Alt+Shift+A截图」，
+  /// 2026-11-10 用户报有序列表并成了一段），但紧跟着数字、点的不算（「3.14」「1.5倍」「192.168…」）
   static func listMarker(_ text: String) -> Substring? {
     text.prefixMatch(
-      of: /(?:[•◦▪▫‣●○■□·・]|[-*–]\s|\d{1,3}[.)]\s|\d{1,3}、|[(（]\d{1,3}[)）]|[①-⑳])\s*/)?.0
+      of:
+        /(?:[•◦▪▫‣●○■□·・]|[-*–]\s|\d{1,3}[.)](?:\s|(?=[^\d\s.)]))|\d{1,3}、|[(（]\d{1,3}[)）]|[①-⑳])\s*/
+    )?.0
   }
 
   /// 识别出的一行：文字 + 行框（归一化坐标、原点左下，同 Vision）+ 其中拉丁字母 / 数字组成的词各自的框
@@ -200,7 +203,8 @@ nonisolated enum OCR {
   /// ② 上一行以句末标点结尾、且不到中位行宽的 80%（段落最后一行；但下一行的第一个词放不进上一行剩下的地方时
   /// 是长词挤出来的折行，不断）；③ 这一行以列表记号开头（listMarker：一条一段，
   /// 列表项之间的间距常常不到 1.2 倍行高）；④ 相邻两行估出来的字号差三成以上（标题和下面的小字，differsInSize，
-  /// 2026-11-08）；⑤ 一段里是一列短标签就一行一段（splittingLabelColumn，2026-11-08）。另外往回跳（这一行在上一行
+  /// 2026-11-08）；⑤ 一段里是一列短标签就一行一段（splittingLabelColumn，2026-11-08）；⑥ 列表项后面一行的左边界比
+  /// 记号还靠左半个字以上（列表后面接着的正文：列表项折行接着往下写的会缩进到正文列，不会缩回去；2026-11-10）。另外往回跳（这一行在上一行
   /// 上面，换栏）、和上一行并排（同一高度的另一块）也断开。ponytail: 正文段落不看缩进和左边界（容易误判列表、代码），
   /// 只有一列短标签时才看对齐；
   /// macOS 26 的 RecognizeDocumentsRequest 直接给段落，有 26 测试机再换
@@ -220,6 +224,8 @@ nonisolated enum OCR {
     let lineRight = rights[rights.count / 2]
     var result: [[Line]] = []
     var previous: Line?
+    // 这一段是列表项时，记号的左边界和往左缩回多少算出了这一项（半个字宽）
+    var item: (left: CGFloat, slack: CGFloat)?
     for line in lines {
       if let previous {
         let gap = previous.box.minY - line.box.maxY
@@ -233,9 +239,16 @@ nonisolated enum OCR {
           gap > 1.2 * lineHeight || gap < -0.5 * lineHeight
           || (endsSentence && previous.box.width < 0.8 * lineWidth && !wrapped)
           || listMarker(line.text) != nil || differsInSize(previous, line)
-        if breaks { result.append([]) }
+          || item.map { line.box.minX < $0.left - $0.slack } == true
+        if breaks {
+          result.append([])
+          item = nil
+        }
       } else {
         result.append([])
+      }
+      if result[result.count - 1].isEmpty, listMarker(line.text) != nil {
+        item = (line.box.minX, max(0.005, 0.5 * (emSize(line)?.size ?? 0)))
       }
       result[result.count - 1].append(line)
       previous = line

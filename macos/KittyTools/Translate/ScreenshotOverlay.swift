@@ -286,66 +286,84 @@ nonisolated enum ScreenshotOverlay {
       }
 
       // 先照原文的基线排（缩到下限、往下借空白）；不行就用上这段周围的空白（拍板 A2）；还不行图上留原文（B1）
-      let placement:
-        (
-          fitted: (fontSize: CGFloat, pitch: CGFloat, textBottom: CGFloat), baseline: CGFloat,
-          frame: CGRect, area: CGRect, aligned: Bool
-        )
-      if let aligned = fit(
-        text, width: columnWidth, nominal: nominal, floor: floorSize, pitch: pitch,
-        lineCount: segment.lineCount, baseline: originalBaseline, bottom: bottom, code: segment.code
-      ),
-        case let taken = area(
-          extent(text, width: columnWidth, fontSize: aligned.fontSize, code: segment.code),
-          bottom: aligned.textBottom),
-        usable(taken)
-      {
-        placement = (
+      typealias Placement = (
+        fitted: (fontSize: CGFloat, pitch: CGFloat, textBottom: CGFloat), baseline: CGFloat,
+        frame: CGRect, area: CGRect, aligned: Bool
+      )
+      // 照原文的基线、原文那一栏（放宽到 1.25 倍）排，最小缩到 floor；borrows 是 false 时不往下借空白
+      func alignedPlacement(floor: CGFloat, borrows: Bool = true) -> Placement? {
+        guard
+          let aligned = fit(
+            text, width: columnWidth, nominal: nominal, floor: floor, pitch: pitch,
+            lineCount: segment.lineCount, baseline: originalBaseline, bottom: bottom,
+            code: segment.code, borrows: borrows),
+          case let taken = area(
+            extent(text, width: columnWidth, fontSize: aligned.fontSize, code: segment.code),
+            bottom: aligned.textBottom),
+          usable(taken)
+        else { return nil }
+        return (
           aligned, originalBaseline,
           CGRect(
             x: left, y: bottom, width: columnWidth, height: max(box.height, box.maxY - bottom)),
           taken, true
         )
-      } else {
-        // 用上这段周围的空白（拍板 A2）：右边到邻栏（或图片右边），上下到这一整条横向范围里最近的别的段、已经排好的段
-        // （没有就到图片边）；这段自己的框总是用得上（邻段挨得比 gap 还近时不扣成比自己还矮）。左边界不动（和原文的
-        // 正文列对齐）。这里只是先划个范围，用不用得上最后还要过 usable
-        let right = (column ?? imageSize.width) - margin
-        let across = obstacles.filter { $0.maxX > left && $0.minX < right }
-        let ceiling = max(
-          box.maxY,
-          across.filter { $0.minY >= box.maxY - 0.5 }.map(\.minY).min().map { $0 - gap }
-            ?? imageSize.height - margin)
-        let ground = min(
-          box.minY,
-          across.filter { $0.maxY <= box.minY + 0.5 }.map(\.maxY).max().map { $0 + gap } ?? margin)
-        let room = right - left
-        let frame = CGRect(x: left, y: ground, width: room, height: ceiling - ground)
-        // 先在原文的基线上用满右边的空白（行距照原文，同样缩到下限、往下借），基线还对得上；
-        // 不行再整块居中、用上下的空白
-        if let wide = fit(
-          text, width: room, nominal: nominal, floor: floorSize, pitch: pitch,
-          lineCount: segment.lineCount, baseline: originalBaseline, bottom: ground,
-          code: segment.code),
+      }
+      // 用上这段周围的空白（拍板 A2）：右边到邻栏（或图片右边），上下到这一整条横向范围里最近的别的段、已经排好的段
+      // （没有就到图片边）；这段自己的框总是用得上（邻段挨得比 gap 还近时不扣成比自己还矮）。左边界不动（和原文的
+      // 正文列对齐）。这里只是先划个范围，用不用得上最后还要过 usable
+      let right = (column ?? imageSize.width) - margin
+      let across = obstacles.filter { $0.maxX > left && $0.minX < right }
+      let ceiling = max(
+        box.maxY,
+        across.filter { $0.minY >= box.maxY - 0.5 }.map(\.minY).min().map { $0 - gap }
+          ?? imageSize.height - margin)
+      let ground = min(
+        box.minY,
+        across.filter { $0.maxY <= box.minY + 0.5 }.map(\.maxY).max().map { $0 + gap } ?? margin)
+      let room = right - left
+      let frame = CGRect(x: left, y: ground, width: room, height: ceiling - ground)
+      // 在原文的基线上用满右边的空白（行距照原文，同样缩到下限、往下借），基线还对得上
+      func widePlacement(floor: CGFloat, borrows: Bool = true) -> Placement? {
+        guard
+          let wide = fit(
+            text, width: room, nominal: nominal, floor: floor, pitch: pitch,
+            lineCount: segment.lineCount, baseline: originalBaseline, bottom: ground,
+            code: segment.code, borrows: borrows),
           case let taken = area(
             extent(text, width: room, fontSize: wide.fontSize, code: segment.code),
             bottom: wide.textBottom),
           usable(taken)
-        {
-          placement = (wide, originalBaseline, frame, taken, false)
-        } else if let blank = fitInBlank(
-          text, width: room, nominal: nominal, floor: floorSize, top: ceiling, bottom: ground,
-          center: box.midY, code: segment.code),
+        else { return nil }
+        return (wide, originalBaseline, frame, taken, false)
+      }
+      // 整块居中、用上下的空白
+      func blankPlacement() -> Placement? {
+        guard
+          let blank = fitInBlank(
+            text, width: room, nominal: nominal, floor: floorSize, top: ceiling, bottom: ground,
+            center: box.midY, code: segment.code),
           case let taken = area(blank.block.width, top: blank.block.maxY, bottom: blank.block.minY),
           usable(taken)
-        {
-          placement = (
-            (blank.fontSize, blank.pitch, blank.block.minY), blank.baseline, frame, taken, false
-          )
-        } else {
-          leftovers.append(index)
-          continue
-        }
+        else { return nil }
+        return (
+          (blank.fontSize, blank.pitch, blank.block.minY), blank.baseline, frame, taken, false
+        )
+      }
+      // 一行的段（标题、标签、一句话）：原字号、还是一行，往右边的空白排得下就这么排，不先在原文那一栏里缩——
+      // 不然只长一点的「使用步骤 → Usage steps」缩成 0.85 倍，旁边长得多、直接用了右边空白的列表项反而是原字号，
+      // 同样大的字翻出来大小不一（2026-11-10 用户的有序列表截图）。一行放不下的照旧：先在原文那一栏里缩、往下借，
+      // 再用满右边，再用上下的空白。多行的段不往右撑：整段撑出原文的栏不好看
+      let sameSize =
+        segment.lineCount == 1
+        ? alignedPlacement(floor: nominal, borrows: false)
+          ?? widePlacement(floor: nominal, borrows: false) : nil
+      let found =
+        sameSize ?? alignedPlacement(floor: floorSize) ?? widePlacement(floor: floorSize)
+        ?? blankPlacement()
+      guard let placement = found else {
+        leftovers.append(index)
+        continue
       }
 
       // 去字的范围（原文那块）：段框四边各扩一点。有代码块的段至少盖到量出来的代码块那么高、那么宽（第一行代码块的
@@ -436,11 +454,11 @@ nonisolated enum ScreenshotOverlay {
 
   /// 照原文的基线排：从基准字号起，① 译文行数不多于原文、也没超出可用的高度，就用它；不然一档档缩，缩到 floor 为止；
   /// ② 到 floor 还多出行来，就用 floor 借下方的空白（行距不变，接着原文的行往下排）。
-  /// 返回字号、行距和最后一行字的底边（去字的范围要盖到那里）；借完还放不下 nil。
+  /// 返回字号、行距和最后一行字的底边（去字的范围要盖到那里）；借完还放不下 nil；borrows 是 false 时不借，直接 nil。
   /// 折行把一个英文词拆成两截（窄栏里一个词都放不下）也算这个字号放不下
   private static func fit(
     _ text: String, width: CGFloat, nominal: CGFloat, floor: CGFloat, pitch: CGFloat,
-    lineCount: Int, baseline: CGFloat, bottom: CGFloat, code: Code?
+    lineCount: Int, baseline: CGFloat, bottom: CGFloat, code: Code?, borrows: Bool = true
   ) -> (fontSize: CGFloat, pitch: CGFloat, textBottom: CGFloat)? {
     func textBottom(_ size: CGFloat) -> (lines: Int, bottom: CGFloat, splits: Bool) {
       let laid = lines(of: text, width: width, fontSize: size, color: nil, code: code)
@@ -456,6 +474,7 @@ nonisolated enum ScreenshotOverlay {
       if size <= floor { break }
       size = max(floor, size * 0.92)
     }
+    guard borrows else { return nil }
     let borrowed = textBottom(size)
     return borrowed.bottom >= bottom && !borrowed.splits ? (size, pitch, borrowed.bottom) : nil
   }
@@ -662,13 +681,14 @@ nonisolated enum ScreenshotOverlay {
     var colors: [RGB] = []
     for span in spans {
       let background = original.background(of: span.source, erasing: span.erase)
+      let outside = original.ring(around: span.erase)
       let ink = pixels.inpaint(
         span.erase, from: original, lineHeight: span.lineHeight, background: background,
-        sampling: span.source, protecting: kept, clearFills: span.code != nil)
+        outside: outside, sampling: span.source, protecting: kept, clearFills: span.code != nil)
       if let cover = span.cover {
         _ = pixels.inpaint(
           cover, from: original, lineHeight: span.lineHeight, background: background,
-          sampling: .null, protecting: kept, clearFills: false)
+          outside: outside, sampling: .null, protecting: kept, clearFills: false)
       }
       colors.append(textColor(ink: ink, background: background))
     }
@@ -853,7 +873,7 @@ nonisolated enum ScreenshotOverlay {
     /// protecting 里的（图上留原文的段）一个像素都不动
     func inpaint(
       _ rect: CGRect, from original: Snapshot, lineHeight: CGFloat, background: RGB,
-      sampling source: CGRect, protecting kept: [CGRect],
+      outside: RGB? = nil, sampling source: CGRect, protecting kept: [CGRect],
       clearFills: Bool
     ) -> RGB? {
       let x0 = max(0, Int(rect.minX.rounded(.down)))
@@ -885,6 +905,17 @@ nonisolated enum ScreenshotOverlay {
       }
       let radius = max(1, Int((lineHeight * 0.06).rounded()))
       var mask = Self.dilate(ink, width: w, height: h, radius: radius)
+      // 字在一块色块里（底色和段外面的不一样：选中的按钮）时，原文框外面和段外底色一样的像素不是字：去字的范围扩出了
+      // 色块，色块边上那几小块出现最多的是色块的颜色，外面的灰底就被当成字补成了粉的（1x 截图里「单色」周围晕开一圈）
+      if let outside, outside.distance(to: background) > 0.12 {
+        for y in y0..<y1 {
+          for x in x0..<x1 where !source.contains(CGPoint(x: x, y: y)) {
+            if original.color(x: x, y: y).distance(to: outside) < inkThreshold {
+              mask[(y - y0) * w + (x - x0)] = false
+            }
+          }
+        }
+      }
       // 留原文的段一个像素都不动（扩毛边扩进去的也撤掉）
       for rect in kept {
         let kx0 = max(x0, Int(rect.minX.rounded(.down)))
@@ -1229,16 +1260,19 @@ nonisolated enum ScreenshotOverlay {
     /// 一段原文的底色：原文框贴身那一圈八成以上是同一种颜色时就是它——字整个包在一块色块里（按钮、标签）：
     /// 去字的范围往外扩、扩出了色块，那一圈是色块外面的灰白，拿它当底色的话色块外面也算「空」、译文的第二行排到
     /// 色块外面去，色块里的白字也取不到、字色取成色块的颜色（2026-11-08 复查：设置页选中的「单色」按钮）。
-    /// 不够八成（段落一部分压在代码块、面板上）还按去字范围外面那一圈
+    /// 框外那一圈出了色块（1x 截图里色块只比字框大一两个像素：设置页的「单色」，框底边离按钮底边 1 像素，粉色只占
+    /// 68%）时再看框里面贴边那一圈（往里缩 1 像素，98% 是粉的）。两圈都不够八成（段落一部分压在代码块、面板上）
+    /// 还按去字范围外面那一圈
     func background(of box: CGRect, erasing erase: CGRect) -> RGB {
-      ring(around: box, minimumShare: 0.8) ?? ring(around: erase) ?? .light
+      ring(around: box, minimumShare: 0.8) ?? ring(around: box, inside: true, minimumShare: 0.8)
+        ?? ring(around: erase) ?? .light
     }
 
     /// 框外一圈的采样，出现最多的那种颜色：原文的底色。不用亮度中位数——列表第一行常常整行都是行内代码块，
     /// 框外那一圈有一大半落在代码块的灰底上，中位数会取成代码块的颜色（2026-11-06 对照微信时撞上的）。
-    /// minimumShare：这种颜色占不到这么多就当没取到
-    func ring(around box: CGRect, minimumShare: CGFloat = 0) -> RGB? {
-      let outset = max(3, box.height * 0.12)
+    /// minimumShare：这种颜色占不到这么多就当没取到；inside：改采框里面贴边的那一圈（往里缩 1 像素）
+    func ring(around box: CGRect, inside: Bool = false, minimumShare: CGFloat = 0) -> RGB? {
+      let outset = inside ? -1 : max(3, box.height * 0.12)
       let outer = box.insetBy(dx: -outset, dy: -outset)
       let x0 = Int(outer.minX.rounded(.down))
       let x1 = Int(outer.maxX.rounded(.up))
@@ -1249,8 +1283,8 @@ nonisolated enum ScreenshotOverlay {
       let stepY = max(1, (y1 - y0) / 40)
       var counts: [Int: (count: Int, red: Int, green: Int, blue: Int)] = [:]
       func collect(_ x: Int, _ y: Int) {
-        // 框里是原文，不能采；图外也没有
-        guard !box.contains(CGPoint(x: x, y: y)), contains(x, y) else { return }
+        // 框里是原文，不能采（只采框里贴边那一圈时除外）；图外也没有
+        guard inside || !box.contains(CGPoint(x: x, y: y)), contains(x, y) else { return }
         let (r, g, b) = raw(x: x, y: y)
         let key = (r >> 3) << 10 | (g >> 3) << 5 | (b >> 3)
         let old = counts[key] ?? (0, 0, 0, 0)

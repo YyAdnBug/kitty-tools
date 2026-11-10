@@ -252,7 +252,12 @@ struct ScreenshotOverlayTests {
 
   /// 色块里的字（选中的按钮、标签；2026-11-08 复查：设置页选中的「单色」按钮）：底色按原文框贴身那一圈取。
   /// 放不下的不往色块外面排（以前第二行排到了按钮下面的灰底上），交给卡片；放得下的字色照原文的白字，不取成色块的粉
-  @Test func textInsideAChipStaysInTheChip() async throws {
+  /// 两种按钮：比字框上下各高 6 像素（框外那一圈出了按钮）；只比字框下边多 1 像素（1x 截图里的「单色」，
+  /// 框外那一圈一大截在按钮外，要看框里贴边那一圈）
+  @Test(arguments: [
+    CGRect(x: 100, y: 86, width: 100, height: 32), CGRect(x: 100, y: 91, width: 100, height: 22),
+  ])
+  func textInsideAChipStaysInTheChip(button: CGRect) async throws {
     let space = try #require(CGColorSpace(name: CGColorSpace.sRGB))
     let context = try #require(
       CGContext(
@@ -264,8 +269,7 @@ struct ScreenshotOverlayTests {
       context.fill(rect)
     }
     fill(CGRect(x: 0, y: 0, width: 420, height: 200), (236, 236, 236))
-    // 粉色按钮比字框上下各高 6 像素：去字范围外面那一圈已经出了按钮
-    fill(CGRect(x: 100, y: 86, width: 100, height: 32), (255, 77, 126))
+    fill(button, (255, 77, 126))
     for x in stride(from: CGFloat(125), to: 175, by: 8) {
       fill(CGRect(x: x, y: 95, width: 3, height: 15), (255, 255, 255))
     }
@@ -279,8 +283,8 @@ struct ScreenshotOverlayTests {
     let pixels = try Self.pixels(short)
     var white = 0
     var dark = 0
-    for y in 86..<118 {
-      for x in 100..<200 {
+    for y in Int(button.minY)..<Int(button.maxY) {
+      for x in Int(button.minX)..<Int(button.maxX) {
         let (r, g, b) = pixels(x, y)
         if min(r, g, b) > 230 { white += 1 }
         if max(r, g, b) < 120 { dark += 1 }
@@ -288,7 +292,8 @@ struct ScreenshotOverlayTests {
     }
     #expect(white > 10 && dark == 0, "白 \(white)、深 \(dark)")
     // 按钮外面一个像素都没动
-    for (x, y) in [(150, 80), (150, 122), (96, 100), (204, 100)] {
+    for (x, y) in [(150, Int(button.minY) - 3), (150, Int(button.maxY) + 2), (96, 100), (204, 100)]
+    {
       #expect(pixels(x, y) == (236, 236, 236), "(\(x), \(y)) 是 \(pixels(x, y))")
     }
   }
@@ -557,6 +562,30 @@ struct ScreenshotOverlayTests {
     // 基线还压在原文上（量不到基线时按行框估：顶边往下 0.72 个行高）
     #expect(abs(middle.baseline - (192 - 40 * 0.72)) < 0.01)
     #expect(middle.frame.width > 600 * 1.25)
+  }
+
+  /// 一行的段：原字号还是一行、往右边的空白排得下就这么排，不先在原文那一栏里缩（2026-11-10 用户的有序列表截图：
+  /// 「使用步骤 → Usage steps」缩成 0.85 倍，旁边的列表项却是原字号）。多行的段照旧在原文那一栏里缩
+  @Test func singleLineKeepsItsSizeWhenTheRightIsBlank() throws {
+    let heading = segment(
+      "使用步骤", box: CGRect(x: 30, y: 400, width: 132, height: 40), lineHeight: 40)
+    let nominal = 40 * ScreenshotOverlay.fontPerLineHeight
+    let one = ScreenshotOverlay.layout(
+      segments: [heading], translations: ["Usage steps and more"],
+      imageSize: CGSize(width: 1000, height: 600))
+    let span = try #require(one.spans.first)
+    #expect(abs(span.fontSize - nominal) < 0.01)
+    #expect(span.area.width > 132 * 1.25)
+    let paragraph = segment(
+      "两行的一段", box: CGRect(x: 30, y: 360, width: 300, height: 90), lineHeight: 40, lineCount: 2)
+    let two = ScreenshotOverlay.layout(
+      segments: [paragraph],
+      translations: [
+        "A paragraph of two lines whose translation is a little longer than the original"
+      ],
+      imageSize: CGSize(width: 1000, height: 600))
+    let wrapped = try #require(two.spans.first)
+    #expect(wrapped.area.maxX <= 30 + 300 * 1.25 + 0.5)
   }
 
   /// 字号下限 10 pt 压过「四分之三」：基准 22 像素（Retina 11 pt），四分之三是 16.5 像素，不能小于 20 像素

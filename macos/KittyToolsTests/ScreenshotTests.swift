@@ -692,6 +692,38 @@ struct ScreenshotTests {
     #expect(OCR.listMarker("-5 degrees") == nil)
     #expect(OCR.listMarker("3.14 is pi") == nil)
     #expect(OCR.listMarker("plain text") == nil)
+    // 「1.」后面没有空格（Vision 在中文里常丢掉它，2026-11-10 用户报的）也算；紧跟着数字、点的不算
+    #expect(OCR.listMarker("1.Alt+Shift+A截图") == "1.")
+    #expect(OCR.listMarker("2.等待该区域变成翻译之后的内容") == "2.")
+    #expect(OCR.listMarker("3)ESC") == "3)")
+    #expect(OCR.listMarker("1.5倍行距") == nil)
+    #expect(OCR.listMarker("192.168.1.1 是网关") == nil)
+    #expect(OCR.listMarker("1...") == nil)
+  }
+
+  /// 用户 2026-11-10 的截图（行框是 Vision 在那张图上实际给的）：「使用步骤」、三条有序列表（记号后面没空格）、
+  /// 列表后面往左缩回去的一段正文，以前五行并成一段、翻出来挤成一行。列表项各成一段，后面那段正文也单独一段；
+  /// 列表项折行接着往下写（缩进到正文列）的不断
+  @Test func orderedListWithoutSpacesSplits() {
+    func line(_ text: String, x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat) -> OCR.Line {
+      OCR.Line(text: text, box: CGRect(x: x, y: y, width: width, height: height))
+    }
+    let shot = [
+      line("使用步骤", x: 0.0218, y: 0.8313, width: 0.0963, height: 0.1039),
+      line("1.Alt+Shift+A截图", x: 0.0538, y: 0.5860, width: 0.1986, height: 0.1145),
+      line("2.等待该区域变成翻译之后的内容", x: 0.0523, y: 0.4363, width: 0.3560, height: 0.1264),
+      line("3.ESC关闭翻译", x: 0.0521, y: 0.2919, width: 0.1698, height: 0.1222),
+      line(
+        "这些步骤是直接在原地显示翻译之后的内容，不是单独显示一个框显示翻译之后的内容。", x: 0.0233, y: 0.0479,
+        width: 0.9009, height: 0.1198),
+    ]
+    #expect(OCR.paragraphs(shot).count == 5)
+    let wrapped = [
+      line("1.第一条写得很长很长很长很长很长", x: 0.05, y: 0.8, width: 0.4, height: 0.05),
+      line("接着往下写的折行", x: 0.075, y: 0.74, width: 0.2, height: 0.05),
+      line("2.第二条", x: 0.05, y: 0.68, width: 0.1, height: 0.05),
+    ]
+    #expect(OCR.paragraphs(wrapped) == [["1.第一条写得很长很长很长很长很长", "接着往下写的折行"], ["2.第二条"]])
   }
 
   /// 句末短行后面跟着一个放不进这一行剩下地方的长词：是长词挤出来的折行，不是段落结尾，不断段（2026-11-06）
