@@ -1,6 +1,7 @@
 // 启动器的 App 目录：扫各应用程序目录下的 .app（含一层子文件夹）。名字取显示名、文件名、中文本地化名，
 // 标题（中文本地化名，没有就是显示名）再转拼音全拼 + 首字母，让「活动监视器」「huodong」「hdjsq」都能搜到（修旧版只认文件名，
-// §11 #26）；中文名直接写在主 Info.plist 里的（企业微信）也转（第三轮体检 B2）。
+// §11 #26）；中文名直接写在主 Info.plist 里的（企业微信）也转（第三轮体检 B2）；在 Mac 上装的 iPhone / iPad App 进里面那层包读中文名
+// （美区小红书叫 rednote，2026-11-10）。
 // 系统 App 不另写死一份、按解开符号链接后的路径去重（修旧版同一个 App 出现两行，§11 #25；
 // 本机 /Applications/Safari.app 就是指向 Cryptexes 的链接）；访达不在应用程序目录里，单独加。
 // 本机 116 个 App 实测约 65ms（含拼音），在后台扫（scanInBackground，第三轮体检 P3；启动台的 LaunchpadCatalog 同一份）。
@@ -116,9 +117,13 @@ enum AppCatalog {
   }
 
   /// 简体中文显示名：系统 App 在 InfoPlist.loctable（表里混着非字符串的项，要逐个取），
-  /// 第三方 App 在 zh_CN / zh-Hans.lproj/InfoPlist.strings
+  /// 第三方 App 在 zh_CN / zh-Hans.lproj/InfoPlist.strings。
+  /// 在 Mac 上装的 iPhone / iPad App（2026-11-10 反馈：美区的小红书叫 rednote，xhs 搜不到）：App Store 在外面包了一层，
+  /// 外面那层的名字是 App Store 那个区的叫法，真的包在里面（WrappedBundle 链接 → Wrapper/<名>.app），iOS 包没有
+  /// Contents/Resources，本地化文件就在包根上；中文名直接写在里面主 Info.plist 的也要自己读（外面那层的显示名不是它）
   nonisolated static func chineseName(_ bundle: URL) -> String? {
-    let resources = bundle.appending(path: "Contents/Resources")
+    let wrapped = wrappedBundle(bundle)
+    let resources = wrapped ?? bundle.appending(path: "Contents/Resources")
     let keys = ["zh_CN", "zh-Hans", "zh_Hans", "zh-CN"]
     if let data = try? Data(contentsOf: resources.appending(path: "InfoPlist.loctable")),
       let table = try? PropertyListSerialization.propertyList(from: data, format: nil)
@@ -140,7 +145,23 @@ enum AppCatalog {
         return name
       }
     }
+    if let wrapped, let info = NSDictionary(contentsOf: wrapped.appending(path: "Info.plist")),
+      let name = (info["CFBundleDisplayName"] ?? info["CFBundleName"]) as? String,
+      name.contains(/\p{Han}/)
+    {
+      return name
+    }
     return nil
+  }
+
+  /// iPhone / iPad App 里面那层真的包；不是这种 App 是 nil
+  nonisolated static func wrappedBundle(_ bundle: URL) -> URL? {
+    let fileManager = FileManager.default
+    let link = bundle.appending(path: "WrappedBundle").resolvingSymlinksInPath()
+    if fileManager.fileExists(atPath: link.appending(path: "Info.plist").path) { return link }
+    let wrapper = bundle.appending(path: "Wrapper")
+    return ((try? fileManager.contentsOfDirectory(atPath: wrapper.path)) ?? [])
+      .first { $0.hasSuffix(".app") }.map { wrapper.appending(path: $0) }
   }
 
   // MARK: 系统设置面板（体检 D9）

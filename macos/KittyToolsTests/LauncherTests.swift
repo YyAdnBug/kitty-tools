@@ -78,6 +78,51 @@ struct LauncherTests {
     }
   }
 
+  /// 在 Mac 上装的 iPhone / iPad App（美区小红书叫 rednote，2026-11-10）：中文名在里面那层包的 zh-Hans.lproj，
+  /// 或者直接写在里面那层的主 Info.plist；没有 WrappedBundle 链接时找 Wrapper 里的 .app
+  @Test func wrappedIOSAppGetsChineseName() throws {
+    let root = FileManager.default.temporaryDirectory.appending(
+      path: "wrapped-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: root) }
+    func make(_ name: String, linked: Bool, info: [String: String], strings: [String: String]?)
+      throws -> String
+    {
+      let outer = root.appending(path: "\(name).app")
+      let inner = outer.appending(path: "Wrapper/discover.app")
+      try FileManager.default.createDirectory(at: inner, withIntermediateDirectories: true)
+      try PropertyListSerialization.data(fromPropertyList: info, format: .binary, options: 0)
+        .write(to: inner.appending(path: "Info.plist"))
+      if let strings {
+        let lproj = inner.appending(path: "zh-Hans.lproj")
+        try FileManager.default.createDirectory(at: lproj, withIntermediateDirectories: true)
+        #expect(
+          (strings as NSDictionary).write(
+            to: lproj.appending(path: "InfoPlist.strings"), atomically: true))
+      }
+      if linked {
+        try FileManager.default.createSymbolicLink(
+          atPath: outer.appending(path: "WrappedBundle").path,
+          withDestinationPath: "Wrapper/discover.app")
+      }
+      return outer.path
+    }
+    let lproj = AppCatalog.item(
+      path: try make(
+        "rednote", linked: true, info: ["CFBundleDisplayName": "rednote"],
+        strings: ["CFBundleDisplayName": "小红书"]))
+    let plain = AppCatalog.item(
+      path: try make("rednote2", linked: false, info: ["CFBundleDisplayName": "小红书"], strings: nil))
+    for app in [lproj, plain] {
+      #expect(app.title == "小红书")
+      for query in ["xhs", "xiaohongshu", "小红", "rednote"] {
+        #expect(LauncherMatch.score(query, item: app) > 0, "\(query)")
+      }
+    }
+    #expect(lproj.subtitle == "rednote")
+    // 普通的 Mac App 不当成这种
+    #expect(AppCatalog.wrappedBundle(URL(filePath: "/System/Applications/Calculator.app")) == nil)
+  }
+
   /// 粗筛（P3，书签和浏览历史先过一遍）：完整打分不是 0 的一定过得去，只靠首字母缩写命中的（vsc、hdjsq）也过
   @Test func prefilterNeverDropsAMatch() {
     let items = [
