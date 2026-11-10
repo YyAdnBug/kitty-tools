@@ -8,6 +8,7 @@ import SwiftUI
 struct HotKeyBlockSection: View {
   let center: HotKeyCenter
   let fixed: [String]?
+  @Environment(SettingsNavigation.self) private var navigation: SettingsNavigation?
   @State private var blocks: [HotKeyBlock]
   @State private var selection: String?
 
@@ -57,7 +58,7 @@ struct HotKeyBlockSection: View {
         .help("添加 App")
       }
     } header: {
-      Text("在这些 App 里停用")
+      NewTitle("在这些 App 里停用", page: .hotkeys, fresh: navigation?.fresh ?? [])
     } footer: {
       SectionFootnote("名单里的 App 在前台时，上面的快捷键不响应，按键交给那个 App。也可以在那个 App 里右键点菜单栏图标，从菜单里停用。")
     }
@@ -133,5 +134,7 @@ struct HotKeyBlockSection: View {
     HotKeyBlock.change(edit)
     blocks = HotKeyBlock.list(HotKeyBlock.stored)
     center.blocksChanged()
+    // 加过、改过、移除过一个 App，「新」就算看过了（光点进这一页不算；WhatsNew）
+    WhatsNew.touch(section: "在这些 App 里停用", of: .hotkeys)
   }
 }

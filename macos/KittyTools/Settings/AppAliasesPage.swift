@@ -114,6 +114,8 @@ struct AppAliasesPage: View {
       }
       aliasesText = saved
       saveError = nil
+      // 改过一个别名，「新」就算看过了（光点进这一页不算；WhatsNew）
+      WhatsNew.touch(section: "应用别名", of: .launcher)
     }
   }
 }

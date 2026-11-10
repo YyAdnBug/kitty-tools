@@ -97,7 +97,8 @@ struct LauncherTab: View {
           SettingsPushRow(
             title: "应用别名",
             detail: AppAliases(text: appAliasesText).count == 0
-              ? "用顺手的名字搜索应用" : "已为 \(AppAliases(text: appAliasesText).count) 个应用设置别名"
+              ? "用顺手的名字搜索应用" : "已为 \(AppAliases(text: appAliasesText).count) 个应用设置别名",
+            isNew: WhatsNew.marks(section: "应用别名", of: .launcher, in: navigation.fresh)
           ) {
             navigation.path = [AppAliasesPage.route]
           }

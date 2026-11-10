@@ -59,6 +59,14 @@ enum WhatsNew {
     Entry(
       id: "launcher-scripts", version: "0.8.0", feature: .launcher, page: .launcher,
       section: "脚本命令"),
+    // 0.8.1：应用别名（设置 › 启动器，PR #13）、按 App 停用快捷键（设置 › 快捷键 最下面一节）。按使用习惯排 App、
+    // iPad App 的中文名、几处修问题没有入口，不标
+    Entry(
+      id: "app-aliases", version: "0.8.1", feature: .launcher, page: .launcher,
+      section: "应用别名"),
+    Entry(
+      id: "hotkey-block", version: "0.8.1", feature: nil, page: .hotkeys,
+      section: "在这些 App 里停用"),
   ]
 
   /// 一版最多标几个（拍板 B1：标多了到处都是「新」，等于没标）
