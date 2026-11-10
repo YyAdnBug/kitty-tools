@@ -1,6 +1,8 @@
 // 启动器使用记录（launcher_usage 表，和剪贴板共用一个库）：每行 = (查询, 类型, 目标)。
 // 查询为空的行是全局使用分（时间常数 14 天，给空查询的「常用」和排序加成）；非空的是「这个查询选过它」
-// （时间常数 3 天）。每用一次：分 = 衰减到现在的分 + 1（修旧版次数永不衰减，§11 #31）。
+// （时间常数 28 天：2026-11-10 论坛反馈「输 s 回车开了 Safari」，原来 3 天，一周开一次的 App 选过也等于没学；对标 Alfred 的
+// 4 周窗口）。每用一次：分 = 衰减到现在的分 + 1（修旧版次数永不衰减，§11 #31）。
+// 输入的开头也算（同日，对标 Raycast「打过的输入或它的开头」）：在「sha」下选过 Shadowrocket，输「s」「sh」时按一半算。
 // 内存里一份字典，改动直接写库（修旧版另起线程整份覆盖写 JSON、可能乱序，§11 #29）。
 // 收藏（体检 D13，launcher_favorites 表）：用户自己挑的，空查询排在「常用」上面，按加入顺序、⌥⌘↑↓ 调，最多 8 个
 // （自己加的时候；全局同步时两台同时各加一个可以超过，都留着）；清空使用记录不动它。收藏接进全局同步（文件末尾）。
@@ -23,10 +25,10 @@ final class LauncherUsage {
   }
 
   static let globalTimeConstant: TimeInterval = 14 * 86_400
-  static let queryTimeConstant: TimeInterval = 3 * 86_400
+  static let queryTimeConstant: TimeInterval = 28 * 86_400
   /// 超过就删掉分最低的（全局 / 查询各自计）
   static let globalLimit = 1024
-  static let queryLimit = 512
+  static let queryLimit = 1024
 
   /// 收藏的一项（按 kind + target 认，标题给网址 / 文件还原用）
   struct Favorite: Equatable {
@@ -38,7 +40,14 @@ final class LauncherUsage {
   /// 收藏最多几个：和空查询的行数一样，收藏满了就没有「常用」
   static let favoriteLimit = 8
 
-  private(set) var entries: [String: Entry] = [:]
+  private(set) var entries: [String: Entry] = [:] {
+    didSet { prefixCache = nil }
+  }
+  /// 输入的开头也算：这次输入（折叠后）是哪些记录的查询的开头（不含一字不差的那条），按条目分组。
+  /// 每敲一个字要给几百个 App 各算一次加成，先把这一轮要看的记录挑出来；记录一变就作废
+  private var prefixCache: (query: String, entries: [String: [Entry]])?
+  /// 输入的开头对上的那些记录按几成算
+  static let prefixWeight = 0.5
   /// 按顺序（加入先后，⌥⌘↑↓ 调过的按调过的）
   private(set) var favorites: [Favorite] = []
   private let db: Database
@@ -123,13 +132,31 @@ final class LauncherUsage {
       Self.decayed($0.score, from: $0.usedAt, to: now, timeConstant: Self.globalTimeConstant)
     }
     let normalized = Self.normalize(query)
-    let affinity =
-      normalized.isEmpty
-      ? nil
-      : entries[Self.key(normalized, item.kind, item.target)].map {
-        Self.decayed($0.score, from: $0.usedAt, to: now, timeConstant: Self.queryTimeConstant)
-      }
-    return (global ?? 0, affinity ?? 0)
+    guard !normalized.isEmpty else { return (global ?? 0, 0) }
+    let decayed = { (entry: Entry) in
+      Self.decayed(entry.score, from: entry.usedAt, to: now, timeConstant: Self.queryTimeConstant)
+    }
+    let exact = entries[Self.key(normalized, item.kind, item.target)].map(decayed) ?? 0
+    let longer = longerQueries(normalized)[Self.key("", item.kind, item.target)] ?? []
+    return (global ?? 0, exact + Self.prefixWeight * longer.map(decayed).reduce(0, +))
+  }
+
+  /// 在一字不差的这个输入下选过它（E8：这种才排到固定行前面；开头对上的不算）
+  func chose(_ item: LauncherItem, query: String) -> Bool {
+    let normalized = Self.normalize(query)
+    return !normalized.isEmpty && entries[Self.key(normalized, item.kind, item.target)] != nil
+  }
+
+  /// 查询以这次输入开头、又比它长的记录，按「类型 + 目标」分组（键同全局那一行）
+  private func longerQueries(_ normalized: String) -> [String: [Entry]] {
+    if let prefixCache, prefixCache.query == normalized { return prefixCache.entries }
+    var found: [String: [Entry]] = [:]
+    for entry in entries.values
+    where entry.query.count > normalized.count && entry.query.hasPrefix(normalized) {
+      found[Self.key("", entry.kind, entry.target), default: []].append(entry)
+    }
+    prefixCache = (normalized, found)
+    return found
   }
 
   /// 全局使用分最高的若干条（「常用」由调用方再按能否还原过滤）

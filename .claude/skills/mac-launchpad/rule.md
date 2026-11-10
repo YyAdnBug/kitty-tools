@@ -47,6 +47,10 @@ Kitty 的第八族「启动台」（SPEC 在 `macos/build/research/launchpad/SPE
   屏变大了重画（旧图先留着）；还没画好的给透明占位、画好一批界面自己刷新。单测和截图自检用 `synchronous: true`（缺了当场画）。
   **位图按 App 包的修改时间认**（`LaunchpadProjectApp.modified`：包本身和 `Contents/Info.plist` 取晚的；第三轮体检 B3）：升级换了图标的照新的重画，
   画好之前旧图照样显示；扫完目录已经不在的（卸掉的）放掉（`LaunchpadIcons.prune`）。启动器那边重扫 App 目录时清掉 App 路径的图标缓存（`LauncherIcons.forget`）。
+- **搜索排序和启动器学同一份使用记录**（2026-11-10，论坛反馈「输 s 回车开了 Safari」）：`LaunchpadModel.boost` 由总控接
+  `LauncherUsage.boost`（`LauncherMatch.rank` 同一个公式，同分按 `LauncherItem.systemUse`——系统记的使用——再标题短的在前）；
+  打开 App **成功后**记一次（`Launchpad.open(_:query:)`：搜着时连输入一起记，直接点格子只记全局，会进启动器的「常用」）。
+  单测、截图自检不接，只按匹配分。
 - 背景的壁纸（`LaunchpadWallpaper`）只读 `NSWorkspace.desktopImageURL` 那个文件，后台缩着读、裁、模糊，缓存一张；不截屏、不要权限。
 - 第一次自动导入、设置里重新导入时，岛上先挂「正在按原来的启动台排列…」（`.progress`），排好换成结果（第一次自动导入先看旧库的文件在不在：系统里根本没有就直接按默认排法、不挂进行中也不出结果提示，第四轮体检 U13⑦）；导入期间用户动过布局就不覆盖、换成「已保留你刚才的排列」。打开到第一帧、翻页每帧的时间要量（R11），写进 PLAN。
 

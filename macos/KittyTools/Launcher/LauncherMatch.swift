@@ -1,7 +1,10 @@
 // 启动器的匹配与排序（纯函数，配单测）。查询按空白分词，每个词都要命中某个名字（AND），各词取最好的一档、
 // 整体取最差的那个词：完全相同 100 > 名字开头 80 > 词首 60 > 首字母缩写开头 50 > 子串 40。
 // 缩写让 vsc 能搜到 Visual Studio Code；中文名另有拼音全拼和首字母。
-// 最终分 = 匹配分 ×（1 + 0.5·f/(f+3) + 1.0·a/(a+2)），f / a 是全局 / 同查询的使用分（两项都饱和：用得再多，加成最多 ×2.5）。
+// 最终分 = 匹配分 ×（1 + 0.5·f/(f+3) + a/(a+0.5)），f / a 是全局 / 同查询的使用分（两项都饱和：用得再多，加成最多 ×2.5）。
+// 同查询那项 2026-11-10 从 a/(a+2) 改成 a/(a+0.5)：在同一个输入下选过一次（a = 1 → +0.67）就压过别的 App 平时用得再多
+// （全局最多 +0.5）；原来要选三四次（论坛反馈「输 s 回车开了 Safari」，对标 Alfred 选过就绑定）。
+// 同分时先按 priority，再按系统记的使用（LauncherItem.systemUse：刚装上、还没在本 App 里用过时也大致排对），再标题短的在前。
 
 import Foundation
 
@@ -106,7 +109,12 @@ nonisolated enum LauncherMatch {
       || item.isStatusPreset ? 1 : 0
   }
 
-  /// 匹配、加使用加成、排序；同分先按 priority（系统命令、退出本 App 最后），再标题短的在前，再按原顺序
+  /// 匹配分乘上使用加成（启动器、启动台、文件搜索同一个公式）
+  static func weighted(_ match: Double, global f: Double, query a: Double) -> Double {
+    match * (1 + 0.5 * f / (f + 3) + a / (a + 0.5))
+  }
+
+  /// 匹配、加使用加成、排序；同分先按 priority（系统命令、退出本 App 最后），再按系统记的使用多的在前，再标题短的在前，再按原顺序
   static func rank(
     _ items: [LauncherItem], query: String, boost: (LauncherItem) -> (global: Double, query: Double)
   ) -> [LauncherItem] {
@@ -114,12 +122,13 @@ nonisolated enum LauncherMatch {
       let match = score(query, item: item)
       guard match > 0 else { return nil }
       let (f, a) = boost(item)
-      return (item, match * (1 + 0.5 * f / (f + 3) + a / (a + 2)), index)
+      return (item, weighted(match, global: f, query: a), index)
     }
     .sorted {
       if $0.1 != $1.1 { return $0.1 > $1.1 }
       let (a, b) = (priority($0.0), priority($1.0))
       if a != b { return a < b }
+      if $0.0.systemUse != $1.0.systemUse { return $0.0.systemUse > $1.0.systemUse }
       if $0.0.title.count != $1.0.title.count { return $0.0.title.count < $1.0.title.count }
       return $0.2 < $1.2
     }

@@ -116,12 +116,71 @@ struct LauncherTests {
       item, query: " IT ", now: start.addingTimeInterval(LauncherUsage.globalTimeConstant))
     let boost = usage.boost(
       for: item, query: "it", now: start.addingTimeInterval(LauncherUsage.globalTimeConstant))
-    // 全局：1 衰减一个时间常数（×1/e）后 +1；查询：3 天常数下 14 天前的那次几乎衰减光
+    // 全局：1 衰减一个时间常数（×1/e）后 +1；查询：28 天常数下 14 天前的那次还剩 e^(-1/2)
     #expect(abs(boost.global - (1 / M_E + 1)) < 1e-9)
-    #expect(abs(boost.query - (1 + exp(-14.0 / 3))) < 1e-9)
+    #expect(abs(boost.query - (1 + exp(-14.0 / 28))) < 1e-9)
     #expect(usage.boost(for: item, query: "other").query == 0)
     // 落库往返
     #expect(usage.entries.count == 2)
+  }
+
+  /// 2026-11-10 论坛反馈「输 s 回车开了 Safari」：同一输入选过一次就压过平时用得多的；输入的开头按一半算；
+  /// 没有记录时按系统记的使用排
+  @Test func usageLearnsChoiceForQuery() throws {
+    let usage = try LauncherUsage(db: Database(path: ":memory:"))
+    let safari = app("Safari")
+    let shadow = app("Shadowrocket")
+    let now = Date(timeIntervalSinceReferenceDate: 1_000_000)
+    for _ in 0..<30 { usage.record(safari, query: "", now: now) }
+    let rank = { (query: String) in
+      LauncherMatch.rank([safari, shadow], query: query) {
+        usage.boost(for: $0, query: query, now: now)
+      }.map(\.title)
+    }
+    #expect(rank("s") == ["Safari", "Shadowrocket"])
+    usage.record(shadow, query: "s", now: now)
+    #expect(rank("s") == ["Shadowrocket", "Safari"])
+    // 一周后还记得（原来 3 天的常数，一周后只剩十分之一）
+    let week = now.addingTimeInterval(7 * 86_400)
+    #expect(
+      LauncherMatch.rank([safari, shadow], query: "s") {
+        usage.boost(for: $0, query: "s", now: week)
+      }.first == shadow)
+
+    // 在「sha」下选过：「s」「sh」按一半算，一字不差的才算「这个输入选过」（E8 的提到固定行前面只看它）
+    let fresh = try LauncherUsage(db: Database(path: ":memory:"))
+    fresh.record(shadow, query: "sha", now: now)
+    #expect(fresh.boost(for: shadow, query: "s", now: now).query == 0.5)
+    #expect(fresh.boost(for: shadow, query: "SH ", now: now).query == 0.5)
+    #expect(fresh.boost(for: shadow, query: "sha", now: now).query == 1)
+    #expect(fresh.boost(for: shadow, query: "shad", now: now).query == 0)
+    #expect(fresh.boost(for: safari, query: "s", now: now).query == 0)
+    #expect(!fresh.chose(shadow, query: "s") && fresh.chose(shadow, query: "sha"))
+    // 记录变了，挑出来的那批跟着变
+    fresh.record(shadow, query: "shadow", now: now)
+    #expect(fresh.boost(for: shadow, query: "s", now: now).query == 1)
+    fresh.forget(shadow)
+    #expect(fresh.boost(for: shadow, query: "s", now: now).query == 0)
+
+    // 都没在这里用过：系统记的使用多的在前，一样多才标题短的在前
+    var used = shadow
+    used.systemUse = 3
+    var less = safari
+    less.systemUse = 1
+    #expect(
+      LauncherMatch.rank([less, used], query: "s") { _ in (0, 0) }.map(\.title) == [
+        "Shadowrocket", "Safari",
+      ])
+    #expect(
+      LauncherMatch.rank([shadow, safari], query: "s") { _ in (0, 0) }.map(\.title) == [
+        "Safari", "Shadowrocket",
+      ])
+    // 系统记的使用：每天按 28 天衰减求和；没有日子时按最后使用那天算
+    let days = [now, now.addingTimeInterval(-28 * 86_400)]
+    #expect(
+      abs(AppCatalog.systemUse(usedDates: days, lastUsed: nil, now: now) - (1 + 1 / M_E)) < 1e-9)
+    #expect(AppCatalog.systemUse(usedDates: [], lastUsed: now, now: now) == 1)
+    #expect(AppCatalog.systemUse(usedDates: [], lastUsed: nil, now: now) == 0)
   }
 
   @Test func usageBreaksTiesInRanking() throws {

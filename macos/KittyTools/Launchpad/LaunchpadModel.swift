@@ -117,6 +117,11 @@ final class LaunchpadModel {
   var onClose: () -> Void = {}
   /// 打开一个 App（总控负责 NSWorkspace 和收起）
   var onOpenApp: (LaunchpadProjectApp) -> Void = { _ in }
+  /// 搜索排序的使用加成（总控接启动器的 LauncherUsage.boost：两边学同一份，2026-11-10 论坛反馈「输 s 回车开了 Safari」）；
+  /// 没接（单测、截图自检）时只按匹配分
+  @ObservationIgnored var boost: (LauncherItem, String) -> (global: Double, query: Double) = {
+    _, _ in (0, 0)
+  }
   /// 布局变了（每次挪动、建文件夹、删 App 都马上存；SPEC R5）
   var onLayoutChange: (LaunchpadLayout) -> Void = { _ in }
   /// 建文件夹时的名字（分类本地化名，SPEC R4）
@@ -193,11 +198,12 @@ final class LaunchpadModel {
     !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
   }
 
-  /// 搜索到的 App（复用启动器的匹配：中文名、拼音全拼、首字母、英文名都算，SPEC R3）
+  /// 搜索到的 App（复用启动器的匹配：中文名、拼音全拼、首字母、英文名都算，SPEC R3；使用加成和启动器同一份）
   var searchResults: [LaunchpadProjectApp] {
     guard isSearching else { return [] }
     if let searchCache, searchCache.query == query { return searchCache.apps }
-    let items = LauncherMatch.rank(catalog.map(\.item), query: query) { _ in (0, 0) }
+    let text = query
+    let items = LauncherMatch.rank(catalog.map(\.item), query: text) { boost($0, text) }
     let byPath = Dictionary(catalog.map { ($0.path, $0) }, uniquingKeysWith: { first, _ in first })
     let apps = items.compactMap { byPath[$0.target] }
     searchCache = (query, apps)

@@ -912,7 +912,7 @@ import UniformTypeIdentifiers
       ? WebSearch.fallbackItems(for: query, engines: engines) : []
     // 直达项和书签 / 用过的网址可能是同一项：按 id 去重，保留靠前的
     var seen = Set<String>()
-    let ordered = Self.promoting(local, over: top) { usage.boost(for: $0, query: query).query > 0 }
+    let ordered = Self.promoting(local, over: top) { usage.chose($0, query: query) }
     if filterFailed, (aliased + ordered).contains(where: { ![.search, .prompt].contains($0.kind) })
     {
       leading = []

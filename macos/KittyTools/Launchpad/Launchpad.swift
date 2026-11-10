@@ -29,6 +29,8 @@ final class Launchpad {
 
   /// 刘海岛（打不开 App、导入 / 恢复默认的结果）
   var island: Island?
+  /// 启动器的使用记录（2026-11-10）：搜索按它排，打开成功记一次（搜着时连输入一起记，直接点格子只记全局）
+  var usage: LauncherUsage?
   /// 现在能不能打开（截图框选、录屏、状态屏、正在录快捷键…时不能）
   var canOpen: () -> Bool = { true }
   /// 打开之前把别的浮层收起（主界面、剪贴板、启动器、选状态、快速记一条、翻译浮窗）
@@ -152,7 +154,10 @@ final class Launchpad {
     // 只认现在这块的：收起途中的旧面板还是 key，按 ↩ 打开 App 时别把新开的（正在捏的那块）收掉
     model.onOpenApp = { [weak self, weak model] app in
       guard let self, let model, model === self.model else { return }
-      self.open(app)
+      self.open(app, query: model.isSearching ? model.query : "")
+    }
+    model.boost = { [weak self] item, query in
+      self?.usage?.boost(for: item, query: query) ?? (0, 0)
     }
     model.onLayoutChange = { [weak self] layout in self?.save(layout) }
     model.onDeleteApp = { [weak self] app in self?.delete(app) }
@@ -595,17 +600,22 @@ final class Launchpad {
 
   // MARK: 打开 App / 删除
 
-  private func open(_ app: LaunchpadProjectApp) {
+  /// 打开成功才记使用（同启动器）；query 是打开时搜索框里的字（没在搜是空的）
+  private func open(_ app: LaunchpadProjectApp, query: String) {
     // 照 macOS 15：启动台淡出、App 出来（2026-10-18 交互对齐；原来一下子消失）
     close(animated: true)
     let configuration = NSWorkspace.OpenConfiguration()
     configuration.activates = true
     let name = app.name
+    let item = app.item
     NSWorkspace.shared.openApplication(at: app.url, configuration: configuration) {
       [weak self] _, error in
-      guard let error else { return }
-      let detail = error.localizedDescription
+      let detail = error?.localizedDescription
       Task { @MainActor [weak self] in
+        guard let detail else {
+          self?.usage?.record(item, query: query)
+          return
+        }
         self?.island?.show("打不开「\(name)」", detail: detail, tone: .warning)
       }
     }

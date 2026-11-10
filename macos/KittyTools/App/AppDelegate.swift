@@ -189,6 +189,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private lazy var launchpad: Launchpad = {
     let board = Launchpad()
     board.island = island
+    board.usage = launcherUsage
     board.canOpen = { [unowned self] in
       !isCapturing && !isReadingSelection && recorder == nil && audioRecorder == nil
         && !statusScreen.isActive && !OverlayPanel.isSelectingRegion(in: NSApp.windows)

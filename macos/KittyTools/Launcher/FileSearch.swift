@@ -162,7 +162,7 @@ final class FileSearch {
       let match = terms.isEmpty ? 1 : max(LauncherMatch.score(query, item: item), 30)
       let (f, a) = boost(item)
       let depth = hit.path.count { $0 == "/" }
-      return (item, match * (1 + 0.5 * f / (f + 3) + a / (a + 2)), hit.date, depth)
+      return (item, LauncherMatch.weighted(match, global: f, query: a), hit.date, depth)
     }
     .sorted {
       if $0.1 != $1.1 { return $0.1 > $1.1 }

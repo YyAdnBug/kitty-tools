@@ -1168,6 +1168,16 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
   （菜单栏图标高 22）。评审后又改：缓存按进程分开、钻过的只在指针还在最里面那块时用（不然同一个大容器里换一行还给旧的）、往下钻的超时封在一半里、主菜单层级只认 WindowServer 的那一条、菜单栏看不见时不收。没做：AX 挪出主线程（现在有总时限和命中缓存，够用）、第三方菜单栏图标（要挨个问所有 App，第一次几百毫秒）、
   核对 AXWindow、窗口边上 = 整扇窗口、替 Chromium / Electron 临时打开辅助功能（拍板 B2；macshot 是开、结束时只撤自己开的那次）。
 
+**启动器 / 启动台按使用习惯排 App（2026-11-10）**（论坛反馈：「唤出启动台之后输入 s 然后回车，结果启动了 Safari」，想要
+Shadowrocket；用户看了建议回「按推荐改」；调研笔记和探针在主检出 `macos/build/research/launcher-app-ranking-2026-11-09/`）
+- 原因：启动台搜索不看也不记使用记录；启动器只认一字不差的输入、同一输入的记忆 3 天衰减、选过一次压不过平时用得多的。
+- 对标：Alfred 4 周滚动窗口、输入和选中绑定（latching），没记录时看系统的使用日期；Raycast 按次数 + 最近程度，「打过的输入或它的开头」都算。
+- 改了五处：① 启动台搜索接 `LauncherUsage.boost`、打开成功记一次（搜着时带输入）；② 输入的开头也算：查询以这次输入开头的记录按一半
+  （`LauncherUsage.prefixWeight`，E8「提到固定行前面」仍只认一字不差的 `chose`）；③ 同一输入的时间常数 3 → 28 天，条数上限 512 → 1024；
+  ④ 公式里同查询那项 a/(a+2) → a/(a+0.5)（`LauncherMatch.weighted`，文件搜索同一个）：选过一次 +0.67，压过全局最多的 +0.5；
+  ⑤ 同分时按系统记的使用（`AppCatalog.systemUse`：Spotlight 的 kMDItemUsedDates 按 28 天衰减求和，扫 App 时顺带读，105 个约 50–90 ms、
+  不要授权）再标题短的在前。不做：导入别家启动器学过的记录（界面不能出现别家名字）。Windows 的 2–4 条可原样跟上，⑤ 换 Windows 的来源。
+
 ## 11½. Whisker 设计语言改造（2026-09-25 起）
 
 已归档到 `docs/archive/PLAN-12.md` §11½（A–E 各阶段的内容、状态和 2026-09-26 的交接）。现状：A 基础与招牌时刻、B 界面重做、C 品牌、E 截图重设计都已完成（待手测）；D 深度只剩「macOS 26 玻璃 + `.icon`」——玻璃分支第 11 批已写好，等 26 测试机按 `HANDTEST.md`「macOS 26 手测」实测，`.icon` 也等 26。规范正文在 `.claude/skills/mac-whisker/rule.md`（核心）和各 `mac-whisker/<界面>.md`。
@@ -1177,6 +1187,9 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 > 2026-10-03 瘦身：原来的完成记录和整段的「下一步」「暂不发版」「发布」「接手须知」原样挪到 `docs/archive/PLAN-12.md`；**手测清单**（原「待用户手测」那一大段）原样挪到 `HANDTEST.md`，条目和编号不变——代码注释里的「PLAN §12 第 N 条」「§12「录屏 / 录音手测」N」「§12「macOS 26 手测」第 1 条」都去那里按小节名找。新的手测条目加在 `HANDTEST.md` 里。2026-11-01（第四轮体检 W1）起这些旧条目连同「发版冒烟清单」又原样挪进了 `docs/archive/HANDTEST-2026-10.md`（编号不变，上面这些引用和下文的「`HANDTEST.md`「X 手测」N」都去那里找）；`HANDTEST.md` 现在是「真机回归清单」+ 正在验收的那一轮。
 
 > 2026-10-28（第三轮体检第 7 批）：2026-10-22 及更早的进度记录、做完的「已知的小毛病」、旧的「现状」「下一步」原样挪到 `docs/archive/PLAN-batches-2026-10.md` §12；AGENTS.md「项目概述」原来的长段原样挪到本节末尾「各族进度摘要（原 AGENTS 项目概述）」。
+
+**2026-11-10：启动器 / 启动台按使用习惯排 App**（§10 同名一节）：检出 `kitty-tools-macos-ranking`（分支 `ranking-wip`，从 macos
+`a15a904e`）一个提交，全量单测过；没并回 macos、没 push、没写更新日志（下一版发版时写）。待手测 HANDTEST「按使用习惯排 App」1–6。
 
 **2026-11-09：0.8.0 已发布**（tag `macos-v0.8.0`，latest；用户先要了测试包、装上试过说「没问题，发布」）：从 macos `a0fec9ef`
 （升 0.8.0、写更新日志 24 条、`WhatsNew` 0.8.0 三个：提醒、通用 › 功能、启动器「脚本命令」一节）打的包，dSYM 在 `build/dsym-0.8.0/`；

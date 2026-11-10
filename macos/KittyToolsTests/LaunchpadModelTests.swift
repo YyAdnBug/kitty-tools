@@ -30,6 +30,19 @@ struct LaunchpadModelTests {
       screenSize: CGSize(width: 900, height: 600), dragTiming: .immediate)
   }
 
+  /// 搜索按启动器的使用记录排（2026-11-10）：没接加成时同分标题短的在前，接上后选过的在前
+  @Test func searchUsesLauncherUsage() {
+    let safari = LaunchpadAppRef(bundleID: nil, path: "/Applications/Safari.app")
+    let shadow = LaunchpadAppRef(bundleID: nil, path: "/Applications/Shadowrocket.app")
+    let board = model(LaunchpadLayout(pages: [[.app(safari), .app(shadow)]]))
+    board.query = "s"
+    #expect(board.searchResults.map(\.path) == [safari.path, shadow.path])
+    let board2 = model(LaunchpadLayout(pages: [[.app(safari), .app(shadow)]]))
+    board2.boost = { item, query in (0, item.target == shadow.path && query == "s" ? 1 : 0) }
+    board2.query = "s"
+    #expect(board2.searchResults.map(\.path) == [shadow.path, safari.path])
+  }
+
   @Test func keyboardNavigationTurnsPagesAtEdges() {
     let refs = (0..<8).map { ref("a\($0)") }
     let layout = LaunchpadLayout(

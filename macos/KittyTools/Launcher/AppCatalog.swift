@@ -4,6 +4,8 @@
 // 系统 App 不另写死一份、按解开符号链接后的路径去重（修旧版同一个 App 出现两行，§11 #25；
 // 本机 /Applications/Safari.app 就是指向 Cryptexes 的链接）；访达不在应用程序目录里，单独加。
 // 本机 116 个 App 实测约 65ms（含拼音），在后台扫（scanInBackground，第三轮体检 P3；启动台的 LaunchpadCatalog 同一份）。
+// 扫的时候顺带读系统记的使用（2026-11-10，systemUse：Spotlight 给每个 App 记的用过的日子；105 个 App 实测 50–90 ms，不要授权），
+// 只在启动器 / 启动台分数相同时排先后。ponytail: 跟着重扫才更新（装 / 删 App、5 分钟兜底），本 App 自己的使用记录才是主力
 // 由 LauncherModel 决定何时重扫：各目录的修改时间（signature，只 stat）变了就在呼出时重扫（放进 / 删掉 .app 都会改它，体检 B31）。
 // 副标题：显示名是中文时写英文文件名；否则标准目录（及其一层子文件夹）里的留空，别处的写所在位置（~/Downloads），
 // 好分清同名的两份（体检 A25：以前写「应用程序」，和右侧类型「应用」重复）。
@@ -38,7 +40,13 @@ enum AppCatalog {
       guard fileManager.fileExists(atPath: path),
         seen.insert(URL(filePath: path).resolvingSymlinksInPath().path).inserted
       else { return }
-      items.append(item(path: path))
+      var app = item(path: path)
+      if let metadata = NSMetadataItem(url: URL(filePath: path)) {
+        app.systemUse = systemUse(
+          usedDates: metadata.value(forAttribute: "kMDItemUsedDates") as? [Date] ?? [],
+          lastUsed: metadata.value(forAttribute: "kMDItemLastUsedDate") as? Date)
+      }
+      items.append(app)
     }
     func visit(_ directory: String, depth: Int) {
       for name in (try? fileManager.contentsOfDirectory(atPath: directory)) ?? [] {
@@ -79,6 +87,13 @@ enum AppCatalog {
         LauncherMatch.initials(display), LauncherMatch.initials(fileName), pinyin?.initials,
       ]
       .compactMap { $0 }.reduce(into: []) { if !$0.contains($1) { $0.append($1) } })
+  }
+
+  /// 系统记的使用：用过的每一天按 28 天衰减求和（同启动器同一输入的记忆）；没有日子只有最后使用时间的按那一天算
+  nonisolated static func systemUse(usedDates: [Date], lastUsed: Date?, now: Date = .now) -> Double
+  {
+    let days = usedDates.isEmpty ? [lastUsed].compactMap { $0 } : usedDates
+    return days.reduce(0) { $0 + exp(-max(0, now.timeIntervalSince($1)) / (28 * 86_400)) }
   }
 
   /// App 不在标准目录（应用程序目录及其一层子文件夹、访达所在处）时的位置（~ 缩写的父目录）；在标准目录里是空的

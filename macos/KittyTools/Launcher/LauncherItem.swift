@@ -78,6 +78,9 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
   /// 来自每次搜索都从源头重新列出来的列表（浏览器书签、快捷链接）：使用记录不靠自己把它找回来，源头删了就不再出现
   /// （issue #10：以前打开过的书签在浏览器里删了，还以「用过的网址」搜得到）
   var listed = false
+  /// App：系统记的最近使用（Spotlight 的 kMDItemUsedDates 按天衰减求和，AppCatalog.systemUse）。只在启动器 / 启动台的
+  /// 分数相同时用来排先后：刚装上本 App、还没在这里用过时，常用的 App 也排在前面（同 Alfred 没记录时看系统的使用日期）
+  var systemUse = 0.0
 
   var id: String { kind.rawValue + "\n" + target }
 
