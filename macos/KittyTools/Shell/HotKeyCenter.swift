@@ -9,6 +9,9 @@
 // 按旧号排着队的事件不能落到别的命令上），和动作的下标、临时 Esc 不撞；注册失败的原因记在 commandFailures。
 // 连按两下修饰键（2026-11-06 拍板 B）不走 Carbon：全局 + 本地监听修饰键变化，交给 ModifierTaps 认，只听不拦；
 // 要「辅助功能」授权（没有时那一行写橙字 + 去授权，别的快捷键照常），授权变了跟着重来。
+// 按 App 停用（2026-11-10，HotKeyBlock）：名单里的 App 在前台时 reload 不注册它停用的那几个（「全部」时连命令的快捷键、
+// 连按两下一起），按键原样到那个 App；看着前台切换（frontChanged），停用的集合变了才重新注册一遍（8 个热键约 0.3 ms）。
+// 录屏倒数的临时 Esc 不受名单管。本 App 的浮层不激活自己，开在名单里的 App 上面时前台还是它、快捷键照样停着。
 
 import AppKit
 import Carbon.HIToolbox
@@ -462,8 +465,8 @@ enum HotKeyAction: String, CaseIterable {
   /// 这条命令在这台 Mac 上有没有（录制框查重只算有的：同步来的、删掉的脚本留下的组合没有那一行，改不掉，不该挡别人）
   @ObservationIgnored var knowsCommand: (String) -> Bool = { _ in true }
 
-  /// 有生效的热键（动作的或命令的）：截图框选、状态屏停热键前看它，结束时才重新注册
-  var isActive: Bool { !bindings.isEmpty || !commandBindings.isEmpty }
+  /// 有生效的热键（动作的或命令的，或者只是因为前台 App 在停用名单里才没注册）：截图框选、状态屏停热键前看它，结束时才重新注册
+  var isActive: Bool { !bindings.isEmpty || !commandBindings.isEmpty || blockedSomething }
   /// 连按两下要辅助功能授权、还没有（failures 里的值，不是 Carbon 的错误码）
   static let needsAccessibility: OSStatus = 1
   /// 连按两下：哪个修饰键归哪个动作，和认连按的状态机、两个监听（全局：别的 App 在前台；本地：本 App 的面板拿着键盘）
@@ -475,6 +478,13 @@ enum HotKeyAction: String, CaseIterable {
   @ObservationIgnored private var trustedWhenLoaded = false
   /// 热键停着（录快捷键、截图框选、状态屏）：授权变了也先不重新注册，等停的那一方自己 reload
   @ObservationIgnored private var suspended = false
+  /// 按 App 停用：上次 reload 时对前台 App 生效的规则（nil = 没停），和因为它没注册的（isActive 也算它们：
+  /// 截图框选、状态屏结束时据此决定要不要 reload，不然在名单 App 里开的截图结束后热键就永远停着了）
+  @ObservationIgnored private var appliedBlock: HotKeyBlock.Rule?
+  @ObservationIgnored private var blockedSomething = false
+  @ObservationIgnored private var frontObserver: NSObjectProtocol?
+  /// 前台 App 的 bundle id：开始看时取一次，之后跟着激活通知改（通知里带的那个，不在通知里再读 frontmostApplication）
+  @ObservationIgnored private var frontID: String?
 
   func setHandler(for action: HotKeyAction, _ handler: @escaping () -> Void) {
     handlers[action] = handler
@@ -488,8 +498,15 @@ enum HotKeyAction: String, CaseIterable {
     installHandlerIfNeeded()
     let trusted = Permissions.isAccessibilityTrusted
     trustedWhenLoaded = trusted
+    watchFront()
+    let block = HotKeyBlock.rule(for: frontID, in: HotKeyBlock.stored)
+    appliedBlock = block
     for (index, action) in HotKeyAction.allCases.enumerated() {
       guard action.isActive, let hotKey = action.hotKey else { continue }
+      if block?.blocks(action) == true {
+        blockedSomething = true
+        continue
+      }
       if let key = hotKey.doubleTap {
         if trusted {
           tapActions[key] = action
@@ -511,14 +528,19 @@ enum HotKeyAction: String, CaseIterable {
         failures[action] = status
       }
     }
-    registerCommands()
+    registerCommands(blocked: block?.blocksCommands == true)
     watchTaps()
     watchTrust(HotKeyAction.allCases.contains { $0.isActive && $0.hotKey?.doubleTap != nil })
   }
 
-  /// 命令的快捷键（在各动作之后注册：和动作撞了的是命令这边失败）
-  private func registerCommands() {
+  /// 命令的快捷键（在各动作之后注册：和动作撞了的是命令这边失败）。blocked：前台 App 停用了全部快捷键，照样记下要注册的
+  /// （reloadCommandsIfChanged 和它比），一个都不注册
+  private func registerCommands(blocked: Bool) {
     commandAttempts = commandHotKeys()
+    if blocked {
+      blockedSomething = blockedSomething || !commandAttempts.isEmpty
+      return
+    }
     for (id, hotKey) in commandAttempts {
       let number =
         commandNumbers[id]
@@ -571,7 +593,38 @@ enum HotKeyAction: String, CaseIterable {
     commandAttempts = []
     commandBindings = [:]
     commandFailures = [:]
+    appliedBlock = nil
+    blockedSomething = false
     watchTaps()
+  }
+
+  /// 第一次 reload 时开始看前台切换（之后一直看着；只比较规则，开销可以忽略）
+  private func watchFront() {
+    guard frontObserver == nil else { return }
+    frontID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+    frontObserver = NSWorkspace.shared.notificationCenter.addObserver(
+      forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+    ) { [weak self] note in
+      let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+      let id = app?.bundleIdentifier
+      MainActor.assumeIsolated { self?.frontChanged(id) }
+    }
+  }
+
+  /// 前台换了 App：对它生效的停用规则和上次注册时不一样才重新注册（大多数切换两边都是「不停」，什么都不做）。
+  /// 热键停着（录快捷键、截图框选、状态屏）时不动，停的那一方结束时 reload 会按那时的前台算
+  private func frontChanged(_ bundleID: String?) {
+    frontID = bundleID
+    guard !suspended, handlerRef != nil,
+      HotKeyBlock.rule(for: bundleID, in: HotKeyBlock.stored) != appliedBlock
+    else { return }
+    reload()
+  }
+
+  /// 停用名单改了（设置页、菜单栏那一项）：对此刻的前台重新算一遍
+  func blocksChanged() {
+    guard recording == nil, frontObserver != nil else { return }
+    frontChanged(frontID)
   }
 
   /// 设了连按两下（有授权）才挂两个监听，否则摘掉；换了一批就从头认

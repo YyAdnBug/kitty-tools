@@ -236,7 +236,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
       ]
     case .hotkeys:
       // 「钉图」：动作名是「钉住剪贴板内容」，搜「钉图」也要找得到这一页
-      ["快捷键", "热键", "冲突", "录制", "恢复默认", "速查", "按键", "钉图"]
+      ["快捷键", "热键", "冲突", "录制", "恢复默认", "速查", "按键", "钉图", "停用", "屏蔽", "App", "不响应"]
         + HotKeyAction.allCases.filter(\.isActive).map(\.title)
     case .about: ["版本", "更新", "日志", "发布", "欢迎", "引导"]
     }

@@ -1323,6 +1323,26 @@ struct SnapshotProbeTests {
     }
   }
 
+  /// 设置 › 快捷键 最下面「在这些 App 里停用」（2026-11-10，HotKeyBlock）：空着、三个 App（全部 / 只停两个 / 本机没装的），
+  /// 浅深。名单直接摆进去，不读写偏好；几秒，图以 hotkey-block- 开头
+  @Test(.enabled(if: directory != nil)) func hotKeyBlocks() throws {
+    let out = try #require(Self.directory)
+    try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
+    let center = HotKeyCenter()
+    let size = NSSize(width: 640, height: 340)
+    try snapshot(
+      Form { HotKeyBlockSection(center: center, fixed: []) }.formStyle(.grouped), size: size,
+      dark: false, to: "\(out)/hotkey-block-empty.png")
+    let list = [
+      "com.apple.Terminal", "com.apple.Safari|clipboard,screenshot", "com.example.not-installed",
+    ]
+    for dark in [false, true] {
+      try snapshot(
+        Form { HotKeyBlockSection(center: center, fixed: list) }.formStyle(.grouped), size: size,
+        dark: dark, to: "\(out)/hotkey-block-list\(dark ? "-dark" : "").png")
+    }
+  }
+
   @Test(.enabled(if: directory != nil)) func statusScreenSettings() throws {
     let out = try #require(Self.directory)
     try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)

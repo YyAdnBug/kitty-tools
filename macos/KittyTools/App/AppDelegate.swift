@@ -3424,8 +3424,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     // 功能全关了时上面没有节：别让菜单以一条分隔线开头
     if menu.items.last?.isSeparatorItem == false { menu.addItem(.separator()) }
+    addHotKeyBlockItem(to: menu)
     // 速查表只在启动器里（菜单里在 设置 › 快捷键）；退出排在最后
     for extra in extras where extra.section == nil && extra != .shortcuts { addExtra(extra) }
+  }
+
+  /// 「在「某 App」中停用 / 恢复快捷键」（HotKeyBlock，2026-11-10）：点菜单栏图标不激活本 App，前台还是撞键的那个 App。
+  /// 前台是本 App、访达（含桌面）或不是普通 App 时没有这一项。停用加的是「全部快捷键」，恢复把那一条整个删掉
+  private func addHotKeyBlockItem(to menu: NSMenu) {
+    guard let front = NSWorkspace.shared.frontmostApplication, front != .current,
+      front.activationPolicy == .regular, let id = front.bundleIdentifier, id != "com.apple.finder"
+    else { return }
+    let name = front.localizedName ?? id
+    let blocked = HotKeyBlock.list(HotKeyBlock.stored).contains { $0.bundleID == id }
+    menu.addAction(
+      blocked ? "在「\(name)」中恢复快捷键" : "在「\(name)」中停用快捷键", symbol: "keyboard",
+      color: NSColor(Style.Family.general)
+    ) { [unowned self] in
+      HotKeyBlock.change { list in
+        if blocked {
+          list.removeAll { $0.bundleID == id }
+        } else if !list.contains(where: { $0.bundleID == id }) {
+          list.append(HotKeyBlock(bundleID: id))
+        }
+      }
+      hotKeys.blocksChanged()
+      island.show(
+        blocked ? "「\(name)」里恢复了快捷键" : "「\(name)」里不再响应快捷键",
+        detail: blocked ? nil : "按键交给它；设置 › 快捷键 里可以改", symbol: "keyboard")
+    }
   }
 
   // MARK: 启动辅助

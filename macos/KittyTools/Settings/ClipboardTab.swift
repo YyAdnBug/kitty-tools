@@ -110,7 +110,7 @@ struct ClipboardTab: View {
         ) {
           Menu {
             Menu("正在运行的 App") {
-              ForEach(runningApps, id: \.bundleID) { app in
+              ForEach(AppListRow.runningApps, id: \.bundleID) { app in
                 Button(app.name) { add(app.bundleID) }.disabled(excluded.contains(app.bundleID))
               }
             }
@@ -307,28 +307,11 @@ struct ClipboardTab: View {
 
   /// 从「应用程序」里选（可多选），按 App 包的 bundle ID 加进来
   private func chooseApps() {
-    let panel = NSOpenPanel()
-    panel.directoryURL = URL(filePath: "/Applications")
-    panel.allowedContentTypes = [.applicationBundle]
-    panel.allowsMultipleSelection = true
-    panel.prompt = "不记录"
-    panel.message = "选择的 App 里复制的内容不进剪贴板历史"
-    guard panel.runModal() == .OK else { return }
-    for url in panel.urls {
-      if let id = Bundle(url: url)?.bundleIdentifier { add(id) }
-    }
-  }
-
-  /// 正在运行的普通 App（有 Dock 图标的），按名称排序
-  private var runningApps: [(bundleID: String, name: String)] {
-    NSWorkspace.shared.runningApplications
-      .filter { $0.activationPolicy == .regular && $0 != .current }
-      .compactMap { app in app.bundleIdentifier.map { ($0, app.localizedName ?? $0) } }
-      .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    AppListRow.chooseApps(prompt: "不记录", message: "选择的 App 里复制的内容不进剪贴板历史").forEach(add)
   }
 }
 
-/// App 列表的一行（剪贴板的排除列表、访达右键的「用 App 打开」）：16 pt App 图标 + 名字；本机找不到这个 App 时显示 bundle ID（secondary）
+/// App 列表的一行（剪贴板的排除列表、访达右键的「用 App 打开」、快捷键的停用名单）：16 pt App 图标 + 名字；本机找不到这个 App 时显示 bundle ID（secondary）
 struct AppListRow: View {
   let bundleID: String
 
@@ -349,6 +332,26 @@ struct AppListRow: View {
     .frame(height: OrderedList.rowHeight - 8)
     .help(bundleID)
     .accessibilityElement(children: .combine)
+  }
+
+  /// 正在运行的普通 App（有程序坞图标的），按名称排序（三张 App 列表的「＋」菜单共用）
+  static var runningApps: [(bundleID: String, name: String)] {
+    NSWorkspace.shared.runningApplications
+      .filter { $0.activationPolicy == .regular && $0 != .current }
+      .compactMap { app in app.bundleIdentifier.map { ($0, app.localizedName ?? $0) } }
+      .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+  }
+
+  /// 从「应用程序」里选（可多选），返回选中的 App 包的 bundle ID
+  static func chooseApps(prompt: String, message: String) -> [String] {
+    let panel = NSOpenPanel()
+    panel.directoryURL = URL(filePath: "/Applications")
+    panel.allowedContentTypes = [.applicationBundle]
+    panel.allowsMultipleSelection = true
+    panel.prompt = prompt
+    panel.message = message
+    guard panel.runModal() == .OK else { return [] }
+    return panel.urls.compactMap { Bundle(url: $0)?.bundleIdentifier }
   }
 }
 

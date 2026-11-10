@@ -149,7 +149,7 @@ struct FinderMenuTab: View {
               }
             }
             Menu("正在运行的 App") {
-              ForEach(runningApps, id: \.bundleID) { app in
+              ForEach(AppListRow.runningApps, id: \.bundleID) { app in
                 Button(app.name) { add(app.bundleID) }.disabled(apps.contains(app.bundleID))
               }
             }
@@ -309,16 +309,8 @@ struct FinderMenuTab: View {
 
   /// 从「应用程序」里选（可多选），按 App 包的 bundle ID 加进来
   private func chooseApps() {
-    let panel = NSOpenPanel()
-    panel.directoryURL = URL(filePath: "/Applications")
-    panel.allowedContentTypes = [.applicationBundle]
-    panel.allowsMultipleSelection = true
-    panel.prompt = "添加"
-    panel.message = "选择的 App 会出现在访达右键里：在“这个 App”中打开"
-    guard panel.runModal() == .OK else { return }
-    for url in panel.urls {
-      if let id = Bundle(url: url)?.bundleIdentifier { add(id) }
-    }
+    AppListRow.chooseApps(prompt: "添加", message: "选择的 App 会出现在访达右键里：在“这个 App”中打开")
+      .forEach(add)
   }
 
   /// 这台 Mac 上装着的常用终端和编辑器（FinderLink.knownTools 里找得到的，同几家成熟产品加 App 时给的预设）
@@ -332,13 +324,6 @@ struct FinderMenuTab: View {
     }
   }
 
-  /// 正在运行的普通 App（有程序坞图标的），按名称排序
-  private var runningApps: [(bundleID: String, name: String)] {
-    NSWorkspace.shared.runningApplications
-      .filter { $0.activationPolicy == .regular && $0 != .current }
-      .compactMap { app in app.bundleIdentifier.map { ($0, app.localizedName ?? $0) } }
-      .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-  }
 }
 
 /// 访达右键里一项的开关（FinderMenuItem：偏好键、默认值、名字和小字都从它取）
