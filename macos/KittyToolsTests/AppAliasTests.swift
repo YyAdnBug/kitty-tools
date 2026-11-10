@@ -187,8 +187,8 @@ struct AppAliasTests {
     let archive = SettingsArchive.capture(
       from: defaults, domainName: suite, services: [], notes: [])
     let imported = try SettingsArchive.read(archive.encoded())
-    #expect(imported.preferences[Prefs.launcherAppAliases] == .string(text))
-    let value = try #require(imported.preferences[Prefs.launcherAppAliases])
+    #expect(imported.preferences?[Prefs.launcherAppAliases] == .string(text))
+    let value = try #require(imported.preferences?[Prefs.launcherAppAliases])
     let restored = try #require(SettingsArchive.Kind.text.plist(value) as? String)
     #expect(AppAliases(text: restored).count == 120)
     let sync = SettingsSync(defaults: defaults, domainName: suite)
