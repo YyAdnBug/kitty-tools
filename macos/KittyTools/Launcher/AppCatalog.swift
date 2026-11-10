@@ -86,7 +86,8 @@ enum AppCatalog {
       initials: [
         LauncherMatch.initials(display), LauncherMatch.initials(fileName), pinyin?.initials,
       ]
-      .compactMap { $0 }.reduce(into: []) { if !$0.contains($1) { $0.append($1) } })
+      .compactMap { $0 }.reduce(into: []) { if !$0.contains($1) { $0.append($1) } },
+      appBundleID: Bundle(url: URL(filePath: path))?.bundleIdentifier)
   }
 
   /// 系统记的使用：用过的每一天按 28 天衰减求和（同启动器同一输入的记忆）；没有日子只有最后使用时间的按那一天算

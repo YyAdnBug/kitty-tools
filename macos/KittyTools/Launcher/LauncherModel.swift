@@ -174,7 +174,24 @@ import UniformTypeIdentifiers
   }
 
   @ObservationIgnored let usage: LauncherUsage
-  @ObservationIgnored private var apps: [LauncherItem] = []
+  @ObservationIgnored private var apps: [LauncherItem] = [] {
+    didSet { appAliasCache = nil }
+  }
+  /// 单测 / 截图自检不读真实偏好；搜索时检查原文，改名、清空、导入或同步后下次搜索就生效。
+  @ObservationIgnored var appAliasesText: () -> String = {
+    UserDefaults.standard.string(forKey: Prefs.launcherAppAliases) ?? ""
+  }
+  @ObservationIgnored private var appAliasCache:
+    (text: String, aliases: AppAliases, items: [LauncherItem])?
+
+  private var searchableApps: (aliases: AppAliases, items: [LauncherItem]) {
+    let text = appAliasesText()
+    if let cache = appAliasCache, cache.text == text { return (cache.aliases, cache.items) }
+    let aliases = AppAliases(text: text)
+    let items = apps.map { aliases.applying(to: $0) }
+    appAliasCache = (text, aliases, items)
+    return (aliases, items)
+  }
   @ObservationIgnored private var appsScannedAt: Date?
   /// 上次扫描时各应用程序目录的修改时间：呼出时变了就重扫（体检 B31）
   @ObservationIgnored private var appsSignature: [Date?] = []
@@ -586,6 +603,7 @@ import UniformTypeIdentifiers
       fetchRates = { nil }
       showsFrequent = { true }
       commandSettings = { .init() }
+      appAliasesText = { "" }
     } else {
       rates = ExchangeRates.load()
       recentCurrencies = ExchangeRates.loadRecents()
@@ -888,8 +906,10 @@ import UniformTypeIdentifiers
     // 书签先粗筛（几千个每敲一个字都完整打分太慢，P3；同 visited）
     let tokens = LauncherMatch.tokens(query)
     let scriptItems = scriptItems
+    let searchable = searchableApps
     let local = LauncherMatch.rank(
-      apps + builtIns + (scriptsOn() ? LauncherItem.scriptActions : []) + systemItems + scriptItems
+      searchable.items + builtIns + (scriptsOn() ? LauncherItem.scriptActions : []) + systemItems
+        + scriptItems
         + WebSearch.quicklinkItems(engines: engines)
         + bookmarks.filter { LauncherMatch.mayMatch(tokens, $0) } + used, query: query
     ) { usage.boost(for: $0, query: query) }
@@ -898,6 +918,8 @@ import UniformTypeIdentifiers
       scriptItems,
       scripts: activeScripts.filter { !$0.isDownloaded || approvedScripts.contains($0.path) },
       query: query, alias: scriptAlias)
+    // 用户给 App 设的完整别名优先于普通结果和无参数脚本；同别名的 App 保留使用排序，最后统一按 id 去重。
+    let aliasedApps = local.filter { searchable.aliases.exactlyMatches($0, query: query) }
     let history = longEnough ? visited(query, excluding: bookmarks + used) : []
     // 兜底默认只在没有本地结果时出现（和 Alfred 一样；以前带空格的查询把兜底排到匹配的 App 前面），
     // 设置里可改成总是附在最后。已经有网址 / 路径直达项、或明写了 http(s):// 的就不再兜底（体检 B35：
@@ -917,7 +939,9 @@ import UniformTypeIdentifiers
     {
       leading = []
     }
-    results = (leading + aliased + ordered + trailing + tx + history + partialPrompts + fallback)
+    results =
+      (leading + aliasedApps + aliased + ordered + trailing + tx + history + partialPrompts
+      + fallback)
       .filter { seen.insert($0.id).inserted }
     if let invocation { startList(invocation) }
   }
@@ -1053,15 +1077,17 @@ import UniformTypeIdentifiers
       hits, terms: request.terms, item: { files.item($0, pinyin: pinyin) },
       boost: { usage.boost(for: $0, query: query) })
     let whole = query.trimmingCharacters(in: .whitespaces)
+    let searchable = searchableApps
     let named =
       request.terms.isEmpty || query.first?.isWhitespace == true
       ? []
-      : LauncherMatch.rank(apps + builtIns, query: whole) {
+      : LauncherMatch.rank(searchable.items + builtIns, query: whole) {
         usage.boost(for: $0, query: whole)
       }
     let selected = results.indices.contains(selection) ? results[selection].id : nil
     var seen = Set<String>()
-    results = (named + found + [folderHint].compactMap { $0 }).filter {
+    let aliased = named.filter { searchable.aliases.exactlyMatches($0, query: whole) }
+    results = (aliased + named + found + [folderHint].compactMap { $0 }).filter {
       seen.insert($0.id).inserted
     }
     emptyText = request.terms.isEmpty ? "最近没有打开或下载的文件" : "没有匹配的文件"

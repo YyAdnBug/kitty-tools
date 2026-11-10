@@ -4994,6 +4994,49 @@ struct SnapshotProbeTests {
     }
   }
 
+  /// 应用别名页（多个别名、长应用名、空列表，浅深）和按别名搜到的原名结果；不扫描本机、不写真实偏好。
+  @Test(.enabled(if: directory != nil)) func appAliases() throws {
+    let out = try #require(Self.directory)
+    try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
+    let apps = [
+      LauncherItem(
+        kind: .app, target: "/Applications/WeChat.app", title: "微信", subtitle: "WeChat",
+        names: ["微信", "wechat"], appBundleID: "com.tencent.xinWeChat"),
+      LauncherItem(
+        kind: .app, target: "/Applications/Visual Studio Code.app", title: "Visual Studio Code",
+        subtitle: "", names: ["visual studio code"], appBundleID: "com.microsoft.VSCode"),
+      LauncherItem(
+        kind: .app, target: "/Applications/Safari.app", title: "Safari", subtitle: "",
+        names: ["safari"], appBundleID: "com.apple.Safari"),
+    ]
+    var text = try #require(AppAliases().setting("wx, 聊天", for: apps[0]))
+    text = try #require(AppAliases(text: text).setting("code, 编辑器, work code", for: apps[1]))
+    let suite = "kitty-snapshot-app-aliases-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    defaults.set(text, forKey: Prefs.launcherAppAliases)
+    let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: apps)
+    model.appAliasesText = { text }
+    model.engines = { [] }
+    model.boundHotKey = { $0.defaultHotKey }
+    model.query = "wx"
+    for dark in [false, true] {
+      let suffix = dark ? "-dark" : ""
+      try snapshot(
+        NavigationStack { AppAliasesPage(apps: apps) }.defaultAppStorage(defaults),
+        size: NSSize(width: 590, height: 580), dark: dark,
+        to: "\(out)/settings-app-aliases\(suffix).png")
+      try snapshot(
+        NavigationStack { AppAliasesPage(apps: []) }.defaultAppStorage(defaults),
+        size: NSSize(width: 590, height: 420), dark: dark,
+        to: "\(out)/settings-app-aliases-empty\(suffix).png")
+      try snapshot(
+        LauncherPanelView(model: model),
+        size: NSSize(width: 720, height: LauncherPanelView.height(for: model)), dark: dark,
+        to: "\(out)/launcher-app-aliases\(suffix).png")
+    }
+  }
+
   private func snapshot(
     _ view: some View, size: NSSize, dark: Bool, to path: String,
     prepare: ((NSView) -> Void)? = nil

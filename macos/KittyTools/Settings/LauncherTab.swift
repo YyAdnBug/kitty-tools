@@ -17,6 +17,7 @@ struct LauncherTab: View {
   @AppStorage(Prefs.launcherRomanInput) private var romanInput = false
   @AppStorage(Prefs.launcherPanelPosition) private var panelPosition = "top"
   @AppStorage(Prefs.launcherShowsFrequent) private var showsFrequent = true
+  @AppStorage(Prefs.launcherAppAliases) private var appAliasesText = ""
   /// 书签 / 浏览历史开着的浏览器 id（换行分隔，Browsers.ids 拆）
   @AppStorage(Prefs.launcherBrowserBookmarks) private var bookmarkIDs = Prefs.defaultBookmarkIDs
   @AppStorage(Prefs.launcherBrowserHistory) private var historyIDs = ""
@@ -43,6 +44,7 @@ struct LauncherTab: View {
       .navigationDestination(for: String.self) { id in
         switch id {
         case LauncherCommandsPage.route: LauncherCommandsPage(library: scripts)
+        case AppAliasesPage.route: AppAliasesPage()
         case ScriptGuidePage.route: ScriptGuidePage(library: scripts)
         case WebSearchPage.route: WebSearchPage()
         default: SearchEngineDetail(id: id)
@@ -89,6 +91,15 @@ struct LauncherTab: View {
             Text(
               "搜 App、系统设置、文件、书签、网址、路径、算式（也能换算单位和进制）和系统命令（lock、quit、kill 这些），"
                 + "↩ 打开，⌘K 看这一项的全部操作")
+          }
+        }
+        Section {
+          SettingsPushRow(
+            title: "应用别名",
+            detail: AppAliases(text: appAliasesText).count == 0
+              ? "用顺手的名字搜索应用" : "已为 \(AppAliases(text: appAliasesText).count) 个应用设置别名"
+          ) {
+            navigation.path = [AppAliasesPage.route]
           }
         }
         Section {

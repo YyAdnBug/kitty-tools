@@ -50,6 +50,8 @@ enum Prefs {
   /// 启动器「命令」表里改过的别名（JSON：编号 → 别名，"" = 不要别名；LauncherCommands.Settings）：注册默认值 ""，跟着设置
   /// 导出、同步（拍板 E1：只是设置；别的 Mac 上没有那个脚本就先留着不用）
   static let launcherCommandAliases = "launcherCommandAliases"
+  /// 应用别名（AppAliases，JSON：bundle id / 路径 → 逗号分隔的别名）；跟着设置导出、同步。
+  static let launcherAppAliases = "launcherAppAliases"
   /// 启动器「命令」表里关掉的（一行一个编号）：同上
   static let launcherCommandsOff = "launcherCommandsOff"
   /// 启动器「命令」表里每条命令的快捷键（JSON：编号 → 组合；脚本命令第三轮 D1，LauncherModel.commandHotKeys）：同上，
@@ -448,6 +450,7 @@ enum Prefs {
       launcherRomanInput: false,
       launcherScripts: true,
       launcherCommandAliases: "",
+      launcherAppAliases: "",
       launcherCommandsOff: "",
       launcherCommandHotKeys: "",
       hotKeyBlockedApps: [String](),
