@@ -1216,6 +1216,13 @@ Alfred 的 Related Apps、BetterTouchTool 按 App 停用，调研和测开销的
 `80e01660`）一个提交，写了 0.8.1 的更新日志；没并回 macos、没 push。待手测 HANDTEST「按 App 停用快捷键」1–9。Windows 那一半是
 `windows/PLAN-v17.md`（windows 分支）。
 
+**2026-11-10：0.8.1 已发布**（tag `macos-v0.8.1` = `933efb2a`，latest；用户说「我都测试过了，可以发布了」）：直接从 macos 打，
+附 DMG、`_arm64.zip` 和第一次附上的更新清单 `macos-update.json`（两条 curl 核对都是 200），dSYM 在 `build/dsym-0.8.1/`；
+全量单测 2128 过，`UpdaterTests` 用这次的 zip 过。这一版并进了外部 PR #13（SeyoZhou，应用别名：保留作者提交、合并提交并入，
+补了它导出单测里编译不过的一处），和读 iPad App 里面那层包的中文名（美区小红书叫 rednote，xhs 搜不到）。`WhatsNew` 0.8.1 两个：
+启动器「应用别名」、快捷键「在这些 App 里停用」。发布说明照 0.8.0 的格式，「感谢」写了 #13 #12 #11。PR #13 留下的小尾巴没做：
+启动台搜索不认 App 别名、「命令和别名」查重不知道 App 别名、`Bundle(url:)` 取 bundle id 会常驻一份 Bundle。
+
 **2026-11-10：启动器 / 启动台按使用习惯排 App**（§10 同名一节）：检出 `kitty-tools-macos-ranking`（分支 `ranking-wip`，从 macos
 `a15a904e`）一个提交，全量单测过；没并回 macos、没 push、没写更新日志（下一版发版时写）。待手测 HANDTEST「按使用习惯排 App」1–6。
 
