@@ -17,7 +17,8 @@ import SwiftUI
 enum SettingsPage: String, CaseIterable, Identifiable {
   // 和菜单栏、快捷键页、引导、速查表同序（记住的上次页存的是 rawValue，调顺序不受影响）。2026-11-04 功能管理拍板 M3：
   // 便签、提醒、状态屏一组，启动台、程序坞预览一组（启动台原来在便签后面）
-  case general, clipboard, launcher, translate, screenshot, record, notes, reminders, statusScreen,
+  case general, island, clipboard, launcher, translate, screenshot, record, notes, reminders,
+    statusScreen,
     launchpad, dockPreview, finderMenu, hotkeys, about
 
   var id: String { rawValue }
@@ -28,7 +29,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   /// 侧栏的分组（功能管理拍板 M2 M3）：通用 ｜ 文字与搜索 ｜ 截图与录制 ｜ 便签与提醒 ｜ 桌面 ｜ 快捷键、关于。和 allCases 同序，
   /// 单测锁住。功能那四组带标题、能折叠（groupTitle）
   static let groups: [[SettingsPage]] = [
-    [.general], [.clipboard, .launcher, .translate], [.screenshot, .record],
+    [.general, .island], [.clipboard, .launcher, .translate], [.screenshot, .record],
     [.notes, .reminders, .statusScreen], [.launchpad, .dockPreview, .finderMenu],
     [.hotkeys, .about],
   ]
@@ -61,12 +62,15 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .screenshot, .record: "截图与录制"
     case .notes, .reminders, .statusScreen: "便签与提醒"
     case .launchpad, .dockPreview, .finderMenu: "桌面"
-    case .general, .hotkeys, .about: nil
+    case .general, .island, .hotkeys, .about: nil
     }
   }
 
   /// 这一页是哪个功能的设置（通用、快捷键、关于不是）：功能关着时侧栏里这一行变淡、标「已关闭」（M1）
-  var feature: Feature? { Feature(rawValue: rawValue) }
+  var feature: Feature? {
+    guard self != .island else { return nil }
+    return Feature(rawValue: rawValue)
+  }
 
   /// 单测喂 false 看 macOS 15 上的样子
   static func visible(launchpad: Bool) -> [SettingsPage] {
@@ -76,6 +80,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   var title: String {
     switch self {
     case .general: "通用"
+    case .island: "灵动岛"
     case .clipboard: "剪贴板"
     case .launcher: "启动器"
     case .launchpad: "启动台"
@@ -95,6 +100,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   var symbol: String {
     switch self {
     case .general: "kitty.general"
+    case .island: HotKeyAction.island.symbol
     case .clipboard: HotKeyAction.clipboard.symbol
     case .launcher: HotKeyAction.launcher.symbol
     case .launchpad: HotKeyAction.launchpad.symbol
@@ -116,6 +122,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   var color: Color {
     switch self {
     case .general: Style.Family.general
+    case .island: Style.Family.general
     case .clipboard: Style.Family.clipboard
     case .launcher: Style.Family.command
     case .launchpad: Style.Family.launchpad
@@ -135,6 +142,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   var summary: String {
     switch self {
     case .general: "功能、外观、菜单栏、登录时打开、权限、同步、导出与导入、数据目录"
+    case .island: "快捷动作、最近提示和显示顺序"
     case .clipboard: "历史上限、面板、内容格式和隐私"
     case .launcher: "搜索 App、文件、书签与历史、网页搜索与快捷链接、脚本命令、命令和别名"
     case .launchpad: "全屏的图标网格：排法、翻页、搜索、文件夹、捏合"
@@ -163,6 +171,11 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         "功能", "模块", "关闭", "停用", "启用", "不用",
         "同步", "iCloud", "云盘", "多台", "几台", "另一台",
         "数据", "数据目录", "访达", "文件夹",
+      ]
+    case .island:
+      [
+        "刘海岛", "灵动岛", "快捷动作", "排序", "顺序", "截图", "识字",
+        "截图翻译", "录屏", "录音", "快速记一条", "最近提示", "消息记录", "显示", "开关",
       ]
     case .clipboard:
       [

@@ -97,6 +97,10 @@ import SwiftUI
   @ObservationIgnored private weak var keyBeforeBoard: NSWindow?
   /// 快捷动作从哪来（AppDelegate 给：截图、录屏、录音、识字、截图翻译、快速记一条；关着的功能不给）
   @ObservationIgnored var boardActions: () -> [Action] = { [] }
+  /// 灵动岛配置页的总开关和两类内容开关。它们不是 Feature：岛是全 App 的轻提示基础设施。
+  private(set) var isEnabled = true
+  private(set) var showsActions = true
+  private(set) var showsHistory = true
   /// 各块屏上硬件刘海的位置（屏幕坐标）：屏幕变了就重算
   @ObservationIgnored private var notchRects: [CGRect] = []
   /// start() 过、而且有刘海屏：监听一直装着（点刘海、停在刘海上要它们），收起后不卸。没有刘海的 Mac 照旧显示时装、收起后卸
@@ -154,10 +158,13 @@ import SwiftUI
   init(
     showing content: Content?, geometry: Geometry = .capsule(menuBar: 24),
     actions: [Action] = [], expanded: Bool = false, board records: [Record]? = nil,
-    quickActions: [Action] = [], peeking: Bool = false, boardSelection: Int? = nil
+    quickActions: [Action] = [], peeking: Bool = false, boardSelection: Int? = nil,
+    showsActions: Bool = true, showsHistory: Bool = true
   ) {
     isStaged = true
     self.content = content
+    self.showsActions = showsActions
+    self.showsHistory = showsHistory
     isOpen = content != nil || records != nil
     self.geometry = geometry
     self.actions = actions
@@ -200,6 +207,36 @@ import SwiftUI
   /// 指针停在刘海上时岛比刘海宽出、长出多少（每侧 8、往下 5）；停在这一圈里也算停在刘海上
   static let peekGrow = CGSize(width: 8, height: 5)
 
+  /// 设置页或导入设置后立即应用灵动岛配置。总开关关闭时收起窗口，内部历史不清空。
+  func applyPreferences(
+    enabled: Bool, showsActions: Bool, showsHistory: Bool
+  ) {
+    self.isEnabled = enabled
+    self.showsActions = showsActions
+    self.showsHistory = showsHistory
+    if isBoardOpen {
+      quickActions = showsActions ? boardActions() : []
+      if let selection = boardSelection, !quickActions.indices.contains(selection) {
+        boardSelection = quickActions.isEmpty ? nil : 0
+      }
+    }
+    if !enabled {
+      isPeeking = false
+      pending = nil
+      actions = []
+      quickActions = []
+      boardSelection = nil
+      isHovered = false
+      isExpanded = false
+      isBoardOpen = false
+      content = nil
+      isOpen = false
+      onToneChange?(nil)
+      window?.orderOut(nil)
+      if !watchesNotch { unwatchMouse() }
+    }
+  }
+
   func show(
     _ title: String, detail: String? = nil, tone: Tone = .success, symbol: String? = nil,
     leading: Leading = .tone, fraction: Double? = nil, actions: [Action] = []
@@ -207,6 +244,10 @@ import SwiftUI
     let next = Content(
       title: title, detail: detail, tone: tone, symbol: symbol ?? Self.symbol(for: tone),
       leading: leading, fraction: fraction)
+    guard isEnabled else {
+      if tone != .progress { remember(next, actions: actions) }
+      return
+    }
     if tone != .progress { remember(next, actions: actions) }
     // 鼠标正停在岛上：先排着，免得正要点的按钮被换掉（B5）。进行中的那条例外——来的是它的结果，原地换。
     // 那一张开着时也排着（收起后再出；那一张里的列表当场就有它）
@@ -496,6 +537,7 @@ import SwiftUI
   /// 打开 / 收起那一张（快捷键「打开刘海岛」、点刘海）。岛上正有提示时换成那一张（那条已经记在列表里）。
   /// byKeyboard：快捷键叫出的——临时当 key，Esc / ←→ / ↩ 能用，到点自己收（U9）
   func toggleBoard(byKeyboard: Bool = false) {
+    guard isEnabled else { return }
     if isBoardOpen { dismiss() } else { openBoard(byKeyboard: byKeyboard) }
   }
 
@@ -514,7 +556,7 @@ import SwiftUI
     isExpanded = false
     isPeeking = false
     isRetracting = false
-    quickActions = boardActions()
+    quickActions = showsActions ? boardActions() : []
     changedAt = .now
     deadline = .now
     showWindow()
@@ -706,6 +748,7 @@ import SwiftUI
   /// 点了一下：没有提示时点在刘海上 = 打开 / 收起那一张（屏幕最顶那一行窗口收不到点击，全局监听收得到）；
   /// 那一张开着时点在它外面 = 收起。返回开 / 关过没有
   private func click(onNotch allowed: Bool) -> Bool {
+    guard isEnabled else { return false }
     let mouse = NSEvent.mouseLocation
     if allowed, content == nil, !isSuppressed(), Self.onNotch(mouse, notches: notchRects) {
       toggleBoard()
@@ -718,6 +761,7 @@ import SwiftUI
   /// 指针停在刘海上（没有提示、没开那一张）：鼓起一点，窗口这时接住点击；离开就缩回、移走窗口
   /// 鼓起 / 缩回的曲线由 IslandView 定（鼓起 0.2 s easeOut，缩回同收起）
   private func peek(_ on: Bool) {
+    guard isEnabled else { return }
     guard on != isPeeking, !isStaged else { return }
     if on {
       // 先摆好窗口（新建的先按收着的样子排一遍），再鼓：顺序反了第一次鼓起没有动画
@@ -750,6 +794,10 @@ import SwiftUI
   // ponytail: 指针停在本 App 不收鼠标移动的窗口（设置窗）上、又正好在岛下面时，本地监听收不到移动，不会展开
   // （离开由 hoverCheck 兜住）；岛在屏幕最顶上，和面板、设置窗叠到的机会很小，真碰到再给那几扇窗口开 acceptsMouseMovedEvents
   private func track() {
+    guard isEnabled else {
+      if isPeeking { peek(false) }
+      return
+    }
     let mouse = NSEvent.mouseLocation
     if content != nil || isBoardOpen {
       if let window { hover(NSMouseInRect(mouse, shapeOnScreen(window), false)) }

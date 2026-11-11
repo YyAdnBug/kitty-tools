@@ -522,6 +522,7 @@ struct SnapshotProbeTests {
         AnyView(
           GeneralTab(
             transfer: SettingsTransfer(services: services, clipboard: store, history: history)))
+      case .island: AnyView(IslandTab())
       case .clipboard: AnyView(ClipboardTab(store: store))
       case .launcher: AnyView(LauncherTab())
       case .launchpad: AnyView(LaunchpadTab())
@@ -4377,6 +4378,7 @@ struct SnapshotProbeTests {
       SettingsRoot(navigation: navigation) { page in
         switch page {
         case .clipboard: AnyView(ClipboardTab(store: store).defaultAppStorage(prefs))
+        case .island: AnyView(IslandTab().defaultAppStorage(prefs))
         case .launchpad: AnyView(LaunchpadTab().defaultAppStorage(prefs))
         default: AnyView(GeneralTab().defaultAppStorage(prefs))
         }

@@ -799,6 +799,7 @@ private final class Probe {
       let root = SettingsRoot(navigation: navigation) { page in
         switch page {
         case .general: AnyView(GeneralTab())
+        case .island: AnyView(IslandTab())
         case .clipboard: AnyView(ClipboardTab(store: store))
         case .launcher: AnyView(EmptyView())
         case .launchpad: AnyView(EmptyView())
