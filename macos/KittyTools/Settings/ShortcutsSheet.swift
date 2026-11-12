@@ -431,6 +431,8 @@ struct ShortcutsSheet: View {
         entries: toolEntries + [
           Entry("⇧", text: "画正方形、正圆、45° 线；拖角时保持比例"),
           Entry("⌥", text: "从中心画矩形、椭圆，或从中心改大小"),
+          Entry("⌘+", "⌘-", text: "文字大一号 / 小一号（输入时、选中文字时）"),
+          Entry("滚轮", text: "在选中的标注上换粗细、字号"),
           Entry("⌫", text: "删除选中的标注"),
           Entry("⌘D", text: "复制一份选中的标注（按住 ⌥ 拖动同样）"),
           Entry("方向键", text: "移动选中的标注"),

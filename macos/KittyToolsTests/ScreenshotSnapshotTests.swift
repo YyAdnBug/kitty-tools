@@ -217,6 +217,32 @@ struct ScreenshotSnapshotTests {
     try shoot(
       h.window, "ratio-menu",
       crop: menu.frame.union(try #require(h.sizeField).frame).insetBy(dx: -40, dy: -30))
+    // 文字托盘的字号菜单（2026-11-12 拍板 A1），选中序号时托盘多一段编号（O2）
+    h = adjust()
+    h.move(CGPoint(x: 550, y: 400))
+    h.view.style = .init(color: .red, fontSize: 32)
+    h.view.tool = .text
+    let fontBar = try #require(h.view.subviews.lazy.compactMap { $0 as? StyleBar }.first)
+    let sizeButton = try #require(
+      Self.descendants(of: fontBar).compactMap { $0 as? NSButton }.first {
+        $0.accessibilityLabel() == "字号"
+      })
+    sizeButton.sendAction(sizeButton.action, to: sizeButton.target)
+    try shoot(
+      h.window, "font-menu",
+      crop: try #require(h.menu).frame.union(fontBar.frame).insetBy(dx: -30, dy: -30))
+    try shootContent(fontBar, "tray-text")
+    try shootContent(try #require(h.menu), "font-menu")
+    h = adjust()
+    let counter = Annotation(
+      shape: .counter(7, center: CGPoint(x: 500, y: 400)), style: .init(color: .blue))
+    h.view.annotations = [counter]
+    h.view.selectedAnnotation = counter.id
+    h.move(CGPoint(x: 1150, y: 760))
+    try shoot(h.window, "tray-counter-selected", crop: barsFrame(h))
+    try shootContent(
+      try #require(h.view.subviews.lazy.compactMap { $0 as? StyleBar }.first),
+      "tray-counter-selected")
     h = adjust()
     let caret = try #require(h.toolbar?.button(for: .saveMenu))
     caret.sendAction(caret.action, to: caret.target)
@@ -913,6 +939,11 @@ struct ScreenshotSnapshotTests {
     ]
   }
 
+  /// view 底下所有的子视图（深度优先）
+  static func descendants(of view: NSView) -> [NSView] {
+    view.subviews.flatMap { [$0] + descendants(of: $0) }
+  }
+
   /// 工具栏 + 样式托盘（+ 开着的菜单）外扩 24
   private func barsFrame(_ h: Harness) -> CGRect {
     let bars = h.view.subviews.filter {
@@ -1015,8 +1046,30 @@ struct ScreenshotSnapshotTests {
     return window
   }
 
+  /// 只画栏里的内容（按钮、字），垫一块 HUD 深底：macOS 26 起样式托盘、HUD 菜单单独的玻璃在屏外画成一块白，
+  /// 看不到里面排成什么样（工具栏两段在玻璃容器里，不受影响）。要在 shoot 之后调（窗口显示过，图层才有内容）
+  private func shootContent(_ bar: HUDBar, _ name: String) throws {
+    let out = try #require(Self.directory)
+    let size = bar.bounds.size
+    let scale: CGFloat = 2
+    let bitmap = try #require(
+      NSBitmapImageRep(
+        bitmapDataPlanes: nil, pixelsWide: Int(size.width * scale),
+        pixelsHigh: Int(size.height * scale), bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+        isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+    let context = try #require(NSGraphicsContext(bitmapImageRep: bitmap)).cgContext
+    context.scaleBy(x: scale, y: scale)
+    context.setFillColor(gray: 0.12, alpha: 1)
+    context.fill(CGRect(origin: .zero, size: size))
+    let origin = bar.effect.convert(CGPoint.zero, to: bar)
+    context.translateBy(x: origin.x, y: origin.y)
+    try #require(bar.effect.layer).render(in: context)
+    try write(try #require(bitmap.cgImage), to: "\(out)/shot-\(name)-content.png")
+  }
+
   /// 同 SnapshotProbeTests.renderLayers：屏外窗口显示一下、跑几轮 RunLoop，再按 2x 渲染内容视图的图层
   /// （cacheDisplay 画不出直接加的子图层）。prepare 在布局之后跑；crop（点，视图坐标）另存一张局部
+
   private func shoot(
     _ window: NSWindow, _ name: String, dark: Bool = false, crop: CGRect? = nil,
     prepare: () -> Void = {}

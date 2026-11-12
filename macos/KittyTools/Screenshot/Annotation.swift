@@ -148,6 +148,31 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
     var color = Palette.red
     var weight = Weight.medium
     var option = 0
+    /// 文字的字号（pt，2026-11-12 拍板 A1）；nil = 按三档（weight.fontSize：14 / 20 / 28，之前存的文字标注、截图历史、
+    /// 记住的样式都是这样）。可选的才能读旧数据：合成的 Codable 碰到缺的键只对可选成员不报错
+    var fontSize: CGFloat?
+
+    /// 文字托盘里的字号档位（A− / A+ 走相邻的，数字弹出的菜单列这些）
+    static let fontSizes: [CGFloat] = [12, 14, 16, 20, 24, 32, 40, 56, 72]
+
+    /// 文字实际用的字号
+    var textSize: CGFloat { fontSize ?? weight.fontSize }
+
+    /// 往大（step > 0）/ 往小换一档：文字换字号（不在档位上的旧字号先落到相邻的那档），别的工具换三档（到头不动）。
+    /// A− / A+、⌘+ / ⌘−、滚轮都走这里（拍板 A2、O1）
+    func stepped(_ step: Int, for tool: Tool) -> Style {
+      var next = self
+      if tool == .text {
+        let sizes = Self.fontSizes
+        let size = textSize
+        next.fontSize =
+          step > 0
+          ? sizes.first { $0 > size } ?? sizes.last! : sizes.last { $0 < size } ?? sizes.first!
+      } else {
+        next.weight = Weight(rawValue: min(max(weight.rawValue + step.signum(), 0), 2))!
+      }
+      return next
+    }
 
     /// 这个工具上次用的样式
     static func remembered(for tool: Tool, in defaults: UserDefaults = .standard) -> Style {
@@ -237,8 +262,8 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
         .insetBy(dx: -width / 2, dy: -width / 2)
     case .text(let string, let origin):
       // 有的字形（泰文声调、斜体）会画出文字框：按字号留边（至少盖住底色块），局部重画不留残影、不被裁掉
-      let pad = max(style.weight.fontSize / 3, Self.platePadding.width)
-      return Self.textFrame(string, origin: origin, weight: style.weight).insetBy(
+      let pad = max(style.textSize / 3, Self.platePadding.width)
+      return Self.textFrame(string, origin: origin, size: style.textSize).insetBy(
         dx: -pad, dy: -pad)
     case .counter(_, let center):
       let radius = style.weight.counterDiameter / 2 + 1  // 白描边一半在圆外
@@ -509,6 +534,14 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
     }
   }
 
+  /// 序号换成 number（选中序号时托盘上的 − / +，拍板 O2；1–99）；别的工具原样返回
+  func renumbered(_ number: Int) -> Annotation {
+    guard case .counter(_, let center) = shape else { return self }
+    var next = self
+    next.shape = .counter(min(max(number, 1), 99), center: center)
+    return next
+  }
+
   /// 下一个序号：现有最大的 + 1
   static func nextCounter(in annotations: [Annotation]) -> Int {
     let numbers = annotations.compactMap { annotation -> Int? in
@@ -558,8 +591,8 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
   // MARK: 文字
 
   /// SF Pro Rounded semibold（中文回退到苹方，没有圆体）
-  static func font(_ weight: Weight) -> NSFont {
-    rounded(size: weight.fontSize, weight: .semibold)
+  static func font(size: CGFloat) -> NSFont {
+    rounded(size: size, weight: .semibold)
   }
 
   /// SF Pro Rounded（文字标注、录屏的按键胶囊 InputOverlay 共用）
@@ -570,9 +603,9 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
   }
 
   /// 文字框（origin 是左上角）。空串和末尾换行也留出一行的高度（输入框里光标要有地方）
-  static func textFrame(_ string: String, origin: CGPoint, weight: Weight) -> CGRect {
+  static func textFrame(_ string: String, origin: CGPoint, size fontSize: CGFloat) -> CGRect {
     let measured = string.isEmpty || string.hasSuffix("\n") ? string + " " : string
-    let size = NSAttributedString(string: measured, attributes: [.font: font(weight)])
+    let size = NSAttributedString(string: measured, attributes: [.font: font(size: fontSize)])
       .boundingRect(
         with: CGSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude),
         options: [.usesLineFragmentOrigin, .usesFontLeading]
@@ -585,7 +618,7 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
   /// 「描边」样式的外描边：字宽 1/7（一半压在字里，随后填上的字把它盖住），白色（白字用黑）。输入框所见即所得也用它
   static func outlineAttributes(_ style: Style) -> [NSAttributedString.Key: Any] {
     [
-      .font: font(style.weight), .strokeWidth: 100.0 / 7,
+      .font: font(size: style.textSize), .strokeWidth: 100.0 / 7,
       .strokeColor: style.color == .white ? NSColor.black : NSColor.white,
     ]
   }
@@ -861,8 +894,8 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
       context.setLineCap(.butt)
       context.strokeLineSegments(between: [from, to])
     case .text(let string, let origin):
-      let frame = Self.textFrame(string, origin: origin, weight: style.weight)
-      let font = Self.font(style.weight)
+      let frame = Self.textFrame(string, origin: origin, size: style.textSize)
+      let font = Self.font(size: style.textSize)
       var ink = color
       NSGraphicsContext.saveGraphicsState()
       defer { NSGraphicsContext.restoreGraphicsState() }

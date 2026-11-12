@@ -741,13 +741,23 @@ final class StyleBar: HUDBar {
   var onColor: (Annotation.Palette) -> Void = { _ in }
   var onWeight: (Annotation.Weight) -> Void = { _ in }
   var onOption: (Int) -> Void = { _ in }
+  /// 文字的 A− / A+：往小 / 往大换一档字号（Style.stepped）
+  var onFontStep: (Int) -> Void = { _ in }
+  /// 点了字号的数字：调用方在这颗钮旁弹出档位菜单（HUD 菜单归调用方管：同时最多开一个、Esc 先收它）
+  var onFontMenu: (NSView) -> Void = { _ in }
+  /// 选中序号时编号的 − / +（拍板 O2）
+  var onNumber: (Int) -> Void = { _ in }
   /// 按当前工具排好内容后的尺寸；位置由 SelectionView 定（move）
   private(set) var preferredSize = CGSize.zero
   private var tool: Annotation.Tool?
+  private var number: Int?
   private var style: Annotation.Style?
   private var colors: [Swatch] = []
   private var weights: [Swatch] = []
   private var options: [BarButton] = []
+  /// 文字托盘里的字号数字、选中序号时的编号（只改字，不重排）
+  private var sizeValue: BarButton?
+  private var numberValue: NSTextField?
 
   /// 托盘高（工具栏放哪时要给它留地方）
   static let height: CGFloat = 34
@@ -762,14 +772,21 @@ final class StyleBar: HUDBar {
 
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-  /// 换了工具就重排内容（色点只给有颜色的工具、三档的名字、选项分段），样式变了只改选中状态（色点 pop）
-  func update(tool: Annotation.Tool, style: Annotation.Style) {
-    if tool != self.tool {
-      rebuild(for: tool)
+  /// 换了工具就重排内容（色点只给有颜色的工具、三档或字号、选项分段、选中序号时的编号），样式变了只改选中状态（色点 pop）。
+  /// number：选中的是序号时它的编号（托盘多一段「编号 − n +」）；别的 nil
+  func update(tool: Annotation.Tool, style: Annotation.Style, number: Int? = nil) {
+    if tool != self.tool || (number == nil) != (self.number == nil) {
+      rebuild(for: tool, numbered: number != nil)
       self.tool = tool
       self.style = nil
     }
+    self.number = number
+    numberValue?.stringValue = number.map(String.init) ?? ""
     guard style != self.style else { return }
+    if let sizeValue {
+      Self.setValue(sizeValue, Self.sizeText(style.textSize))
+      sizeValue.setAccessibilityValue(Self.sizeText(style.textSize))
+    }
     let animated = self.style != nil
     self.style = style
     for swatch in colors {
@@ -781,8 +798,10 @@ final class StyleBar: HUDBar {
     for button in options { Self.mark(button, on: button.tag == style.option) }
   }
 
-  private func rebuild(for tool: Annotation.Tool) {
+  private func rebuild(for tool: Annotation.Tool, numbered: Bool) {
     for view in stack.arrangedSubviews { view.removeFromSuperview() }
+    sizeValue = nil
+    numberValue = nil
     colors =
       tool.hasColor
       ? Annotation.Palette.allCases.map { color in
@@ -793,7 +812,8 @@ final class StyleBar: HUDBar {
         swatch.action = #selector(pickColor(_:))
         return swatch
       } : []
-    weights = tool.weightTitles.enumerated().map { index, title in
+    // 文字不出三档，换成字号：「A− 20 A+」（拍板 A1）
+    weights = (tool == .text ? [] : tool.weightTitles).enumerated().map { index, title in
       let swatch = Swatch(
         fill: Style.HUD.text, diameter: [4, 7, 10][index], outlined: false,
         label: title)
@@ -805,6 +825,36 @@ final class StyleBar: HUDBar {
     var views: [NSView] = colors
     if !colors.isEmpty { views.append(barSeparator()) }
     views += weights
+    if tool == .text {
+      let value = Self.chipButton(
+        Self.sizeText(Annotation.Style().textSize), target: self,
+        action: #selector(openFontMenu(_:)),
+        label: "字号")
+      value.toolTip = "选择字号"
+      sizeValue = value
+      views.append(
+        Self.chip([
+          Self.chipButton("A−", target: self, action: #selector(smallerFont), label: "缩小字号"),
+          value,
+          Self.chipButton("A+", target: self, action: #selector(largerFont), label: "放大字号"),
+        ]))
+    }
+    if numbered {
+      let value = NSTextField(labelWithString: "")
+      value.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+      value.textColor = Style.HUD.text
+      value.alignment = .center
+      value.widthAnchor.constraint(equalToConstant: 26).isActive = true
+      value.setAccessibilityLabel("编号")
+      numberValue = value
+      let chip = Self.chip([
+        Self.chipButton("−", target: self, action: #selector(lowerNumber), label: "编号减一"),
+        value,
+        Self.chipButton("+", target: self, action: #selector(raiseNumber), label: "编号加一"),
+      ])
+      chip.toolTip = "改这个序号的编号"
+      views += [barSeparator(), chip]
+    }
     options = tool.optionTitles.enumerated().map { index, title in
       let button = BarButton(title: title, target: self, action: #selector(pickOption(_:)))
       button.isBordered = false
@@ -833,6 +883,49 @@ final class StyleBar: HUDBar {
     views.forEach(stack.addArrangedSubview)
     preferredSize = CGSize(
       width: ceil(stack.fittingSize.width + 2 * Self.materialInset), height: Self.height)
+  }
+
+  /// 字号、编号那一段：同选项分段的轨道（高 26、圆角 control 6，内缩 2）
+  private static func chip(_ views: [NSView]) -> NSStackView {
+    let chip = NSStackView(views: views)
+    chip.spacing = 0
+    chip.edgeInsets = NSEdgeInsets(top: 2, left: 2, bottom: 2, right: 2)
+    chip.wantsLayer = true
+    chip.layer?.backgroundColor = Style.HUD.chipFill.cgColor
+    chip.layer?.cornerRadius = Style.Radius.control
+    chip.layer?.cornerCurve = .continuous
+    return chip
+  }
+
+  /// 轨道里的一颗字钮（高 22、圆角 mini 4，悬停出底）
+  private static func chipButton(
+    _ title: String, target: AnyObject, action: Selector, label: String
+  )
+    -> BarButton
+  {
+    let button = BarButton(title: title, target: target, action: action)
+    button.isBordered = false
+    button.refusesFirstResponder = true
+    button.layer?.cornerRadius = Style.Radius.mini
+    button.setAccessibilityLabel(label)
+    setValue(button, title)
+    button.widthAnchor.constraint(greaterThanOrEqualToConstant: 26).isActive = true
+    button.heightAnchor.constraint(equalToConstant: 22).isActive = true
+    return button
+  }
+
+  private static func setValue(_ button: NSButton, _ title: String) {
+    button.attributedTitle = NSAttributedString(
+      string: title,
+      attributes: [
+        .font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium),
+        .foregroundColor: Style.HUD.text,
+      ])
+  }
+
+  /// 字号的写法：整数不带小数
+  static func sizeText(_ size: CGFloat) -> String {
+    size.rounded() == size ? String(Int(size)) : String(format: "%.1f", size)
   }
 
   /// 选项分段：选中 HUD 选中底 + 主文字色，其余次文字色
@@ -893,6 +986,29 @@ final class StyleBar: HUDBar {
   }
 
   @objc private func pickOption(_ sender: NSButton) { onOption(sender.tag) }
+  @objc private func smallerFont() { onFontStep(-1) }
+  @objc private func largerFont() { onFontStep(1) }
+  @objc private func openFontMenu(_ sender: NSButton) { onFontMenu(sender) }
+  /// 点在字号的数字上（point：父视图坐标）：开着的菜单交给数字自己收起 / 换（长图标注遮罩用）
+  func opensFontMenu(at point: CGPoint) -> Bool {
+    guard let sizeValue, let superview else { return false }
+    return sizeValue.convert(sizeValue.bounds, to: superview).contains(point)
+  }
+
+  @objc private func lowerNumber() { onNumber(-1) }
+  @objc private func raiseNumber() { onNumber(1) }
+}
+
+extension HUDMenu {
+  /// 字号的档位菜单（勾着现在的字号），选了调 pick
+  static func fontSizes(current: CGFloat, pick: @escaping (CGFloat) -> Void) -> HUDMenu {
+    HUDMenu(
+      Annotation.Style.fontSizes.map { size in
+        Entry(title: "\(StyleBar.sizeText(size)) pt", checked: size == current) { pick(size) }
+      }, label: fontMenuLabel)
+  }
+
+  static let fontMenuLabel = "字号"
 }
 
 /// 托盘里的色点 / 粗细点：选中时外圈 2 pt 品牌粉环（离点 2 pt）、整体放大 1.1（pop）。

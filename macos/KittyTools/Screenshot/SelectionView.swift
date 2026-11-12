@@ -1254,6 +1254,9 @@ final class SelectionView: NSView, NSTextViewDelegate {
     styleBar.onColor = { [unowned self] color in restyle { $0.color = color } }
     styleBar.onWeight = { [unowned self] weight in restyle { $0.weight = weight } }
     styleBar.onOption = { [unowned self] option in restyle { $0.option = option } }
+    styleBar.onFontStep = { [unowned self] step in restyle { $0 = $0.stepped(step, for: .text) } }
+    styleBar.onFontMenu = { [unowned self] button in toggleFontMenu(from: button) }
+    styleBar.onNumber = { [unowned self] delta in renumberSelected(by: delta) }
     // ponytail: macOS 26 上工具栏（两段已在同一个玻璃容器里）、样式托盘、HUD 菜单、尺寸胶囊是各自独立的玻璃兄弟视图，
     // 违反「相邻的玻璃放进同一个 NSGlassEffectContainerView」（玻璃互相取样不到，托盘离工具栏只有 6 pt，颜色会不一致）。
     // 升级路径：SelectionView 里建一个铺满的容器，四者都挂进它的 contentView（改挂载层级和 z 序，要 26 实机验证）
@@ -1317,7 +1320,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
     toolbar.grow(true, from: edge, anchorX: anchorX)
     let owner: Annotation.Tool? = editor != nil ? .text : selected?.tool ?? tool
     guard let owner else { return styleBar.setShown(false) }
-    styleBar.update(tool: owner, style: shownStyle)
+    styleBar.update(tool: owner, style: shownStyle, number: selectedCounterNumber)
     let button = toolbar.toolButtonFrame(owner).offsetBy(dx: origin.x, dy: origin.y)
     let size = styleBar.preferredSize
     // 栏放进了选区里（上下都放不下）：托盘也夹在选区里、离四边 8 pt，不压能拖的边；否则夹在屏内 10 pt
@@ -1497,6 +1500,59 @@ final class SelectionView: NSView, NSTextViewDelegate {
     showRebindTip([done], seconds: 1.8)
   }
   private static let ratioMenuLabel = "比例"
+
+  /// 托盘上字号的数字：HUD 菜单列字号档位（勾着现在的），锚在数字下方；开着时再点一下收起
+  private func toggleFontMenu(from button: NSView) {
+    if closesMenu(HUDMenu.fontMenuLabel) { return }
+    present(
+      .fontSizes(current: shownStyle.textSize) { [weak self] size in
+        self?.restyle { $0.fontSize = size }
+      }, anchor: button.convert(button.bounds, to: self))
+  }
+
+  /// 选中的序号的编号（托盘出「编号 − n +」）；选中的不是序号、正在输入文字时 nil
+  private var selectedCounterNumber: Int? {
+    guard editor == nil, case .counter(let number, _)? = selected?.shape else { return nil }
+    return number
+  }
+
+  /// 选中的序号编号加减 delta（记一步撤销；之后新放的照旧是现有最大 + 1）
+  private func renumberSelected(by delta: Int) {
+    hudMenu?.dismiss()
+    guard !isDraggingAnnotation, let number = selectedCounterNumber, let selected,
+      let index = annotations.firstIndex(where: { $0.id == selected.id })
+    else { return }
+    var next = annotations
+    next[index] = selected.renumbered(number + delta)
+    commit(next)
+    refresh()
+    if let shown = selectedCounterNumber { announce("编号 \(shown)") }
+  }
+
+  /// 滚轮换档（拍板 O1）：调整阶段鼠标在选中的标注上（或正在输入的文字上）滚，往上大一档、往下小一档——文字是字号，
+  /// 别的是三档（粗细、打码强度、聚光灯深浅）。触控板的细碎滚动攒够一格才换（同悬停认元素的 ElementFinder.step）。
+  /// ponytail: 每换一档记一步撤销，触控板一甩换几档就要按几下 ⌘Z；要合成一步就在滚动停下（phase .ended）时再记
+  private func wheelRestyle(_ event: NSEvent) -> Bool {
+    guard annotates, isAdjusting, drag == nil, !sizeField.isEditing, let mouse,
+      !isOverControls(mouse)
+    else { return false }
+    let owner: Annotation.Tool
+    if let editor, editor.field.frame.contains(mouse) {
+      owner = .text
+    } else if editor == nil, let selected, selected.contains(mouse) {
+      owner = selected.tool
+    } else {
+      return false
+    }
+    guard event.momentumPhase.isEmpty else { return true }
+    if event.phase == .began { scrollPending = 0 }
+    let (step, pending) = ElementFinder.step(
+      deltaY: event.scrollingDeltaY, inverted: event.isDirectionInvertedFromDevice,
+      precise: event.hasPreciseScrollingDeltas, pending: scrollPending)
+    scrollPending = pending
+    if step != 0 { restyle { $0 = $0.stepped(step, for: owner) } }
+    return true
+  }
 
   /// 开着的正是这个菜单就收起（再点一下同一个按钮）；开着的是另一个时不收，由 present 换成新的（一下就开，不用点两次）
   private func closesMenu(_ label: String) -> Bool {
@@ -1846,7 +1902,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private func apply(_ style: Annotation.Style, to field: EditorField) {
     let plate = style.option == 2
     let ink = plate ? style.color.ink : style.color.color
-    field.font = Annotation.font(style.weight)
+    field.font = Annotation.font(size: style.textSize)
     field.textColor = ink
     field.insertionPointColor = Style.Shot.accent  // 光标是强调色的位置（§1.2），截图家族用品牌粉
     field.ringRadius = plate ? 6 : 3
@@ -1874,7 +1930,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private func layoutEditor() {
     guard let editor else { return }
     let frame = Annotation.textFrame(
-      editor.field.string, origin: editor.origin, weight: editor.style.weight)
+      editor.field.string, origin: editor.origin, size: editor.style.textSize)
     let pad = editor.style.option == 2 ? Annotation.platePadding : CGSize(width: 3, height: 3)
     if editor.field.textContainerInset != pad { editor.field.textContainerInset = pad }
     editor.field.frame = frame.insetBy(dx: -pad.width, dy: -pad.height)
@@ -2267,6 +2323,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
   /// 滚轮 / 触控板双指：待选、悬停着元素时换层，往上（按手指 / 滚轮的方向，不跟着「自然滚动」反过来）大一层、往下小一层，
   /// 最大到那扇窗口；到头了不动。惯性那一段不算
   override func scrollWheel(with event: NSEvent) {
+    if wheelRestyle(event) { return }
     guard selection == nil, drag == nil, event.momentumPhase.isEmpty, let mouse,
       hoverRect(at: mouse) != nil, var current = stack, current.layers.count > 1
     else { return super.scrollWheel(with: event) }
@@ -2786,6 +2843,18 @@ final class SelectionView: NSView, NSTextViewDelegate {
     super.keyDown(with: event)
   }
 
+  /// ⌘+ / ⌘−（⌘=、⇧⌘=、⌘-、小键盘 ⌘+ ⌘-，就是 ShotKeys.isReserved 留出来的那几个，改键改不到它们）是往大 / 往小一档；
+  /// 别的 nil。长图标注遮罩也用它
+  static func fontStep(_ event: NSEvent, flags: NSEvent.ModifierFlags) -> Int? {
+    switch (Int(event.keyCode), flags) {
+    case (kVK_ANSI_Equal, .command), (kVK_ANSI_Equal, [.command, .shift]),
+      (kVK_ANSI_KeypadPlus, .command):
+      return 1
+    case (kVK_ANSI_Minus, .command), (kVK_ANSI_KeypadMinus, .command): return -1
+    default: return nil
+    }
+  }
+
   /// 截图时的一个快捷键（ShotKeys）：这个模式用得上就做、返回 true（吃掉这一下）。录屏只认上次区域和取色：
   /// 出图键、工具、撤销、切到录屏都是截图的
   private func perform(_ key: ShotKey) -> Bool {
@@ -2865,6 +2934,14 @@ final class SelectionView: NSView, NSTextViewDelegate {
     }
     // 输入文字 / 尺寸时：⌘C / ⌘V / ⌘X / ⌘A 发给输入框（本 App 不激活，主菜单收不到）；⌘Z / ⇧⌘Z 直接动输入框自己的
     // 撤销栈（NSWindow.undoFocusedText，第三轮体检：原来发 undo: / redo: 动作，顺着响应链到头是窗口接、字不变）
+    // ⌘+ / ⌘−：正在输入或选中文字时换一档字号（拍板 A2）；⌘= 不按 ⇧ 也算 +
+    if annotates, !sizeField.isEditing, editor != nil || selected?.tool == .text,
+      let step = Self.fontStep(event, flags: flags)
+    {
+      // 拖着标注时吞掉不做：中途改了列表，松手记的那一步撤销就对不上（同 ⌘Z / ⌫）
+      if !isDraggingAnnotation { restyle { $0 = $0.stepped(step, for: .text) } }
+      return true
+    }
     if editor != nil || sizeField.isEditing {
       if key == "z", flags.subtracting(.shift) == .command {
         if window?.undoFocusedText(redo: flags.contains(.shift)) != true { NSSound.beep() }

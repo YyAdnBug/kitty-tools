@@ -464,7 +464,7 @@ struct ScreenshotTests {
     let mosaic = Annotation(shape: .mosaic(CGRect(x: 0, y: 0, width: 50, height: 50)))
     #expect(mosaic.contains(CGPoint(x: 25, y: 25)))
     // 文字框从左上角往下长；占的范围再按字号留边（泰文声调等会画出框外）
-    let frame = Annotation.textFrame("标注", origin: CGPoint(x: 10, y: 100), weight: .medium)
+    let frame = Annotation.textFrame("标注", origin: CGPoint(x: 10, y: 100), size: 20)
     #expect(frame.maxY == 100 && frame.minX == 10 && frame.height > 10)
     let text = Annotation(shape: .text("标注", origin: CGPoint(x: 10, y: 100)))
     #expect(text.bounds.contains(frame) && text.bounds.maxY > 100)

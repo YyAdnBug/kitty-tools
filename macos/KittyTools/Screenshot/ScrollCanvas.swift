@@ -40,6 +40,11 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
   var shownStyle: Annotation.Style { editor?.style ?? selected?.style ?? style }
   /// 样式托盘跟着谁：同上的优先级（都没有就不出托盘）
   var styleOwner: Annotation.Tool? { editor != nil ? .text : selected?.tool ?? tool }
+  /// 选中的序号的编号（托盘出「编号 − n +」）；选中的不是序号、正在输入文字时 nil
+  var selectedCounterNumber: Int? {
+    guard editor == nil, case .counter(let number, _)? = selected?.shape else { return nil }
+    return number
+  }
   var canUndo: Bool { !undoStack.isEmpty }
   var canRedo: Bool { !redoStack.isEmpty }
   var hasAnnotations: Bool { !annotations.isEmpty || editor != nil }
@@ -254,6 +259,17 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
     Island.announce(chosen.map { "\($0.title)工具" } ?? "已收起工具")
   }
 
+  /// 选中的序号编号加减 delta（记一步撤销）
+  func renumberSelected(by delta: Int) {
+    guard drag == nil, let number = selectedCounterNumber, let selected,
+      let index = annotations.firstIndex(where: { $0.id == selected.id })
+    else { return }
+    var next = annotations
+    next[index] = selected.renumbered(number + delta)
+    commit(next)
+    onState()
+  }
+
   /// 改颜色 / 粗细 / 选项：作用于正在输入的文字、选中的标注或当前工具的新标注，并记成那个工具的样式
   func restyle(_ change: (inout Annotation.Style) -> Void) {
     if var editor {
@@ -376,7 +392,7 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
   private func apply(_ style: Annotation.Style, to field: EditorField) {
     let plate = style.option == 2
     let ink = plate ? style.color.ink : style.color.color
-    field.font = Annotation.font(style.weight)
+    field.font = Annotation.font(size: style.textSize)
     field.textColor = ink
     field.insertionPointColor = Style.Shot.accent
     field.ringRadius = plate ? 6 : 3
@@ -401,7 +417,7 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
   private func layoutEditor() {
     guard let editor else { return }
     let frame = Annotation.textFrame(
-      editor.field.string, origin: editor.origin, weight: editor.style.weight)
+      editor.field.string, origin: editor.origin, size: editor.style.textSize)
     let pad = editor.style.option == 2 ? Annotation.platePadding : CGSize(width: 3, height: 3)
     if editor.field.textContainerInset != pad { editor.field.textContainerInset = pad }
     editor.field.frame = frame.insetBy(dx: -pad.width, dy: -pad.height)

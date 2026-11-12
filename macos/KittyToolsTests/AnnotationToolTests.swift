@@ -141,6 +141,45 @@ struct AnnotationToolTests {
     #expect(!Annotation(shape: .line(from: .zero, to: CGPoint(x: 3, y: 3))).isMeaningful)
   }
 
+  // 字号（2026-11-12 拍板 A1–A3）：档位、换档、旧数据没有字号时按三档；别的工具滚轮换三档（O1）
+  @Test func fontSizesAndSteps() throws {
+    var style = Annotation.Style()
+    #expect(style.textSize == 20 && Annotation.Style(weight: .large).textSize == 28)
+    #expect(style.stepped(1, for: .text).fontSize == 24)
+    #expect(style.stepped(-1, for: .text).fontSize == 16)
+    // 旧的「大」28 不在档位上：往上 32、往下 24
+    let old = Annotation.Style(weight: .large)
+    #expect(old.stepped(1, for: .text).fontSize == 32 && old.stepped(-1, for: .text).fontSize == 24)
+    style.fontSize = 72
+    #expect(style.stepped(1, for: .text).fontSize == 72)
+    style.fontSize = 12
+    #expect(style.stepped(-1, for: .text).fontSize == 12)
+    #expect(Annotation.Style().stepped(1, for: .rectangle).weight == .large)
+    #expect(Annotation.Style(weight: .large).stepped(3, for: .mosaic).weight == .large)
+    #expect(Annotation.Style(weight: .small).stepped(-1, for: .spotlight).weight == .small)
+    #expect(Annotation.Style().stepped(1, for: .rectangle).fontSize == nil)
+    // 截图历史、记住的样式里没有 fontSize 的旧 JSON 照常读；字号跟着标注存
+    let legacy = try JSONDecoder().decode(
+      Annotation.Style.self, from: Data(#"{"color":2,"weight":2,"option":1}"#.utf8))
+    #expect(legacy == Annotation.Style(color: .orange, weight: .large, option: 1))
+    let sized = Annotation(
+      shape: .text("字", origin: .zero), style: Annotation.Style(fontSize: 40))
+    #expect(try JSONDecoder().decode(Annotation.self, from: JSONEncoder().encode(sized)) == sized)
+    #expect(
+      sized.bounds.height > Annotation(shape: .text("字", origin: .zero)).bounds.height + 15)
+  }
+
+  // 序号改编号（拍板 O2）：1–99，别的工具不动
+  @Test func counterRenumber() {
+    let counter = Annotation(shape: .counter(3, center: .zero))
+    #expect(counter.renumbered(5).shape == .counter(5, center: .zero))
+    #expect(counter.renumbered(5).id == counter.id)
+    #expect(counter.renumbered(0).shape == .counter(1, center: .zero))
+    #expect(counter.renumbered(120).shape == .counter(99, center: .zero))
+    let box = Annotation(shape: .rectangle(CGRect(x: 0, y: 0, width: 9, height: 9)))
+    #expect(box.renumbered(4) == box)
+  }
+
   @Test func handlesAndResize() {
     let rect = CGRect(x: 10, y: 20, width: 40, height: 30)
     let box = Annotation(shape: .rectangle(rect))
@@ -1018,7 +1057,7 @@ struct AnnotationToolTests {
   @Test func textOptionsDrawOutlineAndPlate() throws {
     let white = try Self.solid(gray: 1)
     let origin = CGPoint(x: 20, y: 60)
-    let frame = Annotation.textFrame("字", origin: origin, weight: .medium)
+    let frame = Annotation.textFrame("字", origin: origin, size: 20)
     var plate = Annotation.Style(color: .blue)
     plate.option = 2
     let plated = try draw(

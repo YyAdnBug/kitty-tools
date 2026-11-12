@@ -19,6 +19,7 @@ import Carbon.HIToolbox
   /// 缩放的上下限和一档（⌘+ / ⌘-）
   private static let zoomRange: ClosedRange<CGFloat> = 0.1...4
   private static let zoomStep: CGFloat = 1.25
+  private static let saveMenuLabel = "存储选项"
 
   private let image: CGImage
   /// 像素 / 点
@@ -38,8 +39,8 @@ import Carbon.HIToolbox
   private let canvas: ScrollCanvas
   private let bar = EditorToolbar(mode: .longShot)
   private let styleBar = StyleBar()
-  /// 存储右边 ▾ 弹的 HUD 菜单（开着时有值）：Esc、点外面先收它（同截图遮罩、长截图面板）
-  private(set) var saveMenu: HUDMenu?
+  /// 开着的 HUD 菜单（存储右边 ▾ 的、托盘上字号的；同时最多一个）：Esc、点外面先收它（同截图遮罩、长截图面板）
+  private(set) var menu: HUDMenu?
   private let output: Output
   /// 关掉了（AppDelegate 放掉这个会话）
   var onClose: () -> Void = {}
@@ -77,9 +78,16 @@ import Carbon.HIToolbox
     scrollView.documentView = canvas
     scrollView.wantsLayer = true
     bar.onClick = { [unowned self] item in clicked(item) }
-    styleBar.onColor = { [unowned self] color in canvas.restyle { $0.color = color } }
-    styleBar.onWeight = { [unowned self] weight in canvas.restyle { $0.weight = weight } }
-    styleBar.onOption = { [unowned self] option in canvas.restyle { $0.option = option } }
+    // 点托盘先收开着的菜单（点托盘时菜单不自己收：字号菜单开着再点一下数字要收起，见 menuTakes）
+    styleBar.onColor = { [unowned self] color in restyle { $0.color = color } }
+    styleBar.onWeight = { [unowned self] weight in restyle { $0.weight = weight } }
+    styleBar.onOption = { [unowned self] option in restyle { $0.option = option } }
+    styleBar.onFontStep = { [unowned self] step in restyle { $0 = $0.stepped(step, for: .text) } }
+    styleBar.onFontMenu = { [unowned self] button in toggleFontMenu(from: button) }
+    styleBar.onNumber = { [unowned self] delta in
+      menu?.dismiss()
+      canvas.renumberSelected(by: delta)
+    }
     canvas.onState = { [unowned self] in syncBars() }
 
     let content = AnnotateOverlayView()
@@ -225,7 +233,7 @@ import Carbon.HIToolbox
     guard let owner = canvas.styleOwner, let content = panel.contentView else {
       return styleBar.setShown(false)
     }
-    styleBar.update(tool: owner, style: canvas.shownStyle)
+    styleBar.update(tool: owner, style: canvas.shownStyle, number: canvas.selectedCounterNumber)
     let button = bar.toolButtonFrame(owner).offsetBy(dx: bar.frame.minX, dy: bar.frame.minY)
     let size = styleBar.preferredSize
     let x = max(
@@ -255,7 +263,7 @@ import Carbon.HIToolbox
   private func composed() -> CGImage { canvas.composed() }
 
   private func clicked(_ item: EditorToolbar.Item) {
-    if item != .saveMenu { saveMenu?.dismiss() }
+    if item != .saveMenu { menu?.dismiss() }
     switch item {
     case .output(let action): emit(action)
     case .cancel: dismiss()
@@ -270,7 +278,11 @@ import Carbon.HIToolbox
   /// 存储右边的 ▾：HUD 菜单「存储到「桌面」⌘S / 另存为… ⇧⌘S」，锚在存储钮下方（同截图工具栏、长截图面板的那一份，
   /// 第四轮体检 U13：原来直接另存为）；开着时再点一下收起
   private func toggleSaveMenu() {
-    guard saveMenu == nil else { return saveMenu?.dismiss() ?? () }
+    if let menu {
+      let wasSave = menu.accessibilityLabel() == Self.saveMenuLabel
+      menu.dismiss()
+      if wasSave { return }
+    }
     guard let content = panel.contentView, let body = bar.button(for: .output(.save)),
       let caret = bar.button(for: .saveMenu)
     else { return }
@@ -282,22 +294,46 @@ import Carbon.HIToolbox
         .init(title: "另存为…", key: ShotKey.saveAs.label ?? "") { [weak self] in
           self?.emit(.saveAs)
         },
-      ], label: "存储选项")
-    saveMenu = next
-    next.onDismiss = { [weak self, weak next] in
-      if self?.saveMenu === next { self?.saveMenu = nil }
-    }
-    next.present(
-      in: content,
+      ], label: Self.saveMenuLabel)
+    present(
+      next,
       anchor: body.convert(body.bounds, to: content).union(caret.convert(caret.bounds, to: content))
     )
   }
 
+  /// 托盘上字号的数字：字号档位菜单锚在数字下方（同截图遮罩）；开着时再点一下收起
+  private func toggleFontMenu(from button: NSView) {
+    if let menu {
+      let wasFont = menu.accessibilityLabel() == HUDMenu.fontMenuLabel
+      menu.dismiss()
+      if wasFont { return }
+    }
+    guard let content = panel.contentView else { return }
+    present(
+      .fontSizes(current: canvas.shownStyle.textSize) { [weak self] size in
+        self?.canvas.restyle { $0.fontSize = size }
+      }, anchor: button.convert(button.bounds, to: content))
+  }
+
+  private func restyle(_ change: (inout Annotation.Style) -> Void) {
+    menu?.dismiss()
+    canvas.restyle(change)
+  }
+
+  private func present(_ next: HUDMenu, anchor: CGRect) {
+    guard let content = panel.contentView else { return }
+    menu = next
+    next.onDismiss = { [weak self, weak next] in
+      if self?.menu === next { self?.menu = nil }
+    }
+    next.present(in: content, anchor: anchor)
+  }
+
   /// 开着菜单时先过一遍窗口收到的事件（画布是第一响应者、自己认 Esc，等它冒泡上来就晚了）。按键：先收菜单，Esc 到此
   /// 为止（同截图遮罩：Esc 先关 HUD 菜单），别的键照常。按下鼠标：点在菜单、工具栏上照常（工具栏的钮自己先收菜单，
-  /// ▾ 再点一下收起）；点在托盘上收菜单、照常点；点在别处（图、暗底）只收菜单，这一下不做别的。返回 true = 吃掉
+  /// ▾ 再点一下收起）；点在托盘上收菜单、照常点（字号的数字例外：菜单交给它收起 / 换）；点在别处（图、暗底）只收菜单，这一下不做别的。返回 true = 吃掉
   private func menuTakes(_ event: NSEvent) -> Bool {
-    guard let menu = saveMenu, let content = panel.contentView else { return false }
+    guard let menu, let content = panel.contentView else { return false }
     switch event.type {
     case .keyDown:
       menu.dismiss()
@@ -305,6 +341,8 @@ import Carbon.HIToolbox
     case .leftMouseDown, .rightMouseDown:
       let point = content.convert(event.locationInWindow, from: nil)
       if menu.frame.contains(point) || bar.frame.contains(point) { return false }
+      // 点在字号数字上：菜单交给它收起 / 换成字号菜单；托盘别处先收菜单再照常点
+      if styleBar.isShown, styleBar.opensFontMenu(at: point) { return false }
       menu.dismiss()
       return !(styleBar.isShown && styleBar.frame.contains(point))
     default:
@@ -362,6 +400,11 @@ import Carbon.HIToolbox
   /// 行编辑键（specialKey）都交回去，归输入框自己（返回 false）
   private func typing(_ event: NSEvent, flags: NSEvent.ModifierFlags) -> Bool {
     guard flags.contains(.command), event.specialKey == nil else { return false }
+    // ⌘+ / ⌘−：输入文字时换字号（拍板 A2；平时是缩放）
+    if let step = SelectionView.fontStep(event, flags: flags) {
+      restyle { $0 = $0.stepped(step, for: .text) }
+      return true
+    }
     let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
     if key == "z", flags.subtracting(.shift) == .command {
       if !panel.undoFocusedText(redo: flags.contains(.shift)) { NSSound.beep() }

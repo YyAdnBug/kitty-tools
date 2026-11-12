@@ -456,6 +456,87 @@ struct AnnotationEditingTests {
     #expect(capture.action == .copy)
   }
 
+  // 字号：输入时 ⌘+ / 托盘 A− A+ / 选中后 ⌘− / 滚轮，都记撤销、记住给下一条（拍板 A1 A2 O1）
+  @Test func fontSizeByKeysTrayAndWheel() throws {
+    let h = harness(tool: .text)
+    let origin = CGPoint(x: 400, y: 400)
+    h.view.beginEditing(at: origin)
+    let field = try #require(h.fieldEditor)
+    field.insertText("字", replacementRange: NSRange(location: NSNotFound, length: 0))
+    let styleBar = try #require(h.view.subviews.lazy.compactMap { $0 as? StyleBar }.first)
+    #expect(h.keyEquivalent(kVK_ANSI_Equal, "=", flags: .command))
+    #expect(field.font?.pointSize == 24)
+    styleBar.onFontStep(-1)
+    styleBar.onFontStep(-1)
+    #expect(field.font?.pointSize == 16)
+    h.key(kVK_Escape, "\u{1b}")
+    let text = try #require(h.view.annotations.first)
+    #expect(text.style.fontSize == 16 && h.view.selectedAnnotation == text.id)
+    // 选中文字时 ⌘−；下一条文字用记住的字号
+    #expect(h.keyEquivalent(kVK_ANSI_Minus, "-", flags: .command))
+    #expect(h.view.annotations.first?.style.fontSize == 14)
+    #expect(h.view.style.fontSize == 14)
+    // 鼠标在选中的文字上滚轮往上：大一档；不在它上面不动
+    let inside = CGPoint(x: text.bounds.midX, y: text.bounds.midY)
+    h.move(inside)
+    h.scroll(up: true)
+    #expect(h.view.annotations.first?.style.fontSize == 16)
+    h.move(CGPoint(x: 600, y: 250))
+    h.scroll(up: true)
+    #expect(h.view.annotations.first?.style.fontSize == 16)
+    h.keyEquivalent(kVK_ANSI_Z, "z", flags: .command)
+    #expect(h.view.annotations.first?.style.fontSize == 14)
+    // 输入时那几次改字号不单独记步：再撤两步是「选中后 ⌘−」之前、再之前是没有这条文字
+    h.keyEquivalent(kVK_ANSI_Z, "z", flags: .command)
+    #expect(h.view.annotations.first?.style.fontSize == 16)
+    h.keyEquivalent(kVK_ANSI_Z, "z", flags: .command)
+    #expect(h.view.annotations.isEmpty)
+    // ⇧⌘- 不是字号键（留给改键）
+    h.keyEquivalent(kVK_ANSI_Z, "z", flags: [.command, .shift])
+    h.keyEquivalent(kVK_ANSI_Z, "z", flags: [.command, .shift])
+    #expect(!h.keyEquivalent(kVK_ANSI_Minus, "-", flags: [.command, .shift]))
+    #expect(h.view.annotations.first?.style.fontSize == 14)
+  }
+
+  // 拖着文字时按 ⌘+：吞掉不改，松手只记挪动那一步（不然撤销栈里多一个拖到一半的样子）
+  @Test func fontKeysIgnoredWhileDragging() throws {
+    let h = harness(tool: nil)
+    let text = Annotation(shape: .text("字", origin: CGPoint(x: 400, y: 400)))
+    h.view.annotations = [text]
+    let inside = CGPoint(x: text.bounds.midX, y: text.bounds.midY)
+    h.begin(inside, to: CGPoint(x: inside.x + 30, y: inside.y))
+    #expect(h.keyEquivalent(kVK_ANSI_Equal, "=", flags: .command))
+    h.release(CGPoint(x: inside.x + 30, y: inside.y))
+    let moved = try #require(h.view.annotations.first)
+    #expect(
+      moved.style.fontSize == nil && moved.shape == .text("字", origin: CGPoint(x: 430, y: 400)))
+    h.keyEquivalent(kVK_ANSI_Z, "z", flags: .command)
+    #expect(h.view.annotations == [text])
+  }
+
+  // 滚轮在选中的矩形上换粗细；选中序号时托盘改编号，之后新放的照旧是最大 + 1（拍板 O1 O2）
+  @Test func wheelChangesWeightAndTrayRenumbersCounter() throws {
+    let h = harness(tool: .rectangle)
+    h.drag(CGPoint(x: 350, y: 250), CGPoint(x: 450, y: 350))
+    h.move(CGPoint(x: 350, y: 280))  // 空心矩形认边线
+    h.scroll(up: true)
+    #expect(h.view.annotations.first?.style.weight == .large)
+    h.scroll(up: false)
+    h.scroll(up: false)
+    #expect(h.view.annotations.first?.style.weight == .small)
+    h.view.tool = .counter
+    h.click(CGPoint(x: 550, y: 300))
+    let styleBar = try #require(h.view.subviews.lazy.compactMap { $0 as? StyleBar }.first)
+    styleBar.onNumber(1)
+    styleBar.onNumber(1)
+    #expect(h.view.annotations.last?.shape == .counter(3, center: CGPoint(x: 550, y: 300)))
+    h.click(CGPoint(x: 600, y: 300))
+    #expect(h.view.annotations.last?.shape == .counter(4, center: CGPoint(x: 600, y: 300)))
+    h.keyEquivalent(kVK_ANSI_Z, "z", flags: .command)
+    h.keyEquivalent(kVK_ANSI_Z, "z", flags: .command)
+    #expect(h.view.annotations.last?.shape == .counter(2, center: CGPoint(x: 550, y: 300)))
+  }
+
   @Test func textEditorShowsStylesLive() throws {
     // 托盘改样式会写记住的样式：Harness 记在临时偏好域里，不碰真实偏好
     let h = harness(tool: .text)
