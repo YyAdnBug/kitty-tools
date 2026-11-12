@@ -9,6 +9,8 @@ import SwiftUI
 struct NoteCaptureView: View {
   @Bindable var model: NoteCaptureModel
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  /// 输入法正在组字（组着的字还没进 draft）：占位先藏起来
+  @State private var composing = false
 
   private typealias Layout = NoteCaptureModel.Layout
 
@@ -123,12 +125,12 @@ struct NoteCaptureView: View {
     return SourceTextView(
       text: $model.draft, fontSize: Layout.fontSize, horizontalInset: Layout.margin - 5,
       focusRequest: model.bodyFocus, onCancel: model.cancel, onSubmit: { model.save() },
-      onTab: onTab
+      onTab: onTab, onComposingChange: { composing = $0 }
     )
     .accessibilityLabel("便签内容")
     .frame(height: NoteCaptureModel.textHeight(for: model.draft) + 2 * Layout.textInset)
     .overlay(alignment: .topLeading) {
-      if model.draft.isEmpty {
+      if model.draft.isEmpty && !composing {
         Text("记点什么…")
           .font(.system(size: Layout.fontSize))
           .foregroundStyle(.tertiary)

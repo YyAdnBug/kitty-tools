@@ -2,6 +2,7 @@
 // 焦点所在输入框里打的字回去、再回来——多行的（SourceTextView：翻译原文框、剪贴板的编辑对话框）和单行的
 // （CommandTextField：字段编辑器自己的栈）。面板只建不显示、不当 key；事件对象直接交给面板，不往系统里发。
 // 另有 macOS 27 的「排版里改高度，contentView 和窗口差一截」（2026-10-17）。
+// 另有输入法组字的回报（issue #16）：组着的字确认前不进绑定，两种输入框都要报「在组字」，外面自己画的占位据此藏起来。
 
 import AppKit
 import Carbon.HIToolbox
@@ -133,5 +134,73 @@ struct OverlayPanelTests {
         windowNumber: panel.windowNumber, context: nil, characters: "z",
         charactersIgnoringModifiers: "z", isARepeat: false, keyCode: UInt16(kVK_ANSI_Z)))
     #expect(OverlayPanel.undoRedo(optioned, in: panel) == nil)
+  }
+
+  /// 组字开始、确认、撤掉（给空的）、焦点走了：每次变了才报；组着的拼音不进绑定（不然一撤掉，绑定里留着拼音）
+  @Test func composingIsReportedWhileTextStaysUncommitted() throws {
+    final class Log {
+      var multi: [Bool] = []
+      var single: [Bool] = []
+    }
+    let log = Log()
+    let draft = Draft()
+    draft.text = ""
+    let panel = OverlayPanel(
+      size: NSSize(width: 400, height: 260), autoHide: .clickOutside, isPinned: { false },
+      content: VStack {
+        CommandTextField(
+          text: Binding {
+            draft.name
+          } set: {
+            draft.name = $0
+          }, placeholder: "", onComposingChange: { log.single.append($0) })
+        SourceTextView(
+          text: Binding {
+            draft.text
+          } set: {
+            draft.text = $0
+          }, submitsOnEnter: false, onComposingChange: { log.multi.append($0) })
+      })
+    panel.contentView?.layoutSubtreeIfNeeded()
+    let none = NSRange(location: NSNotFound, length: 0)
+    func mark(_ text: String, in view: NSTextView) {
+      view.setMarkedText(
+        text, selectedRange: NSRange(location: (text as NSString).length, length: 0),
+        replacementRange: none)
+    }
+    func spin() {
+      for _ in 0..<5 { RunLoop.main.run(mode: .default, before: Date.now.addingTimeInterval(0.01)) }
+    }
+    // 多行输入框：在 NSTextView 子类里当场报
+    let editor = try #require(find(SourceTextView.FocusTextView.self, in: panel.contentView))
+    #expect(panel.makeFirstResponder(editor))
+    mark("n", in: editor)
+    mark("ni", in: editor)
+    #expect(log.multi == [true] && editor.string == "ni" && draft.text == "")
+    editor.insertText("你", replacementRange: none)
+    #expect(log.multi == [true, false] && draft.text == "你")
+    mark("h", in: editor)
+    mark("", in: editor)
+    #expect(log.multi == [true, false, true, false] && draft.text == "你")
+    // 单行输入框：组字改的是窗口共用的字段编辑器，听它的选区变化
+    let field = try #require(find(CommandTextField.FocusField.self, in: panel.contentView))
+    #expect(panel.makeFirstResponder(field))
+    let fieldEditor = try #require(field.currentEditor() as? NSTextView)
+    mark("n", in: fieldEditor)
+    #expect(log.single == [true] && draft.name == "")
+    mark("", in: fieldEditor)
+    spin()
+    #expect(log.single == [true, false] && draft.name == "")
+    mark("h", in: fieldEditor)
+    fieldEditor.insertText("好", replacementRange: none)
+    spin()
+    #expect(log.single == [true, false, true, false] && draft.name == "好")
+    // 组字中焦点走了：不再算在组字
+    mark("a", in: fieldEditor)
+    #expect(log.single.last == true)
+    #expect(panel.makeFirstResponder(editor))
+    spin()
+    #expect(log.single.last == false)
+    #expect(log.multi == [true, false, true, false])
   }
 }

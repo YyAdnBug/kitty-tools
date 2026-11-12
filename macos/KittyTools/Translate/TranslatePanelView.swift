@@ -43,6 +43,8 @@ struct TranslatePanelView: View {
   @State private var swaps = 0
   /// 原文框拿着焦点：输入框底画焦点环（和历史搜索框只有一个亮）
   @State private var sourceFocused = false
+  /// 原文框里输入法正在组字（组着的字还没进 sourceText）：占位先藏起来（issue #16）
+  @State private var sourceComposing = false
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(Island.self) private var island: Island?
 
@@ -306,12 +308,14 @@ struct TranslatePanelView: View {
         coordinator.start()
       } onFocusChange: {
         sourceFocused = $0
+      } onComposingChange: {
+        sourceComposing = $0
       }
       .frame(height: 76)
       .overlay(alignment: .topLeading) {
         // 划词没取到文字时换一句说明（体检 A16，同一句也播报给 VoiceOver），开始输入就换回平时的。
         // 位置就是输入的第一个字的位置（左 12 = 上面的 7 + 5，上 6 = SourceTextView 的 textContainerInset）：一打字不跳
-        if coordinator.sourceText.isEmpty {
+        if coordinator.sourceText.isEmpty && !sourceComposing {
           Text(coordinator.missedSelection ? "没取到选中的文字，可以直接输入或粘贴" : "输入或粘贴文字，↩ 翻译，⇧↩ 换行")
             .font(.system(size: 15 * fontScale))
             .foregroundStyle(.tertiary)

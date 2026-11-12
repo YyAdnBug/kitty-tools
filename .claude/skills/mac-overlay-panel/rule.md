@@ -35,6 +35,7 @@ M1 起的实测结论。代码：`Shell/OverlayPanel.swift`、`HotKeyCenter.swif
 ## 3. 浮层里的输入框
 - 单行用 `CommandTextField`，多行用 `SourceTextView`（便签的正文另有专用的 `NoteTextView`，见下面「便签正文的编辑器」）：方向键 / 回车 / Esc 一律走 `doCommandBy`。输入法组字期间这些键被输入法消费、不会回调，所以**不要**用 SwiftUI `TextField` + `.onKeyPress` 抢方向键和回车，也不要写吞键 hack。
 - 未处理的 `cancelOperation:` 转给 `window.cancelOperation`，浮层据此按上表关闭。
+- **自己画的占位（SwiftUI 叠在输入框上的那行淡字）要看「在组字」**（issue #16，2026-11-12）：输入法组字时拼音已经在框里，但 `textDidChange` / `controlTextDidChange` 要确认了才来，绑定的文字还是空的——只看 `text.isEmpty` 的占位就和拼音叠在一起。三个输入框都有 `onComposingChange`（`SourceTextView`、`NoteTextView` 在 `setMarkedText` / `insertText` / `unmarkText` 之后看 `hasMarkedText()`；`CommandTextField` 听字段编辑器的选区变化，当场看一眼、晚一拍再看一眼——撤掉组字时选区变的那一刻还算在组字），占位写成 `text.isEmpty && !composing`。系统画的 `placeholderString` 组字时自己会藏，不用管。**组着的字别塞进绑定**：输入法撤掉组字时不一定有下一次 `textDidChange`，绑定会留着拼音、再被 `updateNSView` 写回框里。
 - 多行框（翻译原文框、剪贴板的备注 / 编辑 / 新片段）的滚动条贴框的右边（2026-09-27 用户要求，同翻译结果卡）：外面的框不给 `SourceTextView` 左右内边距，文字缩进改用它的 `horizontalInset`，滚动区铺满框宽。文字离框边 = `horizontalInset` + NSTextView 自己的 `lineFragmentPadding` 5：翻译原文框传 7（文字离框 12，和下面卡片里的字同一条线；2026-10-12 视觉对齐，原来传 12、实际缩进 17），剪贴板对话框传 8。
 - 这两个输入框也用在便签里（2026-10-12）：快速记一条是 `SourceTextView` 的提交模式，标题（全部便签窗口、屏幕边缘那叠）是 `CommandTextField`——可以给字色（`textColor`，纸上的墨；nil = 系统的文字色；给了它插入点也用它）和字重。**便签的正文不用 `SourceTextView`**（2026-10-13 第 5 批起）：原来为它加的字色、字节上限、按编号的标识、挂进窗口就拿焦点这几个口子都从 `SourceTextView` 删掉了，挪进下面这个专用的编辑器。
 - **便签正文的编辑器 `NoteTextView`**（`Notes/NoteTextView.swift`，SwiftUI 包装 `NoteTextEditor`，`NoteFields.swift` 的 `NoteBodyField` 用它；全部便签窗口和屏幕边缘那叠同一份）。它必须守的规矩：

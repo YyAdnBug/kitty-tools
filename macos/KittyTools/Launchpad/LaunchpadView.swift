@@ -17,6 +17,8 @@ struct LaunchpadView: View {
   @Environment(\.colorSchemeContrast) private var contrast
   /// 文件夹面板那块纸（开着、正在缩回去的时候都在；缩完了拆掉）
   @State private var folderSheet: FolderSheet?
+  /// 搜索框里输入法正在组字（组着的字还没进 query）：当成打了字，「搜索」让出来、整组靠左
+  @State private var searchComposing = false
 
   /// 拖动、落点、格子位置都按这个命名坐标空间算（面板本地坐标）
   nonisolated static let space = "launchpad"
@@ -186,7 +188,7 @@ struct LaunchpadView: View {
   /// 点一下（`searchEngaged`）或打了字，整组滑到左边、插入点亮起来，「搜索」两个字等打了字才让出来（同系统搜索框获得焦点）。
   /// 放大镜和「搜索」是一层不接点按的字：左边那格它停下来的位置和输入框前面空出来的位置一样，打字时不跳
   private func searchField(_ metrics: LaunchpadMetrics) -> some View {
-    let empty = model.query.isEmpty
+    let empty = model.query.isEmpty && !searchComposing
     let centered = empty && !model.searchEngaged
     return HStack(spacing: 6) {
       searchGlass.hidden()
@@ -216,7 +218,7 @@ struct LaunchpadView: View {
           default:
             return false
           }
-        }
+        }, onComposingChange: { searchComposing = $0 }
       )
       .frame(height: 20)
     }

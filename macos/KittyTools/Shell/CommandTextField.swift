@@ -5,6 +5,8 @@
 // onFocusChange：焦点进出时回调（外面的输入框底据此画 Whisker 焦点环）。
 // romanOnly：聚焦时只允许英文类输入法（系统自动切过去，离开后恢复）。
 // maxLength：字数上限，超出的那次输入整段退回（提示音，不截断；输入法组字中不打断，确认后再判断）。
+// onComposingChange：输入法开始 / 结束组字时回调——组着的字确认前不进 text（controlTextDidChange 要确认了才来）。
+// placeholder 是系统画的，组字时自己会藏；外面另画占位的（便签标题、启动台搜索）要据此藏起来（issue #16）。
 // focusRequest：面板里主输入框之外的第二个框（快速记一条的标题）——不登记成 initialFirstResponder（面板呼出时焦点不进它），
 // 这个数每变一次拿一次焦点（同 SourceTextView.focusRequest，mac-overlay-panel §3）。
 
@@ -33,6 +35,8 @@ struct CommandTextField: NSViewRepresentable {
   var onCommand: (Selector) -> Bool = { _ in false }
   /// 焦点进出（画焦点环用）
   var onFocusChange: ((Bool) -> Void)?
+  /// 输入法开始 / 结束组字（外面画的占位：text 空着、又没在组字才显示）
+  var onComposingChange: ((Bool) -> Void)?
 
   func makeNSView(context: Context) -> FocusField {
     context.coordinator.focusRequest = focusRequest ?? 0
@@ -48,12 +52,14 @@ struct CommandTextField: NSViewRepresentable {
     field.cell?.lineBreakMode = .byTruncatingTail
     field.delegate = context.coordinator
     field.onFocusChange = onFocusChange
+    field.onComposingChange = onComposingChange
     return field
   }
 
   func updateNSView(_ field: FocusField, context: Context) {
     context.coordinator.parent = self
     field.onFocusChange = onFocusChange
+    field.onComposingChange = onComposingChange
     if let request = focusRequest, request != context.coordinator.focusRequest {
       context.coordinator.focusRequest = request
       field.window?.makeFirstResponder(field)
@@ -113,6 +119,8 @@ struct CommandTextField: NSViewRepresentable {
     var claimsInitialFocus = true
     var romanOnly = false
     var onFocusChange: ((Bool) -> Void)?
+    var onComposingChange: ((Bool) -> Void)?
+    private var composing = false
     /// 插入点的颜色；nil = 强调色
     var caretColor: NSColor?
     /// 对话框输入框抢焦点前拿着焦点的输入框：消失时还给它（管理收藏夹里行内改名完回到下面的新建框）
@@ -123,6 +131,15 @@ struct CommandTextField: NSViewRepresentable {
       applyInputSources()
       applyBrandColors()
       reportFocus()
+      // 组字改的是窗口共用的字段编辑器、不经过这里：听它的选区变化（组着的字每变一次都会动选区）
+      if onComposingChange != nil, let editor = currentEditor() {
+        // 编辑中再拿一次焦点也会走到这里：先摘掉旧的，不叠着听
+        NotificationCenter.default.removeObserver(
+          self, name: NSTextView.didChangeSelectionNotification, object: nil)
+        NotificationCenter.default.addObserver(
+          self, selector: #selector(editorSelectionChanged),
+          name: NSTextView.didChangeSelectionNotification, object: editor)
+      }
       return true
     }
 
@@ -130,6 +147,24 @@ struct CommandTextField: NSViewRepresentable {
     override func textDidEndEditing(_ notification: Notification) {
       super.textDidEndEditing(notification)
       reportFocus()
+      NotificationCenter.default.removeObserver(
+        self, name: NSTextView.didChangeSelectionNotification, object: nil)
+      reportComposing()
+    }
+
+    /// 当场看一眼（开始组字），再晚一拍看一眼：撤掉组字时选区变的那一刻还算在组字，setMarkedText 返回了才不算
+    @objc private func editorSelectionChanged() {
+      reportComposing()
+      NSObject.cancelPreviousPerformRequests(
+        withTarget: self, selector: #selector(reportComposing), object: nil)
+      perform(#selector(reportComposing), with: nil, afterDelay: 0)
+    }
+
+    @objc private func reportComposing() {
+      let now = (currentEditor() as? NSTextView)?.hasMarkedText() ?? false
+      guard now != composing else { return }
+      composing = now
+      onComposingChange?(now)
     }
 
     /// 晚一拍（下一轮 run loop）、按那时的第一响应者报：焦点常在 SwiftUI 插入 / 移除视图的更新中途变，当场改状态

@@ -80,6 +80,9 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
   var onOverflow: () -> Void = {}
   /// Esc（查找条开着时先关它，不到这里）；nil = 交给窗口
   var onCancel: (() -> Void)?
+  /// 输入法开始 / 结束组字：组着的字不进 onChange，外面画的占位据此藏起来（issue #16，同 SourceTextView）
+  var onComposingChange: ((Bool) -> Void)?
+  private var composing = false
   /// 挂进窗口的那一刻就拿焦点（窗口不必是 key）：那叠里刚打开的那条便签
   var takesFocusOnAppear = false
   /// 上次处理过的「要焦点」的次数（NoteTextEditor.focusRequest）
@@ -888,6 +891,18 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
   override func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
     super.setMarkedText(string, selectedRange: selectedRange, replacementRange: replacementRange)
     if !hasMarkedText() { settle() }
+    reportComposing()
+  }
+
+  override func unmarkText() {
+    super.unmarkText()
+    reportComposing()
+  }
+
+  private func reportComposing() {
+    guard hasMarkedText() != composing else { return }
+    composing.toggle()
+    onComposingChange?(composing)
   }
 
   /// 一次编辑收尾了：没有没确认的组字时，把样式补上、把正文交出去。输入法还在组字就什么都不做——攒着的区间等确认
@@ -1098,6 +1113,7 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
   override func insertText(_ string: Any, replacementRange: NSRange) {
     if string as? String == " ", editLine({ NoteTasks.shorthand(in: $0, caret: $1) }) { return }
     super.insertText(string, replacementRange: replacementRange)
+    reportComposing()
   }
 
   /// 没有选区、没在组字时，拿光标所在的行（不含行尾的换行）和光标在行里的位置去问 change 要不要改；改了返回 true。
@@ -2268,6 +2284,7 @@ struct NoteTextEditor: NSViewRepresentable {
   let onChange: (String) -> Void
   let onOverflow: () -> Void
   var onCancel: (() -> Void)?
+  var onComposingChange: ((Bool) -> Void)?
   /// 插图被拒 / 存图没成时说什么（刘海岛的标题 + 说明；默认不说）
   var onImageProblem: (String, String) -> Void = { _, _ in }
   /// 这条便签的图片目录（NoteStore.images）
@@ -2302,6 +2319,7 @@ struct NoteTextEditor: NSViewRepresentable {
     view.onChange = onChange
     view.onOverflow = onOverflow
     view.onCancel = onCancel
+    view.onComposingChange = onComposingChange
     view.onImageProblem = onImageProblem
     view.imageStore = images
     // 换一条便签时正文框可能被复用（setText 换正文）：编号跟着换，替换原文才认得出「已经不是那条便签了」
