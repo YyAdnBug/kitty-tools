@@ -168,22 +168,39 @@ final class ScrollCapture {
     // 第一帧先摆进预览（原来要等拼上第二段才有，开头预览是空的）；预览按自己的大小出图，先布局
     panel.layoutIfNeeded()
     refreshPreview(force: true)
+    // 手动滚时静止睡着的那一觉，选区里一滚就叫醒（滚轮落在别的 App 上，global 监听收得到；落在自家面板上是往回看预览，
+    // 不管）。自动滚动自己发的滚轮这里也收得到，那时的 160 ms 一帧不能被它叫醒
+    wheelMonitor = NSEvent.addGlobalMonitorForEvents(matching: .scrollWheel) { [weak self] _ in
+      MainActor.assumeIsolated {
+        guard let self, !self.isAutoScrolling else { return }
+        self.nap?.cancel()
+      }
+    }
     // 任务持有会话，直到结束（finish 清掉 continuation）循环才退出
     loop = Task { await run() }
   }
 
   /// 一直截选区：手动滚时尽量密（两帧之间滚得越少越容易对上），自动滚时每截一帧滚一步、等画面画完；
   /// 画面停着不动时放慢（interval）。拷像素、逐行哈希这些在主线程外算（ScrollStitcher.frame，第四轮体检 F1），
-  /// 接到长图上仍在主线程、一帧接一帧按顺序来
+  /// 接到长图上仍在主线程、一帧接一帧按顺序来。
+  /// 手动滚、画面在动时：这一帧一截完就开截下一帧，和算这一帧叠着做，算完不睡（2026-11-12 用户：选区大了大部分时候
+  /// 「对不上」）。两帧之间滚了多远 = 滚的速度 × 一轮的时间；原来一轮是「截 35 ms + 算 35 ms + 睡 40 ms」（整窗口
+  /// 3420 × 1982 像素、Release、本机），触控板一甩每秒几千点，慢一倍的机器上一甩就滚过一整屏，之后往前怎么滚都接不上
+  /// （只和上次接上的那帧比）。实录 Chrome 的帧序列回放：原来慢一倍就对不上，现在慢五倍还一路接上
   private func run() async {
+    /// 正在截的下一帧和它开截时 posted 是多少
+    var next: Task<(image: CGImage, posted: CGFloat), any Error>?
+    defer { next?.cancel() }
     while continuation != nil {
       do {
-        postedAtPreviousCapture = postedAtCapture
-        postedAtCapture = posted
-        let image = try await SCScreenshotManager.captureImage(
-          contentFilter: filter, configuration: configuration)
+        let shot = try await (next ?? capture()).value
+        next = nil
         guard continuation != nil else { return }
-        let frame = await ScrollStitcher.frame(image, layout: stitcher.layout)
+        // 手动滚、上一帧画面在动：先开截下一帧，再算这一帧
+        if !isAutoScrolling, quietFrames == 0 { next = capture() }
+        postedAtPreviousCapture = postedAtCapture
+        postedAtCapture = shot.posted
+        let frame = await ScrollStitcher.frame(shot.image, layout: stitcher.layout)
         guard continuation != nil else { return }
         let outcome = stitcher.add(frame)
         quietFrames = outcome == .unchanged ? quietFrames + 1 : 0
@@ -196,18 +213,41 @@ final class ScrollCapture {
         updateStatus()
         return refreshPreview(force: true)
       }
-      try? await Task.sleep(
-        for: Self.interval(isAutoScrolling: isAutoScrolling, quietFrames: quietFrames))
+      // 下一帧已经在截了（画面在动）就不睡
+      guard next == nil,
+        let interval = Self.interval(isAutoScrolling: isAutoScrolling, quietFrames: quietFrames)
+      else { continue }
+      // 静止时睡得久，滚轮一来就醒（不然停了一会儿再一甩，第一帧要等满 200 ms 才截、已经滚过头了）
+      let nap = Task { _ = try? await Task.sleep(for: interval) }
+      self.nap = nap
+      await nap.value
+      self.nap = nil
+    }
+  }
+
+  /// 开截一帧（记下开截时发了多少滚轮，自动滚动拿它和画面实际滚的比）
+  private func capture() -> Task<(image: CGImage, posted: CGFloat), any Error> {
+    let (posted, filter, configuration) = (self.posted, self.filter, self.configuration)
+    return Task {
+      (
+        try await SCScreenshotManager.captureImage(
+          contentFilter: filter, configuration: configuration), posted
+      )
     }
   }
 
   /// 连着几帧画面没变
   private var quietFrames = 0
+  /// 静止时两帧之间在睡的那一觉：选区外的滚轮（global 监听）把它叫醒
+  private var nap: Task<Void, Never>?
+  private var wheelMonitor: Any?
 
-  /// 下一帧隔多久截（纯函数，配单测）：自动滚动 160 ms（边滚边截，每帧滚出一两成选区高）；手动时 40 ms，连着 5 帧没变化（停着看、去拿鼠标）
-  /// 放宽到 200 ms，一有变化就回到 40 ms（第四轮体检 F1：静止时原来也每秒在主线程上算 25 帧）
-  static func interval(isAutoScrolling: Bool, quietFrames: Int) -> Duration {
+  /// 截完一帧后隔多久截下一帧（纯函数，配单测）：自动滚动 160 ms（边滚边截，每帧滚出一两成选区高）；手动时画面在动
+  /// 不等（nil：下一帧已经和这一帧叠着在截了），没变化 40 ms，连着 5 帧没变化（停着看、去拿鼠标）放宽到 200 ms、
+  /// 滚轮一来就醒（第四轮体检 F1：静止时原来也每秒在主线程上算 25 帧）
+  static func interval(isAutoScrolling: Bool, quietFrames: Int) -> Duration? {
     if isAutoScrolling { return .milliseconds(160) }
+    if quietFrames == 0 { return nil }
     return .milliseconds(quietFrames >= 5 ? 200 : 40)
   }
 
@@ -487,6 +527,8 @@ final class ScrollCapture {
     guard let continuation else { return }
     self.continuation = nil
     loop?.cancel()
+    wheelMonitor.map(NSEvent.removeMonitor)
+    wheelMonitor = nil
     isAutoScrolling = false
     panel.hudView.onFrame = nil
     border.orderOut(nil)

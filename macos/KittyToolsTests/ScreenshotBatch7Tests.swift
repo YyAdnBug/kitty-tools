@@ -168,7 +168,9 @@ struct ScreenshotBatch7Tests {
         == .normal)
     // 按两下的时窗和录制条的放弃同一份（RecordingHUD.Discard，2 秒，那边有单测）
     #expect(ScrollCapture.interval(isAutoScrolling: true, quietFrames: 10) == .milliseconds(160))
-    #expect(ScrollCapture.interval(isAutoScrolling: false, quietFrames: 0) == .milliseconds(40))
+    // 手动滚、画面在动：不等，下一帧和这一帧叠着截（2026-11-12：原来固定睡 40 ms，慢一些的机器上一甩就滚过一整屏）
+    #expect(ScrollCapture.interval(isAutoScrolling: false, quietFrames: 0) == nil)
+    #expect(ScrollCapture.interval(isAutoScrolling: false, quietFrames: 1) == .milliseconds(40))
     #expect(ScrollCapture.interval(isAutoScrolling: false, quietFrames: 4) == .milliseconds(40))
     #expect(ScrollCapture.interval(isAutoScrolling: false, quietFrames: 5) == .milliseconds(200))
   }

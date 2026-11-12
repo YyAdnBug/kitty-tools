@@ -475,6 +475,26 @@ struct ScrollStitcher {
 
   // MARK: 帧
 
+  /// 一行像素的哈希（只在一次会话里比相等，不用随机种子）：每次吃 8 字节，左旋 5 位、异或、乘一个奇数常数（FxHash 的
+  /// 做法），最后把高半截折进低半截。比系统的 Hasher（SipHash）快好几倍：整窗口 3420 × 1982 的一帧算帧从 22 ms 到 10 ms
+  /// （2026-11-12，选区大了常对不上：一轮越短两帧之间滚得越少）
+  nonisolated static func rowHash(_ row: UnsafeRawPointer, count: Int) -> Int {
+    let multiplier: UInt64 = 0x517c_c1b7_2722_0a95
+    var hash: UInt64 = 0
+    var offset = 0
+    while offset + 8 <= count {
+      hash = (hash << 5 | hash >> 59) ^ row.loadUnaligned(fromByteOffset: offset, as: UInt64.self)
+      hash &*= multiplier
+      offset += 8
+    }
+    while offset < count {
+      hash = (hash << 5 | hash >> 59) ^ UInt64(row.load(fromByteOffset: offset, as: UInt8.self))
+      hash &*= multiplier
+      offset += 1
+    }
+    return Int(bitPattern: UInt(hash ^ hash >> 32))
+  }
+
   /// 算好的一帧（值类型，能从主线程外带回来）
   nonisolated struct Frame: Sendable {
     /// 第 0 行是图的顶行
@@ -517,9 +537,7 @@ struct ScrollStitcher {
         let bytes = buffer.bindMemory(to: UInt8.self)
         for y in 0..<height {
           let row = buffer.baseAddress! + y * rowBytes
-          var hasher = Hasher()
-          hasher.combine(bytes: UnsafeRawBufferPointer(start: row, count: compared * 4))
-          hashes[y] = hasher.finalize()
+          hashes[y] = ScrollStitcher.rowHash(row, count: compared * 4)
           solid[y] = memcmp(row + 4, row, compared * 4 - 4) == 0
           for k in 0..<bins {
             var sum: Int32 = 0

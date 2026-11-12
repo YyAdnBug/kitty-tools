@@ -113,6 +113,30 @@ struct ScrollStitcherTests {
       ScrollStitcher(first: image(first), scrollbarWidth: scrollbar, maxHeight: 100_000))
   }
 
+  /// 行哈希（2026-11-12 换成按 8 字节一吃的快哈希）：同样的字节在不同地址（没对齐）哈希一样；任何一个字节、
+  /// 任何一位变了都不一样，包括凑不满 8 字节的尾巴
+  @Test func rowHashSeesEveryByte() {
+    var bytes = (0..<4 * 37).map { UInt8(truncatingIfNeeded: $0 &* 73 &+ 11) }
+    let count = bytes.count
+    func hash(_ bytes: [UInt8], shift: Int = 0) -> Int {
+      let padded = [UInt8](repeating: 0xAB, count: shift) + bytes
+      return padded.withUnsafeBytes {
+        ScrollStitcher.rowHash($0.baseAddress! + shift, count: count)
+      }
+    }
+    let base = hash(bytes)
+    #expect(hash(bytes, shift: 3) == base)
+    var seen: Set<Int> = [base]
+    for index in 0..<count {
+      for bit in [0, 7] {
+        bytes[index] ^= 1 << bit
+        seen.insert(hash(bytes))
+        bytes[index] ^= 1 << bit
+      }
+    }
+    #expect(seen.count == 1 + count * 2)
+  }
+
   @Test func stitchesDownWithHeaderAndBlinkingFooter() throws {
     let first = Self.frame(at: 100)
     var stitcher = try Self.stitcher(first)
