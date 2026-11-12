@@ -89,7 +89,12 @@ import Carbon.HIToolbox
       menu?.dismiss()
       canvas.beginPickingColor()
     }
-    styleBar.onWeight = { [unowned self] weight in restyle { $0.weight = weight } }
+    styleBar.onWeight = { [unowned self] weight in
+      restyle {
+        $0.weight = weight
+        $0.diameter = nil  // 序号拖角改过的大小：点了三档就回到三档
+      }
+    }
     styleBar.onOption = { [unowned self] option in restyle { $0.option = option } }
     styleBar.onFontStep = { [unowned self] step in restyle { $0 = $0.stepped(step, for: .text) } }
     styleBar.onFontMenu = { [unowned self] button in toggleFontMenu(from: button) }

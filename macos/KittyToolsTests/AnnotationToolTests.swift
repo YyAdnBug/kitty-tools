@@ -234,6 +234,29 @@ struct AnnotationToolTests {
     #expect(edge[1] > 150 && edge[0] < 40 && edge[2] < 40, "\(edge)")
   }
 
+  // 序号拖角改大小（2026-11-12 用户反馈）：圆心不动、直径跟着角走、夹在 14–160；滚轮按 1.25 倍；点三档清掉
+  @Test func counterResizesByCorners() throws {
+    let counter = Annotation(shape: .counter(3, center: CGPoint(x: 100, y: 100)))
+    let corners = Dictionary(uniqueKeysWithValues: counter.handles.map { ($0.0, $0.1) })
+    #expect(corners[.topRight] == CGPoint(x: 113, y: 113))  // 中号直径 26
+    let grown = counter.resized(.topRight, to: CGPoint(x: 130, y: 120), constrained: false)
+    #expect(grown.style.diameter == 60 && grown.shape == counter.shape && grown.id == counter.id)
+    #expect(grown.bounds.width == 62)  // 白描边一半在圆外
+    #expect(grown.contains(CGPoint(x: 100, y: 128)))
+    #expect(
+      counter.resized(.bottomLeft, to: CGPoint(x: 99, y: 99), constrained: false).style.diameter
+        == 14)
+    #expect(
+      counter.resized(.topLeft, to: CGPoint(x: -500, y: 100), constrained: false).style.diameter
+        == 160)
+    #expect(counter.resized(.top, to: .zero, constrained: false) == counter)  // 没有边中点
+    #expect(grown.style.stepped(1, for: .counter).diameter == 75)
+    #expect(Annotation.Style().stepped(1, for: .counter).diameter == nil)  // 没改过的照旧换三档
+    let legacy = try JSONDecoder().decode(
+      Annotation.Style.self, from: Data(#"{"color":0,"weight":1,"option":0}"#.utf8))
+    #expect(legacy.diameter == nil && legacy.counterDiameter == 26)
+  }
+
   // 序号改编号（拍板 O2）：1–99，别的工具不动
   @Test func counterRenumber() {
     let counter = Annotation(shape: .counter(3, center: .zero))
@@ -312,7 +335,7 @@ struct AnnotationToolTests {
     #expect(box.resized(.bend, to: .zero, constrained: false) == box)
     // 文字、序号、画笔只能拖动
     #expect(Annotation(shape: .text("字", origin: .zero)).handles.isEmpty)
-    #expect(Annotation(shape: .counter(1, center: .zero)).handles.isEmpty)
+    #expect(Annotation(shape: .counter(1, center: .zero)).handles.count == 4)
     #expect(Annotation(shape: .pen([.zero, CGPoint(x: 9, y: 9)])).handles.isEmpty)
   }
 

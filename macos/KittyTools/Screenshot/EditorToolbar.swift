@@ -802,8 +802,10 @@ final class StyleBar: HUDBar {
         style.custom == nil ? swatch.tag == style.color.rawValue : swatch.tag == -1,
         animated: animated)
     }
+    // 序号拖角改过大小时三档都不亮
     for swatch in weights {
-      swatch.setChosen(swatch.tag == style.weight.rawValue, animated: animated)
+      swatch.setChosen(
+        style.diameter == nil && swatch.tag == style.weight.rawValue, animated: animated)
     }
     for button in options { Self.mark(button, on: button.tag == style.option) }
   }

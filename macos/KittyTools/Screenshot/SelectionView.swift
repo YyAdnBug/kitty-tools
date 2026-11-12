@@ -970,7 +970,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
   }
 
   /// 选中的标注：1 pt 粉色虚线框 [4, 3]（箭头、直线、荧光笔不画）+ 手柄（白 9 pt 圆 + 1.5 pt 粉环；矩形类四角和边中点、线类两端，
-  /// 箭头、直线的弧线中点是小一号的 7 pt 弯曲手柄；文字、序号、画笔没有）。输入文字时不画（输入框自己有边框，大小跟着输入变）
+  /// 箭头、直线的弧线中点是小一号的 7 pt 弯曲手柄；序号是外切正方形的四角；文字、画笔没有）。输入文字时不画（输入框自己有边框，大小跟着输入变）
   private func updateAnnotationChrome() {
     guard editor == nil, let selected else {
       annotationOutline.path = nil
@@ -1263,7 +1263,12 @@ final class SelectionView: NSView, NSTextViewDelegate {
       }
     }
     styleBar.onEyedropper = { [unowned self] in beginPickingColor() }
-    styleBar.onWeight = { [unowned self] weight in restyle { $0.weight = weight } }
+    styleBar.onWeight = { [unowned self] weight in
+      restyle {
+        $0.weight = weight
+        $0.diameter = nil  // 序号拖角改过的大小：点了三档就回到三档
+      }
+    }
     styleBar.onOption = { [unowned self] option in restyle { $0.option = option } }
     styleBar.onFontStep = { [unowned self] step in restyle { $0 = $0.stepped(step, for: .text) } }
     styleBar.onFontMenu = { [unowned self] button in toggleFontMenu(from: button) }

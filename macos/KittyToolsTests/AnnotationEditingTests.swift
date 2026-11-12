@@ -537,6 +537,22 @@ struct AnnotationEditingTests {
     #expect(h.view.annotations.last?.shape == .counter(2, center: CGPoint(x: 550, y: 300)))
   }
 
+  // 序号拖右上角放大（用户反馈：序号要能像矩形一样改大小），⌘Z 回去；点托盘的三档回到三档
+  @Test func counterCornerResizesThenUndo() throws {
+    let h = harness(tool: .counter)
+    h.click(CGPoint(x: 500, y: 300))
+    let id = try #require(h.view.selectedAnnotation)
+    h.drag(CGPoint(x: 513, y: 313), CGPoint(x: 540, y: 320))  // 中号 26 的右上角
+    #expect(annotation(h, id)?.style.diameter == 80)
+    #expect(annotation(h, id)?.shape == .counter(1, center: CGPoint(x: 500, y: 300)))
+    h.keyEquivalent(kVK_ANSI_Z, "z", flags: .command)
+    #expect(annotation(h, id)?.style.diameter == nil)
+    h.keyEquivalent(kVK_ANSI_Z, "z", flags: [.command, .shift])
+    let styleBar = try #require(h.view.subviews.lazy.compactMap { $0 as? StyleBar }.first)
+    styleBar.onWeight(.large)
+    #expect(annotation(h, id)?.style.diameter == nil && annotation(h, id)?.style.weight == .large)
+  }
+
   // 一键打码（拍板 C5）：选区里的电话号码加一块打码（第一次用是模糊），一起记一步撤销；选区外的不管
   @Test func autoRedactCoversNumbersInTheSelection() async throws {
     let context = try #require(

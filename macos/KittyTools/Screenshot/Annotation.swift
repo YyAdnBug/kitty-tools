@@ -191,6 +191,16 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
     /// 文字实际用的字号
     var textSize: CGFloat { fontSize ?? weight.fontSize }
 
+    /// 拖角改过的序号直径（点，2026-11-12 用户要的：序号像矩形一样能拖着改大小）；nil = 按三档（weight.counterDiameter
+    /// 20 / 26 / 34）。可选的才能读旧数据（同 fontSize）；点托盘上的三档会清掉它
+    var diameter: CGFloat?
+
+    /// 序号拖角能改到的大小
+    static let diameterRange: ClosedRange<CGFloat> = 14...160
+
+    /// 序号实际的直径
+    var counterDiameter: CGFloat { diameter ?? weight.counterDiameter }
+
     /// 往大（step > 0）/ 往小换一档：文字换字号（不在档位上的旧字号先落到相邻的那档），别的工具换三档（到头不动）。
     /// A− / A+、⌘+ / ⌘−、滚轮都走这里（拍板 A2、O1）
     func stepped(_ step: Int, for tool: Tool) -> Style {
@@ -201,6 +211,12 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
         next.fontSize =
           step > 0
           ? sizes.first { $0 > size } ?? sizes.last! : sizes.last { $0 < size } ?? sizes.first!
+      } else if tool == .counter, let diameter {
+        // 拖角改过大小的序号：滚轮按 1.25 倍一档放大缩小（三档不管用了）
+        next.diameter = min(
+          max(
+            (diameter * pow(1.25, CGFloat(step.signum()))).rounded(), Self.diameterRange.lowerBound),
+          Self.diameterRange.upperBound)
       } else {
         next.weight = Weight(rawValue: min(max(weight.rawValue + step.signum(), 0), 2))!
       }
@@ -300,7 +316,7 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
       return Self.textFrame(string, origin: origin, size: style.textSize).insetBy(
         dx: -pad, dy: -pad)
     case .counter(_, let center):
-      let radius = style.weight.counterDiameter / 2 + 1  // 白描边一半在圆外
+      let radius = style.counterDiameter / 2 + 1  // 白描边一半在圆外
       return CGRect(
         x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)
     case .mosaic(let rect), .spotlight(let rect):
@@ -411,7 +427,7 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
         }
     case .counter(_, let center):
       return hypot(point.x - center.x, point.y - center.y)
-        <= style.weight.counterDiameter / 2 + tolerance
+        <= style.counterDiameter / 2 + tolerance
     case .text, .mosaic:
       return bounds.insetBy(dx: -tolerance, dy: -tolerance).contains(point)
     }
@@ -455,9 +471,9 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
     return copy
   }
 
-  /// 选中时的调整手柄：矩形类四角 + 边中点（边短于 edgeHandleMinimum 的不给，2026-11-12 拍板 B1），线类两端；箭头、直线还有弧线中点（弯曲手柄，直的在弦中点：CleanShot 也是直的就给，
+  /// 选中时的调整手柄：矩形类四角 + 边中点（边短于 edgeHandleMinimum 的不给，2026-11-12 拍板 B1），序号四角，线类两端；箭头、直线还有弧线中点（弯曲手柄，直的在弦中点：CleanShot 也是直的就给，
   /// 看得见才知道能弯），弦短于 32 点的不给（直的中点离两端不到 16 点，和端点手柄挤在一起）。只看弦、不看弧线中点离两端
-  /// 多远：拖着弯曲手柄往一端靠时它不会在光标下消失；荧光笔不弯；文字、序号、画笔只能拖动（空）
+  /// 多远：拖着弯曲手柄往一端靠时它不会在光标下消失；荧光笔不弯；文字、画笔只能拖动（空）
   var handles: [(Handle, CGPoint)] { handles(zoom: 1) }
 
   /// 同 handles；zoom：屏幕上每点画多大（长图缩小着看时边中点按屏幕上的边长判断给不给，不然和角挤成一团）
@@ -491,7 +507,16 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
         + (roomy ? [(.bend, Self.curveMidpoint(from: from, to: to, bend: bend))] : [])
     case .highlighter(let from, let to):
       return [(.start, from), (.end, to)]
-    case .pen, .text, .counter: return []
+    case .counter(_, let center):
+      // 外切正方形的四个角：拖哪个角都是以圆心为准改直径（同矩形的角手柄、光标）
+      let radius = style.counterDiameter / 2
+      return [
+        (.topLeft, CGPoint(x: center.x - radius, y: center.y + radius)),
+        (.topRight, CGPoint(x: center.x + radius, y: center.y + radius)),
+        (.bottomLeft, CGPoint(x: center.x - radius, y: center.y - radius)),
+        (.bottomRight, CGPoint(x: center.x + radius, y: center.y - radius)),
+      ]
+    case .pen, .text: return []
     }
   }
 
@@ -516,6 +541,12 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
       next.shape = Self.segment(
         tool, from: from, to: to,
         bend: Self.curveBend(from: from, to: to, through: point, constrained: constrained))
+    case (.counter(_, let center), .topLeft), (.counter(_, let center), .topRight),
+      (.counter(_, let center), .bottomLeft), (.counter(_, let center), .bottomRight):
+      // 圆心不动，直径 = 拖到的点离圆心横竖较远的那个 × 2（角跟着光标走），夹在 diameterRange 里
+      let reach = max(abs(point.x - center.x), abs(point.y - center.y))
+      next.style.diameter = min(
+        max((reach * 2).rounded(), Style.diameterRange.lowerBound), Style.diameterRange.upperBound)
     case (.arrow(_, let to, _), .start), (.line(_, let to, _), .start),
       (.highlighter(_, let to), .start):
       next.shape = Self.segment(
@@ -958,7 +989,7 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
       NSAttributedString(string: string, attributes: [.font: font, .foregroundColor: ink])
         .draw(in: frame)
     case .counter(let number, let center):
-      let diameter = style.weight.counterDiameter
+      let diameter = style.counterDiameter
       let circle = CGRect(
         x: center.x - diameter / 2, y: center.y - diameter / 2, width: diameter, height: diameter)
       shadow()
