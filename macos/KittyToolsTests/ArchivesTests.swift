@@ -305,6 +305,54 @@ import Testing
     #expect(outcome != .wrongPassword)
     #expect(try names(in: root) == ["坏.zip"])
   }
+
+  /// RAR：系统 tar 解得开（手搓的最小 RAR4，不压缩，里面一个 hello.txt）；主头标着分卷的认出来（RAR4 / RAR5 的头，
+  /// RAR5 的取自本机一个真包、只改了分卷那一位）；认不出来的失败原因带上「有密码」
+  @Test func rar() async throws {
+    let hello: [UInt8] = [
+      0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x00, 0xCF, 0x90, 0x73, 0x00, 0x00, 0x0D, 0x00, 0x00,
+      0x00,
+      0x00, 0x00, 0x00, 0x00, 0x08, 0x29, 0x74, 0x00, 0x80, 0x29, 0x00, 0x0A, 0x00, 0x00, 0x00,
+      0x0A,
+      0x00, 0x00, 0x00, 0x03, 0x9D, 0xD2, 0x80, 0xB1, 0x00, 0x00, 0x6E, 0x5B, 0x14, 0x30, 0x09,
+      0x00,
+      0xA4, 0x81, 0x00, 0x00, 0x68, 0x65, 0x6C, 0x6C, 0x6F, 0x2E, 0x74, 0x78, 0x74, 0x68, 0x65,
+      0x6C,
+      0x6C, 0x6F, 0x20, 0x72, 0x61, 0x72, 0x0A, 0xC4, 0x3D, 0x7B, 0x00, 0x40, 0x07, 0x00,
+    ]
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let archive = root.appending(path: "问候.RAR")
+    try Data(hello).write(to: archive)
+    #expect(Archives.isArchive(archive))
+    let outcome = await Archives.unpack(archive, password: nil, gbk: false)
+    #expect(outcome.url?.lastPathComponent == "hello.txt")
+    #expect(
+      try String(contentsOf: root.appending(path: "hello.txt"), encoding: .utf8) == "hello rar\n")
+
+    #expect(!Archives.isRARVolume(Data(hello)))
+    var volume4 = hello
+    volume4[10] |= 0x01
+    #expect(Archives.isRARVolume(Data(volume4)))
+    let rar5: [UInt8] = [
+      0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x01, 0x00, 0x36, 0x17, 0x44, 0xD8, 0x0C, 0x01, 0x05,
+      0x08,
+      0x00, 0x07, 0x01, 0x01, 0xD8, 0xB2, 0x84, 0x80,
+    ]
+    #expect(!Archives.isRARVolume(Data(rar5)))
+    var volume5 = rar5
+    volume5[16] = 0x01
+    #expect(Archives.isRARVolume(Data(volume5)))
+    #expect(!Archives.isRARVolume(Data(rar5.prefix(14))))  // 截短的不算
+    #expect(!Archives.isRARVolume(Data("PK\u{3}\u{4}".utf8)))
+
+    #expect(
+      Archives.outcome(ofFailure: "x: Bad RAR file data", password: false, rar: true)
+        == .failed("压缩包可能坏了，或者加了密码（RAR 的密码这里解不开）"))
+    #expect(
+      Archives.outcome(ofFailure: "Encryption is not supported", password: false, rar: true)
+        == .failed("这个包加了密码，这里只解得开 zip 的密码"))
+  }
 }
 
 extension Archives.Outcome {

@@ -4,8 +4,12 @@
 //   （zip:hdrcharset=UTF-8；访达和 ditto 打的不标，别的系统解开中文名会乱码，2026-11-08 实测），不带 __MACOSX、._*、.DS_Store
 //   （--no-mac-metadata 加排除）；7z 用 LZMA2。只选了一个包（App 这类）时 zip 改用 ditto（同访达的压缩：带着扩展属性，
 //   签名不坏）。不同文件夹里的同名东西包里只放得下一个，不打。不做带密码的压缩（拍板）。
-// - 解压：zip、7z、tar 一族（.tar、.tar.gz / .tgz、.tar.xz / .txz、.tar.bz2 / .tbz），和只压了一个文件的 .gz / .bz2
-//   （系统的 gunzip / bunzip2，解出来的叫包名去掉 .gz，带上包的隔离标记）。zip 先读一遍中央目录（ZipNames）：
+// - 解压：zip、7z、rar、tar 一族（.tar、.tar.gz / .tgz、.tar.xz / .txz、.tar.bz2 / .tbz），和只压了一个文件的 .gz / .bz2
+//   （系统的 gunzip / bunzip2，解出来的叫包名去掉 .gz，带上包的隔离标记）。RAR（2026-11-12）：系统 tar 是 libarchive 3.7.4，
+//   RAR4、RAR5 都解得开（本机样本实测，字节数和清单一致）；带密码的解不开（libarchive 不解 RAR 的密码：头加了密的 tar 说
+//   「encryption」，只是数据加了密的它不认、当成坏数据报错，所以 RAR 解不开时的原因写「坏了，或者有密码」）；分卷的不解
+//   （RAR5 读到第一卷末尾当成包结束了，没被切开的那几样解出来、tar 照样退出 0，像是解完了）：先读主头的「分卷」标志，标着就不交给 tar。
+//   zip 先读一遍中央目录（ZipNames）：
 //   没标 UTF-8、名字又不是合法 UTF-8 的按 GB18030 解（不说的话 tar 直接报错，ditto 解出来是乱码，实测）；有加密的条目先问密码
 //   （tar 认 ZipCrypto 和 AES；不对再问）：本 App 不在前台时先在刘海岛说「有密码」带「输入密码…」，点了再弹框——直接弹的框
 //   拿不到键盘，打的字会进访达。先解进包旁边一个隐藏的临时文件夹，里面只有一样东西就把它放到包旁边，几样就把
@@ -47,8 +51,35 @@ import AppKit
   /// 「解压到这里」认的（扩展里抄了一份，FinderLinkTests 比对）
   nonisolated static let suffixes = [
     ".zip", ".7z", ".tar", ".tar.gz", ".tgz", ".tar.xz", ".txz", ".tar.bz2", ".tbz", ".tbz2", ".gz",
-    ".bz2",
+    ".bz2", ".rar",
   ]
+
+  /// RAR 的主头标着「分卷」吗（head：包开头的几十个字节）。RAR4：7 字节的签名后是主头（类型 0x73），标志第 0 位；
+  /// RAR5：8 字节的签名后是 CRC32、头大小、头类型（1 = 主头）、头标志（第 0 位：后面跟附加区大小），再是归档标志，第 0 位。
+  /// 都是变长整数。头加了密的 RAR5（主头前是类型 4）读不出来，算不是（tar 会说加了密）
+  nonisolated static func isRARVolume(_ head: Data) -> Bool {
+    let bytes = [UInt8](head.prefix(64))
+    if bytes.starts(with: [0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x00]) {
+      return bytes.count > 10 && bytes[9] == 0x73 && bytes[10] & 0x01 != 0
+    }
+    guard bytes.starts(with: [0x52, 0x61, 0x72, 0x21, 0x1A, 0x07, 0x01, 0x00]) else { return false }
+    var index = 12
+    func number() -> UInt64? {
+      var value: UInt64 = 0
+      var shift: UInt64 = 0
+      while index < bytes.count, shift < 64 {
+        let byte = bytes[index]
+        index += 1
+        value |= UInt64(byte & 0x7F) << shift
+        if byte & 0x80 == 0 { return value }
+        shift += 7
+      }
+      return nil
+    }
+    guard number() != nil, number() == 1, let flags = number() else { return false }
+    if flags & 0x01 != 0, number() == nil { return false }
+    return (number() ?? 0) & 0x01 != 0
+  }
 
   /// 只压了一个文件的 .gz / .bz2（不是 tar 包）交给系统的 gunzip / bunzip2（tar 不认这种，实测）；别的是 nil。
   /// 单文件的 .xz 不认（系统的 gunzip 据说也解得了，但本机造不出样本来验）
@@ -144,8 +175,11 @@ import AppKit
 
   /// 解压失败，给人看的原因（tar 的标准错误里认得的说成中文）。password：给过密码——这时报「密码不对」，或者数据校验不对、
   /// 解不开（ZipCrypto 只校验一个字节，错的密码有 1/256 混过校验、解到一半才报这些，Kitty Box 实测）都算密码不对；
-  /// 包不完整、不是压缩包这类照实说，不然输对了密码也一遍遍问
-  nonisolated static func outcome(ofFailure error: String, password: Bool) -> Outcome {
+  /// 包不完整、不是压缩包这类照实说，不然输对了密码也一遍遍问。rar：只是数据加了密的 RAR，tar 不认密码、当成坏数据报
+  /// （见文件头），认不出来的原因说「坏了，或者有密码」
+  nonisolated static func outcome(ofFailure error: String, password: Bool, rar: Bool = false)
+    -> Outcome
+  {
     if let problem = placeProblem(error) { return .failed(problem) }
     if error.contains("Incorrect passphrase") { return password ? .wrongPassword : .needsPassword }
     if password,
@@ -163,7 +197,8 @@ import AppKit
       ("is not a bzip2 file", "不是压缩包，或者是不支持的格式"),
     ]
     return .failed(
-      damaged.first { error.localizedCaseInsensitiveContains($0.0) }?.1 ?? "压缩包可能坏了")
+      damaged.first { error.localizedCaseInsensitiveContains($0.0) }?.1
+        ?? (rar ? "压缩包可能坏了，或者加了密码（RAR 的密码这里解不开）" : "压缩包可能坏了"))
   }
 
   // MARK: 压缩
@@ -312,7 +347,8 @@ import AppKit
     if Task.isCancelled {
       failure = .stopped
     } else if let result, result.status != 0 {
-      failure = outcome(ofFailure: result.error, password: password != nil)
+      failure = outcome(
+        ofFailure: result.error, password: password != nil, rar: suffix(of: archive) == ".rar")
     } else if result == nil {
       failure = .failed("系统的工具没能运行")
     } else if let placed = settle(work, stem: stem(of: archive), in: parent) {
@@ -368,6 +404,16 @@ import AppKit
     ])
     let offline =
       cloud?.isUbiquitousItem == true && cloud?.ubiquitousItemDownloadingStatus == .notDownloaded
+    // 分卷的 RAR 不交给 tar（见文件头）。同读 zip 的中央目录：在主线程上读几十个字节，还没下载下来的不读
+    if !offline, suffix(of: archive) == ".rar",
+      let handle = try? FileHandle(forReadingFrom: archive),
+      let head = try? handle.read(upToCount: 64), isRARVolume(head)
+    {
+      island?.show(
+        "没有解压「\(archive.lastPathComponent)」", detail: "分卷的 RAR（.part1.rar 这种）这里解不开",
+        tone: .warning)
+      return
+    }
     if !offline, ZipNames.isZip(archive), let entries = ZipNames.entries(of: archive) {
       gbk = ZipNames.charset(for: entries) == .gb18030
       encrypted = encrypted || entries.contains(where: \.encrypted)
