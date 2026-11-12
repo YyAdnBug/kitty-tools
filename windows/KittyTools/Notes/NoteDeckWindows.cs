@@ -7,7 +7,8 @@
 // - 预览卡：标签旁边的一张小纸（标题 + 开头几行），鼠标挪上去不收、点它打开。
 // - 打开的便签：挨着标签列，里面是 NoteSheetView（同全部便签窗口、浮动便签）。要打字，所以拿前台；失去前台 = 点了别处（没固定的收起）。
 //   按住头部空白处往外拖过一段 = 浮到屏幕上（NoteFloats，接着由系统挪窗口）。
-// 只用到系统画的东西：圆角、阴影、边框是 DWM 的（药丸和标签列用 NoteDeckUi.Shell，药丸不要边框；预览卡、打开的便签用 HudFrame），菜单是 MenuFlyout。动效没有（Windows 的窗口退场不淡出，PLAN-v7 §1）。
+// 只用到系统画的东西：圆角、阴影是 DWM 的（药丸和标签列用 NoteDeckUi.Shell；预览卡、打开的便签用系统边框的外壳），都不要 DWM 那圈细边框
+// （NoteDeckUi.NoOutline，同 mac 没有描边），菜单是 MenuFlyout。动效没有（Windows 的窗口退场不淡出，PLAN-v7 §1）。
 using System.Runtime.InteropServices;
 using KittyTools.Core;
 using KittyTools.Core.Notes;
@@ -120,9 +121,9 @@ internal static partial class NoteDeckUi
     /// <summary>
     /// 药丸和标签列的外壳（PLAN-v16 V1）：没有系统边框和标题栏（带边框、内容伸进标题栏的窗口有系统和 WinUI 定的最小宽，
     /// 12 宽的药丸会被撑成一张小卡、三十来宽的标签列会撑到七十、往屏幕外伸）；置顶、不能改大小、不进 Alt+Tab、不抢焦点，
-    /// DWM 的圆角，最小宽高放开（NoteDeckTiny）。outline：留着 DWM 在 Windows 11 上画的那圈细边框（标签列要，药丸不要）。返回窗口句柄。
+    /// DWM 的圆角和阴影、不要细边框（NoOutline），最小宽高放开（NoteDeckTiny）。返回窗口句柄。
     /// </summary>
-    public static IntPtr Shell(Window window, bool outline)
+    public static IntPtr Shell(Window window, bool small)
     {
         window.AppWindow.IsShownInSwitchers = false;
         var presenter = OverlappedPresenter.Create();
@@ -134,17 +135,22 @@ internal static partial class NoteDeckUi
         window.AppWindow.SetPresenter(presenter);
         var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(window);
         SetWindowLong(hwnd, -20, GetWindowLong(hwnd, -20) | 0x08000000 /* WS_EX_NOACTIVATE */);
-        // 药丸只有 12 宽，DWM 的大圆角（8）超过了一半宽：用小圆角（4）；标签列用大圆角
-        var round = outline ? 2 /* DWMWCP_ROUND */ : 3 /* DWMWCP_ROUNDSMALL */;
+        // small：药丸只有 12 宽，DWM 的大圆角（8）超过了一半宽，用小圆角（4）；标签列用大圆角
+        var round = small ? 3 /* DWMWCP_ROUNDSMALL */ : 2 /* DWMWCP_ROUND */;
         DwmSetWindowAttribute(hwnd, 33 /* DWMWA_WINDOW_CORNER_PREFERENCE */, ref round, sizeof(int));
-        if (!outline)
-        {
-            var none = unchecked((int)0xFFFFFFFE); // DWMWA_COLOR_NONE
-            DwmSetWindowAttribute(hwnd, 34 /* DWMWA_BORDER_COLOR */, ref none, sizeof(int));
-        }
-
+        NoOutline(hwnd);
         NoteDeckTiny.Allow(hwnd);
         return hwnd;
+    }
+
+    /// <summary>
+    /// 不要 DWM 在 Windows 11 上给圆角窗口画的那圈 1 像素细边框：深色下是一圈发白的线、四个角最明显（2026-11-12 用户反馈，
+    /// mac 的便签没有）。圆角和阴影还在。便签的几扇窗（药丸、标签列、预览卡、打开的便签、浮动便签、快速记一条）都用。
+    /// </summary>
+    public static void NoOutline(IntPtr hwnd)
+    {
+        var none = unchecked((int)0xFFFFFFFE); // DWMWA_COLOR_NONE
+        DwmSetWindowAttribute(hwnd, 34 /* DWMWA_BORDER_COLOR */, ref none, sizeof(int));
     }
 
     [LibraryImport("user32.dll")]
@@ -177,7 +183,7 @@ internal sealed class NoteDeckPillWindow : Window
     {
         _bay = bay;
         Title = Paths.ProductName + " 便签";
-        _hwnd = NoteDeckUi.Shell(this, outline: false);
+        _hwnd = NoteDeckUi.Shell(this, small: true);
         _sense = NoteDeckSense.Create(() =>
         {
             if (!_dragging)
@@ -344,7 +350,7 @@ internal sealed class NoteDeckColumnWindow : Window
         Title = Paths.ProductName + " 便签";
         // 一列标签只有三十来宽：用带边框的外壳（HudFrame）时窗口被撑到七十（以前一百三十六）、往屏幕外伸，居中的标签整列落到屏幕外面，
         // 边上只剩一块空的亚克力（2026-11-08 用户反馈「便签看不到、点不了」）
-        NoteDeckUi.Shell(this, outline: true);
+        NoteDeckUi.Shell(this, small: false);
         _root = NoteDeckUi.Root();
         _root.RightTapped += (_, e) =>
         {
@@ -658,6 +664,7 @@ internal sealed class NoteDeckPreviewWindow : Window
         _bay = bay;
         Title = Paths.ProductName + " 便签";
         HudFrame.Apply(this);
+        NoteDeckUi.NoOutline(WinRT.Interop.WindowNative.GetWindowHandle(this));
         _title = new TextBlock
         {
             FontSize = 13,
@@ -740,6 +747,7 @@ internal sealed partial class NoteDeckSheetWindow : Window
         AppWindow.SetPresenter(presenter);
         AppWindow.IsShownInSwitchers = false;
         _hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+        NoteDeckUi.NoOutline(_hwnd);
         Sheet = new NoteSheetView(new NoteSheetView.Host
         {
             Close = byKeyboard => _bay.CloseSheet(byKeyboard),
@@ -854,18 +862,28 @@ internal sealed partial class NoteDeckSheetWindow : Window
 }
 
 /// <summary>
-/// 药丸和标签列放开系统给顶层窗口定的最小宽（约 136，PLAN-v16 V1）：没边框、PreferredMinimumWidth 设 1 都还被撑大，
-/// 只好接 WM_GETMINMAXINFO，先让后面的窗口过程填完，再把最小跟踪尺寸改成 1 × 1。
+/// 药丸和标签列的窗口过程补两件事：
+/// - 放开系统给顶层窗口定的最小宽（约 136，PLAN-v16 V1）：没边框、PreferredMinimumWidth 设 1 都还被撑大，只好接 WM_GETMINMAXINFO，
+///   先让后面的窗口过程填完，再把最小跟踪尺寸改成 1 × 1。
+/// - 不要非客户区：SetBorderAndTitleBar(false, false) 之后 WinUI 还给窗口留着 WS_DLGFRAME（自己改样式它又加回来），四边各 3 像素
+///   系统画的浅色框，深色下是一圈白线、12 宽的药丸客户区只剩 6（2026-11-12 屏上实测）。WM_NCCALCSIZE 直接答「客户区 = 整扇窗」。
 /// </summary>
 internal static unsafe partial class NoteDeckTiny
 {
     private const uint WmGetMinMaxInfo = 0x0024;
+    private const uint WmNcCalcSize = 0x0083;
 
     public static void Allow(IntPtr hwnd) => SetWindowSubclass(hwnd, &Proc, 1, 0);
 
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvStdcall) })]
     private static IntPtr Proc(IntPtr hwnd, uint message, IntPtr wParam, IntPtr lParam, UIntPtr id, UIntPtr data)
     {
+        if (message == WmNcCalcSize && wParam != IntPtr.Zero)
+        {
+            // 建议的窗口矩形原样当客户区：没有任何边框
+            return IntPtr.Zero;
+        }
+
         var result = DefSubclassProc(hwnd, message, wParam, lParam);
         if (message == WmGetMinMaxInfo && lParam != IntPtr.Zero)
         {

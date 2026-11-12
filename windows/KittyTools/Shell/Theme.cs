@@ -474,6 +474,73 @@ internal static class Theme
         resources["SystemAccentColorDark1"] = Ramp(ramp, steps[3]);
         resources["SystemAccentColorDark2"] = Ramp(ramp, steps[4]);
         resources["SystemAccentColorDark3"] = Ramp(ramp, steps[5]);
+        RefreshAccentBrushes(resources, accent, Ramp(ramp, steps[1]), Ramp(ramp, steps[2]), Ramp(ramp, steps[3]), Ramp(ramp, steps[4]), Ramp(ramp, steps[5]));
+    }
+
+    /// <summary>
+    /// 主题字典里由强调色派生的画刷（开关的填充、侧栏选中条、链接字……）在第一次用时就按当时的颜色建好了，之后改
+    /// SystemAccentColor* 它们不跟着变，要等新开的窗口（2026-11-12 用户反馈：换强调色后开关还是旧颜色）。这里把浅 / 深两套里
+    /// 这些画刷的颜色就地改掉（透明度留着），开着的窗口当场变。对应关系照 WinUI 的 Common_themeresources（浅色用 Dark1–3、深色用 Light2–3）。
+    /// </summary>
+    private static void RefreshAccentBrushes(ResourceDictionary root, Color accent, Color light2, Color light3, Color dark1, Color dark2, Color dark3)
+    {
+        var light = new Dictionary<string, Color>
+        {
+            ["AccentFillColorDefaultBrush"] = dark1,
+            ["AccentFillColorSecondaryBrush"] = dark1,
+            ["AccentFillColorTertiaryBrush"] = dark1,
+            ["AccentTextFillColorPrimaryBrush"] = dark2,
+            ["AccentTextFillColorSecondaryBrush"] = dark3,
+            ["AccentTextFillColorTertiaryBrush"] = dark1,
+            ["AccentFillColorSelectedTextBackgroundBrush"] = accent,
+        };
+        var dark = new Dictionary<string, Color>
+        {
+            ["AccentFillColorDefaultBrush"] = light2,
+            ["AccentFillColorSecondaryBrush"] = light2,
+            ["AccentFillColorTertiaryBrush"] = light2,
+            ["AccentTextFillColorPrimaryBrush"] = light3,
+            ["AccentTextFillColorSecondaryBrush"] = light3,
+            ["AccentTextFillColorTertiaryBrush"] = light2,
+            ["AccentFillColorSelectedTextBackgroundBrush"] = accent,
+        };
+        var changed = 0;
+        void Walk(ResourceDictionary dictionary)
+        {
+            foreach (var (themeKey, themed) in dictionary.ThemeDictionaries)
+            {
+                var table = themeKey as string == "Light" ? light : themeKey as string is "Dark" or "Default" ? dark : null;
+                if (table is null || themed is not ResourceDictionary theme)
+                {
+                    continue;
+                }
+
+                foreach (var (key, color) in table)
+                {
+                    if (theme.TryGetValue(key, out var value) && value is SolidColorBrush brush)
+                    {
+                        brush.Color = color;
+                        changed++;
+                    }
+                }
+            }
+
+            foreach (var merged in dictionary.MergedDictionaries)
+            {
+                Walk(merged);
+            }
+        }
+
+        try
+        {
+            Walk(root);
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"theme.accent-brushes-failed {ex.GetType().Name}");
+        }
+
+        Log.Info($"theme.accent-brushes changed={changed}");
     }
 
     public static void ApplyTo(FrameworkElement element)

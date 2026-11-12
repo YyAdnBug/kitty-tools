@@ -294,6 +294,7 @@ internal sealed partial class NoteFloatWindow : Window
         AppWindow.SetPresenter(presenter);
         AppWindow.IsShownInSwitchers = false;
         _hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+        NoteDeckUi.NoOutline(_hwnd);
         Sheet = new NoteSheetView(new NoteSheetView.Host
         {
             Close = _ => NoteFloats.Tuck(_id),

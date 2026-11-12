@@ -4077,18 +4077,24 @@ internal sealed partial class SettingsWindow : Window
             };
             ToolTipService.SetToolTip(button, name);
             AutomationProperties.SetName(button, "强调色：" + name);
-            button.Click += (_, _) =>
-            {
-                SettingsService.Current.Accent = key;
-                SettingsService.Save();
-                Theme.ApplyAccent();
-                BuildPage(_currentPage);
-            };
+            button.Click += (_, _) => PickAccent(key);
             row.Children.Add(button);
         }
 
         return row;
     }
+
+    /// <summary>换强调色：记下、改资源，当前页重画。</summary>
+    private void PickAccent(string key)
+    {
+        SettingsService.Current.Accent = key;
+        SettingsService.Save();
+        Theme.ApplyAccent();
+        BuildPage(_currentPage);
+    }
+
+    /// <summary>UI 截图自检：同点那个色点（换强调色后页面里的开关要当场变色）。</summary>
+    internal void PickAccentForProbe(string key) => PickAccent(key);
 
     /// <summary>加一张带开关的卡；返回这张卡，别的开关要原地改它的说明 / 能不能点时用（SettingsUi.SetDescription / SetEnabled）。</summary>
     private Border AddToggle(string title, string subtitle, bool value, Action<bool> changed)

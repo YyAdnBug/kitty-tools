@@ -69,6 +69,7 @@ internal sealed class NoteCaptureWindow : Window
             Hide(clear: false);
         };
         _hwnd = (HWND)WinRT.Interop.WindowNative.GetWindowHandle(this);
+        NoteDeckUi.NoOutline(WinRT.Interop.WindowNative.GetWindowHandle(this));
         Activated += (_, args) =>
         {
             if (args.WindowActivationState == WindowActivationState.Deactivated && _visible && !_hiding)

@@ -614,6 +614,16 @@ internal static class UiSnapshotProbe
             await RenderWindowAsync(settings, "settings-general", dark, directory);
             settings.ScrollToEndForProbe();
             await RenderWindowAsync(settings, "settings-general-end", dark, directory);
+            // 2026-11-12 用户反馈：换强调色后通用页「功能」的开关要当场变色（不等重开窗口）。换成橙色拍一张、再换回来。
+            if (Wanted("settings-accent"))
+            {
+                var accent = SettingsService.Current.Accent;
+                settings.ShowPage(welcome: false, "general");
+                settings.PickAccentForProbe("orange");
+                await Task.Delay(300);
+                await ShootSettingsWindowAsync(settings, "settings-accent-orange", dark, directory);
+                settings.PickAccentForProbe(accent);
+            }
             // PLAN-v9-clipboard 6g：设置 › 剪贴板整页（拉长看到排除的应用列表，同 mac settings-clipboard-full）。
             settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 1700));
             settings.ShowPage(welcome: false, "clipboard");
