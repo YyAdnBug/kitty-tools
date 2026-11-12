@@ -277,7 +277,7 @@ struct ShortcutsSheet: View {
       return [
         Entry(
           "1–0",
-          text: "1 矩形 · 2 椭圆 · 3 箭头 · 4 直线 · 5 画笔 · 6 荧光笔 · 7 文字 · 8 序号 · 9 马赛克 · 0 聚光灯；再按一次收起")
+          text: "1 矩形 · 2 椭圆 · 3 箭头 · 4 直线 · 5 画笔 · 6 荧光笔 · 7 文字 · 8 序号 · 9 打码 · 0 聚光灯；再按一次收起")
       ]
     }
     return ShotKey.tools.map { Entry(key($0), text: $0.title + "（再按一次收起）") }

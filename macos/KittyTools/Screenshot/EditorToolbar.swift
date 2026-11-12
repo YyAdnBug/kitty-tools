@@ -855,7 +855,8 @@ final class StyleBar: HUDBar {
       chip.toolTip = "改这个序号的编号"
       views += [barSeparator(), chip]
     }
-    options = tool.optionTitles.enumerated().map { index, title in
+    options = tool.optionOrder.map { index in
+      let title = tool.optionTitles[index]
       let button = BarButton(title: title, target: self, action: #selector(pickOption(_:)))
       button.isBordered = false
       button.refusesFirstResponder = true

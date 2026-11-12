@@ -382,6 +382,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     clothesline.reclaim()
     ShotThumbnails.shared.keep(only: clothesline.model.pegged)
     LinkPreview.shared.dropHeroes()
+    Annotation.releaseCaches()  // 打码的缩小图和模糊用的 Core Image 上下文（约 45 MB，2026-11-12）
     releaseClosedNotesWindow()
     // 便签正文里解好的图片缩略图（第 7 批：按像素数算 cost，闲下来整块放掉）；浮在屏幕上的那张便签里的图留着
     // （清了它下一次重画先闪一块纸色）

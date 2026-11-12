@@ -5,6 +5,7 @@
 // 弧线（远处先按外框排除）、沿弧线画；箭头颈部不折、拖短了照样沿弧线画且都在外框里，直箭头的七边形、直线的像素都不变。
 
 import AppKit
+import CoreImage
 import Foundation
 import Testing
 
@@ -31,6 +32,11 @@ struct AnnotationToolTests {
     #expect(Annotation.Tool.allCases.filter { !$0.isDragDrawn } == [.text, .counter])
     #expect(Annotation.Tool.text.optionTitles == ["无底", "描边", "底色"])
     #expect(Annotation.Tool.mosaic.optionTitles == ["像素", "模糊"])
+    #expect(
+      Annotation.Tool.mosaic.optionOrder == [1, 0] && Annotation.Tool.text.optionOrder == [0, 1, 2])
+    #expect(
+      Annotation.Tool.mosaic.title == "打码"
+        && Annotation.Tool.mosaic.weightTitles == ["弱", "中", "强"])
     #expect(Annotation.Tool.arrow.optionTitles.isEmpty)
     #expect(Annotation.Palette.allCases.first == .pink && Annotation.Palette.allCases.count == 8)
   }
@@ -1026,10 +1032,41 @@ struct AnnotationToolTests {
     let pixelData = try #require(pixelated.dataProvider?.data as Data?)
     let blurData = try #require(blurred.dataProvider?.data as Data?)
     #expect(pixelData != blurData)
-    // 模糊也得认不出原来的字（打码的本意）
+    // 模糊是平滑的（2026-11-12 拍板 C2：先缩小再高斯）：同一行相邻像素不会有像素块那样的硬台阶
+    func steepest(_ image: CGImage, _ data: Data) -> Int {
+      let row = image.height / 2 * image.bytesPerRow
+      return (0..<(image.width - 1)).map { x in
+        abs(Int(data[row + x * 4 + 1]) - Int(data[row + (x + 1) * 4 + 1]))
+      }.max() ?? 0
+    }
+    #expect(steepest(blurred, blurData) < 24 && steepest(pixelated, pixelData) > 40)
+    // 三档模糊都得认不出原来的字（打码的本意；弱档也要，拍板 C3）
+    for weight in Annotation.Weight.allCases {
+      blur.weight = weight
+      let masked = try #require(
+        Annotation.render(
+          [Annotation(shape: .mosaic(CGRect(origin: .zero, size: viewSize)), style: blur)],
+          over: image, pixelRect: full, viewSize: viewSize))
+      let text = await OCR.recognizeLines(in: masked).map { OCR.text($0, joined: false) } ?? ""
+      #expect(!text.contains("Secret") && !text.contains("12345"), "\(weight)：\(text)")
+      // 反锐化 + 提对比度之后也认不出（评审的还原手法：格子太细时 28 pt 的字弱档能认回大半）
+      let input = CIImage(cgImage: masked)
+      let sharpened = input.clampedToExtent()
+        .applyingFilter(
+          "CIUnsharpMask",
+          parameters: ["inputRadius": weight.blurRadius, "inputIntensity": 3.0]
+        )
+        .cropped(to: input.extent)
+        .applyingFilter("CIColorControls", parameters: ["inputContrast": 2.5])
+      let attacked = try #require(CIContext().createCGImage(sharpened, from: input.extent))
+      let recovered =
+        await OCR.recognizeLines(in: attacked).map { OCR.text($0, joined: false) } ?? ""
+      #expect(
+        !recovered.contains("Secret") && !recovered.contains("12345"), "锐化 \(weight)：\(recovered)")
+    }
     #expect(
-      await OCR.recognizeLines(in: blurred).map { OCR.text($0, joined: false) }?.contains("Secret")
-        == false)
+      Annotation.Style.remembered(for: .mosaic, in: UserDefaults(suiteName: "never-written")!)
+        .option == 1)
   }
 
   @Test func highlighterLooksTheSameOnScreenAndInExport() throws {

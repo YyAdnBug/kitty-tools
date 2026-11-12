@@ -7,6 +7,7 @@
 // 每个工具记住自己上次的样式（Style.remembered / remember，存 Prefs.screenshotToolStyles）。
 
 import AppKit
+import CoreImage
 
 /// Codable 是给截图历史用的（2026-10-26 拍板 A1：原图和标注分开存，才能回头接着改）：
 /// 自动合成的格式拿 case 名和成员名当键，**这些名字进了磁盘，改名要连旧数据一起想清楚**（加 case、加带默认值的成员没问题）。
@@ -26,7 +27,7 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
       case .highlighter: "荧光笔"
       case .text: "文字"
       case .counter: "序号"
-      case .mosaic: "马赛克"
+      case .mosaic: "打码"  // 2026-11-12 拍板 C1：马赛克和模糊合成一个工具（case 名进了磁盘，不改）
       case .spotlight: "聚光灯"
       }
     }
@@ -50,7 +51,7 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
     /// 马赛克、聚光灯没有颜色（托盘不出色点）
     var hasColor: Bool { self != .mosaic && self != .spotlight }
 
-    /// 样式托盘的选项分段（Style.option 是下标）；空 = 没有选项
+    /// 样式托盘的选项分段（Style.option 是下标，存进了磁盘，不能换顺序）；空 = 没有选项
     var optionTitles: [String] {
       switch self {
       case .rectangle, .ellipse: ["空心", "实心"]
@@ -60,10 +61,16 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
       }
     }
 
+    /// 托盘上选项从左到右的顺序（optionTitles 的下标）：打码把模糊排前面（拍板 C1），别的照下标
+    var optionOrder: [Int] {
+      self == .mosaic ? [1, 0] : Array(optionTitles.indices)
+    }
+
     var weightTitles: [String] {
       switch self {
       case .text: ["小", "中", "大"]
       case .spotlight: ["浅", "中", "深"]
+      case .mosaic: ["弱", "中", "强"]
       default: ["细", "中", "粗"]
       }
     }
@@ -137,13 +144,15 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
     var fontSize: CGFloat { [14, 20, 28][rawValue] }
     /// 马赛克每格的边长（点）
     var mosaicBlock: CGFloat { [6, 10, 16][rawValue] }
+    /// 打码「模糊」的半径（点，高斯的 2σ；拍板 C3：弱档也要让 14 pt 的正文认不出）
+    var blurRadius: CGFloat { [8, 12, 18][rawValue] }
     var counterDiameter: CGFloat { [20, 26, 34][rawValue] }
     var highlighterHeight: CGFloat { [12, 18, 26][rawValue] }
     /// 聚光灯外面压暗的程度
     var spotlightDim: CGFloat { [0.35, 0.5, 0.65][rawValue] }
   }
 
-  /// 第一次用是红色中号（荧光笔黄色）；option 是 Tool.optionTitles 的下标
+  /// 第一次用是红色中号（荧光笔黄色，打码是模糊）；option 是 Tool.optionTitles 的下标
   struct Style: Equatable, Codable, Sendable {
     var color = Palette.red
     var weight = Weight.medium
@@ -177,7 +186,8 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
     /// 这个工具上次用的样式
     static func remembered(for tool: Tool, in defaults: UserDefaults = .standard) -> Style {
       saved(in: defaults)[String(tool.rawValue)]
-        ?? (tool == .highlighter ? Style(color: .yellow) : Style())
+        ?? (tool == .highlighter
+          ? Style(color: .yellow) : tool == .mosaic ? Style(option: 1) : Style())
     }
 
     static func remember(_ style: Style, for tool: Tool, in defaults: UserDefaults = .standard) {
@@ -1084,8 +1094,10 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
     context.draw(crop, in: frame)
   }
 
-  /// 马赛克：冻结帧这一块缩小到每格一个像素，再放大回去。像素 = 不插值放大；
-  /// 模糊（option 1）= 格子放大到 1.5 倍、再平滑插值放大（信息已经在缩小时丢掉，不像高斯模糊还能反卷积还原）
+  /// 打码：冻结帧这一块缩小到每格一个像素，再放大回去。像素 = 不插值放大；
+  /// 模糊（option 1，2026-11-12 拍板 C2）= 缩到每格「半径 / 2」、在这张小图上做高斯模糊（σ 1 格 = 半径的一半），
+  /// 再平滑插值放大：看起来就是高斯模糊，格子比高斯能留住的最细笔画还粗，信息在缩小时已经丢掉。格子再细（半径 / 3）
+  /// 就和直接高斯差不多了：评审实测 28 pt 的字弱档反锐化一下就认出大半张卡号（直接对原图高斯模糊也一样能这样还原）
   private func drawMosaic(_ rect: CGRect, in context: CGContext, image: CGImage, viewSize: CGSize) {
     let blurred = style.option == 1
     guard let (blocks, frame) = mosaicBlocks(rect, image: image, viewSize: viewSize) else { return }
@@ -1121,7 +1133,8 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
     }
     let blurred = style.option == 1
     let cell =
-      style.weight.mosaicBlock * (blurred ? 1.5 : 1) * CGFloat(image.width) / viewSize.width
+      (blurred ? style.weight.blurRadius / 2 : style.weight.mosaicBlock) * CGFloat(image.width)
+      / viewSize.width
     let columns = max(1, Int((CGFloat(crop.width) / cell).rounded(.up)))
     let rows = max(1, Int((CGFloat(crop.height) / cell).rounded(.up)))
     guard
@@ -1133,10 +1146,33 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
     else { return nil }
     small.interpolationQuality = blurred ? .high : .medium
     small.draw(crop, in: CGRect(x: 0, y: 0, width: columns, height: rows))
-    guard let blocks = small.makeImage() else { return nil }
+    guard let shrunk = small.makeImage() else { return nil }
+    // 模糊不成（Core Image 出错）就用缩小的块图平滑放大：宁可不那么柔和，也不能什么都不画、把字露出来
+    let blocks = blurred ? Self.gaussian(shrunk) ?? shrunk : shrunk
     Self.mosaicCache.append((key, blocks, frame))
     if Self.mosaicCache.count > 8 { Self.mosaicCache.removeFirst() }
     return (blocks, frame)
+  }
+
+  /// 小图上的高斯模糊（σ 1 像素）：边缘先往外延（clampedToExtent，只延这块自己的像素），不然四边会被透明的外面拖淡；
+  /// 照原图的色彩空间出图（P3 屏截的鲜艳颜色不被截进 sRGB）
+  private static func gaussian(_ image: CGImage) -> CGImage? {
+    let input = CIImage(cgImage: image)
+    let output = input.clampedToExtent().applyingGaussianBlur(sigma: 1).cropped(to: input.extent)
+    if blurContext == nil { blurContext = CIContext(options: [.cacheIntermediates: false]) }
+    return blurContext?.createCGImage(
+      output, from: input.extent, format: .BGRA8,
+      colorSpace: image.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB))
+  }
+
+  /// 打码模糊用的 Core Image 上下文：用到时才建、闲下来放掉（releaseCaches）。建一个热的约 4 ms、冷的 30–60 ms，
+  /// 拖着改打码的范围时每下都要模糊一遍，不能每次新建；常驻着又要攥住约 45 MB（评审独立小程序实测）
+  private static var blurContext: CIContext?
+
+  /// 闲下来放掉打码的缓存和 Core Image 上下文（AppDelegate.reclaimIdleMemory：面板都收起两分钟后）
+  static func releaseCaches() {
+    mosaicCache = []
+    blurContext = nil
   }
 
   /// 冻结帧里 rect（视图坐标）那块像素，和这块像素换回视图坐标的位置（取整后可能比 rect 大一点，调用方自己 clip）

@@ -117,7 +117,7 @@ struct ScreenshotSnapshotTests {
     let trays: [(String, Annotation.Tool, Annotation.Style)] = [
       ("tray-rectangle", .rectangle, .init(color: .pink, weight: .medium, option: 1)),
       ("tray-text", .text, .init(color: .red, weight: .large, option: 2)),
-      ("tray-mosaic", .mosaic, .init(weight: .small, option: 0)),
+      ("tray-mosaic", .mosaic, .init(weight: .small, option: 1)),
       ("tray-spotlight", .spotlight, .init(weight: .large)),
     ]
     for (name, tool, style) in trays {
@@ -126,6 +126,8 @@ struct ScreenshotSnapshotTests {
       h.view.style = style
       h.view.tool = tool
       try shoot(h.window, name, crop: barsFrame(h))
+      try shootContent(
+        try #require(h.view.subviews.lazy.compactMap { $0 as? StyleBar }.first), name)
     }
 
     // 10 种标注（有 / 没有聚光灯各一张）

@@ -35,6 +35,7 @@
 | CoreGraphics `CGEvent` | 10.x | 模拟 ⌘V / ⌘C；长截图自动滚动发像素级滚轮事件（`CGWarpMouseCursorPosition` 先把光标挪进选区） |
 | CoreGraphics `CGEvent.tapCreate`（会话层、会吞事件的事件拦截）、`CGShieldingWindowLevel`、`CGSessionCopyCurrentDictionary` | 10.4 | 状态屏（2026-10-10，§10「状态屏」）：拦住键盘鼠标和媒体键（只要辅助功能授权，实测）、全屏面板的层级、解锁通知没到时的兜底；事件拦截只许在 `StatusScreen/InputBlock.swift` |
 | `NSPasteboard`（`changeCount`、`accessBehavior`） | 10.0 / 15.4 | 剪贴板采集、剪贴板隐私状态 |
+| Core Image `CIImage.applyingGaussianBlur`、`CIContext` | 10.4 | 启动台的壁纸模糊；截图打码的「模糊」（缩小后的小图上做高斯，2026-11-12） |
 | ImageIO + UniformTypeIdentifiers | 10.x / 11 | PNG 编码、读取尺寸、按需生成缩略图；录屏转 GIF（`CGImageDestination` 逐帧写 GIF，录屏录音第 7 批 `Screenshot/VideoExport.swift`）；状态屏的动画表情：读 HEICS（HEVC 图像序列，带透明通道）的每一帧和时长，转换脚本用它把动画 PNG 写成 HEICS（2026-10-10） |
 | QuickLookThumbnailing `QLThumbnailGenerator` | 10.15 | 剪贴板检查器里文件的真实缩略图（PDF 首页、图片、视频帧） |
 | QuickLookUI `QLPreviewView` | 10.6 | 剪贴板 ⌘Y 放大预览里的文件（嵌在自己的浮层里；不用 `QLPreviewPanel`，见 D3） |
