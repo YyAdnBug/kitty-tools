@@ -45,6 +45,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
   var autoTranslates = false
   /// 正在就地翻译：选区上出脉冲、框选和工具栏暂时不动
   private var translating = false
+  /// 一键打码正在识字（再点「自动」不重复跑）
+  private var redacting = false
   /// 正在跑的就地翻译（Esc / 换屏框选时取消：不然剩下的段会继续打翻译服务）
   private var translateTask: Task<Void, Never>?
   /// 就地翻译之前的冻结帧，和译文贴在哪个选区上（2026-11-06 用户：翻完再框别处，上次的译文还留在「屏幕」上，像是
@@ -1257,6 +1259,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
     styleBar.onFontStep = { [unowned self] step in restyle { $0 = $0.stepped(step, for: .text) } }
     styleBar.onFontMenu = { [unowned self] button in toggleFontMenu(from: button) }
     styleBar.onNumber = { [unowned self] delta in renumberSelected(by: delta) }
+    styleBar.onAutoRedact = { [unowned self] in autoRedact() }
     // ponytail: macOS 26 上工具栏（两段已在同一个玻璃容器里）、样式托盘、HUD 菜单、尺寸胶囊是各自独立的玻璃兄弟视图，
     // 违反「相邻的玻璃放进同一个 NSGlassEffectContainerView」（玻璃互相取样不到，托盘离工具栏只有 6 pt，颜色会不一致）。
     // 升级路径：SelectionView 里建一个铺满的容器，四者都挂进它的 contentView（改挂载层级和 z 序，要 26 实机验证）
@@ -1514,6 +1517,42 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private var selectedCounterNumber: Int? {
     guard editor == nil, case .counter(let number, _)? = selected?.shape else { return nil }
     return number
+  }
+
+  /// 一键打码（拍板 C5）：选区里识字，手机号、邮箱、银行卡号、身份证号各加一块打码（托盘上打码现在的样式），
+  /// 一起记一步撤销。识字在主线程外（0.2–0.6 s），回来时选区变了就作废
+  private func autoRedact() {
+    hudMenu?.dismiss()
+    guard annotates, isAdjusting, !redacting, !translating, !isDraggingAnnotation, let selection
+    else { return }
+    let source = image
+    let pixels = RegionSelector.pixelRect(
+      selection, viewSize: bounds.size,
+      imageSize: CGSize(width: source.width, height: source.height))
+    guard let crop = source.cropping(to: pixels) else { return }
+    let style = shownStyle
+    redacting = true
+    announce("正在找要打码的内容")
+    Task { [weak self] in
+      let boxes = await OCR.redactionBoxes(in: crop)
+      // 正拖着标注就等松手再落：中途改了列表，松手记的那一步撤销会把打码一起撤掉（⌥ 单击没拖开还会整个丢掉）
+      while self?.isDraggingAnnotation == true { try? await Task.sleep(for: .milliseconds(50)) }
+      guard let self else { return }
+      redacting = false
+      // 选区挪了、会话结束了、图换成了译文图：位置对不上，作废
+      guard isAdjusting, self.selection == selection, image === source else { return }
+      let areas = Redaction.areas(boxes ?? [], in: selection, existing: annotations)
+      guard !areas.isEmpty else {
+        let reason = boxes == nil ? "识字失败，没有打码" : "没找到要打码的内容"
+        flashHint([reason])
+        announce(reason)
+        return
+      }
+      commit(annotations + areas.map { Annotation(shape: .mosaic($0), style: style) })
+      selectedAnnotation = nil
+      refresh()
+      announce("已打码 \(areas.count) 处")
+    }
   }
 
   /// 选中的序号编号加减 delta（记一步撤销；之后新放的照旧是现有最大 + 1）
@@ -1957,6 +1996,11 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private func output(_ action: RegionSelector.Action) {
     // 开着「把译文盖回截图上」（设置 › 翻译，有 translateHandler）时留在截图页里翻：选区上扫光、翻完把译文贴回选区，
     // 不像其它出图键那样收起遮罩；关着时照旧交出去、走翻译浮窗
+    // 一键打码还在识字：等它落下再出图，不然号码跟着图出去了
+    if redacting {
+      NSSound.beep()
+      return flashHint(["正在打码，稍等再出图"])
+    }
     if case .translate = action, translateHandler != nil { return translateInPlace() }
     endEditing()
     guard let selection, let window else { return }

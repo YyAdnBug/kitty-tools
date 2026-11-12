@@ -1,4 +1,4 @@
-// 图片文字识别（Vision，设备端）：剪贴板图片（让截图里的文字能被搜索到）、截图翻译、识字共用；识字还认二维码 / 条码。
+// 图片文字识别（Vision，设备端）：剪贴板图片（让截图里的文字能被搜索到）、截图翻译、识字、一键打码共用；识字还认二维码 / 条码。
 // 剪贴板图片的后台识字放在子进程里（第二轮体检 M2，文件末尾「子进程识字」）：识字模型一加载就常驻 45–52 MB，
 // 让它跟着子进程退掉；截图翻译、识字、钉图这些当场要结果的照旧在进程内识——连着识的时候模型留着（热的 0.2 s，
 // 重新加载 0.4–0.6 s），闲下来由空闲回收放掉（「放掉识字模型」一节，2026-10-07）。
@@ -52,6 +52,20 @@ nonisolated enum OCR {
     // 去图标要在接回同一行的碎块之前：不然图标先并进旁边的字里
     return mergingRows(
       droppingIcons ? droppingIconLines(lines, imageSize: size) : lines, imageSize: size)
+  }
+
+  /// 一键打码（2026-11-12 拍板 C5）：识字后每一行里要打码的那几段（Redaction.ranges）各自的框（归一化、原点左下，
+  /// 同 Vision）；识别失败 nil、没找到 []。按候选文字里的字符范围取框，不按整行
+  @concurrent static func redactionBoxes(in image: CGImage) async -> [CGRect]? {
+    enter()
+    defer { leave() }
+    guard let observations = try? await request().perform(on: image) else { return nil }
+    return observations.flatMap { observation -> [CGRect] in
+      guard let candidate = observation.topCandidates(1).first else { return [] }
+      return Redaction.ranges(in: candidate.string).compactMap {
+        candidate.boundingBox(for: $0)?.boundingBox.cgRect
+      }
+    }
   }
 
   /// 整行只有一个字、字框接近正方形（宽高差不到两成）、又比正文（中位行高）高出三成以上的：多半是图标被认成了字

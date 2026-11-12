@@ -84,6 +84,10 @@ import Carbon.HIToolbox
     styleBar.onOption = { [unowned self] option in restyle { $0.option = option } }
     styleBar.onFontStep = { [unowned self] step in restyle { $0 = $0.stepped(step, for: .text) } }
     styleBar.onFontMenu = { [unowned self] button in toggleFontMenu(from: button) }
+    styleBar.onAutoRedact = { [unowned self] in
+      menu?.dismiss()
+      canvas.autoRedact()
+    }
     styleBar.onNumber = { [unowned self] delta in
       menu?.dismiss()
       canvas.renumberSelected(by: delta)
@@ -352,6 +356,11 @@ import Carbon.HIToolbox
 
   /// 拷贝 / 存储 / 另存为完就收起遮罩（这一次到此结束）；识字只是把文字拿走，遮罩留着
   private func emit(_ action: RegionSelector.Action) {
+    // 一键打码还在识字：等它落下再出图，不然号码跟着图出去了
+    if canvas.redacting {
+      NSSound.beep()
+      return Island.announce("正在打码，稍等再出图")
+    }
     armedEscape = false
     output(action, composed(), scale, canvas.annotations)
     if action != .recognize { close() }

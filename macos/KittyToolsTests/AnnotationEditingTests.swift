@@ -537,6 +537,54 @@ struct AnnotationEditingTests {
     #expect(h.view.annotations.last?.shape == .counter(2, center: CGPoint(x: 550, y: 300)))
   }
 
+  // 一键打码（拍板 C5）：选区里的电话号码加一块打码（第一次用是模糊），一起记一步撤销；选区外的不管
+  @Test func autoRedactCoversNumbersInTheSelection() async throws {
+    let context = try #require(
+      CGContext(
+        data: nil, width: 1200, height: 800, bitsPerComponent: 8, bytesPerRow: 0,
+        space: CGColorSpace(name: CGColorSpace.sRGB)!,
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+    context.setFillColor(CGColor(gray: 1, alpha: 1))
+    context.fill(CGRect(x: 0, y: 0, width: 1200, height: 800))
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
+    let font: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 28)]
+    NSAttributedString(string: "电话 138 0013 8000", attributes: font).draw(
+      at: CGPoint(x: 330, y: 400))
+    NSAttributedString(string: "选区外 139 1234 5678", attributes: font).draw(
+      at: CGPoint(x: 760, y: 400))
+    NSGraphicsContext.restoreGraphicsState()
+    let h = Harness(image: try #require(context.makeImage()))
+    h.makeSelection()  // (300, 200)–(700, 500)
+    h.key(kVK_ANSI_9, "9")  // 选打码工具（照记住的样式：第一次是模糊）
+    #expect(h.view.tool == .mosaic)
+    let box = Annotation(shape: .rectangle(CGRect(x: 320, y: 220, width: 60, height: 60)))
+    h.view.annotations = [box]
+    let styleBar = try #require(h.view.subviews.lazy.compactMap { $0 as? StyleBar }.first)
+    styleBar.onAutoRedact()
+    // 识字还没回来时按 ⌘C：不出图（不然号码跟着图出去了）
+    let early = await h.outcome { _ = h.keyEquivalent(kVK_ANSI_C, "c", flags: .command) }
+    if case .color(let note)? = early { #expect(note == "没交回结果") } else { Issue.record("出图了") }
+    // 拖着矩形时识字回来：等松手再落，撤销一步只撤打码、矩形留在挪过的地方
+    h.begin(CGPoint(x: 335, y: 220), to: CGPoint(x: 345, y: 220))
+    try await Task.sleep(for: .seconds(1.5))
+    #expect(h.view.annotations.count == 1)
+    h.release(CGPoint(x: 345, y: 220))
+    for _ in 0..<500 where h.view.annotations.count < 2 {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(h.view.annotations.count == 2)
+    let added = try #require(h.view.annotations.last)
+    #expect(added.style.option == 1)
+    guard case .mosaic(let rect) = added.shape else {
+      Issue.record("不是打码")
+      return
+    }
+    #expect(rect.minX > 380 && rect.maxX < 700 && rect.minY < 410 && rect.maxY > 420, "\(rect)")
+    h.keyEquivalent(kVK_ANSI_Z, "z", flags: .command)
+    #expect(h.view.annotations.map(\.shape) == [box.offset(by: CGSize(width: 10, height: 0)).shape])
+  }
+
   @Test func textEditorShowsStylesLive() throws {
     // 托盘改样式会写记住的样式：Harness 记在临时偏好域里，不碰真实偏好
     let h = harness(tool: .text)

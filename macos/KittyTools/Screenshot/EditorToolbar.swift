@@ -747,6 +747,8 @@ final class StyleBar: HUDBar {
   var onFontMenu: (NSView) -> Void = { _ in }
   /// 选中序号时编号的 − / +（拍板 O2）
   var onNumber: (Int) -> Void = { _ in }
+  /// 打码托盘上的「自动」：找出手机号、邮箱这些自动打码（拍板 C5）
+  var onAutoRedact: () -> Void = {}
   /// 按当前工具排好内容后的尺寸；位置由 SelectionView 定（move）
   private(set) var preferredSize = CGSize.zero
   private var tool: Annotation.Tool?
@@ -881,6 +883,14 @@ final class StyleBar: HUDBar {
       segment.layer?.cornerCurve = .continuous
       views += [barSeparator(), segment]
     }
+    // 一个动作，放最后（拍板 C5）
+    if tool == .mosaic {
+      let auto = Self.chip([
+        Self.chipButton("自动", target: self, action: #selector(autoRedact), label: "自动打码")
+      ])
+      auto.toolTip = "找出手机号、邮箱、银行卡号、身份证号，自动打码"
+      views += [barSeparator(), auto]
+    }
     views.forEach(stack.addArrangedSubview)
     preferredSize = CGSize(
       width: ceil(stack.fittingSize.width + 2 * Self.materialInset), height: Self.height)
@@ -996,6 +1006,7 @@ final class StyleBar: HUDBar {
     return sizeValue.convert(sizeValue.bounds, to: superview).contains(point)
   }
 
+  @objc private func autoRedact() { onAutoRedact() }
   @objc private func lowerNumber() { onNumber(-1) }
   @objc private func raiseNumber() { onNumber(1) }
 }

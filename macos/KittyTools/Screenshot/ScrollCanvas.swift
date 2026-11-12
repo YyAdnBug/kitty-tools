@@ -259,6 +259,43 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
     Island.announce(chosen.map { "\($0.title)工具" } ?? "已收起工具")
   }
 
+  /// 一键打码正在识字（这时不出图：AnnotateOverlay.emit 看它）
+  private(set) var redacting = false
+
+  /// 一键打码（拍板 C5，同截图遮罩）：只识窗口里看得见的那一段（长图最长 30000 像素，整张交给识字既慢、小字又会被
+  /// 缩没），手机号、邮箱、银行卡号、身份证号各加一块打码，一起记一步撤销。
+  /// ponytail: 看不见的那几段要滚过去再点一次；要整张都找就按屏高切段逐段识
+  func autoRedact() {
+    guard drag == nil, editor == nil, !redacting else { return }
+    let area = visibleRect.intersection(bounds)
+    guard !area.isEmpty,
+      let crop = image.cropping(
+        to: RegionSelector.pixelRect(
+          area, viewSize: bounds.size,
+          imageSize: CGSize(width: image.width, height: image.height)))
+    else { return }
+    let style = shownStyle
+    redacting = true
+    Island.announce("正在找要打码的内容")
+    Task { [weak self] in
+      let boxes = await OCR.redactionBoxes(in: crop)
+      // 正拖着标注就等松手再落（同截图遮罩）
+      while self?.drag != nil { try? await Task.sleep(for: .milliseconds(50)) }
+      guard let self else { return }
+      redacting = false
+      let areas = Redaction.areas(boxes ?? [], in: area, existing: annotations)
+      guard !areas.isEmpty else {
+        // 这扇遮罩没有顶部提示：同「再按一次 Esc」，提示音 + 旁白
+        NSSound.beep()
+        return Island.announce(boxes == nil ? "识字失败，没有打码" : "看得见的部分里没找到要打码的内容")
+      }
+      commit(annotations + areas.map { Annotation(shape: .mosaic($0), style: style) })
+      selectedAnnotation = nil
+      onState()
+      Island.announce("已打码 \(areas.count) 处")
+    }
+  }
+
   /// 选中的序号编号加减 delta（记一步撤销）
   func renumberSelected(by delta: Int) {
     guard drag == nil, let number = selectedCounterNumber, let selected,
