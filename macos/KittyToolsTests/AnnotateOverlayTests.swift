@@ -303,13 +303,13 @@ struct AnnotateOverlayTests {
     try drag(canvas, from: CGPoint(x: 60, y: 900), to: CGPoint(x: 260, y: 1000))
     try press(canvas, kVK_ANSI_1, "1")  // 收起工具，免得下一下又画一个
     let drawn = try #require(canvas.annotations.first)
-    // 空心矩形点中间不算命中（同遮罩里的标注）：拖它的边
-    let onEdge = CGPoint(x: 160, y: 900)
-    try drag(canvas, from: onEdge, to: CGPoint(x: 200, y: 900))
+    // 空心矩形点中间不算命中（同遮罩里的标注）：拖它的边（避开边中点的手柄，那里是改大小）
+    let onEdge = CGPoint(x: 100, y: 900)
+    try drag(canvas, from: onEdge, to: CGPoint(x: 140, y: 900))
     #expect(canvas.annotations.count == 1)
     #expect(canvas.annotations[0].bounds.minX > drawn.bounds.minX)
     // ⌥ 拖：多一份（序号类还会换号），选中的是副本
-    try drag(canvas, from: CGPoint(x: 200, y: 900), to: CGPoint(x: 300, y: 900), flags: .option)
+    try drag(canvas, from: CGPoint(x: 140, y: 900), to: CGPoint(x: 240, y: 900), flags: .option)
     #expect(canvas.annotations.count == 2)
     #expect(canvas.selectedAnnotation != drawn.id)
     try press(canvas, kVK_ANSI_D, "d", .command)

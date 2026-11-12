@@ -169,8 +169,28 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
     }
   }
 
-  /// 选中标注的调整手柄：矩形类四角，线类两端，箭头、直线还有弧线中点（bend，拖它弯曲）
-  enum Handle { case start, end, bend, topLeft, topRight, bottomLeft, bottomRight }
+  /// 选中标注的调整手柄：矩形类四角 + 四条边的中点，线类两端，箭头、直线还有弧线中点（bend，拖它弯曲）
+  enum Handle {
+    case start, end, bend, topLeft, topRight, bottomLeft, bottomRight, top, bottom, left, right
+
+    /// 矩形类的手柄对应选区的哪个手柄（改大小复用选区那套几何）；线类的 nil
+    var box: RegionSelector.Handle? {
+      switch self {
+      case .topLeft: .topLeft
+      case .topRight: .topRight
+      case .bottomLeft: .bottomLeft
+      case .bottomRight: .bottomRight
+      case .top: .top
+      case .bottom: .bottom
+      case .left: .left
+      case .right: .right
+      case .start, .end, .bend: nil
+      }
+    }
+  }
+
+  /// 边短于它时不给那条边的中点手柄（和两头的角挤在一起，点不准）
+  static let edgeHandleMinimum: CGFloat = 24
 
   var id = UUID()
   var shape: Shape
@@ -374,18 +394,36 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
     return copy
   }
 
-  /// 选中时的调整手柄：矩形类四角，线类两端；箭头、直线还有弧线中点（弯曲手柄，直的在弦中点：CleanShot 也是直的就给，
+  /// 选中时的调整手柄：矩形类四角 + 边中点（边短于 edgeHandleMinimum 的不给，2026-11-12 拍板 B1），线类两端；箭头、直线还有弧线中点（弯曲手柄，直的在弦中点：CleanShot 也是直的就给，
   /// 看得见才知道能弯），弦短于 32 点的不给（直的中点离两端不到 16 点，和端点手柄挤在一起）。只看弦、不看弧线中点离两端
   /// 多远：拖着弯曲手柄往一端靠时它不会在光标下消失；荧光笔不弯；文字、序号、画笔只能拖动（空）
-  var handles: [(Handle, CGPoint)] {
+  var handles: [(Handle, CGPoint)] { handles(zoom: 1) }
+
+  /// 同 handles；zoom：屏幕上每点画多大（长图缩小着看时边中点按屏幕上的边长判断给不给，不然和角挤成一团）
+  func handles(zoom: CGFloat) -> [(Handle, CGPoint)] {
     switch shape {
     case .rectangle(let rect), .ellipse(let rect), .mosaic(let rect), .spotlight(let rect):
+      let minimum = Self.edgeHandleMinimum / max(zoom, 0.01)
+      let wide = rect.width >= minimum
+      let tall = rect.height >= minimum
       return [
         (.topLeft, CGPoint(x: rect.minX, y: rect.maxY)),
         (.topRight, CGPoint(x: rect.maxX, y: rect.maxY)),
         (.bottomLeft, CGPoint(x: rect.minX, y: rect.minY)),
         (.bottomRight, CGPoint(x: rect.maxX, y: rect.minY)),
       ]
+        + (wide
+          ? [
+            (.top, CGPoint(x: rect.midX, y: rect.maxY)),
+            (.bottom, CGPoint(x: rect.midX, y: rect.minY)),
+          ]
+          : [])
+        + (tall
+          ? [
+            (.left, CGPoint(x: rect.minX, y: rect.midY)),
+            (.right, CGPoint(x: rect.maxX, y: rect.midY)),
+          ]
+          : [])
     case .arrow(let from, let to, let bend), .line(let from, let to, let bend):
       let roomy = hypot(to.x - from.x, to.y - from.y) >= 32
       return [(.start, from), (.end, to)]
@@ -396,22 +434,23 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
     }
   }
 
-  /// 拖手柄改大小：矩形类对角不动（拖过头会翻过去）、⇧ 正方形；线类另一端不动、⇧ 吸 45°（箭头、直线的弯度跟着弦等比变）；
-  /// 弯曲手柄见 curveBend（⇧ 对称的弧）。不认的手柄原样返回
-  func resized(_ handle: Handle, to point: CGPoint, constrained: Bool) -> Annotation {
+  /// 拖手柄改大小：矩形类同选区的手柄（RegionSelector.resized）——角改宽高、边中点只改那条边，对边不动（拖过头会翻过去）；
+  /// ⇧ 拖角保持原来的长宽比（拖边时不管 ⇧），⌥（fromCenter）中心不动、对边反向一起动（2026-11-12 拍板 B2 B3）。
+  /// 线类另一端不动、⇧ 吸 45°（箭头、直线的弯度跟着弦等比变）；弯曲手柄见 curveBend（⇧ 对称的弧）。不认的手柄原样返回
+  func resized(_ handle: Handle, to point: CGPoint, constrained: Bool, fromCenter: Bool = false)
+    -> Annotation
+  {
     var next = self
     switch (shape, handle) {
     case (.rectangle(let rect), _), (.ellipse(let rect), _), (.mosaic(let rect), _),
       (.spotlight(let rect), _):
-      let fixed: CGPoint
-      switch handle {
-      case .topLeft: fixed = CGPoint(x: rect.maxX, y: rect.minY)
-      case .topRight: fixed = CGPoint(x: rect.minX, y: rect.minY)
-      case .bottomLeft: fixed = CGPoint(x: rect.maxX, y: rect.maxY)
-      case .bottomRight: fixed = CGPoint(x: rect.minX, y: rect.maxY)
-      case .start, .end, .bend: return self
-      }
-      next.shape = Self.shape(for: tool, from: fixed, to: point, constrained: constrained) ?? shape
+      guard let box = handle.box else { return self }
+      let corner = (box.movesMinX || box.movesMaxX) && (box.movesMinY || box.movesMaxY)
+      let ratio = constrained && corner && rect.height > 0 ? rect.width / rect.height : nil
+      next.shape = Self.boxed(
+        tool,
+        RegionSelector.resized(
+          rect, box, to: point, within: .infinite, ratio: ratio, fromCenter: fromCenter))
     case (.arrow(let from, let to, _), .bend), (.line(let from, let to, _), .bend):
       next.shape = Self.segment(
         tool, from: from, to: to,
@@ -450,20 +489,19 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
   }
 
   /// 拖动画出的形状（文字、序号是单击放置，返回 nil；画笔先给起止两点，由调用方累点）。
-  /// constrained（按住 ⇧）：矩形类变正方形 / 正圆，线类吸附到 45° 的倍数
-  static func shape(for tool: Tool, from start: CGPoint, to end: CGPoint, constrained: Bool)
-    -> Shape?
-  {
+  /// constrained（按住 ⇧）：矩形类变正方形 / 正圆，线类吸附到 45° 的倍数；fromCenter（按住 ⌥）：矩形类以起点为中心
+  /// （同选区，RegionSelector.drawn），线类不管它
+  static func shape(
+    for tool: Tool, from start: CGPoint, to end: CGPoint, constrained: Bool,
+    fromCenter: Bool = false
+  ) -> Shape? {
     switch tool {
     case .rectangle, .ellipse, .mosaic, .spotlight:
-      var end = end
-      if constrained {
-        let dx = end.x - start.x
-        let dy = end.y - start.y
-        let side = max(abs(dx), abs(dy))
-        end = CGPoint(x: start.x + (dx < 0 ? -side : side), y: start.y + (dy < 0 ? -side : side))
-      }
-      return boxed(tool, box(start, end))
+      return boxed(
+        tool,
+        RegionSelector.drawn(
+          from: start, to: end, ratio: constrained ? 1 : nil, fromCenter: fromCenter,
+          within: .infinite))
     case .arrow, .line, .highlighter:
       return segment(tool, from: start, to: constrained ? snapped(start, end) : end)
     case .pen: return .pen([start, end])

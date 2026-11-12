@@ -137,7 +137,7 @@ struct ScreenshotSnapshotTests {
       h.move(CGPoint(x: 1150, y: 760))
       try shoot(h.window, name)
     }
-    // 选中的矩形（虚线框 + 四角手柄）、选中的箭头（两端手柄，托盘显示它的颜色）
+    // 选中的矩形（虚线框 + 四角和边中点手柄）、选中的箭头（两端手柄，托盘显示它的颜色）
     for (name, shape, style) in [
       (
         "selected-rectangle",

@@ -93,6 +93,26 @@ struct AnnotationEditingTests {
     #expect(annotation(h, id)?.shape == .rectangle(CGRect(x: 350, y: 250, width: 100, height: 100)))
   }
 
+  // 边中点的手柄只动那条边；⌥ 画 / 拖手柄以中心为准（2026-11-12 拍板 B1 B3）
+  @Test func edgeHandleAndOptionFromCenter() {
+    let h = harness(tool: .rectangle)
+    h.drag(CGPoint(x: 350, y: 250), CGPoint(x: 450, y: 350))
+    let id = h.view.selectedAnnotation
+    // 右边中点 (450, 300) 拖到 (500, 330)：只变宽
+    h.drag(CGPoint(x: 451, y: 302), CGPoint(x: 500, y: 330))
+    #expect(annotation(h, id)?.shape == .rectangle(CGRect(x: 350, y: 250, width: 150, height: 100)))
+    // ⌥ 拖上边中点 (425, 350) 到 (425, 370)：上下各长 20
+    h.begin(CGPoint(x: 425, y: 350), to: CGPoint(x: 425, y: 370), flags: .option)
+    h.release(CGPoint(x: 425, y: 370), flags: .option)
+    #expect(annotation(h, id)?.shape == .rectangle(CGRect(x: 350, y: 230, width: 150, height: 140)))
+    // ⌥ 画椭圆：按下的点是中心
+    h.view.tool = .ellipse
+    h.begin(CGPoint(x: 600, y: 300), to: CGPoint(x: 640, y: 320), flags: .option)
+    h.release(CGPoint(x: 640, y: 320), flags: .option)
+    #expect(
+      h.view.annotations.last?.shape == .ellipse(CGRect(x: 560, y: 280, width: 80, height: 40)))
+  }
+
   @Test func collapsingByAHandleRestoresTheAnnotation() {
     let h = harness(tool: .rectangle)
     h.drag(CGPoint(x: 350, y: 250), CGPoint(x: 450, y: 350))
@@ -269,7 +289,7 @@ struct AnnotationEditingTests {
     let h = harness(tool: nil)
     let original = Annotation(shape: .rectangle(CGRect(x: 350, y: 250, width: 100, height: 100)))
     h.view.annotations = [original]
-    // 按在左边线中间（不在手柄上），⌥ 往右拖 30
+    // 按在左边线上（原件没选中，没有手柄），⌥ 往右拖 30
     h.drag(CGPoint(x: 350, y: 300), CGPoint(x: 380, y: 300), flags: .option)
     #expect(h.view.annotations.count == 2)
     #expect(h.view.annotations.first == original)
@@ -279,10 +299,11 @@ struct AnnotationEditingTests {
     #expect(h.view.selectedAnnotation == copy.id)
     h.keyEquivalent(kVK_ANSI_Z, "z", flags: .command)
     #expect(h.view.annotations == [original])
-    // ⌥ 单击没拖开：不留叠在原处的副本，选中原件
-    h.click(CGPoint(x: 350, y: 300))
-    h.down(CGPoint(x: 350, y: 300), flags: .option)
-    h.release(CGPoint(x: 350, y: 300), flags: .option)
+    // ⌥ 单击没拖开：不留叠在原处的副本，选中原件（选中后边中点是手柄，按在避开它的边线上）
+    h.click(CGPoint(x: 350, y: 280))
+    h.down(CGPoint(x: 350, y: 280), flags: .option)
+    #expect(h.view.annotations.count == 2)
+    h.release(CGPoint(x: 350, y: 280), flags: .option)
     #expect(h.view.annotations == [original])
     #expect(h.view.selectedAnnotation == original.id)
   }
@@ -296,10 +317,11 @@ struct AnnotationEditingTests {
     h.begin(CGPoint(x: 350, y: 300), to: CGPoint(x: 380, y: 300), flags: .option)
     #expect(NSCursor.current.image.tiffRepresentation == NSCursor.dragCopy.image.tiffRepresentation)
     h.release(CGPoint(x: 380, y: 300), flags: .option)
-    h.begin(CGPoint(x: 380, y: 300), to: CGPoint(x: 400, y: 300))
+    // 按在边线上、避开边中点的手柄（那里是改大小）
+    h.begin(CGPoint(x: 380, y: 280), to: CGPoint(x: 400, y: 280))
     #expect(
       NSCursor.current.image.tiffRepresentation == NSCursor.closedHand.image.tiffRepresentation)
-    h.release(CGPoint(x: 400, y: 300))
+    h.release(CGPoint(x: 400, y: 280))
   }
 
   // 拖着标注（画、挪、改大小）时 ⌘Z / ⇧⌘Z / ⌫ / ⌘D 不响应：不然松手时记的那一步撤销和标注列表对不上
@@ -312,15 +334,15 @@ struct AnnotationEditingTests {
     h.release(CGPoint(x: 560, y: 300))
     #expect(h.view.annotations.count == 2)
     let first = h.view.annotations.first
-    // 按住第二个（空心矩形认边线）挪的途中按 ⌫ / ⌘D / ⇧⌘Z：都不动
-    h.begin(CGPoint(x: 530, y: 250), to: CGPoint(x: 540, y: 260))
+    // 按住第二个（空心矩形认边线，避开边中点的手柄）挪的途中按 ⌫ / ⌘D / ⇧⌘Z：都不动
+    h.begin(CGPoint(x: 515, y: 250), to: CGPoint(x: 525, y: 260))
     h.key(kVK_Delete, "\u{7f}")
     h.keyEquivalent(kVK_ANSI_D, "d", flags: .command)
     h.keyEquivalent(kVK_ANSI_Z, "z", flags: [.command, .shift])
     #expect(h.view.annotations.count == 2)
     #expect(
       h.view.annotations.last?.shape == .rectangle(CGRect(x: 510, y: 260, width: 60, height: 50)))
-    h.release(CGPoint(x: 540, y: 260))
+    h.release(CGPoint(x: 525, y: 260))
     // 撤销依次是：挪 → 画第二个 → 画第一个
     h.keyEquivalent(kVK_ANSI_Z, "z", flags: .command)
     #expect(

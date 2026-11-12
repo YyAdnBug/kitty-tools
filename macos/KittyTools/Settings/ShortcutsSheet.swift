@@ -429,7 +429,8 @@ struct ShortcutsSheet: View {
         title: "截图 · 标注", symbol: "pencil.tip.crop.circle", color: Style.Family.screenshot,
         features: [.screenshot],
         entries: toolEntries + [
-          Entry("⇧", text: "画正方形、正圆、45° 线"),
+          Entry("⇧", text: "画正方形、正圆、45° 线；拖角时保持比例"),
+          Entry("⌥", text: "从中心画矩形、椭圆，或从中心改大小"),
           Entry("⌫", text: "删除选中的标注"),
           Entry("⌘D", text: "复制一份选中的标注（按住 ⌥ 拖动同样）"),
           Entry("方向键", text: "移动选中的标注"),

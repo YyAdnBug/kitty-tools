@@ -9,7 +9,7 @@
 // ⌘ / ⌥ + 方向键推 / 收那条边；尺寸胶囊点数字输入像素宽高、比例菜单锁比例；右键没有标注时回到待选，有标注时只提示；
 // 放大镜显示中心像素的色值（C 复制），按住 ⌘ 出整屏十字准线；S 长截图、T 钉图、O 识字；
 // 标注 1–0（矩形、椭圆、箭头、直线、画笔、荧光笔、文字、序号、马赛克、聚光灯，⇧ 画正方形 / 45° 线，再按一次收起；
-// 序号单击放、画笔一路累点），画完自动选中（工具保持）：粉色虚线框 + 手柄，拖手柄改大小（⇧ 约束）、拖箭头中间的手柄弯曲
+// 序号单击放、画笔一路累点），画完自动选中（工具保持）：粉色虚线框 + 手柄，拖手柄改大小（矩形类四角 + 边中点；⇧ 约束、⌥ 从中心）、拖箭头中间的手柄弯曲
 // （⇧ 对称、拖回弦上拉直、双击拉直）、拖本体移动（⇧ 锁轴）、⌥ 拖动复制、⌘D 复制、改颜色粗细、⌫ 删除、双击文字重新编辑，
 // ⌘Z 撤销、⇧⌘Z 重做（拖着标注时这几个键不响应）。
 // 录屏（录屏第 1 批）：悬停、单击窗口 / 整屏、拖框、调整、尺寸胶囊、D、放大镜都同截图，没有标注和出图键；调整时选区下方是
@@ -964,7 +964,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
     return Self.handle(at: mouse, in: rect)
   }
 
-  /// 选中的标注：1 pt 粉色虚线框 [4, 3]（箭头、直线、荧光笔不画）+ 手柄（白 9 pt 圆 + 1.5 pt 粉环；矩形类四角、线类两端，
+  /// 选中的标注：1 pt 粉色虚线框 [4, 3]（箭头、直线、荧光笔不画）+ 手柄（白 9 pt 圆 + 1.5 pt 粉环；矩形类四角和边中点、线类两端，
   /// 箭头、直线的弧线中点是小一号的 7 pt 弯曲手柄；文字、序号、画笔没有）。输入文字时不画（输入框自己有边框，大小跟着输入变）
   private func updateAnnotationChrome() {
     guard editor == nil, let selected else {
@@ -2479,7 +2479,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
   }
 
   /// 画标注、拖标注、拖标注的手柄跟到 point。⇧（取自 modifiers，拖动中按下 / 松开时 flagsChanged 也走这里重算）：
-  /// 正方形 / 正圆 / 45° 线，拖本体时锁在移动多的那个方向上
+  /// 正方形 / 正圆 / 45° 线，拖矩形类的角时保持原比例，拖本体时锁在移动多的那个方向上；⌥：矩形类从中心画 / 改大小
   private func dragAnnotation(to point: CGPoint) {
     let constrained = modifiers.contains(.shift)
     switch drag {
@@ -2487,7 +2487,9 @@ final class SelectionView: NSView, NSTextViewDelegate {
       guard let tool else { return }
       guard tool == .pen else {
         guard
-          let shape = Annotation.shape(for: tool, from: start, to: point, constrained: constrained)
+          let shape = Annotation.shape(
+            for: tool, from: start, to: point, constrained: constrained,
+            fromCenter: modifiers.contains(.option))
         else { return }
         draft = Annotation(id: draft?.id ?? UUID(), shape: shape, style: style)
         return
@@ -2506,7 +2508,9 @@ final class SelectionView: NSView, NSTextViewDelegate {
       replace(original.offset(by: delta))
     case .resizeAnnotation(let original, let handle, _, let offset)?:
       let target = CGPoint(x: point.x + offset.dx, y: point.y + offset.dy)
-      replace(original.resized(handle, to: target, constrained: constrained))
+      replace(
+        original.resized(
+          handle, to: target, constrained: constrained, fromCenter: modifiers.contains(.option)))
     default:
       break
     }
@@ -2675,15 +2679,10 @@ final class SelectionView: NSView, NSTextViewDelegate {
     (selection.contains(point) ? NSCursor.openHand : NSCursor.crosshair).set()
   }
 
-  /// 标注手柄上的光标：矩形类的角是斜向缩放，线类两端和箭头的弯曲手柄是手指（往哪儿拖都行）
-  private static func cursor(for handle: Annotation.Handle) -> NSCursor {
-    switch handle {
-    case .topLeft: .frameResize(position: .topLeft, directions: .all)
-    case .topRight: .frameResize(position: .topRight, directions: .all)
-    case .bottomLeft: .frameResize(position: .bottomLeft, directions: .all)
-    case .bottomRight: .frameResize(position: .bottomRight, directions: .all)
-    case .start, .end, .bend: .pointingHand
-    }
+  /// 标注手柄上的光标：矩形类的角、边中点同选区的缩放光标，线类两端和箭头的弯曲手柄是手指（往哪儿拖都行）。
+  /// 长图 / 历史的标注遮罩（ScrollCanvas）也用它
+  static func cursor(for handle: Annotation.Handle) -> NSCursor {
+    handle.box.map { .frameResize(position: position(of: $0), directions: .all) } ?? .pointingHand
   }
 
   private static func position(of handle: RegionSelector.Handle) -> NSCursor.FrameResizePosition {
@@ -3088,7 +3087,7 @@ final class AnnotationCanvas: NSView {
     context.setFillColor(NSColor.white.cgColor)
     context.setStrokeColor(pink)
     context.setLineWidth(1.5 * thin)
-    for (handle, point) in selected.handles {
+    for (handle, point) in selected.handles(zoom: zoom) {
       let radius = (handle == .bend ? 3.5 : 4.5) * thin
       let dot = CGRect(
         x: point.x - radius, y: point.y - radius, width: radius * 2, height: radius * 2)

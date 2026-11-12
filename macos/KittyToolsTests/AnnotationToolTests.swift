@@ -83,6 +83,16 @@ struct AnnotationToolTests {
         == .mosaic(CGRect(x: 10, y: -5, width: 30, height: 15)))
     #expect(
       Annotation.shape(for: .pen, from: start, to: end, constrained: true) == .pen([start, end]))
+    // ⌥：矩形类以起点为中心（拍板 B3），线类不管它
+    #expect(
+      Annotation.shape(for: .ellipse, from: start, to: end, constrained: false, fromCenter: true)
+        == .ellipse(CGRect(x: -20, y: -5, width: 60, height: 30)))
+    #expect(
+      Annotation.shape(for: .rectangle, from: start, to: end, constrained: true, fromCenter: true)
+        == .rectangle(CGRect(x: -20, y: -20, width: 60, height: 60)))
+    #expect(
+      Annotation.shape(for: .arrow, from: start, to: end, constrained: false, fromCenter: true)
+        == Annotation.shape(for: .arrow, from: start, to: end, constrained: false))
     // 线类 ⇧ 吸 45°，长度不变
     for tool in [Annotation.Tool.line, .highlighter] {
       guard
@@ -137,8 +147,10 @@ struct AnnotationToolTests {
     let corners = Dictionary(uniqueKeysWithValues: box.handles.map { ($0.0, $0.1) })
     #expect(
       corners[.topLeft] == CGPoint(x: 10, y: 50) && corners[.bottomRight] == CGPoint(x: 50, y: 20))
-    #expect(corners.count == 4)
-    // 拖左上角：右下角不动；拖过头翻过去；⇧ 正方形
+    // 四角 + 四条边的中点（2026-11-12 拍板 B1）
+    #expect(corners.count == 8)
+    #expect(corners[.top] == CGPoint(x: 30, y: 50) && corners[.right] == CGPoint(x: 50, y: 35))
+    // 拖左上角：右下角不动；拖过头翻过去；⇧ 保持原来的长宽比（B2：40 × 30 拉到宽 60 → 高 45）
     let grown = box.resized(.topLeft, to: CGPoint(x: 0, y: 60), constrained: false)
     #expect(
       grown.id == box.id && grown.shape == .rectangle(CGRect(x: 0, y: 20, width: 50, height: 40)))
@@ -147,7 +159,32 @@ struct AnnotationToolTests {
         == .rectangle(CGRect(x: 50, y: 10, width: 10, height: 10)))
     #expect(
       box.resized(.bottomRight, to: CGPoint(x: 70, y: 40), constrained: true).shape
-        == .rectangle(CGRect(x: 10, y: -10, width: 60, height: 60)))
+        == .rectangle(CGRect(x: 10, y: 5, width: 60, height: 45)))
+    // 边中点只动那条边，⇧ 不管；拖过对边翻过去
+    #expect(
+      box.resized(.right, to: CGPoint(x: 90, y: 999), constrained: true).shape
+        == .rectangle(CGRect(x: 10, y: 20, width: 80, height: 30)))
+    #expect(
+      box.resized(.top, to: CGPoint(x: -5, y: 0), constrained: false).shape
+        == .rectangle(CGRect(x: 10, y: 0, width: 40, height: 20)))
+    // ⌥：中心不动，对边反向一起动（B3）
+    #expect(
+      box.resized(.right, to: CGPoint(x: 60, y: 35), constrained: false, fromCenter: true).shape
+        == .rectangle(CGRect(x: 0, y: 20, width: 60, height: 30)))
+    #expect(
+      box.resized(.topRight, to: CGPoint(x: 70, y: 35), constrained: true, fromCenter: true).shape
+        == .rectangle(CGRect(x: -10, y: 5, width: 80, height: 60)))
+    // 边短于 24 的不给那条边的中点；聚光灯、马赛克同矩形
+    let thin = Annotation(shape: .ellipse(CGRect(x: 0, y: 0, width: 100, height: 20))).handles
+    #expect(thin.map(\.0).contains(.top) && !thin.map(\.0).contains(.left))
+    #expect(Annotation(shape: .mosaic(rect)).handles.count == 8)
+    // 长图缩小着看（0.5 倍）：按屏幕上的边长算，40 × 30 只剩四角
+    #expect(box.handles(zoom: 0.5).count == 4)
+    #expect(
+      Annotation(shape: .spotlight(rect)).resized(
+        .bottom, to: CGPoint(x: 0, y: 0), constrained: false
+      )
+      .shape == .spotlight(CGRect(x: 10, y: 0, width: 40, height: 50)))
     #expect(box.resized(.start, to: .zero, constrained: false) == box)
     // 线类两端：另一端不动，⇧ 吸 45°；箭头、直线还有弧线中点的弯曲手柄（直的在弦中点），荧光笔没有
     let arrow = Annotation(shape: .arrow(from: .zero, to: CGPoint(x: 100, y: 0)))

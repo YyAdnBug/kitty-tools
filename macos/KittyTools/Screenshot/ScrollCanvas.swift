@@ -181,8 +181,10 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
     let distance = { (grip: (Annotation.Handle, CGPoint)) in
       hypot(grip.1.x - point.x, grip.1.y - point.y)
     }
-    return selected.handles.filter { distance($0) <= reach }.min { distance($0) < distance($1) }
-      .map { (selected, $0.0, $0.1) }
+    return selected.handles(zoom: zoom).filter { distance($0) <= reach }.min {
+      distance($0) < distance($1)
+    }
+    .map { (selected, $0.0, $0.1) }
   }
 
   private func replace(_ annotation: Annotation) {
@@ -530,7 +532,8 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
     dragAnnotation(to: point)
   }
 
-  /// 画标注、拖标注、拖手柄跟到 point。⇧：正方形 / 正圆 / 45° 线，拖本体时锁轴
+  /// 画标注、拖标注、拖手柄跟到 point。⇧：正方形 / 正圆 / 45° 线，拖矩形类的角时保持原比例，拖本体时锁轴；
+  /// ⌥：矩形类从中心画 / 改大小
   private func dragAnnotation(to point: CGPoint) {
     let constrained = modifiers.contains(.shift)
     switch drag {
@@ -538,7 +541,9 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
       guard let tool else { return }
       guard tool == .pen else {
         guard
-          let shape = Annotation.shape(for: tool, from: start, to: point, constrained: constrained)
+          let shape = Annotation.shape(
+            for: tool, from: start, to: point, constrained: constrained,
+            fromCenter: modifiers.contains(.option))
         else { return }
         draft = Annotation(id: draft?.id ?? UUID(), shape: shape, style: style)
         return
@@ -557,7 +562,9 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
       replace(original.offset(by: delta))
     case .resizeAnnotation(let original, let handle, _, let offset)?:
       let target = CGPoint(x: point.x + offset.dx, y: point.y + offset.dy)
-      replace(original.resized(handle, to: target, constrained: constrained))
+      replace(
+        original.resized(
+          handle, to: target, constrained: constrained, fromCenter: modifiers.contains(.option)))
     default:
       break
     }
@@ -608,12 +615,9 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
     (tool == .text ? NSCursor.iBeam : tool == nil ? .arrow : .crosshair).set()
   }
 
-  /// 标注手柄上的光标：矩形类的角是斜向缩放，线类两端和弯曲手柄是手指
+  /// 标注手柄上的光标：同截图遮罩（矩形类的角、边中点是缩放光标，线类两端和弯曲手柄是手指）
   private static func cursor(for handle: Annotation.Handle) -> NSCursor {
-    switch handle {
-    case .start, .end, .bend: .pointingHand
-    default: .crosshair
-    }
+    SelectionView.cursor(for: handle)
   }
 
   // MARK: 键盘
