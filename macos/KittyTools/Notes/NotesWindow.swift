@@ -1,5 +1,5 @@
 // 全部便签窗口（PLAN §10「便签」，mac-whisker/notes.md「全部便签」）：普通 NSWindow，不是浮层——打开方式同设置窗
-// （先收起浮层 → 切成 .regular 并激活；关掉时设置窗也没开着才切回 .accessory，NSApplication.leaveDockIfNoWindows）。
+// （先收起浮层 → 切成 .regular 并激活；关闭时共用 NSApplication.leaveDockIfNoWindows，macOS 26 保留程序坞图标到退出）。
 // 这里是窗口和它的状态（NotesWindowModel）：三个视图（全部 / 归档 / 最近删除）和搜索、选中项跟着列表怎么变、
 // 各种操作、删除和归档的撤销栈（⌘Z 一条条放回，窗口关掉时清空）、拖动排序、底下那行小字；两种显示方式（便签墙 / 列表，
 // 默认便签墙，记住上次选的）和便签墙上放大着的那张（编辑卡）、墙怎么排（卡片的高：可见区附近的当场建、其余分批在后面
