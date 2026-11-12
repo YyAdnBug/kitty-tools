@@ -352,6 +352,8 @@ final class ScreenRecorder: NSObject {
   /// 当前过滤器里列进例外的窗口号（每秒和此刻的比，变了换过滤器）
   private var exceptedWindows: Set<CGWindowID> = []
   private var isRefreshingFilter = false
+  /// 录制中重取窗口表、换过滤器的次数（实录探针看）
+  private(set) var filterRefreshes = 0
 
   /// region：选区（点，AppKit 全局坐标）；directory：快速保存目录；defaults：录屏设置从这里读、「进行中」记在这里；
   /// hotKeys：倒数时临时注册 Esc；island：没有麦克风授权时的警告岛（只录声音时还有「正在存储录音…」）；audioOnly：给了就是
@@ -682,6 +684,7 @@ final class ScreenRecorder: NSObject {
     let ids = exceptedOwnWindows()
     guard ids != exceptedWindows, !isRefreshingFilter, let stream else { return }
     isRefreshingFilter = true
+    filterRefreshes += 1
     Task {
       defer { isRefreshingFilter = false }
       do {
