@@ -13,6 +13,7 @@
 // 双指上滑收得掉（×、上滑告诉调用方「处理了」）。一次只挂一条（几条提醒由调用方合成一条）。
 
 import AppKit
+import OSLog
 import Observation
 import SwiftUI
 
@@ -655,8 +656,17 @@ import SwiftUI
     window.contentView?.layoutSubtreeIfNeeded()
   }
 
-  /// 屏幕变了（接上 / 拔掉外接屏、合盖、改分辨率）：重算刘海在哪；没有刘海屏就不常驻监听
+  /// 屏幕变了（接上 / 拔掉外接屏、合盖、改分辨率）：重算刘海在哪；没有刘海屏就不常驻监听。
+  /// 每块屏的几何写进日志（`log show --predicate 'category == "island"'`）：新机型我们没有真机，靠用户发来这几行
   private func updateNotches() {
+    for screen in NSScreen.screens {
+      let kind =
+        Self.hasSystemIsland(screen)
+        ? "系统灵动岛" : Self.notchRect(of: screen) == nil ? "胶囊" : "刘海"
+      Log.island.notice(
+        "\(screen.localizedName, privacy: .public)：\(kind, privacy: .public)，frame \(screen.frame.debugDescription, privacy: .public)，菜单栏 \(Double(screen.frame.maxY - screen.visibleFrame.maxY))，安全区顶 \(Double(screen.safeAreaInsets.top))，辅助区 \((screen.auxiliaryTopLeftArea ?? .zero).debugDescription, privacy: .public) / \((screen.auxiliaryTopRightArea ?? .zero).debugDescription, privacy: .public)"
+      )
+    }
     notchRects = NSScreen.screens.compactMap(Self.notchRect(of:))
     watchesNotch = !notchRects.isEmpty
     if watchesNotch { watchMouse() } else if !isOpen { unwatchMouse() }
@@ -780,15 +790,32 @@ import SwiftUI
     host?.rootView = IslandView(island: self)
   }
 
-  /// 刘海：左右两块 auxiliary 区都在、且顶部安全区 > 0；刘海宽 = 屏宽 − 两块区宽 + 4（盖住抗锯齿毛边）
   static func geometry(of screen: NSScreen) -> Geometry {
-    if let left = screen.auxiliaryTopLeftArea, let right = screen.auxiliaryTopRightArea,
-      screen.safeAreaInsets.top > 0
-    {
-      return .notch(
-        width: screen.frame.width - left.width - right.width + 4, height: screen.safeAreaInsets.top)
+    geometry(
+      width: screen.frame.width, left: screen.auxiliaryTopLeftArea,
+      right: screen.auxiliaryTopRightArea, safeTop: screen.safeAreaInsets.top,
+      menuBar: screen.frame.maxY - screen.visibleFrame.maxY, systemIsland: hasSystemIsland(screen))
+  }
+
+  /// 刘海：左右两块 auxiliary 区都在、且顶部安全区 > 0；刘海宽 = 屏宽 − 两块区宽 + 4（盖住抗锯齿毛边）。
+  /// 系统自己有灵动岛的屏（2026-10-28 发布的 MacBook Pro PROLED XDR，挖孔）当没有刘海：开孔周围那一块归系统
+  /// （Spotlight、Siri、实时活动，往下滑叫出 Spotlight），我们不在上面画、不听点和停留，提示退回菜单栏下方的胶囊
+  // ponytail: 胶囊照旧在菜单栏下方正中，系统灵动岛往下展开时可能叠上；没有真机，拿到几何（updateNotches 写的日志）再看要不要挪
+  static func geometry(
+    width: CGFloat, left: CGRect?, right: CGRect?, safeTop: CGFloat, menuBar: CGFloat,
+    systemIsland: Bool
+  ) -> Geometry {
+    if !systemIsland, let left, let right, safeTop > 0 {
+      return .notch(width: width - left.width - right.width + 4, height: safeTop)
     }
-    return .capsule(menuBar: screen.frame.maxY - screen.visibleFrame.maxY)
+    return .capsule(menuBar: menuBar)
+  }
+
+  /// 这块屏上有没有系统自己的灵动岛。系统没有直接说的接口：macOS 27 起看屏幕支不支持多点触控——目前只有
+  /// 这一款 Mac 是触屏，它也是唯一有灵动岛的
+  // ponytail: 拿触屏当灵动岛的记号；出了带刘海的触屏 Mac、或者 Apple 给了正式接口，换成那个
+  static func hasSystemIsland(_ screen: NSScreen) -> Bool {
+    if #available(macOS 27, *) { screen.touchCapabilities.contains(.multiTouch) } else { false }
   }
 
   private func makeWindow() -> IslandPanel {

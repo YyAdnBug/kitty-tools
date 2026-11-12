@@ -330,6 +330,35 @@ struct IslandExcerptTests {
     #expect(island.isBoardOpen && island.content == nil && island.actions.isEmpty)
   }
 
+  /// 认屏：刘海屏从刘海长下巴；没刘海的屏、系统自己有灵动岛的屏（2026-10 的 MacBook Pro PROLED XDR，挖孔）
+  /// 都是菜单栏下方的胶囊——那一块归系统，不在上面画、不听点
+  @Test func screenKinds() {
+    // 开发机 M3 Air 实测：屏宽 1710、左右辅助区各 751、安全区顶 37.5（刘海 208 + 4）
+    let left = CGRect(x: 0, y: 1074.5, width: 751, height: 37.5)
+    let right = CGRect(x: 959, y: 1074.5, width: 751, height: 37.5)
+    #expect(
+      Island.geometry(
+        width: 1710, left: left, right: right, safeTop: 37.5, menuBar: 37.5, systemIsland: false)
+        == .notch(width: 212, height: 37.5))
+    #expect(
+      Island.geometry(
+        width: 1710, left: left, right: right, safeTop: 37.5, menuBar: 37.5, systemIsland: true)
+        == .capsule(menuBar: 37.5))
+    #expect(
+      Island.geometry(
+        width: 1920, left: nil, right: nil, safeTop: 0, menuBar: 25, systemIsland: false)
+        == .capsule(menuBar: 25))
+    // 两块区都在但安全区是 0（全屏 App 这类）、只有一块区：都不算刘海
+    #expect(
+      Island.geometry(
+        width: 1710, left: left, right: right, safeTop: 0, menuBar: 0, systemIsland: false)
+        == .capsule(menuBar: 0))
+    #expect(
+      Island.geometry(
+        width: 1710, left: left, right: nil, safeTop: 37.5, menuBar: 37.5, systemIsland: false)
+        == .capsule(menuBar: 37.5))
+  }
+
   /// 指针停在刘海上才算：只认刘海本身（鼓起那一圈不算），含屏幕最顶那一行、不往上越过顶边；没有刘海的屏都不算
   @Test func notchHitIsTheNotchOnly() {
     let notch = CGRect(x: 650, y: 1074, width: 200, height: 38)  // 屏幕坐标，屏顶 y = 1112
