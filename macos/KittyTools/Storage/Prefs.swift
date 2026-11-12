@@ -11,6 +11,8 @@ enum Prefs {
   static let accent = "accent"
   /// 在菜单栏显示图标（第 9 批 M1，默认开）；关掉后再打开一次本 App（访达 / 启动器）打开主界面，快捷键照常
   static let statusItemVisible = "statusItemVisible"
+  /// macOS 26 上程序坞 / ⌘⇥ 里一直留着图标（PR #1，2026-11-12；只在 26 上有这一项，见 NSApplication.keepsDockIcon）
+  static let dockIconOnTahoe = "dockIconOnTahoe"
   /// 菜单栏图标样式（StatusItem.IconStyle.rawValue）：template 单色剪影（默认）/ color 彩色 App 图标（第 9 批 M2）
   static let statusItemStyle = "statusItemStyle"
   /// 剪贴板面板点外即关；底栏图钉 / ⌘P = 把它关掉（固定）。设置页不再有这个开关（体检 A9），只存图钉状态
@@ -441,6 +443,7 @@ enum Prefs {
       appearance: AppAppearance.system.rawValue,
       accent: AccentChoice.system.rawValue,
       statusItemVisible: true,
+      dockIconOnTahoe: true,
       statusItemStyle: StatusItem.IconStyle.template.rawValue,
       clipboardHideOnUnfocus: true,
       launcherBrowserBookmarks: defaultBookmarkIDs,

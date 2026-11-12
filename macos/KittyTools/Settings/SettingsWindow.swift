@@ -398,13 +398,25 @@ extension NSViewController {
 }
 
 extension NSApplication {
+  /// macOS 26 上程序坞 / ⌘⇥ 里一直留着图标、从启动到退出都是 .regular（PR #1 作者 sspu-wyl 查出的根因：Tahoe 上
+  /// .regular → .accessory 切过一次，之后弹出的不激活面板就接不到键盘——关掉设置窗后捏合打开启动台不能打字、Esc 不响应；
+  /// 延后切、换时机都不行，只能不切）。设置 › 通用「在程序坞显示图标」只在 26 上出现、默认开；关掉 = 原来的样子
+  /// （普通窗口都关了就收起图标），代价是上面那个问题。别的系统版本没有这个问题，不受这一项影响。纯函数配单测
+  static func keepsDockIcon(osMajor: Int, defaults: UserDefaults) -> Bool {
+    osMajor == 26 && (defaults.object(forKey: Prefs.dockIconOnTahoe) as? Bool ?? true)
+  }
+
+  /// 这台 Mac 现在是不是这样（启动入口在注册默认值之前就要读：没存过按开）
+  static var keepsDockIcon: Bool {
+    keepsDockIcon(
+      osMajor: ProcessInfo.processInfo.operatingSystemVersion.majorVersion, defaults: .standard)
+  }
+
   /// 普通窗口关闭时共用：macOS 26 从启动起保持 .regular 到退出，避免切换策略后浮层丢键盘；
   /// 其他系统等最后一扇普通窗口关闭后切回 .accessory，收起程序坞图标。
   func leaveDockIfNoWindows(closing: NSWindow) {
-    if ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 26 {
-      // Tahoe 在 SwiftUI 启动前已设为 regular，运行中不再降策略，保留 Dock / ⌘⇥。
-      return
-    }
+    // 程序坞图标常驻时（macOS 26 默认）从启动起就是 .regular，运行中不再降策略
+    if Self.keepsDockIcon { return }
     if !Self.hasOrdinaryWindow(in: windows, besides: closing) { setActivationPolicy(.accessory) }
   }
 
