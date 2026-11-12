@@ -147,11 +147,16 @@ Kitty 的第八族「启动台」（SPEC 在 `macos/build/research/launchpad/SPE
   `Launchpad.release` 是松手之后走到哪的纯函数（四种：走完 / 退回 × 捏合 / 张开），单测锁住。**单测里不注册回调、不读真触点**；「真的读得到」是按需探针
   `TEST_RUNNER_KITTY_LIVE_TOUCH=1`（真的注册回调、读这台机器的触控板；跑的时候放四根手指捏一下；测试进程里读到的键是
   `KITTY_LIVE_TOUCH`——xcodebuild 去掉 `TEST_RUNNER_` 前缀，G16）。
-- 系统手势开没开：只读 `com.apple.AppleMultitouchTrackpad`（蓝牙触控板是 `com.apple.driver.AppleBluetoothMultitouch.trackpad`）的
-  `TrackpadFourFingerPinchGesture` / `TrackpadFiveFingerPinchGesture`；设置页每次出现、要被捏合打开时读一次，**不轮询、不写系统设置**。
-  几个域合起来（`TrackpadSystemGesture.combined`，G5）：任一域显式开 = 开；有域显式关、没有显式开 = 关；所有域都没信息才按系统默认开。
-  设置页只在读到的值**变了**时重起监听（G8）。
-  系统的还开着时我们认到捏合也不打开，设置页给提示和「打开触控板设置」。**第一次这样让给系统时刘海岛说一次**（第四轮体检 U5，`Prefs.launchpadPinchYieldTold`，不注册默认值）：不当场说（系统的「应用程序」那一屏正盖着），**下次打开启动台时**说，带「打开触控板设置」；那次打开岛上已经有别的话（读不出来的提示、本机有旧库的第一次导入——**要在 `autoImportIfNeeded` 之前判断**，它一起来就清掉 `pendingAutoImport`）就再等一次；到时候系统的已经关了就不说（`Launchpad.pinchHint`）。
+- 系统的应用程序捏合开没开（`TrackpadSystemGesture`）：**macOS 26 只读 `com.apple.dock` 的 `showSpotlightGestureEnabled`，没存过默认开**。
+  26 的旧四指 / 五指键不再决定这个手势，`showDesktopGestureEnabled` 只管原生「显示桌面」，不能拿它当应用程序开关。
+  其他版本沿用 `com.apple.AppleMultitouchTrackpad`（蓝牙触控板是 `com.apple.driver.AppleBluetoothMultitouch.trackpad`）的
+  `TrackpadFourFingerPinchGesture` / `TrackpadFiveFingerPinchGesture`；几个域合起来（`combined`，G5）：任一域显式开 = 开；有域显式关、没有显式开 = 关；所有域都没信息才默认开。
+  设置页每次出现、要被捏合打开时读一次，**不轮询、不写系统设置、不重启 Dock**；设置页只在读到的值变了时重起监听（G8）。
+  系统的应用程序捏合还开着时，识别到了也不打开。**26 没有独立的「应用程序」设置行**，设置页显示命令并给「复制命令」：
+  `defaults write com.apple.dock showSpotlightGestureEnabled -bool false; killall Dock`，由用户自行在终端执行（`Launchpad.copyPinchCommand`：写剪贴板、岛上说「已复制命令」，设置页和岛上的按钮都走它；**不替用户执行**）；说明会重启程序坞、「显示桌面」不受影响，不引导关闭它。
+  其他版本仍给「打开触控板设置」，引导关闭「应用程序」。**第一次让给系统时刘海岛说一次**（第四轮体检 U5，`Prefs.launchpadPinchYieldTold`，不注册默认值）：
+  不当场说（系统的应用程序视图正盖着），下次打开启动台再说；26 带「复制命令」，其他版本带「打开触控板设置」。
+  那次岛上已有读不出来的提示或第一次导入时就再等一次（在 `autoImportIfNeeded` 前判断）；系统的应用程序捏合已经关掉就不说（`Launchpad.pinchHint`）。
 
 ## 7. 触发角（第 3 批）
 - 触发后要等真的离开才重新武装（`CornerArm`）；启动台开着时全屏面板盖住了角，那时的离开收不到也不算——**收起时鼠标已经不在角里就当离开过**

@@ -780,7 +780,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             cornerChanged: { [unowned self] in launchpad.applySettings() },
             pinchAvailable: { [unowned self] in launchpad.pinchAvailable },
             systemPinchOn: { [unowned self] in launchpad.systemPinchIsOn },
-            openTrackpadSettings: { [unowned self] in openTrackpadSettings() }))
+            openTrackpadSettings: { [unowned self] in openTrackpadSettings() },
+            copyPinchCommand: { [unowned self] in launchpad.copyPinchCommand() }))
       case .screenshot:
         AnyView(
           ScreenshotTab(shots: shotHistory, openHistory: { [unowned self] in showShotHistory() }))
