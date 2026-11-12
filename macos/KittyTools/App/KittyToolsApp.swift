@@ -21,6 +21,11 @@ enum Main {
       FileHandle.standardError.write(Data("用法：\(OCR.helperFlag) <图片路径>\n".utf8))
       exit(2)
     case nil:
+      // 本进程的环境会经 NSWorkspace 原样传给从这里打开的 App（启动器、启动台、访达右键「用 App 打开」……，
+      // 2026-11-12 实测 PATH、SHLVL 都照传）。应用内更新经 /bin/sh 调 open 重启本 App，sh 加上的 SHLVL=1、PWD、_
+      // 就跟着到了被打开的 App：JetBrains 的 IDE 见 SHLVL > 0 当成从终端起的，不读登录 shell 的环境（PATH 里
+      // 没有 /opt/homebrew/bin）。启动时去掉 shell 留下的这几个，打开的 App 和从访达打开的一样
+      for key in ["SHLVL", "PWD", "OLDPWD", "_"] { unsetenv(key) }
       KittyToolsApp.main()
     }
   }
