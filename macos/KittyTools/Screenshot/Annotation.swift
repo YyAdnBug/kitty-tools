@@ -55,6 +55,7 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
     var optionTitles: [String] {
       switch self {
       case .rectangle, .ellipse: ["空心", "实心"]
+      case .arrow: ["单头", "双头"]  // 2026-11-12 拍板 O4
       case .text: ["无底", "描边", "底色"]
       case .mosaic: ["像素", "模糊"]
       default: []
@@ -126,7 +127,7 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
       }
     }
 
-    private static func srgb(_ rgb: Int) -> NSColor {
+    static func srgb(_ rgb: Int) -> NSColor {
       NSColor(
         srgbRed: CGFloat(rgb >> 16 & 0xFF) / 255, green: CGFloat(rgb >> 8 & 0xFF) / 255,
         blue: CGFloat(rgb & 0xFF) / 255, alpha: 1)
@@ -160,6 +161,29 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
     /// 文字的字号（pt，2026-11-12 拍板 A1）；nil = 按三档（weight.fontSize：14 / 20 / 28，之前存的文字标注、截图历史、
     /// 记住的样式都是这样）。可选的才能读旧数据：合成的 Codable 碰到缺的键只对可选成员不报错
     var fontSize: CGFloat?
+
+    /// 吸管取的颜色（0xRRGGBB，sRGB；2026-11-12 拍板 O10）；nil = 用 color 那个预设色。可选的才能读旧数据（同 fontSize）
+    var custom: Int?
+
+    /// 画出来的颜色：取过色就是取的那个，否则是预设色
+    var paint: NSColor {
+      custom.map { Palette.srgb($0) } ?? color.color
+    }
+
+    /// 压在这个颜色上的字（底色文字、序号）：预设色同 Palette.ink；取的颜色按亮度，亮的用黑字
+    var ink: NSColor {
+      custom.map { Self.luminance($0) > 0.6 ? .black : .white } ?? color.ink
+    }
+
+    /// 「描边」文字的外描边用黑的（白字、很亮的取色）；别的用白的
+    var outlinesDark: Bool {
+      custom.map { Self.luminance($0) > 0.85 } ?? (color == .white)
+    }
+
+    private static func luminance(_ rgb: Int) -> CGFloat {
+      (0.299 * CGFloat(rgb >> 16 & 0xFF) + 0.587 * CGFloat(rgb >> 8 & 0xFF)
+        + 0.114 * CGFloat(rgb & 0xFF)) / 255
+    }
 
     /// 文字托盘里的字号档位（A− / A+ 走相邻的，数字弹出的菜单列这些）
     static let fontSizes: [CGFloat] = [12, 14, 16, 20, 24, 32, 40, 56, 72]
@@ -372,7 +396,9 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
         Self.distance(from: point, toSegment: $0, $1) <= width / 2 + tolerance
       }
         || tool == .arrow
-          && Self.arrowPath(from: from, to: to, width: width, bend: bend)?.contains(point) == true
+          && (style.option == 1
+            ? Self.doubleArrowContains(point, from: from, to: to, width: width, bend: bend)
+            : Self.arrowPath(from: from, to: to, width: width, bend: bend)?.contains(point) == true)
     case .highlighter(let from, let to):
       return Self.distance(from: point, toSegment: from, to)
         <= style.weight.highlighterHeight / 2 + tolerance
@@ -629,7 +655,7 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
   static func outlineAttributes(_ style: Style) -> [NSAttributedString.Key: Any] {
     [
       .font: font(size: style.textSize), .strokeWidth: 100.0 / 7,
-      .strokeColor: style.color == .white ? NSColor.black : NSColor.white,
+      .strokeColor: style.outlinesDark ? NSColor.black : NSColor.white,
     ]
   }
 
@@ -715,7 +741,7 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
   private func draw(in context: CGContext, image: CGImage, viewSize: CGSize, shadowScale: CGFloat) {
     // 实心矩形 / 椭圆：先铺 0.28 的底（不带阴影，免得底下透出一片灰；铺满整块，不切条），再描带阴影的边
     if style.option == 1, let path = boxPath {
-      context.setFillColor(style.color.color.withAlphaComponent(0.28).cgColor)
+      context.setFillColor(style.paint.withAlphaComponent(0.28).cgColor)
       context.addPath(path)
       context.fillPath()
     }
@@ -725,7 +751,7 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
     let ink: CGPath? =
       switch shape {
       case .arrow(let from, let to, let bend):
-        Self.arrowPath(from: from, to: to, width: width, bend: bend)
+        Self.arrowInk(from: from, to: to, width: width, bend: bend, double: style.option == 1)
       case .line(let from, let to, let bend) where bend != .zero:
         Self.curvedLinePath(from: from, to: to, width: width, bend: bend)
       default: nil
@@ -855,7 +881,7 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
   private func drawInk(
     in context: CGContext, image: CGImage, viewSize: CGSize, shadowScale: CGFloat, ink: CGPath?
   ) {
-    let color = style.color.color
+    let color = style.paint
     let width = style.weight.lineWidth
     context.saveGState()
     defer { context.restoreGState() }
@@ -925,7 +951,7 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
         context.addPath(CGPath(roundedRect: plate, cornerWidth: 6, cornerHeight: 6, transform: nil))
         context.fillPath()
         noShadow()
-        ink = style.color.ink
+        ink = style.ink
       default:
         break
       }
@@ -943,7 +969,7 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
       context.setLineWidth(1.5)
       context.strokeEllipse(in: circle)
       Self.drawNumber(
-        number, centeredAt: center, diameter: diameter, color: style.color.ink, in: context)
+        number, centeredAt: center, diameter: diameter, color: style.ink, in: context)
     case .mosaic(let rect):
       drawMosaic(rect, in: context, image: image, viewSize: viewSize)
     case .spotlight:
@@ -1217,12 +1243,70 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
     return context.makeImage()
   }
 
+  /// 箭头画出来的样子：单头见 arrowPath；双头（option 1，拍板 O4）= 从弧线中点分成两半，各画一支从中点朝外、
+  /// 杆不收细的箭头再合起来：两头的尖都是尖的（杆停在各自的底边），很短时两头箭头各占一半、合成菱形而不是蝴蝶结。
+  /// 零长度返回 nil
+  static func arrowInk(
+    from: CGPoint, to: CGPoint, width: CGFloat, bend: CGVector = .zero, double: Bool
+  ) -> CGPath? {
+    guard double else { return arrowPath(from: from, to: to, width: width, bend: bend) }
+    guard let pair = doubleArrowHalves(from: from, to: to, width: width, bend: bend) else {
+      return nil
+    }
+    return pair.forward.union(pair.backward)
+  }
+
+  /// 点中双头箭头：两半各问一次（比先合成一个轮廓省，鼠标每动一下都要问）
+  static func doubleArrowContains(
+    _ point: CGPoint, from: CGPoint, to: CGPoint, width: CGFloat, bend: CGVector
+  ) -> Bool {
+    guard let pair = doubleArrowHalves(from: from, to: to, width: width, bend: bend) else {
+      return false
+    }
+    return pair.forward.contains(point) || pair.backward.contains(point)
+  }
+
+  /// 双头箭头的两半：弧线在 t = 0.5 处切开（de Casteljau），两段各是一条二次曲线，从中点出发各画一支杆不收细的箭头。
+  /// 两段在中点切线相同、杆一样粗，接得上
+  private static func doubleArrowHalves(
+    from: CGPoint, to: CGPoint, width: CGFloat, bend: CGVector
+  ) -> (forward: CGPath, backward: CGPath)? {
+    let control = curveControl(from: from, to: to, bend: bend)
+    let middle = quad(from, control, to, 0.5)
+    func half(_ end: CGPoint, _ inner: CGPoint) -> CGPath? {
+      arrowPath(
+        from: middle, to: end, width: width,
+        bend: bend == .zero ? .zero : bendThrough(from: middle, control: inner, to: end),
+        tapered: false)
+    }
+    guard
+      let forward = half(to, CGPoint(x: (control.x + to.x) / 2, y: (control.y + to.y) / 2)),
+      let backward = half(from, CGPoint(x: (control.x + from.x) / 2, y: (control.y + from.y) / 2))
+    else { return nil }
+    return (forward, backward)
+  }
+
+  /// 控制点是 control 的那条二次曲线换成弯度（curveMidpoint 的反算：弧线中点离弦中点的偏移按弦分解）
+  private static func bendThrough(from: CGPoint, control: CGPoint, to: CGPoint) -> CGVector {
+    let d = CGVector(dx: to.x - from.x, dy: to.y - from.y)
+    let lengthSquared = d.dx * d.dx + d.dy * d.dy
+    guard lengthSquared > 0 else { return .zero }
+    let mid = quad(from, control, to, 0.5)
+    let v = CGVector(dx: mid.x - (from.x + to.x) / 2, dy: mid.y - (from.y + to.y) / 2)
+    return CGVector(
+      dx: (v.dx * d.dx + v.dy * d.dy) / lengthSquared,
+      dy: (v.dy * d.dx - v.dx * d.dy) / lengthSquared)
+  }
+
   /// 锥形实心箭头：一个填充多边形，杆从尾部 0.3 × 线宽渐粗到箭头处 1.2 × 线宽；箭头长 4 × 线宽、半角 28°
-  /// （比这还短的箭头只剩箭头）。弯的见 curvedArrowPath（直的还是这个多边形，一个像素都不变）。零长度返回 nil
-  static func arrowPath(from: CGPoint, to: CGPoint, width: CGFloat, bend: CGVector = .zero)
-    -> CGPath?
-  {
-    if bend != .zero { return curvedArrowPath(from: from, to: to, width: width, bend: bend) }
+  /// （比这还短的箭头只剩箭头）。弯的见 curvedArrowPath（直的还是这个多边形，一个像素都不变）。零长度返回 nil。
+  /// tapered = false：杆从头到尾都是 1.2 × 线宽（双头箭头用）
+  static func arrowPath(
+    from: CGPoint, to: CGPoint, width: CGFloat, bend: CGVector = .zero, tapered: Bool = true
+  ) -> CGPath? {
+    if bend != .zero {
+      return curvedArrowPath(from: from, to: to, width: width, bend: bend, tapered: tapered)
+    }
     let length = hypot(to.x - from.x, to.y - from.y)
     guard length > 0 else { return nil }
     let head = min(length, width * 4)
@@ -1233,8 +1317,8 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
     func beside(_ point: CGPoint, _ side: CGFloat) -> CGPoint {
       CGPoint(x: point.x - unit.y * side, y: point.y + unit.x * side)
     }
-    let tail = width * 0.15
     let neck = min(width * 0.6, wing)
+    let tail = tapered ? width * 0.15 : neck
     let path = CGMutablePath()
     path.addLines(between: [
       beside(from, tail), beside(base, neck), beside(base, wing), to, beside(base, -wing),
@@ -1377,7 +1461,7 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
   /// 以内后弧线不会拐过端点折回来，剩下只有弦很短、弯得很深的 U 形顶点会这么尖（顶点半径 = 弦² / (8 × 深度)，
   /// 弦 32、深 40 才 3.2 点）；真碰到再改成逐段取并集
   private static func curvedArrowPath(
-    from: CGPoint, to: CGPoint, width: CGFloat, bend: CGVector
+    from: CGPoint, to: CGPoint, width: CGFloat, bend: CGVector, tapered: Bool = true
   ) -> CGPath? {
     let control = curveControl(from: from, to: to, bend: bend)
     let samples = curve(from, control, to)
@@ -1416,8 +1500,8 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
     }
     let total = max(run.last ?? 0, .ulpOfOne)
     let wing = head * tan(28 * .pi / 180)
-    let tail = width * 0.15
     let neck = min(width * 0.6, wing)
+    let tail = tapered ? width * 0.15 : neck
     var left: [CGPoint] = []
     var right: [CGPoint] = []
     for (index, point) in body.enumerated().dropLast() {

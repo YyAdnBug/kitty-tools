@@ -749,10 +749,14 @@ final class StyleBar: HUDBar {
   var onNumber: (Int) -> Void = { _ in }
   /// 打码托盘上的「自动」：找出手机号、邮箱这些自动打码（拍板 C5）
   var onAutoRedact: () -> Void = {}
+  /// 色点最后的吸管：调用方进入取色（拍板 O10）
+  var onEyedropper: () -> Void = {}
   /// 按当前工具排好内容后的尺寸；位置由 SelectionView 定（move）
   private(set) var preferredSize = CGSize.zero
   private var tool: Annotation.Tool?
   private var number: Int?
+  /// 现在排着的那个取色点（吸管取过色才有）：换了颜色要重排
+  private var custom: Int?
   private var style: Annotation.Style?
   private var colors: [Swatch] = []
   private var weights: [Swatch] = []
@@ -777,9 +781,10 @@ final class StyleBar: HUDBar {
   /// 换了工具就重排内容（色点只给有颜色的工具、三档或字号、选项分段、选中序号时的编号），样式变了只改选中状态（色点 pop）。
   /// number：选中的是序号时它的编号（托盘多一段「编号 − n +」）；别的 nil
   func update(tool: Annotation.Tool, style: Annotation.Style, number: Int? = nil) {
-    if tool != self.tool || (number == nil) != (self.number == nil) {
-      rebuild(for: tool, numbered: number != nil)
+    if tool != self.tool || (number == nil) != (self.number == nil) || style.custom != custom {
+      rebuild(for: tool, numbered: number != nil, custom: style.custom)
       self.tool = tool
+      self.custom = style.custom
       self.style = nil
     }
     self.number = number
@@ -791,8 +796,11 @@ final class StyleBar: HUDBar {
     }
     let animated = self.style != nil
     self.style = style
+    // 取过色时亮的是取色点（tag -1），预设色都不亮
     for swatch in colors {
-      swatch.setChosen(swatch.tag == style.color.rawValue, animated: animated)
+      swatch.setChosen(
+        style.custom == nil ? swatch.tag == style.color.rawValue : swatch.tag == -1,
+        animated: animated)
     }
     for swatch in weights {
       swatch.setChosen(swatch.tag == style.weight.rawValue, animated: animated)
@@ -800,7 +808,7 @@ final class StyleBar: HUDBar {
     for button in options { Self.mark(button, on: button.tag == style.option) }
   }
 
-  private func rebuild(for tool: Annotation.Tool, numbered: Bool) {
+  private func rebuild(for tool: Annotation.Tool, numbered: Bool, custom: Int?) {
     for view in stack.arrangedSubviews { view.removeFromSuperview() }
     sizeValue = nil
     numberValue = nil
@@ -814,6 +822,13 @@ final class StyleBar: HUDBar {
         swatch.action = #selector(pickColor(_:))
         return swatch
       } : []
+    if tool.hasColor, let custom {
+      let hex = String(format: "#%06X", custom)
+      let swatch = Swatch(
+        fill: Annotation.Palette.srgb(custom), diameter: 14, outlined: true, label: "取的颜色 \(hex)")
+      swatch.tag = -1  // 已经在用它：点了不做事
+      colors.append(swatch)
+    }
     // 文字不出三档，换成字号：「A− 20 A+」（拍板 A1）
     weights = (tool == .text ? [] : tool.weightTitles).enumerated().map { index, title in
       let swatch = Swatch(
@@ -825,6 +840,21 @@ final class StyleBar: HUDBar {
       return swatch
     }
     var views: [NSView] = colors
+    if tool.hasColor {
+      // 吸管：从截图里取一个颜色（拍板 O10）
+      let dropper = BarButton(
+        image: NSImage(systemSymbolName: "eyedropper", accessibilityDescription: "吸管取色")!,
+        target: self, action: #selector(eyedropper))
+      dropper.isBordered = false
+      dropper.refusesFirstResponder = true
+      dropper.layer?.cornerRadius = Style.Radius.mini
+      dropper.contentTintColor = Style.HUD.text
+      dropper.symbolConfiguration = .init(pointSize: 12, weight: .medium)
+      dropper.toolTip = "吸管：从截图里取一个颜色"
+      dropper.widthAnchor.constraint(equalToConstant: 26).isActive = true
+      dropper.heightAnchor.constraint(equalToConstant: 26).isActive = true
+      views.append(dropper)
+    }
     if !colors.isEmpty { views.append(barSeparator()) }
     views += weights
     if tool == .text {
@@ -1007,6 +1037,7 @@ final class StyleBar: HUDBar {
   }
 
   @objc private func autoRedact() { onAutoRedact() }
+  @objc private func eyedropper() { onEyedropper() }
   @objc private func lowerNumber() { onNumber(-1) }
   @objc private func raiseNumber() { onNumber(1) }
 }

@@ -47,6 +47,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private var translating = false
   /// 一键打码正在识字（再点「自动」不重复跑）
   private var redacting = false
+  /// 托盘上点了吸管：下一下单击取放大镜中心的颜色（拍板 O10）；Esc 取消
+  private var pickingColor = false
   /// 正在跑的就地翻译（Esc / 换屏框选时取消：不然剩下的段会继续打翻译服务）
   private var translateTask: Task<Void, Never>?
   /// 就地翻译之前的冻结帧，和译文贴在哪个选区上（2026-11-06 用户：翻完再框别处，上次的译文还留在「屏幕」上，像是
@@ -529,6 +531,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
 
   /// 回到待选（别的屏开始操作、右键重新框时）：标注一起清掉
   func reset() {
+    pickingColor = false
     cancelTranslation()
     hudMenu?.dismiss()
     finishSizeEditing(commit: false)
@@ -1164,7 +1167,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
     switch drag {
     case .move?, .annotate?, .moveAnnotation?, .resizeAnnotation?: return false
     case .pending?, .draw?, .resize?: return true
-    case nil: return !isAdjusting
+    case nil: return !isAdjusting || pickingColor
     }
   }
 
@@ -1253,7 +1256,13 @@ final class SelectionView: NSView, NSTextViewDelegate {
       }
     }
     let styleBar = StyleBar()
-    styleBar.onColor = { [unowned self] color in restyle { $0.color = color } }
+    styleBar.onColor = { [unowned self] color in
+      restyle {
+        $0.color = color
+        $0.custom = nil
+      }
+    }
+    styleBar.onEyedropper = { [unowned self] in beginPickingColor() }
     styleBar.onWeight = { [unowned self] weight in restyle { $0.weight = weight } }
     styleBar.onOption = { [unowned self] option in restyle { $0.option = option } }
     styleBar.onFontStep = { [unowned self] step in restyle { $0 = $0.stepped(step, for: .text) } }
@@ -1513,6 +1522,29 @@ final class SelectionView: NSView, NSTextViewDelegate {
       }, anchor: button.convert(button.bounds, to: self))
   }
 
+  /// 吸管：放大镜跟着鼠标出来（中心像素的色值在信息卡上），单击取色
+  private func beginPickingColor() {
+    hudMenu?.dismiss()
+    guard annotates, isAdjusting, !isDraggingAnnotation else { return }
+    endEditing()
+    pickingColor = true
+    flashHint(["单击取色", "Esc 取消"])
+    announce("单击取色")
+    refresh()
+    refreshCursor()
+  }
+
+  /// 取放大镜中心那一点的颜色，作用于选中的标注 / 当前工具（同点色点）
+  private func pickColor() {
+    pickingColor = false
+    if let sampled, let rgb = Int(sampled.hex.dropFirst(), radix: 16) {
+      restyle { $0.custom = rgb }
+      announce("已取色 \(sampled.hex)")
+    }
+    refresh()
+    refreshCursor()
+  }
+
   /// 选中的序号的编号（托盘出「编号 − n +」）；选中的不是序号、正在输入文字时 nil
   private var selectedCounterNumber: Int? {
     guard editor == nil, case .counter(let number, _)? = selected?.shape else { return nil }
@@ -1674,6 +1706,10 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private func escape() {
     if let hudMenu {
       hudMenu.dismiss()
+    } else if pickingColor {
+      pickingColor = false
+      refresh()
+      refreshCursor()
     } else if let translationCard, !translationCard.leftovers.isEmpty {
       // 列着放不下的段的卡片先收；只有一条窄栏时不拦 Esc，照常往下走（退出截图）
       closeTranslationCard()
@@ -1803,6 +1839,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
   /// 再按一次同一个工具就收起（回到拖动平移选区）；选上时读这个工具上次的样式
   private func choose(_ next: Annotation.Tool) {
     endEditing()
+    pickingColor = false  // 换工具就不取色了
     let chosen = tool == next ? nil : next
     // 先换样式再换工具：托盘换工具那一下拿到的就是这个工具的样式（反过来色点先显示旧样式、再弹一下）
     if let chosen { style = Annotation.Style.remembered(for: chosen, in: styleDefaults) }
@@ -1940,7 +1977,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
   /// 再画不带阴影的字；底色 = 输入框的底就是带阴影的圆角色块（圆角 6），字用压在色块上的颜色（黄 / 白底黑字）
   private func apply(_ style: Annotation.Style, to field: EditorField) {
     let plate = style.option == 2
-    let ink = plate ? style.color.ink : style.color.color
+    let ink = plate ? style.ink : style.paint
     field.font = Annotation.font(size: style.textSize)
     field.textColor = ink
     field.insertionPointColor = Style.Shot.accent  // 光标是强调色的位置（§1.2），截图家族用品牌粉
@@ -1955,7 +1992,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
     }
     field.outline = style.option == 1 ? Annotation.outlineAttributes(style) : nil
     guard let layer = field.layer else { return }
-    layer.backgroundColor = plate ? style.color.color.cgColor : nil
+    layer.backgroundColor = plate ? style.paint.cgColor : nil
     layer.cornerRadius = plate ? 6 : 0
     // 色块的阴影同 Annotation.textShadow（black 0.28、模糊 3）
     layer.shadowColor = NSColor.black.cgColor
@@ -2468,6 +2505,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
     // 开着 HUD 菜单时点外面：只收菜单；输入着尺寸时点别处：按输入的改选区，这一下不做别的
     if let hudMenu { return hudMenu.dismiss() }
     if sizeField.isEditing { return finishSizeEditing(commit: true) }
+    // 取色：菜单、尺寸输入先收（上面两行），再取
+    if pickingColor, !isOverControls(point) { return pickColor() }
     // 别的屏上有选区：先记下按下的点，拖开了才算在这块屏开始（见 mouseDragged）
     if !session.hasSelection(besides: self) {
       window?.makeKey()
@@ -2765,6 +2804,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
       return NSCursor.iBeam.set()
     }
     if isOverControls(point) { return NSCursor.arrow.set() }
+    if pickingColor { return NSCursor.crosshair.set() }
     if let editor {  // 输入框里是文字光标；外面点一下只是收下文字
       return (editor.field.frame.contains(point) ? NSCursor.iBeam : NSCursor.arrow).set()
     }
@@ -2907,6 +2947,11 @@ final class SelectionView: NSView, NSTextViewDelegate {
       if !session.selectLastRegion() { refuseWipe("有标注时不跳到别的屏") }
       return true
     case .pickColor:
+      // 吸管取色时 C 也是取色（放大镜的信息卡上亮着 C），不能结束截图把选区和标注丢掉
+      if pickingColor {
+        pickColor()
+        return true
+      }
       if showsMagnifier, let sampled { session.finish(.color(sampled.hex)) }
       return true
     case .record where !Feature.record.isOn:

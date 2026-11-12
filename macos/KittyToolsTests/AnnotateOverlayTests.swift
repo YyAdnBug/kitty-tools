@@ -380,6 +380,36 @@ struct AnnotateOverlayTests {
     #expect(canvas.annotations.count == 2 && canvas.selectedAnnotation == nil)
   }
 
+  /// 吸管（拍板 O10）：长图 2 倍、原点左下，单击取光标那一点；换工具就不取了
+  @Test func eyedropperPicksTheRightPixel() throws {
+    let context = CGContext(
+      data: nil, width: 800, height: 2400, bitsPerComponent: 8, bytesPerRow: 0,
+      space: CGColorSpace(name: CGColorSpace.sRGB)!,
+      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+    context.setFillColor(CGColor(srgbRed: 0, green: 0, blue: 1, alpha: 1))
+    context.fill(CGRect(x: 0, y: 0, width: 800, height: 1200))
+    context.setFillColor(CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1))
+    context.fill(CGRect(x: 0, y: 1200, width: 800, height: 1200))  // 上半（图的前 1200 行）
+    let canvas = ScrollCanvas(image: context.makeImage()!, scale: 2)
+    let suite = "eyedropper-tests-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    canvas.styleDefaults = defaults
+    let window = NSWindow(
+      contentRect: CGRect(origin: CGPoint(x: -20000, y: -20000), size: canvas.bounds.size),
+      styleMask: [.borderless], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    window.contentView = canvas
+    defer { window.orderOut(nil) }
+    canvas.choose(.rectangle)
+    canvas.beginPickingColor()
+    try drag(canvas, from: CGPoint(x: 100, y: 1000), to: CGPoint(x: 100, y: 1000))  // 点坐标的上半
+    #expect(canvas.style.custom == 0xFF0000 && canvas.annotations.isEmpty)
+    canvas.beginPickingColor()
+    canvas.choose(.ellipse)
+    #expect(!canvas.pickingColor)
+  }
+
   /// 文字：单击放输入框，收下时变成一条标注；空的不留下
   @Test func textBecomesAnnotation() throws {
     let (canvas, window) = canvasInWindow()

@@ -79,7 +79,16 @@ import Carbon.HIToolbox
     scrollView.wantsLayer = true
     bar.onClick = { [unowned self] item in clicked(item) }
     // 点托盘先收开着的菜单（点托盘时菜单不自己收：字号菜单开着再点一下数字要收起，见 menuTakes）
-    styleBar.onColor = { [unowned self] color in restyle { $0.color = color } }
+    styleBar.onColor = { [unowned self] color in
+      restyle {
+        $0.color = color
+        $0.custom = nil
+      }
+    }
+    styleBar.onEyedropper = { [unowned self] in
+      menu?.dismiss()
+      canvas.beginPickingColor()
+    }
     styleBar.onWeight = { [unowned self] weight in restyle { $0.weight = weight } }
     styleBar.onOption = { [unowned self] option in restyle { $0.option = option } }
     styleBar.onFontStep = { [unowned self] step in restyle { $0 = $0.stepped(step, for: .text) } }

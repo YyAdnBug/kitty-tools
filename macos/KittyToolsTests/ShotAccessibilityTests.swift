@@ -74,7 +74,8 @@ struct ShotAccessibilityTests {
     let tray = try #require(h.view.subviews.lazy.compactMap { $0 as? StyleBar }.first)
     #expect(
       buttons(in: tray).map { $0.accessibilityLabel() ?? "" } == [
-        "粉色", "红色", "橙色", "黄色", "绿色", "蓝色", "黑色", "白色", "细", "中", "粗", "空心", "实心",
+        "粉色", "红色", "橙色", "黄色", "绿色", "蓝色", "黑色", "白色", "吸管取色", "细", "中", "粗", "空心",
+        "实心",
       ])
     let size = try #require(h.sizeField)
     // macOS 26 的零件在玻璃的 contentView 里：往下找

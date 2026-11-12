@@ -37,7 +37,8 @@ struct AnnotationToolTests {
     #expect(
       Annotation.Tool.mosaic.title == "打码"
         && Annotation.Tool.mosaic.weightTitles == ["弱", "中", "强"])
-    #expect(Annotation.Tool.arrow.optionTitles.isEmpty)
+    #expect(Annotation.Tool.arrow.optionTitles == ["单头", "双头"])
+    #expect(Annotation.Tool.line.optionTitles.isEmpty)
     #expect(Annotation.Palette.allCases.first == .pink && Annotation.Palette.allCases.count == 8)
   }
 
@@ -173,6 +174,64 @@ struct AnnotationToolTests {
     #expect(try JSONDecoder().decode(Annotation.self, from: JSONEncoder().encode(sized)) == sized)
     #expect(
       sized.bounds.height > Annotation(shape: .text("字", origin: .zero)).bounds.height + 15)
+  }
+
+  // 双头箭头（拍板 O4）：两头都有箭头、杆一样粗；直的、弯的都是。单头的尾巴那头只有细杆
+  @Test func doubleArrows() throws {
+    let from = CGPoint(x: 10, y: 50)
+    let to = CGPoint(x: 90, y: 50)
+    let nearTail = CGPoint(x: 22, y: 54)  // 尾端往里 12、往上 4 点：单头的杆只有 0.3 × 线宽，双头那里是箭头
+    let single = try #require(Annotation.arrowInk(from: from, to: to, width: 4, double: false))
+    let double = try #require(Annotation.arrowInk(from: from, to: to, width: 4, double: true))
+    #expect(!single.contains(nearTail) && double.contains(nearTail))
+    #expect(double.contains(CGPoint(x: 78, y: 54)))  // 尖端那头照样是箭头
+    #expect(double.contains(CGPoint(x: 50, y: 52)))  // 中间的杆不收细：1.2 × 线宽，半宽 2.4
+    // 两头的尖是尖的：杆停在底边，不从尖上露出来（评审抓到的平头）
+    #expect(
+      !double.contains(CGPoint(x: 10.5, y: 51.5)) && !double.contains(CGPoint(x: 89.5, y: 51.5)))
+    // 很短的（12 点、线宽 4）：两头各占一半，合成菱形，中间最宽（不是中间细成一点的蝴蝶结）
+    let short = try #require(
+      Annotation.arrowInk(from: .zero, to: CGPoint(x: 12, y: 0), width: 4, double: true))
+    #expect(short.contains(CGPoint(x: 6, y: 2.5)))
+    let bend = CGVector(dx: 0, dy: 0.3)
+    let curved = try #require(
+      Annotation.arrowInk(from: from, to: to, width: 4, bend: bend, double: true))
+    let mid = Annotation.curveMidpoint(from: from, to: to, bend: bend)
+    #expect(curved.contains(mid))
+    // 点中：按两半各问
+    var style = Annotation.Style()
+    style.option = 1
+    let arrow = Annotation(shape: .arrow(from: from, to: to), style: style)
+    #expect(arrow.contains(nearTail, tolerance: 0))
+    #expect(!Annotation(shape: .arrow(from: from, to: to)).contains(nearTail, tolerance: 0))
+  }
+
+  // 吸管取的颜色（拍板 O10）：画出来就是它，底色上的字按亮度，旧数据没有它照常读
+  @Test func customColors() throws {
+    var style = Annotation.Style(color: .blue)
+    #expect(style.paint == Annotation.Palette.blue.color && style.custom == nil)
+    style.custom = 0x112233
+    #expect(style.paint == Annotation.Palette.srgb(0x112233))
+    #expect(style.ink == .white && !style.outlinesDark)
+    style.custom = 0xF0F0E0
+    #expect(style.ink == .black && style.outlinesDark)
+    #expect(
+      Annotation.Style(color: .white).outlinesDark && Annotation.Style(color: .yellow).ink == .black
+    )
+    let roundTrip = try JSONDecoder().decode(
+      Annotation.Style.self, from: JSONEncoder().encode(style))
+    #expect(roundTrip == style)
+    // 实心矩形的底色是取的颜色
+    let white = try ScreenshotTests.image(size: 100) { context in
+      context.setFillColor(CGColor(gray: 1, alpha: 1))
+      context.fill(CGRect(x: 0, y: 0, width: 100, height: 100))
+    }
+    let box = Annotation(
+      shape: .rectangle(CGRect(x: 20, y: 20, width: 60, height: 60)),
+      style: .init(weight: .large, custom: 0x00C000))
+    let pixel = try draw([box], over: white)
+    let edge = pixel(20, 50)
+    #expect(edge[1] > 150 && edge[0] < 40 && edge[2] < 40, "\(edge)")
   }
 
   // 序号改编号（拍板 O2）：1–99，别的工具不动

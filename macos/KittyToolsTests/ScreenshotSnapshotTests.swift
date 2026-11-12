@@ -119,6 +119,9 @@ struct ScreenshotSnapshotTests {
       ("tray-text", .text, .init(color: .red, weight: .large, option: 2)),
       ("tray-mosaic", .mosaic, .init(weight: .small, option: 1)),
       ("tray-spotlight", .spotlight, .init(weight: .large)),
+      // 吸管取过色：预设色后面多一个取的颜色（亮着），最后是吸管
+      ("tray-custom", .rectangle, .init(color: .pink, custom: 0x7A5CFA)),
+      ("tray-arrow", .arrow, .init(color: .blue, option: 1)),
     ]
     for (name, tool, style) in trays {
       let h = adjust()
@@ -185,6 +188,27 @@ struct ScreenshotSnapshotTests {
       h.view.annotations = Self.curved(tool)
       h.move(CGPoint(x: 1150, y: 760))
       try shoot(h.window, "curved-\(noun)s", crop: CGRect(x: 120, y: 150, width: 480, height: 300))
+      if tool == .arrow {
+        // 双头（拍板 O4）：同一组摆法全换成双头
+        h = capture()
+        h.view.select(selection)
+        h.view.annotations = Self.curved(tool).map {
+          var double = $0
+          double.style.option = 1
+          return double
+        }
+        h.move(CGPoint(x: 1150, y: 760))
+        try shoot(h.window, "double-arrows", crop: CGRect(x: 120, y: 150, width: 480, height: 300))
+        h = capture()
+        h.view.select(selection)
+        h.view.annotations = Self.extreme(tool).map {
+          var double = $0
+          double.style.option = 1
+          return double
+        }
+        h.move(CGPoint(x: 1150, y: 760))
+        try shoot(h.window, "double-arrows-extreme", crop: selection)
+      }
       // 弯到头的：手柄拖过尖端 / 尾端（沿弦停在 ¾ / ¼ 处）、贴着尖端的钩（箭头颈部不折）、弦很短的深 U、弯过后被拖短的
       h = capture()
       h.view.select(selection)

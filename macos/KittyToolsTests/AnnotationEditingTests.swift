@@ -585,6 +585,47 @@ struct AnnotationEditingTests {
     #expect(h.view.annotations.map(\.shape) == [box.offset(by: CGSize(width: 10, height: 0)).shape])
   }
 
+  // 吸管（拍板 O10）：点了之后放大镜出来，单击取中心像素的颜色给当前工具；点预设色作废；Esc 取消
+  @Test func eyedropperPicksColorFromTheShot() async throws {
+    // 上半红、下半蓝（上下翻了就取错）
+    let context = try #require(
+      CGContext(
+        data: nil, width: 1200, height: 800, bitsPerComponent: 8, bytesPerRow: 0,
+        space: CGColorSpace(name: CGColorSpace.sRGB)!,
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+    context.setFillColor(CGColor(srgbRed: 0, green: 0, blue: 1, alpha: 1))
+    context.fill(CGRect(x: 0, y: 0, width: 1200, height: 400))
+    context.setFillColor(CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1))
+    context.fill(CGRect(x: 0, y: 400, width: 1200, height: 400))
+    let h = Harness(image: try #require(context.makeImage()))
+    h.makeSelection()
+    h.view.tool = .rectangle
+    let styleBar = try #require(h.view.subviews.lazy.compactMap { $0 as? StyleBar }.first)
+    styleBar.onEyedropper()
+    h.move(CGPoint(x: 500, y: 450))  // 上半
+    #expect(h.view.showsMagnifier)
+    h.click(CGPoint(x: 500, y: 450))
+    #expect(h.view.annotations.isEmpty)  // 这一下只取色，不画
+    let custom = try #require(h.view.style.custom)
+    #expect(custom == 0xFF0000)
+    // 取色时按 C 也是取色，不结束截图
+    styleBar.onEyedropper()
+    h.move(CGPoint(x: 500, y: 300))  // 下半
+    let viaKey = await h.outcome { h.key(kVK_ANSI_C, "c") }
+    if case .color(let note)? = viaKey { #expect(note == "没交回结果") } else { Issue.record("截图结束了") }
+    #expect(h.view.style.custom == 0x0000FF)
+    h.drag(CGPoint(x: 350, y: 250), CGPoint(x: 450, y: 350))
+    #expect(h.view.annotations.first?.style.custom == 0x0000FF)
+    styleBar.onColor(.red)
+    #expect(h.view.annotations.first?.style.custom == nil && h.view.style.custom == nil)
+    // Esc 取消：再单击不取色
+    styleBar.onEyedropper()
+    h.key(kVK_Escape, "\u{1b}")
+    h.move(CGPoint(x: 600, y: 300))
+    h.click(CGPoint(x: 600, y: 300))
+    #expect(h.view.style.custom == nil)
+  }
+
   @Test func textEditorShowsStylesLive() throws {
     // 托盘改样式会写记住的样式：Harness 记在临时偏好域里，不碰真实偏好
     let h = harness(tool: .text)

@@ -251,12 +251,33 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
   /// 再按一次同一个工具就收起；选上时读这个工具上次的样式
   func choose(_ next: Annotation.Tool?) {
     endEditing()
+    pickingColor = false  // 换工具就不取色了
     let chosen = tool == next ? nil : next
     if let chosen { style = Annotation.Style.remembered(for: chosen, in: styleDefaults) }
     tool = chosen
     selectedAnnotation = nil
     refreshCursor()
     Island.announce(chosen.map { "\($0.title)工具" } ?? "已收起工具")
+  }
+
+  /// 托盘上点了吸管：下一下单击取那一点的颜色（拍板 O10）；Esc 取消。
+  /// ponytail: 这里没有放大镜，按光标尖上的那个像素取；要准就照截图遮罩把放大镜搬过来
+  private(set) var pickingColor = false
+
+  func beginPickingColor() {
+    guard drag == nil else { return }
+    endEditing()
+    pickingColor = true
+    Island.announce("单击取色，Esc 取消")
+    refreshCursor()
+  }
+
+  /// 图上 point（点坐标）那一个像素的颜色（0xRRGGBB）
+  private func color(at point: CGPoint) -> Int? {
+    let x = min(max(Int(point.x * scale), 0), image.width - 1)
+    let y = min(max(Int((bounds.height - point.y) * scale), 0), image.height - 1)
+    guard let hex = SelectionView.sample(image, x: x, y: y, size: 1)?.hex else { return nil }
+    return Int(hex.dropFirst(), radix: 16)
   }
 
   /// 一键打码正在识字（这时不出图：AnnotateOverlay.emit 看它）
@@ -428,7 +449,7 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
   /// 输入框里的文字和收下后画出来的一样（同遮罩里的 apply）
   private func apply(_ style: Annotation.Style, to field: EditorField) {
     let plate = style.option == 2
-    let ink = plate ? style.color.ink : style.color.color
+    let ink = plate ? style.ink : style.paint
     field.font = Annotation.font(size: style.textSize)
     field.textColor = ink
     field.insertionPointColor = Style.Shot.accent
@@ -443,7 +464,7 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
     }
     field.outline = style.option == 1 ? Annotation.outlineAttributes(style) : nil
     guard let layer = field.layer else { return }
-    layer.backgroundColor = plate ? style.color.color.cgColor : nil
+    layer.backgroundColor = plate ? style.paint.cgColor : nil
     layer.cornerRadius = plate ? 6 : 0
     layer.shadowColor = NSColor.black.cgColor
     layer.shadowOffset = .zero
@@ -510,6 +531,14 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
       NSCursor.closedHand.set()
       drag = .pan(start: event.locationInWindow)
       return
+    }
+    if pickingColor {
+      pickingColor = false
+      if let rgb = color(at: point) {
+        restyle { $0.custom = rgb }
+        Island.announce(String(format: "已取色 #%06X", rgb))
+      }
+      return refreshCursor()
     }
     // 在输入文字时点了输入框外面：先把文字收下，这一下不做别的
     if endEditing() { return }
@@ -660,6 +689,7 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
   private func refreshCursor() {
     guard let point = mouse else { return }
     if isSpaceDown { return NSCursor.openHand.set() }
+    if pickingColor { return NSCursor.crosshair.set() }
     if let editor {
       return (editor.field.frame.contains(point) ? NSCursor.iBeam : NSCursor.arrow).set()
     }
@@ -691,7 +721,11 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
     guard flags.isEmpty else { return super.keyDown(with: event) }
     switch code {
     case kVK_Escape:
-      // 收下输入中的文字 → 收起工具 → 取消选中；都没有就交给窗口（关掉）
+      // 取色 → 收下输入中的文字 → 收起工具 → 取消选中；都没有就交给窗口（关掉）
+      if pickingColor {
+        pickingColor = false
+        return refreshCursor()
+      }
       if endEditing() { return }
       if tool != nil { return choose(nil) }
       if selectedAnnotation != nil {
