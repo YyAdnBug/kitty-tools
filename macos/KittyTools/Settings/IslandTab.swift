@@ -1,102 +1,116 @@
-// 设置 › 灵动岛：总开关、快捷动作 / 最近提示开关，以及快捷动作的启用与排序。
-// 快捷动作的全局 Feature 关闭时仍保留本页选择，但行置灰；重新打开对应功能后会恢复到用户原来的选择。
+// 设置 › 刘海岛（2026-11-12，PR #17 SeyoZhou 提的，收进来时改成本 App 的写法）：点刘海、快捷键「打开刘海岛」叫出来的
+// 那一张上，快捷动作开哪几个、什么先后（拖动排序；右键和读屏有上移 / 下移，同翻译服务的列表），列不列最近的提示。
+// 岛本身是全 App 的轻提示，没有总开关（mac-native §1）。功能关着的动作照样列、开关变灰（那一张上本来就不出），
+// 重新打开功能后照原来的选择回来。不归哪个功能，在侧栏第一组、通用下面。
 
 import SwiftUI
 
 struct IslandTab: View {
-  @AppStorage(Prefs.islandEnabled) private var enabled = true
-  @AppStorage(Prefs.islandShowsActions) private var showsActions = true
+  @AppStorage(Prefs.islandActionOrder) private var order = ""
+  @AppStorage(Prefs.islandActionsOff) private var offText = ""
   @AppStorage(Prefs.islandShowsHistory) private var showsHistory = true
-  @AppStorage(Prefs.islandActionOrder) private var storedOrder = Prefs.islandActionIDs.joined(
-    separator: "\n")
-  @AppStorage(Prefs.islandActionOff) private var storedOff = ""
-  @State private var featureGeneration = 0
-
-  private var actions: [HotKeyAction] {
-    Prefs.islandActionsOrder(stored: storedOrder).compactMap(HotKeyAction.init(rawValue:))
-  }
-
-  private var off: Set<String> {
-    Prefs.islandActionsOff(stored: storedOff)
-  }
 
   var body: some View {
+    let actions = HotKeyAction.islandOrder(order)
     Form {
       Section {
-        Toggle(isOn: $enabled) {
-          Text("显示灵动岛")
-          Text("关闭后不显示刘海岛，但不会删除最近提示")
+        List {
+          ForEach(actions, id: \.self) { action in
+            ActionRow(
+              action: action, isOn: shows(action), isFirst: action == actions.first,
+              isLast: action == actions.last
+            ) { move(action, by: $0) }
+          }
+          .onMove { from, to in
+            var list = actions
+            list.move(fromOffsets: from, toOffset: to)
+            save(list)
+          }
         }
-        Toggle(isOn: $showsActions) {
-          Text("快捷动作")
-          Text("展开灵动岛时显示截图、识字、录屏等常用动作")
-        }
-        .disabled(!enabled)
-        Toggle(isOn: $showsHistory) {
-          Text("最近提示")
-          Text("展开灵动岛时显示本次启动以来最近的消息记录")
-        }
-        .disabled(!enabled)
-      } header: {
-        Text("灵动岛")
-      } footer: {
-        SectionFootnote("快捷动作和最近提示只在展开灵动岛时显示；动作仍受对应功能开关控制。")
-      }
-
-      Section {
-        ForEach(actions, id: \.rawValue) { action in
-          actionRow(action)
-        }
-        .onMove(perform: move)
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .orderedListFrame(rows: actions.count)
       } header: {
         Text("快捷动作")
       } footer: {
-        SectionFootnote("打开或关闭单个动作，拖动调整显示顺序。动作仍受 设置 › 通用 › 功能 中对应功能开关控制。")
+        SectionFootnote(
+          "点刘海或者按「打开刘海岛」的快捷键（到 设置 › 快捷键 里设），叫出来的那一张最上面是这一排。拖动调整先后。")
       }
-      .disabled(!enabled)
-    }
-    .formStyle(.grouped)
-    .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
-      featureGeneration &+= 1
-    }
-  }
-
-  @ViewBuilder private func actionRow(_ action: HotKeyAction) -> some View {
-    let globalOn = action.feature?.isOn ?? true
-    Toggle(isOn: actionBinding(action)) {
-      HStack(spacing: 10) {
-        KindTile(symbol: action.symbol, color: action.color, size: 22)
-          .opacity(globalOn ? 1 : Style.disabledOpacity)
-        VStack(alignment: .leading, spacing: 2) {
-          Text(action.title)
-          if let feature = action.feature, !globalOn {
-            Text("「功能」里的\(feature.title)已关闭")
-              .font(.subheadline)
-              .foregroundStyle(.secondary)
-          }
+      Section {
+        Toggle(isOn: $showsHistory) {
+          Text("列出最近的提示")
+          Text("本次启动以来最近 10 条，新的在前；不列也不影响提示照常弹出")
         }
       }
     }
-    .disabled(!globalOn)
-    .id("\(action.rawValue)-\(featureGeneration)")
+    .formStyle(.grouped)
   }
 
-  private func actionBinding(_ action: HotKeyAction) -> Binding<Bool> {
+  /// 那一张上出不出这一个：关掉的存成一行一个，按 islandShortcuts 的先后写（同步按字节比，别每次换个排法）
+  private func shows(_ action: HotKeyAction) -> Binding<Bool> {
     Binding {
-      !off.contains(action.rawValue)
+      !HotKeyAction.islandOff(offText).contains(action)
     } set: { isOn in
-      var next = off
-      if isOn { next.remove(action.rawValue) } else { next.insert(action.rawValue) }
-      storedOff = next.sorted {
-        Prefs.islandActionIDs.firstIndex(of: $0)! < Prefs.islandActionIDs.firstIndex(of: $1)!
-      }
-      .joined(separator: "\n")
+      var off = HotKeyAction.islandOff(offText)
+      if isOn { off.remove(action) } else { off.insert(action) }
+      offText = HotKeyAction.islandShortcuts.filter(off.contains).map(\.rawValue)
+        .joined(separator: "\n")
     }
   }
 
-  private func move(from source: IndexSet, to destination: Int) {
-    var next = Prefs.islandActionsOrder(stored: storedOrder)
-    next.move(fromOffsets: source, toOffset: destination)
-    storedOrder = next.joined(separator: "\n")
+  /// 右键菜单和读屏的上移（-1）/ 下移（+1）；到头了什么都不做
+  private func move(_ action: HotKeyAction, by offset: Int) {
+    var list = HotKeyAction.islandOrder(order)
+    guard let index = list.firstIndex(of: action), list.indices.contains(index + offset) else {
+      return
+    }
+    list.swapAt(index, index + offset)
+    save(list)
+  }
+
+  private func save(_ list: [HotKeyAction]) {
+    order = list.map(\.rawValue).joined(separator: "\n")
+  }
+}
+
+/// 一行：家族色块、名字（功能关着时下面一行说明）、开关；右键和读屏能上移 / 下移
+private struct ActionRow: View {
+  let action: HotKeyAction
+  @Binding var isOn: Bool
+  let isFirst: Bool
+  let isLast: Bool
+  /// 上移（-1）/ 下移（+1）
+  let move: (Int) -> Void
+
+  var body: some View {
+    let active = action.isActive
+    HStack(spacing: 10) {
+      KindTile(symbol: action.symbol, color: action.color)
+        .opacity(active ? 1 : Style.disabledOpacity)
+      VStack(alignment: .leading, spacing: 1) {
+        Text(action.title).font(.system(size: 13))
+        if !active, let feature = action.feature {
+          Text("「\(feature.title)」功能关着，那一张上不出现")
+            .font(.system(size: 11))
+            .foregroundStyle(.secondary)
+        }
+      }
+      .lineLimit(1)
+      .truncationMode(.tail)
+      .accessibilityElement(children: .combine)
+      Spacer(minLength: 8)
+      Toggle("显示「\(action.title)」", isOn: $isOn)
+        .labelsHidden()
+        .toggleStyle(.switch)
+        .controlSize(.mini)
+        .disabled(!active)
+    }
+    .frame(height: OrderedList.rowHeight - 8)
+    .contextMenu {
+      Button("上移") { move(-1) }.disabled(isFirst)
+      Button("下移") { move(1) }.disabled(isLast)
+    }
+    .accessibilityAction(named: "上移") { move(-1) }
+    .accessibilityAction(named: "下移") { move(1) }
   }
 }

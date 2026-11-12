@@ -621,6 +621,18 @@ struct SnapshotProbeTests {
         RecordTab().defaultAppStorage(recordPrefs), size: NSSize(width: 640, height: 860),
         dark: dark, to: "\(out)/settings-record-default\(dark ? "-dark" : "").png")
     }
+    // 设置 › 刘海岛（PR #17）排过先后、关掉一个、不列提示；临时偏好域（功能关着的那几行变灰跟着本机的功能开关）
+    let islandSuite = "kitty-snapshot-\(UUID().uuidString)"
+    let islandPrefs = try #require(UserDefaults(suiteName: islandSuite))
+    defer { islandPrefs.removePersistentDomain(forName: islandSuite) }
+    islandPrefs.set("noteCapture\nscreenshot", forKey: Prefs.islandActionOrder)
+    islandPrefs.set("recognizeText", forKey: Prefs.islandActionsOff)
+    islandPrefs.set(false, forKey: Prefs.islandShowsHistory)
+    for dark in [false, true] {
+      try snapshot(
+        IslandTab().defaultAppStorage(islandPrefs), size: NSSize(width: 640, height: 520),
+        dark: dark, to: "\(out)/settings-island-custom\(dark ? "-dark" : "").png")
+    }
     // 设置 › 通用「菜单栏」（第 9 批 M1 M2）：显示 + 彩色、隐藏（图标样式置灰），各出深色；临时偏好域，不动用户的菜单栏图标
     let barSuite = "kitty-snapshot-\(UUID().uuidString)"
     let barPrefs = try #require(UserDefaults(suiteName: barSuite))
@@ -1027,6 +1039,13 @@ struct SnapshotProbeTests {
       try snapshot(
         IslandView(island: island), size: geometry.windowSize, dark: false,
         to: "\(out)/\(name).png")
+    }
+    // 设置 › 刘海岛 里不列最近的提示（PR #17）：只有快捷动作；快捷动作也都关了就一句话
+    for (name, actions) in [("island-board-no-history", quick), ("island-board-nothing", [])] {
+      let island = Island(
+        showing: nil, geometry: notch, board: records, quickActions: actions, showsHistory: false)
+      try snapshot(
+        IslandView(island: island), size: notch.windowSize, dark: false, to: "\(out)/\(name).png")
     }
     try snapshot(
       IslandView(island: Island(showing: nil, geometry: notch, peeking: true)),

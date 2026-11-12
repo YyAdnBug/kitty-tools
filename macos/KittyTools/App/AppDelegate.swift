@@ -851,7 +851,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       persists: false)
     // 正在录快捷键时热键停着，录完它自己会重新注册
     if hotKeys.recording == nil { hotKeys.reload() }
-    applyIslandPreferences()
     launchpad.applySettings()
     if Feature.clipboard.isOn { clipboardStore.recognizePendingImages() }
     // 功能开关变了的，偏好的变化通知到了 applyFeatures 自己跟上
@@ -1009,15 +1008,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // 有新版本：菜单栏图标右上角出小圆点，常驻到更新为止
     updater.onAvailableChange = { [weak statusItem] in statusItem?.updateVersion = $0?.version }
     updater.start()
-    // 刘海岛：点刘海、快捷键「打开刘海岛」叫出那一张。快捷动作每次打开时现取（关着的功能不出，录着时写「停止录屏」）
+    // 刘海岛：点刘海、快捷键「打开刘海岛」叫出那一张。快捷动作每次打开时现取（照 设置 › 刘海岛 的先后和开关，
+    // 关着的功能不出，录着时写「停止录屏」）
     island.boardActions = { [unowned self] in
       let recording: HotKeyAction? =
         recorder != nil ? .screenRecord : audioRecorder?.isStarted == true ? .audioRecord : nil
-      let off = Prefs.islandActionsOff()
-      let byID = Dictionary(
-        uniqueKeysWithValues: HotKeyAction.islandShortcuts.map { ($0.rawValue, $0) })
-      return Prefs.islandActionsOrder().compactMap { byID[$0] }
-        .filter { $0.isActive && !off.contains($0.rawValue) }
+      let defaults = UserDefaults.standard
+      let off = HotKeyAction.islandOff(defaults.string(forKey: Prefs.islandActionsOff) ?? "")
+      return HotKeyAction.islandOrder(defaults.string(forKey: Prefs.islandActionOrder) ?? "")
+        .filter { $0.isActive && !off.contains($0) }
         .map { action in
           Island.Action(action.title(recording: recording == action), symbol: action.symbol) {
             [unowned self] in run(action)
@@ -1028,7 +1027,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     island.isSuppressed = { [unowned self] in
       isCapturing || launchpad.isOpen || statusScreen.isActive
     }
-    applyIslandPreferences()
     island.start()
     showWelcomeIfNeeded()
     // 有快捷键没注册上（15.0 / 15.1 上只带 ⌥ 的组合）：按了没反应又不知道为什么，启动时说一次
@@ -1061,7 +1059,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ) { [weak self] _ in
       MainActor.assumeIsolated {
         guard let self else { return }
-        self.applyIslandPreferences()
         self.applyFeatures()
         // 命令的快捷键跟着「命令和别名」的开关和别名、脚本命令总开关、⌘K「关掉这条命令」走（第 4 批评审：只在那一页的
         // onChange 里跟，别处改的不注销）；没变不动
@@ -1212,16 +1209,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if turnedOff.contains(.dockPreview) { dockPreview.stop() }
     if turnedOff.contains(.reminders) { reminders.stop() }
     idleReclaim.schedule()  // 关掉的功能占着的缓存跟着还
-  }
-
-  /// 灵动岛配置页的总开关、快捷动作和最近提示开关实时生效，不清掉本次运行的提示历史。
-  private func applyIslandPreferences() {
-    let defaults = UserDefaults.standard
-    let enabled = defaults.object(forKey: Prefs.islandEnabled) as? Bool ?? true
-    let showsActions = defaults.object(forKey: Prefs.islandShowsActions) as? Bool ?? true
-    let showsHistory = defaults.object(forKey: Prefs.islandShowsHistory) as? Bool ?? true
-    island.applyPreferences(
-      enabled: enabled, showsActions: showsActions, showsHistory: showsHistory)
   }
 
   /// 启动的最后一步，几样连着做：开便签库、清「最近删除」里到期的、从没有过便签的人放一条示例（NoteSample，

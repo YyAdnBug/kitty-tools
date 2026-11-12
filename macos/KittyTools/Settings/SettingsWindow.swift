@@ -17,16 +17,16 @@ import SwiftUI
 enum SettingsPage: String, CaseIterable, Identifiable {
   // 和菜单栏、快捷键页、引导、速查表同序（记住的上次页存的是 rawValue，调顺序不受影响）。2026-11-04 功能管理拍板 M3：
   // 便签、提醒、状态屏一组，启动台、程序坞预览一组（启动台原来在便签后面）
+  // 刘海岛（2026-11-12 PR #17）不是功能，跟着通用（菜单栏、快捷键页里它那一节排在最后）
   case general, island, clipboard, launcher, translate, screenshot, record, notes, reminders,
-    statusScreen,
-    launchpad, dockPreview, finderMenu, hotkeys, about
+    statusScreen, launchpad, dockPreview, finderMenu, hotkeys, about
 
   var id: String { rawValue }
 
   /// 侧栏和搜索里列的页：macOS 15 上没有启动台（`Launchpad.isAvailable`）
   static let visible = visible(launchpad: Launchpad.isAvailable)
 
-  /// 侧栏的分组（功能管理拍板 M2 M3）：通用 ｜ 文字与搜索 ｜ 截图与录制 ｜ 便签与提醒 ｜ 桌面 ｜ 快捷键、关于。和 allCases 同序，
+  /// 侧栏的分组（功能管理拍板 M2 M3）：通用、刘海岛 ｜ 文字与搜索 ｜ 截图与录制 ｜ 便签与提醒 ｜ 桌面 ｜ 快捷键、关于。和 allCases 同序，
   /// 单测锁住。功能那四组带标题、能折叠（groupTitle）
   static let groups: [[SettingsPage]] = [
     [.general, .island], [.clipboard, .launcher, .translate], [.screenshot, .record],
@@ -67,10 +67,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   }
 
   /// 这一页是哪个功能的设置（通用、快捷键、关于不是）：功能关着时侧栏里这一行变淡、标「已关闭」（M1）
-  var feature: Feature? {
-    guard self != .island else { return nil }
-    return Feature(rawValue: rawValue)
-  }
+  var feature: Feature? { Feature(rawValue: rawValue) }
 
   /// 单测喂 false 看 macOS 15 上的样子
   static func visible(launchpad: Bool) -> [SettingsPage] {
@@ -80,7 +77,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   var title: String {
     switch self {
     case .general: "通用"
-    case .island: "灵动岛"
+    case .island: "刘海岛"
     case .clipboard: "剪贴板"
     case .launcher: "启动器"
     case .launchpad: "启动台"
@@ -142,7 +139,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   var summary: String {
     switch self {
     case .general: "功能、外观、菜单栏、登录时打开、权限、同步、导出与导入、数据目录"
-    case .island: "快捷动作、最近提示和显示顺序"
+    case .island: "点刘海叫出来的那一张：哪几个快捷动作、什么先后，列不列最近的提示"
     case .clipboard: "历史上限、面板、内容格式和隐私"
     case .launcher: "搜索 App、文件、书签与历史、网页搜索与快捷链接、脚本命令、命令和别名"
     case .launchpad: "全屏的图标网格：排法、翻页、搜索、文件夹、捏合"
@@ -173,10 +170,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         "数据", "数据目录", "访达", "文件夹",
       ]
     case .island:
-      [
-        "刘海岛", "灵动岛", "快捷动作", "排序", "顺序", "截图", "识字",
-        "截图翻译", "录屏", "录音", "快速记一条", "最近提示", "消息记录", "显示", "开关",
-      ]
+      // 不放快捷动作的名字（截图、录屏…）：搜它们要停在那个功能的页，这一页排在前面会先被选中
+      ["刘海", "灵动岛", "那一张", "快捷动作", "排序", "最近的提示", "通知"]
     case .clipboard:
       [
         "历史", "天数", "保留", "永久", "图片", "占用", "预览", "链接", "网页", "格式", "纯文本",

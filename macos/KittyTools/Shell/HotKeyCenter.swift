@@ -373,6 +373,26 @@ enum HotKeyAction: String, CaseIterable {
     .screenshot, .recognizeText, .screenshotTranslate, .screenRecord, .audioRecord, .noteCapture,
   ]
 
+  /// 设置 › 刘海岛排的先后（Prefs.islandActionOrder，一行一个 rawValue）：不认识的、重复的丢掉，没排过的（以后新加的）
+  /// 照 islandShortcuts 的先后补在最后。偏好是从导入、同步来的，不信它
+  static func islandOrder(_ stored: String) -> [HotKeyAction] {
+    var list: [HotKeyAction] = []
+    for id in stored.split(separator: "\n") {
+      if let action = HotKeyAction(rawValue: String(id)), islandShortcuts.contains(action),
+        !list.contains(action)
+      {
+        list.append(action)
+      }
+    }
+    return list + islandShortcuts.filter { !list.contains($0) }
+  }
+
+  /// 那一张上关掉的快捷动作（Prefs.islandActionsOff，一行一个 rawValue）
+  static func islandOff(_ stored: String) -> Set<HotKeyAction> {
+    Set(stored.split(separator: "\n").compactMap { HotKeyAction(rawValue: String($0)) })
+      .intersection(islandShortcuts)
+  }
+
   /// 种类色块里的符号：自画的功能图标（2026-10-30 拍板，mac 和 Windows 共用一套，见 SymbolImage）。
   /// 色块、菜单栏菜单、主界面、刘海岛、速查表都用它；截图工具栏、⌘K 里的同名按钮照旧是 SF Symbols（拍板 D2）
   var symbol: String {

@@ -12,16 +12,19 @@ import Testing
 @testable import KittyTools
 
 struct SettingsListTests {
+  /// 设置 › 刘海岛的先后和关掉的（PR #17）：偏好从导入、同步来，不认识的、重复的、不是岛上快捷动作的丢掉，
+  /// 没排过的补在最后；空着 = 原来的先后、全开
   @Test func islandActionPreferencesSanitize() {
-    let stored = "noteCapture\nunknown\nscreenshot\nnoteCapture\n"
+    #expect(HotKeyAction.islandOrder("") == HotKeyAction.islandShortcuts)
     #expect(
-      Prefs.islandActionsOrder(stored: stored) == [
-        "noteCapture", "screenshot", "recognizeText", "screenshotTranslate", "screenRecord",
-        "audioRecord",
+      HotKeyAction.islandOrder("noteCapture\nunknown\nscreenshot\nnoteCapture\nlauncher\n") == [
+        .noteCapture, .screenshot, .recognizeText, .screenshotTranslate, .screenRecord,
+        .audioRecord,
       ])
+    #expect(HotKeyAction.islandOff("").isEmpty)
     #expect(
-      Prefs.islandActionsOff(stored: "audioRecord\nunknown\naudioRecord\nscreenshot")
-        == ["audioRecord", "screenshot"])
+      HotKeyAction.islandOff("audioRecord\nunknown\naudioRecord\nscreenshot\nclipboard")
+        == [.audioRecord, .screenshot])
   }
 
   /// 侧栏顺序和菜单栏、快捷键页、引导同序：翻译在截图前面（体检 B51），录制紧跟截图（2026-10-03 拆出来），
@@ -95,6 +98,9 @@ struct SettingsListTests {
     #expect(SettingsPage.page(for: "录制", current: .clipboard) == .record)
     #expect(SettingsPage.page(for: " 快捷键", current: .general) == .hotkeys)
     #expect(SettingsPage.page(for: "帧率", current: .screenshot) == .record)
+    // 刘海岛页排在前面、列着快捷动作，但搜动作的名字要停在那个功能的页（PR #17 原来把名字放进了关键词）
+    #expect(SettingsPage.page(for: "录屏", current: .general) == .record)
+    #expect(SettingsPage.page(for: "刘海", current: .general) == .island)
     #expect(!SettingsPage.screenshot.matches("录屏") && !SettingsPage.screenshot.matches("麦克风"))
     #expect(SettingsPage.page(for: "文件夹", current: .record) == .record)
     // 「文件夹」：通用页（同步文件夹、数据目录，第四轮体检 U13）和截图页的保存文件夹都有（启动台页改叫「App 文件夹」，

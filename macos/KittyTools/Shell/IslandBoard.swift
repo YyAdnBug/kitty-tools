@@ -1,5 +1,6 @@
-// 刘海岛的「那一张」（2026-10-26，用户要能主动叫出来：点刘海、或者快捷键「打开刘海岛」）：上面一排快捷动作，
-// 下面是本次启动以来最近 10 条提示，按配置独立显示。快捷动作受对应 Feature 开关过滤，顺序由设置页保存。
+// 刘海岛的「那一张」（2026-10-26，用户要能主动叫出来：点刘海、或者快捷键「打开刘海岛」）：上面一排快捷动作（截图、录屏、
+// 录音、识字、截图翻译、快速记一条，关着的功能不出；开哪几个、什么先后在 设置 › 刘海岛），下面是本次启动以来最近 10 条提示，
+// 新的在前（设置里能不列：那时只有快捷动作，都关了就一句话）。还能点的打开类按钮
 // （在访达中显示、打开系统设置、打开设置）照样能点，点一行等于点它的按钮；撤销、取消这类过后再点会出事，不留。
 // 用快捷键叫出时 ←→ 选中的快捷动作圆底换成强调色的焦点圈（第四轮体检 U9），↩ 执行它。
 // 宽 420，画在岛的黑底上（同 Island 的深色、字号刻度），不另开窗口。
@@ -9,13 +10,9 @@ import SwiftUI
 struct IslandBoard: View {
   let island: Island
 
-  private var hasVisibleActions: Bool {
-    island.showsActions && !island.quickActions.isEmpty
-  }
-
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
-      if hasVisibleActions {
+      if !island.quickActions.isEmpty {
         HStack(spacing: 6) {
           ForEach(Array(island.quickActions.enumerated()), id: \.offset) { index, action in
             QuickAction(action: action, selected: island.boardSelection == index) {
@@ -25,35 +22,33 @@ struct IslandBoard: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 10)
-        .padding(.bottom, 12)
-        Rectangle().fill(.white.opacity(0.12)).frame(height: 0.5)
+        .padding(.bottom, island.showsHistory ? 12 : 8)
+        if island.showsHistory { Rectangle().fill(.white.opacity(0.12)).frame(height: 0.5) }
       }
-      if island.showsHistory {
-        if island.history.isEmpty {
-          Text("还没有提示")
-            .font(.system(size: 12))
-            .foregroundStyle(.white.opacity(0.45))
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
-        } else {
-          VStack(spacing: 0) {
-            ForEach(island.history) { record in
-              Row(record: record) { island.perform($0) }
-            }
+      if !island.showsHistory {
+        if island.quickActions.isEmpty { placeholder("快捷动作和最近的提示都关着") }
+      } else if island.history.isEmpty {
+        placeholder("还没有提示")
+      } else {
+        VStack(spacing: 0) {
+          ForEach(island.history) { record in
+            Row(record: record) { island.perform($0) }
           }
-          .padding(.vertical, 6)
         }
-      } else if !hasVisibleActions {
-        Text("灵动岛内容已隐藏")
-          .font(.system(size: 12))
-          .foregroundStyle(.white.opacity(0.45))
-          .frame(maxWidth: .infinity)
-          .padding(.vertical, 16)
+        .padding(.vertical, 6)
       }
     }
     .padding(.horizontal, 14)
     .padding(.bottom, 4)
     .frame(width: Island.boardWidth)
+  }
+
+  private func placeholder(_ text: String) -> some View {
+    Text(text)
+      .font(.system(size: 12))
+      .foregroundStyle(.white.opacity(0.45))
+      .frame(maxWidth: .infinity)
+      .padding(.vertical, 16)
   }
 }
 
