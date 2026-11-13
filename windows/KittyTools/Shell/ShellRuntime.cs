@@ -90,7 +90,16 @@ internal sealed class ShellRuntime
         }
 
         // 便签（PLAN-v13）：单独的库，和剪贴板的库互不相干——那边打不开这边照样起。数据层不跟着功能开关走。
-        NotesHost.Start(DispatcherQueue.GetForCurrentThread()!);
+        // R72：便签起不来（某块屏算出怪值、一张坏图……）不能让整个 App 每次启动都退出，那样连设置都打不开、关不掉它。
+        try
+        {
+            NotesHost.Start(DispatcherQueue.GetForCurrentThread()!);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("notes.start-failed", ex);
+            NoticeHost.Show("便签这次用不了", "启动时出了错，其它功能不受影响", NoticeTone.Error);
+        }
 
         // 每日备份：启动时、锁屏 / 解锁、睡眠唤醒各看一眼今天备过没有（不另加定时器）。
         ScheduleBackup();
@@ -107,7 +116,16 @@ internal sealed class ShellRuntime
         // 提醒（PLAN-v12 N6）：起停跟着功能开关（ApplyFeatures）。
         if (Features.IsOn(Feature.Reminders))
         {
-            ReminderCenter.Start();
+            // R72：同便签，提醒起不来不挡整个 App。
+            try
+            {
+                ReminderCenter.Start();
+            }
+            catch (Exception ex)
+            {
+                Log.Error("reminder.start-failed", ex);
+                NoticeHost.Show("提醒这次用不了", "启动时出了错，其它功能不受影响", NoticeTone.Error);
+            }
         }
 
         HiddenWindow.Message += OnHiddenMessage;
