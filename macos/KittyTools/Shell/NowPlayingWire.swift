@@ -12,6 +12,9 @@ import Foundation
   func send(_ command: Int)
   /// 跳到这一首的第几秒（快照里 canSeek 才有用；不是 0…一千万秒里的有限数服务不发）
   func seek(to seconds: Double)
+  /// 换随机 / 循环的模式（快照里 shuffle / repeatMode 不是 nil 才有用；1…3 以外的不发）
+  func setShuffle(_ mode: Int)
+  func setRepeat(_ mode: Int)
 }
 
 /// 服务 → App
@@ -51,6 +54,10 @@ nonisolated struct NowPlayingSnapshot: Codable, Equatable, Sendable {
   var canNext: Bool
   /// 这个 App 此刻支不支持跳到某一秒（进度条能不能拖；直播、有的网页视频没有）
   var canSeek: Bool
+  /// 随机、循环现在是哪一档（MediaRemote 的数）；nil = 这个 App 此刻不支持（浏览器里的视频）。
+  /// 随机：1 关、2 按专辑、3 按歌曲；循环：1 关、2 单曲、3 列表
+  var shuffle: Int?
+  var repeatMode: Int?
   /// 封面：换了才变的编号、缩到最长边 256 的 JPEG；网页视频刚换片的头两秒没有
   var artworkID: String?
   var artwork: Data?

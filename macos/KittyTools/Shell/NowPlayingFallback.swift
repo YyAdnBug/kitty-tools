@@ -40,7 +40,8 @@ nonisolated enum NowPlayingFallback {
       artist: text(info["Artist"]), album: text(info["Album"]), duration: duration,
       elapsed: position.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil },
       timestamp: position == nil ? nil : now, rate: playing ? 1 : 0, isPlaying: playing,
-      canPrevious: true, canNext: true, canSeek: true, artworkID: nil, artwork: nil)
+      canPrevious: true, canNext: true, canSeek: true, shuffle: nil, repeatMode: nil,
+      artworkID: nil, artwork: nil)
   }
 
   private static func text(_ value: Any?) -> String? {

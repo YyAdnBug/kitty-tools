@@ -342,6 +342,8 @@ import OSLog
           snapshot: snapshot, artwork: current?.image, tint: current?.tint,
           appIcon: icon(for: snapshot),
           send: { [weak self] in self?.send($0) }, seek: { [weak self] in self?.seek(to: $0) },
+          setShuffle: { [weak self] in self?.proxy()?.setShuffle($0) },
+          setRepeat: { [weak self] in self?.proxy()?.setRepeat($0) },
           open: { [weak self] in self?.openApp() }),
         onWings: Self.showsOnWings(
           isPlaying: snapshot.isPlaying, pausedFor: pausedSince.map { .now - $0 })))
@@ -449,6 +451,18 @@ import OSLog
   static func changedTrack(from old: NowPlayingSnapshot?, to new: NowPlayingSnapshot?) -> Bool {
     guard let old, let new, new.isPlaying else { return false }
     return old.title != new.title || old.artist != new.artist
+  }
+
+  /// 点一下随机：关着（1）→ 按歌曲随机（3）；开着（按专辑 2、按歌曲 3）→ 关
+  static func nextShuffle(_ mode: Int) -> Int { mode == 1 ? 3 : 1 }
+
+  /// 点一下循环：关（1）→ 列表循环（3）→ 单曲循环（2）→ 关
+  static func nextRepeat(_ mode: Int) -> Int {
+    switch mode {
+    case 1: 3
+    case 3: 2
+    default: 1
+    }
   }
 
   /// 进度条上要跳到的秒数夹进这一首里；跳不了（这个 App 不支持、没有时长、不是有限数）是 nil

@@ -38,6 +38,14 @@ import Foundation
     Task { @MainActor in remote.seek(to: seconds) }
   }
 
+  nonisolated func setShuffle(_ mode: Int) {
+    Task { @MainActor in remote.setShuffle(mode) }
+  }
+
+  nonisolated func setRepeat(_ mode: Int) {
+    Task { @MainActor in remote.setRepeat(mode) }
+  }
+
   /// App 订阅了：推给它（换了连接就把旧的断掉）
   private func attach(_ connection: NSXPCConnection?) {
     guard let connection, connection !== client else { return }

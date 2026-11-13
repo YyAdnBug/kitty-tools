@@ -197,7 +197,8 @@ import SwiftUI
   }
 
   /// 摆出来的岛（截图自检、单测）：从头到尾不建窗口——收起后再 show 也不会弹到屏幕上
-  @ObservationIgnored private let isStaged: Bool
+  /// 摆出来的岛（截图自检、单测）：不建窗口、不给触感，岛上的东西不读本机的状态（输出设备）
+  @ObservationIgnored let isStaged: Bool
 
   init() { isStaged = false }
 

@@ -32,6 +32,9 @@ import UniformTypeIdentifiers
   private typealias ClientString = @convention(c) (AnyObject) -> Unmanaged<CFString>?
   private typealias InfoCommand = @convention(c) (AnyObject) -> UInt32
   private typealias InfoEnabled = @convention(c) (AnyObject) -> Bool
+  private typealias InfoOptions = @convention(c) (AnyObject) -> Unmanaged<CFDictionary>?
+  private typealias SetMode = @convention(c) (Int32) -> Void
+  private typealias SetWants = @convention(c) (Bool) -> Void
   /// -[MRNowPlayingRequest requestNowPlayingItemArtworkOnQueue:completion:] / requestSupportedCommandsOnQueue:completion:
   private typealias Request =
     @convention(c) (
@@ -61,6 +64,11 @@ import UniformTypeIdentifiers
   private lazy var displayName: ClientString? = function("MRNowPlayingClientGetDisplayName")
   private lazy var commandOf: InfoCommand? = function("MRMediaRemoteCommandInfoGetCommand")
   private lazy var enabledOf: InfoEnabled? = function("MRMediaRemoteCommandInfoGetEnabled")
+  private lazy var optionsOf: InfoOptions? = function("MRMediaRemoteCommandInfoCopyOptions")
+  private lazy var setShuffleMode: SetMode? = function("MRMediaRemoteSetShuffleMode")
+  private lazy var setRepeatMode: SetMode? = function("MRMediaRemoteSetRepeatMode")
+  private lazy var wantsCommandChanges: SetWants? = function(
+    "MRMediaRemoteSetWantsSupportedCommandsChangedNotifications")
 
   private func function<T>(_ name: String) -> T? {
     guard let handle, let symbol = dlsym(handle, name) else { return nil }
@@ -83,10 +91,13 @@ import UniformTypeIdentifiers
     // 注册要传别的队列：它会在给的队列上同步等一下，在主线程上传 .main 就死锁（2026-11-13 实测，读不回来、超时也不走）。
     // 通知从那条队列发出来，下面的观察者用 queue: .main 投回主线程
     register(.global(qos: .utility))
+    // 随机 / 循环换了档不动播放信息，只动「支持的命令」：要另外说一声想收它的通知
+    wantsCommandChanges?(true)
     for name in [
       "kMRMediaRemoteNowPlayingInfoDidChangeNotification",
       "kMRMediaRemoteNowPlayingApplicationIsPlayingDidChangeNotification",
       "kMRMediaRemoteNowPlayingApplicationDidChangeNotification",
+      "kMRMediaRemoteSupportedCommandsDidChangeNotification",
     ] {
       guard let value = constant(name) else { continue }
       observers.append(
@@ -101,6 +112,7 @@ import UniformTypeIdentifiers
     guard !observers.isEmpty else { return }
     for observer in observers { NotificationCenter.default.removeObserver(observer) }
     observers = []
+    wantsCommandChanges?(false)
     unregister?()
   }
 
@@ -189,9 +201,11 @@ import UniformTypeIdentifiers
       title: title, artist: info.artist, album: info.album, duration: info.duration,
       elapsed: info.elapsed, timestamp: info.timestamp, rate: info.rate ?? 0,
       isPlaying: playing ?? false,
-      canPrevious: commands.map { $0.contains(NowPlayingCommand.previous.rawValue) } ?? true,
-      canNext: commands.map { $0.contains(NowPlayingCommand.next.rawValue) } ?? true,
-      canSeek: commands.map { $0.contains(Self.seekCommand) } ?? true,
+      canPrevious: commands.map { $0.enabled.contains(NowPlayingCommand.previous.rawValue) }
+        ?? true,
+      canNext: commands.map { $0.enabled.contains(NowPlayingCommand.next.rawValue) } ?? true,
+      canSeek: commands.map { $0.enabled.contains(Self.seekCommand) } ?? true,
+      shuffle: commands?.shuffle, repeatMode: commands?.repeatMode,
       artworkID: artworkID, artwork: artwork)
     return Reading(snapshot: snapshot, artworkPending: artworkID != nil && artwork == nil)
   }
@@ -232,17 +246,51 @@ import UniformTypeIdentifiers
     return small
   }
 
-  /// 这个 App 此刻支持的命令号（只算开着的）；要不到（类、方法不在、超时）或者给了个空的是 nil = 都当支持
-  /// （15 / 26 上它给什么没验过：宁可按钮亮着发了没反应，也不全灰掉）
-  private func supportedCommands() async -> Set<Int>? {
+  /// 这个 App 此刻支持的命令（只算开着的），和随机 / 循环现在的档（命令 26 / 25 开着、信息里带着档才有；没有是 nil =
+  /// 不显示那个按钮）
+  private struct Commands: Sendable {
+    var enabled: Set<Int> = []
+    var shuffle: Int?
+    var repeatMode: Int?
+  }
+
+  /// MRMediaRemoteCommandChangeRepeatMode / ChangeShuffleMode
+  private static let repeatCommand = 25
+  private static let shuffleCommand = 26
+
+  /// 这个 App 此刻支持的命令；要不到（类、方法不在、超时）或者给了个空的是 nil = 上下首、跳都当支持
+  /// （15 / 26 上它给什么没验过：宁可按钮亮着发了没反应，也不全灰掉），随机 / 循环当不支持
+  private func supportedCommands() async -> Commands? {
     guard let commandOf, let enabledOf else { return nil }
+    let optionsOf = optionsOf
+    let shuffleKey = constant("kMRMediaRemoteCommandInfoShuffleMode")
+    let repeatKey = constant("kMRMediaRemoteCommandInfoRepeatMode")
     let commands = await request("requestSupportedCommandsOnQueue:completion:") { value in
       (value as? [AnyObject]).map { list in
-        Set(list.filter { enabledOf($0) }.map { Int(commandOf($0)) })
+        var commands = Commands()
+        for info in list where enabledOf(info) {
+          let command = Int(commandOf(info))
+          commands.enabled.insert(command)
+          guard command == Self.shuffleCommand || command == Self.repeatCommand,
+            let options = optionsOf?(info)?.takeRetainedValue() as? [String: Any]
+          else { continue }
+          if command == Self.shuffleCommand {
+            commands.shuffle = Self.mode(shuffleKey.flatMap { options[$0] })
+          } else {
+            commands.repeatMode = Self.mode(repeatKey.flatMap { options[$0] })
+          }
+        }
+        return commands
       }
     }
-    guard let commands = commands ?? nil, !commands.isEmpty else { return nil }
+    guard let commands = commands ?? nil, !commands.enabled.isEmpty else { return nil }
     return commands
+  }
+
+  /// 随机 / 循环的档：1…3 的整数才认
+  private static func mode(_ value: Any?) -> Int? {
+    guard let mode = (value as? NSNumber)?.intValue, (1...3).contains(mode) else { return nil }
+    return mode
   }
 
   /// 调 MRNowPlayingRequest 的一个「…OnQueue:completion:」方法，当场把回调的第一个值取成 Sendable 的；
@@ -297,6 +345,17 @@ import UniformTypeIdentifiers
       let key = constant("kMRMediaRemoteOptionPlaybackPosition")
     else { return }
     _ = sendCommand?(UInt32(Self.seekCommand), [key: seconds] as CFDictionary)
+  }
+
+  /// 换随机 / 循环的档（1…3）。按了之后以播放器报回来的为准（「支持的命令变了」的通知 → 再读一遍），这里不猜
+  func setShuffle(_ mode: Int) {
+    guard (1...3).contains(mode) else { return }
+    setShuffleMode?(Int32(mode))
+  }
+
+  func setRepeat(_ mode: Int) {
+    guard (1...3).contains(mode) else { return }
+    setRepeatMode?(Int32(mode))
   }
 
   // MARK: 回调转 async

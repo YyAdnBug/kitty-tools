@@ -5,6 +5,7 @@
 // 不碰用户偏好：偏好用临时域，岛是摆出来的（不建窗口）。
 
 import AppKit
+import CoreAudio
 import Foundation
 import MediaPlayer
 import Synchronization
@@ -21,8 +22,8 @@ struct NowPlayingTests {
     NowPlayingSnapshot(
       bundleID: "com.apple.Music", parentBundleID: nil, appName: "Music", title: "歌", artist: "人",
       album: nil, duration: duration, elapsed: elapsed, timestamp: timestamp, rate: rate,
-      isPlaying: playing, canPrevious: true, canNext: true, canSeek: canSeek, artworkID: nil,
-      artwork: nil)
+      isPlaying: playing, canPrevious: true, canNext: true, canSeek: canSeek, shuffle: nil,
+      repeatMode: nil, artworkID: nil, artwork: nil)
   }
 
   /// App 和服务各抄的一份约定，BEGIN / END 之间逐字一样（改了一边忘了另一边，XPC 两头对不上）
@@ -305,6 +306,24 @@ struct NowPlayingTests {
     #expect(IslandMarquee.overflow(text: 300, box: 0) == 0)
   }
 
+  /// 随机 / 循环点一下换到哪一档；输出设备怎么连的 → 卡片右上角的图标
+  @Test func modesAndOutput() {
+    // 随机：关（1）→ 按歌曲（3）；开着（2、3）→ 关
+    #expect(NowPlaying.nextShuffle(1) == 3)
+    #expect(NowPlaying.nextShuffle(3) == 1 && NowPlaying.nextShuffle(2) == 1)
+    // 循环：关（1）→ 列表（3）→ 单曲（2）→ 关
+    #expect(NowPlaying.nextRepeat(1) == 3)
+    #expect(NowPlaying.nextRepeat(3) == 2)
+    #expect(NowPlaying.nextRepeat(2) == 1)
+    #expect(OutputVolume.symbol(transport: kAudioDeviceTransportTypeBuiltIn) == "speaker.wave.2.fill")
+    #expect(OutputVolume.symbol(transport: kAudioDeviceTransportTypeBluetooth) == "headphones")
+    #expect(OutputVolume.symbol(transport: kAudioDeviceTransportTypeBluetoothLE) == "headphones")
+    #expect(OutputVolume.symbol(transport: kAudioDeviceTransportTypeAirPlay) == "airplayaudio")
+    #expect(OutputVolume.symbol(transport: kAudioDeviceTransportTypeHDMI) == "display")
+    #expect(OutputVolume.symbol(transport: kAudioDeviceTransportTypeUSB) == "hifispeaker.fill")
+    #expect(OutputVolume.symbol(transport: nil) == "speaker.wave.2.fill")
+  }
+
   /// 上耳朵：在播；从在播变成暂停还不到 30 秒；一打开就是暂停着的不上
   @Test func wings() {
     #expect(NowPlaying.showsOnWings(isPlaying: true, pausedFor: nil))
@@ -388,6 +407,22 @@ struct NowPlayingTests {
     ]
     center.playbackState = .playing
     let toggled = Mutex(0)
+    // 随机 / 循环：宿主收到的档（MediaPlayer 的数），收到就照做（改自己报的当前档）
+    let shuffled = Mutex<Int?>(nil)
+    let repeated = Mutex<Int?>(nil)
+    let commands = MPRemoteCommandCenter.shared()
+    commands.changeShuffleModeCommand.currentShuffleType = .off
+    commands.changeRepeatModeCommand.currentRepeatType = .off
+    let shuffleTarget = commands.changeShuffleModeCommand.addTarget { @Sendable event in
+      guard let event = event as? MPChangeShuffleModeCommandEvent else { return .commandFailed }
+      shuffled.withLock { $0 = event.shuffleType.rawValue }
+      return .success
+    }
+    let repeatTarget = commands.changeRepeatModeCommand.addTarget { @Sendable event in
+      guard let event = event as? MPChangeRepeatModeCommandEvent else { return .commandFailed }
+      repeated.withLock { $0 = event.repeatType.rawValue }
+      return .success
+    }
     // 跳到某一秒：宿主收到的位置（没收到是 nil）
     let sought = Mutex<Double?>(nil)
     let seekTarget = MPRemoteCommandCenter.shared().changePlaybackPositionCommand.addTarget {
@@ -403,6 +438,8 @@ struct NowPlayingTests {
     defer {
       MPRemoteCommandCenter.shared().togglePlayPauseCommand.removeTarget(target)
       MPRemoteCommandCenter.shared().changePlaybackPositionCommand.removeTarget(seekTarget)
+      commands.changeShuffleModeCommand.removeTarget(shuffleTarget)
+      commands.changeRepeatModeCommand.removeTarget(repeatTarget)
       center.playbackState = .stopped
       center.nowPlayingInfo = nil
     }
@@ -458,6 +495,29 @@ struct NowPlayingTests {
       try await Task.sleep(for: .milliseconds(100))
     }
     #expect(media()?.snapshot.elapsed == 121)
+
+    // 随机 / 循环：一开始都是关（1）；点随机 → 宿主收到「按歌曲」，宿主改了自己的档 → 岛上读回 3；循环同理
+    #expect(media()?.snapshot.shuffle == 1 && media()?.snapshot.repeatMode == 1)
+    first.setShuffle(NowPlaying.nextShuffle(1))
+    for _ in 0..<30 where shuffled.withLock({ $0 }) == nil {
+      try await Task.sleep(for: .milliseconds(100))
+    }
+    #expect(shuffled.withLock { $0 } == MPShuffleType.items.rawValue)
+    commands.changeShuffleModeCommand.currentShuffleType = .items
+    for _ in 0..<30 where media()?.snapshot.shuffle == 1 {
+      try await Task.sleep(for: .milliseconds(100))
+    }
+    #expect(media()?.snapshot.shuffle == 3)
+    first.setRepeat(NowPlaying.nextRepeat(1))
+    for _ in 0..<30 where repeated.withLock({ $0 }) == nil {
+      try await Task.sleep(for: .milliseconds(100))
+    }
+    #expect(repeated.withLock { $0 } == MPRepeatType.all.rawValue)
+    commands.changeRepeatModeCommand.currentRepeatType = .all
+    for _ in 0..<30 where media()?.snapshot.repeatMode == 1 {
+      try await Task.sleep(for: .milliseconds(100))
+    }
+    #expect(media()?.snapshot.repeatMode == 3)
 
     center.playbackState = .paused
     for _ in 0..<30 where media()?.snapshot.isPlaying ?? true {

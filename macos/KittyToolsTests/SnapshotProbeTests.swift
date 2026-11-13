@@ -1088,13 +1088,15 @@ struct SnapshotProbeTests {
       return true
     }
     func media(
-      playing: Bool, artwork: NSImage?, canSeek: Bool = true, canSkip: Bool = true
+      playing: Bool, artwork: NSImage?, canSeek: Bool = true, canSkip: Bool = true,
+      modes: Bool = false
     ) -> Island.Activity {
       let snapshot = NowPlayingSnapshot(
         bundleID: "com.apple.Music", parentBundleID: nil, appName: "音乐",
         title: "Right Now (Na Na Na)", artist: "Akon", album: "Freedom", duration: 240,
         elapsed: 84, timestamp: .now, rate: playing ? 1 : 0, isPlaying: playing,
         canPrevious: canSkip, canNext: canSkip && playing, canSeek: canSeek,
+        shuffle: modes ? 3 : nil, repeatMode: modes ? 1 : nil,
         artworkID: artwork == nil ? nil : "a", artwork: nil)
       return Island.Activity(
         id: NowPlaying.activityID, kind: .media, title: snapshot.title, detail: snapshot.artist,
@@ -1144,6 +1146,27 @@ struct SnapshotProbeTests {
       try snapshot(
         IslandView(island: island), size: notch.windowSize, dark: false,
         to: "\(out)/island-media-card-jumps.png")
+    }
+    // 随机开着、循环关着：按钮行两头各一个小符号，开着的染封面的主色
+    do {
+      let island = Island(
+        showing: nil, geometry: notch,
+        activities: [media(playing: true, artwork: cover, modes: true)])
+      island.tapped()
+      try snapshot(
+        IslandView(island: island), size: notch.windowSize, dark: false,
+        to: "\(out)/island-media-card-modes.png")
+    }
+    // 输出音量的滑杆开着（60%）：进度那一行换成它，右上角的设备图标亮着
+    if let volume = media(playing: true, artwork: cover).media {
+      try snapshot(
+        IslandMediaCard(
+          island: Island(showing: nil, geometry: notch), media: volume, stagedVolume: 0.6
+        )
+        .background(.black)
+        .environment(\.colorScheme, .dark),
+        size: NSSize(width: 340, height: 134), dark: true,
+        to: "\(out)/island-media-card-volume.png")
     }
     // 进度条正拖着（拖到 2:30）：细条变粗、露出圆点、左边的时间是拖到的位置。卡片单独垫黑底出一张
     if let scrubbing = media(playing: true, artwork: cover).media {

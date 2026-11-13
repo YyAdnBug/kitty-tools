@@ -50,7 +50,8 @@ struct NowPlayingFallbackTests {
     NowPlayingSnapshot(
       bundleID: "b", parentBundleID: nil, appName: nil, title: title, artist: nil, album: nil,
       duration: nil, elapsed: nil, timestamp: nil, rate: playing ? 1 : 0, isPlaying: playing,
-      canPrevious: true, canNext: true, canSeek: true, artworkID: nil, artwork: nil)
+      canPrevious: true, canNext: true, canSeek: true, shuffle: nil, repeatMode: nil,
+      artworkID: nil, artwork: nil)
   }
 
   /// 几个播放器里挑：在播的先，同样在不在播的取后来的

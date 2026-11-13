@@ -121,6 +121,9 @@ extension Island {
     var send: (NowPlayingCommand) -> Void
     /// 跳到这一首的第几秒（进度条）
     var seek: (Double) -> Void
+    /// 换随机 / 循环的档（快照里那一样不是 nil 才画按钮）
+    var setShuffle: (Int) -> Void = { _ in }
+    var setRepeat: (Int) -> Void = { _ in }
     var open: () -> Void
   }
 }
