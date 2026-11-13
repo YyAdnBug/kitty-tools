@@ -117,8 +117,15 @@ import SwiftUI
     didSet {
       guard hasExtras != oldValue else { return }
       if !hasExtras {
+        let progressing = activities.last { $0.kind == .progress }
         for activity in activities { endActivity(activity.id) }
         if isBoardOpen { dismiss() }
+        // 缩进耳朵的进行中换回挂着的提示：不然之后的进度、「停止」都没处放，一直到结果出来都看不见（评审 4）
+        if let progressing {
+          var content = progressing.content
+          content.tone = .progress
+          apply(content, actions: progressing.actions)
+        }
       }
       rewatchNotch()
     }

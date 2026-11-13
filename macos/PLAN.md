@@ -1197,11 +1197,13 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
       打开方式 FREAD = 1、FWRITE = 2；出错原因只看「tar:」「ditto:」开头的行（-v 的行里有文件名）。第六轮评审查出了这几处。
     - 最早拍板里「不做」的压缩解压、显示隐藏文件、哈希，由这次扩充改成了做；文件夹图标、启动器里对访达选中的文件做事仍不做。- **压缩时跳过**（2026-11-13，拍板页 https://claude.ai/artifact/DEKeRvQeZR3VxkVA9Bx2Fr Z1–Z5，用户「全部按推荐」）：设置 › 访达右键
   「压缩和解压」一行「压缩时跳过」（`Prefs.finderCompressSkip`，默认空，注册了默认值、跟着导出和同步）。逗号隔开（全角半角），
-  只认名字、* ? 通配（交给 tar 的 `--exclude`，任意一层都跳，zip / 7z 都管）；带「/」的不收、橙字列出来（`Archives.skipNames` /
-  `rejectedSkipNames`，最多 50 条）；选中的那几样自己不跳过（`effectiveSkip`：对上它们名字的条目这一次整条不用）；只压一个包走
-  ditto 时不跳（会弄坏签名）；进度的总大小同样剪掉（`ByteMeter.sizes(of:skip:)`，find 的 -prune）；解压不受影响。不做：压成 RAR
-  （系统的 libarchive 只读不写 RAR，要装 WinRAR 的命令行）、「这一次不跳过」。单测 `ArchivesTests.skipNames` /
-  `skipWhileCompressing`（真压 zip、7z 列包里的条目）。
+  只认名字、只有 * ? 是通配，zip / 7z 都管；带「/」的不收、橙字列出来（`Archives.skipNames` / `rejectedSkipNames`，最多 50 条）。
+  **不能直接交给 tar 的 `--exclude`**（独立评审实测 bsdtar 3.5.3：匹配能从路径任意一层开头、任意一层结尾，* ? 跨「/」——
+  「Screenshot*.png」扔掉 Screenshots/2024/a.png；[ ] \ 也当通配）：先在每个文件夹里跑一次 find（`skipFindArguments`：-name 只看名字、
+  [ ] \ 转义，最外层 `-depth +0` 不算——选中的那一样自己照压、它里面同名的照跳，.app / .framework 这类包 `-prune` 不进去）
+  找出确切路径，转义后写进临时文件交给 `tar -X`（`skipped` / `escapedForTar`）；进度的总大小 = 全部 − 跳掉的那几样。只压一个包走
+  ditto 时不用名单；解压不受影响。不做：压成 RAR（系统的 libarchive 只读不写 RAR，要装 WinRAR 的命令行）、「这一次不跳过」。
+  单测 `ArchivesTests.skipNames` / `skipWhileCompressing`（真压 zip、7z：跨层通配、[old]、.app 里面、选中的 node_modules）。
 
 ### 截图识别元素（下一版，2026-11-08）
 

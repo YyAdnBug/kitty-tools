@@ -15,9 +15,12 @@
 //   拿不到键盘，打的字会进访达。先解进包旁边一个隐藏的临时文件夹，里面只有一样东西就把它放到包旁边，几样就把
 //   临时文件夹改成包的名字（同归档实用工具），重名加「 2」；出错、停了只删临时文件夹。包带着「从网上下载」的隔离标记时，
 //   系统 tar 自己会给解出来的每样东西也带上（实测），不另外做；它默认也不解绝对路径、带 .. 的路径，不顺着包里的符号链接往外写。
-// - 压缩时另外跳过的名字（2026-11-13 拍板 Z1–Z5，Prefs.finderCompressSkip，默认空）：只认名字（tar 的 --exclude，任意一层叫这个
-//   名字的都不压，* ? 通配），带「/」的不收；选中的那几样自己不跳过（effectiveSkip）；只压一个包、走 ditto 时不跳过（跳掉包里的
-//   东西签名就坏了）；进度条按跳过之后的大小算（ByteMeter.sizes 同样剪掉）；解压不受影响。
+// - 压缩时另外跳过的名字（2026-11-13 拍板 Z1–Z5，Prefs.finderCompressSkip，默认空）：只认名字（任意一层叫这个名字的都不压，
+//   只有 * ? 是通配），带「/」的不收；选中的那几样自己不跳过；不进 .app 这类包里面跳（跳掉包里的东西签名就坏了，只压一个包走
+//   ditto 时整个不用名单）；解压不受影响。**不能直接交给 tar 的 --exclude**（评审实测 bsdtar 3.5.3：它的匹配能从路径里任意一层
+//   开头、任意一层结尾，* 和 ? 还跨「/」——「Screenshot*.png」会扔掉 Screenshots/2024/a.png；[ ] \ 也被当成通配）：先用 find
+//   按名字找出要跳的确切路径（skipFindArguments：-name 只看名字，最外层 -depth +0 不算，包 -prune 不进去），转义后写进一个
+//   临时文件交给 tar -X（escapedForTar）；进度的总大小 = 全部 − 跳过的那几样（skipped）。
 // - 进度条（ByteMeter）：压缩按读过的字节（tar -v / ditto -V 报做完的文件，加上正读着的那个读到哪了），解压按压缩包读到第几个
 //   字节，刘海岛上「42% · 1.2 GB / 2.9 GB」。
 // - 落到正式名字都用「目标已存在就报错」的改名（FileMoves.land），算完名字到落下之间别人占了也盖不掉；和移动、复制排在同一条队
@@ -150,45 +153,72 @@ import AppKit
       .filter { $0.contains("/") }
   }
 
-  /// 这一次交给 tar 的名单：对上选中那几样自己名字的条目这一次不用——右键一个 node_modules 压缩，照样整个压进去（Z2）。
-  /// ponytail: 是整条不用，那一样里面同名的这次也不跳；要只放过最外层得改成按路径排除，有人要了再做
-  nonisolated static func effectiveSkip(_ names: [String], items: [URL]) -> [String] {
-    names.filter { pattern in !items.contains { matches(pattern, $0.lastPathComponent) } }
+  /// 不进去跳的包（扩展名）：App、框架、插件这类带签名的包，跳掉里面的东西就坏了。
+  /// ponytail: 按扩展名认，没列的包（.rtfd、.photoslibrary 之类）里面照样跳；要按访达认的包算得自己走一遍目录，有人碰到再改
+  nonisolated static let packages = [
+    "app", "framework", "bundle", "plugin", "appex", "xpc", "kext", "systemextension",
+  ]
+
+  /// 找要跳的路径的 find 参数（在 roots 所在的文件夹里跑，roots 是「./名字」）：名字对上的打印出来、不进去；最外层（选中的那几样）
+  /// 不算（-depth +0）；包不进去（先看名字：包自己叫名单里的名字照样跳）。名单里的 [ ] \ 转义掉，只有 * ? 是通配
+  nonisolated static func skipFindArguments(_ names: [String], roots: [String]) -> [String] {
+    let either = { (patterns: [String]) in
+      patterns.enumerated().flatMap { ($0 == 0 ? [] : ["-o"]) + ["-name", $1] }
+    }
+    let escaped = names.map {
+      $0.replacing("\\", with: "\\\\").replacing("[", with: "\\[").replacing("]", with: "\\]")
+    }
+    return roots + ["(", "-depth", "+0", "("] + either(escaped) + [
+      ")", ")", "-prune", "-print0", "-o", "(",
+    ]
+      + either(packages.map { "*." + $0 }) + [")", "-type", "d", "-prune"]
   }
 
-  /// 名字对不对得上：* 任意几个字、? 一个字，区分大小写（同 tar 的 --exclude）。
-  /// ponytail: 不认 tar 也认的 [abc] 这种，只影响「选中的那一样自己不跳过」的判断；有人用到再补
-  nonisolated static func matches(_ pattern: String, _ name: String) -> Bool {
-    let pattern = Array(pattern)
-    let name = Array(name)
-    var p = 0
-    var n = 0
-    var star: Int?
-    var resume = 0
-    while n < name.count {
-      if p < pattern.count, pattern[p] == "*" {
-        star = p
-        resume = n
-        p += 1
-      } else if p < pattern.count, pattern[p] == "?" || pattern[p] == name[n] {
-        p += 1
-        n += 1
-      } else if let star {
-        p = star + 1
-        resume += 1
-        n = resume
+  /// 交给 tar -X 的一行：确切路径（「./名字/…」，同 tar 自己走目录时看到的样子），* ? [ ] \ 前面加反斜杠，不让它当通配
+  nonisolated static func escapedForTar(_ path: String) -> String {
+    var line = ""
+    for character in path {
+      if "\\*?[]".contains(character) { line.append("\\") }
+      line.append(character)
+    }
+    return line
+  }
+
+  /// 这一次要跳的确切路径：每个文件夹里跑一次 find（另起进程），给回「./名字/…」和它的完整路径（量大小用）。名单空时不跑。
+  /// ponytail: 名字里带换行的找到了也写不进 tar -X 的一行，照压不跳
+  static func skipped(_ items: [URL], names: [String]) async -> [(relative: String, url: URL)] {
+    guard !names.isEmpty else { return [] }
+    var groups: [(folder: String, roots: [String])] = []
+    for item in items {
+      let folder = (FileMoves.plainPath(item) as NSString).deletingLastPathComponent
+      let root = "./" + item.lastPathComponent
+      if let index = groups.firstIndex(where: { $0.folder == folder }) {
+        groups[index].roots.append(root)
       } else {
-        return false
+        groups.append((folder, [root]))
       }
     }
-    while p < pattern.count, pattern[p] == "*" { p += 1 }
-    return p == pattern.count
+    var found: [(relative: String, url: URL)] = []
+    for group in groups {
+      guard
+        let result = try? await Subprocess.run(
+          "/usr/bin/find", skipFindArguments(names, roots: group.roots), captures: true,
+          environment: ByteMeter.utf8Environment, quality: .userInitiated,
+          directory: URL(filePath: group.folder, directoryHint: .isDirectory), stopsOnCancel: true)
+      else { continue }
+      for path in result.output.split(separator: "\0").map(String.init)
+      where path.hasPrefix("./") && !path.contains("\n") {
+        found.append((path, URL(filePath: group.folder + "/" + path.dropFirst(2))))
+      }
+    }
+    return found
   }
 
   /// 压缩用 tar 的参数：按所在的文件夹分组，每组先「-C 文件夹」，再跟「./名字」（./ 开头的名字不会被当成选项，-s 再把它去掉；
   /// S：符号链接指向哪里不改）
+  /// excludes：要跳的确切路径写成的文件（tar -X，见 skipped）
   nonisolated static func compressArguments(
-    _ items: [URL], format: Format, to archive: URL, skip: [String] = []
+    _ items: [URL], format: Format, to archive: URL, excludes: URL? = nil
   ) -> [String] {
     var arguments = [
       "-c", "-v", "-f", archive.path(percentEncoded: false), "--format",
@@ -196,7 +226,8 @@ import AppKit
       "--options", format == .zip ? "zip:hdrcharset=UTF-8" : "7zip:compression=lzma2",
       "--no-mac-metadata", "-s", "|^\\./||S",
     ]
-    arguments += (junk + skip).flatMap { ["--exclude", $0] }
+    arguments += junk.flatMap { ["--exclude", $0] }
+    if let excludes { arguments += ["-X", excludes.path(percentEncoded: false)] }
     var folder: String?
     for item in items {
       let parent = (FileMoves.plainPath(item) as NSString).deletingLastPathComponent
@@ -263,7 +294,7 @@ import AppKit
   // MARK: 压缩
 
   /// 打一个包：先写到 archive 旁边的隐藏临时名，打完落到 archive（重名换「 2」）
-  /// skip：另外跳过的名字（effectiveSkip 算好的）；只压一个包走 ditto 时不用
+  /// skip：另外跳过的名字（skipNames 收拾过的）；只压一个包走 ditto 时不用
   static func pack(
     _ items: [URL], format: Format, to archive: URL, skip: [String] = [],
     report: @escaping FileMoves.Report = { _, _ in }
@@ -274,8 +305,19 @@ import AppKit
       && (try? items[0].resourceValues(forKeys: [.isPackageKey]))?.isPackage == true
     // 进度（ByteMeter）：一共多大先数好；tar -v 每开始一个文件报「a 名字」，名字按它所在的文件夹拼回去看多大；
     // ditto -V 每打完一个报「N bytes for 名字」
-    let skip = package ? [] : skip
-    let meter = ByteMeter(total: await ByteMeter.sizes(of: items, skip: skip).reduce(0, +))
+    let excluded = package ? [] : await skipped(items, names: skip)
+    let excludes =
+      excluded.isEmpty
+      ? nil
+      : FileManager.default.temporaryDirectory.appending(path: "kitty-skip-\(UUID().uuidString)")
+    if let excludes {
+      try? Data(excluded.map { escapedForTar($0.relative) + "\n" }.joined().utf8).write(
+        to: excludes)
+    }
+    defer { if let excludes { try? FileManager.default.removeItem(at: excludes) } }
+    let total = await ByteMeter.sizes(of: items).reduce(0, +)
+    let meter = ByteMeter(
+      total: max(total - (await ByteMeter.sizes(of: excluded.map(\.url)).reduce(0, +)), 0))
     var parents: [String: String] = [:]
     for item in items {
       parents[item.lastPathComponent] =
@@ -298,7 +340,7 @@ import AppKit
           temporary.path(percentEncoded: false),
         ], captures: true, quality: .userInitiated, stopsOnCancel: true, watch: watch)
       : try? await Subprocess.run(
-        "/usr/bin/tar", compressArguments(items, format: format, to: temporary, skip: skip),
+        "/usr/bin/tar", compressArguments(items, format: format, to: temporary, excludes: excludes),
         captures: true,
         environment: ByteMeter.utf8Environment, quality: .userInitiated, stopsOnCancel: true,
         watch: watch)
@@ -342,8 +384,7 @@ import AppKit
       filePath: (FileMoves.plainPath(first) as NSString).deletingLastPathComponent,
       directoryHint: .isDirectory)
     let name = archiveName(for: items, format: format)
-    let skip = effectiveSkip(
-      skipNames(UserDefaults.standard.string(forKey: Prefs.finderCompressSkip) ?? ""), items: items)
+    let skip = skipNames(UserDefaults.standard.string(forKey: Prefs.finderCompressSkip) ?? "")
     FileMoves.enqueue("正在压缩成「\(name)」…", detail: "准备中", island: island) { report in
       await pack(
         items, format: format,

@@ -149,6 +149,10 @@ struct KeepAwakeTests {
     #expect(offered("remind 10分钟 喝水") == ["添加「提醒」插件"])
     #expect(offered("刘海") == ["添加「刘海岛」插件"] && offered("dock") == ["添加「程序坞预览」插件"])
     #expect(offered("便签", added: [.notes]).isEmpty)
+    // 英文的词后面紧跟字母、数字的不算（评审 6）；后面是空格、汉字的照算
+    #expect(
+      offered("docker").isEmpty && offered("notebook").isEmpty && offered("statusbar").isEmpty)
+    #expect(offered("dock 预览") == ["添加「程序坞预览」插件"])
     let row = LauncherModel.pluginOffers(for: "防息屏", added: [])
     #expect(row.first?.target == LauncherModel.pluginPrefix + Feature.keepAwake.rawValue)
   }

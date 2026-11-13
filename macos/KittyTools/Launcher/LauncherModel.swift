@@ -1288,10 +1288,17 @@ import UniformTypeIdentifiers
     return Feature.allCases.filter { $0.isPlugin && $0.isAvailable && !added.contains($0) }
       .compactMap { plugin in
         let words = ([plugin.page.title] + plugin.pluginWords).map(LauncherMatch.fold)
-        // 中文常不打空格（「保持唤醒2小时」）：打的字以这个词开头也算
+        // 中文常不打空格（「保持唤醒2小时」）：打的字以这个词开头也算。英文的词后面不能紧跟着字母、数字
+        // （评审 6：dock、note 这些短词，打 docker、notebook 不该冒出「添加…插件」）
         guard
-          words.contains(where: {
-            head.hasPrefix($0) || ($0.hasPrefix(head) && head.count >= least)
+          words.contains(where: { word in
+            (head.hasPrefix(word)
+              && (!word.allSatisfy(\.isASCII)
+                || head.dropFirst(word.count).first.map {
+                  !($0.isASCII && ($0.isLetter || $0.isNumber))
+                }
+                  ?? true))
+              || (word.hasPrefix(head) && head.count >= least)
           })
         else { return nil }
         return LauncherItem(

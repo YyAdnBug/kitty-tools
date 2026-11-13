@@ -86,6 +86,20 @@ struct IslandActivityTests {
     #expect(island.activities.count == 1)
   }
 
+  /// 移除刘海岛插件时，缩进耳朵的进行中换回挂着的提示，之后的进度照常改它（评审 4：不然一直到结果出来都看不见、停不了）
+  @Test func removingPluginBringsProgressBack() throws {
+    let island = Island(showing: nil, geometry: notch)
+    island.show("正在压缩", detail: "1%", tone: .progress)
+    let shown = try #require(island.content)
+    island.collapseProgress(shown)
+    #expect(island.activities.count == 1)
+    island.hasExtras = false
+    #expect(island.activities.isEmpty)
+    #expect(island.content?.title == "正在压缩" && island.content?.tone == .progress)
+    island.progress("正在压缩", detail: "50%", fraction: 0.5)
+    #expect(island.content?.detail == "50%" && island.content?.fraction == 0.5)
+  }
+
   /// 没有刘海的屏不挂耳朵（H1：放菜单栏）；活动照样记着，那一张里列得出来
   @Test func capsuleScreensHaveNoWings() {
     let island = Island(showing: nil, geometry: .capsule(menuBar: 24))

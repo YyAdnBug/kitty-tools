@@ -245,6 +245,8 @@ struct ShortcutsSheet: View {
     var features: [Feature] = []
     /// 这一组的全局快捷键（排在最前，带「全局」标记）
     var globals: [HotKeyAction] = []
+    /// 功能全关了也列（刘海岛：点刘海那一行归插件，提示怎么停住、收起那一行一直有用）
+    var always = false
     var entries: [Entry]
     var id: String { title }
 
@@ -260,7 +262,9 @@ struct ShortcutsSheet: View {
   static func groups(enabled: Set<Feature>) -> [Group] {
     allGroups.compactMap { group in
       let owners = group.features.isEmpty ? group.globals.compactMap(\.feature) : group.features
-      guard owners.isEmpty || owners.contains(where: enabled.contains) else { return nil }
+      guard group.always || owners.isEmpty || owners.contains(where: enabled.contains) else {
+        return nil
+      }
       var group = group
       group.globals = group.globals.filter { $0.feature.map(enabled.contains) ?? true }
       group.entries = group.entries.filter { $0.needs.map(enabled.contains) ?? true }
@@ -691,12 +695,12 @@ struct ShortcutsSheet: View {
           Entry(text: "按一下开始（无限期），再按一下停止；菜单栏「保持唤醒」里能选 30 分钟到 5 小时"),
           Entry(text: "在启动器里输入「awake 2小时」「保持唤醒 到18点」「awake 无限期」：↩ 开始；开着时第一行是停止"),
         ]),
-      // 刘海岛（mac-whisker S2，2026-10-26）：不属于哪个功能，一直列
+      // 刘海岛（mac-whisker S2，2026-10-26）：一直列；2026-11-13 起点刘海那一行和全局键归刘海岛插件，没添加时只剩提示那一行
       Group(
         title: "刘海岛", symbol: HotKeyAction.island.symbol, color: Style.Family.general,
-        globals: [.island],
+        globals: [.island], always: true,
         entries: [
-          Entry(text: "点刘海：打开 / 收起最近的提示和快捷动作（指针停在刘海上时岛会鼓起一点）"),
+          Entry(text: "点刘海：打开 / 收起最近的提示和快捷动作（指针停在刘海上时岛会鼓起一点）", needs: .island),
           Entry(text: "鼠标挪到弹出的提示上：停住、展开看全文和按钮；在岛上双指往上滑收起"),
         ]),
       // 主界面（2026-10-29，Shell/HomePanel.swift 的 Home.key / Home.command）：不属于哪个功能，一直列

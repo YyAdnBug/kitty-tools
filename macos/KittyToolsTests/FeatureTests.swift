@@ -147,8 +147,10 @@ struct FeatureTests {
     #expect(
       noRecord.first { $0.title == "截图 · 出图" }?.entries.contains { $0.keys == ["R"] } == false)
 
-    // 都关掉只剩不归功能的「设置」一组
-    #expect(ShortcutsSheet.groups(enabled: []).map(\.title) == ["主界面", "设置"])
+    // 都关掉只剩不归功能的那几组；刘海岛那一组一直列，没添加插件时只剩「提示怎么停住、收起」那一行（评审 5）
+    let none = ShortcutsSheet.groups(enabled: [])
+    #expect(none.map(\.title) == ["刘海岛", "主界面", "设置"])
+    #expect(none[0].globals.isEmpty && none[0].entries.count == 1)
   }
 
   /// 新装（没看过任何一版）第一次启动把开关明写进偏好：常用的四个开、别的关（功能管理拍板 M4 M5）；已经存过的不动

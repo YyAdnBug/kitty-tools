@@ -398,6 +398,8 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
   func show(page: SettingsPage? = nil, onboarding: Bool = false) {
     // 页面上开着 sheet（快捷键速查表、确认框等）时不换页：换页会把那一页连同 sheet 和没保存的输入一起拆掉
     if let page, window.attachedSheet == nil { navigation.page = page }
+    // 停在已经移除的插件页上（设置窗关着时同步来的移除：带回「功能」页的那一步只在页面开着时跟，评审 7）：回通用页
+    if SettingsPage.absentPlugins().contains(navigation.page) { navigation.page = .general }
     // 新功能标记：打开设置窗也算打开了那一页（换了页时 SettingsRoot 的 onChange 也会来一次，重复的不写偏好）
     navigation.visit(navigation.page)
     if onboarding { navigation.showsOnboarding = true }
