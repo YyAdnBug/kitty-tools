@@ -25,6 +25,12 @@ public static class NotesWindowRules
     public const string SingleExportTitle = "导出为 Markdown…";
     public const string OverLimitText = "一条便签最多 1 MB，这次输入没有记进去";
 
+    /// <summary>底行：编辑器里的图片和正文对不上，之后的改动交不出去（R73）。</summary>
+    public const string UnsavedText = "这条便签有改动没存上";
+
+    /// <summary>底行：落盘失败、正在隔一会儿重试（R75，同 mac）。</summary>
+    public const string SaveRetryText = "没存上，正在重试";
+
     public static string ScopeTitle(NotesScope scope) => scope switch
     {
         NotesScope.All => "全部",

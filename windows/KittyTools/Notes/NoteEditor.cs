@@ -129,6 +129,13 @@ internal sealed partial class NoteEditor
         }
 
         _box.Document.UndoLimit = 0;
+        // R73：正文框里不许拖放。RichEdit 的内部拖动是先插后删，插进去的 U+FFFC 被当成别处来的对象排队删，
+        // 紧接着删原位置时图片表就错一格（往前拖丢后一张的记录，往后拖之后的字都不交）。Windows 这边本来就不支持往便签里拖文件。
+        _box.AllowDrop = false;
+        _box.CanDrag = false;
+        _box.DragStarting += (_, args) => args.Cancel = true;
+        _box.AddHandler(UIElement.DragOverEvent, new DragEventHandler(RefuseDrop), handledEventsToo: true);
+        _box.AddHandler(UIElement.DropEvent, new DragEventHandler(RefuseDrop), handledEventsToo: true);
         _box.TextChanging += OnTextChanging;
         _box.SelectionChanged += (_, _) => OnSelectionChanged();
         _box.GotFocus += (_, _) => SyncMarkers();
@@ -259,17 +266,34 @@ internal sealed partial class NoteEditor
         Replace(string.Empty, Array.Empty<NoteImages.Image>(), new NoteRange(0, 0));
     }
 
+    private static void RefuseDrop(object sender, DragEventArgs args)
+    {
+        args.AcceptedOperation = Windows.ApplicationModel.DataTransfer.DataPackageOperation.None;
+        args.Handled = true;
+    }
+
+    /// <summary>图片表和正文对不上、改动交不出去（R73：底行写一句，别无声地丢字）。</summary>
+    public bool Unsaved { get; private set; }
+
+    public event Action? UnsavedChanged;
+
     /// <summary>编辑器里的 U+FFFC 和图片表对得上（对不上时交出去的正文会把图片令牌整个丢掉、再被同步带走：宁可这一下不交，
     /// 记一笔日志；PLAN-v13 复查，RichEdit 把占位的 U+FFFC 洗掉之类的情况在 Windows 上核验）。</summary>
     private bool Aligned()
     {
-        if (_text.AsSpan().Count(ObjectChar) == _images.Count)
+        var aligned = _text.AsSpan().Count(ObjectChar) == _images.Count;
+        if (!aligned)
         {
-            return true;
+            Log.Warn($"notes.editor-images-misaligned objects={_text.AsSpan().Count(ObjectChar)} images={_images.Count}");
         }
 
-        Log.Warn($"notes.editor-images-misaligned objects={_text.AsSpan().Count(ObjectChar)} images={_images.Count}");
-        return false;
+        if (Unsaved == aligned)
+        {
+            Unsaved = !aligned;
+            UnsavedChanged?.Invoke();
+        }
+
+        return aligned;
     }
 
     private void PublishPending()

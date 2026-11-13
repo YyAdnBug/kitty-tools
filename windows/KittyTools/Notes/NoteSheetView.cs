@@ -61,6 +61,7 @@ internal sealed class NoteSheetView
         Editor.BodyChanged += (id, body) => NoteStore.Instance?.SetBody(id, body);
         Editor.CloseRequested += () => _host.Close(true);
         Editor.Overflowed += () => NoticeHost.Show(NotesWindowRules.OverLimitText, string.Empty, NoticeTone.Warning);
+        Editor.UnsavedChanged += ShowFootnote;
 
         _strip = new Border { Height = 4, CornerRadius = new CornerRadius(8, 8, 0, 0) };
         _dot = HeaderButton(string.Empty, NotesWindowRules.ColorTitle, ShowColors);
@@ -170,6 +171,7 @@ internal sealed class NoteSheetView
         if (NoteStore.Instance is { } store)
         {
             store.Changed += Refresh;
+            store.SaveProblemChanged += ShowFootnote;
         }
 
         SettingsService.Changed += Refresh;
@@ -186,6 +188,7 @@ internal sealed class NoteSheetView
         if (NoteStore.Instance is { } store)
         {
             store.Changed -= Refresh;
+            store.SaveProblemChanged -= ShowFootnote;
         }
 
         SettingsService.Changed -= Refresh;
@@ -275,8 +278,17 @@ internal sealed class NoteSheetView
             settings.NotesMarkdown, NoteStyles.SpacingFromName(settings.NotesLineSpacing) ?? NoteSpacing.Standard);
         Editor.Load(note);
         _footnote.Foreground = new SolidColorBrush(Shade(paper.SecondaryInk(dark, contrast), tone.Paper));
-        _footnote.Text = NotesWindowRules.Footnote(note, NoteStore.Now, TimeZoneInfo.Local);
+        _footnoteText = NotesWindowRules.Footnote(note, NoteStore.Now, TimeZoneInfo.Local);
+        ShowFootnote();
     }
+
+    private string _footnoteText = string.Empty;
+
+    /// <summary>底行：改于 · 字数；改动交不出去（R73）、落盘一直失败（R75）时前面先写一句。</summary>
+    private void ShowFootnote()
+        => _footnote.Text = Editor.Unsaved ? NotesWindowRules.UnsavedText + " · " + _footnoteText
+            : NoteStore.Instance?.SaveProblem is not null ? NotesWindowRules.SaveRetryText + " · " + _footnoteText
+            : _footnoteText;
 
     private static Color Rgb(int rgb) => Color.FromArgb(255, (byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb);
 

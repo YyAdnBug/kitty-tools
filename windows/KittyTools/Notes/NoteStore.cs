@@ -67,6 +67,9 @@ internal sealed class NoteStore : IDisposable
     /// <summary>上次落盘没成的原因；都落下去了是 null。</summary>
     public string? SaveProblem { get; private set; }
 
+    /// <summary>SaveProblem 有了 / 没了（R75：便签底行跟着写「没存上，正在重试」）。</summary>
+    public event Action? SaveProblemChanged;
+
     /// <summary>便签变了（界面重画）。</summary>
     public event Action? Changed;
 
@@ -515,13 +518,26 @@ internal sealed class NoteStore : IDisposable
 
             Book.Saved();
             _failures = 0;
-            SaveProblem = null;
+            if (SaveProblem is not null)
+            {
+                SaveProblem = null;
+                SaveProblemChanged?.Invoke();
+            }
+
             return true;
         }
         catch (Exception ex)
         {
+            var first = SaveProblem is null;
             SaveProblem = ex.Message;
             _failures++;
+            if (first)
+            {
+                // R75：第一次失败轻提示一次（之后底行一直写着，好了就消）；关机、注销前用户至少知道有字没落盘。
+                NoticeHost.Show("便签没存上", "正在重试，先别关机或注销", NoticeTone.Warning);
+                SaveProblemChanged?.Invoke();
+            }
+
             Log.Warn($"notes.save-failed {ex.GetType().Name} failures={_failures}");
             _retryTimer.Interval = TimeSpan.FromSeconds(RetryDelay(_failures));
             _retryTimer.Start();
