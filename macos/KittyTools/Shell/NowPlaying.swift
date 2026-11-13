@@ -39,8 +39,8 @@ import OSLog
   private var usesFallback = false
   private var fallbackCheck: Task<Void, Never>?
   private var positionRead: Task<Void, Never>?
-  /// 解好的封面（按编号）：同一首不重复解
-  private var artwork: (id: String, image: NSImage)?
+  /// 解好的封面（按编号）和它的主色：同一首不重复解、不重复算
+  private var artwork: (id: String, image: NSImage, tint: NSColor?)?
   /// 放歌那个 App 的图标（按 bundle id 记一份）：没有封面时顶上
   private var appIcon: (bundleID: String, image: NSImage?)?
   /// 从在播变成暂停的那一刻（一直没在播过的是 nil：一打开就是暂停着的不上耳朵）
@@ -315,16 +315,16 @@ import OSLog
     if let id = snapshot.artworkID, let data = snapshot.artwork, artwork?.id != id,
       let image = NSImage(data: data)
     {
-      artwork = (id, image)
+      artwork = (id, image, ArtworkTint.color(of: image))
     }
-    let image =
-      snapshot.artworkID != nil && snapshot.artworkID == artwork?.id ? artwork?.image : nil
+    let current = snapshot.artworkID != nil && snapshot.artworkID == artwork?.id ? artwork : nil
     island.setActivity(
       Island.Activity(
         id: Self.activityID, kind: .media, title: snapshot.title, detail: snapshot.artist,
         symbol: "music.note", tone: .info,
         media: Island.Media(
-          snapshot: snapshot, artwork: image, appIcon: icon(for: snapshot),
+          snapshot: snapshot, artwork: current?.image, tint: current?.tint,
+          appIcon: icon(for: snapshot),
           send: { [weak self] in self?.send($0) }, seek: { [weak self] in self?.seek(to: $0) },
           open: { [weak self] in self?.openApp() }),
         onWings: Self.showsOnWings(

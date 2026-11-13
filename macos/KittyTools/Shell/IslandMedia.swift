@@ -3,7 +3,10 @@
 // 跳动条是图层动画（CABasicAnimation，渲染服务做、本进程不逐帧算）：放歌时一挂几个小时，Whisker §8 循环只动变换、不用 TimelineView；
 // 只在在播且速率 > 0 时动，暂停 / 缓冲停住，减弱动态效果时不动。进度条和时间只在卡片开着时每秒推一次（TimelineView）；
 // 这个 App 支持跳时进度条能拖、能点着跳（IslandScrubber）。
-// 上一首 / 下一首按快照里的 canPrevious / canNext 灰掉（Chrome 里单个视频没有）；点封面切到放歌的那个 App。
+// 上一首 / 下一首按快照里的 canPrevious / canNext 灰掉；两个都没有、又能跳的源（Chrome 里单个视频、播客）换成后退 /
+// 前进 15 秒。点封面切到放歌的那个 App。
+// 以 Alcove 为准的那一轮（2026-11-13）：跳动条和进度条跟封面的主色（ArtworkTint，换封面才算一次）；双指左右滑切歌时
+// 封面上闪一个箭头（IslandSkipArrow）；指针在岛上时右耳的跳动条换成播放 / 暂停（IslandWings）。
 
 import SwiftUI
 
@@ -128,6 +131,7 @@ struct IslandMediaCard: View {
           island.perform(Island.Action("切到 App", opens: true, run: media.open))
         } label: {
           IslandMediaArt(media: media, size: 48)
+            .overlay { IslandSkipArrow(skip: island.skip, size: 48) }
         }
         .buttonStyle(IslandButtonStyle())
         .accessibilityLabel("切到\(Island.Media.appLabel(snapshot))")
@@ -230,7 +234,7 @@ struct IslandScrubber: View {
       Capsule().fill(.white.opacity(0.18))
         .overlay(alignment: .leading) {
           GeometryReader { proxy in
-            Rectangle().fill(IslandLeading.tint(.info))
+            Rectangle().fill(media.tint.map { Color(nsColor: $0) } ?? IslandLeading.tint(.info))
               .frame(width: proxy.size.width * fraction)
               .animation(push, value: fraction)
           }
@@ -312,18 +316,38 @@ struct IslandTransport: View {
 
   var body: some View {
     let snapshot = media.snapshot
+    let jumps = Self.usesJumps(snapshot)
     HStack(spacing: size * 1.4) {
-      button("backward.fill", label: "上一首", size: size - 3, enabled: snapshot.canPrevious) {
-        media.send(.previous)
+      if jumps {
+        button("gobackward.15", label: "后退 15 秒", size: size - 3, enabled: true) { jump(-15) }
+      } else {
+        button("backward.fill", label: "上一首", size: size - 3, enabled: snapshot.canPrevious) {
+          media.send(.previous)
+        }
       }
       button(
         snapshot.isPlaying ? "pause.fill" : "play.fill", label: snapshot.isPlaying ? "暂停" : "播放",
         size: size, enabled: true
       ) { media.send(.toggle) }
-      button("forward.fill", label: "下一首", size: size - 3, enabled: snapshot.canNext) {
-        media.send(.next)
+      if jumps {
+        button("goforward.15", label: "前进 15 秒", size: size - 3, enabled: true) { jump(15) }
+      } else {
+        button("forward.fill", label: "下一首", size: size - 3, enabled: snapshot.canNext) {
+          media.send(.next)
+        }
       }
     }
+  }
+
+  /// 上一首 / 下一首都用不了、又能跳的源（Chrome 里单个视频、播客）：两个灰着的按钮换成后退 / 前进 15 秒
+  static func usesJumps(_ snapshot: NowPlayingSnapshot) -> Bool {
+    !snapshot.canPrevious && !snapshot.canNext && snapshot.elapsed != nil
+      && NowPlaying.seekTarget(0, in: snapshot) != nil
+  }
+
+  /// 从此刻的位置挪几秒（夹进这一首里由 NowPlaying.seek 管）
+  private func jump(_ seconds: Double) {
+    media.seek((NowPlaying.position(media.snapshot, at: .now) ?? 0) + seconds)
   }
 
   private func button(
@@ -372,6 +396,131 @@ struct IslandMediaRow: View {
       IslandTransport(media: media, size: 13)
     }
     .frame(height: 34)
+  }
+}
+
+/// 双指左右滑切了歌：封面上闪一下箭头（暗一层底 + 白色的下一首 / 上一首符号，0.5 秒）。只看 skip 的次数变没变
+struct IslandSkipArrow: View {
+  let skip: Island.Skip?
+  /// 封面的边长
+  let size: CGFloat
+  @State private var shown = false
+  /// 已经闪过的那一次：视图建出来时已有的那一次不闪（先在耳朵上滑过、再展开卡片）
+  @State private var seen: Int?
+
+  init(skip: Island.Skip?, size: CGFloat) {
+    self.skip = skip
+    self.size = size
+    _seen = State(initialValue: skip?.count)
+  }
+
+  var body: some View {
+    RoundedRectangle(cornerRadius: size * 0.225, style: .continuous)
+      .fill(.black.opacity(0.45))
+      .overlay {
+        Image(systemName: skip?.forward ?? true ? "forward.fill" : "backward.fill")
+          .font(.system(size: size * 0.42, weight: .semibold))
+          .foregroundStyle(.white)
+      }
+      .opacity(shown ? 1 : 0)
+      .allowsHitTesting(false)
+      .accessibilityHidden(true)
+      .animation(Style.Motion.snap.animation() ?? .easeInOut(duration: 0.15), value: shown)
+      .task(id: skip?.count) {
+        guard let skip, skip.count != seen else { return }
+        seen = skip.count
+        shown = true
+        try? await Task.sleep(for: .milliseconds(500))
+        // 半秒内又滑了一次：这一个任务被取消，收掉的事交给新的那个
+        guard !Task.isCancelled else { return }
+        shown = false
+      }
+  }
+}
+
+/// 封面的主色：跳动条、进度条跟它走（Alcove 收起时的波形就是这样，颜色来自内容）。换封面才算一次：256 px 的封面画成
+/// 24 × 24 再数像素，不常驻、不逐帧
+nonisolated enum ArtworkTint {
+  /// 一块 RGBA8 像素 → 主色（色相、饱和度、亮度都是 0…1）。按色相分 12 桶，每个像素按「够不够鲜艳」加权（最大和最小
+  /// 分量的差），最重的那一桶里取加权平均，再收拾成岛的黑底上看得清的样子：饱和度夹在 0.5…0.8、亮度至少 0.9
+  /// （蓝到紫那一段 0.5…0.55、亮度 1）。
+  /// 整张图太灰、太暗（黑白封面）是 nil，调用方用强调色
+  static func dominant(rgba: [UInt8]) -> (hue: Double, saturation: Double, brightness: Double)? {
+    var weights = [Double](repeating: 0, count: 12)
+    var reds = weights
+    var greens = weights
+    var blues = weights
+    var pixels = 0.0
+    for index in stride(from: 0, to: rgba.count - 3, by: 4) {
+      let red = Double(rgba[index]) / 255
+      let green = Double(rgba[index + 1]) / 255
+      let blue = Double(rgba[index + 2]) / 255
+      pixels += 1
+      let high = max(red, green, blue)
+      let delta = high - min(red, green, blue)
+      // 太暗、太灰的像素不算
+      guard high > 0.15, delta / high > 0.2 else { continue }
+      // 桶的边界错开半格：红色在 0° 两边（0.99 和 0.01）落进同一桶
+      let bucket = Int(hue(red, green, blue, high: high, delta: delta) * 12 + 0.5) % 12
+      weights[bucket] += delta
+      reds[bucket] += red * delta
+      greens[bucket] += green * delta
+      blues[bucket] += blue * delta
+    }
+    guard pixels > 0, let best = weights.indices.max(by: { weights[$0] < weights[$1] }),
+      weights[best] / pixels > 0.02
+    else { return nil }
+    let red = reds[best] / weights[best]
+    let green = greens[best] / weights[best]
+    let blue = blues[best] / weights[best]
+    let high = max(red, green, blue)
+    let delta = high - min(red, green, blue)
+    guard high > 0, delta > 0 else { return nil }
+    let main = hue(red, green, blue, high: high, delta: delta)
+    // 蓝到紫那一段本身就暗（纯蓝在黑底上对比度不到 3:1）：饱和度压到 0.55、亮度提满
+    let dim = (0.58...0.8).contains(main)
+    return (main, min(max(delta / high, 0.5), dim ? 0.55 : 0.8), dim ? 1 : max(high, 0.9))
+  }
+
+  /// 色相 0…1（delta > 0）
+  private static func hue(
+    _ red: Double, _ green: Double, _ blue: Double, high: Double, delta: Double
+  )
+    -> Double
+  {
+    let sixth: Double
+    if high == red {
+      sixth = ((green - blue) / delta).truncatingRemainder(dividingBy: 6)
+    } else if high == green {
+      sixth = (blue - red) / delta + 2
+    } else {
+      sixth = (red - green) / delta + 4
+    }
+    return (sixth < 0 ? sixth + 6 : sixth) / 6
+  }
+
+  /// 封面 → 主色；画不出来、太灰是 nil
+  static func color(of image: NSImage) -> NSColor? {
+    guard let source = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+      return nil
+    }
+    let side = 24
+    var pixels = [UInt8](repeating: 0, count: side * side * 4)
+    let drawn = pixels.withUnsafeMutableBytes { buffer -> Bool in
+      guard
+        let context = CGContext(
+          data: buffer.baseAddress, width: side, height: side, bitsPerComponent: 8,
+          bytesPerRow: side * 4,
+          space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
+          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+      else { return false }
+      context.interpolationQuality = .low
+      context.draw(source, in: CGRect(x: 0, y: 0, width: side, height: side))
+      return true
+    }
+    guard drawn, let main = dominant(rgba: pixels) else { return nil }
+    return NSColor(
+      hue: main.hue, saturation: main.saturation, brightness: main.brightness, alpha: 1)
   }
 }
 

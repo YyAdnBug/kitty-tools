@@ -115,6 +115,8 @@ extension Island {
   struct Media {
     var snapshot: NowPlayingSnapshot
     var artwork: NSImage?
+    /// 封面的主色（ArtworkTint）：跳动条、进度条跟它走；没有封面、封面太灰是 nil = 用强调色
+    var tint: NSColor?
     var appIcon: NSImage?
     var send: (NowPlayingCommand) -> Void
     /// 跳到这一首的第几秒（进度条）
@@ -129,6 +131,10 @@ struct IslandWings: View {
   /// 刘海宽（Island.Geometry.notch 给的，真刘海 + 4）、高
   let notchWidth: CGFloat
   let notchHeight: CGFloat
+  /// 指针停在刘海 / 耳朵上（岛鼓起着）：正在播放的右耳从跳动条换成播放 / 暂停，点它直接切换
+  var peeking = false
+  /// 刚用双指左右滑切了歌：左耳的封面上闪一个箭头
+  var skip: Island.Skip?
 
   var body: some View {
     HStack(spacing: 0) {
@@ -142,13 +148,19 @@ struct IslandWings: View {
       [
         activity.title, activity.media == nil ? nil : activity.detail,
         Island.Activity.reading(activity.trailing, now: .now),
-      ].compactMap { $0 }.joined(separator: "，"))
+      ].compactMap { $0 }.joined(separator: "，")
+    )
+    .accessibilityActions {
+      if let media = activity.media {
+        Button(media.snapshot.isPlaying ? "暂停" : "播放") { media.send(.toggle) }
+      }
+    }
   }
 
   /// 正在播放：左耳封面（20 pt）、右耳跳动条（在播且速率 > 0 才动）。别的活动：记号和读数
   @ViewBuilder private var leading: some View {
     if let media = activity.media {
-      IslandMediaArt(media: media, size: 20)
+      IslandMediaArt(media: media, size: 20).overlay { IslandSkipArrow(skip: skip, size: 20) }
     } else {
       IslandActivityMark(activity: activity, size: 12)
     }
@@ -156,8 +168,28 @@ struct IslandWings: View {
 
   @ViewBuilder private var trailing: some View {
     if let media = activity.media {
-      IslandBars(
-        moving: media.snapshot.isPlaying && media.snapshot.rate > 0, color: NSColor(activity.tint))
+      // 整块右耳是一个按钮：平时画跳动条（点了也是切换）；指针在岛上时换成播放 / 暂停的符号，告诉你点它不用展开。
+      // 左耳和刘海照旧：点了展开卡片 / 开那一张
+      Button {
+        media.send(.toggle)
+      } label: {
+        ZStack {
+          IslandBars(
+            moving: media.snapshot.isPlaying && media.snapshot.rate > 0,
+            color: media.tint ?? NSColor(activity.tint)
+          )
+          .opacity(peeking ? 0 : 1)
+          Image(systemName: media.snapshot.isPlaying ? "pause.fill" : "play.fill")
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(.white.opacity(0.92))
+            .scaleEffect(peeking ? 1 : 0.6)
+            .opacity(peeking ? 1 : 0)
+        }
+        .frame(width: Island.wing, height: notchHeight)
+        .contentShape(Rectangle())
+      }
+      .buttonStyle(IslandButtonStyle())
+      .animation(Style.Motion.snap.animation(), value: peeking)
     } else if activity.ticks {
       // 只在耳朵露着时每秒推一次；Ticker 只换变了的那几位数字（图层动画，渲染服务做）
       TimelineView(.periodic(from: .now, by: 1)) { context in

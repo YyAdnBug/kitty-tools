@@ -112,6 +112,110 @@ struct NowPlayingTests {
     #expect(NowPlaying.holding(nil, over: served, now: at) == served)
   }
 
+  /// 封面的主色：鲜艳的那一块赢（不是整张图的平均），收拾成黑底上看得清的；黑白封面没有主色
+  @Test func artworkTint() throws {
+    func pixels(_ colors: [(UInt8, UInt8, UInt8, Int)]) -> [UInt8] {
+      colors.flatMap { color in
+        (0..<color.3).flatMap { _ in [color.0, color.1, color.2, 255] }
+      }
+    }
+    // 纯红：色相 0，饱和度夹到 0.8、亮度 1
+    let red = try #require(ArtworkTint.dominant(rgba: pixels([(255, 0, 0, 16)])))
+    #expect(red.hue == 0 && red.saturation == 0.8 && red.brightness == 1)
+    // 暗蓝：色相在蓝那一段，本身就暗——饱和度压到 0.55、亮度提满
+    let navy = try #require(ArtworkTint.dominant(rgba: pixels([(20, 30, 110, 16)])))
+    #expect(abs(navy.hue - 0.648) < 0.01 && navy.saturation == 0.55 && navy.brightness == 1)
+    // 暗绿：亮度提到 0.9
+    let green = try #require(ArtworkTint.dominant(rgba: pixels([(10, 90, 30, 16)])))
+    #expect(green.brightness == 0.9)
+    // 红在 0° 两边（偏品红的红、偏橙的红）算一桶：加起来比蓝多就是红
+    let reds = try #require(
+      ArtworkTint.dominant(
+        rgba: pixels([(255, 0, 20, 20), (255, 20, 0, 20), (0, 0, 255, 30)])))
+    #expect(reds.hue < 0.02 || reds.hue > 0.98)
+    // 大片灰 + 一小块橙：橙赢；两种颜色不搅成一团（红 + 蓝不出紫）
+    let orange = try #require(
+      ArtworkTint.dominant(rgba: pixels([(128, 128, 128, 80), (255, 140, 0, 20)])))
+    #expect(abs(orange.hue - 0.0915) < 0.01)
+    let mixed = try #require(
+      ArtworkTint.dominant(rgba: pixels([(255, 0, 0, 30), (0, 0, 255, 20)])))
+    #expect(mixed.hue == 0)
+    // 黑白、全黑、空的：没有主色
+    #expect(ArtworkTint.dominant(rgba: pixels([(200, 200, 200, 8), (30, 30, 30, 8)])) == nil)
+    #expect(ArtworkTint.dominant(rgba: pixels([(0, 0, 0, 16)])) == nil)
+    #expect(ArtworkTint.dominant(rgba: []) == nil)
+    // 很淡的颜色：饱和度提到 0.5
+    let pale = try #require(ArtworkTint.dominant(rgba: pixels([(255, 190, 190, 16)])))
+    #expect(pale.saturation == 0.5)
+  }
+
+  /// 上一首 / 下一首都没有、又能跳的源：换成后退 / 前进 15 秒；有一个能用、不能跳、没有进度的照旧
+  @Test func jumpsReplaceMissingSkips() {
+    var video = snapshot()
+    video.canPrevious = false
+    video.canNext = false
+    #expect(IslandTransport.usesJumps(video))
+    #expect(!IslandTransport.usesJumps(snapshot()))
+    var half = video
+    half.canNext = true
+    #expect(!IslandTransport.usesJumps(half))
+    var live = video
+    live.canSeek = false
+    #expect(!IslandTransport.usesJumps(live))
+    var unknown = video
+    unknown.elapsed = nil
+    #expect(!IslandTransport.usesJumps(unknown))
+  }
+
+  /// 双指左右滑：横着走够 36 pt、而且比竖着走得多才算；手指往左是下一首。只在正在播放露着（耳朵、它的卡片、那一张）
+  /// 时切，这个源不支持的那个方向不动
+  @Test func swipeSkipsTrack() {
+    #expect(Island.sideways(slide: 40, swipe: 5) == true)
+    #expect(Island.sideways(slide: -40, swipe: 5) == false)
+    #expect(Island.sideways(slide: 30, swipe: 0) == nil)
+    #expect(Island.sideways(slide: 40, swipe: -60) == nil)
+    // 上下滑：竖着够 24、而且不比横着少；斜着往左右滑、竖向先到 24 的不算
+    #expect(Island.upDown(slide: 0, swipe: 24) == true)
+    #expect(Island.upDown(slide: 5, swipe: -30) == false)
+    #expect(Island.upDown(slide: 35, swipe: 24) == nil)
+    #expect(Island.upDown(slide: 0, swipe: 20) == nil)
+    var sent: [NowPlayingCommand] = []
+    var playing = snapshot()
+    playing.canPrevious = false
+    let media = Island.Activity(
+      id: NowPlaying.activityID, kind: .media, title: "歌", symbol: "music.note",
+      media: Island.Media(
+        snapshot: playing, artwork: nil, tint: nil, appIcon: nil, send: { sent.append($0) },
+        seek: { _ in }, open: {}))
+    let notch = Island.Geometry.notch(width: 212, height: 37.5)
+    let island = Island(showing: nil, geometry: notch, activities: [media])
+    #expect(island.swipeTrack(forward: true))
+    #expect(sent == [.next] && island.skip == Island.Skip(forward: true, count: 1))
+    // 不支持上一首：不发、不闪、不占这一次手势
+    #expect(!island.swipeTrack(forward: false))
+    #expect(sent == [.next] && island.skip?.count == 1)
+    // 卡片开着照样认
+    island.tapped()
+    island.swipeTrack(forward: true)
+    #expect(sent == [.next, .next])
+    // 那一张开着照样认（它最上面列着正在播放那一行）
+    let board = Island(showing: nil, geometry: notch, board: [], activities: [media])
+    #expect(board.swipeTrack(forward: true))
+    #expect(sent == [.next, .next, .next])
+    sent = [.next, .next]
+    // 岛上是别的提示：不认
+    let toast = Island(
+      showing: .init(title: "已复制", detail: nil, tone: .success, symbol: "checkmark", leading: .tone),
+      geometry: notch, activities: [media])
+    toast.swipeTrack(forward: true)
+    #expect(sent == [.next, .next])
+    // 耳朵让给了更要紧的活动（录屏）：不认
+    let recording = Island.Activity(
+      id: "rec", kind: .record, title: "录屏中", symbol: "record.circle.fill")
+    Island(showing: nil, geometry: notch, activities: [media, recording]).swipeTrack(forward: true)
+    #expect(sent == [.next, .next])
+  }
+
   /// 上耳朵：在播；从在播变成暂停还不到 30 秒；一打开就是暂停着的不上
   @Test func wings() {
     #expect(NowPlaying.showsOnWings(isPlaying: true, pausedFor: nil))

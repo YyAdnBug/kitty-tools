@@ -472,6 +472,29 @@ import SwiftUI
     closing.onClose()
   }
 
+  /// 刚用双指左右滑切了歌（往哪边、第几次）：封面上闪一个箭头
+  struct Skip: Equatable {
+    var forward: Bool
+    var count: Int
+  }
+  private(set) var skip: Skip?
+
+  /// 双指在岛上左右滑（手指往左 = 下一首，同系统翻页的方向；以 Alcove 为准的那一轮 A3）：正在播放露在耳朵上、它的卡片
+  /// 开着、或者那一张开着时切歌。一次手势只切一首（IslandHost.scrollWheel）；这个源不支持上 / 下一首就不动；
+  /// 岛上是别的提示、别的活动的卡片时不认
+  @discardableResult func swipeTrack(forward: Bool) -> Bool {
+    let media =
+      isBoardOpen
+      ? activities.first { $0.media != nil }?.media
+      : content == nil ? activity?.media : cardActivity?.media
+    guard let media, forward ? media.snapshot.canNext : media.snapshot.canPrevious else {
+      return false
+    }
+    media.send(forward ? .next : .previous)
+    skip = Skip(forward: forward, count: (skip?.count ?? 0) + 1)
+    return true
+  }
+
   /// 双指在刘海上往下滑（刘海岛扩展 G1，同点刘海）：没开着东西时打开那一张。指针停在刘海上岛鼓起、窗口接鼠标时才收得到
   func swipeDown() {
     guard respondsToNotch, content == nil, !isBoardOpen, !isSuppressed() else { return }
@@ -826,6 +849,22 @@ import SwiftUI
 
   /// 双指在岛上往上滑多少算收起（pt，按手指方向）
   static let swipeDistance: CGFloat = 24
+
+  /// 双指左右滑多少算切歌（比上下滑的多一半：横着的误触更烦，切了歌回不到刚才的进度）
+  static let slideDistance: CGFloat = 36
+
+  /// 这一次手势算不算左右滑：横着走够了、而且比竖着走得多。true = 手指往左（下一首），false = 往右；不算是 nil
+  static func sideways(slide: CGFloat, swipe: CGFloat) -> Bool? {
+    guard abs(slide) >= slideDistance, abs(slide) > abs(swipe) else { return nil }
+    return slide > 0
+  }
+
+  /// 这一次手势算不算上下滑：竖着走够了、而且不比横着少（斜着往左右滑、竖向先到 24 的不算收起 / 打开）。
+  /// true = 手指往上（收起），false = 往下（开那一张）；不算是 nil
+  static func upDown(slide: CGFloat, swipe: CGFloat) -> Bool? {
+    guard abs(swipe) >= swipeDistance, abs(swipe) >= abs(slide) else { return nil }
+    return swipe > 0
+  }
 
   /// 手指往上走了多少：「自然滚动」开着时 scrollingDeltaY 和手指同向（往下为正），关着时相反
   nonisolated static func fingersUp(deltaY: CGFloat, inverted: Bool) -> CGFloat {
@@ -1267,9 +1306,12 @@ struct IslandView: View {
     if case .notch(let width, let height) = geometry, island.isShowingWings, !island.isOpen,
       let activity = island.activity
     {
-      IslandWings(activity: activity, notchWidth: width, notchHeight: height)
-        .id(activity.id)
-        .transition(.opacity.animation(.easeInOut(duration: 0.2)))
+      IslandWings(
+        activity: activity, notchWidth: width, notchHeight: height, peeking: island.isPeeking,
+        skip: island.skip
+      )
+      .id(activity.id)
+      .transition(.opacity.animation(.easeInOut(duration: 0.2)))
     }
   }
 
@@ -1674,8 +1716,9 @@ final class IslandPanel: NSPanel {
 /// 平时窗口整个不接鼠标，这两样都不起作用
 private final class IslandHost: NSHostingView<IslandView> {
   weak var island: Island?
-  /// 这一次手势里手指往上走了多少（往下是负的）；够了收 / 开一次，同一次手势不再算
+  /// 这一次手势里手指往上走了多少（往下是负的）、往左走了多少（往右是负的）；够了收 / 开 / 切歌一次，同一次手势不再算
   private var swipe: CGFloat = 0
+  private var slide: CGFloat = 0
   private var swiped = false
 
   override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
@@ -1685,17 +1728,21 @@ private final class IslandHost: NSHostingView<IslandView> {
     guard event.phase != [] else { return }
     if event.phase == .began {
       swipe = 0
+      slide = 0
       swiped = false
     }
     guard !swiped else { return }
     swipe += Island.fingersUp(
       deltaY: event.scrollingDeltaY, inverted: event.isDirectionInvertedFromDevice)
-    if swipe >= Island.swipeDistance {
+    // 横着的同一个换算：「自然滚动」开着时 scrollingDeltaX 和手指同向（往右为正）
+    slide += Island.fingersUp(
+      deltaY: event.scrollingDeltaX, inverted: event.isDirectionInvertedFromDevice)
+    if let forward = Island.sideways(slide: slide, swipe: swipe) {
+      // 没切成（岛上不是正在播放、这个方向不支持）不占这一次手势：接着往上滑照样收得掉
+      if island?.swipeTrack(forward: forward) == true { swiped = true }
+    } else if let up = Island.upDown(slide: slide, swipe: swipe) {
       swiped = true
-      island?.swipeAway()
-    } else if swipe <= -Island.swipeDistance {
-      swiped = true
-      island?.swipeDown()
+      if up { island?.swipeAway() } else { island?.swipeDown() }
     }
   }
 }

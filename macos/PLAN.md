@@ -636,6 +636,35 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
     键盘，没有键盘操作。单测 `NowPlayingTests.seeking` / `holdAfterSeek`、`NowPlayingFallbackTests.scripts`，实机自检
     `liveRoundTrip()` 加了跳转；截图自检 island-media-card-scrub；HANDTEST「正在播放的进度条能拖」1–12。
 
+- **刘海岛完善（以 Alcove 为准，2026-11-13）**：用户「刘海岛的功能目前还太简陋了」「不只是歌曲的播放，还有其他功能，一起做」
+  「我之前就用过 Alcove，特别喜欢它的交互和功能」。拍板页 https://claude.ai/artifact/NmcJTRhvVMgPLnscJgZQCE（源文件
+  `macos/build/research/island-polish-2026-11-13/decisions.html`，16 项 A–E，分 5 批；**还没回复**）。不要授权、不碰红线的
+  （第 1–3 批）不等回复直接做，页上改了哪项撤哪项；日历（D3，新授权）和音量亮度提示（D2：事件拦截的第二个使用者 + 私有
+  亮度接口，先探针、要用户在场）等点头。依据：10 月的 Alcove 全貌（`kitty-tools-macos` 检出的
+  `macos/build/research/notch-alcove-product.md`：功能表、交互模型、手势、官网演示的弹簧）+ 这次补查的各家做法和坑
+  （随机 / 循环状态不同步是通病；收藏各家都走 AppleScript，所以推荐以后；按 App 调音量、真波形要系统音频录制授权；
+  macOS 26 起冻住系统提示进程的老办法不管用）。分支 `claude/island-polish-31f708`，不 push、不并。
+  - 第 0 批：进度条能拖（上面那条，1122d4d1）。
+  - 第 1 批：
+    - A1 取色：`ArtworkTint`（`Shell/IslandMedia.swift`）——封面画成 24 × 24，按色相分 12 桶、按鲜艳程度加权，最重的一桶取
+      平均，饱和度夹到 0.5…0.8、亮度至少 0.9；太灰是 nil（用强调色）。换封面时在 `NowPlaying.render` 里算一次，随
+      `Island.Media.tint` 给跳动条和进度条。
+    - A3 双指左右滑切歌：`IslandHost.scrollWheel` 另记横向的位移，够 `Island.slideDistance`（36 pt）且比竖向多才算
+      （`Island.sideways`），一次手势只触发一次；`Island.swipeTrack`：正在播放露在耳朵上、它的卡片开着、那一张开着时发
+      下一首 / 上一首（手指往左是下一首），不支持的方向不动；封面上闪一下箭头（`IslandSkipArrow`，看 `Island.skip` 的次数）。
+    - A4 耳朵上播放 / 暂停：正在播放的右耳整块是按钮，指针在岛上（`isPeeking`）时跳动条换成播放 / 暂停符号，点了直接
+      切换；左耳和刘海照旧。
+    - B4 ±15 秒：上一首 / 下一首都不支持、又能跳的源（`IslandTransport.usesJumps`），两个按钮换成后退 / 前进 15 秒
+      （就是 `media.seek(此刻 ± 15)`）。
+    - D1 保持唤醒挂上刘海（11-12 拍板 C3）：手动开的那一段是活动 `.awake`（`KeepAwake.activity`：左耳杯子、右耳倒数、
+      无限期不写数、卡片上「停止」），每次重新算完跟一次（`syncIsland`）；定时那一段不上。
+    已知的取舍（评审提的，等手测反馈）：保持唤醒比正在播放要紧（11-12 拍板 B2 的先后），开着无限期时耳朵一直是杯子，
+    耳朵上切歌、播放 / 暂停用不了（卡片、那一张里照常）；在右耳点了暂停，30 秒后耳朵收走，接着放要点刘海开那一张；
+    右耳误点的后果从「展开卡片」变成「音乐停了」。蓝到紫的主色本身暗，饱和度压到 0.55、亮度提满。
+    单测 `NowPlayingTests.artworkTint` / `jumpsReplaceMissingSkips` / `swipeSkipsTrack`、`KeepAwakeTests.islandActivity` /
+    `islandFollowsSession`；
+    截图自检 island-wings-media-peek、island-media-card-jumps（原来的几张现在跟封面取色）；HANDTEST「刘海岛完善第 1 批」1–13。
+
 ### 晾衣绳（第十族，0.7.0，2026-10-26 立项）
 
 - 用户 2026-10-26 看了开源项目 tendedero（MIT，把截图挂在屏幕顶部一根绳子上）后要求集成进来，当作截图的第三种展示方式。

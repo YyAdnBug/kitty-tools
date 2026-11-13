@@ -166,6 +166,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     keepAwake.announce = { [unowned self] title, detail in
       island.show(title, detail: detail, tone: .info, symbol: SettingsPage.keepAwake.symbol)
     }
+    keepAwake.island = island
     return keepAwake
   }()
   /// 提醒（PLAN §10「提醒」）：到点挂在刘海岛上。起停跟着功能开关（applyFeatures），列表变了看着偏好跟上
@@ -1167,6 +1168,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     if turnedOn.contains(.reminders) { reminders.start() }
     if turnedOn.contains(.keepAwake) { keepAwake.start() }
+    // 刘海岛插件刚添加：没添加时岛不收活动，开着的那段保持唤醒补挂上去
+    if turnedOn.contains(.island), now.contains(.keepAwake) { keepAwake.syncIsland(force: true) }
 
     // 访达右键（拍板 D3）：运行中打开、系统里扩展还没打开时直接带去 系统设置 › 登录项与扩展；启动时、欢迎引导里勾上的不当场弹
     // （同程序坞预览要授权）。扩展自己读开关，这边没有后台活要起停

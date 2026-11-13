@@ -1087,19 +1087,21 @@ struct SnapshotProbeTests {
       NSGradient(colors: [.systemPink, .systemOrange])?.draw(in: rect, angle: 45)
       return true
     }
-    func media(playing: Bool, artwork: NSImage?, canSeek: Bool = true) -> Island.Activity {
+    func media(
+      playing: Bool, artwork: NSImage?, canSeek: Bool = true, canSkip: Bool = true
+    ) -> Island.Activity {
       let snapshot = NowPlayingSnapshot(
         bundleID: "com.apple.Music", parentBundleID: nil, appName: "音乐",
         title: "Right Now (Na Na Na)", artist: "Akon", album: "Freedom", duration: 240,
         elapsed: 84, timestamp: .now, rate: playing ? 1 : 0, isPlaying: playing,
-        canPrevious: true, canNext: playing, canSeek: canSeek,
+        canPrevious: canSkip, canNext: canSkip && playing, canSeek: canSeek,
         artworkID: artwork == nil ? nil : "a", artwork: nil)
       return Island.Activity(
         id: NowPlaying.activityID, kind: .media, title: snapshot.title, detail: snapshot.artist,
         symbol: "music.note",
         media: Island.Media(
-          snapshot: snapshot, artwork: artwork, appIcon: nil, send: { _ in }, seek: { _ in },
-          open: {}))
+          snapshot: snapshot, artwork: artwork, tint: artwork.flatMap(ArtworkTint.color(of:)),
+          appIcon: nil, send: { _ in }, seek: { _ in }, open: {}))
     }
     for (name, playing) in [("island-wings-media", true), ("island-wings-media-paused", false)] {
       try snapshot(
@@ -1114,6 +1116,23 @@ struct SnapshotProbeTests {
       island.tapped()
       try snapshot(
         IslandView(island: island), size: notch.windowSize, dark: false, to: "\(out)/\(name).png")
+    }
+    // 指针停在耳朵上：右耳的跳动条换成暂停符号
+    try snapshot(
+      IslandView(
+        island: Island(
+          showing: nil, geometry: notch, peeking: true,
+          activities: [media(playing: true, artwork: cover)])),
+      size: notch.windowSize, dark: false, to: "\(out)/island-wings-media-peek.png")
+    // 上一首 / 下一首都没有的源（单个视频）：两个按钮换成后退 / 前进 15 秒
+    do {
+      let island = Island(
+        showing: nil, geometry: notch,
+        activities: [media(playing: true, artwork: cover, canSkip: false)])
+      island.tapped()
+      try snapshot(
+        IslandView(island: island), size: notch.windowSize, dark: false,
+        to: "\(out)/island-media-card-jumps.png")
     }
     // 进度条正拖着（拖到 2:30）：细条变粗、露出圆点、左边的时间是拖到的位置。卡片单独垫黑底出一张
     if let scrubbing = media(playing: true, artwork: cover).media {

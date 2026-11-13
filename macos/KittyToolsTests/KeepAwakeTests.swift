@@ -156,4 +156,53 @@ struct KeepAwakeTests {
     let row = LauncherModel.pluginOffers(for: "防息屏", added: [])
     #expect(row.first?.target == LauncherModel.pluginPrefix + Feature.keepAwake.rawValue)
   }
+
+  /// 手动那一段在刘海岛上（刘海岛扩展 C3）：类别是保持唤醒，到点的写倒数、无限期不写数，卡片上一个「停止」
+  @Test @MainActor func islandActivity() {
+    var stopped = 0
+    let end = Date(timeIntervalSince1970: 5000)
+    let timed = KeepAwake.activity(until: end, display: true) { stopped += 1 }
+    #expect(timed.id == KeepAwake.islandActivity && timed.kind == .awake)
+    #expect(timed.trailing == .countdown(to: end) && timed.detail == "屏幕也不熄")
+    #expect(
+      Island.Activity.reading(timed.trailing, now: end.addingTimeInterval(-3600)) == "1:00:00")
+    #expect(timed.actions.map(\.title) == ["停止"])
+    timed.actions.first?.run()
+    #expect(stopped == 1)
+    let forever = KeepAwake.activity(until: nil, display: false) {}
+    #expect(forever.trailing == .none && forever.detail == "屏幕照常熄")
+  }
+
+  /// 接线：开一段 → 岛上有这个活动；换成到点的一段 → 原地换读数；只是偏好变了、样子没变 → 不重挂；
+  /// 停 → 收掉；移除插件（stop）→ 收掉。岛是摆出来的（不建窗口），偏好用临时域
+  @Test @MainActor func islandFollowsSession() throws {
+    let suite = "keep-awake-island-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let island = Island(showing: nil, geometry: .notch(width: 212, height: 37.5))
+    let keepAwake = KeepAwake(defaults: defaults)
+    keepAwake.island = island
+    keepAwake.start()
+    defer { keepAwake.stop() }
+    func hung() -> Island.Activity? {
+      island.activities.first { $0.id == KeepAwake.islandActivity }
+    }
+    #expect(hung() == nil)
+    keepAwake.begin(until: nil, label: "无限期")
+    #expect(hung()?.trailing == Island.Activity.Trailing.none && island.isShowingWings)
+    let end = Date.now.addingTimeInterval(1800)
+    keepAwake.begin(until: end, label: "30 分钟")
+    #expect(hung()?.trailing == .countdown(to: end))
+    // 样子没变不重挂：岛那边把活动丢了（刘海岛插件移除）之后，普通的一次跟上不会补，force 才补
+    island.endActivity(KeepAwake.islandActivity)
+    keepAwake.syncIsland()
+    #expect(hung() == nil)
+    keepAwake.syncIsland(force: true)
+    #expect(hung() != nil)
+    keepAwake.end()
+    #expect(hung() == nil && !island.isShowingWings)
+    keepAwake.begin(until: nil, label: "无限期")
+    keepAwake.stop()
+    #expect(hung() == nil)
+  }
 }
