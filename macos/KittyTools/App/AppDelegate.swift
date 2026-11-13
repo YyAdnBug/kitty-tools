@@ -113,6 +113,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private let speaker = Speaker()
   /// 刘海岛（全局轻提示）
   private let island = Island()
+  /// 刘海岛上的系统一瞬提示（电源、电量、耳机、网络；设置 › 刘海岛「系统提示」，开着的才监听）
+  private lazy var systemNotices = SystemNotices(island: island)
   /// 应用内更新（读本仓库的 GitHub release）
   private let updater = Updater()
   /// CleanShot 式常驻缩略图（截图飞入右下角后留在那里）
@@ -1029,6 +1031,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     island.respondsToNotch = UserDefaults.standard.bool(forKey: Prefs.islandNotchClicks)
     island.start()
+    systemNotices.apply()
     showWelcomeIfNeeded()
     // 有快捷键没注册上（15.0 / 15.1 上只带 ⌥ 的组合）：按了没反应又不知道为什么，启动时说一次
     // （放在「已更新」之后：同一座岛原地换内容，警告不能被盖掉）
@@ -1062,6 +1065,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let self else { return }
         self.applyFeatures()
         self.island.respondsToNotch = UserDefaults.standard.bool(forKey: Prefs.islandNotchClicks)
+        self.systemNotices.apply()
         // 命令的快捷键跟着「命令和别名」的开关和别名、脚本命令总开关、⌘K「关掉这条命令」走（第 4 批评审：只在那一页的
         // onChange 里跟，别处改的不注销）；没变不动
         self.hotKeys.reloadCommandsIfChanged()

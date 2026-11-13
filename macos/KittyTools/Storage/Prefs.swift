@@ -425,6 +425,12 @@ enum Prefs {
   static let islandShowsHistory = "islandShowsHistory"
   /// 点刘海、停在刘海上、两指往下滑叫出那一张（默认开；刘海岛扩展 G2：装了别的刘海 App 的人关掉）
   static let islandNotchClicks = "islandNotchClicks"
+  /// 刘海岛上的系统一瞬提示（刘海岛扩展 D1，Shell/SystemNotices.swift）：接上 / 拔掉电源、低电量、耳机连上、断网 / 恢复，
+  /// 每种一个开关，默认都关（不开就不监听）
+  static let islandNoticePower = "islandNoticePower"
+  static let islandNoticeBattery = "islandNoticeBattery"
+  static let islandNoticeHeadphones = "islandNoticeHeadphones"
+  static let islandNoticeNetwork = "islandNoticeNetwork"
   /// 新功能标记（Shell/WhatsNew.swift，2026-11-05）的账：各版本在这台 Mac 上第一次打开的时刻（版本号 → Date，从这一刻起挂 30 天）、
   /// 碰过哪几个（WhatsNew.Entry.id 的数组）。这台电脑自己的状态：不注册默认值、不导出不同步
   static let whatsNewStarted = "whatsNewStarted"
@@ -555,6 +561,10 @@ enum Prefs {
       islandActionsOff: "",
       islandShowsHistory: true,
       islandNotchClicks: true,
+      islandNoticePower: false,
+      islandNoticeBattery: false,
+      islandNoticeHeadphones: false,
+      islandNoticeNetwork: false,
     ].merging(Feature.allCases.map { ($0.prefsKey, $0.defaultOn as Any) }) { current, _ in current }
       .merging(FinderMenuItem.allCases.map { ($0.prefsKey, $0.defaultOn as Any) }) { current, _ in
         current

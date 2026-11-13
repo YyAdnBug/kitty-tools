@@ -10,6 +10,10 @@ struct IslandTab: View {
   @AppStorage(Prefs.islandActionsOff) private var offText = ""
   @AppStorage(Prefs.islandShowsHistory) private var showsHistory = true
   @AppStorage(Prefs.islandNotchClicks) private var notchClicks = true
+  @AppStorage(Prefs.islandNoticePower) private var noticePower = false
+  @AppStorage(Prefs.islandNoticeBattery) private var noticeBattery = false
+  @AppStorage(Prefs.islandNoticeHeadphones) private var noticeHeadphones = false
+  @AppStorage(Prefs.islandNoticeNetwork) private var noticeNetwork = false
 
   var body: some View {
     let actions = HotKeyAction.islandOrder(order)
@@ -48,6 +52,28 @@ struct IslandTab: View {
         }
       } footer: {
         SectionFootnote("装了别的刘海 App 时可以关掉「点刘海叫出那一张」：提示和挂在刘海两边的录制计时这些照常，快捷键照样能叫出那一张。")
+      }
+      Section {
+        Toggle(isOn: $noticePower) {
+          Text("接上、拔掉电源")
+          Text("带上现在的电量")
+        }
+        Toggle(isOn: $noticeBattery) {
+          Text("电量低")
+          Text("没接电源时，降到 20% 和 10% 各说一次")
+        }
+        Toggle(isOn: $noticeHeadphones) {
+          Text("耳机连上")
+          Text("蓝牙耳机、AirPods、USB 耳机，写它的名字")
+        }
+        Toggle(isOn: $noticeNetwork) {
+          Text("断网、网络恢复")
+          Text("断了或者好了 3 秒以上才说，醒来时闪一下不算")
+        }
+      } header: {
+        Text("系统提示")
+      } footer: {
+        SectionFootnote("有变化时在刘海岛上弹一下，同别的提示。没打开的不监听，也不要任何授权。")
       }
     }
     .formStyle(.grouped)
