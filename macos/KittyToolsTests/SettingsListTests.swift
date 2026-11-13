@@ -32,14 +32,15 @@ struct SettingsListTests {
   /// 启动台（第八族，2026-10-18）排在便签后面、状态屏前面（F38；和菜单栏、快捷键页同序）；
   /// 程序坞预览（第九族，2026-10-22）排在状态屏后面（它没有快捷键、菜单栏里没有它，拍板 D1）；
   /// 提醒（2026-11-04）排在状态屏后面、程序坞预览前面；访达右键（2026-11-08）排在程序坞预览后面、同一组。
-  /// 2026-11-04 功能管理拍板 M2 M3：分六组（组之间留空），便签、提醒、状态屏一组，启动台、程序坞预览一组
+  /// 2026-11-04 功能管理拍板 M2 M3：分六组（组之间留空），便签、提醒、状态屏一组，启动台、程序坞预览一组；
+  /// 插件（2026-11-12）自己一组「插件」，排在功能后面、快捷键前面
   @Test func sidebarOrderMatchesMenu() {
     let pages = SettingsPage.allCases
     #expect(
       pages == [
         .general, .island, .clipboard, .launcher, .translate, .screenshot, .record, .notes,
-        .reminders,
-        .statusScreen, .launchpad, .dockPreview, .finderMenu, .hotkeys, .about,
+        .reminders, .statusScreen, .launchpad, .dockPreview, .finderMenu, .keepAwake, .hotkeys,
+        .about,
       ])
     // 分组盖住每一页、和 allCases 同序
     #expect(SettingsPage.groups.flatMap { $0 } == pages)
@@ -48,7 +49,8 @@ struct SettingsListTests {
       SettingsPage.sidebar(SettingsPage.visible(launchpad: false), off: []).map(\.pages)
         == [
           [.general, .island], [.clipboard, .launcher, .translate], [.screenshot, .record],
-          [.notes, .reminders, .statusScreen], [.dockPreview, .finderMenu], [.hotkeys, .about],
+          [.notes, .reminders, .statusScreen], [.dockPreview, .finderMenu], [.keepAwake],
+          [.hotkeys, .about],
         ])
     #expect(
       SettingsPage.sidebar([.reminders, .about], off: []).map(\.pages) == [[.reminders], [.about]])
@@ -58,12 +60,14 @@ struct SettingsListTests {
     #expect(
       closed.map(\.pages) == [
         [.general, .island], [.clipboard, .launcher, .translate], [.screenshot],
-        [.reminders, .statusScreen], [.finderMenu],
+        [.reminders, .statusScreen], [.finderMenu], [.keepAwake],
         [.hotkeys, .about], [.record, .notes, .launchpad, .dockPreview],
       ])
     #expect(
-      closed.map(\.title) == [nil, "文字与搜索", "截图与录制", "便签与提醒", "桌面", nil, "已关闭（4）"])
-    #expect(closed.map(\.isOff) == [false, false, false, false, false, false, true])
+      closed.map(\.title) == [
+        nil, "文字与搜索", "截图与录制", "便签与提醒", "桌面", "插件", nil, "已关闭（4）",
+      ])
+    #expect(closed.map(\.isOff) == [false, false, false, false, false, false, false, true])
     #expect(Set(closed.map(\.id)).count == closed.count)
     // 搜索时只剩对上的：关着的那页照样在「已关闭」里
     #expect(SettingsPage.sidebar([.notes], off: [.notes]).map(\.title) == ["已关闭（1）"])
@@ -73,7 +77,7 @@ struct SettingsListTests {
     }
     #expect(
       SettingsPage.groups.map(\.first?.groupTitle) == [
-        nil, "文字与搜索", "截图与录制", "便签与提醒", "桌面", nil,
+        nil, "文字与搜索", "截图与录制", "便签与提醒", "桌面", "插件", nil,
       ])
     // 功能页对得上功能，通用 / 快捷键 / 关于不是功能
     #expect(pages.compactMap(\.feature) == Feature.allCases)

@@ -26,7 +26,8 @@ struct HomeTests {
     #expect(sections[1].tiles.last?.target == .extra(.copyToTranslate))
     #expect(
       sections.last?.tiles.map(\.target) == [
-        .action(.reminderNew), .action(.statusScreen), .action(.launchpad), .action(.island),
+        .action(.reminderNew), .action(.statusScreen), .action(.launchpad), .action(.keepAwake),
+        .action(.island),
       ])
     #expect(tiles.first { $0.target == .action(.screenshot) }?.key == "⌥A")
     #expect(tiles.first { $0.target == .action(.clipboard) }?.key == nil)
@@ -91,6 +92,8 @@ struct HomeTests {
     #expect(
       Home.offCount(enabled: all.subtracting([.dockPreview, .finderMenu]), available: all) == 0)
     #expect(Home.offCount(enabled: all.subtracting([.notes, .record]), available: all) == 2)
+    // 没添加的插件不算「关着的功能」（2026-11-12 拍板 A1）
+    #expect(Home.offCount(enabled: all.subtracting([.keepAwake]), available: all) == 0)
     let noLaunchpad = all.subtracting([.launchpad])
     #expect(Home.offCount(enabled: noLaunchpad, available: noLaunchpad) == 0)
   }
@@ -100,9 +103,9 @@ struct HomeTests {
     var state = LauncherItem.ActionState()
     state.features = all
     let sections = Home.sections(state: state, keys: [:])
-    // 3 / 5 / 8 / 3 / 4（截图与录制 8 格折成 5 + 3；最后一节是新建提醒、状态屏、启动台、刘海岛）
-    #expect(Home.rows(sections).map(\.count) == [3, 5, 5, 3, 3, 4])
-    #expect(Home.rows(sections).flatMap { $0 } == Array(0..<23))
+    // 3 / 5 / 8 / 3 / 5（截图与录制 8 格折成 5 + 3；最后一节是新建提醒、状态屏、启动台、保持唤醒（插件）、刘海岛）
+    #expect(Home.rows(sections).map(\.count) == [3, 5, 5, 3, 3, 5])
+    #expect(Home.rows(sections).flatMap { $0 } == Array(0..<24))
     let rows: CGFloat = 6
     let expected =
       Home.top + Home.bottom + 4 * Home.titleHeight + Home.untitledGap + rows * Home.tile.height

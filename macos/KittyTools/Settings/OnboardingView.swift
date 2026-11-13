@@ -242,7 +242,8 @@ private struct RowCard<Item: Hashable, Row: View>: View {
 /// 第一屏：品牌图标 + 大标题 + 这台系统上有的全部功能，两列，每格一个勾选框（名字、色块取设置页的，一句话是 Feature.blurb）
 private struct WelcomeScreen: View {
   var body: some View {
-    let features = Feature.allCases.filter(\.isAvailable)
+    // 插件不在这里列（拍板 A1：默认不添加，到 设置 › 通用 › 功能 里加）
+    let features = Feature.listed
     let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
     VStack(spacing: 0) {
       BrandIcon(size: 64)

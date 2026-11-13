@@ -203,12 +203,35 @@ struct FeatureTests {
     #expect(defaults.object(forKey: Prefs.launchpadEnabledLegacy) == nil)
   }
 
-  /// 开关注册了默认值（跟着导出的「设置」一类走），默认开；程序坞预览默认关（拍板 A3），访达右键默认关（2026-11-08 拍板 D2）
+  /// 开关注册了默认值（跟着导出的「设置」一类走），默认开；程序坞预览默认关（拍板 A3），访达右键默认关（2026-11-08 拍板 D2），
+  /// 插件一律默认不添加（2026-11-12 拍板 A1）
   @Test func switchesAreExportedSettings() {
-    #expect(Feature.allCases.filter { !$0.defaultOn } == [.dockPreview, .finderMenu])
+    #expect(Feature.allCases.filter { !$0.defaultOn } == [.dockPreview, .finderMenu, .keepAwake])
+    #expect(
+      Feature.allCases.filter(\.isPlugin).allSatisfy { !$0.defaultOn && $0.pluginFacts != nil })
     for feature in Feature.allCases {
       #expect(Prefs.defaults[feature.prefsKey] as? Bool == feature.defaultOn)
       #expect(SettingsArchive.kinds[feature.prefsKey] != nil)
     }
+  }
+
+  /// 插件（2026-11-12 拍板 A1 A3）：「功能」列表、引导、主界面不列；新装第一次启动也明写成不添加；没添加的插件页不进侧栏和搜索
+  @Test func pluginsStayOutUntilAdded() throws {
+    #expect(!Feature.listed.contains { $0.isPlugin })
+    #expect(
+      Feature.listed.count + Feature.plugins.count == Feature.allCases.filter(\.isAvailable).count)
+    let suite = "kitty-test-plugins-\(UUID().uuidString)"
+    let defaults = try #require(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    Feature.seedNewInstall(defaults, domainName: suite)
+    #expect(defaults.object(forKey: Feature.keepAwake.prefsKey) as? Bool == false)
+    // 搜插件的名字：没添加时落到通用页（「功能 ›」下面就是它的卡），添加了停在它自己那页
+    #expect(SettingsPage.page(for: "保持唤醒", current: .about, hidden: [.keepAwake]) == .general)
+    #expect(SettingsPage.page(for: "防息屏", current: .about, hidden: [.keepAwake]) == .general)
+    #expect(SettingsPage.page(for: "保持唤醒", current: .about) == .keepAwake)
+    // 添加了之后搜它的词停在它自己那页，不落到通用页
+    #expect(SettingsPage.page(for: "防息屏", current: .about) == .keepAwake)
+    #expect(SettingsPage.matching("防息屏", hidden: []) == [.keepAwake])
+    #expect(SettingsPage.keepAwake.groupTitle == "插件")
   }
 }

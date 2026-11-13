@@ -64,7 +64,7 @@ struct GeneralTab: View {
         SettingsPushRow(
           title: "功能",
           detail: FeaturesPage.summary(
-            on: enabled, available: Feature.allCases.filter(\.isAvailable)),
+            on: enabled, available: Feature.listed),
           // 新功能标记：0.8.0 加的（WhatsNew），拨过其中一个开关、换页之后才没
           isNew: navigation.map { WhatsNew.marks(section: "功能", of: .general, in: $0.fresh) }
             ?? false

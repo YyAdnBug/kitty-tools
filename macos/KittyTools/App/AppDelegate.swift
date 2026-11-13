@@ -158,6 +158,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     return screen
   }()
+  /// 保持唤醒（第一个插件，PLAN §10「保持唤醒」）：起停跟着插件添没添加（applyFeatures），开始 / 结束在岛上说一声
+  private(set) lazy var keepAwake: KeepAwake = {
+    let keepAwake = KeepAwake()
+    keepAwake.announce = { [unowned self] title, detail in
+      island.show(title, detail: detail, tone: .info, symbol: SettingsPage.keepAwake.symbol)
+    }
+    return keepAwake
+  }()
   /// 提醒（PLAN §10「提醒」）：到点挂在刘海岛上。起停跟着功能开关（applyFeatures），列表变了看着偏好跟上
   private lazy var reminders: ReminderCenter = {
     let center = ReminderCenter()
@@ -470,6 +478,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       Reminder.save(list)
     }
     model.openReminder = { [unowned self] in openReminder($0) }
+    model.offerPlugin = { [unowned self] in showPlugin($0) }
+    model.keepAwakeStatus = { [unowned self] in
+      keepAwake.sessionEnd == nil ? nil : keepAwake.status()
+    }
+    model.keepAwakeBegin = { [unowned self] in keepAwake.begin(until: $0, label: $1) }
+    model.keepAwakeEnd = { [unowned self] in keepAwake.end() }
     model.openQuickLook = { [unowned self] in
       launcherQuickLook.open().zoom(
         from: launcherRowFrame ?? launcherPanel.frame, to: launcherQuickLookFrame)
@@ -800,6 +814,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       case .reminders: AnyView(RemindersTab())
       case .dockPreview: AnyView(DockPreviewTab())
       case .finderMenu: AnyView(FinderMenuTab())
+      case .keepAwake: AnyView(KeepAwakeTab(keepAwake: keepAwake))
       case .translate:
         AnyView(
           TranslateTab(services: serviceStore, history: historyStore, speaker: speaker)
@@ -1139,6 +1154,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if Feature.screenshot.isOn { clothesline.start() }
 
     if turnedOn.contains(.reminders) { reminders.start() }
+    if turnedOn.contains(.keepAwake) { keepAwake.start() }
 
     // 访达右键（拍板 D3）：运行中打开、系统里扩展还没打开时直接带去 系统设置 › 登录项与扩展；启动时、欢迎引导里勾上的不当场弹
     // （同程序坞预览要授权）。扩展自己读开关，这边没有后台活要起停
@@ -1161,6 +1177,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
       }
     }
+
+    // 插件移除：停掉、不再听（手动开着的那一段也停）
+    if turnedOff.contains(.keepAwake) { keepAwake.stop() }
 
     guard !launching else { return }
     // 正在录快捷键时热键停着，录完它自己会重新注册；只是复制即译开关变了不用重新注册
@@ -1484,7 +1503,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         state: menuState, keys: hotKeys.bindings.mapValues(\.display),
         fresh: Set(fresh.flatMap(\.actions))),
       offCount: Home.offCount(
-        enabled: Feature.enabled, available: Set(Feature.allCases.filter(\.isAvailable))),
+        enabled: Feature.enabled, available: Set(Feature.listed)),
       settingsIsNew: WhatsNew.inSettingsOnly(fresh), appearing: appearing)
     if appearing {
       homePanel.setContentSize(homeModel.size)
@@ -1662,6 +1681,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       pinsHidden: pins.panels.isEmpty ? nil : pins.isHidden, checksUpdates: updater.isSupported,
       recording: recorder != nil
         ? .screenRecord : audioRecorder?.isStarted == true ? .audioRecord : nil,
+      awake: Feature.keepAwake.isOn && keepAwake.sessionEnd != nil,
       statusPresets: StatusPreset.load(),
       statusEntersFirst: UserDefaults.standard.bool(forKey: Prefs.statusScreenHotKeyEntersFirst),
       features: Feature.enabled)
@@ -1703,6 +1723,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       island.toggleBoard(byKeyboard: byKey || NSApp.currentEvent?.type == .keyDown)
     case .home: toggleHome()
     case .reminderNew: newReminder()
+    case .keepAwake: keepAwake.toggle()
     }
   }
 
@@ -1733,6 +1754,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 菜单栏「提醒」一项带子菜单（提醒 D6）：新建提醒…（带全局快捷键）、下一个是什么、几分钟后提醒我、
   /// 暂停全部 / 恢复、管理提醒…
   /// isNew：提醒是这一版新加的、还没碰过（新功能标记）：「提醒」和「新建提醒…」都挂「新」（子菜单的父项跟着挂，拍板 A4）
+  /// 菜单栏「保持唤醒」一项带子菜单（第一个插件，拍板 B2）：开着时项名后面写还剩多久，子菜单第一项「停止保持唤醒」；
+  /// 没开时「开始（无限期）」（带全局快捷键）和几档时长；定时的时段里另有一行灰字写到几点；最后「保持唤醒设置…」
+  private func addKeepAwakeMenu(to menu: NSMenu, isNew: Bool) {
+    let family = HotKeyAction.keepAwake
+    let color = NSColor(family.color)
+    let status = keepAwake.isActive ? " · " + keepAwake.status() : ""
+    let item = menu.addAction(family.title + status, symbol: family.symbol, color: color) {}
+    if isNew { item.badge = WhatsNew.menuBadge }
+    let submenu = NSMenu()
+    // 定时那一行要灰着（只是告诉你到几点）：自动启用会把它点亮
+    submenu.autoenablesItems = false
+    let hotKey = hotKeys.bindings[family]
+    if keepAwake.sessionEnd != nil {
+      submenu.addAction(
+        "停止保持唤醒", symbol: "stop.circle", color: color, key: hotKey?.menuKeyEquivalent ?? "",
+        modifiers: hotKey?.modifierFlags ?? []
+      ) { [unowned self] in keepAwake.end() }
+    } else {
+      if keepAwake.inSchedule {
+        let line = submenu.addAction(keepAwake.status(), symbol: "clock", color: color) {}
+        line.isEnabled = false
+        submenu.addItem(.separator())
+      }
+      for preset in KeepAwakePlan.presets {
+        let key = preset.minutes == nil ? hotKey : nil
+        submenu.addAction(
+          preset.minutes == nil ? "开始（无限期）" : preset.title, symbol: "timer", color: color,
+          key: key?.menuKeyEquivalent ?? "", modifiers: key?.modifierFlags ?? []
+        ) { [unowned self] in
+          keepAwake.begin(
+            until: preset.minutes.map { Date.now.addingTimeInterval(Double($0 * 60)) },
+            label: preset.title)
+        }
+      }
+    }
+    submenu.addItem(.separator())
+    submenu.addAction(
+      "保持唤醒设置…", symbol: MenuExtra.settings.symbol, color: NSColor(MenuExtra.settings.color)
+    ) { [unowned self] in showSettings(page: .keepAwake) }
+    item.submenu = submenu
+  }
+
   private func addReminderMenu(to menu: NSMenu, isNew: Bool) {
     let family = HotKeyAction.reminderNew
     let color = NSColor(family.color)
@@ -3333,6 +3396,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     settingsNavigation.path = [id]
   }
 
+  /// 打开 设置 › 通用 › 功能、滚到这个插件的卡（启动器「添加…插件」，拍板 A4）：不直接添加，先看清要什么授权
+  func showPlugin(_ plugin: Feature) {
+    showSettings(page: .general)
+    settingsNavigation.path = [FeaturesPage.route]
+    settingsNavigation.focusedPlugin = plugin
+  }
+
   /// 打开设置窗（page 为 nil 保持上次的页；onboarding 盖上欢迎引导）：先按正常隐藏路径收起浮层
   /// （固定的浮层会盖在设置窗上）
   func showSettings(page: SettingsPage? = nil, onboarding: Bool = false) {
@@ -3388,6 +3458,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         addReminderMenu(to: menu, isNew: freshActions.contains(.reminderNew))
         continue
       }
+      if section.actions == [.keepAwake] {
+        addKeepAwakeMenu(to: menu, isNew: freshActions.contains(.keepAwake))
+        continue
+      }
       if section.actions == [.statusScreen] {
         let family = HotKeyAction.statusScreen
         let color = NSColor(family.color)
@@ -3426,7 +3500,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       for action in section.actions {
         let binding = hotKeys.bindings[action]
         let item = menu.addAction(
-          action.title(recording: state.recording == action), symbol: action.symbol,
+          action.title(recording: state.isRunning(action)), symbol: action.symbol,
           color: NSColor(action.color),
           key: binding?.menuKeyEquivalent ?? "", modifiers: binding?.modifierFlags ?? []
         ) { [unowned self] in run(action) }

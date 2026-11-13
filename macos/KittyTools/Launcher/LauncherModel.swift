@@ -229,6 +229,12 @@ import UniformTypeIdentifiers
   @ObservationIgnored var createReminder: (Reminder) -> Void = { _ in }
   @ObservationIgnored var toggleReminder: (String) -> Void = { _ in }
   @ObservationIgnored var openReminder: (String) -> Void = { _ in }
+  /// 「添加…插件」（2026-11-12 拍板 A4）：打开 设置 › 通用 › 功能 那张卡（AppDelegate 给）
+  @ObservationIgnored var offerPlugin: (Feature) -> Void = { _ in }
+  /// 「awake …」（保持唤醒插件 B2）：手动开着时还剩多久（没开 nil）、开一段（结束时刻，nil = 无限期；行上的说法）、停掉
+  @ObservationIgnored var keepAwakeStatus: () -> String? = { nil }
+  @ObservationIgnored var keepAwakeBegin: (Date?, String) -> Void = { _, _ in }
+  @ObservationIgnored var keepAwakeEnd: () -> Void = {}
   /// 全局热键动作当前生效的组合（选中的内置动作右侧显示键帽）；AppDelegate 接 HotKeyCenter 注册上的那份
   @ObservationIgnored var boundHotKey: (HotKeyAction) -> HotKey? = { $0.hotKey }
   /// 文件搜索的授权提示 ↩：没问过就逐个弹系统框，问过就打开系统设置
@@ -843,6 +849,11 @@ import UniformTypeIdentifiers
       results = Self.reminderItems(rest, list: reminders(), now: .now)
       return
     }
+    // 「awake …」「保持唤醒 …」（带空格）只列保持唤醒的几行：开着时第一行是停止，再是认出来的那一段或几档时长（插件 B2）
+    if features.contains(.keepAwake), let rest = KeepAwakePlan.query(command) {
+      results = Self.keepAwakeItems(rest, status: keepAwakeStatus(), now: .now)
+      return
+    }
     // 「别名 空格 文字」：交给那条脚本（B2），它的那几行排在普通结果前面
     let invocation = ScriptCommand.invocation(for: query, in: activeScripts, alias: scriptAlias)
     let invocationRows = invocation.map(invocationRows) ?? []
@@ -886,6 +897,8 @@ import UniformTypeIdentifiers
     let currency = ExchangeRates.promptItems(for: typed)
     // 「新建提醒…」提示排在本地结果后面：输「提醒」想打开系统「提醒事项」的，↩ 照旧打开它
     let tx = features.contains(.reminders) ? labeled(Self.reminderPrompts(for: typed)) : []
+    // 没添加的插件：打到它的名字或关键词时，本地结果后面、兜底前面一行「添加…插件」（A4）
+    let offers = Self.pluginOffers(for: typed, added: features)
     let exactPrompts: [LauncherItem] =
       prompts.exact + labeled(filePrompts.exact + systemPrompts.exact)
     let partialPrompts: [LauncherItem] =
@@ -941,7 +954,7 @@ import UniformTypeIdentifiers
     }
     results =
       (leading + aliasedApps + aliased + ordered + trailing + tx + history + partialPrompts
-      + fallback)
+      + offers + fallback)
       .filter { seen.insert($0.id).inserted }
     if let invocation { startList(invocation) }
   }
@@ -1195,6 +1208,98 @@ import UniformTypeIdentifiers
 
   /// 「提醒 …」认不出时那一行提示的目标（↩ 什么都不做，只响提示音）
   static let reminderHint = "reminder-hint"
+
+  /// 「添加…插件」那一行的目标前缀（后面是 Feature.rawValue）
+  static let pluginPrefix = "plugin-"
+
+  /// 「awake …」那几行的目标前缀：awake-stop、awake-for:<分钟>（空的是无限期）、awake-until（payload 是打的那截，↩ 时再算一遍）、
+  /// awake-hint（认不出，↩ 只响提示音）
+  static let awakePrefix = "awake-"
+
+  /// 「awake …」那几行（纯函数）：手动开着时先是「停止保持唤醒」；后面什么都没写列几档时长，写了认得出的就那一行，认不出给提示
+  static func keepAwakeItems(
+    _ rest: String, status: String?, now: Date, calendar: Calendar = .current
+  ) -> [LauncherItem] {
+    var items: [LauncherItem] = []
+    if let status {
+      items.append(
+        LauncherItem(
+          kind: .prompt, target: awakePrefix + "stop", title: "停止保持唤醒",
+          subtitle: "保持唤醒中 · " + status))
+    }
+    func start(_ title: String, minutes: Int?) -> LauncherItem {
+      let end = minutes.map { now.addingTimeInterval(Double($0 * 60)) }
+      return LauncherItem(
+        kind: .prompt, target: awakePrefix + "for:" + (minutes.map(String.init) ?? ""),
+        title: "保持唤醒 " + title,
+        subtitle: end.map { "到 " + KeepAwakePlan.moment($0, now: now, calendar: calendar) }
+          ?? "直到你停止")
+    }
+    switch KeepAwakePlan.parse(rest, now: now, calendar: calendar) {
+    case .empty:
+      items += KeepAwakePlan.presets.map { start($0.title, minutes: $0.minutes) }
+    case .indefinitely:
+      items.append(start("无限期", minutes: nil))
+    case .until(let end, let label):
+      items.append(
+        LauncherItem(
+          kind: .prompt, target: awakePrefix + "until", title: "保持唤醒 " + label,
+          subtitle: "到 " + KeepAwakePlan.moment(end, now: now, calendar: calendar), payload: rest))
+    case .invalid:
+      items.append(
+        LauncherItem(
+          kind: .prompt, target: awakePrefix + "hint", title: "认不出要多久",
+          subtitle: "试试「2小时」「30分钟」「到18点」「无限期」"))
+    }
+    return items
+  }
+
+  /// ↩ 那几行：「到…」的按这一刻再算一遍（行列出来之后过了一会儿，「2小时」要从现在算，「到18点」可能已经过了）
+  private func runKeepAwake(_ item: LauncherItem) {
+    let command = String(item.target.dropFirst(Self.awakePrefix.count))
+    let label = String(item.title.dropFirst("保持唤醒 ".count))
+    switch command {
+    case "stop":
+      close()
+      keepAwakeEnd()
+    case "until":
+      guard
+        case .until(let end, let label) = KeepAwakePlan.parse(
+          item.payload ?? "", now: .now, calendar: .current)
+      else { return NSSound.beep() }
+      close()
+      keepAwakeBegin(end, label)
+    case _ where command.hasPrefix("for:"):
+      let minutes = Int(command.dropFirst("for:".count))
+      close()
+      keepAwakeBegin(minutes.map { Date.now.addingTimeInterval(Double($0 * 60)) }, label)
+    default:
+      NSSound.beep()
+    }
+  }
+
+  /// 没添加的插件里，打的字对得上名字或关键词的（纯函数）：整个词打全了（后面还可以接别的，「awake 2小时」），
+  /// 或者打了一个词的开头——英文至少 4 个字母、中文至少 2 个字（「ca」不该冒出「添加保持唤醒插件」）
+  static func pluginOffers(for typed: String, added: Set<Feature>) -> [LauncherItem] {
+    let text = LauncherMatch.fold(typed.trimmingCharacters(in: .whitespaces))
+    let head = String(text.prefix { !$0.isWhitespace })
+    let least = head.allSatisfy(\.isASCII) ? 4 : 2
+    guard head.count >= 2 else { return [] }
+    return Feature.allCases.filter { $0.isPlugin && $0.isAvailable && !added.contains($0) }
+      .compactMap { plugin in
+        let words = ([plugin.page.title] + plugin.pluginWords).map(LauncherMatch.fold)
+        // 中文常不打空格（「保持唤醒2小时」）：打的字以这个词开头也算
+        guard
+          words.contains(where: {
+            head.hasPrefix($0) || ($0.hasPrefix(head) && head.count >= least)
+          })
+        else { return nil }
+        return LauncherItem(
+          kind: .prompt, target: pluginPrefix + plugin.rawValue,
+          title: "添加「\(plugin.page.title)」插件",
+          subtitle: plugin.blurb)
+      }
+  }
   /// 下拉参数的一个选项那一行（第三轮 C1）：目标是「前缀 脚本路径⏎第几个参数⏎第几个选项」
   static let choicePrefix = "script-choice\n"
 
@@ -1443,6 +1548,13 @@ import UniformTypeIdentifiers
       requestFolderAccess()
     case .prompt where item.target == Self.reminderHint:
       NSSound.beep()
+    case .prompt where item.target.hasPrefix(Self.pluginPrefix):
+      guard let plugin = Feature(rawValue: String(item.target.dropFirst(Self.pluginPrefix.count)))
+      else { return NSSound.beep() }
+      close()
+      offerPlugin(plugin)
+    case .prompt where item.target.hasPrefix(Self.awakePrefix):
+      runKeepAwake(item)
     case .prompt:
       if let completion = item.completion { query = completion }
     case .search:
@@ -2269,6 +2381,10 @@ import UniformTypeIdentifiers
     case .url: ("打开网址", "safari")
     case .search: ("搜索", "magnifyingglass")
     case .prompt where item.target == Self.reminderHint: ("改一下再建", "pencil")
+    case .prompt where item.target.hasPrefix(Self.pluginPrefix): ("去设置里添加", "puzzlepiece.extension")
+    case .prompt where item.target == Self.awakePrefix + "stop": ("停止", "stop.circle")
+    case .prompt where item.target == Self.awakePrefix + "hint": ("改一下", "pencil")
+    case .prompt where item.target.hasPrefix(Self.awakePrefix): ("开始", "cup.and.saucer")
     case .prompt where item.target.hasPrefix(Self.choicePrefix): ("选这个", "text.cursor")
     case .prompt:
       item.target == FileSearch.accessTarget

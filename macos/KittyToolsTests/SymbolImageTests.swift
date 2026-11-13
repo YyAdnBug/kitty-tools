@@ -21,7 +21,7 @@ struct SymbolImageTests {
     let sources = try Self.names(in: "icons/feature", suffix: ".svg")
     let assets = try Self.names(
       in: "macos/KittyTools/Resources/Assets.xcassets/FeatureIcons", suffix: ".symbolset")
-    #expect(sources.count == 28)  // 2026-11-04 加了提醒的闹钟，2026-11-08 加了访达右键
+    #expect(sources.count == 29)  // 2026-11-04 加了提醒的闹钟，2026-11-08 加了访达右键，2026-11-12 加了保持唤醒
     #expect(sources == assets)
     for name in sources {
       let image = try #require(NSImage.symbol(name), "\(name)")

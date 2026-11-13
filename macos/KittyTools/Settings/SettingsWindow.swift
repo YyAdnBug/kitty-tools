@@ -19,18 +19,18 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   // 便签、提醒、状态屏一组，启动台、程序坞预览一组（启动台原来在便签后面）
   // 刘海岛（2026-11-12 PR #17）不是功能，跟着通用（菜单栏、快捷键页里它那一节排在最后）
   case general, island, clipboard, launcher, translate, screenshot, record, notes, reminders,
-    statusScreen, launchpad, dockPreview, finderMenu, hotkeys, about
+    statusScreen, launchpad, dockPreview, finderMenu, keepAwake, hotkeys, about
 
   var id: String { rawValue }
 
   /// 侧栏和搜索里列的页：macOS 15 上没有启动台（`Launchpad.isAvailable`）
   static let visible = visible(launchpad: Launchpad.isAvailable)
 
-  /// 侧栏的分组（功能管理拍板 M2 M3）：通用、刘海岛 ｜ 文字与搜索 ｜ 截图与录制 ｜ 便签与提醒 ｜ 桌面 ｜ 快捷键、关于。和 allCases 同序，
-  /// 单测锁住。功能那四组带标题、能折叠（groupTitle）
+  /// 侧栏的分组（功能管理拍板 M2 M3）：通用、刘海岛 ｜ 文字与搜索 ｜ 截图与录制 ｜ 便签与提醒 ｜ 桌面 ｜ 插件 ｜ 快捷键、关于。和 allCases 同序，
+  /// 单测锁住。功能那几组和插件带标题、能折叠（groupTitle）。插件那组只有添加了的（没添加的插件页不在 pages 里，见 SettingsRoot）
   static let groups: [[SettingsPage]] = [
     [.general, .island], [.clipboard, .launcher, .translate], [.screenshot, .record],
-    [.notes, .reminders, .statusScreen], [.launchpad, .dockPreview, .finderMenu],
+    [.notes, .reminders, .statusScreen], [.launchpad, .dockPreview, .finderMenu], [.keepAwake],
     [.hotkeys, .about],
   ]
 
@@ -62,6 +62,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .screenshot, .record: "截图与录制"
     case .notes, .reminders, .statusScreen: "便签与提醒"
     case .launchpad, .dockPreview, .finderMenu: "桌面"
+    case .keepAwake: "插件"
     case .general, .island, .hotkeys, .about: nil
     }
   }
@@ -72,6 +73,11 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   /// 单测喂 false 看 macOS 15 上的样子
   static func visible(launchpad: Bool) -> [SettingsPage] {
     allCases.filter { launchpad || $0 != .launchpad }
+  }
+
+  /// 没添加的插件的页（侧栏、搜索里都没有它；现读偏好）
+  static func absentPlugins() -> Set<SettingsPage> {
+    Set(Feature.plugins.filter { !$0.isOn }.map(\.page))
   }
 
   var title: String {
@@ -88,6 +94,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .reminders: "提醒"
     case .dockPreview: "程序坞预览"
     case .finderMenu: "访达右键"
+    case .keepAwake: "保持唤醒"
     case .translate: "翻译"
     case .hotkeys: "快捷键"
     case .about: "关于"
@@ -109,6 +116,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .reminders: "kitty.reminders"
     case .dockPreview: "kitty.dock.preview"
     case .finderMenu: "kitty.finder.menu"
+    case .keepAwake: "kitty.keep.awake"
     case .translate: "kitty.translate"
     case .hotkeys: "kitty.hotkeys"
     case .about: "kitty.about"  // 品牌页：猫头
@@ -129,6 +137,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .reminders: Style.Family.reminders
     case .dockPreview: Style.Family.dockPreview
     case .finderMenu: Style.Family.finderMenu
+    case .keepAwake: Style.Family.keepAwake
     case .translate: Style.Family.translate
     case .hotkeys: Style.Family.keyboard
     case .about: Color(nsColor: AccentPalette.brandPink)  // 关于是品牌页，不随强调色变
@@ -150,6 +159,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .reminders: "到点提醒你：什么时候响、用什么方式、点了「稍后」推多久"
     case .dockPreview: "停在程序坞图标上时弹出的窗口缩略图：开关和要给的授权"
     case .finderMenu: "在访达里右键：新建文件、拷贝路径、移动复制、压缩解压"
+    case .keepAwake: "插件 · 不让电脑睡、不让屏幕熄：手动开一段，或按时段自动开"
     case .translate: "语言、翻译服务与密钥、历史"
     case .hotkeys: "所有全局快捷键"
     case .about: "版本与更新内容"
@@ -165,7 +175,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         "屏幕录制", "麦克风",
         "剪贴板访问", "隐私", "菜单栏", "状态栏", "图标", "隐藏", "彩色", "单色", "挤压", "弹开", "动画", "动效",
         "导出", "导入", "备份", "恢复", "迁移", "换电脑", "配置",
-        "功能", "模块", "关闭", "停用", "启用", "不用",
+        "功能", "模块", "关闭", "停用", "启用", "不用", "插件", "添加", "移除",
         "同步", "iCloud", "云盘", "多台", "几台", "另一台",
         "数据", "数据目录", "访达", "文件夹",
       ]
@@ -235,6 +245,11 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         "Word",
         "Excel", "PPT", "Markdown", "文本",
       ]
+    case .keepAwake:
+      [
+        "插件", "保持唤醒", "唤醒", "防息屏", "息屏", "熄屏", "防止睡眠", "睡眠", "不睡眠", "屏幕常亮", "常亮", "定时", "工作日",
+        "时段", "awake", "caffeinate", "咖啡因", "下载", "后台任务",
+      ]
     case .translate:
       [
         "语言", "第一语言", "第二语言", "字号", "换行", "自动复制", "复制即译", "历史", "导出", "CSV", "Anki",
@@ -257,16 +272,28 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   }
 
   /// 搜索时停在哪页：页名对上的优先（「录制」也是通用页的「屏幕录制」、快捷键页的「录制」，「快捷键」也是录制页的
-  /// 「只显示快捷键」，按侧栏顺序会先停在别处）；否则当前页还在结果里就不动，不在就去第一个，一页都没有也不动
-  static func page(for query: String, current: SettingsPage) -> SettingsPage {
+  /// 「只显示快捷键」，按侧栏顺序会先停在别处）；否则当前页还在结果里就不动，不在就去第一个，一页都没有也不动。
+  /// hidden：侧栏里没有的页（没添加的插件，SettingsRoot 现读）
+  static func page(
+    for query: String, current: SettingsPage, hidden: Set<SettingsPage> = []
+  ) -> SettingsPage {
     let query = query.trimmingCharacters(in: .whitespaces)
-    let matches = visible.filter { $0.matches(query) }
+    let matches = matching(query, hidden: hidden)
     if !query.isEmpty,
       let named = matches.first(where: { $0.title.localizedCaseInsensitiveContains(query) })
     {
       return named
     }
     return matches.contains(current) ? current : matches.first ?? current
+  }
+
+  /// 搜索对上的页（侧栏列它们）：侧栏里没有的页（没添加的插件）不列，但对上了它的词就算通用页对上——「功能 ›」下面就是它的
+  /// 卡片；添加了的插件搜它的词停在它自己那页，不落到通用页
+  static func matching(_ query: String, hidden: Set<SettingsPage>) -> [SettingsPage] {
+    let wantsGeneral = hidden.contains { $0.matches(query) }
+    return visible.filter {
+      !hidden.contains($0) && ($0.matches(query) || ($0 == .general && wantsGeneral))
+    }
   }
 }
 
@@ -290,6 +317,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   @ObservationIgnored var onboardingClosed: () -> Void = {}
   /// 启动器 ⌘K「改别名…」要的那一行（「命令和别名」页只列它、别名框拿焦点，用过就清掉）
   var focusedCommand: String?
+  /// 启动器「添加…插件」带过来的那个插件：「功能」页滚到它的卡、描一圈强调色，过一会儿清掉
+  var focusedPlugin: Feature?
   /// 快捷键速查表（启动器里的「快捷键速查表」打开设置窗时盖上；页面里的「查看全部快捷键…」按钮自己管）
   var showsShortcuts = false
   /// 「新建脚本」的小表单（脚本命令第三轮 D2：设置里的按钮、启动器里的「新建脚本」都打开它；挂在窗口根上，同速查表——
@@ -316,9 +345,12 @@ enum SettingsPage: String, CaseIterable, Identifiable {
 
   init(defaults: UserDefaults? = .standard) {
     self.defaults = defaults
-    // 记住的是这台系统上没有的页（导入了 26 上的设置）就回通用页
+    // 记住的是这台系统上没有的页（导入了 26 上的设置）、已经移除的插件的页就回通用页
     let saved = defaults?.string(forKey: Prefs.settingsPage).flatMap(SettingsPage.init)
-    page = saved.flatMap { SettingsPage.visible.contains($0) ? $0 : nil } ?? .general
+    let hidden = defaults == nil ? [] : SettingsPage.absentPlugins()
+    page =
+      saved.flatMap { SettingsPage.visible.contains($0) && !hidden.contains($0) ? $0 : nil }
+      ?? .general
   }
 }
 
@@ -462,10 +494,13 @@ struct SettingsRoot: View {
   @AppStorage(Prefs.settingsShowsOffFeatures) private var showsOff = false
   /// 关着的功能的页：开关一变（偏好变化的通知）跟着挪组
   @State private var off = Self.offPages()
+  /// 没添加的插件的页：侧栏、搜索里都没有（偏好变化时跟着变）
+  @State private var absent = SettingsPage.absentPlugins()
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+  /// 插件不算（没添加的插件不进「已关闭」，见 absent）
   static func offPages() -> Set<SettingsPage> {
-    Set(Feature.allCases.filter { $0.isAvailable && !$0.isOn }.map(\.page))
+    Set(Feature.listed.filter { !$0.isOn }.map(\.page))
   }
 
   /// 「已关闭」那组：搜索时、当前页就在里面时一直展开（不然对上的、正看着的那页藏在收起的组里）
@@ -477,7 +512,7 @@ struct SettingsRoot: View {
     }
   }
 
-  private var matches: [SettingsPage] { SettingsPage.visible.filter { $0.matches(query) } }
+  private var matches: [SettingsPage] { SettingsPage.matching(query, hidden: absent) }
 
   /// 一组展开没有：搜索时都展开（不然对上的页藏在收起的组里）
   private func expanded(_ title: String) -> Binding<Bool> {
@@ -564,7 +599,7 @@ struct SettingsRoot: View {
     .toolbar(removing: .sidebarToggle)
     .environment(navigation)
     .onChange(of: query) {
-      let page = SettingsPage.page(for: query, current: navigation.page)
+      let page = SettingsPage.page(for: query, current: navigation.page, hidden: absent)
       if page != navigation.page { navigation.page = page }
     }
     // 从菜单栏等处直接跳到一页，而旧搜索词把它筛掉了：清掉搜索词（侧栏不留一个没选中的残局）；那一页在收起的组里就展开
@@ -581,6 +616,15 @@ struct SettingsRoot: View {
         off = now
         // 开关变了：关着的功能不标（拍板 B5），重算一遍
         navigation.visit(navigation.page)
+      }
+      let missing = SettingsPage.absentPlugins()
+      if missing != absent {
+        absent = missing
+        // 正看着的插件页被移除了（它自己页底的「移除」、别的 Mac 同步来的）：回到「功能」那一页，卡片上能再添加
+        if missing.contains(navigation.page) {
+          navigation.page = .general
+          navigation.path = [FeaturesPage.route]
+        }
       }
     }
     .sheet(isPresented: $navigation.showsOnboarding) {

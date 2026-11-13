@@ -142,6 +142,8 @@ enum WebSearch {
     "cb": "剪贴板指令", "fy": "翻译", "open": "文件搜索", "find": "文件搜索", "quit": "系统命令",
     "hide": "系统命令", "forcequit": "系统命令", "eject": "系统命令", "kill": "系统命令",
     "port": "系统命令", "提醒": "提醒", "tx": "提醒", "remind": "提醒",
+    // 保持唤醒（插件，2026-11-12，KeepAwakePlan.keywords）
+    "awake": "保持唤醒", "保持唤醒": "保持唤醒", "防息屏": "保持唤醒",
   ]
 
   static func url(_ engine: SearchEngine, _ text: String) -> String {

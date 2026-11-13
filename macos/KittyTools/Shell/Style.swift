@@ -219,6 +219,10 @@ enum Style {
       dark: NSColor(srgbRed: 0.96, green: 0.68, blue: 0.22, alpha: 1))
 
     /// 访达右键（2026-11-08）：系统色用完了，自定义的石板蓝（访达文件夹的蓝压暗、去饱和），和剪贴板的系统蓝、通用的灰分得开
+    /// 保持唤醒（第一个插件，2026-11-12）：系统色用完了，自定义的靛紫（夜里也醒着），比系统靛蓝偏紫、比启动器的紫偏蓝
+    static let keepAwake = Style.dynamic(
+      light: NSColor(srgbRed: 0.42, green: 0.36, blue: 0.86, alpha: 1),
+      dark: NSColor(srgbRed: 0.60, green: 0.55, blue: 1.0, alpha: 1))
     static let finderMenu = Style.dynamic(
       light: NSColor(srgbRed: 0.33, green: 0.47, blue: 0.62, alpha: 1),
       dark: NSColor(srgbRed: 0.47, green: 0.61, blue: 0.76, alpha: 1))

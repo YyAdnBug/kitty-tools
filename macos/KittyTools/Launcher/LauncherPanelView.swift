@@ -734,11 +734,19 @@ extension LauncherItem {
   /// port 列的端口行（目标是「PID:端口」；kill 的进程行目标只有 PID）
   fileprivate var isPort: Bool { kind == .process && target.contains(":") }
 
+  /// 「添加…插件」那一行是哪个插件的页（色块、符号取它的）
+  fileprivate var pluginPage: SettingsPage? {
+    Feature(rawValue: String(target.dropFirst(LauncherModel.pluginPrefix.count)))?.page
+  }
+
   /// 行里种类色块的符号：内置动作用它自己的
   fileprivate var tileSymbol: String {
     switch kind {
     case .reminder: SettingsPage.reminders.symbol
     case .prompt where target.hasPrefix("reminder-"): SettingsPage.reminders.symbol
+    case .prompt where target.hasPrefix(LauncherModel.pluginPrefix):
+      pluginPage?.symbol ?? "puzzlepiece.extension.fill"
+    case .prompt where target.hasPrefix(LauncherModel.awakePrefix): SettingsPage.keepAwake.symbol
     case .calculation: "equal"
     case .path where contentType?.conforms(to: .volume) == true: "externaldrive.fill"
     case .prompt where target == FileSearch.accessTarget: "lock.open.fill"
@@ -781,6 +789,9 @@ extension LauncherItem {
     case .prompt where target.hasPrefix(ExchangeRates.suggestionPrefix): Style.Family.keyboard
     case .reminder: Style.Family.reminders
     case .prompt where target.hasPrefix("reminder-"): Style.Family.reminders
+    case .prompt where target.hasPrefix(LauncherModel.pluginPrefix):
+      pluginPage?.color ?? Style.Family.general
+    case .prompt where target.hasPrefix(LauncherModel.awakePrefix): Style.Family.keepAwake
     case .system, .process, .ip, .script, .scriptResult: Style.Family.command
     case .prompt where target.hasPrefix("system-"): Style.Family.command
     case .url where isSettingsPane: Style.Family.general
@@ -813,6 +824,8 @@ extension LauncherItem {
     case .prompt where target == ExchangeRates.promptTarget: "汇率"
     case .prompt where target.hasPrefix(ExchangeRates.suggestionPrefix): "货币"
     case .prompt where target.hasPrefix("reminder-"): "提醒"
+    case .prompt where target.hasPrefix(LauncherModel.pluginPrefix): "插件"
+    case .prompt where target.hasPrefix(LauncherModel.awakePrefix): "保持唤醒"
     case .prompt where target.hasPrefix(LauncherModel.choicePrefix): "选项"
     case .search, .prompt: "搜索"
     // 计算卡不显示副标题：汇率换算的副标题（「人民币 · 11-03 汇率」，ExchangeRates）写在这里，别的是空的

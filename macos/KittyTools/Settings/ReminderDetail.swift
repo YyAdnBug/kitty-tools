@@ -409,8 +409,8 @@ private struct ScheduleSection: View {
   }
 }
 
-/// 一排星期（一 … 日）：按下的是勾了的；至少留一天
-private struct WeekdayRow: View {
+/// 一排星期（一 … 日）：按下的是勾了的；至少留一天（提醒的详情页、保持唤醒的定时共用）
+struct WeekdayRow: View {
   @Binding var days: [Int]
   private static let order = [2, 3, 4, 5, 6, 7, 1]
   private static let names = ["日", "一", "二", "三", "四", "五", "六"]

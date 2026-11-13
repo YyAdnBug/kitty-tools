@@ -536,6 +536,8 @@ struct SnapshotProbeTests {
       // 私有接口在不在按固定的「都在」画（图不跟着机器变）
       case .dockPreview: AnyView(DockPreviewTab(missing: []))
       case .finderMenu: AnyView(FinderMenuTab(extensionEnabled: false))
+      // 没起的保持唤醒（只读偏好，不建断言）
+      case .keepAwake: AnyView(KeepAwakeTab(keepAwake: KeepAwake()))
       case .translate:
         AnyView(TranslateTab(services: services, history: history, speaker: speaker))
       case .hotkeys: AnyView(HotkeysTab(center: hotKeys))
@@ -4456,6 +4458,43 @@ struct SnapshotProbeTests {
     try snapshot(
       root(), size: NSSize(width: 780, height: 1120), dark: false,
       to: "\(out)/features-launchpad-off.png")
+  }
+
+  /// 插件（2026-11-12）：设置 › 通用 › 功能 下面的插件卡片（没添加、添加了、启动器带过来时描着强调色那一圈，浅 / 深）、
+  /// 设置 › 保持唤醒（定时开着，浅 / 深）。几秒，图以 plugins- 开头：-only-testing:'KittyToolsTests/SnapshotProbeTests/plugins()'。
+  /// 开关和定时读临时偏好域；保持唤醒没起（不建断言），「现在」那一行是没开的样子
+  @Test(.enabled(if: directory != nil)) func plugins() throws {
+    let out = try #require(Self.directory)
+    try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
+    Prefs.registerDefaults()
+    let name = "kitty-snapshot-plugins-\(UUID().uuidString)"
+    let prefs = try #require(UserDefaults(suiteName: name))
+    defer { prefs.removePersistentDomain(forName: name) }
+    let navigation = SettingsNavigation(defaults: nil)
+    func features() -> some View {
+      NavigationStack { FeaturesPage() }.environment(navigation).defaultAppStorage(prefs)
+    }
+    for dark in [false, true] {
+      try snapshot(
+        features(), size: NSSize(width: 600, height: 1000), dark: dark,
+        to: "\(out)/plugins-features\(dark ? "-dark" : "").png")
+    }
+    navigation.focusedPlugin = .keepAwake
+    try snapshot(
+      features(), size: NSSize(width: 600, height: 1000), dark: false,
+      to: "\(out)/plugins-features-focused.png")
+    navigation.focusedPlugin = nil
+    prefs.set(true, forKey: Feature.keepAwake.prefsKey)
+    try snapshot(
+      features(), size: NSSize(width: 600, height: 1000), dark: false,
+      to: "\(out)/plugins-features-added.png")
+    prefs.set(KeepAwakePlan.Schedule(isOn: true).encoded, forKey: Prefs.keepAwakeSchedule)
+    for dark in [false, true] {
+      try snapshot(
+        KeepAwakeTab(keepAwake: KeepAwake(defaults: prefs)).defaultAppStorage(prefs),
+        size: NSSize(width: 600, height: 760), dark: dark,
+        to: "\(out)/plugins-keep-awake\(dark ? "-dark" : "").png")
+    }
   }
 
   /// 新功能标记（Shell/WhatsNew.swift，2026-11-05）：设置窗停在通用页、提醒和「功能」那一节都标着（侧栏行尾的「新」、页里那一节

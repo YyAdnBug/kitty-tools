@@ -76,7 +76,7 @@ enum Home {
     for section in HotKeyAction.visibleSections(enabled: state.features) {
       var tiles = section.actions.filter { $0 != .home }.map { action in
         Tile(
-          target: .action(action), title: action.title(recording: state.recording == action),
+          target: .action(action), title: action.title(recording: state.isRunning(action)),
           symbol: action.symbol, color: action.color, key: keys[action], isOn: nil,
           isNew: fresh.contains(action))
       }
@@ -105,10 +105,11 @@ enum Home {
     extra == .pauseClipboard ? "pause.fill" : "doc.on.doc.fill"
   }
 
-  /// 关着的功能有几个（纯函数）：只算这台系统上有、而且有入口（全局动作）的——程序坞预览没有全局动作，默认关着也不提
+  /// 关着的功能有几个（纯函数）：只算这台系统上有、而且有入口（全局动作）的——程序坞预览没有全局动作，默认关着也不提；
+  /// 没添加的插件不算（插件默认就不添加，不是「关着」）
   static func offCount(enabled: Set<Feature>, available: Set<Feature>) -> Int {
     available.subtracting(enabled).filter { feature in
-      HotKeyAction.allCases.contains { $0.feature == feature }
+      !feature.isPlugin && HotKeyAction.allCases.contains { $0.feature == feature }
     }.count
   }
 

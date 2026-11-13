@@ -169,7 +169,7 @@ enum HotKeyAction: String, CaseIterable {
   case clipboard, selectionTranslate, inputTranslate, screenshotTranslate, launcher, screenshot,
     screenshotLastRegion, recognizeText, translateReplace, screenRecord, audioRecord, pinClipboard,
     statusScreen, noteCapture, noteNew, noteAll, launchpad, shotHistory, island, clothesline, home,
-    reminderNew
+    reminderNew, keepAwake
 
   var title: String {
     switch self {
@@ -195,16 +195,18 @@ enum HotKeyAction: String, CaseIterable {
     case .island: "打开刘海岛"
     case .home: "打开主界面"
     case .reminderNew: "新建提醒"
+    case .keepAwake: "保持唤醒"
     }
   }
 
   /// 菜单栏、启动器里的标题：recording 是这一项正在录（录屏 / 录音录着时叫「停止录屏」/「停止录音」，再按一次快捷键也是停止；
-  /// 录音控制条待录时不算在录，仍叫「录音」，点它 / 再按一次是开始）
+  /// 录音控制条待录时不算在录，仍叫「录音」，点它 / 再按一次是开始）。保持唤醒手动开着一段时也算（再按一次是停止）
   func title(recording: Bool) -> String {
     guard recording else { return title }
     return switch self {
     case .screenRecord: "停止录屏"
     case .audioRecord: "停止录音"
+    case .keepAwake: "停止保持唤醒"
     default: title
     }
   }
@@ -264,6 +266,8 @@ enum HotKeyAction: String, CaseIterable {
     case .launchpad: nil
     // 新建提醒（2026-11-04，提醒 D5）不设默认键：打开启动器、填好「提醒 」，要快捷键到 设置 › 快捷键 里自己设
     case .reminderNew: nil
+    // 保持唤醒（第一个插件，2026-11-12 拍板 B2）不设默认键：按一下开（无限期）、再按一下停
+    case .keepAwake: nil
     // 刘海岛（2026-10-26）：刘海屏点刘海就能打开，键给没有刘海的屏用，到 设置 › 快捷键 里自己设
     case .island: nil
     // 主界面（2026-10-29）：主入口是点菜单栏图标，键给把图标藏起来的人自己设
@@ -330,6 +334,7 @@ enum HotKeyAction: String, CaseIterable {
     case .launchpad: .launchpad
     case .statusScreen: .statusScreen
     case .reminderNew: .reminders
+    case .keepAwake: .keepAwake
     case .island, .home: nil
     }
   }
@@ -362,6 +367,8 @@ enum HotKeyAction: String, CaseIterable {
     // 启动台（第八族，2026-10-18）：和便签分开一节，菜单栏、启动器、快捷键页、速查表里的名字和设置页同名；
     // 2026-11-04 起排在状态屏后面（和程序坞预览一组）
     ("启动台", [.launchpad]),
+    // 插件排在功能后面（同设置侧栏）。保持唤醒：菜单栏里同提醒，只有一项带子菜单（AppDelegate.addKeepAwakeMenu）
+    ("保持唤醒", [.keepAwake]),
     // 刘海岛（2026-10-26）：不属于哪个功能、一直在
     ("刘海岛", [.island]),
     // 主界面（2026-10-29）：同刘海岛，一直在；菜单栏菜单里不列（菜单就是图标的另一半），主界面里也不列它自己
@@ -423,6 +430,7 @@ enum HotKeyAction: String, CaseIterable {
     // 从菜单栏垂下来的那一块
     case .home: "kitty.home"
     case .reminderNew: SettingsPage.reminders.symbol
+    case .keepAwake: SettingsPage.keepAwake.symbol
     }
   }
 
@@ -440,6 +448,7 @@ enum HotKeyAction: String, CaseIterable {
     case .noteCapture, .noteNew, .noteAll: Style.Family.notes
     case .launchpad: Style.Family.launchpad
     case .reminderNew: Style.Family.reminders
+    case .keepAwake: Style.Family.keepAwake
     case .island, .home: Style.Family.general
     }
   }
