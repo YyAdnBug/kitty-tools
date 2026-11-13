@@ -359,6 +359,12 @@ struct NowPlayingTests {
     var empty = snapshot()
     empty.title = ""
     #expect(NowPlaying.decode(try JSONEncoder().encode(empty)) == nil)
+    // 随机 / 循环的档只认 1…3，别的当这个 App 不支持
+    var modes = snapshot()
+    modes.shuffle = 3
+    modes.repeatMode = 9
+    let cleaned = try #require(NowPlaying.decode(try JSONEncoder().encode(modes)))
+    #expect(cleaned.shuffle == 3 && cleaned.repeatMode == nil)
     #expect(NowPlaying.decode(try JSONEncoder().encode(snapshot())) == snapshot())
   }
 
@@ -384,6 +390,26 @@ struct NowPlayingTests {
   }
 
   // MARK: 实机自检（按需）
+
+  /// 正在播放服务（本机所有叫这个名字的进程）累计用了多少秒 CPU；没在跑是 nil。只读 ps 的输出
+  private static func serviceCPU() -> Double? {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/bin/ps")
+    process.arguments = ["-axo", "cputime=,comm="]
+    let pipe = Pipe()
+    process.standardOutput = pipe
+    guard (try? process.run()) != nil else { return nil }
+    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+    process.waitUntilExit()
+    let lines = String(decoding: data, as: UTF8.self).split(separator: "\n")
+      .filter { $0.contains("KittyToolsNowPlaying") }
+    guard !lines.isEmpty else { return nil }
+    // 「0:00.02」「1:02:03.45」→ 秒
+    return lines.reduce(0) { total, line in
+      let clock = line.split(separator: " ").first ?? ""
+      return total + clock.split(separator: ":").reduce(0) { $0 * 60 + (Double($1) ?? 0) }
+    }
+  }
 
   /// 测试宿主把自己挂成正在播放（不出声）→ 包里的服务读到、推回来 → 岛上有这个活动；发「切换」宿主收得到。
   /// 要的是 Dev 版的包里有 KittyToolsNowPlaying.xpc（scheme 构建会带上）
@@ -518,6 +544,15 @@ struct NowPlayingTests {
       try await Task.sleep(for: .milliseconds(100))
     }
     #expect(media()?.snapshot.repeatMode == 3)
+
+    // 稳定下来之后服务不该一直在读：「读支持的命令」要是自己触发「支持的命令变了」的通知，就成了每 100 ms 读一遍的环
+    // （去重会把它藏住：不推，但一直在算）。2 秒里服务的 CPU 时间几乎不涨才对
+    try await Task.sleep(for: .milliseconds(600))
+    let before = Self.serviceCPU()
+    try await Task.sleep(for: .seconds(2))
+    let after = Self.serviceCPU()
+    if let before, let after { #expect(after - before < 0.1, "服务 2 秒用了 \(after - before) 秒 CPU") }
+    #expect(before != nil)
 
     center.playbackState = .paused
     for _ in 0..<30 where media()?.snapshot.isPlaying ?? true {

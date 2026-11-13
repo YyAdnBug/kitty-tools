@@ -125,12 +125,12 @@ struct IslandMediaCard: View {
   var stagedVolume: Double?
   /// 输出设备的图标；nil = 这个设备调不了音量，不出那个按钮。卡片出来时读一次
   @State private var output: String?
-  /// 进度那一行换成了音量滑杆
-  @State private var showsVolume = false
+  /// 进度那一行换成了音量滑杆（值 = 打开那一刻读到的音量：滑杆第一帧就在对的位置）；nil = 没开
+  @State private var volume: Double?
 
   var body: some View {
     let snapshot = media.snapshot
-    let volumeOpen = showsVolume || stagedVolume != nil
+    let volumeOpen = volume != nil || stagedVolume != nil
     VStack(alignment: .leading, spacing: 10) {
       HStack(spacing: 12) {
         // 同岛上别的打开类按钮：先收卡片再切（刚换内容 0.3 s 内的点不算）
@@ -159,7 +159,7 @@ struct IslandMediaCard: View {
         if let output = stagedVolume == nil ? output : "speaker.wave.2.fill" {
           // 输出设备的图标（扬声器、耳机、显示器……）：点了进度那一行换成输出音量的滑杆，再点换回来
           Button {
-            showsVolume.toggle()
+            volume = volume == nil ? OutputVolume.read() : nil
           } label: {
             Image(systemName: output)
               .font(.system(size: 9, weight: .bold))
@@ -183,7 +183,9 @@ struct IslandMediaCard: View {
         .accessibilityLabel("关闭")
       }
       if volumeOpen {
-        IslandVolume(island: island, tint: media.tint, staged: stagedVolume) { showsVolume = false }
+        IslandVolume(
+          island: island, tint: media.tint, initial: stagedVolume ?? volume ?? 0,
+          staged: stagedVolume != nil)
       } else if (snapshot.duration ?? 0) > 0, snapshot.elapsed != nil {
         // 有时长（直播之类报 0 的不画）、有进度才画
         IslandScrubber(island: island, media: media, staged: staged)
@@ -195,8 +197,9 @@ struct IslandMediaCard: View {
     .padding(.top, 10)
     .padding(.bottom, 14)
     .frame(width: 340)
-    // 摆出来的岛（截图自检、单测）不读本机的输出设备：图出来的样子不能跟着这台机器插没插耳机变
-    .task {
+    // 摆出来的岛（截图自检、单测）不读本机的输出设备：图出来的样子不能跟着这台机器插没插耳机变。
+    // onAppear（不是 task）：第一帧就有那个图标，不晚一帧冒出来把歌名挤窄
+    .onAppear {
       if !island.isStaged { output = OutputVolume.read() == nil ? nil : OutputVolume.symbol() }
     }
   }
@@ -246,22 +249,27 @@ struct IslandTrack: View {
 
 /// 播放卡片上的输出音量（以 Alcove 为准的那一轮 B3）：点卡片右上角的设备图标，进度那一行换成它——喇叭 · 滑杆 · 百分比。
 /// 拖着就改系统的输出音量（OutputVolume，公开的 CoreAudio；不拦按键，音量键照旧是系统自己的提示），每秒读一次跟上
-/// 音量键；3 秒没碰自己换回进度。读屏里是可调的（一下 5%）
+/// 音量键。再点一下设备图标、或者卡片收起就换回进度——不自己到点换回：那一行在指针底下原地换成进度条，下一下点击
+/// 就成了误跳进度（评审 2）。读屏里是可调的（一下 5%）
 struct IslandVolume: View {
   let island: Island
   let tint: NSColor?
-  /// 截图自检摆的音量（不读、不写本机的）
-  var staged: Double?
-  /// 3 秒没碰：换回进度
-  let close: () -> Void
-  @State private var level = 0.0
-  /// 碰过几次（拖、读屏调）：每碰一次重新数 3 秒
-  @State private var touches = 0
+  /// 截图自检：不读、不写本机的音量
+  let staged: Bool
+  @State private var level: Double
   @GestureState private var dragging: Double?
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+  /// initial：打开那一刻的音量（调用方读好给进来，第一帧就在对的位置）
+  init(island: Island, tint: NSColor?, initial: Double, staged: Bool = false) {
+    self.island = island
+    self.tint = tint
+    self.staged = staged
+    _level = State(initialValue: min(max(initial, 0), 1))
+  }
+
   var body: some View {
-    let shown = dragging ?? staged ?? level
+    let shown = dragging ?? level
     HStack(spacing: 8) {
       Image(systemName: shown <= 0 ? "speaker.slash.fill" : "speaker.wave.1.fill")
         .font(.system(size: 10, weight: .semibold))
@@ -308,25 +316,17 @@ struct IslandVolume: View {
     .onDisappear { island.holdPointer(false) }
     // 每秒读一次（按了音量键滑杆跟上）；拖着时不读
     .task {
-      guard staged == nil else { return }
+      guard !staged else { return }
       while !Task.isCancelled {
-        if dragging == nil, let now = OutputVolume.read() { level = now }
         try? await Task.sleep(for: .seconds(1))
+        if dragging == nil, let now = OutputVolume.read() { level = now }
       }
-    }
-    .task(id: touches) {
-      guard staged == nil else { return }
-      try? await Task.sleep(for: .seconds(3))
-      // 拖着不放不算没碰
-      while dragging != nil, !Task.isCancelled { try? await Task.sleep(for: .milliseconds(300)) }
-      if !Task.isCancelled { close() }
     }
   }
 
   private func change(to value: Double) {
     level = min(max(value, 0), 1)
-    touches += 1
-    if staged == nil { OutputVolume.set(level) }
+    if !staged { OutputVolume.set(level) }
   }
 }
 

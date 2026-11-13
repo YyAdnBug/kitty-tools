@@ -2,7 +2,7 @@
 // bundle id 是 com.apple.kittytools.nowplaying——macOS 15.4 起 mediaremoted 只把别的 App 的播放信息给 bundle id 以
 // com.apple. 开头的进程（XPC 服务认 Info.plist 的 bundle id），App 自己（com.yy.…）读不到（mac-native §2）。
 // App 打开刘海岛的「正在播放」时连上来（Shell/NowPlaying.swift），launchd 按需拉起它；App 退出 / 关掉 / 崩了，launchd 把它收掉。
-// 它做的事：听 MediaRemote 的通知、合并 100 ms 再读一遍、和上一次不一样才推给 App；替 App 发播放 / 暂停 / 上一首 / 下一首 / 跳到某一秒。
+// 它做的事：听 MediaRemote 的通知、合并 100 ms 再读一遍、和上一次不一样才推给 App；替 App 发播放 / 暂停 / 上一首 / 下一首 / 跳到某一秒 / 换随机和循环的档。
 // 一次只服务一个 App（自己的那个）：新连接来了就换成它。不开沙盒、不要任何权利；没有界面，全在主线程上做。
 
 import Foundation
@@ -38,12 +38,19 @@ import Foundation
     Task { @MainActor in remote.seek(to: seconds) }
   }
 
+  /// 换档之后过一会儿再读一遍：播放器接了命令却不发「支持的命令变了」时，按钮也跟得上
   nonisolated func setShuffle(_ mode: Int) {
-    Task { @MainActor in remote.setShuffle(mode) }
+    Task { @MainActor in
+      remote.setShuffle(mode)
+      changed(after: .milliseconds(300))
+    }
   }
 
   nonisolated func setRepeat(_ mode: Int) {
-    Task { @MainActor in remote.setRepeat(mode) }
+    Task { @MainActor in
+      remote.setRepeat(mode)
+      changed(after: .milliseconds(300))
+    }
   }
 
   /// App 订阅了：推给它（换了连接就把旧的断掉）

@@ -85,7 +85,7 @@ import UniformTypeIdentifiers
 
   private var observers: [NSObjectProtocol] = []
 
-  /// 开始听三个通知（信息、在不在播、换了 App），有一个来了就调 changed；已经在听就不重复挂
+  /// 开始听四个通知（信息、在不在播、换了 App、支持的命令变了），有一个来了就调 changed；已经在听就不重复挂
   func observe(_ changed: @escaping @MainActor () -> Void) {
     guard observers.isEmpty, let register else { return }
     // 注册要传别的队列：它会在给的队列上同步等一下，在主线程上传 .main 就死锁（2026-11-13 实测，读不回来、超时也不走）。

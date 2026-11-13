@@ -70,6 +70,9 @@ import OSLog
       isOn = true
       connect()
       listenToPlayers()
+      // 播放卡片出来时要读输出设备；这个进程第一次碰 CoreAudio 要 50–60 ms（连 coreaudiod，之后约 0.2 ms）：
+      // 趁现在先碰一下，别卡在卡片出场的动画里（评审 1）
+      Task { _ = OutputVolume.read() }
     } else if !wanted, isOn {
       isOn = false
       disconnect()
@@ -545,6 +548,10 @@ import OSLog
     snapshot.duration = valid(snapshot.duration)
     snapshot.elapsed = valid(snapshot.elapsed)
     snapshot.rate = snapshot.rate.isFinite ? min(max(snapshot.rate, 0), maxRate) : 0
+    // 随机 / 循环的档只认 1…3
+    let mode = { (value: Int?) in value.flatMap { (1...3).contains($0) ? $0 : nil } }
+    snapshot.shuffle = mode(snapshot.shuffle)
+    snapshot.repeatMode = mode(snapshot.repeatMode)
     return snapshot
   }
 }
