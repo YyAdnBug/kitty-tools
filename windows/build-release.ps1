@@ -2,7 +2,18 @@
 # 每个架构出三样（PLAN-setup S1）：
 #   KittyTools-<版本>-windows-<x64|arm64>.zip（+ .sha256）       程序内更新用，也能手动解压
 #   KittyTools-<版本>-windows-<x64|arm64>-setup.exe（+ .sha256） 安装程序：Inno Setup 7 编的（installer/KittyTools.iss，PLAN-setup-inno）
+#   windows-update.json                                          更新清单（PLAN-v18 L12，两个架构合一份：版本号、发布页、各自的 zip 地址 / sha256 / 大小）
 # 不调用 gh，不自动上传；发布前先问用户，release 一律 --latest=false。
+#
+# 更新清单（PLAN-v18 L12 ②，issue #12）：App 先读 https://github.com/YyAdnBug/kitty-tools/releases/download/windows-update/windows-update.json
+# （静态文件，不走 API、不受没登录时每个 IP 每小时 60 次的限制），读不到再读 API 的发布列表。不能照 mac 用 releases/latest（latest 永远是
+# mac 版），所以挂在一个固定的**预发布** release「windows-update」上（只放这一个附件；网站和 mac 的检查都不认预发布）。
+# **格式发布后只加新键**（已装的版本会读它，Core/UpdateManifest.cs）；要改已有键的意思就换文件名、旧名字的照发。发布时（用户点头后）多两步：
+#   第一次：gh release create windows-update --prerelease --latest=false --title "Windows 更新清单" --notes "App 内更新读的清单，别删"
+#   以后每版（windows-v<版本> 的 release 和它的 zip 都传完之后）：gh release upload windows-update windows-update.json --clobber
+#   传完核一遍（两条都要 200）：
+#     curl -fsSL https://github.com/YyAdnBug/kitty-tools/releases/download/windows-update/windows-update.json
+#     curl -fsIL https://github.com/YyAdnBug/kitty-tools/releases/download/windows-v<版本>/KittyTools-<版本>-windows-x64.zip
 [CmdletBinding()]
 param(
     [string]$Configuration = 'Release'
@@ -56,6 +67,9 @@ foreach ($item in $entry.items) {
 [void]$notes.AppendLine('Windows 版 release 不标 latest，避免 mac 版收不到更新。')
 
 $summary = @()
+# 更新清单里各架构那一项（PLAN-v18 L12 ②）
+$manifestAssets = [ordered]@{}
+$releaseBase = 'https://github.com/YyAdnBug/kitty-tools/releases'
 # 安装程序用 Inno Setup 7 编（用户 2026-10-27 同意的例外，只在打包时用、不进 App）。
 $innoScript = Join-Path $root 'installer/KittyTools.iss'
 $iscc = @(
@@ -168,10 +182,23 @@ foreach ($target in $targets) {
         "$setupHash  $([System.IO.Path]::GetFileName($setupExe))`n",
         [System.Text.UTF8Encoding]::new($false))
     $setupSize = [math]::Round((Get-Item $setupExe).Length / 1MB, 1)
+    $manifestAssets[$target.Label] = [ordered]@{
+        url = "$releaseBase/download/windows-v$version/$([System.IO.Path]::GetFileName($zip))"
+        sha256 = $hash
+        size = (Get-Item $zip).Length
+    }
 
     $summary += "$($target.Label)：$size MB / $($files.Count) 个文件（不含 pdb），zip $zipSize MB，sha256 $($hash.Substring(0, 12))…；" +
         "安装包 $setupSize MB，sha256 $($setupHash.Substring(0, 12))…"
 }
+
+# 更新清单（文件名和 Core/UpdateManifest.FileName 一样，单测比对）：UTF-8 不带 BOM。
+$manifest = [ordered]@{ version = $version; page = "$releaseBase/tag/windows-v$version" }
+foreach ($label in $manifestAssets.Keys) {
+    $manifest[$label] = $manifestAssets[$label]
+}
+[System.IO.File]::WriteAllText(
+    (Join-Path $outRoot 'windows-update.json'), ($manifest | ConvertTo-Json -Depth 4), [System.Text.UTF8Encoding]::new($false))
 
 $notesPath = Join-Path $outRoot 'release-notes.md'
 [System.IO.File]::WriteAllText($notesPath, $notes.ToString(), [System.Text.UTF8Encoding]::new($true))

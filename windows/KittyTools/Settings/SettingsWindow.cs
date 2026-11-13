@@ -3454,6 +3454,11 @@ internal sealed partial class SettingsWindow : Window
                     row.Children.Add(Text("已是最新版本"));
                     row.Children.Add(Link("再查一次", () => _ = CheckUpdatesFromPageAsync()));
                     break;
+                case "failed" when UpdateService.LastCheckRateLimited:
+                    // PLAN-v18 L12 ①：限流时说清楚、指到发布页（同 mac 关于页那一行）
+                    row.Children.Add(Text(UpdateManifest.RateLimitedText, Theme.Critical()));
+                    row.Children.Add(Link("打开发布页", UpdateService.OpenReleasesPage));
+                    break;
                 case "failed":
                     row.Children.Add(Text("检查更新失败：网络不通或 GitHub 暂时打不开", Theme.Critical()));
                     row.Children.Add(Link("重试", () => _ = CheckUpdatesFromPageAsync()));

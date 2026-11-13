@@ -147,12 +147,22 @@ internal static class UpdateHttp
                 continue;
             }
 
+            // PLAN-v18 L12 ①：403 / 429 是限流（没登录的 API 每个 IP 每小时 60 次），单独认出来，界面上说清楚、指到发布页。
+            if (UpdateManifest.IsRateLimited((int)response.StatusCode))
+            {
+                response.Dispose();
+                throw new UpdateRateLimitedException();
+            }
+
             response.EnsureSuccessStatusCode();
             return response;
         }
 
         throw new HttpRequestException("too-many-redirects");
     }
+
+    /// <summary>GitHub 回了 403 / 429。</summary>
+    internal sealed class UpdateRateLimitedException() : HttpRequestException("update-rate-limited");
 
     private static bool IsRedirect(HttpStatusCode status)
         => status is HttpStatusCode.MovedPermanently or HttpStatusCode.Found or HttpStatusCode.SeeOther

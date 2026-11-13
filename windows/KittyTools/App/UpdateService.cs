@@ -3,7 +3,10 @@
 // PLAN-v11 F7（mac X11）：能「跳过这个版本」（托盘、主界面、启动器底栏不再挂着，更新的版本出来照常）；
 // 开着「后台下好、退出时安装」时，发现新版本就在后台下好（AutoUpdater.PrepareInBackgroundAsync），退出时装上。
 // 每日检查跑在线程池上，所以检查的后半段（改设置、通知、改托盘）一律回 UI 线程（第二版 §2 第 1 条）。
-// 调试开关：KITTY_UPDATE_FEED 指向一个本地 JSON 文件或 URL，用它代替 GitHub 的发布列表。
+// PLAN-v18 L12（mac c006ea04，issue #12）：先读固定预发布 release 上的更新清单 windows-update.json（Core UpdateManifest，不走 API、
+// 不占次数），读不到（还没传、网络问题、解不出来）再读 API 的发布列表；API 回 403 / 429 时说「GitHub 限流了」、指到发布页。
+// 调试开关：KITTY_UPDATE_FEED 指向一个本地 JSON 文件或 URL，用它代替 GitHub 的发布列表；KITTY_UPDATE_MANIFEST 同样代替清单
+// （设了 KITTY_UPDATE_FEED 而没设它时不读清单，测试不碰真地址）。
 // 这个开关、以及 http:// / file:// / 本地路径只在 Debug 或 --update-test 下认（REVIEW R1）；
 // 正常 Release 只认 GitHub 的 https 地址（白名单在 Core 的 UpdateTrust，配单测）。
 using System.Text.Json;
@@ -60,6 +63,16 @@ internal static class UpdateService
     /// <summary>上一次检查没成（网络不通、发布列表读不出来）：设置 › 关于 把结果写在页上，不另弹提示（同 mac）。</summary>
     public static bool LastCheckFailed { get; private set; }
 
+    /// <summary>上一次没成是因为 GitHub 限流（403 / 429）。</summary>
+    public static bool LastCheckRateLimited { get; private set; }
+
+    /// <summary>这台电脑的架构在资产名里的写法。</summary>
+    private static string Architecture => System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture switch
+    {
+        System.Runtime.InteropServices.Architecture.Arm64 => "arm64",
+        _ => "x64",
+    };
+
     public static void Initialize(Microsoft.UI.Dispatching.DispatcherQueue dispatcher)
     {
         _dispatcher = dispatcher;
@@ -103,6 +116,20 @@ internal static class UpdateService
             }
 
             UsingLocalFeed = !string.IsNullOrWhiteSpace(feed);
+            var current = typeof(UpdateService).Assembly.GetName().Version ?? new Version(0, 0, 0);
+            var manifestUrl = UpdateHttp.TestMode && Environment.GetEnvironmentVariable("KITTY_UPDATE_MANIFEST") is { Length: > 0 } testManifest
+                ? testManifest
+                : UsingLocalFeed ? null : UpdateManifest.Url;
+            if (manifestUrl is not null && await ReadManifestAsync(manifestUrl) is { } offer && Version.TryParse(offer.Version, out var offered))
+            {
+                var fresh = offered > current;
+                Log.Info($"update.check newer={fresh} version={offer.Version} source=manifest");
+                LastCheckFailed = false;
+                LastCheckRateLimited = false;
+                ApplyResult(fresh, offer.Version, offer.Page, offer.ZipUrl, offer.HashUrl, offer.AssetName, current, userInitiated);
+                return;
+            }
+
             var json = string.IsNullOrWhiteSpace(feed)
                 ? await UpdateHttp.GetFeedAsync(DefaultFeed)
                 : await UpdateHttp.GetFeedAsync(feed);
@@ -112,7 +139,6 @@ internal static class UpdateService
                 throw new InvalidOperationException("发布列表格式不对");
             }
 
-            var current = typeof(UpdateService).Assembly.GetName().Version ?? new Version(0, 0, 0);
             string? bestVersion = null;
             string? bestUrl = null;
             string? bestZip = null;
@@ -154,18 +180,59 @@ internal static class UpdateService
             }
 
             var newer = best is not null && best > current;
-            Log.Info($"update.check newer={newer} version={bestVersion ?? "none"} localFeed={UsingLocalFeed}");
+            Log.Info($"update.check newer={newer} version={bestVersion ?? "none"} localFeed={UsingLocalFeed} source=api");
             LastCheckFailed = false;
+            LastCheckRateLimited = false;
             ApplyResult(newer, bestVersion, bestUrl, bestZip, bestHash, bestAsset, current, userInitiated);
         }
         catch (Exception ex)
         {
             LastCheckFailed = true;
+            LastCheckRateLimited = ex is UpdateHttp.UpdateRateLimitedException;
             Log.Warn($"update.check-failed {ex.GetType().Name}");
-            if (userInitiated)
+            if (userInitiated && LastCheckRateLimited)
+            {
+                NotifyUser("检查更新失败", UpdateManifest.RateLimitedText, NoticeTone.Error,
+                    new NoticeAction("打开发布页", OpenReleasesPage));
+            }
+            else if (userInitiated)
             {
                 NotifyUser("检查更新失败", "网络不通或 GitHub 暂时打不开", NoticeTone.Error);
             }
+        }
+    }
+
+    /// <summary>读更新清单：读不到、解不出来、这个架构没有都是 null（退回 API）。</summary>
+    private static async Task<UpdateOffer?> ReadManifestAsync(string url)
+    {
+        try
+        {
+            var json = await UpdateHttp.GetTextAsync(url);
+            var offer = UpdateManifest.Parse(json, Architecture, address => UpdateHttp.TestMode || UpdateTrust.IsAllowedDownloadUrl(address));
+            if (offer is null)
+            {
+                Log.Warn("update.manifest-unreadable");
+            }
+
+            return offer;
+        }
+        catch (Exception ex)
+        {
+            Log.Info($"update.manifest-missing {ex.GetType().Name}");
+            return null;
+        }
+    }
+
+    /// <summary>GitHub 上 Kitty Tools 的发布页（限流时去那里下载）。</summary>
+    public static void OpenReleasesPage()
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(UpdateManifest.ReleasesPage) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"update.open-failed {ex.GetType().Name}");
         }
     }
 
@@ -241,12 +308,7 @@ internal static class UpdateService
             return (null, null, null);
         }
 
-        var architecture = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture switch
-        {
-            System.Runtime.InteropServices.Architecture.Arm64 => "arm64",
-            _ => "x64",
-        };
-        var wanted = $"KittyTools-{version}-windows-{architecture}.zip";
+        var wanted = UpdateManifest.AssetName(version, Architecture);
         string? zip = null;
         string? hash = null;
         foreach (var asset in assets.EnumerateArray())
