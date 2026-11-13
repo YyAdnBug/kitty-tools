@@ -15,10 +15,13 @@ public readonly record struct OcrLine(string Text, RectD Box, IReadOnlyList<OcrW
 
 public static partial class OcrText
 {
-    [GeneratedRegex(@"^(?:[•◦▪▫‣●○■□·・]|[-*–]\s|\d{1,3}[.)]\s|\d{1,3}、|[(（]\d{1,3}[)）]|[①-⑳])\s*")]
+    [GeneratedRegex(@"^(?:[•◦▪▫‣●○■□·・]|[-*–]\s|\d{1,3}[.)](?:\s|(?=[^\d\s.)]))|\d{1,3}、|[(（]\d{1,3}[)）]|[①-⑳])\s*")]
     private static partial Regex ListMarkerPattern();
 
-    /// <summary>行首的列表记号（连同后面的空白）；不是列表项时 null（mac OCR.listMarker）。</summary>
+    /// <summary>
+    /// 行首的列表记号（连同后面的空白）；不是列表项时 null（mac OCR.listMarker）。「1.」后面没有空格也算（识字在中文里常把它丢掉：
+    /// 「1.Alt+Shift+A截图」，PLAN-v18 S12 / mac 43931601），紧跟着数字、点的不算（「3.14」「1.5倍」「192.168…」）。
+    /// </summary>
     public static string? ListMarker(string text) => ListMarkerPattern().Match(text) is { Success: true } match ? match.Value : null;
 
     public static List<List<string>> Paragraphs(IReadOnlyList<OcrLine> lines)
@@ -40,6 +43,8 @@ public static partial class OcrText
         var lineWidth = widths[widths.Count / 2];
         var lineRight = rights[rights.Count / 2];
         OcrLine? previous = null;
+        // 这一段是列表项时：记号的左边界，和往左缩回多少算出了这一项（半个字宽）
+        (double Left, double Slack)? item = null;
         foreach (var line in lines)
         {
             if (previous is { } last)
@@ -51,10 +56,13 @@ public static partial class OcrText
                 var wrapped = line.Words is { Count: > 0 } words && IsLatin(words[0].Text) && words[0].Box.Width > room;
                 var breaks = gap > 1.2 * lineHeight || gap < -0.5 * lineHeight ||
                              (endsSentence && last.Box.Width < 0.8 * lineWidth && !wrapped) ||
-                             ListMarker(line.Text) is not null;
+                             ListMarker(line.Text) is not null ||
+                             // 列表项后面一行的左边界比记号还靠左半个字以上：列表后面接着的正文（折行接着写的列表项缩进到正文列，不缩回去）
+                             (item is { } open && line.Box.X < open.Left - open.Slack);
                 if (breaks)
                 {
                     result.Add(new List<OcrLine>());
+                    item = null;
                 }
             }
             else
@@ -62,11 +70,32 @@ public static partial class OcrText
                 result.Add(new List<OcrLine>());
             }
 
+            if (result[^1].Count == 0 && ListMarker(line.Text) is not null)
+            {
+                item = (line.Box.X, Math.Max(2, 0.5 * (EmSize(line) ?? 0)));
+            }
+
             result[^1].Add(line);
             previous = line;
         }
 
         return result;
+    }
+
+    /// <summary>按字数估的字宽（像素；同 mac OCR.emSize）：中日文一个字算 1，窄字母 0.3，宽字母 0.85，大写 0.65，其余 0.53；不到两个字宽 null。</summary>
+    private static double? EmSize(OcrLine line)
+    {
+        double units = 0;
+        foreach (var rune in line.Text.EnumerateRunes())
+        {
+            units += rune.Value >= 0x2E80 ? 1
+                : System.Text.Rune.IsWhiteSpace(rune) || (rune.IsAscii && "iljtfrI.,:;!'|()[]".Contains((char)rune.Value)) ? 0.3
+                : rune.IsAscii && "mwMW".Contains((char)rune.Value) ? 0.85
+                : System.Text.Rune.IsUpper(rune) ? 0.65
+                : 0.53;
+        }
+
+        return units >= 2 ? line.Box.Width / units : null;
     }
 
     /// <summary>拉丁词（mac 的 words 只收字母、数字、下划线组成的词；中日文随便哪个字都能断行，不算挤断）。</summary>

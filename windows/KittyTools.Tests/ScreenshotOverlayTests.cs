@@ -110,6 +110,47 @@ public sealed class ScreenshotOverlayTests
     }
 
     [TestMethod]
+    public void ListMarkerWithoutSpace()
+    {
+        // PLAN-v18 S12（mac 43931601）：「1.」后面没有空格也算；紧跟着数字、点的不算。
+        Assert.AreEqual("1.", OcrText.ListMarker("1.Alt+Shift+A截图"));
+        Assert.AreEqual("2.", OcrText.ListMarker("2.等待该区域变成翻译之后的内容"));
+        Assert.AreEqual("3)", OcrText.ListMarker("3)ESC"));
+        Assert.IsNull(OcrText.ListMarker("1.5倍行距"));
+        Assert.IsNull(OcrText.ListMarker("192.168.1.1 是网关"));
+        Assert.IsNull(OcrText.ListMarker("1..."));
+        Assert.IsNull(OcrText.ListMarker("3.14"));
+    }
+
+    [TestMethod]
+    public void OrderedListWithoutSpacesSplits()
+    {
+        // mac orderedListWithoutSpacesSplits 的行框（Vision 归一化、左下原点）换成 1000 × 1000 像素、左上原点：
+        // 「使用步骤」、三条记号后面没空格的有序列表、列表后面往左缩回去的一段正文，各成一段；折行接着写（缩进到正文列）的不断。
+        static OcrLine Line(string text, double x, double y, double width, double height)
+            => new(text, new RectD(x * 1000, (1 - y - height) * 1000, width * 1000, height * 1000));
+        var shot = new[]
+        {
+            Line("使用步骤", 0.0218, 0.8313, 0.0963, 0.1039),
+            Line("1.Alt+Shift+A截图", 0.0538, 0.5860, 0.1986, 0.1145),
+            Line("2.等待该区域变成翻译之后的内容", 0.0523, 0.4363, 0.3560, 0.1264),
+            Line("3.ESC关闭翻译", 0.0521, 0.2919, 0.1698, 0.1222),
+            Line("这些步骤是直接在原地显示翻译之后的内容，不是单独显示一个框显示翻译之后的内容。", 0.0233, 0.0479, 0.9009, 0.1198),
+        };
+        Assert.AreEqual(5, OcrText.Paragraphs(shot).Count);
+        var wrapped = new[]
+        {
+            Line("1.第一条写得很长很长很长很长很长", 0.05, 0.8, 0.4, 0.05),
+            Line("接着往下写的折行", 0.075, 0.74, 0.2, 0.05),
+            Line("2.第二条", 0.05, 0.68, 0.1, 0.05),
+        };
+        var paragraphs = OcrText.Paragraphs(wrapped);
+        Assert.AreEqual(2, paragraphs.Count);
+        CollectionAssert.AreEqual(new[] { "1.第一条写得很长很长很长很长很长", "接着往下写的折行" }, paragraphs[0]);
+        CollectionAssert.AreEqual(new[] { "2.第二条" }, paragraphs[1]);
+    }
+
+    [TestMethod]
     public void ShortLineAfterALongWordIsNotAParagraphEnd()
     {
         // 「…agent.」后面一整行长的代码词：上一行剩下的地方放不下它，是被挤断的，不算段落结尾
