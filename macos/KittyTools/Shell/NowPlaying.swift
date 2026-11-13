@@ -8,6 +8,8 @@
 // 退路（第 2-3 批，NowPlayingFallback.swift）：开着时一直听音乐 / Spotify 的分布式通知（不要授权）；服务说取不到 MediaRemote、
 // 连不上服务（找不到、拉不起来）、或者它们说在播而服务 2 秒都报不出正在播放，就改用它们的通知（服务又报出来了就换回去）。
 // 按钮照旧交给服务发（发命令不设门槛）；服务整个不能用时走 AppleScript。
+// 进度条能拖（2026-11-13）：跳到某一秒也交给服务发；发完岛上当场当它已经在那儿（Hold），播放器报回新进度或者过了
+// holdTime 就撤——不然松手那一下进度条闪回旧位置。
 
 import AppKit
 import OSLog
@@ -44,6 +46,9 @@ import OSLog
   /// 从在播变成暂停的那一刻（一直没在播过的是 nil：一打开就是暂停着的不上耳朵）
   private var pausedSince: ContinuousClock.Instant?
   private var linger: Task<Void, Never>?
+  /// 刚跳过、播放器还没报回新进度：岛上先顶着的那个位置；到点撤掉
+  private var hold: Hold?
+  private var holdExpiry: Task<Void, Never>?
 
   /// 连哪个服务（单测给一个不存在的名字，走「连不上 → 退路」）
   private let serviceName: String
@@ -164,6 +169,8 @@ import OSLog
     fallbackCheck?.cancel()
     positionRead?.cancel()
     positionRead = nil
+    holdExpiry?.cancel()
+    hold = nil
     island?.endActivity(Self.activityID)
   }
 
@@ -222,12 +229,16 @@ import OSLog
     }
   }
 
-  /// 退路里的音乐没有进度：已经允许过控制「音乐」时读一次（同一首读过就不读）
-  private func readMusicPosition() {
+  /// 退路里的音乐没有进度：已经允许过控制「音乐」时读一次（同一首读过就不读）。again：刚跳过，过一会儿再读一遍盖上去——
+  /// 音乐跳了不发通知，岛上那个位置是自己猜的（命令到没到、授权框停了多久都不知道）
+  private func readMusicPosition(again: Bool = false) {
     guard usesFallback, let current = snapshot, current.bundleID == "com.apple.Music",
-      current.elapsed == nil, positionRead == nil
+      again || (current.elapsed == nil && positionRead == nil)
     else { return }
+    positionRead?.cancel()
     positionRead = Task { [weak self] in
+      if again { try? await Task.sleep(for: .milliseconds(300)) }
+      guard !Task.isCancelled else { return }
       let seconds = await NowPlayingFallback.musicPosition()
       guard let self, !Task.isCancelled else { return }
       self.positionRead = nil
@@ -267,8 +278,11 @@ import OSLog
   /// 岛上该用哪一份（服务的，或者退路里挑的）换上去
   private func refresh() {
     show(
-      Self.effective(
-        served: served, usesFallback: usesFallback, notices: Array(notices.values)))
+      Self.holding(
+        hold,
+        over: Self.effective(
+          served: served, usesFallback: usesFallback, notices: Array(notices.values)),
+        now: .now))
     readMusicPosition()
   }
 
@@ -311,7 +325,8 @@ import OSLog
         symbol: "music.note", tone: .info,
         media: Island.Media(
           snapshot: snapshot, artwork: image, appIcon: icon(for: snapshot),
-          send: { [weak self] in self?.send($0) }, open: { [weak self] in self?.openApp() }),
+          send: { [weak self] in self?.send($0) }, seek: { [weak self] in self?.seek(to: $0) },
+          open: { [weak self] in self?.openApp() }),
         onWings: Self.showsOnWings(
           isPlaying: snapshot.isPlaying, pausedFor: pausedSince.map { .now - $0 })))
   }
@@ -332,13 +347,65 @@ import OSLog
   /// 服务能用就交给它发（读不到时发命令多半还行）；整个不能用时，退路的音乐 / Spotify 走 AppleScript
   private func send(_ command: NowPlayingCommand) {
     if available != false, let proxy = proxy() { return proxy.send(command.rawValue) }
-    guard let snapshot else { return }
+    guard let player = scriptable(snapshot) else { return }
     let island = island
     Task {
       await NowPlayingFallback.run(
-        command, bundleID: snapshot.bundleID, appName: snapshot.appName ?? snapshot.bundleID,
+        NowPlayingFallback.script(command, bundleID: player.bundleID), appName: player.appName,
         island: island)
     }
+  }
+
+  /// AppleScript 只对退路认识的那两个播放器跑：脚本里拼的是这里的常量，不是快照里的字
+  private func scriptable(_ snapshot: NowPlayingSnapshot?) -> (bundleID: String, appName: String)? {
+    NowPlayingFallback.notices.first { $0.bundleID == snapshot?.bundleID }.map {
+      ($0.bundleID, $0.appName)
+    }
+  }
+
+  /// 跳到这一首的第几秒（进度条拖完、点了一下、读屏调）：同按钮，服务能用就交给它发，整个不能用时音乐 / Spotify 走
+  /// AppleScript。岛上当它已经在那儿：
+  /// - 服务报的那一份：先顶着（Hold），播放器报回跳到的位置附近、换了歌或者到点就撤
+  /// - 退路里的那一份（播放器自己的通知）：直接改——音乐跳了不发通知，没有别的来源会来纠正。走 AppleScript 的等脚本
+  ///   跑成了才改（没授权、点了「不允许」就不改）；音乐另外过一会儿读一遍真的位置盖上去
+  private func seek(to seconds: Double) {
+    guard let current = snapshot, let target = Self.seekTarget(seconds, in: current) else { return }
+    if available != false, let proxy = proxy() {
+      proxy.seek(to: target)
+      if let served {
+        hold = Hold(position: target, at: .now, title: served.title)
+        holdExpiry?.cancel()
+        holdExpiry = Task { [weak self] in
+          try? await Task.sleep(for: .seconds(Self.holdTime))
+          guard let self, !Task.isCancelled else { return }
+          self.hold = nil
+          self.refresh()
+        }
+        refresh()
+      } else {
+        sought(target, in: current)
+      }
+      return
+    }
+    guard let player = scriptable(current) else { return }
+    let island = island
+    Task { [weak self] in
+      let done = await NowPlayingFallback.run(
+        NowPlayingFallback.seekScript(target, bundleID: player.bundleID),
+        appName: player.appName, island: island)
+      if done { self?.sought(target, in: current) }
+    }
+  }
+
+  /// 退路里的那一份跳到了 target：还是那一首就把它的进度改成「此刻在 target」
+  private func sought(_ target: Double, in current: NowPlayingSnapshot) {
+    guard isOn, var notice = notices[current.bundleID], notice.snapshot.title == current.title
+    else { return }
+    notice.snapshot.elapsed = target
+    notice.snapshot.timestamp = .now
+    notices[current.bundleID] = notice
+    refresh()
+    readMusicPosition(again: true)
   }
 
   /// 切到放歌的那个 App（Safari 的报的是 WebKit 的进程，按上级 App 找）。岛是不激活本 App 的面板：后台调
@@ -360,6 +427,48 @@ import OSLog
   ) -> NowPlayingSnapshot? {
     if let served { return served }
     return usesFallback ? NowPlayingFallback.pick(notices) : nil
+  }
+
+  /// 进度条上要跳到的秒数夹进这一首里；跳不了（这个 App 不支持、没有时长、不是有限数）是 nil
+  static func seekTarget(_ seconds: Double, in snapshot: NowPlayingSnapshot) -> Double? {
+    guard snapshot.canSeek, let duration = snapshot.duration, duration > 0, seconds.isFinite
+    else { return nil }
+    return min(max(seconds, 0), duration)
+  }
+
+  /// 读屏调进度条一下挪多少秒：时长的 5%，至少 5 秒
+  static func seekStep(duration: Double) -> Double { max(duration * 0.05, 5) }
+
+  /// 刚跳过的那一下：at 那一刻把 title 这一首跳到了 position
+  struct Hold: Equatable {
+    var position: Double
+    var at: Date
+    var title: String
+  }
+
+  /// 跳过之后最多顶多久（服务的通知 7–141 ms 就到；到点还没报到跳到的位置 = 播放器没理这条命令，照它报的画）
+  static let holdTime: TimeInterval = 2
+  /// 播放器报的位置离跳到的位置这么近就算报回来了（网页视频会吸到关键帧上，差一点）
+  static let holdTolerance: Double = 1.5
+
+  /// 刚跳过、还没过 holdTime、还是那一首，而播放器报的位置还不在跳到的位置附近：当它已经在跳到的位置（之后照常
+  /// 按速率往前走）。「附近」而不是「进度变了就撤」：一次操作来好几条通知，先到的可能是旧位置配新的时间戳（评审 2），
+  /// 照它画就闪回去了。播放器报到了附近、换了歌、到点了，都照原样
+  static func holding(_ hold: Hold?, over snapshot: NowPlayingSnapshot?, now: Date)
+    -> NowPlayingSnapshot?
+  {
+    guard let hold, let reported = snapshot, now.timeIntervalSince(hold.at) < holdTime,
+      reported.title == hold.title
+    else { return snapshot }
+    var held = reported
+    held.elapsed = hold.position
+    held.timestamp = hold.at
+    if let real = position(reported, at: now), let expected = position(held, at: now),
+      abs(real - expected) <= holdTolerance
+    {
+      return reported
+    }
+    return held
   }
 
   /// 上不上耳朵：在播；或者从在播变成暂停还不到 pausedLinger。一打开就是暂停着的（pausedFor 是 nil）不上

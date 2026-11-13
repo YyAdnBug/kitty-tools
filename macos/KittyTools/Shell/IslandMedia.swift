@@ -1,7 +1,8 @@
 // 刘海岛上的正在播放（2026-11-13 刘海岛扩展第 2 期，拍板 E2）：耳朵上的封面 + 跳动条、点耳朵展开的播放卡片、那一张里的一行。
 // 数据是 Island.Media（Shell/NowPlaying.swift 给）。画在岛的黑底上（同 Island 的深色、字号刻度）。
 // 跳动条是图层动画（CABasicAnimation，渲染服务做、本进程不逐帧算）：放歌时一挂几个小时，Whisker §8 循环只动变换、不用 TimelineView；
-// 只在在播且速率 > 0 时动，暂停 / 缓冲停住，减弱动态效果时不动。进度条和时间只在卡片开着时每秒推一次（TimelineView）。
+// 只在在播且速率 > 0 时动，暂停 / 缓冲停住，减弱动态效果时不动。进度条和时间只在卡片开着时每秒推一次（TimelineView）；
+// 这个 App 支持跳时进度条能拖、能点着跳（IslandScrubber）。
 // 上一首 / 下一首按快照里的 canPrevious / canNext 灰掉（Chrome 里单个视频没有）；点封面切到放歌的那个 App。
 
 import SwiftUI
@@ -115,7 +116,8 @@ final class IslandBarsView: NSView {
 struct IslandMediaCard: View {
   let island: Island
   let media: Island.Media
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  /// 截图自检：进度条摆成正拖到这一秒的样子
+  var staged: Double?
 
   var body: some View {
     let snapshot = media.snapshot
@@ -154,9 +156,7 @@ struct IslandMediaCard: View {
       }
       // 有时长（直播之类报 0 的不画）、有进度才画
       if (snapshot.duration ?? 0) > 0, snapshot.elapsed != nil {
-        TimelineView(.periodic(from: .now, by: 1)) { context in
-          progress(at: context.date)
-        }
+        IslandScrubber(island: island, media: media, staged: staged)
       }
       IslandTransport(media: media, size: 18)
         .frame(maxWidth: .infinity)
@@ -167,37 +167,136 @@ struct IslandMediaCard: View {
     .frame(width: 340)
   }
 
-  /// 进度：已播 · 细条 · 总长（11 pt 等宽数字）；细条底 white 0.18、填强调色
-  private func progress(at date: Date) -> some View {
+  /// 秒 → 「1:02:03」：夹在 0…99:59:59（快照在收的时候夹过，这里再兜一层：Int(Double) 越界会直接闪退）
+  static func clock(_ seconds: Double) -> String {
+    ScreenRecorder.clock(Int(min(max(seconds.isFinite ? seconds : 0, 0), 359_999)))
+  }
+}
+
+/// 播放卡片上的进度：已播 · 细条 · 总长（11 pt 等宽数字）；细条底 white 0.18、填强调色，卡片开着时每秒推一次。
+/// 这个 App 支持跳（快照的 canSeek）时细条能拖、能点着跳（2026-11-13）：指针在卡片上时细条从 4 变 6 pt 粗、露出一个
+/// 10 pt 的白圆点；按下就跟手（不做动画、不被每秒的刷新拽走，左边的时间跟着变），松手才发一次命令——拖的路上不发，
+/// 播放器不会一路跟着跳。按住时告诉岛别按指针位置收卡片（Island.holdPointer）：拖过头、拖出卡片是常事。
+/// 岛的窗口不接键盘，拖只靠鼠标；读屏里是可调的元素（一下挪时长的 5%、至少 5 秒）
+struct IslandScrubber: View {
+  let island: Island
+  let media: Island.Media
+  /// 截图自检摆出「正拖着」的样子（拖到第几秒）
+  var staged: Double?
+  /// 正拖到的位置（秒）；没在拖是 nil。手势状态：松手、手势被系统打断都自己回到 nil（不会卡在「拖着」）
+  @GestureState private var dragging: Double?
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  var body: some View {
+    TimelineView(.periodic(from: .now, by: 1)) { context in
+      let row = bar(at: context.date)
+      if media.snapshot.canSeek {
+        row.accessibilityAdjustableAction(adjust)
+      } else {
+        row
+      }
+    }
+    .onChange(of: dragging != nil) { _, held in island.holdPointer(held) }
+    // 拖到一半卡片没了（播放器退了、被别的提示换掉）：把岛放开
+    .onDisappear { island.holdPointer(false) }
+  }
+
+  /// 读屏调一下：从此刻的位置挪一步
+  private func adjust(_ direction: AccessibilityAdjustmentDirection) {
+    let snapshot = media.snapshot
+    let step = NowPlaying.seekStep(duration: snapshot.duration ?? 0)
+    let from = NowPlaying.position(snapshot, at: .now) ?? 0
+    switch direction {
+    case .increment: media.seek(from + step)
+    case .decrement: media.seek(from - step)
+    @unknown default: break
+    }
+  }
+
+  private func bar(at date: Date) -> some View {
     let snapshot = media.snapshot
     let duration = snapshot.duration ?? 0
-    let position = NowPlaying.position(snapshot, at: date) ?? 0
-    let fraction = duration > 0 ? position / duration : 0
+    let dragged = dragging ?? staged
+    let position = dragged ?? NowPlaying.position(snapshot, at: date) ?? 0
+    let fraction = Self.fraction(position, of: duration)
+    let seekable = snapshot.canSeek
+    let lifted = seekable && (island.isHovered || dragged != nil)
+    // 两条动画各管各的属性（叠在同一棵子树上时里面那条全赢：松手在卡片外面，圆点会照 1 秒线性慢慢收，评审 5）：
+    // 往前推的管填充的宽、圆点的位置——平时每秒一格（线性 1 s），拖着、点着跳时跟手不做动画；变粗的管细条的高、圆点的显隐
+    let push: Animation? = dragged == nil && !reduceMotion ? .linear(duration: 1) : nil
+    let lift = Style.Motion.snap.animation(reduced: reduceMotion)
     return HStack(spacing: 8) {
       time(position)
       Capsule().fill(.white.opacity(0.18))
         .overlay(alignment: .leading) {
           GeometryReader { proxy in
             Rectangle().fill(IslandLeading.tint(.info))
-              .frame(width: proxy.size.width * min(max(fraction, 0), 1))
+              .frame(width: proxy.size.width * fraction)
+              .animation(push, value: fraction)
           }
         }
         .clipShape(Capsule())
-        .frame(height: 4)
-        .animation(reduceMotion ? nil : .linear(duration: 1), value: fraction)
+        .frame(height: lifted ? 6 : 4)
+        .animation(lift, value: lifted)
+        // 行高不跟着细条变粗变
+        .frame(height: 6)
+        .overlay {
+          GeometryReader { proxy in
+            Circle().fill(.white)
+              .frame(width: 10, height: 10)
+              .animation(lift) { $0.scaleEffect(lifted ? 1 : 0.4).opacity(lifted ? 1 : 0) }
+              .position(x: proxy.size.width * fraction, y: proxy.size.height / 2)
+              .animation(push, value: fraction)
+          }
+          .allowsHitTesting(false)
+        }
+        // 接鼠标的那一条比细条高（18 pt），好点；画在细条上面、不占行高。按歌名认：拖到一半换了歌，这一条换成新的、
+        // 手势当场作废——不然松手会按新歌的时长把新歌跳到中间（评审 4）
+        .overlay {
+          if seekable {
+            GeometryReader { proxy in
+              Color.clear.contentShape(Rectangle())
+                .gesture(drag(width: proxy.size.width, duration: duration))
+            }
+            .frame(height: 18)
+            .id(snapshot.title)
+          }
+        }
       time(duration)
     }
     .accessibilityElement(children: .ignore)
-    .accessibilityLabel("播放到 \(Self.clock(position))，共 \(Self.clock(duration))")
+    .accessibilityLabel("播放进度")
+    .accessibilityValue("\(IslandMediaCard.clock(position))，共 \(IslandMediaCard.clock(duration))")
+    // 每秒在变：旁白光标停在上面时别每秒念一遍
+    .accessibilityAddTraits(.updatesFrequently)
   }
 
-  /// 秒 → 「1:02:03」：夹在 0…99:59:59（快照在收的时候夹过，这里再兜一层：Int(Double) 越界会直接闪退）
-  static func clock(_ seconds: Double) -> String {
-    ScreenRecorder.clock(Int(min(max(seconds.isFinite ? seconds : 0, 0), 359_999)))
+  /// 按下就算（minimumDistance 0：点一下也是跳）；松手发命令：快照当场换成跳到的位置（NowPlaying.seek），和手势状态
+  /// 回到 nil 是同一轮更新，进度条不闪回去
+  private func drag(width: CGFloat, duration: Double) -> some Gesture {
+    DragGesture(minimumDistance: 0)
+      .updating($dragging) { value, state, _ in
+        state = Self.seconds(at: value.location.x, width: width, duration: duration)
+      }
+      .onEnded { value in
+        media.seek(Self.seconds(at: value.location.x, width: width, duration: duration))
+      }
+  }
+
+  /// 细条上横坐标 x 的那一点是第几秒：夹在 0…时长（拖过头就是头 / 尾）；细条没宽度、时长不对是 0
+  static func seconds(at x: CGFloat, width: CGFloat, duration: Double) -> Double {
+    guard width > 0, duration.isFinite, duration > 0, x.isFinite else { return 0 }
+    return min(max(Double(x / width), 0), 1) * duration
+  }
+
+  /// 填到几成：夹在 0…1
+  static func fraction(_ position: Double, of duration: Double) -> Double {
+    guard duration > 0, position.isFinite else { return 0 }
+    return min(max(position / duration, 0), 1)
   }
 
   private func time(_ seconds: Double) -> some View {
-    Text(Self.clock(seconds))
+    Text(IslandMediaCard.clock(seconds))
       .font(.system(size: 11).monospacedDigit())
       .foregroundStyle(.white.opacity(0.5))
       .lineLimit(1)

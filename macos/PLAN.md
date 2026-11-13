@@ -620,6 +620,21 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
     分布式通知要 `.deliverImmediately`（默认的在本 App 不在前台时被系统压着）；播放器崩了 / 强制退出不发「停了」，另听 App 退出；按钮能交给服务
     就交给服务（发命令不设门槛）。退路里没有封面（放 App 图标）。`NSAppleEventsUsageDescription` 补了一句。HANDTEST
     「刘海岛的正在播放」1–14（13、14 要挪走 Dev 版包里的服务模拟读不到）。
+  - **进度条能拖**（2026-11-13，用户「音乐交互太简陋，不能控制进度条」；分支 `claude/island-polish-31f708`）：播放卡片的细条
+    能拖、能点着跳（`IslandScrubber`）。命令照旧只经服务发：约定加 `seek(to:)` 和快照的 `canSeek`（服务查这个 App 支持的命令里
+    有没有 24 = SeekToPlaybackPosition；直播、不支持的源细条照旧只读）；服务里是
+    `MRMediaRemoteSendCommand(24, [kMRMediaRemoteOptionPlaybackPosition: 秒])`（macOS 27.0.1 实机自检：宿主的
+    `changePlaybackPositionCommand` 收到同一个秒数）。拖的时候位置放在手势状态里（跟手、不被每秒的刷新拽走，路上不发命令），
+    松手发一次；发完 `NowPlaying` 当场把岛上那一份改成跳到的位置（`Hold`：播放器报的位置还不在跳到的位置附近（差 1.5 秒
+    以上）时顶着，报到了附近、换了歌或者过了 2 秒就撤——不闪回旧位置，播放器不理这条命令时也不一直骗人；「进度变了就撤」
+    不行：一次操作来好几条通知，先到的可能是旧位置配新时间戳。退路里的那一份直接改，音乐跳了不发通知：走 AppleScript 的
+    等脚本跑成了才改，音乐另外过 0.3 秒读一遍真的位置盖上去）。按住时 `Island.holdPointer(true)`：岛不按指针位置算进出
+    （拖过头、拖出卡片时不收卡片、窗口照接鼠标），松手再算；松手没送到窗口时（拖着时锁屏）`track()` 照按键的实际状态放开。
+    接鼠标的那一条按歌名认（拖到一半换歌，手势当场作废）；往前推和变粗两条动画各管各的属性。AppleScript 只对退路认识的
+    两个播放器跑（脚本里拼的是常量）。
+    服务整个不能用时音乐 / Spotify 走 AppleScript 的 `set player position`。读屏里是可调的元素（一步 5%、至少 5 秒）；岛不接
+    键盘，没有键盘操作。单测 `NowPlayingTests.seeking` / `holdAfterSeek`、`NowPlayingFallbackTests.scripts`，实机自检
+    `liveRoundTrip()` 加了跳转；截图自检 island-media-card-scrub；HANDTEST「正在播放的进度条能拖」1–12。
 
 ### 晾衣绳（第十族，0.7.0，2026-10-26 立项）
 

@@ -83,6 +83,8 @@ import SwiftUI
   private(set) var actions: [Action] = []
   /// 鼠标停在岛上（指针动过、落在形状里才算，拍板 B6）
   private(set) var isHovered = false
+  /// 正按着拖岛上的东西（播放卡片的进度条）：拖出岛外也照旧算指针在岛上，松手再按位置算（holdPointer）
+  @ObservationIgnored private var isDragging = false
   /// 长成了卡片：悬停时展开；离开后照旧开着直到收起（进行中的离开就合上，它还要挂着）
   private(set) var isExpanded = false
   /// 「那一张」开着：点刘海、快捷键「打开刘海岛」叫出来的（快捷动作 + 最近的提示，IslandBoard）
@@ -422,6 +424,14 @@ import SwiftUI
     arm(max(remaining, Self.leaveDelay))
   }
 
+  /// 按着拖岛上的东西时（播放卡片的进度条）调：拖着的时候不按指针位置算进出——不然拖出岛外一点卡片就开始计时收起、
+  /// 窗口不接鼠标；松手（或者拖着的东西没了）再按位置算一次
+  func holdPointer(_ on: Bool) {
+    guard on != isDragging else { return }
+    isDragging = on
+    if !on { track() }
+  }
+
   /// 岛上现在就是挂着的那一条
   private var isShowingPinned: Bool { pinned != nil && content == pinned?.content }
 
@@ -674,6 +684,7 @@ import SwiftUI
     hoverCheck?.cancel()
     actions = []
     expandedActivity = nil
+    isDragging = false
     isHovered = false
     isExpanded = false
     window?.ignoresMouseEvents = true
@@ -987,6 +998,9 @@ import SwiftUI
   // ponytail: 指针停在本 App 不收鼠标移动的窗口（设置窗）上、又正好在岛下面时，本地监听收不到移动，不会展开
   // （离开由 hoverCheck 兜住）；岛在屏幕最顶上，和面板、设置窗叠到的机会很小，真碰到再给那几扇窗口开 acceptsMouseMovedEvents
   private func track() {
+    // 拖着时不算进出。兜底：松手那一下没送到窗口（拖着时锁屏、切桌面）就照按键的实际状态放开，不然卡片永远不收
+    if isDragging, NSEvent.pressedMouseButtons & 1 == 0 { isDragging = false }
+    guard !isDragging else { return }
     let mouse = NSEvent.mouseLocation
     if content != nil || isBoardOpen {
       if let window { hover(NSMouseInRect(mouse, shapeOnScreen(window), false)) }

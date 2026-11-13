@@ -163,7 +163,7 @@ TEST_RUNNER_KITTY_DOCK_PROBE=1 xcodebuild -project macos/KittyTools.xcodeproj -s
   test -only-testing:'KittyToolsTests/DockPreviewProbeTests/measure()'
 
 # 刘海岛的正在播放：经包里真的 XPC 服务读回来的实机自检（按需，不到一秒；不出声：测试宿主用 MPNowPlayingInfoCenter 把自己挂成
-# 「正在播放」，系统控制中心里会短暂出现「Kitty 探针曲目」；读、封面、发「切换」、暂停都过一遍）。改了 KittyToolsNowPlaying/ 或
+# 「正在播放」，系统控制中心里会短暂出现「Kitty 探针曲目」；读、封面、发「切换」、跳到某一秒、暂停都过一遍）。改了 KittyToolsNowPlaying/ 或
 # Shell/NowPlaying.swift 后跑；每个 macOS 大版本也跑一遍（27 上封面的拿法已经变过一次），探针报告在 macos/build/research/now-playing-2026-11-13/
 TEST_RUNNER_KITTY_LIVE_NOW_PLAYING=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
   test -only-testing:'KittyToolsTests/NowPlayingTests/liveRoundTrip()'

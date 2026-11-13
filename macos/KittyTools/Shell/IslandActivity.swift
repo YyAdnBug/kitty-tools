@@ -117,6 +117,8 @@ extension Island {
     var artwork: NSImage?
     var appIcon: NSImage?
     var send: (NowPlayingCommand) -> Void
+    /// 跳到这一首的第几秒（进度条）
+    var seek: (Double) -> Void
     var open: () -> Void
   }
 }

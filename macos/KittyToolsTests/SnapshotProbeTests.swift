@@ -1087,18 +1087,19 @@ struct SnapshotProbeTests {
       NSGradient(colors: [.systemPink, .systemOrange])?.draw(in: rect, angle: 45)
       return true
     }
-    func media(playing: Bool, artwork: NSImage?) -> Island.Activity {
+    func media(playing: Bool, artwork: NSImage?, canSeek: Bool = true) -> Island.Activity {
       let snapshot = NowPlayingSnapshot(
         bundleID: "com.apple.Music", parentBundleID: nil, appName: "音乐",
         title: "Right Now (Na Na Na)", artist: "Akon", album: "Freedom", duration: 240,
         elapsed: 84, timestamp: .now, rate: playing ? 1 : 0, isPlaying: playing,
-        canPrevious: true, canNext: playing, artworkID: artwork == nil ? nil : "a",
-        artwork: nil)
+        canPrevious: true, canNext: playing, canSeek: canSeek,
+        artworkID: artwork == nil ? nil : "a", artwork: nil)
       return Island.Activity(
         id: NowPlaying.activityID, kind: .media, title: snapshot.title, detail: snapshot.artist,
         symbol: "music.note",
         media: Island.Media(
-          snapshot: snapshot, artwork: artwork, appIcon: nil, send: { _ in }, open: {}))
+          snapshot: snapshot, artwork: artwork, appIcon: nil, send: { _ in }, seek: { _ in },
+          open: {}))
     }
     for (name, playing) in [("island-wings-media", true), ("island-wings-media-paused", false)] {
       try snapshot(
@@ -1113,6 +1114,18 @@ struct SnapshotProbeTests {
       island.tapped()
       try snapshot(
         IslandView(island: island), size: notch.windowSize, dark: false, to: "\(out)/\(name).png")
+    }
+    // 进度条正拖着（拖到 2:30）：细条变粗、露出圆点、左边的时间是拖到的位置。卡片单独垫黑底出一张
+    if let scrubbing = media(playing: true, artwork: cover).media {
+      try snapshot(
+        IslandMediaCard(
+          island: Island(showing: nil, geometry: notch), media: scrubbing, staged: 150
+        )
+        .background(.black)
+        // 岛固定是深色：强调色按深色那一档取
+        .environment(\.colorScheme, .dark),
+        size: NSSize(width: 340, height: 134), dark: true,
+        to: "\(out)/island-media-card-scrub.png")
     }
     try snapshot(
       IslandView(

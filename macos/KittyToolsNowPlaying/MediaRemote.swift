@@ -191,6 +191,7 @@ import UniformTypeIdentifiers
       isPlaying: playing ?? false,
       canPrevious: commands.map { $0.contains(NowPlayingCommand.previous.rawValue) } ?? true,
       canNext: commands.map { $0.contains(NowPlayingCommand.next.rawValue) } ?? true,
+      canSeek: commands.map { $0.contains(Self.seekCommand) } ?? true,
       artworkID: artworkID, artwork: artwork)
     return Reading(snapshot: snapshot, artworkPending: artworkID != nil && artwork == nil)
   }
@@ -285,6 +286,17 @@ import UniformTypeIdentifiers
   /// 发命令（不设门槛：哪个进程都发得出去）；App 不支持的命令也返回成功，所以按钮要看快照里的 canNext / canPrevious
   func send(_ command: NowPlayingCommand) {
     _ = sendCommand?(UInt32(command.rawValue), nil)
+  }
+
+  /// MRMediaRemoteCommandSeekToPlaybackPosition：带位置（kMRMediaRemoteOptionPlaybackPosition，秒）
+  private static let seekCommand = 24
+
+  /// 跳到这一首的第几秒（同别的命令：不支持的 App 也返回成功，进度条要看快照里的 canSeek）。不是 0…上限里的有限数不发
+  func seek(to seconds: Double) {
+    guard seconds.isFinite, seconds >= 0, seconds <= 10_000_000,
+      let key = constant("kMRMediaRemoteOptionPlaybackPosition")
+    else { return }
+    _ = sendCommand?(UInt32(Self.seekCommand), [key: seconds] as CFDictionary)
   }
 
   // MARK: 回调转 async

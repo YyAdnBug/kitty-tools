@@ -10,6 +10,8 @@ import Foundation
   func subscribe(reply: @escaping @Sendable (Bool) -> Void)
   /// 发命令（NowPlayingCommand 的 rawValue）
   func send(_ command: Int)
+  /// 跳到这一首的第几秒（快照里 canSeek 才有用；不是 0…一千万秒里的有限数服务不发）
+  func seek(to seconds: Double)
 }
 
 /// 服务 → App
@@ -47,6 +49,8 @@ nonisolated struct NowPlayingSnapshot: Codable, Equatable, Sendable {
   /// 这个 App 此刻支不支持上一首 / 下一首（Chrome 里单个视频就没有）
   var canPrevious: Bool
   var canNext: Bool
+  /// 这个 App 此刻支不支持跳到某一秒（进度条能不能拖；直播、有的网页视频没有）
+  var canSeek: Bool
   /// 封面：换了才变的编号、缩到最长边 256 的 JPEG；网页视频刚换片的头两秒没有
   var artworkID: String?
   var artwork: Data?

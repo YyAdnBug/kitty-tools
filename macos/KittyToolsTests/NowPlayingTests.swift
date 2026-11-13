@@ -1,7 +1,7 @@
 // 刘海岛的正在播放（2026-11-13，刘海岛扩展第 2 期）：两边抄的约定一样、快照怎么收拾、进度怎么外推、什么时候上耳朵，
 // 和它作为活动的先后（最低、不进菜单栏）。
 // 另有一个按需跑的实机自检 liveRoundTrip（TEST_RUNNER_KITTY_LIVE_NOW_PLAYING=1）：测试宿主（Dev 版）用公开的
-// MPNowPlayingInfoCenter 把自己挂成「正在播放」（不出声），经包里真的 XPC 服务读回来、发「切换」命令收得到。
+// MPNowPlayingInfoCenter 把自己挂成「正在播放」（不出声），经包里真的 XPC 服务读回来、发「切换」「跳到某一秒」命令收得到。
 // 不碰用户偏好：偏好用临时域，岛是摆出来的（不建窗口）。
 
 import AppKit
@@ -16,12 +16,13 @@ import Testing
 struct NowPlayingTests {
   private func snapshot(
     elapsed: Double? = 10, timestamp: Date? = Date(timeIntervalSince1970: 1000), rate: Double = 1,
-    playing: Bool = true, duration: Double? = 240
+    playing: Bool = true, duration: Double? = 240, canSeek: Bool = true
   ) -> NowPlayingSnapshot {
     NowPlayingSnapshot(
       bundleID: "com.apple.Music", parentBundleID: nil, appName: "Music", title: "歌", artist: "人",
       album: nil, duration: duration, elapsed: elapsed, timestamp: timestamp, rate: rate,
-      isPlaying: playing, canPrevious: true, canNext: true, artworkID: nil, artwork: nil)
+      isPlaying: playing, canPrevious: true, canNext: true, canSeek: canSeek, artworkID: nil,
+      artwork: nil)
   }
 
   /// App 和服务各抄的一份约定，BEGIN / END 之间逐字一样（改了一边忘了另一边，XPC 两头对不上）
@@ -50,6 +51,65 @@ struct NowPlayingTests {
     #expect(NowPlaying.position(snapshot(duration: nil), at: at) == 40)
     #expect(NowPlaying.position(snapshot(timestamp: nil), at: at) == 10)
     #expect(NowPlaying.position(snapshot(elapsed: nil), at: at) == nil)
+  }
+
+  /// 进度条：要跳到的秒数夹进这一首里，这个 App 不支持跳、没有时长（直播）就跳不了；细条上的一点换成秒，拖过头是头 / 尾；
+  /// 读屏一步是时长的 5%、至少 5 秒
+  @Test func seeking() {
+    #expect(NowPlaying.seekTarget(100, in: snapshot()) == 100)
+    #expect(NowPlaying.seekTarget(-5, in: snapshot()) == 0)
+    #expect(NowPlaying.seekTarget(999, in: snapshot()) == 240)
+    #expect(NowPlaying.seekTarget(100, in: snapshot(canSeek: false)) == nil)
+    #expect(NowPlaying.seekTarget(100, in: snapshot(duration: nil)) == nil)
+    #expect(NowPlaying.seekTarget(100, in: snapshot(duration: 0)) == nil)
+    #expect(NowPlaying.seekTarget(.nan, in: snapshot()) == nil)
+    #expect(IslandScrubber.seconds(at: 50, width: 200, duration: 240) == 60)
+    #expect(IslandScrubber.seconds(at: -30, width: 200, duration: 240) == 0)
+    #expect(IslandScrubber.seconds(at: 260, width: 200, duration: 240) == 240)
+    #expect(IslandScrubber.seconds(at: 50, width: 0, duration: 240) == 0)
+    #expect(IslandScrubber.seconds(at: 50, width: 200, duration: .infinity) == 0)
+    #expect(IslandScrubber.fraction(60, of: 240) == 0.25)
+    #expect(IslandScrubber.fraction(999, of: 240) == 1)
+    #expect(IslandScrubber.fraction(-1, of: 240) == 0)
+    #expect(IslandScrubber.fraction(10, of: 0) == 0)
+    #expect(NowPlaying.seekStep(duration: 240) == 12)
+    #expect(NowPlaying.seekStep(duration: 30) == 5)
+  }
+
+  /// 刚跳过、播放器还没报到跳到的位置附近：岛上当它已经在那儿（之后照常往前走）；报到了附近、换了歌、过了 holdTime
+  /// 都照播放器报的——松手那一下不闪回旧位置，播放器不理这条命令时也不会一直骗人
+  @Test func holdAfterSeek() throws {
+    let at = Date(timeIntervalSince1970: 1030)
+    // 跳之前：1000 那一刻在 10 秒、在播（1030 时在 40 秒）；跳到 200
+    let served = snapshot()
+    let hold = NowPlaying.Hold(position: 200, at: at, title: served.title)
+    let later = at.addingTimeInterval(1)
+    let held = try #require(NowPlaying.holding(hold, over: served, now: later))
+    #expect(held.elapsed == 200 && held.timestamp == at)
+    #expect(NowPlaying.position(held, at: later) == 201)
+    // 封面晚到这类不带新进度的推送：照旧顶着
+    var late = served
+    late.artworkID = "a"
+    #expect(NowPlaying.holding(hold, over: late, now: later)?.elapsed == 200)
+    // 先到的一条是旧位置配新时间戳（一次操作好几条通知）：还顶着，不闪回去
+    let stale = snapshot(elapsed: 40, timestamp: at.addingTimeInterval(0.1))
+    #expect(NowPlaying.holding(hold, over: stale, now: later)?.elapsed == 200)
+    // 播放器报到了跳到的位置附近（吸到关键帧上差一点）：照它的
+    let reported = snapshot(elapsed: 199, timestamp: at.addingTimeInterval(0.2))
+    #expect(NowPlaying.holding(hold, over: reported, now: later) == reported)
+    // 暂停着跳：位置停在跳到的地方，不往前走
+    let paused = snapshot(rate: 0, playing: false)
+    let heldPaused = try #require(NowPlaying.holding(hold, over: paused, now: later))
+    #expect(NowPlaying.position(heldPaused, at: later) == 200)
+    // 换了歌、到点了、没有在播的了、没跳过
+    var other = served
+    other.title = "另一首"
+    #expect(NowPlaying.holding(hold, over: other, now: later) == other)
+    #expect(
+      NowPlaying.holding(hold, over: served, now: at.addingTimeInterval(NowPlaying.holdTime))
+        == served)
+    #expect(NowPlaying.holding(hold, over: nil, now: at) == nil)
+    #expect(NowPlaying.holding(nil, over: served, now: at) == served)
   }
 
   /// 上耳朵：在播；从在播变成暂停还不到 30 秒；一打开就是暂停着的不上
@@ -135,6 +195,13 @@ struct NowPlayingTests {
     ]
     center.playbackState = .playing
     let toggled = Mutex(0)
+    // 跳到某一秒：宿主收到的位置（没收到是 nil）
+    let sought = Mutex<Double?>(nil)
+    let seekTarget = MPRemoteCommandCenter.shared().changePlaybackPositionCommand.addTarget {
+      @Sendable event in
+      sought.withLock { $0 = (event as? MPChangePlaybackPositionCommandEvent)?.positionTime }
+      return .success
+    }
     let target = MPRemoteCommandCenter.shared().togglePlayPauseCommand.addTarget {
       @Sendable _ in
       toggled.withLock { $0 += 1 }
@@ -142,6 +209,7 @@ struct NowPlayingTests {
     }
     defer {
       MPRemoteCommandCenter.shared().togglePlayPauseCommand.removeTarget(target)
+      MPRemoteCommandCenter.shared().changePlaybackPositionCommand.removeTarget(seekTarget)
       center.playbackState = .stopped
       center.nowPlayingInfo = nil
     }
@@ -180,6 +248,23 @@ struct NowPlayingTests {
       try await Task.sleep(for: .milliseconds(100))
     }
     #expect(toggled.withLock { $0 } == 1)
+
+    // 跳到 2:00：宿主收到这个位置；岛上当场就在那儿（播放器还没报回来，顶着的）；宿主报回新进度后照它的
+    #expect(first.snapshot.canSeek)
+    first.seek(120)
+    let optimistic = try #require(media()).snapshot
+    #expect(abs((NowPlaying.position(optimistic, at: .now) ?? 0) - 120) < 1)
+    for _ in 0..<30 where sought.withLock({ $0 }) == nil {
+      try await Task.sleep(for: .milliseconds(100))
+    }
+    #expect(sought.withLock { $0 } == 120)
+    var info = center.nowPlayingInfo ?? [:]
+    info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = 121
+    center.nowPlayingInfo = info
+    for _ in 0..<30 where media()?.snapshot.elapsed != 121 {
+      try await Task.sleep(for: .milliseconds(100))
+    }
+    #expect(media()?.snapshot.elapsed == 121)
 
     center.playbackState = .paused
     for _ in 0..<30 where media()?.snapshot.isPlaying ?? true {
