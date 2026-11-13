@@ -1541,12 +1541,11 @@ struct SnapshotProbeTests {
     try snapshot(
       root(list), size: NSSize(width: 780, height: 1000), dark: false,
       to: "\(out)/settings-status-hotkeys.png")
-    // 关于页的「未来计划」（2026-10-18）：品牌区下面、更新日志上面那一节，拉高看全（roadmap.json 空了时没有这一节：
-    // 2026-10-23 起都做完了，图里是品牌区接着更新日志）
+    // 关于页拉高看全：品牌区接着更新日志
     for dark in [false, true] {
       try snapshot(
         AboutTab(), size: NSSize(width: 590, height: 900), dark: dark,
-        to: "\(out)/settings-about-roadmap\(dark ? "-dark" : "").png")
+        to: "\(out)/settings-about-tall\(dark ? "-dark" : "").png")
     }
     // 关于页最底下那行素材出处：滚到底再拍
     for dark in [false, true] {

@@ -1,6 +1,5 @@
 // 设置 › 关于（Whisker 品牌页）：128 pt 大图标（点一下摇一摇，悬停时跟着指针 3D 倾斜 ≤ 6°）+ 26 pt 圆体字标 +
-// 版本胶囊 + 应用内更新（Updater：检查更新、发现新版本时「更新并重新打开」、下载中「取消」、自动检查开关）+ 未来计划（随包的
-// roadmap.json：已知的小毛病在前、以后的新功能在后；做好了从那里拿掉、写进更新日志，2026-10-18 用户要求）+ 更新日志时间线
+// 版本胶囊 + 应用内更新（Updater：检查更新、发现新版本时「更新并重新打开」、下载中「取消」、自动检查开关）+ 更新日志时间线
 // （随包分发的 changelog.json，最新版在前；只展开当前版本，别的折叠成一行、点了才排它的条目——2026-11-05 用户报全部展开太长、
 // 滚动卡）；可以重看欢迎引导。更新后第一次启动不再自动打开这一页，只由刘海岛说
 // 「已更新到 x」+ 本版摘要（AppDelegate 比较 lastSeenVersion，体检 A29），全文在这里。
@@ -25,13 +24,6 @@ struct AboutTab: View {
     var id: String { version }
   }
 
-  /// roadmap.json 的一条：kind 是 improve（改进，已知的小毛病）或 feature（新功能）
-  struct Plan: Decodable, Hashable {
-    let kind: String
-    let scope: String
-    let text: String
-  }
-
   /// 应用内更新（截图自检里传一个摆好状态的；nil 就不显示更新那一行）
   var updater: Updater?
   /// 重看欢迎引导
@@ -42,7 +34,7 @@ struct AboutTab: View {
     Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
   private static let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
 
-  static let releases: [Release] = load("changelog")
+  static let releases: [Release] = load()
   /// 更新日志一开始展开的那一版
   static let expandedVersion = firstExpanded(in: releases, current: version)
 
@@ -50,14 +42,13 @@ struct AboutTab: View {
   static func firstExpanded(in releases: [Release], current: String) -> String? {
     releases.contains { $0.version == current } ? current : releases.first?.version
   }
-  static let roadmap: [Plan] = load("roadmap")
 
-  /// 随包的一个 JSON 数组（读不出来就是空的：那一节不显示）
-  private static func load<T: Decodable>(_ name: String) -> [T] {
-    guard let url = Bundle.main.url(forResource: name, withExtension: "json"),
+  /// 随包的 changelog.json（读不出来就是空的）
+  private static func load() -> [Release] {
+    guard let url = Bundle.main.url(forResource: "changelog", withExtension: "json"),
       let data = try? Data(contentsOf: url)
     else { return [] }
-    return (try? JSONDecoder().decode([T].self, from: data)) ?? []
+    return (try? JSONDecoder().decode([Release].self, from: data)) ?? []
   }
 
   var body: some View {
@@ -90,7 +81,6 @@ struct AboutTab: View {
             colors: [Style.brandCream, Style.brandCream.opacity(0)], startPoint: .top,
             endPoint: .bottom))
         VStack(alignment: .leading, spacing: 0) {
-          if !Self.roadmap.isEmpty { roadmap }
           Text("更新日志").font(.headline).padding(.bottom, 12)
           ForEach(Array(Self.releases.enumerated()), id: \.element.id) { index, release in
             ReleaseView(
@@ -105,25 +95,6 @@ struct AboutTab: View {
         .frame(maxWidth: .infinity, alignment: .leading)
       }
     }
-  }
-
-  /// 未来计划：更新日志上面一节，标题 + 一句说明，下面一条一行（和更新日志的改动行同一个样子），改进在前、新功能在后
-  private var roadmap: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      VStack(alignment: .leading, spacing: 2) {
-        Text("未来计划").font(.headline)
-        Text("接下来打算做的，先后不定；做好了会写进下面的更新日志")
-          .font(.caption)
-          .foregroundStyle(.secondary)
-      }
-      .padding(.bottom, 4)
-      ForEach(Self.roadmap, id: \.self) { plan in
-        // 「改进」两个字、「新功能」三个字：标签都按「新功能」那么宽，后面的范围对齐
-        ChangeRow(type: plan.kind, scope: plan.scope, text: plan.text, widestType: "feature")
-      }
-    }
-    .padding(.bottom, 28)
-    .textSelection(.enabled)
   }
 
   /// 素材和参考产品的出处：更新日志下面两行小字，每行后面跟着打开随包那份许可全文的链接
@@ -346,25 +317,20 @@ private struct ReleaseView: View {
   }
 }
 
-/// 一条改动（更新日志）或计划（未来计划），两处同一个样子：左边种类的小标签（颜色按种类），右边「范围　一句话」
+/// 更新日志的一条改动：左边种类的小标签（颜色按种类），右边「范围　一句话」
 private struct ChangeRow: View {
   let type: String
   let scope: String
   let text: String
-  /// 标签按这个种类的字那么宽（同一列的标签字数不一样时给，标签居中、后面对齐）
-  var widestType: String?
 
   var body: some View {
     HStack(alignment: .firstTextBaseline, spacing: 8) {
-      ZStack {
-        if let widestType { Text(Self.label(widestType)).hidden() }
-        Text(Self.label(type))
-      }
-      .font(.system(size: 10, weight: .semibold))
-      .foregroundStyle(Self.color(type))
-      .padding(.horizontal, 5)
-      .padding(.vertical, 1)
-      .background(Self.color(type).opacity(0.12), in: .rect(cornerRadius: Style.Radius.mini))
+      Text(Self.label(type))
+        .font(.system(size: 10, weight: .semibold))
+        .foregroundStyle(Self.color(type))
+        .padding(.horizontal, 5)
+        .padding(.vertical, 1)
+        .background(Self.color(type).opacity(0.12), in: .rect(cornerRadius: Style.Radius.mini))
       Text("\(Text(scope).fontWeight(.medium))　\(text)")
         .fixedSize(horizontal: false, vertical: true)
     }
@@ -376,17 +342,15 @@ private struct ChangeRow: View {
     case "fix": "修复"
     case "perf": "性能"
     case "ui": "界面"
-    case "improve": "改进"
-    case "feature": "新功能"
     default: type
     }
   }
 
-  /// 新增 / 新功能绿、修复 / 改进橙（改进里多是已知的小毛病）、性能紫、界面蓝
+  /// 新增绿、修复橙、性能紫、界面蓝
   private static func color(_ type: String) -> Color {
     switch type {
-    case "feat", "feature": Color(nsColor: .systemGreen)
-    case "fix", "improve": Color(nsColor: .systemOrange)
+    case "feat": Color(nsColor: .systemGreen)
+    case "fix": Color(nsColor: .systemOrange)
     case "perf": Color(nsColor: .systemPurple)
     default: Color(nsColor: .systemBlue)
     }
