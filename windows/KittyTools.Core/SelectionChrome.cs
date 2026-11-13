@@ -58,8 +58,9 @@ public static class SelectionChrome
     }
 
     /// <summary>
-    /// 尺寸胶囊（mac-whisker §6）：选区左上角外 8；放不下或压到 avoid（工具栏、顶部提示）就放进选区（离左、上各 8，选区四周都留得出
-    /// 8 才放）；再不行放选区右侧 / 左侧外 8（比胶囊矮的选区竖直居中）；都不行放进选区、只读（Interactive = false：不挡拖边和平移）。
+    /// 尺寸胶囊（mac-whisker §6，PLAN-v18 S5 / mac d5f7c388）：先放选区外面——左上角外 8 → 右侧外 8 → 左侧外 8（和上边对齐，比胶囊矮的选区
+    /// 竖直居中）→ 左下角外 8；外面都放不下或压到 avoid（工具栏、顶部提示）才放进选区（离左、上各 8，选区四周都留得出 8 才放）；
+    /// 再不行放进选区、只读（Interactive = false：不挡拖边和平移）。以前进选区排在左右两侧前面，上面被占着时它挡住要截的字。
     /// </summary>
     public static (double X, double Y, bool Interactive) SizeCapsule(
         RectD selection, double width, double height, double screenWidth, double screenHeight, IReadOnlyList<RectD> avoid)
@@ -82,12 +83,6 @@ public static class SelectionChrome
             return (Math.Round(left), Math.Round(aboveY), true);
         }
 
-        if (selection.Width >= width + SizeGap * 2 && selection.Height >= height + SizeGap * 2 &&
-            Fits(selection.X + SizeGap, selection.Y + SizeGap))
-        {
-            return (Math.Round(selection.X + SizeGap), Math.Round(selection.Y + SizeGap), true);
-        }
-
         var sideY = selection.Height < height ? selection.MidY - height / 2 : selection.Y;
         if (Fits(selection.Right + SizeGap, sideY))
         {
@@ -97,6 +92,18 @@ public static class SelectionChrome
         if (Fits(selection.X - SizeGap - width, sideY))
         {
             return (Math.Round(selection.X - SizeGap - width), Math.Round(sideY), true);
+        }
+
+        var belowY = selection.Bottom + SizeGap;
+        if (Fits(left, belowY))
+        {
+            return (Math.Round(left), Math.Round(belowY), true);
+        }
+
+        if (selection.Width >= width + SizeGap * 2 && selection.Height >= height + SizeGap * 2 &&
+            Fits(selection.X + SizeGap, selection.Y + SizeGap))
+        {
+            return (Math.Round(selection.X + SizeGap), Math.Round(selection.Y + SizeGap), true);
         }
 
         return (Math.Round(Math.Clamp(selection.X + SizeGap, 0, Math.Max(0, screenWidth - width))),

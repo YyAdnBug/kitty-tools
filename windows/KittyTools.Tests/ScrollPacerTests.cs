@@ -186,6 +186,17 @@ public sealed class ScrollPacerTests
     }
 
     [TestMethod]
+    public void ManualCadence_NoSleepWhileMovingThenSlowsDown()
+    {
+        // PLAN-v18 S2（mac ScrollCapture.interval / c7756c75）：画面在动不睡，静止 40 ms，连着 5 帧静止 200 ms。
+        Assert.AreEqual(0, ScrollPacer.ManualDelayMs(0));
+        Assert.AreEqual(40, ScrollPacer.ManualDelayMs(1));
+        Assert.AreEqual(40, ScrollPacer.ManualDelayMs(4));
+        Assert.AreEqual(200, ScrollPacer.ManualDelayMs(5));
+        Assert.AreEqual(200, ScrollPacer.ManualDelayMs(50));
+    }
+
+    [TestMethod]
     public void LeadIsCappedAtHalfARegion()
     {
         // 照 mac leadIsCappedAtHalfARegion（176ad8b1，单位换成滚轮单位）：选区 1000 像素高、1 个单位滚 2 像素，最多领先 250 个单位。

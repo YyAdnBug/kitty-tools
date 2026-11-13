@@ -1,4 +1,6 @@
-// 长截图（第三版 §7）：选区收起后，每 600 ms 抓一帧选区交给 Core 的 ScrollStitcher 拼；
+// 长截图（第三版 §7）：选区收起后，一帧接一帧抓选区交给 Core 的 ScrollStitcher 拼——手动滚时画面在动就拼完立刻抓下一帧、静止 40 ms、
+// 连着 5 帧静止 200 ms（PLAN-v18 S2，Core ScrollPacer.ManualDelayMs；原来固定 600 ms，滚快了两帧之间滚过一整屏就再也接不上），
+// 对不上时状态行橙字「对不上了：往回滚一点，再慢慢滚」；
 // 用户自己滚，Enter / 「完成」结束，Esc 放弃，高度到 30000 自动结束。
 // 遮罩收起后选区外一圈品牌粉实线（RecordingFrame.ShowScrolling，同 mac ScrollCapture 的边框；2026-10-29 用户反馈
 // 以前开始滚后什么框都没有）：线在选区外、又不进截图，抓的帧里没有它；
@@ -28,7 +30,12 @@ internal static class ScrollingCapture
 
     public const int ResumeId = 934;
 
-    private static readonly TimeSpan Interval = TimeSpan.FromMilliseconds(600);
+    /// <summary>手动滚时的保底间隔（静止时的 40 / 200 ms 由 ManualDelayMs 定，拼完再排下一帧）。</summary>
+    private static readonly TimeSpan Interval = TimeSpan.FromMilliseconds(200);
+
+    /// <summary>手动滚时连着几帧画面没动（定下一帧隔多久抓）；对不上的提示正挂着。</summary>
+    private static int _quietFrames;
+    private static bool _lostShown;
 
     /// <summary>自动滚动时抓帧的间隔（同 mac：边滚边截，每帧滚出一两成选区高）。</summary>
     private static readonly TimeSpan AutoInterval = TimeSpan.FromMilliseconds(160);
@@ -92,6 +99,8 @@ internal static class ScrollingCapture
             : null;
         _completing = false;
         _frames = 0;
+        _quietFrames = 0;
+        _lostShown = false;
         _renderFrames = 0;
         _escapeArmedAt = 0;
         _direction = direction;
@@ -315,6 +324,12 @@ internal static class ScrollingCapture
                 return;
             }
 
+            if (!_autoScroll)
+            {
+                ScheduleManual(result.Step);
+                return;
+            }
+
             // 光标在面板附近（去点暂停、看预览）时这一帧不对账（同 mac）：那时不发滚轮，画面不动不能算到头。
             PInvoke.GetCursorPos(out var cursor);
             if (_autoScroll && _pacer is { } pacer && !ScrollPreviewPanel.Contains(cursor.X, cursor.Y, 16))
@@ -335,6 +350,39 @@ internal static class ScrollingCapture
         {
             _work = null;
             Log.Warn($"scroll.frame-failed {ex.GetType().Name}");
+        }
+    }
+
+    /// <summary>
+    /// 手动滚：这一帧拼完排下一帧（ScrollPacer.ManualDelayMs）——在动就马上抓，静止 40 / 200 ms；对不上时状态行说一声，接上了换回来。
+    /// ponytail: 不像 mac 那样「截下一帧和算这一帧叠着做」、也不在静止的那一觉里被滚轮叫醒；静止 200 ms 后第一甩最多晚 200 ms 才截。
+    /// </summary>
+    private static void ScheduleManual(ScrollStep step)
+    {
+        _quietFrames = step == ScrollStep.Unchanged ? _quietFrames + 1 : 0;
+        if (step == ScrollStep.Lost && !_lostShown)
+        {
+            _lostShown = true;
+            ScrollPreviewPanel.SetStatus(ScrollPacer.LostText, warning: true);
+        }
+        else if (step == ScrollStep.Moved && _lostShown)
+        {
+            _lostShown = false;
+            ScrollPreviewPanel.SetStatus("滚动选区，Enter 完成，Esc 放弃");
+        }
+
+        if (_timer is not { } timer || _paused)
+        {
+            return;
+        }
+
+        var delay = ScrollPacer.ManualDelayMs(_quietFrames);
+        timer.Stop();
+        timer.Interval = delay > 0 ? TimeSpan.FromMilliseconds(delay) : Interval;
+        timer.Start();
+        if (delay == 0)
+        {
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(DispatcherQueuePriority.Low, CaptureFrame);
         }
     }
 

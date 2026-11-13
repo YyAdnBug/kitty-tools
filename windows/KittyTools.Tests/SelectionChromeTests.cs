@@ -30,18 +30,25 @@ public sealed class SelectionChromeTests
     }
 
     [TestMethod]
-    public void SizeCapsuleFallsBackInsideThenBesideThenReadOnly()
+    public void SizeCapsulePrefersOutsideThenInsideThenReadOnly()
     {
+        // PLAN-v18 S5（mac d5f7c388）：先放选区外面——左上角外 → 右侧外 → 左侧外 → 左下角外，外面都放不下才进选区。
+        // 以前「贴着屏幕顶 / 上面压着顶部提示：放进选区」那两条锁的是旧顺序，照 mac 的新顺序改写。
         var none = Array.Empty<RectD>();
         // 左上角外 8
         Assert.AreEqual((300.0, 166.0, true), SelectionChrome.SizeCapsule(new RectD(300, 200, 400, 300), 140, 26, 1920, 1080, none));
-        // 贴着屏幕顶：放进选区（离左、上各 8）
-        Assert.AreEqual((308.0, 8.0, true), SelectionChrome.SizeCapsule(new RectD(300, 0, 400, 300), 140, 26, 1920, 1080, none));
-        // 上面压着顶部提示：也放进选区
+        // 贴着屏幕顶：放右侧外 8（和上边对齐），不进选区
+        Assert.AreEqual((708.0, 0.0, true), SelectionChrome.SizeCapsule(new RectD(300, 0, 400, 300), 140, 26, 1920, 1080, none));
+        // 上面压着顶部提示：也放右侧外
         var hint = new[] { new RectD(0, 14, 1920, 30) };
-        Assert.AreEqual((308.0, 58.0, true), SelectionChrome.SizeCapsule(new RectD(300, 50, 400, 300), 140, 26, 1920, 1080, hint));
-        // 选区又贴顶又小：放右侧外 8，比胶囊矮的竖直居中；居中后出了屏顶就只读放进选区
-        Assert.IsFalse(SelectionChrome.SizeCapsule(new RectD(300, 0, 50, 20), 140, 26, 1920, 1080, none).Interactive);
+        Assert.AreEqual((708.0, 50.0, true), SelectionChrome.SizeCapsule(new RectD(300, 50, 400, 300), 140, 26, 1920, 1080, hint));
+        // 选区又贴顶又小：右侧外居中后出了屏顶、左侧也是：放左下角外 8
+        Assert.AreEqual((300.0, 28.0, true), SelectionChrome.SizeCapsule(new RectD(300, 0, 50, 20), 140, 26, 1920, 1080, none));
+        // mac sizeFieldPrefersOutsideSelection：左右都贴边的一条（整屏宽）→ 左下角外；整屏 → 选区里（离左、上各 8）
+        var band = new RectD(0, 0, 1920, 200);
+        var below = SelectionChrome.SizeCapsule(band, 140, 26, 1920, 1080, none);
+        Assert.AreEqual((0.0, 208.0, true), below);
+        Assert.AreEqual((8.0, 8.0, true), SelectionChrome.SizeCapsule(Screen, 140, 26, 1920, 1080, none));
         Assert.AreEqual(358,SelectionChrome.SizeCapsule(new RectD(300, 10, 50, 20), 140, 26, 1920, 1080, none).X);
         Assert.AreEqual(7, SelectionChrome.SizeCapsule(new RectD(300, 10, 50, 20), 140, 26, 1920, 1080, none).Y);
         // 右边贴屏：放左侧外 8

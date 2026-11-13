@@ -111,6 +111,16 @@ public sealed class ScrollPacer
         _ => "normal",
     };
 
+    /// <summary>
+    /// 手动滚时下一帧隔多久抓（毫秒；PLAN-v18 S2，同 mac ScrollCapture.interval + c7756c75）：画面在动（上一帧拼上了或对不上，quietFrames = 0）
+    /// 拼完立刻抓，不睡——两帧之间滚了多远 = 手的速度 × 一轮的时间，原来固定 600 ms，一甩就滚过一整屏；静止 40 ms；连着 5 帧静止（停着看、
+    /// 去拿鼠标）放宽到 200 ms，一有变化就回到不睡。
+    /// </summary>
+    public static int ManualDelayMs(int quietFrames) => quietFrames <= 0 ? 0 : quietFrames >= 5 ? 200 : 40;
+
+    /// <summary>手动滚对不上时状态行的话（同 mac）。</summary>
+    public const string LostText = "对不上了：往回滚一点，再慢慢滚";
+
     /// <summary>每秒滚出几个选区高（同 mac Prefs.ScrollSpeed.heightsPerSecond）。</summary>
     public static double HeightsPerSecond(ScrollSpeed speed) => speed switch
     {
