@@ -642,3 +642,21 @@ mac 0.7.1（第四轮体检）修掉、Windows 也有的那几条，照 mac 同�
 1222. 「停止同步」→ 回到没开的那张卡；凭据管理器里那条没了，数据目录下 sync-server 里空了；服务器上的东西都还在。再连回来 → 接着同一个库（先问合不合在一起）。
 1223. 设置导出的文件里没有服务器地址、用户名、密码。
 1224. 设置 › 通用「从这台电脑移除 Kitty Tools…」（勾上删数据）→ 凭据管理器里那条也没了。
+
+## 0.2.0 收口：R69–R78、PLAN-v18 S1 S6 S12 L12 L13 L7（2026-11-13，Windows 自己写、自己验）
+
+> 写了「Windows 11-13」的是用单测、`--smoke`、`--status-screen-probe`、`--note-editor-probe`、`--overlay-translate-probe`、`--launcher-script`、新的 `--uninstall-probe`（Debug）和本地假更新源验过的；**没写的都没测**。和 REVIEW「0.2.0 发版前审查 › 发版前必须真机走的」那份清单对得上的，括号里写了第几条。
+
+1225. 新装（沙盒或另一个账户）第一次打开 → 欢迎引导三屏出来；第三屏「登录时自动打开」勾着，点「开始使用」后注销再登录，Kitty Tools 自己起来了。已经装着的（有 settings.json）升级上来不弹。（真机清单第 2 条；Windows 11-13：新 Dev 档 `--smoke` 日志 onboarding.shown、smoke.onboarding shown=True，同一个档再起一次不弹；build-release.ps1 的 --smoke 现在每次删掉 smoke 档、没弹就 exit 3。注销再登录没测）
+1226. 状态屏里按 Ctrl+Alt+Del、点「取消」回来，按住 Esc 两秒 → 能退出；漏掉的那几个键 5 秒后不再算按着。（真机清单第 6 条；Windows 11-13：单测 HeldKeys_LostReleaseStopsCountingAfterStale；真的 Ctrl+Alt+Del 没测）
+1227. 打开「按快捷键直接进入排在最前面的状态」，按住快捷键两秒（系统开始连发）再松 → 退出后在记事本里打字不是全大写、点击不是 Ctrl+点击。（真机清单第 7 条；没测）
+1228. 以管理员身份开一个 PowerShell 放在前台：快捷键进「请勿触碰」→ 状态屏拿到前台，敲字母字没进 PowerShell，按住 Esc 能退出；设一条「到点进入状态屏」的提醒、到点时 PowerShell 在前台 → 拿不到前台就不进，退成全屏提醒，上面写「没能进入状态屏：前台是以管理员身份运行的程序」。（真机清单第 8 条；Windows 11-13：`--status-screen-probe` 里「请勿触碰」现在有 foreground.restored；管理员窗口那条没测）
+1229. 便签里贴一张截图，选中这张图往上一行、下一行拖 → 拖不动（正文框不接拖放）；打几个字、关掉重开：图和字都在，底行没有「有改动没存上」。（真机清单第 14 条；Windows 11-13：`--note-editor-probe` 七条照旧；真拖没测）
+1230. （难造）便签落盘一直失败（比如数据盘满了）→ 屏幕底部轻提示「便签没存上」一次，打开的便签底行写「没存上，正在重试 · …」，好了就消。（没测）
+1231. zip 版：设置 › 通用「从这台电脑移除」选删数据 → 数据目录整个进回收站（里面有 notes.sqlite3、notes-images、reminder-sounds），不弹「数据目录没删干净」。（真机清单第 23 条；Windows 11-13：`--uninstall-probe` 停完之后数据目录里没有被占着的文件，修之前 notes.sqlite3 / -shm / -wal 三个占着）
+1232. 长截图：框一块大半个屏幕的选区开自动滚动，一页长网页滚到底自己停下，中途不反复「对不上」。（真机清单第 26 条；Windows 11-13：单测 SlowStitching_NeverLeadsMoreThanHalfARegion、CappedAndUnchanged_StopsAtTheEnd；真网页没滚）
+1233. 开着「截图翻译时把译文直接盖回截图上」：Alt+S 翻一块 → 再拖一块别的选区（或方向键挪、拉边、按 D、右键回到待选）→ 原来那块马上变回原文，顶部「选区变了，已换回原文」；拖回原处再翻，翻的是原文。（真机清单第 27 条；Windows 11-13：InPlaceOriginalTests 逐字节；真遮罩没走）
+1234. 截一段中文有序列表（「1.」后面没空格）加列表后面的一段正文做截图翻译 → 每一项各自一段，后面的正文单独一段。（Windows 11-13：单测照 mac 那张截图的行框；真识字没截）
+1235. 设置 › 关于「检查更新」：能查到；GitHub 限流（公司网）时那一行写「GitHub 限流了（这个网络查得太频繁），稍后再试或到发布页下载」，旁边「打开发布页」。发了 windows-update 清单之后，日志里 update.check 带 source=manifest。（真机清单第 29 条前半；Windows 11-13：本地假源 403 / 429 认成限流、好清单走清单、坏清单退回 API；真限流没碰到）
+1236. 两块显示器、外接屏当主显示器、笔记本放在它左边，设置 › 便签「位置」选「左边」→ 主显示器上的药丸在左边；选「所有显示器」两块屏都在左边；按住 Alt 拖药丸到右半边 → 贴右边。（真机清单第 28 条；Windows 11-13：单测 ExternalMainKeepsTheChosenEdge；只有一块屏，没测）
+1237. 中文系统上启动器搜「命令提示符」「mlts」「command」→ 第一条「命令提示符 cmd」；搜「运行」→「运行 Windows 系统」。（真机清单第 29 条后半；Windows 11-13：`--launcher-script` 截图，修之前三个都只有网页搜索）

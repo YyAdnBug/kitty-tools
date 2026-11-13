@@ -77,7 +77,9 @@
 
 ### 待修
 
-#### R69（P0）新装不弹欢迎引导，开机自启也没设上
+#### R69（P0）新装不弹欢迎引导，开机自启也没设上 → 已修（`cc0356ad`）
+
+> Windows 11-13：`SettingsService.FirstRun`（Save 不清），ShellRuntime 和 WhatsNewHost.Adopt 改看它。新 Dev 档 `--smoke`：onboarding.shown、smoke.onboarding shown=True；同一个档再起一次（= 升级）不弹。`--smoke` 现在在新档上等引导真的弹出（没弹 exit 3），`build-release.ps1` 跑它之前删掉 smoke 档。注销再登录自己起来没测（真机清单第 2 条）。
 
 **位置**：
 
@@ -102,7 +104,9 @@
 
 **验**：真机清单第 2 条（沙盒里新装）。升级（已经有 settings.json）时不弹。
 
-#### R70（P1）状态屏：按 Ctrl+Alt+Del 再「取消」之后，按住 Esc 退不出
+#### R70（P1）状态屏：按 Ctrl+Alt+Del 再「取消」之后，按住 Esc 退不出 → 已修（`9e1a6101`）
+
+> Windows 11-13：取第一种修法——Core `HeldKeys`（键 → 最后一次按下的时刻，超过 `ExitHold.StaleAfterMs` 不算按着），连发和修饰键都按它算。单测 HeldKeys_LostReleaseStopsCountingAfterStale（Ctrl / Alt / Delete 不松，6 秒后按住 Esc 两秒退出）、HeldKeys_LostEscReleaseIsNotRepeatForever；`--status-screen-probe` 三种样式照过。真的 Ctrl+Alt+Del 没测（真机清单第 6 条）。
 
 **位置**：
 
@@ -135,7 +139,9 @@
 
 **验**：真机清单第 6 条。
 
-#### R71（P1）状态屏：进入前就按着的键，系统一连发，它的松开就被吞了
+#### R71（P1）状态屏：进入前就按着的键，系统一连发，它的松开就被吞了 → 已修（`9e1a6101`）
+
+> Windows 11-13：照建议——按下不是这里吞的、`GetAsyncKeyState` 已经是按着：照吞、不报给会话、不记 `KeysTaken`；鼠标键同理（X2 按 mouseData 换 VK）。只能靠 `--status-screen-probe` 验没改坏（不许真进），真按住快捷键进入没测（真机清单第 7 条）。
 
 **位置**：`StatusScreen/InputBlock.cs:274-286`。`KeyboardProc` 收到按下，就设 `KeysTaken[slot] = true`。
 
@@ -159,7 +165,9 @@
 
 **验**：真机清单第 7 条。
 
-#### R72（P1）便签、提醒启动时出错，整个 App 起不来
+#### R72（P1）便签、提醒启动时出错，整个 App 起不来 → 已修（`ec2cc0e5`）
+
+> Windows 11-13：两处各包 try / catch，记 notes.start-failed / reminder.start-failed、轻提示「便签这次用不了」「提醒这次用不了」。编译、全部单测、`--smoke` 过；异常那条路没真走。
 
 **位置**：
 
@@ -179,7 +187,9 @@
 - 两处各包一个 try / catch：记 `Log.Error("notes.start-failed", ex)` 或 `reminder.start-failed`，轻提示「便签这次用不了」或「提醒这次用不了」，其余照常起。
 - 剪贴板那一段（`:77-90`）已经是这个写法。
 
-#### R73（P1，修完真机确认）便签：在正文里拖动一张图，图片表和正文对不上
+#### R73（P1，修完真机确认）便签：在正文里拖动一张图，图片表和正文对不上 → 已修（`0941177a`），待真机确认
+
+> Windows 11-13：AllowDrop / CanDrag = false、DragStarting 取消、DragOver / Drop 用 handledEventsToo 拦下；`Aligned()` 对不上时 `NoteEditor.Unsaved`，底行写「这条便签有改动没存上」。`--note-editor-probe` 七条照旧。不用合成输入，真拖留给用户（真机清单第 14 条）——也要看 RichEditBox 内部的 OLE 拖动是不是真的被这几样挡住（挡不住的话底行会写「有改动没存上」，至少不再无声地丢字）。
 
 **位置**：
 
@@ -207,7 +217,9 @@
 
 **验**：真机清单第 14 条。
 
-#### R74（P1，修完真机确认）状态屏：前台是管理员程序时挡不住键盘
+#### R74（P1，修完真机确认）状态屏：前台是管理员程序时挡不住键盘 → 已修（`8c91127e`），没测
+
+> Windows 11-13：两条都做了——「请勿触碰」鼠标那块屏的底板去掉 NOACTIVATE、拿前台（`HudFrame.AllowActivate`）；摆好窗口后前台还不是自己、而且是提权进程（本进程没提权）就不进：快捷键进入给轻提示，提醒退成全屏（原因写在全屏上），日志 status.enter-refused elevated-foreground。`--status-screen-probe`：「请勿触碰」现在也有 foreground.restored。管理员窗口在前台那条要 UAC、不许真进，没测（真机清单第 8 条）。
 
 **位置**：
 
@@ -236,20 +248,20 @@
 
 ### 应修（不挡这一版，能顺手就修）
 
-**R75 便签落盘一直失败时，界面上什么都不说**
+**R75 便签落盘一直失败时，界面上什么都不说** → 已修（`0941177a`）：`NoteStore.SaveProblemChanged`，第一次失败轻提示一次，底行写「没存上，正在重试」，落下去就消。失败那条路没真走。
 
 - `Notes/NoteStore.cs:521-528` 只记 `SaveProblem` 和日志。
 - 只有快速记一条（`NoteCaptureWindow.cs:447`）和退出时的对话框会告诉用户。关机、注销、闪退就直接丢字。
 - 修：`NoteSheetView` 底行加一句「没存上，正在重试」（同 mac）；第一次失败时轻提示一次。
 
-**R76 zip 版「卸载并删除数据」删不干净**
+**R76 zip 版「卸载并删除数据」删不干净** → 已修（`4a9fd0b9`）：PrepareForUninstall 加 NoteStore.Flush / Dispose、ReminderCenter.Stop。新自检 `--uninstall-probe`（Debug）：停完之后数据目录里每个文件试一次独占打开，修之前 locked=3（notes.sqlite3、-shm、-wal），修之后 0。
 
 - `Shell/ShellRuntime.cs:1113` 的 `PrepareForUninstall` 只停了剪贴板、同步、更新、热键。
 - 便签库没关（连接和 `-wal` 还开着），`ReminderCenter` 没停，`UninstallCleanup.Recycle` 挪不动整个目录，弹「数据目录没删干净」——和当年 R25 一样。
 - 修：加上 `NoteStore.Instance?.Flush(); NoteStore.Instance?.Dispose(); ReminderCenter.Stop();`。
 - 安装版走 Inno 卸载，进程先退，不受影响。
 
-**R77 云盘里「仅在线」的文件不会被要求下载**
+**R77 云盘里「仅在线」的文件不会被要求下载** → 这一版没修（留在应修）；0.2.0 更新日志便签第四条后面照草稿加了「右键它选『始终保留在此设备上』」。
 
 - `Core/Sync/SyncDisk.cs:15-35` 碰到占位文件就当它不存在。0.1.x 的几类同步就是这样；mac 会调 `startDownloading`。
 - 在 OneDrive 按需下载、iCloud for Windows 下，别的电脑新写的文件常常是仅在线的：
@@ -259,13 +271,13 @@
 - 修：开同步时、或每一轮，给同步根目录设上 `FILE_ATTRIBUTE_PINNED`（等于资源管理器里的「始终保留在此设备上」），或者在后台调 `CfHydratePlaceholder`；占位属性也放进指纹。
 - 这一版不修的话，更新日志里同步那条后面加一句：「同步文件夹在 OneDrive / iCloud 里时，右键它选『始终保留在此设备上』」。
 
-**R78 全屏提醒建到一半失败，会留下一层压暗**
+**R78 全屏提醒建到一半失败，会留下一层压暗** → 已修（`4a9fd0b9`）：`ReminderScreen.Show` 的 catch 把已建的都撤掉、返回 false，`ReminderCenter` 退回底部的轻提醒。异常那条路没真走。
 
 - `Reminders/ReminderScreen.cs:116-119` 的 catch 只记日志。
 - 先建好的压暗层留在屏上吃点击；「点了才收」的提醒没人能收掉。
 - 修：catch 里把已建的窗口 `Close()`，退回到底部的轻提醒。
 
-**R79 锁屏通知没注册上时没有兜底**
+**R79 锁屏通知没注册上时没有兜底** → 这一版没修（留在应修）。
 
 - `Shell/HiddenWindow.cs:56` 不看 `WTSRegisterSessionNotification` 的返回值。
 - 收不到「解锁」的话，「锁屏再解锁」这条出路就失效了；状态屏一直算开着，热键和提醒都被压着。
@@ -498,6 +510,43 @@
 6. 从打包的那个提交切分支 `windows-0.2.0` 并推上去（`git push origin <提交>:refs/heads/windows-0.2.0`），报告里写它指哪个提交。
    之后真机清单查出来的 0.2.0 问题修在 `windows-0.2.0` 上、重新打包，再拣回 `windows`；`windows` 接着做 0.3.0（PLAN-v19 核验 → PLAN-v18 第 1–8 批）。
 
+### 0.2.0 收口结果（Windows 2026-11-13，Claude）
+
+**分支**：`windows-0.2.0` → `9bb2c7c7`（打包的那个提交）。它比 `windows` 多一个提交 `46af52f5`：撤掉 PLAN-v19 的代码（63a8e278 + 编译修正 335fa2fe 里的代码文件，文档留着）。
+PLAN-v19 在 0.2.0 收口开始前已经推到 `windows`，而它排在 0.2.0 之后核验、算 0.3.0、更新日志里也没有，0.2.0 不带一个没人走过的「连接服务器…」——**替用户定的**。
+撤完 Sync / SyncFolder / Glyphs 和 PLAN-v19 之前（7214f94f）逐字节一样；`windows` 照旧带着 PLAN-v19 接着做 0.3.0。之后 0.2.0 的修补修在 `windows-0.2.0`、拣回 `windows`。
+
+**修了什么**（各条的提交和验法写在上面各条、下面「PLAN-v18 › 收口结果」）：R69 R70 R71 R72 R73 R74，应修里顺手的 R75 R76 R78；PLAN-v18 S1 S6 S12 L12 L13 L7。R77、R79 没修（R77 照草稿在更新日志里加了那句）。
+另外两个：`335fa2fe`（PLAN-v19 对话框按钮的 lambda 参数叫 `_`，编不过，只在 `windows` 上有意义）、`2931b88e`（自检档的新档不弹欢迎引导，见下）。
+
+**自查**：
+- `dotnet test`：`windows-0.2.0` 866 个全过（`windows` 893 个，多的 27 个是 WebDAV 的）；Debug 0 警告。
+- `build-release.ps1`（x64 / ARM64 AOT 0 个 trim / AOT 警告，PRI 四个都在，`--smoke` 过——现在每次删掉 smoke 档、查新装时引导真的弹出）；`setup-e2e.ps1` 18 项全过；
+  `KittyTools.exe --update-live=0.1.2` 退出码 0，report.txt：ok，下载 32 281 041 字节，sha256 对得上。内置智谱 key 在 x64 / ARM64 的 exe 里（只比对、没打印）。
+- 内存探针（Release AOT，独立探针档，和上一批 PLAN-v16 第 5 批 `232e20f` 的 Release 并排起）：每一步都比上一批低 0.3–3.6 MB，只有托盘 52.1 MB（上一批 53.9）、5000 条剪贴板 57.1、
+  启动器 63.3、翻译窗 64.5、截图五次后 87.5、设置五次后 100.4。**第一次量出来只有托盘 74 MB**：R69 修好以后新探针档一起来就弹欢迎引导（开着设置窗），量的不是「只有托盘」——
+  `2931b88e` 改成自检档里只有 `--smoke` / `KITTY_ONBOARDING=1` 才弹（截图自检的设置页也不再被引导盖住），正常的档照弹。
+- 空闲 CPU（只有托盘，静置 30 s 后量 120 s）：15.6 ms = 0.013 % 单核（基线 0.013–0.026 %）。
+- 新日志：onboarding.shown、notes.start-failed、reminder.start-failed、status.enter-refused、update.check … source=manifest / api、update.manifest-unreadable / -missing、
+  screenshot.overlay-restored，都只有事件名、异常类型和版本号，没有内容、地址、密钥。
+
+**产物**（`kitty-win-v16base` 的 `windows/build/release/0.2.0/`，用户的 `D:\Apps\Kitty Tools` 没碰）：
+
+| 产物 | 0.1.2 | 0.2.0 | 差 |
+|---|---|---|---|
+| x64 安装包 | 23.67 MB | 31.3 MB（32 777 336 字节，sha256 `4a9696c634d3…`） | +7.6 MB（+32 %） |
+| x64 zip | 32.28 MB | 40.2 MB（42 142 722 字节，sha256 `07d21b153ac8…`） | +7.9 MB |
+| ARM64 安装包 | 23.35 MB | 31.0 MB（sha256 `281adc306bc6…`） | +7.7 MB |
+| ARM64 zip | — | 39.2 MB（sha256 `83a28d18e5f3…`） | |
+| 发布目录 | — | x64 94.9 MB / 133 个文件，ARM64 100.5 MB / 133 个（不含 pdb） | |
+
+（0.1.2 那一列照上面「安装包大小」一节的数，单位一样是 MiB 取一位。）另有 `windows-update.json`（L12 ②，UTF-8 无 BOM，x64 / ARM64 两项）和 `release-notes.md`。
+全文 sha256 在各 `.sha256` 里。**没发布、没打 tag、没建 `windows-update` release**；发布时照 `build-release.ps1` 头部：先发 `windows-v0.2.0`（`--latest=false`），
+再第一次 `gh release create windows-update --prerelease --latest=false`、把 `windows-update.json` 传上去，传完 curl 核一遍。
+
+**没测、留给真机清单**：R69 注销再登录自己起来（第 2 条）、R70 真的 Ctrl+Alt+Del（第 6 条）、R71 真按住快捷键进入（第 7 条）、R74 管理员窗口在前台（第 8 条）、
+R73 真拖图（第 14 条）、S1 真长网页（第 26 条）、S6 真遮罩换选区（第 27 条）、L13 两块屏（第 28 条）、L12 真限流 / 真清单（第 29 条）；R75、R78 的出错那条路没真走。
+
 ## PLAN-v19（同步直接连 WebDAV 服务器，issue #18，2026-11-13 用户「全部按推荐」，审查方在 Mac 上写、**没编译**）
 
 方案在 `PLAN-v19.md`（D1–D5 都取推荐）。一批，审查方在 Mac 上写完（`git log --grep "PLAN-v19"`），**一行都没编译、没跑过单测**（Mac 上没有 .NET SDK）。
@@ -568,6 +617,16 @@ mac 的单测在 `macos/KittyToolsTests/`，样本和期望值能搬就搬。只
 | L7 | 先在中文 Windows 上看：启动器搜「命令提示符」「mlts」搜不搜得到。**搜不到**才改 `Launcher/AppCatalog.cs:171`：扫描时取显示名（`SHGetLocalizedName` 或 `SHGetFileInfo(SHGFI_DISPLAYNAME)`），英文文件名也留在可搜的名字里；更新日志草稿里那条（L7）留着。**搜得到**就不改，删掉草稿里那条，这里记「没复现」 | 真机清单第 29 条 |
 
 真机清单第 26–30 条、更新日志草稿的几条 fix 已经加在上面「0.2.0 发版前审查」里。L8、L11 不改代码，只在真机清单里看。
+
+**收口结果**（Windows 2026-11-13，提交正文里有全文）：
+
+- S1 → `73cef009`：`ScrollPacer.Frame` 封顶半个选区高（`MaxLead`、`Room`），「到头」改看自上次接上以来发满一格；光标在面板附近时不对账（同 mac）。单测照 mac 的样本 + 拼接慢 120 帧不调 After + 封顶后能停。
+- S6 → `b3af5a04`：Core `InPlaceOriginal`，`SetSelection` / `ClearSelection` 一处兜住。**和指令不一样**：`--overlay-translate-probe` 只走识字和合成、不起真遮罩，加步骤验不到冻结帧，改成 Core 单测逐字节（`InPlaceOriginalTests`）；真遮罩留真机清单第 27 条。
+- S12 → `94c5e59b`：ListMarker 不要求空白（紧跟数字、点的不算），列表项后面左边缩回半个字的另起一段。单测照 mac 那张截图的行框。
+- L12 → `78d1ea49`：① 403 / 429 认成限流、关于页和轻提示写清楚、「打开发布页」；② `windows-update.json`（Core `UpdateManifest`、`build-release.ps1` 生成、头部写了两步发布命令），**没建 `windows-update` release**。**和指令不一样**：清单读到了就以它为准（同 mac），版本不比当前新**不**退回 API——已是最新的用户占多数，退回等于每次都走 API、限流照旧。
+- L13 → `1a0e4b48`：删 IsJoined / FreeEdge，锁旧规则的三个单测照 mac 改写（用户改了规则）。
+- L7 → `845e027e`：**复现了**（这台中文 Windows 11 上搜「命令提示符」「mlts」只有网页搜索），标题取 SHGFI_DISPLAYNAME、英文文件名也能搜，子文件夹名同样取显示名；更新日志那条留着。
+- 顺带：`2931b88e` 自检档的新档不弹欢迎引导（--smoke、KITTY_ONBOARDING=1 除外）——R69 修好后内存探针的「只有托盘」量成了带设置窗的 74 MB。
 
 ### B. 0.3.0（`windows-0.2.0` 切出去、PLAN-v19 核验完之后）
 
