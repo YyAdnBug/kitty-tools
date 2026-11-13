@@ -105,6 +105,27 @@ internal static class OverlayTranslateProbe
                 Log.Info($"overlay-probe sample={sample.Name} text={text.Length}");
             }
 
+            // 一键打码（PLAN-v18 S17，照 mac recognizesOnARenderedImage）：三行里电话、邮箱给框，订单号不给
+            {
+                var redact = new Sample("redact", Color.FromArgb(255, 255, 255, 255), Color.FromArgb(255, 31, 35, 40), null, new[]
+                {
+                    "电话 138 0013 8000", "订单号 2026111200384756", "邮箱 kitty@example.com",
+                });
+                var (bgra, width, height) = Draw(redact);
+                await SavePngAsync(bgra, width, height, Path.Combine(directory, "redact-before.png"));
+                var (_, lines) = await OcrService.RecognizeAsync(bgra, width, height, joined: false);
+                foreach (var line in lines)
+                {
+                    report.Append($"  打码样图的行「{line.Text}」，词：{string.Join(" | ", line.Words?.Select(word => word.Text) ?? Array.Empty<string>())}").Append('\n');
+                }
+
+                var boxes = KittyTools.Core.Redaction.Boxes(lines);
+                Check(boxes.Count == 2, $"一键打码：认出 {boxes.Count} 处（该 2：电话、邮箱）");
+                static bool SameRow(KittyTools.Core.RectD box, KittyTools.Core.RectD line) => box.Y < line.Bottom && box.Bottom > line.Y;
+                Check(boxes.Count == 2 && lines.Count == 3 && SameRow(boxes[0], lines[0].Box) && SameRow(boxes[1], lines[2].Box),
+                    "一键打码：第一处在电话那行、第二处在邮箱那行");
+            }
+
             // 文字钉图卡片
             var cards = new (string Name, string Text)[]
             {

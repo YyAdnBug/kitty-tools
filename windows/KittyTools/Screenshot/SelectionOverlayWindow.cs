@@ -1219,6 +1219,28 @@ internal sealed partial class SelectionOverlayWindow : Window
             VerticalAlignment = VerticalAlignment.Center,
             Child = segment,
         });
+
+        // 打码最后一个「自动」（PLAN-v18 S17）：识字找手机号、邮箱、卡号、身份证号盖上
+        if (kind == AnnotationKind.Mosaic)
+        {
+            _trayRow.Children.Add(Separator());
+            var auto = new Button
+            {
+                Content = new TextBlock { Text = "自动", FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.Medium, Foreground = new SolidColorBrush(Theme.Shot.HudText) },
+                Height = 22,
+                MinWidth = 0,
+                MinHeight = 0,
+                Padding = new Thickness(8, 0, 8, 0),
+                CornerRadius = new CornerRadius(4),
+                BorderThickness = new Thickness(0),
+                Background = new SolidColorBrush(Theme.Shot.ChipFill),
+                AllowFocusOnInteraction = false,
+            };
+            AutomationProperties.SetName(auto, "自动打码：手机号、邮箱、卡号、身份证号");
+            ToolTipService.SetToolTip(auto, "自动打码：手机号、邮箱、卡号、身份证号");
+            auto.Click += (_, _) => AutoRedact();
+            _trayRow.Children.Add(auto);
+        }
     }
 
     /// <summary>托盘里的色点 / 粗细点：选中时外圈 2 的品牌粉环（离点 2）、整体放大 1.1（mac Swatch）。</summary>
