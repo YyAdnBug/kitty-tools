@@ -105,7 +105,7 @@ internal sealed unsafe partial class StatusScreenPanel
     {
         if (_preset.Style == StatusPresets.Dim)
         {
-            PresentDim(footer);
+            PresentDim(key, footer);
         }
         else
         {
@@ -143,7 +143,7 @@ internal sealed unsafe partial class StatusScreenPanel
         }
     }
 
-    private void PresentDim(string footer)
+    private void PresentDim(bool key, string footer)
     {
         _scrim = CreateScrim(Bounds, StatusScreenView.ScrimAlpha(HighContrast()));
         var column = StatusScreenView.BuildColumn(_preset, _title, _width * 0.8, _animates, footer);
@@ -163,6 +163,13 @@ internal sealed unsafe partial class StatusScreenPanel
         };
         AutomationProperties.SetName(_plateContent, AccessibleName());
         var plate = BareWindow(frame: true);
+        if (key)
+        {
+            // R74：透出样式以前谁都不拿前台，前台是管理员程序时低级钩子收不到发给它的键（UIPI），字会打进被盖住的窗口。
+            // 鼠标那块屏的底板拿前台（mac 每种样式都让面板当 key）。
+            HudFrame.AllowActivate(plate);
+        }
+
         _plate = plate;
         plate.Content = _plateContent;
         // 先按最大可能摆好、隐身着画一遍，量出那一列多大再摆到正中。
@@ -175,7 +182,7 @@ internal sealed unsafe partial class StatusScreenPanel
                 PlayEntrance(column);
             }
         };
-        RevealWhenDrawn(plate, Handle(plate), false, () => _closed);
+        RevealWhenDrawn(plate, Handle(plate), key, () => _closed);
     }
 
     /// <summary>透出：底板那扇窗按那一列量出来的大小摆到正中（再加上防残影的挪动）。</summary>

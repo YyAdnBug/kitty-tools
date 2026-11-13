@@ -30,6 +30,13 @@ internal static partial class HudFrame
         DwmSetWindowAttribute(hwnd, 33 /* DWMWA_WINDOW_CORNER_PREFERENCE */, ref round, sizeof(int));
     }
 
+    /// <summary>去掉 Apply 加的 WS_EX_NOACTIVATE：这扇窗要拿前台（R74：状态屏「请勿触碰」鼠标那块屏的底板，不然前台的管理员程序照收键盘）。</summary>
+    public static void AllowActivate(Window window)
+    {
+        var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(window);
+        SetWindowLong(hwnd, -20, GetWindowLong(hwnd, -20) & ~0x08000000);
+    }
+
     /// <summary>客户区要摆成 <paramref name="client"/>（物理像素）时窗口该多大：把系统边框加回去，客户区位置不动。</summary>
     public static RectInt32 WithFrame(Window window, RectInt32 client)
     {

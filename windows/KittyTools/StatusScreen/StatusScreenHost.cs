@@ -204,6 +204,20 @@ internal static partial class StatusScreenHost
             return "屏幕上的告示没建起来";
         }
 
+        // R74：拿前台没拿到、前台还是提权的程序（以管理员身份运行的终端、安装程序）：普通权限的低级键盘钩子收不到发给它的键，
+        // 进去了也挡不住键盘、按住 Esc 也退不出。不进：提醒退成全屏，快捷键进入给一句原因。
+        if (!probe && ElevatedForeground())
+        {
+            Log.Warn("status.enter-refused elevated-foreground");
+            Exit(StatusExitReason.Quit);
+            if (!quiet)
+            {
+                NoticeHost.Show("没能进入状态屏", "前台是以管理员身份运行的程序，挡不住它的键盘；先切到别的窗口再试", NoticeTone.Warning);
+            }
+
+            return "前台是以管理员身份运行的程序";
+        }
+
         if (!probe)
         {
             HideCursor();
@@ -227,6 +241,20 @@ internal static partial class StatusScreenHost
 
         Log.Info($"status.enter style={preset.Style} power={preset.Power} auto={preset.AutoEndMinutes} screens={Panels.Count} probe={probe}");
         return null;
+    }
+
+    /// <summary>前台不是状态屏自己的窗口，而且是提权进程（本进程没提权时）。</summary>
+    private static unsafe bool ElevatedForeground()
+    {
+        var foreground = (IntPtr)PInvoke.GetForegroundWindow().Value;
+        if (foreground == IntPtr.Zero || Panels.Any(panel => panel.Handles.Contains(foreground)))
+        {
+            return false;
+        }
+
+        var pid = Foreground.PidOf(new Windows.Win32.Foundation.HWND(foreground));
+        return pid != 0 && pid != (uint)Environment.ProcessId && Foreground.IsProcessElevated(pid)
+               && !Foreground.IsProcessElevated((uint)Environment.ProcessId);
     }
 
     /// <summary>收起剪贴板、启动器、翻译浮窗、主界面、选状态的面板（固定的也收）。</summary>
