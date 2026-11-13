@@ -25,7 +25,7 @@ struct ClipboardTab: View {
   @State private var confirmClear = false
   /// 改短保留天数 / 改小图片占用会删掉东西：先问，确认了才改（E4）
   @State private var limitChange: LimitChange?
-  /// 确认框收起后让两个选项重建一次：取消时值没改，但弹出菜单 / 单选可能已经停在点的那一项上
+  /// 确认框收起后让两个选项重建一次：取消时值没改，但弹出菜单可能已经停在点的那一项上
   @State private var limitPickers = 0
   @Environment(Island.self) private var island: Island?
 
@@ -39,20 +39,14 @@ struct ClipboardTab: View {
             Text(Self.retentionTitle($0)).tag($0)
           }
         }
-        .id(limitPickers)
-        // 横排单选包进 LabeledContent：贴着右边线（直接放 Picker 的话单选紧跟在标签后面、靠左）
-        LabeledContent("图片最多占用") {
-          Picker("图片最多占用", selection: limited(.imageMB)) {
-            ForEach(Self.imageBudgetChoices, id: \.0) {
-              Text($0.1).tag($0.0)
-            }
+        // 两个弹出菜单是同一节里挨着的兄弟：id 要各不相同，同一个值的话 SwiftUI 当成同一个视图、第二行画成第一行
+        .id("days-\(limitPickers)")
+        Picker("图片最多占用", selection: limited(.imageMB)) {
+          ForEach(Self.imageBudgetChoices, id: \.0) {
+            Text($0.1).tag($0.0)
           }
-          .pickerStyle(.radioGroup)
-          .horizontalRadioGroupLayout()
-          .labelsHidden()
-          .fixedSize()
-          .id(limitPickers)
         }
+        .id("imageMB-\(limitPickers)")
         LabeledContent("图片当前占用", value: imageUsage)
       } header: {
         Text("历史")
@@ -166,9 +160,10 @@ struct ClipboardTab: View {
     }
   }
 
-  /// 「图片最多占用」的档位（MB → 名字；0 = 不限）
+  /// 「图片最多占用」的档位（MB → 名字；0 = 不限）。256 MB 是 issue #19 加的（2026-11-13，想少占点空间），
+  /// 六项起换成弹出菜单（Whisker §6）
   static let imageBudgetChoices = [
-    (512, "512 MB"), (1024, "1 GB"), (2048, "2 GB"), (5120, "5 GB"), (0, "不限"),
+    (256, "256 MB"), (512, "512 MB"), (1024, "1 GB"), (2048, "2 GB"), (5120, "5 GB"), (0, "不限"),
   ]
 
   /// 两个上限：保留天数、图片占用（MB）
@@ -208,7 +203,7 @@ struct ClipboardTab: View {
     }
   }
 
-  /// 确认框以任何方式收起（删除、取消、Esc）都让两个选项重建一次：取消时值没改，弹出菜单 / 单选却可能停在点的那一项上
+  /// 确认框以任何方式收起（删除、取消、Esc）都让两个选项重建一次：取消时值没改，弹出菜单却可能停在点的那一项上
   private var confirmsLimit: Binding<Bool> {
     Binding {
       limitChange != nil

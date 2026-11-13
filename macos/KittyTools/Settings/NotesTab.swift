@@ -46,7 +46,7 @@ struct NotesTab: View {
     Form {
       Group {
         Section {
-          // 横排单选包进 LabeledContent：贴着右边线（同设置 › 剪贴板「图片最多占用」）
+          // 横排单选包进 LabeledContent：贴着右边线
           radios("正文字号", "全部便签窗口、屏幕边缘和浮在屏幕上的便签里正文的大小", selection: $fontSize) {
             ForEach(Prefs.notesFontSizeChoices, id: \.self) {
               Text(Self.fontTitles[$0] ?? "\($0)").tag($0)

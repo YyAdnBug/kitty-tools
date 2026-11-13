@@ -87,7 +87,7 @@ struct StatusPresetDetail: View {
           ForEach(StatusPreset.Power.allCases, id: \.self) { Text($0.title).tag($0) }
         }
         .pickerStyle(.segmented)
-        // 横排单选包进 LabeledContent：贴着右边线（同设置 › 剪贴板「图片最多占用」）
+        // 横排单选包进 LabeledContent：贴着右边线
         LabeledContent("自动结束") {
           Picker("自动结束", selection: binding.autoEndMinutes) {
             ForEach(StatusPreset.autoEndChoices, id: \.self) {
