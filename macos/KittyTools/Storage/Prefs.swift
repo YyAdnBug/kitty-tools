@@ -416,6 +416,16 @@ enum Prefs {
   static let settingsCollapsedGroups = "settingsCollapsedGroups"
   /// 设置侧栏底下「已关闭」那组展开着没有（默认收起；SettingsRoot）。这台电脑自己的界面状态：不注册默认值、不导出不同步
   static let settingsShowsOffFeatures = "settingsShowsOffFeatures"
+  /// 灵动岛总开关（默认开）。关掉后不建可见的岛窗口，岛的历史仍在本次运行中保留。
+  static let islandEnabled = "islandEnabled"
+  /// 灵动岛展开卡是否显示快捷动作（默认开）。具体动作还受对应 Feature 开关和 islandActionOff 过滤。
+  static let islandShowsActions = "islandShowsActions"
+  /// 灵动岛展开卡是否显示最近提示（默认开）。历史只保留本次运行最近 10 条。
+  static let islandShowsHistory = "islandShowsHistory"
+  /// 灵动岛快捷动作的完整顺序（换行分隔的 HotKeyAction.rawValue）。缺少的新动作会自动补到末尾。
+  static let islandActionOrder = "islandActionOrder"
+  /// 灵动岛快捷动作里被关闭的动作（换行分隔的 HotKeyAction.rawValue）。单独存放以保留关闭动作的排序。
+  static let islandActionOff = "islandActionOff"
   /// 新功能标记（Shell/WhatsNew.swift，2026-11-05）的账：各版本在这台 Mac 上第一次打开的时刻（版本号 → Date，从这一刻起挂 30 天）、
   /// 碰过哪几个（WhatsNew.Entry.id 的数组）。这台电脑自己的状态：不注册默认值、不导出不同步
   static let whatsNewStarted = "whatsNewStarted"
@@ -542,6 +552,12 @@ enum Prefs {
       notesDeckOverFullScreen: false,
       notesDeckNoteSize: NoteDeckOptions.NoteSize.medium.rawValue,
       finderMenuGrouped: false,
+      islandEnabled: true,
+      islandShowsActions: true,
+      islandShowsHistory: true,
+      islandActionOrder:
+        "screenshot\nrecognizeText\nscreenshotTranslate\nscreenRecord\naudioRecord\nnoteCapture",
+      islandActionOff: "",
     ].merging(Feature.allCases.map { ($0.prefsKey, $0.defaultOn as Any) }) { current, _ in current }
       .merging(FinderMenuItem.allCases.map { ($0.prefsKey, $0.defaultOn as Any) }) { current, _ in
         current
@@ -556,6 +572,36 @@ enum Prefs {
   /// 截图拷贝成 PNG 文件（screenshotCopyAs 是 file；没存过、认不出来按默认的图像）
   static func copiesShotAsFile(_ defaults: UserDefaults = .standard) -> Bool {
     defaults.string(forKey: screenshotCopyAs) == "file"
+  }
+
+  /// 灵动岛快捷动作的合法集合，顺序和 HotKeyAction.islandShortcuts 保持一致但不依赖主线程类型。
+  static let islandActionIDs = [
+    "screenshot", "recognizeText", "screenshotTranslate", "screenRecord", "audioRecord",
+    "noteCapture",
+  ]
+
+  /// 读取并修复动作顺序：去掉未知 / 重复值，再把新版本新增的动作补到末尾。
+  static func islandActionsOrder(_ defaults: UserDefaults = .standard) -> [String] {
+    islandActionsOrder(stored: defaults.string(forKey: islandActionOrder) ?? "")
+  }
+
+  static func islandActionsOrder(stored: String) -> [String] {
+    var result: [String] = []
+    for id in stored.split(separator: "\n").map(String.init)
+    where islandActionIDs.contains(id) && !result.contains(id) {
+      result.append(id)
+    }
+    for id in islandActionIDs where !result.contains(id) { result.append(id) }
+    return result
+  }
+
+  /// 读取被关闭的动作，只保留当前版本认识的 id。
+  static func islandActionsOff(_ defaults: UserDefaults = .standard) -> Set<String> {
+    islandActionsOff(stored: defaults.string(forKey: islandActionOff) ?? "")
+  }
+
+  static func islandActionsOff(stored: String) -> Set<String> {
+    Set(stored.split(separator: "\n").map(String.init).filter(islandActionIDs.contains))
   }
 
   /// 截完图放哪（2026-10-26 晾衣绳拍板 B1）：右下角的常驻缩略图 / 挂到晾衣绳上 / 都不要（只进历史）。
