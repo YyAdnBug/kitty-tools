@@ -1,0 +1,54 @@
+// App 和正在播放服务（KittyToolsNowPlaying，XPC）之间的约定：协议、命令、快照。
+// 两边各抄一份（KittyTools/Shell/NowPlayingWire.swift），BEGIN / END 之间逐字一样（NowPlayingTests.wireMatches 比对）。
+
+import Foundation
+
+// BEGIN NowPlayingWire
+/// App → 服务。nonisolated：XPC 在自己的队列上调过来
+@objc nonisolated protocol NowPlayingServing {
+  /// 开始听；之后有变化就推 NowPlayingListening.update（连上时先推一次眼下的）。回 MediaRemote 能不能用（取不到函数是 false）
+  func subscribe(reply: @escaping @Sendable (Bool) -> Void)
+  /// 发命令（NowPlayingCommand 的 rawValue）
+  func send(_ command: Int)
+}
+
+/// 服务 → App
+@objc nonisolated protocol NowPlayingListening {
+  /// 正在播放变了（服务那边合并过、和上一次不一样才推）：NowPlayingSnapshot 的 JSON；空的 Data = 没有在播的
+  func update(_ snapshot: Data)
+}
+
+/// MediaRemote 的命令号（MRMediaRemoteSendCommand）
+nonisolated enum NowPlayingCommand: Int, Sendable {
+  case play = 0
+  case pause = 1
+  case toggle = 2
+  case next = 4
+  case previous = 5
+}
+
+/// 一次读到的正在播放（服务合并过的）
+nonisolated struct NowPlayingSnapshot: Codable, Equatable, Sendable {
+  /// 报上来的是哪个进程（Safari 的是 com.apple.WebKit.GPU）、它的上级 App（Safari）、显示名
+  var bundleID: String
+  var parentBundleID: String?
+  var appName: String?
+  var title: String
+  var artist: String?
+  var album: String?
+  /// 秒；网页直播之类的没有
+  var duration: Double?
+  /// 进度：timestamp 那一刻在 elapsed 秒，之后按 rate 往前走（rate 0 = 停着：暂停、缓冲）
+  var elapsed: Double?
+  var timestamp: Date?
+  var rate: Double
+  /// 播放器说自己在不在播（按钮看它；缓冲时它是 true、rate 是 0）
+  var isPlaying: Bool
+  /// 这个 App 此刻支不支持上一首 / 下一首（Chrome 里单个视频就没有）
+  var canPrevious: Bool
+  var canNext: Bool
+  /// 封面：换了才变的编号、缩到最长边 256 的 JPEG；网页视频刚换片的头两秒没有
+  var artworkID: String?
+  var artwork: Data?
+}
+// END NowPlayingWire

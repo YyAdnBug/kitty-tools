@@ -39,6 +39,13 @@
 // （账在库里 note_meta；本机图片目录不在、账读不出来都不删），跟着那一轮的写一起删；账上有到期的那一刻（imagesDue）
 // 输入没变也不跳过。电脑名（device.json 里的）一次运行只取一次（第四轮体检 E24⑧：不每 20 秒问一遍系统）。
 // ponytail: 退出时不再赶一轮（落盘照常，下次打开那一轮写出去）
+// **连 WebDAV 服务器**（issue #18，2026-11-13）：同步的「文件夹」是数据目录里的一份镜像（sync-server/<编号>/，偏好
+// notesSyncFolder 指着它），服务器网址、用户名在偏好里（syncServer / syncServerUser），密码在钥匙串（passwordKey）。一轮在
+// flush 之后先 pull（NoteSyncServer：服务器上变了的拿进镜像），照常读镜像、合、写镜像，最后 push（本机写进镜像的送上去，
+// 写镜像出了错也照送：写成了的那几个先送上去）；pull 有没拿下来的（超了每轮的请求数），这一轮整个当成没读清楚（不跳过、
+// 不清共用图片）。一分钟一轮（serverInterval：按次数限流的服务器，空闲一轮也要列 3 + 2 × 电脑数次目录）。服务器说请求
+// 太多就退避（5、10、20、30 分钟，服务器说了等多久至少等它说的），这期间的一轮直接停在「请求太多」；连不上、密码不对
+// 照常停在那一轮、下一轮再试。刹车、不是那个文件夹这些停在合之前的，这一轮也不 push（上一轮没送完的等下一轮）。
 
 import AppKit
 import Observation
@@ -68,10 +75,15 @@ import Observation
     case downloading
     /// 读写出错（原因）
     case failed(String)
+    /// 服务器说请求太多：这个时刻之前不合（连服务器时）
+    case busy(Date)
   }
 
-  /// 一轮隔多久
+  /// 一轮隔多久：同步文件夹 20 秒，连服务器 60 秒（文件头）
   static let interval: TimeInterval = 20
+  static let serverInterval: TimeInterval = 60
+  /// 服务器的密码在钥匙串里的名字
+  static let passwordKey = "sync-server-password"
   /// 库里记「写出去的是第几轮」的那一项（note_meta）
   static let epochKey = "sync-epoch"
 
@@ -80,11 +92,16 @@ import Observation
   var lastSync: Date?
   /// 别的电脑（名字、最后一次看到它的文件变的时刻），按名字排
   var peers: [NoteSyncDisk.Peer] = []
-  /// 这一轮还在等同步盘下载的文件有几个
+  /// 这一轮还在等同步盘下载（连服务器时：服务器上变了、还没拿下来）的文件有几个
   var downloading = 0
+  /// 连服务器时还没传上去的文件有几个
+  var uploading = 0
   /// 同步的文件夹、它的库编号（没开 = nil）：偏好里那两项的样子（设置页要跟着变，放在这里）
   private(set) var folder: URL?
   private(set) var library: String?
+  /// 连服务器同步时：服务器上那个文件夹、用户名（同步文件夹的是 nil；偏好 syncServer / syncServerUser 的样子）
+  private(set) var server: URL?
+  private(set) var serverUser: String?
 
   @ObservationIgnored let store: NoteStore
   @ObservationIgnored private let defaults: UserDefaults
@@ -106,6 +123,19 @@ import Observation
   /// 这台电脑叫什么（device.json）；单测换成固定的
   @ObservationIgnored var computerName: () async -> String = { await NoteSyncDisk.computerName() }
   @ObservationIgnored private var cache = NoteSyncDisk.Cache()
+  /// 连服务器用的会话、存取密码（单测换成假服务器、内存里的，不碰钥匙串）
+  @ObservationIgnored var session = WebDAV.session
+  @ObservationIgnored var loadPassword: () -> String? = { Keychain.get(NoteSyncer.passwordKey) }
+  @ObservationIgnored var savePassword: (String?) -> Void = {
+    Keychain.set($0, for: NoteSyncer.passwordKey)
+  }
+  /// 密码：第一次用时从钥匙串取，之后记在内存里
+  @ObservationIgnored private var password: String?
+  /// 镜像都放在这下面（每连一次服务器一个子文件夹）
+  @ObservationIgnored let mirrors: URL
+  /// 服务器说请求太多：这个时刻之前不合；连着第几回了（退避加倍）
+  @ObservationIgnored private var pausedUntil: Date?
+  @ObservationIgnored private var backoffs = 0
   @ObservationIgnored private var timer: Timer?
   @ObservationIgnored private var task: Task<Void, Never>?
   @ObservationIgnored private var again = false
@@ -147,13 +177,20 @@ import Observation
     }
   }
 
-  init(store: NoteStore, defaults: UserDefaults = .standard) {
+  init(
+    store: NoteStore, defaults: UserDefaults = .standard,
+    mirrors: URL = AppDelegate.supportDirectory.appending(
+      path: "sync-server", directoryHint: .isDirectory)
+  ) {
     self.store = store
     self.defaults = defaults
+    self.mirrors = mirrors
     folder = defaults.string(forKey: Prefs.notesSyncFolder).map {
       URL(filePath: $0, directoryHint: .isDirectory)
     }
     library = defaults.string(forKey: Prefs.notesSyncLibrary)
+    server = defaults.string(forKey: Prefs.syncServer).flatMap(URL.init(string:))
+    serverUser = defaults.string(forKey: Prefs.syncServerUser)
     // 升级上来的：便签之外的几类先不勾、存下来（必须在第一轮之前：设置第一次合是整个跟着别的 Mac）
     let upgraded = Self.isUpgrade(defaults)
     if upgraded {
@@ -217,20 +254,8 @@ import Observation
   func enable(folder: URL) async -> String? {
     let inspection = await NoteSyncDisk.inspect(folder: folder, device: store.deviceID)
     guard inspection.exists else { return "这个文件夹不在了" }
-    guard !inspection.markerUnreadable else {
-      return "这个文件夹里的同步记录还没下载完（或者读不出来），稍后再试"
-    }
+    if let refusal = Self.refusal(inspection) { return refusal }
     var library = inspection.marker?.library
-    if let marker = inspection.marker, marker.format > NoteSyncFolder.format {
-      return "这个文件夹是更新版本的 Kitty Tools 用的，先更新再同步"
-    }
-    if library == nil, inspection.devices > 0 {
-      return "这个文件夹里有别的 Mac 同步过的数据，却找不到同步记录（可能还没下载完），稍后再试"
-    }
-    // 没同步过的文件夹要是空的：不往「文稿」这种放着别的东西的文件夹里撒子文件夹
-    if library == nil, !inspection.empty {
-      return "这个文件夹里已经有别的东西了，新建一个空文件夹来同步"
-    }
     if library == nil {
       let fresh = UUID().uuidString
       if let problem = await NoteSyncDisk.createMarker(in: folder, library: fresh) {
@@ -238,6 +263,75 @@ import Observation
       }
       library = fresh
     }
+    forgetServer()
+    use(folder: folder, library: library)
+    return nil
+  }
+
+  /// 连这个服务器上的文件夹同步（同 enable(folder:)：没有这个文件夹的建好、没有标记的写一个；有别的电脑在用由调用方先问，
+  /// NoteSyncServer.inspect）。镜像是新的一个子文件夹，旧的在主线程外删掉；密码进钥匙串。返回没开成的原因
+  func enable(server account: WebDAV.Account) async -> String? {
+    var inspection: NoteSyncDisk.Inspection
+    switch await NoteSyncServer.inspect(account, session: session, device: store.deviceID) {
+    case .failure(let failure): return failure.message
+    case .success(let seen): inspection = seen
+    }
+    if !inspection.exists {
+      if let failure = await NoteSyncServer.makeFolder(account, session: session) {
+        return failure.message
+      }
+      inspection = NoteSyncDisk.Inspection(exists: true)
+    }
+    if let refusal = Self.refusal(inspection) { return refusal }
+    var library = inspection.marker?.library
+    if library == nil {
+      let fresh = UUID().uuidString
+      switch await NoteSyncServer.createMarker(account, session: session, library: fresh) {
+      case nil: library = fresh
+      case .exists?: return "这个文件夹里刚有别的电脑开始同步，再连接一次"
+      case let failure?: return failure.message
+      }
+    }
+    let mirror = mirrors.appending(path: UUID().uuidString, directoryHint: .isDirectory)
+    do {
+      try FileManager.default.createDirectory(at: mirror, withIntermediateDirectories: true)
+    } catch {
+      return error.localizedDescription
+    }
+    savePassword(account.password)
+    password = account.password
+    defaults.set(account.folder.absoluteString, forKey: Prefs.syncServer)
+    defaults.set(account.user, forKey: Prefs.syncServerUser)
+    server = account.folder
+    serverUser = account.user
+    pausedUntil = nil
+    backoffs = 0
+    use(folder: mirror, library: library)
+    let mirrors = self.mirrors
+    Task { await NoteSyncServer.removeMirrors(in: mirrors, keeping: mirror) }
+    return nil
+  }
+
+  /// 这个文件夹（本机的，或者服务器上的）能不能拿来同步：不能的话说为什么
+  private static func refusal(_ inspection: NoteSyncDisk.Inspection) -> String? {
+    if inspection.markerUnreadable {
+      return "这个文件夹里的同步记录还没下载完（或者读不出来），稍后再试"
+    }
+    if let marker = inspection.marker, marker.format > NoteSyncFolder.format {
+      return "这个文件夹是更新版本的 Kitty Tools 用的，先更新再同步"
+    }
+    if inspection.marker == nil, inspection.devices > 0 {
+      return "这个文件夹里有别的电脑同步过的数据，却找不到同步记录（可能还没下载完），稍后再试"
+    }
+    // 没同步过的文件夹要是空的：不往「文稿」这种放着别的东西的文件夹里撒子文件夹
+    if inspection.marker == nil, !inspection.empty {
+      return "这个文件夹里已经有别的东西了，换一个空文件夹来同步"
+    }
+    return nil
+  }
+
+  /// 记下同步的文件夹（连服务器时是镜像）和库编号
+  private func use(folder: URL, library: String?) {
     defaults.set(folder.path, forKey: Prefs.notesSyncFolder)
     defaults.set(library, forKey: Prefs.notesSyncLibrary)
     // 这一版里开的同步（合不合在一起已经问过）：勾存一份，下次启动不当成升级上来的（isUpgrade）
@@ -246,7 +340,23 @@ import Observation
     self.library = library
     cache = NoteSyncDisk.Cache()
     settled = [:]
-    return nil
+  }
+
+  /// 不再连服务器：偏好、钥匙串里的密码清掉，镜像在主线程外删掉（只在连过服务器时碰钥匙串）
+  private func forgetServer() {
+    let wasServer = server != nil || defaults.string(forKey: Prefs.syncServer) != nil
+    defaults.removeObject(forKey: Prefs.syncServer)
+    defaults.removeObject(forKey: Prefs.syncServerUser)
+    server = nil
+    serverUser = nil
+    password = nil
+    pausedUntil = nil
+    backoffs = 0
+    uploading = 0
+    guard wasServer else { return }
+    savePassword(nil)
+    let mirrors = self.mirrors
+    Task { await NoteSyncServer.removeMirrors(in: mirrors, keeping: nil) }
   }
 
   /// 不同步了：文件夹里的东西留着，本机的便签不动；为同步留着的几份缓存放掉
@@ -256,6 +366,7 @@ import Observation
     for source in sources { source.syncStopped() }
     defaults.removeObject(forKey: Prefs.notesSyncFolder)
     defaults.removeObject(forKey: Prefs.notesSyncLibrary)
+    forgetServer()
     folder = nil
     library = nil
     cache = NoteSyncDisk.Cache()
@@ -269,11 +380,12 @@ import Observation
   func start() {
     guard isEnabled else { return }
     timer?.invalidate()
-    let timer = Timer(timeInterval: Self.interval, repeats: true) { [weak self] _ in
+    let interval = server == nil ? Self.interval : Self.serverInterval
+    let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
       MainActor.assumeIsolated { self?.syncNow() }
     }
     // 晚几秒没关系（同步盘本来就是几秒到几分钟的延迟）：让系统把这次唤醒和别的计时器并在一起
-    timer.tolerance = Self.interval / 4
+    timer.tolerance = interval / 4
     RunLoop.main.add(timer, forMode: .common)
     self.timer = timer
     syncNow()
@@ -342,12 +454,38 @@ import Observation
     settled = [:]
     var settling: [String: Inputs] = [:]
     var skipping: Set<String> = []
-    let snapshot = await NoteSyncDisk.read(
+    // 连服务器：先把服务器上变了的拿进镜像（文件头）
+    var account: WebDAV.Account?
+    var pulled: NoteSyncServer.Pulled?
+    if server != nil {
+      guard let current = self.account() else {
+        return halt(.failed("钥匙串里没有服务器的密码，停止同步后重新连接"))
+      }
+      if let pausedUntil, clock() < pausedUntil { return halt(.busy(pausedUntil)) }
+      let result = await NoteSyncServer.pull(
+        current, session: session, mirror: folder, device: store.deviceID,
+        images: notesOn ? store.images?.directory : nil, budget: NoteSyncServer.budget)
+      guard self.folder == folder, self.library == library else { return }
+      if let failure = result.failure { return fail(failure) }
+      if result.missing { return halt(.missingFolder) }
+      pausedUntil = nil
+      backoffs = 0
+      account = current
+      pulled = result
+    }
+    var snapshot = await NoteSyncDisk.read(
       folder: folder, cache: cache, kinds: sources.map(\.syncKind), device: store.deviceID)
     // 读的时候被关了、换了文件夹：这一轮作废
     guard self.folder == folder, self.library == library else { return }
     cache = snapshot.cache
     downloading = snapshot.downloading
+    if let pulled {
+      downloading = pulled.waiting
+      // 服务器上还有没拿下来的：镜像里是旧的那几份，这一轮哪部分都不算读清楚
+      if pulled.waiting > 0 {
+        snapshot.unsettled.formUnion([Self.notesPart] + sources.map(\.syncKind.rawValue))
+      }
+    }
     if snapshot.missing { return halt(.missingFolder) }
     // 文件夹里的东西信得过之前什么都不动（换编号也不）
     if snapshot.markerUnreadable { return halt(.downloading) }
@@ -489,6 +627,15 @@ import Observation
     // 删成了的共用图片从账上去掉（E16）：别的电脑补传回来时从头记，不会刚传上来就又删
     if !written.deletedImages.isEmpty { forgetPurged(written.deletedImages) }
     guard self.folder == folder else { return }
+    // 连服务器：写进镜像的送上去（写镜像出了错也送：写成了的先送）
+    if let account, let pulled {
+      let pushed = await NoteSyncServer.push(
+        account, session: session, mirror: folder, device: store.deviceID, budget: pulled.left,
+        folders: pulled.folders)
+      guard self.folder == folder else { return }
+      uploading = pushed.waiting
+      if let failure = pushed.failure { return fail(failure) }
+    }
     if let problem = written.problem { return halt(.failed(problem)) }
     settled = settling
     skippedParts = skipping
@@ -635,6 +782,24 @@ import Observation
   /// 停在这一轮（下一轮照常来，问题没了就好了）
   private func halt(_ problem: Problem) {
     status = .stopped(problem)
+  }
+
+  /// 连服务器的账号（密码第一次用时从钥匙串取）：取不到密码是 nil
+  private func account() -> WebDAV.Account? {
+    guard let server, let serverUser else { return nil }
+    if password == nil { password = loadPassword() }
+    guard let password else { return nil }
+    return WebDAV.Account(folder: server, user: serverUser, password: password)
+  }
+
+  /// 连服务器这一轮没成：请求太多就退避（5、10、20、30 分钟；服务器说了等多久，至少等它说的），别的停在这一轮、下一轮再试
+  private func fail(_ failure: WebDAV.Failure) {
+    guard case .busy(let retryAfter) = failure else { return halt(.failed(failure.message)) }
+    let wait = max(retryAfter ?? 0, min(300 * Double(1 << min(backoffs, 3)), 1800))
+    backoffs += 1
+    let until = clock().addingTimeInterval(wait)
+    pausedUntil = until
+    halt(.busy(until))
   }
 
   private func problem(for stop: NoteSyncFolder.Stop, in snapshot: NoteSyncDisk.Snapshot)

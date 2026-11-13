@@ -119,6 +119,19 @@ enum Permissions {
     return deniedFolders() ?? []
   }
 
+  /// 能不能给某个 App 发 Apple 事件（自动化授权），**从不弹框**：只有允许过才 true；没问过（−1744）、拒绝过（−1743）、
+  /// 它没在运行（−600）都是 false。正在播放的退路读「音乐」的进度时先看它（2026-11-13，刘海岛扩展第 2-3 批：
+  /// 不在放歌时凭空弹「想控制“音乐”」的框；要授权只在用户点了播放控制时由 osascript 弹）
+  static func canAutomate(_ bundleID: String) -> Bool {
+    // aeDesc 指向 descriptor 里面（内部指针）：descriptor 得活到调用完（临时的那个可能在 guard 之后就放掉了，评审 2）
+    let descriptor = NSAppleEventDescriptor(bundleIdentifier: bundleID)
+    return withExtendedLifetime(descriptor) {
+      guard let target = descriptor.aeDesc else { return false }
+      return AEDeterminePermissionToAutomateTarget(target, typeWildCard, typeWildCard, false)
+        == noErr
+    }
+  }
+
   /// 目录不存在（没开 iCloud 云盘）不算被拒
   private static func canOpen(_ relativePath: String) -> Bool {
     guard let directory = opendir(NSHomeDirectory() + "/" + relativePath) else {

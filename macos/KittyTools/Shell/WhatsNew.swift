@@ -68,12 +68,14 @@ enum WhatsNew {
       id: "hotkey-block", version: "0.8.1", feature: nil, page: .hotkeys,
       section: "在这些 App 里停用"),
     // 0.9.0（拍板 D9）：插件（设置 › 通用「功能」那一行：便签这些挪进了插件、新的保持唤醒；添加 / 移除一个就算看过）、
-    // 设置 › 刘海岛 里新的「系统提示」（刘海岛插件的页，拨过其中一个开关算看过）。截图标注的新东西在框选后的工具栏里、
-    // 刘海两边的活动和两指下滑没有入口，不标
+    // 设置 › 刘海岛 里新的「正在播放」（刘海岛插件的页，拨过那个开关算看过；原来挑的是「系统提示」，正在播放进 0.9.0 后换成它，
+    // 一版最多 3 个）、设置 › 通用「同步」能连 WebDAV 服务器
+    // （issue #18，点过「连接服务器…」算看过）。截图标注的新东西在框选后的工具栏里、刘海两边的活动和两指下滑没有入口，不标
     Entry(id: "plugins", version: "0.9.0", feature: nil, page: .general, section: "功能"),
     Entry(
-      id: "island-notices", version: "0.9.0", feature: .island, page: .island,
-      section: "系统提示"),
+      id: "island-now-playing", version: "0.9.0", feature: .island, page: .island,
+      section: "正在播放"),
+    Entry(id: "sync-server", version: "0.9.0", feature: nil, page: .general, section: "同步"),
   ]
 
   /// 一版最多标几个（拍板 B1：标多了到处都是「新」，等于没标）

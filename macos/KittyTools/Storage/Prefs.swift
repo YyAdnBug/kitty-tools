@@ -327,6 +327,10 @@ enum Prefs {
   /// 这台电脑自己的状态、**不注册默认值**——别人给的导出文件不该改你同步到哪；没有 = 没开同步（A2 默认关）
   nonisolated static let notesSyncFolder = "notesSyncFolder"
   nonisolated static let notesSyncLibrary = "notesSyncLibrary"
+  /// 连 WebDAV 服务器同步时（issue #18，2026-11-13；NoteSyncer / NoteSyncServer）：服务器上那个文件夹的网址、用户名（密码在
+  /// 钥匙串 NoteSyncer.passwordKey）。这时 notesSyncFolder 是数据目录里的镜像。同样是这台电脑自己的状态、**不注册默认值**
+  nonisolated static let syncServer = "syncServer"
+  nonisolated static let syncServerUser = "syncServerUser"
   /// 这台电脑上不同步的几部分（全局同步 A3：设置页每类一个勾；"notes" 和 SyncRecords.Kind 的名字），同样是这台电脑自己的
   /// 状态、不注册默认值（没有 = 都同步）
   nonisolated static let syncSkipped = "syncSkipped"
@@ -440,6 +444,9 @@ enum Prefs {
   static let islandNoticeBattery = "islandNoticeBattery"
   static let islandNoticeHeadphones = "islandNoticeHeadphones"
   static let islandNoticeNetwork = "islandNoticeNetwork"
+  /// 刘海岛上的「正在播放」（刘海岛扩展第 2 期，Shell/NowPlaying.swift）：默认关（2026-11-13 拍板：归刘海岛插件、一组开关）；
+  /// 关着时不连正在播放服务、服务不起
+  static let islandNowPlaying = "islandNowPlaying"
   /// 新功能标记（Shell/WhatsNew.swift，2026-11-05）的账：各版本在这台 Mac 上第一次打开的时刻（版本号 → Date，从这一刻起挂 30 天）、
   /// 碰过哪几个（WhatsNew.Entry.id 的数组）。这台电脑自己的状态：不注册默认值、不导出不同步
   static let whatsNewStarted = "whatsNewStarted"
@@ -575,6 +582,7 @@ enum Prefs {
       islandNoticeBattery: false,
       islandNoticeHeadphones: false,
       islandNoticeNetwork: false,
+      islandNowPlaying: false,
       keepAwakeDisplay: true,
       keepAwakeSchedule: "",
     ].merging(Feature.allCases.map { ($0.prefsKey, $0.defaultOn as Any) }) { current, _ in current }

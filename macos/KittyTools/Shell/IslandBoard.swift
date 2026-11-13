@@ -101,6 +101,15 @@ private struct ActivityRow: View {
   let perform: (Island.Action) -> Void
 
   var body: some View {
+    if let media = activity.media {
+      // 正在播放：封面、歌名 / 艺人、小一号的播放控制（IslandMedia.swift）
+      IslandMediaRow(media: media, perform: perform)
+    } else {
+      row
+    }
+  }
+
+  private var row: some View {
     HStack(spacing: 10) {
       IslandActivityMark(activity: activity, size: 16).frame(width: 22, height: 22)
       Text(activity.title)

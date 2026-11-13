@@ -645,8 +645,9 @@ private struct BackupFolderRow: View {
   }
 }
 
-/// 两张表单共用的骨架：页头（40 pt 色块 + 标题 + 一句说明）、内容、底栏「取消」+ 主按钮（↩；Esc = 取消）
-private struct TransferForm<Content: View>: View {
+/// 导出、导入两张表单（和 设置 › 通用「同步」的「连接服务器」，SyncServerForm）共用的骨架：页头（40 pt 色块 + 标题 + 一句说明）、
+/// 内容、底栏「取消」+ 主按钮（↩；Esc = 取消）
+struct TransferForm<Content: View>: View {
   let symbol: String
   let title: String
   let detail: String

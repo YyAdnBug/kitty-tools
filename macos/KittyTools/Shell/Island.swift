@@ -211,7 +211,8 @@ import SwiftUI
     self.boardSelection = boardSelection
     self.showsHistory = showsHistory
     self.activities = activities
-    if case .notch = geometry { isShowingWings = !activities.isEmpty }
+    // 同真的岛（refreshWings）：有上得了耳朵的活动才露（暂停一阵的正在播放不上）
+    if case .notch = geometry { isShowingWings = Activity.top(activities) != nil }
   }
 
   /// 详情里的一句摘录：第一行前 24 个字，后面还有就补「…」（\r\n、\r、U+2028 都算换行）
@@ -1225,6 +1226,11 @@ struct IslandView: View {
     ZStack(alignment: .top) {
       if island.isBoardOpen {
         IslandBoard(island: island)
+          .measured { report($0) }
+          .transition(appear)
+      } else if island.content != nil, let media = island.cardActivity?.media {
+        // 点耳朵展开的正在播放：播放卡片（IslandMedia.swift）；换歌、暂停原地换，不重新出场
+        IslandMediaCard(island: island, media: media)
           .measured { report($0) }
           .transition(appear)
       } else if let content = island.content {

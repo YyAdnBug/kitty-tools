@@ -1081,6 +1081,45 @@ struct SnapshotProbeTests {
           showing: nil, geometry: notch, board: records, quickActions: quick,
           activities: [recording, compressing])),
       size: notch.windowSize, dark: false, to: "\(out)/island-board-activities.png")
+    // 正在播放（刘海岛扩展第 2 期）：耳朵上的封面 + 跳动条（在播 / 暂停）、点耳朵的播放卡片（有封面 / 没有封面也没有 App 图标）、
+    // 那一张最上面的一行（和录屏一起）。封面是画出来的一块渐变，不读用户的东西
+    let cover = NSImage(size: NSSize(width: 256, height: 256), flipped: false) { rect in
+      NSGradient(colors: [.systemPink, .systemOrange])?.draw(in: rect, angle: 45)
+      return true
+    }
+    func media(playing: Bool, artwork: NSImage?) -> Island.Activity {
+      let snapshot = NowPlayingSnapshot(
+        bundleID: "com.apple.Music", parentBundleID: nil, appName: "音乐",
+        title: "Right Now (Na Na Na)", artist: "Akon", album: "Freedom", duration: 240,
+        elapsed: 84, timestamp: .now, rate: playing ? 1 : 0, isPlaying: playing,
+        canPrevious: true, canNext: playing, artworkID: artwork == nil ? nil : "a",
+        artwork: nil)
+      return Island.Activity(
+        id: NowPlaying.activityID, kind: .media, title: snapshot.title, detail: snapshot.artist,
+        symbol: "music.note",
+        media: Island.Media(
+          snapshot: snapshot, artwork: artwork, appIcon: nil, send: { _ in }, open: {}))
+    }
+    for (name, playing) in [("island-wings-media", true), ("island-wings-media-paused", false)] {
+      try snapshot(
+        IslandView(
+          island: Island(
+            showing: nil, geometry: notch, activities: [media(playing: playing, artwork: cover)])),
+        size: notch.windowSize, dark: false, to: "\(out)/\(name).png")
+    }
+    for (name, art) in [("island-media-card", cover), ("island-media-card-bare", nil)] {
+      let island = Island(
+        showing: nil, geometry: notch, activities: [media(playing: art != nil, artwork: art)])
+      island.tapped()
+      try snapshot(
+        IslandView(island: island), size: notch.windowSize, dark: false, to: "\(out)/\(name).png")
+    }
+    try snapshot(
+      IslandView(
+        island: Island(
+          showing: nil, geometry: notch, board: records, quickActions: quick,
+          activities: [recording, media(playing: true, artwork: cover)])),
+      size: notch.windowSize, dark: false, to: "\(out)/island-board-media.png")
     // 黄色强调色：信息 / 进行中的底是强调色，上面的符号要换深色（Style.onBrand）才看得见——岛垫的圆底、自带圆底的各一张。
     // 只换内存里的颜色，不写偏好
     Accent.shared.select(.yellow, persists: false)
@@ -4616,6 +4655,54 @@ struct SnapshotProbeTests {
           section(prepare), size: size, dark: dark,
           to: "\(out)/sync-\(state)\(dark ? "-dark" : "").png")
       }
+    }
+    // 连 WebDAV 服务器（issue #18）：服务器那一行、还有几个没拿下来 / 没传上去、请求太多、密码不对；连接的表单
+    prefs.set(
+      "https://dav.example.com/dav/Kitty%20Tools%20%E5%90%8C%E6%AD%A5/", forKey: Prefs.syncServer)
+    prefs.set("kitty@example.com", forKey: Prefs.syncServerUser)
+    let pc = NoteSyncDisk.Peer(id: "3", name: "DESKTOP-KITTY", seen: now.addingTimeInterval(-90))
+    let servers: [(String, (NoteSyncer) -> Void)] = [
+      (
+        "server-idle",
+        {
+          $0.status = .idle
+          $0.lastSync = now.addingTimeInterval(-50)
+          $0.downloading = 5
+          $0.uploading = 2
+          $0.peers = [air, pc]
+        }
+      ),
+      (
+        "server-busy",
+        {
+          $0.status = .stopped(.busy(now.addingTimeInterval(600)))
+          $0.lastSync = now.addingTimeInterval(-900)
+          $0.peers = [pc]
+        }
+      ),
+      (
+        "server-failed",
+        {
+          $0.status = .stopped(.failed(WebDAV.Failure.unauthorized.message))
+          $0.lastSync = now.addingTimeInterval(-3600)
+          $0.peers = [pc]
+        }
+      ),
+    ]
+    for (state, prepare) in servers {
+      for dark in state == "server-idle" ? [false, true] : [false] {
+        try snapshot(
+          section(prepare), size: size, dark: dark,
+          to: "\(out)/sync-\(state)\(dark ? "-dark" : "").png")
+      }
+    }
+    prefs.removeObject(forKey: Prefs.syncServer)
+    prefs.removeObject(forKey: Prefs.syncServerUser)
+    for dark in [false, true] {
+      try snapshot(
+        SyncServerForm(syncer: NoteSyncer(store: store, defaults: prefs)) {},
+        size: NSSize(width: 460, height: 400), dark: dark,
+        to: "\(out)/sync-server-form\(dark ? "-dark" : "").png")
     }
     // 从只同步便签的版本升上来：新加的几类没勾、文件夹那一行多一句（第三轮体检 R1）
     prefs.removeObject(forKey: Prefs.syncSkipped)

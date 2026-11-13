@@ -2,7 +2,8 @@
 // 那一张上，快捷动作开哪几个、什么先后（拖动排序；右键和读屏有上移 / 下移，同翻译服务的列表），列不列最近的提示。
 // 岛上的提示是全 App 的轻提示，没有总开关（mac-native §1）。功能关着的动作照样列、开关变灰（那一张上本来就不出），
 // 重新打开功能后照原来的选择回来。2026-11-13 起这一页是刘海岛插件的页（点刘海那一张、两边的活动、系统提示归它，
-// 拍板 P1b）：没添加时不在侧栏，页底一行「移除」。
+// 拍板 P1b）：没添加时不在侧栏，页底一行「移除」。最上面一组是正在播放（刘海岛扩展第 2 期，默认关；2026-11-13 拍板放在这一页、
+// 不单独成插件）。
 
 import SwiftUI
 
@@ -15,11 +16,23 @@ struct IslandTab: View {
   @AppStorage(Prefs.islandNoticeBattery) private var noticeBattery = false
   @AppStorage(Prefs.islandNoticeHeadphones) private var noticeHeadphones = false
   @AppStorage(Prefs.islandNoticeNetwork) private var noticeNetwork = false
+  @AppStorage(Prefs.islandNowPlaying) private var nowPlaying = false
   @Environment(SettingsNavigation.self) private var navigation: SettingsNavigation?
 
   var body: some View {
     let actions = HotKeyAction.islandOrder(order)
     Form {
+      Section {
+        Toggle(isOn: $nowPlaying) {
+          Text("在刘海上显示正在播放")
+          Text("音乐、播客、浏览器里的视频：刘海两边是封面和跳动条，点开能暂停、切歌")
+        }
+      } header: {
+        NewTitle("正在播放", page: .island, fresh: navigation?.fresh ?? [])
+      } footer: {
+        SectionFootnote(
+          "读系统的「正在播放」要另起一个小进程（约 4 MB，没在放时不耗电），关掉就退出。暂停 30 秒后刘海两边收起，点刘海叫出的那一张里照样列着。")
+      }
       Section {
         List {
           ForEach(actions, id: \.self) { action in
@@ -73,17 +86,15 @@ struct IslandTab: View {
           Text("断了或者好了 3 秒以上才说，醒来时闪一下不算")
         }
       } header: {
-        NewTitle("系统提示", page: .island, fresh: navigation?.fresh ?? [])
+        Text("系统提示")
       } footer: {
         SectionFootnote("有变化时在刘海岛上弹一下，同别的提示。没打开的不监听，也不要任何授权。")
       }
       PluginRemoveSection(plugin: .island)
     }
     .formStyle(.grouped)
-    // 0.9.0 的「新」挂在「系统提示」（WhatsNew 的 island-notices）：拨过其中一个开关才算看过
-    .onChange(of: [noticePower, noticeBattery, noticeHeadphones, noticeNetwork]) {
-      WhatsNew.touch(section: "系统提示", of: .island)
-    }
+    // 0.9.0 的「新」挂在「正在播放」（WhatsNew 的 island-now-playing）：拨过那个开关才算看过
+    .onChange(of: nowPlaying) { WhatsNew.touch(section: "正在播放", of: .island) }
   }
 
   /// 那一张上出不出这一个：关掉的存成一行一个，按 islandShortcuts 的先后写（同步按字节比，别每次换个排法）

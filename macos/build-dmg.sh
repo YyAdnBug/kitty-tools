@@ -43,6 +43,18 @@ codesign --verify --strict \
 FXENT=$(codesign -d --entitlements - "$FX" 2>&1 || true)
 [[ "$FXENT" == *com.apple.security.app-sandbox* ]] || { echo "访达扩展没开沙盒"; exit 1; }
 [[ "$FXENT" != *get-task-allow* ]] || { echo "get-task-allow 混入访达扩展"; exit 1; }
+# 正在播放服务（刘海岛扩展第 2 期，mac-native §2 §6）：在包里、bundle id 是 com.apple.kittytools.nowplaying（mediaremoted 认 Info.plist
+# 的 bundle id，以 com.apple. 开头才给别的 App 的播放信息）、本团队签名、开着强化运行时、没有 get-task-allow
+NP="$APP/Contents/XPCServices/KittyToolsNowPlaying.xpc"
+codesign --verify --strict \
+  -R '=identifier "com.apple.kittytools.nowplaying" and anchor apple generic and certificate leaf[subject.OU] = "HTX9F4KG39"' \
+  "$NP"
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$NP/Contents/Info.plist")" == com.apple.kittytools.nowplaying ]] \
+  || { echo "正在播放服务的 bundle id 不对"; exit 1; }
+NPSIGN=$(codesign -dv "$NP" 2>&1 || true)
+[[ "$NPSIGN" == *"(runtime)"* ]] || { echo "正在播放服务没开强化运行时"; exit 1; }
+NPENT=$(codesign -d --entitlements - "$NP" 2>&1 || true)
+[[ "$NPENT" != *get-task-allow* ]] || { echo "get-task-allow 混入正在播放服务"; exit 1; }
 # 内置智谱 key（来自不入库的 Secrets.xcconfig）要真打进包里，否则「装好就能用」不成立；只判断非空，不打印
 [[ -n "$(/usr/libexec/PlistBuddy -c 'Print :KittyBuiltinZhipuKey' "$APP/Contents/Info.plist" 2>/dev/null)" ]] \
   || { echo "内置智谱 key 没打进包（缺 macos/Config/Secrets.xcconfig？）"; exit 1; }

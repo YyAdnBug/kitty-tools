@@ -19,7 +19,7 @@
   - 晾衣绳 `Screenshot/Clothesline*.swift`：截完图挂到屏幕顶上的绳子，和右下角的缩略图二选一（0.7.0）
   - 提醒 `Reminders/`：一次 / 每天 / 每周 / 每月 / 每隔一阵的定时提醒，刘海岛、边框、全屏或直接进入状态屏，启动器里一句话建（2026-11-04 立项，三批在 `reminder-wip` 做完，PLAN §10「提醒」）
   - 保持唤醒 `KeepAwake/`（**第一个插件**，2026-11-12，`plugins-wip`）：手动开一段（无限期 / 30 分钟–5 小时 / 到某一刻）或按时段自动开，`ProcessInfo.beginActivity`；菜单栏、主界面、启动器「awake 2小时」、全局快捷键。**以后新的大模块都做成内置插件**：新装升级都默认不添加，在 设置 › 通用 › 功能 下面的插件卡片里添加（规矩在 mac-native §1「插件」，PLAN §10「插件与保持唤醒」）
-  - 全局同步（设置 › 通用「同步」）：同步文件夹，便签（0.6.0）之外设置、快捷键、片段和收藏等也能同步（0.7.0）
+  - 全局同步（设置 › 通用「同步」）：同步文件夹，便签（0.6.0）之外设置、快捷键、片段和收藏等也能同步（0.7.0）；能直接连 WebDAV 服务器（0.9.0，issue #18：本机一份镜像、pull → 照文件夹同步合 → push，`Notes/NoteSyncServer.swift`，PLAN §10「WebDAV 同步」）
   - 刘海岛交互：提示能悬停展开、带按钮，点刘海叫出最近的提示（0.7.0）；刘海岛扩展（下一版，2026-11-12 立项照 Atoll 拍板、11-13 开工，`island-atoll-wip`，PLAN §10「刘海岛扩展」）：录制计时、长任务、提醒倒数这类「活动」收起时挂在刘海两侧的耳朵上（`Shell/IslandActivity.swift`），没刘海时挂菜单栏，设置 › 刘海岛（PR #17）能调快捷动作、关掉点刘海、开系统提示；新 MacBook Pro 的系统灵动岛上让位
   - 访达右键 `FinderMenu/` + 扩展 target `macos/KittyToolsFinder/`：访达右键第一层的「拷贝路径」「在“X”中打开」「新建文件 ▸」，加上右键扩充的拷贝名称、移动到 / 复制到、剪切 / 粘贴、压缩 / 解压到这里、修复乱码文件名（这几项默认开）和替身到桌面、显示隐藏文件、隐藏 / 扩展名、拷贝哈希、彻底删除（默认关）；整个功能默认关（下一版，2026-11-08 立项，`finder-wip` 分批做；扩展只画菜单、开沙盒、Swift 5 语言模式，规矩在 mac-native §2 §3 §6，PLAN §10「访达右键」）
 - **版本**：已发布到 0.8.1（latest，2026-11-10；0.8.0 是 2026-11-09、0.7.1 是 2026-11-03）；`MARKETING_VERSION` 是 0.9.0（2026-11-13 起准备，没发布：插件、刘海岛扩展、截图标注等，PLAN §12）。各版真机手测都没走完。
@@ -43,6 +43,7 @@ macos/                       # 本分支唯一开发区
 ├── KittyTools.xcodeproj/    # 共享 scheme：KittyTools
 ├── KittyTools/              # 同步文件夹：App/ Shell/ Storage/ Clipboard/ Translate/ Launcher/ Launchpad/ Screenshot/ StatusScreen/ Notes/ DockPreview/ Reminders/ FinderMenu/ Settings/ Resources/
 ├── KittyToolsFinder/        # 访达扩展 target（2026-11-08，第十一族「访达右键」）：只画菜单，动作用 App 的网址交给 App
+├── KittyToolsNowPlaying/    # 正在播放的 XPC 服务 target（2026-11-13，刘海岛扩展第 2 期）：bundle id com.apple.kittytools.nowplaying，只读 MediaRemote、替 App 发播放命令
 ├── KittyToolsTests/         # 纯函数单测（Swift Testing），M2 起建
 ├── Config/                  # Base/Debug/Release.xcconfig、Info.plist（局部）、Secrets.xcconfig（不入库）
 ├── build-dmg.sh             # 打包：archive → 自检 → DMG + App 内更新用的 zip → notes
@@ -160,6 +161,12 @@ TEST_RUNNER_KITTY_SYNC_PROBE=1 xcodebuild -project macos/KittyTools.xcodeproj -s
 # -only-testing:'KittyToolsTests/DockPreviewMemoryProbeTests/memory()'
 TEST_RUNNER_KITTY_DOCK_PROBE=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
   test -only-testing:'KittyToolsTests/DockPreviewProbeTests/measure()'
+
+# 刘海岛的正在播放：经包里真的 XPC 服务读回来的实机自检（按需，不到一秒；不出声：测试宿主用 MPNowPlayingInfoCenter 把自己挂成
+# 「正在播放」，系统控制中心里会短暂出现「Kitty 探针曲目」；读、封面、发「切换」、暂停都过一遍）。改了 KittyToolsNowPlaying/ 或
+# Shell/NowPlaying.swift 后跑；每个 macOS 大版本也跑一遍（27 上封面的拿法已经变过一次），探针报告在 macos/build/research/now-playing-2026-11-13/
+TEST_RUNNER_KITTY_LIVE_NOW_PLAYING=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
+  test -only-testing:'KittyToolsTests/NowPlayingTests/liveRoundTrip()'
 
 # 刘海岛动画的掉帧探针（按需；**屏幕顶部正中会出现岛约 8 秒**，不动鼠标、不抢键盘）：measure() 挂显示链量主线程每拍的间隔，
 # 分阶段（出现、悬停展开、收起、开 / 收那一张、进行中换成结果）报掉了几帧，grep「island-frames」；recording() 要 Dev 版有

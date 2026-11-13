@@ -47,7 +47,7 @@ nonisolated enum Feature: String, CaseIterable {
     case .dockPreview: "鼠标停在程序坞的 App 图标上，看它所有窗口的缩略图"
     case .finderMenu: "在访达里右键：新建文件、拷贝路径、移动复制、压缩解压"
     case .keepAwake: "不让电脑睡、不让屏幕熄：手动开一段，或按时段自动开"
-    case .island: "点刘海叫出快捷动作和最近的提示，录屏计时、提醒倒数挂在刘海两边"
+    case .island: "点刘海叫出快捷动作和最近的提示，录屏计时、提醒倒数、正在播放挂在刘海两边"
     }
   }
 
@@ -67,7 +67,11 @@ nonisolated enum Feature: String, CaseIterable {
     case .dockPreview: ("辅助功能、屏幕录制", "看着程序坞；鼠标停在图标上才截缩略图")
     case .finderMenu: ("要在系统设置里打开访达扩展", "只在你右键时动")
     case .keepAwake: ("不要", "开着时让系统别睡；没开时什么都不跑")
-    case .island: ("不要", "看着指针有没有停在刘海上；打开了系统提示才听电源、耳机、网络。不添加时提示照常弹")
+    case .island:
+      (
+        "不要（正在播放读不到时，「音乐」「Spotify」的播放控制要「自动化」）",
+        "看着指针有没有停在刘海上；打开了系统提示才听电源、耳机、网络，打开了正在播放才起一个读播放信息的小进程。不添加时提示照常弹"
+      )
     default: nil
     }
   }
