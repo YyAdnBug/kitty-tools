@@ -168,13 +168,17 @@ internal sealed class AppCatalog
                     continue;
                 }
 
-                var title = Path.GetFileNameWithoutExtension(file);
-                if (string.IsNullOrWhiteSpace(title))
+                var fileTitle = Path.GetFileNameWithoutExtension(file);
+                if (string.IsNullOrWhiteSpace(fileTitle))
                 {
                     continue;
                 }
 
-                if (StartMenuFilter.ShouldSkip(title))
+                // PLAN-v18 L7：标题用资源管理器显示的名字（desktop.ini 里的本地化名：中文系统上「命令提示符」「运行」这类系统工具的
+                // .lnk 文件名是英文），英文文件名也留在能搜的名字里。
+                var display = ShellIcons.DisplayName(file).Trim();
+                var title = display.Length > 0 && !display.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase) ? display : fileTitle;
+                if (StartMenuFilter.ShouldSkip(title) || StartMenuFilter.ShouldSkip(fileTitle))
                 {
                     stats.SkippedByName++;
                     continue;
@@ -194,8 +198,8 @@ internal sealed class AppCatalog
                     continue;
                 }
 
-                var names = new List<string> { LauncherMatch.Fold(title) };
-                var initials = new List<string> { LauncherMatch.Initials(title) };
+                var names = new List<string> { LauncherMatch.Fold(title), LauncherMatch.Fold(fileTitle) };
+                var initials = new List<string> { LauncherMatch.Initials(title), LauncherMatch.Initials(fileTitle) };
                 if (Pinyin.For(title) is { } pinyin)
                 {
                     names.Add(pinyin.Full);
@@ -203,7 +207,14 @@ internal sealed class AppCatalog
                 }
 
                 // PLAN-v9-launcher B9（mac A25）：不写和右边「应用」重复的「桌面应用」；中文名写 exe 的英文名，子文件夹里的写文件夹名。
-                var parent = Path.GetFileName(Path.GetDirectoryName(file));
+                // 子文件夹名同样取显示名（「System Tools」→「Windows 工具」这类，L7）；开始菜单根目录 Programs 照旧不写。
+                var directory = Path.GetDirectoryName(file);
+                var parent = Path.GetFileName(directory);
+                if (directory is not null && !string.Equals(parent, "Programs", StringComparison.OrdinalIgnoreCase))
+                {
+                    parent = ShellIcons.DisplayName(directory).Trim();
+                }
+
                 var subtitle = LauncherText.AppSubtitle(title, target is null ? null : Path.GetFileName(target), parent);
                 var item = new LauncherItem
                 {
