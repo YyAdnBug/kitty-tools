@@ -219,7 +219,7 @@ internal sealed partial class SettingsWindow
             folder.TextChanged += (_, _) => Edited();
             user.TextChanged += (_, _) => Edited();
             password.PasswordChanged += (_, _) => Edited();
-            dialog.PrimaryButtonClick += (_, args) =>
+            dialog.PrimaryButtonClick += (sender, args) =>
             {
                 args.Cancel = true;
                 if (!working)
@@ -227,7 +227,7 @@ internal sealed partial class SettingsWindow
                     _ = joining is { } pending ? EnableAsync(pending) : ConnectAsync();
                 }
             };
-            dialog.SecondaryButtonClick += (_, args) =>
+            dialog.SecondaryButtonClick += (sender, args) =>
             {
                 args.Cancel = true;
                 if (!working)
