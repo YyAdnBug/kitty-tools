@@ -936,7 +936,12 @@ internal sealed class ShellRuntime
         var updated = Environment.GetCommandLineArgs().Contains("--updated", StringComparer.OrdinalIgnoreCase);
         DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() => AutoUpdater.AfterLaunch(updated));
 
-        if (SettingsService.FirstRun)
+        // 自检档（Dev / 探针档）的新档只在 --smoke（查 R69）或 KITTY_ONBOARDING=1 时弹引导：内存探针量的是「只有托盘」，
+        // 截图自检的设置页不能被引导盖住（R69 修好之前这几样一直是在没有引导的新档上量、拍的）。正常的档照弹。
+        var onboarding = !Paths.IsTestProfile ||
+                         Environment.GetCommandLineArgs().Contains("--smoke", StringComparer.OrdinalIgnoreCase) ||
+                         Environment.GetEnvironmentVariable("KITTY_ONBOARDING") == "1";
+        if (SettingsService.FirstRun && onboarding)
         {
             Log.Info("onboarding.shown");
             ShowSettings(welcome: true);
