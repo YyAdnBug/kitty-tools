@@ -43,6 +43,10 @@ public sealed class SyncRoundResult
     /// 这时文件夹看着没变也不能跳过下一轮（同 mac：合了、有计划、有不稳的文件都不记成「安静」）。</summary>
     public bool Unsettled { get; set; }
 
+    /// <summary>认清了文件夹（标记、库编号、有没有被退回去）才往下走（PLAN-v19 V3）：连服务器时到了这一步才把写进镜像的送上去，
+    /// 停在认文件夹之前的（不在了、还没下载完、里面有别的东西、更新的格式）这一轮不送。</summary>
+    public bool FolderOk { get; set; }
+
     public SyncRoundResult Stop(string message)
     {
         State = "stopped";
@@ -73,14 +77,22 @@ public sealed class SyncRunner(
         _ => kind,
     };
 
-    public async Task<SyncRoundResult> RunAsync(string folder, IReadOnlyDictionary<string, int> allowance, long now)
+    /// <summary>合一轮。incomplete：文件夹里有这一轮没拿到的（连服务器时超了请求数，PLAN-v19），当成有没下载完的——共用的图一张不删、
+    /// 这一轮不算合完。</summary>
+    public async Task<SyncRoundResult> RunAsync(
+        string folder, IReadOnlyDictionary<string, int> allowance, long now, bool incomplete = false)
     {
-        var result = new SyncRoundResult();
+        var result = new SyncRoundResult { Unsettled = incomplete };
         var disk = new SyncDisk(folder);
         var kinds = sources.Select(source => source.Kind).ToList();
         // 便签：写进文件夹的必须是落下去了的
         var notesSaved = notes?.Flush() ?? true;
         var snapshot = await Task.Run(() => Snapshot.Read(disk, kinds, notes is not null));
+        if (incomplete && snapshot.Notes is { } partial)
+        {
+            partial.Pending = true;
+        }
+
         if (!snapshot.Usable)
         {
             return result.Stop("文件夹不在了");
@@ -185,6 +197,7 @@ public sealed class SyncRunner(
             result.Rotated = true;
         }
 
+        result.FolderOk = true;
         result.Devices = snapshot.Peers
             .Where(peer => peer.Key != device.Id)
             .Select(peer => peer.Value.Name ?? peer.Key)

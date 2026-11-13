@@ -481,6 +481,54 @@
    - 把 `SIZES.txt` 里安装包和 zip 的大小和 0.1.2 比一下，写进报告。
 5. 提交、推送。报告写产物路径、大小、R69–R79 各自的结果。**不发布、不打 tag**，等用户走完上面的真机清单再定。
 
+## PLAN-v19（同步直接连 WebDAV 服务器，issue #18，2026-11-13 用户「全部按推荐」，审查方在 Mac 上写、**没编译**）
+
+方案在 `PLAN-v19.md`（D1–D5 都取推荐）。一批，审查方在 Mac 上写完（`git log --grep "PLAN-v19"`），**一行都没编译、没跑过单测**（Mac 上没有 .NET SDK）。
+你们在 0.2.0 发出去之后核验，算 0.3.0 最先的一批；和 PLAN-v18 的各批不碰同样的文件。
+
+### 写了什么
+
+- **Core**：`Sync/WebDav.cs`（客户端：PROPFIND Depth 1、GET、PUT 带 `If-None-Match: *`、DELETE、MKCOL、一路建上级、MOVE 不覆盖；每个请求先带 Basic，
+  401 带 Digest 挑战时换这个账号专门的 client；3xx 当错；multistatus 用 `XmlReader`，不认 DTD；出错分类和界面上的话）、`Sync/SyncServer.cs`
+  （镜像的 pull / push、认得的文件 `Known`、账、连接 `ConnectAsync`、测试连接、删镜像、退避 `Backoff`、一轮 `RoundAsync`）。
+  `SyncRunner`：`SyncRoundResult.FolderOk`（认清文件夹之后为真，连服务器时到了这一步才 push）、`RunAsync` 多一个可选的 `incomplete`（有没从服务器拿下来的：便签那部分当成有没下载完的）。
+- **App**：`Settings.SyncServer` / `SyncServerUser`（不进导出）；`Syncer`（`Storage/SyncFolder.cs`）：连服务器时一分钟一轮、退避 5 / 10 / 20 / 30 分钟、状态 `busy`、
+  `EnableServerAsync` / `ForgetServer` / `Dav`、密码在凭据管理器 `KittyTools/sync-server.password`（Dev 版 `KittyTools.Dev/…`）、镜像在数据目录 `sync-server\`；
+  设置 › 通用「同步」：「连接服务器…」、「同步服务器」那张卡、状态行的「还有 N 个…」、页脚；对话框 `Settings/SettingsWindow.SyncServer.cs`；`Glyphs.Server`。
+- **单测**：`WebDavTests`（10 个）、`SyncServerTests`（17 个，假服务器 `FakeDav` = 一个 `HttpMessageHandler` + 临时文件夹）。
+
+### 给 Windows agent 的核验指令
+
+1. **编译零警告**：`dotnet build windows/KittyTools.slnx -c Debug -p:Platform=x64`；`dotnet publish … -r win-x64` 和 `-r win-arm64` 零 trim / AOT 警告。
+   **发布体积**和上一批比涨了多少写下来（第一次用 `System.Xml`，PLAN-v19 W8：超过 3 MB 先停下来报给审查方）。
+2. **单测**：`dotnet test windows/KittyTools.Tests` 全过，特别是 `WebDavTests`、`SyncServerTests`，和原来的 `NoteSyncRunnerTests`、`SyncIntegrationTests`（`SyncRunner` 动过）。
+   过不了先看是不是测试写错了（审查方没跑过），改了什么记在下面；别为了变绿删测试、改断言的意思。
+3. **要特别看的编译点**：
+   - `WebDav.cs`：`WebDavFailure` 是带位置参数的 record，`FromStatus` 里 `new(WebDavError.Busy, RetryAfter: …)` 这种命名参数；`CredentialCache` 的集合初始化（三个参数的 `Add`）；
+     `ByteArrayContent { Headers = { ContentType = … } }` 嵌套的对象初始化；`XmlReaderSettings.XmlResolver = null`（如果报过时，删掉这一行，`DtdProcessing.Prohibit` 就够了）；
+     `HttpRequestException.HttpRequestError`（.NET 8 起）。
+   - `SyncServer.cs`：`Known` 里 `return cond ? (SyncFile.MaxBytes, 3) : null;`（返回 `(long, int)?`，靠目标类型）；`ServerLedgerJson` 源生成（`ServerLocal` 是带主构造函数的 record）；
+     async 本地函数 `PrepareAsync` 改外面的 `left`。
+   - `SettingsWindow.SyncServer.cs`：`ContentDialog` 的 `PrimaryButtonClick` / `SecondaryButtonClick` 里先 `args.Cancel = true` 再起一个不等的 Task；`Closing` 里正在测试 / 连接时不让关。
+   - `Glyphs.Server` 用的是 `\uE8CE`（MapDrive，映射的网络驱动器）：截图里看一眼是不是这个样子，不对换成 Segoe Fluent Icons 里像服务器 / 网络驱动器的那个。
+4. **占位**（W1）：`SyncServerTests.PlaceholdersForWhatIsNotFetchedYet` 在 Windows 上才验得到 `FileAttributes.Offline`；另外真跑一次时看镜像目录里没拿下来的文件属性带「脱机」，拿下来后没了。
+5. **真服务器**：`$env:KITTY_WEBDAV = "地址|用户名|密码"` 跑 `SyncServerTests.LiveServer`。**只用测试账号**（AGENTS：用户真实的账号要先问）：审查方 Mac 上的 Apache mod_dav 开在局域网里
+   （起法在 mac `webdav-wip` 的 `macos/HANDTEST.md`「WebDAV 同步」开头），或者用户另给的 Nextcloud / 坚果云测试账号。有条件再把 Apache 换成 Digest 跑一次（D2 的 Digest 那条只有这里测得到）。
+   结果写下来：服务器是什么、访问日志里空闲一轮几个 PROPFIND、只 GET 对方变了的、图片先 PUT 临时名再 MOVE、标记第二次 PUT 回 412。
+6. **手测**：`HANDTEST.md`「PLAN-v19」1212–1224。要真 Mac 的那几条（5、7）能做就做，不能标「没测」。
+7. **截图**（`0.3.0-v19/`）：「同步」没开（两个按钮）、对话框（空的、http 橙字、测试连接成功 / 失败、问合不合在一起）、开着连服务器（正常、还有几个没拿下来 / 没传上去、请求太多），
+   浅色、深色、高对比度。
+8. **自查**：内存探针（开着连服务器同步时多多少）；空闲 CPU（同步关着时为 0；开着时一分钟一轮）；新日志里没有服务器地址、用户名、密码（`sync.server-*` 那几行只记个数和出错的种类）。
+
+### 替用户定的 / 和方案不一样
+
+- 对话框放在 `SettingsWindow.SyncServer.cs`（partial），不是方案写的 `SyncServerDialog.cs`：和别的页一样拆文件，用得到 `JoinNote`、`BuildPage`。
+- 连接那一串（看文件夹、没有就建、拒绝的几种、写标记）放进 Core 的 `SyncServer.ConnectAsync`，`Syncer.EnableServerAsync` 和单测共用。
+- 电脑编号除了 `SyncFolderRules.IsDeviceName`，还要不带小写字母、不是 Windows 的保留名（CON、NUL、COM1……）：两边自己生成的编号都是大写 UUID，小写的、保留名的只会是别的程序写的。
+- 本机的镜像写不进去（盘满了）是单独一种出错 `WebDavError.Disk`（「这台电脑上的同步副本写不进去…」），mac 是算成「连不上」。
+- 「选择文件夹…」之前先 `ForgetServer`（以前连过服务器、没停干净时把密码和镜像清掉）。
+- 便签同步关着时 pull 照样拿便签和图片（同 mac）：只在 merge 时不用；ponytail，关着便签又连服务器的人多拿几个文件。
+
 ## PLAN-v17（按应用停用快捷键，2026-11-10 用户「全部按推荐」）
 
 方案在 `PLAN-v17.md`，PLAN-v16 做完再做。一批，你们自己写、自己编译、自己验；做完在这一节下面记一句：做了什么、量到的数（注册 / 注销耗时）、

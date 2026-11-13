@@ -1299,7 +1299,8 @@ internal sealed partial class SettingsWindow : Window
     }
 
     /// <summary>
-    /// 设置 › 通用 › 同步（PLAN-v5 §4.4；布局照 mac SyncSection）：没开时一行「选择文件夹…」；开着时文件夹 +「停止同步」+
+    /// 设置 › 通用 › 同步（PLAN-v5 §4.4；布局照 mac SyncSection）：没开时一行「连接服务器…」（WebDAV，PLAN-v19，对话框在
+    /// SettingsWindow.SyncServer.cs）+「选择文件夹…」；开着时文件夹或服务器 +「停止同步」+
     /// 「立即同步」（等确认时换成「继续同步」），说明是状态，出了问题橙字；下面各类（PLAN-v12 加了状态屏的状态和提醒，六类）各一个开关，跟着的功能关着时说一声；最后是其他电脑。
     /// mac 另外能同步设置、便签和启动器收藏，Windows 这一版只有这六类（MAC-DIFF.md）。
     /// </summary>
@@ -1310,32 +1311,47 @@ internal sealed partial class SettingsWindow : Window
         var status = Syncer.Instance?.Status;
         if (!settings.SyncEnabled || string.IsNullOrEmpty(settings.SyncFolder))
         {
+            var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
+            var connect = new Button { Content = "连接服务器…" };
+            connect.Click += (_, _) => _ = ConnectSyncServerAsync();
+            buttons.Children.Add(connect);
             var choose = new Button { Content = "选择文件夹…" };
             choose.Click += (_, _) => _ = PickSyncFolderAsync();
+            buttons.Children.Add(choose);
             _content.Children.Add(SettingsUi.Card(
                 "在几台电脑之间同步",
-                "选一个几台电脑都看得到的空文件夹，比如在 OneDrive 里新建一个；每台电脑选同一个（Mac 版 0.7.0 起也能选它）",
-                choose));
+                "选一个几台电脑都看得到的空文件夹（比如在 OneDrive 里新建一个），或者连一个 WebDAV 服务器；每台选同一个" +
+                "（Mac 版 0.7.0 起也能选这个文件夹，0.9.0 起也能连服务器）",
+                buttons));
         }
         else
         {
             var folder = settings.SyncFolder ?? string.Empty;
+            var server = Syncer.IsServer ? settings.SyncServer : null;
             var controls = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
             var name = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
-            name.Children.Add(new FontIcon { Glyph = "\uE8B7", FontSize = 14, Foreground = Theme.SecondaryText() });
+            name.Children.Add(new FontIcon
+            {
+                Glyph = server is null ? Glyphs.Folder : Glyphs.Server,
+                FontSize = 14,
+                Foreground = Theme.SecondaryText(),
+            });
             name.Children.Add(new TextBlock
             {
-                Text = ShellIcons.DisplayName(folder),
+                Text = server is null ? ShellIcons.DisplayName(folder) : SyncServerName(server),
                 MaxWidth = 180,
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 Foreground = Theme.SecondaryText(),
             });
-            ToolTipService.SetToolTip(name, folder);
+            // 服务器那一行悬停看整个网址和用户名（同 mac）
+            ToolTipService.SetToolTip(name, server is null ? folder : $"{server}（{settings.SyncServerUser}）");
             controls.Children.Add(name);
             var stop = new HyperlinkButton { Content = "停止同步" };
-            ToolTipService.SetToolTip(stop, "文件夹里的东西留着，这台电脑上的也不动");
+            ToolTipService.SetToolTip(
+                stop, server is null ? "文件夹里的东西留着，这台电脑上的也不动" : "服务器上的东西留着，这台电脑上的也不动");
             stop.Click += (_, _) =>
             {
+                Syncer.Instance?.ForgetServer();
                 settings.SyncEnabled = false;
                 SettingsService.Save();
                 BuildPage("general");
@@ -1364,9 +1380,11 @@ internal sealed partial class SettingsWindow : Window
             {
                 "confirm" => string.IsNullOrEmpty(message) ? "这一轮要删的太多，先停下来等你确认" : message,
                 "stopped" => string.IsNullOrEmpty(message) ? "上一轮没同步成" : message,
+                "busy" => message,
                 _ => null,
             };
-            _content.Children.Add(SettingsUi.Card("同步文件夹", trouble ?? SyncStatusLine(status), controls, problem: trouble is not null));
+            _content.Children.Add(SettingsUi.Card(
+                server is null ? "同步文件夹" : "同步服务器", trouble ?? SyncStatusLine(status), controls, problem: trouble is not null));
 
             var others = status?.Devices.Count ?? 0;
             // 便签（PLAN-v13）：mac 那一行排第一；没有账本，第一次合在选文件夹时已经问过，勾上不再问
@@ -1388,14 +1406,17 @@ internal sealed partial class SettingsWindow : Window
             var peers = status is { Devices.Count: > 0 }
                 ? string.Join("、", status.Devices)
                 : status is { LastSync: > 0 }
-                    ? "还没有——在另一台电脑的 设置 › 通用 里选同一个文件夹"
+                    ? server is null
+                        ? "还没有——在另一台电脑的 设置 › 通用 里选同一个文件夹"
+                        : "还没有——在另一台电脑的 设置 › 通用 里连同一个服务器上的同一个文件夹"
                     : "同步一轮之后列在这里";
             _content.Children.Add(SettingsUi.Card("其他电脑", peers));
         }
 
         _content.Children.Add(SettingsUi.Footnote(
-            "勾上的几类在几台电脑之间保持一样，取消一类只是不再同步它。同步文件夹里放的是不加密的文本文件和图片，能打开这个文件夹的人都看得到。" +
-            "每台电脑只往自己的那份里写、读所有电脑的，改动一般几十秒到几分钟传过去（看同步盘多快）。两台都改了同一条时，后改的留下（便签的另一版放进「最近删除」）；" +
+            "勾上的几类在几台电脑之间保持一样，取消一类只是不再同步它。同步文件夹（连服务器时是服务器上那个文件夹）里放的是不加密的文本文件和图片，" +
+            "能打开这个文件夹的人都看得到。每台电脑只往自己的那份里写、读所有电脑的，改动一般几十秒到几分钟传过去（看同步盘多快；连服务器时大约一分钟一轮）。" +
+            "两台都改了同一条时，后改的留下（便签的另一版放进「最近删除」）；" +
             "一轮要删的太多会先停下来问。密钥不同步。停止同步后，文件夹里的东西留着，这台电脑上的也不动。"));
     }
 
@@ -1447,6 +1468,7 @@ internal sealed partial class SettingsWindow : Window
     /// <summary>状态：上次同步的时刻（第一轮还没完时说正在同步）。</summary>
     private static string SyncStatusLine(SyncStatus? status)
     {
+        string line;
         if (status is { LastSync: > 0 })
         {
             var at = DateTimeOffset.FromUnixTimeMilliseconds(status.LastSync).ToLocalTime();
@@ -1455,10 +1477,37 @@ internal sealed partial class SettingsWindow : Window
                 : minutes < 60 ? $"{(int)minutes} 分钟前"
                 : at.Date == DateTime.Today ? $"今天 {at:HH:mm}"
                 : $"{at.Month} 月 {at.Day} 日 {at:HH:mm}";
-            return "上次同步：" + ago;
+            line = "上次同步：" + ago;
+        }
+        else
+        {
+            line = status?.State == "syncing" ? "正在同步…" : "还没同步过";
         }
 
-        return status?.State == "syncing" ? "正在同步…" : "还没同步过";
+        // 连服务器时（PLAN-v19）：还有几个没拿下来、没传上去
+        if (status is { Downloading: > 0 })
+        {
+            line += $"；还有 {status.Downloading} 个文件没从服务器拿下来";
+        }
+
+        if (status is { Uploading: > 0 })
+        {
+            line += $"；还有 {status.Uploading} 个等着传上去";
+        }
+
+        return line;
+    }
+
+    /// <summary>服务器那一行：文件夹的名字（同文件夹那一行；整个网址和用户名悬停看），地址就是根的时候是主机名（同 mac SyncSection.shown）。</summary>
+    private static string SyncServerName(string server)
+    {
+        if (!Uri.TryCreate(server, UriKind.Absolute, out var url))
+        {
+            return server;
+        }
+
+        var name = Uri.UnescapeDataString(url.AbsolutePath.TrimEnd('/').Split('/').Last());
+        return name.Length == 0 ? url.Host : name;
     }
 
     private async Task PickSyncFolderAsync()
@@ -1493,6 +1542,8 @@ internal sealed partial class SettingsWindow : Window
                 return;
             }
 
+            // 以前连过服务器（PLAN-v19）：密码、镜像清掉再换成文件夹
+            Syncer.Instance?.ForgetServer();
             SettingsService.Current.SyncFolder = folder.Path;
             SettingsService.Current.SyncEnabled = true;
             SettingsService.Save();

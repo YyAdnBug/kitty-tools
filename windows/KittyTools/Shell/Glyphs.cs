@@ -80,6 +80,8 @@ internal static class Glyphs
     public const string Microphone = "\uE720";
     public const string Volume = "\uE767";
     public const string Folder = "\uE8B7";
+    /// <summary>同步连着 WebDAV 服务器（mac server.rack；MapDrive：映射的网络驱动器，PLAN-v19）。</summary>
+    public const string Server = "\uE8CE";
     public const string OpenInNewWindow = "\uE8A7";
     public const string Link = "\uE71B";
     public const string CommandPrompt = "\uE756";
