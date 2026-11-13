@@ -234,7 +234,7 @@ struct LauncherBatch5Tests {
         "translate-screenshot", "copyToTranslate", "screenshot", "screenshotLastRegion", "ocr",
         "screenRecord", "audioRecord", "pinClipboard", "shotHistory", "clothesline", "noteCapture",
         "noteNew",
-        "noteAll", "reminderNew", "launchpad", "keepAwake", "island", "home", "settings",
+        "noteAll", "reminderNew", "launchpad", "island", "home", "settings",
         "shortcuts",
         "about",
         "quit",

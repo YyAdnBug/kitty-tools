@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-  <title>保持唤醒</title>
-  <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M8 2.6C7 3.9 9 4.9 8 6.4M12 2.6C11 3.9 13 4.9 12 6.4"/>
-  <path fill="currentColor" d="M4.2 9.4H16.2V14.6A5.4 5.4 0 0 1 10.8 20H9.6A5.4 5.4 0 0 1 4.2 14.6Z"/>
-  <path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" d="M16.4 11.2H18.2A2.6 2.6 0 0 1 18.2 16.4H16.2M3.6 22.2H16.8"/>
-</svg>

@@ -253,11 +253,6 @@ enum Prefs {
   /// 每条提醒处理到哪一刻、「稍后」推到几点（ReminderState 的 JSON）。这台电脑自己的状态：不注册默认值、不导出
   nonisolated static let remindersState = "remindersState"
 
-  /// 保持唤醒（第一个插件，2026-11-12，KeepAwake/）：屏幕也不熄（默认开；关掉只防系统睡眠）
-  nonisolated static let keepAwakeDisplay = "keepAwakeDisplay"
-  /// 保持唤醒的定时（KeepAwakePlan.Schedule 的 JSON；注册默认值 "" = 关着、工作日 9:00–18:00）：跟着设置导出，
-  /// **不同步**（SettingsSync.localKeys，拍板 B4：台式机要、笔记本不一定要）
-  nonisolated static let keepAwakeSchedule = "keepAwakeSchedule"
   /// 点「稍后」推几分钟（设置 › 提醒，默认 5，C8）
   static let remindersSnoozeMinutes = "remindersSnoozeMinutes"
   /// 挑的系统表情有动画版时自动下载（EmojiPack，2026-11-05，默认开；设置 › 状态屏 / 提醒两页各一行）
@@ -605,8 +600,6 @@ enum Prefs {
       islandHoverExpands: false,
       islandHaptics: true,
       islandBlur: true,
-      keepAwakeDisplay: true,
-      keepAwakeSchedule: "",
     ].merging(Feature.allCases.map { ($0.prefsKey, $0.defaultOn as Any) }) { current, _ in current }
       .merging(FinderMenuItem.allCases.map { ($0.prefsKey, $0.defaultOn as Any) }) { current, _ in
         current

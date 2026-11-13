@@ -811,7 +811,6 @@ private final class Probe {
         case .reminders: AnyView(EmptyView())
         case .dockPreview: AnyView(DockPreviewTab())
         case .finderMenu: AnyView(FinderMenuTab(extensionEnabled: false))
-        case .keepAwake: AnyView(EmptyView())
         case .translate:
           AnyView(TranslateTab(services: services, history: history, speaker: speaker))
         case .hotkeys: AnyView(HotkeysTab(center: hotKeys))

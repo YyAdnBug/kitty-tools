@@ -210,7 +210,7 @@ struct FeatureTests {
   /// 新做的插件默认不添加（2026-11-12 拍板 A1）；2026-11-13 从功能转过来的插件照旧用原来的默认值、刘海岛默认添加着（P2：
   /// 没拨过开关的老用户升级上来便签、提醒、点刘海都还在，0.8.x 导出的文件里没有这一项也不会把它们关掉）
   @Test func switchesAreExportedSettings() {
-    #expect(Feature.allCases.filter { !$0.defaultOn } == [.dockPreview, .finderMenu, .keepAwake])
+    #expect(Feature.allCases.filter { !$0.defaultOn } == [.dockPreview, .finderMenu])
     #expect(
       [Feature.notes, .reminders, .statusScreen, .launchpad, .island].allSatisfy {
         $0.isPlugin && $0.defaultOn
@@ -244,12 +244,10 @@ struct FeatureTests {
         .clipboard, .launcher, .translate, .screenshot, .record,
       ])
     // 搜插件的名字：没添加时落到通用页（「功能 ›」下面就是它的卡），添加了停在它自己那页
-    #expect(SettingsPage.page(for: "保持唤醒", current: .about, hidden: [.keepAwake]) == .general)
-    #expect(SettingsPage.page(for: "防息屏", current: .about, hidden: [.keepAwake]) == .general)
-    #expect(SettingsPage.page(for: "保持唤醒", current: .about) == .keepAwake)
+    #expect(SettingsPage.page(for: "访达右键", current: .about, hidden: [.finderMenu]) == .general)
+    #expect(SettingsPage.page(for: "访达右键", current: .about) == .finderMenu)
     // 添加了之后搜它的词停在它自己那页，不落到通用页
-    #expect(SettingsPage.page(for: "防息屏", current: .about) == .keepAwake)
-    #expect(SettingsPage.matching("防息屏", hidden: []) == [.keepAwake])
-    #expect(SettingsPage.keepAwake.groupTitle == "插件")
+    #expect(SettingsPage.matching("访达右键", hidden: []) == [.finderMenu])
+    #expect(SettingsPage.finderMenu.groupTitle == "插件")
   }
 }

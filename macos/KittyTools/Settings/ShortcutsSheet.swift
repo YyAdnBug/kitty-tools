@@ -687,14 +687,6 @@ struct ShortcutsSheet: View {
           Entry("Esc", text: "先清空搜索，再按一次收起；点空白处也收起"),
           Entry("⌘W", text: "收起"),
         ]),
-      // 保持唤醒（第一个插件，2026-11-12）：插件排在功能后面；没添加时这一组不列（按全局键的功能算）
-      Group(
-        title: "保持唤醒", symbol: HotKeyAction.keepAwake.symbol, color: Style.Family.keepAwake,
-        globals: [.keepAwake],
-        entries: [
-          Entry(text: "按一下开始（无限期），再按一下停止；菜单栏「保持唤醒」里能选 30 分钟到 5 小时"),
-          Entry(text: "在启动器里输入「awake 2小时」「保持唤醒 到18点」「awake 无限期」：↩ 开始；开着时第一行是停止"),
-        ]),
       // 刘海岛（mac-whisker S2，2026-10-26）：一直列；2026-11-13 起点刘海那一行和全局键归刘海岛插件，没添加时只剩提示那一行
       Group(
         title: "刘海岛", symbol: HotKeyAction.island.symbol, color: Style.Family.general,

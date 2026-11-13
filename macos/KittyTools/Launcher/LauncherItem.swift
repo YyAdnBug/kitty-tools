@@ -96,16 +96,12 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
     var pinsHidden: Bool?
     var checksUpdates = false
     var recording: HotKeyAction?
-    /// 保持唤醒手动开着一段（那一项叫「停止保持唤醒」）
-    var awake = false
     var statusPresets: [StatusPreset] = []
     var statusEntersFirst = false
     var features = Set(Feature.allCases.filter(\.isAvailable))
 
-    /// 这一项正在进行（标题换成「停止…」）：录屏 / 录音在录、保持唤醒手动开着
-    func isRunning(_ action: HotKeyAction) -> Bool {
-      recording == action || (action == .keepAwake && awake)
-    }
+    /// 这一项正在进行（标题换成「停止…」）：录屏 / 录音在录
+    func isRunning(_ action: HotKeyAction) -> Bool { recording == action }
   }
 
   /// 内置动作（体检 A26）：和菜单栏同名同序——按 HotKeyAction.sections（只列开着的功能，启动器自己除外），每节末尾接上那一节的
@@ -214,8 +210,6 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
     .launchpad: "Launchpad 启动台 应用",
     // 主界面（2026-10-29）：搜「全部功能」「功能」也找得到
     .home: "Home Main Window 全部功能",
-    // 保持唤醒（插件）：搜「awake」「防息屏」「不睡眠」都找得到这一项（按一下开无限期，开着时叫「停止保持唤醒」）
-    .keepAwake: "Keep Awake Caffeinate awake 防息屏 防止睡眠 不睡眠 屏幕常亮",
   ]
 
   private static func action(

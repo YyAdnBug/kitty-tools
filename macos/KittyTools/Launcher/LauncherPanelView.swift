@@ -746,7 +746,6 @@ extension LauncherItem {
     case .prompt where target.hasPrefix("reminder-"): SettingsPage.reminders.symbol
     case .prompt where target.hasPrefix(LauncherModel.pluginPrefix):
       pluginPage?.symbol ?? "puzzlepiece.extension.fill"
-    case .prompt where target.hasPrefix(LauncherModel.awakePrefix): SettingsPage.keepAwake.symbol
     case .calculation: "equal"
     case .path where contentType?.conforms(to: .volume) == true: "externaldrive.fill"
     case .prompt where target == FileSearch.accessTarget: "lock.open.fill"
@@ -791,7 +790,6 @@ extension LauncherItem {
     case .prompt where target.hasPrefix("reminder-"): Style.Family.reminders
     case .prompt where target.hasPrefix(LauncherModel.pluginPrefix):
       pluginPage?.color ?? Style.Family.general
-    case .prompt where target.hasPrefix(LauncherModel.awakePrefix): Style.Family.keepAwake
     case .system, .process, .ip, .script, .scriptResult: Style.Family.command
     case .prompt where target.hasPrefix("system-"): Style.Family.command
     case .url where isSettingsPane: Style.Family.general
@@ -825,7 +823,6 @@ extension LauncherItem {
     case .prompt where target.hasPrefix(ExchangeRates.suggestionPrefix): "货币"
     case .prompt where target.hasPrefix("reminder-"): "提醒"
     case .prompt where target.hasPrefix(LauncherModel.pluginPrefix): "插件"
-    case .prompt where target.hasPrefix(LauncherModel.awakePrefix): "保持唤醒"
     case .prompt where target.hasPrefix(LauncherModel.choicePrefix): "选项"
     case .search, .prompt: "搜索"
     // 计算卡不显示副标题：汇率换算的副标题（「人民币 · 11-03 汇率」，ExchangeRates）写在这里，别的是空的

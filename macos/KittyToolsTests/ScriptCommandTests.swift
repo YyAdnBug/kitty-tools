@@ -596,8 +596,7 @@ struct ScriptRunTests {
   }
 }
 
-/// 自带的 8 个脚本（Resources/scripts，拍板 D1；防止睡眠 2026-11-12 换成了保持唤醒插件）：都读得出来、都标着自带；会改系统设置的
-/// 深色模式只读不跑，
+/// 自带的 9 个脚本（Resources/scripts，拍板 D1）：都读得出来、都标着自带；会改系统设置的两个（深色模式、防止睡眠）只读不跑，
 /// 别的真跑一遍（只用 zsh 和 osascript，PATH 给最小的）。正则测试给第二个参数，不读剪贴板
 struct BundledScriptTests {
   private func bundled() async throws -> [String: ScriptCommand] {
@@ -611,10 +610,10 @@ struct BundledScriptTests {
     await ScriptRunner.run(try #require(script), arguments: arguments, path: "/usr/bin:/bin")
   }
 
-  @Test func allEightParse() async throws {
+  @Test func allNineParse() async throws {
     let scripts = try await bundled()
     #expect(
-      Set(scripts.keys) == ["time", "json", "uuid", "bcvt", "url", "b64", "regt", "dark"])
+      Set(scripts.keys) == ["time", "json", "uuid", "bcvt", "url", "b64", "regt", "dark", "awake"])
     #expect(scripts.values.allSatisfy { $0.isBundled && !$0.isDownloaded })
     #expect(scripts["time"]?.mode == .list && scripts["json"]?.mode == .full)
     #expect(scripts["uuid"]?.mode == .paste && scripts["dark"]?.mode == .island)

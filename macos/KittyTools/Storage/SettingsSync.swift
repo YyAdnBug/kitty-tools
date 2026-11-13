@@ -33,8 +33,6 @@ import Foundation
     Feature.dockPreview.prefsKey, Feature.finderMenu.prefsKey, Prefs.notesDeckDisplay,
     Prefs.statusItemVisible,
     Prefs.clipboardHideOnUnfocus, Prefs.floatingPinned,
-    // 保持唤醒的定时跟着这台 Mac（拍板 B4）
-    Prefs.keepAwakeSchedule,
     // 另走一类（StatusPresetSync）
     Prefs.statusScreenPresets,
     // 另走一类（ReminderSync）
