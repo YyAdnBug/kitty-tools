@@ -1,6 +1,7 @@
 // 长截图自动滚动的速度（2026-11-04 用户反馈太快）和剪贴板面板、启动器的「面板位置」：
 // 三档的速度、认不出的值按标准、匀速滚动（2026-11-05）的每秒发多少、按实测位移校准倍率、每一帧发几点和零头、
-// 比上次接上的那一帧最多领先半个选区高（2026-11-06 大选区反复对不上）；长截图面板上的速度那一行（屏外量布局、模拟点一下：
+// 比上次接上的那一帧最多领先「在动的那一块」的一半（2026-11-06 大选区反复对不上；2026-11-13 改成按这一块算，
+// 选区里只嵌着一个小滚动区时也接得上）；长截图面板上的速度那一行（屏外量布局、模拟点一下：
 // 26 起的玻璃屏外画不出来，截图自检看不到它）；面板位置三种怎么摆、跟随鼠标时在光标右下、放不下翻到另一侧。
 // 只读临时偏好域，不碰用户偏好。
 
@@ -73,14 +74,19 @@ struct ScrollSpeedTests {
     #expect(ScrollCapture.tickPoints(velocity: 300, seconds: -1, carry: 0.5).points == 0)
   }
 
-  @Test func leadIsCappedAtHalfARegion() {
+  @Test func leadIsCappedAtHalfTheMovingBlock() {
     // 选区 1000 点高、2 倍屏、1 点滚 2 像素：最多领先 500 点（半个选区高 = 1000 像素）
-    #expect(ScrollCapture.room(lead: 0, height: 1000, scale: 2, gain: 2) == 500)
-    #expect(ScrollCapture.room(lead: 480, height: 1000, scale: 2, gain: 2) == 20)
-    #expect(ScrollCapture.room(lead: 700, height: 1000, scale: 2, gain: 2) == 0)
+    #expect(ScrollCapture.room(lead: 0, band: 1000, scale: 2, gain: 2) == 500)
+    #expect(ScrollCapture.room(lead: 480, band: 1000, scale: 2, gain: 2) == 20)
+    #expect(ScrollCapture.room(lead: 700, band: 1000, scale: 2, gain: 2) == 0)
     // 1 点滚 4 像素：发一半就到半个选区高；往回退过（lead 是负的）可以多发
-    #expect(ScrollCapture.room(lead: 0, height: 1000, scale: 2, gain: 4) == 250)
-    #expect(ScrollCapture.room(lead: -100, height: 1000, scale: 2, gain: 2) == 600)
+    #expect(ScrollCapture.room(lead: 0, band: 1000, scale: 2, gain: 4) == 250)
+    #expect(ScrollCapture.room(lead: -100, band: 1000, scale: 2, gain: 2) == 600)
+    // 选区里只有一小块在动（页面里的小滚动区，2026-11-13）：领先上限跟着那一块走，不跟着选区高——
+    // 按选区算会一次滚过整块，之后往前怎么滚都接不上
+    #expect(ScrollCapture.room(lead: 0, band: 200, scale: 2, gain: 2) == 100)
+    #expect(ScrollCapture.room(lead: 90, band: 200, scale: 2, gain: 2) == 10)
+    #expect(ScrollCapture.room(lead: 0, band: 100, scale: 2, gain: 4) == 25)
     // 每一帧最多发 room 点：发不完的扔掉、零头清零，到顶了一点不发
     let capped = ScrollCapture.tickPoints(velocity: 600, seconds: 0.025, carry: 0.5, room: 9.7)
     #expect(capped.points == 9)
@@ -98,13 +104,43 @@ struct ScrollSpeedTests {
     for _ in 0..<120 {
       let next = ScrollCapture.tickPoints(
         velocity: velocity, seconds: 1.0 / 60, carry: carry,
-        room: ScrollCapture.room(lead: lead, height: height, scale: 2, gain: 2))
+        room: ScrollCapture.room(lead: lead, band: height, scale: 2, gain: 2))
       lead += next.points
       carry = next.carry
     }
     #expect(velocity * 2 > height * 2)
     #expect(lead <= height * ScrollCapture.maxLead)
     #expect(lead >= height * ScrollCapture.maxLead - 1)
+    // 同一只手指、同一个选区，只有一小块在动时领先封在这儿（这块 400 点高）：速度再快也顶到 200 点
+    var small: CGFloat = 0
+    for _ in 0..<120 {
+      let next = ScrollCapture.tickPoints(
+        velocity: velocity, seconds: 1.0 / 60, carry: 0,
+        room: ScrollCapture.room(lead: small, band: 400, scale: 2, gain: 2))
+      small += next.points
+    }
+    #expect(small <= 400 * ScrollCapture.maxLead)
+  }
+
+  /// 自动滚动把光标放进「在动的那一块」（2026-11-13，纯函数配单测）：帧里的像素行 / 列换算成屏幕上的点，
+  /// 行 0 在选区顶上（坐标轴朝下），屏幕坐标朝上
+  @Test func bandRectFollowsTheMovingBlock() {
+    let region = CGRect(x: 100, y: 200, width: 200, height: 300)  // 点，全局坐标（原点左下）
+    // 还不知道哪一块在动：整个选区
+    #expect(
+      ScrollCapture.bandRect(region: region, scale: 2, rows: 0..<0, columns: 0..<0) == region)
+    // 2 倍屏、只有中间那 100 点（顶上 50 点、底下 150 点不加进来）在动：横向还是整个选区
+    let rows = ScrollCapture.bandRect(region: region, scale: 2, rows: 100..<300, columns: 0..<0)
+    #expect(rows.minY == 350 && rows.maxY == 450)
+    #expect(rows.width == 200 && rows.minX == 100)
+    // 知道列时只取那几列：像素 40..<240 → 点 20..<120
+    let columns = ScrollCapture.bandRect(
+      region: region, scale: 2, rows: 100..<300, columns: 40..<240)
+    #expect(columns.minX == 120 && columns.width == 100)
+    // 算出选区外（滚动条那一条不比较，列到不了那么远）：夹在选区里
+    let clamped = ScrollCapture.bandRect(
+      region: region, scale: 2, rows: 100..<300, columns: 40..<600)
+    #expect(clamped.maxX == 300)
   }
 
   @Test func hudSpeedRow() throws {
