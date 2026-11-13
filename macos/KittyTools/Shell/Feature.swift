@@ -69,7 +69,7 @@ nonisolated enum Feature: String, CaseIterable {
     case .keepAwake: ("不要", "开着时让系统别睡；没开时什么都不跑")
     case .island:
       (
-        "不要",
+        "不要（正在播放读不到时，「音乐」「Spotify」的播放控制要「自动化」）",
         "看着指针有没有停在刘海上；打开了系统提示才听电源、耳机、网络，打开了正在播放才起一个读播放信息的小进程。不添加时提示照常弹"
       )
     default: nil

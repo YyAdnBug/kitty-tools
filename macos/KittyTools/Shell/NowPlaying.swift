@@ -5,7 +5,9 @@
 // 再订一次（发消息就会被重新拉起）。
 // 快照 → 刘海岛上的一个活动（Island.Activity，类别 .media 最低）：在播时上耳朵（封面 + 跳动条）；从在播变成暂停后耳朵上
 // 再留 pausedLinger，之后只在那一张里列着；没有在播的了（App 退了）活动结束。读到的歌名不进日志、不进提示的记录。
-// 退路（服务读不到时 Music / Spotify 用 AppleScript）是第 2-3 批。
+// 退路（第 2-3 批，NowPlayingFallback.swift）：开着时一直听音乐 / Spotify 的分布式通知（不要授权）；服务说取不到 MediaRemote、
+// 连不上服务（找不到、拉不起来）、或者它们说在播而服务 2 秒都报不出正在播放，就改用它们的通知（服务又报出来了就换回去）。
+// 按钮照旧交给服务发（发命令不设门槛）；服务整个不能用时走 AppleScript。
 
 import AppKit
 import OSLog
@@ -19,7 +21,22 @@ import OSLog
   private weak var island: Island?
   private let defaults: UserDefaults
   private var connection: NSXPCConnection?
+  /// 打开着（插件添加着、开关开着）。和连没连着分开：服务找不到时连接断了，退路照样要用
+  private var isOn = false
+  /// 岛上用的那一份：服务推来的，或者退路里挑的
   private var snapshot: NowPlayingSnapshot?
+  /// 服务推来的最近一份（nil = 它说没有在播的）
+  private var served: NowPlayingSnapshot?
+  /// 服务里取不取得到 MediaRemote（订阅的回话；还没回是 nil）
+  private var available: Bool?
+  /// 退路：音乐 / Spotify 的分布式通知各留最近一份；用没用退路；「2 秒后再看」；读音乐进度的那一次
+  private var notices: [String: (snapshot: NowPlayingSnapshot, at: Date)] = [:]
+  private var listensToPlayers = false
+  /// 播放器退出（崩了、强制退出时它不会发「停了」）的监听
+  private var quitObserver: NSObjectProtocol?
+  private var usesFallback = false
+  private var fallbackCheck: Task<Void, Never>?
+  private var positionRead: Task<Void, Never>?
   /// 解好的封面（按编号）：同一首不重复解
   private var artwork: (id: String, image: NSImage)?
   /// 放歌那个 App 的图标（按 bundle id 记一份）：没有封面时顶上
@@ -28,9 +45,15 @@ import OSLog
   private var pausedSince: ContinuousClock.Instant?
   private var linger: Task<Void, Never>?
 
-  init(island: Island, defaults: UserDefaults = .standard) {
+  /// 连哪个服务（单测给一个不存在的名字，走「连不上 → 退路」）
+  private let serviceName: String
+
+  init(
+    island: Island, defaults: UserDefaults = .standard, serviceName: String = NowPlaying.serviceName
+  ) {
     self.island = island
     self.defaults = defaults
+    self.serviceName = serviceName
   }
 
   /// 照偏好连 / 断（启动时、偏好变了时 AppDelegate 调）：没变不动
@@ -38,9 +61,12 @@ import OSLog
     let added =
       defaults.object(forKey: Feature.island.prefsKey) as? Bool ?? Feature.island.defaultOn
     let wanted = added && defaults.bool(forKey: Prefs.islandNowPlaying)
-    if wanted, connection == nil {
+    if wanted, !isOn {
+      isOn = true
       connect()
-    } else if !wanted, connection != nil {
+      listenToPlayers()
+    } else if !wanted, isOn {
+      isOn = false
       disconnect()
     }
   }
@@ -48,7 +74,7 @@ import OSLog
   // MARK: 连接
 
   private func connect() {
-    let connection = NSXPCConnection(serviceName: Self.serviceName)
+    let connection = NSXPCConnection(serviceName: serviceName)
     connection.remoteObjectInterface = NSXPCInterface(with: NowPlayingServing.self)
     connection.exportedInterface = NSXPCInterface(with: NowPlayingListening.self)
     connection.exportedObject = self
@@ -59,16 +85,21 @@ import OSLog
       Task { @MainActor in
         guard let self, self.isCurrent(id) else { return }
         self.clear()
+        // 已经在用退路的：照样挂着播放器那一份（不等下一条通知，评审 4）
+        self.refresh()
         try? await Task.sleep(for: .seconds(1))
         if self.isCurrent(id) { self.subscribe() }
       }
     }
-    // 断了（自己断的、服务找不到）：清掉，偏好下次变时 apply 再连
+    // 断了、又不是自己断的（服务找不到、拉不起来）：当它取不到 MediaRemote，改用退路；不重连（关掉再打开时重连）
     connection.invalidationHandler = { [weak self] in
       Task { @MainActor in
         guard let self, self.isCurrent(id) else { return }
+        Log.nowPlaying.error("连不上正在播放服务，改用音乐 / Spotify 自己的通知")
         self.connection = nil
         self.clear()
+        self.serviceAnswered(false)
+        self.refresh()
       }
     }
     connection.resume()
@@ -78,13 +109,26 @@ import OSLog
 
   private func subscribe() {
     guard let proxy = proxy() else { return }
-    proxy.subscribe { available in
+    proxy.subscribe { [weak self] available in
       if !available { Log.nowPlaying.error("服务里取不到 MediaRemote 的函数") }
+      Task { @MainActor in self?.serviceAnswered(available) }
+    }
+  }
+
+  /// 服务回了话（或者连不上）：取不到 MediaRemote 就直接用退路
+  private func serviceAnswered(_ available: Bool) {
+    guard isOn else { return }
+    self.available = available
+    if !available, !usesFallback {
+      usesFallback = true
+      refresh()
     }
   }
 
   private func proxy() -> NowPlayingServing? {
-    connection?.remoteObjectProxyWithErrorHandler { error in
+    // 出错的回调在 XPC 自己的队列上调：SDK 里它的类型没标 Sendable，不写 @Sendable 就继承主线程隔离，
+    // 一来就触发执行器断言闪退（2026-11-13 单测 missingServiceFallsBackToPlayers 抓到的：服务找不到时必来）
+    connection?.remoteObjectProxyWithErrorHandler { @Sendable error in
       Log.nowPlaying.error("正在播放服务：\(error.localizedDescription, privacy: .public)")
     } as? NowPlayingServing
   }
@@ -97,13 +141,106 @@ import OSLog
     connection?.invalidate()
     connection = nil
     clear()
+    if listensToPlayers {
+      for player in NowPlayingFallback.notices {
+        DistributedNotificationCenter.default().removeObserver(
+          self, name: Notification.Name(player.name), object: nil)
+      }
+      listensToPlayers = false
+    }
+    if let quitObserver { NSWorkspace.shared.notificationCenter.removeObserver(quitObserver) }
+    quitObserver = nil
+    notices = [:]
+    usesFallback = false
+    available = nil
   }
 
+  /// 清掉服务那一份和岛上的（断开、服务崩了）；退路的通知留着（播放器那边没变）
   private func clear() {
     snapshot = nil
+    served = nil
     pausedSince = nil
     linger?.cancel()
+    fallbackCheck?.cancel()
+    positionRead?.cancel()
+    positionRead = nil
     island?.endActivity(Self.activityID)
+  }
+
+  // MARK: 退路
+
+  /// 听音乐 / Spotify 状态一变就发的分布式通知（不要授权）。**要 .deliverImmediately**：默认的写法在本 App 不在前台时
+  /// 被系统压着、等下次激活才送到（SDK 头文件写明，评审 1 本机实测）——本 App 几乎从不在前台，退路就等于没有。
+  /// 播放器崩了、被强制退出时不会发「停了」：另听 App 退出，清掉它那一份
+  private func listenToPlayers() {
+    guard !listensToPlayers else { return }
+    listensToPlayers = true
+    for player in NowPlayingFallback.notices {
+      DistributedNotificationCenter.default().addObserver(
+        self, selector: #selector(playerChanged(_:)), name: Notification.Name(player.name),
+        object: nil, suspensionBehavior: .deliverImmediately)
+    }
+    quitObserver = NSWorkspace.shared.notificationCenter.addObserver(
+      forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main
+    ) { [weak self] note in
+      let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+      guard let bundleID = app?.bundleIdentifier else { return }
+      MainActor.assumeIsolated {
+        guard let self, self.notices[bundleID] != nil else { return }
+        self.noticed(bundleID, nil)
+      }
+    }
+  }
+
+  /// 分布式通知在注册它的线程（主线程）的 run loop 上送到：就地解成快照（Sendable 的）再交给主线程那边
+  @objc nonisolated private func playerChanged(_ note: Notification) {
+    guard let player = NowPlayingFallback.notices.first(where: { $0.name == note.name.rawValue })
+    else { return }
+    let snapshot = NowPlayingFallback.snapshot(
+      bundleID: player.bundleID, appName: player.appName, info: note.userInfo ?? [:], now: .now)
+    MainActor.assumeIsolated { self.noticed(player.bundleID, snapshot) }
+  }
+
+  /// 播放器的通知解出来了（不是 private：单测直接喂，不往全系统发假的「音乐」通知）
+  func noticed(_ bundleID: String, _ snapshot: NowPlayingSnapshot?) {
+    guard isOn else { return }
+    notices[bundleID] = snapshot.map { ($0, .now) }
+    if usesFallback {
+      refresh()
+    } else if snapshot?.isPlaying ?? false, served == nil {
+      // 播放器说在播、服务没报出来：等一会儿还是这样就算服务读不到了（服务的通知 15–32 ms 就到）
+      fallbackCheck?.cancel()
+      fallbackCheck = Task { [weak self] in
+        try? await Task.sleep(for: NowPlayingFallback.grace)
+        guard let self, !Task.isCancelled, self.served == nil,
+          self.notices.values.contains(where: \.snapshot.isPlaying)
+        else { return }
+        Log.nowPlaying.error("正在播放服务读不到，改用音乐 / Spotify 自己的通知")
+        self.usesFallback = true
+        self.refresh()
+      }
+    }
+  }
+
+  /// 退路里的音乐没有进度：已经允许过控制「音乐」时读一次（同一首读过就不读）
+  private func readMusicPosition() {
+    guard usesFallback, let current = snapshot, current.bundleID == "com.apple.Music",
+      current.elapsed == nil, positionRead == nil
+    else { return }
+    positionRead = Task { [weak self] in
+      let seconds = await NowPlayingFallback.musicPosition()
+      guard let self, !Task.isCancelled else { return }
+      self.positionRead = nil
+      // 读不到（没允许过、它没在运行）就算了，不再读
+      guard let seconds else { return }
+      // 读的时候换了歌：给新的那首再读一次（评审 5）
+      guard var notice = self.notices["com.apple.Music"], notice.snapshot.title == current.title
+      else { return self.readMusicPosition() }
+      notice.snapshot.elapsed = seconds
+      notice.snapshot.timestamp = .now
+      self.notices["com.apple.Music"] = notice
+      self.refresh()
+    }
   }
 
   // MARK: 收快照
@@ -117,7 +254,25 @@ import OSLog
 
   private func received(_ next: NowPlayingSnapshot?) {
     // 断开之后才到的不算
-    guard connection != nil else { return }
+    guard isOn, connection != nil else { return }
+    served = next
+    // 服务又报得出来了：不用退路
+    if next != nil {
+      usesFallback = false
+      fallbackCheck?.cancel()
+    }
+    refresh()
+  }
+
+  /// 岛上该用哪一份（服务的，或者退路里挑的）换上去
+  private func refresh() {
+    show(
+      Self.effective(
+        served: served, usesFallback: usesFallback, notices: Array(notices.values)))
+    readMusicPosition()
+  }
+
+  private func show(_ next: NowPlayingSnapshot?) {
     let wasPlaying = snapshot?.isPlaying ?? false
     snapshot = next
     if let next, !next.isPlaying, wasPlaying {
@@ -174,8 +329,16 @@ import OSLog
 
   // MARK: 按钮
 
+  /// 服务能用就交给它发（读不到时发命令多半还行）；整个不能用时，退路的音乐 / Spotify 走 AppleScript
   private func send(_ command: NowPlayingCommand) {
-    proxy()?.send(command.rawValue)
+    if available != false, let proxy = proxy() { return proxy.send(command.rawValue) }
+    guard let snapshot else { return }
+    let island = island
+    Task {
+      await NowPlayingFallback.run(
+        command, bundleID: snapshot.bundleID, appName: snapshot.appName ?? snapshot.bundleID,
+        island: island)
+    }
   }
 
   /// 切到放歌的那个 App（Safari 的报的是 WebKit 的进程，按上级 App 找）。岛是不激活本 App 的面板：后台调
@@ -189,6 +352,15 @@ import OSLog
   }
 
   // MARK: 纯函数（单测锁住）
+
+  /// 岛上用哪一份：服务报得出来就用服务的；报不出来、又在用退路时，从播放器自己的通知里挑
+  static func effective(
+    served: NowPlayingSnapshot?, usesFallback: Bool,
+    notices: [(snapshot: NowPlayingSnapshot, at: Date)]
+  ) -> NowPlayingSnapshot? {
+    if let served { return served }
+    return usesFallback ? NowPlayingFallback.pick(notices) : nil
+  }
 
   /// 上不上耳朵：在播；或者从在播变成暂停还不到 pausedLinger。一打开就是暂停着的（pausedFor 是 nil）不上
   static func showsOnWings(isPlaying: Bool, pausedFor: Duration?) -> Bool {

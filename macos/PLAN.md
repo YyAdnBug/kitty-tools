@@ -612,7 +612,14 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
     快照在收的时候把时长 / 进度夹到 1000 万秒以内、速率夹到 100 以内，显示的时间再夹到 99:59:59——网页用 Media Session
     能报 1e20 这种时长，`Int(Double)` 越界会闪退（评审 1）。截图自检 island-wings-media（-paused）、island-media-card（-bare）、
     island-board-media。
-  - 第 2-3 批：退路（Music / Spotify 的分布式通知 + AppleScript，授权先不弹框地查、要弹由用户点）、HANDTEST 一节。
+  - 第 2-3 批：退路（`Shell/NowPlayingFallback.swift`）。拍板 E1 写的是「读不到时 Music / Spotify 退回 AppleScript」，做的时候
+    改成先用它们状态一变就发的分布式通知（`com.apple.Music.playerInfo`、`com.spotify.client.PlaybackStateChanged`：歌名、
+    艺人、专辑、在不在播、时长，Spotify 还有播到哪，**不要任何授权**），AppleScript 只用在两处：音乐的进度（只在已经允许过
+    控制「音乐」时读，`Permissions.canAutomate` 不弹框地查）、服务整个不能用时的播放控制（osascript，授权框是用户点按钮才弹）。
+    什么时候用退路：服务说取不到 MediaRemote、连不上服务（找不到、拉不起来），或者播放器说在播、服务 2 秒都报不出（服务又报得出来就换回去）；
+    分布式通知要 `.deliverImmediately`（默认的在本 App 不在前台时被系统压着）；播放器崩了 / 强制退出不发「停了」，另听 App 退出；按钮能交给服务
+    就交给服务（发命令不设门槛）。退路里没有封面（放 App 图标）。`NSAppleEventsUsageDescription` 补了一句。HANDTEST
+    「刘海岛的正在播放」1–14（13、14 要挪走 Dev 版包里的服务模拟读不到）。
 
 ### 晾衣绳（第十族，0.7.0，2026-10-26 立项）
 
