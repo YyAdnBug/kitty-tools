@@ -301,6 +301,44 @@ struct NoteSyncServerTests {
     )
   }
 
+  /// 服务器上的名字只认规范写法（编号大写）：镜像在默认不分大小写的 APFS 上，只差大小写的两个名字会落到同一个文件上；
+  /// 别的程序写的小写名字不拿、不进镜像
+  @Test func onlyCanonicalNamesAreKnown() async throws {
+    let id = UUID().uuidString
+    let lower = id.lowercased()
+    #expect(NoteSyncServer.known("devices/\(id)/notes/\(id).md") != nil)
+    #expect(NoteSyncServer.known("devices/\(id)/notes/\(lower).md") == nil)
+    #expect(NoteSyncServer.known("devices/\(id)/device.json") != nil)
+    #expect(NoteSyncServer.known("devices/\(lower)/device.json") == nil)
+    #expect(NoteSyncServer.known("images/\(id).png") != nil)
+    #expect(NoteSyncServer.known("images/\(lower).png") == nil)
+    #expect(NoteSyncServer.known("images/\(id).PNG") == nil)
+
+    let host = try makeServer()
+    defer { cleanUp(host) }
+    let session = FakeDAV.session()
+    let a = try Mac(host: "a", root: root, session: session)
+    let b = try Mac(host: "b", root: root, session: session)
+    let note = a.store.create(body: "正经的", now: .now)
+    #expect(await a.syncer.enable(server: account(host)) == nil)
+    await a.syncer.round()
+    // 别的程序往服务器上写了一份小写编号的便签文件（APFS 上建不出和正经那份只差大小写的文件，就拿另一个编号的小写写法）
+    let notes = shared.appending(path: "devices/\(a.store.deviceID)/notes")
+    let stray = UUID().uuidString.lowercased()
+    try FileManager.default.copyItem(
+      at: notes.appending(path: NoteSyncFolder.fileName(of: note.id)),
+      to: notes.appending(path: "\(stray).md"))
+    #expect(await b.syncer.enable(server: account(host)) == nil)
+    FakeDAV.clearLog(host)
+    await b.syncer.round()
+    #expect(!FakeDAV.log(host).contains { $0.hasPrefix("GET") && $0.contains(stray) })
+    #expect(bodies(b) == ["正经的"])
+    let mirror = try #require(b.syncer.folder)
+    #expect(
+      !FileManager.default.fileExists(
+        atPath: mirror.appending(path: "devices/\(a.store.deviceID)/notes/\(stray).md").path))
+  }
+
   /// 测试连接：文件夹在 = 能读能写（写的小文件删掉了）；不在 = 连上了、连接时建；密码不对说清楚
   @Test func testConnection() async throws {
     let host = try makeServer()

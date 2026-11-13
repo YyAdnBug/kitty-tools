@@ -74,16 +74,20 @@ nonisolated enum NoteSyncServer {
 
   // MARK: 认得的文件
 
-  /// 镜像里认得的文件：大小上限、拿的先后（小的先）。认不出的（.DS_Store、别人的临时文件……）不拿、不删
+  /// 镜像里认得的文件：大小上限、拿的先后（小的先）。认不出的（.DS_Store、别人的临时文件……）不拿、不删。
+  /// 名字只认规范写法、一字不差（电脑编号、便签编号、图片编号都是大写）：镜像在默认不分大小写的 APFS 上，服务器上只差大小写的
+  /// 两个名字会落到镜像里同一个文件上，一轮拿这个、一轮拿那个。两边自己写的都是大写，小写的只会是别的程序写的
   static func known(_ path: String) -> (limit: Int, order: Int)? {
     let parts = path.split(separator: "/").map(String.init)
     switch parts.count {
     case 1 where parts[0] == NoteSyncFolder.markerName:
       return (NoteSyncDisk.maxSmallBytes, 0)
     case 2 where parts[0] == NoteSyncFolder.imagesName:
-      return NoteImageStore.identifier(ofFileNamed: parts[1]) == nil
-        ? nil : (NoteImageStore.maxFileBytes, 5)
-    case 3 where parts[0] == NoteSyncFolder.devicesName && NoteSyncDisk.isDeviceName(parts[1]):
+      guard let id = NoteImageStore.identifier(ofFileNamed: parts[1]),
+        parts[1].hasPrefix(id.uuidString + ".")
+      else { return nil }
+      return (NoteImageStore.maxFileBytes, 5)
+    case 3 where parts[0] == NoteSyncFolder.devicesName && isDevice(parts[1]):
       if parts[2] == NoteSyncFolder.deviceInfoName { return (NoteSyncDisk.maxSmallBytes, 1) }
       if parts[2] == NoteSyncFolder.erasedName { return (NoteSyncDisk.maxErasedBytes, 2) }
       if SyncRecords.Kind.allCases.contains(where: { $0.fileName == parts[2] }) {
@@ -91,13 +95,20 @@ nonisolated enum NoteSyncServer {
       }
       return nil
     case 4
-    where parts[0] == NoteSyncFolder.devicesName && NoteSyncDisk.isDeviceName(parts[1])
+    where parts[0] == NoteSyncFolder.devicesName && isDevice(parts[1])
       && parts[2] == NoteSyncFolder.notesName:
-      return NoteSyncFolder.noteID(ofFileNamed: parts[3]) == nil
-        ? nil : (NoteSyncFolder.maxNoteFileBytes, 4)
+      guard let id = NoteSyncFolder.noteID(ofFileNamed: parts[3]), parts[3] == "\(id).md" else {
+        return nil
+      }
+      return (NoteSyncFolder.maxNoteFileBytes, 4)
     default:
       return nil
     }
+  }
+
+  /// 电脑编号的规范写法：不带小写字母（known 的说明）
+  static func isDevice(_ name: String) -> Bool {
+    NoteSyncDisk.isDeviceName(name) && !name.contains(where: \.isLowercase)
   }
 
   /// 服务器上的这个文件和账上记的是不是同一版
@@ -146,7 +157,7 @@ nonisolated enum NoteSyncServer {
         let devices = [NoteSyncFolder.devicesName]
         result.folders.insert(devices[0])
         for device in try await dav.list(devices) ?? []
-        where device.isFolder && NoteSyncDisk.isDeviceName(device.name) {
+        where device.isFolder && isDevice(device.name) {
           let folder = devices + [device.name]
           guard let items = try await dav.list(folder) else { continue }
           result.folders.insert(folder.joined(separator: "/"))
@@ -408,7 +419,7 @@ nonisolated enum NoteSyncServer {
       }
       var ids: Set<String> = []
       for other in try await dav.list([NoteSyncFolder.devicesName]) ?? []
-      where other.isFolder && NoteSyncDisk.isDeviceName(other.name) && other.name != device {
+      where other.isFolder && isDevice(other.name) && other.name != device {
         result.devices += 1
         let notes = [NoteSyncFolder.devicesName, other.name, NoteSyncFolder.notesName]
         for file in (try? await dav.list(notes)) ?? [] {
@@ -506,7 +517,7 @@ nonisolated enum NoteSyncServer {
     }
     _ = scan([])
     _ = scan([NoteSyncFolder.imagesName])
-    for device in scan([NoteSyncFolder.devicesName]) where NoteSyncDisk.isDeviceName(device) {
+    for device in scan([NoteSyncFolder.devicesName]) where isDevice(device) {
       _ = scan([NoteSyncFolder.devicesName, device])
       _ = scan([NoteSyncFolder.devicesName, device, NoteSyncFolder.notesName])
     }
