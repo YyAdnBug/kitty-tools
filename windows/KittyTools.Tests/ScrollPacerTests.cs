@@ -186,6 +186,65 @@ public sealed class ScrollPacerTests
     }
 
     [TestMethod]
+    public void LeadIsCappedAtHalfARegion()
+    {
+        // 照 mac leadIsCappedAtHalfARegion（176ad8b1，单位换成滚轮单位）：选区 1000 像素高、1 个单位滚 2 像素，最多领先 250 个单位。
+        Assert.AreEqual(250, ScrollPacer.Room(0, 1000, 2), 1e-9);
+        Assert.AreEqual(20, ScrollPacer.Room(230, 1000, 2), 1e-9);
+        Assert.AreEqual(0, ScrollPacer.Room(700, 1000, 2), 1e-9);
+        Assert.AreEqual(125, ScrollPacer.Room(0, 1000, 4), 1e-9);
+        Assert.AreEqual(350, ScrollPacer.Room(-100, 1000, 2), 1e-9, "往回退过可以多发");
+        var capped = ScrollPacer.FrameUnits(600, 0.025, 0.5, 9.7);
+        Assert.AreEqual(9, capped.Units);
+        Assert.AreEqual(0, capped.Carry, "发不完的扔掉、零头清零");
+        Assert.AreEqual(0, ScrollPacer.FrameUnits(600, 0.025, 0, 0).Units);
+        var free = ScrollPacer.FrameUnits(300, 0.025, 0, 100);
+        Assert.AreEqual(7, free.Units);
+        Assert.AreEqual(0.5, free.Carry, 1e-9);
+    }
+
+    [TestMethod]
+    public void SlowStitching_NeverLeadsMoreThanHalfARegion()
+    {
+        // PLAN-v18 S1：整屏大选区、快档、拼接慢（2 秒才拼完一帧：连着 120 帧不调 After）。不封顶时两帧之间滚出两个多选区高。
+        const int height = 1400;
+        var pacer = new ScrollPacer(height, 1.5, ScrollSpeed.Fast);
+        pacer.Begin();
+        for (var frame = 0; frame < 120; frame++)
+        {
+            pacer.Frame(1 / 60.0);
+            Assert.IsTrue((pacer.Posted - pacer.PostedAtReference) * pacer.Gain <= height * ScrollPacer.MaxLead + 1e-6);
+        }
+
+        Assert.IsTrue(pacer.Velocity * 2 * pacer.Gain > height * 2, "这个速度不封顶两秒能滚两个多选区高");
+        Assert.AreEqual(height * ScrollPacer.MaxLead, (pacer.Posted - pacer.PostedAtReference) * pacer.Gain, pacer.Gain + 1e-6);
+    }
+
+    [TestMethod]
+    public void CappedAndUnchanged_StopsAtTheEnd()
+    {
+        // 到底了、领先也到顶了：之后几帧一点没发、画面不动，照样算到头停下（以前要求这一帧发过，封顶后停不下来）。
+        const int height = 600;
+        var pacer = new ScrollPacer(height, 1, ScrollSpeed.Normal);
+        pacer.Begin();
+        var stopped = false;
+        for (var capture = 0; capture < 20 && !stopped; capture++)
+        {
+            for (var frame = 0; frame < 30; frame++)
+            {
+                pacer.Frame(1 / 60.0);
+            }
+
+            pacer.Captured();
+            pacer.After(ScrollStep.Unchanged, 0);
+            stopped = pacer.Stopped == ScrollStopReason.End;
+        }
+
+        Assert.IsTrue(stopped);
+        Assert.IsTrue((pacer.Posted - pacer.PostedAtReference) * pacer.Gain <= height * ScrollPacer.MaxLead + 1e-6);
+    }
+
+    [TestMethod]
     public void Lost_BacksOffHalfThenStopsAfterFour()
     {
         var pacer = new ScrollPacer(600, 1, ScrollSpeed.Normal);

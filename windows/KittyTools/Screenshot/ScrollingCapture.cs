@@ -315,7 +315,9 @@ internal static class ScrollingCapture
                 return;
             }
 
-            if (_autoScroll && _pacer is { } pacer)
+            // 光标在面板附近（去点暂停、看预览）时这一帧不对账（同 mac）：那时不发滚轮，画面不动不能算到头。
+            PInvoke.GetCursorPos(out var cursor);
+            if (_autoScroll && _pacer is { } pacer && !ScrollPreviewPanel.Contains(cursor.X, cursor.Y, 16))
             {
                 var back = pacer.After(result.Step, result.Grown);
                 if (back > 0)

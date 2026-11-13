@@ -6,6 +6,9 @@
 // Windows 和 mac 不一样的两处：
 // - 单位是滚轮单位（WHEEL_DELTA 120 = 一格），不是像素：一格滚多远各程序不一样，支持高精度滚轮的按比例滚，老程序攒满一格才滚。
 //   所以算「到头」时还要自上次接上以来发满一格（不然老程序攒着那几十个单位会被当成到头）。
+// 封顶（mac 176ad8b1，PLAN-v18 S1）：匀速滚动不等拼接，两帧之间滚多远 = 速度 × 抓帧、算帧、拼接的时间，后者跟着选区面积涨；
+// 选区大了两帧之间滚过一整屏，对不上 → 退回、放慢 → 接上又全速再滚过头，反反复复。所以比上次接上的那一帧最多领先半个选区高
+// （MaxLead），到顶就停发，下一帧接上了再接着滚；到顶时一帧可能一点没发，自上次接上以来发过、画面没动照样算到头。
 // - 不翻滚轮正负号（mac 的 wheelSign）：SendInput 的滚轮方向是定的，没有「自然滚动」对合成事件怎么处理的问题；
 //   Windows 的拼接按方向接（ScrollCanvas.Append），反方向滚只会对不上，走退回那一路。
 namespace KittyTools.Core;
@@ -45,6 +48,9 @@ public sealed class ScrollPacer
 {
     /// <summary>滚轮一格（WHEEL_DELTA）。</summary>
     public const int Notch = 120;
+
+    /// <summary>比上次接上的那一帧开抓时最多领先几个选区高（同 mac ScrollCapture.maxLead）。</summary>
+    public const double MaxLead = 0.5;
 
     private const int StallLimit = 3;
     private const int LostLimit = 4;
@@ -135,13 +141,25 @@ public sealed class ScrollPacer
         return Math.Clamp((gain + shift / sent) / 2, guess / 20, guess * 20);
     }
 
-    /// <summary>这一帧发几个单位：速度 × 这一帧的时长再加上次的零头，发整数，零头留到下一帧；一帧最多按 50 ms 算（卡了一下不猛冲一大段）。</summary>
-    public static (int Units, double Carry) FrameUnits(double velocity, double seconds, double carry)
+    /// <summary>
+    /// 这一帧发几个单位：速度 × 这一帧的时长再加上次的零头，发整数，零头留到下一帧；一帧最多按 50 ms 算（卡了一下不猛冲一大段）；
+    /// 最多发 room 个（领先到顶了：发不完的扔掉，零头清零）。
+    /// </summary>
+    public static (int Units, double Carry) FrameUnits(double velocity, double seconds, double carry, double room = double.PositiveInfinity)
     {
         var amount = velocity * Math.Clamp(seconds, 0, 0.05) + carry;
         var whole = Math.Truncate(amount);
+        var allowed = Math.Truncate(Math.Max(room, 0));
+        if (whole > allowed)
+        {
+            return ((int)allowed, 0);
+        }
+
         return ((int)whole, amount - whole);
     }
+
+    /// <summary>还能再发几个单位：lead 是自上次接上的那一帧开抓以来发了多少（退回过可以是负数），换算成像素不超过 MaxLead 个选区高。</summary>
+    public static double Room(double lead, int height, double gain) => Math.Max(MaxLead * height / Math.Max(gain, 0.001) - lead, 0);
 
     /// <summary>开始 / 暂停后接着滚：清计数和零头；停着时没发过滚轮，参照帧开抓时就是现在这个数。</summary>
     public void Begin()
@@ -164,7 +182,7 @@ public sealed class ScrollPacer
     /// <summary>屏幕刷新了一帧（离上一帧 seconds 秒）：这一帧要发几个单位（0 = 这一帧不发），已经记进 Posted。</summary>
     public int Frame(double seconds)
     {
-        var (units, carry) = FrameUnits(Velocity, seconds, _carry);
+        var (units, carry) = FrameUnits(Velocity, seconds, _carry, Room(Posted - PostedAtReference, _height, Gain));
         _carry = carry;
         Posted += units;
         return units;
@@ -183,9 +201,8 @@ public sealed class ScrollPacer
     /// </summary>
     public int After(ScrollStep step, int shift)
     {
-        // 自上次接上以来、自上一帧以来各发了多少。
+        // 自上次接上以来发了多少。
         var sent = PostedAtCapture - PostedAtReference;
-        var sentThisFrame = PostedAtCapture - PostedAtPreviousCapture;
         switch (step)
         {
             case ScrollStep.Moved:
@@ -212,8 +229,9 @@ public sealed class ScrollPacer
                 Posted -= back;
                 return back;
             default:
-                // 这一帧没发滚轮（光标停在面板上、刚开始）不算；老程序攒满一格才滚，没发满一格也不算。
-                if (sentThisFrame < 1 || sent < Notch)
+                // 自上次接上以来没发满一格不算（刚开始；老程序攒满一格才滚）。这一帧没发也算：领先到顶时一帧一点没发、画面也没动，
+                // 就是到头了（S1）。光标停在面板上时根本不调 After（ScrollingCapture）。
+                if (sent < Notch)
                 {
                     return 0;
                 }
