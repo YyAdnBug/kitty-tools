@@ -1027,6 +1027,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     island.isSuppressed = { [unowned self] in
       isCapturing || launchpad.isOpen || statusScreen.isActive
     }
+    island.respondsToNotch = UserDefaults.standard.bool(forKey: Prefs.islandNotchClicks)
     island.start()
     showWelcomeIfNeeded()
     // 有快捷键没注册上（15.0 / 15.1 上只带 ⌥ 的组合）：按了没反应又不知道为什么，启动时说一次
@@ -1060,6 +1061,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       MainActor.assumeIsolated {
         guard let self else { return }
         self.applyFeatures()
+        self.island.respondsToNotch = UserDefaults.standard.bool(forKey: Prefs.islandNotchClicks)
         // 命令的快捷键跟着「命令和别名」的开关和别名、脚本命令总开关、⌘K「关掉这条命令」走（第 4 批评审：只在那一页的
         // onChange 里跟，别处改的不注销）；没变不动
         self.hotKeys.reloadCommandsIfChanged()

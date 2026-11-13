@@ -101,6 +101,15 @@ import SwiftUI
   private(set) var isShowingWings = false
   /// 展开着的卡片是哪个活动的（点耳朵展开的）：它更新时卡片原地换，结束时收起；卡片上标题旁边挂它的实时读数
   private(set) var expandedActivity: String?
+  /// 没有刘海屏时活动挂在菜单栏里（刘海岛扩展 H1，IslandMenuItem）
+  @ObservationIgnored private lazy var menuItem: IslandMenuItem = {
+    let item = IslandMenuItem()
+    item.onClick = { [weak self] in self?.expand($0) }
+    return item
+  }()
+  /// 点刘海、停在刘海上、两指往下滑叫出那一张（设置 › 刘海岛「点刘海叫出那一张」，刘海岛扩展 G2；AppDelegate 跟着偏好给）。
+  /// 关着时这几样都不响应，快捷键照样能叫出来；耳朵上的活动照常能停、能点
+  @ObservationIgnored var respondsToNotch = true
   /// 用快捷键叫出的那一张上，←→ 选中的快捷动作（第几个；鼠标叫出的、没有快捷动作时是 nil，U9）
   private(set) var boardSelection: Int?
   /// 那一张是用快捷键叫出的、正临时拿着键盘：收起时还回去
@@ -432,6 +441,12 @@ import SwiftUI
     closing.onClose()
   }
 
+  /// 双指在刘海上往下滑（刘海岛扩展 G1，同点刘海）：没开着东西时打开那一张。指针停在刘海上岛鼓起、窗口接鼠标时才收得到
+  func swipeDown() {
+    guard respondsToNotch, content == nil, !isBoardOpen, !isSuppressed() else { return }
+    toggleBoard()
+  }
+
   /// 挂在岛上直到处理（提醒，PLAN §10「提醒」C2）：不到点收起；中间来了别的提示先显示那条，它收起后换回这一条；
   /// 点它的按钮、点 ×、双指上滑才真的收（×、上滑调 onClose，按钮跑自己的动作）。再 pin 一次 = 换内容（几条提醒合成
   /// 一条，B5），内容一样只换按钮。鼠标正停在别的提示上、那一张开着时先挂着不出，那条收起 / 那一张关掉时换上
@@ -520,7 +535,12 @@ import SwiftUI
 
   /// 点耳朵：最要紧的那个活动展开成卡片（同悬停展开的样子），收起后回到耳朵
   private func expandActivity() {
-    guard let activity else { return }
+    if let activity { expand(activity.id) }
+  }
+
+  /// 某个活动展开成卡片（耳朵、菜单栏那一项都走这里）
+  private func expand(_ id: String) {
+    guard let activity = activities.first(where: { $0.id == id }) else { return }
     isPeeking = false
     apply(activity.content, actions: activity.actions, quiet: true)
     expandedActivity = activity.id
@@ -531,6 +551,7 @@ import SwiftUI
   /// 它们收起时（dismiss）照这个缩回耳朵
   private func refreshWings() {
     let wanted = activity != nil && canShowWings
+    if !isStaged { menuItem.show(IslandMenuItem.pick(activities, wings: canShowWings)) }
     guard wanted != isShowingWings else { return }
     if wanted, !isOpen, !isStaged { showWindow(on: Self.notchScreen) }
     withAnimation((wanted ? Style.Motion.island : Style.Motion.retract).animation()) {
@@ -893,7 +914,9 @@ import SwiftUI
   /// 那一张开着时点在它外面 = 收起。返回开 / 关过没有
   private func click(onNotch allowed: Bool) -> Bool {
     let mouse = NSEvent.mouseLocation
-    if allowed, content == nil, !isSuppressed(), Self.onNotch(mouse, notches: notchRects) {
+    if allowed, respondsToNotch, content == nil, !isSuppressed(),
+      Self.onNotch(mouse, notches: notchRects)
+    {
       toggleBoard()
       return true
     }
@@ -945,7 +968,8 @@ import SwiftUI
     guard !isOpen, !isRetracting else { return }
     let onWings =
       isShowingWings && window.map { NSMouseInRect(mouse, shapeOnScreen($0), false) } == true
-    peek(!isSuppressed() && (onWings || Self.onNotch(mouse, notches: notchRects)))
+    peek(
+      !isSuppressed() && (onWings || (respondsToNotch && Self.onNotch(mouse, notches: notchRects))))
   }
 
   /// 放到鼠标所在屏（耳朵给的是刘海屏）顶部正中（刘海屏贴着顶边，其它屏在菜单栏下方）。只在窗口不在屏上时调
@@ -1603,18 +1627,28 @@ final class IslandPanel: NSPanel {
 /// 平时窗口整个不接鼠标，这两样都不起作用
 private final class IslandHost: NSHostingView<IslandView> {
   weak var island: Island?
-  /// 这一次手势里手指往上走了多少；够了收一次，同一次手势不再算
+  /// 这一次手势里手指往上走了多少（往下是负的）；够了收 / 开一次，同一次手势不再算
   private var swipe: CGFloat = 0
+  private var swiped = false
 
   override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
   override func scrollWheel(with event: NSEvent) {
     // 只认触控板的手势阶段（鼠标滚轮、惯性阶段的 phase 是空的）
     guard event.phase != [] else { return }
-    if event.phase == .began { swipe = 0 }
-    guard swipe < Island.swipeDistance else { return }
+    if event.phase == .began {
+      swipe = 0
+      swiped = false
+    }
+    guard !swiped else { return }
     swipe += Island.fingersUp(
       deltaY: event.scrollingDeltaY, inverted: event.isDirectionInvertedFromDevice)
-    if swipe >= Island.swipeDistance { island?.swipeAway() }
+    if swipe >= Island.swipeDistance {
+      swiped = true
+      island?.swipeAway()
+    } else if swipe <= -Island.swipeDistance {
+      swiped = true
+      island?.swipeDown()
+    }
   }
 }

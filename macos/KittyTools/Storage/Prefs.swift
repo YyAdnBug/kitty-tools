@@ -423,6 +423,8 @@ enum Prefs {
   static let islandActionsOff = "islandActionsOff"
   /// 那一张上列不列最近的提示（默认列）
   static let islandShowsHistory = "islandShowsHistory"
+  /// 点刘海、停在刘海上、两指往下滑叫出那一张（默认开；刘海岛扩展 G2：装了别的刘海 App 的人关掉）
+  static let islandNotchClicks = "islandNotchClicks"
   /// 新功能标记（Shell/WhatsNew.swift，2026-11-05）的账：各版本在这台 Mac 上第一次打开的时刻（版本号 → Date，从这一刻起挂 30 天）、
   /// 碰过哪几个（WhatsNew.Entry.id 的数组）。这台电脑自己的状态：不注册默认值、不导出不同步
   static let whatsNewStarted = "whatsNewStarted"
@@ -552,6 +554,7 @@ enum Prefs {
       islandActionOrder: "",
       islandActionsOff: "",
       islandShowsHistory: true,
+      islandNotchClicks: true,
     ].merging(Feature.allCases.map { ($0.prefsKey, $0.defaultOn as Any) }) { current, _ in current }
       .merging(FinderMenuItem.allCases.map { ($0.prefsKey, $0.defaultOn as Any) }) { current, _ in
         current

@@ -9,6 +9,7 @@ struct IslandTab: View {
   @AppStorage(Prefs.islandActionOrder) private var order = ""
   @AppStorage(Prefs.islandActionsOff) private var offText = ""
   @AppStorage(Prefs.islandShowsHistory) private var showsHistory = true
+  @AppStorage(Prefs.islandNotchClicks) private var notchClicks = true
 
   var body: some View {
     let actions = HotKeyAction.islandOrder(order)
@@ -41,6 +42,12 @@ struct IslandTab: View {
           Text("列出最近的提示")
           Text("本次启动以来最近 10 条，新的在前；不列也不影响提示照常弹出")
         }
+        Toggle(isOn: $notchClicks) {
+          Text("点刘海叫出那一张")
+          Text("停在刘海上会鼓起一点，点一下或者两指往下滑打开")
+        }
+      } footer: {
+        SectionFootnote("装了别的刘海 App 时可以关掉「点刘海叫出那一张」：提示和挂在刘海两边的录制计时这些照常，快捷键照样能叫出那一张。")
       }
     }
     .formStyle(.grouped)

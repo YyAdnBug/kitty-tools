@@ -135,6 +135,35 @@ struct IslandActivityTests {
     #expect(island.content?.title == "正在压缩" && island.activities.isEmpty)
   }
 
+  /// 没有刘海屏时菜单栏里挂哪个（H1）：挂得了耳朵时不挂；最要紧的是录制时不挂（它有自己的停止项）
+  @Test func menuItemPicksNonRecordingTop() {
+    let record = activity("录屏", .record)
+    let countdown = activity("喝水", .reminder, trailing: .countdown(to: .now))
+    #expect(IslandMenuItem.pick([countdown], wings: true) == nil)
+    #expect(IslandMenuItem.pick([countdown], wings: false)?.id == "喝水")
+    #expect(IslandMenuItem.pick([record, countdown], wings: false) == nil)
+    #expect(IslandMenuItem.pick([], wings: false) == nil)
+  }
+
+  /// 两指往下滑 = 点刘海（G1）；「点刘海叫出那一张」关着（G2）时不响应，快捷键照样开
+  @Test func swipeDownFollowsNotchSetting() {
+    let island = Island(showing: nil, geometry: notch)
+    island.respondsToNotch = false
+    island.swipeDown()
+    #expect(!island.isBoardOpen)
+    island.toggleBoard()
+    #expect(island.isBoardOpen)
+    island.toggleBoard()
+    island.respondsToNotch = true
+    island.swipeDown()
+    #expect(island.isBoardOpen)
+    // 开着提示时不抢
+    island.toggleBoard()
+    island.show("已复制")
+    island.swipeDown()
+    #expect(!island.isBoardOpen)
+  }
+
   /// 提示照旧从刘海长出来（盖住耳朵），收起后还是耳朵；那一张同样
   @Test func noticesAndBoardReturnToWings() {
     let island = Island(showing: nil, geometry: notch, activities: [activity("录屏", .record)])
