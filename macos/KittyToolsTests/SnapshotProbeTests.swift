@@ -4617,6 +4617,54 @@ struct SnapshotProbeTests {
           to: "\(out)/sync-\(state)\(dark ? "-dark" : "").png")
       }
     }
+    // 连 WebDAV 服务器（issue #18）：服务器那一行、还有几个没拿下来 / 没传上去、请求太多、密码不对；连接的表单
+    prefs.set(
+      "https://dav.example.com/dav/Kitty%20Tools%20%E5%90%8C%E6%AD%A5/", forKey: Prefs.syncServer)
+    prefs.set("kitty@example.com", forKey: Prefs.syncServerUser)
+    let pc = NoteSyncDisk.Peer(id: "3", name: "DESKTOP-KITTY", seen: now.addingTimeInterval(-90))
+    let servers: [(String, (NoteSyncer) -> Void)] = [
+      (
+        "server-idle",
+        {
+          $0.status = .idle
+          $0.lastSync = now.addingTimeInterval(-50)
+          $0.downloading = 5
+          $0.uploading = 2
+          $0.peers = [air, pc]
+        }
+      ),
+      (
+        "server-busy",
+        {
+          $0.status = .stopped(.busy(now.addingTimeInterval(600)))
+          $0.lastSync = now.addingTimeInterval(-900)
+          $0.peers = [pc]
+        }
+      ),
+      (
+        "server-failed",
+        {
+          $0.status = .stopped(.failed(WebDAV.Failure.unauthorized.message))
+          $0.lastSync = now.addingTimeInterval(-3600)
+          $0.peers = [pc]
+        }
+      ),
+    ]
+    for (state, prepare) in servers {
+      for dark in state == "server-idle" ? [false, true] : [false] {
+        try snapshot(
+          section(prepare), size: size, dark: dark,
+          to: "\(out)/sync-\(state)\(dark ? "-dark" : "").png")
+      }
+    }
+    prefs.removeObject(forKey: Prefs.syncServer)
+    prefs.removeObject(forKey: Prefs.syncServerUser)
+    for dark in [false, true] {
+      try snapshot(
+        SyncServerForm(syncer: NoteSyncer(store: store, defaults: prefs)) {},
+        size: NSSize(width: 460, height: 400), dark: dark,
+        to: "\(out)/sync-server-form\(dark ? "-dark" : "").png")
+    }
     // 从只同步便签的版本升上来：新加的几类没勾、文件夹那一行多一句（第三轮体检 R1）
     prefs.removeObject(forKey: Prefs.syncSkipped)
     try snapshot(

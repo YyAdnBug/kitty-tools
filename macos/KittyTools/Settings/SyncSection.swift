@@ -1,16 +1,21 @@
 // 设置 › 通用「同步」（2026-10-23 全局同步拍板 A1：从 设置 › 便签 挪过来，整个 App 的同步都在这一节。执行在 NoteSyncer）。
-// 没开时一行「选择文件夹…」；开着时文件夹、状态、停止 / 立即同步，「同步的内容」每类一个勾（A3，这台电脑自己的），其他 Mac。
+// 没开时一行「连接服务器…」「选择文件夹…」（WebDAV 服务器：issue #18，2026-11-13，表单在 SyncServerForm）；开着时文件夹或
+// 服务器、状态、停止 / 立即同步，「同步的内容」每类一个勾（A3，这台电脑自己的），其他电脑。
 
 import AppKit
 import SwiftUI
 
-/// 没开时一行「选择文件夹…」（打开面板先指到 iCloud 云盘）；选的文件夹里已经有别的 Mac 在同步，先问一句合不合在一起。
-/// 开着时：文件夹（悬停看路径）+「停止同步」+「立即同步」（刹车时换成「继续同步」），说明是状态（上次同步、还在下载几个），
+/// 没开时一行「连接服务器…」（WebDAV，SyncServerForm）+「选择文件夹…」（打开面板先指到 iCloud 云盘）；选的文件夹里已经有
+/// 别的电脑在同步，先问一句合不合在一起。
+/// 开着时：文件夹（悬停看路径）或服务器（悬停看网址和用户名）+「停止同步」+「立即同步」（刹车时换成「继续同步」），
+/// 说明是状态（上次同步、还在下载几个、连服务器时还有几个没传上去），
 /// 出了问题橙字说为什么、能怎么办；下面一行列出别的 Mac 和它们上次有改动的时刻。勾上一类会是它第一次合（升级上来的那台
 /// 新加的几类先没勾，NoteSyncer.isUpgrade）时先问合不合在一起，说明和选文件夹时那段一样。**这一节不去碰那个文件夹**（可能在卡住的
 /// 网络盘上）：名字取路径最后一段，读写都在 NoteSyncer / NoteSyncDisk 的主线程外
 struct SyncSection: View {
   let syncer: NoteSyncer
+  /// 「新」标记（0.9.0 能连 WebDAV 服务器，WhatsNew）：在设置窗里才有
+  @Environment(SettingsNavigation.self) private var navigation: SettingsNavigation?
   /// 几部分跟着的功能开着没有（关着的那部分不同步：勾下面说一声）
   @AppStorage(Feature.notes.prefsKey) private var notesOn = true
   @AppStorage(Feature.clipboard.prefsKey) private var clipboardOn = true
@@ -30,6 +35,8 @@ struct SyncSection: View {
   @State private var joining: Joining?
   /// 勾上会是第一次合的那一类（NoteSyncer.joins）：先问合不合在一起，确认框开着时有值
   @State private var confirming: String?
+  /// 「连接服务器」的表单开着
+  @State private var connecting = false
 
   struct Joining {
     var folder: URL
@@ -42,7 +49,7 @@ struct SyncSection: View {
       if let folder = syncer.folder {
         folderRow(folder)
           .confirmationDialog(
-            "「\(confirming.flatMap(SyncRecords.Kind.init(rawValue:))?.title ?? "")」和已经在同步的 Mac 合在一起？",
+            "「\(confirming.flatMap(SyncRecords.Kind.init(rawValue:))?.title ?? "")」和已经在同步的电脑合在一起？",
             isPresented: Binding {
               confirming != nil
             } set: {
@@ -86,17 +93,17 @@ struct SyncSection: View {
         LabeledContent {
           EmptyView()
         } label: {
-          Text("其他 Mac")
+          Text("其他电脑")
           Text(peersLine)
         }
       } else {
         offRow
       }
     } header: {
-      Text("同步")
+      NewTitle("同步", page: .general, fresh: navigation?.fresh ?? [])
     } footer: {
       SectionFootnote(
-        "勾上的几类在几台 Mac 之间保持一样，取消一类只是不再同步它。同步文件夹里放的是不加密的文本文件和图片，能打开这个文件夹的人都看得到。每台 Mac 只往自己的那份里写、读所有 Mac 的，改动一般几十秒到几分钟传过去（看同步盘多快）。两台都改了同一条时，后改的留下（便签的另一版放进「最近删除」）；别处删掉的片段、收藏和生词，这台 Mac 上只是不再收藏；一轮要删的太多会先停下来问。停止同步后，文件夹里的东西留着，这台 Mac 上的也不动。"
+        "勾上的几类在几台电脑之间保持一样，取消一类只是不再同步它。同步文件夹（连服务器时是服务器上那个文件夹）里放的是不加密的文本文件和图片，能打开这个文件夹的人都看得到。每台电脑只往自己的那份里写、读所有电脑的，改动一般几十秒到几分钟传过去（看同步盘多快；连服务器时大约一分钟一轮）。两台都改了同一条时，后改的留下（便签的另一版放进「最近删除」）；别处删掉的片段、收藏和生词，这台 Mac 上只是不再收藏；一轮要删的太多会先停下来问。停止同步后，文件夹里的东西留着，这台 Mac 上的也不动。"
       )
     }
   }
@@ -105,18 +112,27 @@ struct SyncSection: View {
 
   private var offRow: some View {
     LabeledContent {
-      Button("选择文件夹…", action: choose)
-        .disabled(isBusy)
+      HStack(spacing: 8) {
+        Button("连接服务器…") {
+          problem = nil
+          connecting = true
+          WhatsNew.touch(section: "同步", of: .general)
+        }
+        Button("选择文件夹…", action: choose)
+      }
+      .disabled(isBusy)
     } label: {
-      Text("在几台 Mac 之间同步")
+      Text("在几台电脑之间同步")
       Text(
-        looking ? "正在看这个文件夹…" : "选一个几台 Mac 都看得到的空文件夹，比如在 iCloud 云盘里新建一个；每台 Mac 选同一个")
+        looking
+          ? "正在看这个文件夹…"
+          : "选一个几台电脑都看得到的空文件夹（比如在 iCloud 云盘里新建一个），或者连一个 WebDAV 服务器；每台选同一个")
       if let problem {
         Text(problem).foregroundStyle(Color(nsColor: .systemOrange))
       }
     }
     .confirmationDialog(
-      "和这个文件夹里已经在同步的 Mac 合在一起？",
+      "和这个文件夹里已经在同步的电脑合在一起？",
       isPresented: Binding {
         joining != nil
       } set: {
@@ -128,15 +144,21 @@ struct SyncSection: View {
     } message: { joining in
       Text(
         (joining.notes > 0
-          ? "这个文件夹里已经有 \(joining.devices) 台 Mac 在同步，有 \(joining.notes) 条便签（含「最近删除」里的）。"
-          : "这个文件夹里已经有 \(joining.devices) 台 Mac 在同步。")
+          ? "这个文件夹里已经有 \(joining.devices) 台电脑在同步，有 \(joining.notes) 条便签（含「最近删除」里的）。"
+          : "这个文件夹里已经有 \(joining.devices) 台电脑在同步。")
           + Self.joinNote)
+    }
+    .sheet(isPresented: $connecting) {
+      SyncServerForm(syncer: syncer) {
+        connecting = false
+        syncer.start()
+      }
     }
   }
 
   /// 「合在一起？」的说明：第一次选文件夹时、开着同步时勾上还没合过的一类时（升级上来的那台）共用
   static let joinNote =
-    "合在一起后，这台 Mac 上的便签、片段、收藏、生词和状态屏的状态和它们的会出现在每台 Mac 上（同样的不重复）；设置、快捷键、功能开关（连同内置的网页搜索、翻译服务）换成已经在同步的那几台的——剪贴板的保留天数、「不记录」的 App 也跟着换，超出新保留天数的历史会清掉。之后同一条两边都改过的，后改的留下。"
+    "合在一起后，这台 Mac 上的便签、片段、收藏、生词和状态屏的状态和它们的会出现在每台电脑上（同样的不重复）；设置、快捷键、功能开关（连同内置的网页搜索、翻译服务）换成已经在同步的那几台的——剪贴板的保留天数、「不记录」的 App 也跟着换，超出新保留天数的历史会清掉。之后同一条两边都改过的，后改的留下。"
 
   /// 选文件夹：先看一眼（主线程外），已经有别的 Mac 在用就先问，不然直接开。面板是设置窗上的表单（开着时点不到
   /// 便签的开关、换不了页：不然关掉便签之后还会把同步起起来，换了页这一节的状态也丢了）
@@ -193,11 +215,18 @@ struct SyncSection: View {
   private func folderRow(_ folder: URL) -> some View {
     LabeledContent {
       HStack(spacing: 8) {
-        Label(folder.lastPathComponent, systemImage: "folder")
-          .lineLimit(1)
-          .truncationMode(.middle)
-          .foregroundStyle(.secondary)
-          .help(Self.shown(folder))
+        Group {
+          if let server = syncer.server {
+            Label(Self.shown(server: server), systemImage: "server.rack")
+              .help("\(server.absoluteString)（\(syncer.serverUser ?? "")）")
+          } else {
+            Label(folder.lastPathComponent, systemImage: "folder")
+              .help(Self.shown(folder))
+          }
+        }
+        .lineLimit(1)
+        .truncationMode(.middle)
+        .foregroundStyle(.secondary)
         Button("停止同步") { syncer.disable() }
           .buttonStyle(.plain)
           .foregroundStyle(Style.brandInk)
@@ -211,7 +240,7 @@ struct SyncSection: View {
         }
       }
     } label: {
-      Text("同步文件夹")
+      Text(syncer.server == nil ? "同步文件夹" : "同步服务器")
       Text(statusLine)
       if syncer.newKindsHint {
         Text("现在也能同步设置、片段和收藏这些了：在下面勾上要同步的几类，勾的时候先问合不合在一起")
@@ -262,7 +291,12 @@ struct SyncSection: View {
     } else {
       line = "还没同步过"
     }
-    if syncer.downloading > 0 { line += "；还有 \(syncer.downloading) 个文件在下载" }
+    if syncer.downloading > 0 {
+      line +=
+        syncer.server == nil
+        ? "；还有 \(syncer.downloading) 个文件在下载" : "；还有 \(syncer.downloading) 个文件没从服务器拿下来"
+    }
+    if syncer.uploading > 0 { line += "；还有 \(syncer.uploading) 个等着传上去" }
     return line
   }
 
@@ -274,13 +308,23 @@ struct SyncSection: View {
       "这一轮要删掉 \(trashing) 条（便签是放进「最近删除」），先停下来等你确认"
     case .stopped(let problem):
       switch problem {
-      case .missingFolder: "找不到同步文件夹：没接上、被挪走或删了，找到了自己接着同步"
-      case .notTheFolder: "同步文件夹里的同步记录被换掉或删了：先停止同步，再选一个新的空文件夹（每台 Mac 都换过去）"
+      case .missingFolder:
+        syncer.server == nil
+          ? "找不到同步文件夹：没接上、被挪走或删了，找到了自己接着同步"
+          : "服务器上找不到同步的那个文件夹：被挪走或删了，找到了自己接着同步"
+      case .notTheFolder:
+        syncer.server == nil
+          ? "同步文件夹里的同步记录被换掉或删了：先停止同步，再选一个新的空文件夹（每台电脑都换过去）"
+          : "服务器上那个文件夹里的同步记录被换掉或删了：先停止同步，再连一个新的空文件夹（每台电脑都换过去）"
       case .newerFormat: "文件夹里有更新版本的 Kitty Tools 写的东西，先更新这台 Mac 上的 Kitty Tools"
       case .unreadable(let name):
-        "\(name.map { "「\($0)」" } ?? "另一台 Mac ")那份同步记录还读不出来（多半是还没下载完），读到了自己接着同步"
-      case .downloading: "同步文件夹里有文件还没下载到这台 Mac，下载完自己接着同步"
+        "\(name.map { "「\($0)」" } ?? "另一台电脑")那份同步记录还读不出来（多半是还没下载完），读到了自己接着同步"
+      case .downloading:
+        syncer.server == nil
+          ? "同步文件夹里有文件还没下载到这台 Mac，下载完自己接着同步" : "服务器上有文件还没拿下来，拿下来了自己接着同步"
       case .failed(let reason): "上一轮没同步成：\(Self.clause(reason))"
+      case .busy(let until):
+        "服务器说请求太多，\(until.formatted(date: .omitted, time: .shortened)) 后接着同步"
       }
     }
   }
@@ -289,7 +333,10 @@ struct SyncSection: View {
     guard !syncer.peers.isEmpty else {
       // 第一轮还没合完（或者合之前就停了）时不知道有没有
       return syncer.lastSync == nil
-        ? "同步一轮之后列在这里" : "还没有——在另一台 Mac 的 设置 › 通用 里选同一个文件夹"
+        ? "同步一轮之后列在这里"
+        : syncer.server == nil
+          ? "还没有——在另一台电脑的 设置 › 通用 里选同一个文件夹"
+          : "还没有——在另一台电脑的 设置 › 通用 里连同一个服务器上的同一个文件夹"
     }
     return syncer.peers.map { peer in
       let name = peer.name ?? "没写名字的一台"
@@ -312,6 +359,12 @@ struct SyncSection: View {
   /// iCloud 云盘在本机的位置（选文件夹的面板先指到这里）
   static let iCloudDrive = FileManager.default.homeDirectoryForCurrentUser.appending(
     path: "Library/Mobile Documents/com~apple~CloudDocs", directoryHint: .isDirectory)
+
+  /// 服务器那一行：文件夹的名字（同文件夹那一行；整个网址和用户名悬停看），地址就是根的时候是主机名
+  static func shown(server: URL) -> String {
+    let name = server.lastPathComponent
+    return name.isEmpty || name == "/" ? server.host(percentEncoded: false) ?? "" : name
+  }
 
   /// 悬停时给人看的路径：iCloud 云盘里的写成「iCloud 云盘/…」，家目录写成 ~
   static func shown(_ folder: URL) -> String {
