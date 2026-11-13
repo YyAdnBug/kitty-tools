@@ -1568,8 +1568,9 @@ struct SnapshotProbeTests {
 
   /// 主界面（Shell/HomePanel.swift，2026-10-29 拍板）。单独一个测试函数，几秒：
   ///   -only-testing:'KittyToolsTests/SnapshotProbeTests/home()'
-  /// 面板的大小取模型算出来的（和真面板一样）。出：全开浅 / 深色（键盘选中「截图」、鼠标停在「启动器」上）、开关都开着
-  /// 而且在录屏、有钉图（深色）、关掉便签和录制（多一行「2 个功能关着 · 管理…」）、增强对比度（选中描边、发丝线）、
+  /// 面板的大小取模型算出来的（和真面板一样）。出：全开浅 / 深色（键盘选中「截图」、鼠标停在「启动器」上；插件收在最后
+  /// 一节）、新装默认的四个功能（没有「插件」一节，多一行「1 个功能关着 · 管理…」）、只添加了一个插件（「插件」一节里一格）、
+  /// 在录屏、有钉图（深色；两个开关开着也不占格子）、没添加便签、关掉录制、增强对比度（选中描边、发丝线）、
   /// 有新版本（底栏左边「更新到 x」，Updater 从环境给）
   @Test(.enabled(if: directory != nil)) func home() throws {
     let out = try #require(Self.directory)
@@ -1594,8 +1595,14 @@ struct SnapshotProbeTests {
     var state = LauncherItem.ActionState()
     state.features = all
     for dark in [false, true] {
-      let home = model(state, selection: 8, hovered: 1)
+      let home = model(state, selection: 6, hovered: 1)
       try shot("home\(dark ? "-dark" : "")", HomeView(model: home), home, dark: dark)
+    }
+    for (name, plugins) in [("home-default", Set<Feature>()), ("home-plugin-one", [.reminders])] {
+      var fresh = state
+      fresh.features = Feature.core.union(plugins)
+      let home = model(fresh, off: Home.offCount(enabled: fresh.features, available: all))
+      try shot(name, HomeView(model: home), home)
     }
     var busy = LauncherItem.ActionState(
       recordingPaused: true, copyToTranslate: true, pinsHidden: false, recording: .screenRecord)

@@ -709,7 +709,7 @@ struct ShortcutsSheet: View {
         globals: [.home],
         entries: [
           Entry("←→", "↑↓", text: "在格子之间换（Tab、⇧Tab 也行）"),
-          Entry("↩", "空格", text: "执行选中的那一格；开关原地切换"),
+          Entry("↩", "空格", text: "执行选中的那一格"),
           Entry("⌘,", text: "打开设置"),
           Entry("⌘Q", text: "退出 Kitty Tools"),
           Entry("Esc", "⌘W", text: "收起"),

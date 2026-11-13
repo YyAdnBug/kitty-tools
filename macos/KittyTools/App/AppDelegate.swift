@@ -268,10 +268,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     model.perform = { [unowned self] target in
       switch target {
       case .action(let action): run(action)
-      // 开关原地切：结果就在格子上，不再弹岛（mac-whisker S2「分工」）
-      case .extra(let extra):
-        run(extra, announcing: false)
-        if builtHomePanel?.isVisible == true { refreshHome(appearing: false) }
+      case .extra(let extra): run(extra)
       }
     }
     builtHomePanel = panel
@@ -1506,8 +1503,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     homePanel.present(atTop: icon == nil, below: icon)
   }
 
-  /// 按现在的状态重排主界面（关着的功能、开关、在不在录、钉图、当前生效的快捷键）。appearing：新呼出，直接定大小；
-  /// 开着时（切了开关）高度变了带动画
+  /// 按现在的状态重排主界面（关着的功能、添加的插件、在不在录、钉图、当前生效的快捷键）。appearing：新呼出，直接定大小；
+  /// 开着时再呼出一次，高度变了带动画
   private func refreshHome(appearing: Bool) {
     let fresh = WhatsNew.current()
     homeModel.update(
@@ -1662,13 +1659,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     run(MenuExtra(rawValue: id) ?? .settings)
   }
 
-  /// 菜单栏里不对应全局热键的项：菜单栏、启动器、主界面同一个分发。announcing = false：开关切了不弹岛（主界面里结果就在格子上）
-  private func run(_ extra: MenuExtra, announcing: Bool = true) {
+  /// 菜单栏里不对应全局热键的项：菜单栏、启动器、主界面（钉图两项、设置、退出）同一个分发
+  private func run(_ extra: MenuExtra) {
     // 归关着的功能的那几项（暂停记录、复制即译、钉图）：同 run(action) 的兜底
     if let feature = extra.section?.feature, !feature.isOn { return }
     switch extra {
-    case .pauseClipboard: togglePauseRecording(announcing: announcing)
-    case .copyToTranslate: toggleCopyToTranslate(announcing: announcing)
+    case .pauseClipboard: togglePauseRecording()
+    case .copyToTranslate: toggleCopyToTranslate()
     case .pinsToggle: pins.toggleHidden()
     case .pinsClose: closeAllPins()
     case .settings: showSettings()
@@ -1910,13 +1907,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     .init("勾选同步", opens: true) { [unowned self] in showSettings(page: .general) }
   }
 
-  /// 暂停 / 恢复记录剪贴板（菜单栏、启动器、主界面，D4）：不存盘，重启 App 自动恢复记录（免得忘了关）；
-  /// 菜单一关就看不出开没开，用刘海说（announcing = false：主界面里格子就是开关，不说）
-  private func togglePauseRecording(announcing: Bool = true) {
+  /// 暂停 / 恢复记录剪贴板（菜单栏、启动器，D4；主界面 2026-11-13 起不放开关）：不存盘，重启 App 自动恢复记录（免得忘了关）；
+  /// 菜单一关就看不出开没开，用刘海说（剪贴板面板底栏也写着「已暂停记录」）
+  private func togglePauseRecording() {
     let paused = watcher.isUserPaused
     watcher.isUserPaused = !paused
     clipboardModel.isRecordingPaused = !paused
-    guard announcing else { return }
     island.show(
       paused ? "已恢复记录剪贴板" : "已暂停记录剪贴板",
       detail: paused ? nil : "复制的内容不进历史，再点一次恢复", tone: .info,
@@ -1924,12 +1920,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       actions: [.init("撤销") { [unowned self] in togglePauseRecording() }])
   }
 
-  /// 复制即译开关（菜单栏、启动器、主界面）：开关一关就看不出开没开，这个后台模式会影响之后的每次复制，用刘海说
-  /// （announcing = false：主界面里格子就是开关，不说）
-  private func toggleCopyToTranslate(announcing: Bool = true) {
+  /// 复制即译开关（菜单栏、启动器；另在 设置 › 翻译 和翻译浮窗上）：开关一关就看不出开没开，这个后台模式会影响之后的每次复制，用刘海说
+  private func toggleCopyToTranslate() {
     let wasOn = UserDefaults.standard.bool(forKey: Prefs.translateCopyToTranslate)
     UserDefaults.standard.set(!wasOn, forKey: Prefs.translateCopyToTranslate)
-    guard announcing else { return }
     island.show(
       wasOn ? "已关闭复制即译" : "已开启复制即译", detail: wasOn ? nil : "复制文字后会弹出翻译", tone: .info,
       symbol: wasOn ? "character.bubble" : "character.bubble.fill",

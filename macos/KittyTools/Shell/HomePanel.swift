@@ -1,10 +1,11 @@
 // 主界面（2026-10-29 拍板「全部按推荐」，拍板页 macos/build/research/home-panel-2026-10-29/decisions.html）：一眼看到全部功能、
 // 点一下就用的那块面板。内容和菜单栏菜单读同一份——HotKeyAction.sections 分节、同名同序（关着的功能不出现），每节末尾接上那一节
-// 的 MenuExtra（暂停记录剪贴板、复制即译、有钉图时的两项）；有关着的功能时最下面一行「N 个功能关着 · 管理…」；底栏左边有新版本
+// 的 MenuExtra 里是动作的（有钉图时的两项）；有关着的功能时最下面一行「N 个功能关着 · 管理…」；底栏左边有新版本
 // 时是「更新到 x」（UpdateBarHint），右边「设置 ⌘,」「退出 ⌘Q」。一格 = 30 pt 家族色块 + 名字 + 一行小字快捷键，一行 5 格；
-// 只有一格的节（提醒、状态屏、启动台、刘海岛）不画标题、连着的并成一行。开关是圆的，开着时填强调色，点了原地切、面板不收；别的格子
-// 点了面板先收起再做（同启动器的内置动作）。「打开主界面」自己不在里面；「钉住剪贴板内容」也不列（2026-11-13 用户：剪贴板
-// 历史面板里就能钉，Home.unlisted），菜单栏菜单、启动器、快捷键照旧有它。
+// 功能各一节（只剩一格的不画标题、连着的并成一行），添加了的插件全收进最后一节「插件」（同设置侧栏的分组，2026-11-13）。
+// **只放点一下就做的动作**（2026-11-13 拍板，对标托盘快捷面板的通行做法：面板放动作，开关放菜单里打勾）：开关
+// （暂停记录剪贴板、复制即译）不占格子，在右键菜单、启动器里；「打开主界面」自己不在里面；「钉住剪贴板内容」也不列
+// （剪贴板历史面板里就能钉，Home.unlisted），菜单栏菜单、启动器、快捷键照旧有它。格子点了面板先收起再做（同启动器的内置动作）。
 // 面板是一个 OverlayPanel 实例（AppDelegate.homePanel：Panel 皮肤、不激活本 App、点外面收）。键盘：←→ ↑↓ Tab 选（一块中性
 // 高亮滑过去），↩ / 空格执行，Esc 收起，⌘, 设置，⌘Q 退出。按键由一块当第一响应者的 NSView 收（同选状态的面板）。
 // 分节、排版、选中怎么移动、按键对应什么都是纯函数（enum Home），单测锁住。
@@ -47,8 +48,6 @@ enum Home {
     let color: Color
     /// 当前生效的快捷键（没设、没注册上的 nil）
     let key: String?
-    /// 开关（暂停记录剪贴板、复制即译）开没开；不是开关的 nil
-    let isOn: Bool?
     /// 新功能标记（WhatsNew）：名字前面一个强调色小圆点
     var isNew = false
 
@@ -61,7 +60,7 @@ enum Home {
   }
 
   struct Section: Equatable {
-    /// nil = 不画标题（只有一格的节并成的那一行）
+    /// nil = 不画标题（只剩一格的功能并成的那一行）
     let title: String?
     let tiles: [Tile]
   }
@@ -69,31 +68,38 @@ enum Home {
   /// 主界面里不列的动作：「打开主界面」自己；「钉住剪贴板内容」（剪贴板历史面板里就能钉，这里不再摆一格）
   static let unlisted: Set<HotKeyAction> = [.home, .pinClipboard]
 
+  /// 插件那一节的标题（同设置侧栏那一组的名字）
+  static let pluginsTitle = "插件"
+
   /// 分节（纯函数）：和菜单栏菜单同一份（AppDelegate.buildStatusMenu），关着的功能不出现，unlisted 的不列；
-  /// 每节末尾接那一节的 MenuExtra。只有一格的节不画标题，和前面同样是一格的并成一行（菜单里这几节也不画标题）。
+  /// 每节末尾接那一节的 MenuExtra 里是动作的（开关不列：isOn 不是 nil 的）。功能只剩一格的节不画标题，和前面同样是一格的
+  /// 并成一行；插件的格子不分节，按原来的先后全收进最后一节「插件」（只添加了一个也带标题，不会掉出孤零零的一格）。
   /// keys：各动作当前生效的快捷键（HotKeyCenter.bindings 的 display）；fresh：这一版新加、还没碰过的动作（WhatsNew），格子标小圆点
   static func sections(
     state: LauncherItem.ActionState, keys: [HotKeyAction: String], fresh: Set<HotKeyAction> = []
   ) -> [Section] {
-    let extras = MenuExtra.allCases.filter { $0.section != nil && $0.isAvailable(state) }
+    let extras = MenuExtra.allCases.filter {
+      $0.section != nil && $0.isAvailable(state) && $0.isOn(state) == nil
+    }
     var result: [Section] = []
+    var plugins: [Tile] = []
     for section in HotKeyAction.visibleSections(enabled: state.features) {
       var tiles = section.actions.filter { !unlisted.contains($0) }.map { action in
         Tile(
           target: .action(action), title: action.title(recording: state.isRunning(action)),
-          symbol: action.symbol, color: action.color, key: keys[action], isOn: nil,
+          symbol: action.symbol, color: action.color, key: keys[action],
           isNew: fresh.contains(action))
       }
       for extra in extras where section.actions.contains(where: { $0 == extra.section }) {
-        let isOn = extra.isOn(state)
         tiles.append(
           Tile(
             target: .extra(extra), title: extra.title(pinsHidden: state.pinsHidden == true),
-            symbol: isOn == nil ? extra.symbol : toggleSymbol(extra), color: extra.color, key: nil,
-            isOn: isOn))
+            symbol: extra.symbol, color: extra.color, key: nil))
       }
       guard !tiles.isEmpty else { continue }
-      if tiles.count > 1 {
+      if section.actions.first?.feature?.isPlugin == true {
+        plugins += tiles
+      } else if tiles.count > 1 {
         result.append(Section(title: section.title, tiles: tiles))
       } else if let last = result.last, last.title == nil {
         result[result.count - 1] = Section(title: nil, tiles: last.tiles + tiles)
@@ -101,12 +107,8 @@ enum Home {
         result.append(Section(title: nil, tiles: tiles))
       }
     }
+    if !plugins.isEmpty { result.append(Section(title: pluginsTitle, tiles: plugins)) }
     return result
-  }
-
-  /// 开关画在圆里：菜单用的是带圈的符号（pause.circle），圆里再画一圈就成了圈套圈
-  private static func toggleSymbol(_ extra: MenuExtra) -> String {
-    extra == .pauseClipboard ? "pause.fill" : "doc.on.doc.fill"
   }
 
   /// 关着的功能有几个（纯函数）：只算这台系统上有、而且有入口（全局动作）的——程序坞预览没有全局动作，默认关着也不提；
@@ -212,7 +214,7 @@ enum Home {
   /// 选中换了走哪条曲线：键盘 snap，按住连发不动画
   private(set) var motion = Style.Motion.instant
 
-  /// 做一件事（AppDelegate 接上：动作走 run(action)，菜单栏那几项走 run(extra)；开关做完再 refresh）
+  /// 做一件事（AppDelegate 接上：动作走 run(action)，菜单栏那几项走 run(extra)）
   @ObservationIgnored var perform: (Home.Tile.Target) -> Void = { _ in }
   /// 「管理…」：设置 › 通用（「功能」那一节在里面）
   @ObservationIgnored var openFeatures: () -> Void = {}
@@ -234,7 +236,7 @@ enum Home {
   var tiles: [Home.Tile] { sections.flatMap(\.tiles) }
   var size: CGSize { CGSize(width: Home.width, height: Home.height(sections, offCount: offCount)) }
 
-  /// 换成现在的样子。appearing：新呼出（选中、悬停清掉）；开关切完原地刷新时选中留着
+  /// 换成现在的样子。appearing：新呼出（选中、悬停清掉）；开着时再排一遍选中留着
   func update(
     _ sections: [Home.Section], offCount: Int, settingsIsNew: Bool = false, appearing: Bool
   ) {
@@ -261,12 +263,11 @@ enum Home {
     }
   }
 
-  /// 点了 / 按了第 index 格：开关原地切（面板不收）；别的先收起面板再做
+  /// 点了 / 按了第 index 格：先收起面板再做
   func activate(_ index: Int) {
     guard tiles.indices.contains(index) else { return }
-    let tile = tiles[index]
-    if tile.isOn == nil { hidePanel() }
-    perform(tile.target)
+    hidePanel()
+    perform(tiles[index].target)
   }
 
   /// 底栏的「设置」「退出」
@@ -383,7 +384,7 @@ struct HomeView: View {
   }
 }
 
-/// 一格：色块（开关是圆）+ 名字 + 快捷键（开关这一行写「已暂停」「已开启」）。键盘选中的那格垫一块中性高亮（matchedGeometryEffect
+/// 一格：色块 + 名字 + 快捷键。键盘选中的那格垫一块中性高亮（matchedGeometryEffect
 /// 在格子间滑过去：格子是固定的、不会被回收，不同于长列表的 offset 写法）；没选中的悬停铺 fill.hover
 private struct HomeTile: View {
   let model: HomeModel
@@ -399,7 +400,7 @@ private struct HomeTile: View {
       model.activate(index)
     } label: {
       VStack(spacing: 0) {
-        icon.padding(.top, 9)
+        KindTile(symbol: tile.symbol, color: tile.color, size: 30).padding(.top, 9)
         // 新功能：名字前面一个小圆点（iOS 主屏新装 App 的那种，拍板 A1）
         HStack(spacing: 3) {
           if tile.isNew { NewDot() }
@@ -410,12 +411,10 @@ private struct HomeTile: View {
         }
         .padding(.horizontal, 3)
         .padding(.top, 6)
-        Text(detail)
+        Text(tile.key ?? "")
           .font(.system(size: 10, weight: .medium, design: .rounded))
           .monospacedDigit()
-          .foregroundStyle(
-            tile.isOn == true ? AnyShapeStyle(Style.brandInk) : AnyShapeStyle(.tertiary)
-          )
+          .foregroundStyle(.tertiary)
           .lineLimit(1)
           .frame(height: 13)
           .padding(.top, 1)
@@ -445,39 +444,8 @@ private struct HomeTile: View {
     }
     .help(tile.key.map { "\(tile.title)  \($0)" } ?? tile.title)
     .accessibilityLabel(tile.isNew ? tile.title + "，" + WhatsNew.spoken : tile.title)
-    .accessibilityValue(accessibilityValue)
+    .accessibilityValue(tile.key.map { "快捷键 \($0)" } ?? "")
     .accessibilityAddTraits(selected ? .isSelected : [])
-    .accessibilityAddTraits(tile.isOn != nil ? .isToggle : [])
-  }
-
-  @ViewBuilder private var icon: some View {
-    if let isOn = tile.isOn {
-      // 开关：圆，关着中性底，开着强调色（同控制中心）
-      Image(symbol: tile.symbol)
-        .font(.system(size: 13, weight: .semibold))
-        .foregroundStyle(isOn ? AnyShapeStyle(Style.onBrand) : AnyShapeStyle(.primary))
-        .frame(width: 30, height: 30)
-        .background(
-          isOn ? AnyShapeStyle(Style.brand) : AnyShapeStyle(Style.controlFill), in: .circle
-        )
-        .contentTransition(.symbolEffect(.replace))
-    } else {
-      KindTile(symbol: tile.symbol, color: tile.color, size: 30)
-    }
-  }
-
-  /// 名字下面那一行：快捷键；开关开着时写开着是什么样（同启动器里这两项的副标题）
-  private var detail: String {
-    switch tile.target {
-    case .extra(.pauseClipboard): tile.isOn == true ? "已暂停" : ""
-    case .extra: tile.isOn == true ? "已开启" : ""
-    case .action: tile.key ?? ""
-    }
-  }
-
-  private var accessibilityValue: String {
-    if let isOn = tile.isOn { return isOn ? "开" : "关" }
-    return tile.key.map { "快捷键 \($0)" } ?? ""
   }
 }
 
