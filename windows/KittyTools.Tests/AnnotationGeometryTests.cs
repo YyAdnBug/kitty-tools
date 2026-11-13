@@ -146,17 +146,37 @@ public sealed class AnnotationGeometryTests
     {
         var box = Box(AnnotationKind.Rectangle, new RectD(10, 20, 40, 30));
         var corners = box.Handles(1).ToDictionary(grip => grip.Handle, grip => grip.Point);
-        Assert.AreEqual(4, corners.Count);
+        // PLAN-v18 S14（mac 29655638）：四角 + 四条边的中点（这里 40 × 30，两条边都不短于 24）
+        Assert.AreEqual(8, corners.Count);
         Assert.AreEqual(new PointD(10, 20), corners[AnnotationHandle.TopLeft]);
         Assert.AreEqual(new PointD(50, 50), corners[AnnotationHandle.BottomRight]);
-        // 拖左上角：右下角不动；拖过头翻过去；Shift 正方形
+        Assert.AreEqual(new PointD(30, 20), corners[AnnotationHandle.Top]);
+        Assert.AreEqual(new PointD(10, 35), corners[AnnotationHandle.Left]);
+        // 拖左上角：右下角不动；拖过头翻过去
         var grown = box.Resized(AnnotationHandle.TopLeft, new PointD(0, 10), false, 1);
         Assert.AreEqual(box.Id, grown.Id);
         Assert.AreEqual(new RectD(0, 10, 50, 40), grown.Rect);
         Assert.AreEqual(
             new RectD(50, 50, 10, 10), box.Resized(AnnotationHandle.TopLeft, new PointD(60, 60), false, 1).Rect);
+        // Shift 拖角保持原来的长宽比（4 : 3）——以前是变正方形（60 × 60），用户改了规则（mac 拍板 B2）
         Assert.AreEqual(
-            new RectD(10, 20, 60, 60), box.Resized(AnnotationHandle.BottomRight, new PointD(70, 50), true, 1).Rect);
+            new RectD(10, 20, 60, 45), box.Resized(AnnotationHandle.BottomRight, new PointD(70, 50), true, 1).Rect);
+        // 拖边只改那条边；拖边时不管 Shift
+        Assert.AreEqual(new RectD(10, 20, 70, 30), box.Resized(AnnotationHandle.Right, new PointD(80, 999), false, 1).Rect);
+        Assert.AreEqual(new RectD(10, 20, 70, 30), box.Resized(AnnotationHandle.Right, new PointD(80, 999), true, 1).Rect);
+        Assert.AreEqual(new RectD(10, 5, 40, 45), box.Resized(AnnotationHandle.Top, new PointD(0, 5), false, 1).Rect);
+        // Alt：中心不动、对边反向一起动（中心 30, 35）
+        Assert.AreEqual(new RectD(0, 20, 60, 30), box.Resized(AnnotationHandle.Right, new PointD(60, 0), false, 1, fromCenter: true).Rect);
+        Assert.AreEqual(new RectD(-10, 5, 80, 60), box.Resized(AnnotationHandle.BottomRight, new PointD(70, 65), false, 1, fromCenter: true).Rect);
+        // 短于 24 的边不给中点
+        var thin = Box(AnnotationKind.Ellipse, new RectD(0, 0, 100, 20));
+        var thinHandles = thin.Handles(1).Select(grip => grip.Handle).ToList();
+        CollectionAssert.Contains(thinHandles, AnnotationHandle.Top);
+        CollectionAssert.DoesNotContain(thinHandles, AnnotationHandle.Left);
+        Assert.AreEqual(6, thin.Handles(2).Count, "按 2 倍算：100 不短于 48 给上下两个，20 短于 48 不给左右");
+        // Alt 画：以起点为中心；再加 Shift 是正方形
+        Assert.AreEqual(new RectD(80, 90, 40, 20), Annotation.Drawn(AnnotationKind.Rectangle, new PointD(100, 100), new PointD(120, 110), false, AnnotationStyle.Default, fromCenter: true)!.Rect);
+        Assert.AreEqual(new RectD(80, 80, 40, 40), Annotation.Drawn(AnnotationKind.Rectangle, new PointD(100, 100), new PointD(120, 110), true, AnnotationStyle.Default, fromCenter: true)!.Rect);
         Assert.AreEqual(box, box.Resized(AnnotationHandle.Start, new PointD(0, 0), false, 1));
         // 线类两端：另一端不动，Shift 吸 45°；箭头、直线还有弧线中点的弯曲手柄（直的在弦中点），荧光笔没有
         var arrow = Segment(AnnotationKind.Arrow, new PointD(0, 0), new PointD(100, 0));

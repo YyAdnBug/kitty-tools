@@ -1,4 +1,5 @@
-// 马赛克打进原图（第四轮体检 E6，PLAN-v11 M4）：框里每格一种颜色、框外不动，格子跨出选区时取色照整屏。
+// 马赛克打进原图（第四轮体检 E6，PLAN-v11 M4）：框里每格一种颜色、框外不动，格子跨出选区时取色照整屏；
+// 打码「模糊」打进去的也是模糊（PLAN-v18 S16）。
 // 另有 PngInfo（PLAN-v11 M16：角落卡按图本身的像素算尺寸）。
 using KittyTools.Core;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -100,6 +101,71 @@ public sealed class MosaicBurnTests
         }
 
         return bgra;
+    }
+
+    [TestMethod]
+    public void BlurHasNoBlockStepsKeepsTheMeanAndStaysInside()
+    {
+        // PLAN-v18 S16（mac e378bbe6）：打码「模糊」打进原图的也是模糊——黑白相间、一像素宽的「字」糊成一片灰，
+        // 相邻像素之间没有方块的台阶，整块的平均亮度不变，框外一个像素都不动。
+        const int size = 120;
+        var image = new byte[size * size * 4];
+        for (var y = 0; y < size; y++)
+        {
+            for (var x = 0; x < size; x++)
+            {
+                var index = (y * size + x) * 4;
+                var ink = (x / 2 + y / 3) % 2 == 0 ? (byte)0 : (byte)255;
+                image[index] = image[index + 1] = image[index + 2] = ink;
+                image[index + 3] = 255;
+            }
+        }
+
+        var before = (byte[])image.Clone();
+        var rect = new RectD(20, 20, 80, 80);
+        MosaicBurn.ApplyBlur(before, size, size, rect, 6, image, size, size, 0, 0);
+        double sumBefore = 0, sumAfter = 0;
+        var largestStep = 0;
+        for (var y = 20; y < 100; y++)
+        {
+            for (var x = 20; x < 100; x++)
+            {
+                var index = (y * size + x) * 4;
+                sumBefore += before[index];
+                sumAfter += image[index];
+                Assert.AreEqual(image[index], image[index + 2], "灰的进灰的出");
+                if (x > 20)
+                {
+                    largestStep = Math.Max(largestStep, Math.Abs(image[index] - image[index - 4]));
+                }
+            }
+        }
+
+        Assert.IsTrue(largestStep <= 12, $"相邻像素最多差 {largestStep}（方块会在格子边上跳一大截）");
+        Assert.AreEqual(sumBefore / 6400, sumAfter / 6400, 12, "平均亮度不变");
+        for (var y = 0; y < size; y++)
+        {
+            for (var x = 0; x < size; x++)
+            {
+                if (x < 20 || x >= 100 || y < 20 || y >= 100)
+                {
+                    Assert.AreEqual(Pixel(before, size, x, y), Pixel(image, size, x, y));
+                }
+            }
+        }
+    }
+
+    [TestMethod]
+    public void MosaicToolIsRenamedAndBlursFirst()
+    {
+        Assert.AreEqual("打码", AnnotationKinds.Title(AnnotationKind.Mosaic));
+        Assert.AreEqual(1, AnnotationStyle.DefaultFor(AnnotationKind.Mosaic).Option, "第一次用是模糊");
+        CollectionAssert.AreEqual(new[] { 1, 0 }, AnnotationKinds.OptionOrder(AnnotationKind.Mosaic));
+        CollectionAssert.AreEqual(new[] { 0, 1 }, AnnotationKinds.OptionOrder(AnnotationKind.Rectangle));
+        CollectionAssert.AreEqual(new[] { "像素", "模糊" }, AnnotationKinds.OptionTitles(AnnotationKind.Mosaic), "下标存进了磁盘，不换");
+        CollectionAssert.AreEqual(new[] { "弱", "中", "强" }, AnnotationKinds.WeightTitles(AnnotationKind.Mosaic));
+        CollectionAssert.AreEqual(new[] { 8.0, 12, 18 }, new[] { 0, 1, 2 }.Select(weight => (AnnotationStyle.Default with { Weight = weight }).BlurRadius).ToArray());
+        Assert.AreEqual("mosaic", AnnotationKinds.StorageName(AnnotationKind.Mosaic), "存盘名不变，历史照读");
     }
 
     private static (byte, byte, byte, byte) Pixel(byte[] bgra, int width, int x, int y)

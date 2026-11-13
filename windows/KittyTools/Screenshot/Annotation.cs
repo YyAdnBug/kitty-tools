@@ -385,13 +385,41 @@ internal static class AnnotationRenderer
     }
 
     /// <summary>
-    /// 马赛克：冻结帧这一块按格子取平均，再放大回去。格子边长按粗细档 6 / 10 / 16 DIP；像素 = 不插值放大，
-    /// 模糊（选项 1）= 格子放大到 1.5 倍、再平滑插值放大（信息已经在取平均时丢掉，还原不了）。
+    /// 打码：冻结帧这一块按格子取平均，再放大回去。像素（选项 0）= 格子边长按粗细档 6 / 10 / 16 DIP、不插值放大；
+    /// 模糊（选项 1，PLAN-v18 S16）= 每格「半径 / 2」、半径 8 / 12 / 18 DIP，格子上做 σ = 1 格的高斯（Core MosaicBurn.BlurredGrid，
+    /// 和打进历史原图的同一张小图）再三次插值放大（信息在缩小时已经丢了）。
     /// </summary>
     private static void DrawMosaic(CanvasDrawingSession ds, Annotation annotation, FrozenScreen screen, Mapping map)
     {
         var blurred = annotation.Style.Option == 1;
         var cell = MosaicCell(annotation, map.PixelsPerDip);
+        if (blurred)
+        {
+            var (gridLeft, gridTop, gridColumns, gridRows, rgb) = MosaicBurn.BlurredGrid(screen.Bgra, screen.Width, screen.Height, annotation.Rect, cell);
+            if (gridColumns <= 0 || gridRows <= 0)
+            {
+                return;
+            }
+
+            var smooth = new Color[gridColumns * gridRows];
+            for (var index = 0; index < smooth.Length; index++)
+            {
+                smooth[index] = Color.FromArgb(
+                    255, (byte)Math.Clamp(Math.Round(rgb[index * 3]), 0, 255), (byte)Math.Clamp(Math.Round(rgb[index * 3 + 1]), 0, 255),
+                    (byte)Math.Clamp(Math.Round(rgb[index * 3 + 2]), 0, 255));
+            }
+
+            using var small = CanvasBitmap.CreateFromColors(ds, smooth, gridColumns, gridRows);
+            using (ds.CreateLayer(1, map.Rect(annotation.Rect)))
+            {
+                ds.DrawImage(
+                    small, map.Rect(new RectD(gridLeft, gridTop, gridColumns * cell, gridRows * cell)),
+                    new Windows.Foundation.Rect(0, 0, gridColumns, gridRows), 1, CanvasImageInterpolation.HighQualityCubic);
+            }
+
+            return;
+        }
+
         var left = (int)Math.Clamp(Math.Floor(annotation.Rect.X), 0, screen.Width);
         var top = (int)Math.Clamp(Math.Floor(annotation.Rect.Y), 0, screen.Height);
         var right = (int)Math.Clamp(Math.Ceiling(annotation.Rect.Right), 0, screen.Width);
@@ -419,9 +447,7 @@ internal static class AnnotationRenderer
         var destination = map.Rect(new RectD(left, top, columns * cell, rows * cell));
         using (ds.CreateLayer(1, map.Rect(annotation.Rect)))
         {
-            ds.DrawImage(
-                blocks, destination, new Windows.Foundation.Rect(0, 0, columns, rows), 1,
-                blurred ? CanvasImageInterpolation.HighQualityCubic : CanvasImageInterpolation.NearestNeighbor);
+            ds.DrawImage(blocks, destination, new Windows.Foundation.Rect(0, 0, columns, rows), 1, CanvasImageInterpolation.NearestNeighbor);
         }
     }
 
@@ -501,9 +527,10 @@ internal static class AnnotationRenderer
     private static (byte R, byte G, byte B) Average(FrozenScreen screen, int left, int top, int right, int bottom)
         => MosaicBurn.Average(screen.Bgra, screen.Width, left, top, right, bottom);
 
-    /// <summary>马赛克的格子边长（像素）：粗细档 6 / 10 / 16 DIP，模糊那档再放大 1.5 倍。出图时 pixelsPerDip = 屏幕缩放。</summary>
+    /// <summary>打码的格子边长（像素）：像素档 6 / 10 / 16 DIP，模糊档是半径的一半（4 / 6 / 9 DIP）。出图时 pixelsPerDip = 屏幕缩放。</summary>
     internal static int MosaicCell(Annotation annotation, double pixelsPerDip)
-        => Math.Max(1, (int)Math.Round(annotation.Style.MosaicBlock * (annotation.Style.Option == 1 ? 1.5 : 1) * pixelsPerDip));
+        => Math.Max(1, (int)Math.Round(
+            (annotation.Style.Option == 1 ? annotation.Style.BlurRadius / 2 : annotation.Style.MosaicBlock) * pixelsPerDip));
 
     /// <summary>
     /// 截图历史要存的原图（第四轮体检 E6）：把这几块马赛克打进 target（frozen 里 (offsetX, offsetY) 起的那一块，坐标都是 frozen 的像素），
@@ -515,9 +542,19 @@ internal static class AnnotationRenderer
     {
         foreach (var annotation in annotations.Where(annotation => annotation.Kind == AnnotationKind.Mosaic))
         {
-            MosaicBurn.Apply(
-                frozen.Bgra, frozen.Width, frozen.Height, annotation.Rect, MosaicCell(annotation, pixelsPerDip),
-                target, targetWidth, targetHeight, offsetX, offsetY);
+            // 模糊档打进去的也是模糊（同一张小图，双线性放大），不再是方块（PLAN-v18 S16）
+            if (annotation.Style.Option == 1)
+            {
+                MosaicBurn.ApplyBlur(
+                    frozen.Bgra, frozen.Width, frozen.Height, annotation.Rect, MosaicCell(annotation, pixelsPerDip),
+                    target, targetWidth, targetHeight, offsetX, offsetY);
+            }
+            else
+            {
+                MosaicBurn.Apply(
+                    frozen.Bgra, frozen.Width, frozen.Height, annotation.Rect, MosaicCell(annotation, pixelsPerDip),
+                    target, targetWidth, targetHeight, offsetX, offsetY);
+            }
         }
     }
 }

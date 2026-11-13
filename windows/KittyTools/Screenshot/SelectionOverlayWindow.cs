@@ -738,7 +738,8 @@ internal sealed partial class SelectionOverlayWindow : Window
         }
 
         var target = new PointD(_cursor.X + _dragOffset.X, _cursor.Y + _dragOffset.Y);
-        _document.Replace(original.Resized(_dragHandle, target, IsDown(Windows.System.VirtualKey.Shift), _scale));
+        _document.Replace(original.Resized(
+            _dragHandle, target, IsDown(Windows.System.VirtualKey.Shift), _scale, fromCenter: IsDown(Windows.System.VirtualKey.Menu)));
         _canvas.Invalidate();
     }
 
@@ -1189,9 +1190,9 @@ internal sealed partial class SelectionOverlayWindow : Window
 
         _trayRow.Children.Add(Separator());
         var segment = new StackPanel { Orientation = Orientation.Horizontal };
-        for (var option = 0; option < options.Length; option++)
+        // 打码把模糊排前面（AnnotationKinds.OptionOrder，下标照旧）
+        foreach (var index in AnnotationKinds.OptionOrder(kind))
         {
-            var index = option;
             var button = new Button
             {
                 Content = new TextBlock { Text = options[index], FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.Medium },
@@ -2160,7 +2161,7 @@ internal sealed partial class SelectionOverlayWindow : Window
                 }
             }
             else if (Annotation.Drawn(draft.Kind, _annotationStart, point, IsDown(Windows.System.VirtualKey.Shift),
-                         draft.Style) is { } shaped)
+                         draft.Style, fromCenter: IsDown(Windows.System.VirtualKey.Menu)) is { } shaped)
             {
                 // B7：Shift = 正方形 / 正圆 / 45° 线；拖动中按下、松开都立刻重算（PollCursor 20 ms 一次）
                 _draft = shaped with { Id = draft.Id };
@@ -2770,11 +2771,13 @@ internal sealed partial class SelectionOverlayWindow : Window
         return inside ? InputSystemCursorShape.SizeAll : InputSystemCursorShape.Cross;
     }
 
-    /// <summary>标注手柄：矩形类的角是斜向缩放，线类两端和弯曲手柄是手指（往哪儿拖都行）。</summary>
-    private static InputSystemCursorShape HandleCursor(AnnotationHandle handle) => handle switch
+    /// <summary>标注手柄：矩形类的角是斜向缩放、边中点是横 / 竖缩放，线类两端和弯曲手柄是手指（往哪儿拖都行）。</summary>
+    internal static InputSystemCursorShape HandleCursor(AnnotationHandle handle) => handle switch
     {
         AnnotationHandle.TopLeft or AnnotationHandle.BottomRight => InputSystemCursorShape.SizeNorthwestSoutheast,
         AnnotationHandle.TopRight or AnnotationHandle.BottomLeft => InputSystemCursorShape.SizeNortheastSouthwest,
+        AnnotationHandle.Top or AnnotationHandle.Bottom => InputSystemCursorShape.SizeNorthSouth,
+        AnnotationHandle.Left or AnnotationHandle.Right => InputSystemCursorShape.SizeWestEast,
         _ => InputSystemCursorShape.Hand,
     };
 

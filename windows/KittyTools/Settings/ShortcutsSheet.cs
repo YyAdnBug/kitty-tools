@@ -443,7 +443,7 @@ internal static class ShortcutsSheet
         new("screenshot", "截图 · 标注", "capture", Glyphs.Edit, Array.Empty<string>(), new ShortcutEntry[]
         {
             new(new[] { "1", "2", "3", "4", "5" }, "矩形 · 椭圆 · 箭头 · 直线 · 画笔"),
-            new(new[] { "6", "7", "8", "9", "0" }, "荧光笔 · 文字 · 序号 · 马赛克 · 聚光灯（再按一次收起工具）"),
+            new(new[] { "6", "7", "8", "9", "0" }, "荧光笔 · 文字 · 序号 · 打码 · 聚光灯（再按一次收起工具）"),
             new("Delete", "Backspace", "删除选中的标注"),
             new(new[] { "Ctrl+Z", "Ctrl+Y", "Ctrl+Shift+Z" }, "撤销 / 重做"),
             new("Ctrl+Enter", "Esc", "文字框里收下文字（Enter 是换行；点外面也收下）"),

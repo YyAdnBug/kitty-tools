@@ -632,7 +632,7 @@ internal sealed class LongAnnotateWindow
                 _draft = pen with { Points = _pen.ToArray() };
                 break;
             case Drag.Draw when _draft is { } draft:
-                if (Annotation.Drawn(draft.Kind, _start, point, shift, _style) is { } next)
+                if (Annotation.Drawn(draft.Kind, _start, point, shift, _style, fromCenter: IsDown(VirtualKey.Menu)) is { } next)
                 {
                     _draft = next with { Id = draft.Id };
                 }
@@ -642,7 +642,7 @@ internal sealed class LongAnnotateWindow
                 _document.Replace(grabbed.Offset(point.X - _start.X, point.Y - _start.Y));
                 break;
             case Drag.Resize when _grabbed is { } grabbed:
-                _document.Replace(grabbed.Resized(_handle, point, shift, _scale));
+                _document.Replace(grabbed.Resized(_handle, point, shift, _scale, fromCenter: IsDown(VirtualKey.Menu)));
                 break;
         }
 
@@ -906,7 +906,7 @@ internal sealed class LongAnnotateWindow
         if (optionTitles.Length > 0)
         {
             var options = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-            for (var index = 0; index < optionTitles.Length; index++)
+            foreach (var index in AnnotationKinds.OptionOrder(kind))
             {
                 var option = index;
                 var button = new Button

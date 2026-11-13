@@ -35,6 +35,12 @@ public enum AnnotationHandle
     TopRight,
     BottomLeft,
     BottomRight,
+
+    // 矩形类四条边的中点（PLAN-v18 S14）
+    Top,
+    Right,
+    Bottom,
+    Left,
 }
 
 /// <summary>标注的颜色（内容色，不随深浅色、强调色变；mac Annotation.Palette）。</summary>
@@ -86,9 +92,13 @@ public readonly record struct AnnotationStyle(int Color, int Weight, int Option)
     /// <summary>第一次用：红色中号。</summary>
     public static readonly AnnotationStyle Default = new(AnnotationPalette.Red, 1, 0);
 
-    /// <summary>这个工具第一次用的样式：荧光笔黄色，其余红色中号。</summary>
-    public static AnnotationStyle DefaultFor(AnnotationKind kind)
-        => kind == AnnotationKind.Highlighter ? Default with { Color = AnnotationPalette.Yellow } : Default;
+    /// <summary>这个工具第一次用的样式：荧光笔黄色，打码是模糊（mac e378bbe6），其余红色中号。</summary>
+    public static AnnotationStyle DefaultFor(AnnotationKind kind) => kind switch
+    {
+        AnnotationKind.Highlighter => Default with { Color = AnnotationPalette.Yellow },
+        AnnotationKind.Mosaic => Default with { Option = 1 },
+        _ => Default,
+    };
 
     private int Index => Math.Clamp(Weight, 0, 2);
 
@@ -96,8 +106,11 @@ public readonly record struct AnnotationStyle(int Color, int Weight, int Option)
 
     public double FontSize => Index switch { 0 => 14, 1 => 20, _ => 28 };
 
-    /// <summary>马赛克每格的边长。</summary>
+    /// <summary>打码「像素」每格的边长。</summary>
     public double MosaicBlock => Index switch { 0 => 6, 1 => 10, _ => 16 };
+
+    /// <summary>打码「模糊」的半径（DIP，高斯的 2σ；PLAN-v18 S16 / mac e378bbe6：弱档也要让 14 pt 的正文认不出）。格子边长是它的一半。</summary>
+    public double BlurRadius => Index switch { 0 => 8, 1 => 12, _ => 18 };
 
     public double CounterDiameter => Index switch { 0 => 20, 1 => 26, _ => 34 };
 
@@ -151,7 +164,7 @@ public static class AnnotationKinds
         AnnotationKind.Highlighter => "荧光笔",
         AnnotationKind.Text => "文字",
         AnnotationKind.Counter => "序号",
-        AnnotationKind.Mosaic => "马赛克",
+        AnnotationKind.Mosaic => "打码", // PLAN-v18 S16：马赛克和模糊合成一个工具（存盘名 mosaic、option 的值不变）
         _ => "聚光灯",
     };
 
@@ -191,10 +204,15 @@ public static class AnnotationKinds
         _ => Array.Empty<string>(),
     };
 
+    /// <summary>托盘上选项从左到右的顺序（OptionTitles 的下标，下标存进了磁盘不能换）：打码把模糊排前面（mac optionOrder）。</summary>
+    public static int[] OptionOrder(AnnotationKind kind)
+        => kind == AnnotationKind.Mosaic ? new[] { 1, 0 } : Enumerable.Range(0, OptionTitles(kind).Length).ToArray();
+
     public static string[] WeightTitles(AnnotationKind kind) => kind switch
     {
         AnnotationKind.Text => new[] { "小", "中", "大" },
         AnnotationKind.Spotlight => new[] { "浅", "中", "深" },
+        AnnotationKind.Mosaic => new[] { "弱", "中", "强" },
         _ => new[] { "细", "中", "粗" },
     };
 }
@@ -401,21 +419,37 @@ public sealed record Annotation
     /// <summary>复制一份（新 Id）。Ctrl+D 往右下偏 12 DIP，Alt 拖动传 0。序号的编号不变，要不要换由调用方决定。</summary>
     public Annotation Duplicated(double dx, double dy) => Offset(dx, dy) with { Id = Guid.NewGuid() };
 
+    /// <summary>边短于这么多（DIP）不给那条边的中点手柄（mac edgeHandleMinimum）。</summary>
+    public const double EdgeHandleMinimum = 24;
+
     /// <summary>
-    /// 选中时的调整手柄：矩形类四角，线类两端；箭头、直线还有弧线中点（直的在弦中点），弦短于 32 DIP 的不给；
-    /// 荧光笔不弯；文字、序号、画笔只能拖动（空）。
+    /// 选中时的调整手柄：矩形类四角 + 四条边的中点（边短于 EdgeHandleMinimum 的不给那条边的，PLAN-v18 S14 / mac 29655638），
+    /// 线类两端；箭头、直线还有弧线中点（直的在弦中点），弦短于 32 DIP 的不给；荧光笔不弯；文字、序号、画笔只能拖动（空）。
     /// </summary>
     public IReadOnlyList<(AnnotationHandle Handle, PointD Point)> Handles(double unit)
     {
         if (IsBox)
         {
-            return new[]
+            var list = new List<(AnnotationHandle, PointD)>
             {
                 (AnnotationHandle.TopLeft, new PointD(Rect.X, Rect.Y)),
                 (AnnotationHandle.TopRight, new PointD(Rect.Right, Rect.Y)),
                 (AnnotationHandle.BottomLeft, new PointD(Rect.X, Rect.Bottom)),
                 (AnnotationHandle.BottomRight, new PointD(Rect.Right, Rect.Bottom)),
             };
+            if (Rect.Width >= EdgeHandleMinimum * unit)
+            {
+                list.Add((AnnotationHandle.Top, new PointD(Rect.MidX, Rect.Y)));
+                list.Add((AnnotationHandle.Bottom, new PointD(Rect.MidX, Rect.Bottom)));
+            }
+
+            if (Rect.Height >= EdgeHandleMinimum * unit)
+            {
+                list.Add((AnnotationHandle.Left, new PointD(Rect.X, Rect.MidY)));
+                list.Add((AnnotationHandle.Right, new PointD(Rect.Right, Rect.MidY)));
+            }
+
+            return list;
         }
 
         if (Kind is AnnotationKind.Arrow or AnnotationKind.Line)
@@ -434,23 +468,38 @@ public sealed record Annotation
             : Array.Empty<(AnnotationHandle, PointD)>();
     }
 
+    /// <summary>标注的框不受屏幕边界管（长图标注、拖到选区外都行）：给 RegionMath 一个足够大的边界。</summary>
+    private static readonly RectD Unbounded = new(-1e7, -1e7, 2e7, 2e7);
+
     /// <summary>
-    /// 拖手柄改大小：矩形类对角不动（拖过头会翻过去）、Shift 正方形；线类另一端不动、Shift 吸 45°（弯度跟着弦等比变）；
-    /// 弯曲手柄见 CurveBend（Shift 对称的弧）。不认的手柄原样返回。
+    /// 拖手柄改大小：矩形类同选区的手柄（RegionMath.Resized，PLAN-v18 S14 / mac 29655638）——角改宽高、边中点只改那条边，对边不动
+    /// （拖过头会翻过去）；Shift 拖角保持原来的长宽比（拖边时不管 Shift），fromCenter（Alt）中心不动、对边反向一起动。
+    /// 线类另一端不动、Shift 吸 45°（弯度跟着弦等比变）；弯曲手柄见 CurveBend（Shift 对称的弧）。不认的手柄原样返回。
     /// </summary>
-    public Annotation Resized(AnnotationHandle handle, PointD point, bool constrained, double unit)
+    public Annotation Resized(AnnotationHandle handle, PointD point, bool constrained, double unit, bool fromCenter = false)
     {
         if (IsBox)
         {
-            PointD? fixedCorner = handle switch
+            SelectionHandle? box = handle switch
             {
-                AnnotationHandle.TopLeft => new PointD(Rect.Right, Rect.Bottom),
-                AnnotationHandle.TopRight => new PointD(Rect.X, Rect.Bottom),
-                AnnotationHandle.BottomLeft => new PointD(Rect.Right, Rect.Y),
-                AnnotationHandle.BottomRight => new PointD(Rect.X, Rect.Y),
+                AnnotationHandle.TopLeft => SelectionHandle.TopLeft,
+                AnnotationHandle.TopRight => SelectionHandle.TopRight,
+                AnnotationHandle.BottomLeft => SelectionHandle.BottomLeft,
+                AnnotationHandle.BottomRight => SelectionHandle.BottomRight,
+                AnnotationHandle.Top => SelectionHandle.Top,
+                AnnotationHandle.Right => SelectionHandle.Right,
+                AnnotationHandle.Bottom => SelectionHandle.Bottom,
+                AnnotationHandle.Left => SelectionHandle.Left,
                 _ => null,
             };
-            return fixedCorner is { } corner ? this with { Rect = DrawnRect(corner, point, constrained) } : this;
+            if (box is not { } grip)
+            {
+                return this;
+            }
+
+            var corner = grip is SelectionHandle.TopLeft or SelectionHandle.TopRight or SelectionHandle.BottomLeft or SelectionHandle.BottomRight;
+            double? ratio = constrained && corner && Rect.Height > 0 ? Rect.Width / Rect.Height : null;
+            return this with { Rect = RegionMath.Resized(Rect, grip, point, Unbounded, ratio, fromCenter) };
         }
 
         if (!IsSegment)
@@ -474,16 +523,21 @@ public sealed record Annotation
 
     /// <summary>
     /// 拖动画出的标注（文字、序号是单击放置，返回 null；画笔先给起止两点，由调用方累点）。
-    /// constrained（按住 Shift）：矩形类变正方形 / 正圆，线类吸附到 45° 的倍数。
+    /// constrained（按住 Shift）：矩形类变正方形 / 正圆，线类吸附到 45° 的倍数；fromCenter（按住 Alt，PLAN-v18 S14）：矩形类以起点为中心。
     /// </summary>
     public static Annotation? Drawn(
-        AnnotationKind kind, PointD start, PointD end, bool constrained, AnnotationStyle style)
+        AnnotationKind kind, PointD start, PointD end, bool constrained, AnnotationStyle style, bool fromCenter = false)
     {
         var annotation = new Annotation { Kind = kind, Style = style };
         return kind switch
         {
             AnnotationKind.Rectangle or AnnotationKind.Ellipse or AnnotationKind.Mosaic or AnnotationKind.Spotlight
-                => annotation with { Rect = DrawnRect(start, end, constrained) },
+                => annotation with
+                {
+                    Rect = fromCenter
+                        ? RegionMath.Drawn(start, end, Unbounded, constrained ? 1 : null, fromCenter: true)
+                        : DrawnRect(start, end, constrained),
+                },
             AnnotationKind.Arrow or AnnotationKind.Line or AnnotationKind.Highlighter
                 => annotation with { From = start, To = constrained ? Snapped(start, end) : end },
             AnnotationKind.Pen => annotation with { Points = new[] { start, end } },
