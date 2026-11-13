@@ -151,7 +151,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   var summary: String {
     switch self {
     case .general: "功能、外观、菜单栏、登录时打开、权限、同步、导出与导入、数据目录"
-    case .island: "正在播放、点刘海叫出来的那一张上的快捷动作和最近的提示、系统提示"
+    case .island: "正在播放、点刘海叫出来的那一张上的快捷动作和最近的提示、自动展开、触感反馈、系统提示"
     case .clipboard: "历史上限、面板、内容格式和隐私"
     case .launcher: "搜索 App、文件、书签与历史、网页搜索与快捷链接、脚本命令、命令和别名"
     case .launchpad: "全屏的图标网格：排法、翻页、搜索、文件夹、捏合"

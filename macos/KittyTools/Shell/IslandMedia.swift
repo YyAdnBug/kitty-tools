@@ -136,15 +136,18 @@ struct IslandMediaCard: View {
         .buttonStyle(IslandButtonStyle())
         .accessibilityLabel("切到\(Island.Media.appLabel(snapshot))")
         VStack(alignment: .leading, spacing: 2) {
-          Text(snapshot.title)
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(.white.opacity(0.95))
-          Text(Island.Media.byline(snapshot))
-            .font(.system(size: 11))
-            .foregroundStyle(.white.opacity(0.55))
+          // 按字认：换歌时整行重来（不然新歌名有一帧画在上一首滚到尾的位置）
+          IslandMarquee(
+            text: snapshot.title, font: .system(size: 13, weight: .semibold),
+            color: .white.opacity(0.95)
+          )
+          .id(snapshot.title)
+          IslandMarquee(
+            text: Island.Media.byline(snapshot), font: .system(size: 11),
+            color: .white.opacity(0.55)
+          )
+          .id(Island.Media.byline(snapshot))
         }
-        .lineLimit(1)
-        .truncationMode(.tail)
         Spacer(minLength: 12)
         Button {
           island.close()
@@ -201,6 +204,12 @@ struct IslandScrubber: View {
       }
     }
     .onChange(of: dragging != nil) { _, held in island.holdPointer(held) }
+    // 拖到头 / 尾：触控板一下
+    .onChange(of: dragging) { old, new in
+      if Self.hitEnd(from: old, to: new, duration: media.snapshot.duration ?? 0) {
+        island.haptic(.levelChange)
+      }
+    }
     // 拖到一半卡片没了（播放器退了、被别的提示换掉）：把岛放开
     .onDisappear { island.holdPointer(false) }
   }
@@ -291,6 +300,13 @@ struct IslandScrubber: View {
   static func seconds(at x: CGFloat, width: CGFloat, duration: Double) -> Double {
     guard width > 0, duration.isFinite, duration > 0, x.isFinite else { return 0 }
     return min(max(Double(x / width), 0), 1) * duration
+  }
+
+  /// 拖着拖着到了头或者尾（上一下还不在那一头）
+  static func hitEnd(from old: Double?, to new: Double?, duration: Double) -> Bool {
+    guard let new, duration > 0, new <= 0 || new >= duration else { return false }
+    guard let old else { return true }
+    return new <= 0 ? old > 0 : old < duration
   }
 
   /// 填到几成：夹在 0…1
@@ -396,6 +412,79 @@ struct IslandMediaRow: View {
       IslandTransport(media: media, size: 13)
     }
     .frame(height: 34)
+  }
+}
+
+/// 一行字放不下时慢慢滚（以 Alcove 为准的那一轮 B5；只有播放卡片上的歌名、艺人用）：停 1.5 秒 → 匀速滚到尾（每秒 30 pt）→
+/// 停 1.5 秒 → 滚回开头，往返。放得下、减弱动态效果时就是普通的一行（截断加省略号）。卡片开着才有它，收起就不滚了
+/// （指针停在卡片上时卡片不收，会一直滚：SwiftUI 的平移动画，本进程在算，开销看 HANDTEST「第 2 批」12）
+struct IslandMarquee: View {
+  let text: String
+  let font: Font
+  let color: Color
+  @State private var textWidth: CGFloat = 0
+  @State private var boxWidth: CGFloat = 0
+  @State private var atEnd = false
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  var body: some View {
+    let overflow = Self.overflow(text: textWidth, box: boxWidth)
+    let scrolls = overflow > 0 && !reduceMotion
+    // 底下那一行定高度和能用的宽度（截断着；要滚时藏起来）；上面那一行不截断、整行平移，被这一行的框裁掉
+    Text(text)
+      .font(font)
+      .foregroundStyle(color)
+      .lineLimit(1)
+      .truncationMode(.tail)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .opacity(scrolls ? 0 : 1)
+      .onGeometryChange(for: CGFloat.self) {
+        $0.size.width
+      } action: {
+        boxWidth = $0
+      }
+      .overlay(alignment: .leading) {
+        Text(text)
+          .font(font)
+          .foregroundStyle(color)
+          .lineLimit(1)
+          .fixedSize()
+          .onGeometryChange(for: CGFloat.self) {
+            $0.size.width
+          } action: {
+            textWidth = $0
+          }
+          .offset(x: scrolls && atEnd ? -overflow : 0)
+          .opacity(scrolls ? 1 : 0)
+          .accessibilityHidden(true)
+      }
+      .clipped()
+      // 读屏只念一遍整句（滚动时底下那行藏着、上面那行不给读屏）
+      .accessibilityElement(children: .ignore)
+      .accessibilityLabel(text)
+      .task(id: Run(text: text, overflow: scrolls ? overflow : 0)) {
+        atEnd = false
+        guard scrolls else { return }
+        let travel = Double(overflow) / 30
+        while !Task.isCancelled {
+          try? await Task.sleep(for: .seconds(1.5))
+          guard !Task.isCancelled else { return }
+          withAnimation(.linear(duration: travel)) { atEnd.toggle() }
+          try? await Task.sleep(for: .seconds(travel))
+        }
+      }
+  }
+
+  /// 这一轮滚动由什么定：字换了、多出来的长度变了就从头来
+  private struct Run: Equatable {
+    var text: String
+    var overflow: CGFloat
+  }
+
+  /// 字比框多出多少（不到 1 pt 当放得下：量出来的宽度有零头）
+  static func overflow(text: CGFloat, box: CGFloat) -> CGFloat {
+    let extra = text - box
+    return box > 0 && extra >= 1 ? extra : 0
   }
 }
 

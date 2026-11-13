@@ -632,7 +632,7 @@ struct SnapshotProbeTests {
     islandPrefs.set(false, forKey: Prefs.islandShowsHistory)
     for dark in [false, true] {
       try snapshot(
-        IslandTab().defaultAppStorage(islandPrefs), size: NSSize(width: 640, height: 900),
+        IslandTab().defaultAppStorage(islandPrefs), size: NSSize(width: 640, height: 1020),
         dark: dark, to: "\(out)/settings-island-custom\(dark ? "-dark" : "").png")
     }
     // 设置 › 通用「菜单栏」（第 9 批 M1 M2）：显示 + 彩色、隐藏（图标样式置灰），各出深色；临时偏好域，不动用户的菜单栏图标
@@ -1116,6 +1116,17 @@ struct SnapshotProbeTests {
       island.tapped()
       try snapshot(
         IslandView(island: island), size: notch.windowSize, dark: false, to: "\(out)/\(name).png")
+    }
+    // 换歌的一瞥：从耳朵垂下一小条封面 + 歌名 + 艺人
+    do {
+      let island = Island(
+        showing: nil, geometry: notch, activities: [media(playing: true, artwork: cover)])
+      island.glance(
+        NowPlaying.activityID, title: "Right Now (Na Na Na)", detail: "Akon", symbol: "music.note",
+        leading: .thumbnail(cover))
+      try snapshot(
+        IslandView(island: island), size: notch.windowSize, dark: false,
+        to: "\(out)/island-media-glance.png")
     }
     // 指针停在耳朵上：右耳的跳动条换成暂停符号
     try snapshot(

@@ -447,6 +447,11 @@ enum Prefs {
   /// 刘海岛上的「正在播放」（刘海岛扩展第 2 期，Shell/NowPlaying.swift）：默认关（2026-11-13 拍板：归刘海岛插件、一组开关）；
   /// 关着时不连正在播放服务、服务不起
   static let islandNowPlaying = "islandNowPlaying"
+  /// 以 Alcove 为准的那一轮（2026-11-13，都默认开）：换歌时从耳朵垂下一小条歌名（Island.glance）、停在刘海 / 耳朵上
+  /// 自动展开活动的卡片、触感反馈
+  static let islandTrackPeek = "islandTrackPeek"
+  static let islandHoverExpands = "islandHoverExpands"
+  static let islandHaptics = "islandHaptics"
   /// 新功能标记（Shell/WhatsNew.swift，2026-11-05）的账：各版本在这台 Mac 上第一次打开的时刻（版本号 → Date，从这一刻起挂 30 天）、
   /// 碰过哪几个（WhatsNew.Entry.id 的数组）。这台电脑自己的状态：不注册默认值、不导出不同步
   static let whatsNewStarted = "whatsNewStarted"
@@ -583,6 +588,9 @@ enum Prefs {
       islandNoticeHeadphones: false,
       islandNoticeNetwork: false,
       islandNowPlaying: false,
+      islandTrackPeek: true,
+      islandHoverExpands: true,
+      islandHaptics: true,
       keepAwakeDisplay: true,
       keepAwakeSchedule: "",
     ].merging(Feature.allCases.map { ($0.prefsKey, $0.defaultOn as Any) }) { current, _ in current }

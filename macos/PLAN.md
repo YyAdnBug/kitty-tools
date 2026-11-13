@@ -658,12 +658,29 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
       （就是 `media.seek(此刻 ± 15)`）。
     - D1 保持唤醒挂上刘海（11-12 拍板 C3）：手动开的那一段是活动 `.awake`（`KeepAwake.activity`：左耳杯子、右耳倒数、
       无限期不写数、卡片上「停止」），每次重新算完跟一次（`syncIsland`）；定时那一段不上。
+    （第 1 批到此，c6af22d6；下面「已知的取舍」和单测也是第 1 批的。）
     已知的取舍（评审提的，等手测反馈）：保持唤醒比正在播放要紧（11-12 拍板 B2 的先后），开着无限期时耳朵一直是杯子，
     耳朵上切歌、播放 / 暂停用不了（卡片、那一张里照常）；在右耳点了暂停，30 秒后耳朵收走，接着放要点刘海开那一张；
     右耳误点的后果从「展开卡片」变成「音乐停了」。蓝到紫的主色本身暗，饱和度压到 0.55、亮度提满。
     单测 `NowPlayingTests.artworkTint` / `jumpsReplaceMissingSkips` / `swipeSkipsTrack`、`KeepAwakeTests.islandActivity` /
     `islandFollowsSession`；
-    截图自检 island-wings-media-peek、island-media-card-jumps（原来的几张现在跟封面取色）；HANDTEST「刘海岛完善第 1 批」1–13。
+    截图自检 island-wings-media-peek、island-media-card-jumps（原来的几张现在跟封面取色）；HANDTEST「刘海岛完善第 1 批」1–14。
+  - 第 2 批（岛的节奏；三个新开关都默认开：`Prefs.islandTrackPeek` / `islandHoverExpands` / `islandHaptics`，设置 › 刘海岛）：
+    - A2 换歌的一瞥：`Island.glance`——活动有新情况时从耳朵垂下一行（封面 + 歌名 + 艺人，约 2 秒，同普通提示那一行的画法），
+      不进最近的提示、不播报、菜单栏图标不动；只在它露在耳朵上、岛上没别的东西、指针不在岛上时出；指针移上去、点它
+      都展开成它的卡片。`NowPlaying.changedTrack`：原来有一首、现在在播、歌名或艺人变了才算。
+    - C1 停在耳朵上 0.3 秒自动展开最要紧的活动（`armHoverExpand`，`track()` 里排）：只在有活动露着、指针在耳朵上时——
+      刘海正中照旧只鼓起、点了开那一张（评审：不然放着歌时那一张只剩快捷键开得了）；正在播放的右耳是播放 / 暂停钮，
+      停在它上面也不展开（`Island.hoverExpands(pointerX:shape:onMedia:)`）。展开后当场 `hover(true)`：指针就停在那儿、
+      没有鼠标移动来报，不然窗口不接鼠标、卡片 2 秒自己收。到点时在框选（`isSuppressed`）不展开。
+      一瞥只在指针在刘海屏上时出（提示跟指针所在的屏走，跟过去就成了外接屏上冒胶囊）；出着时再换歌、封面晚到原地换。
+    - C2 点耳朵、点刘海时整座岛缩到 0.96 再弹回（`Press`，看 `Island.presses`；不接手势，只在点击生效的地方加一）。
+    - A5 触感：`Island.haptic`（`NSHapticFeedbackManager`，公开接口）——滑动切歌、展开活动的卡片、进度条拖到头 / 尾
+      （`IslandScrubber.hitEnd`）；摆出来的岛不给。
+    - B5 长歌名滚动：`IslandMarquee`（播放卡片的歌名、艺人）——放不下时停 1.5 秒、每秒 30 pt 滚到尾、停、滚回，往返；
+      SwiftUI 的动画，只在卡片开着时有（指针停在卡片上时会一直滚，开销等手测 12 量）；减弱动态效果、放得下时是普通的一行。
+    单测 `NowPlayingTests.glanceOnTrackChange` / `hoverExpandAndFeel`；截图自检 island-media-glance、settings-island*；
+    HANDTEST「刘海岛完善第 2 批」1–12。悬停展开、点击缩一下、触感、滚动都没法屏外验，靠手测。
 
 ### 晾衣绳（第十族，0.7.0，2026-10-26 立项）
 

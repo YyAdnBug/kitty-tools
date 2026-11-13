@@ -112,6 +112,15 @@ import SwiftUI
   /// 点刘海、停在刘海上、两指往下滑叫出那一张（设置 › 刘海岛「点刘海叫出那一张」，刘海岛扩展 G2；AppDelegate 跟着偏好给）。
   /// 关着时这几样都不响应，快捷键照样能叫出来；耳朵上的活动照常能停、能点
   @ObservationIgnored var respondsToNotch = true
+  /// 停在耳朵上自动展开最要紧的那个活动（设置 › 刘海岛，以 Alcove 为准的那一轮 C1；AppDelegate 跟着偏好给）
+  @ObservationIgnored var hoverExpands = true
+  /// 触感（设置 › 刘海岛「触感反馈」，A5）：滑动切歌、展开活动、进度条拖到头时触控板一下。摆出来的岛不给
+  @ObservationIgnored var haptics = true
+  /// 点到了岛本身（耳朵、刘海）：整座岛缩一下再弹回（C2；IslandView 看它的次数）
+  private(set) var presses = 0
+  /// 岛上现在是哪个活动的「一瞥」（glance）；不是就是 nil
+  @ObservationIgnored private var glancing: String?
+  @ObservationIgnored private var hoverExpand: Task<Void, Never>?
   /// 刘海岛插件添加着（Feature.island，2026-11-13 插件化 P1b；AppDelegate 跟着开关给）：点刘海那一张、活动（耳朵、菜单栏那一项、
   /// 进行中缩进耳朵）、刘海上常驻的鼠标监听都归它。没添加时只弹提示（0.7.0 之前的样子）：setActivity 不收、进行中照旧挂着、
   /// 不常驻监听（点刘海另由 respondsToNotch 关掉，快捷键「打开刘海岛」随插件不注册）。摆出来的岛（截图自检、单测）是 true
@@ -280,9 +289,12 @@ import SwiftUI
   }
 
   /// quiet：展开活动的卡片（不是新提示）——菜单栏图标不跟着呼吸 / 弹一下
-  private func apply(_ next: Content, actions: [Action], quiet: Bool = false) {
+  private func apply(
+    _ next: Content, actions: [Action], quiet: Bool = false, announces: Bool = true
+  ) {
     // 那一张开着时换成这一条：键盘还回去
     releaseKeyboard()
+    glancing = nil
     if !quiet { expandedActivity = nil }
     self.actions = actions
     // 离开后照旧展开着的那张卡片：换成新的一条就合上，新提示一律从一行出来
@@ -301,8 +313,10 @@ import SwiftUI
     if next.tone == .error, !quiet { shakes += 1 }
     if next.tone == .progress { collapseLater(next.title) }
     if !quiet { onToneChange?(next.tone) }
-    // VoiceOver 不会去读不当 key 的岛：主动播报
-    Self.announce([next.title, next.detail].compactMap { $0 }.joined(separator: "，"))
+    // VoiceOver 不会去读不当 key 的岛：主动播报（一瞥不报：一首歌念一遍太吵）
+    if announces {
+      Self.announce([next.title, next.detail].compactMap { $0 }.joined(separator: "，"))
+    }
     // 挂着的那条不到点收起（按钮、×、上滑才收）
     if let pinned, next == pinned.content {
       dwell?.cancel()
@@ -397,6 +411,8 @@ import SwiftUI
     if inside {
       dwell?.cancel()
       remaining = max(deadline - .now, .zero)
+      // 指针移到一瞥上：展开成那个活动的卡片
+      if let id = glancing { expand(id) }
       if !isExpanded, !isBoardOpen {
         changedAt = .now
         withAnimation(Style.Motion.island.animation()) { isExpanded = true }
@@ -492,6 +508,7 @@ import SwiftUI
     }
     media.send(forward ? .next : .previous)
     skip = Skip(forward: forward, count: (skip?.count ?? 0) + 1)
+    haptic(.generic)
     return true
   }
 
@@ -547,8 +564,40 @@ import SwiftUI
   /// 点岛本身：耳朵露着、没别的东西时 = 展开最要紧的那个活动；有打开类的按钮就执行它，没有就什么都不做（点得到时已经展开着）。
   /// 点在刘海本身上的那一下由鼠标监听当成开那一张（click），到不了这里
   func tapped() {
-    if content == nil, !isBoardOpen, isShowingWings { return expandActivity() }
+    if content == nil, !isBoardOpen, isShowingWings {
+      presses += 1
+      return expandActivity()
+    }
+    // 点一瞥 = 展开那个活动的卡片
+    if let id = glancing, content != nil { return expand(id) }
     if let open = actions.first(where: \.opens) { perform(open) }
+  }
+
+  /// 一瞥（以 Alcove 为准的那一轮 A2，它叫 Quick Peek）：某个活动有新情况（正在播放换了歌）时，从耳朵垂下一小条说一声，
+  /// 约 2 秒收回耳朵。不进最近的提示（歌名不留记录）、不播报、菜单栏图标不动。只在它正露在耳朵上、岛上没别的东西
+  /// （或者就是它上一次的一瞥：原地换，连着切两首、封面晚到）、指针不在岛上时出；指针移上去、点它都是展开成它的卡片。
+  /// 指针在别的屏上时不出：提示跟着指针所在的屏走，一瞥跟过去就成了外接屏上冒一条胶囊、耳朵跟着没了
+  func glance(_ id: String, title: String, detail: String?, symbol: String, leading: Leading) {
+    guard hasExtras, isShowingWings, content == nil || isGlancing(id), !isBoardOpen, !isPeeking,
+      activity?.id == id, isStaged || pointerIsOnNotchScreen
+    else { return }
+    apply(
+      Content(title: title, detail: detail, tone: .info, symbol: symbol, leading: leading),
+      actions: [], quiet: true, announces: false)
+    glancing = id
+  }
+
+  /// 岛上现在是不是这个活动的一瞥
+  func isGlancing(_ id: String) -> Bool { glancing == id && content != nil }
+
+  private var pointerIsOnNotchScreen: Bool {
+    Self.notchScreen.map { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? false
+  }
+
+  /// 触控板轻轻一下（手指放在触控板上才有感觉；设置里能关）
+  func haptic(_ pattern: NSHapticFeedbackManager.FeedbackPattern = .alignment) {
+    guard haptics, !isStaged else { return }
+    NSHapticFeedbackManager.defaultPerformer.perform(pattern, performanceTime: .now)
   }
 
   // MARK: 活动
@@ -596,6 +645,9 @@ import SwiftUI
   /// 某个活动展开成卡片（耳朵、菜单栏那一项都走这里）
   private func expand(_ id: String) {
     guard let activity = activities.first(where: { $0.id == id }) else { return }
+    hoverExpand?.cancel()
+    hoverExpand = nil
+    haptic()
     isPeeking = false
     apply(activity.content, actions: activity.actions, quiet: true)
     expandedActivity = activity.id
@@ -707,6 +759,7 @@ import SwiftUI
     hoverCheck?.cancel()
     actions = []
     expandedActivity = nil
+    glancing = nil
     isDragging = false
     isHovered = false
     isExpanded = false
@@ -760,6 +813,7 @@ import SwiftUI
       onToneChange?(nil)
     }
     actions = []
+    glancing = nil
     isHovered = false
     isExpanded = false
     isPeeking = false
@@ -995,6 +1049,7 @@ import SwiftUI
     if allowed, respondsToNotch, content == nil, !isSuppressed(),
       Self.onNotch(mouse, notches: notchRects)
     {
+      presses += 1
       toggleBoard()
       return true
     }
@@ -1014,12 +1069,50 @@ import SwiftUI
       return
     }
     isPeeking = false
+    hoverExpand?.cancel()
+    hoverExpand = nil
     window?.ignoresMouseEvents = true
     Task { [weak self] in
       try? await Task.sleep(for: Self.retractTime)
       guard let self, !self.isOpen, !self.isPeeking, !self.isShowingWings else { return }
       self.window?.orderOut(nil)
     }
+  }
+
+  /// 停在耳朵 / 刘海上多久自动展开
+  static let hoverExpandDelay = Duration.milliseconds(300)
+
+  /// 指针在鼓起的岛上：排「停一下自动展开」（C1）。只在有活动露着、指针在耳朵上时：刘海正中照旧只鼓起、点了开那一张
+  /// （不然放着歌时那一张只剩快捷键开得了）；正在播放的右耳是播放 / 暂停钮，停在它上面也不展开（不然正要点，卡片先
+  /// 盖上来）。到点时还鼓着、岛上没别的东西、没在框选才展开；展开后当指针在岛上（它就停在那儿，没有鼠标移动来报）：
+  /// 不然窗口不接鼠标、卡片照没人看的提示 2 秒就收
+  private func armHoverExpand(_ mouse: NSPoint) {
+    guard hoverExpands, isPeeking, content == nil, !isBoardOpen, let top = activity, let window,
+      Self.hoverExpands(
+        pointerX: mouse.x, shape: shapeOnScreen(window), onMedia: top.media != nil)
+    else {
+      hoverExpand?.cancel()
+      hoverExpand = nil
+      return
+    }
+    guard hoverExpand == nil else { return }
+    hoverExpand = Task { [weak self] in
+      try? await Task.sleep(for: Self.hoverExpandDelay)
+      guard let self, !Task.isCancelled else { return }
+      self.hoverExpand = nil
+      guard self.isPeeking, self.content == nil, !self.isBoardOpen, !self.isSuppressed() else {
+        return
+      }
+      self.expandActivity()
+      self.hover(true)
+    }
+  }
+
+  /// 指针在这个横坐标上停着算不算要展开（纯函数）：左耳算；右耳算，除非是正在播放（那一截是播放 / 暂停钮）；
+  /// 中间的刘海不算。耳朵 = 形体两头往里一只耳朵宽（另加鼓起的那一圈 8 pt）
+  static func hoverExpands(pointerX: CGFloat, shape: CGRect, onMedia: Bool) -> Bool {
+    if pointerX < shape.minX + wing + 8 { return true }
+    return pointerX > shape.maxX - wing - 8 && !onMedia
   }
 
   private func shapeOnScreen(_ window: NSWindow) -> CGRect {
@@ -1051,6 +1144,7 @@ import SwiftUI
       isShowingWings && window.map { NSMouseInRect(mouse, shapeOnScreen($0), false) } == true
     peek(
       !isSuppressed() && (onWings || (respondsToNotch && Self.onNotch(mouse, notches: notchRects))))
+    armHoverExpand(mouse)
   }
 
   /// 放到鼠标所在屏（耳朵给的是刘海屏）顶部正中（刘海屏贴着顶边，其它屏在菜单栏下方）。只在窗口不在屏上时调
@@ -1207,6 +1301,7 @@ struct IslandView: View {
     .onTapGesture { island.tapped() }
     .onChange(of: shape.frame, initial: true) { island.shapeFrame = shape.frame }
     .modifier(Shake(count: island.shakes, enabled: !reduceMotion))
+    .modifier(Press(count: island.presses, enabled: !reduceMotion))
     .modifier(Presence(island: island, capsule: shape.capsule, reduceMotion: reduceMotion))
     .environment(\.colorScheme, .dark)
   }
@@ -1488,6 +1583,23 @@ struct IslandLeading: View {
     case .info, .progress: Style.brand
     case .warning: Color(nsColor: .systemOrange)
     case .error: Color(nsColor: .systemRed)
+    }
+  }
+}
+
+/// 点到了岛本身：整座岛缩到 0.96 再弹回（顶边不动，同岛上按钮按下的手感），count 变一次播一次
+private struct Press: ViewModifier {
+  let count: Int
+  let enabled: Bool
+
+  func body(content: Content) -> some View {
+    content.keyframeAnimator(initialValue: CGFloat(1), trigger: count) { view, scale in
+      view.scaleEffect(enabled ? scale : 1, anchor: .top)
+    } keyframes: { _ in
+      KeyframeTrack {
+        CubicKeyframe(0.96, duration: 0.08)
+        SpringKeyframe(1, duration: 0.26, spring: .snappy)
+      }
     }
   }
 }

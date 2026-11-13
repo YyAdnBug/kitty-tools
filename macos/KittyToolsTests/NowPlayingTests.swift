@@ -216,6 +216,95 @@ struct NowPlayingTests {
     #expect(sent == [.next, .next])
   }
 
+  /// 换歌的一瞥：原来有一首、现在在播、歌名或艺人变了才算；岛上只在它露在耳朵上、没别的东西时出，不进最近的提示，
+  /// 点它展开成播放卡片
+  @Test func glanceOnTrackChange() {
+    var next = snapshot()
+    next.title = "下一首"
+    #expect(NowPlaying.changedTrack(from: snapshot(), to: next))
+    #expect(!NowPlaying.changedTrack(from: nil, to: next))
+    #expect(!NowPlaying.changedTrack(from: snapshot(), to: nil))
+    #expect(!NowPlaying.changedTrack(from: snapshot(), to: snapshot(elapsed: 99)))
+    var paused = next
+    paused.isPlaying = false
+    #expect(!NowPlaying.changedTrack(from: snapshot(), to: paused))
+    var cover = snapshot()
+    cover.artist = "另一个人"
+    #expect(NowPlaying.changedTrack(from: snapshot(), to: cover))
+
+    let media = Island.Activity(
+      id: NowPlaying.activityID, kind: .media, title: "歌", symbol: "music.note",
+      media: Island.Media(
+        snapshot: snapshot(), artwork: nil, tint: nil, appIcon: nil, send: { _ in },
+        seek: { _ in }, open: {}))
+    let notch = Island.Geometry.notch(width: 212, height: 37.5)
+    func glance(_ island: Island) {
+      island.glance(
+        NowPlaying.activityID, title: "下一首", detail: "人", symbol: "music.note", leading: .tone)
+    }
+    let island = Island(showing: nil, geometry: notch, activities: [media])
+    glance(island)
+    #expect(island.content?.title == "下一首" && island.history.isEmpty)
+    #expect(island.cardActivity == nil)
+    #expect(island.isGlancing(NowPlaying.activityID))
+    // 一瞥还出着又换了一首：原地换
+    island.glance(
+      NowPlaying.activityID, title: "再下一首", detail: "人", symbol: "music.note", leading: .tone)
+    #expect(island.content?.title == "再下一首")
+    // 点一瞥：展开成播放卡片
+    island.tapped()
+    #expect(island.cardActivity?.id == NowPlaying.activityID && island.isExpanded)
+    #expect(!island.isGlancing(NowPlaying.activityID))
+    // 岛上有别的提示、那一张开着、耳朵让给了别的活动、暂停久了不上耳朵：都不出
+    let busy = Island(
+      showing: .init(
+        title: "已复制", detail: nil, tone: .success, symbol: "checkmark", leading: .tone),
+      geometry: notch, activities: [media])
+    glance(busy)
+    #expect(busy.content?.title == "已复制")
+    let board = Island(showing: nil, geometry: notch, board: [], activities: [media])
+    glance(board)
+    #expect(board.content == nil && board.isBoardOpen)
+    let recording = Island.Activity(
+      id: "rec", kind: .record, title: "录屏中", symbol: "record.circle.fill")
+    let taken = Island(showing: nil, geometry: notch, activities: [media, recording])
+    glance(taken)
+    #expect(taken.content == nil)
+    var hidden = media
+    hidden.onWings = false
+    let lingering = Island(showing: nil, geometry: notch, activities: [hidden])
+    glance(lingering)
+    #expect(lingering.content == nil)
+    // 没有刘海的屏：不出
+    let capsule = Island(showing: nil, activities: [media])
+    glance(capsule)
+    #expect(capsule.content == nil)
+  }
+
+  /// 停在耳朵上自动展开：正在播放时右耳那一截是播放 / 暂停钮，停在它上面不展开；别的活动整只耳朵都算。
+  /// 进度条拖到头 / 尾给一下触感：刚到那一头才给，停在那一头继续拖不重复给；长歌名多出不到 1 pt 不滚
+  @Test func hoverExpandAndFeel() {
+    // 形体 700…1000，耳朵宽 36（另加鼓起的 8）：744 往左是左耳、956 往右是右耳，中间是刘海
+    let shape = CGRect(x: 700, y: 0, width: 300, height: 40)
+    #expect(Island.hoverExpands(pointerX: 720, shape: shape, onMedia: true))
+    #expect(!Island.hoverExpands(pointerX: 850, shape: shape, onMedia: true))
+    #expect(!Island.hoverExpands(pointerX: 850, shape: shape, onMedia: false))
+    #expect(!Island.hoverExpands(pointerX: 980, shape: shape, onMedia: true))
+    #expect(Island.hoverExpands(pointerX: 980, shape: shape, onMedia: false))
+    #expect(IslandScrubber.hitEnd(from: 10, to: 0, duration: 240))
+    #expect(IslandScrubber.hitEnd(from: 200, to: 240, duration: 240))
+    #expect(!IslandScrubber.hitEnd(from: 0, to: 0, duration: 240))
+    #expect(!IslandScrubber.hitEnd(from: 240, to: 240, duration: 240))
+    #expect(!IslandScrubber.hitEnd(from: 10, to: 20, duration: 240))
+    #expect(!IslandScrubber.hitEnd(from: 10, to: nil, duration: 240))
+    #expect(IslandScrubber.hitEnd(from: nil, to: 0, duration: 240))
+    #expect(!IslandScrubber.hitEnd(from: 10, to: 0, duration: 0))
+    #expect(IslandMarquee.overflow(text: 300, box: 200) == 100)
+    #expect(IslandMarquee.overflow(text: 200.4, box: 200) == 0)
+    #expect(IslandMarquee.overflow(text: 100, box: 200) == 0)
+    #expect(IslandMarquee.overflow(text: 300, box: 0) == 0)
+  }
+
   /// 上耳朵：在播；从在播变成暂停还不到 30 秒；一打开就是暂停着的不上
   @Test func wings() {
     #expect(NowPlaying.showsOnWings(isPlaying: true, pausedFor: nil))

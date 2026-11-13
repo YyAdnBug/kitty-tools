@@ -288,6 +288,8 @@ import OSLog
 
   private func show(_ next: NowPlayingSnapshot?) {
     let wasPlaying = snapshot?.isPlaying ?? false
+    let changedTrack = Self.changedTrack(from: snapshot, to: next)
+    let changedCover = snapshot?.artworkID != next?.artworkID
     snapshot = next
     if let next, !next.isPlaying, wasPlaying {
       pausedSince = .now
@@ -298,6 +300,20 @@ import OSLog
       linger?.cancel()
     }
     render()
+    guard let next, defaults.bool(forKey: Prefs.islandTrackPeek) else { return }
+    // 换歌了说一声；一瞥还出着时封面才到（网页视频晚约 2 秒、服务补读）：原地换上封面
+    if changedTrack || (changedCover && island?.isGlancing(Self.activityID) == true) {
+      glance(next)
+    }
+  }
+
+  /// 换歌了：耳朵下面垂下一小条歌名和艺人（设置 › 刘海岛「换歌时显示歌名」）。封面已经到了用封面，没到用 App 的图标
+  private func glance(_ snapshot: NowPlayingSnapshot) {
+    let cover =
+      snapshot.artworkID != nil && snapshot.artworkID == artwork?.id ? artwork?.image : nil
+    island?.glance(
+      Self.activityID, title: snapshot.title, detail: snapshot.artist, symbol: "music.note",
+      leading: (cover ?? icon(for: snapshot)).map { .thumbnail($0) } ?? .tone)
   }
 
   /// 暂停满 pausedLinger 时再画一次（耳朵收回去）
@@ -427,6 +443,12 @@ import OSLog
   ) -> NowPlayingSnapshot? {
     if let served { return served }
     return usesFallback ? NowPlayingFallback.pick(notices) : nil
+  }
+
+  /// 算不算换了歌（要不要垂下歌名）：原来就有一首、现在在播、歌名或者艺人不一样。刚开始放（原来没有）、暂停着换的不算
+  static func changedTrack(from old: NowPlayingSnapshot?, to new: NowPlayingSnapshot?) -> Bool {
+    guard let old, let new, new.isPlaying else { return false }
+    return old.title != new.title || old.artist != new.artist
   }
 
   /// 进度条上要跳到的秒数夹进这一首里；跳不了（这个 App 不支持、没有时长、不是有限数）是 nil

@@ -1049,6 +1049,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     island.hasExtras = Feature.island.isOn
     island.respondsToNotch = respondsToNotch
+    applyIslandFeel()
     island.start()
     systemNotices.apply()
     nowPlaying.apply()
@@ -1085,6 +1086,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let self else { return }
         self.applyFeatures()
         self.island.respondsToNotch = self.respondsToNotch
+        self.applyIslandFeel()
         self.systemNotices.apply()
         self.nowPlaying.apply()
         // 命令的快捷键跟着「命令和别名」的开关和别名、脚本命令总开关、⌘K「关掉这条命令」走（第 4 批评审：只在那一页的
@@ -1102,6 +1104,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // 访达右键把 App 冷启动时交过来的动作：剪贴板历史、偏好都起来了再做（拷贝的路径才记得进历史）
     for url in pendingLinks { FinderLink.perform(url, island: island) }
     pendingLinks = []
+  }
+
+  /// 设置 › 刘海岛的「停在刘海上自动展开」「触感反馈」跟上（启动时、偏好变了时）
+  private func applyIslandFeel() {
+    island.hoverExpands = UserDefaults.standard.bool(forKey: Prefs.islandHoverExpands)
+    island.haptics = UserDefaults.standard.bool(forKey: Prefs.islandHaptics)
   }
 
   /// 点刘海、停在刘海上、往下滑叫出那一张：刘海岛插件添加着，设置 › 刘海岛「点刘海叫出那一张」也开着

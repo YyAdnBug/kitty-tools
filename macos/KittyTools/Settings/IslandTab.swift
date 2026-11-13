@@ -17,6 +17,9 @@ struct IslandTab: View {
   @AppStorage(Prefs.islandNoticeHeadphones) private var noticeHeadphones = false
   @AppStorage(Prefs.islandNoticeNetwork) private var noticeNetwork = false
   @AppStorage(Prefs.islandNowPlaying) private var nowPlaying = false
+  @AppStorage(Prefs.islandTrackPeek) private var trackPeek = true
+  @AppStorage(Prefs.islandHoverExpands) private var hoverExpands = true
+  @AppStorage(Prefs.islandHaptics) private var haptics = true
   @Environment(SettingsNavigation.self) private var navigation: SettingsNavigation?
 
   var body: some View {
@@ -25,8 +28,13 @@ struct IslandTab: View {
       Section {
         Toggle(isOn: $nowPlaying) {
           Text("在刘海上显示正在播放")
-          Text("音乐、播客、浏览器里的视频：刘海两边是封面和跳动条，点开能暂停、切歌")
+          Text("音乐、播客、浏览器里的视频：刘海两边是封面和跳动条，点开能暂停、切歌、拖进度")
         }
+        Toggle(isOn: $trackPeek) {
+          Text("换歌时显示歌名")
+          Text("从刘海垂下一小条歌名和艺人，约 2 秒收回")
+        }
+        .disabled(!nowPlaying)
       } header: {
         NewTitle("正在播放", page: .island, fresh: navigation?.fresh ?? [])
       } footer: {
@@ -64,6 +72,14 @@ struct IslandTab: View {
         Toggle(isOn: $notchClicks) {
           Text("点刘海叫出那一张")
           Text("停在刘海上会鼓起一点，点一下或者两指往下滑打开")
+        }
+        Toggle(isOn: $hoverExpands) {
+          Text("停在刘海两边自动展开")
+          Text("刘海两边挂着东西时，指针停在上面一下就展开成卡片；刘海正中照旧点了才打开那一张")
+        }
+        Toggle(isOn: $haptics) {
+          Text("触感反馈")
+          Text("滑动切歌、展开卡片、进度条拖到头时，触控板轻轻一下")
         }
       } footer: {
         SectionFootnote("装了别的刘海 App 时可以关掉「点刘海叫出那一张」：提示和挂在刘海两边的录制计时这些照常，快捷键照样能叫出那一张。")
