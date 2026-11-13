@@ -12,6 +12,16 @@ struct IslandBoard: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
+      // 正在进行的活动（刘海岛扩展 B3）：最要紧的在上面，各带自己的按钮
+      if !island.activities.isEmpty {
+        VStack(spacing: 0) {
+          ForEach(island.activities.sorted { ($0.kind, $0.started) > ($1.kind, $1.started) }) {
+            ActivityRow(activity: $0) { island.perform($0) }
+          }
+        }
+        .padding(.vertical, 6)
+        Rectangle().fill(.white.opacity(0.12)).frame(height: 0.5)
+      }
       if !island.quickActions.isEmpty {
         HStack(spacing: 6) {
           ForEach(Array(island.quickActions.enumerated()), id: \.offset) { index, action in
@@ -31,7 +41,9 @@ struct IslandBoard: View {
         placeholder("还没有提示")
       } else {
         VStack(spacing: 0) {
-          ForEach(island.history) { record in
+          // 窗口一次定高（Island.boardHeight）：活动占了几行，列表就少列几条
+          ForEach(island.history.prefix(max(Island.historyLimit - island.activities.count, 0))) {
+            record in
             Row(record: record) { island.perform($0) }
           }
         }
@@ -80,6 +92,29 @@ private struct QuickAction: View {
     .buttonStyle(IslandButtonStyle())
     .accessibilityLabel(action.title)
     .accessibilityAddTraits(selected ? .isSelected : [])
+  }
+}
+
+/// 正在进行的一个活动（高 34）：耳朵上那两样（图标 / 一圈进度 + 读数）+ 标题 + 它的按钮（第一个是主按钮）
+private struct ActivityRow: View {
+  let activity: Island.Activity
+  let perform: (Island.Action) -> Void
+
+  var body: some View {
+    HStack(spacing: 10) {
+      IslandActivityMark(activity: activity, size: 16).frame(width: 22, height: 22)
+      Text(activity.title)
+        .font(.system(size: 12, weight: .semibold))
+        .foregroundStyle(.white.opacity(0.92))
+        .lineLimit(1)
+      IslandActivityReading(activity: activity)
+      Spacer(minLength: 8)
+      ForEach(Array(activity.actions.enumerated().reversed()), id: \.offset) { index, action in
+        IslandButton(title: action.title, prominent: index == 0) { perform(action) }
+      }
+    }
+    .frame(height: 34)
+    .accessibilityElement(children: .combine)
   }
 }
 

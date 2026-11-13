@@ -1050,6 +1050,35 @@ struct SnapshotProbeTests {
     try snapshot(
       IslandView(island: Island(showing: nil, geometry: notch, peeking: true)),
       size: notch.windowSize, dark: false, to: "\(out)/island-peek.png")
+    // 活动（刘海岛扩展 B1–B3）：耳朵上的录屏计时、长任务一圈进度、指针停在耳朵上鼓起、点耳朵展开的卡片、那一张最上面的活动
+    let recording = Island.Activity(
+      id: "record", kind: .record, title: "录屏中", symbol: "record.circle.fill", tone: .error,
+      trailing: .elapsed(since: .now.addingTimeInterval(-42)),
+      actions: [Island.Action("停止") {}, Island.Action("暂停") {}])
+    let compressing = Island.Activity(
+      id: "compress", kind: .progress, title: "正在压缩", detail: "录屏 2026-11-13 14.32.08.mov",
+      symbol: "film", trailing: .fraction(0.37), actions: [Island.Action("停止") {}])
+    let wingStates: [(String, [Island.Activity], Bool)] = [
+      ("island-wings-record", [recording], false), ("island-wings-progress", [compressing], false),
+      ("island-wings-peek", [recording, compressing], true),
+    ]
+    for (name, list, peeking) in wingStates {
+      try snapshot(
+        IslandView(
+          island: Island(showing: nil, geometry: notch, peeking: peeking, activities: list)),
+        size: notch.windowSize, dark: false, to: "\(out)/\(name).png")
+    }
+    let card = Island(showing: nil, geometry: notch, activities: [recording, compressing])
+    card.tapped()
+    try snapshot(
+      IslandView(island: card), size: notch.windowSize, dark: false,
+      to: "\(out)/island-wings-card.png")
+    try snapshot(
+      IslandView(
+        island: Island(
+          showing: nil, geometry: notch, board: records, quickActions: quick,
+          activities: [recording, compressing])),
+      size: notch.windowSize, dark: false, to: "\(out)/island-board-activities.png")
     // 黄色强调色：信息 / 进行中的底是强调色，上面的符号要换深色（Style.onBrand）才看得见——岛垫的圆底、自带圆底的各一张。
     // 只换内存里的颜色，不写偏好
     Accent.shared.select(.yellow, persists: false)

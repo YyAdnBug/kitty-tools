@@ -10,6 +10,8 @@
 // 快捷动作开哪几个、什么先后，列不列提示，在 设置 › 刘海岛，2026-11-12 PR #17）。
 // 用快捷键叫出的那一张临时当 key（第四轮体检 U9）：Esc 收、←→ 选快捷动作、↩ 执行，到点自己收（同平时的岛）；收起时键盘
 // 还给原来那扇窗口 / 原来的 App。点刘海叫出的照旧不抢键盘。
+// 活动（2026-11-13，刘海岛扩展 B1–B3，IslandActivity.swift）：一直挂着的状态（录制中、长任务……）在刘海屏上收起时挂在
+// 刘海两侧的耳朵上；指针停上去鼓起一点，点耳朵展开成卡片，点刘海照旧是那一张（最上面列着活动）。提示收起后缩回耳朵。
 // 挂着直到处理（pin，2026-11-04 提醒 C2）：到点的提醒不到点收起，中间来的别的提示先显示、收起后换回它；只有它的按钮、×、
 // 双指上滑收得掉（×、上滑告诉调用方「处理了」）。一次只挂一条（几条提醒由调用方合成一条）。
 
@@ -93,6 +95,12 @@ import SwiftUI
   private(set) var quickActions: [Action] = []
   /// 那一张上列不列最近的提示（设置 › 刘海岛，Prefs.islandShowsHistory）：打开时读一次。不列也照样记着
   private(set) var showsHistory = true
+  /// 一直挂着的活动（IslandActivity.swift）；耳朵上露最要紧的一个（activity）
+  private(set) var activities: [Activity] = []
+  /// 耳朵该露着：有活动、有刘海屏。提示、那一张开着时照旧是它们，收起后缩回耳朵（不缩进刘海、窗口不移走）
+  private(set) var isShowingWings = false
+  /// 展开着的卡片是哪个活动的（点耳朵展开的）：它更新时卡片原地换，结束时收起；卡片上标题旁边挂它的实时读数
+  private(set) var expandedActivity: String?
   /// 用快捷键叫出的那一张上，←→ 选中的快捷动作（第几个；鼠标叫出的、没有快捷动作时是 nil，U9）
   private(set) var boardSelection: Int?
   /// 那一张是用快捷键叫出的、正临时拿着键盘：收起时还回去
@@ -159,7 +167,7 @@ import SwiftUI
     showing content: Content?, geometry: Geometry = .capsule(menuBar: 24),
     actions: [Action] = [], expanded: Bool = false, board records: [Record]? = nil,
     quickActions: [Action] = [], peeking: Bool = false, boardSelection: Int? = nil,
-    showsHistory: Bool = true
+    showsHistory: Bool = true, activities: [Activity] = []
   ) {
     isStaged = true
     self.content = content
@@ -173,6 +181,8 @@ import SwiftUI
     isPeeking = peeking
     self.boardSelection = boardSelection
     self.showsHistory = showsHistory
+    self.activities = activities
+    if case .notch = geometry { isShowingWings = !activities.isEmpty }
   }
 
   /// 详情里的一句摘录：第一行前 24 个字，后面还有就补「…」（\r\n、\r、U+2028 都算换行）
@@ -232,9 +242,11 @@ import SwiftUI
     if history.count > Self.historyLimit { history.removeLast(history.count - Self.historyLimit) }
   }
 
-  private func apply(_ next: Content, actions: [Action]) {
+  /// quiet：展开活动的卡片（不是新提示）——菜单栏图标不跟着呼吸 / 弹一下
+  private func apply(_ next: Content, actions: [Action], quiet: Bool = false) {
     // 那一张开着时换成这一条：键盘还回去
     releaseKeyboard()
+    if !quiet { expandedActivity = nil }
     self.actions = actions
     // 离开后照旧展开着的那张卡片：换成新的一条就合上，新提示一律从一行出来
     if !isHovered, isExpanded { withAnimation(Self.resize) { isExpanded = false } }
@@ -249,8 +261,8 @@ import SwiftUI
     } else {
       open(with: next)
     }
-    if next.tone == .error { shakes += 1 }
-    onToneChange?(next.tone)
+    if next.tone == .error, !quiet { shakes += 1 }
+    if !quiet { onToneChange?(next.tone) }
     // VoiceOver 不会去读不当 key 的岛：主动播报
     Self.announce([next.title, next.detail].compactMap { $0 }.joined(separator: "，"))
     // 挂着的那条不到点收起（按钮、×、上滑才收）
@@ -448,9 +460,81 @@ import SwiftUI
     if content?.title == title { dismiss() }
   }
 
-  /// 点岛本身：有打开类的按钮就执行它，没有就什么都不做（点得到时已经展开着）
+  /// 点岛本身：耳朵露着、没别的东西时 = 展开最要紧的那个活动；有打开类的按钮就执行它，没有就什么都不做（点得到时已经展开着）。
+  /// 点在刘海本身上的那一下由鼠标监听当成开那一张（click），到不了这里
   func tapped() {
+    if content == nil, !isBoardOpen, isShowingWings { return expandActivity() }
     if let open = actions.first(where: \.opens) { perform(open) }
+  }
+
+  // MARK: 活动
+
+  /// 耳朵上露的那一个（拍板 B2）
+  var activity: Activity? { Activity.top(activities) }
+
+  /// 卡片展开着的那个活动
+  var cardActivity: Activity? { activities.first { $0.id == expandedActivity } }
+
+  /// 开始 / 更新一个活动（同一个 id 再来一次 = 原地换，开始的时刻不变）。刘海屏上收起时挂到耳朵上；
+  /// 它的卡片正展开着就原地换内容和按钮
+  func setActivity(_ activity: Activity) {
+    var next = activity
+    if let index = activities.firstIndex(where: { $0.id == activity.id }) {
+      next.started = activities[index].started
+      activities[index] = next
+    } else {
+      activities.append(next)
+    }
+    if expandedActivity == next.id, content != nil {
+      content = next.content
+      actions = next.actions
+    }
+    refreshWings()
+  }
+
+  /// 活动结束：它的卡片正展开着就收起；没有活动了耳朵缩回刘海
+  func endActivity(_ id: String) {
+    guard activities.contains(where: { $0.id == id }) else { return }
+    activities.removeAll { $0.id == id }
+    if expandedActivity == id {
+      expandedActivity = nil
+      if content != nil { dismiss() }
+    }
+    refreshWings()
+  }
+
+  /// 点耳朵：最要紧的那个活动展开成卡片（同悬停展开的样子），收起后回到耳朵
+  private func expandActivity() {
+    guard let activity else { return }
+    isPeeking = false
+    apply(activity.content, actions: activity.actions, quiet: true)
+    expandedActivity = activity.id
+    withAnimation(Self.resize) { isExpanded = true }
+  }
+
+  /// 耳朵该不该露：有活动、有刘海屏（摆出来的岛看给的几何）。没开着别的时当场长出 / 缩回；开着提示、那一张时只改标记，
+  /// 它们收起时（dismiss）照这个缩回耳朵
+  private func refreshWings() {
+    let wanted =
+      activity != nil
+      && (isStaged
+        ? { if case .notch = geometry { true } else { false } }() : Self.notchScreen != nil)
+    guard wanted != isShowingWings else { return }
+    if wanted, !isOpen, !isStaged { showWindow(on: Self.notchScreen) }
+    withAnimation((wanted ? Style.Motion.island : Style.Motion.retract).animation()) {
+      isShowingWings = wanted
+    }
+    guard !wanted, !isOpen, !isStaged else { return }
+    Task { [weak self] in
+      try? await Task.sleep(for: Self.retractTime)
+      guard let self, !self.isOpen, !self.isPeeking, !self.isShowingWings else { return }
+      self.window?.orderOut(nil)
+    }
+  }
+
+  /// 有刘海的那块屏（耳朵挂在它上面）；没有是 nil
+  private static var notchScreen: NSScreen? {
+    NSScreen.screens.first { notchRect(of: $0) != nil }
   }
 
   /// 收起：内容先退（0.12 s），0.08 s 后形体缩回刘海，动画结束再移走窗口。鼠标在岛上时排着一条的（点了 ×、按钮，
@@ -471,6 +555,7 @@ import SwiftUI
     }
     hoverCheck?.cancel()
     actions = []
+    expandedActivity = nil
     isHovered = false
     isExpanded = false
     window?.ignoresMouseEvents = true
@@ -490,6 +575,13 @@ import SwiftUI
       guard !Task.isCancelled else { return }
       self.isRetracting = false
       guard !self.isOpen, !self.isPeeking else { return }
+      // 有活动：缩回耳朵、窗口留着；提示是在别的屏（外接屏的胶囊）上弹的，就挪回刘海屏
+      if self.isShowingWings {
+        if case .notch = self.geometry { return }
+        self.window?.orderOut(nil)
+        self.showWindow(on: Self.notchScreen)
+        return
+      }
       self.window?.orderOut(nil)
       if !self.watchesNotch { self.unwatchMouse() }
     }
@@ -625,12 +717,12 @@ import SwiftUI
 
   /// 摆好窗口、拿到最前（摆出来的岛不建）。窗口在屏上时不动它（尺寸一次定死，见 Geometry.windowSize）。
   /// 先不接鼠标，指针落在形状上再接（hover）
-  private func showWindow() {
+  private func showWindow(on screen: NSScreen? = nil) {
     guard !isStaged else { return }
     let fresh = self.window == nil
     let window = self.window ?? makeWindow()
     self.window = window
-    if !isOpen || !window.isVisible { place(window) }
+    if !isOpen || !window.isVisible { place(window, on: screen) }
     // 新建的窗口先按收着的样子排一遍，再改状态：SwiftUI 第一次画它时状态要是已经变了（鼓起、展开），就没有动画的起点、
     // 直接画成终点的样子（2026-10-26 用户：「首次启动，hover 没有动画效果」）
     if fresh { window.contentView?.layoutSubtreeIfNeeded() }
@@ -678,6 +770,8 @@ import SwiftUI
     notchRects = NSScreen.screens.compactMap(Self.notchRect(of:))
     watchesNotch = !notchRects.isEmpty
     if watchesNotch { watchMouse() } else if !isOpen { unwatchMouse() }
+    // 合盖只用外接屏、又打开：耳朵跟着收掉 / 长回来
+    refreshWings()
   }
 
   /// 硬件刘海在屏幕上的那一块（屏幕坐标）；没有刘海的屏是 nil
@@ -748,7 +842,7 @@ import SwiftUI
     window?.ignoresMouseEvents = true
     Task { [weak self] in
       try? await Task.sleep(for: Self.retractTime)
-      guard let self, !self.isOpen, !self.isPeeking else { return }
+      guard let self, !self.isOpen, !self.isPeeking, !self.isShowingWings else { return }
       self.window?.orderOut(nil)
     }
   }
@@ -775,15 +869,17 @@ import SwiftUI
     }
     // 刚收起、还在缩回时不鼓
     guard !isOpen, !isRetracting else { return }
-    peek(!isSuppressed() && Self.onNotch(mouse, notches: notchRects))
+    let onWings =
+      isShowingWings && window.map { NSMouseInRect(mouse, shapeOnScreen($0), false) } == true
+    peek(!isSuppressed() && (onWings || Self.onNotch(mouse, notches: notchRects)))
   }
 
-  /// 放到鼠标所在屏顶部正中（刘海屏贴着顶边，其它屏在菜单栏下方）。只在窗口不在屏上时调
-  private func place(_ window: IslandPanel) {
+  /// 放到鼠标所在屏（耳朵给的是刘海屏）顶部正中（刘海屏贴着顶边，其它屏在菜单栏下方）。只在窗口不在屏上时调
+  private func place(_ window: IslandPanel, on target: NSScreen? = nil) {
     let mouse = NSEvent.mouseLocation
     guard
-      let screen = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) })
-        ?? NSScreen.main
+      let screen = target
+        ?? NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) }) ?? NSScreen.main
     else { return }
     geometry = Self.geometry(of: screen)
     let size = geometry.windowSize
@@ -920,10 +1016,12 @@ struct IslandView: View {
     let shape = shape(geometry)
     ZStack(alignment: .top) {
       backdrop(shape)
-      content
-        .padding(.top, shape.contentTop)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .mask { IslandOutline(shape: shape).animation(curve, value: shape) }
+      ZStack(alignment: .top) {
+        content.padding(.top, shape.contentTop)
+        wings(geometry)
+      }
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+      .mask { IslandOutline(shape: shape).animation(curve, value: shape) }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     .contentShape(IslandOutline(shape: shape))
@@ -940,14 +1038,20 @@ struct IslandView: View {
     let canvas = Island.canvasWidth
     switch geometry {
     case .notch(let notchWidth, let notchHeight):
-      // 减弱动态效果：形体不伸缩（一直是开着的大小），整座岛只淡入淡出；鼓起照常
-      let open = island.isOpen || (reduceMotion && !island.isPeeking)
+      // 减弱动态效果：形体不伸缩（一直是开着的大小），整座岛只淡入淡出；鼓起、耳朵照常
+      let wings = island.isShowingWings && !island.isOpen
+      let open = island.isOpen || (reduceMotion && !island.isPeeking && !wings)
       let peek = island.isPeeking && !island.isOpen
       let size =
         if open {
           CGSize(
             width: max(notchWidth + 64, contentSize.width),
             height: notchHeight + max(Island.chin, contentSize.height))
+        } else if wings {
+          // 耳朵：刘海两侧各 36，和刘海同高；指针停上去同样鼓起一圈
+          CGSize(
+            width: notchWidth + Island.wing * 2 + (peek ? Island.peekGrow.width * 2 : 0),
+            height: notchHeight + (peek ? Island.peekGrow.height : 0))
         } else if peek {
           CGSize(
             width: notchWidth + Island.peekGrow.width * 2,
@@ -957,8 +1061,9 @@ struct IslandView: View {
         }
       return IslandGeometry(
         frame: CGRect(x: (canvas - size.width) / 2, y: 0, width: size.width, height: size.height),
-        ear: open ? 10 : (peek ? 8 : 0),
-        bottom: open ? (island.isExpanded || island.isBoardOpen ? 24 : 22) : (peek ? 13 : 8),
+        ear: open ? 10 : (peek ? 8 : (wings ? 6 : 0)),
+        bottom: open
+          ? (island.isExpanded || island.isBoardOpen ? 24 : 22) : (peek ? 13 : (wings ? 12 : 8)),
         floor: IslandGeometry.tucked(notchWidth: notchWidth, notchHeight: notchHeight),
         contentTop: notchHeight, capsule: false)
     case .capsule:
@@ -1012,6 +1117,17 @@ struct IslandView: View {
     }
   }
 
+  /// 耳朵上的两小块（收起、有活动时）：画在刘海那一行里，不垫刘海高度；换了露的活动就交叉淡入
+  @ViewBuilder private func wings(_ geometry: Island.Geometry) -> some View {
+    if case .notch(let width, let height) = geometry, island.isShowingWings, !island.isOpen,
+      let activity = island.activity
+    {
+      IslandWings(activity: activity, notchWidth: width, notchHeight: height)
+        .id(activity.id)
+        .transition(.opacity.animation(.easeInOut(duration: 0.2)))
+    }
+  }
+
   /// 内容量好的大小：岛上有东西时才记（收起后退场的那一份不覆盖，形体照最后一份缩回）
   private func report(_ size: CGSize) {
     guard island.content != nil || island.isBoardOpen, size.width > 0 else { return }
@@ -1034,6 +1150,7 @@ struct IslandView: View {
     HStack(spacing: 10) {
       IslandLeading(content: content)
       title(content)
+      if let activity = island.cardActivity { IslandActivityReading(activity: activity) }
       fractionBar(content)
       if let detail = content.detail {
         Text(detail)
@@ -1064,6 +1181,7 @@ struct IslandView: View {
       HStack(spacing: 10) {
         IslandLeading(content: content)
         title(content)
+        if let activity = island.cardActivity { IslandActivityReading(activity: activity) }
         fractionBar(content)
         Spacer(minLength: 12)
         HStack(spacing: 8) {
@@ -1196,7 +1314,8 @@ private struct Presence: ViewModifier {
 
   func body(content: Content) -> some View {
     let open = island.isOpen
-    let shown = capsule ? open : !(reduceMotion && !open && !island.isPeeking)
+    let shown =
+      capsule ? open : !(reduceMotion && !open && !island.isPeeking && !island.isShowingWings)
     return
       content
       .scaleEffect(capsule && !open && !reduceMotion ? 0.6 : 1, anchor: .top)
