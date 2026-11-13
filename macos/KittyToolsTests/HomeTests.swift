@@ -10,7 +10,7 @@ import Testing
 struct HomeTests {
   private let all = Set(Feature.allCases)
 
-  /// 全开：节名和菜单同名同序（「打开主界面」不列它自己）；每节末尾接那一节的开关；提醒、状态屏、启动台、刘海岛几个单格的节
+  /// 全开：节名和菜单同名同序（「打开主界面」不列它自己，「钉住剪贴板内容」也不列）；每节末尾接那一节的开关；提醒、状态屏、启动台、刘海岛几个单格的节
   /// 不画标题、并成最后一行；快捷键是传进来的那份，没设的空着
   @Test func sectionsFollowTheMenu() {
     var state = LauncherItem.ActionState(statusPresets: StatusPreset.builtIn)
@@ -18,7 +18,7 @@ struct HomeTests {
     let sections = Home.sections(state: state, keys: [.screenshot: "⌥A"])
     #expect(sections.map(\.title) == ["剪贴板与启动器", "翻译", "截图与录制", "便签", nil])
     let tiles = sections.flatMap(\.tiles)
-    #expect(!tiles.contains { $0.target == .action(.home) })
+    #expect(!tiles.contains { $0.target == .action(.home) || $0.target == .action(.pinClipboard) })
     #expect(
       sections[0].tiles.map(\.target) == [
         .action(.clipboard), .action(.launcher), .extra(.pauseClipboard),
@@ -107,9 +107,9 @@ struct HomeTests {
     var state = LauncherItem.ActionState()
     state.features = all
     let sections = Home.sections(state: state, keys: [:])
-    // 3 / 5 / 8 / 3 / 5（截图与录制 8 格折成 5 + 3；最后一节是新建提醒、状态屏、启动台、保持唤醒（插件）、刘海岛）
-    #expect(Home.rows(sections).map(\.count) == [3, 5, 5, 3, 3, 5])
-    #expect(Home.rows(sections).flatMap { $0 } == Array(0..<24))
+    // 3 / 5 / 7 / 3 / 5（截图与录制 7 格折成 5 + 2；最后一节是新建提醒、状态屏、启动台、保持唤醒（插件）、刘海岛）
+    #expect(Home.rows(sections).map(\.count) == [3, 5, 5, 2, 3, 5])
+    #expect(Home.rows(sections).flatMap { $0 } == Array(0..<23))
     let rows: CGFloat = 6
     let expected =
       Home.top + Home.bottom + 4 * Home.titleHeight + Home.untitledGap + rows * Home.tile.height

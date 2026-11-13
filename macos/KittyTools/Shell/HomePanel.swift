@@ -3,7 +3,8 @@
 // 的 MenuExtra（暂停记录剪贴板、复制即译、有钉图时的两项）；有关着的功能时最下面一行「N 个功能关着 · 管理…」；底栏左边有新版本
 // 时是「更新到 x」（UpdateBarHint），右边「设置 ⌘,」「退出 ⌘Q」。一格 = 30 pt 家族色块 + 名字 + 一行小字快捷键，一行 5 格；
 // 只有一格的节（提醒、状态屏、启动台、刘海岛）不画标题、连着的并成一行。开关是圆的，开着时填强调色，点了原地切、面板不收；别的格子
-// 点了面板先收起再做（同启动器的内置动作）。「打开主界面」自己不在里面。
+// 点了面板先收起再做（同启动器的内置动作）。「打开主界面」自己不在里面；「钉住剪贴板内容」也不列（2026-11-13 用户：剪贴板
+// 历史面板里就能钉，Home.unlisted），菜单栏菜单、启动器、快捷键照旧有它。
 // 面板是一个 OverlayPanel 实例（AppDelegate.homePanel：Panel 皮肤、不激活本 App、点外面收）。键盘：←→ ↑↓ Tab 选（一块中性
 // 高亮滑过去），↩ / 空格执行，Esc 收起，⌘, 设置，⌘Q 退出。按键由一块当第一响应者的 NSView 收（同选状态的面板）。
 // 分节、排版、选中怎么移动、按键对应什么都是纯函数（enum Home），单测锁住。
@@ -15,7 +16,7 @@ import SwiftUI
 enum Home {
   /// 一行几格
   static let columns = 5
-  /// 一格：最长的名字（「钉住剪贴板内容」这类七八个字）11 pt 一行放得下
+  /// 一格：最长的名字（「划词翻译并替换」这类七八个字）11 pt 一行放得下
   static let tile = CGSize(width: 92, height: 76)
   /// 格子之间（横竖一样）
   static let gap: CGFloat = 2
@@ -65,7 +66,10 @@ enum Home {
     let tiles: [Tile]
   }
 
-  /// 分节（纯函数）：和菜单栏菜单同一份（AppDelegate.buildStatusMenu），关着的功能不出现，「打开主界面」不列；
+  /// 主界面里不列的动作：「打开主界面」自己；「钉住剪贴板内容」（剪贴板历史面板里就能钉，这里不再摆一格）
+  static let unlisted: Set<HotKeyAction> = [.home, .pinClipboard]
+
+  /// 分节（纯函数）：和菜单栏菜单同一份（AppDelegate.buildStatusMenu），关着的功能不出现，unlisted 的不列；
   /// 每节末尾接那一节的 MenuExtra。只有一格的节不画标题，和前面同样是一格的并成一行（菜单里这几节也不画标题）。
   /// keys：各动作当前生效的快捷键（HotKeyCenter.bindings 的 display）；fresh：这一版新加、还没碰过的动作（WhatsNew），格子标小圆点
   static func sections(
@@ -74,7 +78,7 @@ enum Home {
     let extras = MenuExtra.allCases.filter { $0.section != nil && $0.isAvailable(state) }
     var result: [Section] = []
     for section in HotKeyAction.visibleSections(enabled: state.features) {
-      var tiles = section.actions.filter { $0 != .home }.map { action in
+      var tiles = section.actions.filter { !unlisted.contains($0) }.map { action in
         Tile(
           target: .action(action), title: action.title(recording: state.isRunning(action)),
           symbol: action.symbol, color: action.color, key: keys[action], isOn: nil,
