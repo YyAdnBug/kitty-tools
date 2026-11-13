@@ -149,6 +149,32 @@ public sealed class ExitHold
     private static bool Contains(PixelRect rect, int x, int y) => x >= rect.X && x < rect.Right && y >= rect.Y && y < rect.Bottom;
 }
 
+/// <summary>
+/// 拦截层记着哪些键按着，给按键补上「连发」「带修饰键」两样（低级钩子不给）。和 ExitHold 一样按时刻过期（R70）：
+/// 松开的那一下没收到（Ctrl+Alt+Del 进安全桌面再取消、钩子被系统摘过）的键，StaleAfterMs 之后不再算按着——
+/// 不然之后每一下 Esc 都算带修饰键或连发，按住 Esc 永远退不出。真按着的键靠连发不断刷新时刻。
+/// </summary>
+public sealed class HeldKeys
+{
+    private readonly Dictionary<int, long> _down = new();
+
+    /// <summary>按下：这一下是不是连发、此刻有没有别的修饰键按着。</summary>
+    public (bool Repeat, bool Modifiers) Press(int key, long now)
+    {
+        var repeat = _down.TryGetValue(key, out var at) && now - at < ExitHold.StaleAfterMs;
+        _down[key] = now;
+        var modifiers = _down.Any(pair => pair.Key != key && IsModifier(pair.Key) && now - pair.Value < ExitHold.StaleAfterMs);
+        return (repeat, modifiers);
+    }
+
+    public void Release(int key) => _down.Remove(key);
+
+    public void Clear() => _down.Clear();
+
+    /// <summary>Shift / Ctrl / Alt（左右两个和通用的）、左右 Win。</summary>
+    public static bool IsModifier(int key) => key is 0x10 or 0x11 or 0x12 or >= 0xA0 and <= 0xA5 or 0x5B or 0x5C;
+}
+
 public enum PasscodeOutcome
 {
     /// <summary>不归输入框管：别的键、鼠标、连发、松开。</summary>

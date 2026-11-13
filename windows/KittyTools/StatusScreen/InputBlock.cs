@@ -52,13 +52,16 @@ internal static unsafe class InputBlock
     private static readonly bool[] KeysTaken = new bool[256];
 
     private static readonly bool[] ButtonsTaken = new bool[4];
+
+    /// <summary>ButtonsTaken 各格的虚拟键（左、右、中、侧键 X1；X2 按 mouseData 换成 0x06）。</summary>
+    private static readonly int[] ButtonKeys = { 0x01, 0x02, 0x04, 0x05 };
     private static Microsoft.UI.Dispatching.DispatcherQueue? _queue;
     private static Action<StatusInput>? _onInput;
     private static Action<int, int>? _onMove;
     private static readonly ManualResetEventSlim Ready = new();
 
-    /// <summary>UI 线程上记着哪些键按着：算连发、算有没有修饰键（LL 钩子不给这两样）。</summary>
-    private static readonly HashSet<int> Down = new();
+    /// <summary>UI 线程上记着哪些键按着：算连发、算有没有修饰键（LL 钩子不给这两样）；5 秒没动静的不算（R70）。</summary>
+    private static readonly HeldKeys Down = new();
 
     public static bool Active => _running;
 
@@ -268,10 +271,18 @@ internal static unsafe class InputBlock
                     var key = (int)info->VirtualKey;
                     var scan = (int)info->ScanCode;
                     var extended = (info->Flags & LlkhfExtended) != 0;
+                    var slot = key & 0xFF;
+                    // R71：进入之前就按着、按得久了系统在连发的键：系统早就当它按着（低级钩子里的异步状态还没算上这一下，
+                    // 这里吞的按下也不会算进去）。连发照吞、不报给会话，但不记 KeysTaken——它的松开得放过去。
+                    if (down && !KeysTaken[slot] && (GetAsyncKeyState(key) & 0x8000) != 0)
+                    {
+                        _queue?.TryEnqueue(() => Swallowed++);
+                        return 1;
+                    }
+
                     _queue?.TryEnqueue(() => DeliverKey(down, key, scan, extended));
                     // 进入之前就按着的键（选状态时按的 Enter、快捷键里的 Ctrl、提醒进来时正按着的 Shift）：按下已经交给了前台程序，
                     // 松开也放过去（照样报给会话），不然那个程序和系统的按键状态里它一直算按着。只吞按下也是这里吞的那些键的松开。
-                    var slot = key & 0xFF;
                     if (down)
                     {
                         KeysTaken[slot] = true;
@@ -334,6 +345,14 @@ internal static unsafe class InputBlock
                     {
                         if (message is not (WmLButtonUp or 0x0205 or 0x0208 or 0x020C))
                         {
+                            // R71 同键盘：系统已经当这个键按着（按下不是这里吞的）就不记，松开放过去。
+                            var vk = button == 3 && (info->MouseData >> 16) == 2 ? 0x06 : ButtonKeys[button];
+                            if (!ButtonsTaken[button] && (GetAsyncKeyState(vk) & 0x8000) != 0)
+                            {
+                                _queue?.TryEnqueue(() => Swallowed++);
+                                return 1;
+                            }
+
                             ButtonsTaken[button] = true;
                         }
                         else if (ButtonsTaken[button])
@@ -385,13 +404,12 @@ internal static unsafe class InputBlock
 
         if (!down)
         {
-            Down.Remove(key);
+            Down.Release(key);
             Deliver(new StatusInput(StatusInputKind.KeyUp, key, scan, extended));
             return;
         }
 
-        var repeat = !Down.Add(key);
-        var modifiers = Down.Any(other => other != key && IsModifier(other));
+        var (repeat, modifiers) = Down.Press(key, Environment.TickCount64);
         Deliver(new StatusInput(StatusInputKind.KeyDown, key, scan, extended, repeat, modifiers));
     }
 
@@ -403,9 +421,6 @@ internal static unsafe class InputBlock
             _onInput?.Invoke(input);
         }
     }
-
-    /// <summary>Shift / Ctrl / Alt（左右两个和通用的）、左右 Win。</summary>
-    private static bool IsModifier(int key) => key is 0x10 or 0x11 or 0x12 or >= 0xA0 and <= 0xA5 or 0x5B or 0x5C;
 
     /// <summary>
     /// 自检：发一个带标记的按键（默认按下再松开；只按下 / 只松开用来模拟按住）。Probe 模式下钩子吞掉它、真的输入照常放行；
@@ -513,4 +528,7 @@ internal static unsafe class InputBlock
 
     [DllImport("kernel32.dll")]
     private static extern uint GetCurrentThreadId();
+
+    [DllImport("user32.dll")]
+    private static extern short GetAsyncKeyState(int virtualKey);
 }

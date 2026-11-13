@@ -140,6 +140,57 @@ public sealed class StatusScreenTests
     }
 
     [TestMethod]
+    public void HeldKeys_LostReleaseStopsCountingAfterStale()
+    {
+        // R70：Ctrl+Alt+Del 进安全桌面再取消，Ctrl / Alt / Delete 的松开收不到。6 秒后按住 Esc 两秒照样能退出。
+        var keys = new HeldKeys();
+        var hold = new ExitHold();
+        StatusInput Press(int key, long now)
+        {
+            var (repeat, modifiers) = keys.Press(key, now);
+            return Down(key, repeat, modifiers);
+        }
+
+        hold.Handle(Press(0xA2, 0), 0); // 左 Ctrl
+        hold.Handle(Press(0xA4, 10), 10); // 左 Alt
+        hold.Handle(Press(0x2E, 20), 20); // Delete
+        var early = Press(ExitHold.Escape, 1000);
+        Assert.IsTrue(early.HasModifiers, "Ctrl 刚按下时 Esc 算带修饰键");
+        hold.Handle(early, 1000);
+        keys.Release(ExitHold.Escape);
+        hold.Handle(Up(ExitHold.Escape), 1100);
+        Assert.IsNull(hold.Holding);
+
+        var first = Press(ExitHold.Escape, 6000);
+        Assert.IsFalse(first.HasModifiers, "5 秒没动静的 Ctrl 不再算按着");
+        Assert.IsFalse(first.IsRepeat);
+        hold.Handle(first, 6000);
+        for (var t = 6500L; t <= 8000; t += 500)
+        {
+            var again = Press(ExitHold.Escape, t);
+            Assert.IsTrue(again.IsRepeat);
+            hold.Handle(again, t);
+        }
+
+        Assert.IsTrue(hold.IsComplete(8000), "按住 Esc 两秒退出");
+    }
+
+    [TestMethod]
+    public void HeldKeys_LostEscReleaseIsNotRepeatForever()
+    {
+        // 漏掉的是 Esc 自己的松开：5 秒后的下一下不算连发。
+        var keys = new HeldKeys();
+        Assert.IsFalse(keys.Press(ExitHold.Escape, 0).Repeat);
+        Assert.IsTrue(keys.Press(ExitHold.Escape, 400).Repeat);
+        Assert.IsFalse(keys.Press(ExitHold.Escape, 6000).Repeat);
+        Assert.IsTrue(keys.Press(0x41, 6100).Repeat is false);
+        keys.Press(0x10, 6200);
+        Assert.IsTrue(keys.Press(0x41, 6300).Modifiers, "Shift 按着时字母带修饰键");
+        keys.Release(0x10);
+        Assert.IsFalse(keys.Press(0x42, 6400).Modifiers);
+    }
+
+    [TestMethod]
     public void ExitHold_EscHeldTwoSecondsCompletes()
     {
         var hold = new ExitHold();
