@@ -58,6 +58,28 @@ struct ScrollStitcherTests {
     return bytes
   }
 
+  /// 页面里嵌着一个小滚动区：选区 height 行高，其中 band 那几行在滚（内容照 page 走），其余原地不动——
+  /// still 给行号时是页面上别处的内容（有字），给 nil 时是留白（2026-11-13：一块小滚动区 + 周围不动的页面）
+  private static func nested(at offset: Int, band: Range<Int>, still: Int? = nil) -> [UInt8] {
+    let rowBytes = width * 4
+    var bytes = [UInt8](repeating: 0, count: height * rowBytes)
+    for y in 0..<height {
+      let range = y * rowBytes..<(y + 1) * rowBytes
+      guard band.contains(y) else {
+        if let still {
+          let row = still + y
+          bytes.replaceSubrange(range, with: page[row * rowBytes..<(row + 1) * rowBytes])
+        } else {
+          bytes.replaceSubrange(range, with: [UInt8](repeating: 245, count: rowBytes))
+        }
+        continue
+      }
+      let row = offset + (y - band.lowerBound)
+      bytes.replaceSubrange(range, with: page[row * rowBytes..<(row + 1) * rowBytes])
+    }
+    return bytes
+  }
+
   private static func image(_ bytes: [UInt8], rows: Int = height, width: Int = width) -> CGImage {
     CGImage(
       width: width, height: rows, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4,
@@ -176,6 +198,82 @@ struct ScrollStitcherTests {
     Self.expect(
       stitcher.makeImage(), top: 0, bottom: 1600 + rows, topFrame: first, bottomFrame: last,
       rows: rows)
+  }
+
+  /// 页面里只嵌着一块小滚动区在滚（选区比它大得多）：能接上的位移只和这一块有关。
+  /// 2026-11-13 用户：这样长截图一直「对不上」，整个页面只有一个滚动区时没事。
+  /// 拼接器把这一块报出来（`movingRows`），会话按它算自动滚动的领先上限、把滚轮对准它
+  @Test func reportsTheBlockThatActuallyMoves() throws {
+    let band = 60..<140  // 选区 200 行高，中间 80 行是那块小滚动区（周围是页面上的留白）
+    var stitcher = try Self.stitcher(Self.nested(at: 100, band: band))
+    #expect(stitcher.movingRows.isEmpty, "还没滚过：不知道哪一块在动，会话按整个选区算")
+    // 滚 40 行（这块的一半）：接上
+    for offset in [140, 180] {
+      guard case .moved = stitcher.add(Self.image(Self.nested(at: offset, band: band))) else {
+        Issue.record("滚到 \(offset) 没对上")
+        return
+      }
+    }
+    // 在动的是中间那 80 行，不是整个选区。块里留白的那几行（这块底下连着 6 行）滚过去还是白的、不算变过，
+    // 量出来会短几行——短一点只是滚得稳一点，不影响接得上
+    #expect(stitcher.movingRows.count >= band.count * 9 / 10, "量出 \(stitcher.movingRows)")
+    #expect(stitcher.movingRows.count <= band.count + 2)
+    #expect(stitcher.movingRows.lowerBound > 40 && stitcher.movingRows.upperBound < 160)
+    // 手动滚时不算列（落点由用户的光标定）；自动滚动打开后才有
+    #expect(stitcher.movingColumns.isEmpty)
+    stitcher.tracksColumns = true
+    guard case .moved = stitcher.add(Self.image(Self.nested(at: 220, band: band))) else {
+      Issue.record("滚到 220 没对上")
+      return
+    }
+    #expect(stitcher.movingColumns.lowerBound < Self.width / 2)
+    #expect(stitcher.movingColumns.upperBound > Self.width / 2)
+    // 一次滚出这块的高度（80 行）：两帧之间这块已经没有重叠，接不上——按选区高算领先上限时就是这样丢帧的
+    #expect(stitcher.add(Self.image(Self.nested(at: 300, band: band))) == .lost)
+  }
+
+  /// 没滚时原地变的几行（选区里在放的小动画、闪烁的光标）不算「在动的那一块」：不然一开自动滚动，
+  /// 光标就被挪到动画上（`ScrollCapture.aimAtBand`），滚的不是用户指着的那一块
+  @Test func bandIgnoresChangesWithoutScrolling() throws {
+    let band = 60..<140
+    let first = Self.nested(at: 100, band: band)
+    var stitcher = try Self.stitcher(first)
+    let rowBytes = Self.width * 4
+    var animated = first
+    animated.replaceSubrange(
+      10 * rowBytes..<20 * rowBytes, with: [UInt8](repeating: 0, count: 10 * rowBytes))
+    #expect(stitcher.add(Self.image(animated)) == .unchanged)
+    #expect(stitcher.movingRows.isEmpty, "没滚过，量出了 \(stitcher.movingRows)")
+    // 真滚了才量出来，量出来的是那块小滚动区
+    guard case .moved = stitcher.add(Self.image(Self.nested(at: 140, band: band))) else {
+      Issue.record("滚到 140 没对上")
+      return
+    }
+    #expect(stitcher.movingRows.lowerBound >= band.lowerBound - 2, "量出 \(stitcher.movingRows)")
+  }
+
+  /// 在动的那一块只看连着变的那一段：光标闪烁、页脚里走的秒表只是零星的几行，不能把这一块撑成整个选区
+  @Test func bandIgnoresIsolatedChangedRows() {
+    func run(_ rows: [Int], gap: Int = 4) -> Range<Int> {
+      ScrollStitcher.largestRun(Self.marked(rows, count: 600), gap: gap)
+    }
+    #expect(run([]) == 0..<0, "一帧都没滚过")
+    #expect(run(Array(200..<400)) == 200..<400)
+    #expect(run(Array(200..<400) + [590]) == 200..<400, "页脚的光标在闪，孤零零一行")
+    #expect(run([3] + Array(300..<320) + [590]) == 300..<320, "取最长的一段，不是最靠上的")
+    // 中间隔几行没变连起来；隔得远的（换了一块、页脚的光标）断开
+    #expect(run(Array(200..<300) + Array(304..<400)) == 200..<400)
+    #expect(run(Array(100..<160) + Array(200..<400)) == 200..<400)
+    // 实际用的那档间隔：块里每 20 行一段字、中间 6 行留白滚过去不变，照样连成一整块（不然会量小一半）
+    let spacing = stride(from: 200, to: 400, by: 20).flatMap { Array($0..<($0 + 14)) }
+    #expect(
+      run(spacing, gap: 32) == 200..<394, "留白行不算变过，但两段字之间隔着 6 行就断开的话就量错了")
+  }
+
+  private static func marked(_ rows: [Int], count: Int) -> [Bool] {
+    var moved = [Bool](repeating: false, count: count)
+    for row in rows { moved[row] = true }
+    return moved
   }
 
   /// 长截图会话在主线程外算帧（第四轮体检 F1：ScrollStitcher.frame）再接：每一帧的结果和拼出来的长图，和当场算帧的一模一样

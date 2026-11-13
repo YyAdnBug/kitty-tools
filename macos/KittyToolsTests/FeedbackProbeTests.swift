@@ -430,7 +430,8 @@ struct FeedbackProbeTests {
           let next = ScrollCapture.tickPoints(
             velocity: velocity, seconds: 1.0 / 60, carry: carry,
             room: ScrollCapture.room(
-              lead: posted - postedAtReference, height: snapped.height, scale: scale, gain: gain))
+              // 这里的选区就是整扇 Chrome 窗口、整帧都在滚：在动的那一块 = 选区
+              lead: posted - postedAtReference, band: snapped.height, scale: scale, gain: gain))
           carry = next.carry
           points = next.points
         } else {
