@@ -19,7 +19,8 @@
 //   又滚回已经拼过的地方），画布每行的哈希一直留着。都不行才是对不上。
 // - 回弹：触控板滚到头会越界再弹回来，越界露出的是纯色底。刚接过的那头往回滚时：画布那头和新帧那头逐字节相同的行
 //   （页脚、还露着的越界底色）换成新帧的，再往里画布比新帧多出来的行只有全是纯色才去掉，有字的行一行都不丢。
-// - 在动的那一块（2026-11-13）：累计每帧变过的行 / 列，取最长的连续一段（`movingRows` / `movingColumns`）。
+// - 在动的那一块（2026-11-13）：累计真滚过的那些帧里变过的行 / 列（没滚时原地变的不算），取最长的连续一段
+//   （`movingRows` / `movingColumns`）。
 //   选区里嵌着一个小滚动区（页面里的一块列表、对话记录）时，两帧之间能接上的位移只和这一块有关，不是选区高——
 //   长截图会话按它算自动滚动的领先上限（`ScrollCapture.room`）、把滚轮对准这一块（`aimAtBand`）。
 
@@ -70,7 +71,7 @@ struct ScrollStitcher {
   nonisolated private static let maxRepeat = 8
   /// 「在动的那一块」里允许隔几行没变：块里空了白的行、行间留白滚过去还是白的，不算「变过」，
   /// 不连起来的话量出来的这一块会小一半（2026-11-13 实测：每 20 行一段字、6 行空白，80 行的一块只量出 14 行）
-  nonisolated private static let bandGap = 32
+  private static let bandGap = 32
   /// 对上至少要这么多行投票、票数是第二名的这么多倍，且占重叠部分可比行的这个比例
   /// （比例只挡「重叠部分大多在变、碰巧几行一样」，比如选区里在放视频）
   private static let minVotes = 6
@@ -100,7 +101,7 @@ struct ScrollStitcher {
   /// 最近一次对上时的位移（像素，> 0 是往下滚）：自动滚动据此校准滚轮方向
   private(set) var lastShift = 0
 
-  /// 画面里真正在动的那一块（像素行）：会话里累计「变过的行」中最长的连续一段（中间最多隔 bandGap 行）。
+  /// 画面里真正在动的那一块（像素行）：会话里累计「真滚过的帧里变过的行」中最长的连续一段（中间最多隔 bandGap 行）。
   /// 长截图会话按它算自动滚动最多能领先多少——选区里嵌着一个小滚动区时，两帧之间能接上的位移只和这一块有关，
   /// 按选区高算就会一次滚过这块、一直「对不上」（2026-11-13 用户报）。空着 = 还没量出来，按整个选区算
   private(set) var movingRows = 0..<0
@@ -163,24 +164,8 @@ struct ScrollStitcher {
     guard let frame else { return .lost }
     let a = reference.hashes
     let b = frame.hashes
-    var changed = 0
-    var grew = false
-    for row in 0..<height where a[row] != b[row] {
-      changed += 1
-      if !movedRows[row] {
-        movedRows[row] = true
-        grew = true
-      }
-      guard tracksColumns else { continue }
-      let base = row * frame.bins
-      for bin in 0..<frame.bins
-      where frame.profile[base + bin] != reference.profile[base + bin] && !movedColumns[bin] {
-        movedColumns[bin] = true
-        grew = true
-      }
-    }
+    let changed = (0..<height).count { a[$0] != b[$0] }
     guard changed > 0 else { return .unchanged }
-    if grew { bandGrew() }
     var found = Self.match(from: reference, to: frame)
     if found == nil {
       let ink = (0..<height).count { reference.ink[$0] }
@@ -231,6 +216,7 @@ struct ScrollStitcher {
         prependTop(frame, rows: 0..<kept)
       }
     }
+    noteMoved(frame)
     reference = frame
     referenceTop = position
     lastShift = dy
@@ -238,6 +224,26 @@ struct ScrollStitcher {
   }
 
   // MARK: 在动的那一块
+
+  /// 这一帧真滚过了（对上了、位移不是 0）：把和上一帧比变过的行 / 列记进去。没滚时原地变的（光标闪烁、悬停高亮、
+  /// 选区里在放的动画 / 视频）不记——不然一开自动滚动，光标就被挪到动画上，滚的不是用户指着的那一块
+  private mutating func noteMoved(_ frame: Frame) {
+    var grew = false
+    for row in 0..<height where reference.hashes[row] != frame.hashes[row] {
+      if !movedRows[row] {
+        movedRows[row] = true
+        grew = true
+      }
+      guard tracksColumns else { continue }
+      let base = row * frame.bins
+      for bin in 0..<frame.bins
+      where !movedColumns[bin] && frame.profile[base + bin] != reference.profile[base + bin] {
+        movedColumns[bin] = true
+        grew = true
+      }
+    }
+    if grew { bandGrew() }
+  }
 
   /// 累计变过的范围长大了：重算在动的那一块（行、列分开算）
   private mutating func bandGrew() {

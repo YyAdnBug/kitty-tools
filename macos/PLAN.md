@@ -810,22 +810,22 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 ### 长截图：页面里嵌着的小滚动区一直「对不上」（2026-11-13，用户反馈）
 
 - 用户：在页面里某个小的滚动区域长截图，一直提示「对不上」；整个页面只有一个滚动区域时没事。
-- 根因（离线复现，材料 `macos/build/research/scroll-band-2026-11-13/`）：拼接和自动滚动的阈值都拿「选区高」当
+- 根因（外部 PR #20 的作者离线复现）：拼接和自动滚动的阈值都拿「选区高」当
   「画面里真正在动的那一段有多高」。选区 600 行、中间一块 200 行的小滚动区在滚、其余留白：每帧滚 100 行（这块的一半）
   5/5 接上，滚 150 行（七成半）5/5 对不上、长图停在 600 行不再长；同样步长下整帧都在滚（只有一个滚动区）5/5 接上。
   断掉之后参照帧不前进，只有往回滚才恢复——所以一直卡在橙字上。
 - 另一头：自动滚动把光标挪到「选区中心」（`ScrollCapture.toggleAutoScroll`），那块滚动区不在中心时滚的是外层页面。
-- 修法：① `ScrollStitcher` 累计每帧变过的行 / 列，报出「在动的那一块」（`movingRows` / `movingColumns`：变过的行里
-  最长的连续一段，块里留白隔 32 行以内连起来，不然量小一半；列只在自动滚动时统计 `tracksColumns`；还没量出来时是空，
+- 修法（外部 PR #20，Leeero）：① `ScrollStitcher` 累计真滚过（`.moved`）的那些帧里变过的行 / 列，
+  报出「在动的那一块」（`movingRows` / `movingColumns`：变过的行里最长的连续一段，块里留白隔 32 行以内连起来，不然量小一半；列只在自动滚动时统计 `tracksColumns`；还没量出来时是空，
   会话按整个选区算）；② `ScrollCapture` 的领先上限 `room`、`.lost` 的退让量、光标落点（`aimAtBand` / 纯函数 `bandRect`）
   全按这一块算；③ 单测 `ScrollStitcherTests.reportsTheBlockThatActuallyMoves` / `bandIgnoresIsolatedChangedRows`、
   `ScrollSpeedTests.leadIsCappedAtHalfTheMovingBlock` / `bandRectFollowsTheMovingBlock`。
-- 验证（2026-11-13）：整包 `xcodebuild test` 在本机跑不了（分支要 macOS 27 SDK，且 Swift 6.3.3 前端在
-  `Notes/NoteDeckPanel.swift` 上断言崩溃 `getConcrete at ProtocolConformanceRef.h:126`——把这次改的两个文件退回基线再编，
-  崩在同一处，是工具链不是这块代码）。改用 `macos/build/research/scroll-band-2026-11-13/run-tests.sh`：把改动碰到的代码
-  按函数名从源文件逐字抽成两个 SwiftPM 小包跑真单测，拼接器 **19 条**、纯函数（`room` / `bandRect` / `velocity` /
-  `calibrated` / `tickPoints`）**5 条**全过。顺带修掉测试里一处编不过的异构数组字面量（`[3, 300..<320, 590]`，`89d13fba`）。
-  还没有机器验证的是自动滚动的实际行为（`aimAtBand` 真把光标挪进那块、`.lost` 的退让量），要真机手测。
+- 合并时补的（2026-11-13 审查）：PR 原来每一帧只要有行变了就记进「在动的那一块」，没滚时原地变的也算——选区里有
+  动画、视频、闪烁的输入光标，框好不滚直接按空格，`aimAtBand` 会把用户特意停在小滚动区上的光标挪到动画上。改成只记
+  对上了的帧（`noteMoved`，在 `add` 换参照帧之前），单测 `bandIgnoresChangesWithoutScrolling`。没量出来时（这次会话
+  还没滚过那块）光标在哪滚哪，和以前一样：自动滚动认得那块的前提是它先被滚过一次（HANDTEST 第 2 条按这个写）。
+- 验证（2026-11-13，本机 Xcode 27.1）：编译零警告、全量单测过、Dev 版偏好 md5 前后一样、lint 无输出。自动滚动的
+  实际行为（`aimAtBand` 真把光标挪进那块、`.lost` 的退让量）要真机手测。
 - 已知：选区里静止的部分有字时，一次滚出这块会被 `stillShare` 先当成「画面没动」（手动模式下什么都不发生、自动模式
   3 帧后报「已经滚到底了」），不硬接；节奏改成按这一块之后基本碰不到，没另外改（离线验证里锁着「不硬接」）。
   量出来的这块只短不长（留白行不算变过），短一点只是滚得更稳。手测 HANDTEST「长截图页面里的小滚动区」。

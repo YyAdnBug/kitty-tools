@@ -232,6 +232,26 @@ struct ScrollStitcherTests {
     #expect(stitcher.add(Self.image(Self.nested(at: 300, band: band))) == .lost)
   }
 
+  /// 没滚时原地变的几行（选区里在放的小动画、闪烁的光标）不算「在动的那一块」：不然一开自动滚动，
+  /// 光标就被挪到动画上（`ScrollCapture.aimAtBand`），滚的不是用户指着的那一块
+  @Test func bandIgnoresChangesWithoutScrolling() throws {
+    let band = 60..<140
+    let first = Self.nested(at: 100, band: band)
+    var stitcher = try Self.stitcher(first)
+    let rowBytes = Self.width * 4
+    var animated = first
+    animated.replaceSubrange(
+      10 * rowBytes..<20 * rowBytes, with: [UInt8](repeating: 0, count: 10 * rowBytes))
+    #expect(stitcher.add(Self.image(animated)) == .unchanged)
+    #expect(stitcher.movingRows.isEmpty, "没滚过，量出了 \(stitcher.movingRows)")
+    // 真滚了才量出来，量出来的是那块小滚动区
+    guard case .moved = stitcher.add(Self.image(Self.nested(at: 140, band: band))) else {
+      Issue.record("滚到 140 没对上")
+      return
+    }
+    #expect(stitcher.movingRows.lowerBound >= band.lowerBound - 2, "量出 \(stitcher.movingRows)")
+  }
+
   /// 在动的那一块只看连着变的那一段：光标闪烁、页脚里走的秒表只是零星的几行，不能把这一块撑成整个选区
   @Test func bandIgnoresIsolatedChangedRows() {
     func run(_ rows: [Int], gap: Int = 4) -> Range<Int> {

@@ -444,7 +444,7 @@ final class ScrollCapture {
   }
 
   /// 把光标放到在动那一块的中间：滚轮事件交给光标下的窗口，光标停在选区里别的地方（外层页面）就滚错了对象，
-  /// 画面不动、怎么滚都「对不上」（2026-11-13）。光标已经在那一块上、或者在自家面板上（那是要去点按钮）不动
+  /// 画面不动、怎么滚都「对不上」（2026-11-13）。光标已经在那一块上就不动；停在自家面板上（刚点了 ▶）也挪进去
   private func aimAtBand() {
     guard isAutoScrolling else { return }
     let mouse = NSEvent.mouseLocation
