@@ -597,7 +597,7 @@ internal static class UiSnapshotProbe
 
     private static async Task SafeRenderSettingsAsync(bool dark, string directory)
     {
-        if (!Wanted("settings"))
+        if (!Wanted("settings") && !Wanted("settings-sync"))
         {
             return;
         }
@@ -691,6 +691,68 @@ internal static class UiSnapshotProbe
                     Path.Combine(directory, $"{name}-{(dark ? "dark" : "light")}-window.png"));
                 settings.CloseDialogsForProbe();
                 await Task.Delay(400);
+            }
+
+            // PLAN-v19：设置 › 通用「同步」没开（两个按钮）、「连接服务器…」对话框（空的、http 橙字、测试连接成 / 不成、问合不合在一起）、
+            // 连上之后的状态行（正常、还有几个没拿下来 / 没传上去、请求太多）。要 KITTY_SNAPSHOT_DAV=「地址|用户名|密码」指着本机的测试服务器，
+            // KITTY_SNAPSHOT_DAV_SHARED 是服务器上已经有别的电脑在同步的文件夹（问合不合那张）；每种外观连一个新文件夹，拍完停同步。
+            if (Wanted("settings-sync") && Environment.GetEnvironmentVariable("KITTY_SNAPSHOT_DAV") is { Length: > 0 } dav &&
+                dav.Split('|') is { Length: 3 } account && Syncer.Instance is { } syncer)
+            {
+                var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(settings);
+                async Task SyncShotAsync(string name, int wait)
+                {
+                    await Task.Delay(wait);
+                    await WindowShot.SaveAsync(hwnd, Path.Combine(directory, $"{name}-{(dark ? "dark" : "light")}-window.png"));
+                }
+
+                settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 760));
+                settings.ShowPage(welcome: false, "general");
+                await Task.Delay(400);
+                settings.ScrollToSectionForProbe("同步");
+                await SyncShotAsync("settings-sync-off", 600);
+                var fresh = $"snap-{(dark ? "dark" : "light")}-{Guid.NewGuid():N}"[..17];
+                var shared = Environment.GetEnvironmentVariable("KITTY_SNAPSHOT_DAV_SHARED") ?? "Kitty Tools 同步";
+                var dialogs = new (string Name, SettingsWindow.SyncServerProbeFill? Fill)[]
+                {
+                    ("settings-sync-dialog", null),
+                    ("settings-sync-dialog-http", new(account[0], "Kitty Tools 同步", account[1], account[2], string.Empty)),
+                    ("settings-sync-dialog-test-ok", new(account[0], fresh, account[1], account[2], "test")),
+                    ("settings-sync-dialog-test-failed", new(account[0], fresh, account[1], "wrong-password", "test")),
+                    ("settings-sync-dialog-join", new(account[0], shared, account[1], account[2], "connect")),
+                };
+                foreach (var (name, fill) in dialogs)
+                {
+                    settings.OpenSyncServerForProbe(fill);
+                    await SyncShotAsync(name, 1500);
+                    settings.CloseDialogsForProbe();
+                    await Task.Delay(400);
+                }
+
+                settings.OpenSyncServerForProbe(new(account[0], fresh, account[1], account[2], "connect"));
+                await Task.Delay(3000);
+                settings.CloseDialogsForProbe();
+                settings.RebuildForProbe();
+                settings.ScrollToSectionForProbe("同步");
+                await SyncShotAsync("settings-sync-server", 800);
+                syncer.Status.Downloading = 12;
+                syncer.Status.Uploading = 3;
+                settings.RebuildForProbe();
+                settings.ScrollToSectionForProbe("同步");
+                await SyncShotAsync("settings-sync-server-pending", 600);
+                syncer.Status.Downloading = 0;
+                syncer.Status.Uploading = 0;
+                syncer.Status.State = "busy";
+                syncer.Status.Message = Syncer.BusyMessage(DateTimeOffset.Now.AddMinutes(10));
+                settings.RebuildForProbe();
+                settings.ScrollToSectionForProbe("同步");
+                await SyncShotAsync("settings-sync-server-busy", 600);
+                syncer.ForgetServer();
+                SettingsService.Current.SyncEnabled = false;
+                SettingsService.Save();
+                syncer.Status.State = "off";
+                syncer.Status.Message = string.Empty;
+                settings.RebuildForProbe();
             }
 
             // PLAN-v16 L1 / V12：设置 › 启动器滚到底（使用记录的「空搜索框里列出常用」）。

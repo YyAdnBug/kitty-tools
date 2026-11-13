@@ -547,7 +547,7 @@ PLAN-v19 在 0.2.0 收口开始前已经推到 `windows`，而它排在 0.2.0 �
 **没测、留给真机清单**：R69 注销再登录自己起来（第 2 条）、R70 真的 Ctrl+Alt+Del（第 6 条）、R71 真按住快捷键进入（第 7 条）、R74 管理员窗口在前台（第 8 条）、
 R73 真拖图（第 14 条）、S1 真长网页（第 26 条）、S6 真遮罩换选区（第 27 条）、L13 两块屏（第 28 条）、L12 真限流 / 真清单（第 29 条）；R75、R78 的出错那条路没真走。
 
-## PLAN-v19（同步直接连 WebDAV 服务器，issue #18，2026-11-13 用户「全部按推荐」，审查方在 Mac 上写、**没编译**）
+## PLAN-v19（同步直接连 WebDAV 服务器，issue #18，2026-11-13 用户「全部按推荐」，审查方在 Mac 上写；Windows 11-13 核验完，见本节末尾）
 
 方案在 `PLAN-v19.md`（D1–D5 都取推荐）。一批，审查方在 Mac 上写完（`git log --grep "PLAN-v19"`），**一行都没编译、没跑过单测**（Mac 上没有 .NET SDK）。
 你们在 0.2.0 打完包、切出 `windows-0.2.0` 之后核验（见「0.2.0 发版前审查 › 给 Windows agent 的指令」第 6 步），算 0.3.0 最先的一批；和 PLAN-v18 的各批不碰同样的文件。
@@ -594,6 +594,33 @@ R73 真拖图（第 14 条）、S1 真长网页（第 26 条）、S6 真遮罩�
 - 本机的镜像写不进去（盘满了）是单独一种出错 `WebDavError.Disk`（「这台电脑上的同步副本写不进去…」），mac 是算成「连不上」。
 - 「选择文件夹…」之前先 `ForgetServer`（以前连过服务器、没停干净时把密码和镜像清掉）。
 - 便签同步关着时 pull 照样拿便签和图片（同 mac）：只在 merge 时不用；ponytail，关着便签又连服务器的人多拿几个文件。
+
+### Windows 核验结果（2026-11-13，Claude 在 Windows 上，`windows` 线）
+
+照上面「核验指令」八条：
+
+1. **编译**：只有一处错——`SettingsWindow.SyncServer.cs` 两个按钮的 lambda 参数叫 `_`，`_ = Task` 成了给参数赋值（CS0029），改名 `sender`（`335fa2fe`）；
+   其余一次编过，Debug 0 警告；AOT x64 / ARM64 0 个 trim / AOT 警告。`XmlReaderSettings.XmlResolver = null` 没报过时，留着。
+   **发布体积**比 0.2.0（同一批代码去掉 PLAN-v19）多 x64 +1.04 MB、ARM64 +1.07 MB（94.91 → 95.95、100.50 → 101.57 MB，全在 exe 里），没到 3 MB。
+2. **单测**：893 个全过（WebDavTests 10、SyncServerTests 17，原来的 NoteSyncRunnerTests、SyncIntegrationTests 也过），一个测试都没改。
+3. **编译点**：第 3 条列的几处都编过；`Glyphs.Server`（`\uE8CE`）截图里是一个连着网络的驱动器，像服务器，留着。
+4. **占位**：`PlaceholdersForWhatIsNotFetchedYet` 在 Windows 上过；真跑（下面第 5 条的自检）：一台先建 71 条便签，另一台第一次连，第一轮镜像里 42 个带「脱机」属性的占位、
+   状态「还有 42 个没拿下来」，第二轮 2 个，第三轮 0，便签 33 → 73 条，中途没报错、没删东西。
+5. **真服务器**：没有用户另给的测试账号，审查方 Mac 上的 Apache 在那边的局域网、这台够不着，所以写了一个本机的 WebDAV 测试服务器（Python 标准库、只听 127.0.0.1、Basic 或 Digest，
+   不进仓库，在会话的临时目录里）。`SyncServerTests.LiveServer`：Basic、Digest 各跑一次，都过。另加测试档自检 `--sync-server-probe=<目录>`（`App/SyncServerProbe.cs`，
+   连 `KITTY_SYNC_PROBE` 给的服务器，走真的 `Syncer.EnableServerAsync` / `RoundAsync`，可以先建便签、带图），两份 Dev 档轮流连同一个文件夹，访问日志看到：
+   - 空闲一轮只有 3 + 2 × 台数个 PROPFIND（一台 5 个、两台 7 个），没有别的请求；
+   - 另一台回来时只 GET 对方的那几个文件，自己的不拿；
+   - 图片先 PUT `images/.kitty-<编号>.partial` 再 MOVE 成正式名，`images/` 里没留下 .partial；
+   - 标记只 PUT 一次（第二台读到标记不写）。「标记第二次 PUT 回 412」要两台同一刻第一次连才碰得到，没造出来，靠单测。
+   **发现**：服务器要 Digest 时，换成 Digest 的 client 之后**每个请求还是先回一次 401** 再带上认证（.NET 的 `SocketsHttpHandler` 不预先带 Digest，`PreAuthenticate` 只管 Basic），
+   请求数翻倍：按次数限流的 Digest 服务器上，「一轮 40 个」实际是 80 次。没改（要自己算 Digest 的 nonce / nc；常见网盘、NAS 的 WebDAV 都是 Basic），记在这里给审查方定。
+6. **手测**：HANDTEST 1212–1224 各条后面注了验到哪；要真 Mac 的、要网盘客户端的、断网、真限流、卸载没测。
+7. **截图**（`windows-shots` 的 `0.3.0-v19/`）：`--ui-snapshots` 加了 `settings-sync-*`（要 `KITTY_SNAPSHOT_DAV`、`KITTY_SNAPSHOT_DAV_SHARED` 指着本机测试服务器）：
+   没开、对话框（空的、http 橙字、测试连接成 / 不成、问合不合在一起）、连上（正常、还有几个没拿下来 / 没传上去、请求太多），浅 / 深。高对比度没截（要改系统主题，照旧不动）。
+   截图里看出来两处排版，改了：转圈藏着时说明文比下面的橙字多缩进 8 px（列间距照留）；问句的正文在对话框里居中、和左对齐的标题错开。
+8. **自查**：Release 探针档，只有托盘：连着服务器 54.2 MB、没开同步 53.9 MB（+0.3）；空闲 CPU 连着服务器 0.013 %（量的 120 秒里正好两轮）、关着 0.013 %；
+   日志里 `sync.server-*` 只有个数和出错种类，几份测试档的日志里都没有服务器地址、端口、用户名、密码；settings.json 里没有密码。
 
 ## PLAN-v18（mac 0.7.3 之后的改动，2026-11-13 用户「给我命令吧，我让 windows agent 开始实现」= D1–D13 按推荐）
 

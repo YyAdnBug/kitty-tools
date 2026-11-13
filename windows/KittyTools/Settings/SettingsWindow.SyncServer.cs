@@ -16,6 +16,49 @@ internal sealed partial class SettingsWindow
     private const string SyncServerExplanation =
         "文件夹没有的话连接时新建，每台电脑填同一个。密码存在这台电脑的凭据管理器里；有的服务要在网页上另外生成给第三方应用用的密码。";
 
+    /// <summary>UI 截图自检：对话框打开后填的东西和要按的按钮（"test" / "connect" / "join" / 别的 = 只填不按）。</summary>
+    internal sealed record SyncServerProbeFill(string Address, string Folder, string User, string Password, string Action);
+
+    private SyncServerProbeFill? _syncServerFill;
+
+    /// <summary>UI 截图自检（只在测试档）：弹「连接服务器…」对话框，fill 不是 null 就填好、按一下；关它用 CloseDialogsForProbe。</summary>
+    internal void OpenSyncServerForProbe(SyncServerProbeFill? fill)
+    {
+        _syncServerFill = fill;
+        _ = ConnectSyncServerAsync();
+    }
+
+    /// <summary>UI 截图自检：页面滚到标题是 title 的那一节（「同步」）的顶上。</summary>
+    internal void ScrollToSectionForProbe(string title)
+    {
+        _scroll.UpdateLayout();
+        foreach (var child in _content.Children)
+        {
+            if (child is FrameworkElement element && Texts(element).Contains(title))
+            {
+                var top = element.TransformToVisual((UIElement)_scroll.Content).TransformPoint(default).Y;
+                _scroll.ChangeView(null, Math.Max(0, top - 8), null, disableAnimation: true);
+                return;
+            }
+        }
+
+        static IEnumerable<string> Texts(DependencyObject node)
+        {
+            if (node is TextBlock block)
+            {
+                yield return block.Text;
+            }
+
+            for (var index = 0; index < Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChildrenCount(node); index++)
+            {
+                foreach (var text in Texts(Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChild(node, index)))
+                {
+                    yield return text;
+                }
+            }
+        }
+    }
+
     private async Task ConnectSyncServerAsync()
     {
         if (Syncer.Instance is not { } syncer)
@@ -104,6 +147,8 @@ internal sealed partial class SettingsWindow
 
                 spinner.IsActive = working;
                 spinner.Visibility = working ? Visibility.Visible : Visibility.Collapsed;
+                // 转圈藏着时不留列间距，说明文和下面的橙字左边对齐
+                line.ColumnSpacing = working ? 8 : 0;
                 insecure.Visibility = address.Text.Trim().StartsWith("http://", StringComparison.OrdinalIgnoreCase)
                     ? Visibility.Visible
                     : Visibility.Collapsed;
@@ -205,6 +250,7 @@ internal sealed partial class SettingsWindow
                             : $"这个文件夹里已经有 {seen.Devices} 台电脑在同步。") + JoinNote,
                         TextWrapping = TextWrapping.Wrap,
                         MaxWidth = 420,
+                        HorizontalAlignment = HorizontalAlignment.Left,
                     };
                     dialog.PrimaryButtonText = "合在一起";
                     dialog.SecondaryButtonText = string.Empty;
@@ -244,6 +290,36 @@ internal sealed partial class SettingsWindow
                 }
             };
             Refresh();
+            if (Paths.IsTestProfile && _syncServerFill is { } fill)
+            {
+                // UI 截图自检（PLAN-v19 第 7 条）：填好再按一下「测试连接」「连接」，或连上「合在一起」（只对本机的测试服务器）
+                _syncServerFill = null;
+                address.Text = fill.Address;
+                folder.Text = fill.Folder;
+                user.Text = fill.User;
+                password.Password = fill.Password;
+                DispatcherQueue.TryEnqueue(async () =>
+                {
+                    switch (fill.Action)
+                    {
+                        case "test":
+                            await TestAsync();
+                            break;
+                        case "connect":
+                            await ConnectAsync();
+                            break;
+                        case "join":
+                            await ConnectAsync();
+                            if (joining is { } pending)
+                            {
+                                await EnableAsync(pending);
+                            }
+
+                            break;
+                    }
+                });
+            }
+
             await dialog.ShowAsync();
         }
         catch (Exception ex)

@@ -3942,6 +3942,9 @@ internal sealed partial class SettingsWindow : Window
         => SettingsUi.Header(title, subtitle, Pages.FirstOrDefault(page => page.Title == title).Glyph);
 
     /// <summary>UI 截图自检：内容滚到底（设置 › 翻译的服务列表在一屏以下）。</summary>
+    /// <summary>UI 截图自检：照现在的状态重建这一页（同步的状态行是建页时读的）。</summary>
+    internal void RebuildForProbe() => BuildPage(_currentPage);
+
     internal void ScrollToEndForProbe()
     {
         _scroll.UpdateLayout();

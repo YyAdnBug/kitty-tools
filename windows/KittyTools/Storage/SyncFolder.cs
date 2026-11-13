@@ -352,7 +352,7 @@ internal sealed class Syncer
         Halt("busy", BusyMessage(until));
     }
 
-    private static string BusyMessage(DateTimeOffset until) => $"服务器说请求太多，{until.ToLocalTime():HH:mm} 后接着同步";
+    internal static string BusyMessage(DateTimeOffset until) => $"服务器说请求太多，{until.ToLocalTime():HH:mm} 后接着同步";
 
     private void Halt(string state, string message)
     {

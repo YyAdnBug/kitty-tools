@@ -131,6 +131,13 @@ public partial class App : Application
                 return;
             }
 
+            if (SyncServerProbe.IsRequested(commandLine) && SyncServerProbe.DirectoryFrom(commandLine) is { } syncProbe)
+            {
+                // PLAN-v19 核验：连本机测试 WebDAV 服务器走几轮真的同步（只在测试档），跑完就退。
+                _ = SyncServerProbe.RunAsync(syncProbe);
+                return;
+            }
+
             if (ReminderSoundProbe.IsRequested(commandLine) && ReminderSoundProbe.DirectoryFrom(commandLine) is { } soundProbe)
             {
                 // PLAN-v16 第 4 批：提醒提示音文件的自检（只在测试档），跑完就退。
