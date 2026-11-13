@@ -20,11 +20,13 @@ public enum ShotKind
 /// <summary>
 /// 一条标注存盘的样子。Tool 是 AnnotationKind 的名字（小写）；坐标是原图里的像素。Argb / Width 是第一版就有的两个字段，
 /// 照旧写（颜色、线宽 DIP）；Palette、Weight、Option、Number、Bend 是 PLAN-v9 第 5a 批加的，旧数据里没有（-1 / 0），
-/// 读的时候按 Argb、Width 换算。
+/// 读的时候按 Argb、Width 换算。TextSize、Diameter、Custom 是 PLAN-v18 S15 S19 S18 加的可选字段（键 textSize / diameter / custom），
+/// 旧数据里没有就是 null，照原来三档、预设色。
 /// </summary>
 public sealed record ShotAnnotationData(
     string Tool, RectD Rect, IReadOnlyList<PointD> Points, string Text, uint Argb, double Width,
-    int Palette = -1, int Weight = -1, int Option = 0, int Number = 0, VectorD Bend = default);
+    int Palette = -1, int Weight = -1, int Option = 0, int Number = 0, VectorD Bend = default,
+    double? TextSize = null, double? Diameter = null, int? Custom = null);
 
 /// <summary>算该清掉哪些时只看这三样。CreatedAt 是 Unix 毫秒。</summary>
 public readonly record struct ShotStaleItem(string Id, long CreatedAt, long Bytes);
@@ -186,6 +188,21 @@ public static class ShotHistoryRules
                     writer.WriteEndArray();
                 }
 
+                if (annotation.TextSize is { } textSize)
+                {
+                    writer.WriteNumber("textSize", textSize);
+                }
+
+                if (annotation.Diameter is { } diameter)
+                {
+                    writer.WriteNumber("diameter", diameter);
+                }
+
+                if (annotation.Custom is { } custom)
+                {
+                    writer.WriteNumber("custom", custom);
+                }
+
                 writer.WriteEndObject();
             }
 
@@ -261,7 +278,12 @@ public static class ShotHistoryRules
                     Integer(item, "weight", -1),
                     Integer(item, "option", 0),
                     Integer(item, "number", 0),
-                    bend));
+                    bend,
+                    item.TryGetProperty("textSize", out var sizeValue) && sizeValue.TryGetDouble(out var size) && size is >= 6 and <= 200 ? size : null,
+                    item.TryGetProperty("diameter", out var diameterValue) && diameterValue.TryGetDouble(out var diameter)
+                        ? Math.Clamp(diameter, AnnotationStyle.MinDiameter, AnnotationStyle.MaxDiameter) : null,
+                    item.TryGetProperty("custom", out var customValue) && customValue.TryGetInt32(out var custom) && custom is >= 0 and <= 0xFFFFFF
+                        ? custom : null));
             }
         }
         catch (Exception ex) when (ex is JsonException or InvalidOperationException or FormatException)
@@ -304,7 +326,7 @@ public static class ShotHistoryRules
             AnnotationKinds.StorageName(annotation.Kind), rect, points, annotation.Text,
             AnnotationPalette.ArgbOf(annotation.Style.Color), annotation.Style.LineWidth,
             annotation.Style.Color, annotation.Style.Weight, annotation.Style.Option, annotation.Number,
-            annotation.Bend);
+            annotation.Bend, annotation.Style.TextSize, annotation.Style.Diameter, annotation.Style.Custom);
     }
 
     /// <summary>
@@ -323,7 +345,12 @@ public static class ShotHistoryRules
         var style = new AnnotationStyle(
             data.Palette is >= 0 and < 8 ? data.Palette : AnnotationPalette.Nearest(data.Argb),
             data.Weight is >= 0 and <= 2 ? data.Weight : AnnotationStyle.WeightFromWidth(data.Width),
-            Math.Max(0, data.Option));
+            Math.Max(0, data.Option))
+        {
+            TextSize = data.TextSize,
+            Diameter = data.Diameter,
+            Custom = data.Custom,
+        };
         var annotation = new Annotation { Kind = kind, Style = style, Text = data.Text };
         switch (kind)
         {

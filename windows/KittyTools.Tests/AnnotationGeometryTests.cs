@@ -32,7 +32,8 @@ public sealed class AnnotationGeometryTests
             AnnotationKinds.All.Where(kind => !AnnotationKinds.IsDragDrawn(kind)).ToArray());
         CollectionAssert.AreEqual(new[] { "无底", "描边", "底色" }, AnnotationKinds.OptionTitles(AnnotationKind.Text));
         CollectionAssert.AreEqual(new[] { "像素", "模糊" }, AnnotationKinds.OptionTitles(AnnotationKind.Mosaic));
-        Assert.AreEqual(0, AnnotationKinds.OptionTitles(AnnotationKind.Arrow).Length);
+        // PLAN-v18 S18（mac 43b0248e）：箭头多了「单头 · 双头」（以前没有选项，用户要的新功能）
+        CollectionAssert.AreEqual(new[] { "单头", "双头" }, AnnotationKinds.OptionTitles(AnnotationKind.Arrow));
         Assert.AreEqual(8, AnnotationPalette.Argb.Length);
         Assert.AreEqual(0xFFFF3B30u, AnnotationPalette.ArgbOf(AnnotationStyle.Default.Color));
         Assert.AreEqual(AnnotationPalette.Yellow, AnnotationStyle.DefaultFor(AnnotationKind.Highlighter).Color);
@@ -142,6 +143,75 @@ public sealed class AnnotationGeometryTests
     }
 
     [TestMethod]
+    public void DoubleHeadedArrowHasTwoSharpTips()
+    {
+        // S18（mac 43b0248e）：双头在中点切开、两半各一支尖朝外的箭头；直的弯的都行；很短时两个头合成菱形；点中两半都算
+        var from = new PointD(0, 0);
+        var to = new PointD(200, 0);
+        var single = Annotation.ArrowOutlines(from, to, 4, VectorD.Zero, doubled: false);
+        Assert.AreEqual(1, single.Count);
+        var doubled = Annotation.ArrowOutlines(from, to, 4, VectorD.Zero, doubled: true);
+        Assert.AreEqual(2, doubled.Count);
+        CollectionAssert.Contains(doubled[0], to);
+        CollectionAssert.Contains(doubled[1], from);
+        // 杆不收细：中点那头的半宽 = 颈的半宽 2.4（单头的尾巴是 0.6）
+        Assert.AreEqual(2.4, doubled[0].Max(point => Math.Abs(point.Y) is var y && Math.Abs(point.X - 100) < 0.01 ? y : 0), 0.01);
+        var curved = Annotation.ArrowOutlines(from, to, 4, new VectorD(0, 40), doubled: true);
+        Assert.AreEqual(2, curved.Count);
+        var shortOne = Annotation.ArrowOutlines(from, new PointD(10, 0), 4, VectorD.Zero, doubled: true);
+        Assert.AreEqual(2, shortOne.Count, "很短也是两块，拼成菱形");
+        var arrow = Segment(AnnotationKind.Arrow, from, to) with { Style = AnnotationStyle.Default with { Option = 1 } };
+        Assert.IsTrue(arrow.Contains(new PointD(5, 0), 1, 0), "靠起点那一头也点得中");
+    }
+
+    [TestMethod]
+    public void CounterCornersResizeAroundTheCenter()
+    {
+        // S19（mac 2901562d）：四个角在外切正方形上；拖哪个角都以圆心为准改直径，夹在 14–160；改过之后滚轮按 1.25 倍一档
+        var counter = new Annotation { Kind = AnnotationKind.Counter, From = new PointD(100, 100), Number = 3 };
+        var corners = counter.Handles(2).ToDictionary(grip => grip.Handle, grip => grip.Point);
+        Assert.AreEqual(new PointD(74, 74), corners[AnnotationHandle.TopLeft], "中号 26 DIP，2 倍屏半径 26 像素");
+        var bigger = counter.Resized(AnnotationHandle.BottomRight, new PointD(160, 130), false, 2);
+        Assert.AreEqual(60, bigger.Style.Diameter);
+        Assert.AreEqual(counter.From, bigger.From);
+        Assert.AreEqual(160, counter.Resized(AnnotationHandle.TopLeft, new PointD(-900, 100), false, 1).Style.Diameter);
+        Assert.AreEqual(14, counter.Resized(AnnotationHandle.TopLeft, new PointD(101, 101), false, 1).Style.Diameter);
+        Assert.AreEqual(75, bigger.Style.Stepped(1, AnnotationKind.Counter).Diameter);
+        Assert.AreEqual(48, bigger.Style.Stepped(-1, AnnotationKind.Counter).Diameter);
+        // 没拖过角的序号滚轮照旧换三档
+        Assert.AreEqual(2, counter.Style.Stepped(1, AnnotationKind.Counter).Weight);
+    }
+
+    [TestMethod]
+    public void TextSizeStepsAndPickedColorInk()
+    {
+        // S15（mac 79deab8c）：字号档位 12–72，不在档位上的先落到相邻的那档；到头不动；别的工具换三档
+        var style = AnnotationStyle.Default;
+        Assert.AreEqual(20, style.FontSize);
+        Assert.AreEqual(24, style.Stepped(1, AnnotationKind.Text).FontSize);
+        Assert.AreEqual(16, style.Stepped(-1, AnnotationKind.Text).FontSize);
+        Assert.AreEqual(32, (style with { TextSize = 28 }).Stepped(1, AnnotationKind.Text).TextSize);
+        Assert.AreEqual(72, (style with { TextSize = 72 }).Stepped(1, AnnotationKind.Text).TextSize);
+        Assert.AreEqual(12, (style with { TextSize = 12 }).Stepped(-1, AnnotationKind.Text).TextSize);
+        Assert.AreEqual(2, style.Stepped(5, AnnotationKind.Rectangle).Weight);
+        Assert.AreEqual(0, (style with { Weight = 0 }).Stepped(-1, AnnotationKind.Rectangle).Weight);
+        // S18（mac 43b0248e）：取的颜色画出来就是它，压在上面的字按亮度选黑白；没取过照预设色
+        Assert.AreEqual(0xFF123456u, (style with { Custom = 0x123456 }).PaintArgb);
+        Assert.AreEqual(0xFFFFFFFFu, (style with { Custom = 0x123456 }).InkArgb);
+        Assert.AreEqual(0xFF000000u, (style with { Custom = 0xF0F0A0 }).InkArgb);
+        Assert.IsTrue((style with { Custom = 0xFAFAFA }).OutlinesDark);
+        Assert.AreEqual(AnnotationPalette.ArgbOf(style.Color), style.PaintArgb);
+        Assert.IsTrue((style with { Color = AnnotationPalette.White }).OutlinesDark);
+        // 记住的样式：有可选字段时多三段，旧的三段照读
+        var saved = new Dictionary<string, string>();
+        AnnotationStyle.Remember(saved, AnnotationKind.Text, style with { TextSize = 40, Custom = 0x112233 });
+        Assert.AreEqual("1,1,0,40,,1122867", saved["text"]);
+        Assert.AreEqual(style with { TextSize = 40, Custom = 0x112233 }, AnnotationStyle.Remembered(saved, AnnotationKind.Text));
+        saved["rectangle"] = "4,2,1";
+        Assert.AreEqual(new AnnotationStyle(4, 2, 1), AnnotationStyle.Remembered(saved, AnnotationKind.Rectangle));
+    }
+
+    [TestMethod]
     public void HandlesAndResize()
     {
         var box = Box(AnnotationKind.Rectangle, new RectD(10, 20, 40, 30));
@@ -195,9 +265,9 @@ public sealed class AnnotationGeometryTests
         Assert.AreEqual(new PointD(0, 0), snapped.From);
         Assert.IsTrue(Math.Abs(snapped.To.X - snapped.To.Y) < 0.001);
         Assert.AreEqual(box, box.Resized(AnnotationHandle.Bend, new PointD(0, 0), false, 1));
-        // 文字、序号、画笔只能拖动
+        // 文字、画笔只能拖动；序号（PLAN-v18 S19，mac 2901562d，以前也只能拖动）有外切正方形的四个角
         Assert.AreEqual(0, new Annotation { Kind = AnnotationKind.Text, Text = "字" }.Handles(1).Count);
-        Assert.AreEqual(0, new Annotation { Kind = AnnotationKind.Counter }.Handles(1).Count);
+        Assert.AreEqual(4, new Annotation { Kind = AnnotationKind.Counter }.Handles(1).Count);
         Assert.AreEqual(0, new Annotation { Kind = AnnotationKind.Pen, Points = new[] { new PointD(0, 0), new PointD(9, 9) } }
             .Handles(1).Count);
     }

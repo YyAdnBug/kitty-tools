@@ -287,7 +287,8 @@ internal sealed partial class SelectionOverlayWindow : Window
                 Style = new(AnnotationPalette.White, 1, 0),
             },
             new Annotation { Kind = AnnotationKind.Counter, From = At(0.3, 0.15), Number = 1, Style = new(AnnotationPalette.Red, 1, 0) },
-            new Annotation { Kind = AnnotationKind.Counter, From = At(0.92, 0.18), Number = 12, Style = new(AnnotationPalette.Yellow, 2, 0) },
+            // PLAN-v18 S19：拖角改过大小的序号（直径 44）
+            new Annotation { Kind = AnnotationKind.Counter, From = At(0.92, 0.18), Number = 12, Style = new AnnotationStyle(AnnotationPalette.Yellow, 2, 0) { Diameter = 44 } },
         };
         _document.Load(annotations);
         _document.SelectedId = annotations.First(annotation => annotation.Kind == selected).Id;
@@ -460,6 +461,13 @@ internal sealed partial class SelectionOverlayWindow : Window
                 e.Handled = true;
                 CommitText();
             }
+            else if (IsDown(Windows.System.VirtualKey.Control) && !_composing &&
+                     e.Key is (Windows.System.VirtualKey)187 or Windows.System.VirtualKey.Add or (Windows.System.VirtualKey)189 or Windows.System.VirtualKey.Subtract)
+            {
+                // 打字时 Ctrl+= / Ctrl+- 换字号（S15）
+                e.Handled = true;
+                StepStyle(e.Key is (Windows.System.VirtualKey)187 or Windows.System.VirtualKey.Add ? 1 : -1);
+            }
         };
         editor.TextChanged += (_, _) => LayoutEditor();
         editor.Loaded += (_, _) => LayoutEditor(); // 套上模板、排好之后才量得到输入框的行距
@@ -519,7 +527,7 @@ internal sealed partial class SelectionOverlayWindow : Window
         }
 
         editor.FontSize = _style.FontSize;
-        _editorInk.Color = _style.Option == 2 ? AnnotationRenderer.InkOf(_style.Color) : AnnotationRenderer.ColorOf(_style.Color);
+        _editorInk.Color = AnnotationRenderer.FromArgb(_style.Option == 2 ? _style.InkArgb : _style.PaintArgb);
         LayoutEditor();
     }
 
@@ -1154,6 +1162,7 @@ internal sealed partial class SelectionOverlayWindow : Window
     {
         _trayKind = kind;
         _trayRow.Children.Clear();
+        _trayCustom = null;
         _trayColors.Clear();
         _trayWeights.Clear();
         _trayOptions.Clear();
@@ -1164,22 +1173,39 @@ internal sealed partial class SelectionOverlayWindow : Window
                 var index = palette;
                 var title = AnnotationPalette.Titles[index] + "色";
                 var (button, ring, dot) = Swatch(14, AnnotationRenderer.ColorOf(index), outlined: true, title);
-                button.Click += (_, _) => Restyle(style => style with { Color = index });
+                button.Click += (_, _) => Restyle(style => style with { Color = index, Custom = null });
                 _trayColors.Add((ring, dot, index));
                 _trayRow.Children.Add(button);
             }
 
+            AddColorExtras();
             _trayRow.Children.Add(Separator());
         }
 
-        var weightTitles = AnnotationKinds.WeightTitles(kind);
-        for (var weight = 0; weight < 3; weight++)
+        _traySize = null;
+        _trayNumberPanel = null;
+        if (kind == AnnotationKind.Text)
         {
-            var index = weight;
-            var (button, ring, dot) = Swatch(new[] { 4.0, 7, 10 }[index], Theme.Shot.HudText, outlined: false, weightTitles[index]);
-            button.Click += (_, _) => Restyle(style => style with { Weight = index });
-            _trayWeights.Add((ring, dot, index));
-            _trayRow.Children.Add(button);
+            // 文字：A− 字号 A+（PLAN-v18 S15）
+            AddTextSize();
+        }
+        else
+        {
+            var weightTitles = AnnotationKinds.WeightTitles(kind);
+            for (var weight = 0; weight < 3; weight++)
+            {
+                var index = weight;
+                var (button, ring, dot) = Swatch(new[] { 4.0, 7, 10 }[index], Theme.Shot.HudText, outlined: false, weightTitles[index]);
+                // 点三档清掉拖角改过的序号直径（S19）
+                button.Click += (_, _) => Restyle(style => style with { Weight = index, Diameter = null });
+                _trayWeights.Add((ring, dot, index));
+                _trayRow.Children.Add(button);
+            }
+        }
+
+        if (kind == AnnotationKind.Counter)
+        {
+            AddCounterNumber();
         }
 
         var options = AnnotationKinds.OptionTitles(kind);
@@ -1334,13 +1360,16 @@ internal sealed partial class SelectionOverlayWindow : Window
         var style = ShownStyle;
         foreach (var (ring, dot, index) in _trayColors)
         {
-            MarkSwatch(ring, dot, index == style.Color, animate: !rebuilt);
+            MarkSwatch(ring, dot, index == style.Color && style.Custom is null, animate: !rebuilt);
         }
 
         foreach (var (ring, dot, index) in _trayWeights)
         {
-            MarkSwatch(ring, dot, index == style.Weight, animate: !rebuilt);
+            // 拖角改过大小的序号三档都不亮（S19）
+            MarkSwatch(ring, dot, index == style.Weight && !(owner == AnnotationKind.Counter && style.Diameter is not null), animate: !rebuilt);
         }
+
+        UpdateTrayExtras(style, owner);
 
         foreach (var (button, index) in _trayOptions)
         {
@@ -1443,6 +1472,7 @@ internal sealed partial class SelectionOverlayWindow : Window
     private void SelectTool(AnnotationKind? tool)
     {
         CommitText();
+        CancelPicking();
         var chosen = tool is not null && tool == _tool ? null : tool;
         if (chosen is { } kind)
         {
@@ -1847,6 +1877,22 @@ internal sealed partial class SelectionOverlayWindow : Window
         _canvas.Focus(FocusState.Pointer);
         ReadCursor();
         var point = _cursor;
+        if (_picking)
+        {
+            // 吸管（S18）：这一下只取色
+            e.Handled = true;
+            if (!e.GetCurrentPoint(_canvas).Properties.IsRightButtonPressed)
+            {
+                PickColor(point);
+            }
+            else
+            {
+                CancelPicking();
+            }
+
+            return;
+        }
+
         _pressed = point;
         _anchor = point;
         _cursor = point;
@@ -2119,7 +2165,20 @@ internal sealed partial class SelectionOverlayWindow : Window
         _canvas.Invalidate();
     }
 
-    private void OnPointerWheel(object sender, PointerRoutedEventArgs e) => e.Handled = true;
+    /// <summary>选中的标注上滚轮换一档（PLAN-v18 S15，mac：文字换字号，别的换粗细 / 格子 / 深浅，拖角改过的序号按 1.25 倍）。</summary>
+    private void OnPointerWheel(object sender, PointerRoutedEventArgs e)
+    {
+        e.Handled = true;
+        ReadCursor();
+        if (_document.Selected is { } selected && !IsDraggingAnnotation && _textEditor is null && selected.Contains(_cursor, _scale))
+        {
+            var delta = e.GetCurrentPoint(_canvas).Properties.MouseWheelDelta;
+            if (delta != 0)
+            {
+                StepStyle(Math.Sign(delta));
+            }
+        }
+    }
 
     private void ReadCursor()
     {
@@ -2432,6 +2491,15 @@ internal sealed partial class SelectionOverlayWindow : Window
                 e.Handled = true;
                 PushEdge(e.Key, outward: control);
                 break;
+            // Ctrl+= / Ctrl+-（主键盘和小键盘）：选中的标注或当前工具换一档（S15，mac ⌘+ / ⌘−）
+            case (Windows.System.VirtualKey)187 or Windows.System.VirtualKey.Add when control && !alt:
+                e.Handled = true;
+                StepStyle(1);
+                break;
+            case (Windows.System.VirtualKey)189 or Windows.System.VirtualKey.Subtract when control && !alt:
+                e.Handled = true;
+                StepStyle(-1);
+                break;
             case Windows.System.VirtualKey.Space:
                 // 拖动框选途中按着空格整块平移；按住不放的自动重复不算新按下
                 e.Handled = true;
@@ -2452,7 +2520,10 @@ internal sealed partial class SelectionOverlayWindow : Window
                 // 照 mac：打字中的文字 → 选中的标注 → 选中的工具 → 退出截图（免得一下把画好的标注全丢了）。
                 // 有选区、没选工具时按一下就退出，不先清选区（0.1.0 用户反馈：以前要按两下）。
                 e.Handled = true;
-                if (_textEditor is not null)
+                if (CancelPicking())
+                {
+                }
+                else if (_textEditor is not null)
                 {
                     CommitText();
                 }

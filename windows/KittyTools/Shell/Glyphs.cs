@@ -82,6 +82,9 @@ internal static class Glyphs
     public const string Folder = "\uE8B7";
     /// <summary>同步连着 WebDAV 服务器（mac server.rack；MapDrive：映射的网络驱动器，PLAN-v19）。</summary>
     public const string Server = "\uE8CE";
+
+    /// <summary>吸管（截图标注从截图里取色，PLAN-v18 S18）。</summary>
+    public const string Eyedropper = "\uEF3C";
     public const string OpenInNewWindow = "\uE8A7";
     public const string Link = "\uE71B";
     public const string CommandPrompt = "\uE756";

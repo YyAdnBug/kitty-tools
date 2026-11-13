@@ -40,7 +40,7 @@ internal static class AnnotationRenderer
     /// <summary>压在这个颜色上的字（底色文字、序号）：黄、白上黑字，其余白字。</summary>
     public static Color InkOf(int palette) => FromArgb(AnnotationPalette.InkOf(palette));
 
-    private static Color FromArgb(uint argb)
+    internal static Color FromArgb(uint argb)
         => Color.FromArgb((byte)(argb >> 24), (byte)(argb >> 16), (byte)(argb >> 8), (byte)argb);
 
     /// <summary>
@@ -128,7 +128,7 @@ internal static class AnnotationRenderer
             return;
         }
 
-        var color = ColorOf(annotation.Style.Color);
+        var color = FromArgb(annotation.Style.PaintArgb);
         var width = map.Size(annotation.Style.LineWidth);
         if (annotation.Kind is AnnotationKind.Rectangle or AnnotationKind.Ellipse && annotation.Style.Option == 1 &&
             BoxGeometry(ds, annotation, map) is { } fill)
@@ -154,7 +154,9 @@ internal static class AnnotationRenderer
 
                     break;
                 case AnnotationKind.Arrow:
-                    if (Annotation.ArrowOutline(annotation.From, annotation.To, annotation.Style.LineWidth * map.PixelsPerDip, annotation.Bend) is { } outline)
+                    // 单头一块；双头（选项 1）两半各一块（PLAN-v18 S18）
+                    foreach (var outline in Annotation.ArrowOutlines(
+                                 annotation.From, annotation.To, annotation.Style.LineWidth * map.PixelsPerDip, annotation.Bend, annotation.Style.Option == 1))
                     {
                         using var arrow = Polygon(inner, outline, map);
                         inner.FillGeometry(arrow, color);
@@ -233,7 +235,7 @@ internal static class AnnotationRenderer
     private static void DrawText(CanvasDrawingSession ds, Annotation annotation, Mapping map, bool glyphs, double? linePitch = null)
     {
         var style = annotation.Style;
-        var color = ColorOf(style.Color);
+        var color = FromArgb(style.PaintArgb);
         var origin = map.Point(new PointD(annotation.Rect.X, annotation.Rect.Y));
         using var layout = TextLayout(ds, annotation.Text, style, map.StrokeScale, linePitch);
         switch (style.Option)
@@ -242,7 +244,7 @@ internal static class AnnotationRenderer
             {
                 // 描边：先画带阴影的外描边（字号的 1/7，一半压在字里，随后填上的字把它盖住；白字用黑描边），再不带阴影地把字填上
                 using var outline = CanvasGeometry.CreateText(layout);
-                var stroke = style.Color == AnnotationPalette.White ? Colors.Black : Colors.White;
+                var stroke = style.OutlinesDark ? Colors.Black : Colors.White;
                 WithShadow(ds, map, inner => inner.DrawGeometry(outline, origin, stroke, map.Size(style.FontSize / 7), RoundStroke));
                 if (glyphs)
                 {
@@ -262,7 +264,7 @@ internal static class AnnotationRenderer
                 WithShadow(ds, map, inner => inner.FillRoundedRectangle(plate, radius, radius, color));
                 if (glyphs)
                 {
-                    ds.DrawTextLayout(layout, origin, InkOf(style.Color));
+                    ds.DrawTextLayout(layout, origin, FromArgb(style.InkArgb));
                 }
 
                 break;
@@ -369,7 +371,7 @@ internal static class AnnotationRenderer
         builder.EndFigure(CanvasFigureLoop.Open);
         using var segment = CanvasGeometry.CreatePath(builder);
         using var band = segment.Stroke(map.Size(annotation.Style.HighlighterHeight));
-        var color = ColorOf(annotation.Style.Color);
+        var color = FromArgb(annotation.Style.PaintArgb);
         using var backdrop = new Transform2DEffect
         {
             Source = frozen,
@@ -520,7 +522,7 @@ internal static class AnnotationRenderer
             var glyphs = layout.DrawBounds;
             ds.DrawTextLayout(
                 layout, center.X - (float)(glyphs.X + glyphs.Width / 2), center.Y - (float)(glyphs.Y + glyphs.Height / 2),
-                FromArgb(AnnotationPalette.InkOf(annotation.Style.Color)));
+                FromArgb(annotation.Style.InkArgb));
         }
     }
 

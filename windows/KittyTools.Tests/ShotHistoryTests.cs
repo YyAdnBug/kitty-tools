@@ -46,6 +46,29 @@ public sealed class ShotHistoryTests
     }
 
     [TestMethod]
+    public void StyleExtrasRoundTripAndOldJsonStillReads()
+    {
+        // PLAN-v18 S15 S18 S19：字号、序号直径、取的颜色是可选字段；旧格式的样式串（PLAN-v16 时存的，没有这三个键）照读、照原来三档
+        const string old = "[{\"tool\":\"text\",\"rect\":[10,10,80,20],\"points\":[],\"text\":\"旧的字\",\"color\":\"#FFFF3B30\",\"width\":4,\"palette\":1,\"weight\":2}]";
+        var decoded = ShotHistoryRules.DecodeAnnotations(old);
+        Assert.AreEqual(1, decoded.Count);
+        Assert.IsNull(decoded[0].TextSize);
+        var restored = ShotHistoryRules.FromData(decoded[0], 0, 0)!;
+        Assert.AreEqual(new AnnotationStyle(1, 2, 0), restored.Style);
+        Assert.AreEqual(28, restored.Style.FontSize);
+
+        var text = new Annotation { Kind = AnnotationKind.Text, Text = "大字", Rect = new RectD(5, 5, 60, 30), Style = AnnotationStyle.Default with { TextSize = 56, Custom = 0x336699 } };
+        var counter = new Annotation { Kind = AnnotationKind.Counter, From = new PointD(40, 40), Number = 7, Style = AnnotationStyle.Default with { Diameter = 90 } };
+        var json = ShotHistoryRules.EncodeAnnotations(new[] { ShotHistoryRules.ToData(text, 0, 0), ShotHistoryRules.ToData(counter, 0, 0) })!;
+        StringAssert.Contains(json, "\"textSize\":56");
+        StringAssert.Contains(json, "\"diameter\":90");
+        var back = ShotHistoryRules.DecodeAnnotations(json).Select(data => ShotHistoryRules.FromData(data, 0, 0)!).ToList();
+        Assert.AreEqual(text.Style, back[0].Style);
+        Assert.AreEqual(counter.Style, back[1].Style);
+        Assert.AreEqual(7, back[1].Number);
+    }
+
+    [TestMethod]
     public void AnnotationsRoundTrip()
     {
         var annotations = new List<ShotAnnotationData>

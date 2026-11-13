@@ -717,7 +717,7 @@ internal sealed class LongAnnotateWindow
             FontSize = Math.Max(1, style.FontSize * _scale * _unit),
             FontFamily = new FontFamily(AnnotationRenderer.TextFontFamily),
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            Foreground = new SolidColorBrush(AnnotationRenderer.ColorOf(style.Color)),
+            Foreground = new SolidColorBrush(AnnotationRenderer.FromArgb(style.PaintArgb)),
         };
         if (existing is not null)
         {

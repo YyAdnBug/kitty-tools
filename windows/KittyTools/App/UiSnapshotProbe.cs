@@ -251,6 +251,21 @@ internal static class UiSnapshotProbe
                 await WindowShot.SaveAsync(
                     overlay.Handle, Path.Combine(directory, "shot-annotations-tray.png"),
                     crop with { Left = Math.Max(0, crop.Left - (int)(120 * overlay.Screen.Scale)) });
+                // PLAN-v18 第 1 批：选中文字（托盘 A− 字号 A+）、选中序号（四个角的手柄、托盘「− n +」）、选中打码（托盘模糊在前、「自动」）
+                foreach (var (kind, name) in new[]
+                         {
+                             (KittyTools.Core.AnnotationKind.Text, "shot-tray-text"),
+                             (KittyTools.Core.AnnotationKind.Counter, "shot-tray-counter"),
+                             (KittyTools.Core.AnnotationKind.Mosaic, "shot-tray-mosaic"),
+                         })
+                {
+                    overlay.ShowProbeAnnotations(kind);
+                    await Task.Delay(500);
+                    await WindowShot.SaveAsync(
+                        overlay.Handle, Path.Combine(directory, name + ".png"),
+                        crop with { Left = Math.Max(0, crop.Left - (int)(120 * overlay.Screen.Scale)) });
+                }
+
                 // 裁剪（PLAN-v11 F11）：开着裁剪、拖着一个框（框外压暗、虚线框、工具栏「裁剪」亮着）
                 overlay.ShowProbeCrop();
                 await Task.Delay(500);

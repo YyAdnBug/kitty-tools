@@ -86,9 +86,70 @@ public static class AnnotationPalette
     }
 }
 
-/// <summary>Color 是 AnnotationPalette 的下标，Weight 是 0–2 的档（细 / 中 / 粗），Option 是 OptionTitles 的下标。</summary>
+/// <summary>
+/// Color 是 AnnotationPalette 的下标，Weight 是 0–2 的档（细 / 中 / 粗），Option 是 OptionTitles 的下标。
+/// 三个可选的（PLAN-v18 S15 S18 S19，mac fontSize / custom / diameter）：没有它们的旧标注、截图历史、记住的样式照原来三档，一个像素不变。
+/// </summary>
 public readonly record struct AnnotationStyle(int Color, int Weight, int Option)
 {
+    /// <summary>文字的字号（DIP，S15）；null = 按三档 14 / 20 / 28。</summary>
+    public double? TextSize { get; init; }
+
+    /// <summary>拖角改过的序号直径（DIP，S19）；null = 按三档 20 / 26 / 34。点托盘上的三档会清掉它。</summary>
+    public double? Diameter { get; init; }
+
+    /// <summary>吸管取的颜色（0xRRGGBB，S18）；null = 用 Color 那个预设色。</summary>
+    public int? Custom { get; init; }
+
+    /// <summary>文字托盘里的字号档位（A− / A+ 走相邻的，点数字弹出的菜单列这些；同 mac）。</summary>
+    public static readonly double[] FontSizes = { 12, 14, 16, 20, 24, 32, 40, 56, 72 };
+
+    public const double MinDiameter = 14;
+
+    public const double MaxDiameter = 160;
+
+    /// <summary>画出来的颜色（ARGB）：取过色就是取的那个，否则是预设色。</summary>
+    public uint PaintArgb => Custom is { } rgb ? 0xFF000000u | (uint)(rgb & 0xFFFFFF) : AnnotationPalette.ArgbOf(Color);
+
+    /// <summary>压在这个颜色上的字（底色文字、序号）：预设色同 AnnotationPalette.InkOf，取的颜色按亮度，亮的用黑字。</summary>
+    public uint InkArgb => Custom is { } rgb ? (Luminance(rgb) > 0.6 ? 0xFF000000u : 0xFFFFFFFFu) : AnnotationPalette.InkOf(Color);
+
+    /// <summary>「描边」文字的外描边用黑的（白字、很亮的取色）；别的用白的。</summary>
+    public bool OutlinesDark => Custom is { } rgb ? Luminance(rgb) > 0.85 : Color == AnnotationPalette.White;
+
+    private static double Luminance(int rgb)
+        => (0.299 * ((rgb >> 16) & 0xFF) + 0.587 * ((rgb >> 8) & 0xFF) + 0.114 * (rgb & 0xFF)) / 255;
+
+    /// <summary>
+    /// 往大（step &gt; 0）/ 往小换一档（S15，mac stepped）：文字换字号（不在档位上的先落到相邻的那档），拖角改过大小的序号按 1.25 倍一档，
+    /// 别的换三档（到头不动）。A− / A+、Ctrl+= / Ctrl+-、滚轮都走这里。
+    /// </summary>
+    public AnnotationStyle Stepped(int step, AnnotationKind kind)
+    {
+        if (step == 0)
+        {
+            return this;
+        }
+
+        if (kind == AnnotationKind.Text)
+        {
+            var size = FontSize;
+            return this with
+            {
+                TextSize = step > 0
+                    ? FontSizes.FirstOrDefault(value => value > size, FontSizes[^1])
+                    : FontSizes.LastOrDefault(value => value < size, FontSizes[0]),
+            };
+        }
+
+        if (kind == AnnotationKind.Counter && Diameter is { } diameter)
+        {
+            return this with { Diameter = Math.Clamp(Math.Round(diameter * Math.Pow(1.25, Math.Sign(step))), MinDiameter, MaxDiameter) };
+        }
+
+        return this with { Weight = Math.Clamp(Weight + Math.Sign(step), 0, 2) };
+    }
+
     /// <summary>第一次用：红色中号。</summary>
     public static readonly AnnotationStyle Default = new(AnnotationPalette.Red, 1, 0);
 
@@ -104,7 +165,8 @@ public readonly record struct AnnotationStyle(int Color, int Weight, int Option)
 
     public double LineWidth => Index switch { 0 => 2, 1 => 4, _ => 6 };
 
-    public double FontSize => Index switch { 0 => 14, 1 => 20, _ => 28 };
+    /// <summary>文字实际用的字号。</summary>
+    public double FontSize => TextSize ?? Index switch { 0 => 14, 1 => 20, _ => 28 };
 
     /// <summary>打码「像素」每格的边长。</summary>
     public double MosaicBlock => Index switch { 0 => 6, 1 => 10, _ => 16 };
@@ -112,7 +174,8 @@ public readonly record struct AnnotationStyle(int Color, int Weight, int Option)
     /// <summary>打码「模糊」的半径（DIP，高斯的 2σ；PLAN-v18 S16 / mac e378bbe6：弱档也要让 14 pt 的正文认不出）。格子边长是它的一半。</summary>
     public double BlurRadius => Index switch { 0 => 8, 1 => 12, _ => 18 };
 
-    public double CounterDiameter => Index switch { 0 => 20, 1 => 26, _ => 34 };
+    /// <summary>序号实际的直径。</summary>
+    public double CounterDiameter => Diameter ?? Index switch { 0 => 20, 1 => 26, _ => 34 };
 
     public double HighlighterHeight => Index switch { 0 => 12, 1 => 18, _ => 26 };
 
@@ -124,21 +187,34 @@ public readonly record struct AnnotationStyle(int Color, int Weight, int Option)
 
     /// <summary>
     /// 每个工具记住的样式（PLAN-v9-annotate Y8，mac Style.remembered）：存在设置的 ScreenshotToolStyles 里，
-    /// 键是工具的存盘名、值是「颜色,粗细,选项」。没记过、记坏了的用 DefaultFor。
+    /// 键是工具的存盘名、值是「颜色,粗细,选项」，有可选字段时后面再跟「,字号,直径,取色」（空的就是没有；S15 S18 S19）。
+    /// 没记过、记坏了的用 DefaultFor。
     /// </summary>
     public static AnnotationStyle Remembered(IReadOnlyDictionary<string, string>? saved, AnnotationKind kind)
     {
+        var culture = System.Globalization.CultureInfo.InvariantCulture;
         if (saved is not null && saved.TryGetValue(AnnotationKinds.StorageName(kind), out var text))
         {
             var parts = text.Split(',');
-            if (parts.Length == 3 &&
-                int.TryParse(parts[0], System.Globalization.CultureInfo.InvariantCulture, out var color) &&
-                int.TryParse(parts[1], System.Globalization.CultureInfo.InvariantCulture, out var weight) &&
-                int.TryParse(parts[2], System.Globalization.CultureInfo.InvariantCulture, out var option) &&
+            if (parts.Length is 3 or 6 &&
+                int.TryParse(parts[0], culture, out var color) &&
+                int.TryParse(parts[1], culture, out var weight) &&
+                int.TryParse(parts[2], culture, out var option) &&
                 color is >= 0 and < 8 && weight is >= 0 and <= 2 &&
                 option >= 0 && option < Math.Max(1, AnnotationKinds.OptionTitles(kind).Length))
             {
-                return new AnnotationStyle(color, weight, option);
+                var style = new AnnotationStyle(color, weight, option);
+                if (parts.Length == 6)
+                {
+                    style = style with
+                    {
+                        TextSize = double.TryParse(parts[3], culture, out var size) && size is >= 6 and <= 200 ? size : null,
+                        Diameter = double.TryParse(parts[4], culture, out var diameter) ? Math.Clamp(diameter, MinDiameter, MaxDiameter) : null,
+                        Custom = int.TryParse(parts[5], culture, out var custom) && custom is >= 0 and <= 0xFFFFFF ? custom : null,
+                    };
+                }
+
+                return style;
             }
         }
 
@@ -146,8 +222,10 @@ public readonly record struct AnnotationStyle(int Color, int Weight, int Option)
     }
 
     public static void Remember(IDictionary<string, string> saved, AnnotationKind kind, AnnotationStyle style)
-        => saved[AnnotationKinds.StorageName(kind)] = string.Create(
-            System.Globalization.CultureInfo.InvariantCulture, $"{style.Color},{style.Weight},{style.Option}");
+        => saved[AnnotationKinds.StorageName(kind)] = style.TextSize is null && style.Diameter is null && style.Custom is null
+            ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{style.Color},{style.Weight},{style.Option}")
+            : string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                $"{style.Color},{style.Weight},{style.Option},{style.TextSize},{style.Diameter},{style.Custom}");
 }
 
 public static class AnnotationKinds
@@ -201,6 +279,7 @@ public static class AnnotationKinds
         AnnotationKind.Rectangle or AnnotationKind.Ellipse => new[] { "空心", "实心" },
         AnnotationKind.Text => new[] { "无底", "描边", "底色" },
         AnnotationKind.Mosaic => new[] { "像素", "模糊" },
+        AnnotationKind.Arrow => new[] { "单头", "双头" }, // PLAN-v18 S18（mac 43b0248e）
         _ => Array.Empty<string>(),
     };
 
@@ -361,8 +440,8 @@ public sealed record Annotation
                     }
                 }
 
-                return Kind == AnnotationKind.Arrow && ArrowOutline(From, To, width, Bend) is { } outline &&
-                       PolygonContains(outline, point);
+                return Kind == AnnotationKind.Arrow && ArrowOutlines(From, To, width, Bend, Style.Option == 1) is { Count: > 0 } outlines &&
+                       outlines.Any(outline => PolygonContains(outline, point));
             }
             case AnnotationKind.Highlighter:
                 return RegionMath.DistanceToSegment(point, From, To) <= Style.HighlighterHeight * unit / 2 + slack;
@@ -463,6 +542,19 @@ public sealed record Annotation
             return list;
         }
 
+        if (Kind == AnnotationKind.Counter)
+        {
+            // 序号：外切正方形四个角（PLAN-v18 S19，mac 2901562d），拖哪个都以圆心为准改直径
+            var radius = Style.CounterDiameter * unit / 2;
+            return new[]
+            {
+                (AnnotationHandle.TopLeft, new PointD(From.X - radius, From.Y - radius)),
+                (AnnotationHandle.TopRight, new PointD(From.X + radius, From.Y - radius)),
+                (AnnotationHandle.BottomLeft, new PointD(From.X - radius, From.Y + radius)),
+                (AnnotationHandle.BottomRight, new PointD(From.X + radius, From.Y + radius)),
+            };
+        }
+
         return Kind == AnnotationKind.Highlighter
             ? new[] { (AnnotationHandle.Start, From), (AnnotationHandle.End, To) }
             : Array.Empty<(AnnotationHandle, PointD)>();
@@ -500,6 +592,19 @@ public sealed record Annotation
             var corner = grip is SelectionHandle.TopLeft or SelectionHandle.TopRight or SelectionHandle.BottomLeft or SelectionHandle.BottomRight;
             double? ratio = constrained && corner && Rect.Height > 0 ? Rect.Width / Rect.Height : null;
             return this with { Rect = RegionMath.Resized(Rect, grip, point, Unbounded, ratio, fromCenter) };
+        }
+
+        if (Kind == AnnotationKind.Counter && handle is AnnotationHandle.TopLeft or AnnotationHandle.TopRight or AnnotationHandle.BottomLeft or AnnotationHandle.BottomRight)
+        {
+            // 圆心不动，直径 = 拖到的点离圆心横竖较远的那个 × 2（角跟着光标走），夹在 14–160 DIP
+            var reach = Math.Max(Math.Abs(point.X - From.X), Math.Abs(point.Y - From.Y)) / Math.Max(unit, 0.01);
+            return this with
+            {
+                Style = Style with
+                {
+                    Diameter = Math.Clamp(Math.Round(reach * 2), AnnotationStyle.MinDiameter, AnnotationStyle.MaxDiameter),
+                },
+            };
         }
 
         if (!IsSegment)
@@ -581,7 +686,7 @@ public sealed record Annotation
     /// 直箭头的锥形实心多边形（7 个点）：杆从尾部半宽 0.15 × 线宽渐粗到颈 0.6 × 线宽；箭头长 4 × 线宽、半角 28°
     /// （比这还短的箭头只剩箭头）。零长度返回 null。
     /// </summary>
-    public static PointD[]? ArrowPolygon(PointD from, PointD to, double width)
+    public static PointD[]? ArrowPolygon(PointD from, PointD to, double width, bool taper = true)
     {
         var length = Distance(from, to);
         if (length <= 0)
@@ -597,8 +702,9 @@ public sealed record Annotation
         var baseY = to.Y - uy * head;
         // 沿法向偏出 side（正数在箭头方向的左边，原点左上时看着是右边）
         PointD Beside(double x, double y, double side) => new(x - uy * side, y + ux * side);
-        var tail = width * 0.15;
         var neck = Math.Min(width * 0.6, wing);
+        // 双头箭头的两半杆不收细（taper = false）：中间接上时不掐出一个细腰
+        var tail = taper ? width * 0.15 : neck;
         return new[]
         {
             Beside(from.X, from.Y, tail), Beside(baseX, baseY, neck), Beside(baseX, baseY, wing), to,
@@ -611,6 +717,29 @@ public sealed record Annotation
         => bend == VectorD.Zero ? ArrowPolygon(from, to, width) : CurvedArrowPolygon(from, to, width, bend);
 
     /// <summary>
+    /// 箭头要填的几块（画和点中共用）：单头一块；双头（选项 1，PLAN-v18 S18 / mac 43b0248e）在弧线中点切开，两半各一支杆不收细、
+    /// 尖朝外的箭头（弯的按 de Casteljau 切成两段二次贝塞尔），两头的尖都是尖的；很短时两个头合成菱形。零长度是空的。
+    /// </summary>
+    public static IReadOnlyList<PointD[]> ArrowOutlines(PointD from, PointD to, double width, VectorD bend, bool doubled)
+    {
+        if (!doubled)
+        {
+            return ArrowOutline(from, to, width, bend) is { } single ? new[] { single } : Array.Empty<PointD[]>();
+        }
+
+        var control = bend == VectorD.Zero ? new PointD((from.X + to.X) / 2, (from.Y + to.Y) / 2) : CurveControl(from, to, bend);
+        var middle = Quad(from, control, to, 0.5);
+        var halves = bend == VectorD.Zero
+            ? new[] { ArrowPolygon(middle, to, width, taper: false), ArrowPolygon(middle, from, width, taper: false) }
+            : new[]
+            {
+                CurvedArrowAlong(middle, new PointD((control.X + to.X) / 2, (control.Y + to.Y) / 2), to, width, taper: false),
+                CurvedArrowAlong(middle, new PointD((from.X + control.X) / 2, (from.Y + control.Y) / 2), from, width, taper: false),
+            };
+        return halves.Where(half => half is not null).Select(half => half!).ToArray();
+    }
+
+    /// <summary>
     /// 弯箭头（照 mac curvedArrowPath）：同直箭头的锥形实心多边形，沿二次贝塞尔弯过去。尖端是弧线的终点，箭头底边的中点落在
     /// 弧线上离尖端一个头长（4 × 线宽）处；杆是弧线到底边中点的那一段（de Casteljau 截出来），沿弧长从尾部半宽 0.15 × 线宽
     /// 渐粗到颈 0.6 × 线宽，按每个采样点的法向往两侧偏出。底边垂直于杆在颈部的走向（不垂直于底边中点到尖端的弦：弧线贴着尖端
@@ -618,13 +747,16 @@ public sealed record Annotation
     /// ponytail: 按法向偏移的轮廓在弧线半径小于杆的半宽处内侧自交，那一小块可能描不满（同 mac），真碰到再改成逐段取并集。
     /// </summary>
     public static PointD[]? CurvedArrowPolygon(PointD from, PointD to, double width, VectorD bend)
+        => CurvedArrowAlong(from, CurveControl(from, to, bend), to, width, taper: true);
+
+    /// <summary>沿 from → control → to 这段二次贝塞尔的弯箭头（CurvedArrowPolygon 的本体）；taper = false 时杆不收细（双头的两半）。</summary>
+    private static PointD[]? CurvedArrowAlong(PointD from, PointD control, PointD to, double width, bool taper)
     {
-        var control = CurveControl(from, to, bend);
-        var samples = CurvePoints(from, to, bend);
+        var samples = Sample(from, control, to);
         var head = Math.Min(width * 4, samples.Max(point => Distance(point, to)));
         bool Far(PointD point) => Distance(point, to) >= head;
         var index = -1;
-        for (var at = samples.Count - 1; at >= 0; at--)
+        for (var at = samples.Length - 1; at >= 0; at--)
         {
             if (Far(samples[at]))
             {
@@ -639,7 +771,7 @@ public sealed record Annotation
         }
 
         // 最后一个够远的采样点和下一个之间二分出底边中点
-        var step = 1.0 / (samples.Count - 1);
+        var step = 1.0 / (samples.Length - 1);
         var (low, high) = (index * step, Math.Min(1, (index + 1) * step));
         for (var round = 0; round < 24; round++)
         {
@@ -680,8 +812,8 @@ public sealed record Annotation
 
         var total = Math.Max(run[^1], double.Epsilon);
         var wing = head * Math.Tan(28 * Math.PI / 180);
-        var tail = width * 0.15;
         var neck = Math.Min(width * 0.6, wing);
+        var tail = taper ? width * 0.15 : neck;
         var left = new List<PointD>();
         var right = new List<PointD>();
         for (var at = 0; at < body.Length - 1; at++)
