@@ -6,6 +6,8 @@
 // 缩回耳朵、不缩进刘海。没有刘海屏的 Mac 上不挂耳朵（H1：放进菜单栏，第 1-3 批）。
 // 这里是模型、先后和读数的纯函数，耳朵上那两小块的画法；状态和窗口在 Island.swift，形体在 IslandView。
 // 每秒在变的读数用 Ticker（图层滚数字，不用 numericText：每秒换一次要 7–15% CPU），只在耳朵露着时由 TimelineView 每秒推一次。
+// 正在播放（刘海岛扩展第 2 期，Shell/NowPlaying.swift）也是一个活动：类别最低（.media，有别的活动时耳朵上让给别的），
+// 带 media（封面、歌名、进度、发命令）；暂停一阵后不上耳朵（onWings），那一张里照列；不进菜单栏那一项。
 
 import SwiftUI
 
@@ -13,7 +15,7 @@ extension Island {
   struct Activity: Identifiable {
     /// 哪一类（也是先后：数大的先露，拍板 B2）
     enum Kind: Int, Comparable {
-      case reminder, awake, progress, record
+      case media, reminder, awake, progress, record
 
       static func < (lhs: Kind, rhs: Kind) -> Bool { lhs.rawValue < rhs.rawValue }
     }
@@ -45,11 +47,15 @@ extension Island {
     /// 展开的卡片上的按钮（停止、暂停 / 继续、提前结束……）；第一个是最主要的
     var actions: [Action]
     var started: Date
+    /// 正在播放（kind 是 .media 时有）：耳朵、卡片、那一张里画成封面 + 歌名 + 播放控制
+    var media: Media?
+    /// 上不上耳朵（菜单栏那一项同）：正在播放暂停一阵后 false，那一张里照列
+    var onWings: Bool
 
     init(
       id: String, kind: Kind, title: String, detail: String? = nil, symbol: String,
       tone: Tone = .info, trailing: Trailing = .none, actions: [Action] = [],
-      started: Date = .now
+      started: Date = .now, media: Media? = nil, onWings: Bool = true
     ) {
       self.id = id
       self.kind = kind
@@ -60,11 +66,13 @@ extension Island {
       self.trailing = trailing
       self.actions = actions
       self.started = started
+      self.media = media
+      self.onWings = onWings
     }
 
-    /// 耳朵上露哪一个（B2）：类别要紧的先；同一类后开始的先（刚开的那件事更可能是你在等的）
+    /// 耳朵上露哪一个（B2）：上得了耳朵的里面，类别要紧的先；同一类后开始的先（刚开的那件事更可能是你在等的）
     static func top(_ activities: [Activity]) -> Activity? {
-      activities.max { ($0.kind, $0.started) < ($1.kind, $1.started) }
+      activities.filter(\.onWings).max { ($0.kind, $0.started) < ($1.kind, $1.started) }
     }
 
     /// 右耳上的字（纯函数，单测锁住）：计时同录制 HUD（0:42、1:02:03），倒数到 0 停住，百分比取整
@@ -101,6 +109,14 @@ extension Island {
 
   /// 耳朵每侧多宽（拍板 B1：不超过 36 pt，免得盖住离刘海最近的菜单栏图标）
   static let wing: CGFloat = 36
+
+  /// 正在播放的活动带的东西（NowPlaying 给）：快照、解好的封面、发命令和切到那个 App
+  struct Media {
+    var snapshot: NowPlayingSnapshot
+    var artwork: NSImage?
+    var send: (NowPlayingCommand) -> Void
+    var open: () -> Void
+  }
 }
 
 /// 刘海两侧的耳朵：左边图标 / 一圈进度，中间让出刘海，右边读数。画在岛的黑底上（同 Island 的深色）

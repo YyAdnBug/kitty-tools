@@ -1,0 +1,18 @@
+// 正在播放服务 target（KittyToolsNowPlaying，XPC 服务，刘海岛扩展第 2 期）：只覆盖和 App 不同的，其余沿用 project 层的
+// Debug / Release.xcconfig（Base.xcconfig：版本号、签名团队、强化运行时、arm64、macOS 15.0、Swift 6 都一样）
+PRODUCT_NAME = KittyToolsNowPlaying
+PRODUCT_MODULE_NAME = KittyToolsNowPlaying
+// mediaremoted（macOS 15.4 起）只把别的 App 的播放信息给 bundle id 以 com.apple. 开头的进程；XPC 服务认的是 Info.plist 的
+// bundle id（2026-11-13 macOS 27.0.1 实测，签名标识无所谓）。定了不改（mac-native §6）；Debug、Release 同一个：
+// XPC 服务是每个 App 自己的，Kitty Tools 和 Kitty Tools Dev 同时开着也不会撞
+PRODUCT_BUNDLE_IDENTIFIER = com.apple.kittytools.nowplaying
+INFOPLIST_FILE = Config/NowPlaying-Info.plist
+INFOPLIST_KEY_LSUIElement =
+INFOPLIST_KEY_LSApplicationCategoryType =
+ASSETCATALOG_COMPILER_APPICON_NAME =
+ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME =
+// 不要任何权利（读 MediaRemote 不要授权）；不开沙盒
+CODE_SIGN_ENTITLEMENTS =
+ENABLE_PREVIEWS = NO
+SKIP_INSTALL = YES
+LD_RUNPATH_SEARCH_PATHS = $(inherited) @executable_path/../Frameworks @executable_path/../../../../Frameworks

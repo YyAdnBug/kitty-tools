@@ -43,6 +43,7 @@ macos/                       # 本分支唯一开发区
 ├── KittyTools.xcodeproj/    # 共享 scheme：KittyTools
 ├── KittyTools/              # 同步文件夹：App/ Shell/ Storage/ Clipboard/ Translate/ Launcher/ Launchpad/ Screenshot/ StatusScreen/ Notes/ DockPreview/ Reminders/ FinderMenu/ Settings/ Resources/
 ├── KittyToolsFinder/        # 访达扩展 target（2026-11-08，第十一族「访达右键」）：只画菜单，动作用 App 的网址交给 App
+├── KittyToolsNowPlaying/    # 正在播放的 XPC 服务 target（2026-11-13，刘海岛扩展第 2 期）：bundle id com.apple.kittytools.nowplaying，只读 MediaRemote、替 App 发播放命令
 ├── KittyToolsTests/         # 纯函数单测（Swift Testing），M2 起建
 ├── Config/                  # Base/Debug/Release.xcconfig、Info.plist（局部）、Secrets.xcconfig（不入库）
 ├── build-dmg.sh             # 打包：archive → 自检 → DMG + App 内更新用的 zip → notes
@@ -160,6 +161,12 @@ TEST_RUNNER_KITTY_SYNC_PROBE=1 xcodebuild -project macos/KittyTools.xcodeproj -s
 # -only-testing:'KittyToolsTests/DockPreviewMemoryProbeTests/memory()'
 TEST_RUNNER_KITTY_DOCK_PROBE=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
   test -only-testing:'KittyToolsTests/DockPreviewProbeTests/measure()'
+
+# 刘海岛的正在播放：经包里真的 XPC 服务读回来的实机自检（按需，不到一秒；不出声：测试宿主用 MPNowPlayingInfoCenter 把自己挂成
+# 「正在播放」，系统控制中心里会短暂出现「Kitty 探针曲目」；读、封面、发「切换」、暂停都过一遍）。改了 KittyToolsNowPlaying/ 或
+# Shell/NowPlaying.swift 后跑；每个 macOS 大版本也跑一遍（27 上封面的拿法已经变过一次），探针报告在 macos/build/research/now-playing-2026-11-13/
+TEST_RUNNER_KITTY_LIVE_NOW_PLAYING=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
+  test -only-testing:'KittyToolsTests/NowPlayingTests/liveRoundTrip()'
 
 # 刘海岛动画的掉帧探针（按需；**屏幕顶部正中会出现岛约 8 秒**，不动鼠标、不抢键盘）：measure() 挂显示链量主线程每拍的间隔，
 # 分阶段（出现、悬停展开、收起、开 / 收那一张、进行中换成结果）报掉了几帧，grep「island-frames」；recording() 要 Dev 版有
