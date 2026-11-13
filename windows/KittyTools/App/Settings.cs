@@ -176,13 +176,6 @@ internal sealed class Settings
 
     public string? SyncFolder { get; set; }
 
-    /// <summary>连 WebDAV 服务器同步时（PLAN-v19）：服务器上同步的那个文件夹的网址（以 / 结尾）和用户名；密码在凭据管理器
-    /// （Syncer.PasswordName）。这时 SyncFolder 指着数据目录里的镜像（sync-server/&lt;编号&gt;）。这台电脑自己的：
-    /// 不进导出（ArchiveService 是一个键一个键手写的），Windows 也不同步设置。</summary>
-    public string? SyncServer { get; set; }
-
-    public string? SyncServerUser { get; set; }
-
     public bool SyncClips { get; set; } = true;
 
     public bool SyncVocabulary { get; set; } = true;

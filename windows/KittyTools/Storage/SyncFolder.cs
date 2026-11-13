@@ -7,11 +7,6 @@
 // 每一类跟着各自的设置和功能开关：clips 跟剪贴板，vocabulary 和 services 跟翻译，engines 跟启动器（PLAN-v5 §4.3）。
 // REVIEW R49：上一轮什么都没剩下之后，要读的那几个文件（SyncDisk.Fingerprint）和本机这几类（改一次 _revision 加一）都没动，
 // 这一轮就不读、不合，只把「上次同步」记成现在。
-// **连 WebDAV 服务器**（PLAN-v19，issue #18）：同步的「文件夹」是数据目录里的一份镜像（sync-server/<编号>/，SyncFolder 指着它），
-// 服务器网址、用户名在设置里（SyncServer / SyncServerUser），密码在凭据管理器（PasswordName）。一轮交给 Core 的 SyncServer.RoundAsync：
-// pull → 照上面那样合（MergeAsync，指纹没变照样跳过）→ push。一分钟一轮（ServerInterval：按次数限流的服务器，空闲一轮也要列
-// 3 + 2 × 电脑数次目录）。服务器说请求太多就退避（5、10、20、30 分钟，服务器说了等多久至少等它说的），这期间的一轮直接停在 busy；
-// 连不上、密码不对照常停在那一轮、下一轮再试。日志里不记地址、用户名。
 using KittyTools.Core;
 using KittyTools.Core.Notes;
 using KittyTools.Core.Sync;
@@ -30,23 +25,12 @@ internal sealed class SyncStatus
 
     public int PendingDeletions { get; set; }
 
-    /// <summary>连服务器时：服务器上变了、还没拿下来的 / 还没传上去的文件有几个（PLAN-v19）。</summary>
-    public int Downloading { get; set; }
-
-    public int Uploading { get; set; }
-
     public List<string> Devices { get; set; } = new();
 }
 
 internal sealed class Syncer
 {
     private static readonly TimeSpan Interval = TimeSpan.FromSeconds(20);
-
-    /// <summary>连服务器时一分钟一轮（文件头）。</summary>
-    private static readonly TimeSpan ServerInterval = TimeSpan.FromSeconds(60);
-
-    /// <summary>服务器的密码在凭据管理器里的名字（Credentials.Target 前面再拼 KittyTools/ 或 KittyTools.Dev/）。</summary>
-    public const string PasswordName = "sync-server.password";
     private static Syncer? _instance;
     private readonly DeviceState _device;
     private readonly SyncLedger _ledger;
@@ -67,16 +51,6 @@ internal sealed class Syncer
 
     /// <summary>上一轮什么都没剩下（合完、没等确认、没出错）时这一轮开始那一刻的样子；下一轮还是这样就跳过。</summary>
     private string? _quiet;
-
-    /// <summary>连服务器用的：共用的 client + Digest 的退路（WebDavTransport）。</summary>
-    private readonly WebDavTransport _transport = WebDavTransport.CreateDefault();
-
-    /// <summary>服务器的密码：第一次用时从凭据管理器取，之后记在内存里。</summary>
-    private string? _password;
-
-    /// <summary>服务器说请求太多：这个时刻之前不合；连着第几回了（退避加倍）。</summary>
-    private DateTimeOffset? _pausedUntil;
-    private int _backoffs;
 
     private Syncer(SyncDevice device, SyncLedger ledger, DispatcherQueue dispatcher)
     {
@@ -122,86 +96,6 @@ internal sealed class Syncer
     }
 
     public bool Enabled => SettingsService.Current.SyncEnabled && !string.IsNullOrEmpty(Folder);
-
-    /// <summary>连着 WebDAV 服务器（不是同步文件夹）。</summary>
-    public static bool IsServer => !string.IsNullOrEmpty(SettingsService.Current.SyncServer);
-
-    /// <summary>镜像都放在这下面（每连一次服务器一个子文件夹，账在它旁边的 .json）。</summary>
-    private static string MirrorsRoot => Path.Combine(Paths.DataDirectory, "sync-server");
-
-    /// <summary>对这个账号发请求的那个（设置里「测试连接」「连接」也用它）。</summary>
-    public WebDav Dav(WebDavAccount account) => new(account, _transport);
-
-    /// <summary>
-    /// 连这个服务器上的文件夹同步（照 mac NoteSyncer.enable(server:)；有别的电脑在用要不要合在一起，由设置页先问）：服务器那边
-    /// 交给 SyncServer.ConnectAsync（没有就建、拿不来同步的说为什么、没有标记的写一个），再建新的镜像目录、存密码和设置，旧镜像在后台删掉。
-    /// 返回没开成的原因。
-    /// </summary>
-    public async Task<string?> EnableServerAsync(WebDavAccount account)
-    {
-        var dav = Dav(account);
-        var device = _device.Id;
-        if (await Task.Run(() => SyncServer.ConnectAsync(dav, device)) is { } problem)
-        {
-            return problem;
-        }
-
-        var mirror = Path.Combine(MirrorsRoot, Guid.NewGuid().ToString("D").ToUpperInvariant());
-        try
-        {
-            Directory.CreateDirectory(mirror);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            Log.Warn($"sync.server-mirror-failed {ex.GetType().Name}");
-            return "数据目录写不进去";
-        }
-
-        if (!Credentials.Set(Credentials.Target(PasswordName), account.Password))
-        {
-            return "密码存不进凭据管理器";
-        }
-
-        _password = account.Password;
-        var settings = SettingsService.Current;
-        settings.SyncServer = account.Folder.AbsoluteUri;
-        settings.SyncServerUser = account.User;
-        settings.SyncFolder = mirror;
-        settings.SyncEnabled = true;
-        SettingsService.Save();
-        _pausedUntil = null;
-        _backoffs = 0;
-        _quiet = null;
-        Status.Downloading = 0;
-        Status.Uploading = 0;
-        Log.Info("sync.server-connected");
-        _ = Task.Run(() => SyncServer.RemoveMirrors(MirrorsRoot, mirror));
-        return null;
-    }
-
-    /// <summary>不再连服务器（「停止同步」时调，之后调用方关掉同步、存设置）：设置里的地址、用户名和镜像路径清掉，凭据管理器里的
-    /// 密码删掉，镜像在后台删掉；服务器上的东西都留着。没连过服务器时什么都不做。</summary>
-    public void ForgetServer()
-    {
-        var settings = SettingsService.Current;
-        if (string.IsNullOrEmpty(settings.SyncServer) && string.IsNullOrEmpty(settings.SyncServerUser))
-        {
-            return;
-        }
-
-        settings.SyncServer = null;
-        settings.SyncServerUser = null;
-        settings.SyncFolder = null;
-        _password = null;
-        _pausedUntil = null;
-        _backoffs = 0;
-        _quiet = null;
-        Status.Downloading = 0;
-        Status.Uploading = 0;
-        Credentials.Delete(Credentials.Target(PasswordName));
-        _ = Task.Run(() => SyncServer.RemoveMirrors(MirrorsRoot, null));
-        Log.Info("sync.server-forgotten");
-    }
 
     /// <summary>这一类勾上会是它第一次和文件夹里的合（账本里还没有它）：设置页先问「合在一起？」（同 mac NoteSyncer.joins）。</summary>
     public bool Joins(string kind) => Enabled && _ledger.Read(kind) is null;
@@ -272,97 +166,6 @@ internal sealed class Syncer
 
     private async Task RunOnceAsync(string folder)
     {
-        if (!IsServer)
-        {
-            await MergeAsync(folder);
-            return;
-        }
-
-        if (Account() is not { } account)
-        {
-            Halt("stopped", "凭据管理器里没有服务器的密码，停止同步后重新连接");
-            return;
-        }
-
-        if (_pausedUntil is { } until && DateTimeOffset.Now < until)
-        {
-            Halt("busy", BusyMessage(until));
-            return;
-        }
-
-        var settings = SettingsService.Current;
-        var server = settings.SyncServer;
-        var images = settings.SyncNotes && Features.IsOn(Feature.Notes) ? NoteStore.Instance?.Images?.Directory : null;
-        var round = await SyncServer.RoundAsync(
-            Dav(account), folder, _device, images,
-            incomplete => MergeAsync(folder, incomplete),
-            () => Enabled && Folder == folder && SettingsService.Current.SyncServer == server);
-        Status.Downloading = round.Downloading;
-        Status.Uploading = round.Uploading;
-        if (round.Unsettled)
-        {
-            // 还有没拿下来 / 没传上去的：下一轮不能当成没变跳过
-            _quiet = null;
-        }
-
-        Log.Info($"sync.server-round down={round.Downloading} up={round.Uploading} failure={round.Failure?.Error.ToString() ?? "-"}");
-        if (round.Failure is { } failure)
-        {
-            Fail(failure);
-            return;
-        }
-
-        _pausedUntil = null;
-        _backoffs = 0;
-        if (round.Missing)
-        {
-            Halt("stopped", "服务器上找不到同步的那个文件夹：被挪走或删了，找到了自己接着同步");
-        }
-        else if (round.MarkerGone)
-        {
-            Halt("stopped", "服务器上那个文件夹里的同步记录被换掉或删了：先停止同步，再连一个新的空文件夹（每台电脑都换过去）");
-        }
-    }
-
-    /// <summary>连服务器的账号（密码第一次用时从凭据管理器取）：取不到是 null。</summary>
-    private WebDavAccount? Account()
-    {
-        var settings = SettingsService.Current;
-        if (settings.SyncServer is not { } server || settings.SyncServerUser is not { } user ||
-            !Uri.TryCreate(server, UriKind.Absolute, out var folder))
-        {
-            return null;
-        }
-
-        _password ??= Credentials.Get(Credentials.Target(PasswordName));
-        return _password is null ? null : new WebDavAccount(folder, user, _password);
-    }
-
-    /// <summary>连服务器这一轮没成：请求太多就退避，别的停在这一轮、下一轮再试。</summary>
-    private void Fail(WebDavFailure failure)
-    {
-        if (failure.Error != WebDavError.Busy)
-        {
-            Halt("stopped", failure.Message);
-            return;
-        }
-
-        var until = DateTimeOffset.Now + SyncServer.Backoff(failure.RetryAfter, _backoffs++);
-        _pausedUntil = until;
-        Halt("busy", BusyMessage(until));
-    }
-
-    private static string BusyMessage(DateTimeOffset until) => $"服务器说请求太多，{until.ToLocalTime():HH:mm} 后接着同步";
-
-    private void Halt(string state, string message)
-    {
-        Status.State = state;
-        Status.Message = message;
-    }
-
-    /// <summary>照文件夹合一轮（连服务器时文件夹是镜像，incomplete = 这一轮有没从服务器拿下来的）。指纹没变跳过时返回 null。</summary>
-    private async Task<SyncRoundResult?> MergeAsync(string folder, bool incomplete = false)
-    {
         WatchLocalChanges();
         var sources = Sources();
         var kinds = sources.Select(source => source.Kind).ToList();
@@ -375,13 +178,13 @@ internal sealed class Syncer
             Status.State = "idle";
             Status.Message = string.Empty;
             Status.LastSync = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            return null;
+            return;
         }
 
         var allowance = _confirmed;
         var runner = new SyncRunner(_device, sources, Environment.MachineName, message => Log.Warn(message), notes);
         var started = Environment.TickCount64;
-        var result = await runner.RunAsync(folder, allowance, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), incomplete);
+        var result = await runner.RunAsync(folder, allowance, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         Log.Info($"sync.round state={result.State} kinds={kinds.Count} written={result.Written.Count} ms={Environment.TickCount64 - started}");
         // 用这一轮开始前取的样子：合的这一会儿别处写了、本机改了，下一轮看到的就不一样，照样整轮跑。
         _quiet = result.State == "idle" && result.Waiting.Count == 0 && !result.Unsettled ? signature : null;
@@ -405,13 +208,12 @@ internal sealed class Syncer
             }
 
             _braked = Status.PendingDeletions;
-            return result;
+            return;
         }
 
         _pending = new Dictionary<string, int>(StringComparer.Ordinal);
         _confirmed = new Dictionary<string, int>(StringComparer.Ordinal);
         _braked = 0;
-        return result;
     }
 
     /// <summary>本机这几类改了就让 _revision 加一（剪贴板库、生词本起得比同步晚：每轮看一眼，换了实例再挂一次）。</summary>
@@ -513,22 +315,13 @@ internal sealed class Syncer
 
     private void EnsureTimer()
     {
-        var interval = IsServer ? ServerInterval : Interval;
         if (_timer is not null)
         {
-            if (_timer.Interval != interval)
-            {
-                // 换了同步方式（文件夹 ↔ 服务器）
-                _timer.Stop();
-                _timer.Interval = interval;
-                _timer.Start();
-            }
-
             return;
         }
 
         _timer = _dispatcher.CreateTimer();
-        _timer.Interval = interval;
+        _timer.Interval = Interval;
         _timer.IsRepeating = true;
         _timer.Tick += (_, _) => _ = RoundAsync();
         _timer.Start();
