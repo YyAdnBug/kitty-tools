@@ -65,7 +65,6 @@ struct LaunchpadTab: View {
     // 关着时（Feature）变灰；「排列数据」里的导入、恢复、撤销管的是存着的排法，照常能用
     Form {
       Section {
-        FeatureToggle(feature: .launchpad, inPage: true)
         LabeledContent {
           ShortcutsButton()
         } label: {
@@ -154,6 +153,7 @@ struct LaunchpadTab: View {
       } header: {
         Text("排列数据")
       }
+      PluginRemoveSection(plugin: .launchpad)
     }
     .onAppear {
       systemPinch = systemPinchOn()

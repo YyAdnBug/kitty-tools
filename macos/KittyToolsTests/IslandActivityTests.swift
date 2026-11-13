@@ -72,6 +72,20 @@ struct IslandActivityTests {
     #expect(!island.isShowingWings && island.activities.isEmpty)
   }
 
+  /// 刘海岛插件没添加（2026-11-13 插件化 P1b）：活动不收、耳朵不露；移除时挂着的活动全收掉，进行中的提示不缩进耳朵
+  @Test func extrasFollowPlugin() {
+    let island = Island(showing: nil, geometry: notch)
+    island.setActivity(activity("录屏", .record))
+    #expect(island.isShowingWings)
+    island.hasExtras = false
+    #expect(island.activities.isEmpty && !island.isShowingWings)
+    island.setActivity(activity("倒数", .reminder))
+    #expect(island.activities.isEmpty && !island.isShowingWings)
+    island.hasExtras = true
+    island.setActivity(activity("倒数", .reminder))
+    #expect(island.activities.count == 1)
+  }
+
   /// 没有刘海的屏不挂耳朵（H1：放菜单栏）；活动照样记着，那一张里列得出来
   @Test func capsuleScreensHaveNoWings() {
     let island = Island(showing: nil, geometry: .capsule(menuBar: 24))

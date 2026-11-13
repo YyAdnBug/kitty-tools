@@ -239,11 +239,12 @@ private struct RowCard<Item: Hashable, Row: View>: View {
   }
 }
 
-/// 第一屏：品牌图标 + 大标题 + 这台系统上有的全部功能，两列，每格一个勾选框（名字、色块取设置页的，一句话是 Feature.blurb）
+/// 第一屏：品牌图标 + 大标题 + 这台系统上有的全部功能和插件，两列，每格一个勾选框（名字、色块取设置页的，一句话是 Feature.blurb）。
+/// 2026-11-13 便签、提醒也成了插件（拍板 P5）：只列功能的话新装的人看不到它们，所以插件也列，分在下面一组、默认不勾，勾了就是添加。
+/// 插件那组是紧凑的三列（勾选框 + 色块 + 名字，一句话在悬停提示和读屏里）：带上说明的话这一屏放不下（引导的大小是固定的）
 private struct WelcomeScreen: View {
   var body: some View {
-    // 插件不在这里列（拍板 A1：默认不添加，到 设置 › 通用 › 功能 里加）
-    let features = Feature.listed
+    let plugins = Feature.allCases.filter { $0.isPlugin && $0.isAvailable }
     let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
     VStack(spacing: 0) {
       BrandIcon(size: 64)
@@ -252,11 +253,17 @@ private struct WelcomeScreen: View {
         subtitle: "这些小工具都住在菜单栏里，用快捷键随叫随到。\n勾上要用的，以后在 设置 › 通用 › 功能 里随时改。"
       )
       .padding(.top, 8)
-      Grid(alignment: .topLeading, horizontalSpacing: 16, verticalSpacing: 10) {
-        ForEach(Array(stride(from: 0, to: features.count, by: 2)), id: \.self) { start in
-          GridRow {
-            ForEach(features[start..<min(start + 2, features.count)], id: \.self) {
-              FeatureChoice(feature: $0)
+      VStack(alignment: .leading, spacing: 10) {
+        Self.grid(Feature.listed)
+        Divider()
+        Text("插件 · 用得上再勾，以后也能在 设置 › 通用 › 功能 里添加")
+          .font(.subheadline).foregroundStyle(.secondary)
+        Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 6) {
+          ForEach(Array(stride(from: 0, to: plugins.count, by: 3)), id: \.self) { start in
+            GridRow {
+              ForEach(plugins[start..<min(start + 3, plugins.count)], id: \.self) {
+                FeatureChoice(feature: $0, compact: true)
+              }
             }
           }
         }
@@ -268,20 +275,56 @@ private struct WelcomeScreen: View {
       .padding(.top, 14)
     }
   }
+
+  private static func grid(_ features: [Feature]) -> some View {
+    Grid(alignment: .topLeading, horizontalSpacing: 16, verticalSpacing: 10) {
+      ForEach(Array(stride(from: 0, to: features.count, by: 2)), id: \.self) { start in
+        GridRow {
+          ForEach(features[start..<min(start + 2, features.count)], id: \.self) {
+            FeatureChoice(feature: $0)
+          }
+        }
+      }
+    }
+  }
 }
 
 /// 第一屏的一格：系统勾选框，标签是色块 + 名字 + 一句话（点哪里都勾）。绑功能开关的偏好，勾了立即生效（同 FeatureToggle）；
 /// 没勾的色块变淡（同设置侧栏「已关闭」那一行）
 private struct FeatureChoice: View {
   let feature: Feature
+  /// 插件那组：只有色块 + 名字，一句话放悬停提示和读屏
+  var compact = false
   @AppStorage private var isOn: Bool
 
-  init(feature: Feature) {
+  init(feature: Feature, compact: Bool = false) {
     self.feature = feature
+    self.compact = compact
     _isOn = AppStorage(wrappedValue: feature.defaultOn, feature.prefsKey)
   }
 
   var body: some View {
+    if compact {
+      Toggle(isOn: $isOn) {
+        HStack(spacing: 8) {
+          KindTile(symbol: feature.page.symbol, color: feature.page.color, size: 20)
+            .opacity(isOn ? 1 : Style.disabledOpacity)
+            .accessibilityHidden(true)
+          Text(feature.title).lineLimit(1)
+          Spacer(minLength: 0)
+        }
+        .contentShape(Rectangle())
+      }
+      .toggleStyle(.checkbox)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .help(feature.blurb)
+      .accessibilityHint(feature.blurb)
+    } else {
+      full
+    }
+  }
+
+  private var full: some View {
     Toggle(isOn: $isOn) {
       HStack(alignment: .top, spacing: 10) {
         KindTile(symbol: feature.page.symbol, color: feature.page.color, size: 24)

@@ -58,30 +58,30 @@ struct SyncSection: View {
           SyncRecords.Kind.settings.rawValue, title: SyncRecords.Kind.settings.title,
           detail: "各页的设置、全局快捷键和功能开关；启动台、录音的麦克风、菜单栏图标这些跟着这台 Mac 的不同步")
         part(
-          NoteSyncer.notesPart, title: "便签", detail: "连同正文里的图片", feature: "便签",
+          NoteSyncer.notesPart, title: "便签", detail: "连同正文里的图片", feature: .notes,
           isOn: notesOn)
         part(
           SyncRecords.Kind.clips.rawValue, title: SyncRecords.Kind.clips.title,
-          detail: "文字的片段、收藏和收藏夹；图片和文件的收藏不同步", feature: "剪贴板", isOn: clipboardOn)
+          detail: "文字的片段、收藏和收藏夹；图片和文件的收藏不同步", feature: .clipboard, isOn: clipboardOn)
         part(
           SyncRecords.Kind.vocabulary.rawValue, title: SyncRecords.Kind.vocabulary.title,
-          detail: "翻译里收藏的词句", feature: "翻译", isOn: translateOn)
+          detail: "翻译里收藏的词句", feature: .translate, isOn: translateOn)
         part(
           SyncRecords.Kind.engines.rawValue, title: SyncRecords.Kind.engines.title,
-          detail: "启动器里的网页搜索和快捷链接", feature: "启动器", isOn: launcherOn)
+          detail: "启动器里的网页搜索和快捷链接", feature: .launcher, isOn: launcherOn)
         part(
           SyncRecords.Kind.services.rawValue, title: SyncRecords.Kind.services.title,
-          detail: "哪几个服务、顺序和设置；密钥不同步，别的 Mac 上要自己填一次", feature: "翻译",
+          detail: "哪几个服务、顺序和设置；密钥不同步，别的 Mac 上要自己填一次", feature: .translate,
           isOn: translateOn)
         part(
           SyncRecords.Kind.statuses.rawValue, title: SyncRecords.Kind.statuses.title,
-          detail: "状态屏里自己写的那几个状态", feature: "状态屏", isOn: statusScreenOn)
+          detail: "状态屏里自己写的那几个状态", feature: .statusScreen, isOn: statusScreenOn)
         part(
           SyncRecords.Kind.reminders.rawValue, title: SyncRecords.Kind.reminders.title,
-          detail: "有哪些提醒、各自的时间和方式；两台都开着时两台都响", feature: "提醒", isOn: remindersOn)
+          detail: "有哪些提醒、各自的时间和方式；两台都开着时两台都响", feature: .reminders, isOn: remindersOn)
         part(
           SyncRecords.Kind.launcher.rawValue, title: SyncRecords.Kind.launcher.title,
-          detail: "空搜索框里收藏的那几个；这台没装的 App 不显示，装上就回来", feature: "启动器",
+          detail: "空搜索框里收藏的那几个；这台没装的 App 不显示，装上就回来", feature: .launcher,
           isOn: launcherOn)
         LabeledContent {
           EmptyView()
@@ -230,9 +230,10 @@ struct SyncSection: View {
     .onDisappear { syncer.dismissHint() }
   }
 
-  /// 「同步的内容」里的一类：勾上才同步；它跟着的功能关着时说一声（勾着也先不同步）
+  /// 「同步的内容」里的一类：勾上才同步；它跟着的功能关着（插件没添加）时说一声（勾着也先不同步）
   private func part(
-    _ name: String, title: String, detail: String, feature: String = "", isOn featureOn: Bool = true
+    _ name: String, title: String, detail: String, feature: Feature? = nil,
+    isOn featureOn: Bool = true
   ) -> some View {
     Toggle(
       isOn: Binding {
@@ -242,7 +243,12 @@ struct SyncSection: View {
       }
     ) {
       Text(title)
-      Text(featureOn ? detail : "\(feature)关着，先不同步；在上面「功能」里打开就接着同步")
+      Text(
+        featureOn
+          ? detail
+          : feature?.isPlugin == true
+            ? "\(feature?.title ?? "")插件没添加，先不同步；在上面「功能」里添加就接着同步"
+            : "\(feature?.title ?? "")关着，先不同步；在上面「功能」里打开就接着同步")
     }
   }
 

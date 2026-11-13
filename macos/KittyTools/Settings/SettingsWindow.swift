@@ -17,20 +17,23 @@ import SwiftUI
 enum SettingsPage: String, CaseIterable, Identifiable {
   // 和菜单栏、快捷键页、引导、速查表同序（记住的上次页存的是 rawValue，调顺序不受影响）。2026-11-04 功能管理拍板 M3：
   // 便签、提醒、状态屏一组，启动台、程序坞预览一组（启动台原来在便签后面）
-  // 刘海岛（2026-11-12 PR #17）不是功能，跟着通用（菜单栏、快捷键页里它那一节排在最后）
-  case general, island, clipboard, launcher, translate, screenshot, record, notes, reminders,
-    statusScreen, launchpad, dockPreview, finderMenu, keepAwake, hotkeys, about
+  // 2026-11-13 起便签之后都是插件（Feature.plugins），刘海岛（2026-11-12 PR #17 加的页）也成了插件、挪到最后
+  case general, clipboard, launcher, translate, screenshot, record, notes, reminders,
+    statusScreen, launchpad, dockPreview, finderMenu, keepAwake, island, hotkeys, about
 
   var id: String { rawValue }
 
   /// 侧栏和搜索里列的页：macOS 15 上没有启动台（`Launchpad.isAvailable`）
   static let visible = visible(launchpad: Launchpad.isAvailable)
 
-  /// 侧栏的分组（功能管理拍板 M2 M3）：通用、刘海岛 ｜ 文字与搜索 ｜ 截图与录制 ｜ 便签与提醒 ｜ 桌面 ｜ 插件 ｜ 快捷键、关于。和 allCases 同序，
-  /// 单测锁住。功能那几组和插件带标题、能折叠（groupTitle）。插件那组只有添加了的（没添加的插件页不在 pages 里，见 SettingsRoot）
+  /// 侧栏的分组（功能管理拍板 M2 M3；2026-11-13 插件化 P3）：通用 ｜ 文字与搜索 ｜ 截图与录制 ｜ 插件 ｜ 快捷键、关于。
+  /// 和 allCases 同序，单测锁住。中间三组带标题、能折叠（groupTitle）。插件那组只有添加了的（没添加的插件页不在 pages 里，
+  /// 见 SettingsRoot），按这里的先后排、不按添加的先后
   static let groups: [[SettingsPage]] = [
-    [.general, .island], [.clipboard, .launcher, .translate], [.screenshot, .record],
-    [.notes, .reminders, .statusScreen], [.launchpad, .dockPreview, .finderMenu], [.keepAwake],
+    [.general], [.clipboard, .launcher, .translate], [.screenshot, .record],
+    [
+      .notes, .reminders, .statusScreen, .launchpad, .dockPreview, .finderMenu, .keepAwake, .island,
+    ],
     [.hotkeys, .about],
   ]
 
@@ -60,10 +63,10 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     switch self {
     case .clipboard, .launcher, .translate: "文字与搜索"
     case .screenshot, .record: "截图与录制"
-    case .notes, .reminders, .statusScreen: "便签与提醒"
-    case .launchpad, .dockPreview, .finderMenu: "桌面"
-    case .keepAwake: "插件"
-    case .general, .island, .hotkeys, .about: nil
+    case .notes, .reminders, .statusScreen, .launchpad, .dockPreview, .finderMenu, .keepAwake,
+      .island:
+      "插件"
+    case .general, .hotkeys, .about: nil
     }
   }
 
@@ -554,7 +557,7 @@ struct SettingsRoot: View {
   var body: some View {
     NavigationSplitView {
       List(selection: selection) {
-        // 分组：功能那四组带小标题、点标题收起 / 展开（同访达的侧栏）；通用、快捷键与关于不写标题；关着的功能在最底下
+        // 分组：功能两组和插件带小标题、点标题收起 / 展开（同访达的侧栏）；通用、快捷键与关于不写标题；关着的功能在最底下
         // 「已关闭」那组（默认收起）
         ForEach(SettingsPage.sidebar(matches, off: off)) { group in
           if group.isOff, let title = group.title {

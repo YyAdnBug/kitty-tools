@@ -99,20 +99,20 @@ struct ShortcutsTests {
     #expect(HotKeyAction.inputTranslate.resolve { stored[$0] } == optionT)
   }
 
-  /// 速查表左栏按设置页分类：和设置侧栏同序、通用排最后，钉图归截图、录屏录音归录制、刘海岛和「设置」归通用。
+  /// 速查表左栏按设置页分类：和设置侧栏同序、通用排最后，钉图归截图、录屏录音归录制、刘海岛归刘海岛插件（2026-11-13）、「设置」归通用。
   /// 搜索跨类找：空格分开的词都要对上（组名 + 说明 + 按键），词全在组名里的整组列出，别的只留对上的行
   @Test func cheatSheetSectionsAndSearch() throws {
     let groups = ShortcutsSheet.groups(enabled: Set(Feature.allCases))
     #expect(
       ShortcutsSheet.sections(groups) == [
         .clipboard, .launcher, .translate, .screenshot, .record, .notes, .reminders, .statusScreen,
-        .launchpad, .keepAwake, .general,
+        .launchpad, .keepAwake, .island, .general,
       ])
     #expect(groups.first { $0.title == "提醒" }?.page == .reminders)
     func page(_ title: String) -> SettingsPage? { groups.first { $0.title == title }?.page }
     #expect(page("钉图") == .screenshot && page("截图 · 框选") == .screenshot)
     #expect(page("录音") == .record && page("系统命令") == .launcher)
-    #expect(page("刘海岛") == .general && page("主界面") == .general && page("设置") == .general)
+    #expect(page("刘海岛") == .island && page("主界面") == .general && page("设置") == .general)
 
     let pin = ShortcutsSheet.matching(groups, query: "钉")
     let pinGroup = try #require(groups.first { $0.title == "钉图" })

@@ -24,8 +24,8 @@ struct FeatureTests {
   }
 
   /// 每个动作恰好归一个功能，就是它所在那一节里的；每个功能至少一个动作（程序坞预览除外：它停在程序坞上就弹，
-  /// 没有快捷键，拍板 D1；访达右键也是，入口在访达里）；和设置页同名。打开刘海岛（岛关不掉，2026-10-26）、打开主界面（全部功能的入口，2026-10-29）
-  /// 不归哪个功能
+  /// 没有快捷键，拍板 D1；访达右键也是，入口在访达里）；和设置页同名。打开主界面（全部功能的入口，2026-10-29）不归哪个功能；
+  /// 打开刘海岛 2026-11-13 起归刘海岛插件（原来不归哪个功能）
   @Test func everyActionBelongsToOneFeature() {
     for feature in Feature.allCases {
       #expect(
@@ -36,7 +36,7 @@ struct FeatureTests {
     #expect(HotKeyAction.screenshotTranslate.feature == .translate)
     #expect(HotKeyAction.pinClipboard.feature == .screenshot)
     #expect(HotKeyAction.audioRecord.feature == .record)
-    #expect(HotKeyAction.island.feature == nil && HotKeyAction.island.isActive)
+    #expect(HotKeyAction.island.feature == .island)
     #expect(HotKeyAction.reminderNew.feature == .reminders)
     #expect(HotKeyAction.home.feature == nil && HotKeyAction.home.isActive)
     // 菜单栏的非热键项跟着它那一节的动作走
@@ -51,8 +51,9 @@ struct FeatureTests {
     let full = HotKeyAction.visibleSections(enabled: all)
     #expect(Set(full.flatMap(\.actions)) == Set(HotKeyAction.allCases))
     #expect(full.first?.title == "剪贴板与启动器")
-    // 功能全关时只剩不归功能的那一节
-    #expect(HotKeyAction.visibleSections(enabled: []).map(\.title) == ["刘海岛", "主界面"])
+    // 功能全关时只剩不归功能的那一节（刘海岛 2026-11-13 起是插件）
+    #expect(HotKeyAction.visibleSections(enabled: []).map(\.title) == ["主界面"])
+    #expect(HotKeyAction.visibleSections(enabled: [.island]).map(\.title) == ["刘海岛", "主界面"])
 
     let noClipboard = HotKeyAction.visibleSections(enabled: all.subtracting([.clipboard]))
     #expect(noClipboard.first?.title == "启动器")
@@ -147,7 +148,7 @@ struct FeatureTests {
       noRecord.first { $0.title == "截图 · 出图" }?.entries.contains { $0.keys == ["R"] } == false)
 
     // 都关掉只剩不归功能的「设置」一组
-    #expect(ShortcutsSheet.groups(enabled: []).map(\.title) == ["刘海岛", "主界面", "设置"])
+    #expect(ShortcutsSheet.groups(enabled: []).map(\.title) == ["主界面", "设置"])
   }
 
   /// 新装（没看过任何一版）第一次启动把开关明写进偏好：常用的四个开、别的关（功能管理拍板 M4 M5）；已经存过的不动
@@ -204,11 +205,18 @@ struct FeatureTests {
   }
 
   /// 开关注册了默认值（跟着导出的「设置」一类走），默认开；程序坞预览默认关（拍板 A3），访达右键默认关（2026-11-08 拍板 D2），
-  /// 插件一律默认不添加（2026-11-12 拍板 A1）
+  /// 新做的插件默认不添加（2026-11-12 拍板 A1）；2026-11-13 从功能转过来的插件照旧用原来的默认值、刘海岛默认添加着（P2：
+  /// 没拨过开关的老用户升级上来便签、提醒、点刘海都还在，0.8.x 导出的文件里没有这一项也不会把它们关掉）
   @Test func switchesAreExportedSettings() {
     #expect(Feature.allCases.filter { !$0.defaultOn } == [.dockPreview, .finderMenu, .keepAwake])
     #expect(
-      Feature.allCases.filter(\.isPlugin).allSatisfy { !$0.defaultOn && $0.pluginFacts != nil })
+      [Feature.notes, .reminders, .statusScreen, .launchpad, .island].allSatisfy {
+        $0.isPlugin && $0.defaultOn
+      })
+    #expect(
+      Feature.allCases.filter(\.isPlugin).allSatisfy {
+        $0.pluginFacts != nil && !$0.pluginWords.isEmpty
+      })
     for feature in Feature.allCases {
       #expect(Prefs.defaults[feature.prefsKey] as? Bool == feature.defaultOn)
       #expect(SettingsArchive.kinds[feature.prefsKey] != nil)
@@ -224,7 +232,15 @@ struct FeatureTests {
     let defaults = try #require(UserDefaults(suiteName: suite))
     defer { defaults.removePersistentDomain(forName: suite) }
     Feature.seedNewInstall(defaults, domainName: suite)
-    #expect(defaults.object(forKey: Feature.keepAwake.prefsKey) as? Bool == false)
+    // 新装一个插件都没添加（转过来的、刘海岛也是）
+    for plugin in Feature.plugins {
+      #expect(defaults.object(forKey: plugin.prefsKey) as? Bool == false, "\(plugin)")
+    }
+    // 功能剩核心五个（2026-11-13 插件化 P1）
+    #expect(
+      Feature.allCases.filter { !$0.isPlugin } == [
+        .clipboard, .launcher, .translate, .screenshot, .record,
+      ])
     // 搜插件的名字：没添加时落到通用页（「功能 ›」下面就是它的卡），添加了停在它自己那页
     #expect(SettingsPage.page(for: "保持唤醒", current: .about, hidden: [.keepAwake]) == .general)
     #expect(SettingsPage.page(for: "防息屏", current: .about, hidden: [.keepAwake]) == .general)

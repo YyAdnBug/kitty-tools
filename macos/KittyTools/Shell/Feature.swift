@@ -10,6 +10,9 @@
 // 打开、「移除」= 关掉，设置和数据留着），区别只在露不露面：新装、升级都默认不添加；没添加的不进设置侧栏（也不进「已关闭」那组）、
 // 欢迎引导、「功能」列表和主界面的「N 个功能关着」，只在 设置 › 通用 › 功能 下面的「插件」卡片里，和启动器里打它的名字时
 // 最后那一行「添加…插件」（LauncherModel.pluginOffers）。
+// 2026-11-13（拍板页 https://claude.ai/artifact/DEKeRvQeZR3VxkVA9Bx2Fr「全部按推荐」）：便签、提醒、状态屏、启动台、程序坞预览、
+// 访达右键也改成插件，另加刘海岛（只管点刘海那一张、两边的活动、系统提示；岛上的提示是全 App 的，不归它）。功能剩剪贴板、
+// 启动器、翻译、截图、录制。转过来的照旧用原来的偏好键和默认值：开着的就是添加着，升级上来什么都不变（P2）。
 
 import Foundation
 
@@ -19,8 +22,8 @@ nonisolated enum Feature: String, CaseIterable {
   // 启动台、程序坞预览一组）。rawValue 是偏好键，不能改
   case clipboard, launcher, translate, screenshot, record, notes, reminders, statusScreen
   case launchpad, dockPreview, finderMenu
-  // 插件（isPlugin）排在功能后面
-  case keepAwake
+  // 2026-11-13 起便签之后这几个都是插件（isPlugin），保持唤醒、刘海岛新加在最后（刘海岛那一节一直排在菜单栏、快捷键页最后）
+  case keepAwake, island
 
   /// 同名的设置页（名字、符号、家族色从它取）
   @MainActor var page: SettingsPage { SettingsPage(rawValue: rawValue) ?? .general }
@@ -44,17 +47,27 @@ nonisolated enum Feature: String, CaseIterable {
     case .dockPreview: "鼠标停在程序坞的 App 图标上，看它所有窗口的缩略图"
     case .finderMenu: "在访达里右键：新建文件、拷贝路径、移动复制、压缩解压"
     case .keepAwake: "不让电脑睡、不让屏幕熄：手动开一段，或按时段自动开"
+    case .island: "点刘海叫出快捷动作和最近的提示，录屏计时、提醒倒数挂在刘海两边"
     }
   }
 
-  /// 插件（新的大模块，2026-11-12）
-  static let plugins: Set<Feature> = [.keepAwake]
+  /// 插件（2026-11-12 起新的大模块；2026-11-13 起除了核心五个都是）
+  static let plugins: Set<Feature> = [
+    .notes, .reminders, .statusScreen, .launchpad, .dockPreview, .finderMenu, .keepAwake, .island,
+  ]
   var isPlugin: Bool { Self.plugins.contains(self) }
 
   /// 插件卡片上那两行：要什么授权、在后台做什么（拍板 A2：添加之前就看得清）；不是插件的 nil
   var pluginFacts: (permission: String, background: String)? {
     switch self {
+    case .notes: ("不要", "屏幕边缘一条细药丸；开着同步时跟着合")
+    case .reminders: ("不要", "等着下一条提醒；一条都没有时什么都不跑")
+    case .statusScreen: ("进入时要「辅助功能」（拦住键盘鼠标）", "没进入时什么都不跑")
+    case .launchpad: ("不要", "看着触控板捏合和触发角，装卸 App 时重扫一遍")
+    case .dockPreview: ("辅助功能、屏幕录制", "看着程序坞；鼠标停在图标上才截缩略图")
+    case .finderMenu: ("要在系统设置里打开访达扩展", "只在你右键时动")
     case .keepAwake: ("不要", "开着时让系统别睡；没开时什么都不跑")
+    case .island: ("不要", "看着指针有没有停在刘海上；打开了系统提示才听电源、耳机、网络。不添加时提示照常弹")
     default: nil
     }
   }
@@ -62,7 +75,14 @@ nonisolated enum Feature: String, CaseIterable {
   /// 启动器里打这些词（插件没添加时）出「添加…插件」那一行；名字本身也算
   var pluginWords: [String] {
     switch self {
+    case .notes: ["便签", "笔记", "note", "notes", "记一条"]
+    case .reminders: ["提醒", "闹钟", "remind", "reminder"]
+    case .statusScreen: ["状态屏", "请勿触碰", "status"]
+    case .launchpad: ["启动台", "launchpad"]
+    case .dockPreview: ["程序坞", "窗口预览", "dock"]
+    case .finderMenu: ["访达右键", "右键菜单", "finder"]
     case .keepAwake: ["awake", "保持唤醒", "防息屏", "防止睡眠", "不睡眠", "唤醒", "咖啡因", "caffeinate"]
+    case .island: ["刘海岛", "刘海", "灵动岛", "island", "notch"]
     default: []
     }
   }
@@ -71,8 +91,10 @@ nonisolated enum Feature: String, CaseIterable {
   /// 访达右键也默认关（2026-11-08 拍板 D2：改的是访达的菜单，还要去系统设置里打开扩展，默认开着也不生效）。
   /// 全 App 只有这一套：新装只开四个不是靠改它，是第一次启动时把开关明写进偏好（seedNewInstall）——导出、同步里「没有这一项
   /// = 默认值」，各台默认值不一样的话，导入老电脑的文件、加入同步时没动过的开关会被悄悄换成这台的默认
-  /// 插件一律默认不添加（拍板 A1：新装、升级都不添加）
-  var defaultOn: Bool { self != .dockPreview && self != .finderMenu && !isPlugin }
+  /// 新做的插件默认不添加（拍板 A1：新装、升级都不添加）。2026-11-13 从功能转过来的插件照旧用原来的默认值（P2：导出文件、
+  /// 同步里「没有这一项 = 默认值」，改了的话 0.8.x 的文件、电脑会把没拨过的便签悄悄关掉）；刘海岛也算开着——0.7.0 起就有
+  /// 点刘海，升级上来照旧能用。新装照样一个插件都没添加：seedNewInstall 把核心以外的都明写成关
+  var defaultOn: Bool { ![.dockPreview, .finderMenu, .keepAwake].contains(self) }
 
   /// 新装默认开着的四个（功能管理拍板 M4）
   static let core: Set<Feature> = [.clipboard, .launcher, .translate, .screenshot]

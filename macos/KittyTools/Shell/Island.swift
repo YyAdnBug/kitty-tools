@@ -110,6 +110,19 @@ import SwiftUI
   /// 点刘海、停在刘海上、两指往下滑叫出那一张（设置 › 刘海岛「点刘海叫出那一张」，刘海岛扩展 G2；AppDelegate 跟着偏好给）。
   /// 关着时这几样都不响应，快捷键照样能叫出来；耳朵上的活动照常能停、能点
   @ObservationIgnored var respondsToNotch = true
+  /// 刘海岛插件添加着（Feature.island，2026-11-13 插件化 P1b；AppDelegate 跟着开关给）：点刘海那一张、活动（耳朵、菜单栏那一项、
+  /// 进行中缩进耳朵）、刘海上常驻的鼠标监听都归它。没添加时只弹提示（0.7.0 之前的样子）：setActivity 不收、进行中照旧挂着、
+  /// 不常驻监听（点刘海另由 respondsToNotch 关掉，快捷键「打开刘海岛」随插件不注册）。摆出来的岛（截图自检、单测）是 true
+  @ObservationIgnored var hasExtras = true {
+    didSet {
+      guard hasExtras != oldValue else { return }
+      if !hasExtras {
+        for activity in activities { endActivity(activity.id) }
+        if isBoardOpen { dismiss() }
+      }
+      rewatchNotch()
+    }
+  }
   /// 用快捷键叫出的那一张上，←→ 选中的快捷动作（第几个；鼠标叫出的、没有快捷动作时是 nil，U9）
   private(set) var boardSelection: Int?
   /// 那一张是用快捷键叫出的、正临时拿着键盘：收起时还回去
@@ -508,6 +521,7 @@ import SwiftUI
   /// 开始 / 更新一个活动（同一个 id 再来一次 = 原地换，开始的时刻不变）。刘海屏上收起时挂到耳朵上；
   /// 它的卡片正展开着就原地换内容和按钮
   func setActivity(_ activity: Activity) {
+    guard hasExtras else { return }
     var next = activity
     if let index = activities.firstIndex(where: { $0.id == activity.id }) {
       next.started = activities[index].started
@@ -593,6 +607,7 @@ import SwiftUI
   /// 进行中的提示出来了：挂满 3 秒还是它（指针不在上面）就缩进耳朵；指针在上面就等它离开
   private func collapseLater(_ title: String) {
     collapseTask?.cancel()
+    guard hasExtras else { return }
     collapseTask = Task { [weak self] in
       try? await Task.sleep(for: Self.progressCollapse)
       while !Task.isCancelled {
@@ -608,7 +623,7 @@ import SwiftUI
   /// 把正显示着的进行中提示换成耳朵上的活动（左一圈进度、右百分比；说不出做到哪的只有记号），按钮（停止）跟过去，
   /// 提示收起、缩回耳朵。没有刘海屏时照旧挂着（菜单栏那一项是第 1-3 批）
   func collapseProgress(_ content: Content) {
-    guard canShowWings, self.content == content else { return }
+    guard hasExtras, canShowWings, self.content == content else { return }
     setActivity(
       Activity(
         id: Self.progressID(content.title), kind: .progress, title: content.title,
@@ -863,10 +878,15 @@ import SwiftUI
       )
     }
     notchRects = NSScreen.screens.compactMap(Self.notchRect(of:))
-    watchesNotch = !notchRects.isEmpty
-    if watchesNotch { watchMouse() } else if !isOpen { unwatchMouse() }
+    rewatchNotch()
     // 合盖只用外接屏、又打开：耳朵跟着收掉 / 长回来
     refreshWings()
+  }
+
+  /// 有刘海屏、插件也添加着才常驻监听（点刘海、停在刘海上、耳朵的悬停要它们）；否则照旧显示时装、收起后卸
+  private func rewatchNotch() {
+    watchesNotch = hasExtras && !notchRects.isEmpty
+    if watchesNotch { watchMouse() } else if !isOpen { unwatchMouse() }
   }
 
   /// 硬件刘海在屏幕上的那一块（屏幕坐标）；没有刘海的屏是 nil

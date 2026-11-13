@@ -53,7 +53,6 @@ struct RemindersTab: View {
     let isFull = list.count >= Reminder.maxCount
     let statuses = StatusPreset.load()
     return Form {
-      Section { FeatureToggle(feature: .reminders, inPage: true) }
       Group {
         Section {
           if list.isEmpty {
@@ -98,6 +97,7 @@ struct RemindersTab: View {
         }
       }
       .gated(by: .reminders)
+      PluginRemoveSection(plugin: .reminders)
     }
     .formStyle(.grouped)
   }

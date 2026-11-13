@@ -27,7 +27,6 @@ struct DockPreviewTab: View {
   private var form: some View {
     Form {
       Section {
-        FeatureToggle(feature: .dockPreview, inPage: true)
         Picker("停多久再弹出", selection: $delay) {
           ForEach(Prefs.dockPreviewDelayChoices, id: \.self) { milliseconds in
             Text(Self.title(milliseconds)).tag(milliseconds)
@@ -72,6 +71,7 @@ struct DockPreviewTab: View {
           .help(missing.joined(separator: "、"))
         }
       }
+      PluginRemoveSection(plugin: .dockPreview)
     }
     .formStyle(.grouped)
   }

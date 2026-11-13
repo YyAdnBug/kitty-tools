@@ -3,6 +3,7 @@
 // 偏好）。通用页只留一行「功能 ›」写开着几个、关着哪几个（summary），0.8.0 的「新」标在那一行。
 // 下面一组「插件」（2026-11-12 拍板 A2）：每个插件一张卡（色块、名字、一句话、要的授权、后台做什么）+「添加」/「移除」，
 // 绑的还是那个功能开关的偏好。启动器里「添加…插件」那一行带过来时（SettingsNavigation.focusedPlugin）滚到那张卡、描一圈强调色。
+// 2026-11-13 起功能只剩核心五个，便签、提醒等七样也是插件卡片（拍板 P1）；插件自己的页最后一组是「移除」（PluginRemoveSection）。
 
 import SwiftUI
 
@@ -24,7 +25,8 @@ struct FeaturesPage: View {
             SectionFootnote("关掉的功能不出现在快捷键、菜单栏和启动器里，也不在后台运行；它的数据和设置都留着，打开就回来。")
           }
           Section {
-            ForEach(Feature.allCases.filter(\.isPlugin), id: \.self) { plugin in
+            ForEach(Feature.allCases.filter { $0.isPlugin && $0.isAvailable }, id: \.self) {
+              plugin in
               PluginCard(plugin: plugin, isFocused: navigation?.focusedPlugin == plugin)
                 .id(plugin)
             }
@@ -32,7 +34,8 @@ struct FeaturesPage: View {
             Text("插件")
           } footer: {
             SectionFootnote(
-              "插件新装、升级都默认不添加。添加了才出现在侧栏、菜单栏、主界面、快捷键和启动器里；移除就是关掉，设置留着，再添加就回来。")
+              "新装时插件都没添加；从旧版升级上来的，原来开着的照旧添加着。添加了才出现在侧栏、菜单栏、主界面、快捷键和启动器里；移除就是关掉，设置和数据留着，再添加就回来。"
+            )
           }
         }
         .formStyle(.grouped)
@@ -124,5 +127,31 @@ private struct PluginCard: View {
     // 合起来读：名字、已添加、一句话、授权、后台都在（拍板 A2：添加之前就听得到要什么授权）；按钮并进来后用命名动作
     .accessibilityElement(children: .combine)
     .accessibilityAction(named: isAdded ? "移除" : "添加") { isAdded.toggle() }
+  }
+}
+
+/// 插件自己的设置页最后一组：一行「移除」（同「功能」页卡片上的；mac-whisker settings「插件卡片」）。移除后这一页就不在侧栏了，
+/// SettingsRoot 带回「功能」页。刘海岛另写一句：岛上的提示不归它，移除了照常弹
+struct PluginRemoveSection: View {
+  let plugin: Feature
+  @AppStorage private var isAdded: Bool
+
+  init(plugin: Feature) {
+    self.plugin = plugin
+    _isAdded = AppStorage(wrappedValue: plugin.defaultOn, plugin.prefsKey)
+  }
+
+  var body: some View {
+    Section {
+      LabeledContent {
+        Button("移除") { isAdded = false }
+      } label: {
+        Text("\(plugin.title)插件")
+        Text(
+          plugin == .island
+            ? "移除后点刘海没反应、刘海两边不挂计时；岛上的提示照常弹。设置留着，再添加就回来"
+            : "移除后菜单栏、主界面、启动器、快捷键里都没有它，设置和数据留着，再添加就回来")
+      }
+    }
   }
 }

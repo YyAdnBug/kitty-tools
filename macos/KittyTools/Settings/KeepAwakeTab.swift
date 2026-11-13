@@ -10,7 +10,6 @@ struct KeepAwakeTab: View {
   let keepAwake: KeepAwake
   @AppStorage(Prefs.keepAwakeDisplay) private var display = true
   @AppStorage(Prefs.keepAwakeSchedule) private var scheduleText = ""
-  @AppStorage(Feature.keepAwake.prefsKey) private var isAdded = false
   /// 「开始」用哪一档（KeepAwakePlan.presets 的下标；默认 1 小时）
   @State private var preset = 1
 
@@ -78,14 +77,7 @@ struct KeepAwakeTab: View {
           "结束早于开始就是跨过半夜（22:00 到 2:00 管到第二天凌晨）。定时跟着这台 Mac，不同步。合上盖子时系统照样会睡（接着电源和外接显示器时除外）。"
         )
       }
-      Section {
-        LabeledContent {
-          Button("移除") { isAdded = false }
-        } label: {
-          Text("保持唤醒插件")
-          Text("移除后菜单栏、主界面、启动器、快捷键里都没有它，设置留着，再添加就回来")
-        }
-      }
+      PluginRemoveSection(plugin: .keepAwake)
     }
     .formStyle(.grouped)
   }

@@ -1295,6 +1295,18 @@ Alfred 的 Related Apps、BetterTouchTool 按 App 停用，调研和测开销的
   通用页对上）；卡片滚动太早；读屏听不到授权 / 后台两行；移除插件时手动那段悄悄停（说一声）；中文关键词不带空格不认。
 - 单测 `KeepAwakeTests`（时段、跨午夜、全天、读写、解析、启动器那几行、添加插件那一行）；截图自检 `SnapshotProbeTests/plugins()`
   （图以 plugins- 开头）。待手测 HANDTEST「插件与保持唤醒」。
+- **七样改插件**（2026-11-13，拍板页 https://claude.ai/artifact/DEKeRvQeZR3VxkVA9Bx2Fr 第 2 版，用户「全部按推荐」）：功能只剩剪贴板、
+  启动器、翻译、截图、录制（P1），便签、提醒、状态屏、启动台、程序坞预览、访达右键进 `Feature.plugins`，另加 `Feature.island`。
+  - 升级不动（P2）：偏好键、默认值都照旧（`defaultOn` 只有程序坞预览、访达右键、保持唤醒是 false），开着的就是添加着；
+    刘海岛没人存过、按添加着算，升级上来点刘海照旧能用。新装由 `seedNewInstall` 写成全没添加。
+  - 刘海岛只做「多出来的」那一半（P1b）：`Island.hasExtras`（AppDelegate.applyFeatures 跟着给）挡 `setActivity`、进行中缩进耳朵、
+    常驻的刘海监听；点刘海 / 停留 / 下滑看 `respondsToNotch`（插件添加着且「点刘海叫出那一张」开着）；「打开刘海岛」动作归
+    `.island`；`SystemNotices.apply` 没添加时一样都不听。提示本身不动。
+  - 侧栏五组（P3）：通用 ｜ 文字与搜索 ｜ 截图与录制 ｜ 插件 ｜ 快捷键、关于；插件页顶上的「启用」去掉，页底统一
+    `PluginRemoveSection`；卡片补 `pluginFacts`（P4）、`pluginWords`（P6），按 `isAvailable` 过滤（macOS 15 没有启动台）；
+    欢迎引导第一屏下面一组紧凑三列列插件、默认不勾（P5）；同步那一节、刘海岛页、提醒进状态屏的「功能关着」改说「插件没添加」（P7）。
+  - Windows 这次不动（P8）。单测：FeatureTests（转过来的默认添加着、新装全没添加、功能剩五个）、SettingsListTests、HomeTests、
+    ShortcutsTests、IslandActivityTests.extrasFollowPlugin、KeepAwakeTests.pluginOffers；待手测 HANDTEST「七样改插件」。
 - **#14 平滑滚动**排在后面另发（C1 C2）：第一版只做鼠标平滑 + 鼠标单独反向 + 按 App 停用 + 修饰键；拦截放在 Kitty 里单独一条线程
   （要改 mac-native §3、mac-overlay-panel §11 两条红线），先做探针。Mos 是 CC BY-NC 4.0，不拷代码。
 

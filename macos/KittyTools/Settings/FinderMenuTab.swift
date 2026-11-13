@@ -31,7 +31,6 @@ struct FinderMenuTab: View {
   private var form: some View {
     Form {
       Section {
-        FeatureToggle(feature: .finderMenu, inPage: true)
         PermissionRow(
           title: "在系统设置里打开", detail: "系统要你自己打开一次访达扩展，右键里才会出现这几项",
           symbol: "puzzlepiece.extension.fill", color: Style.Family.finderMenu,
@@ -169,6 +168,7 @@ struct FinderMenuTab: View {
         )
       }
       .gated(by: .finderMenu)
+      PluginRemoveSection(plugin: .finderMenu)
     }
     .formStyle(.grouped)
     // 同步、导入落下了新的列表：页面跟上（同剪贴板页的排除列表）

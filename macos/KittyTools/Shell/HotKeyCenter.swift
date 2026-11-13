@@ -335,7 +335,9 @@ enum HotKeyAction: String, CaseIterable {
     case .statusScreen: .statusScreen
     case .reminderNew: .reminders
     case .keepAwake: .keepAwake
-    case .island, .home: nil
+    // 「打开刘海岛」2026-11-13 起归刘海岛插件（原来 nil、一直在）；岛上的提示不归它
+    case .island: .island
+    case .home: nil
     }
   }
 
@@ -369,9 +371,9 @@ enum HotKeyAction: String, CaseIterable {
     ("启动台", [.launchpad]),
     // 插件排在功能后面（同设置侧栏）。保持唤醒：菜单栏里同提醒，只有一项带子菜单（AppDelegate.addKeepAwakeMenu）
     ("保持唤醒", [.keepAwake]),
-    // 刘海岛（2026-10-26）：不属于哪个功能、一直在
+    // 刘海岛（2026-10-26）：2026-11-13 起归刘海岛插件，没添加时不列
     ("刘海岛", [.island]),
-    // 主界面（2026-10-29）：同刘海岛，一直在；菜单栏菜单里不列（菜单就是图标的另一半），主界面里也不列它自己
+    // 主界面（2026-10-29）：不属于哪个功能、一直在；菜单栏菜单里不列（菜单就是图标的另一半），主界面里也不列它自己
     ("主界面", [.home]),
   ]
 

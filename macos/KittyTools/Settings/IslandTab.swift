@@ -1,7 +1,8 @@
 // 设置 › 刘海岛（2026-11-12，PR #17 SeyoZhou 提的，收进来时改成本 App 的写法）：点刘海、快捷键「打开刘海岛」叫出来的
 // 那一张上，快捷动作开哪几个、什么先后（拖动排序；右键和读屏有上移 / 下移，同翻译服务的列表），列不列最近的提示。
-// 岛本身是全 App 的轻提示，没有总开关（mac-native §1）。功能关着的动作照样列、开关变灰（那一张上本来就不出），
-// 重新打开功能后照原来的选择回来。不归哪个功能，在侧栏第一组、通用下面。
+// 岛上的提示是全 App 的轻提示，没有总开关（mac-native §1）。功能关着的动作照样列、开关变灰（那一张上本来就不出），
+// 重新打开功能后照原来的选择回来。2026-11-13 起这一页是刘海岛插件的页（点刘海那一张、两边的活动、系统提示归它，
+// 拍板 P1b）：没添加时不在侧栏，页底一行「移除」。
 
 import SwiftUI
 
@@ -75,6 +76,7 @@ struct IslandTab: View {
       } footer: {
         SectionFootnote("有变化时在刘海岛上弹一下，同别的提示。没打开的不监听，也不要任何授权。")
       }
+      PluginRemoveSection(plugin: .island)
     }
     .formStyle(.grouped)
   }
@@ -123,9 +125,11 @@ private struct ActionRow: View {
       VStack(alignment: .leading, spacing: 1) {
         Text(action.title).font(.system(size: 13))
         if !active, let feature = action.feature {
-          Text("「\(feature.title)」功能关着，那一张上不出现")
-            .font(.system(size: 11))
-            .foregroundStyle(.secondary)
+          Text(
+            feature.isPlugin ? "「\(feature.title)」插件没添加，那一张上不出现" : "「\(feature.title)」功能关着，那一张上不出现"
+          )
+          .font(.system(size: 11))
+          .foregroundStyle(.secondary)
         }
       }
       .lineLimit(1)

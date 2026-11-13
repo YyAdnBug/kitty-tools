@@ -66,7 +66,6 @@ struct StatusScreenTab: View {
     let isFull = list.count >= StatusPreset.maxCount
     // 关着时（Feature）变灰
     return Form {
-      Section { FeatureToggle(feature: .statusScreen, inPage: true) }
       Group {
         Section {
           presetList(list)
@@ -128,6 +127,7 @@ struct StatusScreenTab: View {
         }
       }
       .gated(by: .statusScreen)
+      PluginRemoveSection(plugin: .statusScreen)
     }
     .formStyle(.grouped)
   }

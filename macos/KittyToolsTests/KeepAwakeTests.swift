@@ -144,6 +144,11 @@ struct KeepAwakeTests {
     #expect(offered("保持唤醒2小时") == ["添加「保持唤醒」插件"])
     #expect(offered("ca").isEmpty && offered("aw").isEmpty && offered("safari").isEmpty)
     #expect(offered("awake", added: [.keepAwake]).isEmpty)
+    // 2026-11-13 转过来的插件：打名字、关键词同样出（没添加提醒时打「remind 10分钟 喝水」也出）
+    #expect(offered("便签") == ["添加「便签」插件"] && offered("note") == ["添加「便签」插件"])
+    #expect(offered("remind 10分钟 喝水") == ["添加「提醒」插件"])
+    #expect(offered("刘海") == ["添加「刘海岛」插件"] && offered("dock") == ["添加「程序坞预览」插件"])
+    #expect(offered("便签", added: [.notes]).isEmpty)
     let row = LauncherModel.pluginOffers(for: "防息屏", added: [])
     #expect(row.first?.target == LauncherModel.pluginPrefix + Feature.keepAwake.rawValue)
   }

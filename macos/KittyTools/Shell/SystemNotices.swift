@@ -32,17 +32,21 @@ import Network
 
   /// 照偏好起停（启动时、偏好变了时 AppDelegate 调）：开着的才监听，没变不动
   func apply() {
+    // 归刘海岛插件（2026-11-13 插件化 P1b）：没添加时一样都不听，开关照旧记着
+    let added =
+      defaults.object(forKey: Feature.island.prefsKey) as? Bool ?? Feature.island.defaultOn
     let power =
-      defaults.bool(forKey: Prefs.islandNoticePower)
-      || defaults.bool(forKey: Prefs.islandNoticeBattery)
+      added
+      && (defaults.bool(forKey: Prefs.islandNoticePower)
+        || defaults.bool(forKey: Prefs.islandNoticeBattery))
     if power, powerSource == nil { startPower() } else if !power, powerSource != nil { stopPower() }
-    let headphones = defaults.bool(forKey: Prefs.islandNoticeHeadphones)
+    let headphones = added && defaults.bool(forKey: Prefs.islandNoticeHeadphones)
     if headphones, audioListener == nil {
       startAudio()
     } else if !headphones, audioListener != nil {
       stopAudio()
     }
-    let network = defaults.bool(forKey: Prefs.islandNoticeNetwork)
+    let network = added && defaults.bool(forKey: Prefs.islandNoticeNetwork)
     if network, pathMonitor == nil {
       startNetwork()
     } else if !network, pathMonitor != nil {

@@ -847,7 +847,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 到点的提醒要进入状态屏（提醒 C1 / C12）：先把进不去的情况挑出来（进不去时提醒退成全屏，原因写在全屏上——状态屏自己的
   /// 警告岛会被全屏盖住），再真的进。进去了返回 nil
   private func enterStatus(forReminder id: String) -> (reason: String, grants: Bool)? {
-    guard Feature.statusScreen.isOn else { return ("状态屏这个功能关着", false) }
+    guard Feature.statusScreen.isOn else { return ("状态屏插件没添加", false) }
     guard Permissions.isAccessibilityTrusted else { return ("还没给辅助功能授权，进不了状态屏", true) }
     if let blocked = statusScreen.blocker() { return (blocked.title + "，没进状态屏", false) }
     guard !statusScreen.isBusy(), !statusScreen.isActive else { return ("现在进不了状态屏", false) }
@@ -1044,7 +1044,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     island.isSuppressed = { [unowned self] in
       isCapturing || launchpad.isOpen || statusScreen.isActive
     }
-    island.respondsToNotch = UserDefaults.standard.bool(forKey: Prefs.islandNotchClicks)
+    island.hasExtras = Feature.island.isOn
+    island.respondsToNotch = respondsToNotch
     island.start()
     systemNotices.apply()
     showWelcomeIfNeeded()
@@ -1079,7 +1080,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       MainActor.assumeIsolated {
         guard let self else { return }
         self.applyFeatures()
-        self.island.respondsToNotch = UserDefaults.standard.bool(forKey: Prefs.islandNotchClicks)
+        self.island.respondsToNotch = self.respondsToNotch
         self.systemNotices.apply()
         // 命令的快捷键跟着「命令和别名」的开关和别名、脚本命令总开关、⌘K「关掉这条命令」走（第 4 批评审：只在那一页的
         // onChange 里跟，别处改的不注销）；没变不动
@@ -1096,6 +1097,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // 访达右键把 App 冷启动时交过来的动作：剪贴板历史、偏好都起来了再做（拷贝的路径才记得进历史）
     for url in pendingLinks { FinderLink.perform(url, island: island) }
     pendingLinks = []
+  }
+
+  /// 点刘海、停在刘海上、往下滑叫出那一张：刘海岛插件添加着，设置 › 刘海岛「点刘海叫出那一张」也开着
+  private var respondsToNotch: Bool {
+    Feature.island.isOn && UserDefaults.standard.bool(forKey: Prefs.islandNotchClicks)
   }
 
   /// 剪贴板历史现在记不记（剪贴板这个功能开着、没在菜单栏暂停）：本 App 自己写剪贴板的几处（Paster.recordText、截图、
@@ -1120,6 +1126,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let turnedOff = (before ?? []).subtracting(now)
     let launching = before == nil
 
+    // 刘海岛插件（2026-11-13）：没添加时活动、常驻的刘海监听都停（Island.hasExtras），提示照常
+    island.hasExtras = now.contains(.island)
     // 剪贴板的轮询：记历史要它，复制即译也要它（剪贴板关着时只为复制即译跑、不入库）
     watcher.records = now.contains(.clipboard)
     if now.contains(.clipboard) || (now.contains(.translate) && copyToTranslate) {
