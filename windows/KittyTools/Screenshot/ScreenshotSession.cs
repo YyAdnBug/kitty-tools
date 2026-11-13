@@ -218,7 +218,17 @@ internal sealed class ScreenshotSession
     {
         SelectionScreen = screen;
         Selection = rect;
+        SelectionChanged();
         InvalidateAll();
+    }
+
+    /// <summary>选区变了：就地翻译贴上去的译文换回原图（PLAN-v18 S6：译文只属于翻的那个选区）。</summary>
+    private void SelectionChanged()
+    {
+        foreach (var overlay in _overlays)
+        {
+            overlay.OnSelectionChanged();
+        }
     }
 
     /// <summary>别的屏上画了标注（含正在输入的字）：会把它们清掉的操作（换屏框选）都不做（mac hasAnnotations(besides:)）。</summary>
@@ -229,6 +239,7 @@ internal sealed class ScreenshotSession
     {
         SelectionScreen = null;
         Selection = default;
+        SelectionChanged();
         InvalidateAll();
     }
 

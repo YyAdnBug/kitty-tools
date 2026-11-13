@@ -2,6 +2,8 @@
 // 截图翻译（框完松手自动翻）和工具栏的「翻译」都不收起遮罩——选区上一条浅白扫光等待（1.1 s 一轮，减弱动态效果时只压暗），
 // 翻完把译文图贴回冻结帧的选区位置；已经画的标注留着（它们一直画在冻结帧上面），人还在截图页，可以接着标注 / 复制 / 保存。
 // Esc、收起遮罩、右键重新框都停掉翻译（取消点在每段开头，取消后不再发新请求）。
+// 译文只属于翻的那个选区（PLAN-v18 S6，mac 758c4d44）：选区一变就把原图贴回冻结帧、提示「选区变了，已换回原文」；
+// 同一个选区再翻从原图翻；翻到一半选区换了，这份译文不贴（Core InPlaceOriginal）。
 using KittyTools.Core;
 using KittyTools.Infrastructure;
 using Microsoft.Graphics.Canvas;
@@ -14,6 +16,8 @@ namespace KittyTools;
 internal sealed partial class SelectionOverlayWindow
 {
     private const double SweepSeconds = 1.1;
+
+    private readonly InPlaceOriginal _untranslated = new();
 
     private CancellationTokenSource? _translateCts;
     private bool _translating;
@@ -37,7 +41,8 @@ internal sealed partial class SelectionOverlayWindow
             return;
         }
 
-        var crop = _screen.Crop(rect);
+        var selection = _session.Selection;
+        var crop = _untranslated.OriginalFor(selection) ?? _screen.Crop(rect);
         var cts = new CancellationTokenSource();
         _translateCts = cts;
         _translating = true;
@@ -64,6 +69,13 @@ internal sealed partial class SelectionOverlayWindow
                 return;
             }
 
+            // 翻的时候选区被换掉了（框选和工具栏这时本来不动，防万一）：这份译文贴不回去
+            if (_session.SelectionScreen != _screen || _session.Selection != selection)
+            {
+                return;
+            }
+
+            _untranslated.Remember(selection, rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top, crop);
             Paste(patch, rect);
             message = "已替换为译文";
             Log.Info("screenshot.overlay-done");
@@ -130,15 +142,29 @@ internal sealed partial class SelectionOverlayWindow
         _canvas.Invalidate();
     }
 
+    /// <summary>选区变了（ScreenshotSession.SetSelection / ClearSelection）：这块屏上贴着的译文换回原图，说一声。</summary>
+    public void OnSelectionChanged()
+    {
+        RectD? current = _session.HasSelection && _session.SelectionScreen == _screen ? _session.Selection : null;
+        if (_screen.Bgra.Length == 0 || !_untranslated.RestoreIfChanged(current, _screen.Bgra, _screen.Width))
+        {
+            return;
+        }
+
+        Log.Info("screenshot.overlay-restored");
+        FrameChanged();
+        Flash("选区变了，已换回原文", 2000);
+    }
+
     /// <summary>把译文图贴回冻结帧的选区位置；冻结帧的位图、画好的标注缓存（马赛克读的是冻结帧）重建。</summary>
     private void Paste(byte[] patch, PixelBounds rect)
     {
-        var width = rect.Right - rect.Left;
-        for (var row = 0; row < rect.Bottom - rect.Top; row++)
-        {
-            Buffer.BlockCopy(patch, row * width * 4, _screen.Bgra, ((rect.Top + row) * _screen.Width + rect.Left) * 4, width * 4);
-        }
+        InPlaceOriginal.Paste(_screen.Bgra, _screen.Width, patch, rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top);
+        FrameChanged();
+    }
 
+    private void FrameChanged()
+    {
         _bitmap?.Dispose();
         _bitmap = null;
         _layer?.Dispose();
