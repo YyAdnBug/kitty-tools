@@ -109,13 +109,20 @@ import Foundation
   }
 
   /// 这几样各多少字节（里面普通文件的大小加起来，「._」开头的不算——拷的时候它们并进扩展属性），和 urls 一一对应；
-  /// 算不出来的是 0。find 加 stat 一遍走完（另起进程），每一行按它的上一层一级级找是哪一样的
-  static func sizes(of urls: [URL]) async -> [Int64] {
+  /// 算不出来的是 0。find 加 stat 一遍走完（另起进程），每一行按它的上一层一级级找是哪一样的。
+  /// skip：压缩时另外跳过的名字（Archives.effectiveSkip），叫这些名字的文件、文件夹整个不算（find 的 -prune，同 tar 的 --exclude）
+  static func sizes(of urls: [URL], skip: [String] = []) async -> [Int64] {
     let paths = urls.map { FileMoves.plainPath($0) }
+    let prune =
+      skip.isEmpty
+      ? []
+      : ["("] + skip.enumerated().flatMap { ($0 == 0 ? [] : ["-o"]) + ["-name", $1] } + [
+        ")", "-prune", "-o",
+      ]
     guard !paths.isEmpty,
       let result = try? await Subprocess.run(
         "/usr/bin/find",
-        paths + [
+        paths + prune + [
           "-type", "f", "!", "-name", "._*", "-exec", "/usr/bin/stat", "-f", "%z %N", "{}", "+",
         ],
         captures: true, environment: utf8Environment, quality: .userInitiated, stopsOnCancel: true)

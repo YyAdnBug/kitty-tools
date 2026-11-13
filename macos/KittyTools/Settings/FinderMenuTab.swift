@@ -3,6 +3,7 @@
 //   「去打开…」；「收进一个子菜单」（Prefs.finderMenuGrouped，默认关）（拍板 D3：直接到 系统设置 › 通用 › 登录项与扩展）。15.0、15.1 的系统设置里没有扩展的入口，那两版上给一条
 //   终端命令和「拷贝命令」（不替用户跑）。页脚说在哪右键、哪里不出现。
 // 「新建文件」——右键里显示不显示、模板文件夹一行 +「在访达中显示」，页脚说菜单里有什么、建好后怎样。
+// 「压缩和解压」里另有一行「压缩时跳过」（2026-11-13 拍板 Z1，Prefs.finderCompressSkip）。
 // 「拷贝」「整理文件」「压缩和解压」「隐藏、哈希、删除」——每一项一个开关（FinderMenuItem，2026-11-08 右键扩充拍板 A2；同几家成熟产品每项能单独关），页脚说做法。
 // 「「移动到」「复制到」的常用文件夹」——Prefs.finderTransferFolders（~ 开头的写法，默认桌面、文稿、下载）：加、移除。
 // 「在 App 中打开」——访达右键里列哪几个 App（菜单项照访达自己的写法「在“终端”中打开」）（Prefs.finderOpenWithApps，默认只有终端）：加（正在运行的 / 从「应用程序」里选）、移除；
@@ -22,6 +23,7 @@ struct FinderMenuTab: View {
   @State private var selection: String?
   @State private var copied = false
   @AppStorage(Prefs.finderMenuGrouped) private var grouped = false
+  @AppStorage(Prefs.finderCompressSkip) private var compressSkip = ""
 
   var body: some View {
     // 从系统设置打开扩展回来，设置窗重新当 key 时刷新那一行（同程序坞预览页的授权）
@@ -91,13 +93,29 @@ struct FinderMenuTab: View {
       .gated(by: .finderMenu)
       Section {
         ItemToggle(.compress)
+        // 压缩时另外跳过的名字（2026-11-13 拍板 Z1 Z2）：一行字，逗号隔开；带「/」的不认，下面橙字列出来
+        LabeledContent {
+          TextField("压缩时跳过", text: $compressSkip, prompt: Text("node_modules, .git, *.log"))
+            .textFieldStyle(.roundedBorder)
+            .labelsHidden()
+            .frame(maxWidth: 220)
+        } label: {
+          Text("压缩时跳过")
+          Text("名字用逗号隔开，* 代表任意几个字；文件夹里任意一层叫这个名字的都不压进去，选中的那几样自己照压")
+        }
+        let rejected = Archives.rejectedSkipNames(compressSkip)
+        if !rejected.isEmpty {
+          Text("只认名字、不认路径，这几条不算：" + rejected.joined(separator: "、"))
+            .font(.subheadline)
+            .foregroundStyle(.orange)
+        }
         ItemToggle(.extract)
         ItemToggle(.fixNames)
       } header: {
         Text("压缩和解压")
       } footer: {
         SectionFootnote(
-          "压缩包放在旁边，重名的自动加「 2」；zip 里的中文名到别的系统上解开也不乱码，也不夹带 Mac 的隐藏文件。解压时只有一样东西就直接放在包旁边，几样就放进和包同名的文件夹；别的系统打的 zip，中文名也解得对。修复乱码文件名之后，刘海岛上能撤销。包里不带访达的标签、替身和自定义图标，要在 Mac 之间原样传，用访达自带的「压缩」。"
+          "压缩包放在旁边，重名的自动加「 2」；zip 里的中文名到别的系统上解开也不乱码，也不夹带 Mac 的隐藏文件（.DS_Store、._*、__MACOSX 总会跳过；只压一个 App 这类包时不按「压缩时跳过」跳，跳了签名会坏）。解压时只有一样东西就直接放在包旁边，几样就放进和包同名的文件夹；别的系统打的 zip，中文名也解得对。修复乱码文件名之后，刘海岛上能撤销。包里不带访达的标签、替身和自定义图标，要在 Mac 之间原样传，用访达自带的「压缩」。"
         )
       }
       .gated(by: .finderMenu)

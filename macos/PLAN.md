@@ -1195,7 +1195,14 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
       时候每 0.25 秒给进程号和标准错误新写完的几行）。实测：tar -v 开始一个文件时先写「a 名字」、做完才补换行；同一个卷上 ditto
       是克隆、只报「hardlinked 名字」；du、tar -v 在没有 UTF-8 locale 时把中文名打成「?」「\345…」，要给它们设 LC_ALL；内核报的
       打开方式 FREAD = 1、FWRITE = 2；出错原因只看「tar:」「ditto:」开头的行（-v 的行里有文件名）。第六轮评审查出了这几处。
-    - 最早拍板里「不做」的压缩解压、显示隐藏文件、哈希，由这次扩充改成了做；文件夹图标、启动器里对访达选中的文件做事仍不做。
+    - 最早拍板里「不做」的压缩解压、显示隐藏文件、哈希，由这次扩充改成了做；文件夹图标、启动器里对访达选中的文件做事仍不做。- **压缩时跳过**（2026-11-13，拍板页 https://claude.ai/artifact/DEKeRvQeZR3VxkVA9Bx2Fr Z1–Z5，用户「全部按推荐」）：设置 › 访达右键
+  「压缩和解压」一行「压缩时跳过」（`Prefs.finderCompressSkip`，默认空，注册了默认值、跟着导出和同步）。逗号隔开（全角半角），
+  只认名字、* ? 通配（交给 tar 的 `--exclude`，任意一层都跳，zip / 7z 都管）；带「/」的不收、橙字列出来（`Archives.skipNames` /
+  `rejectedSkipNames`，最多 50 条）；选中的那几样自己不跳过（`effectiveSkip`：对上它们名字的条目这一次整条不用）；只压一个包走
+  ditto 时不跳（会弄坏签名）；进度的总大小同样剪掉（`ByteMeter.sizes(of:skip:)`，find 的 -prune）；解压不受影响。不做：压成 RAR
+  （系统的 libarchive 只读不写 RAR，要装 WinRAR 的命令行）、「这一次不跳过」。单测 `ArchivesTests.skipNames` /
+  `skipWhileCompressing`（真压 zip、7z 列包里的条目）。
+
 ### 截图识别元素（下一版，2026-11-08）
 
 - 用户转来的需求：截图框选时鼠标移到侧栏、工具栏、列表、卡片、按钮上就框出那一块，单击截下；问能不能做、能不能对齐市面上的。

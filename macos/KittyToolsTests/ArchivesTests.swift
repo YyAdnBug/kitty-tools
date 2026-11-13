@@ -103,6 +103,66 @@ import Testing
     #expect(try names(in: root) == ["资料", "资料 2", "资料.zip"])
   }
 
+  /// 压缩时跳过（2026-11-13 拍板 Z1 Z2）：逗号（全角半角）隔开、去空白去重、带「/」的不收；* ? 通配；选中的那一样自己不跳过
+  @Test func skipNames() {
+    #expect(
+      Archives.skipNames(" node_modules, .git，*.log ,, .git") == ["node_modules", ".git", "*.log"])
+    #expect(Archives.skipNames("build/out, a") == ["a"])
+    #expect(Archives.rejectedSkipNames("build/out, a, /tmp") == ["build/out", "/tmp"])
+    #expect(
+      Archives.skipNames(
+        String(repeating: "a,", count: 80).enumerated().map { "\($0.offset)" }.joined(
+          separator: ",")
+      ).count == 50)
+    #expect(Archives.matches("*.log", "a.log") && !Archives.matches("*.log", "a.logs"))
+    #expect(
+      Archives.matches("node_modules", "node_modules") && !Archives.matches("node", "node_modules"))
+    #expect(Archives.matches("?.txt", "a.txt") && !Archives.matches("?.txt", "ab.txt"))
+    #expect(Archives.matches("a*b*c", "aXXbYc") && !Archives.matches("a*b*c", "aXXbY"))
+    #expect(Archives.matches("*", "") && !Archives.matches("Log", "log"))
+    let picked = [URL(filePath: "/x/node_modules"), URL(filePath: "/x/app")]
+    #expect(Archives.effectiveSkip(["node_modules", "*.log"], items: picked) == ["*.log"])
+    let arguments = Archives.compressArguments(
+      picked, format: .zip, to: URL(filePath: "/x/归档.zip"), skip: ["*.log"])
+    #expect(
+      arguments.contains("*.log")
+        && arguments[arguments.firstIndex(of: "*.log")! - 1] == "--exclude")
+  }
+
+  /// 真压一遍：任意一层叫这个名字的都不进包，进度的总大小也不算它们；选中的那一样叫这个名字时照压
+  @Test func skipWhileCompressing() async throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let project = root.appending(path: "项目")
+    try write("main", to: project.appending(path: "src/main.js"))
+    try write(
+      String(repeating: "x", count: 1000), to: project.appending(path: "node_modules/a/b.js"))
+    try write("log", to: project.appending(path: "src/run.log"))
+    let skip = Archives.effectiveSkip(["node_modules", "*.log"], items: [project])
+    for format in [Archives.Format.zip, .sevenZip] {
+      let packed = await Archives.pack(
+        [project], format: format, to: root.appending(path: "项目.\(format.rawValue)"), skip: skip)
+      let archive = try #require(packed.url)
+      let listing = try await Subprocess.run(
+        "/usr/bin/tar", ["-tf", archive.path(percentEncoded: false)], captures: true,
+        environment: ByteMeter.utf8Environment)
+      #expect(listing.output.contains("项目/src/main.js"), "\(format)")
+      #expect(
+        !listing.output.contains("node_modules") && !listing.output.contains("run.log"), "\(format)"
+      )
+    }
+    #expect(await ByteMeter.sizes(of: [project], skip: skip) == [4])
+    // 选中的就是 node_modules：这一次不跳它，整个压进去
+    let modules = project.appending(path: "node_modules")
+    let own = Archives.effectiveSkip(["node_modules"], items: [modules])
+    let packed = await Archives.pack(
+      [modules], format: .zip, to: root.appending(path: "node_modules.zip"), skip: own)
+    let whole = try #require(packed.url)
+    let entries = try #require(ZipNames.entries(of: whole))
+    #expect(
+      entries.map { String(decoding: $0.name, as: UTF8.self) }.contains("node_modules/a/b.js"))
+  }
+
   /// 7z：两样东西打成「归档」，解回来放进和包同名的文件夹
   @Test func sevenZipRoundTrip() async throws {
     let root = try makeRoot()

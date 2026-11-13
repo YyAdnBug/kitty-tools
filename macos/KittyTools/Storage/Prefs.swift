@@ -383,6 +383,9 @@ enum Prefs {
   /// 访达右键把我们的项都收进一个「Kitty Tools ▸」子菜单（默认关、平铺在第一层；设置 › 访达右键，2026-11-08 用户同意的建议）。
   /// 扩展读同一个键，键名和默认值在 KittyToolsFinder/FinderMenu 里抄了一份
   nonisolated static let finderMenuGrouped = "finderMenuGrouped"
+  /// 访达右键压缩时另外跳过的名字（设置 › 访达右键「压缩时跳过」，2026-11-13 拍板 Z1）：逗号隔开，* ? 通配，只认名字不认路径，
+  /// 默认空 = 和原来一样（Mac 杂文件照旧总跳过）。只有 App 读，扩展不读；注册了默认值，跟着导出、同步（Z4）
+  nonisolated static let finderCompressSkip = "finderCompressSkip"
   /// 访达右键里每一项显示不显示：键是「finderMenu<名字>」，见 FinderMenu/FinderMenuItem（默认值按项，下面 defaults 里一起注册）。
   /// 访达右键「移动到」「复制到」的常用文件夹（~ 开头的写法；设置 › 访达右键，没存过是桌面、文稿、下载）。这台电脑自己的、
   /// **不注册默认值**（同截图的存储文件夹：别人给的设置文件不该能往右键菜单里加一个文件夹）。扩展读同一个键（键名和默认值
@@ -563,6 +566,7 @@ enum Prefs {
       notesDeckOverFullScreen: false,
       notesDeckNoteSize: NoteDeckOptions.NoteSize.medium.rawValue,
       finderMenuGrouped: false,
+      finderCompressSkip: "",
       islandActionOrder: "",
       islandActionsOff: "",
       islandShowsHistory: true,
