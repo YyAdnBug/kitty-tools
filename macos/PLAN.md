@@ -820,6 +820,12 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
   会话按整个选区算）；② `ScrollCapture` 的领先上限 `room`、`.lost` 的退让量、光标落点（`aimAtBand` / 纯函数 `bandRect`）
   全按这一块算；③ 单测 `ScrollStitcherTests.reportsTheBlockThatActuallyMoves` / `bandIgnoresIsolatedChangedRows`、
   `ScrollSpeedTests.leadIsCappedAtHalfTheMovingBlock` / `bandRectFollowsTheMovingBlock`。
+- 验证（2026-11-13）：整包 `xcodebuild test` 在本机跑不了（分支要 macOS 27 SDK，且 Swift 6.3.3 前端在
+  `Notes/NoteDeckPanel.swift` 上断言崩溃 `getConcrete at ProtocolConformanceRef.h:126`——把这次改的两个文件退回基线再编，
+  崩在同一处，是工具链不是这块代码）。改用 `macos/build/research/scroll-band-2026-11-13/run-tests.sh`：把改动碰到的代码
+  按函数名从源文件逐字抽成两个 SwiftPM 小包跑真单测，拼接器 **19 条**、纯函数（`room` / `bandRect` / `velocity` /
+  `calibrated` / `tickPoints`）**5 条**全过。顺带修掉测试里一处编不过的异构数组字面量（`[3, 300..<320, 590]`，`89d13fba`）。
+  还没有机器验证的是自动滚动的实际行为（`aimAtBand` 真把光标挪进那块、`.lost` 的退让量），要真机手测。
 - 已知：选区里静止的部分有字时，一次滚出这块会被 `stillShare` 先当成「画面没动」（手动模式下什么都不发生、自动模式
   3 帧后报「已经滚到底了」），不硬接；节奏改成按这一块之后基本碰不到，没另外改（离线验证里锁着「不硬接」）。
   量出来的这块只短不长（留白行不算变过），短一点只是滚得更稳。手测 HANDTEST「长截图页面里的小滚动区」。
