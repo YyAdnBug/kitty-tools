@@ -525,6 +525,10 @@ internal static class SettingsService
 
     public static bool IsNew { get; private set; }
 
+    /// <summary>这次启动是新装（或设置文件坏了重来）：Save 不清它，欢迎引导和「上次运行的版本」都看它（R69：
+    /// 启动时 WhatsNewHost.Adopt、示例便签都会先 Save，IsNew 到 ShellRuntime 看的时候已经是 false）。</summary>
+    public static bool FirstRun { get; private set; }
+
     public static event Action? Changed;
 
     /// <summary>当前在不在 UI 线程上（没有 dispatcher 时当作在：Load 之前的调用都发生在启动线程上）。</summary>
@@ -542,6 +546,7 @@ internal static class SettingsService
                 {
                     _current = new Settings();
                     IsNew = true;
+                    FirstRun = true;
                     SettingsDefaults.Apply(_current);
                     // 新装只开剪贴板、启动器、翻译、截图（PLAN-v16 G2，同 mac seedNewInstall）：默认值不变，把各个开关明写进设置。
                     // 测试档要 KITTY_SEED_FEATURES=1 才写（自检、截图的新档照旧全开）。
@@ -581,6 +586,7 @@ internal static class SettingsService
             catch (Exception ex)
             {
                 IsNew = true;
+                FirstRun = true;
                 _current = new Settings();
                 SettingsDefaults.Apply(_current);
                 Log.Error("settings.load-failed", ex);

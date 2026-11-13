@@ -834,6 +834,24 @@ internal sealed class ShellRuntime
             {
                 try
                 {
+                    // R69：新档（build-release.ps1 每次删掉 smoke 档）第一次打开一定弹欢迎引导。
+                    if (SettingsService.FirstRun)
+                    {
+                        for (var waited = 0; waited < 5000 && !SettingsWindow.FirstRunOnboardingShown; waited += 100)
+                        {
+                            await Task.Delay(100);
+                        }
+
+                        Log.Info($"smoke.onboarding shown={SettingsWindow.FirstRunOnboardingShown}");
+                        if (!SettingsWindow.FirstRunOnboardingShown)
+                        {
+                            Environment.Exit(3);
+                        }
+
+                        _settingsWindow?.CloseOnboardingForSmoke();
+                        await Task.Delay(300);
+                    }
+
                     Log.Info("smoke.settings");
                     ShowSettings(welcome: false);
                     foreach (var page in new[] { "general", "clipboard", "launcher", "translate", "screenshot", "record", "hotkeys", "about" })
@@ -874,8 +892,9 @@ internal sealed class ShellRuntime
         var updated = Environment.GetCommandLineArgs().Contains("--updated", StringComparer.OrdinalIgnoreCase);
         DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() => AutoUpdater.AfterLaunch(updated));
 
-        if (SettingsService.IsNew)
+        if (SettingsService.FirstRun)
         {
+            Log.Info("onboarding.shown");
             ShowSettings(welcome: true);
         }
     }

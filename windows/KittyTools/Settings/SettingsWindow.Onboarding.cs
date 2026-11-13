@@ -26,6 +26,14 @@ internal sealed partial class SettingsWindow
 
     private bool _onboardingOpen;
 
+    private ContentDialog? _onboardingDialog;
+
+    /// <summary>首次的欢迎引导真的弹出来过（R69：--smoke 在新档上查它）。</summary>
+    public static bool FirstRunOnboardingShown { get; private set; }
+
+    /// <summary>--smoke 查完就关掉引导，接着走设置七页。</summary>
+    public void CloseOnboardingForSmoke() => _onboardingDialog?.Hide();
+
     /// <summary>设置窗排好版（有 XamlRoot）之后再弹：首次安装时 BuildPage 跑在窗口显示出来之前。</summary>
     private void ShowOnboardingWhenReady(bool firstRun)
     {
@@ -110,6 +118,12 @@ internal sealed partial class SettingsWindow
         var result = ContentDialogResult.None;
         try
         {
+            _onboardingDialog = dialog;
+            if (firstRun)
+            {
+                FirstRunOnboardingShown = true;
+            }
+
             result = await dialog.ShowAsync();
         }
         catch (Exception ex)
@@ -125,6 +139,7 @@ internal sealed partial class SettingsWindow
             }
 
             _onboardingOpen = false;
+            _onboardingDialog = null;
         }
 
         if (result == ContentDialogResult.Primary && autostart.IsChecked == true && !Autostart.IsEnabled())

@@ -26,7 +26,7 @@ internal static class WhatsNewHost
     public static void Adopt()
     {
         var settings = SettingsService.Current;
-        var last = SettingsService.IsNew ? null : settings.LastRunVersion ?? "0.0.0";
+        var last = SettingsService.FirstRun ? null : settings.LastRunVersion ?? "0.0.0";
         // 测试档：KITTY_WHATS_NEW_LAST 当成上次运行的版本（新档也算升级上来的）
         if (Paths.IsTestProfile && Environment.GetEnvironmentVariable("KITTY_WHATS_NEW_LAST") is { Length: > 0 } simulated)
         {

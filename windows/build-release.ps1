@@ -122,6 +122,11 @@ foreach ($target in $targets) {
         $smokeExe = Join-Path $smokeRoot 'Kitty Tools/KittyTools.exe'
         $previousProfile = $env:KITTY_PROBE_PROFILE
         $env:KITTY_PROBE_PROFILE = 'smoke'
+        # R69：每次都是新档，--smoke 顺带查新装时欢迎引导确实弹出来（exit 3 = 没弹）。
+        $smokeData = Join-Path $env:LOCALAPPDATA 'KittyTools.Probe.smoke'
+        if (Test-Path $smokeData) {
+            Remove-Item $smokeData -Recurse -Force
+        }
         try {
             $smoke = Start-Process -FilePath $smokeExe -ArgumentList '--smoke' -PassThru -Wait
             if ($smoke.ExitCode -ne 0) {
