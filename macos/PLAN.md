@@ -1327,6 +1327,12 @@ Alfred 的 Related Apps、BetterTouchTool 按 App 停用，调研和测开销的
 
 > 2026-10-28（第三轮体检第 7 批）：2026-10-22 及更早的进度记录、做完的「已知的小毛病」、旧的「现状」「下一步」原样挪到 `docs/archive/PLAN-batches-2026-10.md` §12；AGENTS.md「项目概述」原来的长段原样挪到本节末尾「各族进度摘要（原 AGENTS 项目概述）」。
 
+**2026-11-13：0.9.0 准备中**（会话工作树 `claude/release-0-9-0-3adad5`，从 macos `632e5c4e`）：发版拍板页
+https://claude.ai/artifact/YTu1NosyLqkNFq9PDPsQZT 和「功能改插件与压缩跳过」https://claude.ai/artifact/DEKeRvQeZR3VxkVA9Bx2Fr
+都「全部按推荐」。island-atoll-wip 快进、plugins-wip 拣在上面（顺手清掉 7806b585 误提交进本文件的冲突标记），再加七样改插件、
+压缩时跳过、0.9.0 的版本号 / 更新日志 / 「新」（plugins、island-notices）。没并回 macos、没 push、没打 tag；待用候选包走
+0.9.0 拍板页 D11 的必走清单，用户说「发」再快进 macos、发布。
+
 **2026-11-12：插件与保持唤醒**（§10 同名一节）：拍板页「全部按推荐」；分支 `plugins-wip`（从 macos `632e5c4e`），
 插件页 + 保持唤醒做完，全量单测过；没并回 macos、没 push、没写更新日志（下一版发版时写，`WhatsNew` 也那时挑）。
 待手测 HANDTEST「插件与保持唤醒」。#14 平滑滚动还没开始。

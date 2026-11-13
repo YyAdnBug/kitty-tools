@@ -15,6 +15,7 @@ struct IslandTab: View {
   @AppStorage(Prefs.islandNoticeBattery) private var noticeBattery = false
   @AppStorage(Prefs.islandNoticeHeadphones) private var noticeHeadphones = false
   @AppStorage(Prefs.islandNoticeNetwork) private var noticeNetwork = false
+  @Environment(SettingsNavigation.self) private var navigation: SettingsNavigation?
 
   var body: some View {
     let actions = HotKeyAction.islandOrder(order)
@@ -72,13 +73,17 @@ struct IslandTab: View {
           Text("断了或者好了 3 秒以上才说，醒来时闪一下不算")
         }
       } header: {
-        Text("系统提示")
+        NewTitle("系统提示", page: .island, fresh: navigation?.fresh ?? [])
       } footer: {
         SectionFootnote("有变化时在刘海岛上弹一下，同别的提示。没打开的不监听，也不要任何授权。")
       }
       PluginRemoveSection(plugin: .island)
     }
     .formStyle(.grouped)
+    // 0.9.0 的「新」挂在「系统提示」（WhatsNew 的 island-notices）：拨过其中一个开关才算看过
+    .onChange(of: [noticePower, noticeBattery, noticeHeadphones, noticeNetwork]) {
+      WhatsNew.touch(section: "系统提示", of: .island)
+    }
   }
 
   /// 那一张上出不出这一个：关掉的存成一行一个，按 islandShortcuts 的先后写（同步按字节比，别每次换个排法）

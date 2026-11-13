@@ -127,6 +127,8 @@ private struct PluginCard: View {
     // 合起来读：名字、已添加、一句话、授权、后台都在（拍板 A2：添加之前就听得到要什么授权）；按钮并进来后用命名动作
     .accessibilityElement(children: .combine)
     .accessibilityAction(named: isAdded ? "移除" : "添加") { isAdded.toggle() }
+    // 0.9.0 的「新」挂在通用页「功能」那一行（WhatsNew 的 plugins）：添加 / 移除过一个插件就算看过
+    .onChange(of: isAdded) { WhatsNew.touch(section: "功能", of: .general) }
   }
 }
 
