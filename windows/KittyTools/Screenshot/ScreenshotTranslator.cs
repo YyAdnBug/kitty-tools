@@ -1,7 +1,8 @@
 // 截图翻译把译文盖回截图上（PLAN-v16 S1 / S1b，mac AppDelegate.overlayTranslate + ScreenshotOverlay.render）：
-// 选区的像素 → 识字（带词框）→ 按段分好 → 逐段翻译（整段原文定一次方向，每段按顺序试启用的服务；纯符号段不发请求）
+// 选区的像素 → 识字（带词框）→ 按段分好 → 翻译（整段原文定一次方向，每段按顺序试启用的服务；纯符号段不发请求；
+// PLAN-v18 S11 / mac a428a86c：最多 3 段同时在翻，按段的顺序拼回，「翻译中 i/n」数的是翻完了几段）
 // → Core 的 ScreenshotOverlay.Compose 量基线 / 代码块、排版、去字 → Win2D 按原文的字色把译文画上去（代码词在新位置重画底框）。
-// 识字、合成、画字都在后台线程（Win2D 的共享设备不挑线程）；取消点在每段开头，取消后不再发新请求。
+// 识字、合成、画字都在后台线程（Win2D 的共享设备不挑线程）；取消点在每段开头，取消后不再发新请求；一段翻不成，别的段也停。
 // 原文照截图翻译那条路记进剪贴板历史（开了「复制识别出的原文」就当复制一次）；翻译历史记一条整段原文 + 整段译文（不记碎片）。
 using KittyTools.Core;
 using KittyTools.Infrastructure;
@@ -17,6 +18,9 @@ internal static class ScreenshotTranslator
 {
     private const string BodyFont = "Segoe UI";
     private const string CodeFont = "Cascadia Mono, Consolas";
+
+    /// <summary>同时在翻的段数（同 mac：免费服务会限流，不全放出去）。</summary>
+    private const int MaxConcurrent = 3;
 
     /// <summary>翻译失败、取消之外的「做不了」：消息直接给遮罩上的提示。</summary>
     internal sealed class Failure(string message) : Exception(message);
@@ -68,52 +72,86 @@ internal static class ScreenshotTranslator
         }
 
         var plan = TranslateCoordinator.PlanRequest(source);
-        var results = new List<string>(segments.Count);
-        TranslateServiceConfig? used = null;
-        for (var index = 0; index < segments.Count; index++)
+        var results = new string[segments.Count];
+        var usedAt = new TranslateServiceConfig?[segments.Count];
+        var finished = 0;
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        using var slots = new SemaphoreSlim(MaxConcurrent);
+        var token = stop.Token;
+
+        async Task TranslateOneAsync(int index)
         {
-            cancellationToken.ThrowIfCancellationRequested();
             var segment = segments[index];
             // 纯符号段不发请求（有道这类接口会回错误码，一段失败整张图就白翻了），原样占位；覆盖那一步也会跳过它
             if (!ScreenshotOverlay.HasTranslatableContent(segment.Text))
             {
-                results.Add(segment.Text);
-                continue;
+                results[index] = segment.Text;
+                return;
             }
 
-            progress(index + 1, segments.Count);
-            var request = new TranslateRequest(segment.Text, plan.From, plan.To);
-            Exception failure = new TranslateError("翻译失败");
-            string? translated = null;
-            foreach (var service in services)
+            await slots.WaitAsync(token);
+            try
             {
-                try
+                token.ThrowIfCancellationRequested();
+                var request = new TranslateRequest(segment.Text, plan.From, plan.To);
+                Exception failure = new TranslateError("翻译失败");
+                foreach (var service in services)
                 {
-                    var latest = string.Empty;
-                    await foreach (var piece in TranslateServiceStore.Translate(service, request, cancellationToken).WithCancellation(cancellationToken))
+                    try
                     {
-                        latest = piece;
-                    }
+                        var latest = string.Empty;
+                        await foreach (var piece in TranslateServiceStore.Translate(service, request, token).WithCancellation(token))
+                        {
+                            latest = piece;
+                        }
 
-                    cancellationToken.ThrowIfCancellationRequested();
-                    if (latest.Trim().Length == 0)
+                        token.ThrowIfCancellationRequested();
+                        if (latest.Trim().Length == 0)
+                        {
+                            throw TranslateError.EmptyResult;
+                        }
+
+                        results[index] = latest;
+                        usedAt[index] = service;
+                        progress(Interlocked.Increment(ref finished), segments.Count);
+                        return;
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
                     {
-                        throw TranslateError.EmptyResult;
+                        Log.Info($"screenshot.overlay-next kind={service.Kind} error={(ex as TranslateError)?.Kind.ToString() ?? ex.GetType().Name}");
+                        failure = ex;
                     }
+                }
 
-                    translated = latest;
-                    used ??= service;
-                    break;
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    Log.Info($"screenshot.overlay-next kind={service.Kind} error={(ex as TranslateError)?.Kind.ToString() ?? ex.GetType().Name}");
-                    failure = ex;
-                }
+                // 这一段哪个服务都没翻成：别的段也不翻了（整张图要么全盖、要么不盖）
+                stop.Cancel();
+                throw failure;
+            }
+            finally
+            {
+                slots.Release();
+            }
+        }
+
+        progress(0, segments.Count);
+        var tasks = Enumerable.Range(0, segments.Count).Select(TranslateOneAsync).ToList();
+        try
+        {
+            await Task.WhenAll(tasks);
+        }
+        catch
+        {
+            // 报第一段真的出错的（不是被叫停的那几段）；用户取消照旧是取消
+            cancellationToken.ThrowIfCancellationRequested();
+            if (tasks.FirstOrDefault(task => task.IsFaulted)?.Exception?.InnerException is { } first)
+            {
+                throw first;
             }
 
-            results.Add(translated ?? throw failure);
+            throw;
         }
+
+        var used = usedAt.FirstOrDefault(service => service is not null);
 
         // 和浮窗那条一样记一份翻译历史（整段原文 + 整段译文）
         var settings = SettingsService.Current;
@@ -123,7 +161,7 @@ internal static class ScreenshotTranslator
                 plan.Text, plan.From?.Code(), plan.To.Code(), string.Join("\n\n", results), used.Name, settings.TranslateHistoryLimit);
         }
 
-        return results;
+        return results.ToList();
     }
 
     /// <summary>合成：去字（Core）+ 画字（Win2D）。坐标：Core 是左下原点，Win2D 是左上原点，y 换一下。</summary>
