@@ -442,13 +442,17 @@ internal static partial class ReminderCenter
         {
             ReminderGlow.Dismiss();
             NoticeHost.Unpin();
-            ReminderScreen.Show(
-                new ReminderScreen.Content(
-                    notice.Title, notice.Detail, fired.FirstOrDefault(reminder => reminder.Symbol.Length > 0)?.Symbol ?? string.Empty,
-                    ReminderAlerts.FullSeconds(fired), ReminderAlerts.SnoozeChoices(SnoozeMinutes), _note),
-                Acknowledge,
-                minutes => Snooze(minutes));
-            return;
+            if (ReminderScreen.Show(
+                    new ReminderScreen.Content(
+                        notice.Title, notice.Detail, fired.FirstOrDefault(reminder => reminder.Symbol.Length > 0)?.Symbol ?? string.Empty,
+                        ReminderAlerts.FullSeconds(fired), ReminderAlerts.SnoozeChoices(SnoozeMinutes), _note),
+                    Acknowledge,
+                    minutes => Snooze(minutes)))
+            {
+                return;
+            }
+
+            // 全屏没建起来（R78）：退回底部的轻提醒。
         }
 
         ReminderScreen.Dismiss();

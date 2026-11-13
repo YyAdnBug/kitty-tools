@@ -398,6 +398,32 @@ internal sealed class ShellRuntime
                 () => RecordingHud.Show(new PixelBounds(200, 200, 1000, 700)));
         }
 
+        // R76 自检：「卸载并删除数据」之前的那一步停完之后，数据目录里还有没有被自己占着的文件（只看能不能独占打开，不真删）。
+        // 结果写 %TEMP%\kitty-uninstall-probe.txt（日志那时已经关了），退出码 0 = 全放开了、4 = 还有占着的。
+        if (Environment.GetCommandLineArgs().Contains("--uninstall-probe", StringComparer.OrdinalIgnoreCase))
+        {
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(async () =>
+            {
+                await Task.Delay(3000);
+                PrepareForUninstall();
+                var locked = new List<string>();
+                foreach (var file in Directory.EnumerateFiles(Paths.DataDirectory, "*", SearchOption.AllDirectories))
+                {
+                    try
+                    {
+                        using var stream = new FileStream(file, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+                    }
+                    catch (IOException)
+                    {
+                        locked.Add(Path.GetRelativePath(Paths.DataDirectory, file));
+                    }
+                }
+
+                File.WriteAllText(Path.Combine(Path.GetTempPath(), "kitty-uninstall-probe.txt"), $"locked={locked.Count}\n" + string.Join("\n", locked));
+                Environment.Exit(locked.Count == 0 ? 0 : 4);
+            });
+        }
+
         // 截图自检用：打开设置、弹出卸载对话框（REVIEW R30 补第六版截图；只看，不点）。
         if (Environment.GetCommandLineArgs().Contains("--uninstall-dialog", StringComparer.OrdinalIgnoreCase))
         {
@@ -1152,6 +1178,10 @@ internal sealed class ShellRuntime
         Log.Info("uninstall.prepare");
         Clipboard?.Stop();
         Clipboard = null;
+        // R76：便签库（连接和 -wal 还开着）、提醒也停掉，不然回收站挪不动整个数据目录（同当年 R25）。
+        NoteStore.Instance?.Flush();
+        NoteStore.Instance?.Dispose();
+        ReminderCenter.Stop();
         Syncer.StopAll();
         UpdateService.Configure(false);
         HotKeys.UnregisterAll();

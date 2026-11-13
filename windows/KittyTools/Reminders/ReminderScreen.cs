@@ -62,8 +62,8 @@ internal static class ReminderScreen
 
     public static bool IsShowing => Screens.Count > 0;
 
-    /// <summary>出来；已经在了就原地换内容（时长和那 1 秒都从这一刻重新数）。</summary>
-    public static void Show(Content content, Action onDone, Action<int> onSnooze)
+    /// <summary>出来；已经在了就原地换内容（时长和那 1 秒都从这一刻重新数）。建不出来返回 false（已建的都撤掉，调用方退回底部的轻提醒）。</summary>
+    public static bool Show(Content content, Action onDone, Action<int> onSnooze)
     {
         _onDone = onDone;
         _onSnooze = onSnooze;
@@ -71,7 +71,7 @@ internal static class ReminderScreen
         if (IsShowing && _content is { } shown && shown with { Snoozes = content.Snoozes } == content &&
             shown.Snoozes.SequenceEqual(content.Snoozes))
         {
-            return;
+            return true;
         }
 
         var replacing = IsShowing;
@@ -115,7 +115,10 @@ internal static class ReminderScreen
         }
         catch (Exception ex)
         {
+            // R78：建到一半失败，先建好的压暗层留在屏上吃点击，「点了才收」的提醒没人收得掉：都撤掉，退回轻提醒。
             Log.Error("reminder.screen-failed", ex);
+            Close();
+            return false;
         }
 
         _countdown?.Stop();
@@ -125,6 +128,7 @@ internal static class ReminderScreen
         _countdown.Tick += (_, _) => Tick();
         _countdown.Start();
         Log.Info($"reminder.screen-show screens={Screens.Count} seconds={content.Seconds} replaced={replacing}");
+        return true;
     }
 
     public static void Dismiss() => Close();
