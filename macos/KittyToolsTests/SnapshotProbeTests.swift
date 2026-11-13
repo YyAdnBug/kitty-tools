@@ -1081,6 +1081,45 @@ struct SnapshotProbeTests {
           showing: nil, geometry: notch, board: records, quickActions: quick,
           activities: [recording, compressing])),
       size: notch.windowSize, dark: false, to: "\(out)/island-board-activities.png")
+    // 正在播放（刘海岛扩展第 2 期）：耳朵上的封面 + 跳动条（在播 / 暂停）、点耳朵的播放卡片（有封面 / 没有封面也没有 App 图标）、
+    // 那一张最上面的一行（和录屏一起）。封面是画出来的一块渐变，不读用户的东西
+    let cover = NSImage(size: NSSize(width: 256, height: 256), flipped: false) { rect in
+      NSGradient(colors: [.systemPink, .systemOrange])?.draw(in: rect, angle: 45)
+      return true
+    }
+    func media(playing: Bool, artwork: NSImage?) -> Island.Activity {
+      let snapshot = NowPlayingSnapshot(
+        bundleID: "com.apple.Music", parentBundleID: nil, appName: "音乐",
+        title: "Right Now (Na Na Na)", artist: "Akon", album: "Freedom", duration: 240,
+        elapsed: 84, timestamp: .now, rate: playing ? 1 : 0, isPlaying: playing,
+        canPrevious: true, canNext: playing, artworkID: artwork == nil ? nil : "a",
+        artwork: nil)
+      return Island.Activity(
+        id: NowPlaying.activityID, kind: .media, title: snapshot.title, detail: snapshot.artist,
+        symbol: "music.note",
+        media: Island.Media(
+          snapshot: snapshot, artwork: artwork, appIcon: nil, send: { _ in }, open: {}))
+    }
+    for (name, playing) in [("island-wings-media", true), ("island-wings-media-paused", false)] {
+      try snapshot(
+        IslandView(
+          island: Island(
+            showing: nil, geometry: notch, activities: [media(playing: playing, artwork: cover)])),
+        size: notch.windowSize, dark: false, to: "\(out)/\(name).png")
+    }
+    for (name, art) in [("island-media-card", cover), ("island-media-card-bare", nil)] {
+      let island = Island(
+        showing: nil, geometry: notch, activities: [media(playing: art != nil, artwork: art)])
+      island.tapped()
+      try snapshot(
+        IslandView(island: island), size: notch.windowSize, dark: false, to: "\(out)/\(name).png")
+    }
+    try snapshot(
+      IslandView(
+        island: Island(
+          showing: nil, geometry: notch, board: records, quickActions: quick,
+          activities: [recording, media(playing: true, artwork: cover)])),
+      size: notch.windowSize, dark: false, to: "\(out)/island-board-media.png")
     // 黄色强调色：信息 / 进行中的底是强调色，上面的符号要换深色（Style.onBrand）才看得见——岛垫的圆底、自带圆底的各一张。
     // 只换内存里的颜色，不写偏好
     Accent.shared.select(.yellow, persists: false)

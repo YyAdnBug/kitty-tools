@@ -72,6 +72,18 @@ struct NowPlayingTests {
     #expect(decoded.artwork == nil)
     #expect(decoded.elapsed == nil)
     #expect(decoded.duration == 240)
+    // 网页能报离谱的时长和速率：时长、进度超过上限不要，速率夹住；显示的时间再兜一层（Int(Double) 越界会闪退）
+    var huge = snapshot()
+    huge.duration = 1e20
+    huge.elapsed = 1e19
+    huge.rate = 1e9
+    let clamped = try #require(NowPlaying.decode(try JSONEncoder().encode(huge)))
+    #expect(clamped.duration == nil && clamped.elapsed == nil)
+    #expect(clamped.rate == NowPlaying.maxRate)
+    #expect(IslandMediaCard.clock(1e20) == "99:59:59")
+    #expect(IslandMediaCard.clock(.infinity) == "0:00")
+    #expect(IslandMediaCard.clock(-5) == "0:00")
+    #expect(IslandMediaCard.clock(84) == "1:24")
     var empty = snapshot()
     empty.title = ""
     #expect(NowPlaying.decode(try JSONEncoder().encode(empty)) == nil)

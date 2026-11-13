@@ -22,6 +22,8 @@ import OSLog
   private var snapshot: NowPlayingSnapshot?
   /// 解好的封面（按编号）：同一首不重复解
   private var artwork: (id: String, image: NSImage)?
+  /// 放歌那个 App 的图标（按 bundle id 记一份）：没有封面时顶上
+  private var appIcon: (bundleID: String, image: NSImage?)?
   /// 从在播变成暂停的那一刻（一直没在播过的是 nil：一打开就是暂停着的不上耳朵）
   private var pausedSince: ContinuousClock.Instant?
   private var linger: Task<Void, Never>?
@@ -153,10 +155,21 @@ import OSLog
         id: Self.activityID, kind: .media, title: snapshot.title, detail: snapshot.artist,
         symbol: "music.note", tone: .info,
         media: Island.Media(
-          snapshot: snapshot, artwork: image, send: { [weak self] in self?.send($0) },
-          open: { [weak self] in self?.openApp() }),
+          snapshot: snapshot, artwork: image, appIcon: icon(for: snapshot),
+          send: { [weak self] in self?.send($0) }, open: { [weak self] in self?.openApp() }),
         onWings: Self.showsOnWings(
           isPlaying: snapshot.isPlaying, pausedFor: pausedSince.map { .now - $0 })))
+  }
+
+  /// 放歌那个 App 的图标（Safari 的报的是 WebKit 的进程，按上级 App 找）；找不到是 nil
+  private func icon(for snapshot: NowPlayingSnapshot) -> NSImage? {
+    let bundleID = snapshot.parentBundleID ?? snapshot.bundleID
+    if let appIcon, appIcon.bundleID == bundleID { return appIcon.image }
+    let image = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID).map {
+      NSWorkspace.shared.icon(forFile: $0.path(percentEncoded: false))
+    }
+    appIcon = (bundleID, image)
+    return image
   }
 
   // MARK: 按钮
@@ -165,11 +178,14 @@ import OSLog
     proxy()?.send(command.rawValue)
   }
 
-  /// 切到放歌的那个 App（Safari 的报的是 WebKit 的进程，按上级 App 找）
+  /// 切到放歌的那个 App（Safari 的报的是 WebKit 的进程，按上级 App 找）。岛是不激活本 App 的面板：后台调
+  /// NSRunningApplication.activate 系统可以不理、窗口关着时也叫不回窗口，所以同程序坞那几处走「打开这个 App」
   private func openApp() {
-    guard let snapshot else { return }
-    let bundleID = snapshot.parentBundleID ?? snapshot.bundleID
-    NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first?.activate()
+    guard let snapshot,
+      let url = NSWorkspace.shared.urlForApplication(
+        withBundleIdentifier: snapshot.parentBundleID ?? snapshot.bundleID)
+    else { return }
+    NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
   }
 
   // MARK: 纯函数（单测锁住）
@@ -192,7 +208,12 @@ import OSLog
     return max(position, 0)
   }
 
-  /// 解服务推来的 JSON：解不开的丢掉；字截短（标题、艺人最多 200 个字）、封面超过 1 MB 不要、时长进度不是有限的非负数不要
+  /// 时长、进度最多信这么多秒（约 116 天；网页能用 Media Session 报 1e20 这种，换成整数就闪退）、速率最多这么快
+  nonisolated static let maxSeconds: Double = 10_000_000
+  nonisolated static let maxRate: Double = 100
+
+  /// 解服务推来的 JSON：解不开的丢掉；字截短（标题、艺人最多 200 个字）、封面超过 1 MB 不要、时长进度不是
+  /// 0…maxSeconds 里的有限数不要、速率夹到 0…maxRate
   nonisolated static func decode(_ data: Data) -> NowPlayingSnapshot? {
     guard var snapshot = try? JSONDecoder().decode(NowPlayingSnapshot.self, from: data),
       !snapshot.title.isEmpty, !snapshot.bundleID.isEmpty
@@ -201,10 +222,12 @@ import OSLog
     snapshot.artist = snapshot.artist.map { String($0.prefix(200)) }
     snapshot.album = snapshot.album.map { String($0.prefix(200)) }
     if (snapshot.artwork?.count ?? 0) > 1 << 20 { snapshot.artwork = nil }
-    let valid = { (value: Double?) in value.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil } }
+    let valid = { (value: Double?) in
+      value.flatMap { $0.isFinite && $0 >= 0 && $0 <= maxSeconds ? $0 : nil }
+    }
     snapshot.duration = valid(snapshot.duration)
     snapshot.elapsed = valid(snapshot.elapsed)
-    snapshot.rate = valid(snapshot.rate) ?? 0
+    snapshot.rate = snapshot.rate.isFinite ? min(max(snapshot.rate, 0), maxRate) : 0
     return snapshot
   }
 }

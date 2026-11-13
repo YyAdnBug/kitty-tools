@@ -1228,6 +1228,11 @@ struct IslandView: View {
         IslandBoard(island: island)
           .measured { report($0) }
           .transition(appear)
+      } else if island.content != nil, let media = island.cardActivity?.media {
+        // 点耳朵展开的正在播放：播放卡片（IslandMedia.swift）；换歌、暂停原地换，不重新出场
+        IslandMediaCard(island: island, media: media)
+          .measured { report($0) }
+          .transition(appear)
       } else if let content = island.content {
         Group {
           if island.isExpanded {

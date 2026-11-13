@@ -8,6 +8,7 @@
 // 每秒在变的读数用 Ticker（图层滚数字，不用 numericText：每秒换一次要 7–15% CPU），只在耳朵露着时由 TimelineView 每秒推一次。
 // 正在播放（刘海岛扩展第 2 期，Shell/NowPlaying.swift）也是一个活动：类别最低（.media，有别的活动时耳朵上让给别的），
 // 带 media（封面、歌名、进度、发命令）；暂停一阵后不上耳朵（onWings），那一张里照列；不进菜单栏那一项。
+// 它的耳朵、卡片、那一张里的一行画法在 IslandMedia.swift。
 
 import SwiftUI
 
@@ -110,10 +111,11 @@ extension Island {
   /// 耳朵每侧多宽（拍板 B1：不超过 36 pt，免得盖住离刘海最近的菜单栏图标）
   static let wing: CGFloat = 36
 
-  /// 正在播放的活动带的东西（NowPlaying 给）：快照、解好的封面、发命令和切到那个 App
+  /// 正在播放的活动带的东西（NowPlaying 给）：快照、解好的封面、放歌那个 App 的图标（没有封面时顶上）、发命令和切到那个 App
   struct Media {
     var snapshot: NowPlayingSnapshot
     var artwork: NSImage?
+    var appIcon: NSImage?
     var send: (NowPlayingCommand) -> Void
     var open: () -> Void
   }
@@ -135,16 +137,26 @@ struct IslandWings: View {
     .frame(height: notchHeight)
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(
-      [activity.title, Island.Activity.reading(activity.trailing, now: .now)].compactMap { $0 }
-        .joined(separator: "，"))
+      [
+        activity.title, activity.media == nil ? nil : activity.detail,
+        Island.Activity.reading(activity.trailing, now: .now),
+      ].compactMap { $0 }.joined(separator: "，"))
   }
 
-  private var leading: some View {
-    IslandActivityMark(activity: activity, size: 12)
+  /// 正在播放：左耳封面（20 pt）、右耳跳动条（在播且速率 > 0 才动）。别的活动：记号和读数
+  @ViewBuilder private var leading: some View {
+    if let media = activity.media {
+      IslandMediaArt(media: media, size: 20)
+    } else {
+      IslandActivityMark(activity: activity, size: 12)
+    }
   }
 
   @ViewBuilder private var trailing: some View {
-    if activity.ticks {
+    if let media = activity.media {
+      IslandBars(
+        moving: media.snapshot.isPlaying && media.snapshot.rate > 0, color: NSColor(activity.tint))
+    } else if activity.ticks {
       // 只在耳朵露着时每秒推一次；Ticker 只换变了的那几位数字（图层动画，渲染服务做）
       TimelineView(.periodic(from: .now, by: 1)) { context in
         reading(Island.Activity.reading(activity.trailing, now: context.date) ?? "")

@@ -605,7 +605,13 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
     单测 `NowPlayingTests`（约定逐字一样、进度外推、上不上耳朵、收拾快照、先后）+ 按需的实机自检 `liveRoundTrip()`
     （`TEST_RUNNER_KITTY_LIVE_NOW_PLAYING=1`：测试宿主用 `MPNowPlayingInfoCenter` 不出声地挂成正在播放，经真的服务读回来、
     发「切换」收得到）。
-  - 第 2-2 批：耳朵上的封面 + 跳动条（图层动画）、点耳朵的播放卡片、那一张里的一行、设置那一组、截图自检。
+  - 第 2-2 批：`Shell/IslandMedia.swift`——耳朵上的封面（没有封面放 App 图标）+ 跳动条（`CABasicAnimation`，本进程不逐帧算；
+    只在在播且速率 > 0 时动，减弱动态效果时停在在播的静止样子）、点耳朵的播放卡片（封面点了切到那个 App：走
+    `NSWorkspace.openApplication`，岛不激活本 App、后台的 `activate()` 系统可以不理；进度只在卡片开着时每秒推一次；
+    不支持的上一首 / 下一首灰掉）、那一张里的一行；设置 › 刘海岛 最上面「正在播放」一组；刘海岛插件卡片的说明。
+    快照在收的时候把时长 / 进度夹到 1000 万秒以内、速率夹到 100 以内，显示的时间再夹到 99:59:59——网页用 Media Session
+    能报 1e20 这种时长，`Int(Double)` 越界会闪退（评审 1）。截图自检 island-wings-media（-paused）、island-media-card（-bare）、
+    island-board-media。
   - 第 2-3 批：退路（Music / Spotify 的分布式通知 + AppleScript，授权先不弹框地查、要弹由用户点）、HANDTEST 一节。
 
 ### 晾衣绳（第十族，0.7.0，2026-10-26 立项）
