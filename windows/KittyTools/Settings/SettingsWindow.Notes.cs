@@ -62,7 +62,7 @@ internal sealed partial class SettingsWindow
             }
         }
 
-        Deck(() => AddCombo("位置", "两块显示器相接的那条边不放，自动换到另一侧", new[] { "右边", "左边" },
+        Deck(() => AddCombo("位置", string.Empty, new[] { "右边", "左边" },
             settings.NotesDeckEdge == "left" ? 1 : 0, index => Save(() => settings.NotesDeckEdge = index == 1 ? "left" : "right")));
         var displays = Displays.All().Select(display => display.Name).ToList();
         if (displays.Count > 1)
@@ -129,7 +129,7 @@ internal sealed partial class SettingsWindow
 
         _content.Children.Add(SettingsUi.Footnote(
             "鼠标靠到屏幕边上的药丸就展开一列标签，点一张，便签在边上打开。按住 Alt 拖药丸可以换边、换高度。右键一张标签可以直接固定、换颜色、" +
-            "浮到屏幕上、归档、删除；右键「+」有新建便签、全部便签和设置。两块显示器相接的那条边不放，自动换到另一侧；不挡任务栏。打开的便签点别处就收起，" +
+            "浮到屏幕上、归档、删除；右键「+」有新建便签、全部便签和设置。不挡任务栏。打开的便签点别处就收起，" +
             "固定（Ctrl+P）之后不收。按住打开的便签顶上的空白处往外拖，它就浮在屏幕上、可以拉大小。浮着的便签一直在别的窗口上面；固定之后，重启还回到原处。"));
 
         // 数据（导出 / 导入不套开关）

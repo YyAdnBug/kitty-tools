@@ -267,53 +267,59 @@ public sealed class NoteDeckLayoutTests
         Assert.AreEqual(0, NoteDeckLayout.Placements(Array.Empty<NoteDeckScreen>(), left).Count);
     }
 
-    /// <summary>左右相接：相接的那条边不放、换到另一侧。</summary>
-    [TestMethod]
-    public void JoinedEdgeMovesToTheOtherSide()
-    {
-        var screens = new[] { Screen(), Screen("副屏", x: 1440) };
-        Assert.IsTrue(NoteDeckLayout.IsJoined(NoteDeckEdge.Right, 0, screens));
-        Assert.IsFalse(NoteDeckLayout.IsJoined(NoteDeckEdge.Left, 0, screens));
-        Assert.IsTrue(NoteDeckLayout.IsJoined(NoteDeckEdge.Left, 1, screens));
-        Assert.IsFalse(NoteDeckLayout.IsJoined(NoteDeckEdge.Right, 1, screens));
-        var options = new NoteDeckOptions();
-        CollectionAssert.AreEqual(new[] { new NoteDeckPlacement(0, NoteDeckEdge.Left) }, NoteDeckLayout.Placements(screens, options));
-        options = options with { Display = NoteDeckDisplay.All };
-        var both = new[] { new NoteDeckPlacement(0, NoteDeckEdge.Left), new NoteDeckPlacement(1, NoteDeckEdge.Right) };
-        CollectionAssert.AreEqual(both, NoteDeckLayout.Placements(screens, options));
-        CollectionAssert.AreEqual(both, NoteDeckLayout.Placements(screens, options with { Edge = NoteDeckEdge.Left }));
-        // 副屏在左边
-        var mirrored = new[] { Screen(), Screen("副屏", x: -1440) };
-        CollectionAssert.AreEqual(new[] { new NoteDeckPlacement(0, NoteDeckEdge.Right) }, NoteDeckLayout.Placements(mirrored, new NoteDeckOptions()));
-        CollectionAssert.AreEqual(
-            new[] { new NoteDeckPlacement(0, NoteDeckEdge.Right) }, NoteDeckLayout.Placements(mirrored, new NoteDeckOptions { Edge = NoteDeckEdge.Left }));
-    }
+    // PLAN-v18 L13（mac 4e7ed636，issue #11）：用户改了规则——选哪边就放哪边，和另一块屏相接也放。原来锁旧规则的
+    // JoinedEdgeMovesToTheOtherSide / StackedScreensKeepBothEdges / MiddleOfThreeScreensGetsNothing 照 mac 改写成下面两个。
 
-    /// <summary>上下相接不碍左右两条边；斜着摆（纵向没有重叠）也不算相接；只错开一部分算。</summary>
+    /// <summary>三块屏一排：中间那块两侧都和别的屏相接，照样放在选的那一边（mac middleOfThreeScreensStillGetsTheDeck）。</summary>
     [TestMethod]
-    public void StackedScreensKeepBothEdges()
-    {
-        var stacked = new[] { Screen(), Screen("上面", y: 900) };
-        CollectionAssert.AreEqual(
-            new[] { new NoteDeckPlacement(0, NoteDeckEdge.Right), new NoteDeckPlacement(1, NoteDeckEdge.Right) },
-            NoteDeckLayout.Placements(stacked, new NoteDeckOptions { Display = NoteDeckDisplay.All }));
-        var diagonal = new[] { Screen(), Screen("右上", x: 1440, y: 900) };
-        Assert.IsFalse(NoteDeckLayout.IsJoined(NoteDeckEdge.Right, 0, diagonal));
-        var offset = new[] { Screen(), Screen("错开", x: 1440, y: 600) };
-        Assert.IsTrue(NoteDeckLayout.IsJoined(NoteDeckEdge.Right, 0, offset));
-        Assert.IsTrue(NoteDeckLayout.IsJoined(NoteDeckEdge.Left, 1, offset));
-    }
-
-    /// <summary>三块屏一排：中间那块两侧都相接，不放。</summary>
-    [TestMethod]
-    public void MiddleOfThreeScreensGetsNothing()
+    public void MiddleOfThreeScreensStillGetsTheDeck()
     {
         var screens = new[] { Screen(), Screen("左", x: -1440), Screen("右", x: 1440) };
-        Assert.IsNull(NoteDeckLayout.FreeEdge(0, screens, NoteDeckEdge.Right));
-        Assert.AreEqual(0, NoteDeckLayout.Placements(screens, new NoteDeckOptions()).Count);
+        CollectionAssert.AreEqual(new[] { new NoteDeckPlacement(0, NoteDeckEdge.Right) }, NoteDeckLayout.Placements(screens, new NoteDeckOptions()));
         CollectionAssert.AreEqual(
-            new[] { new NoteDeckPlacement(1, NoteDeckEdge.Left), new NoteDeckPlacement(2, NoteDeckEdge.Right) },
-            NoteDeckLayout.Placements(screens, new NoteDeckOptions { Display = NoteDeckDisplay.All }));
+            new[] { new NoteDeckPlacement(0, NoteDeckEdge.Left), new NoteDeckPlacement(1, NoteDeckEdge.Left), new NoteDeckPlacement(2, NoteDeckEdge.Left) },
+            NoteDeckLayout.Placements(screens, new NoteDeckOptions { Display = NoteDeckDisplay.All, Edge = NoteDeckEdge.Left }));
+    }
+
+    /// <summary>
+    /// issue #11（mac externalMainKeepsTheChosenEdge）：外接屏当主显示器（screens[0]），笔记本在它左边 / 右边 / 上边——选了哪边就放哪边，
+    /// 和另一块屏相接也放；主显示器、所有显示器、指定那一块都一样；药丸贴着那块屏自己的那条边（原点不是 0 的那块也对）。
+    /// </summary>
+    [TestMethod]
+    public void ExternalMainKeepsTheChosenEdge()
+    {
+        var external = Screen("DELL", width: 2560, height: 1440);
+        var arrangements = new[]
+        {
+            ("左", Screen("内建", x: -1512, y: 200, width: 1512, height: 982)),
+            ("右", Screen("内建", x: 2560, width: 1512, height: 982)),
+            ("上", Screen("内建", x: 500, y: 1440, width: 1512, height: 982)),
+        };
+        foreach (var (side, builtIn) in arrangements)
+        {
+            var screens = new[] { external, builtIn };
+            foreach (var edge in new[] { NoteDeckEdge.Left, NoteDeckEdge.Right })
+            {
+                var label = $"笔记本在主屏{side}边，选{edge}";
+                var options = new NoteDeckOptions { Edge = edge };
+                CollectionAssert.AreEqual(new[] { new NoteDeckPlacement(0, edge) }, NoteDeckLayout.Placements(screens, options), label);
+                CollectionAssert.AreEqual(
+                    new[] { new NoteDeckPlacement(0, edge), new NoteDeckPlacement(1, edge) },
+                    NoteDeckLayout.Placements(screens, options with { Display = NoteDeckDisplay.All }), label + "，所有显示器");
+                CollectionAssert.AreEqual(
+                    new[] { new NoteDeckPlacement(1, edge) },
+                    NoteDeckLayout.Placements(screens, options with { Display = NoteDeckDisplay.Named("内建") }), label + "，指定");
+                var pill = NoteDeckLayout.PillFrame(builtIn, edge, 3, options);
+                if (edge == NoteDeckEdge.Left)
+                {
+                    Assert.AreEqual(builtIn.WorkArea.X, pill.X, 1e-9, label);
+                }
+                else
+                {
+                    Assert.AreEqual(builtIn.WorkArea.Right, pill.Right, 1e-9, label);
+                }
+            }
+        }
     }
 
     /// <summary>指定某一块：按名字认；它没接着时退回主显示器。</summary>
@@ -466,21 +472,18 @@ public sealed class NoteDeckLayoutTests
         Assert.AreEqual(new NoteDeckPlacement(0, NoteDeckEdge.Left), result.Placement);
         // mac：工作区 0…875，药丸高 92：顶 = 775、底 = 8；鼠标对着药丸的中线。比例（0 = 最上）两边一样
         Assert.AreEqual((775 - (400 - 46)) / 767.0, result.Position, 0.0001);
-        // 主屏右半边：右边贴着副屏，换回左边
-        Assert.AreEqual(new NoteDeckPlacement(0, NoteDeckEdge.Left), Drag(1300, 400)!.Value.Placement);
+        // 主屏右半边：右边（贴着副屏也是右边，L13 / mac #11）
+        Assert.AreEqual(new NoteDeckPlacement(0, NoteDeckEdge.Right), Drag(1300, 400)!.Value.Placement);
         // 拖到最上、最下：夹在 0…1
         Assert.AreEqual(0, Drag(200, 2000)!.Value.Position);
         Assert.AreEqual(1, Drag(200, -500)!.Value.Position);
-        // 不许换屏时鼠标到了副屏也还在主屏；许换屏时跟过去
-        Assert.AreEqual(new NoteDeckPlacement(0, NoteDeckEdge.Left), Drag(2600, 400)!.Value.Placement);
+        // 不许换屏时鼠标到了副屏也还在主屏（在主屏中线右边 = 右边）；许换屏时跟过去，按副屏自己的中线分左右（同 mac 4e7ed636）
+        Assert.AreEqual(new NoteDeckPlacement(0, NoteDeckEdge.Right), Drag(2600, 400)!.Value.Placement);
         Assert.AreEqual(new NoteDeckPlacement(1, NoteDeckEdge.Right), Drag(2600, 400, crosses: true)!.Value.Placement);
-        Assert.AreEqual(new NoteDeckPlacement(1, NoteDeckEdge.Right), Drag(1500, 400, crosses: true)!.Value.Placement);
+        Assert.AreEqual(new NoteDeckPlacement(1, NoteDeckEdge.Left), Drag(1500, 400, crosses: true)!.Value.Placement);
+        // 鼠标不在任何一块屏上：留在原来那块
+        Assert.AreEqual(new NoteDeckPlacement(1, NoteDeckEdge.Right), Drag(5000, 400, from: 1, crosses: true)!.Value.Placement);
         Assert.IsNull(Drag(100, 100, from: 9));
-        // 三块屏一排，从右边那块拖进中间那块（两侧都相接）：留在原来那块
-        var row = new[] { Screen(), Screen("左", x: -1440), Screen("右", x: 1440) };
-        var stuck = NoteDeckLayout.Dragged(MacPoint(700, 400), row, 2, true, 92)!.Value;
-        Assert.AreEqual(new NoteDeckPlacement(2, NoteDeckEdge.Right), stuck.Placement);
-        Assert.IsNull(NoteDeckLayout.Dragged(MacPoint(700, 400), row, 0, false, 92));
     }
 
     // ---- 竖排标题 ----

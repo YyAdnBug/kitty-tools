@@ -3,7 +3,7 @@
 // - NoteDeckOptions：设置 › 便签「屏幕边缘」的选项、默认值、设置里的键名、读设置时把怪值按默认算；
 // - NoteDeckMetrics：药丸和标签的各个尺寸，按大小档（0.85 / 1 / 1.25）一起缩放、取整到整点（叠着的标签不出缝）；
 // - NoteDeckLayout：一列标签怎么排（每张露出多长、要不要压短、「+N」、放不下时在视口里滚），药丸多高、放哪块屏哪条边
-//   （两块屏相接的那条边不放）、药丸 / 那叠 / 打开的便签摆在哪、拖药丸落在哪、拖动排序落在第几格、热区；
+//   （选哪边就放哪边，和另一块屏相接也放：PLAN-v18 L13，mac issue #11）、药丸 / 那叠 / 打开的便签摆在哪、拖药丸落在哪、拖动排序落在第几格、热区；
 // - NoteDeckLabel：竖排的标题——哪些字正着放、怎么分段、太长怎么截（每段多长由窗口代码量好传进来）；
 // - NoteDeckState：静置 / 扇出 / 打开的状态机，和状态变了该做哪几件事（Effects）。
 // **坐标（和 mac 不一样）**：Windows 的屏幕坐标原点在左上、y 向下（mac 是左下、y 向上），这里的函数一律按 y 向下写。
@@ -459,36 +459,10 @@ public sealed record NoteDeckLayout
 
     // ---- 放哪块屏、哪条边 ----
 
-    /// <summary>这块屏的这条边是不是和别的屏相接（那边贴着另一块屏、纵向有重叠）：相接的边鼠标一过就到了另一块屏，不放。</summary>
-    public static bool IsJoined(NoteDeckEdge edge, int index, IReadOnlyList<NoteDeckScreen> screens)
-    {
-        var own = screens[index].Frame;
-        var x = edge == NoteDeckEdge.Right ? own.Right : own.X;
-        for (var offset = 0; offset < screens.Count; offset++)
-        {
-            var other = screens[offset].Frame;
-            var facing = edge == NoteDeckEdge.Right ? other.X : other.Right;
-            if (offset != index && Math.Abs(facing - x) < 1 && other.Y < own.Bottom && other.Bottom > own.Y)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /// <summary>想放 edge：它和别的屏相接就换另一侧，两侧都相接这块屏不放（null）。</summary>
-    public static NoteDeckEdge? FreeEdge(int index, IReadOnlyList<NoteDeckScreen> screens, NoteDeckEdge preferring)
-    {
-        if (!IsJoined(preferring, index, screens))
-        {
-            return preferring;
-        }
-
-        return IsJoined(preferring.Opposite(), index, screens) ? null : preferring.Opposite();
-    }
-
-    /// <summary>每块屏放不放、放哪边。screens 的第一块是主显示器。</summary>
+    /// <summary>
+    /// 每块屏放不放、放哪边：都放在选的那条边，和另一块屏相接也放（PLAN-v18 L13，mac 4e7ed636 / issue #11：以前相接的边换到另一侧，
+    /// 外接屏当主显示器、笔记本在它左边、选「左边」时那叠跑到右边）。screens 的第一块是主显示器。
+    /// </summary>
     public static List<NoteDeckPlacement> Placements(IReadOnlyList<NoteDeckScreen> screens, NoteDeckOptions options)
     {
         var placements = new List<NoteDeckPlacement>();
@@ -505,10 +479,7 @@ public sealed record NoteDeckLayout
         };
         foreach (var index in targets)
         {
-            if (FreeEdge(index, screens, options.Edge) is { } edge)
-            {
-                placements.Add(new NoteDeckPlacement(index, edge));
-            }
+            placements.Add(new NoteDeckPlacement(index, options.Edge));
         }
 
         return placements;
@@ -548,8 +519,8 @@ public sealed record NoteDeckLayout
     public static bool CrossesScreens(NoteDeckDisplay display, IReadOnlyList<NoteDeckScreen> screens)
         => display.Mode == NoteDeckDisplayMode.Chosen && IndexOf(screens, display.Name) >= 0;
 
-    /// <summary>按住修饰键拖药丸到 mouse：贴鼠标所在那一半的边（那条边和别的屏相接就换另一侧），高度跟着鼠标（药丸的中线对着鼠标）。
-    /// crossesScreens：能不能拖到别的屏；鼠标所在的屏两侧都放不了就留在原来那块屏。原来那块屏也放不了时是 null。</summary>
+    /// <summary>按住修饰键拖药丸到 mouse：贴鼠标所在那一半的边（和别的屏相接也贴，L13），高度跟着鼠标（药丸的中线对着鼠标）。
+    /// crossesScreens：能不能拖到别的屏（鼠标不在任何一块屏上时留在原来那块）。from 不是一块屏时是 null。</summary>
     public static (NoteDeckPlacement Placement, double Position)? Dragged(
         PointD mouse, IReadOnlyList<NoteDeckScreen> screens, int from, bool crossesScreens, double pillHeight)
     {
@@ -572,22 +543,13 @@ public sealed record NoteDeckLayout
         }
 
         targets.Add(from);
-        foreach (var target in targets)
-        {
-            var wanted = mouse.X < screens[target].Frame.MidX ? NoteDeckEdge.Left : NoteDeckEdge.Right;
-            if (FreeEdge(target, screens, wanted) is not { } edge)
-            {
-                continue;
-            }
-
-            var visible = screens[target].WorkArea;
-            var highest = visible.Y + PillMargin;
-            var span = visible.Bottom - PillMargin - pillHeight - highest;
-            var ratio = span > 0 ? (mouse.Y - pillHeight / 2 - highest) / span : 0.5;
-            return (new NoteDeckPlacement(target, edge), Math.Clamp(ratio, 0, 1));
-        }
-
-        return null;
+        var target = targets[0];
+        var edge = mouse.X < screens[target].Frame.MidX ? NoteDeckEdge.Left : NoteDeckEdge.Right;
+        var visible = screens[target].WorkArea;
+        var highest = visible.Y + PillMargin;
+        var span = visible.Bottom - PillMargin - pillHeight - highest;
+        var ratio = span > 0 ? (mouse.Y - pillHeight / 2 - highest) / span : 0.5;
+        return (new NoteDeckPlacement(target, edge), Math.Clamp(ratio, 0, 1));
     }
 
     // ---- 那叠 ----
