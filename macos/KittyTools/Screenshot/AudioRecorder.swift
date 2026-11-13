@@ -251,7 +251,27 @@ final class AudioRecorder: NSObject {
     }
     isPaused.toggle()
     hud?.setPaused(isPaused)
+    island?.setActivity(islandState())
     Island.announce(isPaused ? "已暂停" : "已继续")
+  }
+
+  /// 刘海岛上录音那个活动的编号（录屏的是 ScreenRecorder.islandActivity）
+  static let islandActivity = "audio-record"
+
+  /// 刘海岛耳朵上的录音（刘海岛扩展 C1）：左边红色的麦克风、右边计时（不算暂停的时间）；暂停时停在那一刻、按钮换成「继续」。
+  /// 只录麦克风才能暂停（同 HUD 的 ⏸）
+  private func islandState() -> Island.Activity {
+    let seconds = Double(recorded.components.seconds)
+    var actions = [Island.Action("停止") { [weak self] in self?.stop() }]
+    if source == .microphone {
+      actions.append(Island.Action(isPaused ? "继续" : "暂停") { [weak self] in self?.togglePause() })
+    }
+    return Island.Activity(
+      id: Self.islandActivity, kind: .record, title: isPaused ? "录音已暂停" : "录音中",
+      symbol: "mic.circle.fill", tone: .error,
+      trailing: isPaused
+        ? .text(ScreenRecorder.clock(Int(seconds))) : .elapsed(since: .now - seconds),
+      actions: actions)
   }
 
   /// 录了多久（不算暂停的时间）
@@ -372,6 +392,7 @@ final class AudioRecorder: NSObject {
     }
     stopItem = ScreenRecorder.makeStopItem(
       label: "停止录音", target: self, action: #selector(stopClicked))
+    island?.setActivity(islandState())
     // 菜单开着（.eventTracking）时电平和计时也要走
     let timer = Timer(timeInterval: 1 / Double(Self.meterRate), repeats: true) { [weak self] _ in
       MainActor.assumeIsolated { self?.tick() }
@@ -494,6 +515,7 @@ final class AudioRecorder: NSObject {
     hud = nil
     if let stopItem { NSStatusBar.system.removeStatusItem(stopItem) }
     stopItem = nil
+    island?.endActivity(Self.islandActivity)
     if let activity { ProcessInfo.processInfo.endActivity(activity) }
     activity = nil
     for (center, token) in observers { center.removeObserver(token) }

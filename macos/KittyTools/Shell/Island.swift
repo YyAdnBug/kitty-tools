@@ -223,7 +223,12 @@ import SwiftUI
     let next = Content(
       title: title, detail: detail, tone: tone, symbol: symbol ?? Self.symbol(for: tone),
       leading: leading, fraction: fraction)
-    if tone != .progress { remember(next, actions: actions) }
+    // 不是进行中的 = 结果来了：缩进耳朵的进行中跟着收（同原来「进行中挂着，直到下一条替换它」）
+    // ponytail: 分不出这一条是不是它的结果，中途来一条不相干的提示也会把它收掉（和原来一样）；要分就给进行中配一个编号
+    if tone != .progress {
+      endProgress()
+      remember(next, actions: actions)
+    }
     // 鼠标正停在岛上：先排着，免得正要点的按钮被换掉（B5）。进行中的那条例外——来的是它的结果，原地换。
     // 那一张开着时也排着（收起后再出；那一张里的列表当场就有它）
     let busy = isHovered && content.map { $0.tone != .progress } == true
@@ -262,6 +267,7 @@ import SwiftUI
       open(with: next)
     }
     if next.tone == .error, !quiet { shakes += 1 }
+    if next.tone == .progress { collapseLater(next.title) }
     if !quiet { onToneChange?(next.tone) }
     // VoiceOver 不会去读不当 key 的岛：主动播报
     Self.announce([next.title, next.detail].compactMap { $0 }.joined(separator: "，"))
@@ -302,6 +308,14 @@ import SwiftUI
   /// 进行中的岛改详情（更新包下载、转 GIF、压缩的百分比；fraction 是同一个进度，细进度条跟着走）：内容不重新出场、不播报
   /// （一秒几次，旁白会被刷屏），停留重新计时——事情还在做就一直挂着。岛上已经不是这一条（标题对不上、被别的岛换掉了）就不动
   func progress(_ title: String, detail: String, fraction: Double? = nil) {
+    // 已经缩进耳朵的：改活动（卡片展开着就原地换），兜底的 60 s 重新计时
+    if var activity = activities.first(where: { $0.id == Self.progressID(title) }) {
+      activity.detail = detail
+      if let fraction { activity.trailing = .fraction(fraction) }
+      setActivity(activity)
+      expireProgressLater()
+      return
+    }
     // 排着还没换上的那条：改它，换上来时就是最新的百分比
     if var queued = pending, queued.content.title == title, queued.content.tone == .progress {
       queued.content.detail = detail
@@ -456,6 +470,7 @@ import SwiftUI
 
   /// 收起标题是 title 的这一条（没有结果岛的进行中提示，调用方做完了自己收）：正显示着就收，排着就丢掉
   func dismiss(ifShowing title: String) {
+    endActivity(Self.progressID(title))
     if pending?.content.title == title { pending = nil }
     if content?.title == title { dismiss() }
   }
@@ -515,10 +530,7 @@ import SwiftUI
   /// 耳朵该不该露：有活动、有刘海屏（摆出来的岛看给的几何）。没开着别的时当场长出 / 缩回；开着提示、那一张时只改标记，
   /// 它们收起时（dismiss）照这个缩回耳朵
   private func refreshWings() {
-    let wanted =
-      activity != nil
-      && (isStaged
-        ? { if case .notch = geometry { true } else { false } }() : Self.notchScreen != nil)
+    let wanted = activity != nil && canShowWings
     guard wanted != isShowingWings else { return }
     if wanted, !isOpen, !isStaged { showWindow(on: Self.notchScreen) }
     withAnimation((wanted ? Style.Motion.island : Style.Motion.retract).animation()) {
@@ -535,6 +547,68 @@ import SwiftUI
   /// 有刘海的那块屏（耳朵挂在它上面）；没有是 nil
   private static var notchScreen: NSScreen? {
     NSScreen.screens.first { notchRect(of: $0) != nil }
+  }
+
+  /// 挂得了耳朵：有刘海屏（摆出来的岛看给的几何）
+  private var canShowWings: Bool {
+    if isStaged {
+      if case .notch = geometry { true } else { false }
+    } else {
+      Self.notchScreen != nil
+    }
+  }
+
+  // MARK: 慢的长任务缩进耳朵（刘海岛扩展 C4）
+
+  /// 进行中的提示挂满这么久还没做完，缩回耳朵
+  static let progressCollapse = Duration.seconds(3)
+  /// 缩进耳朵的进行中多久没有新进度就收掉（同原来进行中提示的 60 s 兜底）
+  static let progressExpiry = Duration.seconds(60)
+  @ObservationIgnored private var collapseTask: Task<Void, Never>?
+  @ObservationIgnored private var expiryTask: Task<Void, Never>?
+
+  static func progressID(_ title: String) -> String { "progress:" + title }
+
+  /// 进行中的提示出来了：挂满 3 秒还是它（指针不在上面）就缩进耳朵；指针在上面就等它离开
+  private func collapseLater(_ title: String) {
+    collapseTask?.cancel()
+    collapseTask = Task { [weak self] in
+      try? await Task.sleep(for: Self.progressCollapse)
+      while !Task.isCancelled {
+        guard let self, let content = self.content, content.tone == .progress,
+          content.title == title
+        else { return }
+        if !self.isHovered, !self.isBoardOpen { return self.collapseProgress(content) }
+        try? await Task.sleep(for: .seconds(1))
+      }
+    }
+  }
+
+  /// 把正显示着的进行中提示换成耳朵上的活动（左一圈进度、右百分比；说不出做到哪的只有记号），按钮（停止）跟过去，
+  /// 提示收起、缩回耳朵。没有刘海屏时照旧挂着（菜单栏那一项是第 1-3 批）
+  func collapseProgress(_ content: Content) {
+    guard canShowWings, self.content == content else { return }
+    setActivity(
+      Activity(
+        id: Self.progressID(content.title), kind: .progress, title: content.title,
+        detail: content.detail, symbol: content.symbol,
+        trailing: content.fraction.map { .fraction($0) } ?? .none, actions: actions))
+    expireProgressLater()
+    dismiss()
+  }
+
+  /// 缩进耳朵的进行中都收掉（结果来了）
+  private func endProgress() {
+    for activity in activities where activity.kind == .progress { endActivity(activity.id) }
+    expiryTask?.cancel()
+  }
+
+  private func expireProgressLater() {
+    expiryTask?.cancel()
+    expiryTask = Task { [weak self] in
+      try? await Task.sleep(for: Self.progressExpiry)
+      if !Task.isCancelled { self?.endProgress() }
+    }
   }
 
   /// 收起：内容先退（0.12 s），0.08 s 后形体缩回刘海，动画结束再移走窗口。鼠标在岛上时排着一条的（点了 ×、按钮，

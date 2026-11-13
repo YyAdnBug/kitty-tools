@@ -104,9 +104,40 @@ struct IslandActivityTests {
     #expect(!stopped)
   }
 
+  /// 慢的长任务（刘海岛扩展 C4）：进行中的提示缩进耳朵后跟着进度走（按钮跟过去）；结果来了、做完自己收（dismiss(ifShowing:)）都收掉
+  @Test func progressCollapsesIntoWings() throws {
+    let island = Island(showing: nil, geometry: notch)
+    island.show(
+      "正在压缩", detail: "12%", tone: .progress, fraction: 0.12, actions: [Island.Action("停止") {}])
+    let shown = try #require(island.content)
+    island.collapseProgress(shown)
+    #expect(island.content == nil && island.isShowingWings)
+    #expect(island.activity?.id == Island.progressID("正在压缩"))
+    #expect(island.activity?.actions.map(\.title) == ["停止"])
+    island.progress("正在压缩", detail: "40%", fraction: 0.4)
+    #expect(island.activity?.trailing == .fraction(0.4) && island.activity?.detail == "40%")
+    island.show("已压缩")
+    #expect(island.activities.isEmpty && island.content?.title == "已压缩")
+    // 做完没有结果岛、调用方自己收的
+    island.dismiss()
+    island.show("正在导出", tone: .progress)
+    island.collapseProgress(try #require(island.content))
+    #expect(island.activity?.trailing == Island.Activity.Trailing.none)
+    island.dismiss(ifShowing: "正在导出")
+    #expect(island.activities.isEmpty && !island.isShowingWings)
+  }
+
+  /// 没有刘海屏：进行中的照旧挂着（菜单栏那一项是下一批）
+  @Test func progressStaysWithoutNotch() throws {
+    let island = Island(showing: nil, geometry: .capsule(menuBar: 24))
+    island.show("正在压缩", tone: .progress)
+    island.collapseProgress(try #require(island.content))
+    #expect(island.content?.title == "正在压缩" && island.activities.isEmpty)
+  }
+
   /// 提示照旧从刘海长出来（盖住耳朵），收起后还是耳朵；那一张同样
   @Test func noticesAndBoardReturnToWings() {
-    let island = Island(showing: nil, geometry: notch, activities: [activity("压缩", .progress)])
+    let island = Island(showing: nil, geometry: notch, activities: [activity("录屏", .record)])
     island.show("已复制")
     #expect(island.content?.title == "已复制" && island.isShowingWings)
     island.dismiss()

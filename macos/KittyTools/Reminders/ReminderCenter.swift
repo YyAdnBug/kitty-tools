@@ -12,6 +12,8 @@
 // 之后不再催。
 // 状态（每条处理到哪一刻、推到几点）存在 Prefs.remindersState：这台电脑自己的，不导出；间隔的锚点只在内存里（重启就是重新数）。
 // 起停跟着功能开关（AppDelegate.applyFeatures）；关掉时岛上挂着的收掉，数据和状态不动。
+// 倒数（2026-11-13，刘海岛扩展 C2）：一小时以内要响的一次性提醒（「提醒 10分钟 喝水」）挂在刘海岛的耳朵上倒数，只挂最近的
+// 那一条；点开能「提前结束」（同「知道了」：从列表里删掉、不响）或「推后 5 分钟」。暂停全部提醒时不挂。
 
 import AppKit
 
@@ -117,6 +119,7 @@ import AppKit
     for (center, token) in observers { center.removeObserver(token) }
     observers = []
     if !firing.isEmpty || !missed.isEmpty { island?.unpin() }
+    island?.endActivity(Self.islandActivity)
     ReminderSound.stop()
     hideSurfaces()
     firing = []
@@ -223,14 +226,73 @@ import AppKit
       present()
       scheduleNag()
     }
-    // 暂停着的到点了要再看一眼（那时补响 / 合成错过的）
-    guard let next = [result.next, paused].compactMap({ $0 }).min() else { return }
+    // 暂停着的到点了要再看一眼（那时补响 / 合成错过的）；离下一条一次性提醒还远时，到该开始倒数的那一刻再看
+    let countdown = updateCountdown(now: now)
+    guard let next = [result.next, paused, countdown].compactMap({ $0 }).min() else { return }
     wake = Task { [weak self] in
       try? await Task.sleep(
         for: .seconds(max(next.timeIntervalSinceNow, 0) + 0.05), tolerance: .seconds(1))
       guard !Task.isCancelled else { return }
       self?.check()
     }
+  }
+
+  // MARK: 倒数（刘海岛扩展 C2）
+
+  /// 刘海岛上提醒倒数那个活动的编号
+  static let islandActivity = "reminder-countdown"
+  /// 离响还有多久起在耳朵上倒数
+  static let countdownWindow: TimeInterval = 60 * 60
+
+  /// 下一条要响的一次性提醒和几点（纯函数）：开着、没挂着、还没到点的里面最近的一条（推过的按推到的时刻）
+  static func nextOnce(
+    _ list: [Reminder], state: ReminderState, anchors: [String: Date], showing: Set<String>,
+    now: Date, calendar: Calendar
+  ) -> (reminder: Reminder, at: Date)? {
+    list.filter { $0.isOn && $0.schedule.kind == .once && !showing.contains($0.id) }
+      .compactMap { reminder in
+        ReminderCheck.due(reminder, state: state, anchors: anchors, calendar: calendar)
+          .flatMap { $0 > now ? (reminder, $0) : nil }
+      }
+      .min { $0.1 < $1.1 }
+  }
+
+  /// 一小时以内要响的那条挂上倒数（没有就收掉）；还早时返回该开始倒数的那一刻（check 那时再看）
+  private func updateCountdown(now: Date) -> Date? {
+    guard let island else { return nil }
+    guard pausedUntil == nil,
+      let (reminder, at) = Self.nextOnce(
+        list, state: state, anchors: anchors, showing: Set(firing + missed), now: now,
+        calendar: .current)
+    else {
+      island.endActivity(Self.islandActivity)
+      return nil
+    }
+    let start = at - Self.countdownWindow
+    guard start <= now else {
+      island.endActivity(Self.islandActivity)
+      return start
+    }
+    island.setActivity(
+      Island.Activity(
+        id: Self.islandActivity, kind: .reminder, title: reminder.title,
+        detail: at.formatted(date: .omitted, time: .shortened) + " 提醒", symbol: "alarm.fill",
+        trailing: .countdown(to: at),
+        actions: [
+          Island.Action("提前结束") { [weak self] in self?.finish([reminder.id]) },
+          Island.Action("推后 5 分钟") { [weak self] in self?.postpone(reminder.id, by: 5 * 60) },
+        ]))
+    return nil
+  }
+
+  /// 还没响的那条推后一段（倒数上的「推后 5 分钟」）：从它原来要响的那一刻往后推
+  private func postpone(_ id: String, by seconds: TimeInterval) {
+    guard let reminder = list.first(where: { $0.id == id }),
+      let at = ReminderCheck.due(reminder, state: state, anchors: anchors, calendar: .current)
+    else { return }
+    state.snoozed[id] = at + seconds
+    saveState()
+    check()
   }
 
   // MARK: 方式

@@ -589,8 +589,9 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
   在用、视差和空闲动画、终端 / AI 助手 / 大模型用量；以后再说：日历、文件暂存架、歌词频谱。新东西（系统提示、正在播放、
   音量亮度）做成内置插件（插件页 2026-11-12 也是「全部按推荐」，还没开工）。
 - 已做：H2 给系统灵动岛让位（632e5c4e，已进 macos）。在分支 `island-atoll-wip` 上：PR #17 重新合进来（27e12b25 + 7806b585）；
-  第 1-1 批活动的框架（`Shell/IslandActivity.swift`：`Island.Activity`、`setActivity` / `endActivity`、耳朵、点耳朵展开的卡片、
-  那一张里的活动行；这一批还没有调用方）。
+  第 1-1 批活动的框架（e4e7ecaa，`Shell/IslandActivity.swift`：`Island.Activity`、`setActivity` / `endActivity`、耳朵、点耳朵展开的
+  卡片、那一张里的活动行）；第 1-2 批我们自己的活动：录屏 / 录音计时（C1，录音能暂停 / 继续）、一小时以内的一次性提醒倒数（C2，
+  「提前结束」= 同「知道了」删掉不响、「推后 5 分钟」）、进行中提示挂满 3 秒缩进耳朵（C4）。保持唤醒（C3）等 issue #3 的插件。
 
 ### 晾衣绳（第十族，0.7.0，2026-10-26 立项）
 

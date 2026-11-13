@@ -135,6 +135,37 @@ struct ReminderTests {
     #expect(off == .init())
   }
 
+  /// 刘海岛上的倒数（刘海岛扩展 C2）挂哪条：开着、没挂着、还没到的一次性提醒里最近的；推过的按推到的时刻；别的种类不算
+  @Test func nextOnceForCountdown() {
+    var state = ReminderState()
+    let soon = Reminder(
+      id: "s", title: "喝水", schedule: Schedule(kind: .once, date: Self.at(2, 9, 40)))
+    let later = Reminder(
+      id: "l", title: "开会", schedule: Schedule(kind: .once, date: Self.at(2, 9, 50)))
+    let off = Reminder(
+      id: "x", title: "关着", isOn: false, schedule: Schedule(kind: .once, date: Self.at(2, 9, 20)))
+    let weekly = Self.weekly("w")
+    for reminder in [soon, later, off, weekly] {
+      state.marks[reminder.id] = .init(at: Self.at(1, 0), schedule: reminder.schedule)
+    }
+    let list = [later, soon, off, weekly]
+    let now = Self.at(2, 9, 10)
+    let next = {
+      ReminderCenter.nextOnce(
+        list, state: state, anchors: [:], showing: $0, now: now, calendar: Self.calendar)
+    }
+    #expect(next([])?.reminder.id == "s" && next([])?.at == Self.at(2, 9, 40))
+    #expect(next(["s"])?.reminder.id == "l")
+    // 推后 5 分钟后还是它，时刻跟着推
+    state.snoozed["s"] = Self.at(2, 9, 45)
+    #expect(next([])?.at == Self.at(2, 9, 45))
+    // 已经过了的不算（那是 check 的事：响或算错过）
+    #expect(
+      ReminderCenter.nextOnce(
+        list, state: state, anchors: [:], showing: [], now: Self.at(2, 10), calendar: Self.calendar)
+        == nil)
+  }
+
   @Test func checkSnoozeOnceAndInterval() {
     var state = ReminderState()
     let a = Self.weekly("a")

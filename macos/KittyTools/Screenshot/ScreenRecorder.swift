@@ -777,12 +777,22 @@ final class ScreenRecorder: NSObject {
     activity = ProcessInfo.processInfo.beginActivity(
       options: [.idleSystemSleepDisabled, .idleDisplaySleepDisabled, .userInitiated],
       reason: "录屏")
+    // 刘海岛的耳朵：左边红色的录制记号、右边计时（刘海岛扩展 C1；岛不进录屏，挂在那里录不进去）。HUD 和停止项照旧
+    island?.setActivity(
+      Island.Activity(
+        id: Self.islandActivity, kind: .record, title: "录屏中", symbol: "record.circle.fill",
+        tone: .error, trailing: .elapsed(since: .now),
+        actions: [Island.Action("停止") { [weak self] in self?.stop() }]))
     Island.announce("开始录屏")
   }
+
+  /// 刘海岛上录屏那个活动的编号（录音的是 AudioRecorder.islandActivity）
+  static let islandActivity = "screen-record"
 
   /// 边框、HUD、点按圈、停止项、计时立刻收掉（停的那一刻；文件还在写）；只录声音时让 AudioRecorder 收它的录音 HUD 和停止项
   private func hideChrome() {
     onHalted()
+    island?.endActivity(Self.islandActivity)
     border?.orderOut(nil)
     border = nil
     hud?.close()
