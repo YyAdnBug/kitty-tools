@@ -593,10 +593,12 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
   第 1-1 批活动的框架（e4e7ecaa，`Shell/IslandActivity.swift`：`Island.Activity`、`setActivity` / `endActivity`、耳朵、点耳朵展开的
   卡片、那一张里的活动行）；第 1-2 批我们自己的活动：录屏 / 录音计时（C1，录音能暂停 / 继续）、一小时以内的一次性提醒倒数（C2，
   「提前结束」= 同「知道了」删掉不响、「推后 5 分钟」）、进行中提示挂满 3 秒缩进耳朵（C4）（40895f7e）。保持唤醒（C3）等 issue #3 的插件。
-  第 1-3a 批：没有刘海屏时活动挂在菜单栏（H1，`Shell/IslandMenuItem.swift`，录制不另挂）、两指在刘海上往下滑打开（G1）、
+  第 1-3a 批（7e2344fb）：没有刘海屏时活动挂在菜单栏（H1，`Shell/IslandMenuItem.swift`，录制不另挂）、两指在刘海上往下滑打开（G1）、
   设置 › 刘海岛「点刘海叫出那一张」（G2，`Prefs.islandNotchClicks`，默认开）。第 1-3b 批系统的一瞬提示（D1）要加电源、
-  音频设备、网络三样系统接口进 §2 白名单和 mac-native §3 的 C 接口名单。第 1-3b 批：`Shell/SystemNotices.swift`，设置 › 刘海岛「系统提示」
+  音频设备、网络三样系统接口进 §2 白名单和 mac-native §3 的 C 接口名单。第 1-3b 批（ffa2b679）：`Shell/SystemNotices.swift`，设置 › 刘海岛「系统提示」
   四个开关（默认都关；拍板 A2 说新东西做成内置插件，插件页还没开工，先放在刘海岛页里，插件做出来再挪）。
+  第 1 期剩下的：保持唤醒上岛（C3，等 issue #3 的插件）、真机手测（HANDTEST「刘海岛的活动」1–16）、发版时的更新日志和「新」标记。
+  之后：第 1.5 批接系统的实时活动（H3，等 macOS 27.3 正式版和 Xcode 27.3）、第 2 期正在播放（先做第 0 批探针）、第 3 期音量亮度。
 
 ### 晾衣绳（第十族，0.7.0，2026-10-26 立项）
 
