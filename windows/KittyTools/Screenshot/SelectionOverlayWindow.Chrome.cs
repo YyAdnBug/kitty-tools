@@ -343,6 +343,12 @@ internal sealed partial class SelectionOverlayWindow
             avoid.Add(new RectD(Canvas.GetLeft(_toolbar), Canvas.GetTop(_toolbar), _toolbar.DesiredSize.Width, _toolbar.DesiredSize.Height));
         }
 
+        // 译文卡片（PLAN-v18 S9）挂在选区外，常和尺寸胶囊在同一边：胶囊让开
+        if (_card is not null)
+        {
+            avoid.Add(_cardFrame);
+        }
+
         var dip = ToDip(selection);
         var (x, y, interactive) = SelectionChrome.SizeCapsule(
             new RectD(dip.X, dip.Y, dip.Width, dip.Height), size.Width, size.Height, screenWidth, screenHeight, avoid);
@@ -508,6 +514,7 @@ internal sealed partial class SelectionOverlayWindow
     {
         CommitText();
         EndSizeEditing(commit: false);
+        CloseTranslationCard();
         _tool = null;
         _chipTool = null;
         _document.SelectedId = null;

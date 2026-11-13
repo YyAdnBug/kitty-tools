@@ -2517,11 +2517,15 @@ internal sealed partial class SelectionOverlayWindow : Window
                 e.Handled = true;
                 break;
             case Windows.System.VirtualKey.Escape:
-                // 照 mac：打字中的文字 → 选中的标注 → 选中的工具 → 退出截图（免得一下把画好的标注全丢了）。
-                // 有选区、没选工具时按一下就退出，不先清选区（0.1.0 用户反馈：以前要按两下）。
+                // 照 mac：取色 → 列着放不下的段的译文卡片 → 打字中的文字 → 选中的标注 → 选中的工具 → 退出截图（免得一下把画好的标注全丢了）。
+                // 有选区、没选工具时按一下就退出，不先清选区（0.1.0 用户反馈：以前要按两下）。只有一条译文窄栏时不拦 Esc。
                 e.Handled = true;
                 if (CancelPicking())
                 {
+                }
+                else if (_card is not null && _cardLeftovers > 0)
+                {
+                    CloseTranslationCard();
                 }
                 else if (_textEditor is not null)
                 {

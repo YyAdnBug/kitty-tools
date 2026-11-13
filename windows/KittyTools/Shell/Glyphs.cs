@@ -17,6 +17,8 @@ internal static class Glyphs
     public const string Settings = "\uE713";
     public const string Search = "\uE721";
     public const string Close = "\uE711";
+    /// <summary>\u773C\u775B\uFF08\u622A\u56FE\u7FFB\u8BD1\u5361\u7247\u7684\u300C\u770B\u539F\u6587\u300D\uFF0CPLAN-v18 S9\uFF09\u3002</summary>
+    public const string View = "\uE890";
     public const string Add = "\uE710";
     public const string ChevronDown = "\uE70D";
     public const string ChevronUp = "\uE70E";

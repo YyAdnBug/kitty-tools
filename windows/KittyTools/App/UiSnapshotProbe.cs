@@ -266,6 +266,22 @@ internal static class UiSnapshotProbe
                         crop with { Left = Math.Max(0, crop.Left - (int)(120 * overlay.Screen.Scale)) });
                 }
 
+                // PLAN-v18 第 2 批：翻完挂的译文窄栏（看原文、拷贝、✕）、列着两段放不下的译文卡片（工具栏在选区下面，卡片挂上面）
+                foreach (var (leftovers, name) in new[] { (false, "shot-translate-bar"), (true, "shot-translate-card") })
+                {
+                    if (!Wanted(name))
+                    {
+                        continue;
+                    }
+
+                    overlay.ShowProbeTranslationCard(leftovers);
+                    await Task.Delay(600);
+                    await WindowShot.SaveAsync(
+                        overlay.Handle, Path.Combine(directory, name + ".png"),
+                        crop with { Top = Math.Max(0, crop.Top - (int)(260 * overlay.Screen.Scale)) });
+                }
+
+                overlay.CloseProbeTranslationCard();
                 // 裁剪（PLAN-v11 F11）：开着裁剪、拖着一个框（框外压暗、虚线框、工具栏「裁剪」亮着）
                 overlay.ShowProbeCrop();
                 await Task.Delay(500);

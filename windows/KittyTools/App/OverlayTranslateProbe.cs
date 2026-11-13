@@ -79,8 +79,9 @@ internal static class OverlayTranslateProbe
                 Check(segments.Count == sample.Paragraphs.Length, $"{sample.Name}：分成 {segments.Count} 段（样图 {sample.Paragraphs.Length} 段）");
                 var snapshot = new OverlayPixels((byte[])bgra.Clone(), width, height, width * 4);
                 var translations = segments.Select(segment => Translate(ScreenshotOverlay.Measure(segment, snapshot))).ToList();
-                var after = await Task.Run(() => ScreenshotTranslator.Render(bgra, width, height, segments, translations));
+                var (after, leftovers) = await Task.Run(() => ScreenshotTranslator.Render(bgra, width, height, segments, translations));
                 Check(after is not null, $"{sample.Name}：合成出图");
+                report.Append($"  放不下的段：{leftovers.Count}").Append('\n');
                 if (after is null)
                 {
                     continue;
@@ -103,6 +104,38 @@ internal static class OverlayTranslateProbe
                 // 合成后原文的字去掉了：英文字母的像素少了一大截（译文是中文，换了位置）
                 Check(!bgra.SequenceEqual(after), $"{sample.Name}：图变了");
                 Log.Info($"overlay-probe sample={sample.Name} text={text.Length}");
+            }
+
+            // 小选区（PLAN-v18 S7，150 %）：只框浅色样图的第二段那一行。紧贴着框：到 10 pt 也放不下，图不变、整段进卡片；
+            // 上下各留 40 像素：用上周围的空白排，不进卡片
+            {
+                var light = samples[0];
+                var (bgra, width, height) = Draw(light);
+                var (_, lines) = await OcrService.RecognizeAsync(bgra, width, height, joined: false);
+                if (lines.FirstOrDefault(line => line.Text.StartsWith("Everything", StringComparison.Ordinal)) is { } line)
+                {
+                    var longText = string.Concat(Enumerable.Repeat("这是一段比原文长得多的译文，得折成好几行才放得下。", 3));
+                    foreach (var (name, margin, expectLeftover) in new[] { ("tight", 3, true), ("roomy", 40, false) })
+                    {
+                        var top = Math.Max(0, (int)line.Box.Y - margin);
+                        var bottom = Math.Min(height, (int)Math.Ceiling(line.Box.Bottom) + margin);
+                        var cropHeight = bottom - top;
+                        var crop = new byte[width * cropHeight * 4];
+                        Array.Copy(bgra, top * width * 4, crop, 0, crop.Length);
+                        var (_, cropLines) = await OcrService.RecognizeAsync(crop, width, cropHeight, joined: true, separator: "\n\n");
+                        var segments = ScreenshotOverlay.Segments(cropLines, width, cropHeight);
+                        var translations = segments.Select(_ => longText).ToList();
+                        var (after, leftovers) = await Task.Run(
+                            () => ScreenshotTranslator.Render(crop, width, cropHeight, segments, translations, pixelsPerPoint: 1.5));
+                        Check(segments.Count == 1 && (expectLeftover ? after is null && leftovers.Count == 1 : after is not null && leftovers.Count == 0),
+                            $"小选区 {name}（高 {cropHeight}）：{segments.Count} 段，{(after is null ? "图没变" : "盖了译文")}，放不下 {leftovers.Count} 段");
+                        await SavePngAsync(after ?? crop, width, cropHeight, Path.Combine(directory, $"small-{name}-after.png"));
+                    }
+                }
+                else
+                {
+                    Check(false, "小选区：样图里没认出第二段那一行");
+                }
             }
 
             // 一键打码（PLAN-v18 S17，照 mac recognizesOnARenderedImage）：三行里电话、邮箱给框，订单号不给

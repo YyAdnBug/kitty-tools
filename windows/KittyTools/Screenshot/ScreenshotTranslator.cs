@@ -25,9 +25,18 @@ internal static class ScreenshotTranslator
     /// <summary>翻译失败、取消之外的「做不了」：消息直接给遮罩上的提示。</summary>
     internal sealed class Failure(string message) : Exception(message);
 
-    /// <summary>选区（BGRA，宽 × 高）→ 贴了译文的同尺寸 BGRA。progress(第几段, 共几段) 在调用线程上回调。</summary>
-    public static async Task<byte[]> TranslateAsync(
-        byte[] bgra, int width, int height, Action<int, int> progress, CancellationToken cancellationToken)
+    /// <summary>
+    /// 就地翻译交回的结果（mac ScreenshotOverlay.Outcome）：贴了译文的选区图（一段都没画时 null）、到字号下限也放不下的段（图上留原文，
+    /// 译文进卡片）、全部段的译文（段间空一行，纯符号段不算；卡片的「拷贝译文」拷它）。
+    /// </summary>
+    internal sealed record Outcome(byte[]? Image, IReadOnlyList<(string Source, string Translation)> Leftovers, string Translation);
+
+    /// <summary>
+    /// 选区（BGRA，宽 × 高）→ 贴了译文的同尺寸 BGRA 和放不下的段。pixelsPerPoint：冻结帧每 DIP 几个像素（字号下限 10 pt 按它换成像素）。
+    /// progress(第几段, 共几段) 在调用线程上回调。
+    /// </summary>
+    public static async Task<Outcome> TranslateAsync(
+        byte[] bgra, int width, int height, double pixelsPerPoint, Action<int, int> progress, CancellationToken cancellationToken)
     {
         if (!OcrService.HasEngine)
         {
@@ -56,8 +65,16 @@ internal static class ScreenshotTranslator
 
         var translations = await TranslateSegmentsAsync(segments, text, progress, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
-        return await Task.Run(() => Render(bgra, width, height, segments, translations), cancellationToken)
-               ?? throw new Failure("合成失败");
+        var (image, leftovers) = await Task.Run(() => Render(bgra, width, height, segments, translations, pixelsPerPoint), cancellationToken);
+        var all = string.Join("\n\n", Enumerable.Range(0, segments.Count)
+            .Where(index => ScreenshotOverlay.HasTranslatableContent(segments[index].Text))
+            .Select(index => translations[index].Trim()));
+        if (image is null && leftovers.Count == 0)
+        {
+            throw new Failure("合成失败");
+        }
+
+        return new Outcome(image, leftovers.Select(index => (segments[index].Text, translations[index].Trim())).ToList(), all);
     }
 
     private static async Task<List<string>> TranslateSegmentsAsync(
@@ -164,16 +181,22 @@ internal static class ScreenshotTranslator
         return results.ToList();
     }
 
-    /// <summary>合成：去字（Core）+ 画字（Win2D）。坐标：Core 是左下原点，Win2D 是左上原点，y 换一下。</summary>
-    internal static byte[]? Render(byte[] bgra, int width, int height, IReadOnlyList<OverlaySegment> segments, IReadOnlyList<string> translations)
+    /// <summary>
+    /// 合成：去字（Core）+ 画字（Win2D）。坐标：Core 是左下原点，Win2D 是左上原点，y 换一下。
+    /// 返回贴了译文的图（一段都没画时 null）和放不下的段的下标（纯符号段不算）。
+    /// </summary>
+    internal static (byte[]? Image, List<int> Leftovers) Render(
+        byte[] bgra, int width, int height, IReadOnlyList<OverlaySegment> segments, IReadOnlyList<string> translations,
+        double pixelsPerPoint = 1)
     {
         var device = CanvasDevice.GetSharedDevice();
         var measure = new Win2DMeasure(device);
         var pixels = new OverlayPixels((byte[])bgra.Clone(), width, height, width * 4);
-        var composed = ScreenshotOverlay.Compose(pixels, segments, translations, measure);
+        var (composed, leftovers) = ScreenshotOverlay.Compose(pixels, segments, translations, measure, pixelsPerPoint);
+        leftovers = leftovers.Where(index => ScreenshotOverlay.HasTranslatableContent(segments[index].Text)).ToList();
         if (composed.Count == 0)
         {
-            return null;
+            return (null, leftovers);
         }
 
         using var target = new CanvasRenderTarget(device, width, height, 96, DirectXPixelFormat.B8G8R8A8UIntNormalized, CanvasAlphaMode.Premultiplied);
@@ -188,7 +211,7 @@ internal static class ScreenshotTranslator
             }
         }
 
-        return target.GetPixelBytes();
+        return (target.GetPixelBytes(), leftovers);
     }
 
     private static Color ToColor(OverlayRgb rgb)
@@ -283,16 +306,74 @@ internal static class ScreenshotTranslator
     /// <summary>量字：和画同一份排版（折法一致）。</summary>
     private sealed class Win2DMeasure(CanvasDevice device) : ITextMeasure
     {
+        private static readonly Color Black = Color.FromArgb(255, 0, 0, 0);
+
+        /// <summary>字的上伸部占字号的多少（「Ag国」的墨迹顶到基线；量一次）。</summary>
+        private double? _ascent;
+
         public int LineCount(string text, double width, double fontSize, OverlayCode? code)
         {
-            using var layout = Layout(device, text, width, fontSize, code, 0, Color.FromArgb(255, 0, 0, 0), Color.FromArgb(255, 0, 0, 0));
+            using var layout = Layout(device, text, width, fontSize, code, 0, Black, Black);
             return Math.Max(1, layout.LineCount);
         }
 
         public double Width(string text, double fontSize)
         {
-            using var layout = Layout(device, text, 10_000, fontSize, null, 0, Color.FromArgb(255, 0, 0, 0), Color.FromArgb(255, 0, 0, 0));
+            using var layout = Layout(device, text, 10_000, fontSize, null, 0, Black, Black);
             return layout.LayoutBounds.Width;
         }
+
+        /// <summary>最长那行的宽（DirectWrite 的宽不算行尾空格）。</summary>
+        public double Extent(string text, double width, double fontSize, OverlayCode? code)
+        {
+            using var layout = Layout(device, text, width, fontSize, code, 0, Black, Black);
+            return Math.Min(width, layout.LayoutBounds.Width);
+        }
+
+        /// <summary>
+        /// 折行有没有把一个拉丁词拆开（PLAN-v18 S8）：DirectWrite 一个词放不下一行时按字母断，行数照算成放得下。
+        /// 看每个断行处两边的字：都是字母 / 数字（不是汉字）就是拆了词。断行处按字符区块换行认（LineMetrics 有 bool 字段，
+        /// AOT 下 CsWinRT 封送不了这个数组）。
+        /// </summary>
+        public bool SplitsWord(string text, double width, double fontSize, OverlayCode? code)
+        {
+            if (text.Length < 2)
+            {
+                return false;
+            }
+
+            using var layout = Layout(device, text, width, fontSize, code, 0, Black, Black);
+            if (layout.LineCount < 2)
+            {
+                return false;
+            }
+
+            var regions = layout.GetCharacterRegions(0, text.Length);
+            for (var index = 1; index < regions.Length; index++)
+            {
+                var at = regions[index].CharacterIndex;
+                if (regions[index].LayoutBounds.Y > regions[index - 1].LayoutBounds.Y + 0.5 &&
+                    at > 0 && at < text.Length && IsWordChar(text[at - 1]) && IsWordChar(text[at]))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>等行距排版时第一行的基线在行顶下 0.8 行距（Layout 那样设的），墨迹顶到它的距离就是上伸部。</summary>
+        public double Ascent(double fontSize)
+        {
+            if (_ascent is null)
+            {
+                using var layout = Layout(device, "Ag国", 10_000, 100, null, 200, Black, Black);
+                _ascent = Math.Clamp((160 - layout.DrawBounds.Top) / 100, 0.6, 1.2);
+            }
+
+            return fontSize * _ascent.Value;
+        }
+
+        private static bool IsWordChar(char ch) => char.IsLetterOrDigit(ch) && !OcrText.IsCjk(ch);
     }
 }

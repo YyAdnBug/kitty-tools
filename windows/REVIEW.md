@@ -667,6 +667,17 @@ mac 的单测在 `macos/KittyToolsTests/`，样本和期望值能搬就搬。只
 - **第 6–8 批**：脚本命令 L1，照 D7–D9；mac 的代码在 `Launcher/Script*.swift`、`Shell/Subprocess.swift`，规矩在 mac 的 `.claude/skills/` 里搜「脚本」。三轮评审修的口子（看全文不可跳过、看不见的字符不放行、密码不拿去搜、停得掉）都要有，各写单测。
 - 0.3.0 的「新」标记三项、版本号、更新日志在最后一批定。
 
+#### 各批结果（Windows agent 写）
+
+- **第 1 批（`a40e5b53` S5 S2、`b066b09c` S16 S14、`11707cad` S17、`39cf9750` S15 S18 S19）**：长截图手动滚的节奏和「对不上」的提示、尺寸胶囊先放选区外、打码改高斯模糊 + 改名 + 模糊在前、八个手柄 / Shift 保比例 / Alt 从中心、一键打码（手机号 / 邮箱 / 卡号 Luhn / 身份证校验位）、文字字号 12–72、序号改编号和拖角改大小、双头箭头、吸管取色。AOT x64 / ARM64 0 警告；906 测试；`--overlay-translate-probe` 真识字认出电话、邮箱、订单号不盖。
+  内存全量（39cf9750 vs 0.2.0 包，这份也带着 PLAN-v19 的同步代码）：只托盘 54.2 / 53.5 MB，开截图遮罩 76.2 / 74.6，最后静置 98.6 / 96.7（+0.7…+1.9 MB）。
+  没做：长图标注窗口里的「自动」、吸管、A− / A+、改编号（只做在截图遮罩里）；S2 没像 mac 那样叠着截、不被滚轮叫醒。没量：长截图进行中的 CPU（没有不靠合成输入开长截图的自检）。手测 1238–1246。
+- **第 2 批（`a744f513` S11，`git log --grep "PLAN-v18 第 2 批"`）**：mac 第二轮排版整段搬进 Core `ScreenshotOverlay.Layout`（同段原字号 → 原位 → 往右撑 → 用周围空白居中，都要「在图里、不碰别段原文和已排好的段、那块是空的」；字号下限 10 pt × DPI 和基准的 3/4 取大，基准本来就小的不缩；放不下的进 Leftovers），去字只在原文框里取字色、留原文的段一个像素不动、色块里的字不连段外一起抹；`ITextMeasure` 加 Extent / SplitsWord / Ascent（Win2D 那边按字符区块认断行——`CanvasLineMetrics` 带 bool 字段，CsWinRT 封送不了，Debug 也一样抛）。
+  界面：翻完总挂卡片（`SelectionOverlayWindow.TranslationCard.cs`，窄栏 = 「译文」｜看原文｜拷贝｜✕，有放不下的段时列原文一行 + 译文全文、可选中），位置是 Core `SelectionChrome.TranslationCard`（mac cardPlacement 的单测换成左上原点照搬），尺寸胶囊给卡片让位；Esc / 选区一变 / 切录屏 / ✕ 收。
+  单测 920（新 14：mac 的十个排版 + 400 个随机版面、去字不动图标、卡片位置、标题和提示）；`--overlay-translate-probe` 新加「小选区」两条：150 % 下紧贴一行 → 图不变、1 段进卡片；上下留 40 像素 → 用空白排、不进卡片。
+  替用户定的：卡片在 Windows 上没有 mac 的「从边长出来」，用工具栏同一个入场（Pop，往选区那边让 6）；卡片里的字是 WinUI 可选中的 TextBlock，右键菜单是系统的「复制 / 全选」（mac 关了右键菜单是因为系统菜单压在遮罩下面，WinUI 的在同一扇窗里）。
+  没测：真翻译服务、真点卡片和 Esc 顺序（HANDTEST 1247–1257）。
+
 ### 停下来问用户
 
 - 建 / 改 `windows-update` 那个 release、打 tag、发布；

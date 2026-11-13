@@ -154,6 +154,78 @@ public static class SelectionChrome
             Math.Clamp(Math.Round(height), 1, Math.Max(1, bounds.Bottom - top)));
     }
 
+    /// <summary>译文卡片的宽同选区、夹在这两个数之间（DIP，mac TranslationCard.minWidth / maxWidth）。</summary>
+    public const double CardMinWidth = 240;
+
+    public const double CardMaxWidth = 420;
+
+    /// <summary>译文卡片的标题（也是读屏名，PLAN-v18 S7 S9）：没有放不下的段时就是「译文」。</summary>
+    public static string CardTitle(int leftovers)
+        => leftovers > 1 ? $"放不下的 {leftovers} 段译文" : leftovers == 1 ? "放不下的译文" : "译文";
+
+    /// <summary>就地翻译完的顶部提示：到字号下限也放不下的段图上留着原文，译文在卡片里（mac translatedHint）。</summary>
+    public static string TranslatedHint(int leftovers, bool drewAny)
+        => leftovers == 0 ? "已替换为译文" : drewAny ? $"有 {leftovers} 段放不下，译文放在卡片里" : "选区太小，译文放在卡片里";
+
+    /// <summary>
+    /// 译文卡片放哪（mac cardPlacement，PLAN-v18 S7 / 拍板 B3；DIP、左上原点）：选区外、工具栏的另一侧（栏在下面挂上面、栏在上面挂下面），
+    /// 离选区 10，左边和选区对齐、夹在屏内 10；那一侧放不下挂到工具栏外面（让出样式托盘 tray）；都放不下（选区差不多整屏）放进选区
+    /// 左下角离边 8，压到栏（连托盘）就挪到它上面。没有工具栏（截图翻译模式）先挂上面、再挂下面。
+    /// GrowsDown：卡片靠选区的是上边（从那里往下长出来）。
+    /// </summary>
+    public static (double X, double Y, bool GrowsDown) TranslationCard(
+        double width, double height, RectD selection, RectD? toolbar, double tray, double screenWidth, double screenHeight)
+    {
+        const double margin = 10;
+        var x = Math.Round(Math.Max(margin, Math.Min(selection.X, screenWidth - margin - width)));
+        bool Fits(double y) => y >= margin && y + height <= screenHeight - margin;
+        var barAbove = toolbar is { } above && above.Bottom <= selection.Y + 0.5;
+        var barBelow = toolbar is { } below && below.Y >= selection.Bottom - 0.5;
+        var candidates = new List<(double Y, bool GrowsDown)>
+        {
+            barAbove ? (selection.Bottom + margin, true) : (selection.Y - margin - height, false),
+        };
+        if (toolbar is { } outer && barBelow)
+        {
+            candidates.Add((outer.Bottom + tray + 6, true));
+        }
+
+        if (toolbar is { } upper && barAbove)
+        {
+            candidates.Add((upper.Y - tray - 6 - height, false));
+        }
+
+        if (toolbar is null)
+        {
+            candidates.Add((selection.Bottom + margin, true));
+        }
+
+        foreach (var (y, growsDown) in candidates)
+        {
+            if (Fits(Math.Round(y)))
+            {
+                return (x, Math.Round(y), growsDown);
+            }
+        }
+
+        // 选区里左下角；压到栏（连托盘：栏在选区下面时托盘在栏下面，在上面 / 选区里时在栏上面）就挪到它上面；
+        // 最后夹在屏内 10（贴着屏幕边的窄选区，卡片比选区宽，✕ 和拷贝不能跑到屏幕外）
+        var inside = new RectD(selection.X + 8, selection.Bottom - 8 - height, width, height);
+        if (toolbar is { } taken)
+        {
+            var occupied = new RectD(taken.X, barBelow ? taken.Y : taken.Y - tray, taken.Width, taken.Height + tray);
+            if (Overlaps(inside, occupied))
+            {
+                inside = inside with { Y = occupied.Y - 6 - height };
+            }
+        }
+
+        return (
+            Math.Round(Math.Max(margin, Math.Min(inside.X, screenWidth - margin - width))),
+            Math.Round(Math.Max(margin, Math.Min(inside.Y, screenHeight - margin - height))),
+            false);
+    }
+
     private static bool Overlaps(RectD a, RectD b)
         => a.X < b.Right && b.X < a.Right && a.Y < b.Bottom && b.Y < a.Bottom;
 }
