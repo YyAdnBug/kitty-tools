@@ -300,6 +300,8 @@ internal sealed partial class SettingsWindow
                 password.Password = fill.Password;
                 DispatcherQueue.TryEnqueue(async () =>
                 {
+                    // 对话框还没排版时改 Text 不一定发 TextChanged：按钮、http 橙字按填好的样子刷一遍
+                    Refresh();
                     switch (fill.Action)
                     {
                         case "test":
