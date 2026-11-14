@@ -48,7 +48,7 @@ internal static class WhatsNewHost
     /// <summary>执行了一个动作（快捷键、主界面、托盘、启动器）。</summary>
     public static void Touch(string action) => Update(ledger => WhatsNew.Touching(ledger, entry => entry.Actions.Contains(action)));
 
-    /// <summary>拨过设置里新的那一节（脚本命令、同步）：那一节的条目算看过。</summary>
+    /// <summary>拨过设置里新的那一节：那一节的条目算看过（脚本命令、同步两处在调；0.2.0 没有设置里一节的条目，调了什么都不变）。</summary>
     public static void TouchSection(string page, string section)
         => Update(ledger => WhatsNew.Touching(ledger, entry => entry.Page == page && entry.Section == section));
 

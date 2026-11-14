@@ -132,10 +132,6 @@ public sealed class WhatsNewTests
         CollectionAssert.AreEqual(new[] { "notes", "reminders", "status-screen" }, WhatsNew.Fresh(upgraded, All, T0).Select(entry => entry.Id).ToArray());
         Assert.IsTrue(WhatsNew.MarksAction("noteCapture", WhatsNew.Fresh(upgraded, All, T0)));
         Assert.AreEqual(0, WhatsNew.Fresh(WhatsNew.Adopting(WhatsNewLedger.Empty, null, "0.2.0", T0), All, T0).Count);
-        // 0.2.0 升到 0.3.0：只标脚本命令、WebDAV（都只在设置里有入口），0.2.0 那三个不再标
-        var third = WhatsNew.Fresh(WhatsNew.Adopting(WhatsNewLedger.Empty, "0.2.0", "0.3.0", T0), All, T0);
-        CollectionAssert.AreEqual(new[] { "scripts", "webdav" }, third.Select(entry => entry.Id).ToArray());
-        Assert.IsTrue(WhatsNew.InSettingsOnly(third));
         // 还没改版本号（这次还是 0.1.2）：不标
         Assert.AreEqual(0, WhatsNew.Fresh(WhatsNew.Adopting(WhatsNewLedger.Empty, "0.1.2", "0.1.2", T0), All, T0).Count);
     }

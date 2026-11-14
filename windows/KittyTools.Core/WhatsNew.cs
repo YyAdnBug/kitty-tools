@@ -1,8 +1,8 @@
 // 新功能标记「新」（PLAN-v16 G3，照 mac Shell/WhatsNew.swift 的规则，纯函数配单测）：从旧版本升上来后，这一版新加的功能挂一个「新」——
 // 托盘菜单（子菜单的父项跟着挂）和主界面是格子名字前的强调色小圆点、设置侧栏是行尾的小圆点（收起的组标题后也一个）、设置页里新的那一节是
 // 标题后描边的「新」。
-// - 标什么：Entries，每版最多 3 个，只挑有入口的。0.2.0（PLAN-v16 §3 V3）：便签、提醒、状态屏（Windows 这一轮真新加的）；
-//   0.3.0（PLAN-v18）：脚本命令、同步到 WebDAV 服务器。
+// - 标什么：Entries，每版最多 3 个，只挑有入口的。0.2.0（PLAN-v16 §3 V3）：便签、提醒、状态屏（Windows 这一轮真新加的）。
+//   PLAN-v19 / v18 的同步服务器、脚本命令（用户 2026-11-14 并进 0.2.0）不标：一版只标 3 个，这三个更大。
 //   id 发布后别改（「碰过」按它记）。版本号写 0.2.0：0.1.2 之后不管下一版发成几，这几样都在 (上次, 这次] 里。
 // - 什么时候出：只有从旧版本升上来的（上次打开的版本之后、这一版及以前加的都算，跳着升级的中间几版一起标），新装不标；功能关着不标。
 // - 什么时候没：真用过一次就各处一起没——执行了它的动作、拨过它那一节的开关（设置换页时看着的那页不闪掉，换页才没）；升到下一版时
@@ -45,9 +45,6 @@ public static class WhatsNew
         new WhatsNewEntry("notes", "0.2.0", "notes", new[] { "noteCapture", "noteNew", "noteAll" }, "notes"),
         new WhatsNewEntry("reminders", "0.2.0", "reminders", new[] { "reminderNew" }, "reminders"),
         new WhatsNewEntry("status-screen", "0.2.0", "statusScreen", new[] { "statusScreen" }, "statusScreen"),
-        // 0.3.0（PLAN-v18 最后一批定）：脚本命令、同步到 WebDAV 服务器——都只在设置里有入口，拨过那一节才算碰过
-        new WhatsNewEntry("scripts", "0.3.0", "launcher", Array.Empty<string>(), "launcher", "脚本命令"),
-        new WhatsNewEntry("webdav", "0.3.0", null, Array.Empty<string>(), "general", "同步"),
     };
 
     /// <summary>版本号比较（x.y.z，认不出的当 0）。</summary>
