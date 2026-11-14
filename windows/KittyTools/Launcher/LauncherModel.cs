@@ -213,6 +213,10 @@ internal sealed partial class LauncherModel
             Initials = new[] { LauncherMatch.Initials(script.Title) }.Where(value => value.Length > 0).ToList(),
             Payload = arguments is null ? null : string.Join('\u001F', arguments),
             Completion = script.TakesInput ? (alias ?? script.Title) + " " : null,
+            // 头部写的图标（PLAN-v20 L1，mac scriptIcon）：表情照画、脚本旁边的图片读进来；深色下有 iconDark 用它。
+            // Segoe 图标名（mac 是 SF 符号名，Windows 没有对照）、网址（不下载）照旧画统一的脚本图标
+            Emoji = ScriptLibrary.IconFor(script) is ScriptIcon.Emoji emoji && StatusEmojiCatalog.IsCustom(emoji.Text.TrimEnd('\uFE0F')) ? emoji.Text : null,
+            IconData = ScriptLibrary.IconFor(script) is ScriptIcon.Image image ? ScriptLibrary.ImageBytes(image.Path) : null,
         };
     }
 
@@ -1529,6 +1533,21 @@ internal sealed partial class LauncherModel
         LauncherKind.Url or LauncherKind.Search => "复制网址",
         LauncherKind.Calculation => "复制结果",
         LauncherKind.Ip when item.Payload is not null => "复制地址",
+        // 列表脚本的一行（PLAN-v20 L3，mac text.copy）：拷它的值，没有值拷标题；「没有结果」那一行不算
+        LauncherKind.Script when IsScriptLine(item) => "复制这一行",
+        _ => null,
+    };
+
+    /// <summary>列表脚本跑出来的一行（scriptline:0…；-1 是「没有结果 / 出错」那一行）。</summary>
+    private static bool IsScriptLine(LauncherItem item)
+        => item.Target.StartsWith("scriptline:", StringComparison.Ordinal) && !item.Target.EndsWith(":-1", StringComparison.Ordinal);
+
+    /// <summary>这一行在 设置 › 启动器 › 命令和别名 里是哪一条（PLAN-v20 L2）：自己的 / 自带的脚本、系统命令、关键词命令的提示行；别的给 null。</summary>
+    private static string? CommandIdFor(LauncherItem item) => item.Kind switch
+    {
+        LauncherKind.Script when !item.Target.StartsWith("scriptline:", StringComparison.Ordinal) => "script:" + item.Target,
+        LauncherKind.Command => SystemCommands.IdOf(item.Target),
+        LauncherKind.Prompt => LauncherCommandTable.BuiltInForPrompt(item.Target)?.Id,
         _ => null,
     };
 
@@ -1552,7 +1571,7 @@ internal sealed partial class LauncherModel
             {
                 CopyFormat.Markdown => (LauncherText.MarkdownLink(item.Title, item.Target), "复制为 Markdown 链接"),
                 CopyFormat.Title => (item.Title, "复制标题"),
-                _ => (item.Payload ?? item.Target, CopyTitle(item) ?? "复制"),
+                _ => (IsScriptLine(item) ? item.Payload ?? item.Title : item.Payload ?? item.Target, CopyTitle(item) ?? "复制"),
             };
         if (!ClipboardWriter.WriteText(text))
         {
@@ -1877,6 +1896,16 @@ internal sealed partial class LauncherModel
             {
                 HidePanel();
                 LauncherOpeners.Reveal(own.Path);
+            }));
+        }
+
+        // 改别名（PLAN-v20 L2，mac bda29731）：命令表里那一行（脚本、系统命令、关键词命令），打开设置滚到它、光标放进别名框
+        if (CommandIdFor(item) is { } commandId && LauncherCommandKeys.Rows.Any(row => row.Id == commandId))
+        {
+            actions.Add(new PaletteItem("改别名…", Glyphs.Edit, 4, () =>
+            {
+                HidePanel();
+                ShellRuntime.Instance?.FocusCommand(commandId);
             }));
         }
 

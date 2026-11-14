@@ -261,6 +261,41 @@ internal static class ScriptLibrary
         return Encoding.GetEncoding(System.Globalization.CultureInfo.CurrentCulture.TextInfo.ANSICodePage).GetString(span);
     }
 
+    /// <summary>这条脚本此刻用的图标：深色下有 iconDark 用它（PLAN-v20 L1）。</summary>
+    public static ScriptIcon? IconFor(ScriptCommand script)
+        => Theme.EffectiveTheme == Microsoft.UI.Xaml.ElementTheme.Dark && script.IconDark is { } dark ? dark : script.Icon;
+
+    private static readonly Dictionary<string, (DateTime Modified, byte[]? Bytes)> Images = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// 头部 icon 写的图片（png / jpg / ico / bmp…）读成字节给启动器那一行（PLAN-v20 L1）：按路径和修改时间记着，脚本库每次呼出都重读、图片不跟着重读；
+    /// 超过 1 MB、读不了的不要（行上照旧画脚本图标）。
+    /// </summary>
+    public static byte[]? ImageBytes(string path)
+    {
+        try
+        {
+            var info = new FileInfo(path);
+            if (!info.Exists || info.Length > 1024 * 1024)
+            {
+                return null;
+            }
+
+            if (Images.TryGetValue(path, out var cached) && cached.Modified == info.LastWriteTimeUtc)
+            {
+                return cached.Bytes;
+            }
+
+            var bytes = File.ReadAllBytes(path);
+            Images[path] = (info.LastWriteTimeUtc, bytes);
+            return bytes;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
     /// <summary>下载来、还没看过的：网址图标、脚本文件夹外面的图片不用（mac dropUntrustedIcons）。</summary>
     private static ScriptCommand DropUntrustedIcons(ScriptCommand script)
     {

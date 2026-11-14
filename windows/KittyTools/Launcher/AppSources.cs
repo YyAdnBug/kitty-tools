@@ -212,8 +212,9 @@ internal static partial class AppSources
             return null;
         }
 
-        var icon = ShellIcons.LoadPng(path, scale);
-        if (icon is not { Length: > 0 })
+        // 只问有没有图标（不取、不编 PNG）：图是启动器第一次画这一行时再取（LauncherPanel 的 PathIcon，后台批量），
+        // 扫描少了大头（PLAN-v20 L4：A1–A3 原来主要花在给 App Paths 的二十几个程序取图标）
+        if (!HasIcon(path))
         {
             return null;
         }
@@ -239,10 +240,21 @@ internal static partial class AppSources
             Names = names.Distinct().ToList(),
             Initials = initials.Where(value => value.Length > 0).Distinct().ToList(),
             IconPath = path,
-            IconData = icon,
             AliasKey = AppAliases.Key(path, path, AliasFolders),
         };
     }
+
+    /// <summary>exe 里有没有图标（ExtractIconEx 传 -1 只数个数，不加载）；没有的是命令行小工具，不当应用。</summary>
+    private static unsafe bool HasIcon(string path)
+    {
+        fixed (char* file = path)
+        {
+            return ExtractIconExW(file, -1, null, null, 0) > 0;
+        }
+    }
+
+    [System.Runtime.InteropServices.LibraryImport("shell32.dll")]
+    private static unsafe partial uint ExtractIconExW(char* file, int index, IntPtr* large, IntPtr* small, uint icons);
 
     /// <summary>文件说明（同一个文件夹里说明一样的只留一个用）。</summary>
     public static string? Description(string path)

@@ -819,3 +819,12 @@ mac 0.7.1（第四轮体检）修掉、Windows 也有的那几条，照 mac 同�
 1338. 手动开着无限期时在设置里「移除」插件：底部提示「已停止保持唤醒 / 插件移除了…」，侧栏那一组没了、回到 通用 › 功能，`powercfg /requests` 里没有了。（Windows 11-14：--keep-awake-probe 这一步停掉、撤掉）
 1339. 设置 › 通用 › 导出 再导入：定时和「屏幕也不熄」跟着回来（键名同 mac：keepAwakeSchedule、keepAwakeDisplay）；手动开的那一段、插件添没添加不跟着。（没测）
 1340. 设置 › 便签 / 提醒 / 状态屏 / 保持唤醒 的页头色块是各自的家族色（以前便签、提醒、状态屏是灰的）。（Windows 11-14：截图 settings-sub-keepawake）
+
+## PLAN-v20 第 4 批：启动器小补（脚本行的图标、改别名、列表行复制、应用扫描），2026-11-14
+
+> 写了「Windows 11-14」的是用 `--launcher-script`（.Dev 档脚本文件夹里放的三个测试脚本，不发按键）、`--ui-snapshots` 验过的；**没写的都没测**。截图在 `windows-shots` 的 `0.3.0-v20-4/`。
+
+1341. 脚本头部写 `# @kitty.icon 👋`：启动器里那一行画这个表情（不是统一的脚本图标）；写 `# @kitty.icon pic.png`（脚本旁边的图片）画那张图；改了图片、下次呼出换新的；写 `# @kitty.iconDark` 的深色主题下用它。下载来还没看过全文的脚本，图片不在脚本文件夹里、是链接时照旧画脚本图标。（Windows 11-14：截图 script-emoji、script-image，浅深；iconDark、下载来的没测）
+1342. 自己的脚本、自带的命令、系统命令（如 sleep）、关键词命令的提示行上 Ctrl+K：最下面「改别名…」，点了打开 设置 › 启动器 › 命令和别名，滚到那一行、描两秒强调色、光标在别名框里（全选着，直接打新的）；「只看开着的」勾着、那条又关着时先把勾去掉。（Windows 11-14：截图 script-menu；落到那一行的截图 settings-sub-command-focus 是直接调的，Ctrl+K 里真点没测）
+1343. 列表脚本（mode list）跑出来的一行上 Ctrl+C：拷它的值（Script Filter 的 arg），没有值拷标题，提示「已复制这一行」；Ctrl+K 里也有「复制这一行」。「没有结果」那一行没有。（Windows 11-14：截图 script-list-menu；真按 Ctrl+C 没测）
+1344. 刚开机第一次呼出启动器、搜到 App Paths 里的程序（如 chrome、winword）：图标先空一下、马上出来（第一次画时才取）；之后照常。启动器扫应用时（日志 launcher.app-sources）比以前快。（Windows 11-14：Release 日志 ms 前后见 REVIEW；图标晚到那一下没看）

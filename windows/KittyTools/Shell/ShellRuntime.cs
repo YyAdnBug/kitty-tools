@@ -1016,6 +1016,13 @@ internal sealed class ShellRuntime
         _settingsWindow.ShowPage(welcome, page, service);
     }
 
+    /// <summary>启动器 Ctrl+K「改别名…」（PLAN-v20 L2）：打开 设置 › 启动器 › 命令和别名，滚到那一行。</summary>
+    public void FocusCommand(string id)
+    {
+        ShowSettings(welcome: false, "launcher");
+        _settingsWindow?.FocusCommand(id);
+    }
+
     /// <summary>启动器「添加…插件」那一行（PLAN-v20 K2）：打开 通用 › 功能，滚到那张插件卡、描两秒强调色。</summary>
     public void FocusPlugin(string key)
     {

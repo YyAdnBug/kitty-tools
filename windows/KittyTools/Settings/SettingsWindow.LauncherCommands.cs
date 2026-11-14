@@ -71,6 +71,61 @@ internal sealed partial class SettingsWindow
         _scroll.ChangeView(null, 0, null, disableAnimation: true);
     }
 
+    /// <summary>
+    /// 启动器 Ctrl+K「改别名…」（PLAN-v20 L2，mac bda29731）：打开 命令和别名、清掉筛选，滚到那一行、描两秒强调色，光标放进它的别名框。
+    /// 那条关着、「只看开着的」勾着时先把勾去掉。
+    /// </summary>
+    public void FocusCommand(string id)
+    {
+        _commandOnlyOn = false;
+        OpenLauncherSubpage("commands");
+        _scroll.UpdateLayout();
+        if (FindTagged(_content, "command:" + id) is not Border row)
+        {
+            return;
+        }
+
+        var brush = row.BorderBrush;
+        var thickness = row.BorderThickness;
+        row.BorderBrush = new SolidColorBrush(Theme.AccentColor);
+        row.BorderThickness = new Thickness(2);
+        row.StartBringIntoView(new BringIntoViewOptions { VerticalAlignmentRatio = 0.3, AnimationDesired = false });
+        if (_aliasBoxes.TryGetValue(id, out var box))
+        {
+            box.Focus(FocusState.Programmatic);
+            box.SelectAll();
+        }
+
+        var timer = DispatcherQueue.CreateTimer();
+        timer.Interval = TimeSpan.FromSeconds(2);
+        timer.IsRepeating = false;
+        timer.Tick += (_, _) =>
+        {
+            row.BorderBrush = brush;
+            row.BorderThickness = thickness;
+        };
+        timer.Start();
+
+        static FrameworkElement? FindTagged(DependencyObject node, string tag)
+        {
+            if (node is FrameworkElement element && element.Tag as string == tag)
+            {
+                return element;
+            }
+
+            var count = VisualTreeHelper.GetChildrenCount(node);
+            for (var index = 0; index < count; index++)
+            {
+                if (FindTagged(VisualTreeHelper.GetChild(node, index), tag) is { } found)
+                {
+                    return found;
+                }
+            }
+
+            return null;
+        }
+    }
+
     private void OpenLauncherSubpage(string? subpage)
     {
         _launcherSubpage = subpage;
@@ -268,6 +323,7 @@ internal sealed partial class SettingsWindow
             Padding = new Thickness(12, 6, 12, 6),
             Background = Theme.CardBackground(),
             Child = body,
+            Tag = "command:" + row.Id,
         };
         _hotKeyCards[action] = card;
         _commandProblems[action] = problem;

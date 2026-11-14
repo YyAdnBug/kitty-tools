@@ -279,6 +279,9 @@ public sealed partial class LauncherPanel : UserControl
     internal void ProbeMove(int delta) => MoveSelection(delta, repeat: false);
 
     /// <summary>Enter（没有修饰键）。</summary>
+    /// <summary>自检：开 / 关 Ctrl+K 菜单（同按 Ctrl+K，PLAN-v20 L2）。</summary>
+    internal void ProbeActions() => ToggleActions();
+
     internal void ProbeEnter()
     {
         if (Model is not { } model || SelectedItem is not { } item)
@@ -609,6 +612,11 @@ public sealed partial class LauncherPanel : UserControl
                 break;
             case LauncherKind.App when item.IconData is { Length: > 0 } data:
                 key = "app:" + item.Target;
+                bytes = data;
+                break;
+            case LauncherKind.Script when item.IconData is { Length: > 0 } data:
+                // 脚本头部写的图片（PLAN-v20 L1）：改了图片（长度变了）换一张
+                key = "script:" + item.Target + ":" + data.Length;
                 bytes = data;
                 break;
             case LauncherKind.App or LauncherKind.Path:

@@ -33,6 +33,10 @@
   顺手：设置页头的色块，便签 / 提醒 / 状态屏 以前是灰的。验：998 个测试全过（KeepAwakeTests 8 条照 mac、侧栏插件一条）；`--keep-awake-probe`（Debug 和 Release AOT 都跑了）全过，
   但这台机器上别的程序本来就要着系统和屏幕两位，挂上 / 撤掉从全机状态看不出，只能说请求建成、换档、撤掉都没出错；`powercfg /requests` 要管理员，没跑（HANDTEST 1331）。AOT 0 警告；内存（Release，插件没添加）只托盘 44.7、静置 87.6、录屏后 92.9 MB；空闲 CPU 0.026 %。
   替用户定的：Windows 只有一个插件，mac 的七样改插件不跟（§0）；引导里不列插件；托盘子菜单的项名照 mac。没测：真的不睡 / 不熄屏、睡眠醒来、导出导入（1329–1340）。
+- **第 4 批（`git log --grep "PLAN-v20 第 4 批"`）**：L1 脚本行画头部写的表情 / 旁边的图片（`ScriptLibrary.IconFor` / `ImageBytes`，按路径和修改时间记着）、
+  L2 Ctrl+K「改别名…」落到 命令和别名 那一行（`SettingsWindow.FocusCommand`）、L3 列表脚本的行 Ctrl+C 拷值（没有值拷标题）、
+  L4 应用扫描只数图标不取图（`ExtractIconExW(path, -1)`，图交给启动器第一次画时取）。`--launcher-script` 加一步 `menu`（开 / 关 Ctrl+K）。数字见提交正文。
+  替用户定的：图标名（mac 的 SF 符号名）不认、网址不下载，照旧画脚本图标；「改别名…」排在 Ctrl+K 最后一组。没测：真点（1341–1344）。
 
 ## 0.2.0 发版前审查（2026-11-12）
 

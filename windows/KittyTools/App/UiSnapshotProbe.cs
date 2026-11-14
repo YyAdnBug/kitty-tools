@@ -811,6 +811,17 @@ internal static class UiSnapshotProbe
                 settings.ShowPage(welcome: false, "general");
             }
 
+            // PLAN-v20 L2：启动器 Ctrl+K「改别名…」落到 命令和别名 的那一行（描强调色、光标在别名框里）
+            if (Paths.IsTestProfile && Wanted("settings-sub"))
+            {
+                settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 760));
+                settings.ShowPage(welcome: false, "launcher");
+                settings.FocusCommand("system:sleep");
+                await Task.Delay(600);
+                await ShootSettingsWindowAsync(settings, "settings-sub-command-focus", dark, directory);
+                settings.OpenSubpageForProbe("launcher", null);
+            }
+
             // PLAN-v18 S3：快捷键页「截图时」两组（改过一个键：钉图 Alt+P；清掉一个：录屏），拍完换回去
             if (Paths.IsTestProfile && Wanted("settings-hotkeys-shot"))
             {
