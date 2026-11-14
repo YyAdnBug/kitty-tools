@@ -12,6 +12,7 @@ enum Permissions {
   /// 提示里「去系统设置授权」按钮要打开的那一项
   enum Kind {
     case accessibility, screenRecording, filesAndFolders, automation, fullDiskAccess, microphone
+    case calendar
 
     var settingsTitle: String {
       switch self {
@@ -21,6 +22,7 @@ enum Permissions {
       case .automation: "打开自动化设置"
       case .fullDiskAccess: "打开完全磁盘访问权限设置"
       case .microphone: "打开麦克风设置"
+      case .calendar: "打开日历设置"
       }
     }
 
@@ -33,6 +35,7 @@ enum Permissions {
         case .automation: "Privacy_Automation"
         case .fullDiskAccess: "Privacy_AllFiles"
         case .microphone: "Privacy_Microphone"
+        case .calendar: "Privacy_Calendars"
         }
       NSWorkspace.shared.open(
         URL(string: "x-apple.systempreferences:com.apple.preference.security?\(anchor)")!)

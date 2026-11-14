@@ -18,8 +18,13 @@ struct IslandTab: View {
   @AppStorage(Prefs.islandNoticeNetwork) private var noticeNetwork = false
   @AppStorage(Prefs.islandNowPlaying) private var nowPlaying = false
   @AppStorage(Prefs.islandTrackPeek) private var trackPeek = true
+  @AppStorage(Prefs.islandNextEvent) private var nextEvent = false
+  /// 本 App 回到前台 / 问完授权时加一：让下面那行橙字照现在的授权重算（从系统设置里打开授权回来）
+  @State private var accessChecks = 0
   @AppStorage(Prefs.islandHoverExpands) private var hoverExpands = true
   @AppStorage(Prefs.islandHaptics) private var haptics = true
+  /// 这一次打开开关时系统没给授权（偏好没打开，橙字留着告诉怎么开）
+  @State private var calendarDenied = false
   @Environment(SettingsNavigation.self) private var navigation: SettingsNavigation?
 
   var body: some View {
@@ -40,6 +45,50 @@ struct IslandTab: View {
       } footer: {
         SectionFootnote(
           "读系统的「正在播放」要另起一个小进程（约 4 MB，没在放时不耗电），关掉就退出。暂停 30 秒后刘海两边收起，点刘海叫出的那一张里照样列着。")
+      }
+      Section {
+        // 打开时先问「日历」授权，给了才真的打开（偏好开着 = 当时授权过）；没给就留在关着、橙字说怎么开
+        Toggle(
+          isOn: Binding {
+            nextEvent
+          } set: { isOn in
+            guard isOn else {
+              nextEvent = false
+              calendarDenied = false
+              return
+            }
+            // 已经授权过：直接开（不绕一圈异步，开关不闪）
+            if NextEvent.isAuthorized {
+              nextEvent = true
+              return
+            }
+            askCalendar()
+          }
+        ) {
+          Text("在刘海上显示下一个日程")
+          Text("开始前 10 分钟挂在刘海两边倒数，点开能加入会议、打开日历")
+        }
+        // 开关关着、也没被拒绝过时不去查授权（截图自检画这一页不碰 EventKit）
+        if calendarDenied || (nextEvent && !NextEvent.isAuthorized) {
+          LabeledContent {
+            // 系统还没问过（设置从别处带过来的）：按钮就是去问；问过了只能去系统设置里开
+            if NextEvent.canAsk {
+              Button("允许访问日历") { askCalendar() }
+            } else {
+              Button(Permissions.Kind.calendar.settingsTitle) {
+                Permissions.Kind.calendar.openSettings()
+              }
+            }
+          } label: {
+            Text("没有「日历」授权，读不了日程").foregroundStyle(.orange)
+          }
+          .id(accessChecks)
+        }
+      } header: {
+        Text("日程")
+      } footer: {
+        SectionFootnote(
+          "读系统「日历」里的日程，打开时会问一次授权。全天的、已拒绝的不算；日程的内容只留在这台 Mac 上，不进最近的提示。")
       }
       Section {
         List {
@@ -109,8 +158,27 @@ struct IslandTab: View {
       PluginRemoveSection(plugin: .island)
     }
     .formStyle(.grouped)
+    .onReceive(
+      NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
+    ) { _ in
+      accessChecks += 1
+      if NextEvent.isAuthorized, calendarDenied {
+        calendarDenied = false
+        nextEvent = true
+      }
+    }
     // 0.9.0 的「新」挂在「正在播放」（WhatsNew 的 island-now-playing）：拨过那个开关才算看过
     .onChange(of: nowPlaying) { WhatsNew.touch(section: "正在播放", of: .island) }
+  }
+
+  /// 问「日历」授权（系统框只弹一次）：给了才把开关打开；没给留在关着、橙字说怎么开
+  private func askCalendar() {
+    Task {
+      let allowed = await NextEvent.requestAccess()
+      nextEvent = allowed
+      calendarDenied = !allowed
+      accessChecks += 1
+    }
   }
 
   /// 那一张上出不出这一个：关掉的存成一行一个，按 islandShortcuts 的先后写（同步按字节比，别每次换个排法）

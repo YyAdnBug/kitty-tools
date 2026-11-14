@@ -632,7 +632,7 @@ struct SnapshotProbeTests {
     islandPrefs.set(false, forKey: Prefs.islandShowsHistory)
     for dark in [false, true] {
       try snapshot(
-        IslandTab().defaultAppStorage(islandPrefs), size: NSSize(width: 640, height: 1020),
+        IslandTab().defaultAppStorage(islandPrefs), size: NSSize(width: 640, height: 1180),
         dark: dark, to: "\(out)/settings-island-custom\(dark ? "-dark" : "").png")
     }
     // 设置 › 通用「菜单栏」（第 9 批 M1 M2）：显示 + 彩色、隐藏（图标样式置灰），各出深色；临时偏好域，不动用户的菜单栏图标
@@ -1118,6 +1118,23 @@ struct SnapshotProbeTests {
       island.tapped()
       try snapshot(
         IslandView(island: island), size: notch.windowSize, dark: false, to: "\(out)/\(name).png")
+    }
+    // 下一个日程：开始前 10 分钟挂在耳朵上倒数；点开是标题、时间地点、加入会议 / 打开日历
+    do {
+      let start = Date.now.addingTimeInterval(8 * 60 + 2)
+      let event = NextEvent.activity(
+        NextEvent.Entry(
+          id: "e", title: "周会", start: start, end: start.addingTimeInterval(1800),
+          location: "会议室 A", url: URL(string: "https://zoom.us/j/1")),
+        join: { _ in }, openCalendar: {})
+      try snapshot(
+        IslandView(island: Island(showing: nil, geometry: notch, activities: [event])),
+        size: notch.windowSize, dark: false, to: "\(out)/island-wings-event.png")
+      let island = Island(showing: nil, geometry: notch, activities: [event])
+      island.tapped()
+      try snapshot(
+        IslandView(island: island), size: notch.windowSize, dark: false,
+        to: "\(out)/island-event-card.png")
     }
     // 换歌的一瞥：从耳朵垂下一小条封面 + 歌名 + 艺人
     do {

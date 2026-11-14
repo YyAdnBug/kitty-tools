@@ -16,7 +16,8 @@ extension Island {
   struct Activity: Identifiable {
     /// 哪一类（也是先后：数大的先露，拍板 B2）
     enum Kind: Int, Comparable {
-      case media, reminder, awake, progress, record
+      /// event：十分钟内要开始的日程（2026-11-14）——比保持唤醒、提醒的倒数要紧（它们一挂几个小时，会议马上就到）
+      case media, reminder, awake, event, progress, record
 
       static func < (lhs: Kind, rhs: Kind) -> Bool { lhs.rawValue < rhs.rawValue }
     }
