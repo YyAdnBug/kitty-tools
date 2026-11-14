@@ -447,6 +447,15 @@ internal sealed class Settings
 
     public List<HotKeySetting> HotKeys { get; set; } = new();
 
+    /// <summary>在这些应用里停用快捷键（PLAN-v17 H1，Core HotKeyBlock）：「exe 名」= 全部，「exe 名|动作,动作」= 只停这几个。默认空。</summary>
+    public List<string> HotKeyBlockedApps { get; set; } = new();
+
+    /// <summary>截图时的键（PLAN-v18 S3，Core ShotKeys）：id → 「Ctrl+S」写法，空串 = 清除了，没有这一项 = 默认。</summary>
+    public Dictionary<string, string>? ScreenshotKeys { get; set; }
+
+    /// <summary>全屏游戏时停用快捷键（PLAN-v17 H7 / W1）：默认开。</summary>
+    public bool HotKeyBlockFullscreen { get; set; } = true;
+
     /// <summary>
     /// 功能开关（第三版 §2.3）：clipboard / translate / launcher / screenshot → 开没开。
     /// 没存过的当开；关掉只停入口和后台工作，数据层照常。

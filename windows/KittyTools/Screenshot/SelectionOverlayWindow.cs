@@ -927,7 +927,7 @@ internal sealed partial class SelectionOverlayWindow : Window
         foreach (var kind in AnnotationKinds.All)
         {
             var name = AnnotationKinds.Title(kind);
-            var button = ToolbarButton(ToolGlyph(kind), $"{name}（{AnnotationKinds.Key(kind)}）", name);
+            var button = ShotButton(ToolGlyph(kind), name, name, ShotKeys.IdFor(kind));
             if (kind == AnnotationKind.Line && button.Content is FontIcon line)
             {
                 // Fluent 没有斜线：横线转 −45°
@@ -963,39 +963,40 @@ internal sealed partial class SelectionOverlayWindow : Window
 
         var extras = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
         // 裁剪（PLAN-v11 F11，mac X17）：十种工具之外单独一个，开着时在选区里拖框裁小。
-        _cropButton = ToolbarButton(Glyphs.Crop, "裁剪（X）", "裁剪");
+        _cropButton = ShotButton(Glyphs.Crop, "裁剪", "裁剪", "crop");
         _cropButton.Click += (_, _) => ToggleCrop();
         extras.Children.Add(_cropButton);
-        _undoButton = ToolbarButton(Glyphs.Undo, "撤销（Ctrl+Z）", "撤销");
+        _undoButton = ShotButton(Glyphs.Undo, "撤销", "撤销", "undo");
         _undoButton.Click += (_, _) => Undo();
         extras.Children.Add(_undoButton);
-        _redoButton = ToolbarButton(Glyphs.Redo, "重做（Ctrl+Y）", "重做");
+        _redoButton = ShotButton(Glyphs.Redo, "重做", "重做", "redo");
         _redoButton.Click += (_, _) => Redo();
         extras.Children.Add(_redoButton);
 
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
-        var actionItems = new List<(string, string, string, Action)>();
+        var actionItems = new List<(string Glyph, string Tip, string Name, string ShotId, Action Run)>();
         if (_session.Mode != ScreenshotMode.Record)
         {
-            actionItems.Add((Glyphs.Ocr, "识字（O）", "识别文字", () => _ = _session.RecognizedSelectionAsync()));
+            actionItems.Add((Glyphs.Ocr, "识字", "识别文字", "recognize", () => _ = _session.RecognizedSelectionAsync()));
             if (Features.IsOn(Feature.Translate))
             {
-                actionItems.Add((Glyphs.Translate, "翻译（T）", "截图翻译", () => _ = _session.TranslateSelectionAsync()));
+                actionItems.Add((Glyphs.Translate, "翻译", "截图翻译", "translate", () => _ = _session.TranslateSelectionAsync()));
             }
 
-            actionItems.Add((Glyphs.LongScreenshot, "长截图（S 向下 · Shift+S 向上 · A 自动滚）", "长截图", () => _session.BeginScrolling()));
+            actionItems.Add((Glyphs.LongScreenshot, "长截图", "长截图", "scroll", () => _session.BeginScrolling()));
             if (Features.IsOn(Feature.Recording))
             {
-                actionItems.Add((Glyphs.Record, "录屏（R）", "切到录屏", SwitchToRecording));
+                actionItems.Add((Glyphs.Record, "录屏", "切到录屏", "record", SwitchToRecording));
             }
 
-            actionItems.Add((Glyphs.Pin, "钉在屏幕上（P）", "钉图", () => _ = PinSelectionAsync()));
+            actionItems.Add((Glyphs.Pin, "钉在屏幕上", "钉图", "pin", () => _ = PinSelectionAsync()));
         }
 
-        foreach (var (glyph, tip, name, action) in actionItems)
+        foreach (var item in actionItems)
         {
-            var button = ToolbarButton(glyph, tip, name);
-            button.Click += (_, _) => action();
+            var button = ShotButton(item.Glyph, item.Tip, item.Name, item.ShotId);
+            var run = item.Run;
+            button.Click += (_, _) => run();
             actions.Children.Add(button);
         }
 
@@ -1004,10 +1005,10 @@ internal sealed partial class SelectionOverlayWindow : Window
         if (_session.Mode != ScreenshotMode.Record)
         {
             actions.Children.Add(Separator());
-            var save = ToolbarButton(Glyphs.Save, "快速保存（Ctrl+S）", "保存截图");
+            var save = ShotButton(Glyphs.Save, "快速保存", "保存截图", "save");
             save.Click += (_, _) => _ = _session.SaveSelectionAsync(saveAs: false);
             actions.Children.Add(save);
-            var saveMenu = ToolbarButton(Glyphs.ChevronDown, "更多保存选项", "更多保存选项", width: 18);
+            var saveMenu = ShotButton(Glyphs.ChevronDown, "更多保存选项", "更多保存选项", "saveAs", width: 18);
             if (saveMenu.Content is FontIcon chevron)
             {
                 chevron.FontSize = 10;
@@ -1028,6 +1029,7 @@ internal sealed partial class SelectionOverlayWindow : Window
                 new FontIcon { Glyph = Glyphs.Check, FontSize = 14, Foreground = new SolidColorBrush(Colors.White) },
                 "复制（Enter · 双击选区）", "复制截图");
             done.Click += (_, _) => _ = _session.CopySelectionAsync();
+            AttachRebind(done, "copy", "复制（Enter · 双击选区）");
             actions.Children.Add(done);
         }
         else
@@ -2483,6 +2485,23 @@ internal sealed partial class SelectionOverlayWindow : Window
         var control = IsDown(Windows.System.VirtualKey.Control);
         var shift = IsDown(Windows.System.VirtualKey.Shift);
         var alt = IsDown(Windows.System.VirtualKey.Menu);
+        // 工具栏右键「改…的快捷键」之后等新的键（PLAN-v18 S3）
+        if (_rebinding is not null)
+        {
+            e.Handled = true;
+            RebindKey(e.Key, control, alt, shift);
+            return;
+        }
+
+        // 截图时的键（PLAN-v18 S3，设置 › 快捷键「截图时」能改）：十种工具、出图、长截图、录屏、裁剪、撤销重做、上次区域、取色
+        var modifiers = (control ? HotKeyModifiers.Control : 0) | (alt ? HotKeyModifiers.Alt : 0) | (shift ? HotKeyModifiers.Shift : 0);
+        if (!ShotKeys.IsReserved(new ShotKeyBinding((uint)e.Key, modifiers)) &&
+            ShotKeys.Matching((uint)e.Key, modifiers, SettingsService.Current.ScreenshotKeys) is { } shot)
+        {
+            e.Handled = RunShotKey(shot.Id, shot.Up);
+            return;
+        }
+
         switch (e.Key)
         {
             // PLAN-v9 S4：Ctrl + 方向键把那条边往外推、Alt + 方向键往里收（Shift 10 DIP；mac ⌘ / ⌥）
@@ -2508,13 +2527,6 @@ internal sealed partial class SelectionOverlayWindow : Window
                     _spaceDown = true;
                 }
 
-                break;
-            // 数字键 1–9、0 依次是十种工具（mac toolKeys），再按一次收起；A 留给长截图自动滚动、T 留给截图翻译。
-            // 录屏没有标注（mac：数字键是截图的）。
-            case >= Windows.System.VirtualKey.Number0 and <= Windows.System.VirtualKey.Number9
-                when !control && _session.Mode == ScreenshotMode.Capture && _session.HasSelection:
-                SelectTool(AnnotationKinds.All[((int)e.Key - (int)Windows.System.VirtualKey.Number0 + 9) % 10]);
-                e.Handled = true;
                 break;
             case Windows.System.VirtualKey.Escape:
                 // 照 mac：取色 → 列着放不下的段的译文卡片 → 打字中的文字 → 选中的标注 → 选中的工具 → 退出截图（免得一下把画好的标注全丢了）。
@@ -2561,17 +2573,6 @@ internal sealed partial class SelectionOverlayWindow : Window
                 e.Handled = true;
                 DuplicateSelectedAnnotation();
                 break;
-            case Windows.System.VirtualKey.D:
-                // S5：跳到上次截的区域（录屏、识字、翻译也认）
-                e.Handled = true;
-                SelectLastRegion();
-                break;
-            case Windows.System.VirtualKey.R when !control && _session.Mode == ScreenshotMode.Capture &&
-                                                  _session.SelectionScreen == _screen && _session.HasSelection:
-                // S5：截图调整时切到录屏（工具栏原地换成录制条）
-                e.Handled = true;
-                SwitchToRecording();
-                break;
             case Windows.System.VirtualKey.Left when !control:
                 e.Handled = true;
                 Nudge(-1, 0);
@@ -2593,14 +2594,6 @@ internal sealed partial class SelectionOverlayWindow : Window
                 e.Handled = true;
                 Redo();
                 break;
-            case Windows.System.VirtualKey.Z when control:
-                e.Handled = true;
-                Undo();
-                break;
-            case Windows.System.VirtualKey.Y when control:
-                e.Handled = true;
-                Redo();
-                break;
             case Windows.System.VirtualKey.Enter:
                 e.Handled = true;
                 if (_session.Mode is ScreenshotMode.Ocr or ScreenshotMode.Translate)
@@ -2616,44 +2609,6 @@ internal sealed partial class SelectionOverlayWindow : Window
                     _ = _session.CopySelectionAsync();
                 }
 
-                break;
-            case Windows.System.VirtualKey.C when control:
-                e.Handled = true;
-                _ = _session.CopySelectionAsync();
-                break;
-            case Windows.System.VirtualKey.X when !control && _session.Mode == ScreenshotMode.Capture && _session.HasSelection:
-                e.Handled = true;
-                ToggleCrop();
-                break;
-            case Windows.System.VirtualKey.C:
-                e.Handled = true;
-                _session.CopyColor(_screen.HexAt((int)_cursor.X, (int)_cursor.Y));
-                break;
-            case Windows.System.VirtualKey.S when control:
-                e.Handled = true;
-                _ = _session.SaveSelectionAsync(saveAs: shift);
-                break;
-            case Windows.System.VirtualKey.S when !control && _session.HasSelection:
-                // 长截图（第三版 §7）：S 向下、Shift+S 向上。
-                e.Handled = true;
-                _session.BeginScrolling(up: shift);
-                break;
-            case Windows.System.VirtualKey.A when !control && _session.HasSelection:
-                // 自动滚动长截图：A 向下、Shift+A 向上。
-                e.Handled = true;
-                _session.BeginScrolling(up: shift, autoScroll: true);
-                break;
-            case Windows.System.VirtualKey.O when !control:
-                e.Handled = true;
-                _ = _session.RecognizedSelectionAsync();
-                break;
-            case Windows.System.VirtualKey.T when !control:
-                e.Handled = true;
-                _ = _session.TranslateSelectionAsync();
-                break;
-            case Windows.System.VirtualKey.P:
-                e.Handled = true;
-                _ = PinSelectionAsync();
                 break;
             case Windows.System.VirtualKey.W when control:
                 e.Handled = true;

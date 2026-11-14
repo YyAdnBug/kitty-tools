@@ -677,6 +677,14 @@ mac 的单测在 `macos/KittyToolsTests/`，样本和期望值能搬就搬。只
   单测 920（新 14：mac 的十个排版 + 400 个随机版面、去字不动图标、卡片位置、标题和提示）；`--overlay-translate-probe` 新加「小选区」两条：150 % 下紧贴一行 → 图不变、1 段进卡片；上下留 40 像素 → 用空白排、不进卡片。
   替用户定的：卡片在 Windows 上没有 mac 的「从边长出来」，用工具栏同一个入场（Pop，往选区那边让 6）；卡片里的字是 WinUI 可选中的 TextBlock，右键菜单是系统的「复制 / 全选」（mac 关了右键菜单是因为系统菜单压在遮罩下面，WinUI 的在同一扇窗里）。
   没测：真翻译服务、真点卡片和 Esc 顺序（HANDTEST 1247–1257）。
+  内存全量（478efded vs 0.2.0 包，各两轮取第二轮）：只托盘 53.4 / 53.4 MB，开截图遮罩 75.2 / 75.1，最后静置 99.4 / 97.8；空闲 CPU 0.021 %（静置 30 s 后量 300 s；量 120 s 那次是 0.052 %，同一个包，抖动）。
+- **第 3 批（`git log --grep "PLAN-v18 第 3 批"`）**：PLAN-v17 整份 + L10 两句、S3、L9。
+  - 按应用停用（Core `HotKeyBlock`，`Shell/HotKeyBlocker.cs`）：前台切换挂 `EVENT_SYSTEM_FOREGROUND`（进程外、不轮询），取 exe 名算规则交给 `HotKeyManager.Apply`——规则不变什么都不做，变了只注销 / 补注册变了的那几个 id（失败原因不清）。前台是 Kitty 自己时沿用上一个外部前台（L10 ①）；名单、全屏开关一保存就按此刻的前台重算（L10 ②，`ShellRuntime.OnSettingsChanged`）。截图停着期间只记规则（H4）。全屏游戏 = `QUNS_RUNNING_D3D_FULL_SCREEN` / `PRESENTATION_MODE`，前台变时和热键按下时各查一次。设置页一节 + 全屏开关、托盘一项（用最后一个不是任务栏 / 桌面 / 资源管理器 / 我们的窗口）、导出导入 `hotKeyBlockedExes` `hotKeyBlockFullscreen`。
+  - 截图时的键（Core `ShotKeys`，24 项：mac 的 21 项 + 截图翻译、自动滚、裁剪）：设置 › 快捷键「截图时」两组、工具栏右键改键（钮亮粉底、Esc 只取消改键）、悬停提示 / 速查表 / 长图标注窗口都按现在的键；固定的键、截图里重复、和全局快捷键一样的不收；导出导入 `shotKeys`（读文件时重复的丢掉）。`HotKeyRules.TryParse` 补认标点键和「VKxx」（Format 本来就会写，读不回来）。
+  - 连按两下 Ctrl / Alt / Shift（Core `ModifierTaps` 照 mac 的状态机，毫秒；`Shell/ModifierTapListener.cs`）：Raw Input `RIDEV_INPUTSINK` 挂在隐藏窗口，只在有动作设成连按时才注册；`hDevice == 0`（SendInput，含我们自己粘贴的 Ctrl+V）滤掉；中间按了普通键作废。记成修饰键自己、写法「Ctrl+Ctrl」；Alt / Shift 的副作用写在那一行下面。
+  - 验：单测 938（新 18：HotKeyBlock 6、ShotKeys 4、ModifierTaps 8）；`--hotkey-block-probe`（Debug，假装前台换 exe、不发按键）全对，注册 / 注销 20 次切换中位 0.015 ms、最长 0.045 ms（第一次带上开 / 关 Raw Input 1.6 ms）；AOT x64 / ARM64 0 警告（96.4 / 102.0 MB）；截图 settings-hotkeys-block(-empty)、settings-hotkeys-shot-*、shot-rebind（浅深）。内存全量和空闲 CPU 随第 4 批补。
+  - 替用户定的：托盘那一项认「最后一个外部窗口」时跳过 `XamlExplorerHostIslandWindow`、`Windows.UI.Core.CoreWindow`（开始菜单、通知中心）；截图时的键多出截图翻译、自动滚、裁剪三项（Windows 工具栏上有）；连按两下只听键盘，中间点了鼠标也算（听鼠标要收每一下移动，`ponytail:`）；同一个连按键只认第一个动作，第二个那一行写「和「…」重复」。
+  - 没测：W3（管理员窗口在前台时 RegisterHotKey / Raw Input 收不收得到）、W4 远程桌面、独占全屏游戏、真按键（录制框、截图里改过的键、连按两下）、托盘那一项（HANDTEST 1258–1271）。
 
 ### 停下来问用户
 
@@ -688,6 +696,8 @@ mac 的单测在 `macos/KittyToolsTests/`，样本和期望值能搬就搬。只
 
 方案在 `PLAN-v17.md`，PLAN-v16 做完再做。一批，你们自己写、自己编译、自己验；做完在这一节下面记一句：做了什么、量到的数（注册 / 注销耗时）、
 W3 管理员窗口和 W4 远程桌面的实测结果、替用户定的、没做成 / 没测的。
+
+- **做完了（2026-11-14，随 PLAN-v18 第 3 批）**：结果、量到的数、替用户定的、没测的写在上面「PLAN-v18 › 各批结果 › 第 3 批」。W3、W4 都没测（要 UAC / 远程桌面）。
 
 ## PLAN-v16（跟上 mac 0.7.1 之后的新东西，2026-11-07 用户「让 windows agent 实现」）
 

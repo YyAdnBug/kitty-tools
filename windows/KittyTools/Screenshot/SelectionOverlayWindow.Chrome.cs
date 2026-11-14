@@ -520,6 +520,8 @@ internal sealed partial class SelectionOverlayWindow
         _document.SelectedId = null;
         _root.Children.Remove(_toolbar);
         _toolButtons.Clear();
+        EndRebind();
+        _shotButtons.Clear();
         _undoButton = null;
         _redoButton = null;
         _toolChip = null;

@@ -525,6 +525,23 @@ internal static class ArchiveService
             }
 
             writer.WriteEndArray();
+            // PLAN-v17 H8：按应用停用快捷键。键名和 mac 的 hotKeyBlockedApps 分开（mac 存 bundle id，导进对方那边只会多出认不出的行）
+            writer.WriteStartArray("hotKeyBlockedExes");
+            foreach (var block in HotKeyBlock.List(settings.HotKeyBlockedApps))
+            {
+                writer.WriteStringValue(block.Entry);
+            }
+
+            writer.WriteEndArray();
+            writer.WriteBoolean("hotKeyBlockFullscreen", settings.HotKeyBlockFullscreen);
+            // PLAN-v18 S3：截图时的键（只存改过的；空串 = 清除了）。Windows 自己的键名，mac 的 shot.<名字> 认不出、照旧忽略
+            writer.WriteStartObject("shotKeys");
+            foreach (var (id, text) in ShotKeys.Sanitize(settings.ScreenshotKeys ?? new Dictionary<string, string>()))
+            {
+                writer.WriteString(id, text);
+            }
+
+            writer.WriteEndObject();
             writer.WriteString("translateFirstLanguage", settings.TranslateFirstLanguage);
             writer.WriteString("translateSecondLanguage", settings.TranslateSecondLanguage);
             writer.WriteBoolean("translateAutoCopy", settings.TranslateAutoCopy);
@@ -617,6 +634,22 @@ internal static class ArchiveService
                         .Select(item => item.GetString()!)
                         .Take(200)
                         .ToList();
+                    break;
+                case "hotKeyBlockedExes" when value.ValueKind == JsonValueKind.Array:
+                    settings.HotKeyBlockedApps = HotKeyBlock.List(value.EnumerateArray()
+                            .Where(item => item.ValueKind == JsonValueKind.String)
+                            .Select(item => item.GetString()!))
+                        .Select(block => block.Entry)
+                        .ToList();
+                    break;
+                case "hotKeyBlockFullscreen" when value.ValueKind is JsonValueKind.True or JsonValueKind.False:
+                    settings.HotKeyBlockFullscreen = value.GetBoolean();
+                    break;
+                case "shotKeys" when value.ValueKind == JsonValueKind.Object:
+                    var shotKeys = ShotKeys.Sanitize(value.EnumerateObject()
+                        .Where(property => property.Value.ValueKind == JsonValueKind.String)
+                        .Select(property => new KeyValuePair<string, string>(property.Name, property.Value.GetString()!)));
+                    settings.ScreenshotKeys = shotKeys.Count == 0 ? null : shotKeys;
                     break;
                 case "translateFirstLanguage" when value.ValueKind == JsonValueKind.String:
                     settings.TranslateFirstLanguage = value.GetString();
@@ -726,6 +759,8 @@ internal static class ArchiveService
 
         SettingsService.Save();
         ShellRuntime.Instance?.HotKeys.RegisterAll(settings);
+        // 导入的停用名单当场按此刻的前台生效
+        HotKeyBlocker.Refresh();
     }
 
     private static void ApplyEngines(List<SettingsArchive.ArchiveEngine> engines, ArchiveOutcome outcome)

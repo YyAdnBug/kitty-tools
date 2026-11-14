@@ -130,7 +130,10 @@ internal sealed partial class SettingsWindow : Window
         {
             "提醒", "定时", "闹钟", "喝水", "休息", "稍后", "催促", "全屏", "边框", "朗读", "每天", "每周", "工作日", "间隔", "暂停",
         },
-        ["hotkeys"] = new[] { "快捷键", "热键", "冲突", "录制", "恢复默认", "速查", "按键", "钉图" },
+        ["hotkeys"] = new[]
+        {
+            "快捷键", "热键", "冲突", "录制", "恢复默认", "速查", "按键", "钉图", "停用", "游戏", "全屏", "截图时", "工具栏", "连按", "双击",
+        },
         ["about"] = new[] { "版本", "更新", "日志", "发布", "检查更新", "自动检查" },
     };
 
@@ -252,6 +255,7 @@ internal sealed partial class SettingsWindow : Window
         _shell.Children.Add(_nav);
 
         _shell.AddHandler(UIElement.KeyDownEvent, new KeyEventHandler(OnRecordKeyDown), handledEventsToo: true);
+        _shell.AddHandler(UIElement.KeyUpEvent, new KeyEventHandler(OnRecordKeyUp), handledEventsToo: true);
 
         Content = _shell;
         // Mica 在部分机器 / Release AOT 下会在 OnDefaultSystemBackdropConfigurationChanged 抛
@@ -3007,7 +3011,10 @@ internal sealed partial class SettingsWindow : Window
         _content.Children.Add(new Border { Height = 8 });
         AddShortcutsRow(null, "面板里的按键", "剪贴板、启动器、翻译浮窗和截图里按什么键，都在速查表里");
         _content.Children.Add(SettingsUi.Footnote(
-            "点录制框后按下新组合；Esc 取消，Backspace 清除，右键可恢复默认。至少带 Ctrl 或 Alt，或者单独一个 F1–F24。"));
+            "点录制框后按下新组合；Esc 取消，Backspace 清除，右键可恢复默认。至少带 Ctrl 或 Alt，或者单独一个 F1–F24；也可以连按两下 Ctrl、Alt 或 Shift。"));
+        // 截图时的键（PLAN-v18 S3，.ShotKeys.cs）、按应用停用（PLAN-v17 H5 H7，.HotKeyBlock.cs）
+        BuildShotKeys();
+        BuildHotKeyBlocks();
     }
 
     /// <summary>
@@ -3113,8 +3120,10 @@ internal sealed partial class SettingsWindow : Window
         recorder.Children.Add(box);
         recorder.Children.Add(clear);
 
+        // 连按两下 Alt / Shift 的副作用写在那一行下面（PLAN-v18 D6）
+        var hint = HotKeyRules.IsDoubleTap(binding.VirtualKey, binding.Modifiers) ? HotKeyRules.DoubleTapHint(binding.VirtualKey) : null;
         var card = SettingsUi.Card(
-            SettingsDefaults.RowTitle(action), failure ?? string.Empty, recorder, leading: HotKeyTile(action), problem: failure is not null);
+            SettingsDefaults.RowTitle(action), failure ?? hint ?? string.Empty, recorder, leading: HotKeyTile(action), problem: failure is not null);
         _hotKeyCards[action] = card;
         return card;
     }
@@ -3122,7 +3131,8 @@ internal sealed partial class SettingsWindow : Window
     /// <summary>录制框里显示的：录着时「按下快捷键」（强调色边），平时是键帽 / 未设置。</summary>
     private void ShowBinding(Button box, string action)
     {
-        var name = SettingsDefaults.RowTitle(action);
+        var shot = IsShot(action) ? ShotKeys.Find(ShotId(action)) : null;
+        var name = shot?.Title ?? SettingsDefaults.RowTitle(action);
         if (_recordingAction == action)
         {
             box.Content = new TextBlock { Text = "按下快捷键", Foreground = Theme.SecondaryText() };
@@ -3131,7 +3141,9 @@ internal sealed partial class SettingsWindow : Window
             return;
         }
 
-        var shortcut = HotKeyManager.FormatFor(action);
+        var shortcut = shot is not null
+            ? ShotKeys.Current(shot.Id, SettingsService.Current.ScreenshotKeys)?.Display ?? "未设置"
+            : HotKeyManager.FormatFor(action);
         box.Content = SettingsUi.KeyCaps(shortcut);
         box.ClearValue(Control.BorderBrushProperty);
         AutomationProperties.SetName(box, $"{name}：{shortcut}");
@@ -3145,6 +3157,7 @@ internal sealed partial class SettingsWindow : Window
         }
 
         _recordingAction = action;
+        _recordTaps.Interrupt(modifiersHeld: false);
         if (_hotKeyBoxes.TryGetValue(action, out var box))
         {
             ShowBinding(box, action);
@@ -3176,7 +3189,7 @@ internal sealed partial class SettingsWindow : Window
             return;
         }
 
-        var text = message ?? (SettingsDefaults.BindingFor(SettingsService.Current, action).VirtualKey == 0
+        var text = message ?? (IsShot(action) || SettingsDefaults.BindingFor(SettingsService.Current, action).VirtualKey == 0
             ? null
             : ShellRuntime.Instance?.HotKeys.FailureFor(action));
         SettingsUi.SetDescription(card, text ?? string.Empty, problem: true);
@@ -3213,7 +3226,22 @@ internal sealed partial class SettingsWindow : Window
 
         if (HotKeyRules.IsModifierKey(key))
         {
-            SetHotKeyMessage(action, "再按一个普通键（修饰键本身不算）");
+            // 全局动作还能连按两下 Ctrl / Alt / Shift（PLAN-v18 L9，松开时在 OnRecordKeyUp 里认）
+            if (!IsShot(action))
+            {
+                FeedRecordTaps(action);
+            }
+
+            SetHotKeyMessage(action, IsShot(action) ? "再按一个普通键（修饰键本身不算）" : "再按一个普通键，或者连按两下 Ctrl / Alt / Shift");
+            return;
+        }
+
+        _recordTaps.Interrupt(modifiers != HotKeyModifiers.None);
+
+        // 截图时的键：单个键也行，规矩在 ShotKeys.Problem
+        if (IsShot(action))
+        {
+            RecordShotKey(action, key, modifiers);
             return;
         }
 
@@ -3232,8 +3260,57 @@ internal sealed partial class SettingsWindow : Window
         BuildPage("hotkeys");
     }
 
+    /// <summary>录制框里认连按两下（同一份 Core 状态机，按下 / 松开修饰键各喂一次）。</summary>
+    private readonly ModifierTaps _recordTaps = new();
+
+    private void OnRecordKeyUp(object sender, KeyRoutedEventArgs e)
+    {
+        if (_recordingAction is { } action && !IsShot(action) && HotKeyRules.IsModifierKey((uint)e.Key))
+        {
+            e.Handled = true;
+            FeedRecordTaps(action);
+        }
+    }
+
+    private void FeedRecordTaps(string action)
+    {
+        var held = new List<TapKey>();
+        if (IsDown(VirtualKey.Control)) held.Add(TapKey.Control);
+        if (IsDown(VirtualKey.Menu)) held.Add(TapKey.Alt);
+        if (IsDown(VirtualKey.Shift)) held.Add(TapKey.Shift);
+        var win = IsDown(VirtualKey.LeftWindows) || IsDown(VirtualKey.RightWindows);
+        if (_recordTaps.Handle(held, win, Environment.TickCount64) is not { } tap)
+        {
+            return;
+        }
+
+        var key = ModifierTaps.VirtualKey(tap.Key);
+        // 别的动作已经是这个连按：不收（同一个键只认第一个）
+        if (SettingsDefaults.DefaultHotKeys.FirstOrDefault(definition => definition.Action != action &&
+                SettingsDefaults.BindingFor(SettingsService.Current, definition.Action) is var other &&
+                other.VirtualKey == key && other.Modifiers == HotKeyModifiers.None) is { } taken)
+        {
+            SetHotKeyMessage(action, $"和「{SettingsDefaults.RowTitle(taken.Action)}」重复");
+            return;
+        }
+
+        SettingsDefaults.SetBinding(SettingsService.Current, action, new HotKeyBinding(key, HotKeyModifiers.None));
+        SettingsService.Save();
+        ShellRuntime.Instance?.HotKeys.RegisterAll(SettingsService.Current);
+        _recordingAction = null;
+        BuildPage("hotkeys");
+    }
+
     private void ClearHotKey(string action)
     {
+        if (IsShot(action))
+        {
+            SettingsService.Current.ScreenshotKeys = ShotKeys.Set(SettingsService.Current.ScreenshotKeys, ShotId(action), null);
+            SettingsService.Save();
+            BuildPage("hotkeys");
+            return;
+        }
+
         SettingsDefaults.SetBinding(SettingsService.Current, action, new HotKeyBinding(0, HotKeyModifiers.None));
         SettingsService.Save();
         ShellRuntime.Instance?.HotKeys.RegisterAll(SettingsService.Current);
@@ -3243,6 +3320,15 @@ internal sealed partial class SettingsWindow : Window
     /// <summary>右键「恢复默认」：这一个动作换回默认键（mac 录制框右键菜单）。</summary>
     private void RestoreHotKey(string action)
     {
+        if (IsShot(action))
+        {
+            var id = ShotId(action);
+            SettingsService.Current.ScreenshotKeys = ShotKeys.Set(SettingsService.Current.ScreenshotKeys, id, ShotKeys.Find(id)?.Default);
+            SettingsService.Save();
+            BuildPage("hotkeys");
+            return;
+        }
+
         SettingsDefaults.ResetBinding(SettingsService.Current, action);
         SettingsService.Save();
         ShellRuntime.Instance?.HotKeys.RegisterAll(SettingsService.Current);

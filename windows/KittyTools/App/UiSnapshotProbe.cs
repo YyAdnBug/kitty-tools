@@ -282,6 +282,15 @@ internal static class UiSnapshotProbe
                 }
 
                 overlay.CloseProbeTranslationCard();
+                // PLAN-v18 S3：工具栏右键「改…的快捷键」之后等新键（钉图那颗钮亮粉底、顶部提示）
+                if (Wanted("shot-rebind"))
+                {
+                    overlay.ShowProbeRebind("pin");
+                    await Task.Delay(500);
+                    await WindowShot.SaveAsync(overlay.Handle, Path.Combine(directory, "shot-rebind.png"), crop with { Top = 0 });
+                    overlay.ShowProbeRebind(null);
+                }
+
                 // 裁剪（PLAN-v11 F11）：开着裁剪、拖着一个框（框外压暗、虚线框、工具栏「裁剪」亮着）
                 overlay.ShowProbeCrop();
                 await Task.Delay(500);
@@ -628,7 +637,7 @@ internal static class UiSnapshotProbe
 
     private static async Task SafeRenderSettingsAsync(bool dark, string directory)
     {
-        if (!Wanted("settings") && !Wanted("settings-sync"))
+        if (!Wanted("settings") && !Wanted("settings-sync") && !Wanted("settings-hotkeys-block") && !Wanted("settings-hotkeys-shot"))
         {
             return;
         }
@@ -688,6 +697,47 @@ internal static class UiSnapshotProbe
             settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 1300));
             settings.ShowPage(welcome: false, "hotkeys");
             await RenderWindowAsync(settings, "settings-hotkeys", dark, directory);
+            // PLAN-v17：快捷键页最下面「在这些应用里停用」：空着一张；三行（全部 / 只停两个 / 本机没有的 exe）一张。只在测试档改名单，拍完换回去。
+            if (Paths.IsTestProfile && Wanted("settings-hotkeys-block"))
+            {
+                var saved = SettingsService.Current.HotKeyBlockedApps;
+                foreach (var (name, entries) in new[]
+                         {
+                             ("settings-hotkeys-block-empty", new List<string>()),
+                             ("settings-hotkeys-block", new List<string> { "notepad.exe", "Code.exe|clipboard,screenshot", "NotInstalled.exe" }),
+                         })
+                {
+                    SettingsService.Current.HotKeyBlockedApps = entries;
+                    settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 760));
+                    settings.ShowPage(welcome: false, "hotkeys");
+                    settings.RebuildForProbe();
+                    await Task.Delay(400);
+                    settings.ScrollToSectionForProbe("在这些应用里停用");
+                    await Task.Delay(300);
+                    await ShootSettingsWindowAsync(settings, name, dark, directory);
+                }
+
+                SettingsService.Current.HotKeyBlockedApps = saved;
+            }
+
+            // PLAN-v18 S3：快捷键页「截图时」两组（改过一个键：钉图 Alt+P；清掉一个：录屏），拍完换回去
+            if (Paths.IsTestProfile && Wanted("settings-hotkeys-shot"))
+            {
+                var saved = SettingsService.Current.ScreenshotKeys;
+                SettingsService.Current.ScreenshotKeys = new Dictionary<string, string> { ["pin"] = "Alt+P", ["record"] = string.Empty };
+                foreach (var (name, section) in new[] { ("settings-hotkeys-shot-tools", "截图时：标注工具"), ("settings-hotkeys-shot-others", "截图时：出图和操作") })
+                {
+                    settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 760));
+                    settings.ShowPage(welcome: false, "hotkeys");
+                    settings.RebuildForProbe();
+                    await Task.Delay(400);
+                    settings.ScrollToSectionForProbe(section);
+                    await Task.Delay(300);
+                    await ShootSettingsWindowAsync(settings, name, dark, directory);
+                }
+
+                SettingsService.Current.ScreenshotKeys = saved;
+            }
             // PLAN-v12 第 3、5 批 / PLAN-v13 第 5 批：设置 › 状态屏、提醒、便签整页（真窗口的样子各拍一张上面一屏）。
             foreach (var page in new[] { "statusScreen", "reminders", "notes" })
             {

@@ -50,6 +50,12 @@ public static class HotKeyRules
             return HotKeyValidation.Fail("没有按键");
         }
 
+        // 连按两下 Ctrl / Alt / Shift（PLAN-v18 L9）：记成修饰键自己、不带修饰键
+        if (IsDoubleTap(virtualKey, modifiers))
+        {
+            return HotKeyValidation.Pass;
+        }
+
         if ((modifiers & HotKeyModifiers.Win) != 0)
         {
             return HotKeyValidation.Fail("不能使用 Win 键组合");
@@ -104,6 +110,25 @@ public static class HotKeyRules
         return HotKeyValidation.Pass;
     }
 
+    /// <summary>连按两下修饰键（PLAN-v18 L9 / D6）：Ctrl、Alt、Shift 自己的虚拟键、不带修饰键（Win 不认）。</summary>
+    public static bool IsDoubleTap(uint virtualKey, HotKeyModifiers modifiers)
+        => modifiers == HotKeyModifiers.None && virtualKey is 0x10 or 0x11 or 0x12;
+
+    /// <summary>录上连按两下之后那一行下面的提醒（D6）；Ctrl 没有。</summary>
+    public static string? DoubleTapHint(uint virtualKey) => virtualKey switch
+    {
+        0x12 => "很多软件里单按 Alt 会先激活菜单栏，连按两下会开了又关",
+        0x10 => "中文输入法里单按 Shift 切中英文，连按两下会切过去再切回来",
+        _ => null,
+    };
+
+    private static string DoubleTapName(uint virtualKey) => virtualKey switch
+    {
+        0x11 => "Ctrl",
+        0x12 => "Alt",
+        _ => "Shift",
+    };
+
     public static bool IsModifierKey(uint virtualKey)
         => virtualKey is 0x10 or 0x11 or 0x12 or 0x5B or 0x5C or >= 0xA0 and <= 0xA5;
 
@@ -111,6 +136,12 @@ public static class HotKeyRules
 
     public static string Format(uint virtualKey, HotKeyModifiers modifiers)
     {
+        if (IsDoubleTap(virtualKey, modifiers))
+        {
+            // 「Ctrl+Ctrl」：键帽拆成两个 Ctrl，导出导入照这个写法读回来
+            return DoubleTapName(virtualKey) + "+" + DoubleTapName(virtualKey);
+        }
+
         var sb = new StringBuilder(24);
         if ((modifiers & HotKeyModifiers.Control) != 0) sb.Append("Ctrl+");
         if ((modifiers & HotKeyModifiers.Alt) != 0) sb.Append("Alt+");
@@ -149,6 +180,14 @@ public static class HotKeyRules
         }
 
         var key = parts[^1];
+        // 「Ctrl+Ctrl」：连按两下（前面只有同一个修饰键）
+        if (parts.Length == 2 && key is "Ctrl" or "Alt" or "Shift" && parts[0] == key)
+        {
+            virtualKey = key switch { "Ctrl" => 0x11u, "Alt" => 0x12u, _ => 0x10u };
+            modifiers = HotKeyModifiers.None;
+            return true;
+        }
+
         if (key.Length == 1 && char.IsAsciiLetterOrDigit(key[0]))
         {
             virtualKey = char.ToUpperInvariant(key[0]);
@@ -162,8 +201,27 @@ public static class HotKeyRules
             return true;
         }
 
+        // KeyName 写出来的「VK6B」（小键盘这些没名字的键）读回去（截图时的键能录任意键，PLAN-v18 S3）
+        if (key.Length == 4 && key.StartsWith("VK", StringComparison.Ordinal) &&
+            uint.TryParse(key[2..], System.Globalization.NumberStyles.HexNumber, null, out var raw) && raw is > 0 and < 0x100)
+        {
+            virtualKey = raw;
+            return true;
+        }
+
         virtualKey = key switch
         {
+            ";" => 0xBA,
+            "=" => 0xBB,
+            "," => 0xBC,
+            "-" => 0xBD,
+            "." => 0xBE,
+            "/" => 0xBF,
+            "`" => 0xC0,
+            "[" => 0xDB,
+            "\\" => 0xDC,
+            "]" => 0xDD,
+            "'" => 0xDE,
             "Space" => VkSpace,
             "Tab" => VkTab,
             "Enter" => VkReturn,
