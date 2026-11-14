@@ -267,17 +267,25 @@ struct IslandActivityTests {
       IslandBackdrop.falloff(IslandBackdrop.spread * 2) == 0 && IslandBackdrop.falloff(-5) == 1)
     let half = IslandBackdrop.falloff(IslandBackdrop.spread / 2)
     #expect(half > 0 && half < 0.5)
+    // 画布按 spread 留边（spread 调了这条测试不用跟着改）：形体 120 × 80，顶边贴着顶（刘海屏），左右和底下各留
+    // spread + 20
+    let margin = IslandBackdrop.spread + 20
+    let size = CGSize(width: 120 + margin * 2, height: 80 + margin)
     let mask = try #require(
       IslandBackdrop.mask(
-        size: CGSize(width: 200, height: 120), shape: CGRect(x: 40, y: 40, width: 120, height: 80),
-        corner: 24, flatTop: true, scale: 2))
-    #expect(mask.width == 400 && mask.height == 240)
-    // 形体正中不透明、离形体的边远过 spread 的角上全透明（左下角：横竖各离 40）
+        size: size, shape: CGRect(x: margin, y: margin, width: 120, height: 80), corner: 24,
+        flatTop: true, scale: 2))
+    let (wide, tall) = (Int(size.width * 2), Int(size.height * 2))
+    #expect(mask.width == wide && mask.height == tall)
     let data = try #require(mask.dataProvider?.data as Data?)
     func alpha(_ x: Int, _ y: Int) -> UInt8 { data[y * mask.bytesPerRow + x * 4 + 3] }
-    #expect(alpha(200, 120) == 255 && alpha(2, 237) == 0)
-    // 上下没画反（位图第 0 行是图像的顶）：刘海屏的形体顶边贴着顶、顶上不晕，所以正上方不透明、正下方全透明
-    #expect(alpha(200, 0) == 255 && alpha(200, 239) == 0)
+    // 形体正中不透明；离形体的边远过 spread 的地方（左下角、正下方的底边）全透明
+    #expect(alpha(wide / 2, 80) == 255 && alpha(2, tall - 3) == 0 && alpha(wide / 2, tall - 1) == 0)
+    // 上下没画反（位图第 0 行是图像的顶）：刘海屏的形体顶边贴着顶、顶上不晕，所以正上方不透明
+    #expect(alpha(wide / 2, 0) == 255)
+    // 形体底边往下半个 spread：半透明
+    let midway = alpha(wide / 2, 160 + Int(IslandBackdrop.spread))
+    #expect(midway > 0 && midway < 255)
     // fadeTop：最上面那一段往上渐隐到 0（没有刘海的屏上那一圈被窗口上沿切掉时用），别处不变
     let faded = try #require(
       IslandBackdrop.mask(

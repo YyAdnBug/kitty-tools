@@ -336,7 +336,8 @@ struct IslandLevelBar: View {
 }
 
 /// 按音量键 / 亮度键时，刘海屏上的样子（2026-11-14 以 Alcove 为准：原来是从刘海往下掉一行）：岛不往下长，只在刘海两边各
-/// 伸出 Island.levelWing——左边符号 + 「音量」/「亮度」/「静音」，右边一根细条。约 1.2 秒缩回去
+/// 伸出 Island.levelWing（108）、比刘海高 5——左边符号 + 「音量」/「亮度」/「静音」，右边一根 68 pt 的细条。约 1.2 秒缩回去。
+/// 从耳朵过来、音量换亮度、收回耳朵时岛都先捏回刘海再长出来（Island.pinched）
 struct IslandLevelWings: View {
   let level: Island.Level
   let notchWidth: CGFloat
@@ -345,19 +346,19 @@ struct IslandLevelWings: View {
   var body: some View {
     HStack(spacing: 0) {
       HStack(spacing: 6) {
-        IslandLevelSymbol(level: level, size: 13).frame(width: 20)
+        IslandLevelSymbol(level: level, size: 14).frame(width: 22)
         Text(level.title)
-          .font(.system(size: 12, weight: .semibold))
+          .font(.system(size: 13, weight: .semibold))
           .foregroundStyle(.white.opacity(0.95))
           .lineLimit(1)
           .fixedSize()
       }
-      .padding(.leading, 12)
+      .padding(.leading, 14)
       .frame(width: Island.levelWing, alignment: .leading)
       Color.clear.frame(width: notchWidth)
       IslandLevelBar(level: level)
-        .frame(width: 56)
-        .padding(.trailing, 14)
+        .frame(width: 68)
+        .padding(.trailing, 16)
         .frame(width: Island.levelWing, alignment: .trailing)
     }
     .frame(height: notchHeight)

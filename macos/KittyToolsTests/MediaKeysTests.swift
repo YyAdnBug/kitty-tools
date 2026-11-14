@@ -104,6 +104,20 @@ struct MediaKeysTests {
     island.showLevel(Island.Level(kind: .volume, fraction: 0.5))
     #expect(island.level?.fraction == 0.5 && island.content?.title == "音量")
     #expect(island.isShowingLevel && island.levelShaped)
+    // 出之前要不要先捏回刘海：从耳朵过来、换了种类（音量 → 亮度）时捏；岛上空着、摆出来的岛、减弱动态效果不捏
+    func squeezes(
+      swaps: Bool, wings: Bool, notch: Bool = true, staged: Bool = false, reduced: Bool = false
+    ) -> Bool {
+      Island.squeezes(
+        swapsKind: swaps, wings: wings, notch: notch, staged: staged, reduceMotion: reduced)
+    }
+    #expect(squeezes(swaps: false, wings: true) && squeezes(swaps: true, wings: false))
+    #expect(!squeezes(swaps: false, wings: false))
+    // 没有刘海的屏上是一行、形体不认「捏着」：不捏
+    #expect(!squeezes(swaps: true, wings: true, notch: false))
+    #expect(!squeezes(swaps: true, wings: true, staged: true))
+    #expect(!squeezes(swaps: true, wings: true, reduced: true))
+    #expect(!island.pinched)
     island.showLevel(Island.Level(kind: .volume, fraction: 0.5625))
     #expect(island.level?.fraction == 0.5625 && island.history.isEmpty)
     // 换成亮度：还是那一行，原地换

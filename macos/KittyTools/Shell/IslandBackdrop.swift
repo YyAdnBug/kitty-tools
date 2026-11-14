@@ -1,6 +1,6 @@
 // 展开的岛四周的渐进模糊（2026-11-14，照 Alcove 的实录：卡片背后的东西越靠近卡片越糊；用户同意用非公开接口）。
 // 岛的窗口里、SwiftUI 宿主下面垫一块系统毛玻璃（NSVisualEffectView，behindWindow），把它里面那层 CABackdropLayer 的滤镜
-// 换成 **私有的 CAFilter「variableBlur」**：一张蒙版图说哪里糊多少——形体那一块全糊，往外 spread（36 pt）之内渐渐不糊。
+// 换成 **私有的 CAFilter「variableBlur」**：一张蒙版图说哪里糊多少——形体那一块全糊，往外 spread（56 pt）之内渐渐不糊（三次曲线：只有贴着形体的那一小段才重，外面一大圈只是让字变软）。
 // 毛玻璃自带的底色、高光那几层藏掉（只要模糊，不要底色）。只在岛展开成「大面」（卡片、那一张）时出，收起就藏
 // （藏着时窗口服务器不算它）；它只盖形体外面那一圈，不盖整扇窗口。
 // 私有的东西都按名字取、取不到就什么都不做（岛照旧只有阴影）：CAFilter 这个类和 filterWithType:、CABackdropLayer 这个
@@ -15,8 +15,8 @@ import QuartzCore
 
 final class IslandBackdrop: NSView {
   /// 模糊半径、往形体外面晕开多远
-  static let radius: CGFloat = 12
-  static let spread: CGFloat = 36
+  static let radius: CGFloat = 7
+  static let spread: CGFloat = 56
   /// 形体的目标变了之后等多久才出：蒙版是照目标大小画的，形体还在往那儿长（约 0.25 秒到顶、这时已经差不多到位），
   /// 先出就是一块悬空的模糊
   static let settle = Duration.milliseconds(180)
@@ -230,9 +230,10 @@ final class IslandBackdrop: NSView {
     return context.makeImage()
   }
 
-  /// 离形体的边 distance 远的地方糊几成（纯函数）：贴着边是 1，到 spread 是 0，中间二次曲线（靠外的一大半都很淡）
+  /// 离形体的边 distance 远的地方糊几成（纯函数）：贴着边是 1，到 spread 是 0，中间三次曲线（靠外的一大半都很淡：字只是变软，贴着形体的那一段才糊成一片——2026-11-14 用户对着 Alcove 的截图调的，
+  /// 原来半径 12、晕开 36、二次曲线：字是一下子被抹掉的，不像糊了）
   static func falloff(_ distance: CGFloat) -> CGFloat {
     let t = 1 - min(max(distance / spread, 0), 1)
-    return t * t
+    return t * t * t
   }
 }
