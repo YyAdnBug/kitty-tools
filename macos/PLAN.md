@@ -819,11 +819,34 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
     - 设置 › 刘海岛「日程」多一个「点刘海打开时显示月历」，`Prefs.islandCalendar` 默认关（日期网格不要授权，这个键照常
       导出、同步；同刘海岛别的新东西一样默认关）。同时列最近的提示时列表只列 5 条（窗口一次定高）。
     - 单测 `NextEventTests.monthGrid` / `todaysAgenda`；截图自检 island-board-calendar*、settings-island；HANDTEST「第 10 批」。
-    - **另三样都要用非公开接口，没做，等用户定**（技术路线来自 10 月的拆解调研 notch-alcove-teardown / notch-oss-data）：
-      渐进模糊 = 另垫一扇窗口 + 私有的 `CAFilter variableBlur`；专注模式 = 私有名字的分布式通知（只知道开 / 关；名字和图标
-      要「完全磁盘访问」或者读系统日志流，公开的 `INFocusStatusCenter` 要受限的权利）；锁屏上显示 = 窗口服务器的私有
-      Space（绝对层级 400）。
-      （逐帧量我们自己形体这件事由上面的收起探针顺带做了。）
+  - 第 11 批 展开时四周的渐进模糊（2026-11-14；用户同意用非公开接口：「照这个来」——模糊做、专注模式只做开 / 关、
+    锁屏上显示不做）。
+    - 探针（不进仓库，`macos/build/research/island-polish-2026-11-13/blur/`，测试宿主里屏上跑）：macOS 27.0.1 上 `CAFilter`
+      的 variableBlur 还在；`NSVisualEffectView`（behindWindow）里有一层 `CABackdropLayer`，滤镜是
+      sdrNormalize + gaussianBlur + colorSaturate，把它换成 variableBlur + 蒙版图就是渐进模糊，系统不会自己换回去，换一次约
+      15 ms。**坑**：那一层的 `scale` 是 0.125（只按 1/8 的分辨率取背景），不调回 1 的话蒙版说「不糊」的地方也是糊的、
+      外沿是一道硬边（试过换渐变的指数、开 `inputDither` 都没用）；蒙版用阴影晕开也会在外沿留尾巴，改成沿形体的边
+      从粗到细一圈圈描、到 spread 正好是 0。
+    - 实现 `Shell/IslandBackdrop.swift`：岛的窗口里、SwiftUI 宿主下面垫一层；`Island.syncBackdrop`（形体的目标位置变了、
+      收起、设置变了时调）在展开成大面时照形体的目标位置出一圈（半径 12、晕开 36），别的时候收掉；蒙版按目标大小画
+      一次、不逐帧跟弹簧——形体长到位（0.18 s）之后才出，形体一收就先收。只盖形体外面那一圈，藏着时不占窗口服务器。
+      设置 › 刘海岛「展开时模糊四周」，`Prefs.islandBlur` 默认开；系统「降低透明度」时不出。规矩登记在 mac-native §3。
+    - 屏上验证：条纹背景上重录展开 / 收起（collapse 探针加 `KITTY_COLLAPSE_STRIPES`），展开途中没有悬空的模糊、落定后一圈
+      渐变、收起时先消失；强调色像素仍是 0 帧。**没量**：窗口服务器那边的开销（按原分辨率取背景；展开时背后放视频
+      要是掉帧就把 scale 降到 0.5）。
+    - 评审后修的：收起后那层毛玻璃其实没藏（排着出的、收尾的原来合用一个任务，连着两次 hide 第二次把收尾的取消了——
+      背景层一直挂着占窗口服务器），拆成两个任务；形体大小碰巧没变时没人调（没有刘海的屏上第二次开同一张起没有
+      模糊），`IslandView` 另看着 `Island.wantsBackdrop`；没有刘海的屏上那一圈在顶上被窗口上沿硬切，蒙版顶上 16 pt
+      往上渐隐；`isAvailable` 多查一步系统的滤镜种类里有没有 variableBlur（`filterWithType:` 给不认识的名字也返回空滤镜）；
+      蒙版按 1x 画（2–3 ms，2x 要 6–10 ms）。
+    - 掉帧探针 `IslandFrameProbeTests.measure()`：加模糊之前合计掉 1 帧、之后 2 帧，最长一拍都是 33.3 ms。
+    - 单测 `IslandActivityTests.backdropMask`；HANDTEST「刘海岛完善第 11 批」。
+    - **专注模式提示还没做**：两轮探针（点名听分布式通知 / Darwin 通知 + 系统日志流）都没等到用户开关专注模式，要用户
+      在场再跑一次（`…/focus/listen2.swift`）；「全部通知都听」这条路不通（一条都收不到）。锁屏上显示：不做。
+    - 三样非公开接口的技术路线（10 月的拆解调研 notch-alcove-teardown / notch-oss-data）和用户的决定：渐进模糊 = 私有的
+      `CAFilter variableBlur`，**做了**（本批）；专注模式 = 私有名字的分布式通知（只知道开 / 关；名字和图标要「完全磁盘
+      访问」或者读系统日志流，公开的 `INFocusStatusCenter` 要受限的权利），**只做开 / 关，等探针**；锁屏上显示 = 窗口
+      服务器的私有 Space（绝对层级 400），**不做**。
 
 
 ### 晾衣绳（第十族，0.7.0，2026-10-26 立项）

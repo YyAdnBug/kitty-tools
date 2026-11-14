@@ -1,6 +1,7 @@
 // 刘海岛的活动（2026-11-13，刘海岛扩展 B1–B3）：耳朵上露哪一个、读数怎么写，和岛在有活动时的几种状态。
 // 用摆出来的岛（Island(showing:…)）：从头到尾不建窗口。
 
+import CoreGraphics
 import Foundation
 import Testing
 
@@ -256,6 +257,37 @@ struct IslandActivityTests {
     #expect(Island.notchClick(hasContent: false, boardOpen: true, cardOpen: false) == .closeBoard)
     #expect(Island.notchClick(hasContent: true, boardOpen: false, cardOpen: true) == .rotate)
     #expect(Island.notchClick(hasContent: true, boardOpen: false, cardOpen: false) == .ignore)
+  }
+
+  /// 渐进模糊的蒙版：贴着形体的边全糊，到 spread 正好是 0（外沿不能留一点点糊：那是一道看得见的边），中间单调变淡；
+  /// 画得出来、大小对
+  @Test func backdropMask() throws {
+    #expect(IslandBackdrop.falloff(0) == 1 && IslandBackdrop.falloff(IslandBackdrop.spread) == 0)
+    #expect(
+      IslandBackdrop.falloff(IslandBackdrop.spread * 2) == 0 && IslandBackdrop.falloff(-5) == 1)
+    let half = IslandBackdrop.falloff(IslandBackdrop.spread / 2)
+    #expect(half > 0 && half < 0.5)
+    let mask = try #require(
+      IslandBackdrop.mask(
+        size: CGSize(width: 200, height: 120), shape: CGRect(x: 40, y: 40, width: 120, height: 80),
+        corner: 24, flatTop: true, scale: 2))
+    #expect(mask.width == 400 && mask.height == 240)
+    // 形体正中不透明、离形体的边远过 spread 的角上全透明（左下角：横竖各离 40）
+    let data = try #require(mask.dataProvider?.data as Data?)
+    func alpha(_ x: Int, _ y: Int) -> UInt8 { data[y * mask.bytesPerRow + x * 4 + 3] }
+    #expect(alpha(200, 120) == 255 && alpha(2, 237) == 0)
+    // 上下没画反（位图第 0 行是图像的顶）：刘海屏的形体顶边贴着顶、顶上不晕，所以正上方不透明、正下方全透明
+    #expect(alpha(200, 0) == 255 && alpha(200, 239) == 0)
+    // fadeTop：最上面那一段往上渐隐到 0（没有刘海的屏上那一圈被窗口上沿切掉时用），别处不变
+    let faded = try #require(
+      IslandBackdrop.mask(
+        size: CGSize(width: 200, height: 120), shape: CGRect(x: 40, y: 20, width: 120, height: 98),
+        corner: 18, flatTop: false, scale: 1, fadeTop: 16))
+    let pixels = try #require(faded.dataProvider?.data as Data?)
+    func faint(_ x: Int, _ y: Int) -> UInt8 { pixels[y * faded.bytesPerRow + x * 4 + 3] }
+    #expect(faint(100, 0) < 20 && faint(100, 60) == 255 && faint(100, 8) > faint(100, 2))
+    #expect(
+      IslandBackdrop.mask(size: .zero, shape: .zero, corner: 0, flatTop: false, scale: 2) == nil)
   }
 
   /// 提示照旧从刘海长出来（盖住耳朵），收起后还是耳朵；那一张同样

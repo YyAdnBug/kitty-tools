@@ -191,7 +191,10 @@ import SwiftUI
   /// 悬停期间每 0.2 s 再核一次指针：从岛直接挪进本 App 不收鼠标移动的窗口时没有移动事件，靠它发现离开
   @ObservationIgnored private var hoverCheck: Task<Void, Never>?
   /// 形状在窗口里的位置（IslandView 量了报上来，左上角原点）：判断指针在不在岛上
-  @ObservationIgnored var shapeFrame = CGRect.zero
+  @ObservationIgnored var shapeFrame = CGRect.zero { didSet { syncBackdrop() } }
+  /// 展开成大面（卡片、那一张）时四周的渐进模糊（设置 › 刘海岛；IslandBackdrop.swift，私有接口，取不到就没有）
+  @ObservationIgnored var blurs = true { didSet { syncBackdrop() } }
+  @ObservationIgnored private var backdrop: IslandBackdrop?
   /// 语气变了（nil = 收起）：菜单栏图标据此呼吸 / 弹一下（StatusItem.reflect）
   @ObservationIgnored var onToneChange: ((Tone?) -> Void)?
 
@@ -932,6 +935,7 @@ import SwiftUI
       isExpanded = false
       isHovered = false
     }
+    syncBackdrop()
     dwell = Task { [weak self] in
       try? await Task.sleep(for: Self.retractLag)
       guard let self, !Task.isCancelled else { return }
@@ -1114,6 +1118,31 @@ import SwiftUI
       isOpen = true
       content = next
     }
+  }
+
+  /// 现在该不该有渐进模糊：展开成了大面（卡片、那一张），不是音量 / 亮度的提示。用到的都是被观察的属性：
+  /// IslandView 看着它，它一变就调 syncBackdrop——形体的大小碰巧没变（没有刘海的屏上收起再开同一张、减弱动态效果时
+  /// 形体一直是开着的大小）时 shapeFrame 不报，光靠它会漏（评审 B）
+  var wantsBackdrop: Bool {
+    isOpen && (content != nil || isBoardOpen)
+      && (isExpanded || isBoardOpen || cardActivity != nil) && !levelShaped
+  }
+
+  /// 渐进模糊跟上岛现在的样子：展开成大面时照形体的目标位置出一圈，别的时候收掉。形体的位置变了（IslandView 报
+  /// shapeFrame）、该不该有变了（IslandView 看着 wantsBackdrop）、收起（dismiss）、设置变了时调
+  func syncBackdrop() {
+    guard let backdrop, let container = backdrop.superview else { return }
+    guard blurs, wantsBackdrop, shapeFrame.height > 0
+    else { return backdrop.hide(animated: !Style.reduceMotion) }
+    let notch: Bool
+    if case .notch = geometry { notch = true } else { notch = false }
+    backdrop.show(
+      around: IslandBackdrop.Shape(
+        frame: CGRect(
+          x: shapeFrame.minX, y: container.bounds.height - shapeFrame.maxY, width: shapeFrame.width,
+          height: shapeFrame.height),
+        corner: notch ? 24 : 18, flatTop: notch),
+      animated: !Style.reduceMotion)
   }
 
   /// 摆好窗口、拿到最前（摆出来的岛不建）。窗口在屏上时不动它（尺寸一次定死，见 Geometry.windowSize）。
@@ -1437,6 +1466,13 @@ import SwiftUI
     host.island = self
     panel.setHostedContent(host)
     self.host = host
+    // 宿主下面垫一层：展开时四周的渐进模糊（这一版系统上用不了就不垫）
+    if IslandBackdrop.isAvailable, let container = panel.contentView {
+      let backdrop = IslandBackdrop(frame: container.bounds)
+      backdrop.autoresizingMask = [.width, .height]
+      container.addSubview(backdrop, positioned: .below, relativeTo: host)
+      self.backdrop = backdrop
+    }
     return panel
   }
 
@@ -1518,6 +1554,7 @@ struct IslandView: View {
     .contentShape(IslandOutline(shape: shape))
     .onTapGesture { island.tapped() }
     .onChange(of: shape.frame, initial: true) { island.shapeFrame = shape.frame }
+    .onChange(of: island.wantsBackdrop) { island.syncBackdrop() }
     .modifier(Shake(count: island.shakes, enabled: !reduceMotion))
     .modifier(Press(count: island.presses, enabled: !reduceMotion))
     .modifier(Presence(island: island, capsule: shape.capsule, reduceMotion: reduceMotion))

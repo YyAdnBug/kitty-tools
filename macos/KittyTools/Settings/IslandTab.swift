@@ -26,6 +26,7 @@ struct IslandTab: View {
   @State private var accessChecks = 0
   @AppStorage(Prefs.islandHoverExpands) private var hoverExpands = true
   @AppStorage(Prefs.islandHaptics) private var haptics = true
+  @AppStorage(Prefs.islandBlur) private var blur = true
   /// 这一次打开开关时系统没给授权（偏好没打开，橙字留着告诉怎么开）
   @State private var calendarDenied = false
   @Environment(SettingsNavigation.self) private var navigation: SettingsNavigation?
@@ -159,6 +160,10 @@ struct IslandTab: View {
         Toggle(isOn: $haptics) {
           Text("触感反馈")
           Text("滑动切歌、展开卡片、进度条拖到头时，触控板轻轻一下")
+        }
+        Toggle(isOn: $blur) {
+          Text("展开时模糊四周")
+          Text("卡片背后的东西越靠近卡片越模糊；系统设置里开着「降低透明度」时不模糊")
         }
       } footer: {
         SectionFootnote("装了别的刘海 App 时可以关掉「点刘海打开」：提示和挂在刘海两边的录制计时这些照常，快捷键照样能叫出快捷动作。")

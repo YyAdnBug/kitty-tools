@@ -1120,6 +1120,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private func applyIslandFeel() {
     island.hoverExpands = UserDefaults.standard.bool(forKey: Prefs.islandHoverExpands)
     island.haptics = UserDefaults.standard.bool(forKey: Prefs.islandHaptics)
+    island.blurs = UserDefaults.standard.bool(forKey: Prefs.islandBlur)
   }
 
   /// 点刘海、停在刘海上、往下滑打开（有活动是它的卡片，没有是那一张）：刘海岛插件添加着，设置 › 刘海岛「点刘海打开」也开着
