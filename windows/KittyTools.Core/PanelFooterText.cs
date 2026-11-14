@@ -35,6 +35,7 @@ public static class PanelFooterText
         LauncherKind.Translate => "翻译",
         LauncherKind.Process => "进程",
         LauncherKind.Ip => "网络",
+        LauncherKind.Script => "脚本",
         LauncherKind.Prompt when target.StartsWith("system-", StringComparison.Ordinal) => "系统",
         LauncherKind.Prompt when target == "translate-fy" => "翻译",
         LauncherKind.Prompt when target == ExchangeRates.PromptTarget => "汇率",
@@ -52,7 +53,7 @@ public static class PanelFooterText
     {
         var verb = kind switch
         {
-            LauncherKind.Action or LauncherKind.Command => "运行",
+            LauncherKind.Action or LauncherKind.Command or LauncherKind.Script => "运行",
             LauncherKind.Url => "打开网址",
             LauncherKind.Search => "搜索",
             LauncherKind.Calculation or LauncherKind.Ip => "粘贴",

@@ -352,6 +352,12 @@ internal sealed class Settings
     /// <summary>「从启动器里隐藏」的应用（§6 A5）：目标路径（小写）。</summary>
     public List<string>? LauncherHiddenApps { get; set; }
 
+    /// <summary>脚本命令（PLAN-v18 L1）：整个开关，默认开。</summary>
+    public bool LauncherScripts { get; set; } = true;
+
+    /// <summary>自己加的脚本文件夹（PLAN-v18 L1，这台电脑自己的路径，不导出）。</summary>
+    public List<string>? LauncherScriptFolders { get; set; }
+
     /// <summary>把运行过的程序也列出来（§6 A3 / P1，读资源管理器的 UserAssist）：默认开，只在本机、不导出。</summary>
     public bool LauncherRecentPrograms { get; set; } = true;
 

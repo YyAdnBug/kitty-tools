@@ -737,3 +737,17 @@ mac 0.7.1（第四轮体检）修掉、Windows 也有的那几条，照 mac 同�
 1287. 设置 › 启动器 › 应用「应用别名」搜「计算器」选中 → 填 zz9；启动器里输 zz9 → 计算器排第一，只输 zz 不算。VS Code 升级、开始菜单快捷方式挪了位置后别名照样认。（Windows 11-14：--launcher-script 截图 zz9 / zz；单测 KeysSurviveShortcutMovesAndUpdates、OnlyTheWholeAliasCounts）
 1288. 在「sha」下选过某个应用，之后只输「s」「sh」它也往前（按一半算）；选过一次就压过平时用得多的；28 天里都记着。还没用过的同分时，系统记着最近运行过的排前面。（Windows 11-14：单测 TiesFollowSystemUse、Multiplier；真用没测）
 1289. 设置 › 通用 导出再导入：应用别名、应用文件夹、隐藏的应用跟着回来；「把运行过的程序也列出来」不跟（只在本机）。（没测）
+
+## PLAN-v18 第 6 批：脚本命令（L1）之一——脚本库和运行，2026-11-14
+
+> 写了「Windows 11-14」的是用单测、`--script-probe`（临时文件夹里真跑 .ps1 / .cmd）、`--launcher-script`（改搜索框的字、不发按键）验过的；**没写的都没测**。截图在 `windows-shots` 的 `0.3.0-v18-6/`。
+
+1290. 把一个 .ps1 放进数据目录（%LOCALAPPDATA%\KittyTools）下的 scripts 文件夹→ 下次打开启动器搜标题、拼音、文件名、头部写的 keyword 都搜得到，行尾「脚本」、底栏「运行」；keyword 一字不差时排第一。（Windows 11-14：--launcher-script 截图「你好脚本 打个招呼」）
+1291. 带参数的（# @kitty.argument1 名字）：只打 keyword 按 Enter 先补「keyword 空格」；「nh 世界」那一行副标题「名字：世界」，Enter 跑、刘海岛上显示输出的最后一行。（Windows 11-14：截图「名字：世界」、日志 script.run end=Finished 215 ms）
+1292. mode paste：输出粘贴到呼出启动器之前的那个应用；mode copy：复制、进剪贴板历史、提示「已复制」；mode none：什么都不出；mode full：另开一扇窗边跑边显示，能「复制全部」「再运行」(Ctrl+R)「停止」。（没测）
+1293. 写了 # @kitty.confirm 的：第一下 Enter 副标题换成「再按 Enter 运行「…」」，再按一次才跑。（没测）
+1294. 从网上下载的脚本（浏览器下载、带「来自 Internet」标记）：第一次 Enter 不跑，开一扇窗看全文；里面有零宽字、双向控制符这类看不见的字时标成 ⟦U+…⟧、「运行」是灰的；没有的话「运行」后去掉标记、以后不再问。（Windows 11-14：--script-probe 认得出 / 去掉 :Zone.Identifier、扫描后才带上标记的不跑；看全文那扇窗没截图）
+1295. 跑超过 1 秒的出「正在运行「…」」带「停止」，点了连脚本起的子进程（ping、curl）一起停；默认 60 秒超时（# @kitty.timeout 改）；出错时提示写最后一行错误输出。（Windows 11-14：--script-probe 超时 1 s 停下、停止后子进程 ping 0 个）
+1296. .cmd / .bat 存成 UTF-8（VS Code 默认）或 GBK（记事本 ANSI）里写的中文都不乱码；参数带空格、& 原样到脚本；.ps1 存成 UTF-8 带 BOM 才认中文（PowerShell 5.1 的老毛病）。（Windows 11-14：--script-probe 两种 cmd、ps1 带空格和 & 的参数）
+1297. .py 只在装了 Python（带 py 启动器）时认；没装时设置里列「要装 Python…」；.sh / .js 这类列「Windows 版只认 .ps1、.cmd、.bat、.py」。（Windows 11-14：单测 DefaultsAndSkips；这台没有 py.exe）
+1298. 设置 › 启动器 › 命令和别名 最上面「我的脚本」一组：能改别名、关掉、设快捷键；脚本的快捷键：不要参数、不用确认、看过全文的直接跑，别的打开启动器填好「别名 」。（没测）

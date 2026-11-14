@@ -13,8 +13,16 @@ internal static class LauncherCommandKeys
     public static LauncherCommandSettings Settings
         => LauncherCommandTable.FromStored(SettingsService.Current.LauncherCommandAliases, SettingsService.Current.LauncherCommandsOff);
 
-    /// <summary>表里全部的行：关键词命令、系统命令（编号、标题、原来的关键词、图标）。</summary>
-    public static IEnumerable<LauncherBuiltIn> Rows => LauncherCommandTable.BuiltIns.Concat(SystemCommands.Rows());
+    /// <summary>表里全部的行：我的脚本（PLAN-v18 L1）、关键词命令、系统命令（编号、标题、原来的关键词、图标）。</summary>
+    public static IEnumerable<LauncherBuiltIn> Rows => ScriptRows.Concat(LauncherCommandTable.BuiltIns).Concat(SystemCommands.Rows());
+
+    /// <summary>脚本那几行：编号「script:路径」，原来的别名是头部写的 keyword（没写是空）。</summary>
+    public static IEnumerable<LauncherBuiltIn> ScriptRows
+        => SettingsService.Current.LauncherScripts
+            ? ScriptLibrary.Scripts.Select(script => new LauncherBuiltIn(ScriptId(script), script.Title, script.Keyword ?? string.Empty, Glyphs.Code))
+            : Enumerable.Empty<LauncherBuiltIn>();
+
+    public static string ScriptId(ScriptCommand script) => "script:" + script.Path;
 
     /// <summary>设了快捷键、开着的命令（编号 → 组合）：HotKeyManager 注册它们。</summary>
     public static IEnumerable<(string Id, HotKeyBinding Binding)> Bindings()
@@ -45,6 +53,19 @@ internal static class LauncherCommandKeys
 
         var alias = settings.Alias(id, row.Keyword);
         Log.Info($"launcher.command-hotkey {id}");
+        // 脚本：不要参数、不用确认、看过全文的直接跑；别的打开启动器填好「别名 」（参数、确认、看全文在那里做）
+        if (id.StartsWith("script:", StringComparison.Ordinal) && ScriptLibrary.Scripts.FirstOrDefault(script => ScriptId(script) == id) is { } script)
+        {
+            if (!script.TakesInput && script.Confirmation is null && !script.IsDownloaded)
+            {
+                ScriptHost.Run(script, Array.Empty<string>(), Windows.Win32.PInvoke.GetForegroundWindow());
+                return;
+            }
+
+            Open((alias is { Length: > 0 } typed ? typed : script.Title) + " ");
+            return;
+        }
+
         if (id.StartsWith("system:", StringComparison.Ordinal) && SystemCommands.TargetOf(row.Keyword) is { } target)
         {
             if (SystemCommands.Confirmation(target) is null)

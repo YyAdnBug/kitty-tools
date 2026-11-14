@@ -224,6 +224,7 @@ internal sealed class LauncherUsageStore
         LauncherKind.Prompt => "prompt",
         LauncherKind.Process => "process",
         LauncherKind.Ip => "ip",
+        LauncherKind.Script => "script",
         _ => "calculation",
     };
 
@@ -236,6 +237,7 @@ internal sealed class LauncherUsageStore
         "url" => LauncherKind.Url,
         "path" => LauncherKind.Path,
         "search" => LauncherKind.Search,
+        "script" => LauncherKind.Script,
         _ => LauncherKind.Calculation,
     };
 

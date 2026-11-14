@@ -112,6 +112,7 @@ internal sealed partial class SettingsWindow
                     row.Keyword.Contains(filter, StringComparison.Ordinal));
             var groups = new[]
             {
+                ("我的脚本", LauncherCommandKeys.ScriptRows),
                 ("关键词命令", LauncherCommandTable.BuiltIns.AsEnumerable()),
                 ("系统命令", SystemCommands.Rows()),
             };

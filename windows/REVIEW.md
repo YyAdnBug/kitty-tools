@@ -693,7 +693,7 @@ mac 的单测在 `macos/KittyToolsTests/`，样本和期望值能搬就搬。只
   - 验：单测 945（新 7：命令表 5、设置小字 2）；`--hotkey-block-probe` 加了命令快捷键四条（名单外注册着、「全部」停、只停几个不管、重新注册热键号还是 1000）全对；截图 settings-sub-*（浅深）；AOT x64 / ARM64 0 警告（96.6 / 102.2 MB）。内存全量、空闲 CPU 随第 5 批补。
   - 替用户定的：脚本命令（第 6–8 批）没有，表里先只有关键词、系统两组，筛选只留「只看开着的」；子页页头的图标是通用的齿轮；命令快捷键不能设成连按两下。
   - 没做：mac 启动器 ⌘K 里「改别名…」直达这一行（要动启动器的操作菜单，跟脚本那几批一起做）。没测：真打字、真按命令快捷键、导出导入（HANDTEST 1272–1280）。
-  - 空闲 CPU 0.031 %（静置 30 s 后量 300 s）；内存全量在跑，随第 6 批补。
+  - 空闲 CPU 0.031 %（静置 30 s 后量 300 s）。内存全量（0a4fc679 vs 3979f9fe）：只托盘 54.4 / 55.0 MB，开启动器 63.7 / 64.3，开截图遮罩 77.9 / 77.8，最后静置 100.8 / 103.0（没涨）。
 - **第 5 批（`git log --grep "PLAN-v18 第 5 批"`）**：§6（= PLAN-v16 §4 便携软件，P1–P4 照推荐）、L5、L6。
   - 便携软件（`Launcher/AppSources.cs`、Core `PortableApps`）：A1 桌面（当前用户 + 公用，顶层 .lnk / .exe，副标题「桌面」，和开始菜单按目标去重）；A2 App Paths（HKCU + HKLM，Windows 目录下的不要）；A3 资源管理器的 UserAssist（ROT13 + 72 字节，已知文件夹 GUID 用 SHGetKnownFolderPath 换；设置开关「把运行过的程序也列出来」默认开、不导出）；A4 应用文件夹和单个程序（往下两层、500 个、2 秒超时；找不到的灰着不删；文件搜索结果是 exe 时 Ctrl+K「添加到启动器的应用」）；A5 名单（unins / setup / update / crash / helper… 和说明里的卸载 / 安装 / 更新；没图标的不收；同一个文件夹说明一样的留 64 位那个）+ 「从启动器里隐藏」（按目标，设置里能恢复，跟着导出导入）；A6 打开 exe 时工作目录是它自己的文件夹。
   - 应用别名（Core `AppAliases`，D10）：键 aumid: / exe:（解析出来的 exe 折成 %ProgramFiles% 这类、小写，不用 .lnk 路径），输完整的别名时那个应用排第一；设置 › 启动器 › 应用（别名、应用文件夹、隐藏的应用三块，D10「同一页」）；导出导入 launcherAppAliases / launcherAppFolders / launcherHiddenApps。
@@ -701,6 +701,14 @@ mac 的单测在 `macos/KittyToolsTests/`，样本和期望值能搬就搬。只
   - 验：单测 952（新 7：PortableApps 3、AppAliases 3、同分按系统记的使用 1）；`--launcher-script` 在 .Dev 档给计算器起别名 zz9 → 输 zz9 计算器排第一、输 zz 不出；本机实测 App Paths 27 个、运行记录 14 条（新收 0 个：都已在开始菜单里或被名单拦下）、桌面 0 个，A1–A3 加起来 391 ms（后台线程，主要是给 27 个 App Paths 程序取图标；PLAN 写的目标是 100 ms，没达到，见下）；截图 settings-sub-apps（浅深）；AOT x64 / ARM64 0 警告（96.7 / 102.4 MB）。内存全量、空闲 CPU 随第 6 批补。
   - 替用户定的：A5「没图标的不收」用的是取不取得到 PNG 图标（ShellIcons.LoadPng），没另调 ExtractIconEx；App Paths 的程序也要有图标才收；A3 的副标题写所在文件夹名。
   - 没达到：A1–A3 391 ms > 100 ms（取图标占大头；在后台线程、扫完才换列表，界面不卡；要压就把 App Paths 的图标改成第一次显示时再取）。没测：真桌面上的便携软件、真文件夹、隐藏 / 恢复、工作目录、导出导入（HANDTEST 1281–1289）。
+  - 空闲 CPU 0.037 %（静置 30 s 后量 300 s）；内存全量在跑，随第 7 批补。
+- **第 6 批（`git log --grep "PLAN-v18 第 6 批"`）**：L1 之一——脚本库和运行（照 mac 7c5ea76e 起的几批，D7 D9）。
+  - Core `ScriptCommand`（头部字段同 mac：@kitty.* / @raycast.*，注释多认 ::、REM；按扩展名选解释器：.ps1 → powershell -NoProfile -ExecutionPolicy Bypass -File、.cmd / .bat → cmd /d /s /c、.py 有 py.exe 才认；.sh / .js 记「Windows 版只认…」）、参数（JSON、下拉、密码、percentEncoded、引号）、列表输出、清颜色码和回车、看不见的字（⟦U+…⟧，不放行）；Core `ScriptLaunch`（cmd 的命令行、PATH 从注册表的系统 + 用户重拼、环境加 KITTY_*、UTF-8 判断）。
+  - `Launcher/ScriptLibrary.cs`（数据目录 scripts + 自己加的文件夹，顶层、每次呼出后台重读，读不成的记原因，下载来的去掉不可信图标）、`ScriptRunner.cs`（不开窗口、标准输入空、工作目录是脚本的文件夹、默认 60 s，超时 / 停止 / 输出 4 MB 都是 Kill(entireProcessTree)；.py 和存成 UTF-8 的批处理按 UTF-8 读（批处理先 chcp 65001），别的按 OEM 代码页；:Zone.Identifier 下载标记）、`ScriptHost.cs`（下载来的先开窗看全文、1 秒后「正在运行」带「停止」、按 mode 交出结果）、`ScriptTextWindow.cs`（看全文 / 全部输出两用）。
+  - 启动器：新种类 Script（行尾「脚本」、命令家族紫），搜标题 / 拼音 / 文件名 / 别名，别名一字不差排第一；「别名 空格 参数」（内置命令先认）一行写各参数；Enter 补「别名 空格」/ 缺必填响一声 / confirm 上膛 / 跑；密码参数不记使用。命令和别名表最上面加「我的脚本」组（别名、开关、快捷键）。
+  - 验：单测 965（新 13：ScriptCommand 9、ScriptLaunch 4）；`--script-probe`（新，Debug，临时文件夹真跑）全过：ps1 中文 + 带空格和 & 的参数、退出码、工作目录 / KITTY_SCRIPT_DIR、cmd 存 UTF-8 和 GBK 都不乱码、超时 1 s 停下、停止后子进程 ping 0 个、下载标记；**PowerShell 冷启动约 200 ms**（第二次 190 ms）；`--launcher-script` 在 .Dev 档 scripts 放一个 .ps1：搜得到、「nh 世界」副标题「名字：世界」、Enter 跑完 215 ms；AOT x64 / ARM64 0 警告（97.6 / 103.3 MB，比第 5 批 +0.9 MB）。内存全量、空闲 CPU 随第 7 批补。
+  - 替用户定的：mac 在启动器面板里原地看全文 / 全部输出，Windows 的启动器失焦就收，挪到一扇普通窗口；批处理按文件是不是 UTF-8 决定要不要 chcp 65001；.ps1 不带 BOM 的中文 PowerShell 5.1 读成乱码（`ponytail:`，说明里写存成带 BOM）。
+  - 没做（第 7、8 批）：列表模式、下拉参数打字时列选项、全部输出认终端颜色、设置页（文件夹、读不成的、新建、怎么写、给 AI 的写法说明）、自带的命令（D8）。没测：粘贴 / 复制 / 全文、confirm、看全文那扇窗、快捷键跑脚本（HANDTEST 1290–1298）。
 
 ### 停下来问用户
 

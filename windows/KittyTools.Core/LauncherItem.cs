@@ -32,6 +32,9 @@ public enum LauncherKind
 
     /// <summary>「ip」列的本机 / 外网地址（LauncherIp）：Enter 粘贴 Payload、Ctrl+Enter 只复制；没有 Payload 的（还在查、没查到）不能粘贴。</summary>
     Ip,
+
+    /// <summary>脚本命令（PLAN-v18 L1，Target = 脚本路径；带参数时 Payload 是参数，\u001F 隔开）。</summary>
+    Script,
 }
 
 public static class LauncherKinds

@@ -160,7 +160,7 @@ internal static class KindTile
     /// </summary>
     public static string FamilyOf(LauncherKind kind) => kind switch
     {
-        LauncherKind.Command or LauncherKind.Process or LauncherKind.Ip => "command",
+        LauncherKind.Command or LauncherKind.Process or LauncherKind.Ip or LauncherKind.Script => "command",
         LauncherKind.Url => "url",
         LauncherKind.Search or LauncherKind.Prompt => "search",
         LauncherKind.Calculation => "calculator",
@@ -183,6 +183,7 @@ internal static class KindTile
         LauncherKind.Translate => FeatureIcons.Translate,
         LauncherKind.Process => Glyphs.Process,
         LauncherKind.Ip => Glyphs.Port,
+        LauncherKind.Script => Glyphs.Code,
         _ => Glyphs.App,
     };
 
