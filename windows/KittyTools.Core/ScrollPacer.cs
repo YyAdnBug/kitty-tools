@@ -9,6 +9,8 @@
 // 封顶（mac 176ad8b1，PLAN-v18 S1）：匀速滚动不等拼接，两帧之间滚多远 = 速度 × 抓帧、算帧、拼接的时间，后者跟着选区面积涨；
 // 选区大了两帧之间滚过一整屏，对不上 → 退回、放慢 → 接上又全速再滚过头，反反复复。所以比上次接上的那一帧最多领先半个选区高
 // （MaxLead），到顶就停发，下一帧接上了再接着滚；到顶时一帧可能一点没发，自上次接上以来发过、画面没动照样算到头。
+// 「半个选区高」里的高是**在动的那一块**的高（Band，PLAN-v20 W1，mac PR #20）：选区里只嵌着一块小滚动区时能接上的位移只和它有关；
+// 对不上时退回自上次接上以来发的一半，领先得比这块还多时退到这块的一半以内（只退一半还是接不上）。还没量出来时就是选区高。
 // - 不翻滚轮正负号（mac 的 wheelSign）：SendInput 的滚轮方向是定的，没有「自然滚动」对合成事件怎么处理的问题；
 //   Windows 的拼接按方向接（ScrollCanvas.Append），反方向滚只会对不上，走退回那一路。
 namespace KittyTools.Core;
@@ -49,7 +51,7 @@ public sealed class ScrollPacer
     /// <summary>滚轮一格（WHEEL_DELTA）。</summary>
     public const int Notch = 120;
 
-    /// <summary>比上次接上的那一帧开抓时最多领先几个选区高（同 mac ScrollCapture.maxLead）。</summary>
+    /// <summary>比上次接上的那一帧开抓时最多领先「在动的那一块」高的几倍（同 mac ScrollCapture.maxLead）。</summary>
     public const double MaxLead = 0.5;
 
     private const int StallLimit = 3;
@@ -70,6 +72,7 @@ public sealed class ScrollPacer
     {
         _height = Math.Max(1, height);
         _scale = scale <= 0 ? 1 : scale;
+        _band = _height;
         // 开头按「一格约 100 DIP」猜（浏览器、大多数新程序）；之后按实测校准。
         Gain = InitialGain(_scale);
         Speed = speed;
@@ -77,6 +80,15 @@ public sealed class ScrollPacer
     }
 
     public ScrollSpeed Speed { get; private set; }
+
+    /// <summary>选区里在动的那一块有多高（像素，ScrollBand.MovingRows）：领先上限按它算；没量出来（0）、比选区高时按选区高。</summary>
+    public int Band
+    {
+        get => _band;
+        set => _band = value <= 0 ? _height : Math.Min(value, _height);
+    }
+
+    private int _band;
 
     /// <summary>发出去 1 个滚轮单位，画面实际滚几像素（校准过的）。</summary>
     public double Gain { get; private set; }
@@ -168,8 +180,18 @@ public sealed class ScrollPacer
         return ((int)whole, amount - whole);
     }
 
-    /// <summary>还能再发几个单位：lead 是自上次接上的那一帧开抓以来发了多少（退回过可以是负数），换算成像素不超过 MaxLead 个选区高。</summary>
-    public static double Room(double lead, int height, double gain) => Math.Max(MaxLead * height / Math.Max(gain, 0.001) - lead, 0);
+    /// <summary>
+    /// 还能再发几个单位：lead 是自上次接上的那一帧开抓以来发了多少（退回过可以是负数），换算成像素不超过 MaxLead 个 band 高
+    /// （band = 在动的那一块的高，没量出来时是选区高）。
+    /// </summary>
+    public static double Room(double lead, int band, double gain) => Math.Max(MaxLead * band / Math.Max(gain, 0.001) - lead, 0);
+
+    /// <summary>
+    /// 对不上时往回退几个单位（同 mac 的 .lost）：自上次接上以来发的一半；领先得比在动那块还多时（块是后来才量出来的）
+    /// 退到这块的一半以内。
+    /// </summary>
+    public static int BackOff(double lead, int band, double gain)
+        => (int)Math.Round(Math.Max(lead / 2, lead - Room(0, band, gain) / 2));
 
     /// <summary>开始 / 暂停后接着滚：清计数和零头；停着时没发过滚轮，参照帧开抓时就是现在这个数。</summary>
     public void Begin()
@@ -192,7 +214,7 @@ public sealed class ScrollPacer
     /// <summary>屏幕刷新了一帧（离上一帧 seconds 秒）：这一帧要发几个单位（0 = 这一帧不发），已经记进 Posted。</summary>
     public int Frame(double seconds)
     {
-        var (units, carry) = FrameUnits(Velocity, seconds, _carry, Room(Posted - PostedAtReference, _height, Gain));
+        var (units, carry) = FrameUnits(Velocity, seconds, _carry, Room(Posted - PostedAtReference, _band, Gain));
         _carry = carry;
         Posted += units;
         return units;
@@ -229,7 +251,7 @@ public sealed class ScrollPacer
                     return 0;
                 }
 
-                var back = (int)Math.Round((Posted - PostedAtReference) / 2);
+                var back = BackOff(Posted - PostedAtReference, _band, Gain);
                 Velocity /= 2;
                 if (back <= 0)
                 {

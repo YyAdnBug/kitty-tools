@@ -1,6 +1,7 @@
 // 长截图（第三版 §7）：选区收起后，一帧接一帧抓选区交给 Core 的 ScrollStitcher 拼——手动滚时画面在动就拼完立刻抓下一帧、静止 40 ms、
 // 连着 5 帧静止 200 ms（PLAN-v18 S2，Core ScrollPacer.ManualDelayMs；原来固定 600 ms，滚快了两帧之间滚过一整屏就再也接不上），
-// 对不上时状态行橙字「对不上了：往回滚一点，再慢慢滚」；
+// 对不上时状态行橙字「对不上了：往回滚一点，再慢慢滚」；画面在动时截下一帧和拼这一帧叠着做（PLAN-v20 W2，mac c7756c75：这一帧开拼就先截好
+// 下一帧，拼完马上拿它接着拼），静止那一觉被选区里的滚轮叫醒（WheelWake：鼠标的 Raw Input，只在手动长截图期间注册）；
 // 用户自己滚，Enter / 「完成」结束，Esc 放弃，高度到 30000 自动结束。
 // 遮罩收起后选区外一圈品牌粉实线（RecordingFrame.ShowScrolling，同 mac ScrollCapture 的边框；2026-10-29 用户反馈
 // 以前开始滚后什么框都没有）：线在选区外、又不进截图，抓的帧里没有它；
@@ -11,6 +12,8 @@
 // 抓帧 160 ms 一帧、边滚边截，每帧拼完按发出去的量和画面实际滚的像素对账校准（Core ScrollPacer）；对不上退回、放慢，
 // 连着几帧不动 = 到头，停下、状态行说。滚轮交给光标下的窗口：开始 / 接着滚时光标不在选区里（或停在面板上）就挪到选区中间，
 // 之后光标停在面板附近先不发，移出选区 = 暂停（按 A 接着滚）。
+// 在动的那一块（PLAN-v20 W1，mac PR #20）：Core ScrollBand 累计真滚过的帧里变过的行 / 列，领先上限（ScrollPacer.Band）、对不上时的退让、
+// 光标落点（AimAtBand：开始、接着滚、对不上时光标不在那一块上就挪进去）都按它算；还没量出来时按整个选区。
 // REVIEW R43：每拍只 BitBlt 选区那一块（以前抓全部屏再裁），转像素、算行哈希、找重叠在线程池上做（一次只拼一拍，
 // 上一拍没拼完这一拍就跳过），拼接按条带存（ScrollCanvas）；「完成」等正在拼的那一拍拼完再合成。
 using System.Diagnostics;
@@ -49,8 +52,14 @@ internal static class ScrollingCapture
     /// <summary>正在线程池上拼的那一拍（拼完回 UI 线程换上）；没有在拼时是 null。</summary>
     private static Task<Tick>? _work;
 
-    /// <summary>上一次拼上的那帧每行的哈希：判断这一拍是没动还是对不上（ScrollPacer.Classify）。</summary>
-    private static uint[]? _reference;
+    /// <summary>上一次拼上的那帧（行哈希判断这一拍是没动还是对不上，ScrollPacer.Classify；像素给 ScrollBand 比列）。</summary>
+    private static ScrollFrame? _reference;
+
+    /// <summary>在动的那一块（第一帧拼上时建）。只在拼的那一拍里改（线程池上，一次只拼一拍），UI 线程在拼完之后读。</summary>
+    private static ScrollBand? _band;
+
+    /// <summary>手动滚、画面在动时先截好的下一帧（拼这一帧的同时截）：拼完马上拿它接着拼；没有时是 null。</summary>
+    private static byte[]? _prefetched;
 
     /// <summary>自动滚动的速度和校准；手动滚时是 null。</summary>
     private static ScrollPacer? _pacer;
@@ -75,6 +84,14 @@ internal static class ScrollingCapture
 
     public static bool Active { get; private set; }
 
+    /// <summary>自检（ScrollBandProbe）：不注册 Enter、不装 Esc 钩子（自检跑的那几秒不抢用户的键）。</summary>
+    public static bool ProbeQuiet { get; set; }
+
+    /// <summary>自检看：在动的那一块、手动滚时叠着截了几帧。</summary>
+    public static ScrollBand? BandForProbe => _band;
+
+    public static int PrefetchCountForProbe { get; private set; }
+
     /// <summary>没有正在拼的那一拍：这时 UI 线程可以从 _canvas 取预览（拼的时候条带在线程池上改）。</summary>
     public static bool Idle => _work is null;
 
@@ -93,6 +110,8 @@ internal static class ScrollingCapture
         _canvas = null;
         _work = null;
         _reference = null;
+        _band = null;
+        _prefetched = null;
         var speed = ScrollPacer.Parse(SettingsService.Current.ScrollCaptureSpeed);
         _pacer = autoScroll
             ? new ScrollPacer(rect.Height, Displays.AtPoint(rect.Left + rect.Width / 2, rect.Top + rect.Height / 2).Scale, speed)
@@ -114,8 +133,17 @@ internal static class ScrollingCapture
             _messageHooked = true;
             HiddenWindow.Message += OnHiddenMessage;
         }
-        PInvoke.RegisterHotKey(HiddenWindow.Hwnd, EnterId, 0, (uint)VIRTUAL_KEY.VK_RETURN);
-        EscapeKeyWatch.Start(RequestCancel);
+        if (!ProbeQuiet)
+        {
+            PInvoke.RegisterHotKey(HiddenWindow.Hwnd, EnterId, 0, (uint)VIRTUAL_KEY.VK_RETURN);
+            EscapeKeyWatch.Start(RequestCancel);
+        }
+
+        PrefetchCountForProbe = 0;
+        if (!autoScroll)
+        {
+            WheelWake.Start(OnWheel);
+        }
         RecordingFrame.ShowScrolling(rect);
         CaptureFrame();
         _timer = DispatcherQueue.GetForCurrentThread()!.CreateTimer();
@@ -235,6 +263,7 @@ internal static class ScrollingCapture
         ScrollPreviewPanel.Hide();
         PInvoke.UnregisterHotKey(HiddenWindow.Hwnd, EnterId);
         EscapeKeyWatch.Stop();
+        WheelWake.Stop();
         PInvoke.UnregisterHotKey(HiddenWindow.Hwnd, ResumeId);
         if (_messageHooked)
         {
@@ -248,6 +277,8 @@ internal static class ScrollingCapture
         _canvas = null;
         _work = null;
         _reference = null;
+        _band = null;
+        _prefetched = null;
         _pacer = null;
         _completing = false;
         _onComplete = null;
@@ -256,18 +287,31 @@ internal static class ScrollingCapture
 
     private static async void CaptureFrame()
     {
-        if (!Active || _screen is null || _timer is null && _frames > 0 || _work is not null || _completing)
+        if (!Active || _screen is null || _timer is null && _frames > 0 || _completing)
         {
+            return;
+        }
+
+        if (_work is not null)
+        {
+            // 正在拼上一帧：手动滚、画面在动时先把下一帧截好（叠着做），拼完马上接着拼；别的时候这一拍跳过。
+            Prefetch();
             return;
         }
 
         try
         {
             // 只抓选区那一块（屏幕内容会变，冻结帧不能再用）；GDI 的屏幕 DC 用的就是全局的物理像素坐标。
-            // 开抓前记下一共发了多少滚轮，拼完拿它和画面实际滚的对账。
+            // 开抓前记下一共发了多少滚轮，拼完拿它和画面实际滚的对账（先截好的那一帧只有手动滚时才有，那时不对账）。
             var rect = _rect;
-            _pacer?.Captured();
-            var bgra = ScreenCapture.CaptureRegion(rect);
+            var bgra = _prefetched;
+            _prefetched = null;
+            if (bgra is null)
+            {
+                _pacer?.Captured();
+                bgra = ScreenCapture.CaptureRegion(rect);
+            }
+
             if (bgra is null)
             {
                 NoticeHost.Show("长截图", "选区不在屏幕上了", NoticeTone.Warning);
@@ -277,6 +321,7 @@ internal static class ScrollingCapture
 
             var canvas = _canvas;
             var reference = _reference;
+            var band = _band;
             var direction = _direction;
             var work = Task.Run(() =>
             {
@@ -285,22 +330,34 @@ internal static class ScrollingCapture
                 var frame = new ScrollFrame(rect.Width, rect.Height, pixels);
                 if (canvas is null || reference is null)
                 {
-                    return new Tick(new ScrollCanvas(frame), frame.Hashes, ScrollStep.Moved, frame.Height);
+                    return new Tick(new ScrollCanvas(frame), frame, new ScrollBand(rect.Width, rect.Height), ScrollStep.Moved, frame.Height);
                 }
 
                 // 和上次拼上的一样：不拿去拼（整片纯色时随便哪个重叠都对得上，会凭空长出空白）。
-                if (ScrollPacer.Same(reference, frame.Hashes))
+                if (ScrollPacer.Same(reference.Hashes, frame.Hashes))
                 {
-                    return new Tick(canvas, reference, ScrollStep.Unchanged, 0);
+                    return new Tick(canvas, reference, band, ScrollStep.Unchanged, 0);
                 }
 
                 var before = canvas.Height;
                 var appended = canvas.Append(frame, direction);
                 var grown = canvas.Height - before;
-                return new Tick(
-                    canvas, appended ? frame.Hashes : reference, ScrollPacer.Classify(reference, frame.Hashes, appended, grown), grown);
+                var step = ScrollPacer.Classify(reference.Hashes, frame.Hashes, appended, grown);
+                if (step == ScrollStep.Moved)
+                {
+                    // 真滚过了：变过的行 / 列记进「在动的那一块」（换参照帧之前比；没滚时原地变的不算）。
+                    band?.NoteMoved(reference, frame);
+                }
+
+                return new Tick(canvas, appended ? frame : reference, band, step, grown);
             });
             _work = work;
+            if (!_autoScroll && _quietFrames == 0 && _frames > 0)
+            {
+                // 画面在动：拼这一帧的同时截下一帧。
+                DispatcherQueue.GetForCurrentThread()?.TryEnqueue(DispatcherQueuePriority.Low, Prefetch);
+            }
+
             var result = await work;
             if (!ReferenceEquals(_work, work))
             {
@@ -315,8 +372,14 @@ internal static class ScrollingCapture
             }
 
             _canvas = result.Canvas;
-            _reference = result.Hashes;
+            _reference = result.Reference;
+            _band = result.Band;
             _frames++;
+            if (_pacer is { } tracked && _band is { } measured)
+            {
+                tracked.Band = measured.MovingRows.Count;
+            }
+
             ScrollPreviewPanel.Update(result.Canvas, direction == ScrollDirection.Up, result.Grown);
             if (_canvas.Height >= ScrollStitcher.MaxOutputHeight)
             {
@@ -335,6 +398,12 @@ internal static class ScrollingCapture
             if (_autoScroll && _pacer is { } pacer && !ScrollPreviewPanel.Contains(cursor.X, cursor.Y, 16))
             {
                 var back = pacer.After(result.Step, result.Grown);
+                if (result.Step == ScrollStep.Lost && pacer.Stopped == ScrollStopReason.None)
+                {
+                    // 也许是滚轮根本没落在在动的那一块上（光标停在选区里的外层页面上）：先把它挪进去。
+                    AimAtBand();
+                }
+
                 if (back > 0)
                 {
                     SendWheel(-back);
@@ -354,8 +423,8 @@ internal static class ScrollingCapture
     }
 
     /// <summary>
-    /// 手动滚：这一帧拼完排下一帧（ScrollPacer.ManualDelayMs）——在动就马上抓，静止 40 / 200 ms；对不上时状态行说一声，接上了换回来。
-    /// ponytail: 不像 mac 那样「截下一帧和算这一帧叠着做」、也不在静止的那一觉里被滚轮叫醒；静止 200 ms 后第一甩最多晚 200 ms 才截。
+    /// 手动滚：这一帧拼完排下一帧（ScrollPacer.ManualDelayMs）——在动就马上接着拼（拼的时候已经截好了下一帧），静止 40 / 200 ms
+    /// （那一觉被选区里的滚轮叫醒，OnWheel）；对不上时状态行说一声，接上了换回来。
     /// </summary>
     private static void ScheduleManual(ScrollStep step)
     {
@@ -376,7 +445,7 @@ internal static class ScrollingCapture
             return;
         }
 
-        var delay = ScrollPacer.ManualDelayMs(_quietFrames);
+        var delay = _prefetched is not null ? 0 : ScrollPacer.ManualDelayMs(_quietFrames);
         timer.Stop();
         timer.Interval = delay > 0 ? TimeSpan.FromMilliseconds(delay) : Interval;
         timer.Start();
@@ -386,7 +455,61 @@ internal static class ScrollingCapture
         }
     }
 
-    /// <summary>开始 / 接着自动滚动：光标不在选区里、或停在面板上就挪到选区中间（滚轮交给光标下的窗口），挂上帧回调。</summary>
+    /// <summary>手动滚、画面在动、正在拼上一帧时：先把下一帧截好（一次只存一帧）。</summary>
+    private static void Prefetch()
+    {
+        if (!Active || _autoScroll || _completing || _work is null || _prefetched is not null || _quietFrames != 0)
+        {
+            return;
+        }
+
+        _prefetched = ScreenCapture.CaptureRegion(_rect);
+        PrefetchCountForProbe++;
+    }
+
+    /// <summary>
+    /// 选区里转了滚轮（WheelWake，只在手动长截图期间收）：静止时睡着的那一觉提前结束——停了一会儿再一甩，第一帧不用等满 200 ms。
+    /// 滚轮事件比画面先到，马上截多半还没动，所以只把节奏拨回「刚静止」（40 ms 那档）、15 ms 后截。落在面板上是往回看预览，不管。
+    /// </summary>
+    private static void OnWheel(int x, int y)
+    {
+        if (!Active || _autoScroll || _completing || _quietFrames == 0 || !Inside(_rect, x, y) || _timer is not { } timer)
+        {
+            return;
+        }
+
+        _quietFrames = 1;
+        if (_work is null)
+        {
+            timer.Stop();
+            timer.Interval = TimeSpan.FromMilliseconds(15);
+            timer.Start();
+        }
+    }
+
+    /// <summary>
+    /// 把光标放进在动的那一块（同 mac aimAtBand）：滚轮交给光标下的窗口，光标停在选区里别的地方（外层页面）就滚错了对象，画面不动、
+    /// 怎么滚都对不上。光标已经在那一块上就不动；停在自家面板上（或选区外）照样挪进去。还没量出来时那一块就是整个选区。
+    /// </summary>
+    private static void AimAtBand()
+    {
+        var rows = _band?.MovingRows ?? default;
+        var columns = _band?.MovingColumns ?? default;
+        var (left, top, width, height) = ScrollBand.BandRect(_rect.Left, _rect.Top, _rect.Width, _rect.Height, rows, columns);
+        PInvoke.GetCursorPos(out var cursor);
+        var inside = cursor.X >= left && cursor.X < left + width && cursor.Y >= top && cursor.Y < top + height;
+        if (inside && !ScrollPreviewPanel.Contains(cursor.X, cursor.Y, 0))
+        {
+            return;
+        }
+
+        SetCursorPos(left + width / 2, top + height / 2);
+    }
+
+    /// <summary>
+    /// 开始 / 接着自动滚动：光标不在在动的那一块上（没量出来时是整个选区）、或停在面板上就挪进去（滚轮交给光标下的窗口），挂上帧回调。
+    /// 自动滚动时不听滚轮叫醒（自己发的滚轮也收得到）。
+    /// </summary>
     private static void BeginAutoScroll()
     {
         if (_pacer is not { } pacer)
@@ -394,12 +517,15 @@ internal static class ScrollingCapture
             return;
         }
 
-        PInvoke.GetCursorPos(out var cursor);
-        if (!Inside(_rect, cursor.X, cursor.Y) || ScrollPreviewPanel.Contains(cursor.X, cursor.Y, 0))
+        WheelWake.Stop();
+        _prefetched = null;
+        if (_band is { } band)
         {
-            SetCursorPos(_rect.Left + _rect.Width / 2, _rect.Top + _rect.Height / 2);
+            // 要它的左右边界才能把滚轮落进在动的那一块（手动滚的落点由用户的光标定，不算列）。
+            band.TracksColumns = true;
         }
 
+        AimAtBand();
         pacer.Begin();
         _autoScroll = true;
         if (_timer is { } timer)
@@ -499,6 +625,7 @@ internal static class ScrollingCapture
     {
         _autoScroll = false;
         UnhookFrames();
+        StopTrackingColumns();
         var end = _direction == ScrollDirection.Down ? "已经滚到底了" : "已经滚到顶了";
         ScrollPreviewPanel.SetStatus(
             reason == ScrollStopReason.Lost
@@ -526,6 +653,7 @@ internal static class ScrollingCapture
         _paused = true;
         _autoScroll = false;
         UnhookFrames();
+        StopTrackingColumns();
         PInvoke.RegisterHotKey(HiddenWindow.Hwnd, ResumeId, 0, (uint)VIRTUAL_KEY.VK_A);
         ScrollPreviewPanel.SetStatus("自动滚动暂停了（光标移出了选区）：按 A 继续，Enter 完成", warning: true);
         Log.Info("scroll.paused");
@@ -546,9 +674,23 @@ internal static class ScrollingCapture
         Log.Info("scroll.resumed");
     }
 
+    /// <summary>自动滚动停了 / 暂停：不再算列（拼的那一拍在线程池上读它，下一拍起生效）；之后就是手动滚，听滚轮叫醒。</summary>
+    private static void StopTrackingColumns()
+    {
+        if (_band is { } band)
+        {
+            band.TracksColumns = false;
+        }
+
+        if (Active && !_completing)
+        {
+            WheelWake.Start(OnWheel);
+        }
+    }
+
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     private static extern bool SetCursorPos(int x, int y);
 
-    /// <summary>拼完的一拍：画布、这次拼上的那帧的行哈希（没拼上就还是上一次的）、算哪种、长了几行。</summary>
-    private readonly record struct Tick(ScrollCanvas Canvas, uint[] Hashes, ScrollStep Step, int Grown);
+    /// <summary>拼完的一拍：画布、上一次拼上的那帧（这次拼上了就是这一帧）、在动的那一块、算哪种、长了几行。</summary>
+    private readonly record struct Tick(ScrollCanvas Canvas, ScrollFrame Reference, ScrollBand? Band, ScrollStep Step, int Grown);
 }

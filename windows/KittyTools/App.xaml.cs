@@ -131,6 +131,13 @@ public partial class App : Application
                 return;
             }
 
+            if (ScrollBandProbe.IsRequested(commandLine) && ScrollBandProbe.DirectoryFrom(commandLine) is { } scrollProbe)
+            {
+                // PLAN-v20 第 1 批：长截图框住页面里的一小块滚动区（只在测试档），跑完就退。
+                _ = ScrollBandProbe.RunAsync(scrollProbe);
+                return;
+            }
+
             if (ScriptProbe.IsRequested(commandLine) && ScriptProbe.DirectoryFrom(commandLine) is { } scriptProbe)
             {
                 // PLAN-v18 L1：脚本命令实跑的自检（只在测试档），跑完就退。

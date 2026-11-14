@@ -8,6 +8,10 @@
 // 拍的过程中用 ScrollCanvas（REVIEW R43）：拼好的部分按条带存，每拍只拿找重叠要看的那几行比，不再整张重新分配、重新哈希。
 // 重叠在整帧高度内找（同 mac 的 match 找遍所有位移；2026-11-04 以前最多找 800 行：选区高、每步滚得少时找不到，
 // 长截图自动滚动想放慢就只能滚得更多，ScrollPacer）。
+// 页面里嵌着一块小滚动区（对话记录、代码框，上下是不动的页头和输入框；PLAN-v20 W1，mac PR #20 那个场景）：整帧对不上，
+// 再试一次「去掉上下原地不动的行」（Join：头 = 两帧最上面一样的行，不限 120 行；脚 = 两帧最下面一样的行），只拿中间的身子找重叠。
+// 接的时候先去掉长图末尾上一帧的脚、再接新帧的新内容连同它的脚（同 mac：长图始终是「最上面那帧的头 + 内容 + 最下面那帧的脚」）。
+// 整帧能对上的照旧走老路，结果一行不变。
 using System.Buffers;
 
 namespace KittyTools.Core;
@@ -61,11 +65,57 @@ public static class ScrollStitcher
     {
         if (Plan(previous, next, direction, out var previousBody, out var nextBody) is not { } plan)
         {
-            return null;
+            // 上下有不动的头和脚（页面里的一块小滚动区）：交给条带那一路接（它会先去掉旧的脚）。
+            var canvas = new ScrollCanvas(previous);
+            return canvas.Append(next, direction) ? canvas.Compose() : null;
         }
 
         var body = Combine(previousBody, nextBody, plan.Overlap, up: direction == ScrollDirection.Up);
         return plan.Sticky == 0 ? body : Prepend(previous, plan.Sticky, body);
+    }
+
+    /// <summary>
+    /// 整帧对不上时再试（ScrollCanvas 用；previous 是上一次拼上的那一整帧，不是长图）：去掉上下原地不动的行（头、脚），
+    /// 只拿中间的身子找重叠。Sticky = 头的行数，Foot = 脚的行数。
+    /// </summary>
+    public static (int Sticky, int Overlap, int Foot)? PlanInner(ScrollFrame previous, ScrollFrame next, ScrollDirection direction)
+    {
+        if (previous.Width != next.Width || previous.Height != next.Height)
+        {
+            return null;
+        }
+
+        var height = next.Height;
+        var head = 0;
+        while (head < height && previous.Hashes[head] == next.Hashes[head])
+        {
+            head++;
+        }
+
+        var foot = 0;
+        while (foot < height - head && previous.Hashes[height - 1 - foot] == next.Hashes[height - 1 - foot])
+        {
+            foot++;
+        }
+
+        // 身子太矮（几乎整帧没动）、或上下都没有不动的行（那就是整帧在滚，Plan 已经试过了）：不接。
+        if (head + foot == 0 || height - head - foot < 2 * MinOverlap)
+        {
+            return null;
+        }
+
+        var previousBody = Rows(previous, head, height - foot);
+        var nextBody = Rows(next, head, height - foot);
+        var overlap = FindOverlap(previousBody, nextBody, direction);
+        return overlap <= 0 || overlap >= nextBody.Height ? null : (head, overlap, foot);
+    }
+
+    /// <summary>第 from 到 to 行（不含）。</summary>
+    private static ScrollFrame Rows(ScrollFrame frame, int from, int to)
+    {
+        var pixels = new int[frame.Width * (to - from)];
+        Array.Copy(frame.Pixels, from * frame.Width, pixels, 0, pixels.Length);
+        return new ScrollFrame(frame.Width, to - from, pixels);
     }
 
     /// <summary>两帧怎么接：吸顶栏几行、重叠几行；接口不清（宽度不一样、找不到重叠）返回 null。Append 和 ScrollCanvas 共用。</summary>
@@ -345,8 +395,12 @@ public sealed class ScrollCanvas
 
     private readonly List<Strip> _strips = new();
 
+    /// <summary>上一次拼上的那一整帧（PlanInner 拿它比上下不动的头和脚）。</summary>
+    private ScrollFrame _last;
+
     public ScrollCanvas(ScrollFrame first)
     {
+        _last = first;
         Width = first.Width;
         Height = first.Height;
         _strips.Add(new Strip(first.Pixels, 0, first.Height));
@@ -356,18 +410,37 @@ public sealed class ScrollCanvas
 
     public int Height { get; private set; }
 
-    /// <summary>接上一帧；接口不清（宽度不一样、找不到重叠）返回 false，图不变。同 ScrollStitcher.Append，到 30000 行截掉。</summary>
+    /// <summary>
+    /// 接上一帧；接口不清（宽度不一样、找不到重叠）返回 false，图不变。同 ScrollStitcher.Append，到 30000 行截掉。
+    /// 整帧对不上时拿上一次拼上的那一帧试 ScrollStitcher.PlanInner（页面里的一块小滚动区）：有脚（下面不动的输入框）时先去掉长图末尾的
+    /// 那几行，新帧的脚跟着新内容接上。长图的末尾（往下）/ 开头（往上）就是上一次拼上的那一帧，所以拿它比和拿长图比是一回事。
+    /// </summary>
     public bool Append(ScrollFrame next, ScrollDirection direction)
     {
-        if (next.Width != Width || ScrollStitcher.Plan(Probe(direction, next.Height), next, direction) is not { } plan)
+        if (next.Width != Width)
         {
             return false;
         }
 
-        var (sticky, overlap) = plan;
+        int sticky, overlap, foot = 0;
+        if (ScrollStitcher.Plan(Probe(direction, next.Height), next, direction) is { } plan)
+        {
+            (sticky, overlap) = plan;
+        }
+        else if (ScrollStitcher.PlanInner(_last, next, direction) is { } inner)
+        {
+            (sticky, overlap, foot) = inner;
+        }
+        else
+        {
+            return false;
+        }
+
+        _last = next;
         if (direction == ScrollDirection.Down)
         {
-            // 整张 + 新帧去掉吸顶栏和重叠的那一截，接在最下面。
+            // 整张（去掉末尾上一帧的脚）+ 新帧去掉吸顶栏和重叠的那一截（连同新帧的脚），接在最下面。
+            Truncate(Height - foot);
             var take = Math.Min(next.Height - sticky - overlap, ScrollStitcher.MaxOutputHeight - Height);
             if (take > 0)
             {
@@ -380,14 +453,15 @@ public sealed class ScrollCanvas
             return true;
         }
 
-        // 往上：上面的吸顶栏 + 新帧去掉吸顶栏的整段 + 原来的身子去掉最上面 overlap 行（重叠的那一截留新帧的）。
+        // 往上：上面的吸顶栏 + 新帧去掉吸顶栏（和脚）的整段 + 原来的身子去掉最上面 overlap 行（重叠的那一截留新帧的；长图的脚还在最后）。
         var head = Slice(0, sticky);
         var tail = Slice(sticky + overlap, Height);
-        var body = new int[(next.Height - sticky) * Width];
+        var bodyRows = next.Height - sticky - foot;
+        var body = new int[bodyRows * Width];
         Array.Copy(next.Pixels, sticky * Width, body, 0, body.Length);
         _strips.Clear();
         _strips.AddRange(head);
-        _strips.Add(new Strip(body, 0, next.Height - sticky));
+        _strips.Add(new Strip(body, 0, bodyRows));
         _strips.AddRange(tail);
         Height = _strips.Sum(strip => strip.Rows);
         Truncate(ScrollStitcher.MaxOutputHeight);
