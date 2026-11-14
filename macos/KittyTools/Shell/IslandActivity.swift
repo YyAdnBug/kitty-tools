@@ -118,6 +118,14 @@ extension Island {
   static let levelWing: CGFloat = 108
   static let levelDrop: CGFloat = 5
 
+  /// 刘海两边的东西这一刻要往里挪多少，才贴着形体的边（纯函数）。它们是照「长到位」的样子排的（每侧 wing 宽）；
+  /// 形体还没长到那么宽（正从刘海往两边长开、正捏回刘海）时，两边各往中间挪「形体每侧还差的那一截」——东西跟着边
+  /// 一起出去、一起回来，不是停在原位被边一点点露出来 / 切掉（2026-11-14 用户：音量 / 亮度往两边展开的动画和
+  /// Alcove 不一致；它的逐帧实录里图标离边一直是同一段距离）。形体比它宽（鼓起、展开成卡片）不挪；最多挪一个 wing
+  nonisolated static func ride(wing: CGFloat, notch: CGFloat, shape: CGFloat) -> CGFloat {
+    min(max((notch + wing * 2 - shape) / 2, 0), wing)
+  }
+
   /// 正在播放的活动带的东西（NowPlaying 给）：快照、解好的封面、放歌那个 App 的图标（没有封面时顶上）、发命令和切到那个 App
   struct Media {
     var snapshot: NowPlayingSnapshot
@@ -135,6 +143,12 @@ extension Island {
   }
 }
 
+extension EnvironmentValues {
+  /// 耳朵、音量 / 亮度提示这一刻各要往中间挪多少（Island.ride；IslandView 跟着形体的动画逐帧给）。没人给是 0
+  @Entry var islandWingRide: CGFloat = 0
+  @Entry var islandLevelRide: CGFloat = 0
+}
+
 /// 刘海两侧的耳朵：左边图标 / 一圈进度，中间让出刘海，右边读数。画在岛的黑底上（同 Island 的深色）
 struct IslandWings: View {
   let activity: Island.Activity
@@ -147,12 +161,14 @@ struct IslandWings: View {
   /// 箭头闪在左耳的封面上
   var skip: Island.Skip?
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.islandWingRide) private var ride
 
   var body: some View {
     HStack(spacing: 0) {
-      leading.frame(width: Island.wing)
+      // 挪的这一下不再套动画（.animation(nil)）：ride 本身已经是逐帧给的动画中途的值，再套一层就跟不上边
+      leading.frame(width: Island.wing).animation(nil) { $0.offset(x: ride) }
       Color.clear.frame(width: notchWidth)
-      trailing.frame(width: Island.wing)
+      trailing.frame(width: Island.wing).animation(nil) { $0.offset(x: -ride) }
     }
     .frame(height: notchHeight)
     .accessibilityElement(children: .ignore)

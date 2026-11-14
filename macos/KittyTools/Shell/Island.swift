@@ -137,6 +137,10 @@ import SwiftUI
   /// 的逐帧实录：耳朵 → 音量提示是先缩回刘海约 0.3 秒、再往两边长开约 0.4 秒；音量换亮度、提示收回耳朵同样）
   private(set) var pinched = false
   @ObservationIgnored private var pinch: Task<Void, Never>?
+  /// 刚收起的那个音量 / 亮度提示：再留 0.3 秒给画面（IslandView 把它原地淡掉、跟着形体的边往回走；当场拆掉它就
+  /// 停在原位、被缩回来的边切掉）。摆出来的岛、减弱动态效果不留
+  private(set) var departingLevel: Level?
+  @ObservationIgnored private var departing: Task<Void, Never>?
   /// 正捏着、等着出的那个音量 / 亮度（捏的时候又按了键就换成最新的）
   @ObservationIgnored private var pendingLevel: Level?
   /// 捏多久再长出来
@@ -210,6 +214,11 @@ import SwiftUI
   enum Geometry: Equatable {
     case notch(width: CGFloat, height: CGFloat)
     case capsule(menuBar: CGFloat)
+
+    /// 刘海宽；没有刘海的屏是 nil
+    var notchWidth: CGFloat? {
+      if case .notch(let width, _) = self { width } else { nil }
+    }
 
     /// 窗口尺寸：一次定死成最大的那个（那一张，boardHeight）+ 两侧耳朵与阴影余量——开那一张不改窗口大小，
     /// 改大小会卡一下（窗口服务器的 frame 变化和图层动画不在一个事务里）。开过一次那一张和一直这么高，常驻内存一样
@@ -356,8 +365,9 @@ import SwiftUI
     releaseKeyboard()
     // 离开后照旧展开着的那张卡片：换成新的一条就合上，新提示一律从一行出来；音量提示同（形体不走展开的那条弹簧）
     let collapses = (!isHovered || level != nil) && isExpanded
-    // 来的不是音量提示：正捏着等的那个不出了
+    // 来的不是音量提示：正捏着等的那个不出了；刚收起、还在淡的那个也不留（不然它的残影会叠在新来的东西上）
     if level == nil {
+      departingLevel = nil
       pinch?.cancel()
       pendingLevel = nil
     }
@@ -1000,6 +1010,15 @@ import SwiftUI
       glancing = nil
       // 音量 / 亮度的提示收回耳朵：先捏回刘海，再长成耳朵（下面那个任务放开）
       if levelShaped, isShowingWings, onNotch, !isStaged, !Style.reduceMotion { pinched = true }
+      if level != nil, levelShaped, onNotch, !isStaged, !Style.reduceMotion {
+        departingLevel = level
+        departing?.cancel()
+        departing = Task { [weak self] in
+          try? await Task.sleep(for: .milliseconds(300))
+          guard !Task.isCancelled else { return }
+          self?.departingLevel = nil
+        }
+      }
       level = nil
       isExpanded = false
       isHovered = false
@@ -1631,8 +1650,14 @@ struct IslandView: View {
       backdrop(shape)
       ZStack(alignment: .top) {
         content.padding(.top, shape.contentTop)
-        wings(geometry)
-        levelWings(geometry)
+        // 刘海两边的东西贴着形体的边走：形体这一刻多宽，跟着形体的那条曲线逐帧报给它们（EdgeRide）
+        Group {
+          wings(geometry)
+          levelWings(geometry)
+        }
+        .modifier(EdgeRide(width: shape.frame.width, notch: geometry.notchWidth))
+        // 减弱动态效果时不挂这条（形体本来就不伸缩；curve 是 nil，挂上会把这棵子树里同一拍的动画清掉）
+        .animation(curve, value: reduceMotion ? 0 : shape.frame.width)
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
       .mask { IslandOutline(shape: shape).animation(curve, value: shape) }
@@ -1790,7 +1815,8 @@ struct IslandView: View {
     // 一瞥出着时耳朵照旧露着（它只是往下垂了一行）。岛上的东西已经在退、形体还没开始缩的那两帧（dismiss 的
     // retractLag：content 空了、isOpen 还是 true）也算——不然一瞥收回时耳朵会被拆掉再重建、闪一下（评审 1）；
     // 别的提示收起时耳朵早两帧开始进来
-    if case .notch(let width, let height) = geometry, island.isShowingWings, !island.pinched,
+    // 捏回刘海时（island.pinched）不拆：原地淡掉、跟着边往回走（见 EdgeRide）
+    if case .notch(let width, let height) = geometry, island.isShowingWings,
       !island.isOpen || island.isGlance || (island.content == nil && !island.isBoardOpen),
       let activity = island.activity
     {
@@ -1817,21 +1843,34 @@ struct IslandView: View {
             .accessibilityHidden(true)
         }
       }
+      .modifier(Melt(progress: island.pinched ? 0 : 1, scales: false))
+      .animation(.smooth(duration: 0.24), value: island.pinched)
+      .allowsHitTesting(!island.pinched)
       .transition(melt)
     }
   }
 
   /// 音量 / 亮度的提示（刘海屏）：画在刘海那一行里、刘海两边；换数不重新出场
   @ViewBuilder private func levelWings(_ geometry: Island.Geometry) -> some View {
-    if case .notch(let width, let height) = geometry, island.isShowingLevel, !island.pinched,
-      let level = island.level
+    // 捏回刘海时、刚收起的那 0.3 秒（departingLevel）不拆：原地淡掉、跟着边往回走（同耳朵）
+    if case .notch(let width, let height) = geometry,
+      let level = island.isShowingLevel ? island.level : island.departingLevel
     {
+      let fading = island.pinched || !island.isShowingLevel
       IslandLevelWings(
         level: level, notchWidth: width, notchHeight: height + Island.levelDrop
       )
-      // 换了种类（音量 → 亮度）是另一个：旧的糊着退、新的糊着进
+      .modifier(Melt(progress: fading ? 0 : 1, scales: false))
+      .animation(.smooth(duration: 0.24), value: fading)
+      // 换了种类（音量 → 亮度）是另一个：旧的糊着退、新的糊着进（进来的慢半拍：形体长到一半才看得清，同 Alcove）
       .id(level.kind)
-      .transition(melt)
+      .transition(
+        reduceMotion
+          ? melt
+          : .asymmetric(
+            insertion: .modifier(active: Melt(progress: 0), identity: Melt(progress: 1))
+              .animation(.smooth(duration: 0.3).delay(0.08)),
+            removal: melt))
     }
   }
 
@@ -2169,14 +2208,48 @@ extension View {
   }
 }
 
-/// 刘海那一行里的小东西进出：blur 6 → 0、scale 0.85 → 1（原地）、透明度
+/// 把形体这一刻的宽度（动画中途的值）折成「刘海两边的东西要往中间挪多少」报下去（Island.ride）：形体的宽度变了，
+/// 它跟着同一条曲线逐帧重算——耳朵、音量 / 亮度的提示就贴着边一起走。形体比它们宽时两个数都是 0、不变，不会每帧
+/// 重画（展开成卡片的那几百毫秒里什么都不做）。没有刘海的屏上不用。
+/// 两条屏上录出来的教训：① 要用普通的 `.modifier(…).animation(curve, value:)`——写成
+/// `.animation(curve) { $0.modifier(EdgeRide(…)) }` 时环境里的数根本传不下去（两个数一直是 0）；② 形体捏回刘海时
+/// 耳朵、音量提示都不拆，原地淡掉（wings / levelWings 里的 Melt(scales: false)）——这样跟边走不靠「退场中的视图还
+/// 收不收得到更新」
+/// nonisolated：动画的中间值是系统插的，不保证在主线程上设（mac-native §3，同 IslandOutline）；body 照旧在主线程
+nonisolated private struct EdgeRide: ViewModifier, Animatable {
+  var width: CGFloat
+  /// 刘海宽；没有刘海的屏是 nil
+  let notch: CGFloat?
+
+  var animatableData: CGFloat {
+    get { width }
+    set { width = newValue }
+  }
+
+  @MainActor func body(content: Content) -> some View {
+    if let notch {
+      content
+        .environment(
+          \.islandWingRide, Island.ride(wing: Island.wing, notch: notch, shape: width)
+        )
+        .environment(
+          \.islandLevelRide, Island.ride(wing: Island.levelWing, notch: notch, shape: width))
+    } else {
+      content
+    }
+  }
+}
+
+/// 刘海那一行里的小东西进出：blur 6 → 0、scale 0.85 → 1（原地）、透明度。scales false：不缩放（捏回刘海时原地淡掉
+/// 的耳朵、音量提示：它们自己跟着边走，整条再朝中间缩就离边越来越远）
 private struct Melt: ViewModifier {
   let progress: Double
+  var scales = true
 
   func body(content: Content) -> some View {
     content
       .blur(radius: 6 * (1 - progress))
-      .scaleEffect(0.85 + 0.15 * progress)
+      .scaleEffect(scales ? 0.85 + 0.15 * progress : 1)
       .opacity(progress)
   }
 }

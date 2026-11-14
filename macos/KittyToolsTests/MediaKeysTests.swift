@@ -97,6 +97,20 @@ struct MediaKeysTests {
     #expect(sun.symbol == "sun.max.fill" && sun.title == "亮度")
   }
 
+  /// 刘海两边的东西贴着形体的边走：形体每侧还差多少没长到位，它们就往中间挪多少；形体比它们宽不挪；最多一个 wing
+  @Test func wingsRideTheEdge() {
+    let notch: CGFloat = 212
+    // 音量提示（每侧 108）：长到位不挪；捏在刘海每侧只多 8 时挪 100；长到一半挪一半
+    #expect(Island.ride(wing: 108, notch: notch, shape: notch + 216) == 0)
+    #expect(Island.ride(wing: 108, notch: notch, shape: notch + 16) == 100)
+    #expect(Island.ride(wing: 108, notch: notch, shape: notch + 116) == 50)
+    // 耳朵（每侧 36）：鼓起、展开成卡片时形体更宽，不往外挪；缩进刘海里面时最多挪一个 wing
+    #expect(Island.ride(wing: 36, notch: notch, shape: notch + 72 + 16) == 0)
+    #expect(Island.ride(wing: 36, notch: notch, shape: 384) == 0)
+    #expect(Island.ride(wing: 36, notch: notch, shape: notch + 16) == 28)
+    #expect(Island.ride(wing: 36, notch: notch, shape: notch - 40) == 36)
+  }
+
   /// 岛上：没出着就长出来（顶掉别的提示），出着就原地换数；不进最近的提示；收起后清掉；有活动时收回耳朵
   @Test func islandShowsLevelInPlace() {
     let notch = Island.Geometry.notch(width: 212, height: 37.5)
