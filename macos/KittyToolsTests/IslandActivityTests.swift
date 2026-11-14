@@ -225,6 +225,11 @@ struct IslandActivityTests {
     #expect(idle.isBoardOpen)
     idle.swipeDown()
     #expect(idle.isBoardOpen)
+    // 卡片开着时用快捷键叫出那一张：卡片的标记清掉；卡片开着、有排着的提示时活动结束：换上排着的那条
+    let keyed = Island(showing: nil, geometry: notch, activities: [record])
+    keyed.tapped()
+    keyed.toggleBoard(byKeyboard: false)
+    #expect(keyed.isBoardOpen && keyed.cardActivity == nil)
     // 只有暂停了一阵的正在播放（不上耳朵）：打开是那一张，从那一张往下滑轮得到它
     var paused = activity("音乐", .media)
     paused.onWings = false

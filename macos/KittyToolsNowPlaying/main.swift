@@ -1,7 +1,8 @@
 // 正在播放服务（KittyToolsNowPlaying，XPC 服务，2026-11-13 刘海岛扩展第 2 期）：嵌在 App 的 Contents/XPCServices/ 里，
 // bundle id 是 com.apple.kittytools.nowplaying——macOS 15.4 起 mediaremoted 只把别的 App 的播放信息给 bundle id 以
 // com.apple. 开头的进程（XPC 服务认 Info.plist 的 bundle id），App 自己（com.yy.…）读不到（mac-native §2）。
-// App 打开刘海岛的「正在播放」时连上来（Shell/NowPlaying.swift），launchd 按需拉起它；App 退出 / 关掉 / 崩了，launchd 把它收掉。
+// App 打开刘海岛的「正在播放」时连上来（Shell/NowPlaying.swift），launchd 按需拉起它；App 断开（关掉开关、移除插件、退出、崩了）
+// 它就自己退出（detach），不指望 launchd 收。
 // 它做的事：听 MediaRemote 的通知、合并 100 ms 再读一遍、和上一次不一样才推给 App；替 App 发播放 / 暂停 / 上一首 / 下一首 / 跳到某一秒 / 换随机和循环的档。
 // 一次只服务一个 App（自己的那个）：新连接来了就换成它。不开沙盒、不要任何权利；没有界面，全在主线程上做。
 
@@ -60,12 +61,15 @@ import Foundation
     client = connection
   }
 
-  /// 连接断了：是当前那个就不听了
+  /// 连接断了：是当前那个就不听了，**然后自己退出**（2026-11-14：App 里关掉「正在播放」、移除刘海岛插件后，这个进程
+  /// 还一直挂着——实测 launchd 不收它，空转 0% CPU、占 15 MB、挂了几个小时）。App 再打开时连上来，launchd 按需重新拉起。
+  /// 被新连接换掉的旧连接走不到这里（guard：它已经不是当前那个）
   func detach(_ id: ObjectIdentifier) {
     guard let client, ObjectIdentifier(client) == id else { return }
     self.client = nil
     pending?.cancel()
     remote.stopObserving()
+    exit(0)
   }
 
   /// 有通知来了：合并一阵再读（一次操作 1–9 条）。读得信不过（有一样超时）就不推；它、或者有封面编号却没要到字节，

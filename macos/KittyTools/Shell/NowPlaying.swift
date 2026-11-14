@@ -1,7 +1,7 @@
 // 刘海岛的「正在播放」（2026-11-13 刘海岛扩展第 2 期，拍板 E1 E2；归属：刘海岛插件里一组、默认关）。
 // 读系统的正在播放要 bundle id 以 com.apple. 开头（macOS 15.4 起），App 自己读不到：读和发命令都在包里的 XPC 服务
 // KittyToolsNowPlaying（bundle id com.apple.kittytools.nowplaying，mac-native §2），这里只连它、收它推来的快照、替按钮发命令。
-// 打开（刘海岛插件添加着 + 设置 › 刘海岛「正在播放」开着）才连；关掉就断开，launchd 把服务收掉。服务崩了（连接中断）过一秒
+// 打开（刘海岛插件添加着 + 设置 › 刘海岛「正在播放」开着）才连；关掉就断开，服务跟着自己退出（它的 detach）。服务崩了（连接中断）过一秒
 // 再订一次（发消息就会被重新拉起）。
 // 快照 → 刘海岛上的一个活动（Island.Activity，类别 .media 最低）：在播时上耳朵（封面 + 跳动条）；从在播变成暂停后耳朵上
 // 再留 pausedLinger，之后只在那一张里列着；没有在播的了（App 退了）活动结束。读到的歌名不进日志、不进提示的记录。
@@ -292,7 +292,6 @@ import OSLog
   private func show(_ next: NowPlayingSnapshot?) {
     let wasPlaying = snapshot?.isPlaying ?? false
     let changedTrack = Self.changedTrack(from: snapshot, to: next)
-    let changedCover = snapshot?.artworkID != next?.artworkID
     snapshot = next
     if let next, !next.isPlaying, wasPlaying {
       pausedSince = .now
@@ -304,13 +303,12 @@ import OSLog
     }
     render()
     guard let next, defaults.bool(forKey: Prefs.islandTrackPeek) else { return }
-    // 换歌了说一声；一瞥还出着时封面才到（网页视频晚约 2 秒、服务补读）：原地换上封面
-    if changedTrack || (changedCover && island?.isGlancing(Self.activityID) == true) {
-      glance(next)
-    }
+    // 换歌了说一声（封面晚到不用再说一遍：一瞥只是一行字，封面在耳朵上、活动自己会换）
+    if changedTrack { glance(next) }
   }
 
-  /// 换歌了：耳朵下面垂下一小条歌名和艺人（设置 › 刘海岛「换歌时显示歌名」）。封面已经到了用封面，没到用 App 的图标
+  /// 换歌了：耳朵下面垂下一行歌名和艺人（设置 › 刘海岛「换歌时显示歌名」）。leading 只在回退成普通提示那一行时画
+  /// （一瞥出着时活动没了）：封面已经到了用封面，没到用 App 的图标
   private func glance(_ snapshot: NowPlayingSnapshot) {
     let cover =
       snapshot.artworkID != nil && snapshot.artworkID == artwork?.id ? artwork?.image : nil

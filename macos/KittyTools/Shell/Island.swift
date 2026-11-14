@@ -317,28 +317,44 @@ import SwiftUI
   }
 
   /// quiet：展开活动的卡片（不是新提示）——菜单栏图标不跟着呼吸 / 弹一下
+  /// level：这一条是音量 / 亮度的提示（showLevel），连同它一起换上；card：这一条是这个活动的卡片（expand）
+  ///
+  /// **决定「画哪一种内容」的那几样（expandedActivity、level、glancing、isExpanded、actions）要和 content 在同一个事务里
+  /// 改**（settle）：先单独改它们、再 withAnimation 换 content 的话，SwiftUI 会按事务排两遍——第一遍是「旧内容 + 新标记」，
+  /// 比如播放卡片的 expandedActivity 清掉了、content 还在，就按普通提示画出一行（强调色圆底的音符 + 歌名）；这一行是不带
+  /// 动画插进来的、紧接着带着动画退场，于是每次收起都闪一下（2026-11-14 用户报，逐帧实录抓到）。dismiss、openBoard 同
   private func apply(
-    _ next: Content, actions: [Action], quiet: Bool = false, announces: Bool = true
+    _ next: Content, actions: [Action], quiet: Bool = false, announces: Bool = true,
+    level: Level? = nil, card: String? = nil
   ) {
     // 那一张开着时换成这一条：键盘还回去
     releaseKeyboard()
-    glancing = nil
-    level = nil
-    levelShaped = false
-    if !quiet { expandedActivity = nil }
-    self.actions = actions
-    // 离开后照旧展开着的那张卡片：换成新的一条就合上，新提示一律从一行出来
-    if !isHovered, isExpanded { withAnimation(Self.resize) { isExpanded = false } }
+    // 离开后照旧展开着的那张卡片：换成新的一条就合上，新提示一律从一行出来；音量提示同（形体不走展开的那条弹簧）
+    let collapses = (!isHovered || level != nil) && isExpanded
+    let settle = { [self] in
+      glancing = nil
+      self.level = level
+      levelShaped = level != nil
+      // 活动的卡片开着时来了提示 / 按了音量键：收掉它（不然下一次 setActivity 会把内容换回卡片的）
+      if let card {
+        expandedActivity = card
+      } else if !quiet || level != nil {
+        expandedActivity = nil
+      }
+      self.actions = actions
+      if collapses { isExpanded = false }
+    }
     dwell?.cancel()
     changedAt = .now
     if isOpen, content != nil || isBoardOpen {
       // 原地更新：内容交叉模糊替换，宽度跟着内容走（spring 0.32）；那一张开着时换成这一条
       withAnimation(Self.resize) {
+        settle()
         isBoardOpen = false
         content = next
       }
     } else {
-      open(with: next)
+      open(with: next, settle: settle)
     }
     if next.tone == .error, !quiet { shakes += 1 }
     if next.tone == .progress { collapseLater(next.title) }
@@ -605,7 +621,6 @@ import SwiftUI
       if index + 1 < order.count {
         expand(order[index + 1].id)
       } else {
-        expandedActivity = nil
         haptic()
         turnedAt = .now
         openBoard()
@@ -701,15 +716,11 @@ import SwiftUI
     } else {
       // 进行中的提示（带「停止」的）先排着，这一行收起时换回来（同开那一张时：不然它被顶掉，之后的进度、按钮都没处放）
       if let content, content.tone == .progress { pending = (content, actions) }
-      // 活动的卡片开着：收掉它（不然下一次 setActivity 会把内容换回卡片的）
-      expandedActivity = nil
+      // 活动的卡片开着就收掉它、不留着「展开着」（形体从卡片缩到这一条不走展开的那条弹簧）：都在 apply 里和内容
+      // 一起换
       apply(
         Content(title: next.title, detail: nil, tone: .info, symbol: next.symbol, leading: .tone),
-        actions: [], quiet: true, announces: false)
-      level = next
-      levelShaped = true
-      // 指针停在展开的卡片上按的键：别留着「展开着」——形体从卡片缩到这一条要走不过冲那么多的曲线（评审 1）
-      isExpanded = false
+        actions: [], quiet: true, announces: false, level: next)
       // 这一条上没有能点的东西：不算悬停（指针正在被顶掉的卡片上时也放开），窗口不接鼠标——它盖着刘海两边的菜单栏
       hoverCheck?.cancel()
       isHovered = false
@@ -723,6 +734,9 @@ import SwiftUI
 
   /// 岛上现在是不是这个活动的一瞥
   func isGlancing(_ id: String) -> Bool { glancing == id && content != nil }
+
+  /// 岛上现在是一瞥（哪个活动的都算）：耳朵照旧露着，下面只垂一行字
+  var isGlance: Bool { glancing != nil && content != nil }
 
   private var pointerIsOnNotchScreen: Bool {
     Self.notchScreen.map { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? false
@@ -763,11 +777,11 @@ import SwiftUI
   /// 活动结束：它的卡片正展开着就收起；没有活动了耳朵缩回刘海
   func endActivity(_ id: String) {
     guard activities.contains(where: { $0.id == id }) else { return }
+    // 它的卡片（或者它的一瞥）正出着：先收（内容清掉），再把活动拿走——反过来有一拍「内容还在、活动没了」，会闪出
+    // 一条普通样式的行；一瞥留着的话指针移上去会展开成普通卡片
+    if expandedActivity == id || glancing == id, content != nil { dismiss() }
     activities.removeAll { $0.id == id }
-    if expandedActivity == id {
-      expandedActivity = nil
-      if content != nil { dismiss() }
-    }
+    if expandedActivity == id { expandedActivity = nil }
     refreshWings()
   }
 
@@ -784,8 +798,8 @@ import SwiftUI
     haptic()
     isPeeking = false
     turnedAt = .now
-    apply(activity.content, actions: activity.actions, quiet: true)
-    expandedActivity = activity.id
+    // 「是它的卡片」和内容在同一个事务里换（apply 的说明）
+    apply(activity.content, actions: activity.actions, quiet: true, card: activity.id)
     withAnimation(Self.resize) { isExpanded = true }
   }
 
@@ -892,21 +906,22 @@ import SwiftUI
       return
     }
     hoverCheck?.cancel()
-    actions = []
-    expandedActivity = nil
-    glancing = nil
-    level = nil
     isDragging = false
-    isHovered = false
-    isExpanded = false
     window?.ignoresMouseEvents = true
     onToneChange?(nil)
     // 内容和形体一起走（2026-11-14 照 Alcove 的实录：收起一开始形体就动、约 0.4 s 走完，内容边模糊边退——IslandView
     // 的 appear 退场）。原来是两拍：内容 0.12 s 淡出、等 0.2 s 形体才缩（用户 2026-10-26 试过同时走觉得没两拍好看，
     // 那次内容是纯淡出；这次是模糊退场，用户看了实录后定的）。形体只晚两帧：让内容先开始糊
+    // 决定画哪一种内容的那几样和 content 在同一个事务里清（见 apply 的说明：先清它们会闪出一条普通样式的行）
     withAnimation(.easeIn(duration: 0.12)) {
       content = nil
       isBoardOpen = false
+      actions = []
+      expandedActivity = nil
+      glancing = nil
+      level = nil
+      isExpanded = false
+      isHovered = false
     }
     dwell = Task { [weak self] in
       try? await Task.sleep(for: Self.retractLag)
@@ -956,22 +971,24 @@ import SwiftUI
       if showsHistory { pending = nil }
       onToneChange?(nil)
     }
-    actions = []
-    glancing = nil
-    level = nil
-    levelShaped = false
-    isHovered = false
-    isExpanded = false
-    isPeeking = false
     isRetracting = false
     quickActions = boardActions()
     changedAt = .now
     deadline = .now
     showWindow()
+    // 决定画哪一种内容的那几样和 content 在同一个事务里清（见 apply 的说明）
     withAnimation(isOpen ? Self.resize : Style.Motion.island.animation()) {
       isOpen = true
       content = nil
       isBoardOpen = true
+      actions = []
+      expandedActivity = nil
+      glancing = nil
+      level = nil
+      levelShaped = false
+      isExpanded = false
+      isPeeking = false
+      isHovered = false
     }
     let heading =
       !showsHistory ? "快捷动作" : quickActions.isEmpty ? "最近的提示" : "最近的提示和快捷动作"
@@ -1070,13 +1087,15 @@ import SwiftUI
     inverted ? -deltaY : deltaY
   }
 
-  private func open(with next: Content) {
+  /// settle：apply 里那几样决定画哪一种内容的标记，和内容一起换
+  private func open(with next: Content, settle: () -> Void = {}) {
     isPeeking = false
     isRetracting = false
     showWindow()
     content = nil
     // 先让形体从刘海 / 小胶囊长开，内容由自己的过渡晚 60 ms 出场
     withAnimation(Style.Motion.island.animation()) {
+      settle()
       isOpen = true
       content = next
     }
@@ -1511,8 +1530,9 @@ struct IslandView: View {
       }
       let size =
         if open {
+          // 一瞥：和耳朵一样宽（耳朵还露着，只是往下垂了一行）
           CGSize(
-            width: max(notchWidth + 64, contentSize.width),
+            width: max(notchWidth + (island.isGlance ? Island.wing * 2 : 64), contentSize.width),
             height: notchHeight + max(Island.chin, contentSize.height))
         } else if wings {
           // 耳朵：刘海两侧各 36，和刘海同高；指针停上去同样鼓起一圈
@@ -1590,6 +1610,15 @@ struct IslandView: View {
         IslandMediaCard(island: island, media: media)
           .measured { report($0) }
           .transition(appear)
+      } else if island.isGlance, !island.isExpanded, let content = island.content,
+        case .notch(let width, _) = island.geometry
+      {
+        // 一瞥（换歌）：耳朵上的封面和波形不动（wings），下面只垂一行「♪ 歌名 · 艺人」，和耳朵一样宽、放不下截断
+        // （2026-11-14 照 Alcove 的实录：原来整条换成带缩略图的一行，耳朵跟着没了）
+        glanceRow(content, width: width + Island.wing * 2)
+          .measured { report($0) }
+          .id(content.title + (content.detail ?? ""))
+          .transition(appear)
       } else if let content = island.content {
         Group {
           if island.isExpanded {
@@ -1607,7 +1636,11 @@ struct IslandView: View {
 
   /// 耳朵上的两小块（收起、有活动时）：画在刘海那一行里，不垫刘海高度；出现、换了露的活动都是模糊着进出（melt）
   @ViewBuilder private func wings(_ geometry: Island.Geometry) -> some View {
-    if case .notch(let width, let height) = geometry, island.isShowingWings, !island.isOpen,
+    // 一瞥出着时耳朵照旧露着（它只是往下垂了一行）。岛上的东西已经在退、形体还没开始缩的那两帧（dismiss 的
+    // retractLag：content 空了、isOpen 还是 true）也算——不然一瞥收回时耳朵会被拆掉再重建、闪一下（评审 1）；
+    // 别的提示收起时耳朵早两帧开始进来
+    if case .notch(let width, let height) = geometry, island.isShowingWings,
+      !island.isOpen || island.isGlance || (island.content == nil && !island.isBoardOpen),
       let activity = island.activity
     {
       ZStack {
@@ -1674,6 +1707,29 @@ struct IslandView: View {
       ? .opacity.animation(.easeInOut(duration: 0.2))
       : .modifier(active: Melt(progress: 0), identity: Melt(progress: 1))
         .animation(.smooth(duration: 0.24))
+  }
+
+  /// 一瞥的那一行：音符 + 歌名 + 「· 艺人」，居中，12 pt；和耳朵那一条一样宽
+  private func glanceRow(_ content: Island.Content, width: CGFloat) -> some View {
+    HStack(spacing: 5) {
+      Image(symbol: content.symbol)
+        .font(.system(size: 10, weight: .semibold))
+        .foregroundStyle(.white.opacity(0.55))
+      Text(content.title)
+        .font(.system(size: 12, weight: .semibold))
+        .foregroundStyle(.white.opacity(0.95))
+        .layoutPriority(1)
+      if let detail = content.detail {
+        Text("· \(detail)")
+          .font(.system(size: 12))
+          .foregroundStyle(.white.opacity(0.55))
+      }
+    }
+    .lineLimit(1)
+    .truncationMode(.tail)
+    .padding(.horizontal, 14)
+    .frame(width: width, height: Island.chin - 4)
+    .accessibilityElement(children: .combine)
   }
 
   private func row(_ content: Island.Content) -> some View {

@@ -171,7 +171,10 @@ struct IslandWings: View {
   /// 正在播放：左耳封面（20 pt）、右耳跳动条（在播且速率 > 0 才动）。别的活动：记号和读数
   @ViewBuilder private var leading: some View {
     if let media = activity.media {
+      // 暂停时封面暗一半（同 Alcove：一眼看得出停着）
       IslandMediaArt(media: media, size: 20)
+        .opacity(media.snapshot.isPlaying ? 1 : 0.5)
+        .animation(.easeInOut(duration: 0.2), value: media.snapshot.isPlaying)
         .overlay { if reduceMotion { IslandSkipArrow(skip: skip, size: 20) } }
     } else {
       IslandActivityMark(activity: activity, size: 12)

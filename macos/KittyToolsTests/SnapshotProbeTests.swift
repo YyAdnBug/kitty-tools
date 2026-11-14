@@ -1151,7 +1151,7 @@ struct SnapshotProbeTests {
         IslandView(island: island), size: notch.windowSize, dark: false,
         to: "\(out)/island-event-card.png")
     }
-    // 换歌的一瞥：从耳朵垂下一小条封面 + 歌名 + 艺人
+    // 换歌的一瞥：耳朵不动，下面垂一行居中的「♪ 歌名 · 艺人」
     do {
       let island = Island(
         showing: nil, geometry: notch, activities: [media(playing: true, artwork: cover)])
