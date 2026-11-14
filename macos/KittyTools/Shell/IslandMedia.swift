@@ -247,6 +247,37 @@ struct IslandTrack: View {
   }
 }
 
+/// 按音量键 / 亮度键时岛上的那一行（MediaKeys → Island.showLevel）：图标（13 pt）· 细条（160 宽，白色填充）· 百分比。
+/// 同提示那一行的高度；条跟着键走得很快（一秒十几格），用 0.08 秒的线性跟上
+struct IslandLevelRow: View {
+  let level: Island.Level
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  var body: some View {
+    HStack(spacing: 10) {
+      Image(systemName: level.symbol)
+        .font(.system(size: 13, weight: .semibold))
+        .foregroundStyle(.white.opacity(0.92))
+        .frame(width: 24)
+      IslandTrack(
+        fraction: level.shown, lifted: false, tint: .white,
+        push: reduceMotion ? nil : .linear(duration: 0.08), lift: nil
+      )
+      .frame(width: 160)
+      Text("\(Int((level.shown * 100).rounded()))%")
+        .font(.system(size: 12, weight: .semibold).monospacedDigit())
+        .foregroundStyle(.white.opacity(0.92))
+        .lineLimit(1)
+        .frame(width: 40, alignment: .trailing)
+    }
+    .frame(height: Island.chin)
+    .padding(.horizontal, 18)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(level.title)
+    .accessibilityValue("\(Int((level.shown * 100).rounded()))%")
+  }
+}
+
 /// 播放卡片上的输出音量（以 Alcove 为准的那一轮 B3）：点卡片右上角的设备图标，进度那一行换成它——喇叭 · 滑杆 · 百分比。
 /// 拖着就改系统的输出音量（OutputVolume，公开的 CoreAudio；不拦按键，音量键照旧是系统自己的提示），每秒读一次跟上
 /// 音量键。再点一下设备图标、或者卡片收起就换回进度——不自己到点换回：那一行在指针底下原地换成进度条，下一下点击

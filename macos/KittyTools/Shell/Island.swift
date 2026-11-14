@@ -120,6 +120,8 @@ import SwiftUI
   private(set) var presses = 0
   /// 岛上现在是哪个活动的「一瞥」（glance）；不是就是 nil
   @ObservationIgnored private var glancing: String?
+  /// 岛上现在是音量 / 亮度的那一行（showLevel）；不是就是 nil
+  private(set) var level: Level?
   @ObservationIgnored private var hoverExpand: Task<Void, Never>?
   /// 刘海岛插件添加着（Feature.island，2026-11-13 插件化 P1b；AppDelegate 跟着开关给）：点刘海那一张、活动（耳朵、菜单栏那一项、
   /// 进行中缩进耳朵）、刘海上常驻的鼠标监听都归它。没添加时只弹提示（0.7.0 之前的样子）：setActivity 不收、进行中照旧挂着、
@@ -296,6 +298,7 @@ import SwiftUI
     // 那一张开着时换成这一条：键盘还回去
     releaseKeyboard()
     glancing = nil
+    level = nil
     if !quiet { expandedActivity = nil }
     self.actions = actions
     // 离开后照旧展开着的那张卡片：换成新的一条就合上，新提示一律从一行出来
@@ -588,6 +591,28 @@ import SwiftUI
     glancing = id
   }
 
+  /// 音量 / 亮度的那一行多久收回
+  static let levelDwell = Duration.milliseconds(1200)
+
+  /// 音量 / 亮度的那一行（MediaKeys：按了音量键、亮度键）：图标 + 细条 + 百分比，约 1.2 秒收回。已经出着就原地换数、
+  /// 重新数时间（按住连发时一秒来十几次：不重新出场）；没出着就从刘海长出来，顶掉岛上别的提示、那一张（提示本来就是
+  /// 一瞬的；挂着的提醒收起后会换回来）。不进最近的提示、不播报、菜单栏图标不动
+  func showLevel(_ next: Level) {
+    if level != nil, content != nil {
+      level = next
+    } else {
+      // 进行中的提示（带「停止」的）先排着，这一行收起时换回来（同开那一张时：不然它被顶掉，之后的进度、按钮都没处放）
+      if let content, content.tone == .progress { pending = (content, actions) }
+      // 活动的卡片开着：收掉它（不然下一次 setActivity 会把内容换回卡片的）
+      expandedActivity = nil
+      apply(
+        Content(title: next.title, detail: nil, tone: .info, symbol: next.symbol, leading: .tone),
+        actions: [], quiet: true, announces: false)
+      level = next
+    }
+    arm(Self.levelDwell)
+  }
+
   /// 岛上现在是不是这个活动的一瞥
   func isGlancing(_ id: String) -> Bool { glancing == id && content != nil }
 
@@ -761,6 +786,7 @@ import SwiftUI
     actions = []
     expandedActivity = nil
     glancing = nil
+    level = nil
     isDragging = false
     isHovered = false
     isExpanded = false
@@ -815,6 +841,7 @@ import SwiftUI
     }
     actions = []
     glancing = nil
+    level = nil
     isHovered = false
     isExpanded = false
     isPeeking = false
@@ -1375,6 +1402,11 @@ struct IslandView: View {
     ZStack(alignment: .top) {
       if island.isBoardOpen {
         IslandBoard(island: island)
+          .measured { report($0) }
+          .transition(appear)
+      } else if island.content != nil, let level = island.level {
+        // 音量 / 亮度的那一行：换数不重新出场
+        IslandLevelRow(level: level)
           .measured { report($0) }
           .transition(appear)
       } else if island.content != nil, let media = island.cardActivity?.media {

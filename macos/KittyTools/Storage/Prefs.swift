@@ -450,6 +450,9 @@ enum Prefs {
   /// 刘海岛上的「下一个日程」（Shell/NextEvent.swift，2026-11-14）：没存过 = 关；要「日历」授权，只在设置里打开它时问。
   /// 跟着这台 Mac 的授权走：**不注册默认值**——不导出、不同步（导入到没授权的 Mac 上只会是一个开着却读不了的开关）
   static let islandNextEvent = "islandNextEvent"
+  /// 按音量键、亮度键时在刘海岛上显示、系统自己的提示不出（Shell/MediaKeys.swift，2026-11-14）：没存过 = 关；要「辅助功能」
+  /// 授权。跟着这台 Mac 的授权和键盘走：**不注册默认值**——不导出、不同步（同 islandNextEvent）
+  static let islandKeyLevels = "islandKeyLevels"
   /// 以 Alcove 为准的那一轮（2026-11-13，都默认开）：换歌时从耳朵垂下一小条歌名（Island.glance）、停在刘海 / 耳朵上
   /// 自动展开活动的卡片、触感反馈
   static let islandTrackPeek = "islandTrackPeek"

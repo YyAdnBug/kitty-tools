@@ -19,6 +19,7 @@ struct IslandTab: View {
   @AppStorage(Prefs.islandNowPlaying) private var nowPlaying = false
   @AppStorage(Prefs.islandTrackPeek) private var trackPeek = true
   @AppStorage(Prefs.islandNextEvent) private var nextEvent = false
+  @AppStorage(Prefs.islandKeyLevels) private var keyLevels = false
   /// 本 App 回到前台 / 问完授权时加一：让下面那行橙字照现在的授权重算（从系统设置里打开授权回来）
   @State private var accessChecks = 0
   @AppStorage(Prefs.islandHoverExpands) private var hoverExpands = true
@@ -89,6 +90,28 @@ struct IslandTab: View {
       } footer: {
         SectionFootnote(
           "读系统「日历」里的日程，打开时会问一次授权。全天的、已拒绝的不算；日程的内容只留在这台 Mac 上，不进最近的提示。")
+      }
+      Section {
+        Toggle(isOn: $keyLevels) {
+          Text("按音量键、亮度键时显示在刘海上")
+          Text("系统自己的音量、亮度提示不再出现；按着 ⌥ 时照旧打开系统设置")
+        }
+        // 开关关着时不去查授权
+        if keyLevels, !Permissions.isAccessibilityTrusted {
+          LabeledContent {
+            Button(Permissions.Kind.accessibility.settingsTitle) {
+              Permissions.Kind.accessibility.openSettings()
+            }
+          } label: {
+            Text("没有「辅助功能」授权，接不住这几个键").foregroundStyle(.orange)
+          }
+          .id(accessChecks)
+        }
+      } header: {
+        Text("音量和亮度")
+      } footer: {
+        SectionFootnote(
+          "只接音量 +、音量 −、静音、亮度 +、亮度 − 这五个键，要「辅助功能」授权。锁屏时、接着调不了音量的输出设备或者外接显示器时，照旧是系统自己的提示。")
       }
       Section {
         List {

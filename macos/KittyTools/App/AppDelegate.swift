@@ -119,6 +119,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private lazy var nowPlaying = NowPlaying(island: island)
   /// 刘海岛上的「下一个日程」（设置 › 刘海岛，默认关）
   private lazy var nextEvent = NextEvent(island: island)
+  /// 音量 / 亮度键换成刘海岛上的提示（设置 › 刘海岛，默认关）
+  private(set) lazy var mediaKeys = MediaKeys(island: island)
   /// 应用内更新（读本仓库的 GitHub release）
   private let updater = Updater()
   /// CleanShot 式常驻缩略图（截图飞入右下角后留在那里）
@@ -1056,6 +1058,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     systemNotices.apply()
     nowPlaying.apply()
     nextEvent.apply()
+    mediaKeys.apply()
     showWelcomeIfNeeded()
     // 有快捷键没注册上（15.0 / 15.1 上只带 ⌥ 的组合）：按了没反应又不知道为什么，启动时说一次
     // （放在「已更新」之后：同一座岛原地换内容，警告不能被盖掉）
@@ -1093,6 +1096,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.systemNotices.apply()
         self.nowPlaying.apply()
         self.nextEvent.apply()
+        self.mediaKeys.apply()
         // 命令的快捷键跟着「命令和别名」的开关和别名、脚本命令总开关、⌘K「关掉这条命令」走（第 4 批评审：只在那一页的
         // onChange 里跟，别处改的不注销）；没变不动
         self.hotKeys.reloadCommandsIfChanged()
