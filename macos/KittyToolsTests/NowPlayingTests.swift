@@ -73,6 +73,10 @@ struct NowPlayingTests {
     #expect(IslandScrubber.fraction(999, of: 240) == 1)
     #expect(IslandScrubber.fraction(-1, of: 240) == 0)
     #expect(IslandScrubber.fraction(10, of: 0) == 0)
+    // 右边写还剩多久（带负号；拖过头不变成正的）
+    #expect(IslandScrubber.remaining(185, of: 240) == "-0:55")
+    #expect(IslandScrubber.remaining(240, of: 240) == "-0:00")
+    #expect(IslandScrubber.remaining(999, of: 240) == "-0:00")
     #expect(NowPlaying.seekStep(duration: 240) == 12)
     #expect(NowPlaying.seekStep(duration: 30) == 5)
   }
@@ -206,7 +210,8 @@ struct NowPlayingTests {
     sent = [.next, .next]
     // 岛上是别的提示：不认
     let toast = Island(
-      showing: .init(title: "已复制", detail: nil, tone: .success, symbol: "checkmark", leading: .tone),
+      showing: .init(
+        title: "已复制", detail: nil, tone: .success, symbol: "checkmark", leading: .tone),
       geometry: notch, activities: [media])
     toast.swipeTrack(forward: true)
     #expect(sent == [.next, .next])
@@ -315,7 +320,8 @@ struct NowPlayingTests {
     #expect(NowPlaying.nextRepeat(1) == 3)
     #expect(NowPlaying.nextRepeat(3) == 2)
     #expect(NowPlaying.nextRepeat(2) == 1)
-    #expect(OutputVolume.symbol(transport: kAudioDeviceTransportTypeBuiltIn) == "speaker.wave.2.fill")
+    #expect(
+      OutputVolume.symbol(transport: kAudioDeviceTransportTypeBuiltIn) == "speaker.wave.2.fill")
     #expect(OutputVolume.symbol(transport: kAudioDeviceTransportTypeBluetooth) == "headphones")
     #expect(OutputVolume.symbol(transport: kAudioDeviceTransportTypeBluetoothLE) == "headphones")
     #expect(OutputVolume.symbol(transport: kAudioDeviceTransportTypeAirPlay) == "airplayaudio")

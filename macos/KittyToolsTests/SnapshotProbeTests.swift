@@ -1131,6 +1131,15 @@ struct SnapshotProbeTests {
         IslandView(island: island), size: notch.windowSize, dark: false,
         to: "\(out)/\(name).png")
     }
+    // 没有刘海的屏上还是一行（符号 · 细条 · 百分比）
+    do {
+      let capsule = Island.Geometry.capsule(menuBar: 24)
+      let island = Island(showing: nil, geometry: capsule)
+      island.showLevel(Island.Level(kind: .volume, fraction: 0.625))
+      try snapshot(
+        IslandView(island: island), size: capsule.windowSize, dark: false,
+        to: "\(out)/island-level-capsule.png")
+    }
     // 下一个日程：开始前 10 分钟挂在耳朵上倒数；点开是标题、时间地点、加入会议 / 打开日历
     do {
       let start = Date.now.addingTimeInterval(8 * 60 + 2)

@@ -112,6 +112,10 @@ extension Island {
   /// 耳朵每侧多宽（拍板 B1：不超过 36 pt，免得盖住离刘海最近的菜单栏图标）
   static let wing: CGFloat = 36
 
+  /// 音量 / 亮度提示在刘海每侧伸出多宽（放得下符号 + 两个字、一根 56 pt 的细条）。比耳朵宽，会盖住离刘海最近的菜单栏
+  /// 图标——只有一秒多
+  static let levelWing: CGFloat = 84
+
   /// 正在播放的活动带的东西（NowPlaying 给）：快照、解好的封面、放歌那个 App 的图标（没有封面时顶上）、发命令和切到那个 App
   struct Media {
     var snapshot: NowPlayingSnapshot

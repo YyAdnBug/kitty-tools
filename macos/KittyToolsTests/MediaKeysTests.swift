@@ -103,13 +103,14 @@ struct MediaKeysTests {
     let island = Island(showing: nil, geometry: notch)
     island.showLevel(Island.Level(kind: .volume, fraction: 0.5))
     #expect(island.level?.fraction == 0.5 && island.content?.title == "音量")
+    #expect(island.isShowingLevel && island.levelShaped)
     island.showLevel(Island.Level(kind: .volume, fraction: 0.5625))
     #expect(island.level?.fraction == 0.5625 && island.history.isEmpty)
     // 换成亮度：还是那一行，原地换
     island.showLevel(Island.Level(kind: .brightness, fraction: 0.3))
     #expect(island.level?.kind == .brightness)
     island.dismiss()
-    #expect(island.level == nil && island.content == nil)
+    #expect(island.level == nil && island.content == nil && !island.isShowingLevel)
     // 岛上正有提示：顶掉它
     let busy = Island(
       showing: .init(
@@ -119,7 +120,7 @@ struct MediaKeysTests {
     #expect(busy.level != nil && busy.content?.title == "音量")
     // 来了新提示：那一行让开
     busy.show("已保存")
-    #expect(busy.level == nil)
+    #expect(busy.level == nil && !busy.levelShaped)
     // 那一张开着：换成这一行
     let board = Island(showing: nil, geometry: notch, board: [])
     board.showLevel(Island.Level(kind: .volume, fraction: 0.25))

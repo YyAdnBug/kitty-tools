@@ -122,6 +122,9 @@ import SwiftUI
   @ObservationIgnored private var glancing: String?
   /// 岛上现在是音量 / 亮度的那一行（showLevel）；不是就是 nil
   private(set) var level: Level?
+  /// 形体现在按音量 / 亮度提示的样子算（刘海两边各伸出一截、不往下长）。比 level 多留一拍：收回时内容先退、0.2 秒后
+  /// 形体才缩，这一拍里 level 已经没了、形体得还是提示的样子——不然会按上一份内容的大小往下鼓出一块空的再缩回
+  private(set) var levelShaped = false
   @ObservationIgnored private var hoverExpand: Task<Void, Never>?
   /// 刘海岛插件添加着（Feature.island，2026-11-13 插件化 P1b；AppDelegate 跟着开关给）：点刘海那一张、活动（耳朵、菜单栏那一项、
   /// 进行中缩进耳朵）、刘海上常驻的鼠标监听都归它。没添加时只弹提示（0.7.0 之前的样子）：setActivity 不收、进行中照旧挂着、
@@ -299,6 +302,7 @@ import SwiftUI
     releaseKeyboard()
     glancing = nil
     level = nil
+    levelShaped = false
     if !quiet { expandedActivity = nil }
     self.actions = actions
     // 离开后照旧展开着的那张卡片：换成新的一条就合上，新提示一律从一行出来
@@ -609,9 +613,17 @@ import SwiftUI
         Content(title: next.title, detail: nil, tone: .info, symbol: next.symbol, leading: .tone),
         actions: [], quiet: true, announces: false)
       level = next
+      levelShaped = true
+      // 这一条上没有能点的东西：不算悬停（指针正在被顶掉的卡片上时也放开），窗口不接鼠标——它盖着刘海两边的菜单栏
+      hoverCheck?.cancel()
+      isHovered = false
+      window?.ignoresMouseEvents = true
     }
     arm(Self.levelDwell)
   }
+
+  /// 岛上现在是音量 / 亮度的提示
+  var isShowingLevel: Bool { level != nil && content != nil }
 
   /// 岛上现在是不是这个活动的一瞥
   func isGlancing(_ id: String) -> Bool { glancing == id && content != nil }
@@ -802,7 +814,10 @@ import SwiftUI
       try? await Task.sleep(for: .milliseconds(200))
       guard let self, !Task.isCancelled else { return }
       self.isRetracting = true
-      withAnimation(Style.Motion.retract.animation()) { self.isOpen = false }
+      withAnimation(Style.Motion.retract.animation()) {
+        self.isOpen = false
+        self.levelShaped = false
+      }
       try? await Task.sleep(for: Self.retractTime)
       guard !Task.isCancelled else { return }
       self.isRetracting = false
@@ -842,6 +857,7 @@ import SwiftUI
     actions = []
     glancing = nil
     level = nil
+    levelShaped = false
     isHovered = false
     isExpanded = false
     isPeeking = false
@@ -1071,7 +1087,7 @@ import SwiftUI
   }
 
   /// 点了一下：没有提示时点在刘海上 = 打开 / 收起那一张（屏幕最顶那一行窗口收不到点击，全局监听收得到）；
-  /// 那一张开着时点在它外面 = 收起。返回开 / 关过没有
+  /// 那一张、活动的卡片（播放卡片没有 ×）开着时点在它外面 = 收起。返回开 / 关过没有
   private func click(onNotch allowed: Bool) -> Bool {
     let mouse = NSEvent.mouseLocation
     if allowed, respondsToNotch, content == nil, !isSuppressed(),
@@ -1081,7 +1097,11 @@ import SwiftUI
       toggleBoard()
       return true
     }
-    if isBoardOpen, let window, !NSMouseInRect(mouse, shapeOnScreen(window), false) { dismiss() }
+    if isBoardOpen || (content != nil && cardActivity != nil), let window,
+      !NSMouseInRect(mouse, shapeOnScreen(window), false)
+    {
+      dismiss()
+    }
     return false
   }
 
@@ -1162,6 +1182,8 @@ import SwiftUI
     if isDragging, NSEvent.pressedMouseButtons & 1 == 0 { isDragging = false }
     guard !isDragging else { return }
     let mouse = NSEvent.mouseLocation
+    // 音量 / 亮度的提示上没有能点的东西：不算悬停（不停计时、窗口不接鼠标，底下的菜单栏照常点）
+    if isShowingLevel { return }
     if content != nil || isBoardOpen {
       if let window { hover(NSMouseInRect(mouse, shapeOnScreen(window), false)) }
       return
@@ -1320,6 +1342,7 @@ struct IslandView: View {
       ZStack(alignment: .top) {
         content.padding(.top, shape.contentTop)
         wings(geometry)
+        levelWings(geometry)
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
       .mask { IslandOutline(shape: shape).animation(curve, value: shape) }
@@ -1344,6 +1367,15 @@ struct IslandView: View {
       let wings = island.isShowingWings && !island.isOpen
       let open = island.isOpen || (reduceMotion && !island.isPeeking && !wings)
       let peek = island.isPeeking && !island.isOpen
+      // 音量 / 亮度的提示：不往下长，只在刘海两边各伸出一截（IslandLevelWings）
+      if island.levelShaped {
+        let width = notchWidth + Island.levelWing * 2
+        return IslandGeometry(
+          frame: CGRect(x: (canvas - width) / 2, y: 0, width: width, height: notchHeight),
+          ear: 6, bottom: 12,
+          floor: IslandGeometry.tucked(notchWidth: notchWidth, notchHeight: notchHeight),
+          contentTop: notchHeight, capsule: false)
+      }
       let size =
         if open {
           CGSize(
@@ -1392,7 +1424,8 @@ struct IslandView: View {
     let outline = IslandOutline(shape: shape)
     return outline.fill(.black.opacity(shape.capsule ? 0.92 : 1))
       .overlay(outline.hairlineBorder(.white.opacity(shape.capsule ? 0.12 : 0)))
-      .islandShadow(open: island.isOpen)
+      // 音量 / 亮度的提示贴在刘海那一行里，不算展开：没有阴影
+      .islandShadow(open: island.isOpen && (shape.capsule || !island.levelShaped))
       .animation(curve, value: shape)
   }
 
@@ -1404,11 +1437,13 @@ struct IslandView: View {
         IslandBoard(island: island)
           .measured { report($0) }
           .transition(appear)
-      } else if island.content != nil, let level = island.level {
-        // 音量 / 亮度的那一行：换数不重新出场
-        IslandLevelRow(level: level)
-          .measured { report($0) }
-          .transition(appear)
+      } else if island.isShowingLevel, let level = island.level {
+        // 音量 / 亮度：没有刘海的屏上是一行（换数不重新出场）；刘海屏上画在刘海两边（levelWings），这里不占地方
+        if case .capsule = island.geometry {
+          IslandLevelRow(level: level)
+            .measured { report($0) }
+            .transition(appear)
+        }
       } else if island.content != nil, let media = island.cardActivity?.media {
         // 点耳朵展开的正在播放：播放卡片（IslandMedia.swift）；换歌、暂停原地换，不重新出场
         IslandMediaCard(island: island, media: media)
@@ -1440,6 +1475,16 @@ struct IslandView: View {
       )
       .id(activity.id)
       .transition(.opacity.animation(.easeInOut(duration: 0.2)))
+    }
+  }
+
+  /// 音量 / 亮度的提示（刘海屏）：画在刘海那一行里、刘海两边；换数不重新出场
+  @ViewBuilder private func levelWings(_ geometry: Island.Geometry) -> some View {
+    if case .notch(let width, let height) = geometry, island.isShowingLevel,
+      let level = island.level
+    {
+      IslandLevelWings(level: level, notchWidth: width, notchHeight: height)
+        .transition(.opacity.animation(.easeInOut(duration: 0.18)))
     }
   }
 

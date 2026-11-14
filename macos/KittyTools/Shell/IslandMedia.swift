@@ -35,7 +35,8 @@ struct IslandMediaArt: View {
   }
 }
 
-/// 右耳上的跳动条：4 根、宽 3、间隔 2，最高 14，从底边往上长
+/// 右耳、播放卡片右上角的跳动条：5 根、宽 2、间隔 2，最高 14，以中线为轴上下对称地长（波形的样子，中间高两头矮；
+/// 2026-11-14 以 Alcove 为准：原来是 4 根从底边往上长的均衡器）
 struct IslandBars: NSViewRepresentable {
   /// 在动（在播且速率 > 0）
   let moving: Bool
@@ -57,22 +58,21 @@ struct IslandBars: NSViewRepresentable {
 }
 
 final class IslandBarsView: NSView {
-  static let size = CGSize(width: 4 * 3 + 3 * 2, height: 14)
+  static let size = CGSize(width: 5 * 2 + 4 * 2, height: 14)
   /// 每根停着时多高（占最高的几成；暂停 / 缓冲时矮一截，在播时的静止样子——减弱动态效果、截图自检——高一截）、
   /// 动起来一程多久（各不一样，看着不齐步）
-  private static let rest: [CGFloat] = [0.35, 0.6, 0.45, 0.3]
-  private static let lively: [CGFloat] = [0.7, 1, 0.55, 0.85]
-  private static let durations: [CFTimeInterval] = [0.52, 0.71, 0.46, 0.63]
+  private static let rest: [CGFloat] = [0.2, 0.3, 0.42, 0.3, 0.2]
+  private static let lively: [CGFloat] = [0.42, 0.78, 1, 0.64, 0.36]
+  private static let durations: [CFTimeInterval] = [0.52, 0.71, 0.46, 0.63, 0.57]
   private var bars: [CALayer] = []
 
   override init(frame: NSRect) {
     super.init(frame: frame)
     wantsLayer = true
-    for index in 0..<4 {
+    for index in 0..<5 {
       let bar = CALayer()
-      bar.cornerRadius = 1.5
-      bar.anchorPoint = CGPoint(x: 0.5, y: 0)
-      bar.frame = CGRect(x: CGFloat(index) * 5, y: 0, width: 3, height: Self.size.height)
+      bar.cornerRadius = 1
+      bar.frame = CGRect(x: CGFloat(index) * 4, y: 0, width: 2, height: Self.size.height)
       bar.transform = CATransform3DMakeScale(1, Self.rest[index], 1)
       layer?.addSublayer(bar)
       bars.append(bar)
@@ -103,8 +103,8 @@ final class IslandBarsView: NSView {
       bar.removeAnimation(forKey: "bounce")
       guard wanted else { continue }
       let bounce = CABasicAnimation(keyPath: "transform.scale.y")
-      bounce.fromValue = 0.25
-      bounce.toValue = 1
+      bounce.fromValue = 0.22
+      bounce.toValue = Self.lively[index] * 0.5 + 0.5
       bounce.duration = Self.durations[index]
       bounce.autoreverses = true
       bounce.repeatCount = .infinity
@@ -115,7 +115,9 @@ final class IslandBarsView: NSView {
   }
 }
 
-/// 点耳朵展开的播放卡片：封面（点了切到那个 App）+ 歌名 / 艺人 · App + ×；进度条和时间；上一首、播放 / 暂停、下一首
+/// 点耳朵展开的播放卡片（2026-11-14 以 Alcove 为准重排）：封面 52（点了切到那个 App）+ 歌名 / 艺人 · App，右上角是输出设备的
+/// 图标和跳动条；进度条和时间（右边写还剩多久）；一行大的播放控制，随机、循环靠两头。没有 ×：指针离开、双指往上滑、
+/// 点卡片外面都收（Island.click），读屏有「退出」动作
 struct IslandMediaCard: View {
   let island: Island
   let media: Island.Media
@@ -131,56 +133,55 @@ struct IslandMediaCard: View {
   var body: some View {
     let snapshot = media.snapshot
     let volumeOpen = volume != nil || stagedVolume != nil
-    VStack(alignment: .leading, spacing: 10) {
+    VStack(alignment: .leading, spacing: 12) {
       HStack(spacing: 12) {
         // 同岛上别的打开类按钮：先收卡片再切（刚换内容 0.3 s 内的点不算）
         Button {
           island.perform(Island.Action("切到 App", opens: true, run: media.open))
         } label: {
-          IslandMediaArt(media: media, size: 48)
-            .overlay { IslandSkipArrow(skip: island.skip, size: 48) }
+          IslandMediaArt(media: media, size: 52)
+            .overlay { IslandSkipArrow(skip: island.skip, size: 52) }
         }
         .buttonStyle(IslandButtonStyle())
         .accessibilityLabel("切到\(Island.Media.appLabel(snapshot))")
         VStack(alignment: .leading, spacing: 2) {
           // 按字认：换歌时整行重来（不然新歌名有一帧画在上一首滚到尾的位置）
           IslandMarquee(
-            text: snapshot.title, font: .system(size: 13, weight: .semibold),
+            text: snapshot.title, font: .system(size: 14, weight: .semibold),
             color: .white.opacity(0.95)
           )
           .id(snapshot.title)
           IslandMarquee(
-            text: Island.Media.byline(snapshot), font: .system(size: 11),
+            text: Island.Media.byline(snapshot), font: .system(size: 12),
             color: .white.opacity(0.55)
           )
           .id(Island.Media.byline(snapshot))
         }
         Spacer(minLength: 12)
-        if let output = stagedVolume == nil ? output : "speaker.wave.2.fill" {
-          // 输出设备的图标（扬声器、耳机、显示器……）：点了进度那一行换成输出音量的滑杆，再点换回来
-          Button {
-            volume = volume == nil ? OutputVolume.read() : nil
-          } label: {
-            Image(systemName: output)
-              .font(.system(size: 9, weight: .bold))
-              .foregroundStyle(.white.opacity(volumeOpen ? 0.95 : 0.8))
-              .frame(width: 20, height: 20)
-              .background(Circle().fill(.white.opacity(volumeOpen ? 0.3 : 0.16)))
+        HStack(spacing: 10) {
+          if let output = stagedVolume == nil ? output : "speaker.wave.2.fill" {
+            // 输出设备的图标（扬声器、耳机、显示器……）：点了进度那一行换成输出音量的滑杆，再点换回来
+            Button {
+              volume = volume == nil ? OutputVolume.read() : nil
+            } label: {
+              Image(systemName: output)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white.opacity(volumeOpen ? 0.95 : 0.5))
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(IslandButtonStyle())
+            .accessibilityLabel("输出音量")
           }
-          .buttonStyle(IslandButtonStyle())
-          .accessibilityLabel("输出音量")
+          IslandBars(
+            moving: snapshot.isPlaying && snapshot.rate > 0,
+            color: media.tint ?? NSColor(IslandLeading.tint(.info))
+          )
+          .accessibilityHidden(true)
         }
-        Button {
-          island.close()
-        } label: {
-          Image(systemName: "xmark")
-            .font(.system(size: 9, weight: .bold))
-            .foregroundStyle(.white.opacity(0.8))
-            .frame(width: 20, height: 20)
-            .background(Circle().fill(.white.opacity(0.16)))
-        }
-        .buttonStyle(IslandButtonStyle())
-        .accessibilityLabel("关闭")
+        // 在封面那么高的框里靠上、往下让 4（Alcove 的波形在右上角）
+        .padding(.top, 4)
+        .frame(height: 52, alignment: .top)
       }
       if volumeOpen {
         IslandVolume(
@@ -190,13 +191,15 @@ struct IslandMediaCard: View {
         // 有时长（直播之类报 0 的不画）、有进度才画
         IslandScrubber(island: island, media: media, staged: staged)
       }
-      IslandTransport(media: media, size: 18, modes: true)
+      IslandTransport(media: media, size: 26, modes: true)
         .frame(maxWidth: .infinity)
     }
-    .padding(.horizontal, 18)
-    .padding(.top, 10)
+    .padding(.horizontal, 20)
+    .padding(.top, 12)
     .padding(.bottom, 14)
-    .frame(width: 340)
+    .frame(width: 360)
+    // 没有 ×：读屏用「退出」收
+    .accessibilityAction(.escape) { island.close() }
     // 摆出来的岛（截图自检、单测）不读本机的输出设备：图出来的样子不能跟着这台机器插没插耳机变。
     // onAppear（不是 task）：第一帧就有那个图标，不晚一帧冒出来把歌名挤窄
     .onAppear {
@@ -210,8 +213,8 @@ struct IslandMediaCard: View {
   }
 }
 
-/// 细条 + 填充 + 圆点（进度条、音量滑杆共用）：底 white 0.18，填封面的主色（没有就强调色）；lifted 时细条从 4 变 6 pt、
-/// 露出 10 pt 的白圆点，行高不变。两条动画各管各的属性（叠在同一棵子树上时里面那条全赢）：push 管填充的宽和圆点的位置，
+/// 细条 + 填充 + 圆点（进度条、音量滑杆共用）：底 white 0.18，填封面的主色（没有就强调色）；lifted 时细条从 5 变 7 pt、
+/// 露出 11 pt 的白圆点，行高不变。两条动画各管各的属性（叠在同一棵子树上时里面那条全赢）：push 管填充的宽和圆点的位置，
 /// lift 管细条的高和圆点的显隐
 struct IslandTrack: View {
   let fraction: Double
@@ -230,14 +233,14 @@ struct IslandTrack: View {
         }
       }
       .clipShape(Capsule())
-      .frame(height: lifted ? 6 : 4)
+      .frame(height: lifted ? 7 : 5)
       .animation(lift, value: lifted)
       // 行高不跟着细条变粗变
-      .frame(height: 6)
+      .frame(height: 7)
       .overlay {
         GeometryReader { proxy in
           Circle().fill(.white)
-            .frame(width: 10, height: 10)
+            .frame(width: 11, height: 11)
             .animation(lift) { $0.scaleEffect(lifted ? 1 : 0.4).opacity(lifted ? 1 : 0) }
             .position(x: proxy.size.width * fraction, y: proxy.size.height / 2)
             .animation(push, value: fraction)
@@ -247,23 +250,85 @@ struct IslandTrack: View {
   }
 }
 
-/// 按音量键 / 亮度键时岛上的那一行（MediaKeys → Island.showLevel）：图标（13 pt）· 细条（160 宽，白色填充）· 百分比。
-/// 同提示那一行的高度；条跟着键走得很快（一秒十几格），用 0.08 秒的线性跟上
-struct IslandLevelRow: View {
+/// 音量 / 亮度提示的符号：喇叭的波纹跟着格数一格格亮起来（符号的可变值；太阳这个符号没有可变的层，是静的——
+/// macOS 27 实测），静音换成划掉的喇叭（原地替换）
+struct IslandLevelSymbol: View {
+  let level: Island.Level
+  let size: CGFloat
+
+  var body: some View {
+    let muted = level.kind == .volume && (level.muted || level.fraction <= 0)
+    Image(
+      systemName: level.kind == .brightness
+        ? "sun.max.fill" : muted ? "speaker.slash.fill" : "speaker.wave.3.fill",
+      variableValue: level.shown
+    )
+    .font(.system(size: size, weight: .semibold))
+    .foregroundStyle(.white.opacity(muted ? 0.55 : 0.95))
+    .contentTransition(.symbolEffect(.replace))
+    .animation(Style.Motion.snap.animation(), value: muted)
+  }
+}
+
+/// 音量 / 亮度提示的细条：4 pt 高的胶囊，白色填充（静音时整条暗着）；条跟着键走得很快（一秒十几格），用 0.08 秒的线性跟上
+struct IslandLevelBar: View {
   let level: Island.Level
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
+    Capsule().fill(.white.opacity(0.22))
+      .overlay(alignment: .leading) {
+        GeometryReader { proxy in
+          Capsule().fill(.white)
+            .frame(width: max(proxy.size.width * level.shown, level.shown > 0 ? 4 : 0))
+            .animation(reduceMotion ? nil : .linear(duration: 0.08), value: level.shown)
+        }
+      }
+      .frame(height: 4)
+  }
+}
+
+/// 按音量键 / 亮度键时，刘海屏上的样子（2026-11-14 以 Alcove 为准：原来是从刘海往下掉一行）：岛不往下长，只在刘海两边各
+/// 伸出 Island.levelWing——左边符号 + 「音量」/「亮度」/「静音」，右边一根细条。约 1.2 秒缩回去
+struct IslandLevelWings: View {
+  let level: Island.Level
+  let notchWidth: CGFloat
+  let notchHeight: CGFloat
+
+  var body: some View {
+    HStack(spacing: 0) {
+      HStack(spacing: 6) {
+        IslandLevelSymbol(level: level, size: 13).frame(width: 20)
+        Text(level.title)
+          .font(.system(size: 12, weight: .semibold))
+          .foregroundStyle(.white.opacity(0.95))
+          .lineLimit(1)
+          .fixedSize()
+      }
+      .padding(.leading, 12)
+      .frame(width: Island.levelWing, alignment: .leading)
+      Color.clear.frame(width: notchWidth)
+      IslandLevelBar(level: level)
+        .frame(width: 56)
+        .padding(.trailing, 14)
+        .frame(width: Island.levelWing, alignment: .trailing)
+    }
+    .frame(height: notchHeight)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(level.title)
+    .accessibilityValue("\(Int((level.shown * 100).rounded()))%")
+  }
+}
+
+/// 按音量键 / 亮度键时，没有刘海的屏上的那一行（MediaKeys → Island.showLevel）：符号（13 pt）· 细条（160 宽）· 百分比。
+/// 同提示那一行的高度
+struct IslandLevelRow: View {
+  let level: Island.Level
+
+  var body: some View {
     HStack(spacing: 10) {
-      Image(systemName: level.symbol)
-        .font(.system(size: 13, weight: .semibold))
-        .foregroundStyle(.white.opacity(0.92))
-        .frame(width: 24)
-      IslandTrack(
-        fraction: level.shown, lifted: false, tint: .white,
-        push: reduceMotion ? nil : .linear(duration: 0.08), lift: nil
-      )
-      .frame(width: 160)
+      IslandLevelSymbol(level: level, size: 13).frame(width: 24)
+      IslandLevelBar(level: level).frame(width: 160)
       Text("\(Int((level.shown * 100).rounded()))%")
         .font(.system(size: 12, weight: .semibold).monospacedDigit())
         .foregroundStyle(.white.opacity(0.92))
@@ -361,9 +426,10 @@ struct IslandVolume: View {
   }
 }
 
-/// 播放卡片上的进度：已播 · 细条 · 总长（11 pt 等宽数字）；细条底 white 0.18、填强调色，卡片开着时每秒推一次。
-/// 这个 App 支持跳（快照的 canSeek）时细条能拖、能点着跳（2026-11-13）：指针在卡片上时细条从 4 变 6 pt 粗、露出一个
-/// 10 pt 的白圆点；按下就跟手（不做动画、不被每秒的刷新拽走，左边的时间跟着变），松手才发一次命令——拖的路上不发，
+/// 播放卡片上的进度：已播 · 细条 · 还剩多久（「-0:55」，11 pt 等宽数字；2026-11-14 以 Alcove 为准，原来写总长）；细条底
+/// white 0.18、填强调色，卡片开着时每秒推一次。
+/// 这个 App 支持跳（快照的 canSeek）时细条能拖、能点着跳（2026-11-13）：指针在卡片上时细条从 5 变 7 pt 粗、露出一个
+/// 11 pt 的白圆点；按下就跟手（不做动画、不被每秒的刷新拽走，左边的时间跟着变），松手才发一次命令——拖的路上不发，
 /// 播放器不会一路跟着跳。按住时告诉岛别按指针位置收卡片（Island.holdPointer）：拖过头、拖出卡片是常事。
 /// 岛的窗口不接键盘，拖只靠鼠标；读屏里是可调的元素（一下挪时长的 5%、至少 5 秒）
 struct IslandScrubber: View {
@@ -420,7 +486,7 @@ struct IslandScrubber: View {
     let push: Animation? = dragged == nil && !reduceMotion ? .linear(duration: 1) : nil
     let lift = Style.Motion.snap.animation(reduced: reduceMotion)
     return HStack(spacing: 8) {
-      time(position)
+      time(IslandMediaCard.clock(position))
       IslandTrack(fraction: fraction, lifted: lifted, tint: media.tint, push: push, lift: lift)
         // 接鼠标的那一条比细条高（18 pt），好点；画在细条上面、不占行高。按歌名认：拖到一半换了歌，这一条换成新的、
         // 手势当场作废——不然松手会按新歌的时长把新歌跳到中间（评审 4）
@@ -434,7 +500,7 @@ struct IslandScrubber: View {
             .id(snapshot.title)
           }
         }
-      time(duration)
+      time(Self.remaining(position, of: duration))
     }
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("播放进度")
@@ -474,8 +540,13 @@ struct IslandScrubber: View {
     return min(max(position / duration, 0), 1)
   }
 
-  private func time(_ seconds: Double) -> some View {
-    Text(IslandMediaCard.clock(seconds))
+  /// 右边那个时间：还剩多久，前面带负号（剩 0 也带：宽度不跳）
+  static func remaining(_ position: Double, of duration: Double) -> String {
+    "-" + IslandMediaCard.clock(max(duration - position, 0))
+  }
+
+  private func time(_ text: String) -> some View {
+    Text(text)
       .font(.system(size: 11).monospacedDigit())
       .foregroundStyle(.white.opacity(0.5))
       .lineLimit(1)
@@ -483,53 +554,40 @@ struct IslandScrubber: View {
   }
 }
 
-/// 上一首、播放 / 暂停、下一首：白色实心符号，不支持的灰掉
+/// 上一首、播放 / 暂停、下一首：白色实心符号，不支持的灰掉。播放卡片上（modes）是一行大的：播放 / 暂停 26 pt、两边 21，
+/// 随机、循环 14 pt 靠卡片两头（2026-11-14 以 Alcove 为准：原来 18 / 15 / 12 挤在中间）；那一张里的一行是小的、挤在一起
 struct IslandTransport: View {
   let media: Island.Media
-  /// 播放 / 暂停的字号；两边小 3
+  /// 播放 / 暂停的字号
   let size: CGFloat
-  /// 两头加随机、循环（播放卡片上；那一张里的一行不加）。这个 App 两样都不支持就不占位置，只支持一样时另一头空着（三个
-  /// 主按钮照旧居中）
+  /// 播放卡片上的那一行：两头加随机、循环。这个 App 两样都不支持就不占位置，只支持一样时另一头空着（三个主按钮照旧居中）
   var modes = false
 
   var body: some View {
     let snapshot = media.snapshot
-    let jumps = Self.usesJumps(snapshot)
     let showsModes = modes && (snapshot.shuffle != nil || snapshot.repeatMode != nil)
-    HStack(spacing: size * 1.4) {
+    HStack(spacing: 0) {
       if showsModes {
         if let shuffle = snapshot.shuffle {
-          mode("shuffle", label: "随机播放", value: shuffle == 1 ? "关" : "开", on: shuffle != 1) {
+          mode(
+            "shuffle", label: "随机播放", value: shuffle == 1 ? "关" : "开", on: shuffle != 1,
+            alignment: .leading
+          ) {
             media.setShuffle(NowPlaying.nextShuffle(shuffle))
           }
         } else {
           modeSpace
         }
+        Spacer(minLength: 0)
       }
-      if jumps {
-        button("gobackward.15", label: "后退 15 秒", size: size - 3, enabled: true) { jump(-15) }
-      } else {
-        button("backward.fill", label: "上一首", size: size - 3, enabled: snapshot.canPrevious) {
-          media.send(.previous)
-        }
-      }
-      button(
-        snapshot.isPlaying ? "pause.fill" : "play.fill", label: snapshot.isPlaying ? "暂停" : "播放",
-        size: size, enabled: true
-      ) { media.send(.toggle) }
-      if jumps {
-        button("goforward.15", label: "前进 15 秒", size: size - 3, enabled: true) { jump(15) }
-      } else {
-        button("forward.fill", label: "下一首", size: size - 3, enabled: snapshot.canNext) {
-          media.send(.next)
-        }
-      }
+      main(snapshot)
       if showsModes {
+        Spacer(minLength: 0)
         if let repeatMode = snapshot.repeatMode {
           mode(
             repeatMode == 2 ? "repeat.1" : "repeat", label: "循环播放",
             value: repeatMode == 1 ? "关" : repeatMode == 2 ? "单曲循环" : "列表循环",
-            on: repeatMode != 1
+            on: repeatMode != 1, alignment: .trailing
           ) { media.setRepeat(NowPlaying.nextRepeat(repeatMode)) }
         } else {
           modeSpace
@@ -538,19 +596,49 @@ struct IslandTransport: View {
     }
   }
 
-  /// 随机 / 循环：小一号的符号，开着染封面的主色（没有就强调色），关着 white 0.45。点了不自己变：等播放器报回来
+  /// 中间三个
+  private func main(_ snapshot: NowPlayingSnapshot) -> some View {
+    let jumps = Self.usesJumps(snapshot)
+    let side = modes ? size - 5 : size - 3
+    return HStack(spacing: modes ? size : size * 1.4) {
+      if jumps {
+        button("gobackward.15", label: "后退 15 秒", size: side, enabled: true) { jump(-15) }
+      } else {
+        button("backward.fill", label: "上一首", size: side, enabled: snapshot.canPrevious) {
+          media.send(.previous)
+        }
+      }
+      button(
+        snapshot.isPlaying ? "pause.fill" : "play.fill", label: snapshot.isPlaying ? "暂停" : "播放",
+        size: size, enabled: true
+      ) { media.send(.toggle) }
+      if jumps {
+        button("goforward.15", label: "前进 15 秒", size: side, enabled: true) { jump(15) }
+      } else {
+        button("forward.fill", label: "下一首", size: side, enabled: snapshot.canNext) {
+          media.send(.next)
+        }
+      }
+    }
+  }
+
+  /// 随机 / 循环：14 pt 的符号，符号贴着卡片内容的边（alignment）；开着染封面的主色（没有就强调色）、底下一个小圆点，
+  /// 关着 white 0.45。点了不自己变：等播放器报回来
   private func mode(
-    _ symbol: String, label: String, value: String, on: Bool, run: @escaping () -> Void
+    _ symbol: String, label: String, value: String, on: Bool, alignment: Alignment,
+    run: @escaping () -> Void
   ) -> some View {
-    Button(action: run) {
+    let tint = media.tint.map { Color(nsColor: $0) } ?? IslandLeading.tint(.info)
+    return Button(action: run) {
       Image(systemName: symbol)
-        .font(.system(size: size - 6, weight: .semibold))
-        .foregroundStyle(
-          on
-            ? AnyShapeStyle(media.tint.map { Color(nsColor: $0) } ?? IslandLeading.tint(.info))
-            : AnyShapeStyle(.white.opacity(0.45))
-        )
-        .frame(width: size + 12, height: size + 10)
+        .font(.system(size: 14, weight: .semibold))
+        .foregroundStyle(on ? AnyShapeStyle(tint) : AnyShapeStyle(.white.opacity(0.45)))
+        .contentTransition(.symbolEffect(.replace))
+        .animation(Style.Motion.snap.animation(), value: symbol)
+        .overlay(alignment: .bottom) {
+          Circle().fill(tint).frame(width: 3, height: 3).offset(y: 6).opacity(on ? 1 : 0)
+        }
+        .frame(width: 36, height: size + 10, alignment: alignment)
         .contentShape(Rectangle())
     }
     .buttonStyle(IslandButtonStyle())
@@ -559,7 +647,7 @@ struct IslandTransport: View {
   }
 
   private var modeSpace: some View {
-    Color.clear.frame(width: size + 12, height: size + 10).accessibilityHidden(true)
+    Color.clear.frame(width: 36, height: size + 10).accessibilityHidden(true)
   }
 
   /// 上一首 / 下一首都用不了、又能跳的源（Chrome 里单个视频、播客）：两个灰着的按钮换成后退 / 前进 15 秒
@@ -573,14 +661,18 @@ struct IslandTransport: View {
     media.seek((NowPlaying.position(media.snapshot, at: .now) ?? 0) + seconds)
   }
 
+  /// 播放 ↔ 暂停换符号时原地替换（系统的符号过渡），不是硬切
   private func button(
     _ symbol: String, label: String, size: CGFloat, enabled: Bool, run: @escaping () -> Void
   ) -> some View {
     Button(action: run) {
       Image(systemName: symbol)
         .font(.system(size: size, weight: .semibold))
-        .foregroundStyle(.white.opacity(enabled ? 0.92 : 0.3))
-        .frame(width: size + 12, height: size + 10)
+        .foregroundStyle(.white.opacity(enabled ? (modes ? 0.95 : 0.92) : 0.3))
+        .contentTransition(.symbolEffect(.replace))
+        // 符号替换只在带动画的事务里走（快照是播放器报回来才换的，不在 withAnimation 里）
+        .animation(Style.Motion.snap.animation(), value: symbol)
+        .frame(width: size + (modes ? 14 : 12), height: size + 10)
         .contentShape(Rectangle())
     }
     .buttonStyle(IslandButtonStyle())
