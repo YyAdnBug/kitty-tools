@@ -243,8 +243,10 @@ internal sealed partial class SettingsWindow : Window
 
             if (args.SelectedItemContainer?.Tag is string tag)
             {
-                // 从左栏换页：翻译服务的详情子页收起来，回来时是列表。
+                // 从左栏换页：翻译服务的详情子页、启动器和通用的子页收起来，回来时是列表。
                 _serviceDetail = null;
+                _launcherSubpage = null;
+                _featuresPage = false;
                 BuildPage(tag);
             }
         };
@@ -610,6 +612,8 @@ internal sealed partial class SettingsWindow : Window
         if (target is not null && target != _currentPage && _recordingAction is null)
         {
             _serviceDetail = null;
+            _launcherSubpage = null;
+            _featuresPage = false;
             BuildPage(target);
         }
     }
@@ -743,6 +747,12 @@ internal sealed partial class SettingsWindow : Window
     /// </summary>
     private void BuildGeneral()
     {
+        if (_featuresPage)
+        {
+            BuildFeaturesPage();
+            return;
+        }
+
         _content.Children.Add(Header("通用", "外观、登录时打开、权限、同步、设置的导出与导入"));
         if (_firstRun)
         {
@@ -751,8 +761,30 @@ internal sealed partial class SettingsWindow : Window
             ShowOnboardingWhenReady(firstRun: true);
         }
 
-        // 功能
-        _content.Children.Add(SettingsUi.Section("功能"));
+        // 功能（PLAN-v18 L4：收成一行「功能 ›」，写开着几个、关着哪几个，开关在子页里）
+        AddSubpageRow("功能", SettingsSummary.Features(Enum.GetValues<Feature>().Select(feature => (Features.Title(feature), Features.IsOn(feature))).ToList()),
+            () => OpenFeaturesPage(true));
+        BuildGeneralRest();
+    }
+
+    /// <summary>通用页里点进去的「功能」子页开着。</summary>
+    private bool _featuresPage;
+
+    private void OpenFeaturesPage(bool open)
+    {
+        _featuresPage = open;
+        BuildPage("general");
+        _scroll.ChangeView(null, 0, null, disableAnimation: true);
+    }
+
+    /// <summary>设置 › 通用 › 功能（PLAN-v18 L4，mac FeaturesPage）：各功能一个开关。</summary>
+    private void BuildFeaturesPage()
+    {
+        var back = new HyperlinkButton { Content = "‹ 通用", Padding = new Thickness(0), Margin = new Thickness(0, 0, 0, 4) };
+        back.Click += (_, _) => OpenFeaturesPage(false);
+        AutomationProperties.SetName(back, "返回通用设置");
+        _content.Children.Add(back);
+        _content.Children.Add(Header("功能", "用不上的整个关掉"));
         foreach (var feature in Enum.GetValues<Feature>())
         {
             _content.Children.Add(SettingsUi.Card(
@@ -771,7 +803,11 @@ internal sealed partial class SettingsWindow : Window
 
         _content.Children.Add(SettingsUi.Footnote(
             "关掉的功能不出现在快捷键、托盘菜单和启动器里，也不在后台运行；它的数据和设置都留着，打开就回来。"));
+    }
 
+    /// <summary>通用页「功能」那一行下面的部分。</summary>
+    private void BuildGeneralRest()
+    {
         // 外观、强调色（mac 这一组没有组标题，空一截隔开）
         _content.Children.Add(new Border { Height = 8 });
         _content.Children.Add(SettingsUi.Card("外观", string.Empty, ThemePicker()));
@@ -1988,64 +2024,17 @@ internal sealed partial class SettingsWindow : Window
     }
 
     /// <summary>
-    /// 设置 › 启动器（PLAN-v9-launcher §5，照 mac LauncherTab）：功能开关 ｜ 呼出时切到英文输入法、启动器里的按键 ｜ 文件搜索 ｜
-    /// 浏览器书签与历史（只列装了的，每家书签 / 也搜浏览历史两个开关，下面写读到了几条）｜ 网页搜索与快捷链接（每条一个兜底开关、
-    /// 能新建和编辑、↑↓ 排序，有问题的橙字写出来）+ 有本地结果时也显示兜底搜索 ｜ 使用记录（清空…，先确认）。
+    /// 设置 › 启动器 › 网页搜索与快捷链接（PLAN-v18 L4，mac WebSearchPage 8bbc2f8d）：以前铺在启动器页上，收成一行、点进来编辑。
+    /// 每条一个兜底开关、能新建和编辑、拖动排序，有问题的橙字写出来；下面是「有本地结果时也显示兜底搜索」。
     /// </summary>
-    private void BuildLauncher()
+    private void BuildWebSearchPage()
     {
-        _content.Children.Add(Header("启动器", "搜索应用、文件、书签与历史、网页搜索与快捷链接"));
-        AddFeatureToggle(Feature.Launcher);
+        var back = new HyperlinkButton { Content = "‹ 启动器", Padding = new Thickness(0), Margin = new Thickness(0, 0, 0, 4) };
+        back.Click += (_, _) => OpenLauncherSubpage(null);
+        AutomationProperties.SetName(back, "返回启动器设置");
+        _content.Children.Add(back);
+        _content.Children.Add(Header("网页搜索与快捷链接", "「关键词 空格 内容」直达的搜索、没有本地结果时的兜底、一键打开的网址"));
         var settings = SettingsService.Current;
-
-        _content.Children.Add(new Border { Height = 8 });
-        AddToggle("呼出时切到英文输入法", "只在搜索框里生效，离开后恢复；要搜中文时先关掉",
-            settings.LauncherRomanInput,
-            isOn =>
-            {
-                settings.LauncherRomanInput = isOn;
-                SettingsService.Save();
-            });
-        AddPanelPositionCombo(settings.LauncherPanelPosition, value => settings.LauncherPanelPosition = value);
-        AddPanelSizeCard(
-            () => settings.LauncherPanelWidth is not null || settings.LauncherPanelRows is not null,
-            () =>
-            {
-                settings.LauncherPanelWidth = null;
-                settings.LauncherPanelRows = null;
-            });
-        AddShortcutsRow("launcher", "启动器里的按键",
-            "搜应用、系统设置、文件、书签、网址、路径、算式（也能换算单位和进制）和系统命令（lock、quit、kill 这些），" +
-            "Enter 打开，Ctrl+K 看这一项的全部操作");
-
-        // 文件搜索
-        _content.Children.Add(SettingsUi.Section("文件搜索"));
-        _content.Children.Add(SettingsUi.Card(
-            "建了索引的位置", "设置 › 隐私和安全性 › 搜索 Windows", null,
-            () => LauncherOpeners.Start("ms-settings:cortana-windowssearch")));
-        _content.Children.Add(SettingsUi.Footnote(
-            "「open 文件名」搜文件并打开，「find 文件名」在资源管理器中显示；搜的是 Windows 搜索建了索引的位置，不想被搜到的文件夹从索引里去掉。"));
-
-        // 浏览器书签与历史
-        _content.Children.Add(SettingsUi.Section("浏览器书签与历史"));
-        var installed = Browsers.Installed();
-        if (installed.Count == 0)
-        {
-            _content.Children.Add(SettingsUi.Card("没有找到浏览器", "装了 Edge、Chrome、Firefox 这些之后会列在这里"));
-        }
-
-        foreach (var browser in installed)
-        {
-            AddBrowserRows(settings, browser);
-        }
-
-        _content.Children.Add(SettingsUi.Footnote("只列本机装了的浏览器。"));
-
-        // 后台读浏览器数据，读完原地改各行的条数（不重建整页：以前读完整页重画，开关全闪一下、滚动跳回顶部）。
-        _ = RefreshBrowsersAsync(settings);
-
-        // 网页搜索与快捷链接
-        _content.Children.Add(SettingsUi.Section("网页搜索与快捷链接"));
         var engines = (settings.LauncherSearchEngines ?? WebSearch.Defaults()).Select(Copy).ToList();
         _shownEngines = settings.LauncherSearchEngines;
 
@@ -2129,6 +2118,83 @@ internal sealed partial class SettingsWindow : Window
             });
         _content.Children.Add(SettingsUi.Footnote(
             "网址里有 {query} 的是搜索（「关键词 空格 内容」直达，开关 = 没有本地结果时兜底），没有的是快捷链接。搜索的关键词重复时用靠前的，拖动一行改顺序；点一行改名称、关键词和网址，右键可以上移、下移和删除。"));
+    }
+
+    /// <summary>
+    /// 设置 › 启动器（PLAN-v9-launcher §5，照 mac LauncherTab）：功能开关 ｜ 呼出时切到英文输入法、启动器里的按键 ｜ 文件搜索 ｜
+    /// 浏览器书签与历史（只列装了的，每家书签 / 也搜浏览历史两个开关，下面写读到了几条）｜ 网页搜索与快捷链接（每条一个兜底开关、
+    /// 能新建和编辑、↑↓ 排序，有问题的橙字写出来）+ 有本地结果时也显示兜底搜索 ｜ 使用记录（清空…，先确认）。
+    /// </summary>
+    private void BuildLauncher()
+    {
+        // 点进去的子页（PLAN-v18 L2 L4）：命令和别名、网页搜索与快捷链接
+        if (_launcherSubpage == "commands")
+        {
+            BuildLauncherCommands();
+            return;
+        }
+
+        if (_launcherSubpage == "web")
+        {
+            BuildWebSearchPage();
+            return;
+        }
+
+        _content.Children.Add(Header("启动器", "搜索应用、文件、书签与历史、网页搜索与快捷链接"));
+        AddFeatureToggle(Feature.Launcher);
+        var settings = SettingsService.Current;
+
+        _content.Children.Add(new Border { Height = 8 });
+        AddToggle("呼出时切到英文输入法", "只在搜索框里生效，离开后恢复；要搜中文时先关掉",
+            settings.LauncherRomanInput,
+            isOn =>
+            {
+                settings.LauncherRomanInput = isOn;
+                SettingsService.Save();
+            });
+        AddPanelPositionCombo(settings.LauncherPanelPosition, value => settings.LauncherPanelPosition = value);
+        AddPanelSizeCard(
+            () => settings.LauncherPanelWidth is not null || settings.LauncherPanelRows is not null,
+            () =>
+            {
+                settings.LauncherPanelWidth = null;
+                settings.LauncherPanelRows = null;
+            });
+        AddShortcutsRow("launcher", "启动器里的按键",
+            "搜应用、系统设置、文件、书签、网址、路径、算式（也能换算单位和进制）和系统命令（lock、quit、kill 这些），" +
+            "Enter 打开，Ctrl+K 看这一项的全部操作");
+
+        // 文件搜索
+        _content.Children.Add(SettingsUi.Section("文件搜索"));
+        _content.Children.Add(SettingsUi.Card(
+            "建了索引的位置", "设置 › 隐私和安全性 › 搜索 Windows", null,
+            () => LauncherOpeners.Start("ms-settings:cortana-windowssearch")));
+        _content.Children.Add(SettingsUi.Footnote(
+            "「open 文件名」搜文件并打开，「find 文件名」在资源管理器中显示；搜的是 Windows 搜索建了索引的位置，不想被搜到的文件夹从索引里去掉。"));
+
+        // 浏览器书签与历史
+        _content.Children.Add(SettingsUi.Section("浏览器书签与历史"));
+        var installed = Browsers.Installed();
+        if (installed.Count == 0)
+        {
+            _content.Children.Add(SettingsUi.Card("没有找到浏览器", "装了 Edge、Chrome、Firefox 这些之后会列在这里"));
+        }
+
+        foreach (var browser in installed)
+        {
+            AddBrowserRows(settings, browser);
+        }
+
+        _content.Children.Add(SettingsUi.Footnote("只列本机装了的浏览器。"));
+
+        // 后台读浏览器数据，读完原地改各行的条数（不重建整页：以前读完整页重画，开关全闪一下、滚动跳回顶部）。
+        _ = RefreshBrowsersAsync(settings);
+
+        // 命令与网页搜索（PLAN-v18 L2 L4：各收成一行，点进去编辑）
+        _content.Children.Add(SettingsUi.Section("命令与网页搜索"));
+        AddCommandsRow();
+        AddSubpageRow("网页搜索与快捷链接", WebSearch.Summary(settings.LauncherSearchEngines ?? WebSearch.Defaults()),
+            () => OpenLauncherSubpage("web"));
 
         // 使用记录：「空搜索框里列出常用」跟着功能开关变灰（PLAN-v16 L1，mac adc47977）；清空是管数据的，功能关着也能清（同 mac）
         _content.Children.Add(Ungated(SettingsUi.Section("使用记录")));
@@ -3132,7 +3198,8 @@ internal sealed partial class SettingsWindow : Window
     private void ShowBinding(Button box, string action)
     {
         var shot = IsShot(action) ? ShotKeys.Find(ShotId(action)) : null;
-        var name = shot?.Title ?? SettingsDefaults.RowTitle(action);
+        var command = IsCommand(action) ? LauncherCommandKeys.Rows.FirstOrDefault(row => row.Id == CommandId(action)) : null;
+        var name = shot?.Title ?? command?.Title ?? SettingsDefaults.RowTitle(action);
         if (_recordingAction == action)
         {
             box.Content = new TextBlock { Text = "按下快捷键", Foreground = Theme.SecondaryText() };
@@ -3143,7 +3210,9 @@ internal sealed partial class SettingsWindow : Window
 
         var shortcut = shot is not null
             ? ShotKeys.Current(shot.Id, SettingsService.Current.ScreenshotKeys)?.Display ?? "未设置"
-            : HotKeyManager.FormatFor(action);
+            : command is not null
+                ? CommandHotKey(command.Id) ?? "未设置"
+                : HotKeyManager.FormatFor(action);
         box.Content = SettingsUi.KeyCaps(shortcut);
         box.ClearValue(Control.BorderBrushProperty);
         AutomationProperties.SetName(box, $"{name}：{shortcut}");
@@ -3184,6 +3253,13 @@ internal sealed partial class SettingsWindow : Window
     /// <summary>那一行下面的橙字：录制时的提示、这个组合不能用；null = 回到注册失败的原因（没有就收起）。</summary>
     private void SetHotKeyMessage(string action, string? message)
     {
+        // 命令那一行的橙字另写在行下面（PLAN-v18 L3，.LauncherCommands.cs）
+        if (IsCommand(action))
+        {
+            SetCommandMessage(action, message);
+            return;
+        }
+
         if (!_hotKeyCards.TryGetValue(action, out var card))
         {
             return;
@@ -3227,12 +3303,12 @@ internal sealed partial class SettingsWindow : Window
         if (HotKeyRules.IsModifierKey(key))
         {
             // 全局动作还能连按两下 Ctrl / Alt / Shift（PLAN-v18 L9，松开时在 OnRecordKeyUp 里认）
-            if (!IsShot(action))
+            if (!IsShot(action) && !IsCommand(action))
             {
                 FeedRecordTaps(action);
             }
 
-            SetHotKeyMessage(action, IsShot(action) ? "再按一个普通键（修饰键本身不算）" : "再按一个普通键，或者连按两下 Ctrl / Alt / Shift");
+            SetHotKeyMessage(action, IsShot(action) || IsCommand(action) ? "再按一个普通键（修饰键本身不算）" : "再按一个普通键，或者连按两下 Ctrl / Alt / Shift");
             return;
         }
 
@@ -3242,6 +3318,13 @@ internal sealed partial class SettingsWindow : Window
         if (IsShot(action))
         {
             RecordShotKey(action, key, modifiers);
+            return;
+        }
+
+        // 启动器命令的快捷键（PLAN-v18 L3）：规矩同全局，另外查和全局、别的命令重复
+        if (IsCommand(action))
+        {
+            RecordCommandKey(action, key, modifiers);
             return;
         }
 
@@ -3265,7 +3348,7 @@ internal sealed partial class SettingsWindow : Window
 
     private void OnRecordKeyUp(object sender, KeyRoutedEventArgs e)
     {
-        if (_recordingAction is { } action && !IsShot(action) && HotKeyRules.IsModifierKey((uint)e.Key))
+        if (_recordingAction is { } action && !IsShot(action) && !IsCommand(action) && HotKeyRules.IsModifierKey((uint)e.Key))
         {
             e.Handled = true;
             FeedRecordTaps(action);
@@ -3303,6 +3386,12 @@ internal sealed partial class SettingsWindow : Window
 
     private void ClearHotKey(string action)
     {
+        if (IsCommand(action))
+        {
+            ClearCommandKey(action);
+            return;
+        }
+
         if (IsShot(action))
         {
             SettingsService.Current.ScreenshotKeys = ShotKeys.Set(SettingsService.Current.ScreenshotKeys, ShotId(action), null);

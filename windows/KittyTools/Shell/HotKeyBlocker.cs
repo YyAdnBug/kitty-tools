@@ -155,6 +155,7 @@ internal static partial class HotKeyBlocker
         var savedBlocks = settings.HotKeyBlockedApps;
         var savedFullscreen = settings.HotKeyBlockFullscreen;
         var savedKeys = settings.HotKeys.Select(hotkey => (hotkey.Action, SettingsDefaults.BindingFor(settings, hotkey.Action))).ToList();
+        var savedCommandKeys = settings.LauncherCommandHotKeys;
         var text = new System.Text.StringBuilder();
         var ok = true;
         var manager = ShellRuntime.Instance!.HotKeys;
@@ -216,10 +217,38 @@ internal static partial class HotKeyBlocker
             }
 
             text.Append($"20 次切换：注册 / 注销中位 {times.Order().ElementAt(10):F3} ms、最长 {times.Max():F3} ms\n");
+
+            // 启动器命令的快捷键（PLAN-v18 L3）：注册着；「全部」停它、只停几个不管它；重新注册热键号不变
+            settings.LauncherCommandHotKeys = new Dictionary<string, string> { ["system:lock"] = "Ctrl+Alt+Shift+F16" };
+            settings.HotKeyBlockedApps = new List<string> { "probe-all.exe", "probe-some.exe|clipboard" };
+            _frontExe = "other.exe";
+            Refresh();
+            manager.RegisterAll(settings);
+            const string command = HotKeyManager.CommandPrefix + "system:lock";
+            var firstId = manager.CommandHotKeyIdForProbe("system:lock");
+            void CheckCommand(string step, bool expected)
+            {
+                var right = manager.IsRegistered(command) == expected;
+                ok &= right;
+                text.Append(right ? "ok " : "不对 ").Append(step).Append(manager.IsRegistered(command) ? "：命令快捷键注册着" : "：命令快捷键没注册").Append('\n');
+            }
+
+            CheckCommand("命令快捷键，名单外", true);
+            _frontExe = "probe-all.exe";
+            Refresh();
+            CheckCommand("全部停用连命令一起停", false);
+            _frontExe = "probe-some.exe";
+            Refresh();
+            CheckCommand("只停几个不管命令", true);
+            manager.RegisterAll(settings);
+            var sameId = manager.CommandHotKeyIdForProbe("system:lock") == firstId;
+            ok &= sameId;
+            text.Append(sameId ? "ok " : "不对 ").Append($"重新注册后热键号还是 {firstId}").Append('\n');
         }
         finally
         {
             settings.HotKeyBlockedApps = savedBlocks;
+            settings.LauncherCommandHotKeys = savedCommandKeys;
             settings.HotKeyBlockFullscreen = savedFullscreen;
             foreach (var (action, binding) in savedKeys)
             {

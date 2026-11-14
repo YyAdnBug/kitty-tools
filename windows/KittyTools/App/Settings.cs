@@ -334,6 +334,15 @@ internal sealed class Settings
     /// <summary>有本地结果时也显示兜底搜索（mac launcherFallbackAlways，默认关；PLAN-v9 L4）。</summary>
     public bool LauncherFallbackAlways { get; set; }
 
+    /// <summary>启动器「命令」表（PLAN-v18 L2，Core LauncherCommandTable）：改过的别名（编号 → 打的原样，空串 = 不要别名），只存改过的。</summary>
+    public Dictionary<string, string>? LauncherCommandAliases { get; set; }
+
+    /// <summary>启动器「命令」表里关掉的命令编号。</summary>
+    public List<string>? LauncherCommandsOff { get; set; }
+
+    /// <summary>启动器每条命令的快捷键（PLAN-v18 L3）：编号 → 「Ctrl+Alt+K」写法。</summary>
+    public Dictionary<string, string>? LauncherCommandHotKeys { get; set; }
+
     /// <summary>书签开着的浏览器 id；null = 从没设过（Edge、Chrome，PLAN-v9 V1）。</summary>
     public List<string>? LauncherBookmarkBrowsers { get; set; }
 

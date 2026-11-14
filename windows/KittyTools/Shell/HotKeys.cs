@@ -4,6 +4,8 @@
 // 规则和上次一样就什么都不做，不一样只动变了的那几个 id（失败原因留着，设置页那几行橙字不闪）。
 // 截图框选、录快捷键这些时候 UnregisterAll 停着全部热键，这期间前台变了只记规则，RegisterAll 时按那时的前台注册。
 // 设成连按两下修饰键的（PLAN-v18 L9，HotKeyRules.IsDoubleTap）不走 RegisterHotKey，交给 ModifierTapListener（Raw Input）。
+// 启动器每条命令的快捷键（PLAN-v18 L3）也在这里注册：动作名是「cmd:编号」，热键号从 1000 起、每条命令这次运行里一个固定的号、不复用；
+// 停用名单选「全部」时连它们一起停（PLAN-v17 H3），只停几个的不管它们。
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using KittyTools.Infrastructure;
@@ -27,6 +29,29 @@ internal sealed class HotKeyManager
 
     public event Action<string>? Pressed;
 
+    /// <summary>启动器命令的快捷键按下了（命令编号）。</summary>
+    public event Action<string>? CommandPressed;
+
+    public const string CommandPrefix = "cmd:";
+
+    /// <summary>每条命令的热键号（这次运行里固定、不复用：注销后再注册还是这个号）。</summary>
+    private readonly Dictionary<string, int> _commandIds = new();
+    private int _nextCommandId = 1000;
+
+#if DEBUG
+    internal int CommandHotKeyIdForProbe(string command) => CommandHotKeyId(command);
+#endif
+
+    private int CommandHotKeyId(string command)
+    {
+        if (!_commandIds.TryGetValue(command, out var id))
+        {
+            _commandIds[command] = id = _nextCommandId++;
+        }
+
+        return id;
+    }
+
     /// <summary>上一次注册 / 注销用了多久（PLAN-v17 W5，报告用）。</summary>
     public double LastApplyMilliseconds { get; private set; }
 
@@ -40,6 +65,11 @@ internal sealed class HotKeyManager
         foreach (var definition in SettingsDefaults.DefaultHotKeys)
         {
             RegisterOne(id++, definition.Action, settings);
+        }
+
+        foreach (var (command, binding) in LauncherCommandKeys.Bindings())
+        {
+            RegisterBinding(CommandHotKeyId(command), CommandPrefix + command, binding, _rule?.BlocksCommands == true);
         }
 
         SyncTaps();
@@ -110,6 +140,24 @@ internal sealed class HotKeyManager
             id++;
         }
 
+        // 命令的快捷键只跟着「全部」
+        foreach (var (command, binding) in LauncherCommandKeys.Bindings())
+        {
+            var action = CommandPrefix + command;
+            var hotKeyId = CommandHotKeyId(command);
+            var blocks = rule?.BlocksCommands == true;
+            if (blocks && _registered.Remove(action))
+            {
+                PInvoke.UnregisterHotKey(HiddenWindow.Hwnd, hotKeyId);
+                _idToAction.Remove(hotKeyId);
+                _blocked.Add(action);
+            }
+            else if (!blocks && _blocked.Remove(action))
+            {
+                RegisterBinding(hotKeyId, action, binding, blocked: false);
+            }
+        }
+
         SyncTaps();
         LastApplyMilliseconds = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
         Log.Info($"hotkey.block-applied rule={(rule is null ? "none" : rule.AllActions ? "all" : rule.Only.Count.ToString())} ms={LastApplyMilliseconds:F2}");
@@ -129,6 +177,12 @@ internal sealed class HotKeyManager
             return;
         }
 
+        RegisterBinding(id, action, binding, _rule?.Blocks(action) == true);
+    }
+
+    /// <summary>注册一个组合（全局动作、启动器命令共用）；blocked：名单里的应用在前台，不注册、不算失败。</summary>
+    private void RegisterBinding(int id, string action, HotKeyBinding binding, bool blocked)
+    {
         var validation = HotKeyRules.Validate(binding.VirtualKey, binding.Modifiers);
         if (!validation.Ok)
         {
@@ -137,14 +191,15 @@ internal sealed class HotKeyManager
         }
 
         // 名单里的应用在前台：不注册，键原样到它（不算失败）
-        if (_rule?.Blocks(action) == true)
+        if (blocked)
         {
             _blocked.Add(action);
             return;
         }
 
         // 连按两下修饰键：不注册组合，交给 Raw Input 的监听（同一个键只认第一个动作）
-        if (HotKeyRules.IsDoubleTap(binding.VirtualKey, binding.Modifiers) && ModifierTaps.FromVirtualKey(binding.VirtualKey) is { } tap)
+        if (HotKeyRules.IsDoubleTap(binding.VirtualKey, binding.Modifiers) && !action.StartsWith(CommandPrefix, StringComparison.Ordinal) &&
+            ModifierTaps.FromVirtualKey(binding.VirtualKey) is { } tap)
         {
             if (!_taps.TryAdd(tap, action))
             {
@@ -204,6 +259,12 @@ internal sealed class HotKeyManager
         {
             Log.Info("hotkey.fullscreen-swallowed");
             Apply(HotKeyBlockRule.All);
+            return;
+        }
+
+        if (action.StartsWith(CommandPrefix, StringComparison.Ordinal))
+        {
+            CommandPressed?.Invoke(action[CommandPrefix.Length..]);
             return;
         }
 

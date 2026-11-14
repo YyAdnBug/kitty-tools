@@ -49,6 +49,42 @@ internal static partial class SystemCommands
 
     public static List<LauncherItem> Items() => Cached;
 
+    /// <summary>
+    /// 跟着「命令」表（PLAN-v18 L2）：关掉的不出；改了别名的副标题写别名、按别名搜得到、原来的英文关键词不再认（名字、拼音照旧）。
+    /// </summary>
+    public static IEnumerable<LauncherItem> Items(LauncherCommandSettings settings)
+    {
+        foreach (var entry in Table)
+        {
+            var item = Cached.First(cached => cached.Target == entry.Target);
+            var id = LauncherCommandTable.SystemId(entry.Keyword);
+            if (!settings.IsOn(id))
+            {
+                continue;
+            }
+
+            var alias = settings.Alias(id, entry.Keyword);
+            yield return alias == entry.Keyword
+                ? item
+                : item with
+                {
+                    Subtitle = alias ?? string.Empty,
+                    Names = item.Names.Where(name => name != entry.Keyword).Concat(alias is null ? Array.Empty<string>() : new[] { alias }).ToList(),
+                };
+        }
+    }
+
+    /// <summary>「命令」表里系统那一组：编号、标题、原来的关键词、图标。</summary>
+    public static IEnumerable<LauncherBuiltIn> Rows()
+        => Table.Select(entry => new LauncherBuiltIn(LauncherCommandTable.SystemId(entry.Keyword), entry.Title, entry.Keyword, entry.Glyph));
+
+    /// <summary>关键词对应的目标（命令快捷键用）。</summary>
+    public static string? TargetOf(string keyword) => Table.FirstOrDefault(entry => entry.Keyword == keyword)?.Target;
+
+    /// <summary>这一行（目标）在「命令」表里的编号。</summary>
+    public static string? IdOf(string target)
+        => Table.FirstOrDefault(entry => entry.Target == target) is { } entry ? LauncherCommandTable.SystemId(entry.Keyword) : null;
+
     public static LauncherItem? Find(string target) => Cached.FirstOrDefault(item => item.Target == target);
 
     /// <summary>上膛后选中行的副标题；不用确认的是 null。</summary>

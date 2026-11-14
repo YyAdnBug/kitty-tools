@@ -637,7 +637,7 @@ internal static class UiSnapshotProbe
 
     private static async Task SafeRenderSettingsAsync(bool dark, string directory)
     {
-        if (!Wanted("settings") && !Wanted("settings-sync") && !Wanted("settings-hotkeys-block") && !Wanted("settings-hotkeys-shot"))
+        if (!Wanted("settings") && !Wanted("settings-sync") && !Wanted("settings-hotkeys-block") && !Wanted("settings-hotkeys-shot") && !Wanted("settings-sub"))
         {
             return;
         }
@@ -718,6 +718,38 @@ internal static class UiSnapshotProbe
                 }
 
                 SettingsService.Current.HotKeyBlockedApps = saved;
+            }
+
+            // PLAN-v18 L2 L4：启动器页（命令和网页搜索各一行）、命令和别名（改了 kill → k、cb → g 和 Google 撞了、睡眠关掉）、
+            // 网页搜索子页、通用页「功能」一行和它的子页。只在测试档改设置，拍完换回去
+            if (Paths.IsTestProfile && Wanted("settings-sub"))
+            {
+                var aliases = SettingsService.Current.LauncherCommandAliases;
+                var off = SettingsService.Current.LauncherCommandsOff;
+                SettingsService.Current.LauncherCommandAliases = new Dictionary<string, string> { ["builtin:kill"] = "k", ["builtin:cb"] = "g" };
+                SettingsService.Current.LauncherCommandsOff = new List<string> { "system:sleep" };
+                foreach (var (name, page, sub) in new[]
+                         {
+                             ("settings-sub-launcher", "launcher", (string?)null), ("settings-sub-commands", "launcher", "commands"),
+                             ("settings-sub-web", "launcher", "web"), ("settings-sub-general", "general", null),
+                             ("settings-sub-features", "general", "features"),
+                         })
+                {
+                    settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 760));
+                    settings.OpenSubpageForProbe(page, sub);
+                    await Task.Delay(500);
+                    if (page == "launcher" && sub is null)
+                    {
+                        settings.ScrollToSectionForProbe("命令与网页搜索");
+                        await Task.Delay(300);
+                    }
+
+                    await ShootSettingsWindowAsync(settings, name, dark, directory);
+                }
+
+                settings.OpenSubpageForProbe("general", null);
+                SettingsService.Current.LauncherCommandAliases = aliases;
+                SettingsService.Current.LauncherCommandsOff = off;
             }
 
             // PLAN-v18 S3：快捷键页「截图时」两组（改过一个键：钉图 Alt+P；清掉一个：录屏），拍完换回去

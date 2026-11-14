@@ -205,7 +205,17 @@ internal sealed partial class LauncherModel
         _forgotten = null;
         FavoriteCount = 0;
         Groups = new List<LauncherGroup>();
-        var (mode, terms) = LauncherCommands.Classify(query);
+        // 「命令」表（PLAN-v18 L2）：改过的别名换回原关键词交给原来那一套；原关键词改掉 / 关掉的那几条挡住
+        _commands = LauncherCommandTable.FromStored(SettingsService.Current.LauncherCommandAliases, SettingsService.Current.LauncherCommandsOff);
+        var (canonical, blocked) = LauncherCommandTable.Canonical(query, _commands);
+        _blocked = blocked;
+        var (mode, terms) = LauncherCommands.Classify(canonical);
+        if (mode != LauncherMode.Normal && !char.IsWhiteSpace(canonical.FirstOrDefault()) &&
+            blocked.Contains("builtin:" + LauncherCommands.Keyword(mode)))
+        {
+            (mode, terms) = (LauncherMode.Normal, query);
+        }
+
         Mode = mode;
         Terms = terms;
         if (!mode.ListsProcesses() && !mode.ListsApps())
@@ -246,17 +256,32 @@ internal sealed partial class LauncherModel
         }
 
         EmptyText = "没有匹配的结果";
-        Results = Assemble(query);
+        Results = Assemble(query, canonical);
         if (IsShowingHome)
         {
             Groups = LauncherHome.Groups(Results.Count, FavoriteCount);
         }
     }
 
-    private List<LauncherItem> Assemble(string query)
+    /// <summary>「命令」表此刻的设置、这次输入里被挡住的内置命令编号（Search 一开头算）。</summary>
+    private LauncherCommandSettings _commands = LauncherCommandSettings.Empty;
+    private IReadOnlySet<string> _blocked = new HashSet<string>();
+
+    private bool CommandOn(string id) => !_blocked.Contains(id);
+
+    /// <summary>补全提示跟着「命令」表：改了别名的换词，清空的、关掉的不出。</summary>
+    private IEnumerable<LauncherItem> Relabeled(IEnumerable<LauncherItem> items)
+        => items.Select(item => LauncherCommandTable.Relabel(item, _commands)).OfType<LauncherItem>();
+
+    /// <summary>关掉的系统命令也不出现在常用、收藏里（收藏不删，打开就回来）。</summary>
+    private bool Hidden(LauncherItem item)
+        => item.Kind == LauncherKind.Command && SystemCommands.IdOf(item.Target) is { } id && !_commands.IsOn(id);
+
+    private List<LauncherItem> Assemble(string original, string query)
     {
-        var clipboardOn = Features.IsOn(Feature.Clipboard);
-        var translateOn = Features.IsOn(Feature.Translate);
+        var clipboardOn = Features.IsOn(Feature.Clipboard) && CommandOn("builtin:cb");
+        var translateOn = Features.IsOn(Feature.Translate) && CommandOn("builtin:fy");
+        var currencyOn = _commands.IsOn("builtin:currency");
         if (translateOn && LauncherCommands.TranslateQuery(query) is { } text)
         {
             return new List<LauncherItem> { LauncherCommands.TranslateItem(text, Definition(text)) };
@@ -269,51 +294,64 @@ internal sealed partial class LauncherModel
         }
 
         // 「提醒 …」（带空格）只列提醒（PLAN-v12 N6）：能认出时间的先是「建一条」，再是已有的提醒；单输「提醒」出补全提示（排在本地结果后面）。
-        var remindersOn = Features.IsOn(Feature.Reminders);
-        if (remindersOn && ReminderPhrase.Query(query) is { } rest)
+        // 提醒：关掉了全不认；只是改了别名时原来的 remind 不认，中文「提醒」、tx 照旧
+        var remindersOn = Features.IsOn(Feature.Reminders) && _commands.IsOn("builtin:reminder");
+        var firstWord = query.TrimStart().Split((char[]?)null, 2, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? string.Empty;
+        var remindBlocked = !CommandOn("builtin:reminder") && LauncherMatch.Fold(firstWord) == "remind";
+        if (remindersOn && !remindBlocked && ReminderPhrase.Query(query) is { } rest)
         {
             EmptyText = ReminderLauncher.EmptyText;
             return ReminderLauncher.Items(rest, ReminderCenter.List, DateTime.UtcNow, TimeZoneInfo.Local);
         }
 
-        var trimmed = query.Trim();
+        var command = query.Trim();
+        var trimmed = original.Trim();
         if (trimmed.Length == 0)
         {
-            return Home();
+            return Home().Where(item => !Hidden(item)).ToList();
         }
 
         var engines = Engines;
         var direct = DirectItems.ItemsFor(trimmed);
         var keywordItem = WebSearch.KeywordItem(trimmed, engines);
         var prompts = WebSearch.PromptItems(trimmed, engines);
-        var commandPrompts = LauncherCommands.PromptItems(trimmed);
-        var currencyPrompts = ExchangeRates.PromptItems(trimmed);
+        var commandPrompts = LauncherCommands.PromptItems(command);
+        var currencyPrompts = ExchangeRates.PromptItems(command);
+        if (!CommandOn("builtin:currency"))
+        {
+            currencyPrompts = (new List<LauncherItem>(), new List<LauncherItem>());
+        }
+
         var top = new List<LauncherItem>();
-        if (clipboardOn && LauncherCommands.ClipQuery(trimmed) is not null)
+        if (clipboardOn && LauncherCommands.ClipQuery(command) is not null)
         {
             top.Add(LauncherCommands.ClipItem(string.Empty));
         }
 
         if (translateOn)
         {
-            top.AddRange(LauncherCommands.TranslatePrompts(trimmed));
+            top.AddRange(Relabeled(LauncherCommands.TranslatePrompts(command)));
         }
 
-        top.AddRange(currencyPrompts.Exact);
+        top.AddRange(Relabeled(currencyPrompts.Exact));
 
         // 「ip」排在 cb / fy 后面、直达前面（mac）。
-        if (LauncherIp.Matches(trimmed))
+        if (CommandOn("builtin:ip") && LauncherIp.Matches(command))
         {
             top.AddRange(IpItems());
         }
 
         top.AddRange(direct);
-        StartRatesFetchIfStale(trimmed);
-        if (CalculationRow(trimmed) is { } calculation)
+        if (currencyOn)
+        {
+            StartRatesFetchIfStale(trimmed);
+        }
+
+        if (CalculationRow(trimmed, currencyOn) is { } calculation)
         {
             top.Add(calculation);
         }
-        else
+        else if (currencyOn)
         {
             // 货币打到一半（「100 美元 转 英」）列候选；有计算结果时（「10 km to m」）不出。
             top.AddRange(ExchangeRates.Suggestions(trimmed, SettingsService.Current.LauncherRecentCurrencies));
@@ -325,7 +363,7 @@ internal sealed partial class LauncherModel
         }
 
         top.AddRange(prompts.Exact);
-        top.AddRange(commandPrompts.Exact);
+        top.AddRange(Relabeled(commandPrompts.Exact));
 
         // 书签、浏览历史至少 2 个字才搜（1 个字母命中太多；含中文时 1 个字就搜，第四轮体检 U8）；
         // 书签先粗筛（几千个每敲一个字都完整打分太慢）。
@@ -341,7 +379,7 @@ internal sealed partial class LauncherModel
 
         candidates.AddRange(_settings);
         candidates.AddRange(LauncherActions.Items());
-        candidates.AddRange(SystemCommands.Items());
+        candidates.AddRange(SystemCommands.Items(_commands));
         candidates.AddRange(WebSearch.QuicklinkItems(engines));
         candidates.AddRange(bookmarks.Where(item => LauncherMatch.MayMatch(tokens, item)));
         candidates.AddRange(used);
@@ -366,11 +404,12 @@ internal sealed partial class LauncherModel
             (LauncherUsageStore.Instance?.Boost(item, trimmed, now).Query ?? 0) > 0);
         var seen = new HashSet<string>();
         // 「新建提醒…」提示排在本地结果后面：输「提醒」想打开别的「提醒」应用的，Enter 照旧打开它（mac）。
-        var reminderPrompts = remindersOn ? ReminderLauncher.Prompts(trimmed) : Array.Empty<LauncherItem>();
-        return ordered.Concat(history).Concat(prompts.Partial).Concat(commandPrompts.Partial).Concat(currencyPrompts.Partial)
-            .Concat(reminderPrompts)
+        var reminderPrompts = remindersOn && !remindBlocked ? ReminderLauncher.Prompts(command) : Array.Empty<LauncherItem>();
+        return ordered.Concat(history).Concat(prompts.Partial).Concat(Relabeled(commandPrompts.Partial))
+            .Concat(Relabeled(currencyPrompts.Partial))
+            .Concat(Relabeled(reminderPrompts))
             .Concat(fallback)
-            .Where(item => seen.Add(item.Id))
+            .Where(item => !Hidden(item) && seen.Add(item.Id))
             .ToList();
     }
 
@@ -487,14 +526,15 @@ internal sealed partial class LauncherModel
     }
 
     /// <summary>计算那一行：算得出来就是结果；是汇率换算、可还没有汇率表时是「正在取汇率…」/「没取到汇率」占位行（不能粘贴）。</summary>
-    private LauncherItem? CalculationRow(string query)
+    /// <summary>计算那一行；currency：「命令」表里汇率换算开着（关掉 = 不换算货币、不取汇率表，算式照算）。</summary>
+    private LauncherItem? CalculationRow(string query, bool currency = true)
     {
-        if (Calculator.ItemFor(query, Rates, HomeCurrency) is { } item)
+        if (Calculator.ItemFor(query, currency ? Rates : null, HomeCurrency) is { } item)
         {
             return item;
         }
 
-        return Rates is null && ExchangeRates.RequestFor(query) is not null
+        return currency && Rates is null && ExchangeRates.RequestFor(query) is not null
             ? ExchangeRates.Placeholder(query, _ratesFailed)
             : null;
     }

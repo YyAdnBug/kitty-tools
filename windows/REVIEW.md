@@ -685,6 +685,14 @@ mac 的单测在 `macos/KittyToolsTests/`，样本和期望值能搬就搬。只
   - 验：单测 938（新 18：HotKeyBlock 6、ShotKeys 4、ModifierTaps 8）；`--hotkey-block-probe`（Debug，假装前台换 exe、不发按键）全对，注册 / 注销 20 次切换中位 0.015 ms、最长 0.045 ms（第一次带上开 / 关 Raw Input 1.6 ms）；AOT x64 / ARM64 0 警告（96.4 / 102.0 MB）；截图 settings-hotkeys-block(-empty)、settings-hotkeys-shot-*、shot-rebind（浅深）。内存全量和空闲 CPU 随第 4 批补。
   - 替用户定的：托盘那一项认「最后一个外部窗口」时跳过 `XamlExplorerHostIslandWindow`、`Windows.UI.Core.CoreWindow`（开始菜单、通知中心）；截图时的键多出截图翻译、自动滚、裁剪三项（Windows 工具栏上有）；连按两下只听键盘，中间点了鼠标也算（听鼠标要收每一下移动，`ponytail:`）；同一个连按键只认第一个动作，第二个那一行写「和「…」重复」。
   - 没测：W3（管理员窗口在前台时 RegisterHotKey / Raw Input 收不收得到）、W4 远程桌面、独占全屏游戏、真按键（录制框、截图里改过的键、连按两下）、托盘那一项（HANDTEST 1258–1271）。
+  - 空闲 CPU 0.021 %（静置 30 s 后量 300 s，同第 2 批）；内存全量在跑，随第 5 批补。
+- **第 4 批（`git log --grep "PLAN-v18 第 4 批"`）**：L2、L4、L3 + `15bcac45` 的用法提示。
+  - 命令和别名（Core `LauncherCommandTable`，照 mac LauncherCommands）：12 条关键词命令（open find quit hide forcequit kill port ip cb fy remind currency，提醒 / 汇率默认英文）+ 12 条系统命令，每条别名 + 开关；`LauncherModel.Search` 一开头把别名换回原关键词交给原来那一套，原关键词改掉 / 关掉的挡住；补全提示换词或不出；关掉的系统命令搜索、常用、收藏里都藏；汇率关掉不换算、不取表。提醒的用法提示写用户打的那个词。
+  - 设置：启动器页「命令与网页搜索」两行推子页（命令和别名、网页搜索与快捷链接），通用页「功能 ›」一行推子页；两行的小字照 mac 的 summary（Core `SettingsSummary.Features`、`WebSearch.Summary`）。别名撞了（别的命令、网页搜索关键词）描橙框。
+  - 命令快捷键（L3，`Launcher/LauncherCommandKeys.cs`）：表里「快捷键」一列，和全局快捷键、别的命令查重；HotKeyManager 每条命令一个固定热键号（1000 起、这次运行不复用）；注册跟着启动器功能开关和那条命令的开关；停用名单「全部」连它们一起停。按了：系统命令直接跑、要确认的打开启动器填好；关键词命令打开启动器填好「别名 」。导出导入 launcherCommandAliases / launcherCommandsOff / launcherCommandHotKeys。
+  - 验：单测 945（新 7：命令表 5、设置小字 2）；`--hotkey-block-probe` 加了命令快捷键四条（名单外注册着、「全部」停、只停几个不管、重新注册热键号还是 1000）全对；截图 settings-sub-*（浅深）；AOT x64 / ARM64 0 警告（96.6 / 102.2 MB）。内存全量、空闲 CPU 随第 5 批补。
+  - 替用户定的：脚本命令（第 6–8 批）没有，表里先只有关键词、系统两组，筛选只留「只看开着的」；子页页头的图标是通用的齿轮；命令快捷键不能设成连按两下。
+  - 没做：mac 启动器 ⌘K 里「改别名…」直达这一行（要动启动器的操作菜单，跟脚本那几批一起做）。没测：真打字、真按命令快捷键、导出导入（HANDTEST 1272–1280）。
 
 ### 停下来问用户
 

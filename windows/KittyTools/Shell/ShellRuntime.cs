@@ -136,6 +136,8 @@ internal sealed class ShellRuntime
         RecordingHost.Changed += Tray.Refresh;
         AudioHost.Changed += Tray.Refresh;
         HotKeys.Pressed += OnHotKey;
+        // 启动器每条命令的快捷键（PLAN-v18 L3）
+        HotKeys.CommandPressed += LauncherCommandKeys.Run;
         RegisterHotKeys();
         // 按应用停用快捷键（PLAN-v17）：前台一变按名单注销 / 注册
         HotKeyBlocker.Start();
@@ -1576,5 +1578,10 @@ internal sealed class ShellRuntime
             Enum.GetValues<Feature>().Select(feature => $"{feature}:{Features.IsOn(feature)}")
                 .Concat(settings.HotKeys
                     .OrderBy(hotkey => hotkey.Action, StringComparer.Ordinal)
-                    .Select(hotkey => $"{hotkey.Action}:{hotkey.Modifiers}:{hotkey.VirtualKey}")));
+                    .Select(hotkey => $"{hotkey.Action}:{hotkey.Modifiers}:{hotkey.VirtualKey}"))
+                // 命令的快捷键和命令的开关（关掉的命令不注册它的键）
+                .Concat((settings.LauncherCommandHotKeys ?? new Dictionary<string, string>())
+                    .OrderBy(pair => pair.Key, StringComparer.Ordinal)
+                    .Select(pair => $"{pair.Key}={pair.Value}"))
+                .Concat(settings.LauncherCommandsOff ?? new List<string>()));
 }
