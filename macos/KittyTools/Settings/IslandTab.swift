@@ -1,5 +1,6 @@
 // 设置 › 刘海岛（2026-11-12，PR #17 SeyoZhou 提的，收进来时改成本 App 的写法）：点刘海、快捷键「打开刘海岛」叫出来的
-// 那一张上，快捷动作开哪几个、什么先后（拖动排序；右键和读屏有上移 / 下移，同翻译服务的列表），列不列最近的提示。
+// 那一张上，快捷动作开哪几个、什么先后（拖动排序；右键和读屏有上移 / 下移，同翻译服务的列表），列不列最近的提示
+// （2026-11-14 起默认不列）。
 // 岛上的提示是全 App 的轻提示，没有总开关（mac-native §1）。功能关着的动作照样列、开关变灰（那一张上本来就不出），
 // 重新打开功能后照原来的选择回来。2026-11-13 起这一页是刘海岛插件的页（点刘海那一张、两边的活动、系统提示归它，
 // 拍板 P1b）：没添加时不在侧栏，页底一行「移除」。最上面一组是正在播放（刘海岛扩展第 2 期，默认关；2026-11-13 拍板放在这一页、
@@ -10,7 +11,7 @@ import SwiftUI
 struct IslandTab: View {
   @AppStorage(Prefs.islandActionOrder) private var order = ""
   @AppStorage(Prefs.islandActionsOff) private var offText = ""
-  @AppStorage(Prefs.islandShowsHistory) private var showsHistory = true
+  @AppStorage(Prefs.islandShowsHistory) private var showsHistory = false
   @AppStorage(Prefs.islandNotchClicks) private var notchClicks = true
   @AppStorage(Prefs.islandNoticePower) private var noticePower = false
   @AppStorage(Prefs.islandNoticeBattery) private var noticeBattery = false
@@ -45,7 +46,7 @@ struct IslandTab: View {
         NewTitle("正在播放", page: .island, fresh: navigation?.fresh ?? [])
       } footer: {
         SectionFootnote(
-          "读系统的「正在播放」要另起一个小进程（约 4 MB，没在放时不耗电），关掉就退出。暂停 30 秒后刘海两边收起，点刘海叫出的那一张里照样列着。")
+          "读系统的「正在播放」要另起一个小进程（约 4 MB，没在放时不耗电），关掉就退出。暂停 30 秒后刘海两边收起；想接着放，点刘海再两指往下滑一次还找得到它。")
       }
       Section {
         // 打开时先问「日历」授权，给了才真的打开（偏好开着 = 当时授权过）；没给就留在关着、橙字说怎么开
@@ -134,27 +135,28 @@ struct IslandTab: View {
         Text("快捷动作")
       } footer: {
         SectionFootnote(
-          "点刘海或者按「打开刘海岛」的快捷键（到 设置 › 快捷键 里设），叫出来的那一张最上面是这一排。拖动调整先后。")
+          "点刘海、两指往下滑或者按「打开刘海岛」的快捷键（到 设置 › 快捷键 里设）叫出来的就是这一排。刘海两边挂着东西（在放歌、在录制）时，点刘海先展开它，再往下滑一次才是这一排。拖动调整先后。"
+        )
       }
       Section {
         Toggle(isOn: $showsHistory) {
           Text("列出最近的提示")
-          Text("本次启动以来最近 10 条，新的在前；不列也不影响提示照常弹出")
+          Text("列在快捷动作下面：本次启动以来最近 10 条，新的在前；不列也不影响提示照常弹出")
         }
         Toggle(isOn: $notchClicks) {
-          Text("点刘海叫出那一张")
-          Text("停在刘海上会鼓起一点，点一下或者两指往下滑打开")
+          Text("点刘海打开")
+          Text("停在刘海上会鼓起一点，点一下或者两指往下滑打开：刘海两边挂着东西时是它的卡片，没有时是快捷动作")
         }
         Toggle(isOn: $hoverExpands) {
-          Text("停在刘海两边自动展开")
-          Text("刘海两边挂着东西时，指针停在上面一下就展开成卡片；刘海正中照旧点了才打开那一张")
+          Text("停在刘海上自动展开")
+          Text("刘海两边挂着东西时，指针停在刘海或者它两边一下就展开成卡片；没挂东西时点了才打开")
         }
         Toggle(isOn: $haptics) {
           Text("触感反馈")
           Text("滑动切歌、展开卡片、进度条拖到头时，触控板轻轻一下")
         }
       } footer: {
-        SectionFootnote("装了别的刘海 App 时可以关掉「点刘海叫出那一张」：提示和挂在刘海两边的录制计时这些照常，快捷键照样能叫出那一张。")
+        SectionFootnote("装了别的刘海 App 时可以关掉「点刘海打开」：提示和挂在刘海两边的录制计时这些照常，快捷键照样能叫出快捷动作。")
       }
       Section {
         Toggle(isOn: $noticePower) {
@@ -249,7 +251,7 @@ private struct ActionRow: View {
         Text(action.title).font(.system(size: 13))
         if !active, let feature = action.feature {
           Text(
-            feature.isPlugin ? "「\(feature.title)」插件没添加，那一张上不出现" : "「\(feature.title)」功能关着，那一张上不出现"
+            feature.isPlugin ? "「\(feature.title)」插件没添加，这一排上不出现" : "「\(feature.title)」功能关着，这一排上不出现"
           )
           .font(.system(size: 11))
           .foregroundStyle(.secondary)

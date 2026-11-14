@@ -203,11 +203,10 @@ struct NowPlayingTests {
     island.tapped()
     island.swipeTrack(forward: true)
     #expect(sent == [.next, .next])
-    // 那一张开着照样认（它最上面列着正在播放那一行）
+    // 那一张开着时不认（2026-11-14 起它上面没有播放那一行，切了没处给反馈）
     let board = Island(showing: nil, geometry: notch, board: [], activities: [media])
-    #expect(board.swipeTrack(forward: true))
-    #expect(sent == [.next, .next, .next])
-    sent = [.next, .next]
+    #expect(!board.swipeTrack(forward: true))
+    #expect(sent == [.next, .next])
     // 岛上是别的提示：不认
     let toast = Island(
       showing: .init(
@@ -287,14 +286,18 @@ struct NowPlayingTests {
     #expect(capsule.content == nil)
   }
 
-  /// 停在耳朵上自动展开：正在播放时右耳那一截是播放 / 暂停钮，停在它上面不展开；别的活动整只耳朵都算。
+  /// 停在刘海、耳朵上自动展开：正在播放时右耳那一截是播放 / 暂停钮，停在它上面不展开；别的活动整座岛都算。
   /// 进度条拖到头 / 尾给一下触感：刚到那一头才给，停在那一头继续拖不重复给；长歌名多出不到 1 pt 不滚
   @Test func hoverExpandAndFeel() {
     // 形体 700…1000，耳朵宽 36（另加鼓起的 8）：744 往左是左耳、956 往右是右耳，中间是刘海
     let shape = CGRect(x: 700, y: 0, width: 300, height: 40)
     #expect(Island.hoverExpands(pointerX: 720, shape: shape, onMedia: true))
-    #expect(!Island.hoverExpands(pointerX: 850, shape: shape, onMedia: true))
-    #expect(!Island.hoverExpands(pointerX: 850, shape: shape, onMedia: false))
+    // 刘海正中也算（2026-11-14：悬停、点、下滑开的是同一张面）
+    #expect(Island.hoverExpands(pointerX: 850, shape: shape, onMedia: true))
+    #expect(Island.hoverExpands(pointerX: 850, shape: shape, onMedia: false))
+    // 设置里关了「点刘海打开」：刘海正中不算，耳朵照旧
+    #expect(!Island.hoverExpands(pointerX: 850, shape: shape, onMedia: true, notch: false))
+    #expect(Island.hoverExpands(pointerX: 720, shape: shape, onMedia: true, notch: false))
     #expect(!Island.hoverExpands(pointerX: 980, shape: shape, onMedia: true))
     #expect(Island.hoverExpands(pointerX: 980, shape: shape, onMedia: false))
     #expect(IslandScrubber.hitEnd(from: 10, to: 0, duration: 240))

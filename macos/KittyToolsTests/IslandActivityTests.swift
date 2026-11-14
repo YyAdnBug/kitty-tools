@@ -192,6 +192,67 @@ struct IslandActivityTests {
     #expect(!island.isBoardOpen)
   }
 
+  /// 一个刘海只有一张面（2026-11-14）：有活动时点刘海 / 往下滑开的是最要紧那个活动的卡片，再往下滑轮到下一个活动、
+  /// 最后是那一张，那一张上再往下滑回到第一个；没有活动时直接是那一张。别的提示开着时不轮
+  @Test func openingAndRotating() {
+    let record = activity("录屏", .record)
+    let timer = activity("喝水", .reminder)
+    let island = Island(showing: nil, geometry: notch, activities: [timer, record])
+    island.swipeDown()
+    #expect(island.cardActivity?.id == "录屏" && island.content != nil && !island.isBoardOpen)
+    island.swipeDown()
+    #expect(island.cardActivity?.id == "喝水" && !island.isBoardOpen)
+    island.swipeDown()
+    #expect(island.isBoardOpen && island.cardActivity == nil && island.content == nil)
+    island.swipeDown()
+    #expect(island.cardActivity?.id == "录屏" && !island.isBoardOpen)
+    // 活动中途结束了：从剩下的接着轮
+    island.endActivity("录屏")
+    #expect(island.content == nil)
+    island.openTop()
+    #expect(island.cardActivity?.id == "喝水")
+    island.rotate()
+    #expect(island.isBoardOpen)
+    island.toggleBoard()
+    // 别的提示开着：不轮、不开
+    island.show("已复制")
+    island.swipeDown()
+    island.rotate()
+    #expect(island.content?.title == "已复制" && !island.isBoardOpen)
+    // 没有活动：打开就是那一张；那一张上再往下滑不动
+    let idle = Island(showing: nil, geometry: notch)
+    idle.openTop()
+    #expect(idle.isBoardOpen)
+    idle.swipeDown()
+    #expect(idle.isBoardOpen)
+    // 只有暂停了一阵的正在播放（不上耳朵）：打开是那一张，从那一张往下滑轮得到它
+    var paused = activity("音乐", .media)
+    paused.onWings = false
+    let quiet = Island(showing: nil, geometry: notch, activities: [paused])
+    quiet.openTop()
+    #expect(quiet.isBoardOpen)
+    quiet.swipeDown()
+    #expect(quiet.cardActivity?.id == "音乐")
+    // 设置里关了「点刘海打开」：往下滑不开、也不轮
+    let off = Island(showing: nil, geometry: notch, activities: [record])
+    off.respondsToNotch = false
+    off.swipeDown()
+    #expect(off.content == nil)
+    off.tapped()
+    off.swipeDown()
+    #expect(off.cardActivity?.id == "录屏" && !off.isBoardOpen)
+    // 刚换过面的 0.8 秒里不轮（悬停刚把卡片展开，那一下点击才到）
+    let start = ContinuousClock.now
+    #expect(Island.canTurn(since: nil, now: start))
+    #expect(!Island.canTurn(since: start, now: start + .milliseconds(300)))
+    #expect(Island.canTurn(since: start, now: start + .milliseconds(800)))
+    // 点在刘海上该做什么
+    #expect(Island.notchClick(hasContent: false, boardOpen: false, cardOpen: false) == .open)
+    #expect(Island.notchClick(hasContent: false, boardOpen: true, cardOpen: false) == .closeBoard)
+    #expect(Island.notchClick(hasContent: true, boardOpen: false, cardOpen: true) == .rotate)
+    #expect(Island.notchClick(hasContent: true, boardOpen: false, cardOpen: false) == .ignore)
+  }
+
   /// 提示照旧从刘海长出来（盖住耳朵），收起后还是耳朵；那一张同样
   @Test func noticesAndBoardReturnToWings() {
     let island = Island(showing: nil, geometry: notch, activities: [activity("录屏", .record)])

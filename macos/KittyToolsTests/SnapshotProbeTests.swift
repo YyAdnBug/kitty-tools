@@ -629,7 +629,7 @@ struct SnapshotProbeTests {
     defer { islandPrefs.removePersistentDomain(forName: islandSuite) }
     islandPrefs.set("noteCapture\nscreenshot", forKey: Prefs.islandActionOrder)
     islandPrefs.set("recognizeText", forKey: Prefs.islandActionsOff)
-    islandPrefs.set(false, forKey: Prefs.islandShowsHistory)
+    islandPrefs.set(true, forKey: Prefs.islandShowsHistory)
     for dark in [false, true] {
       try snapshot(
         IslandTab().defaultAppStorage(islandPrefs), size: NSSize(width: 640, height: 1330),
@@ -1052,7 +1052,7 @@ struct SnapshotProbeTests {
     try snapshot(
       IslandView(island: Island(showing: nil, geometry: notch, peeking: true)),
       size: notch.windowSize, dark: false, to: "\(out)/island-peek.png")
-    // 活动（刘海岛扩展 B1–B3）：耳朵上的录屏计时、长任务一圈进度、指针停在耳朵上鼓起、点耳朵展开的卡片、那一张最上面的活动
+    // 活动（刘海岛扩展 B1–B3）：耳朵上的录屏计时、长任务一圈进度、指针停在耳朵上鼓起、点耳朵展开的卡片
     let recording = Island.Activity(
       id: "record", kind: .record, title: "录屏中", symbol: "record.circle.fill", tone: .error,
       trailing: .elapsed(since: .now.addingTimeInterval(-42)),
@@ -1075,14 +1075,8 @@ struct SnapshotProbeTests {
     try snapshot(
       IslandView(island: card), size: notch.windowSize, dark: false,
       to: "\(out)/island-wings-card.png")
-    try snapshot(
-      IslandView(
-        island: Island(
-          showing: nil, geometry: notch, board: records, quickActions: quick,
-          activities: [recording, compressing])),
-      size: notch.windowSize, dark: false, to: "\(out)/island-board-activities.png")
     // 正在播放（刘海岛扩展第 2 期）：耳朵上的封面 + 跳动条（在播 / 暂停）、点耳朵的播放卡片（有封面 / 没有封面也没有 App 图标）、
-    // 那一张最上面的一行（和录屏一起）。封面是画出来的一块渐变，不读用户的东西
+    // 封面是画出来的一块渐变，不读用户的东西
     let cover = NSImage(size: NSSize(width: 256, height: 256), flipped: false) { rect in
       NSGradient(colors: [.systemPink, .systemOrange])?.draw(in: rect, angle: 45)
       return true
@@ -1215,15 +1209,9 @@ struct SnapshotProbeTests {
         .background(.black)
         // 岛固定是深色：强调色按深色那一档取
         .environment(\.colorScheme, .dark),
-        size: NSSize(width: 340, height: 134), dark: true,
+        size: NSSize(width: 360, height: 158), dark: true,
         to: "\(out)/island-media-card-scrub.png")
     }
-    try snapshot(
-      IslandView(
-        island: Island(
-          showing: nil, geometry: notch, board: records, quickActions: quick,
-          activities: [recording, media(playing: true, artwork: cover)])),
-      size: notch.windowSize, dark: false, to: "\(out)/island-board-media.png")
     // 黄色强调色：信息 / 进行中的底是强调色，上面的符号要换深色（Style.onBrand）才看得见——岛垫的圆底、自带圆底的各一张。
     // 只换内存里的颜色，不写偏好
     Accent.shared.select(.yellow, persists: false)

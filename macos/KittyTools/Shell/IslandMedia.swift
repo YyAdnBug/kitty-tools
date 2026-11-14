@@ -1,4 +1,5 @@
-// 刘海岛上的正在播放（2026-11-13 刘海岛扩展第 2 期，拍板 E2）：耳朵上的封面 + 跳动条、点耳朵展开的播放卡片、那一张里的一行。
+// 刘海岛上的正在播放（2026-11-13 刘海岛扩展第 2 期，拍板 E2）：耳朵上的封面 + 跳动条、点耳朵 / 点刘海展开的播放卡片
+// （2026-11-14 起那一张里不再有它的一行）。
 // 数据是 Island.Media（Shell/NowPlaying.swift 给）。画在岛的黑底上（同 Island 的深色、字号刻度）。
 // 跳动条是图层动画（CABasicAnimation，渲染服务做、本进程不逐帧算）：放歌时一挂几个小时，Whisker §8 循环只动变换、不用 TimelineView；
 // 只在在播且速率 > 0 时动，暂停 / 缓冲停住，减弱动态效果时不动。进度条和时间只在卡片开着时每秒推一次（TimelineView）；
@@ -191,7 +192,7 @@ struct IslandMediaCard: View {
         // 有时长（直播之类报 0 的不画）、有进度才画
         IslandScrubber(island: island, media: media, staged: staged)
       }
-      IslandTransport(media: media, size: 26, modes: true)
+      IslandTransport(media: media, size: 26)
         .frame(maxWidth: .infinity)
     }
     .padding(.horizontal, 20)
@@ -554,18 +555,17 @@ struct IslandScrubber: View {
   }
 }
 
-/// 上一首、播放 / 暂停、下一首：白色实心符号，不支持的灰掉。播放卡片上（modes）是一行大的：播放 / 暂停 26 pt、两边 21，
-/// 随机、循环 14 pt 靠卡片两头（2026-11-14 以 Alcove 为准：原来 18 / 15 / 12 挤在中间）；那一张里的一行是小的、挤在一起
+/// 播放卡片上的那一行控制：上一首、播放 / 暂停、下一首（白色实心符号，播放 / 暂停 26 pt、两边 21，不支持的灰掉），
+/// 随机、循环 14 pt 靠卡片两头（2026-11-14 以 Alcove 为准：原来 18 / 15 / 12 挤在中间）。这个 App 随机、循环都不支持就不占
+/// 位置，只支持一样时另一头空着（三个主按钮照旧居中）
 struct IslandTransport: View {
   let media: Island.Media
   /// 播放 / 暂停的字号
   let size: CGFloat
-  /// 播放卡片上的那一行：两头加随机、循环。这个 App 两样都不支持就不占位置，只支持一样时另一头空着（三个主按钮照旧居中）
-  var modes = false
 
   var body: some View {
     let snapshot = media.snapshot
-    let showsModes = modes && (snapshot.shuffle != nil || snapshot.repeatMode != nil)
+    let showsModes = snapshot.shuffle != nil || snapshot.repeatMode != nil
     HStack(spacing: 0) {
       if showsModes {
         if let shuffle = snapshot.shuffle {
@@ -599,8 +599,8 @@ struct IslandTransport: View {
   /// 中间三个
   private func main(_ snapshot: NowPlayingSnapshot) -> some View {
     let jumps = Self.usesJumps(snapshot)
-    let side = modes ? size - 5 : size - 3
-    return HStack(spacing: modes ? size : size * 1.4) {
+    let side = size - 5
+    return HStack(spacing: size) {
       if jumps {
         button("gobackward.15", label: "后退 15 秒", size: side, enabled: true) { jump(-15) }
       } else {
@@ -668,49 +668,16 @@ struct IslandTransport: View {
     Button(action: run) {
       Image(systemName: symbol)
         .font(.system(size: size, weight: .semibold))
-        .foregroundStyle(.white.opacity(enabled ? (modes ? 0.95 : 0.92) : 0.3))
+        .foregroundStyle(.white.opacity(enabled ? 0.95 : 0.3))
         .contentTransition(.symbolEffect(.replace))
         // 符号替换只在带动画的事务里走（快照是播放器报回来才换的，不在 withAnimation 里）
         .animation(Style.Motion.snap.animation(), value: symbol)
-        .frame(width: size + (modes ? 14 : 12), height: size + 10)
+        .frame(width: size + 14, height: size + 10)
         .contentShape(Rectangle())
     }
     .buttonStyle(IslandButtonStyle())
     .disabled(!enabled)
     .accessibilityLabel(label)
-  }
-}
-
-/// 那一张里的一行（高 34）：封面（点了收起那一张、切到那个 App）、歌名 / 艺人、小一号的播放控制
-struct IslandMediaRow: View {
-  let media: Island.Media
-  /// 同那一张里别的按钮（Island.perform：先收再跑）
-  let perform: (Island.Action) -> Void
-
-  var body: some View {
-    let snapshot = media.snapshot
-    HStack(spacing: 10) {
-      Button {
-        perform(Island.Action("切到 App", opens: true, run: media.open))
-      } label: {
-        IslandMediaArt(media: media, size: 22)
-      }
-      .buttonStyle(IslandButtonStyle())
-      .accessibilityLabel("切到\(Island.Media.appLabel(snapshot))")
-      VStack(alignment: .leading, spacing: 1) {
-        Text(snapshot.title)
-          .font(.system(size: 12, weight: .semibold))
-          .foregroundStyle(.white.opacity(0.92))
-        Text(Island.Media.byline(snapshot))
-          .font(.system(size: 11))
-          .foregroundStyle(.white.opacity(0.5))
-      }
-      .lineLimit(1)
-      .truncationMode(.tail)
-      Spacer(minLength: 8)
-      IslandTransport(media: media, size: 13)
-    }
-    .frame(height: 34)
   }
 }
 

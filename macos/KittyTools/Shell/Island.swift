@@ -6,12 +6,14 @@
 // 点岛本身执行「打开」类的按钮；双指往上滑收起；鼠标在岛上时来的新提示先排着。窗口平时不接鼠标，只在指针落在
 // 画出来的形状上时才接（全局 + 本 App 的鼠标移动监听按位置开关），透明处和阴影那一圈照旧点穿。
 // 主动叫出来（同日用户「不能手动交互吗」，三项按推荐）：没有提示时点刘海（指针停在刘海上岛先鼓起一点），或者按
-// 「打开刘海岛」的快捷键（哪块屏都行），长出「那一张」：一排快捷动作 + 本次启动以来最近 10 条提示（IslandBoard.swift；
-// 快捷动作开哪几个、什么先后，列不列提示，在 设置 › 刘海岛，2026-11-12 PR #17）。
+// 「打开刘海岛」的快捷键（哪块屏都行），长出「那一张」：一排快捷动作，设置里打开时再列本次启动以来最近 10 条提示
+// （IslandBoard.swift；快捷动作开哪几个、什么先后，列不列提示（2026-11-14 起默认不列），在 设置 › 刘海岛，2026-11-12 PR #17）。
 // 用快捷键叫出的那一张临时当 key（第四轮体检 U9）：Esc 收、←→ 选快捷动作、↩ 执行，到点自己收（同平时的岛）；收起时键盘
 // 还给原来那扇窗口 / 原来的 App。点刘海叫出的照旧不抢键盘。
 // 活动（2026-11-13，刘海岛扩展 B1–B3，IslandActivity.swift）：一直挂着的状态（录制中、长任务……）在刘海屏上收起时挂在
-// 刘海两侧的耳朵上；指针停上去鼓起一点，点耳朵展开成卡片，点刘海照旧是那一张（最上面列着活动）。提示收起后缩回耳朵。
+// 刘海两侧的耳朵上；指针停上去鼓起一点。**一个刘海只有一张面**（2026-11-14）：有活动时点耳朵、点刘海、往下滑、停一下，
+// 开的都是最要紧那个活动的卡片（openTop），再往下滑 / 再点刘海轮到下一个活动、最后是那一张（rotate）；没有活动时点刘海
+// 才是那一张。提示收起后缩回耳朵。
 // 挂着直到处理（pin，2026-11-04 提醒 C2）：到点的提醒不到点收起，中间来的别的提示先显示、收起后换回它；只有它的按钮、×、
 // 双指上滑收得掉（×、上滑告诉调用方「处理了」）。一次只挂一条（几条提醒由调用方合成一条）。
 
@@ -109,7 +111,7 @@ import SwiftUI
     item.onClick = { [weak self] in self?.expand($0) }
     return item
   }()
-  /// 点刘海、停在刘海上、两指往下滑叫出那一张（设置 › 刘海岛「点刘海叫出那一张」，刘海岛扩展 G2；AppDelegate 跟着偏好给）。
+  /// 点刘海、停在刘海上、两指往下滑打开（设置 › 刘海岛「点刘海打开」，刘海岛扩展 G2；AppDelegate 跟着偏好给）。
   /// 关着时这几样都不响应，快捷键照样能叫出来；耳朵上的活动照常能停、能点
   @ObservationIgnored var respondsToNotch = true
   /// 停在耳朵上自动展开最要紧的那个活动（设置 › 刘海岛，以 Alcove 为准的那一轮 C1；AppDelegate 跟着偏好给）
@@ -172,6 +174,8 @@ import SwiftUI
   @ObservationIgnored private var remaining = Duration.zero
   /// 内容换过 / 刚展开的时刻：之后 clickGuard 以内的点击不算（拍板 B6，按钮会挪位置）
   @ObservationIgnored private var changedAt: ContinuousClock.Instant?
+  /// 上一次换面（展开某个活动的卡片、轮到那一张）的时刻：之后 turnGuard 之内的点刘海 / 往下滑不轮
+  @ObservationIgnored private var turnedAt: ContinuousClock.Instant?
   /// 鼠标在岛上时来的新提示：移开再换上，只留最新一条（拍板 B5）
   @ObservationIgnored private var pending: (content: Content, actions: [Action])?
   /// 挂着直到处理的那一条（提醒，PLAN §10「提醒」C2；pin）：不到点收起，别的提示来了先显示那条、收起后换回它
@@ -256,6 +260,16 @@ import SwiftUI
   /// 离开岛后至少再留多久
   static let leaveDelay = Duration.milliseconds(1500)
   static let clickGuard = Duration.milliseconds(300)
+  /// 刚换面之后多久不轮（评审 1）：指针停在刘海上 0.3 秒卡片自己展开了，你那一下点击 / 下滑才到——本意是「打开」，
+  /// 不能当成「轮到下一个」把刚出来的卡片又换掉
+  static let turnGuard = Duration.milliseconds(800)
+
+  /// 现在能不能轮（纯函数）
+  static func canTurn(
+    since turned: ContinuousClock.Instant?, now: ContinuousClock.Instant = .now
+  ) -> Bool {
+    turned.map { now - $0 >= turnGuard } ?? true
+  }
   /// 那一张多宽、最高多少（一排快捷动作 + historyLimit 行提示）
   static let boardWidth: CGFloat = 420
   static let boardHeight: CGFloat = 440
@@ -504,14 +518,12 @@ import SwiftUI
   private(set) var skip: Skip?
 
   /// 双指在岛上左右滑（手指往左 = 下一首，同系统翻页的方向；以 Alcove 为准的那一轮 A3）：正在播放露在耳朵上、它的卡片
-  /// 开着、或者那一张开着时切歌。一次手势只切一首（IslandHost.scrollWheel）；这个源不支持上 / 下一首就不动；
+  /// 开着时切歌（那一张开着时不认：2026-11-14 起它上面没有播放那一行，切了没处给反馈）。一次手势只切一首（IslandHost.scrollWheel）；这个源不支持上 / 下一首就不动；
   /// 岛上是别的提示、别的活动的卡片时不认
   @discardableResult func swipeTrack(forward: Bool) -> Bool {
-    let media =
-      isBoardOpen
-      ? activities.first { $0.media != nil }?.media
-      : content == nil ? activity?.media : cardActivity?.media
-    guard let media, forward ? media.snapshot.canNext : media.snapshot.canPrevious else {
+    let media = content == nil ? activity?.media : cardActivity?.media
+    guard !isBoardOpen, let media, forward ? media.snapshot.canNext : media.snapshot.canPrevious
+    else {
       return false
     }
     media.send(forward ? .next : .previous)
@@ -520,10 +532,63 @@ import SwiftUI
     return true
   }
 
-  /// 双指在刘海上往下滑（刘海岛扩展 G1，同点刘海）：没开着东西时打开那一张。指针停在刘海上岛鼓起、窗口接鼠标时才收得到
+  /// 双指在刘海上往下滑（刘海岛扩展 G1，同点刘海）：没开着东西时打开（openTop）；活动的卡片、那一张开着时轮到下一个
+  /// （rotate）。指针停在刘海上岛鼓起、窗口接鼠标时才收得到
   func swipeDown() {
-    guard respondsToNotch, content == nil, !isBoardOpen, !isSuppressed() else { return }
-    toggleBoard()
+    guard respondsToNotch, !isSuppressed() else { return }
+    if content == nil, !isBoardOpen {
+      openTop()
+    } else if isBoardOpen || cardActivity != nil {
+      rotate()
+    }
+  }
+
+  /// 那一张刚由鼠标 / 触控板打开（点刘海、往下滑、轮到它）：指针就停在岛上、没有鼠标移动来报——当它在岛上，窗口才接得到
+  /// 紧跟着的那一下往下滑（评审 2）；指针其实不在时 0.2 秒一次的 hoverCheck 会纠正
+  private func settleOnBoard() {
+    if !isStaged, isBoardOpen { hover(true) }
+  }
+
+  /// 打开（一个刘海只有一张面，2026-11-14 用户：悬停出播放卡片、点却出那一张，是两样东西；各家刘海 App 都是悬停、点、
+  /// 下滑开同一张面）：有活动 = 最要紧那个活动的卡片；没有 = 快捷动作那一张。点刘海、双指往下滑走这里；悬停只在有活动时
+  /// 展开（armHoverExpand），快捷键「打开刘海岛」照旧直接是那一张（键盘只管得了快捷动作）
+  func openTop() {
+    guard let activity else {
+      toggleBoard()
+      return settleOnBoard()
+    }
+    expand(activity.id)
+    // 指针就停在岛上（没有鼠标移动来报）：当它在岛上，不然窗口不接鼠标、卡片 2 秒就收
+    if !isStaged { hover(true) }
+  }
+
+  /// 活动从要紧到不要紧（卡片轮换的先后，同耳朵上露哪个的先后）
+  private var ranked: [Activity] {
+    activities.sorted { ($0.kind, $0.started) > ($1.kind, $1.started) }
+  }
+
+  /// 卡片开着时再往下滑 / 再点一下刘海：轮到下一个活动的卡片，轮完是快捷动作那一张；那一张开着时往下滑回到第一个活动
+  /// （没有活动就不动）。别的提示开着时不轮；刚换过面的 0.8 秒里不轮（turnGuard；摆出来的岛不等）
+  func rotate() {
+    guard isStaged || Self.canTurn(since: turnedAt) else { return }
+    let order = ranked
+    if isBoardOpen {
+      guard let first = order.first else { return }
+      expand(first.id)
+    } else if let index = order.firstIndex(where: { $0.id == expandedActivity }), content != nil {
+      if index + 1 < order.count {
+        expand(order[index + 1].id)
+      } else {
+        expandedActivity = nil
+        haptic()
+        turnedAt = .now
+        openBoard()
+        return settleOnBoard()
+      }
+    } else {
+      return
+    }
+    if !isStaged { hover(true) }
   }
 
   /// 挂在岛上直到处理（提醒，PLAN §10「提醒」C2）：不到点收起；中间来了别的提示先显示那条，它收起后换回这一条；
@@ -570,11 +635,14 @@ import SwiftUI
   }
 
   /// 点岛本身：耳朵露着、没别的东西时 = 展开最要紧的那个活动；有打开类的按钮就执行它，没有就什么都不做（点得到时已经展开着）。
-  /// 点在刘海本身上的那一下由鼠标监听当成开那一张（click），到不了这里
+  /// 点在刘海本身上的那一下由鼠标监听接走（click：打开 / 轮换），到不了这里
   func tapped() {
     if content == nil, !isBoardOpen, isShowingWings {
       presses += 1
-      return expandActivity()
+      expandActivity()
+      // 同点刘海（openTop）：指针就停在岛上，当它在岛上——不然不动指针时卡片 2 秒就收
+      if !isStaged, content != nil { hover(true) }
+      return
     }
     // 点一瞥 = 展开那个活动的卡片
     if let id = glancing, content != nil { return expand(id) }
@@ -687,6 +755,7 @@ import SwiftUI
     hoverExpand = nil
     haptic()
     isPeeking = false
+    turnedAt = .now
     apply(activity.content, actions: activity.actions, quiet: true)
     expandedActivity = activity.id
     withAnimation(Self.resize) { isExpanded = true }
@@ -847,11 +916,13 @@ import SwiftUI
   private func openBoard(byKeyboard: Bool = false) {
     dwell?.cancel()
     hoverCheck?.cancel()
-    // 进行中的提示留着（排着，progress() 接着改它的百分比），收起那一张时换回来；别的已经在列表里了
+    showsHistory = UserDefaults.standard.bool(forKey: Prefs.islandShowsHistory)
+    // 进行中的提示留着（排着，progress() 接着改它的百分比），收起那一张时换回来；别的排着的：列着最近的提示时丢掉（它
+    // 已经在列表里了），不列时照样留到那一张收起再出（评审 4：不然这条提示从没露过面）
     if let content, content.tone == .progress {
       pending = (content, actions)
     } else if pending?.content.tone != .progress {
-      pending = nil
+      if showsHistory { pending = nil }
       onToneChange?(nil)
     }
     actions = []
@@ -863,7 +934,6 @@ import SwiftUI
     isPeeking = false
     isRetracting = false
     quickActions = boardActions()
-    showsHistory = UserDefaults.standard.object(forKey: Prefs.islandShowsHistory) as? Bool ?? true
     changedAt = .now
     deadline = .now
     showWindow()
@@ -1082,20 +1152,40 @@ import SwiftUI
     }
     // 本 App 别的窗口盖着刘海时（截图遮罩、启动台），点在它们上面不算点刘海；双击只认第一下
     let ownsClick = !local || event.window == nil || event.window === window
-    let toggled = click(onNotch: ownsClick && event.clickCount == 1)
+    let toggled = click(onNotch: ownsClick, repeated: event.clickCount > 1)
     return toggled && local && event.window === window
   }
 
-  /// 点了一下：没有提示时点在刘海上 = 打开 / 收起那一张（屏幕最顶那一行窗口收不到点击，全局监听收得到）；
-  /// 那一张、活动的卡片（播放卡片没有 ×）开着时点在它外面 = 收起。返回开 / 关过没有
-  private func click(onNotch allowed: Bool) -> Bool {
+  /// 点了一下：点在刘海上 = 没开着东西时打开（openTop：有活动是它的卡片，没有是那一张）、那一张开着时收起、活动的卡片
+  /// 开着时轮到下一个（rotate）；别的提示开着时不管（屏幕最顶那一行窗口收不到点击，全局监听收得到）。
+  /// 那一张、活动的卡片（播放卡片没有 ×）开着时点在它外面 = 收起。返回这一下处理掉了没有（本地监听据此吞掉它）。
+  /// repeated：双击的第二、三下——不算点刘海（不然开了又关、连轮两个）；卡片开着时照样吞掉，别落到卡片上被当成
+  /// 点它的打开类按钮（tapped，评审 3）
+  private func click(onNotch allowed: Bool, repeated: Bool = false) -> Bool {
     let mouse = NSEvent.mouseLocation
-    if allowed, respondsToNotch, content == nil, !isSuppressed(),
-      Self.onNotch(mouse, notches: notchRects)
-    {
-      presses += 1
-      toggleBoard()
-      return true
+    if allowed, respondsToNotch, !isSuppressed(), Self.onNotch(mouse, notches: notchRects) {
+      if repeated {
+        if content != nil, cardActivity != nil { return true }
+      } else {
+        switch Self.notchClick(
+          hasContent: content != nil, boardOpen: isBoardOpen, cardOpen: cardActivity != nil)
+        {
+        case .open:
+          presses += 1
+          openTop()
+          return true
+        case .closeBoard:
+          presses += 1
+          toggleBoard()
+          return true
+        case .rotate:
+          // 刚换过面时不轮（rotate 自己挡），这一下照样吞掉
+          presses += 1
+          rotate()
+          return true
+        case .ignore: break
+        }
+      }
     }
     if isBoardOpen || (content != nil && cardActivity != nil), let window,
       !NSMouseInRect(mouse, shapeOnScreen(window), false)
@@ -1127,17 +1217,27 @@ import SwiftUI
     }
   }
 
+  enum NotchClick { case open, closeBoard, rotate, ignore }
+
+  /// 点在刘海上该做什么（纯函数）：那一张开着 = 收起；什么都没开 = 打开；活动的卡片开着 = 轮到下一个；别的提示开着不管
+  static func notchClick(hasContent: Bool, boardOpen: Bool, cardOpen: Bool) -> NotchClick {
+    if boardOpen { return .closeBoard }
+    if !hasContent { return .open }
+    return cardOpen ? .rotate : .ignore
+  }
+
   /// 停在耳朵 / 刘海上多久自动展开
   static let hoverExpandDelay = Duration.milliseconds(300)
 
-  /// 指针在鼓起的岛上：排「停一下自动展开」（C1）。只在有活动露着、指针在耳朵上时：刘海正中照旧只鼓起、点了开那一张
-  /// （不然放着歌时那一张只剩快捷键开得了）；正在播放的右耳是播放 / 暂停钮，停在它上面也不展开（不然正要点，卡片先
-  /// 盖上来）。到点时还鼓着、岛上没别的东西、没在框选才展开；展开后当指针在岛上（它就停在那儿，没有鼠标移动来报）：
+  /// 指针在鼓起的岛上：排「停一下自动展开」（C1）。只在有活动露着时（没有活动时悬停只鼓起、点了才开那一张）；刘海
+  /// 正中和两只耳朵都算（2026-11-14：原来刘海正中不算，点它出的是另一张面）；正在播放的右耳是播放 / 暂停钮，停在它
+  /// 上面不展开（不然正要点，卡片先盖上来）。到点时还鼓着、岛上没别的东西、没在框选才展开；展开后当指针在岛上（它就停在那儿，没有鼠标移动来报）：
   /// 不然窗口不接鼠标、卡片照没人看的提示 2 秒就收
   private func armHoverExpand(_ mouse: NSPoint) {
     guard hoverExpands, isPeeking, content == nil, !isBoardOpen, let top = activity, let window,
       Self.hoverExpands(
-        pointerX: mouse.x, shape: shapeOnScreen(window), onMedia: top.media != nil)
+        pointerX: mouse.x, shape: shapeOnScreen(window), onMedia: top.media != nil,
+        notch: respondsToNotch)
     else {
       hoverExpand?.cancel()
       hoverExpand = nil
@@ -1156,11 +1256,13 @@ import SwiftUI
     }
   }
 
-  /// 指针在这个横坐标上停着算不算要展开（纯函数）：左耳算；右耳算，除非是正在播放（那一截是播放 / 暂停钮）；
-  /// 中间的刘海不算。耳朵 = 形体两头往里一只耳朵宽（另加鼓起的那一圈 8 pt）
-  static func hoverExpands(pointerX: CGFloat, shape: CGRect, onMedia: Bool) -> Bool {
-    if pointerX < shape.minX + wing + 8 { return true }
-    return pointerX > shape.maxX - wing - 8 && !onMedia
+  /// 指针在这个横坐标上停着算不算要展开（纯函数）：左耳算；右耳算，除非是正在播放（那一截是播放 / 暂停钮）；中间的
+  /// 刘海也算，除非设置里关了「点刘海打开」（notch）。耳朵 = 形体两头往里一只耳朵宽（另加鼓起的那一圈 8 pt）
+  static func hoverExpands(pointerX: CGFloat, shape: CGRect, onMedia: Bool, notch: Bool = true)
+    -> Bool
+  {
+    if pointerX > shape.maxX - wing - 8 { return !onMedia }
+    return pointerX < shape.minX + wing + 8 || notch
   }
 
   private func shapeOnScreen(_ window: NSWindow) -> CGRect {

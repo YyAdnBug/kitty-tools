@@ -434,9 +434,9 @@ enum Prefs {
   /// 跟着设置导出、同步
   static let islandActionOrder = "islandActionOrder"
   static let islandActionsOff = "islandActionsOff"
-  /// 那一张上列不列最近的提示（默认列）
+  /// 那一张上列不列最近的提示（2026-11-14 起默认不列：各家刘海 App 都不在刘海里放提示历史；这个开关是 0.9.0 加的，那一版默认列）
   static let islandShowsHistory = "islandShowsHistory"
-  /// 点刘海、停在刘海上、两指往下滑叫出那一张（默认开；刘海岛扩展 G2：装了别的刘海 App 的人关掉）
+  /// 点刘海、停在刘海上、两指往下滑打开（有活动是它的卡片，没有是那一张；设置里叫「点刘海打开」。默认开；刘海岛扩展 G2：装了别的刘海 App 的人关掉）
   static let islandNotchClicks = "islandNotchClicks"
   /// 刘海岛上的系统一瞬提示（刘海岛扩展 D1，Shell/SystemNotices.swift）：接上 / 拔掉电源、低电量、耳机连上、断网 / 恢复，
   /// 每种一个开关，默认都关（不开就不监听）
@@ -587,7 +587,7 @@ enum Prefs {
       finderCompressSkip: "",
       islandActionOrder: "",
       islandActionsOff: "",
-      islandShowsHistory: true,
+      islandShowsHistory: false,
       islandNotchClicks: true,
       islandNoticePower: false,
       islandNoticeBattery: false,
