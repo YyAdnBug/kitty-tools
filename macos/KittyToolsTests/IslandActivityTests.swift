@@ -265,8 +265,11 @@ struct IslandActivityTests {
     #expect(IslandBackdrop.falloff(0) == 1 && IslandBackdrop.falloff(IslandBackdrop.spread) == 0)
     #expect(
       IslandBackdrop.falloff(IslandBackdrop.spread * 2) == 0 && IslandBackdrop.falloff(-5) == 1)
+    // 整圈差不多一样糊：半个 spread 处还有一大半，最外面一小段才淡掉（一路往外只减不增）
     let half = IslandBackdrop.falloff(IslandBackdrop.spread / 2)
-    #expect(half > 0 && half < 0.5)
+    #expect(half > 0.6 && half < 1)
+    let steps = stride(from: 0, through: IslandBackdrop.spread, by: 4).map(IslandBackdrop.falloff)
+    #expect(zip(steps, steps.dropFirst()).allSatisfy { $0 > $1 })
     // 画布按 spread 留边（spread 调了这条测试不用跟着改）：形体 120 × 80，顶边贴着顶（刘海屏），左右和底下各留
     // spread + 20
     let margin = IslandBackdrop.spread + 20

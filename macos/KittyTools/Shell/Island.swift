@@ -216,9 +216,10 @@ import SwiftUI
     var windowSize: CGSize {
       switch self {
       case .notch(_, let notch):
-        // 底下留 40：阴影（半径 14、下移 6）+ 那一张列满时 bloom 过冲的那一下（原来 26，过冲峰值时阴影会被切平）
-        CGSize(width: Island.canvasWidth, height: notch + Island.boardHeight + 40)
-      case .capsule: CGSize(width: Island.canvasWidth, height: Island.boardHeight + 34)
+        // 底下留 72：四周的渐进模糊往外晕 68（IslandBackdrop.spread；窗口不够大，那一圈在窗口边上就是一道切口）
+        // + 那一张列满时 bloom 过冲的那一下
+        CGSize(width: Island.canvasWidth, height: notch + Island.boardHeight + 72)
+      case .capsule: CGSize(width: Island.canvasWidth, height: Island.boardHeight + 80)
       }
     }
   }
@@ -276,8 +277,8 @@ import SwiftUI
   /// 下巴 / 胶囊高度
   static let chin: CGFloat = 36
   static let maxWidth: CGFloat = 460
-  /// 画布（窗口）宽：最宽 460 的岛 + 两侧耳朵与阴影余量
-  static let canvasWidth: CGFloat = 520
+  /// 画布（窗口）宽：最宽 460 的岛 + 两侧各 70（耳朵、阴影、渐进模糊往外晕的 68）
+  static let canvasWidth: CGFloat = 600
   /// 离开岛后至少再留多久
   static let leaveDelay = Duration.milliseconds(1500)
   static let clickGuard = Duration.milliseconds(300)
@@ -1208,8 +1209,7 @@ import SwiftUI
       && (isExpanded || isBoardOpen || cardActivity != nil) && !levelShaped
   }
 
-  /// 现在四周有渐进模糊（这时不要阴影：阴影把模糊的那一圈压暗，背后的字像被抹掉了，不像是糊了——2026-11-14
-  /// 用户对着 Alcove 的截图指出来的；它也没有阴影）
+  /// 现在四周有渐进模糊（这时阴影换成又宽又淡的一圈，见 islandShadow）
   var blursNow: Bool {
     backdrop != nil && blurs && wantsBackdrop
       && !NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
@@ -1731,9 +1731,12 @@ struct IslandView: View {
     let outline = IslandOutline(shape: shape)
     return outline.fill(.black.opacity(shape.capsule ? 0.92 : 1))
       .overlay(outline.hairlineBorder(.white.opacity(shape.capsule ? 0.12 : 0)))
-      // 音量 / 亮度的提示贴在刘海那一行里，不算展开：没有阴影
+      // 音量 / 亮度的提示贴在刘海那一行里，不算展开：没有阴影。
+      // ponytail: 没有刘海的屏上有模糊时不画阴影（同第 12 批）——形体离窗口上沿只有 2 pt，又宽又淡的那一圈会在
+      // 卡片上方被窗口切成一道平顶；要补就把那块屏上的窗口往上加高（place 的 top、shape 里胶囊的 y 一起改）
       .islandShadow(
-        open: island.isOpen && (shape.capsule || !island.levelShaped) && !island.blursNow
+        open: island.isOpen && (shape.capsule ? !island.blursNow : !island.levelShaped),
+        soft: island.blursNow
       )
       .animation(curve, value: shape)
   }
@@ -2156,8 +2159,13 @@ nonisolated private struct CardLayout: Layout {
 
 extension View {
   /// 展开态的阴影（mac-whisker §3「层级」：black 0.45 / 模糊 14 / 向下 6）：刘海下巴和无刘海的胶囊同一组
-  fileprivate func islandShadow(open: Bool) -> some View {
-    shadow(color: .black.opacity(open ? 0.45 : 0), radius: 14, y: 6)
+  /// soft：四周有渐进模糊时换成又宽又淡的一圈压暗（2026-11-14 量 Alcove：6 pt 处暗 20%、16 pt 处 13%、26 pt 处
+  /// 8%、36 pt 处 5%、46 pt 处 3%；这组参数屏上量到 12 / 8 / 5 / 3）。原来那道又窄又重的压在模糊上，背后的字像被
+  /// 抹掉了；整个不要又浮不起来
+  fileprivate func islandShadow(open: Bool, soft: Bool = false) -> some View {
+    shadow(
+      color: .black.opacity(open ? (soft ? 0.6 : 0.45) : 0), radius: soft ? 32 : 14,
+      y: soft ? 2 : 6)
   }
 }
 
