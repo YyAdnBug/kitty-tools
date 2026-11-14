@@ -3,6 +3,7 @@
 // 下面再列本次启动以来最近 10 条提示，新的在前（2026-11-14 起默认不列：各家刘海 App 都不在刘海里放提示历史；快捷动作
 // 也都关了就一句话）。还能点的打开类按钮（在访达中显示、打开系统设置、打开设置）照样能点，点一行等于点它的按钮；撤销、
 // 取消这类过后再点会出事，不留。
+// 设置里打开「月历」时，快捷动作下面多一块月历（IslandCalendar.swift，2026-11-14），提示列表相应只列 5 条。
 // **不列正在进行的活动**（2026-11-14，原来最上面有一行小的播放器 / 录制计时）：活动有自己的卡片，有活动时点刘海、悬停、
 // 往下滑开的就是它的卡片，再往下滑一次才轮到这一张（Island.openTop / rotate）——一个刘海只有一张面。
 // 用快捷键叫出时 ←→ 选中的快捷动作圆底换成强调色的焦点圈（第四轮体检 U9），↩ 执行它。
@@ -25,16 +26,34 @@ struct IslandBoard: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.top, 10)
-        .padding(.bottom, island.showsHistory ? 12 : 8)
-        if island.showsHistory { Rectangle().fill(.white.opacity(0.12)).frame(height: 0.5) }
+        .padding(.bottom, island.showsHistory || island.calendarDay != nil ? 12 : 8)
+        if island.showsHistory || island.calendarDay != nil { divider }
+      }
+      // 月历（设置里打开时）：点了打开「日历」
+      if let day = island.calendarDay {
+        Button {
+          island.perform(
+            Island.Action("打开日历", opens: true) {
+              NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Calendar.app"))
+            })
+        } label: {
+          IslandCalendar(date: day, agenda: island.agenda)
+        }
+        .buttonStyle(IslandButtonStyle())
+        .accessibilityHint("打开日历")
+        if island.showsHistory { divider }
       }
       if !island.showsHistory {
-        if island.quickActions.isEmpty { placeholder("快捷动作和最近的提示都关着") }
+        if island.quickActions.isEmpty, island.calendarDay == nil {
+          placeholder("快捷动作和最近的提示都关着")
+        }
       } else if island.history.isEmpty {
         placeholder("还没有提示")
       } else {
         VStack(spacing: 0) {
-          ForEach(island.history.prefix(Island.historyLimit)) { record in
+          // 窗口一次定高（Island.boardHeight）：月历占了一块，列表就少列几条
+          ForEach(island.history.prefix(island.calendarDay == nil ? Island.historyLimit : 5)) {
+            record in
             Row(record: record) { island.perform($0) }
           }
         }
@@ -44,6 +63,10 @@ struct IslandBoard: View {
     .padding(.horizontal, 14)
     .padding(.bottom, 4)
     .frame(width: Island.boardWidth)
+  }
+
+  private var divider: some View {
+    Rectangle().fill(.white.opacity(0.12)).frame(height: 0.5)
   }
 
   private func placeholder(_ text: String) -> some View {

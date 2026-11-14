@@ -632,7 +632,7 @@ struct SnapshotProbeTests {
     islandPrefs.set(true, forKey: Prefs.islandShowsHistory)
     for dark in [false, true] {
       try snapshot(
-        IslandTab().defaultAppStorage(islandPrefs), size: NSSize(width: 640, height: 1330),
+        IslandTab().defaultAppStorage(islandPrefs), size: NSSize(width: 640, height: 1400),
         dark: dark, to: "\(out)/settings-island-custom\(dark ? "-dark" : "").png")
     }
     // 设置 › 通用「菜单栏」（第 9 批 M1 M2）：显示 + 彩色、隐藏（图标样式置灰），各出深色；临时偏好域，不动用户的菜单栏图标
@@ -1048,6 +1048,30 @@ struct SnapshotProbeTests {
         showing: nil, geometry: notch, board: records, quickActions: actions, showsHistory: false)
       try snapshot(
         IslandView(island: island), size: notch.windowSize, dark: false, to: "\(out)/\(name).png")
+    }
+    // 那一张上的月历（设置里打开时）：有今天的日程 / 没有日程 / 没有「日历」授权、同时列着最近的提示。日子定死
+    do {
+      let day = try #require(
+        Calendar.current.date(from: DateComponents(year: 2026, month: 11, day: 14, hour: 9)))
+      let busy = Island.Agenda(
+        items: [
+          Island.AgendaItem(id: "1", title: "周会", time: "10:30"),
+          Island.AgendaItem(id: "2", title: "和供应商对一下第四季度的排期和报价", time: "14:00"),
+          Island.AgendaItem(id: "3", title: "牙医", time: "18:30"),
+        ], more: 2)
+      let cases: [(String, Island.Agenda?, Bool)] = [
+        ("island-board-calendar", busy, false),
+        ("island-board-calendar-empty", Island.Agenda(items: []), false),
+        ("island-board-calendar-history", nil, true),
+      ]
+      for (name, agenda, history) in cases {
+        let island = Island(
+          showing: nil, geometry: notch, board: records, quickActions: quick,
+          showsHistory: history, calendarDay: day, agenda: agenda)
+        try snapshot(
+          IslandView(island: island), size: notch.windowSize, dark: false,
+          to: "\(out)/\(name).png")
+      }
     }
     try snapshot(
       IslandView(island: Island(showing: nil, geometry: notch, peeking: true)),

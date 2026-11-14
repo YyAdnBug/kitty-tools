@@ -1053,6 +1053,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     island.hasExtras = Feature.island.isOn
     island.respondsToNotch = respondsToNotch
+    // 那一张上的月历旁边列今天的日程（没有「日历」授权是 nil；岛自己不碰 EventKit）
+    island.agendaProvider = { [unowned self] in nextEvent.agenda() }
     applyIslandFeel()
     island.start()
     systemNotices.apply()

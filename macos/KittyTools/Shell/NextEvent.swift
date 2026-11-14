@@ -9,7 +9,8 @@
 // - 日程的标题、地点只留在本机：不进日志、不进最近的提示。会议链接只认 https 的、主机是认得的那几家的（日程是别人
 //   能发来的邀请，里面的网址不能随便开）。
 // ponytail: 读日程在主线程（之后 24 小时的那几条，EventKit 自己有缓存）；日历多到读得慢再挪出去。
-// ponytail: 进行中的日程不显示（Alcove 显示进度）；月历、当天列表没做（拍板：以后）。
+// ponytail: 进行中的日程不显示（Alcove 显示进度）。月历和当天的列表在那一张上（Shell/IslandCalendar.swift，2026-11-14）：
+// 今天的日程由这里的 agenda() 读，同样只在已经授权时读、从不弹框。
 
 import AppKit
 import EventKit
@@ -43,6 +44,8 @@ import EventKit
   /// 一直听着的两样（不跟着起停）：本 App 回到前台、设置页问完授权——授权可能刚变
   private var accessObservers: [NSObjectProtocol] = []
   private var wait: Task<Void, Never>?
+  /// 那一张的月历读今天的日程用（「下一个日程」没开时 store 是 nil）：第一次用到才建，留着（建一个要几十毫秒）
+  private var agendaStore: EKEventStore?
 
   init(island: Island, defaults: UserDefaults = .standard) {
     self.island = island
@@ -172,7 +175,49 @@ import EventKit
       location: event.location, url: event.url, notes: event.notes)
   }
 
+  /// 今天的日程（那一张的月历旁边列；Island.agendaProvider 接到这里）。没有「日历」授权是 nil——只查不弹框。
+  /// 读的是今天零点到明天零点的那几条，在主线程（那一张打开的那一下；同 refresh 的 ponytail）
+  func agenda(now: Date = .now, calendar: Calendar = .current) -> Island.Agenda? {
+    guard Self.isAuthorized, let day = calendar.dateInterval(of: .day, for: now) else {
+      // 授权没了：授权期间建的那个不留（重新给了授权再建新的）
+      agendaStore = nil
+      return nil
+    }
+    let store = store ?? agendaStore ?? EKEventStore()
+    agendaStore = self.store == nil ? store : nil
+    let predicate = store.predicateForEvents(withStart: day.start, end: day.end, calendars: nil)
+    // 先按便宜的几样筛（已经结束的、正好明天零点开始的不要），剩下的才取参会人、备注（EventKit 用到才去读）
+    let events = store.events(matching: predicate).filter {
+      $0.startDate < day.end && ($0.isAllDay || $0.endDate > now)
+    }
+    return Self.today(events.map(Self.entry), now: now)
+  }
+
   // MARK: 纯函数（单测锁住）
+
+  /// 今天的日程排成月历旁边那几行：全天的在前，其余按开始时刻；已经结束的、拒绝 / 取消的不列；最多 limit 条，
+  /// 另记还有几条。标题空的写「日程」、最多 80 个字
+  static func today(
+    _ entries: [Entry], now: Date, limit: Int = 3, timeZone: TimeZone = .current
+  ) -> Island.Agenda {
+    var style = Date.FormatStyle(date: .omitted, time: .shortened)
+    style.timeZone = timeZone
+    let rows =
+      entries
+      .filter { !$0.declined && ($0.isAllDay || $0.end > now) }
+      .sorted {
+        ($0.isAllDay ? 0 : 1, $0.start, $0.title) < ($1.isAllDay ? 0 : 1, $1.start, $1.title)
+      }
+      .map { entry -> Island.AgendaItem in
+        let title = entry.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        // 编号拼上开始时刻：每天重复的日程各次共用一个编号，跨零点的那种（23:00–07:00）昨天那次和今天那次会同时在
+        return Island.AgendaItem(
+          id: "\(entry.id)@\(entry.start.timeIntervalSince1970)",
+          title: title.isEmpty ? "日程" : String(title.prefix(80)),
+          time: entry.isAllDay ? "全天" : entry.start.formatted(style))
+      }
+    return Island.Agenda(items: Array(rows.prefix(limit)), more: max(rows.count - limit, 0))
+  }
 
   /// 下一个日程：还没开始的里面最早的（同一刻的按标题排，几台读出来一样）；全天的、拒绝 / 取消的不算
   static func pick(_ entries: [Entry], now: Date) -> Entry? {

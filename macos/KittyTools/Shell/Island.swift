@@ -99,6 +99,12 @@ import SwiftUI
   private(set) var quickActions: [Action] = []
   /// 那一张上列不列最近的提示（设置 › 刘海岛，Prefs.islandShowsHistory）：打开时读一次。不列也照样记着
   private(set) var showsHistory = true
+  /// 那一张上的月历（设置 › 刘海岛「日程」，Prefs.islandCalendar；IslandCalendar.swift）：打开时读一次——哪一天
+  /// （nil = 不显示）、今天的日程（nil = 没有「日历」授权）
+  private(set) var calendarDay: Date?
+  private(set) var agenda: Agenda?
+  /// 今天的日程从哪来（AppDelegate 接到 NextEvent.agenda；岛自己不碰 EventKit）。没授权返回 nil
+  @ObservationIgnored var agendaProvider: (() -> Agenda?)?
   /// 一直挂着的活动（IslandActivity.swift）；耳朵上露最要紧的一个（activity）
   private(set) var activities: [Activity] = []
   /// 耳朵该露着：有活动、有刘海屏。提示、那一张开着时照旧是它们，收起后缩回耳朵（不缩进刘海、窗口不移走）
@@ -218,9 +224,12 @@ import SwiftUI
     showing content: Content?, geometry: Geometry = .capsule(menuBar: 24),
     actions: [Action] = [], expanded: Bool = false, board records: [Record]? = nil,
     quickActions: [Action] = [], peeking: Bool = false, boardSelection: Int? = nil,
-    showsHistory: Bool = true, activities: [Activity] = []
+    showsHistory: Bool = true, activities: [Activity] = [], calendarDay: Date? = nil,
+    agenda: Agenda? = nil
   ) {
     isStaged = true
+    self.calendarDay = calendarDay
+    self.agenda = agenda
     self.content = content
     isOpen = content != nil || records != nil
     self.geometry = geometry
@@ -278,7 +287,7 @@ import SwiftUI
   ) -> Bool {
     turned.map { now - $0 >= turnGuard } ?? true
   }
-  /// 那一张多宽、最高多少（一排快捷动作 + historyLimit 行提示）
+  /// 那一张多宽、最高多少（一排快捷动作 + historyLimit 行提示；有月历时月历 + 5 行提示，差不多一样高）
   static let boardWidth: CGFloat = 420
   static let boardHeight: CGFloat = 440
   static let historyLimit = 10
@@ -963,6 +972,11 @@ import SwiftUI
     dwell?.cancel()
     hoverCheck?.cancel()
     showsHistory = UserDefaults.standard.bool(forKey: Prefs.islandShowsHistory)
+    // 摆出来的岛（单测、截图）用给进来的那一天，不读偏好、不读日程
+    if !isStaged {
+      calendarDay = UserDefaults.standard.bool(forKey: Prefs.islandCalendar) ? .now : nil
+      agenda = calendarDay == nil ? nil : agendaProvider?()
+    }
     // 进行中的提示留着（排着，progress() 接着改它的百分比），收起那一张时换回来；别的排着的：列着最近的提示时丢掉（它
     // 已经在列表里了），不列时照样留到那一张收起再出（评审 4：不然这条提示从没露过面）
     if let content, content.tone == .progress {
@@ -991,7 +1005,8 @@ import SwiftUI
       isHovered = false
     }
     let heading =
-      !showsHistory ? "快捷动作" : quickActions.isEmpty ? "最近的提示" : "最近的提示和快捷动作"
+      quickActions.isEmpty && calendarDay != nil && !showsHistory
+      ? "月历" : !showsHistory ? "快捷动作" : quickActions.isEmpty ? "最近的提示" : "最近的提示和快捷动作"
     guard byKeyboard, let window else { return Self.announce(heading) }
     takeKeyboard(window)
     Self.announce(

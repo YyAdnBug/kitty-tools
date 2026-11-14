@@ -116,4 +116,67 @@ struct NextEventTests {
       entry(String(repeating: "长", count: 500), in: 8), join: { _ in }, openCalendar: {})
     #expect(long.title.count == 200)
   }
+
+  /// 那一张上的月历：一周一行、从系统设的那一天起，头尾补满整周（借来的格子不算这个月的）；今天、周末标出来
+  @Test func monthGrid() throws {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = try #require(TimeZone(identifier: "UTC"))
+    func day(_ year: Int, _ month: Int, _ day: Int) throws -> Date {
+      try #require(calendar.date(from: DateComponents(year: year, month: month, day: day, hour: 9)))
+    }
+    // 2026 年 11 月 1 日是星期天：从星期天起正好 5 行，最后一行 29、30 后面是借来的 5 格
+    calendar.firstWeekday = 1
+    let november = MonthGrid.weeks(of: try day(2026, 11, 14), calendar: calendar)
+    #expect(november.count == 5 && november.allSatisfy { $0.count == 7 })
+    #expect(november[0].map(\.number) == [1, 2, 3, 4, 5, 6, 7] && november[0][0].inMonth)
+    #expect(november[4].map(\.inMonth) == [true, true, false, false, false, false, false])
+    #expect(november[1][6].isToday && november[1][6].number == 14)
+    #expect(november.joined().filter(\.isToday).count == 1)
+    #expect(november[0][0].isWeekend && november[0][6].isWeekend && !november[0][1].isWeekend)
+    #expect(MonthGrid.header(calendar: calendar) == ["日", "一", "二", "三", "四", "五", "六"])
+    #expect(MonthGrid.weekday(of: try day(2026, 11, 14), calendar: calendar) == "周六")
+    // 从星期一起：1 号（星期天）排在第一行最后，一共 6 行
+    calendar.firstWeekday = 2
+    let monday = MonthGrid.weeks(of: try day(2026, 11, 14), calendar: calendar)
+    #expect(
+      monday.count == 6
+        && monday[0].map(\.inMonth) == [false, false, false, false, false, false, true])
+    #expect(monday[0][6].number == 1 && monday[5][0].number == 30 && monday[5][0].inMonth)
+    #expect(MonthGrid.header(calendar: calendar) == ["一", "二", "三", "四", "五", "六", "日"])
+    // 2026 年 2 月：28 天、1 号是星期天，从星期天起正好 4 行，一格都不借
+    calendar.firstWeekday = 1
+    let february = MonthGrid.weeks(of: try day(2026, 2, 3), calendar: calendar)
+    #expect(february.count == 4 && february.joined().allSatisfy(\.inMonth))
+    // 闰年 2 月有 29 号
+    #expect(
+      MonthGrid.weeks(of: try day(2028, 2, 29), calendar: calendar).joined().contains {
+        $0.number == 29 && $0.inMonth && $0.isToday
+      })
+  }
+
+  /// 月历旁边今天的日程：全天的在前、其余按开始时刻；结束了的、拒绝的不列；最多三条、另记还有几条
+  @Test func todaysAgenda() throws {
+    let utc = try #require(TimeZone(identifier: "UTC"))
+    let agenda = NextEvent.today(
+      [
+        entry("晚上的", in: 300), entry("刚开完的", in: -60), entry("正在开的", in: -10),
+        entry("拒绝的", in: 30, declined: true), entry("纪念日", in: -600, allDay: true),
+        entry("  ", in: 60), entry("下午的", in: 120),
+      ], now: now, timeZone: utc)
+    #expect(agenda.items.map(\.title) == ["纪念日", "正在开的", "日程"])
+    #expect(agenda.more == 2 && agenda.items[0].time == "全天")
+    // 1_000_000 秒 = 13:46:40 UTC；10 分钟前开始的那个写的是它的开始时刻
+    #expect(agenda.items[1].time.contains("36"))
+    #expect(NextEvent.today([], now: now) == Island.Agenda(items: [], more: 0))
+    // 每天重复、跨零点的日程：昨天那次和今天那次编号一样，列出来的两行各有各的 id
+    var last = entry("睡眠", in: -300)
+    last.id = "repeat"
+    last.end = now.addingTimeInterval(60)
+    var next = entry("睡眠", in: 500)
+    next.id = "repeat"
+    let nights = NextEvent.today([last, next], now: now)
+    #expect(nights.items.count == 2 && Set(nights.items.map(\.id)).count == 2)
+    let long = NextEvent.today([entry(String(repeating: "长", count: 300), in: 5)], now: now)
+    #expect(long.items[0].title.count == 80)
+  }
 }

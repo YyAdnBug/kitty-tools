@@ -20,6 +20,7 @@ struct IslandTab: View {
   @AppStorage(Prefs.islandNowPlaying) private var nowPlaying = false
   @AppStorage(Prefs.islandTrackPeek) private var trackPeek = true
   @AppStorage(Prefs.islandNextEvent) private var nextEvent = false
+  @AppStorage(Prefs.islandCalendar) private var monthCalendar = false
   @AppStorage(Prefs.islandKeyLevels) private var keyLevels = false
   /// 本 App 回到前台 / 问完授权时加一：让下面那行橙字照现在的授权重算（从系统设置里打开授权回来）
   @State private var accessChecks = 0
@@ -86,11 +87,15 @@ struct IslandTab: View {
           }
           .id(accessChecks)
         }
+        Toggle(isOn: $monthCalendar) {
+          Text("点刘海打开时显示月历")
+          Text("快捷动作下面一块这个月的日历，点它打开「日历」；已经允许读取「日历」时，旁边还列今天的日程")
+        }
       } header: {
         Text("日程")
       } footer: {
         SectionFootnote(
-          "读系统「日历」里的日程，打开时会问一次授权。全天的、已拒绝的不算；日程的内容只留在这台 Mac 上，不进最近的提示。")
+          "读系统「日历」里的日程，打开「下一个日程」时会问一次授权。全天的、已拒绝的不算下一个日程；日程的内容只留在这台 Mac 上，不进最近的提示。月历本身不用授权。")
       }
       Section {
         Toggle(isOn: $keyLevels) {
