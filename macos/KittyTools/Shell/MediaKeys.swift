@@ -288,18 +288,37 @@ import Synchronization
 }
 
 extension Island {
-  /// 音量 / 亮度的那一行画什么
+  /// 音量 / 亮度的那一行画什么；带电量的提示也是它（device：耳机连上、接上 / 拔掉电源、电量低——左边一句话
+  /// （耳机的前面带它的图标），右边电量百分比 + 电池）
   nonisolated struct Level: Equatable, Sendable {
-    nonisolated enum Kind: Sendable { case volume, brightness }
+    nonisolated enum Kind: Sendable { case volume, brightness, device }
+    /// device：电量那一截的颜色——好着（绿）、低了（红）、平常（白）
+    nonisolated enum Tone: Sendable { case plain, good, low }
     var kind: Kind
-    /// 0…1
+    /// 0…1；device：电量，还不知道是负数
     var fraction: Double
     var muted = false
+    /// device：耳机的名字（读屏、没有刘海的屏上那一行用）
+    var label: String?
+    /// device：左边的图标（耳机有；电源的提示没有，只有一句话）
+    var glyph: String?
+    /// device：左边那句话（不给是「已连接」）
+    var caption: String?
+    var tone = Tone.good
+    /// 出多久（不给是 Island.levelDwell）
+    var stay: Duration?
+
+    /// 是不是「同一条」（不看数）：同一条原地换数，不是同一条的两个 device 提示换的时候糊着进出
+    var identity: String { "\(kind)|\(caption ?? "")|\(glyph ?? "")|\(label ?? "")" }
+
+    /// device：电量（0…1），还没读到是 nil
+    var battery: Double? { kind == .device && fraction >= 0 ? min(fraction, 1) : nil }
 
     /// 静音、0 是划掉的喇叭；音量分三档波纹；亮度是太阳
     var symbol: String {
       switch kind {
       case .brightness: "sun.max.fill"
+      case .device: glyph ?? "bolt.fill"
       case .volume:
         if muted || fraction <= 0 {
           "speaker.slash.fill"
@@ -314,7 +333,13 @@ extension Island {
     }
 
     /// 读屏、占位用的名字
-    var title: String { kind == .volume ? (muted ? "静音" : "音量") : "亮度" }
+    var title: String {
+      switch kind {
+      case .volume: muted ? "静音" : "音量"
+      case .brightness: "亮度"
+      case .device: caption ?? "已连接"
+      }
+    }
 
     /// 条上填到几成、右边写百分之几（静音时是 0）
     var shown: Double { muted ? 0 : min(max(fraction, 0), 1) }

@@ -768,6 +768,26 @@ import SwiftUI
   /// 音量 / 亮度的那一行（MediaKeys：按了音量键、亮度键）：图标 + 细条 + 百分比，约 2.2 秒收回。已经出着就原地换数、
   /// 重新数时间（按住连发时一秒来十几次：不重新出场）；没出着就从刘海长出来，顶掉岛上别的提示、那一张（提示本来就是
   /// 一瞬的；挂着的提醒收起后会换回来）。不进最近的提示、不播报、菜单栏图标不动
+  /// 自己冒出来的那种（耳机连上）：岛上正用着——那一张开着、指针停在带按钮的提示上——时不顶掉它，退回成一条
+  /// 普通的提示排着（同 show 的规矩，评审）；别的时候同 showLevel
+  func showNotice(_ next: Level, fallback: String) {
+    let busy = isHovered && content.map { $0.tone != .progress } == true
+    if isBoardOpen || busy { return show(fallback, tone: .info, symbol: next.symbol) }
+    showLevel(next)
+  }
+
+  /// 同一种提示正出着、或者正捏着等着出时，原地换上新的数、重新数时间；别的时候什么都不做（不重新出场，也不顶掉
+  /// 已经换上来的别的提示）。耳机的电量晚到时用——只看 level 的话，捏着的那 0.24 秒里它还是上一种（评审）
+  func updateLevel(_ next: Level) {
+    if let waiting = pendingLevel {
+      if waiting.identity == next.identity { pendingLevel = next }
+      return
+    }
+    guard level?.identity == next.identity, content != nil else { return }
+    level = next
+    arm(next.stay ?? Self.levelDwell)
+  }
+
   func showLevel(_ next: Level) {
     // 正捏着：等会儿出的换成最新的这个
     if pendingLevel != nil {
@@ -776,7 +796,7 @@ import SwiftUI
     }
     if level != nil, content != nil, level?.kind == next.kind {
       level = next
-      return arm(Self.levelDwell)
+      return arm(next.stay ?? Self.levelDwell)
     }
     let swapsKind = level != nil && content != nil
     guard
@@ -815,7 +835,7 @@ import SwiftUI
     hoverCheck?.cancel()
     isHovered = false
     window?.ignoresMouseEvents = true
-    arm(Self.levelDwell)
+    arm(next.stay ?? Self.levelDwell)
   }
 
   /// 出音量 / 亮度提示之前要不要先捏回刘海（纯函数）：从耳朵过来、或者提示换了种类（音量 → 亮度）时捏；岛上空着
@@ -1911,7 +1931,7 @@ struct IslandView: View {
       .modifier(Melt(progress: fading ? 0 : 1, scales: false))
       .animation(.smooth(duration: 0.24), value: fading)
       // 换了种类（音量 → 亮度）是另一个：旧的糊着退、新的糊着进（进来的慢半拍：形体长到一半才看得清，同 Alcove）
-      .id(level.kind)
+      .id(level.identity)
       .transition(
         reduceMotion
           ? melt

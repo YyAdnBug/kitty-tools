@@ -306,9 +306,9 @@ struct IslandLevelSymbol: View {
   var body: some View {
     let muted = level.kind == .volume && (level.muted || level.fraction <= 0)
     Image(
-      systemName: level.kind == .brightness
-        ? "sun.max.fill" : muted ? "speaker.slash.fill" : "speaker.wave.3.fill",
-      variableValue: level.shown
+      systemName: level.kind == .volume
+        ? (muted ? "speaker.slash.fill" : "speaker.wave.3.fill") : level.symbol,
+      variableValue: level.kind == .device ? 1 : level.shown
     )
     .font(.system(size: size, weight: .semibold))
     .foregroundStyle(.white.opacity(muted ? 0.55 : 0.95))
@@ -348,28 +348,90 @@ struct IslandLevelWings: View {
   var body: some View {
     HStack(spacing: 0) {
       HStack(spacing: 6) {
-        IslandLevelSymbol(level: level, size: 14).frame(width: 22)
+        // 电源的提示左边只有一句话，没有图标（同 Alcove 的「Charging」）
+        if level.kind != .device || level.glyph != nil {
+          IslandLevelSymbol(level: level, size: 14).frame(width: 22)
+        }
         Text(level.title)
           .font(.system(size: 13, weight: .semibold))
           .foregroundStyle(.white.opacity(0.95))
           .lineLimit(1)
           .fixedSize()
       }
-      .padding(.leading, 11)
+      .padding(.leading, level.kind == .device && level.glyph == nil ? 13 : 11)
       .frame(width: Island.levelWing, alignment: .leading)
       // 不再套动画：见 IslandWings
       .animation(nil) { $0.offset(x: ride) }
       Color.clear.frame(width: notchWidth)
-      IslandLevelBar(level: level)
-        .frame(width: 68)
-        .padding(.trailing, 12)
-        .frame(width: Island.levelWing, alignment: .trailing)
-        .animation(nil) { $0.offset(x: -ride) }
+      Group {
+        if level.kind == .device {
+          // 耳机连上、电源：电量（还没读到时空着，读到了原地出来）
+          IslandBattery(fraction: level.battery, tone: level.tone)
+        } else {
+          IslandLevelBar(level: level).frame(width: 68)
+        }
+      }
+      .padding(.trailing, 12)
+      .frame(width: Island.levelWing, alignment: .trailing)
+      .animation(nil) { $0.offset(x: -ride) }
     }
     .frame(height: notchHeight)
     .accessibilityElement(children: .ignore)
-    .accessibilityLabel(level.title)
-    .accessibilityValue("\(Int((level.shown * 100).rounded()))%")
+    .accessibilityLabel(level.reading.label)
+    .accessibilityValue(level.reading.value)
+  }
+}
+
+/// 带电量的提示右边那一截（2026-11-14 照 Alcove 的截图：「Charging　99% 🔋」）：百分比（13 pt semibold 等宽）+ 电池的
+/// 系统符号（照电量分五档），两样同一个颜色——好着是绿的、低了是红的、平常是白的。还没读到时什么都不画
+struct IslandBattery: View {
+  let fraction: Double?
+  var tone = Island.Level.Tone.good
+
+  var body: some View {
+    HStack(spacing: 6) {
+      if let fraction {
+        Text("\(Int((fraction * 100).rounded()))%")
+          .font(.system(size: 13, weight: .semibold).monospacedDigit())
+          .lineLimit(1)
+          .fixedSize()
+        Image(systemName: Self.symbol(fraction))
+          .font(.system(size: 16, weight: .medium))
+          .transition(.opacity)
+      }
+    }
+    .foregroundStyle(color)
+    .animation(Style.Motion.snap.animation(), value: fraction == nil)
+  }
+
+  private var color: Color {
+    switch tone {
+    case .good: Color(nsColor: .systemGreen)
+    case .low: Color(nsColor: .systemRed)
+    case .plain: .white.opacity(0.95)
+    }
+  }
+
+  /// 电池的符号照电量分五档（纯函数）
+  nonisolated static func symbol(_ fraction: Double) -> String {
+    switch fraction {
+    case ..<0.125: "battery.0percent"
+    case ..<0.375: "battery.25percent"
+    case ..<0.625: "battery.50percent"
+    case ..<0.875: "battery.75percent"
+    default: "battery.100percent"
+    }
+  }
+}
+
+extension Island.Level {
+  /// 读屏里念什么：音量 / 亮度是名字 + 百分比；耳机是「已连接，名字」+ 电量（没读到就没有）
+  var reading: (label: String, value: String) {
+    guard kind == .device else { return (title, "\(Int((shown * 100).rounded()))%") }
+    return (
+      [title, label].compactMap { $0 }.joined(separator: "，"),
+      battery.map { "电量 \(Int(($0 * 100).rounded()))%" } ?? ""
+    )
   }
 }
 
@@ -380,19 +442,33 @@ struct IslandLevelRow: View {
 
   var body: some View {
     HStack(spacing: 10) {
-      IslandLevelSymbol(level: level, size: 13).frame(width: 24)
-      IslandLevelBar(level: level).frame(width: 160)
-      Text("\(Int((level.shown * 100).rounded()))%")
-        .font(.system(size: 12, weight: .semibold).monospacedDigit())
-        .foregroundStyle(.white.opacity(0.92))
-        .lineLimit(1)
-        .frame(width: 40, alignment: .trailing)
+      if level.kind != .device || level.glyph != nil {
+        IslandLevelSymbol(level: level, size: 13).frame(width: 24)
+      }
+      if level.kind == .device {
+        // 耳机连上：「已连上 名字」+ 电量；电源：那句话 + 电量
+        Text(level.label.map { "已连上\($0)" } ?? level.title)
+          .font(.system(size: 13, weight: .semibold))
+          .foregroundStyle(.white.opacity(0.95))
+          .lineLimit(1)
+          .truncationMode(.tail)
+          .frame(maxWidth: 200, alignment: .leading)
+          .fixedSize(horizontal: true, vertical: false)
+        IslandBattery(fraction: level.battery, tone: level.tone)
+      } else {
+        IslandLevelBar(level: level).frame(width: 160)
+        Text("\(Int((level.shown * 100).rounded()))%")
+          .font(.system(size: 12, weight: .semibold).monospacedDigit())
+          .foregroundStyle(.white.opacity(0.92))
+          .lineLimit(1)
+          .frame(width: 40, alignment: .trailing)
+      }
     }
     .frame(height: Island.chin)
     .padding(.horizontal, 18)
     .accessibilityElement(children: .ignore)
-    .accessibilityLabel(level.title)
-    .accessibilityValue("\(Int((level.shown * 100).rounded()))%")
+    .accessibilityLabel(level.reading.label)
+    .accessibilityValue(level.reading.value)
   }
 }
 

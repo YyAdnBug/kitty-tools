@@ -1,8 +1,8 @@
 // 刘海岛上的系统一瞬提示（2026-11-13，刘海岛扩展 D1）：接上 / 拔掉电源（带电量）、电量低到 20% 和 10%、耳机或 AirPods 连上
-// （只写名字）、断网 / 网络恢复。弹一下就走，同别的提示；每种一个开关（设置 › 刘海岛「系统提示」，默认都关），**不开就不监听**。
+// （2026-11-14 起贴在刘海两边、带电量：Headphones.swift）、断网 / 网络恢复。弹一下就走，同别的提示；每种一个开关（设置 › 刘海岛「系统提示」，默认都关），**不开就不监听**。
 // 全是公开接口、有变化才通知，空闲 0 CPU、不要授权：电源走 IOKit 的电源通知（IOPSNotificationCreateRunLoopSource，主线程的
 // run loop 上回调），耳机走 CoreAudio 的默认输出设备变化（回调投在主队列），网络走 Network 的 NWPathMonitor（主队列）。
-// 不做的（拍板 D1）：耳机电量（要蓝牙授权和私有键）、Wi-Fi 的名字（macOS 14 起要定位授权）、摄像头 / 麦克风在用（菜单栏本来就有
+// 不做的（拍板 D1）：Wi-Fi 的名字（macOS 14 起要定位授权）、摄像头 / 麦克风在用（菜单栏本来就有
 // 橙点绿点）、大写锁定（系统在输入框旁提示）。和 C 接口打交道的只在这个文件（mac-native §3）。
 
 import AppKit
@@ -20,6 +20,8 @@ import Network
   private var warned: Set<Int> = []
   private var audioListener: AudioObjectPropertyListenerBlock?
   private var lastOutput: AudioObjectID?
+  /// 正在读刚连上的那副耳机的电量
+  private var batteryRead: Task<Void, Never>?
   private var pathMonitor: NWPathMonitor?
   /// 网络通不通（最后一次稳住的）；第一次读到时只记下
   private var online: Bool?
@@ -87,22 +89,30 @@ import Network
     if let last = lastPower, last.plugged != now.plugged,
       defaults.bool(forKey: Prefs.islandNoticePower)
     {
-      if now.plugged {
-        island?.show(
-          "已接上电源", detail: "\(now.percent)%", tone: .success, symbol: "bolt.circle.fill")
-      } else {
-        island?.show("已拔掉电源", detail: "\(now.percent)%", tone: .info, symbol: "powerplug.fill")
-      }
+      let level = Self.powerLevel(plugged: now.plugged, percent: now.percent, low: false)
+      let spoken = now.plugged ? "已接上电源" : "已拔掉电源"
+      island?.showNotice(level, fallback: "\(spoken) \(now.percent)%")
+      Island.announce("\(spoken)，电量 \(now.percent)%")
     }
     if defaults.bool(forKey: Prefs.islandNoticeBattery),
       let threshold = Self.lowBattery(
         percent: now.percent, plugged: now.plugged, warned: warned)
     {
       warned.insert(threshold)
-      island?.show(
-        "电量还剩 \(now.percent)%", detail: "接上电源吧", tone: .warning,
-        symbol: "battery.25percent")
+      island?.showNotice(
+        Self.powerLevel(plugged: false, percent: now.percent, low: true),
+        fallback: "电量还剩 \(now.percent)%")
+      Island.announce("电量低，还剩 \(now.percent)%")
     }
+  }
+
+  /// 电源的提示怎么画（纯函数；2026-11-14 照 Alcove：贴在刘海两边，左边一句话、右边百分比 + 电池）：接着电源是
+  /// 绿的「充电中」（满了是「已充满」），拔掉是白的「电池供电」，电量低是红的「电量低」。多出一会儿（5 秒，同它）
+  static func powerLevel(plugged: Bool, percent: Int, low: Bool) -> Island.Level {
+    Island.Level(
+      kind: .device, fraction: Double(min(max(percent, 0), 100)) / 100,
+      caption: low ? "电量低" : plugged ? (percent >= 100 ? "已充满" : "充电中") : "电池供电",
+      tone: low ? .low : plugged ? .good : .plain, stay: .seconds(5))
   }
 
   /// 该提醒低电量的门槛（纯函数）：没接电源、电量到了 20 / 10 以下、这一轮放电里还没提醒过；两个都到了只说低的那个
@@ -158,13 +168,41 @@ import Network
     }
     audioListener = nil
     lastOutput = nil
+    batteryRead?.cancel()
+    batteryRead = nil
   }
 
   private func outputChanged() {
     guard let device = Self.defaultOutput(), device != lastOutput else { return }
     lastOutput = device
-    guard Self.isHeadphones(transport: Self.transport(of: device)) else { return }
-    island?.show("已连上\(Self.name(of: device) ?? "耳机")", tone: .info, symbol: "headphones")
+    let transport = Self.transport(of: device)
+    guard Self.isHeadphones(transport: transport) else { return }
+    // 贴在刘海两边（同音量提示）：左边耳机的图标 + 「已连接」，右边电量。先出、电量读到了原地补上
+    let name = Self.name(of: device)
+    let address = Self.uid(of: device).flatMap(Headphones.address(fromUID:))
+    var level = Island.Level(
+      kind: .device, fraction: -1, label: name, glyph: Headphones.symbol(named: name),
+      stay: .seconds(3))
+    island?.showNotice(level, fallback: "已连上\(name ?? "耳机")")
+    Island.announce("已连上\(name ?? "耳机")")
+    batteryRead?.cancel()
+    // 电量只有蓝牙耳机有（USB 的没有地址，按名字去找会认成同名的别的蓝牙设备）
+    guard transport != kAudioDeviceTransportTypeUSB else { return }
+    batteryRead = Task { [weak self] in
+      // 刚连上的那一下系统多半还没拿到电量：读不到就过一会儿再读一次
+      for wait in [Duration.zero, .milliseconds(1200)] {
+        try? await Task.sleep(for: wait)
+        guard !Task.isCancelled, let self, self.lastOutput == device else { return }
+        guard let battery = await Headphones.battery(address: address, name: name)?.level
+        else { continue }
+        guard !Task.isCancelled, self.lastOutput == device else { return }
+        level.fraction = battery
+        level.tone = battery <= 0.2 ? .low : .good
+        // 提示还出着（或者正等着出）就原地补上；已经收了、换成别的了就不再弹一遍
+        self.island?.updateLevel(level)
+        return
+      }
+    }
   }
 
   /// 算不算耳机（纯函数）：蓝牙（AirPods 这类）、USB 的输出设备。内建的（扬声器、耳机孔）、显示器、隔空播放不算
@@ -197,8 +235,19 @@ import Network
   }
 
   private static func name(of device: AudioObjectID) -> String? {
+    string(of: device, kAudioObjectPropertyName)
+  }
+
+  /// 音频设备的编号（蓝牙耳机的里面带着蓝牙地址，Headphones.address(fromUID:)）
+  private static func uid(of device: AudioObjectID) -> String? {
+    string(of: device, kAudioDevicePropertyDeviceUID)
+  }
+
+  private static func string(
+    of device: AudioObjectID, _ selector: AudioObjectPropertySelector
+  ) -> String? {
     var address = AudioObjectPropertyAddress(
-      mSelector: kAudioObjectPropertyName, mScope: kAudioObjectPropertyScopeGlobal,
+      mSelector: selector, mScope: kAudioObjectPropertyScopeGlobal,
       mElement: kAudioObjectPropertyElementMain)
     var name: Unmanaged<CFString>?
     var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)

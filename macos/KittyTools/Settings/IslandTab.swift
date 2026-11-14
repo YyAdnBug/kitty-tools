@@ -171,7 +171,7 @@ struct IslandTab: View {
       Section {
         Toggle(isOn: $noticePower) {
           Text("接上、拔掉电源")
-          Text("带上现在的电量")
+          Text("刘海两边出几秒：一句话和现在的电量")
         }
         Toggle(isOn: $noticeBattery) {
           Text("电量低")
@@ -179,7 +179,7 @@ struct IslandTab: View {
         }
         Toggle(isOn: $noticeHeadphones) {
           Text("耳机连上")
-          Text("蓝牙耳机、AirPods、USB 耳机，写它的名字")
+          Text("蓝牙耳机、AirPods、USB 耳机：刘海两边出一下，蓝牙耳机带电量")
         }
         Toggle(isOn: $noticeNetwork) {
           Text("断网、网络恢复")

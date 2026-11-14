@@ -1142,6 +1142,27 @@ struct SnapshotProbeTests {
       ("island-level-volume", Island.Level(kind: .volume, fraction: 0.625)),
       ("island-level-muted", Island.Level(kind: .volume, fraction: 0.625, muted: true)),
       ("island-level-brightness", Island.Level(kind: .brightness, fraction: 0.3125)),
+      // 耳机连上：电量还没读到、读到了、快没电
+      (
+        "island-level-device-pending",
+        Island.Level(kind: .device, fraction: -1, label: "AirPods Pro", glyph: "airpodspro")
+      ),
+      (
+        "island-level-device",
+        Island.Level(kind: .device, fraction: 0.85, label: "AirPods Pro", glyph: "airpodspro")
+      ),
+      (
+        "island-level-device-low",
+        Island.Level(
+          kind: .device, fraction: 0.15, label: "WH-1000XM5", glyph: "headphones", tone: .low)
+      ),
+      // 电源：充电中、拔掉、电量低
+      ("island-level-power", SystemNotices.powerLevel(plugged: true, percent: 99, low: false)),
+      (
+        "island-level-power-unplugged",
+        SystemNotices.powerLevel(plugged: false, percent: 64, low: false)
+      ),
+      ("island-level-power-low", SystemNotices.powerLevel(plugged: false, percent: 9, low: true)),
     ] {
       let island = Island(showing: nil, geometry: notch)
       island.showLevel(level)
@@ -1157,6 +1178,12 @@ struct SnapshotProbeTests {
       try snapshot(
         IslandView(island: island), size: capsule.windowSize, dark: false,
         to: "\(out)/island-level-capsule.png")
+      let device = Island(showing: nil, geometry: capsule)
+      device.showLevel(
+        Island.Level(kind: .device, fraction: 0.85, label: "AirPods Pro", glyph: "airpodspro"))
+      try snapshot(
+        IslandView(island: device), size: capsule.windowSize, dark: false,
+        to: "\(out)/island-level-device-capsule.png")
     }
     // 下一个日程：开始前 10 分钟挂在耳朵上倒数；点开是标题、时间地点、加入会议 / 打开日历
     do {
