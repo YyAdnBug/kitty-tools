@@ -54,6 +54,10 @@ internal static class LauncherCache
                     Initials = Strings(entry, "initials"),
                     IconPath = String(entry, "iconPath"),
                     IconData = Bytes(entry, "icon"),
+                    // PLAN-v18 L5 L6：别名的键、解析出来的 exe、系统记的最后一次运行（旧缓存没有，下次扫完补上）
+                    AliasKey = String(entry, "aliasKey"),
+                    ResolvedExe = String(entry, "exe"),
+                    SystemUse = entry.TryGetProperty("systemUse", out var systemUse) && systemUse.TryGetInt64(out var ticks) ? ticks : 0,
                 });
             }
 
@@ -93,6 +97,21 @@ internal static class LauncherCache
                     writer.WriteString("title", item.Title);
                     writer.WriteString("subtitle", item.Subtitle);
                     writer.WriteString("iconPath", item.IconPath);
+                    if (item.AliasKey is { } aliasKey)
+                    {
+                        writer.WriteString("aliasKey", aliasKey);
+                    }
+
+                    if (item.ResolvedExe is { } exe)
+                    {
+                        writer.WriteString("exe", exe);
+                    }
+
+                    if (item.SystemUse > 0)
+                    {
+                        writer.WriteNumber("systemUse", item.SystemUse);
+                    }
+
                     writer.WriteStartArray("names");
                     foreach (var name in item.Names)
                     {

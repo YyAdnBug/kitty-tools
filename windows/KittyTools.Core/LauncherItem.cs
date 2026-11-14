@@ -84,6 +84,15 @@ public sealed record LauncherItem
     /// <summary>同分时的先后：系统命令、退出本 App 这类不确认就执行的要排在后面。</summary>
     public int Priority { get; init; }
 
+    /// <summary>应用别名的键（PLAN-v18 L5，Core AppAliases.Key：aumid: / exe:）；起不了别名的是 null。</summary>
+    public string? AliasKey { get; init; }
+
+    /// <summary>应用解析出来的 exe（.lnk 的目标；直接是 exe 的就是它）：对系统记的运行记录、按目标隐藏用。</summary>
+    public string? ResolvedExe { get; init; }
+
+    /// <summary>系统记的最后一次运行（UTC 刻度，PLAN-v18 L6 / §6 A3，资源管理器的 UserAssist）：同分时近的在前；不知道是 0。</summary>
+    public long SystemUse { get; init; }
+
     /// <summary>图标路径（App 的 exe / .lnk），没有就用 Kind 的默认图标。</summary>
     public string? IconPath { get; init; }
 

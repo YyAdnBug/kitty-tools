@@ -2140,6 +2140,12 @@ internal sealed partial class SettingsWindow : Window
             return;
         }
 
+        if (_launcherSubpage == "apps")
+        {
+            BuildLauncherApps();
+            return;
+        }
+
         _content.Children.Add(Header("启动器", "搜索应用、文件、书签与历史、网页搜索与快捷链接"));
         AddFeatureToggle(Feature.Launcher);
         var settings = SettingsService.Current;
@@ -2163,6 +2169,10 @@ internal sealed partial class SettingsWindow : Window
         AddShortcutsRow("launcher", "启动器里的按键",
             "搜应用、系统设置、文件、书签、网址、路径、算式（也能换算单位和进制）和系统命令（lock、quit、kill 这些），" +
             "Enter 打开，Ctrl+K 看这一项的全部操作");
+
+        // 应用（PLAN-v18 L5 + §6：别名、应用文件夹、隐藏的应用，点进去编辑）
+        _content.Children.Add(SettingsUi.Section("应用"));
+        AddSubpageRow("应用", AppsSummary(settings), () => OpenLauncherSubpage("apps"));
 
         // 文件搜索
         _content.Children.Add(SettingsUi.Section("文件搜索"));

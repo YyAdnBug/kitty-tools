@@ -685,7 +685,7 @@ mac 的单测在 `macos/KittyToolsTests/`，样本和期望值能搬就搬。只
   - 验：单测 938（新 18：HotKeyBlock 6、ShotKeys 4、ModifierTaps 8）；`--hotkey-block-probe`（Debug，假装前台换 exe、不发按键）全对，注册 / 注销 20 次切换中位 0.015 ms、最长 0.045 ms（第一次带上开 / 关 Raw Input 1.6 ms）；AOT x64 / ARM64 0 警告（96.4 / 102.0 MB）；截图 settings-hotkeys-block(-empty)、settings-hotkeys-shot-*、shot-rebind（浅深）。内存全量和空闲 CPU 随第 4 批补。
   - 替用户定的：托盘那一项认「最后一个外部窗口」时跳过 `XamlExplorerHostIslandWindow`、`Windows.UI.Core.CoreWindow`（开始菜单、通知中心）；截图时的键多出截图翻译、自动滚、裁剪三项（Windows 工具栏上有）；连按两下只听键盘，中间点了鼠标也算（听鼠标要收每一下移动，`ponytail:`）；同一个连按键只认第一个动作，第二个那一行写「和「…」重复」。
   - 没测：W3（管理员窗口在前台时 RegisterHotKey / Raw Input 收不收得到）、W4 远程桌面、独占全屏游戏、真按键（录制框、截图里改过的键、连按两下）、托盘那一项（HANDTEST 1258–1271）。
-  - 空闲 CPU 0.021 %（静置 30 s 后量 300 s，同第 2 批）；内存全量在跑，随第 5 批补。
+  - 空闲 CPU 0.021 %（静置 30 s 后量 300 s，同第 2 批）。内存全量（3979f9fe vs 478efded）：只托盘 53.7 / 53.6 MB，开启动器 63.9 / 63.1，开截图遮罩 77.5 / 76.2，最后静置 99.5 / 99.0。
 - **第 4 批（`git log --grep "PLAN-v18 第 4 批"`）**：L2、L4、L3 + `15bcac45` 的用法提示。
   - 命令和别名（Core `LauncherCommandTable`，照 mac LauncherCommands）：12 条关键词命令（open find quit hide forcequit kill port ip cb fy remind currency，提醒 / 汇率默认英文）+ 12 条系统命令，每条别名 + 开关；`LauncherModel.Search` 一开头把别名换回原关键词交给原来那一套，原关键词改掉 / 关掉的挡住；补全提示换词或不出；关掉的系统命令搜索、常用、收藏里都藏；汇率关掉不换算、不取表。提醒的用法提示写用户打的那个词。
   - 设置：启动器页「命令与网页搜索」两行推子页（命令和别名、网页搜索与快捷链接），通用页「功能 ›」一行推子页；两行的小字照 mac 的 summary（Core `SettingsSummary.Features`、`WebSearch.Summary`）。别名撞了（别的命令、网页搜索关键词）描橙框。
@@ -693,6 +693,14 @@ mac 的单测在 `macos/KittyToolsTests/`，样本和期望值能搬就搬。只
   - 验：单测 945（新 7：命令表 5、设置小字 2）；`--hotkey-block-probe` 加了命令快捷键四条（名单外注册着、「全部」停、只停几个不管、重新注册热键号还是 1000）全对；截图 settings-sub-*（浅深）；AOT x64 / ARM64 0 警告（96.6 / 102.2 MB）。内存全量、空闲 CPU 随第 5 批补。
   - 替用户定的：脚本命令（第 6–8 批）没有，表里先只有关键词、系统两组，筛选只留「只看开着的」；子页页头的图标是通用的齿轮；命令快捷键不能设成连按两下。
   - 没做：mac 启动器 ⌘K 里「改别名…」直达这一行（要动启动器的操作菜单，跟脚本那几批一起做）。没测：真打字、真按命令快捷键、导出导入（HANDTEST 1272–1280）。
+  - 空闲 CPU 0.031 %（静置 30 s 后量 300 s）；内存全量在跑，随第 6 批补。
+- **第 5 批（`git log --grep "PLAN-v18 第 5 批"`）**：§6（= PLAN-v16 §4 便携软件，P1–P4 照推荐）、L5、L6。
+  - 便携软件（`Launcher/AppSources.cs`、Core `PortableApps`）：A1 桌面（当前用户 + 公用，顶层 .lnk / .exe，副标题「桌面」，和开始菜单按目标去重）；A2 App Paths（HKCU + HKLM，Windows 目录下的不要）；A3 资源管理器的 UserAssist（ROT13 + 72 字节，已知文件夹 GUID 用 SHGetKnownFolderPath 换；设置开关「把运行过的程序也列出来」默认开、不导出）；A4 应用文件夹和单个程序（往下两层、500 个、2 秒超时；找不到的灰着不删；文件搜索结果是 exe 时 Ctrl+K「添加到启动器的应用」）；A5 名单（unins / setup / update / crash / helper… 和说明里的卸载 / 安装 / 更新；没图标的不收；同一个文件夹说明一样的留 64 位那个）+ 「从启动器里隐藏」（按目标，设置里能恢复，跟着导出导入）；A6 打开 exe 时工作目录是它自己的文件夹。
+  - 应用别名（Core `AppAliases`，D10）：键 aumid: / exe:（解析出来的 exe 折成 %ProgramFiles% 这类、小写，不用 .lnk 路径），输完整的别名时那个应用排第一；设置 › 启动器 › 应用（别名、应用文件夹、隐藏的应用三块，D10「同一页」）；导出导入 launcherAppAliases / launcherAppFolders / launcherHiddenApps。
+  - 按使用习惯排（L6，照 mac ea0c2813）：同一输入 28 天、1024 条、q/(q+0.5)；在更长的输入下选过的按一半算；提到固定行前面只认一字不差（LauncherUsageStore.Chose）；同分时按 UserAssist 记的最后运行（exe 那组 + .lnk 那组）近的在前。旧断言 `Exp(-14/3)` 换成 `Exp(-14/28)`：规格改了（注释写着），不是为了变绿。
+  - 验：单测 952（新 7：PortableApps 3、AppAliases 3、同分按系统记的使用 1）；`--launcher-script` 在 .Dev 档给计算器起别名 zz9 → 输 zz9 计算器排第一、输 zz 不出；本机实测 App Paths 27 个、运行记录 14 条（新收 0 个：都已在开始菜单里或被名单拦下）、桌面 0 个，A1–A3 加起来 391 ms（后台线程，主要是给 27 个 App Paths 程序取图标；PLAN 写的目标是 100 ms，没达到，见下）；截图 settings-sub-apps（浅深）；AOT x64 / ARM64 0 警告（96.7 / 102.4 MB）。内存全量、空闲 CPU 随第 6 批补。
+  - 替用户定的：A5「没图标的不收」用的是取不取得到 PNG 图标（ShellIcons.LoadPng），没另调 ExtractIconEx；App Paths 的程序也要有图标才收；A3 的副标题写所在文件夹名。
+  - 没达到：A1–A3 391 ms > 100 ms（取图标占大头；在后台线程、扫完才换列表，界面不卡；要压就把 App Paths 的图标改成第一次显示时再取）。没测：真桌面上的便携软件、真文件夹、隐藏 / 恢复、工作目录、导出导入（HANDTEST 1281–1289）。
 
 ### 停下来问用户
 

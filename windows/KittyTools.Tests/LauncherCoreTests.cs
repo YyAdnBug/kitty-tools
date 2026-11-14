@@ -271,10 +271,25 @@ public sealed class LauncherUsageMathTests
         var day = 86_400_000L;
         var global = LauncherUsageMath.Decayed(1, 0, 14 * day, LauncherUsageMath.GlobalTimeConstantDays) + 1;
         Assert.IsTrue(Math.Abs(global - (1 / Math.E + 1)) < 1e-9);
+        // 同一查询的时间常数 3 → 28 天（PLAN-v18 L6 照 mac ea0c2813 改的规格）
         var query = LauncherUsageMath.Decayed(1, 0, 14 * day, LauncherUsageMath.QueryTimeConstantDays) + 1;
-        Assert.IsTrue(Math.Abs(query - (1 + Math.Exp(-14.0 / 3))) < 1e-9);
+        Assert.IsTrue(Math.Abs(query - (1 + Math.Exp(-14.0 / 28))) < 1e-9);
         Assert.AreEqual("it", LauncherUsageMath.NormalizeQuery("  IT "));
         Assert.IsTrue(LauncherUsageMath.Multiplier(0, 0) == 1);
         Assert.IsTrue(LauncherUsageMath.Multiplier(1000, 1000) < 2.5);
+        // 选过一次（q = 1）就压过全局用得最多的加成（0.5·g/(g+3) 最多 0.5）
+        Assert.IsTrue(LauncherUsageMath.Multiplier(0, 1) > LauncherUsageMath.Multiplier(1000, 0));
+    }
+
+    [TestMethod]
+    public void TiesFollowSystemUse()
+    {
+        // 同分（都没用过、同一个打分、标题一样长）时按系统记的最后一次运行，近的在前（PLAN-v18 L6）
+        LauncherItem App(string title, long systemUse) => new()
+        {
+            Kind = LauncherKind.App, Target = title, Title = title, Names = new List<string> { LauncherMatch.Fold(title) }, SystemUse = systemUse,
+        };
+        var ranked = LauncherMatch.Rank(new[] { App("safari", 0), App("shadow", 20), App("sketch", 10) }, "s");
+        CollectionAssert.AreEqual(new[] { "shadow", "sketch", "safari" }, ranked.Select(item => item.Title).ToArray());
     }
 }

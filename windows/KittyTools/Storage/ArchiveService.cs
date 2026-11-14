@@ -550,6 +550,25 @@ internal static class ArchiveService
             }
 
             writer.WriteEndArray();
+            // PLAN-v18 L5 / §6：应用别名、应用文件夹、隐藏的应用（「运行过的程序」开关只在本机，不导出）
+            writer.WriteStartObject("launcherAppAliases");
+            foreach (var (key, alias) in AppAliases.Sanitize(settings.LauncherAppAliases ?? new Dictionary<string, string>()))
+            {
+                writer.WriteString(key, alias);
+            }
+
+            writer.WriteEndObject();
+            foreach (var (name, values) in new[] { ("launcherAppFolders", settings.LauncherAppFolders), ("launcherHiddenApps", settings.LauncherHiddenApps) })
+            {
+                writer.WriteStartArray(name);
+                foreach (var value in (values ?? new List<string>()).Take(500))
+                {
+                    writer.WriteStringValue(value);
+                }
+
+                writer.WriteEndArray();
+            }
+
             writer.WriteStartObject("launcherCommandHotKeys");
             foreach (var (id, text) in settings.LauncherCommandHotKeys ?? new Dictionary<string, string>())
             {
@@ -682,6 +701,28 @@ internal static class ArchiveService
                         .Take(500)
                         .ToList();
                     settings.LauncherCommandsOff = off.Count == 0 ? null : off;
+                    break;
+                case "launcherAppAliases" when value.ValueKind == JsonValueKind.Object:
+                    var appAliases = AppAliases.Sanitize(value.EnumerateObject()
+                        .Where(property => property.Value.ValueKind == JsonValueKind.String)
+                        .Select(property => new KeyValuePair<string, string>(property.Name, property.Value.GetString()!)));
+                    settings.LauncherAppAliases = appAliases.Count == 0 ? null : appAliases;
+                    break;
+                case "launcherAppFolders" or "launcherHiddenApps" when value.ValueKind == JsonValueKind.Array:
+                    var paths = value.EnumerateArray()
+                        .Where(item => item.ValueKind == JsonValueKind.String && item.GetString()!.Length is > 0 and < 1024)
+                        .Select(item => item.GetString()!)
+                        .Take(500)
+                        .ToList();
+                    if (key == "launcherAppFolders")
+                    {
+                        settings.LauncherAppFolders = paths.Count == 0 ? null : paths;
+                    }
+                    else
+                    {
+                        settings.LauncherHiddenApps = paths.Count == 0 ? null : paths;
+                    }
+
                     break;
                 case "launcherCommandHotKeys" when value.ValueKind == JsonValueKind.Object:
                     var commandKeys = value.EnumerateObject()

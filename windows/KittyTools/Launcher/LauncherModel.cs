@@ -400,8 +400,17 @@ internal sealed partial class LauncherModel
 
         // 直达项和书签 / 用过的网址可能是同一项：按 id 去重，留靠前的。
         // 在这个输入下选过的本地结果排到固定行前面（第四轮体检 E8）。
-        var ordered = LauncherMatch.Promoting(local, top, item =>
-            (LauncherUsageStore.Instance?.Boost(item, trimmed, now).Query ?? 0) > 0);
+        // 只有一字不差选过的才提到固定行前面（PLAN-v18 L6：开头对上的只加分，不越过固定行）
+        var ordered = LauncherMatch.Promoting(local, top, item => LauncherUsageStore.Instance?.Chose(item, trimmed) == true);
+        // 应用别名（PLAN-v18 L5）：输完整的别名时那个应用排第一
+        if (SettingsService.Current.LauncherAppAliases is { Count: > 0 } appAliases &&
+            AppAliases.KeyFor(trimmed, appAliases) is { } aliasKey &&
+            AppCatalog.Instance?.Apps.FirstOrDefault(app => app.AliasKey == aliasKey) is { } aliased)
+        {
+            ordered.RemoveAll(item => item.Id == aliased.Id);
+            ordered.Insert(0, aliased);
+        }
+
         var seen = new HashSet<string>();
         // 「新建提醒…」提示排在本地结果后面：输「提醒」想打开别的「提醒」应用的，Enter 照旧打开它（mac）。
         var reminderPrompts = remindersOn && !remindBlocked ? ReminderLauncher.Prompts(command) : Array.Empty<LauncherItem>();
@@ -1713,7 +1722,50 @@ internal sealed partial class LauncherModel
             actions.Add(new PaletteItem("移到回收站", Glyphs.Delete, 4, () => MoveToRecycleBin(item), Danger: true));
         }
 
+        // 便携软件（PLAN-v18 §6 A4 A5）：搜到的 exe 能加成启动器的应用；不想看到的应用藏起来（设置 › 启动器 › 应用 里能恢复）
+        if (item.IsFileResult && item.Target.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+        {
+            actions.Add(new PaletteItem("添加到启动器的应用", Glyphs.Add, 4, () => AddToApps(item)));
+        }
+
+        if (item.Kind == LauncherKind.App)
+        {
+            actions.Add(new PaletteItem("从启动器里隐藏", Glyphs.Remove, 4, () => HideApp(item)));
+        }
+
         return actions;
+    }
+
+    /// <summary>「从启动器里隐藏」：记进隐藏名单（按目标），这一行原地删掉；设置 › 启动器 › 应用 里能恢复。</summary>
+    private void HideApp(LauncherItem item)
+    {
+        var hidden = SettingsService.Current.LauncherHiddenApps ?? new List<string>();
+        if (!hidden.Contains(item.Target, StringComparer.OrdinalIgnoreCase))
+        {
+            hidden.Add(item.Target);
+        }
+
+        SettingsService.Current.LauncherHiddenApps = hidden;
+        SettingsService.Save();
+        AppCatalog.Instance?.Remove(item.Target);
+        Results = Results.Where(row => row.Id != item.Id).ToList();
+        ResultsChanged(null);
+        NoticeHost.Show($"已从启动器里隐藏「{item.Title}」", "设置 › 启动器 › 应用 里能恢复", NoticeTone.Normal);
+    }
+
+    /// <summary>「添加到启动器的应用」：这个 exe 记进应用文件夹那一节（单个程序），重新扫一遍应用。</summary>
+    private void AddToApps(LauncherItem item)
+    {
+        var folders = SettingsService.Current.LauncherAppFolders ?? new List<string>();
+        if (!folders.Contains(item.Target, StringComparer.OrdinalIgnoreCase))
+        {
+            folders.Add(item.Target);
+        }
+
+        SettingsService.Current.LauncherAppFolders = folders;
+        SettingsService.Save();
+        AppCatalog.Instance?.Rescan();
+        NoticeHost.Show($"已添加「{Path.GetFileNameWithoutExtension(item.Target)}」", "过一会儿就能当应用搜到", NoticeTone.Normal);
     }
 
     /// <summary>移到回收站（能放回，不二次确认）：轻提示说一声，结果行原地删掉。</summary>

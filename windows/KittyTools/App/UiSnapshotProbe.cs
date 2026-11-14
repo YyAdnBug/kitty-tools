@@ -728,10 +728,18 @@ internal static class UiSnapshotProbe
                 var off = SettingsService.Current.LauncherCommandsOff;
                 SettingsService.Current.LauncherCommandAliases = new Dictionary<string, string> { ["builtin:kill"] = "k", ["builtin:cb"] = "g" };
                 SettingsService.Current.LauncherCommandsOff = new List<string> { "system:sleep" };
+                // PLAN-v18 L5 / §6：应用页里一条别名（计算器 → jsq）、一个找不到的文件夹、一个隐藏的应用
+                var appAliases = SettingsService.Current.LauncherAppAliases;
+                var appFolders = SettingsService.Current.LauncherAppFolders;
+                var hiddenApps = SettingsService.Current.LauncherHiddenApps;
+                SettingsService.Current.LauncherAppAliases = new Dictionary<string, string> { ["aumid:microsoft.windowscalculator_8wekyb3d8bbwe!app"] = "jsq" };
+                SettingsService.Current.LauncherAppFolders = new List<string> { @"D:\Tools-not-here" };
+                SettingsService.Current.LauncherHiddenApps = new List<string> { @"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Example.lnk" };
                 foreach (var (name, page, sub) in new[]
                          {
                              ("settings-sub-launcher", "launcher", (string?)null), ("settings-sub-commands", "launcher", "commands"),
-                             ("settings-sub-web", "launcher", "web"), ("settings-sub-general", "general", null),
+                             ("settings-sub-web", "launcher", "web"), ("settings-sub-apps", "launcher", "apps"),
+                             ("settings-sub-general", "general", null),
                              ("settings-sub-features", "general", "features"),
                          })
                 {
@@ -750,6 +758,9 @@ internal static class UiSnapshotProbe
                 settings.OpenSubpageForProbe("general", null);
                 SettingsService.Current.LauncherCommandAliases = aliases;
                 SettingsService.Current.LauncherCommandsOff = off;
+                SettingsService.Current.LauncherAppAliases = appAliases;
+                SettingsService.Current.LauncherAppFolders = appFolders;
+                SettingsService.Current.LauncherHiddenApps = hiddenApps;
             }
 
             // PLAN-v18 S3：快捷键页「截图时」两组（改过一个键：钉图 Alt+P；清掉一个：录屏），拍完换回去

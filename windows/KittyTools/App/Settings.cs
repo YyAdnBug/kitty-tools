@@ -343,6 +343,18 @@ internal sealed class Settings
     /// <summary>启动器每条命令的快捷键（PLAN-v18 L3）：编号 → 「Ctrl+Alt+K」写法。</summary>
     public Dictionary<string, string>? LauncherCommandHotKeys { get; set; }
 
+    /// <summary>应用别名（PLAN-v18 L5，Core AppAliases）：键（aumid: / exe:）→ 别名。</summary>
+    public Dictionary<string, string>? LauncherAppAliases { get; set; }
+
+    /// <summary>用户加的应用文件夹和单个程序（PLAN-v18 §6 A4）：文件夹往下扫两层；.exe / .lnk 是单个程序。</summary>
+    public List<string>? LauncherAppFolders { get; set; }
+
+    /// <summary>「从启动器里隐藏」的应用（§6 A5）：目标路径（小写）。</summary>
+    public List<string>? LauncherHiddenApps { get; set; }
+
+    /// <summary>把运行过的程序也列出来（§6 A3 / P1，读资源管理器的 UserAssist）：默认开，只在本机、不导出。</summary>
+    public bool LauncherRecentPrograms { get; set; } = true;
+
     /// <summary>书签开着的浏览器 id；null = 从没设过（Edge、Chrome，PLAN-v9 V1）。</summary>
     public List<string>? LauncherBookmarkBrowsers { get; set; }
 
