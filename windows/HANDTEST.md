@@ -751,3 +751,13 @@ mac 0.7.1（第四轮体检）修掉、Windows 也有的那几条，照 mac 同�
 1296. .cmd / .bat 存成 UTF-8（VS Code 默认）或 GBK（记事本 ANSI）里写的中文都不乱码；参数带空格、& 原样到脚本；.ps1 存成 UTF-8 带 BOM 才认中文（PowerShell 5.1 的老毛病）。（Windows 11-14：--script-probe 两种 cmd、ps1 带空格和 & 的参数）
 1297. .py 只在装了 Python（带 py 启动器）时认；没装时设置里列「要装 Python…」；.sh / .js 这类列「Windows 版只认 .ps1、.cmd、.bat、.py」。（Windows 11-14：单测 DefaultsAndSkips；这台没有 py.exe）
 1298. 设置 › 启动器 › 命令和别名 最上面「我的脚本」一组：能改别名、关掉、设快捷键；脚本的快捷键：不要参数、不用确认、看过全文的直接跑，别的打开启动器填好「别名 」。（没测）
+
+## PLAN-v18 第 7 批：脚本命令（L1）之二——参数和输出，2026-11-14
+
+> 写了「Windows 11-14」的是用单测、`--launcher-script`（.Dev 档 scripts 里的测试脚本，不发按键）验过的；**没写的都没测**。截图在 `windows-shots` 的 `0.3.0-v18-7/`。
+
+1299. 列表脚本（# @kitty.mode list，# @kitty.argument1 词）：打「keyword 空格 ab」停一下，每行输出一条结果（「标题⇥副标题」，或 Script Filter 的 JSON：title / subtitle / arg / url / path / autocomplete / valid）；接着打字重跑；Enter 粘贴那一行的值，写了 url / path 的打开它，valid=false 的只响一声；Tab 补 autocomplete。（Windows 11-14：截图 ls9 ab 两行「ab-1 第一」「ab-2 第二」；Enter 没测）
+1300. # @kitty.filter 的列表脚本只跑一次，打的字在结果里过滤；脚本出错时那一行写最后一行错误。（没测）
+1301. 下拉参数（argument 的 type: dropdown）：打「keyword 空格」列出选项（行尾「选项」、底栏「选这个」），打几个字过滤，Enter / Tab 把选项补进框；交给脚本的是选项的 value；打的不是选项之一时 Enter 响一声。（Windows 11-14：截图 dw 列出「毫秒」「秒」；补进框、交 value 没测，value 那一半有单测 ChoicesAndEncoding）
+1302. 参数带空格用引号括：「hb "New York" London」两个参数；密码参数（type: password）在行上显示成 •••、跑完不记使用。（单测 Invocations；密码显示没测）
+1303. mode full 的那扇窗认终端颜色：红绿蓝、亮色、256 色、24 位、粗体、下划线；黑和白换成文字的主次色，黄色在浅色里压暗；进度条（\r 重画）只留最后一帧。（Windows 11-14：单测 ScriptTerminalTests；那扇窗没截图）

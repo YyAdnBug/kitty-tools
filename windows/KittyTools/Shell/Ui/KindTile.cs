@@ -193,6 +193,7 @@ internal static class KindTile
         LauncherKind.Action => LauncherActions.FamilyOf(target),
         LauncherKind.Prompt when target.StartsWith("file-", StringComparison.Ordinal) => "general",
         LauncherKind.Prompt when target.StartsWith("system-", StringComparison.Ordinal) => "command",
+        LauncherKind.Prompt when target.StartsWith("script-option:", StringComparison.Ordinal) => "command",
         LauncherKind.Prompt when target == "translate-fy" => "translate",
         // 「提醒 …」认不出时间的提示、单输「提醒」的补全提示：提醒的琥珀（PLAN-v12 N6）。
         LauncherKind.Prompt when target is ReminderLauncher.HintTarget or ReminderLauncher.KeywordTarget => "reminders",

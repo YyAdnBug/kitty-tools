@@ -37,6 +37,8 @@ public static class PanelFooterText
         LauncherKind.Ip => "网络",
         LauncherKind.Script => "脚本",
         LauncherKind.Prompt when target.StartsWith("system-", StringComparison.Ordinal) => "系统",
+        // 脚本下拉参数的选项（PLAN-v18 L1）
+        LauncherKind.Prompt when target.StartsWith("script-option:", StringComparison.Ordinal) => "选项",
         LauncherKind.Prompt when target == "translate-fy" => "翻译",
         LauncherKind.Prompt when target == ExchangeRates.PromptTarget => "汇率",
         LauncherKind.Prompt when target.StartsWith(ExchangeRates.SuggestionPrefix, StringComparison.Ordinal) => "货币",
@@ -59,6 +61,7 @@ public static class PanelFooterText
             LauncherKind.Calculation or LauncherKind.Ip => "粘贴",
             LauncherKind.Clip => target.Length == 0 ? "打开" : "搜索",
             LauncherKind.Translate => "翻译",
+            LauncherKind.Prompt when target.StartsWith("script-option:", StringComparison.Ordinal) => "选这个",
             LauncherKind.Prompt => "补全关键词",
             LauncherKind.Process => "结束",
             _ => "打开",

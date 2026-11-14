@@ -709,6 +709,13 @@ mac 的单测在 `macos/KittyToolsTests/`，样本和期望值能搬就搬。只
   - 验：单测 965（新 13：ScriptCommand 9、ScriptLaunch 4）；`--script-probe`（新，Debug，临时文件夹真跑）全过：ps1 中文 + 带空格和 & 的参数、退出码、工作目录 / KITTY_SCRIPT_DIR、cmd 存 UTF-8 和 GBK 都不乱码、超时 1 s 停下、停止后子进程 ping 0 个、下载标记；**PowerShell 冷启动约 200 ms**（第二次 190 ms）；`--launcher-script` 在 .Dev 档 scripts 放一个 .ps1：搜得到、「nh 世界」副标题「名字：世界」、Enter 跑完 215 ms；AOT x64 / ARM64 0 警告（97.6 / 103.3 MB，比第 5 批 +0.9 MB）。内存全量、空闲 CPU 随第 7 批补。
   - 替用户定的：mac 在启动器面板里原地看全文 / 全部输出，Windows 的启动器失焦就收，挪到一扇普通窗口；批处理按文件是不是 UTF-8 决定要不要 chcp 65001；.ps1 不带 BOM 的中文 PowerShell 5.1 读成乱码（`ponytail:`，说明里写存成带 BOM）。
   - 没做（第 7、8 批）：列表模式、下拉参数打字时列选项、全部输出认终端颜色、设置页（文件夹、读不成的、新建、怎么写、给 AI 的写法说明）、自带的命令（D8）。没测：粘贴 / 复制 / 全文、confirm、看全文那扇窗、快捷键跑脚本（HANDTEST 1290–1298）。
+- **第 7 批（`git log --grep "PLAN-v18 第 7 批"`）**：L1 之二——参数和输出。
+  - 列表脚本（mode list）：「别名 空格 参数」停 0.25 s 后台跑（还在打字就撤掉），每行一条结果（Core `ScriptText.Lines`：「标题⇥副标题」或 Script Filter 的 JSON），接着打字重跑；filter 的只跑一次、按打的字过滤；Enter 打开 url / path 或粘贴值，valid=false 响一声，Tab 补 autocomplete；出错那一行写原因。
+  - 下拉参数：正在打的那个参数是下拉的就列选项（行尾「选项」、底栏「选这个」），Enter / Tab 补进框（带空白的括引号），交给脚本的是 value；引号参数、密码参数（行上 •••、不记使用）在第 6 批的 Core 里。
+  - 全部输出那扇窗认终端颜色（Core `ScriptTerminal`：SGR 8 / 16 / 256 色、24 位、粗体 / 暗 / 斜体 / 下划线 / 删除线，别的控制码去掉、截在一半的先不显示；0–15 按深浅色调过），可选中的 RichTextBlock、边跑边来最多 0.1 s 重画一次。
+  - 验：单测 968（新 3：ScriptTerminal）；`--launcher-script`（.Dev 档）：列表脚本「ls9 ab」两行「ab-1 第一」「ab-2 第二」，下拉参数「dw 」列出「毫秒」「秒」；AOT x64 / ARM64 0 警告（97.7 / 103.3 MB）。内存全量、空闲 CPU 随第 8 批补。
+  - 替用户定的：列表那几行的 Ctrl+C 没做（mac 的 text.copy；Enter 粘贴照常），列表结果不进使用记录。
+  - 没测：列表的 Enter / Tab、filter、选项补进框、彩色输出那扇窗（HANDTEST 1299–1303）。
 
 ### 停下来问用户
 

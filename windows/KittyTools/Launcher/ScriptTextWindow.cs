@@ -11,6 +11,7 @@ using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Documents;
 using Microsoft.UI.Xaml.Input;
 using Windows.System;
 
@@ -131,19 +132,111 @@ internal sealed class ScriptTextWindow : Window
                 rerun();
             }
         };
+        // 认终端颜色（Core ScriptTerminal）：可选中的 RichTextBlock 换掉纯文字框；边跑边来的输出最多 0.1 s 重画一次
+        var rich = new RichTextBlock
+        {
+            IsTextSelectionEnabled = true,
+            FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Cascadia Mono, Consolas"),
+            FontSize = 13,
+            TextWrapping = TextWrapping.NoWrap,
+        };
+        var scroller = new ScrollViewer
+        {
+            Content = rich,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+        };
+        AutomationProperties.SetName(scroller, "全部输出");
+        var root = (Grid)window.Content;
+        root.Children.Remove(window._text);
+        root.Children.Insert(0, scroller);
         window.Activate();
         var queue = window.DispatcherQueue;
+        var pending = false;
+        void Render()
+        {
+            pending = false;
+            var paragraph = new Paragraph();
+            foreach (var span in ScriptTerminal.Spans(raw.ToString()))
+            {
+                var run = new Run { Text = span.Text };
+                if (span.Pen.Foreground is { } color)
+                {
+                    run.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(TerminalColor(color, span.Pen.Dim));
+                }
+
+                if (span.Pen.Bold)
+                {
+                    run.FontWeight = FontWeights.Bold;
+                }
+
+                if (span.Pen.Italic)
+                {
+                    run.FontStyle = Windows.UI.Text.FontStyle.Italic;
+                }
+
+                if (span.Pen.Underline || span.Pen.Strike)
+                {
+                    run.TextDecorations = (span.Pen.Underline ? Windows.UI.Text.TextDecorations.Underline : 0) |
+                                          (span.Pen.Strike ? Windows.UI.Text.TextDecorations.Strikethrough : 0);
+                }
+
+                paragraph.Inlines.Add(run);
+            }
+
+            rich.Blocks.Clear();
+            rich.Blocks.Add(paragraph);
+            scroller.UpdateLayout();
+            scroller.ChangeView(null, scroller.ScrollableHeight, null, disableAnimation: true);
+        }
+
         void Append(string piece) => queue.TryEnqueue(() =>
         {
             raw.Append(piece);
-            window._text.Text = ScriptText.Clean(raw.ToString());
-            window._text.Select(window._text.Text.Length, 0);
+            if (!pending)
+            {
+                pending = true;
+                var timer = queue.CreateTimer();
+                timer.Interval = TimeSpan.FromMilliseconds(100);
+                timer.IsRepeating = false;
+                timer.Tick += (_, _) => Render();
+                timer.Start();
+            }
         });
         void Done(string status) => queue.TryEnqueue(() =>
         {
+            Render();
             window._status.Text = status;
             stopButton.IsEnabled = false;
         });
         return (Append, Done);
+    }
+
+    /// <summary>
+    /// 终端颜色：0–15 按深浅色调过（黑、白换成文字的主次色；黄色在浅色里压暗，不然白底上看不清），16–255 照 xterm，24 位照给的。
+    /// </summary>
+    private static Windows.UI.Color TerminalColor(int color, bool dim)
+    {
+        var dark = Theme.ElementTheme == ElementTheme.Dark ||
+                   (Theme.ElementTheme == ElementTheme.Default && Application.Current.RequestedTheme == ApplicationTheme.Dark);
+        int rgb;
+        if ((color & TerminalPen.RgbFlag) != 0)
+        {
+            rgb = color & 0xFFFFFF;
+        }
+        else if (color < 16)
+        {
+            int[] lightPalette = { 0x1A1A1A, 0xC42B1C, 0x0F7B0F, 0x8A6A00, 0x0063B1, 0x881798, 0x00788A, 0x606060,
+                                   0x606060, 0xE81123, 0x16C60C, 0x9D7B00, 0x3B78FF, 0xB4009E, 0x00A3B4, 0x1A1A1A };
+            int[] darkPalette = { 0xFFFFFF, 0xFF6B6B, 0x6CCB5F, 0xF9F1A5, 0x6CB8FF, 0xD670D6, 0x61D6D6, 0xBEBEBE,
+                                  0x9E9E9E, 0xFF8A8A, 0x8BE38B, 0xFFF59D, 0x8EC9FF, 0xE59BE5, 0x8AE6E6, 0xFFFFFF };
+            rgb = (dark ? darkPalette : lightPalette)[color];
+        }
+        else
+        {
+            rgb = ScriptTerminal.PaletteRgb(color);
+        }
+
+        return Windows.UI.Color.FromArgb(dim ? (byte)160 : (byte)255, (byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb);
     }
 }

@@ -348,7 +348,7 @@ internal sealed partial class LauncherModel
         // 「别名 空格 参数」给脚本（PLAN-v18 L1）：内置命令先认（上面那几样），其次脚本，网页搜索的关键词最后
         if (ScriptText.InvocationFor(original, Scripts, ScriptAlias) is { } invocation)
         {
-            return new List<LauncherItem> { ScriptItem(invocation.Script, invocation.Arguments) };
+            return ScriptRows(invocation);
         }
 
         // 「cb 词」（带空格）只有这一行；单输 cb 时它排第一，后面照常接本地结果（mac 体检 B33）。
@@ -1815,12 +1815,196 @@ internal sealed partial class LauncherModel
         return actions;
     }
 
+    // ---- 脚本的参数和列表（PLAN-v18 L1 第 7 批）
+
+    /// <summary>列表脚本上一次跑出来的：哪条脚本、哪组参数（列表打字时跑的那组；filter 的只按脚本），和一行行结果。</summary>
+    private (string Key, IReadOnlyList<ScriptLine> Lines, string? Failure)? _listResult;
+    private CancellationTokenSource? _listRun;
+    private string? _listPending;
+
+    /// <summary>
+    /// 「别名 空格 参数」那几行：正在打的参数是下拉的列出选项（Enter / Tab 补进去）；列表脚本（mode list）停 0.25 s 跑一遍、
+    /// 每行一条结果（filter 的只跑一次、按打的字过滤）；别的就是脚本那一行。
+    /// </summary>
+    private List<LauncherItem> ScriptRows(ScriptInvocation invocation)
+    {
+        var script = invocation.Script;
+        var rows = new List<LauncherItem>();
+        if (invocation.Typing < script.Arguments.Count && script.Arguments[invocation.Typing].Choices.Count > 0)
+        {
+            var argument = script.Arguments[invocation.Typing];
+            var typed = invocation.Typing < invocation.Arguments.Count ? invocation.Arguments[invocation.Typing] : string.Empty;
+            if (argument.OptionFor(typed) is null || invocation.Arguments.Count <= invocation.Typing)
+            {
+                var folded = LauncherMatch.Fold(typed);
+                var before = string.Join(" ", invocation.Arguments.Take(invocation.Typing).Select(ScriptText.Quoted));
+                var prefix = invocation.Keyword + " " + (before.Length > 0 ? before + " " : string.Empty);
+                foreach (var option in argument.Choices.Where(option => folded.Length == 0 ||
+                                                                      LauncherMatch.Fold(option.Title).Contains(folded, StringComparison.Ordinal)))
+                {
+                    rows.Add(new LauncherItem
+                    {
+                        Kind = LauncherKind.Prompt,
+                        Target = "script-option:" + option.Value,
+                        Title = option.Title,
+                        Subtitle = argument.Placeholder,
+                        Completion = prefix + ScriptText.Quoted(option.Title) + " ",
+                    });
+                }
+
+                if (rows.Count > 0)
+                {
+                    return rows;
+                }
+            }
+        }
+
+        if (script.Mode != ScriptMode.List)
+        {
+            rows.Add(ScriptItem(script, invocation.Arguments));
+            return rows;
+        }
+
+        // 列表：filter 的只跑一次（不带参数）、按打的字过滤；别的每组参数跑一遍
+        var key = script.Filters ? script.Path : script.Path + "\u001F" + string.Join("\u001F", invocation.Arguments);
+        if (_listResult is { } result && result.Key == key)
+        {
+            if (result.Failure is { } failure)
+            {
+                return new List<LauncherItem> { ListNote(script, failure) };
+            }
+
+            var filter = script.Filters ? LauncherMatch.Fold(string.Join(" ", invocation.Arguments)) : string.Empty;
+            for (var index = 0; index < result.Lines.Count; index++)
+            {
+                var line = result.Lines[index];
+                if (filter.Length > 0 && !LauncherMatch.Fold(line.Title + " " + line.Subtitle).Contains(filter, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                rows.Add(new LauncherItem
+                {
+                    Kind = LauncherKind.Script,
+                    Target = $"scriptline:{index}",
+                    Title = line.Title,
+                    Subtitle = line.Subtitle,
+                    Payload = line.Value,
+                    Completion = line.Autocomplete is { } complete ? invocation.Keyword + " " + complete : null,
+                });
+            }
+
+            return rows.Count > 0 ? rows : new List<LauncherItem> { ListNote(script, "没有结果") };
+        }
+
+        if (invocation.IsMissing)
+        {
+            return new List<LauncherItem> { ScriptItem(script, invocation.Arguments) };
+        }
+
+        StartList(script, invocation.Arguments, key);
+        return new List<LauncherItem> { ListNote(script, "正在运行…") };
+    }
+
+    private LauncherItem ListNote(ScriptCommand script, string text) => new()
+    {
+        Kind = LauncherKind.Script,
+        Target = "scriptline:-1",
+        Title = script.Title,
+        Subtitle = text,
+    };
+
+    /// <summary>停 0.25 s（还在打字就撤掉）跑列表脚本，跑完记下结果、还是这一句就重搜。</summary>
+    private void StartList(ScriptCommand script, IReadOnlyList<string> arguments, string key)
+    {
+        if (_listPending == key)
+        {
+            return;
+        }
+
+        _listRun?.Cancel();
+        var cts = new CancellationTokenSource();
+        _listRun = cts;
+        _listPending = key;
+        var query = Query;
+        var dispatcher = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(250, cts.Token);
+                var outcome = await ScriptRunner.RunAsync(script, script.Filters ? Array.Empty<string>() : arguments, cts.Token);
+                if (cts.IsCancellationRequested)
+                {
+                    return;
+                }
+
+                var failure = outcome.Succeeded
+                    ? null
+                    : outcome.Reason ?? ScriptText.LastLine(outcome.Error) ?? ScriptText.LastLine(outcome.Output) ?? $"退出码 {outcome.ExitCode}";
+                var lines = ScriptText.Lines(outcome.Output, script.Folder);
+                dispatcher?.TryEnqueue(() =>
+                {
+                    if (_listPending != key)
+                    {
+                        return;
+                    }
+
+                    _listPending = null;
+                    _listResult = (key, lines, failure);
+                    if (_shown && Query == query)
+                    {
+                        Search(Query);
+                        ResultsChanged(null);
+                    }
+                });
+            }
+            catch (OperationCanceledException)
+            {
+                // 打字撤掉了
+            }
+        });
+    }
+
+    /// <summary>列表的一行：Enter 打开它的网址 / 文件，不然粘贴它的值；valid = false 的只响一声。</summary>
+    private void RunListLine(LauncherItem item)
+    {
+        var index = int.TryParse(item.Target["scriptline:".Length..], out var value) ? value : -1;
+        var lines = _listResult?.Lines;
+        if (lines is null || index < 0 || index >= lines.Count || !lines[index].IsValid)
+        {
+            Beep();
+            return;
+        }
+
+        var line = lines[index];
+        if ((line.OpensUrl ?? line.OpensFile) is { } open)
+        {
+            Executed = true;
+            HidePanel();
+            if (LauncherOpeners.Start(open) is { } error)
+            {
+                NoticeHost.Show("打不开", error, NoticeTone.Warning);
+            }
+
+            return;
+        }
+
+        Paste(line.Value);
+    }
+
     /// <summary>
     /// Enter 跑脚本（PLAN-v18 L1）：要参数的只打了名字时先补「别名 空格」；必填的没填够响一声；写了 confirm 的先上膛；
     /// 跑之前收起启动器（粘贴往原来的前台粘），结果交给 ScriptHost。
     /// </summary>
     private void RunScript(LauncherItem item)
     {
+        if (item.Target.StartsWith("scriptline:", StringComparison.Ordinal))
+        {
+            RunListLine(item);
+            return;
+        }
+
         if (Scripts.FirstOrDefault(script => string.Equals(script.Path, item.Target, StringComparison.OrdinalIgnoreCase)) is not { } script)
         {
             Beep();
