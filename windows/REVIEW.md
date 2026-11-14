@@ -557,6 +557,17 @@ PLAN-v19 在 0.2.0 收口开始前已经推到 `windows`，而它排在 0.2.0 �
 **没测、留给真机清单**：R69 注销再登录自己起来（第 2 条）、R70 真的 Ctrl+Alt+Del（第 6 条）、R71 真按住快捷键进入（第 7 条）、R74 管理员窗口在前台（第 8 条）、
 R73 真拖图（第 14 条）、S1 真长网页（第 26 条）、S6 真遮罩换选区（第 27 条）、L13 两块屏（第 28 条）、L12 真限流 / 真清单（第 29 条）；R75、R78 的出错那条路没真走。
 
+### 发布（2026-11-14，用户：「windows发布0.2.0把」）
+
+- tag `windows-v0.2.0` → `764b5ae6`（exe 就是从它打的，`ProductVersion` 0.2.0+764b5ae…；`windows-0.2.0` 的合并提交 `93f8ba61` 是同一棵树）。只推了这一个 tag。
+- REST API：先建草稿、传 8 个文件（两个架构的安装包、zip 和各自的 `.sha256`，大小逐个核过）、说明用 `release-notes.md`、再发布：
+  https://github.com/YyAdnBug/kitty-tools/releases/tag/windows-v0.2.0 ，不是预发布、没标 latest（latest 仍是 `macos-v0.8.1`）。
+- 第一次建了更新清单的预发布 `windows-update`（tag 也指 `764b5ae6`，标题「Windows 更新清单」、说明「App 内更新读的清单，别删」、不标 latest），只放 `windows-update.json`：
+  https://github.com/YyAdnBug/kitty-tools/releases/tag/windows-update 。以后每版只 `upload --clobber` 这一个文件。
+- 发布后核：清单从 `releases/download/windows-update/` 下回来和本地逐字节一样；x64 zip、x64 安装包下回来 sha256 对得上（`f7f2bc11…`、`614fd638…`），arm64 zip 200。
+  已发布的 0.1.2（`0.1.2+45a487d`，探针档，真 GitHub）启动后 `update.check newer=True version=0.2.0 localFeed=False`；0.2.0 自己（探针档）`update.check newer=False version=0.2.0 source=manifest`（读的是清单）。
+- **真机清单 1–37 条没走就发了**（用户决定发）；走出来的问题修在 `windows` 上，出 0.2.1。没碰 `D:\Apps\Kitty Tools`。
+
 ## PLAN-v19（同步直接连 WebDAV 服务器，issue #18，2026-11-13 用户「全部按推荐」，审查方在 Mac 上写；Windows 11-13 核验完，见本节末尾）
 
 方案在 `PLAN-v19.md`（D1–D5 都取推荐）。一批，审查方在 Mac 上写完（`git log --grep "PLAN-v19"`），**一行都没编译、没跑过单测**（Mac 上没有 .NET SDK）。
