@@ -50,7 +50,8 @@ struct NowPlayingFallbackTests {
     NowPlayingSnapshot(
       bundleID: "b", parentBundleID: nil, appName: nil, title: title, artist: nil, album: nil,
       duration: nil, elapsed: nil, timestamp: nil, rate: playing ? 1 : 0, isPlaying: playing,
-      canPrevious: true, canNext: true, artworkID: nil, artwork: nil)
+      canPrevious: true, canNext: true, canSeek: true, shuffle: nil, repeatMode: nil,
+      artworkID: nil, artwork: nil)
   }
 
   /// 几个播放器里挑：在播的先，同样在不在播的取后来的
@@ -88,6 +89,12 @@ struct NowPlayingFallbackTests {
       NowPlayingFallback.script(.next, bundleID: "com.spotify.client")
         == "if application id \"com.spotify.client\" is running then tell application id \"com.spotify.client\" to next track"
     )
+    // 跳到某一秒：整秒（83.6 → 84），离谱的数夹住
+    #expect(
+      NowPlayingFallback.seekScript(83.6, bundleID: "com.apple.Music")
+        == "if application id \"com.apple.Music\" is running then tell application id \"com.apple.Music\" to set player position to 84"
+    )
+    #expect(NowPlayingFallback.seekScript(-.infinity, bundleID: "x").hasSuffix("to 0"))
   }
 
   /// 连不上服务（名字不存在 = 包里的服务找不到、拉不起来）→ 用退路：Spotify 说在播的那一首挂到岛上。

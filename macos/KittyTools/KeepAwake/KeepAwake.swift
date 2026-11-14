@@ -5,6 +5,8 @@
 // - 没开、没在时段里时什么都不跑：只有一个等到「下一次要变」的 Task（手动那段到点、时段的下一个边界），醒来、改系统时间、
 //   换时区、偏好变了（定时、屏幕熄不熄）重新算一遍。
 // - 插件移除（功能开关关掉）= stop()：停掉、不再听。开始 / 结束在岛上说一声（announce，AppDelegate 接刘海岛）。
+// - 手动开的那一段是刘海岛上的一个活动（2026-11-13，刘海岛扩展拍板 C3）：左耳杯子、右耳倒数（无限期不写数），点开有
+//   「停止」；没刘海时是菜单栏那一项。定时那一段不上（每天自动开，天天挂着是噪音）。每次重新算完跟一次（syncIsland）。
 
 import AppKit
 
@@ -21,6 +23,9 @@ import AppKit
 
   /// 岛上说一声（标题、说明）
   @ObservationIgnored var announce: (String, String?) -> Void = { _, _ in }
+  /// 手动开的那一段挂在它上面（AppDelegate 接；单测里是 nil）
+  @ObservationIgnored weak var island: Island?
+  static let islandActivity = "keep-awake"
 
   @ObservationIgnored private let defaults: UserDefaults
   @ObservationIgnored private var activity: NSObjectProtocol?
@@ -76,6 +81,39 @@ import AppKit
     wake?.cancel()
     wake = nil
     apply(false)
+    syncIsland()
+  }
+
+  /// 上次挂到岛上的样子（nil = 没挂）：偏好一变就重新算一遍，样子没变就不重挂——不然每次都让岛重画、读数的秒拍重来
+  @ObservationIgnored private var hung: Hung?
+
+  struct Hung: Equatable {
+    var end: Date
+    var display: Bool
+  }
+
+  /// 岛上的活动跟上：手动那一段开着就挂（再挂一次 = 原地换读数），没开就收。force：岛那边可能把它丢了
+  /// （刘海岛插件刚添加：没添加时岛不收活动），照现在的样子重挂一次（AppDelegate.applyFeatures 调）
+  func syncIsland(force: Bool = false) {
+    let wanted = sessionEnd.map { Hung(end: $0, display: keepsDisplayOn) }
+    guard force || wanted != hung else { return }
+    hung = wanted
+    guard let end = sessionEnd else {
+      island?.endActivity(Self.islandActivity)
+      return
+    }
+    island?.setActivity(
+      Self.activity(until: isIndefinite ? nil : end, display: keepsDisplayOn) { [weak self] in
+        self?.end()
+      })
+  }
+
+  /// 手动那一段在岛上的样子（纯函数）：until 是 nil = 无限期，右耳不写数；卡片上一个「停止」
+  static func activity(until: Date?, display: Bool, stop: @escaping () -> Void) -> Island.Activity {
+    Island.Activity(
+      id: islandActivity, kind: .awake, title: "保持唤醒", detail: display ? "屏幕也不熄" : "屏幕照常熄",
+      symbol: "cup.and.saucer.fill", trailing: until.map { .countdown(to: $0) } ?? .none,
+      actions: [Island.Action("停止", run: stop)])
   }
 
   // MARK: 手动的一段
@@ -131,6 +169,7 @@ import AppKit
         inside ? "按时段保持唤醒" : "时段结束，不再保持唤醒", inside ? plan.summary : "电脑会照常睡")
     }
     apply(isActive)
+    syncIsland()
     wake?.cancel()
     let next = [
       sessionEnd == .distantFuture ? nil : sessionEnd,

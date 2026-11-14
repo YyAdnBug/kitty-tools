@@ -117,6 +117,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private lazy var systemNotices = SystemNotices(island: island)
   /// 刘海岛的正在播放（刘海岛扩展第 2 期）：开着才连包里的正在播放服务
   private lazy var nowPlaying = NowPlaying(island: island)
+  /// 刘海岛上的「下一个日程」（设置 › 刘海岛，默认关）
+  private lazy var nextEvent = NextEvent(island: island)
+  /// 音量 / 亮度键换成刘海岛上的提示（设置 › 刘海岛，默认关）
+  private(set) lazy var mediaKeys = MediaKeys(island: island)
   /// 应用内更新（读本仓库的 GitHub release）
   private let updater = Updater()
   /// CleanShot 式常驻缩略图（截图飞入右下角后留在那里）
@@ -166,6 +170,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     keepAwake.announce = { [unowned self] title, detail in
       island.show(title, detail: detail, tone: .info, symbol: SettingsPage.keepAwake.symbol)
     }
+    keepAwake.island = island
     return keepAwake
   }()
   /// 提醒（PLAN §10「提醒」）：到点挂在刘海岛上。起停跟着功能开关（applyFeatures），列表变了看着偏好跟上
@@ -1045,9 +1050,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     island.hasExtras = Feature.island.isOn
     island.respondsToNotch = respondsToNotch
+    // 那一张上的月历旁边列今天的日程（没有「日历」授权是 nil；岛自己不碰 EventKit）
+    island.agendaProvider = { [unowned self] in nextEvent.agenda() }
+    applyIslandFeel()
     island.start()
     systemNotices.apply()
     nowPlaying.apply()
+    nextEvent.apply()
+    mediaKeys.apply()
     showWelcomeIfNeeded()
     // 有快捷键没注册上（15.0 / 15.1 上只带 ⌥ 的组合）：按了没反应又不知道为什么，启动时说一次
     // （放在「已更新」之后：同一座岛原地换内容，警告不能被盖掉）
@@ -1081,8 +1091,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let self else { return }
         self.applyFeatures()
         self.island.respondsToNotch = self.respondsToNotch
+        self.applyIslandFeel()
         self.systemNotices.apply()
         self.nowPlaying.apply()
+        self.nextEvent.apply()
+        self.mediaKeys.apply()
         // 命令的快捷键跟着「命令和别名」的开关和别名、脚本命令总开关、⌘K「关掉这条命令」走（第 4 批评审：只在那一页的
         // onChange 里跟，别处改的不注销）；没变不动
         self.hotKeys.reloadCommandsIfChanged()
@@ -1100,7 +1113,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     pendingLinks = []
   }
 
-  /// 点刘海、停在刘海上、往下滑叫出那一张：刘海岛插件添加着，设置 › 刘海岛「点刘海叫出那一张」也开着
+  /// 设置 › 刘海岛的「停在刘海上自动展开」「触感反馈」跟上（启动时、偏好变了时）
+  private func applyIslandFeel() {
+    island.hoverExpands = UserDefaults.standard.bool(forKey: Prefs.islandHoverExpands)
+    island.haptics = UserDefaults.standard.bool(forKey: Prefs.islandHaptics)
+    island.blurs = UserDefaults.standard.bool(forKey: Prefs.islandBlur)
+  }
+
+  /// 点刘海、停在刘海上、往下滑打开（有活动是它的卡片，没有是那一张）：刘海岛插件添加着，设置 › 刘海岛「点刘海打开」也开着
   private var respondsToNotch: Bool {
     Feature.island.isOn && UserDefaults.standard.bool(forKey: Prefs.islandNotchClicks)
   }
@@ -1164,6 +1184,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     if turnedOn.contains(.reminders) { reminders.start() }
     if turnedOn.contains(.keepAwake) { keepAwake.start() }
+    // 刘海岛插件刚添加：没添加时岛不收活动，开着的那段保持唤醒补挂上去
+    if turnedOn.contains(.island), now.contains(.keepAwake) { keepAwake.syncIsland(force: true) }
 
     // 访达右键（拍板 D3）：运行中打开、系统里扩展还没打开时直接带去 系统设置 › 登录项与扩展；启动时、欢迎引导里勾上的不当场弹
     // （同程序坞预览要授权）。扩展自己读开关，这边没有后台活要起停

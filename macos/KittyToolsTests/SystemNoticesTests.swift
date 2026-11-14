@@ -18,6 +18,28 @@ struct SystemNoticesTests {
     #expect(SystemNotices.lowBattery(percent: 5, plugged: true, warned: []) == nil)
   }
 
+  /// 电源的提示：接着电源是绿的「充电中」（满了「已充满」），拔掉是白的「电池供电」，电量低是红的；都出 5 秒
+  @Test func powerNoticeLevels() {
+    let charging = SystemNotices.powerLevel(plugged: true, percent: 99, low: false)
+    #expect(charging.kind == .device && charging.title == "充电中" && charging.tone == .good)
+    #expect(charging.battery == 0.99 && charging.glyph == nil && charging.stay == .seconds(5))
+    #expect(SystemNotices.powerLevel(plugged: true, percent: 100, low: false).title == "已充满")
+    let unplugged = SystemNotices.powerLevel(plugged: false, percent: 64, low: false)
+    #expect(unplugged.title == "电池供电" && unplugged.tone == .plain && unplugged.battery == 0.64)
+    let low = SystemNotices.powerLevel(plugged: false, percent: 9, low: true)
+    #expect(low.title == "电量低" && low.tone == .low)
+    // 百分比夹在 0…100
+    #expect(SystemNotices.powerLevel(plugged: true, percent: 140, low: false).battery == 1)
+    // 不是同一条：换的时候糊着进出，晚到的耳机电量不会补到电源的提示上
+    #expect(charging.identity != unplugged.identity)
+    // 电池的符号分五档
+    #expect(IslandBattery.symbol(0.05) == "battery.0percent")
+    #expect(IslandBattery.symbol(0.3) == "battery.25percent")
+    #expect(IslandBattery.symbol(0.5) == "battery.50percent")
+    #expect(IslandBattery.symbol(0.8) == "battery.75percent")
+    #expect(IslandBattery.symbol(0.99) == "battery.100percent")
+  }
+
   /// 蓝牙、USB 的输出设备算耳机；内建的、显示器、隔空播放、读不出来的不算
   @Test func headphoneTransports() {
     #expect(SystemNotices.isHeadphones(transport: kAudioDeviceTransportTypeBluetooth))

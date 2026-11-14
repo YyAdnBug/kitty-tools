@@ -1,6 +1,7 @@
 // 刘海岛的活动（2026-11-13，刘海岛扩展 B1–B3）：耳朵上露哪一个、读数怎么写，和岛在有活动时的几种状态。
 // 用摆出来的岛（Island(showing:…)）：从头到尾不建窗口。
 
+import CoreGraphics
 import Foundation
 import Testing
 
@@ -190,6 +191,114 @@ struct IslandActivityTests {
     island.show("已复制")
     island.swipeDown()
     #expect(!island.isBoardOpen)
+  }
+
+  /// 一个刘海只有一张面（2026-11-14）：有活动时点刘海 / 往下滑开的是最要紧那个活动的卡片，再往下滑轮到下一个活动、
+  /// 最后是那一张，那一张上再往下滑回到第一个；没有活动时直接是那一张。别的提示开着时不轮
+  @Test func openingAndRotating() {
+    let record = activity("录屏", .record)
+    let timer = activity("喝水", .reminder)
+    let island = Island(showing: nil, geometry: notch, activities: [timer, record])
+    island.swipeDown()
+    #expect(island.cardActivity?.id == "录屏" && island.content != nil && !island.isBoardOpen)
+    island.swipeDown()
+    #expect(island.cardActivity?.id == "喝水" && !island.isBoardOpen)
+    island.swipeDown()
+    #expect(island.isBoardOpen && island.cardActivity == nil && island.content == nil)
+    island.swipeDown()
+    #expect(island.cardActivity?.id == "录屏" && !island.isBoardOpen)
+    // 活动中途结束了：从剩下的接着轮
+    island.endActivity("录屏")
+    #expect(island.content == nil)
+    island.openTop()
+    #expect(island.cardActivity?.id == "喝水")
+    island.rotate()
+    #expect(island.isBoardOpen)
+    island.toggleBoard()
+    // 别的提示开着：不轮、不开
+    island.show("已复制")
+    island.swipeDown()
+    island.rotate()
+    #expect(island.content?.title == "已复制" && !island.isBoardOpen)
+    // 没有活动：打开就是那一张；那一张上再往下滑不动
+    let idle = Island(showing: nil, geometry: notch)
+    idle.openTop()
+    #expect(idle.isBoardOpen)
+    idle.swipeDown()
+    #expect(idle.isBoardOpen)
+    // 卡片开着时用快捷键叫出那一张：卡片的标记清掉；卡片开着、有排着的提示时活动结束：换上排着的那条
+    let keyed = Island(showing: nil, geometry: notch, activities: [record])
+    keyed.tapped()
+    keyed.toggleBoard(byKeyboard: false)
+    #expect(keyed.isBoardOpen && keyed.cardActivity == nil)
+    // 只有暂停了一阵的正在播放（不上耳朵）：打开是那一张，从那一张往下滑轮得到它
+    var paused = activity("音乐", .media)
+    paused.onWings = false
+    let quiet = Island(showing: nil, geometry: notch, activities: [paused])
+    quiet.openTop()
+    #expect(quiet.isBoardOpen)
+    quiet.swipeDown()
+    #expect(quiet.cardActivity?.id == "音乐")
+    // 设置里关了「点刘海打开」：往下滑不开、也不轮
+    let off = Island(showing: nil, geometry: notch, activities: [record])
+    off.respondsToNotch = false
+    off.swipeDown()
+    #expect(off.content == nil)
+    off.tapped()
+    off.swipeDown()
+    #expect(off.cardActivity?.id == "录屏" && !off.isBoardOpen)
+    // 刚换过面的 0.8 秒里不轮（悬停刚把卡片展开，那一下点击才到）
+    let start = ContinuousClock.now
+    #expect(Island.canTurn(since: nil, now: start))
+    #expect(!Island.canTurn(since: start, now: start + .milliseconds(300)))
+    #expect(Island.canTurn(since: start, now: start + .milliseconds(800)))
+    // 点在刘海上该做什么
+    #expect(Island.notchClick(hasContent: false, boardOpen: false, cardOpen: false) == .open)
+    #expect(Island.notchClick(hasContent: false, boardOpen: true, cardOpen: false) == .closeBoard)
+    #expect(Island.notchClick(hasContent: true, boardOpen: false, cardOpen: true) == .rotate)
+    #expect(Island.notchClick(hasContent: true, boardOpen: false, cardOpen: false) == .ignore)
+  }
+
+  /// 渐进模糊的蒙版：贴着形体的边全糊，到 spread 正好是 0（外沿不能留一点点糊：那是一道看得见的边），中间单调变淡；
+  /// 画得出来、大小对
+  @Test func backdropMask() throws {
+    #expect(IslandBackdrop.falloff(0) == 1 && IslandBackdrop.falloff(IslandBackdrop.spread) == 0)
+    #expect(
+      IslandBackdrop.falloff(IslandBackdrop.spread * 2) == 0 && IslandBackdrop.falloff(-5) == 1)
+    // 整圈差不多一样糊：半个 spread 处还有一大半，最外面一小段才淡掉（一路往外只减不增）
+    let half = IslandBackdrop.falloff(IslandBackdrop.spread / 2)
+    #expect(half > 0.6 && half < 1)
+    let steps = stride(from: 0, through: IslandBackdrop.spread, by: 4).map(IslandBackdrop.falloff)
+    #expect(zip(steps, steps.dropFirst()).allSatisfy { $0 > $1 })
+    // 画布按 spread 留边（spread 调了这条测试不用跟着改）：形体 120 × 80，顶边贴着顶（刘海屏），左右和底下各留
+    // spread + 20
+    let margin = IslandBackdrop.spread + 20
+    let size = CGSize(width: 120 + margin * 2, height: 80 + margin)
+    let mask = try #require(
+      IslandBackdrop.mask(
+        size: size, shape: CGRect(x: margin, y: margin, width: 120, height: 80), corner: 24,
+        flatTop: true, scale: 2))
+    let (wide, tall) = (Int(size.width * 2), Int(size.height * 2))
+    #expect(mask.width == wide && mask.height == tall)
+    let data = try #require(mask.dataProvider?.data as Data?)
+    func alpha(_ x: Int, _ y: Int) -> UInt8 { data[y * mask.bytesPerRow + x * 4 + 3] }
+    // 形体正中不透明；离形体的边远过 spread 的地方（左下角、正下方的底边）全透明
+    #expect(alpha(wide / 2, 80) == 255 && alpha(2, tall - 3) == 0 && alpha(wide / 2, tall - 1) == 0)
+    // 上下没画反（位图第 0 行是图像的顶）：刘海屏的形体顶边贴着顶、顶上不晕，所以正上方不透明
+    #expect(alpha(wide / 2, 0) == 255)
+    // 形体底边往下半个 spread：半透明
+    let midway = alpha(wide / 2, 160 + Int(IslandBackdrop.spread))
+    #expect(midway > 0 && midway < 255)
+    // fadeTop：最上面那一段往上渐隐到 0（没有刘海的屏上那一圈被窗口上沿切掉时用），别处不变
+    let faded = try #require(
+      IslandBackdrop.mask(
+        size: CGSize(width: 200, height: 120), shape: CGRect(x: 40, y: 20, width: 120, height: 98),
+        corner: 18, flatTop: false, scale: 1, fadeTop: 16))
+    let pixels = try #require(faded.dataProvider?.data as Data?)
+    func faint(_ x: Int, _ y: Int) -> UInt8 { pixels[y * faded.bytesPerRow + x * 4 + 3] }
+    #expect(faint(100, 0) < 20 && faint(100, 60) == 255 && faint(100, 8) > faint(100, 2))
+    #expect(
+      IslandBackdrop.mask(size: .zero, shape: .zero, corner: 0, flatTop: false, scale: 2) == nil)
   }
 
   /// 提示照旧从刘海长出来（盖住耳朵），收起后还是耳朵；那一张同样

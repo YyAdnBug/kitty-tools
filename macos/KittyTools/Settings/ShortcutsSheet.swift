@@ -700,7 +700,9 @@ struct ShortcutsSheet: View {
         title: "刘海岛", symbol: HotKeyAction.island.symbol, color: Style.Family.general,
         globals: [.island], always: true,
         entries: [
-          Entry(text: "点刘海：打开 / 收起最近的提示和快捷动作（指针停在刘海上时岛会鼓起一点）", needs: .island),
+          Entry(
+            text: "点刘海或在刘海上两指往下滑：打开——刘海两边挂着东西时是它的卡片，再往下滑一次轮到下一个，最后是快捷动作",
+            needs: .island),
           Entry(text: "鼠标挪到弹出的提示上：停住、展开看全文和按钮；在岛上双指往上滑收起"),
         ]),
       // 主界面（2026-10-29，Shell/HomePanel.swift 的 Home.key / Home.command）：不属于哪个功能，一直列

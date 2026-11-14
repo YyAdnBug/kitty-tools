@@ -434,9 +434,12 @@ enum Prefs {
   /// 跟着设置导出、同步
   static let islandActionOrder = "islandActionOrder"
   static let islandActionsOff = "islandActionsOff"
-  /// 那一张上列不列最近的提示（默认列）
+  /// 那一张上列不列最近的提示（2026-11-14 起默认不列：各家刘海 App 都不在刘海里放提示历史；这个开关是 0.9.0 加的，那一版默认列）
   static let islandShowsHistory = "islandShowsHistory"
-  /// 点刘海、停在刘海上、两指往下滑叫出那一张（默认开；刘海岛扩展 G2：装了别的刘海 App 的人关掉）
+  /// 那一张上显示月历（默认关；2026-11-14，Shell/IslandCalendar.swift）。日期网格不要授权，所以它照常导出、同步；
+  /// 旁边今天的日程看这台 Mac 给没给「日历」授权
+  static let islandCalendar = "islandCalendar"
+  /// 点刘海、停在刘海上、两指往下滑打开（有活动是它的卡片，没有是那一张；设置里叫「点刘海打开」。默认开；刘海岛扩展 G2：装了别的刘海 App 的人关掉）
   static let islandNotchClicks = "islandNotchClicks"
   /// 刘海岛上的系统一瞬提示（刘海岛扩展 D1，Shell/SystemNotices.swift）：接上 / 拔掉电源、低电量、耳机连上、断网 / 恢复，
   /// 每种一个开关，默认都关（不开就不监听）
@@ -447,6 +450,19 @@ enum Prefs {
   /// 刘海岛上的「正在播放」（刘海岛扩展第 2 期，Shell/NowPlaying.swift）：默认关（2026-11-13 拍板：归刘海岛插件、一组开关）；
   /// 关着时不连正在播放服务、服务不起
   static let islandNowPlaying = "islandNowPlaying"
+  /// 刘海岛上的「下一个日程」（Shell/NextEvent.swift，2026-11-14）：没存过 = 关；要「日历」授权，只在设置里打开它时问。
+  /// 跟着这台 Mac 的授权走：**不注册默认值**——不导出、不同步（导入到没授权的 Mac 上只会是一个开着却读不了的开关）
+  static let islandNextEvent = "islandNextEvent"
+  /// 按音量键、亮度键时在刘海岛上显示、系统自己的提示不出（Shell/MediaKeys.swift，2026-11-14）：没存过 = 关；要「辅助功能」
+  /// 授权。跟着这台 Mac 的授权和键盘走：**不注册默认值**——不导出、不同步（同 islandNextEvent）
+  static let islandKeyLevels = "islandKeyLevels"
+  /// 以 Alcove 为准的那一轮（2026-11-13，都默认开）：换歌时从耳朵垂下一小条歌名（Island.glance）、停在刘海 / 耳朵上
+  /// 自动展开活动的卡片、触感反馈
+  static let islandTrackPeek = "islandTrackPeek"
+  static let islandHoverExpands = "islandHoverExpands"
+  static let islandHaptics = "islandHaptics"
+  /// 岛展开成卡片 / 那一张时四周渐进模糊（默认开；2026-11-14，Shell/IslandBackdrop.swift）
+  static let islandBlur = "islandBlur"
   /// 新功能标记（Shell/WhatsNew.swift，2026-11-05）的账：各版本在这台 Mac 上第一次打开的时刻（版本号 → Date，从这一刻起挂 30 天）、
   /// 碰过哪几个（WhatsNew.Entry.id 的数组）。这台电脑自己的状态：不注册默认值、不导出不同步
   static let whatsNewStarted = "whatsNewStarted"
@@ -576,13 +592,19 @@ enum Prefs {
       finderCompressSkip: "",
       islandActionOrder: "",
       islandActionsOff: "",
-      islandShowsHistory: true,
+      islandShowsHistory: false,
+      islandCalendar: false,
       islandNotchClicks: true,
       islandNoticePower: false,
       islandNoticeBattery: false,
       islandNoticeHeadphones: false,
       islandNoticeNetwork: false,
       islandNowPlaying: false,
+      islandTrackPeek: true,
+      // 默认关（2026-11-14，用户：Alcove 是点了才展开；它的实录里指针停 2–5 秒都只是鼓起）。这一项没发布过
+      islandHoverExpands: false,
+      islandHaptics: true,
+      islandBlur: true,
       keepAwakeDisplay: true,
       keepAwakeSchedule: "",
     ].merging(Feature.allCases.map { ($0.prefsKey, $0.defaultOn as Any) }) { current, _ in current }

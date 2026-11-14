@@ -3,7 +3,7 @@
 // - 歌名、艺人、专辑、在不在播、时长：它们状态一变就发分布式通知（com.apple.Music.playerInfo、
 //   com.spotify.client.PlaybackStateChanged），**不要任何授权**——退路先用它；Spotify 的还带播到哪
 // - 音乐播到哪：通知里没有，要 AppleScript（player position）。只在已经允许过控制「音乐」时读，从不自己弹授权框
-// - 按钮：先照旧交给服务发（发命令不设门槛，服务读不到时多半还发得出去）；服务整个不能用时用 AppleScript，
+// - 按钮、拖进度条：先照旧交给服务发（发命令不设门槛，服务读不到时多半还发得出去）；服务整个不能用时用 AppleScript，
 //   这时授权框是用户点按钮弹的
 // 什么时候算服务坏了（NowPlaying 判断）：服务说取不到 MediaRemote 的函数；或者音乐 / Spotify 说在播、服务 2 秒都报不出
 // 正在播放。这里是纯函数和执行层的几样小东西，NowPlaying 接线。
@@ -40,7 +40,8 @@ nonisolated enum NowPlayingFallback {
       artist: text(info["Artist"]), album: text(info["Album"]), duration: duration,
       elapsed: position.flatMap { $0.isFinite && $0 >= 0 ? $0 : nil },
       timestamp: position == nil ? nil : now, rate: playing ? 1 : 0, isPlaying: playing,
-      canPrevious: true, canNext: true, artworkID: nil, artwork: nil)
+      canPrevious: true, canNext: true, canSeek: true, shuffle: nil, repeatMode: nil,
+      artworkID: nil, artwork: nil)
   }
 
   private static func text(_ value: Any?) -> String? {
@@ -52,6 +53,13 @@ nonisolated enum NowPlayingFallback {
   static func pick(_ notices: [(snapshot: NowPlayingSnapshot, at: Date)]) -> NowPlayingSnapshot? {
     notices.max { ($0.snapshot.isPlaying ? 1 : 0, $0.at) < ($1.snapshot.isPlaying ? 1 : 0, $1.at) }?
       .snapshot
+  }
+
+  /// 跳到第几秒在 AppleScript 里怎么说（音乐、Spotify 都是 player position）。写整秒：小数的写法不用操心
+  static func seekScript(_ seconds: Double, bundleID: String) -> String {
+    let second = Int(min(max(seconds.isFinite ? seconds : 0, 0), NowPlaying.maxSeconds).rounded())
+    return
+      "if application id \"\(bundleID)\" is running then tell application id \"\(bundleID)\" to set player position to \(second)"
   }
 
   /// 按钮在 AppleScript 里怎么说（服务整个不能用时）
@@ -71,25 +79,23 @@ nonisolated enum NowPlayingFallback {
 }
 
 extension NowPlayingFallback {
-  /// 服务整个不能用时按钮走 AppleScript（osascript，进程外；本 App 是它的「负责的进程」，授权框写的是本 App）。
+  /// 服务整个不能用时按钮、进度条走 AppleScript（osascript，进程外；本 App 是它的「负责的进程」，授权框写的是本 App）。
   /// 没问过时 osascript 会弹授权框——这是用户点了按钮才弹的；拒绝过（−1743 / −1744）刘海岛说一声、带「打开系统设置」
-  @MainActor static func run(
-    _ command: NowPlayingCommand, bundleID: String, appName: String, island: Island?
-  )
-    async
-  {
+  /// 返回跑成了没有（进度条跳完要知道：没跳成就不改岛上的位置）
+  @discardableResult
+  @MainActor static func run(_ script: String, appName: String, island: Island?) async -> Bool {
     guard
       let result = try? await Subprocess.run(
-        "/usr/bin/osascript", ["-e", script(command, bundleID: bundleID)], captures: true,
-        timeout: .seconds(30))
-    else { return }
-    guard result.status != 0 else { return }
+        "/usr/bin/osascript", ["-e", script], captures: true, timeout: .seconds(30))
+    else { return false }
+    guard result.status != 0 else { return true }
     if result.error.contains("-1743") || result.error.contains("-1744") {
       island?.show(
         "没有权限控制「\(appName)」",
         detail: "在 系统设置 › \(Permissions.privacyPane) › 自动化 里打开", tone: .warning,
         actions: [.settings(for: .automation)])
     }
+    return false
   }
 
   /// 「音乐」此刻播到哪（秒）：只在已经允许过控制「音乐」时读（Permissions.canAutomate，不弹框）；读不到是 nil。

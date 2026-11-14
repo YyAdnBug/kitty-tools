@@ -163,10 +163,16 @@ TEST_RUNNER_KITTY_DOCK_PROBE=1 xcodebuild -project macos/KittyTools.xcodeproj -s
   test -only-testing:'KittyToolsTests/DockPreviewProbeTests/measure()'
 
 # 刘海岛的正在播放：经包里真的 XPC 服务读回来的实机自检（按需，不到一秒；不出声：测试宿主用 MPNowPlayingInfoCenter 把自己挂成
-# 「正在播放」，系统控制中心里会短暂出现「Kitty 探针曲目」；读、封面、发「切换」、暂停都过一遍）。改了 KittyToolsNowPlaying/ 或
+# 「正在播放」，系统控制中心里会短暂出现「Kitty 探针曲目」；读、封面、发「切换」、跳到某一秒、暂停都过一遍）。改了 KittyToolsNowPlaying/ 或
 # Shell/NowPlaying.swift 后跑；每个 macOS 大版本也跑一遍（27 上封面的拿法已经变过一次），探针报告在 macos/build/research/now-playing-2026-11-13/
 TEST_RUNNER_KITTY_LIVE_NOW_PLAYING=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
   test -only-testing:'KittyToolsTests/NowPlayingTests/liveRoundTrip()'
+
+# 音量 / 亮度键换成刘海岛提示的实机自检（按需，不到一秒，要测试宿主有「辅助功能」授权；不出声）：真的建事件拦截，发一个
+# **合成**的「音量+」，看它被吞掉、只走了我们自己的一格、岛上有那一行；**系统音量会临时变一格，测完恢复**。改了
+# Shell/MediaKeys.swift、OutputVolume、DisplayBrightness 后跑。自检里只发会被吞掉的键（发带 ⌥ 的，系统会真的打开系统设置）
+TEST_RUNNER_KITTY_LIVE_MEDIA_KEYS=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
+  test -only-testing:'KittyToolsTests/MediaKeysTests/liveSwallowsVolumeKey()'
 
 # 刘海岛动画的掉帧探针（按需；**屏幕顶部正中会出现岛约 8 秒**，不动鼠标、不抢键盘）：measure() 挂显示链量主线程每拍的间隔，
 # 分阶段（出现、悬停展开、收起、开 / 收那一张、进行中换成结果）报掉了几帧，grep「island-frames」；recording() 要 Dev 版有

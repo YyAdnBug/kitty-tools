@@ -34,6 +34,8 @@
 	<string>用于打开、显示你在启动器和剪贴板历史里选中的下载文件，和在访达右键里新建文件</string>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>用于启动器的系统命令：让访达清倒废纸篓，弹出退出登录、重新启动、关机的系统确认框；刘海岛读不到正在播放时，替「音乐」「Spotify」播放、暂停、切歌，读「音乐」播到哪</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>用于在刘海岛上显示下一个日程的倒数（标题、时间、地点和会议链接）；日程的内容只留在这台 Mac 上</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>用于录屏和录音时录下麦克风的声音</string>
 	<key>NSLocalNetworkUsageDescription</key>
