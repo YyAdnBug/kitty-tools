@@ -251,6 +251,46 @@ internal static class UiSnapshotProbe
                 await WindowShot.SaveAsync(
                     overlay.Handle, Path.Combine(directory, "shot-annotations-tray.png"),
                     crop with { Left = Math.Max(0, crop.Left - (int)(120 * overlay.Screen.Scale)) });
+                // PLAN-v18 第 1 批：选中文字（托盘 A− 字号 A+）、选中序号（四个角的手柄、托盘「− n +」）、选中打码（托盘模糊在前、「自动」）
+                foreach (var (kind, name) in new[]
+                         {
+                             (KittyTools.Core.AnnotationKind.Text, "shot-tray-text"),
+                             (KittyTools.Core.AnnotationKind.Counter, "shot-tray-counter"),
+                             (KittyTools.Core.AnnotationKind.Mosaic, "shot-tray-mosaic"),
+                         })
+                {
+                    overlay.ShowProbeAnnotations(kind);
+                    await Task.Delay(500);
+                    await WindowShot.SaveAsync(
+                        overlay.Handle, Path.Combine(directory, name + ".png"),
+                        crop with { Left = Math.Max(0, crop.Left - (int)(120 * overlay.Screen.Scale)) });
+                }
+
+                // PLAN-v18 第 2 批：翻完挂的译文窄栏（看原文、拷贝、✕）、列着两段放不下的译文卡片（工具栏在选区下面，卡片挂上面）
+                foreach (var (leftovers, name) in new[] { (false, "shot-translate-bar"), (true, "shot-translate-card") })
+                {
+                    if (!Wanted(name))
+                    {
+                        continue;
+                    }
+
+                    overlay.ShowProbeTranslationCard(leftovers);
+                    await Task.Delay(600);
+                    await WindowShot.SaveAsync(
+                        overlay.Handle, Path.Combine(directory, name + ".png"),
+                        crop with { Top = Math.Max(0, crop.Top - (int)(260 * overlay.Screen.Scale)) });
+                }
+
+                overlay.CloseProbeTranslationCard();
+                // PLAN-v18 S3：工具栏右键「改…的快捷键」之后等新键（钉图那颗钮亮粉底、顶部提示）
+                if (Wanted("shot-rebind"))
+                {
+                    overlay.ShowProbeRebind("pin");
+                    await Task.Delay(500);
+                    await WindowShot.SaveAsync(overlay.Handle, Path.Combine(directory, "shot-rebind.png"), crop with { Top = 0 });
+                    overlay.ShowProbeRebind(null);
+                }
+
                 // 裁剪（PLAN-v11 F11）：开着裁剪、拖着一个框（框外压暗、虚线框、工具栏「裁剪」亮着）
                 overlay.ShowProbeCrop();
                 await Task.Delay(500);
@@ -597,7 +637,7 @@ internal static class UiSnapshotProbe
 
     private static async Task SafeRenderSettingsAsync(bool dark, string directory)
     {
-        if (!Wanted("settings"))
+        if (!Wanted("settings") && !Wanted("settings-sync") && !Wanted("settings-hotkeys-block") && !Wanted("settings-hotkeys-shot") && !Wanted("settings-sub"))
         {
             return;
         }
@@ -657,6 +697,108 @@ internal static class UiSnapshotProbe
             settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 1300));
             settings.ShowPage(welcome: false, "hotkeys");
             await RenderWindowAsync(settings, "settings-hotkeys", dark, directory);
+            // PLAN-v17：快捷键页最下面「在这些应用里停用」：空着一张；三行（全部 / 只停两个 / 本机没有的 exe）一张。只在测试档改名单，拍完换回去。
+            if (Paths.IsTestProfile && Wanted("settings-hotkeys-block"))
+            {
+                var saved = SettingsService.Current.HotKeyBlockedApps;
+                foreach (var (name, entries) in new[]
+                         {
+                             ("settings-hotkeys-block-empty", new List<string>()),
+                             ("settings-hotkeys-block", new List<string> { "notepad.exe", "Code.exe|clipboard,screenshot", "NotInstalled.exe" }),
+                         })
+                {
+                    SettingsService.Current.HotKeyBlockedApps = entries;
+                    settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 760));
+                    settings.ShowPage(welcome: false, "hotkeys");
+                    settings.RebuildForProbe();
+                    await Task.Delay(400);
+                    settings.ScrollToSectionForProbe("在这些应用里停用");
+                    await Task.Delay(300);
+                    await ShootSettingsWindowAsync(settings, name, dark, directory);
+                }
+
+                SettingsService.Current.HotKeyBlockedApps = saved;
+            }
+
+            // PLAN-v18 L2 L4：启动器页（命令和网页搜索各一行）、命令和别名（改了 kill → k、cb → g 和 Google 撞了、睡眠关掉）、
+            // 网页搜索子页、通用页「功能」一行和它的子页。只在测试档改设置，拍完换回去
+            if (Paths.IsTestProfile && Wanted("settings-sub"))
+            {
+                var aliases = SettingsService.Current.LauncherCommandAliases;
+                var off = SettingsService.Current.LauncherCommandsOff;
+                SettingsService.Current.LauncherCommandAliases = new Dictionary<string, string> { ["builtin:kill"] = "k", ["builtin:cb"] = "g" };
+                SettingsService.Current.LauncherCommandsOff = new List<string> { "system:sleep" };
+                // PLAN-v18 L5 / §6：应用页里一条别名（计算器 → jsq）、一个找不到的文件夹、一个隐藏的应用
+                var appAliases = SettingsService.Current.LauncherAppAliases;
+                var appFolders = SettingsService.Current.LauncherAppFolders;
+                var hiddenApps = SettingsService.Current.LauncherHiddenApps;
+                SettingsService.Current.LauncherAppAliases = new Dictionary<string, string> { ["aumid:microsoft.windowscalculator_8wekyb3d8bbwe!app"] = "jsq" };
+                SettingsService.Current.LauncherAppFolders = new List<string> { @"D:\Tools-not-here" };
+                SettingsService.Current.LauncherHiddenApps = new List<string> { @"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Example.lnk" };
+                // PLAN-v18 第 8 批：脚本命令页里一个找不到的「其他文件夹」
+                var scriptFolders = SettingsService.Current.LauncherScriptFolders;
+                SettingsService.Current.LauncherScriptFolders = new List<string> { @"D:\Scripts-not-here" };
+                foreach (var (name, page, sub) in new[]
+                         {
+                             ("settings-sub-launcher", "launcher", (string?)null), ("settings-sub-commands", "launcher", "commands"),
+                             ("settings-sub-web", "launcher", "web"), ("settings-sub-apps", "launcher", "apps"),
+                             ("settings-sub-scripts", "launcher", "scripts"), ("settings-sub-script-guide", "launcher", "script-guide"),
+                             ("settings-sub-script-fields", "launcher", "script-guide"),
+                             ("settings-sub-general", "general", null),
+                             ("settings-sub-features", "general", "features"),
+                         })
+                {
+                    settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 760));
+                    settings.OpenSubpageForProbe(page, sub);
+                    await Task.Delay(500);
+                    if (page == "launcher" && sub is null)
+                    {
+                        settings.ScrollToSectionForProbe("脚本命令");
+                        await Task.Delay(300);
+                    }
+
+                    if (sub == "scripts")
+                    {
+                        // 后台读脚本文件夹，读完重画这一页
+                        await Task.Delay(800);
+                    }
+
+                    if (name == "settings-sub-script-fields")
+                    {
+                        settings.ScrollToSectionForProbe("开头几行能写什么");
+                        await Task.Delay(300);
+                    }
+
+                    await ShootSettingsWindowAsync(settings, name, dark, directory);
+                }
+
+                settings.OpenSubpageForProbe("general", null);
+                SettingsService.Current.LauncherCommandAliases = aliases;
+                SettingsService.Current.LauncherCommandsOff = off;
+                SettingsService.Current.LauncherAppAliases = appAliases;
+                SettingsService.Current.LauncherAppFolders = appFolders;
+                SettingsService.Current.LauncherHiddenApps = hiddenApps;
+                SettingsService.Current.LauncherScriptFolders = scriptFolders;
+            }
+
+            // PLAN-v18 S3：快捷键页「截图时」两组（改过一个键：钉图 Alt+P；清掉一个：录屏），拍完换回去
+            if (Paths.IsTestProfile && Wanted("settings-hotkeys-shot"))
+            {
+                var saved = SettingsService.Current.ScreenshotKeys;
+                SettingsService.Current.ScreenshotKeys = new Dictionary<string, string> { ["pin"] = "Alt+P", ["record"] = string.Empty };
+                foreach (var (name, section) in new[] { ("settings-hotkeys-shot-tools", "截图时：标注工具"), ("settings-hotkeys-shot-others", "截图时：出图和操作") })
+                {
+                    settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 760));
+                    settings.ShowPage(welcome: false, "hotkeys");
+                    settings.RebuildForProbe();
+                    await Task.Delay(400);
+                    settings.ScrollToSectionForProbe(section);
+                    await Task.Delay(300);
+                    await ShootSettingsWindowAsync(settings, name, dark, directory);
+                }
+
+                SettingsService.Current.ScreenshotKeys = saved;
+            }
             // PLAN-v12 第 3、5 批 / PLAN-v13 第 5 批：设置 › 状态屏、提醒、便签整页（真窗口的样子各拍一张上面一屏）。
             foreach (var page in new[] { "statusScreen", "reminders", "notes" })
             {
@@ -691,6 +833,68 @@ internal static class UiSnapshotProbe
                     Path.Combine(directory, $"{name}-{(dark ? "dark" : "light")}-window.png"));
                 settings.CloseDialogsForProbe();
                 await Task.Delay(400);
+            }
+
+            // PLAN-v19：设置 › 通用「同步」没开（两个按钮）、「连接服务器…」对话框（空的、http 橙字、测试连接成 / 不成、问合不合在一起）、
+            // 连上之后的状态行（正常、还有几个没拿下来 / 没传上去、请求太多）。要 KITTY_SNAPSHOT_DAV=「地址|用户名|密码」指着本机的测试服务器，
+            // KITTY_SNAPSHOT_DAV_SHARED 是服务器上已经有别的电脑在同步的文件夹（问合不合那张）；每种外观连一个新文件夹，拍完停同步。
+            if (Wanted("settings-sync") && Environment.GetEnvironmentVariable("KITTY_SNAPSHOT_DAV") is { Length: > 0 } dav &&
+                dav.Split('|') is { Length: 3 } account && Syncer.Instance is { } syncer)
+            {
+                var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(settings);
+                async Task SyncShotAsync(string name, int wait)
+                {
+                    await Task.Delay(wait);
+                    await WindowShot.SaveAsync(hwnd, Path.Combine(directory, $"{name}-{(dark ? "dark" : "light")}-window.png"));
+                }
+
+                settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 760));
+                settings.ShowPage(welcome: false, "general");
+                await Task.Delay(400);
+                settings.ScrollToSectionForProbe("同步");
+                await SyncShotAsync("settings-sync-off", 600);
+                var fresh = $"snap-{(dark ? "dark" : "light")}-{Guid.NewGuid():N}"[..17];
+                var shared = Environment.GetEnvironmentVariable("KITTY_SNAPSHOT_DAV_SHARED") ?? "Kitty Tools 同步";
+                var dialogs = new (string Name, SettingsWindow.SyncServerProbeFill? Fill)[]
+                {
+                    ("settings-sync-dialog", null),
+                    ("settings-sync-dialog-http", new(account[0], "Kitty Tools 同步", account[1], account[2], string.Empty)),
+                    ("settings-sync-dialog-test-ok", new(account[0], fresh, account[1], account[2], "test")),
+                    ("settings-sync-dialog-test-failed", new(account[0], fresh, account[1], "wrong-password", "test")),
+                    ("settings-sync-dialog-join", new(account[0], shared, account[1], account[2], "connect")),
+                };
+                foreach (var (name, fill) in dialogs)
+                {
+                    settings.OpenSyncServerForProbe(fill);
+                    await SyncShotAsync(name, 1500);
+                    settings.CloseDialogsForProbe();
+                    await Task.Delay(400);
+                }
+
+                settings.OpenSyncServerForProbe(new(account[0], fresh, account[1], account[2], "connect"));
+                await Task.Delay(3000);
+                settings.CloseDialogsForProbe();
+                settings.RebuildForProbe();
+                settings.ScrollToSectionForProbe("同步");
+                await SyncShotAsync("settings-sync-server", 800);
+                syncer.Status.Downloading = 12;
+                syncer.Status.Uploading = 3;
+                settings.RebuildForProbe();
+                settings.ScrollToSectionForProbe("同步");
+                await SyncShotAsync("settings-sync-server-pending", 600);
+                syncer.Status.Downloading = 0;
+                syncer.Status.Uploading = 0;
+                syncer.Status.State = "busy";
+                syncer.Status.Message = Syncer.BusyMessage(DateTimeOffset.Now.AddMinutes(10));
+                settings.RebuildForProbe();
+                settings.ScrollToSectionForProbe("同步");
+                await SyncShotAsync("settings-sync-server-busy", 600);
+                syncer.ForgetServer();
+                SettingsService.Current.SyncEnabled = false;
+                SettingsService.Save();
+                syncer.Status.State = "off";
+                syncer.Status.Message = string.Empty;
+                settings.RebuildForProbe();
             }
 
             // PLAN-v16 L1 / V12：设置 › 启动器滚到底（使用记录的「空搜索框里列出常用」）。

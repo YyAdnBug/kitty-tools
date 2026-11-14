@@ -18,6 +18,15 @@ public interface ITextMeasure
     int LineCount(string text, double width, double fontSize, OverlayCode? code);
 
     double Width(string text, double fontSize);
+
+    /// <summary>按 width 折好行之后最长那行有多宽（译文实际占的那块的右边界）。默认按一行的宽估。</summary>
+    double Extent(string text, double width, double fontSize, OverlayCode? code) => Math.Min(width, Width(text, fontSize));
+
+    /// <summary>折行有没有把一个拉丁词拆成两截（「Eleme / nt.」：窄栏里一个词都放不下时按字母断）。默认不拆。</summary>
+    bool SplitsWord(string text, double width, double fontSize, OverlayCode? code) => false;
+
+    /// <summary>字的上伸部（基线以上多高）。默认 0.8 个字号。</summary>
+    double Ascent(double fontSize) => fontSize * 0.8;
 }
 
 public readonly record struct OverlayRgb(double Red, double Green, double Blue)
@@ -39,6 +48,7 @@ public readonly record struct OverlayRect(double X, double Y, double Width, doub
     public double MinY => Y;
     public double MaxX => X + Width;
     public double MaxY => Y + Height;
+    public double MidY => Y + Height / 2;
 
     public static OverlayRect FromEdges(double minX, double minY, double maxX, double maxY) => new(minX, minY, maxX - minX, maxY - minY);
 
@@ -121,6 +131,12 @@ public sealed record OverlaySpan
     /// <summary>要去字的范围：里面只换掉字的像素（有代码块的段连代码块的底框一起换），底色留着。</summary>
     public OverlayRect Erase { get; init; }
 
+    /// <summary>用周围空白排的段：译文那块另外去字（和原文不一定挨着，不并进 Erase 的外接框）；照原文基线排的是 null。</summary>
+    public OverlayRect? Cover { get; init; }
+
+    /// <summary>译文实际占的地方（字、列表记号、重画的代码块）：段与段之间、和别的段的原文都不相交。</summary>
+    public OverlayRect Area { get; init; }
+
     /// <summary>正文排在哪：左边界和宽度；顶边和原文顶边齐平，底边是最多往下长到哪。</summary>
     public OverlayRect Frame { get; init; }
 
@@ -140,8 +156,11 @@ public sealed record OverlaySpan
 
 public static partial class ScreenshotOverlay
 {
-    /// <summary>可接受的最小字号（像素）。</summary>
-    public const double MinimumFontSize = 6.5;
+    /// <summary>字号下限（点，PLAN-v18 S7）：按 DPI 换成像素；基准本来就不到它的不缩。</summary>
+    public const double MinimumPoints = 10;
+
+    /// <summary>用周围空白居中排时的行距（字号的倍数）。</summary>
+    private const double BlankLeading = 1.25;
 
     /// <summary>字号和行高之比：0.9 时汉字的字面和原文的大写字母、上伸部差不多高（mac 对照微信）。</summary>
     public const double FontPerLineHeight = 0.9;
@@ -307,15 +326,29 @@ public static partial class ScreenshotOverlay
 
     // ---- 排版
 
-    /// <summary>每段用多大字号、画在哪：只算几何，不碰像素（基线、代码块先量好放进 Segment）。</summary>
+    /// <summary>每段用多大字号、画在哪（只要排好的段；放不下的段见 Layout 的 Leftovers）。</summary>
     public static List<OverlaySpan> Spans(
         IReadOnlyList<OverlaySegment> segments, IReadOnlyList<string> translations, double imageWidth, double imageHeight,
-        ITextMeasure measure)
+        ITextMeasure measure, double pixelsPerPoint = 1)
+        => Layout(segments, translations, imageWidth, imageHeight, measure, pixelsPerPoint).Spans;
+
+    /// <summary>
+    /// 每段用多大字号、画在哪（PLAN-v18 S7 S8，照 mac layout：96e78116 077501b7 30c71710 43931601）：只算几何，不碰像素（基线、代码块先量好
+    /// 放进 Segment）。pixelsPerPoint 是图里每点几个像素（150 % 缩放 = 1.5），字号下限按点算（最多缩到基准的 3/4、且不小于 10 pt）。
+    /// 先照原文的基线排（缩到下限、往下借空白），不行在原文基线上用满右边的空白，再不行整块居中用上下的空白；到下限也放不下的段不画、
+    /// 不去字，下标放进 Leftovers（图上留原文，截图页把译文放进卡片）。一行的段（标题、标签）先试原字号、还是一行。
+    /// isBlank(区域, 除去的框, 原文的框)：原图里这块（除去原文那块）是不是空的——译文伸出原文的地方要先问它（Compose 按像素答；
+    /// 纯几何的单测不给，当处处都空）。每个排法都查译文实际占的地方（Area）：不碰别的段的原文、不碰已经排好的段的译文。
+    /// </summary>
+    public static (List<OverlaySpan> Spans, List<int> Leftovers) Layout(
+        IReadOnlyList<OverlaySegment> segments, IReadOnlyList<string> translations, double imageWidth, double imageHeight,
+        ITextMeasure measure, double pixelsPerPoint = 1, Func<OverlayRect, OverlayRect, OverlayRect, bool>? isBlank = null)
     {
         var body = BodyLineHeight(segments);
         var bodyPitch = BodyPitch(segments, body);
         var bounds = new OverlayRect(0, 0, imageWidth, imageHeight);
         var spans = new List<OverlaySpan>();
+        var leftovers = new List<int>();
         for (var index = 0; index < segments.Count; index++)
         {
             if (index >= translations.Count)
@@ -344,48 +377,130 @@ public static partial class ScreenshotOverlay
                 Math.Max(segment.Pitch ?? EstimatedPitch(segment) ?? (isBody ? bodyPitch : null) ?? lineHeight * 1.3, lineHeight * 0.9),
                 lineHeight * 2.5);
 
-            // 右边整个在本段右边、高度上有重叠的那一栏：放宽译文时要让出它的位置
-            double? column = others.Where(other => other.MinX >= box.MaxX - 0.5 && Overlaps(other, box, vertically: true))
+            // 右边整个在本段右边、高度上有重叠的那一栏：放宽译文时要让出它的位置；已经排好的段按它的译文实际占的地方算
+            var obstacles = others.Concat(spans.Select(span => span.Area)).ToList();
+            double? column = obstacles.Where(other => other.MinX >= box.MaxX - 0.5 && Overlaps(other, box, vertically: true))
                 .Select(other => (double?)other.MinX).Min();
             var rightRoom = (column ?? imageWidth) - margin - box.MinX;
             var width = Math.Max(8, Math.Min(box.Width * 1.25, rightRoom));
             var inset = segment.Inset > 0 ? segment.Inset : marker is not null ? measure.Width(marker + " ", nominal) : 0;
             var columnWidth = Math.Max(8, width - inset);
+            var left = box.MinX + inset;
 
             double Pad(double? room) => Math.Max(1, Math.Min(segment.LineHeight * ErasePad, (room ?? double.PositiveInfinity) / 2));
-            double? left = others.Where(other => other.MaxX <= box.MinX + 0.5 && Overlaps(other, box, vertically: true))
+            double? leftGap = others.Where(other => other.MaxX <= box.MinX + 0.5 && Overlaps(other, box, vertically: true))
                 .Select(other => (double?)(box.MinX - other.MaxX)).Min();
             double? above = others.Where(other => other.MinY >= box.MaxY - 0.5 && Overlaps(other, box, vertically: false))
                 .Select(other => (double?)(other.MinY - box.MaxY)).Min();
             double? under = others.Where(other => other.MaxY <= box.MinY + 0.5 && Overlaps(other, box, vertically: false))
                 .Select(other => (double?)(box.MinY - other.MaxY)).Min();
-            var eraseMinX = box.MinX - Pad(left);
-            var eraseMaxX = Math.Max(box.MaxX + Pad(column is { } c ? c - box.MaxX : null), box.MinX + width);
+            var eraseMinX = box.MinX - Pad(leftGap);
+            var padRight = box.MaxX + Pad(column is { } c ? c - box.MaxX : null);
 
-            // 往下能长到哪：这一整条（比原文宽）下面、横向有重叠的段里最高的那个顶边，再留一点空；下面没东西就到图片底边
-            double? below = others.Where(other => other.MaxY < box.MaxY - 0.5 && other.MaxX > eraseMinX && other.MinX < eraseMaxX)
+            // 往下能长到哪：这一整条（比原文宽）下面、横向有重叠的段（和已经排好的段）里最高的那个顶边，再留一点空
+            double? below = obstacles.Where(other => other.MaxY < box.MaxY - 0.5 && other.MaxX > eraseMinX && other.MinX < box.MinX + width)
                 .Select(other => (double?)other.MaxY).Max();
             var bottom = below is { } belowTop ? Math.Max(0, Math.Min(box.MinY, belowTop + gap)) : 0;
 
-            var baseline = segment.Baseline ?? box.MaxY - segment.LineHeight * BaselineDrop;
-            var fitted = Fit(text, columnWidth, nominal, pitch, segment.LineCount, baseline, bottom, segment.Code, measure);
+            var originalBaseline = segment.Baseline ?? box.MaxY - segment.LineHeight * BaselineDrop;
+            var floorSize = SmallestFontSize(nominal, pixelsPerPoint);
 
+            // 译文实际占的地方：照原文基线排的，顶边就是原文的顶边
+            OverlayRect Area(double used, double areaBottom, double? areaTop = null)
+            {
+                var x0 = marker is null ? left : Math.Min(left, box.MinX);
+                return OverlayRect.FromEdges(x0, areaBottom, left + used, areaTop ?? box.MaxY);
+            }
+
+            var own = Inflate(box, segment.LineHeight * ErasePad);
+            bool Usable(OverlayRect rect)
+            {
+                var probe = Inflate(rect, -0.5);
+                return Inflate(bounds, 0.5) is var outer && rect.MinX >= outer.MinX && rect.MinY >= outer.MinY &&
+                       rect.MaxX <= outer.MaxX && rect.MaxY <= outer.MaxY &&
+                       !obstacles.Any(other => Intersects(other, probe)) && (isBlank?.Invoke(rect, own, box) ?? true);
+            }
+
+            Placement? Aligned(double floor, bool borrows = true)
+            {
+                if (Fit(text, columnWidth, nominal, floor, pitch, segment.LineCount, originalBaseline, bottom, segment.Code, measure, borrows) is not { } fitted)
+                {
+                    return null;
+                }
+
+                var taken = Area(measure.Extent(text, columnWidth, fitted.FontSize, segment.Code), fitted.TextBottom);
+                return Usable(taken)
+                    ? new Placement(fitted.FontSize, fitted.Pitch, originalBaseline,
+                        new OverlayRect(left, bottom, columnWidth, Math.Max(box.Height, box.MaxY - bottom)), taken, true)
+                    : null;
+            }
+
+            // 用上这段周围的空白：右边到邻栏（或图片右边），上下到这一整条横向范围里最近的别的段、已经排好的段（没有就到图片边）
+            var right = (column ?? imageWidth) - margin;
+            var across = obstacles.Where(other => other.MaxX > left && other.MinX < right).ToList();
+            var ceiling = Math.Max(box.MaxY, across.Where(other => other.MinY >= box.MaxY - 0.5).Select(other => (double?)(other.MinY - gap)).Min() ?? imageHeight - margin);
+            var ground = Math.Min(box.MinY, across.Where(other => other.MaxY <= box.MinY + 0.5).Select(other => (double?)(other.MaxY + gap)).Max() ?? margin);
+            var room = right - left;
+            var frame = new OverlayRect(left, ground, room, ceiling - ground);
+
+            Placement? Wide(double floor, bool borrows = true)
+            {
+                if (room <= 0 || Fit(text, room, nominal, floor, pitch, segment.LineCount, originalBaseline, ground, segment.Code, measure, borrows) is not { } fitted)
+                {
+                    return null;
+                }
+
+                var taken = Area(measure.Extent(text, room, fitted.FontSize, segment.Code), fitted.TextBottom);
+                return Usable(taken) ? new Placement(fitted.FontSize, fitted.Pitch, originalBaseline, frame, taken, false) : null;
+            }
+
+            Placement? Blank()
+            {
+                if (FitInBlank(text, room, nominal, floorSize, ceiling, ground, box.MidY, segment.Code, measure) is not { } blank)
+                {
+                    return null;
+                }
+
+                var taken = Area(blank.Block.Width, blank.Block.MinY, blank.Block.MaxY);
+                return Usable(taken) ? new Placement(blank.FontSize, blank.Pitch, blank.Baseline, frame, taken, false) : null;
+            }
+
+            // 一行的段：原字号、还是一行，往右边的空白排得下就这么排，不先在原文那一栏里缩（mac 43931601）
+            var sameSize = segment.LineCount == 1 ? Aligned(nominal, borrows: false) ?? Wide(nominal, borrows: false) : null;
+            if ((sameSize ?? Aligned(floorSize) ?? Wide(floorSize) ?? Blank()) is not { } placement)
+            {
+                leftovers.Add(index);
+                continue;
+            }
+
+            // 去字的范围（原文那块）：段框四边各扩一点；有代码块的段至少盖到量出来的代码块那么高、那么宽
             var top = box.MaxY + Pad(above);
-            var floor = box.MinY - Pad(under);
+            var floorEdge = box.MinY - Pad(under);
             var minX = eraseMinX;
-            var maxX = eraseMaxX;
+            var maxX = padRight;
             if (segment.Code is { } code)
             {
-                var last = baseline - Math.Max(0, segment.LineCount - 1) * pitch;
-                top = Math.Max(top, baseline + code.Above + 1);
-                floor = Math.Min(floor, last - code.Below - 1);
+                var last = originalBaseline - Math.Max(0, segment.LineCount - 1) * pitch;
+                top = Math.Max(top, originalBaseline + code.Above + 1);
+                floorEdge = Math.Min(floorEdge, last - code.Below - 1);
                 minX = Math.Min(minX, box.MinX - code.Padding - 2);
                 maxX = Math.Max(maxX, box.MaxX + code.Padding + 2);
             }
 
-            // 去字的范围也要盖住译文多出来的行
-            var eraseMinY = Math.Min(floor, Math.Max(bottom, fitted.TextBottom));
-            var erase = OverlayRect.FromEdges(minX, eraseMinY, maxX, top).Intersection(bounds);
+            var erase = OverlayRect.FromEdges(minX, floorEdge, maxX, top);
+            // 照原文基线排的：译文伸出原文的那截和原文连成一块一起去字；用周围空白排的：译文那块另外去字（Cover），不并成外接框
+            OverlayRect? cover = null;
+            var reach = Inflate(placement.Area, margin / 2);
+            if (placement.IsAligned)
+            {
+                erase = erase.Union(reach);
+            }
+            else
+            {
+                cover = reach.Intersection(bounds);
+            }
+
+            erase = erase.Intersection(bounds);
             if (erase.Width <= 1 || erase.Height <= 1)
             {
                 continue;
@@ -397,18 +512,35 @@ public static partial class ScreenshotOverlay
                 Marker = marker,
                 Source = box,
                 Erase = erase,
-                Frame = new OverlayRect(box.MinX + inset, bottom, columnWidth, Math.Max(box.Height, box.MaxY - bottom)),
-                Baseline = baseline,
-                Pitch = fitted.Pitch,
-                FontSize = fitted.FontSize,
-                Scale = fitted.FontSize / Math.Max(1, nominal),
+                Cover = cover,
+                Area = placement.Area,
+                Frame = placement.Frame,
+                Baseline = placement.Baseline,
+                Pitch = placement.Pitch,
+                FontSize = placement.FontSize,
+                Scale = placement.FontSize / Math.Max(1, nominal),
                 LineHeight = segment.LineHeight,
                 Code = segment.Code,
             });
         }
 
-        return spans;
+        return (spans, leftovers);
     }
+
+    /// <summary>一个排法：字号、行距、第一行基线、正文排在哪、译文实际占的地方、是不是照原文基线排的。</summary>
+    private sealed record Placement(double FontSize, double Pitch, double Baseline, OverlayRect Frame, OverlayRect Area, bool IsAligned);
+
+    /// <summary>字号最多缩到多小（mac 拍板 A1）：基准的 3/4，但不小于 10 pt；基准本来就不到 10 pt 的不缩。</summary>
+    private static double SmallestFontSize(double nominal, double pixelsPerPoint)
+    {
+        var minimum = MinimumPoints * Math.Max(0.01, pixelsPerPoint);
+        return nominal <= minimum ? nominal : Math.Max(minimum, nominal * ShrinkFloor);
+    }
+
+    private static OverlayRect Inflate(OverlayRect rect, double by) => OverlayRect.FromEdges(rect.MinX - by, rect.MinY - by, rect.MaxX + by, rect.MaxY + by);
+
+    private static bool Intersects(OverlayRect a, OverlayRect b)
+        => a.Width > 0 && a.Height > 0 && b.Width > 0 && b.Height > 0 && a.MinX < b.MaxX && a.MaxX > b.MinX && a.MinY < b.MaxY && a.MaxY > b.MinY;
 
     private static double? EstimatedPitch(OverlaySegment segment)
         => segment.LineCount > 1 ? (segment.Box.Height - segment.LineHeight) / (segment.LineCount - 1) : null;
@@ -449,30 +581,32 @@ public static partial class ScreenshotOverlay
         return (OcrText.ListMarker(source)?.Trim(), text);
     }
 
+    /// <summary>最后一行字在基线下伸出多少（重画的代码块底框还要再往下一点，跟着字号缩）。</summary>
+    private static double Descent(double size, double nominal, OverlayCode? code)
+        => Math.Max(size * 0.25, (code?.Below ?? 0) * size / Math.Max(1, nominal));
+
     /// <summary>
-    /// 字号拟合（mac fit）：① 从基准起，行数不多于原文、也没超出可用的高度就用它，不然一档档缩，最多到基准的四分之三；
-    /// ② 四分之三还多出行，就用它借下方的空白；③ 借完还放不下才继续缩、行距跟着缩。
+    /// 照原文的基线排（mac fit）：从基准字号起，① 译文行数不多于原文、也没超出可用的高度就用它，不然一档档缩，缩到 floor 为止；
+    /// ② 到 floor 还多出行来，就用 floor 借下方的空白（行距不变）。借完还放不下 null；borrows 是 false 时不借、直接 null。
+    /// 折行把一个英文词拆成两截（窄栏里一个词都放不下）也算这个字号放不下。
     /// </summary>
-    private static (double FontSize, double Pitch, int Lines, double TextBottom) Fit(
-        string text, double width, double nominal, double pitch, int lineCount, double baseline, double bottom,
-        OverlayCode? code, ITextMeasure measure)
+    private static (double FontSize, double Pitch, double TextBottom)? Fit(
+        string text, double width, double nominal, double floor, double pitch, int lineCount, double baseline, double bottom,
+        OverlayCode? code, ITextMeasure measure, bool borrows = true)
     {
-        var start = Math.Max(MinimumFontSize, nominal);
-        var floor = Math.Max(MinimumFontSize, start * ShrinkFloor);
-        (int Lines, double Bottom) TextBottom(double size, double linePitch)
+        (int Lines, double Bottom, bool Splits) TextBottom(double size)
         {
             var lines = measure.LineCount(text, width, size, code);
-            var under = Math.Max(size * 0.25, (code?.Below ?? 0) * size / start);
-            return (lines, baseline - Math.Max(0, lines - 1) * linePitch - under);
+            return (lines, baseline - Math.Max(0, lines - 1) * pitch - Descent(size, nominal, code), measure.SplitsWord(text, width, size, code));
         }
 
-        var size = start;
+        var size = nominal;
         while (true)
         {
-            var measured = TextBottom(size, pitch);
-            if (measured.Lines <= Math.Max(1, lineCount) && measured.Bottom >= bottom)
+            var measured = TextBottom(size);
+            if (measured.Lines <= Math.Max(1, lineCount) && measured.Bottom >= bottom && !measured.Splits)
             {
-                return (size, pitch, measured.Lines, measured.Bottom);
+                return (size, pitch, measured.Bottom);
             }
 
             if (size <= floor)
@@ -483,26 +617,48 @@ public static partial class ScreenshotOverlay
             size = Math.Max(floor, size * 0.92);
         }
 
-        var borrowed = TextBottom(size, pitch);
-        if (borrowed.Bottom >= bottom)
+        if (!borrows)
         {
-            return (size, pitch, borrowed.Lines, borrowed.Bottom);
+            return null;
         }
 
-        while (size * 0.92 >= MinimumFontSize)
+        var borrowed = TextBottom(size);
+        return borrowed.Bottom >= bottom && !borrowed.Splits ? (size, pitch, borrowed.Bottom) : null;
+    }
+
+    /// <summary>
+    /// 用周围的空白排（mac fitInBlank）：宽度给满，从基准字号起一档档缩到 floor，整块译文高度放得进 top…bottom 就用；整块以原文的竖直中线
+    /// 为准居中，挤到边上就贴着边，行距是字号的 1.25 倍。返回字号、行距、第一行基线和字实际占的那一块（x 从 0 起）；放不下 null。
+    /// </summary>
+    private static (double FontSize, double Pitch, double Baseline, OverlayRect Block)? FitInBlank(
+        string text, double width, double nominal, double floor, double top, double bottom, double center, OverlayCode? code, ITextMeasure measure)
+    {
+        if (width <= 0 || top <= bottom)
         {
-            size *= 0.92;
-            var scaledPitch = pitch * size / floor;
-            var measured = TextBottom(size, scaledPitch);
-            if (measured.Bottom >= bottom)
+            return null;
+        }
+
+        var size = nominal;
+        while (true)
+        {
+            var pitch = size * BlankLeading;
+            var lines = measure.LineCount(text, width, size, code);
+            var ascent = Math.Max(measure.Ascent(size), (code?.Above ?? 0) * size / Math.Max(1, nominal));
+            var height = ascent + Math.Max(0, lines - 1) * pitch + Descent(size, nominal, code);
+            if (lines > 0 && height <= top - bottom && !measure.SplitsWord(text, width, size, code))
             {
-                return (size, scaledPitch, measured.Lines, measured.Bottom);
+                var blockTop = Math.Min(top, Math.Max(bottom + height, center + height / 2));
+                var used = Math.Min(width, measure.Extent(text, width, size, code));
+                return (size, pitch, blockTop - ascent, new OverlayRect(0, blockTop - height, used, height));
             }
-        }
 
-        var lastPitch = pitch * size / floor;
-        var lastMeasured = TextBottom(size, lastPitch);
-        return (size, lastPitch, lastMeasured.Lines, lastMeasured.Bottom);
+            if (size <= floor)
+            {
+                return null;
+            }
+
+            size = Math.Max(floor, size * 0.92);
+        }
     }
 
     /// <summary>
@@ -598,24 +754,39 @@ public static partial class ScreenshotOverlay
     }
 
     /// <summary>
-    /// 合成的前一半（mac render 里画字之前的那些）：先从原图量出每段的基线、行距和行内代码块，再排版；然后把原文的字从 image 上
-    /// 去掉（只换字的像素，有代码块的段连底框一起换）。返回要画的段和各段的字色；画字（和代码块的底框）交给调用方。
+    /// 合成的前一半（mac render 里画字之前的那些）：先从原图量出每段的基线、行距和行内代码块，再排版（Layout，按像素回答哪儿是空的）；
+    /// 然后把原文的字从 image 上去掉（只换字的像素，有代码块的段连底框一起换；用周围空白排的段译文那块另外去）。图上留原文的段（放不下的、
+    /// 纯符号的）一个像素都不动；字色只在原文框里取。返回要画的段和各段的字色、放不下的段的下标；画字交给调用方。
     /// </summary>
-    public static List<(OverlaySpan Span, OverlayRgb Color)> Compose(
-        OverlayPixels image, IReadOnlyList<OverlaySegment> segments, IReadOnlyList<string> translations, ITextMeasure measure)
+    public static (List<(OverlaySpan Span, OverlayRgb Color)> Spans, List<int> Leftovers) Compose(
+        OverlayPixels image, IReadOnlyList<OverlaySegment> segments, IReadOnlyList<string> translations, ITextMeasure measure,
+        double pixelsPerPoint = 1)
     {
         var original = image.Snapshot();
         var measured = segments.Select(segment => Measure(segment, original)).ToList();
-        var spans = Spans(measured, translations, image.Width, image.Height, measure);
+        var (spans, leftovers) = Layout(
+            measured, translations, image.Width, image.Height, measure, pixelsPerPoint,
+            (area, own, box) => original.IsBlank(area, own, original.Background(box, own)));
+        var kept = measured.Select(segment => segment.Box)
+            .Where(box => !spans.Any(span => span.Source == box))
+            .Select(box => OverlayRect.FromEdges(box.MinX - 1, box.MinY - 1, box.MaxX + 1, box.MaxY + 1))
+            .ToList();
         var result = new List<(OverlaySpan, OverlayRgb)>(spans.Count);
         foreach (var span in spans)
         {
-            var background = original.Ring(span.Erase) ?? OverlayRgb.Light;
-            var ink = image.Inpaint(span.Erase, original, span.LineHeight, background, clearFills: span.Code is not null);
+            var background = original.Background(span.Source, span.Erase);
+            var outside = original.Ring(span.Erase);
+            var ink = image.Inpaint(span.Erase, original, span.LineHeight, background, clearFills: span.Code is not null,
+                sampling: span.Source, protecting: kept, outside: outside);
+            if (span.Cover is { } cover)
+            {
+                image.Inpaint(cover, original, span.LineHeight, background, clearFills: false, protecting: kept, outside: outside);
+            }
+
             result.Add((span, TextColor(ink, background)));
         }
 
-        return result;
+        return (result, leftovers);
     }
 
     /// <summary>字色：够浓的字像素里出现最多的颜色（门槛取最浓那个的一半）。</summary>

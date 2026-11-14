@@ -313,6 +313,30 @@ internal static class ShortcutsSheet
     };
 
     /// <summary>全部的组（按页排好）。面板里的按键照各面板的按键处理抄过来，改了那边要同步这里。</summary>
+    /// <summary>截图时的键（PLAN-v18 S3，设置 › 快捷键「截图时」能改）：现在的键，清除了写「未设置」。</summary>
+    private static string Shot(string id) => ShotKeys.Current(id, SettingsService.Current.ScreenshotKeys)?.Display ?? "未设置";
+
+    private static ShortcutEntry ScrollRow(string id, string text)
+        => ShotKeys.Current(id, SettingsService.Current.ScreenshotKeys) is { } key
+            ? new ShortcutEntry(key.Display, "Shift+" + key.Display, text)
+            : new ShortcutEntry("未设置", text);
+
+    /// <summary>十种工具：都是默认的 1–0 时照旧两行，改过就逐个列。</summary>
+    private static IEnumerable<ShortcutEntry> ShotToolRows()
+    {
+        var stored = SettingsService.Current.ScreenshotKeys;
+        if (ShotKeys.ToolsAreDefault(stored))
+        {
+            return new ShortcutEntry[]
+            {
+                new(new[] { "1", "2", "3", "4", "5" }, "矩形 · 椭圆 · 箭头 · 直线 · 画笔"),
+                new(new[] { "6", "7", "8", "9", "0" }, "荧光笔 · 文字 · 序号 · 打码 · 聚光灯（再按一次收起工具）"),
+            };
+        }
+
+        return ShotKeys.Tools.Select(entry => new ShortcutEntry(Shot(entry.Id), entry.Title));
+    }
+
     private static List<ShortcutGroup> Groups() => new()
     {
         // Clipboard/ClipboardPanel.xaml.cs 的 OnKeyDown / OnKeyUp。
@@ -435,29 +459,29 @@ internal static class ShortcutsSheet
                 new("右键", "清掉选区；没有选区时退出（画了标注时不清）"),
                 new(new[] { "←", "→", "↑", "↓" }, "挪选区（选中标注时挪标注）1 px，Shift 10 px"),
                 new(new[] { "Ctrl+方向键", "Alt+方向键" }, "那条边往外推 / 往里收"),
-                new("D", "跳到上次截的区域"),
-                new("C", "复制放大镜里的色值"),
+                new(Shot("lastRegion"), "跳到上次截的区域"),
+                new(Shot("pickColor"), "复制放大镜里的色值"),
                 new("Esc", "逐级退出：收下正在输入的文字、取消选中的标注、收起工具，最后退出截图"),
                 new("Ctrl+W", "退出截图"),
             }),
-        new("screenshot", "截图 · 标注", "capture", Glyphs.Edit, Array.Empty<string>(), new ShortcutEntry[]
+        new("screenshot", "截图 · 标注", "capture", Glyphs.Edit, Array.Empty<string>(), ShotToolRows().Concat(new ShortcutEntry[]
         {
-            new(new[] { "1", "2", "3", "4", "5" }, "矩形 · 椭圆 · 箭头 · 直线 · 画笔"),
-            new(new[] { "6", "7", "8", "9", "0" }, "荧光笔 · 文字 · 序号 · 马赛克 · 聚光灯（再按一次收起工具）"),
+            new(Shot("crop"), "裁剪"),
             new("Delete", "Backspace", "删除选中的标注"),
-            new(new[] { "Ctrl+Z", "Ctrl+Y", "Ctrl+Shift+Z" }, "撤销 / 重做"),
+            new(new[] { Shot("undo"), Shot("redo"), "Ctrl+Shift+Z" }, "撤销 / 重做"),
             new("Ctrl+Enter", "Esc", "文字框里收下文字（Enter 是换行；点外面也收下）"),
-        }),
+        }).ToArray()),
         new("screenshot", "截图 · 出图", "capture", Glyphs.Save, Array.Empty<string>(), new ShortcutEntry[]
         {
-            new("Enter", "Ctrl+C", "拷贝（识字 / 截图翻译时是确认，录屏时是开始录）"),
-            new("Ctrl+S", "快速保存"),
-            new("Ctrl+Shift+S", "另存为…"),
-            new("P", "钉在屏幕上"),
-            new("S", "Shift+S", "长截图：往下滚 / 往上滚"),
-            new("R", "切到录屏（录屏功能开着时；画了标注不切）"),
-            new("O", "识字并拷贝"),
-            new("T", "截图翻译"),
+            new("Enter", Shot("copy"), "拷贝（识字 / 截图翻译时是确认，录屏时是开始录）"),
+            new(Shot("save"), "快速保存"),
+            new(Shot("saveAs"), "另存为…"),
+            new(Shot("pin"), "钉在屏幕上"),
+            ScrollRow("scroll", "长截图：往下滚 / 往上滚"),
+            ScrollRow("autoScroll", "自动滚动长截图：往下 / 往上"),
+            new(Shot("record"), "切到录屏（录屏功能开着时；画了标注不切）"),
+            new(Shot("recognize"), "识字并拷贝"),
+            new(Shot("translate"), "截图翻译"),
         }),
 
         // ScrollingCapture.cs（长截图期间临时注册的键）、PinWindow.cs、RecordingCountdown.cs。

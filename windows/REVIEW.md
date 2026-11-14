@@ -77,7 +77,9 @@
 
 ### 待修
 
-#### R69（P0）新装不弹欢迎引导，开机自启也没设上
+#### R69（P0）新装不弹欢迎引导，开机自启也没设上 → 已修（`cc0356ad`）
+
+> Windows 11-13：`SettingsService.FirstRun`（Save 不清），ShellRuntime 和 WhatsNewHost.Adopt 改看它。新 Dev 档 `--smoke`：onboarding.shown、smoke.onboarding shown=True；同一个档再起一次（= 升级）不弹。`--smoke` 现在在新档上等引导真的弹出（没弹 exit 3），`build-release.ps1` 跑它之前删掉 smoke 档。注销再登录自己起来没测（真机清单第 2 条）。
 
 **位置**：
 
@@ -102,7 +104,9 @@
 
 **验**：真机清单第 2 条（沙盒里新装）。升级（已经有 settings.json）时不弹。
 
-#### R70（P1）状态屏：按 Ctrl+Alt+Del 再「取消」之后，按住 Esc 退不出
+#### R70（P1）状态屏：按 Ctrl+Alt+Del 再「取消」之后，按住 Esc 退不出 → 已修（`9e1a6101`）
+
+> Windows 11-13：取第一种修法——Core `HeldKeys`（键 → 最后一次按下的时刻，超过 `ExitHold.StaleAfterMs` 不算按着），连发和修饰键都按它算。单测 HeldKeys_LostReleaseStopsCountingAfterStale（Ctrl / Alt / Delete 不松，6 秒后按住 Esc 两秒退出）、HeldKeys_LostEscReleaseIsNotRepeatForever；`--status-screen-probe` 三种样式照过。真的 Ctrl+Alt+Del 没测（真机清单第 6 条）。
 
 **位置**：
 
@@ -135,7 +139,9 @@
 
 **验**：真机清单第 6 条。
 
-#### R71（P1）状态屏：进入前就按着的键，系统一连发，它的松开就被吞了
+#### R71（P1）状态屏：进入前就按着的键，系统一连发，它的松开就被吞了 → 已修（`9e1a6101`）
+
+> Windows 11-13：照建议——按下不是这里吞的、`GetAsyncKeyState` 已经是按着：照吞、不报给会话、不记 `KeysTaken`；鼠标键同理（X2 按 mouseData 换 VK）。只能靠 `--status-screen-probe` 验没改坏（不许真进），真按住快捷键进入没测（真机清单第 7 条）。
 
 **位置**：`StatusScreen/InputBlock.cs:274-286`。`KeyboardProc` 收到按下，就设 `KeysTaken[slot] = true`。
 
@@ -159,7 +165,9 @@
 
 **验**：真机清单第 7 条。
 
-#### R72（P1）便签、提醒启动时出错，整个 App 起不来
+#### R72（P1）便签、提醒启动时出错，整个 App 起不来 → 已修（`ec2cc0e5`）
+
+> Windows 11-13：两处各包 try / catch，记 notes.start-failed / reminder.start-failed、轻提示「便签这次用不了」「提醒这次用不了」。编译、全部单测、`--smoke` 过；异常那条路没真走。
 
 **位置**：
 
@@ -179,7 +187,9 @@
 - 两处各包一个 try / catch：记 `Log.Error("notes.start-failed", ex)` 或 `reminder.start-failed`，轻提示「便签这次用不了」或「提醒这次用不了」，其余照常起。
 - 剪贴板那一段（`:77-90`）已经是这个写法。
 
-#### R73（P1，修完真机确认）便签：在正文里拖动一张图，图片表和正文对不上
+#### R73（P1，修完真机确认）便签：在正文里拖动一张图，图片表和正文对不上 → 已修（`0941177a`），待真机确认
+
+> Windows 11-13：AllowDrop / CanDrag = false、DragStarting 取消、DragOver / Drop 用 handledEventsToo 拦下；`Aligned()` 对不上时 `NoteEditor.Unsaved`，底行写「这条便签有改动没存上」。`--note-editor-probe` 七条照旧。不用合成输入，真拖留给用户（真机清单第 14 条）——也要看 RichEditBox 内部的 OLE 拖动是不是真的被这几样挡住（挡不住的话底行会写「有改动没存上」，至少不再无声地丢字）。
 
 **位置**：
 
@@ -207,7 +217,9 @@
 
 **验**：真机清单第 14 条。
 
-#### R74（P1，修完真机确认）状态屏：前台是管理员程序时挡不住键盘
+#### R74（P1，修完真机确认）状态屏：前台是管理员程序时挡不住键盘 → 已修（`8c91127e`），没测
+
+> Windows 11-13：两条都做了——「请勿触碰」鼠标那块屏的底板去掉 NOACTIVATE、拿前台（`HudFrame.AllowActivate`）；摆好窗口后前台还不是自己、而且是提权进程（本进程没提权）就不进：快捷键进入给轻提示，提醒退成全屏（原因写在全屏上），日志 status.enter-refused elevated-foreground。`--status-screen-probe`：「请勿触碰」现在也有 foreground.restored。管理员窗口在前台那条要 UAC、不许真进，没测（真机清单第 8 条）。
 
 **位置**：
 
@@ -236,20 +248,20 @@
 
 ### 应修（不挡这一版，能顺手就修）
 
-**R75 便签落盘一直失败时，界面上什么都不说**
+**R75 便签落盘一直失败时，界面上什么都不说** → 已修（`0941177a`）：`NoteStore.SaveProblemChanged`，第一次失败轻提示一次，底行写「没存上，正在重试」，落下去就消。失败那条路没真走。
 
 - `Notes/NoteStore.cs:521-528` 只记 `SaveProblem` 和日志。
 - 只有快速记一条（`NoteCaptureWindow.cs:447`）和退出时的对话框会告诉用户。关机、注销、闪退就直接丢字。
 - 修：`NoteSheetView` 底行加一句「没存上，正在重试」（同 mac）；第一次失败时轻提示一次。
 
-**R76 zip 版「卸载并删除数据」删不干净**
+**R76 zip 版「卸载并删除数据」删不干净** → 已修（`4a9fd0b9`）：PrepareForUninstall 加 NoteStore.Flush / Dispose、ReminderCenter.Stop。新自检 `--uninstall-probe`（Debug）：停完之后数据目录里每个文件试一次独占打开，修之前 locked=3（notes.sqlite3、-shm、-wal），修之后 0。
 
 - `Shell/ShellRuntime.cs:1113` 的 `PrepareForUninstall` 只停了剪贴板、同步、更新、热键。
 - 便签库没关（连接和 `-wal` 还开着），`ReminderCenter` 没停，`UninstallCleanup.Recycle` 挪不动整个目录，弹「数据目录没删干净」——和当年 R25 一样。
 - 修：加上 `NoteStore.Instance?.Flush(); NoteStore.Instance?.Dispose(); ReminderCenter.Stop();`。
 - 安装版走 Inno 卸载，进程先退，不受影响。
 
-**R77 云盘里「仅在线」的文件不会被要求下载**
+**R77 云盘里「仅在线」的文件不会被要求下载** → 这一版没修（留在应修）；0.2.0 更新日志便签第四条后面照草稿加了「右键它选『始终保留在此设备上』」。
 
 - `Core/Sync/SyncDisk.cs:15-35` 碰到占位文件就当它不存在。0.1.x 的几类同步就是这样；mac 会调 `startDownloading`。
 - 在 OneDrive 按需下载、iCloud for Windows 下，别的电脑新写的文件常常是仅在线的：
@@ -259,13 +271,13 @@
 - 修：开同步时、或每一轮，给同步根目录设上 `FILE_ATTRIBUTE_PINNED`（等于资源管理器里的「始终保留在此设备上」），或者在后台调 `CfHydratePlaceholder`；占位属性也放进指纹。
 - 这一版不修的话，更新日志里同步那条后面加一句：「同步文件夹在 OneDrive / iCloud 里时，右键它选『始终保留在此设备上』」。
 
-**R78 全屏提醒建到一半失败，会留下一层压暗**
+**R78 全屏提醒建到一半失败，会留下一层压暗** → 已修（`4a9fd0b9`）：`ReminderScreen.Show` 的 catch 把已建的都撤掉、返回 false，`ReminderCenter` 退回底部的轻提醒。异常那条路没真走。
 
 - `Reminders/ReminderScreen.cs:116-119` 的 catch 只记日志。
 - 先建好的压暗层留在屏上吃点击；「点了才收」的提醒没人能收掉。
 - 修：catch 里把已建的窗口 `Close()`，退回到底部的轻提醒。
 
-**R79 锁屏通知没注册上时没有兜底**
+**R79 锁屏通知没注册上时没有兜底** → 这一版没修（留在应修）。
 
 - `Shell/HiddenWindow.cs:56` 不看 `WTSRegisterSessionNotification` 的返回值。
 - 收不到「解锁」的话，「锁屏再解锁」这条出路就失效了；状态屏一直算开着，热键和提醒都被压着。
@@ -306,7 +318,7 @@
 
 ### 发版前必须真机走的（给用户）
 
-用要发的那个 setup.exe，约一个半小时。
+用要发的那个 setup.exe，约两个小时（31–37 条是 2026-11-14 并进来的 PLAN-v19 和 PLAN-v18）。
 
 **先跑自动的**：
 
@@ -394,6 +406,16 @@
 28. 两块显示器、外接屏当主显示器、笔记本放在它左边，设置 › 便签 位置选「左边」：主显示器上的药丸在左边。
 29. 设置 › 关于「检查更新」能查到；中文系统上，启动器搜「命令提示符」「mlts」（L7，结果写进报告）；从启动器打开 cmd 跑 `set`，和从开始菜单打开的比，多出来的变量写进报告（L8）。
 30. 中文输入法打拼音、还没选字时，翻译原文框、启动器、快速记一条、便签标题和正文里的灰色占位字都不和拼音叠在一起（L11）。
+
+**PLAN-v19、PLAN-v18 第 1–8 批**（2026-11-14 用户「把 WebDAV 和 PLAN-v18 第 1–8 放到 0.2.0 里面」，加了这几条；详细的在 HANDTEST 1212–1224、1238–1317）
+
+31. 设置 › 通用「同步」→「连接服务器…」，连一个**临时的测试 WebDAV**（别连真在用的网盘目录）：测试连接通过，连上后建一条便签，一分钟内服务器上出现文件；「停止同步」后凭据管理器里那条没了。
+32. 截图标注：打码是模糊、「自动」能盖住截图里的手机号 / 邮箱；矩形拖边中点、Shift 等比、Alt 从中心；文字 Ctrl+= / Ctrl+- 改字号；序号拖角放大、改编号；箭头选双头；吸管取色。
+33. 截图翻译盖回：框一小块（一两行字）翻 → 字不小得看不清，放不下的段进旁边的译文卡片；卡片上「看原文」「拷贝」「✕」都管用。
+34. 设置 › 快捷键 加一个按应用停用的程序（比如记事本），记事本在前台时 Alt+V 不出剪贴板、切走就回来；把某个动作设成「连按两下 Ctrl」，连按能触发、平时 Ctrl+C / Ctrl+V 不误触；截图时在工具栏上右键一颗钮改它的键。
+35. 启动器：设置 › 启动器 › 命令和别名 给 kill 改个别名，旧词不认、新词认；给一条命令设快捷键能直接跑；桌面上一个便携 exe 能搜到；给一个应用起别名，输全排第一。
+36. 启动器的脚本：设置 › 启动器 › 脚本命令「新建脚本」建一个 PowerShell 的，在启动器里输它的关键词能跑；「用例子新建」后输「tq 北京」出天气（要联网）；输「time」「bcvt 0xff」「b64 aGk=」出几行结果，Enter 粘贴；「复制写法说明」贴给 AI、把它回的脚本「从剪贴板新建」能存能跑。
+37. 启动器输「dark」Enter：深色 / 浅色切过去，再输一次切回来（**会改系统主题**，走完记得切回原来的）。
 
 **发布之后**：把第 4、6、9、10、13–15、18 条并进真机回归清单（R41 起），这份清单就不再只管 0.1.x 的功能。
 
@@ -498,7 +520,44 @@
 6. 从打包的那个提交切分支 `windows-0.2.0` 并推上去（`git push origin <提交>:refs/heads/windows-0.2.0`），报告里写它指哪个提交。
    之后真机清单查出来的 0.2.0 问题修在 `windows-0.2.0` 上、重新打包，再拣回 `windows`；`windows` 接着做 0.3.0（PLAN-v19 核验 → PLAN-v18 第 1–8 批）。
 
-## PLAN-v19（同步直接连 WebDAV 服务器，issue #18，2026-11-13 用户「全部按推荐」，审查方在 Mac 上写、**没编译**）
+### 0.2.0 收口结果（Windows 2026-11-13，Claude）
+
+**分支**：`windows-0.2.0` → `9bb2c7c7`（打包的那个提交）。它比 `windows` 多一个提交 `46af52f5`：撤掉 PLAN-v19 的代码（63a8e278 + 编译修正 335fa2fe 里的代码文件，文档留着）。
+PLAN-v19 在 0.2.0 收口开始前已经推到 `windows`，而它排在 0.2.0 之后核验、算 0.3.0、更新日志里也没有，0.2.0 不带一个没人走过的「连接服务器…」——**替用户定的**。
+撤完 Sync / SyncFolder / Glyphs 和 PLAN-v19 之前（7214f94f）逐字节一样；`windows` 照旧带着 PLAN-v19 接着做 0.3.0。之后 0.2.0 的修补修在 `windows-0.2.0`、拣回 `windows`。
+
+**修了什么**（各条的提交和验法写在上面各条、下面「PLAN-v18 › 收口结果」）：R69 R70 R71 R72 R73 R74，应修里顺手的 R75 R76 R78；PLAN-v18 S1 S6 S12 L12 L13 L7。R77、R79 没修（R77 照草稿在更新日志里加了那句）。
+另外两个：`335fa2fe`（PLAN-v19 对话框按钮的 lambda 参数叫 `_`，编不过，只在 `windows` 上有意义）、`2931b88e`（自检档的新档不弹欢迎引导，见下）。
+
+**自查**：
+- `dotnet test`：`windows-0.2.0` 866 个全过（`windows` 893 个，多的 27 个是 WebDAV 的）；Debug 0 警告。
+- `build-release.ps1`（x64 / ARM64 AOT 0 个 trim / AOT 警告，PRI 四个都在，`--smoke` 过——现在每次删掉 smoke 档、查新装时引导真的弹出）；`setup-e2e.ps1` 18 项全过；
+  `KittyTools.exe --update-live=0.1.2` 退出码 0，report.txt：ok，下载 32 281 041 字节，sha256 对得上。内置智谱 key 在 x64 / ARM64 的 exe 里（只比对、没打印）。
+- 内存探针（Release AOT，独立探针档，和上一批 PLAN-v16 第 5 批 `232e20f` 的 Release 并排起）：每一步都比上一批低 0.3–3.6 MB，只有托盘 52.1 MB（上一批 53.9）、5000 条剪贴板 57.1、
+  启动器 63.3、翻译窗 64.5、截图五次后 87.5、设置五次后 100.4。**第一次量出来只有托盘 74 MB**：R69 修好以后新探针档一起来就弹欢迎引导（开着设置窗），量的不是「只有托盘」——
+  `2931b88e` 改成自检档里只有 `--smoke` / `KITTY_ONBOARDING=1` 才弹（截图自检的设置页也不再被引导盖住），正常的档照弹。
+- 空闲 CPU（只有托盘，静置 30 s 后量 120 s）：15.6 ms = 0.013 % 单核（基线 0.013–0.026 %）。
+- 新日志：onboarding.shown、notes.start-failed、reminder.start-failed、status.enter-refused、update.check … source=manifest / api、update.manifest-unreadable / -missing、
+  screenshot.overlay-restored，都只有事件名、异常类型和版本号，没有内容、地址、密钥。
+
+**产物**（`kitty-win-v16base` 的 `windows/build/release/0.2.0/`，用户的 `D:\Apps\Kitty Tools` 没碰）：
+
+| 产物 | 0.1.2 | 0.2.0 | 差 |
+|---|---|---|---|
+| x64 安装包 | 23.67 MB | 31.3 MB（32 777 336 字节，sha256 `4a9696c634d3…`） | +7.6 MB（+32 %） |
+| x64 zip | 32.28 MB | 40.2 MB（42 142 722 字节，sha256 `07d21b153ac8…`） | +7.9 MB |
+| ARM64 安装包 | 23.35 MB | 31.0 MB（sha256 `281adc306bc6…`） | +7.7 MB |
+| ARM64 zip | — | 39.2 MB（sha256 `83a28d18e5f3…`） | |
+| 发布目录 | — | x64 94.9 MB / 133 个文件，ARM64 100.5 MB / 133 个（不含 pdb） | |
+
+（0.1.2 那一列照上面「安装包大小」一节的数，单位一样是 MiB 取一位。）另有 `windows-update.json`（L12 ②，UTF-8 无 BOM，x64 / ARM64 两项）和 `release-notes.md`。
+全文 sha256 在各 `.sha256` 里。**没发布、没打 tag、没建 `windows-update` release**；发布时照 `build-release.ps1` 头部：先发 `windows-v0.2.0`（`--latest=false`），
+再第一次 `gh release create windows-update --prerelease --latest=false`、把 `windows-update.json` 传上去，传完 curl 核一遍。
+
+**没测、留给真机清单**：R69 注销再登录自己起来（第 2 条）、R70 真的 Ctrl+Alt+Del（第 6 条）、R71 真按住快捷键进入（第 7 条）、R74 管理员窗口在前台（第 8 条）、
+R73 真拖图（第 14 条）、S1 真长网页（第 26 条）、S6 真遮罩换选区（第 27 条）、L13 两块屏（第 28 条）、L12 真限流 / 真清单（第 29 条）；R75、R78 的出错那条路没真走。
+
+## PLAN-v19（同步直接连 WebDAV 服务器，issue #18，2026-11-13 用户「全部按推荐」，审查方在 Mac 上写；Windows 11-13 核验完，见本节末尾）
 
 方案在 `PLAN-v19.md`（D1–D5 都取推荐）。一批，审查方在 Mac 上写完（`git log --grep "PLAN-v19"`），**一行都没编译、没跑过单测**（Mac 上没有 .NET SDK）。
 你们在 0.2.0 打完包、切出 `windows-0.2.0` 之后核验（见「0.2.0 发版前审查 › 给 Windows agent 的指令」第 6 步），算 0.3.0 最先的一批；和 PLAN-v18 的各批不碰同样的文件。
@@ -546,6 +605,33 @@
 - 「选择文件夹…」之前先 `ForgetServer`（以前连过服务器、没停干净时把密码和镜像清掉）。
 - 便签同步关着时 pull 照样拿便签和图片（同 mac）：只在 merge 时不用；ponytail，关着便签又连服务器的人多拿几个文件。
 
+### Windows 核验结果（2026-11-13，Claude 在 Windows 上，`windows` 线）
+
+照上面「核验指令」八条：
+
+1. **编译**：只有一处错——`SettingsWindow.SyncServer.cs` 两个按钮的 lambda 参数叫 `_`，`_ = Task` 成了给参数赋值（CS0029），改名 `sender`（`335fa2fe`）；
+   其余一次编过，Debug 0 警告；AOT x64 / ARM64 0 个 trim / AOT 警告。`XmlReaderSettings.XmlResolver = null` 没报过时，留着。
+   **发布体积**比 0.2.0（同一批代码去掉 PLAN-v19）多 x64 +1.04 MB、ARM64 +1.07 MB（94.91 → 95.95、100.50 → 101.57 MB，全在 exe 里），没到 3 MB。
+2. **单测**：893 个全过（WebDavTests 10、SyncServerTests 17，原来的 NoteSyncRunnerTests、SyncIntegrationTests 也过），一个测试都没改。
+3. **编译点**：第 3 条列的几处都编过；`Glyphs.Server`（`\uE8CE`）截图里是一个连着网络的驱动器，像服务器，留着。
+4. **占位**：`PlaceholdersForWhatIsNotFetchedYet` 在 Windows 上过；真跑（下面第 5 条的自检）：一台先建 71 条便签，另一台第一次连，第一轮镜像里 42 个带「脱机」属性的占位、
+   状态「还有 42 个没拿下来」，第二轮 2 个，第三轮 0，便签 33 → 73 条，中途没报错、没删东西。
+5. **真服务器**：没有用户另给的测试账号，审查方 Mac 上的 Apache 在那边的局域网、这台够不着，所以写了一个本机的 WebDAV 测试服务器（Python 标准库、只听 127.0.0.1、Basic 或 Digest，
+   不进仓库，在会话的临时目录里）。`SyncServerTests.LiveServer`：Basic、Digest 各跑一次，都过。另加测试档自检 `--sync-server-probe=<目录>`（`App/SyncServerProbe.cs`，
+   连 `KITTY_SYNC_PROBE` 给的服务器，走真的 `Syncer.EnableServerAsync` / `RoundAsync`，可以先建便签、带图），两份 Dev 档轮流连同一个文件夹，访问日志看到：
+   - 空闲一轮只有 3 + 2 × 台数个 PROPFIND（一台 5 个、两台 7 个），没有别的请求；
+   - 另一台回来时只 GET 对方的那几个文件，自己的不拿；
+   - 图片先 PUT `images/.kitty-<编号>.partial` 再 MOVE 成正式名，`images/` 里没留下 .partial；
+   - 标记只 PUT 一次（第二台读到标记不写）。「标记第二次 PUT 回 412」要两台同一刻第一次连才碰得到，没造出来，靠单测。
+   **发现**：服务器要 Digest 时，换成 Digest 的 client 之后**每个请求还是先回一次 401** 再带上认证（.NET 的 `SocketsHttpHandler` 不预先带 Digest，`PreAuthenticate` 只管 Basic），
+   请求数翻倍：按次数限流的 Digest 服务器上，「一轮 40 个」实际是 80 次。没改（要自己算 Digest 的 nonce / nc；常见网盘、NAS 的 WebDAV 都是 Basic），记在这里给审查方定。
+6. **手测**：HANDTEST 1212–1224 各条后面注了验到哪；要真 Mac 的、要网盘客户端的、断网、真限流、卸载没测。
+7. **截图**（`windows-shots` 的 `0.3.0-v19/`）：`--ui-snapshots` 加了 `settings-sync-*`（要 `KITTY_SNAPSHOT_DAV`、`KITTY_SNAPSHOT_DAV_SHARED` 指着本机测试服务器）：
+   没开、对话框（空的、http 橙字、测试连接成 / 不成、问合不合在一起）、连上（正常、还有几个没拿下来 / 没传上去、请求太多），浅 / 深。高对比度没截（要改系统主题，照旧不动）。
+   截图里看出来两处排版，改了：转圈藏着时说明文比下面的橙字多缩进 8 px（列间距照留）；问句的正文在对话框里居中、和左对齐的标题错开。
+8. **自查**：Release 探针档，只有托盘：连着服务器 54.2 MB、没开同步 53.9 MB（+0.3）；空闲 CPU 连着服务器 0.013 %（量的 120 秒里正好两轮）、关着 0.013 %；
+   日志里 `sync.server-*` 只有个数和出错种类，几份测试档的日志里都没有服务器地址、端口、用户名、密码；settings.json 里没有密码。
+
 ## PLAN-v18（mac 0.7.3 之后的改动，2026-11-13 用户「给我命令吧，我让 windows agent 开始实现」= D1–D13 按推荐）
 
 方案在 `PLAN-v18.md`。**你们自己写、自己编译、自己验**，照 `AGENTS.md`「每一批的流程」走，一批一个（或几个）提交，报告写在提交正文里；
@@ -569,7 +655,20 @@ mac 的单测在 `macos/KittyToolsTests/`，样本和期望值能搬就搬。只
 
 真机清单第 26–30 条、更新日志草稿的几条 fix 已经加在上面「0.2.0 发版前审查」里。L8、L11 不改代码，只在真机清单里看。
 
+**收口结果**（Windows 2026-11-13，提交正文里有全文）：
+
+- S1 → `73cef009`：`ScrollPacer.Frame` 封顶半个选区高（`MaxLead`、`Room`），「到头」改看自上次接上以来发满一格；光标在面板附近时不对账（同 mac）。单测照 mac 的样本 + 拼接慢 120 帧不调 After + 封顶后能停。
+- S6 → `b3af5a04`：Core `InPlaceOriginal`，`SetSelection` / `ClearSelection` 一处兜住。**和指令不一样**：`--overlay-translate-probe` 只走识字和合成、不起真遮罩，加步骤验不到冻结帧，改成 Core 单测逐字节（`InPlaceOriginalTests`）；真遮罩留真机清单第 27 条。
+- S12 → `94c5e59b`：ListMarker 不要求空白（紧跟数字、点的不算），列表项后面左边缩回半个字的另起一段。单测照 mac 那张截图的行框。
+- L12 → `78d1ea49`：① 403 / 429 认成限流、关于页和轻提示写清楚、「打开发布页」；② `windows-update.json`（Core `UpdateManifest`、`build-release.ps1` 生成、头部写了两步发布命令），**没建 `windows-update` release**。**和指令不一样**：清单读到了就以它为准（同 mac），版本不比当前新**不**退回 API——已是最新的用户占多数，退回等于每次都走 API、限流照旧。
+- L13 → `1a0e4b48`：删 IsJoined / FreeEdge，锁旧规则的三个单测照 mac 改写（用户改了规则）。
+- L7 → `845e027e`：**复现了**（这台中文 Windows 11 上搜「命令提示符」「mlts」只有网页搜索），标题取 SHGFI_DISPLAYNAME、英文文件名也能搜，子文件夹名同样取显示名；更新日志那条留着。
+- 顺带：`2931b88e` 自检档的新档不弹欢迎引导（--smoke、KITTY_ONBOARDING=1 除外）——R69 修好后内存探针的「只有托盘」量成了带设置窗的 74 MB。
+
 ### B. 0.3.0（`windows-0.2.0` 切出去、PLAN-v19 核验完之后）
+
+> **2026-11-14 用户：「把 WebDAV 和 PLAN-v18 第 1–8 放到 0.2.0 里面」**。下面写的「0.3.0」都并进 0.2.0：版本号回到 0.2.0，0.3.0 那条更新日志并进 0.2.0（长截图的两条修合成一条）；
+> 「新」只留便签、提醒、状态屏三条（一版最多 3 个），脚本命令、WebDAV 不标；`windows-0.2.0` 用一个合并提交指到 `windows` 的同一棵树（不强推），在那里重新打包。真机清单加了 31–37 条。
 
 照 `PLAN-v18.md` §3 第 1–8 批，D1–D13 都按推荐。几点：
 
@@ -581,6 +680,67 @@ mac 的单测在 `macos/KittyToolsTests/`，样本和期望值能搬就搬。只
 - **第 6–8 批**：脚本命令 L1，照 D7–D9；mac 的代码在 `Launcher/Script*.swift`、`Shell/Subprocess.swift`，规矩在 mac 的 `.claude/skills/` 里搜「脚本」。三轮评审修的口子（看全文不可跳过、看不见的字符不放行、密码不拿去搜、停得掉）都要有，各写单测。
 - 0.3.0 的「新」标记三项、版本号、更新日志在最后一批定。
 
+#### 各批结果（Windows agent 写）
+
+- **第 1 批（`a40e5b53` S5 S2、`b066b09c` S16 S14、`11707cad` S17、`39cf9750` S15 S18 S19）**：长截图手动滚的节奏和「对不上」的提示、尺寸胶囊先放选区外、打码改高斯模糊 + 改名 + 模糊在前、八个手柄 / Shift 保比例 / Alt 从中心、一键打码（手机号 / 邮箱 / 卡号 Luhn / 身份证校验位）、文字字号 12–72、序号改编号和拖角改大小、双头箭头、吸管取色。AOT x64 / ARM64 0 警告；906 测试；`--overlay-translate-probe` 真识字认出电话、邮箱、订单号不盖。
+  内存全量（39cf9750 vs 0.2.0 包，这份也带着 PLAN-v19 的同步代码）：只托盘 54.2 / 53.5 MB，开截图遮罩 76.2 / 74.6，最后静置 98.6 / 96.7（+0.7…+1.9 MB）。
+  没做：长图标注窗口里的「自动」、吸管、A− / A+、改编号（只做在截图遮罩里）；S2 没像 mac 那样叠着截、不被滚轮叫醒。没量：长截图进行中的 CPU（没有不靠合成输入开长截图的自检）。手测 1238–1246。
+- **第 2 批（`a744f513` S11，`git log --grep "PLAN-v18 第 2 批"`）**：mac 第二轮排版整段搬进 Core `ScreenshotOverlay.Layout`（同段原字号 → 原位 → 往右撑 → 用周围空白居中，都要「在图里、不碰别段原文和已排好的段、那块是空的」；字号下限 10 pt × DPI 和基准的 3/4 取大，基准本来就小的不缩；放不下的进 Leftovers），去字只在原文框里取字色、留原文的段一个像素不动、色块里的字不连段外一起抹；`ITextMeasure` 加 Extent / SplitsWord / Ascent（Win2D 那边按字符区块认断行——`CanvasLineMetrics` 带 bool 字段，CsWinRT 封送不了，Debug 也一样抛）。
+  界面：翻完总挂卡片（`SelectionOverlayWindow.TranslationCard.cs`，窄栏 = 「译文」｜看原文｜拷贝｜✕，有放不下的段时列原文一行 + 译文全文、可选中），位置是 Core `SelectionChrome.TranslationCard`（mac cardPlacement 的单测换成左上原点照搬），尺寸胶囊给卡片让位；Esc / 选区一变 / 切录屏 / ✕ 收。
+  单测 920（新 14：mac 的十个排版 + 400 个随机版面、去字不动图标、卡片位置、标题和提示）；`--overlay-translate-probe` 新加「小选区」两条：150 % 下紧贴一行 → 图不变、1 段进卡片；上下留 40 像素 → 用空白排、不进卡片。
+  替用户定的：卡片在 Windows 上没有 mac 的「从边长出来」，用工具栏同一个入场（Pop，往选区那边让 6）；卡片里的字是 WinUI 可选中的 TextBlock，右键菜单是系统的「复制 / 全选」（mac 关了右键菜单是因为系统菜单压在遮罩下面，WinUI 的在同一扇窗里）。
+  没测：真翻译服务、真点卡片和 Esc 顺序（HANDTEST 1247–1257）。
+  内存全量（478efded vs 0.2.0 包，各两轮取第二轮）：只托盘 53.4 / 53.4 MB，开截图遮罩 75.2 / 75.1，最后静置 99.4 / 97.8；空闲 CPU 0.021 %（静置 30 s 后量 300 s；量 120 s 那次是 0.052 %，同一个包，抖动）。
+- **第 3 批（`git log --grep "PLAN-v18 第 3 批"`）**：PLAN-v17 整份 + L10 两句、S3、L9。
+  - 按应用停用（Core `HotKeyBlock`，`Shell/HotKeyBlocker.cs`）：前台切换挂 `EVENT_SYSTEM_FOREGROUND`（进程外、不轮询），取 exe 名算规则交给 `HotKeyManager.Apply`——规则不变什么都不做，变了只注销 / 补注册变了的那几个 id（失败原因不清）。前台是 Kitty 自己时沿用上一个外部前台（L10 ①）；名单、全屏开关一保存就按此刻的前台重算（L10 ②，`ShellRuntime.OnSettingsChanged`）。截图停着期间只记规则（H4）。全屏游戏 = `QUNS_RUNNING_D3D_FULL_SCREEN` / `PRESENTATION_MODE`，前台变时和热键按下时各查一次。设置页一节 + 全屏开关、托盘一项（用最后一个不是任务栏 / 桌面 / 资源管理器 / 我们的窗口）、导出导入 `hotKeyBlockedExes` `hotKeyBlockFullscreen`。
+  - 截图时的键（Core `ShotKeys`，24 项：mac 的 21 项 + 截图翻译、自动滚、裁剪）：设置 › 快捷键「截图时」两组、工具栏右键改键（钮亮粉底、Esc 只取消改键）、悬停提示 / 速查表 / 长图标注窗口都按现在的键；固定的键、截图里重复、和全局快捷键一样的不收；导出导入 `shotKeys`（读文件时重复的丢掉）。`HotKeyRules.TryParse` 补认标点键和「VKxx」（Format 本来就会写，读不回来）。
+  - 连按两下 Ctrl / Alt / Shift（Core `ModifierTaps` 照 mac 的状态机，毫秒；`Shell/ModifierTapListener.cs`）：Raw Input `RIDEV_INPUTSINK` 挂在隐藏窗口，只在有动作设成连按时才注册；`hDevice == 0`（SendInput，含我们自己粘贴的 Ctrl+V）滤掉；中间按了普通键作废。记成修饰键自己、写法「Ctrl+Ctrl」；Alt / Shift 的副作用写在那一行下面。
+  - 验：单测 938（新 18：HotKeyBlock 6、ShotKeys 4、ModifierTaps 8）；`--hotkey-block-probe`（Debug，假装前台换 exe、不发按键）全对，注册 / 注销 20 次切换中位 0.015 ms、最长 0.045 ms（第一次带上开 / 关 Raw Input 1.6 ms）；AOT x64 / ARM64 0 警告（96.4 / 102.0 MB）；截图 settings-hotkeys-block(-empty)、settings-hotkeys-shot-*、shot-rebind（浅深）。内存全量和空闲 CPU 随第 4 批补。
+  - 替用户定的：托盘那一项认「最后一个外部窗口」时跳过 `XamlExplorerHostIslandWindow`、`Windows.UI.Core.CoreWindow`（开始菜单、通知中心）；截图时的键多出截图翻译、自动滚、裁剪三项（Windows 工具栏上有）；连按两下只听键盘，中间点了鼠标也算（听鼠标要收每一下移动，`ponytail:`）；同一个连按键只认第一个动作，第二个那一行写「和「…」重复」。
+  - 没测：W3（管理员窗口在前台时 RegisterHotKey / Raw Input 收不收得到）、W4 远程桌面、独占全屏游戏、真按键（录制框、截图里改过的键、连按两下）、托盘那一项（HANDTEST 1258–1271）。
+  - 空闲 CPU 0.021 %（静置 30 s 后量 300 s，同第 2 批）。内存全量（3979f9fe vs 478efded）：只托盘 53.7 / 53.6 MB，开启动器 63.9 / 63.1，开截图遮罩 77.5 / 76.2，最后静置 99.5 / 99.0。
+- **第 4 批（`git log --grep "PLAN-v18 第 4 批"`）**：L2、L4、L3 + `15bcac45` 的用法提示。
+  - 命令和别名（Core `LauncherCommandTable`，照 mac LauncherCommands）：12 条关键词命令（open find quit hide forcequit kill port ip cb fy remind currency，提醒 / 汇率默认英文）+ 12 条系统命令，每条别名 + 开关；`LauncherModel.Search` 一开头把别名换回原关键词交给原来那一套，原关键词改掉 / 关掉的挡住；补全提示换词或不出；关掉的系统命令搜索、常用、收藏里都藏；汇率关掉不换算、不取表。提醒的用法提示写用户打的那个词。
+  - 设置：启动器页「命令与网页搜索」两行推子页（命令和别名、网页搜索与快捷链接），通用页「功能 ›」一行推子页；两行的小字照 mac 的 summary（Core `SettingsSummary.Features`、`WebSearch.Summary`）。别名撞了（别的命令、网页搜索关键词）描橙框。
+  - 命令快捷键（L3，`Launcher/LauncherCommandKeys.cs`）：表里「快捷键」一列，和全局快捷键、别的命令查重；HotKeyManager 每条命令一个固定热键号（1000 起、这次运行不复用）；注册跟着启动器功能开关和那条命令的开关；停用名单「全部」连它们一起停。按了：系统命令直接跑、要确认的打开启动器填好；关键词命令打开启动器填好「别名 」。导出导入 launcherCommandAliases / launcherCommandsOff / launcherCommandHotKeys。
+  - 验：单测 945（新 7：命令表 5、设置小字 2）；`--hotkey-block-probe` 加了命令快捷键四条（名单外注册着、「全部」停、只停几个不管、重新注册热键号还是 1000）全对；截图 settings-sub-*（浅深）；AOT x64 / ARM64 0 警告（96.6 / 102.2 MB）。内存全量、空闲 CPU 随第 5 批补。
+  - 替用户定的：脚本命令（第 6–8 批）没有，表里先只有关键词、系统两组，筛选只留「只看开着的」；子页页头的图标是通用的齿轮；命令快捷键不能设成连按两下。
+  - 没做：mac 启动器 ⌘K 里「改别名…」直达这一行（要动启动器的操作菜单，跟脚本那几批一起做）。没测：真打字、真按命令快捷键、导出导入（HANDTEST 1272–1280）。
+  - 空闲 CPU 0.031 %（静置 30 s 后量 300 s）。内存全量（0a4fc679 vs 3979f9fe）：只托盘 54.4 / 55.0 MB，开启动器 63.7 / 64.3，开截图遮罩 77.9 / 77.8，最后静置 100.8 / 103.0（没涨）。
+- **第 5 批（`git log --grep "PLAN-v18 第 5 批"`）**：§6（= PLAN-v16 §4 便携软件，P1–P4 照推荐）、L5、L6。
+  - 便携软件（`Launcher/AppSources.cs`、Core `PortableApps`）：A1 桌面（当前用户 + 公用，顶层 .lnk / .exe，副标题「桌面」，和开始菜单按目标去重）；A2 App Paths（HKCU + HKLM，Windows 目录下的不要）；A3 资源管理器的 UserAssist（ROT13 + 72 字节，已知文件夹 GUID 用 SHGetKnownFolderPath 换；设置开关「把运行过的程序也列出来」默认开、不导出）；A4 应用文件夹和单个程序（往下两层、500 个、2 秒超时；找不到的灰着不删；文件搜索结果是 exe 时 Ctrl+K「添加到启动器的应用」）；A5 名单（unins / setup / update / crash / helper… 和说明里的卸载 / 安装 / 更新；没图标的不收；同一个文件夹说明一样的留 64 位那个）+ 「从启动器里隐藏」（按目标，设置里能恢复，跟着导出导入）；A6 打开 exe 时工作目录是它自己的文件夹。
+  - 应用别名（Core `AppAliases`，D10）：键 aumid: / exe:（解析出来的 exe 折成 %ProgramFiles% 这类、小写，不用 .lnk 路径），输完整的别名时那个应用排第一；设置 › 启动器 › 应用（别名、应用文件夹、隐藏的应用三块，D10「同一页」）；导出导入 launcherAppAliases / launcherAppFolders / launcherHiddenApps。
+  - 按使用习惯排（L6，照 mac ea0c2813）：同一输入 28 天、1024 条、q/(q+0.5)；在更长的输入下选过的按一半算；提到固定行前面只认一字不差（LauncherUsageStore.Chose）；同分时按 UserAssist 记的最后运行（exe 那组 + .lnk 那组）近的在前。旧断言 `Exp(-14/3)` 换成 `Exp(-14/28)`：规格改了（注释写着），不是为了变绿。
+  - 验：单测 952（新 7：PortableApps 3、AppAliases 3、同分按系统记的使用 1）；`--launcher-script` 在 .Dev 档给计算器起别名 zz9 → 输 zz9 计算器排第一、输 zz 不出；本机实测 App Paths 27 个、运行记录 14 条（新收 0 个：都已在开始菜单里或被名单拦下）、桌面 0 个，A1–A3 加起来 391 ms（后台线程，主要是给 27 个 App Paths 程序取图标；PLAN 写的目标是 100 ms，没达到，见下）；截图 settings-sub-apps（浅深）；AOT x64 / ARM64 0 警告（96.7 / 102.4 MB）。内存全量、空闲 CPU 随第 6 批补。
+  - 替用户定的：A5「没图标的不收」用的是取不取得到 PNG 图标（ShellIcons.LoadPng），没另调 ExtractIconEx；App Paths 的程序也要有图标才收；A3 的副标题写所在文件夹名。
+  - 没达到：A1–A3 391 ms > 100 ms（取图标占大头；在后台线程、扫完才换列表，界面不卡；要压就把 App Paths 的图标改成第一次显示时再取）。没测：真桌面上的便携软件、真文件夹、隐藏 / 恢复、工作目录、导出导入（HANDTEST 1281–1289）。
+  - 空闲 CPU 0.037 %（静置 30 s 后量 300 s）；内存全量（第 5 批 vs 第 4 批，两份一起跑）：只托盘 51.7 / 52.0 MB，开启动器 58.1 / 63.1，开截图遮罩 72.5 / 77.5，最后静置 96.4 / 98.8（都没涨）。
+- **第 6 批（`git log --grep "PLAN-v18 第 6 批"`）**：L1 之一——脚本库和运行（照 mac 7c5ea76e 起的几批，D7 D9）。
+  - Core `ScriptCommand`（头部字段同 mac：@kitty.* / @raycast.*，注释多认 ::、REM；按扩展名选解释器：.ps1 → powershell -NoProfile -ExecutionPolicy Bypass -File、.cmd / .bat → cmd /d /s /c、.py 有 py.exe 才认；.sh / .js 记「Windows 版只认…」）、参数（JSON、下拉、密码、percentEncoded、引号）、列表输出、清颜色码和回车、看不见的字（⟦U+…⟧，不放行）；Core `ScriptLaunch`（cmd 的命令行、PATH 从注册表的系统 + 用户重拼、环境加 KITTY_*、UTF-8 判断）。
+  - `Launcher/ScriptLibrary.cs`（数据目录 scripts + 自己加的文件夹，顶层、每次呼出后台重读，读不成的记原因，下载来的去掉不可信图标）、`ScriptRunner.cs`（不开窗口、标准输入空、工作目录是脚本的文件夹、默认 60 s，超时 / 停止 / 输出 4 MB 都是 Kill(entireProcessTree)；.py 和存成 UTF-8 的批处理按 UTF-8 读（批处理先 chcp 65001），别的按 OEM 代码页；:Zone.Identifier 下载标记）、`ScriptHost.cs`（下载来的先开窗看全文、1 秒后「正在运行」带「停止」、按 mode 交出结果）、`ScriptTextWindow.cs`（看全文 / 全部输出两用）。
+  - 启动器：新种类 Script（行尾「脚本」、命令家族紫），搜标题 / 拼音 / 文件名 / 别名，别名一字不差排第一；「别名 空格 参数」（内置命令先认）一行写各参数；Enter 补「别名 空格」/ 缺必填响一声 / confirm 上膛 / 跑；密码参数不记使用。命令和别名表最上面加「我的脚本」组（别名、开关、快捷键）。
+  - 验：单测 965（新 13：ScriptCommand 9、ScriptLaunch 4）；`--script-probe`（新，Debug，临时文件夹真跑）全过：ps1 中文 + 带空格和 & 的参数、退出码、工作目录 / KITTY_SCRIPT_DIR、cmd 存 UTF-8 和 GBK 都不乱码、超时 1 s 停下、停止后子进程 ping 0 个、下载标记；**PowerShell 冷启动约 200 ms**（第二次 190 ms）；`--launcher-script` 在 .Dev 档 scripts 放一个 .ps1：搜得到、「nh 世界」副标题「名字：世界」、Enter 跑完 215 ms；AOT x64 / ARM64 0 警告（97.6 / 103.3 MB，比第 5 批 +0.9 MB）。内存全量、空闲 CPU 和第 7、8 批一起量，记在第 8 批。
+  - 替用户定的：mac 在启动器面板里原地看全文 / 全部输出，Windows 的启动器失焦就收，挪到一扇普通窗口；批处理按文件是不是 UTF-8 决定要不要 chcp 65001；.ps1 不带 BOM 的中文 PowerShell 5.1 读成乱码（`ponytail:`，说明里写存成带 BOM）。
+  - 没做（第 7、8 批）：列表模式、下拉参数打字时列选项、全部输出认终端颜色、设置页（文件夹、读不成的、新建、怎么写、给 AI 的写法说明）、自带的命令（D8）。没测：粘贴 / 复制 / 全文、confirm、看全文那扇窗、快捷键跑脚本（HANDTEST 1290–1298）。
+- **第 7 批（`git log --grep "PLAN-v18 第 7 批"`）**：L1 之二——参数和输出。
+  - 列表脚本（mode list）：「别名 空格 参数」停 0.25 s 后台跑（还在打字就撤掉），每行一条结果（Core `ScriptText.Lines`：「标题⇥副标题」或 Script Filter 的 JSON），接着打字重跑；filter 的只跑一次、按打的字过滤；Enter 打开 url / path 或粘贴值，valid=false 响一声，Tab 补 autocomplete；出错那一行写原因。
+  - 下拉参数：正在打的那个参数是下拉的就列选项（行尾「选项」、底栏「选这个」），Enter / Tab 补进框（带空白的括引号），交给脚本的是 value；引号参数、密码参数（行上 •••、不记使用）在第 6 批的 Core 里。
+  - 全部输出那扇窗认终端颜色（Core `ScriptTerminal`：SGR 8 / 16 / 256 色、24 位、粗体 / 暗 / 斜体 / 下划线 / 删除线，别的控制码去掉、截在一半的先不显示；0–15 按深浅色调过），可选中的 RichTextBlock、边跑边来最多 0.1 s 重画一次。
+  - 验：单测 968（新 3：ScriptTerminal）；`--launcher-script`（.Dev 档）：列表脚本「ls9 ab」两行「ab-1 第一」「ab-2 第二」，下拉参数「dw 」列出「毫秒」「秒」；AOT x64 / ARM64 0 警告（97.7 / 103.3 MB）。空闲 CPU 0.037 %；内存全量记在第 8 批（三批一起跑）。
+  - 第一次量第 7 批时它一启动就退（Microsoft.UI.Xaml.dll 0xc000027b）：是我拷探针包时把 exe 改名成 KittyProbe.exe、没把 KittyTools.pri 跟着拷成 KittyProbe.pri（找不到资源），不是代码的问题；补上后照常跑。
+  - 替用户定的：列表那几行的 Ctrl+C 没做（mac 的 text.copy；Enter 粘贴照常），列表结果不进使用记录。
+  - 没测：列表的 Enter / Tab、filter、选项补进框、彩色输出那扇窗（HANDTEST 1299–1303）。
+- **第 8 批（`git log --grep "PLAN-v18 第 8 批"`）**：L1 之三——设置、自带的命令（D8）、写法说明；0.3.0 的版本号、更新日志、「新」。
+  - 自带的七条（Core `BuiltinTools`，头部同 mac 那几个 .sh：time json uuid bcvt url b64 regt）：C# 算、不起进程，`ScriptRunner` 认出解释器 kitty-builtin 时直接调；排在自己的脚本后面（同关键词用自己的），走同一条路（别名、开关、快捷键、列表 / 粘贴 / 全文）；json / regt 不带文字时读剪贴板（`ReadTextForPin`，标了隐私的不读）。「切换深色模式」做成系统命令 dark（写 AppsUseLightTheme + SystemUsesLightTheme，广播 ImmersiveColorSet，提示里说切成了哪个）。命令和别名表多「自带的命令」一组。
+  - 设置 › 启动器「脚本命令 ›」子页（`Settings/SettingsWindow.Scripts.cs`）：启用开关、「怎么写脚本 ›」、让 AI 来写（复制写法说明、从剪贴板新建——`ScriptTextWindow.ReviewNew` 先看全文，看不见的字不让存）、脚本文件夹（新建脚本对话框：名字 / 关键词 / 结果给谁 / 用什么写，存好用文件的「编辑」打开；在资源管理器中打开）、没有自己的脚本时「用例子新建」、其他文件夹（添加 / 移除、找不到的橙字）、读不成的脚本（橙字 + 在资源管理器中显示）。「怎么写脚本」子页照 mac ScriptGuide：让 AI 来写、三步上手、查天气的例子、9 个字段、列表、用什么跑、安全和同步。
+  - Core `ScriptTemplates`：新建的模板（PowerShell / 批处理 / Python × 六种结果，都读得回一条命令）、文件名、重名加数字、.ps1 存成带 BOM 的 UTF-8 / .cmd 不带、从剪贴板认脚本（只取第一个代码块，按围栏的语言或 :: / REM 认批处理）、给 AI 的写法说明（字段同 mac，语言和规矩换成 Windows 的：PowerShell 5.1、不用 PS7 写法、`[Console]::Error.WriteLine`、输出按 GBK 读）。默认脚本文件夹第一次建时放两个样板：查天气.ps1（tq，要联网）、数字数.ps1（zs）。
+  - 启动器 Ctrl+K：自己的脚本多「编辑脚本」「在资源管理器中显示」。
+  - 0.3.0：`Directory.Build.props` 0.3.0；`changelog.json` 0.3.0 一条（12 条：feat 10、fix 1、ui 1）；「新」两条——脚本命令（启动器页「脚本命令」一节）、WebDAV（通用页「同步」一节），都只在设置里，拨过脚本命令的开关 / 新建过脚本 / 点过「连接服务器…」算碰过（`WhatsNewHost.TouchSection`）。0.2.0 那三条照旧（0.2.0 升上来不再标）。
+  - 验：单测 977（新 9：BuiltinTools 5、ScriptTemplates 4；WhatsNew 加了 0.2.0 → 0.3.0 那几句）；`--script-probe` 全过，新加：模板存成的 .ps1 / .cmd 真跑出「你好，用户名」、临时文件夹第一次建时两个带 BOM 的样板读得出 tq / zs、自带 time 走 ScriptRunner 0 ms、bcvt 写错退出码 1；`--launcher-script`（.Dev 档）time / bcvt / regt / b64 / dark 的行；截图 settings-sub-scripts / script-guide / script-fields / commands / launcher（浅深）；AOT x64 / ARM64 0 警告（97.9 / 103.5 MB）。
+  - 空闲 CPU 0.047 %（静置 30 s 后量 300 s）；内存全量（第 8 批 vs 第 7 批 vs 第 6 批）：只托盘 52.2 / 52.4 / 53.0 MB，开启动器 58.3 / 58.1 / 59.2，开截图遮罩 71.7 / 71.7 / 73.2，最后静置 94.9 / 94.1 / 95.2（都没涨，第 8 批比第 7 批静置多 0.8 MB，在抖动范围里）。
+  - 替用户定的：自带的七条做成 C#（D8 推荐），头部和 mac 一样；样板放两个（查天气同 mac 的例子，数字数是 Windows 加的、不联网）；mac 的「拖进来导入」「命令的查找路径」没做（Windows 直接放进文件夹就行、PATH 每次从注册表读）；从剪贴板新建时 AI 前后的话自动去掉（mac 要求第一行是 #!）；「新」的两条都是设置里一节（Windows 设置页里一节标题后的「新」没画，只有侧栏的点）；新建脚本用文件自己的「编辑」打开（.ps1 双击就跑了）。
+  - 没做：启动器里脚本行画头部写的图标（都画统一的脚本图标）；⌘K 里「改别名…」直达命令表那一行；「防止睡眠」（等 issue #3）。没测：dark 真切（会改系统主题）、uuid 粘贴、json 的全文窗、新建对话框和从剪贴板新建的窗口、查天气联网（HANDTEST 1304–1317）。
+
 ### 停下来问用户
 
 - 建 / 改 `windows-update` 那个 release、打 tag、发布；
@@ -591,6 +751,8 @@ mac 的单测在 `macos/KittyToolsTests/`，样本和期望值能搬就搬。只
 
 方案在 `PLAN-v17.md`，PLAN-v16 做完再做。一批，你们自己写、自己编译、自己验；做完在这一节下面记一句：做了什么、量到的数（注册 / 注销耗时）、
 W3 管理员窗口和 W4 远程桌面的实测结果、替用户定的、没做成 / 没测的。
+
+- **做完了（2026-11-14，随 PLAN-v18 第 3 批）**：结果、量到的数、替用户定的、没测的写在上面「PLAN-v18 › 各批结果 › 第 3 批」。W3、W4 都没测（要 UAC / 远程桌面）。
 
 ## PLAN-v16（跟上 mac 0.7.1 之后的新东西，2026-11-07 用户「让 windows agent 实现」）
 

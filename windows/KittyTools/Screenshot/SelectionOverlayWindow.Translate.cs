@@ -4,6 +4,7 @@
 // Esc、收起遮罩、右键重新框都停掉翻译（取消点在每段开头，取消后不再发新请求）。
 // 译文只属于翻的那个选区（PLAN-v18 S6，mac 758c4d44）：选区一变就把原图贴回冻结帧、提示「选区变了，已换回原文」；
 // 同一个选区再翻从原图翻；翻到一半选区换了，这份译文不贴（Core InPlaceOriginal）。
+// 翻完总挂译文卡片（PLAN-v18 S7 S9，.TranslationCard.cs）：到 10 pt 也放不下的段图上留原文、译文进卡片；一段都没画时图回到原图。
 using KittyTools.Core;
 using KittyTools.Infrastructure;
 using Microsoft.Graphics.Canvas;
@@ -57,7 +58,8 @@ internal sealed partial class SelectionOverlayWindow
         string message;
         try
         {
-            var patch = await ScreenshotTranslator.TranslateAsync(crop, rect.Width, rect.Height, (index, count) =>
+            // 字号下限按点算：冻结帧每 DIP 几个像素（150 % 缩放是 1.5）
+            var outcome = await ScreenshotTranslator.TranslateAsync(crop, rect.Width, rect.Height, _scale, (index, count) =>
             {
                 if (!cts.IsCancellationRequested)
                 {
@@ -75,10 +77,32 @@ internal sealed partial class SelectionOverlayWindow
                 return;
             }
 
-            _untranslated.Remember(selection, rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top, crop);
-            Paste(patch, rect);
-            message = "已替换为译文";
-            Log.Info("screenshot.overlay-done");
+            // 原来的卡片等结果回来再换（这次失败的话它和图上的译文都照旧）；新卡片挂上前先不算「在看原文」
+            _showingOriginal = false;
+            if (outcome.Image is { } patch)
+            {
+                _untranslated.Remember(selection, rect.Left, rect.Top, rect.Right - rect.Left, rect.Bottom - rect.Top, crop);
+                _translatedPatch = patch;
+                _translatedRect = rect;
+                Paste(patch, rect);
+            }
+            else
+            {
+                // 这次一段都没画（全进了卡片）：图回到原图，没有可换的
+                if (_untranslated.HasTranslation)
+                {
+                    Paste(crop, rect);
+                    _untranslated.Clear();
+                }
+
+                _translatedPatch = null;
+            }
+
+            ShowTranslationCard(outcome.Leftovers, outcome.Translation, toggles: outcome.Image is not null);
+            message = SelectionChrome.TranslatedHint(outcome.Leftovers.Count, outcome.Image is not null);
+            // 出了卡片读屏要知道（顶部提示只是看的）
+            Announce(message);
+            Log.Info($"screenshot.overlay-done leftovers={outcome.Leftovers.Count} drew={outcome.Image is not null}");
         }
         catch (OperationCanceledException)
         {
@@ -146,12 +170,19 @@ internal sealed partial class SelectionOverlayWindow
     public void OnSelectionChanged()
     {
         RectD? current = _session.HasSelection && _session.SelectionScreen == _screen ? _session.Selection : null;
+        // 卡片只属于翻的那个选区：和换回原文同时收（图马上整块换回原图，不用先换回译文）
+        if (_card is not null && current != _cardSelection)
+        {
+            CloseTranslationCard(restoreTranslation: false);
+        }
+
         if (_screen.Bgra.Length == 0 || !_untranslated.RestoreIfChanged(current, _screen.Bgra, _screen.Width))
         {
             return;
         }
 
         Log.Info("screenshot.overlay-restored");
+        _translatedPatch = null;
         FrameChanged();
         Flash("选区变了，已换回原文", 2000);
     }

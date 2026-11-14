@@ -163,7 +163,7 @@ internal sealed class LongAnnotateWindow
         {
             var button = SelectionOverlayWindow.ToolbarButton(
                 SelectionOverlayWindow.ToolGlyph(kind),
-                $"{AnnotationKinds.Title(kind)}（{AnnotationKinds.Key(kind)}）",
+                ShotKeys.Tip(AnnotationKinds.Title(kind), ShotKeys.IdFor(kind), SettingsService.Current.ScreenshotKeys),
                 AnnotationKinds.Title(kind));
             button.Click += (_, _) => SelectTool(kind);
             _toolButtons[kind] = button;
@@ -176,19 +176,19 @@ internal sealed class LongAnnotateWindow
         flyout.Opening += (_, _) => flyout.Content = StylePicker(flyout);
         styleButton.Flyout = flyout;
         bar.Children.Add(styleButton);
-        _cropButton = SelectionOverlayWindow.ToolbarButton(Glyphs.Crop, "裁剪（X）", "裁剪");
+        _cropButton = SelectionOverlayWindow.ToolbarButton(Glyphs.Crop, ShotKeys.Tip("裁剪", "crop", SettingsService.Current.ScreenshotKeys), "裁剪");
         _cropButton.Click += (_, _) => SetCropping(!_cropping);
         bar.Children.Add(_cropButton);
-        _undoButton = SelectionOverlayWindow.ToolbarButton(Glyphs.Undo, "撤销（Ctrl+Z）", "撤销");
+        _undoButton = SelectionOverlayWindow.ToolbarButton(Glyphs.Undo, ShotKeys.Tip("撤销", "undo", SettingsService.Current.ScreenshotKeys), "撤销");
         _undoButton.Click += (_, _) => Step(redo: false);
-        _redoButton = SelectionOverlayWindow.ToolbarButton(Glyphs.Redo, "重做（Ctrl+Y）", "重做");
+        _redoButton = SelectionOverlayWindow.ToolbarButton(Glyphs.Redo, ShotKeys.Tip("重做", "redo", SettingsService.Current.ScreenshotKeys), "重做");
         _redoButton.Click += (_, _) => Step(redo: true);
         bar.Children.Add(_undoButton);
         bar.Children.Add(_redoButton);
         bar.Children.Add(Separator());
         var close = SelectionOverlayWindow.ToolbarButton(Glyphs.Close, "关闭（Esc）", "关闭");
         close.Click += (_, _) => Escape();
-        var save = SelectionOverlayWindow.ToolbarButton(Glyphs.Save, "保存到截图文件夹（Ctrl+S）", "保存");
+        var save = SelectionOverlayWindow.ToolbarButton(Glyphs.Save, ShotKeys.Tip("保存到截图文件夹", "save", SettingsService.Current.ScreenshotKeys), "保存");
         save.Click += (_, _) => Save(saveAs: false);
         var copy = new Button
         {
@@ -632,7 +632,7 @@ internal sealed class LongAnnotateWindow
                 _draft = pen with { Points = _pen.ToArray() };
                 break;
             case Drag.Draw when _draft is { } draft:
-                if (Annotation.Drawn(draft.Kind, _start, point, shift, _style) is { } next)
+                if (Annotation.Drawn(draft.Kind, _start, point, shift, _style, fromCenter: IsDown(VirtualKey.Menu)) is { } next)
                 {
                     _draft = next with { Id = draft.Id };
                 }
@@ -642,7 +642,7 @@ internal sealed class LongAnnotateWindow
                 _document.Replace(grabbed.Offset(point.X - _start.X, point.Y - _start.Y));
                 break;
             case Drag.Resize when _grabbed is { } grabbed:
-                _document.Replace(grabbed.Resized(_handle, point, shift, _scale));
+                _document.Replace(grabbed.Resized(_handle, point, shift, _scale, fromCenter: IsDown(VirtualKey.Menu)));
                 break;
         }
 
@@ -717,7 +717,7 @@ internal sealed class LongAnnotateWindow
             FontSize = Math.Max(1, style.FontSize * _scale * _unit),
             FontFamily = new FontFamily(AnnotationRenderer.TextFontFamily),
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            Foreground = new SolidColorBrush(AnnotationRenderer.ColorOf(style.Color)),
+            Foreground = new SolidColorBrush(AnnotationRenderer.FromArgb(style.PaintArgb)),
         };
         if (existing is not null)
         {
@@ -906,7 +906,7 @@ internal sealed class LongAnnotateWindow
         if (optionTitles.Length > 0)
         {
             var options = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-            for (var index = 0; index < optionTitles.Length; index++)
+            foreach (var index in AnnotationKinds.OptionOrder(kind))
             {
                 var option = index;
                 var button = new Button
@@ -1074,7 +1074,14 @@ internal sealed class LongAnnotateWindow
     private void ShowHint(string? text = null)
         => _hint.Text = text ?? (_editor is not null
             ? "Esc 或 Ctrl+Enter 收下文字，Enter 换行"
-            : "Enter 拷贝 · Ctrl+S 保存 · 1–0 标注 · X 裁剪 · Ctrl+= / Ctrl+- 缩放 · 空格拖动平移 · Esc 关闭");
+            : string.Join(" · ", new[]
+            {
+                "Enter 拷贝",
+                ShotKeys.Current("save", SettingsService.Current.ScreenshotKeys) is { } save ? $"{save.Display} 保存" : null,
+                ShotKeys.ToolsAreDefault(SettingsService.Current.ScreenshotKeys) ? "1–0 标注" : null,
+                ShotKeys.Current("crop", SettingsService.Current.ScreenshotKeys) is { } crop ? $"{crop.Display} 裁剪" : null,
+                "Ctrl+= / Ctrl+- 缩放", "空格拖动平移", "Esc 关闭",
+            }.OfType<string>()));
 
     // ---- 键盘
 
@@ -1087,6 +1094,37 @@ internal sealed class LongAnnotateWindow
 
         var control = IsDown(VirtualKey.Control);
         var shift = IsDown(VirtualKey.Shift);
+        // 截图时的键（PLAN-v18 S3，和截图框选同一份）：十种工具、拷贝、保存、另存为、撤销、重做、裁剪
+        var modifiers = (control ? HotKeyModifiers.Control : 0) | (IsDown(VirtualKey.Menu) ? HotKeyModifiers.Alt : 0) |
+                        (shift ? HotKeyModifiers.Shift : 0);
+        if (!ShotKeys.IsReserved(new ShotKeyBinding((uint)e.Key, modifiers)) &&
+            ShotKeys.Matching((uint)e.Key, modifiers, SettingsService.Current.ScreenshotKeys) is { Up: false } shot)
+        {
+            switch (shot.Id)
+            {
+                case var id when AnnotationKinds.Parse(id) is { } tool:
+                    SelectTool(tool);
+                    break;
+                case "copy":
+                    Copy();
+                    break;
+                case "save" or "saveAs":
+                    Save(saveAs: shot.Id == "saveAs");
+                    break;
+                case "undo" or "redo":
+                    Step(redo: shot.Id == "redo");
+                    break;
+                case "crop":
+                    SetCropping(!_cropping);
+                    break;
+                default:
+                    return;
+            }
+
+            e.Handled = true;
+            return;
+        }
+
         switch (e.Key)
         {
             case VirtualKey.Number0 or VirtualKey.NumberPad0 when control:
@@ -1105,16 +1143,10 @@ internal sealed class LongAnnotateWindow
                 Escape();
                 break;
             case VirtualKey.Enter:
-            case VirtualKey.C when control:
                 Copy();
                 break;
-            case VirtualKey.S when control:
-                Save(saveAs: shift);
-                break;
-            case VirtualKey.Z when control:
-                Step(redo: shift);
-                break;
-            case VirtualKey.Y when control:
+            case VirtualKey.Z when control && shift:
+                // 重做的另一个键（固定）
                 Step(redo: true);
                 break;
             case VirtualKey.Delete or VirtualKey.Back when _drag == Drag.None:
@@ -1124,12 +1156,6 @@ internal sealed class LongAnnotateWindow
                     _view.Invalidate();
                 }
 
-                break;
-            case VirtualKey.X when !control:
-                SetCropping(!_cropping);
-                break;
-            case >= VirtualKey.Number0 and <= VirtualKey.Number9 when !control:
-                SelectTool(AnnotationKinds.All[((int)e.Key - (int)VirtualKey.Number0 + 9) % 10]);
                 break;
             default:
                 return;

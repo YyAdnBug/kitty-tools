@@ -1,5 +1,5 @@
 // 系统命令（照 mac SystemCommands，PLAN-v9-launcher R10 / L5）：锁定、睡眠、关闭显示器、屏幕保护程序、打开回收站、清空回收站、
-// 注销、重启、关机、调高 / 调低音量、切换静音，一条一行。标题用 Windows 自己的叫法，副标题是英文关键词（和 mac 同一套，
+// 注销、重启、关机、调高 / 调低音量、切换静音、切换深色模式（PLAN-v18 D8，mac 是自带的脚本 dark），一条一行。标题用 Windows 自己的叫法，副标题是英文关键词（和 mac 同一套，
 // 两台电脑上手感一样）；英文名、口语叫法（锁屏、重启、屏保…）和拼音只进匹配。同分排在应用、网址、书签、内置动作后面。
 // 不可撤销的（清空回收站、注销、重启、关机）第一下只上膛，同一个再按一次才执行（Windows 不像 mac 会自己弹确认框）。
 // 不做「全部退出」「推出全部磁盘」（PLAN-v9 L5 已定）。目标 id 沿用旧的六个（使用记录按它累计），新加的用 mac 的关键词。
@@ -24,6 +24,7 @@ internal static partial class SystemCommands
     public const string VolumeUp = "volup";
     public const string VolumeDown = "voldown";
     public const string Mute = "mute";
+    public const string DarkMode = "darkmode";
 
     private sealed record Definition(
         string Target, string Title, string Keyword, string English, string[] Synonyms, string Glyph, string? Confirmation);
@@ -43,11 +44,48 @@ internal static partial class SystemCommands
         new(VolumeUp, "调高音量", "volup", "Volume Up", new[] { "音量加", "大声" }, Glyphs.VolumeUp, null),
         new(VolumeDown, "调低音量", "voldown", "Volume Down", new[] { "音量减", "小声" }, Glyphs.VolumeDown, null),
         new(Mute, "切换静音", "mute", "Toggle Mute", new[] { "静音", "取消静音" }, Glyphs.VolumeOff, null),
+        new(DarkMode, "切换深色模式", "dark", "Toggle Dark Mode Appearance", new[] { "深色模式", "浅色模式", "暗色模式", "夜间模式" }, Glyphs.Brightness, null),
     };
 
     private static readonly List<LauncherItem> Cached = Table.Select(Command).ToList();
 
     public static List<LauncherItem> Items() => Cached;
+
+    /// <summary>
+    /// 跟着「命令」表（PLAN-v18 L2）：关掉的不出；改了别名的副标题写别名、按别名搜得到、原来的英文关键词不再认（名字、拼音照旧）。
+    /// </summary>
+    public static IEnumerable<LauncherItem> Items(LauncherCommandSettings settings)
+    {
+        foreach (var entry in Table)
+        {
+            var item = Cached.First(cached => cached.Target == entry.Target);
+            var id = LauncherCommandTable.SystemId(entry.Keyword);
+            if (!settings.IsOn(id))
+            {
+                continue;
+            }
+
+            var alias = settings.Alias(id, entry.Keyword);
+            yield return alias == entry.Keyword
+                ? item
+                : item with
+                {
+                    Subtitle = alias ?? string.Empty,
+                    Names = item.Names.Where(name => name != entry.Keyword).Concat(alias is null ? Array.Empty<string>() : new[] { alias }).ToList(),
+                };
+        }
+    }
+
+    /// <summary>「命令」表里系统那一组：编号、标题、原来的关键词、图标。</summary>
+    public static IEnumerable<LauncherBuiltIn> Rows()
+        => Table.Select(entry => new LauncherBuiltIn(LauncherCommandTable.SystemId(entry.Keyword), entry.Title, entry.Keyword, entry.Glyph));
+
+    /// <summary>关键词对应的目标（命令快捷键用）。</summary>
+    public static string? TargetOf(string keyword) => Table.FirstOrDefault(entry => entry.Keyword == keyword)?.Target;
+
+    /// <summary>这一行（目标）在「命令」表里的编号。</summary>
+    public static string? IdOf(string target)
+        => Table.FirstOrDefault(entry => entry.Target == target) is { } entry ? LauncherCommandTable.SystemId(entry.Keyword) : null;
 
     public static LauncherItem? Find(string target) => Cached.FirstOrDefault(item => item.Target == target);
 
@@ -97,6 +135,8 @@ internal static partial class SystemCommands
                 case Mute:
                     PressKey(0xAD);
                     return true;
+                case DarkMode:
+                    return ToggleDarkMode(out error);
                 default:
                     error = "不认识的系统命令";
                     return false;
@@ -134,6 +174,28 @@ internal static partial class SystemCommands
             UseShellExecute = false,
             CreateNoWindow = true,
         });
+        return true;
+    }
+
+    /// <summary>
+    /// 深色 / 浅色来回切：「设置 › 个性化 › 颜色」那两项（应用、Windows）一起写，再广播 ImmersiveColorSet，任务栏、开着的窗口跟着变。
+    /// 提示写切成了哪个（mac 的 dark 脚本在岛上说一句）。自动化里不真跑（会改系统主题），只有 DarkModeToggle 的单测。
+    /// </summary>
+    private static bool ToggleDarkMode(out string error)
+    {
+        error = string.Empty;
+        using var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+        if (key is null)
+        {
+            error = "读不到主题设置";
+            return false;
+        }
+
+        var (light, message) = BuiltinTools.DarkModeToggle(key.GetValue("AppsUseLightTheme") as int?);
+        key.SetValue("AppsUseLightTheme", light, Microsoft.Win32.RegistryValueKind.DWord);
+        key.SetValue("SystemUsesLightTheme", light, Microsoft.Win32.RegistryValueKind.DWord);
+        _ = Task.Run(() => SendMessageTimeoutW(new IntPtr(0xFFFF), 0x001A, IntPtr.Zero, "ImmersiveColorSet", 0x0002, 1000, out _));
+        NoticeHost.Show(message, string.Empty, NoticeTone.Normal);
         return true;
     }
 
@@ -184,6 +246,9 @@ internal static partial class SystemCommands
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool PostMessageW(IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam);
+
+    [LibraryImport("user32.dll", EntryPoint = "SendMessageTimeoutW", StringMarshalling = StringMarshalling.Utf16)]
+    private static partial IntPtr SendMessageTimeoutW(IntPtr hwnd, int message, IntPtr wParam, string lParam, uint flags, uint timeout, out IntPtr result);
 
     [LibraryImport("user32.dll", EntryPoint = "keybd_event")]
     private static partial void KeybdEvent(byte virtualKey, byte scanCode, uint flags, nuint extraInfo);

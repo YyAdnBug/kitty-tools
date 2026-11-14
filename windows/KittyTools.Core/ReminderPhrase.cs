@@ -367,7 +367,8 @@ public static class ReminderLauncher
                     Kind = LauncherKind.Prompt,
                     Target = KeywordTarget,
                     Title = "新建提醒…",
-                    Subtitle = "输入「提醒 空格 时间 内容」，如「提醒 10分钟 喝水」；Enter 或 Tab 补全关键词",
+                    // 提示里写用户打的那个词，和补进框的一致（mac 15bcac45：打 tx 时以前写的是「提醒 空格」）
+                    Subtitle = $"输入「{query.Trim()} 空格 时间 内容」，如「{query.Trim()} 10分钟 喝水」；Enter 或 Tab 补全关键词",
                     Completion = query.Trim() + " ",
                     Note = "提醒",
                 },

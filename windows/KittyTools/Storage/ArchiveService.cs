@@ -525,6 +525,64 @@ internal static class ArchiveService
             }
 
             writer.WriteEndArray();
+            // PLAN-v17 H8：按应用停用快捷键。键名和 mac 的 hotKeyBlockedApps 分开（mac 存 bundle id，导进对方那边只会多出认不出的行）
+            writer.WriteStartArray("hotKeyBlockedExes");
+            foreach (var block in HotKeyBlock.List(settings.HotKeyBlockedApps))
+            {
+                writer.WriteStringValue(block.Entry);
+            }
+
+            writer.WriteEndArray();
+            writer.WriteBoolean("hotKeyBlockFullscreen", settings.HotKeyBlockFullscreen);
+            // PLAN-v18 S3：截图时的键（只存改过的；空串 = 清除了）。Windows 自己的键名，mac 的 shot.<名字> 认不出、照旧忽略
+            // PLAN-v18 L2 L3：启动器「命令」表（只存改过的别名、关掉的、设了的快捷键）
+            writer.WriteStartObject("launcherCommandAliases");
+            foreach (var (id, alias) in settings.LauncherCommandAliases ?? new Dictionary<string, string>())
+            {
+                writer.WriteString(id, alias);
+            }
+
+            writer.WriteEndObject();
+            writer.WriteStartArray("launcherCommandsOff");
+            foreach (var id in settings.LauncherCommandsOff ?? new List<string>())
+            {
+                writer.WriteStringValue(id);
+            }
+
+            writer.WriteEndArray();
+            // PLAN-v18 L5 / §6：应用别名、应用文件夹、隐藏的应用（「运行过的程序」开关只在本机，不导出）
+            writer.WriteStartObject("launcherAppAliases");
+            foreach (var (key, alias) in AppAliases.Sanitize(settings.LauncherAppAliases ?? new Dictionary<string, string>()))
+            {
+                writer.WriteString(key, alias);
+            }
+
+            writer.WriteEndObject();
+            foreach (var (name, values) in new[] { ("launcherAppFolders", settings.LauncherAppFolders), ("launcherHiddenApps", settings.LauncherHiddenApps) })
+            {
+                writer.WriteStartArray(name);
+                foreach (var value in (values ?? new List<string>()).Take(500))
+                {
+                    writer.WriteStringValue(value);
+                }
+
+                writer.WriteEndArray();
+            }
+
+            writer.WriteStartObject("launcherCommandHotKeys");
+            foreach (var (id, text) in settings.LauncherCommandHotKeys ?? new Dictionary<string, string>())
+            {
+                writer.WriteString(id, text);
+            }
+
+            writer.WriteEndObject();
+            writer.WriteStartObject("shotKeys");
+            foreach (var (id, text) in ShotKeys.Sanitize(settings.ScreenshotKeys ?? new Dictionary<string, string>()))
+            {
+                writer.WriteString(id, text);
+            }
+
+            writer.WriteEndObject();
             writer.WriteString("translateFirstLanguage", settings.TranslateFirstLanguage);
             writer.WriteString("translateSecondLanguage", settings.TranslateSecondLanguage);
             writer.WriteBoolean("translateAutoCopy", settings.TranslateAutoCopy);
@@ -617,6 +675,69 @@ internal static class ArchiveService
                         .Select(item => item.GetString()!)
                         .Take(200)
                         .ToList();
+                    break;
+                case "hotKeyBlockedExes" when value.ValueKind == JsonValueKind.Array:
+                    settings.HotKeyBlockedApps = HotKeyBlock.List(value.EnumerateArray()
+                            .Where(item => item.ValueKind == JsonValueKind.String)
+                            .Select(item => item.GetString()!))
+                        .Select(block => block.Entry)
+                        .ToList();
+                    break;
+                case "hotKeyBlockFullscreen" when value.ValueKind is JsonValueKind.True or JsonValueKind.False:
+                    settings.HotKeyBlockFullscreen = value.GetBoolean();
+                    break;
+                case "launcherCommandAliases" when value.ValueKind == JsonValueKind.Object:
+                    var aliases = value.EnumerateObject()
+                        .Where(property => property.Value.ValueKind == JsonValueKind.String &&
+                                           property.Value.GetString()!.Length <= LauncherCommandTable.AliasLimit)
+                        .Take(500)
+                        .ToDictionary(property => property.Name, property => property.Value.GetString()!);
+                    settings.LauncherCommandAliases = aliases.Count == 0 ? null : aliases;
+                    break;
+                case "launcherCommandsOff" when value.ValueKind == JsonValueKind.Array:
+                    var off = value.EnumerateArray()
+                        .Where(item => item.ValueKind == JsonValueKind.String && item.GetString()!.Length is > 0 and < 600)
+                        .Select(item => item.GetString()!)
+                        .Take(500)
+                        .ToList();
+                    settings.LauncherCommandsOff = off.Count == 0 ? null : off;
+                    break;
+                case "launcherAppAliases" when value.ValueKind == JsonValueKind.Object:
+                    var appAliases = AppAliases.Sanitize(value.EnumerateObject()
+                        .Where(property => property.Value.ValueKind == JsonValueKind.String)
+                        .Select(property => new KeyValuePair<string, string>(property.Name, property.Value.GetString()!)));
+                    settings.LauncherAppAliases = appAliases.Count == 0 ? null : appAliases;
+                    break;
+                case "launcherAppFolders" or "launcherHiddenApps" when value.ValueKind == JsonValueKind.Array:
+                    var paths = value.EnumerateArray()
+                        .Where(item => item.ValueKind == JsonValueKind.String && item.GetString()!.Length is > 0 and < 1024)
+                        .Select(item => item.GetString()!)
+                        .Take(500)
+                        .ToList();
+                    if (key == "launcherAppFolders")
+                    {
+                        settings.LauncherAppFolders = paths.Count == 0 ? null : paths;
+                    }
+                    else
+                    {
+                        settings.LauncherHiddenApps = paths.Count == 0 ? null : paths;
+                    }
+
+                    break;
+                case "launcherCommandHotKeys" when value.ValueKind == JsonValueKind.Object:
+                    var commandKeys = value.EnumerateObject()
+                        .Where(property => property.Value.ValueKind == JsonValueKind.String &&
+                                           HotKeyRules.TryParse(property.Value.GetString()!, out var key, out var modifiers) &&
+                                           HotKeyRules.Validate(key, modifiers).Ok && !HotKeyRules.IsDoubleTap(key, modifiers))
+                        .Take(500)
+                        .ToDictionary(property => property.Name, property => property.Value.GetString()!);
+                    settings.LauncherCommandHotKeys = commandKeys.Count == 0 ? null : commandKeys;
+                    break;
+                case "shotKeys" when value.ValueKind == JsonValueKind.Object:
+                    var shotKeys = ShotKeys.Sanitize(value.EnumerateObject()
+                        .Where(property => property.Value.ValueKind == JsonValueKind.String)
+                        .Select(property => new KeyValuePair<string, string>(property.Name, property.Value.GetString()!)));
+                    settings.ScreenshotKeys = shotKeys.Count == 0 ? null : shotKeys;
                     break;
                 case "translateFirstLanguage" when value.ValueKind == JsonValueKind.String:
                     settings.TranslateFirstLanguage = value.GetString();
@@ -726,6 +847,8 @@ internal static class ArchiveService
 
         SettingsService.Save();
         ShellRuntime.Instance?.HotKeys.RegisterAll(settings);
+        // 导入的停用名单当场按此刻的前台生效
+        HotKeyBlocker.Refresh();
     }
 
     private static void ApplyEngines(List<SettingsArchive.ArchiveEngine> engines, ArchiveOutcome outcome)

@@ -1,7 +1,8 @@
 // 截图翻译把译文盖回截图上（PLAN-v16 S1 / S1b，mac AppDelegate.overlayTranslate + ScreenshotOverlay.render）：
-// 选区的像素 → 识字（带词框）→ 按段分好 → 逐段翻译（整段原文定一次方向，每段按顺序试启用的服务；纯符号段不发请求）
+// 选区的像素 → 识字（带词框）→ 按段分好 → 翻译（整段原文定一次方向，每段按顺序试启用的服务；纯符号段不发请求；
+// PLAN-v18 S11 / mac a428a86c：最多 3 段同时在翻，按段的顺序拼回，「翻译中 i/n」数的是翻完了几段）
 // → Core 的 ScreenshotOverlay.Compose 量基线 / 代码块、排版、去字 → Win2D 按原文的字色把译文画上去（代码词在新位置重画底框）。
-// 识字、合成、画字都在后台线程（Win2D 的共享设备不挑线程）；取消点在每段开头，取消后不再发新请求。
+// 识字、合成、画字都在后台线程（Win2D 的共享设备不挑线程）；取消点在每段开头，取消后不再发新请求；一段翻不成，别的段也停。
 // 原文照截图翻译那条路记进剪贴板历史（开了「复制识别出的原文」就当复制一次）；翻译历史记一条整段原文 + 整段译文（不记碎片）。
 using KittyTools.Core;
 using KittyTools.Infrastructure;
@@ -18,12 +19,24 @@ internal static class ScreenshotTranslator
     private const string BodyFont = "Segoe UI";
     private const string CodeFont = "Cascadia Mono, Consolas";
 
+    /// <summary>同时在翻的段数（同 mac：免费服务会限流，不全放出去）。</summary>
+    private const int MaxConcurrent = 3;
+
     /// <summary>翻译失败、取消之外的「做不了」：消息直接给遮罩上的提示。</summary>
     internal sealed class Failure(string message) : Exception(message);
 
-    /// <summary>选区（BGRA，宽 × 高）→ 贴了译文的同尺寸 BGRA。progress(第几段, 共几段) 在调用线程上回调。</summary>
-    public static async Task<byte[]> TranslateAsync(
-        byte[] bgra, int width, int height, Action<int, int> progress, CancellationToken cancellationToken)
+    /// <summary>
+    /// 就地翻译交回的结果（mac ScreenshotOverlay.Outcome）：贴了译文的选区图（一段都没画时 null）、到字号下限也放不下的段（图上留原文，
+    /// 译文进卡片）、全部段的译文（段间空一行，纯符号段不算；卡片的「拷贝译文」拷它）。
+    /// </summary>
+    internal sealed record Outcome(byte[]? Image, IReadOnlyList<(string Source, string Translation)> Leftovers, string Translation);
+
+    /// <summary>
+    /// 选区（BGRA，宽 × 高）→ 贴了译文的同尺寸 BGRA 和放不下的段。pixelsPerPoint：冻结帧每 DIP 几个像素（字号下限 10 pt 按它换成像素）。
+    /// progress(第几段, 共几段) 在调用线程上回调。
+    /// </summary>
+    public static async Task<Outcome> TranslateAsync(
+        byte[] bgra, int width, int height, double pixelsPerPoint, Action<int, int> progress, CancellationToken cancellationToken)
     {
         if (!OcrService.HasEngine)
         {
@@ -52,8 +65,16 @@ internal static class ScreenshotTranslator
 
         var translations = await TranslateSegmentsAsync(segments, text, progress, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
-        return await Task.Run(() => Render(bgra, width, height, segments, translations), cancellationToken)
-               ?? throw new Failure("合成失败");
+        var (image, leftovers) = await Task.Run(() => Render(bgra, width, height, segments, translations, pixelsPerPoint), cancellationToken);
+        var all = string.Join("\n\n", Enumerable.Range(0, segments.Count)
+            .Where(index => ScreenshotOverlay.HasTranslatableContent(segments[index].Text))
+            .Select(index => translations[index].Trim()));
+        if (image is null && leftovers.Count == 0)
+        {
+            throw new Failure("合成失败");
+        }
+
+        return new Outcome(image, leftovers.Select(index => (segments[index].Text, translations[index].Trim())).ToList(), all);
     }
 
     private static async Task<List<string>> TranslateSegmentsAsync(
@@ -68,52 +89,86 @@ internal static class ScreenshotTranslator
         }
 
         var plan = TranslateCoordinator.PlanRequest(source);
-        var results = new List<string>(segments.Count);
-        TranslateServiceConfig? used = null;
-        for (var index = 0; index < segments.Count; index++)
+        var results = new string[segments.Count];
+        var usedAt = new TranslateServiceConfig?[segments.Count];
+        var finished = 0;
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        using var slots = new SemaphoreSlim(MaxConcurrent);
+        var token = stop.Token;
+
+        async Task TranslateOneAsync(int index)
         {
-            cancellationToken.ThrowIfCancellationRequested();
             var segment = segments[index];
             // 纯符号段不发请求（有道这类接口会回错误码，一段失败整张图就白翻了），原样占位；覆盖那一步也会跳过它
             if (!ScreenshotOverlay.HasTranslatableContent(segment.Text))
             {
-                results.Add(segment.Text);
-                continue;
+                results[index] = segment.Text;
+                return;
             }
 
-            progress(index + 1, segments.Count);
-            var request = new TranslateRequest(segment.Text, plan.From, plan.To);
-            Exception failure = new TranslateError("翻译失败");
-            string? translated = null;
-            foreach (var service in services)
+            await slots.WaitAsync(token);
+            try
             {
-                try
+                token.ThrowIfCancellationRequested();
+                var request = new TranslateRequest(segment.Text, plan.From, plan.To);
+                Exception failure = new TranslateError("翻译失败");
+                foreach (var service in services)
                 {
-                    var latest = string.Empty;
-                    await foreach (var piece in TranslateServiceStore.Translate(service, request, cancellationToken).WithCancellation(cancellationToken))
+                    try
                     {
-                        latest = piece;
-                    }
+                        var latest = string.Empty;
+                        await foreach (var piece in TranslateServiceStore.Translate(service, request, token).WithCancellation(token))
+                        {
+                            latest = piece;
+                        }
 
-                    cancellationToken.ThrowIfCancellationRequested();
-                    if (latest.Trim().Length == 0)
+                        token.ThrowIfCancellationRequested();
+                        if (latest.Trim().Length == 0)
+                        {
+                            throw TranslateError.EmptyResult;
+                        }
+
+                        results[index] = latest;
+                        usedAt[index] = service;
+                        progress(Interlocked.Increment(ref finished), segments.Count);
+                        return;
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
                     {
-                        throw TranslateError.EmptyResult;
+                        Log.Info($"screenshot.overlay-next kind={service.Kind} error={(ex as TranslateError)?.Kind.ToString() ?? ex.GetType().Name}");
+                        failure = ex;
                     }
+                }
 
-                    translated = latest;
-                    used ??= service;
-                    break;
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    Log.Info($"screenshot.overlay-next kind={service.Kind} error={(ex as TranslateError)?.Kind.ToString() ?? ex.GetType().Name}");
-                    failure = ex;
-                }
+                // 这一段哪个服务都没翻成：别的段也不翻了（整张图要么全盖、要么不盖）
+                stop.Cancel();
+                throw failure;
+            }
+            finally
+            {
+                slots.Release();
+            }
+        }
+
+        progress(0, segments.Count);
+        var tasks = Enumerable.Range(0, segments.Count).Select(TranslateOneAsync).ToList();
+        try
+        {
+            await Task.WhenAll(tasks);
+        }
+        catch
+        {
+            // 报第一段真的出错的（不是被叫停的那几段）；用户取消照旧是取消
+            cancellationToken.ThrowIfCancellationRequested();
+            if (tasks.FirstOrDefault(task => task.IsFaulted)?.Exception?.InnerException is { } first)
+            {
+                throw first;
             }
 
-            results.Add(translated ?? throw failure);
+            throw;
         }
+
+        var used = usedAt.FirstOrDefault(service => service is not null);
 
         // 和浮窗那条一样记一份翻译历史（整段原文 + 整段译文）
         var settings = SettingsService.Current;
@@ -123,19 +178,25 @@ internal static class ScreenshotTranslator
                 plan.Text, plan.From?.Code(), plan.To.Code(), string.Join("\n\n", results), used.Name, settings.TranslateHistoryLimit);
         }
 
-        return results;
+        return results.ToList();
     }
 
-    /// <summary>合成：去字（Core）+ 画字（Win2D）。坐标：Core 是左下原点，Win2D 是左上原点，y 换一下。</summary>
-    internal static byte[]? Render(byte[] bgra, int width, int height, IReadOnlyList<OverlaySegment> segments, IReadOnlyList<string> translations)
+    /// <summary>
+    /// 合成：去字（Core）+ 画字（Win2D）。坐标：Core 是左下原点，Win2D 是左上原点，y 换一下。
+    /// 返回贴了译文的图（一段都没画时 null）和放不下的段的下标（纯符号段不算）。
+    /// </summary>
+    internal static (byte[]? Image, List<int> Leftovers) Render(
+        byte[] bgra, int width, int height, IReadOnlyList<OverlaySegment> segments, IReadOnlyList<string> translations,
+        double pixelsPerPoint = 1)
     {
         var device = CanvasDevice.GetSharedDevice();
         var measure = new Win2DMeasure(device);
         var pixels = new OverlayPixels((byte[])bgra.Clone(), width, height, width * 4);
-        var composed = ScreenshotOverlay.Compose(pixels, segments, translations, measure);
+        var (composed, leftovers) = ScreenshotOverlay.Compose(pixels, segments, translations, measure, pixelsPerPoint);
+        leftovers = leftovers.Where(index => ScreenshotOverlay.HasTranslatableContent(segments[index].Text)).ToList();
         if (composed.Count == 0)
         {
-            return null;
+            return (null, leftovers);
         }
 
         using var target = new CanvasRenderTarget(device, width, height, 96, DirectXPixelFormat.B8G8R8A8UIntNormalized, CanvasAlphaMode.Premultiplied);
@@ -150,7 +211,7 @@ internal static class ScreenshotTranslator
             }
         }
 
-        return target.GetPixelBytes();
+        return (target.GetPixelBytes(), leftovers);
     }
 
     private static Color ToColor(OverlayRgb rgb)
@@ -245,16 +306,74 @@ internal static class ScreenshotTranslator
     /// <summary>量字：和画同一份排版（折法一致）。</summary>
     private sealed class Win2DMeasure(CanvasDevice device) : ITextMeasure
     {
+        private static readonly Color Black = Color.FromArgb(255, 0, 0, 0);
+
+        /// <summary>字的上伸部占字号的多少（「Ag国」的墨迹顶到基线；量一次）。</summary>
+        private double? _ascent;
+
         public int LineCount(string text, double width, double fontSize, OverlayCode? code)
         {
-            using var layout = Layout(device, text, width, fontSize, code, 0, Color.FromArgb(255, 0, 0, 0), Color.FromArgb(255, 0, 0, 0));
+            using var layout = Layout(device, text, width, fontSize, code, 0, Black, Black);
             return Math.Max(1, layout.LineCount);
         }
 
         public double Width(string text, double fontSize)
         {
-            using var layout = Layout(device, text, 10_000, fontSize, null, 0, Color.FromArgb(255, 0, 0, 0), Color.FromArgb(255, 0, 0, 0));
+            using var layout = Layout(device, text, 10_000, fontSize, null, 0, Black, Black);
             return layout.LayoutBounds.Width;
         }
+
+        /// <summary>最长那行的宽（DirectWrite 的宽不算行尾空格）。</summary>
+        public double Extent(string text, double width, double fontSize, OverlayCode? code)
+        {
+            using var layout = Layout(device, text, width, fontSize, code, 0, Black, Black);
+            return Math.Min(width, layout.LayoutBounds.Width);
+        }
+
+        /// <summary>
+        /// 折行有没有把一个拉丁词拆开（PLAN-v18 S8）：DirectWrite 一个词放不下一行时按字母断，行数照算成放得下。
+        /// 看每个断行处两边的字：都是字母 / 数字（不是汉字）就是拆了词。断行处按字符区块换行认（LineMetrics 有 bool 字段，
+        /// AOT 下 CsWinRT 封送不了这个数组）。
+        /// </summary>
+        public bool SplitsWord(string text, double width, double fontSize, OverlayCode? code)
+        {
+            if (text.Length < 2)
+            {
+                return false;
+            }
+
+            using var layout = Layout(device, text, width, fontSize, code, 0, Black, Black);
+            if (layout.LineCount < 2)
+            {
+                return false;
+            }
+
+            var regions = layout.GetCharacterRegions(0, text.Length);
+            for (var index = 1; index < regions.Length; index++)
+            {
+                var at = regions[index].CharacterIndex;
+                if (regions[index].LayoutBounds.Y > regions[index - 1].LayoutBounds.Y + 0.5 &&
+                    at > 0 && at < text.Length && IsWordChar(text[at - 1]) && IsWordChar(text[at]))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>等行距排版时第一行的基线在行顶下 0.8 行距（Layout 那样设的），墨迹顶到它的距离就是上伸部。</summary>
+        public double Ascent(double fontSize)
+        {
+            if (_ascent is null)
+            {
+                using var layout = Layout(device, "Ag国", 10_000, 100, null, 200, Black, Black);
+                _ascent = Math.Clamp((160 - layout.DrawBounds.Top) / 100, 0.6, 1.2);
+            }
+
+            return fontSize * _ascent.Value;
+        }
+
+        private static bool IsWordChar(char ch) => char.IsLetterOrDigit(ch) && !OcrText.IsCjk(ch);
     }
 }

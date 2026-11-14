@@ -731,7 +731,14 @@ internal sealed class ScreenshotSession
     private async Task<byte[]?> SelectionPngAsync()
     {
         var overlay = _overlays.FirstOrDefault(item => item.Screen == SelectionScreen);
-        return overlay is null ? null : await overlay.ExportPngAsync();
+        if (overlay is null)
+        {
+            return null;
+        }
+
+        // 一键打码还在识字：等它盖完再出图，号码不跟着图出去（PLAN-v18 S17）
+        await overlay.RedactionDone;
+        return await overlay.ExportPngAsync();
     }
 
     public async Task RecognizedSelectionAsync()

@@ -17,6 +17,8 @@ internal static class Glyphs
     public const string Settings = "\uE713";
     public const string Search = "\uE721";
     public const string Close = "\uE711";
+    /// <summary>\u773C\u775B\uFF08\u622A\u56FE\u7FFB\u8BD1\u5361\u7247\u7684\u300C\u770B\u539F\u6587\u300D\uFF0CPLAN-v18 S9\uFF09\u3002</summary>
+    public const string View = "\uE890";
     public const string Add = "\uE710";
     public const string ChevronDown = "\uE70D";
     public const string ChevronUp = "\uE70E";
@@ -80,6 +82,11 @@ internal static class Glyphs
     public const string Microphone = "\uE720";
     public const string Volume = "\uE767";
     public const string Folder = "\uE8B7";
+    /// <summary>同步连着 WebDAV 服务器（mac server.rack；MapDrive：映射的网络驱动器，PLAN-v19）。</summary>
+    public const string Server = "\uE8CE";
+
+    /// <summary>吸管（截图标注从截图里取色，PLAN-v18 S18）。</summary>
+    public const string Eyedropper = "\uEF3C";
     public const string OpenInNewWindow = "\uE8A7";
     public const string Link = "\uE71B";
     public const string CommandPrompt = "\uE756";
@@ -124,6 +131,7 @@ internal static class Glyphs
     public const string Shutdown = "\uE7E8";
     public const string Lock = "\uE72E";
     public const string Sleep = "\uE708";
+    public const string Brightness = "\uE706";
     public const string Recycle = "\uE74D";
 
     // 启动器对齐 mac（PLAN-v9-launcher）：系统命令、Ctrl+K 菜单用到的。

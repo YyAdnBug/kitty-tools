@@ -287,7 +287,8 @@ internal sealed partial class SelectionOverlayWindow : Window
                 Style = new(AnnotationPalette.White, 1, 0),
             },
             new Annotation { Kind = AnnotationKind.Counter, From = At(0.3, 0.15), Number = 1, Style = new(AnnotationPalette.Red, 1, 0) },
-            new Annotation { Kind = AnnotationKind.Counter, From = At(0.92, 0.18), Number = 12, Style = new(AnnotationPalette.Yellow, 2, 0) },
+            // PLAN-v18 S19：拖角改过大小的序号（直径 44）
+            new Annotation { Kind = AnnotationKind.Counter, From = At(0.92, 0.18), Number = 12, Style = new AnnotationStyle(AnnotationPalette.Yellow, 2, 0) { Diameter = 44 } },
         };
         _document.Load(annotations);
         _document.SelectedId = annotations.First(annotation => annotation.Kind == selected).Id;
@@ -460,6 +461,13 @@ internal sealed partial class SelectionOverlayWindow : Window
                 e.Handled = true;
                 CommitText();
             }
+            else if (IsDown(Windows.System.VirtualKey.Control) && !_composing &&
+                     e.Key is (Windows.System.VirtualKey)187 or Windows.System.VirtualKey.Add or (Windows.System.VirtualKey)189 or Windows.System.VirtualKey.Subtract)
+            {
+                // 打字时 Ctrl+= / Ctrl+- 换字号（S15）
+                e.Handled = true;
+                StepStyle(e.Key is (Windows.System.VirtualKey)187 or Windows.System.VirtualKey.Add ? 1 : -1);
+            }
         };
         editor.TextChanged += (_, _) => LayoutEditor();
         editor.Loaded += (_, _) => LayoutEditor(); // 套上模板、排好之后才量得到输入框的行距
@@ -519,7 +527,7 @@ internal sealed partial class SelectionOverlayWindow : Window
         }
 
         editor.FontSize = _style.FontSize;
-        _editorInk.Color = _style.Option == 2 ? AnnotationRenderer.InkOf(_style.Color) : AnnotationRenderer.ColorOf(_style.Color);
+        _editorInk.Color = AnnotationRenderer.FromArgb(_style.Option == 2 ? _style.InkArgb : _style.PaintArgb);
         LayoutEditor();
     }
 
@@ -738,7 +746,8 @@ internal sealed partial class SelectionOverlayWindow : Window
         }
 
         var target = new PointD(_cursor.X + _dragOffset.X, _cursor.Y + _dragOffset.Y);
-        _document.Replace(original.Resized(_dragHandle, target, IsDown(Windows.System.VirtualKey.Shift), _scale));
+        _document.Replace(original.Resized(
+            _dragHandle, target, IsDown(Windows.System.VirtualKey.Shift), _scale, fromCenter: IsDown(Windows.System.VirtualKey.Menu)));
         _canvas.Invalidate();
     }
 
@@ -918,7 +927,7 @@ internal sealed partial class SelectionOverlayWindow : Window
         foreach (var kind in AnnotationKinds.All)
         {
             var name = AnnotationKinds.Title(kind);
-            var button = ToolbarButton(ToolGlyph(kind), $"{name}（{AnnotationKinds.Key(kind)}）", name);
+            var button = ShotButton(ToolGlyph(kind), name, name, ShotKeys.IdFor(kind));
             if (kind == AnnotationKind.Line && button.Content is FontIcon line)
             {
                 // Fluent 没有斜线：横线转 −45°
@@ -954,39 +963,40 @@ internal sealed partial class SelectionOverlayWindow : Window
 
         var extras = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
         // 裁剪（PLAN-v11 F11，mac X17）：十种工具之外单独一个，开着时在选区里拖框裁小。
-        _cropButton = ToolbarButton(Glyphs.Crop, "裁剪（X）", "裁剪");
+        _cropButton = ShotButton(Glyphs.Crop, "裁剪", "裁剪", "crop");
         _cropButton.Click += (_, _) => ToggleCrop();
         extras.Children.Add(_cropButton);
-        _undoButton = ToolbarButton(Glyphs.Undo, "撤销（Ctrl+Z）", "撤销");
+        _undoButton = ShotButton(Glyphs.Undo, "撤销", "撤销", "undo");
         _undoButton.Click += (_, _) => Undo();
         extras.Children.Add(_undoButton);
-        _redoButton = ToolbarButton(Glyphs.Redo, "重做（Ctrl+Y）", "重做");
+        _redoButton = ShotButton(Glyphs.Redo, "重做", "重做", "redo");
         _redoButton.Click += (_, _) => Redo();
         extras.Children.Add(_redoButton);
 
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
-        var actionItems = new List<(string, string, string, Action)>();
+        var actionItems = new List<(string Glyph, string Tip, string Name, string ShotId, Action Run)>();
         if (_session.Mode != ScreenshotMode.Record)
         {
-            actionItems.Add((Glyphs.Ocr, "识字（O）", "识别文字", () => _ = _session.RecognizedSelectionAsync()));
+            actionItems.Add((Glyphs.Ocr, "识字", "识别文字", "recognize", () => _ = _session.RecognizedSelectionAsync()));
             if (Features.IsOn(Feature.Translate))
             {
-                actionItems.Add((Glyphs.Translate, "翻译（T）", "截图翻译", () => _ = _session.TranslateSelectionAsync()));
+                actionItems.Add((Glyphs.Translate, "翻译", "截图翻译", "translate", () => _ = _session.TranslateSelectionAsync()));
             }
 
-            actionItems.Add((Glyphs.LongScreenshot, "长截图（S 向下 · Shift+S 向上 · A 自动滚）", "长截图", () => _session.BeginScrolling()));
+            actionItems.Add((Glyphs.LongScreenshot, "长截图", "长截图", "scroll", () => _session.BeginScrolling()));
             if (Features.IsOn(Feature.Recording))
             {
-                actionItems.Add((Glyphs.Record, "录屏（R）", "切到录屏", SwitchToRecording));
+                actionItems.Add((Glyphs.Record, "录屏", "切到录屏", "record", SwitchToRecording));
             }
 
-            actionItems.Add((Glyphs.Pin, "钉在屏幕上（P）", "钉图", () => _ = PinSelectionAsync()));
+            actionItems.Add((Glyphs.Pin, "钉在屏幕上", "钉图", "pin", () => _ = PinSelectionAsync()));
         }
 
-        foreach (var (glyph, tip, name, action) in actionItems)
+        foreach (var item in actionItems)
         {
-            var button = ToolbarButton(glyph, tip, name);
-            button.Click += (_, _) => action();
+            var button = ShotButton(item.Glyph, item.Tip, item.Name, item.ShotId);
+            var run = item.Run;
+            button.Click += (_, _) => run();
             actions.Children.Add(button);
         }
 
@@ -995,10 +1005,10 @@ internal sealed partial class SelectionOverlayWindow : Window
         if (_session.Mode != ScreenshotMode.Record)
         {
             actions.Children.Add(Separator());
-            var save = ToolbarButton(Glyphs.Save, "快速保存（Ctrl+S）", "保存截图");
+            var save = ShotButton(Glyphs.Save, "快速保存", "保存截图", "save");
             save.Click += (_, _) => _ = _session.SaveSelectionAsync(saveAs: false);
             actions.Children.Add(save);
-            var saveMenu = ToolbarButton(Glyphs.ChevronDown, "更多保存选项", "更多保存选项", width: 18);
+            var saveMenu = ShotButton(Glyphs.ChevronDown, "更多保存选项", "更多保存选项", "saveAs", width: 18);
             if (saveMenu.Content is FontIcon chevron)
             {
                 chevron.FontSize = 10;
@@ -1019,6 +1029,7 @@ internal sealed partial class SelectionOverlayWindow : Window
                 new FontIcon { Glyph = Glyphs.Check, FontSize = 14, Foreground = new SolidColorBrush(Colors.White) },
                 "复制（Enter · 双击选区）", "复制截图");
             done.Click += (_, _) => _ = _session.CopySelectionAsync();
+            AttachRebind(done, "copy", "复制（Enter · 双击选区）");
             actions.Children.Add(done);
         }
         else
@@ -1153,6 +1164,7 @@ internal sealed partial class SelectionOverlayWindow : Window
     {
         _trayKind = kind;
         _trayRow.Children.Clear();
+        _trayCustom = null;
         _trayColors.Clear();
         _trayWeights.Clear();
         _trayOptions.Clear();
@@ -1163,22 +1175,39 @@ internal sealed partial class SelectionOverlayWindow : Window
                 var index = palette;
                 var title = AnnotationPalette.Titles[index] + "色";
                 var (button, ring, dot) = Swatch(14, AnnotationRenderer.ColorOf(index), outlined: true, title);
-                button.Click += (_, _) => Restyle(style => style with { Color = index });
+                button.Click += (_, _) => Restyle(style => style with { Color = index, Custom = null });
                 _trayColors.Add((ring, dot, index));
                 _trayRow.Children.Add(button);
             }
 
+            AddColorExtras();
             _trayRow.Children.Add(Separator());
         }
 
-        var weightTitles = AnnotationKinds.WeightTitles(kind);
-        for (var weight = 0; weight < 3; weight++)
+        _traySize = null;
+        _trayNumberPanel = null;
+        if (kind == AnnotationKind.Text)
         {
-            var index = weight;
-            var (button, ring, dot) = Swatch(new[] { 4.0, 7, 10 }[index], Theme.Shot.HudText, outlined: false, weightTitles[index]);
-            button.Click += (_, _) => Restyle(style => style with { Weight = index });
-            _trayWeights.Add((ring, dot, index));
-            _trayRow.Children.Add(button);
+            // 文字：A− 字号 A+（PLAN-v18 S15）
+            AddTextSize();
+        }
+        else
+        {
+            var weightTitles = AnnotationKinds.WeightTitles(kind);
+            for (var weight = 0; weight < 3; weight++)
+            {
+                var index = weight;
+                var (button, ring, dot) = Swatch(new[] { 4.0, 7, 10 }[index], Theme.Shot.HudText, outlined: false, weightTitles[index]);
+                // 点三档清掉拖角改过的序号直径（S19）
+                button.Click += (_, _) => Restyle(style => style with { Weight = index, Diameter = null });
+                _trayWeights.Add((ring, dot, index));
+                _trayRow.Children.Add(button);
+            }
+        }
+
+        if (kind == AnnotationKind.Counter)
+        {
+            AddCounterNumber();
         }
 
         var options = AnnotationKinds.OptionTitles(kind);
@@ -1189,9 +1218,9 @@ internal sealed partial class SelectionOverlayWindow : Window
 
         _trayRow.Children.Add(Separator());
         var segment = new StackPanel { Orientation = Orientation.Horizontal };
-        for (var option = 0; option < options.Length; option++)
+        // 打码把模糊排前面（AnnotationKinds.OptionOrder，下标照旧）
+        foreach (var index in AnnotationKinds.OptionOrder(kind))
         {
-            var index = option;
             var button = new Button
             {
                 Content = new TextBlock { Text = options[index], FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.Medium },
@@ -1218,6 +1247,28 @@ internal sealed partial class SelectionOverlayWindow : Window
             VerticalAlignment = VerticalAlignment.Center,
             Child = segment,
         });
+
+        // 打码最后一个「自动」（PLAN-v18 S17）：识字找手机号、邮箱、卡号、身份证号盖上
+        if (kind == AnnotationKind.Mosaic)
+        {
+            _trayRow.Children.Add(Separator());
+            var auto = new Button
+            {
+                Content = new TextBlock { Text = "自动", FontSize = 12, FontWeight = Microsoft.UI.Text.FontWeights.Medium, Foreground = new SolidColorBrush(Theme.Shot.HudText) },
+                Height = 22,
+                MinWidth = 0,
+                MinHeight = 0,
+                Padding = new Thickness(8, 0, 8, 0),
+                CornerRadius = new CornerRadius(4),
+                BorderThickness = new Thickness(0),
+                Background = new SolidColorBrush(Theme.Shot.ChipFill),
+                AllowFocusOnInteraction = false,
+            };
+            AutomationProperties.SetName(auto, "自动打码：手机号、邮箱、卡号、身份证号");
+            ToolTipService.SetToolTip(auto, "自动打码：手机号、邮箱、卡号、身份证号");
+            auto.Click += (_, _) => AutoRedact();
+            _trayRow.Children.Add(auto);
+        }
     }
 
     /// <summary>托盘里的色点 / 粗细点：选中时外圈 2 的品牌粉环（离点 2）、整体放大 1.1（mac Swatch）。</summary>
@@ -1311,13 +1362,16 @@ internal sealed partial class SelectionOverlayWindow : Window
         var style = ShownStyle;
         foreach (var (ring, dot, index) in _trayColors)
         {
-            MarkSwatch(ring, dot, index == style.Color, animate: !rebuilt);
+            MarkSwatch(ring, dot, index == style.Color && style.Custom is null, animate: !rebuilt);
         }
 
         foreach (var (ring, dot, index) in _trayWeights)
         {
-            MarkSwatch(ring, dot, index == style.Weight, animate: !rebuilt);
+            // 拖角改过大小的序号三档都不亮（S19）
+            MarkSwatch(ring, dot, index == style.Weight && !(owner == AnnotationKind.Counter && style.Diameter is not null), animate: !rebuilt);
         }
+
+        UpdateTrayExtras(style, owner);
 
         foreach (var (button, index) in _trayOptions)
         {
@@ -1420,6 +1474,7 @@ internal sealed partial class SelectionOverlayWindow : Window
     private void SelectTool(AnnotationKind? tool)
     {
         CommitText();
+        CancelPicking();
         var chosen = tool is not null && tool == _tool ? null : tool;
         if (chosen is { } kind)
         {
@@ -1824,6 +1879,22 @@ internal sealed partial class SelectionOverlayWindow : Window
         _canvas.Focus(FocusState.Pointer);
         ReadCursor();
         var point = _cursor;
+        if (_picking)
+        {
+            // 吸管（S18）：这一下只取色
+            e.Handled = true;
+            if (!e.GetCurrentPoint(_canvas).Properties.IsRightButtonPressed)
+            {
+                PickColor(point);
+            }
+            else
+            {
+                CancelPicking();
+            }
+
+            return;
+        }
+
         _pressed = point;
         _anchor = point;
         _cursor = point;
@@ -2096,7 +2167,20 @@ internal sealed partial class SelectionOverlayWindow : Window
         _canvas.Invalidate();
     }
 
-    private void OnPointerWheel(object sender, PointerRoutedEventArgs e) => e.Handled = true;
+    /// <summary>选中的标注上滚轮换一档（PLAN-v18 S15，mac：文字换字号，别的换粗细 / 格子 / 深浅，拖角改过的序号按 1.25 倍）。</summary>
+    private void OnPointerWheel(object sender, PointerRoutedEventArgs e)
+    {
+        e.Handled = true;
+        ReadCursor();
+        if (_document.Selected is { } selected && !IsDraggingAnnotation && _textEditor is null && selected.Contains(_cursor, _scale))
+        {
+            var delta = e.GetCurrentPoint(_canvas).Properties.MouseWheelDelta;
+            if (delta != 0)
+            {
+                StepStyle(Math.Sign(delta));
+            }
+        }
+    }
 
     private void ReadCursor()
     {
@@ -2160,7 +2244,7 @@ internal sealed partial class SelectionOverlayWindow : Window
                 }
             }
             else if (Annotation.Drawn(draft.Kind, _annotationStart, point, IsDown(Windows.System.VirtualKey.Shift),
-                         draft.Style) is { } shaped)
+                         draft.Style, fromCenter: IsDown(Windows.System.VirtualKey.Menu)) is { } shaped)
             {
                 // B7：Shift = 正方形 / 正圆 / 45° 线；拖动中按下、松开都立刻重算（PollCursor 20 ms 一次）
                 _draft = shaped with { Id = draft.Id };
@@ -2401,6 +2485,23 @@ internal sealed partial class SelectionOverlayWindow : Window
         var control = IsDown(Windows.System.VirtualKey.Control);
         var shift = IsDown(Windows.System.VirtualKey.Shift);
         var alt = IsDown(Windows.System.VirtualKey.Menu);
+        // 工具栏右键「改…的快捷键」之后等新的键（PLAN-v18 S3）
+        if (_rebinding is not null)
+        {
+            e.Handled = true;
+            RebindKey(e.Key, control, alt, shift);
+            return;
+        }
+
+        // 截图时的键（PLAN-v18 S3，设置 › 快捷键「截图时」能改）：十种工具、出图、长截图、录屏、裁剪、撤销重做、上次区域、取色
+        var modifiers = (control ? HotKeyModifiers.Control : 0) | (alt ? HotKeyModifiers.Alt : 0) | (shift ? HotKeyModifiers.Shift : 0);
+        if (!ShotKeys.IsReserved(new ShotKeyBinding((uint)e.Key, modifiers)) &&
+            ShotKeys.Matching((uint)e.Key, modifiers, SettingsService.Current.ScreenshotKeys) is { } shot)
+        {
+            e.Handled = RunShotKey(shot.Id, shot.Up);
+            return;
+        }
+
         switch (e.Key)
         {
             // PLAN-v9 S4：Ctrl + 方向键把那条边往外推、Alt + 方向键往里收（Shift 10 DIP；mac ⌘ / ⌥）
@@ -2408,6 +2509,15 @@ internal sealed partial class SelectionOverlayWindow : Window
                 or Windows.System.VirtualKey.Down when control != alt:
                 e.Handled = true;
                 PushEdge(e.Key, outward: control);
+                break;
+            // Ctrl+= / Ctrl+-（主键盘和小键盘）：选中的标注或当前工具换一档（S15，mac ⌘+ / ⌘−）
+            case (Windows.System.VirtualKey)187 or Windows.System.VirtualKey.Add when control && !alt:
+                e.Handled = true;
+                StepStyle(1);
+                break;
+            case (Windows.System.VirtualKey)189 or Windows.System.VirtualKey.Subtract when control && !alt:
+                e.Handled = true;
+                StepStyle(-1);
                 break;
             case Windows.System.VirtualKey.Space:
                 // 拖动框选途中按着空格整块平移；按住不放的自动重复不算新按下
@@ -2418,18 +2528,18 @@ internal sealed partial class SelectionOverlayWindow : Window
                 }
 
                 break;
-            // 数字键 1–9、0 依次是十种工具（mac toolKeys），再按一次收起；A 留给长截图自动滚动、T 留给截图翻译。
-            // 录屏没有标注（mac：数字键是截图的）。
-            case >= Windows.System.VirtualKey.Number0 and <= Windows.System.VirtualKey.Number9
-                when !control && _session.Mode == ScreenshotMode.Capture && _session.HasSelection:
-                SelectTool(AnnotationKinds.All[((int)e.Key - (int)Windows.System.VirtualKey.Number0 + 9) % 10]);
-                e.Handled = true;
-                break;
             case Windows.System.VirtualKey.Escape:
-                // 照 mac：打字中的文字 → 选中的标注 → 选中的工具 → 退出截图（免得一下把画好的标注全丢了）。
-                // 有选区、没选工具时按一下就退出，不先清选区（0.1.0 用户反馈：以前要按两下）。
+                // 照 mac：取色 → 列着放不下的段的译文卡片 → 打字中的文字 → 选中的标注 → 选中的工具 → 退出截图（免得一下把画好的标注全丢了）。
+                // 有选区、没选工具时按一下就退出，不先清选区（0.1.0 用户反馈：以前要按两下）。只有一条译文窄栏时不拦 Esc。
                 e.Handled = true;
-                if (_textEditor is not null)
+                if (CancelPicking())
+                {
+                }
+                else if (_card is not null && _cardLeftovers > 0)
+                {
+                    CloseTranslationCard();
+                }
+                else if (_textEditor is not null)
                 {
                     CommitText();
                 }
@@ -2463,17 +2573,6 @@ internal sealed partial class SelectionOverlayWindow : Window
                 e.Handled = true;
                 DuplicateSelectedAnnotation();
                 break;
-            case Windows.System.VirtualKey.D:
-                // S5：跳到上次截的区域（录屏、识字、翻译也认）
-                e.Handled = true;
-                SelectLastRegion();
-                break;
-            case Windows.System.VirtualKey.R when !control && _session.Mode == ScreenshotMode.Capture &&
-                                                  _session.SelectionScreen == _screen && _session.HasSelection:
-                // S5：截图调整时切到录屏（工具栏原地换成录制条）
-                e.Handled = true;
-                SwitchToRecording();
-                break;
             case Windows.System.VirtualKey.Left when !control:
                 e.Handled = true;
                 Nudge(-1, 0);
@@ -2495,14 +2594,6 @@ internal sealed partial class SelectionOverlayWindow : Window
                 e.Handled = true;
                 Redo();
                 break;
-            case Windows.System.VirtualKey.Z when control:
-                e.Handled = true;
-                Undo();
-                break;
-            case Windows.System.VirtualKey.Y when control:
-                e.Handled = true;
-                Redo();
-                break;
             case Windows.System.VirtualKey.Enter:
                 e.Handled = true;
                 if (_session.Mode is ScreenshotMode.Ocr or ScreenshotMode.Translate)
@@ -2518,44 +2609,6 @@ internal sealed partial class SelectionOverlayWindow : Window
                     _ = _session.CopySelectionAsync();
                 }
 
-                break;
-            case Windows.System.VirtualKey.C when control:
-                e.Handled = true;
-                _ = _session.CopySelectionAsync();
-                break;
-            case Windows.System.VirtualKey.X when !control && _session.Mode == ScreenshotMode.Capture && _session.HasSelection:
-                e.Handled = true;
-                ToggleCrop();
-                break;
-            case Windows.System.VirtualKey.C:
-                e.Handled = true;
-                _session.CopyColor(_screen.HexAt((int)_cursor.X, (int)_cursor.Y));
-                break;
-            case Windows.System.VirtualKey.S when control:
-                e.Handled = true;
-                _ = _session.SaveSelectionAsync(saveAs: shift);
-                break;
-            case Windows.System.VirtualKey.S when !control && _session.HasSelection:
-                // 长截图（第三版 §7）：S 向下、Shift+S 向上。
-                e.Handled = true;
-                _session.BeginScrolling(up: shift);
-                break;
-            case Windows.System.VirtualKey.A when !control && _session.HasSelection:
-                // 自动滚动长截图：A 向下、Shift+A 向上。
-                e.Handled = true;
-                _session.BeginScrolling(up: shift, autoScroll: true);
-                break;
-            case Windows.System.VirtualKey.O when !control:
-                e.Handled = true;
-                _ = _session.RecognizedSelectionAsync();
-                break;
-            case Windows.System.VirtualKey.T when !control:
-                e.Handled = true;
-                _ = _session.TranslateSelectionAsync();
-                break;
-            case Windows.System.VirtualKey.P:
-                e.Handled = true;
-                _ = PinSelectionAsync();
                 break;
             case Windows.System.VirtualKey.W when control:
                 e.Handled = true;
@@ -2770,11 +2823,13 @@ internal sealed partial class SelectionOverlayWindow : Window
         return inside ? InputSystemCursorShape.SizeAll : InputSystemCursorShape.Cross;
     }
 
-    /// <summary>标注手柄：矩形类的角是斜向缩放，线类两端和弯曲手柄是手指（往哪儿拖都行）。</summary>
-    private static InputSystemCursorShape HandleCursor(AnnotationHandle handle) => handle switch
+    /// <summary>标注手柄：矩形类的角是斜向缩放、边中点是横 / 竖缩放，线类两端和弯曲手柄是手指（往哪儿拖都行）。</summary>
+    internal static InputSystemCursorShape HandleCursor(AnnotationHandle handle) => handle switch
     {
         AnnotationHandle.TopLeft or AnnotationHandle.BottomRight => InputSystemCursorShape.SizeNorthwestSoutheast,
         AnnotationHandle.TopRight or AnnotationHandle.BottomLeft => InputSystemCursorShape.SizeNortheastSouthwest,
+        AnnotationHandle.Top or AnnotationHandle.Bottom => InputSystemCursorShape.SizeNorthSouth,
+        AnnotationHandle.Left or AnnotationHandle.Right => InputSystemCursorShape.SizeWestEast,
         _ => InputSystemCursorShape.Hand,
     };
 

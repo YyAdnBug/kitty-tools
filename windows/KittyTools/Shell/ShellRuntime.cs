@@ -13,6 +13,8 @@ internal sealed class ShellRuntime
     private Window? _keeper;
     private SettingsWindow? _settingsWindow;
     private string _hotKeySignature = string.Empty;
+    /// <summary>上次按哪份停用名单 / 全屏开关算的规则（变了才重算）。</summary>
+    private string _blockSignature = string.Empty;
     private string? _appearanceSignature;
     private string? _featureSignature;
     private bool? _autoCheck;
@@ -134,7 +136,11 @@ internal sealed class ShellRuntime
         RecordingHost.Changed += Tray.Refresh;
         AudioHost.Changed += Tray.Refresh;
         HotKeys.Pressed += OnHotKey;
+        // 启动器每条命令的快捷键（PLAN-v18 L3）
+        HotKeys.CommandPressed += LauncherCommandKeys.Run;
         RegisterHotKeys();
+        // 按应用停用快捷键（PLAN-v17）：前台一变按名单注销 / 注册
+        HotKeyBlocker.Start();
         SettingsService.Changed += OnSettingsChanged;
         var dispatcher = DispatcherQueue.GetForCurrentThread();
         UpdateService.Initialize(dispatcher!);
@@ -421,6 +427,19 @@ internal sealed class ShellRuntime
 
                 File.WriteAllText(Path.Combine(Path.GetTempPath(), "kitty-uninstall-probe.txt"), $"locked={locked.Count}\n" + string.Join("\n", locked));
                 Environment.Exit(locked.Count == 0 ? 0 : 4);
+            });
+        }
+
+        // PLAN-v17 自检：按应用停用快捷键（不动前台、不发按键：假装前台换成某个 exe，看哪些动作注册着、注册 / 注销用了多久）。
+        // 只在测试档；结果写 %TEMP%\kitty-hotkey-block-probe.txt，退出码 0 = 全对、5 = 有不对的。
+        if (Paths.IsTestProfile && Environment.GetCommandLineArgs().Contains("--hotkey-block-probe", StringComparer.OrdinalIgnoreCase))
+        {
+            DispatcherQueue.GetForCurrentThread()?.TryEnqueue(async () =>
+            {
+                await Task.Delay(2000);
+                var report = HotKeyBlocker.RunProbe();
+                File.WriteAllText(Path.Combine(Path.GetTempPath(), "kitty-hotkey-block-probe.txt"), report.Text);
+                Environment.Exit(report.Ok ? 0 : 5);
             });
         }
 
@@ -1189,6 +1208,7 @@ internal sealed class ShellRuntime
         ReminderCenter.Stop();
         Syncer.StopAll();
         UpdateService.Configure(false);
+        HotKeyBlocker.Stop();
         HotKeys.UnregisterAll();
         Tray.Remove();
         Log.Shutdown();
@@ -1208,6 +1228,7 @@ internal sealed class ShellRuntime
 
         Log.Info("app.exit");
         FinishSession(installUpdate);
+        HotKeyBlocker.Stop();
         HotKeys.UnregisterAll();
         Tray.Remove();
         Application.Current.Exit();
@@ -1495,6 +1516,14 @@ internal sealed class ShellRuntime
             RegisterHotKeys();
         }
 
+        // 停用名单、全屏开关一改（设置页、托盘那一项、导入）当场按此刻的前台重算（PLAN-v18 L10 ②）
+        var blocks = string.Join('\n', SettingsService.Current.HotKeyBlockedApps) + "\n" + SettingsService.Current.HotKeyBlockFullscreen;
+        if (blocks != _blockSignature)
+        {
+            _blockSignature = blocks;
+            HotKeyBlocker.Refresh();
+        }
+
         if (_autoCheck != SettingsService.Current.AutoCheckUpdates)
         {
             _autoCheck = SettingsService.Current.AutoCheckUpdates;
@@ -1549,5 +1578,10 @@ internal sealed class ShellRuntime
             Enum.GetValues<Feature>().Select(feature => $"{feature}:{Features.IsOn(feature)}")
                 .Concat(settings.HotKeys
                     .OrderBy(hotkey => hotkey.Action, StringComparer.Ordinal)
-                    .Select(hotkey => $"{hotkey.Action}:{hotkey.Modifiers}:{hotkey.VirtualKey}")));
+                    .Select(hotkey => $"{hotkey.Action}:{hotkey.Modifiers}:{hotkey.VirtualKey}"))
+                // 命令的快捷键和命令的开关（关掉的命令不注册它的键）
+                .Concat((settings.LauncherCommandHotKeys ?? new Dictionary<string, string>())
+                    .OrderBy(pair => pair.Key, StringComparer.Ordinal)
+                    .Select(pair => $"{pair.Key}={pair.Value}"))
+                .Concat(settings.LauncherCommandsOff ?? new List<string>()));
 }

@@ -393,7 +393,7 @@ public sealed class ScreenshotOverlayTests
         var image = canvas.Pixels();
         var composed = ScreenshotOverlay.Compose(
             image, new[] { Segment("inline code and text", new OverlayRect(50, 95, 360, 25), 25) }, new[] { "译" }, Measure);
-        Assert.AreEqual(1, composed.Count);
+        Assert.AreEqual(1, composed.Spans.Count);
         foreach (var (x, y) in new[] { (202, 110), (250, 105), (150, 125), (150, 92) })
         {
             Assert.IsTrue(Near(image, x, y, (22, 27, 34)), $"({x}, {y}) 是 {image.Raw(x, y)}");
@@ -403,7 +403,7 @@ public sealed class ScreenshotOverlayTests
         Assert.IsTrue(Near(image, 322, 110, (1, 4, 9)), $"{image.Raw(322, 110)}");
         Assert.IsTrue(image.Raw(150, 171).R > 100);
         // 译文的字色是原文正文的灰，不是白
-        var color = composed[0].Color;
+        var color = composed.Spans[0].Color;
         Assert.IsTrue(color.Red * 255 is > 100 and <= 150, $"字色 {color}");
     }
 
@@ -426,8 +426,8 @@ public sealed class ScreenshotOverlayTests
             Words = new[] { new OverlayWord("foo_bar", new OverlayRect(260, 98, 130, 26)) },
         };
         var composed = ScreenshotOverlay.Compose(image, new[] { segment }, new[] { "foo_bar 在左边" }, Measure);
-        Assert.AreEqual(1, composed.Count);
-        var code = composed[0].Span.Code;
+        Assert.AreEqual(1, composed.Spans.Count);
+        var code = composed.Spans[0].Span.Code;
         Assert.IsNotNull(code);
         Assert.AreEqual("foo_bar", code.Phrases.Single().Single());
         Assert.AreEqual(22 / 255.0, code.Fill.Red, 0.01);
@@ -435,7 +435,7 @@ public sealed class ScreenshotOverlayTests
         Assert.AreEqual(2, code.BorderWidth);
         Assert.AreEqual(30, code.Above, 0.01);
         Assert.AreEqual(8, code.Below, 0.01);
-        Assert.AreEqual(100, composed[0].Span.Baseline, 0.01);
+        Assert.AreEqual(100, composed.Spans[0].Span.Baseline, 0.01);
         foreach (var (x, y) in new[] { (395, 110), (395, 129), (255, 95) })
         {
             Assert.IsTrue(Near(image, x, y, (1, 4, 9)), $"({x}, {y}) 是 {image.Raw(x, y)}");

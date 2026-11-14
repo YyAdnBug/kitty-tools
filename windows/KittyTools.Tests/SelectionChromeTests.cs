@@ -30,18 +30,25 @@ public sealed class SelectionChromeTests
     }
 
     [TestMethod]
-    public void SizeCapsuleFallsBackInsideThenBesideThenReadOnly()
+    public void SizeCapsulePrefersOutsideThenInsideThenReadOnly()
     {
+        // PLAN-v18 S5（mac d5f7c388）：先放选区外面——左上角外 → 右侧外 → 左侧外 → 左下角外，外面都放不下才进选区。
+        // 以前「贴着屏幕顶 / 上面压着顶部提示：放进选区」那两条锁的是旧顺序，照 mac 的新顺序改写。
         var none = Array.Empty<RectD>();
         // 左上角外 8
         Assert.AreEqual((300.0, 166.0, true), SelectionChrome.SizeCapsule(new RectD(300, 200, 400, 300), 140, 26, 1920, 1080, none));
-        // 贴着屏幕顶：放进选区（离左、上各 8）
-        Assert.AreEqual((308.0, 8.0, true), SelectionChrome.SizeCapsule(new RectD(300, 0, 400, 300), 140, 26, 1920, 1080, none));
-        // 上面压着顶部提示：也放进选区
+        // 贴着屏幕顶：放右侧外 8（和上边对齐），不进选区
+        Assert.AreEqual((708.0, 0.0, true), SelectionChrome.SizeCapsule(new RectD(300, 0, 400, 300), 140, 26, 1920, 1080, none));
+        // 上面压着顶部提示：也放右侧外
         var hint = new[] { new RectD(0, 14, 1920, 30) };
-        Assert.AreEqual((308.0, 58.0, true), SelectionChrome.SizeCapsule(new RectD(300, 50, 400, 300), 140, 26, 1920, 1080, hint));
-        // 选区又贴顶又小：放右侧外 8，比胶囊矮的竖直居中；居中后出了屏顶就只读放进选区
-        Assert.IsFalse(SelectionChrome.SizeCapsule(new RectD(300, 0, 50, 20), 140, 26, 1920, 1080, none).Interactive);
+        Assert.AreEqual((708.0, 50.0, true), SelectionChrome.SizeCapsule(new RectD(300, 50, 400, 300), 140, 26, 1920, 1080, hint));
+        // 选区又贴顶又小：右侧外居中后出了屏顶、左侧也是：放左下角外 8
+        Assert.AreEqual((300.0, 28.0, true), SelectionChrome.SizeCapsule(new RectD(300, 0, 50, 20), 140, 26, 1920, 1080, none));
+        // mac sizeFieldPrefersOutsideSelection：左右都贴边的一条（整屏宽）→ 左下角外；整屏 → 选区里（离左、上各 8）
+        var band = new RectD(0, 0, 1920, 200);
+        var below = SelectionChrome.SizeCapsule(band, 140, 26, 1920, 1080, none);
+        Assert.AreEqual((0.0, 208.0, true), below);
+        Assert.AreEqual((8.0, 8.0, true), SelectionChrome.SizeCapsule(Screen, 140, 26, 1920, 1080, none));
         Assert.AreEqual(358,SelectionChrome.SizeCapsule(new RectD(300, 10, 50, 20), 140, 26, 1920, 1080, none).X);
         Assert.AreEqual(7, SelectionChrome.SizeCapsule(new RectD(300, 10, 50, 20), 140, 26, 1920, 1080, none).Y);
         // 右边贴屏：放左侧外 8
@@ -98,5 +105,40 @@ public sealed class SelectionChromeTests
         Assert.AreEqual("16:9", SelectionChrome.RatioTitle(16.0 / 9));
         Assert.AreEqual("自由", SelectionChrome.RatioTitle(2.5));
         Assert.AreEqual(6, SelectionChrome.Ratios.Length);
+    }
+
+    // PLAN-v18 S7 S9：译文卡片放哪（mac SelectionInteractionTests cardPlacement 那几条，y 换成左上原点：屏 1000 × 800，卡片 400 × 80，托盘 6 + 34）
+    [TestMethod]
+    public void TranslationCardSitsOnTheOtherSideOfTheToolbar()
+    {
+        (double, double, bool) Place(RectD selection, RectD? toolbar, double width = 400)
+            => SelectionChrome.TranslationCard(width, 80, selection, toolbar, 40, 1000, 800);
+
+        var selection = new RectD(300, 400, 400, 100);
+        Assert.AreEqual((300, 310, false), Place(selection, new RectD(300, 510, 400, 40)));
+        Assert.AreEqual((300, 510, true), Place(selection, new RectD(300, 350, 400, 40)));
+        // 选区贴着屏幕顶：上面放不下，挂到栏（和托盘）外面
+        Assert.AreEqual((300, 196, true), Place(new RectD(300, 0, 400, 100), new RectD(300, 110, 400, 40)));
+        // 上面、栏外面都放不下：放进选区左下角；栏在选区下面时托盘在栏下面，左下角压不到它
+        Assert.AreEqual((108, 652, false), Place(new RectD(100, 90, 800, 650), new RectD(100, 750, 400, 40)));
+        // 整屏：选区里左下角离边 8；栏在选区里靠下，压到了就挪到栏和托盘上面
+        var screen = new RectD(0, 0, 1000, 800);
+        Assert.AreEqual((10, 710, false), Place(screen, null));
+        Assert.AreEqual((10, 624, false), Place(screen, new RectD(0, 750, 600, 40)));
+        // 贴着屏幕右边的窄竖条：卡片比选区宽，夹回屏内（✕ 和拷贝在右上角，不能跑出屏幕）
+        Assert.AreEqual((750, 707, false), Place(new RectD(850, 5, 150, 790), null, 240));
+        // 截图翻译模式没有工具栏：先挂上面，上面放不下挂下面
+        Assert.AreEqual((300, 510, true), Place(new RectD(300, 50, 400, 450), null));
+    }
+
+    [TestMethod]
+    public void TranslationCardTitleAndHint()
+    {
+        Assert.AreEqual("译文", SelectionChrome.CardTitle(0));
+        Assert.AreEqual("放不下的译文", SelectionChrome.CardTitle(1));
+        Assert.AreEqual("放不下的 3 段译文", SelectionChrome.CardTitle(3));
+        Assert.AreEqual("已替换为译文", SelectionChrome.TranslatedHint(0, drewAny: true));
+        Assert.AreEqual("有 2 段放不下，译文放在卡片里", SelectionChrome.TranslatedHint(2, drewAny: true));
+        Assert.AreEqual("选区太小，译文放在卡片里", SelectionChrome.TranslatedHint(1, drewAny: false));
     }
 }

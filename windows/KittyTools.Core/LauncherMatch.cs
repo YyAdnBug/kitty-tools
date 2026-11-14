@@ -140,7 +140,7 @@ public static class LauncherMatch
             }
 
             var usage = boost?.Invoke(item) ?? default;
-            var multiplier = 1 + 0.5 * usage.Global / (usage.Global + 3) + usage.Query / (usage.Query + 2);
+            var multiplier = LauncherUsageMath.Multiplier(usage.Global, usage.Query);
             scored.Add((item, match * multiplier, index));
         }
 
@@ -156,6 +156,13 @@ public static class LauncherMatch
             if (byPriority != 0)
             {
                 return byPriority;
+            }
+
+            // 还没用过时按系统记的使用（PLAN-v18 L6：UserAssist 的最后运行时刻），近的在前
+            var bySystem = right.Item.SystemUse.CompareTo(left.Item.SystemUse);
+            if (bySystem != 0)
+            {
+                return bySystem;
             }
 
             var byTitle = left.Item.Title.Length.CompareTo(right.Item.Title.Length);

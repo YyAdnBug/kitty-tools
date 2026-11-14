@@ -176,6 +176,13 @@ internal sealed class Settings
 
     public string? SyncFolder { get; set; }
 
+    /// <summary>连 WebDAV 服务器同步时（PLAN-v19）：服务器上同步的那个文件夹的网址（以 / 结尾）和用户名；密码在凭据管理器
+    /// （Syncer.PasswordName）。这时 SyncFolder 指着数据目录里的镜像（sync-server/&lt;编号&gt;）。这台电脑自己的：
+    /// 不进导出（ArchiveService 是一个键一个键手写的），Windows 也不同步设置。</summary>
+    public string? SyncServer { get; set; }
+
+    public string? SyncServerUser { get; set; }
+
     public bool SyncClips { get; set; } = true;
 
     public bool SyncVocabulary { get; set; } = true;
@@ -327,6 +334,33 @@ internal sealed class Settings
     /// <summary>有本地结果时也显示兜底搜索（mac launcherFallbackAlways，默认关；PLAN-v9 L4）。</summary>
     public bool LauncherFallbackAlways { get; set; }
 
+    /// <summary>启动器「命令」表（PLAN-v18 L2，Core LauncherCommandTable）：改过的别名（编号 → 打的原样，空串 = 不要别名），只存改过的。</summary>
+    public Dictionary<string, string>? LauncherCommandAliases { get; set; }
+
+    /// <summary>启动器「命令」表里关掉的命令编号。</summary>
+    public List<string>? LauncherCommandsOff { get; set; }
+
+    /// <summary>启动器每条命令的快捷键（PLAN-v18 L3）：编号 → 「Ctrl+Alt+K」写法。</summary>
+    public Dictionary<string, string>? LauncherCommandHotKeys { get; set; }
+
+    /// <summary>应用别名（PLAN-v18 L5，Core AppAliases）：键（aumid: / exe:）→ 别名。</summary>
+    public Dictionary<string, string>? LauncherAppAliases { get; set; }
+
+    /// <summary>用户加的应用文件夹和单个程序（PLAN-v18 §6 A4）：文件夹往下扫两层；.exe / .lnk 是单个程序。</summary>
+    public List<string>? LauncherAppFolders { get; set; }
+
+    /// <summary>「从启动器里隐藏」的应用（§6 A5）：目标路径（小写）。</summary>
+    public List<string>? LauncherHiddenApps { get; set; }
+
+    /// <summary>脚本命令（PLAN-v18 L1）：整个开关，默认开。</summary>
+    public bool LauncherScripts { get; set; } = true;
+
+    /// <summary>自己加的脚本文件夹（PLAN-v18 L1，这台电脑自己的路径，不导出）。</summary>
+    public List<string>? LauncherScriptFolders { get; set; }
+
+    /// <summary>把运行过的程序也列出来（§6 A3 / P1，读资源管理器的 UserAssist）：默认开，只在本机、不导出。</summary>
+    public bool LauncherRecentPrograms { get; set; } = true;
+
     /// <summary>书签开着的浏览器 id；null = 从没设过（Edge、Chrome，PLAN-v9 V1）。</summary>
     public List<string>? LauncherBookmarkBrowsers { get; set; }
 
@@ -439,6 +473,15 @@ internal sealed class Settings
     public bool SyncNotes { get; set; } = true;
 
     public List<HotKeySetting> HotKeys { get; set; } = new();
+
+    /// <summary>在这些应用里停用快捷键（PLAN-v17 H1，Core HotKeyBlock）：「exe 名」= 全部，「exe 名|动作,动作」= 只停这几个。默认空。</summary>
+    public List<string> HotKeyBlockedApps { get; set; } = new();
+
+    /// <summary>截图时的键（PLAN-v18 S3，Core ShotKeys）：id → 「Ctrl+S」写法，空串 = 清除了，没有这一项 = 默认。</summary>
+    public Dictionary<string, string>? ScreenshotKeys { get; set; }
+
+    /// <summary>全屏游戏时停用快捷键（PLAN-v17 H7 / W1）：默认开。</summary>
+    public bool HotKeyBlockFullscreen { get; set; } = true;
 
     /// <summary>
     /// 功能开关（第三版 §2.3）：clipboard / translate / launcher / screenshot → 开没开。

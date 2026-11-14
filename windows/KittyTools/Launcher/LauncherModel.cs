@@ -72,6 +72,8 @@ internal sealed partial class LauncherModel
         {
             catalog.Changed += () => RefreshIfIdle(minLength: 1);
         }
+
+        ScriptLibrary.Changed += ScriptsChanged;
     }
 
     // ---- 面板接上的
@@ -156,6 +158,62 @@ internal sealed partial class LauncherModel
         var settings = SettingsService.Current;
         _ = BrowserIndex.RefreshAsync(Browsers.BookmarkIds(settings), Browsers.HistoryIds(settings));
         AppCatalog.Instance?.RefreshIfStale();
+        // 脚本命令（PLAN-v18 L1）：每次呼出在后台重读一遍，读完换上、开着就重搜
+        ScriptLibrary.Refresh();
+    }
+
+    /// <summary>脚本库读完换上了：启动器开着、没在挪选中时按新的重搜。</summary>
+    public void ScriptsChanged()
+    {
+        if (_shown && !UserMovedSelection && _armed is null && Mode == LauncherMode.Normal && Query.Trim().Length > 0)
+        {
+            Search(Query);
+            ResultsChanged(null);
+        }
+    }
+
+    /// <summary>开着的脚本（命令表里没关的；脚本命令整个关着时没有）。</summary>
+    private IReadOnlyList<ScriptCommand> Scripts
+        => SettingsService.Current.LauncherScripts
+            ? ScriptLibrary.Scripts.Where(script => _commands.IsOn(LauncherCommandKeys.ScriptId(script))).ToList()
+            : Array.Empty<ScriptCommand>();
+
+    /// <summary>这条脚本此刻的别名（命令表里改过的，没改过是头部写的 keyword；清空了是 null）。</summary>
+    private string? ScriptAlias(ScriptCommand script)
+        => _commands.Alias(LauncherCommandKeys.ScriptId(script), script.Keyword ?? string.Empty) is { Length: > 0 } alias ? alias : null;
+
+    /// <summary>脚本的一行：标题、副标题（说明 / 包名 / 别名）、按标题、别名、文件名都搜得到。</summary>
+    private LauncherItem ScriptItem(ScriptCommand script, IReadOnlyList<string>? arguments = null)
+    {
+        var alias = ScriptAlias(script);
+        var names = new List<string> { LauncherMatch.Fold(script.Title), LauncherMatch.Fold(Path.GetFileNameWithoutExtension(script.Path)) };
+        if (alias is not null)
+        {
+            names.Add(alias);
+        }
+
+        if (Pinyin.For(script.Title) is { } pinyin)
+        {
+            names.Add(pinyin.Full);
+        }
+
+        var subtitle = arguments is null
+            ? script.Summary ?? script.Package ?? alias ?? string.Empty
+            : script.Arguments.Count == 0
+                ? string.Join(" ", arguments)
+                : string.Join("，", script.Arguments.Select((argument, index) =>
+                    $"{argument.Placeholder}：{(index < arguments.Count ? (argument.IsSecret ? new string('•', arguments[index].Length) : arguments[index]) : "（还没填）")}"));
+        return new LauncherItem
+        {
+            Kind = LauncherKind.Script,
+            Target = script.Path,
+            Title = script.Title,
+            Subtitle = subtitle,
+            Names = names.Where(name => name.Length > 0).Distinct().ToList(),
+            Initials = new[] { LauncherMatch.Initials(script.Title) }.Where(value => value.Length > 0).ToList(),
+            Payload = arguments is null ? null : string.Join('\u001F', arguments),
+            Completion = script.TakesInput ? (alias ?? script.Title) + " " : null,
+        };
     }
 
     /// <summary>收起：执行过、或者查询是空的，清空；没执行就收起的留着查询和选中项。带对象模式的列表再呼出时重列。</summary>
@@ -205,7 +263,17 @@ internal sealed partial class LauncherModel
         _forgotten = null;
         FavoriteCount = 0;
         Groups = new List<LauncherGroup>();
-        var (mode, terms) = LauncherCommands.Classify(query);
+        // 「命令」表（PLAN-v18 L2）：改过的别名换回原关键词交给原来那一套；原关键词改掉 / 关掉的那几条挡住
+        _commands = LauncherCommandTable.FromStored(SettingsService.Current.LauncherCommandAliases, SettingsService.Current.LauncherCommandsOff);
+        var (canonical, blocked) = LauncherCommandTable.Canonical(query, _commands);
+        _blocked = blocked;
+        var (mode, terms) = LauncherCommands.Classify(canonical);
+        if (mode != LauncherMode.Normal && !char.IsWhiteSpace(canonical.FirstOrDefault()) &&
+            blocked.Contains("builtin:" + LauncherCommands.Keyword(mode)))
+        {
+            (mode, terms) = (LauncherMode.Normal, query);
+        }
+
         Mode = mode;
         Terms = terms;
         if (!mode.ListsProcesses() && !mode.ListsApps())
@@ -246,20 +314,41 @@ internal sealed partial class LauncherModel
         }
 
         EmptyText = "没有匹配的结果";
-        Results = Assemble(query);
+        Results = Assemble(query, canonical);
         if (IsShowingHome)
         {
             Groups = LauncherHome.Groups(Results.Count, FavoriteCount);
         }
     }
 
-    private List<LauncherItem> Assemble(string query)
+    /// <summary>「命令」表此刻的设置、这次输入里被挡住的内置命令编号（Search 一开头算）。</summary>
+    private LauncherCommandSettings _commands = LauncherCommandSettings.Empty;
+    private IReadOnlySet<string> _blocked = new HashSet<string>();
+
+    private bool CommandOn(string id) => !_blocked.Contains(id);
+
+    /// <summary>补全提示跟着「命令」表：改了别名的换词，清空的、关掉的不出。</summary>
+    private IEnumerable<LauncherItem> Relabeled(IEnumerable<LauncherItem> items)
+        => items.Select(item => LauncherCommandTable.Relabel(item, _commands)).OfType<LauncherItem>();
+
+    /// <summary>关掉的系统命令也不出现在常用、收藏里（收藏不删，打开就回来）。</summary>
+    private bool Hidden(LauncherItem item)
+        => item.Kind == LauncherKind.Command && SystemCommands.IdOf(item.Target) is { } id && !_commands.IsOn(id);
+
+    private List<LauncherItem> Assemble(string original, string query)
     {
-        var clipboardOn = Features.IsOn(Feature.Clipboard);
-        var translateOn = Features.IsOn(Feature.Translate);
+        var clipboardOn = Features.IsOn(Feature.Clipboard) && CommandOn("builtin:cb");
+        var translateOn = Features.IsOn(Feature.Translate) && CommandOn("builtin:fy");
+        var currencyOn = _commands.IsOn("builtin:currency");
         if (translateOn && LauncherCommands.TranslateQuery(query) is { } text)
         {
             return new List<LauncherItem> { LauncherCommands.TranslateItem(text, Definition(text)) };
+        }
+
+        // 「别名 空格 参数」给脚本（PLAN-v18 L1）：内置命令先认（上面那几样），其次脚本，网页搜索的关键词最后
+        if (ScriptText.InvocationFor(original, Scripts, ScriptAlias) is { } invocation)
+        {
+            return ScriptRows(invocation);
         }
 
         // 「cb 词」（带空格）只有这一行；单输 cb 时它排第一，后面照常接本地结果（mac 体检 B33）。
@@ -269,51 +358,64 @@ internal sealed partial class LauncherModel
         }
 
         // 「提醒 …」（带空格）只列提醒（PLAN-v12 N6）：能认出时间的先是「建一条」，再是已有的提醒；单输「提醒」出补全提示（排在本地结果后面）。
-        var remindersOn = Features.IsOn(Feature.Reminders);
-        if (remindersOn && ReminderPhrase.Query(query) is { } rest)
+        // 提醒：关掉了全不认；只是改了别名时原来的 remind 不认，中文「提醒」、tx 照旧
+        var remindersOn = Features.IsOn(Feature.Reminders) && _commands.IsOn("builtin:reminder");
+        var firstWord = query.TrimStart().Split((char[]?)null, 2, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? string.Empty;
+        var remindBlocked = !CommandOn("builtin:reminder") && LauncherMatch.Fold(firstWord) == "remind";
+        if (remindersOn && !remindBlocked && ReminderPhrase.Query(query) is { } rest)
         {
             EmptyText = ReminderLauncher.EmptyText;
             return ReminderLauncher.Items(rest, ReminderCenter.List, DateTime.UtcNow, TimeZoneInfo.Local);
         }
 
-        var trimmed = query.Trim();
+        var command = query.Trim();
+        var trimmed = original.Trim();
         if (trimmed.Length == 0)
         {
-            return Home();
+            return Home().Where(item => !Hidden(item)).ToList();
         }
 
         var engines = Engines;
         var direct = DirectItems.ItemsFor(trimmed);
         var keywordItem = WebSearch.KeywordItem(trimmed, engines);
         var prompts = WebSearch.PromptItems(trimmed, engines);
-        var commandPrompts = LauncherCommands.PromptItems(trimmed);
-        var currencyPrompts = ExchangeRates.PromptItems(trimmed);
+        var commandPrompts = LauncherCommands.PromptItems(command);
+        var currencyPrompts = ExchangeRates.PromptItems(command);
+        if (!CommandOn("builtin:currency"))
+        {
+            currencyPrompts = (new List<LauncherItem>(), new List<LauncherItem>());
+        }
+
         var top = new List<LauncherItem>();
-        if (clipboardOn && LauncherCommands.ClipQuery(trimmed) is not null)
+        if (clipboardOn && LauncherCommands.ClipQuery(command) is not null)
         {
             top.Add(LauncherCommands.ClipItem(string.Empty));
         }
 
         if (translateOn)
         {
-            top.AddRange(LauncherCommands.TranslatePrompts(trimmed));
+            top.AddRange(Relabeled(LauncherCommands.TranslatePrompts(command)));
         }
 
-        top.AddRange(currencyPrompts.Exact);
+        top.AddRange(Relabeled(currencyPrompts.Exact));
 
         // 「ip」排在 cb / fy 后面、直达前面（mac）。
-        if (LauncherIp.Matches(trimmed))
+        if (CommandOn("builtin:ip") && LauncherIp.Matches(command))
         {
             top.AddRange(IpItems());
         }
 
         top.AddRange(direct);
-        StartRatesFetchIfStale(trimmed);
-        if (CalculationRow(trimmed) is { } calculation)
+        if (currencyOn)
+        {
+            StartRatesFetchIfStale(trimmed);
+        }
+
+        if (CalculationRow(trimmed, currencyOn) is { } calculation)
         {
             top.Add(calculation);
         }
-        else
+        else if (currencyOn)
         {
             // 货币打到一半（「100 美元 转 英」）列候选；有计算结果时（「10 km to m」）不出。
             top.AddRange(ExchangeRates.Suggestions(trimmed, SettingsService.Current.LauncherRecentCurrencies));
@@ -325,7 +427,7 @@ internal sealed partial class LauncherModel
         }
 
         top.AddRange(prompts.Exact);
-        top.AddRange(commandPrompts.Exact);
+        top.AddRange(Relabeled(commandPrompts.Exact));
 
         // 书签、浏览历史至少 2 个字才搜（1 个字母命中太多；含中文时 1 个字就搜，第四轮体检 U8）；
         // 书签先粗筛（几千个每敲一个字都完整打分太慢）。
@@ -341,7 +443,8 @@ internal sealed partial class LauncherModel
 
         candidates.AddRange(_settings);
         candidates.AddRange(LauncherActions.Items());
-        candidates.AddRange(SystemCommands.Items());
+        candidates.AddRange(SystemCommands.Items(_commands));
+        candidates.AddRange(Scripts.Select(script => ScriptItem(script)));
         candidates.AddRange(WebSearch.QuicklinkItems(engines));
         candidates.AddRange(bookmarks.Where(item => LauncherMatch.MayMatch(tokens, item)));
         candidates.AddRange(used);
@@ -362,15 +465,33 @@ internal sealed partial class LauncherModel
 
         // 直达项和书签 / 用过的网址可能是同一项：按 id 去重，留靠前的。
         // 在这个输入下选过的本地结果排到固定行前面（第四轮体检 E8）。
-        var ordered = LauncherMatch.Promoting(local, top, item =>
-            (LauncherUsageStore.Instance?.Boost(item, trimmed, now).Query ?? 0) > 0);
+        // 只有一字不差选过的才提到固定行前面（PLAN-v18 L6：开头对上的只加分，不越过固定行）
+        var ordered = LauncherMatch.Promoting(local, top, item => LauncherUsageStore.Instance?.Chose(item, trimmed) == true);
+        // 脚本的别名一字不差：排第一（mac：别名一字不差排第一）
+        if (Scripts.FirstOrDefault(script => ScriptAlias(script) == LauncherMatch.Fold(trimmed)) is { } aliasedScript)
+        {
+            var row = ScriptItem(aliasedScript);
+            ordered.RemoveAll(item => item.Id == row.Id);
+            ordered.Insert(0, row);
+        }
+
+        // 应用别名（PLAN-v18 L5）：输完整的别名时那个应用排第一
+        if (SettingsService.Current.LauncherAppAliases is { Count: > 0 } appAliases &&
+            AppAliases.KeyFor(trimmed, appAliases) is { } aliasKey &&
+            AppCatalog.Instance?.Apps.FirstOrDefault(app => app.AliasKey == aliasKey) is { } aliased)
+        {
+            ordered.RemoveAll(item => item.Id == aliased.Id);
+            ordered.Insert(0, aliased);
+        }
+
         var seen = new HashSet<string>();
         // 「新建提醒…」提示排在本地结果后面：输「提醒」想打开别的「提醒」应用的，Enter 照旧打开它（mac）。
-        var reminderPrompts = remindersOn ? ReminderLauncher.Prompts(trimmed) : Array.Empty<LauncherItem>();
-        return ordered.Concat(history).Concat(prompts.Partial).Concat(commandPrompts.Partial).Concat(currencyPrompts.Partial)
-            .Concat(reminderPrompts)
+        var reminderPrompts = remindersOn && !remindBlocked ? ReminderLauncher.Prompts(command) : Array.Empty<LauncherItem>();
+        return ordered.Concat(history).Concat(prompts.Partial).Concat(Relabeled(commandPrompts.Partial))
+            .Concat(Relabeled(currencyPrompts.Partial))
+            .Concat(Relabeled(reminderPrompts))
             .Concat(fallback)
-            .Where(item => seen.Add(item.Id))
+            .Where(item => !Hidden(item) && seen.Add(item.Id))
             .ToList();
     }
 
@@ -487,14 +608,15 @@ internal sealed partial class LauncherModel
     }
 
     /// <summary>计算那一行：算得出来就是结果；是汇率换算、可还没有汇率表时是「正在取汇率…」/「没取到汇率」占位行（不能粘贴）。</summary>
-    private LauncherItem? CalculationRow(string query)
+    /// <summary>计算那一行；currency：「命令」表里汇率换算开着（关掉 = 不换算货币、不取汇率表，算式照算）。</summary>
+    private LauncherItem? CalculationRow(string query, bool currency = true)
     {
-        if (Calculator.ItemFor(query, Rates, HomeCurrency) is { } item)
+        if (Calculator.ItemFor(query, currency ? Rates : null, HomeCurrency) is { } item)
         {
             return item;
         }
 
-        return Rates is null && ExchangeRates.RequestFor(query) is not null
+        return currency && Rates is null && ExchangeRates.RequestFor(query) is not null
             ? ExchangeRates.Placeholder(query, _ratesFailed)
             : null;
     }
@@ -683,6 +805,9 @@ internal sealed partial class LauncherModel
         LauncherKind.App => AppCatalog.Instance?.Find(target),
         LauncherKind.Setting => SettingsPages.Find(target),
         LauncherKind.Command => SystemCommands.Find(target),
+        LauncherKind.Script => Scripts.FirstOrDefault(script => string.Equals(script.Path, target, StringComparison.OrdinalIgnoreCase)) is { } script
+            ? ScriptItem(script)
+            : null,
         LauncherKind.Action => LauncherActions.Find(target),
         LauncherKind.Url => Location(kind, target, title),
         LauncherKind.Path => File.Exists(target) || Directory.Exists(target) ? Location(kind, target, title) : null,
@@ -973,6 +1098,9 @@ internal sealed partial class LauncherModel
             case LauncherKind.Translate:
                 Close();
                 TranslateHost.ShowText(item.Target);
+                break;
+            case LauncherKind.Script:
+                RunScript(item);
                 break;
             case LauncherKind.Prompt:
                 if (item.Completion is { } completion)
@@ -1673,7 +1801,295 @@ internal sealed partial class LauncherModel
             actions.Add(new PaletteItem("移到回收站", Glyphs.Delete, 4, () => MoveToRecycleBin(item), Danger: true));
         }
 
+        // 便携软件（PLAN-v18 §6 A4 A5）：搜到的 exe 能加成启动器的应用；不想看到的应用藏起来（设置 › 启动器 › 应用 里能恢复）
+        if (item.IsFileResult && item.Target.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+        {
+            actions.Add(new PaletteItem("添加到启动器的应用", Glyphs.Add, 4, () => AddToApps(item)));
+        }
+
+        if (item.Kind == LauncherKind.App)
+        {
+            actions.Add(new PaletteItem("从启动器里隐藏", Glyphs.Remove, 4, () => HideApp(item)));
+        }
+
+        // 自己的脚本（PLAN-v18 L1 第 8 批，mac ⌘E / 在访达中显示）：用编辑器改、在资源管理器里找到它；自带的没有文件
+        if (item.Kind == LauncherKind.Script &&
+            Scripts.FirstOrDefault(script => string.Equals(script.Path, item.Target, StringComparison.OrdinalIgnoreCase)) is { IsBundled: false } own)
+        {
+            actions.Add(new PaletteItem("编辑脚本", Glyphs.Edit, 1, () =>
+            {
+                HidePanel();
+                ScriptLibrary.Edit(own.Path);
+            }));
+            actions.Add(new PaletteItem("在资源管理器中显示", Glyphs.Folder, 1, () =>
+            {
+                HidePanel();
+                LauncherOpeners.Reveal(own.Path);
+            }));
+        }
+
         return actions;
+    }
+
+    // ---- 脚本的参数和列表（PLAN-v18 L1 第 7 批）
+
+    /// <summary>列表脚本上一次跑出来的：哪条脚本、哪组参数（列表打字时跑的那组；filter 的只按脚本），和一行行结果。</summary>
+    private (string Key, IReadOnlyList<ScriptLine> Lines, string? Failure)? _listResult;
+    private CancellationTokenSource? _listRun;
+    private string? _listPending;
+
+    /// <summary>
+    /// 「别名 空格 参数」那几行：正在打的参数是下拉的列出选项（Enter / Tab 补进去）；列表脚本（mode list）停 0.25 s 跑一遍、
+    /// 每行一条结果（filter 的只跑一次、按打的字过滤）；别的就是脚本那一行。
+    /// </summary>
+    private List<LauncherItem> ScriptRows(ScriptInvocation invocation)
+    {
+        var script = invocation.Script;
+        var rows = new List<LauncherItem>();
+        if (invocation.Typing < script.Arguments.Count && script.Arguments[invocation.Typing].Choices.Count > 0)
+        {
+            var argument = script.Arguments[invocation.Typing];
+            var typed = invocation.Typing < invocation.Arguments.Count ? invocation.Arguments[invocation.Typing] : string.Empty;
+            if (argument.OptionFor(typed) is null || invocation.Arguments.Count <= invocation.Typing)
+            {
+                var folded = LauncherMatch.Fold(typed);
+                var before = string.Join(" ", invocation.Arguments.Take(invocation.Typing).Select(ScriptText.Quoted));
+                var prefix = invocation.Keyword + " " + (before.Length > 0 ? before + " " : string.Empty);
+                foreach (var option in argument.Choices.Where(option => folded.Length == 0 ||
+                                                                      LauncherMatch.Fold(option.Title).Contains(folded, StringComparison.Ordinal)))
+                {
+                    rows.Add(new LauncherItem
+                    {
+                        Kind = LauncherKind.Prompt,
+                        Target = "script-option:" + option.Value,
+                        Title = option.Title,
+                        Subtitle = argument.Placeholder,
+                        Completion = prefix + ScriptText.Quoted(option.Title) + " ",
+                    });
+                }
+
+                if (rows.Count > 0)
+                {
+                    return rows;
+                }
+            }
+        }
+
+        if (script.Mode != ScriptMode.List)
+        {
+            rows.Add(ScriptItem(script, invocation.Arguments));
+            return rows;
+        }
+
+        // 列表：filter 的只跑一次（不带参数）、按打的字过滤；别的每组参数跑一遍
+        var key = script.Filters ? script.Path : script.Path + "\u001F" + string.Join("\u001F", invocation.Arguments);
+        if (_listResult is { } result && result.Key == key)
+        {
+            if (result.Failure is { } failure)
+            {
+                return new List<LauncherItem> { ListNote(script, failure) };
+            }
+
+            var filter = script.Filters ? LauncherMatch.Fold(string.Join(" ", invocation.Arguments)) : string.Empty;
+            for (var index = 0; index < result.Lines.Count; index++)
+            {
+                var line = result.Lines[index];
+                if (filter.Length > 0 && !LauncherMatch.Fold(line.Title + " " + line.Subtitle).Contains(filter, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                rows.Add(new LauncherItem
+                {
+                    Kind = LauncherKind.Script,
+                    Target = $"scriptline:{index}",
+                    Title = line.Title,
+                    Subtitle = line.Subtitle,
+                    Payload = line.Value,
+                    Completion = line.Autocomplete is { } complete ? invocation.Keyword + " " + complete : null,
+                });
+            }
+
+            return rows.Count > 0 ? rows : new List<LauncherItem> { ListNote(script, "没有结果") };
+        }
+
+        if (invocation.IsMissing)
+        {
+            return new List<LauncherItem> { ScriptItem(script, invocation.Arguments) };
+        }
+
+        StartList(script, invocation.Arguments, key);
+        return new List<LauncherItem> { ListNote(script, "正在运行…") };
+    }
+
+    private LauncherItem ListNote(ScriptCommand script, string text) => new()
+    {
+        Kind = LauncherKind.Script,
+        Target = "scriptline:-1",
+        Title = script.Title,
+        Subtitle = text,
+    };
+
+    /// <summary>停 0.25 s（还在打字就撤掉）跑列表脚本，跑完记下结果、还是这一句就重搜。</summary>
+    private void StartList(ScriptCommand script, IReadOnlyList<string> arguments, string key)
+    {
+        if (_listPending == key)
+        {
+            return;
+        }
+
+        _listRun?.Cancel();
+        var cts = new CancellationTokenSource();
+        _listRun = cts;
+        _listPending = key;
+        var query = Query;
+        var dispatcher = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(250, cts.Token);
+                var outcome = await ScriptRunner.RunAsync(script, script.Filters ? Array.Empty<string>() : arguments, cts.Token);
+                if (cts.IsCancellationRequested)
+                {
+                    return;
+                }
+
+                var failure = outcome.Succeeded
+                    ? null
+                    : outcome.Reason ?? ScriptText.LastLine(outcome.Error) ?? ScriptText.LastLine(outcome.Output) ?? $"退出码 {outcome.ExitCode}";
+                var lines = ScriptText.Lines(outcome.Output, script.Folder);
+                dispatcher?.TryEnqueue(() =>
+                {
+                    if (_listPending != key)
+                    {
+                        return;
+                    }
+
+                    _listPending = null;
+                    _listResult = (key, lines, failure);
+                    if (_shown && Query == query)
+                    {
+                        Search(Query);
+                        ResultsChanged(null);
+                    }
+                });
+            }
+            catch (OperationCanceledException)
+            {
+                // 打字撤掉了
+            }
+        });
+    }
+
+    /// <summary>列表的一行：Enter 打开它的网址 / 文件，不然粘贴它的值；valid = false 的只响一声。</summary>
+    private void RunListLine(LauncherItem item)
+    {
+        var index = int.TryParse(item.Target["scriptline:".Length..], out var value) ? value : -1;
+        var lines = _listResult?.Lines;
+        if (lines is null || index < 0 || index >= lines.Count || !lines[index].IsValid)
+        {
+            Beep();
+            return;
+        }
+
+        var line = lines[index];
+        if ((line.OpensUrl ?? line.OpensFile) is { } open)
+        {
+            Executed = true;
+            HidePanel();
+            if (LauncherOpeners.Start(open) is { } error)
+            {
+                NoticeHost.Show("打不开", error, NoticeTone.Warning);
+            }
+
+            return;
+        }
+
+        Paste(line.Value);
+    }
+
+    /// <summary>
+    /// Enter 跑脚本（PLAN-v18 L1）：要参数的只打了名字时先补「别名 空格」；必填的没填够响一声；写了 confirm 的先上膛；
+    /// 跑之前收起启动器（粘贴往原来的前台粘），结果交给 ScriptHost。
+    /// </summary>
+    private void RunScript(LauncherItem item)
+    {
+        if (item.Target.StartsWith("scriptline:", StringComparison.Ordinal))
+        {
+            RunListLine(item);
+            return;
+        }
+
+        if (Scripts.FirstOrDefault(script => string.Equals(script.Path, item.Target, StringComparison.OrdinalIgnoreCase)) is not { } script)
+        {
+            Beep();
+            return;
+        }
+
+        var arguments = item.Payload is null
+            ? Array.Empty<string>()
+            : item.Payload.Split('\u001F', StringSplitOptions.RemoveEmptyEntries);
+        if (script.TakesInput && item.Payload is null)
+        {
+            Complete(item);
+            return;
+        }
+
+        if (arguments.Length < script.RequiredCount || script.InvalidChoice(arguments) is not null)
+        {
+            Beep();
+            Announce(arguments.Length < script.RequiredCount ? $"还要填「{script.Arguments[arguments.Length].Placeholder}」" : "选项里没有这个");
+            return;
+        }
+
+        if (script.Confirmation is { } text && !Confirm(item, commandKey: false, text))
+        {
+            return;
+        }
+
+        // 密码参数：不记使用（mac 第三轮 C3）
+        if (!script.HasSecret)
+        {
+            Record(item with { Payload = null, Subtitle = string.Empty });
+        }
+
+        var target = OverlayHost.PasteTarget;
+        Executed = true;
+        HidePanel();
+        ScriptHost.Run(script, arguments, target);
+    }
+
+    /// <summary>「从启动器里隐藏」：记进隐藏名单（按目标），这一行原地删掉；设置 › 启动器 › 应用 里能恢复。</summary>
+    private void HideApp(LauncherItem item)
+    {
+        var hidden = SettingsService.Current.LauncherHiddenApps ?? new List<string>();
+        if (!hidden.Contains(item.Target, StringComparer.OrdinalIgnoreCase))
+        {
+            hidden.Add(item.Target);
+        }
+
+        SettingsService.Current.LauncherHiddenApps = hidden;
+        SettingsService.Save();
+        AppCatalog.Instance?.Remove(item.Target);
+        Results = Results.Where(row => row.Id != item.Id).ToList();
+        ResultsChanged(null);
+        NoticeHost.Show($"已从启动器里隐藏「{item.Title}」", "设置 › 启动器 › 应用 里能恢复", NoticeTone.Normal);
+    }
+
+    /// <summary>「添加到启动器的应用」：这个 exe 记进应用文件夹那一节（单个程序），重新扫一遍应用。</summary>
+    private void AddToApps(LauncherItem item)
+    {
+        var folders = SettingsService.Current.LauncherAppFolders ?? new List<string>();
+        if (!folders.Contains(item.Target, StringComparer.OrdinalIgnoreCase))
+        {
+            folders.Add(item.Target);
+        }
+
+        SettingsService.Current.LauncherAppFolders = folders;
+        SettingsService.Save();
+        AppCatalog.Instance?.Rescan();
+        NoticeHost.Show($"已添加「{Path.GetFileNameWithoutExtension(item.Target)}」", "过一会儿就能当应用搜到", NoticeTone.Normal);
     }
 
     /// <summary>移到回收站（能放回，不二次确认）：轻提示说一声，结果行原地删掉。</summary>

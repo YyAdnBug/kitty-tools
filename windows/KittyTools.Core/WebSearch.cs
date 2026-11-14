@@ -189,6 +189,28 @@ public static class WebSearch
     public static string KindTitle(SearchEngine engine)
         => engine.IsQuicklink ? "快捷链接" : engine.Fallback ? "搜索 · 没有本地结果时兜底" : "搜索 · 只用关键词";
 
+    /// <summary>
+    /// 启动器页「网页搜索与快捷链接」那一行的小字（PLAN-v18 L4，mac WebSearchPage.summary）：几个搜索、几个快捷链接、兜底的是哪几个、
+    /// 几条要改。
+    /// </summary>
+    public static string Summary(IReadOnlyList<SearchEngine> engines)
+    {
+        if (engines.Count == 0)
+        {
+            return "还没有，点进去添加";
+        }
+
+        var searches = engines.Where(engine => !engine.IsQuicklink).ToList();
+        var links = engines.Count - searches.Count;
+        var text = $"{searches.Count} 个搜索" + (links > 0 ? $"、{links} 个快捷链接" : string.Empty);
+        var fallback = searches.Where(engine => engine.Fallback).Select(Title).ToList();
+        text += fallback.Count == 0
+            ? "，不兜底"
+            : "；兜底：" + string.Join("、", fallback.Take(3)) + (fallback.Count > 3 ? $" 等 {fallback.Count} 个" : string.Empty);
+        var problems = engines.Count(engine => Problem(engine, engines) is not null);
+        return problems > 0 ? text + $"；{problems} 条要改一下" : text;
+    }
+
     /// <summary>预置的（「+」里能加回来，删除不用确认）。</summary>
     public static bool IsPreset(string id) => Presets.Any(preset => preset.Id == id);
 

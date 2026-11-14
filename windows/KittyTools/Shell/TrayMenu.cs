@@ -362,6 +362,23 @@ internal static partial class TrayMenu
         }
 
         AddSeparator(menu);
+        // 按应用停用快捷键（PLAN-v17 H6）：点托盘时前台已经是任务栏，用最后一个外部应用；资源管理器、我们自己、关掉了的不出
+        if (HotKeyBlocker.MenuApp() is { } app)
+        {
+            menu.Add(new Item(app.Blocked ? $"在「{app.Name}」中恢复快捷键" : $"在「{app.Name}」中停用快捷键", null, () =>
+            {
+                HotKeyBlocker.Toggle(app.Exe);
+                if (app.Blocked)
+                {
+                    NoticeHost.Show($"「{app.Name}」里恢复了快捷键", string.Empty, NoticeTone.Normal);
+                }
+                else
+                {
+                    NoticeHost.Show($"「{app.Name}」里不再响应快捷键", "按键交给它；设置 › 快捷键 里可以改", NoticeTone.Normal);
+                }
+            }));
+        }
+
         menu.Add(new Item("设置…", null, () => runtime?.ShowSettings(welcome: false), IsNew: Core.WhatsNew.InSettingsOnly(_fresh)));
         menu.Add(new Item("关于 Kitty Tools", null, () => runtime?.ShowSettings(welcome: false, "about")));
         // 下载中这一项是「正在下载 37% · 取消」，点了就取消（第四轮体检 E23）。

@@ -18,6 +18,11 @@ internal static partial class LauncherOpeners
         try
         {
             var info = new ProcessStartInfo(target) { UseShellExecute = true };
+            // 便携软件按当前目录找配置（PLAN-v18 §6 A6）：exe 在它自己的目录里启动；.lnk 不管（快捷方式自己写了起始位置）
+            if (target.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) && Path.GetDirectoryName(target) is { Length: > 0 } directory)
+            {
+                info.WorkingDirectory = directory;
+            }
             if (verb is not null)
             {
                 info.Verb = verb;

@@ -1,6 +1,6 @@
 // 自检档（Debug，或 Release 带 KITTY_PROBE_PROFILE）：`--launcher-script=<步骤>` 照脚本操作启动器，量每一步里 UI 线程最多卡了多久。
 // 不合成按键：改搜索框的字走 TextChanged（和打字同一条路），挪选中、Enter 直接调面板里键盘处理用的那几个方法。
-// 步骤用「;」隔开：show、hide、type:<字>（一个字一个字地加，120 ms 一个）、back:<个数>（一个一个删）、
+// 步骤用「;」隔开：show、hide、type:<字>（一个字一个字地加，120 ms 一个；␣ 是空格）、back:<个数>（一个一个删）、
 // down、up、enter、wait:<毫秒>、shot:<名字>（抓浮层窗口存到数据目录的 probe-<名字>.png）。每步一行日志 launcher.probe，跑完一行 launcher.probe-done（带全程最长的一次卡顿）。
 // 卡顿的量法：后台每 20 ms 往 UI 线程排一个空操作，记从排进去到它跑起来的时间。
 using KittyTools.Core;
@@ -55,7 +55,8 @@ internal static class LauncherProbe
                 OverlayHost.Hide(restoreForeground: false);
                 break;
             case "type":
-                foreach (var character in argument)
+                // 命令行里带不了空格（一层层转手会把引号去掉）：␣ 当空格打
+                foreach (var character in argument.Replace('␣', ' '))
                 {
                     if (OverlayHost.VisibleLauncher is { } panel)
                     {

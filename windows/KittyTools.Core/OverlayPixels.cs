@@ -122,7 +122,12 @@ public sealed class OverlayPixels
     /// ① 每一小块（边长约一个行高）出现最多的颜色当这一块的底色；② 和所在小块的底色差过门槛的像素算字（clearFills 时和页面底
     /// 有一点不一样的也算：代码块的底框连字一起去掉），再往外扩一两像素；③ 字的像素用同一行左右、同一列上下最近的非字像素插值补上。
     /// </summary>
-    public OverlayRgb? Inpaint(OverlayRect rect, OverlayPixels original, double lineHeight, OverlayRgb background, bool clearFills)
+    /// <param name="sampling">字色只在这块里取（原文的段框；PLAN-v18 S8 / mac 30c71710：去字的范围可能伸到旁边的图标上）；null = 不取。</param>
+    /// <param name="protecting">这些框（图上留原文的段）里一个像素都不动。</param>
+    /// <param name="outside">段外面的底色：字在一块色块里（选中的按钮）时，原文框外面和它一样的像素不算字。</param>
+    public OverlayRgb? Inpaint(
+        OverlayRect rect, OverlayPixels original, double lineHeight, OverlayRgb background, bool clearFills,
+        OverlayRect? sampling = null, IReadOnlyList<OverlayRect>? protecting = null, OverlayRgb? outside = null)
     {
         var x0 = Math.Max(0, Down(rect.MinX));
         var x1 = Math.Min(Width, Up(rect.MaxX));
@@ -148,7 +153,7 @@ public sealed class OverlayPixels
                 if (distance > ScreenshotOverlay.InkLimit)
                 {
                     ink[(y - y0) * w + (x - x0)] = true;
-                    if (local.Distance(background) < 0.06)
+                    if (local.Distance(background) < 0.06 && sampling is { } source && source.Contains(x, y))
                     {
                         samples.Add((distance, color));
                     }
@@ -162,6 +167,36 @@ public sealed class OverlayPixels
 
         var radius = Math.Max(1, Round(lineHeight * 0.06));
         var mask = Dilate(ink, w, h, radius);
+        // 字在一块色块里（底色和段外面的不一样）时，原文框外面和段外底色一样的像素不是字（mac 43931601：按钮周围晕开一圈）
+        if (outside is { } around && around.Distance(background) > 0.12 && sampling is { } own)
+        {
+            for (var y = y0; y < y1; y++)
+            {
+                for (var x = x0; x < x1; x++)
+                {
+                    if (!own.Contains(x, y) && original.Color(x, y).Distance(around) < ScreenshotOverlay.InkLimit)
+                    {
+                        mask[(y - y0) * w + (x - x0)] = false;
+                    }
+                }
+            }
+        }
+
+        // 留原文的段一个像素都不动（扩毛边扩进去的也撤掉）
+        foreach (var kept in protecting ?? Array.Empty<OverlayRect>())
+        {
+            var kx0 = Math.Max(x0, Down(kept.MinX));
+            var kx1 = Math.Min(x1, Up(kept.MaxX));
+            var ky0 = Math.Max(y0, Down(kept.MinY));
+            var ky1 = Math.Min(y1, Up(kept.MaxY));
+            for (var y = ky0; y < ky1; y++)
+            {
+                for (var x = kx0; x < kx1; x++)
+                {
+                    mask[(y - y0) * w + (x - x0)] = false;
+                }
+            }
+        }
         var fills = new OverlayRgb?[w * h];
         for (var y = 0; y < h; y++)
         {
@@ -514,10 +549,57 @@ public sealed class OverlayPixels
         return style with { Phrases = chips.Select(chip => (IReadOnlyList<string>)chip.Words).ToList() };
     }
 
-    /// <summary>框外一圈的采样，出现最多的那种颜色：原文的底色（不用亮度中位数：列表第一行常常整行都是行内代码块）。</summary>
-    public OverlayRgb? Ring(OverlayRect box)
+    /// <summary>
+    /// 这块（除去 except 那块）是不是空的（PLAN-v18 S8 / mac isBlank）：每隔 2 像素看一个，和底色差过 0.12 的不到 3%。
+    /// 译文伸出原文的地方要先问它：图标、色点、开关不是字、识字框看不见，排过去去字会把它们擦掉。
+    /// </summary>
+    public bool IsBlank(OverlayRect area, OverlayRect except, OverlayRgb background)
     {
-        var outset = Math.Max(3, box.Height * 0.12);
+        var x0 = Math.Max(0, Down(area.MinX));
+        var x1 = Math.Min(Width, Up(area.MaxX));
+        var y0 = Math.Max(0, Down(area.MinY));
+        var y1 = Math.Min(Height, Up(area.MaxY));
+        if (x1 <= x0 || y1 <= y0)
+        {
+            return true;
+        }
+
+        var total = 0;
+        var inked = 0;
+        for (var y = y0; y < y1; y += 2)
+        {
+            for (var x = x0; x < x1; x += 2)
+            {
+                if (except.Contains(x, y))
+                {
+                    continue;
+                }
+
+                total++;
+                if (Color(x, y).Distance(background) > 0.12)
+                {
+                    inked++;
+                }
+            }
+        }
+
+        return inked * 100 <= total * 3;
+    }
+
+    /// <summary>
+    /// 一段原文的底色（mac background(of:erasing:)）：原文框外贴身那一圈八成以上是同一种颜色就是它；不够八成再看框里贴边那一圈
+    /// （1x 截图里按钮只比字框大一两个像素）；两圈都不够还按去字范围外面那一圈。
+    /// </summary>
+    public OverlayRgb Background(OverlayRect box, OverlayRect erase)
+        => Ring(box, minimumShare: 0.8) ?? Ring(box, inside: true, minimumShare: 0.8) ?? Ring(erase) ?? OverlayRgb.Light;
+
+    /// <summary>
+    /// 框外一圈的采样，出现最多的那种颜色：原文的底色（不用亮度中位数：列表第一行常常整行都是行内代码块）。
+    /// minimumShare：这种颜色占不到这么多就当没取到；inside：改采框里面贴边的那一圈（往里缩 1 像素）。
+    /// </summary>
+    public OverlayRgb? Ring(OverlayRect box, bool inside = false, double minimumShare = 0)
+    {
+        var outset = inside ? -1 : Math.Max(3, box.Height * 0.12);
         var x0 = Down(box.MinX - outset);
         var x1 = Up(box.MaxX + outset);
         var y0 = Down(box.MinY - outset);
@@ -532,7 +614,7 @@ public sealed class OverlayPixels
         var counts = new Dictionary<int, (int Count, int Red, int Green, int Blue)>();
         void Collect(int x, int y)
         {
-            if (box.Contains(x, y) || !Contains(x, y))
+            if ((!inside && box.Contains(x, y)) || !Contains(x, y))
             {
                 return;
             }
@@ -561,6 +643,11 @@ public sealed class OverlayPixels
         }
 
         var best = counts.Values.MaxBy(value => value.Count);
+        if (best.Count < minimumShare * counts.Values.Sum(value => value.Count))
+        {
+            return null;
+        }
+
         var n = best.Count * 255.0;
         return new OverlayRgb(best.Red / n, best.Green / n, best.Blue / n);
     }
