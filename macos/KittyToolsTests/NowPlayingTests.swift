@@ -196,13 +196,21 @@ struct NowPlayingTests {
     let island = Island(showing: nil, geometry: notch, activities: [media])
     #expect(island.swipeTrack(forward: true))
     #expect(sent == [.next] && island.skip == Island.Skip(forward: true, count: 1))
+    // 耳朵露着：岛伸出一截（下一首往右、上一首往左：箭头在哪边就往哪边伸）
+    #expect(island.stretch == Island.stretchReach)
     // 不支持上一首：不发、不闪、不占这一次手势
     #expect(!island.swipeTrack(forward: false))
     #expect(sent == [.next] && island.skip?.count == 1)
-    // 卡片开着照样认
-    island.tapped()
-    island.swipeTrack(forward: true)
-    #expect(sent == [.next, .next])
+    // 卡片开着照样认；岛不伸（箭头闪在卡片的封面上）
+    let open = Island(showing: nil, geometry: notch, activities: [media])
+    open.tapped()
+    open.swipeTrack(forward: true)
+    #expect(sent == [.next, .next] && open.stretch == 0)
+    // 换封面时翻面：前后都有封面、编号变了才翻
+    #expect(IslandMediaArt.flips(from: "a", to: "b", had: true, has: true))
+    #expect(!IslandMediaArt.flips(from: "a", to: "a", had: true, has: true))
+    #expect(!IslandMediaArt.flips(from: nil, to: "b", had: false, has: true))
+    #expect(!IslandMediaArt.flips(from: "a", to: nil, had: true, has: false))
     // 那一张开着时不认（2026-11-14 起它上面没有播放那一行，切了没处给反馈）
     let board = Island(showing: nil, geometry: notch, board: [], activities: [media])
     #expect(!board.swipeTrack(forward: true))

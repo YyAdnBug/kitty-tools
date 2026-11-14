@@ -124,8 +124,8 @@ import SwiftUI
   @ObservationIgnored private var glancing: String?
   /// 岛上现在是音量 / 亮度的那一行（showLevel）；不是就是 nil
   private(set) var level: Level?
-  /// 形体现在按音量 / 亮度提示的样子算（刘海两边各伸出一截、不往下长）。比 level 多留一拍：收回时内容先退、0.2 秒后
-  /// 形体才缩，这一拍里 level 已经没了、形体得还是提示的样子——不然会按上一份内容的大小往下鼓出一块空的再缩回
+  /// 形体现在按音量 / 亮度提示的样子算（刘海两边各伸出一截、不往下长）。比 level 多留一拍：收回时内容先开始退、形体
+  /// 晚两帧才缩，这一拍里 level 已经没了、形体得还是提示的样子——不然会按上一份内容的大小往下鼓出一块空的再缩回
   private(set) var levelShaped = false
   @ObservationIgnored private var hoverExpand: Task<Void, Never>?
   /// 刘海岛插件添加着（Feature.island，2026-11-13 插件化 P1b；AppDelegate 跟着开关给）：点刘海那一张、活动（耳朵、菜单栏那一项、
@@ -199,7 +199,8 @@ import SwiftUI
     var windowSize: CGSize {
       switch self {
       case .notch(_, let notch):
-        CGSize(width: Island.canvasWidth, height: notch + Island.boardHeight + 26)
+        // 底下留 40：阴影（半径 14、下移 6）+ 那一张列满时 bloom 过冲的那一下（原来 26，过冲峰值时阴影会被切平）
+        CGSize(width: Island.canvasWidth, height: notch + Island.boardHeight + 40)
       case .capsule: CGSize(width: Island.canvasWidth, height: Island.boardHeight + 34)
       }
     }
@@ -260,6 +261,13 @@ import SwiftUI
   /// 离开岛后至少再留多久
   static let leaveDelay = Duration.milliseconds(1500)
   static let clickGuard = Duration.milliseconds(300)
+
+  /// 展开成卡片、开那一张的弹簧（2026-11-14 照 Alcove 的逐帧实录：约 250 ms 到顶、冲过头约 7% 再落回，折成 duration
+  /// 0.38 / bounce 0.35）。只给岛的「大面」用：提示那一行、耳朵出现照旧是 Style.Motion.island（0.42 / 0.22，过冲约 2%）——
+  /// 一行小东西弹这么大显得晃，Alcove 的提示、一瞥也不过冲。减弱动态效果时同别的曲线退成 0.2 s
+  static var bloom: Animation? {
+    Style.reduceMotion ? .easeInOut(duration: 0.2) : .spring(duration: 0.38, bounce: 0.35)
+  }
   /// 刚换面之后多久不轮（评审 1）：指针停在刘海上 0.3 秒卡片自己展开了，你那一下点击 / 下滑才到——本意是「打开」，
   /// 不能当成「轮到下一个」把刚出来的卡片又换掉
   static let turnGuard = Duration.milliseconds(800)
@@ -437,7 +445,7 @@ import SwiftUI
       if let id = glancing { expand(id) }
       if !isExpanded, !isBoardOpen {
         changedAt = .now
-        withAnimation(Style.Motion.island.animation()) { isExpanded = true }
+        withAnimation(Self.bloom) { isExpanded = true }
       }
       hoverCheck?.cancel()
       hoverCheck = Task { [weak self] in
@@ -516,6 +524,11 @@ import SwiftUI
     var count: Int
   }
   private(set) var skip: Skip?
+  /// 刚用双指左右滑切了歌、耳朵露着时：岛往一侧伸出这么多（正 = 往右、下一首；负 = 往左、上一首），那一截里
+  /// 出一个箭头，约 0.24 秒后弹回（2026-11-14 照 Alcove 的实录：伸 24 pt，伸 230 ms、回 250 ms）。摆出来的岛不弹回
+  private(set) var stretch: CGFloat = 0
+  @ObservationIgnored private var stretchBack: Task<Void, Never>?
+  static let stretchReach: CGFloat = 24
 
   /// 双指在岛上左右滑（手指往左 = 下一首，同系统翻页的方向；以 Alcove 为准的那一轮 A3）：正在播放露在耳朵上、它的卡片
   /// 开着时切歌（那一张开着时不认：2026-11-14 起它上面没有播放那一行，切了没处给反馈）。一次手势只切一首（IslandHost.scrollWheel）；这个源不支持上 / 下一首就不动；
@@ -529,6 +542,19 @@ import SwiftUI
     media.send(forward ? .next : .previous)
     skip = Skip(forward: forward, count: (skip?.count ?? 0) + 1)
     haptic(.generic)
+    // 耳朵露着（卡片没开）：岛伸一下——下一首往右、上一首往左（箭头在哪边就往哪边伸，同播放控制里两个按钮的位置；
+    // 和手指滑的方向相反）。卡片开着、减弱动态效果时不伸，箭头照旧闪在封面上
+    if content == nil, isShowingWings, !Style.reduceMotion {
+      stretch = forward ? Self.stretchReach : -Self.stretchReach
+      stretchBack?.cancel()
+      if !isStaged {
+        stretchBack = Task { [weak self] in
+          try? await Task.sleep(for: .milliseconds(240))
+          guard !Task.isCancelled else { return }
+          self?.stretch = 0
+        }
+      }
+    }
     return true
   }
 
@@ -682,6 +708,8 @@ import SwiftUI
         actions: [], quiet: true, announces: false)
       level = next
       levelShaped = true
+      // 指针停在展开的卡片上按的键：别留着「展开着」——形体从卡片缩到这一条要走不过冲那么多的曲线（评审 1）
+      isExpanded = false
       // 这一条上没有能点的东西：不算悬停（指针正在被顶掉的卡片上时也放开），窗口不接鼠标——它盖着刘海两边的菜单栏
       hoverCheck?.cancel()
       isHovered = false
@@ -847,7 +875,7 @@ import SwiftUI
     }
   }
 
-  /// 收起：内容先退（0.12 s），0.08 s 后形体缩回刘海，动画结束再移走窗口。鼠标在岛上时排着一条的（点了 ×、按钮，
+  /// 收起：内容糊着退、形体只晚两帧就缩回刘海（一起走），动画结束再移走窗口。鼠标在岛上时排着一条的（点了 ×、按钮，
   /// 或者调用方自己收），直接换成排着的那条
   func dismiss() {
     dwell?.cancel()
@@ -873,14 +901,15 @@ import SwiftUI
     isExpanded = false
     window?.ignoresMouseEvents = true
     onToneChange?(nil)
-    // 内容先退（0.12 s），0.08 s 后形体缩回刘海（Whisker S2 的两拍；用户 2026-10-26 改成同时走后觉得没原来好看，
-    // 改回来——那次的卡顿其实是收起终点露在刘海外面，已经由 IslandGeometry.tucked 解决）
+    // 内容和形体一起走（2026-11-14 照 Alcove 的实录：收起一开始形体就动、约 0.4 s 走完，内容边模糊边退——IslandView
+    // 的 appear 退场）。原来是两拍：内容 0.12 s 淡出、等 0.2 s 形体才缩（用户 2026-10-26 试过同时走觉得没两拍好看，
+    // 那次内容是纯淡出；这次是模糊退场，用户看了实录后定的）。形体只晚两帧：让内容先开始糊
     withAnimation(.easeIn(duration: 0.12)) {
       content = nil
       isBoardOpen = false
     }
     dwell = Task { [weak self] in
-      try? await Task.sleep(for: .milliseconds(200))
+      try? await Task.sleep(for: Self.retractLag)
       guard let self, !Task.isCancelled else { return }
       self.isRetracting = true
       withAnimation(Style.Motion.retract.animation()) {
@@ -906,6 +935,8 @@ import SwiftUI
   /// 缩回动画走完的时间（retract 0.34 s + 余量）：之后才移走窗口
   /// （缩回的弹簧标的 0.34 s 是感知上的时长，真停稳还要一会儿；终点藏在刘海后面，多留一会儿看不出来）
   private static let retractTime = Duration.milliseconds(600)
+  /// 收起时形体比内容晚多久开始缩
+  private static let retractLag = Duration.milliseconds(30)
 
   /// 打开 / 收起那一张（快捷键「打开刘海岛」、点刘海）。岛上正有提示时换成那一张（那条已经记在列表里）。
   /// byKeyboard：快捷键叫出的——临时当 key，Esc / ←→ / ↩ 能用，到点自己收（U9）
@@ -1486,7 +1517,8 @@ struct IslandView: View {
         } else if wings {
           // 耳朵：刘海两侧各 36，和刘海同高；指针停上去同样鼓起一圈
           CGSize(
-            width: notchWidth + Island.wing * 2 + (peek ? Island.peekGrow.width * 2 : 0),
+            width: notchWidth + Island.wing * 2 + (peek ? Island.peekGrow.width * 2 : 0)
+              + abs(island.stretch),
             height: notchHeight + (peek ? Island.peekGrow.height : 0))
         } else if peek {
           CGSize(
@@ -1495,13 +1527,16 @@ struct IslandView: View {
         } else {
           IslandGeometry.tucked(notchWidth: notchWidth, notchHeight: notchHeight)
         }
-      return IslandGeometry(
+      var geometry = IslandGeometry(
         frame: CGRect(x: (canvas - size.width) / 2, y: 0, width: size.width, height: size.height),
         ear: open ? 10 : (peek ? 8 : (wings ? 6 : 0)),
         bottom: open
           ? (island.isExpanded || island.isBoardOpen ? 24 : 22) : (peek ? 13 : (wings ? 12 : 8)),
         floor: IslandGeometry.tucked(notchWidth: notchWidth, notchHeight: notchHeight),
         contentTop: notchHeight, capsule: false)
+      // 滑动切歌：只往一侧伸（另一侧的边不动）——整体宽了 stretch、中线往那一侧挪一半
+      if wings, !open { geometry.shift = island.stretch / 2 }
+      return geometry
     case .capsule:
       let size = CGSize(
         width: min(max(120, contentSize.width), Island.maxWidth),
@@ -1516,7 +1551,11 @@ struct IslandView: View {
   /// 鼓起是 pop（小东西出现的那条，带一点弹）。减弱动态效果时不伸缩
   private var curve: Animation? {
     if reduceMotion { return nil }
-    if island.isOpen { return Style.Motion.island.animation() }
+    if island.isOpen {
+      // 大面（卡片、那一张）冲过头一点再落回；一行的提示、一瞥不过冲那么多
+      return island.isExpanded || island.isBoardOpen
+        ? Island.bloom : Style.Motion.island.animation()
+    }
     return island.isPeeking ? Style.Motion.pop.animation() : Style.Motion.retract.animation()
   }
 
@@ -1566,17 +1605,35 @@ struct IslandView: View {
     }
   }
 
-  /// 耳朵上的两小块（收起、有活动时）：画在刘海那一行里，不垫刘海高度；换了露的活动就交叉淡入
+  /// 耳朵上的两小块（收起、有活动时）：画在刘海那一行里，不垫刘海高度；出现、换了露的活动都是模糊着进出（melt）
   @ViewBuilder private func wings(_ geometry: Island.Geometry) -> some View {
     if case .notch(let width, let height) = geometry, island.isShowingWings, !island.isOpen,
       let activity = island.activity
     {
-      IslandWings(
-        activity: activity, notchWidth: width, notchHeight: height, peeking: island.isPeeking,
-        skip: island.skip
-      )
-      .id(activity.id)
-      .transition(.opacity.animation(.easeInOut(duration: 0.2)))
+      ZStack {
+        IslandWings(
+          activity: activity, notchWidth: width, notchHeight: height, peeking: island.isPeeking,
+          skip: island.skip
+        )
+        .id(activity.id)
+        .transition(melt)
+        // 滑动切歌：伸出去的那一截里的箭头（形体的那一截由 shape() 伸出来）
+        if island.stretch != 0 {
+          let side: CGFloat = island.stretch > 0 ? 1 : -1
+          Image(systemName: island.stretch > 0 ? "forward.fill" : "backward.fill")
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.white.opacity(0.9))
+            .frame(height: height)
+            .offset(
+              x: side
+                * (width / 2 + Island.wing + (island.isPeeking ? Island.peekGrow.width : 0)
+                  + Island.stretchReach / 2 - 3)
+            )
+            .transition(melt)
+            .accessibilityHidden(true)
+        }
+      }
+      .transition(melt)
     }
   }
 
@@ -1586,7 +1643,7 @@ struct IslandView: View {
       let level = island.level
     {
       IslandLevelWings(level: level, notchWidth: width, notchHeight: height)
-        .transition(.opacity.animation(.easeInOut(duration: 0.18)))
+        .transition(melt)
     }
   }
 
@@ -1596,8 +1653,8 @@ struct IslandView: View {
     contentSize = size
   }
 
-  /// 内容出场：晚 60 ms，blur 8 → 0、scale 0.9 → 1（顶部锚点）、透明度（smooth 0.28）；退场 0.12 s 淡出。
-  /// 形体那边同时在长，内容被它裁着出来
+  /// 内容出场：晚 60 ms，blur 8 → 0、scale 0.9 → 1（顶部锚点）、透明度（smooth 0.28）；退场同一套反着走、0.18 s
+  /// （2026-11-14 照 Alcove：内容进出一律「模糊 + 缩放」，原来退场是 0.12 s 纯淡出）。形体那边同时在长 / 缩，内容被它裁着
   private var appear: AnyTransition {
     reduceMotion
       ? .opacity
@@ -1605,7 +1662,18 @@ struct IslandView: View {
         insertion: .modifier(
           active: Emerge(progress: 0), identity: Emerge(progress: 1)
         ).animation(.smooth(duration: 0.28).delay(0.06)),
-        removal: .opacity.animation(.easeIn(duration: 0.12)))
+        removal: .modifier(
+          active: Emerge(progress: 0), identity: Emerge(progress: 1)
+        ).animation(.easeIn(duration: 0.18)))
+  }
+
+  /// 刘海那一行里的小东西（耳朵上的封面、读数、音量提示）进出：blur 6 → 0、scale 0.85 → 1（原地）、透明度，0.24 s；
+  /// 减弱动态效果时只淡
+  private var melt: AnyTransition {
+    reduceMotion
+      ? .opacity.animation(.easeInOut(duration: 0.2))
+      : .modifier(active: Melt(progress: 0), identity: Melt(progress: 1))
+        .animation(.smooth(duration: 0.24))
   }
 
   private func row(_ content: Island.Content) -> some View {
@@ -1885,6 +1953,18 @@ extension View {
   }
 }
 
+/// 刘海那一行里的小东西进出：blur 6 → 0、scale 0.85 → 1（原地）、透明度
+private struct Melt: ViewModifier {
+  let progress: Double
+
+  func body(content: Content) -> some View {
+    content
+      .blur(radius: 6 * (1 - progress))
+      .scaleEffect(0.85 + 0.15 * progress)
+      .opacity(progress)
+  }
+}
+
 /// 内容出场：blur 8 → 0、scale 0.9 → 1（顶部锚点）、透明度
 private struct Emerge: ViewModifier {
   let progress: Double
@@ -1907,6 +1987,8 @@ nonisolated struct IslandGeometry: Equatable {
   var contentTop: CGFloat
   /// 无刘海屏的圆角卡片（没有耳朵、四角同一个半径）
   var capsule: Bool
+  /// 形体的中线往右挪多少（滑动切歌时往一侧伸；平时 0）。可动画
+  var shift: CGFloat = 0
 
   /// 刘海屏收起时的形体：缩进真刘海里面（每侧让出 6、底边让出 6、没有耳朵、底角 8），被硬件刘海整个挡住。
   /// 收起的终点要是比刘海大（原来每侧宽 2、顶上带 6 的耳朵），缩回走完移走窗口时露在外面的那几点黑边一下子没了，
@@ -1925,18 +2007,24 @@ nonisolated struct IslandOutline: InsettableShape {
   var inset: CGFloat = 0
 
   var animatableData:
-    AnimatablePair<AnimatablePair<CGFloat, CGFloat>, AnimatablePair<CGFloat, CGFloat>>
+    AnimatablePair<
+      AnimatablePair<AnimatablePair<CGFloat, CGFloat>, AnimatablePair<CGFloat, CGFloat>>, CGFloat
+    >
   {
     get {
       AnimatablePair(
-        AnimatablePair(shape.frame.width, shape.frame.height),
-        AnimatablePair(shape.ear, shape.bottom))
+        AnimatablePair(
+          AnimatablePair(shape.frame.width, shape.frame.height),
+          AnimatablePair(shape.ear, shape.bottom)),
+        shape.shift)
     }
     set {
-      shape.frame.origin.x += (shape.frame.width - newValue.first.first) / 2
-      shape.frame.size = CGSize(width: newValue.first.first, height: newValue.first.second)
-      shape.ear = newValue.second.first
-      shape.bottom = newValue.second.second
+      let size = newValue.first.first
+      shape.frame.origin.x += (shape.frame.width - size.first) / 2
+      shape.frame.size = CGSize(width: size.first, height: size.second)
+      shape.ear = newValue.first.second.first
+      shape.bottom = newValue.first.second.second
+      shape.shift = newValue.second
     }
   }
 
@@ -1950,7 +2038,8 @@ nonisolated struct IslandOutline: InsettableShape {
     let width = max(shape.frame.width, shape.floor.width)
     let height = max(shape.frame.height, shape.floor.height)
     let rect = CGRect(
-      x: canvas.midX - width / 2, y: canvas.minY + shape.frame.minY, width: width, height: height
+      x: canvas.midX - width / 2 + shape.shift, y: canvas.minY + shape.frame.minY, width: width,
+      height: height
     ).insetBy(dx: inset, dy: inset)
     guard !shape.capsule else {
       return RoundedRectangle(

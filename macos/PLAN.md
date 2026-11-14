@@ -769,6 +769,25 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
       从菜单栏那一项展开的卡片上往下滑现在也轮。
     - 单测 `IslandActivityTests.openingAndRotating`、`NowPlayingTests.hoverExpandAndFeel` / `swipeSkipsTrack`；截图自检去掉
       island-board-activities / island-board-media；HANDTEST「刘海岛完善第 7 批」。
+  - 第 8 批 照 Alcove 的逐帧实录对动画（2026-11-14）。
+    - **实录**（不进仓库，`macos/build/research/island-polish-2026-11-13/alcove/README.md`）：用户在场操作 Alcove 90 秒，测试宿主
+      把屏幕顶上正中一条录成 60 fps 的视频，离线逐帧量黑色形体的宽高。量到的：展开约 250 ms 到顶、冲过头约 7%、480 ms 落定
+      （折成 spring 0.38 / 0.35；我们 0.42 / 0.22 是 336 ms 到顶、过冲约 2%）；收起一开始就动、400 ms 走完、不过冲，内容边模糊
+      边退（我们是内容先淡出、等 0.2 s 形体才缩）；内容进出一律模糊 + 缩放；滑动切歌时岛往一侧伸 24 pt、里面出箭头、弹回，
+      随后封面翻面；换不同种类的内容时形体先缩回刘海再长出来（耳朵 → 音量提示共约 0.9 s）；展开的卡片四周一圈渐进模糊。
+      鼓起（每侧 +8.5、往下 +6）、耳朵宽（37）和我们基本一样。
+    - 给了五项推荐，用户「全部按推荐」：① 展开成卡片 / 那一张的弹簧换成 `Island.bloom` = spring(0.38, 0.35)，只给岛的大面
+      （Whisker「bounce ≤ 0.25」写明的例外；一行的提示、耳朵出现照旧 `island`）；② 收起改成内容和形体一起走，内容用
+      模糊退场（形体只晚 30 ms）——10 月试过同时走、用户嫌不如两拍，那次内容是纯淡出；③ 耳朵上的内容、音量提示也用
+      模糊进出（`melt`）；④ 滑动切歌时岛往一侧伸 24 pt（下一首往右、上一首往左；减弱动态效果时不伸；`Island.stretch` → `IslandGeometry.shift`，形体多一个可动画的
+      横向偏移）、伸出的那一截里出箭头，换封面时翻面（`IslandMediaArt`）；⑤ 音量提示**不**照搬「先缩回刘海」（0.9 s，
+      按键要跟手），只换内容的进出。**没做**：渐进模糊（要私有的可变模糊或者另垫一层模糊窗口，单独一批先量开销）、
+      展开前微微缩一下的预备动作。
+    - 掉帧探针 `IslandFrameProbeTests.measure()` 改后跑过一遍（屏上，Alcove 开着不影响主线程的拍子）：出现、悬停展开、收起、
+      开 / 收那一张、进行中换成结果、收起结果，合计掉 1 帧、最长一拍 33.3 ms。`recording()`（逐帧量形体）没跑：Alcove 的窗口
+      盖在刘海上，量不准，等用户退出 Alcove 后再跑。评审后补的：指针在卡片上按音量键时形体不走 bloom、翻面被打断不闪
+      中间那张、窗口底下多留 14 pt 给过冲时的阴影。
+    - 单测 `NowPlayingTests.swipeSkipsTrack`（伸缩、翻面的判断）；截图自检 island-wings-media-skip；HANDTEST「刘海岛完善第 8 批」。
 
 ### 晾衣绳（第十族，0.7.0，2026-10-26 立项）
 

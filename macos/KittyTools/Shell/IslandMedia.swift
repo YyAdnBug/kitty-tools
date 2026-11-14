@@ -7,18 +7,32 @@
 // 上一首 / 下一首按快照里的 canPrevious / canNext 灰掉；两个都没有、又能跳的源（Chrome 里单个视频、播客）换成后退 /
 // 前进 15 秒。点封面切到放歌的那个 App。
 // 以 Alcove 为准的那一轮（2026-11-13）：跳动条和进度条跟封面的主色（ArtworkTint，换封面才算一次）；双指左右滑切歌时
-// 封面上闪一个箭头（IslandSkipArrow）；指针在岛上时右耳的跳动条换成播放 / 暂停（IslandWings）。
+// 卡片的封面上闪一个箭头（IslandSkipArrow；耳朵露着时是岛往一侧伸一下、箭头出在伸出的那一截里，2026-11-14）；指针在岛上时右耳的跳动条换成播放 / 暂停（IslandWings）。
 
 import SwiftUI
 
-/// 封面：圆角方块（色块的圆角，边长 × 0.225）；没有封面（网页视频刚换片的头两秒）是放歌那个 App 的图标，再没有是音符
+/// 封面：圆角方块（色块的圆角，边长 × 0.225）；没有封面（网页视频刚换片的头两秒）是放歌那个 App 的图标，再没有是音符。
+/// **换了一张封面时翻面**（2026-11-14 照 Alcove 的实录）：旧的那张绕竖轴转到侧立（0.14 s），换成新的从另一侧转回来
+/// （0.32 s，带一点弹）。只在两张都是封面、封面的编号变了时翻（同一张重新解出来、封面晚到不翻）；减弱动态效果时直接换
 struct IslandMediaArt: View {
   let media: Island.Media
   let size: CGFloat
+  /// 翻到一半时还画着的旧封面
+  @State private var held: NSImage?
+  @State private var angle = 0.0
+  @State private var seen: String?
+  @State private var flip: Task<Void, Never>?
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  init(media: Island.Media, size: CGFloat) {
+    self.media = media
+    self.size = size
+    _seen = State(initialValue: media.snapshot.artworkID)
+  }
 
   var body: some View {
     Group {
-      if let artwork = media.artwork {
+      if let artwork = held ?? media.artwork {
         Image(nsImage: artwork).resizable().aspectRatio(contentMode: .fill)
       } else if let icon = media.appIcon {
         Image(nsImage: icon).resizable().aspectRatio(contentMode: .fit)
@@ -32,7 +46,39 @@ struct IslandMediaArt: View {
     }
     .frame(width: size, height: size)
     .clipShape(RoundedRectangle(cornerRadius: size * 0.225, style: .continuous))
+    .rotation3DEffect(.degrees(angle), axis: (x: 0, y: 1, z: 0), perspective: 0.4)
     .accessibilityHidden(true)
+    .onChange(of: media.artwork) { old, new in
+      let id = media.snapshot.artworkID
+      defer { seen = id }
+      guard Self.flips(from: seen, to: id, had: old != nil, has: new != nil), !reduceMotion
+      else { return }
+      flip?.cancel()
+      // 上一次还没翻完又来一张：接着画正画着的那张（不闪一下中间那张）
+      held = held ?? old
+      flip = Task {
+        withAnimation(.easeIn(duration: 0.14)) { angle = 90 }
+        try? await Task.sleep(for: .milliseconds(140))
+        // 被下一次换封面打断：状态归新的那一次管，这里不碰
+        guard !Task.isCancelled else { return }
+        // 侧立的那一刻换成新的、摆到另一侧（不做动画），下一帧再转回来
+        var still = Transaction()
+        still.disablesAnimations = true
+        withTransaction(still) {
+          held = nil
+          angle = -90
+        }
+        try? await Task.sleep(for: .milliseconds(20))
+        guard !Task.isCancelled else { return }
+        withAnimation(.spring(duration: 0.32, bounce: 0.3)) { angle = 0 }
+      }
+    }
+    .onDisappear { flip?.cancel() }
+  }
+
+  /// 换封面时翻不翻（纯函数）：前后都有封面、编号变了才翻
+  static func flips(from seen: String?, to id: String?, had: Bool, has: Bool) -> Bool {
+    had && has && seen != id
   }
 }
 

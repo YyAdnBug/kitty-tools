@@ -142,8 +142,10 @@ struct IslandWings: View {
   let notchHeight: CGFloat
   /// 指针停在刘海 / 耳朵上（岛鼓起着）：正在播放的右耳从跳动条换成播放 / 暂停，点它直接切换
   var peeking = false
-  /// 刚用双指左右滑切了歌：左耳的封面上闪一个箭头
+  /// 刚用双指左右滑切了歌。平时岛往一侧伸一下、箭头出在伸出的那一截里（IslandView）；减弱动态效果时岛不伸，
+  /// 箭头闪在左耳的封面上
   var skip: Island.Skip?
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
     HStack(spacing: 0) {
@@ -169,7 +171,8 @@ struct IslandWings: View {
   /// 正在播放：左耳封面（20 pt）、右耳跳动条（在播且速率 > 0 才动）。别的活动：记号和读数
   @ViewBuilder private var leading: some View {
     if let media = activity.media {
-      IslandMediaArt(media: media, size: 20).overlay { IslandSkipArrow(skip: skip, size: 20) }
+      IslandMediaArt(media: media, size: 20)
+        .overlay { if reduceMotion { IslandSkipArrow(skip: skip, size: 20) } }
     } else {
       IslandActivityMark(activity: activity, size: 12)
     }

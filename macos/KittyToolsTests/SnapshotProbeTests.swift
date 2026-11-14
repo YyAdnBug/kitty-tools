@@ -1169,6 +1169,16 @@ struct SnapshotProbeTests {
           showing: nil, geometry: notch, peeking: true,
           activities: [media(playing: true, artwork: cover)])),
       size: notch.windowSize, dark: false, to: "\(out)/island-wings-media-peek.png")
+    // 双指往右滑（上一首）：岛往左伸出一截，里面一个箭头
+    do {
+      var previous = media(playing: true, artwork: cover)
+      previous.media?.snapshot.canPrevious = true
+      let island = Island(showing: nil, geometry: notch, peeking: true, activities: [previous])
+      island.swipeTrack(forward: false)
+      try snapshot(
+        IslandView(island: island), size: notch.windowSize, dark: false,
+        to: "\(out)/island-wings-media-skip.png")
+    }
     // 上一首 / 下一首都没有的源（单个视频）：两个按钮换成后退 / 前进 15 秒
     do {
       let island = Island(
