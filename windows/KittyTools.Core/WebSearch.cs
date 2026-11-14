@@ -180,6 +180,10 @@ public static class WebSearch
         ["提醒"] = "提醒",
         ["tx"] = "提醒",
         ["remind"] = "提醒",
+        // 保持唤醒（PLAN-v20 K1，mac KeepAwakePlan.keywords）。
+        ["awake"] = "保持唤醒",
+        ["保持唤醒"] = "保持唤醒",
+        ["防息屏"] = "保持唤醒",
     };
 
     /// <summary>设置里一行的名字（没填名称写「未命名」）。</summary>

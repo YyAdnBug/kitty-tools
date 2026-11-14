@@ -261,6 +261,11 @@ internal static class SettingsUi
         "翻译" => "translate",
         "启动器" => "launcher",
         "截图" or "录制" => "capture",
+        // PLAN-v20：后加的几页照侧栏的家族色（以前漏了，页头是灰的）
+        "便签" => "notes",
+        "提醒" => "reminders",
+        "状态屏" => "statusScreen",
+        "保持唤醒" => "keepAwake",
         _ => "general",
     };
 

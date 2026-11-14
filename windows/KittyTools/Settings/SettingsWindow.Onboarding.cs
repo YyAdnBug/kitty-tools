@@ -217,7 +217,8 @@ internal sealed partial class SettingsWindow
         var grid = new Grid { ColumnSpacing = 16, RowSpacing = 12 };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        var features = Enum.GetValues<Feature>();
+        // 插件不进引导（PLAN-v20 K2：在 通用 › 功能 下面添加）
+        var features = Features.Listed.ToArray();
         for (var index = 0; index < features.Length; index++)
         {
             if (index % 2 == 0)

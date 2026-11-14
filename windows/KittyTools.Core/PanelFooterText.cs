@@ -42,6 +42,8 @@ public static class PanelFooterText
         LauncherKind.Prompt when target == "translate-fy" => "翻译",
         LauncherKind.Prompt when target == ExchangeRates.PromptTarget => "汇率",
         LauncherKind.Prompt when target.StartsWith(ExchangeRates.SuggestionPrefix, StringComparison.Ordinal) => "货币",
+        LauncherKind.Prompt when KeepAwakeLauncher.IsKeepAwake(target) => "保持唤醒",
+        LauncherKind.Prompt when target.StartsWith(PluginOffers.Prefix, StringComparison.Ordinal) => "插件",
         LauncherKind.Prompt => "搜索",
         _ => string.Empty,
     };
@@ -62,6 +64,11 @@ public static class PanelFooterText
             LauncherKind.Clip => target.Length == 0 ? "打开" : "搜索",
             LauncherKind.Translate => "翻译",
             LauncherKind.Prompt when target.StartsWith("script-option:", StringComparison.Ordinal) => "选这个",
+            // 保持唤醒那几行、「添加…插件」（PLAN-v20 K1 K2）
+            LauncherKind.Prompt when target == KeepAwakeLauncher.Prefix + "stop" => "停止",
+            LauncherKind.Prompt when target == KeepAwakeLauncher.Prefix + "hint" => "改一下",
+            LauncherKind.Prompt when KeepAwakeLauncher.IsKeepAwake(target) => "开始",
+            LauncherKind.Prompt when target.StartsWith(PluginOffers.Prefix, StringComparison.Ordinal) => "去添加",
             LauncherKind.Prompt => "补全关键词",
             LauncherKind.Process => "结束",
             _ => "打开",

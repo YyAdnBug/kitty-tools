@@ -2,6 +2,7 @@
 // 通用 ｜ 文字与搜索（剪贴板、启动器、翻译）｜ 截图与录制 ｜ 便签与提醒（便签、提醒、状态屏）｜ 快捷键、关于；功能那三组带小标题、能收起，
 // 通用和快捷键与关于两组不写标题。关着的功能不在原来的组里，照侧栏顺序挪进最底下的「已关闭（N）」组（默认收起）。
 // mac 的「桌面」组（启动台、程序坞预览）Windows 没有。
+// 插件（PLAN-v20 K2，mac 侧栏「插件」一组）：添加了的才进侧栏，排在功能那几组后面、快捷键与关于前面；没添加的哪儿都不出（也不进「已关闭」）。
 namespace KittyTools.Core;
 
 /// <summary>侧栏的一组：标题（null = 不画）、组里的页；IsOff 是最底下「已关闭」那组。</summary>
@@ -21,6 +22,9 @@ public static class SettingsSidebar
 
     public static IEnumerable<string> AllPages => Groups.SelectMany(group => group);
 
+    /// <summary>插件的页（侧栏「插件」一组的顺序）。</summary>
+    public static readonly IReadOnlyList<string> PluginPages = new[] { "keepAwake" };
+
     /// <summary>组标题；通用、快捷键与关于不写。</summary>
     public static string? GroupTitle(string page) => page switch
     {
@@ -31,13 +35,24 @@ public static class SettingsSidebar
     };
 
     /// <summary>侧栏这一刻怎么分组：只留 pages 里有的（搜索匹配的），空了的组不画；关着的功能（off）挪进最底下的「已关闭（N）」。</summary>
-    public static List<SidebarGroup> Build(IReadOnlyCollection<string> pages, IReadOnlySet<string> off)
+    /// <remarks>addedPlugins：添加了的插件（pages 里也有的才画）；插在最后一组（快捷键、关于）前面，标题「插件」。</remarks>
+    public static List<SidebarGroup> Build(
+        IReadOnlyCollection<string> pages, IReadOnlySet<string> off, IReadOnlyCollection<string>? addedPlugins = null)
     {
         var shown = Groups
             .Select(group => group.Where(page => pages.Contains(page) && !off.Contains(page)).ToList())
             .Where(kept => kept.Count > 0)
             .Select(kept => new SidebarGroup(GroupTitle(kept[0]), kept))
             .ToList();
+        var plugins = PluginPages.Where(page => pages.Contains(page) && addedPlugins?.Contains(page) == true).ToList();
+        if (plugins.Count > 0)
+        {
+            var tail = shown.Count > 0 && shown[^1].Pages.Contains("about") || shown.Count > 0 && shown[^1].Pages.Contains("hotkeys")
+                ? shown.Count - 1
+                : shown.Count;
+            shown.Insert(tail, new SidebarGroup("插件", plugins));
+        }
+
         var closed = AllPages.Where(page => pages.Contains(page) && off.Contains(page)).ToList();
         if (closed.Count > 0)
         {

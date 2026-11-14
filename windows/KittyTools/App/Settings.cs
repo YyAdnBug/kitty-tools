@@ -387,6 +387,14 @@ internal sealed class Settings
     /// <summary>告示上的动画（表情动、进入时的出场、甩一下、冒眼睛；默认开）。</summary>
     public bool StatusScreenAnimations { get; set; } = true;
 
+    // 保持唤醒（插件，PLAN-v20 K1，mac Prefs.keepAwake*）：手动开的那一段不存（不跨重启）。
+
+    /// <summary>定时（Core KeepAwakeSchedule 的 JSON，键同 mac；null / 空 = 默认的工作日 9:00–18:00、关着）。跟着导出导入，不同步。</summary>
+    public string? KeepAwakeSchedule { get; set; }
+
+    /// <summary>保持唤醒时屏幕也不熄（默认开：要的就是防息屏；关了只防系统睡）。</summary>
+    public bool KeepAwakeDisplay { get; set; } = true;
+
     /// <summary>上次进入的状态（选状态的面板默认选中它）。这台电脑自己的状态，不导出。</summary>
     public string? StatusScreenLastPreset { get; set; }
 

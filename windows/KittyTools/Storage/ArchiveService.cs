@@ -603,6 +603,9 @@ internal static class ArchiveService
             writer.WriteBoolean("statusScreenExitHint", settings.StatusScreenExitHint);
             writer.WriteBoolean("statusScreenHotKeyEntersFirst", settings.StatusScreenHotKeyEntersFirst);
             writer.WriteBoolean("statusScreenAnimations", settings.StatusScreenAnimations);
+            // PLAN-v20 K1 保持唤醒：键名和写法同 mac（定时是一段 JSON 文字）
+            writer.WriteBoolean("keepAwakeDisplay", settings.KeepAwakeDisplay);
+            writer.WriteString("keepAwakeSchedule", settings.KeepAwakeSchedule ?? string.Empty);
             if (settings.StatusScreenPresets is { } presets)
             {
                 writer.WriteStartArray("statusScreenPresets");
@@ -786,6 +789,15 @@ internal static class ArchiveService
                     break;
                 case "statusScreenAnimations" when value.ValueKind is JsonValueKind.True or JsonValueKind.False:
                     settings.StatusScreenAnimations = value.GetBoolean();
+                    break;
+                case "keepAwakeDisplay" when value.ValueKind is JsonValueKind.True or JsonValueKind.False:
+                    settings.KeepAwakeDisplay = value.GetBoolean();
+                    break;
+                case "keepAwakeSchedule" when value.ValueKind == JsonValueKind.String:
+                    // 读一遍再存规范的写法（越界的夹回来）；空的 = 默认
+                    settings.KeepAwakeSchedule = value.GetString() is { Length: > 0 } schedule
+                        ? KeepAwakeSchedule.Decode(schedule).Encode()
+                        : null;
                     break;
                 case "remindersSnoozeMinutes" when value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var snooze) &&
                                                    Reminders.SnoozeChoices.Contains(snooze):

@@ -781,6 +781,36 @@ internal static class UiSnapshotProbe
                 SettingsService.Current.LauncherScriptFolders = scriptFolders;
             }
 
+            // PLAN-v20 K1 K2：通用 › 功能 下面的插件卡片（没添加）；添加之后侧栏「插件」一组和保持唤醒页（没开 / 开着 30 分钟、定时开着），拍完移除、停掉
+            if (Paths.IsTestProfile && Wanted("settings-sub"))
+            {
+                var features = SettingsService.Current.Features is { } map ? new Dictionary<string, bool>(map) : null;
+                var schedule = SettingsService.Current.KeepAwakeSchedule;
+                settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 760));
+                settings.OpenSubpageForProbe("general", "features");
+                await Task.Delay(400);
+                settings.ScrollToSectionForProbe("插件");
+                await Task.Delay(300);
+                await ShootSettingsWindowAsync(settings, "settings-sub-plugins", dark, directory);
+                Features.Set(Feature.KeepAwake, true);
+                SettingsService.Current.KeepAwakeSchedule = new KittyTools.Core.KeepAwakeSchedule { IsOn = true }.Encode();
+                SettingsService.Save();
+                settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 980));
+                settings.ShowPage(welcome: false, "keepAwake");
+                settings.RebuildForProbe();
+                await Task.Delay(500);
+                await ShootSettingsWindowAsync(settings, "settings-sub-keepawake", dark, directory);
+                KeepAwakeHost.Begin(DateTime.UtcNow.AddMinutes(30), "30 分钟");
+                await Task.Delay(400);
+                await ShootSettingsWindowAsync(settings, "settings-sub-keepawake-on", dark, directory);
+                Log.Info($"ui-snapshots keep-awake active={KeepAwakeHost.IsActive} status={KeepAwakeHost.Status()}");
+                KeepAwakeHost.End();
+                SettingsService.Current.Features = features;
+                SettingsService.Current.KeepAwakeSchedule = schedule;
+                SettingsService.Save();
+                settings.ShowPage(welcome: false, "general");
+            }
+
             // PLAN-v18 S3：快捷键页「截图时」两组（改过一个键：钉图 Alt+P；清掉一个：录屏），拍完换回去
             if (Paths.IsTestProfile && Wanted("settings-hotkeys-shot"))
             {

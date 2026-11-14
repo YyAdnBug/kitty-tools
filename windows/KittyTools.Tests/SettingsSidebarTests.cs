@@ -64,4 +64,20 @@ public sealed class SettingsSidebarTests
         Assert.IsTrue(kept["notes"]);
         Assert.IsFalse(kept["clipboard"]);
     }
+
+    [TestMethod]
+    public void AddedPluginsGetTheirOwnGroupBeforeHotkeys()
+    {
+        // PLAN-v20 K2（mac 侧栏「插件」一组）：添加了的插件在功能那几组后面、快捷键与关于前面；没添加的哪儿都不出
+        var pages = SettingsSidebar.AllPages.Concat(SettingsSidebar.PluginPages).ToList();
+        var none = SettingsSidebar.Build(pages, None);
+        Assert.IsFalse(none.SelectMany(group => group.Pages).Contains("keepAwake"));
+        var added = SettingsSidebar.Build(pages, None, new[] { "keepAwake" });
+        CollectionAssert.AreEqual(new string?[] { null, "文字与搜索", "截图与录制", "便签与提醒", "插件", null }, added.Select(group => group.Title).ToArray());
+        CollectionAssert.AreEqual(new[] { "keepAwake" }, added[4].Pages.ToArray());
+        // 关着的功能照样进「已关闭」，插件不进
+        var off = SettingsSidebar.Build(pages, new HashSet<string> { "record" }, new[] { "keepAwake" });
+        Assert.AreEqual("插件", off[^3].Title);
+        Assert.AreEqual("已关闭（1）", off[^1].Title);
+    }
 }

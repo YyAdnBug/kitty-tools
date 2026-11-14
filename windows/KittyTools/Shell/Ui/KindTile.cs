@@ -199,6 +199,8 @@ internal static class KindTile
         LauncherKind.Prompt when target is ReminderLauncher.HintTarget or ReminderLauncher.KeywordTarget => "reminders",
         // 汇率的用法提示、货币候选：同计算卡的橙（mac）。
         LauncherKind.Prompt when target.StartsWith(ExchangeRates.PromptTarget, StringComparison.Ordinal) => "calculator",
+        // 「awake …」那几行、「添加…插件」：保持唤醒的靛紫（PLAN-v20 K1 K2）
+        LauncherKind.Prompt when KeepAwakeLauncher.IsKeepAwake(target) || target.StartsWith(PluginOffers.Prefix, StringComparison.Ordinal) => "keepAwake",
         _ => FamilyOf(kind),
     };
 
@@ -221,6 +223,7 @@ internal static class KindTile
             "translate-fy" => FeatureIcons.Translate,
             ReminderLauncher.HintTarget or ReminderLauncher.KeywordTarget => FeatureIcons.Reminders,
             _ when target.StartsWith(ExchangeRates.PromptTarget, StringComparison.Ordinal) => Glyphs.Calculator,
+            _ when KeepAwakeLauncher.IsKeepAwake(target) || target.StartsWith(PluginOffers.Prefix, StringComparison.Ordinal) => FeatureIcons.KeepAwake,
             _ => Glyphs.Search,
         },
         _ => GlyphOf(kind),

@@ -64,6 +64,8 @@ internal sealed partial class SettingsWindow : Window
         ("notes", "便签", FeatureIcons.Notes),
         ("reminders", "提醒", FeatureIcons.Reminders),
         ("statusScreen", "状态屏", FeatureIcons.StatusScreen),
+        // 插件（PLAN-v20 K2）：添加了才进侧栏「插件」一组
+        ("keepAwake", "保持唤醒", FeatureIcons.KeepAwake),
         ("hotkeys", "快捷键", FeatureIcons.Hotkeys),
         ("about", "关于", FeatureIcons.About),
     };
@@ -86,6 +88,12 @@ internal sealed partial class SettingsWindow : Window
             "外观", "浅色", "深色", "暗黑", "主题", "跟随系统", "强调色", "主题色", "颜色", "开机", "登录", "自启", "启动", "权限", "麦克风",
             "隐私", "导出", "导入", "备份", "恢复", "迁移", "换电脑", "配置", "功能", "模块", "关闭", "停用", "启用", "不用",
             "同步", "OneDrive", "云盘", "多台", "几台", "另一台", "数据", "目录", "卸载", "移除",
+            // 插件在 通用 › 功能 下面添加（没添加的插件页不进搜索，落到这一页，同 mac SettingsPage.matching）
+            "插件", "添加", "保持唤醒", "awake", "防息屏", "防止睡眠", "不睡眠", "咖啡因",
+        },
+        ["keepAwake"] = new[]
+        {
+            "awake", "防息屏", "防止睡眠", "不睡眠", "唤醒", "咖啡因", "屏幕", "熄屏", "睡眠", "定时", "时段", "工作日", "全天", "插件", "移除",
         },
         ["clipboard"] = new[]
         {
@@ -475,6 +483,18 @@ internal sealed partial class SettingsWindow : Window
             case "reminders":
                 BuildReminders();
                 break;
+            case "keepAwake":
+                if (!Features.IsOn(Feature.KeepAwake))
+                {
+                    // 插件没添加（移除了、或者从搜索里点过来）：回到 通用 › 功能
+                    _featuresPage = true;
+                    BuildGeneral();
+                    _currentPage = "general";
+                    break;
+                }
+
+                BuildKeepAwake();
+                break;
             case "about":
                 BuildAbout();
                 break;
@@ -506,7 +526,8 @@ internal sealed partial class SettingsWindow : Window
             .ToList();
         var off = Pages.Select(page => page.Tag).Where(tag => Features.ForPage(tag) is { } feature && !Features.IsOn(feature)).ToHashSet();
         var collapsed = (settings.SettingsCollapsedGroups ?? new List<string>()).ToHashSet();
-        var groups = SettingsSidebar.Build(matches, off);
+        var added = Features.Plugins.Where(Features.IsOn).Select(Features.Key).ToList();
+        var groups = SettingsSidebar.Build(matches, off, added);
         var layout = groups.Select(group =>
         {
             var expanded = SettingsSidebar.IsExpanded(group, query.Length > 0, collapsed, settings.SettingsShowsOffFeatures, _currentPage);
@@ -762,7 +783,7 @@ internal sealed partial class SettingsWindow : Window
         }
 
         // 功能（PLAN-v18 L4：收成一行「功能 ›」，写开着几个、关着哪几个，开关在子页里）
-        AddSubpageRow("功能", SettingsSummary.Features(Enum.GetValues<Feature>().Select(feature => (Features.Title(feature), Features.IsOn(feature))).ToList()),
+        AddSubpageRow("功能", SettingsSummary.Features(Features.Listed.Select(feature => (Features.Title(feature), Features.IsOn(feature))).ToList()),
             () => OpenFeaturesPage(true));
         BuildGeneralRest();
     }
@@ -785,7 +806,7 @@ internal sealed partial class SettingsWindow : Window
         AutomationProperties.SetName(back, "返回通用设置");
         _content.Children.Add(back);
         _content.Children.Add(Header("功能", "用不上的整个关掉"));
-        foreach (var feature in Enum.GetValues<Feature>())
+        foreach (var feature in Features.Listed)
         {
             _content.Children.Add(SettingsUi.Card(
                 Features.Title(feature),
@@ -803,6 +824,7 @@ internal sealed partial class SettingsWindow : Window
 
         _content.Children.Add(SettingsUi.Footnote(
             "关掉的功能不出现在快捷键、托盘菜单和启动器里，也不在后台运行；它的数据和设置都留着，打开就回来。"));
+        AddPluginCards();
     }
 
     /// <summary>通用页「功能」那一行下面的部分。</summary>
@@ -3133,6 +3155,8 @@ internal sealed partial class SettingsWindow : Window
             }),
             // 便签（PLAN-v13）：三项同名同序（同 mac 那一节、托盘、速查表）。
             ("便签", new List<string> { HotKeyActions.NoteCapture, HotKeyActions.NoteNew, HotKeyActions.NoteAll }),
+            // 保持唤醒（插件，PLAN-v20 K1）：添加了才出（Features.IsOnFor）
+            ("保持唤醒", new List<string> { HotKeyActions.KeepAwake }),
             // 主界面（PLAN-v10 §5）：不归哪个功能、一直在（同 mac 那一节）。
             ("主界面", new List<string> { HotKeyActions.Home }),
         };
@@ -4101,6 +4125,7 @@ internal sealed partial class SettingsWindow : Window
             Feature.StatusScreen => "statusScreen",
             Feature.Reminders => "reminders",
             Feature.Notes => "notes",
+            Feature.KeepAwake => "keepAwake",
             _ => "capture",
         };
 
@@ -4125,6 +4150,7 @@ internal sealed partial class SettingsWindow : Window
             HotKeyActions.NoteCapture => FeatureIcons.NotesCapture,
             HotKeyActions.NoteNew => FeatureIcons.NotesNew,
             HotKeyActions.NoteAll => FeatureIcons.Notes,
+            HotKeyActions.KeepAwake => FeatureIcons.KeepAwake,
             _ => FeatureIcons.Screenshot,
         };
 
@@ -4138,6 +4164,7 @@ internal sealed partial class SettingsWindow : Window
         "statusScreen" => "statusScreen",
         "reminders" => "reminders",
         "notes" => "notes",
+        "keepAwake" => "keepAwake",
         "about" => "general",
         _ => "general",
     };

@@ -42,6 +42,9 @@ internal static class HotKeyActions
     public const string NoteNew = "noteNew";
 
     public const string NoteAll = "noteAll";
+
+    /// <summary>保持唤醒（插件，PLAN-v20 K1）：按一下开无限期、再按停；不设默认键（同 mac）。</summary>
+    public const string KeepAwake = "keepAwake";
 }
 
 internal sealed record HotKeyDefault(
@@ -74,6 +77,7 @@ internal static class SettingsDefaults
         new(HotKeyActions.NoteCapture, "快速记一条", HotKeyModifiers.Alt, (uint)'N'),
         new(HotKeyActions.NoteNew, "新建便签", HotKeyModifiers.None, 0),
         new(HotKeyActions.NoteAll, "全部便签", HotKeyModifiers.None, 0),
+        new(HotKeyActions.KeepAwake, "保持唤醒（再按一次停止）", HotKeyModifiers.None, 0),
     };
 
     public static void Apply(Settings settings)

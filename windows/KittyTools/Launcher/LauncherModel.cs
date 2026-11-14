@@ -368,6 +368,12 @@ internal sealed partial class LauncherModel
             return ReminderLauncher.Items(rest, ReminderCenter.List, DateTime.UtcNow, TimeZoneInfo.Local);
         }
 
+        // 「awake 2小时」「保持唤醒 到18点」（插件，PLAN-v20 K1）：只列保持唤醒那几行；只打关键词的是内置动作那一行（LauncherActions）
+        if (Features.IsOn(Feature.KeepAwake) && KeepAwakePlan.Query(query) is { } awake)
+        {
+            return KeepAwakeLauncher.Items(awake, KeepAwakeHost.HasSession ? KeepAwakeHost.Status() : null, DateTime.UtcNow, TimeZoneInfo.Local);
+        }
+
         var command = query.Trim();
         var trimmed = original.Trim();
         if (trimmed.Length == 0)
@@ -490,6 +496,8 @@ internal sealed partial class LauncherModel
         return ordered.Concat(history).Concat(prompts.Partial).Concat(Relabeled(commandPrompts.Partial))
             .Concat(Relabeled(currencyPrompts.Partial))
             .Concat(Relabeled(reminderPrompts))
+            // 没添加的插件打到名字或关键词：「添加…插件」一行，本地结果后面、兜底前面（PLAN-v20 K2）
+            .Concat(PluginOffers.For(trimmed, Features.PluginInfos, Features.Plugins.Where(Features.IsOn).Select(Features.Key).ToHashSet()))
             .Concat(fallback)
             .Where(item => !Hidden(item) && seen.Add(item.Id))
             .ToList();
@@ -1112,6 +1120,16 @@ internal sealed partial class LauncherModel
                     // 「认不出时间」那一行：只响一声，改一下再建。
                     Beep();
                 }
+                else if (KeepAwakeLauncher.IsKeepAwake(item.Target))
+                {
+                    RunKeepAwake(item);
+                }
+                else if (item.Target.StartsWith(PluginOffers.Prefix, StringComparison.Ordinal))
+                {
+                    // 「添加…插件」：不直接添加，去设置里那张卡（先看清要什么授权，同 mac）
+                    Close();
+                    ShellRuntime.Instance?.FocusPlugin(item.Target[PluginOffers.Prefix.Length..]);
+                }
 
                 break;
             case LauncherKind.Search:
@@ -1166,6 +1184,40 @@ internal sealed partial class LauncherModel
             case LauncherKind.Setting:
             case LauncherKind.Url:
                 Open(item.Target, item);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// 「awake …」那几行（PLAN-v20 K1，mac runKeepAwake）：「到…」的按这一刻再算一遍（行列出来之后过了一会儿，「2小时」要从现在算，
+    /// 「到18点」可能已经过了）。
+    /// </summary>
+    private void RunKeepAwake(LauncherItem item)
+    {
+        var command = item.Target[KeepAwakeLauncher.Prefix.Length..];
+        var label = item.Title.StartsWith("保持唤醒 ", StringComparison.Ordinal) ? item.Title["保持唤醒 ".Length..] : item.Title;
+        switch (command)
+        {
+            case "stop":
+                Close();
+                KeepAwakeHost.End();
+                break;
+            case "until":
+                if (KeepAwakePlan.Parse(item.Payload ?? string.Empty, DateTime.UtcNow, TimeZoneInfo.Local) is not KeepAwakeParsed.Until until)
+                {
+                    Beep();
+                    return;
+                }
+
+                Close();
+                KeepAwakeHost.Begin(until.AtUtc, until.Label);
+                break;
+            case var value when value.StartsWith("for:", StringComparison.Ordinal):
+                Close();
+                KeepAwakeHost.Begin(int.TryParse(value["for:".Length..], out var minutes) ? DateTime.UtcNow.AddMinutes(minutes) : null, label);
+                break;
+            default:
+                Beep();
                 break;
         }
     }

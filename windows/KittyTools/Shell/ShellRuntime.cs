@@ -130,6 +130,12 @@ internal sealed class ShellRuntime
             }
         }
 
+        // 保持唤醒（插件，PLAN-v20 K1）：添加了才跑；起停跟着 ApplyFeatures
+        if (Features.IsOn(Feature.KeepAwake))
+        {
+            KeepAwakeHost.Start();
+        }
+
         HiddenWindow.Message += OnHiddenMessage;
         Tray.Add();
         // 托盘图标跟着录制 / 暂停记录换（PLAN-v11 F9）。
@@ -1010,6 +1016,13 @@ internal sealed class ShellRuntime
         _settingsWindow.ShowPage(welcome, page, service);
     }
 
+    /// <summary>启动器「添加…插件」那一行（PLAN-v20 K2）：打开 通用 › 功能，滚到那张插件卡、描两秒强调色。</summary>
+    public void FocusPlugin(string key)
+    {
+        ShowSettings(welcome: false, "general");
+        _settingsWindow?.FocusPlugin(key);
+    }
+
     /// <summary>启动器的「快捷键速查表」（PLAN-v9-launcher R12）：打开设置窗，在上面弹速查表。</summary>
     public void ShowShortcutsSheet()
     {
@@ -1112,6 +1125,16 @@ internal sealed class ShellRuntime
         else
         {
             ReminderCenter.Stop();
+        }
+
+        // 保持唤醒（插件，PLAN-v20 K1）：添加了才跑
+        if (Features.IsOn(Feature.KeepAwake))
+        {
+            KeepAwakeHost.Start();
+        }
+        else
+        {
+            KeepAwakeHost.Stop();
         }
 
         NotesHost.ApplyFeature();
@@ -1378,14 +1401,16 @@ internal sealed class ShellRuntime
         }
         else if (msg == WmTimeChange)
         {
-            // 改了系统时间、时区：提醒把记在「将来」的时刻收回来再看一遍。
+            // 改了系统时间、时区：提醒把记在「将来」的时刻收回来再看一遍；保持唤醒重算到点和时段。
             ReminderCenter.ClockChanged();
+            KeepAwakeHost.Evaluate();
         }
         else if (msg == WmPowerBroadcast && wParam.Value is 7 or 0x12)
         {
             // 7 = 从睡眠唤醒（PBT_APMRESUMESUSPEND）、0x12 = 自动唤醒。
             ScheduleBackup();
             ReminderCenter.Resumed();
+            KeepAwakeHost.Evaluate();
             _ = Syncer.Instance?.RoundAsync();
         }
         else if (msg == WmPowerBroadcast && wParam.Value == 4)
@@ -1474,6 +1499,9 @@ internal sealed class ShellRuntime
             case HotKeyActions.ReminderNew:
                 NewReminder();
                 break;
+            case HotKeyActions.KeepAwake:
+                KeepAwakeHost.Toggle();
+                break;
             case HotKeyActions.NoteCapture:
                 NoteCaptureWindow.Toggle();
                 break;
@@ -1506,6 +1534,8 @@ internal sealed class ShellRuntime
     /// <summary>主界面点一格：和按它的快捷键做同一件事（PLAN-v10 §5）。</summary>
     internal void RunAction(string action) => OnHotKey(action);
 
+    private string? _awakeSignature;
+
     private void OnSettingsChanged()
     {
         // 只在热键真的变了时才重注册：每次保存都清空重注册的话，别的设置一改热键也会短暂失效
@@ -1522,6 +1552,14 @@ internal sealed class ShellRuntime
         {
             _blockSignature = blocks;
             HotKeyBlocker.Refresh();
+        }
+
+        // 保持唤醒的定时、屏幕熄不熄改了：当场重算（定时被改了引起的进出不说，KeepAwakeHost 自己认）
+        var awake = SettingsService.Current.KeepAwakeSchedule + "|" + SettingsService.Current.KeepAwakeDisplay;
+        if (awake != _awakeSignature)
+        {
+            _awakeSignature = awake;
+            KeepAwakeHost.Evaluate();
         }
 
         if (_autoCheck != SettingsService.Current.AutoCheckUpdates)

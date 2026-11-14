@@ -31,6 +31,7 @@ internal static class LauncherActions
     public const string NoteCapture = "action:note-capture";
     public const string NoteNew = "action:note-new";
     public const string NoteAll = "action:note-all";
+    public const string KeepAwake = "action:keep-awake";
     public const string Home = "action:home";
     public const string Settings = "action:settings";
     public const string Shortcuts = "action:shortcuts";
@@ -131,6 +132,14 @@ internal static class LauncherActions
             }
         }
 
+        // 保持唤醒（插件，PLAN-v20 K1）：只打关键词时是这一行（按一下开无限期、开着时停）；「awake 2小时」这类走 KeepAwakeLauncher
+        if (Features.IsOn(Feature.KeepAwake))
+        {
+            items.Add(Item(new(KeepAwake, KeepAwakeHost.HasSession ? "停止保持唤醒" : "保持唤醒", "Keep Awake caffeinate", FeatureIcons.KeepAwake,
+                    "keepAwake", HotKeyActions.KeepAwake, new[] { "awake", "防息屏", "防止睡眠", "不睡眠" }),
+                KeepAwakeHost.IsActive ? "保持唤醒中 · " + KeepAwakeHost.Status() : "Kitty Tools"));
+        }
+
         items.Add(Item(new(Home, "打开主界面", "Home Panel All Features", FeatureIcons.Home, "general", HotKeyActions.Home)));
         items.Add(Item(new(Settings, "设置", "Settings Preferences", Glyphs.Settings, "general")));
         items.Add(Item(new(Shortcuts, "快捷键速查表", "Keyboard Shortcuts", Glyphs.Keyboard, "shortcut")));
@@ -154,6 +163,9 @@ internal static class LauncherActions
             or Record or Audio => "capture",
         Shortcuts => "shortcut",
         NoteCapture or NoteNew or NoteAll => "notes",
+        KeepAwake => "keepAwake",
+        _ when KeepAwakeLauncher.IsKeepAwake(target) => "keepAwake",
+        _ when target.StartsWith(PluginOffers.Prefix, StringComparison.Ordinal) => "keepAwake",
         _ when IsStatusPreset(target) => "statusScreen",
         _ when ReminderLauncher.IsReminder(target) => "reminders",
         _ => "general",
@@ -183,6 +195,9 @@ internal static class LauncherActions
         NoteCapture => FeatureIcons.NotesCapture,
         NoteNew => FeatureIcons.NotesNew,
         NoteAll => FeatureIcons.Notes,
+        KeepAwake => FeatureIcons.KeepAwake,
+        _ when KeepAwakeLauncher.IsKeepAwake(target) => FeatureIcons.KeepAwake,
+        _ when target.StartsWith(PluginOffers.Prefix, StringComparison.Ordinal) => FeatureIcons.KeepAwake,
         About => Glyphs.Info,
         Update => Glyphs.Update,
         Quit => Glyphs.Close,
@@ -250,6 +265,9 @@ internal static class LauncherActions
                 break;
             case NoteAll:
                 NotesWindow.ShowWindow();
+                break;
+            case KeepAwake:
+                KeepAwakeHost.Toggle();
                 break;
             case Settings:
                 runtime?.ShowSettings(welcome: false);

@@ -26,6 +26,13 @@
   （`OcrResult.TextAngle` 不是 0）时词框是「摆正之后」的坐标，没转回原图——长图条纹底色让它判成斜 1.3°，号码框左偏 38 像素、打码露出半截；截图翻译盖回、截图识字一样受影响。
   现在 `OcrScale.Unrotate` 绕图中心转回去取外接矩形。验：Core 单测 2 条（切条、转回），`--long-annotate-probe=12000` 浅深：3 段号码都整个盖住、吸管、改编号、三种样式弹层截图，
   `--overlay-translate-probe` 全过；AOT 0 警告；内存和第 1 批一样（只托盘 44.6、静置 87.9、录屏后 93.5 MB）；空闲 CPU 0.047 %。没测：真点（1323–1328）。
+- **第 3 批（`git log --grep "PLAN-v20 第 3 批"`）**：K1 保持唤醒、K2 插件、K3 图标（mac f48c5d2e）。Core `KeepAwakePlan`（定时、解析、说法；KeepAwakeSchedule 的 JSON 键同 mac）、
+  `KeepAwakeLauncher`、`PluginOffers`；`KeepAwakeHost`（PowerCreateRequest / PowerSetRequest，醒来、改时间、设置变了重算）；`Feature.KeepAwake` 是插件（没存过 = 没添加），
+  功能列表、引导、主界面计数不含插件；侧栏「插件」一组（Core `SettingsSidebar.PluginPages`）、通用 › 功能 下面的插件卡片、设置 › 保持唤醒；托盘子菜单、主界面一格、
+  全局动作（不设默认键）、启动器（内置动作一行、「awake …」几行、没添加时「添加…插件」）、速查表、网页搜索保留词、导出导入两个键。图标用 Win2D 在 Windows 上展开（`--feature-icon-outline`）。
+  顺手：设置页头的色块，便签 / 提醒 / 状态屏 以前是灰的。验：998 个测试全过（KeepAwakeTests 8 条照 mac、侧栏插件一条）；`--keep-awake-probe`（Debug 和 Release AOT 都跑了）全过，
+  但这台机器上别的程序本来就要着系统和屏幕两位，挂上 / 撤掉从全机状态看不出，只能说请求建成、换档、撤掉都没出错；`powercfg /requests` 要管理员，没跑（HANDTEST 1331）。AOT 0 警告；内存（Release，插件没添加）只托盘 44.7、静置 87.6、录屏后 92.9 MB；空闲 CPU 0.026 %。
+  替用户定的：Windows 只有一个插件，mac 的七样改插件不跟（§0）；引导里不列插件；托盘子菜单的项名照 mac。没测：真的不睡 / 不熄屏、睡眠醒来、导出导入（1329–1340）。
 
 ## 0.2.0 发版前审查（2026-11-12）
 

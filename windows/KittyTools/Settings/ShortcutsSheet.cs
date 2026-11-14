@@ -37,7 +37,11 @@ internal sealed record ShortcutGroup(
 internal static class ShortcutsSheet
 {
     /// <summary>左栏的分类（就是设置页），按这个顺序排。</summary>
-    private static readonly (string Page, string Title, string Glyph)[] Pages =
+    private static (string Page, string Title, string Glyph)[] Pages
+        => AllPages.Where(item => Features.ForPage(item.Page) is not { } feature || !Features.IsPlugin(feature) || Features.IsOn(feature)).ToArray();
+
+    /// <summary>全部分类；没添加的插件（PLAN-v20 K2）不出（Pages）。</summary>
+    private static readonly (string Page, string Title, string Glyph)[] AllPages =
     {
         ("clipboard", "剪贴板", FeatureIcons.Clipboard),
         ("launcher", "启动器", FeatureIcons.Launcher),
@@ -46,6 +50,7 @@ internal static class ShortcutsSheet
         ("notes", "便签", FeatureIcons.Notes),
         ("statusScreen", "状态屏", FeatureIcons.StatusScreen),
         ("reminders", "提醒", FeatureIcons.Reminders),
+        ("keepAwake", "保持唤醒", FeatureIcons.KeepAwake),
         ("general", "设置窗", FeatureIcons.General),
     };
 
@@ -608,6 +613,13 @@ internal static class ShortcutsSheet
             new("Enter", "建好提醒；已有的那条是打开 / 暂停"),
             new("Ctrl+Enter", "已有的那条：到设置里编辑"),
             new("Enter", "Esc", "全屏提醒：知道了（出来后 1 秒内不算）"),
+        }),
+
+        // KeepAwake/KeepAwakeHost.cs（插件，PLAN-v20 K1）：启动器里「awake …」（Core 的 KeepAwakePlan / KeepAwakeLauncher）。
+        new("keepAwake", "保持唤醒", "keepAwake", FeatureIcons.KeepAwake, new[] { HotKeyActions.KeepAwake }, new ShortcutEntry[]
+        {
+            new("awake 2小时", "保持唤醒 到18点", "启动器里开一段（也认「防息屏」「awake 30m」「awake 无限期」）"),
+            new("Enter", "开这一段；开着时第一行是「停止保持唤醒」"),
         }),
 
         // Shell/HomePanel.cs（PLAN-v10 §5）：托盘左键打开；全局的「打开主界面」不设默认键。

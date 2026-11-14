@@ -361,6 +361,38 @@ internal static partial class TrayMenu
             menu.Add(new Item("提醒", null, static () => { }, Children: children, IsNew: IsNew(HotKeyActions.ReminderNew)));
         }
 
+        // 保持唤醒（插件，PLAN-v20 K1，mac addKeepAwakeMenu）：一项「保持唤醒」带子菜单——开着时项名后写还剩多久、「停止保持唤醒」；
+        // 没开时「开始（无限期）」和几档；定时的时段里一行说明；「保持唤醒设置…」。
+        if (Features.IsOn(Feature.KeepAwake))
+        {
+            AddSeparator(menu);
+            var shortcut = runtime?.HotKeys.ShortcutFor(HotKeyActions.KeepAwake);
+            var children = new List<Item>();
+            if (KeepAwakeHost.HasSession)
+            {
+                children.Add(new Item("停止保持唤醒", shortcut, KeepAwakeHost.End));
+            }
+            else
+            {
+                foreach (var (title, minutes) in Core.KeepAwakePlan.Presets)
+                {
+                    children.Add(new Item(minutes is null ? "开始（无限期）" : title, minutes is null ? shortcut : null,
+                        () => KeepAwakeHost.Begin(minutes is { } value ? DateTime.UtcNow.AddMinutes(value) : null, title)));
+                }
+            }
+
+            if (KeepAwakeHost.InSchedule && !KeepAwakeHost.HasSession)
+            {
+                children.Add(new Item(null, null, static () => { }));
+                children.Add(new Item("按定时保持唤醒中 · " + KeepAwakeHost.Status(), null, () => runtime?.ShowSettings(welcome: false, "keepAwake")));
+            }
+
+            children.Add(new Item(null, null, static () => { }));
+            children.Add(new Item("保持唤醒设置…", null, () => runtime?.ShowSettings(welcome: false, "keepAwake")));
+            var name = KeepAwakeHost.IsActive ? $"保持唤醒（{KeepAwakeHost.Status()}）" : "保持唤醒";
+            menu.Add(new Item(name, null, static () => { }, Children: children));
+        }
+
         AddSeparator(menu);
         // 按应用停用快捷键（PLAN-v17 H6）：点托盘时前台已经是任务栏，用最后一个外部应用；资源管理器、我们自己、关掉了的不出
         if (HotKeyBlocker.MenuApp() is { } app)

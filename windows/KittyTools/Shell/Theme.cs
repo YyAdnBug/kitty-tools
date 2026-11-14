@@ -89,6 +89,9 @@ internal static class Theme
         /// <summary>便签：系统黄（mac Style.Family.notes = systemYellow）；色块上的符号用黑（mac onTile）。</summary>
         public static Color Notes => Value(0xFFCC00, 0xFFD60A);
 
+        /// <summary>保持唤醒：自定义的靛紫（mac Style.Family.keepAwake，夜里也醒着；比系统靛蓝偏紫、比启动器的紫偏蓝）。</summary>
+        public static Color KeepAwake => Value(0x6B5CDB, 0x998CFF);
+
         public static Color For(string key) => key switch
         {
             "clipboard" => Clipboard,
@@ -101,6 +104,7 @@ internal static class Theme
             "statusScreen" => StatusScreen,
             "reminders" => Reminders,
             "notes" => Notes,
+            "keepAwake" => KeepAwake,
             _ => General,
         };
 

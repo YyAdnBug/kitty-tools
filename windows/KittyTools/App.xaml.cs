@@ -131,6 +131,21 @@ public partial class App : Application
                 return;
             }
 
+#if DEBUG
+            if (commandLine.FirstOrDefault(arg => arg.StartsWith(IconOutlineProbe.ArgumentPrefix, StringComparison.OrdinalIgnoreCase)) is { } outline)
+            {
+                // PLAN-v20 K3：功能图标的路径数据（只在 Debug），写完就退。
+                IconOutlineProbe.Run(outline[IconOutlineProbe.ArgumentPrefix.Length..]);
+                return;
+            }
+#endif
+
+            if (KeepAwakeProbe.IsRequested(commandLine) && KeepAwakeProbe.DirectoryFrom(commandLine) is { } awakeProbe)
+            {
+                // PLAN-v20 第 3 批：保持唤醒真的挂上 / 撤掉电源请求（只在测试档），跑完就退。要等 ShellRuntime 起来，不 return。
+                Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() => _ = KeepAwakeProbe.RunAsync(awakeProbe));
+            }
+
             if (ScrollBandProbe.IsRequested(commandLine) && ScrollBandProbe.DirectoryFrom(commandLine) is { } scrollProbe)
             {
                 // PLAN-v20 第 1 批：长截图框住页面里的一小块滚动区（只在测试档），跑完就退。

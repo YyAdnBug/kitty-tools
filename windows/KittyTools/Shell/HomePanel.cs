@@ -297,7 +297,7 @@ internal sealed class HomePanel : Window
         _fresh = WhatsNewHost.Current();
         _sections = HomeLayout.Sections(BuildSections());
         _tiles = _sections.SelectMany(section => section.Tiles).ToList();
-        _offCount = Enum.GetValues<Feature>().Count(feature => !Features.IsOn(feature));
+        _offCount = Features.Listed.Count(feature => !Features.IsOn(feature));
         if (appearing)
         {
             _selection = null;
@@ -406,6 +406,15 @@ internal sealed class HomePanel : Window
         if (Features.IsOn(Feature.Reminders))
         {
             yield return new HomeSection("提醒", new[] { Global(HotKeyActions.ReminderNew, "新建提醒") });
+        }
+
+        // 保持唤醒（插件，PLAN-v20 K1）：一格，同它的快捷键（开无限期 / 停止；开着时叫「停止保持唤醒」，mac ActionState.awake）。
+        if (Features.IsOn(Feature.KeepAwake))
+        {
+            yield return new HomeSection("保持唤醒", new[]
+            {
+                Global(HotKeyActions.KeepAwake, KeepAwakeHost.HasSession ? "停止保持唤醒" : "保持唤醒"),
+            });
         }
     }
 
