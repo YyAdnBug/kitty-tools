@@ -120,8 +120,9 @@ import SwiftUI
   /// 点刘海、停在刘海上、两指往下滑打开（设置 › 刘海岛「点刘海打开」，刘海岛扩展 G2；AppDelegate 跟着偏好给）。
   /// 关着时这几样都不响应，快捷键照样能叫出来；耳朵上的活动照常能停、能点
   @ObservationIgnored var respondsToNotch = true
-  /// 停在耳朵上自动展开最要紧的那个活动（设置 › 刘海岛，以 Alcove 为准的那一轮 C1；AppDelegate 跟着偏好给）
-  @ObservationIgnored var hoverExpands = true
+  /// 停在耳朵上自动展开最要紧的那个活动（设置 › 刘海岛，默认关：Alcove 是停上去只鼓起、点了才展开——第 2 批
+  /// 以为它是悬停展开，做成了默认开，用户 2026-11-14 指出；AppDelegate 跟着偏好给）
+  @ObservationIgnored var hoverExpands = false
   /// 触感（设置 › 刘海岛「触感反馈」，A5）：滑动切歌、展开活动、进度条拖到头时触控板一下。摆出来的岛不给
   @ObservationIgnored var haptics = true
   /// 点到了岛本身（耳朵、刘海）：整座岛缩一下再弹回（C2；IslandView 看它的次数）

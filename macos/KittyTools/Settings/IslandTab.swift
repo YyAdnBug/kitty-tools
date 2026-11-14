@@ -24,7 +24,7 @@ struct IslandTab: View {
   @AppStorage(Prefs.islandKeyLevels) private var keyLevels = false
   /// 本 App 回到前台 / 问完授权时加一：让下面那行橙字照现在的授权重算（从系统设置里打开授权回来）
   @State private var accessChecks = 0
-  @AppStorage(Prefs.islandHoverExpands) private var hoverExpands = true
+  @AppStorage(Prefs.islandHoverExpands) private var hoverExpands = false
   @AppStorage(Prefs.islandHaptics) private var haptics = true
   @AppStorage(Prefs.islandBlur) private var blur = true
   /// 这一次打开开关时系统没给授权（偏好没打开，橙字留着告诉怎么开）
@@ -155,7 +155,7 @@ struct IslandTab: View {
         }
         Toggle(isOn: $hoverExpands) {
           Text("停在刘海上自动展开")
-          Text("刘海两边挂着东西时，指针停在刘海或者它两边一下就展开成卡片；没挂东西时点了才打开")
+          Text("关着时停上去只鼓起一点、点一下才展开；打开后刘海两边挂着东西时，指针停一下就展开成卡片")
         }
         Toggle(isOn: $haptics) {
           Text("触感反馈")

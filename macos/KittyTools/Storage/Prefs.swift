@@ -601,7 +601,8 @@ enum Prefs {
       islandNoticeNetwork: false,
       islandNowPlaying: false,
       islandTrackPeek: true,
-      islandHoverExpands: true,
+      // 默认关（2026-11-14，用户：Alcove 是点了才展开；它的实录里指针停 2–5 秒都只是鼓起）。这一项没发布过
+      islandHoverExpands: false,
       islandHaptics: true,
       islandBlur: true,
       keepAwakeDisplay: true,
