@@ -100,7 +100,7 @@ struct MediaKeysTests {
   /// 刘海两边的东西贴着形体的边走：形体每侧还差多少没长到位，它们就往中间挪多少；形体比它们宽不挪；最多一个 wing
   @Test func wingsRideTheEdge() {
     let notch: CGFloat = 212
-    // 音量提示（每侧 108）：长到位不挪；捏在刘海每侧只多 8 时挪 100；长到一半挪一半
+    // 每侧 108 的东西：长到位不挪；形体捏到每侧只多 8 时挪 100；长到一半挪一半
     #expect(Island.ride(wing: 108, notch: notch, shape: notch + 216) == 0)
     #expect(Island.ride(wing: 108, notch: notch, shape: notch + 16) == 100)
     #expect(Island.ride(wing: 108, notch: notch, shape: notch + 116) == 50)

@@ -133,10 +133,15 @@ import SwiftUI
   /// 形体现在按音量 / 亮度提示的样子算（刘海两边各伸出一截、不往下长）。比 level 多留一拍：收回时内容先开始退、形体
   /// 晚两帧才缩，这一拍里 level 已经没了、形体得还是提示的样子——不然会按上一份内容的大小往下鼓出一块空的再缩回
   private(set) var levelShaped = false
-  /// 形体捏回刘海（每侧只多 8 pt，里面什么都不画）：换不同种类的内容时先捏一下、再长成新的（2026-11-14 照 Alcove
+  /// 形体捏回刘海（每侧只多 4 pt，里面什么都不画）：换不同种类的内容时先捏一下、再长成新的（2026-11-14 照 Alcove
   /// 的逐帧实录：耳朵 → 音量提示是先缩回刘海约 0.3 秒、再往两边长开约 0.4 秒；音量换亮度、提示收回耳朵同样）
   private(set) var pinched = false
   @ObservationIgnored private var pinch: Task<Void, Never>?
+  /// 形体「坐」在刘海里：和收着时一样窄（藏在真刘海后面），但和刘海一样高。空刘海上出音量 / 亮度提示之前先（不带
+  /// 动画）换成它、收回时缩到它为止（缩完再不带动画换回收着的样子）——提示就只往两边长 / 缩，高度不变；直接从收着的
+  /// 样子（比刘海矮 6）长的话，两边伸出来的那一截是一边伸一边往下长的（Alcove 的实录里高度一直是刘海的高度）。
+  /// 只在刘海屏、岛上空着（没开、没耳朵、没鼓起）时算数：isSeated
+  private(set) var seated = false
   /// 刚收起的那个音量 / 亮度提示：再留 0.3 秒给画面（IslandView 把它原地淡掉、跟着形体的边往回走；当场拆掉它就
   /// 停在原位、被缩回来的边切掉）。摆出来的岛、减弱动态效果不留
   private(set) var departingLevel: Level?
@@ -373,6 +378,8 @@ import SwiftUI
     }
     let settle = { [self] in
       pinched = false
+      // 岛上有东西了，「坐着」就不算数了：清掉，免得这一条收起时还按它算（评审 3）；音量提示收回时再置
+      seated = false
       glancing = nil
       self.level = level
       levelShaped = level != nil
@@ -395,7 +402,7 @@ import SwiftUI
         content = next
       }
     } else {
-      open(with: next, settle: settle)
+      open(with: next, settle: settle, seats: level != nil)
     }
     if next.tone == .error, !quiet { shakes += 1 }
     if next.tone == .progress { collapseLater(next.title) }
@@ -421,6 +428,13 @@ import SwiftUI
     } else {
       arm(.seconds(seconds))
     }
+  }
+
+  /// 不带动画地改（形体那条 .animation(curve, value:) 也不接）
+  private static func withoutAnimation(_ body: () -> Void) {
+    var transaction = Transaction()
+    transaction.disablesAnimations = true
+    withTransaction(transaction, body)
   }
 
   /// 到点收起
@@ -746,10 +760,11 @@ import SwiftUI
     glancing = id
   }
 
-  /// 音量 / 亮度的那一行多久收回
-  static let levelDwell = Duration.milliseconds(1200)
+  /// 音量 / 亮度的那一行多久收回（Alcove 的实录：最后一下按键之后约 2.5 秒开始收；原来 1.2 秒是照它连着按的那段
+  /// 录像估的，估短了）
+  static let levelDwell = Duration.milliseconds(2200)
 
-  /// 音量 / 亮度的那一行（MediaKeys：按了音量键、亮度键）：图标 + 细条 + 百分比，约 1.2 秒收回。已经出着就原地换数、
+  /// 音量 / 亮度的那一行（MediaKeys：按了音量键、亮度键）：图标 + 细条 + 百分比，约 2.2 秒收回。已经出着就原地换数、
   /// 重新数时间（按住连发时一秒来十几次：不重新出场）；没出着就从刘海长出来，顶掉岛上别的提示、那一张（提示本来就是
   /// 一瞬的；挂着的提醒收起后会换回来）。不进最近的提示、不播报、菜单栏图标不动
   func showLevel(_ next: Level) {
@@ -818,6 +833,9 @@ import SwiftUI
 
   /// 岛上现在是音量 / 亮度的提示
   var isShowingLevel: Bool { level != nil && content != nil }
+
+  /// 形体现在按「坐在刘海里」算（seated 只在岛上空着时算数：开着、有耳朵、鼓起时照它们自己的样子）
+  var isSeated: Bool { seated && !isOpen && !isShowingWings && !isPeeking }
 
   /// 岛上现在是不是这个活动的一瞥
   func isGlancing(_ id: String) -> Bool { glancing == id && content != nil }
@@ -1010,7 +1028,16 @@ import SwiftUI
       glancing = nil
       // 音量 / 亮度的提示收回耳朵：先捏回刘海，再长成耳朵（下面那个任务放开）
       if levelShaped, isShowingWings, onNotch, !isStaged, !Style.reduceMotion { pinched = true }
-      if level != nil, levelShaped, onNotch, !isStaged, !Style.reduceMotion {
+      // 收回空刘海：形体当场就开始往中间缩（缩到「坐在刘海里」为止，高度不变），不等下面那两帧——里面的东西是跟着
+      // 边走的，形体晚了它们就先在原地糊掉（Alcove 是一起动的）
+      if levelShaped, !isShowingWings, onNotch, !isStaged, !Style.reduceMotion {
+        seated = true
+        isOpen = false
+        levelShaped = false
+        // 已经在缩了：指针这时碰到刘海不鼓起（下面的任务晚两帧才标，评审 2）
+        isRetracting = true
+      }
+      if level != nil, onNotch, !isStaged, !Style.reduceMotion {
         departingLevel = level
         departing?.cancel()
         departing = Task { [weak self] in
@@ -1042,6 +1069,8 @@ import SwiftUI
       }
       try? await Task.sleep(for: Self.retractTime)
       guard !Task.isCancelled else { return }
+      // 缩完了（已经藏在真刘海后面）：换回收着的样子
+      if self.seated { Self.withoutAnimation { self.seated = false } }
       self.isRetracting = false
       guard !self.isOpen, !self.isPeeking else { return }
       // 有活动：缩回耳朵、窗口留着；提示是在别的屏（外接屏的胶囊）上弹的，就挪回刘海屏
@@ -1096,6 +1125,7 @@ import SwiftUI
     // 决定画哪一种内容的那几样和 content 在同一个事务里清（见 apply 的说明）
     withAnimation(isOpen ? Self.resize : Style.Motion.island.animation()) {
       isOpen = true
+      seated = false
       content = nil
       isBoardOpen = true
       actions = []
@@ -1207,11 +1237,23 @@ import SwiftUI
   }
 
   /// settle：apply 里那几样决定画哪一种内容的标记，和内容一起换
-  private func open(with next: Content, settle: () -> Void = {}) {
+  private func open(with next: Content, settle: () -> Void = {}, seats: Bool = false) {
+    // 形体这会儿真的收在刘海里吗：鼓起着、上一条正在缩回时不是（评审 1：这时不带动画地「坐下」会把形体一帧切进
+    // 刘海再长出来；照旧从现在的样子连续长过去）
+    let tucked = !isPeeking && !isRetracting
     isPeeking = false
     isRetracting = false
     showWindow()
     content = nil
+    // 空刘海上出音量 / 亮度的提示：先坐到刘海的高度（不带动画，藏在真刘海后面看不见），再往两边长
+    let sits: Bool
+    if seats, tucked, case .notch = geometry, !isShowingWings, !isStaged, !Style.reduceMotion {
+      sits = true
+    } else {
+      sits = false
+    }
+    // 不坐的时候不在这儿清（清它也得不带动画，会连累同一拍里别的变化）：settle 里和内容一起清
+    if sits, !seated { Self.withoutAnimation { seated = true } }
     // 先让形体从刘海 / 小胶囊长开，内容由自己的过渡晚 60 ms 出场
     withAnimation(Style.Motion.island.animation()) {
       settle()
@@ -1684,16 +1726,19 @@ struct IslandView: View {
       let open = island.isOpen || (reduceMotion && !island.isPeeking && !wings)
       let peek = island.isPeeking && !island.isOpen
       let large = island.isExpanded || island.isBoardOpen || island.cardActivity != nil
-      // 捏回刘海（换内容的中间那一下）：每侧只多 8；音量 / 亮度的提示：只在刘海两边各伸出一截、比刘海高一点
-      // （IslandLevelWings）
-      if island.pinched || island.levelShaped {
-        let width = notchWidth + (island.pinched ? 16 : Island.levelWing * 2)
+      // 捏回刘海（换内容的中间那一下）：每侧只多 4；音量 / 亮度的提示：只在刘海两边各伸出一截、和刘海一样高
+      // （IslandLevelWings）；坐在刘海里（Island.seated）：收着那么窄、刘海那么高
+      if island.pinched || island.levelShaped || island.isSeated {
+        let tucked = IslandGeometry.tucked(notchWidth: notchWidth, notchHeight: notchHeight)
+        let shown = island.pinched || island.levelShaped
+        let width =
+          island.pinched
+          ? notchWidth + 8 : (island.levelShaped ? notchWidth + Island.levelWing * 2 : tucked.width)
         let height = notchHeight + (island.levelShaped ? Island.levelDrop : 0)
         return IslandGeometry(
           frame: CGRect(x: (canvas - width) / 2, y: 0, width: width, height: height),
-          ear: 10, bottom: 12,
-          floor: IslandGeometry.tucked(notchWidth: notchWidth, notchHeight: notchHeight),
-          contentTop: notchHeight, capsule: false)
+          ear: shown ? 10 : 0, bottom: shown ? 12 : 8, floor: tucked, contentTop: notchHeight,
+          capsule: false)
       }
       let size =
         if open {
@@ -1742,6 +1787,8 @@ struct IslandView: View {
     // 捏回刘海 0.24 s、音量 / 亮度的提示长开 0.4 s，都不过冲（照 Alcove 的实录）
     if island.pinched { return .smooth(duration: 0.24) }
     if island.levelShaped { return .smooth(duration: 0.4) }
+    // 音量 / 亮度的提示收回空刘海：比别的收起慢一点、尾巴长（Alcove：约 0.09 s 走一半、0.27 s 走九成）
+    if island.isSeated { return .smooth(duration: 0.42) }
     if island.isOpen {
       // 大面（卡片、那一张）冲过头一点再落回；一行的提示、一瞥不过冲那么多
       return island.isExpanded || island.isBoardOpen
