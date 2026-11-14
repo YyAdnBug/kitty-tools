@@ -227,6 +227,44 @@ public static partial class Redaction
     }
 
     /// <summary>
+    /// 长图（PLAN-v20 A1：长图标注里的「自动」）比识字能吃的最大边长还高时，切成几条一条条识字：每条最多 slice 行、相邻两条叠 overlap 行
+    /// （一行字压在切口上时下一条里它是完整的）。每条只认它「管」的那一段（Own：叠着的那截两条各管一半）——找到的框中心落在哪条管的
+    /// 那一段里就算哪条的，同一个号码不会在两条里各盖一块。图不高时就一条、管全部。
+    /// </summary>
+    public static List<(int Top, int Rows, int OwnTop, int OwnBottom)> Slices(int height, int slice, int overlap)
+    {
+        var result = new List<(int, int, int, int)>();
+        if (height <= 0)
+        {
+            return result;
+        }
+
+        slice = Math.Max(slice, 1);
+        overlap = Math.Clamp(overlap, 0, slice / 2);
+        if (height <= slice)
+        {
+            result.Add((0, height, 0, height));
+            return result;
+        }
+
+        var top = 0;
+        while (true)
+        {
+            var rows = Math.Min(slice, height - top);
+            var last = top + rows >= height;
+            var ownTop = top == 0 ? 0 : top + overlap / 2;
+            var ownBottom = last ? height : top + rows - (overlap - overlap / 2);
+            result.Add((top, rows, ownTop, ownBottom));
+            if (last)
+            {
+                return result;
+            }
+
+            top += slice - overlap;
+        }
+    }
+
+    /// <summary>
     /// 字框换成打码框：四周各放 pad（框贴着字，留点边才盖得严），夹回 area（选区）里；字框本身不到 minimum 的是识错的碎渣，
     /// 夹回之后太窄的（字压在区域边上）也不要；已经被某块打码整个盖住的不要（连按两下不叠两层）。
     /// ponytail: 只按「整个盖住」去重（同 mac），和已有打码只部分重叠的照样加一块。

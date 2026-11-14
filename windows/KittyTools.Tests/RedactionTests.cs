@@ -105,4 +105,39 @@ public sealed class RedactionTests
         Assert.AreEqual(300, areas[1].Bottom);
         Assert.AreEqual(0, Redaction.Areas(boxes, area, areas, 3, 2).Count);
     }
+
+    [TestMethod]
+    public void TallImagesAreSlicedWithOwnedBands()
+    {
+        // PLAN-v20 A1：长图一条条识字，相邻两条叠一截，各管一半、首尾相接不漏不重。
+        CollectionAssert.AreEqual(new[] { (0, 900, 0, 900) }, Redaction.Slices(900, 4000, 200));
+        var slices = Redaction.Slices(10_000, 4000, 200);
+        CollectionAssert.AreEqual(new[] { (0, 4000, 0, 3900), (3800, 4000, 3900, 7700), (7600, 2400, 7700, 10_000) }, slices);
+        foreach (var height in new[] { 4001, 7801, 30_000 })
+        {
+            var all = Redaction.Slices(height, 4000, 200);
+            Assert.AreEqual(0, all[0].OwnTop);
+            Assert.AreEqual(height, all[^1].OwnBottom);
+            for (var index = 1; index < all.Count; index++)
+            {
+                Assert.AreEqual(all[index - 1].OwnBottom, all[index].OwnTop, "管的那一段首尾相接");
+                Assert.IsTrue(all[index].Top < all[index - 1].Top + all[index - 1].Rows, "相邻两条叠着");
+            }
+
+            Assert.IsTrue(all.All(slice => slice.Rows <= 4000 && slice.Top + slice.Rows <= height));
+        }
+
+        Assert.AreEqual(0, Redaction.Slices(0, 4000, 200).Count);
+    }
+
+    [TestMethod]
+    public void SkewedOcrBoxesAreTurnedBack()
+    {
+        // PLAN-v20 A1 实测：1200 × 4000 的一条判成顺时针斜 1.3°，「138」报在 (85, 331)，实际在 (123, 320)。
+        var straight = OcrScale.Unrotate(new RectD(85, 331, 46, 30), 1.3, 600, 2000);
+        Assert.AreEqual(123, straight.X, 2);
+        Assert.AreEqual(320, straight.Y, 2);
+        Assert.IsTrue(straight.Width >= 46 && straight.Height >= 30, "外接矩形只会比原来大");
+        Assert.AreEqual(new RectD(10, 20, 30, 40), OcrScale.Unrotate(new RectD(10, 20, 30, 40), 0, 600, 2000), "没斜就原样");
+    }
 }

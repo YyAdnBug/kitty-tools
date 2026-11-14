@@ -11,6 +11,10 @@
 // 缩放（PLAN-v11 C1，照 mac ScrollCanvas）：默认按宽适配（最大 1:1），Ctrl+0 回到适合宽度、Ctrl+1 实际大小、Ctrl+= / Ctrl+- 和
 // Ctrl+滚轮一档一档（Core 的 ZoomSteps），换档时画面中间那一点不动；样式弹层同截图遮罩多一排选项（空心 / 实心、像素 / 模糊……）；
 // 双击文字重新编辑；拖着画 / 挪的时候碰到窗口上下边自动滚；按住空格拖动平移。
+// 样式弹层补齐截图遮罩那几样（PLAN-v20 A1，mac ee303f55 / 43b0248e / 79deab8c）：色点后面吸管（点了再单击长图上一点取色，Esc 不取）
+// 和取过的那个颜色；文字是「A− 字号 A+」（点数字选 12–72）；选中序号时「− n +」改编号；打码多一个「自动」——长图比识字能吃的
+// 最大边长高，切成 4000 行一条、相邻叠 200 行一条条识字（Core Redaction.Slices），手机号、邮箱、卡号、身份证号各盖一块，一起记一步撤销；
+// 识字没完时拷贝 / 保存先等它（号码不跟着图出去）。长图里 Ctrl+= / Ctrl+- 是缩放，所以字号只在弹层里换。
 // ponytail: 条带位图看过的都留着（最多和长图一样大，约 170 MB 显存）。
 using KittyTools.Core;
 using KittyTools.Infrastructure;
@@ -99,6 +103,15 @@ internal sealed class LongAnnotateWindow
     private long _escapeArmedAt;
     private bool _busy;
 
+    /// <summary>工具栏上的「颜色和粗细」（自检拿它打开样式弹层截图）。</summary>
+    private Button? _styleButton;
+
+    /// <summary>吸管取色中：下一次单击取长图上那一点的颜色（A1）。</summary>
+    private bool _picking;
+
+    /// <summary>自动打码正在识字（A1）：出图之前等它。</summary>
+    private Task? _redaction;
+
     /// <summary>裁剪开着（F11）、正在拖的裁剪框（长图像素）、这次裁过没有（回写历史时原图跟着换）。</summary>
     private bool _cropping;
     private RectD? _cropDraft;
@@ -172,6 +185,7 @@ internal sealed class LongAnnotateWindow
 
         bar.Children.Add(Separator());
         var styleButton = SelectionOverlayWindow.ToolbarButton(string.Empty, "颜色和粗细", "颜色和粗细");
+        _styleButton = styleButton;
         var flyout = new Flyout();
         flyout.Opening += (_, _) => flyout.Content = StylePicker(flyout);
         styleButton.Flyout = flyout;
@@ -531,6 +545,13 @@ internal sealed class LongAnnotateWindow
 
         _scroller.Focus(FocusState.Pointer);
         var point = ToImage(current.Position);
+        if (_picking)
+        {
+            // 吸管（A1）：这一下只取色
+            PickColor(point);
+            return;
+        }
+
         _start = point;
         _before = _document.Items;
         _lastViewPoint = current.Position;
@@ -794,6 +815,7 @@ internal sealed class LongAnnotateWindow
     private void SelectTool(AnnotationKind? tool)
     {
         CommitText();
+        _picking = false;
         _tool = tool == _tool ? null : tool;
         _document.SelectedId = null;
         if (_tool is { } kind)
@@ -867,39 +889,158 @@ internal sealed class LongAnnotateWindow
                     CornerRadius = new CornerRadius(12),
                     Background = new SolidColorBrush(AnnotationRenderer.ColorOf(index)),
                     BorderBrush = new SolidColorBrush(Colors.White),
-                    BorderThickness = new Thickness(shown.Color == index ? 2 : 0.5),
+                    BorderThickness = new Thickness(shown.Color == index && shown.Custom is null ? 2 : 0.5),
                 };
                 AutomationProperties.SetName(swatch, AnnotationPalette.Titles[index]);
                 swatch.Click += (_, _) =>
                 {
-                    Restyle(style => style with { Color = color });
+                    Restyle(style => style with { Color = color, Custom = null });
                     flyout.Hide();
                 };
                 colors.Children.Add(swatch);
             }
 
+            // 取过色时那个颜色的点 + 吸管（A1）
+            if (shown.Custom is { } rgb)
+            {
+                var custom = new Button
+                {
+                    Width = 24,
+                    Height = 24,
+                    MinWidth = 0,
+                    MinHeight = 0,
+                    Padding = new Thickness(0),
+                    CornerRadius = new CornerRadius(12),
+                    Background = new SolidColorBrush(AnnotationRenderer.FromArgb(0xFF000000u | (uint)rgb)),
+                    BorderBrush = new SolidColorBrush(Colors.White),
+                    BorderThickness = new Thickness(2),
+                };
+                AutomationProperties.SetName(custom, "取的颜色");
+                ToolTipService.SetToolTip(custom, $"取的颜色 #{rgb:X6}");
+                colors.Children.Add(custom);
+            }
+
+            var picker = new Button
+            {
+                Content = new FontIcon { Glyph = Glyphs.Eyedropper, FontSize = 14 },
+                Width = 32,
+                Height = 24,
+                MinWidth = 0,
+                MinHeight = 0,
+                Padding = new Thickness(0),
+            };
+            AutomationProperties.SetName(picker, "从长图里取色");
+            ToolTipService.SetToolTip(picker, "从长图里取色");
+            picker.Click += (_, _) =>
+            {
+                flyout.Hide();
+                _picking = true;
+                ShowHint("单击长图上一点取它的颜色，Esc 不取");
+            };
+            colors.Children.Add(picker);
             panel.Children.Add(colors);
         }
 
-        var weights = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-        var titles = AnnotationKinds.WeightTitles(kind);
-        for (var index = 0; index < titles.Length; index++)
+        if (kind == AnnotationKind.Text)
         {
-            var weight = index;
-            var button = new Button
+            // 文字：A− 字号 A+，点数字选 12–72（A1，同截图遮罩 S15）
+            var sizes = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+            var smaller = new Button { Content = "A−" };
+            AutomationProperties.SetName(smaller, "字号小一档");
+            smaller.Click += (_, _) =>
             {
-                Content = titles[index],
-                FontWeight = shown.Weight == index ? Microsoft.UI.Text.FontWeights.SemiBold : Microsoft.UI.Text.FontWeights.Normal,
+                Restyle(style => style.Stepped(-1, AnnotationKind.Text));
+                flyout.Content = StylePicker(flyout);
             };
-            button.Click += (_, _) =>
+            var number = new Button
             {
-                Restyle(style => style with { Weight = weight });
-                flyout.Hide();
+                Content = shown.FontSize.ToString("0", System.Globalization.CultureInfo.InvariantCulture),
+                MinWidth = 48,
             };
-            weights.Children.Add(button);
+            AutomationProperties.SetName(number, "字号");
+            var menu = new MenuFlyout();
+            foreach (var value in AnnotationStyle.FontSizes)
+            {
+                var item = new ToggleMenuFlyoutItem
+                {
+                    Text = value.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    IsChecked = Math.Abs(shown.FontSize - value) < 0.01,
+                };
+                item.Click += (_, _) =>
+                {
+                    Restyle(style => style with { TextSize = value });
+                    flyout.Hide();
+                };
+                menu.Items.Add(item);
+            }
+
+            number.Flyout = menu;
+            var larger = new Button { Content = "A+" };
+            AutomationProperties.SetName(larger, "字号大一档");
+            larger.Click += (_, _) =>
+            {
+                Restyle(style => style.Stepped(1, AnnotationKind.Text));
+                flyout.Content = StylePicker(flyout);
+            };
+            sizes.Children.Add(smaller);
+            sizes.Children.Add(number);
+            sizes.Children.Add(larger);
+            panel.Children.Add(sizes);
+        }
+        else
+        {
+            var weights = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+            var titles = AnnotationKinds.WeightTitles(kind);
+            for (var index = 0; index < titles.Length; index++)
+            {
+                var weight = index;
+                var button = new Button
+                {
+                    Content = titles[index],
+                    FontWeight = shown.Weight == index ? Microsoft.UI.Text.FontWeights.SemiBold : Microsoft.UI.Text.FontWeights.Normal,
+                };
+                button.Click += (_, _) =>
+                {
+                    // 点三档清掉拖角改过的序号直径（同截图遮罩 S19）
+                    Restyle(style => style with { Weight = weight, Diameter = null });
+                    flyout.Hide();
+                };
+                weights.Children.Add(button);
+            }
+
+            panel.Children.Add(weights);
         }
 
-        panel.Children.Add(weights);
+        if (_document.Selected is { Kind: AnnotationKind.Counter } counter)
+        {
+            // 选中序号：改编号（1–99，A1，同截图遮罩 S15）
+            var numbers = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+            var minus = new Button { Content = "−" };
+            AutomationProperties.SetName(minus, "编号减一");
+            minus.Click += (_, _) =>
+            {
+                Renumber(-1);
+                flyout.Content = StylePicker(flyout);
+            };
+            var plus = new Button { Content = "+" };
+            AutomationProperties.SetName(plus, "编号加一");
+            plus.Click += (_, _) =>
+            {
+                Renumber(1);
+                flyout.Content = StylePicker(flyout);
+            };
+            numbers.Children.Add(new TextBlock { Text = "编号", VerticalAlignment = VerticalAlignment.Center });
+            numbers.Children.Add(minus);
+            numbers.Children.Add(new TextBlock
+            {
+                Text = counter.Number.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                MinWidth = 22,
+                TextAlignment = TextAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+            numbers.Children.Add(plus);
+            panel.Children.Add(numbers);
+        }
 
         // 选项（C1，同截图遮罩的样式托盘）：空心 / 实心、无底 / 描边 / 底色、像素 / 模糊……没有的工具不出这一排
         var optionTitles = AnnotationKinds.OptionTitles(kind);
@@ -923,10 +1064,152 @@ internal sealed class LongAnnotateWindow
                 options.Children.Add(button);
             }
 
+            if (kind == AnnotationKind.Mosaic)
+            {
+                // 打码最后一个「自动」（A1，同截图遮罩 S17）
+                var auto = new Button { Content = "自动" };
+                AutomationProperties.SetName(auto, "自动打码：手机号、邮箱、卡号、身份证号");
+                ToolTipService.SetToolTip(auto, "自动打码：手机号、邮箱、卡号、身份证号");
+                auto.Click += (_, _) =>
+                {
+                    flyout.Hide();
+                    AutoRedact();
+                };
+                options.Children.Add(auto);
+            }
+
             panel.Children.Add(options);
         }
 
         return panel;
+    }
+
+    /// <summary>选中的序号改编号（1–99），记一步撤销（A1）。</summary>
+    private void Renumber(int delta)
+    {
+        if (_document.Selected is not { Kind: AnnotationKind.Counter } counter || _drag != Drag.None)
+        {
+            return;
+        }
+
+        var next = Math.Clamp(counter.Number + delta, 1, 99);
+        if (next == counter.Number)
+        {
+            return;
+        }
+
+        _document.Commit(_document.Items.Select(item => item.Id == counter.Id ? item with { Number = next } : item));
+        UpdateToolbar();
+        _view.Invalidate();
+    }
+
+    /// <summary>吸管：取长图上 point（长图像素）的颜色给样式（取的是原图，不含标注；A1）。</summary>
+    private void PickColor(PointD point)
+    {
+        _picking = false;
+        var x = Math.Clamp((int)point.X, 0, _width - 1);
+        var y = Math.Clamp((int)point.Y, 0, _height - 1);
+        var index = (y * _width + x) * 4;
+        var rgb = (_bgra[index + 2] << 16) | (_bgra[index + 1] << 8) | _bgra[index];
+        FlashHint($"取了颜色 #{rgb:X6}");
+        Restyle(style => style with { Custom = rgb });
+    }
+
+    private void AutoRedact()
+    {
+        if (_busy || _cropping || _redaction is { IsCompleted: false })
+        {
+            return;
+        }
+
+        _redaction = RedactAsync();
+    }
+
+    /// <summary>
+    /// 自动打码（A1）：长图切成几条一条条识字（Redaction.Slices：每条 4000 行、叠 200 行，各认自己管的那一段），
+    /// 手机号、邮箱、卡号、身份证号各加一块打码，一起记一步撤销。识字途中长图被裁过就作废；拖着标注就等松手再落。
+    /// </summary>
+    private async Task RedactAsync()
+    {
+        CommitText();
+        var bgra = _bgra;
+        var width = _width;
+        var height = _height;
+        ShowHint("正在找手机号、邮箱、卡号、身份证号…");
+        string message;
+        try
+        {
+            var found = new List<RectD>();
+            foreach (var (top, rows, ownTop, ownBottom) in Redaction.Slices(height, 4000, 200))
+            {
+                var slice = new byte[width * rows * 4];
+                Buffer.BlockCopy(bgra, top * width * 4, slice, 0, slice.Length);
+                var (_, lines) = await OcrService.RecognizeAsync(slice, width, rows, joined: false);
+                foreach (var box in Redaction.Boxes(lines))
+                {
+                    var moved = box.Offset(0, top);
+                    var middle = moved.Y + moved.Height / 2;
+                    if (middle >= ownTop && middle < ownBottom)
+                    {
+                        found.Add(moved);
+                    }
+                }
+            }
+
+            if (!ReferenceEquals(bgra, _bgra))
+            {
+                message = "长图裁过了，这次没打码";
+            }
+            else
+            {
+                var existing = _document.Items.Where(item => item.Kind == AnnotationKind.Mosaic).Select(item => item.Rect);
+                var areas = Redaction.Areas(found, new RectD(0, 0, width, height), existing, 3 * _scale, 2 * _scale);
+                while (_drag != Drag.None)
+                {
+                    await Task.Delay(50);
+                }
+
+                if (areas.Count == 0)
+                {
+                    message = "没找到手机号、邮箱、卡号、身份证号";
+                }
+                else
+                {
+                    var style = _tool == AnnotationKind.Mosaic ? _style : AnnotationStyle.DefaultFor(AnnotationKind.Mosaic);
+                    var added = areas.Select(box => new Annotation { Kind = AnnotationKind.Mosaic, Rect = box, Style = style }).ToList();
+                    _document.Commit(_document.Items.Concat(added));
+                    UpdateToolbar();
+                    _view.Invalidate();
+                    message = $"打码了 {added.Count} 处";
+                }
+
+                Log.Info($"screenshot.long-auto-redact count={areas.Count} slices={Redaction.Slices(height, 4000, 200).Count}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"screenshot.long-auto-redact-failed {ex.GetType().Name}");
+            message = "识字没成，这次没打码";
+        }
+
+        FlashHint(message);
+    }
+
+    /// <summary>底下那行先说一句，2.5 秒后（没被别的话换掉的话）换回按键提示。</summary>
+    private void FlashHint(string text)
+    {
+        ShowHint(text);
+        var timer = _window.DispatcherQueue.CreateTimer();
+        timer.Interval = TimeSpan.FromMilliseconds(2500);
+        timer.IsRepeating = false;
+        timer.Tick += (_, _) =>
+        {
+            if (_hint.Text == text)
+            {
+                ShowHint();
+            }
+        };
+        timer.Start();
     }
 
     // ---- 缩放、双击文字、平移、自动滚（C1）
@@ -1167,6 +1450,13 @@ internal sealed class LongAnnotateWindow
     /// <summary>Esc：选着工具先收起工具；画过标注时第一下只提示，2 秒内再按一次才关（同 mac 的「再按一次放弃」）。</summary>
     private void Escape()
     {
+        if (_picking)
+        {
+            _picking = false;
+            ShowHint();
+            return;
+        }
+
         if (_cropping)
         {
             SetCropping(false);
@@ -1196,6 +1486,12 @@ internal sealed class LongAnnotateWindow
     private async Task<byte[]?> ComposeAsync()
     {
         CommitText();
+        if (_redaction is { IsCompleted: false } redaction)
+        {
+            // 自动打码还在识字：等它落下再出图（A1）
+            await redaction;
+        }
+
         if (_document.Items.Count == 0 && _png is not null)
         {
             return _png;
@@ -1418,6 +1714,9 @@ internal sealed class LongAnnotateWindow
         window.EndDrag();
         Log.Info($"long-annotate.probe edge-scroll offset={scrolled:F0} draftBottom={draftBottom:F0} items={window._document.Items.Count}");
 
+        // PLAN-v20 A1：自动打码（号码画在第一条、两条相叠的那一截、最后一条里）、吸管、改编号、样式弹层。
+        await window.ProbeStyleExtrasAsync(hwnd, directory);
+
         // 裁剪（F11）：裁掉头尾各 500 行、左右各 100 列，接缝处的标注跟着挪，出图量尺寸。
         window.SetCropping(true);
         window._cropDraft = new RectD(100, 500, width - 200, rows - 1000);
@@ -1436,6 +1735,119 @@ internal sealed class LongAnnotateWindow
         }
 
         window._window.Close();
+    }
+
+    /// <summary>
+    /// 自检（PLAN-v20 A1）：在长图上画三段号码（手机号、邮箱、身份证号；第二段压在第一、二条识字相叠的那一截上），点「自动」，
+    /// 看盖了几块（每段一块、不重复）；吸管取一个已知颜色的点；放一个序号改编号；打开样式弹层（文字 / 序号 / 打码）各截一张。
+    /// </summary>
+    private async Task ProbeStyleExtrasAsync(IntPtr hwnd, string directory)
+    {
+        var samples = new (int Row, string Text)[]
+        {
+            (300, "电话 138 0013 8000"),
+            (Math.Min(3870, _height - 200), "邮箱 zhang.xm@example.com"),
+            (Math.Max(_height - 1000, 400), "身份证 11010519491231002X"),
+        };
+        var device = CanvasDevice.GetSharedDevice();
+        foreach (var (row, text) in samples)
+        {
+            using var target = new CanvasRenderTarget(device, 700, 64, 96);
+            using (var ds = target.CreateDrawingSession())
+            {
+                ds.Clear(Colors.White);
+                ds.DrawText(text, 12, 10, Colors.Black, new Microsoft.Graphics.Canvas.Text.CanvasTextFormat { FontSize = 30, FontFamily = "Segoe UI" });
+            }
+
+            var pixels = target.GetPixelBytes();
+            for (var y = 0; y < 64 && row + y < _height; y++)
+            {
+                Buffer.BlockCopy(pixels, y * 700 * 4, _bgra, ((row + y) * _width + 40) * 4, 700 * 4);
+            }
+        }
+
+        _bands.Clear();
+        _view.Invalidate();
+        var before = _document.Items.Count(item => item.Kind == AnnotationKind.Mosaic);
+        AutoRedact();
+        if (_redaction is { } redaction)
+        {
+            await redaction;
+        }
+
+        var masks = _document.Items.Where(item => item.Kind == AnnotationKind.Mosaic).Skip(before).ToList();
+        // 每段号码：拿一条 64 行的窄条单独识字得到号码的框（窄条不会被判成斜的），打码要把它整个盖住
+        var hits = 0;
+        foreach (var (row, _) in samples)
+        {
+            var strip = new byte[_width * 64 * 4];
+            Buffer.BlockCopy(_bgra, row * _width * 4, strip, 0, strip.Length);
+            var (_, seen) = await OcrService.RecognizeAsync(strip, _width, 64, joined: false);
+            var boxes = Redaction.Boxes(seen).Select(box => box.Offset(0, row)).ToList();
+            if (boxes.Count > 0 && boxes.All(box => masks.Any(mask =>
+                    mask.Rect.X <= box.X && mask.Rect.Y <= box.Y && mask.Rect.Right >= box.Right && mask.Rect.Bottom >= box.Bottom)))
+            {
+                hits++;
+            }
+        }
+
+        Log.Info($"long-annotate.probe auto-redact added={masks.Count} samples={samples.Length} covered={hits} " +
+                 $"slices={Redaction.Slices(_height, 4000, 200).Count} hint={_hint.Text}");
+        var redacted = await ComposeAsync();
+        if (redacted is not null)
+        {
+            await File.WriteAllBytesAsync(Path.Combine(directory, "long-annotate-redacted-export.png"), redacted);
+        }
+
+        _scroller.ChangeView(null, Math.Max(0, samples[1].Row * _unit - 200), null, true);
+        await Task.Delay(800);
+        await WindowShot.SaveAsync(hwnd, Path.Combine(directory, "long-annotate-auto-redact.png"));
+
+        // 吸管：取长图上 (60, 10) 那一点（渐变底，颜色已知）
+        SelectTool(AnnotationKind.Rectangle);
+        var index = (10 * _width + 60) * 4;
+        var expected = (_bgra[index + 2] << 16) | (_bgra[index + 1] << 8) | _bgra[index];
+        _picking = true;
+        PickColor(new PointD(60, 10));
+        Log.Info($"long-annotate.probe eyedropper custom={_style.Custom:X6} expected={expected:X6} ok={_style.Custom == expected}");
+
+        // 序号：放一个、选中、编号加二减一
+        var counter = new Annotation
+        {
+            Kind = AnnotationKind.Counter, From = new PointD(600, 200), Number = 1,
+            Style = AnnotationStyle.DefaultFor(AnnotationKind.Counter),
+        };
+        {
+            _document.Commit(_document.Items.Append(counter));
+            _document.SelectedId = counter.Id;
+            Renumber(1);
+            Renumber(1);
+            Renumber(-1);
+            var number = _document.Items.First(item => item.Id == counter.Id).Number;
+            Log.Info($"long-annotate.probe renumber number={number} ok={number == 2}");
+        }
+
+        // 样式弹层：选中序号（多「编号」一行）、文字工具（A− 字号 A+）、打码工具（多「自动」）
+        _scroller.ChangeView(null, 0, null, true);
+        await Task.Delay(400);
+        foreach (var (name, tool) in new[] { ("counter", (AnnotationKind?)null), ("text", AnnotationKind.Text), ("mosaic", AnnotationKind.Mosaic) })
+        {
+            if (tool is { } kind)
+            {
+                SelectTool(kind);
+            }
+
+            if (_styleButton?.Flyout is Flyout flyout)
+            {
+                flyout.ShowAt(_styleButton);
+                await Task.Delay(700);
+                await WindowShot.SaveAsync(hwnd, Path.Combine(directory, $"long-annotate-style-{name}.png"));
+                flyout.Hide();
+                await Task.Delay(300);
+            }
+        }
+
+        SelectTool(null);
     }
 
     private void Release()

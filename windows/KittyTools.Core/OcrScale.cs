@@ -61,4 +61,34 @@ public static class OcrScale
 
         return result;
     }
+
+    /// <summary>
+    /// 识字认出图里的字是斜的（OcrResult.TextAngle，顺时针的度数）时，词和行的框是按「摆正之后」的图给的，不是原图的坐标
+    /// （PLAN-v20 A1 实测：长图切成 4000 行一条识字，横条纹的底色让它判成斜了 1.3°，号码的框往左偏了 38 像素，打码盖歪、号码露出半截）。
+    /// 这里把框的四个角绕图的中心（cx, cy）顺时针转回 angle 度，取外接矩形（只会比字大一点，不会漏）。y 朝下。
+    /// </summary>
+    public static RectD Unrotate(RectD box, double angle, double cx, double cy)
+    {
+        if (Math.Abs(angle) < 0.01)
+        {
+            return box;
+        }
+
+        var radians = angle * Math.PI / 180;
+        var (sin, cos) = Math.SinCos(radians);
+        double left = double.MaxValue, top = double.MaxValue, right = double.MinValue, bottom = double.MinValue;
+        foreach (var (x, y) in new[] { (box.X, box.Y), (box.Right, box.Y), (box.X, box.Bottom), (box.Right, box.Bottom) })
+        {
+            var dx = x - cx;
+            var dy = y - cy;
+            var rx = cx + dx * cos - dy * sin;
+            var ry = cy + dx * sin + dy * cos;
+            left = Math.Min(left, rx);
+            top = Math.Min(top, ry);
+            right = Math.Max(right, rx);
+            bottom = Math.Max(bottom, ry);
+        }
+
+        return RectD.FromLtrb(left, top, right, bottom);
+    }
 }

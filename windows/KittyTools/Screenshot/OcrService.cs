@@ -71,6 +71,11 @@ internal static class OcrService
             }
         }
 
+        // 判成斜的时框是摆正之后的坐标：绕识字那张图的中心转回去（OcrScale.Unrotate，PLAN-v20 A1）。
+        var angle = result.TextAngle ?? 0;
+        var centerX = scaledWidth * scale / 2;
+        var centerY = scaledHeight * scale / 2;
+        RectD Straight(RectD box) => OcrScale.Unrotate(box, angle, centerX, centerY);
         var lines = new List<CoreOcrLine>();
         foreach (var line in result.Lines)
         {
@@ -80,12 +85,12 @@ internal static class OcrService
                 continue;
             }
 
-            var box = Union(line);
+            var box = Straight(Union(line));
             // 各个词的框（截图翻译认行内代码块、判断被长词挤断的行；PLAN-v16 S1b）
             var words = line.Words
-                .Select(word => new KittyTools.Core.OcrWord(word.Text, RectD.FromLtrb(
-                    word.BoundingRect.X / scale, word.BoundingRect.Y / scale,
-                    word.BoundingRect.Right / scale, word.BoundingRect.Bottom / scale)))
+                .Select(word => Straight(new RectD(word.BoundingRect.X, word.BoundingRect.Y, word.BoundingRect.Width, word.BoundingRect.Height)))
+                .Zip(line.Words, (box, word) => new KittyTools.Core.OcrWord(word.Text, RectD.FromLtrb(
+                    box.X / scale, box.Y / scale, box.Right / scale, box.Bottom / scale)))
                 .ToList();
             lines.Add(new CoreOcrLine(text, RectD.FromLtrb(box.X / scale, box.Y / scale, box.Right / scale, box.Bottom / scale), words));
         }
