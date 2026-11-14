@@ -1812,6 +1812,22 @@ internal sealed partial class LauncherModel
             actions.Add(new PaletteItem("从启动器里隐藏", Glyphs.Remove, 4, () => HideApp(item)));
         }
 
+        // 自己的脚本（PLAN-v18 L1 第 8 批，mac ⌘E / 在访达中显示）：用编辑器改、在资源管理器里找到它；自带的没有文件
+        if (item.Kind == LauncherKind.Script &&
+            Scripts.FirstOrDefault(script => string.Equals(script.Path, item.Target, StringComparison.OrdinalIgnoreCase)) is { IsBundled: false } own)
+        {
+            actions.Add(new PaletteItem("编辑脚本", Glyphs.Edit, 1, () =>
+            {
+                HidePanel();
+                ScriptLibrary.Edit(own.Path);
+            }));
+            actions.Add(new PaletteItem("在资源管理器中显示", Glyphs.Folder, 1, () =>
+            {
+                HidePanel();
+                LauncherOpeners.Reveal(own.Path);
+            }));
+        }
+
         return actions;
     }
 

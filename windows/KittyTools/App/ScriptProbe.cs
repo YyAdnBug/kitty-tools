@@ -1,6 +1,7 @@
 // 脚本命令的实跑自检（PLAN-v18 L1，Windows 自己加的）：`--script-probe=<目录>`（只在测试档）。不碰启动器界面、不发按键：
 // 在 <目录>\scripts 写几个假脚本（.ps1、.cmd、.py），用 ScriptRunner 真跑一遍：输出、中文不乱码、退出码、参数（带空格 / &）、
-// 超时、停止时连子进程一起停、工作目录、KITTY_* 环境、下载标记（写一个 :Zone.Identifier）；量 PowerShell 冷启动。结果写 report.md，跑完就退。
+// 超时、停止时连子进程一起停、工作目录、KITTY_* 环境、下载标记（写一个 :Zone.Identifier）；量 PowerShell 冷启动；
+// 第 8 批：新建脚本的模板（.ps1 带 BOM、.cmd 不带）真跑出中文、第一次建文件夹放两个样板、自带的命令走同一条路。结果写 report.md，跑完就退。
 using System.Diagnostics;
 using System.Text;
 using KittyTools.Core;
@@ -121,6 +122,29 @@ internal static class ScriptProbe
             {
                 report.Append("  这台没有 py.exe：.py 没跑（设置页列「要装 Python」）\n");
             }
+
+            // 第 8 批：新建脚本的模板（存成的字节真跑得出中文）、第一次建文件夹时的样板、自带的命令走同一条路
+            foreach (var language in new[] { ScriptLanguage.PowerShell, ScriptLanguage.Batch })
+            {
+                var path = Path.Combine(folder, ScriptTemplates.NewFileName("模板", "tpl", language));
+                await File.WriteAllBytesAsync(path, ScriptTemplates.Bytes(ScriptTemplates.Template("模板", "tpl", ScriptMode.Island, language), language));
+                var template = ScriptCommand.Parse(await File.ReadAllTextAsync(path), path, python)?.Script;
+                outcome = template is null ? new ScriptRunner.Outcome(ScriptRunner.End.FailedToStart) : await ScriptRunner.RunAsync(template, Array.Empty<string>(), CancellationToken.None);
+                Check(ScriptText.LastLine(outcome.Output) == "你好，" + Environment.UserName, $"{language} 模板：「{ScriptText.LastLine(outcome.Output)}」");
+            }
+
+            var fresh = Path.Combine(directory, "fresh scripts");
+            ScriptLibrary.EnsureFolder(fresh);
+            var samples = Directory.GetFiles(fresh).Select(file => ScriptCommand.Parse(File.ReadAllText(file), file, python)?.Script?.Keyword).Order().ToArray();
+            Check(samples.SequenceEqual(new[] { "tq", "zs" }) && Directory.GetFiles(fresh).All(file => File.ReadAllBytes(file).Take(3).SequenceEqual(new byte[] { 0xEF, 0xBB, 0xBF })),
+                $"第一次建文件夹放两个带 BOM 的样板：{string.Join("、", samples)}");
+            var time = BuiltinTools.Commands.First(command => command.Keyword == "time");
+            watch.Restart();
+            outcome = await ScriptRunner.RunAsync(time, new[] { "1700000000" }, CancellationToken.None);
+            var builtinMs = watch.ElapsedMilliseconds;
+            Check(outcome.Succeeded && ScriptText.Lines(outcome.Output).Count == 4, $"自带 time：{ScriptText.Lines(outcome.Output).Count} 行，{builtinMs} ms（不起进程）");
+            outcome = await ScriptRunner.RunAsync(BuiltinTools.Commands.First(command => command.Keyword == "bcvt"), new[] { "12z" }, CancellationToken.None);
+            Check(!outcome.Succeeded && outcome.ExitCode == 1 && ScriptText.LastLine(outcome.Error) is { Length: > 0 }, $"自带 bcvt 写错：退出码 1，「{ScriptText.LastLine(outcome.Error)}」");
         }
         catch (Exception ex)
         {

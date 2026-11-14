@@ -102,6 +102,32 @@ internal sealed class ScriptTextWindow : Window
         Log.Info($"script.review blocked={blocked}");
     }
 
+    /// <summary>从剪贴板新建（第 8 批，mac ScriptImportSheet）：存之前看全文；看不见的字同样不放行。点了「存进脚本文件夹」才 save。</summary>
+    public static void ReviewNew(string name, string text, string summary, Action save)
+    {
+        var (shown, blocked) = ScriptText.Revealed(text);
+        var window = new ScriptTextWindow($"看一眼再存：{name}");
+        window._text.Text = shown;
+        window._status.Text = blocked
+            ? "里面有看不见的字（标成 ⟦U+…⟧）：显示出来的和真会跑的不一样，不能存。让 AI 重新给一份，或者自己删掉它们"
+            : $"{summary}。脚本以你的身份运行、能用 Kitty Tools 已有的权限，看过、确认没问题再存";
+        if (blocked)
+        {
+            window._status.Foreground = Theme.Caution();
+        }
+
+        var saveButton = window.AddButton("存进脚本文件夹", () =>
+        {
+            window.Close();
+            save();
+        }, accent: true);
+        saveButton.IsEnabled = !blocked;
+        window.AddButton("取消", window.Close);
+        AutomationProperties.SetName(window._text, "脚本全文");
+        window.Activate();
+        Log.Info($"script.review-new blocked={blocked}");
+    }
+
     /// <summary>全部输出那一页（mode full）：返回追加输出的回调和「跑完了」的回调。</summary>
     public static (Action<string> Append, Action<string> Done) Output(ScriptCommand script, Action stop, Action rerun)
     {

@@ -1,6 +1,6 @@
 // 设置 › 启动器 › 命令和别名（PLAN-v18 L2 L3，mac LauncherCommandsSection / LauncherCommandsPage）：启动器页上一行「命令和别名 ›」，
 // 点进来是一张「名称 / 别名 / 快捷键 / 启用」的表，两组——关键词命令（open、kill、ip、cb、fy、remind、currency…）、系统命令
-// （lock、sleep…），组里按名字排；上面能搜、能只看开着的。脚本命令（第 6–8 批）以后加在最前面。
+// （lock、sleep…），组里按名字排；上面能搜、能只看开着的。最前面是我的脚本、自带的命令（PLAN-v18 第 6–8 批）。
 // 别名就是在启动器里要打的那个词：改了旧词不再认，清空就只能按名字搜；和别的命令、网页搜索的关键词撞了那一格描橙框。
 // 关掉 = 不出现在搜索、常用、收藏里，关键词也不认。只存改过的（Core LauncherCommandTable，跟着导出导入）。
 // 快捷键那一列：同快捷键页的录制框（_recordingAction 带 cmd: 前缀），和全局快捷键、别的命令一起查重；按了直接跑（LauncherCommandKeys）。
@@ -18,7 +18,8 @@ internal sealed partial class SettingsWindow
 {
     private const string CommandPrefix = "cmd:";
 
-    /// <summary>启动器页里点进去的子页：null = 启动器页本身，"commands" = 命令和别名，"web" = 网页搜索。</summary>
+    /// <summary>启动器页里点进去的子页：null = 启动器页本身，"commands" = 命令和别名，"web" = 网页搜索，"apps" = 应用，
+    /// "scripts" = 脚本命令，"script-guide" = 怎么写脚本。</summary>
     private string? _launcherSubpage;
     private string _commandFilter = string.Empty;
     private bool _commandOnlyOn;
@@ -113,6 +114,7 @@ internal sealed partial class SettingsWindow
             var groups = new[]
             {
                 ("我的脚本", LauncherCommandKeys.ScriptRows),
+                ("自带的命令", LauncherCommandKeys.BundledRows),
                 ("关键词命令", LauncherCommandTable.BuiltIns.AsEnumerable()),
                 ("系统命令", SystemCommands.Rows()),
             };

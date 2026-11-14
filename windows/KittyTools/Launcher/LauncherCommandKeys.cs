@@ -14,12 +14,19 @@ internal static class LauncherCommandKeys
         => LauncherCommandTable.FromStored(SettingsService.Current.LauncherCommandAliases, SettingsService.Current.LauncherCommandsOff);
 
     /// <summary>表里全部的行：我的脚本（PLAN-v18 L1）、关键词命令、系统命令（编号、标题、原来的关键词、图标）。</summary>
-    public static IEnumerable<LauncherBuiltIn> Rows => ScriptRows.Concat(LauncherCommandTable.BuiltIns).Concat(SystemCommands.Rows());
+    public static IEnumerable<LauncherBuiltIn> Rows
+        => ScriptRows.Concat(BundledRows).Concat(LauncherCommandTable.BuiltIns).Concat(SystemCommands.Rows());
 
-    /// <summary>脚本那几行：编号「script:路径」，原来的别名是头部写的 keyword（没写是空）。</summary>
-    public static IEnumerable<LauncherBuiltIn> ScriptRows
+    /// <summary>自己的脚本那几行：编号「script:路径」，原来的别名是头部写的 keyword（没写是空）。</summary>
+    public static IEnumerable<LauncherBuiltIn> ScriptRows => ScriptRowsWhere(bundled: false);
+
+    /// <summary>自带的命令那几行（PLAN-v18 D8）。</summary>
+    public static IEnumerable<LauncherBuiltIn> BundledRows => ScriptRowsWhere(bundled: true);
+
+    private static IEnumerable<LauncherBuiltIn> ScriptRowsWhere(bool bundled)
         => SettingsService.Current.LauncherScripts
-            ? ScriptLibrary.Scripts.Select(script => new LauncherBuiltIn(ScriptId(script), script.Title, script.Keyword ?? string.Empty, Glyphs.Code))
+            ? ScriptLibrary.Scripts.Where(script => script.IsBundled == bundled)
+                .Select(script => new LauncherBuiltIn(ScriptId(script), script.Title, script.Keyword ?? string.Empty, Glyphs.Code))
             : Enumerable.Empty<LauncherBuiltIn>();
 
     public static string ScriptId(ScriptCommand script) => "script:" + script.Path;

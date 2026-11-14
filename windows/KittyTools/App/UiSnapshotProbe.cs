@@ -735,10 +735,15 @@ internal static class UiSnapshotProbe
                 SettingsService.Current.LauncherAppAliases = new Dictionary<string, string> { ["aumid:microsoft.windowscalculator_8wekyb3d8bbwe!app"] = "jsq" };
                 SettingsService.Current.LauncherAppFolders = new List<string> { @"D:\Tools-not-here" };
                 SettingsService.Current.LauncherHiddenApps = new List<string> { @"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Example.lnk" };
+                // PLAN-v18 第 8 批：脚本命令页里一个找不到的「其他文件夹」
+                var scriptFolders = SettingsService.Current.LauncherScriptFolders;
+                SettingsService.Current.LauncherScriptFolders = new List<string> { @"D:\Scripts-not-here" };
                 foreach (var (name, page, sub) in new[]
                          {
                              ("settings-sub-launcher", "launcher", (string?)null), ("settings-sub-commands", "launcher", "commands"),
                              ("settings-sub-web", "launcher", "web"), ("settings-sub-apps", "launcher", "apps"),
+                             ("settings-sub-scripts", "launcher", "scripts"), ("settings-sub-script-guide", "launcher", "script-guide"),
+                             ("settings-sub-script-fields", "launcher", "script-guide"),
                              ("settings-sub-general", "general", null),
                              ("settings-sub-features", "general", "features"),
                          })
@@ -748,7 +753,19 @@ internal static class UiSnapshotProbe
                     await Task.Delay(500);
                     if (page == "launcher" && sub is null)
                     {
-                        settings.ScrollToSectionForProbe("命令与网页搜索");
+                        settings.ScrollToSectionForProbe("脚本命令");
+                        await Task.Delay(300);
+                    }
+
+                    if (sub == "scripts")
+                    {
+                        // 后台读脚本文件夹，读完重画这一页
+                        await Task.Delay(800);
+                    }
+
+                    if (name == "settings-sub-script-fields")
+                    {
+                        settings.ScrollToSectionForProbe("开头几行能写什么");
                         await Task.Delay(300);
                     }
 
@@ -761,6 +778,7 @@ internal static class UiSnapshotProbe
                 SettingsService.Current.LauncherAppAliases = appAliases;
                 SettingsService.Current.LauncherAppFolders = appFolders;
                 SettingsService.Current.LauncherHiddenApps = hiddenApps;
+                SettingsService.Current.LauncherScriptFolders = scriptFolders;
             }
 
             // PLAN-v18 S3：快捷键页「截图时」两组（改过一个键：钉图 Alt+P；清掉一个：录屏），拍完换回去

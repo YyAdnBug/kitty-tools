@@ -1353,7 +1353,11 @@ internal sealed partial class SettingsWindow : Window
         {
             var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
             var connect = new Button { Content = "连接服务器…" };
-            connect.Click += (_, _) => _ = ConnectSyncServerAsync();
+            connect.Click += (_, _) =>
+            {
+                WhatsNewHost.TouchSection("general", "同步");
+                _ = ConnectSyncServerAsync();
+            };
             buttons.Children.Add(connect);
             var choose = new Button { Content = "选择文件夹…" };
             choose.Click += (_, _) => _ = PickSyncFolderAsync();
@@ -2146,6 +2150,18 @@ internal sealed partial class SettingsWindow : Window
             return;
         }
 
+        if (_launcherSubpage == "scripts")
+        {
+            BuildLauncherScripts();
+            return;
+        }
+
+        if (_launcherSubpage == "script-guide")
+        {
+            BuildScriptGuide();
+            return;
+        }
+
         _content.Children.Add(Header("启动器", "搜索应用、文件、书签与历史、网页搜索与快捷链接"));
         AddFeatureToggle(Feature.Launcher);
         var settings = SettingsService.Current;
@@ -2199,6 +2215,9 @@ internal sealed partial class SettingsWindow : Window
 
         // 后台读浏览器数据，读完原地改各行的条数（不重建整页：以前读完整页重画，开关全闪一下、滚动跳回顶部）。
         _ = RefreshBrowsersAsync(settings);
+
+        // 脚本命令（PLAN-v18 L1 第 8 批：一行，点进去）
+        AddScriptsRow();
 
         // 命令与网页搜索（PLAN-v18 L2 L4：各收成一行，点进去编辑）
         _content.Children.Add(SettingsUi.Section("命令与网页搜索"));

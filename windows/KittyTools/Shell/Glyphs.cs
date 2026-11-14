@@ -131,6 +131,7 @@ internal static class Glyphs
     public const string Shutdown = "\uE7E8";
     public const string Lock = "\uE72E";
     public const string Sleep = "\uE708";
+    public const string Brightness = "\uE706";
     public const string Recycle = "\uE74D";
 
     // 启动器对齐 mac（PLAN-v9-launcher）：系统命令、Ctrl+K 菜单用到的。

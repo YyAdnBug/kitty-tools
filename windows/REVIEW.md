@@ -701,21 +701,32 @@ mac 的单测在 `macos/KittyToolsTests/`，样本和期望值能搬就搬。只
   - 验：单测 952（新 7：PortableApps 3、AppAliases 3、同分按系统记的使用 1）；`--launcher-script` 在 .Dev 档给计算器起别名 zz9 → 输 zz9 计算器排第一、输 zz 不出；本机实测 App Paths 27 个、运行记录 14 条（新收 0 个：都已在开始菜单里或被名单拦下）、桌面 0 个，A1–A3 加起来 391 ms（后台线程，主要是给 27 个 App Paths 程序取图标；PLAN 写的目标是 100 ms，没达到，见下）；截图 settings-sub-apps（浅深）；AOT x64 / ARM64 0 警告（96.7 / 102.4 MB）。内存全量、空闲 CPU 随第 6 批补。
   - 替用户定的：A5「没图标的不收」用的是取不取得到 PNG 图标（ShellIcons.LoadPng），没另调 ExtractIconEx；App Paths 的程序也要有图标才收；A3 的副标题写所在文件夹名。
   - 没达到：A1–A3 391 ms > 100 ms（取图标占大头；在后台线程、扫完才换列表，界面不卡；要压就把 App Paths 的图标改成第一次显示时再取）。没测：真桌面上的便携软件、真文件夹、隐藏 / 恢复、工作目录、导出导入（HANDTEST 1281–1289）。
-  - 空闲 CPU 0.037 %（静置 30 s 后量 300 s）；内存全量在跑，随第 7 批补。
+  - 空闲 CPU 0.037 %（静置 30 s 后量 300 s）；内存全量（第 5 批 vs 第 4 批，两份一起跑）：只托盘 51.7 / 52.0 MB，开启动器 58.1 / 63.1，开截图遮罩 72.5 / 77.5，最后静置 96.4 / 98.8（都没涨）。
 - **第 6 批（`git log --grep "PLAN-v18 第 6 批"`）**：L1 之一——脚本库和运行（照 mac 7c5ea76e 起的几批，D7 D9）。
   - Core `ScriptCommand`（头部字段同 mac：@kitty.* / @raycast.*，注释多认 ::、REM；按扩展名选解释器：.ps1 → powershell -NoProfile -ExecutionPolicy Bypass -File、.cmd / .bat → cmd /d /s /c、.py 有 py.exe 才认；.sh / .js 记「Windows 版只认…」）、参数（JSON、下拉、密码、percentEncoded、引号）、列表输出、清颜色码和回车、看不见的字（⟦U+…⟧，不放行）；Core `ScriptLaunch`（cmd 的命令行、PATH 从注册表的系统 + 用户重拼、环境加 KITTY_*、UTF-8 判断）。
   - `Launcher/ScriptLibrary.cs`（数据目录 scripts + 自己加的文件夹，顶层、每次呼出后台重读，读不成的记原因，下载来的去掉不可信图标）、`ScriptRunner.cs`（不开窗口、标准输入空、工作目录是脚本的文件夹、默认 60 s，超时 / 停止 / 输出 4 MB 都是 Kill(entireProcessTree)；.py 和存成 UTF-8 的批处理按 UTF-8 读（批处理先 chcp 65001），别的按 OEM 代码页；:Zone.Identifier 下载标记）、`ScriptHost.cs`（下载来的先开窗看全文、1 秒后「正在运行」带「停止」、按 mode 交出结果）、`ScriptTextWindow.cs`（看全文 / 全部输出两用）。
   - 启动器：新种类 Script（行尾「脚本」、命令家族紫），搜标题 / 拼音 / 文件名 / 别名，别名一字不差排第一；「别名 空格 参数」（内置命令先认）一行写各参数；Enter 补「别名 空格」/ 缺必填响一声 / confirm 上膛 / 跑；密码参数不记使用。命令和别名表最上面加「我的脚本」组（别名、开关、快捷键）。
-  - 验：单测 965（新 13：ScriptCommand 9、ScriptLaunch 4）；`--script-probe`（新，Debug，临时文件夹真跑）全过：ps1 中文 + 带空格和 & 的参数、退出码、工作目录 / KITTY_SCRIPT_DIR、cmd 存 UTF-8 和 GBK 都不乱码、超时 1 s 停下、停止后子进程 ping 0 个、下载标记；**PowerShell 冷启动约 200 ms**（第二次 190 ms）；`--launcher-script` 在 .Dev 档 scripts 放一个 .ps1：搜得到、「nh 世界」副标题「名字：世界」、Enter 跑完 215 ms；AOT x64 / ARM64 0 警告（97.6 / 103.3 MB，比第 5 批 +0.9 MB）。内存全量、空闲 CPU 随第 7 批补。
+  - 验：单测 965（新 13：ScriptCommand 9、ScriptLaunch 4）；`--script-probe`（新，Debug，临时文件夹真跑）全过：ps1 中文 + 带空格和 & 的参数、退出码、工作目录 / KITTY_SCRIPT_DIR、cmd 存 UTF-8 和 GBK 都不乱码、超时 1 s 停下、停止后子进程 ping 0 个、下载标记；**PowerShell 冷启动约 200 ms**（第二次 190 ms）；`--launcher-script` 在 .Dev 档 scripts 放一个 .ps1：搜得到、「nh 世界」副标题「名字：世界」、Enter 跑完 215 ms；AOT x64 / ARM64 0 警告（97.6 / 103.3 MB，比第 5 批 +0.9 MB）。内存全量、空闲 CPU 和第 7、8 批一起量，记在第 8 批。
   - 替用户定的：mac 在启动器面板里原地看全文 / 全部输出，Windows 的启动器失焦就收，挪到一扇普通窗口；批处理按文件是不是 UTF-8 决定要不要 chcp 65001；.ps1 不带 BOM 的中文 PowerShell 5.1 读成乱码（`ponytail:`，说明里写存成带 BOM）。
   - 没做（第 7、8 批）：列表模式、下拉参数打字时列选项、全部输出认终端颜色、设置页（文件夹、读不成的、新建、怎么写、给 AI 的写法说明）、自带的命令（D8）。没测：粘贴 / 复制 / 全文、confirm、看全文那扇窗、快捷键跑脚本（HANDTEST 1290–1298）。
 - **第 7 批（`git log --grep "PLAN-v18 第 7 批"`）**：L1 之二——参数和输出。
   - 列表脚本（mode list）：「别名 空格 参数」停 0.25 s 后台跑（还在打字就撤掉），每行一条结果（Core `ScriptText.Lines`：「标题⇥副标题」或 Script Filter 的 JSON），接着打字重跑；filter 的只跑一次、按打的字过滤；Enter 打开 url / path 或粘贴值，valid=false 响一声，Tab 补 autocomplete；出错那一行写原因。
   - 下拉参数：正在打的那个参数是下拉的就列选项（行尾「选项」、底栏「选这个」），Enter / Tab 补进框（带空白的括引号），交给脚本的是 value；引号参数、密码参数（行上 •••、不记使用）在第 6 批的 Core 里。
   - 全部输出那扇窗认终端颜色（Core `ScriptTerminal`：SGR 8 / 16 / 256 色、24 位、粗体 / 暗 / 斜体 / 下划线 / 删除线，别的控制码去掉、截在一半的先不显示；0–15 按深浅色调过），可选中的 RichTextBlock、边跑边来最多 0.1 s 重画一次。
-  - 验：单测 968（新 3：ScriptTerminal）；`--launcher-script`（.Dev 档）：列表脚本「ls9 ab」两行「ab-1 第一」「ab-2 第二」，下拉参数「dw 」列出「毫秒」「秒」；AOT x64 / ARM64 0 警告（97.7 / 103.3 MB）。内存全量、空闲 CPU 随第 8 批补。
+  - 验：单测 968（新 3：ScriptTerminal）；`--launcher-script`（.Dev 档）：列表脚本「ls9 ab」两行「ab-1 第一」「ab-2 第二」，下拉参数「dw 」列出「毫秒」「秒」；AOT x64 / ARM64 0 警告（97.7 / 103.3 MB）。空闲 CPU 0.037 %；内存全量记在第 8 批（三批一起跑）。
+  - 第一次量第 7 批时它一启动就退（Microsoft.UI.Xaml.dll 0xc000027b）：是我拷探针包时把 exe 改名成 KittyProbe.exe、没把 KittyTools.pri 跟着拷成 KittyProbe.pri（找不到资源），不是代码的问题；补上后照常跑。
   - 替用户定的：列表那几行的 Ctrl+C 没做（mac 的 text.copy；Enter 粘贴照常），列表结果不进使用记录。
   - 没测：列表的 Enter / Tab、filter、选项补进框、彩色输出那扇窗（HANDTEST 1299–1303）。
+- **第 8 批（`git log --grep "PLAN-v18 第 8 批"`）**：L1 之三——设置、自带的命令（D8）、写法说明；0.3.0 的版本号、更新日志、「新」。
+  - 自带的七条（Core `BuiltinTools`，头部同 mac 那几个 .sh：time json uuid bcvt url b64 regt）：C# 算、不起进程，`ScriptRunner` 认出解释器 kitty-builtin 时直接调；排在自己的脚本后面（同关键词用自己的），走同一条路（别名、开关、快捷键、列表 / 粘贴 / 全文）；json / regt 不带文字时读剪贴板（`ReadTextForPin`，标了隐私的不读）。「切换深色模式」做成系统命令 dark（写 AppsUseLightTheme + SystemUsesLightTheme，广播 ImmersiveColorSet，提示里说切成了哪个）。命令和别名表多「自带的命令」一组。
+  - 设置 › 启动器「脚本命令 ›」子页（`Settings/SettingsWindow.Scripts.cs`）：启用开关、「怎么写脚本 ›」、让 AI 来写（复制写法说明、从剪贴板新建——`ScriptTextWindow.ReviewNew` 先看全文，看不见的字不让存）、脚本文件夹（新建脚本对话框：名字 / 关键词 / 结果给谁 / 用什么写，存好用文件的「编辑」打开；在资源管理器中打开）、没有自己的脚本时「用例子新建」、其他文件夹（添加 / 移除、找不到的橙字）、读不成的脚本（橙字 + 在资源管理器中显示）。「怎么写脚本」子页照 mac ScriptGuide：让 AI 来写、三步上手、查天气的例子、9 个字段、列表、用什么跑、安全和同步。
+  - Core `ScriptTemplates`：新建的模板（PowerShell / 批处理 / Python × 六种结果，都读得回一条命令）、文件名、重名加数字、.ps1 存成带 BOM 的 UTF-8 / .cmd 不带、从剪贴板认脚本（只取第一个代码块，按围栏的语言或 :: / REM 认批处理）、给 AI 的写法说明（字段同 mac，语言和规矩换成 Windows 的：PowerShell 5.1、不用 PS7 写法、`[Console]::Error.WriteLine`、输出按 GBK 读）。默认脚本文件夹第一次建时放两个样板：查天气.ps1（tq，要联网）、数字数.ps1（zs）。
+  - 启动器 Ctrl+K：自己的脚本多「编辑脚本」「在资源管理器中显示」。
+  - 0.3.0：`Directory.Build.props` 0.3.0；`changelog.json` 0.3.0 一条（12 条：feat 10、fix 1、ui 1）；「新」两条——脚本命令（启动器页「脚本命令」一节）、WebDAV（通用页「同步」一节），都只在设置里，拨过脚本命令的开关 / 新建过脚本 / 点过「连接服务器…」算碰过（`WhatsNewHost.TouchSection`）。0.2.0 那三条照旧（0.2.0 升上来不再标）。
+  - 验：单测 977（新 9：BuiltinTools 5、ScriptTemplates 4；WhatsNew 加了 0.2.0 → 0.3.0 那几句）；`--script-probe` 全过，新加：模板存成的 .ps1 / .cmd 真跑出「你好，用户名」、临时文件夹第一次建时两个带 BOM 的样板读得出 tq / zs、自带 time 走 ScriptRunner 0 ms、bcvt 写错退出码 1；`--launcher-script`（.Dev 档）time / bcvt / regt / b64 / dark 的行；截图 settings-sub-scripts / script-guide / script-fields / commands / launcher（浅深）；AOT x64 / ARM64 0 警告（97.9 / 103.5 MB）。
+  - 空闲 CPU 0.047 %（静置 30 s 后量 300 s）；内存全量（第 8 批 vs 第 7 批 vs 第 6 批）：只托盘 52.2 / 52.4 / 53.0 MB，开启动器 58.3 / 58.1 / 59.2，开截图遮罩 71.7 / 71.7 / 73.2，最后静置 94.9 / 94.1 / 95.2（都没涨，第 8 批比第 7 批静置多 0.8 MB，在抖动范围里）。
+  - 替用户定的：自带的七条做成 C#（D8 推荐），头部和 mac 一样；样板放两个（查天气同 mac 的例子，数字数是 Windows 加的、不联网）；mac 的「拖进来导入」「命令的查找路径」没做（Windows 直接放进文件夹就行、PATH 每次从注册表读）；从剪贴板新建时 AI 前后的话自动去掉（mac 要求第一行是 #!）；「新」的两条都是设置里一节（Windows 设置页里一节标题后的「新」没画，只有侧栏的点）；新建脚本用文件自己的「编辑」打开（.ps1 双击就跑了）。
+  - 没做：启动器里脚本行画头部写的图标（都画统一的脚本图标）；⌘K 里「改别名…」直达命令表那一行；「防止睡眠」（等 issue #3）。没测：dark 真切（会改系统主题）、uuid 粘贴、json 的全文窗、新建对话框和从剪贴板新建的窗口、查天气联网（HANDTEST 1304–1317）。
 
 ### 停下来问用户
 

@@ -79,6 +79,21 @@ internal static class ScriptRunner
     public static async Task<Outcome> RunAsync(
         ScriptCommand script, IReadOnlyList<string> arguments, CancellationToken cancellation, Action<string>? live = null)
     {
+        // 自带的命令（PLAN-v18 D8）：C# 里算，不起进程；json / regt 不带文字时读剪贴板（标了隐私的不读）
+        if (BuiltinTools.IsBuiltin(script))
+        {
+            var given = script.Passed(arguments);
+            var clipboard = script.Path switch
+            {
+                "kitty-builtin:json" when given.All(string.IsNullOrWhiteSpace) => ClipboardFormats.ReadTextForPin(),
+                "kitty-builtin:regt" when given.Count < 2 || given[1].Length == 0 => ClipboardFormats.ReadTextForPin(),
+                _ => null,
+            };
+            var (code, text) = BuiltinTools.Run(script.Path, given, clipboard, DateTimeOffset.Now, TimeZoneInfo.Local);
+            live?.Invoke(text);
+            return code == 0 ? new Outcome(End.Finished, 0, text) : new Outcome(End.Finished, code, string.Empty, text);
+        }
+
         if (!script.IsDownloaded && !script.IsBundled && IsDownloaded(script.Path))
         {
             return new Outcome(End.FailedToStart, Reason: "这个脚本刚换成了从网上下载的：重新打开启动器，先看一眼全文再运行");

@@ -48,6 +48,10 @@ internal static class WhatsNewHost
     /// <summary>执行了一个动作（快捷键、主界面、托盘、启动器）。</summary>
     public static void Touch(string action) => Update(ledger => WhatsNew.Touching(ledger, entry => entry.Actions.Contains(action)));
 
+    /// <summary>拨过设置里新的那一节（脚本命令、同步）：那一节的条目算看过。</summary>
+    public static void TouchSection(string page, string section)
+        => Update(ledger => WhatsNew.Touching(ledger, entry => entry.Page == page && entry.Section == section));
+
     private static long Now => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
     private static bool Update(Func<WhatsNewLedger, WhatsNewLedger> change, bool save = true)
