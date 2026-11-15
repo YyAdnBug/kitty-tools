@@ -44,7 +44,21 @@ internal sealed partial class SettingsWindow : Window
     private readonly HashSet<UIElement> _ungated = new();
     private bool _suppressNav;
     private string _currentPage = "general";
-    private string? _recordingAction;
+    private string? _recordingActionValue;
+
+    /// <summary>正在录哪个快捷键；录着的时候设置先不同步（PLAN-v21，mac isBusy）。</summary>
+    private string? _recordingAction
+    {
+        get => _recordingActionValue;
+        set
+        {
+            _recordingActionValue = value;
+            RecordingHotKey = value is not null;
+        }
+    }
+
+    /// <summary>设置窗里正在录快捷键。</summary>
+    internal static bool RecordingHotKey { get; private set; }
 
     // REVIEW R44：别处存了设置（截图记上次区域、翻译窗记位置、托盘里的开关、同步……）时不当场重建这一页，
     // 只记下来，等窗口下次显示、或者从别的窗口切回来时再建；在这一页里自己改的，控件已经是新值，不用重建。

@@ -14,13 +14,26 @@
 截图推到 `windows-shots` 的 `0.3.0-v21-<批>/`。mac 的源码：`origin/macos` `58f15ee3`（`Storage/SettingsSync.swift` 文件头就是规格）。
 
 - **第 1 批（`git log --grep "PLAN-v21 第 1 批"`）**：Core 的对照表和写法，App 还没接。`Sync/SettingValue`（mac `SettingsArchive.Value` 那几种 + Windows 独有的
-  文字表；写法同 `CanonicalJson`，整数值的小数写成整数；解的时候编回去不一字不差的当解不开）、`Sync/SettingsSyncMap`（A、B 组 82 项（含 8 个功能开关）和 mac 互认、
+  文字表；写法同 `CanonicalJson`，整数值的小数写成整数；解的时候编回去不一字不差的当解不开）、`Sync/SettingsSyncMap`（A、B 组 81 项（含 7 个功能开关）和 mac 互认、
   C 组 15 项只在 Windows 之间；强调色 brand → pink、截完放哪 card ↔ corner、折起来的服务一组 ↔ 换行隔开的一段、源 / 目标语言照文字收）、
   `Sync/SettingsSync`（存过的键、透传、改的时刻、落的规划、快捷键撞键；windows-settings 里共有的编号删除不落、有了 Mac 之后只发不落）。
   对照表里「待核」的几项都对上了：`ClipboardShowLens` = `clipboardShowPreview`、`TranslateJoinLines` = `translateDeleteNewline`、`TranslateWordLookup` = `translateWordMode`
   （`translateSystemDictionary` 是 mac 独有的系统词典，透传）、调色板两边一样。验：1004 → 1012 个测试全过（SettingsSyncTests 8 条：对照表里的 mac 键都在 mac
   `Prefs.defaults` 里、mac 留在本机的一项都不在、mac 单测里那几行原样当输入）；AOT x64 / ARM64 0 警告。没接进 App，内存、空闲 CPU、截图不变，没量。
   没做：golden 行在 Mac 上用 mac 代码编一遍核对（Windows 上跑不了 Swift；标量的写法照 `SyncRecords.encoder` 的规矩和 mac 单测里的几行）。
+- **第 2 批（`git log --grep "PLAN-v21 第 2 批"`）**：两类接进同步。Core `Sync/SettingsSyncSource`（`SettingsSyncHost` 设置存在哪、`SettingsSyncBook` 一类一本、
+  跟 App 一样长、设置一存就比；`SettingsSyncSource` 每轮新建，第一次合 Adopt）；`ISyncSource` 加了 `Join` / `Changed` / `WaitsForPeers` / `SeePeers`（都有默认值，
+  别的几类不动），`SyncRunner` 照着走（settings 一类在别的电脑还没有、本机也没账本时 `sync.kind-waiting`，不合不写）。App `Storage/SettingsSyncFields`（对照表每项怎么读写，
+  功能开关、全局快捷键、截图工具栏的键也在里面）、`Storage/SettingsSyncHost`（两本账、`SettingsService.Changed` 之后空下来再比、忙着时不合：录屏 / 录音 / 状态屏 / 录快捷键；
+  落了之后照常 Save，ShellRuntime 自己跟上；撞键轻提示）、`settings.json` 加 `SyncSettings`（null = 没定过，这一批当关着，第 4 批接设置页）和存过的键、两份透传、两份改的时刻。
+  **改了第 1 批的一处**：Windows 没有截图的功能开关，`feature.screenshot` 挪到透传；mac 的 `feature.record` 对 Windows 的 `recording`（81 项）。
+  **改了一条已有的断言**：`SyncServerTests.OnlyCanonicalNamesAreKnown` 原来断言服务器上的 `settings.json` 不拿（「Windows 不同步的类别」），现在这两类要同步，
+  换成断言 `settings.json`、`windows-settings.json` 拿、mac 的 `launcher.json` 照旧不拿（意思不变）。
+  验：1012 → 1015 个测试（SettingsSyncRunnerTests 3 条走真的 SyncRunner 和临时文件夹：两台 Windows + 照 mac 规矩合的假 Mac；把 D3 的等待、「有了 Mac 只发不落」各拿掉一次，
+  都有一条失败）；新自检 `--sync-settings-probe`（Release 测试档 × 3、临时文件夹、四步 a / b / mac / a2 全过：只有 Windows 时没写 settings.json，b 跟上主题、
+  关掉的录制、Windows 独有的、启动器的键，假 Mac 加入后它的三项一项不少，a 跟着 Mac 换了主题、Mac 独有的两项透传进了自己那份、Windows 的快捷键没变；一轮 14–76 ms）。
+  替用户定的 / 要说的：**第一次和 Mac 合时，本机关掉而 Mac 没存过的功能开关会回到默认（开）**——a 关的录制就是这样（mac C4 同样：「整个跟着别的电脑」）；第 4 批问「合在一起？」时写明。
+  Windows 之间第一次合时共有的那几项是并在一起（本机有、别人没有的留着），不是整个跟着（「共有编号的删除不落」的副作用）；Windows 独有的照常整个跟着。
 
 ## PLAN-v20（mac 还有、Windows 还没有的，2026-11-14，照推荐直接做）
 

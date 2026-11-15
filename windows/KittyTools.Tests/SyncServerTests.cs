@@ -502,7 +502,10 @@ public sealed class SyncServerTests
         Assert.IsNull(SyncServer.Known("devices/win-a/device.json"));
         Assert.IsNull(SyncServer.Known("devices/CON/device.json"), "Windows 的保留名");
         Assert.IsNull(SyncServer.Known("devices/COM1/device.json"));
-        Assert.IsNull(SyncServer.Known("devices/WIN-A/settings.json"), "Windows 不同步的类别不拿");
+        // PLAN-v21 起设置的两类也同步；mac 的启动器收藏（launcher.json）Windows 照旧不同步（D5：Windows 的另走 windows-launcher）
+        Assert.IsNotNull(SyncServer.Known("devices/WIN-A/settings.json"));
+        Assert.IsNotNull(SyncServer.Known("devices/WIN-A/windows-settings.json"));
+        Assert.IsNull(SyncServer.Known("devices/WIN-A/launcher.json"), "Windows 不同步的类别不拿");
         Assert.IsNull(SyncServer.Known($"images/{id}.PNG"));
         Assert.IsNull(SyncServer.Known($"images/{lower}.png"));
         Assert.IsNull(SyncServer.Known(@"images/..\..\evil.png"));

@@ -167,6 +167,13 @@ public partial class App : Application
                 return;
             }
 
+            if (SettingsSyncProbe.IsRequested(commandLine) && SettingsSyncProbe.DirectoryFrom(commandLine) is { } settingsSyncProbe)
+            {
+                // PLAN-v21 第 2 批：设置同步在临时文件夹里走几轮真的同步（只在测试档），跑完就退。
+                _ = SettingsSyncProbe.RunAsync(settingsSyncProbe);
+                return;
+            }
+
             if (SyncServerProbe.IsRequested(commandLine) && SyncServerProbe.DirectoryFrom(commandLine) is { } syncProbe)
             {
                 // PLAN-v19 核验：连本机测试 WebDAV 服务器走几轮真的同步（只在测试档），跑完就退。

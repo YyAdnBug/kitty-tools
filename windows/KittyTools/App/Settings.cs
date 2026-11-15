@@ -197,6 +197,26 @@ internal sealed class Settings
     /// <summary>同步提醒列表（PLAN-v12 N6）。</summary>
     public bool SyncReminders { get; set; } = true;
 
+    // PLAN-v21：设置、快捷键、功能开关的同步（settings 和 windows-settings 两类，设置页一行）。下面几项是这台电脑自己的账，不导出。
+
+    /// <summary>同步设置与快捷键。null = 还没定过（升级上来、已经开着同步的人：先不勾，PLAN-v21 D7）。</summary>
+    public bool? SyncSettings { get; set; }
+
+    /// <summary>存过的设置项（SettingKey.Field；PLAN-v21 D4：和本机默认不一样过的、同步落下来过的才同步）。</summary>
+    public List<string>? SyncStoredKeys { get; set; }
+
+    /// <summary>settings 一类的透传：这一版不认识 / 落不下的，原样交回去（mac syncPassthrough.settings）。</summary>
+    public Dictionary<string, string>? SyncPassthrough { get; set; }
+
+    /// <summary>windows-settings 一类的透传。</summary>
+    public Dictionary<string, string>? SyncPassthroughWindows { get; set; }
+
+    /// <summary>settings 一类每项改的时刻（毫秒；mac syncChangedAt.settings）。</summary>
+    public Dictionary<string, long>? SyncChangedAt { get; set; }
+
+    /// <summary>windows-settings 一类每项改的时刻。</summary>
+    public Dictionary<string, long>? SyncChangedAtWindows { get; set; }
+
     /// <summary>截图快速保存的文件夹；空 = 系统的「屏幕截图」文件夹。</summary>
     public string? ScreenshotSaveFolder { get; set; }
 

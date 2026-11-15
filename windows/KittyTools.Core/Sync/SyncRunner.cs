@@ -74,6 +74,7 @@ public sealed class SyncRunner(
         NoteSyncFolder.NotesPart => "便签",
         StatusPresetSync.Kind => "状态屏的状态",
         ReminderSync.Kind => "提醒",
+        SettingsSync.Kind or SettingsSync.WindowsKind => "设置与快捷键",
         _ => kind,
     };
 
@@ -331,6 +332,10 @@ public sealed class SyncRunner(
         ISyncSource source, Snapshot snapshot, string library, int allowance, long now)
     {
         var kind = source.Kind;
+        bool OthersHave(string other) => snapshot.Peers.Any(pair =>
+            pair.Key != device.Id && pair.Value.Files.TryGetValue(other, out var text) && text is not null);
+
+        source.SeePeers(OthersHave);
         // 仓库还没起来（或这一轮先别合）：这一类这一轮不合，当成空表交进去会把账本里的全当成删了。
         if (source.Values() is not { } values)
         {
@@ -349,8 +354,17 @@ public sealed class SyncRunner(
             return new KindStep(0, $"{Title(kind)}的同步记录读不出来", null);
         }
 
+        // PLAN-v21 D3：别的电脑还没有这一类、本机也没合过，先不写
+        if (source.WaitsForPeers && ledger is null && !OthersHave(kind))
+        {
+            log?.Invoke($"sync.kind-waiting {kind}");
+            return default;
+        }
+
         var me = device.Id;
-        var merged = await Task.Run(() => Merge(kind, values, ledger, snapshot, me, now, source.JoinKey));
+        var changed = source.Changed() ?? NoChanged;
+        var join = source.Join;
+        var merged = await Task.Run(() => Merge(kind, values, ledger, snapshot, me, now, source.JoinKey, changed, join));
         if (merged.Outcome is not { } outcome)
         {
             return new KindStep(0, merged.Problem, null);
@@ -396,7 +410,7 @@ public sealed class SyncRunner(
 
     private Merged Merge(
         string kind, IReadOnlyDictionary<string, string> values, SyncLedgerData? ledger, Snapshot snapshot,
-        string me, long now, Func<string, string?> joinKey)
+        string me, long now, Func<string, string?> joinKey, IReadOnlyDictionary<string, long> changed, JoinMode join)
     {
         // 自己那份读不出来照常合（引擎接着见过的最大往上数）；更新版本写的整类不合。
         SyncFileData? own = null;
@@ -436,7 +450,7 @@ public sealed class SyncRunner(
             }
         }
 
-        var outcome = SyncEngine.Round(values, NoChanged, ledger, own, others, me, now, JoinMode.Union, joinKey);
+        var outcome = SyncEngine.Round(values, changed, ledger, own, others, me, now, join, joinKey);
         return new Merged(outcome, null, ToFile(kind, outcome.Own).Encode(), SyncLedgerText.Encode(outcome.Ledger));
     }
 

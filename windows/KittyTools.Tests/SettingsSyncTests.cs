@@ -53,7 +53,7 @@ public sealed class SettingsSyncTests
     public void MapCoversRealMacKeysOnly()
     {
         var ids = SettingsSyncMap.Shared.Select(key => key.Id).ToList();
-        Assert.AreEqual(82, ids.Count, "PLAN-v21 §1 A、B 组（含 8 个功能开关）");
+        Assert.AreEqual(81, ids.Count, "PLAN-v21 §1 A、B 组（含 7 个功能开关）");
         Assert.AreEqual(15, SettingsSyncMap.WindowsOnly.Count, "C 组（快捷键另算）");
         CollectionAssert.AllItemsAreUnique(ids);
         CollectionAssert.AllItemsAreUnique(SettingsSyncMap.Shared.Select(key => key.Field).ToList());
@@ -145,7 +145,8 @@ public sealed class SettingsSyncTests
         Assert.AreEqual("Theme", theme.Field);
         Assert.IsNull(theme.Incoming("\"sepia\""));
         Assert.AreEqual("Accent", accent.Field);
-        Assert.AreEqual("feature.record", SettingsSyncMap.FindShared("pref:feature.record")!.Field);
+        Assert.AreEqual("feature.recording", SettingsSyncMap.FindShared("pref:feature.record")!.Field, "Windows 的录制叫 recording");
+        Assert.IsNull(SettingsSyncMap.FindShared("pref:feature.screenshot"), "截图在 Windows 上没有开关：透传");
         Assert.IsNull(SettingsSyncMap.FindShared("pref:feature.keepAwake"), "mac 0.9.0 拿掉了保持唤醒：Windows 独有");
         Assert.IsNotNull(SettingsSyncMap.FindWindows("pref:feature.keepAwake"));
 

@@ -109,7 +109,7 @@
 | `screenRecordSystemAudio` | `RecordSystemSound` | 布尔 |
 | `screenRecordShowsClicks` | `RecordClicks` | 布尔 |
 | `audioRecordStartsImmediately` | `RecordInstantStart` | 布尔 |
-| `feature.clipboard` `feature.launcher` `feature.translate` `feature.screenshot` `feature.record` `feature.notes` `feature.reminders` `feature.statusScreen` | `Features["clipboard"]` 等 | 布尔。mac 「没存过 = defaultOn」（便签、提醒、状态屏也是开），Windows 新装明写四个开、其余关（HANDTEST 1190）。两边新装都会明写，存过的才同步，所以照常对得上。**关掉别的电脑正在用的功能**：`isBusy` 里那几样先不合 |
+| `feature.clipboard` `feature.launcher` `feature.translate` `feature.record` `feature.notes` `feature.reminders` `feature.statusScreen` | `Features["clipboard"]` 等（录制在 Windows 叫 `recording`；第 2 批改的：截图 Windows 上没有开关，`feature.screenshot` 归 D 组） | 布尔。mac 「没存过 = defaultOn」（便签、提醒、状态屏也是开），Windows 新装明写四个开、其余关（HANDTEST 1190）。两边新装都会明写，存过的才同步，所以照常对得上。**关掉别的电脑正在用的功能**：`isBusy` 里那几样先不合 |
 
 ### C 组：Windows 独有，只在 Windows 之间同步（D1）
 
@@ -128,7 +128,7 @@
 
 `statusItemVisible` `statusItemStyle` `dockIconOnTahoe` `clipboardHideOnUnfocus` `floatingPinned`（这几项 mac 自己也留在本机）、
 `clipboardExcludedBundleIDs` `hotKeyBlockedApps`、`launcherBrowserBookmarks` `launcherBrowserHistory`、`launchpad*` 全部、`dockPreview*`、`finder*`、
-`island*` 全部、`screenRecordCodec`、`emojiPackDownloads`、`translateSystemDictionary`（待核）、`feature.launchpad` `feature.dockPreview` `feature.finderMenu` `feature.island`，
+`island*` 全部、`feature.screenshot`（Windows 的截图不能关）、`screenRecordCodec`、`emojiPackDownloads`、`translateSystemDictionary`（待核）、`feature.launchpad` `feature.dockPreview` `feature.finderMenu` `feature.island`，
 mac 的全部 `hotkey:*` 和 `shotkey:*`，以及以后 mac 新加、这一版不认识的编号。
 
 透传的意思是：Windows 一项都不落进设置，下一轮原样交回去。Windows 本来也没有这些设置，所以「本机自己又改了它」这种情况不会发生。

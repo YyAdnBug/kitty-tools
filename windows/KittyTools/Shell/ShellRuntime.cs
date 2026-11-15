@@ -79,6 +79,8 @@ internal sealed class ShellRuntime
                 // 同步（第五版）：本机编号、账本和执行层。
                 var syncDevice = SyncDevice.Start(database);
                 var syncLedger = SyncLedger.Start(database);
+                // 设置的两本账（PLAN-v21）：要在第一轮同步之前起来
+                SettingsSyncState.Start(syncLedger, DispatcherQueue.GetForCurrentThread()!);
                 // 开着同步就马上合一轮；定时器由 Syncer 自己开 / 停（设置里后来才打开也会转起来）。
                 _ = Syncer.Start(syncDevice, syncLedger, DispatcherQueue.GetForCurrentThread()!).RoundAsync();
                 // 图片的后台识字排队（第三版 §5）。

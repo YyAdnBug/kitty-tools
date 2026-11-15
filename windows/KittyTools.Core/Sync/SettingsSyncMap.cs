@@ -218,10 +218,15 @@ public static class SettingsSyncMap
         Flag("notesDeckOverFullScreen", "NotesDeckOverFullScreen");
         Choice("notesDeckNoteSize", "NotesDeckNoteSize", "small", "medium", "large", "extraLarge");
 
-        // 功能开关（启动台、程序坞预览、访达右键、刘海岛 mac 独有；保持唤醒 mac 0.9.0 拿掉了，归 C 组）
-        foreach (var feature in new[] { "clipboard", "launcher", "translate", "screenshot", "record", "notes", "reminders", "statusScreen" })
+        // 功能开关：mac 的键 → Windows Features 里的键（录制 mac 叫 record）。截图在 Windows 上不能关、没有这个开关，和启动台、
+        // 程序坞预览、访达右键、刘海岛一样透传；保持唤醒 mac 0.9.0 拿掉了，归 C 组
+        foreach (var (mac, windows) in new[]
+                 {
+                     ("clipboard", "clipboard"), ("launcher", "launcher"), ("translate", "translate"), ("record", "recording"),
+                     ("notes", "notes"), ("reminders", "reminders"), ("statusScreen", "statusScreen"),
+                 })
         {
-            keys.Add(new(PrefPrefix + "feature." + feature, "feature." + feature, SettingType.Bool, true, Same, Same));
+            keys.Add(new(PrefPrefix + "feature." + mac, "feature." + windows, SettingType.Bool, true, Same, Same));
         }
 
         return keys;

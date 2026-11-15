@@ -8,7 +8,7 @@ namespace KittyTools.Core.Sync;
 
 public interface ISyncSource
 {
-    /// <summary>clips / vocabulary / engines / services。</summary>
+    /// <summary>clips / vocabulary / engines / services / statuses / reminders / settings / windows-settings / windows-launcher。</summary>
     string Kind { get; }
 
     /// <summary>第一次合时认「同一条」的键（同样的内容只留文件夹里那条）；null = 不去重。</summary>
@@ -25,6 +25,21 @@ public interface ISyncSource
     /// <summary>落合并出来的改动（编号 → 新内容，null = 不再留着），在同一个事务里存账本。
     /// 成了返回 null；没成返回原因（什么都没改，账本也没存）。</summary>
     string? Apply(IReadOnlyDictionary<string, string?> changes, SyncLedgerData ledger, string library);
+
+    /// <summary>第一次合时本机原有的怎么办（mac syncJoin）：并在一起（默认），或者整个跟着别的电脑（设置，PLAN-v21）。</summary>
+    JoinMode Join => JoinMode.Union;
+
+    /// <summary>每条真正改的时刻（毫秒；mac syncChanged）：仓库记着的才给，没给的引擎用「现在」。在 Values 之后取。</summary>
+    IReadOnlyDictionary<string, long>? Changed() => null;
+
+    /// <summary>PLAN-v21 D3：文件夹里别的电脑还没有这一类、本机也没合过（没账本）时，这一类这一轮先不合也不写
+    /// （settings：等文件夹里有了 Mac 的那份，免得 Mac 第一次加入时跟着这台、把 Mac 独有的设置清回默认）。</summary>
+    bool WaitsForPeers => false;
+
+    /// <summary>这一轮文件夹里别的电脑有没有某一类的文件（合这一类之前给一次，在 Values 之前）。</summary>
+    void SeePeers(Func<string, bool> othersHave)
+    {
+    }
 }
 
 public interface ISyncDevice

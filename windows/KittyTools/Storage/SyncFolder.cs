@@ -519,8 +519,26 @@ internal sealed class Syncer
             sources.Add(new ReminderSource(_ledger));
         }
 
+        // 设置与快捷键（PLAN-v21）：两类一行开关；settings 一类等文件夹里有了别的电脑的那份才写（D3）
+        if (settings.SyncSettings == true && SettingsSyncState.Settings is { } shared && SettingsSyncState.Windows is { } windows)
+        {
+            sources.Add(SettingsSource(shared));
+            sources.Add(SettingsSource(windows));
+        }
+
         return sources;
     }
+
+    private SettingsSyncSource SettingsSource(SettingsSyncBook book)
+        => new(book,
+            library =>
+            {
+                var text = _ledger.Read(book.Kind);
+                var stored = _ledger.ReadLibrary(book.Kind);
+                return text is null || (stored is not null && stored != library) ? null : SyncLedgerText.Decode(text);
+            },
+            (data, library) => _ledger.Write(book.Kind, library, SyncLedgerText.Encode(data)),
+            () => _ledger.Read(SettingsSync.Kind) is not null);
 
     private void EnsureTimer()
     {
