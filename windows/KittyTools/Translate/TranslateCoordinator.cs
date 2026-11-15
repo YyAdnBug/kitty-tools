@@ -4,6 +4,8 @@
 // 前面的还在跑就先等。截断的不算完成。被取消的请求一个字都不再写回卡片（每次跑一个号，旧号写不进新卡）。
 // 替换原文只给划词来的会话（Replace）；静默的「划词翻译并替换」走 TranslateOnceAsync（只用第一个启用的服务、不开浮窗）。
 // 流式的片段合并成 33 ms 刷一次窗口（REVIEW R45）；换状态（出完、出错、重试）照旧当场刷。
+// 折叠着的服务不自动翻译（PLAN-v22，同 mac）：开会话时它们是「没翻」的卡（Idle）、不发请求，点开（Expand）才翻当前原文；
+// 点开后才翻的卡不当主结果（不写历史、不自动复制），静默替换和截图翻译盖回先用没折叠的服务（ReplaceServices）。
 // ponytail: 读流、解析 JSON 还在 UI 线程上（每段很小）；量出来还卡再挪进线程池，只把累积好的字交回来。
 using KittyTools.Core;
 using KittyTools.Infrastructure;
@@ -24,6 +26,9 @@ internal sealed class TranslateCard
     public bool Thinking => State == CardState.Running && Text.Length == 0;
 
     public TranslateError? Error { get; set; }
+
+    /// <summary>折叠着、点开后才翻的：不当主结果（点开一张卡不该换掉剪贴板、再写一条历史，PLAN-v22 D5）。</summary>
+    public bool Opened { get; set; }
 }
 
 /// <summary>划词来的会话：取到的原文（不去首尾空白，替换时照它补回）、取词时的前台窗口和它的进程（粘之前核对）。</summary>
@@ -122,14 +127,17 @@ internal sealed class TranslateCoordinator
     /// <summary>原文改过还没重新翻译：原文框右下角出「翻译 ↩」。</summary>
     public bool NeedsTranslate => TranslateSession.IsEdited(SourceText, TranslatedSource);
 
-    /// <summary>主结果：按列表顺序第一个翻成功的卡（写历史、自动复制、收藏、替换原文都认它）。</summary>
+    /// <summary>
+    /// 主结果：按列表顺序第一个翻成功的卡（写历史、自动复制、收藏、替换原文都认它）。没翻的折叠卡不挡着等，
+    /// 点开后才翻的也不认（PLAN-v22 D5）。
+    /// </summary>
     public TranslateCard? Primary
     {
         get
         {
             // 词典类服务给的是释义，不是译文（PLAN-v14 V4）
             var index = TranslateSession.Primary(
-                _cards.Select(card => (card.State, card.Text, TranslateKinds.IsDictionary(card.Service.Kind))).ToList());
+                _cards.Select(card => (card.State, card.Text, TranslateKinds.IsDictionary(card.Service.Kind) || card.Opened)).ToList());
             return index >= 0 ? _cards[index] : null;
         }
     }
@@ -178,7 +186,10 @@ internal sealed class TranslateCoordinator
         Changed?.Invoke();
     }
 
-    /// <summary>输入翻译再打开浮窗：保留上次的原文和结果（调用方把原文全选）；上次收起时被中断的卡重新跑。收着时换过语言的整个重译。</summary>
+    /// <summary>
+    /// 输入翻译再打开浮窗：保留上次的原文和结果（调用方把原文全选）；上次收起时被中断的卡重新跑——折叠着的不跑、
+    /// 回到「没翻」，点开再翻（PLAN-v22 D4）。收着时换过语言的整个重译。
+    /// </summary>
     public void ResumeInput()
     {
         Notice = null;
@@ -189,13 +200,41 @@ internal sealed class TranslateCoordinator
             return;
         }
 
-        foreach (var card in _cards.Where(card => card.State == CardState.Failed && card.Error == TranslateError.Interrupted).ToList())
+        var collapsed = CollapsedIds();
+        foreach (var card in _cards.ToList())
         {
-            _ = RunAsync(card);
+            var next = TranslateSession.ResumeState(
+                card.State, card.Error == TranslateError.Interrupted, collapsed.Contains(card.Service.Id));
+            if (next == CardState.Idle)
+            {
+                card.State = CardState.Idle;
+                card.Error = null;
+                card.Opened = false;
+            }
+            else if (next is not null)
+            {
+                _ = RunAsync(card);
+            }
         }
 
         Changed?.Invoke();
     }
+
+    /// <summary>点开一张没翻的折叠卡：现在才翻当前原文（这张卡记成「点开后才翻的」，不当主结果）；翻过 / 在翻的不动（D2）。</summary>
+    public void Expand(string serviceId)
+    {
+        if (_cards.FirstOrDefault(card => card.Service.Id == serviceId) is not { } card ||
+            !TranslateSession.ExpandRuns(card.State))
+        {
+            return;
+        }
+
+        card.Opened = true;
+        Retry(serviceId);
+    }
+
+    /// <summary>浮窗里折叠着的服务（按服务 id 记住、跨重启；同步也带着）。</summary>
+    private static HashSet<string> CollapsedIds() => new(SettingsService.Current.TranslateCollapsedServices ?? new List<string>());
 
     /// <summary>开新会话。replace：划词来的（浮窗里给「替换原文」）；fromCopy：复制即译带来的（不自动复制）。</summary>
     public void Translate(string text, ReplaceTarget? replace = null, bool fromCopy = false)
@@ -240,15 +279,20 @@ internal sealed class TranslateCoordinator
         _cards.Clear();
         if (TranslateServiceStore.Instance is { } store)
         {
-            // 系统翻译、不认识的种类不开卡（V2、V3）；词典类服务只查单词和短语（V4）
+            // 系统翻译、不认识的种类不开卡（V2、V3）；词典类服务只查单词和短语（V4）；折叠着的不自动翻译，点开再翻（PLAN-v22）
             var lookup = WordLookup.IsWord(text) || WordLookup.IsPhrase(text);
+            var collapsed = CollapsedIds();
             _cards.AddRange(store.Enabled
                 .Where(service => TranslateKinds.IsRunnable(service.Kind) && (lookup || !TranslateKinds.IsDictionary(service.Kind)))
-                .Select(service => new TranslateCard { Service = service }));
+                .Select(service => new TranslateCard
+                {
+                    Service = service,
+                    State = TranslateSession.StartState(collapsed.Contains(service.Id)),
+                }));
         }
 
         Changed?.Invoke();
-        foreach (var card in _cards.ToList())
+        foreach (var card in _cards.Where(card => card.State != CardState.Idle).ToList())
         {
             _ = RunAsync(card);
         }
@@ -281,7 +325,7 @@ internal sealed class TranslateCoordinator
 
         if (!ReferenceEquals(_cards[index].Service, current))
         {
-            _cards[index] = new TranslateCard { Service = current };
+            _cards[index] = new TranslateCard { Service = current, Opened = _cards[index].Opened };
         }
 
         _ = RunAsync(_cards[index]);
@@ -363,7 +407,7 @@ internal sealed class TranslateCoordinator
     }
 
     /// <summary>
-    /// 静默替换（划词翻译并替换）：不开浮窗、不动当前会话，按顺序用启用的服务、等完整结果；记历史（开着的话）。
+    /// 静默替换（划词翻译并替换）：不开浮窗、不动当前会话，按顺序用启用的服务（没折叠的先试）、等完整结果；记历史（开着的话）。
     /// 一个服务失败就试下一个（第四轮体检 U14，同 mac）；取消、截断不换（截断的半截不该悄悄换成别家的全文）。
     /// 不接行、不用单词模式：要替换回去的是译文、段落得保住。
     /// </summary>
@@ -375,10 +419,7 @@ internal sealed class TranslateCoordinator
             throw new TranslateError("原文为空或太长");
         }
 
-        // 词典类服务不进静默替换；系统翻译、不认识的种类不跑
-        var services = TranslateServiceStore.Instance?.Enabled
-            .Where(service => TranslateKinds.IsRunnable(service.Kind) && !TranslateKinds.IsDictionary(service.Kind))
-            .ToList() ?? new List<TranslateServiceConfig>();
+        var services = ReplaceServices();
         if (services.Count == 0)
         {
             throw TranslateError.Config("没有启用的翻译服务");
@@ -421,6 +462,18 @@ internal sealed class TranslateCoordinator
 
         throw failure!;
     }
+
+    /// <summary>
+    /// 不开浮窗的两条路（静默替换、截图翻译盖回）按这个顺序试服务：没折叠的在前、折叠的垫底（PLAN-v22 D6：排第一的贵模型折叠了
+    /// 也不先用它）。词典类服务不进来；系统翻译、不认识的种类不跑。
+    /// </summary>
+    internal static List<TranslateServiceConfig> ReplaceServices()
+        => TranslateSession.Ordered(
+            TranslateServiceStore.Instance?.Enabled
+                .Where(service => TranslateKinds.IsRunnable(service.Kind) && !TranslateKinds.IsDictionary(service.Kind))
+            ?? Enumerable.Empty<TranslateServiceConfig>(),
+            service => service.Id,
+            CollapsedIds());
 
     /// <summary>UI 截图自检（--ui-snapshots）：直接摆出一组卡片（不发请求）。正常入口不碰。</summary>
     internal void ShowProbe(string source, Lang detected, Lang target, IReadOnlyList<TranslateCard> cards, bool isWord = false)

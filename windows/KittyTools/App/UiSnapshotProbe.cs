@@ -581,7 +581,7 @@ internal static class UiSnapshotProbe
             foreach (var state in new[]
                      {
                          "translate-empty", "translate-running", "translate-done", "translate-truncated", "translate-word",
-                         "translate-history", "translate-history-menu",
+                         "translate-collapsed", "translate-history", "translate-history-menu",
                      })
             {
                 if (!Wanted(state))
@@ -635,7 +635,7 @@ internal static class UiSnapshotProbe
     }
 
     /// <summary>
-    /// 自检档里只有默认的智谱时补几个服务，好看出服务行的各种状态（HANDTEST 577）：谷歌、微软（没 key：免费 Edge 接口）、
+    /// 自检档里只有默认的智谱时补几个服务，好看出服务行的各种状态（HANDTEST 577）：谷歌、微软（没 key：Edge 接口，标「免费」）、
     /// DeepSeek（填了模型）、Kimi（没填模型：橙字）、百度（关着、缺密钥：灰字）。
     /// </summary>
     private static void SeedTranslateServices()
@@ -673,7 +673,7 @@ internal static class UiSnapshotProbe
 
     private static async Task SafeRenderSettingsAsync(bool dark, string directory)
     {
-        if (!Wanted("settings") && !Wanted("settings-sync") && !Wanted("settings-sync-settings") && !Wanted("settings-hotkeys-block") && !Wanted("settings-hotkeys-shot") && !Wanted("settings-sub"))
+        if (!Wanted("settings") && !Wanted("settings-sync") && !Wanted("settings-sync-settings") && !Wanted("settings-hotkeys-block") && !Wanted("settings-hotkeys-shot") && !Wanted("settings-sub") && !Wanted("settings-translate-add"))
         {
             return;
         }
@@ -712,6 +712,20 @@ internal static class UiSnapshotProbe
             await RenderWindowAsync(settings, "settings-translate", dark, directory);
             settings.ScrollToEndForProbe();
             await RenderWindowAsync(settings, "settings-translate-services", dark, directory);
+            // PLAN-v22 F2 F3：服务行上的「免费」、「添加服务」菜单的「免费」「要填密钥」两节（真窗口，菜单是弹出层）
+            if (Wanted("settings-translate-add"))
+            {
+                settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 760));
+                settings.ShowPage(welcome: false, "translate");
+                await Task.Delay(600);
+                settings.OpenAddServiceMenuForProbe();
+                await Task.Delay(1500);
+                await WindowShot.SaveAsync(
+                    WinRT.Interop.WindowNative.GetWindowHandle(settings),
+                    Path.Combine(directory, $"settings-translate-add-{(dark ? "dark" : "light")}-window.png"));
+                settings.CloseAddServiceMenuForProbe();
+            }
+
             if (Paths.IsTestProfile && TranslateServiceStore.Instance?.Services.FirstOrDefault(service => service.Model == "deepseek-chat") is { } ai)
             {
                 settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 1100));

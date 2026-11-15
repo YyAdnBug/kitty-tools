@@ -262,7 +262,8 @@ internal sealed partial class SettingsWindow
             BuildPage("translate");
         }));
 
-        _content.Children.Add(AddServiceButton(store));
+        _addServiceButton = AddServiceButton(store);
+        _content.Children.Add(_addServiceButton);
         _content.Children.Add(SettingsUi.Footnote(
             "结果按这个顺序显示，拖动一行改顺序；排在最前、翻译成功的那个服务的结果写入历史、用于自动复制和收藏。点一行进入设置，右键可以上移、下移和删除。" +
             "删掉的内置服务可以从「添加服务」加回来，密钥还在。"));
@@ -316,13 +317,16 @@ internal sealed partial class SettingsWindow
             Foreground = Theme.SecondaryText(),
             VerticalAlignment = VerticalAlignment.Center,
         });
+        // 不花钱的标「免费」（PLAN-v22 F3）：微软填了自己的 Key 走 Azure 就不标；标了时智谱默认名里的「（免费）」去掉，不说两遍
+        var free = TranslateSession.ShowsFree(service.Kind, hasOwnKey: store.Secret(service) is not null);
         var card = SettingsUi.Card(
-            service.Name,
+            free && service.Name.EndsWith("（免费）", StringComparison.Ordinal) ? service.Name[..^"（免费）".Length] : service.Name,
             status,
             controls,
             () => OpenServiceDetail(service.Id),
             leading: ServiceTile.Create(service, 24),
-            problem: problem);
+            problem: problem,
+            tag: free ? "免费" : null);
         statusCard = card;
 
         var menu = new MenuFlyout();
@@ -392,27 +396,45 @@ internal sealed partial class SettingsWindow
     }
 
     /// <summary>
-    /// 「添加服务」（mac「+」菜单）：还没加的内置服务（带图标）｜「AI 服务」子菜单（9 家预设 + 自定义 / Azure）。
+    /// 「添加服务」（mac「+」菜单）：还没加的内置服务（带图标；不花钱的一节「免费」排最前，其余一节「要填密钥」，PLAN-v22 F2）｜
+    /// 「AI 服务」子菜单（9 家预设 + 自定义 / Azure）。
     /// 内置的加回来直接启用（密钥是删之前留下的）；AI 服务等测试连接成功再自动启用。加完推进详情（AI 服务光标落在 API Key）。
     /// </summary>
     private Button AddServiceButton(TranslateServiceStore store)
     {
         var menu = new MenuFlyout();
-        foreach (var kind in store.MissingBuiltins)
+        var missing = store.MissingBuiltins.ToList();
+        foreach (var (title, kinds) in new[]
+                 {
+                     ("免费", missing.Where(TranslateSession.IsFreeKind).ToList()),
+                     ("要填密钥", missing.Where(kind => !TranslateSession.IsFreeKind(kind)).ToList()),
+                 })
         {
-            var item = new MenuFlyoutItem { Text = TranslateKinds.DefaultName(kind), Icon = MenuLogo(TranslateServiceStore.Builtin(kind)) };
-            item.Click += (_, _) =>
+            if (kinds.Count == 0)
             {
-                var service = store.AddBuiltin(kind);
-                service.Enabled = true;
-                store.Save();
-                OpenServiceDetail(service.Id);
-            };
-            menu.Items.Add(item);
-        }
+                continue;
+            }
 
-        if (menu.Items.Count > 0)
-        {
+            // WinUI 的 MenuFlyout 没有分节标题：用一行不能点的小字代替（mac Section）
+            menu.Items.Add(new MenuFlyoutItem { Text = title, IsEnabled = false, FontSize = 12 });
+            foreach (var kind in kinds)
+            {
+                // 智谱的默认名带着「（免费）」：已经在「免费」那一节里了
+                var item = new MenuFlyoutItem
+                {
+                    Text = TranslateCardView.DisplayName(TranslateKinds.DefaultName(kind)),
+                    Icon = MenuLogo(TranslateServiceStore.Builtin(kind)),
+                };
+                item.Click += (_, _) =>
+                {
+                    var service = store.AddBuiltin(kind);
+                    service.Enabled = true;
+                    store.Save();
+                    OpenServiceDetail(service.Id);
+                };
+                menu.Items.Add(item);
+            }
+
             menu.Items.Add(new MenuFlyoutSeparator());
         }
 
@@ -442,6 +464,30 @@ internal sealed partial class SettingsWindow
         return new Button { Content = "＋ 添加服务", Flyout = menu };
     }
 
+    private Button? _addServiceButton;
+
+    /// <summary>UI 截图自检（PLAN-v22 F2）：滚到「翻译服务」、打开「添加服务」的菜单；CloseAddServiceMenuForProbe 关它。</summary>
+    internal void OpenAddServiceMenuForProbe()
+    {
+        ScrollToSectionForProbe("翻译服务");
+        if (_addServiceButton is { Flyout: { } flyout } button)
+        {
+            // 平时菜单是单独的弹出窗口（可以伸出设置窗），只抓设置窗拍不到：自检里关在窗口里画。
+            // 关在窗口里时菜单的亚克力在抓图里是透明的（底下的服务行透上来），垫一层卡片实色
+            flyout.ShouldConstrainToRootBounds = true;
+            if (flyout is MenuFlyout menu)
+            {
+                var style = new Style(typeof(MenuFlyoutPresenter)) { BasedOn = Theme.Style("DefaultMenuFlyoutPresenterStyle") };
+                style.Setters.Add(new Setter(Control.BackgroundProperty, Theme.Brush("Kitty.CardSolid", Theme.Argb(255, 251, 251, 251))));
+                menu.MenuFlyoutPresenterStyle = style;
+            }
+
+            flyout.ShowAt(button);
+        }
+    }
+
+    internal void CloseAddServiceMenuForProbe() => _addServiceButton?.Flyout?.Hide();
+
     /// <summary>菜单项上的服务 logo（没有官方 logo 的就不放图标）。</summary>
     private static IconElement? MenuLogo(TranslateServiceConfig service)
         => ServiceBadge.Logo(service.Kind, service.Protocol, service.BaseUrl, service.Name) is { } logo
@@ -460,8 +506,9 @@ internal sealed partial class SettingsWindow
             TranslateKinds.DeepL => service.UsesDeepLX == true
                 ? string.IsNullOrWhiteSpace(service.BaseUrl) ? ("未填 DeepLX 地址", true) : ("DeepLX（自建）", false)
                 : store.Secret(service) is null ? ("未填密钥", true) : ("官方 API", false),
-            TranslateKinds.Microsoft => (store.Secret(service) is null ? "免费 Edge 接口" : "Azure 翻译", false),
-            TranslateKinds.YoudaoDict => ("免费 · 只查单词", false),
+            // 「免费」是服务行上的标签（PLAN-v22 F3），这里不再写
+            TranslateKinds.Microsoft => (store.Secret(service) is null ? "Edge 接口" : "Azure 翻译", false),
+            TranslateKinds.YoudaoDict => ("只查单词", false),
             // 系统翻译、不认识的种类：留在列表里（同步、导出原样带回去），翻译时不开卡（V2、V3）
             TranslateKinds.Apple => ("只在 Mac 上能用", false),
             _ when !TranslateKinds.IsRunnable(service.Kind) => ("这一版不认识这个服务，更新后可用", false),

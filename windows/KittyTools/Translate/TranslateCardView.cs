@@ -3,7 +3,7 @@
 // 每格 20 × 18、间距 4、平时 0.45 透明。正文：等待是两根骨架条 + 扫光（模型在思考时上面多一行「思考中」）；生成中新字直接出现、末尾一根
 // 光标；截断的照常显示、下面一行说明；出错只显示错误行（配置问题橙色钥匙 + 「打开设置」直达这个服务，网络 / 服务问题红色三角 + 「重试」，
 // 自建 AI 另给「打开设置」），整张卡染橙 / 红。大模型生成中边框上一段强调色光绕行（2.4 s 一圈，同一条描边上叠几层虚线、合成器上动），完成时整圈闪一下；
-// 复制时整卡闪一下。换状态时正文淡变 0.18 s；重新翻译时骨架先撑到上次正文的高。正文最多 8 行，再长在卡里滚（不做上下渐隐，见构造函数里的说明）。
+// 复制时整卡闪一下；折叠着（= 不自动翻译，PLAN-v22）不画彗星、不闪完成那一圈。换状态时正文淡变 0.18 s；重新翻译时骨架先撑到上次正文的高。正文最多 8 行，再长在卡里滚（不做上下渐隐，见构造函数里的说明）。
 // 大模型的结果有 Markdown 时按 Markdown 显示（Core 的 InlineMarkdown：行内记号 + 标题、列表、引用、代码块）。
 // 单词卡（大模型单词模式、有道词典，PLAN-v14 V5 V6）：右上角的喇叭只读第一行释义；第一行整行是「美 /…/ 英 /…/」时换成一行
 // 「美 /rʌn/ 🔊  英 /rʌn/ 🔊」，小喇叭放那个口音的真人发音（Speech.ToggleWord），正文从第二行起。
@@ -59,6 +59,9 @@ internal sealed partial class TranslateCardView
     private readonly Grid _failure;
     private readonly StackPanel _skeleton;
     private readonly TextBlock _thinking;
+
+    /// <summary>展开着却没翻（折叠状态从别处改过来的，正常点开会马上开跑）：说一句，不画骨架（骨架会一直在，PLAN-v22 C4）。</summary>
+    private readonly TextBlock _idleHint;
     private readonly List<Border> _bands = new();
     private readonly Border _copyFlash;
 
@@ -212,11 +215,21 @@ internal sealed partial class TranslateCardView
         }
 
         _skeleton.Children.Add(bars);
+        _idleHint = new TextBlock
+        {
+            Text = "折叠着时没有翻译，点右上角的重新翻译",
+            FontSize = 11,
+            Foreground = Theme.SecondaryText(),
+            TextWrapping = TextWrapping.Wrap,
+            Padding = new Thickness(SideInset, 0, SideInset, 0),
+            Visibility = Visibility.Collapsed,
+        };
 
         _body = new Grid { Margin = new Thickness(0, 3, 0, 0) };
         _body.Children.Add(_scroll);
         _body.Children.Add(_failure);
         _body.Children.Add(_skeleton);
+        _body.Children.Add(_idleHint);
 
         var stack = new StackPanel();
         stack.Children.Add(header);
@@ -304,6 +317,7 @@ internal sealed partial class TranslateCardView
             CardState.Running => hasText ? 1 : 0,
             CardState.Done => markdown ? 2 : 1,
             CardState.Truncated => 1,
+            CardState.Idle => 4,
             _ => 3,
         };
 
@@ -311,6 +325,7 @@ internal sealed partial class TranslateCardView
         _scroll.Visibility = phase is 1 or 2 ? Visibility.Visible : Visibility.Collapsed;
         _skeleton.Visibility = phase == 0 ? Visibility.Visible : Visibility.Collapsed;
         _failure.Visibility = phase == 3 ? Visibility.Visible : Visibility.Collapsed;
+        _idleHint.Visibility = phase == 4 ? Visibility.Visible : Visibility.Collapsed;
         _truncated.Visibility = card.State == CardState.Truncated ? Visibility.Visible : Visibility.Collapsed;
         _thinking.Visibility = card.Thinking ? Visibility.Visible : Visibility.Collapsed;
         // 读音行：流式中第一行没出完照原样
@@ -359,8 +374,9 @@ internal sealed partial class TranslateCardView
 
         SetBlink(generating);
         SetShimmer(phase == 0);
-        SetComet(IsStreaming && pending);
-        if (IsStreaming && card.State == CardState.Done && previous is CardState.Waiting or CardState.Running)
+        // 折叠着不画彗星、不闪完成那一圈（看不到正文，闪了像在偷偷翻，PLAN-v22 D7）；失败的底色、复制的闪照旧
+        SetComet(IsStreaming && pending && !_collapsed);
+        if (IsStreaming && !_collapsed && card.State == CardState.Done && previous is CardState.Waiting or CardState.Running)
         {
             FlashBorder();
         }
@@ -469,7 +485,7 @@ internal sealed partial class TranslateCardView
 
         _actions.Children.Add(IconAction(Glyphs.Refresh, "重新翻译", _retry));
         _actions.Children.Add(IconAction(_collapsed ? Glyphs.ChevronDown : Glyphs.ChevronUp,
-            _collapsed ? "展开（会一直记住）" : "收起（会一直记住）", _toggleCollapse));
+            _collapsed ? "展开：以后自动翻译" : "收起：以后不自动翻译，点开再翻", _toggleCollapse));
     }
 
     private static Button IconAction(string glyph, string name, Action run)

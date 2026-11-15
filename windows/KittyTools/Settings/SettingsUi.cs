@@ -17,6 +17,7 @@ internal static class SettingsUi
     /// <summary>
     /// 设置卡：（身份图标）+ 标题 + 说明 + 右边控件（control 为 null 时整张卡可点，右侧显示箭头）。
     /// problem：说明写的是配置问题（没找到书签文件、未填密钥），用橙字（配置问题的语义色）。
+    /// tag：标题后面的一枚小标签（翻译服务行的「免费」，PLAN-v22 F3），读屏跟着标题读。
     /// </summary>
     public static Border Card(
         string title,
@@ -25,15 +26,28 @@ internal static class SettingsUi
         Action? onClick = null,
         bool enabled = true,
         FrameworkElement? leading = null,
-        bool problem = false)
+        bool problem = false,
+        string? tag = null)
     {
         var text = new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center, Name = CardTextName };
-        text.Children.Add(new TextBlock
+        var heading = new TextBlock
         {
             Text = title,
             FontWeight = FontWeights.SemiBold,
             TextWrapping = TextWrapping.Wrap,
-        });
+        };
+        if (tag is null)
+        {
+            text.Children.Add(heading);
+        }
+        else
+        {
+            var titleRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+            titleRow.Children.Add(heading);
+            titleRow.Children.Add(Tag(tag));
+            text.Children.Add(titleRow);
+            title = $"{title}（{tag}）";
+        }
         if (!string.IsNullOrEmpty(description))
         {
             text.Children.Add(new TextBlock
@@ -154,6 +168,26 @@ internal static class SettingsUi
     {
         card.IsHitTestVisible = enabled;
         card.Opacity = enabled ? 1 : 0.55;
+    }
+
+    /// <summary>标题后面的小标签（翻译服务行的「免费」）：和翻译浮窗目标语言上的「自动」同一个样子（强调色 0.16 底、强调色字、10 号半粗）。</summary>
+    public static Border Tag(string text)
+    {
+        var accent = Theme.AccentColor;
+        return new Border
+        {
+            Padding = new Thickness(4, 1, 4, 1),
+            CornerRadius = new CornerRadius(7),
+            Background = new SolidColorBrush(Theme.Argb(41, accent.R, accent.G, accent.B)),
+            VerticalAlignment = VerticalAlignment.Center,
+            Child = new TextBlock
+            {
+                Text = text,
+                FontSize = 10,
+                FontWeight = FontWeights.SemiBold,
+                Foreground = new SolidColorBrush(Theme.AccentTextColor),
+            },
+        };
     }
 
     /// <summary>左右并排的小开关（用于卡片右侧）。</summary>

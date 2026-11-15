@@ -1185,7 +1185,7 @@ internal sealed partial class TranslateWindow : Window
                 {
                     view = new TranslateCardView(
                         card.Service,
-                        () => _coordinator.Retry(id),
+                        () => RetryCard(id),
                         () =>
                         {
                             if (!_coordinator.CopyCard(id))
@@ -1219,19 +1219,54 @@ internal sealed partial class TranslateWindow : Window
         }
     }
 
-    /// <summary>折叠按服务记住（跨重启），不再因为出结果自动展开（F3）。</summary>
+    /// <summary>
+    /// 折叠按服务记住（跨重启），不再因为出结果自动展开（F3）。折叠 = 以后不自动翻译：展开一张没翻的卡时现在才翻（PLAN-v22 C3）。
+    /// </summary>
     private void ToggleCollapse(string id)
     {
         var collapsed = SettingsService.Current.TranslateCollapsedServices ?? new List<string>();
-        if (!collapsed.Remove(id))
+        var expanding = collapsed.Remove(id);
+        if (!expanding)
         {
             collapsed.Add(id);
         }
 
         SettingsService.Current.TranslateCollapsedServices = collapsed;
         SettingsService.Save();
+        if (expanding)
+        {
+            _coordinator.Expand(id);
+        }
+
         RefreshResults();
         ResizeToContent();
+    }
+
+    /// <summary>
+    /// 卡上的「重新翻译」：折叠着点 = 展开并翻译（没翻的由展开去跑，翻过的再重跑）；展开着却没翻的（折叠状态从别处改过来的，
+    /// 比如同步）也是现在才翻（PLAN-v22 C3，同 mac）。
+    /// </summary>
+    private void RetryCard(string id)
+    {
+        if (_coordinator.Cards.FirstOrDefault(card => card.Service.Id == id) is not { } card)
+        {
+            return;
+        }
+
+        var idle = card.State == CardState.Idle;
+        if (SettingsService.Current.TranslateCollapsedServices?.Contains(id) == true)
+        {
+            ToggleCollapse(id);
+        }
+        else if (idle)
+        {
+            _coordinator.Expand(id);
+        }
+
+        if (!idle)
+        {
+            _coordinator.Retry(id);
+        }
     }
 
     private void OnSpeechChanged()
@@ -1274,7 +1309,7 @@ internal sealed partial class TranslateWindow : Window
 
     /// <summary>
     /// UI 截图自检（--ui-snapshots）：摆出一种状态，不激活地露在左上角 (8, 8)（RenderTargetBitmap 只画它自己的内容）。
-    /// translate-empty / -running / -done / -truncated / -history / -history-menu。卡片是摆出来的，不发请求。正常入口不碰。
+    /// translate-empty / -running / -done / -truncated / -collapsed / -history / -history-menu。卡片是摆出来的，不发请求。正常入口不碰。
     /// </summary>
     internal void ShowProbe(string state)
     {
@@ -1291,8 +1326,29 @@ internal sealed partial class TranslateWindow : Window
         const string done = "敏捷的棕色狐狸跳过了那只懒狗。那是最好的时代，也是最坏的时代。";
         ShowHistory(false);
         SetSourceQuietly(state == "translate-empty" ? string.Empty : state == "translate-word" ? "stuff" : source);
+        // 折叠状态是全局记住的：摆出来的服务（probe-*）只在 translate-collapsed 里折叠，别的状态不带着
+        var collapsed = (SettingsService.Current.TranslateCollapsedServices ?? new List<string>())
+            .Where(id => !id.StartsWith("probe-", StringComparison.Ordinal)).ToList();
+        if (state == "translate-collapsed")
+        {
+            collapsed.AddRange(new[] { "probe-deepseek", "probe-ms" });
+        }
+
+        SettingsService.Current.TranslateCollapsedServices = collapsed.Count > 0 ? collapsed : null;
         switch (state)
         {
+            case "translate-collapsed":
+                // PLAN-v22：折叠着没翻的只剩标题行（右边只有重新翻译和展开）、折叠着翻过的、展开着却没翻的（偏好从别处改了）写一行说明
+                var microsoft = new TranslateServiceConfig { Id = "probe-ms", Kind = TranslateKinds.Microsoft, Name = "微软翻译" };
+                var google = new TranslateServiceConfig { Id = "probe-google", Kind = TranslateKinds.Google, Name = "Google 翻译" };
+                _coordinator.ShowProbe(source, Lang.En, Lang.ZhHans, new[]
+                {
+                    new TranslateCard { Service = deepseek, State = CardState.Idle },
+                    new TranslateCard { Service = zhipu, State = CardState.Done, Text = done },
+                    new TranslateCard { Service = microsoft, State = CardState.Done, Text = done },
+                    new TranslateCard { Service = google, State = CardState.Idle },
+                });
+                break;
             case "translate-word":
                 // PLAN-v14：有道词典卡 + 大模型单词卡，第一行换成带小喇叭的读音行
                 var dict = new TranslateServiceConfig { Id = "probe-dict", Kind = TranslateKinds.YoudaoDict, Name = "有道词典" };

@@ -80,9 +80,8 @@ internal static class ScreenshotTranslator
     private static async Task<List<string>> TranslateSegmentsAsync(
         IReadOnlyList<OverlaySegment> segments, string source, Action<int, int> progress, CancellationToken cancellationToken)
     {
-        var services = TranslateServiceStore.Instance?.Enabled
-            .Where(service => TranslateKinds.IsRunnable(service.Kind) && !TranslateKinds.IsDictionary(service.Kind))
-            .ToList() ?? new List<TranslateServiceConfig>();
+        // 没折叠的服务先试（PLAN-v22 D6）
+        var services = TranslateCoordinator.ReplaceServices();
         if (services.Count == 0)
         {
             throw new Failure("没有启用的翻译服务，先在设置 › 翻译里开一个");
