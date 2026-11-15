@@ -467,6 +467,9 @@ internal static class PinHost
     /// <summary>屏幕上有几张钉图（托盘、启动器里「隐藏 / 关闭全部钉图」只在有钉图时列出来）。</summary>
     public static int Count => Windows.Count;
 
+    /// <summary>钉了一张、关了一张、全部藏起 / 显示回来（主界面开着时那两格跟着换，PLAN-v20 M1）。在界面线程上发。</summary>
+    public static event Action? Changed;
+
     /// <summary>托盘「隐藏全部钉图」之后（PLAN-v9 G1、S10，同 mac 菜单栏）：再钉新的一张时先全部显示回来。</summary>
     public static bool AllHidden { get; private set; }
 
@@ -474,6 +477,7 @@ internal static class PinHost
     public static void ToggleHidden()
     {
         AllHidden = !AllHidden && Windows.Count > 0;
+        Changed?.Invoke();
         foreach (var window in Windows.ToList())
         {
             try
@@ -503,7 +507,12 @@ internal static class PinHost
 
         var window = new PinWindow(png, bounds);
         Windows.Add(window);
-        window.Closed += (_, _) => Windows.Remove(window);
+        window.Closed += (_, _) =>
+        {
+            Windows.Remove(window);
+            Changed?.Invoke();
+        };
+        Changed?.Invoke();
         window.ShowPin();
     }
 

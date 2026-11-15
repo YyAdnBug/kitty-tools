@@ -14,7 +14,7 @@
 // 从托盘用键盘打开时停在第一格。
 // 选中高亮是格子底下单独一块，在格子间滑过去（Snap，同剪贴板 / 启动器；位置算法在 Core 的 HomeLayout.TileOrigin）；
 // 开着的时候录屏 / 录音开始、停止，格子跟着换（「录屏」⇄「停止录屏」）（PLAN-v11 C2）。
-// ponytail: 钉图那两格只在打开时排（钉图的增减没有事件；主界面开着时钉图也很少变），要跟着变再给 PinHost 加 Changed。
+// 开着时钉图那两格跟着钉图增减、藏起 / 显示变（PinHost.Changed，PLAN-v20 M1，同 mac）；保持唤醒那一格跟着开 / 停换名字（KeepAwakeHost.Changed）。
 using KittyTools.Core;
 using KittyTools.Infrastructure;
 using KittyTools.Ui;
@@ -84,6 +84,8 @@ internal sealed class HomePanel : Window
         _keys.CharacterReceived += OnCharacterReceived;
         RecordingHost.Changed += OnRecordingChanged;
         AudioHost.Changed += OnRecordingChanged;
+        PinHost.Changed += OnRecordingChanged;
+        KeepAwakeHost.Changed += OnRecordingChanged;
         AutomationProperties.SetName(_keys, "主界面");
         Content = _keys;
         SystemBackdrop = new AcrylicBackdrop();

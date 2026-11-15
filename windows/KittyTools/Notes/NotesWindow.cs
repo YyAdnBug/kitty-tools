@@ -7,6 +7,8 @@
 // - 右键菜单：颜色 ›、固定、归档、浮在屏幕上、删除（最近删除里是放回、永久删除）。删除 / 归档后提示里能撤销。
 // - 按键：Ctrl+N 新建、Ctrl+F 搜索（焦点在正文里时是便签内查找）、Delete（列表拿着焦点时）删除、Esc 收回编辑卡。
 // 落盘：打字走仓库（停手再落）；换一条、收回编辑卡、窗口失去激活、关窗口时 Flush。
+// 便签墙的键盘（PLAN-v20 N3，mac NotesWallView）：墙拿着焦点时方向键在卡片之间挑（Core NoteWall.Neighbor：同一列上下、左右去最近的一列），
+// 挑中的那张描一圈强调色、滚进视野；Enter / 空格放大成编辑卡，Esc 收回后焦点回到墙上、还是那张。
 // ponytail: 便签墙不能拖动排序（mac 能）、卡片一次全画（mac 可见区附近的先建、其余分批建）；几百条以内没事，要再说。
 using KittyTools.Core;
 using KittyTools.Core.Notes;
@@ -129,8 +131,11 @@ internal sealed class NotesWindow : Window
         // 便签墙
         _wall = new Grid();
         _wallCanvas = new Canvas();
-        _wallScroll = new ScrollViewer { Content = _wallCanvas, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
+        _wallScroll = new ScrollViewer { Content = _wallCanvas, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, IsTabStop = true };
         _wallScroll.SizeChanged += (_, _) => ArrangeWall();
+        // 先于 ScrollViewer 自己处理方向键（不然方向键只是滚动）
+        _wallScroll.PreviewKeyDown += OnWallKeyDown;
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_wallScroll, "便签墙：方向键挑一张，Enter 打开");
         _wall.Children.Add(_wallScroll);
         _editCard = new Grid { Visibility = Visibility.Collapsed, Background = new SolidColorBrush(Color.FromArgb(64, 0, 0, 0)) };
         _editCard.PointerPressed += (_, e) =>
@@ -776,6 +781,9 @@ internal sealed class NotesWindow : Window
             cards.Add(card);
             return height;
         });
+        _wallLayout = layout;
+        _wallIds = ordered;
+        _wallCards = cards;
         _wallCanvas.Children.Clear();
         _wallCanvas.Height = layout.Height;
         _wallCanvas.Width = width;
@@ -799,6 +807,92 @@ internal sealed class NotesWindow : Window
             Canvas.SetTop(card, frame.Y);
             _wallCanvas.Children.Add(card);
         }
+
+        MarkWallFocus(bringIntoView: false);
+    }
+
+    // ---- 便签墙的键盘（PLAN-v20 N3）
+
+    private NoteWall.Layout? _wallLayout;
+    private List<string> _wallIds = new();
+    private List<FrameworkElement> _wallCards = new();
+
+    /// <summary>方向键挑中的那张（便签编号；墙重排后照样认得）。</summary>
+    private string? _wallFocus;
+
+    private void OnWallKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (!_wallMode || _editCard.Visibility == Visibility.Visible || _wallLayout is not { } layout || _wallIds.Count == 0)
+        {
+            return;
+        }
+
+        NoteWall.Direction? direction = e.Key switch
+        {
+            VirtualKey.Up => NoteWall.Direction.Up,
+            VirtualKey.Down => NoteWall.Direction.Down,
+            VirtualKey.Left => NoteWall.Direction.Left,
+            VirtualKey.Right => NoteWall.Direction.Right,
+            _ => null,
+        };
+        if (direction is { } way)
+        {
+            MoveWallFocus(way, layout);
+            e.Handled = true;
+        }
+        else if (e.Key is VirtualKey.Enter or VirtualKey.Space && _wallFocus is { } id && _wallIds.Contains(id))
+        {
+            ExpandCard(id);
+            e.Handled = true;
+        }
+    }
+
+    /// <summary>往 direction 挑下一张（还没挑过的先挑第一张）；走不动就不动。</summary>
+    private void MoveWallFocus(NoteWall.Direction direction, NoteWall.Layout layout)
+    {
+        var current = _wallFocus is { } id ? _wallIds.IndexOf(id) : -1;
+        var next = current < 0 ? 0 : NoteWall.Neighbor(current, direction, layout);
+        if (next is not { } index || index >= _wallIds.Count)
+        {
+            return;
+        }
+
+        _wallFocus = _wallIds[index];
+        MarkWallFocus(bringIntoView: true);
+    }
+
+    /// <summary>挑中的那张描一圈强调色（别的去掉），要的话滚进视野；读屏念它的标题。</summary>
+    private void MarkWallFocus(bool bringIntoView)
+    {
+        var index = _wallFocus is { } id ? _wallIds.IndexOf(id) : -1;
+        for (var at = 0; at < _wallCards.Count; at++)
+        {
+            if (_wallCards[at] is Border card)
+            {
+                card.BorderBrush = at == index ? new SolidColorBrush(Theme.AccentColor) : null;
+                card.BorderThickness = new Thickness(at == index ? 2 : 0);
+            }
+        }
+
+        if (index >= 0 && index < _wallCards.Count && bringIntoView)
+        {
+            _wallCards[index].StartBringIntoView(new BringIntoViewOptions { AnimationDesired = !Motion.Reduced, VerticalAlignmentRatio = 0.5 });
+            Microsoft.UI.Xaml.Automation.Peers.FrameworkElementAutomationPeer.FromElement(_wallScroll)?.RaiseNotificationEvent(
+                Microsoft.UI.Xaml.Automation.Peers.AutomationNotificationKind.ActionCompleted,
+                Microsoft.UI.Xaml.Automation.Peers.AutomationNotificationProcessing.MostRecent,
+                Microsoft.UI.Xaml.Automation.AutomationProperties.GetName(_wallCards[index]), "notes-wall-focus");
+        }
+    }
+
+    /// <summary>自检：在墙上按一下方向键（不发真按键，直接走同一条路），返回挑中的那张。</summary>
+    internal string? ProbeWallKey(NoteWall.Direction direction)
+    {
+        if (_wallLayout is { } layout)
+        {
+            MoveWallFocus(direction, layout);
+        }
+
+        return _wallFocus;
     }
 
     /// <summary>墙上的一张卡片：色条、标题（一两行）、开头几行字（截断渐隐）、底下的相对时间；量好的高。</summary>
@@ -935,6 +1029,7 @@ internal sealed class NotesWindow : Window
     private void ExpandCard(string id)
     {
         Select(id);
+        _wallFocus = id;
         var size = NoteWall.EditorSize((_wall.ActualWidth > 0 ? _wall.ActualWidth : 1000, _wall.ActualHeight > 0 ? _wall.ActualHeight : 600));
         _cardSheet.View.Width = size.Width;
         _cardSheet.View.Height = size.Height;
@@ -959,8 +1054,12 @@ internal sealed class NotesWindow : Window
         NoteStore.Instance?.Flush();
         _editCard.Visibility = Visibility.Collapsed;
         // 放掉编辑卡里的那条（落盘、Left 都在 Show(null) 里）：收起来的编辑卡还拿着编号的话，空白便签删不掉
+        _wallFocus = _cardSheet.NoteId ?? _wallFocus;
         _cardSheet.Show(null);
         BuildActions();
+        // 焦点回到墙上，方向键接着从这张走（PLAN-v20 N3）
+        _wallScroll.Focus(FocusState.Keyboard);
+        MarkWallFocus(bringIntoView: false);
     }
 
     // ---- 按键 ----

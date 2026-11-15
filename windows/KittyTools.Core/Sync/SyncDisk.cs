@@ -1,6 +1,9 @@
 // 同步文件夹的读写（PLAN-v5 §2.1–§2.3；REVIEW R26 从 App 挪进 Core，执行层的集成测试直接用它）：
 // 只写自己的子文件夹；云盘还没下载的占位文件不读（当成没有）；单个文件超过 SyncFile.MaxBytes 不读；
 // 写一律「临时文件 + 替换」。
+// 同步文件夹在 OneDrive 这类云盘（按需下载）里时，别的电脑新写的文件常常只在线：KeepLocal 给同步文件夹设上「始终保留在此设备上」
+// （FILE_ATTRIBUTE_PINNED，PLAN-v20 M2 = REVIEW R77，mac 调 startDownloading），云盘客户端自己把它下下来；占位与否也进指纹，
+// 下载完了下一轮就会重读（大小、时间不变，只有这个属性变）。
 namespace KittyTools.Core.Sync;
 
 public sealed class SyncDisk(string root)
@@ -9,6 +12,43 @@ public sealed class SyncDisk(string root)
     private const FileAttributes RecallOnDataAccess = (FileAttributes)0x400000;
 
     public string Root { get; } = root;
+
+    private const FileAttributes Pinned = (FileAttributes)0x80000;
+    private const FileAttributes Unpinned = (FileAttributes)0x100000;
+    private const FileAttributes RecallOnOpen = (FileAttributes)0x40000;
+
+    /// <summary>
+    /// 同步文件夹是云盘的按需下载文件夹（带云文件的属性 / 是重分析点）时，设上「始终保留在此设备上」；已经设过、不是云盘的不动。
+    /// 设上了返回 true。设不上（云盘客户端没在跑、不支持）给 false，由调用方记日志（Core 不写日志）。
+    /// </summary>
+    public static bool KeepLocal(string folder)
+    {
+        try
+        {
+            var attributes = File.GetAttributes(folder);
+            if ((attributes & Pinned) != 0 && (attributes & Unpinned) == 0)
+            {
+                return true;
+            }
+
+            var cloud = (attributes & (Unpinned | RecallOnOpen | RecallOnDataAccess | FileAttributes.ReparsePoint)) != 0;
+            if (!cloud)
+            {
+                return false;
+            }
+
+            File.SetAttributes(folder, (attributes & ~Unpinned) | Pinned);
+            return (File.GetAttributes(folder) & Pinned) != 0;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>指纹里一个文件的样子：修改时间、大小，还没下载的（占位）多一个 p。</summary>
+    public static string Stamp(FileInfo info)
+        => info.Exists ? $"{info.LastWriteTimeUtc.Ticks}:{info.Length}{(IsPlaceholder(info.FullName) ? ":p" : string.Empty)}" : "-";
 
     public bool IsUsable => Directory.Exists(Root);
 
@@ -112,10 +152,7 @@ public sealed class SyncDisk(string root)
         var builder = new System.Text.StringBuilder();
         void Add(string relative)
         {
-            var info = new FileInfo(Path.Combine(Root, relative));
-            builder.Append(relative).Append('=')
-                .Append(info.Exists ? $"{info.LastWriteTimeUtc.Ticks}:{info.Length}" : "-")
-                .Append('\n');
+            builder.Append(relative).Append('=').Append(Stamp(new FileInfo(Path.Combine(Root, relative)))).Append('\n');
         }
 
         var wanted = kinds.ToList();

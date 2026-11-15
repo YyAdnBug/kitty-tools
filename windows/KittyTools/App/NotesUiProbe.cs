@@ -74,6 +74,13 @@ internal static class NotesUiProbe
                 await Task.Delay(1000);
                 await Shoot(notes, directory, $"notes-wall-card-{theme}", report);
                 notes.ProbeCollapse();
+                // PLAN-v20 N3：收回后还是那张；方向键往右、往下挑（不发真按键，走同一条路）
+                var after = notes.ProbeWallKey(KittyTools.Core.Notes.NoteWall.Direction.Right);
+                var below = notes.ProbeWallKey(KittyTools.Core.Notes.NoteWall.Direction.Down);
+                await Task.Delay(500);
+                await Shoot(notes, directory, $"notes-wall-focus-{theme}", report);
+                string Title(string? id) => id is not null && NoteStore.Instance?.Book.Find(id) is { } found ? found.Title : "（没有）";
+                report.Append($"- 便签墙方向键：起点「{Title(ids[2])}」，右移 →「{Title(after)}」，再下移 →「{Title(below)}」").Append('\n');
                 notes.ProbeToggleLayout();
                 NotesWindow.ShowNote(ids[2]);
                 await Task.Delay(1200);

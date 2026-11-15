@@ -37,6 +37,10 @@
   L2 Ctrl+K「改别名…」落到 命令和别名 那一行（`SettingsWindow.FocusCommand`）、L3 列表脚本的行 Ctrl+C 拷值（没有值拷标题）、
   L4 应用扫描只数图标不取图（`ExtractIconExW(path, -1)`，图交给启动器第一次画时取）。`--launcher-script` 加一步 `menu`（开 / 关 Ctrl+K）。数字见提交正文。
   替用户定的：图标名（mac 的 SF 符号名）不认、网址不下载，照旧画脚本图标；「改别名…」排在 Ctrl+K 最后一组。没测：真点（1341–1344）。
+- **第 5 批（`git log --grep "PLAN-v20 第 5 批"`）**：N1 便签导入按自然顺序（Core `NaturalOrder`）、N2 图片路径整条解析完再比（Core `RealPath`，目录联接指到外面的不导入）、
+  N3 便签墙方向键挑卡片 / Enter 放大（`NoteWall.Neighbor` 原来就有，接上键盘）、M1 主界面开着时钉图两格和保持唤醒那一格跟着变（`PinHost.Changed`）、
+  M2 = R77 同步文件夹在云盘里时设「始终保留在此设备上」、占位与否进指纹（`SyncDisk.KeepLocal` / `Stamp`）、M3 = R79 锁屏通知注册不上时状态屏每 2 秒查一次（`SessionLock`）。
+  R77、R79 从「应修」挪到已修。数字见提交正文。没测：真 OneDrive、真进状态屏锁屏、真按键（1345–1350）。
 
 ## 0.2.0 发版前审查（2026-11-12）
 
@@ -291,7 +295,7 @@
 - 修：加上 `NoteStore.Instance?.Flush(); NoteStore.Instance?.Dispose(); ReminderCenter.Stop();`。
 - 安装版走 Inno 卸载，进程先退，不受影响。
 
-**R77 云盘里「仅在线」的文件不会被要求下载** → 这一版没修（留在应修）；0.2.0 更新日志便签第四条后面照草稿加了「右键它选『始终保留在此设备上』」。
+**R77 云盘里「仅在线」的文件不会被要求下载** → 已修（PLAN-v20 第 5 批 M2）；0.2.0 更新日志便签第四条后面照草稿加了「右键它选『始终保留在此设备上』」。
 
 - `Core/Sync/SyncDisk.cs:15-35` 碰到占位文件就当它不存在。0.1.x 的几类同步就是这样；mac 会调 `startDownloading`。
 - 在 OneDrive 按需下载、iCloud for Windows 下，别的电脑新写的文件常常是仅在线的：
@@ -307,7 +311,7 @@
 - 先建好的压暗层留在屏上吃点击；「点了才收」的提醒没人能收掉。
 - 修：catch 里把已建的窗口 `Close()`，退回到底部的轻提醒。
 
-**R79 锁屏通知没注册上时没有兜底** → 这一版没修（留在应修）。
+**R79 锁屏通知没注册上时没有兜底** → 已修（PLAN-v20 第 5 批 M3）。
 
 - `Shell/HiddenWindow.cs:56` 不看 `WTSRegisterSessionNotification` 的返回值。
 - 收不到「解锁」的话，「锁屏再解锁」这条出路就失效了；状态屏一直算开着，热键和提醒都被压着。

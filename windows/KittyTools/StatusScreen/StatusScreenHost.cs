@@ -171,6 +171,7 @@ internal static partial class StatusScreenHost
         }
 
         Active = true;
+        StartLockPoll();
         _probe = probe;
         _preset = preset;
         _passcode = passcode;
@@ -645,6 +646,41 @@ internal static partial class StatusScreenHost
 
     // ---- 锁屏
 
+    private static DispatcherQueueTimer? _lockPoll;
+
+    /// <summary>
+    /// 收不到锁屏 / 解锁的通知时（REVIEW R79：WTSRegisterSessionNotification 失败）每 2 秒查一次（SessionLock），照通知那样让开、结束；
+    /// 收得到通知时什么都不跑。退出时停（StopLockPoll）。
+    /// </summary>
+    private static void StartLockPoll()
+    {
+        if (HiddenWindow.SessionNotices)
+        {
+            return;
+        }
+
+        if (_lockPoll is null)
+        {
+            _lockPoll = DispatcherQueue.GetForCurrentThread()!.CreateTimer();
+            _lockPoll.Interval = TimeSpan.FromSeconds(2);
+            _lockPoll.Tick += (_, _) =>
+            {
+                switch (SessionLock.IsLocked())
+                {
+                    case true when !_locked:
+                        Locked();
+                        break;
+                    case false when _locked:
+                        Unlocked();
+                        break;
+                }
+            };
+        }
+
+        _lockPoll.Start();
+        Log.Info("status.lock-poll on");
+    }
+
     /// <summary>锁屏、会话切走（WTS_SESSION_LOCK）：不拦输入、窗口收起；「屏幕常亮」降成只防睡眠（不然锁屏界面一直亮着）。</summary>
     public static void Locked()
     {
@@ -695,6 +731,7 @@ internal static partial class StatusScreenHost
         }
 
         Active = false;
+        _lockPoll?.Stop();
         var seconds = (int)((Environment.TickCount64 - _startedTick) / 1000);
         foreach (var timer in new[] { _tickTimer, _autoEndTimer, _holdTimer, _hintTimer, _promptTimer, _peekTimer })
         {

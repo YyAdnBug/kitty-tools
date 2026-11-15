@@ -270,10 +270,21 @@ internal sealed class Syncer
         _ = RoundAsync();
     }
 
+    /// <summary>设过「始终保留在此设备上」的同步文件夹（R77）。</summary>
+    private string? _pinnedFolder;
+
     private async Task RunOnceAsync(string folder)
     {
         if (!IsServer)
         {
+            // 同步文件夹在云盘里：设上「始终保留在此设备上」（REVIEW R77），别的电脑写的才不会一直只在线。同一个文件夹只设一次
+            if (_pinnedFolder != folder)
+            {
+                _pinnedFolder = folder;
+                var pinned = await Task.Run(() => SyncDisk.KeepLocal(folder));
+                Log.Info($"sync.keep-local pinned={pinned}");
+            }
+
             await MergeAsync(folder);
             return;
         }

@@ -226,6 +226,42 @@ internal static class UiSnapshotProbe
 
             SettingsService.Current.Theme = theme;
 
+            // PLAN-v20 M1：主界面开着时钉图的状态变了，那两格当场跟着换（不用关了再开）。钉图窗口一出来会拿前台、把主界面收掉，
+            // 所以先钉、再开主界面，然后在它开着时「隐藏全部钉图」「关闭全部钉图」（这两样不抢前台），各拍一张
+            if (Paths.IsTestProfile)
+            {
+                var device = Microsoft.Graphics.Canvas.CanvasDevice.GetSharedDevice();
+                using var target = new Microsoft.Graphics.Canvas.CanvasRenderTarget(device, 160, 100, 96);
+                using (var ds = target.CreateDrawingSession())
+                {
+                    ds.Clear(Microsoft.UI.Colors.SteelBlue);
+                }
+
+                using var stream = new Windows.Storage.Streams.InMemoryRandomAccessStream();
+                await target.SaveAsync(stream, Microsoft.Graphics.Canvas.CanvasBitmapFileFormat.Png);
+                var bytes = new byte[stream.Size];
+                using (var reader = new Windows.Storage.Streams.DataReader(stream.GetInputStreamAt(0)))
+                {
+                    await reader.LoadAsync((uint)stream.Size);
+                    reader.ReadBytes(bytes);
+                }
+
+                PinHost.Show(bytes, new PixelBounds(40, 40, 200, 140));
+                await Task.Delay(600);
+                HomePanel.ShowAtCursor();
+                await Task.Delay(900);
+                await WindowShot.SaveAsync(HomePanel.HandleForProbe, Path.Combine(directory, "home-pins-1-shown.png"));
+                PinHost.ToggleHidden();
+                await Task.Delay(700);
+                await WindowShot.SaveAsync(HomePanel.HandleForProbe, Path.Combine(directory, "home-pins-2-hidden.png"));
+                PinHost.CloseAll();
+                await Task.Delay(700);
+                await WindowShot.SaveAsync(HomePanel.HandleForProbe, Path.Combine(directory, "home-pins-3-closed.png"));
+                Log.Info($"ui-snapshots home-pins-live pins={PinHost.Count} home-open={HomePanel.HandleForProbe != IntPtr.Zero}");
+                HomePanel.Hide(restoreForeground: false);
+                await Task.Delay(300);
+            }
+
             // 托盘菜单换成了系统的 Win32 菜单（2026-10-27）：TrackPopupMenuEx 一直占着界面线程等到菜单收起，
             // 这里截不了；深浅色两张靠手测截（HANDTEST 367）。
             Log.Info("snapshot.tray-menu skipped (system menu)");

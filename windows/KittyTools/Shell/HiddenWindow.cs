@@ -54,11 +54,27 @@ internal static unsafe class HiddenWindow
         }
 
         PInvoke.AddClipboardFormatListener(Hwnd);
-        // 锁屏 / 解锁的通知（第三版 §2.1：锁屏时看一眼今天备过没有）。
-        WtsRegisterSessionNotification((IntPtr)Hwnd.Value, 0);
+        // 锁屏 / 解锁的通知（第三版 §2.1：锁屏时看一眼今天备过没有）。注册不上时状态屏改成每 2 秒查一次锁没锁（REVIEW R79，SessionLock）；
+        // 测试档里 KITTY_FAKE_NO_SESSION_NOTICES=1 当成注册不上，走那条路。
+        SessionNotices = WtsRegisterSessionNotification((IntPtr)Hwnd.Value, 0) &&
+                         !(Paths.IsTestProfile && Environment.GetEnvironmentVariable("KITTY_FAKE_NO_SESSION_NOTICES") == "1");
+        if (!SessionNotices)
+        {
+            Log.Warn($"hidden.session-notices-failed {Marshal.GetLastWin32Error()}");
+        }
+
+        if (Paths.IsTestProfile)
+        {
+            // 自检档：兜底那条查询读得出来（R79；没锁时应当是 False）
+            Log.Info($"hidden.session notices={SessionNotices} locked={SessionLock.IsLocked()?.ToString() ?? "unknown"}");
+        }
+
         Log.Info("hidden.ready");
         return true;
     }
+
+    /// <summary>收得到锁屏 / 解锁的通知（WM_WTSSESSION_CHANGE）。</summary>
+    public static bool SessionNotices { get; private set; }
 
     [DllImport("wtsapi32.dll", EntryPoint = "WTSRegisterSessionNotification", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

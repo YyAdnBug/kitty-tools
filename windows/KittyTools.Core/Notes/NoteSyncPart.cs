@@ -360,7 +360,7 @@ public static class NoteSyncDisk
         {
             var info = new FileInfo(path);
             builder.Append(Path.GetRelativePath(disk.Root, path)).Append('=')
-                .Append(info.Exists ? $"{info.LastWriteTimeUtc.Ticks}:{info.Length}" : "-").Append('\n');
+                .Append(SyncDisk.Stamp(info)).Append('\n');
         }
 
         void Folder(string path)

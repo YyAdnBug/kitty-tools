@@ -10,6 +10,7 @@
 // 读写文件、拷图片、存图片都在线程池上（文件夹可能在网络盘上）；合并进仓库、提示在 UI 线程。
 // Windows 的选择框不能同时选文件和文件夹（mac 能），所以「导入…」是一个两项的小菜单：选择文件… / 选择文件夹…。
 using System.Text;
+using KittyTools.Core;
 using KittyTools.Core.Notes;
 using KittyTools.Infrastructure;
 using Microsoft.UI.Xaml;
@@ -379,7 +380,7 @@ internal static class NotesTransfer
                     var extension = Path.GetExtension(path).ToLowerInvariant();
                     return !name.StartsWith('.') && extension is ".md" or ".markdown";
                 })
-                .OrderBy(path => Path.GetFileName(path), StringComparer.CurrentCultureIgnoreCase)
+                .OrderBy(path => Path.GetFileName(path), NaturalOrder.Instance)
                 .ToList();
         }
         catch (Exception ex)
@@ -390,13 +391,12 @@ internal static class NotesTransfer
     }
 
     /// <summary>读文件、换成便签（线程池上）。自家的头按编号、别处的每个一条新便签。</summary>
-    // ponytail: 按文件名排序用当前区域的不区分大小写比较，不是 mac 的「自然顺序」（文件 2 排在文件 10 前面）；只影响超过 2000 个时截掉哪些、
-    // 别处文件的先后。
+    // 按文件名的自然顺序排（Core NaturalOrder，同 mac：「便签 2」在「便签 10」前面；PLAN-v20 N1）：影响超过 2000 个时截掉哪些、别处文件的先后。
     private static async Task<NoteMarkdownFiles.ImportResult> ImportFilesAsync(
         List<(string Path, string Root)> sources, string? imageDirectory, long now)
     {
         var result = new NoteMarkdownFiles.ImportResult { LimitHit = sources.Count > NoteMarkdownFiles.MaxFiles };
-        var files = sources.OrderBy(source => Path.GetFileName(source.Path), StringComparer.CurrentCultureIgnoreCase)
+        var files = sources.OrderBy(source => Path.GetFileName(source.Path), NaturalOrder.Instance)
             .Take(NoteMarkdownFiles.MaxFiles).ToList();
         result.Add(NoteMarkdownFiles.Skip.OverLimit, Math.Max(0, sources.Count - NoteMarkdownFiles.MaxFiles));
         for (var index = 0; index < files.Count; index++)
@@ -512,8 +512,8 @@ internal static class NotesTransfer
         }
     }
 
-    /// <summary>图片路径（相对那个 .md 的文件夹）→ 文件的完整路径；绝对路径、网址、跑出文件夹的、不是普通文件的、符号链接给 null。</summary>
-    // ponytail: 只看最后那个文件是不是符号链接，不逐级查路径上的目录联接（mac 是整条路径解析完再比）；要更严再逐级 ResolveLinkTarget。
+    /// <summary>图片路径（相对那个 .md 的文件夹）→ 文件的完整路径；绝对路径、网址、跑出文件夹的（符号链接、目录联接解析完再看）、不是普通文件的给 null。</summary>
+    // 整条路径解析完再比（Core RealPath，同 mac resolvingSymlinksInPath；PLAN-v20 N2）：文件夹里一个目录联接指到外面时，经过它的图不导入。
     private static string? ImagePath(string raw, string root)
     {
         string decoded;
@@ -544,7 +544,7 @@ internal static class NotesTransfer
             }
 
             var info = new FileInfo(full);
-            return info.Exists && info.LinkTarget is null ? full : null;
+            return info.Exists && RealPath.IsInside(full, bas) ? full : null;
         }
         catch (Exception)
         {
