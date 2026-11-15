@@ -60,7 +60,7 @@ struct NoteCaptureView: View {
   /// （↩ 不保存），Esc 同正文里的 Esc。字的左边线和记到已有的便签时那行标题是同一条（截图自检量过，不用再让）
   private var titleField: some View {
     CommandTextField(
-      text: $model.title, placeholder: "标题（可不填）", fontSize: 13,
+      text: $model.title, placeholder: String(localized: "标题（可不填）"), fontSize: 13,
       maxLength: Note.maxTitleLength, focusRequest: model.titleFocus,
       onCommand: { selector in
         switch selector {
@@ -180,12 +180,12 @@ struct NoteCaptureView: View {
   }
 
   /// 只提示键位、不能点：secondary（mac-whisker §3「面板里共用的几件」）
-  private func hint(_ text: String, _ key: String) -> some View {
+  private func hint(_ text: LocalizedStringResource, _ key: String) -> some View {
     HStack(spacing: 6) {
       Text(text).foregroundStyle(.secondary)
       KeyCap(key)
     }
     .accessibilityElement(children: .ignore)
-    .accessibilityLabel("\(text)：\(key)")
+    .accessibilityLabel("\(String(localized: text))：\(key)")
   }
 }

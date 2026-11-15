@@ -86,7 +86,7 @@ struct NotesWindowView: View {
     Picker("视图", selection: $model.scope) {
       ForEach(Model.Scope.allCases) { scope in
         let count = model.list(scope).count
-        Text(count > 0 ? "\(scope.title) \(count)" : scope.title).tag(scope)
+        Text(count > 0 ? "\(scope.segmentTitle) \(count)" : scope.segmentTitle).tag(scope)
       }
     }
     .pickerStyle(.segmented)
@@ -204,7 +204,7 @@ struct NotesWindowView: View {
     }
   }
 
-  private func keyHint(_ text: String, _ keys: String) -> some View {
+  private func keyHint(_ text: LocalizedStringResource, _ keys: String) -> some View {
     HStack(spacing: 6) {
       Text(text).foregroundStyle(.secondary)
       KeyCombo(keys)
@@ -394,7 +394,7 @@ private struct NoteRow: View {
           Text(NotesWindowModel.ago(note)).font(.system(size: 11)).foregroundStyle(.tertiary)
         }
         HStack(spacing: 6) {
-          Text(preview.isEmpty ? "没有更多内容" : preview)
+          Text(preview.isEmpty ? String(localized: "没有更多内容") : preview)
             .font(.system(size: 12))
             .foregroundStyle(preview.isEmpty ? .tertiary : .secondary)
             .lineLimit(1)
@@ -413,10 +413,10 @@ private struct NoteRow: View {
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(
       [
-        summary.title, note.isPinned ? "已固定" : nil, paper.name,
+        summary.title, note.isPinned ? String(localized: "已固定") : nil, paper.name,
         progress.map(Note.progressSpoken), NotesWindowModel.ago(note),
       ]
-      .compactMap { $0 }.joined(separator: "，")
+      .compactMap { $0 }.joined(separator: Island.comma)
     )
     .accessibilityValue(preview)
   }

@@ -391,10 +391,11 @@ private struct NoteTab: View {
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(
       [
-        summary.title, note.isPinned ? "已固定" : nil, isFloating ? "浮在屏幕上" : nil,
+        summary.title, note.isPinned ? String(localized: "已固定") : nil,
+        isFloating ? String(localized: "浮在屏幕上") : nil,
         paper.name, summary.progress.map(Note.progressSpoken),
       ]
-      .compactMap { $0 }.joined(separator: "，")
+      .compactMap { $0 }.joined(separator: Island.comma)
     )
     .accessibilityAddTraits(isOpen ? [.isButton, .isSelected] : .isButton)
     .accessibilityAction { model.tapTab(note.id) }
@@ -484,7 +485,7 @@ struct NotePreviewCard: View {
         }
         .foregroundStyle(paper.ink)
         if !titleOnly {
-          Text(preview.isEmpty ? "没有更多内容" : preview)
+          Text(preview.isEmpty ? String(localized: "没有更多内容") : preview)
             .font(.system(size: 11))
             .foregroundStyle(preview.isEmpty ? paper.ink.opacity(0.35) : paper.secondaryInk)
             .lineLimit(4)

@@ -44,6 +44,20 @@ struct NoteSampleTests {
     #expect(right.utf8.count < Note.maxBodyBytes)
   }
 
+  /// 英文界面放的是英文的那一份（放的那一刻的语言，之后就是用户自己的便签，第 7 批）：第一行是标题，三条照样是任务；
+  /// 单测宿主是中文界面，不传 english 时是中文那份
+  @Test func englishBody() {
+    let body = NoteSample.body(edge: .left, hotKey: "⌥N", english: true)
+    let note = Note(id: "a", body: body, createdAt: .now, modifiedAt: .now)
+    #expect(note.displayTitle == "Welcome to Notes")
+    #expect(body.contains("the left edge of the screen") && body.contains("☐ Press ⌥N to jot"))
+    #expect(NoteTasks.progress(in: body)?.total == 3)
+    #expect(!body.contains(/[\u{3400}-\u{9FFF}]/))
+    #expect(
+      NoteSample.body(edge: .right, hotKey: "⌥N")
+        == NoteSample.body(edge: .right, hotKey: "⌥N", english: false))
+  }
+
   /// 全新的库：放一条（标题空着、第一种纸色、没固定没归档），记下放过了；删掉之后不再放，换了新库也不再放
   @Test func addedOnceToAnEmptyLibrary() throws {
     let (defaults, suite) = try prefs()

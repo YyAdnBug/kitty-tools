@@ -10,7 +10,7 @@ struct SyncServerForm: View {
   /// 开成了（调用方收起表单、start）
   let connected: () -> Void
   @State private var address = ""
-  @State private var path = "Kitty Tools 同步"
+  @State private var path = Self.defaultFolder
   @State private var user = ""
   @State private var password = ""
   /// 正在测试 / 连接（输入框和按钮都停用）
@@ -19,6 +19,9 @@ struct SyncServerForm: View {
   @State private var outcome: Outcome?
   /// 服务器上已经有别的电脑在同步：确认框开着时有值
   @State private var joining: Joining?
+
+  /// 服务器上默认的文件夹名：**永远不翻**（多语言，TRANSLATION.md 二）——中英两台都用默认值时要连到同一个文件夹
+  static let defaultFolder = "Kitty Tools 同步"
 
   enum Outcome: Equatable {
     case fine(String)
@@ -44,7 +47,7 @@ struct SyncServerForm: View {
         }
         GridRow {
           Text("文件夹")
-          TextField("文件夹", text: $path, prompt: Text("Kitty Tools 同步"))
+          TextField("文件夹", text: $path, prompt: Text(verbatim: Self.defaultFolder))
         }
         GridRow {
           Text("用户名")
@@ -97,11 +100,7 @@ struct SyncServerForm: View {
     ) { joining in
       Button("合在一起") { Task { await enable(joining.account) } }
     } message: { joining in
-      Text(
-        (joining.notes > 0
-          ? "这个文件夹里已经有 \(joining.devices) 台电脑在同步，有 \(joining.notes) 条便签（含「最近删除」里的）。"
-          : "这个文件夹里已经有 \(joining.devices) 台电脑在同步。")
-          + SyncSection.joinNote)
+      Text(SyncSection.joinMessage(devices: joining.devices, notes: joining.notes))
     }
   }
 
@@ -124,8 +123,8 @@ struct SyncServerForm: View {
     outcome = nil
     Task {
       switch await NoteSyncServer.test(account, session: syncer.session) {
-      case .success(.ready): outcome = .fine("连上了，能读能写")
-      case .success(.missing): outcome = .fine("连上了；服务器上还没有这个文件夹，连接时会新建")
+      case .success(.ready): outcome = .fine(String(localized: "连上了，能读能写"))
+      case .success(.missing): outcome = .fine(String(localized: "连上了；服务器上还没有这个文件夹，连接时会新建"))
       case .failure(let failure): outcome = .problem(failure.message)
       }
       working = false

@@ -379,9 +379,9 @@ nonisolated enum NoteStyles {
 
     var title: String {
       switch self {
-      case .compact: "紧凑"
-      case .standard: "标准"
-      case .relaxed: "宽松"
+      case .compact: String(localized: "紧凑")
+      case .standard: String(localized: "标准")
+      case .relaxed: String(localized: "宽松")
       }
     }
   }

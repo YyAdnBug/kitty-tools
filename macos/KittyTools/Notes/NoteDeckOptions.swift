@@ -11,7 +11,7 @@ nonisolated struct NoteDeckOptions: Equatable, Sendable {
     case right, left
 
     var opposite: Edge { self == .right ? .left : .right }
-    /// 界面上的叫法（「便签在屏幕右边缘」）
+    /// 中文示例便签里的叫法（「鼠标靠到屏幕右边缘」；英文那份用 rawValue）
     var name: String { self == .right ? "右" : "左" }
   }
 

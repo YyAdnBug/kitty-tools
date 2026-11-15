@@ -108,7 +108,7 @@ private final class PillView: NSView {
     layer?.addSublayer(body)
     setAccessibilityElement(true)
     setAccessibilityRole(.button)
-    setAccessibilityHelp("鼠标靠过来展开便签；按住 Option 拖动可以换边、换高度")
+    setAccessibilityHelp(String(localized: "鼠标靠过来展开便签；按住 Option 拖动可以换边、换高度"))
   }
 
   @available(*, unavailable)
@@ -118,7 +118,7 @@ private final class PillView: NSView {
   func draw(edge: NoteDeckOptions.Edge, colors: [Int], metrics: NoteDeckMetrics, sense: CGFloat) {
     self.edge = edge
     self.sense = sense
-    setAccessibilityLabel("便签，\(colors.count) 条")
+    setAccessibilityLabel(String(localized: "便签，\(colors.count) 条"))
     CATransaction.begin()
     CATransaction.setDisableActions(true)
     let width = metrics.pillWidth

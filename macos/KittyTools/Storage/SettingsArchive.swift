@@ -38,7 +38,9 @@ struct SettingsArchive: Codable, Equatable {
 
     var id: String { rawValue }
 
-    var title: String {
+    var title: String { String(localized: titleResource) }
+
+    var titleResource: LocalizedStringResource {
       switch self {
       case .preferences: "设置"
       case .hotkeys: "快捷键"
@@ -242,11 +244,11 @@ struct SettingsArchive: Codable, Equatable {
 
     var message: String {
       switch self {
-      case .backupFailed(let reason): "没能先备份现在的设置和数据（\(reason)），所以没有导入"
-      case .notArchive: "这不是 Kitty Tools 导出的设置文件"
-      case .newer: "这个文件来自更新版本的 Kitty Tools，先更新再导入"
-      case .unreadable: "文件读不出来：可能被改动过，或者来自更新版本的 Kitty Tools"
-      case .wrongPassword: "密码不对（也可能是文件里的翻译服务被改动过）"
+      case .backupFailed(let reason): String(localized: "没能先备份现在的设置和数据（\(reason)），所以没有导入")
+      case .notArchive: String(localized: "这不是 Kitty Tools 导出的设置文件")
+      case .newer: String(localized: "这个文件来自更新版本的 Kitty Tools，先更新再导入")
+      case .unreadable: String(localized: "文件读不出来：可能被改动过，或者来自更新版本的 Kitty Tools")
+      case .wrongPassword: String(localized: "密码不对（也可能是文件里的翻译服务被改动过）")
       }
     }
   }
@@ -421,22 +423,23 @@ struct SettingsArchive: Codable, Equatable {
   /// 没问题是 nil，有问题给一句说给用户的话
   func exportProblem(encodedSize: Int) -> String? {
     if (clips?.count ?? 0) > Self.maxClips {
-      return "片段和文字收藏超过 \(Self.maxClips) 条，先取消勾选「片段与收藏」"
+      return String(localized: "片段和文字收藏超过 \(Self.maxClips) 条，先取消勾选「片段与收藏」")
     }
     if (clipGroups?.count ?? 0) > Self.maxGroups {
-      return "收藏夹超过 \(Self.maxGroups) 个，先取消勾选「片段与收藏」"
+      return String(localized: "收藏夹超过 \(Self.maxGroups) 个，先取消勾选「片段与收藏」")
     }
     if (vocabulary?.count ?? 0) > Self.maxWords {
-      return "生词本超过 \(Self.maxWords) 条，先取消勾选「生词本」"
+      return String(localized: "生词本超过 \(Self.maxWords) 条，先取消勾选「生词本」")
     }
     if (notes?.count ?? 0) > Self.maxNotes {
-      return "便签超过 \(Self.maxNotes) 条，先取消勾选「便签」"
+      return String(localized: "便签超过 \(Self.maxNotes) 条，先取消勾选「便签」")
     }
     if !notesFit {
-      return "有便签的正文超过 \(Note.maxBodyBytes >> 20) MB，先取消勾选「便签」"
+      return String(localized: "有便签的正文超过 \(Note.maxBodyBytes >> 20) MB，先取消勾选「便签」")
     }
     if encodedSize > Self.maxFileSize {
-      return "内容太多，先取消勾选「片段与收藏」" + ((notes ?? []).isEmpty ? "" : "或「便签」")
+      return (notes ?? []).isEmpty
+        ? String(localized: "内容太多，先取消勾选「片段与收藏」") : String(localized: "内容太多，先取消勾选「片段与收藏」或「便签」")
     }
     return nil
   }
@@ -452,7 +455,7 @@ struct SettingsArchive: Codable, Equatable {
   static func fileName(now: Date = .now) -> String {
     // 按本地时区取日期（ISO 8601 样式默认是格林尼治时间，半夜导出会差一天）
     let day = now.formatted(Date.ISO8601FormatStyle(timeZone: .current).year().month().day())
-    return "Kitty Tools 设置 \(day).json"
+    return String(localized: "Kitty Tools 设置 \(day).json", comment: "导出设置的默认文件名，中间是日期")
   }
 
   // MARK: 密钥
@@ -872,16 +875,16 @@ struct SettingsArchive: Codable, Equatable {
     if incoming(Prefs.clipboardBlockSensitive) as? Bool == false,
       defaults.bool(forKey: Prefs.clipboardBlockSensitive)
     {
-      losses.append("不再过滤疑似密钥和银行卡号")
+      losses.append(String(localized: "不再过滤疑似密钥和银行卡号"))
     }
     let excluded = Set(incoming(Prefs.clipboardExcludedBundleIDs) as? [String] ?? [])
     let current = Set(defaults.stringArray(forKey: Prefs.clipboardExcludedBundleIDs) ?? [])
-    if !current.isSubset(of: excluded) { losses.append("剪贴板「不记录」的 App 会变少") }
+    if !current.isSubset(of: excluded) { losses.append(String(localized: "剪贴板「不记录」的 App 会变少")) }
     // 功能开关（Feature）：没存过 = 开。剪贴板从关变开 = 又开始记复制的东西
     let local = { (key: String) in defaults.object(forKey: key) as? Bool ?? true }
     let clipboard = Feature.clipboard.prefsKey
     if incoming(clipboard) as? Bool != false, !local(clipboard) {
-      losses.append("会开始记录剪贴板")
+      losses.append(String(localized: "会开始记录剪贴板"))
     }
     // 复制即译实际跑不跑看两样：翻译这个功能开着、复制即译开着（只比其中一样会漏掉「翻译从关变开」）
     let translate = Feature.translate.prefsKey
@@ -890,12 +893,12 @@ struct SettingsArchive: Codable, Equatable {
       incoming(translate) as? Bool != false
       && incoming(Prefs.translateCopyToTranslate) as? Bool == true
     if copiesAfter, !copiesNow {
-      losses.append("会打开复制即译（复制的外语文字自动发给翻译服务）")
+      losses.append(String(localized: "会打开复制即译（复制的外语文字自动发给翻译服务）"))
     }
     // 动画表情包（EmojiPack）：从关变开 = 挑到有动画版的表情时会联网下载
     let emoji = Prefs.emojiPackDownloads
     if incoming(emoji) as? Bool != false, !local(emoji) {
-      losses.append("会自动下载挑的表情的动画")
+      losses.append(String(localized: "会自动下载挑的表情的动画"))
     }
     return losses
   }

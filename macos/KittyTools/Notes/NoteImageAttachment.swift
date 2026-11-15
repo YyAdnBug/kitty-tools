@@ -233,7 +233,7 @@ final class NoteImageAttachmentCell: NSTextAttachmentCell {
   }
 
   /// 读屏读到图片时念「图片」（不念 U+FFFC）
-  override func accessibilityLabel() -> String? { "图片" }
+  override func accessibilityLabel() -> String? { String(localized: "图片") }
 
   // MARK: 画
 
@@ -277,7 +277,7 @@ final class NoteImageAttachmentCell: NSTextAttachmentCell {
     path.setLineDash([4, 3], count: 2, phase: 0)
     ink.withAlphaComponent(0.35).setStroke()
     path.stroke()
-    let text = "图片找不到了"
+    let text = String(localized: "图片找不到了")
     let attributes: [NSAttributedString.Key: Any] = [
       .font: NSFont.systemFont(ofSize: 11), .foregroundColor: ink.withAlphaComponent(0.6),
     ]

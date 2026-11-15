@@ -1558,7 +1558,8 @@ struct SettingsArchiveTests {
     #expect(!archive.notesFit)
     #expect(
       archive.exportProblem(encodedSize: 100)
-        == "便签超过 \(SettingsArchive.maxNotes) 条，先取消勾选「便签」")
+        // 条数是数量，插进句子时按语言加千分位（多语言第 7 批：「5,000 条」）
+        == "便签超过 \(SettingsArchive.maxNotes.formatted()) 条，先取消勾选「便签」")
     archive.notes = [note(1, body: String(repeating: "x", count: Note.maxBodyBytes))]
     #expect(archive.notesFit && archive.exportProblem(encodedSize: 100) == nil)
     archive.notes = [

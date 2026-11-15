@@ -26,7 +26,7 @@ nonisolated enum NoteImages {
   static let minWidth = 40
   static let maxWidth = 4000
   /// 标题、摘要、墙卡片上图片写成什么
-  static let placeholder = "[图片]"
+  static var placeholder: String { String(localized: "[图片]") }
   /// 扩展名最长几位
   static let maxExtension = 10
 
@@ -67,11 +67,11 @@ nonisolated enum NoteImages {
 
     var title: String {
       switch self {
-      case .small: "小"
-      case .medium: "中"
-      case .large: "大"
-      case .fill: "铺满"
-      case .original: "原始大小"
+      case .small: String(localized: "小")
+      case .medium: String(localized: "中")
+      case .large: String(localized: "大")
+      case .fill: String(localized: "铺满")
+      case .original: String(localized: "原始大小")
       }
     }
 

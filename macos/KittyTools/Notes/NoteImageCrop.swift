@@ -22,7 +22,8 @@ enum NoteImageCrop {
   /// 比例（宽 / 高；nil = 自由）。「原比例」按这张图算
   static func ratios(for size: CGSize) -> [(title: String, value: CGFloat?)] {
     [
-      ("自由", nil), ("原比例", size.width / max(size.height, 1)), ("1:1", 1), ("4:3", 4.0 / 3),
+      (String(localized: "自由"), nil), (String(localized: "原比例"), size.width / max(size.height, 1)),
+      ("1:1", 1), ("4:3", 4.0 / 3),
       ("3:4", 3.0 / 4), ("16:9", 16.0 / 9), ("9:16", 9.0 / 16),
     ]
   }
@@ -108,7 +109,7 @@ final class NoteImageCropView: NSView {
     appearance = NSAppearance(named: .darkAqua)
     setAccessibilityElement(true)
     setAccessibilityRole(.group)
-    setAccessibilityLabel("裁切图片")
+    setAccessibilityLabel(String(localized: "裁切图片"))
     buildBar()
     changed()
   }
@@ -124,9 +125,10 @@ final class NoteImageCropView: NSView {
     ratioButton.controlSize = .small
     ratioButton.target = self
     ratioButton.action = #selector(ratioChosen(_:))
-    ratioButton.setAccessibilityLabel("比例")
-    let cancel = NSButton(title: "取消", target: self, action: #selector(cancel(_:)))
-    let done = NSButton(title: "完成", target: self, action: #selector(done(_:)))
+    ratioButton.setAccessibilityLabel(String(localized: "比例"))
+    let cancel = NSButton(
+      title: String(localized: "取消"), target: self, action: #selector(cancel(_:)))
+    let done = NSButton(title: String(localized: "完成"), target: self, action: #selector(done(_:)))
     done.keyEquivalent = "\r"
     for button in [cancel, done] { button.controlSize = .small }
     // 全键盘操作时 Tab 在这几样之间转（keyDown 不认的键交给父类，窗口按 nextKeyView 走）
@@ -218,7 +220,8 @@ final class NoteImageCropView: NSView {
     window?.invalidateCursorRects(for: self)
     let rect = NoteImageCrop.pixelRect(crop, imageSize: pixelSize)
     let size = rect?.size ?? pixelSize
-    setAccessibilityValue("\(Int(size.width)) × \(Int(size.height)) 像素")
+    setAccessibilityValue(
+      String(localized: "\(String(Int(size.width))) × \(String(Int(size.height))) 像素"))
   }
 
   @objc private func ratioChosen(_ sender: NSPopUpButton) {

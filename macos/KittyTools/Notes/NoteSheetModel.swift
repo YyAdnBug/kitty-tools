@@ -266,7 +266,9 @@ import Observation
 
   /// 放回之后说的那句：一条写标题（摘录），几条写条数
   static func restoredTitle(_ count: Int, first: Note) -> String {
-    count > 1 ? "已放回 \(count) 条" : "已放回「\(Island.excerpt(first.displayTitle))」"
+    count > 1
+      ? String(localized: "已放回 \(count) 条")
+      : String(localized: "已放回「\(Island.excerpt(first.displayTitle))」")
   }
 
   func openInWindow() {
@@ -286,7 +288,7 @@ import Observation
 
   // MARK: 操作菜单
 
-  static let openInWindowTitle = "在「全部便签」里打开"
+  static var openInWindowTitle: String { String(localized: "在「全部便签」里打开") }
 
   /// 菜单里现在列的（名字和全部便签窗口的工具栏、右键菜单同一份）
   var menuItems: [ActionMenu.Item] {

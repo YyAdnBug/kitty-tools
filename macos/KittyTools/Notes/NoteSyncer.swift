@@ -253,7 +253,7 @@ import Observation
   /// start）。文件夹里已经有别的电脑在同步时合不合在一起，由调用方先问（NoteSyncDisk.inspect）
   func enable(folder: URL) async -> String? {
     let inspection = await NoteSyncDisk.inspect(folder: folder, device: store.deviceID)
-    guard inspection.exists else { return "这个文件夹不在了" }
+    guard inspection.exists else { return String(localized: "这个文件夹不在了") }
     if let refusal = Self.refusal(inspection) { return refusal }
     var library = inspection.marker?.library
     if library == nil {
@@ -288,7 +288,7 @@ import Observation
       let fresh = UUID().uuidString
       switch await NoteSyncServer.createMarker(account, session: session, library: fresh) {
       case nil: library = fresh
-      case .exists?: return "这个文件夹里刚有别的电脑开始同步，再连接一次"
+      case .exists?: return String(localized: "这个文件夹里刚有别的电脑开始同步，再连接一次")
       case let failure?: return failure.message
       }
     }
@@ -315,17 +315,17 @@ import Observation
   /// 这个文件夹（本机的，或者服务器上的）能不能拿来同步：不能的话说为什么
   private static func refusal(_ inspection: NoteSyncDisk.Inspection) -> String? {
     if inspection.markerUnreadable {
-      return "这个文件夹里的同步记录还没下载完（或者读不出来），稍后再试"
+      return String(localized: "这个文件夹里的同步记录还没下载完（或者读不出来），稍后再试")
     }
     if let marker = inspection.marker, marker.format > NoteSyncFolder.format {
-      return "这个文件夹是更新版本的 Kitty Tools 用的，先更新再同步"
+      return String(localized: "这个文件夹是更新版本的 Kitty Tools 用的，先更新再同步")
     }
     if inspection.marker == nil, inspection.devices > 0 {
-      return "这个文件夹里有别的电脑同步过的数据，却找不到同步记录（可能还没下载完），稍后再试"
+      return String(localized: "这个文件夹里有别的电脑同步过的数据，却找不到同步记录（可能还没下载完），稍后再试")
     }
     // 没同步过的文件夹要是空的：不往「文稿」这种放着别的东西的文件夹里撒子文件夹
     if inspection.marker == nil, !inspection.empty {
-      return "这个文件夹里已经有别的东西了，换一个空文件夹来同步"
+      return String(localized: "这个文件夹里已经有别的东西了，换一个空文件夹来同步")
     }
     return nil
   }
@@ -459,7 +459,7 @@ import Observation
     var pulled: NoteSyncServer.Pulled?
     if server != nil {
       guard let current = self.account() else {
-        return halt(.failed("钥匙串里没有服务器的密码，停止同步后重新连接"))
+        return halt(.failed(String(localized: "钥匙串里没有服务器的密码，停止同步后重新连接")))
       }
       if let pausedUntil, clock() < pausedUntil { return halt(.busy(pausedUntil)) }
       let result = await NoteSyncServer.pull(
@@ -528,7 +528,7 @@ import Observation
       if !regressed.isEmpty || rolledBack {
         do {
           guard try store.switchDevice(bumping: regressed) else {
-            return halt(.failed(store.saveProblem ?? "便签没存上"))
+            return halt(.failed(store.saveProblem ?? String(localized: "便签没存上")))
           }
         } catch {
           return halt(.failed(error.localizedDescription))
@@ -553,7 +553,7 @@ import Observation
         let merges = round.merges.filter { !held.contains($0.key) }
         let before = Set(store.notes.map(\.id))
         guard store.applySync(merges, tombstones: round.tombstones) else {
-          return halt(.failed(store.saveProblem ?? "便签没存上"))
+          return halt(.failed(store.saveProblem ?? String(localized: "便签没存上")))
         }
         let copied = merges.values.flatMap(\.copies).contains {
           !before.contains($0.id) && store.note($0.id) != nil
@@ -645,7 +645,7 @@ import Observation
       let titles = sources.filter { waiting[$0.syncKind.rawValue] != nil }.map(\.syncKind.title)
       return wait(
         waiting, title: "同步先停下了",
-        detail: "这一轮要删掉 \(count) 条\(titles.joined(separator: "、"))里的东西")
+        detail: "这一轮要删掉 \(count) 条\(titles.joinedAsList())里的东西")
     }
     confirmed = [:]
     braked = nil
@@ -724,7 +724,7 @@ import Observation
     do {
       ledger = try source.syncLedger(library: library)
     } catch {
-      return .problem(.failed("\(source.syncKind.title)的同步记录读不出来"))
+      return .problem(.failed(String(localized: "\(source.syncKind.title)的同步记录读不出来")))
     }
     let local = source.syncValues()
     let inputs =
@@ -749,14 +749,16 @@ import Observation
     let data = SyncRecords.data(of: outcome.own, kind: source.syncKind)
     guard data.count <= NoteSyncDisk.maxErasedBytes else {
       return .problem(
-        .failed("\(source.syncKind.title)超过 \(NoteSyncDisk.maxErasedBytes >> 20) MB，同步不了"))
+        .failed(
+          String(
+            localized: "\(source.syncKind.title)超过 \(NoteSyncDisk.maxErasedBytes >> 20) MB，同步不了")))
     }
     if !outcome.changes.isEmpty || outcome.ledger != ledger {
       switch source.applySync(outcome.changes, ledger: outcome.ledger, library: library) {
       case .saved: break
       // 有一条是更新版本写的（多了这一版不认识的字段）：整类没落，等这台更新
       case .newer: return .problem(.newerFormat)
-      case .failed: return .problem(.failed("\(source.syncKind.title)没存上"))
+      case .failed: return .problem(.failed(String(localized: "\(source.syncKind.title)没存上")))
       }
     }
     // 和读到的自己那份按字节比（String 的相等按 Unicode 等价，只换了写法的改动会漏写）
@@ -766,14 +768,16 @@ import Observation
   }
 
   /// 刹车：停在这一轮，等用户说继续（条数变了才再弹刘海岛）。parts：每一部分要删几条（点继续时各自记下额度）
-  private func wait(_ parts: [String: Int], title: String, detail: String) {
+  private func wait(
+    _ parts: [String: Int], title: LocalizedStringResource, detail: LocalizedStringResource
+  ) {
     pending = parts
     confirmed = [:]
     let count = parts.values.reduce(0, +)
     status = .waiting(trashing: count)
     if braked != count {
       island?.show(
-        "\(title)", detail: "\(detail)", tone: .warning,
+        title, detail: detail, tone: .warning,
         actions: [.init("继续") { [weak self] in self?.confirmTrashing() }])
     }
     braked = count

@@ -37,7 +37,9 @@ nonisolated enum SyncRecords {
     var fileName: String { "\(rawValue).json" }
 
     /// 设置页、提示里的叫法
-    var title: String {
+    var title: String { String(localized: titleResource) }
+
+    var titleResource: LocalizedStringResource {
       switch self {
       case .clips: "片段和收藏"
       case .vocabulary: "生词本"

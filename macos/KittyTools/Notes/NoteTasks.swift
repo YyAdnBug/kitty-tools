@@ -38,11 +38,12 @@ nonisolated enum NoteTasks {
     /// 菜单、旁白里的名字
     var title: String {
       switch self {
-      case .todo: "待办"
-      case .doing: "进行中"
-      case .urgent: "紧急"
-      case .done: "完成"
-      case .cancelled: "取消"
+      case .todo: String(localized: "待办")
+      case .doing: String(localized: "进行中")
+      case .urgent: String(localized: "紧急")
+      case .done: String(localized: "task.done", defaultValue: "完成", comment: "便签任务的状态：做完了")
+      case .cancelled:
+        String(localized: "task.cancelled", defaultValue: "取消", comment: "便签任务的状态：不做了")
       }
     }
 
@@ -577,6 +578,6 @@ extension Note {
   }
 
   static func progressSpoken(_ progress: (done: Int, total: Int)) -> String {
-    "任务完成 \(progress.done) 项，共 \(progress.total) 项"
+    String(localized: "任务完成 \(progress.done) 项，共 \(progress.total) 项")
   }
 }

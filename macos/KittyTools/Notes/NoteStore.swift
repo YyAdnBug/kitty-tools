@@ -38,7 +38,10 @@ import Observation
     var description: String {
       switch self {
       case .newer(let version):
-        "便签的数据是更新版本的 Kitty Tools 写的（数据版本 \(version)，这个版本只认到 \(NoteStore.schemaVersion)）"
+        String(
+          localized:
+            "便签的数据是更新版本的 Kitty Tools 写的（数据版本 \(String(version))，这个版本只认到 \(String(NoteStore.schemaVersion))）"
+        )
       }
     }
   }
@@ -659,7 +662,7 @@ import Observation
   /// 没有要落的就不问
   func flushBeforeQuit(ask: (String) -> QuitChoice) -> Bool {
     while !flush() {
-      switch ask(saveProblem ?? "原因不明") {
+      switch ask(saveProblem ?? String(localized: "原因不明")) {
       case .retry: continue
       case .quitAnyway: return true
       case .cancel: return false

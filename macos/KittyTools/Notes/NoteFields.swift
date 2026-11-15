@@ -100,7 +100,7 @@ struct NoteFootnote: View {
   /// 字数（NoteStore.characterCount(of:)：按正文缓存，长正文打字时停手再算）；nil = 现算
   var count: Int?
 
-  static let unsavedText = "没存上，正在重试"
+  static var unsavedText: String { String(localized: "没存上，正在重试") }
 
   /// 这一行该换成哪句警告（纯函数）：没存上的先说（字可能丢），再是打到上限；都没有是 nil
   static func warning(isUnsaved: Bool, isOverLimit: Bool) -> String? {
@@ -127,7 +127,7 @@ struct NoteFootnote: View {
 
 /// 输入框空着时的占位（墨的 35%）。NSTextField / NSTextView 的字自己左边各有 2 pt，占位跟着让 2
 struct NotePlaceholder: View {
-  let text: String
+  let text: LocalizedStringResource
   let size: CGFloat
   let weight: Font.Weight
   let paper: NotePaper

@@ -105,10 +105,17 @@ enum InterfaceLanguage: String, CaseIterable, Identifiable {
 
 extension Sequence<String> {
   /// 并列的几个名字连成一串：中文「剪贴板、启动器」，英文「Clipboard, Launcher」
-  func joinedAsList() -> String {
+  nonisolated func joinedAsList() -> String {
     joined(
       separator: String(
         localized: "list.enumeration", defaultValue: "、", comment: "并列的几个名字之间（剪贴板、启动器）"))
+  }
+
+  /// 几句话并成一句：中文「；」、英文「; 」（同 AppDelegate.semicolon 那个 key）
+  nonisolated func joinedAsClauses() -> String {
+    joined(
+      separator: String(
+        localized: "list.semicolon", defaultValue: "；", comment: "两句话并成一句时中间的分号"))
   }
 }
 

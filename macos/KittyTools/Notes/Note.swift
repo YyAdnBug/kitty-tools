@@ -23,7 +23,7 @@ nonisolated struct Note: Identifiable, Equatable, Sendable {
   static let titleLength = 60
   static let previewLength = 120
   /// 标题和正文都没有内容时显示的名字
-  static let untitled = "未命名便签"
+  static var untitled: String { String(localized: "未命名便签") }
   /// 一条便签的正文最多多大（UTF-8 字节）。导入的文件按它查（SettingsArchive：正文超了的那条不要；自己导出时有超的
   /// 就不让导出「便签」一类）；正文编辑器（NoteTextView.maxBytes）和快速记一条按它拦——会超的那一次输入不进。
   /// ponytail: 正文仓库自己不拦；现在能写正文的入口（编辑器、快速记一条、导入）各自先按它拦，以后新加的入口也要拦——

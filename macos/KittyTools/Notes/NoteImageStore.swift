@@ -72,18 +72,18 @@ final class NoteImageStore {
     /// 刘海岛的标题和说明分开（岛上是标题一行、说明一行，同别处的写法）
     var noticeTitle: String {
       switch self {
-      case .tooLarge, .tooManyPixels: "图片太大了"
-      case .unreadable: "读不出这张图片"
-      case .unsaved: "裁好的图存不下"
+      case .tooLarge, .tooManyPixels: String(localized: "图片太大了")
+      case .unreadable: String(localized: "读不出这张图片")
+      case .unsaved: String(localized: "裁好的图存不下")
       }
     }
 
     var noticeDetail: String {
       switch self {
-      case .tooLarge: "单张最多 20 MB"
-      case .tooManyPixels: "像素太多"
-      case .unreadable: "换个文件试试"
-      case .unsaved: "看看磁盘还有没有地方"
+      case .tooLarge: String(localized: "单张最多 20 MB")
+      case .tooManyPixels: String(localized: "像素太多")
+      case .unreadable: String(localized: "换个文件试试")
+      case .unsaved: String(localized: "看看磁盘还有没有地方")
       }
     }
   }

@@ -23,8 +23,6 @@ import Synchronization
 import UniformTypeIdentifiers
 
 nonisolated enum NoteMarkdownFiles {
-  /// 导出文件夹的名字前缀
-  static let folderPrefix = "Kitty Tools 便签 "
   /// 图片放在导出文件夹里的哪个子文件夹
   static let attachmentsName = "attachments"
   /// 一次最多导入这么多个文件（按文件名排序取前这么多）
@@ -95,11 +93,12 @@ nonisolated enum NoteMarkdownFiles {
     return String(text[..<end])
   }
 
-  /// 导出文件夹的名字（本地日期）
+  /// 导出文件夹的名字（本地日期）。多语言：跟导出那一刻的界面语言（英文「Kitty Tools Notes 2026-10-17」）；
+  /// 导入不靠文件夹名认东西（自家文件按文件头里的编号认）
   static func folderName(now: Date = .now, calendar: Calendar = .current) -> String {
     let parts = calendar.dateComponents([.year, .month, .day], from: now)
-    return String(
-      format: "%@%04d-%02d-%02d", folderPrefix, parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
+    let day = String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
+    return String(localized: "Kitty Tools 便签 \(day)", comment: "导出的 Markdown 文件夹名，后面是日期")
   }
 
   /// 在 parent 里新建一个不重名的文件夹（「Kitty Tools 便签 2026-10-17」「… 2」「… 3」），返回它的 URL。
@@ -446,7 +445,7 @@ nonisolated enum NoteMarkdownFiles {
     do {
       folder = try makeFolder(in: parent, now: now)
     } catch {
-      result.failure = "没能新建导出文件夹：\(error.localizedDescription)"
+      result.failure = String(localized: "没能新建导出文件夹：\(error.localizedDescription)")
       return result
     }
     result.folder = folder
@@ -461,7 +460,7 @@ nonisolated enum NoteMarkdownFiles {
           try write(text, name: name, in: folder)
           result.count += 1
         } catch {
-          result.failure = "「\(name).md」写不进去：\(error.localizedDescription)"
+          result.failure = String(localized: "「\(name).md」写不进去：\(error.localizedDescription)")
           return result
         }
         result.missingImages += images.count
@@ -475,7 +474,7 @@ nonisolated enum NoteMarkdownFiles {
         try write(text, name: name, in: folder)
         result.count += 1
       } catch {
-        result.failure = "「\(name).md」写不进去：\(error.localizedDescription)"
+        result.failure = String(localized: "「\(name).md」写不进去：\(error.localizedDescription)")
         return result
       }
       for image in images {
@@ -554,7 +553,8 @@ nonisolated enum NoteMarkdownFiles {
     do {
       try Data(text.utf8).write(to: url, options: .atomic)
     } catch {
-      result.failure = "「\(url.lastPathComponent)」写不进去：\(error.localizedDescription)"
+      result.failure = String(
+        localized: "「\(url.lastPathComponent)」写不进去：\(error.localizedDescription)")
       return result
     }
     guard let imageDirectory else {
@@ -577,7 +577,7 @@ nonisolated enum NoteMarkdownFiles {
   }
 
   /// 三处入口菜单里那一项的名字（全部便签窗口的右键、那叠 / 浮动便签的操作菜单，R8）
-  static let singleExportTitle = "导出为 Markdown…"
+  static var singleExportTitle: String { String(localized: "导出为 Markdown…") }
 
   /// 「导出为 Markdown…」的存储面板：选好之后在后台写文件，写完用刘海岛说一句（R9、R11）。
   /// 那叠、浮动便签的面板不激活 App：激活、把面板提到最前、关掉后把前台还给原来的 App 都在 FilePanel 里
@@ -591,8 +591,8 @@ nonisolated enum NoteMarkdownFiles {
     panel.nameFieldStringValue = fileName(for: note) + ".md"
     panel.allowedContentTypes = [UTType(filenameExtension: "md") ?? .plainText]
     panel.canCreateDirectories = true
-    panel.prompt = "导出"
-    panel.message = "导出成一个 Markdown 文件；图片放在旁边的 attachments 文件夹里"
+    panel.prompt = String(localized: "导出")
+    panel.message = String(localized: "导出成一个 Markdown 文件；图片放在旁边的 attachments 文件夹里")
     panel.isExtensionHidden = false
     FilePanel.begin(panel) { response in
       restore()
@@ -607,8 +607,10 @@ nonisolated enum NoteMarkdownFiles {
           return
         }
         if result.missingImages > 0 {
-          var detail = "\(result.missingImages) 张图片不在，没导出"
-          if result.images > 0 { detail = "\(result.images) 张图片在旁边的 attachments 文件夹 · " + detail }
+          var detail = String(localized: "\(result.missingImages) 张图片不在，没导出")
+          if result.images > 0 {
+            detail = String(localized: "\(result.images) 张图片在旁边的 attachments 文件夹") + " · " + detail
+          }
           island.show("已导出「\(result.fileName)」", detail: "\(detail)", actions: [.reveal(url)])
           return
         }
@@ -648,12 +650,15 @@ nonisolated enum NoteMarkdownFiles {
 
     var text: String {
       switch self {
-      case .tooLarge: "太大（超过 \(NoteMarkdownFiles.maxFileBytes >> 20) MB）"
-      case .notText: "不是 UTF-8 文本"
-      case .tooLong: "超过一条便签 \(Note.maxBodyBytes >> 20) MB 的上限"
-      case .unreadable: "读不出来"
-      case .syncFile: "是同步文件夹里的文件"
-      case .overLimit: "超过一次 \(NoteMarkdownFiles.maxFiles) 个"
+      case .tooLarge: String(localized: "太大（超过 \(NoteMarkdownFiles.maxFileBytes >> 20) MB）")
+      case .notText: String(localized: "不是 UTF-8 文本")
+      case .tooLong: String(localized: "超过一条便签 \(Note.maxBodyBytes >> 20) MB 的上限")
+      case .unreadable:
+        String(
+          localized: "markdown.skip.unreadable", defaultValue: "读不出来",
+          comment: "导入时跳过的原因，接在「2 个」后面")
+      case .syncFile: String(localized: "是同步文件夹里的文件")
+      case .overLimit: String(localized: "超过一次 \(String(NoteMarkdownFiles.maxFiles)) 个")
       }
     }
   }
@@ -695,31 +700,34 @@ nonisolated enum NoteMarkdownFiles {
     files: Int, result: ImportResult, added: Int, updated: Int
   ) -> (title: String, detail: String?, warning: Bool) {
     var parts: [String] = []
-    guard files > 0 else { return ("没有导入", "选的地方没有 .md 文件", true) }
+    let none = String(localized: "没有导入")
+    guard files > 0 else { return (none, String(localized: "选的地方没有 .md 文件"), true) }
     guard !result.notes.isEmpty else {
-      return ("没有导入", "全部跳过了：" + reasons(result).joined(separator: "、"), true)
+      return (none, String(localized: "全部跳过了：\(reasons(result).joinedAsList())"), true)
     }
     let title: String
     switch (added, updated) {
-    case (0, 0): title = "没有变化"
-    case (_, 0): title = "已导入 \(added) 条新便签"
-    case (0, _): title = "已更新 \(updated) 条便签"
-    default: title = "已导入：新增 \(added) 条，更新 \(updated) 条"
+    case (0, 0): title = String(localized: "没有变化")
+    case (_, 0): title = String(localized: "已导入 \(added) 条新便签")
+    case (0, _): title = String(localized: "已更新 \(updated) 条便签")
+    default: title = String(localized: "已导入：新增 \(added) 条，更新 \(updated) 条")
     }
     let same = result.notes.count - added - updated
-    if same > 0 { parts.append("\(same) 条和现在的一样") }
+    if same > 0 { parts.append(String(localized: "\(same) 条和现在的一样")) }
     // 超过 2000 个：只说「只导了前 2000 个」那一句，不再算进跳过
     let skipped = reasons(result, excluding: result.limitHit ? .overLimit : nil)
-    if !skipped.isEmpty { parts.append("跳过 " + skipped.joined(separator: "、")) }
-    if result.missingImages > 0 { parts.append("\(result.missingImages) 张图片没导进来") }
-    if result.limitHit { parts.append("只导了前 \(maxFiles) 个") }
+    if !skipped.isEmpty { parts.append(String(localized: "跳过 \(skipped.joinedAsList())")) }
+    if result.missingImages > 0 {
+      parts.append(String(localized: "\(result.missingImages) 张图片没导进来"))
+    }
+    if result.limitHit { parts.append(String(localized: "只导了前 \(String(maxFiles)) 个")) }
     return (title, parts.isEmpty ? nil : parts.joined(separator: " · "), false)
   }
 
   /// 跳过的原因一句一句：「2 个太大（超过 4 MB）」
   private static func reasons(_ result: ImportResult, excluding left: Skip? = nil) -> [String] {
     Skip.allCases.filter { $0 != left }.compactMap { reason in
-      result.reasons[reason].map { "\($0) 个\(reason.text)" }
+      result.reasons[reason].map { String(localized: "\($0) 个\(reason.text)") }
     }
   }
 

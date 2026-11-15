@@ -398,7 +398,7 @@ nonisolated enum NoteSyncDisk {
     }
     // 读完到写之间文件夹没了（拔了盘、被删了）：不替它建回来（建回来的空文件夹下一轮是「不是那个文件夹」）
     guard isDirectory(root) else {
-      result.problem = "同步文件夹不在了"
+      result.problem = String(localized: "同步文件夹不在了")
       return result
     }
     let mine = root.appending(path: NoteSyncFolder.devicesName).appending(path: device)

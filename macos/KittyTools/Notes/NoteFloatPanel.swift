@@ -27,7 +27,7 @@ final class NoteFloatPanel: NotePanel {
       contentRect: frame, styleMask: [.borderless, .nonactivatingPanel, .resizable],
       backing: .buffered, defer: true)
     // 没有标题栏，这个名字只给旁白读窗口时用
-    title = "浮动便签"
+    title = String(localized: "浮动便签")
     level = .floating
     collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
     hidesOnDeactivate = false

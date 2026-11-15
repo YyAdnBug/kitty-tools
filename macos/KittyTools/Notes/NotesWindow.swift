@@ -19,10 +19,18 @@ import SwiftUI
 
     var title: String {
       switch self {
-      case .all: "全部"
-      case .archive: "归档"
-      case .trash: "最近删除"
+      case .all: String(localized: "全部")
+      case .archive: String(localized: "归档")
+      case .trash: String(localized: "最近删除")
       }
+    }
+
+    /// 左上角那排分段里的叫法：英文「Recently Deleted」太宽（列表栏被撑到最宽、工具栏挤进溢出菜单），分段里用短说法
+    var segmentTitle: String {
+      guard self == .trash else { return title }
+      return String(
+        localized: "notes.scope.trash.short", defaultValue: "最近删除",
+        comment: "短说法：全部便签窗口左上角分段里的「最近删除」（英文全称放不下）")
     }
   }
 
@@ -34,8 +42,8 @@ import SwiftUI
 
     var title: String {
       switch self {
-      case .wall: "便签墙"
-      case .list: "列表"
+      case .wall: String(localized: "便签墙")
+      case .list: String(localized: "列表")
       }
     }
 
@@ -240,21 +248,23 @@ import SwiftUI
 
   // MARK: 操作（工具栏、右键菜单、键盘同一份）
 
-  static let newTitle = "新建便签"
-  static let deleteTitle = "删除"
-  static let restoreTitle = "放回"
-  static let eraseTitle = "永久删除…"
-  static let emptyTrashTitle = "清空最近删除…"
-  static let colorTitle = "颜色"
+  static var newTitle: String { String(localized: "新建便签") }
+  static var deleteTitle: String { String(localized: "删除") }
+  static var restoreTitle: String { String(localized: "放回") }
+  static var eraseTitle: String { String(localized: "永久删除…") }
+  static var emptyTrashTitle: String { String(localized: "清空最近删除…") }
+  static var colorTitle: String { String(localized: "颜色") }
   /// 「任务」：全部便签窗口的工具栏、屏幕边缘那叠的便签头部和操作菜单、正文的右键菜单同名同符号（键位 ⌘T）
-  static let taskTitle = "任务"
+  static var taskTitle: String { String(localized: "任务") }
   static let taskSymbol = "checklist"
-  static let taskHelp = "任务：把这一行变成任务，或变回普通行（⌘T）"
+  static var taskHelp: String { String(localized: "任务：把这一行变成任务，或变回普通行（⌘T）") }
   /// 「浮在屏幕上」/「收回边缘」：屏幕边缘那叠和浮动便签的操作菜单、全部便签窗口的工具栏和右键菜单同名（浮动便签的
   /// 关闭钮、它带着的标签也叫这个名字）。浮着的那条收回时，屏幕边缘没有那叠（总开关关着）就没有「边缘」可回，
   /// 叫「取消浮动」
   static func floatTitle(isFloating: Bool, hasEdge: Bool = true) -> String {
-    isFloating ? (hasEdge ? "收回边缘" : "取消浮动") : "浮在屏幕上"
+    isFloating
+      ? (hasEdge ? String(localized: "收回边缘") : String(localized: "取消浮动"))
+      : String(localized: "浮在屏幕上")
   }
   /// 符号：「收回边缘」朝那一叠实际在的那条边（edge）
   static func floatSymbol(
@@ -266,11 +276,13 @@ import SwiftUI
   }
   /// 「便签设置」：全部便签窗口的工具栏（最右边一组的最后）、屏幕边缘那叠和浮动便签的操作菜单（「便签设置…」）同名
   /// 同符号，键位 ⌘,——打开设置窗、落在「便签」那一页
-  static let settingsTitle = "便签设置"
+  static var settingsTitle: String { String(localized: "便签设置") }
   static let settingsSymbol = "gearshape"
-  static func pinTitle(_ note: Note?) -> String { note?.isPinned == true ? "取消固定" : "固定" }
+  static func pinTitle(_ note: Note?) -> String {
+    note?.isPinned == true ? String(localized: "取消固定") : String(localized: "固定")
+  }
   static func archiveTitle(_ note: Note?) -> String {
-    note?.isArchived == true ? "取消归档" : "归档"
+    note?.isArchived == true ? String(localized: "取消归档") : String(localized: "归档")
   }
 
   /// 工具栏上画出来的那几样：名字、符号、能不能点。工具栏是单独的一个视图、只拿它（NotesWindowView 的 NotesToolbar）——
@@ -358,7 +370,13 @@ import SwiftUI
   var wallGroups: [(title: String?, notes: [Note])] {
     let notes = notes
     guard scope != .trash, notes.contains(where: \.isPinned) else { return [(nil, notes)] }
-    return [("已固定", notes.filter(\.isPinned)), ("其他", notes.filter { !$0.isPinned })]
+    return [
+      (String(localized: "已固定"), notes.filter(\.isPinned)),
+      (
+        String(localized: "wall.others", defaultValue: "其他", comment: "便签墙上固定的那段之后的一段"),
+        notes.filter { !$0.isPinned }
+      ),
+    ]
   }
 
   /// 便签墙怎么排（groups：分段和段里的便签；width：墙多宽；reach：可见区附近到哪——墙的坐标，往下多少都算；
@@ -492,13 +510,17 @@ import SwiftUI
 
   // MARK: 归档的提示（全部便签窗口、屏幕边缘那叠、浮动便签同一份，第四轮体检 U6）
 
-  static let unarchiveTitle = "取消归档"
+  static var unarchiveTitle: String { String(localized: "取消归档") }
   static let archivedSymbol = "archivebox.circle.fill"
 
-  static func archivedTitle(_ count: Int) -> String { count > 1 ? "已归档 \(count) 条" : "已归档" }
+  static func archivedTitle(_ count: Int) -> String {
+    count > 1 ? String(localized: "已归档 \(count) 条") : String(localized: "已归档")
+  }
 
   static func unarchivedTitle(_ count: Int, first: Note) -> String {
-    count > 1 ? "已取消归档 \(count) 条" : "已取消归档「\(Island.excerpt(first.displayTitle))」"
+    count > 1
+      ? String(localized: "已取消归档 \(count) 条")
+      : String(localized: "已取消归档「\(Island.excerpt(first.displayTitle))」")
   }
 
   /// 还在归档里（没删）
@@ -515,7 +537,7 @@ import SwiftUI
 
   /// 删除的提示：一条是「已删除」，连着删了几条（岛上的「放回」放回这一串）带上条数
   static func deletedTitle(_ count: Int) -> String {
-    count > 1 ? "已删除 \(count) 条" : "已删除"
+    count > 1 ? String(localized: "已删除 \(count) 条") : String(localized: "已删除")
   }
 
   /// 连着删的几条（岛上的「放回」放回这一串，第三轮体检 U2）：上一条删了不到 window 秒（带按钮的岛停多久）就接着记，
@@ -744,7 +766,7 @@ import SwiftUI
     Island.announce("\(Self.overLimitText)")
   }
 
-  static let overLimitText = "一条便签最多 1 MB，这次输入没有记进去"
+  static var overLimitText: String { String(localized: "一条便签最多 1 MB，这次输入没有记进去") }
 
   /// 正文里插图被拒 / 存图没成：用刘海岛说一句（标题 + 说明分开，F9）
   func imageProblem(_ title: String, _ detail: String) {
@@ -794,7 +816,7 @@ import SwiftUI
     let date = note.deletedAt ?? note.modifiedAt
     // 相对时间的格式总是对着「现在」算：按 now 平移过去（平时 now 就是现在，单测能摆固定的时刻）
     return Date.now.addingTimeInterval(min(date.timeIntervalSince(now), 0)).formatted(
-      .relative(presentation: .named).locale(Locale(identifier: "zh-Hans")))
+      .relative(presentation: .named))
   }
 
   /// 底下那行小字里的字数（纯函数）：不算空白；**不数图片的令牌**（一张图算 0 个字：不然一张图让底下多出六七十个字，
@@ -858,13 +880,16 @@ import SwiftUI
   ) -> String {
     guard let deleted = note.deletedAt else {
       let count = count ?? characterCount(note.body)
-      return "改于 \(SettingsBackup.when(note.modifiedAt, now: now, calendar: calendar)) · \(count) 字"
+      return String(
+        localized:
+          "改于 \(SettingsBackup.when(note.modifiedAt, now: now, calendar: calendar)) · \(count) 字")
     }
     let left = deleted.addingTimeInterval(Double(NoteStore.trashDays) * 86_400)
       .timeIntervalSince(now)
     let days = Int((left / 86_400).rounded(.up))
-    return "删于 \(SettingsBackup.when(deleted, now: now, calendar: calendar)) · "
-      + (days > 0 ? "\(days) 天后永久删除" : "即将永久删除")
+    let when = SettingsBackup.when(deleted, now: now, calendar: calendar)
+    return days > 0
+      ? String(localized: "删于 \(when) · \(days) 天后永久删除") : String(localized: "删于 \(when) · 即将永久删除")
   }
 }
 

@@ -165,8 +165,8 @@ struct TransferSection: View {
   private func chooseFile() {
     let panel = NSOpenPanel()
     panel.allowedContentTypes = [.json]
-    panel.message = "选一个 Kitty Tools 导出的设置文件"
-    panel.prompt = "选取"
+    panel.message = String(localized: "选一个 Kitty Tools 导出的设置文件")
+    panel.prompt = String(localized: "选取")
     isChoosing = true
     panel.begin { response in
       isChoosing = false
@@ -240,7 +240,7 @@ struct ExportSheet: View {
     ) {
       ForEach(SettingsArchive.Section.allCases) { section in
         Toggle(isOn: isSelected(section, in: $sections)) {
-          TransferLabel(title: section.title, detail: detail(of: section))
+          TransferLabel(title: section.titleResource, detail: detail(of: section))
         }
         .disabled(Self.isEmpty(section, in: archive))
       }
@@ -255,7 +255,7 @@ struct ExportSheet: View {
             "密码", text: $password,
             prompt: Text("密码（至少 \(SettingsArchive.minPasswordLength) 位）"))
           SecureField("再输一次", text: $confirmation, prompt: Text("再输一次"))
-          Text(passwordProblem ?? "密码不会存在任何地方；忘了的话，重新导出一份就行。")
+          Text(passwordProblem ?? String(localized: "密码不会存在任何地方；忘了的话，重新导出一份就行。"))
             .font(.caption)
             .foregroundStyle(
               passwordProblem == nil
@@ -282,9 +282,11 @@ struct ExportSheet: View {
 
   private var passwordProblem: String? {
     if !password.isEmpty, password.count < SettingsArchive.minPasswordLength {
-      return "密码至少 \(SettingsArchive.minPasswordLength) 位"
+      return String(localized: "密码至少 \(SettingsArchive.minPasswordLength) 位")
     }
-    if !confirmation.isEmpty, confirmation != password { return "两次输入的密码不一样" }
+    if !confirmation.isEmpty, confirmation != password {
+      return String(localized: "两次输入的密码不一样")
+    }
     return nil
   }
 
@@ -292,38 +294,46 @@ struct ExportSheet: View {
     switch section {
     case .preferences:
       let count = archive.preferences?.count ?? 0
-      return count == 0 ? "各页的选项都还是默认值" : "各页里改过的 \(count) 项，其余是默认值"
+      return count == 0
+        ? String(localized: "各页的选项都还是默认值") : String(localized: "各页里改过的 \(count) 项，其余是默认值")
     case .hotkeys:
       let count = archive.hotkeys?.count ?? 0
-      return count == 0 ? "都还是默认的组合" : "改过的 \(count) 个，其余是默认的组合"
-    case .services: return "\(archive.translateServices?.count ?? 0) 个服务的名称、地址、模型和开关"
-    case .engines: return "\(archive.searchEngines?.count ?? 0) 条"
+      return count == 0
+        ? String(localized: "都还是默认的组合") : String(localized: "改过的 \(count) 个，其余是默认的组合")
+    case .services:
+      return String(localized: "\(archive.translateServices?.count ?? 0) 个服务的名称、地址、模型和开关")
+    case .engines: return String(localized: "\(archive.searchEngines?.count ?? 0) 条")
     case .clips:
       let (count, groups) = (archive.clips?.count ?? 0, archive.clipGroups?.count ?? 0)
       let kept =
         count == 0 && groups == 0
-        ? "还没有片段或文字类的收藏"
-        : "\(count) 条文字" + (groups > 0 ? "、\(groups) 个收藏夹" : "") + "，原样写进文件（不加密、不带格式）"
+        ? String(localized: "还没有片段或文字类的收藏")
+        : groups > 0
+          ? String(localized: "\(count) 条文字、\(groups) 个收藏夹，原样写进文件（不加密、不带格式）")
+          : String(localized: "\(count) 条文字，原样写进文件（不加密、不带格式）")
       let skipped = [
-        skippedImages > 0 ? "\(skippedImages) 张图片" : nil,
-        skippedFiles > 0 ? "\(skippedFiles) 个文件" : nil,
+        skippedImages > 0 ? String(localized: "\(skippedImages) 张图片") : nil,
+        skippedFiles > 0 ? String(localized: "\(skippedFiles) 个文件") : nil,
       ].compactMap { $0 }
       return skipped.isEmpty
-        ? kept : kept + "；另有 " + skipped.joined(separator: "、") + "类的收藏不在文件里"
+        ? kept
+        : [kept, String(localized: "另有 \(skipped.joinedAsList())类的收藏不在文件里")].joinedAsClauses()
     case .vocabulary:
       let count = archive.vocabulary?.count ?? 0
-      return count == 0 ? "还没有收藏的翻译" : "\(count) 条收藏的翻译，原样写进文件（不加密）"
+      return count == 0
+        ? String(localized: "还没有收藏的翻译") : String(localized: "\(count) 条收藏的翻译，原样写进文件（不加密）")
     case .notes:
-      guard let notes = archive.notes else { return "便签这次用不了，不带这一类" }
+      guard let notes = archive.notes else { return String(localized: "便签这次用不了，不带这一类") }
       return notes.isEmpty
-        ? "还没有便签" : "\(notes.count) 条便签的文字，原样写进文件（不加密）；图片和「最近删除」里的不带"
+        ? String(localized: "还没有便签")
+        : String(localized: "\(notes.count) 条便签的文字，原样写进文件（不加密）；图片和「最近删除」里的不带")
     }
   }
 
   private var secretsDetail: String {
-    if !sections.contains(.services) { return "要先勾选「翻译服务」" }
-    if secrets.isEmpty { return "这些服务还没有存密钥" }
-    return "勾上后设一个密码，密钥加密后写进文件，导入时输同一个密码；不勾就只导出服务，不带密钥"
+    if !sections.contains(.services) { return String(localized: "要先勾选「翻译服务」") }
+    if secrets.isEmpty { return String(localized: "这些服务还没有存密钥") }
+    return String(localized: "勾上后设一个密码，密钥加密后写进文件，导入时输同一个密码；不勾就只导出服务，不带密钥")
   }
 
   /// 开存储面板；存好了收起表单、刘海岛说一声，取消就留在表单上
@@ -392,24 +402,37 @@ struct ImportSheet: View {
   /// 页头那句话：文件是哪来的 + 不能撤销；开着自动备份时再说动手前会存一份、它能把什么换回去
   /// （只有设置和快捷键：两张列表和数据是合并进来的，照备份再导一遍也不会把加进来的删掉）
   private var headline: String {
+    let version = archive.version
     let source =
-      origin.map { "\($0)（Kitty Tools \(archive.version)）。" }
-      ?? ("Kitty Tools \(archive.version) 在 "
-        + archive.exportedAt.formatted(date: .long, time: .shortened) + " 导出的文件。")
-    return source
-      + (transfer.backupFolder != nil && backsUp
-        ? "\(verb)不能撤销；动手之前会先把现在的存一份，设置和快捷键可以用「从备份恢复」换回去。" : "\(verb)不能撤销。")
+      origin.map { String(localized: "\($0)（Kitty Tools \(version)）。") }
+      ?? String(
+        localized:
+          "Kitty Tools \(version) 在 \(archive.exportedAt.formatted(date: .long, time: .shortened)) 导出的文件。"
+      )
+    let backs = transfer.backupFolder != nil && backsUp
+    let tail =
+      switch (origin == nil, backs) {
+      case (true, true):
+        String(localized: "导入不能撤销；动手之前会先把现在的存一份，设置和快捷键可以用「从备份恢复」换回去。")
+      case (true, false): String(localized: "导入不能撤销。")
+      case (false, true):
+        String(localized: "恢复不能撤销；动手之前会先把现在的存一份，设置和快捷键可以用「从备份恢复」换回去。")
+      case (false, false): String(localized: "恢复不能撤销。")
+      }
+    return String(
+      localized: "transfer.headline", defaultValue: "\(source)\(tail)",
+      comment: "导入表单页头：文件是哪来的 + 不能撤销（两句话；英文中间要空格）")
   }
 
   var body: some View {
     TransferForm(
       symbol: origin == nil ? "square.and.arrow.down" : "clock.arrow.circlepath",
-      title: origin == nil ? "导入设置与数据" : "从备份恢复", detail: headline,
+      title: origin == nil ? "导入设置与数据" : "从备份恢复", detail: "\(headline)",
       action: origin == nil ? "导入" : "恢复", canAct: !sections.isEmpty, act: importSelected
     ) {
       ForEach(archive.sections) { section in
         Toggle(isOn: isSelected(section, in: $sections)) {
-          TransferLabel(title: section.title, detail: detail(of: section))
+          TransferLabel(title: section.titleResource, detail: detail(of: section))
         }
         if section == .services, sections.contains(.services) { hostList }
       }
@@ -421,7 +444,7 @@ struct ImportSheet: View {
             .labelsHidden()
             .textFieldStyle(.roundedBorder)
             .onChange(of: password) { problem = nil }
-          Text(problem ?? "不填就只导入服务，不导入密钥。")
+          Text(problem ?? String(localized: "不填就只导入服务，不导入密钥。"))
             .font(.caption)
             .foregroundStyle(
               problem == nil
@@ -429,13 +452,18 @@ struct ImportSheet: View {
         }
       }
       if sections.contains(.preferences), archive.keepsLessHistory() {
-        Text("\(verb)后历史会保留得比现在少（保留时间、图片上限、翻译历史条数变小，或者退出、锁屏时清空），超出的普通历史会被清理；收藏和片段不动。")
-          .font(.caption)
-          .foregroundStyle(Color(nsColor: .systemOrange))
-          .fixedSize(horizontal: false, vertical: true)
+        Text(
+          origin == nil
+            ? "导入后历史会保留得比现在少（保留时间、图片上限、翻译历史条数变小，或者退出、锁屏时清空），超出的普通历史会被清理；收藏和片段不动。"
+            : "恢复后历史会保留得比现在少（保留时间、图片上限、翻译历史条数变小，或者退出、锁屏时清空），超出的普通历史会被清理；收藏和片段不动。"
+        )
+        .font(.caption)
+        .foregroundStyle(Color(nsColor: .systemOrange))
+        .fixedSize(horizontal: false, vertical: true)
       }
       if sections.contains(.preferences), !privacyLosses.isEmpty {
-        Text("\(verb)后隐私保护会比现在弱：" + privacyLosses.joined(separator: "；") + "。")
+        let losses = privacyLosses.joinedAsClauses()
+        Text(origin == nil ? "导入后隐私保护会比现在弱：\(losses)。" : "恢复后隐私保护会比现在弱：\(losses)。")
           .font(.caption)
           .foregroundStyle(Color(nsColor: .systemOrange))
           .fixedSize(horizontal: false, vertical: true)
@@ -457,8 +485,6 @@ struct ImportSheet: View {
   }
 
   private var privacyLosses: [String] { archive.privacyLosses() }
-  /// 这张表单是在导入还是在从备份恢复
-  private var verb: String { origin == nil ? "导入" : "恢复" }
 
   /// 「翻译服务」下面：文件里的服务会连到的自己填的地址，一行一个（太长的掐头留尾：要看的是结尾的域名）；
   /// 多于 8 个放进定高的框里滚，不省略——省略了，藏在后面的那个就没人看得到
@@ -486,21 +512,21 @@ struct ImportSheet: View {
   private func detail(of section: SettingsArchive.Section) -> String {
     switch section {
     case .preferences:
-      "换成文件里的样子：改过的 \(archive.preferences?.count ?? 0) 项照文件，其余回到默认值"
+      String(localized: "换成文件里的样子：改过的 \(archive.preferences?.count ?? 0) 项照文件，其余回到默认值")
     case .hotkeys:
-      "换成文件里的样子：改过的 \(archive.hotkeys?.count ?? 0) 个照文件，其余回到默认的组合"
+      String(localized: "换成文件里的样子：改过的 \(archive.hotkeys?.count ?? 0) 个照文件，其余回到默认的组合")
     case .services:
-      "\(archive.translateServices?.count ?? 0) 个：已有的按文件更新，没有的加上；现在的服务不会删"
+      String(localized: "\(archive.translateServices?.count ?? 0) 个：已有的按文件更新，没有的加上；现在的服务不会删")
     case .engines:
-      "\(archive.searchEngines?.count ?? 0) 条：已有的按文件更新，没有的加上；现在的不会删"
+      String(localized: "\(archive.searchEngines?.count ?? 0) 条：已有的按文件更新，没有的加上；现在的不会删")
     case .clips:
-      "\(archive.clips?.count ?? 0) 条文字：同样的文字不重复加，只补上收藏、片段和收藏夹；现在的不会删"
+      String(localized: "\(archive.clips?.count ?? 0) 条文字：同样的文字不重复加，只补上收藏、片段和收藏夹；现在的不会删")
     case .vocabulary:
-      "\(archive.vocabulary?.count ?? 0) 条：已有的不重复加；现在的不会删"
+      String(localized: "\(archive.vocabulary?.count ?? 0) 条：已有的不重复加；现在的不会删")
     case .notes:
       transfer.notes() == nil
-        ? "便签这次用不了，这一类会跳过"
-        : "\(archive.notes?.count ?? 0) 条：没有的加上；两边都有的留改得晚的，换下来的那一版进「最近删除」"
+        ? String(localized: "便签这次用不了，这一类会跳过")
+        : String(localized: "\(archive.notes?.count ?? 0) 条：没有的加上；两边都有的留改得晚的，换下来的那一版进「最近删除」")
     }
   }
 
@@ -542,9 +568,9 @@ struct ImportSheet: View {
     _ sections: [SettingsArchive.Section], outcome: SettingsArchive.Outcome, restoring: Bool
   ) -> String {
     if outcome.notesSkipped, sections.allSatisfy({ $0 == .notes }) {
-      return restoring ? "没有恢复" : "没有导入"
+      return restoring ? String(localized: "没有恢复") : String(localized: "没有导入")
     }
-    return restoring ? "已恢复" : "已导入"
+    return restoring ? String(localized: "已恢复") : String(localized: "已导入")
   }
 
   /// 刘海岛的那一行（岛上的详情只有一行、280 pt，放得下约 22 个字）：导入了哪几类、带没带密钥，再说最要紧的一件事——
@@ -556,20 +582,25 @@ struct ImportSheet: View {
   ) -> String {
     let sections = outcome.notesSkipped ? sections.filter { $0 != .notes } : sections
     // 一类都没导进去（只勾了便签）：标题已经是「没有导入」，这里说为什么
-    guard !sections.isEmpty else { return outcome.notesSkipped ? "便签这次用不了" : "" }
-    var tail = outcome.secrets > 0 ? "，含密钥" : ""
+    guard !sections.isEmpty else {
+      return outcome.notesSkipped ? String(localized: "便签这次用不了") : ""
+    }
+    var tail = outcome.secrets > 0 ? String(localized: "，含密钥") : ""
     let added = outcome.clipsAdded + outcome.wordsAdded + outcome.notesAdded
     if outcome.notesSkipped {
-      tail += "，便签没导入"
+      tail += String(localized: "，便签没导入")
     } else if outcome.notesUnsaved {
-      tail += "，便签没存上"
+      tail += String(localized: "，便签没存上")
     } else if pruned > 0 {
-      tail += "，清理了 \(pruned) 条历史"
+      tail += String(localized: "，清理了 \(pruned) 条历史")
     } else if added > 0 {
-      tail += "，新增 \(added) 条"
+      tail += String(localized: "，新增 \(added) 条")
     }
-    let names = sections.map(\.title).joined(separator: "、")
-    return (names.count + tail.count <= 22 ? names : "\(sections.count) 类") + tail
+    let names = sections.map(\.title).joinedAsList()
+    // 岛上一行放得下的字数：中文约 22 个字，英文字窄、约 40 个字母
+    let room = InterfaceLanguage.isEnglish ? 40 : 22
+    return (names.count + tail.count <= room ? names : String(localized: "\(sections.count) 类"))
+      + tail
   }
 }
 
@@ -614,12 +645,13 @@ private struct BackupFolderRow: View {
 
   /// 说明：没选时说为什么要选；选了说存过去的文件长什么样。两种都说清文件不加密（多半是云盘，会同步上去）
   private var detail: String {
-    let plain = "文件不加密，片段、收藏、生词和便签原样写在里面。"
+    let plain = String(localized: "文件不加密，片段、收藏、生词和便签原样写在里面。")
     guard path != nil else {
-      return "再选一个文件夹（比如 iCloud 云盘里的），每天那份也存过去，硬盘坏了、换电脑时还在。\(plain)"
+      return String(localized: "再选一个文件夹（比如 iCloud 云盘里的），每天那份也存过去，硬盘坏了、换电脑时还在。\(plain)")
     }
-    let mark = installID.map { "文件名末尾的 \($0) 是这台 Mac 的编号，几台 Mac 可以共用一个文件夹。" } ?? ""
-    return "每天那份也存到这里。\(mark)\(plain)"
+    guard let installID else { return String(localized: "每天那份也存到这里。\(plain)") }
+    return String(
+      localized: "每天那份也存到这里。文件名末尾的 \(installID) 是这台 Mac 的编号，几台 Mac 可以共用一个文件夹。\(plain)")
   }
 
   /// 换文件夹（nil = 不再另存）：名字跟着换，上次没存成的原因说的是原来那个文件夹，收掉
@@ -636,8 +668,8 @@ private struct BackupFolderRow: View {
     panel.canChooseFiles = false
     panel.canCreateDirectories = true
     if let path { panel.directoryURL = URL(filePath: path, directoryHint: .isDirectory) }
-    panel.message = "选一个文件夹，每天的自动备份也会存一份到这里"
-    panel.prompt = "选取"
+    panel.message = String(localized: "选一个文件夹，每天的自动备份也会存一份到这里")
+    panel.prompt = String(localized: "选取")
     panel.begin { response in
       guard response == .OK, let url = panel.url else { return }
       pick(url)
@@ -650,9 +682,9 @@ private struct BackupFolderRow: View {
 /// 内容、底栏「取消」+ 主按钮（↩；Esc = 取消）
 struct TransferForm<Content: View>: View {
   let symbol: String
-  let title: String
-  let detail: String
-  let action: String
+  let title: LocalizedStringResource
+  let detail: LocalizedStringResource
+  let action: LocalizedStringResource
   let canAct: Bool
   let act: () -> Void
   @ViewBuilder let content: Content
@@ -713,7 +745,7 @@ private func isSelected(
 
 /// 勾选框的两行标签：名字 + 一句说明
 private struct TransferLabel: View {
-  let title: String
+  let title: LocalizedStringResource
   let detail: String
   /// 勾选框的宽度 + 间距：密码框和标签的文字左对齐
   static let indent: CGFloat = 20

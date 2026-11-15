@@ -123,6 +123,25 @@ struct LocalizationTests {
     }
   }
 
+  /// 存下来还要读回来比对的名字永远不翻（TRANSLATION.md 二「存下来的字」，第 7 批）：自动备份的文件名（列备份、轮换、
+  /// 恢复都按它认，几台不同语言的 Mac 共用一个另存的文件夹）、WebDAV 默认文件夹（中英两台都用默认值时要连到同一个）
+  /// 不进目录——进了目录，英文界面写出来的就和中文的对不上、认不回来
+  @Test func storedNamesNeverTranslated() throws {
+    let keys = try Self.catalog("KittyTools/Resources/Localizable.xcstrings").keys
+    for fixed in ["Kitty Tools 自动备份", "Kitty Tools 导入前"] {
+      #expect(!keys.contains { $0.hasPrefix(fixed) }, "\(fixed)")
+    }
+    #expect(SyncServerForm.defaultFolder == "Kitty Tools 同步")
+    #expect(!keys.contains(SyncServerForm.defaultFolder))
+    // 0.9.0 写下的名字照样认得出；英文界面导出的设置文件（「Kitty Tools Settings …」）不当成自动备份
+    let calendar = Calendar(identifier: .gregorian)
+    let daily = SettingsBackup.parse("Kitty Tools 自动备份 2026-10-08 3F9A.json", calendar: calendar)
+    #expect(daily?.kind == .daily && daily?.owner == "3F9A")
+    let before = SettingsBackup.parse("Kitty Tools 导入前 2026-10-08 153012.json", calendar: calendar)
+    #expect(before?.kind == .beforeImport)
+    #expect(SettingsBackup.parse("Kitty Tools Settings 2026-10-08.json", calendar: calendar) == nil)
+  }
+
   @Test func placeholderParsing() {
     #expect(Self.placeholders("版本 %@（%@）") == ["@", "@"])
     #expect(Self.placeholders("Next: %2$@ (%1$lld)") == ["lld", "@"])

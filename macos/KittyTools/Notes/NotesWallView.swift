@@ -608,10 +608,10 @@ struct WallCard: View {
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(
       [
-        summary.title, note.isPinned ? "已固定" : nil, paper.name,
+        summary.title, note.isPinned ? String(localized: "已固定") : nil, paper.name,
         summary.progress.map(Note.progressSpoken), NotesWindowModel.ago(note),
       ]
-      .compactMap { $0 }.joined(separator: "，")
+      .compactMap { $0 }.joined(separator: Island.comma)
     )
     .accessibilityValue(summary.preview)
     .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)

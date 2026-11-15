@@ -27,8 +27,24 @@ enum NoteSample {
   }
 
   /// 示例的正文（纯函数）。标题留空：第一行就是标题。edge：那一叠在屏幕哪条边；hotKey：「快速记一条」现在的快捷键
-  /// （「⌥N」），没设键是 nil——那一行换成从菜单栏、启动器走
-  static func body(edge: NoteDeckOptions.Edge, hotKey: String?) -> String {
+  /// （「⌥N」），没设键是 nil——那一行换成从菜单栏、启动器走。
+  /// 多语言：放进库里就是用户自己的便签，**按放的那一刻的界面语言写一份**（english），以后不跟着换（TRANSLATION.md 二）
+  static func body(
+    edge: NoteDeckOptions.Edge, hotKey: String?, english: Bool = InterfaceLanguage.isEnglish
+  ) -> String {
+    if english {
+      let capture =
+        hotKey.map { "Press \($0) to jot something down" }
+        ?? "Choose “\(HotKeyAction.noteCapture.title)” in the menu bar or Launcher to jot something down"
+      return """
+        Welcome to Notes
+        Move the pointer to the \(edge.rawValue) edge of the screen to fan out this stack, then click a tab to open it.
+        ☐ \(capture)
+        ☐ Drag tabs to reorder them
+        ☐ Click the pin to keep a note open when you click elsewhere
+        Don’t need this note anymore? Choose Delete in the “⋯” menu.
+        """
+    }
     let capture =
       hotKey.map { "按 \($0) 随手记一条" }
       ?? "在菜单栏或启动器里选「\(HotKeyAction.noteCapture.title)」随手记"

@@ -4,6 +4,16 @@
     "" : {
       "shouldTranslate" : false
     },
+    "# 标题、**粗体**、*斜体*、`代码`、[链接](地址)、三个反引号围起来的代码块，这些写法直接显示成样式，标记只在光标所在的那一行露出来" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "# heading, **bold**, *italic*, `code`, [link](address), and code blocks fenced with three backticks show as styles; the marks appear only on the line with the cursor"
+          }
+        }
+      }
+    },
     "%@" : {
       "shouldTranslate" : false
     },
@@ -19,6 +29,22 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "%1$@\n\n数据目录：%2$@"
+          }
+        }
+      }
+    },
+    "%@ %@ 导入前存的备份" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Backup saved before importing, %1$@ %2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ %2$@ 导入前存的备份"
           }
         }
       }
@@ -116,6 +142,22 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "%1$@ · 已等 %2$lld 秒"
+          }
+        }
+      }
+    },
+    "%@ × %@ 像素" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ × %2$@ pixels"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ × %2$@ 像素"
           }
         }
       }
@@ -220,8 +262,27 @@
         }
       }
     },
-    "%@后历史会保留得比现在少（保留时间、图片上限、翻译历史条数变小，或者退出、锁屏时清空），超出的普通历史会被清理；收藏和片段不动。" : {},
+    "%@关着，先不同步；在上面「功能」里打开就接着同步" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ is off, so this isn’t syncing; turn it on under Features above to resume"
+          }
+        }
+      }
+    },
     "%@四指捏合四根、五根手指都认（同系统），捏的时候多碰到一根也接着认；五指只认五根，和四指的横扫（切换桌面、调度中心）完全错开，不容易误开。Mac 从睡眠中唤醒后会自动重新接上触控板，不用重启。" : {},
+    "%@太多，自动备份里没带，可以手动导出" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: too many to include in the automatic backup; you can export them manually"
+          }
+        }
+      }
+    },
     "%@工具" : {
       "localizations" : {
         "en" : {
@@ -242,12 +303,42 @@
         }
       }
     },
+    "%@插件没添加，先不同步；在上面「功能」里添加就接着同步" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The %@ plugin isn’t added, so this isn’t syncing; add it under Features above to resume"
+          }
+        }
+      }
+    },
+    "%@没存上" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ couldn’t be saved"
+          }
+        }
+      }
+    },
     "%@用的是同一个组合，到 设置 › 快捷键 里改一个" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ use the same combination. Change one in Settings › Shortcuts."
+          }
+        }
+      }
+    },
+    "%@的同步记录读不出来" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can’t read the sync records for %@"
           }
         }
       }
@@ -262,12 +353,55 @@
         }
       }
     },
+    "%@的自动备份" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Automatic backup from %@"
+          }
+        }
+      }
+    },
     "%@要用，授权后可能要重新打开本 App" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ needs it. You may need to reopen the app after allowing access."
+          }
+        }
+      }
+    },
+    "%@超过 %lld MB，同步不了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ is over %2$lld MB and can’t be synced"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@超过 %2$lld MB，同步不了"
+          }
+        }
+      }
+    },
+    "%@（%@有改动）" : {
+      "comment" : "其他电脑那一行：名字（多久之前有改动）",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ (changed %2$@)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@（%2$@有改动）"
           }
         }
       }
@@ -304,14 +438,71 @@
         }
       }
     },
+    "%@（Esc）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ (Esc)"
+          }
+        }
+      }
+    },
+    "%@（Kitty Tools %@）。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ (Kitty Tools %2$@)."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@（Kitty Tools %2$@）。"
+          }
+        }
+      }
+    },
     "%@（⇧⌘A）" : {
-      "shouldTranslate" : false
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ (⇧⌘A)"
+          }
+        }
+      }
     },
     "%@（⌘,）" : {
-      "shouldTranslate" : false
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ (⌘,)"
+          }
+        }
+      }
     },
     "%@（⌘P）" : {
-      "shouldTranslate" : false
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ (⌘P)"
+          }
+        }
+      }
+    },
+    "%@（⌘T）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ (⌘T)"
+          }
+        }
+      }
     },
     "%@（今天）" : {
       "localizations" : {
@@ -615,6 +806,44 @@
         }
       }
     },
+    "%lld 个%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$#@files@ %2$@"
+          },
+          "substitutions" : {
+            "files" : {
+              "argNum" : 1,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg file"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg files"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld 个%2$@"
+          }
+        }
+      }
+    },
     "%lld 个关键词命令" : {
       "localizations" : {
         "en" : {
@@ -772,6 +1001,28 @@
       }
     },
     "%lld 个文件读不到，没算" : {},
+    "%lld 个服务的名称、地址、模型和开关" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Name, address, model, and switch of %lld service"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Names, addresses, models, and switches of %lld services"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld 个系统命令" : {
       "localizations" : {
         "en" : {
@@ -807,6 +1058,28 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld items"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld 个：已有的按文件更新，没有的加上；现在的服务不会删" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld service: existing ones are updated from the file and new ones are added; current services aren’t deleted"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld services: existing ones are updated from the file and new ones are added; current services aren’t deleted"
                 }
               }
             }
@@ -906,7 +1179,94 @@
         }
       }
     },
-    "%lld 张图片在旁边的 attachments 文件夹" : {},
+    "%lld 张图片" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld image"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld images"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld 张图片不在，没导出" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld image is missing and wasn’t exported"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld images are missing and weren’t exported"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld 张图片在旁边的 attachments 文件夹" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld image is in the attachments folder next to it"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld images are in the attachments folder next to it"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld 张图片没导进来" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld image wasn’t imported"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld images weren’t imported"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld 条" : {
       "localizations" : {
         "en" : {
@@ -922,6 +1282,28 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld items"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld 条便签的文字，原样写进文件（不加密）；图片和「最近删除」里的不带" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Text of %lld note, written as is (not encrypted); images and Recently Deleted aren’t included"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Text of %lld notes, written as is (not encrypted); images and Recently Deleted aren’t included"
                 }
               }
             }
@@ -973,6 +1355,98 @@
         }
       }
     },
+    "%lld 条和现在的一样" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld unchanged"
+          }
+        }
+      }
+    },
+    "%lld 条收藏的翻译，原样写进文件（不加密）" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld saved translation, written as is (not encrypted)"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld saved translations, written as is (not encrypted)"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld 条文字、%lld 个收藏夹，原样写进文件（不加密、不带格式）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Text items: %1$lld, collections: %2$lld; written as is (not encrypted, no formatting)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld 条文字、%2$lld 个收藏夹，原样写进文件（不加密、不带格式）"
+          }
+        }
+      }
+    },
+    "%lld 条文字，原样写进文件（不加密、不带格式）" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld text item, written as is (not encrypted, no formatting)"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld text items, written as is (not encrypted, no formatting)"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld 条文字：同样的文字不重复加，只补上收藏、片段和收藏夹；现在的不会删" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld text item: identical text isn’t added again, only favorites, snippets, and collections are filled in; current ones aren’t deleted"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld text items: identical text isn’t added again, only favorites, snippets, and collections are filled in; current ones aren’t deleted"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld 条标注" : {
       "localizations" : {
         "en" : {
@@ -988,6 +1462,72 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld annotations"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld 条：已有的不重复加；现在的不会删" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld item: existing ones aren’t added again; current ones aren’t deleted"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld items: existing ones aren’t added again; current ones aren’t deleted"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld 条：已有的按文件更新，没有的加上；现在的不会删" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld item: existing ones are updated from the file and new ones are added; current ones aren’t deleted"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld items: existing ones are updated from the file and new ones are added; current ones aren’t deleted"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld 条：没有的加上；两边都有的留改得晚的，换下来的那一版进「最近删除」" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld note: new ones are added; where both have it, the later edit is kept and the replaced version goes to Recently Deleted"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld notes: new ones are added; where both have one, the later edit is kept and the replaced version goes to Recently Deleted"
                 }
               }
             }
@@ -1054,6 +1594,28 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "Recording starts in %lld seconds. Press Esc to cancel."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld 类" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld category"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld categories"
                 }
               }
             }
@@ -1391,7 +1953,33 @@
     "Kitty Tools" : {
       "shouldTranslate" : false
     },
-    "Kitty Tools 同步" : {},
+    "Kitty Tools %@ 在 %@ 导出的文件。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A file exported by Kitty Tools %1$@ on %2$@."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Kitty Tools %1$@ 在 %2$@ 导出的文件。"
+          }
+        }
+      }
+    },
+    "Kitty Tools 便签 %@" : {
+      "comment" : "导出的 Markdown 文件夹名，后面是日期",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kitty Tools Notes %@"
+          }
+        }
+      }
+    },
     "Kitty Tools 图标" : {
       "localizations" : {
         "en" : {
@@ -1432,8 +2020,28 @@
         }
       }
     },
+    "Kitty Tools 设置 %@.json" : {
+      "comment" : "导出设置的默认文件名，中间是日期",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kitty Tools Settings %@.json"
+          }
+        }
+      }
+    },
     "Mac 自己的隐藏文件（.DS_Store、._*、__MACOSX）总会跳过，不用加。" : {},
-    "Markdown 样式" : {},
+    "Markdown 样式" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Markdown styles"
+          }
+        }
+      }
+    },
     "OpenAI 兼容" : {
       "localizations" : {
         "en" : {
@@ -1510,6 +2118,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "VPN (%@)"
+          }
+        }
+      }
+    },
+    "[图片]" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "[Image]"
           }
         }
       }
@@ -2471,12 +3089,66 @@
         }
       }
     },
+    "markdown.heading" : {
+      "comment" : "便签「格式」菜单里的标题（几级之外的）",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Heading"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "标题"
+          }
+        }
+      }
+    },
+    "markdown.skip.unreadable" : {
+      "comment" : "导入时跳过的原因，接在「2 个」后面",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "unreadable"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "读不出来"
+          }
+        }
+      }
+    },
     "mode 写 list 时，脚本每打印一行就是一条结果，写成「结果⇥说明」（中间是 Tab），↩ 粘贴选中的那条。打字时会重新跑。" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "With mode list, each line the script prints is one result, written “result⇥note” (a Tab in between); ↩ pastes the selected one. It runs again as you type."
+          }
+        }
+      }
+    },
+    "notes.scope.trash.short" : {
+      "comment" : "短说法：全部便签窗口左上角分段里的「最近删除」（英文全称放不下）",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deleted"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "最近删除"
           }
         }
       }
@@ -2823,6 +3495,78 @@
         }
       }
     },
+    "sync.resume" : {
+      "comment" : "短说法：同步停下来等确认时那个按钮（英文全称把这一行挤成两行）",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resume"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "继续同步"
+          }
+        }
+      }
+    },
+    "task.cancelled" : {
+      "comment" : "便签任务的状态：不做了",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Canceled"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "取消"
+          }
+        }
+      }
+    },
+    "task.done" : {
+      "comment" : "便签任务的状态：做完了",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Done"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "完成"
+          }
+        }
+      }
+    },
+    "transfer.headline" : {
+      "comment" : "导入表单页头：文件是哪来的 + 不能撤销（两句话；英文中间要空格）",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@%2$@"
+          }
+        }
+      }
+    },
     "translate.add.aiServices" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -3028,6 +3772,24 @@
         }
       }
     },
+    "wall.others" : {
+      "comment" : "便签墙上固定的那段之后的一段",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Others"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "其他"
+          }
+        }
+      }
+    },
     "{\"items\": [{\"title\": \"显示的\", \"subtitle\": \"说明\", \"arg\": \"↩ 粘贴的\"}]}" : {
       "localizations" : {
         "en" : {
@@ -3117,8 +3879,26 @@
         }
       }
     },
-    "⌘Z 撤销，或到「归档」里找回" : {},
-    "⌘Z 撤销，或到「最近删除」里放回" : {},
+    "⌘Z 撤销，或到「归档」里找回" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Press ⌘Z to undo, or find it in Archive"
+          }
+        }
+      }
+    },
+    "⌘Z 撤销，或到「最近删除」里放回" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Press ⌘Z to undo, or put it back from Recently Deleted"
+          }
+        }
+      }
+    },
     "⌘方向键" : {
       "localizations" : {
         "en" : {
@@ -3145,6 +3925,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "⌥Arrow Keys"
+          }
+        }
+      }
+    },
+    "「%@.md」写不进去：%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t write “%1$@.md”: %2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "「%1$@.md」写不进去：%2$@"
           }
         }
       }
@@ -3185,6 +3981,22 @@
         }
       }
     },
+    "「%@」写不进去：%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t write “%1$@”: %2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "「%1$@」写不进去：%2$@"
+          }
+        }
+      }
+    },
     "「%@」出错了" : {
       "localizations" : {
         "en" : {
@@ -3205,7 +4017,32 @@
         }
       }
     },
-    "「%@」和已经在同步的电脑合在一起？" : {},
+    "「%@」和「%@」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%1$@” and “%2$@”"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "「%1$@」和「%2$@」"
+          }
+        }
+      }
+    },
+    "「%@」和已经在同步的电脑合在一起？" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Merge “%@” with the computers already syncing?"
+          }
+        }
+      }
+    },
     "「%@」已经不在运行了" : {
       "localizations" : {
         "en" : {
@@ -3236,7 +4073,16 @@
         }
       }
     },
-    "「%@」收回了边缘" : {},
+    "「%@」收回了边缘" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@” went back to the edge"
+          }
+        }
+      }
+    },
     "「%@」有不止一个（在不同的文件夹里），包里只放得下一个" : {},
     "「%@」有密码" : {},
     "「%@」正在使用它" : {
@@ -3357,6 +4203,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "“%@” is still running"
+          }
+        }
+      }
+    },
+    "「%@」那份同步记录还读不出来（多半是还没下载完），读到了自己接着同步" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can’t read the sync records from “%@” yet (they’re probably still downloading). Syncing resumes once they can be read"
           }
         }
       }
@@ -3484,8 +4340,27 @@
         }
       }
     },
+    "一条便签最多 1 MB，这次输入没有记进去" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A note can be up to 1 MB, so this input wasn’t added"
+          }
+        }
+      }
+    },
     "一次最多 %lld 项" : {},
-    "一直展开" : {},
+    "一直展开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Always expanded"
+          }
+        }
+      }
+    },
     "一直留着" : {
       "localizations" : {
         "en" : {
@@ -3508,6 +4383,17 @@
     },
     "一页几列" : {},
     "一页几行" : {},
+    "丁香" : {
+      "comment" : "便签纸色的名字",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lilac"
+          }
+        }
+      }
+    },
     "三步上手" : {
       "localizations" : {
         "en" : {
@@ -3548,6 +4434,16 @@
         }
       }
     },
+    "上一轮没同步成：%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The last sync didn’t finish: %@"
+          }
+        }
+      }
+    },
     "上一首" : {
       "localizations" : {
         "en" : {
@@ -3564,6 +4460,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Last Position"
+          }
+        }
+      }
+    },
+    "上次同步：%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last synced: %@"
           }
         }
       }
@@ -3638,7 +4544,28 @@
         }
       }
     },
-    "上面这些每天自动存一份在这台 Mac 上，留最近 %lld 份；导入前也会先存一份，设置和快捷键导错了能换回去。不含密钥。" : {},
+    "上面这些每天自动存一份在这台 Mac 上，留最近 %lld 份；导入前也会先存一份，设置和快捷键导错了能换回去。不含密钥。" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Saves everything above on this Mac every day and keeps the latest %lld. A copy is also saved before each import, so you can switch settings and shortcuts back if an import goes wrong. Keys aren’t included."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Saves everything above on this Mac every day and keeps the latest %lld. A copy is also saved before each import, so you can switch settings and shortcuts back if an import goes wrong. Keys aren’t included."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "下一个：%@（%@）" : {
       "localizations" : {
         "en" : {
@@ -3737,7 +4664,26 @@
       }
     },
     "不催" : {},
-    "不再另存" : {},
+    "不再另存" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop Saving Copies"
+          }
+        }
+      }
+    },
+    "不再过滤疑似密钥和银行卡号" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "possible keys and card numbers will no longer be filtered"
+          }
+        }
+      }
+    },
     "不压暗屏幕，悬停的窗口只描边、不染色，放大镜正中的像素也不染色。取色、对比颜色时打开" : {
       "localizations" : {
         "en" : {
@@ -3748,7 +4694,36 @@
         }
       }
     },
-    "不显示药丸" : {},
+    "不填就只导入服务，不导入密钥。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leave blank to import only the services, without keys."
+          }
+        }
+      }
+    },
+    "不是 UTF-8 文本" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "not UTF-8 text"
+          }
+        }
+      }
+    },
+    "不显示药丸" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide the pill"
+          }
+        }
+      }
+    },
     "不用的整个关掉，用的时候再打开" : {
       "localizations" : {
         "en" : {
@@ -3769,7 +4744,16 @@
         }
       }
     },
-    "不缩成药丸，标签一直排在边上" : {},
+    "不缩成药丸，标签一直排在边上" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tabs stay along the edge instead of collapsing into a pill"
+          }
+        }
+      }
+    },
     "不能有 / 和 :，比如 json、tar.gz" : {},
     "不要（打开「下一个日程」要「日历」，打开「音量和亮度」要「辅助功能」；正在播放读不到时，「音乐」「Spotify」的播放控制要「自动化」）" : {
       "localizations" : {
@@ -3821,13 +4805,32 @@
         }
       }
     },
-    "两台电脑改了同一条便签" : {},
+    "两台电脑改了同一条便签" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Two computers changed the same note"
+          }
+        }
+      }
+    },
     "两指左右滑" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Two-Finger Swipe"
+          }
+        }
+      }
+    },
+    "两次输入的密码不一样" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The passwords don’t match"
           }
         }
       }
@@ -3862,7 +4865,16 @@
         }
       }
     },
-    "主显示器" : {},
+    "主显示器" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Main Display"
+          }
+        }
+      }
+    },
     "主界面" : {
       "localizations" : {
         "en" : {
@@ -3989,6 +5001,16 @@
         }
       }
     },
+    "今天 %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "today at %@"
+          }
+        }
+      }
+    },
     "今天没有日程" : {
       "localizations" : {
         "en" : {
@@ -3999,7 +5021,16 @@
         }
       }
     },
-    "今天那份没存过去：%@" : {},
+    "今天那份没存过去：%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Today’s copy wasn’t saved there: %@"
+          }
+        }
+      }
+    },
     "仍要退出" : {
       "localizations" : {
         "en" : {
@@ -4011,7 +5042,16 @@
       }
     },
     "从" : {},
-    "从 Markdown 导入" : {},
+    "从 Markdown 导入" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Import from Markdown"
+          }
+        }
+      }
+    },
     "从「常用」里移除" : {
       "localizations" : {
         "en" : {
@@ -4083,7 +5123,16 @@
         }
       }
     },
-    "从备份恢复" : {},
+    "从备份恢复" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restore from Backup"
+          }
+        }
+      }
+    },
     "从常用中移除" : {
       "localizations" : {
         "en" : {
@@ -4128,6 +5177,16 @@
         }
       }
     },
+    "从边缘打开的便签多大" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "How big a note opened from the edge is"
+          }
+        }
+      }
+    },
     "代码" : {
       "localizations" : {
         "en" : {
@@ -4138,12 +5197,68 @@
         }
       }
     },
+    "代码块" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Code Block"
+          }
+        }
+      }
+    },
+    "任务" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Task"
+          }
+        }
+      }
+    },
+    "任务完成 %lld 项，共 %lld 项" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tasks: %1$lld of %2$lld done"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "任务完成 %1$lld 项，共 %2$lld 项"
+          }
+        }
+      }
+    },
+    "任务状态" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Task Status"
+          }
+        }
+      }
+    },
     "任务：光标所在的行（选了几行就是那几行）变成任务，再按一次变回普通行；点行首的方框打勾" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Task: turn the line with the cursor (or the selected lines) into a task, press again to turn it back; click the box at the start to check it off"
+          }
+        }
+      }
+    },
+    "任务：把这一行变成任务，或变回普通行（⌘T）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Task: turn this line into a task, or back into a regular line (⌘T)"
           }
         }
       }
@@ -4292,7 +5407,46 @@
         }
       }
     },
-    "位置" : {},
+    "会开始记录剪贴板" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "clipboard history will start recording"
+          }
+        }
+      }
+    },
+    "会打开复制即译（复制的外语文字自动发给翻译服务）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Translate on Copy will turn on (copied foreign-language text is sent to translation services automatically)"
+          }
+        }
+      }
+    },
+    "会自动下载挑的表情的动画" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "animations for the emoji you choose will download automatically"
+          }
+        }
+      }
+    },
+    "位置" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Position"
+          }
+        }
+      }
+    },
     "使用记录" : {
       "localizations" : {
         "en" : {
@@ -4353,8 +5507,66 @@
         }
       }
     },
-    "便签「%@」" : {},
-    "便签内容" : {},
+    "便签「%@」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Note “%@”"
+          }
+        }
+      }
+    },
+    "便签内容" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Note text"
+          }
+        }
+      }
+    },
+    "便签同步先停下了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notes sync paused"
+          }
+        }
+      }
+    },
+    "便签在屏幕右边缘" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notes are on the right edge of the screen"
+          }
+        }
+      }
+    },
+    "便签在屏幕左边缘" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notes are on the left edge of the screen"
+          }
+        }
+      }
+    },
+    "便签墙" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Note Wall"
+          }
+        }
+      }
+    },
     "便签墙 / 列表（同工具栏上的切换；下次打开是上次用的那种）" : {
       "localizations" : {
         "en" : {
@@ -4395,8 +5607,48 @@
         }
       }
     },
-    "便签墙（⌘1）/ 列表（⌘2）" : {},
-    "便签存在这台 Mac 上，和剪贴板历史分开：清空历史、保留天数都碰不到它。每天自动备份一份，留最近 7 份（正文里的图片跟着一起备）。删掉的便签在「最近删除」里留 %lld 天。设置 › 通用 里的导出与导入带便签的文字、不带图片；要连图片一起带走、或者拿别的工具看，用上面的 Markdown 导出。在几台 Mac 之间同步到 设置 › 通用「同步」里选文件夹。" : {},
+    "便签墙（⌘1）/ 列表（⌘2）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Note Wall (⌘1) / List (⌘2)"
+          }
+        }
+      }
+    },
+    "便签大小" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Note size"
+          }
+        }
+      }
+    },
+    "便签存在这台 Mac 上，和剪贴板历史分开：清空历史、保留天数都碰不到它。每天自动备份一份，留最近 7 份（正文里的图片跟着一起备）。删掉的便签在「最近删除」里留 %lld 天。设置 › 通用 里的导出与导入带便签的文字、不带图片；要连图片一起带走、或者拿别的工具看，用上面的 Markdown 导出。在几台 Mac 之间同步到 设置 › 通用「同步」里选文件夹。" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Notes are stored on this Mac, separately from clipboard history: clearing history and the retention setting don’t affect them. They’re backed up automatically every day, and the latest 7 backups are kept (images in notes included). Deleted notes stay in Recently Deleted for %lld day. Export and Import in Settings › General include note text but not images; to take images along, or to open notes in other apps, use Markdown export above. To sync between Macs, choose a folder under Sync in Settings › General."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Notes are stored on this Mac, separately from clipboard history: clearing history and the retention setting don’t affect them. They’re backed up automatically every day, and the latest 7 backups are kept (images in notes included). Deleted notes stay in Recently Deleted for %lld days. Export and Import in Settings › General include note text but not images; to take images along, or to open notes in other apps, use Markdown export above. To sync between Macs, choose a folder under Sync in Settings › General."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "便签打不开了" : {
       "localizations" : {
         "en" : {
@@ -4427,7 +5679,16 @@
         }
       }
     },
-    "便签的按键" : {},
+    "便签的按键" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Note keyboard shortcuts"
+          }
+        }
+      }
+    },
     "便签的数据库文件不见了" : {
       "localizations" : {
         "en" : {
@@ -4448,6 +5709,22 @@
         }
       }
     },
+    "便签的数据是更新版本的 Kitty Tools 写的（数据版本 %@，这个版本只认到 %@）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The notes data was written by a newer version of Kitty Tools (data version %1$@; this version supports up to %2$@)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "便签的数据是更新版本的 Kitty Tools 写的（数据版本 %1$@，这个版本只认到 %2$@）"
+          }
+        }
+      }
+    },
     "便签的数据读不出来了。剪贴板、翻译和别的功能不受影响。" : {
       "localizations" : {
         "en" : {
@@ -4464,6 +5741,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Kitty Tools can’t read your notes. The clipboard, translation, and other features aren’t affected. There’s no usable backup either."
+          }
+        }
+      }
+    },
+    "便签设置" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Note Settings"
+          }
+        }
+      }
+    },
+    "便签超过 %lld 条，先取消勾选「便签」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "More than %lld notes. Deselect “Notes” first."
           }
         }
       }
@@ -4504,6 +5801,26 @@
         }
       }
     },
+    "便签这次用不了，不带这一类" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notes are unavailable this time and won’t be included"
+          }
+        }
+      }
+    },
+    "便签这次用不了，这一类会跳过" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notes are unavailable this time, so this category will be skipped"
+          }
+        }
+      }
+    },
     "便签里的原文已经改了，没有替换" : {
       "localizations" : {
         "en" : {
@@ -4514,7 +5831,28 @@
         }
       }
     },
-    "便签，%lld 条" : {},
+    "便签，%lld 条" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld note"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld notes"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "俄语" : {
       "localizations" : {
         "en" : {
@@ -4710,7 +6048,16 @@
         }
       }
     },
-    "停止同步" : {},
+    "停止同步" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop Syncing"
+          }
+        }
+      }
+    },
     "停止并保存" : {
       "localizations" : {
         "en" : {
@@ -4767,6 +6114,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pixelate"
+          }
+        }
+      }
+    },
+    "像素太多" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Too many pixels"
           }
         }
       }
@@ -5004,7 +6361,36 @@
         }
       }
     },
-    "全部列出来" : {},
+    "全部便签窗口、屏幕边缘和浮在屏幕上的便签里正文一行一行之间隔多远" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Space between lines of note text in All Notes, on the screen edge, and in floating notes"
+          }
+        }
+      }
+    },
+    "全部便签窗口、屏幕边缘和浮在屏幕上的便签里正文的大小" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Size of note text in All Notes, on the screen edge, and in floating notes"
+          }
+        }
+      }
+    },
+    "全部列出来" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shows all of them"
+          }
+        }
+      }
+    },
     "全部历史" : {
       "localizations" : {
         "en" : {
@@ -5061,6 +6447,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "All actions (⌘K or →)"
+          }
+        }
+      }
+    },
+    "全部跳过了：%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All skipped: %@"
           }
         }
       }
@@ -5261,6 +6657,16 @@
         }
       }
     },
+    "关闭便签" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close Note"
+          }
+        }
+      }
+    },
     "关闭全部钉图" : {
       "localizations" : {
         "en" : {
@@ -5352,7 +6758,16 @@
         }
       }
     },
-    "其他电脑" : {},
+    "其他电脑" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Other computers"
+          }
+        }
+      }
+    },
     "其他设备" : {
       "localizations" : {
         "en" : {
@@ -5363,12 +6778,52 @@
         }
       }
     },
+    "其他颜色…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Other Color…"
+          }
+        }
+      }
+    },
     "内容" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Content"
+          }
+        }
+      }
+    },
+    "内容太多，先取消勾选「片段与收藏」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Too much content. Deselect “Snippets and Favorites” first."
+          }
+        }
+      }
+    },
+    "内容太多，先取消勾选「片段与收藏」或「便签」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Too much content. Deselect “Snippets and Favorites” or “Notes” first."
+          }
+        }
+      }
+    },
+    "内容编不出来" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "the content couldn’t be encoded"
           }
         }
       }
@@ -5539,13 +6994,32 @@
         }
       }
     },
-    "再输一次" : {},
+    "再输一次" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirm password"
+          }
+        }
+      }
+    },
     "再输入一个字母" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Type one more letter"
+          }
+        }
+      }
+    },
+    "再选一个文件夹（比如 iCloud 云盘里的），每天那份也存过去，硬盘坏了、换电脑时还在。%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose another folder (one in iCloud Drive, for example) to also save each day’s copy there, so it survives a failed disk or a new computer. %@"
           }
         }
       }
@@ -5580,7 +7054,36 @@
         }
       }
     },
-    "几秒内点「恢复」能放回来" : {},
+    "写点什么…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Write something…"
+          }
+        }
+      }
+    },
+    "几台电脑连同一个服务器上的同一个文件夹，不在一个网络里也能同步。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connect each computer to the same folder on the same server to sync, even across networks."
+          }
+        }
+      }
+    },
+    "几秒内点「恢复」能放回来" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Click Restore within a few seconds to bring it back"
+          }
+        }
+      }
+    },
     "分卷的 RAR（.part1.rar 这种）这里解不开" : {},
     "分钟" : {},
     "切到 App" : {
@@ -5784,6 +7287,16 @@
         }
       }
     },
+    "列表" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "List"
+          }
+        }
+      }
+    },
     "列表循环" : {
       "localizations" : {
         "en" : {
@@ -5844,6 +7357,16 @@
         }
       }
     },
+    "刚刚" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "just now"
+          }
+        }
+      }
+    },
     "创建" : {
       "localizations" : {
         "en" : {
@@ -5886,6 +7409,54 @@
         }
       }
     },
+    "删于 %@ · %lld 天后永久删除" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deleted %1$@ · deleted permanently in %2$#@days@"
+          },
+          "substitutions" : {
+            "days" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg day"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg days"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "删于 %1$@ · %2$lld 天后永久删除"
+          }
+        }
+      }
+    },
+    "删于 %@ · 即将永久删除" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deleted %@ · will be deleted permanently soon"
+          }
+        }
+      }
+    },
     "删掉 %lld 条？" : {
       "localizations" : {
         "en" : {
@@ -5908,7 +7479,28 @@
         }
       }
     },
-    "删掉的便签在这里留 %lld 天" : {},
+    "删掉的便签在这里留 %lld 天" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Deleted notes stay here for %lld day"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Deleted notes stay here for %lld days"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "删掉选中的那条" : {
       "localizations" : {
         "en" : {
@@ -6003,6 +7595,16 @@
       }
     },
     "删除所选的状态" : {},
+    "删除线" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Strikethrough"
+          }
+        }
+      }
+    },
     "删除选中的标注" : {
       "localizations" : {
         "en" : {
@@ -6033,7 +7635,16 @@
         }
       }
     },
-    "删除（⌘⌫），进「最近删除」" : {},
+    "删除（⌘⌫），进「最近删除」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete (⌘⌫); moves to Recently Deleted"
+          }
+        }
+      }
+    },
     "删除（管理收藏夹里是删掉选中的收藏夹，条目留在收藏里）" : {
       "localizations" : {
         "en" : {
@@ -6064,7 +7675,16 @@
         }
       }
     },
-    "别的 App 全屏时边缘也有便签" : {},
+    "别的 App 全屏时边缘也有便签" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notes stay on the edge when another app is full screen"
+          }
+        }
+      }
+    },
     "到" : {},
     "到 系统设置 › 麦克风 里打开" : {
       "localizations" : {
@@ -6097,8 +7717,26 @@
       }
     },
     "到「%@」" : {},
-    "到「全部便签」的「归档」里找回" : {},
-    "到「全部便签」的「最近删除」里放回" : {},
+    "到「全部便签」的「归档」里找回" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Find it in Archive in All Notes"
+          }
+        }
+      }
+    },
+    "到「全部便签」的「最近删除」里放回" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Put it back from Recently Deleted in All Notes"
+          }
+        }
+      }
+    },
     "到别的文件夹空白处右键「粘贴」，或者在访达里按 ⌥⌘V" : {},
     "到点之后" : {},
     "到点提醒你：一次、每天、每周或每隔一阵" : {
@@ -6190,6 +7828,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "The clipboard, launcher, and translation panels spring open from slightly smaller to full size; not when Reduce Motion is on"
+          }
+        }
+      }
+    },
+    "剪贴板「不记录」的 App 会变少" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "fewer apps will be excluded from clipboard history"
           }
         }
       }
@@ -6361,7 +8009,26 @@
     "动画" : {},
     "动画表情" : {},
     "动画表情：%@" : {},
-    "勾上的几类在几台电脑之间保持一样，取消一类只是不再同步它。同步文件夹（连服务器时是服务器上那个文件夹）里放的是不加密的文本文件和图片，能打开这个文件夹的人都看得到。每台电脑只往自己的那份里写、读所有电脑的，改动一般几十秒到几分钟传过去（看同步盘多快；连服务器时大约一分钟一轮）。两台都改了同一条时，后改的留下（便签的另一版放进「最近删除」）；别处删掉的片段、收藏和生词，这台 Mac 上只是不再收藏；一轮要删的太多会先停下来问。停止同步后，文件夹里的东西留着，这台 Mac 上的也不动。" : {},
+    "勾上后设一个密码，密钥加密后写进文件，导入时输同一个密码；不勾就只导出服务，不带密钥" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Set a password and the keys are encrypted into the file; enter the same password when importing. If this is off, only the services are exported, without keys"
+          }
+        }
+      }
+    },
+    "勾上的几类在几台电脑之间保持一样，取消一类只是不再同步它。同步文件夹（连服务器时是服务器上那个文件夹）里放的是不加密的文本文件和图片，能打开这个文件夹的人都看得到。每台电脑只往自己的那份里写、读所有电脑的，改动一般几十秒到几分钟传过去（看同步盘多快；连服务器时大约一分钟一轮）。两台都改了同一条时，后改的留下（便签的另一版放进「最近删除」）；别处删掉的片段、收藏和生词，这台 Mac 上只是不再收藏；一轮要删的太多会先停下来问。停止同步后，文件夹里的东西留着，这台 Mac 上的也不动。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The selected categories stay the same across your computers; deselecting one just stops syncing it. The sync folder (or the folder on the server, when you connect to one) holds unencrypted text files and images, readable by anyone who can open the folder. Each computer writes only to its own part and reads everyone’s; changes usually arrive within seconds to a few minutes (depending on the sync service; about once a minute with a server). When two computers change the same item, the later change wins (the other version of a note goes to Recently Deleted); snippets, favorites, and words deleted elsewhere are just no longer favorites on this Mac; if a round would delete too much, syncing pauses to ask first. After you stop syncing, the folder’s contents stay, and nothing on this Mac changes."
+          }
+        }
+      }
+    },
     "勾上的功能没有默认快捷键：点菜单栏图标就能用，\n想用键叫出来到 设置 › 快捷键 里设一个。" : {
       "localizations" : {
         "en" : {
@@ -6398,6 +8065,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Choose What to Sync"
+          }
+        }
+      }
+    },
+    "勾选要写进文件的内容。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Select what to include in the file."
+          }
+        }
+      }
+    },
+    "包含翻译服务的密钥" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Include translation service keys"
           }
         }
       }
@@ -6532,6 +8219,16 @@
         }
       }
     },
+    "单张最多 20 MB" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Each image can be up to 20 MB"
+          }
+        }
+      }
+    },
     "单曲循环" : {
       "localizations" : {
         "en" : {
@@ -6657,6 +8354,16 @@
     "压缩和解压" : {},
     "压缩时跳过" : {},
     "原件在只读的盘上、上了锁，或者没有权限" : {},
+    "原因不明" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unknown reason"
+          }
+        }
+      }
+    },
     "原因：%@" : {
       "localizations" : {
         "en" : {
@@ -6781,6 +8488,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Original: %@"
+          }
+        }
+      }
+    },
+    "原比例" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Original"
           }
         }
       }
@@ -6977,6 +8694,26 @@
         }
       }
     },
+    "取消固定（⌘P）：重启后不再浮在这里" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unpin (⌘P): won’t float here after a restart"
+          }
+        }
+      }
+    },
+    "取消归档" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unarchive"
+          }
+        }
+      }
+    },
     "取消录制" : {
       "localizations" : {
         "en" : {
@@ -7007,6 +8744,16 @@
         }
       }
     },
+    "取消浮动" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop Floating"
+          }
+        }
+      }
+    },
     "取消（Esc）" : {
       "localizations" : {
         "en" : {
@@ -7027,15 +8774,53 @@
         }
       }
     },
-    "另一版放进了「最近删除」" : {},
+    "另一台电脑那份同步记录还读不出来（多半是还没下载完），读到了自己接着同步" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can’t read another computer’s sync records yet (they’re probably still downloading). Syncing resumes once they can be read"
+          }
+        }
+      }
+    },
+    "另一版放进了「最近删除」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The other version is in Recently Deleted"
+          }
+        }
+      }
+    },
     "另外跳过的" : {},
-    "另存一份到" : {},
+    "另存一份到" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Also save to"
+          }
+        }
+      }
+    },
     "另存为…" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Save As…"
+          }
+        }
+      }
+    },
+    "另有 %@类的收藏不在文件里" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "image and file favorites aren’t included (%@)"
           }
         }
       }
@@ -7140,7 +8925,26 @@
         }
       }
     },
-    "只导入自己导出的、或信得过的人给的文件：设置会照文件改；翻译服务和网页搜索的地址也照文件里的，要翻译的文字、密钥和搜索的内容会发到那里；快捷链接能打开任意网址和文件。" : {},
+    "只导了前 %@ 个" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only the first %@ were imported"
+          }
+        }
+      }
+    },
+    "只导入自己导出的、或信得过的人给的文件：设置会照文件改；翻译服务和网页搜索的地址也照文件里的，要翻译的文字、密钥和搜索的内容会发到那里；快捷链接能打开任意网址和文件。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Import only files you exported yourself or got from someone you trust: settings change to match the file; translation services and web searches use the addresses in the file, so text to translate, keys, and searches are sent there; quicklinks can open any website or file."
+          }
+        }
+      }
+    },
     "只导收藏 · %@" : {
       "localizations" : {
         "en" : {
@@ -7191,7 +8995,16 @@
         }
       }
     },
-    "只有色块" : {},
+    "只有色块" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Color Only"
+          }
+        }
+      }
+    },
     "只查单词" : {
       "localizations" : {
         "en" : {
@@ -7317,11 +9130,81 @@
     "可能是没有权限，或者那里放不下" : {},
     "可能没有权限，或者它正在被使用；可以在访达里看它" : {},
     "可能系统里已经没有了，或者读不了" : {},
-    "右边" : {},
+    "右边" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Right"
+          }
+        }
+      }
+    },
     "右键的不是文件夹" : {},
     "右键第一层只多一项「Kitty Tools」，下面开着的这几项都在它里面" : {},
     "右键里不列「在“X”中打开」" : {},
-    "合在一起" : {},
+    "各页的设置、全局快捷键和功能开关；启动台、录音的麦克风、菜单栏图标这些跟着这台 Mac 的不同步" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Settings on every page, global shortcuts, and feature switches; things tied to this Mac, like Launchpad, the recording microphone, and the menu bar icon, aren’t synced"
+          }
+        }
+      }
+    },
+    "各页的选项都还是默认值" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All options are still at their defaults"
+          }
+        }
+      }
+    },
+    "各页里改过的 %lld 项，其余是默认值" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld changed option; the rest are defaults"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld changed options; the rest are defaults"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "合在一起" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Merge"
+          }
+        }
+      }
+    },
+    "合在一起后，这台 Mac 上的便签、片段、收藏、生词和状态屏的状态和它们的会出现在每台电脑上（同样的不重复）；设置、快捷键、功能开关（连同内置的网页搜索、翻译服务）换成已经在同步的那几台的——剪贴板的保留天数、「不记录」的 App 也跟着换，超出新保留天数的历史会清掉。之后同一条两边都改过的，后改的留下。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "After merging, the notes, snippets, favorites, words, and Status Screen statuses on this Mac and on the others appear on every computer (without duplicates); settings, shortcuts, and feature switches (including built-in web searches and translation services) are replaced with those of the computers already syncing. Clipboard retention and the apps excluded from history change too, and history older than the new retention period is cleared. After that, when both sides change the same item, the later change wins."
+          }
+        }
+      }
+    },
     "合并粘贴" : {
       "localizations" : {
         "en" : {
@@ -7362,6 +9245,26 @@
         }
       }
     },
+    "同步一轮之后列在这里" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Listed here after the first sync"
+          }
+        }
+      }
+    },
+    "同步先停下了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sync paused"
+          }
+        }
+      }
+    },
     "同步换了剪贴板的保留设置" : {
       "localizations" : {
         "en" : {
@@ -7372,8 +9275,56 @@
         }
       }
     },
-    "同步文件夹" : {},
-    "同步服务器" : {},
+    "同步文件夹" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sync folder"
+          }
+        }
+      }
+    },
+    "同步文件夹不在了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The sync folder no longer exists"
+          }
+        }
+      }
+    },
+    "同步文件夹里有文件还没下载到这台 Mac，下载完自己接着同步" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Some files in the sync folder haven’t downloaded to this Mac yet. Syncing resumes once they have"
+          }
+        }
+      }
+    },
+    "同步文件夹里的同步记录被换掉或删了：先停止同步，再选一个新的空文件夹（每台电脑都换过去）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The sync records in the sync folder were replaced or deleted: stop syncing, then choose a new empty folder (and switch every computer to it)"
+          }
+        }
+      }
+    },
+    "同步服务器" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sync server"
+          }
+        }
+      }
+    },
     "同步来的快捷键撞上了" : {
       "localizations" : {
         "en" : {
@@ -7548,6 +9499,16 @@
         }
       }
     },
+    "启动器收藏" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Launcher Favorites"
+          }
+        }
+      }
+    },
     "启动器里只输「提醒 」：列出全部提醒，↩ 打开 / 暂停那一条，⌘↩ 到设置里编辑" : {
       "localizations" : {
         "en" : {
@@ -7610,6 +9571,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Keys in the Launcher"
+          }
+        }
+      }
+    },
+    "启动器里的网页搜索和快捷链接" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Web searches and quicklinks in the Launcher"
           }
         }
       }
@@ -7791,7 +9762,16 @@
         }
       }
     },
-    "和服务器上这个文件夹里已经在同步的电脑合在一起？" : {},
+    "和服务器上这个文件夹里已经在同步的电脑合在一起？" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Merge with the computers already syncing in this folder on the server?"
+          }
+        }
+      }
+    },
     "和本 App 的另一个快捷键重复，没有注册上" : {
       "localizations" : {
         "en" : {
@@ -7802,13 +9782,32 @@
         }
       }
     },
-    "和这个文件夹里已经在同步的电脑合在一起？" : {},
+    "和这个文件夹里已经在同步的电脑合在一起？" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Merge with the computers already syncing in this folder?"
+          }
+        }
+      }
+    },
     "品牌粉" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pink"
+          }
+        }
+      }
+    },
+    "品红" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Magenta"
           }
         }
       }
@@ -7823,9 +9822,28 @@
         }
       }
     },
+    "哪几个服务、顺序和设置；密钥不同步，别的 Mac 上要自己填一次" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Which services, their order, and settings; keys aren’t synced, so enter them once on each Mac"
+          }
+        }
+      }
+    },
     "回到访达窗口再右键一次" : {},
     "回车或 Esc 也是知道了" : {},
-    "固定" : {},
+    "固定" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pin"
+          }
+        }
+      }
+    },
     "固定 / 取消固定" : {
       "localizations" : {
         "en" : {
@@ -8048,12 +10066,32 @@
         }
       }
     },
+    "图片太大了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The image is too large"
+          }
+        }
+      }
+    },
     "图片当前占用" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Image storage used"
+          }
+        }
+      }
+    },
+    "图片找不到了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Image not found"
           }
         }
       }
@@ -8139,6 +10177,16 @@
         }
       }
     },
+    "在「全部便签」里打开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open in All Notes"
+          }
+        }
+      }
+    },
     "在「脚本命令」里点「新建脚本」" : {
       "localizations" : {
         "en" : {
@@ -8179,7 +10227,26 @@
         }
       }
     },
-    "在几台电脑之间同步" : {},
+    "在任何地方%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ from anywhere"
+          }
+        }
+      }
+    },
+    "在几台电脑之间同步" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sync between computers"
+          }
+        }
+      }
+    },
     "在列表里点 +，选中 Kitty Tools" : {
       "localizations" : {
         "en" : {
@@ -8360,7 +10427,16 @@
         }
       }
     },
-    "在屏幕边缘显示便签" : {},
+    "在屏幕边缘显示便签" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show notes on the screen edge"
+          }
+        }
+      }
+    },
     "在格子之间换（Tab、⇧Tab 也行）" : {
       "localizations" : {
         "en" : {
@@ -8530,6 +10606,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Find in this note (Esc closes the find bar first, then the note)"
+          }
+        }
+      }
+    },
+    "在这里新建一条" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Create one here"
           }
         }
       }
@@ -9069,7 +11155,37 @@
       }
     },
     "大屏可以多放几行" : {},
-    "太长了，一条便签最多 1 MB" : {},
+    "天蓝" : {
+      "comment" : "便签纸色的名字",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sky"
+          }
+        }
+      }
+    },
+    "太大（超过 %lld MB）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "too large (over %lld MB)"
+          }
+        }
+      }
+    },
+    "太长了，一条便签最多 1 MB" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Too long. A note can be up to 1 MB"
+          }
+        }
+      }
+    },
     "好" : {
       "localizations" : {
         "en" : {
@@ -9303,6 +11419,36 @@
         }
       }
     },
+    "宽" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wide"
+          }
+        }
+      }
+    },
+    "宽度" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Width"
+          }
+        }
+      }
+    },
+    "宽松" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Relaxed"
+          }
+        }
+      }
+    },
     "宽（像素）" : {
       "localizations" : {
         "en" : {
@@ -9313,8 +11459,37 @@
         }
       }
     },
-    "密码" : {},
+    "密码" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Password"
+          }
+        }
+      }
+    },
+    "密码不会存在任何地方；忘了的话，重新导出一份就行。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The password isn’t stored anywhere. If you forget it, just export again."
+          }
+        }
+      }
+    },
     "密码不对" : {},
+    "密码不对（也可能是文件里的翻译服务被改动过）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wrong password (or the translation services in the file were modified)"
+          }
+        }
+      }
+    },
     "密码管理器通常会自己标记「不要记录」，这里只是兜底。" : {
       "localizations" : {
         "en" : {
@@ -9325,7 +11500,50 @@
         }
       }
     },
-    "密码（至少 %lld 位）" : {},
+    "密码至少 %lld 位" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "The password must be at least %lld character"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "The password must be at least %lld characters"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "密码（至少 %lld 位）" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Password (at least %lld character)"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Password (at least %lld characters)"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "密钥" : {
       "localizations" : {
         "en" : {
@@ -9386,7 +11604,16 @@
         }
       }
     },
-    "导入…" : {},
+    "导入…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Import…"
+          }
+        }
+      }
+    },
     "导入「%@」？" : {
       "localizations" : {
         "en" : {
@@ -9397,13 +11624,88 @@
         }
       }
     },
-    "导入的内容在内存里，稍后会自动再试" : {},
+    "导入不能撤销。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Importing can’t be undone."
+          }
+        }
+      }
+    },
+    "导入不能撤销；动手之前会先把现在的存一份，设置和快捷键可以用「从备份恢复」换回去。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Importing can’t be undone. The current settings and data are saved first, so you can switch settings and shortcuts back with Restore from Backup."
+          }
+        }
+      }
+    },
+    "导入前 · %@ %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Before Import · %1$@ %2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "导入前 · %1$@ %2$@"
+          }
+        }
+      }
+    },
+    "导入后历史会保留得比现在少（保留时间、图片上限、翻译历史条数变小，或者退出、锁屏时清空），超出的普通历史会被清理；收藏和片段不动。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "After importing, history will be kept for less than now (a shorter retention period, a lower image limit, fewer translation history entries, or clearing on quit or lock), and regular history beyond that will be cleared; favorites and snippets aren’t affected."
+          }
+        }
+      }
+    },
+    "导入后隐私保护会比现在弱：%@。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "After importing, privacy protection will be weaker: %@."
+          }
+        }
+      }
+    },
+    "导入的内容在内存里，稍后会自动再试" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The imported content is in memory; Kitty Tools will try saving again shortly"
+          }
+        }
+      }
+    },
     "导入的脚本.sh" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Imported Script.sh"
+          }
+        }
+      }
+    },
+    "导入设置与数据" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Import Settings and Data"
           }
         }
       }
@@ -9428,9 +11730,56 @@
         }
       }
     },
-    "导出与导入" : {},
-    "导出为 Markdown" : {},
-    "导出到一半" : {},
+    "导出与导入" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export and Import"
+          }
+        }
+      }
+    },
+    "导出为 Markdown" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export as Markdown"
+          }
+        }
+      }
+    },
+    "导出为 Markdown…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export as Markdown…"
+          }
+        }
+      }
+    },
+    "导出到一半" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export stopped partway"
+          }
+        }
+      }
+    },
+    "导出到这里" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export Here"
+          }
+        }
+      }
+    },
     "导出和清空" : {
       "localizations" : {
         "en" : {
@@ -9451,9 +11800,56 @@
         }
       }
     },
-    "导出时设的密码" : {},
-    "导出没成" : {},
-    "导回导出过的文件夹不会重复；别处的 .md 文件每个变成一条新便签" : {},
+    "导出成一个 Markdown 文件；图片放在旁边的 attachments 文件夹里" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export as one Markdown file; images go in an attachments folder next to it"
+          }
+        }
+      }
+    },
+    "导出时设的密码" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Password set when exporting"
+          }
+        }
+      }
+    },
+    "导出没成" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t export"
+          }
+        }
+      }
+    },
+    "导出设置与数据" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export Settings and Data"
+          }
+        }
+      }
+    },
+    "导回导出过的文件夹不会重复；别处的 .md 文件每个变成一条新便签" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Importing a folder you exported doesn’t create duplicates; each .md file from elsewhere becomes a new note"
+          }
+        }
+      }
+    },
     "小" : {
       "localizations" : {
         "en" : {
@@ -9546,7 +11942,16 @@
       }
     },
     "屏幕角" : {},
-    "屏幕边缘" : {},
+    "屏幕边缘" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Screen Edge"
+          }
+        }
+      }
+    },
     "屏幕边缘一条细药丸；开着同步时跟着合" : {
       "localizations" : {
         "en" : {
@@ -9649,7 +12054,16 @@
         }
       }
     },
-    "左边" : {},
+    "左边" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Left"
+          }
+        }
+      }
+    },
     "已 %lld 分 %lld 秒" : {
       "localizations" : {
         "en" : {
@@ -9986,7 +12400,48 @@
         }
       }
     },
-    "已取消归档" : {},
+    "已取消归档" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unarchived"
+          }
+        }
+      }
+    },
+    "已取消归档 %lld 条" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Unarchived %lld note"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Unarchived %lld notes"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "已取消归档「%@」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unarchived “%@”"
+          }
+        }
+      }
+    },
     "已取消收藏" : {
       "localizations" : {
         "en" : {
@@ -9997,7 +12452,16 @@
         }
       }
     },
-    "已取消浮动" : {},
+    "已取消浮动" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stopped floating"
+          }
+        }
+      }
+    },
     "已取消隐藏" : {},
     "已取消隐藏 %lld 项" : {},
     "已取色 %@" : {
@@ -10468,7 +12932,64 @@
         }
       }
     },
-    "已导出" : {},
+    "已导入" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imported"
+          }
+        }
+      }
+    },
+    "已导入 %lld 条新便签" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Imported %lld new note"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Imported %lld new notes"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "已导入：新增 %lld 条，更新 %lld 条" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Imported: %1$lld new, %2$lld updated"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "已导入：新增 %1$lld 条，更新 %2$lld 条"
+          }
+        }
+      }
+    },
+    "已导出" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exported"
+          }
+        }
+      }
+    },
     "已导出 %lld 条" : {
       "localizations" : {
         "en" : {
@@ -10491,8 +13012,38 @@
         }
       }
     },
-    "已导出 %lld 条便签" : {},
-    "已导出「%@」" : {},
+    "已导出 %lld 条便签" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Exported %lld note"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Exported %lld notes"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "已导出「%@」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exported “%@”"
+          }
+        }
+      }
+    },
     "已展开" : {
       "localizations" : {
         "en" : {
@@ -10535,6 +13086,38 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "已强制结束 %1$@（PID %2$@）"
+          }
+        }
+      }
+    },
+    "已归档" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Archived"
+          }
+        }
+      }
+    },
+    "已归档 %lld 条" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Archived %lld note"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Archived %lld notes"
+                }
+              }
+            }
           }
         }
       }
@@ -10792,7 +13375,16 @@
         }
       }
     },
-    "已收回边缘" : {},
+    "已收回边缘" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sent back to edge"
+          }
+        }
+      }
+    },
     "已收藏" : {
       "localizations" : {
         "en" : {
@@ -10813,8 +13405,48 @@
         }
       }
     },
-    "已放回" : {},
-    "已放回「%@」" : {},
+    "已放回" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Put back"
+          }
+        }
+      }
+    },
+    "已放回 %lld 条" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Put back %lld note"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Put back %lld notes"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "已放回「%@」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Put back “%@”"
+          }
+        }
+      }
+    },
     "已放弃录屏" : {
       "localizations" : {
         "en" : {
@@ -10897,6 +13529,28 @@
         }
       }
     },
+    "已更新 %lld 条便签" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Updated %lld note"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Updated %lld notes"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "已更新到 %@" : {
       "localizations" : {
         "en" : {
@@ -10917,8 +13571,26 @@
         }
       }
     },
-    "已有的备份" : {},
-    "已浮在屏幕上" : {},
+    "已有的备份" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Backups"
+          }
+        }
+      }
+    },
+    "已浮在屏幕上" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Floating on screen"
+          }
+        }
+      }
+    },
     "已添加" : {
       "localizations" : {
         "en" : {
@@ -10969,7 +13641,16 @@
         }
       }
     },
-    "已清空草稿" : {},
+    "已清空草稿" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Draft cleared"
+          }
+        }
+      }
+    },
     "已移到「%@」" : {},
     "已移到废纸篓" : {
       "localizations" : {
@@ -11011,7 +13692,16 @@
         }
       }
     },
-    "已经存过去的文件不会删" : {},
+    "已经存过去的文件不会删" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Files already saved there aren’t deleted"
+          }
+        }
+      }
+    },
     "已经最长了，按 ↩ 拷贝" : {
       "localizations" : {
         "en" : {
@@ -11100,7 +13790,16 @@
         }
       }
     },
-    "已记下" : {},
+    "已记下" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saved"
+          }
+        }
+      }
+    },
     "已试过" : {
       "localizations" : {
         "en" : {
@@ -11272,7 +13971,16 @@
         }
       }
     },
-    "带标题的标签" : {},
+    "带标题的标签" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tabs with Titles"
+          }
+        }
+      }
+    },
     "带格式" : {
       "localizations" : {
         "en" : {
@@ -11581,6 +14289,16 @@
         }
       }
     },
+    "引用" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quote"
+          }
+        }
+      }
+    },
     "弱" : {
       "localizations" : {
         "en" : {
@@ -11671,7 +14389,16 @@
         }
       }
     },
-    "归档是空的" : {},
+    "归档是空的" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Archive is empty"
+          }
+        }
+      }
+    },
     "当前 %@" : {
       "localizations" : {
         "en" : {
@@ -12074,6 +14801,16 @@
         }
       }
     },
+    "待办" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "To Do"
+          }
+        }
+      }
+    },
     "待选" : {
       "localizations" : {
         "en" : {
@@ -12096,6 +14833,16 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "待选，%1$@ %2$@ 像素"
+          }
+        }
+      }
+    },
+    "很宽" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Extra Wide"
           }
         }
       }
@@ -12291,7 +15038,16 @@
         }
       }
     },
-    "快速记一条、屏幕边缘的便签和全部便签窗口里按什么键" : {},
+    "快速记一条、屏幕边缘的便签和全部便签窗口里按什么键" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Which keys to press in Quick Note, edge notes, and the All Notes window"
+          }
+        }
+      }
+    },
     "快速记一条里：换行" : {
       "localizations" : {
         "en" : {
@@ -12394,7 +15150,56 @@
         }
       }
     },
-    "恢复" : {},
+    "恢复" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restore"
+          }
+        }
+      }
+    },
+    "恢复不能撤销。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restoring can’t be undone."
+          }
+        }
+      }
+    },
+    "恢复不能撤销；动手之前会先把现在的存一份，设置和快捷键可以用「从备份恢复」换回去。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restoring can’t be undone. The current settings and data are saved first, so you can switch settings and shortcuts back with Restore from Backup."
+          }
+        }
+      }
+    },
+    "恢复后历史会保留得比现在少（保留时间、图片上限、翻译历史条数变小，或者退出、锁屏时清空），超出的普通历史会被清理；收藏和片段不动。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "After restoring, history will be kept for less than now (a shorter retention period, a lower image limit, fewer translation history entries, or clearing on quit or lock), and regular history beyond that will be cleared; favorites and snippets aren’t affected."
+          }
+        }
+      }
+    },
+    "恢复后隐私保护会比现在弱：%@。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "After restoring, privacy protection will be weaker: %@."
+          }
+        }
+      }
+    },
     "恢复提醒（暂停到 %@）" : {
       "localizations" : {
         "en" : {
@@ -12430,7 +15235,16 @@
     "恢复默认排列" : {},
     "恢复默认排列…" : {},
     "恢复默认排列？" : {},
-    "悬停即打开" : {},
+    "悬停即打开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open on hover"
+          }
+        }
+      }
+    },
     "悬停时在「认元素 / 只认窗口」之间切" : {
       "localizations" : {
         "en" : {
@@ -12461,13 +15275,32 @@
         }
       }
     },
-    "悬停预览" : {},
+    "悬停预览" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Preview on hover"
+          }
+        }
+      }
+    },
     "意大利语" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Italian"
+          }
+        }
+      }
+    },
+    "感应范围" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hover area"
           }
         }
       }
@@ -12835,7 +15668,16 @@
         }
       }
     },
-    "所有显示器" : {},
+    "所有显示器" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All Displays"
+          }
+        }
+      }
+    },
     "打不开「%@」" : {
       "localizations" : {
         "en" : {
@@ -13037,7 +15879,16 @@
         }
       }
     },
-    "打开全部便签…" : {},
+    "打开全部便签…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open All Notes…"
+          }
+        }
+      }
+    },
     "打开刘海岛" : {
       "localizations" : {
         "en" : {
@@ -13350,6 +16201,26 @@
         }
       }
     },
+    "找不到同步文件夹：没接上、被挪走或删了，找到了自己接着同步" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can’t find the sync folder: it’s disconnected, moved, or deleted. Syncing resumes once it’s found"
+          }
+        }
+      }
+    },
+    "找不到文件夹（没连上、被移走，或者没有访问权限）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can’t find the folder (it’s disconnected or was moved, or Kitty Tools doesn’t have access)"
+          }
+        }
+      }
+    },
     "找不到模板「%@」" : {},
     "找不到要录的屏幕" : {
       "localizations" : {
@@ -13362,6 +16233,16 @@
       }
     },
     "找不到要打开的 App" : {},
+    "找不到这个服务器" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "server not found"
+          }
+        }
+      }
+    },
     "找不到选区所在的屏幕" : {
       "localizations" : {
         "en" : {
@@ -13966,6 +16847,16 @@
         }
       }
     },
+    "换个文件试试" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Try another file"
+          }
+        }
+      }
+    },
     "换个词试试" : {
       "localizations" : {
         "en" : {
@@ -13983,6 +16874,50 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Switch to the next paper color"
+          }
+        }
+      }
+    },
+    "换成文件里的样子：改过的 %lld 个照文件，其余回到默认的组合" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Replaced with the file’s version: %lld changed shortcut from the file, the rest back to defaults"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Replaced with the file’s version: %lld changed shortcuts from the file, the rest back to defaults"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "换成文件里的样子：改过的 %lld 项照文件，其余回到默认值" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Replaced with the file’s version: %lld changed option from the file, the rest back to defaults"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Replaced with the file’s version: %lld changed options from the file, the rest back to defaults"
+                }
+              }
+            }
           }
         }
       }
@@ -14017,8 +16952,26 @@
         }
       }
     },
-    "换颜色" : {},
-    "换颜色（⌘. 换下一种）" : {},
+    "换颜色" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Change Color"
+          }
+        }
+      }
+    },
+    "换颜色（⌘. 换下一种）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Change Color (⌘. for the next one)"
+          }
+        }
+      }
+    },
     "授权" : {
       "localizations" : {
         "en" : {
@@ -14082,7 +17035,16 @@
         }
       }
     },
-    "接上这段就超过一条便签 1 MB 的上限了，换一条记" : {},
+    "接上这段就超过一条便签 1 MB 的上限了，换一条记" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adding this would go over the 1 MB limit for a note. Choose another note"
+          }
+        }
+      }
+    },
     "接口" : {
       "localizations" : {
         "en" : {
@@ -14268,6 +17230,26 @@
         }
       }
     },
+    "插入" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Insert"
+          }
+        }
+      }
+    },
+    "插入图片…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Insert Image…"
+          }
+        }
+      }
+    },
     "搜 App、系统设置、文件、书签、网址、路径、算式（也能换算单位和进制）和系统命令（lock、quit、kill 这些），↩ 打开，⌘K 看这一项的全部操作" : {
       "localizations" : {
         "en" : {
@@ -14368,7 +17350,16 @@
         }
       }
     },
-    "搜索便签" : {},
+    "搜索便签" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search Notes"
+          }
+        }
+      }
+    },
     "搜索便签；光标在正文里时是在这条便签里查找" : {
       "localizations" : {
         "en" : {
@@ -14651,12 +17642,32 @@
         }
       }
     },
+    "操作（⌘K）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Actions (⌘K)"
+          }
+        }
+      }
+    },
     "支持 {date} {time} {clipboard} {cursor} 等" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Supports {date}, {time}, {clipboard}, {cursor}, and more"
+          }
+        }
+      }
+    },
+    "收回边缘" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Send Back to Edge"
           }
         }
       }
@@ -14771,6 +17782,16 @@
         }
       }
     },
+    "收藏夹超过 %lld 个，先取消勾选「片段与收藏」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "More than %lld collections. Deselect “Snippets and Favorites” first."
+          }
+        }
+      }
+    },
     "收藏最多 %lld 个，先取消一个" : {
       "localizations" : {
         "en" : {
@@ -14872,6 +17893,44 @@
         }
       }
     },
+    "改于 %@ · %lld 字" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edited %1$@ · %2$#@chars@"
+          },
+          "substitutions" : {
+            "chars" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg character"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg characters"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "改于 %1$@ · %2$lld 字"
+          }
+        }
+      }
+    },
     "改别名…" : {
       "localizations" : {
         "en" : {
@@ -14963,6 +18022,28 @@
         }
       }
     },
+    "改过的 %lld 个，其余是默认的组合" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld changed shortcut; the rest are defaults"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld changed shortcuts; the rest are defaults"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "改这个序号的编号" : {
       "localizations" : {
         "en" : {
@@ -15001,6 +18082,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Translation that didn’t fit"
+          }
+        }
+      }
+    },
+    "放回" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Put Back"
           }
         }
       }
@@ -15198,6 +18289,16 @@
         }
       }
     },
+    "文件不加密，片段、收藏、生词和便签原样写在里面。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Files aren’t encrypted; snippets, favorites, words, and notes are written in them as is."
+          }
+        }
+      }
+    },
     "文件名" : {
       "localizations" : {
         "en" : {
@@ -15220,9 +18321,37 @@
     },
     "文件夹原样交给 App；文件交给认得它的 App，不认得的改成打开它所在的文件夹。脚本和可执行文件只交给编辑器，交给终端的是它所在的文件夹，不会运行它。选了几样时编辑器全打开，终端只开第一个。" : {},
     "文件夹名字" : {},
-    "文件夹没有的话连接时新建，每台电脑填同一个。密码存在这台 Mac 的钥匙串里；有的服务要在网页上另外生成给第三方应用用的密码。" : {},
+    "文件夹没有的话连接时新建，每台电脑填同一个。密码存在这台 Mac 的钥匙串里；有的服务要在网页上另外生成给第三方应用用的密码。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "If the folder doesn’t exist, it’s created when you connect. Enter the same one on each computer. The password is stored in this Mac’s keychain; some services require a separate app password generated on their website."
+          }
+        }
+      }
+    },
     "文件夹里叫这些名字的文件和文件夹，都不压进去" : {},
-    "文件夹里的东西留着，这台 Mac 上的数据也不动" : {},
+    "文件夹里有更新版本的 Kitty Tools 写的东西，先更新这台 Mac 上的 Kitty Tools" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The folder has data written by a newer version of Kitty Tools. Update Kitty Tools on this Mac first"
+          }
+        }
+      }
+    },
+    "文件夹里的东西留着，这台 Mac 上的数据也不动" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The folder’s contents stay, and the data on this Mac isn’t changed"
+          }
+        }
+      }
+    },
     "文件已不存在" : {
       "localizations" : {
         "en" : {
@@ -15283,9 +18412,37 @@
         }
       }
     },
+    "文件读不出来：可能被改动过，或者来自更新版本的 Kitty Tools" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can’t read the file: it may have been modified, or it’s from a newer version of Kitty Tools"
+          }
+        }
+      }
+    },
     "文件读不到（被移走了，或者没有权限）" : {},
-    "文件里带着加密的密钥" : {},
-    "文件里没有可导入的内容" : {},
+    "文件里带着加密的密钥" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The file includes encrypted keys"
+          }
+        }
+      }
+    },
+    "文件里没有可导入的内容" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The file has nothing to import"
+          }
+        }
+      }
+    },
     "文字" : {
       "localizations" : {
         "en" : {
@@ -15316,12 +18473,32 @@
         }
       }
     },
+    "文字的片段、收藏和收藏夹；图片和文件的收藏不同步" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Text snippets, favorites, and collections; image and file favorites aren’t synced"
+          }
+        }
+      }
+    },
     "文字识别失败" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Text recognition failed"
+          }
+        }
+      }
+    },
+    "文字颜色" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Text Color"
           }
         }
       }
@@ -15342,6 +18519,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Documents"
+          }
+        }
+      }
+    },
+    "斜体" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Italic"
           }
         }
       }
@@ -15377,8 +18564,26 @@
         }
       }
     },
-    "新便签" : {},
-    "新便签的标题" : {},
+    "新便签" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New Note"
+          }
+        }
+      }
+    },
+    "新便签的标题" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New note title"
+          }
+        }
+      }
+    },
     "新功能" : {
       "localizations" : {
         "en" : {
@@ -15420,7 +18625,16 @@
         }
       }
     },
-    "新建便签（⌘N）" : {},
+    "新建便签（⌘N）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New Note (⌘N)"
+          }
+        }
+      }
+    },
     "新建便签（便签墙上直接打开它的编辑卡）" : {
       "localizations" : {
         "en" : {
@@ -15562,6 +18776,16 @@
         }
       }
     },
+    "无序列表" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bulleted List"
+          }
+        }
+      }
+    },
     "无底" : {
       "localizations" : {
         "en" : {
@@ -15611,6 +18835,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Yesterday"
+          }
+        }
+      }
+    },
+    "昨天 %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "yesterday at %@"
+          }
+        }
+      }
+    },
+    "是同步文件夹里的文件" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "from a sync folder"
           }
         }
       }
@@ -15685,7 +18929,16 @@
         }
       }
     },
-    "显示器" : {},
+    "显示器" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Display"
+          }
+        }
+      }
+    },
     "显示器睡眠时已自动停止" : {
       "localizations" : {
         "en" : {
@@ -15736,7 +18989,16 @@
         }
       }
     },
-    "显示方式" : {},
+    "显示方式" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Layout"
+          }
+        }
+      }
+    },
     "显示点按：关" : {
       "localizations" : {
         "en" : {
@@ -15793,7 +19055,16 @@
         }
       }
     },
-    "普通历史、图片和文件类的收藏不在文件里；截图的存储文件夹、登录时打开和系统权限要在新电脑上重新设。" : {},
+    "普通历史、图片和文件类的收藏不在文件里；截图的存储文件夹、登录时打开和系统权限要在新电脑上重新设。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Regular history and image and file favorites aren’t included. Set the screenshot folder, Open at Login, and system permissions again on the new computer."
+          }
+        }
+      }
+    },
     "智谱 GLM" : {
       "localizations" : {
         "en" : {
@@ -15904,7 +19175,16 @@
         }
       }
     },
-    "暂时不看的便签可以归档，要用时再取消归档" : {},
+    "暂时不看的便签可以归档，要用时再取消归档" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Archive notes you don’t need for now, and unarchive them when you do"
+          }
+        }
+      }
+    },
     "更多" : {
       "localizations" : {
         "en" : {
@@ -16129,8 +19409,86 @@
         }
       }
     },
-    "最多同时浮 %lld 张" : {},
-    "最近删除是空的" : {},
+    "最多同时浮 %lld 张" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Up to %lld floating note at a time"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Up to %lld floating notes at a time"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "最近一份：%@，共 %lld 份" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Latest: %1$@, %2$#@copies@ in total"
+          },
+          "substitutions" : {
+            "copies" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg backup"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg backups"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "最近一份：%1$@，共 %2$lld 份"
+          }
+        }
+      }
+    },
+    "最近删除" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recently Deleted"
+          }
+        }
+      }
+    },
+    "最近删除是空的" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recently Deleted is empty"
+          }
+        }
+      }
+    },
     "最近打开和下载的文件" : {
       "localizations" : {
         "en" : {
@@ -16245,14 +19603,63 @@
         }
       }
     },
-    "有了第一条便签才出现；关掉后便签照样能从快捷键、启动器和全部便签窗口打开" : {},
+    "有了第一条便签才出现；关掉后便签照样能从快捷键、启动器和全部便签窗口打开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Appears once you have a note. When this is off, you can still open notes with shortcuts, the Launcher, and the All Notes window"
+          }
+        }
+      }
+    },
     "有人碰键盘或鼠标时显示怎么退出" : {},
+    "有便签的正文超过 %lld MB，先取消勾选「便签」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A note’s text is over %lld MB. Deselect “Notes” first."
+          }
+        }
+      }
+    },
+    "有便签的正文超过 %lld MB，自动备份里没带便签" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A note’s text is over %lld MB, so notes weren’t included in the automatic backup"
+          }
+        }
+      }
+    },
     "有变化时在刘海岛上弹一下，同别的提示。没打开的不监听，也不要任何授权。" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pops up on the notch when something changes, like other notices. Ones that are off aren't monitored and need no permissions."
+          }
+        }
+      }
+    },
+    "有哪些提醒、各自的时间和方式；两台都开着时两台都响" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your reminders, with their times and styles; if two computers are on, both alert"
+          }
+        }
+      }
+    },
+    "有序列表" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Numbered List"
           }
         }
       }
@@ -16387,7 +19794,156 @@
         }
       }
     },
-    "服务器地址" : {},
+    "服务器上已经有同名的了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Something with the same name already exists on the server"
+          }
+        }
+      }
+    },
+    "服务器上找不到同步的那个文件夹：被挪走或删了，找到了自己接着同步" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can’t find the sync folder on the server: it was moved or deleted. Syncing resumes once it’s found"
+          }
+        }
+      }
+    },
+    "服务器上有文件还没拿下来，拿下来了自己接着同步" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Some files on the server haven’t been fetched yet. Syncing resumes once they have"
+          }
+        }
+      }
+    },
+    "服务器上没有这个文件夹" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This folder doesn’t exist on the server"
+          }
+        }
+      }
+    },
+    "服务器上的空间满了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The server is out of space"
+          }
+        }
+      }
+    },
+    "服务器上那个文件夹里的同步记录被换掉或删了：先停止同步，再连一个新的空文件夹（每台电脑都换过去）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The sync records in the folder on the server were replaced or deleted: stop syncing, then connect to a new empty folder (and switch every computer to it)"
+          }
+        }
+      }
+    },
+    "服务器不让读写这个文件夹" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The server doesn’t allow reading or writing this folder"
+          }
+        }
+      }
+    },
+    "服务器出错（HTTP %@）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Server error (HTTP %@)"
+          }
+        }
+      }
+    },
+    "服务器回的东西看不懂，可能不是 WebDAV 地址" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can’t understand the server’s response. This may not be a WebDAV address"
+          }
+        }
+      }
+    },
+    "服务器地址" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Server address"
+          }
+        }
+      }
+    },
+    "服务器很久没回应" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "the server took too long to respond"
+          }
+        }
+      }
+    },
+    "服务器没开或者端口不对" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "the server is down or the port is wrong"
+          }
+        }
+      }
+    },
+    "服务器的证书不受信任（不支持自签的证书）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "the server’s certificate isn’t trusted (self-signed certificates aren’t supported)"
+          }
+        }
+      }
+    },
+    "服务器说请求太多，%@ 后接着同步" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The server reported too many requests. Syncing resumes after %@"
+          }
+        }
+      }
+    },
+    "服务器说请求太多，过一会儿再试" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The server reported too many requests. Try again later"
+          }
+        }
+      }
+    },
     "服务地址" : {
       "localizations" : {
         "en" : {
@@ -16494,6 +20050,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Untitled"
+          }
+        }
+      }
+    },
+    "未命名便签" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Untitled Note"
           }
         }
       }
@@ -16649,6 +20215,17 @@
         }
       }
     },
+    "柠檬" : {
+      "comment" : "便签纸色的名字",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lemon"
+          }
+        }
+      }
+    },
     "查一次 hello。" : {
       "localizations" : {
         "en" : {
@@ -16689,7 +20266,16 @@
         }
       }
     },
-    "查找" : {},
+    "查找" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Find"
+          }
+        }
+      }
+    },
     "查看全部快捷键…" : {
       "localizations" : {
         "en" : {
@@ -16790,7 +20376,46 @@
         }
       }
     },
-    "标题" : {},
+    "标题" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Title"
+          }
+        }
+      }
+    },
+    "标题 1" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Heading 1"
+          }
+        }
+      }
+    },
+    "标题 2" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Heading 2"
+          }
+        }
+      }
+    },
+    "标题 3" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Heading 3"
+          }
+        }
+      }
+    },
     "标题最多 %lld 个字，说明最多 %lld 个字。" : {
       "localizations" : {
         "zh-Hans" : {
@@ -16801,7 +20426,47 @@
         }
       }
     },
-    "样式" : {},
+    "标题（可不填）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Title (optional)"
+          }
+        }
+      }
+    },
+    "样式" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Style"
+          }
+        }
+      }
+    },
+    "格式" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Format"
+          }
+        }
+      }
+    },
+    "桃" : {
+      "comment" : "便签纸色的名字",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Peach"
+          }
+        }
+      }
+    },
     "框选、标注、长截图和录屏的按键" : {
       "localizations" : {
         "en" : {
@@ -16971,6 +20636,16 @@
         }
       }
     },
+    "橙" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Orange"
+          }
+        }
+      }
+    },
     "橙色" : {
       "localizations" : {
         "en" : {
@@ -17043,6 +20718,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Getting exchange rates…"
+          }
+        }
+      }
+    },
+    "正在同步…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Syncing…"
           }
         }
       }
@@ -17199,7 +20884,16 @@
         }
       }
     },
-    "正在看这个文件夹…" : {},
+    "正在看这个文件夹…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Checking this folder…"
+          }
+        }
+      }
+    },
     "正在记录" : {
       "localizations" : {
         "en" : {
@@ -17332,7 +21026,26 @@
         }
       }
     },
-    "正文" : {},
+    "正文" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Body"
+          }
+        }
+      }
+    },
+    "正文字号" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Text size"
+          }
+        }
+      }
+    },
     "正文里右键：任务状态（五种）、文字颜色（红橙绿蓝紫灰 / 默认）；点在方框上只弹五种状态" : {
       "localizations" : {
         "en" : {
@@ -17394,9 +21107,53 @@
       }
     },
     "每 %lld 分钟" : {},
-    "每天自动备份" : {},
+    "每天自动备份" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Back up automatically every day"
+          }
+        }
+      }
+    },
+    "每天那份也存到这里。%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Each day’s copy is also saved here. %@"
+          }
+        }
+      }
+    },
+    "每天那份也存到这里。文件名末尾的 %@ 是这台 Mac 的编号，几台 Mac 可以共用一个文件夹。%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Each day’s copy is also saved here. The %1$@ at the end of the file name identifies this Mac, so several Macs can share a folder. %2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "每天那份也存到这里。文件名末尾的 %1$@ 是这台 Mac 的编号，几台 Mac 可以共用一个文件夹。%2$@"
+          }
+        }
+      }
+    },
     "每月几号" : {},
-    "每条便签一个 .md 文件，正文里的图片放在旁边的 attachments 文件夹" : {},
+    "每条便签一个 .md 文件，正文里的图片放在旁边的 attachments 文件夹" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "One .md file per note; images in note text go in an attachments folder next to them"
+          }
+        }
+      }
+    },
     "每条还可以写 url（↩ 用浏览器打开）、path（↩ 打开文件，⌘↩ 在访达中显示，⌘Y 快速查看）、icon（这一条的图标，写法同 @kitty.icon；{\"type\": \"fileicon\", \"path\": …} 用那个文件的图标）、autocomplete（⇥ 填进搜索框，接在关键词后面）、text 里的 copy（⌘C 复制的）。" : {
       "localizations" : {
         "en" : {
@@ -17469,9 +21226,46 @@
         }
       }
     },
-    "永久删除" : {},
-    "永久删除「%@」？" : {},
-    "永久删除（⌘⌫）" : {},
+    "永久删除" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete Permanently"
+          }
+        }
+      }
+    },
+    "永久删除…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete Permanently…"
+          }
+        }
+      }
+    },
+    "永久删除「%@」？" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete “%@” permanently?"
+          }
+        }
+      }
+    },
+    "永久删除（⌘⌫）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete Permanently (⌘⌫)"
+          }
+        }
+      }
+    },
     "汇率" : {
       "localizations" : {
         "en" : {
@@ -17508,6 +21302,27 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Currency conversion; you can also type “100 USD to JPY” directly (rates need the network)"
+          }
+        }
+      }
+    },
+    "沙" : {
+      "comment" : "便签纸色的名字",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sand"
+          }
+        }
+      }
+    },
+    "没写名字的一台" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An unnamed computer"
           }
         }
       }
@@ -17558,6 +21373,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Couldn’t save “%@”"
+          }
+        }
+      }
+    },
+    "没存上，正在重试" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not saved, retrying"
           }
         }
       }
@@ -17705,7 +21530,16 @@
         }
       }
     },
-    "没有匹配的便签" : {},
+    "没有匹配的便签" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No matching notes"
+          }
+        }
+      }
+    },
     "没有匹配的应用，试试其它名字或别名" : {
       "localizations" : {
         "en" : {
@@ -17838,6 +21672,16 @@
     },
     "没有压缩" : {},
     "没有取消隐藏" : {},
+    "没有变化" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No changes"
+          }
+        }
+      }
+    },
     "没有可导出的记录" : {
       "localizations" : {
         "en" : {
@@ -17939,8 +21783,26 @@
       }
     },
     "没有对上的动画表情" : {},
-    "没有导入" : {},
-    "没有导出" : {},
+    "没有导入" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing imported"
+          }
+        }
+      }
+    },
+    "没有导出" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing exported"
+          }
+        }
+      }
+    },
     "没有屏幕录制授权" : {
       "localizations" : {
         "en" : {
@@ -17963,7 +21825,16 @@
       }
     },
     "没有彻底删除" : {},
-    "没有恢复" : {},
+    "没有恢复" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing restored"
+          }
+        }
+      }
+    },
     "没有找到「%@」" : {
       "localizations" : {
         "en" : {
@@ -18016,6 +21887,16 @@
     },
     "没有改名" : {},
     "没有新建" : {},
+    "没有更多内容" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No additional text"
+          }
+        }
+      }
+    },
     "没有本地结果时用它兜底" : {
       "localizations" : {
         "en" : {
@@ -18032,6 +21913,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Search with it when there are no local results"
+          }
+        }
+      }
+    },
+    "没有权限写这个文件夹（到 系统设置 › %@ › 文件和文件夹 里允许 Kitty Tools，或者换一个文件夹）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No permission to write to this folder (allow Kitty Tools in System Settings › %@ › Files & Folders, or choose another folder)"
           }
         }
       }
@@ -18180,7 +22071,16 @@
         }
       }
     },
-    "没有选中的便签" : {},
+    "没有选中的便签" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No note selected"
+          }
+        }
+      }
+    },
     "没有隐藏" : {},
     "没有麦克风和辅助功能授权" : {
       "localizations" : {
@@ -18214,6 +22114,16 @@
     },
     "没点「知道了」或「稍后」就再响一次，第 3 次换成全屏，之后不再催" : {},
     "没理会时再催" : {},
+    "没联网" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "not connected to the internet"
+          }
+        }
+      }
+    },
     "没能%@" : {},
     "没能%@到「%@」" : {
       "localizations" : {
@@ -18221,6 +22131,16 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "没能%1$@到「%2$@」"
+          }
+        }
+      }
+    },
+    "没能先备份现在的设置和数据（%@），所以没有导入" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t back up the current settings and data first (%@), so nothing was imported"
           }
         }
       }
@@ -18292,6 +22212,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Couldn’t start the screen saver"
+          }
+        }
+      }
+    },
+    "没能备份：%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t back up: %@"
+          }
+        }
+      }
+    },
+    "没能备份：内容编不出来" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t back up: the content couldn’t be encoded"
           }
         }
       }
@@ -18395,6 +22335,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Couldn’t create the GIF file"
+          }
+        }
+      }
+    },
+    "没能新建导出文件夹：%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t create the export folder: %@"
           }
         }
       }
@@ -18647,6 +22597,26 @@
         }
       }
     },
+    "浮动便签" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Floating Note"
+          }
+        }
+      }
+    },
+    "浮在屏幕上" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Float on Screen"
+          }
+        }
+      }
+    },
     "浮窗位置" : {
       "localizations" : {
         "en" : {
@@ -18851,7 +22821,26 @@
         }
       }
     },
-    "清空最近删除？" : {},
+    "清空最近删除…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Empty Recently Deleted…"
+          }
+        }
+      }
+    },
+    "清空最近删除？" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Empty Recently Deleted?"
+          }
+        }
+      }
+    },
     "清空翻译历史…" : {
       "localizations" : {
         "en" : {
@@ -18892,13 +22881,32 @@
         }
       }
     },
-    "清除搜索" : {},
+    "清除搜索" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear Search"
+          }
+        }
+      }
+    },
     "清除搜索和筛选" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Clear Search and Filters"
+          }
+        }
+      }
+    },
+    "清除格式" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear Formatting"
           }
         }
       }
@@ -18959,6 +22967,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Volcengine Translate error: %@"
+          }
+        }
+      }
+    },
+    "灰" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gray"
           }
         }
       }
@@ -19058,6 +23076,36 @@
         }
       }
     },
+    "片段与收藏" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Snippets and Favorites"
+          }
+        }
+      }
+    },
+    "片段和收藏" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Snippets and Favorites"
+          }
+        }
+      }
+    },
+    "片段和文字收藏超过 %lld 条，先取消勾选「片段与收藏」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "More than %lld snippets and text favorites. Deselect “Snippets and Favorites” first."
+          }
+        }
+      }
+    },
     "版本 %@" : {
       "localizations" : {
         "en" : {
@@ -19104,7 +23152,16 @@
         }
       }
     },
-    "特大" : {},
+    "特大" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Extra Large"
+          }
+        }
+      }
+    },
     "状态" : {},
     "状态屏" : {
       "localizations" : {
@@ -19139,6 +23196,26 @@
         }
       }
     },
+    "状态屏的状态" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Status Screen Statuses"
+          }
+        }
+      }
+    },
+    "状态屏里自己写的那几个状态" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Statuses you wrote yourself for the Status Screen"
+          }
+        }
+      }
+    },
     "状态屏需要「辅助功能」授权" : {},
     "状态屏：%@。%@" : {
       "localizations" : {
@@ -19146,6 +23223,17 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "状态屏：%1$@。%2$@"
+          }
+        }
+      }
+    },
+    "玫瑰" : {
+      "comment" : "便签纸色的名字",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rose"
           }
         }
       }
@@ -19180,7 +23268,16 @@
         }
       }
     },
-    "现在也能同步设置、片段和收藏这些了：在下面勾上要同步的几类，勾的时候先问合不合在一起" : {},
+    "现在也能同步设置、片段和收藏这些了：在下面勾上要同步的几类，勾的时候先问合不合在一起" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Settings, snippets, favorites, and more can sync now too: select the categories below, and you’ll be asked whether to merge as you select each one"
+          }
+        }
+      }
+    },
     "现在清空…" : {
       "localizations" : {
         "en" : {
@@ -19224,6 +23321,26 @@
       }
     },
     "现有的「启动器」是搜索框，和启动台是两个东西：名字、设置、快捷键都分开。" : {},
+    "生词本" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Word List"
+          }
+        }
+      }
+    },
+    "生词本超过 %lld 条，先取消勾选「生词本」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "More than %lld Word List entries. Deselect “Word List” first."
+          }
+        }
+      }
+    },
     "用 %@ 搜索…" : {
       "localizations" : {
         "en" : {
@@ -19371,7 +23488,26 @@
         }
       }
     },
-    "用户名" : {},
+    "用户名" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Username"
+          }
+        }
+      }
+    },
+    "用户名或密码不对（有的服务要在网页上另外生成给第三方应用用的密码）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Incorrect username or password (some services require a separate app password generated on their website)"
+          }
+        }
+      }
+    },
     "用查天气的例子新建一个，在启动器里输「tq 空格 北京」就能跑；或者点上面的「新建脚本」选好语言和结果方式" : {
       "localizations" : {
         "en" : {
@@ -19398,6 +23534,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Replace the original with the first successful translation (the text selected in your note or in the original app)"
+          }
+        }
+      }
+    },
+    "用这个文件夹同步" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sync with This Folder"
           }
         }
       }
@@ -19496,7 +23642,28 @@
         }
       }
     },
-    "留 %lld 天后自动删除" : {},
+    "留 %lld 天后自动删除" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Deleted automatically after %lld day"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Deleted automatically after %lld days"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "留着看、接着改的东西：屏幕边缘的那一叠、字号和行距，存在哪、怎么备份" : {
       "localizations" : {
         "en" : {
@@ -19657,7 +23824,16 @@
         }
       }
     },
-    "盖在全屏 App 上" : {},
+    "盖在全屏 App 上" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show over full-screen apps"
+          }
+        }
+      }
+    },
     "目标语言" : {
       "localizations" : {
         "en" : {
@@ -19708,7 +23884,16 @@
         }
       }
     },
-    "看、改、搜索、归档便签，找回删掉的" : {},
+    "看、改、搜索、归档便签，找回删掉的" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "View, edit, search, and archive notes, and recover deleted ones"
+          }
+        }
+      }
+    },
     "看原文" : {
       "localizations" : {
         "en" : {
@@ -19735,6 +23920,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "See What’s New"
+          }
+        }
+      }
+    },
+    "看看磁盘还有没有地方" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check whether the disk has free space"
           }
         }
       }
@@ -19857,6 +24052,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Graphite"
+          }
+        }
+      }
+    },
+    "石板" : {
+      "comment" : "便签纸色的名字",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Slate"
           }
         }
       }
@@ -20125,6 +24331,16 @@
         }
       }
     },
+    "空搜索框里收藏的那几个；这台没装的 App 不显示，装上就回来" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Favorites shown when the search field is empty; apps not installed on this computer are hidden and come back once installed"
+          }
+        }
+      }
+    },
     "空搜索框里调整选中的收藏的顺序" : {
       "localizations" : {
         "en" : {
@@ -20146,6 +24362,16 @@
         }
       }
     },
+    "窄" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Narrow"
+          }
+        }
+      }
+    },
     "窗口" : {
       "localizations" : {
         "en" : {
@@ -20156,7 +24382,16 @@
         }
       }
     },
-    "立即同步" : {},
+    "立即同步" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sync Now"
+          }
+        }
+      }
+    },
     "立即清空普通历史…" : {
       "localizations" : {
         "en" : {
@@ -20399,6 +24634,16 @@
         }
       }
     },
+    "粉" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pink"
+          }
+        }
+      }
+    },
     "粉色" : {
       "localizations" : {
         "en" : {
@@ -20415,6 +24660,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Thick"
+          }
+        }
+      }
+    },
+    "粗体" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bold"
           }
         }
       }
@@ -20705,6 +24960,36 @@
         }
       }
     },
+    "紧凑" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compact"
+          }
+        }
+      }
+    },
+    "紧急" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Urgent"
+          }
+        }
+      }
+    },
+    "紫" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Purple"
+          }
+        }
+      }
+    },
     "紫色" : {
       "localizations" : {
         "en" : {
@@ -20721,6 +25006,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Traditional Chinese"
+          }
+        }
+      }
+    },
+    "红" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Red"
           }
         }
       }
@@ -20815,7 +25110,6 @@
         }
       }
     },
-    "继续同步" : {},
     "继续录音" : {
       "localizations" : {
         "en" : {
@@ -20842,6 +25136,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Wikipedia"
+          }
+        }
+      }
+    },
+    "绿" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Green"
           }
         }
       }
@@ -21297,6 +25601,16 @@
         }
       }
     },
+    "翻译里收藏的词句" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Words and phrases saved in Translate"
+          }
+        }
+      }
+    },
     "翻译（文本，或识别出文字的图片）" : {
       "localizations" : {
         "en" : {
@@ -21645,6 +25959,17 @@
         }
       }
     },
+    "自定义 · %@" : {
+      "comment" : "自定义纸色的名字，后面是色相的叫法",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Custom · %@"
+          }
+        }
+      }
+    },
     "自定义…" : {},
     "自定义搜索或快捷链接…" : {
       "localizations" : {
@@ -21829,6 +26154,16 @@
         }
       }
     },
+    "蓝" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Blue"
+          }
+        }
+      }
+    },
     "蓝牙耳机、AirPods、USB 耳机：刘海两边出一下，蓝牙耳机带电量" : {
       "localizations" : {
         "en" : {
@@ -21859,12 +26194,33 @@
         }
       }
     },
+    "薄荷" : {
+      "comment" : "便签纸色的名字",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mint"
+          }
+        }
+      }
+    },
     "行为" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Behavior"
+          }
+        }
+      }
+    },
+    "行距" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Line spacing"
           }
         }
       }
@@ -21905,6 +26261,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Complete (keep calculating with the result, keep going into the folder)"
+          }
+        }
+      }
+    },
+    "裁切…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crop…"
+          }
+        }
+      }
+    },
+    "裁切图片" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crop Image"
+          }
+        }
+      }
+    },
+    "裁好的图存不下" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can’t save the cropped image"
           }
         }
       }
@@ -21970,6 +26356,16 @@
       }
     },
     "要「辅助功能」授权" : {},
+    "要先勾选「翻译服务」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Select “Translation Services” first"
+          }
+        }
+      }
+    },
     "要同步哪几类，到 设置 › 通用「同步」里勾上" : {
       "localizations" : {
         "en" : {
@@ -22032,8 +26428,38 @@
         }
       }
     },
-    "要翻译的文字和密钥会发到这些地址（共 %lld 个）：" : {},
-    "视图" : {},
+    "要翻译的文字和密钥会发到这些地址（共 %lld 个）：" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Text to translate and keys will be sent to this address (%lld in total):"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Text to translate and keys will be sent to these addresses (%lld in total):"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "视图" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "View"
+          }
+        }
+      }
+    },
     "视频里没有画面" : {
       "localizations" : {
         "en" : {
@@ -22117,8 +26543,26 @@
         }
       }
     },
-    "记下" : {},
-    "记下了，但还没存上" : {},
+    "记下" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save"
+          }
+        }
+      }
+    },
+    "记下了，但还没存上" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Added, but not saved yet"
+          }
+        }
+      }
+    },
     "记下复制过的文字、图片和文件，随时找回来粘贴" : {
       "localizations" : {
         "en" : {
@@ -22129,9 +26573,46 @@
         }
       }
     },
-    "记到" : {},
-    "记到「%@」" : {},
-    "记到哪" : {},
+    "记到" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add to"
+          }
+        }
+      }
+    },
+    "记到「%@」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add to “%@”"
+          }
+        }
+      }
+    },
+    "记到哪" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Where to add"
+          }
+        }
+      }
+    },
+    "记到已有的" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add to existing"
+          }
+        }
+      }
+    },
     "记录翻译历史" : {
       "localizations" : {
         "en" : {
@@ -22142,8 +26623,26 @@
         }
       }
     },
-    "记成新便签" : {},
-    "记点什么…" : {},
+    "记成新便签" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New note"
+          }
+        }
+      }
+    },
+    "记点什么…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jot something down…"
+          }
+        }
+      }
+    },
     "许可全文" : {
       "localizations" : {
         "en" : {
@@ -22194,8 +26693,36 @@
         }
       }
     },
-    "设置、快捷键、翻译服务、网页搜索、片段和文字收藏、生词本、便签存成一个文件，换电脑或重装后导回来" : {},
-    "设置与数据" : {},
+    "设置、快捷键、翻译服务、网页搜索、片段和文字收藏、生词本、便签存成一个文件，换电脑或重装后导回来" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save settings, shortcuts, translation services, web searches, snippets and text favorites, the Word List, and notes to one file, and bring them back after switching computers or reinstalling"
+          }
+        }
+      }
+    },
+    "设置与快捷键" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Settings and Shortcuts"
+          }
+        }
+      }
+    },
+    "设置与数据" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Settings and data"
+          }
+        }
+      }
+    },
     "设置刚改过的话，再右键一次" : {},
     "设置失败：%@" : {
       "localizations" : {
@@ -22669,6 +27196,16 @@
         }
       }
     },
+    "读不出这张图片" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can’t read this image"
+          }
+        }
+      }
+    },
     "读系统「日历」里的日程，打开「下一个日程」时会问一次授权。全天的、已拒绝的不算下一个日程；日程的内容只留在这台 Mac 上，不进最近的提示。月历本身不用授权。" : {
       "localizations" : {
         "en" : {
@@ -22802,6 +27339,26 @@
         }
       }
     },
+    "超过一条便签 %lld MB 的上限" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "over the %lld MB limit for a note"
+          }
+        }
+      }
+    },
+    "超过一次 %@ 个" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "over the limit of %@ per import"
+          }
+        }
+      }
+    },
     "越松越容易捏出来" : {},
     "跑了 %@ 秒还没完；脚本里写 @kitty.timeout 能改" : {
       "localizations" : {
@@ -22834,6 +27391,16 @@
       }
     },
     "路径是完整路径、不加引号，选了几个就一行一个，空白处是这个文件夹的路径；拷好后刘海岛说一声，剪贴板历史里也有。" : {},
+    "跳过 %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skipped %@"
+          }
+        }
+      }
+    },
     "跳过 %lld 个已经卸掉的 App" : {},
     "跳过叫这个名字的文件和文件夹" : {},
     "转成 GIF" : {
@@ -22977,7 +27544,16 @@
         }
       }
     },
-    "边上什么都不画，鼠标靠过去照样展开" : {},
+    "边上什么都不画，鼠标靠过去照样展开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing is drawn on the edge; moving the pointer there still expands the tabs"
+          }
+        }
+      }
+    },
     "运行" : {
       "localizations" : {
         "en" : {
@@ -23050,13 +27626,110 @@
         }
       }
     },
-    "还有 %lld 条便签" : {},
+    "还有 %lld 个文件在下载" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld file still downloading"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld files still downloading"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "还有 %lld 个文件没从服务器拿下来" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld file not yet fetched from the server"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld files not yet fetched from the server"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "还有 %lld 个等着传上去" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld file waiting to upload"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld files waiting to upload"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "还有 %lld 条便签" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld more note"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld more notes"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "还没允许：这些文件夹里的文件搜不到" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Not allowed yet: files in these folders can’t be searched"
+          }
+        }
+      }
+    },
+    "还没同步过" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not synced yet"
           }
         }
       }
@@ -23091,13 +27764,52 @@
         }
       }
     },
-    "还没有便签" : {},
+    "还没有——在另一台电脑的 设置 › 通用 里连同一个服务器上的同一个文件夹" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "None yet — connect to the same folder on the same server in Settings › General on another computer"
+          }
+        }
+      }
+    },
+    "还没有——在另一台电脑的 设置 › 通用 里选同一个文件夹" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "None yet — choose the same folder in Settings › General on another computer"
+          }
+        }
+      }
+    },
+    "还没有便签" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No notes yet"
+          }
+        }
+      }
+    },
     "还没有剪贴板历史" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "No clipboard history yet"
+          }
+        }
+      }
+    },
+    "还没有备份" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No backups yet"
           }
         }
       }
@@ -23149,6 +27861,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No collections yet. Items in a collection count as favorites and are never cleaned up"
+          }
+        }
+      }
+    },
+    "还没有收藏的翻译" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No saved translations yet"
+          }
+        }
+      }
+    },
+    "还没有片段或文字类的收藏" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No snippets or text favorites yet"
           }
         }
       }
@@ -23224,10 +27956,276 @@
         }
       }
     },
+    "这一轮要删掉 %lld 条%@里的东西" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This round would delete %1$#@items@ from %2$@"
+          },
+          "substitutions" : {
+            "items" : {
+              "argNum" : 1,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg item"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg items"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "这一轮要删掉 %1$lld 条%2$@里的东西"
+          }
+        }
+      }
+    },
+    "这一轮要删掉 %lld 条（便签是放进「最近删除」），先停下来等你确认" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "This round would delete %lld item (notes go to Recently Deleted), so syncing is paused until you confirm"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "This round would delete %lld items (notes go to Recently Deleted), so syncing is paused until you confirm"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "这一轮要把 %lld 条便签放进「最近删除」" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "This round would move %lld note to Recently Deleted"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "This round would move %lld notes to Recently Deleted"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "这一项没做成" : {},
+    "这不是 Kitty Tools 导出的设置文件" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This isn’t a settings file exported by Kitty Tools"
+          }
+        }
+      }
+    },
     "这个 App 会被移到废纸篓。" : {},
-    "这个地址没加密（http），密码和同步的内容在网上都是明文的" : {},
-    "这个文件夹不在了" : {},
+    "这个地址没加密（http），密码和同步的内容在网上都是明文的" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This address isn’t encrypted (http), so the password and synced content travel over the network as plain text"
+          }
+        }
+      }
+    },
+    "这个文件夹不在了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This folder no longer exists"
+          }
+        }
+      }
+    },
+    "这个文件夹是更新版本的 Kitty Tools 用的，先更新再同步" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This folder is used by a newer version of Kitty Tools. Update first, then sync"
+          }
+        }
+      }
+    },
+    "这个文件夹里刚有别的电脑开始同步，再连接一次" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Another computer just started syncing in this folder. Connect again"
+          }
+        }
+      }
+    },
+    "这个文件夹里已经有 %lld 台电脑在同步。%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$#@computers@ already syncing in this folder. %2$@"
+          },
+          "substitutions" : {
+            "computers" : {
+              "argNum" : 1,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg computer is"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg computers are"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "这个文件夹里已经有 %1$lld 台电脑在同步。%2$@"
+          }
+        }
+      }
+    },
+    "这个文件夹里已经有 %lld 台电脑在同步，有 %lld 条便签（含「最近删除」里的）。%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$#@computers@ already syncing in this folder, with %2$#@notes@ (including Recently Deleted). %3$@"
+          },
+          "substitutions" : {
+            "computers" : {
+              "argNum" : 1,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg computer is"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg computers are"
+                    }
+                  }
+                }
+              }
+            },
+            "notes" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg note"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg notes"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "这个文件夹里已经有 %1$lld 台电脑在同步，有 %2$lld 条便签（含「最近删除」里的）。%3$@"
+          }
+        }
+      }
+    },
+    "这个文件夹里已经有别的东西了，换一个空文件夹来同步" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This folder already has other things in it. Use an empty folder for syncing"
+          }
+        }
+      }
+    },
+    "这个文件夹里有别的电脑同步过的数据，却找不到同步记录（可能还没下载完），稍后再试" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This folder has data synced by other computers, but its sync records can’t be found (they may still be downloading). Try again later"
+          }
+        }
+      }
+    },
+    "这个文件夹里的同步记录还没下载完（或者读不出来），稍后再试" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The sync records in this folder haven’t finished downloading (or can’t be read). Try again later"
+          }
+        }
+      }
+    },
+    "这个文件来自更新版本的 Kitty Tools，先更新再导入" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This file is from a newer version of Kitty Tools. Update first, then import it."
+          }
+        }
+      }
+    },
     "这个文件现在还跑不了：%@。导入后会列在「读不成的脚本」里，改好就能用。" : {
       "localizations" : {
         "en" : {
@@ -23349,6 +28347,16 @@
         }
       }
     },
+    "这些服务还没有存密钥" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No keys saved for these services yet"
+          }
+        }
+      }
+    },
     "这几条都还没存成文件，先存储一下" : {
       "localizations" : {
         "en" : {
@@ -23425,7 +28433,16 @@
         }
       }
     },
-    "这条便签会被永久删除，不能撤销。" : {},
+    "这条便签会被永久删除，不能撤销。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This note will be deleted permanently. You can’t undo this."
+          }
+        }
+      }
+    },
     "这次先不用便签" : {
       "localizations" : {
         "en" : {
@@ -23580,12 +28597,62 @@
         }
       }
     },
+    "进行中" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In Progress"
+          }
+        }
+      }
+    },
+    "连上了，能读能写" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connected; can read and write"
+          }
+        }
+      }
+    },
+    "连上了；服务器上还没有这个文件夹，连接时会新建" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connected; the folder doesn’t exist on the server yet and will be created when you connect"
+          }
+        }
+      }
+    },
+    "连不上服务器：%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can’t connect to the server: %@"
+          }
+        }
+      }
+    },
     "连不上服务地址" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Can’t connect to the server"
+          }
+        }
+      }
+    },
+    "连同正文里的图片" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Including images in note text"
           }
         }
       }
@@ -23600,7 +28667,36 @@
         }
       }
     },
-    "连接服务器…" : {},
+    "连接" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connect"
+          }
+        }
+      }
+    },
+    "连接 WebDAV 服务器" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connect to a WebDAV Server"
+          }
+        }
+      }
+    },
+    "连接服务器…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connect to Server…"
+          }
+        }
+      }
+    },
     "连着选过去（从现在这一张往那个方向长）" : {
       "localizations" : {
         "en" : {
@@ -23712,7 +28808,36 @@
         }
       }
     },
-    "选一个几台电脑都看得到的空文件夹（比如在 iCloud 云盘里新建一个），或者连一个 WebDAV 服务器；每台选同一个" : {},
+    "选一个 Kitty Tools 导出的设置文件" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose a settings file exported by Kitty Tools"
+          }
+        }
+      }
+    },
+    "选一个几台 Mac 都看得到的空文件夹（比如在 iCloud 云盘里新建一个「Kitty Tools 同步」），每台 Mac 选同一个" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose an empty folder all your Macs can see (for example, create “Kitty Tools Sync” in iCloud Drive), and choose the same folder on each Mac"
+          }
+        }
+      }
+    },
+    "选一个几台电脑都看得到的空文件夹（比如在 iCloud 云盘里新建一个），或者连一个 WebDAV 服务器；每台选同一个" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose an empty folder all your computers can see (for example, a new one in iCloud Drive), or connect to a WebDAV server; choose the same one on each computer"
+          }
+        }
+      }
+    },
     "选一个别人给的脚本文件，导入前先看一眼全文" : {
       "localizations" : {
         "en" : {
@@ -23729,6 +28854,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Choose a folder of scripts (read only; nothing is written to it)"
+          }
+        }
+      }
+    },
+    "选一个文件夹，或者多选 .md / .markdown / .txt 文件" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose a folder, or select multiple .md, .markdown, or .txt files"
+          }
+        }
+      }
+    },
+    "选一个文件夹，每天的自动备份也会存一份到这里" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose a folder to also save each daily automatic backup to"
+          }
+        }
+      }
+    },
+    "选一个文件夹，里面会新建「%@」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose a folder. A new “%@” folder will be created in it."
           }
         }
       }
@@ -23934,7 +29089,16 @@
         }
       }
     },
-    "选择…" : {},
+    "选择…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose…"
+          }
+        }
+      }
+    },
     "选择字号" : {
       "localizations" : {
         "en" : {
@@ -23955,7 +29119,16 @@
         }
       }
     },
-    "选择文件夹…" : {},
+    "选择文件夹…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose Folder…"
+          }
+        }
+      }
+    },
     "选择状态" : {},
     "选择状态…" : {
       "localizations" : {
@@ -24024,6 +29197,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Choosing a status: enter the selected one (or click a card)"
+          }
+        }
+      }
+    },
+    "选的地方没有 .md 文件" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "There are no .md files in what you chose"
+          }
+        }
+      }
+    },
+    "选要插进便签的图片" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose images to insert into the note"
           }
         }
       }
@@ -24128,7 +29321,38 @@
         }
       }
     },
-    "里面的 %lld 条便签会被永久删除，不能撤销。" : {},
+    "都还是默认的组合" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All shortcuts are still the defaults"
+          }
+        }
+      }
+    },
+    "里面的 %lld 条便签会被永久删除，不能撤销。" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "The %lld note in it will be deleted permanently. You can’t undo this."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "The %lld notes in it will be deleted permanently. You can’t undo this."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "重做" : {
       "localizations" : {
         "en" : {
@@ -24336,6 +29560,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pinned"
+          }
+        }
+      }
+    },
+    "钥匙串里没有服务器的密码，停止同步后重新连接" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The server password isn’t in the keychain. Stop syncing and connect again"
+          }
+        }
+      }
+    },
+    "铺满" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fill"
           }
         }
       }
@@ -24647,12 +29891,42 @@
         }
       }
     },
+    "青" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cyan"
+          }
+        }
+      }
+    },
+    "青绿" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Teal"
+          }
+        }
+      }
+    },
     "静音" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Muted"
+          }
+        }
+      }
+    },
+    "靛" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Indigo"
           }
         }
       }
@@ -24889,6 +30163,26 @@
         }
       }
     },
+    "黄" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yellow"
+          }
+        }
+      }
+    },
+    "黄绿" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lime"
+          }
+        }
+      }
+    },
     "黄色" : {
       "localizations" : {
         "en" : {
@@ -24939,7 +30233,16 @@
         }
       }
     },
-    "默认颜色" : {},
+    "默认颜色" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Default Color"
+          }
+        }
+      }
+    },
     "鼠标停在侧栏、列表、按钮这些上面就框出那一块，单击截下；滚轮往上换大一块、往下换小一块，Tab 只认整扇窗口。网页内容、游戏这类认不出来的照旧只认窗口" : {
       "localizations" : {
         "en" : {
@@ -24950,7 +30253,16 @@
         }
       }
     },
-    "鼠标停在标签上时，旁边显示这条便签的开头几行" : {},
+    "鼠标停在标签上时，旁边显示这条便签的开头几行" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When the pointer rests on a tab, the first few lines of the note appear beside it"
+          }
+        }
+      }
+    },
     "鼠标停在程序坞的 App 图标上，看它所有窗口的缩略图" : {
       "localizations" : {
         "en" : {
@@ -24961,7 +30273,16 @@
         }
       }
     },
-    "鼠标在标签上停一下就打开，不用点" : {},
+    "鼠标在标签上停一下就打开，不用点" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opens a note when the pointer rests on its tab, without clicking"
+          }
+        }
+      }
+    },
     "鼠标在程序坞的图标上停这么久才弹出，弹出后移到别的图标上马上换。点一张切到那扇窗口，悬停时点左上角的 ✕ 关掉它。最小化的、隐藏的和别的桌面上的窗口也列出来。" : {},
     "鼠标挪到弹出的提示上：停住、展开看全文和按钮；在岛上双指往上滑收起" : {
       "localizations" : {
@@ -24974,7 +30295,46 @@
       }
     },
     "鼠标推到角上停一下打开" : {},
-    "鼠标靠到屏幕边上的药丸就展开一列标签，点一张，便签从边缘滑出来。按住 ⌥ 拖药丸可以换边、换高度。右键一张标签可以直接固定、换颜色、浮到屏幕上、归档、删除；右键「+」或标签之间的空处有新建便签、全部便签和设置。打开的便签点别处就收起，固定（⌘P）之后不收。按住打开的便签侧边那张标签往外拖，它就浮在屏幕上、可以拉大小。浮着的便签一直在别的窗口上面；固定（⌘P）之后，重启还回到原处。" : {},
+    "鼠标离屏幕边缘多近就展开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "How close the pointer has to get to the screen edge to expand the tabs"
+          }
+        }
+      }
+    },
+    "鼠标靠到屏幕边上的药丸就展开一列标签，点一张，便签从边缘滑出来。按住 ⌥ 拖药丸可以换边、换高度。右键一张标签可以直接固定、换颜色、浮到屏幕上、归档、删除；右键「+」或标签之间的空处有新建便签、全部便签和设置。打开的便签点别处就收起，固定（⌘P）之后不收。按住打开的便签侧边那张标签往外拖，它就浮在屏幕上、可以拉大小。浮着的便签一直在别的窗口上面；固定（⌘P）之后，重启还回到原处。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move the pointer to the pill on the screen edge to expand a column of tabs; click one and its note slides out from the edge. Hold ⌥ and drag the pill to change the side or height. Right-click a tab to pin it, change its color, float it on the screen, archive it, or delete it; right-click “+” or the space between tabs for New Note, All Notes, and Settings. An open note closes when you click elsewhere, unless it’s pinned (⌘P). Drag the tab on the side of an open note outward to float the note on the screen, where you can resize it. Floating notes stay above other windows; once pinned (⌘P), they return to the same place after a restart."
+          }
+        }
+      }
+    },
+    "鼠标靠过去就能看到" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move the pointer there to see them"
+          }
+        }
+      }
+    },
+    "鼠标靠过来展开便签；按住 Option 拖动可以换边、换高度" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move the pointer here to expand notes; hold Option and drag to change the side or height"
+          }
+        }
+      }
+    },
     "（没有输出）" : {
       "localizations" : {
         "en" : {
@@ -24991,6 +30351,68 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "(Empty)"
+          }
+        }
+      }
+    },
+    "，便签没存上" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : ", notes not saved"
+          }
+        }
+      }
+    },
+    "，便签没导入" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : ", notes not imported"
+          }
+        }
+      }
+    },
+    "，含密钥" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : ", keys included"
+          }
+        }
+      }
+    },
+    "，新增 %lld 条" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : ", %lld new"
+          }
+        }
+      }
+    },
+    "，清理了 %lld 条历史" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : ", cleared %lld history item"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : ", cleared %lld history items"
+                }
+              }
+            }
           }
         }
       }

@@ -38,8 +38,12 @@ struct NotesTab: View {
   @AppStorage(Prefs.notesDeckOverFullScreen) private var overFullScreen = false
   @AppStorage(Prefs.notesDeckNoteSize) private var noteSize = NoteDeckOptions.NoteSize.medium
 
-  private static let fontTitles = [13: "小", 15: "标准", 17: "大", 20: "特大"]
-  private static let senseTitles = [8: "窄", 14: "标准", 28: "宽", 44: "很宽"]
+  private static let fontTitles: [Int: LocalizedStringResource] = [
+    13: "小", 15: "标准", 17: "大", 20: "特大",
+  ]
+  private static let senseTitles: [Int: LocalizedStringResource] = [
+    8: "窄", 14: "标准", 28: "宽", 44: "很宽",
+  ]
 
   var body: some View {
     // 关着时（Feature）变灰；Markdown 导出、导入管的是已有的便签，照常能用
@@ -49,7 +53,7 @@ struct NotesTab: View {
           // 横排单选包进 LabeledContent：贴着右边线
           radios("正文字号", "全部便签窗口、屏幕边缘和浮在屏幕上的便签里正文的大小", selection: $fontSize) {
             ForEach(Prefs.notesFontSizeChoices, id: \.self) {
-              Text(Self.fontTitles[$0] ?? "\($0)").tag($0)
+              Text(Self.fontTitles[$0] ?? "\(String($0))").tag($0)
             }
           }
           radios("行距", "全部便签窗口、屏幕边缘和浮在屏幕上的便签里正文一行一行之间隔多远", selection: $lineSpacing) {
@@ -59,9 +63,10 @@ struct NotesTab: View {
             Text("Markdown 样式")
             // verbatim：SwiftUI 的 Text 自己会把字面量里的 ** ` [] 当 Markdown 画掉，这里要原样写给人看
             Text(
-              verbatim:
-                "# 标题、**粗体**、*斜体*、`代码`、[链接](地址)、三个反引号围起来的代码块，这些写法直接显示成样式，标记只在光标所在的那一行露出来"
-            )
+              verbatim: String(
+                localized:
+                  "# 标题、**粗体**、*斜体*、`代码`、[链接](地址)、三个反引号围起来的代码块，这些写法直接显示成样式，标记只在光标所在的那一行露出来"
+              ))
           }
         } header: {
           Text("便签")
@@ -123,8 +128,8 @@ struct NotesTab: View {
     panel.canChooseDirectories = true
     panel.canChooseFiles = false
     panel.canCreateDirectories = true
-    panel.prompt = "导出到这里"
-    panel.message = "选一个文件夹，里面会新建「\(NoteMarkdownFiles.folderName())」"
+    panel.prompt = String(localized: "导出到这里")
+    panel.message = String(localized: "选一个文件夹，里面会新建「\(NoteMarkdownFiles.folderName())」")
     isTransferring = true
     panel.begin { response in
       guard response == .OK, let parent = panel.url else {
@@ -144,8 +149,10 @@ struct NotesTab: View {
             "导出到一半", detail: "\(failure)", tone: .error, symbol: "exclamationmark.triangle.fill")
           return
         }
-        var detail = "「\(result.folderName)」"
-        if result.missingImages > 0 { detail += " · \(result.missingImages) 张图片不在，没导出" }
+        var detail = String(localized: "「\(result.folderName)」")
+        if result.missingImages > 0 {
+          detail += " · " + String(localized: "\(result.missingImages) 张图片不在，没导出")
+        }
         island?.show(
           "已导出 \(result.count) 条便签", detail: "\(detail)",
           symbol: "square.and.arrow.up.circle.fill",
@@ -161,8 +168,8 @@ struct NotesTab: View {
     panel.canChooseDirectories = true
     panel.canChooseFiles = true
     panel.allowsMultipleSelection = true
-    panel.prompt = "导入"
-    panel.message = "选一个文件夹，或者多选 .md / .markdown / .txt 文件"
+    panel.prompt = String(localized: "导入")
+    panel.message = String(localized: "选一个文件夹，或者多选 .md / .markdown / .txt 文件")
     panel.allowedContentTypes =
       [.plainText]
       + ["md", "markdown"].compactMap {
@@ -258,7 +265,7 @@ struct NotesTab: View {
         .pickerStyle(.segmented)
         radios("感应范围", "鼠标离屏幕边缘多近就展开", selection: $sense) {
           ForEach(NoteDeckOptions.senseChoices, id: \.self) {
-            Text(Self.senseTitles[$0] ?? "\($0)").tag($0)
+            Text(Self.senseTitles[$0] ?? "\(String($0))").tag($0)
           }
         }
         Toggle(isOn: $alwaysFanned) {
@@ -326,11 +333,11 @@ struct NotesTab: View {
 
   /// 一行横排的单选（3–5 个选项，mac-whisker-settings）：贴着右边线，说明写成副标题
   private func radios<Value: Hashable, Options: View>(
-    _ title: String, _ detail: String, selection: Binding<Value>,
+    _ title: LocalizedStringResource, _ detail: LocalizedStringResource, selection: Binding<Value>,
     @ViewBuilder options: () -> Options
   ) -> some View {
     LabeledContent {
-      Picker(title, selection: selection, content: options)
+      Picker(selection: selection, content: options) { Text(title) }
         .pickerStyle(.radioGroup)
         .horizontalRadioGroupLayout()
         .labelsHidden()

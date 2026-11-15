@@ -540,10 +540,10 @@ nonisolated enum NoteMarkdown {
     /// 右键菜单「格式」里的名字
     var title: String {
       switch self {
-      case .bold: "粗体"
-      case .italic: "斜体"
-      case .strike: "删除线"
-      case .code: "代码"
+      case .bold: String(localized: "粗体")
+      case .italic: String(localized: "斜体")
+      case .strike: String(localized: "删除线")
+      case .code: String(localized: "代码")
       }
     }
 
@@ -1150,13 +1150,14 @@ nonisolated enum NoteMarkdown {
     /// 菜单里的名字
     var title: String {
       switch self {
-      case .heading(1): "标题 1"
-      case .heading(2): "标题 2"
-      case .heading(3): "标题 3"
-      case .quote: "引用"
-      case .bullet: "无序列表"
-      case .ordered: "有序列表"
-      case .heading: "标题"
+      case .heading(1): String(localized: "标题 1")
+      case .heading(2): String(localized: "标题 2")
+      case .heading(3): String(localized: "标题 3")
+      case .quote: String(localized: "引用")
+      case .bullet: String(localized: "无序列表")
+      case .ordered: String(localized: "有序列表")
+      case .heading:
+        String(localized: "markdown.heading", defaultValue: "标题", comment: "便签「格式」菜单里的标题（几级之外的）")
       }
     }
   }

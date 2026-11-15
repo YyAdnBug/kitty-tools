@@ -120,7 +120,10 @@ final class NoteEdge {
   nonisolated static func hint(
     _ edge: NoteDeckOptions.Edge
   ) -> (title: String, detail: String) {
-    ("便签在屏幕\(edge.name)边缘", "鼠标靠过去就能看到")
+    (
+      edge == .right ? String(localized: "便签在屏幕右边缘") : String(localized: "便签在屏幕左边缘"),
+      String(localized: "鼠标靠过去就能看到")
+    )
   }
 
   /// 这台电脑上说过「便签在屏幕右边缘」了吗：没说过就记成说过、返回 true（只这一次）

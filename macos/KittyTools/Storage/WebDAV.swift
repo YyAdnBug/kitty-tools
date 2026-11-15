@@ -46,15 +46,16 @@ nonisolated struct WebDAV: Sendable {
     /// 设置页、状态行上的一句话
     var message: String {
       switch self {
-      case .offline(let reason): "连不上服务器：\(reason.trimmingCharacters(in: ["。", "."]))"
-      case .unauthorized: "用户名或密码不对（有的服务要在网页上另外生成给第三方应用用的密码）"
-      case .forbidden: "服务器不让读写这个文件夹"
-      case .notFound: "服务器上没有这个文件夹"
-      case .exists: "服务器上已经有同名的了"
-      case .busy: "服务器说请求太多，过一会儿再试"
-      case .full: "服务器上的空间满了"
-      case .status(let code): "服务器出错（HTTP \(code)）"
-      case .invalid: "服务器回的东西看不懂，可能不是 WebDAV 地址"
+      case .offline(let reason):
+        String(localized: "连不上服务器：\(reason.trimmingCharacters(in: ["。", "."]))")
+      case .unauthorized: String(localized: "用户名或密码不对（有的服务要在网页上另外生成给第三方应用用的密码）")
+      case .forbidden: String(localized: "服务器不让读写这个文件夹")
+      case .notFound: String(localized: "服务器上没有这个文件夹")
+      case .exists: String(localized: "服务器上已经有同名的了")
+      case .busy: String(localized: "服务器说请求太多，过一会儿再试")
+      case .full: String(localized: "服务器上的空间满了")
+      case .status(let code): String(localized: "服务器出错（HTTP \(String(code))）")
+      case .invalid: String(localized: "服务器回的东西看不懂，可能不是 WebDAV 地址")
       }
     }
   }
@@ -235,14 +236,15 @@ nonisolated struct WebDAV: Sendable {
     if let failure = error as? Failure { return failure }
     if let error = error as? URLError {
       switch error.code {
-      case .notConnectedToInternet, .networkConnectionLost: return .offline("没联网")
-      case .cannotFindHost, .dnsLookupFailed: return .offline("找不到这个服务器")
-      case .cannotConnectToHost: return .offline("服务器没开或者端口不对")
-      case .timedOut: return .offline("服务器很久没回应")
+      case .notConnectedToInternet, .networkConnectionLost:
+        return .offline(String(localized: "没联网"))
+      case .cannotFindHost, .dnsLookupFailed: return .offline(String(localized: "找不到这个服务器"))
+      case .cannotConnectToHost: return .offline(String(localized: "服务器没开或者端口不对"))
+      case .timedOut: return .offline(String(localized: "服务器很久没回应"))
       case .serverCertificateUntrusted, .serverCertificateHasBadDate,
         .serverCertificateNotYetValid, .serverCertificateHasUnknownRoot,
         .secureConnectionFailed:
-        return .offline("服务器的证书不受信任（不支持自签的证书）")
+        return .offline(String(localized: "服务器的证书不受信任（不支持自签的证书）"))
       case .userCancelledAuthentication, .userAuthenticationRequired: return .unauthorized
       default: break
       }

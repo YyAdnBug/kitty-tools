@@ -273,7 +273,7 @@ extension NoteTextView {
   // MARK: 右键图片的小菜单（宽度档位、拷贝；便签未来计划 D3 / D4）
 
   /// 右键菜单「宽度」那一节的名字
-  static let imageWidthTitle = "宽度"
+  static var imageWidthTitle: String { String(localized: "宽度") }
 
   /// 选区里的每张图（字的位置，从前到后）
   func selectedImageChars() -> [Int] {
@@ -313,7 +313,8 @@ extension NoteTextView {
       title: Self.cropTitle, action: #selector(cropImageFromMenu(_:)), keyEquivalent: "")
     crop.target = self
     menu.addItem(crop)
-    let copy = NSMenuItem(title: "拷贝", action: #selector(copy(_:)), keyEquivalent: "")
+    let copy = NSMenuItem(
+      title: String(localized: "拷贝"), action: #selector(copy(_:)), keyEquivalent: "")
     copy.target = self
     menu.addItem(copy)
     return menu
@@ -345,7 +346,7 @@ extension NoteTextView {
   // MARK: 裁切（便签未来计划 D1 / D2；裁切层在 NoteImageCrop.swift）
 
   /// 右键图片小菜单里那一项
-  static let cropTitle = "裁切…"
+  static var cropTitle: String { String(localized: "裁切…") }
 
   /// 「裁切…」可不可用：选区正好一张图、文件在、没在组字、没在裁（上一次还在后台裁、还欠着没换进来也不行：
   /// 那一张换掉之后这一次就对不上了）
@@ -893,8 +894,8 @@ extension NoteTextView {
     panel.canChooseDirectories = false
     panel.canChooseFiles = true
     panel.allowedContentTypes = [.image]
-    panel.prompt = "插入"
-    panel.message = "选要插进便签的图片"
+    panel.prompt = String(localized: "插入")
+    panel.message = String(localized: "选要插进便签的图片")
     let range = selectedRange()
     // 激活、提到最前（不然开在前台 App 后面，看着像没反应）、关掉后还回去都在 FilePanel 里
     FilePanel.begin(panel) { [weak self] response in

@@ -37,28 +37,36 @@ nonisolated struct NotePaper: Equatable, Sendable {
 
   static let all: [NotePaper] = [
     NotePaper(
-      name: "柠檬", light: Tone(paper: 0xFCE795, strip: 0xE0AD08, ink: 0x3A3008),
+      name: String(localized: "柠檬", comment: "便签纸色的名字"),
+      light: Tone(paper: 0xFCE795, strip: 0xE0AD08, ink: 0x3A3008),
       dark: Tone(paper: 0x4A4012, strip: 0xF2C230, ink: 0xFBEFB8)),
     NotePaper(
-      name: "桃", light: Tone(paper: 0xFBCFA6, strip: 0xE2762A, ink: 0x422413),
+      name: String(localized: "桃", comment: "便签纸色的名字"),
+      light: Tone(paper: 0xFBCFA6, strip: 0xE2762A, ink: 0x422413),
       dark: Tone(paper: 0x4F3320, strip: 0xF08A45, ink: 0xFCE0C6)),
     NotePaper(
-      name: "玫瑰", light: Tone(paper: 0xFAC4D1, strip: 0xDC4570, ink: 0x40161F),
+      name: String(localized: "玫瑰", comment: "便签纸色的名字"),
+      light: Tone(paper: 0xFAC4D1, strip: 0xDC4570, ink: 0x40161F),
       dark: Tone(paper: 0x4E2330, strip: 0xF06A8E, ink: 0xFBD5DE)),
     NotePaper(
-      name: "丁香", light: Tone(paper: 0xD9C7FA, strip: 0x7C4DEE, ink: 0x2A1B44),
+      name: String(localized: "丁香", comment: "便签纸色的名字"),
+      light: Tone(paper: 0xD9C7FA, strip: 0x7C4DEE, ink: 0x2A1B44),
       dark: Tone(paper: 0x35285A, strip: 0x9D7CF5, ink: 0xE6DAFC)),
     NotePaper(
-      name: "天蓝", light: Tone(paper: 0xBEDDFA, strip: 0x2280D6, ink: 0x13293A),
+      name: String(localized: "天蓝", comment: "便签纸色的名字"),
+      light: Tone(paper: 0xBEDDFA, strip: 0x2280D6, ink: 0x13293A),
       dark: Tone(paper: 0x1D3A54, strip: 0x4DA3EC, ink: 0xD3E8FB)),
     NotePaper(
-      name: "薄荷", light: Tone(paper: 0xB4E8D0, strip: 0x0E9B6E, ink: 0x0F2E23),
+      name: String(localized: "薄荷", comment: "便签纸色的名字"),
+      light: Tone(paper: 0xB4E8D0, strip: 0x0E9B6E, ink: 0x0F2E23),
       dark: Tone(paper: 0x17402F, strip: 0x2DBE8D, ink: 0xC8F0DD)),
     NotePaper(
-      name: "沙", light: Tone(paper: 0xE3D3B4, strip: 0xA37B3C, ink: 0x372C18),
+      name: String(localized: "沙", comment: "便签纸色的名字"),
+      light: Tone(paper: 0xE3D3B4, strip: 0xA37B3C, ink: 0x372C18),
       dark: Tone(paper: 0x453A26, strip: 0xC39A58, ink: 0xEEE2CA)),
     NotePaper(
-      name: "石板", light: Tone(paper: 0xCBD6E2, strip: 0x4E6579, ink: 0x1A242E),
+      name: String(localized: "石板", comment: "便签纸色的名字"),
+      light: Tone(paper: 0xCBD6E2, strip: 0x4E6579, ink: 0x1A242E),
       dark: Tone(paper: 0x2C3742, strip: 0x7E97AD, ink: 0xDCE4EC)),
   ]
 
@@ -219,13 +227,18 @@ nonisolated extension NotePaper {
   /// 不拿十六进制当名字（旁白念不好）
   static func customName(rgb: Int) -> String {
     let color = PaperMath.oklch(rgb)
-    guard color.c >= 0.02 else { return "自定义 · 灰" }
-    // 每个词管到的色相上界（度）；红之前、品红之后的都是粉
+    // 每个词管到的色相上界（度）；红之前、品红之后的都是粉；彩度很低的叫「灰」
+    let gray = String(localized: "灰")
     let words: [(upTo: Double, word: String)] = [
-      (15, "粉"), (45, "红"), (80, "橙"), (118, "黄"), (138, "黄绿"), (158, "绿"), (183, "青绿"),
-      (215, "青"), (272, "蓝"), (290, "靛"), (320, "紫"), (340, "品红"), (360, "粉"),
+      (15, String(localized: "粉")), (45, String(localized: "红")), (80, String(localized: "橙")),
+      (118, String(localized: "黄")), (138, String(localized: "黄绿")), (158, String(localized: "绿")),
+      (183, String(localized: "青绿")), (215, String(localized: "青")), (272, String(localized: "蓝")),
+      (290, String(localized: "靛")), (320, String(localized: "紫")), (340, String(localized: "品红")),
+      (360, String(localized: "粉")),
     ]
-    return "自定义 · " + (words.first { color.h < $0.upTo }?.word ?? "粉")
+    let word =
+      color.c < 0.02 ? gray : words.first { color.h < $0.upTo }?.word ?? String(localized: "粉")
+    return String(localized: "自定义 · \(word)", comment: "自定义纸色的名字，后面是色相的叫法")
   }
 }
 
@@ -325,12 +338,12 @@ nonisolated enum NoteColor: Int, CaseIterable, Sendable {
   /// 菜单里叫的名字
   var title: String {
     switch self {
-    case .red: "红"
-    case .orange: "橙"
-    case .green: "绿"
-    case .blue: "蓝"
-    case .purple: "紫"
-    case .gray: "灰"
+    case .red: String(localized: "红")
+    case .orange: String(localized: "橙")
+    case .green: String(localized: "绿")
+    case .blue: String(localized: "蓝")
+    case .purple: String(localized: "紫")
+    case .gray: String(localized: "灰")
     }
   }
 
@@ -409,7 +422,7 @@ extension NoteColor {
 
 extension NotePaper {
   /// 颜色菜单末尾那一项的名字（打开系统取色面板，NoteColorPicker）
-  static let otherColorTitle = "其他颜色…"
+  static var otherColorTitle: String { String(localized: "其他颜色…") }
 
   /// 选颜色的那份表，**所有选颜色的地方共用**（全部便签窗口工具栏的下拉、行 / 卡片的右键菜单里的「颜色」、屏幕边缘那叠
   /// 的 ⌘K 子列表和圆点点出来的菜单、那叠标签的右键）：8 种纸色各一项，前面是它的纸色圆点（swatch，非模板图），

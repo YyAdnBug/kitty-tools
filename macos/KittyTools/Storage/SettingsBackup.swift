@@ -95,7 +95,9 @@ nonisolated enum SettingsBackup {
   // MARK: 文件名
 
   /// 「Kitty Tools 自动备份 2026-10-08.json」/「Kitty Tools 导入前 2026-10-08 153012.json」（当地时间）；
-  /// owner：另存的文件夹里每天那份多带电脑编号——「Kitty Tools 自动备份 2026-10-08 3F9A.json」（导入前那份只在本机，不带）
+  /// owner：另存的文件夹里每天那份多带电脑编号——「Kitty Tools 自动备份 2026-10-08 3F9A.json」（导入前那份只在本机，不带）。
+  /// **文件名永远不翻**（多语言，TRANSLATION.md 二）：列备份、轮换、恢复都靠 parse 按这两个中文前缀认，几台不同语言的
+  /// Mac 共用一个另存的文件夹时也要认得出彼此的；给人看的叫法在下面「说法」里跟着界面语言
   static func name(
     for kind: Kind, at date: Date, owner: String? = nil, calendar: Calendar = .current
   ) -> String {
@@ -217,7 +219,9 @@ nonisolated enum SettingsBackup {
 
   /// 没写成的原因，说给用户的：文件夹找不到、没权限（给出去哪开），其余用系统的原话
   static func describe(_ error: Error) -> String {
-    if error as? Failure == .missingFolder { return "找不到文件夹（没连上、被移走，或者没有访问权限）" }
+    if error as? Failure == .missingFolder {
+      return String(localized: "找不到文件夹（没连上、被移走，或者没有访问权限）")
+    }
     let cocoa = error as NSError
     let underlying = cocoa.userInfo[NSUnderlyingErrorKey] as? NSError
     let denied =
@@ -225,7 +229,10 @@ nonisolated enum SettingsBackup {
       && [EPERM, EACCES].contains(Int32(underlying?.code ?? 0))
     if denied || (cocoa.domain == NSCocoaErrorDomain && cocoa.code == NSFileWriteNoPermissionError)
     {
-      return "没有权限写这个文件夹（到 系统设置 › \(Permissions.privacyPane) › 文件和文件夹 里允许 Kitty Tools，或者换一个文件夹）"
+      return String(
+        localized:
+          "没有权限写这个文件夹（到 系统设置 › \(Permissions.privacyPane) › 文件和文件夹 里允许 Kitty Tools，或者换一个文件夹）"
+      )
     }
     return error.localizedDescription
   }
@@ -260,12 +267,13 @@ nonisolated enum SettingsBackup {
         let names = droppable.filter {
           present.contains($0) && !kept.contains($0) && !(hasLongNote && $0 == .notes)
         }
-        .map(\.title).joined(separator: "、")
+        .map(\.title).joinedAsList()
         let notes = [
-          names.isEmpty ? nil : "\(names)太多，自动备份里没带，可以手动导出",
-          hasLongNote ? "有便签的正文超过 \(Note.maxBodyBytes >> 20) MB，自动备份里没带便签" : nil,
+          names.isEmpty ? nil : String(localized: "\(names)太多，自动备份里没带，可以手动导出"),
+          hasLongNote
+            ? String(localized: "有便签的正文超过 \(Note.maxBodyBytes >> 20) MB，自动备份里没带便签") : nil,
         ].compactMap { $0 }
-        return (data, notes.isEmpty ? nil : notes.joined(separator: "；"))
+        return (data, notes.isEmpty ? nil : notes.joinedAsClauses())
       }
       if bySize == nil {
         bySize = droppable.filter(kept.contains)
@@ -290,7 +298,7 @@ nonisolated enum SettingsBackup {
   ) async {
     guard isDue(in: folder, now: now, calendar: calendar) else { return }
     let content = payload()
-    var problem = content == nil ? "没能备份：内容编不出来" : content?.note
+    var problem = content == nil ? String(localized: "没能备份：内容编不出来") : content?.note
     if let content {
       do {
         let url = try await write(
@@ -298,7 +306,7 @@ nonisolated enum SettingsBackup {
         Log.storage.notice("已备份设置与数据：\(url.lastPathComponent, privacy: .public)")
       } catch {
         Log.storage.error("设置与数据的自动备份没写成：\(error)")
-        problem = "没能备份：\(describe(error))"
+        problem = String(localized: "没能备份：\(describe(error))")
       }
     }
     record(problem, forKey: Prefs.settingsBackupProblem, in: defaults)
@@ -327,7 +335,7 @@ nonisolated enum SettingsBackup {
           problem = describe(error)
         }
       } else {
-        problem = "内容编不出来"
+        problem = String(localized: "内容编不出来")
       }
     }
     guard extraFolder(defaults)?.path == folder.path else { return }
@@ -344,7 +352,7 @@ nonisolated enum SettingsBackup {
   ) throws {
     guard isEnabled(defaults) else { return }
     guard let content = payload() else {
-      throw SettingsArchive.Failure.backupFailed("内容编不出来")
+      throw SettingsArchive.Failure.backupFailed(String(localized: "内容编不出来"))
     }
     do {
       try store(
@@ -370,25 +378,26 @@ nonisolated enum SettingsBackup {
   static func title(of copy: Copy, now: Date = .now, calendar: Calendar = .current) -> String {
     let day = Recovery.describe(copy.date, now: now, calendar: calendar)
     guard copy.kind == .beforeImport else { return day }
-    return "导入前 · \(day) \(time(copy.date, calendar: calendar))"
+    return String(localized: "导入前 · \(day) \(time(copy.date, calendar: calendar))")
   }
 
   /// 恢复表单页头里怎么说这份备份：「10 月 7 日（昨天）的自动备份」「10 月 8 日（今天） 15:30 导入前存的备份」
   static func source(of copy: Copy, now: Date = .now, calendar: Calendar = .current) -> String {
     let day = Recovery.describe(copy.date, now: now, calendar: calendar)
-    guard copy.kind == .beforeImport else { return "\(day)的自动备份" }
-    return "\(day) \(time(copy.date, calendar: calendar)) 导入前存的备份"
+    guard copy.kind == .beforeImport else { return String(localized: "\(day)的自动备份") }
+    return String(localized: "\(day) \(time(copy.date, calendar: calendar)) 导入前存的备份")
   }
 
   /// 设置 › 通用那一行的说明：「最近一份：今天 09:12，共 5 份」；一份都没有时「还没有备份」。
   /// 时间取文件的修改时间（每天那份的名字里只有日期）
   static func summary(of copies: [Copy], now: Date = .now, calendar: Calendar = .current) -> String
   {
-    guard let latest = copies.first else { return "还没有备份" }
+    guard let latest = copies.first else { return String(localized: "还没有备份") }
     let written =
       (try? latest.url.resourceValues(forKeys: [.contentModificationDateKey]))?
       .contentModificationDate ?? latest.date
-    return "最近一份：\(when(written, now: now, calendar: calendar))，共 \(copies.count) 份"
+    return String(
+      localized: "最近一份：\(when(written, now: now, calendar: calendar))，共 \(copies.count) 份")
   }
 
   /// 「今天 09:12」「昨天 22:40」，更早「10 月 3 日（5 天前）」
@@ -398,18 +407,16 @@ nonisolated enum SettingsBackup {
         [.day], from: calendar.startOfDay(for: date), to: calendar.startOfDay(for: now)
       ).day ?? 0
     switch days {
-    case ...0: return "今天 \(time(date, calendar: calendar))"
-    case 1: return "昨天 \(time(date, calendar: calendar))"
+    case ...0: return String(localized: "今天 \(time(date, calendar: calendar))")
+    case 1: return String(localized: "昨天 \(time(date, calendar: calendar))")
     default: return Recovery.describe(date, now: now, calendar: calendar)
     }
   }
 
-  /// 时:分，都写两位、24 小时制（同翻译历史行右侧的时间）
+  /// 时:分，跟着界面语言和系统的 12 / 24 小时（同翻译历史行右侧的时间：中文 24 小时制下「09:05」，英文「9:05 AM」）
   private static func time(_ date: Date, calendar: Calendar) -> String {
     date.formatted(
-      Date.FormatStyle(
-        locale: Locale(identifier: "zh-Hans"), calendar: calendar, timeZone: calendar.timeZone
-      )
-      .hour(.twoDigits(amPM: .omitted)).minute(.twoDigits))
+      Date.FormatStyle(locale: .current, calendar: calendar, timeZone: calendar.timeZone)
+        .hour().minute())
   }
 }

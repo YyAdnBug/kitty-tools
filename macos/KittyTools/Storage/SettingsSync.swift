@@ -283,7 +283,9 @@ import Foundation
       guard let data = defaults.data(forKey: action.prefsKey),
         let hotKey = try? JSONDecoder().decode(HotKey.self, from: data)
       else { continue }
-      if let first = owners[hotKey] { return "「\(first.title)」和「\(action.title)」" }
+      if let first = owners[hotKey] {
+        return String(localized: "「\(first.title)」和「\(action.title)」")
+      }
       owners[hotKey] = action
     }
     return nil

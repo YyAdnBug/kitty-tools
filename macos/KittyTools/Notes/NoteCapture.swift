@@ -213,7 +213,8 @@ import os
   /// 第几个目的地叫什么（顶上那一行、旁白）
   func title(of index: Int) -> String {
     let list = destinations
-    return list.indices.contains(index - 1) ? list[index - 1].displayTitle : "新便签"
+    return list.indices.contains(index - 1)
+      ? list[index - 1].displayTitle : String(localized: "新便签")
   }
 
   /// 选第几个目的地（⌘1–⌘9、点圆点）；没有那一条就响一声
