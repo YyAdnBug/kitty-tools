@@ -47,6 +47,7 @@ final class ShotShelf {
   private static let maxPerScreen = 3
   /// 拖出去用的 PNG 放在这里（截图拷贝成文件的那份也是，ScreenshotOutput.copyFileURL）；启动时清空、换日时删一天以前的
   /// （拖进邮件、聊天的附件可能还在读，用的时候不删）
+  /// 目录名不翻（启动时按这个名字清空：换了界面语言也得认得上次的）
   nonisolated static let dragDirectory = FileManager.default.temporaryDirectory.appending(
     path: "Kitty Tools 截图")
 
@@ -216,19 +217,20 @@ final class ShotShelf {
 
     var title: String {
       switch self {
-      case .copy: "拷贝"
-      case .gif: "转成 GIF"
-      case .compress: "压缩"
-      case .save: "存储"
-      case .pin: "钉图"
-      case .edit: "改标注"
-      case .unpeg: "取下"
-      case .forget: "从历史里删掉"
-      case .open: "打开"
-      case .reveal: "在访达中显示"
-      case .history: "在历史里看"
-      case .trash: "移到废纸篓"
-      case .close: "关闭"
+      case .copy: String(localized: "拷贝")
+      case .gif: String(localized: "转成 GIF")
+      case .compress: String(localized: "压缩")
+      case .save: String(localized: "存储")
+      // 动作「钉图」（Pin）和速查表的组名「钉图」（Pinned Screenshots）英文不同：显式 key
+      case .pin: String(localized: "shot.command.pin", defaultValue: "钉图", comment: "动作：把截图钉到屏幕上")
+      case .edit: String(localized: "改标注")
+      case .unpeg: String(localized: "取下")
+      case .forget: String(localized: "从历史里删掉")
+      case .open: String(localized: "打开")
+      case .reveal: String(localized: "在访达中显示")
+      case .history: String(localized: "在历史里看")
+      case .trash: String(localized: "移到废纸篓")
+      case .close: String(localized: "关闭")
       }
     }
   }
@@ -333,9 +335,9 @@ final class ShotShelf {
 
   /// 旁白里卡片的名字
   var accessibilityName: String {
-    if case .gif = kind { return "GIF 动图" }
-    guard let recording = kind.recording else { return "截图缩略图" }
-    return recording.medium.noun + "，" + ScreenRecorder.spoken(recording.seconds)
+    if case .gif = kind { return String(localized: "GIF 动图") }
+    guard let recording = kind.recording else { return String(localized: "截图缩略图") }
+    return recording.medium.noun + Island.comma + ScreenRecorder.spoken(recording.seconds)
   }
 
   /// 右键菜单（一节一组，节间分隔线）：截图「拷贝 / 存储 / 钉图 /（存过的）在访达中显示 / 在历史里看 ｜ 关闭」；
@@ -435,8 +437,14 @@ final class ShotShelf {
     if let file = kind.file {
       guard exists(file) else { return }
       shelf.copyFile(file)
+      let copied: LocalizedStringResource =
+        switch kind.recording?.medium {
+        case .screen: "已复制录屏"
+        case .audio: "已复制录音"
+        case nil: "已复制 GIF"
+        }
       shelf.island?.show(
-        kind.recording.map { "已复制\($0.medium.noun)" } ?? "已复制 GIF",
+        copied,
         leading: shown.map(Island.thumbnail(of:)) ?? .tone)
       return
     }
@@ -861,12 +869,17 @@ struct ShelfCardView: View {
   private func buttons(compact: Bool, corners: Bool) -> some View {
     ZStack {
       HStack(spacing: 6) {
-        pill("拷贝", "doc.on.doc", compact: compact, action: card.copyAgain)
+        pill(String(localized: "拷贝"), "doc.on.doc", compact: compact, action: card.copyAgain)
         if card.kind == .image {
-          pill("存储", "square.and.arrow.down", compact: compact, action: card.save)
+          pill(
+            String(localized: "存储"), "square.and.arrow.down", compact: compact, action: card.save)
         } else if case .video = card.kind {
+          // 卡片里放不下英文全称（Convert to GIF）：胶囊上用短说法，悬停提示、旁白照旧写全称
           pill(
             ShelfCard.Command.gif.title, ShelfCard.gifSymbol, compact: compact,
+            short: String(
+              localized: "shot.shelf.gifPill", defaultValue: "转成 GIF",
+              comment: "短说法：视频卡悬停时「拷贝」旁边的胶囊（卡片宽 200，放不下全称）"),
             action: card.convertToGIF)
         }
       }
@@ -877,10 +890,10 @@ struct ShelfCardView: View {
         }
       }
       if corners {
-        round("xmark", "关闭", action: card.close).frame(
+        round("xmark", String(localized: "关闭"), action: card.close).frame(
           maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         if card.kind == .image, Feature.screenshot.isOn {
-          round("pin.fill", "钉图", action: card.pin).frame(
+          round("pin.fill", ShelfCard.Command.pin.title, action: card.pin).frame(
             maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
         } else if card.canCompress {
           // 录屏：右下角（截图放钉图的位置）是「压缩」
@@ -888,7 +901,7 @@ struct ShelfCardView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
         }
         if case .saved = card.badge {
-          round("folder", "在访达中显示", action: card.revealInFinder).frame(
+          round("folder", String(localized: "在访达中显示"), action: card.revealInFinder).frame(
             maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
         }
       }
@@ -899,12 +912,13 @@ struct ShelfCardView: View {
   }
 
   private func pill(
-    _ title: String, _ symbol: String, compact: Bool, action: @escaping () -> Void
+    _ title: String, _ symbol: String, compact: Bool, short: String? = nil,
+    action: @escaping () -> Void
   ) -> some View {
     Button(action: action) {
       let label = HStack(spacing: 6) {
         Image(systemName: symbol)
-        if !compact { Text(title) }
+        if !compact { Text(short ?? title) }
       }
       .font(.system(size: 12, weight: .medium))
       if compact {

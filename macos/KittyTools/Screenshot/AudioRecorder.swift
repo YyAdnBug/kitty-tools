@@ -242,7 +242,7 @@ final class AudioRecorder: NSObject {
   func togglePause() {
     guard let recorder, stopping == nil else { return }
     if isPaused {
-      guard recorder.record() else { return stop(.failed("没能继续录音")) }
+      guard recorder.record() else { return stop(.failed(String(localized: "没能继续录音"))) }
       resumedAt = .now
     } else {
       recorder.pause()
@@ -264,10 +264,14 @@ final class AudioRecorder: NSObject {
     let seconds = Double(recorded.components.seconds)
     var actions = [Island.Action("停止") { [weak self] in self?.stop() }]
     if source == .microphone {
-      actions.append(Island.Action(isPaused ? "继续" : "暂停") { [weak self] in self?.togglePause() })
+      // 暂停后的「继续」（Resume）和欢迎引导的「继续」（Continue）英文不同：显式 key
+      let resume = LocalizedStringResource(
+        "record.resume", defaultValue: "继续", comment: "录音暂停后接着录")
+      actions.append(Island.Action(isPaused ? resume : "暂停") { [weak self] in self?.togglePause() })
     }
     return Island.Activity(
-      id: Self.islandActivity, kind: .record, title: isPaused ? "录音已暂停" : "录音中",
+      id: Self.islandActivity, kind: .record,
+      title: isPaused ? String(localized: "录音已暂停") : String(localized: "录音中"),
       symbol: "mic.circle.fill", tone: .error,
       trailing: isPaused
         ? .text(ScreenRecorder.clock(Int(seconds))) : .elapsed(since: .now - seconds),
@@ -298,12 +302,12 @@ final class AudioRecorder: NSObject {
       recorder = try AVAudioRecorder(url: temp, settings: Self.settings)
     } catch {
       Log.record.error("录音开不起来：\(error)")
-      return finish(.failed("没能开始录音"))
+      return finish(.failed(String(localized: "没能开始录音")))
     }
     recorder.isMeteringEnabled = true
     guard recorder.prepareToRecord(), recorder.record() else {
       Log.record.error("录音 record() 失败")
-      return finish(.failed("没能开始录音"))
+      return finish(.failed(String(localized: "没能开始录音")))
     }
     self.recorder = recorder
     resumedAt = .now
@@ -322,7 +326,7 @@ final class AudioRecorder: NSObject {
         defaults: defaults, island: island,
         audioOnly: .init(systemAudio: true, microphone: source == .both),
         onFinish: { [weak self] in self?.engineFinished($0) })
-    else { return finish(.failed("找不到要录的屏幕")) }
+    else { return finish(.failed(String(localized: "找不到要录的屏幕"))) }
     engine.microphoneStatus = microphoneStatus
     engine.requestMicrophone = requestMicrophone
     engine.onStarted = { [weak self] in self?.engineStarted() }
@@ -391,7 +395,7 @@ final class AudioRecorder: NSObject {
       presentHUD(.recording(0))
     }
     stopItem = ScreenRecorder.makeStopItem(
-      label: "停止录音", target: self, action: #selector(stopClicked))
+      label: String(localized: "停止录音"), target: self, action: #selector(stopClicked))
     island?.setActivity(islandState())
     // 菜单开着（.eventTracking）时电平和计时也要走
     let timer = Timer(timeInterval: 1 / Double(Self.meterRate), repeats: true) { [weak self] _ in
@@ -406,7 +410,10 @@ final class AudioRecorder: NSObject {
     if source != .microphone { options.insert(.idleDisplaySleepDisabled) }
     activity = ProcessInfo.processInfo.beginActivity(options: options, reason: "录音")
     if source == .microphone { observeInterruptions() }
-    Island.announce("开始录音")
+    // 播报「录音开始了」和按钮「开始录音」（Start Recording）英文不同：显式 key
+    Island.announce(
+      LocalizedStringResource(
+        "record.audioStarted", defaultValue: "开始录音", comment: "读屏播报：录音已经开始了"))
   }
 
   private func clicked(_ item: RecordingHUD.Item) {
@@ -436,7 +443,7 @@ final class AudioRecorder: NSObject {
       // ponytail: 不挂委托、靠这里看 isRecording：看不到具体出错原因（只能说「录音意外停止」）、最多晚一个 tick（50 ms）
       // 才发现、暂停中不查。真遇到了按 mac-native §3 挂 nonisolated 的 AVAudioRecorderDelegate
       // （audioRecorderEncodeErrorDidOccur / audioRecorderDidFinishRecording），把错误文字投回主线程再收尾
-      guard recorder.isRecording else { return stop(.failed("录音意外停止")) }
+      guard recorder.isRecording else { return stop(.failed(String(localized: "录音意外停止"))) }
       recorder.updateMeters()
       levels.add(recorder.averagePower(forChannel: 0))
     } else {
@@ -526,7 +533,8 @@ final class AudioRecorder: NSObject {
 
   /// 待录的控制条出来时旁白说的：设了录音快捷键就带上「再按一次」
   nonisolated static func readyAnnouncement(key: String?) -> String {
-    "录音控制条已打开，" + (key.map { "再按一次 \($0) 或点「开始录音」开始" } ?? "点「开始录音」开始")
+    key.map { String(localized: "录音控制条已打开，再按一次 \($0) 或点「开始录音」开始") }
+      ?? String(localized: "录音控制条已打开，点「开始录音」开始")
   }
 
   /// 开头 silenceWindow 里一次都没到门槛：HUD 出「没听到声音」；听到过就收起（之后再安静也不再出）

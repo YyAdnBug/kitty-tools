@@ -129,7 +129,7 @@ private struct ClotheslineCard: View {
       .animation(.easeOut(duration: 0.12), value: isHovered)
       .overlay { mouse(image) }
       .accessibilityElement(children: .ignore)
-      .accessibilityLabel("\(item.kind.title)，\(ShotHistoryModel.caption(item))")
+      .accessibilityLabel(item.kind.title + Island.comma + ShotHistoryModel.caption(item))
       .accessibilityActions {
         ForEach(ClotheslineModel.menu(for: item).flatMap { $0 }, id: \.self) { command in
           Button(command.title) { model.onCommand(command, item) }

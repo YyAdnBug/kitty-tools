@@ -21,8 +21,8 @@ enum FlyCard {
     /// 结果的一句话（旁白；减弱动态效果时不飞，刘海岛说这句）
     var title: String {
       switch self {
-      case .copied: "已复制截图"
-      case .saved: "已保存到「\(folder ?? "")」"
+      case .copied: String(localized: "已复制截图")
+      case .saved: String(localized: "已保存到「\(folder ?? "")」")
       }
     }
 

@@ -41,7 +41,7 @@ struct ShotHistoryView: View {
           ForEach(ShotHistoryModel.Filter.allCases) { Text($0.title).tag($0) }
         }
         .pickerStyle(.segmented)
-        .frame(width: 280)
+        .frame(width: Self.filterWidth)
       }
     }
     .searchable(text: $model.search, prompt: "搜来源或种类")
@@ -201,9 +201,20 @@ struct ShotHistoryView: View {
     }
   }
 
+  /// 顶上筛选的宽：280；英文四段放不下（约 370）时按系统分段控件量出来的宽加宽，中文照旧 280
+  private static let filterWidth: CGFloat = max(
+    280,
+    ceil(
+      NSSegmentedControl(
+        labels: ShotHistoryModel.Filter.allCases.map(\.title), trackingMode: .selectOne,
+        target: nil, action: nil
+      ).fittingSize.width) + 8)
+
   /// 空状态那句：保留几天照设置（0 = 一直留着）
   static func keepLine(days: Int) -> String {
-    "截图、长截图和录屏录音都会留在这里，" + (days > 0 ? "保留 \(days) 天" : "一直留着")
+    days > 0
+      ? String(localized: "截图、长截图和录屏录音都会留在这里，保留 \(days) 天")
+      : String(localized: "截图、长截图和录屏录音都会留在这里，一直留着")
   }
 
   static func symbol(_ kind: ShotHistory.Kind) -> String {
@@ -265,12 +276,12 @@ struct ShotHistoryView: View {
       Text(ShotHistoryModel.summary(items)).font(.system(size: 12)).foregroundStyle(.secondary)
       Divider()
       VStack(alignment: .leading, spacing: 8) {
-        row("拷贝", "doc.on.doc", key: "⌘C") { model.copySelection() }
+        row(String(localized: "拷贝"), "doc.on.doc", key: "⌘C") { model.copySelection() }
         row(ScreenshotOutput.saveTitle, "square.and.arrow.down", key: "⌘S") {
           model.saveSelection()
         }
-        row("在访达中显示", "folder", key: "⇧⌘R") { model.revealSelection() }
-        row("删除", "trash", key: "⌫", danger: true) { model.deleteSelection() }
+        row(String(localized: "在访达中显示"), "folder", key: "⇧⌘R") { model.revealSelection() }
+        row(String(localized: "删除"), "trash", key: "⌫", danger: true) { model.deleteSelection() }
       }
       Spacer()
     }
@@ -284,25 +295,29 @@ struct ShotHistoryView: View {
     let isImage = item.filePath == nil
     VStack(alignment: .leading, spacing: 8) {
       if isImage {
-        row("改标注", "pencil.tip.crop.circle", key: "↩") { edit(item) }
-        row("拷贝", "doc.on.doc", key: "⌘C") { model.actions.copy(item) }
+        row(String(localized: "改标注"), "pencil.tip.crop.circle", key: "↩") { edit(item) }
+        row(String(localized: "拷贝"), "doc.on.doc", key: "⌘C") { model.actions.copy(item) }
         row(ScreenshotOutput.saveTitle, "square.and.arrow.down", key: "⌘S") {
           model.actions.save(item)
         }
-        row("另存为…", "square.and.arrow.down.on.square", key: "⇧⌘S") { model.actions.saveAs(item) }
-        row("钉到屏幕", "pin", key: "⌘P") { model.actions.pin(item) }
-        row("识字并拷贝", "text.viewfinder", key: "⌘O") { model.actions.recognize(item) }
+        row(String(localized: "另存为…"), "square.and.arrow.down.on.square", key: "⇧⌘S") {
+          model.actions.saveAs(item)
+        }
+        row(String(localized: "钉到屏幕"), "pin", key: "⌘P") { model.actions.pin(item) }
+        row(String(localized: "识字并拷贝"), "text.viewfinder", key: "⌘O") {
+          model.actions.recognize(item)
+        }
       } else {
-        row("打开", "play.rectangle", key: "↩") { model.open(item) }
+        row(String(localized: "打开"), "play.rectangle", key: "↩") { model.open(item) }
         // 录制的拷的是文件（第四轮体检 U1：原来只有 ⌘C，这里没有）；录屏另有转成 GIF、压缩（同视频卡）
-        row("拷贝", "doc.on.doc", key: "⌘C") { model.actions.copy(item) }
+        row(String(localized: "拷贝"), "doc.on.doc", key: "⌘C") { model.actions.copy(item) }
         ForEach(model.jobs(for: item), id: \.self) { job in
           row(job.title, job.symbol) { model.actions.convert(item, job) }
         }
       }
-      row("在访达中显示", "folder", key: "⇧⌘R") { model.reveal(item) }
+      row(String(localized: "在访达中显示"), "folder", key: "⇧⌘R") { model.reveal(item) }
         .disabled(!model.hasFile(item))
-      row("删除", "trash", key: "⌫", danger: true) { model.deleting = [item.id] }
+      row(String(localized: "删除"), "trash", key: "⌫", danger: true) { model.deleting = [item.id] }
     }
   }
 
@@ -431,7 +446,7 @@ private struct ShotCard: View {
       }
     )
     .accessibilityElement(children: .combine)
-    .accessibilityLabel("\(item.kind.title)，\(ShotHistoryModel.caption(item))")
+    .accessibilityLabel(item.kind.title + Island.comma + ShotHistoryModel.caption(item))
     .accessibilityAddTraits(chosen ? [.isSelected, .isButton] : .isButton)
   }
 }

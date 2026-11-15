@@ -34,7 +34,9 @@ final class TranslationCard: HUDBar {
 
   /// 标题（也是旁白名）：没有放不下的段时就是「译文」
   static func title(count: Int) -> String {
-    count > 1 ? "放不下的 \(count) 段译文" : count == 1 ? "放不下的译文" : "译文"
+    count > 1
+      ? String(localized: "放不下的 \(count) 段译文")
+      : count == 1 ? String(localized: "放不下的译文") : String(localized: "译文")
   }
 
   /// toggles：图上画了译文、可以换回原文看
@@ -61,7 +63,7 @@ final class TranslationCard: HUDBar {
       source.maximumNumberOfLines = 1
       source.cell?.truncatesLastVisibleLine = true
       source.frame = CGRect(x: 0, y: y, width: inner, height: ceil(source.fittingSize.height))
-      source.setAccessibilityLabel("原文：\(item.source)")
+      source.setAccessibilityLabel(String(localized: "原文：\(item.source)"))
       document.addSubview(source)
       y = source.frame.maxY + 2
       let text = CardText.make(item.translation, width: inner, font: Self.textFont)
@@ -95,16 +97,16 @@ final class TranslationCard: HUDBar {
     let button = CGSize(width: 24, height: 24)
     let close = barButton(
       NSImage(systemSymbolName: "xmark", accessibilityDescription: nil) ?? NSImage(),
-      tip: "关闭", action: #selector(closeTapped), size: button)
+      tip: String(localized: "关闭"), action: #selector(closeTapped), size: button)
     let copy = barButton(
       NSImage(systemSymbolName: "doc.on.doc", accessibilityDescription: nil) ?? NSImage(),
-      tip: "拷贝译文", action: #selector(copyTapped), size: button)
+      tip: String(localized: "拷贝译文"), action: #selector(copyTapped), size: button)
     var controls = [close, copy]
     if toggles {
       let original = barButton(
         NSImage(systemSymbolName: "eye", accessibilityDescription: nil) ?? NSImage(),
-        tip: "看原文", action: #selector(toggleTapped), size: button)
-      original.setAccessibilityValue("图上是译文")
+        tip: String(localized: "看原文"), action: #selector(toggleTapped), size: button)
+      original.setAccessibilityValue(String(localized: "图上是译文"))
       toggle = original
       controls.append(original)
     }
@@ -155,9 +157,9 @@ final class TranslationCard: HUDBar {
     guard let toggle else { return }
     toggle.image = NSImage(systemSymbolName: on ? "eye.fill" : "eye", accessibilityDescription: nil)
     toggle.contentTintColor = on ? Style.Shot.accent : Style.HUD.text
-    toggle.toolTip = on ? "看译文" : "看原文"
-    toggle.setAccessibilityLabel(on ? "看译文" : "看原文")
-    toggle.setAccessibilityValue(on ? "图上是原文" : "图上是译文")
+    toggle.toolTip = on ? String(localized: "看译文") : String(localized: "看原文")
+    toggle.setAccessibilityLabel(toggle.toolTip)
+    toggle.setAccessibilityValue(on ? String(localized: "图上是原文") : String(localized: "图上是译文"))
   }
 
   @objc private func copyTapped() { onCopy() }
@@ -198,7 +200,7 @@ private final class CardText: NSTextView {
       height = max(height, ceil(layout.usedRect(for: container).height))
     }
     text.frame = CGRect(x: 0, y: 0, width: width, height: height)
-    text.setAccessibilityLabel("译文")
+    text.setAccessibilityLabel(String(localized: "译文"))
     return text
   }
 

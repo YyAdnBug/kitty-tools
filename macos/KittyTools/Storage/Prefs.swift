@@ -628,9 +628,9 @@ enum Prefs {
 
     var title: String {
       switch self {
-      case .corner: "角落的缩略图"
-      case .clothesline: "挂到晾衣绳上"
-      case .none: "都不要"
+      case .corner: String(localized: "角落的缩略图")
+      case .clothesline: String(localized: "挂到晾衣绳上")
+      case .none: String(localized: "都不要")
       }
     }
 
@@ -647,9 +647,11 @@ enum Prefs {
 
     var title: String {
       switch self {
-      case .slow: "慢"
-      case .normal: "标准"
-      case .fast: "快"
+      case .slow: String(localized: "慢")
+      // 录屏清晰度也有个「标准」（Standard）：这里是速度的中间档（Normal），显式 key
+      case .normal:
+        String(localized: "shot.scrollSpeed.normal", defaultValue: "标准", comment: "长截图自动滚动的速度：中间那档")
+      case .fast: String(localized: "快")
       }
     }
 

@@ -44,15 +44,18 @@ import UniformTypeIdentifiers
   enum Kind: String, Codable, CaseIterable, Sendable {
     case shot, scroll, video, audio, gif
 
-    var title: String {
+    /// 种类的名字（卡片角上、旁白、搜索）：录屏 / 录音是名词，同 ScreenRecorder.Medium.nounResource
+    var titleResource: LocalizedStringResource {
       switch self {
       case .shot: "截图"
       case .scroll: "长截图"
-      case .video: "录屏"
-      case .audio: "录音"
+      case .video: ScreenRecorder.Medium.screen.nounResource
+      case .audio: ScreenRecorder.Medium.audio.nounResource
       case .gif: "GIF"
       }
     }
+
+    var title: String { String(localized: titleResource) }
   }
 
   struct Item: Identifiable, Equatable, Sendable {
@@ -499,9 +502,9 @@ import UniformTypeIdentifiers
   /// 「点了没反应」（2026-10-26 用户手测报的）
   static func reveal(_ item: Item, notice: (String, Bool) -> Void) {
     guard let path = item.filePath ?? item.savedPath else {
-      return notice("这张还没存成文件，先存储一下", false)
+      return notice(String(localized: "这张还没存成文件，先存储一下"), false)
     }
-    guard fileExists(item) else { return notice("文件已经不在了", true) }
+    guard fileExists(item) else { return notice(String(localized: "文件已经不在了"), true) }
     NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: path)])
   }
 
@@ -515,14 +518,16 @@ import UniformTypeIdentifiers
       .compactMap { $0.filePath ?? $0.savedPath }
       .filter { FileManager.default.fileExists(atPath: $0) }
       .map { URL(filePath: $0) }
-    guard !urls.isEmpty else { return notice("这几条都还没存成文件，先存储一下", false) }
+    guard !urls.isEmpty else {
+      return notice(String(localized: "这几条都还没存成文件，先存储一下"), false)
+    }
     NSWorkspace.shared.activateFileViewerSelecting(urls)
   }
 
   /// 用默认 App 打开（录制的那几条）
   static func open(_ item: Item, notice: (String, Bool) -> Void) {
     guard let path = item.filePath, fileExists(item) else {
-      return notice("文件已经不在了", true)
+      return notice(String(localized: "文件已经不在了"), true)
     }
     NSWorkspace.shared.open(URL(filePath: path))
   }
@@ -719,7 +724,7 @@ private final class ShotPromise: NSObject, NSFilePromiseProviderDelegate {
   func filePromiseProvider(_ provider: NSFilePromiseProvider, fileNameForType fileType: String)
     -> String
   {
-    history?.dragName(for: item) ?? "截图.png"
+    history?.dragName(for: item) ?? ScreenshotOutput.fileNoun + ".png"
   }
 
   nonisolated func filePromiseProvider(

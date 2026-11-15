@@ -89,7 +89,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
   var isAdjusting = false {
     didSet {
       if isAdjusting, !oldValue, let selection {
-        announce("已选中 \(sizeText(selection))")
+        announce(String(localized: "已选中 \(sizeText(selection))"))
       }
       refresh()
     }
@@ -365,21 +365,31 @@ final class SelectionView: NSView, NSTextViewDelegate {
 
   /// 待选时顶部提示的几段（按会话的模式）
   private static func hintParts(for session: SelectionSession) -> [String] {
-    let lastRegion = session.lastRegion == nil ? [] : ["D 上次区域"]
+    let lastRegion = session.lastRegion == nil ? [] : [String(localized: "D 上次区域")]
     // 认元素时单击选中的是指针下那一块，滚轮换大小、Tab 切只认窗口；切成只认窗口后提示怎么切回来
     let elements = session.findsElements && !session.windowOnly
     let layers =
-      !session.findsElements ? [] : session.windowOnly ? ["Tab 认元素"] : ["滚轮 换大小", "Tab 只认窗口"]
+      !session.findsElements
+      ? []
+      : session.windowOnly
+        ? [String(localized: "Tab 认元素")]
+        : [String(localized: "滚轮 换大小"), String(localized: "Tab 只认窗口")]
     return switch session.mode {
     case .quick: session.hint.components(separatedBy: " · ")
     case .capture:
       session.hint.isEmpty
-        ? ["拖动框选", elements ? "单击选中" : "单击选中窗口"] + layers + ["双击直接拷贝"] + lastRegion
-          + ["Esc 取消"]
+        ? [
+          String(localized: "拖动框选"),
+          elements ? String(localized: "单击选中") : String(localized: "单击选中窗口"),
+        ] + layers + [String(localized: "双击直接拷贝")] + lastRegion
+          + [String(localized: "Esc 取消")]
         : session.hint.components(separatedBy: " · ")
     case .record:
-      ["拖动框选要录的区域", elements ? "单击选中" : "单击选中窗口区域"] + layers + ["单击桌面录整屏", "双击直接开始"]
-        + lastRegion + ["Esc 取消"]
+      [
+        String(localized: "拖动框选要录的区域"),
+        elements ? String(localized: "单击选中") : String(localized: "单击选中窗口区域"),
+      ] + layers + [String(localized: "单击桌面录整屏"), String(localized: "双击直接开始")]
+        + lastRegion + [String(localized: "Esc 取消")]
     }
   }
 
@@ -526,7 +536,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
   /// 挡下会清掉标注的操作：提示音 + 顶部提示怎么退出
   private func refuseWipe(_ what: String) {
     NSSound.beep()
-    flashHint([what, "Esc 退出"])
+    flashHint([what, String(localized: "Esc 退出")])
   }
 
   /// 回到待选（别的屏开始操作、右键重新框时）：标注一起清掉
@@ -557,22 +567,23 @@ final class SelectionView: NSView, NSTextViewDelegate {
   override func isAccessibilityElement() -> Bool { true }
   override func accessibilityRole() -> NSAccessibility.Role? { .group }
   override func accessibilityLabel() -> String? { accessibilityState }
-  override func accessibilityHelp() -> String? { hintParts.joined(separator: "，") }
+  override func accessibilityHelp() -> String? { hintParts.joined(separator: Island.comma) }
 
   /// 旁白读的状态：待选（悬停着窗口时带窗口尺寸）/ 选区像素尺寸，调整时加当前工具、锁着的比例
   private var accessibilityState: String {
     guard let selection else {
-      guard let mouse, let hovered = hoverRect(at: mouse) else { return "待选" }
-      return "待选，\(hoverName ?? "窗口") \(sizeText(hovered)) 像素"
+      guard let mouse, let hovered = hoverRect(at: mouse) else { return String(localized: "待选") }
+      let name = hoverName ?? String(localized: "窗口")
+      return String(localized: "待选，\(name) \(sizeText(hovered)) 像素")
     }
-    var parts = ["选区 \(sizeText(selection)) 像素"]
+    var parts = [String(localized: "选区 \(sizeText(selection)) 像素")]
     if adjusts, isAdjusting {
-      if let tool { parts.append("当前工具：\(tool.title)") }
+      if let tool { parts.append(String(localized: "当前工具：\(tool.title)")) }
       if let ratio = session.lockedRatio {
-        parts.append("比例 \(RegionSelector.ratioTitle(ratio))")
+        parts.append(String(localized: "比例 \(RegionSelector.ratioTitle(ratio))"))
       }
     }
-    return parts.joined(separator: "，")
+    return parts.joined(separator: Island.comma)
   }
 
   /// 主动播报：本 App 不激活，VoiceOver 的焦点多半不在遮罩上，状态切换要自己说出来
@@ -1388,8 +1399,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
   }
 
   /// 两个 HUD 菜单的名字（旁白读它，也用来认开着的是哪个）
-  private static let saveMenuLabel = "存储选项"
-  private static let rebindMenuLabel = "快捷键"
+  private static var saveMenuLabel: String { String(localized: "存储选项") }
+  private static var rebindMenuLabel: String { String(localized: "快捷键") }
   /// 等新的键最多等多久（秒）：提示一直在，过了就当取消
   private static let rebindWait = 60.0
 
@@ -1402,13 +1413,13 @@ final class SelectionView: NSView, NSTextViewDelegate {
     else { return }
     rebindItem = item
     var entries: [HUDMenu.Entry] = [
-      .init(title: "改「\(key.title)」的快捷键…", key: key.label) { [weak self] in
+      .init(title: String(localized: "改「\(key.title)」的快捷键…"), key: key.label) { [weak self] in
         self?.startRebind(key)
       }
     ]
     if key.key() != key.defaultKey {
       entries.append(
-        .init(title: "恢复默认", key: key.defaultKey.display) { [weak self] in
+        .init(title: String(localized: "恢复默认"), key: key.defaultKey.display) { [weak self] in
           self?.setShotKey(key, to: key.defaultKey)
         })
     }
@@ -1423,9 +1434,9 @@ final class SelectionView: NSView, NSTextViewDelegate {
     endEditing()
     rebinding = key
     toolbar?.setWaiting(rebindItem)
-    let text = "按下新的键给「\(key.title)」"
+    let text = String(localized: "按下新的键给「\(key.title)」")
     announce(text)
-    showRebindTip([text, "Esc 取消"])
+    showRebindTip([text, String(localized: "Esc 取消")])
     Task { [weak self] in
       try? await Task.sleep(for: .seconds(Self.rebindWait))
       if let self, self.rebinding == key { self.stopRebind() }
@@ -1491,7 +1502,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
     if Int(event.keyCode) == kVK_Escape, flags.isEmpty {
       rebinding = nil
       toolbar?.setWaiting(nil)
-      return showRebindTip(["没改，还是 \(key.label ?? "未设置")"], seconds: 1.5)
+      let label = key.label ?? String(localized: "未设置")
+      return showRebindTip([String(localized: "没改，还是 \(label)")], seconds: 1.5)
     }
     setShotKey(key, to: HotKey(keyCode: event.keyCode, flags: event.modifierFlags))
   }
@@ -1502,7 +1514,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
       announce(problem)
       // 从右键菜单「恢复默认」来的（没在等）不接着等
       if rebinding == key {
-        showRebindTip([problem, "换一个键", "Esc 取消"])
+        showRebindTip([problem, String(localized: "换一个键"), String(localized: "Esc 取消")])
       } else {
         showRebindTip([problem], seconds: 2.5)
       }
@@ -1512,11 +1524,11 @@ final class SelectionView: NSView, NSTextViewDelegate {
     toolbar?.setWaiting(nil)
     key.set(hotKey)
     toolbar?.refreshTips()
-    let done = "「\(key.title)」的快捷键改成了 \(hotKey.display)"
+    let done = String(localized: "「\(key.title)」的快捷键改成了 \(hotKey.display)")
     announce(done)
     showRebindTip([done], seconds: 1.8)
   }
-  private static let ratioMenuLabel = "比例"
+  private static var ratioMenuLabel: String { String(localized: "比例") }
 
   /// 托盘上字号的数字：HUD 菜单列字号档位（勾着现在的），锚在数字下方；开着时再点一下收起
   private func toggleFontMenu(from button: NSView) {
@@ -1533,8 +1545,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
     guard annotates, isAdjusting, !isDraggingAnnotation else { return }
     endEditing()
     pickingColor = true
-    flashHint(["单击取色", "Esc 取消"])
-    announce("单击取色")
+    flashHint([String(localized: "单击取色"), String(localized: "Esc 取消")])
+    announce(String(localized: "单击取色"))
     refresh()
     refreshCursor()
   }
@@ -1544,7 +1556,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
     pickingColor = false
     if let sampled, let rgb = Int(sampled.hex.dropFirst(), radix: 16) {
       restyle { $0.custom = rgb }
-      announce("已取色 \(sampled.hex)")
+      announce(String(localized: "已取色 \(sampled.hex)"))
     }
     refresh()
     refreshCursor()
@@ -1569,7 +1581,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
     guard let crop = source.cropping(to: pixels) else { return }
     let style = shownStyle
     redacting = true
-    announce("正在找要打码的内容")
+    announce(String(localized: "正在找要打码的内容"))
     Task { [weak self] in
       let boxes = await OCR.redactionBoxes(in: crop)
       // 正拖着标注就等松手再落：中途改了列表，松手记的那一步撤销会把打码一起撤掉（⌥ 单击没拖开还会整个丢掉）
@@ -1580,7 +1592,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
       guard isAdjusting, self.selection == selection, image === source else { return }
       let areas = Redaction.areas(boxes ?? [], in: selection, existing: annotations)
       guard !areas.isEmpty else {
-        let reason = boxes == nil ? "识字失败，没有打码" : "没找到要打码的内容"
+        let reason = boxes == nil ? String(localized: "识字失败，没有打码") : String(localized: "没找到要打码的内容")
         flashHint([reason])
         announce(reason)
         return
@@ -1588,7 +1600,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
       commit(annotations + areas.map { Annotation(shape: .mosaic($0), style: style) })
       selectedAnnotation = nil
       refresh()
-      announce("已打码 \(areas.count) 处")
+      announce(String(localized: "已打码 \(areas.count) 处"))
     }
   }
 
@@ -1602,7 +1614,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
     next[index] = selected.renumbered(number + delta)
     commit(next)
     refresh()
-    if let shown = selectedCounterNumber { announce("编号 \(shown)") }
+    if let shown = selectedCounterNumber { announce(String(localized: "编号 \(shown)")) }
   }
 
   /// 滚轮换档（拍板 O1）：调整阶段鼠标在选中的标注上（或正在输入的文字上）滚，往上大一档、往下小一档——文字是字号，
@@ -1649,7 +1661,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
           .init(title: ScreenshotOutput.saveTitle, key: ShotKey.save.label ?? "") { [weak self] in
             self?.output(.save)
           },
-          .init(title: "另存为…", key: ShotKey.saveAs.label ?? "") { [weak self] in
+          .init(title: String(localized: "另存为…"), key: ShotKey.saveAs.label ?? "") { [weak self] in
             self?.output(.saveAs)
           },
         ], label: Self.saveMenuLabel),
@@ -1679,7 +1691,9 @@ final class SelectionView: NSView, NSTextViewDelegate {
     }
     refresh()
     refreshCursor()
-    announce(ratio.map { "已锁定比例 \(RegionSelector.ratioTitle($0))" } ?? "已解锁比例")
+    announce(
+      ratio.map { String(localized: "已锁定比例 \(RegionSelector.ratioTitle($0))") }
+        ?? String(localized: "已解锁比例"))
   }
 
   /// 点了尺寸胶囊的数字：收掉菜单和输入中的文字，两个数变成输入框
@@ -1727,7 +1741,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
     } else if tool != nil {
       tool = nil
       refreshCursor()
-      announce("已收起工具")
+      announce(String(localized: "已收起工具"))
     } else {
       cancelTranslation()
       session.finish(nil)
@@ -1851,7 +1865,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
     tool = chosen
     selectedAnnotation = nil
     refreshCursor()
-    announce(chosen.map { "\($0.title)工具" } ?? "已收起工具")
+    announce(
+      chosen.map { String(localized: "\($0.title)工具") } ?? String(localized: "已收起工具"))
   }
 
   /// 改了标注就记一步撤销（没变不记）
@@ -2041,7 +2056,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
     // 一键打码还在识字：等它落下再出图，不然号码跟着图出去了
     if redacting {
       NSSound.beep()
-      return flashHint(["正在打码，稍等再出图"])
+      return flashHint([String(localized: "正在打码，稍等再出图")])
     }
     if case .translate = action, translateHandler != nil { return translateInPlace() }
     endEditing()
@@ -2097,11 +2112,11 @@ final class SelectionView: NSView, NSTextViewDelegate {
       translateTask = nil
       guard result.image != nil || !result.leftovers.isEmpty else {
         refresh()
-        return flashHint([result.message ?? "翻译失败"])
+        return flashHint([result.message ?? String(localized: "翻译失败")])
       }
       if result.image != nil, replaced == nil {
         refresh()
-        return flashHint(["合成失败"])
+        return flashHint([String(localized: "合成失败")])
       }
       // 翻的时候选区被换掉了（框选和工具栏这时不动，防万一）：这份译文贴不回去
       guard selection == translatedSelection else { return refresh() }
@@ -2131,8 +2146,9 @@ final class SelectionView: NSView, NSTextViewDelegate {
 
   /// 就地翻译完的顶部提示：到字号下限也放不下的段图上留着原文，译文在卡片里
   static func translatedHint(leftovers: Int, drewAny: Bool) -> String {
-    guard leftovers > 0 else { return "已替换为译文" }
-    return drewAny ? "有 \(leftovers) 段放不下，译文放在卡片里" : "选区太小，译文放在卡片里"
+    guard leftovers > 0 else { return String(localized: "已替换为译文") }
+    return drewAny
+      ? String(localized: "有 \(leftovers) 段放不下，译文放在卡片里") : String(localized: "选区太小，译文放在卡片里")
   }
 
   /// 翻完挂的译文卡片（截图自检也直接调；第二轮 E1 起总挂）：宽同选区、夹在 240–420 pt，高最多到屏幕的四成；
@@ -2186,7 +2202,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private func copyTranslation() {
     guard let card = translationCard else { return }
     Paster.write(string: card.translation, record: true)
-    flashHint(["已拷贝译文"])
+    flashHint([String(localized: "已拷贝译文")])
   }
 
   /// 卡片上的「看原文」：图上换回原文 / 再换回译文，不重新请求；出图按当时看到的那张
@@ -2197,7 +2213,9 @@ final class SelectionView: NSView, NSTextViewDelegate {
     annotationCanvas?.image = image
     needsDisplay = true
     translationCard?.showOriginal(showingOriginal)
-    if translationCard != nil { flashHint([showingOriginal ? "正在看原文" : "已换回译文"]) }
+    if translationCard != nil {
+      flashHint([showingOriginal ? String(localized: "正在看原文") : String(localized: "已换回译文")])
+    }
   }
 
   /// 译文卡片放哪（拍板 B3，纯函数，配单测）：选区外、工具栏的另一侧（栏在下面挂上面、栏在上面挂下面），离选区 10，
@@ -2250,7 +2268,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
     image = untranslated.image
     annotationCanvas?.image = untranslated.image
     needsDisplay = true
-    flashHint(["选区变了，已换回原文"])
+    flashHint([String(localized: "选区变了，已换回原文")])
   }
 
   /// 停掉就地翻译：Esc 收起截图、这块屏被清掉时都要调，不然还在排队的那几段会继续往翻译服务发请求。
@@ -2271,12 +2289,12 @@ final class SelectionView: NSView, NSTextViewDelegate {
     guard selection.height >= ScrollCapture.minimumHeight else {
       // 不写点数：尺寸胶囊显示的是像素，写「60 点」和看到的数字对不上（体检 B43）
       NSSound.beep()
-      flashHint(["选区太矮，拉高一点再长截图"])
-      return announce("选区太矮，拉高一点再长截图")
+      flashHint([String(localized: "选区太矮，拉高一点再长截图")])
+      return announce(String(localized: "选区太矮，拉高一点再长截图"))
     }
     if hasAnnotations || session.hasAnnotations(besides: self) {
-      flashHint(["长截图不带这些标注，拼完可以在长图上标"])
-      announce("长截图不带这些标注，拼完可以在长图上标")
+      flashHint([String(localized: "长截图不带这些标注，拼完可以在长图上标")])
+      announce(String(localized: "长截图不带这些标注，拼完可以在长图上标"))
     }
     session.finish(.scroll(selection.offsetBy(dx: window.frame.minX, dy: window.frame.minY)))
   }
@@ -2287,8 +2305,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
     guard let selection, let window else { return }
     guard min(selection.width, selection.height) >= ScreenRecorder.minimumSide else {
       NSSound.beep()
-      flashHint(["选区太小，拉大一点再录"])
-      return announce("选区太小，拉大一点再录")
+      flashHint([String(localized: "选区太小，拉大一点再录")])
+      return announce(String(localized: "选区太小，拉大一点再录"))
     }
     session.finish(.record(selection.offsetBy(dx: window.frame.minX, dy: window.frame.minY)))
   }
@@ -2299,19 +2317,19 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private func switchToRecording() {
     guard !hasAnnotations, !session.hasAnnotations(besides: self) else {
       NSSound.beep()
-      flashHint(["录屏不带标注，先撤销或 Esc 退出"])
-      return announce("录屏不带标注，先撤销或 Esc 退出")
+      flashHint([String(localized: "录屏不带标注，先撤销或 Esc 退出")])
+      return announce(String(localized: "录屏不带标注，先撤销或 Esc 退出"))
     }
     if let blocker = session.recordingBlocker() {
       NSSound.beep()
       flashHint([blocker.title, blocker.detail])
-      return announce("\(blocker.title)，\(blocker.detail)")
+      return announce([blocker.title, blocker.detail].joined(separator: Island.comma))
     }
     finishSizeEditing(commit: true)
     session.mode = .record
     for view in session.views where view !== self { view.becomeRecorder() }
     becomeRecorder()
-    announce("已切到录屏，↩ 开始录制")
+    announce(String(localized: "已切到录屏，↩ 开始录制"))
   }
 
   /// 会话切成录屏之后：收起 HUD 菜单、输入框和工具，工具栏、样式托盘换成录制条（从选区那条边长出来），顶部提示换成录屏的
@@ -2433,14 +2451,15 @@ final class SelectionView: NSView, NSTextViewDelegate {
     stack = current
     refresh()
     let layer = current.layers[index]
-    announce("\(layer.name ?? "窗口") \(sizeText(layer.frame))")
+    announce("\(layer.name ?? String(localized: "窗口")) \(sizeText(layer.frame))")
   }
 
   /// Tab：在「认窗口里的元素 / 只认窗口」之间切（只管这一次框选，几块屏一起换），顶部提示跟着换一下
   private func toggleWindowOnly() {
     session.windowOnly.toggle()
     for view in session.views.isEmpty ? [self] : session.views { view.elementModeChanged() }
-    announce(session.windowOnly ? "只认窗口" : "认窗口里的元素")
+    announce(
+      session.windowOnly ? String(localized: "只认窗口") : String(localized: "认窗口里的元素"))
   }
 
   private func elementModeChanged() {
@@ -2601,7 +2620,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
       // 别的屏上画了标注：不在这块屏重新框（框出来就会清掉那边），同右键
       if session.hasAnnotations(besides: self) {
         drag = nil
-        return refuseWipe("有标注时不能换屏重新框选")
+        return refuseWipe(String(localized: "有标注时不能换屏重新框选"))
       }
       window?.makeKey()
       let restore = isAdjusting ? selection : nil
@@ -2792,7 +2811,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
     }
     // 画了标注（含正在输入、还没收下的文字，不管在哪块屏）就不清空（一下丢掉太亏）
     if hasAnnotations || session.hasAnnotations(besides: self) {
-      return refuseWipe("有标注时右键不清空")
+      return refuseWipe(String(localized: "有标注时右键不清空"))
     }
     session.activate(self)
     reset()
@@ -2949,7 +2968,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private func perform(_ key: ShotKey) -> Bool {
     switch key {
     case .lastRegion:
-      if !session.selectLastRegion() { refuseWipe("有标注时不跳到别的屏") }
+      if !session.selectLastRegion() { refuseWipe(String(localized: "有标注时不跳到别的屏")) }
       return true
     case .pickColor:
       // 吸管取色时 C 也是取色（放大镜的信息卡上亮着 C），不能结束截图把选区和标注丢掉

@@ -16,10 +16,15 @@ import SwiftUI
 
     var title: String {
       switch self {
-      case .all: "全部"
-      case .shot: "截图"
-      case .scroll: "长截图"
-      case .recording: "录制"
+      // 筛选是复数的几类（Screenshots），和页名「截图」（Screenshot）分开：显式 key
+      case .all: String(localized: "全部")
+      case .shot:
+        String(localized: "shot.history.shots", defaultValue: "截图", comment: "截图历史顶上的筛选：截图")
+      case .scroll:
+        String(localized: "shot.history.scrolls", defaultValue: "长截图", comment: "截图历史顶上的筛选：长截图")
+      case .recording:
+        String(
+          localized: "shot.history.recordings", defaultValue: "录制", comment: "截图历史顶上的筛选：录屏、录音和 GIF")
       }
     }
 
@@ -110,6 +115,7 @@ import SwiftUI
       guard !needle.isEmpty else { return true }
       return (item.source ?? "").lowercased().contains(needle)
         || item.kind.title.lowercased().contains(needle)
+        || item.kind.titleResource.chinese.contains(needle)  // 英文界面里打中文也找得到（TRANSLATION.md「搜索中英都认」）
         || (item.savedPath.map { ($0 as NSString).lastPathComponent.lowercased().contains(needle) }
           ?? false)
     }
@@ -133,8 +139,10 @@ import SwiftUI
   static func title(for day: Date, now: Date, calendar: Calendar = .current) -> String {
     // 和传进来的 now 比，不用 isDateInToday（那是和真实的今天比，单测没法固定时间）
     let today = calendar.startOfDay(for: now)
-    if day == today { return "今天" }
-    if day == calendar.date(byAdding: .day, value: -1, to: today) { return "昨天" }
+    if day == today { return String(localized: "今天") }
+    if day == calendar.date(byAdding: .day, value: -1, to: today) {
+      return String(localized: "昨天")
+    }
     // 只要日期、不带时间（Date.FormatStyle 加了字段也还会带上 0:00，实测）；今年的不写年份
     let formatter =
       calendar.isDate(day, equalTo: now, toGranularity: .year) ? thisYear : otherYears
@@ -166,10 +174,12 @@ import SwiftUI
     var parts: [String] = []
     if let path = item.savedPath {
       let folder = (path as NSString).deletingLastPathComponent
-      parts.append("已存到「\(FileManager.default.displayName(atPath: folder))」")
+      parts.append(String(localized: "已存到「\(FileManager.default.displayName(atPath: folder))」"))
     }
-    if !item.annotations.isEmpty { parts.append("\(item.annotations.count) 条标注") }
-    if item.pinnedAt != nil { parts.append("钉过") }
+    if !item.annotations.isEmpty {
+      parts.append(String(localized: "\(item.annotations.count) 条标注"))
+    }
+    if item.pinnedAt != nil { parts.append(String(localized: "钉过")) }
     return parts.joined(separator: " · ")
   }
 
@@ -380,7 +390,7 @@ import SwiftUI
     self.model = model
     window = NSWindow(
       contentViewController: .windowContent(ShotHistoryView(model: model)))
-    window.title = "截图历史"
+    window.title = String(localized: "截图历史")
     window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
     window.toolbarStyle = .unified
     window.isReleasedWhenClosed = false

@@ -106,12 +106,14 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
 
   override func accessibilityLabel() -> String? {
     let count = annotations.count
-    return "长截图，\(image.width) × \(image.height) 像素"
-      + (count > 0 ? "，\(count) 条标注" : "")
+    let (width, height) = (String(image.width), String(image.height))
+    return count > 0
+      ? String(localized: "长截图，\(width) × \(height) 像素，\(count) 条标注")
+      : String(localized: "长截图，\(width) × \(height) 像素")
   }
 
   override func accessibilityHelp() -> String? {
-    "数字键 1 到 0 选标注工具，⌫ 删除选中的，⌘Z 撤销，↩ 拷贝"
+    String(localized: "数字键 1 到 0 选标注工具，⌫ 删除选中的，⌘Z 撤销，↩ 拷贝")
   }
   override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
@@ -536,7 +538,7 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
       pickingColor = false
       if let rgb = color(at: point) {
         restyle { $0.custom = rgb }
-        Island.announce("\(String(format: "已取色 #%06X", rgb))")
+        Island.announce("已取色 \(String(format: "#%06X", rgb))")
       }
       return refreshCursor()
     }

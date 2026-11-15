@@ -418,11 +418,15 @@ private final class PinView: NSView {
     let side = 22 - 2 * HUDBar.materialInset
     let opacity = circle(
       barButton(
-        NSImage(systemSymbolName: "circle.lefthalf.filled", accessibilityDescription: "透明度")!,
-        tip: "透明度", action: #selector(showOpacity(_:)), size: CGSize(width: side, height: side)))
+        NSImage(
+          systemSymbolName: "circle.lefthalf.filled",
+          accessibilityDescription: String(localized: "透明度"))!,
+        tip: String(localized: "透明度"), action: #selector(showOpacity(_:)),
+        size: CGSize(width: side, height: side)))
     let close = circle(
       barButton(
-        NSImage(systemSymbolName: "xmark", accessibilityDescription: "关闭")!, tip: "关闭",
+        NSImage(systemSymbolName: "xmark", accessibilityDescription: String(localized: "关闭"))!,
+        tip: String(localized: "关闭"),
         action: #selector(close), size: CGSize(width: side, height: side)))
     buttons.spacing = 6
     buttons.setViews([opacity, close], in: .trailing)
@@ -602,24 +606,27 @@ private final class PinView: NSView {
   private var commands: [Command] {
     [
       Command(
-        title: "拷贝", key: "c", keyCode: kVK_ANSI_C, modifiers: .command,
+        title: String(localized: "拷贝"), key: "c", keyCode: kVK_ANSI_C, modifiers: .command,
         action: #selector(copyImage)),
       Command(
-        title: "识字并拷贝", key: "o", keyCode: kVK_ANSI_O, modifiers: [],
+        title: String(localized: "识字并拷贝"), key: "o", keyCode: kVK_ANSI_O, modifiers: [],
         action: #selector(recognizeText)),
       Command(
-        title: "翻译", key: "", keyCode: nil, modifiers: [], action: #selector(translateImage)),
+        title: String(localized: "翻译"), key: "", keyCode: nil, modifiers: [],
+        action: #selector(translateImage)),
       Command(
         title: ScreenshotOutput.saveTitle, key: "s", keyCode: kVK_ANSI_S, modifiers: .command,
         action: #selector(saveImage)),
       Command(
-        title: "另存为…", key: "s", keyCode: kVK_ANSI_S, modifiers: [.command, .shift],
+        title: String(localized: "另存为…"), key: "s", keyCode: kVK_ANSI_S,
+        modifiers: [.command, .shift],
         action: #selector(saveImageAs)),
       Command(
-        title: "原始大小", key: "0", keyCode: kVK_ANSI_0, modifiers: .command,
+        title: String(localized: "原始大小"), key: "0", keyCode: kVK_ANSI_0, modifiers: .command,
         action: #selector(actualSize)),
       Command(
-        title: "关闭", key: "w", keyCode: kVK_ANSI_W, modifiers: .command, action: #selector(close)),
+        title: String(localized: "关闭"), key: "w", keyCode: kVK_ANSI_W, modifiers: .command,
+        action: #selector(close)),
     ]
   }
 
@@ -636,7 +643,7 @@ private final class PinView: NSView {
     }
     items[0..<5].forEach(menu.addItem)
     menu.addItem(.separator())
-    let opacity = NSMenuItem(title: "透明度", action: nil, keyEquivalent: "")
+    let opacity = NSMenuItem(title: String(localized: "透明度"), action: nil, keyEquivalent: "")
     opacity.submenu = opacityMenu()
     menu.addItem(opacity)
     menu.addItem(items[5])
@@ -649,12 +656,15 @@ private final class PinView: NSView {
 
   override func isAccessibilityElement() -> Bool { true }
   override func accessibilityRole() -> NSAccessibility.Role? { .image }
-  override func accessibilityLabel() -> String? { "钉图" }
+  override func accessibilityLabel() -> String? {
+    String(localized: "shot.pin.name", defaultValue: "钉图", comment: "名词：钉在屏幕上的一张截图（旁白）")
+  }
 
   override func accessibilityValue() -> Any? {
     let size = window?.frame.size ?? bounds.size
     let percent = Int(((panel?.opacity ?? 1) * 100).rounded())
-    return "\(Int(size.width.rounded())) × \(Int(size.height.rounded())) 点，透明度 \(percent)%"
+    let (width, height) = (String(Int(size.width.rounded())), String(Int(size.height.rounded())))
+    return String(localized: "\(width) × \(height) 点，透明度 \(percent)%")
   }
 
   override func accessibilityCustomActions() -> [NSAccessibilityCustomAction]? {
@@ -725,7 +735,7 @@ private final class OpacitySlider: NSView {
     slider.action = #selector(changed)
     // 跟随系统时系统自己取 AccentColor（品牌粉），选了 8 色之一时 AppKit 控件不跟，填充色单独给（mac-whisker §3「颜色」）
     slider.trackFillColor = NSColor(Style.brand)
-    slider.setAccessibilityLabel("透明度")
+    slider.setAccessibilityLabel(String(localized: "透明度"))
     label.font = .monospacedDigitSystemFont(ofSize: 13, weight: .regular)
     label.textColor = .secondaryLabelColor
     label.alignment = .right

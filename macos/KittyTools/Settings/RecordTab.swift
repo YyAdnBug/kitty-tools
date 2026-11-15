@@ -55,7 +55,7 @@ struct RecordTab: View {
           }
           .pickerStyle(.segmented)
         } header: {
-          Text("录屏")
+          Text(ScreenRecorder.Medium.screen.nounResource)
         } footer: {
           SectionFootnote(
             "60 fps 更顺，文件大约大一半；大屏上可能录不满 60。文件嫌大：标准清晰度在高分屏上宽高各减半，文件小一半多，小字会糊一些；HEVC 同样的画面小三分之一左右，部分 App 和旧设备可能放不了。录好的也可以在角落的缩略图上点「压缩」另存一份小的。只显示快捷键：带 ⌘ ⌃ ⌥ 的组合键、Esc 和 F 键才进画面，打字不显示。"
@@ -70,7 +70,7 @@ struct RecordTab: View {
           .pickerStyle(.segmented)
           Toggle("按快捷键后立即开始录音", isOn: $startsImmediately)
         } header: {
-          Text("录音")
+          Text(ScreenRecorder.Medium.audio.nounResource)
         } footer: {
           SectionFootnote(
             "录系统声音时菜单栏会出现屏幕录制指示；锁屏会停止；不能暂停。立即开始关着时，按快捷键（或点菜单栏、启动器里的「录音」）先在屏幕底部打开录音控制条，点 ● 或再按一次才开始录。"

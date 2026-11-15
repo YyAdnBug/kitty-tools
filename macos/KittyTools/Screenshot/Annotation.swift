@@ -19,16 +19,16 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
 
     var title: String {
       switch self {
-      case .rectangle: "矩形"
-      case .ellipse: "椭圆"
-      case .arrow: "箭头"
-      case .line: "直线"
-      case .pen: "画笔"
-      case .highlighter: "荧光笔"
-      case .text: "文字"
-      case .counter: "序号"
-      case .mosaic: "打码"  // 2026-11-12 拍板 C1：马赛克和模糊合成一个工具（case 名进了磁盘，不改）
-      case .spotlight: "聚光灯"
+      case .rectangle: String(localized: "矩形")
+      case .ellipse: String(localized: "椭圆")
+      case .arrow: String(localized: "箭头")
+      case .line: String(localized: "直线")
+      case .pen: String(localized: "画笔")
+      case .highlighter: String(localized: "荧光笔")
+      case .text: String(localized: "文字")
+      case .counter: String(localized: "序号")
+      case .mosaic: String(localized: "打码")  // 2026-11-12 拍板 C1：马赛克和模糊合成一个工具（case 名进了磁盘，不改）
+      case .spotlight: String(localized: "聚光灯")
       }
     }
 
@@ -54,10 +54,10 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
     /// 样式托盘的选项分段（Style.option 是下标，存进了磁盘，不能换顺序）；空 = 没有选项
     var optionTitles: [String] {
       switch self {
-      case .rectangle, .ellipse: ["空心", "实心"]
-      case .arrow: ["单头", "双头"]  // 2026-11-12 拍板 O4
-      case .text: ["无底", "描边", "底色"]
-      case .mosaic: ["像素", "模糊"]
+      case .rectangle, .ellipse: [String(localized: "空心"), String(localized: "实心")]
+      case .arrow: [String(localized: "单头"), String(localized: "双头")]  // 2026-11-12 拍板 O4
+      case .text: [String(localized: "无底"), String(localized: "描边"), String(localized: "底色")]
+      case .mosaic: [String(localized: "像素"), String(localized: "模糊")]
       default: []
       }
     }
@@ -69,10 +69,10 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
 
     var weightTitles: [String] {
       switch self {
-      case .text: ["小", "中", "大"]
-      case .spotlight: ["浅", "中", "深"]
-      case .mosaic: ["弱", "中", "强"]
-      default: ["细", "中", "粗"]
+      case .text: [String(localized: "小"), String(localized: "中"), String(localized: "大")]
+      case .spotlight: [String(localized: "浅"), String(localized: "中"), String(localized: "深")]
+      case .mosaic: [String(localized: "弱"), String(localized: "中"), String(localized: "强")]
+      default: Weight.allCases.map(\.title)
       }
     }
 
@@ -101,16 +101,17 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
   enum Palette: Int, CaseIterable, Codable, Sendable {
     case pink, red, orange, yellow, green, blue, black, white
 
+    /// 颜色的名字（色点的旁白：「粉色」）
     var title: String {
       switch self {
-      case .pink: "粉"
-      case .red: "红"
-      case .orange: "橙"
-      case .yellow: "黄"
-      case .green: "绿"
-      case .blue: "蓝"
-      case .black: "黑"
-      case .white: "白"
+      case .pink: String(localized: "粉色")
+      case .red: String(localized: "红色")
+      case .orange: String(localized: "橙色")
+      case .yellow: String(localized: "黄色")
+      case .green: String(localized: "绿色")
+      case .blue: String(localized: "蓝色")
+      case .black: String(localized: "黑色")
+      case .white: String(localized: "白色")
       }
     }
 
@@ -140,7 +141,9 @@ struct Annotation: Identifiable, Equatable, Codable, Sendable {
   enum Weight: Int, CaseIterable, Codable, Sendable {
     case small, medium, large
 
-    var title: String { ["细", "中", "粗"][rawValue] }
+    var title: String {
+      [String(localized: "细"), String(localized: "中"), String(localized: "粗")][rawValue]
+    }
     var lineWidth: CGFloat { [2, 4, 6][rawValue] }
     var fontSize: CGFloat { [14, 20, 28][rawValue] }
     /// 马赛克每格的边长（点）

@@ -56,7 +56,7 @@ enum ScreenshotOutput {
 
   /// 快速保存那一项的叫法（截图家族同一个，体检 B41；截图历史窗口也是，第四轮体检 U13）：存储到「桌面」——访达里的名字，
   /// 不写 Desktop
-  static var saveTitle: String { "存储到「\(saveFolderName)」" }
+  static var saveTitle: String { String(localized: "存储到「\(saveFolderName)」") }
 
   /// 快速保存的文件夹在访达里的名字（「桌面」）：多选时「存储 3 项到「桌面」」也用它
   static var saveFolderName: String { FileManager.default.displayName(atPath: saveDirectory.path) }
@@ -82,9 +82,10 @@ enum ScreenshotOutput {
   }
 
   /// 「截图 2026-09-24 22.46.10.png」；已有同名文件就追加「 2」「 3」…。录屏传「录屏」「mp4」（同一个快速保存目录）。
+  /// 前缀跟起名那一刻的界面语言（英文「Screenshot 2026-09-24 22.46.10.png」；起好的名字之后不再比对，旧文件照样认）。
   /// 纯函数（只查文件是否存在），配单测
   nonisolated static func availableURL(
-    in directory: URL, date: Date = .now, prefix: String = "截图", ext: String = "png"
+    in directory: URL, date: Date = .now, prefix: String = fileNoun, ext: String = "png"
   ) -> URL {
     let stamp = date.formatted(
       Date.VerbatimFormatStyle(
@@ -99,6 +100,13 @@ enum ScreenshotOutput {
       index += 1
     }
     return url
+  }
+
+  /// 截图文件名的前缀（「截图 日期 时间.png」）：和页名「截图」分开，英文写法不一样
+  nonisolated static var fileNoun: String {
+    String(
+      localized: "shot.fileName", defaultValue: "截图",
+      comment: "截图的默认文件名前缀：「截图 2026-09-24 22.46.10.png」")
   }
 
   /// ⌘S：存进快速保存目录（首次写桌面 / 下载等目录时系统会问一次文件夹访问授权）。

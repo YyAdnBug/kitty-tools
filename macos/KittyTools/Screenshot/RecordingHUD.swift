@@ -104,22 +104,26 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
   /// 录音：电平、暂停钮、暂停时顶替红点的暂停符号、「没听到声音」
   private lazy var meter = LevelMeter()
   private lazy var pauseButton = barButton(
-    NSImage(systemSymbolName: "pause.fill", accessibilityDescription: "暂停录音")!, tip: "暂停录音",
-    label: "暂停录音", action: #selector(pauseClicked(_:)), size: CGSize(width: 32, height: 32))
+    NSImage(systemSymbolName: "pause.fill", accessibilityDescription: String(localized: "暂停录音"))!,
+    tip: String(localized: "暂停录音"), label: String(localized: "暂停录音"),
+    action: #selector(pauseClicked(_:)), size: CGSize(width: 32, height: 32))
   private lazy var pauseSeparator = barSeparator()
   private lazy var pauseMark = makePauseMark()
   private lazy var silence = makeSilence()
   private lazy var separator = barSeparator()
   /// 倒数时是「取消」，录制中是「放弃」
   private lazy var closeButton = barButton(
-    NSImage(systemSymbolName: "xmark", accessibilityDescription: "取消")!, tip: "取消",
-    label: "取消", action: #selector(closeClicked(_:)), size: CGSize(width: 32, height: 32))
+    NSImage(systemSymbolName: "xmark", accessibilityDescription: String(localized: "取消"))!,
+    tip: String(localized: "取消"), label: String(localized: "取消"),
+    action: #selector(closeClicked(_:)), size: CGSize(width: 32, height: 32))
   private lazy var stopButton = makeRoundButton(
-    "stop.fill", tip: stopTip, label: "停止并保存", action: #selector(stopClicked(_:)))
+    "stop.fill", tip: stopTip, label: String(localized: "停止并保存"), action: #selector(stopClicked(_:))
+  )
   /// 录音待录：来源开关（读写 defaults 里的 Prefs.audioRecordSource）和开始钮
   private let defaults: UserDefaults
   private lazy var systemButton = makeSourceButton { [unowned self] in
-    "系统声音：\(AudioRecorder.Source(defaults).recordsSystem ? "开" : "关")"
+    AudioRecorder.Source(defaults).recordsSystem
+      ? String(localized: "系统声音：开") : String(localized: "系统声音：关")
   }
   /// 输入设备（名字、是不是蓝牙）每次现查、不记：控制条没有超时、能一直开着，这期间戴上蓝牙耳机换了系统输入，提示还写旧
   /// 设备、少了蓝牙那一句的话，开录前就不知道会录成通话音质（录制条的缓存只活一次框选）。只有进程里第一次查约 70 ms，
@@ -131,7 +135,8 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
       bluetooth: input?.bluetooth ?? false)
   }
   private lazy var startButton = makeRoundButton(
-    "circle.fill", tip: startTip, label: "开始录音", action: #selector(startRecordingClicked(_:)))
+    "circle.fill", tip: startTip, label: String(localized: "开始录音"),
+    action: #selector(startRecordingClicked(_:)))
   /// 开关上画着的来源（别处改了偏好——设置 › 录制的「来源」——跟着重画；和偏好一样就不动，免得把点击的 .replace 过渡截断）
   private var shownSource: AudioRecorder.Source?
   private var sourceObserver: NSObjectProtocol?
@@ -166,8 +171,8 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
   ) {
     self.state = state
     self.medium = medium
-    stopTip = stopKey.map { "停止并保存（\($0)）" } ?? "停止并保存"
-    startTip = stopKey.map { "开始录音（\($0)）" } ?? "开始录音"
+    stopTip = stopKey.map { String(localized: "停止并保存（\($0)）") } ?? String(localized: "停止并保存")
+    startTip = stopKey.map { String(localized: "开始录音（\($0)）") } ?? String(localized: "开始录音")
     self.defaults = defaults
     self.escapes = escapes
     self.systemAudio = systemAudio
@@ -198,7 +203,8 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
     panel.delegate = self
     setAccessibilityElement(true)
     setAccessibilityRole(.group)
-    setAccessibilityLabel(medium == .audio ? "录音控制" : "录屏控制")
+    setAccessibilityLabel(
+      medium == .audio ? String(localized: "录音控制") : String(localized: "录屏控制"))
     show(state, rebuilding: true)
     // 录屏不倒数：HUD 一建出来就是录制态、马上接在录制条的位置，■ 落在录制条上刚点过的 ● 那里（同录音的
     // 待录 → 录制，ignoresStop）
@@ -289,9 +295,9 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
     switch next {
     case .countdown(let seconds):
       reading.countdown = seconds
-      setAccessibilityValue("\(seconds) 秒后开始")
+      setAccessibilityValue(String(localized: "\(seconds) 秒后开始"))
     case .ready:
-      setAccessibilityValue("还没开始录")
+      setAccessibilityValue(String(localized: "还没开始录"))
     case .recording:
       // 计时是值，不逐秒播报
       widened = applyClock()
@@ -351,7 +357,9 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
     clockText.show(
       text, font: Self.clockFont, color: isPaused ? Style.HUD.secondaryText : Style.HUD.text,
       direction: Style.reduceMotion ? 0 : 1)
-    setAccessibilityValue((isPaused ? "已暂停，" : "") + "已录 " + ScreenRecorder.spoken(seconds))
+    let spoken = ScreenRecorder.spoken(seconds)
+    setAccessibilityValue(
+      isPaused ? String(localized: "已暂停，已录 \(spoken)") : String(localized: "已录 \(spoken)"))
     let width = TickerView.measure(text, font: Self.clockFont).size.width
     guard clockWidth.constant != width else { return false }
     clockWidth.constant = width
@@ -384,8 +392,8 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
     let next = AudioRecorder.Source(defaults).toggling(system: sender === systemButton)
     showSource(next, animated: true)
     defaults.set(next.rawValue, forKey: Prefs.audioRecordSource)
-    Island.announce(
-      "系统声音：\(next.recordsSystem ? "开" : "关")，麦克风：\(next.recordsMicrophone ? "开" : "关")")
+    let state = { (on: Bool) in on ? String(localized: "开") : String(localized: "关") }
+    Island.announce("系统声音：\(state(next.recordsSystem))，麦克风：\(state(next.recordsMicrophone))")
   }
 
   /// 按了开始、还没真正录起来（等授权框、流还在开）：来源开关和 ● 置灰，✕ 还能点（会话当取消）
@@ -400,7 +408,8 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
   func setPausable(_ pausable: Bool) {
     guard medium == .audio else { return }
     pauseButton.isEnabled = pausable
-    pauseButton.toolTip = pausable ? "暂停录音" : "录系统声音时不能暂停"
+    pauseButton.toolTip =
+      pausable ? String(localized: "暂停录音") : String(localized: "录系统声音时不能暂停")
   }
 
   /// 电平（最近 3 s，旧 → 新，dB）：每帧直接换（instant），减弱动态效果时照样更新
@@ -414,7 +423,7 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
     pauseMark.isHidden = !paused
     if paused { dot.stop() } else { dot.start() }
     meter.isPaused = paused
-    let name = paused ? "继续录音" : "暂停录音"
+    let name = paused ? String(localized: "继续录音") : String(localized: "暂停录音")
     pauseButton.image = NSImage(
       systemSymbolName: paused ? "play.fill" : "pause.fill", accessibilityDescription: name)
     pauseButton.toolTip = name
@@ -434,29 +443,36 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
   /// 位置换成橙字「麦克风断开了」，HUD 变宽（右边线不动；会话之后不再叫 setSilent）
   func microphoneLost(animated: Bool = true) {
     if medium == .audio {
-      silence.stringValue = "麦克风断开了"
-      silence.toolTip = "麦克风断开了，后面没有麦克风声音"
+      silence.stringValue = String(localized: "麦克风断开了")
+      silence.toolTip = String(localized: "麦克风断开了，后面没有麦克风声音")
       silence.isHidden = false
       return refit()
     }
     guard microphone else { return }
     microphoneIcon.show(
-      "mic.slash.fill", tint: .systemOrange, flat: true, label: "麦克风断开了，后面没有麦克风声音",
+      "mic.slash.fill", tint: .systemOrange, flat: true,
+      label: String(localized: "麦克风断开了，后面没有麦克风声音"),
       animated: animated)
-    microphoneIcon.toolTip = "麦克风断开了，后面没有麦克风声音"
+    microphoneIcon.toolTip = String(localized: "麦克风断开了，后面没有麦克风声音")
   }
 
   /// ✕ 的样子：倒数时「取消」，待录时「关闭」（点一下就关，没有东西可放弃），录制中「放弃录制」（录音「放弃录音」），
   /// 上膛后变红「再点一次放弃」
   private func applyClose() {
     let armed = discard.isArmed(at: .now)
-    let discardName = medium == .audio ? "放弃录音" : "放弃录制"
+    let discardName = medium == .audio ? String(localized: "放弃录音") : String(localized: "放弃录制")
     let (label, tip): (String, String) =
       switch state {
-      case .countdown: ("取消", escapes ? "取消（Esc）" : "取消")
-      case .ready: ("关闭", "关闭")
+      case .countdown:
+        (String(localized: "取消"), escapes ? String(localized: "取消（Esc）") : String(localized: "取消"))
+      case .ready: (String(localized: "关闭"), String(localized: "关闭"))
       case .recording:
-        armed ? ("再点一次放弃", "再点一次放弃，不会保存") : (discardName, discardName + "（不保存）")
+        armed
+          ? (String(localized: "再点一次放弃"), String(localized: "再点一次放弃，不会保存"))
+          : (
+            discardName,
+            medium == .audio ? String(localized: "放弃录音（不保存）") : String(localized: "放弃录制（不保存）")
+          )
       }
     closeButton.setAccessibilityLabel(label)
     closeButton.toolTip = tip
@@ -583,8 +599,8 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
     button.refusesFirstResponder = true
     button.target = self
     button.action = #selector(startClicked(_:))
-    button.toolTip = "马上开始"
-    button.setAccessibilityLabel("马上开始")
+    button.toolTip = String(localized: "马上开始")
+    button.setAccessibilityLabel(String(localized: "马上开始"))
     let host = PassiveHost(rootView: AnyView(CountdownText(reading: reading)))
     host.sizingOptions = [.intrinsicContentSize]
     host.translatesAutoresizingMaskIntoConstraints = false
@@ -637,7 +653,7 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
 
   /// 「没听到声音」：11 pt systemOrange（配置 / 授权问题的语义色）
   private func makeSilence() -> NSTextField {
-    let label = NSTextField(labelWithString: "没听到声音")
+    let label = NSTextField(labelWithString: String(localized: "没听到声音"))
     label.font = .systemFont(ofSize: 11, weight: .medium)
     label.textColor = .systemOrange
     label.isHidden = true
@@ -646,15 +662,22 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
 
   /// 声音状态：两个 13 pt 图标（开 = 强调色、关 = 再次文字色 + 斜杠），只读、提示「录制中不能开关声音」
   private func makeSound() -> NSView {
-    let icons: [(SoundIcon, Bool, String, String, String)] = [
-      (systemIcon, systemAudio, "speaker.wave.2.fill", "speaker.slash.fill", "系统声音"),
-      (microphoneIcon, microphone, "mic.fill", "mic.slash.fill", "麦克风"),
+    // (图标, 开着, 开 / 关的符号, 开 / 关的旁白)
+    let icons: [(SoundIcon, Bool, String, String, String, String)] = [
+      (
+        systemIcon, systemAudio, "speaker.wave.2.fill", "speaker.slash.fill",
+        String(localized: "系统声音：开"), String(localized: "系统声音：关")
+      ),
+      (
+        microphoneIcon, microphone, "mic.fill", "mic.slash.fill", String(localized: "麦克风：开"),
+        String(localized: "麦克风：关")
+      ),
     ]
-    for (icon, on, symbol, off, name) in icons {
+    for (icon, on, symbol, off, onLabel, offLabel) in icons {
       icon.show(
         on ? symbol : off, tint: on ? Style.Shot.accent : Style.HUD.tertiaryText, flat: !on,
-        label: "\(name)：\(on ? "开" : "关")", animated: false)
-      icon.toolTip = "录制中不能开关声音"
+        label: on ? onLabel : offLabel, animated: false)
+      icon.toolTip = String(localized: "录制中不能开关声音")
     }
     let row = NSStackView(views: [systemIcon, microphoneIcon])
     row.spacing = 2

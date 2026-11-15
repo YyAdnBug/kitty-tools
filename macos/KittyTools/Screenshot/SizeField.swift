@@ -74,8 +74,8 @@ final class SizeField: NSView, NSTextFieldDelegate {
       }
       surface.addSubview(field)
     }
-    widthField.setAccessibilityLabel("宽（像素）")
-    heightField.setAccessibilityLabel("高（像素）")
+    widthField.setAccessibilityLabel(String(localized: "宽（像素）"))
+    heightField.setAccessibilityLabel(String(localized: "高（像素）"))
     times.font = Self.font
     times.textColor = Style.HUD.secondaryText
     times.setAccessibilityElement(false)
@@ -117,7 +117,7 @@ final class SizeField: NSView, NSTextFieldDelegate {
       (next.3 ? Style.Shot.accent.withAlphaComponent(0.9) : Style.HUD.chipFill).cgColor
     chipLabel.stringValue = "\(ratio) ▾"
     chipLabel.textColor = next.3 ? Style.Shot.onAccent : Style.HUD.text
-    chip.setAccessibilityLabel("比例：\(ratio)")
+    chip.setAccessibilityLabel(String(localized: "比例：\(ratio)"))
     layoutParts()
   }
 

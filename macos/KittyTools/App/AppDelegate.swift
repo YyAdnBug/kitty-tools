@@ -2371,7 +2371,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       )
     }
     if case .installing = updater.state {
-      return (String(localized: "正在更新"), String(localized: "装好会自动重新打开，之后再\(medium.noun)"))
+      return (
+        String(localized: "正在更新"),
+        medium == .screen
+          ? String(localized: "装好会自动重新打开，之后再录屏")
+          : String(localized: "装好会自动重新打开，之后再录音")
+      )
     }
     return nil
   }
@@ -2486,7 +2491,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       // 飞过去了：落地的角标已写目录名，正常停的不再出岛（同截图快速保存），只给 VoiceOver 说一句
       if landRecording(file, result, medium), summary.tone == .success {
         let spoken = ScreenRecorder.spoken(Int(result.duration.components.seconds))
-        return Island.announce("\(medium.noun)已保存到「\(folder)」，\(spoken)")
+        return Island.announce(
+          medium == .screen ? "录屏已保存到「\(folder)」，\(spoken)" : "录音已保存到「\(folder)」，\(spoken)")
       }
       if summary.tone == .success, let poster = result.poster {
         leading = Island.thumbnail(of: poster)

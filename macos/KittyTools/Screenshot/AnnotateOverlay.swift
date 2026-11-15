@@ -19,7 +19,7 @@ import Carbon.HIToolbox
   /// 缩放的上下限和一档（⌘+ / ⌘-）
   private static let zoomRange: ClosedRange<CGFloat> = 0.1...4
   private static let zoomStep: CGFloat = 1.25
-  private static let saveMenuLabel = "存储选项"
+  private static var saveMenuLabel: String { String(localized: "存储选项") }
 
   private let image: CGImage
   /// 像素 / 点
@@ -309,7 +309,7 @@ import Carbon.HIToolbox
         .init(title: ScreenshotOutput.saveTitle, key: ShotKey.save.label ?? "") { [weak self] in
           self?.emit(.save)
         },
-        .init(title: "另存为…", key: ShotKey.saveAs.label ?? "") { [weak self] in
+        .init(title: String(localized: "另存为…"), key: ShotKey.saveAs.label ?? "") { [weak self] in
           self?.emit(.saveAs)
         },
       ], label: Self.saveMenuLabel)

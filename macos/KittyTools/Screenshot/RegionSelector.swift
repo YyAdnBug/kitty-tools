@@ -295,11 +295,12 @@ enum RegionSelector {
 
   /// 比例预设（尺寸胶囊的菜单）：宽 / 高，nil = 自由
   static let ratios: [(title: String, value: CGFloat?)] = [
-    ("自由", nil), ("1:1", 1), ("4:3", 4.0 / 3), ("3:2", 1.5), ("16:9", 16.0 / 9), ("9:16", 9.0 / 16),
+    (String(localized: "自由", comment: "截图比例：不锁定"), nil), ("1:1", 1), ("4:3", 4.0 / 3), ("3:2", 1.5),
+    ("16:9", 16.0 / 9), ("9:16", 9.0 / 16),
   ]
 
   static func ratioTitle(_ ratio: CGFloat?) -> String {
-    ratios.first { $0.value == ratio }?.title ?? "自由"
+    ratios.first { $0.value == ratio }?.title ?? String(localized: "自由", comment: "截图比例：不锁定")
   }
 
   /// 套用比例预设：宽不变、高按比例，顶边和水平中心不动；下面放不下就按剩下的高反推宽（只会变窄，不会出屏）

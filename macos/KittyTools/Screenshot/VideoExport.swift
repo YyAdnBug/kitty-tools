@@ -71,16 +71,16 @@ enum VideoExport {
     do {
       let asset = AVURLAsset(url: video)
       guard let track = try await asset.loadTracks(withMediaType: .video).first else {
-        throw Failure("视频里没有画面")
+        throw Failure(String(localized: "视频里没有画面"))
       }
       let (pixels, range) = try await track.load(.naturalSize, .timeRange)
       let frames = frames(
         duration: try await asset.load(.duration).seconds, videoEnd: range.end.seconds)
-      guard !frames.isEmpty else { throw Failure("视频里没有画面") }
+      guard !frames.isEmpty else { throw Failure(String(localized: "视频里没有画面")) }
       guard
         let destination = CGImageDestinationCreateWithURL(
           target as CFURL, UTType.gif.identifier as CFString, frames.count, nil)
-      else { throw Failure("没能新建 GIF 文件") }
+      else { throw Failure(String(localized: "没能新建 GIF 文件")) }
       CGImageDestinationSetProperties(
         destination,
         [
@@ -109,7 +109,7 @@ enum VideoExport {
       }
       try Task.checkCancellation()
       guard let first, CGImageDestinationFinalize(destination) else {
-        throw Failure("没能写入 GIF 文件")
+        throw Failure(String(localized: "没能写入 GIF 文件"))
       }
       return first
     } catch {
@@ -137,9 +137,12 @@ enum VideoExport {
     return Int64(min((video + audioBitrate) * seconds / 8, Double(bytes) * 0.6))
   }
 
+  /// 压缩出来的文件名后缀「 压缩版」：**不翻**（拍板 D6）——isCompressed 靠它认出压缩版，英文界面压出来的也叫「… 压缩版.mp4」
+  nonisolated static let compressedSuffix = " 压缩版"
+
   /// 压缩后存成什么名字：原名后面加「 压缩版」，mp4；重名加序号
   static func compressedTarget(for video: URL, in directory: URL) -> URL {
-    let base = video.deletingPathExtension().lastPathComponent + " 压缩版"
+    let base = video.deletingPathExtension().lastPathComponent + compressedSuffix
     var url = directory.appending(path: "\(base).mp4")
     var index = 2
     while FileManager.default.fileExists(atPath: url.path) {
@@ -168,7 +171,7 @@ enum VideoExport {
     do {
       let asset = AVURLAsset(url: video)
       guard let track = try await asset.loadTracks(withMediaType: .video).first else {
-        throw Failure("视频里没有画面")
+        throw Failure(String(localized: "视频里没有画面"))
       }
       let pixels = try await track.load(.naturalSize)
       let seconds = try await asset.load(.duration).seconds
@@ -180,7 +183,7 @@ enum VideoExport {
       guard
         let session = AVAssetExportSession(
           asset: asset, presetName: AVAssetExportPresetHighestQuality)
-      else { throw Failure("这段视频压不了") }
+      else { throw Failure(String(localized: "这段视频压不了")) }
       session.fileLengthLimit = compressedLimit(
         pixels: pixels, seconds: seconds, audioBitrate: audio, bytes: Int64(bytes))
       session.shouldOptimizeForNetworkUse = true
@@ -203,7 +206,8 @@ enum VideoExport {
     }
   }
 
-  /// 压缩中的隐藏临时名：「.Kitty 压缩中 <UUID>.mp4」（点开头，访达里看不见；扩展名留 mp4 给导出会话）
+  /// 压缩中的隐藏临时名：「.Kitty 压缩中 <UUID>.mp4」（点开头，访达里看不见；扩展名留 mp4 给导出会话）。不翻：
+  /// 只按偏好里记的路径删（removePartials），不按名字认
   nonisolated static func partialName() -> String { ".Kitty 压缩中 \(UUID().uuidString).mp4" }
 
   /// 正在压的临时文件记上 / 划掉（几段可以同时压：存成路径的数组）
@@ -235,7 +239,7 @@ enum VideoExport {
 
   /// 压缩出来的那一段（「<原名> 压缩版.mp4」「… 压缩版 2.mp4」）：不再给「压缩」。纯函数
   nonisolated static func isCompressed(_ video: URL) -> Bool {
-    video.deletingPathExtension().lastPathComponent.contains(" 压缩版")
+    video.deletingPathExtension().lastPathComponent.contains(compressedSuffix)
   }
 }
 
@@ -277,11 +281,12 @@ enum VideoJob: Equatable {
     }
   }
 
-  private var progressTitle: String {
-    switch self {
-    case .gif: "正在转成 GIF…"
-    case .compress: "正在压缩…"
-    }
+  /// 进度岛的标题：show、progress、dismiss(ifShowing:) 给同一个（岛按 Content.source 认这一条）
+  private static let gifProgress: LocalizedStringResource = "正在转成 GIF…"
+  private static let compressProgress: LocalizedStringResource = "正在压缩…"
+
+  private var progressTitle: LocalizedStringResource {
+    self == .gif ? Self.gifProgress : Self.compressProgress
   }
 
   private var islandSymbol: String {
@@ -316,15 +321,15 @@ enum VideoJob: Equatable {
   ) -> Task<Void, Never>? {
     if let busy = Self.running[video] {
       island?.show(
-        "\(busy.job.progressTitle)", detail: "这一段还没做完", tone: .progress,
+        busy.job.progressTitle, detail: "这一段还没做完", tone: .progress,
         symbol: busy.job.islandSymbol, actions: [Self.cancel(video)])
       return nil
     }
     let progress = progressTitle
     let job = self
-    let longNote = "只转前 60 秒"
+    let longNote = String(localized: "只转前 60 秒")
     island?.show(
-      "\(progress)",
+      progress,
       detail: job == .gif && seconds.map({ Double($0) > VideoExport.maxSeconds }) == true
         ? "\(longNote)" : nil,
       tone: .progress, symbol: islandSymbol, actions: [Self.cancel(video)])
@@ -343,7 +348,7 @@ enum VideoJob: Equatable {
           let target = VideoExport.target(for: video, in: ScreenshotOutput.saveDirectory)
           let first = try await VideoExport.gif(from: video, to: target) { percent in
             island?.progress(
-              "\(progress)", detail: "\(ShelfCard.progressDetail(percent, note: note))",
+              progress, detail: "\(ShelfCard.progressDetail(percent, note: note))",
               fraction: Double(percent) / 100)
           }
           let bytes = (try? target.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
@@ -357,7 +362,7 @@ enum VideoJob: Equatable {
             to: VideoExport.compressedTarget(for: video, in: video.deletingLastPathComponent())
           ) { percent in
             island?.progress(
-              "\(progress)", detail: "\(ShelfCard.progressDetail(percent))",
+              progress, detail: "\(ShelfCard.progressDetail(percent))",
               fraction: Double(percent) / 100)
           }
           island?.show(
@@ -367,7 +372,7 @@ enum VideoJob: Equatable {
         }
         done(output)
       } catch is CancellationError {
-        island?.dismiss(ifShowing: "\(progress)")
+        island?.dismiss(ifShowing: progress)
       } catch {
         island?.show(
           job == .gif ? "没能转成 GIF" : "没能压缩", detail: "\(error.localizedDescription)", tone: .error)

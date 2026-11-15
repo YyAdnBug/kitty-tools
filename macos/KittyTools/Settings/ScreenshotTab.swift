@@ -232,26 +232,28 @@ struct ScreenshotTab: View {
   /// 确认框的标题：「截图历史改成保留「7 天」？」「截图历史最多占用改成「1 GB」？」
   private static func title(_ change: HistoryLimit) -> String {
     change.isDays
-      ? "截图历史改成保留「\(daysTitle(change.value))」？"
-      : "截图历史最多占用改成「\(megabytesTitle(change.value))」？"
+      ? String(localized: "截图历史改成保留「\(daysTitle(change.value))」？")
+      : String(localized: "截图历史最多占用改成「\(megabytesTitle(change.value))」？")
   }
 
-  static func daysTitle(_ days: Int) -> String { days == 0 ? "一直留着" : "\(days) 天" }
+  static func daysTitle(_ days: Int) -> String {
+    days == 0 ? String(localized: "一直留着") : String(localized: "\(days) 天")
+  }
 
   static func megabytesTitle(_ megabytes: Int) -> String {
-    megabytes == 0 ? "不限" : "\(megabytes / 1024) GB"
+    megabytes == 0 ? String(localized: "不限") : "\(megabytes / 1024) GB"
   }
 }
 
 /// 快速保存的文件夹一行：截图页「快速保存到」和录制页「保存到」是同一个偏好、同一行。16 pt 文件夹图标 + 访达里的名字
 /// （完整路径在悬停提示里），选过的能「恢复默认」，「更改…」选别的文件夹
 struct SaveDirectoryRow: View {
-  let title: String
+  let title: LocalizedStringResource
   /// 选过的文件夹（没选过 = nil，跟随系统截屏的存储位置）；实际位置按 ScreenshotOutput.directory 算（有兜底）
   @AppStorage(Prefs.screenshotSaveDirectory) private var savedDirectory: String?
 
   var body: some View {
-    LabeledContent(title) {
+    LabeledContent {
       HStack(spacing: 8) {
         let directory = ScreenshotOutput.directory(saved: savedDirectory)
         // 同工具栏「存储到「桌面」」：访达里的名字 + 文件夹图标，完整路径在悬停提示里
@@ -275,6 +277,8 @@ struct SaveDirectoryRow: View {
         }
         Button("更改…", action: chooseDirectory)
       }
+    } label: {
+      Text(title)
     }
   }
 
@@ -284,7 +288,7 @@ struct SaveDirectoryRow: View {
     panel.canChooseFiles = false
     panel.canCreateDirectories = true
     panel.directoryURL = ScreenshotOutput.directory(saved: savedDirectory)
-    panel.prompt = "选取"
+    panel.prompt = String(localized: "选取")
     panel.begin { response in
       if response == .OK, let url = panel.url { savedDirectory = url.path }
     }
@@ -297,7 +301,7 @@ private struct JoinLinesPreview: View {
   let joins: Bool
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-  /// 行高 0.1、行距 0.03，两段之间空 0.15（> 1.2 倍行高）
+  /// 行高 0.1、行距 0.03，两段之间空 0.15（> 1.2 倍行高）。示例故意一段中文、一段英文（看两种接法），不翻
   private static let sample: [OCR.Line] = [
     ("敏捷的棕色狐狸", 0.9, 0.7), ("跳过了懒狗。", 0.77, 0.6), ("The quick brown", 0.52, 0.75),
     ("fox jumps over it.", 0.39, 0.7),

@@ -251,7 +251,7 @@ struct ScreenshotSnapshotTests {
     let fontBar = try #require(h.view.subviews.lazy.compactMap { $0 as? StyleBar }.first)
     let sizeButton = try #require(
       Self.descendants(of: fontBar).compactMap { $0 as? NSButton }.first {
-        $0.accessibilityLabel() == "字号"
+        $0.accessibilityLabel() == String(localized: "字号")  // 英文截图里是 Font size
       })
     sizeButton.sendAction(sizeButton.action, to: sizeButton.target)
     try shoot(
@@ -1147,7 +1147,7 @@ struct ScreenshotSnapshotTests {
     for (percent, dark) in [(60, false), (60, true), (10, false)] {
       panel.opacity = CGFloat(percent) / 100
       let row = try #require(
-        pin.menu(for: event)?.items.first { $0.title == "透明度" }?.submenu?.items.first?.view)
+        pin.menu(for: event)?.items.first { $0.title == String(localized: "透明度") }?.submenu?.items.first?.view)
       // 菜单上下各有约 5 pt 的内边距
       let size = NSSize(width: row.frame.width, height: row.frame.height + 10)
       let window = NSWindow(

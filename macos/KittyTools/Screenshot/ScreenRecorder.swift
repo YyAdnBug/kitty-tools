@@ -148,7 +148,26 @@ final class ScreenRecorder: NSObject {
   enum Medium {
     case screen, audio
 
-    var noun: String { self == .screen ? "录屏" : "录音" }
+    /// 界面上的叫法（名词：读屏「录屏，1 分 5 秒」、截图历史里一条的种类、设置 › 录制的分节名）。动作「录屏」英文是
+    /// Record Screen，这里是 Screen Recording：显式 key。句子里要提到的写成两句整句，不插它
+    var nounResource: LocalizedStringResource {
+      self == .screen
+        ? LocalizedStringResource("record.noun.screen", defaultValue: "录屏", comment: "名词：一段录屏")
+        : LocalizedStringResource("record.noun.audio", defaultValue: "录音", comment: "名词：一段录音")
+    }
+    var noun: String { String(localized: nounResource) }
+    /// 存盘文件名的前缀（「录屏 <开录时刻>.mp4」）：跟起名那一刻的界面语言，起好之后不再比对
+    var fileNoun: String {
+      self == .screen
+        ? String(
+          localized: "record.fileName.screen", defaultValue: "录屏",
+          comment: "录屏的默认文件名前缀：「录屏 2026-09-24 22.46.10.mp4」")
+        : String(
+          localized: "record.fileName.audio", defaultValue: "录音",
+          comment: "录音的默认文件名前缀：「录音 2026-09-24 22.46.10.m4a」")
+    }
+    /// 进行中的临时文件名的前缀（workFile）：不翻——只按偏好里记的路径认，换了语言也照样是这个名字
+    var workNoun: String { self == .screen ? "录屏" : "录音" }
     var ext: String { self == .screen ? "mp4" : "m4a" }
     var inProgressKey: String {
       self == .screen ? Prefs.screenRecordingInProgress : Prefs.audioRecordingInProgress
@@ -179,22 +198,22 @@ final class ScreenRecorder: NSObject {
     var note: String? {
       switch self {
       case .user, .cancelled, .discarded: nil
-      case .locked: "锁屏时已自动停止"
-      case .sleep: "睡眠前已自动停止"
-      case .displaySleep: "显示器睡眠时已自动停止"
-      case .screenChanged: "屏幕有变化，已自动停止"
-      case .lowDisk: "磁盘剩余不到 1 GB，已自动停止"
-      case .microphoneLost: "麦克风断开了，已自动停止"
+      case .locked: String(localized: "锁屏时已自动停止")
+      case .sleep: String(localized: "睡眠前已自动停止")
+      case .displaySleep: String(localized: "显示器睡眠时已自动停止")
+      case .screenChanged: String(localized: "屏幕有变化，已自动停止")
+      case .lowDisk: String(localized: "磁盘剩余不到 1 GB，已自动停止")
+      case .microphoneLost: String(localized: "麦克风断开了，已自动停止")
       // 社区观测多半和磁盘空间有关（PLAN §10 C6）
       case .system(code: SCStreamError.Code.systemStoppedStream.rawValue, _):
-        "系统停止了录制，看看磁盘空间"
+        String(localized: "系统停止了录制，看看磁盘空间")
       // -3820：麦克风采集出错（设备被占用、驱动出错……），流随之停了（第 4 批）
       case .system(code: SCStreamError.Code.failedToStartMicrophoneCapture.rawValue, _):
-        "麦克风出了问题，已自动停止"
-      case .system(let code, _): "系统停止了录制（错误 \(code)）"
+        String(localized: "麦克风出了问题，已自动停止")
+      case .system(let code, _): String(localized: "系统停止了录制（错误 \(String(code))）")
       case .failed(let text): text
-      case .denied: "没有屏幕录制授权"
-      case .noMicrophoneAccess: "没有麦克风授权"
+      case .denied: String(localized: "没有屏幕录制授权")
+      case .noMicrophoneAccess: String(localized: "没有麦克风授权")
       }
     }
   }
@@ -529,7 +548,7 @@ final class ScreenRecorder: NSObject {
       case .startTimedOut:
         guard startedAt == nil else { continue }
         stopCapture(stream)
-        return .failed("没能开始录制")
+        return .failed(String(localized: "没能开始录制"))
       case .stopped(let domain, let code, let text):
         let why = Self.reason(streamStopped: domain, code: code, text: text)
         Log.record.notice("录屏的流停了：\(domain) \(code) \(text)")
@@ -548,7 +567,8 @@ final class ScreenRecorder: NSObject {
         finished = true
         halt(stream, running: false, wait: .milliseconds(500))
       case .finishTimedOut:
-        return .failed(finished ? "录制意外结束" : "文件没有按时写完")
+        return .failed(
+          finished ? String(localized: "录制意外结束") : String(localized: "文件没有按时写完"))
       case .level(let power, let microphone):
         onLevel(power, microphone)
       case .tick, .startNow:
@@ -636,7 +656,7 @@ final class ScreenRecorder: NSObject {
   }
 
   private struct NoDisplay: LocalizedError {
-    var errorDescription: String? { "找不到选区所在的屏幕" }
+    var errorDescription: String? { String(localized: "找不到选区所在的屏幕") }
   }
 
   /// 要列进过滤器例外的本 App 窗口号（makeFilter 和 refreshFilterIfNeeded 同一个取法）：白名单里的面板，外加点按圈 /
@@ -766,7 +786,8 @@ final class ScreenRecorder: NSObject {
   private func showChrome() {
     guard medium == .screen else { return onStarted() }
     if hud == nil { showFrame(counting: false) }
-    stopItem = Self.makeStopItem(label: "停止录屏", target: self, action: #selector(stopClicked))
+    stopItem = Self.makeStopItem(
+      label: String(localized: "停止录屏"), target: self, action: #selector(stopClicked))
     // 菜单开着（.eventTracking）时计时也要走
     let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
       MainActor.assumeIsolated { self?.tick() }
@@ -780,7 +801,8 @@ final class ScreenRecorder: NSObject {
     // 刘海岛的耳朵：左边红色的录制记号、右边计时（刘海岛扩展 C1；岛不进录屏，挂在那里录不进去）。HUD 和停止项照旧
     island?.setActivity(
       Island.Activity(
-        id: Self.islandActivity, kind: .record, title: "录屏中", symbol: "record.circle.fill",
+        id: Self.islandActivity, kind: .record, title: String(localized: "录屏中"),
+        symbol: "record.circle.fill",
         tone: .error, trailing: .elapsed(since: .now),
         actions: [Island.Action("停止") { [weak self] in self?.stop() }]))
     Island.announce("开始录屏")
@@ -845,7 +867,7 @@ final class ScreenRecorder: NSObject {
   static func showClock(_ seconds: Int, on item: NSStatusItem?) {
     guard let button = item?.button else { return }
     button.title = clock(seconds)
-    button.setAccessibilityValue("已录 " + spoken(seconds))
+    button.setAccessibilityValue(String(localized: "已录 \(spoken(seconds))"))
   }
 
   /// file 所在卷剩余不到 1 GB（录制中每 5 s 查一次，录屏、录音共用）
@@ -912,8 +934,10 @@ final class ScreenRecorder: NSObject {
     }
     // 等框时已经取消了：没有「这段录屏 / 录音」
     if !stoppedWhileAsking {
+      let detail: LocalizedStringResource =
+        medium == .screen ? "这段录屏不带麦克风" : "这段录音不带麦克风"
       island?.show(
-        "没有麦克风授权", detail: "这段\(medium.noun)不带麦克风", tone: .warning,
+        "没有麦克风授权", detail: detail, tone: .warning,
         actions: [.settings(for: .microphone)])
     }
     return false
@@ -983,17 +1007,17 @@ final class ScreenRecorder: NSObject {
     var file = temp
     if medium == .audio, keeps, FileManager.default.fileExists(atPath: temp.path) {
       let island = self.island
-      let saving = "正在存储录音…"
+      let saving: LocalizedStringResource = "正在存储录音…"
       let progress = Task {
         try? await Task.sleep(for: .seconds(1))
         guard !Task.isCancelled else { return false }
-        island?.show("\(saving)", tone: .progress, symbol: "waveform.circle.fill")
+        island?.show(saving, tone: .progress, symbol: "waveform.circle.fill")
         return true
       }
       file = await Self.extractAudio(from: temp) ?? temp
       progress.cancel()
       // 结果岛（出的话）随后由 AppDelegate 弹；飞了卡片的正常停只播报，进度岛得自己收
-      if await progress.value { island?.dismiss(ifShowing: "\(saving)") }
+      if await progress.value { island?.dismiss(ifShowing: saving) }
     }
     defaults.removeObject(forKey: medium.inProgressKey)
     let (saved, moved, denied) = Self.settle(file, into: directory, medium: medium, keeps: keeps)
@@ -1054,7 +1078,7 @@ final class ScreenRecorder: NSObject {
   /// 也不受桌面 / 下载的文件夹授权影响）；不同卷（移动硬盘、NAS）时放快速保存目录里的隐藏文件。都和保存目录同卷，
   /// 写完 moveItem 只是改名。文件名带 UUID：打不开留在原地的旧文件不会被下一次覆盖。录音（第 5 批）同一个地方，名字「录音 <UUID>.m4a」
   static func workFile(for directory: URL, medium: Medium = .screen) -> URL {
-    let name = "\(medium.noun) \(UUID().uuidString).\(medium.ext)"
+    let name = "\(medium.workNoun) \(UUID().uuidString).\(medium.ext)"
     let volume = { (url: URL) in
       (try? url.resourceValues(forKeys: [.volumeIdentifierKey]))?.volumeIdentifier
     }
@@ -1076,7 +1100,7 @@ final class ScreenRecorder: NSObject {
   ) -> URL {
     let created = (try? file.resourceValues(forKeys: [.creationDateKey]))?.creationDate
     return ScreenshotOutput.availableURL(
-      in: directory, date: created ?? .now, prefix: medium.noun, ext: ext ?? file.pathExtension)
+      in: directory, date: created ?? .now, prefix: medium.fileNoun, ext: ext ?? file.pathExtension)
   }
 
   /// 启动时（AppDelegate，单测宿主不跑；录屏、录音各查一次）：偏好里还记着进行中的文件 = 上次没正常收尾（闪退、断电）。
@@ -1099,16 +1123,29 @@ final class ScreenRecorder: NSObject {
       }
       let target = savedURL(for: file, in: directory, medium: medium)
       if (try? manager.moveItem(at: file, to: target)) != nil {
-        let title = "上次\(medium.noun)没有正常结束，已保存"
+        let title =
+          medium == .screen
+          ? String(localized: "上次录屏没有正常结束，已保存")
+          : String(localized: "上次录音没有正常结束，已保存")
         return target.pathExtension == medium.ext
           ? (title, target.lastPathComponent, .info)
-          : (title, "没能转成 \(medium.ext)，存的是 mp4 · \(target.lastPathComponent)", .warning)
+          : (
+            title, String(localized: "没能转成 \(medium.ext)，存的是 mp4 · \(target.lastPathComponent)"),
+            .warning
+          )
       }
     }
     let bytes =
       ((try? manager.attributesOfItem(atPath: file.path))?[.size] as? NSNumber)?.int64Value ?? 0
+    let title =
+      switch (medium, playable) {
+      case (.screen, true): String(localized: "上次录屏没有正常结束")
+      case (.screen, false): String(localized: "上次录屏没有正常结束，文件打不开")
+      case (.audio, true): String(localized: "上次录音没有正常结束")
+      case (.audio, false): String(localized: "上次录音没有正常结束，文件打不开")
+      }
     return (
-      "上次\(medium.noun)没有正常结束" + (playable ? "" : "，文件打不开"),
+      title,
       "\((file.path as NSString).abbreviatingWithTildeInPath) · \(bytes.formatted(.byteCount(style: .file)))",
       .warning
     )
@@ -1239,8 +1276,8 @@ final class ScreenRecorder: NSObject {
     title: String, detail: String
   ) {
     withoutMicrophone
-      ? ("没有麦克风和辅助功能授权", "这段录屏不带麦克风、不显示按键")
-      : ("没有辅助功能授权", "这段录屏不显示按键")
+      ? (String(localized: "没有麦克风和辅助功能授权"), String(localized: "这段录屏不带麦克风、不显示按键"))
+      : (String(localized: "没有辅助功能授权"), String(localized: "这段录屏不显示按键"))
   }
 
   /// 开录前倒数几秒：设置里只给 0 / 3 / 5，存的值在 0…5 之间照用（实录自检用 1 s），出了这个范围按默认 3
@@ -1250,7 +1287,8 @@ final class ScreenRecorder: NSObject {
 
   /// 倒数开始时的播报（按实际秒数）；Esc 没注册上就不提它
   nonisolated static func countdownAnnouncement(_ seconds: Int, escapes: Bool) -> String {
-    "\(seconds) 秒后开始录屏" + (escapes ? "，按 Esc 取消" : "")
+    escapes
+      ? String(localized: "\(seconds) 秒后开始录屏，按 Esc 取消") : String(localized: "\(seconds) 秒后开始录屏")
   }
 
   /// 收尾按什么说：用户放弃 / 取消过就按它（放弃后写完超时、取消挂着时没开起来，都不能说成「已保存已录的部分」/「录屏失败」、
@@ -1270,8 +1308,14 @@ final class ScreenRecorder: NSObject {
   /// 旁白读的时长：「12 秒」「1 分 5 秒」「1 小时 2 分 3 秒」
   nonisolated static func spoken(_ seconds: Int) -> String {
     let (hours, minutes, rest) = (seconds / 3600, seconds / 60 % 60, seconds % 60)
-    if hours > 0 { return "\(hours) 小时 \(minutes) 分 \(rest) 秒" }
-    return minutes > 0 ? "\(minutes) 分 \(rest) 秒" : "\(rest) 秒"
+    // 每一段各自走单复数（英文「1 minute 5 seconds」），段间空格（中文原来就有）
+    let parts = [
+      hours > 0 ? String(localized: "duration.hours", defaultValue: "\(hours) 小时") : nil,
+      hours > 0 || minutes > 0
+        ? String(localized: "duration.minutes", defaultValue: "\(minutes) 分") : nil,
+      String(localized: "duration.seconds", defaultValue: "\(rest) 秒"),
+    ]
+    return parts.compactMap { $0 }.joined(separator: " ")
   }
 
   /// 流停了：控制中心「停止共享」（-3817）当用户停的，其余是系统中止
@@ -1284,7 +1328,7 @@ final class ScreenRecorder: NSObject {
   /// 用户停的、还没停的按写入失败说（用户停的不能说成「已保存录屏」）
   nonisolated static func reason(writeFailed text: String, stopping: Reason?) -> Reason {
     if let stopping, stopping != .user { return stopping }
-    return .failed("写入失败：\(text)")
+    return .failed(String(localized: "写入失败：\(text)"))
   }
 
   /// startCapture 抛错：-3801（用户拒绝）/ -3802（没开起来，多半是授权）按屏幕录制授权问题，-3820 是麦克风开不起来，
@@ -1292,15 +1336,15 @@ final class ScreenRecorder: NSObject {
   nonisolated static func reason(startFailed error: any Error) -> Reason {
     let error = error as NSError
     guard error.domain == SCStreamError.errorDomain else {
-      return .failed("没能开始录制：\(error.localizedDescription)")
+      return .failed(String(localized: "没能开始录制：\(error.localizedDescription)"))
     }
     switch error.code {
     case SCStreamError.Code.userDeclined.rawValue, SCStreamError.Code.failedToStart.rawValue:
       return .denied
     case SCStreamError.Code.failedToStartMicrophoneCapture.rawValue:
-      return .failed("没能开始录制：麦克风出了问题")
+      return .failed(String(localized: "没能开始录制：麦克风出了问题"))
     default:
-      return .failed("没能开始录制：\(error.localizedDescription)")
+      return .failed(String(localized: "没能开始录制：\(error.localizedDescription)"))
     }
   }
 
@@ -1313,34 +1357,52 @@ final class ScreenRecorder: NSObject {
   static func summary(_ result: Result, folder: String, medium: Medium = .screen) -> (
     title: String, detail: String, tone: Island.Tone
   )? {
-    let noun = medium.noun
+    let screen = medium == .screen
     switch result.reason {
     case .cancelled: return nil
-    case .discarded: return ("已放弃\(noun)", "没有保存", .info)
+    case .discarded:
+      return (
+        screen ? String(localized: "已放弃录屏") : String(localized: "已放弃录音"),
+        String(localized: "没有保存"), .info
+      )
     case .denied:
       return (
-        "需要「屏幕录制」授权", "\(medium == .screen ? "录屏" : "录系统声音")要用，授权后可能要重新打开本 App",
+        String(localized: "需要「屏幕录制」授权"),
+        screen
+          ? String(localized: "录屏要用，授权后可能要重新打开本 App")
+          : String(localized: "录系统声音要用，授权后可能要重新打开本 App"),
         .warning
       )
-    case .noMicrophoneAccess: return ("需要麦克风授权", "到 系统设置 › 麦克风 里打开", .warning)
+    case .noMicrophoneAccess:
+      return (String(localized: "需要麦克风授权"), String(localized: "到 系统设置 › 麦克风 里打开"), .warning)
     default: break
     }
     guard let file = result.file else {
-      return ("\(noun)失败", result.reason.note ?? "没有录下内容", .error)
+      return (
+        screen ? String(localized: "录屏失败") : String(localized: "录音失败"),
+        result.reason.note ?? String(localized: "没有录下内容"), .error
+      )
     }
     let length = clock(Int(result.duration.components.seconds))
-    var notes = result.microphoneLost ? ["后半段没有麦克风声音"] : []
-    if file.pathExtension != medium.ext { notes.append("没能转成 \(medium.ext)，存的是 mp4") }
+    var notes = result.microphoneLost ? [String(localized: "后半段没有麦克风声音")] : []
+    if file.pathExtension != medium.ext {
+      notes.append(String(localized: "没能转成 \(medium.ext)，存的是 mp4"))
+    }
     let detail = { (first: String) in ([first] + notes + [length]).joined(separator: " · ") }
     guard result.moved else {
-      return ("\(noun)没能存进「\(folder)」", detail("已在访达中显示"), .warning)
+      return (
+        screen
+          ? String(localized: "录屏没能存进「\(folder)」") : String(localized: "录音没能存进「\(folder)」"),
+        detail(String(localized: "已在访达中显示")), .warning
+      )
     }
+    let saved = screen ? String(localized: "已保存录屏") : String(localized: "已保存录音")
     guard let note = result.reason.note else {
       // 断了麦克风、存成了 mp4：卡片上就有文件，岛里省掉文件名、把这句放前面
       return notes.isEmpty
-        ? ("已保存\(noun)", detail(file.lastPathComponent), .success)
-        : ("已保存\(noun)", (notes + [length]).joined(separator: " · "), .warning)
+        ? (saved, detail(file.lastPathComponent), .success)
+        : (saved, (notes + [length]).joined(separator: " · "), .warning)
     }
-    return ("已保存已录的部分", detail(note), .warning)
+    return (String(localized: "已保存已录的部分"), detail(note), .warning)
   }
 }
