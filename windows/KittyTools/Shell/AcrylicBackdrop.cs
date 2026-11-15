@@ -62,6 +62,14 @@ internal sealed partial class AcrylicBackdrop : SystemBackdrop
         base.OnTargetDisconnected(target);
     }
 
+    // 配置是自己给的（上面的 _configuration），系统给的默认配置不用。不重写的话默认实现转回基类：窗口关掉、
+    // 目标已经断开以后系统还会发一次（失去激活 / 换主题），基类对着断开的目标返回 E_INVALIDARG，在原生回调里
+    // 抛 ArgumentException、整个进程闪退（--ui-snapshots 退出时 Debug / Release 每次都崩，crash log stage xaml）。
+    protected override void OnDefaultSystemBackdropConfigurationChanged(
+        ICompositionSupportsSystemBackdrop target, XamlRoot xamlRoot)
+    {
+    }
+
     private void OnActualThemeChanged(FrameworkElement sender, object args)
     {
         if (_configuration is not null)
