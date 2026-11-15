@@ -132,25 +132,27 @@ import AppKit
   /// 打包、解包都不要的 Mac 杂文件
   nonisolated static let junk = ["__MACOSX", "._*", ".DS_Store"]
 
-  /// 用户另加的跳过名单（设置里那一行的字）：全角半角逗号隔开、去掉两头空白、去重；带「/」的不收（只认名字，Z2）；
-  /// 最多 50 条、每条 100 个字以内（偏好是导入、同步来的，不信它）
+  /// 用户另加的跳过名单（设置里那一页拼成的一行字）：skipEntries 里不带毛病（skipProblem）的，最多 50 条
+  /// （偏好是导入、同步来的，不信它）
   nonisolated static func skipNames(_ text: String) -> [String] {
-    var names: [String] = []
-    for part in text.split(whereSeparator: { $0 == "," || $0 == "，" }) {
-      let name = part.trimmingCharacters(in: .whitespaces)
-      guard !name.isEmpty, !name.contains("/"), name.count <= 100, !names.contains(name) else {
-        continue
-      }
-      names.append(name)
-    }
-    return Array(names.prefix(50))
+    Array(skipEntries(text).filter { skipProblem($0) == nil }.prefix(50))
   }
 
-  /// 设置页标出来的：带「/」的条目（不认，Z2）
-  nonisolated static func rejectedSkipNames(_ text: String) -> [String] {
-    text.split(whereSeparator: { $0 == "," || $0 == "，" })
-      .map { $0.trimmingCharacters(in: .whitespaces) }
-      .filter { $0.contains("/") }
+  /// 那一行字拆成的每一条：全角半角逗号隔开、去掉两头空白、去掉空的和重复的；写错的也留着（设置页列出来、标橙，让人看到再删）
+  nonisolated static func skipEntries(_ text: String) -> [String] {
+    var entries: [String] = []
+    for part in text.split(whereSeparator: { $0 == "," || $0 == "，" }) {
+      let name = part.trimmingCharacters(in: .whitespaces)
+      if !name.isEmpty, !entries.contains(name) { entries.append(name) }
+    }
+    return entries
+  }
+
+  /// 一条为什么不算（设置页上的橙字）：带「/」的不认（只认名字，Z2）、超过 100 个字的不收；nil = 照跳
+  nonisolated static func skipProblem(_ name: String) -> String? {
+    if name.contains("/") { return "只认名字、不认路径" }
+    if name.count > 100 { return "超过 100 个字" }
+    return nil
   }
 
   /// 不进去跳的包（扩展名）：App、框架、插件这类带签名的包，跳掉里面的东西就坏了。

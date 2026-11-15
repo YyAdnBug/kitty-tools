@@ -4685,6 +4685,54 @@ struct SnapshotProbeTests {
       to: "\(out)/plugins-features-added.png")
   }
 
+  /// 设置 › 访达右键整页（「压缩时跳过」那一行的小字：填了一串、有一条写错了），推进去的「压缩时跳过」（空着、很多项带写错的，
+  /// 浅 / 深），「+」弹出的小框（空着、能加、带「/」、已经有了；屏外画不出 popover，单画里面那块）。几秒，图以 finder- 开头：
+  /// -only-testing:'KittyToolsTests/SnapshotProbeTests/finderMenuSettings()'。偏好读临时偏好域
+  @Test(.enabled(if: directory != nil)) func finderMenuSettings() throws {
+    let out = try #require(Self.directory)
+    try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
+    Prefs.registerDefaults()
+    let name = "kitty-snapshot-finder-\(UUID().uuidString)"
+    let prefs = try #require(UserDefaults(suiteName: name))
+    defer { prefs.removePersistentDomain(forName: name) }
+    prefs.set(true, forKey: Feature.finderMenu.prefsKey)
+    let some = "node_modules, .git, *.log, build/out, Screenshot*.png, .venv, dist, coverage"
+    prefs.set(some, forKey: Prefs.finderCompressSkip)
+    for dark in [false, true] {
+      try snapshot(
+        FinderMenuTab(extensionEnabled: true).defaultAppStorage(prefs),
+        size: NSSize(width: 640, height: 2300), dark: dark,
+        to: "\(out)/finder-settings\(dark ? "-dark" : "").png")
+    }
+    func page() -> some View { NavigationStack { CompressSkipPage() }.defaultAppStorage(prefs) }
+    prefs.removeObject(forKey: Prefs.finderCompressSkip)
+    for dark in [false, true] {
+      try snapshot(
+        page(), size: NSSize(width: 640, height: 1060), dark: dark,
+        to: "\(out)/finder-skip-empty\(dark ? "-dark" : "").png")
+    }
+    let many = [
+      "node_modules", ".git", "*.log", "~$*", "build/out", "Screenshot*.png", "dist", "coverage",
+      ".idea", ".vscode", "*.bak", "tmp", String(repeating: "很长的名字", count: 22),
+    ].joined(separator: ", ")
+    prefs.set(many, forKey: Prefs.finderCompressSkip)
+    for dark in [false, true] {
+      try snapshot(
+        page(), size: NSSize(width: 640, height: 1400), dark: dark,
+        to: "\(out)/finder-skip-many\(dark ? "-dark" : "").png")
+    }
+    for (state, input) in [
+      ("empty", ""), ("ok", "dist/, *.tmp"), ("path", "src/build"), ("dup", ".git"),
+    ] {
+      for dark in state == "path" ? [false, true] : [false] {
+        try snapshot(
+          SkipNameForm(text: .constant(some), input: input) {},
+          size: NSSize(width: 300, height: 150),
+          dark: dark, to: "\(out)/finder-skip-form-\(state)\(dark ? "-dark" : "").png")
+      }
+    }
+  }
+
   /// 新功能标记（Shell/WhatsNew.swift，2026-11-05）：设置窗停在通用页、提醒和「功能」那一节都标着（侧栏行尾的「新」、页里那一节
   /// 标题后的「新」；浅 / 深，外加窗口是 key、选中行是强调色的那一张），主界面里「新建提醒」名字前的小圆点和底栏「设置」前的小圆点
   /// （浅 / 深）。几秒，图以 whatsnew- 开头：-only-testing:'KittyToolsTests/SnapshotProbeTests/whatsNew()'。

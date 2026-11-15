@@ -242,7 +242,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
         "访达", "Finder", "右键", "右键菜单", "上下文菜单", "拷贝路径", "复制路径", "路径", "终端", "Terminal",
         "编辑器", "打开方式", "用 App 打开", "在 App 中打开", "改名", "扩展", "登录项与扩展", "新建文件", "新建", "模板", "后缀",
         "Word",
-        "Excel", "PPT", "Markdown", "文本",
+        "Excel", "PPT", "Markdown", "文本", "压缩", "解压", "zip", "7z", "跳过", "排除", "忽略", "node_modules",
       ]
     case .translate:
       [
@@ -579,11 +579,12 @@ struct SettingsRoot: View {
       .navigationSplitViewColumnWidth(min: 170, ideal: 190, max: 240)
     } detail: {
       VStack(spacing: 0) {
-        // 关于是品牌页、没有页头；通用、翻译、启动器、启动台、状态屏、提醒把页头画在自己的 NavigationStack 里，推进详情页时一起换掉（N12）
-        if ![.about, .general, .translate, .launcher, .launchpad, .statusScreen, .reminders]
-          .contains(
-            navigation.page)
-        {
+        // 关于是品牌页、没有页头；通用、翻译、启动器、启动台、状态屏、提醒、访达右键把页头画在自己的 NavigationStack 里，
+        // 推进详情页时一起换掉（N12）
+        if ![
+          .about, .general, .translate, .launcher, .launchpad, .statusScreen, .reminders,
+          .finderMenu,
+        ].contains(navigation.page) {
           PageHeader(page: navigation.page)
         }
         page(navigation.page)

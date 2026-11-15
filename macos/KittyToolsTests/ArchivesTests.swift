@@ -103,13 +103,55 @@ import Testing
     #expect(try names(in: root) == ["资料", "资料 2", "资料.zip"])
   }
 
+  /// 设置 › 访达右键 › 压缩时跳过（2026-11-15 改成开关 + 列表）：拆出来的每一条（写错的留着给人看）、哪条不算、
+  /// 拼回去旧版本照认、添加框认逗号和结尾的「/」、那一行的小字
+  @Test func skipEditing() {
+    let text = " node_modules, .git，build/out ,, .git, *.log"
+    #expect(Archives.skipEntries(text) == ["node_modules", ".git", "build/out", "*.log"])
+    #expect(Archives.skipProblem("build/out") != nil)
+    #expect(Archives.skipProblem(String(repeating: "a", count: 101)) != nil)
+    #expect(Archives.skipProblem("*.log") == nil)
+    // 拼回去的那一行，skipNames 读出来的和原来一样
+    let joined = CompressSkipPage.joined(Archives.skipEntries(text))
+    #expect(joined == "node_modules, .git, build/out, *.log")
+    #expect(Archives.skipNames(joined) == Archives.skipNames(text))
+    // 第 51 条起照存、不算
+    let many = (0..<52).map(String.init).joined(separator: ",")
+    #expect(
+      CompressSkipPage.problem("50", applied: Set(Archives.skipNames(many))) != nil)
+    #expect(CompressSkipPage.problem("49", applied: Set(Archives.skipNames(many))) == nil)
+    // 添加框
+    #expect(CompressSkipPage.additions("", to: text).names.isEmpty)
+    #expect(CompressSkipPage.additions("", to: text).problem == nil)
+    let added = CompressSkipPage.additions(" dist/ ，*.tmp, dist", to: text)
+    #expect(added.names == ["dist", "*.tmp"] && added.problem == nil)
+    #expect(CompressSkipPage.additions("src/build", to: text).problem != nil)
+    #expect(
+      CompressSkipPage.additions("ok, src/build", to: text).problem?.hasPrefix("「src/build」")
+        == true)
+    #expect(CompressSkipPage.problem("build/out", applied: []) == "只认名字、不认路径，这条不算")
+    #expect(CompressSkipPage.additions("*", to: text).problem != nil)
+    #expect(CompressSkipPage.additions(".git", to: text).problem != nil)
+    #expect(CompressSkipPage.additions(".git, dist", to: text).names == ["dist"])
+    #expect(CompressSkipPage.additions("x", to: many).problem != nil)
+    // 那一行的小字
+    #expect(CompressSkipPage.summary("") == "只跳过 Mac 自己的隐藏文件")
+    #expect(CompressSkipPage.summary(text) == "node_modules、.git、*.log；1 条写错了、不算")
+    #expect(
+      CompressSkipPage.summary("a, b, c, d, e") == "a、b、c、d 等 5 个")
+    // 常见的几项本身都照跳（不带「/」、不重名）
+    let presets = CompressSkipPage.presets.flatMap { $0.items.map(\.name) }
+    #expect(presets.allSatisfy { Archives.skipProblem($0) == nil })
+    #expect(Set(presets).count == presets.count)
+    #expect(presets.allSatisfy { !Archives.junk.contains($0) })
+  }
+
   /// 压缩时跳过（2026-11-13 拍板 Z1 Z2）：逗号（全角半角）隔开、去空白去重、带「/」的不收；交给 find 时 [ ] \ 转义、
   /// 交给 tar -X 的确切路径 * ? [ ] \ 都转义（评审：bsdtar 的 --exclude 跨「/」匹配，不能直接交名单）
   @Test func skipNames() {
     #expect(
       Archives.skipNames(" node_modules, .git，*.log ,, .git") == ["node_modules", ".git", "*.log"])
     #expect(Archives.skipNames("build/out, a") == ["a"])
-    #expect(Archives.rejectedSkipNames("build/out, a, /tmp") == ["build/out", "/tmp"])
     #expect(
       Archives.skipNames((0..<80).map(String.init).joined(separator: ",")).count == 50)
     let find = Archives.skipFindArguments(["[old]", "*.log"], roots: ["./a"])
