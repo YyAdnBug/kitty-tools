@@ -49,6 +49,21 @@ internal sealed partial class SelectionOverlayWindow : Window
     private readonly Border _styleTray;
     private readonly List<(AnnotationKind? Tool, Button Button)> _toolButtons = new();
     private readonly List<PixelBounds> _windows = new();
+
+    /// <summary>和 _windows 一一对应的窗口句柄（问元素用，PLAN-v20 E1）；本 App 自己的窗口是 0（不问）。</summary>
+    private readonly List<IntPtr> _windowHandles = new();
+
+    /// <summary>
+    /// 悬停识别元素（PLAN-v20 E1，mac ElementFinder）：开着（设置、不是截图翻译 / 识字）、这次框选按了 Tab 只认窗口、指针下面的各层、
+    /// 选的是第几层（0 = 最小）、是不是滚轮换过（换过的那层还包着指针就留着，不跟着最小的跑）、提示说过没有。
+    /// </summary>
+    private bool _elementsOn;
+    private bool _windowsOnly;
+    private List<(int Left, int Top, int Right, int Bottom)>? _layers;
+    private int _elementLayer;
+    private bool _layerPinned;
+    private (IntPtr Window, PixelBounds Rect)? _layerChosen;
+    private bool _layerHinted;
     private readonly AnnotationDocument _document = new();
     private readonly CanvasTextFormat _small = new() { FontFamily = "Segoe UI", FontSize = 11 };
 
@@ -176,8 +191,12 @@ internal sealed partial class SelectionOverlayWindow : Window
             if (r - l >= 2 && b - t >= 2)
             {
                 _windows.Add(new PixelBounds(l - left, t - top, r - left, b - top));
+                _windowHandles.Add(ElementFinder.IsOwn(window.Hwnd) && !ElementFinder.AllowOwnForProbe ? IntPtr.Zero : window.Hwnd);
             }
         }
+
+        _elementsOn = SettingsService.Current.ScreenshotFindsElements && !session.AutoTranslate &&
+                      session.Mode is not (ScreenshotMode.Ocr or ScreenshotMode.Translate);
 
         Activated += OnActivated;
         _timer = DispatcherQueue.CreateTimer();
@@ -2172,6 +2191,22 @@ internal sealed partial class SelectionOverlayWindow : Window
     {
         e.Handled = true;
         ReadCursor();
+        // 还没框选、悬停在元素上：滚轮往上大一层、往下小一层（PLAN-v20 E1，mac 按物理方向）
+        if (!_session.HasSelection && _drag == DragKind.None && _document.Selected is null && _layers is { Count: > 1 } layers &&
+            _layerChosen is { } current)
+        {
+            var delta = e.GetCurrentPoint(_canvas).Properties.MouseWheelDelta;
+            if (delta != 0)
+            {
+                _elementLayer = ElementLayers.Step(_elementLayer, Math.Sign(delta), layers.Count);
+                _layerPinned = _elementLayer > 0;
+                ShowLayer(layers, current.Window);
+                _canvas.Invalidate();
+            }
+
+            return;
+        }
+
         if (_document.Selected is { } selected && !IsDraggingAnnotation && _textEditor is null && selected.Contains(_cursor, _scale))
         {
             var delta = e.GetCurrentPoint(_canvas).Properties.MouseWheelDelta;
@@ -2182,8 +2217,39 @@ internal sealed partial class SelectionOverlayWindow : Window
         }
     }
 
+    /// <summary>自检（PLAN-v20 E1）：当成指针停在这里（这块屏的像素），不挪真的光标。</summary>
+    private PointD? _probeCursor;
+
+    internal void ProbeHoverAt(PointD point)
+    {
+        _probeCursor = point;
+        ReadCursor();
+        UpdateHover();
+        _canvas.Invalidate();
+    }
+
+    /// <summary>自检：滚轮往上（+1）/ 往下（-1）一格换层；返回现在是第几层、一共几层。</summary>
+    internal (int Layer, int Count) ProbeWheel(int delta)
+    {
+        if (_layers is { Count: > 1 } layers && _layerChosen is { } current)
+        {
+            _elementLayer = ElementLayers.Step(_elementLayer, delta, layers.Count);
+            _layerPinned = _elementLayer > 0;
+            ShowLayer(layers, current.Window);
+            _canvas.Invalidate();
+        }
+
+        return (_elementLayer, _layers?.Count ?? 0);
+    }
+
     private void ReadCursor()
     {
+        if (_probeCursor is { } fake)
+        {
+            _cursor = fake;
+            return;
+        }
+
         PInvoke.GetCursorPos(out var cursor);
         _cursor = new PointD(cursor.X - _screen.Bounds.Left, cursor.Y - _screen.Bounds.Top);
     }
@@ -2519,6 +2585,14 @@ internal sealed partial class SelectionOverlayWindow : Window
                 e.Handled = true;
                 StepStyle(-1);
                 break;
+            case Windows.System.VirtualKey.Tab when _elementsOn && !_session.HasSelection && _drag == DragKind.None:
+                // 这一次框选只认窗口 / 再按认元素（PLAN-v20 E1，mac Tab）
+                e.Handled = true;
+                _windowsOnly = !_windowsOnly;
+                Flash(_windowsOnly ? "只认窗口（再按 Tab 认元素）" : "认窗口里的元素", 1500);
+                UpdateHover();
+                _canvas.Invalidate();
+                break;
             case Windows.System.VirtualKey.Space:
                 // 拖动框选途中按着空格整块平移；按住不放的自动重复不算新按下
                 e.Handled = true;
@@ -2651,14 +2725,51 @@ internal sealed partial class SelectionOverlayWindow : Window
         PinHost.Show(png, global);
     }
 
-    /// <summary>鼠标下面的窗口（挖洞用）。在窗口之间移动时洞直接跳过去，不滑（0.1.0 用户定：不学 mac S5）。</summary>
+    /// <summary>
+    /// 鼠标下面的窗口（挖洞用）。在窗口之间移动时洞直接跳过去，不滑（0.1.0 用户定：不学 mac S5）。
+    /// 开着悬停识别元素时（PLAN-v20 E1）：那扇窗口的元素读好了，就是指针下面最小的那层元素；滚轮换过层的，那层还包着指针就留着。
+    /// </summary>
     private void UpdateHover()
     {
-        _hover = _windows.FirstOrDefault(window => window.Contains((int)_cursor.X, (int)_cursor.Y));
+        var index = _windows.FindIndex(window => window.Contains((int)_cursor.X, (int)_cursor.Y));
+        _hover = index >= 0 ? _windows[index] : null;
+        _layers = null;
         if (_hover is { Width: > 0, Height: > 0 } && _session.HasSelection)
         {
             _hover = null;
+            return;
         }
+
+        if (_hover is not { } window || !_elementsOn || _windowsOnly || _windowHandles[index] == IntPtr.Zero ||
+            ElementFinder.Elements(_windowHandles[index], static () => { }) is not { } elements)
+        {
+            return;
+        }
+
+        var left = _screen.Bounds.Left;
+        var top = _screen.Bounds.Top;
+        var layers = ElementLayers.At((int)_cursor.X, (int)_cursor.Y, (window.Left, window.Top, window.Right, window.Bottom),
+            elements.Select(element => (element.Left - left, element.Top - top, element.Right - left, element.Bottom - top)));
+        var kept = _layerPinned && _layerChosen is { } chosen && chosen.Window == _windowHandles[index]
+            ? layers.FindIndex(layer => layer == (chosen.Rect.Left, chosen.Rect.Top, chosen.Rect.Right, chosen.Rect.Bottom))
+            : -1;
+        _layerPinned = kept >= 0;
+        _elementLayer = kept >= 0 ? kept : 0;
+        ShowLayer(layers, _windowHandles[index]);
+        if (!_layerHinted && layers.Count > 1)
+        {
+            _layerHinted = true;
+            Flash("滚轮：大一层 / 小一层 · Tab：只认窗口", 2500);
+        }
+    }
+
+    /// <summary>悬停框换成第 _elementLayer 层。</summary>
+    private void ShowLayer(List<(int Left, int Top, int Right, int Bottom)> layers, IntPtr window)
+    {
+        _layers = layers;
+        var rect = layers[Math.Clamp(_elementLayer, 0, layers.Count - 1)];
+        _hover = new PixelBounds(rect.Left, rect.Top, rect.Right, rect.Bottom);
+        _layerChosen = (window, _hover.Value);
     }
 
     private PointD Snap(PointD point)

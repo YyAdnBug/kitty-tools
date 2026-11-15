@@ -41,6 +41,11 @@
   N3 便签墙方向键挑卡片 / Enter 放大（`NoteWall.Neighbor` 原来就有，接上键盘）、M1 主界面开着时钉图两格和保持唤醒那一格跟着变（`PinHost.Changed`）、
   M2 = R77 同步文件夹在云盘里时设「始终保留在此设备上」、占位与否进指纹（`SyncDisk.KeepLocal` / `Stamp`）、M3 = R79 锁屏通知注册不上时状态屏每 2 秒查一次（`SessionLock`）。
   R77、R79 从「应修」挪到已修。数字见提交正文。没测：真 OneDrive、真进状态屏锁屏、真按键（1345–1350）。
+- **第 6 批（`git log --grep "PLAN-v20 第 6 批"`）**：E1 框选时悬停识别窗口里的元素（mac 8e0ab3c1 6500d9cb，默认关）。D11「先探针」：`--element-probe`
+  读自己的测试窗口 31 个元素 62 ms、任务栏 26 个 22 ms，够快，照 D4 做：指针第一次停进一扇窗口时在后台用 UI Automation 读它控件视图里的元素框
+  （`ElementFinder`：ElementFromHandle + FindAllBuildCache，只缓存 BoundingRectangle；连接 / 调用各 0.6 s 时限；最多 3000 个；自家窗口不问），
+  悬停只在读好的那份里找（Core `ElementLayers`：从小到大、夹进窗口、太小的不要、几乎一样大的并一层）；滚轮换层、Tab 只认窗口、第一次提示一句。
+  设置 › 截图一个开关（导出键 screenshotFindsElements 同 mac）。AOT 0 警告；内存和第 5 批差 2 MB 内；空闲 CPU 0.016 %。没测：真资源管理器 / 浏览器 / Office、真按键（1351–1356）。
 
 ## 0.2.0 发版前审查（2026-11-12）
 

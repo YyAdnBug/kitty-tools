@@ -111,6 +111,8 @@ internal sealed class ScreenshotSession
         }
 
         var windows = WindowList.Capture();
+        // 悬停识别元素（PLAN-v20 E1）：每次框选重新问（窗口里的东西会变）
+        ElementFinder.Reset();
         var overlays = mode == ScreenshotMode.Translate && SettingsService.Current.TranslateScreenshotOverlay;
         var session = new ScreenshotSession(overlays ? ScreenshotMode.Capture : mode, screens, windows)
         {
@@ -186,6 +188,25 @@ internal sealed class ScreenshotSession
         _current = session;
         session.ShowOverlays();
         session.SetSelection(screen, new RectD(screen.Width * 0.3, screen.Height * 0.25, screen.Width * 0.4, screen.Height * 0.35));
+        return session._overlays.FirstOrDefault();
+    }
+
+    /// <summary>
+    /// PLAN-v20 E1 自检：合成的冻结帧、窗口列表只有 window（自检自己开的测试窗口），不选区——悬停识别元素那条路。用完调 FinishCurrent。
+    /// </summary>
+    internal static SelectionOverlayWindow? StartSyntheticWithWindow(SnapWindow window)
+    {
+        if (_current is not null)
+        {
+            return null;
+        }
+
+        ShellRuntime.Instance?.HotKeys.UnregisterAll();
+        ElementFinder.Reset();
+        var screen = ScreenCapture.Synthetic();
+        var session = new ScreenshotSession(ScreenshotMode.Capture, new List<FrozenScreen> { screen }, new List<SnapWindow> { window });
+        _current = session;
+        session.ShowOverlays();
         return session._overlays.FirstOrDefault();
     }
 

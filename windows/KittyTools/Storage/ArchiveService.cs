@@ -599,6 +599,7 @@ internal static class ArchiveService
             // PLAN-v16 S1 / S2，键名同 mac
             writer.WriteBoolean("translateScreenshotOverlay", settings.TranslateScreenshotOverlay);
             writer.WriteBoolean("screenshotKeepsColors", settings.ScreenshotKeepsColors);
+            writer.WriteBoolean("screenshotFindsElements", settings.ScreenshotFindsElements); // PLAN-v20 E1，键名同 mac
             // PLAN-v12 N5 状态屏：同 mac Prefs（状态列表是一组对象，导入时按 id 并进本机的、不删本机独有的）。
             writer.WriteBoolean("statusScreenExitHint", settings.StatusScreenExitHint);
             writer.WriteBoolean("statusScreenHotKeyEntersFirst", settings.StatusScreenHotKeyEntersFirst);
@@ -780,6 +781,9 @@ internal static class ArchiveService
                     break;
                 case "screenshotKeepsColors" when value.ValueKind is JsonValueKind.True or JsonValueKind.False:
                     settings.ScreenshotKeepsColors = value.GetBoolean();
+                    break;
+                case "screenshotFindsElements" when value.ValueKind is JsonValueKind.True or JsonValueKind.False:
+                    settings.ScreenshotFindsElements = value.GetBoolean();
                     break;
                 case "statusScreenExitHint" when value.ValueKind is JsonValueKind.True or JsonValueKind.False:
                     settings.StatusScreenExitHint = value.GetBoolean();

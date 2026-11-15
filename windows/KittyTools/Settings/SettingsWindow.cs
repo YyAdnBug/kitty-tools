@@ -2827,6 +2827,15 @@ internal sealed partial class SettingsWindow : Window
                 SettingsService.Save();
             });
 
+        // 框选时悬停识别窗口里的元素（PLAN-v20 E1，mac 6500d9cb；Windows 不用授权）
+        _content.Children.Add(new Border { Height = 8 });
+        AddToggle("悬停时识别窗口里的元素", "框选时指针停在按钮、侧栏、列表上就框出那一块，单击截下；滚轮换一层大小，Tab 只认窗口。截图翻译、识字不认",
+            SettingsService.Current.ScreenshotFindsElements, value =>
+            {
+                SettingsService.Current.ScreenshotFindsElements = value;
+                SettingsService.Save();
+            });
+
         // 截完图放哪（PLAN-v9 S7）：角落缩略图 / 都不要（mac 还有晾衣绳，Windows 不做）。
         _content.Children.Add(new Border { Height = 8 });
         var placements = new[] { "card", "none" };

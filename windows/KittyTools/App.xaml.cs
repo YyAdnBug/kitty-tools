@@ -146,6 +146,13 @@ public partial class App : Application
                 Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread()?.TryEnqueue(() => _ = KeepAwakeProbe.RunAsync(awakeProbe));
             }
 
+            if (ElementProbe.IsRequested(commandLine) && ElementProbe.DirectoryFrom(commandLine) is { } elementProbe)
+            {
+                // PLAN-v20 第 6 批：框选时悬停识别元素（只在测试档），跑完就退。
+                _ = ElementProbe.RunAsync(elementProbe);
+                return;
+            }
+
             if (ScrollBandProbe.IsRequested(commandLine) && ScrollBandProbe.DirectoryFrom(commandLine) is { } scrollProbe)
             {
                 // PLAN-v20 第 1 批：长截图框住页面里的一小块滚动区（只在测试档），跑完就退。

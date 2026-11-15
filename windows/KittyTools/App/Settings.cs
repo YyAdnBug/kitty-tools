@@ -269,6 +269,12 @@ internal sealed class Settings
     /// </summary>
     public bool ScreenshotKeepsColors { get; set; }
 
+    /// <summary>
+    /// 框选时悬停识别窗口里的元素（PLAN-v20 E1，mac screenshotFindsElements，跟着导出导入）：指针停在按钮、侧栏、列表上就框出那一块，
+    /// 滚轮换一层大小，Tab 只认窗口。默认关（同 mac）。截图翻译、识字不认元素。
+    /// </summary>
+    public bool ScreenshotFindsElements { get; set; }
+
     // 录制（第四版）：帧率、保存目录、上次没写完的临时文件（闪退恢复用）。
     public int RecordFps { get; set; } = Core.RecorderRules.DefaultFps;
 

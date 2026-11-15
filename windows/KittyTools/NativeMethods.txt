@@ -116,6 +116,12 @@ IUIAutomationElement
 IUIAutomationTextPattern
 IUIAutomationTextRange
 IUIAutomationTextRangeArray
+IUIAutomation2
+IUIAutomationCacheRequest
+IUIAutomationElementArray
+IUIAutomationCondition
+TreeScope
+UIA_PROPERTY_ID
 CUIAutomation
 UIA_PATTERN_ID
 BSTR
