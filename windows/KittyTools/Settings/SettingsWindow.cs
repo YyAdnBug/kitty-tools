@@ -273,8 +273,8 @@ internal sealed partial class SettingsWindow : Window
             }
         };
 
-        // 没有 Mica 时窗口底色跟系统的深浅色走：设置里选了另一种外观，深色的白字就落在白底上
-        // （左栏的页名整个看不见）。铺一层按设置里选的那套取的不透明底，同截图历史窗。
+        // 没有 Mica 时（Windows 10）窗口底色跟系统的深浅色走：设置里选了另一种外观，深色的白字就落在白底上
+        // （左栏的页名整个看不见）。铺一层按设置里选的那套取的不透明底，同截图历史窗；有 Mica 时透明，露出 Mica。
         _shell = new Grid { RequestedTheme = Theme.ElementTheme, Background = PageBackground() };
         _shell.Children.Add(_nav);
 
@@ -282,10 +282,12 @@ internal sealed partial class SettingsWindow : Window
         _shell.AddHandler(UIElement.KeyUpEvent, new KeyEventHandler(OnRecordKeyUp), handledEventsToo: true);
 
         Content = _shell;
-        // Mica 在部分机器 / Release AOT 下会在 OnDefaultSystemBackdropConfigurationChanged 抛
-        // ArgumentException（R31 冒烟抓到）；设置窗改用不透明卡片底，稳过启动冒烟。
-        // ponytail: 要 Mica 时等 WinUI 修好再用，或换成自己挂 DesktopAcrylicController + try/catch。
-        SystemBackdrop = null;
+        // 用 XAML 自带的 MicaBackdrop：深浅色跟着 _shell 的 RequestedTheme（设置里选的外观）走，窗口不在前台时
+        // 系统换成纯色，同 Windows 设置。R31 去掉的是以前自己写的 MicaThemeBackdrop：没重写
+        // OnDefaultSystemBackdropConfigurationChanged，基类对着不是它自己挂上的目标返回 E_INVALIDARG、进程闪退
+        // （同 AcrylicBackdrop 5654a6b1；2026-11-15 把旧类放回来反复开关、换外观，几秒就崩，加上空的重写就不崩）。
+        // 同 AcrylicBackdrop，放在 Content 之后。
+        SystemBackdrop = UsesMica ? new MicaBackdrop() : null;
 
         var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
         _hwnd = (Windows.Win32.Foundation.HWND)hwnd;
@@ -383,10 +385,14 @@ internal sealed partial class SettingsWindow : Window
         Log.Info($"settings.show firstRun={welcome}");
     }
 
+    private static readonly bool UsesMica = Microsoft.UI.Composition.SystemBackdrops.MicaController.IsSupported();
+
     private static Brush PageBackground()
-        => Theme.Brush("Kitty.PageBackground", Theme.EffectiveTheme == ElementTheme.Dark
-            ? Theme.Argb(255, 32, 32, 32)
-            : Theme.Argb(255, 243, 243, 243));
+        => UsesMica
+            ? new SolidColorBrush(Colors.Transparent)
+            : Theme.Brush("Kitty.PageBackground", Theme.EffectiveTheme == ElementTheme.Dark
+                ? Theme.Argb(255, 32, 32, 32)
+                : Theme.Argb(255, 243, 243, 243));
 
     /// <summary>建页时网页搜索 / 翻译服务的那一份：同步落下来会换成新的一份，比引用就知道页面旧了（第四轮体检 E19）。</summary>
     private List<KittyTools.Core.SearchEngine>? _shownEngines;

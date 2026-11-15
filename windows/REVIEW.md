@@ -2709,6 +2709,10 @@ KittyTools.exe --record-test=600 --record-fps=30                     # 看 recor
 x64 包冒烟通过。设置窗的 Mica 在 Release AOT 下会抛 `ArgumentException`，已改成不透明卡片底；
 关于页卡住的原因是 `ShellIcons.LoadPng` 在 Release AOT 下不返回；改成后台线程 + 500 ms 超时后，**七页冒烟全过**。
 
+**后续（2026-11-15）**：设置窗换回 Mica（XAML 自带的 `MicaBackdrop`）。当时崩的不是 Mica 本身，是自己写的 `MicaThemeBackdrop`
+没重写 `OnDefaultSystemBackdropConfigurationChanged`：基类对着不是它挂上的目标返回 E_INVALIDARG（同 `5654a6b1` 的亚克力）。
+把旧类放回来反复开关设置窗、换外观，Debug 4 s 内 0xC000027B；加上空的重写、或换自带的 `MicaBackdrop`，Debug / Release x64 都不崩。
+
 - `cea27773` 16:21 打的 0.7.0。设置窗崩溃 16:22（`7ec18c5e`）、16:45（`d1c697c8`）才修好，`d1c697c8` 里也写了「0.7.0 包里……真机已复现」。所以 `windows/build/release/0.7.0/` 里的 zip 一打开设置就退出。之后没看到重打。
 - 更要紧的是这个崩溃怎么漏过去的：从 `877cdf17` 到 `7ec18c5e`，中间八九个提交，每个都写着「测试全过、AOT 零警告」，可是设置窗根本打不开。单测和编译管不到「界面能不能打开」。
 

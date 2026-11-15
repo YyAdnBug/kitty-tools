@@ -1122,13 +1122,19 @@ internal static class UiSnapshotProbe
         await bitmap.RenderAsync(content);
         var pixels = (await bitmap.GetPixelsAsync()).ToArray();
         // 透明窗口的空白像素是 alpha=0，PNG 查看器会显示成黑；截图里补成卡片实色。
+        // 设置窗的页底是 Mica（RenderTargetBitmap 画不出来），内容区那层又是半透明的：每个不透明度不满的像素都
+        // 叠在没有 Mica 时的页底色上（像素是预乘的），不然深色图的内容区是一片浅灰。
+        var settings = window is SettingsWindow;
+        var fill = settings ? (dark ? 32 : 243) : 251;
         for (var index = 0; index + 3 < pixels.Length; index += 4)
         {
-            if (pixels[index + 3] == 0)
+            var alpha = pixels[index + 3];
+            if (alpha == 0 || (settings && alpha < 255))
             {
-                pixels[index] = 251;
-                pixels[index + 1] = 251;
-                pixels[index + 2] = 251;
+                var rest = 255 - alpha;
+                pixels[index] = (byte)(pixels[index] + fill * rest / 255);
+                pixels[index + 1] = (byte)(pixels[index + 1] + fill * rest / 255);
+                pixels[index + 2] = (byte)(pixels[index + 2] + fill * rest / 255);
                 pixels[index + 3] = 255;
             }
         }
