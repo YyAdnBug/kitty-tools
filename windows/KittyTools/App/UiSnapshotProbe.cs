@@ -673,7 +673,7 @@ internal static class UiSnapshotProbe
 
     private static async Task SafeRenderSettingsAsync(bool dark, string directory)
     {
-        if (!Wanted("settings") && !Wanted("settings-sync") && !Wanted("settings-hotkeys-block") && !Wanted("settings-hotkeys-shot") && !Wanted("settings-sub"))
+        if (!Wanted("settings") && !Wanted("settings-sync") && !Wanted("settings-sync-settings") && !Wanted("settings-hotkeys-block") && !Wanted("settings-hotkeys-shot") && !Wanted("settings-sub"))
         {
             return;
         }
@@ -972,6 +972,59 @@ internal static class UiSnapshotProbe
                 syncer.Status.State = "off";
                 syncer.Status.Message = string.Empty;
                 settings.RebuildForProbe();
+            }
+
+            // PLAN-v21 第 4 批：同步文件夹开着时「同步的内容」里新的两行——升级上来的（设置与快捷键还没定过，先不勾、说是新的）、
+            // 勾着的，和勾上时那一问。文件夹是临时的空文件夹，不合真的一轮；拍完恢复原来的同步设置。
+            if (Wanted("settings-sync-settings") && Paths.IsTestProfile)
+            {
+                var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(settings);
+                var current = SettingsService.Current;
+                var saved = (current.SyncEnabled, current.SyncFolder, current.SyncSettings, current.SyncLauncher);
+                var folder = Path.Combine(Path.GetTempPath(), "kitty-snap-sync-" + Guid.NewGuid().ToString("N")[..8]);
+                Directory.CreateDirectory(folder);
+                try
+                {
+                    async Task ShotAsync(string name, int wait)
+                    {
+                        await Task.Delay(wait);
+                        await WindowShot.SaveAsync(hwnd, Path.Combine(directory, $"{name}-{(dark ? "dark" : "light")}-window.png"));
+                    }
+
+                    settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 1200));
+                    current.SyncFolder = folder;
+                    current.SyncEnabled = true;
+                    current.SyncSettings = null;
+                    current.SyncLauncher = null;
+                    SettingsService.Save();
+                    settings.ShowPage(welcome: false, "general");
+                    settings.RebuildForProbe();
+                    settings.ScrollToSectionForProbe("同步");
+                    await ShotAsync("settings-sync-settings-upgraded", 600);
+                    current.SyncSettings = true;
+                    current.SyncLauncher = true;
+                    SettingsService.Save();
+                    settings.RebuildForProbe();
+                    settings.ScrollToSectionForProbe("同步");
+                    await ShotAsync("settings-sync-settings-on", 600);
+                    var join = settings.ShowSettingsJoinForProbe();
+                    await ShotAsync("settings-sync-settings-join", 700);
+                    join.Hide();
+                }
+                finally
+                {
+                    (current.SyncEnabled, current.SyncFolder, current.SyncSettings, current.SyncLauncher) = saved;
+                    SettingsService.Save();
+                    settings.RebuildForProbe();
+                    try
+                    {
+                        Directory.Delete(folder, recursive: true);
+                    }
+                    catch (IOException)
+                    {
+                        // 临时文件夹留给系统清理
+                    }
+                }
             }
 
             // PLAN-v16 L1 / V12：设置 › 启动器滚到底（使用记录的「空搜索框里列出常用」）。

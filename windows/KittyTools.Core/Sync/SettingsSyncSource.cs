@@ -39,6 +39,11 @@ public abstract class SettingsSyncHost
 
     /// <summary>记不记改的时刻：开着同步、或者这一类合过（mac：没开同步也从没合过时不比，再开就是第一次合）。</summary>
     public virtual bool Tracking(string kind) => true;
+
+    /// <summary>第一次合时跟着别的电脑换了几项（App 用轻提示说一声，同 mac「换了之后……刘海岛说一声」）。</summary>
+    public virtual void Followed(string kind, int count)
+    {
+    }
 }
 
 public sealed class SettingsSyncBook
@@ -104,8 +109,8 @@ public sealed class SettingsSyncBook
 
     public IReadOnlyDictionary<string, long> Changed() => new Dictionary<string, long>(_host.Times(Kind), StringComparer.Ordinal);
 
-    /// <summary>落一轮：写设置（存过的键跟着增减）、换透传、清落了的时刻，存下来，再存账本。</summary>
-    public void Land(IReadOnlyDictionary<string, string?> changes, bool sharedFrozen, Action saveLedger)
+    /// <summary>落一轮：写设置（存过的键跟着增减）、换透传、清落了的时刻，存下来，再存账本。joining：这一类第一次合。</summary>
+    public void Land(IReadOnlyDictionary<string, string?> changes, bool sharedFrozen, bool joining, Action saveLedger)
     {
         var plan = SettingsSync.Plan(
             changes, _find, _host.Passthrough(Kind), Kind == SettingsSync.WindowsKind, sharedFrozen, _host.Accept);
@@ -142,6 +147,10 @@ public sealed class SettingsSyncBook
         }
 
         saveLedger();
+        if (joining && plan.Writes.Count > 0)
+        {
+            _host.Followed(Kind, plan.Writes.Count);
+        }
     }
 }
 
@@ -150,6 +159,7 @@ public sealed class SettingsSyncSource(
     Func<bool> settingsMerged) : ISyncSource
 {
     private bool _macPresent;
+    private bool _joining;
 
     public string Kind => book.Kind;
 
@@ -165,11 +175,16 @@ public sealed class SettingsSyncSource(
 
     public IReadOnlyDictionary<string, long>? Changed() => book.Changed();
 
-    public SyncLedgerData? Ledger(string library) => ledger(library);
+    public SyncLedgerData? Ledger(string library)
+    {
+        var data = ledger(library);
+        _joining = data is null;
+        return data;
+    }
 
     public string? Apply(IReadOnlyDictionary<string, string?> changes, SyncLedgerData data, string library)
     {
-        book.Land(changes, sharedFrozen: _macPresent, () => saveLedger(data, library));
+        book.Land(changes, sharedFrozen: _macPresent, _joining, () => saveLedger(data, library));
         return null;
     }
 }

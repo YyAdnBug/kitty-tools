@@ -2,7 +2,7 @@
 
 2026-11-15。用户：「为设置、快捷键、功能开关和启动器收藏同 mac 的同步单独写一版方案：先出一张两边键名的对照表」。
 
-**状态：D1–D8 用户 2026-11-15「照推荐」，一批一批在做（`git log --grep "PLAN-v21"`；结果在 `REVIEW.md`「PLAN-v21」）。** 照 `AGENTS.md`「每一批的流程」一批一批做，交接写在 `REVIEW.md`「PLAN-v21」，
+**状态：D1–D8 用户 2026-11-15「照推荐」，第 1–4 批都做完了（`git log --grep "PLAN-v21"`；结果在 `REVIEW.md`「PLAN-v21」）。** 照 `AGENTS.md`「每一批的流程」一批一批做，交接写在 `REVIEW.md`「PLAN-v21」，
 手测接着 `HANDTEST.md` 末尾往下编（从 1357 起），截图推到 `windows-shots` 的 `0.3.0-v21-<批>/`。不改版本号、不发布。
 
 - **对照的 mac**：`origin/macos` `58f15ee3`（0.9.0 发布后）。规则在 `Storage/SettingsSync.swift`（文件头就是规格）、`Storage/SyncRecords.swift`、

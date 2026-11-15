@@ -169,6 +169,8 @@ internal sealed class Syncer
         settings.SyncServerUser = account.User;
         settings.SyncFolder = mirror;
         settings.SyncEnabled = true;
+        settings.SyncSettings ??= true;
+        settings.SyncLauncher ??= true;
         SettingsService.Save();
         _pausedUntil = null;
         _backoffs = 0;

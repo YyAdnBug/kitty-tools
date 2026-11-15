@@ -1482,6 +1482,9 @@ internal sealed partial class SettingsWindow : Window
                 settings.SyncStatuses, value => settings.SyncStatuses = value, others);
             AddSyncPart(Core.Sync.ReminderSync.Kind, "提醒", "有哪些提醒、各自的时间和方式；两台都开着时两台都响", Feature.Reminders,
                 settings.SyncReminders, value => settings.SyncReminders = value, others);
+            AddSyncPart(Core.Sync.LauncherFavoriteSync.Kind, "启动器收藏", "收藏的应用、网址和命令和它们的顺序；只在 Windows 电脑之间同步", Feature.Launcher,
+                settings.SyncLauncher == true, value => settings.SyncLauncher = value, others);
+            AddSyncSettingsPart(others);
 
             var peers = status is { Devices.Count: > 0 }
                 ? string.Join("、", status.Devices)
@@ -1525,24 +1528,69 @@ internal sealed partial class SettingsWindow : Window
                 }
             });
 
+    /// <summary>
+    /// 「设置与快捷键」（PLAN-v21）：settings 和 windows-settings 两类一个开关，不跟着哪个功能。勾上时还没合过、文件夹里又有别的电脑，
+    /// 先问：第一次合是整个跟着别的电脑（D7，同 mac）。升级上来、已经开着同步的人这一行先不勾（SyncSettings 是 null），说一句是新的。
+    /// </summary>
+    private void AddSyncSettingsPart(int others)
+    {
+        var settings = SettingsService.Current;
+        var detail = settings.SyncSettings is null
+            ? "新：这一版起能同步各页的设置、快捷键和功能开关了。已经开着同步的先不勾，勾上时先问一句"
+            : "各页的设置、全局快捷键和功能开关；和 Mac 只同步两边都有的设置，快捷键只在 Windows 电脑之间。开机启动、窗口位置、文件夹、麦克风这些跟着这台电脑的不同步";
+        AddToggle("设置与快捷键", detail, settings.SyncSettings == true, async isOn =>
+        {
+            if (isOn && others > 0 && Syncer.Instance?.Joins(Core.Sync.SettingsSync.WindowsKind) == true &&
+                !await ConfirmJoinAsync(SettingsJoinTitle, null, SettingsJoinNote))
+            {
+                BuildPage("general");
+                return;
+            }
+
+            settings.SyncSettings = isOn;
+            SettingsService.Save();
+            if (isOn)
+            {
+                _ = Syncer.Instance?.RoundAsync();
+            }
+        });
+    }
+
     /// <summary>「合在一起后……」：第一次选文件夹时、勾上还没合过的一类时共用（mac SyncSection.joinNote，去掉 Windows 不同步的几类）。</summary>
     private const string JoinNote =
-        "合在一起后，这台电脑上的便签、片段、收藏、生词、网页搜索、翻译服务、状态屏的状态和提醒会和它们的一起出现在每台电脑上（同样的不重复）；" +
+        "合在一起后，这台电脑上的便签、片段、收藏、生词、网页搜索、翻译服务、状态屏的状态、提醒和启动器收藏会和它们的一起出现在每台电脑上（同样的不重复）；" +
+        "设置、快捷键、功能开关换成已经在同步的那几台的——剪贴板的保留天数、「不记录」的应用也跟着换，超出新保留天数的历史会清掉。" +
         "之后同一条两边都改过的，后改的留下。";
 
-    private async Task<bool> ConfirmJoinAsync(string title, string? lead)
+    private const string SettingsJoinTitle = "「设置与快捷键」和已经在同步的电脑合在一起？";
+
+    /// <summary>勾上「设置与快捷键」时那一句（mac joinNote 里设置那半句，加上 Windows 才有的：关掉的功能会打开）。</summary>
+    private const string SettingsJoinNote =
+        "合在一起后，这台电脑的设置、快捷键、功能开关换成已经在同步的那几台的——剪贴板的保留天数、「不记录」的应用也跟着换，" +
+        "超出新保留天数的历史会清掉；这台关掉、它们没动过的功能会重新打开。之后同一项两边都改过的，后改的留下。";
+
+    private Task<bool> ConfirmJoinAsync(string title, string? lead) => ConfirmJoinAsync(title, lead, JoinNote);
+
+    private async Task<bool> ConfirmJoinAsync(string title, string? lead, string note)
+        => await JoinDialog(title, lead, note).ShowAsync() == ContentDialogResult.Primary;
+
+    private ContentDialog JoinDialog(string title, string? lead, string note) => new()
     {
-        var dialog = new ContentDialog
-        {
-            RequestedTheme = Theme.ElementTheme,
-            Title = title,
-            Content = new TextBlock { Text = (lead ?? string.Empty) + JoinNote, TextWrapping = TextWrapping.Wrap, MaxWidth = 420 },
-            PrimaryButtonText = "合在一起",
-            CloseButtonText = "取消",
-            DefaultButton = ContentDialogButton.Primary,
-            XamlRoot = _shell.XamlRoot,
-        };
-        return await dialog.ShowAsync() == ContentDialogResult.Primary;
+        RequestedTheme = Theme.ElementTheme,
+        Title = title,
+        Content = new TextBlock { Text = (lead ?? string.Empty) + note, TextWrapping = TextWrapping.Wrap, MaxWidth = 420 },
+        PrimaryButtonText = "合在一起",
+        CloseButtonText = "取消",
+        DefaultButton = ContentDialogButton.Primary,
+        XamlRoot = _shell.XamlRoot,
+    };
+
+    /// <summary>自检用（PLAN-v21 第 4 批截图）：打开勾上「设置与快捷键」时那一问，截完调用方 Hide。</summary>
+    internal ContentDialog ShowSettingsJoinForProbe()
+    {
+        var dialog = JoinDialog(SettingsJoinTitle, null, SettingsJoinNote);
+        _ = dialog.ShowAsync();
+        return dialog;
     }
 
     /// <summary>状态：上次同步的时刻（第一轮还没完时说正在同步）。</summary>
@@ -1626,6 +1674,9 @@ internal sealed partial class SettingsWindow : Window
             Syncer.Instance?.ForgetServer();
             SettingsService.Current.SyncFolder = folder.Path;
             SettingsService.Current.SyncEnabled = true;
+            // PLAN-v21：第一次开同步的人设置与快捷键、启动器收藏也勾上（升级上来已经开着的才先不勾）
+            SettingsService.Current.SyncSettings ??= true;
+            SettingsService.Current.SyncLauncher ??= true;
             SettingsService.Save();
             _ = Syncer.Instance?.RoundAsync();
             BuildPage("general");

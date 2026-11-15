@@ -40,6 +40,14 @@
   `settings.json` 加 `SyncLauncher`（同 `SyncSettings`，第 4 批接设置页）。验：1015 → 1018 个测试（LauncherFavoriteSyncTests 3 条，最后一条两台走真的 SyncRunner：
   各加、合并、挪顺序、删）；`--sync-settings-probe` 加了收藏：b 跟上两个网址和挪过的顺序，假 Mac 的 `launcher.json` 一个字节都没变、Windows 不写 `launcher.json`；
   AOT 0 警告；内存只托盘 48.7 / 49.1 MB（第 2 批 48.6 / 49.1）；空闲 CPU（开着同步、设置和收藏同步的测试档、300 s）0.068 %；同一个档拷一份给第 1 批的 Release（没有这两类）跑是 0.078 %，没多。
+- **第 4 批（`git log --grep "PLAN-v21 第 4 批"`）**：设置页和升级。同步那一节「同步的内容」末尾加「启动器收藏」「设置与快捷键」两行；第一次开同步（选文件夹、连服务器）
+  两行默认勾上，升级上来已经开着同步的先不勾（`null`），「设置与快捷键」下面说一句是新的；勾上时还没合过、文件夹里又有别的电脑，先问「合在一起？」，写明保留天数、
+  「不记录」的应用跟着换、超出的历史清掉、关掉的功能会重新打开（第 2 批自检里看到的）；选文件夹时那一问也加上了设置和收藏。第一次合跟着别的电脑换了设置时底部轻提示
+  「设置跟着已经在同步的电脑换了」（两类一起算条数；Core 加了 `SettingsSyncHost.Followed`）。验：`--ui-snapshots` 新的 `settings-sync-settings-upgraded` / `-on` / `-join`
+  （Debug 浅深 + Release 浅深，`windows-shots` `0.3.0-v21-4/`）；1018 个测试全过；AOT 0 警告；内存只托盘 48.7 / 48.7 MB（第 3 批 48.6 / 48.7），空闲 CPU（同一个开着全部同步的测试档、300 s）0.026 %。
+  **看到的、不是这一版的**：Release 版用 WGC 拍的设置窗里每一行没有卡片底色（Debug 有）；拿第 1 批的 Release（App 没改过，等于 7561487a）拍 `settings-hotkeys-block` 也一样，
+  另外那一次跑完退出时崩了一次（crash log：stage xaml，`ISystemBackdropOverrides.OnDefaultSystemBackdropConfigurationChanged` 抛 ArgumentException，窗口关的时候）。两件都留作后续，没查。
+  替用户定的：已经在 Windows 之间同步设置的，Mac 后来加入时第一次合不再问（这一行早就勾着），靠那句轻提示说；没测：真两台 Windows、真 Mac（HANDTEST 1357–1367）。
 
 ## PLAN-v20（mac 还有、Windows 还没有的，2026-11-14，照推荐直接做）
 

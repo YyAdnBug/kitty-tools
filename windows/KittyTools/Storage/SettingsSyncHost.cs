@@ -88,6 +88,24 @@ internal static class SettingsSyncState
 
         public override bool Tracking(string kind) => Current.SyncEnabled || ledger.Read(kind) is not null;
 
+        /// <summary>第一次合跟着别的电脑换了几项：两类一起算，这一轮完了说一声（PLAN-v21 第 4 批）。</summary>
+        public override void Followed(string kind, int count)
+        {
+            var first = _followed == 0;
+            _followed += count;
+            Log.Info($"settings-sync.followed kind={kind} count={count}");
+            if (first && _dispatcher is { } dispatcher)
+            {
+                dispatcher.TryEnqueue(DispatcherQueuePriority.Low, () =>
+                {
+                    NoticeHost.Show("设置跟着已经在同步的电脑换了", $"换了 {_followed} 项；之后两边都改过的，后改的留下", NoticeTone.Normal);
+                    _followed = 0;
+                });
+            }
+        }
+
+        private int _followed;
+
         public override Dictionary<string, string> Passthrough(string kind) => kind == SettingsSync.Kind
             ? Current.SyncPassthrough ??= new Dictionary<string, string>(StringComparer.Ordinal)
             : Current.SyncPassthroughWindows ??= new Dictionary<string, string>(StringComparer.Ordinal);
