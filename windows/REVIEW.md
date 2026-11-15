@@ -8,6 +8,20 @@
 
 条目编号不复用。行号按条目里写的那个提交。
 
+## PLAN-v21（设置、快捷键、功能开关和启动器收藏的同步，2026-11-15，用户「照推荐」）
+
+方案在 `PLAN-v21.md`（对照表在 §1，D1–D8 都照推荐）。照 `AGENTS.md`「每一批的流程」走，一批一个提交、报告写在提交正文里；手测从 1357 起，
+截图推到 `windows-shots` 的 `0.3.0-v21-<批>/`。mac 的源码：`origin/macos` `58f15ee3`（`Storage/SettingsSync.swift` 文件头就是规格）。
+
+- **第 1 批（`git log --grep "PLAN-v21 第 1 批"`）**：Core 的对照表和写法，App 还没接。`Sync/SettingValue`（mac `SettingsArchive.Value` 那几种 + Windows 独有的
+  文字表；写法同 `CanonicalJson`，整数值的小数写成整数；解的时候编回去不一字不差的当解不开）、`Sync/SettingsSyncMap`（A、B 组 82 项（含 8 个功能开关）和 mac 互认、
+  C 组 15 项只在 Windows 之间；强调色 brand → pink、截完放哪 card ↔ corner、折起来的服务一组 ↔ 换行隔开的一段、源 / 目标语言照文字收）、
+  `Sync/SettingsSync`（存过的键、透传、改的时刻、落的规划、快捷键撞键；windows-settings 里共有的编号删除不落、有了 Mac 之后只发不落）。
+  对照表里「待核」的几项都对上了：`ClipboardShowLens` = `clipboardShowPreview`、`TranslateJoinLines` = `translateDeleteNewline`、`TranslateWordLookup` = `translateWordMode`
+  （`translateSystemDictionary` 是 mac 独有的系统词典，透传）、调色板两边一样。验：1004 → 1012 个测试全过（SettingsSyncTests 8 条：对照表里的 mac 键都在 mac
+  `Prefs.defaults` 里、mac 留在本机的一项都不在、mac 单测里那几行原样当输入）；AOT x64 / ARM64 0 警告。没接进 App，内存、空闲 CPU、截图不变，没量。
+  没做：golden 行在 Mac 上用 mac 代码编一遍核对（Windows 上跑不了 Swift；标量的写法照 `SyncRecords.encoder` 的规矩和 mac 单测里的几行）。
+
 ## PLAN-v20（mac 还有、Windows 还没有的，2026-11-14，照推荐直接做）
 
 方案在 `PLAN-v20.md`。**Windows 的 agent 自己写、自己编译、自己验**，照 `AGENTS.md`「每一批的流程」走，一批一个提交，报告写在提交正文里；
