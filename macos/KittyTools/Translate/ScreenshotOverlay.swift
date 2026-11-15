@@ -2,13 +2,14 @@
 // 坐标全程是「像素、原点左下」，和 Vision 的归一化行框同一个方向，不用翻；CoreText 在这个坐标系里画字正好是正的。
 // 排版规则（2026-11-06 改，原来每段各自从自己的行高缩起、一路能缩到 6.5，同一张图里字号忽大忽小）：
 // 正文段（行高和全图正文差不到两成）统一用一个基准字号，标题、小字这类明显不一样高的按自己的行高；
-// 译文行数多过原文时先缩，最多缩到基准的四分之三、且不小于 10 pt（按点算，基准本来就不到 10 pt 的不缩），
-// 再多就借下方的空白；还放不下就用上这段周围的空白（右边到邻栏、上下到别的段），整块居中排；
+// 英文正文译成中文时用字体的大写高度和原文行距还原字号，按字面顶边对齐，先按可用高度自然换行；
+// 其它语言、代码块沿用原文基线。确实放不下才缩，最多到基准的四分之三、且不小于 10 pt，
+// 再用上这段周围的空白（右边到邻栏、上下到别的段），整块居中排；
 // 到这一步还放不下的段图上留原文，原文和译文交给截图页的卡片（2026-11-08 拍板 A1 A2 B1：原来一路缩到 6.5 像素，
 // Retina 屏上约 3 pt，小选区里看不清）。
 // 观感对照微信的截图翻译（2026-11-06 用户给的对比图），并修掉微信也有的毛病：
 // - 只去掉字的像素，底色、渐变、边框留着；字色取原文的（灰字还是灰字）；
-// - 每行译文的基线落在原文一行的基线上（基线、行距从像素里量，不信 Vision 的行框——带行内代码块的行，框会被撑高）；
+// - 保留段落起点和行距；英文转中文按字面上沿对齐，其它段按原文基线（从像素里量，不信被代码块撑高的 Vision 行框）；
 // - 行内代码块跟着词走：原来的底框连字一起去掉，译文里还留着的代码词（`total_comments_evaluated`）在新位置
 //   按原来的样子（底色、描边、上下高度、字色，等宽字体）重画底框——微信是把底框留在原处，译文折行之后就错位了；
 // - 列表项的记号单独画，正文和原文的正文列对齐。
@@ -210,14 +211,20 @@ nonisolated enum ScreenshotOverlay {
       // 正文统一一个基准：行高和全图正文差不到两成的都按正文的行高定字号、行距
       let isBody = abs(segment.lineHeight - body) <= body * bodyTolerance
       let lineHeight = isBody ? body : segment.lineHeight
-      let nominal = lineHeight * fontPerLineHeight
-      // 行距照原文：量出来的优先；多行的段按行框估；一行的段用全图正文的（标题这类用自己行高的 1.3 倍）
-      let pitch = min(
-        max(
-          segment.pitch ?? estimatedPitch(segment) ?? (isBody ? bodyPitch : nil) ?? lineHeight
-            * 1.3,
-          lineHeight * 0.9),
-        lineHeight * 2.5)
+      // 英文正文译成中文时，OCR 量到的是字面高度，先还原字体字号；其它语言和代码块保持原来的排法。
+      let calibrated = readingFontSize(
+        source: segment.text, translation: text, lineHeight: lineHeight,
+        pitch: isBody ? bodyPitch : segment.pitch ?? estimatedPitch(segment), code: segment.code)
+      let nominal = calibrated ?? lineHeight * fontPerLineHeight
+      // 行距至少容得下放大后的中文字面，避免密集的原文行距把两行译文压在一起。
+      let pitch = max(
+        calibrated.map { $0 * 1.2 } ?? 0,
+        min(
+          max(
+            segment.pitch ?? estimatedPitch(segment) ?? (isBody ? bodyPitch : nil) ?? lineHeight
+              * 1.3,
+            lineHeight * 0.9),
+          lineHeight * 2.5))
 
       // 右边**整个在本段右边**、高度上有重叠的那一栏：放宽译文时要让出它的位置。只看左边界在不在本段右边界之外——
       // 原来是「左边界比本段的靠右」就算，段框是几行的并集、又高又宽，同一栏里下一段的段框（或者被拆开的半行）
@@ -265,7 +272,11 @@ nonisolated enum ScreenshotOverlay {
       .map(\.maxY).max()
       let bottom: CGFloat = if let below { max(0, min(box.minY, below + gap)) } else { 0 }
 
-      let originalBaseline = segment.baseline ?? box.maxY - segment.lineHeight * baselineDrop
+      // 放大中文后按字面顶边对齐原文；沿用英文基线会让汉字伸出段框、顶到上一段。
+      let originalBaseline =
+        calibrated != nil
+        ? box.maxY - glyphTop(text, fontSize: nominal)
+        : segment.baseline ?? box.maxY - segment.lineHeight * baselineDrop
       let floorSize = smallestFontSize(nominal: nominal, pixelsPerPoint: pixelsPerPoint)
       // 译文实际占的地方（字、列表记号、重画的代码块）：照原文基线排的，顶边就是原文的顶边（字号按原文的行高定，
       // 字面落在原文那一行里；不往上多算，挨得很紧的上一段、贴着图片顶边的段才不会被当成放不下）
@@ -358,9 +369,11 @@ nonisolated enum ScreenshotOverlay {
         segment.lineCount == 1
         ? alignedPlacement(floor: nominal, borrows: false)
           ?? widePlacement(floor: nominal, borrows: false) : nil
+      // 正文先按可用高度自然换行，允许比原文多行；确实放不下时再缩字。
+      let readable = calibrated != nil ? alignedPlacement(floor: nominal) : nil
       let found =
-        sameSize ?? alignedPlacement(floor: floorSize) ?? widePlacement(floor: floorSize)
-        ?? blankPlacement()
+        sameSize ?? readable ?? alignedPlacement(floor: floorSize)
+        ?? widePlacement(floor: floorSize) ?? blankPlacement()
       guard let placement = found else {
         leftovers.append(index)
         continue
@@ -403,6 +416,37 @@ nonisolated enum ScreenshotOverlay {
           code: segment.code))
     }
     return (spans, leftovers)
+  }
+
+  /// 英文的可见大写字高约为字体字号的七成，不能直接当字号再乘 0.9。
+  /// 用系统字体的实际大写高度还原字号，并给行间留至少两成空隙。只调整英文到中日韩文的正文；
+  /// 代码块沿用原来量好的底框和基线，不拿这套估算改变它。
+  private static func readingFontSize(
+    source: String, translation: String, lineHeight: CGFloat, pitch: CGFloat?, code: Code?
+  ) -> CGFloat? {
+    func hasCJK(_ value: String) -> Bool {
+      value.unicodeScalars.contains {
+        (0x3400...0x9FFF).contains($0.value) || (0x3040...0x30FF).contains($0.value)
+          || (0xAC00...0xD7AF).contains($0.value)
+      }
+    }
+    guard code == nil, !hasCJK(source), hasCJK(translation),
+      source.unicodeScalars.contains(where: {
+        (65...90).contains($0.value) || (97...122).contains($0.value)
+      })
+    else { return nil }
+    let reference = font(size: 100)
+    let size = lineHeight * 100 / CTFontGetCapHeight(reference)
+    return pitch.map { min(size, $0 / 1.2) } ?? size
+  }
+
+  /// CoreText 会为中文选取后备字体。按实际字形的上沿对齐，而不是套西文字体的 ascent。
+  private static func glyphTop(_ text: String, fontSize: CGFloat) -> CGFloat {
+    guard let string = attributed(text, fontSize: fontSize, color: nil, code: nil) else {
+      return fontSize
+    }
+    let line = CTLineCreateWithAttributedString(string)
+    return CTLineGetBoundsWithOptions(line, [.useGlyphPathBounds]).maxY
   }
 
   /// 字号最多缩到多小（拍板 A1）：基准的四分之三，但不小于 10 pt；基准本来就不到 10 pt 的不缩（和原文一样大）
