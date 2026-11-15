@@ -216,11 +216,21 @@ import Observation
       format:
         "\(year: .defaultDigits)-\(month: .twoDigits)-\(day: .twoDigits) \(hour: .twoDigits(clock: .twentyFourHour, hourCycle: .zeroBased)):\(minute: .twoDigits):\(second: .twoDigits)",
       timeZone: timeZone, calendar: Calendar(identifier: .gregorian))
-    let header = ["原文", "译文", "目标语言", "服务", "时间", "收藏"]
+    // 表头、语言名、服务名、「是」跟导出那一刻的界面语言（只写出去、不读回来）；时间是固定格式
+    let header = [
+      String(localized: "translate.csv.source", defaultValue: "原文"),
+      String(localized: "translate.csv.result", defaultValue: "译文"),
+      String(localized: "translate.csv.target", defaultValue: "目标语言"),
+      String(localized: "translate.csv.service", defaultValue: "服务"),
+      String(localized: "translate.csv.time", defaultValue: "时间"),
+      String(localized: "translate.csv.favorite", defaultValue: "收藏"),
+    ]
+    let favorite = String(localized: "translate.csv.yes", defaultValue: "是")
     let rows: [[String]] = entries.map { entry in
       [
-        entry.source, entry.result, entry.target.title, entry.service,
-        entry.createdAt.formatted(time), entry.favorite ? "是" : "",
+        entry.source, entry.result, entry.target.title,
+        TranslateService.displayName(stored: entry.service),
+        entry.createdAt.formatted(time), entry.favorite ? favorite : "",
       ]
     }
     let lines: [String] = ([header] + rows).map { row in

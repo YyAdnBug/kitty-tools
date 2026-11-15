@@ -20,7 +20,8 @@ nonisolated struct TranslateService: Codable, Identifiable, Hashable, Sendable {
     /// 有道词典。设置「+」菜单里排最前、服务行标「免费」
     var isFree: Bool { [.zhipu, .microsoft, .apple, .youdaoDict].contains(self) }
 
-    var defaultName: String {
+    /// 默认名（显示用，跟界面语言）。存进 name 的是 defaultName（中文原文）
+    var nameResource: LocalizedStringResource {
       switch self {
       case .zhipu: "智谱 GLM（免费）"
       case .baidu: "百度翻译"
@@ -35,18 +36,28 @@ nonisolated struct TranslateService: Codable, Identifiable, Hashable, Sendable {
       case .ai: "AI 服务"
       }
     }
+
+    /// 存进 name 的默认名：永远是中文原文（跟着同步、导出走；显示时按它认出没改过名的内置服务再翻，多语言第 4 批）
+    var defaultName: String { nameResource.key }
+
+    /// 卡片、「+」菜单、标着「免费」的服务行里用的短默认名：去掉括号里的说明（智谱 GLM（免费）→ 智谱 GLM）
+    var shortNameResource: LocalizedStringResource {
+      self == .zhipu ? "智谱 GLM" : nameResource
+    }
   }
 
   enum AIProtocol: String, Codable, CaseIterable, Sendable {
     case openai, azure, anthropic
 
-    var title: String {
+    var titleResource: LocalizedStringResource {
       switch self {
       case .openai: "OpenAI 兼容"
       case .azure: "Azure OpenAI"
       case .anthropic: "Anthropic"
       }
     }
+
+    var title: String { String(localized: titleResource) }
   }
 
   /// 一个要存进钥匙串的字段
@@ -79,6 +90,24 @@ nonisolated struct TranslateService: Codable, Identifiable, Hashable, Sendable {
     stored.flatMap { zhipuModels.contains($0) ? $0 : nil } ?? zhipuModels[0]
   }
 
+  /// 没改过名（存的还是中文默认名）时不是用户写的字：显示跟界面语言（存的不动）。AI 服务没改名的「AI 服务」也算
+  private var isDefaultName: Bool { name == kind.defaultName }
+
+  /// 显示的名字：没改过名的换成当前语言的默认名；改过的是用户的（AI 服务的预设名按建的那一刻的语言写），原样
+  var displayName: String { isDefaultName ? String(localized: kind.nameResource) : name }
+
+  /// 卡片标题、主结果播报、设置「+」菜单里的短名字：默认名去掉括号里的说明，AI 服务名字末尾全角括号里的说明也去掉
+  var shortName: String {
+    isDefaultName ? String(localized: kind.shortNameResource) : name.replacing(/（.*）$/, with: "")
+  }
+
+  /// 存在翻译历史里的服务名（写入那一刻的 name）显示时同样翻：是内置服务的中文默认名就换成当前语言的
+  static func displayName(stored: String) -> String {
+    Kind.allCases.first { $0.defaultName == stored }.map {
+      String(localized: $0.nameResource)
+    } ?? stored
+  }
+
   static var zhipu: TranslateService { builtin(.zhipu) }
 
   static func builtin(_ kind: Kind) -> TranslateService {
@@ -89,12 +118,14 @@ nonisolated struct TranslateService: Codable, Identifiable, Hashable, Sendable {
 
   static func newAI() -> TranslateService {
     TranslateService(
-      id: "ai:" + UUID().uuidString.prefix(8).lowercased(), kind: .ai, name: "AI 服务",
+      // 名字是用户的：按建的那一刻的界面语言写
+      id: "ai:" + UUID().uuidString.prefix(8).lowercased(), kind: .ai,
+      name: String(localized: Kind.ai.nameResource),
       isEnabled: false, model: "", baseURL: "", aiProtocol: .openai)
   }
 
   /// 「+ › AI 服务」里的厂商预设（D15）：只用来填好名称、协议和地址（经 AIService.endpoint 补全），不持久化；
-  /// 模型留空（进详情页后填了 Key 自动取模型列表）
+  /// 模型留空（进详情页后填了 Key 自动取模型列表）。名称是加进去那一刻界面语言的写法（通义千问 / Qwen），之后是用户的数据
   struct AIPreset: Identifiable, Sendable {
     let name: String
     let aiProtocol: AIProtocol
@@ -114,10 +145,12 @@ nonisolated struct TranslateService: Codable, Identifiable, Hashable, Sendable {
     AIPreset(name: "OpenAI", aiProtocol: .openai, baseURL: "https://api.openai.com/v1"),
     AIPreset(name: "DeepSeek", aiProtocol: .openai, baseURL: "https://api.deepseek.com/v1"),
     AIPreset(
-      name: "通义千问", aiProtocol: .openai,
+      name: String(localized: "通义千问"), aiProtocol: .openai,
       baseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1"),
     AIPreset(name: "Kimi", aiProtocol: .openai, baseURL: "https://api.moonshot.cn/v1"),
-    AIPreset(name: "硅基流动", aiProtocol: .openai, baseURL: "https://api.siliconflow.cn/v1"),
+    AIPreset(
+      name: String(localized: "硅基流动"), aiProtocol: .openai,
+      baseURL: "https://api.siliconflow.cn/v1"),
     AIPreset(name: "OpenRouter", aiProtocol: .openai, baseURL: "https://openrouter.ai/api/v1"),
     AIPreset(
       name: "Gemini", aiProtocol: .openai,
@@ -131,16 +164,29 @@ nonisolated struct TranslateService: Codable, Identifiable, Hashable, Sendable {
 
   var secretFields: [SecretField] {
     switch kind {
-    case .zhipu: [SecretField(name: "apiKey", label: "API Key", prompt: "留空使用内置免费额度")]
-    case .ai: [SecretField(name: "apiKey", label: "API Key", prompt: "本机模型可留空")]
+    case .zhipu:
+      [SecretField(name: "apiKey", label: "API Key", prompt: String(localized: "留空使用内置免费额度"))]
+    case .ai: [SecretField(name: "apiKey", label: "API Key", prompt: String(localized: "本机模型可留空"))]
     case .baidu:
-      [SecretField(name: "appId", label: "App ID"), SecretField(name: "secret", label: "密钥")]
+      [
+        SecretField(name: "appId", label: "App ID"),
+        SecretField(
+          // 百度的「密钥」是一格（英文 Secret Key），和详情页那一节的标题「密钥」（Keys）分开
+          name: "secret", label: String(localized: "translate.baidu.secret", defaultValue: "密钥")),
+      ]
     case .youdao:
-      [SecretField(name: "appKey", label: "应用 ID"), SecretField(name: "appSecret", label: "应用密钥")]
+      [
+        SecretField(name: "appKey", label: String(localized: "应用 ID")),
+        SecretField(name: "appSecret", label: String(localized: "应用密钥")),
+      ]
     case .google: [SecretField(name: "apiKey", label: "API Key")]
-    case .deepl: [SecretField(name: "authKey", label: "Auth Key", prompt: "免费版以 :fx 结尾")]
+    case .deepl:
+      [SecretField(name: "authKey", label: "Auth Key", prompt: String(localized: "免费版以 :fx 结尾"))]
     case .microsoft:
-      [SecretField(name: "subscriptionKey", label: "Key", prompt: "留空使用免费的 Edge 接口")]
+      [
+        SecretField(
+          name: "subscriptionKey", label: "Key", prompt: String(localized: "留空使用免费的 Edge 接口"))
+      ]
     case .volcengine:
       [
         SecretField(name: "accessKey", label: "Access Key"),

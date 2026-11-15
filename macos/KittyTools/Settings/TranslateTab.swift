@@ -55,7 +55,7 @@ struct TranslateTab: View {
     }
     .onChange(of: navigation.path) { keysRevision += 1 }
     .confirmationDialog(
-      "删除「\(services.services.first { $0.id == removing }?.name ?? "")」？",
+      "删除「\(services.services.first { $0.id == removing }?.displayName ?? "")」？",
       isPresented: Binding {
         removing != nil
       } set: {
@@ -235,7 +235,8 @@ struct TranslateTab: View {
     .formStyle(.grouped)
   }
 
-  private static let sample = "SwiftUI 提供了声明 App 界面所需的视图、控件和布局结构。"
+  /// 预览卡里的译文（跟界面语言：只是摆给人看的样子）
+  private static var sample: String { String(localized: "SwiftUI 提供了声明 App 界面所需的视图、控件和布局结构。") }
 
   private func sameLanguage(_ a: String, _ b: String) -> Bool {
     guard let a = Lang(rawValue: a), let b = Lang(rawValue: b) else { return false }
@@ -257,7 +258,8 @@ struct TranslateTab: View {
         Section("要填密钥") { builtinItems(paid) }
       }
       if !missing.isEmpty { Divider() }
-      Menu("AI 服务") {
+      // 子菜单（复数的「AI 服务」）和新建服务的默认名（单数）英文不同：显式 key
+      Menu(String(localized: "translate.add.aiServices", defaultValue: "AI 服务")) {
         ForEach(TranslateService.aiPresets) { preset in
           Button {
             add(preset.make(), focusesKey: true)
@@ -295,7 +297,7 @@ struct TranslateTab: View {
       } label: {
         Label {
           // 智谱的默认名带着「（免费）」：已经在「免费」那一节里了
-          Text(ProviderCardView.displayName(service))
+          Text(service.shortName)
         } icon: {
           ServiceTile.menuIcon(service)
         }
@@ -386,7 +388,7 @@ struct TranslateTab: View {
 private struct ServiceListRow: View {
   @Binding var service: TranslateService
   let status: (text: String, isProblem: Bool)
-  /// 名字后面标「免费」（智谱默认名里的「（免费）」这时去掉，不说两遍）
+  /// 名字后面标「免费」（智谱默认名里的「（免费）」这时去掉，不说两遍：用短名字）
   var isFree = false
   let open: () -> Void
   /// 上移（-1）/ 下移（+1）
@@ -397,7 +399,7 @@ private struct ServiceListRow: View {
       ServiceTile(service: service, size: 24)
       VStack(alignment: .leading, spacing: 1) {
         HStack(spacing: 6) {
-          Text(isFree ? service.name.replacing(/（免费）$/, with: "") : service.name)
+          Text(isFree ? service.shortName : service.displayName)
             .font(.system(size: 13))
           if isFree { FreeTag() }
         }
@@ -409,7 +411,7 @@ private struct ServiceListRow: View {
       .truncationMode(.tail)
       .accessibilityElement(children: .combine)
       Spacer(minLength: 8)
-      Toggle("启用「\(service.name)」", isOn: $service.isEnabled)
+      Toggle("启用「\(service.displayName)」", isOn: $service.isEnabled)
         .labelsHidden()
         .toggleStyle(.switch)
         .controlSize(.mini)

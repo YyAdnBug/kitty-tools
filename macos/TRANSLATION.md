@@ -77,6 +77,7 @@
 ## 五、术语表
 
 右边是英文；括号里是放不下时的短说法。`LocalizationTests.glossary` 查其中不会被别的说法替代的那些，改这里要一起改。
+用短说法的地方写显式 key、comment 里带「短说法」（测试不查它的术语），悬停提示、读屏照旧写全称。
 
 | 中文 | English | 说明 |
 |---|---|---|
@@ -89,7 +90,7 @@
 | 翻译（功能 / 页） | Translate | 句子里的名词用 translation |
 | 划词翻译 / 输入翻译 / 截图翻译 | Translate Selection / Type to Translate / Translate Screenshot | 动词在前 |
 | 划词翻译并替换 | Translate and Replace Selection（Translate & Replace） | |
-| 复制即译 | Translate on Copy | |
+| 复制即译 | Translate on Copy（On Copy） | 顶栏状态胶囊用短说法 `translate.copyBadge` |
 | 生词本 | Word List | |
 | 翻译服务 | Translation Services | |
 | 截图（页 / 功能）· 截图（动作） | Screenshot · Take Screenshot | 显式 key `action.screenshot` |

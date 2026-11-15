@@ -3160,7 +3160,7 @@ struct SnapshotProbeTests {
           c.cards = [
             .init(service: zhipu, state: .done("SwiftUI 提供了视图、控件和布局结构，用来**声明**应用的用户界面。")),
             .init(service: gpt, state: .running("SwiftUI 提供视图、控件以及")),
-            .init(service: claude, state: .failed(.config("密钥无效或没有权限"))),
+            .init(service: claude, state: .failed(.config(String(localized: Self.key("密钥无效或没有权限"))))),
           ]
         }
       ),
@@ -3176,11 +3176,14 @@ struct SnapshotProbeTests {
           c.cards = [
             .init(service: zhipu, state: .running("")),
             .init(service: gpt, state: .truncated("进程是操作系统分配资源的基本单位，线程是 CPU 调度的基本单位。一个进程可以包含多个线程")),
-            .init(service: claude, state: .failed(.config("App ID 或密钥不对"))),
-            .init(service: .builtin(.baidu), state: .failed(TranslateError(message: "请求太频繁，稍后再试"))),
+            .init(service: claude, state: .failed(.config(String(localized: Self.key("App ID 或密钥不对"))))),
+            .init(
+              service: .builtin(.baidu),
+              state: .failed(TranslateError(message: String(localized: Self.key("请求太频繁，稍后再试"))))),
             .init(
               service: deepseek,
-              state: .failed(TranslateError(message: "连不上服务地址", kind: .network))),
+              state: .failed(
+                TranslateError(message: String(localized: Self.key("连不上服务地址")), kind: .network))),
           ]
         }
       ),
@@ -3316,7 +3319,12 @@ struct SnapshotProbeTests {
           _ = c.handleHistoryCommand(#selector(NSResponder.insertNewline(_:)))
         }
       ),
-      ("translate-notice", { c in c.showNotice("划词翻译需要「辅助功能」授权", permission: .accessibility) }),
+      (
+        "translate-notice",
+        { c in
+          c.showNotice(String(localized: Self.key("划词翻译需要「辅助功能」授权")), permission: .accessibility)
+        }
+      ),
       ("translate-screenshot-empty", { c in c.showNotice("没有识别到文字，可以把选区框大一些再试") }),
     ]
     for dark in [false, true] {

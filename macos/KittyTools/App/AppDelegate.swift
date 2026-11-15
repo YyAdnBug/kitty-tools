@@ -879,6 +879,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if yieldToOlderInstance() { return }
     // 新装把功能开关明写进偏好（只开四个；升级上来的不碰），在注册默认值之前（功能管理拍板 M4 M5）
     Feature.seedNewInstall()
+    // 新装、系统英文在前：第一 / 第二语言明写成英语 / 简体中文（注册的默认值不动，多语言第 4 批）
+    Lang.seedNewInstall()
     Prefs.registerDefaults()
     Task { await EmojiPack.trim() }  // 动画表情的缓存收到上限以内（主线程外）
     Prefs.migrate()

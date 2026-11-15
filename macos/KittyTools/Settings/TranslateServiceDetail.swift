@@ -27,7 +27,7 @@ struct TranslateServiceDetail: View {
     // 删掉之后、退回列表之前的这一帧没有这条服务：什么都不画
     if let current = store.services.first(where: { $0.id == id }) {
       form(current)
-        .navigationTitle(current.name)
+        .navigationTitle(current.displayName)
         .toolbar { SettingsBackButton { dismiss() } }
     }
   }
@@ -37,7 +37,7 @@ struct TranslateServiceDetail: View {
     let status = current.settingsStatus
     return VStack(spacing: 0) {
       DetailHeader(
-        title: "\(current.name)", status: "\(status.text)", isProblem: status.isProblem
+        title: "\(current.displayName)", status: "\(status.text)", isProblem: status.isProblem
       ) {
         ServiceTile(service: current, size: 40)
       }
@@ -55,7 +55,7 @@ struct TranslateServiceDetail: View {
       guard !Task.isCancelled else { return }
       await fetchModels(current, quiet: true)
     }
-    .confirmationDialog("删除「\(current.name)」？", isPresented: $confirmsDelete) {
+    .confirmationDialog("删除「\(current.displayName)」？", isPresented: $confirmsDelete) {
       Button("删除", role: .destructive) {
         dismiss()
         store.remove(id)
@@ -229,9 +229,9 @@ struct TranslateServiceDetail: View {
 
   private static func addressHint(_ aiProtocol: TranslateService.AIProtocol) -> String {
     switch aiProtocol {
-    case .openai: "https://api.openai.com/v1 或本机 http://127.0.0.1:11434/v1"
-    case .azure: "https://<资源名>.openai.azure.com/openai/v1"
-    case .anthropic: "留空即 https://api.anthropic.com"
+    case .openai: String(localized: "https://api.openai.com/v1 或本机 http://127.0.0.1:11434/v1")
+    case .azure: String(localized: "https://<资源名>.openai.azure.com/openai/v1")
+    case .anthropic: String(localized: "留空即 https://api.anthropic.com")
     }
   }
 
@@ -272,7 +272,8 @@ struct TranslateServiceDetail: View {
       if !quiet {
         result =
           models.isEmpty
-          ? (false, "服务端没有返回模型") : (true, "找到 \(models.count) 个模型，在「模型」里打字时会列出来")
+          ? (false, String(localized: "服务端没有返回模型"))
+          : (true, String(localized: "找到 \(models.count) 个模型，在「模型」里打字时会列出来"))
       }
     } catch {
       if !quiet { result = (false, error.localizedDescription) }
@@ -289,29 +290,38 @@ extension TranslateService {
       case .zhipu: (TranslateService.zhipuModel(model), false)
       case .ai:
         if aiProtocol != .anthropic, (baseURL ?? "").trimmingCharacters(in: .whitespaces).isEmpty {
-          ("未填服务地址", true)
+          (String(localized: "未填服务地址"), true)
         } else if let url = AIService.endpoint(baseURL ?? "", aiProtocol ?? .openai),
           !HTTP.isLocalNetwork(url), secret() == nil
         {
           // 本机 / 局域网的模型可以不要 Key（也不读钥匙串）；别的地址翻译前直接报「请先在设置里填写 API Key」
           // （第四轮体检 E20）
-          ("未填 API Key", true)
+          (String(localized: "未填 API Key"), true)
         } else if (model ?? "").trimmingCharacters(in: .whitespaces).isEmpty {
-          ("未填模型", true)
+          (String(localized: "未填模型"), true)
         } else {
           ([aiProtocol?.title, model].compactMap { $0 }.joined(separator: " · "), false)
         }
       case .deepl:
         if usesDeepLX == true {
-          (baseURL ?? "").isEmpty ? ("未填 DeepLX 地址", true) : ("DeepLX（自建）", false)
+          (baseURL ?? "").isEmpty
+            ? (String(localized: "未填 DeepLX 地址"), true) : (String(localized: "DeepLX（自建）"), false)
         } else {
-          secret("authKey") == nil ? ("未填密钥", true) : ("官方 API", false)
+          secret("authKey") == nil
+            ? (String(localized: "未填密钥"), true) : (String(localized: "官方 API"), false)
         }
-      case .microsoft: (secret("subscriptionKey") == nil ? "Edge 接口" : "Azure 翻译", false)
-      case .apple: AppleTranslation.isAvailable ? ("离线 · 本机翻译", false) : ("要 macOS 26", true)
-      case .youdaoDict: ("只查单词", false)
+      case .microsoft:
+        (
+          secret("subscriptionKey") == nil
+            ? String(localized: "Edge 接口") : String(localized: "Azure 翻译"), false
+        )
+      case .apple:
+        AppleTranslation.isAvailable
+          ? (String(localized: "离线 · 本机翻译"), false) : (String(localized: "要 macOS 26"), true)
+      case .youdaoDict: (String(localized: "只查单词"), false)
       default:
-        secretFields.allSatisfy { secret($0.name) != nil } ? ("已填密钥", false) : ("未填密钥", true)
+        secretFields.allSatisfy { secret($0.name) != nil }
+          ? (String(localized: "已填密钥"), false) : (String(localized: "未填密钥"), true)
       }
     return (text, missing && isEnabled)
   }

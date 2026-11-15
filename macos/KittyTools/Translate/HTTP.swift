@@ -1,4 +1,4 @@
-// 翻译服务的网络请求：JSON POST、SSE 流式读取、面向用户的中文错误信息。
+// 翻译服务的网络请求：JSON POST、SSE 流式读取、面向用户的错误信息（跟界面语言；服务商返回的原文不动）。
 // 红线：错误信息和日志里不出现请求 URL、请求头和密钥。
 
 import Foundation
@@ -22,12 +22,13 @@ nonisolated struct TranslateError: LocalizedError, Sendable, Equatable {
 
   var errorDescription: String? { message }
 
-  static let emptyResult = TranslateError(message: "服务没有返回译文（输出额度可能被思考过程占满，可换非推理模型）")
+  static let emptyResult = TranslateError(
+    message: String(localized: "服务没有返回译文（输出额度可能被思考过程占满，可换非推理模型）"))
   /// 流正常结束但服务说输出到上限了（OpenAI 兼容 / 智谱 finish_reason = length，Anthropic stop_reason = max_tokens）：
   /// 已出来的半截照常显示，但不算完成（不写历史、不自动复制、不给替换原文；体检 B19）
-  static let truncated = TranslateError(message: "只翻了前一部分：超出这个服务单次输出上限")
+  static let truncated = TranslateError(message: String(localized: "只翻了前一部分：超出这个服务单次输出上限"))
   /// 浮窗收起、换了新会话时没出完的卡片（点重试、或再按输入翻译热键重新打开时自动重跑）
-  static let interrupted = TranslateError(message: "已中断，点重试重新翻译")
+  static let interrupted = TranslateError(message: String(localized: "已中断，点重试重新翻译"))
 
   /// 配置类错误（缺密钥、地址或模型没填）
   static func config(_ message: String) -> TranslateError {
@@ -119,17 +120,19 @@ nonisolated enum HTTP {
   private static func describe(status: Int, serverMessage: String?) -> String {
     let base =
       switch status {
-      case 401, 403: "密钥无效或没有权限"
-      case 404: "服务地址或模型不存在"
-      case 429: "请求太频繁或额度已用完"
-      case 500...: "服务暂时不可用（\(status)）"
-      default: "请求失败（\(status)）"
+      case 401, 403: String(localized: "密钥无效或没有权限")
+      case 404: String(localized: "服务地址或模型不存在")
+      case 429: String(localized: "请求太频繁或额度已用完")
+      // 状态码不是数量：插成字符串，免得加千分位
+      case 500...: String(localized: "服务暂时不可用（\(String(status))）")
+      default: String(localized: "请求失败（\(String(status))）")
       }
     guard let serverMessage, !serverMessage.isEmpty else { return base }
-    return "\(base)：\(serverMessage.prefix(160))"
+    // 服务商的说明原样接在后面（不翻）
+    return String(localized: "\(base)：\(String(serverMessage.prefix(160)))")
   }
 
-  /// 发请求一律包这一层：连不上、超时、断网报成统一的中文网络错误（`.network`），不让原始 URLError 被包成服务类错误
+  /// 发请求一律包这一层：连不上、超时、断网报成统一的网络错误（`.network`），不让原始 URLError 被包成服务类错误
   static func perform<T>(_ body: () async throws -> T) async throws -> T {
     do { return try await body() } catch { throw userFacing(error) }
   }
@@ -139,11 +142,12 @@ nonisolated enum HTTP {
     if urlError.code == .cancelled { return CancellationError() }
     let message =
       switch urlError.code {
-      case .timedOut: "请求超时，请检查网络或服务地址"
-      case .notConnectedToInternet, .networkConnectionLost: "网络不可用"
-      case .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed: "连不上服务地址"
-      case .secureConnectionFailed, .serverCertificateUntrusted: "HTTPS 连接失败（证书问题）"
-      default: "网络错误（\(urlError.code.rawValue)）"
+      case .timedOut: String(localized: "请求超时，请检查网络或服务地址")
+      case .notConnectedToInternet, .networkConnectionLost: String(localized: "网络不可用")
+      case .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed: String(localized: "连不上服务地址")
+      case .secureConnectionFailed, .serverCertificateUntrusted:
+        String(localized: "HTTPS 连接失败（证书问题）")
+      default: String(localized: "网络错误（\(String(urlError.code.rawValue))）")
       }
     return TranslateError(message: message, kind: .network)
   }

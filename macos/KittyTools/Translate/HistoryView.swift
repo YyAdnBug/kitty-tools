@@ -391,7 +391,9 @@ struct HistoryView: View {
           // 对话框式输入框：出现时抢焦点，关历史时把焦点还给原文框。⌘K 菜单开着时改成过滤动作
           CommandTextField(
             text: list.showsActions ? $list.actionQuery : $list.query,
-            placeholder: list.showsActions ? "搜索操作" : "搜索原文或译文", isDialogField: true,
+            placeholder: list.showsActions
+              ? String(localized: "搜索操作") : String(localized: "搜索原文或译文"),
+            isDialogField: true,
             fontSize: 13, onCommand: { coordinator.handleHistoryCommand($0) },
             onFocusChange: { searchFocused = $0 })
         }
@@ -399,7 +401,11 @@ struct HistoryView: View {
         .frame(height: 28)
         .modifier(InputBox(isFocused: searchFocused))
         ScopeCapsule(title: "全部", isOn: !list.favoritesOnly) { list.favoritesOnly = false }
-        ScopeCapsule(title: "收藏", isOn: list.favoritesOnly) { list.favoritesOnly = true }
+        // 范围名「收藏」（名词，英文 Favorites）和动作「收藏」分开
+        ScopeCapsule(
+          title: LocalizedStringResource("translate.scope.favorites", defaultValue: "收藏"),
+          isOn: list.favoritesOnly
+        ) { list.favoritesOnly = true }
       }
       .padding(.horizontal, 12)
       if entries.isEmpty {
@@ -604,11 +610,10 @@ struct HistoryView: View {
     return date.formatted(style)
   }
 
-  /// 行右侧的时间：时、分都写两位（18:07；分钟不指定两位会显示成「18:7」）
+  /// 行右侧的时间：跟着界面语言（Locale.current），12 / 24 小时制按系统设置（中文 24 小时制是两位的 18:07、09:05，
+  /// 和以前定死 zh-Hans 时一样；英文「6:07 PM」）
   static func rowTime(_ date: Date) -> String {
-    date.formatted(
-      .dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits)
-        .locale(Locale(identifier: "zh-Hans")))
+    date.formatted(.dateTime.hour().minute())
   }
 
   /// 高亮的 y：前面的分组标题和行高累加
@@ -696,11 +701,11 @@ enum HistoryMenu {
   static let exports = [(false, false), (false, true), (true, false), (true, true)]
 
   static func scopeTitle(favoritesOnly: Bool) -> String {
-    favoritesOnly ? "只导收藏（生词本）" : "全部历史"
+    favoritesOnly ? String(localized: "只导收藏（生词本）") : String(localized: "全部历史")
   }
 
   static func formatTitle(anki: Bool) -> String {
-    anki ? "TSV（Anki 卡片）…" : "CSV（表格）…"
+    anki ? String(localized: "TSV（Anki 卡片）…") : String(localized: "CSV（表格）…")
   }
 
   /// 导出翻译历史 / 收藏：CSV 给表格（带 BOM，Excel 才认 UTF-8），TSV 给 Anki（正面原文、背面译文）。
@@ -714,7 +719,10 @@ enum HistoryMenu {
     }
     let panel = NSSavePanel()
     panel.allowedContentTypes = [anki ? .tabSeparatedText : .commaSeparatedText]
-    panel.nameFieldStringValue = (favoritesOnly ? "翻译收藏" : "翻译历史") + (anki ? ".tsv" : ".csv")
+    // 文件名跟导出那一刻的界面语言（只写出去、不读回来）
+    panel.nameFieldStringValue =
+      (favoritesOnly ? String(localized: "翻译收藏") : String(localized: "翻译历史"))
+      + (anki ? ".tsv" : ".csv")
     FilePanel.begin(panel) { response in
       guard response == .OK, let url = panel.url else { return }
       let text = anki ? HistoryStore.tsv(entries) : "\u{FEFF}" + HistoryStore.csv(entries)
@@ -805,7 +813,7 @@ private struct HistoryRow: View {
 
 /// 22 pt 范围胶囊：生效的品牌粉 0.16 底 + brandInk 字，没生效的无底 secondary（⇧Tab 在两者间切换）
 private struct ScopeCapsule: View {
-  let title: String
+  let title: LocalizedStringResource
   let isOn: Bool
   let action: () -> Void
   @Environment(\.accessibilityReduceMotion) private var reduceMotion

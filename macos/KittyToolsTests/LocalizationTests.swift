@@ -98,7 +98,9 @@ struct LocalizationTests {
         }
       }
       let lowered = english.map { $0.text.lowercased() }
-      for (chinese, term) in Self.glossary where source.contains(chinese) {
+      // 放不下的地方用的短说法（显式 key、comment 里写「短说法」，TRANSLATION.md 五）不查术语
+      let isShortForm = (entry["comment"] as? String)?.contains("短说法") == true
+      for (chinese, term) in Self.glossary where source.contains(chinese) && !isShortForm {
         if !lowered.allSatisfy({ $0.contains(term) }) {
           problems.append("术语：「\(chinese)」要译成 \(term)：\(key)")
         }
@@ -192,5 +194,29 @@ struct LocalizationTests {
     #expect(try !run([Prefs.lastSeenVersion: "0.9.0"], system: ["zh-Hans-CN"]).kept)
     let chose = try run([Prefs.lastSeenVersion: "0.9.0", Prefs.appleLanguages: ["en"]], system: english)
     #expect(!chose.kept && chose.after[Prefs.appleLanguages] as? [String] == ["en"])
+  }
+
+  /// 翻译的第一 / 第二语言：新装、系统英文在中文前面时明写成英语 / 简体中文；别的情况不写（注册的默认值不动）
+  @Test func seedsTranslateLanguagesOnNewInstall() throws {
+    func run(_ stored: [String: Any], system: [String]) throws -> [String: Any] {
+      let name = "kitty-tests.translate-lang.\(UUID().uuidString)"
+      let defaults = try #require(UserDefaults(suiteName: name))
+      defer { defaults.removePersistentDomain(forName: name) }
+      defaults.setPersistentDomain(stored, forName: name)
+      Lang.seedNewInstall(defaults, domainName: name, system: system)
+      return defaults.persistentDomain(forName: name) ?? [:]
+    }
+    let fresh = try run([:], system: ["en-CN", "zh-Hans-CN"])
+    #expect(fresh[Prefs.translateFirst] as? String == "en")
+    #expect(fresh[Prefs.translateSecond] as? String == "zh-Hans")
+    #expect(try run([:], system: ["ja-JP", "en-US"])[Prefs.translateFirst] as? String == "en")
+    // 中文在前、没有中英文：不写
+    #expect(try run([:], system: ["zh-Hans-CN", "en-CN"]).isEmpty)
+    #expect(try run([:], system: ["de-DE"]).isEmpty)
+    // 升级上来的、引导开过的、自己选过的：不碰
+    #expect(try run([Prefs.lastSeenVersion: "0.9.0"], system: ["en-US"]).keys.sorted() == [Prefs.lastSeenVersion])
+    #expect(try run([Prefs.onboardingScreen: 1], system: ["en-US"]).keys.sorted() == [Prefs.onboardingScreen])
+    let chose = try run([Prefs.translateFirst: "ja"], system: ["en-US"])
+    #expect(chose[Prefs.translateFirst] as? String == "ja" && chose[Prefs.translateSecond] == nil)
   }
 }

@@ -166,7 +166,7 @@ struct ProviderCardView: View {
   }
 
   private var header: some View {
-    let name = Self.displayName(card.service)
+    let name = card.service.shortName
     return HStack(spacing: 8) {
       ServiceTile(service: card.service)
       // 服务名 12 和模型名 11 按基线对齐（居中对齐的话两段字的基线差 0.5–1 pt）
@@ -199,7 +199,7 @@ struct ProviderCardView: View {
           .accessibilityLabel("朗读\(name)的译文")
           Button("复制", systemImage: isCopied ? "checkmark" : "doc.on.doc", action: onCopy)
             .contentTransition(.symbolEffect(.replace))
-            .help(index < 9 ? "复制（⌘\(index + 1)）" : "复制")
+            .help(index < 9 ? "复制（⌘\(String(index + 1))）" : "复制")
             .accessibilityLabel("复制\(name)的译文")
         }
         Button("重新翻译", systemImage: "arrow.clockwise") {
@@ -316,7 +316,8 @@ struct ProviderCardView: View {
       HStack(alignment: .firstTextBaseline, spacing: 12) {
         ForEach(Array(line.phonetics.enumerated()), id: \.offset) { _, phonetic in
           HStack(alignment: .firstTextBaseline, spacing: 2) {
-            Text("\(phonetic.accent == .uk ? "英" : "美") /\(phonetic.text)/")
+            // 读音的口音标签跟界面语言（存着的字里是「美 /…/」，Speaker.phoneticLine 认出来的）
+            Text(verbatim: DictionaryCardView.label(phonetic))
               .font(.system(size: 15 * fontScale))
               .textSelection(.enabled)
             PronounceButton(word: pronounce, accent: phonetic.accent ?? .us, speaker: speaker)
@@ -422,11 +423,6 @@ struct ProviderCardView: View {
     .buttonStyle(.plain).foregroundStyle(Style.brandInk).pointerStyle(.link)
     .font(.system(size: 12))
     .onAppear { errorTicks += 1 }
-  }
-
-  /// 「智谱 GLM（免费）」这类默认名去掉括号里的说明
-  static func displayName(_ service: TranslateService) -> String {
-    service.name.replacing(/（.*）$/, with: "")
   }
 
   /// 完成的大模型结果按 Markdown 画成的样子，没有 Markdown 是 nil。完成的卡每次重画（复制闪光、朗读、换字号、
@@ -700,7 +696,7 @@ struct ServiceTile: View {
 
   /// 首字母：名字以中文开头取第一个字（智谱 GLM → 智），否则取第一个拉丁字母（大写）
   static func monogram(_ service: TranslateService) -> String {
-    let name = ProviderCardView.displayName(service).trimmingCharacters(in: .whitespaces)
+    let name = service.shortName.trimmingCharacters(in: .whitespaces)
     guard let first = name.first else { return "?" }
     if !first.isASCII { return String(first) }
     return name.first(where: { $0.isLetter }).map { String($0).uppercased() } ?? String(first)

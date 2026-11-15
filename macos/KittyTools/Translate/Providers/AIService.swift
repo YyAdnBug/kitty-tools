@@ -15,11 +15,15 @@ nonisolated enum AIService {
     let model = service.model?.trimmingCharacters(in: .whitespaces) ?? ""
     let key = service.secret()?.trimmingCharacters(in: .whitespaces) ?? ""
     guard let url = endpoint(service.baseURL ?? "", aiProtocol), !model.isEmpty else {
-      return AsyncThrowingStream { $0.finish(throwing: TranslateError.config("请先在设置里填写服务地址和模型")) }
+      return AsyncThrowingStream {
+        $0.finish(throwing: TranslateError.config(String(localized: "请先在设置里填写服务地址和模型")))
+      }
     }
     // 不是本机 / 局域网的地址没有 Key 一定 401：不发请求，直接是配置错误（第四轮体检 E20）
     guard !key.isEmpty || HTTP.isLocalNetwork(url) else {
-      return AsyncThrowingStream { $0.finish(throwing: TranslateError.config("请先在设置里填写 API Key")) }
+      return AsyncThrowingStream {
+        $0.finish(throwing: TranslateError.config(String(localized: "请先在设置里填写 API Key")))
+      }
     }
     let target = request.to.englishName
     let from = request.from.map { " from \($0.englishName)" } ?? ""
@@ -74,7 +78,9 @@ nonisolated enum AIService {
   static func fetchModels(baseURL: String, aiProtocol: AIProtocolAlias, key: String) async throws
     -> [String]
   {
-    guard let chat = endpoint(baseURL, aiProtocol) else { throw TranslateError(message: "服务地址不正确") }
+    guard let chat = endpoint(baseURL, aiProtocol) else {
+      throw TranslateError(message: String(localized: "服务地址不正确"))
+    }
     let listURL =
       aiProtocol == .anthropic
       ? chat.deletingLastPathComponent().appending(path: "models").appending(queryItems: [

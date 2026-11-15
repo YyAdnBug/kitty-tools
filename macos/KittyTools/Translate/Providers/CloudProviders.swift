@@ -11,7 +11,7 @@ nonisolated enum Volcengine {
     -> AsyncThrowingStream<String, Error>
   {
     guard let accessKey = service.secret("accessKey"), let secretKey = service.secret("secretKey")
-    else { return Signing.missing("火山引擎的 Access Key 和 Secret Key") }
+    else { return Signing.missing("请先在设置里填写火山引擎的 Access Key 和 Secret Key") }
     return Signing.oneShot {
       var json: [String: Any] = ["TargetLanguage": code(request.to), "TextList": [request.text]]
       if let from = request.from { json["SourceLanguage"] = code(from) }
@@ -33,7 +33,8 @@ nonisolated enum Volcengine {
         let code = error["Code"] as? String ?? ""
         let isKey = ["Signature", "AccessKey", "Auth"].contains { code.contains($0) }
         throw TranslateError(
-          message: "火山翻译错误：\(message.prefix(160))", kind: isKey ? .config : .service)
+          message: String(localized: "火山翻译错误：\(String(message.prefix(160)))"),
+          kind: isKey ? .config : .service)
       }
       let list = object["TranslationList"] as? [[String: Any]]
       return list?.first?["Translation"] as? String ?? ""
@@ -91,7 +92,7 @@ nonisolated enum Tencent {
   {
     guard let secretID = service.secret("secretId"), let secretKey = service.secret("secretKey")
     else {
-      return Signing.missing("腾讯云的 SecretId 和 SecretKey")
+      return Signing.missing("请先在设置里填写腾讯云的 SecretId 和 SecretKey")
     }
     return Signing.oneShot {
       let json: [String: Any] = [
@@ -112,9 +113,10 @@ nonisolated enum Tencent {
       let object = try await HTTP.send(urlRequest)
       let response = object["Response"] as? [String: Any] ?? [:]
       if let error = response["Error"] as? [String: Any] {
-        // AuthFailure.* 是 SecretId / SecretKey 的问题：配置错误
+        // AuthFailure.* 是 SecretId / SecretKey 的问题：配置错误。服务商的说明原样接在后面（不翻）
+        let detail = String((error["Message"] as? String ?? String(localized: "未知")).prefix(160))
         throw TranslateError(
-          message: "腾讯翻译错误：\((error["Message"] as? String ?? "未知").prefix(160))",
+          message: String(localized: "腾讯翻译错误：\(detail)"),
           kind: (error["Code"] as? String ?? "").hasPrefix("AuthFailure") ? .config : .service)
       }
       return response["TargetText"] as? String ?? ""

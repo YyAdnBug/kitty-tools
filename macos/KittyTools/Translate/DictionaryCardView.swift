@@ -138,18 +138,21 @@ struct DictionaryCardView: View {
     return Text("\(main)\(tail)")
   }
 
-  /// 读音：分口音的写「英 /stʌf/」「美 /stəf/」，不分的照旧「/rən/」
+  /// 读音：分口音的写「英 /stʌf/」「美 /stəf/」（英文界面 UK / US），不分的照旧「/rən/」。只是显示：
+  /// 存着的单词卡里的「美」「英」是格式标记，不跟着变
   static func label(_ phonetic: DictionaryEntry.Phonetic) -> String {
     switch phonetic.accent {
-    case .uk: "英 /\(phonetic.text)/"
-    case .us: "美 /\(phonetic.text)/"
+    case .uk: String(localized: "英 /\(phonetic.text)/", comment: "英式读音，后面是音标")
+    case .us: String(localized: "美 /\(phonetic.text)/", comment: "美式读音，后面是音标")
     case nil: "/\(phonetic.text)/"
     }
   }
 
   private var expandTitle: String {
-    if expanded { return "收起" }
-    return hiddenCount > 0 ? "展开全部 \(entry.senseCount) 条释义" : "展开全部例句"
+    // 卡片右上角的「收起」是折起整张卡（Collapse），这里是少看几条（Show Less）
+    if expanded { return String(localized: "translate.dictionary.showLess", defaultValue: "收起") }
+    return hiddenCount > 0
+      ? String(localized: "展开全部 \(entry.senseCount) 条释义") : String(localized: "展开全部例句")
   }
 
   /// 收起时有例句没露出来（露出来的义项里有第二个例句）
@@ -189,7 +192,6 @@ struct PronounceButton: View {
 
   var body: some View {
     let isSpeaking = speaker.speaking == Speaker.key(word: word, accent: accent)
-    let name = accent == .uk ? "英音" : "美音"
     Button {
       speaker.toggleWord(word, accent: accent)
     } label: {
@@ -203,7 +205,7 @@ struct PronounceButton: View {
     .buttonStyle(.plain)
     .foregroundStyle(isSpeaking ? AnyShapeStyle(Style.brandInk) : AnyShapeStyle(.secondary))
     .opacity(isSpeaking ? 1 : 0.7)
-    .help("读\(name)")
-    .accessibilityLabel("读 \(word) 的\(name)")
+    .help(accent == .uk ? "读英音" : "读美音")
+    .accessibilityLabel(accent == .uk ? "读 \(word) 的英音" : "读 \(word) 的美音")
   }
 }

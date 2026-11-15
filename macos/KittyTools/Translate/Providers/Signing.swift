@@ -53,13 +53,16 @@ nonisolated enum Signing {
     }
   }
 
-  static func missing(_ what: String) -> AsyncThrowingStream<String, Error> {
-    AsyncThrowingStream { $0.finish(throwing: TranslateError.config("请先在设置里填写\(what)")) }
+  /// 缺密钥 / 地址：调用方给整句（「请先在设置里填写…」，多语言整句翻，不拼）
+  static func missing(_ message: LocalizedStringResource) -> AsyncThrowingStream<String, Error> {
+    let message = String(localized: message)
+    return AsyncThrowingStream { $0.finish(throwing: TranslateError.config(message)) }
   }
 
   static func tooLong(_ limit: Int) -> AsyncThrowingStream<String, Error> {
     AsyncThrowingStream {
-      $0.finish(throwing: TranslateError(message: "原文超过这个服务的长度上限（\(limit) 字）"))
+      $0.finish(
+        throwing: TranslateError(message: String(localized: "原文超过这个服务的长度上限（\(limit) 字）")))
     }
   }
 }

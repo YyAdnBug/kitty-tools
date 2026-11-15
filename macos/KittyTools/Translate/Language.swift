@@ -12,7 +12,8 @@ nonisolated enum Lang: String, CaseIterable, Codable, Sendable {
   case zhHant = "zh-Hant"
   case en, ja, ko, fr, de, es, ru, pt, it
 
-  var title: String {
+  /// 界面上的语言名（跟界面语言）
+  var titleResource: LocalizedStringResource {
     switch self {
     case .zhHans: "简体中文"
     case .zhHant: "繁体中文"
@@ -27,6 +28,23 @@ nonisolated enum Lang: String, CaseIterable, Codable, Sendable {
     case .it: "意大利语"
     }
   }
+
+  var title: String { String(localized: titleResource) }
+
+  /// 翻译浮窗顶栏胶囊里的语言名：英文的简繁中文太长（Simplified Chinese 把胶囊挤成「Simplifi…hinese」），用短说法；
+  /// 中文和别的语言同 title
+  var shortTitle: String {
+    switch self {
+    case .zhHans:
+      String(localized: "lang.short.zhHans", defaultValue: "简体中文", comment: "翻译浮窗顶栏胶囊里的语言名（短说法）")
+    case .zhHant:
+      String(localized: "lang.short.zhHant", defaultValue: "繁体中文", comment: "翻译浮窗顶栏胶囊里的语言名（短说法）")
+    default: title
+    }
+  }
+
+  /// 智谱中文提示词里用的语言名：固定中文（中文原文），不跟界面语言变——给大模型的提示词不翻
+  var chineseName: String { titleResource.key }
 
   /// 英文提示词里用的语言名
   var englishName: String {
@@ -146,5 +164,24 @@ extension Lang {
     var second = rawSecond.flatMap(Lang.init) ?? .en
     if second.isSameLanguage(as: first) { second = first == .en ? .zhHans : .en }
     return (first, second)
+  }
+}
+
+extension Lang {
+  /// 新装第一次启动时（AppDelegate 里、Prefs.registerDefaults 之前，同 Feature.seedNewInstall）：系统语言列表里英文排在
+  /// 中文前面的 Mac，把第一 / 第二语言明写成英语 / 简体中文；中文在前（或者都没有）的照旧不写，用注册的默认值（简体中文 / 英语）。
+  /// 注册的默认值全 App 一套、不改（mac-native §1：导出、同步里「没有这一项 = 默认值」，各台不同会把没动过的设置悄悄换掉）。
+  /// 新装 = 还没看过任何一版、引导也没开过（同 Feature.seedNewInstall）；升级上来的、已经存过的都不碰。只看持久域
+  @MainActor static func seedNewInstall(
+    _ defaults: UserDefaults = .standard, domainName: String? = Bundle.main.bundleIdentifier,
+    system: [String] = InterfaceLanguage.systemLanguages
+  ) {
+    let stored = domainName.flatMap(defaults.persistentDomain(forName:)) ?? [:]
+    guard stored[Prefs.lastSeenVersion] == nil, stored[Prefs.onboardingScreen] == nil,
+      stored[Prefs.translateFirst] == nil, stored[Prefs.translateSecond] == nil,
+      system.first(where: { $0.hasPrefix("en") || $0.hasPrefix("zh") })?.hasPrefix("en") == true
+    else { return }
+    defaults.set(Lang.en.rawValue, forKey: Prefs.translateFirst)
+    defaults.set(Lang.zhHans.rawValue, forKey: Prefs.translateSecond)
   }
 }

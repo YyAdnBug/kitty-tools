@@ -21,10 +21,10 @@ nonisolated enum AppleTranslation {
   {
     Signing.oneShot {
       guard #available(macOS 26, *) else {
-        throw TranslateError.config("系统翻译要 macOS 26 或更新")
+        throw TranslateError.config(String(localized: "系统翻译要 macOS 26 或更新"))
       }
       guard let from = request.from ?? Lang.detect(request.text) else {
-        throw TranslateError(message: "认不出原文是什么语言，在浮窗顶上选一下源语言")
+        throw TranslateError(message: String(localized: "认不出原文是什么语言，在浮窗顶上选一下源语言"))
       }
       let source = Locale.Language(identifier: from.rawValue)
       let target = Locale.Language(identifier: request.to.rawValue)
@@ -32,9 +32,12 @@ nonisolated enum AppleTranslation {
       case .installed: break
       case .supported:
         throw TranslateError.config(
-          "系统翻译还没下载\(from.title)和\(request.to.title)：到 系统设置 › 通用 › 语言与地区 › 翻译语言 里下载")
+          String(
+            localized:
+              "系统翻译还没下载\(from.title)和\(request.to.title)：到 系统设置 › 通用 › 语言与地区 › 翻译语言 里下载"
+          ))
       case .unsupported:
-        throw TranslateError(message: "系统翻译不支持\(from.title)译\(request.to.title)")
+        throw TranslateError(message: String(localized: "系统翻译不支持\(from.title)译\(request.to.title)"))
       @unknown default: break
       }
       let session = TranslationSession(installedSource: source, target: target)
@@ -43,7 +46,7 @@ nonisolated enum AppleTranslation {
       } catch is CancellationError {
         throw CancellationError()
       } catch {
-        throw TranslateError(message: "系统翻译出错：\(error.localizedDescription)")
+        throw TranslateError(message: String(localized: "系统翻译出错：\(error.localizedDescription)"))
       }
     }
   }
@@ -70,14 +73,16 @@ nonisolated enum YoudaoDict {
       let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
       try HTTP.check(response, object ?? [:])
       guard let object, let entry = entry(object) else {
-        throw TranslateError(message: "有道词典里没有这个词")
+        throw TranslateError(message: String(localized: "有道词典里没有这个词"))
       }
       return entry
     }
   }
 
   /// 把接口返回的词条写成单词卡的样子（纯函数，配单测）：
-  /// 英汉 = 「美 /…/  英 /…/」+ 每个词性一行 + 变形 + 「例：英文 中文」；汉英 = 拼音 + 「n. name；…」。都没有时 nil
+  /// 英汉 = 「美 /…/  英 /…/」+ 每个词性一行 + 变形 + 「例：英文 中文」；汉英 = 拼音 + 「n. name；…」。都没有时 nil。
+  /// 「美」「英」「变形：」「例：」是格式里的标记（朗读按它们认读音行、例句，这段字还存进翻译历史），不跟界面语言变；
+  /// 只在显示的地方换成当前语言的字（DictionaryCardView.label、单词卡的读音行）
   static func entry(_ object: [String: Any]) -> String? {
     var lines: [String] = []
     if let word = ((object["ec"] as? [String: Any])?["word"] as? [[String: Any]])?.first {

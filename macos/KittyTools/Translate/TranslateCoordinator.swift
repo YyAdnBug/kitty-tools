@@ -320,7 +320,7 @@ import Observation
     let text = Self.preprocess(sourceText)
     guard !text.isEmpty else { return }
     guard text.utf8.count <= Self.maxSourceBytes else {
-      notice = "原文太长（上限 32 KB），请分段翻译"
+      notice = String(localized: "原文太长（上限 32 KB），请分段翻译")
       cards = []
       return
     }
@@ -428,10 +428,10 @@ import Observation
   func translateOnce(_ source: String) async throws -> String {
     let text = source.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty, text.utf8.count <= Self.maxSourceBytes else {
-      throw TranslateError(message: "原文为空或太长")
+      throw TranslateError(message: String(localized: "原文为空或太长"))
     }
     let request = Self.plan(for: text, wordMode: false).request
-    var failure: Error = TranslateError.config("没有启用的翻译服务")
+    var failure: Error = TranslateError.config(String(localized: "没有启用的翻译服务"))
     for service in orderedServices where !service.kind.isDictionary {
       do {
         var latest = ""
@@ -540,7 +540,7 @@ import Observation
     // 焦点在原文框，结果出来了读屏不知道（第四轮体检 U12）：浮窗是 key 时把译文开头读出来（自动复制不另播）
     if isPanelKey() {
       Island.announce(
-        "\(Self.announcement(service: ProviderCardView.displayName(service), text: text))")
+        "\(Self.announcement(service: service.shortName, text: text))")
     }
     let defaults = UserDefaults.standard
     if defaults.bool(forKey: Prefs.translateHistoryEnabled) {
@@ -572,7 +572,8 @@ import Observation
       }
     }
     let head = text[..<end].trimmingCharacters(in: .whitespacesAndNewlines)
-    return service + "：" + (head.count > 80 ? String(head.prefix(80)) + "…" : head)
+    let shown = head.count > 80 ? String(head.prefix(80)) + "…" : head
+    return String(localized: "\(service)：\(shown)")
   }
 
   /// 这次的结果自动复制吗（纯函数，配单测）：设置开着、不是查词（释义不该换掉剪贴板）、原文不是复制即译带来又没改过的

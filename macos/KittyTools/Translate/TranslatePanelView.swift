@@ -215,7 +215,7 @@ struct TranslatePanelView: View {
   private func languageMenu(isSource: Bool, showsAutoTags: Bool) -> some View {
     let title = isSource ? sourceTitle : targetTitle
     let isAuto = (isSource ? source : target) == nil
-    let label = isSource ? "源语言" : "目标语言"
+    let label = isSource ? String(localized: "源语言") : String(localized: "目标语言")
     return Menu {
       Picker(
         label,
@@ -234,7 +234,8 @@ struct TranslatePanelView: View {
     } label: {
       LanguageCapsule(
         title: title,
-        showsAutoTag: showsAutoTags && isAuto && title != (isSource ? "自动检测" : "自动"))
+        showsAutoTag: showsAutoTags && isAuto
+          && title != (isSource ? Self.autoDetectTitle : Self.autoTitle))
     }
     .menuStyle(.button)
     .buttonStyle(.plain)
@@ -269,15 +270,19 @@ struct TranslatePanelView: View {
 
   /// 源语言胶囊：自动时显示检测到的语言（还没翻译时写「自动检测」）
   private var sourceTitle: String {
-    if let source, let lang = Lang(rawValue: source) { return lang.title }
-    return (coordinator.fixedSource ?? coordinator.detected)?.title ?? "自动检测"
+    if let source, let lang = Lang(rawValue: source) { return lang.shortTitle }
+    return (coordinator.fixedSource ?? coordinator.detected)?.shortTitle ?? Self.autoDetectTitle
   }
 
   /// 目标语言胶囊：自动时显示这次实际译成的语言（还没翻译时写「自动」，菜单里有「自动（A ⇄ B）」）
   private var targetTitle: String {
-    if let target, let lang = Lang(rawValue: target) { return lang.title }
-    return coordinator.target?.title ?? "自动"
+    if let target, let lang = Lang(rawValue: target) { return lang.shortTitle }
+    return coordinator.target?.shortTitle ?? Self.autoTitle
   }
+
+  /// 胶囊上还没定下语言时的字（显示和「是不是还没定下」的比对用同一份）
+  private static var autoDetectTitle: String { String(localized: "自动检测") }
+  private static var autoTitle: String { String(localized: "自动") }
 
   /// 选成和另一边相同的固定语言时，另一边换成这边原来的值（像交换一样），不会出现「英 → 英」
   private func choose(
@@ -415,12 +420,12 @@ struct TranslatePanelView: View {
   /// 只在出乎所选时写一行：固定目标正好是原文语言而改译了另一端；固定源和检测结果对不上（照所选发出，只提示）
   private var directionNote: String? {
     if let abandoned = coordinator.abandonedTarget, let to = coordinator.target {
-      return "原文已是\(abandoned.title)，改译成\(to.title)"
+      return String(localized: "原文已是\(abandoned.title)，改译成\(to.title)")
     }
     if let fixedSource = coordinator.fixedSource, let detected = coordinator.detected,
       !detected.isSameLanguage(as: fixedSource)
     {
-      return "检测到\(detected.title)，仍按\(fixedSource.title)翻译"
+      return String(localized: "检测到\(detected.title)，仍按\(fixedSource.title)翻译")
     }
     return nil
   }
@@ -627,13 +632,17 @@ private struct CopyToTranslateBadge: View {
 
   var body: some View {
     Button(action: turnOff) {
-      Text("复制即译")
-        .font(.system(size: 12, weight: .medium))
-        .foregroundStyle(Style.brandInk)
-        .padding(.horizontal, 10)
-        .frame(height: 22)
-        .background(Style.brand.opacity(0.16), in: .capsule)
-        .contentShape(.capsule)
+      // 英文用短说法（On Copy）：全称把顶栏的语言胶囊挤成「Si…ese」；悬停提示、读屏照旧写全称
+      Text(
+        LocalizedStringResource(
+          "translate.copyBadge", defaultValue: "复制即译", comment: "顶栏的状态胶囊（短说法）：复制即译开着")
+      )
+      .font(.system(size: 12, weight: .medium))
+      .foregroundStyle(Style.brandInk)
+      .padding(.horizontal, 10)
+      .frame(height: 22)
+      .background(Style.brand.opacity(0.16), in: .capsule)
+      .contentShape(.capsule)
     }
     .buttonStyle(PressScale())
     .fixedSize()
