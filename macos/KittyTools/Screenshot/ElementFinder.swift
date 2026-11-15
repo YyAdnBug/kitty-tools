@@ -6,7 +6,7 @@
 // （SelectionSession.silentApps）。
 // 第三轮（2026-11-15，方案页 https://claude.ai/artifact/Nxzsp9Nssftomsw8FVjn96 ，实测在 macos/build/research/element-detect-v2/）：
 // 一层的下限 20 → 16 点；缓存要看指针进没进钻到那块的子元素；指针在窗口工具栏上、命中的却是铺到玻璃工具栏底下的内容
-// （macOS 26 起）时改从工具栏往下钻。
+// （macOS 26 起）时改从工具栏往下钻；设置里开了「也认网页里的元素」时先读一次 App 的角色，把浏览器内核叫醒（B1）。
 // ponytail: 主线程问，卡住或很慢的 App 每次框选最多顿一下 timeout（0.1 s）；真碰到掉帧再挪出主线程（要把「读界面元素」
 // 加进 @concurrent 第 3 类）。
 
@@ -26,6 +26,11 @@ enum ElementFinder {
   /// 只在窗口顶上这一条（点）里找工具栏（工具栏优先，见 query）：macOS 26 起的工具栏高 52，带标签栏的再高些；
   /// 别处不读窗口的子元素（第一次读要串行读到 32 个，吃总时限）
   static let toolbarBand: CGFloat = 120
+  /// 叫醒以后指针停着不动、还只认到很粗的一块时，到这几个时刻各再问一次（也认网页里的元素，见 query）：实测 Obsidian
+  /// 读完 App 的角色 0.26 s、Claude 约 0.3 s 后命中测试就给细的了；大网页建树慢，1.2 s 再补一次
+  static let settles: [Duration] = [.milliseconds(400), .milliseconds(1200)]
+  /// 叫醒后这么久里问超时的不记成卡住（SelectionSession.silentApps）：浏览器内核刚开始建网页那棵树，可能一时答得慢
+  static let wakeGrace: Duration = .milliseconds(1500)
   /// 和上一层四边都差不到这个（点）的并成一层（一串套娃的分组）
   static let mergeSlack: CGFloat = 4
   /// 从命中的元素往下钻最多几层、一共读几个子元素（见 query）
@@ -65,6 +70,10 @@ enum ElementFinder {
       }
     }
     var entries: [pid_t: Entry] = [:]
+    /// 也认网页里的元素（SelectionSession.wakesWebContent）：每个进程第一次问之前读一次 App 对象的角色（见 query）
+    var wakes = false
+    /// 叫醒过的进程和叫醒的时刻（到点再问一次用，SelectionSession.recheckDelay）
+    var woken: [pid_t: ContinuousClock.Instant] = [:]
     /// 每扇窗口的工具栏（没有 nil）：一扇窗口只读一次，读不清的不记（见 query 的「工具栏优先」）
     var toolbars: [(window: AXUIElement, toolbar: (element: AXUIElement, layer: Layer)?)] = []
   }
@@ -193,6 +202,20 @@ enum ElementFinder {
 
     let app = AXUIElementCreateApplication(pid)
     _ = budget(app, until: deadline)
+    // 也认网页里的元素（第三轮 B1）：浏览器内核（Chromium、Electron）不主动交出网页里的元素，外部程序读一次 App 对象的
+    // 角色才打开最轻的一档辅助功能（只有角色、名字、位置；一直开到它退出），约 0.3 s 后命中测试才给细的（实测 Obsidian
+    // 0.26 s，之前 99% 的点只认到窗口、之后 95% 认得出）。不设任何属性：AXManualAccessibility / AXEnhancedUserInterface
+    // 开的是最重的读屏那一档，还要截完撤回（拍板 B2 不做）。别的 App 读了也没事；每个进程一次框选只读一次
+    if let cache, cache.wakes, cache.woken[pid] == nil {
+      cache.woken[pid] = clock.now
+      var role: CFTypeRef?
+      if AXUIElementCopyAttributeValue(app, kAXRoleAttribute as CFString, &role) == .cannotComplete
+      {
+        return .unresponsive
+      }
+      // 读角色用掉的时间也算在总时限里：命中测试按剩下的设超时
+      guard budget(app, until: deadline) else { return .unresponsive }
+    }
     var hit: AXUIElement?
     let found = AXUIElementCopyElementAtPosition(
       app, Float(point.x), Float(primaryHeight - point.y), &hit)
@@ -290,6 +313,14 @@ enum ElementFinder {
         within: inner.first?.frame ?? (redirected ? bar?.layer.frame : nil), children: exits)
     }
     return .chain(chain)
+  }
+
+  /// 叫醒后指针停着不动，离下一个该再问的时刻（settles）还差多久（woken 是叫醒的时刻）；都过了 nil。纯函数，配单测
+  static func recheckDelay(wokenAt woken: ContinuousClock.Instant, now: ContinuousClock.Instant)
+    -> Duration?
+  {
+    let elapsed = woken.duration(to: now)
+    return settles.first { $0 > elapsed }.map { $0 - elapsed }
   }
 
   /// 一扇窗口的工具栏：找到了 / 没有 / 这次读不清（超时、读坏：不记进缓存，这次的结果也不进缓存）

@@ -176,6 +176,10 @@ enum Prefs {
   /// 截图 / 录屏框选时悬停识别窗口里的元素（侧栏、列表、按钮，2026-11-08；拍板 D1 是默认开，同日用户改成默认关）：要辅助功能授权，
   /// 没授权时照旧只认窗口。关掉 = 只认窗口（原来的样子）。截图翻译 / 识字没有悬停，不管它
   static let screenshotFindsElements = "screenshotFindsElements"
+  /// 识别元素时也认网页里的元素（2026-11-15 第三轮拍板 B1，子开关、默认关）：浏览器内核的 App（Chromium、Electron）
+  /// 不主动交出网页里的元素，开着时第一次问一个 App 前读一次它的角色，请它打开最轻的一档辅助功能（一直开到它退出）。
+  /// 总开关关着时不管它
+  static let screenshotFindsWebElements = "screenshotFindsWebElements"
   /// 旧键（0.7.0 之前是「留不留常驻缩略图」一个布尔）：migrate 里升成上面那个三选一，关过它的人升级后是「都不要」
   static let screenshotShelfLegacy = "screenshotShelf"
   /// 保留截图历史（2026-10-26 拍板 B3，默认开）：关掉之后不再往历史里记，已经记下的留着（设置里另有「现在清空」）
@@ -553,6 +557,7 @@ enum Prefs {
       scrollCaptureSpeed: ScrollSpeed.normal.rawValue,
       screenshotKeepsColors: false,
       screenshotFindsElements: false,
+      screenshotFindsWebElements: false,
       shotHistory: true,
       shotHistoryDays: 30,
       shotHistoryMegabytes: 2 * 1024,

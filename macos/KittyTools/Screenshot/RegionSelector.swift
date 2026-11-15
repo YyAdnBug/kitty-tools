@@ -67,6 +67,7 @@ enum RegionSelector {
       mode: .capture, hint: hint ?? "", lastRegion: lastRegion)
     // ⌥S 截图翻译（autoTranslate）照拍板 C3 不认元素：它的顶部提示也没写滚轮和 Tab
     session.findsElements = !autoTranslate && SelectionSession.elementsAllowed
+    session.wakesWebContent = session.findsElements && SelectionSession.webElementsAllowed
     session.preselectsLastRegion = preselect
     session.recordingBlocker = recordingBlocker
     session.translate = translate
@@ -78,6 +79,7 @@ enum RegionSelector {
   static func record(_ shots: [ScreenCapture.Shot], lastRegion: CGRect?) async -> Outcome? {
     let session = SelectionSession(mode: .record, lastRegion: lastRegion)
     session.findsElements = SelectionSession.elementsAllowed
+    session.wakesWebContent = session.findsElements && SelectionSession.webElementsAllowed
     return await run(shots, session)
   }
 
@@ -384,14 +386,41 @@ final class SelectionSession {
   lazy var findElements: (pid_t, CGPoint) -> ElementFinder.Answer = { [hits] pid, point in
     ElementFinder.query(pid: pid, at: point, cache: hits)
   }
-  private let hits = ElementFinder.Cache()
+  /// 这次框选问元素的缓存（单测直接设 woken）
+  let hits = ElementFinder.Cache()
   /// 问过超时的 App：这次框选不再问它，只认窗口（卡住的 App 每动一下鼠标都等一次就卡成幻灯片了）
   var silentApps: Set<pid_t> = []
+  /// 也认网页里的元素（设置 › 截图的子开关；截图、录屏开始时定）：第一次问一个 App 前读一次它的角色，浏览器内核的 App
+  /// 才打开辅助功能（ElementFinder.Cache.wakes）
+  var wakesWebContent = false {
+    didSet { hits.wakes = wakesWebContent }
+  }
+
+  /// 刚叫醒过 pid：离下一个该再问的时刻（ElementFinder.settles）还差多久（指针停着不动时，SelectionView 到点再问一次）；
+  /// 不是刚叫醒的 nil
+  func recheckDelay(for pid: pid_t) -> Duration? {
+    hits.woken[pid].flatMap { ElementFinder.recheckDelay(wokenAt: $0, now: .now) }
+  }
+
+  /// pid 刚叫醒不久（ElementFinder.wakeGrace）：问超时了也不记成卡住
+  func spares(_ pid: pid_t) -> Bool {
+    hits.woken[pid].map { $0.duration(to: .now) < ElementFinder.wakeGrace } ?? false
+  }
+
+  /// 丢掉 pid 那个 App 上次问的结果（叫醒后它的界面元素换了一批）
+  func forget(_ pid: pid_t) {
+    hits.entries[pid] = nil
+  }
 
   /// 设置 › 截图开着、且有辅助功能授权（没授权照旧只认窗口，不弹框、不催：拍板 D2）
   static var elementsAllowed: Bool {
     UserDefaults.standard.bool(forKey: Prefs.screenshotFindsElements)
       && Permissions.isAccessibilityTrusted
+  }
+
+  /// 设置 › 截图「也认网页里的元素」开着（总开关和授权看 elementsAllowed）
+  static var webElementsAllowed: Bool {
+    UserDefaults.standard.bool(forKey: Prefs.screenshotFindsWebElements)
   }
   private var overlays: [SelectionOverlay] = []
   /// 各屏的画面（start 时填上；单测直接放几个屏外窗口里的视图进来，不弹遮罩）

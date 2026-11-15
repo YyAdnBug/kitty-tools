@@ -199,6 +199,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private var stack: HoverStack?
   /// 触控板换层攒着的量（ElementFinder.step）
   private var scrollPending: CGFloat = 0
+  /// 已经排了「到点再问一次」的 App（刚叫醒的，见 recheck）
+  private var rechecking: Set<pid_t> = []
   /// 待选时按下那一刻悬停的那块：单击松手就选它（按下后手抖出了换大的那层，重问会落回最小那层，评审）
   private var pressedHover: CGRect?
   /// 没悬停窗口时洞缩成光标处的零尺寸占位（路径元素数恒定，桌面 ↔ 窗口也能变形）
@@ -2412,16 +2414,40 @@ final class SelectionView: NSView, NSTextViewDelegate {
     for pid in pids where layers.isEmpty && !session.silentApps.contains(pid) {
       switch session.findElements(pid, CGPoint(x: point.x + origin.x, y: point.y + origin.y)) {
       case .unresponsive:
-        session.silentApps.insert(pid)
+        // 刚叫醒的 App 正在建网页那棵树，可能一时答得慢：这次只给窗口，不记成卡住
+        if !session.spares(pid) { session.silentApps.insert(pid) }
       case .chain(let chain):
         let local = chain.map {
           ElementFinder.Layer(frame: $0.frame.offsetBy(dx: -origin.x, dy: -origin.y), name: $0.name)
         }
         layers = ElementFinder.layers(local, at: point, in: window)
       }
+      // 刚叫醒、这次还只认到很粗的一块（最小那层占了窗口一半以上，或者只有窗口）：指针停着不动时到点再问一次
+      let coarse =
+        layers.first.map { $0.frame.width * $0.frame.height * 2 >= window.width * window.height }
+        ?? true
+      if coarse, let delay = session.recheckDelay(for: pid) { recheck(pid, after: delay) }
     }
     return HoverStack(
       window: index, layers: layers + [ElementFinder.Layer(frame: window, name: nil)])
+  }
+
+  /// 刚叫醒的 App（也认网页里的元素，ElementFinder.settles）过一会儿才交出网页里的元素：指针停着不动时到点再问一次——
+  /// 这次框选还开着、指针还停在这个 App 的窗口上的最小那层、没在拖、没有选区，就丢掉它上次的结果重问（不然要动一下
+  /// 鼠标才变细）。重问还粗的话，findLayers 会排下一个时刻
+  private func recheck(_ pid: pid_t, after delay: Duration) {
+    guard rechecking.insert(pid).inserted else { return }
+    Task { [weak self] in
+      try? await Task.sleep(for: delay)
+      guard let self else { return }
+      rechecking.remove(pid)
+      guard session.views.contains(where: { $0 === self }), adjusts, mouse != nil, selection == nil,
+        drag == nil, let stack, stack.index == 0, owners[stack.window].contains(pid)
+      else { return }
+      session.forget(pid)
+      self.stack = nil
+      refresh()
+    }
   }
 
   /// 滚轮 / 触控板双指：待选、悬停着元素时换层，往上（按手指 / 滚轮的方向，不跟着「自然滚动」反过来）大一层、往下小一层，

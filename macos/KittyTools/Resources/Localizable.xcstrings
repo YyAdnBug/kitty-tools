@@ -7489,16 +7489,6 @@
         }
       }
     },
-    "保存,存储,目录,文件夹,快门,声音,缩略图,识字,换行,二维码,标注,长截图,钉图,按键,速查,工具栏,位置,靠右,居中,录制条,原色,压暗,遮罩,滤镜,取色,颜色,拷贝,复制,文件,PNG,对拷线,远程" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Save,Storage,Directory,Folder,Shutter,Sound,Thumbnail,Capture Text,Line Breaks,QR Code,Annotate,Scrolling Capture,Pin,Keys,Keyboard Shortcuts,Toolbar,Position,Right,Center,Recording Bar,Original Colors,Dim,Overlay,Filter,Color Picker,Color,Copy,Duplicate,File,PNG,Transfer Cable,Remote"
-          }
-        }
-      }
-    },
     "保存到" : {
       "localizations" : {
         "en" : {
@@ -37312,6 +37302,16 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "保存,存储,目录,文件夹,快门,声音,缩略图,识字,换行,二维码,标注,长截图,钉图,按键,速查,工具栏,位置,靠右,居中,录制条,原色,压暗,遮罩,滤镜,取色,颜色,拷贝,复制,文件,PNG,对拷线,远程,元素,识别,悬停,网页,浏览器" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save,Storage,Directory,Folder,Shutter,Sound,Thumbnail,Capture Text,Line Breaks,QR Code,Annotate,Scrolling Capture,Pin,Keys,Keyboard Shortcuts,Toolbar,Position,Right,Center,Recording Bar,Original Colors,Dim,Overlay,Filter,Color Picker,Color,Copy,Duplicate,File,PNG,Transfer Cable,Remote,element,detect,hover,web page,browser"
           }
         }
       }

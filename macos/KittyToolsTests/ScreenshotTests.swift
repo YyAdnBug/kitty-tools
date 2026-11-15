@@ -196,6 +196,19 @@ struct ScreenshotTests {
     #expect(!ElementFinder.underneath(CGRect(x: 0, y: 546, width: 802, height: 56), toolbar))
   }
 
+  // 第三轮 B1：叫醒浏览器内核后，指针停着不动时到 0.4 s、1.2 s 各再问一次；都过了就不再排
+  @Test func elementRecheckAfterWaking() {
+    let woken = ContinuousClock.now
+    #expect(
+      ElementFinder.recheckDelay(wokenAt: woken, now: woken + .milliseconds(100))
+        == .milliseconds(300))
+    #expect(
+      ElementFinder.recheckDelay(wokenAt: woken, now: woken + .milliseconds(400))
+        == .milliseconds(800))
+    #expect(ElementFinder.recheckDelay(wokenAt: woken, now: woken + .milliseconds(1200)) == nil)
+    #expect(ElementFinder.recheckDelay(wokenAt: woken, now: woken + .seconds(2)) == nil)
+  }
+
   @Test func elementLayerPositionAndScrollSteps() {
     let frames = [
       CGRect(x: 10, y: 10, width: 50, height: 30), CGRect(x: 0, y: 0, width: 200, height: 100),
@@ -501,6 +514,8 @@ struct ScreenshotTests {
     #expect(Prefs.defaults[Prefs.screenshotKeepsColors] as? Bool == false)
     // 悬停时识别窗口里的元素：同样默认关（2026-11-08 用户：两个都默认不打开）
     #expect(Prefs.defaults[Prefs.screenshotFindsElements] as? Bool == false)
+    // 也认网页里的元素（2026-11-15 第三轮 B1）：会让别的 App 打开辅助功能，子开关默认关
+    #expect(Prefs.defaults[Prefs.screenshotFindsWebElements] as? Bool == false)
   }
 
   @Test func annotationHitTesting() {

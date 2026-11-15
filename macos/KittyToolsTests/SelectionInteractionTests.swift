@@ -631,6 +631,67 @@ struct SelectionInteractionTests {
     #expect(h.view.accessibilityHelp()?.contains("Tab") == false)
   }
 
+  // 第三轮 B1：刚叫醒的 App（也认网页里的元素）还只认到很粗的一块时，指针停着不动到 0.4 s 再问一次、变细；
+  // 遮罩收了不问；本来就细的不重问；刚叫醒时问超时的不记成卡住。假的 App 没有缓存、每次悬停都会问，所以只看
+  // 「停着不动的那段时间里有没有再问」
+  @Test func wokenAppIsAskedAgainWhileCoarse() async throws {
+    let window = CGRect(x: 100, y: 100, width: 600, height: 500)
+    let row = CGRect(x: 120, y: 300, width: 300, height: 30)
+    let point = CGPoint(x: 200, y: 312)
+    let origin = CGPoint(x: -20000, y: -20000)
+    /// ready：网页那棵树建好了没有（没建好只答整块）
+    final class Fake {
+      var asked = 0
+      var ready = false
+    }
+    func woken(views: Bool, ready: Bool = false) -> (Harness, Fake) {
+      let h = Harness(windows: [window], owners: [[4242]], findsElements: true)
+      if views { h.session.views = [h.view] }
+      h.session.hits.woken[4242] = .now
+      let fake = Fake()
+      fake.ready = ready
+      h.session.findElements = { _, _ in
+        fake.asked += 1
+        return .chain(
+          (fake.ready ? [row, window] : [window]).map {
+            ElementFinder.Layer(frame: $0.offsetBy(dx: origin.x, dy: origin.y), name: "组")
+          })
+      }
+      return (h, fake)
+    }
+    var (h, fake) = woken(views: true)
+    h.move(point)
+    #expect(h.view.accessibilityLabel() == "待选，窗口 600 × 500 像素")
+    var before = fake.asked
+    fake.ready = true
+    try await Task.sleep(for: .milliseconds(600))
+    #expect(fake.asked > before)
+    #expect(h.view.accessibilityLabel() == "待选，组 300 × 30 像素")
+    // 遮罩已经收了（finish 清掉 views）：到点不问
+    (h, fake) = woken(views: false)
+    h.move(point)
+    before = fake.asked
+    try await Task.sleep(for: .milliseconds(600))
+    #expect(fake.asked == before)
+    // 本来就认得细：不排
+    (h, fake) = woken(views: true, ready: true)
+    h.move(point)
+    before = fake.asked
+    try await Task.sleep(for: .milliseconds(600))
+    #expect(fake.asked == before)
+    // 刚叫醒时问超时：这次只给窗口，不记成卡住；叫醒很久以前的照旧记
+    h = Harness(windows: [window], owners: [[4242]], findsElements: true)
+    h.session.hits.woken[4242] = .now
+    h.session.findElements = { _, _ in .unresponsive }
+    h.move(point)
+    #expect(h.session.silentApps.isEmpty)
+    h = Harness(windows: [window], owners: [[4242]], findsElements: true)
+    h.session.hits.woken[4242] = .now - .seconds(5)
+    h.session.findElements = { _, _ in .unresponsive }
+    h.move(point)
+    #expect(h.session.silentApps == [4242])
+  }
+
   // 进场时光标就在窗口上：洞和粉框从光标处的零尺寸占位长出来，不从屏幕左下角 (0, 0) 飞过来
   @Test func hoverMorphStartsAtCursor() {
     let h = Harness(windows: [CGRect(x: 100, y: 100, width: 400, height: 300)])
