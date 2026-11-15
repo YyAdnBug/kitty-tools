@@ -65,12 +65,13 @@ struct ReminderDetail: View {
     }
     let statuses = StatusPreset.load()
     let problem = editing.problem(now: now ?? .now)
+    let status =
+      problem
+      ?? stored.summary(
+        now: now ?? .now, statusTitle: Self.status(for: stored, in: statuses)?.title)
     return VStack(spacing: 0) {
       DetailHeader(
-        title: stored.title,
-        status: problem
-          ?? stored.summary(
-            now: now ?? .now, statusTitle: Self.status(for: stored, in: statuses)?.title),
+        title: "\(stored.title)", status: "\(status)",
         isProblem: problem != nil
       ) {
         ReminderIcon(symbol: stored.symbol, size: 40)
@@ -382,7 +383,7 @@ private struct ScheduleSection: View {
     } header: {
       Text("时间")
     } footer: {
-      SectionFootnote(Self.footnote(schedule.kind))
+      SectionFootnote("\(Self.footnote(schedule.kind))")
     }
   }
 

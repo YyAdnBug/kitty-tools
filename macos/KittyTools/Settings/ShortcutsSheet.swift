@@ -134,7 +134,7 @@ struct ShortcutsSheet: View {
           .foregroundStyle(.tertiary)
         // 对话框式输入框：一打开就拿焦点，直接打字就是搜
         CommandTextField(
-          text: $query, placeholder: "搜索快捷键", isDialogField: true, fontSize: 13,
+          text: $query, placeholder: String(localized: "搜索快捷键"), isDialogField: true, fontSize: 13,
           onCommand: { command($0, sections: sections, searching: searching) },
           onFocusChange: { searchFocused = $0 })
       }
@@ -207,38 +207,55 @@ struct ShortcutsSheet: View {
   }
 
   /// 搜索（空格分开的几个词都要对上，不分大小写）：每一行拿「组名 + 说明 + 按键」去对，全局快捷键拿「组名 + 动作名 +
-  /// 当前组合」；词全在组名里的整组列出。一行都没对上的组不列
+  /// 当前组合」；词全在组名里的整组列出。一行都没对上的组不列。组名、说明、动作名都是当前语言的一份 + 中文原文一份
+  /// （多语言拍板 D7：英文界面里打中文也找得到；中文界面里两份一样）
   static func matching(_ groups: [Group], query: String) -> [Group] {
     let words = query.split(whereSeparator: \.isWhitespace).map(String.init)
     guard !words.isEmpty else { return groups }
+    func both(_ text: LocalizedStringResource) -> String {
+      String(localized: text) + " " + text.chinese
+    }
     return groups.compactMap { group in
+      let title = both(group.title)
       func hits(_ text: String) -> Bool {
-        words.allSatisfy { (group.title + " " + text).localizedStandardContains($0) }
+        words.allSatisfy { (title + " " + text).localizedStandardContains($0) }
       }
       if hits("") { return group }
       var group = group
-      group.globals = group.globals.filter { hits($0.rowTitle + " " + ($0.hotKey?.display ?? "")) }
-      group.entries = group.entries.filter { hits($0.text + " " + $0.keys.joined(separator: " ")) }
+      group.globals = group.globals.filter {
+        hits($0.rowTitle + " " + $0.titleResource.chinese + " " + ($0.hotKey?.display ?? ""))
+      }
+      group.entries = group.entries.filter {
+        hits(both($0.text) + " " + $0.keys.joined(separator: " "))
+      }
       return group.globals.isEmpty && group.entries.isEmpty ? nil : group
     }
   }
 
-  /// 一行：说明 + 按键（keys 里每项是一种按法，多项之间写「/」）
+  /// 一行：说明 + 按键（keys 里每项是一种按法，多项之间写「/」；按键名里有字的（空格、双击、⌘方向键）写
+  /// String(localized:)，修饰键符号留在最前）
   struct Entry: Hashable {
     let keys: [String]
-    let text: String
+    let text: LocalizedStringResource
     /// 指向别的功能的那一行（剪贴板的 ⌘T 翻译、启动器的 cb / fy、截图里按 R 录屏）：那个功能关着时不列
     let needs: Feature?
 
-    init(_ keys: String..., text: String, needs: Feature? = nil) {
+    init(_ keys: String..., text: LocalizedStringResource, needs: Feature? = nil) {
       self.keys = keys
       self.text = text
       self.needs = needs
     }
+
+    /// LocalizedStringResource 不是 Hashable：按 key（中文原文）算，相等的必然 key 一样
+    func hash(into hasher: inout Hasher) {
+      hasher.combine(keys)
+      hasher.combine(text.key)
+      hasher.combine(needs)
+    }
   }
 
   struct Group: Identifiable {
-    let title: String
+    let title: LocalizedStringResource
     let symbol: String
     let color: Color
     /// 归哪些功能（Feature，有一个开着就列）；空 = 按全局快捷键各自的功能，再空就总是列（设置那一组）
@@ -248,7 +265,8 @@ struct ShortcutsSheet: View {
     /// 功能全关了也列（刘海岛：点刘海那一行归插件，提示怎么停住、收起那一行一直有用）
     var always = false
     var entries: [Entry]
-    var id: String { title }
+    /// 中文原文（key）当 id：换语言不变
+    var id: String { title.key }
 
     /// 归左栏的哪一类（同名的设置页）：头一个功能那一页（截图 · 框选归截图、钉图归截图、录屏录音归录制）；
     /// 不归功能的（刘海岛、设置）归通用
@@ -273,7 +291,11 @@ struct ShortcutsSheet: View {
   }
 
   /// 截图时能改的键（ShotKeys，设置 › 快捷键「截图时」）现在写成什么；清除了写「未设置」
-  private static func key(_ shot: ShotKey) -> String { shot.label ?? "未设置" }
+  private static func key(_ shot: ShotKey) -> String { shot.label ?? String(localized: "未设置") }
+
+  /// 启动台、主界面的「收起」（显式 key：翻译卡片上的「收起」是折叠，英文不同）
+  private static let dismiss = LocalizedStringResource(
+    "shortcuts.dismiss", defaultValue: "收起", comment: "速查表：收起启动台、主界面这类面板")
 
   /// 「截图 · 标注」的工具：还是默认的 1–0 就一行，改过就逐个列
   private static var toolEntries: [Entry] {
@@ -284,7 +306,7 @@ struct ShortcutsSheet: View {
           text: "1 矩形 · 2 椭圆 · 3 箭头 · 4 直线 · 5 画笔 · 6 荧光笔 · 7 文字 · 8 序号 · 9 打码 · 0 聚光灯；再按一次收起")
       ]
     }
-    return ShotKey.tools.map { Entry(key($0), text: $0.title + "（再按一次收起）") }
+    return ShotKey.tools.map { Entry(key($0), text: "\($0.title)（再按一次收起）") }
   }
 
   /// 每次打开现算：录屏组里「停止」那行写当前设的录屏快捷键、截图里能改的键写现在设的
@@ -360,10 +382,12 @@ struct ShortcutsSheet: View {
         title: "系统命令", symbol: "power", color: Style.Family.command,
         features: [.launcher],
         entries: SystemCommand.allCases.map { command in
-          let note =
+          let title = command.title.replacing("…", with: "")
+          let text: LocalizedStringResource =
             command.confirmation != nil
-            ? "（再按一次 ↩ 确认）" : [.logout, .restart, .shutdown].contains(command) ? "（弹系统确认框）" : ""
-          return Entry(command.rawValue, text: command.title.replacing("…", with: "") + note)
+            ? "\(title)（再按一次 ↩ 确认）"
+            : [.logout, .restart, .shutdown].contains(command) ? "\(title)（弹系统确认框）" : "\(title)"
+          return Entry(command.rawValue, text: text)
         } + [
           Entry("quit", text: "列出正在运行的 App：↩ 退出，⌘↩ 强制退出（再按一次确认）"),
           Entry("hide", text: "列出正在运行的 App：↩ 隐藏，⌘↩ 强制退出（再按一次确认）"),
@@ -416,15 +440,15 @@ struct ShortcutsSheet: View {
         entries: [
           Entry("⇧", text: "锁定比例（新框是正方形）"),
           Entry("⌥", text: "从中心拉框"),
-          Entry("空格", text: "按住平移选区"),
+          Entry(String(localized: "空格"), text: "按住平移选区"),
           Entry("⌃", text: "暂停吸附"),
           Entry("⌘", text: "按住显示十字准线"),
-          Entry("滚轮", text: "悬停时换大一块 / 小一块（窗口里的元素）"),
+          Entry(String(localized: "滚轮"), text: "悬停时换大一块 / 小一块（窗口里的元素）"),
           Entry("Tab", text: "悬停时在「认元素 / 只认窗口」之间切"),
           Entry(key(.lastRegion), text: "选中上次的区域"),
-          Entry("方向键", text: "移动选区 1 点（按住 ⇧ 10 点）"),
-          Entry("⌘方向键", text: "把那条边往外推（按住 ⇧ 10 点）"),
-          Entry("⌥方向键", text: "把那条边往里收（按住 ⇧ 10 点）"),
+          Entry(String(localized: "方向键"), text: "移动选区 1 点（按住 ⇧ 10 点）"),
+          Entry(String(localized: "⌘方向键"), text: "把那条边往外推（按住 ⇧ 10 点）"),
+          Entry(String(localized: "⌥方向键"), text: "把那条边往里收（按住 ⇧ 10 点）"),
           Entry(key(.pickColor), text: "复制放大镜里的色值"),
           Entry("Esc", text: "逐级退出，最后取消截图"),
         ]),
@@ -436,10 +460,10 @@ struct ShortcutsSheet: View {
           Entry("⇧", text: "画正方形、正圆、45° 线；拖角时保持比例"),
           Entry("⌥", text: "从中心画矩形、椭圆，或从中心改大小"),
           Entry("⌘+", "⌘-", text: "文字大一号 / 小一号（输入时、选中文字时）"),
-          Entry("滚轮", text: "在选中的标注上换粗细、字号"),
+          Entry(String(localized: "滚轮"), text: "在选中的标注上换粗细、字号"),
           Entry("⌫", text: "删除选中的标注"),
           Entry("⌘D", text: "复制一份选中的标注（按住 ⌥ 拖动同样）"),
-          Entry("方向键", text: "移动选中的标注"),
+          Entry(String(localized: "方向键"), text: "移动选中的标注"),
           Entry(key(.undo), key(.redo), text: "撤销 / 重做"),
         ]),
       // mac-whisker §6 截图「出图」
@@ -460,7 +484,7 @@ struct ShortcutsSheet: View {
         title: "长截图", symbol: "arrow.up.and.down.text.horizontal", color: Style.Family.screenshot,
         features: [.screenshot],
         entries: [
-          Entry("空格", text: "自动滚动 / 停下（要辅助功能授权）"),
+          Entry(String(localized: "空格"), text: "自动滚动 / 停下（要辅助功能授权）"),
           Entry("A", text: "标注（在长图上画，画完再出图）"),
           Entry("↩", "⌘C", text: "拷贝"),
           Entry("⌘S", text: "快速保存"),
@@ -474,10 +498,11 @@ struct ShortcutsSheet: View {
         features: [.screenshot], globals: [.shotHistory],
         entries: [
           Entry("↑↓", "←→", text: "在卡片之间挑（←→ 前一张 / 后一张，↑↓ 上下一行；搜索框里打字时让给它）"),
-          Entry("⌘点", "⇧点", text: "多选：⌘ 点一张加进来 / 去掉，⇧ 点从上一张连到这一张"),
+          Entry(
+            String(localized: "⌘点"), String(localized: "⇧点"), text: "多选：⌘ 点一张加进来 / 去掉，⇧ 点从上一张连到这一张"),
           Entry("⌘A", text: "把现在列出来的全选上（筛选、搜索之外的不算）"),
           Entry("⇧↑↓", "⇧←→", text: "连着选过去（从现在这一张往那个方向长）"),
-          Entry("↩", "双击", text: "改标注（录制的是用默认 App 打开）"),
+          Entry("↩", String(localized: "双击"), text: "改标注（录制的是用默认 App 打开）"),
           Entry("⌘C", text: "拷贝（画过标注的带标注；选着好几条时拷的是几个文件）"),
           Entry("⌘S", "⇧⌘S", text: "存储到快速保存目录（选着好几条就一起存）/ 另存为…（一条时）"),
           Entry("⌘P", text: "钉到屏幕"),
@@ -486,7 +511,7 @@ struct ShortcutsSheet: View {
           Entry("⌘F", text: "搜索（搜来源 App 和种类）"),
           Entry("⌘1", "⌘4", text: "换筛选：⌘1 全部、⌘2 截图、⌘3 长截图、⌘4 录制"),
           Entry("⌫", text: "删掉选中的那条"),
-          Entry("拖出去", text: "发一份到别的 App 或文件夹（历史里那条还在）"),
+          Entry(String(localized: "拖出去"), text: "发一份到别的 App 或文件夹（历史里那条还在）"),
         ]),
       // 晾衣绳（第十族，2026-10-26 拍板 C1 C3）：全局的「晾衣绳」不设默认键，没设时那一行写「未设置」。
       // 绳子上的动作在 ClotheslineView 的 CardMouse（面板永不当 key，没有按键）
@@ -494,10 +519,10 @@ struct ShortcutsSheet: View {
         title: "晾衣绳", symbol: HotKeyAction.clothesline.symbol, color: Style.Family.screenshot,
         features: [.screenshot], globals: [.clothesline],
         entries: [
-          Entry("停在菜单栏", text: "绳子滑下来（移开收起；截完图挂上去时也会自己滑下来）"),
-          Entry("单击", text: "拷贝那一张"),
-          Entry("双击", text: "改标注（在标注遮罩里打开）"),
-          Entry("拖出去", text: "发一份到别的 App 或文件夹（原图还挂着）；拖到废纸篓是取下"),
+          Entry(String(localized: "停在菜单栏"), text: "绳子滑下来（移开收起；截完图挂上去时也会自己滑下来）"),
+          Entry(String(localized: "单击"), text: "拷贝那一张"),
+          Entry(String(localized: "双击"), text: "改标注（在标注遮罩里打开）"),
+          Entry(String(localized: "拖出去"), text: "发一份到别的 App 或文件夹（原图还挂着）；拖到废纸篓是取下"),
           Entry("✕", text: "取下（右键菜单里还有存储、钉图、从历史里删掉）"),
         ]),
       // 标注遮罩（2026-10-26：长截图按 A、截图历史里双击都用它）；代码在 ScrollCanvas.keyDown
@@ -512,7 +537,7 @@ struct ShortcutsSheet: View {
           Entry("⌫", text: "删除选中的标注"),
           Entry("⌘D", text: "复制选中的标注"),
           Entry(key(.undo), key(.redo), text: "撤销 / 重做"),
-          Entry("空格", text: "按住拖动平移画面"),
+          Entry(String(localized: "空格"), text: "按住拖动平移画面"),
           Entry("⌘0", "⌘1", text: "适配 / 原始大小"),
           Entry("⌘+", "⌘-", text: "放大 / 缩小"),
           Entry("↩", key(.copy), text: "拷贝"),
@@ -626,7 +651,7 @@ struct ShortcutsSheet: View {
         entries: [
           Entry("⌘1", "⌘2", text: "便签墙 / 列表（同工具栏上的切换；下次打开是上次用的那种）"),
           Entry("↑↓", "←→", text: "便签墙上：在卡片之间挑（↑↓ 同一列上下，←→ 旁边那列）"),
-          Entry("↩", "空格", text: "便签墙上：把选中的那张放大成编辑卡，接着写"),
+          Entry("↩", String(localized: "空格"), text: "便签墙上：把选中的那张放大成编辑卡，接着写"),
           Entry("Esc", "⌘W", text: "便签墙上：收回编辑卡（点旁边变暗的地方也行）；没开着编辑卡时 ⌘W 关窗口"),
           Entry("⌘N", text: "新建便签（便签墙上直接打开它的编辑卡）"),
           Entry("⌘F", text: "搜索便签；光标在正文里时是在这条便签里查找"),
@@ -681,11 +706,11 @@ struct ShortcutsSheet: View {
           Entry("←→", "↑↓", text: "在图标之间挪选中（鼠标指着不高亮），到页边接着翻页"),
           Entry("↩", text: "打开选中的 App（鼠标单击同样；打开后启动台自己收起）"),
           Entry("⌘←", "⌘→", text: "到第一页 / 最后一页"),
-          Entry("两指左右滑", text: "翻页，跟手；鼠标滚轮上下滚也行，点底下的圆点跳页"),
+          Entry(String(localized: "两指左右滑"), text: "翻页，跟手；鼠标滚轮上下滚也行，点底下的圆点跳页"),
           Entry(text: "一打开就直接打字：搜 App 的中文名、拼音、首字母或英文名，文件夹里的也算"),
           Entry("↩", text: "搜索时：打开第一个（或方向键选中的）"),
           Entry("Esc", text: "先清空搜索，再按一次收起；点空白处也收起"),
-          Entry("⌘W", text: "收起"),
+          Entry("⌘W", text: Self.dismiss),
         ]),
       // 刘海岛（mac-whisker S2，2026-10-26）：一直列；2026-11-13 起点刘海那一行和全局键归刘海岛插件，没添加时只剩提示那一行
       Group(
@@ -703,10 +728,10 @@ struct ShortcutsSheet: View {
         globals: [.home],
         entries: [
           Entry("←→", "↑↓", text: "在格子之间换（Tab、⇧Tab 也行）"),
-          Entry("↩", "空格", text: "执行选中的那一格"),
+          Entry("↩", String(localized: "空格"), text: "执行选中的那一格"),
           Entry("⌘,", text: "打开设置"),
           Entry("⌘Q", text: "退出 Kitty Tools"),
-          Entry("Esc", "⌘W", text: "收起"),
+          Entry("Esc", "⌘W", text: Self.dismiss),
         ]),
       // mac-whisker §6 设置；代码在 SettingsWindow 的 SettingsCommands（主菜单「显示 › 返回」）
       Group(

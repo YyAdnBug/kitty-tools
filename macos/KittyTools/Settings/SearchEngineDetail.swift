@@ -30,7 +30,7 @@ struct SearchEngineDetail: View {
     }
     return VStack(spacing: 0) {
       DetailHeader(
-        title: Self.title(engine), status: problem ?? Self.kindTitle(engine),
+        title: "\(Self.title(engine))", status: "\(problem ?? Self.kindTitle(engine))",
         isProblem: problem != nil
       ) {
         Self.tile(engine, size: 40)

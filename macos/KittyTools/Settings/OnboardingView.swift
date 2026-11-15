@@ -144,7 +144,7 @@ struct OnboardingView: View {
     .onChange(of: center.fireCount) {
       guard let action = center.lastFired, !tried.contains(action) else { return }
       pending.insert(action)
-      AccessibilityNotification.Announcement("按过了「\(action.title)」").post()
+      AccessibilityNotification.Announcement(String(localized: "按过了「\(action.title)」")).post()
     }
     // ponytail: 热键什么也没弹出（截图 / 取词进行中又按）时 ✓ 等下次引导重新成为 key 才弹；真遇到再加兜底计时
     .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) {
@@ -201,8 +201,8 @@ struct OnboardingView: View {
 
 /// 大标题（品牌圆体 26）+ 一句说明
 private struct Heading: View {
-  let title: String
-  let subtitle: String
+  let title: LocalizedStringResource
+  let subtitle: LocalizedStringResource
 
   var body: some View {
     VStack(spacing: 4) {
@@ -355,8 +355,9 @@ private struct PermissionScreen: View {
     VStack(spacing: 0) {
       Heading(
         title: kinds.count > 1 ? "先开两项授权" : "先开一项授权",
-        subtitle: (kinds.count > 1 ? "勾上的功能要用到它们，各管什么写在下面。" : "勾上的功能要用到它，管什么写在下面。")
-          + "\n点「去授权」后在系统设置里打开开关，回到这里状态会自己变。")
+        subtitle: kinds.count > 1
+          ? "勾上的功能要用到它们，各管什么写在下面。\n点「去授权」后在系统设置里打开开关，回到这里状态会自己变。"
+          : "勾上的功能要用到它，管什么写在下面。\n点「去授权」后在系统设置里打开开关，回到这里状态会自己变。")
       RowCard(items: kinds) { kind in
         if kind == .accessibility {
           PermissionRow.accessibility(granted: trusted)

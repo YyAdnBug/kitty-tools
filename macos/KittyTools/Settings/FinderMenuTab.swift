@@ -113,7 +113,7 @@ struct FinderMenuTab: View {
       Section {
         ItemToggle(.compress)
         // 压缩时另外跳过的名字（2026-11-13 拍板 Z1 Z2）：开关和列表在推进去的那一页
-        SettingsPushRow(title: "压缩时跳过", detail: CompressSkipPage.summary(compressSkip)) {
+        SettingsPushRow(title: "压缩时跳过", detail: "\(CompressSkipPage.summary(compressSkip))") {
           navigation?.path = [CompressSkipPage.route]
         }
         ItemToggle(.extract)

@@ -56,7 +56,7 @@ extension View {
 /// 列表下面的「+ −」小按钮条（add 是按钮或菜单，只放图标）。整条往左让出「+」在它那一格里的留白：
 /// 「+」的左缘对上上面那一列图标的左边线（四张列表共用；原来「+」比图标靠右 6.5 pt）
 struct ListEditBar<Add: View>: View {
-  let removeTitle: String
+  let removeTitle: LocalizedStringResource
   let canRemove: Bool
   let remove: () -> Void
   @ViewBuilder let add: Add
@@ -72,7 +72,7 @@ struct ListEditBar<Add: View>: View {
         .labelStyle(.iconOnly)
         .frame(width: cell.width, height: cell.height)
         .disabled(!canRemove)
-        .help(removeTitle)
+        .help(Text(removeTitle))
       Spacer(minLength: 0)
     }
     .buttonStyle(.borderless)
@@ -84,8 +84,9 @@ struct ListEditBar<Add: View>: View {
 /// 详情页的页头：40 pt 图标 + 名称（title2）+ 状态（callout；缺配置时橙色），和列表页的页头 PageHeader 同一套排版、
 /// 同一个位置（pageHeaderInsets）。放在表单外面：`VStack(spacing: 0) { DetailHeader; Form }`，别放回 Section 的 header 里
 struct DetailHeader<Icon: View>: View {
-  let title: String
-  let status: String
+  /// 用户起的名字、别处算好的字传 "\(x)"（TRANSLATION.md 二）
+  let title: LocalizedStringResource
+  let status: LocalizedStringResource
   var isProblem = false
   @ViewBuilder let icon: Icon
 

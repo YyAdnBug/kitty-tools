@@ -71,15 +71,16 @@ struct RemindersTab: View {
           Text("提醒")
         } footer: {
           SectionFootnote(
-            "点一行编辑，右边的开关暂停或打开那一条。一次性的提醒点了「知道了」就从列表里拿掉。"
-              + (isFull ? "最多 \(Reminder.maxCount) 条，已经满了，删掉一条才能再加。" : ""))
+            isFull
+              ? "点一行编辑，右边的开关暂停或打开那一条。一次性的提醒点了「知道了」就从列表里拿掉。最多 \(Reminder.maxCount) 条，已经满了，删掉一条才能再加。"
+              : "点一行编辑，右边的开关暂停或打开那一条。一次性的提醒点了「知道了」就从列表里拿掉。")
         }
         Section {
           EmojiPackToggle()
         } header: {
           Text("图标")
         } footer: {
-          SectionFootnote(EmojiPackToggle.footnote)
+          SectionFootnote("\(EmojiPackToggle.footnote)")
         }
         Section {
           Picker(selection: $snooze) {
@@ -92,8 +93,8 @@ struct RemindersTab: View {
           Text("到点之后")
         } footer: {
           SectionFootnote(
-            "电脑睡着、锁着屏或者没打开 Kitty 时到点的提醒，晚 5 分钟以内的照常提醒，更晚的回来后合成一条告诉你。"
-              + "每隔一阵的提醒碰上锁屏、睡眠，或者 5 分钟没碰键盘鼠标，算休息过了，回来重新数。")
+            "电脑睡着、锁着屏或者没打开 Kitty 时到点的提醒，晚 5 分钟以内的照常提醒，更晚的回来后合成一条告诉你。每隔一阵的提醒碰上锁屏、睡眠，或者 5 分钟没碰键盘鼠标，算休息过了，回来重新数。"
+          )
         }
       }
       .gated(by: .reminders)

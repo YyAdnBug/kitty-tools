@@ -78,11 +78,13 @@ struct StatusScreenTab: View {
         } header: {
           Text("状态")
         } footer: {
-          SectionFootnote(
+          // 多语言：拼起来的几段先原样传（"\(x)" 不翻），状态屏那一批拆成整句
+          let text =
             "拖动调整顺序，点一行编辑。"
-              + (entersFirst ? "排在最前面的状态就是全局快捷键进入的那个。" : "按全局快捷键选状态时，卡片也按这个顺序排。")
-              + "至少留一个；删掉的自带状态可以从「+」里恢复。"
-              + (isFull ? "最多 \(StatusPreset.maxCount) 个，已经满了，删掉一个才能再加。" : ""))
+            + (entersFirst ? "排在最前面的状态就是全局快捷键进入的那个。" : "按全局快捷键选状态时，卡片也按这个顺序排。")
+            + "至少留一个；删掉的自带状态可以从「+」里恢复。"
+            + (isFull ? "最多 \(StatusPreset.maxCount) 个，已经满了，删掉一个才能再加。" : "")
+          SectionFootnote("\(text)")
         }
         Section {
           Toggle(isOn: $entersFirst) {
@@ -104,7 +106,7 @@ struct StatusScreenTab: View {
           Text("动画")
         } footer: {
           SectionFootnote(
-            "系统设置里打开了「减弱动态效果」时，这些动画都不做，标题也不晃。" + EmojiPackToggle.footnote)
+            "系统设置里打开了「减弱动态效果」时，这些动画都不做，标题也不晃。\(EmojiPackToggle.footnote)")
         }
         Section {
           LabeledContent {
@@ -122,8 +124,8 @@ struct StatusScreenTab: View {
           Text("退出")
         } footer: {
           SectionFootnote(
-            "状态屏是告示加防误触，不是安全措施：没设退出密码时照着提示谁都能退出，设了也拦不住电源键、触控 ID 键和合盖。"
-              + "要防别人动电脑，进入之后再锁定屏幕（按一下触控 ID 键）：电脑照样不睡，回来解锁就结束——忘了退出密码也这样出来。")
+            "状态屏是告示加防误触，不是安全措施：没设退出密码时照着提示谁都能退出，设了也拦不住电源键、触控 ID 键和合盖。要防别人动电脑，进入之后再锁定屏幕（按一下触控 ID 键）：电脑照样不睡，回来解锁就结束——忘了退出密码也这样出来。"
+          )
         }
       }
       .gated(by: .statusScreen)

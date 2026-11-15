@@ -425,7 +425,7 @@ enum Prefs {
   static let updateNotifiedVersion = "updateNotifiedVersion"
   /// 设置窗上次看的页（SettingsPage.rawValue）
   static let settingsPage = "settingsPage"
-  /// 设置侧栏收起了哪几组（组标题，换行隔开；SettingsRoot）。这台电脑自己的界面状态：不注册默认值、不导出不同步
+  /// 设置侧栏收起了哪几组（SettingsPage.SidebarSection 的 rawValue，换行隔开；0.9.0 及以前存的是中文组标题，读时照样认；SettingsRoot）。这台电脑自己的界面状态：不注册默认值、不导出不同步
   static let settingsCollapsedGroups = "settingsCollapsedGroups"
   /// 设置侧栏底下「已关闭」那组展开着没有（默认收起；SettingsRoot）。这台电脑自己的界面状态：不注册默认值、不导出不同步
   static let settingsShowsOffFeatures = "settingsShowsOffFeatures"

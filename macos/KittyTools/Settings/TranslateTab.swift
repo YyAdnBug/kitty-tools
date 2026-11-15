@@ -92,8 +92,7 @@ struct TranslateTab: View {
           Text("语言")
         } footer: {
           SectionFootnote(
-            "目标语言选「自动」时：原文是第一语言就译成第二语言，否则译成第一语言（简繁中文算同一种）。"
-              + "源语言和目标语言在翻译浮窗顶部切换，会一直记住。")
+            "目标语言选「自动」时：原文是第一语言就译成第二语言，否则译成第一语言（简繁中文算同一种）。源语言和目标语言在翻译浮窗顶部切换，会一直记住。")
         }
         // 两个选成同一种语言（简繁也算）就互换，免得「自动」变成中译中
         .onChange(of: first) { old, new in if sameLanguage(new, second) { second = old } }

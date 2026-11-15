@@ -40,7 +40,7 @@ struct StatusPresetDetail: View {
     }
     return VStack(spacing: 0) {
       DetailHeader(
-        title: stored.title, status: editing.problem ?? stored.summary,
+        title: "\(stored.title)", status: "\(editing.problem ?? stored.summary)",
         isProblem: editing.problem != nil
       ) {
         StatusPresetIcon(symbol: stored.symbol, size: 40)

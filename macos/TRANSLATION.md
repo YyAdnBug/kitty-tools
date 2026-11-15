@@ -33,6 +33,8 @@
 | AppKit（`NSMenuItem`、`NSAlert`、`toolTip`、读屏的标签和播报） | `String(localized:)` |
 | 刘海岛（第 1 批改好）：`show` / `progress` / `dismiss(ifShowing:)` / `showIfSlow`、`Island.Action`、`Island.announce` 收 `LocalizedStringResource` | 进行中那一条按 `Content.source`（传进来的 resource，key + 插的值）认：`progress`、`dismiss(ifShowing:)` 给和 `show` 同一个 resource（存成 `static let x: LocalizedStringResource`）；已经取好的字播报用 `Island.post` |
 | 自家组件（第 1 批改好）：`ActionMenu.Item(title:detail:)`、`emptyText`、`EmptyState`、`BarNotice.message/warning/undo`、`NSMenu.addAction`、`NewTitle`、`WhatsNew.touch(section:)` | 同上，字面量直接写；`ActionMenu.Item.original` 是中文原文（`resource.chinese`），过滤时和标题一起认 |
+| 设置页的零件（第 2 批改好）：`SectionFootnote`、`DetailHeader(title:status:)`、`PermissionRow(title:detail:button:)`、`PermissionStatus`、`ListEditBar(removeTitle:)`、`SettingsPushRow(title:detail:)`、`PanelSizeRow(detail:)`、`AppListRow.chooseApps(prompt:message:)` | 同上；用户起的名字、别处算好的一句摘要传 `"\(x)"`。原来拿 `+` 拼的说明（`SectionFootnote("a" + (x ? "b" : ""))`）编不过：拆成整句的三目，或者暂时整段 `"\(text)"` 传过去、留给那一族拆 |
+| 并列的几个名字连成一串（「剪贴板、启动器」） | `names.joinedAsList()`（显式 key `list.enumeration`：中文「、」，英文「, 」），别写死 `joined(separator: "、")` |
 | 某种语言里是空的（中文「」「」之间什么都不加、英文要「, 」） | 别让哪种语言的值是空串：查不到译文、默认值又是空的时候系统显示 key 本身（实测）。把空的那段并进旁边的字里（`list.quoted` 的中文是「」「」，外面再包一层「%@」），`LocalizationTests` 查空串 |
 | 固定宽的格子里英文放不下（主界面格子、刘海岛那一张的快捷动作） | `Style.fitsOneLine` 量：放不下的才折两行、居中，放得下的修饰符和原来一模一样（中文截图逐像素不变） |
 
@@ -63,7 +65,8 @@
 
 ## 四、英文口径（对着 macOS 自带 App 写，拍板 D3）
 
-- 菜单项、按钮、窗口 / 设置页 / 分节标题用 Title Case（Check for Updates…）；开关、复选框、说明、提示用句子写法（Check for updates automatically）。
+- 菜单项、按钮、窗口 / 设置页 / 分节标题用 Title Case（Check for Updates…）；开关、复选框、设置里一行的行名（照系统设置：Accent color、
+  Icon style、Panel size）、说明、提示用句子写法（Check for updates automatically）。
 - 还要再问一步的动作带「…」（一个省略号字符）；「」换成 “ ”；路径照用 ›（Settings › General）。
 - 用 you，不写 please，短句；出错写「出了什么事 + 怎么办」，不道歉；不用感叹号。
 - 数字用阿拉伯数字，单位走单复数；按键写符号（⌥Space、⌘⇧A）。

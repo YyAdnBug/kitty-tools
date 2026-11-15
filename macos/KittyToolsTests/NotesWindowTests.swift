@@ -724,10 +724,10 @@ struct NotesWindowTests {
     #expect(LauncherMatch.score("ksj", item: launcher[start]) > 0)
 
     let group = try #require(
-      ShortcutsSheet.groups(enabled: Set(Feature.allCases)).first { $0.title == "便签" })
+      ShortcutsSheet.groups(enabled: Set(Feature.allCases)).first { $0.title.key == "便签" })
     #expect(
       group.globals == [.noteCapture, .noteNew, .noteAll] && group.color == Style.Family.notes)
-    let titles = ShortcutsSheet.groups(enabled: Set(Feature.allCases)).map(\.title)
+    let titles = ShortcutsSheet.groups(enabled: Set(Feature.allCases)).map(\.title.key)
     // 第 3 批在中间加了「屏幕边缘」一组，第 4 批在它后面加了「浮在屏幕上」一小组
     #expect(titles.firstIndex(of: "便签")! + 1 == titles.firstIndex(of: "便签 · 屏幕边缘")!)
     #expect(titles.firstIndex(of: "便签 · 屏幕边缘")! + 1 == titles.firstIndex(of: "便签 · 浮在屏幕上")!)
@@ -737,7 +737,7 @@ struct NotesWindowTests {
     #expect(titles.firstIndex(of: "提醒")! + 1 == titles.firstIndex(of: "状态屏")!)
     #expect(titles.firstIndex(of: "状态屏")! + 1 == titles.firstIndex(of: "启动台")!)
     let keys = Set(
-      ShortcutsSheet.groups(enabled: Set(Feature.allCases)).filter { $0.title.hasPrefix("便签") }
+      ShortcutsSheet.groups(enabled: Set(Feature.allCases)).filter { $0.title.key.hasPrefix("便签") }
         .flatMap(\.entries).flatMap(\.keys))
     #expect(
       keys.isSuperset(of: [

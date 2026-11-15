@@ -602,7 +602,7 @@ struct ClipboardPanelTests {
 
   /// 速查表跟着按键走：剪贴板组里有 ⌘T ⌘O ⌘R ⌥⌘C
   @Test func cheatSheetListsNewKeys() throws {
-    let clipboard = try #require(ShortcutsSheet.groups.first { $0.title == "剪贴板" })
+    let clipboard = try #require(ShortcutsSheet.groups.first { $0.title.key == "剪贴板" })
     let keys = Set(clipboard.entries.flatMap(\.keys))
     #expect(keys.isSuperset(of: ["⌘T", "⌘O", "⌘R", "⌥⌘C"]))
   }

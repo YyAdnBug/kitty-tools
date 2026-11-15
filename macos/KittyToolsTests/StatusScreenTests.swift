@@ -1171,7 +1171,8 @@ struct StatusScreenTests {
     let license = try #require(
       Bundle.main.url(forResource: "status-emoji-LICENSE", withExtension: "txt"))
     #expect(try String(contentsOf: license, encoding: .utf8).contains("MIT License"))
-    #expect(AboutTab.emojiCredit == "状态屏的动画表情来自 Microsoft Fluent Emoji（MIT 许可）")
+    #expect(
+      String(localized: AboutTab.emojiCredit) == "状态屏的动画表情来自 Microsoft Fluent Emoji（MIT 许可）")
   }
 
   /// 解好的帧是预乘透明度的 BGRA（小端）：一个像素 4 字节，透明度在最后一个

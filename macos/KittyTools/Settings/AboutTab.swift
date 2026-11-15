@@ -34,6 +34,11 @@ struct AboutTab: View {
     Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
   private static let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
 
+  /// 版本胶囊上的字（有构建号时带上）
+  private static var versionLine: LocalizedStringResource {
+    if let build { "版本 \(version)（\(build)）" } else { "版本 \(version)" }
+  }
+
   static let releases: [Release] = load()
   /// 更新日志一开始展开的那一版
   static let expandedVersion = firstExpanded(in: releases, current: version)
@@ -58,7 +63,7 @@ struct AboutTab: View {
           BrandIcon(size: 128)
           Text("Kitty Tools")
             .font(.system(size: 26, weight: .bold, design: .rounded))
-          Text("版本 \(Self.version)" + (Self.build.map { "（\($0)）" } ?? ""))
+          Text(Self.versionLine)
             .font(.system(size: 12, weight: .medium))
             .foregroundStyle(Style.brandInk)
             .padding(.horizontal, 10)
@@ -107,7 +112,7 @@ struct AboutTab: View {
     .padding(.top, 4)
   }
 
-  private func credit(_ text: String, license: String) -> some View {
+  private func credit(_ text: LocalizedStringResource, license: String) -> some View {
     HStack(spacing: 6) {
       Text(text).foregroundStyle(.tertiary)
       if let url = Bundle.main.url(forResource: license, withExtension: "txt") {
@@ -117,8 +122,8 @@ struct AboutTab: View {
     }
   }
 
-  static let emojiCredit = "状态屏的动画表情来自 Microsoft Fluent Emoji（MIT 许可）"
-  static let noteCredit = "便签的交互参考了 Noty（MIT 许可）"
+  static let emojiCredit: LocalizedStringResource = "状态屏的动画表情来自 Microsoft Fluent Emoji（MIT 许可）"
+  static let noteCredit: LocalizedStringResource = "便签的交互参考了 Noty（MIT 许可）"
 
   /// 版本胶囊下面的更新状态。强调色只给「现在该操作的」：有新版本时的「更新并重新打开」；其余是文字链接
   private func updateRow(_ updater: Updater) -> some View {
@@ -179,7 +184,9 @@ struct AboutTab: View {
     }
   }
 
-  private func link(_ title: String, _ action: @escaping () async -> Void) -> some View {
+  private func link(_ title: LocalizedStringResource, _ action: @escaping () async -> Void)
+    -> some View
+  {
     Button(title) { Task { await action() } }
       .buttonStyle(.plain).foregroundStyle(Style.brandInk).pointerStyle(.link)
   }
@@ -338,10 +345,10 @@ private struct ChangeRow: View {
 
   private static func label(_ type: String) -> String {
     switch type {
-    case "feat": "新增"
-    case "fix": "修复"
-    case "perf": "性能"
-    case "ui": "界面"
+    case "feat": String(localized: "新增", comment: "更新日志一条改动的种类：新功能")
+    case "fix": String(localized: "修复", comment: "更新日志一条改动的种类：修了问题")
+    case "perf": String(localized: "性能", comment: "更新日志一条改动的种类：更快、更省")
+    case "ui": String(localized: "界面", comment: "更新日志一条改动的种类：界面、样子")
     default: type
     }
   }

@@ -338,13 +338,15 @@ struct AppListRow: View {
   }
 
   /// 从「应用程序」里选（可多选），返回选中的 App 包的 bundle ID
-  static func chooseApps(prompt: String, message: String) -> [String] {
+  static func chooseApps(prompt: LocalizedStringResource, message: LocalizedStringResource)
+    -> [String]
+  {
     let panel = NSOpenPanel()
     panel.directoryURL = URL(filePath: "/Applications")
     panel.allowedContentTypes = [.applicationBundle]
     panel.allowsMultipleSelection = true
-    panel.prompt = prompt
-    panel.message = message
+    panel.prompt = String(localized: prompt)
+    panel.message = String(localized: message)
     guard panel.runModal() == .OK else { return [] }
     return panel.urls.compactMap { Bundle(url: $0)?.bundleIdentifier }
   }

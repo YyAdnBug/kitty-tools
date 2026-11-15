@@ -23,7 +23,7 @@ struct WebSearchPage: View {
       // 页里的说法不说「点进去」（人已经在这一页了）
       DetailHeader(
         title: "网页搜索与快捷链接",
-        status: engines.isEmpty ? "还没有，点下面的 + 添加" : Self.summary(engines)
+        status: engines.isEmpty ? "还没有，点下面的 + 添加" : "\(Self.summary(engines))"
       ) {
         KindTile(symbol: "globe", color: Style.Family.search, size: 40)
       }
@@ -38,8 +38,7 @@ struct WebSearchPage: View {
           Toggle("有本地结果时也显示兜底搜索", isOn: $fallbackAlways)
         } footer: {
           SectionFootnote(
-            "网址里有 {query} 的是搜索（「关键词 空格 内容」直达，开关 = 没有本地结果时兜底），没有的是快捷链接。"
-              + "拖动调整顺序，搜索的关键词重复时用靠前的；点一行编辑。")
+            "网址里有 {query} 的是搜索（「关键词 空格 内容」直达，开关 = 没有本地结果时兜底），没有的是快捷链接。拖动调整顺序，搜索的关键词重复时用靠前的；点一行编辑。")
         }
       }
       .formStyle(.grouped)

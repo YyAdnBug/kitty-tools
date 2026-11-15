@@ -101,8 +101,7 @@ struct GeneralTab: View {
       Section {
         SettingsPushRow(
           title: "功能",
-          detail: FeaturesPage.summary(
-            on: enabled, available: Feature.listed),
+          detail: "\(FeaturesPage.summary(on: enabled, available: Feature.listed))",
           // 新功能标记：0.8.0 加的（WhatsNew），拨过其中一个开关、换页之后才没
           isNew: navigation.map { WhatsNew.marks(section: "功能", of: .general, in: $0.fresh) }
             ?? false
@@ -235,7 +234,7 @@ struct GeneralTab: View {
         try LaunchAtLogin.set(isOn)
         loginError = nil
       } catch {
-        loginError = "设置失败：\(error.localizedDescription)"
+        loginError = String(localized: "设置失败：\(error.localizedDescription)")
       }
       loginStatus = SMAppService.mainApp.status
     }
@@ -268,13 +267,13 @@ struct GeneralTab: View {
 /// 一行权限：家族色块 + 名字 + 用途，右边是状态（未授权时带「去授权」）。从未授权变已授权时符号替换 + 弹一下
 /// （Whisker §6 设置）；通用页和欢迎引导共用
 struct PermissionRow: View {
-  let title: String
-  let detail: String
+  let title: LocalizedStringResource
+  let detail: LocalizedStringResource
   let symbol: String
   let color: Color
   let granted: Bool
   /// 未授权时的按钮文字
-  var button = "去授权"
+  var button: LocalizedStringResource = "去授权"
   let grant: () -> Void
 
   var body: some View {
@@ -315,7 +314,7 @@ extension PermissionRow {
 /// PermissionRow 和欢迎引导的功能行共用；button 是按钮文字（引导里写明授权哪一项）
 struct PermissionStatus: View {
   let granted: Bool
-  var button = "去授权"
+  var button: LocalizedStringResource = "去授权"
   let grant: () -> Void
 
   var body: some View {
@@ -496,9 +495,10 @@ enum AppAppearance: String, CaseIterable, Identifiable {
 
   var title: String {
     switch self {
-    case .system: "跟随系统"
-    case .light: "浅色"
-    case .dark: "深色"
+    // 显式 key：强调色、语言也有「跟随系统」，英文各叫各的（外观是系统设置里的 Auto）
+    case .system: String(localized: "appearance.system", defaultValue: "跟随系统")
+    case .light: String(localized: "浅色")
+    case .dark: String(localized: "深色")
     }
   }
 

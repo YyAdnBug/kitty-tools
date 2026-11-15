@@ -27,7 +27,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   static let visible = visible(launchpad: Launchpad.isAvailable)
 
   /// 侧栏的分组（功能管理拍板 M2 M3；2026-11-13 插件化 P3）：通用 ｜ 文字与搜索 ｜ 截图与录制 ｜ 插件 ｜ 快捷键、关于。
-  /// 和 allCases 同序，单测锁住。中间三组带标题、能折叠（groupTitle）。插件那组只有添加了的（没添加的插件页不在 pages 里，
+  /// 和 allCases 同序，单测锁住。中间三组带标题、能折叠（section）。插件那组只有添加了的（没添加的插件页不在 pages 里，
   /// 见 SettingsRoot），按这里的先后排、不按添加的先后
   static let groups: [[SettingsPage]] = [
     [.general], [.clipboard, .launcher, .translate], [.screenshot, .record],
@@ -37,10 +37,11 @@ enum SettingsPage: String, CaseIterable, Identifiable {
 
   /// 侧栏的一组：标题（没有就不画）、组里的页；isOff 是最底下「已关闭」那组
   struct SidebarGroup: Equatable, Identifiable {
-    let title: String?
+    let title: LocalizedStringResource?
     let pages: [SettingsPage]
     var isOff = false
-    var id: String { isOff ? "off" : title ?? pages.first?.rawValue ?? "" }
+    /// 不拿显示出来的标题当 id（换了界面语言就变）：带标题的组用 SidebarSection 的 rawValue
+    var id: String { isOff ? "off" : pages.first?.section?.rawValue ?? pages.first?.rawValue ?? "" }
   }
 
   /// 侧栏这一刻怎么分组（纯函数）：只留 pages 里有的（搜索匹配、这台系统有），空了的组不画；关着的功能（off）不在原来的组里，
@@ -48,22 +49,42 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   static func sidebar(_ pages: [SettingsPage], off: Set<SettingsPage>) -> [SidebarGroup] {
     let shown = groups.compactMap { group -> SidebarGroup? in
       let kept = group.filter { pages.contains($0) && !off.contains($0) }
-      return kept.isEmpty ? nil : SidebarGroup(title: group.first?.groupTitle, pages: kept)
+      return kept.isEmpty ? nil : SidebarGroup(title: group.first?.section?.title, pages: kept)
     }
     let closed = allCases.filter { pages.contains($0) && off.contains($0) }
     return closed.isEmpty
       ? shown : shown + [SidebarGroup(title: "已关闭（\(closed.count)）", pages: closed, isOff: true)]
   }
 
-  /// 侧栏组标题（2026-11-04 真机反馈「间距那里有个提示」：同访达、邮件侧栏的小标题，点一下收起 / 展开，对标 PowerToys 导航的分组）。
-  /// 通用、快捷键与关于两组不写：一头一尾，收起来也省不了地方
-  var groupTitle: String? {
+  /// 侧栏里带标题的组（2026-11-04 真机反馈「间距那里有个提示」：同访达、邮件侧栏的小标题，点一下收起 / 展开，对标 PowerToys
+  /// 导航的分组）。通用、快捷键与关于两组没有：一头一尾，收起来也省不了地方
+  var section: SidebarSection? {
     switch self {
-    case .clipboard, .launcher, .translate: "文字与搜索"
-    case .screenshot, .record: "截图与录制"
-    case .notes, .reminders, .statusScreen, .launchpad, .dockPreview, .finderMenu, .island:
-      "插件"
+    case .clipboard, .launcher, .translate: .text
+    case .screenshot, .record: .capture
+    case .notes, .reminders, .statusScreen, .launchpad, .dockPreview, .finderMenu, .island: .plugins
     case .general, .hotkeys, .about: nil
+    }
+  }
+
+  /// 侧栏带标题、能收起的组。收起了哪几组按 rawValue 存进偏好（多语言拍板 D6：不存显示的标题，换了界面语言也认得）；
+  /// 0.9.0 及以前存的是中文标题，读的时候照样认（init(stored:)），下次收起 / 展开时换成 rawValue
+  enum SidebarSection: String {
+    case text, capture, plugins
+
+    var title: LocalizedStringResource {
+      switch self {
+      case .text: "文字与搜索"
+      case .capture: "截图与录制"
+      case .plugins: "插件"
+      }
+    }
+
+    /// 偏好里存的一项：rawValue，或者旧版本存的中文标题；认不出的 nil
+    init?(stored: String) {
+      let legacy: [String: Self] = ["文字与搜索": .text, "截图与录制": .capture, "插件": .plugins]
+      guard let section = Self(rawValue: stored) ?? legacy[stored] else { return nil }
+      self = section
     }
   }
 
@@ -145,7 +166,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   }
 
   /// 页头下面的一句说明
-  var summary: String {
+  var summary: LocalizedStringResource {
     switch self {
     case .general: "功能、外观、菜单栏、登录时打开、权限、同步、导出与导入、数据目录"
     case .island: "正在播放、下一个日程和月历、音量和亮度、点刘海打开的快捷动作和最近的提示、自动展开、触感反馈、系统提示"
@@ -165,108 +186,66 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     }
   }
 
-  /// 侧栏搜索按这些词筛页（页里各项设置的叫法）
-  var keywords: [String] {
+  /// 侧栏搜索按这些词筛页（页里各项设置的叫法）：一页一条、逗号隔开，能本地化——英文给英文界面里的叫法，不逐词直译
+  /// （多语言拍板 D7）。中文原文就是 key：搜索时当前语言那组和中文那组都认（searchWords）
+  var keywords: LocalizedStringResource {
     switch self {
     case .general:
-      [
-        "语言", "英文", "中文", "English", "Language", "外观", "浅色", "深色", "暗黑", "主题", "跟随系统", "强调色", "主题色",
-        "颜色", "开机", "登录", "自启", "权限", "辅助功能",
-        "屏幕录制", "麦克风",
-        "剪贴板访问", "隐私", "菜单栏", "状态栏", "图标", "隐藏", "彩色", "单色", "挤压", "弹开", "动画", "动效",
-        "导出", "导入", "备份", "恢复", "迁移", "换电脑", "配置",
-        "功能", "模块", "关闭", "停用", "启用", "不用", "插件", "添加", "移除",
-        "同步", "iCloud", "云盘", "多台", "几台", "另一台",
-        "数据", "数据目录", "访达", "文件夹",
-      ]
+      "语言,英文,中文,English,Language,外观,浅色,深色,暗黑,主题,跟随系统,强调色,主题色,颜色,开机,登录,自启,权限,辅助功能,屏幕录制,麦克风,剪贴板访问,隐私,菜单栏,状态栏,图标,隐藏,彩色,单色,挤压,弹开,动画,动效,导出,导入,备份,恢复,迁移,换电脑,配置,功能,模块,关闭,停用,启用,不用,插件,添加,移除,同步,iCloud,云盘,多台,几台,另一台,数据,数据目录,访达,文件夹"
     case .island:
       // 不放快捷动作的名字（截图、录屏…）：搜它们要停在那个功能的页，这一页排在前面会先被选中
-      [
-        "刘海", "灵动岛", "那一张", "快捷动作", "排序", "最近的提示", "通知", "正在播放", "音乐", "封面", "切歌",
-        "日程", "日历", "月历", "会议", "模糊", "触感", "自动展开", "音量", "亮度", "静音",
-      ]
+      "刘海,灵动岛,那一张,快捷动作,排序,最近的提示,通知,正在播放,音乐,封面,切歌,日程,日历,月历,会议,模糊,触感,自动展开,音量,亮度,静音"
     case .clipboard:
-      [
-        "历史", "天数", "保留", "永久", "图片", "占用", "预览", "链接", "网页", "格式", "纯文本",
-        "识别", "文字", "OCR", "隐私", "密钥", "银行卡", "清空", "退出", "锁屏", "排除", "App",
-        "收藏", "收藏夹", "片段", "密码", "敏感", "网站", "标题", "透镜", "单击", "双击", "点击", "粘贴",
-        "位置", "面板位置", "鼠标", "跟随鼠标", "上次位置",
-      ]
+      "历史,天数,保留,永久,图片,占用,预览,链接,网页,格式,纯文本,识别,文字,OCR,隐私,密钥,银行卡,清空,退出,锁屏,排除,App,收藏,收藏夹,片段,密码,敏感,网站,标题,透镜,单击,双击,点击,粘贴,位置,面板位置,鼠标,跟随鼠标,上次位置"
     case .launcher:
-      [
-        "英文", "输入法", "书签", "浏览历史", "历史", "浏览器", "Safari", "Chrome", "Edge", "Arc", "Brave",
-        "Firefox",
-        "完全磁盘访问", "搜索", "引擎", "快捷链接", "关键词",
-        "兜底", "使用记录", "常用", "最近", "收藏", "文件", "open", "find", "Spotlight",
-        "位置", "面板位置", "鼠标", "跟随鼠标", "上次位置",
-        "脚本", "脚本命令", "命令", "别名", "写法", "AI", "新建脚本", "导入",
-      ]
+      "英文,输入法,书签,浏览历史,历史,浏览器,Safari,Chrome,Edge,Arc,Brave,Firefox,完全磁盘访问,搜索,引擎,快捷链接,关键词,兜底,使用记录,常用,最近,收藏,文件,open,find,Spotlight,位置,面板位置,鼠标,跟随鼠标,上次位置,脚本,脚本命令,命令,别名,写法,AI,新建脚本,导入"
     case .launchpad:
-      [
-        "启动台", "图标", "网格", "全屏", "应用", "App", "排法", "排列", "列", "行", "翻页", "页",
-        "搜索", "App 文件夹", "拖动", "抖动", "删除", "卸载", "App Store", "捏合", "触控板", "四指", "五指",
-        "触发角", "导入", "系统启动台", "Launchpad", "快捷键",
-      ]
+      "启动台,图标,网格,全屏,应用,App,排法,排列,列,行,翻页,页,搜索,App 文件夹,拖动,抖动,删除,卸载,App Store,捏合,触控板,四指,五指,触发角,导入,系统启动台,Launchpad,快捷键"
     case .screenshot:
-      [
-        "保存", "存储", "目录", "文件夹", "快门", "声音", "缩略图", "识字", "换行", "二维码", "标注", "长截图", "钉图",
-        "按键", "速查", "工具栏", "位置", "靠右", "居中", "录制条", "原色", "压暗", "遮罩", "滤镜", "取色", "颜色",
-        "拷贝", "复制", "文件", "PNG", "对拷线", "远程",
-      ]
+      "保存,存储,目录,文件夹,快门,声音,缩略图,识字,换行,二维码,标注,长截图,钉图,按键,速查,工具栏,位置,靠右,居中,录制条,原色,压暗,遮罩,滤镜,取色,颜色,拷贝,复制,文件,PNG,对拷线,远程"
     case .record:
-      [
-        "录屏", "录音", "视频", "保存", "文件夹", "系统声音", "麦克风", "来源", "立即开始", "控制条", "倒数", "帧率", "光标",
-        "按键", "速查", "清晰度", "分辨率", "画质", "编码", "H.264", "HEVC", "文件大小", "体积", "压缩", "只显示快捷键",
-      ]
+      "录屏,录音,视频,保存,文件夹,系统声音,麦克风,来源,立即开始,控制条,倒数,帧率,光标,按键,速查,清晰度,分辨率,画质,编码,H.264,HEVC,文件大小,体积,压缩,只显示快捷键"
     case .notes:
-      [
-        "笔记", "备忘", "便利贴", "快速记", "记一条", "字号", "字体大小", "最近删除", "归档", "备份", "导出", "导入",
-        "屏幕边缘", "边缘", "药丸", "标签", "色块", "感应范围", "一直展开", "悬停", "预览", "全屏", "显示器", "便签大小",
-        "Markdown", "粗体", "斜体", "链接", "引用", "行距", "行高", "间距", "代码块",
-      ]
+      "笔记,备忘,便利贴,快速记,记一条,字号,字体大小,最近删除,归档,备份,导出,导入,屏幕边缘,边缘,药丸,标签,色块,感应范围,一直展开,悬停,预览,全屏,显示器,便签大小,Markdown,粗体,斜体,链接,引用,行距,行高,间距,代码块"
     case .statusScreen:
-      [
-        "清洁", "擦屏幕", "请勿触碰", "马上回来", "告示", "防误触", "退出", "Esc", "提示", "熄屏", "透出", "样式", "图标",
-        "电源", "不睡眠", "屏幕常亮", "自动结束", "键盘", "鼠标", "拦截", "预览卡片", "直接进入", "选择状态",
-        "动画", "表情", "出场",
-      ]
+      "清洁,擦屏幕,请勿触碰,马上回来,告示,防误触,退出,Esc,提示,熄屏,透出,样式,图标,电源,不睡眠,屏幕常亮,自动结束,键盘,鼠标,拦截,预览卡片,直接进入,选择状态,动画,表情,出场"
     case .reminders:
-      [
-        "提醒", "定时", "闹钟", "倒计时", "喝水", "休息", "护眼", "久坐", "走走", "稍后", "推迟", "间隔", "每天", "工作日",
-        "每周", "每月", "一次", "刘海岛", "边框", "全屏", "声音", "提示音", "朗读", "催促", "错过",
-      ]
+      "提醒,定时,闹钟,倒计时,喝水,休息,护眼,久坐,走走,稍后,推迟,间隔,每天,工作日,每周,每月,一次,刘海岛,边框,全屏,声音,提示音,朗读,催促,错过"
     case .dockPreview:
-      [
-        "程序坞", "Dock", "预览", "缩略图", "窗口", "切换", "悬停", "延迟", "多久", "⌘Tab", "Command Tab", "切换器",
-        "最小化", "桌面", "全屏", "辅助功能",
-        "屏幕录制",
-      ]
+      "程序坞,Dock,预览,缩略图,窗口,切换,悬停,延迟,多久,⌘Tab,Command Tab,切换器,最小化,桌面,全屏,辅助功能,屏幕录制"
     case .finderMenu:
-      [
-        "访达", "Finder", "右键", "右键菜单", "上下文菜单", "拷贝路径", "复制路径", "路径", "终端", "Terminal",
-        "编辑器", "打开方式", "用 App 打开", "在 App 中打开", "改名", "扩展", "登录项与扩展", "新建文件", "新建", "模板", "后缀",
-        "Word",
-        "Excel", "PPT", "Markdown", "文本", "压缩", "解压", "zip", "7z", "跳过", "排除", "忽略", "node_modules",
-      ]
+      "访达,Finder,右键,右键菜单,上下文菜单,拷贝路径,复制路径,路径,终端,Terminal,编辑器,打开方式,用 App 打开,在 App 中打开,改名,扩展,登录项与扩展,新建文件,新建,模板,后缀,Word,Excel,PPT,Markdown,文本,压缩,解压,zip,7z,跳过,排除,忽略,node_modules"
     case .translate:
-      [
-        "语言", "第一语言", "第二语言", "字号", "换行", "自动复制", "复制即译", "历史", "导出", "CSV", "Anki",
-        "位置", "浮窗位置", "鼠标", "清空",
-        "服务", "密钥", "查词", "词典", "单词", "音标", "例句", "生词本", "收藏",
-        "智谱", "OpenAI", "Anthropic", "DeepL", "Google", "百度", "有道", "微软", "火山", "腾讯", "AI", "模型",
-      ]
+      "语言,第一语言,第二语言,字号,换行,自动复制,复制即译,历史,导出,CSV,Anki,位置,浮窗位置,鼠标,清空,服务,密钥,查词,词典,单词,音标,例句,生词本,收藏,智谱,OpenAI,Anthropic,DeepL,Google,百度,有道,微软,火山,腾讯,AI,模型"
     case .hotkeys:
-      // 「钉图」：动作名是「钉住剪贴板内容」，搜「钉图」也要找得到这一页
-      ["快捷键", "热键", "冲突", "录制", "恢复默认", "速查", "按键", "钉图", "停用", "屏蔽", "App", "不响应"]
-        + HotKeyAction.allCases.filter(\.isActive).map(\.title)
-    case .about: ["版本", "更新", "日志", "发布", "欢迎", "引导"]
+      // 「钉图」：动作名是「钉住剪贴板内容」，搜「钉图」也要找得到这一页；动作名另外加（searchWords）
+      "快捷键,热键,冲突,录制,恢复默认,速查,按键,钉图,停用,屏蔽,App,不响应"
+    case .about:
+      "版本,更新,日志,发布,欢迎,引导"
     }
+  }
+
+  /// 页名两种：当前语言的和中文原文（英文界面里打中文也停得到这一页）
+  var titles: [String] { [title, titleResource.chinese] }
+
+  /// 搜索认的全部词：页名、关键词，各取当前语言和中文原文两份（拍板 D7；中文界面里两份一样）。
+  /// 快捷键页另加开着的全局动作的名字
+  var searchWords: [String] {
+    let lists = [String(localized: keywords), keywords.chinese]
+    var words =
+      titles
+      + lists.flatMap { $0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) } }
+    if self == .hotkeys {
+      let actions = HotKeyAction.allCases.filter(\.isActive)
+      words += actions.map(\.title) + actions.map(\.titleResource.chinese)
+    }
+    return words
   }
 
   func matches(_ query: String) -> Bool {
     let query = query.trimmingCharacters(in: .whitespaces)
     guard !query.isEmpty else { return true }
-    return ([title] + keywords).contains { $0.localizedCaseInsensitiveContains(query) }
+    return searchWords.contains { $0.localizedCaseInsensitiveContains(query) }
   }
 
   /// 搜索时停在哪页：页名对上的优先（「录制」也是通用页的「屏幕录制」、快捷键页的「录制」，「快捷键」也是录制页的
@@ -278,7 +257,9 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     let query = query.trimmingCharacters(in: .whitespaces)
     let matches = matching(query, hidden: hidden)
     if !query.isEmpty,
-      let named = matches.first(where: { $0.title.localizedCaseInsensitiveContains(query) })
+      let named = matches.first(where: {
+        $0.titles.contains { $0.localizedCaseInsensitiveContains(query) }
+      })
     {
       return named
     }
@@ -488,7 +469,7 @@ struct SettingsRoot: View {
   let page: (SettingsPage) -> AnyView
   let onboarding: () -> AnyView
   @State private var query = ""
-  /// 收起了的组（组标题，换行隔开；这台电脑自己的）
+  /// 收起了的组（SidebarSection 的 rawValue，换行隔开；旧版本存的中文标题也认；这台电脑自己的）
   @AppStorage(Prefs.settingsCollapsedGroups) private var collapsedGroups = ""
   /// 底下「已关闭」那组展开着没有（默认收起）
   @AppStorage(Prefs.settingsShowsOffFeatures) private var showsOff = false
@@ -515,18 +496,18 @@ struct SettingsRoot: View {
   private var matches: [SettingsPage] { SettingsPage.matching(query, hidden: absent) }
 
   /// 一组展开没有：搜索时都展开（不然对上的页藏在收起的组里）
-  private func expanded(_ title: String) -> Binding<Bool> {
+  private func expanded(_ section: SettingsPage.SidebarSection) -> Binding<Bool> {
     Binding {
-      !query.isEmpty || !collapsed.contains(title)
+      !query.isEmpty || !collapsed.contains(section)
     } set: { open in
-      var titles = collapsed
-      if open { titles.remove(title) } else { titles.insert(title) }
-      collapsedGroups = titles.sorted().joined(separator: "\n")
+      var sections = collapsed
+      if open { sections.remove(section) } else { sections.insert(section) }
+      collapsedGroups = sections.map(\.rawValue).sorted().joined(separator: "\n")
     }
   }
 
-  private var collapsed: Set<String> {
-    Set(collapsedGroups.split(separator: "\n").map(String.init))
+  private var collapsed: Set<SettingsPage.SidebarSection> {
+    Set(collapsedGroups.split(separator: "\n").compactMap { .init(stored: String($0)) })
   }
 
   private func rows(_ group: [SettingsPage]) -> some View {
@@ -540,10 +521,11 @@ struct SettingsRoot: View {
   }
 
   /// 功能组的小标题；收起着、里面有新功能时后面一个小圆点（拍板 A4：标记藏在收起的组里等于没标）
-  private func header(_ title: String, _ pages: [SettingsPage]) -> some View {
+  private func header(_ section: SettingsPage.SidebarSection, _ pages: [SettingsPage]) -> some View
+  {
     HStack(spacing: 5) {
-      Text(title)
-      if !expanded(title).wrappedValue,
+      Text(section.title)
+      if !expanded(section).wrappedValue,
         pages.contains(where: { WhatsNew.marks($0, in: navigation.fresh) })
       {
         NewDot()
@@ -563,11 +545,11 @@ struct SettingsRoot: View {
             } header: {
               Text(title)
             }
-          } else if let title = group.title {
-            Section(isExpanded: expanded(title)) {
+          } else if let section = group.pages.first?.section {
+            Section(isExpanded: expanded(section)) {
               rows(group.pages)
             } header: {
-              header(title, group.pages)
+              header(section, group.pages)
             }
           } else {
             Section { rows(group.pages) }
@@ -607,8 +589,8 @@ struct SettingsRoot: View {
     .onChange(of: navigation.page) {
       navigation.visit(navigation.page)
       if !matches.contains(navigation.page) { query = "" }
-      if let title = navigation.page.groupTitle, collapsed.contains(title) {
-        expanded(title).wrappedValue = true
+      if let section = navigation.page.section, collapsed.contains(section) {
+        expanded(section).wrappedValue = true
       }
     }
     .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
@@ -738,7 +720,7 @@ private struct FeatureSidebarLabel: View {
         .opacity(isOn ? 1 : Style.disabledOpacity)
     }
     .accessibilityElement(children: .ignore)
-    .accessibilityLabel(isOn ? page.title : page.title + "，已关闭")
+    .accessibilityLabel(isOn ? "\(page.title)" : "\(page.title)，已关闭")
   }
 }
 
@@ -814,14 +796,16 @@ extension View {
 /// 「面板大小」一行（2026-11-05 W3）：启动器、剪贴板、翻译浮窗各一行。拖边改过的大小（宽度、最多几行 / 最高多高）
 /// 都是这台电脑自己的偏好；「恢复默认大小」把宽度写回默认（面板下次出现时按它摆）、高度上限清掉。没拖过时按钮是灰的
 struct PanelSizeRow: View {
-  let detail: String
+  let detail: LocalizedStringResource
   let widthKey: String
   let heightKey: String
   let defaultWidth: CGFloat
   @AppStorage private var width: Double
   @AppStorage private var height: Double
 
-  init(detail: String, widthKey: String, heightKey: String, defaultWidth: CGFloat) {
+  init(
+    detail: LocalizedStringResource, widthKey: String, heightKey: String, defaultWidth: CGFloat
+  ) {
     self.detail = detail
     self.widthKey = widthKey
     self.heightKey = heightKey
@@ -849,9 +833,10 @@ struct PanelSizeRow: View {
 /// 左右各缩 10，和分组标题、卡片里的行文字同一条左边线（卡片的内边距是 10）。
 /// 解释某一行的不用它，写成那一行的副标题（Toggle / LabeledContent 标签里的第二个 Text，系统画成 11 pt）
 struct SectionFootnote: View {
-  let text: String
+  let text: LocalizedStringResource
 
-  init(_ text: String) { self.text = text }
+  /// 传用户的数据、别处算好的字时写 "\(x)"（TRANSLATION.md 二）
+  init(_ text: LocalizedStringResource) { self.text = text }
 
   var body: some View {
     Text(text)

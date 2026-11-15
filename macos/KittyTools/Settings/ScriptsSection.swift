@@ -152,7 +152,7 @@ struct ScriptsSection: View {
       }
     }
     Section {
-      SettingsPushRow(title: "命令和别名", detail: commandsSummary) {
+      SettingsPushRow(title: "命令和别名", detail: "\(commandsSummary)") {
         navigation?.path = [LauncherCommandsPage.route]
       }
     } header: {
@@ -294,8 +294,9 @@ struct ScriptsSection: View {
 
 /// 设置里推进一页的那种行：标题 + 一行小字 + 右边 ›（整行能点）
 struct SettingsPushRow: View {
-  let title: String
-  let detail: String
+  /// 别处算好的字（一句摘要）传 "\(x)"（TRANSLATION.md 二）
+  let title: LocalizedStringResource
+  let detail: LocalizedStringResource
   /// 名字后面挂「新」（WhatsNew）
   var isNew = false
   let action: () -> Void
@@ -317,7 +318,7 @@ struct SettingsPushRow: View {
       .contentShape(.rect)
     }
     .buttonStyle(.plain)
-    .accessibilityHint("打开「\(title)」")
+    .accessibilityHint("打开「\(String(localized: title))」")
   }
 }
 

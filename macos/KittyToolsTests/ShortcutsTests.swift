@@ -37,7 +37,7 @@ struct ShortcutsTests {
     // 功能全开着时的样子（不读宿主 App 的偏好：用户在 Dev 版里关过哪个功能也不影响）
     let all = Set(Feature.allCases)
     let groups = ShortcutsSheet.groups(enabled: all)
-    let titles = groups.map(\.title)
+    let titles = groups.map(\.id)
     #expect(Set(titles).count == titles.count)
     #expect(groups.allSatisfy { !$0.entries.isEmpty })
     // 每个全局快捷键都出现在速查表里，且只出现一次
@@ -108,18 +108,18 @@ struct ShortcutsTests {
         .clipboard, .launcher, .translate, .screenshot, .record, .notes, .reminders, .statusScreen,
         .launchpad, .island, .general,
       ])
-    #expect(groups.first { $0.title == "提醒" }?.page == .reminders)
-    func page(_ title: String) -> SettingsPage? { groups.first { $0.title == title }?.page }
+    #expect(groups.first { $0.title.key == "提醒" }?.page == .reminders)
+    func page(_ title: String) -> SettingsPage? { groups.first { $0.title.key == title }?.page }
     #expect(page("钉图") == .screenshot && page("截图 · 框选") == .screenshot)
     #expect(page("录音") == .record && page("系统命令") == .launcher)
     #expect(page("刘海岛") == .island && page("主界面") == .general && page("设置") == .general)
 
     let pin = ShortcutsSheet.matching(groups, query: "钉")
-    let pinGroup = try #require(groups.first { $0.title == "钉图" })
-    #expect(pin.first { $0.title == "钉图" }?.entries == pinGroup.entries)
-    #expect(pin.first { $0.title == "截图 · 出图" }?.entries.map(\.keys) == [["T"]])
+    let pinGroup = try #require(groups.first { $0.title.key == "钉图" })
+    #expect(pin.first { $0.title.key == "钉图" }?.entries == pinGroup.entries)
+    #expect(pin.first { $0.title.key == "截图 · 出图" }?.entries.map(\.keys) == [["T"]])
     let menu = ShortcutsSheet.matching(groups, query: "剪贴板 ⌘K")
-    #expect(menu.map(\.title) == ["剪贴板"])
+    #expect(menu.map(\.title.key) == ["剪贴板"])
     #expect(menu.first?.globals.isEmpty == true && menu.first?.entries.count == 1)
     #expect(!ShortcutsSheet.matching(groups, query: "esc").isEmpty)
     #expect(ShortcutsSheet.matching(groups, query: "没有这种键").isEmpty)

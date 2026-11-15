@@ -105,7 +105,7 @@ struct LauncherTab: View {
         }
         Section {
           PermissionRow(
-            title: "桌面、文稿、下载、iCloud 云盘", detail: folderDetail, symbol: "folder.fill",
+            title: "桌面、文稿、下载、iCloud 云盘", detail: "\(folderDetail)", symbol: "folder.fill",
             color: Style.Family.general, granted: deniedFolders == []
           ) {
             if deniedFolders == nil {
@@ -130,7 +130,7 @@ struct LauncherTab: View {
         Section {
           SettingsPushRow(
             title: "网页搜索与快捷链接",
-            detail: WebSearchPage.summary(SearchEngineDetail.decode(enginesData))
+            detail: "\(WebSearchPage.summary(SearchEngineDetail.decode(enginesData)))"
           ) {
             navigation.path = [WebSearchPage.route]
           }

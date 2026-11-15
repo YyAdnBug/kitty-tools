@@ -103,6 +103,15 @@ enum InterfaceLanguage: String, CaseIterable, Identifiable {
   }
 }
 
+extension Sequence<String> {
+  /// 并列的几个名字连成一串：中文「剪贴板、启动器」，英文「Clipboard, Launcher」
+  func joinedAsList() -> String {
+    joined(
+      separator: String(
+        localized: "list.enumeration", defaultValue: "、", comment: "并列的几个名字之间（剪贴板、启动器）"))
+  }
+}
+
 extension LocalizedStringResource {
   /// 中文原文（开发语言的那一份，插进去的值照样填上；显式 key 的取它的默认值）：搜索时中英都认
   /// （TRANSLATION.md「搜索中英都认」：英文界面里打中文、拼音也找得到）

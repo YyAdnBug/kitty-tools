@@ -145,6 +145,7 @@
       }
     },
     "%@后历史会保留得比现在少（保留时间、图片上限、翻译历史条数变小，或者退出、锁屏时清空），超出的普通历史会被清理；收藏和片段不动。" : {},
+    "%@四指捏合四根、五根手指都认（同系统），捏的时候多碰到一根也接着认；五指只认五根，和四指的横扫（切换桌面、调度中心）完全错开，不容易误开。Mac 从睡眠中唤醒后会自动重新接上触控板，不用重启。" : {},
     "%@工具" : {},
     "%@已保存到「%@」，%@" : {
       "localizations" : {
@@ -162,7 +163,16 @@
         }
       }
     },
-    "%@插件" : {},
+    "%@插件" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ Plugin"
+          }
+        }
+      }
+    },
     "%@没有输出" : {},
     "%@用的是同一个组合，到 设置 › 快捷键 里改一个" : {
       "localizations" : {
@@ -216,6 +226,36 @@
     "%@（⌘P）" : {
       "shouldTranslate" : false
     },
+    "%@（再按一次 ↩ 确认）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ (press ↩ again to confirm)"
+          }
+        }
+      }
+    },
+    "%@（再按一次收起）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ (press again to put away)"
+          }
+        }
+      }
+    },
+    "%@（弹系统确认框）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ (asks the system to confirm)"
+          }
+        }
+      }
+    },
     "%@（这台 Mac 上没有）" : {},
     "%@，%@" : {
       "localizations" : {
@@ -266,6 +306,16 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "%1$@，左右键选快捷动作，回车执行，Esc 关闭；现在是「%2$@」"
+          }
+        }
+      }
+    },
+    "%@，已关闭" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, turned off"
           }
         }
       }
@@ -352,6 +402,72 @@
         }
       }
     },
+    "%lld 个功能都关着" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "1 feature is off"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "All %lld features are off"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld 个功能都开着" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "1 feature is on"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "All %lld features are on"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld 个快捷键" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld shortcut"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld shortcuts"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld 个文件读不到，没算" : {},
     "%lld 个项目" : {},
     "%lld 分钟" : {},
@@ -430,6 +546,7 @@
       },
       "shouldTranslate" : false
     },
+    "* 代表任意几个字、? 代表一个字，比如 *.tmp 跳过所有 .tmp 文件；只认名字、不认路径。右键选中的那几样自己照压，只跳它们里面的；只压一个 App 这类包时不跳，跳了签名会坏。" : {},
     "+%lld" : {
       "shouldTranslate" : false
     },
@@ -449,6 +566,16 @@
         }
       }
     },
+    "1 矩形 · 2 椭圆 · 3 箭头 · 4 直线 · 5 画笔 · 6 荧光笔 · 7 文字 · 8 序号 · 9 打码 · 0 聚光灯；再按一次收起" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 Rectangle · 2 Ellipse · 3 Arrow · 4 Line · 5 Pen · 6 Highlighter · 7 Text · 8 Counter · 9 Blur · 0 Spotlight; press again to put away"
+          }
+        }
+      }
+    },
     "1–120 分钟" : {},
     "3 秒" : {},
     "30 fps" : {
@@ -459,6 +586,7 @@
     "60 fps" : {
       "shouldTranslate" : false
     },
+    "60 fps 更顺，文件大约大一半；大屏上可能录不满 60。文件嫌大：标准清晰度在高分屏上宽高各减半，文件小一半多，小字会糊一些；HEVC 同样的画面小三分之一左右，部分 App 和旧设备可能放不了。录好的也可以在角落的缩略图上点「压缩」另存一份小的。只显示快捷键：带 ⌘ ⌃ ⌥ 的组合键、Esc 和 F 键才进画面，打字不显示。" : {},
     "AI 服务" : {},
     "Azure OpenAI…" : {
       "shouldTranslate" : false
@@ -495,7 +623,17 @@
       "shouldTranslate" : false
     },
     "Kitty Tools 同步" : {},
-    "Kitty Tools 图标" : {},
+    "Kitty Tools 图标" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kitty Tools icon"
+          }
+        }
+      }
+    },
+    "Mac 自己的隐藏文件（.DS_Store、._*、__MACOSX）总会跳过，不用加。" : {},
     "Markdown 样式" : {},
     "PNG 文件" : {},
     "accent.system" : {
@@ -529,6 +667,23 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "截图"
+          }
+        }
+      }
+    },
+    "appearance.system" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auto"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "跟随系统"
           }
         }
       }
@@ -594,6 +749,24 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "跟随系统"
+          }
+        }
+      }
+    },
+    "list.enumeration" : {
+      "comment" : "并列的几个名字之间（剪贴板、启动器）",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : ", "
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "、"
           }
         }
       }
@@ -680,6 +853,24 @@
         }
       }
     },
+    "shortcuts.dismiss" : {
+      "comment" : "速查表：收起启动台、主界面这类面板",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "收起"
+          }
+        }
+      }
+    },
     "·" : {
       "shouldTranslate" : false
     },
@@ -689,10 +880,60 @@
     "↩" : {
       "shouldTranslate" : false
     },
+    "↩ 拷贝、Esc 退出、⌫ 删除标注、方向键微调、⌘D 复制标注固定不改。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "↩ copies, Esc exits, ⌫ deletes an annotation, arrow keys nudge, and ⌘D duplicates an annotation; these can't be changed."
+          }
+        }
+      }
+    },
     "↩ 翻译，⌘R 重新翻译，⌘1–9 复制第 1–9 个结果，⌘Y 翻译历史；划词来的翻译可以「替换原文」" : {},
+    "⇧点" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "⇧Click"
+          }
+        }
+      }
+    },
     "⌘Z 撤销" : {},
     "⌘Z 撤销，或到「归档」里找回" : {},
     "⌘Z 撤销，或到「最近删除」里放回" : {},
+    "⌘方向键" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "⌘Arrow Keys"
+          }
+        }
+      }
+    },
+    "⌘点" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "⌘Click"
+          }
+        }
+      }
+    },
+    "⌥方向键" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "⌥Arrow Keys"
+          }
+        }
+      }
+    },
     "「%@」" : {
       "localizations" : {
         "en" : {
@@ -704,7 +945,16 @@
       }
     },
     "「%@」不在了" : {},
-    "「%@」功能关着，这一排上不出现" : {},
+    "「%@」功能关着，这一排上不出现" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ is off, so it won't appear in this row"
+          }
+        }
+      }
+    },
     "「%@」和已经在同步的电脑合在一起？" : {},
     "「%@」已经不在运行了" : {},
     "「%@」快捷键没注册上" : {
@@ -717,7 +967,16 @@
         }
       }
     },
-    "「%@」插件没添加，这一排上不出现" : {},
+    "「%@」插件没添加，这一排上不出现" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The %@ plugin isn't added, so it won't appear in this row"
+          }
+        }
+      }
+    },
     "「%@」收回了边缘" : {},
     "「%@」有不止一个（在不同的文件夹里），包里只放得下一个" : {},
     "「%@」有密码" : {},
@@ -745,6 +1004,8 @@
         }
       }
     },
+    "「open 文件名」搜文件并打开，「find 文件名」在访达中显示；不想被搜到的文件夹加到 系统设置 › Spotlight › 搜索隐私。" : {},
+    "「关键词 空格 内容」直接用那个网站搜；没有本地结果时用开了兜底的几个搜。" : {},
     "「常用」和按使用习惯的排序会从头开始学，收藏不动。" : {},
     "「常用」和排序会从头开始学，收藏不动" : {
       "localizations" : {
@@ -756,15 +1017,37 @@
         }
       }
     },
+    "「新建文件」里有文本文件、Markdown、Word 文档、Excel 表格、PPT 演示文稿，和模板文件夹里放的文件；「从剪贴板新建」把剪贴板里的图存成 PNG、文字存成文本文件；「自定义后缀…」建一个任意后缀的空文件，可以顺手记进菜单。建好后在访达里选中它、直接改名（要「辅助功能」授权，没有就只选中）；重名的自动加「 2」。" : {},
     "「移动到」「复制到」的常用文件夹" : {},
     "「稍后」推多久" : {},
     "一个例子：查天气" : {},
+    "一个功能都没勾。以后用得上，到 设置 › 通用 › 功能 里打开。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No features are checked. When you need one, turn it on in Settings › General › Features."
+          }
+        }
+      }
+    },
     "一个搜索框：打开 App、文件和网页，顺手算算式" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "One search field to open apps, files, and webpages, and do quick math"
+            "value" : "Open apps, files, and webpages, or do quick math"
+          }
+        }
+      }
+    },
+    "一个脚本文件就是启动器里的一条命令" : {},
+    "一打开就直接打字：搜 App 的中文名、拼音、首字母或英文名，文件夹里的也算" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Just start typing: search apps by name, Chinese name, pinyin, or initials, including apps in folders"
           }
         }
       }
@@ -774,6 +1057,7 @@
     "一页几列" : {},
     "一页几行" : {},
     "三步上手" : {},
+    "三步上手、开头几行怎么写、结果给谁，带一个能直接用的例子" : {},
     "上一张" : {},
     "上一行" : {},
     "上一首" : {
@@ -787,7 +1071,16 @@
       }
     },
     "上次位置" : {},
-    "上移" : {},
+    "上移" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move Up"
+          }
+        }
+      }
+    },
     "上面这些每天自动存一份在这台 Mac 上，留最近 %lld 份；导入前也会先存一份，设置和快捷键导错了能换回去。不含密钥。" : {},
     "下一个：%@（%@）" : {
       "localizations" : {
@@ -817,7 +1110,16 @@
         }
       }
     },
-    "下移" : {},
+    "下移" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move Down"
+          }
+        }
+      }
+    },
     "下载" : {
       "localizations" : {
         "en" : {
@@ -839,11 +1141,22 @@
       }
     },
     "不会写也没关系：把这份写法说明复制给你常用的 AI，在最后一段写上想让脚本做什么，AI 会照规矩写好。把它给的脚本复制下来，回到「脚本命令」点「从剪贴板新建」，看一眼就能存。" : {},
+    "不会覆盖：重名的自动加「 2」。搬得久时刘海岛显示进度、能停下，做完带「在访达中显示」。剪切之后又拷了别的东西，剪切就作废。" : {},
     "不倒数" : {},
     "不催" : {},
     "不再另存" : {},
     "不压暗屏幕，悬停的窗口只描边、不染色，放大镜正中的像素也不染色。取色、对比颜色时打开" : {},
     "不显示药丸" : {},
+    "不用的整个关掉，用的时候再打开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn off what you don't use, and back on when you need it"
+          }
+        }
+      }
+    },
     "不缩成药丸，标签一直排在边上" : {},
     "不能有 / 和 :，比如 json、tar.gz" : {},
     "不要（打开「下一个日程」要「日历」，打开「音量和亮度」要「辅助功能」；正在播放读不到时，「音乐」「Spotify」的播放控制要「自动化」）" : {
@@ -856,10 +1169,21 @@
         }
       }
     },
+    "不记录" : {},
     "不记录疑似密钥和银行卡号" : {},
     "不记录这些 App 里的复制" : {},
     "不限" : {},
     "两台电脑改了同一条便签" : {},
+    "两指左右滑" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Two-Finger Swipe"
+          }
+        }
+      }
+    },
     "两者" : {},
     "中" : {},
     "中文输入法里单按 ⇧ 切中英文，连按两下会切过去再切回来" : {
@@ -929,7 +1253,46 @@
     },
     "从" : {},
     "从 Markdown 导入" : {},
-    "从刘海垂下一小条歌名和艺人，约 2 秒收回" : {},
+    "从「常用」里移除" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove from Frequent"
+          }
+        }
+      }
+    },
+    "从中心拉框" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Draw from the center"
+          }
+        }
+      }
+    },
+    "从中心画矩形、椭圆，或从中心改大小" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Draw rectangles and ellipses from the center, or resize from the center"
+          }
+        }
+      }
+    },
+    "从刘海垂下一小条歌名和艺人，约 2 秒收回" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A small strip with the song and artist drops from the notch and goes back after about 2 seconds"
+          }
+        }
+      }
+    },
     "从剪贴板新建" : {},
     "从动画表情里挑一个（会动，第一次用到时下载）" : {},
     "从备份恢复" : {},
@@ -939,6 +1302,36 @@
     "从系统启动台重新导入？" : {},
     "从系统表情里挑一个（按系统的样子画，不会动）" : {},
     "从网上下载的脚本" : {},
+    "从翻译服务、网页搜索、状态屏的状态的详情页返回列表" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Go back to the list from the detail page of a translation service, web search, or Status Screen status"
+          }
+        }
+      }
+    },
+    "任务：光标所在的行（选了几行就是那几行）变成任务，再按一次变回普通行；点行首的方框打勾" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Task: turn the line with the cursor (or the selected lines) into a task, press again to turn it back; click the box at the start to check it off"
+          }
+        }
+      }
+    },
+    "任务：正文里光标所在的行变成任务，再按一次变回普通行" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Task: turn the line with the cursor into a task, press again to turn it back"
+          }
+        }
+      }
+    },
     "会删掉 %lld 条截图历史，连同留着的原图；已经存到文件夹里的文件不动。" : {},
     "会同时删除它保存在钥匙串里的密钥" : {},
     "位置" : {},
@@ -953,15 +1346,96 @@
         }
       }
     },
+    "便签 · 全部便签" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notes · All Notes"
+          }
+        }
+      }
+    },
+    "便签 · 屏幕边缘" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notes · Screen Edge"
+          }
+        }
+      }
+    },
+    "便签 · 浮在屏幕上" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notes · Floating"
+          }
+        }
+      }
+    },
     "便签「%@」" : {},
     "便签内容" : {},
+    "便签墙 / 列表（同工具栏上的切换；下次打开是上次用的那种）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Note Wall / list (same as the toolbar switch; opens to whichever you used last)"
+          }
+        }
+      }
+    },
+    "便签墙上：在卡片之间挑（↑↓ 同一列上下，←→ 旁边那列）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On the Note Wall: move between cards (↑↓ within a column, ←→ to the next column)"
+          }
+        }
+      }
+    },
+    "便签墙上：把选中的那张放大成编辑卡，接着写" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On the Note Wall: enlarge the selected card for editing and keep writing"
+          }
+        }
+      }
+    },
+    "便签墙上：收回编辑卡（点旁边变暗的地方也行）；没开着编辑卡时 ⌘W 关窗口" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On the Note Wall: put the editing card back (or click the dimmed area around it); with no editing card open, ⌘W closes the window"
+          }
+        }
+      }
+    },
     "便签墙（⌘1）/ 列表（⌘2）" : {},
+    "便签存在这台 Mac 上，和剪贴板历史分开：清空历史、保留天数都碰不到它。每天自动备份一份，留最近 7 份（正文里的图片跟着一起备）。删掉的便签在「最近删除」里留 %lld 天。设置 › 通用 里的导出与导入带便签的文字、不带图片；要连图片一起带走、或者拿别的工具看，用上面的 Markdown 导出。在几台 Mac 之间同步到 设置 › 通用「同步」里选文件夹。" : {},
     "便签没存上" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Notes weren’t saved"
+          }
+        }
+      }
+    },
+    "便签的交互参考了 Noty（MIT 许可）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notes interactions are based on Noty (MIT License)"
           }
         }
       }
@@ -989,6 +1463,16 @@
     },
     "便签，%lld 条" : {},
     "保存" : {},
+    "保存,存储,目录,文件夹,快门,声音,缩略图,识字,换行,二维码,标注,长截图,钉图,按键,速查,工具栏,位置,靠右,居中,录制条,原色,压暗,遮罩,滤镜,取色,颜色,拷贝,复制,文件,PNG,对拷线,远程" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save,Storage,Directory,Folder,Shutter,Sound,Thumbnail,Capture Text,Line Breaks,QR Code,Annotate,Scrolling Capture,Pin,Keys,Keyboard Shortcuts,Toolbar,Position,Right,Center,Recording Bar,Original Colors,Dim,Overlay,Filter,Color Picker,Color,Copy,Duplicate,File,PNG,Transfer Cable,Remote"
+          }
+        }
+      }
+    },
     "保存失败，截图已复制到剪贴板" : {
       "localizations" : {
         "en" : {
@@ -1003,9 +1487,58 @@
     "保留了 %lld 条收藏" : {},
     "保留截图历史" : {},
     "保留普通历史" : {},
+    "修复" : {
+      "comment" : "更新日志一条改动的种类：修了问题",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fixed"
+          }
+        }
+      }
+    },
     "停下了，或者里面有没有权限删的；已经删掉的找不回来" : {},
-    "停在刘海上会鼓起一点，点一下或者两指往下滑打开：刘海两边挂着东西时是它的卡片，没有时是快捷动作" : {},
-    "停在刘海上自动展开" : {},
+    "停在刘海上会鼓起一点，点一下或者两指往下滑打开：刘海两边挂着东西时是它的卡片，没有时是快捷动作" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hovering over the notch makes it bulge a little; click or swipe down with two fingers to open the card for whatever hangs beside the notch, or the quick actions if nothing does"
+          }
+        }
+      }
+    },
+    "停在刘海上自动展开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expand when hovering over the notch"
+          }
+        }
+      }
+    },
+    "停在程序坞图标上时弹出的窗口缩略图：开关和要给的授权" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Window thumbnails when you hover over a Dock icon: on or off, and the permissions it needs"
+          }
+        }
+      }
+    },
+    "停在菜单栏" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hover Menu Bar"
+          }
+        }
+      }
+    },
     "停多久再弹出" : {},
     "停止" : {},
     "停止同步" : {},
@@ -1029,10 +1562,29 @@
         }
       }
     },
+    "停用快捷键" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disable Shortcuts"
+          }
+        }
+      }
+    },
     "像素高 · 宽 %@" : {},
     "允许屏幕录制" : {},
     "允许屏幕录制后显示缩略图" : {},
-    "允许访问日历" : {},
+    "允许访问日历" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allow Calendar Access"
+          }
+        }
+      }
+    },
     "充电中" : {
       "localizations" : {
         "en" : {
@@ -1063,7 +1615,57 @@
         }
       }
     },
+    "先关操作菜单，再清空搜索，最后回到浮窗" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close the actions menu, then clear the search, then go back to the panel"
+          }
+        }
+      }
+    },
+    "先关预览和操作菜单，再撤掉待确认的命令，再清空搜索，最后关闭；脚本的全文 / 输出那一页回到结果（还在跑就停掉）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close the preview and actions menu, then cancel a command awaiting confirmation, then clear the search, then close; on a script's source or output page, go back to the results (stopping it if it's still running)"
+          }
+        }
+      }
+    },
+    "先开一项授权" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "One Permission First"
+          }
+        }
+      }
+    },
+    "先开两项授权" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Two Permissions First"
+          }
+        }
+      }
+    },
     "先拷贝一段文字或一张图" : {},
+    "先清空搜索，再按一次收起；点空白处也收起" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clears the search first, then press again to close; clicking empty space also closes"
+          }
+        }
+      }
+    },
     "免费" : {},
     "全天" : {
       "localizations" : {
@@ -1075,7 +1677,26 @@
         }
       }
     },
-    "全局" : {},
+    "全局" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Global"
+          }
+        }
+      }
+    },
+    "全屏提醒：知道了（出现后 1 秒内按的不算）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Full-screen reminder: dismiss (presses in the first second don't count)"
+          }
+        }
+      }
+    },
     "全屏的 App 图标网格" : {
       "localizations" : {
         "en" : {
@@ -1086,7 +1707,27 @@
         }
       }
     },
+    "全屏的图标网格：排法、翻页、搜索、文件夹、捏合" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The full-screen icon grid: layout, pages, search, folders, pinch"
+          }
+        }
+      }
+    },
     "全选" : {},
+    "全选（搜索框为空时）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Select all (with the search field empty)"
+          }
+        }
+      }
+    },
     "全部便签" : {
       "localizations" : {
         "en" : {
@@ -1099,8 +1740,26 @@
     },
     "全部列出来" : {},
     "全部历史 · %@" : {},
-    "全部快捷键" : {},
-    "全部恢复默认" : {},
+    "全部快捷键" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All Shortcuts"
+          }
+        }
+      }
+    },
+    "全部恢复默认" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restore All Defaults"
+          }
+        }
+      }
+    },
     "全部按键" : {},
     "全部操作（⌘K 或 →）" : {},
     "共 %lld 条 · 收藏 %lld" : {
@@ -1147,7 +1806,36 @@
     "关掉后打开启动器只有搜索框，有收藏时只列收藏；排序照样按用过的学" : {},
     "关掉后表情不动、进入时不做出场、屏幕边上不冒眼睛；标题照样晃一下" : {},
     "关掉后还没下好的动画表情先显示缩略图、不动，已经下好的照样动" : {},
-    "关着时停上去只鼓起一点、点一下才展开；打开后刘海两边挂着东西时，指针停一下就展开成卡片" : {},
+    "关掉打开的便签，那一列标签也一起收回，接着打字回到原来的 App" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close the open note and put the tabs away; keep typing in the app you were using"
+          }
+        }
+      }
+    },
+    "关掉的功能不出现在快捷键、菜单栏和启动器里，也不在后台运行；它的数据和设置都留着，打开就回来。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Features that are off disappear from shortcuts, the menu bar, and the launcher, and don't run in the background; their data and settings stay and come back when you turn them on."
+          }
+        }
+      }
+    },
+    "关着时停上去只鼓起一点、点一下才展开；打开后刘海两边挂着东西时，指针停一下就展开成卡片" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When off, hovering only makes it bulge and you click to expand; when on, a brief hover expands whatever hangs beside the notch into a card"
+          }
+        }
+      }
+    },
     "关着时单击选中、双击粘贴；打开后点一下就粘贴，想先看内容用 ↑↓，⌘ 单击、⇧ 单击照常多选" : {},
     "关着时，按快捷键先出一排预览卡片，选一个再进" : {},
     "关键词" : {},
@@ -1174,8 +1862,47 @@
     },
     "关闭复制即译" : {},
     "关闭对话框" : {},
-    "关闭引导" : {},
+    "关闭引导" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close Welcome"
+          }
+        }
+      }
+    },
     "关闭窗口" : {},
+    "关闭（双击同样）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close (or double-click)"
+          }
+        }
+      }
+    },
+    "关闭（固定着也关；历史开着时 Esc 先关历史）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close (even when pinned; with history open, Esc closes history first)"
+          }
+        }
+      }
+    },
+    "关闭（固定着也关；对话框开着时先关对话框）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close (even when pinned; an open dialog closes first)"
+          }
+        }
+      }
+    },
     "其他文件夹" : {},
     "其他电脑" : {},
     "内容" : {},
@@ -1187,6 +1914,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Press the shortcut again to cancel"
+          }
+        }
+      }
+    },
+    "再查一次" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check Again"
           }
         }
       }
@@ -1234,7 +1971,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Translate selections, typed text, and screenshots, or translate on copy"
+            "value" : "Translate selections and screenshots; translate on copy"
           }
         }
       }
@@ -1280,8 +2017,86 @@
       }
     },
     "列出几条结果让人挑" : {},
-    "列出最近的提示" : {},
-    "列在快捷动作下面：本次启动以来最近 10 条，新的在前；不列也不影响提示照常弹出" : {},
+    "列出可推出的磁盘：↩ 推出" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "List ejectable disks: ↩ ejects"
+          }
+        }
+      }
+    },
+    "列出后台进程（kill :端口 按端口列）：↩ 结束，⌘↩ 强制结束（再按一次确认）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "List background processes (kill :port lists by port): ↩ ends, ⌘↩ force ends (press again to confirm)"
+          }
+        }
+      }
+    },
+    "列出在监听的端口：↩ 结束占用它的进程，⌘↩ 强制结束（再按一次确认）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "List listening ports: ↩ ends the process using it, ⌘↩ force ends (press again to confirm)"
+          }
+        }
+      }
+    },
+    "列出最近的提示" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "List recent notices"
+          }
+        }
+      }
+    },
+    "列出正在运行的 App：↩ 强制退出（再按一次确认）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "List running apps: ↩ force quits (press again to confirm)"
+          }
+        }
+      }
+    },
+    "列出正在运行的 App：↩ 退出，⌘↩ 强制退出（再按一次确认）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "List running apps: ↩ quits, ⌘↩ force quits (press again to confirm)"
+          }
+        }
+      }
+    },
+    "列出正在运行的 App：↩ 隐藏，⌘↩ 强制退出（再按一次确认）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "List running apps: ↩ hides, ⌘↩ force quits (press again to confirm)"
+          }
+        }
+      }
+    },
+    "列在快捷动作下面：本次启动以来最近 10 条，新的在前；不列也不影响提示照常弹出" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Below the quick actions: the last 10 since launch, newest first; notices pop up either way"
+          }
+        }
+      }
+    },
     "列表循环" : {
       "localizations" : {
         "en" : {
@@ -1292,7 +2107,26 @@
         }
       }
     },
-    "刘海两边出几秒：一句话和现在的电量" : {},
+    "刘海,灵动岛,那一张,快捷动作,排序,最近的提示,通知,正在播放,音乐,封面,切歌,日程,日历,月历,会议,模糊,触感,自动展开,音量,亮度,静音" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notch,Dynamic Island,Card,Quick Actions,Order,Recent Notices,Notifications,Now Playing,Music,Artwork,Skip Track,Events,Calendar,Month Calendar,Meeting,Blur,Haptics,Expand Automatically,Volume,Brightness,Mute"
+          }
+        }
+      }
+    },
+    "刘海两边出几秒：一句话和现在的电量" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shows beside the notch for a few seconds, with the current battery level"
+          }
+        }
+      }
+    },
     "刘海岛" : {
       "localizations" : {
         "en" : {
@@ -1317,14 +2151,59 @@
     },
     "删掉 %lld 条？" : {},
     "删掉的便签在这里留 %lld 天" : {},
+    "删掉选中的那条" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete the selected one"
+          }
+        }
+      }
+    },
     "删除" : {},
     "删除 %lld 项" : {},
     "删除…" : {},
     "删除「%@」" : {},
     "删除「%@」？" : {},
+    "删除所选的一条" : {},
+    "删除所选的提醒" : {},
+    "删除所选的服务" : {},
+    "删除所选的状态" : {},
+    "删除选中的标注" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete the selected annotation"
+          }
+        }
+      }
+    },
+    "删除（⌘Z 撤销）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete (⌘Z to undo)"
+          }
+        }
+      }
+    },
     "删除（⌘⌫）" : {},
     "删除（⌘⌫），进「最近删除」" : {},
+    "删除（管理收藏夹里是删掉选中的收藏夹，条目留在收藏里）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete (in Manage Collections, deletes the selected collection; its items stay in Favorites)"
+          }
+        }
+      }
+    },
     "别名" : {},
+    "别名就是在启动器里要打的那个词，改了以后原来的词不再认；清空就只能按名字搜。关掉的不出现在搜索里。" : {},
     "别的 App 全屏时边缘也有便签" : {},
     "到" : {},
     "到 设置 › 关于 里点「更新并重新打开」" : {
@@ -1362,6 +2241,26 @@
         }
       }
     },
+    "到点提醒你：什么时候响、用什么方式、点了「稍后」推多久" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reminds you on time: when, how, and how long Snooze waits"
+          }
+        }
+      }
+    },
+    "到第一页 / 最后一页" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Go to the first / last page"
+          }
+        }
+      }
+    },
     "前台已不是取词的 App，没有替换" : {
       "localizations" : {
         "en" : {
@@ -1395,9 +2294,36 @@
         }
       }
     },
-    "剪贴板、便签和翻译历史的数据库、图片和每日备份都在这里" : {},
-    "剪贴板、启动器、翻译浮窗和截图里按什么键，都在速查表里" : {},
-    "剪贴板、启动器和翻译浮窗从窄一点、矮一点弹开到原尺寸；减弱动态效果时不弹" : {},
+    "剪贴板、便签和翻译历史的数据库、图片和每日备份都在这里" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The databases, images, and daily backups for the clipboard, notes, and translation history are here"
+          }
+        }
+      }
+    },
+    "剪贴板、启动器、翻译浮窗和截图里按什么键，都在速查表里" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keys for the clipboard, launcher, translation panel, and screenshots are all in Keyboard Shortcuts"
+          }
+        }
+      }
+    },
+    "剪贴板、启动器和翻译浮窗从窄一点、矮一点弹开到原尺寸；减弱动态效果时不弹" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The clipboard, launcher, and translation panels spring open from slightly smaller to full size; not when Reduce Motion is on"
+          }
+        }
+      }
+    },
     "剪贴板与启动器" : {
       "localizations" : {
         "en" : {
@@ -1420,6 +2346,16 @@
     },
     "剪贴板设置" : {},
     "剪贴板设置（⌘,）" : {},
+    "剪贴板访问" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clipboard Access"
+          }
+        }
+      }
+    },
     "剪贴板里不是脚本" : {},
     "剪贴板里是密码这类隐私内容，不存成文件" : {},
     "剪贴板里是文件" : {},
@@ -1445,6 +2381,26 @@
         }
       }
     },
+    "功能、外观、菜单栏、登录时打开、权限、同步、导出与导入、数据目录" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Features, appearance, menu bar, open at login, permissions, sync, export and import, data folder"
+          }
+        }
+      }
+    },
+    "加入 / 取消收藏（收藏排在空搜索框的最上面）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add to / remove from Favorites (favorites come first in an empty search)"
+          }
+        }
+      }
+    },
     "加入会议" : {
       "localizations" : {
         "en" : {
@@ -1456,10 +2412,50 @@
       }
     },
     "加入收藏" : {},
-    "动效" : {},
+    "动效" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Motion"
+          }
+        }
+      }
+    },
     "动画" : {},
     "动画表情" : {},
     "动画表情：%@" : {},
+    "勾上的几类在几台电脑之间保持一样，取消一类只是不再同步它。同步文件夹（连服务器时是服务器上那个文件夹）里放的是不加密的文本文件和图片，能打开这个文件夹的人都看得到。每台电脑只往自己的那份里写、读所有电脑的，改动一般几十秒到几分钟传过去（看同步盘多快；连服务器时大约一分钟一轮）。两台都改了同一条时，后改的留下（便签的另一版放进「最近删除」）；别处删掉的片段、收藏和生词，这台 Mac 上只是不再收藏；一轮要删的太多会先停下来问。停止同步后，文件夹里的东西留着，这台 Mac 上的也不动。" : {},
+    "勾上的功能没有默认快捷键：点菜单栏图标就能用，\n想用键叫出来到 设置 › 快捷键 里设一个。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The features you checked have no default shortcuts: use them from the menu bar icon,\nor set a key in Settings › Shortcuts."
+          }
+        }
+      }
+    },
+    "勾上的功能要用到它们，各管什么写在下面。\n点「去授权」后在系统设置里打开开关，回到这里状态会自己变。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The features you checked need these; what each is for is below.\nClick Grant Access, turn on the switch in System Settings, and the status here updates by itself."
+          }
+        }
+      }
+    },
+    "勾上的功能要用到它，管什么写在下面。\n点「去授权」后在系统设置里打开开关，回到这里状态会自己变。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The features you checked need this; what it's for is below.\nClick Grant Access, turn on the switch in System Settings, and the status here updates by itself."
+          }
+        }
+      }
+    },
     "勾选同步" : {
       "localizations" : {
         "en" : {
@@ -1471,7 +2467,37 @@
       }
     },
     "区域" : {},
+    "十种标注工具（再按一次收起）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The ten annotation tools (press again to put away)"
+          }
+        }
+      }
+    },
+    "十种标注工具，各自的键见「截图 · 标注」（再按一次收起）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The ten annotation tools; see “Screenshot · Annotate” for each key (press again to put away)"
+          }
+        }
+      }
+    },
     "协议" : {},
+    "单击" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Click"
+          }
+        }
+      }
+    },
     "单击取色，Esc 取消" : {},
     "单击条目直接粘贴" : {},
     "单曲循环" : {
@@ -1494,8 +2520,37 @@
         }
       }
     },
-    "卡片背后的东西越靠近卡片越模糊；系统设置里开着「降低透明度」时不模糊" : {},
+    "卡片背后的东西越靠近卡片越模糊；系统设置里开着「降低透明度」时不模糊" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "What's behind the card gets blurrier closer to it; no blur when Reduce Transparency is on in System Settings"
+          }
+        }
+      }
+    },
     "历史" : {},
+    "历史,天数,保留,永久,图片,占用,预览,链接,网页,格式,纯文本,识别,文字,OCR,隐私,密钥,银行卡,清空,退出,锁屏,排除,App,收藏,收藏夹,片段,密码,敏感,网站,标题,透镜,单击,双击,点击,粘贴,位置,面板位置,鼠标,跟随鼠标,上次位置" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "History,Days,Keep,Forever,Images,Storage,Preview,Links,Web Page,Format,Plain Text,Recognize,Text,OCR,Privacy,Keys,Bank Card,Clear,Quit,Lock Screen,Exclude,App,Favorites,Collections,Snippets,Password,Sensitive,Website,Title,Lens,Click,Double-click,Paste,Position,Panel Position,Mouse,Follow Mouse,Last Position"
+          }
+        }
+      }
+    },
+    "历史上限、面板、内容格式和隐私" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "History limit, panel, content formats, and privacy"
+          }
+        }
+      }
+    },
     "历史最多保留" : {},
     "历史里的原图被清掉了" : {
       "localizations" : {
@@ -1509,10 +2564,21 @@
     },
     "历史里这几条连同留着的原图一起删掉，不能撤销；已经存到文件夹里的文件不动。" : {},
     "压缩包不在了，或者不是能解的格式" : {},
+    "压缩包放在旁边，重名的自动加「 2」；zip 里的中文名到别的系统上解开也不乱码，也不夹带 Mac 的隐藏文件（.DS_Store、._*、__MACOSX）。解压时只有一样东西就直接放在包旁边，几样就放进和包同名的文件夹；别的系统打的 zip，中文名也解得对。修复乱码文件名之后，刘海岛上能撤销。包里不带访达的标签、替身和自定义图标，要在 Mac 之间原样传，用访达自带的「压缩」。" : {},
     "压缩和解压" : {},
     "压缩时跳过" : {},
     "原件在只读的盘上、上了锁，或者没有权限" : {},
     "原始" : {},
+    "原始大小（滚轮、捏合缩放）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Actual size (scroll or pinch to zoom)"
+          }
+        }
+      }
+    },
     "原文" : {},
     "原文改过了，按回车键也可以翻译" : {},
     "去打开" : {
@@ -1525,10 +2591,60 @@
         }
       }
     },
-    "去授权" : {},
+    "去打开…" : {},
+    "去授权" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grant Access"
+          }
+        }
+      }
+    },
     "去授权屏幕录制，允许后显示窗口的缩略图" : {},
     "去过两次以上或手输过的网页，排在书签后面" : {},
     "去过两次以上的网页，排在书签后面" : {},
+    "双击" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Double-click"
+          }
+        }
+      }
+    },
+    "发一份到别的 App 或文件夹（历史里那条还在）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Send a copy to another app or folder (it stays in the history)"
+          }
+        }
+      }
+    },
+    "发一份到别的 App 或文件夹（原图还挂着）；拖到废纸篓是取下" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Send a copy to another app or folder (the original stays on the line); drag to the Trash to take it down"
+          }
+        }
+      }
+    },
+    "取下（右键菜单里还有存储、钉图、从历史里删掉）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Take it down (the right-click menu also has save, pin, and delete from history)"
+          }
+        }
+      }
+    },
     "取消" : {
       "localizations" : {
         "en" : {
@@ -1565,8 +2681,18 @@
     "另一版放进了「最近删除」" : {},
     "另外跳过的" : {},
     "另存一份到" : {},
-    "另存为…" : {},
+    "另存为…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save As…"
+          }
+        }
+      }
+    },
     "只列出了「%@」" : {},
+    "只列本机装了的浏览器。" : {},
     "只在你右键时动" : {
       "localizations" : {
         "en" : {
@@ -1577,12 +2703,42 @@
         }
       }
     },
-    "只在截图框选和标注里有效，单个键也行" : {},
+    "只在截图框选和标注里有效，单个键也行" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only while selecting and annotating a screenshot; single keys work too"
+          }
+        }
+      }
+    },
     "只在搜索框里生效，离开后恢复；要搜中文时先关掉" : {},
     "只复制了第 1 条" : {},
     "只复制了第 1 条，授权辅助功能后才能直接粘贴" : {},
+    "只复制，不粘贴" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy only, don't paste"
+          }
+        }
+      }
+    },
+    "只存在这台 Mac 的钥匙串里。" : {},
     "只导入自己导出的、或信得过的人给的文件：设置会照文件改；翻译服务和网页搜索的地址也照文件里的，要翻译的文字、密钥和搜索的内容会发到那里；快捷链接能打开任意网址和文件。" : {},
     "只导收藏 · %@" : {},
+    "只接音量 +、音量 −、静音、亮度 +、亮度 − 这五个键，要「辅助功能」授权。锁屏时、接着调不了音量的输出设备或者外接显示器时，照旧是系统自己的提示。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only handles the five keys volume +, volume −, mute, brightness +, and brightness −, and needs Accessibility permission. On the lock screen, and with output devices or external displays whose level can't be changed, the system's own indicator still shows."
+          }
+        }
+      }
+    },
     "只显示快捷键" : {},
     "只有色块" : {},
     "只留最近一次的输出" : {},
@@ -1630,6 +2786,7 @@
         }
       }
     },
+    "同一段里的行接起来，段和段之间保留换行：中文、日文的行直接接上，其它文字之间加空格。截图翻译总是这样接。框选里有二维码或条码时复制它的内容。" : {},
     "同步" : {
       "localizations" : {
         "en" : {
@@ -1662,11 +2819,40 @@
         }
       }
     },
+    "名单里的 App 在前台时，上面的快捷键不响应，按键交给那个 App。也可以在那个 App 里右键点菜单栏图标，从菜单里停用。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When an app on this list is in front, the shortcuts above don't respond and the keys go to that app. You can also right-click the menu bar icon while in that app and disable them from the menu."
+          }
+        }
+      }
+    },
     "名字" : {},
     "名字已经不像乱码了，或者没有权限改" : {},
     "名字里带 .template.：这是要先填值的模板，导入后不会列在启动器里；填好、把名字里的 .template. 去掉才会列出来。" : {},
     "名称" : {},
-    "后台" : {},
+    "后台" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Background"
+          }
+        }
+      }
+    },
+    "后台记录剪贴板历史；系统询问时到「从其他 App 粘贴」里改成始终允许" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Records clipboard history in the background; if the system asks, change it to Always Allow under “Paste from Other Apps”"
+          }
+        }
+      }
+    },
     "后缀不对" : {},
     "后退 15 秒" : {
       "localizations" : {
@@ -1678,13 +2864,32 @@
         }
       }
     },
-    "启动" : {},
+    "启动" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Startup"
+          }
+        }
+      }
+    },
     "启动台" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Launchpad"
+          }
+        }
+      }
+    },
+    "启动台,图标,网格,全屏,应用,App,排法,排列,列,行,翻页,页,搜索,App 文件夹,拖动,抖动,删除,卸载,App Store,捏合,触控板,四指,五指,触发角,导入,系统启动台,Launchpad,快捷键" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Launchpad,Icons,Grid,Full Screen,Apps,App,Layout,Arrange,Columns,Rows,Pages,Page,Search,App Folder,Drag,Jiggle,Delete,Uninstall,App Store,Pinch,Trackpad,Four Fingers,Five Fingers,Hot Corner,Import,System Launchpad,Shortcuts"
           }
         }
       }
@@ -1701,17 +2906,47 @@
         }
       }
     },
+    "启动器按用过的次数和时间排序，空搜索框里先列收藏（⌘D 加入），再列「常用」。在「常用」里选中一项按 ⌘⌫ 可以单独移除，⌘Z 撤销。" : {},
+    "启动器里只输「提醒 」：列出全部提醒，↩ 打开 / 暂停那一条，⌘↩ 到设置里编辑" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Type just “remind ” in the launcher: lists all reminders; ↩ turns one on or pauses it, ⌘↩ edits it in Settings"
+          }
+        }
+      }
+    },
     "启动器里的按键" : {},
     "启用" : {},
-    "启用%@" : {},
+    "启用%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enable %@"
+          }
+        }
+      }
+    },
     "启用「%@」" : {},
     "启用脚本命令" : {},
     "告示上的动画" : {},
     "呼出时切到英文输入法" : {},
-    "呼出面板时挤压弹开" : {},
+    "呼出面板时挤压弹开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Squeeze open when panels appear"
+          }
+        }
+      }
+    },
     "命令" : {},
     "命令和别名" : {},
     "命令的查找路径" : {},
+    "和 设置 › 截图 的「快速保存到」是同一个文件夹，文件名是「录屏 日期 时间.mp4」「录音 日期 时间.m4a」。" : {},
     "和「%@」重复" : {
       "localizations" : {
         "en" : {
@@ -1773,16 +3008,85 @@
     "回到访达窗口再右键一次" : {},
     "回车或 Esc 也是知道了" : {},
     "固定" : {},
+    "固定 / 取消固定" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pin / unpin"
+          }
+        }
+      }
+    },
+    "固定 / 取消固定浮窗（固定后点别处不收起）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pin / unpin the panel (a pinned panel stays open when you click elsewhere)"
+          }
+        }
+      }
+    },
+    "固定 / 取消固定（固定后点面板外面不收起）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pin / unpin (a pinned panel stays open when you click outside it)"
+          }
+        }
+      }
+    },
+    "固定 / 取消固定（固定的便签点别处不收起；浮在屏幕上的便签固定后一直在别的窗口上面，重启后回到原处）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pin / unpin (a pinned note stays open when you click elsewhere; a pinned floating note stays above other windows and comes back to its place after a restart)"
+          }
+        }
+      }
+    },
     "固定浮窗" : {},
     "固定浮窗（⌘P）" : {},
     "固定面板" : {},
     "固定面板（⌘P）" : {},
     "图像" : {},
     "图标" : {},
-    "图标样式" : {},
+    "图标样式" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Icon style"
+          }
+        }
+      }
+    },
     "图片当前占用" : {},
     "图片最多占用" : {},
     "在 App 中打开" : {},
+    "在 全部 / 收藏 / 片段 之间切换" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch between All / Favorites / Snippets"
+          }
+        }
+      }
+    },
+    "在 全部 / 收藏 之间切换" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch between All / Favorites"
+          }
+        }
+      }
+    },
     "在 系统设置 › %@ › 自动化 里打开" : {
       "localizations" : {
         "en" : {
@@ -1816,15 +3120,113 @@
     },
     "在「词典」App 里看完整释义" : {},
     "在「词典」中打开" : {},
+    "在任何 App 里按下这些键，对应的功能就会出来。\n现在按一下，按过的会打勾。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Press these keys in any app to bring up the feature.\nTry one now; the ones you've pressed get a check mark."
+          }
+        }
+      }
+    },
     "在几台电脑之间同步" : {},
     "在列表里点 +，选中 Kitty Tools" : {},
-    "在刘海上显示下一个日程" : {},
-    "在刘海上显示正在播放" : {},
+    "在刘海上显示下一个日程" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show the next event on the notch"
+          }
+        }
+      }
+    },
+    "在刘海上显示正在播放" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show now playing on the notch"
+          }
+        }
+      }
+    },
     "在别的 App 里复制文字，浮窗自动弹出翻译（网址、路径和数字不翻）" : {},
+    "在剪贴板历史里搜索" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search clipboard history"
+          }
+        }
+      }
+    },
+    "在卡片之间挑（←→ 前一张 / 后一张，↑↓ 上下一行；搜索框里打字时让给它）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move between cards (←→ previous / next, ↑↓ row above / below; they go to the search field while you type in it)"
+          }
+        }
+      }
+    },
     "在启动器里输「tq 空格 北京」试试" : {},
+    "在启动器里输「tq 空格 北京」，↩ 后刘海岛显示北京的天气。要联网。" : {},
+    "在启动器里输入「提醒 10分钟 喝水」「提醒 明天9点 交周报」：↩ 建好（tx、remind 也行）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Type a reminder in the launcher, like “remind 10 min drink water” or “remind tomorrow 9am report”: ↩ creates it (tx works too)"
+          }
+        }
+      }
+    },
+    "在图标之间挪选中（鼠标指着不高亮），到页边接着翻页" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move the selection between icons (hovering doesn't highlight); at the edge of a page it turns the page"
+          }
+        }
+      }
+    },
     "在屏幕边缘显示便签" : {},
-    "在程序坞显示图标" : {},
-    "在菜单栏显示图标" : {},
+    "在格子之间换（Tab、⇧Tab 也行）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move between tiles (Tab, ⇧Tab too)"
+          }
+        }
+      }
+    },
+    "在程序坞显示图标" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show icon in Dock"
+          }
+        }
+      }
+    },
+    "在系统设置里打开" : {},
+    "在菜单栏显示图标" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show icon in menu bar"
+          }
+        }
+      }
+    },
     "在访达中打开" : {},
     "在访达中显示" : {
       "localizations" : {
@@ -1836,7 +3238,47 @@
         }
       }
     },
-    "在访达中显示数据目录" : {},
+    "在访达中显示数据目录" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show Data Folder in Finder"
+          }
+        }
+      }
+    },
+    "在访达中显示（find 搜到的是打开，计算结果只复制，网址用第二个浏览器打开）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show in Finder (opens results from find, only copies a calculation result, opens a URL in your second browser)"
+          }
+        }
+      }
+    },
+    "在访达中显示（存过盘的、录制的那几条才有）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show in Finder (only for saved items and recordings)"
+          }
+        }
+      }
+    },
+    "在访达中显示（文件）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show in Finder (files)"
+          }
+        }
+      }
+    },
+    "在访达里右键文件、文件夹，或者文件夹窗口的空白处，就有下面开着的这几项。iCloud 云盘和网盘的文件夹里，系统不显示这些项。" : {},
     "在访达里右键：新建文件、拷贝路径、移动复制、压缩解压" : {
       "localizations" : {
         "en" : {
@@ -1848,12 +3290,42 @@
       }
     },
     "在访达里按 ⇧⌘. 能看到隐藏的东西" : {},
+    "在访达里搜索输入的文字" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search Finder for the typed text"
+          }
+        }
+      }
+    },
     "在这些 App 里停用" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Turn Off in These Apps"
+          }
+        }
+      }
+    },
+    "在这条便签里查找（Esc 先关查找条，再按才关便签）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Find in this note (Esc closes the find bar first, then the note)"
+          }
+        }
+      }
+    },
+    "在选中的标注上换粗细、字号" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Change the line width or text size of the selected annotation"
           }
         }
       }
@@ -1866,6 +3338,16 @@
     "复制 %@" : {},
     "复制%@的译文" : {},
     "复制一份到我的脚本" : {},
+    "复制一份选中的标注（按住 ⌥ 拖动同样）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Duplicate the selected annotation (or ⌥-drag)"
+          }
+        }
+      }
+    },
     "复制写法说明" : {},
     "复制即译" : {
       "localizations" : {
@@ -1880,8 +3362,37 @@
     "复制即译已开启" : {},
     "复制即译已开启：复制文字后自动翻译。点一下关闭" : {},
     "复制即译弹出的翻译不会自动复制，免得覆盖你刚复制的原文" : {},
-    "复制原文" : {},
+    "复制原文" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy Original"
+          }
+        }
+      }
+    },
     "复制命令" : {},
+    "复制放大镜里的色值" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy the color under the magnifier"
+          }
+        }
+      }
+    },
+    "复制文件路径（多个按换行分开）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy file paths (one per line)"
+          }
+        }
+      }
+    },
     "复制文字后会弹出翻译" : {
       "localizations" : {
         "en" : {
@@ -1903,11 +3414,70 @@
       }
     },
     "复制的文本、图片和文件会出现在这里" : {},
-    "复制译文" : {},
+    "复制第 1–9 个结果" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy result 1–9"
+          }
+        }
+      }
+    },
+    "复制译文" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy Translation"
+          }
+        }
+      }
+    },
+    "复制路径、网址或计算结果" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy the path, URL, or calculation result"
+          }
+        }
+      }
+    },
     "复制这个例子" : {},
+    "复制选中的标注" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Duplicate the selected annotation"
+          }
+        }
+      }
+    },
     "复制（⌘%lld）" : {},
-    "外观" : {},
+    "外观" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Appearance"
+          }
+        }
+      }
+    },
+    "多个别名用逗号隔开，例如 wx, 聊天。原来的应用名仍可搜索，清空即可移除别名。" : {},
     "多久自己收起" : {},
+    "多选：⌘ 点一张加进来 / 去掉，⇧ 点从上一张连到这一张" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Multiple selection: ⌘-click adds or removes one, ⇧-click selects everything from the last one to this one"
+          }
+        }
+      }
+    },
     "大" : {},
     "大小" : {},
     "大屏可以多放几行" : {},
@@ -1927,12 +3497,23 @@
     "如 http://127.0.0.1:1188/translate" : {},
     "如 喝水" : {},
     "如 马上回来" : {},
+    "子菜单里按这个顺序列（拖动调整），后面接最近用「选择文件夹…」选过的 3 个；这次用不上的会变灰。" : {},
     "存储 %lld 项到「%@」" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "new",
             "value" : "存储 %1$lld 项到「%2$@」"
+          }
+        }
+      }
+    },
+    "存储到快速保存目录（选着好几条就一起存）/ 另存为…（一条时）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save to the quick save folder (all selected ones) / Save As… (one at a time)"
           }
         }
       }
@@ -1953,10 +3534,21 @@
     "它可能被删掉或挪走了" : {},
     "它属于别的用户" : {},
     "安全和同步" : {},
-    "完成" : {},
+    "完成" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Done"
+          }
+        }
+      }
+    },
+    "完整输入别名时优先显示对应应用；多个应用用了同一别名时按使用习惯排序。带参数的命令仍按命令处理。每个应用最多 256 字。" : {},
     "官方 API" : {},
     "密码" : {},
     "密码不对" : {},
+    "密码管理器通常会自己标记「不要记录」，这里只是兜底。" : {},
     "密码（至少 %lld 位）" : {},
     "密钥" : {},
     "导入" : {},
@@ -1978,6 +3570,16 @@
     "居中" : {},
     "屏幕上方" : {},
     "屏幕上方是鼠标所在屏幕的上方正中，跟随鼠标是光标旁边，上次位置是上次拖到的地方" : {},
+    "屏幕录制" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Screen Recording"
+          }
+        }
+      }
+    },
     "屏幕角" : {},
     "屏幕边缘" : {},
     "屏幕边缘一条细药丸；开着同步时跟着合" : {
@@ -1991,7 +3593,16 @@
       }
     },
     "展开" : {},
-    "展开时模糊四周" : {},
+    "展开时模糊四周" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Blur the surroundings when expanded"
+          }
+        }
+      }
+    },
     "展开：以后自动翻译" : {},
     "工作目录是脚本所在的文件夹。能用的环境变量：KITTY_SCRIPT_DIR（脚本所在的文件夹）、KITTY_DATA_DIR（Kitty Tools 的数据目录）、KITTY_VERSION。退出码不是 0 算出错，最后一行显示在刘海岛上。" : {},
     "工具栏位置" : {},
@@ -2017,6 +3628,7 @@
         }
       }
     },
+    "已为 %lld 个应用设置别名" : {},
     "已从常用中移除" : {},
     "已保存" : {
       "localizations" : {
@@ -2070,6 +3682,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Translate on Copy is off"
+          }
+        }
+      }
+    },
+    "已关闭（%lld）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turned Off (%lld)"
           }
         }
       }
@@ -2279,7 +3901,16 @@
     "已导出 %lld 条" : {},
     "已导出 %lld 条便签" : {},
     "已导出「%@」" : {},
-    "已展开" : {},
+    "已展开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expanded"
+          }
+        }
+      }
+    },
     "已开启复制即译" : {
       "localizations" : {
         "en" : {
@@ -2308,7 +3939,16 @@
     "已恢复默认排列" : {},
     "已打码 %lld 处" : {},
     "已把替身放到桌面" : {},
-    "已折叠" : {},
+    "已折叠" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Collapsed"
+          }
+        }
+      }
+    },
     "已拔掉电源" : {
       "localizations" : {
         "en" : {
@@ -2338,7 +3978,16 @@
       }
     },
     "已按默认排法排好" : {},
-    "已授权" : {},
+    "已授权" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Granted"
+          }
+        }
+      }
+    },
     "已接上电源" : {
       "localizations" : {
         "en" : {
@@ -2415,7 +4064,16 @@
     },
     "已有的备份" : {},
     "已浮在屏幕上" : {},
-    "已添加" : {},
+    "已添加" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Added"
+          }
+        }
+      }
+    },
     "已清倒废纸篓" : {},
     "已清空启动器使用记录" : {
       "localizations" : {
@@ -2455,11 +4113,30 @@
     },
     "已经存过去的文件不会删" : {},
     "已继续" : {},
+    "已被拒绝，剪贴板历史不会再记录新内容；到「从其他 App 粘贴」里改成始终允许" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Denied, so clipboard history won't record anything new; change it to Always Allow under “Paste from Other Apps”"
+          }
+        }
+      }
+    },
     "已被移走或删除" : {},
     "已被系统占用" : {},
     "已解压" : {},
     "已记下" : {},
-    "已试过" : {},
+    "已试过" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tried"
+          }
+        }
+      }
+    },
     "已读到 %lld 条%@" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2536,13 +4213,101 @@
       }
     },
     "开头几行能写什么" : {},
-    "开始使用" : {},
-    "开始前 10 分钟挂在刘海两边倒数，点开能加入会议、打开日历" : {},
+    "开始使用" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Get Started"
+          }
+        }
+      }
+    },
+    "开始前 10 分钟挂在刘海两边倒数，点开能加入会议、打开日历" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Counts down beside the notch from 10 minutes before it starts; open it to join the meeting or open Calendar"
+          }
+        }
+      }
+    },
     "开始前倒数" : {},
+    "开始录制（双击选区同样）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start recording (or double-click the selection)"
+          }
+        }
+      }
+    },
     "开始录屏" : {},
     "开始录音" : {},
-    "强调色" : {},
-    "归档" : {},
+    "开着 %lld 个；关着：%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld on; off: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "开着 %1$lld 个；关着：%2$@"
+          }
+        }
+      }
+    },
+    "开着：%@；另外 %lld 个关着" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On: %1$@; %2$lld off"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "开着：%1$@；另外 %2$lld 个关着"
+          }
+        }
+      }
+    },
+    "强调色" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Accent color"
+          }
+        }
+      }
+    },
+    "归档" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Archive"
+          }
+        }
+      }
+    },
+    "归档 / 取消归档" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Archive / unarchive"
+          }
+        }
+      }
+    },
     "归档是空的" : {},
     "当前 %@" : {
       "localizations" : {
@@ -2554,13 +4319,42 @@
         }
       }
     },
-    "当前版本" : {},
+    "当前版本" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Current"
+          }
+        }
+      }
+    },
     "录制" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Recording"
+          }
+        }
+      }
+    },
+    "录制中停止并保存（点菜单栏的 ■ 计时、录屏控制条的 ■ 同样）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "While recording, stop and save (same as ■ on the menu bar timer or the screen recording control bar)"
+          }
+        }
+      }
+    },
+    "录制中停止并保存（点菜单栏的 ■ 计时、录音控制条的 ■ 同样）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "While recording, stop and save (same as ■ on the menu bar timer or the audio control bar)"
           }
         }
       }
@@ -2585,6 +4379,26 @@
         }
       }
     },
+    "录屏,录音,视频,保存,文件夹,系统声音,麦克风,来源,立即开始,控制条,倒数,帧率,光标,按键,速查,清晰度,分辨率,画质,编码,H.264,HEVC,文件大小,体积,压缩,只显示快捷键" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Record Screen,Record Audio,Video,Save,Folder,System Audio,Microphone,Source,Start Immediately,Control Bar,Countdown,Frame Rate,Cursor,Keys,Keyboard Shortcuts,Resolution,Quality,Encoding,H.264,HEVC,File Size,Size,Compress,Show Shortcuts Only"
+          }
+        }
+      }
+    },
+    "录屏、录音时录下你的声音" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Records your voice in screen and audio recordings"
+          }
+        }
+      }
+    },
     "录屏和录音" : {
       "localizations" : {
         "en" : {
@@ -2596,6 +4410,26 @@
       }
     },
     "录屏和录音的按键" : {},
+    "录屏的画质、倒数和按键，录音的来源" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Screen recording quality, countdown, and keys; audio recording sources"
+          }
+        }
+      }
+    },
+    "录屏（选区不变；有标注时不切）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Record the screen (same selection; not when there are annotations)"
+          }
+        }
+      }
+    },
     "录系统声音" : {
       "localizations" : {
         "en" : {
@@ -2606,6 +4440,7 @@
         }
       }
     },
+    "录系统声音时菜单栏会出现屏幕录制指示；锁屏会停止；不能暂停。立即开始关着时，按快捷键（或点菜单栏、启动器里的「录音」）先在屏幕底部打开录音控制条，点 ● 或再按一次才开始录。" : {},
     "录音" : {
       "localizations" : {
         "en" : {
@@ -2647,7 +4482,16 @@
         }
       }
     },
-    "快捷动作下面一块这个月的日历，点它打开「日历」；已经允许读取「日历」时，旁边还列今天的日程" : {},
+    "快捷动作下面一块这个月的日历，点它打开「日历」；已经允许读取「日历」时，旁边还列今天的日程" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This month's calendar below the quick actions; click it to open Calendar. With Calendar access allowed, today's events are listed beside it"
+          }
+        }
+      }
+    },
     "快捷动作和最近的提示都关着" : {
       "localizations" : {
         "en" : {
@@ -2678,13 +4522,63 @@
         }
       }
     },
-    "快捷键速查" : {},
+    "快捷键,热键,冲突,录制,恢复默认,速查,按键,钉图,停用,屏蔽,App,不响应" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shortcuts,Hotkeys,Conflict,Record,Restore Defaults,Keyboard Shortcuts,Keys,Pin,Disable,Block,App,Not Responding"
+          }
+        }
+      }
+    },
+    "快捷键在 设置 › 快捷键 里设置，默认没有。在菜单栏、启动器里选一个状态，都是直接进入。" : {},
+    "快捷键速查" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keyboard Shortcuts"
+          }
+        }
+      }
+    },
     "快捷键速查表" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Keyboard Shortcuts"
+          }
+        }
+      }
+    },
+    "快速保存" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quick Save"
+          }
+        }
+      }
+    },
+    "快速保存、拷贝为图像还是文件、工具栏位置、快门声、缩略图和识字" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quick save, copy as image or file, toolbar position, shutter sound, thumbnail, and text capture"
+          }
+        }
+      }
+    },
+    "快速查看选中的文件" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quick Look the selected file"
           }
         }
       }
@@ -2700,6 +4594,66 @@
       }
     },
     "快速记一条、屏幕边缘的便签和全部便签窗口里按什么键" : {},
+    "快速记一条里：换行" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In Quick Note: new line"
+          }
+        }
+      }
+    },
+    "快速记一条里：接在最近改过的某一条便签后面" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In Quick Note: add to the end of a recently edited note"
+          }
+        }
+      }
+    },
+    "快速记一条里：清空并关闭（点面板外面、再按一次全局快捷键、⌘W 也是关闭，写了一半的留着）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In Quick Note: clear and close (clicking outside, the global shortcut again, or ⌘W also closes and keeps what you've written)"
+          }
+        }
+      }
+    },
+    "快速记一条里：记下" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In Quick Note: save"
+          }
+        }
+      }
+    },
+    "快速记一条里：记成新便签" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In Quick Note: save as a new note"
+          }
+        }
+      }
+    },
+    "快速记一条里：记成新便签时去填标题，再按一次（或 ↩）回到正文" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In Quick Note: when saving as a new note, go to the title; press again (or ↩) to go back to the text"
+          }
+        }
+      }
+    },
     "快速记一条，屏幕边缘的便签" : {
       "localizations" : {
         "en" : {
@@ -2713,6 +4667,17 @@
     "怎么写脚本" : {},
     "怎么退出" : {},
     "思考中" : {},
+    "性能" : {
+      "comment" : "更新日志一条改动的种类：更快、更省",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Performance"
+          }
+        }
+      }
+    },
     "恢复" : {},
     "恢复提醒（暂停到 %@）" : {
       "localizations" : {
@@ -2736,11 +4701,40 @@
         }
       }
     },
-    "恢复默认大小" : {},
+    "恢复默认大小" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restore Default Size"
+          }
+        }
+      }
+    },
     "恢复默认排列" : {},
     "恢复默认排列…" : {},
     "恢复默认排列？" : {},
     "悬停即打开" : {},
+    "悬停时在「认元素 / 只认窗口」之间切" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "While hovering: switch between detecting elements and windows only"
+          }
+        }
+      }
+    },
+    "悬停时换大一块 / 小一块（窗口里的元素）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "While hovering: pick a bigger / smaller area (elements in a window)"
+          }
+        }
+      }
+    },
     "悬停时识别窗口里的元素" : {},
     "悬停预览" : {},
     "截取上次区域" : {
@@ -2763,6 +4757,47 @@
         }
       }
     },
+    "截图 · 出图" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Screenshot · Output"
+          }
+        }
+      }
+    },
+    "截图 · 标注" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Screenshot · Annotate"
+          }
+        }
+      }
+    },
+    "截图 · 框选" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Screenshot · Selection"
+          }
+        }
+      }
+    },
+    "截图、截图翻译、识字、录屏、录系统声音、程序坞预览的缩略图；授权后可能要重新打开本 App 才生效" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Screenshots, Translate Screenshot, Capture Text, screen and system audio recording, Dock Preview thumbnails; you may need to reopen the app after granting"
+          }
+        }
+      }
+    },
+    "截图、长截图、录屏录音都留在这里，能回头接着改标注（打码会直接打进存下的图）、再钉一次。超过保留期或占用的先删最旧的（已经存到文件夹里的文件不动）。历史只在这台 Mac 上，不跟着同步。" : {},
     "截图与录制" : {
       "localizations" : {
         "en" : {
@@ -2795,8 +4830,26 @@
       }
     },
     "截图时播放快门声" : {},
-    "截图时：出图和操作" : {},
-    "截图时：标注工具" : {},
+    "截图时：出图和操作" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "While Taking Screenshots: Output and Actions"
+          }
+        }
+      }
+    },
+    "截图时：标注工具" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "While Taking Screenshots: Annotation Tools"
+          }
+        }
+      }
+    },
     "截图编码失败" : {
       "localizations" : {
         "en" : {
@@ -2850,6 +4903,7 @@
         }
       }
     },
+    "截完图挂到屏幕顶上的绳子上，最多 8 张：鼠标停到菜单栏那一条上它就滑下来，单击拷贝、双击改标注、拖出去发一份，点右上角的叉取下。取下不删历史。" : {},
     "截完图放哪" : {},
     "截屏失败" : {
       "localizations" : {
@@ -2871,6 +4925,17 @@
         }
       }
     },
+    "截窗口的缩略图；没有它只列窗口的名字" : {},
+    "所有全局快捷键" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All global shortcuts"
+          }
+        }
+      }
+    },
     "所有显示器" : {},
     "打不开「%@」" : {},
     "打开" : {
@@ -2883,7 +4948,117 @@
         }
       }
     },
+    "打开 / 关闭操作菜单（→ 要在搜索词末尾按；在「移到收藏夹 ›」上按 → 或 ↩ 进去）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show / hide the actions menu (→ only at the end of the search text; press → or ↩ on “Move to Collection ›” to go in)"
+          }
+        }
+      }
+    },
+    "打开 / 关闭操作菜单：这条的全部操作、导出、清空历史（→ 要在搜索词末尾按；在「导出 ›」上按 → 或 ↩ 进去）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show / hide the actions menu: every action for this entry, export, clear history (→ only at the end of the search text; press → or ↩ on “Export ›” to go in)"
+          }
+        }
+      }
+    },
+    "打开 / 关闭操作菜单：选中项的全部操作（→ 要在搜索词末尾按；右键同一份）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show / hide the actions menu: every action for the selected item (→ only at the end of the search text; right-click shows the same)"
+          }
+        }
+      }
+    },
+    "打开 / 关闭筛选面板（范围、收藏夹、类型、来源）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show / hide the filter panel (range, collections, type, source)"
+          }
+        }
+      }
+    },
+    "打开 / 关闭翻译历史" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show / hide translation history"
+          }
+        }
+      }
+    },
     "打开 / 收起、翻页、搜索、文件夹里按什么键" : {},
+    "打开 设置 › 便签（同工具栏的「便签设置」）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Settings › Notes (same as Note Settings in the toolbar)"
+          }
+        }
+      }
+    },
+    "打开 设置 › 便签（打开的便签先收起）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Settings › Notes (the open note is put away first)"
+          }
+        }
+      }
+    },
+    "打开 设置 › 便签（浮着的便签留在原处）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Settings › Notes (floating notes stay where they are)"
+          }
+        }
+      }
+    },
+    "打开 设置 › 剪贴板" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Settings › Clipboard"
+          }
+        }
+      }
+    },
+    "打开 设置 › 启动器" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Settings › Launcher"
+          }
+        }
+      }
+    },
+    "打开 设置 › 翻译" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Settings › Translate"
+          }
+        }
+      }
+    },
     "打开 设置 › 通用，打开或关掉功能" : {
       "localizations" : {
         "en" : {
@@ -2917,7 +5092,16 @@
         }
       }
     },
-    "打开发布页" : {},
+    "打开发布页" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Releases Page"
+          }
+        }
+      }
+    },
     "打开后 ↩ 粘贴纯文本，⌥↩ 保留格式；文字的格式总是记下来" : {},
     "打开后在访达里右键就能看到" : {
       "localizations" : {
@@ -2991,7 +5175,26 @@
         }
       }
     },
-    "打开登录项设置" : {},
+    "打开登录项设置" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Login Items Settings"
+          }
+        }
+      }
+    },
+    "打开第 1–9 项" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open item 1–9"
+          }
+        }
+      }
+    },
     "打开系统设置" : {
       "localizations" : {
         "en" : {
@@ -3034,12 +5237,62 @@
         }
       }
     },
+    "打开选中的 App（鼠标单击同样；打开后启动台自己收起）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open the selected app (or click it; Launchpad closes itself after opening)"
+          }
+        }
+      }
+    },
+    "打开选中项（计算结果是粘贴；双击同样）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open the selected item (pastes a calculation result; or double-click)"
+          }
+        }
+      }
+    },
+    "打开链接，或用默认 App 打开文件" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open the link, or open the file in its default app"
+          }
+        }
+      }
+    },
     "打开麦克风设置" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Open Microphone Settings"
+          }
+        }
+      }
+    },
+    "执行选中的那一格" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Run the selected tile"
+          }
+        }
+      }
+    },
+    "扩展多选（⇧ 单击选一段，⌘ 单击逐条勾选）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Extend the selection (⇧-click selects a range, ⌘-click toggles items)"
           }
         }
       }
@@ -3059,8 +5312,58 @@
     "把写法说明贴给你常用的 AI、在最后写上想做什么；它给的脚本复制下来，点「从剪贴板新建」" : {},
     "把别人给的脚本文件拖到这里导入（导入前先看一眼全文）" : {},
     "把剪贴板里的脚本存成「%@」？" : {},
+    "把现在列出来的全选上（筛选、搜索之外的不算）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Select everything listed (not what the filter or search hides)"
+          }
+        }
+      }
+    },
+    "把网址复制为 Markdown 链接" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy the URL as a Markdown link"
+          }
+        }
+      }
+    },
     "把脚本文件拖到这里导入" : {},
+    "把那条边往外推（按住 ⇧ 10 点）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Push that edge out (10 points with ⇧)"
+          }
+        }
+      }
+    },
+    "把那条边往里收（按住 ⇧ 10 点）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pull that edge in (10 points with ⇧)"
+          }
+        }
+      }
+    },
     "折叠着时没有翻译，点右上角的重新翻译" : {},
+    "拖出去" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Drag Out"
+          }
+        }
+      }
+    },
     "拖动排序" : {},
     "拖动框选要翻译的文字 · Esc 取消" : {
       "localizations" : {
@@ -3083,11 +5386,84 @@
       }
     },
     "拖动框选，数字键换标注工具，↩ 拷贝" : {},
-    "拖进「应用程序」后可在 设置 › 通用 里开启登录时打开" : {},
-    "拷贝" : {},
+    "拖动调整顺序，结果按这个顺序显示；排在最前、翻译成功的那个服务的结果写入历史、用于自动复制和收藏。点一行进入设置。删掉的内置服务可以从「+」加回来，密钥还在。" : {},
+    "拖左右两边改宽度，拖下边改最多显示几行" : {},
+    "拖左右两边改宽度，拖下边改最高多高（内容少时照样变矮）" : {},
+    "拖进「应用程序」后可在 设置 › 通用 里开启登录时打开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "After moving the app to Applications, you can turn on Open at Login in Settings › General"
+          }
+        }
+      }
+    },
+    "拦住键盘鼠标的全屏告示：有哪些状态、各是什么样子、怎么退出" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A full-screen notice that blocks the keyboard and mouse: the statuses, how each looks, and how to exit"
+          }
+        }
+      }
+    },
+    "拷贝" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy"
+          }
+        }
+      }
+    },
     "拷贝 %lld 项" : {},
+    "拷贝、存储、钉图时响；还要 系统设置 › 声音 里的「播放用户界面音效」开着。截图翻译、识字不出声。" : {},
     "拷贝命令" : {},
+    "拷贝那一张" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy that one"
+          }
+        }
+      }
+    },
+    "拷贝（双击选区同样）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy (or double-click the selection)"
+          }
+        }
+      }
+    },
+    "拷贝（画过标注的带标注；选着好几条时拷的是几个文件）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy (with annotations if any; with several selected, copies them as files)"
+          }
+        }
+      }
+    },
+    "按 ⌘S 或工具栏的「存储」存到这里，文件名是「截图 日期 时间.png」，重名自动加序号。没选过时跟随系统截屏的存储位置。录屏、录音也存这里。" : {},
     "按 ⌘Tab 时也显示" : {},
+    "按一下试试" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Give It a Try"
+          }
+        }
+      }
+    },
     "按下后录制新的快捷键" : {
       "localizations" : {
         "en" : {
@@ -3130,6 +5506,56 @@
     },
     "按住" : {},
     "按住 Esc 两秒；或者动一下鼠标，再用鼠标按住屏幕底部出现的提示两秒。到了自动结束的时间、解锁电脑回来时，也会结束。" : {},
+    "按住它拖边上的药丸：换边、换高度" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hold it and drag the pill at the edge: change the side or height"
+          }
+        }
+      }
+    },
+    "按住它点正文里的链接：打开（网址和邮件地址；不按 ⌘ 是放光标）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hold it and click a link in the text to open it (URLs and email addresses; without ⌘ the click places the cursor)"
+          }
+        }
+      }
+    },
+    "按住平移选区" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hold to move the selection"
+          }
+        }
+      }
+    },
+    "按住拖动平移画面" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hold and drag to pan"
+          }
+        }
+      }
+    },
+    "按住显示十字准线" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hold to show crosshairs"
+          }
+        }
+      }
+    },
     "按删除键移除" : {},
     "按名字或别名找" : {},
     "按应用名或别名找" : {},
@@ -3157,6 +5583,16 @@
         }
       }
     },
+    "按过了「%@」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pressed “%@”"
+          }
+        }
+      }
+    },
     "按键交给它；设置 › 快捷键 里可以改" : {
       "localizations" : {
         "en" : {
@@ -3167,16 +5603,73 @@
         }
       }
     },
-    "按音量键、亮度键时显示在刘海上" : {},
+    "按音量键、亮度键时显示在刘海上" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show on the notch when you press the volume or brightness keys"
+          }
+        }
+      }
+    },
     "挤不下的图标顺到了下一页开头" : {},
     "捏合打开的是系统的应用程序视图" : {},
     "捏合打开，张开收起；多个触控板都认" : {},
     "换个词试试" : {},
     "换回导入、恢复默认或改行列数之前的样子，只能用一次" : {},
-    "换歌时显示歌名" : {},
+    "换成下一种纸色" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch to the next paper color"
+          }
+        }
+      }
+    },
+    "换歌时显示歌名" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show the song title when the track changes"
+          }
+        }
+      }
+    },
+    "换筛选：⌘1 全部、⌘2 截图、⌘3 长截图、⌘4 录制" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Change the filter: ⌘1 All, ⌘2 Screenshots, ⌘3 Scrolling Captures, ⌘4 Recordings"
+          }
+        }
+      }
+    },
+    "换行" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New line"
+          }
+        }
+      }
+    },
     "换颜色" : {},
     "换颜色（⌘. 换下一种）" : {},
-    "授权" : {},
+    "授权" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Permissions"
+          }
+        }
+      }
+    },
     "授权「辅助功能」后才能直接粘贴回原 App，现在只会写进剪贴板" : {},
     "授权后才能替你在访达里按 ⇧⌘." : {},
     "授权辅助功能后再试" : {},
@@ -3193,12 +5686,41 @@
     "授权辅助功能后才能直接粘贴" : {},
     "排列" : {},
     "排列数据" : {},
-    "接上、拔掉电源" : {},
+    "接上、拔掉电源" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Power connected or disconnected"
+          }
+        }
+      }
+    },
     "接上这段就超过一条便签 1 MB 的上限了，换一条记" : {},
     "接口" : {},
+    "控制条开着、还没开始时开始录音（点控制条的 ● 同样）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "With the control bar open, start recording (same as ● on the control bar)"
+          }
+        }
+      }
+    },
     "推后 5 分钟" : {},
+    "描了橙框的别名重复了（也算网页搜索的关键词）：只打这个词时脚本排第一；后面接了空格和文字时，内置命令先认，其次脚本，网页搜索最后。改一个吧。" : {},
     "提前结束" : {},
-    "提示从屏幕顶部正中冒出来，有刘海时点一下刘海能看最近几条\n点菜单栏图标看全部功能；换键、看面板里的按键：设置 › 快捷键" : {},
+    "提示从屏幕顶部正中冒出来，有刘海时点一下刘海能看最近几条\n点菜单栏图标看全部功能；换键、看面板里的按键：设置 › 快捷键" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notices pop up at the top center of the screen; on a Mac with a notch, click it for the latest few\nClick the menu bar icon for all features; to change keys or see keys in panels: Settings › Shortcuts"
+          }
+        }
+      }
+    },
     "提示音" : {},
     "提醒" : {
       "localizations" : {
@@ -3206,6 +5728,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Reminders"
+          }
+        }
+      }
+    },
+    "提醒,定时,闹钟,倒计时,喝水,休息,护眼,久坐,走走,稍后,推迟,间隔,每天,工作日,每周,每月,一次,刘海岛,边框,全屏,声音,提示音,朗读,催促,错过" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reminders,Timer,Alarm,Countdown,Drink Water,Break,Eye Rest,Sitting,Walk,Snooze,Postpone,Interval,Every Day,Weekdays,Weekly,Monthly,Once,Notch,Border,Full Screen,Sound,Alert Sound,Speak,Nag,Missed"
           }
         }
       }
@@ -3262,20 +5794,138 @@
         }
       }
     },
-    "插件 · 用得上再勾，以后也能在 设置 › 通用 › 功能 里添加" : {},
+    "插件 · 用得上再勾，以后也能在 设置 › 通用 › 功能 里添加" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plugins · optional; you can add them later in Settings › General › Features"
+          }
+        }
+      }
+    },
+    "搜文件并在访达中显示" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search files and show in Finder"
+          }
+        }
+      }
+    },
+    "搜文件并打开（空格开头同样）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search files and open (or start with a space)"
+          }
+        }
+      }
+    },
     "搜来源或种类" : {},
     "搜索" : {},
+    "搜索 App、文件、书签与历史、网页搜索与快捷链接、脚本命令、命令和别名" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search apps, files, bookmarks and history; web search and quicklinks; script commands; commands and aliases"
+          }
+        }
+      }
+    },
     "搜索便签" : {},
+    "搜索便签；光标在正文里时是在这条便签里查找" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search notes; with the cursor in the text, find in this note"
+          }
+        }
+      }
+    },
     "搜索命令" : {},
     "搜索应用" : {},
+    "搜索快捷键" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search Shortcuts"
+          }
+        }
+      }
+    },
+    "搜索时：打开第一个（或方向键选中的）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "While searching: open the first one (or the one selected with the arrow keys)"
+          }
+        }
+      }
+    },
+    "搜索框为空时：选中最后一个筛选标签，再按一次删掉" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "With the search field empty: select the last filter tag; press again to remove it"
+          }
+        }
+      }
+    },
     "搜索结果" : {},
-    "搜索设置" : {},
+    "搜索设置" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search Settings"
+          }
+        }
+      }
+    },
+    "搜索（搜来源 App 和种类）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search (by source app and kind)"
+          }
+        }
+      }
+    },
     "撤销" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Undo"
+          }
+        }
+      }
+    },
+    "撤销 / 重做" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Undo / redo"
+          }
+        }
+      }
+    },
+    "撤销 / 重做打的字（勾任务、回车接出来的下一条也能撤）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Undo / redo typing (checking off tasks and auto-continued items too)"
           }
         }
       }
@@ -3287,6 +5937,26 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "撤销了 %1$lld 个，%2$lld 个原来的名字被占了"
+          }
+        }
+      }
+    },
+    "撤销移除" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Undo removal"
+          }
+        }
+      }
+    },
+    "撤销（删除、删收藏夹，以及取消收藏后会被清理的；收起面板前可以一步步连着撤）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Undo (deletions, deleted collections, and unfavorited items that would be cleaned up; step back repeatedly until the panel closes)"
           }
         }
       }
@@ -3312,19 +5982,102 @@
       }
     },
     "操作" : {},
+    "操作菜单开着、过滤词为空时回上一级 / 关掉它" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "With the actions menu open and no filter text: go up a level / close it"
+          }
+        }
+      }
+    },
+    "操作菜单里的「收回边缘」；别的键同屏幕边缘里打开的便签" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“Send Back to Edge” in the actions menu; other keys are the same as for a note opened from the screen edge"
+          }
+        }
+      }
+    },
+    "操作菜单：固定、颜色、任务、归档、删除、浮在屏幕上、在「全部便签」里打开、导出为 Markdown、便签设置（↑↓ 选，↩ 执行，→ ← 进出「颜色」）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Actions menu: pin, color, task, archive, delete, float on screen, open in All Notes, export as Markdown, note settings (↑↓ choose, ↩ run, → ← in and out of Color)"
+          }
+        }
+      }
+    },
     "支持 {date} {time} {clipboard} {cursor} 等" : {},
+    "收回边缘（固定着的也收），接着打字回到原来的 App" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Send back to the edge (even when pinned); keep typing in the app you were using"
+          }
+        }
+      }
+    },
     "收藏" : {},
+    "收藏 / 取消收藏这条" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Favorite / unfavorite this one"
+          }
+        }
+      }
+    },
+    "收藏 / 取消收藏（取消时也移出收藏夹）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Favorite / unfavorite (unfavoriting also removes it from collections)"
+          }
+        }
+      }
+    },
+    "收藏和片段一直留着，图片占用也只算普通历史里的。" : {},
     "收藏和片段不受影响" : {},
     "收藏和片段会保留" : {},
     "收藏夹 %lld" : {},
     "收藏夹…" : {},
     "收藏最多 %lld 个，先取消一个" : {},
+    "收藏的记录不算在保留条数里、永不清理。" : {},
     "收藏的记录会保留" : {},
+    "收藏这次翻译" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Favorite this translation"
+          }
+        }
+      }
+    },
     "收藏这次翻译（⌘D），在历史里可以只看收藏" : {},
     "收起" : {},
+    "收起工具 / 退出（画过要按两下）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Put away the tool / exit (press twice if you've drawn)"
+          }
+        }
+      }
+    },
     "收起：以后不自动翻译，点开再翻" : {},
     "收进一个子菜单" : {},
     "改名" : {},
+    "改在启动器里要打的词，关掉用不上的" : {},
     "改好保存，下次呼出启动器就能用" : {
       "localizations" : {
         "en" : {
@@ -3338,16 +6091,95 @@
     "改少了，每页挤不下的顺到下一页开头" : {},
     "改按键" : {},
     "改标注" : {},
-    "放大预览" : {},
+    "改标注（在标注遮罩里打开）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit annotations (opens in the annotation overlay)"
+          }
+        }
+      }
+    },
+    "改标注（录制的是用默认 App 打开）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit annotations (recordings open in the default app)"
+          }
+        }
+      }
+    },
+    "放回刚删的便签（连着删了几条就一条条放回；光标在正文、标题、搜索框里时先撤销那里打的字）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Put back the note you just deleted (one at a time if you deleted several; in the text, title, or search field, undoes typing there first)"
+          }
+        }
+      }
+    },
+    "放大 / 缩小" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zoom in / out"
+          }
+        }
+      }
+    },
+    "放大 / 缩小 / 还原字号" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bigger / smaller / actual text size"
+          }
+        }
+      }
+    },
+    "放大预览" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enlarge Preview"
+          }
+        }
+      }
+    },
     "放进去的任何文件，右键「新建文件」里就多一项" : {},
     "效果示例" : {},
-    "数据" : {},
-    "数据目录" : {},
+    "数据" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Data"
+          }
+        }
+      }
+    },
+    "数据目录" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Data folder"
+          }
+        }
+      }
+    },
     "整块盘、系统文件夹、主目录不能移动，可以复制" : {},
     "整理文件" : {},
     "文件夹" : {},
+    "文件夹原样交给 App；文件交给认得它的 App，不认得的改成打开它所在的文件夹。脚本和可执行文件只交给编辑器，交给终端的是它所在的文件夹，不会运行它。选了几样时编辑器全打开，终端只开第一个。" : {},
     "文件夹名字" : {},
     "文件夹没有的话连接时新建，每台电脑填同一个。密码存在这台 Mac 的钥匙串里；有的服务要在网页上另外生成给第三方应用用的密码。" : {},
+    "文件夹里叫这些名字的文件和文件夹，都不压进去" : {},
     "文件夹里的东西留着，这台 Mac 上的数据也不动" : {},
     "文件已不存在" : {},
     "文件已经不在了" : {
@@ -3374,6 +6206,26 @@
     "文件读不到（被移走了，或者没有权限）" : {},
     "文件里带着加密的密钥" : {},
     "文件里没有可导入的内容" : {},
+    "文字与搜索" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Text & Search"
+          }
+        }
+      }
+    },
+    "文字大一号 / 小一号（输入时、选中文字时）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Text one size bigger / smaller (while typing or with text selected)"
+          }
+        }
+      }
+    },
     "文字识别失败" : {
       "localizations" : {
         "en" : {
@@ -3394,8 +6246,26 @@
         }
       }
     },
-    "断了或者好了 3 秒以上才说，醒来时闪一下不算" : {},
-    "断网、网络恢复" : {},
+    "断了或者好了 3 秒以上才说，醒来时闪一下不算" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only after 3 seconds lost or restored; a blip on wake doesn't count"
+          }
+        }
+      }
+    },
+    "断网、网络恢复" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Network lost or restored"
+          }
+        }
+      }
+    },
     "新" : {
       "comment" : "新功能标记：菜单徽标、设置页标题后的小胶囊",
       "localizations" : {
@@ -3419,6 +6289,17 @@
         }
       }
     },
+    "新增" : {
+      "comment" : "更新日志一条改动的种类：新功能",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New"
+          }
+        }
+      }
+    },
     "新建" : {},
     "新建便签" : {
       "localizations" : {
@@ -3431,6 +6312,16 @@
       }
     },
     "新建便签（⌘N）" : {},
+    "新建便签（便签墙上直接打开它的编辑卡）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New note (on the Note Wall, opens it for editing right away)"
+          }
+        }
+      }
+    },
     "新建提醒" : {
       "localizations" : {
         "en" : {
@@ -3444,7 +6335,16 @@
     "新建收藏夹" : {},
     "新建收藏夹…" : {},
     "新建文件" : {},
-    "新建片段" : {},
+    "新建片段" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New Snippet"
+          }
+        }
+      }
+    },
     "新建脚本" : {},
     "新提醒" : {},
     "新版本 %@ 已装好" : {
@@ -3459,6 +6359,12 @@
     },
     "新版本 %@ 已装好，%@" : {
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Version %1$@ is installed. %2$@"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "new",
@@ -3470,6 +6376,27 @@
     "新状态" : {},
     "新的一页" : {},
     "新脚本" : {},
+    "新装时插件都没添加；从旧版升级上来的，原来开着的照旧添加着。添加了才出现在侧栏、菜单栏、主界面、快捷键和启动器里；移除就是关掉，设置和数据留着，再添加就回来。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A new install starts with no plugins; after an upgrade, plugins that were on stay added. Only added plugins appear in the sidebar, menu bar, Home, shortcuts, and the launcher. Removing one just turns it off; its settings and data stay for when you add it again."
+          }
+        }
+      }
+    },
+    "新装的 App 自动追加到最后一页末尾；卸掉的从布局里拿掉。拖动排序、建文件夹、删 App 都在启动台里做。" : {},
+    "方向键" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arrow Keys"
+          }
+        }
+      }
+    },
     "无" : {},
     "无法打开数据库" : {
       "localizations" : {
@@ -3482,11 +6409,29 @@
       }
     },
     "日期和时间" : {},
-    "日程" : {},
+    "日程" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Events"
+          }
+        }
+      }
+    },
     "时间" : {},
     "星期" : {},
     "显示" : {},
-    "显示「%@」" : {},
+    "显示「%@」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show “%@”"
+          }
+        }
+      }
+    },
     "显示光标" : {},
     "显示全部" : {},
     "显示全部钉图" : {
@@ -3514,6 +6459,7 @@
       }
     },
     "显示透镜" : {},
+    "普通历史、图片和文件类的收藏不在文件里；截图的存储文件夹、登录时打开和系统权限要在新电脑上重新设。" : {},
     "晾衣绳" : {
       "localizations" : {
         "en" : {
@@ -3565,6 +6511,16 @@
         }
       }
     },
+    "暂停吸附" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pause snapping"
+          }
+        }
+      }
+    },
     "暂停记录剪贴板" : {
       "localizations" : {
         "en" : {
@@ -3595,6 +6551,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Update"
+          }
+        }
+      }
+    },
+    "更新内容" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "What's New"
           }
         }
       }
@@ -3679,9 +6645,36 @@
         }
       }
     },
-    "更新并重新打开" : {},
-    "更新日志" : {},
-    "更新进度" : {},
+    "更新并重新打开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Update and Relaunch"
+          }
+        }
+      }
+    },
+    "更新日志" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Release Notes"
+          }
+        }
+      }
+    },
+    "更新进度" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Update progress"
+          }
+        }
+      }
+    },
     "替换原文" : {},
     "最多 %lld 个状态" : {},
     "最多 %lld 条提醒" : {},
@@ -3775,6 +6768,16 @@
     "有 App 正在使用它" : {},
     "有了第一条便签才出现；关掉后便签照样能从快捷键、启动器和全部便签窗口打开" : {},
     "有人碰键盘或鼠标时显示怎么退出" : {},
+    "有变化时在刘海岛上弹一下，同别的提示。没打开的不监听，也不要任何授权。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pops up on the notch when something changes, like other notices. Ones that are off aren't monitored and need no permissions."
+          }
+        }
+      }
+    },
     "有新版本 %@" : {
       "localizations" : {
         "en" : {
@@ -3813,7 +6816,16 @@
     "朗读%@的译文" : {},
     "朗读原文" : {},
     "未固定" : {},
-    "未授权" : {},
+    "未授权" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not granted"
+          }
+        }
+      }
+    },
     "未设置" : {
       "localizations" : {
         "en" : {
@@ -3825,18 +6837,87 @@
       }
     },
     "本机 App 目录还没扫出来" : {},
-    "权限" : {},
+    "本机的局域网 / 内网地址和外网地址（外网要联网查）：↩ 粘贴，⌘↩ 只复制" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This Mac's local and public addresses (the public one needs a network lookup): ↩ pastes, ⌘↩ only copies"
+          }
+        }
+      }
+    },
+    "权限" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Permissions"
+          }
+        }
+      }
+    },
     "来源" : {},
     "来源 %lld" : {},
+    "查一次 hello。" : {},
+    "查单个词时不自动复制、不给「替换原文」。" : {},
     "查单个词时大模型按词典回答（读音、词性、例句）" : {},
     "查单个词时显示系统词典的释义" : {},
     "查找" : {},
-    "查看全部快捷键…" : {},
+    "查看全部快捷键…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show All Shortcuts…"
+          }
+        }
+      }
+    },
     "查词" : {},
     "标准" : {},
+    "标注" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Annotate"
+          }
+        }
+      }
+    },
     "标注工具、钉图、长截图、识字、出图这些键能自己改" : {},
-    "标着「全局」的在任何 App 里都能按，可到 设置 › 快捷键 里改；其余是面板和设置窗里的按键。" : {},
+    "标注（在长图上画，画完再出图）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Annotate (draw on the long image, then output)"
+          }
+        }
+      }
+    },
+    "标着「全局」的在任何 App 里都能按，可到 设置 › 快捷键 里改；其余是面板和设置窗里的按键。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ones marked Global work in any app and can be changed in Settings › Shortcuts; the rest are keys in panels and the Settings window."
+          }
+        }
+      }
+    },
     "标题" : {},
+    "标题最多 %lld 个字，说明最多 %lld 个字。" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "标题最多 %1$lld 个字，说明最多 %2$lld 个字。"
+          }
+        }
+      }
+    },
     "样式" : {},
     "框选、标注、长截图和录屏的按键" : {},
     "框选和截图一样，↩ 或双击选区开始，Esc 取消；录着时再按一次快捷键停止并保存" : {},
@@ -3861,12 +6942,33 @@
         }
       }
     },
+    "框选时逐级退出，最后取消；倒数中取消" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "While selecting, back out step by step, then cancel; during the countdown, cancel"
+          }
+        }
+      }
+    },
     "桌面" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Desktop"
+          }
+        }
+      }
+    },
+    "桌面、文稿、下载、iCloud 云盘" : {},
+    "检查更新" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check for Updates"
           }
         }
       }
@@ -3915,6 +7017,16 @@
         }
       }
     },
+    "欢迎使用 Kitty Tools" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Welcome to Kitty Tools"
+          }
+        }
+      }
+    },
     "正在下载 %@ · %lld%%" : {
       "localizations" : {
         "en" : {
@@ -3927,6 +7039,16 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "正在下载 %1$@ · %2$lld%%"
+          }
+        }
+      }
+    },
+    "正在从磁盘映像或临时位置运行。请先把 App 拖进「应用程序」文件夹，再开启这一项。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Running from a disk image or a temporary location. Drag the app into the Applications folder first, then turn this on."
           }
         }
       }
@@ -3981,6 +7103,7 @@
         }
       }
     },
+    "正在录屏、录音时，边框和全屏改成刘海岛上的提醒，免得录进去。" : {},
     "正在录音" : {
       "localizations" : {
         "en" : {
@@ -4000,6 +7123,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Now Playing"
+          }
+        }
+      }
+    },
+    "正在播放、下一个日程和月历、音量和亮度、点刘海打开的快捷动作和最近的提示、自动展开、触感反馈、系统提示" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Now playing, next event and calendar, volume and brightness, quick actions and recent notices, auto-expand, haptics, system notices"
           }
         }
       }
@@ -4024,26 +7157,115 @@
         }
       }
     },
-    "正在检查更新…" : {},
+    "正在检查更新…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Checking for updates…"
+          }
+        }
+      }
+    },
     "正在看这个文件夹…" : {},
     "正在读取…" : {},
     "正在读取应用…" : {},
     "正在读取网页" : {},
     "正在运行「%@」" : {},
-    "正在运行的 App" : {},
+    "正在运行的 App" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Running Apps"
+          }
+        }
+      }
+    },
     "正在退出 %lld 个 App" : {},
     "正文" : {},
+    "正文里右键：任务状态（五种）、文字颜色（红橙绿蓝紫灰 / 默认）；点在方框上只弹五种状态" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Right-click in the text: task status (five kinds), text color (red, orange, green, blue, purple, gray / default); on a box, just the five statuses"
+          }
+        }
+      }
+    },
+    "正文里：任务行、列表行回车接着下一条，空的那条上回车退出列表；Tab / ⇧Tab 缩进、退回" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In the text: Return on a task or list line starts the next item, Return on an empty one ends the list; Tab / ⇧Tab indents and outdents"
+          }
+        }
+      }
+    },
+    "正文里：删除线（同上）、代码（只在没选字时插一对；代码块里不加）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In the text: strikethrough (same as above), code (inserts a pair only with nothing selected; not in code blocks)"
+          }
+        }
+      }
+    },
+    "正文里：剪贴板里是图片（截图、复制的图）时插一张；也可以把图片文件拖进来，或右键「插入图片…」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In the text: inserts the image when the clipboard has one (a screenshot, a copied image); you can also drag image files in, or right-click and choose Insert Image…"
+          }
+        }
+      }
+    },
+    "正文里：弹出右键菜单（任务状态、文字颜色、格式：粗体、斜体、删除线、代码、链接、标题 1–3、引用、无序列表、有序列表、代码块、清除格式；插入图片…）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In the text: open the right-click menu (task status, text color, format: bold, italic, strikethrough, code, link, heading 1–3, quote, bulleted list, numbered list, code block, clear formatting; Insert Image…)"
+          }
+        }
+      }
+    },
+    "正文里：粗体、斜体（选区整段一种：不全是就全加上、原来有的并成一段；全都是就去掉、拆开；没选字插一对，光标在中间）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In the text: bold, italic (the whole selection gets one style: if only some of it has it, it's applied throughout and merged; if all of it has it, it's removed; with nothing selected, a pair is inserted with the cursor in the middle)"
+          }
+        }
+      }
+    },
     "每 %lld 分钟" : {},
     "每天自动备份" : {},
     "每月几号" : {},
     "每条便签一个 .md 文件，正文里的图片放在旁边的 attachments 文件夹" : {},
     "每条还可以写 url（↩ 用浏览器打开）、path（↩ 打开文件，⌘↩ 在访达中显示，⌘Y 快速查看）、icon（这一条的图标，写法同 @kitty.icon；{\"type\": \"fileicon\", \"path\": …} 用那个文件的图标）、autocomplete（⇥ 填进搜索框，接在关键词后面）、text 里的 copy（⌘C 复制的）。" : {},
+    "每行以 #、// 或 -- 开头都行。网上常见的另一种写法（字段以 @raycast. 开头）也认，下载下来不用改。文件名里带 .template. 的不列出来。" : {},
     "每隔" : {},
     "比如 build、*.tmp" : {},
     "比如放在 iCloud 云盘里、几台 Mac 共用的脚本文件夹（只读，不往里写）" : {},
     "永久删除" : {},
     "永久删除「%@」？" : {},
     "永久删除（⌘⌫）" : {},
+    "汇率换算；也可以直接输「100 美元 转 日元」（要联网取汇率）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Currency conversion; you can also type “100 USD to JPY” directly (rates need the network)"
+          }
+        }
+      }
+    },
     "没取到选中的文字，可以直接输入或粘贴" : {
       "localizations" : {
         "en" : {
@@ -4069,15 +7291,70 @@
     "没建成「查天气.sh」" : {},
     "没建成：脚本文件夹写不进去。" : {},
     "没找到系统启动台的数据" : {},
-    "没接电源时，降到 20% 和 10% 各说一次" : {},
+    "没接电源时，降到 20% 和 10% 各说一次" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On battery, once at 20%, then again at 10%"
+          }
+        }
+      }
+    },
     "没有%@" : {},
-    "没有「日历」授权，读不了日程" : {},
-    "没有「辅助功能」授权，接不住这几个键" : {},
-    "没有停用快捷键的 App" : {},
+    "没有「日历」授权，读不了日程" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Calendar access, so events can't be read"
+          }
+        }
+      }
+    },
+    "没有「辅助功能」授权，接不住这几个键" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Accessibility permission, so these keys can't be caught"
+          }
+        }
+      }
+    },
+    "没有停用快捷键的 App" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No apps with shortcuts disabled"
+          }
+        }
+      }
+    },
+    "没有停用的" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "None disabled"
+          }
+        }
+      }
+    },
     "没有剪切" : {},
     "没有匹配的便签" : {},
     "没有匹配的应用，试试其它名字或别名" : {},
-    "没有匹配的快捷键" : {},
+    "没有匹配的快捷键" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Matching Shortcuts"
+          }
+        }
+      }
+    },
     "没有匹配的截图" : {},
     "没有匹配的操作" : {
       "localizations" : {
@@ -4093,7 +7370,16 @@
     "没有匹配的条目" : {},
     "没有匹配的筛选" : {},
     "没有匹配的记录" : {},
-    "没有匹配的设置" : {},
+    "没有匹配的设置" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Matching Settings"
+          }
+        }
+      }
+    },
     "没有压缩" : {},
     "没有取消隐藏" : {},
     "没有可导出的记录" : {},
@@ -4217,9 +7503,27 @@
       }
     },
     "没能删掉「%@」" : {},
-    "没能加入登录项" : {},
+    "没能加入登录项" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't add to login items"
+          }
+        }
+      }
+    },
     "没能压缩" : {},
-    "没能取消登录项" : {},
+    "没能取消登录项" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't remove from login items"
+          }
+        }
+      }
+    },
     "没能启动屏幕保护程序" : {},
     "没能复制" : {},
     "没能开始录屏" : {
@@ -4274,11 +7578,49 @@
         }
       }
     },
+    "浅色" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Light"
+          }
+        }
+      }
+    },
     "测试连接" : {},
     "浏览器书签与历史" : {},
     "浮窗位置" : {},
-    "添加" : {},
-    "添加 App" : {},
+    "深色" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dark"
+          }
+        }
+      }
+    },
+    "添加" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add"
+          }
+        }
+      }
+    },
+    "添加 App" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add App"
+          }
+        }
+      }
+    },
     "添加别名" : {},
     "添加名字" : {},
     "添加提醒" : {},
@@ -4288,6 +7630,16 @@
     "添加状态" : {},
     "添加翻译服务" : {},
     "清晰度" : {},
+    "清洁,擦屏幕,请勿触碰,马上回来,告示,防误触,退出,Esc,提示,熄屏,透出,样式,图标,电源,不睡眠,屏幕常亮,自动结束,键盘,鼠标,拦截,预览卡片,直接进入,选择状态,动画,表情,出场" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clean,Wipe Screen,Do Not Touch,Be Right Back,Notice,Accidental Touches,Exit,Esc,Hint,Screen Off,Show Through,Style,Icon,Power,Stay Awake,Keep Screen On,End Automatically,Keyboard,Mouse,Block Input,Preview Cards,Enter Directly,Choose Status,Animation,Emoji,Entrance"
+          }
+        }
+      }
+    },
     "清空" : {},
     "清空历史…" : {},
     "清空启动器的使用记录？" : {},
@@ -4317,9 +7669,40 @@
     },
     "清除搜索" : {},
     "清除搜索和筛选" : {},
-    "滑动切歌、展开卡片、进度条拖到头时，触控板轻轻一下" : {},
+    "滑动切歌、展开卡片、进度条拖到头时，触控板轻轻一下" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A light tap on the trackpad when you swipe to skip, expand a card, or drag the progress bar to the end"
+          }
+        }
+      }
+    },
+    "滚轮" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scroll"
+          }
+        }
+      }
+    },
     "灵敏度" : {},
     "点「输入密码」再解压" : {},
+    "点一行编辑，右边的开关暂停或打开那一条。一次性的提醒点了「知道了」就从列表里拿掉。" : {},
+    "点一行编辑，右边的开关暂停或打开那一条。一次性的提醒点了「知道了」就从列表里拿掉。最多 %lld 条，已经满了，删掉一条才能再加。" : {},
+    "点刘海、两指往下滑或者按「打开刘海岛」的快捷键（到 设置 › 快捷键 里设）叫出来的就是这一排。刘海两边挂着东西（在放歌、在录制）时，点刘海先展开它，再往下滑一次才是这一排。拖动调整先后。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This row comes up when you click the notch, swipe down with two fingers, or press the Open Notch shortcut (set it in Settings › Shortcuts). When something hangs beside the notch (music playing, a recording), clicking the notch expands that first; swipe down once more for this row. Drag to reorder."
+          }
+        }
+      }
+    },
     "点刘海叫出快捷动作，录屏计时、提醒倒数、正在播放挂在刘海两边、点开是卡片" : {
       "localizations" : {
         "en" : {
@@ -4330,9 +7713,47 @@
         }
       }
     },
-    "点刘海打开" : {},
-    "点刘海打开时显示月历" : {},
+    "点刘海或在刘海上两指往下滑：打开——刘海两边挂着东西时是它的卡片，再往下滑一次轮到下一个，最后是快捷动作" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Click the notch or swipe down on it with two fingers to open: the card for whatever hangs beside the notch, then the next one each time you swipe down, and finally the quick actions"
+          }
+        }
+      }
+    },
+    "点刘海打开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Click the notch to open"
+          }
+        }
+      }
+    },
+    "点刘海打开时显示月历" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show a month calendar when you open the notch"
+          }
+        }
+      }
+    },
     "点开头的、整块盘、系统文件夹不动，或者没有权限" : {},
+    "点录制框后按下新组合，或者快速连按两下 ⌘ ⌥ ⌃ ⇧ 中的一个；Esc 取消，⌫ 清除，右键可恢复默认。连按两下要「辅助功能」授权。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Click a shortcut field and press a new combination, or quickly press one of ⌘ ⌥ ⌃ ⇧ twice; Esc cancels, ⌫ clears, and right-click restores the default. Pressing twice needs Accessibility permission."
+          }
+        }
+      }
+    },
     "点菜单栏图标，选「更新到 %@」" : {
       "localizations" : {
         "en" : {
@@ -4343,7 +7764,63 @@
         }
       }
     },
+    "焦点在列表或便签墙上时：删除选中的便签，进「最近删除」（⌫ 也行；在最近删除里是永久删除，要确认）。光标在标题、正文里时是删到行首" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "With the list or Note Wall focused: move the selected note to Recently Deleted (⌫ works too; in Recently Deleted it deletes permanently after confirming). In the title or text, deletes to the start of the line"
+          }
+        }
+      }
+    },
     "片段" : {},
+    "版本 %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Version %@"
+          }
+        }
+      }
+    },
+    "版本 %@（%@）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Version %1$@ (%2$@)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "版本 %1$@（%2$@）"
+          }
+        }
+      }
+    },
+    "版本,更新,日志,发布,欢迎,引导" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Version,Update,Release Notes,Changelog,Release,Welcome,Onboarding"
+          }
+        }
+      }
+    },
+    "版本与更新内容" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Version and what's new"
+          }
+        }
+      }
+    },
     "特大" : {},
     "状态" : {},
     "状态屏" : {
@@ -4356,6 +7833,7 @@
         }
       }
     },
+    "状态屏会拦住键盘鼠标，按住 Esc 或者到了状态的自动结束时间才退出。没给辅助功能授权、正在录屏时进不去，改成全屏提醒。" : {},
     "状态屏已结束" : {},
     "状态屏插件没添加" : {
       "localizations" : {
@@ -4363,6 +7841,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "The Status Screen plugin isn’t added"
+          }
+        }
+      }
+    },
+    "状态屏是告示加防误触，不是安全措施：没设退出密码时照着提示谁都能退出，设了也拦不住电源键、触控 ID 键和合盖。要防别人动电脑，进入之后再锁定屏幕（按一下触控 ID 键）：电脑照样不睡，回来解锁就结束——忘了退出密码也这样出来。" : {},
+    "状态屏的动画表情来自 Microsoft Fluent Emoji（MIT 许可）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Animated emoji on the Status Screen come from Microsoft Fluent Emoji (MIT License)"
           }
         }
       }
@@ -4431,7 +7920,9 @@
         }
       }
     },
+    "现有的「启动器」是搜索框，和启动台是两个东西：名字、设置、快捷键都分开。" : {},
     "用%@重新翻译" : {},
+    "用「Hello, world」做一次英译中。" : {},
     "用不了" : {},
     "用什么写" : {},
     "用什么跑" : {},
@@ -4439,7 +7930,18 @@
     "用它新建" : {},
     "用户名" : {},
     "用查天气的例子新建一个，在启动器里输「tq 空格 北京」就能跑；或者点上面的「新建脚本」选好语言和结果方式" : {},
+    "用第一个网页搜索搜输入的文字" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search the typed text with your first web search"
+          }
+        }
+      }
+    },
     "用第一个翻译成功的服务的译文替换原文（便签里选中的那一段，或原 App 里选中的文字）" : {},
+    "用顺手的名字搜索应用" : {},
     "电池供电" : {
       "localizations" : {
         "en" : {
@@ -4451,6 +7953,8 @@
       }
     },
     "电源" : {},
+    "电源只管闲置的时候：屏幕锁定后照常熄灭，合上盖子照样睡眠。屏幕常亮时电脑也不睡眠。" : {},
+    "电脑睡着、锁着屏或者没打开 Kitty 时到点的提醒，晚 5 分钟以内的照常提醒，更晚的回来后合成一条告诉你。每隔一阵的提醒碰上锁屏、睡眠，或者 5 分钟没碰键盘鼠标，算休息过了，回来重新数。" : {},
     "电量 %lld%%" : {
       "localizations" : {
         "en" : {
@@ -4491,9 +7995,58 @@
         }
       }
     },
+    "画正方形、正圆、45° 线；拖角时保持比例" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Draw squares, circles, and 45° lines; keep proportions when dragging a corner"
+          }
+        }
+      }
+    },
+    "界面" : {
+      "comment" : "更新日志一条改动的种类：界面、样子",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "UI"
+          }
+        }
+      }
+    },
     "留 %lld 天后自动删除" : {},
-    "登录时自动打开" : {},
-    "登录时自动打开，开机后快捷键就能用" : {},
+    "留着看、接着改的东西：屏幕边缘的那一叠、字号和行距，存在哪、怎么备份" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Things to keep and come back to: the stack at the screen edge, text size and line spacing, storage and backups"
+          }
+        }
+      }
+    },
+    "登录时自动打开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open at login"
+          }
+        }
+      }
+    },
+    "登录时自动打开，开机后快捷键就能用" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open at login, so shortcuts work after you start up"
+          }
+        }
+      }
+    },
     "盖住屏幕、拦住键盘鼠标的告示" : {
       "localizations" : {
         "en" : {
@@ -4505,7 +8058,18 @@
       }
     },
     "盖在全屏 App 上" : {},
+    "目标语言选「自动」时：原文是第一语言就译成第二语言，否则译成第一语言（简繁中文算同一种）。源语言和目标语言在翻译浮窗顶部切换，会一直记住。" : {},
     "直接粘贴" : {},
+    "直接粘贴第 1–9 条" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paste item 1–9 directly"
+          }
+        }
+      }
+    },
     "看、改、搜索、归档便签，找回删掉的" : {},
     "看得见的部分里没找到要打码的内容" : {},
     "看更新了什么" : {
@@ -4550,7 +8114,9 @@
     },
     "看说明全文" : {},
     "看输出" : {},
+    "真人发音来自有道词典，会把要读的单词发给有道；取不到时用系统声音。句子用系统声音，可以在 系统设置 › 辅助功能 › 朗读内容 里下载音质更好的声音。" : {},
     "知道了" : {},
+    "知道鼠标停在哪个图标上，列出、切换和关掉窗口；没有它用不了" : {},
     "石墨色" : {
       "localizations" : {
         "en" : {
@@ -4564,9 +8130,98 @@
     "秒后开始" : {},
     "移出收藏夹" : {},
     "移到废纸篓" : {},
-    "移除" : {},
-    "移除后点刘海没反应、刘海两边不挂计时；岛上的提示照常弹。设置留着，再添加就回来" : {},
-    "移除后菜单栏、主界面、启动器、快捷键里都没有它，设置和数据留着，再添加就回来" : {},
+    "移动选中" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move the selection"
+          }
+        }
+      }
+    },
+    "移动选中的标注" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move the selected annotation"
+          }
+        }
+      }
+    },
+    "移动选中，透镜跟着走" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move the selection; the Lens follows"
+          }
+        }
+      }
+    },
+    "移动选区 1 点（按住 ⇧ 10 点）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move the selection 1 point (10 with ⇧)"
+          }
+        }
+      }
+    },
+    "移除" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove"
+          }
+        }
+      }
+    },
+    "移除后点刘海没反应、刘海两边不挂计时；岛上的提示照常弹。设置留着，再添加就回来" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Once removed, clicking the notch does nothing and no timers hang beside it; notices still appear. Settings stay for when you add it again"
+          }
+        }
+      }
+    },
+    "移除后菜单栏、主界面、启动器、快捷键里都没有它，设置和数据留着，再添加就回来" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Once removed, it's gone from the menu bar, Home, the launcher, and shortcuts; settings and data stay for when you add it again"
+          }
+        }
+      }
+    },
+    "移除所选的 App" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove Selected App"
+          }
+        }
+      }
+    },
+    "移除所选的名字" : {},
+    "移除所选的文件夹" : {},
+    "程序坞,Dock,预览,缩略图,窗口,切换,悬停,延迟,多久,⌘Tab,Command Tab,切换器,最小化,桌面,全屏,辅助功能,屏幕录制" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dock,Preview,Thumbnails,Windows,Switch,Hover,Delay,How Long,⌘Tab,Command Tab,App Switcher,Minimize,Desktop,Full Screen,Accessibility,Screen Recording"
+          }
+        }
+      }
+    },
     "程序坞预览" : {
       "localizations" : {
         "en" : {
@@ -4589,6 +8244,16 @@
         }
       }
     },
+    "空搜索框里调整选中的收藏的顺序" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reorder the selected favorite in an empty search"
+          }
+        }
+      }
+    },
     "空格" : {
       "comment" : "按键名：空格键（快捷键里显示成 ⌥空格）",
       "localizations" : {
@@ -4601,6 +8266,16 @@
       }
     },
     "立即同步" : {},
+    "笔记,备忘,便利贴,快速记,记一条,字号,字体大小,最近删除,归档,备份,导出,导入,屏幕边缘,边缘,药丸,标签,色块,感应范围,一直展开,悬停,预览,全屏,显示器,便签大小,Markdown,粗体,斜体,链接,引用,行距,行高,间距,代码块" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notes,Memo,Sticky Notes,Quick Note,Jot,Text Size,Font Size,Recently Deleted,Archive,Backup,Export,Import,Screen Edge,Edge,Pill,Tabs,Color,Hover Area,Always Expanded,Hover,Preview,Full Screen,Display,Note Size,Markdown,Bold,Italic,Link,Quote,Line Spacing,Line Height,Spacing,Code Block"
+          }
+        }
+      }
+    },
     "第 %lld 页" : {},
     "第一次识字要等一分钟左右，以后就快了" : {
       "localizations" : {
@@ -4661,6 +8336,16 @@
     },
     "管理收藏夹" : {},
     "管理收藏夹…" : {},
+    "管理收藏夹里：选择 / 给选中的改名（双击同样；输入框里有字时 ↩ 是新建）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In Manage Collections: choose / rename the selected one (or double-click; with text in the field, ↩ creates a new one)"
+          }
+        }
+      }
+    },
     "管理状态…" : {
       "localizations" : {
         "en" : {
@@ -4673,8 +8358,38 @@
     },
     "类型" : {},
     "粘贴" : {},
+    "粘贴为纯文本（打开「默认粘贴为纯文本」后是保留格式粘贴）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paste as plain text (with plain text as the default, pastes with formatting)"
+          }
+        }
+      }
+    },
     "粘贴到「终端」里运行，程序坞会重启一下" : {},
     "粘贴到当前 App（↩）" : {},
+    "粘贴回原 App、划词翻译、截图识别窗口里的元素、长截图自动滚动、录屏显示按键、状态屏拦住键鼠、程序坞预览" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pasting back into apps, Translate Selection, detecting elements in windows for screenshots, auto-scrolling Scrolling Capture, showing keys in screen recordings, Status Screen input blocking, Dock Preview"
+          }
+        }
+      }
+    },
+    "粘贴选中的条目（双击同样，设置里可改成点一下就粘贴；多选时全是文本合并、全是文件一起粘贴，其余依次粘贴）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paste the selected item (or double-click; Settings can make it a single click. With several selected: text is merged, files are pasted together, anything else one by one)"
+          }
+        }
+      }
+    },
     "系统 App 在前、其余按名字排" : {},
     "系统听写可以设成连按这个键，设了的话两边都会响应" : {
       "localizations" : {
@@ -4682,6 +8397,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "System dictation can use a double press of this key. If it does, both will respond."
+          }
+        }
+      }
+    },
+    "系统命令" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "System Commands"
           }
         }
       }
@@ -4697,13 +8422,42 @@
         }
       }
     },
-    "系统强调色选「多色」时使用品牌粉" : {},
-    "系统提示" : {},
+    "系统强调色选「多色」时使用品牌粉" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uses brand pink when the system accent color is Multicolor"
+          }
+        }
+      }
+    },
+    "系统提示" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "System Notices"
+          }
+        }
+      }
+    },
     "系统的应用程序捏合还开着" : {},
     "系统的捏合手势还开着" : {},
-    "系统自己的音量、亮度提示不再出现；按着 ⌥ 时照旧打开系统设置" : {},
+    "系统自己的音量、亮度提示不再出现；按着 ⌥ 时照旧打开系统设置" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The system's own volume and brightness indicators no longer appear; holding ⌥ still opens System Settings"
+          }
+        }
+      }
+    },
     "系统表情" : {},
     "系统表情：%@" : {},
+    "系统要你自己打开一次访达扩展，右键里才会出现这几项" : {},
+    "系统设置里打开了「减弱动态效果」时，这些动画都不做，标题也不晃。%@" : {},
     "系统词典" : {},
     "系统词典的中文释义" : {},
     "紫色" : {
@@ -4727,8 +8481,29 @@
       }
     },
     "结果给谁" : {},
-    "继续" : {},
+    "给内置命令和脚本改在启动器里要打的词，关掉用不上的。" : {},
+    "给应用起个顺手的名字，在启动器里输入就能找到" : {},
+    "继续" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continue"
+          }
+        }
+      }
+    },
     "继续同步" : {},
+    "绳子滑下来（移开收起；截完图挂上去时也会自己滑下来）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The line slides down (and back up when you move away; it also slides down when a new screenshot is hung)"
+          }
+        }
+      }
+    },
     "绿色" : {
       "localizations" : {
         "en" : {
@@ -4752,7 +8527,20 @@
     },
     "编辑…" : {},
     "编辑脚本" : {},
+    "编辑选中的脚本（自带的先复制一份到我的脚本）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit the selected script (a built-in one is copied to My Scripts first)"
+          }
+        }
+      }
+    },
     "网址" : {},
+    "网址里有 {query} 的是搜索（「关键词 空格 内容」直达，开关 = 没有本地结果时兜底），没有的是快捷链接。拖动调整顺序，搜索的关键词重复时用靠前的；点一行编辑。" : {},
+    "网址里有 {query}：搜索，输入「关键词 空格 内容」时内容替换进 {query}。" : {},
+    "网址里没有 {query}：快捷链接，搜名字或关键词直接打开这个网址（也可以填 / 或 ~ 开头的路径）。" : {},
     "网络已恢复" : {
       "localizations" : {
         "en" : {
@@ -4784,6 +8572,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Translate"
+          }
+        }
+      }
+    },
+    "翻译 · 历史" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Translate · History"
           }
         }
       }
@@ -4825,7 +8623,37 @@
     "翻译改过的原文（↩）" : {},
     "翻译服务" : {},
     "翻译浮窗里的按键" : {},
+    "翻译输入的文字（单个英文词另有词典释义）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Translate the typed text (a single English word also gets a dictionary definition)"
+          }
+        }
+      }
+    },
     "翻译过的原文和译文会记在这里" : {},
+    "翻译（文本，或识别出文字的图片）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Translate (text, or an image with recognized text)"
+          }
+        }
+      }
+    },
+    "翻页，跟手；鼠标滚轮上下滚也行，点底下的圆点跳页" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn pages, following your fingers; the scroll wheel works too, and the dots at the bottom jump to a page"
+          }
+        }
+      }
+    },
     "耳机" : {
       "localizations" : {
         "en" : {
@@ -4836,8 +8664,38 @@
         }
       }
     },
-    "耳机连上" : {},
+    "耳机连上" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Headphones connected"
+          }
+        }
+      }
+    },
     "脚本以你的身份运行，能用 Kitty Tools 已有的辅助功能、屏幕录制、完全磁盘访问授权，只放你信得过的。从网上下载的脚本，第一次运行前会先在启动器里给你看一眼全文。" : {},
+    "脚本以你的身份运行，能用 Kitty Tools 已有的辅助功能、屏幕录制等授权，只放你信得过的脚本；从网上下载的，第一次运行前会先给你看一眼全文。" : {},
+    "脚本全文 / 输出那一页：滚动正文（PageUp / PageDown 一屏）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On a script's source / output page: scroll the text (Page Up / Page Down by a screen)"
+          }
+        }
+      }
+    },
+    "脚本全文那一页：看过了，运行；输出那一页：粘贴全部输出（⌘C 复制）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On a script's source page: run it once you've read it; on the output page: paste all output (⌘C copies)"
+          }
+        }
+      }
+    },
     "脚本命令" : {
       "localizations" : {
         "en" : {
@@ -4861,13 +8719,43 @@
       }
     },
     "脚本文件夹里的每个脚本就是启动器里的一条命令" : {},
+    "脚本用 .sh 文件的默认 App 打开；默认的那个不是编辑器（比如终端，一开就跑了）时，改用打开纯文本的那个编辑器。想换编辑器：在访达里选一个 .sh 文件，⌘I 显示简介，「打开方式」选好后点「全部更改…」。启动器里选中一条脚本，⌘E 就能改它。" : {},
     "脚本被删掉、关掉或者换过了" : {},
     "脚本输出" : {},
+    "脚本输出那一页：用同样的参数再跑一次" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On a script's output page: run again with the same arguments"
+          }
+        }
+      }
+    },
     "自动" : {},
     "自动下载动画表情" : {},
     "自动复制译文" : {},
-    "自动检查更新" : {},
+    "自动检查更新" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check for updates automatically"
+          }
+        }
+      }
+    },
     "自动检测" : {},
+    "自动滚动 / 停下（要辅助功能授权）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auto-scroll / stop (needs Accessibility permission)"
+          }
+        }
+      }
+    },
     "自动结束" : {},
     "自动（%@ ⇄ %@）" : {
       "localizations" : {
@@ -4892,14 +8780,52 @@
         }
       }
     },
+    "至少留一个状态。" : {},
+    "英文,输入法,书签,浏览历史,历史,浏览器,Safari,Chrome,Edge,Arc,Brave,Firefox,完全磁盘访问,搜索,引擎,快捷链接,关键词,兜底,使用记录,常用,最近,收藏,文件,open,find,Spotlight,位置,面板位置,鼠标,跟随鼠标,上次位置,脚本,脚本命令,命令,别名,写法,AI,新建脚本,导入" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "English,Input Method,Bookmarks,Browsing History,History,Browser,Safari,Chrome,Edge,Arc,Brave,Firefox,Full Disk Access,Search,Search Engine,Quicklinks,Keyword,Fallback,Usage,Frequent,Recent,Favorites,Files,open,find,Spotlight,Position,Panel Position,Mouse,Follow Mouse,Last Position,Scripts,Script Commands,Commands,Alias,How to Write,AI,New Script,Import"
+          }
+        }
+      }
+    },
     "英文单词发音" : {},
     "英文单词用真人发音" : {},
     "英音" : {},
     "范围" : {},
     "范围（⇧Tab 切换）" : {},
-    "菜单栏" : {},
-    "菜单高亮和焦点环由系统绘制，仍使用系统强调色" : {},
-    "蓝牙耳机、AirPods、USB 耳机：刘海两边出一下，蓝牙耳机带电量" : {},
+    "菜单栏" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Menu Bar"
+          }
+        }
+      }
+    },
+    "菜单高亮和焦点环由系统绘制，仍使用系统强调色" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Menu highlights and focus rings are drawn by the system and keep the system accent color"
+          }
+        }
+      }
+    },
+    "蓝牙耳机、AirPods、USB 耳机：刘海两边出一下，蓝牙耳机带电量" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bluetooth headphones, AirPods, USB headsets: shows briefly beside the notch, with battery level for Bluetooth"
+          }
+        }
+      }
+    },
     "蓝色" : {
       "localizations" : {
         "en" : {
@@ -4911,6 +8837,26 @@
       }
     },
     "行为" : {},
+    "补全（计算结果接着算、目录接着往下找）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Complete (keep calculating with the result, keep going into the folder)"
+          }
+        }
+      }
+    },
+    "装了别的刘海 App 时可以关掉「点刘海打开」：提示和挂在刘海两边的录制计时这些照常，快捷键照样能叫出快捷动作。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "If you use another notch app, you can turn off “Click the notch to open”: notices and recording timers beside the notch still work, and the shortcut still brings up the quick actions."
+          }
+        }
+      }
+    },
     "装好会自动重新打开" : {
       "localizations" : {
         "en" : {
@@ -4969,8 +8915,18 @@
     "要第一行是 #! 的一整个脚本：先把 AI 给的脚本复制下来" : {},
     "要翻译的文字和密钥会发到这些地址（共 %lld 个）：" : {},
     "视图" : {},
+    "角落的缩略图可以拖出、钉图、存储；选「都不要」后截图只在右下角闪一下，仍然进历史。" : {},
     "触发角" : {},
-    "触感反馈" : {},
+    "触感反馈" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Haptic feedback"
+          }
+        }
+      }
+    },
     "触控板" : {},
     "触控板手势" : {},
     "让 AI 来写" : {},
@@ -4981,7 +8937,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Keeps the text, images, and files you copy so you can paste them anytime"
+            "value" : "Keeps what you copy, ready to paste again"
           }
         }
       }
@@ -4992,7 +8948,26 @@
     "记录翻译历史" : {},
     "记成新便签" : {},
     "记点什么…" : {},
-    "许可全文" : {},
+    "许可全文" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Full License"
+          }
+        }
+      }
+    },
+    "设了退出密码时：按住满 2 秒后输入密码（⌫ 删一位，Esc 不输了）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "With an exit passcode: after holding for 2 seconds, enter the passcode (⌫ deletes a digit, Esc gives up)"
+          }
+        }
+      }
+    },
     "设置" : {
       "localizations" : {
         "en" : {
@@ -5017,6 +8992,26 @@
     "设置、快捷键、翻译服务、网页搜索、片段和文字收藏、生词本、便签存成一个文件，换电脑或重装后导回来" : {},
     "设置与数据" : {},
     "设置刚改过的话，再右键一次" : {},
+    "设置失败：%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't change this: %@"
+          }
+        }
+      }
+    },
+    "访达,Finder,右键,右键菜单,上下文菜单,拷贝路径,复制路径,路径,终端,Terminal,编辑器,打开方式,用 App 打开,在 App 中打开,改名,扩展,登录项与扩展,新建文件,新建,模板,后缀,Word,Excel,PPT,Markdown,文本,压缩,解压,zip,7z,跳过,排除,忽略,node_modules" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finder,Right-click,Context Menu,Copy Path,Path,Terminal,Editor,Open With,Open in App,Rename,Extension,Login Items & Extensions,New File,New,Template,File Extension,Word,Excel,PPT,Markdown,Text,Compress,Extract,Unzip,zip,7z,Skip,Exclude,Ignore,node_modules"
+          }
+        }
+      }
+    },
     "访达不在最前面" : {},
     "访达右键" : {
       "localizations" : {
@@ -5062,6 +9057,7 @@
         }
       }
     },
+    "识别窗口里的元素要它；没授权时只认窗口" : {},
     "识字" : {
       "localizations" : {
         "en" : {
@@ -5074,11 +9070,60 @@
     },
     "识字后把同一段里的换行接起来" : {},
     "识字失败，没有打码" : {},
-    "识字并拷贝" : {},
+    "识字并拷贝" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Capture Text and Copy"
+          }
+        }
+      }
+    },
+    "识字并拷贝（翻译在右键菜单里）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Capture text and copy (translation is in the right-click menu)"
+          }
+        }
+      }
+    },
     "译文字号" : {},
     "试听" : {},
     "试听快门声" : {},
     "语言" : {},
+    "语言,第一语言,第二语言,字号,换行,自动复制,复制即译,历史,导出,CSV,Anki,位置,浮窗位置,鼠标,清空,服务,密钥,查词,词典,单词,音标,例句,生词本,收藏,智谱,OpenAI,Anthropic,DeepL,Google,百度,有道,微软,火山,腾讯,AI,模型" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Language,First Language,Second Language,Text Size,Line Breaks,Copy Automatically,Translate on Copy,History,Export,CSV,Anki,Position,Panel Position,Mouse,Clear,Services,API Key,Look Up,Dictionary,Word,Phonetics,Examples,Word List,Favorites,Zhipu,OpenAI,Anthropic,DeepL,Google,Baidu,Youdao,Microsoft,Volcengine,Tencent,AI,Model"
+          }
+        }
+      }
+    },
+    "语言,英文,中文,English,Language,外观,浅色,深色,暗黑,主题,跟随系统,强调色,主题色,颜色,开机,登录,自启,权限,辅助功能,屏幕录制,麦克风,剪贴板访问,隐私,菜单栏,状态栏,图标,隐藏,彩色,单色,挤压,弹开,动画,动效,导出,导入,备份,恢复,迁移,换电脑,配置,功能,模块,关闭,停用,启用,不用,插件,添加,移除,同步,iCloud,云盘,多台,几台,另一台,数据,数据目录,访达,文件夹" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Language,English,Chinese,Appearance,Light,Dark,Dark Mode,Theme,Auto,Accent Color,Color,Startup,Login,Open at Login,Permissions,Accessibility,Screen Recording,Microphone,Clipboard Access,Privacy,Menu Bar,Status Bar,Icon,Hide,Colorful,Monochrome,Squeeze,Bounce,Animation,Motion,Export,Import,Backup,Restore,Migrate,New Mac,Configuration,Features,Modules,Turn Off,Disable,Enable,Plugins,Add,Remove,Sync,iCloud,iCloud Drive,Multiple Macs,Another Mac,Data,Data Folder,Finder,Folder"
+          }
+        }
+      }
+    },
+    "语言、翻译服务与密钥、历史" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Languages, translation services and keys, history"
+          }
+        }
+      }
+    },
     "说明" : {},
     "请先把 Kitty Tools 拖进「应用程序」，从那里打开后再更新" : {
       "localizations" : {
@@ -5131,6 +9176,26 @@
         }
       }
     },
+    "读系统「日历」里的日程，打开「下一个日程」时会问一次授权。全天的、已拒绝的不算下一个日程；日程的内容只留在这台 Mac 上，不进最近的提示。月历本身不用授权。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reads events from the system Calendar and asks for permission once when you turn on the next event. All-day and declined events don't count as the next event; event details stay on this Mac and stay out of recent notices. The month calendar needs no permission."
+          }
+        }
+      }
+    },
+    "读系统的「正在播放」要另起一个小进程（约 4 MB，没在放时不耗电），关掉就退出。暂停 30 秒后刘海两边收起；想接着放，点刘海再两指往下滑一次还找得到它。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reading the system's Now Playing takes a small separate process (about 4 MB, no power used when nothing is playing) that quits when this is off. After 30 seconds paused it leaves the notch; to resume, click the notch and swipe down with two fingers once more to find it."
+          }
+        }
+      }
+    },
     "贴给你常用的 AI、写上想做什么；它给的脚本到 设置 › 启动器「从剪贴板新建」" : {
       "localizations" : {
         "en" : {
@@ -5147,8 +9212,19 @@
     "越松越容易捏出来" : {},
     "跟随系统截屏的存储位置" : {},
     "跟随鼠标" : {},
+    "路径是完整路径、不加引号，选了几个就一行一个，空白处是这个文件夹的路径；拷好后刘海岛说一声，剪贴板历史里也有。" : {},
     "跳过 %lld 个已经卸掉的 App" : {},
     "跳过叫这个名字的文件和文件夹" : {},
+    "辅助功能" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Accessibility"
+          }
+        }
+      }
+    },
     "辅助功能、屏幕录制" : {
       "localizations" : {
         "en" : {
@@ -5185,7 +9261,16 @@
     },
     "边上什么都不画，鼠标靠过去照样展开" : {},
     "运行" : {},
-    "返回" : {},
+    "返回" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Back"
+          }
+        }
+      }
+    },
     "返回上一级：%@" : {
       "localizations" : {
         "en" : {
@@ -5219,7 +9304,16 @@
       }
     },
     "还有 %lld 条便签" : {},
-    "还没按过" : {},
+    "还没按过" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not tried yet"
+          }
+        }
+      }
+    },
     "还没有便签" : {},
     "还没有剪贴板历史" : {},
     "还没有截图" : {},
@@ -5238,6 +9332,7 @@
     "还没有收藏夹。放进收藏夹的条目都算收藏，不会被清理" : {},
     "还没有翻译历史" : {},
     "还没有自己的脚本" : {},
+    "还没有，点下面的 + 添加" : {},
     "还没有：点下面的「+」加一个名字" : {},
     "还没给辅助功能授权，进不了状态屏" : {
       "localizations" : {
@@ -5250,7 +9345,16 @@
       }
     },
     "这一段还没做完" : {},
-    "这一版系统上，收起程序坞图标会让之后弹出的面板接不到键盘（启动台、启动器不能直接打字），所以默认一直留着。关掉后，设置窗口关上时图标跟着收起" : {},
+    "这一版系统上，收起程序坞图标会让之后弹出的面板接不到键盘（启动台、启动器不能直接打字），所以默认一直留着。关掉后，设置窗口关上时图标跟着收起" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On this version of macOS, hiding the Dock icon keeps panels that open afterward from getting the keyboard (you can't type straight into Launchpad or the launcher), so it stays by default. When off, the icon goes away when the Settings window closes"
+          }
+        }
+      }
+    },
     "这一项没做成" : {},
     "这个 App 会被移到废纸篓。" : {},
     "这个地址没加密（http），密码和同步的内容在网上都是明文的" : {},
@@ -5260,6 +9364,17 @@
     "这个脚本是从网上下载的，先看一眼再运行。按回车运行，按 Esc 返回" : {},
     "这个角也设了系统的触发角" : {},
     "这个输出设备不能调音量" : {},
+    "这些小工具都住在菜单栏里，用快捷键随叫随到。\n勾上要用的，以后在 设置 › 通用 › 功能 里随时改。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "These little tools live in the menu bar, a shortcut away.\nCheck the ones you want; change them anytime in Settings › General › Features."
+          }
+        }
+      }
+    },
+    "这几项默认关着。点开头的文件本来就是隐藏的，不出现「取消隐藏」；隐藏了的东西，在访达里按 ⇧⌘. 就能看到。拷贝哈希只给文件算，算完也记进剪贴板历史。彻底删除每次都先问，删了不进废纸篓，找不回来。" : {},
     "这台 Mac 上用不了（系统改了触控板的接口）：用快捷键或触发角打开" : {},
     "这台 Mac 上的终端和编辑器" : {},
     "这台 Mac 的系统设置里没有访达扩展的入口（macOS 15.2 起才有）：在终端里运行「%@」打开它。" : {},
@@ -5309,6 +9424,26 @@
     "这段%@不带麦克风" : {},
     "这里还没有" : {},
     "进入" : {},
+    "进入之后按住 2 秒：退出" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "After entering, hold for 2 seconds to exit"
+          }
+        }
+      }
+    },
+    "进入之后用鼠标按住屏幕底部的提示 2 秒：退出（动一下鼠标，提示就出现）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "After entering, press and hold the hint at the bottom of the screen for 2 seconds to exit (move the mouse to show the hint)"
+          }
+        }
+      }
+    },
     "进入哪个状态" : {},
     "进入排在最前面的状态" : {
       "localizations" : {
@@ -5343,6 +9478,16 @@
       }
     },
     "连接服务器…" : {},
+    "连着选过去（从现在这一张往那个方向长）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Extend the selection (grows from the current one in that direction)"
+          }
+        }
+      }
+    },
     "退出" : {
       "localizations" : {
         "en" : {
@@ -5375,6 +9520,16 @@
       }
     },
     "退出密码" : {},
+    "适配 / 原始大小" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fit / actual size"
+          }
+        }
+      }
+    },
     "选 PNG 文件时，剪贴板里是一个图片文件，和拷贝一个文件一样：能粘进聊天窗口和文件夹，只认文件的跨电脑剪贴板工具也传得过去；只收图像的程序粘不进去" : {},
     "选一个几台电脑都看得到的空文件夹（比如在 iCloud 云盘里新建一个），或者连一个 WebDAV 服务器；每台选同一个" : {},
     "选一个状态进入" : {
@@ -5387,13 +9542,42 @@
         }
       }
     },
+    "选中一段字时粘贴一个网址：粘成链接，字不变" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paste a URL with text selected: turns it into a link, the text stays"
+          }
+        }
+      }
+    },
+    "选中上次的区域" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Select the previous area"
+          }
+        }
+      }
+    },
     "选中条目按 ⌘D 收藏；收藏不受保留天数影响" : {},
     "选中的东西不在了" : {},
     "选中的东西不在了，或者桌面上写不进去" : {},
     "选中的条目在原地展开预览；关掉就是纯列表，一屏多露出几行" : {},
     "选中的没有扩展名，或者没有权限" : {},
     "选中链接时联网读取；本机、内网和带登录令牌的网址不读" : {},
-    "选择 App…" : {},
+    "选择 App…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose App…"
+          }
+        }
+      }
+    },
     "选择…" : {},
     "选择文件…" : {},
     "选择文件夹…" : {},
@@ -5404,6 +9588,78 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Choose Status…"
+          }
+        }
+      }
+    },
+    "选择的 App 会出现在访达右键里：在“这个 App”中打开" : {},
+    "选择的 App 在前台时，快捷键交给它" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When a chosen app is in front, shortcuts go to it"
+          }
+        }
+      }
+    },
+    "选择的 App 里复制的内容不进剪贴板历史" : {},
+    "选状态时：不进了，关闭" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choosing a status: close without entering"
+          }
+        }
+      }
+    },
+    "选状态时：换一张（Tab、⇧Tab，或再按一次全局快捷键也行）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choosing a status: switch cards (Tab, ⇧Tab, or the global shortcut again)"
+          }
+        }
+      }
+    },
+    "选状态时：直接进入第 1–9 个状态" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choosing a status: enter status 1–9 directly"
+          }
+        }
+      }
+    },
+    "选状态时：进入选中的状态（单击卡片同样）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choosing a status: enter the selected one (or click a card)"
+          }
+        }
+      }
+    },
+    "逐级退出，最后取消截图" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Back out step by step, then cancel the screenshot"
+          }
+        }
+      }
+    },
+    "逐级退出：放大预览、菜单、对话框、待删标签、搜索词、多选，最后关闭（固定着也关）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Back out step by step: enlarged preview, menu, dialog, tag about to be removed, search text, multiple selection, then close (even when pinned)"
           }
         }
       }
@@ -5419,7 +9675,27 @@
       }
     },
     "那次的输出没留着" : {},
+    "都准备好了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You're All Set"
+          }
+        }
+      }
+    },
     "里面的 %lld 条便签会被永久删除，不能撤销。" : {},
+    "重做刚撤销的打字" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Redo the typing you just undid"
+          }
+        }
+      }
+    },
     "重复" : {},
     "重新打开 Kitty Tools 后换成新的语言" : {
       "localizations" : {
@@ -5431,11 +9707,39 @@
         }
       }
     },
-    "重新翻译" : {},
+    "重新翻译" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Translate Again"
+          }
+        }
+      }
+    },
+    "重新翻译这条（双击同样）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Translate this one again (or double-click)"
+          }
+        }
+      }
+    },
     "重新读取" : {},
     "重新读取服务端的模型列表" : {},
     "重新读取模型列表" : {},
-    "重看欢迎引导" : {},
+    "重看欢迎引导" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show Welcome Again"
+          }
+        }
+      }
+    },
     "重试" : {
       "localizations" : {
         "en" : {
@@ -5457,10 +9761,59 @@
         }
       }
     },
-    "钉到屏幕" : {},
+    "钉到屏幕" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pin to Screen"
+          }
+        }
+      }
+    },
+    "钉图" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pinned Screenshots"
+          }
+        }
+      }
+    },
+    "钉在屏幕上" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pin to the screen"
+          }
+        }
+      }
+    },
     "链接显示网页标题和图片" : {},
+    "锁定比例（新框是正方形）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lock aspect ratio (new selections are square)"
+          }
+        }
+      }
+    },
     "锁屏时清空普通历史" : {},
     "键盘鼠标的拦截没建起来" : {},
+    "长截图" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scrolling Capture"
+          }
+        }
+      }
+    },
     "长截图失败" : {
       "localizations" : {
         "en" : {
@@ -5513,7 +9866,16 @@
         }
       }
     },
-    "隐藏后，再打开一次 Kitty Tools（在启动器或访达里）会打开主界面；快捷键照常能用" : {},
+    "隐藏后，再打开一次 Kitty Tools（在启动器或访达里）会打开主界面；快捷键照常能用" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When hidden, open Kitty Tools again (from the launcher or Finder) to show Home; shortcuts keep working"
+          }
+        }
+      }
+    },
     "需要「屏幕录制」授权" : {
       "localizations" : {
         "en" : {
@@ -5534,7 +9896,16 @@
         }
       }
     },
-    "需要在 系统设置 › 通用 › 登录项与扩展 里允许本 App 在后台运行" : {},
+    "需要在 系统设置 › 通用 › 登录项与扩展 里允许本 App 在后台运行" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allow this app to run in the background in System Settings › General › Login Items & Extensions"
+          }
+        }
+      }
+    },
     "需要的话点「撤销」换回原来的" : {},
     "静音" : {
       "localizations" : {
@@ -5549,8 +9920,26 @@
     "靠右" : {},
     "面板" : {},
     "面板位置" : {},
-    "面板大小" : {},
-    "面板里的按键" : {},
+    "面板大小" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Panel size"
+          }
+        }
+      }
+    },
+    "面板里的按键" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keys in panels"
+          }
+        }
+      }
+    },
     "音乐" : {
       "comment" : "「音乐」App 的名字",
       "localizations" : {
@@ -5562,7 +9951,16 @@
         }
       }
     },
-    "音乐、播客、浏览器里的视频：刘海两边是封面和跳动条，点开能暂停、切歌、拖进度" : {},
+    "音乐、播客、浏览器里的视频：刘海两边是封面和跳动条，点开能暂停、切歌、拖进度" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Music, podcasts, and videos in the browser: artwork and a bouncing bar beside the notch; open it to pause, skip, or scrub"
+          }
+        }
+      }
+    },
     "音量" : {
       "localizations" : {
         "en" : {
@@ -5574,10 +9972,37 @@
       }
     },
     "音量 %lld%%" : {},
-    "音量和亮度" : {},
+    "音量和亮度" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Volume and Brightness"
+          }
+        }
+      }
+    },
     "页、文件夹、顺序照旧；卸掉的跳过" : {},
-    "麦克风" : {},
-    "麦克风、文件夹这类授权等用到时再问；以后都在 设置 › 通用 › 权限 里" : {},
+    "麦克风" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Microphone"
+          }
+        }
+      }
+    },
+    "麦克风、文件夹这类授权等用到时再问；以后都在 设置 › 通用 › 权限 里" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Permissions like the microphone and folders are asked for when needed; all are in Settings › General › Permissions"
+          }
+        }
+      }
+    },
     "麦克风断开了，后面没有麦克风声音" : {},
     "黄色" : {
       "localizations" : {
@@ -5605,7 +10030,19 @@
       }
     },
     "鼠标在标签上停一下就打开，不用点" : {},
-    "鼠标推到角上停一下打开" : {}
+    "鼠标在程序坞的图标上停这么久才弹出，弹出后移到别的图标上马上换。点一张切到那扇窗口，悬停时点左上角的 ✕ 关掉它。最小化的、隐藏的和别的桌面上的窗口也列出来。" : {},
+    "鼠标挪到弹出的提示上：停住、展开看全文和按钮；在岛上双指往上滑收起" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move the pointer onto a notice: it stays and expands to show the full text and buttons; swipe up with two fingers on it to dismiss"
+          }
+        }
+      }
+    },
+    "鼠标推到角上停一下打开" : {},
+    "鼠标靠到屏幕边上的药丸就展开一列标签，点一张，便签从边缘滑出来。按住 ⌥ 拖药丸可以换边、换高度。右键一张标签可以直接固定、换颜色、浮到屏幕上、归档、删除；右键「+」或标签之间的空处有新建便签、全部便签和设置。打开的便签点别处就收起，固定（⌘P）之后不收。按住打开的便签侧边那张标签往外拖，它就浮在屏幕上、可以拉大小。浮着的便签一直在别的窗口上面；固定（⌘P）之后，重启还回到原处。" : {}
   },
   "version" : "1.0"
 }

@@ -36,7 +36,9 @@ struct TranslateServiceDetail: View {
     let service = binding(current)
     let status = current.settingsStatus
     return VStack(spacing: 0) {
-      DetailHeader(title: current.name, status: status.text, isProblem: status.isProblem) {
+      DetailHeader(
+        title: "\(current.name)", status: "\(status.text)", isProblem: status.isProblem
+      ) {
         ServiceTile(service: current, size: 40)
       }
       fields(current, service: service)

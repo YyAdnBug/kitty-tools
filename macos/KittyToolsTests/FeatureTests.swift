@@ -128,28 +128,28 @@ struct FeatureTests {
   @Test func cheatSheetFollowsFeatures() {
     let full = ShortcutsSheet.groups(enabled: all)
     let noTranslate = ShortcutsSheet.groups(enabled: all.subtracting([.translate]))
-    #expect(!noTranslate.contains { $0.title.hasPrefix("翻译") })
-    let clipboard = noTranslate.first { $0.title == "剪贴板" }
+    #expect(!noTranslate.contains { $0.title.key.hasPrefix("翻译") })
+    let clipboard = noTranslate.first { $0.title.key == "剪贴板" }
     #expect(clipboard?.entries.contains { $0.keys == ["⌘T"] } == false)
-    #expect(full.first { $0.title == "剪贴板" }?.entries.contains { $0.keys == ["⌘T"] } == true)
+    #expect(full.first { $0.title.key == "剪贴板" }?.entries.contains { $0.keys == ["⌘T"] } == true)
     #expect(
-      noTranslate.first { $0.title == "启动器" }?.entries.contains { $0.keys == ["fy"] } == false)
+      noTranslate.first { $0.title.key == "启动器" }?.entries.contains { $0.keys == ["fy"] } == false)
 
     // 框选也是截图翻译和录屏的第一步：截图关了、翻译开着时这一组还在，只是没有截图的全局键
     let noShots = ShortcutsSheet.groups(enabled: all.subtracting([.screenshot]))
-    let selecting = noShots.first { $0.title == "截图 · 框选" }
+    let selecting = noShots.first { $0.title.key == "截图 · 框选" }
     #expect(selecting?.globals.isEmpty == true)
-    #expect(!noShots.contains { $0.title == "截图 · 标注" })
-    #expect(!noShots.contains { $0.title == "钉图" })
+    #expect(!noShots.contains { $0.title.key == "截图 · 标注" })
+    #expect(!noShots.contains { $0.title.key == "钉图" })
 
     let noRecord = ShortcutsSheet.groups(enabled: all.subtracting([.record]))
-    #expect(!noRecord.contains { $0.title == "录屏" })
+    #expect(!noRecord.contains { $0.title.key == "录屏" })
     #expect(
-      noRecord.first { $0.title == "截图 · 出图" }?.entries.contains { $0.keys == ["R"] } == false)
+      noRecord.first { $0.title.key == "截图 · 出图" }?.entries.contains { $0.keys == ["R"] } == false)
 
     // 都关掉只剩不归功能的那几组；刘海岛那一组一直列，没添加插件时只剩「提示怎么停住、收起」那一行（评审 5）
     let none = ShortcutsSheet.groups(enabled: [])
-    #expect(none.map(\.title) == ["刘海岛", "主界面", "设置"])
+    #expect(none.map(\.title.key) == ["刘海岛", "主界面", "设置"])
     #expect(none[0].globals.isEmpty && none[0].entries.count == 1)
   }
 
@@ -248,6 +248,6 @@ struct FeatureTests {
     #expect(SettingsPage.page(for: "访达右键", current: .about) == .finderMenu)
     // 添加了之后搜它的词停在它自己那页，不落到通用页
     #expect(SettingsPage.matching("访达右键", hidden: []) == [.finderMenu])
-    #expect(SettingsPage.finderMenu.groupTitle == "插件")
+    #expect(SettingsPage.finderMenu.section == .plugins)
   }
 }

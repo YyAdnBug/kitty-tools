@@ -59,12 +59,12 @@ struct FeaturesPage: View {
   static func summary(on: Set<Feature>, available: [Feature]) -> String {
     let opened = available.filter(on.contains)
     let closed = available.filter { !on.contains($0) }
-    if closed.isEmpty { return "\(available.count) 个功能都开着" }
-    if opened.isEmpty { return "\(available.count) 个功能都关着" }
+    if closed.isEmpty { return String(localized: "\(available.count) 个功能都开着") }
+    if opened.isEmpty { return String(localized: "\(available.count) 个功能都关着") }
     if closed.count <= opened.count {
-      return "开着 \(opened.count) 个；关着：" + closed.map(\.title).joined(separator: "、")
+      return String(localized: "开着 \(opened.count) 个；关着：\(closed.map(\.title).joinedAsList())")
     }
-    return "开着：" + opened.map(\.title).joined(separator: "、") + "；另外 \(closed.count) 个关着"
+    return String(localized: "开着：\(opened.map(\.title).joinedAsList())；另外 \(closed.count) 个关着")
   }
 }
 
