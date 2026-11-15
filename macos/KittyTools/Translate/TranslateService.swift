@@ -16,6 +16,10 @@ nonisolated struct TranslateService: Codable, Identifiable, Hashable, Sendable {
     /// 只查单词和短语的词典类服务：不是单词时不开卡片，不当主结果、不进静默替换（S2）
     var isDictionary: Bool { self == .youdaoDict }
 
+    /// 不花钱、不用自己申请 key 就能用的（2026-11-15）：智谱内置的免费模型、微软的 Edge 接口（没填 Key 时）、系统翻译、
+    /// 有道词典。设置「+」菜单里排最前、服务行标「免费」
+    var isFree: Bool { [.zhipu, .microsoft, .apple, .youdaoDict].contains(self) }
+
     var defaultName: String {
       switch self {
       case .zhipu: "智谱 GLM（免费）"

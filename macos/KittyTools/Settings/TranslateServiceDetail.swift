@@ -305,13 +305,18 @@ extension TranslateService {
         } else {
           secret("authKey") == nil ? ("未填密钥", true) : ("官方 API", false)
         }
-      case .microsoft: (secret("subscriptionKey") == nil ? "免费 Edge 接口" : "Azure 翻译", false)
+      case .microsoft: (secret("subscriptionKey") == nil ? "Edge 接口" : "Azure 翻译", false)
       case .apple: AppleTranslation.isAvailable ? ("离线 · 本机翻译", false) : ("要 macOS 26", true)
-      case .youdaoDict: ("免费 · 只查单词", false)
+      case .youdaoDict: ("只查单词", false)
       default:
         secretFields.allSatisfy { secret($0.name) != nil } ? ("已填密钥", false) : ("未填密钥", true)
       }
     return (text, missing && isEnabled)
+  }
+
+  /// 服务行标不标「免费」：种类不花钱，微软填了自己的 Key 走 Azure 就不算了。读钥匙串，只在设置里用
+  var settingsIsFree: Bool {
+    kind.isFree && (kind != .microsoft || secret("subscriptionKey") == nil)
   }
 }
 

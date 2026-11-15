@@ -243,23 +243,21 @@ struct TranslateTab: View {
     return a.isSameLanguage(as: b)
   }
 
-  /// 「+」（体检 B21 D15）：还没加的内置服务（18 pt 服务图标）｜「AI 服务」子菜单（厂商预设：名称、协议、地址填好）
-  /// + 自定义 / Azure。选了就加到列表末尾、推进详情页（AI 服务光标落在 API Key）
+  /// 「+」（体检 B21 D15）：还没加的内置服务（18 pt 服务图标；不花钱的一节「免费」排最前，2026-11-15）｜
+  /// 「AI 服务」子菜单（厂商预设：名称、协议、地址填好）+ 自定义 / Azure。选了就加到列表末尾、推进详情页
+  /// （AI 服务光标落在 API Key）
   private var addMenu: some View {
-    Menu {
-      ForEach(services.missingBuiltins, id: \.self) { kind in
-        let service = TranslateService.builtin(kind)
-        Button {
-          add(service)
-        } label: {
-          Label {
-            Text(service.name)
-          } icon: {
-            ServiceTile.menuIcon(service)
-          }
-        }
+    let missing = services.missingBuiltins
+    let free = missing.filter(\.isFree)
+    let paid = missing.filter { !$0.isFree }
+    return Menu {
+      if !free.isEmpty {
+        Section("免费") { builtinItems(free) }
       }
-      if !services.missingBuiltins.isEmpty { Divider() }
+      if !paid.isEmpty {
+        Section("要填密钥") { builtinItems(paid) }
+      }
+      if !missing.isEmpty { Divider() }
       Menu("AI 服务") {
         ForEach(TranslateService.aiPresets) { preset in
           Button {
@@ -288,6 +286,22 @@ struct TranslateTab: View {
     .menuIndicator(.hidden)
     .accessibilityLabel("添加翻译服务")
     .help("添加翻译服务")
+  }
+
+  private func builtinItems(_ kinds: [TranslateService.Kind]) -> some View {
+    ForEach(kinds, id: \.self) { kind in
+      let service = TranslateService.builtin(kind)
+      Button {
+        add(service)
+      } label: {
+        Label {
+          // 智谱的默认名带着「（免费）」：已经在「免费」那一节里了
+          Text(ProviderCardView.displayName(service))
+        } icon: {
+          ServiceTile.menuIcon(service)
+        }
+      }
+    }
   }
 
   /// 加一个服务：内置的直接启用（加回来就是要用；密钥是删之前留下的）、AI 服务等测试连接成功再自动启用；推进详情页
@@ -320,7 +334,8 @@ struct TranslateTab: View {
     List(selection: OrderedList.selection($selection, open: open)) {
       ForEach($services.services) { $service in
         ServiceListRow(
-          service: $service, status: service.settingsStatus, open: { open(service.id) },
+          service: $service, status: service.settingsStatus, isFree: service.settingsIsFree,
+          open: { open(service.id) },
           move: { move(service.id, by: $0) }
         )
         .tag(service.id)
@@ -372,6 +387,8 @@ struct TranslateTab: View {
 private struct ServiceListRow: View {
   @Binding var service: TranslateService
   let status: (text: String, isProblem: Bool)
+  /// 名字后面标「免费」（智谱默认名里的「（免费）」这时去掉，不说两遍）
+  var isFree = false
   let open: () -> Void
   /// 上移（-1）/ 下移（+1）
   let move: (Int) -> Void
@@ -380,7 +397,11 @@ private struct ServiceListRow: View {
     HStack(spacing: 10) {
       ServiceTile(service: service, size: 24)
       VStack(alignment: .leading, spacing: 1) {
-        Text(service.name).font(.system(size: 13))
+        HStack(spacing: 6) {
+          Text(isFree ? service.name.replacing(/（免费）$/, with: "") : service.name)
+            .font(.system(size: 13))
+          if isFree { FreeTag() }
+        }
         Text(status.text)
           .font(.system(size: 11))
           .foregroundStyle(OrderedList.statusStyle(isProblem: status.isProblem))
@@ -401,5 +422,18 @@ private struct ServiceListRow: View {
     .accessibilityAction(named: "设置", open)
     .accessibilityAction(named: "上移") { move(-1) }
     .accessibilityAction(named: "下移") { move(1) }
+  }
+}
+
+/// 服务行名字后面的「免费」：和浮窗里「自动」标签同一个样子（品牌粉 0.16 底、brandInk 字），和描边的「新」分得开
+private struct FreeTag: View {
+  var body: some View {
+    Text("免费")
+      .font(.system(size: 10, weight: .semibold))
+      .foregroundStyle(Style.brandInk)
+      .padding(.horizontal, 4)
+      .padding(.vertical, 1)
+      .background(Style.brand.opacity(0.16), in: .capsule)
+      .fixedSize()
   }
 }
