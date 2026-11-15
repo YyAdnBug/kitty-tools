@@ -110,13 +110,29 @@ internal static class ShortcutsSheet
                 Render();
             }
         };
-        search.TextChanged += (_, _) => Render();
-        // Esc 先清空搜索，再关（ContentDialog 自己的 Esc 在这之后）。
+        search.TextChanged += (_, _) =>
+        {
+            // 搜着时跨类列出、左栏不标选中；清空了回到原来那一类（同 mac）
+            var index = search.Text.Trim().Length == 0 ? Array.FindIndex(Pages, item => item.Page == selected) : -1;
+            if (list.SelectedIndex != index)
+            {
+                list.SelectedIndex = index;
+            }
+
+            Render();
+        };
+        // Esc 先清空搜索，再关（ContentDialog 自己的 Esc 在这之后）；↑↓ 换类（PLAN-v23 L2，mac 搜索框里 ↑↓ 换类）。
         search.PreviewKeyDown += (_, args) =>
         {
             if (args.Key == VirtualKey.Escape && search.Text.Length > 0)
             {
                 search.Text = string.Empty;
+                args.Handled = true;
+            }
+            else if (args.Key is VirtualKey.Up or VirtualKey.Down)
+            {
+                var current = Array.FindIndex(Pages, item => item.Page == selected);
+                list.SelectedIndex = Math.Clamp(current + (args.Key == VirtualKey.Up ? -1 : 1), 0, Pages.Length - 1);
                 args.Handled = true;
             }
         };

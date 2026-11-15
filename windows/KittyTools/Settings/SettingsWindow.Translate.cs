@@ -335,6 +335,8 @@ internal sealed partial class SettingsWindow
             var item = new MenuFlyoutItem { Text = text, IsEnabled = enabled };
             item.Click += (_, _) => action();
             menu.Items.Add(item);
+            // 列表里键盘也能用（PLAN-v23 L1）：Delete 删、Alt + ↑ / ↓ 挪，同右键菜单
+            SettingsUi.RememberAction(card, text, enabled, action);
         }
 
         void Move(int offset)

@@ -53,4 +53,19 @@ internal sealed partial class SettingsWindow
     internal void RecordKeyForProbe(string action, uint key, KittyTools.Core.HotKeyModifiers modifiers) => RecordKey(action, key, modifiers);
 
     internal void RestoreHotKeyForProbe(string action) => RestoreHotKey(action);
+
+    // ---- 列表和跟着开关变的行（第 3 批）
+
+    internal StackPanel ContentForProbe => _content;
+
+    internal void RebuildPageForProbe() => BuildPage(_currentPage);
+
+    /// <summary>页里叫 name 的那个有序列表（ListView 的读屏名字）。</summary>
+    internal ListView? ListForProbe(string name)
+        => _content.Children.OfType<ListView>().FirstOrDefault(list => Microsoft.UI.Xaml.Automation.AutomationProperties.GetName(list) == name);
+
+    /// <summary>列表第 index 行按了键（同 ListViewItem 的 KeyDown 那条路；不发真的按键）。</summary>
+    internal bool ListKeyForProbe(string name, int index, Windows.System.VirtualKey key, bool alt)
+        => ListForProbe(name) is { } list && list.Items[index] is ListViewItem { Content: Microsoft.UI.Xaml.Controls.Border row } &&
+           ListKey(key, alt, row, name, index);
 }

@@ -46,9 +46,11 @@ internal sealed partial class SettingsWindow
             _content.Children.Add(SettingsUi.Footnote("还没有提醒。点「＋」新建，或者在启动器里输「提醒 10分钟 喝水」。"));
         }
 
-        for (var index = 0; index < reminders.Count; index++)
+        // 拖动排序、键盘 Enter / Delete / Alt + ↑↓（PLAN-v23 L1，mac RemindersTab 的 List .onMove / onDeleteCommand）
+        if (reminders.Count > 0)
         {
-            _content.Children.Add(ReminderRow(reminders, index, Persist));
+            var reminderRows = reminders.Select((_, index) => ReminderRow(reminders, index, Persist)).ToList();
+            _content.Children.Add(ReorderableList(reminderRows, "提醒（拖动排序）", order => Persist(order.Select(index => reminders[index]).ToList())));
         }
 
         var isFull = reminders.Count >= Reminders.MaxCount;
@@ -72,7 +74,7 @@ internal sealed partial class SettingsWindow
         add.Flyout = menu;
         _content.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0), Children = { add } });
         _content.Children.Add(SettingsUi.Footnote(
-            "点一行编辑，右键能上移、下移和删除；一次性的提醒点了「知道了」就删掉。示例默认关着，打开才响。" +
+            "点一行编辑，拖动调整顺序，右键能上移、下移和删除；一次性的提醒点了「知道了」就删掉。示例默认关着，打开才响。" +
             (isFull ? $"最多 {Reminders.MaxCount} 条，已经满了。" : string.Empty)));
 
         // 稍后
@@ -143,13 +145,15 @@ internal sealed partial class SettingsWindow
         var card = SettingsUi.Card(
             reminder.Title, Reminders.Summary(reminder, DateTime.UtcNow, TimeZoneInfo.Local, statusTitle), toggle, () => _ = EditAsync(),
             leading: leading);
-        AutomationProperties.SetHelpText(card, "点一下编辑；右键有上移、下移和删除");
+        AutomationProperties.SetHelpText(card, "点一下或按 Enter 编辑；拖动或 Alt + 上下箭头排序；Delete 删除；右键有上移、下移和删除");
         var menu = new MenuFlyout();
         void Add(string text, bool enabled, Action action)
         {
             var item = new MenuFlyoutItem { Text = text, IsEnabled = enabled };
             item.Click += (_, _) => action();
             menu.Items.Add(item);
+            // 列表里键盘也能用（PLAN-v23 L1）：Delete 删、Alt + ↑ / ↓ 挪，同右键菜单
+            SettingsUi.RememberAction(card, text, enabled, action);
         }
 
         Add("编辑…", true, () => _ = EditAsync());

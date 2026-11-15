@@ -99,14 +99,40 @@ internal sealed partial class SettingsWindow
         Deck(() => AddCombo("感应范围", "鼠标离屏幕边缘多近就展开", new[] { "窄", "标准", "宽", "很宽" },
             Math.Max(Array.IndexOf(NoteDeckOptions.SenseChoices, settings.NotesDeckSense), 1),
             index => Save(() => settings.NotesDeckSense = NoteDeckOptions.SenseChoices[index])));
+        // 「一直展开」开着时「不显示药丸」没意义、「悬停即打开」开着时「悬停预览」没意义：跟着变灰（PLAN-v23 L5，mac NotesTab .disabled）
+        Border? hidesPill = null;
+        Border? preview = null;
         Deck(() => AddToggle("一直展开", "不缩成药丸，标签一直排在边上", settings.NotesDeckAlwaysFanned,
-            isOn => Save(() => settings.NotesDeckAlwaysFanned = isOn)));
-        Deck(() => AddToggle("不显示药丸", "边上什么都不画，鼠标靠过去照样展开", settings.NotesDeckHidesPill,
+            isOn =>
+            {
+                Save(() => settings.NotesDeckAlwaysFanned = isOn);
+                if (hidesPill is not null)
+                {
+                    SetCardEnabled(hidesPill, !isOn);
+                }
+            }));
+        Deck(() => hidesPill = AddToggle("不显示药丸", "边上什么都不画，鼠标靠过去照样展开", settings.NotesDeckHidesPill,
             isOn => Save(() => settings.NotesDeckHidesPill = isOn)));
-        Deck(() => AddToggle("悬停预览", "鼠标停在标签上时，旁边显示这条便签的开头几行", settings.NotesDeckPreview,
+        Deck(() => preview = AddToggle("悬停预览", "鼠标停在标签上时，旁边显示这条便签的开头几行", settings.NotesDeckPreview,
             isOn => Save(() => settings.NotesDeckPreview = isOn)));
         Deck(() => AddToggle("悬停即打开", "鼠标在标签上停一下就打开，不用点", settings.NotesDeckOpensOnHover,
-            isOn => Save(() => settings.NotesDeckOpensOnHover = isOn)));
+            isOn =>
+            {
+                Save(() => settings.NotesDeckOpensOnHover = isOn);
+                if (preview is not null)
+                {
+                    SetCardEnabled(preview, !isOn);
+                }
+            }));
+        if (settings.NotesDeckEnabled && settings.NotesDeckAlwaysFanned && hidesPill is not null)
+        {
+            SetCardEnabled(hidesPill, false);
+        }
+
+        if (settings.NotesDeckEnabled && settings.NotesDeckOpensOnHover && preview is not null)
+        {
+            SetCardEnabled(preview, false);
+        }
         Deck(() => AddToggle("盖在全屏程序上", "别的程序全屏时边缘也有便签", settings.NotesDeckOverFullScreen,
             isOn => Save(() => settings.NotesDeckOverFullScreen = isOn)));
         var noteSizes = new[] { "small", "medium", "large", "extraLarge" };

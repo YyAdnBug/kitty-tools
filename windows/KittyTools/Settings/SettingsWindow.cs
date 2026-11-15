@@ -127,6 +127,7 @@ internal sealed partial class SettingsWindow : Window
             "英文", "输入法", "书签", "浏览历史", "历史", "浏览器", "Edge", "Chrome", "Firefox", "Brave", "索引", "搜索", "引擎",
             "快捷链接", "关键词", "兜底", "使用记录", "常用", "最近", "收藏", "文件", "open", "find", "按键", "速查",
             "位置", "面板位置", "鼠标", "跟随鼠标", "上次位置", "面板大小", "恢复默认大小", "宽度", "行数",
+            "脚本", "脚本命令", "命令", "别名", "写法", "AI", "新建脚本", "导入",
         },
         ["translate"] = new[]
         {
@@ -161,7 +162,7 @@ internal sealed partial class SettingsWindow : Window
         },
         ["hotkeys"] = new[]
         {
-            "快捷键", "热键", "冲突", "录制", "恢复默认", "速查", "按键", "钉图", "停用", "游戏", "全屏", "截图时", "工具栏", "连按", "双击",
+            "快捷键", "热键", "冲突", "录制", "恢复默认", "速查", "按键", "钉图", "停用", "游戏", "全屏", "截图时", "工具栏", "连按", "双击", "屏蔽", "不响应",
         },
         ["about"] = new[] { "版本", "更新", "日志", "发布", "检查更新", "自动检查", "欢迎", "引导" },
     };
@@ -887,24 +888,33 @@ internal sealed partial class SettingsWindow : Window
     }
 
     /// <summary>变灰的那几块里的控件也停用：Tab 走不进去、键盘拨不动（mac 的 .disabled）。页是代码建的，Panel / Border 往下找就够。</summary>
-    private static void DisableControls(UIElement element)
+    private static void DisableControls(UIElement element) => SetControlsEnabled(element, false);
+
+    private static void SetControlsEnabled(UIElement element, bool enabled)
     {
         switch (element)
         {
             case Control control:
-                control.IsEnabled = false;
+                control.IsEnabled = enabled;
                 break;
             case Panel panel:
                 foreach (var child in panel.Children)
                 {
-                    DisableControls(child);
+                    SetControlsEnabled(child, enabled);
                 }
 
                 break;
             case Border { Child: { } child }:
-                DisableControls(child);
+                SetControlsEnabled(child, enabled);
                 break;
         }
+    }
+
+    /// <summary>跟着别的开关变灰 / 恢复的一行（mac .disabled(…)）：卡变淡、不接点击，里面的开关、下拉也停用。</summary>
+    private static void SetCardEnabled(Border card, bool enabled)
+    {
+        SettingsUi.SetEnabled(card, enabled);
+        SetControlsEnabled(card, enabled);
     }
 
     /// <summary>App 图标（侧栏「关于」、关于页的大图标）：从 exe 里取一张 PNG，取到之前是空的。</summary>
@@ -2067,7 +2077,7 @@ internal sealed partial class SettingsWindow : Window
             var dialog = new ContentDialog
             {
                 RequestedTheme = Theme.ElementTheme,
-                Title = "清空普通历史？",
+                Title = "清空所有普通历史？",
                 Content = "收藏和片段会保留",
                 PrimaryButtonText = "清空",
                 CloseButtonText = "取消",
@@ -2080,7 +2090,16 @@ internal sealed partial class SettingsWindow : Window
             }
 
             var removed = service.Store.ClearOrdinary();
-            NoticeHost.Show("已清空", $"删了 {removed} 条，收藏和片段还在", NoticeTone.Normal);
+            // 同 mac：一条都没有时不说「已清空」（PLAN-v23 L6）
+            if (removed > 0)
+            {
+                NoticeHost.Show("已清空普通历史", $"删了 {removed} 条，收藏和片段留着", NoticeTone.Normal);
+            }
+            else
+            {
+                NoticeHost.Show("没有可清空的普通历史", string.Empty, NoticeTone.Normal);
+            }
+
             BuildPage("clipboard");
         };
         _content.Children.Add(Ungated(clear));
@@ -2544,7 +2563,11 @@ internal sealed partial class SettingsWindow : Window
     /// 拖完按新顺序回调（旧的下标，按新的先后排）。右键菜单里的上移 / 下移照旧。
     /// 容器自己建成 ListViewItem（不用 Style：少一处 AOT 下的类型名转换），去掉内边距、两张卡之间空 8 同页面别的卡。
     /// </summary>
-    private static ListView ReorderableList(IReadOnlyList<Border> rows, string name, Action<IReadOnlyList<int>> moved)
+    /// <summary>
+    /// 有序列表（翻译服务、网页搜索、状态、提醒；mac orderedList）：拖动排序；键盘（PLAN-v23 L1）Enter 打开、Delete 删（自己加的先确认，
+    /// 同右键菜单）、Alt + ↑ / ↓ 上移下移，挪完 / 删完焦点留在列表里那个位置上。
+    /// </summary>
+    private ListView ReorderableList(IReadOnlyList<Border> rows, string name, Action<IReadOnlyList<int>> moved)
     {
         var list = new ListView
         {
@@ -2557,18 +2580,49 @@ internal sealed partial class SettingsWindow : Window
         ScrollViewer.SetVerticalScrollMode(list, ScrollMode.Disabled);
         ScrollViewer.SetVerticalScrollBarVisibility(list, ScrollBarVisibility.Disabled);
         AutomationProperties.SetName(list, name);
+        var focus = _listFocus is { } wanted && wanted.Name == name ? Math.Clamp(wanted.Index, 0, Math.Max(0, rows.Count - 1)) : -1;
+        if (focus >= 0)
+        {
+            _listFocus = null;
+        }
+
         for (var index = 0; index < rows.Count; index++)
         {
-            list.Items.Add(new ListViewItem
+            var row = rows[index];
+            var position = index;
+            var item = new ListViewItem
             {
-                Content = rows[index],
+                Content = row,
                 Tag = index,
                 Padding = new Thickness(0),
                 MinHeight = 0,
                 Margin = new Thickness(0, 0, 0, 8),
                 HorizontalContentAlignment = HorizontalAlignment.Stretch,
-            });
+            };
+            // 读屏落在这一项上时读卡的名字（卡自己的名字 + 说明）
+            AutomationProperties.SetName(item, AutomationProperties.GetName(row));
+            item.AddHandler(UIElement.KeyDownEvent, new KeyEventHandler((_, e) =>
+            {
+                if (ReferenceEquals(e.OriginalSource, item) && _recordingAction is null &&
+                    ListKey(e.Key, IsDown(VirtualKey.Menu), row, name, position))
+                {
+                    e.Handled = true;
+                }
+            }), handledEventsToo: true);
+            if (index == focus)
+            {
+                void Focus(object sender, RoutedEventArgs args)
+                {
+                    item.Loaded -= Focus;
+                    item.Focus(FocusState.Keyboard);
+                }
+
+                item.Loaded += Focus;
+            }
+
+            list.Items.Add(item);
         }
+
 
         list.DragItemsCompleted += (_, _) =>
         {
@@ -2579,6 +2633,28 @@ internal sealed partial class SettingsWindow : Window
             }
         };
         return list;
+    }
+
+    /// <summary>键盘挪 / 删了一行：重建出来的同名列表把焦点放到这个位置（PLAN-v23 L1）。</summary>
+    private (string Name, int Index)? _listFocus;
+
+    /// <summary>有序列表里的一行按了键：Enter 打开、Delete 删、Alt + ↑ / ↓ 挪；动了的话记下重建后焦点放哪（SettingsProbe 也从这里走）。</summary>
+    private bool ListKey(VirtualKey key, bool alt, Border row, string name, int position)
+    {
+        bool Remember(int index)
+        {
+            _listFocus = (name, index);
+            return true;
+        }
+
+        return key switch
+        {
+            VirtualKey.Enter when !alt => SettingsUi.Open(row),
+            VirtualKey.Delete when !alt => Remember(position) && SettingsUi.RunAction(row, "删除"),
+            VirtualKey.Up when alt => Remember(position - 1) && SettingsUi.RunAction(row, "上移"),
+            VirtualKey.Down when alt => Remember(position + 1) && SettingsUi.RunAction(row, "下移"),
+            _ => false,
+        };
     }
 
     /// <summary>这一页浏览器各行「读到几条」的原地刷新（BuildPage 换页时清空）。</summary>
@@ -2748,7 +2824,7 @@ internal sealed partial class SettingsWindow : Window
             controls,
             () => _ = EditAsync(),
             problem: problem is not null);
-        AutomationProperties.SetHelpText(card, "点一下编辑；拖动排序；右键有上移、下移和删除");
+        AutomationProperties.SetHelpText(card, "点一下或按 Enter 编辑；拖动或 Alt + 上下箭头排序；Delete 删除；右键有上移、下移和删除");
 
         var menu = new MenuFlyout();
         void Add(string text, bool enabled, Action action)
@@ -2756,6 +2832,8 @@ internal sealed partial class SettingsWindow : Window
             var item = new MenuFlyoutItem { Text = text, IsEnabled = enabled };
             item.Click += (_, _) => action();
             menu.Items.Add(item);
+            // 列表里键盘也能用（PLAN-v23 L1）：Delete 删、Alt + ↑ / ↓ 挪，同右键菜单
+            SettingsUi.RememberAction(card, text, enabled, action);
         }
 
         Add("编辑…", true, () => _ = EditAsync());
@@ -2954,11 +3032,14 @@ internal sealed partial class SettingsWindow : Window
         AutomationProperties.SetName(listen, "试听快门声");
         ToolTipService.SetToolTip(listen, "试听");
         listen.Click += (_, _) => ShotFeedback.PlayShutter(force: true);
+        // 快门声关着时「试听」是灰的（PLAN-v23 L3，mac .disabled(!shutterSound)）
+        listen.IsEnabled = SettingsService.Current.ScreenshotShutterSound;
         shutter.Children.Add(listen);
         shutter.Children.Add(SettingsUi.Toggle(SettingsService.Current.ScreenshotShutterSound, value =>
         {
             SettingsService.Current.ScreenshotShutterSound = value;
             SettingsService.Save();
+            listen.IsEnabled = value;
         }, "截图时播放快门声"));
         _content.Children.Add(SettingsUi.Card("截图时播放快门声", string.Empty, shutter));
         _content.Children.Add(SettingsUi.Footnote("拷贝、存储、钉图时响；系统静音、全屏游戏和演示时不响。截图翻译、识字不出声。"));
@@ -2973,7 +3054,7 @@ internal sealed partial class SettingsWindow : Window
             });
         AddHideDesktopIconsToggle();
 
-        // 截图历史（PLAN-v8 H3；保留期、占用、清空是 PLAN-v9 S8，照 mac：关掉「保留」时下面两行变灰）
+        // 截图历史（PLAN-v8 H3；保留期、占用、清空是 PLAN-v9 S8；照 mac：关掉「保留」时下面两行不显示，PLAN-v23 L4）
         _content.Children.Add(SettingsUi.Section("截图历史"));
         Border? daysCard = null;
         Border? sizeCard = null;
@@ -2985,8 +3066,7 @@ internal sealed partial class SettingsWindow : Window
                 SettingsService.Save();
                 if (daysCard is not null && sizeCard is not null)
                 {
-                    SettingsUi.SetEnabled(daysCard, value);
-                    SettingsUi.SetEnabled(sizeCard, value);
+                    daysCard.Visibility = sizeCard.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
                 }
             });
         // 两个上限：换到会删掉历史的那一档先问，取消回原值（第四轮体检 E24，同剪贴板 E4）。
@@ -3003,7 +3083,7 @@ internal sealed partial class SettingsWindow : Window
                 SettingsService.Current.ShotHistoryDays = days[index];
                 SettingsService.Save();
                 ShotHistory.Instance?.Prune();
-            }), enabled: SettingsService.Current.ShotHistory);
+            }));
         _content.Children.Add(daysCard);
         var sizes = new[] { 1024, 2048, 5120, 0 };
         var sizeTitles = new[] { "1 GB", "2 GB", "5 GB", "不限" };
@@ -3018,7 +3098,8 @@ internal sealed partial class SettingsWindow : Window
                 SettingsService.Current.ShotHistoryMegabytes = sizes[index];
                 SettingsService.Save();
                 ShotHistory.Instance?.Prune();
-            }), enabled: SettingsService.Current.ShotHistory);
+            }));
+        daysCard.Visibility = sizeCard.Visibility = SettingsService.Current.ShotHistory ? Visibility.Visible : Visibility.Collapsed;
         _content.Children.Add(sizeCard);
         var historyButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
         var openHistory = new Button { Content = "打开截图历史…" };

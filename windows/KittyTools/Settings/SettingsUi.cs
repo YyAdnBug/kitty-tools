@@ -3,6 +3,7 @@
 // 设置；用户 2026-10-28：有的有图标有的没有很怪）；只有列表里标明「这一项是谁」的才在最左边：功能开关的家族色块、
 // 翻译服务的 logo（leading）。
 // 子设置放在可以展开的卡里（Expand 参数）。全部颜色走主题资源，深浅色和高对比度自动跟着变。
+using System.Runtime.CompilerServices;
 using KittyTools.Ui;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
@@ -117,6 +118,7 @@ internal static class SettingsUi
 
                 onClick();
             };
+            Clicks.AddOrUpdate(card, onClick);
         }
 
         AutomationProperties.SetName(card, description.Length > 0 ? $"{title}，{description}" : title);
@@ -124,6 +126,44 @@ internal static class SettingsUi
     }
 
     private const string CardTextName = "KittyCardText";
+
+    /// <summary>可点的卡点了做什么、右键菜单里各项做什么（列表的键盘操作要用，PLAN-v23 L1）。</summary>
+    private static readonly ConditionalWeakTable<Border, Action> Clicks = new();
+
+    private static readonly ConditionalWeakTable<Border, Dictionary<string, Action>> MenuActions = new();
+
+    /// <summary>记下卡上右键菜单的一项（灰着的不记）；名字去掉末尾的「…」（「删除…」「删除」都记成「删除」）。</summary>
+    public static void RememberAction(Border card, string text, bool enabled, Action action)
+    {
+        if (enabled)
+        {
+            MenuActions.GetOrCreateValue(card)[text.TrimEnd('…')] = action;
+        }
+    }
+
+    /// <summary>做卡上右键菜单里的那一项（没有、灰着的返回 false）。</summary>
+    public static bool RunAction(Border card, string text)
+    {
+        if (!MenuActions.TryGetValue(card, out var actions) || !actions.TryGetValue(text, out var action))
+        {
+            return false;
+        }
+
+        action();
+        return true;
+    }
+
+    /// <summary>点这张卡（同鼠标点它；不可点的返回 false）。</summary>
+    public static bool Open(Border card)
+    {
+        if (!Clicks.TryGetValue(card, out var action) || !card.IsHitTestVisible)
+        {
+            return false;
+        }
+
+        action();
+        return true;
+    }
 
     /// <summary>
     /// 原地改一张 <see cref="Card"/> 的说明（空 = 收起那一行）。开关旁边的说明、下面那一行要跟着变时用它，

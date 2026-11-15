@@ -42,10 +42,9 @@ internal sealed partial class SettingsWindow
 
         // 状态
         _content.Children.Add(SettingsUi.Section("状态"));
-        for (var index = 0; index < presets.Count; index++)
-        {
-            _content.Children.Add(StatusPresetRow(presets, index, Persist));
-        }
+        // 拖动排序、键盘 Enter / Delete / Alt + ↑↓（PLAN-v23 L1，mac StatusScreenTab 的 List .onMove / onDeleteCommand）
+        var presetRows = presets.Select((_, index) => StatusPresetRow(presets, index, Persist)).ToList();
+        _content.Children.Add(ReorderableList(presetRows, "状态（拖动排序）", order => Persist(order.Select(index => presets[index]).ToList())));
 
         var isFull = presets.Count >= StatusPresets.MaxCount;
         var add = new DropDownButton { Content = new FontIcon { Glyph = "\uE710", FontSize = 14 }, IsEnabled = !isFull };
@@ -68,7 +67,7 @@ internal sealed partial class SettingsWindow
         add.Flyout = addMenu;
         _content.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0), Children = { add } });
         _content.Children.Add(SettingsUi.Footnote(
-            "点一行编辑，右键能上移、下移和删除。" +
+            "点一行编辑，拖动调整顺序，右键能上移、下移和删除。" +
             (settings.StatusScreenHotKeyEntersFirst
                 ? "排在最前面的状态就是全局快捷键进入的那个。"
                 : "按全局快捷键选状态时，卡片也按这个顺序排。") +
@@ -162,13 +161,15 @@ internal sealed partial class SettingsWindow
         }
 
         var card = SettingsUi.Card(preset.Title, StatusPresets.Summary(preset), null, () => _ = EditAsync(), leading: leading);
-        AutomationProperties.SetHelpText(card, "点一下编辑；右键有上移、下移和删除");
+        AutomationProperties.SetHelpText(card, "点一下或按 Enter 编辑；拖动或 Alt + 上下箭头排序；Delete 删除；右键有上移、下移和删除");
         var menu = new MenuFlyout();
         void Add(string text, bool enabled, Action action)
         {
             var item = new MenuFlyoutItem { Text = text, IsEnabled = enabled };
             item.Click += (_, _) => action();
             menu.Items.Add(item);
+            // 列表里键盘也能用（PLAN-v23 L1）：Delete 删、Alt + ↑ / ↓ 挪，同右键菜单
+            SettingsUi.RememberAction(card, text, enabled, action);
         }
 
         Add("编辑…", true, () => _ = EditAsync());

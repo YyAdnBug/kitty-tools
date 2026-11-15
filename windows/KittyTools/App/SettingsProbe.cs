@@ -5,6 +5,8 @@
 // - b：同一个测试档再起一次，打开设置窗：停在 a 最后的那页、窗口在 a 记下的位置和大小（W1 W2）。
 // - h：快捷键录制（第 2 批 H1–H9）：用 UIA 的 Invoke 点录制框和 ⓧ，「按下的键」走 RecordKey（算好修饰键之后那条路），不发真的按键；
 //   录着时全局热键全停、结束注册回来；撞键的三种话；ⓧ 录着时取消；录完焦点回到录制框；Delete 清除；占位字；窗口失活就停。
+// - l：列表和跟着开关变的行（第 3 批 L1 L3–L5）：状态、翻译服务的列表按 Alt + ↑ / Delete / Enter（走 ListViewItem 收到键以后那条路），
+//   挪完焦点还在列表里；快门声关着时「试听」灰；截图历史关着时两行不显示；便签边缘两对互斥的开关。
 // 每份把结果写进 <目录>\report-<角色>.md，跑完就退（有不对的退出码 1）。
 using System.Text;
 using KittyTools.Core;
@@ -59,6 +61,10 @@ internal static class SettingsProbe
             else if (role == "h")
             {
                 await RunHotKeysAsync(shell, Check);
+            }
+            else if (role == "l")
+            {
+                await RunListsAsync(shell, Check);
             }
             else
             {
@@ -312,6 +318,112 @@ internal static class SettingsProbe
         other.Close();
         await Task.Delay(200);
         check(SettingsDefaults.BindingFor(settings, launcher) == original, "最后启动器的键还是默认");
+    }
+
+    /// <summary>页里读屏名字是 title（或「title，说明」）的那个元素（卡、按钮）。</summary>
+    private static T? Find<T>(Microsoft.UI.Xaml.DependencyObject root, string title) where T : Microsoft.UI.Xaml.FrameworkElement
+    {
+        if (root is T element && Microsoft.UI.Xaml.Automation.AutomationProperties.GetName(element) is var name &&
+            (name == title || name.StartsWith(title + "，", StringComparison.Ordinal)))
+        {
+            return element;
+        }
+
+        for (var index = 0; index < Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChildrenCount(root); index++)
+        {
+            if (Find<T>(Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChild(root, index), title) is { } found)
+            {
+                return found;
+            }
+        }
+
+        return null;
+    }
+
+    private static async Task RunListsAsync(ShellRuntime shell, Action<bool, string> check)
+    {
+        var settings = SettingsService.Current;
+        Features.Set(Feature.StatusScreen, true);
+        Features.Set(Feature.Notes, true);
+        var window = await ShowAsync(shell, "statusScreen");
+        const string statuses = "状态（拖动排序）";
+        var before = StatusScreenHost.Presets.Select(preset => preset.Id).ToList();
+        check(window.ListForProbe(statuses) is { } list && list.Items.Count == before.Count && before.Count >= 3,
+            $"L1 状态是一个能拖的列表（{before.Count} 行）");
+        var moved = window.ListKeyForProbe(statuses, 1, Windows.System.VirtualKey.Up, alt: true);
+        await Task.Delay(500);
+        var after = StatusScreenHost.Presets.Select(preset => preset.Id).ToList();
+        var first = window.ListForProbe(statuses)?.Items[0] as ListViewItem;
+        check(moved && after.Count == before.Count && after[0] == before[1] && after[1] == before[0],
+            "L1 第二行按 Alt + ↑：挪到第一行");
+        check(first?.FocusState is not (null or Microsoft.UI.Xaml.FocusState.Unfocused), $"L1 挪完焦点在新的第一行上（{first?.FocusState}）");
+        var deleted = window.ListKeyForProbe(statuses, 2, Windows.System.VirtualKey.Delete, alt: false);
+        await Task.Delay(400);
+        check(deleted && StatusScreenHost.Presets.Count == before.Count - 1 && StatusScreenHost.Presets.All(preset => preset.Id != after[2]),
+            "L1 自带的、没改过的状态按 Delete：直接删了（不问）");
+        var opened = window.ListKeyForProbe(statuses, 0, Windows.System.VirtualKey.Enter, alt: false);
+        await Task.Delay(500);
+        var root = window.ContentForProbe.XamlRoot;
+        check(opened && Microsoft.UI.Xaml.Media.VisualTreeHelper.GetOpenPopupsForXamlRoot(root).Any(popup => popup.Child is ContentDialog),
+            "L1 第一行按 Enter：打开编辑");
+        window.CloseDialogsForProbe();
+        await Task.Delay(300);
+        check(!window.ListKeyForProbe(statuses, 0, Windows.System.VirtualKey.Up, alt: true), "L1 第一行按 Alt + ↑：什么都不做（上移是灰的）");
+
+        if (TranslateServiceStore.Instance is { Services.Count: >= 2 } store)
+        {
+            window = await ShowAsync(shell, "translate");
+            var services = store.Services.Select(service => service.Id).ToList();
+            window.ListKeyForProbe("翻译服务（拖动排序）", 0, Windows.System.VirtualKey.Down, alt: true);
+            await Task.Delay(400);
+            check(store.Services[0].Id == services[1] && store.Services[1].Id == services[0], "L1 翻译服务第一行按 Alt + ↓：挪到第二");
+            window.ListKeyForProbe("翻译服务（拖动排序）", 1, Windows.System.VirtualKey.Up, alt: true);
+            await Task.Delay(400);
+            check(store.Services[0].Id == services[0], "L1 再按 Alt + ↑ 挪回去");
+        }
+
+        // L3 快门声
+        settings.ScreenshotShutterSound = false;
+        SettingsService.Save();
+        window = await ShowAsync(shell, "screenshot");
+        window.RebuildPageForProbe();
+        await Task.Delay(300);
+        check(Find<Button>(window.ContentForProbe, "试听快门声") is { IsEnabled: false }, "L3 快门声关着：「试听」是灰的");
+        settings.ScreenshotShutterSound = true;
+        // L4 截图历史
+        settings.ShotHistory = false;
+        SettingsService.Save();
+        window.RebuildPageForProbe();
+        await Task.Delay(300);
+        check(Find<Border>(window.ContentForProbe, "保留") is null or { Visibility: Microsoft.UI.Xaml.Visibility.Collapsed } &&
+              Find<Border>(window.ContentForProbe, "最多占用") is null or { Visibility: Microsoft.UI.Xaml.Visibility.Collapsed },
+            "L4 截图历史关着：「保留」「最多占用」不显示");
+        check(Find<Button>(window.ContentForProbe, "试听快门声") is { IsEnabled: true }, "L3 快门声开着：「试听」能点");
+        settings.ShotHistory = true;
+        SettingsService.Save();
+        window.RebuildPageForProbe();
+        await Task.Delay(300);
+        check(Find<Border>(window.ContentForProbe, "保留") is { Visibility: Microsoft.UI.Xaml.Visibility.Visible }, "L4 截图历史开着：两行回来");
+
+        // L5 便签边缘
+        settings.NotesDeckEnabled = true;
+        settings.NotesDeckAlwaysFanned = true;
+        settings.NotesDeckOpensOnHover = false;
+        SettingsService.Save();
+        window = await ShowAsync(shell, "notes");
+        window.RebuildPageForProbe();
+        await Task.Delay(300);
+        check(Find<Border>(window.ContentForProbe, "不显示药丸") is { IsHitTestVisible: false } &&
+              Find<Border>(window.ContentForProbe, "悬停预览") is { IsHitTestVisible: true },
+            "L5 「一直展开」开着：「不显示药丸」灰、「悬停预览」能拨");
+        settings.NotesDeckAlwaysFanned = false;
+        settings.NotesDeckOpensOnHover = true;
+        SettingsService.Save();
+        window.RebuildPageForProbe();
+        await Task.Delay(300);
+        check(Find<Border>(window.ContentForProbe, "不显示药丸") is { IsHitTestVisible: true } &&
+              Find<Border>(window.ContentForProbe, "悬停预览") is { IsHitTestVisible: false },
+            "L5 「悬停即打开」开着：「悬停预览」灰、「不显示药丸」能拨");
     }
 
     private static async Task RunSecondAsync(ShellRuntime shell, Action<bool, string> check)
