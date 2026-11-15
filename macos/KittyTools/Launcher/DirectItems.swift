@@ -19,7 +19,7 @@ enum DirectItems {
       return [
         LauncherItem(
           kind: .url, target: url.absoluteString, title: displayName(of: url),
-          subtitle: "在浏览器中打开", names: [],
+          subtitle: String(localized: "在浏览器中打开"), names: [],
           // Tab 保留原样（显示名去掉了协议、查询串，补回去会变成另一个网址）
           completion: query.trimmingCharacters(in: .whitespaces))
       ]

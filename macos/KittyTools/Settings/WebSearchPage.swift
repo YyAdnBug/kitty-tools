@@ -64,19 +64,23 @@ struct WebSearchPage: View {
 
   /// 启动器页那一行和这一页页头的小字：几个搜索、几个快捷链接、谁兜底、有几条要改（纯函数，配单测）
   static func summary(_ engines: [SearchEngine]) -> String {
-    guard !engines.isEmpty else { return "还没有，点进去添加" }
+    guard !engines.isEmpty else { return String(localized: "还没有，点进去添加") }
     let searches = engines.filter { !$0.isQuicklink }
     let links = engines.count - searches.count
-    var text = "\(searches.count) 个搜索" + (links > 0 ? "、\(links) 个快捷链接" : "")
+    let count =
+      links > 0
+      ? String(localized: "\(searches.count) 个搜索、\(links) 个快捷链接")
+      : String(localized: "\(searches.count) 个搜索")
     let fallback = searches.filter(\.enabled).map(SearchEngineDetail.title)
-    if fallback.isEmpty {
-      text += "，不兜底"
-    } else {
-      text += "；兜底：" + fallback.prefix(3).joined(separator: "、")
-      if fallback.count > 3 { text += " 等 \(fallback.count) 个" }
-    }
+    let names = fallback.prefix(3).joinedAsList()
+    var text =
+      fallback.isEmpty
+      ? String(localized: "\(count)，不兜底")
+      : fallback.count > 3
+        ? String(localized: "\(count)；兜底：\(names) 等 \(fallback.count) 个")
+        : String(localized: "\(count)；兜底：\(names)")
     let problems = engines.filter { SearchEngineDetail.problem(of: $0, in: engines) != nil }.count
-    if problems > 0 { text += "；\(problems) 条要改一下" }
+    if problems > 0 { text = String(localized: "\(text)；\(problems) 条要改一下") }
     return text
   }
 
@@ -129,7 +133,7 @@ struct WebSearchPage: View {
     Menu {
       let added = Set(engines.map(\.id))
       ForEach(WebSearch.presets.filter { !added.contains($0.id) }) { preset in
-        Button("\(preset.name)（\(preset.keyword)）") { engines.append(preset) }
+        Button("\(preset.displayName)（\(preset.keyword)）") { engines.append(preset) }
       }
       Divider()
       Button("自定义搜索或快捷链接…") {

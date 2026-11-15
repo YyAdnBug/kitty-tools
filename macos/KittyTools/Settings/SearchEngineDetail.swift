@@ -37,7 +37,7 @@ struct SearchEngineDetail: View {
       }
       Form {
         Section {
-          TextField("名称", text: binding.name, prompt: Text("如 GitHub"))
+          TextField("名称", text: name(of: engine), prompt: Text("如 GitHub"))
           TextField("关键词", text: binding.keyword, prompt: Text("可不填"))
           TextField(
             "网址", text: binding.urlTemplate, prompt: Text("https://example.com/search?q={query}"))
@@ -103,20 +103,33 @@ struct SearchEngineDetail: View {
       })
   }
 
+  /// 名称框：自带的预设没改过名字时显示翻好的（「百度」在英文界面是 Baidu），不动它就照存的留着（D6：存的是中文，只翻显示）
+  private func name(of engine: SearchEngine) -> Binding<String> {
+    Binding {
+      engine.displayName
+    } set: { text in
+      guard text != engine.displayName else { return }
+      var changed = engine
+      changed.name = text
+      save(changed)
+    }
+  }
+
   /// 预置的删了还能从「+」加回来，直接删；自定义的删掉就找不回来，要先确认（列表和详情页同一套）
   static func isPreset(_ id: String) -> Bool { WebSearch.presets.contains { $0.id == id } }
 
-  static let deleteMessage = "自定义的名称、关键词和网址删掉就找不回来了。"
+  static var deleteMessage: String { String(localized: "自定义的名称、关键词和网址删掉就找不回来了。") }
 
   static func title(_ engine: SearchEngine) -> String {
-    let name = engine.name.trimmingCharacters(in: .whitespaces)
-    return name.isEmpty ? "未命名" : name
+    let name = engine.displayName.trimmingCharacters(in: .whitespaces)
+    return name.isEmpty ? String(localized: "未命名") : name
   }
 
   /// 没问题时的状态副标题：说明它怎么用（列表行上开关的含义也靠它）
   static func kindTitle(_ engine: SearchEngine) -> String {
-    if engine.isQuicklink { return "快捷链接" }
-    return engine.enabled ? "搜索 · 没有本地结果时兜底" : "搜索 · 只用关键词"
+    if engine.isQuicklink { return String(localized: "快捷链接") }
+    return engine.enabled
+      ? String(localized: "搜索 · 没有本地结果时兜底") : String(localized: "搜索 · 只用关键词")
   }
 
   /// 图标：网址的网站图标（和启动器同一份 SiteIcons：本机 Chromium 系浏览器的 / 剪贴板链接预览取到的，不联网，体检 D6），
@@ -141,7 +154,9 @@ struct SearchEngineDetail: View {
   /// 名称不空；搜索的网址要有协议（https:、maps: 之类，http(s) 还得有主机名，默认的「https://」不算填好）；
   /// 快捷链接也可以是 / ~ 开头的路径；关键词不能是保留的 cb / fy / open / find / quit / hide / forcequit / eject / kill / port；搜索没关键词又不兜底就用不上
   static func problem(of engine: SearchEngine, in list: [SearchEngine]) -> String? {
-    if engine.name.trimmingCharacters(in: .whitespaces).isEmpty { return "还没填名称" }
+    if engine.name.trimmingCharacters(in: .whitespaces).isEmpty {
+      return String(localized: "还没填名称")
+    }
     let url = engine.urlTemplate.trimmingCharacters(in: .whitespaces)
     let parsed = URL(string: url.replacing("{query}", with: "q"))
     let hasScheme =
@@ -149,18 +164,22 @@ struct SearchEngineDetail: View {
         $0.count > 1 && (!["http", "https"].contains($0.lowercased()) || parsed?.host() != nil)
       } ?? false
     let isPath = engine.isQuicklink && (url.hasPrefix("/") || url.hasPrefix("~"))
-    if !hasScheme && !isPath { return "网址不完整" }
+    if !hasScheme && !isPath { return String(localized: "网址不完整") }
     let keyword = engine.keyword.lowercased()
-    if let owner = WebSearch.reservedKeywords[keyword] { return "关键词「\(keyword)」留给\(owner)" }
+    if let owner = WebSearch.reservedKeywords[keyword] {
+      return String(localized: "关键词「\(keyword)」留给\(String(localized: owner))")
+    }
     if !engine.isQuicklink, !keyword.isEmpty,
       let index = list.firstIndex(where: { $0.id == engine.id }),
       let earlier = list[..<index].first(where: {
         !$0.isQuicklink && $0.keyword.lowercased() == keyword
       })
     {
-      return "关键词和「\(title(earlier))」重复，用的是靠前的那个"
+      return String(localized: "关键词和「\(title(earlier))」重复，用的是靠前的那个")
     }
-    if !engine.isQuicklink && keyword.isEmpty && !engine.enabled { return "没有关键词也不兜底，用不上" }
+    if !engine.isQuicklink && keyword.isEmpty && !engine.enabled {
+      return String(localized: "没有关键词也不兜底，用不上")
+    }
     return nil
   }
 }

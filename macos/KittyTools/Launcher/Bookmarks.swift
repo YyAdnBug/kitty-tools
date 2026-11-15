@@ -148,7 +148,7 @@ enum Bookmarks {
     let bare = Self.bare(bookmark.url)
     return LauncherItem(
       kind: .url, target: bookmark.url, title: bookmark.title.isEmpty ? host : bookmark.title,
-      subtitle: "书签 · \(browser) · \(host)",
+      subtitle: String(localized: "书签 · \(browser) · \(host)"),
       names: [bookmark.title, bare, pinyin?.full].compactMap { $0.map(LauncherMatch.fold) },
       initials: [pinyin?.initials].compactMap { $0 }, listed: true)
   }

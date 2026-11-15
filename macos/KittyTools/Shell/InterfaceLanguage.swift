@@ -120,4 +120,18 @@ extension LocalizedStringResource {
     copy.locale = Locale(identifier: InterfaceLanguage.chinese.rawValue)
     return String(localized: copy)
   }
+
+  /// 英文的那一份（还没有英文的落回中文）：中文界面里打英文也找得到（启动器的搜索名）
+  nonisolated var english: String {
+    var copy = self
+    copy.locale = Locale(identifier: InterfaceLanguage.english.rawValue)
+    return String(localized: copy)
+  }
+}
+
+extension InterfaceLanguage {
+  /// 这次运行界面是不是英文（同 running；nonisolated：后台扫 App 目录、读脚本头部时按它挑显示的名字）
+  nonisolated static var isEnglish: Bool {
+    Bundle.main.preferredLocalizations.first?.hasPrefix("en") == true
+  }
 }

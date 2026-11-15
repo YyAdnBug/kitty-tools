@@ -18,18 +18,19 @@ struct NewScriptSheet: View {
   /// 结果给谁：和写法说明里的说法一样
   static func modeTitle(_ mode: ScriptCommand.Mode) -> String {
     switch mode {
-    case .island: "岛上显示最后一行"
-    case .paste: "粘贴到前台 App"
-    case .copy: "复制到剪贴板"
-    case .full: "在启动器里看全部输出"
-    case .list: "列出几条结果来挑"
-    case .none: "不显示"
+    case .island: String(localized: "岛上显示最后一行")
+    case .paste: String(localized: "粘贴到前台 App")
+    case .copy: String(localized: "复制到剪贴板")
+    case .full: String(localized: "在启动器里看全部输出")
+    case .list: String(localized: "列出几条结果来挑")
+    case .none:
+      String(localized: "launcher.scriptMode.none", defaultValue: "不显示", comment: "脚本的结果给谁：不显示")
     }
   }
 
   private var name: String {
     let text = title.trimmingCharacters(in: .whitespaces)
-    return text.isEmpty ? "新脚本" : text
+    return text.isEmpty ? ScriptLibrary.untitled : text
   }
 
   /// 关键词只取第一个词、折成小写（同读脚本时）
@@ -53,13 +54,9 @@ struct NewScriptSheet: View {
         }
       }
       .formStyle(.columns)
-      Text(
-        "建好后用编辑器打开，里面有一段能直接跑的示例；改好保存，"
-          + (folded.map { "在启动器里输 \($0) 就能跑。" } ?? "在启动器里按名字找它。")
-          + (language == .python ? "Python 要先装好 python3。" : "")
-      )
-      .foregroundStyle(.secondary)
-      .fixedSize(horizontal: false, vertical: true)
+      Text(verbatim: help)
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
       if failed {
         Text("没建成：脚本文件夹写不进去。").foregroundStyle(Color(nsColor: .systemRed))
       }
@@ -73,6 +70,14 @@ struct NewScriptSheet: View {
     }
     .padding(20)
     .frame(width: 420)
+  }
+
+  /// 表单下面那句：建好以后怎么跑（写了关键词的说打它，用 Python 的提一句要装 python3）
+  private var help: String {
+    let next =
+      folded.map { String(localized: "在启动器里输 \($0) 就能跑。") } ?? String(localized: "在启动器里按名字找它。")
+    let python = language == .python ? String(localized: "Python 要先装好 python3。") : ""
+    return String(localized: "建好后用编辑器打开，里面有一段能直接跑的示例；改好保存，\(next)\(python)")
   }
 
   private func create() {

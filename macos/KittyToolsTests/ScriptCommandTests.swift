@@ -131,6 +131,8 @@ struct ScriptCommandTests {
       environment == [
         "HOME": "/Users/me", "USER": "me", "PATH": "/usr/bin", "LANG": "zh_CN.UTF-8",
         "KITTY_SCRIPT_DIR": "/tmp/scripts", "KITTY_DATA_DIR": "/data", "KITTY_VERSION": "0.8.0",
+        // 单测宿主是中文界面
+        "KITTY_LANGUAGE": "zh-Hans",
       ])
     #expect(ScriptCommand.language(Locale(identifier: "zh_CN")) == "zh_CN.UTF-8")
     // 系统里没有的组合（en_CN）退回 en_US.UTF-8：要紧的是 UTF-8
@@ -409,12 +411,12 @@ struct ScriptRunTests {
     // 只打了关键词：普通那一行，↩ 先补「tq 空格」
     model.query = "tq"
     let row = try #require(model.results.first)
-    #expect(model.primaryAction(for: row).title == "补全关键词")
+    #expect(String(localized: model.primaryAction(for: row).title) == "补全关键词")
     model.execute(row)
     #expect(model.query == "tq " && given.isEmpty)
     // 没填参数：副标题写要填什么，↩ 不跑
     #expect(model.results.first?.subtitle == "输入「tq 空格 城市」")
-    #expect(model.primaryAction(for: try #require(model.results.first)).title == "先填参数")
+    #expect(String(localized: model.primaryAction(for: try #require(model.results.first)).title) == "先填参数")
     model.execute(try #require(model.results.first))
     #expect(given.isEmpty)
     model.query = "tq 北京"
@@ -440,8 +442,8 @@ struct ScriptRunTests {
     #expect(runs == 1)
     #expect(model.results.prefix(2).map(\.title) == ["YUdrPQ==", "hi"])
     #expect(model.results.prefix(2).map(\.payload) == ["YUdrPQ==", "hi"])
-    #expect(model.primaryAction(for: model.results[0]).title == "粘贴")
-    #expect(model.copyTitle(for: model.results[0]) == "复制结果")
+    #expect(String(localized: model.primaryAction(for: model.results[0]).title) == "粘贴")
+    #expect(model.copyTitle(for: model.results[0]).map { String(localized: $0) } == "复制结果")
     // 再打一个字：跑完之前留着这条脚本上一次的结果
     model.query = "b64 bad"
     #expect(model.results.prefix(2).map(\.title) == ["YUdrPQ==", "hi"])
@@ -708,7 +710,7 @@ struct BundledScriptTests {
     // 只打了关键词：↩ 先补「time 」，补上就跑、列出 4 行
     model.query = "time"
     let row = try #require(model.results.first { $0.kind == .script })
-    #expect(model.primaryAction(for: row).title == "补全关键词")
+    #expect(String(localized: model.primaryAction(for: row).title) == "补全关键词")
     model.execute(row)
     #expect(model.query == "time ")
     await model.listRun()
@@ -1599,9 +1601,9 @@ struct SubprocessStopTests {
     let rows = LauncherModel.resultRows(
       .init(end: .finished(0), output: output), of: script, keyword: "PR")
     let model = try model(script)
-    #expect(rows.map { model.primaryAction(for: $0).title } == ["打开", "打开", "粘贴"])
+    #expect(rows.map { String(localized: model.primaryAction(for: $0).title) } == ["打开", "打开", "粘贴"])
     #expect(
-      rows.map { model.commandReturnAction(for: $0)?.title } == ["复制网址", "在访达中显示", "只复制，不粘贴"])
+      rows.map { model.commandReturnAction(for: $0).map { String(localized: $0.title) } } == ["复制网址", "在访达中显示", "只复制，不粘贴"])
     #expect(rows.map { model.copyTitle(for: $0) } == ["复制网址", "复制路径", "复制结果"])
     // ⇥ 接在打的关键词后面；文件结果没写图标时用它在访达里的图标
     #expect(LauncherModel.completion(for: rows[0]) == "PR 12")

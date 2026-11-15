@@ -12,8 +12,10 @@ enum SystemCommand: String, CaseIterable {
   case lock, sleep, sleepdisplays, screensaver, trash, emptytrash, logout, restart, shutdown
   case quitall, ejectall, volup, voldown, mute
 
+  var title: String { String(localized: titleResource) }
+
   /// 标题用 macOS 自己的叫法（苹果菜单、访达、系统设置里的中文）；弹系统确认框的带「…」
-  var title: String {
+  var titleResource: LocalizedStringResource {
     switch self {
     case .lock: "锁定屏幕"
     case .sleep: "睡眠"
@@ -94,8 +96,8 @@ enum SystemCommand: String, CaseIterable {
   /// 不可撤销、要再按一次 ↩ 的：上膛后选中行的副标题（退出登录 / 重新启动 / 关机由 macOS 自己弹确认框）
   var confirmation: String? {
     switch self {
-    case .emptytrash: "再按 ↩ 清倒废纸篓，不能撤销"
-    case .quitall: "再按 ↩ 退出所有打开的 App"
+    case .emptytrash: String(localized: "再按 ↩ 清倒废纸篓，不能撤销")
+    case .quitall: String(localized: "再按 ↩ 退出所有打开的 App")
     default: nil
     }
   }
@@ -104,7 +106,8 @@ enum SystemCommand: String, CaseIterable {
 enum SystemCommands {
   /// 带对象的命令：关键词 = Alfred 的（kill 是 Raycast 的 Kill Process，体检 D12；port 是同一份进程的端口视图，
   /// 对标 Raycast Port Manager，2026-10-08）
-  enum Verb: String, CaseIterable {
+  /// nonisolated：「命令」表的提示行副标题（LauncherCommands.promptSubtitle）要读 noun
+  nonisolated enum Verb: String, CaseIterable {
     case quit, hide, forcequit, eject, kill, port
 
     /// 列的是进程（Processes，在进程外异步列）
@@ -112,13 +115,16 @@ enum SystemCommands {
 
     /// ↩ 的动作名（底栏主动作、⌘K 第一行）。port 的行按 kill（后台进程）或 quit（程序坞里的 App）办，
     /// 见 LauncherModel.rowVerb
-    var title: String {
+    var title: String { String(localized: titleResource) }
+
+    var titleResource: LocalizedStringResource {
       switch self {
       case .quit: "退出"
       case .hide: "隐藏"
       case .forcequit: "强制退出"
       case .eject: "推出"
-      case .kill, .port: "结束"
+      case .kill, .port:
+        LocalizedStringResource("launcher.endProcess", defaultValue: "结束", comment: "动作：结束进程")
       }
     }
 
@@ -137,12 +143,12 @@ enum SystemCommands {
     /// 只输关键词时那一行补全提示
     var prompt: String {
       switch self {
-      case .quit: "退出正在运行的 App…"
-      case .hide: "隐藏 App…"
-      case .forcequit: "强制退出 App…"
-      case .eject: "推出磁盘…"
-      case .kill: "结束进程…"
-      case .port: "查看端口占用…"
+      case .quit: String(localized: "退出正在运行的 App…")
+      case .hide: String(localized: "隐藏 App…")
+      case .forcequit: String(localized: "强制退出 App…")
+      case .eject: String(localized: "推出磁盘…")
+      case .kill: String(localized: "结束进程…")
+      case .port: String(localized: "查看端口占用…")
       }
     }
 
@@ -161,20 +167,20 @@ enum SystemCommands {
     /// 补全提示里「关键词 空格 X」的 X
     var noun: String {
       switch self {
-      case .eject: "磁盘名"
-      case .kill: "进程名或 :端口"
-      case .port: "端口号或进程名"
-      default: "App 名"
+      case .eject: String(localized: "磁盘名")
+      case .kill: String(localized: "进程名或 :端口")
+      case .port: String(localized: "端口号或进程名")
+      default: String(localized: "App 名")
       }
     }
 
     /// 只输了关键词时的分组标题
     var groupTitle: String {
       switch self {
-      case .eject: "可推出的磁盘"
-      case .kill: "后台进程"
-      case .port: "在监听的端口"
-      default: "正在运行的 App"
+      case .eject: String(localized: "可推出的磁盘")
+      case .kill: String(localized: "后台进程")
+      case .port: String(localized: "在监听的端口")
+      default: String(localized: "正在运行的 App")
       }
     }
   }
@@ -190,21 +196,28 @@ enum SystemCommands {
   /// 强制退出上膛后的副标题（↩ 上膛写 ↩，quit / hide 里 ⌘↩ 上膛写 ⌘↩）。name：port 的行标题是端口号，
   /// 副标题一换成这句就看不出是哪个进程了，所以写进提示里（别的模式标题就是名字，不用写）
   static func forceQuitConfirmation(key: String, name: String? = nil) -> String {
-    "再按 \(key) 强制退出\(name.map { "「\($0)」" } ?? "")，没存的内容会丢失"
+    guard let name else { return String(localized: "再按 \(key) 强制退出，没存的内容会丢失") }
+    return String(localized: "再按 \(key) 强制退出「\(name)」，没存的内容会丢失")
   }
 
   /// kill / port 里 ⌘↩（SIGKILL）上膛后的副标题
   static func killConfirmation(name: String? = nil) -> String {
-    "再按 ⌘↩ 强制结束\(name.map { "「\($0)」" } ?? "")，没存的内容会丢失"
+    guard let name else { return String(localized: "再按 ⌘↩ 强制结束，没存的内容会丢失") }
+    return String(localized: "再按 ⌘↩ 强制结束「\(name)」，没存的内容会丢失")
   }
 
+  /// 搜索中英都认（D7）：显示的标题、中文原文和口语叫法（连拼音、首字母）、Alfred 关键词、英文名
   static let items: [LauncherItem] = SystemCommand.allCases.map { command in
-    let chinese = [command.title] + command.synonyms
+    let chinese = [command.titleResource.chinese] + command.synonyms
     let pinyin = chinese.compactMap { AppCatalog.pinyin($0) }
+    let names =
+      [command.title] + chinese + [command.rawValue, command.english]
+      + pinyin.map(\.full)
     return LauncherItem(
       kind: .system, target: command.rawValue, title: command.title, subtitle: command.rawValue,
-      names: (chinese + [command.rawValue, command.english] + pinyin.map(\.full))
-        .map(LauncherMatch.fold),
+      names: names.map(LauncherMatch.fold).reduce(into: []) {
+        if !$0.contains($1) { $0.append($1) }
+      },
       initials: [LauncherMatch.initials(command.english)] + pinyin.map(\.initials))
   }
 
@@ -228,9 +241,10 @@ enum SystemCommands {
     var exact: [LauncherItem] = []
     var partial: [LauncherItem] = []
     for verb in Verb.allCases {
+      let target = "system-" + verb.rawValue
       let item = LauncherItem(
-        kind: .prompt, target: "system-" + verb.rawValue, title: verb.prompt,
-        subtitle: "输入「\(verb.rawValue) 空格 \(verb.noun)」，↩ 或 Tab 补全关键词",
+        kind: .prompt, target: target, title: verb.prompt,
+        subtitle: LauncherCommands.promptSubtitle(target, keyword: verb.rawValue) ?? "",
         completion: verb.rawValue + " ")
       switch LauncherMatch.promptMatch(query, keywords: [verb.rawValue], aliases: verb.aliases) {
       case .exact: exact.append(item)

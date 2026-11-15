@@ -89,8 +89,7 @@ struct LauncherTab: View {
           } label: {
             Text("启动器里的按键")
             Text(
-              "搜 App、系统设置、文件、书签、网址、路径、算式（也能换算单位和进制）和系统命令（lock、quit、kill 这些），"
-                + "↩ 打开，⌘K 看这一项的全部操作")
+              "搜 App、系统设置、文件、书签、网址、路径、算式（也能换算单位和进制）和系统命令（lock、quit、kill 这些），↩ 打开，⌘K 看这一项的全部操作")
           }
         }
         Section {
@@ -191,7 +190,8 @@ struct LauncherTab: View {
           Group {
             if let status {
               statusText(
-                status, noun: "书签", empty: "书签文件里一条书签都没有", missing: "没找到书签文件")
+                status, read: { "已读到 \($0) 条书签" }, empty: "书签文件里一条书签都没有",
+                missing: "没找到书签文件")
             }
             if status == .needsAccess { Text("在列表里点 +，选中 Kitty Tools") }
           }
@@ -217,8 +217,8 @@ struct LauncherTab: View {
         Text("也搜浏览历史").accessibilityLabel("也搜 \(browser.name) 的浏览历史")
         if history.wrappedValue {
           statusText(
-            BrowserHistory.shared.status(.init(browser: browser, kind: .history)), noun: "历史",
-            empty: "浏览历史里还没有常去的网页", missing: "没找到浏览历史文件")
+            BrowserHistory.shared.status(.init(browser: browser, kind: .history)),
+            read: { "已读到 \($0) 条历史" }, empty: "浏览历史里还没有常去的网页", missing: "没找到浏览历史文件")
         } else {
           // Safari 的库没有「手输过」这一项，只按访问次数
           Text(
@@ -241,27 +241,28 @@ struct LauncherTab: View {
 
   /// 开关下的一行：「已读到 N 条书签」；没读到、没授权是橙字
   @ViewBuilder
-  private func statusText(_ status: Browsers.Status, noun: String, empty: String, missing: String)
-    -> some View
-  {
+  private func statusText(
+    _ status: Browsers.Status, read: (Int) -> LocalizedStringResource,
+    empty: LocalizedStringResource, missing: LocalizedStringResource
+  ) -> some View {
     switch status {
     case .reading: Text("正在读取…")
-    case .read(let count) where count > 0: Text("已读到 \(count) 条\(noun)")
+    case .read(let count) where count > 0: Text(read(count))
     case .read: problem(empty)
     case .noFile: problem(missing)
     case .needsAccess: problem("需要完全磁盘访问权限")
     }
   }
 
-  private func problem(_ text: String) -> some View {
+  private func problem(_ text: LocalizedStringResource) -> some View {
     Text(text).foregroundStyle(Color(nsColor: .systemOrange))
   }
 
   private var folderDetail: String {
     switch deniedFolders {
-    case nil: "还没允许：这些文件夹里的文件搜不到"
-    case let denied? where denied.isEmpty: "都已允许"
-    case let denied?: "没有权限：" + denied.joined(separator: "、") + "（去系统设置里打开）"
+    case nil: String(localized: "还没允许：这些文件夹里的文件搜不到")
+    case let denied? where denied.isEmpty: String(localized: "都已允许")
+    case let denied?: String(localized: "没有权限：\(denied.joinedAsList())（去系统设置里打开）")
     }
   }
 }

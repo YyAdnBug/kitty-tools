@@ -21,25 +21,31 @@ enum Calculator {
   }
 
   struct Copy: Equatable {
-    let title: String
+    /// ⌘K 里那一行（中文原文另给动作菜单过滤用，ActionMenu.Item.original）
+    let title: LocalizedStringResource
     let text: String
   }
 
   static func item(
-    for query: String, rates: ExchangeRates.Table? = nil, home: String = ExchangeRates.home
+    for query: String, rates: ExchangeRates.Table? = nil, home: String = ExchangeRates.home,
+    english: Bool = InterfaceLanguage.isEnglish
   ) -> LauncherItem? {
-    guard let result = result(for: query, rates: rates, home: home) else { return nil }
+    guard let result = result(for: query, rates: rates, home: home, english: english) else {
+      return nil
+    }
     return LauncherItem(
       kind: .calculation, target: query, title: result.display,
       subtitle: result.note ?? "", payload: result.payload,
       completion: result.payload)
   }
 
-  /// 单位换算 → 进制 → 汇率（没有汇率表时 nil）→ 算式，都不是就 nil
+  /// 单位换算 → 进制 → 汇率（没有汇率表时 nil）→ 算式，都不是就 nil。english：结果里的市制单位、天、周写英文
+  /// （输入中英都认）
   static func result(
-    for query: String, rates: ExchangeRates.Table? = nil, home: String = ExchangeRates.home
+    for query: String, rates: ExchangeRates.Table? = nil, home: String = ExchangeRates.home,
+    english: Bool = InterfaceLanguage.isEnglish
   ) -> Result? {
-    if let result = convert(query) ?? convertRadix(query) { return result }
+    if let result = convert(query, english: english) ?? convertRadix(query) { return result }
     if let request = ExchangeRates.request(for: query) {
       return rates.flatMap { ExchangeRates.result(request, table: $0, home: home) }
     }
@@ -139,7 +145,10 @@ enum Calculator {
   /// ⌘K 里的「复制十进制 / 十六进制 / 二进制」（不是整数时没有；except 是结果本身的进制）
   static func radixCopies(_ value: Double, except base: Int) -> [Copy] {
     guard value == value.rounded(), abs(value) <= 9_007_199_254_740_992 else { return [] }
-    return [(10, "复制十进制"), (16, "复制十六进制"), (2, "复制二进制")].filter { $0.0 != base }.map {
+    let titles: [(Int, LocalizedStringResource)] = [
+      (10, "复制十进制"), (16, "复制十六进制"), (2, "复制二进制"),
+    ]
+    return titles.filter { $0.0 != base }.map {
       Copy(title: $0.1, text: $0.0 == 10 ? format(value) : radix(Int64(value), $0.0))
     }
   }
@@ -152,7 +161,7 @@ enum Calculator {
 
   /// 「10 km to mi」「30 摄氏度 转 华氏度」「1.5GB in MB」：左边一个数加单位，右边单位；两边要是同一类量。
   /// 结果：大字「6.2137 mi」（分组）、↩ 粘贴 / Tab 写回「6.2137 mi」（不分组，接着能换算）、⌘K「复制原始数字」6.2137
-  static func convert(_ query: String) -> Result? {
+  static func convert(_ query: String, english: Bool = false) -> Result? {
     let text = normalize(query).trimmingCharacters(in: .whitespaces)
     guard
       let match = text.wholeMatch(
@@ -166,10 +175,16 @@ enum Calculator {
       .value
     guard converted.isFinite else { return nil }
     let plain = quantity(converted, grouped: false)
+    let symbol = english ? englishSymbols[to.symbol] ?? to.symbol : to.symbol
     return Result(
-      display: quantity(converted, grouped: true) + " " + to.symbol,
-      payload: plain + " " + to.symbol, copies: [Copy(title: "复制原始数字", text: plain)])
+      display: quantity(converted, grouped: true) + " " + symbol,
+      payload: plain + " " + symbol, copies: [Copy(title: "复制原始数字", text: plain)])
   }
+
+  /// 只有中文名的单位在英文界面里的写法（结果、粘贴的都用它；它们也是能输入的名字，写回去还能接着换算）
+  static let englishSymbols = [
+    "里": "li", "尺": "chi", "寸": "cun", "斤": "jin", "两": "liang", "天": "d", "周": "wk", "亩": "mu",
+  ]
 
   /// 换算结果的数：≥ 1 的最多 4 位小数（6.2137），小于 1 的 6 位有效数字（0.000621371）
   static func quantity(_ value: Double, grouped: Bool) -> String {
@@ -215,15 +230,15 @@ enum Calculator {
         (UnitLength.nauticalMiles, "nmi", ["nmi", "海里"]),
         (
           UnitLength(symbol: "里", converter: UnitConverterLinear(coefficient: 500)), "里",
-          ["里", "华里"]
+          ["里", "华里", "li"]
         ),
         (
           UnitLength(symbol: "尺", converter: UnitConverterLinear(coefficient: 1.0 / 3)), "尺",
-          ["尺", "市尺"]
+          ["尺", "市尺", "chi"]
         ),
         (
           UnitLength(symbol: "寸", converter: UnitConverterLinear(coefficient: 1.0 / 30)), "寸",
-          ["寸", "市寸"]
+          ["寸", "市寸", "cun"]
         ),
       ]
     ),
@@ -237,9 +252,13 @@ enum Calculator {
         (UnitMass.pounds, "lb", ["lb", "lbs", "pound", "pounds", "磅"]),
         (UnitMass.ounces, "oz", ["oz", "ounce", "ounces", "盎司"]),
         (
-          UnitMass(symbol: "斤", converter: UnitConverterLinear(coefficient: 0.5)), "斤", ["斤", "市斤"]
+          UnitMass(symbol: "斤", converter: UnitConverterLinear(coefficient: 0.5)), "斤",
+          ["斤", "市斤", "jin"]
         ),
-        (UnitMass(symbol: "两", converter: UnitConverterLinear(coefficient: 0.05)), "两", ["两"]),
+        (
+          UnitMass(symbol: "两", converter: UnitConverterLinear(coefficient: 0.05)), "两",
+          ["两", "liang"]
+        ),
       ]
     ),
     (
@@ -298,7 +317,8 @@ enum Calculator {
         (UnitArea.hectares, "ha", ["ha", "hectare", "hectares", "公顷"]),
         (UnitArea.acres, "ac", ["ac", "acre", "acres", "英亩"]),
         (
-          UnitArea(symbol: "亩", converter: UnitConverterLinear(coefficient: 2000.0 / 3)), "亩", ["亩"]
+          UnitArea(symbol: "亩", converter: UnitConverterLinear(coefficient: 2000.0 / 3)), "亩",
+          ["亩", "mu"]
         ),
       ]
     ),

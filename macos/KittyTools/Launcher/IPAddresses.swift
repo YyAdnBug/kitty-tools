@@ -44,7 +44,9 @@ enum IPAddresses {
     keywords.contains(LauncherMatch.fold(query).filter { !$0.isWhitespace })
   }
 
-  private static let keywords: Set<String> = ["ip", "ip地址", "本机ip", "局域网ip", "内网ip", "外网ip"]
+  private static let keywords: Set<String> = [
+    "ip", "ip地址", "本机ip", "局域网ip", "内网ip", "外网ip", "ipaddress", "myip", "localip", "publicip",
+  ]
 
   // MARK: 本机
 
@@ -58,18 +60,24 @@ enum IPAddresses {
     -> [LauncherItem]
   {
     guard !addresses.isEmpty else {
-      return [LauncherItem(kind: .ip, target: "lan", title: "局域网 IP", subtitle: "没有连上网络")]
+      return [
+        LauncherItem(
+          kind: .ip, target: "lan", title: String(localized: "局域网 IP"),
+          subtitle: String(localized: "没有连上网络"))
+      ]
     }
     let sorted =
       addresses.filter { $0.interface == primary } + addresses.filter { $0.interface != primary }
     return sorted.map { local in
       let vpn = isVPN(local.interface)
+      let interface = local.interface
       let name =
-        names[local.interface].map { "\($0)（\(local.interface)）" }
-        ?? (vpn ? "VPN（\(local.interface)）" : local.interface)
+        names[interface].map { String(localized: "\($0)（\(interface)）") }
+        ?? (vpn ? String(localized: "VPN（\(interface)）") : interface)
       return LauncherItem(
-        kind: .ip, target: local.interface + " " + local.address, title: local.address,
-        subtitle: (vpn ? "内网" : "局域网") + " · " + name, payload: local.address)
+        kind: .ip, target: interface + " " + local.address, title: local.address,
+        subtitle: vpn ? String(localized: "内网 · \(name)") : String(localized: "局域网 · \(name)"),
+        payload: local.address)
     }
   }
 
@@ -135,20 +143,23 @@ enum IPAddresses {
       return found.map { service, address in
         LauncherItem(
           kind: .ip, target: service == .domestic ? "public" : "public-overseas", title: address,
-          subtitle: service == .domestic ? "外网 · 访问国内网站时" : "外网 · 访问国外网站时",
+          subtitle: service == .domestic
+            ? String(localized: "外网 · 访问国内网站时") : String(localized: "外网 · 访问国外网站时"),
           payload: address)
       }
     }
     if let address = found.first?.1 {
       return [
-        LauncherItem(kind: .ip, target: "public", title: address, subtitle: "外网", payload: address)
+        LauncherItem(
+          kind: .ip, target: "public", title: address, subtitle: String(localized: "外网"),
+          payload: address)
       ]
     }
     let pending = lookups.values.contains(.pending)
     return [
       LauncherItem(
-        kind: .ip, target: "public", title: "外网 IP",
-        subtitle: pending ? "正在查询…" : "没查到：没有联网，或查询超时")
+        kind: .ip, target: "public", title: String(localized: "外网 IP"),
+        subtitle: pending ? String(localized: "正在查询…") : String(localized: "没查到：没有联网，或查询超时"))
     ]
   }
 

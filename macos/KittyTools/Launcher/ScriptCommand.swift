@@ -69,9 +69,9 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
 
     var text: String {
       switch self {
-      case .noShebang: "第一行没有 #!，不知道用什么跑"
-      case .unreadable: "读不出来"
-      case .confirmInList: "列表脚本打字时就会运行，不能写 confirm"
+      case .noShebang: String(localized: "第一行没有 #!，不知道用什么跑")
+      case .unreadable: String(localized: "读不出来")
+      case .confirmInList: String(localized: "列表脚本打字时就会运行，不能写 confirm")
       }
     }
   }
@@ -79,6 +79,9 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
   /// 脚本文件的路径：使用记录、收藏、别名都按它认
   let path: String
   var title: String
+  /// 头部用 @kitty.title.en 另写了一种语言的标题时，没用上的那一个（英文界面里是中文标题，中文界面里是英文的）：只进搜索名，
+  /// 两种语言里打哪个都找得到（D7）
+  var otherTitle: String?
   /// 头部写的关键词（「命令」表里的默认别名）：折叠过、不带空白
   var keyword: String?
   var icon: Icon?
@@ -140,8 +143,12 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
 
   // MARK: 解析
 
-  /// 读到的开头（最多 headerBytes）→ 一条命令；nil = 不是脚本、或者是 .template. 的（不列也不报）
-  static func parse(_ head: String, path: String) -> Result<ScriptCommand, Problem>? {
+  /// 读到的开头（最多 headerBytes）→ 一条命令；nil = 不是脚本、或者是 .template. 的（不列也不报）。
+  /// english：英文界面里 title、description、argument1–3、confirm 先用 @kitty.<字段>.en 写的（自带脚本两种语言各写一份），
+  /// 没写的用原来的
+  static func parse(_ head: String, path: String, english: Bool = InterfaceLanguage.isEnglish)
+    -> Result<ScriptCommand, Problem>?
+  {
     let name = (path as NSString).lastPathComponent
     guard !name.hasPrefix("."), !name.contains(".template.") else { return nil }
     let lines = head.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline)
@@ -161,10 +168,18 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
         raycast[key] = value
       }
     }
+    let original = kitty["title"]
+    if english {
+      for key in localizedKeys {
+        if let value = kitty[key + englishSuffix], !value.isEmpty { kitty[key] = value }
+      }
+    }
     let fields = merged(kitty: kitty, raycast: raycast)
     let fileTitle = (name as NSString).deletingPathExtension
     let title = fields["title"].flatMap { $0.isEmpty ? nil : $0 } ?? fileTitle
     var script = ScriptCommand(path: path, title: title, interpreter: interpreter)
+    let other = english ? original : kitty["title" + englishSuffix]
+    script.otherTitle = other.flatMap { $0.isEmpty || $0 == title ? nil : $0 }
     script.keyword = fields["keyword"].flatMap(keyword)
     let folder = (path as NSString).deletingLastPathComponent
     script.icon = fields["icon"].flatMap { icon($0, folder: folder) }
@@ -183,6 +198,12 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
     }
     return .success(script)
   }
+
+  /// 能另写英文的字段（@kitty.title.en 这类），和那个后缀
+  static let localizedKeys = [
+    "title", "description", "argument1", "argument2", "argument3", "confirm",
+  ]
+  static let englishSuffix = ".en"
 
   /// 一行注释里的「@kitty.key 值」/「@raycast.key 值」；注释符号可以是 #、// 或 --
   static func field(_ line: Substring) -> (prefix: String, key: String, value: String)? {
@@ -268,7 +289,7 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
       if value.hasPrefix("{"),
         let object = try? JSONSerialization.jsonObject(with: Data(value.utf8)) as? [String: Any]
       {
-        let placeholder = (object["placeholder"] as? String) ?? "参数\(index)"
+        let placeholder = (object["placeholder"] as? String) ?? String(localized: "参数\(index)")
         let type = object["type"] as? String
         // 下拉的选项：title 给人看（没写就用 value），value 交给脚本；一个都没有的当普通文字
         let options = (type == "dropdown" ? object["data"] as? [[String: Any]] : nil)?.compactMap {
@@ -300,7 +321,7 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
   static func confirmation(_ value: String, title: String) -> String? {
     switch value.lowercased() {
     case "false", "no", "0": nil
-    case "", "true", "yes", "1": "再按 ↩ 运行「\(title)」"
+    case "", "true", "yes", "1": String(localized: "再按 ↩ 运行「\(title)」")
     default: value
     }
   }
@@ -676,9 +697,13 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
   /// 再加 PATH 和几个 KITTY_ 开头的
   static let inheritedKeys = ["HOME", "USER", "LOGNAME", "SHELL", "TMPDIR"]
 
+  /// KITTY_LANGUAGE：本 App 界面的语言（zh-Hans / en），自带脚本按它挑输出的话（LANG 跟着地区走，中文界面在没有
+  /// zh_<地区> 的地方会退成 en_US，不能拿来认）
   static func environment(
     inherited: [String: String], path: String, script: ScriptCommand, dataDirectory: String,
-    version: String, language: String
+    version: String, language: String,
+    interface: String = InterfaceLanguage.isEnglish
+      ? InterfaceLanguage.english.rawValue : InterfaceLanguage.chinese.rawValue
   ) -> [String: String] {
     var environment = inherited.filter { inheritedKeys.contains($0.key) }
     environment["PATH"] = path
@@ -686,6 +711,7 @@ nonisolated struct ScriptCommand: Hashable, Sendable {
     environment["KITTY_SCRIPT_DIR"] = script.folder
     environment["KITTY_DATA_DIR"] = dataDirectory
     environment["KITTY_VERSION"] = version
+    environment["KITTY_LANGUAGE"] = interface
     return environment
   }
 

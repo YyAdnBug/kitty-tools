@@ -159,13 +159,13 @@ struct SystemCommandsTests {
     #expect(model.groupTitle == nil)
     #expect(listed == [.quit])  // 进模式时列一次，打字只过滤
     let target = try #require(model.selectedItem)
-    #expect(model.primaryAction(for: target).title == "退出")
-    #expect(model.commandReturnAction(for: target)?.title == "强制退出")
+    #expect(String(localized: model.primaryAction(for: target).title) == "退出")
+    #expect(model.commandReturnAction(for: target).map { String(localized: $0.title) } == "强制退出")
     // 危险色：退出不算，⌘↩ 的强制退出算（⌘K 里那一行跟着标成危险）
     #expect(!model.isDangerous(target, commandKey: false))
     #expect(model.isDangerous(target, commandKey: true))
     #expect(model.actions.map(\.isDestructive).prefix(2) == [false, true])
-    #expect(model.copyTitle(for: target) == "复制路径")
+    #expect(model.copyTitle(for: target).map { String(localized: $0) } == "复制路径")
     model.execute(target)
     #expect(performed == [.quit(notes.target)] && hides == 1)
     #expect(usage.entries.isEmpty)  // 退出过的 App 不在普通搜索里加分
@@ -191,7 +191,7 @@ struct SystemCommandsTests {
     model.execute(trash)
     #expect(performed.isEmpty && hides == 0 && model.isArmed(trash))
     #expect(model.alternateSubtitle(for: trash) == "再按 ↩ 清倒废纸篓，不能撤销")
-    #expect(model.primaryAction(for: trash).title == "确认清倒废纸篓")
+    #expect(String(localized: model.primaryAction(for: trash).title) == "确认清倒废纸篓")
     #expect(
       model.isDangerous(trash, commandKey: false) && !model.isDangerous(trash, commandKey: true))
     #expect(model.actions.first?.isDestructive == true)

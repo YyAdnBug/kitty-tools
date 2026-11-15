@@ -36,10 +36,10 @@ import SwiftUI
 
     var text: String {
       switch self {
-      case .missing(let name): "图标找不到：\(name)"
-      case .tooBig: "图标太大（本地最多 2 MB，网址最多 1 MB）"
-      case .notImage: "图标不是图片"
-      case .download: "图标下载不下来：网址不对或没联网"
+      case .missing(let name): String(localized: "图标找不到：\(name)")
+      case .tooBig: String(localized: "图标太大（本地最多 2 MB，网址最多 1 MB）")
+      case .notImage: String(localized: "图标不是图片")
+      case .download: String(localized: "图标下载不下来：网址不对或没联网")
       }
     }
   }

@@ -1,12 +1,16 @@
 // 给 AI 的脚本写法说明（2026-11-07 第二轮拍板 A1 A2：用户要的是「一份写法说明丢给 AI」，Kitty 里不调 AI 写）：一份中文 Markdown，
 // 说清楚文件格式、每个字段、六种结果方式、参数、列表的两种写法、运行环境和硬规矩，最后留一段给用户写「想做什么」。
 // 设置 › 启动器「脚本命令」、「怎么写脚本」说明页、启动器里的「复制脚本写法说明」都复制这一份。AI 给回来的脚本从剪贴板新建，
-// 走和导入一样的「先看一眼」（ScriptLibrary.scriptText(fromClipboard:)）。改了脚本的写法（字段、模式）要同步改这里。
+// 走和导入一样的「先看一眼」（ScriptLibrary.scriptText(fromClipboard:)）。改了脚本的写法（字段、模式）要同步改这里（中英两份）。
+// 英文界面复制的是英文那份（让 AI 写出英文的名字和说明）：给大模型的提示词不进 String Catalog，两份直接写在这里。
 
 import Foundation
 
 nonisolated enum ScriptAIGuide {
-  static let text = """
+  /// 按这次运行界面的语言
+  static var text: String { InterfaceLanguage.isEnglish ? english : chinese }
+
+  static let chinese = """
     # 写一个 Kitty Tools 的脚本命令
 
     Kitty Tools 是一个 macOS 菜单栏工具，它的启动器能跑用户写的脚本：一个脚本文件就是启动器里的一条命令。请按下面的规矩，为最后一段「我要的脚本」写一个脚本。**只输出这一个完整的脚本文件，放在一个代码块里，不要别的解释。**
@@ -45,7 +49,7 @@ nonisolated enum ScriptAIGuide {
     ## 运行环境
 
     - 用用户自己终端里的 PATH；工作目录是脚本所在的文件夹；没有标准输入（读不到键盘）。
-    - 能用的环境变量：`KITTY_SCRIPT_DIR`（脚本所在文件夹）、`KITTY_DATA_DIR`（Kitty Tools 的数据目录，要存东西就存这下面自己建的子文件夹）、`KITTY_VERSION`。
+    - 能用的环境变量：`KITTY_SCRIPT_DIR`（脚本所在文件夹）、`KITTY_DATA_DIR`（Kitty Tools 的数据目录，要存东西就存这下面自己建的子文件夹）、`KITTY_VERSION`、`KITTY_LANGUAGE`（Kitty Tools 的界面语言，`zh-Hans` 或 `en`）。
     - 读剪贴板用 `pbpaste`。mode 是 paste / copy 时直接把结果打印出来就行，不用自己写剪贴板。
     - 退出码是 0 算成功；不是 0 算出错，提示里显示输出的最后一行。
 
@@ -61,11 +65,74 @@ nonisolated enum ScriptAIGuide {
     ## 例子
 
     ```zsh
-    \(ScriptLibrary.example)
+    \(ScriptLibrary.chineseExample)
     ```
 
     ## 我要的脚本
 
     （在这里写你想让它做什么，越具体越好：输入是什么、要什么结果、结果给谁。比如：把剪贴板里的网址转成短链接，直接粘贴出来。）
+    """
+
+  static let english = """
+    # Write a Kitty Tools script command
+
+    Kitty Tools is a macOS menu bar app whose Launcher runs scripts the user writes: one script file is one command in the Launcher. Following the rules below, write a script for the last section, “The script I want”. **Output only that one complete script file, in a single code block, with no other explanation.**
+
+    ## File format
+
+    - The first line is `#!`, saying what runs it. Prefer `#!/bin/zsh`; for JavaScript use `#!/usr/bin/osascript -l JavaScript`; for AppleScript use `#!/usr/bin/osascript`.
+    - Then the metadata, one per line, written as comments `# @kitty.field value` (JavaScript uses `// @kitty.field value`, AppleScript uses `-- @kitty.field value`):
+      - `@kitty.title` The name, in English. Required.
+      - `@kitty.keyword` A keyword: one short lowercase English word the user types in the Launcher.
+      - `@kitty.mode` Where the result goes, one of six:
+        - `island`: show the last line of output in the notice at the top of the screen (the default; good for “do one thing, say one line”)
+        - `paste`: paste the output into the app the user is in (good for generating text)
+        - `copy`: copy the output to the clipboard
+        - `full`: show all of the output in the Launcher (good for longer results)
+        - `list`: one result per line for the user to pick; ↩ pastes the selected one (see “Lists” below)
+        - `none`: show nothing
+      - `@kitty.argument1` The argument’s name, like `City`. The user types “keyword, a space, then text” in the Launcher and the text is in `$1`; up to 3 (`argument1`–`argument3`, split on spaces, the last one gets the rest). The user puts arguments with spaces in quotes. An optional one is written `{"placeholder": "City", "optional": true}`; one that goes straight into a URL also gets `"percentEncoded": true` (Kitty percent-encodes it before passing it on); one picked from a few values is `{"placeholder": "Device", "type": "dropdown", "data": [{"title": "Headphones", "value": "headphones"}, {"title": "Speakers", "value": "speakers"}]}` (the user picks a title, the script gets the value); passwords and tokens use `"type": "password"`.
+      - `@kitty.description` One sentence on what it does.
+      - `@kitty.icon` An emoji, or an SF Symbols name (prefer these two; it can also be an image file name in the script’s folder, or an image URL starting with https).
+      - `@kitty.confirm` A confirmation sentence. **Required for anything that deletes files, changes system settings, shuts down, or sends messages**: the user has to press Return twice to run it. A list (`list`) runs as you type and can’t confirm; list scripts with confirm don’t show up.
+      - `@kitty.timeout` Timeout in seconds, 60 if not written; only write it when it really runs long.
+      - `@kitty.filter` For lists (`list`) only; see “Lists” below.
+
+    ## Lists (when mode is list)
+
+    - Each printed line is one result, written “result<Tab>note” (a tab character in between); the user selects one and Return pastes “result”.
+    - When what’s shown differs from what’s pasted, print JSON instead: `{"items": [{"title": "shown", "subtitle": "note", "arg": "pasted"}]}`; add `"valid": false` to one that can’t be picked. Each item can also have:
+      - `"url"`: Return opens this URL in the browser (no paste); `"path"`: Return opens this file or folder (⌘↩ shows it in Finder, ⌘Y Quick Look).
+      - `"icon"`: this item’s own icon, written like `@kitty.icon` (no URLs); `{"type": "fileicon", "path": "~/Desktop"}` uses that file’s icon in Finder.
+      - `"autocomplete"`: text filled into the search field (after the keyword) by ⇥, good for drilling down level by level.
+      - `"text": {"copy": "…"}`: what ⌘C copies (otherwise arg, the URL, or the path).
+    - The script runs again on every keystroke and gets at most 10 seconds, so it has to be fast.
+    - When the results don’t depend on the input (like a fixed list of items), add a line `@kitty.filter`: it runs once, when the user has typed “keyword and a space”; after that the Launcher filters by title and note, and the script gets no arguments.
+
+    ## Environment
+
+    - The PATH is the one from the user’s own Terminal; the working directory is the script’s folder; there’s no standard input (no keyboard).
+    - Environment variables: `KITTY_SCRIPT_DIR` (the script’s folder), `KITTY_DATA_DIR` (Kitty Tools’ data folder; to store things, make your own subfolder in it), `KITTY_VERSION`, `KITTY_LANGUAGE` (Kitty Tools’ interface language, `zh-Hans` or `en`).
+    - Read the clipboard with `pbpaste`. With mode paste / copy, just print the result; don’t write the clipboard yourself.
+    - Exit code 0 is success; anything else is an error, and the notice shows the last line of output.
+
+    ## Hard rules
+
+    1. Use only commands every Mac has: zsh, osascript, curl, pbpaste / pbcopy, open, defaults, date, base64, sed, awk, grep and the like. python3, node, jq and Homebrew tools may be missing; if you must use one, check for it first and if it’s missing write “Install xxx first” to standard error and `exit 1`.
+    2. Double-quote every argument and variable (`"$1"`); don’t use `eval`; don’t splice arguments into a command string you run.
+    3. On error, write the reason to standard error (in zsh `print -u2 "reason"`) and `exit 1`; on success print only the result, nothing extra.
+    4. Anything that deletes files, changes system settings, shuts down, sends messages, or spends money must have `@kitty.confirm`; prefer moving files to the Trash over deleting them.
+    5. Use `curl -sS --max-time 10` for the network; no infinite loops, and don’t leave processes running in the background (if you really must, give it a time limit like `caffeinate` does).
+    6. Name the file in lowercase English with hyphens, extension `.sh` (JavaScript / AppleScript ones can use `.sh` too), like `short-url.sh`.
+
+    ## Example
+
+    ```zsh
+    \(ScriptLibrary.englishExample)
+    ```
+
+    ## The script I want
+
+    (Write here what you want it to do, as specifically as you can: what goes in, what result you want, and where it goes. For example: turn the URL on the clipboard into a short link and paste it.)
     """
 }

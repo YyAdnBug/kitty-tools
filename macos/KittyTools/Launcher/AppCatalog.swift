@@ -68,16 +68,22 @@ enum AppCatalog {
     return items + panes()
   }
 
-  nonisolated static func item(path: String) -> LauncherItem {
+  /// english：界面是英文时标题用系统给的显示名（跟着本 App 的语言，多半是英文名），中文名和它的拼音只进 names（D7：
+  /// 英文界面里打中文、拼音也找得到）；中文界面照旧是中文名
+  nonisolated static func item(path: String, english: Bool = InterfaceLanguage.isEnglish)
+    -> LauncherItem
+  {
     let fileName = ((path as NSString).lastPathComponent as NSString).deletingPathExtension
     // 访达开着「显示所有扩展名」时 displayName 带 .app
     var display = FileManager.default.displayName(atPath: path)
     if display.hasSuffix(".app") { display = String(display.dropLast(4)) }
     let chinese = chineseName(URL(filePath: path))
-    let title = chinese ?? display
-    // 按标题转：中文名直接写在主 Info.plist 里的（企业微信、小程序开发者工具）没有 zh-Hans.lproj，显示名就是中文（B2）
-    let pinyin = Self.pinyin(title)
-    let names = [title, display, fileName, pinyin?.full].compactMap { $0.map(LauncherMatch.fold) }
+    let title = english ? display : chinese ?? display
+    // 按中文名转：中文名直接写在主 Info.plist 里的（企业微信、小程序开发者工具）没有 zh-Hans.lproj，显示名就是中文（B2）
+    let pinyin = Self.pinyin(chinese ?? title)
+    let names = [title, chinese, display, fileName, pinyin?.full].compactMap {
+      $0.map(LauncherMatch.fold)
+    }
     return LauncherItem(
       kind: .app, target: path, title: title,
       // 本 App 界面是简体中文，displayName 往往已是中文名：副标题用文件名（多为英文原名）
@@ -248,8 +254,10 @@ enum AppCatalog {
     let compact = english.filter { $0.isLetter || $0.isNumber }
     let names = ([chinese] + sidebar + [english, compact] + pinyin.map(\.full))
       .filter { !$0.isEmpty }.map(LauncherMatch.fold)
+    // 英文界面里标题是英文名（中文名、拼音照样搜得到）
+    let title = InterfaceLanguage.isEnglish && !english.isEmpty ? english : chinese
     return LauncherItem(
-      kind: .url, target: settingsScheme + id, title: chinese, subtitle: "系统设置",
+      kind: .url, target: settingsScheme + id, title: title, subtitle: String(localized: "系统设置"),
       names: names.reduce(into: []) { if !$0.contains($1) { $0.append($1) } },
       initials: ([LauncherMatch.initials(english)] + pinyin.map(\.initials)).filter { !$0.isEmpty })
   }

@@ -14,32 +14,39 @@ nonisolated enum LauncherCommands {
   struct BuiltIn: Hashable, Sendable {
     /// 偏好里的编号（builtin: + 关键词的英文名）
     let id: String
+    /// 显示的名字（这次运行的语言）和中文原文（「命令」表里中英都能搜）
     let title: String
+    let chinese: String
     /// 原来的关键词（折叠过的）
     let keyword: String
     let symbol: String
   }
 
   static let builtIns: [BuiltIn] = [
-    BuiltIn(
-      id: "builtin:open", title: "搜索文件并打开", keyword: "open", symbol: "doc.text.magnifyingglass"),
-    BuiltIn(
-      id: "builtin:find", title: "搜索文件并在访达中显示", keyword: "find", symbol: "doc.text.magnifyingglass"),
-    BuiltIn(id: "builtin:quit", title: "退出 App", keyword: "quit", symbol: "xmark.circle"),
-    BuiltIn(id: "builtin:hide", title: "隐藏 App", keyword: "hide", symbol: "eye.slash"),
-    BuiltIn(
-      id: "builtin:forcequit", title: "强制退出 App", keyword: "forcequit", symbol: "xmark.octagon"),
-    BuiltIn(id: "builtin:eject", title: "推出磁盘", keyword: "eject", symbol: "eject"),
-    BuiltIn(id: "builtin:kill", title: "结束进程", keyword: "kill", symbol: "stop.circle"),
-    BuiltIn(id: "builtin:port", title: "查看端口占用", keyword: "port", symbol: "network"),
-    BuiltIn(id: "builtin:ip", title: "IP 地址", keyword: "ip", symbol: "network"),
-    BuiltIn(id: "builtin:cb", title: "在剪贴板历史里搜索", keyword: "cb", symbol: "doc.on.clipboard.fill"),
-    BuiltIn(id: "builtin:fy", title: "翻译", keyword: "fy", symbol: "character.bubble.fill"),
+    builtIn("builtin:open", "搜索文件并打开", "open", "doc.text.magnifyingglass"),
+    builtIn("builtin:find", "搜索文件并在访达中显示", "find", "doc.text.magnifyingglass"),
+    builtIn("builtin:quit", "退出 App", "quit", "xmark.circle"),
+    builtIn("builtin:hide", "隐藏 App", "hide", "eye.slash"),
+    builtIn("builtin:forcequit", "强制退出 App", "forcequit", "xmark.octagon"),
+    builtIn("builtin:eject", "推出磁盘", "eject", "eject"),
+    builtIn("builtin:kill", "结束进程", "kill", "stop.circle"),
+    builtIn("builtin:port", "查看端口占用", "port", "network"),
+    builtIn("builtin:ip", "IP 地址", "ip", "network"),
+    builtIn("builtin:cb", "在剪贴板历史里搜索", "cb", "doc.on.clipboard.fill"),
+    builtIn("builtin:fy", "翻译", "fy", "character.bubble.fill"),
     // 默认别名一律英文（不用切输入法；2026-11-08 用户「为什么这两个是中文，不应该统一英文吗」）。中文的「提醒」「汇率」和
     // tx、huilv 这些照旧认（ReminderPhrase.keywords、ExchangeRates.keywords）
-    BuiltIn(id: "builtin:reminder", title: "新建提醒", keyword: "remind", symbol: "alarm.fill"),
-    BuiltIn(id: "builtin:currency", title: "汇率换算", keyword: "currency", symbol: "banknote"),
+    builtIn("builtin:reminder", "新建提醒", "remind", "alarm.fill"),
+    builtIn("builtin:currency", "汇率换算", "currency", "banknote"),
   ]
+
+  private static func builtIn(
+    _ id: String, _ title: LocalizedStringResource, _ keyword: String, _ symbol: String
+  ) -> BuiltIn {
+    BuiltIn(
+      id: id, title: String(localized: title), chinese: title.chinese, keyword: keyword,
+      symbol: symbol)
+  }
 
   static func systemID(_ keyword: String) -> String { "system:" + keyword }
 
@@ -147,11 +154,31 @@ nonisolated enum LauncherCommands {
     guard alias != command.keyword else { return item }
     guard let alias else { return nil }
     var item = item
-    // 「kill 空格 进程名」和例子「remind 10分钟 喝水」里的关键词都换
-    item.subtitle = item.subtitle.replacing("「\(command.keyword) ", with: "「\(alias) ")
     // 补全的是「关键词 空格」的才换（汇率补的是一句示例，不动）
-    if item.completion?.hasPrefix(command.keyword + " ") == true { item.completion = alias + " " }
+    guard item.completion?.hasPrefix(command.keyword + " ") == true else { return item }
+    item.completion = alias + " "
+    // 副标题照同一句模板换上别名（「kill 空格 进程名」、例子「remind 10分钟 喝水」）：不在译好的句子里找字替换
+    if let subtitle = promptSubtitle(item.target, keyword: alias) { item.subtitle = subtitle }
     return item
+  }
+
+  /// 关键词提示行的副标题（模板 + 关键词）：各提示行和 relabel 都从这里取，换语言、换别名都是同一句。不是这几种提示行给 nil
+  static func promptSubtitle(_ target: String, keyword: String) -> String? {
+    func hint(_ noun: String) -> String {
+      String(localized: "输入「\(keyword) 空格 \(noun)」，↩ 或 Tab 补全关键词")
+    }
+    if target.hasPrefix("system-") {
+      return SystemCommands.Verb(rawValue: String(target.dropFirst("system-".count))).map {
+        hint($0.noun)
+      }
+    }
+    if target.hasPrefix("file-") { return hint(String(localized: "文件名")) }
+    if target == "translate-fy" { return hint(String(localized: "文字")) }
+    if target.hasPrefix("reminder-") {
+      return String(
+        localized: "输入「\(keyword) 空格 时间 内容」，如「\(keyword) 10分钟 喝水」；↩ 或 Tab 补全关键词")
+    }
+    return nil
   }
 
   /// 提示行是哪条内置命令的

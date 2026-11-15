@@ -177,12 +177,12 @@ struct LauncherBatch6Tests {
     // ↩ 结束（SIGTERM，不确认）
     model.query = "kill no"
     let node = try #require(model.selectedItem)
-    #expect(model.primaryAction(for: node).title == "结束")
-    #expect(model.commandReturnAction(for: node)?.title == "强制结束")
+    #expect(String(localized: model.primaryAction(for: node).title) == "结束")
+    #expect(model.commandReturnAction(for: node).map { String(localized: $0.title) } == "强制结束")
     // 危险色：结束（SIGTERM）不算，强制结束算
     #expect(
       !model.isDangerous(node, commandKey: false) && model.isDangerous(node, commandKey: true))
-    #expect(model.copyTitle(for: node) == nil && !model.canFavorite(node))
+    #expect(model.copyTitle(for: node).map { String(localized: $0) } == nil && !model.canFavorite(node))
     model.execute(node)
     #expect(performed == [.signal(pid: 4321, name: "node", force: false)] && hides == 1)
     #expect(usage.entries.isEmpty)  // 不记使用
@@ -193,7 +193,7 @@ struct LauncherBatch6Tests {
     model.commandReturn(python)
     #expect(performed.count == 1 && model.isArmed(python))
     #expect(model.alternateSubtitle(for: python) == SystemCommands.killConfirmation())
-    #expect(model.commandReturnAction(for: python)?.title == "确认强制结束")
+    #expect(model.commandReturnAction(for: python).map { String(localized: $0.title) } == "确认强制结束")
     model.commandReturn(python)
     #expect(performed.last == .signal(pid: 88, name: "python3", force: true) && hides == 2)
   }
@@ -320,11 +320,11 @@ struct LauncherBatch6Tests {
     // 后台进程：↩ 结束（同 kill，不确认），⌘↩ 强制结束才算危险
     #expect(titles("port 3000") == [":3000"])
     let node = try #require(model.selectedItem)
-    #expect(model.primaryAction(for: node).title == "结束")
-    #expect(model.commandReturnAction(for: node)?.title == "强制结束")
+    #expect(String(localized: model.primaryAction(for: node).title) == "结束")
+    #expect(model.commandReturnAction(for: node).map { String(localized: $0.title) } == "强制结束")
     #expect(
       !model.isDangerous(node, commandKey: false) && model.isDangerous(node, commandKey: true))
-    #expect(model.copyTitle(for: node) == nil && !model.canFavorite(node))
+    #expect(model.copyTitle(for: node).map { String(localized: $0) } == nil && !model.canFavorite(node))
     #expect(LauncherModel.completion(for: node) == "port 3000")
     model.execute(node)
     #expect(performed == [.signal(pid: 4321, name: "node", force: false)] && hides == 1)
@@ -341,8 +341,8 @@ struct LauncherBatch6Tests {
     // 程序坞里的 App：↩ 正常退出（有没存的它会先问），⌘↩ 强制退出要上膛
     #expect(titles("port 14013") == [":14013"])
     let wechat = try #require(model.selectedItem)
-    #expect(model.primaryAction(for: wechat).title == "退出")
-    #expect(model.commandReturnAction(for: wechat)?.title == "强制退出")
+    #expect(String(localized: model.primaryAction(for: wechat).title) == "退出")
+    #expect(model.commandReturnAction(for: wechat).map { String(localized: $0.title) } == "强制退出")
     #expect(
       !model.isDangerous(wechat, commandKey: false) && model.isDangerous(wechat, commandKey: true))
     model.commandReturn(wechat)
@@ -436,8 +436,8 @@ struct LauncherBatch6Tests {
     model.query = "蓝牙"
     let row = try #require(model.selectedItem)
     #expect(row == pane)
-    #expect(model.primaryAction(for: row).title == "打开")
-    #expect(model.copyTitle(for: row) == nil && model.commandReturnAction(for: row) == nil)
+    #expect(String(localized: model.primaryAction(for: row).title) == "打开")
+    #expect(model.copyTitle(for: row).map { String(localized: $0) } == nil && model.commandReturnAction(for: row) == nil)
     #expect(!model.actions.contains { $0.title.hasPrefix("用「") })  // 不是网页，没有「用 X 打开」
     // 用过的进「常用」、从目录里还原（副标题仍是「系统设置」），搜索时不另出一行
     usage.record(pane, query: "")
@@ -462,7 +462,7 @@ struct LauncherBatch6Tests {
     model.query = ""
     #expect(usage.favorites.map(\.target) == [custom.target])
     let row = try #require(model.results.first { $0.target == custom.target })
-    #expect(model.copyTitle(for: row) == "复制网址")
+    #expect(model.copyTitle(for: row).map { String(localized: $0) } == "复制网址")
     model.query = "辅助功能授权"
     #expect(model.results.contains { $0.target == custom.target })
   }

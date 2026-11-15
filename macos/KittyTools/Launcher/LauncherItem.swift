@@ -124,7 +124,7 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
         }
         items.append(
           action(
-            actionID(hotKey), hotKey.title(recording: state.isRunning(hotKey)),
+            actionID(hotKey), hotKey.titleResource(recording: state.isRunning(hotKey)),
             aliases[hotKey] ?? "")
         )
       }
@@ -141,13 +141,13 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
   private static func action(_ extra: MenuExtra, _ state: ActionState) -> LauncherItem {
     let subtitle =
       switch (extra, extra.isOn(state)) {
-      case (.pauseClipboard, let on?): on ? "已暂停" : "正在记录"
-      case (_, let on?): on ? "已开启" : "已关闭"
+      case (.pauseClipboard, let on?): on ? String(localized: "已暂停") : String(localized: "正在记录")
+      case (_, let on?): on ? String(localized: "已开启") : String(localized: "已关闭")
       default: "Kitty Tools"
       }
     return action(
-      extra.rawValue, extra.title(pinsHidden: state.pinsHidden == true).replacing("…", with: ""),
-      extra.alias, subtitle: subtitle)
+      extra.rawValue, extra.titleResource(pinsHidden: state.pinsHidden == true), extra.alias,
+      subtitle: subtitle, trimsEllipsis: true)
   }
 
   private static var actionCache: (state: ActionState, items: [LauncherItem])?
@@ -163,11 +163,11 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
   /// 状态屏的一个状态：标题是状态的标题，副标题同别的内置动作，右侧类型写「状态屏」；输状态的标题、「状态屏」、
   /// 拼音都搜得到。↩ 直接进入、不确认，所以同分时排在别的结果后面、也不记使用（LauncherMatch.priority、LauncherModel）
   private static func statusPreset(_ preset: StatusPreset) -> LauncherItem {
-    let family = HotKeyAction.statusScreen
-    var item = action(statusPresetPrefix + preset.id, preset.title, "Status Screen")
-    let pinyin = AppCatalog.pinyin(family.title)
-    item.names += [family.title, pinyin?.full].compactMap { $0.map(LauncherMatch.fold) }
-    item.initials += [pinyin?.initials].compactMap { $0 }
+    var item = action(statusPresetPrefix + preset.id, "\(preset.title)", "Status Screen")
+    let family = searchTerms(
+      HotKeyAction.statusScreen.title, HotKeyAction.statusScreen.titleResource)
+    item.names += family.names.filter { !item.names.contains($0) }
+    item.initials += family.initials.filter { !item.initials.contains($0) }
     item.presetEmoji = preset.symbol
     return item
   }
@@ -212,14 +212,48 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
     .home: "Home Main Window 全部功能",
   ]
 
+  /// trimsEllipsis：菜单栏那一项的标题去掉菜单的「…」（中文原文、英文同样去掉再进搜索名）
   private static func action(
-    _ id: String, _ title: String, _ alias: String, subtitle: String = "Kitty Tools"
+    _ id: String, _ resource: LocalizedStringResource, _ alias: String,
+    subtitle: String = "Kitty Tools", trimsEllipsis: Bool = false
   ) -> LauncherItem {
-    let pinyin = AppCatalog.pinyin(title)
+    let trim = { (text: String) in trimsEllipsis ? text.replacing("…", with: "") : text }
+    let title = trim(String(localized: resource))
+    let terms = searchTerms(
+      title, chinese: trim(resource.chinese), english: trim(resource.english), aliases: [alias])
     return LauncherItem(
-      kind: .action, target: id, title: title, subtitle: subtitle,
-      names: [title, alias, pinyin?.full].compactMap { $0.map(LauncherMatch.fold) },
-      initials: [LauncherMatch.initials(alias), pinyin?.initials].compactMap { $0 })
+      kind: .action, target: id, title: title, subtitle: subtitle, names: terms.names,
+      initials: terms.initials)
+  }
+
+  /// 搜索中英都认（拍板 D7，TRANSLATION.md「搜索中英都认」）：显示的标题、中文原文和它的全拼、英文、另给的英文别名都进 names
+  /// （折叠过、不重复），首字母取别名、英文的缩写和中文的拼音首字母。title 是显示的那个（英文界面里是英文）；resource 是 nil 的
+  /// （用户自己起的名字）只按 title 和它的拼音。中文界面里的名字和以前一样，只多出英文（多半已经在别名里）
+  nonisolated static func searchTerms(
+    _ title: String, _ resource: LocalizedStringResource?, aliases: [String] = []
+  ) -> (names: [String], initials: [String]) {
+    searchTerms(title, chinese: resource?.chinese, english: resource?.english, aliases: aliases)
+  }
+
+  /// 同上，中文原文、英文另给（标题去掉了「…」的、脚本头部两种语言各写一份的）；chinese 是 nil 时按 title 转拼音
+  nonisolated static func searchTerms(
+    _ title: String, chinese: String?, english: String?, aliases: [String] = []
+  ) -> (names: [String], initials: [String]) {
+    let pinyin = AppCatalog.pinyin(chinese ?? title)
+    var names: [String] = []
+    for name in [title, chinese] + aliases + [english, pinyin?.full] {
+      guard let name = name.map(LauncherMatch.fold), !name.isEmpty, !names.contains(name) else {
+        continue
+      }
+      names.append(name)
+    }
+    var initials: [String] = []
+    let latin = (aliases + [english]).compactMap { $0 }.filter { !$0.isEmpty }
+    for initial in latin.map(LauncherMatch.initials) + [pinyin?.initials].compactMap({ $0 })
+    where !initial.isEmpty && !initials.contains(initial) {
+      initials.append(initial)
+    }
+    return (names, initials)
   }
 
   var symbol: String {

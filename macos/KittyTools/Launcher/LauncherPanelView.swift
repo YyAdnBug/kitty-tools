@@ -63,23 +63,27 @@ struct LauncherPanelView: View {
         ScriptPageView(
           title: review.script.title,
           subtitle: (review.script.path as NSString).abbreviatingWithTildeInPath,
-          note: "这个脚本是从网上下载的，第一次运行前先看一眼。它会以你的身份运行，能用 Kitty Tools 已有的辅助功能、屏幕录制、完全磁盘访问授权。",
-          noteColor: Color(nsColor: .systemOrange), text: review.text, placeholder: "正在读取…",
-          warning: review.reading?.problem.map { $0 + "不能在这里运行，用编辑器打开看完再说。" },
-          label: "脚本全文", scroll: model.pageScroll
+          note: String(
+            localized: "这个脚本是从网上下载的，第一次运行前先看一眼。它会以你的身份运行，能用 Kitty Tools 已有的辅助功能、屏幕录制、完全磁盘访问授权。"),
+          noteColor: Color(nsColor: .systemOrange), text: review.text,
+          placeholder: String(localized: "正在读取…"),
+          warning: review.reading?.problem.map { String(localized: "\($0)不能在这里运行，用编辑器打开看完再说。") },
+          label: String(localized: "脚本全文"), scroll: model.pageScroll
         )
         .frame(height: Self.reviewHeight)
       } else if let output = model.output {
         ScriptPageView(
           title: output.script.title,
-          subtitle: output.isRunning ? "正在运行…" : output.failure == nil ? "运行完了" : "没有跑成",
+          subtitle: output.isRunning
+            ? String(localized: "正在运行…")
+            : output.failure == nil ? String(localized: "运行完了") : String(localized: "没有跑成"),
           since: output.isRunning ? output.startedAt : nil,
           note: output.failure, noteColor: Color(nsColor: .systemRed),
           text: nil, styled: output.styled.characters.isEmpty ? nil : output.styled,
-          placeholder: output.isRunning ? "正在运行…" : "（没有输出）",
-          warning: output.isCut
-            ? "只显示了前 \(LauncherModel.outputDisplayLimit / 10_000) 万字；粘贴、复制的是全部。" : nil,
-          label: "脚本输出", scroll: model.pageScroll, follows: true
+          placeholder: output.isRunning ? String(localized: "正在运行…") : String(localized: "（没有输出）"),
+          // 10 万字 = LauncherModel.outputDisplayLimit（改了它这句一起改）
+          warning: output.isCut ? String(localized: "只显示了前 10 万字；粘贴、复制的是全部。") : nil,
+          label: String(localized: "脚本输出"), scroll: model.pageScroll, follows: true
         )
         .frame(height: Self.reviewHeight)
       } else if showsNoResults {
@@ -199,7 +203,8 @@ struct LauncherPanelView: View {
       // ⌘K 菜单开着时，搜索框改成过滤动作
       CommandTextField(
         text: model.showsActions ? $model.actionQuery : $model.query,
-        placeholder: model.showsActions ? "搜索操作" : "搜索 App、网址、命令或文件", fontSize: 20,
+        placeholder: model.showsActions
+          ? String(localized: "搜索操作") : String(localized: "搜索 App、网址、命令或文件"), fontSize: 20,
         romanOnly: romanInput, onCommand: model.handleCommand)
     }
   }
@@ -262,12 +267,12 @@ struct LauncherPanelView: View {
 
   /// VoiceOver 的动作（体检 B37）：按一下行只是选中，这里给直接执行的；和 ⌘K 调的是同一批方法
   @ViewBuilder private func accessibilityActions(for item: LauncherItem) -> some View {
-    Button(model.primaryAction(for: item).title) { model.execute(item) }
+    Button(String(localized: model.primaryAction(for: item).title)) { model.execute(item) }
     if let secondary = model.commandReturnAction(for: item) {
-      Button(secondary.title) { model.commandReturn(item) }
+      Button(String(localized: secondary.title)) { model.commandReturn(item) }
     }
     if let copy = model.copyTitle(for: item) {
-      Button(copy) { model.copy(item) }
+      Button(String(localized: copy)) { model.copy(item) }
     }
     if model.canFavorite(item) {
       Button(model.isFavorite(item) ? "取消收藏" : "加入收藏") { model.toggleFavorite(item) }
@@ -449,7 +454,7 @@ struct LauncherPanelView: View {
     if model.notice == nil { UpdateBarHint { model.hidePanel() } }
     Spacer(minLength: 8)
     if let selected = model.selectedItem {
-      let primary = model.primaryAction(for: selected).title
+      let primary = String(localized: model.primaryAction(for: selected).title)
       // 等着再按一次确认、强制退出：字和 ↩ 键帽换危险色（mac-whisker §3「危险色」）
       let danger = model.isDangerous(selected, commandKey: false)
       // 参数没填够：↩ 只响提示音，不画成该按的主按钮（只提示键位，同 secondary 的那种）
@@ -570,7 +575,9 @@ private struct ScriptPageView: View {
   /// 「已 12 秒」「已 2 分 5 秒」
   static func elapsed(_ interval: TimeInterval) -> String {
     let seconds = max(Int(interval), 0)
-    return seconds < 60 ? "已 \(seconds) 秒" : "已 \(seconds / 60) 分 \(seconds % 60) 秒"
+    return seconds < 60
+      ? String(localized: "已 \(seconds) 秒")
+      : String(localized: "已 \(seconds / 60) 分 \(seconds % 60) 秒")
   }
 
   /// ±1 一小段（三行），±2 一屏（留一行接上）
@@ -804,41 +811,65 @@ extension LauncherItem {
     }
   }
 
-  /// 行右侧的类型、底栏左边的种类名
+  /// 行右侧的类型、底栏左边的种类名（显式 key：「提醒」「翻译」「设置」这些短词在别处是页名，英文是复数 / 别的说法）
   fileprivate var kindTitle: String {
     switch kind {
-    case .app: "应用"
-    case .path where contentType?.conforms(to: .volume) == true: "宗卷"
+    case .app: String(localized: "launcher.kind.app", defaultValue: "应用", comment: "启动器行右侧的类型")
+    case .path where contentType?.conforms(to: .volume) == true:
+      String(localized: "launcher.kind.volume", defaultValue: "宗卷", comment: "启动器行右侧的类型")
     case .path:
-      contentType.map { FileSearch.kindTitle(path: target, contentType: $0.identifier) } ?? "文件"
-    case .action: isStatusPreset ? HotKeyAction.statusScreen.title : "命令"
-    case .system: "系统"
-    case .prompt where target.hasPrefix("system-"): "系统"
-    case .translate: "翻译"
-    case .prompt where target == "translate-fy": "翻译"
-    case .url where isSettingsPane: "设置"
-    case .url: "网址"
-    case .prompt where target == FileSearch.accessTarget: "授权"
-    case .prompt where target == ExchangeRates.promptTarget: "汇率"
-    case .prompt where target.hasPrefix(ExchangeRates.suggestionPrefix): "货币"
-    case .prompt where target.hasPrefix("reminder-"): "提醒"
-    case .prompt where target.hasPrefix(LauncherModel.pluginPrefix): "插件"
-    case .prompt where target.hasPrefix(LauncherModel.choicePrefix): "选项"
-    case .search, .prompt: "搜索"
+      contentType.map { FileSearch.kindTitle(path: target, contentType: $0.identifier) }
+        ?? String(localized: "launcher.kind.file", defaultValue: "文件", comment: "启动器行右侧的类型")
+    case .action:
+      isStatusPreset
+        ? HotKeyAction.statusScreen.title
+        : String(localized: "launcher.kind.command", defaultValue: "命令", comment: "启动器行右侧的类型")
+    case .system:
+      String(localized: "launcher.kind.system", defaultValue: "系统", comment: "启动器行右侧的类型")
+    case .prompt where target.hasPrefix("system-"):
+      String(localized: "launcher.kind.system", defaultValue: "系统", comment: "启动器行右侧的类型")
+    case .translate:
+      String(localized: "launcher.kind.translate", defaultValue: "翻译", comment: "启动器行右侧的类型")
+    case .prompt where target == "translate-fy":
+      String(localized: "launcher.kind.translate", defaultValue: "翻译", comment: "启动器行右侧的类型")
+    case .url where isSettingsPane:
+      String(localized: "launcher.kind.settings", defaultValue: "设置", comment: "启动器行右侧的类型")
+    case .url: String(localized: "launcher.kind.url", defaultValue: "网址", comment: "启动器行右侧的类型")
+    case .prompt where target == FileSearch.accessTarget:
+      String(localized: "launcher.kind.access", defaultValue: "授权", comment: "启动器行右侧的类型")
+    case .prompt where target == ExchangeRates.promptTarget:
+      String(localized: "launcher.kind.rates", defaultValue: "汇率", comment: "启动器行右侧的类型")
+    case .prompt where target.hasPrefix(ExchangeRates.suggestionPrefix):
+      String(localized: "launcher.kind.currency", defaultValue: "货币", comment: "启动器行右侧的类型")
+    case .prompt where target.hasPrefix("reminder-"):
+      String(localized: "launcher.kind.reminder", defaultValue: "提醒", comment: "启动器行右侧的类型")
+    case .prompt where target.hasPrefix(LauncherModel.pluginPrefix):
+      String(localized: "launcher.kind.plugin", defaultValue: "插件", comment: "启动器行右侧的类型")
+    case .prompt where target.hasPrefix(LauncherModel.choicePrefix):
+      String(localized: "launcher.kind.option", defaultValue: "选项", comment: "启动器行右侧的类型")
+    case .search, .prompt:
+      String(localized: "launcher.kind.search", defaultValue: "搜索", comment: "启动器行右侧的类型")
     // 计算卡不显示副标题：汇率换算的副标题（「人民币 · 11-03 汇率」，ExchangeRates）写在这里，别的是空的
-    case .calculation: subtitle.isEmpty ? "计算" : subtitle
-    case .clip: "剪贴板"
-    case .process: "进程"
-    case .ip: "网络"
-    case .reminder: "提醒"
+    case .calculation:
+      subtitle.isEmpty
+        ? String(localized: "launcher.kind.calculation", defaultValue: "计算", comment: "启动器行右侧的类型")
+        : subtitle
+    case .clip:
+      String(localized: "launcher.kind.clipboard", defaultValue: "剪贴板", comment: "启动器行右侧的类型")
+    case .process:
+      String(localized: "launcher.kind.process", defaultValue: "进程", comment: "启动器行右侧的类型")
+    case .ip: String(localized: "launcher.kind.network", defaultValue: "网络", comment: "启动器行右侧的类型")
+    case .reminder:
+      String(localized: "launcher.kind.reminder", defaultValue: "提醒", comment: "启动器行右侧的类型")
     // 列表结果写了 url / path 的：同网址行、文件行（↩ 打开写在底栏的主动作上，第三轮 B1）
     case .scriptResult:
       switch opens {
-      case .url: "网址"
-      case .file: "文件"
-      case nil: "脚本"
+      case .url: String(localized: "launcher.kind.url", defaultValue: "网址", comment: "启动器行右侧的类型")
+      case .file: String(localized: "launcher.kind.file", defaultValue: "文件", comment: "启动器行右侧的类型")
+      case nil: String(localized: "launcher.kind.script", defaultValue: "脚本", comment: "启动器行右侧的类型")
       }
-    case .script: "脚本"
+    case .script:
+      String(localized: "launcher.kind.script", defaultValue: "脚本", comment: "启动器行右侧的类型")
     }
   }
 }

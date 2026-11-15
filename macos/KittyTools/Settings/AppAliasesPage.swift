@@ -108,8 +108,8 @@ struct AppAliasesPage: View {
       guard let saved = AppAliases(text: aliasesText).setting(value, for: item) else {
         saveError =
           value.count > AppAliases.entryLimit
-          ? "「\(item.title)」的别名超过 256 字，请缩短后再输入。"
-          : "应用别名已达到可保存的长度，请先删去一些不用的别名。"
+          ? String(localized: "「\(item.title)」的别名超过 \(String(AppAliases.entryLimit)) 字，请缩短后再输入。")
+          : String(localized: "应用别名已达到可保存的长度，请先删去一些不用的别名。")
         return
       }
       aliasesText = saved

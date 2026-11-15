@@ -241,7 +241,7 @@ struct ExchangeRatesTests {
     model.query = "100 美元 转 英"
     let first = try #require(model.results.first)
     #expect(first.target == ExchangeRates.suggestionPrefix + "GBP")
-    #expect(model.primaryAction(for: first).title == "补全货币")
+    #expect(String(localized: model.primaryAction(for: first).title) == "补全货币")
     model.execute(first)
     #expect(model.query == "100 美元 转 英镑")
     // 单位换算有结果：不列货币候选
@@ -311,7 +311,7 @@ struct ExchangeRatesTests {
     let (model, counter) = try model(table)
     model.query = "100 usd to cny"
     #expect(model.results.first?.title == "正在取汇率…")
-    #expect(model.copyTitle(for: try #require(model.results.first)) == nil)  // 占位行不能复制
+    #expect(model.copyTitle(for: try #require(model.results.first)).map { String(localized: $0) } == nil)  // 占位行不能复制
     let id = model.results.first?.id
     await model.ratesFetch()
     #expect(model.results.first?.title == "700.00 CNY")
@@ -342,7 +342,7 @@ struct ExchangeRatesTests {
     model.query = "汇率"
     let prompt = try #require(model.results.first)
     #expect(prompt.target == ExchangeRates.promptTarget)
-    #expect(model.primaryAction(for: prompt).title == "填进示例")
+    #expect(String(localized: model.primaryAction(for: prompt).title) == "填进示例")
     model.execute(prompt)
     #expect(model.query == "100 美元 转 日元")
     await model.ratesFetch()

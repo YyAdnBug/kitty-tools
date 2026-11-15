@@ -101,9 +101,9 @@ struct IPAddressesTests {
     #expect(
       model.results.prefix(3).map(\.title) == ["192.168.1.23", "203.0.113.7", "198.51.100.24"])
     #expect(model.selection == 0)
-    #expect(model.primaryAction(for: model.results[0]).title == "粘贴")
-    #expect(model.commandReturnAction(for: model.results[0])?.title == "只复制，不粘贴")
-    #expect(model.copyTitle(for: model.results[0]) == "复制地址")
+    #expect(String(localized: model.primaryAction(for: model.results[0]).title) == "粘贴")
+    #expect(model.commandReturnAction(for: model.results[0]).map { String(localized: $0.title) } == "只复制，不粘贴")
+    #expect(model.copyTitle(for: model.results[0]).map { String(localized: $0) } == "复制地址")
     // ⌘K 里复制只列一次（⌘↩），不另列 ⌘C
     #expect(model.actions(for: model.results[0]).filter { $0.title.contains("复制") }.count == 1)
     // 这次呼出里查到的不再问
@@ -125,7 +125,7 @@ struct IPAddressesTests {
     model.query = "ip"
     let pending = try #require(model.results.first { $0.subtitle == "正在查询…" })
     #expect(model.commandReturnAction(for: pending) == nil)
-    #expect(model.copyTitle(for: pending) == nil)
+    #expect(model.copyTitle(for: pending).map { String(localized: $0) } == nil)
   }
 
   @Test func typingPastIPDoesNotLookUp() async throws {

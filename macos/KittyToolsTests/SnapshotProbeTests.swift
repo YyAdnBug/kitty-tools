@@ -3566,7 +3566,7 @@ struct SnapshotProbeTests {
       "/System/Applications/Calculator.app", "/System/Applications/Utilities/Activity Monitor.app",
       "/System/Applications/Utilities/Terminal.app", "/System/Applications/Notes.app",
       "/System/Applications/System Settings.app",
-    ].map(AppCatalog.item(path:))
+    ].map { AppCatalog.item(path: $0) }
     let model = LauncherModel(usage: usage, apps: apps)
     model.boundHotKey = { $0.defaultHotKey }  // 不读本机设置，键帽固定是默认键
     // 「用 X 打开」：固定两个浏览器 / 两个编辑器（不问本机的 LaunchServices）；fy 的释义固定一句

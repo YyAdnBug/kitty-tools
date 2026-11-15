@@ -110,9 +110,9 @@ final class FileSearch {
 
   /// 右侧的种类：文件夹、扩展名大写（DMG、MD），没有扩展名写「文件」
   static func kindTitle(path: String, contentType: String?) -> String {
-    if isFolder(contentType) { return "文件夹" }
+    if isFolder(contentType) { return String(localized: "文件夹") }
     let ext = (path as NSString).pathExtension
-    return ext.isEmpty || ext.count > 6 ? "文件" : ext.uppercased()
+    return ext.isEmpty || ext.count > 6 ? String(localized: "文件") : ext.uppercased()
   }
 
   /// 副标题里的位置：~ 缩写；iCloud 云盘写成「iCloud 云盘」（原路径 ~/Library/Mobile Documents/com~apple~CloudDocs
@@ -120,7 +120,7 @@ final class FileSearch {
   static func location(of folder: String, home: String = NSHomeDirectory()) -> String {
     let iCloud = home + "/Library/Mobile Documents/com~apple~CloudDocs"
     if folder == iCloud || folder.hasPrefix(iCloud + "/") {
-      return "iCloud 云盘" + folder.dropFirst(iCloud.count)
+      return String(localized: "iCloud 云盘") + folder.dropFirst(iCloud.count)
     }
     return (folder as NSString).abbreviatingWithTildeInPath
   }
@@ -179,14 +179,19 @@ final class FileSearch {
   static func accessHint(denied: [String]?) -> LauncherItem? {
     guard let denied else {
       return LauncherItem(
-        kind: .prompt, target: accessTarget, title: "搜不到桌面、文稿、下载、iCloud 云盘里的文件？",
-        subtitle: "↩ 允许访问（系统会逐个询问，只要一次）")
+        kind: .prompt, target: accessTarget, title: String(localized: "搜不到桌面、文稿、下载、iCloud 云盘里的文件？"),
+        subtitle: String(localized: "↩ 允许访问（系统会逐个询问，只要一次）"))
     }
     guard !denied.isEmpty else { return nil }
     return LauncherItem(
       kind: .prompt, target: accessTarget,
-      title: "没有权限搜" + denied.map { "「\($0)」" }.joined() + "里的文件",
-      subtitle: "↩ 打开系统设置 › \(Permissions.privacyPane) › 文件和文件夹")
+      title: String(localized: "没有权限搜「\(denied.joined(separator: quotedSeparator))」里的文件"),
+      subtitle: String(localized: "↩ 打开系统设置 › \(Permissions.privacyPane) › 文件和文件夹"))
+  }
+
+  /// 一串加了引号的名字（「桌面」「文稿」）里两个名字之间的那一段（同 AppDelegate）
+  private static var quotedSeparator: String {
+    String(localized: "list.quoted", defaultValue: "」「", comment: "「A」「B」这样一串名字里两个名字之间的那一段")
   }
 
   /// 单输（或拼到一半）「open」「find」时的补全提示，同网页搜索的关键词提示：正好是关键词的放最前，
@@ -196,13 +201,17 @@ final class FileSearch {
     var partial: [LauncherItem] = []
     // 中文叫法和全拼只算打了一半（LauncherMatch.promptMatch）
     let prompts = [
-      ("open", "搜索文件并打开…", ["搜索文件", "打开文件", "文件", "sousuowenjian", "wenjian"]),
-      ("find", "搜索文件并在访达中显示…", ["查找文件", "在访达中显示", "chazhaowenjian", "chazhao"]),
+      ("open", String(localized: "搜索文件并打开…"), ["搜索文件", "打开文件", "文件", "sousuowenjian", "wenjian"]),
+      (
+        "find", String(localized: "搜索文件并在访达中显示…"),
+        ["查找文件", "在访达中显示", "chazhaowenjian", "chazhao"]
+      ),
     ]
     for (keyword, title, aliases) in prompts {
       let item = LauncherItem(
         kind: .prompt, target: "file-" + keyword, title: title,
-        subtitle: "输入「\(keyword) 空格 文件名」，↩ 或 Tab 补全关键词", completion: keyword + " ")
+        subtitle: LauncherCommands.promptSubtitle("file-" + keyword, keyword: keyword) ?? "",
+        completion: keyword + " ")
       switch LauncherMatch.promptMatch(query, keywords: [keyword], aliases: aliases) {
       case .exact: exact.append(item)
       case .partial: partial.append(item)

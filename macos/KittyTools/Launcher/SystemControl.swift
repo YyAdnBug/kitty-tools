@@ -28,10 +28,12 @@ enum SystemControl {
   static func perform(_ action: Action, island: Island?) {
     switch action {
     case .command(let command): run(command, island: island)
-    case .quit(let path): control(path, island: island, failure: "没能退出") { $0.terminate() }
+    case .quit(let path):
+      control(path, island: island, failure: { "没能退出「\($0)」" }, { $0.terminate() })
     case .forceQuit(let path):
-      control(path, island: island, failure: "没能强制退出") { $0.forceTerminate() }
-    case .hide(let path): control(path, island: island, failure: "没能隐藏") { $0.hide() }
+      control(path, island: island, failure: { "没能强制退出「\($0)」" }, { $0.forceTerminate() })
+    case .hide(let path):
+      control(path, island: island, failure: { "没能隐藏「\($0)」" }, { $0.hide() })
     case .eject(let path): Task { await eject([URL(filePath: path)], island: island) }
     case .signal(let pid, let name, let force):
       signal(pid, name: name, force: force, island: island)
@@ -53,8 +55,9 @@ enum SystemControl {
       }
       return
     }
+    let id = String(pid)
     island?.show(
-      "已\(force ? "强制" : "")结束 \(name)（PID \(pid)）",
+      force ? "已强制结束 \(name)（PID \(id)）" : "已结束 \(name)（PID \(id)）",
       symbol: force ? "xmark.octagon.fill" : "stop.circle.fill")
   }
 
@@ -121,8 +124,10 @@ enum SystemControl {
   // MARK: App
 
   /// 按路径找正在运行的 App 再做（退出 / 强制退出 / 隐藏只是发出请求：有没存的文稿时 App 会先问）
+  /// failure：没做成时岛上那一句（插 App 的名字）
   private static func control(
-    _ path: String, island: Island?, failure: String, _ act: (NSRunningApplication) -> Bool
+    _ path: String, island: Island?, failure: (String) -> LocalizedStringResource,
+    _ act: (NSRunningApplication) -> Bool
   ) {
     let current = ProcessInfo.processInfo.processIdentifier
     guard
@@ -136,7 +141,7 @@ enum SystemControl {
     }
     if !act(app) {
       let name = app.localizedName ?? ""
-      island?.show("\(failure)「\(name)」", tone: .error)
+      island?.show(failure(name), tone: .error)
     }
   }
 
@@ -190,23 +195,28 @@ enum SystemControl {
 
   // MARK: 系统工具 / AppleScript（进程外）
 
-  private static func tool(_ path: String, _ arguments: [String], failure: String, island: Island?)
+  private static func tool(
+    _ path: String, _ arguments: [String], failure: LocalizedStringResource, island: Island?
+  )
     async
   {
     if (try? await Subprocess.run(path, arguments))?.status != 0 {
-      island?.show("\(failure)", tone: .error)
+      island?.show(failure, tone: .error)
     }
   }
 
   /// 跑一段 AppleScript，成功返回输出。没被允许控制目标 App（-1743 / -1744）时刘海岛说明并打开系统设置的
   /// 「自动化」，用户在系统确认框里点了取消（-128）不算错
-  private static func script(_ source: String, target: String, failure: String, island: Island?)
+  private static func script(
+    _ source: String, target: LocalizedStringResource, failure: LocalizedStringResource,
+    island: Island?
+  )
     async -> String?
   {
     guard
       let result = try? await Subprocess.run("/usr/bin/osascript", ["-e", source], captures: true)
     else {
-      island?.show("\(failure)", tone: .error)
+      island?.show(failure, tone: .error)
       return nil
     }
     guard result.status != 0 else {
@@ -214,12 +224,12 @@ enum SystemControl {
     }
     if result.error.contains("-1743") || result.error.contains("-1744") {
       island?.show(
-        "没有权限控制「\(target)」",
+        "没有权限控制「\(String(localized: target))」",
         detail: "在 系统设置 › \(Permissions.privacyPane) › 自动化 里打开", tone: .warning,
         actions: [.settings(for: .automation)])
       Permissions.Kind.automation.openSettings()
     } else if !result.error.contains("-128") {
-      island?.show("\(failure)", detail: "\(Island.excerpt(result.error))", tone: .error)
+      island?.show(failure, detail: "\(Island.excerpt(result.error))", tone: .error)
     }
     return nil
   }
@@ -247,7 +257,9 @@ enum SystemControl {
 
   /// kAELogOut 'logo' / kAEShowRestartDialog 'rrst' / kAEShowShutdownDialog 'rsdn'：弹系统自己的确认框
   /// （60 秒倒计时、「重新打开窗口」），不等它的回复
-  private static func loginWindow(_ event: String, failure: String, island: Island?) async {
+  private static func loginWindow(
+    _ event: String, failure: LocalizedStringResource, island: Island?
+  ) async {
     _ = await script(
       "ignoring application responses\ntell application \"loginwindow\" to «event aevt\(event)»\nend ignoring",
       target: "loginwindow", failure: failure, island: island)
@@ -292,7 +304,7 @@ enum SystemControl {
     } else {
       // 圆底的喇叭只有不带声波和两道声波两种（一道、三道的没有圆底变体）；大小看标题里的百分比
       island?.show(
-        "音量 \(level)%", tone: .info,
+        "音量 \(String(level))%", tone: .info,
         symbol: level == 0 ? "speaker.circle.fill" : "speaker.wave.2.circle.fill")
     }
   }

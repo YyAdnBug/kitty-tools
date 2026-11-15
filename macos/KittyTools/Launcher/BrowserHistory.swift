@@ -252,7 +252,7 @@ import Observation
       let bare = Bookmarks.bare(page.url)
       var item = LauncherItem(
         kind: .url, target: page.url, title: page.title.isEmpty ? host : page.title,
-        subtitle: "历史 · \(host)",
+        subtitle: String(localized: "历史 · \(host)"),
         names: [page.title, bare].filter { !$0.isEmpty }.map(LauncherMatch.fold))
       item.visitedAt = page.visitedAt
       return item
@@ -264,7 +264,7 @@ import Observation
     guard let visitedAt = item.visitedAt else { return item.subtitle }
     // 相对时间的格式总是对着「现在」算：按 now 平移过去（平时 now 就是现在，单测能摆固定的时刻）
     let ago = Date.now.addingTimeInterval(min(visitedAt.timeIntervalSince(now), 0)).formatted(
-      .relative(presentation: .named).locale(Locale(identifier: "zh-Hans")))
+      .relative(presentation: .named).locale(.current))
     return item.subtitle + " · " + ago
   }
 }

@@ -116,11 +116,10 @@ enum Processes {
   }
 
   static func item(_ entry: Entry) -> LauncherItem {
-    let memory = entry.memory.formatted(
-      .byteCount(style: .memory).locale(Locale(identifier: "zh-Hans")))
+    let memory = entry.memory.formatted(.byteCount(style: .memory).locale(.current))
     var parts = ["PID \(entry.pid)", memory]
     if !entry.ports.isEmpty {
-      parts.append("监听 " + entry.ports.map { ":\($0)" }.joined(separator: "、"))
+      parts.append(String(localized: "监听 \(entry.ports.map { ":\($0)" }.joinedAsList())"))
     }
     return LauncherItem(
       kind: .process, target: String(entry.pid), title: entry.name,

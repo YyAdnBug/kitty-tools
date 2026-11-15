@@ -57,7 +57,7 @@ import UniformTypeIdentifiers
   /// 上膛的那一行：不可撤销的命令第一下按下后，等同一个键再按一次（打字、移动选中、Esc、收起都撤掉）
   private(set) var armed: Armed?
   /// 没有结果时显示的话。和结果一起换：文件搜索还在查时留着上一句，不闪「没有匹配」
-  private(set) var emptyText = "没有匹配的结果"
+  private(set) var emptyText = String(localized: "没有匹配的结果")
   /// 空查询时前几行是收藏（其余是常用）
   private(set) var favoriteCount = 0
   /// 底栏左边的就地提示（换掉种类色块和种类名）：收藏、移除常用（带撤销「已从常用中移除 · 撤销 ⌘Z」）
@@ -622,16 +622,23 @@ import UniformTypeIdentifiers
   var groups: [Group] {
     if isShowingRecent {
       var groups: [Group] = []
-      if favoriteCount > 0 { groups.append(Group(row: 0, title: "收藏")) }
+      if favoriteCount > 0 {
+        groups.append(
+          Group(
+            row: 0,
+            title: String(
+              localized: "launcher.group.favorites", defaultValue: "收藏", comment: "空搜索框里收藏那一组的标题")))
+      }
       if favoriteCount == 0 || results.count > favoriteCount {
-        groups.append(Group(row: favoriteCount, title: "常用"))
+        groups.append(Group(row: favoriteCount, title: String(localized: "常用")))
       }
       return groups
     }
     if let commandRequest, commandRequest.terms.isEmpty {
       return [Group(row: 0, title: commandRequest.verb.groupTitle)]
     }
-    return fileRequest?.terms.isEmpty == true ? [Group(row: 0, title: "最近打开和下载的文件")] : []
+    return fileRequest?.terms.isEmpty == true
+      ? [Group(row: 0, title: String(localized: "最近打开和下载的文件"))] : []
   }
 
   /// 第一个分组标题
@@ -822,7 +829,7 @@ import UniformTypeIdentifiers
       showTargets(commandRequest)
       return
     }
-    emptyText = "没有匹配的结果"
+    emptyText = String(localized: "没有匹配的结果")
     let features = features
     if features.contains(.translate), allowed("builtin:fy"), let text = Self.translateQuery(command)
     {
@@ -841,7 +848,7 @@ import UniformTypeIdentifiers
     if features.contains(.reminders), allowed("builtin:reminder"),
       let rest = ReminderPhrase.query(command)
     {
-      emptyText = "还没有提醒：在「提醒 」后面接着写时间和内容，如「10分钟 喝水」"
+      emptyText = String(localized: "还没有提醒：在「提醒 」后面接着写时间和内容，如「10分钟 喝水」")
       results = Self.reminderItems(rest, list: reminders(), now: .now)
       return
     }
@@ -1004,7 +1011,7 @@ import UniformTypeIdentifiers
         return showTargets(request)
       }
       results = []
-      emptyText = verb == .port ? "正在读取端口…" : "正在读取进程…"
+      emptyText = verb == .port ? String(localized: "正在读取端口…") : String(localized: "正在读取进程…")
       // 同一个关键词还在列就等它（打字不重列）；换了关键词，上一次的不要了
       if processTask?.verb != verb {
         processTask?.task.cancel()
@@ -1039,15 +1046,15 @@ import UniformTypeIdentifiers
     // port 写「没有找到」：别的用户、系统的进程在监听时这里看不到，不能说「没有」
     emptyText =
       switch (verb, terms.isEmpty) {
-      case (.eject, true): "没有可推出的磁盘"
-      case (.eject, false): "没有匹配的磁盘"
-      case (.kill, true): "没有后台进程"
-      case (.kill, false) where terms.hasPrefix(":"): "没有进程在监听这个端口"
-      case (.port, true): "没有找到在监听端口的进程"
-      case (.port, false) where port != nil: "没有找到监听这个端口的进程"
-      case (.kill, false), (.port, false): "没有匹配的进程"
-      case (_, true): "没有正在运行的 App"
-      case (_, false): "没有匹配的 App"
+      case (.eject, true): String(localized: "没有可推出的磁盘")
+      case (.eject, false): String(localized: "没有匹配的磁盘")
+      case (.kill, true): String(localized: "没有后台进程")
+      case (.kill, false) where terms.hasPrefix(":"): String(localized: "没有进程在监听这个端口")
+      case (.port, true): String(localized: "没有找到在监听端口的进程")
+      case (.port, false) where port != nil: String(localized: "没有找到监听这个端口的进程")
+      case (.kill, false), (.port, false): String(localized: "没有匹配的进程")
+      case (_, true): String(localized: "没有正在运行的 App")
+      case (_, false): String(localized: "没有匹配的 App")
       }
   }
 
@@ -1059,7 +1066,7 @@ import UniformTypeIdentifiers
     guard !request.isTooShort else {
       files.stop()
       results = []
-      emptyText = "再输入一个字母"
+      emptyText = String(localized: "再输入一个字母")
       return
     }
     guard !isFixture else { return }
@@ -1094,7 +1101,8 @@ import UniformTypeIdentifiers
     results = (aliased + named + found + [folderHint].compactMap { $0 }).filter {
       seen.insert($0.id).inserted
     }
-    emptyText = request.terms.isEmpty ? "最近没有打开或下载的文件" : "没有匹配的文件"
+    emptyText =
+      request.terms.isEmpty ? String(localized: "最近没有打开或下载的文件") : String(localized: "没有匹配的文件")
     selectionMotion = .instant
     selection =
       request == shownFileRequest && userMovedSelection
@@ -1113,9 +1121,10 @@ import UniformTypeIdentifiers
   static func clipItem(_ keyword: String) -> LauncherItem {
     LauncherItem(
       kind: .clip, target: keyword,
-      title: keyword.isEmpty ? "打开剪贴板历史" : "在剪贴板历史里搜索「\(keyword)」",
+      title: keyword.isEmpty
+        ? String(localized: "打开剪贴板历史") : String(localized: "在剪贴板历史里搜索「\(keyword)」"),
       // 只输 cb 时说一下还能带关键词（2026-11-04：每个提示行都写怎么用）
-      subtitle: keyword.isEmpty ? "↩ 打开剪贴板面板；输入「cb 空格 关键词」直接搜" : "")
+      subtitle: keyword.isEmpty ? String(localized: "↩ 打开剪贴板面板；输入「cb 空格 关键词」直接搜") : "")
   }
 
   /// 「fy 文本」的文本（不分大小写；只输 fy 不算，出补全提示）
@@ -1127,7 +1136,8 @@ import UniformTypeIdentifiers
 
   /// fy 那一行（副标题是单个英文词的词典释义，查到了再换上）
   static func translateItem(_ text: String, definition: String = "") -> LauncherItem {
-    LauncherItem(kind: .translate, target: text, title: "翻译「\(text)」", subtitle: definition)
+    LauncherItem(
+      kind: .translate, target: text, title: String(localized: "翻译「\(text)」"), subtitle: definition)
   }
 
   /// 单输 fy：↩ / Tab 补全关键词的提示（同 open / find）；打「翻译」「fanyi」时排在本地结果（输入翻译）后面
@@ -1135,9 +1145,13 @@ import UniformTypeIdentifiers
     exact: [LauncherItem], partial: [LauncherItem]
   ) {
     let item = LauncherItem(
-      kind: .prompt, target: "translate-fy", title: "翻译…",
-      subtitle: "输入「fy 空格 文字」，↩ 或 Tab 补全关键词", completion: "fy ")
-    switch LauncherMatch.promptMatch(query, keywords: ["fy"], aliases: ["翻译", "fanyi"]) {
+      kind: .prompt, target: "translate-fy", title: String(localized: "翻译…"),
+      subtitle: LauncherCommands.promptSubtitle("translate-fy", keyword: "fy") ?? "",
+      completion: "fy ")
+    // 英文界面打「translate」也算打了一半（D7：中英都认）
+    switch LauncherMatch.promptMatch(
+      query, keywords: ["fy"], aliases: ["翻译", "fanyi", "translate"])
+    {
     case .exact: return ([item], [])
     case .partial: return ([], [item])
     case nil: return ([], [])
@@ -1151,8 +1165,8 @@ import UniformTypeIdentifiers
     let typed = query.trimmingCharacters(in: .whitespaces)
     return [
       LauncherItem(
-        kind: .prompt, target: "reminder-new", title: "新建提醒…",
-        subtitle: "输入「\(typed) 空格 时间 内容」，如「\(typed) 10分钟 喝水」；↩ 或 Tab 补全关键词",
+        kind: .prompt, target: "reminder-new", title: String(localized: "新建提醒…"),
+        subtitle: LauncherCommands.promptSubtitle("reminder-new", keyword: typed) ?? "",
         completion: typed + " ")
     ]
   }
@@ -1171,26 +1185,29 @@ import UniformTypeIdentifiers
           now: now, calendar: calendar)
         create.append(
           LauncherItem(
-            kind: .reminder, target: "", title: "提醒我：\(parsed.title)", subtitle: when,
+            kind: .reminder, target: "", title: String(localized: "提醒我：\(parsed.title)"),
+            subtitle: when,
             payload: rest))
       } else {
         let repeating = ReminderPhrase.isRepeating(ReminderPhrase.halfWidth(rest))
         hint.append(
           LauncherItem(
             kind: .prompt, target: Self.reminderHint,
-            title: repeating ? "重复的提醒到设置里建" : parsed == nil ? "认不出时间" : "这个时间已经过了",
+            title: repeating
+              ? String(localized: "重复的提醒到设置里建")
+              : parsed == nil ? String(localized: "认不出时间") : String(localized: "这个时间已经过了"),
             subtitle: repeating
-              ? "这里只建一次的；每天、每周、每隔一阵的到 设置 › 提醒 里加"
-              : "试试「10分钟 喝水」「明天9点 交周报」「下午3点半 开会」"))
+              ? String(localized: "这里只建一次的；每天、每周、每隔一阵的到 设置 › 提醒 里加")
+              : String(localized: "试试「10分钟 喝水」「明天9点 交周报」「下午3点半 开会」")))
       }
     }
     let folded = LauncherMatch.fold(rest)
     let existing = list.filter { rest.isEmpty || LauncherMatch.fold($0.title).contains(folded) }
       .map { reminder in
+        let summary = reminder.summary(now: now, calendar: calendar)
         var item = LauncherItem(
           kind: .reminder, target: reminder.id, title: reminder.title,
-          subtitle: reminder.summary(now: now, calendar: calendar)
-            + (reminder.isOn ? "" : " · 已暂停"))
+          subtitle: reminder.isOn ? summary : String(localized: "\(summary) · 已暂停"))
         item.presetEmoji = reminder.symbol.isEmpty ? nil : reminder.symbol
         return item
       }
@@ -1228,7 +1245,7 @@ import UniformTypeIdentifiers
         else { return nil }
         return LauncherItem(
           kind: .prompt, target: pluginPrefix + plugin.rawValue,
-          title: "添加「\(plugin.page.title)」插件",
+          title: String(localized: "添加「\(plugin.page.title)」插件"),
           subtitle: plugin.blurb)
       }
   }
@@ -1489,7 +1506,7 @@ import UniformTypeIdentifiers
       if let completion = item.completion { query = completion }
     case .search:
       guard let url = URL(string: item.target) else {
-        error = "打不开搜索页"
+        error = String(localized: "打不开搜索页")
         return
       }
       open(url, nil)
@@ -1514,7 +1531,7 @@ import UniformTypeIdentifiers
       }
     case .url:
       guard let url = URL(string: item.target) else {
-        error = "打不开「\(item.title)」"
+        error = String(localized: "打不开「\(item.title)」")
         return
       }
       open(url, item)
@@ -1567,26 +1584,27 @@ import UniformTypeIdentifiers
     // 正在打的是下拉参数、还没对上一个选项：选项排在前面，↩ / ⇥ 填进去（第三轮 C1）
     let choices = choiceRows(invocation)
     if !choices.isEmpty {
-      row.subtitle = "从下面选一个「\(script.arguments[invocation.typing].placeholder)」"
+      row.subtitle = String(
+        localized: "从下面选一个「\(script.arguments[invocation.typing].placeholder)」")
       return choices + [row]
     }
     if invocation.isMissing {
       let missing = script.arguments[invocation.arguments.count..<script.requiredCount]
-      row.subtitle =
-        "输入「\(invocation.keyword) 空格 \(missing.map(\.placeholder).joined(separator: " "))」"
+      let placeholders = missing.map(\.placeholder).joined(separator: " ")
+      row.subtitle = String(localized: "输入「\(invocation.keyword) 空格 \(placeholders)」")
       return [row]
     }
     if let bad = script.invalidChoice(invocation.arguments) {
       let argument = script.arguments[bad]
-      row.subtitle =
-        "「\(invocation.arguments[bad])」不是「\(argument.placeholder)」能选的："
-        + argument.options.map(\.title).joined(separator: " / ")
+      let options = argument.options.map(\.title).joined(separator: " / ")
+      row.subtitle = String(
+        localized: "「\(invocation.arguments[bad])」不是「\(argument.placeholder)」能选的：\(options)")
       return [row]
     }
     let downloaded = script.isDownloaded && !approvedScripts.contains(script.path)
     guard script.mode == .list, !downloaded else {
       if downloaded {
-        row.subtitle = "从网上下载的脚本，↩ 先看一眼"
+        row.subtitle = String(localized: "从网上下载的脚本，↩ 先看一眼")
       } else if !invocation.arguments.isEmpty {
         // 密码参数不回显（第三轮 C3）
         row.subtitle = invocation.arguments.enumerated().map { index, value in
@@ -1603,7 +1621,8 @@ import UniformTypeIdentifiers
     let kept = results.filter { $0.isResult(of: script) && $0.payload != nil }
     guard kept.isEmpty else { return kept }
     var pending = LauncherItem(
-      kind: .scriptResult, target: script.path + "\n…", title: "正在运行「\(script.title)」…",
+      kind: .scriptResult, target: script.path + "\n…",
+      title: String(localized: "正在运行「\(script.title)」…"),
       subtitle: "")
     pending.scriptIcon = script.icon
     pending.scriptIconDark = script.iconDark
@@ -1670,7 +1689,7 @@ import UniformTypeIdentifiers
       let found = rest.contains { ![.search, .prompt].contains($0.kind) }
       results = (failed && found ? [] : rows) + rest
       selection = selected.flatMap { id in results.firstIndex { $0.id == id } } ?? 0
-      emptyText = "「\(script.title)」没有给出结果"
+      emptyText = String(localized: "「\(script.title)」没有给出结果")
       // 结果到之前按了 ↩：执行这次的第一条
       if runsWhenListed {
         runsWhenListed = false
@@ -1708,7 +1727,7 @@ import UniformTypeIdentifiers
         selection = index
         userMovedSelection = true
       }
-      emptyText = "「\(script.title)」没有给出结果"
+      emptyText = String(localized: "「\(script.title)」没有给出结果")
       if runs, let first = results.first, first.isResult(of: script) { execute(first) }
     }
     filterTask = (script.path, task)
@@ -1784,19 +1803,27 @@ import UniformTypeIdentifiers
   static func failure(_ outcome: ScriptRunner.Outcome, of script: ScriptCommand) -> (
     title: String, detail: String
   )? {
-    let name = "「\(script.title)」"
+    let name = script.title
     switch outcome.end {
-    case .stopped: return ("已停止" + name, "")
+    case .stopped: return (String(localized: "已停止「\(name)」"), "")
     case .timedOut:
-      return (name + "超时，已停止", "跑了 \(script.limit) 秒还没完；脚本里写 @kitty.timeout 能改")
-    case .failedToStart(let reason): return ("运行不了" + name, reason)
+      // 秒数是脚本写的上限（不是数量：不加千分位）
+      let seconds = String(script.limit)
+      return (
+        String(localized: "「\(name)」超时，已停止"),
+        String(localized: "跑了 \(seconds) 秒还没完；脚本里写 @kitty.timeout 能改")
+      )
+    case .failedToStart(let reason): return (String(localized: "运行不了「\(name)」"), reason)
     case .tooMuchOutput:
-      return (name + "输出太多，已停止", "输出超过 \(ScriptRunner.outputLimit * 4 / 1_048_576) MB")
+      let megabytes = String(ScriptRunner.outputLimit * 4 / 1_048_576)
+      return (
+        String(localized: "「\(name)」输出太多，已停止"), String(localized: "输出超过 \(megabytes) MB")
+      )
     case .finished(let status) where status != 0:
       let reason =
         ScriptCommand.lastLine(outcome.error) ?? ScriptCommand.lastLine(outcome.output)
-        ?? "退出码 \(status)"
-      return (name + "出错了", reason)
+        ?? String(localized: "退出码 \(String(status))")
+      return (String(localized: "「\(name)」出错了"), reason)
     case .finished: return nil
     }
   }
@@ -1822,13 +1849,12 @@ import UniformTypeIdentifiers
   /// 跑一条脚本（B1 B4）：先收起再跑，粘贴的目标在收起前定（焦点原本在自家便签里时直接粘进去）；
   /// 超过 1 秒还没完，岛上出「正在运行」带「停止」。同一个还在跑：不重复起，岛上说一声
   private func start(_ script: ScriptCommand, arguments: [String]) {
-    let name = "「\(script.title)」"
     guard runningScripts[script.path] == nil else {
       close()
       // 岛上那条「正在运行」会被这一条换掉、挂满 60 秒也会收：这里再给一个「停止」（第三轮评审）
       let path = script.path
       island?.show(
-        "\(name)还在运行", detail: "等它跑完，或者点「停止」", tone: .info,
+        "「\(script.title)」还在运行", detail: "等它跑完，或者点「停止」", tone: .info,
         actions: [Island.Action("停止") { [weak self] in self?.runningScripts[path]?.cancel() }])
       return
     }
@@ -1836,12 +1862,12 @@ import UniformTypeIdentifiers
     let target = script.mode == .paste ? pasteTargetView() : nil
     close()
     let path = script.path
-    let progress = "正在运行" + name
+    let progress = Self.progress(script)
     runningScripts[path] = Task { [weak self] in
       guard let self else { return }
       let outcome = await Island.whenSlow(after: .seconds(1)) { [weak self] in
         self?.island?.show(
-          "\(progress)", tone: .progress, symbol: "terminal.fill",
+          progress, tone: .progress, symbol: "terminal.fill",
           actions: [Island.Action("停止") { [weak self] in self?.runningScripts[path]?.cancel() }])
       } work: {
         await self.runScript(script, arguments, nil)
@@ -1871,8 +1897,7 @@ import UniformTypeIdentifiers
         var shown = script
         shown.mode = .full
         return deliver(
-          outcome, of: shown, arguments: arguments, into: nil,
-          progress: "正在运行「\(script.title)」")
+          outcome, of: shown, arguments: arguments, into: nil, progress: Self.progress(script))
       }
       guard output?.startedAt == started else { return }
       var page = Self.outputPage(outcome, of: script, arguments: arguments)
@@ -1909,7 +1934,7 @@ import UniformTypeIdentifiers
     let path = script.path
     detachedOutputs.insert(path)
     island?.show(
-      "正在运行「\(script.title)」", tone: .progress, symbol: "terminal.fill",
+      Self.progress(script), tone: .progress, symbol: "terminal.fill",
       actions: [Island.Action("停止") { [weak self] in self?.runningScripts[path]?.cancel() }])
   }
 
@@ -1923,7 +1948,7 @@ import UniformTypeIdentifiers
       raw += (raw.isEmpty ? "" : "\n\n") + outcome.error
     }
     let failure = Self.failure(outcome, of: script).map {
-      [$0.title, $0.detail].filter { !$0.isEmpty }.joined(separator: "：")
+      $0.detail.isEmpty ? $0.title : String(localized: "\($0.title)：\($0.detail)")
     }
     var page = ScriptOutput(
       script: script, arguments: arguments, isRunning: false, failure: failure)
@@ -1975,12 +2000,16 @@ import UniformTypeIdentifiers
   /// 等脚本跑完（单测）
   func scriptRun(_ path: String) async { await runningScripts[path]?.value }
 
+  /// 岛上「正在运行」那一条：show、dismiss(ifShowing:) 给同一个（按 key + 插进去的名字认）
+  static func progress(_ script: ScriptCommand) -> LocalizedStringResource {
+    "正在运行「\(script.title)」"
+  }
+
   /// 把结果交出去（B1）：出错的一律岛上红字（最后一行；没有就写退出码），成功的按 mode
   private func deliver(
     _ outcome: ScriptRunner.Outcome, of script: ScriptCommand, arguments: [String],
-    into target: NSTextView?, progress: String
+    into target: NSTextView?, progress: LocalizedStringResource
   ) {
-    let name = "「\(script.title)」"
     if let failure = Self.failure(outcome, of: script) {
       let stopped = outcome.end == .stopped
       // 出错了带「看输出」（D3）：前面几行才说得清为什么；自己停的、什么都没输出的不带
@@ -1999,25 +2028,25 @@ import UniformTypeIdentifiers
     switch script.mode {
     case .paste, .copy:
       guard !text.isEmpty else {
-        island?.show("\(name)没有输出", tone: .warning)
+        island?.show("「\(script.title)」没有输出", tone: .warning)
         return
       }
       if script.mode == .copy {
         Paster.write(string: text, record: true)
-        island?.show("已复制\(name)的输出", detail: "\(Island.excerpt(text))")
+        island?.show("已复制「\(script.title)」的输出", detail: "\(Island.excerpt(text))")
       } else {
-        island?.dismiss(ifShowing: "\(progress)")
+        island?.dismiss(ifShowing: progress)
         pasteOutput(text, into: target)
       }
     case .none:
-      island?.dismiss(ifShowing: "\(progress)")
+      island?.dismiss(ifShowing: progress)
     // 全文：跑着时启动器收起了的才走这里（detach）。岛上说一声，带「看输出」
     case .full:
       let page = Self.outputPage(outcome, of: script, arguments: arguments)
       let id = UUID()
       if !page.text.isEmpty { lastOutput = (id, page) }
       island?.show(
-        "\(name)运行完了", detail: ScriptCommand.lastLine(outcome.output).map { "\($0)" },
+        "「\(script.title)」运行完了", detail: ScriptCommand.lastLine(outcome.output).map { "\($0)" },
         actions: page.text.isEmpty
           ? [] : [Island.Action("看输出", opens: true) { [weak self] in self?.showOutput(id) }])
     // list 平时不走这里（列表行）；万一走到了按岛上一行
@@ -2025,7 +2054,7 @@ import UniformTypeIdentifiers
       if let line = ScriptCommand.lastLine(outcome.output) {
         island?.show("\(line)", detail: "\(script.title)")
       } else {
-        island?.show("已运行\(name)")
+        island?.show("已运行「\(script.title)」")
       }
     }
   }
@@ -2285,58 +2314,82 @@ import UniformTypeIdentifiers
     if let armed, armed.id == item.id { return armed.text }
     return switch alternate {
     case .none: nil
-    case .command: commandReturnAction(for: item).map { "⌘↩ " + $0.title }
+    case .command: commandReturnAction(for: item).map { "⌘↩ " + String(localized: $0.title) }
     case .option: finderSearchTitle.map { "⌥↩ " + $0 }
     case .control: webSearchTitle.map { "⌃↩ " + $0 }
     }
   }
 
+  /// 主动作、⌘↩ 的一项（名字、符号）。别在 switch / 三目里直接写元组字面量：编得过，但元组里的字只有第一个分支被抽进
+  /// 目录（第 6 批实测），英文界面会露中文；经这个函数传进去的每一个都抽得到
+  private static func act(_ title: LocalizedStringResource, _ symbol: String) -> (
+    title: LocalizedStringResource, symbol: String
+  ) { (title, symbol) }
+
   /// ↩ 做什么：底栏右侧的主动作和 ⌘K 菜单的第一行（名字随种类）
-  func primaryAction(for item: LauncherItem) -> (title: String, symbol: String) {
+  func primaryAction(for item: LauncherItem) -> (title: LocalizedStringResource, symbol: String) {
     let confirming = armed?.id == item.id && armed?.commandKey == false
     if let request = commandRequest, [.app, .path, .process].contains(item.kind) {
       let verb = rowVerb(item, in: request)
-      return ((confirming ? "确认" : "") + verb.title, verb.symbol)
+      return Self.act(confirming ? "确认\(verb.title)" : verb.titleResource, verb.symbol)
     }
     return switch item.kind {
     case .app, .path:
-      revealsOnReturn(item) ? ("在访达中显示", "folder") : ("打开", "arrow.up.forward.app")
+      revealsOnReturn(item)
+        ? Self.act("在访达中显示", "folder")
+        : Self.act("打开", "arrow.up.forward.app")
     case .action:
-      item.isStatusPreset ? ("进入状态屏", HotKeyAction.statusScreen.symbol) : ("运行", "command")
+      item.isStatusPreset
+        ? Self.act("进入状态屏", HotKeyAction.statusScreen.symbol)
+        : Self.act("运行", "command")
     case .system:
       confirming
-        ? ("确认" + item.title, "exclamationmark.triangle")
-        : ("运行", SystemCommand(rawValue: item.target)?.symbol ?? "power")
-    case .url where AppCatalog.isSettingsPane(item.target): ("打开", "gearshape")
-    case .url: ("打开网址", "safari")
-    case .search: ("搜索", "magnifyingglass")
-    case .prompt where item.target == Self.reminderHint: ("改一下再建", "pencil")
-    case .prompt where item.target.hasPrefix(Self.pluginPrefix): ("去设置里添加", "puzzlepiece.extension")
-    case .prompt where item.target.hasPrefix(Self.choicePrefix): ("选这个", "text.cursor")
+        ? Self.act("确认\(item.title)", "exclamationmark.triangle")
+        : Self.act("运行", SystemCommand(rawValue: item.target)?.symbol ?? "power")
+    case .url where AppCatalog.isSettingsPane(item.target):
+      Self.act("打开", "gearshape")
+    case .url: Self.act("打开网址", "safari")
+    case .search: Self.act("搜索", "magnifyingglass")
+    case .prompt where item.target == Self.reminderHint:
+      Self.act("改一下再建", "pencil")
+    case .prompt where item.target.hasPrefix(Self.pluginPrefix):
+      Self.act("去设置里添加", "puzzlepiece.extension")
+    case .prompt where item.target.hasPrefix(Self.choicePrefix):
+      Self.act("选这个", "text.cursor")
     case .prompt:
       item.target == FileSearch.accessTarget
-        ? ("授权", "lock.open")
+        ? Self.act(
+          LocalizedStringResource(
+            "launcher.grantAccess", defaultValue: "授权", comment: "动作：允许访问文件夹"), "lock.open")
         : item.target == ExchangeRates.promptTarget
-          ? ("填进示例", "text.cursor")
+          ? Self.act("填进示例", "text.cursor")
           : item.target.hasPrefix(ExchangeRates.suggestionPrefix)
-            ? ("补全货币", "text.cursor") : ("补全关键词", "text.cursor")
-    case .calculation, .ip: ("粘贴", "arrow.turn.down.left")
-    case .clip: (item.target.isEmpty ? "打开" : "搜索", "doc.on.clipboard")
-    case .translate: ("翻译", "character.bubble")
-    case .process: ("结束", "stop.circle")
-    case .reminder where item.target.isEmpty: ("建好提醒", "alarm")
+            ? Self.act("补全货币", "text.cursor")
+            : Self.act("补全关键词", "text.cursor")
+    case .calculation, .ip: Self.act("粘贴", "arrow.turn.down.left")
+    case .clip:
+      (
+        item.target.isEmpty ? LocalizedStringResource("打开") : LocalizedStringResource("搜索"),
+        "doc.on.clipboard"
+      )
+    case .translate: Self.act("翻译", "character.bubble")
+    case .process: Self.act(SystemCommands.Verb.kill.titleResource, "stop.circle")
+    case .reminder where item.target.isEmpty: Self.act("建好提醒", "alarm")
     case .reminder:
       reminders().first { $0.id == item.target }?.isOn == true
-        ? ("暂停", "pause.circle") : ("打开", "play.circle")
-    case .script where item.arguments == nil && item.completion != nil: ("补全关键词", "text.cursor")
+        ? Self.act("暂停", "pause.circle")
+        : Self.act("打开", "play.circle")
+    case .script where item.arguments == nil && item.completion != nil:
+      Self.act("补全关键词", "text.cursor")
     // 参数没填够：↩ 只响提示音，副标题写着要填什么
-    case .script where isMissingArguments(item): ("先填参数", "text.cursor")
-    case .script: (confirming ? "确认运行" : "运行", "play")
+    case .script where isMissingArguments(item): Self.act("先填参数", "text.cursor")
+    case .script:
+      Self.act(confirming ? "确认运行" : "运行", "play")
     case .scriptResult:
       switch item.opens {
-      case .url: ("打开", "safari")
-      case .file: ("打开", "arrow.up.forward.app")
-      case nil: ("粘贴", "arrow.turn.down.left")
+      case .url: Self.act("打开", "safari")
+      case .file: Self.act("打开", "arrow.up.forward.app")
+      case nil: Self.act("粘贴", "arrow.turn.down.left")
       }
     }
   }
@@ -2350,37 +2403,45 @@ import UniformTypeIdentifiers
     return arguments.count < script.requiredCount || script.invalidChoice(arguments) != nil
   }
 
-  func commandReturnAction(for item: LauncherItem) -> (title: String, symbol: String)? {
+  func commandReturnAction(for item: LauncherItem) -> (
+    title: LocalizedStringResource, symbol: String
+  )? {
     let confirming = armed?.id == item.id && armed?.commandKey == true
     if let request = commandRequest, [.app, .process].contains(item.kind) {
       let verb = rowVerb(item, in: request)
-      if verb == .kill { return (confirming ? "确认强制结束" : "强制结束", "xmark.octagon") }
+      if verb == .kill {
+        return Self.act(confirming ? "确认强制结束" : "强制结束", "xmark.octagon")
+      }
       // 访达只能隐藏（hide 里列着它），不给强制退出
       guard verb != .forcequit, item.target != SystemCommands.finderPath else { return nil }
-      return (confirming ? "确认强制退出" : "强制退出", "xmark.octagon")
+      return Self.act(confirming ? "确认强制退出" : "强制退出", "xmark.octagon")
     }
     if isWebLink(item) {
-      return otherBrowsers.first.map { ("用「\(Self.appName($0))」打开", "safari") }
+      return otherBrowsers.first.map {
+        Self.act("用「\(Self.appName($0))」打开", "safari")
+      }
     }
     return switch item.kind {
     case .app, .path:
-      revealsOnReturn(item) ? ("打开", "arrow.up.forward.app") : ("在访达中显示", "folder")
+      revealsOnReturn(item)
+        ? Self.act("打开", "arrow.up.forward.app")
+        : Self.act("在访达中显示", "folder")
     case .scriptResult where item.payload != nil:
       switch item.opens {
-      case .url: ("复制网址", "doc.on.doc")
-      case .file: ("在访达中显示", "folder")
-      case nil: ("只复制，不粘贴", "doc.on.doc")
+      case .url: Self.act("复制网址", "doc.on.doc")
+      case .file: Self.act("在访达中显示", "folder")
+      case nil: Self.act("只复制，不粘贴", "doc.on.doc")
       }
     case .calculation where item.payload != nil, .ip where item.payload != nil:
-      ("只复制，不粘贴", "doc.on.doc")
-    case .reminder where !item.target.isEmpty: ("在设置里编辑", "gearshape")
-    case .script: ("在访达中显示", "folder")
+      Self.act("只复制，不粘贴", "doc.on.doc")
+    case .reminder where !item.target.isEmpty: Self.act("在设置里编辑", "gearshape")
+    case .script: Self.act("在访达中显示", "folder")
     default: nil
     }
   }
 
   /// ⌘C 复制什么；内置动作、提示、cb / fy 那一行、进程、系统设置面板没有，⌘C 交给输入框
-  func copyTitle(for item: LauncherItem) -> String? {
+  func copyTitle(for item: LauncherItem) -> LocalizedStringResource? {
     switch item.kind {
     case .app, .path, .script: "复制路径"
     case .url where AppCatalog.isSettingsPane(item.target): nil
@@ -2398,7 +2459,7 @@ import UniformTypeIdentifiers
   /// ⌥↩ / ⌃↩ 做什么：没有查询（或没有兜底搜索）时 nil
   private var finderSearchTitle: String? {
     let text = searchText
-    return text.isEmpty || holdsSecret ? nil : "在访达里搜索「\(text)」"
+    return text.isEmpty || holdsSecret ? nil : String(localized: "在访达里搜索「\(text)」")
   }
 
   private var webSearchTitle: String? {
@@ -2406,7 +2467,7 @@ import UniformTypeIdentifiers
     guard !text.isEmpty, !holdsSecret, let engine = WebSearch.primary(in: engines()) else {
       return nil
     }
-    return "用 \(engine.name) 搜索「\(text)」"
+    return String(localized: "用 \(engine.displayName) 搜索「\(text)」")
   }
 
   /// 打开 App / 文件 / 网址 / 搜索页（app：用指定的 App 打开）：先收起，再交给系统在后台打开（NSWorkspace 同步的 open
@@ -2504,7 +2565,7 @@ import UniformTypeIdentifiers
     let entries = usage.forget(item)
     refresh(keeping: nil)
     forgotten = (item, entries)
-    show(.undo("已从常用中移除"), spoken: "已从常用中移除，按 Command-Z 撤销")
+    show(.undo("已从常用中移除"), spoken: String(localized: "已从常用中移除，按 Command-Z 撤销"))
   }
 
   func undoForget() {
@@ -2917,7 +2978,7 @@ import UniformTypeIdentifiers
     if isPending(item) { return NSSound.beep() }
     rememberCurrencies(item)
     let text: String
-    let title: String?
+    let title: LocalizedStringResource?
     switch format {
     // 列表结果：text.copy 写了的复制它，写了 url / path 的复制网址 / 路径（第三轮 B1 B2）
     case .value:
@@ -2934,9 +2995,27 @@ import UniformTypeIdentifiers
     guard let title else { return }
     let isPath = (item.kind == .app || item.kind == .path) && copyTitle(for: item) == title
     island?.show(
-      "已\(title)",
+      Self.copied(title),
       detail: isPath
         ? "\((text as NSString).abbreviatingWithTildeInPath)" : "\(Island.excerpt(text))")
+  }
+
+  /// 复制完岛上那一句：「复制路径」→「已复制路径」（英文 Path Copied）。认的是复制项的中文原文；没列到的说「已复制」
+  static func copied(_ title: LocalizedStringResource) -> LocalizedStringResource {
+    switch title.key {
+    case "复制路径": "已复制路径"
+    case "复制网址": "已复制网址"
+    case "复制结果": "已复制结果"
+    case "复制地址": "已复制地址"
+    case "复制为 Markdown 链接": "已复制为 Markdown 链接"
+    case "复制标题": "已复制标题"
+    case "复制原始数字": "已复制原始数字"
+    case "复制汇率": "已复制汇率"
+    case "复制十进制": "已复制十进制"
+    case "复制十六进制": "已复制十六进制"
+    case "复制二进制": "已复制二进制"
+    default: "已复制"
+    }
   }
 
   /// [标题](网址)：标题里的方括号、网址里的空格和右括号转义，粘进 Markdown 不断链
@@ -2970,14 +3049,13 @@ import UniformTypeIdentifiers
   func actions(for item: LauncherItem) -> [ActionMenu.Item] {
     var actions: [ActionMenu.Item] = []
     func add(
-      _ title: String, _ symbol: String?, _ shortcut: String? = nil, image: NSImage? = nil,
-      detail: String? = nil, section: Int, destructive: Bool = false,
-      _ run: @escaping () -> Void
+      _ title: LocalizedStringResource, _ symbol: String?, _ shortcut: String? = nil,
+      image: NSImage? = nil, detail: LocalizedStringResource? = nil, section: Int,
+      destructive: Bool = false, _ run: @escaping () -> Void
     ) {
       actions.append(
         ActionMenu.Item(
-          title: "\(title)", symbol: symbol, image: image, detail: detail.map { "\($0)" },
-          shortcut: shortcut,
+          title: title, symbol: symbol, image: image, detail: detail, shortcut: shortcut,
           id: "\(actions.count)", section: section, isDestructive: destructive, run: run))
     }
     // 0 打开
@@ -3050,7 +3128,7 @@ import UniformTypeIdentifiers
     // 计算结果：原始数字（不分组、不带单位）、别的进制（体检 D11）
     if item.kind == .calculation {
       for extra in Calculator.result(for: item.target, rates: rates)?.copies ?? [] {
-        add(extra.title, "doc.on.doc", detail: extra.text, section: 2) { [unowned self] in
+        add(extra.title, "doc.on.doc", detail: "\(extra.text)", section: 2) { [unowned self] in
           copy(item, .calculation(extra))
         }
       }
@@ -3065,12 +3143,12 @@ import UniformTypeIdentifiers
       }
     }
     if let title = finderSearchTitle {
-      add(title, "doc.text.magnifyingglass", "⌥↩", section: 3) { [unowned self] in
+      add("\(title)", "doc.text.magnifyingglass", "⌥↩", section: 3) { [unowned self] in
         searchInFinder()
       }
     }
     if let title = webSearchTitle {
-      add(title, "globe", "⌃↩", section: 3) { [unowned self] in searchWeb() }
+      add("\(title)", "globe", "⌃↩", section: 3) { [unowned self] in searchWeb() }
     }
     // 4 收藏、移除、废纸篓
     if canFavorite(item) {

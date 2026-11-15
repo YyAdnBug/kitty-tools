@@ -40,7 +40,8 @@ enum ScriptRunner {
   ) async -> Outcome {
     // 扫描之后才换成了下载来的（用下载的新版本盖掉了同名的、还没重读）：不跑，重读之后先给人看全文（第三轮评审）
     if !script.isDownloaded, !script.isBundled, await isDownloadedNow(script.path) {
-      return Outcome(end: .failedToStart("这个脚本刚换成了从网上下载的：重新打开启动器，先看一眼全文再运行"))
+      return Outcome(
+        end: .failedToStart(String(localized: "这个脚本刚换成了从网上下载的：重新打开启动器，先看一眼全文再运行")))
     }
     let path = if let path { path } else { await searchPath() }
     // 等读 PATH（第一次用时最多 3 秒）那会儿被撤掉的（列表打字）：不再起进程
@@ -75,7 +76,7 @@ enum ScriptRunner {
     } catch {
       let reason =
         FileManager.default.fileExists(atPath: tool)
-        ? error.localizedDescription : "找不到 \(tool)（第一行 #! 写的）"
+        ? error.localizedDescription : String(localized: "找不到 \(tool)（第一行 #! 写的）")
       return Outcome(end: .failedToStart(reason))
     }
   }
@@ -198,12 +199,15 @@ nonisolated struct ScriptReading: Equatable, Sendable {
 
   /// 看完了也不能运行 / 导入的原因（后面由调用方接「不能在这里运行」「不能导入」）；nil = 可以
   var problem: String? {
-    if isUnreadable { return "读不出这个文件。" }
+    if isUnreadable { return String(localized: "读不出这个文件。") }
     if hasHidden {
-      return "这个文件里藏着看不见、或者会打乱显示的字符（下面标成了 ⟦U+200B⟧ 这样），看到的和真正会跑的可能不一样。"
+      return String(
+        localized: "这个文件里藏着看不见、或者会打乱显示的字符（下面标成了 ⟦U+200B⟧ 这样），看到的和真正会跑的可能不一样。")
     }
-    if isMalformed { return "这个文件里有不是 UTF-8 的字节，显示出来的和真正会跑的可能不一样。" }
-    if isTruncated { return "这个文件超过 \(ScriptRunner.reviewLimit / 1024) KB，下面只显示了开头。" }
+    if isMalformed { return String(localized: "这个文件里有不是 UTF-8 的字节，显示出来的和真正会跑的可能不一样。") }
+    if isTruncated {
+      return String(localized: "这个文件超过 \(String(ScriptRunner.reviewLimit / 1024)) KB，下面只显示了开头。")
+    }
     return nil
   }
 }

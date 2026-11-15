@@ -16,6 +16,19 @@ struct SearchEngine: Codable, Hashable, Identifiable {
   var enabled: Bool
 
   var isQuicklink: Bool { !urlTemplate.contains("{query}") }
+
+  /// 显示的名字：自带的预设、名字还是存的那个中文名（没改过）时按界面语言翻（「百度」→ Baidu）；改过的、自己加的照存的写。
+  /// 存的照旧是中文（拍板 D6：存过就固定，只翻显示；默认列表全 App 一套，不按语言变）
+  var displayName: String {
+    WebSearch.presetTitle(id: id, name: name).map { String(localized: $0) } ?? name
+  }
+
+  /// 搜索用的名字：显示的、存的和中文名的全拼（英文界面里打「百度」「baidu」都找得到）
+  var searchNames: [String] {
+    let pinyin = AppCatalog.pinyin(name)?.full
+    return [displayName, name, pinyin].compactMap { $0 }.map(LauncherMatch.fold)
+      .reduce(into: []) { if !$0.contains($1) { $0.append($1) } }
+  }
 }
 
 enum WebSearch {
@@ -47,6 +60,27 @@ enum WebSearch {
       var engine = engine
       engine.enabled = engine.id == fallback
       return engine
+    }
+  }
+
+  /// 中文名的预设在别的语言里怎么写（存的名字还是这个中文名时）；品牌名本来就是英文的、改过名字的是 nil
+  static func presetTitle(id: String, name: String) -> LocalizedStringResource? {
+    let title = presetName(id)
+    return title?.chinese == name ? title : nil
+  }
+
+  /// 预设的中文名（函数直接返回：赋给可选值的 switch 表达式里的字只有第一个抽得进目录，第 6 批实测）
+  private static func presetName(_ id: String) -> LocalizedStringResource? {
+    switch id {
+    case "baidu": "百度"
+    case "zhihu": "知乎"
+    case "bilibili": "哔哩哔哩"
+    case "wikipedia": "维基百科"
+    case "maps": LocalizedStringResource("search.maps", defaultValue: "地图", comment: "网页搜索的预设：地图")
+    case "taobao": "淘宝"
+    case "jd": "京东"
+    case "douban": "豆瓣"
+    default: nil
     }
   }
 
@@ -103,10 +137,12 @@ enum WebSearch {
       let isPath = target.hasPrefix("/") || target.hasPrefix("~")
       return LauncherItem(
         kind: isPath ? .path : .url,
-        target: isPath ? (target as NSString).expandingTildeInPath : target, title: engine.name,
+        target: isPath ? (target as NSString).expandingTildeInPath : target,
+        title: engine.displayName,
         subtitle: engine.keyword.isEmpty ? target : "\(engine.keyword) · \(target)",
-        names: [engine.name, engine.keyword, pinyin?.full].compactMap { $0 }.filter { !$0.isEmpty }
-          .map(LauncherMatch.fold),
+        // 显示的名字也进来（预设改成快捷链接时英文界面打 Baidu 也找得到）
+        names: engine.searchNames
+          + [engine.keyword].filter { !$0.isEmpty }.map(LauncherMatch.fold),
         initials: [LauncherMatch.initials(engine.name), pinyin?.initials].compactMap { $0 },
         listed: true)
     }
@@ -122,11 +158,10 @@ enum WebSearch {
     var partial: [LauncherItem] = []
     for engine in engines where !engine.isQuicklink && !engine.keyword.isEmpty {
       let item = LauncherItem(
-        kind: .prompt, target: engine.id, title: "用 \(engine.name) 搜索…",
-        subtitle: "输入「\(engine.keyword) 空格 内容」，↩ 或 Tab 补全关键词",
+        kind: .prompt, target: engine.id, title: String(localized: "用 \(engine.displayName) 搜索…"),
+        subtitle: String(localized: "输入「\(engine.keyword) 空格 内容」，↩ 或 Tab 补全关键词"),
         completion: engine.keyword + " ")
-      let names = [engine.name, AppCatalog.pinyin(engine.name)?.full].compactMap { $0 }
-        .map(LauncherMatch.fold)
+      let names = engine.searchNames
       if folded == LauncherMatch.fold(engine.keyword) {
         exact.append(item)
       } else if folded.count >= 2, names.contains(where: { $0.hasPrefix(folded) }) {
@@ -138,7 +173,7 @@ enum WebSearch {
 
   /// 关键词不能用的（值是设置里提示的占用者）：cb 留给剪贴板指令，fy 留给翻译，open / find 留给文件搜索，
   /// 提醒 / tx / remind 留给提醒（2026-11-04，ReminderPhrase.keywords）
-  static let reservedKeywords = [
+  static let reservedKeywords: [String: LocalizedStringResource] = [
     "cb": "剪贴板指令", "fy": "翻译", "open": "文件搜索", "find": "文件搜索", "quit": "系统命令",
     "hide": "系统命令", "forcequit": "系统命令", "eject": "系统命令", "kill": "系统命令",
     "port": "系统命令", "提醒": "提醒", "tx": "提醒", "remind": "提醒",
@@ -153,8 +188,9 @@ enum WebSearch {
 
   static func item(_ engine: SearchEngine, _ text: String) -> LauncherItem {
     LauncherItem(
-      kind: .search, target: url(engine, text), title: "用 \(engine.name) 搜索「\(text)」",
-      subtitle: "网页搜索",
+      kind: .search, target: url(engine, text),
+      title: String(localized: "用 \(engine.displayName) 搜索「\(text)」"),
+      subtitle: String(localized: "网页搜索"),
       completion: engine.keyword.isEmpty ? nil : "\(engine.keyword) \(text)")
   }
 }

@@ -219,9 +219,14 @@ enum ExchangeRates {
     return names
   }()
 
-  /// 货币的中文名（结果右侧小字写它）：系统的简体名，「人民币」「新台币」「沙特里亚尔」
-  static func name(_ code: String) -> String {
-    Locale(identifier: "zh_Hans").localizedString(forCurrencyCode: code) ?? code
+  /// 货币的名字（结果右侧小字、候选的标题写它）：系统按界面语言给的，中文「人民币」「新台币」「沙特里亚尔」、英文「Chinese Yuan」
+  static func name(_ code: String, locale: Locale = .current) -> String {
+    locale.localizedString(forCurrencyCode: code) ?? code
+  }
+
+  /// 货币的中文名：搜索、补全用（打中文时补成中文名，写回去还认得）
+  static func chineseName(_ code: String) -> String {
+    name(code, locale: Locale(identifier: "zh_Hans"))
   }
 
   /// 搜索框里输这些（不分大小写、空格）出用法提示；打了开头也出（LauncherMatch.promptMatch）
@@ -230,12 +235,19 @@ enum ExchangeRates {
   /// 用法提示那一行的 target（面板按它取色块和右侧「汇率」）
   static let promptTarget = "currency"
 
+  /// 用法提示填进搜索框的示例（英文界面是「100 USD to JPY」；两种都认得出，速查表里写的也是它）
+  static var example: String {
+    String(
+      localized: "launcher.currencyExample", defaultValue: "100 美元 转 日元", comment: "汇率换算的示例，要能算出来")
+  }
+
   /// 输「汇率」：一行用法提示（同 open / kill 的提示：标题写做什么、副标题写怎么用），↩ / Tab 把示例「100 美元 转 日元」
   /// 填进搜索框，填进去就看到结果和写法。整个打对了排在最前面，只打了开头（「curr」「汇」）排在本地结果后面
   static func promptItems(for query: String) -> (exact: [LauncherItem], partial: [LauncherItem]) {
+    let example = example
     let item = LauncherItem(
-      kind: .prompt, target: promptTarget, title: "汇率换算…",
-      subtitle: "输入「100 美元 转 日元」，↩ 或 Tab 填进示例", completion: "100 美元 转 日元")
+      kind: .prompt, target: promptTarget, title: String(localized: "汇率换算…"),
+      subtitle: String(localized: "输入「\(example)」，↩ 或 Tab 填进示例"), completion: example)
     switch LauncherMatch.promptMatch(query, keywords: keywords) {
     case .exact: return ([item], [])
     case .partial: return ([], [item])
@@ -261,7 +273,7 @@ enum ExchangeRates {
     for (name, code) in names { aliases[code, default: []].append(name) }
     return isoCodes.sorted().map { code in
       var keys = [code.lowercased()] + (aliases[code] ?? [])
-      let chinese = name(code)
+      let chinese = chineseName(code)
       keys.append(chinese)
       if let pinyin = AppCatalog.pinyin(chinese) { keys.append(pinyin.full) }
       if let english = Locale(identifier: "en_US").localizedString(forCurrencyCode: code) {
@@ -338,10 +350,12 @@ enum ExchangeRates {
     let typedLetters = !key.isEmpty && key.allSatisfy(\.isASCII)
     return codes.map { code in
       let english = Locale(identifier: "en_US").localizedString(forCurrencyCode: code) ?? code
+      let title = name(code)
+      // 英文界面里标题就是英文名：副标题只写代码
       return LauncherItem(
-        kind: .prompt, target: suggestionPrefix + code, title: name(code),
-        subtitle: "\(code) · \(english)",
-        completion: prefix + joiner + (typedLetters ? code : name(code)))
+        kind: .prompt, target: suggestionPrefix + code, title: title,
+        subtitle: english == title ? code : "\(code) · \(english)",
+        completion: prefix + joiner + (typedLetters ? code : chineseName(code)))
     }
   }
 
@@ -394,7 +408,8 @@ enum ExchangeRates {
           title: "复制汇率",
           text: "1 \(request.from) = \(Calculator.quantity(rate, grouped: false)) \(to)"),
       ],
-      note: "\(name(to)) · \(table.date.suffix(5)) 汇率")
+      // 日期是数据源写的「月-日」（不是按语言排的日期）
+      note: String(localized: "\(name(to)) · \(String(table.date.suffix(5))) 汇率"))
   }
 
   /// 金额：小数位按币种（日元 0 位、人民币 2 位、科威特第纳尔 3 位）；不到 1 的按 4 位有效数字（100 韩元 = 0.07459 美元，
@@ -419,8 +434,9 @@ enum ExchangeRates {
   /// 还没有汇率时那一行（不能粘贴、不能补全，同 ip 的占位行）：正在取 / 没取到
   static func placeholder(for query: String, failed: Bool) -> LauncherItem {
     LauncherItem(
-      kind: .calculation, target: query, title: failed ? "没取到汇率，检查一下网络" : "正在取汇率…",
-      subtitle: "汇率")
+      kind: .calculation, target: query,
+      title: failed ? String(localized: "没取到汇率，检查一下网络") : String(localized: "正在取汇率…"),
+      subtitle: String(localized: "汇率"))
   }
 
   // MARK: 取表和存取

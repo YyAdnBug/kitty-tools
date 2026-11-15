@@ -37,6 +37,8 @@
 | 设置页的零件（第 2 批改好）：`SectionFootnote`、`DetailHeader(title:status:)`、`PermissionRow(title:detail:button:)`、`PermissionStatus`、`ListEditBar(removeTitle:)`、`SettingsPushRow(title:detail:)`、`PanelSizeRow(detail:)`、`AppListRow.chooseApps(prompt:message:)`、`DangerButton`（第 3 批） | 同上；用户起的名字、别处算好的一句摘要传 `"\(x)"`。原来拿 `+` 拼的说明（`SectionFootnote("a" + (x ? "b" : ""))`）编不过：拆成整句的三目，或者暂时整段 `"\(text)"` 传过去、留给那一族拆 |
 | 并列的几个名字连成一串（「剪贴板、启动器」） | `names.joinedAsList()`（显式 key `list.enumeration`：中文「、」，英文「, 」），别写死 `joined(separator: "、")` |
 | 某种语言里是空的（中文「」「」之间什么都不加、英文要「, 」） | 别让哪种语言的值是空串：查不到译文、默认值又是空的时候系统显示 key 本身（实测）。把空的那段并进旁边的字里（`list.quoted` 的中文是「」「」，外面再包一层「%@」），`LocalizationTests` 查空串 |
+| switch / 三目的各个分支是元组（`case .url: ("打开", "safari")`），或者 switch 表达式赋给一个可选值的 `let` | 编得过，但**只有第一个分支的字被抽进目录**，写成 `LocalizedStringResource("…")` 也一样（第 6 批实测，其余的英文界面显示中文）：经一个收 `LocalizedStringResource` 参数的小函数传进去（`LauncherModel.act`），或者让函数直接 `return` 那个 switch。不是元组的 switch / 三目、`String(localized:)` 都没事。改完拿构建目录里的 `.stringsdata` 对一遍源码里的中文字面量 |
+| 文件里的内容（新建脚本的模板、例子、给 AI 的写法说明） | 不进目录：按 `InterfaceLanguage.isEnglish` 写两份，建的那一刻用当时的语言（写进文件就是用户自己的） |
 | 固定宽的格子里英文放不下（主界面格子、刘海岛那一张的快捷动作） | `Style.fitsOneLine` 量：放不下的才折两行、居中，放得下的修饰符和原来一模一样（中文截图逐像素不变） |
 
 **存下来的字：存原文、显示时翻**（拍板 D6）。写进偏好、数据库、同步文件夹、导出文件、文件名，而且之后还要读回来比对的中文，
@@ -46,8 +48,12 @@
   「Kitty Tools 同步」、新建文件模板的文件夹名「新建文件模板」**永远不翻**；「新」标记、设置侧栏收起的组、启动器别名替换、
   岛上认哪一条，改成按 id 比，不拿显示出来的文字比。
 - 自带的东西（状态屏的三个状态、提醒的示例）：存着的还是中文，按 id 认出「没改过的自带项」、显示时翻；用户改过的原样显示。
-- 存进去就是用户数据的（翻译服务和网页搜索的预设名、启动台的「未命名」、示例便签、起的文件名）：按存的那一刻的语言写。
+- 存进去就是用户数据的（翻译服务的预设名、启动台的「未命名」、示例便签、起的文件名）：按存的那一刻的语言写。
+- 网页搜索的预设（第 6 批）：默认列表全 App 一套、存的照旧是中文名；名字没改过的按 id 认出来、显示时翻（`SearchEngine.displayName`）。
 - 给大模型的提示词、词典词条里朗读要认的标记（「美 /…/」「例：」）不翻。
+- 自带脚本（`Resources/scripts/`）：头部另写 `@kitty.title.en` / `description.en` / `argument1.en`…（英文界面用它，没写的用原来的，
+  另一种语言的标题进搜索名）；输出的话按 `$KITTY_LANGUAGE`（`zh-Hans` / `en`）挑。复制一份到我的脚本时只留复制那一刻的语言
+  （`ScriptLibrary.localizedCopy`）。
 
 **搜索中英都认**（拍板 D7）：启动器、设置搜索里，当前语言的标题 + 中文原文（`resource.key`）+ 拼音 + 英文都进可匹配的名字；
 解析中文输入的（提醒的一句话、计算器单位、汇率、系统命令）中文照旧认，补英文关键词。

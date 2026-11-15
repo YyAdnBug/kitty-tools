@@ -15,26 +15,28 @@ struct ScriptGuidePage: View {
   @State private var readingPath = false
 
   /// 开头能写的字段：写法、做什么、怎么填
-  static let fields: [(name: String, title: String, detail: String)] = [
-    ("@kitty.title", "名字", "启动器里显示的名字，不写就用文件名"),
-    ("@kitty.keyword", "关键词", "在启动器里打它就排第一；设置 › 启动器「命令和别名」里还能改"),
-    (
-      "@kitty.mode", "结果给谁",
-      "island 岛上显示最后一行（不写就是它）、paste 粘贴到前台 App、copy 复制、full 在启动器里看全部输出、list 每行一条结果可以挑、none 不显示"
-    ),
-    (
-      "@kitty.argument1", "参数（最多 3 个）",
-      "写参数的名字，如「城市」；在启动器里输「关键词 空格 文字」，文字在 $1 里，带空格的用引号括起来（\"New York\"）。可以不填的写成 `{\"placeholder\": \"城市\", \"optional\": true}`；要直接拼进网址的再加 `\"percentEncoded\": true`（先做网址编码）；只能从几个里挑的写 `\"type\": \"dropdown\", \"data\": [{\"title\": \"耳机\", \"value\": \"headphones\"}]`（打到这里时列出来挑，交给脚本的是 value）；密码写 `\"type\": \"password\"`（行上不显示、跑完清空搜索框、不记进使用记录，但打的时候搜索框里看得见，别在有人看着时用）"
-    ),
-    ("@kitty.description", "副标题", "启动器里名字后面的那行小字"),
-    (
-      "@kitty.icon", "图标",
-      "一个 emoji、SF 符号的名字、同一个文件夹里的图片文件名，或者 https 开头的图片网址（第一次用时下载一次，以后不再联网）；深色主题换一张写在 @kitty.iconDark"
-    ),
-    ("@kitty.confirm", "先确认再跑", "写一句话：↩ 第一下只显示这句（红字），再按一次才跑；列表脚本打字时就跑，不能写"),
-    ("@kitty.timeout", "超时", "秒数，不写是 60 秒，写 0 不限"),
-    ("@kitty.filter", "只跑一次", "列表脚本才写：打完「关键词 空格」时跑一次，之后打的字由启动器按标题、说明过滤（认拼音、首字母），脚本收不到参数"),
-  ]
+  /// detail 是 Markdown（反引号里的画成等宽字）
+  static let fields:
+    [(name: String, title: LocalizedStringResource, detail: LocalizedStringResource)] = [
+      ("@kitty.title", "名字", "启动器里显示的名字，不写就用文件名"),
+      ("@kitty.keyword", "关键词", "在启动器里打它就排第一；设置 › 启动器「命令和别名」里还能改"),
+      (
+        "@kitty.mode", "结果给谁",
+        "island 岛上显示最后一行（不写就是它）、paste 粘贴到前台 App、copy 复制、full 在启动器里看全部输出、list 每行一条结果可以挑、none 不显示"
+      ),
+      (
+        "@kitty.argument1", "参数（最多 3 个）",
+        "写参数的名字，如「城市」；在启动器里输「关键词 空格 文字」，文字在 $1 里，带空格的用引号括起来（\"New York\"）。可以不填的写成 `{\"placeholder\": \"城市\", \"optional\": true}`；要直接拼进网址的再加 `\"percentEncoded\": true`（先做网址编码）；只能从几个里挑的写 `\"type\": \"dropdown\", \"data\": [{\"title\": \"耳机\", \"value\": \"headphones\"}]`（打到这里时列出来挑，交给脚本的是 value）；密码写 `\"type\": \"password\"`（行上不显示、跑完清空搜索框、不记进使用记录，但打的时候搜索框里看得见，别在有人看着时用）"
+      ),
+      ("@kitty.description", "副标题", "启动器里名字后面的那行小字"),
+      (
+        "@kitty.icon", "图标",
+        "一个 emoji、SF 符号的名字、同一个文件夹里的图片文件名，或者 https 开头的图片网址（第一次用时下载一次，以后不再联网）；深色主题换一张写在 @kitty.iconDark"
+      ),
+      ("@kitty.confirm", "先确认再跑", "写一句话：↩ 第一下只显示这句（红字），再按一次才跑；列表脚本打字时就跑，不能写"),
+      ("@kitty.timeout", "超时", "秒数，不写是 60 秒，写 0 不限"),
+      ("@kitty.filter", "只跑一次", "列表脚本才写：打完「关键词 空格」时跑一次，之后打的字由启动器按标题、说明过滤（认拼音、首字母），脚本收不到参数"),
+    ]
 
   var body: some View {
     VStack(spacing: 0) {
@@ -95,12 +97,11 @@ struct ScriptGuidePage: View {
                 Text(field.title).font(.system(size: 13, weight: .medium))
               }
               // 反引号里的（JSON、取值）是等宽字，和左边的字段名一样
-              Text(
-                (try? AttributedString(markdown: field.detail)) ?? AttributedString(field.detail)
-              )
-              .font(.system(size: 12))
-              .foregroundStyle(.secondary)
-              .fixedSize(horizontal: false, vertical: true)
+              let detail = String(localized: field.detail)
+              Text((try? AttributedString(markdown: detail)) ?? AttributedString(detail))
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             }
             .accessibilityElement(children: .combine)
           }
@@ -115,7 +116,8 @@ struct ScriptGuidePage: View {
             "mode 写 list 时，脚本每打印一行就是一条结果，写成「结果⇥说明」（中间是 Tab），↩ 粘贴选中的那条。打字时会重新跑。"
           )
           .fixedSize(horizontal: false, vertical: true)
-          code(#"{"items": [{"title": "显示的", "subtitle": "说明", "arg": "↩ 粘贴的"}]}"#)
+          code(
+            String(localized: #"{"items": [{"title": "显示的", "subtitle": "说明", "arg": "↩ 粘贴的"}]}"#))
           Text("要显示的和粘贴的不一样时，打印上面这样一段 JSON。")
             .foregroundStyle(.secondary)
           Text(
@@ -147,7 +149,8 @@ struct ScriptGuidePage: View {
             .disabled(readingPath)
           } label: {
             Text("命令的查找路径")
-            Text(shellPath ?? "第一次运行脚本时从终端里读一遍，nvm、pyenv、Homebrew 装的命令也找得到")
+            (shellPath.map { Text(verbatim: $0) }
+              ?? Text("第一次运行脚本时从终端里读一遍，nvm、pyenv、Homebrew 装的命令也找得到"))
               .lineLimit(3)
               .truncationMode(.middle)
           }
@@ -172,7 +175,9 @@ struct ScriptGuidePage: View {
     .toolbar { SettingsBackButton { dismiss() } }
   }
 
-  private func step(_ number: Int, _ title: String, _ detail: String) -> some View {
+  private func step(
+    _ number: Int, _ title: LocalizedStringResource, _ detail: LocalizedStringResource
+  ) -> some View {
     HStack(alignment: .top, spacing: 10) {
       Text("\(number)")
         .font(.system(size: 12, weight: .semibold, design: .rounded))

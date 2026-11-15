@@ -222,49 +222,79 @@ extension ScriptLibrary {
     }
   }
 
-  /// 新建脚本表单生成的文件（第三轮 D2）：#!、开头几行元数据、几行写法提示，和一段按选的语言、结果方式能直接跑的示例。纯函数，配单测
+  /// 新建脚本表单生成的文件（第三轮 D2）：#!、开头几行元数据、几行写法提示，和一段按选的语言、结果方式能直接跑的示例。
+  /// english：提示和示例写英文（新建那一刻界面的语言；写进文件就是用户自己的，以后不跟着换）。纯函数，配单测
   nonisolated static func template(
-    title: String, keyword: String?, mode: ScriptCommand.Mode, language: Language
+    title: String, keyword: String?, mode: ScriptCommand.Mode, language: Language,
+    english: Bool = InterfaceLanguage.isEnglish
   ) -> String {
     let c = language.comment
     var lines = [language.shebang, "\(c) @kitty.title \(title)"]
     if let keyword { lines.append("\(c) @kitty.keyword \(keyword)") }
-    lines += [
-      "\(c) @kitty.mode \(mode.rawValue)",
-      "\(c) @kitty.description 这一行写它是做什么的",
-      c,
-      "\(c) 要参数就加一行「\(c) @kitty.argument1 城市」，在启动器里输「关键词 空格 北京」，「北京」是第一个参数",
-      // 列表打字时就跑，确认不了（写了 confirm 的列表读不成；第 3 批评审）
-      mode == .list
-        ? "\(c) 结果不随输入变的，加一行「\(c) @kitty.filter」：只跑一次，打的字由启动器过滤"
-        : "\(c) 要先确认再跑就加一行「\(c) @kitty.confirm 再按 ↩ 运行」",
-      "\(c) 别的字段看 设置 › 启动器「怎么写脚本」",
-    ]
-    if language == .python { lines.append("\(c) 要先装好 python3（终端里输 python3 --version 看看）") }
-    if mode == .list { lines.append("\(c) 每行一条结果：标题、一个 Tab、说明；↩ 粘贴选中那条的标题") }
-    return (lines + ["", sample(mode, language), ""]).joined(separator: "\n")
+    if english {
+      lines += [
+        "\(c) @kitty.mode \(mode.rawValue)",
+        "\(c) @kitty.description What this script does",
+        c,
+        "\(c) To take an argument, add a line “\(c) @kitty.argument1 City”; type “keyword London” in the Launcher and “London” is the first argument",
+        mode == .list
+          ? "\(c) If the results don’t depend on what you type, add “\(c) @kitty.filter”: it runs once and the Launcher filters what you type"
+          : "\(c) To confirm before running, add “\(c) @kitty.confirm Press ↩ again to run”",
+        "\(c) For other fields, see Settings › Launcher › “How to Write Scripts”",
+      ]
+      if language == .python {
+        lines.append("\(c) Needs python3 (run python3 --version in Terminal to check)")
+      }
+      if mode == .list {
+        lines.append(
+          "\(c) One result per line: a title, a Tab, a note; ↩ pastes the selected title")
+      }
+    } else {
+      lines += [
+        "\(c) @kitty.mode \(mode.rawValue)",
+        "\(c) @kitty.description 这一行写它是做什么的",
+        c,
+        "\(c) 要参数就加一行「\(c) @kitty.argument1 城市」，在启动器里输「关键词 空格 北京」，「北京」是第一个参数",
+        // 列表打字时就跑，确认不了（写了 confirm 的列表读不成；第 3 批评审）
+        mode == .list
+          ? "\(c) 结果不随输入变的，加一行「\(c) @kitty.filter」：只跑一次，打的字由启动器过滤"
+          : "\(c) 要先确认再跑就加一行「\(c) @kitty.confirm 再按 ↩ 运行」",
+        "\(c) 别的字段看 设置 › 启动器「怎么写脚本」",
+      ]
+      if language == .python { lines.append("\(c) 要先装好 python3（终端里输 python3 --version 看看）") }
+      if mode == .list { lines.append("\(c) 每行一条结果：标题、一个 Tab、说明；↩ 粘贴选中那条的标题") }
+    }
+    return (lines + ["", sample(mode, language, english: english), ""]).joined(separator: "\n")
   }
 
   /// 能直接跑的示例：岛上 / 粘贴 / 复制 / 全文打一句话，列表列两条，不显示的放一声提示音
-  nonisolated static func sample(_ mode: ScriptCommand.Mode, _ language: Language) -> String {
-    switch (language, mode) {
-    case (.zsh, .list): "printf '%s\\t%s\\n' 第一条 说明一 第二条 说明二"
-    case (.zsh, .full): "print -r -- \"你好，$(id -un)\"\nsw_vers"
+  nonisolated static func sample(
+    _ mode: ScriptCommand.Mode, _ language: Language, english: Bool = false
+  ) -> String {
+    // 列表的四个词中间不能有空格（zsh 的 printf 按空格切）
+    let (hello, comma, first, one, second, two) =
+      english
+      ? ("Hello", ", ", "First", "Note-1", "Second", "Note-2")
+      : ("你好", "，", "第一条", "说明一", "第二条", "说明二")
+    return switch (language, mode) {
+    case (.zsh, .list): "printf '%s\\t%s\\n' \(first) \(one) \(second) \(two)"
+    case (.zsh, .full): "print -r -- \"\(hello)\(comma)$(id -un)\"\nsw_vers"
     case (.zsh, .none): "afplay /System/Library/Sounds/Glass.aiff"
-    case (.zsh, _): "print -r -- \"你好，$(id -un)\""
+    case (.zsh, _): "print -r -- \"\(hello)\(comma)$(id -un)\""
     case (.javascript, .list):
-      "function run(argv) {\n  return [\"第一条\\t说明一\", \"第二条\\t说明二\"].join(\"\\n\")\n}"
+      "function run(argv) {\n  return [\"\(first)\\t\(one)\", \"\(second)\\t\(two)\"].join(\"\\n\")\n}"
     case (.javascript, .none):
       "function run(argv) {\n  const app = Application.currentApplication()\n  app.includeStandardAdditions = true\n  app.beep()\n}"
-    case (.javascript, _): "function run(argv) {\n  return \"你好\"\n}"
+    case (.javascript, _): "function run(argv) {\n  return \"\(hello)\"\n}"
     case (.applescript, .list):
-      "on run argv\n  return \"第一条\" & tab & \"说明一\" & linefeed & \"第二条\" & tab & \"说明二\"\nend run"
+      "on run argv\n  return \"\(first)\" & tab & \"\(one)\" & linefeed & \"\(second)\" & tab & \"\(two)\"\nend run"
     case (.applescript, .none): "on run argv\n  beep\nend run"
-    case (.applescript, _): "on run argv\n  return \"你好\"\nend run"
-    case (.python, .list): "print(\"第一条\\t说明一\")\nprint(\"第二条\\t说明二\")"
+    case (.applescript, _): "on run argv\n  return \"\(hello)\"\nend run"
+    case (.python, .list): "print(\"\(first)\\t\(one)\")\nprint(\"\(second)\\t\(two)\")"
     case (.python, .none):
       "import subprocess\n\nsubprocess.run([\"afplay\", \"/System/Library/Sounds/Glass.aiff\"])"
-    case (.python, _): "import getpass\n\nprint(f\"你好，{getpass.getuser()}\")"
+    case (.python, _):
+      "import getpass\n\nprint(f\"\(hello)\(comma){getpass.getuser()}\")"
     }
   }
 
@@ -277,11 +307,21 @@ extension ScriptLibrary {
     }
     var name = safe.isEmpty ? title.replacing("/", with: "-") : safe
     while name.hasPrefix(".") { name.removeFirst() }
-    return (name.isEmpty ? "新脚本" : name) + "." + language.fileExtension
+    return (name.isEmpty ? untitled : name) + "." + language.fileExtension
   }
 
-  /// 例子：查天气（带一个参数，岛上显示一行；说明页、没有自己的脚本时那一行「用例子新建」）
-  nonisolated static let example = """
+  /// 起不出名字时的文件名（起名那一刻界面的语言：新文件就是用户自己的）
+  nonisolated static var untitled: String {
+    InterfaceLanguage.isEnglish ? "New Script" : "新脚本"
+  }
+
+  /// 例子：查天气（带一个参数，岛上显示一行；说明页、没有自己的脚本时那一行「用例子新建」）。按界面语言给一份（英文的关键词是
+  /// weather、天气用英文）：建出来的文件就是用户自己的，以后不跟着换语言；说明页、设置里那句「输「tq 空格 北京」试试」跟着同一个语言
+  nonisolated static var example: String {
+    InterfaceLanguage.isEnglish ? englishExample : chineseExample
+  }
+
+  nonisolated static let chineseExample = """
     #!/bin/zsh
     # @kitty.title 查天气
     # @kitty.keyword tq
@@ -296,11 +336,31 @@ extension ScriptLibrary {
     }
     """
 
+  nonisolated static let englishExample = """
+    #!/bin/zsh
+    # @kitty.title Weather
+    # @kitty.keyword weather
+    # @kitty.icon ⛅
+    # @kitty.argument1 City
+    # @kitty.description Type “weather <city>” to see the weather in a notice
+
+    city="$1"
+    curl -sS --max-time 10 "https://wttr.in/${city// /+}?format=3" || {
+      print -u2 "Couldn’t get the weather: check your network"
+      exit 1
+    }
+    """
+
+  /// 例子存成的文件名
+  nonisolated static var exampleFileName: String {
+    InterfaceLanguage.isEnglish ? "weather.sh" : "查天气.sh"
+  }
+
   /// 新建查天气的例子：存成「查天气.sh」（重名加数字）、用编辑器打开、重读，岛上说怎么试
   func newExample(island: Island?) {
-    let url = Self.freeURL(in: Self.ensureDefaultFolder(), name: "查天气.sh")
+    let url = Self.freeURL(in: Self.ensureDefaultFolder(), name: Self.exampleFileName)
     guard (try? Self.example.write(to: url, atomically: true, encoding: .utf8)) != nil else {
-      island?.show("没建成「查天气.sh」", detail: "脚本文件夹写不进去", tone: .error)
+      island?.show("没建成「\(Self.exampleFileName)」", detail: "脚本文件夹写不进去", tone: .error)
       return
     }
     Self.edit(url.path(percentEncoded: false))
@@ -344,7 +404,7 @@ extension ScriptLibrary {
     let safe = keyword.filter {
       $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_")
     }
-    return safe.isEmpty ? "新脚本.sh" : safe + ".sh"
+    return (safe.isEmpty ? untitled : safe) + ".sh"
   }
 
   /// 存一段看过的脚本（导入、从剪贴板新建）：默认文件夹里起一个没用过的名字。自己写出来的文件不带下载标记
@@ -353,11 +413,14 @@ extension ScriptLibrary {
     return (try? data.write(to: url, options: .atomic)) == nil ? nil : url
   }
 
-  /// 自带的复制一份到默认文件夹（去掉 script- 前缀），用编辑器打开；返回复制出来的位置
+  /// 自带的复制一份到默认文件夹（去掉 script- 前缀），用编辑器打开；返回复制出来的位置。开头的两种语言只留复制那一刻
+  /// 界面的那一种（localizedCopy：复制出来的是用户自己的，看到的名字就是改的那一行）
   static func copyBundled(_ script: ScriptCommand) -> URL? {
     let name = String(script.fileName.dropFirst(bundledPrefix.count))
     let url = freeURL(in: ensureDefaultFolder(), name: name.isEmpty ? script.fileName : name)
-    guard (try? FileManager.default.copyItem(at: URL(filePath: script.path), to: url)) != nil
+    guard let data = FileManager.default.contents(atPath: script.path),
+      let text = String(data: data, encoding: .utf8),
+      (try? localizedCopy(text).write(to: url, atomically: true, encoding: .utf8)) != nil
     else { return nil }
     // 从下载的 DMG 装的 App，包里的文件可能带着隔离标记；复制出来的是自己的，不用再看一眼
     var copy = url
@@ -366,6 +429,39 @@ extension ScriptLibrary {
     try? copy.setResourceValues(values)
     edit(url.path(percentEncoded: false))
     return url
+  }
+
+  /// 自带脚本复制出去的那份：开头的 @kitty.<字段>.en 去掉；英文界面里先把它的值换到 @kitty.<字段> 那一行上。
+  /// 正文（按 KITTY_LANGUAGE 挑输出的话）不动。纯函数，配单测
+  nonisolated static func localizedCopy(_ text: String, english: Bool = InterfaceLanguage.isEnglish)
+    -> String
+  {
+    let lines = text.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline)
+    let localized = /^(\s*(?:#|\/\/|--)\s*@kitty\.)([A-Za-z0-9]+)(\.en)?(\s.*)?$/
+    var values: [String: String] = [:]
+    for line in lines {
+      if let match = String(line).wholeMatch(of: localized), match.3 != nil,
+        ScriptCommand.localizedKeys.contains(String(match.2))
+      {
+        values[String(match.2)] = match.4.map { String($0).trimmingCharacters(in: .whitespaces) }
+      }
+    }
+    var result: [String] = []
+    for line in lines.map(String.init) {
+      guard let match = line.wholeMatch(of: localized),
+        ScriptCommand.localizedKeys.contains(String(match.2))
+      else {
+        result.append(line)
+        continue
+      }
+      if match.3 != nil { continue }
+      if english, let value = values[String(match.2)], !value.isEmpty {
+        result.append(match.1 + match.2 + " " + value)
+      } else {
+        result.append(line)
+      }
+    }
+    return result.joined(separator: "\n")
   }
 
   /// 打开脚本给人改（第二轮 D4）：用这个文件的默认 App（装了别的编辑器、给 .sh 设了默认的就用它）；默认的不是能开纯文本的
@@ -401,16 +497,21 @@ extension LauncherItem {
     let pinyin = AppCatalog.pinyin(script.title)
     let folder =
       script.isBundled
-      ? "自带"
+      ? String(localized: "launcher.bundledScripts", defaultValue: "自带", comment: "脚本的来处：随 App 带的")
       : script.folder == ScriptLibrary.defaultFolder.path(percentEncoded: false).trimmingSuffix("/")
-        ? "我的脚本" : (script.folder as NSString).lastPathComponent
+        ? String(localized: "我的脚本") : (script.folder as NSString).lastPathComponent
+    // 头部另写了一种语言的标题（自带脚本）：那一个和它的拼音也搜得到（D7）
+    let other = script.otherTitle
+    let otherPinyin = other.flatMap(AppCatalog.pinyin)
     var item = LauncherItem(
       kind: .script, target: script.path, title: script.title,
       subtitle: script.summary ?? script.package ?? folder,
-      names: [script.title, alias, script.package, pinyin?.full].compactMap {
-        $0.map(LauncherMatch.fold)
-      },
-      initials: [LauncherMatch.initials(script.title), pinyin?.initials].compactMap { $0 },
+      names: [script.title, alias, script.package, pinyin?.full, other, otherPinyin?.full]
+        .compactMap { $0.map(LauncherMatch.fold) },
+      initials: [
+        LauncherMatch.initials(script.title), pinyin?.initials,
+        other.map(LauncherMatch.initials), otherPinyin?.initials,
+      ].compactMap { $0 },
       completion: script.takesInput ? (alias ?? script.title) + " " : nil)
     item.scriptIcon = script.icon
     item.scriptIconDark = script.iconDark

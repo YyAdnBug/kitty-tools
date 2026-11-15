@@ -1,19 +1,28 @@
 #!/bin/zsh
 # @kitty.title 进制转换
+# @kitty.title.en Number Base Converter
 # @kitty.keyword bcvt
 # @kitty.icon number
 # @kitty.mode list
 # @kitty.description 十进制、十六进制、二进制、八进制一起列
+# @kitty.description.en Decimal, hex, binary and octal at once
 # @kitty.argument1 数字
+# @kitty.argument1.en Number
 #
 # 写成 255、0xff、0b1010 或 0o17，四种进制各一行，↩ 粘贴选中的那条。最大到 2^63 - 1（再大 zsh 的整数装不下）。
+# 说的话按 Kitty Tools 的界面语言（KITTY_LANGUAGE：zh-Hans / en）。
 
 # 下面的 ##0#、%%[[:space:]]# 要它（非交互的 zsh 默认不开）
 setopt extended_glob
 n=${${1:l}//[[:space:]_]/}
+en=0
+[[ $KITTY_LANGUAGE == en* ]] && en=1
+# 中文、英文两种说法挑一个
+say() { (( en )) && print -r -- "$2" || print -r -- "$1" }
 row() { print -r -- "$1"$'\t'"$2" }
 too_big() {
-  print -u2 -r -- "「$1」太大了：最大到 9223372036854775807（0x7fffffffffffffff）"
+  say "「$1」太大了：最大到 9223372036854775807（0x7fffffffffffffff）" \
+    "“$1” is too big: the largest is 9223372036854775807 (0x7fffffffffffffff)" >&2
   exit 1
 }
 if [[ $n =~ '^0x[0-9a-f]+$' ]]; then
@@ -33,10 +42,11 @@ elif [[ $n == <-> ]]; then
   (( ${#digits} > 19 )) || [[ ${#digits} == 19 && $digits > 9223372036854775807 ]] && too_big $1
   value=$(( 10#${digits:-0} ))
 else
-  print -u2 -r -- "认不出「$1」：写成 255、0xff、0b1010 或 0o17"
+  say "认不出「$1」：写成 255、0xff、0b1010 或 0o17" \
+    "Can’t read “$1”: write it as 255, 0xff, 0b1010 or 0o17" >&2
   exit 1
 fi
-row $value "十进制"
-row "0x$(( [##16] value ))" "十六进制"
-row "0b$(( [##2] value ))" "二进制"
-row "0o$(( [##8] value ))" "八进制"
+row $value "$(say 十进制 Decimal)"
+row "0x$(( [##16] value ))" "$(say 十六进制 Hexadecimal)"
+row "0b$(( [##2] value ))" "$(say 二进制 Binary)"
+row "0o$(( [##8] value ))" "$(say 八进制 Octal)"

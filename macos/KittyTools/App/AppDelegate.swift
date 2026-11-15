@@ -1745,12 +1745,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
   }
 
-  /// 「新建提醒」（提醒 D5）：打开启动器、填好「提醒 」，接着写时间和内容（解析和预览都在启动器里，不另做面板）；
+  /// 「新建提醒」（提醒 D5）：打开启动器、填好「提醒 」（英文界面「remind 」），接着写时间和内容（解析和预览都在启动器里，不另做面板）；
   /// 启动器这个功能关着时打开 设置 › 提醒
   private func newReminder() {
     guard Feature.launcher.isOn else { return showSettings(page: .reminders) }
     if !(launcherPanel.isVisible && launcherPanel.isKeyWindow) { toggleLauncher() }
-    launcherModel.query = "提醒 "
+    // 英文界面填英文关键词（ReminderPhrase.keywords 里两个都认；第 1 批留下的，第 8 批让英文的一句话也认得出）
+    launcherModel.query = InterfaceLanguage.running == .english ? "remind " : "提醒 "
     (launcherPanel.firstResponder as? NSTextView)?.moveToEndOfDocument(nil)
   }
 
