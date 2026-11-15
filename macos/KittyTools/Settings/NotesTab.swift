@@ -231,8 +231,9 @@ struct NotesTab: View {
       }
       Group {
         Picker("位置", selection: $deckEdge) {
-          Text("右边").tag(NoteDeckOptions.Edge.right)
+          // 照屏幕上的方位：左边在前（2026-11-15 用户：原来「右边 | 左边」反着摆很别扭）；默认仍是右边
           Text("左边").tag(NoteDeckOptions.Edge.left)
+          Text("右边").tag(NoteDeckOptions.Edge.right)
         }
         .pickerStyle(.segmented)
         if displays.count > 1 {
