@@ -515,13 +515,17 @@ import SwiftUI
 
   /// 静止的绳子（减弱动态效果时画它）：plan 里那条二次贝塞尔采几个点
   private static func staticPoints(_ rope: ClotheslineLayout.Rope) -> [CGPoint] {
-    (0..<ClotheslineRope.count).map { index in
+    var points: [CGPoint] = []
+    points.reserveCapacity(ClotheslineRope.count)
+    for index in 0..<ClotheslineRope.count {
       let t = CGFloat(index) / CGFloat(ClotheslineRope.count - 1)
       let inverse = 1 - t
-      return CGPoint(
+      let point = CGPoint(
         x: inverse * inverse * rope.from.x + 2 * inverse * t * rope.control.x + t * t * rope.to.x,
         y: inverse * inverse * rope.from.y + 2 * inverse * t * rope.control.y + t * t * rope.to.y)
+      points.append(point)
     }
+    return points
   }
 
   // MARK: 表
