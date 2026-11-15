@@ -8,6 +8,453 @@
 
 条目编号不复用。行号按条目里写的那个提交。
 
+## 对齐检查（2026-11-15）
+
+用户：「windows 最近提交了很多修改 / 更新，主要是为了对齐 macos 的功能，你检查一下看看有没有还没有对齐的」。审查方在 Mac 上只读两边的代码，**没编译、没上机**。
+对照的是 mac `origin/macos` `9acd4306`（0.9.0 之后）和 Windows `origin/windows` `1848233a`（PLAN-v22 之后）。下面的行号都按这两个提交；mac 的路径省略了 `macos/KittyTools/`，Windows 的路径省略了 `windows/`。
+先分四块各读一遍，再由审查方逐条对着代码抽查，没对上的不写进来。
+
+**结论**：
+- **功能族上大体对齐了**。mac 0.9.0 之后 Windows 真正没跟的只有三样：主界面重排、256 MB 那一档、识字认二维码。PLAN-v18 和 PLAN-v20 排过的都做了。
+- **最要紧的是导出导入文件，两边互相读不了**（R80–R82）。从 PLAN-v3 起就是这样：单测里的 mac 样本只有一条片段，一直没测出来。
+- **同步里有一项值会落错**（R83）。
+- 其余是一批「两边都有、但没对齐」的小处：文案、分组、先后、按钮名、速查表。还有一个框选吸附的 bug（R87）。
+
+### 给 Windows agent 的指令
+
+1. 先 `git fetch origin && git rebase origin/windows`。
+2. 按编号修下面的「待修」R80–R102：**先修 R80–R83**（互通格式和同步），再修 R87，其余照顺序。
+   - 每条修完改成「已修（提交号）」，写一句怎么验的。
+   - 互通格式那几条要加单测：用 mac 那边真实的导出文件当样本。没有 Mac 就照本节写的字段手写一份，至少带上快捷键、网页搜索、翻译服务、状态和提醒。再加一条往返测试：Windows 写出去的文件按 mac 的必填字段检查一遍。
+3. **「缺口」表要不要做，等用户拍板**，别先动。
+   - 和同一天写的 PLAN-v23（设置窗的交互）重叠的几处，照 PLAN-v23 做、这里不重复：
+     - R91 的通用页头、快捷键页 / 关于页的搜索词 = PLAN-v23 W10、W6；
+     - R99 的设置 › 便签两处联动 = L5；
+     - R101 和 E1（编辑改成子页、即时存）一起做。
+4. 修完照常走 `AGENTS.md` 的自查清单，手测接着 `HANDTEST.md` 末尾编。
+
+### 互通的数据格式（同步、导出导入、片段占位符）
+
+**对过、确认一致的**：
+- **同步文件夹 / WebDAV 的各类记录**：
+  - 类别名、文件结构、版本钟、墓碑、epoch、`kitty-notes-sync.json`、`device.json` 都一致；
+  - clip、group、word、service（含 `isEnabled`）、engine 的字段一致，有 mac 生成的 golden 锁着；
+  - mac 在 `58f15ee3` 之后没动过任何格式文件。
+- **翻译服务的种类**：同一套 11 种（含 apple、youdaoDict）。
+- **设置同步对照表**（PLAN-v21）：枚举值和档位都核过，256 MB 收得下。唯一的例外是 R83。
+- **便签**：同步文件头、整数毫秒、`tint`、哈希、任务五态、图片令牌、文字颜色都一致。
+- **提醒**：字段、重复规则、提示音名都一致。
+- **状态屏的状态**：`symbol` / `emoji` / `pack:` 一致。
+- **密钥加密**：PBKDF2 60 万轮 + AES-GCM + `routing`，一字不差。
+
+#### R80（P1）mac 读不了任何一份 Windows 导出的文件
+
+- **mac 读文件的规则**：解码时有几样是必填的（`Storage/SettingsArchive.swift:284-288`），缺任何一样整份读不出，提示「文件读不出来」（`:551-569`）：
+  - `version`、`exportedAt`；
+  - `hotkeys` 的值是 `{keyCode, modifiers}` 对象；
+  - 翻译服务要有 `isEnabled`（`Translate/TranslateService.swift:63`，自动生成的解码不认默认值）；
+  - 网页搜索要有 `urlTemplate`、`enabled`（`Launcher/WebSearch.swift:14-16`）。
+- **Windows 写的**（`KittyTools.Core/SettingsArchive.cs`）：
+  - 没有 `version` / `exportedAt`（`:15-70`）；
+  - 服务写 `enabled`（`:87-88`）；
+  - 搜索写 `url` / `fallback`（`:117-121`，这是同步的键名，不是导出文件的）；
+  - 快捷键写成 `"Alt+C"` 字符串（`KittyTools/Storage/ArchiveService.cs:176-178`）。
+- 上面任何一处都够让整份失败，片段、生词本、便签一起导不进 Mac。这违背了 PLAN-v3 E2「两边通用」。
+- **修好之后还有一个坑**：mac 导「设置」「快捷键」是整类替换，文件里没有的键回到默认（`SettingsArchive.swift:715-722`、`:749-756`），而且它不看 `platform`。Windows 要是还把自己的设置写在 `preferences` / `hotkeys` 里，Mac 用户一勾这两类，Mac 独有的设置和全部自定义快捷键就被清掉了。
+- **修**：
+  - 补 `version`（App 版本）和 `exportedAt`（ISO 8601、到秒、带 `Z`）。
+  - 服务写 `isEnabled`，搜索写 `urlTemplate` / `enabled`。读的时候新旧两种名字都认，旧的 Windows 文件照样能读。
+  - **Windows 的设置和快捷键改写进 `windowsPreferences` / `windowsHotkeys`**：mac 不认识的键直接忽略，也就不会出这两类的勾。读的时候 `platform == windows` 且只有旧键的，照旧当 Windows 的读。
+  - 单测：写出去的文件按上面 mac 的必填字段逐项查一遍。
+
+#### R81（P1）Windows 读不了 Mac 上改过快捷键的人导出的文件
+
+- mac 改过任何一个全局快捷键或截图时的键（`shot.<名>`），`hotkeys` 里就是对象（`SettingsArchive.swift:373-384`）。
+- Windows 把它定成 `Dictionary<string, string?>`（`KittyTools.Core/SettingsArchive.cs:47-48`），读到对象就抛 `JsonException`：
+  - `ArchiveService.Decode` 返回 null（`:141-159`）；
+  - 界面说「这不是 Kitty Tools 导出的设置文件」（`Settings/SettingsWindow.cs:1076-1079`）。
+- 片段、收藏、生词本、便签、翻译服务（连密钥）全都导不进来。
+- 单测 `PlanV3Batch1Tests.cs:169-175` 的 mac 样本里没有 `hotkeys`，所以没测出来。
+- **修**：
+  - 改成 `Dictionary<string, JsonElement>?`，只在是 Windows 的文件时才按字符串解；
+  - 单测样本里加上对象形式的 `hotkeys`。
+
+#### R82（P1）从 Mac 导入时，网页搜索、服务开关、状态和提醒都丢
+
+- **网页搜索整类丢**：
+  - `Sanitized` 要求 `Url` 不为空、而且含 `{query}`（`KittyTools.Core/SettingsArchive.cs:210-219`）；
+  - mac 的条目只有 `urlTemplate`，全被筛掉，也不报错；
+  - 「必须含 `{query}`」这一条连 Windows 自己导出的快捷链接也筛掉（`KittyTools.Core/WebSearch.cs:23` 支持快捷链接），从自己的备份恢复也丢。
+- **翻译服务的开关丢**：读不到 `enabled` 就按默认开（`ArchiveService.cs:306`），Mac 上关着的服务导进来全是开的。
+- **状态屏的状态、提醒丢**：
+  - 这两类 mac 放在 `preferences` 里（`SettingsArchive.swift:308-309`、`:731-745`）；
+  - Windows 没有 `platform` 的文件整个 `preferences` 都跳过（`ArchiveService.cs:281-285`），按 id 合并的那两段（`:810-831`）走不到；
+  - 这和 HANDTEST 970、1012「拿 mac 导出的文件导入同样认」相矛盾。
+- **修**：
+  - 搜索读 `urlTemplate`（没有退回 `url`）和 `enabled`（没有退回 `fallback`），去掉「必须含 `{query}`」；
+  - 服务读 `isEnabled`（没有退回 `enabled`）；
+  - mac 的文件里只单拿 `statusScreenPresets`、`reminders` 两个键走合并，别的设置照旧跳过。
+
+#### R83（P1）翻译浮窗「跟随鼠标」两边存的值不一样，同步过去都落成「屏幕上方」
+
+- **mac** 存 `mouse`：`App/AppDelegate.swift:1975-1977`，认不出的按 top。
+- **Windows** 存 `pointer`：设置页 `Settings/SettingsWindow.Translate.cs:136`、浮窗 `Translate/TranslateWindow.cs:569-574`、`App/Settings.cs:126`。
+- 同步表按 `top / mouse / last` 收（`KittyTools.Core/Sync/SettingsSyncMap.cs:69`、`:159`），出去的时候原样（`Same`）：
+  - Windows 选了跟随鼠标，发出去 `pointer`，Mac 当成屏幕上方；
+  - Mac 发来 `mouse`，Windows 收下了，但浮窗和设置页都不认，也当成屏幕上方。
+- 剪贴板、启动器两处本来就存 `mouse`，没问题。
+- **修**：Windows 改存 `mouse`；读设置时把旧的 `pointer` 换成 `mouse`（`SettingsService` 加载时迁一次）；`TranslateWindow` 两种都认；加一条往返单测。
+
+#### R84（P2）Windows 导出的「设置」只带了大约 40 项，和同步对不上
+
+- `ArchiveService.PreferencesOf`（`:505-602`）只写了约 40 个键，`Settings.cs` 一共 178 个属性。下面这些都没带：
+  - 截图：快门声、截完图放哪、截图历史和天数、占用、长截图速度；
+  - 录制：帧率、清晰度、倒数、光标、点按、按键、系统声音、麦克风；录音来源；
+  - 便签：字号、行距、屏幕边缘那几项（0.2.0 审查「观察」里那条）；
+  - 翻译浮窗位置等。
+- mac 是注册了默认值的偏好键自动全带（`Storage/Prefs.swift:543-565`）。
+- 同步（PLAN-v21 的 `Storage/SettingsSyncFields.cs`）倒是都带，现在导出和同步各管各的一份表。
+- **修**：导出导入改用 `SettingsSyncFields` 那张表（A、B、C 组都写进 R80 说的 `windowsPreferences`），以后新加设置只登记一处。截图工具栏的键（`shotKeys`）照旧。
+
+#### R85（P2）导出文件的细处
+
+- **格式比自己新**：Windows 直接当「不是导出文件」（`ArchiveService.cs:146-150`）；mac 说「来自更新版本，先更新再导入」（`SettingsArchive.swift:247`、`:569`）。修：`app` 对上、`format` 更大时单独说这句。
+- **转义**：`ArchiveJsonContext`（`KittyTools.Core/SettingsArchive.cs:253-256`）用默认编码器，中文、表情全写成 `\uXXXX`，人读不了，中文体积约是 mac 的两倍，离 32 MB 上限更近。修：换成不转义非 ASCII 的编码器（`JavaScriptEncoder.UnsafeRelaxedJsonEscaping` 只用在写文件这一处）。
+- **时间写法**：`copiedAt` / `createdAt` 写成带毫秒的 `+00:00`（`ArchiveService.cs:223`、`:243`）；mac 写到秒的 `Z`。macOS 27 实测读得了，15 上没验。修：截到秒、写 `Z`。
+
+#### R86（P2）片段占位符：支持的集合一样，边界上意思不一样
+
+- 两边都认 `{date} {time} {datetime} {weekday} {uuid} {clipboard} {clipboard:N} {cursor}`，不分大小写。
+- 片段正文是同步的，同一条片段在两边展开结果会不同。对照的代码：mac `Clipboard/Snippet.swift:21-58`、`ClipboardPanelModel.swift:1029-1032`；Windows `KittyTools.Core/SnippetRules.cs:17-111`、`Clipboard/Expander.cs:16-29`。
+
+| 情况 | mac | Windows |
+|---|---|---|
+| `{clipboard}` / `{clipboard:1}` 取什么 | 剪贴板当前的文字 | 历史里最近一条文字 |
+| `{clipboard:N}` 跳过什么 | 所有片段 | 只跳过自己这条 |
+| 有几个 `{cursor}` 时认哪个 | 第一个 | 最后一个（`SnippetRules.cs:74` 每次覆盖） |
+| `{cursor}` 后面怎么数字数 | 字形簇 | UTF-16 单元（后面有表情时光标挪过头） |
+| `{ date }`、`{clipboard:12}`、`{clipboard:abc}` | 原样留着（只认 `\{name(:\d)?\}`） | 也展开 |
+
+- **修**：照 mac 改，用 `StringInfo` 数字形簇；补一组和 mac 同样期望值的单测。
+
+**观察（有意的取舍，记一句）**：
+- 状态、提醒的「系统表情」Windows 收得比 mac 宽：U+2000 以上的 So 类都算（`KittyTools.Core/StatusPreset.cs:498-511`），mac 只收表情字符（`StatusScreen/StatusEmoji.swift:78-87`）。
+- 后果：Windows 上挑了 `★`，同步到 Mac 会被置空，再当成本机改动传回来。代码注释写了「宁可多留」，但用户看到的是选的图标没了。
+- 修法：Windows 挑表情时只收 mac 也认的字。
+
+### 待修：两边都有、但没对齐（漏的）
+
+#### R87（P1）框选吸附横竖弄反了
+
+- 毛病在 `Screenshot/SelectionOverlayWindow.cs:2775-2791`：
+  - 边列表按「屏 0、W、0、H，然后每扇窗口 左、右、上、下」排，再按下标奇偶分成 x、y 两组；
+  - 结果 x 吸的是 {0, 0, 左, 上}，y 吸的是 {W, H, 右, 下}；
+  - 横向会吸到窗口上边的数值，选区左上角吸不到屏幕上边和窗口上边，右下角吸不到窗口右边。
+- 2026-10-24（`ea7352e2`）起就是这样。`Screenshot/WindowList.cs:22-36` 的 `Edges` 是同样的排法，没人调。
+- mac：`Screenshot/SelectionView.swift:2707-2721`，6 pt 内吸到窗口边和屏幕边。
+- **修**：
+  - 每 4 个一组，第 0、1 个进 x（左右），第 2、3 个进 y（上下）；
+  - 抽成 Core 纯函数，加单测：窗口右边、下边、屏幕上边都吸得上。
+
+#### R88（P2）主界面照 mac 0.9.0 重排（mac `e8fc2424`、`ecc2037e`，0.9.0 更新日志「界面 · 主界面」）
+
+mac 现在的做法（`Shell/HomePanel.swift` `Home.unlisted`、`sections`）：
+- 只放点一下就做的动作。
+- 「暂停记录剪贴板」「复制即译」两个开关不占格子，在右键菜单和启动器里。
+- 「钉住剪贴板内容」不列。
+- 添加了的插件全收进最后一节，标题「插件」，只有一个也带标题。
+
+Windows（`Shell/HomePanel.cs`）：
+- `:342`、`:358` 两个开关还占格子；
+- `:379` 还列着钉住剪贴板内容；
+- `:413-420` 保持唤醒是一节没标题的单格，会和别的单格并成一行。
+
+**修**：
+- 照 mac 拿掉这三格，保持唤醒进「插件」一节；
+- 托盘里的这两个开关照旧（mac 菜单里也有）；
+- 开关的画法（`IsOn`、`ToggleButton` 那半）跟着删；
+- `HomeLayout` 单测同步改。
+
+#### R89（P2）剪贴板「图片最多占用」少 256 MB 一档（mac `58c91673`，issue #19）
+
+- `Settings/SettingsWindow.cs:1749` 的档位是 512 MB / 1 GB / 2 GB / 5 GB / 不限。
+- **已经写好、没并**：本地分支 `claude/win-clip-image-256` 的 `376a990d`（11-13 在 Mac 上写的，没编译）。
+- **修**：
+  - 拣过来，档位前面加 `(256, "256 MB")`；
+  - 那个提交里的 HANDTEST 编号 1318 和 PLAN-v20 撞了，改成末尾的号；
+  - 注释里「旧的 128 / 256」改成「旧的 128」。
+
+#### R90（P2）快捷键页、托盘、速查表、主界面的分节和先后
+
+- **快捷键页没有「提醒」「状态屏」两节**：
+  - `Settings/SettingsWindow.cs:3221-3245`，它们掉进兜底，追加在「截图与录制」最后；
+  - mac `Shell/HotKeyCenter.swift:346-364`，便签后面是「提醒」「状态屏」各一节。
+- **截图翻译归翻译**：
+  - mac（`HotKeyCenter.swift:324`、`:347`、`:436`）里它在翻译那一节、用翻译的家族色，截图关了照样在；
+  - Windows 的托盘（`Shell/TrayMenu.cs:200-217`）、启动器内置动作（`Launcher/LauncherActions.cs:73-80`，家族色还是 capture）、主界面（`Shell/HomePanel.cs:353-356`）都包在「截图开着」里；
+  - 截图关了以后快捷键还能用（`Shell/Feature.cs:132` 归翻译），入口却全没了。
+- **「截图与录制」的先后**：mac 是截图、截取上次区域、识字、录屏、录音、钉住剪贴板内容、截图历史、钉图两项；Windows 托盘把截图翻译、截图历史、钉图插在录屏前面。
+- **提醒在状态屏前面**（mac 处处便签 → 提醒 → 状态屏，Windows 自己的侧栏 `KittyTools.Core/SettingsSidebar.cs:19` 也是），Windows 有三处反着：
+  - 托盘（`TrayMenu.cs:271`、`:304`）；
+  - 速查表左栏（`Settings/ShortcutsSheet.cs:51-52`、`:598`、`:610`）；
+  - 主界面（`HomePanel.cs:400-411`，和 R88 一起改）。
+- **快捷键页的先后**：mac 是全局 → 截图时 → 面板里的按键 → 按应用停用（`Settings/HotkeysTab.swift`）；Windows 把「面板里的按键」放在「截图时」前面（`SettingsWindow.cs:3209-3213`）。
+- **行名**：Windows 写「录屏（再按一次停止）」「录音（再按一次停止）」（`App/HotKeyDefaults.cs:67`、`:72`），mac 只写「录屏」「录音」。
+- **速查表左栏的分类**：mac「截图」「录制」分两类，最后一类叫「通用」；Windows 合成「截图与录制」，最后一类叫「设置窗」（`ShortcutsSheet.cs:44-55`）。
+- **修**：照 mac。
+
+#### R91（P2）功能名、功能说明、页头说明、通用页的几句、侧栏搜索词
+
+- **功能名**：`Shell/Feature.cs:71` 叫「录屏」，所以录制页第一行、通用 › 功能、引导、主界面只开录制时的节名都写「录屏」；mac 的功能名就是页名「录制」（`Shell/Feature.swift:31`）。
+- **功能说明**：
+  - 录制：Windows `:84`「把屏幕录成视频（Alt+R 开始 / 停止）」，漏了录音，键还是写死的；mac「录屏和录音」（`Feature.swift:43`）。
+  - 启动器：Windows `:83`「打开应用、设置和网页」；mac「打开 App、文件和网页」（App 换成「应用」）。
+- **页头说明**（照 mac `Settings/SettingsWindow.swift:147-156`）：
+  - 通用（`SettingsWindow.cs:797`）少「功能」「数据目录」；
+  - 启动器（`:2258`）少「脚本命令、命令和别名」；
+  - 截图（`:2734`）少「工具栏位置」；
+  - 录制（`:2946`）写「帧率和按键」，mac 是「画质、倒数和按键」；
+  - 便签、提醒、状态屏（`SettingsWindow.Notes.cs:18`、`.Reminders.cs:22`、`.StatusScreen.cs:22`）用的是功能说明那句，不是 mac 的页头说明：
+    - 便签：「留着看、接着改的东西：屏幕边缘的那一叠、字号和行距，存在哪、怎么备份」
+    - 状态屏：「拦住键盘鼠标的全屏告示：有哪些状态、各是什么样子、怎么退出」
+    - 提醒：「到点提醒你：什么时候响、用什么方式、点了「稍后」推多久」
+- **通用页漏了便签**：
+  - 「设置与数据」的说明（`SettingsWindow.cs:929`），导出里明明有便签；mac `Settings/SettingsTransfer.swift:101`；
+  - 「数据目录」的说明（`:942`），mac「剪贴板、便签和翻译历史的数据库、图片和每日备份都在这里」（`GeneralTab.swift:177`）。
+- **侧栏搜索词**（照 mac `SettingsWindow.swift:198`、`:256`、`:258`；快捷键页和关于页那两条 = PLAN-v23 W6，通用页头 = W10，照那边做）：
+  - 启动器页（`SettingsWindow.cs:118`）少「脚本 / 脚本命令 / 命令 / 别名 / 写法 / AI / 新建脚本 / 导入」，现在搜「脚本」「别名」找不到；
+  - 快捷键页（`:155`）少各动作名和「屏蔽 / 不响应」；
+  - 关于页（`:159`）少「欢迎 / 引导」。
+
+#### R92（P2）启动器：内置动作、补全提示、脚本行、底栏动词
+
+- **少三条内置动作**：「新建提醒」「新建脚本」「复制脚本写法说明（给 AI）」。
+  - mac：`Launcher/LauncherItem.swift:113-130`、`:189-196`，脚本命令关着时后两条不列。
+  - Windows：`Launcher/LauncherActions.cs` 里都没有。
+- **open / find / quit / hide / forcequit / kill / port / fy 的补全提示，打中文或拼音出不来**：
+  - mac 另认中文叫法和全拼（「端口」「duankou」「翻译」「fanyi」「文件」，`Launcher/SystemCommands.swift:149-159`、`FileSearch.swift:197-201`、`LauncherModel.swift:1140`）；
+  - Windows `KittyTools.Core/LauncherCommands.cs:160-186` 只认关键词开头，fy（`:125-138`）只认打全的；
+  - `LauncherMatch.cs:50` 的注释自己写着「以后也照这个」。
+  - 修：走现成的 `LauncherMatch.PromptMatch`，中文叫法照抄 mac 的表。
+- **脚本那一行**：
+  - Ctrl+K 里没有「关掉这条命令」（mac `LauncherModel.swift:3010`、`:3102-3117`，关掉后提示里带「撤销」）；
+  - 「编辑脚本」没有 Ctrl+E（mac ⌘E，`:3004`）；
+  - 「改别名…」mac 在脚本那一组，Windows 在最后一组（`Launcher/LauncherModel.cs:1886-1909`）。
+- **底栏动词**：`KittyTools.Core/PanelFooterText.cs:56-82` 对照 mac `LauncherModel.swift:2303-2340`：
+
+| 那一行 | Windows | mac |
+|---|---|---|
+| 状态 | 运行 | 进入状态屏 |
+| 汇率的用法提示 | 补全关键词 | 填进示例 |
+| 货币候选 | 补全关键词 | 补全货币 |
+| 脚本参数没填够 | 运行 | 先填参数 |
+| 要参数的脚本只打了关键词 | 运行 | 补全关键词 |
+| 添加插件 | 去添加 | 去设置里添加 |
+
+- **速查表启动器那组**（`Settings/ShortcutsSheet.cs:379-399`）没有脚本的键（mac `ShortcutsSheet.swift:342-351`），看全文那扇窗的 Ctrl+R 重跑也没列。
+- **「怎么写脚本」里过时的一句**：`Settings/SettingsWindow.Scripts.cs:44` 还写着「这一版启动器里先都画脚本的图标」。PLAN-v20 L1 之后已经画表情和旁边的图片，改成写清哪些写法照旧画脚本图标（SF 符号名、网址）。
+
+#### R93（P2）设置 › 启动器 一页的分节和「命令和别名」表
+
+- **分节**：
+  - mac 的顺序（`Settings/LauncherTab.swift:96-161`、`ScriptsSection.swift:58-186`）：
+    - 浏览器书签与历史；
+    - 「网页搜索」节：一行进子页，带脚注；
+    - 「脚本命令」节：开关、怎么写、让 AI 来写、文件夹……铺在这一页；
+    - 「命令」节：一行进子页，脚注「给内置命令和脚本改在启动器里要打的词，关掉用不上的。」；
+    - 使用记录。
+  - Windows（`SettingsWindow.cs:2313-2321`）：
+    - 脚本命令只有一行，点进子页；
+    - 「命令与网页搜索」一节里放两行，没有两句脚注。
+- **「命令和别名」那一行的小字**：mac「N 个我的脚本、N 个自带脚本、N 个关键词命令、N 个系统命令，关了 N 个」；Windows「改了 N 个别名，关了 N 条」（`SettingsWindow.LauncherCommands.cs:33-42`）。
+- **表本身**：
+  - 少一排筛选「全部 / 我的脚本 / 自带的命令 / 内置」（mac `LauncherCommandsSection.swift:36-50`。PLAN-v18 第 4 批只留了「只看开着的」，那时还没有脚本）；
+  - 「我的脚本」是空的时候，mac 照样列这一组、一行「还没有自己的脚本 · 用例子新建」（`:8`、`:156`），Windows 不画这一组。
+- **修**：
+  - 照 mac 分节，脚本那一节要留子页的话写进 MAC-DIFF；
+  - 补筛选和空组那一行；
+  - 从「改别名…」进来时 mac 只列那一条，Windows 滚到那一行描两秒，留着现在的做法，在 MAC-DIFF 记一句。
+
+#### R94（P2）欢迎引导第三屏
+
+- `Settings/SettingsWindow.Onboarding.cs:20-25` 只列 6 个键，注释还写着「Windows 没有便签」。
+- mac 列 7 个，含「快速记一条」（`Settings/OnboardingView.swift:392-395`）；一个键都列不出时换成「都准备好了」那一屏（`:401-407`）。
+- **修**：加上 `HotKeyActions.NoteCapture`，补上那一屏。
+
+#### R95（P2）关于页没有便签的出处和许可全文
+
+- mac：关于页有「便签的交互参考了 Noty（MIT 许可）」，后面是打开随包 `Resources/notes-LICENSE.txt` 的链接（`Settings/AboutTab.swift:100-121`）。
+- Windows 的便签是从 mac 那份搬过来的，但关于页只有状态屏表情那一行（`SettingsWindow.cs:3676-3688`），`Resources/` 里也没有这份许可。
+- **修**：照 mac 补上这一行和许可全文（`git show origin/macos:macos/KittyTools/Resources/notes-LICENSE.txt`），点「许可」用记事本打开，同表情那一行。
+
+#### R96（P2）插件卡片和功能页的文案；托盘里多出的两项
+
+- **插件卡片和功能页**：
+  - mac（`Settings/FeaturesPage.swift:30-37`、`:80-110`）：插件一组有一句完整的脚注（新装都没添加、升级上来照旧……），卡片上有「已添加」，「授权」「后台」各占一行，功能页页头是「不用的整个关掉，用的时候再打开」。
+  - Windows（`Settings/SettingsWindow.KeepAwake.cs:204-221`）：只有一行说明，授权和后台并在说明里，页头是「用不上的整个关掉」（`SettingsWindow.cs:828`）。
+  - 修：照 mac 改。
+- **托盘里多出两项**：「压缩最近的录屏（不超过 60%）」「转成 GIF（10 fps，长边 800）」（`Shell/TrayMenu.cs:239-249`）。mac 的菜单没有，它们在视频卡和截图历史里（`Shell/StatusItem.swift:346`）。
+  - 修：去掉（截图历史、角落卡里都有）；要留就写进 MAC-DIFF。
+
+#### R97（P2）截图：叫法、写死的键、速查表、设置页、钉图、角落卡
+
+- **「拷贝 / 存储」**：mac 全家统一叫「拷贝 / 存储到「X」 / 另存为… / 识字并拷贝 / 钉到屏幕」（`Screenshot/EditorToolbar.swift:251-273`、`ShotKeys.swift:43-53`，体检 B41）。Windows 混着用：
+  - 工具栏（`Screenshot/SelectionOverlayWindow.cs:999-1049`）：「识字」「钉在屏幕上」「快速保存」「复制」；
+  - 保存菜单（`:1108`）：「快速保存到文件夹」；
+  - 截图时的键（`KittyTools.Core/ShotKeys.cs:28-41`，也是 设置 › 快捷键 的行名）：「复制 / 快速保存 / 钉在屏幕上 / 识字」；
+  - 钉图菜单（`Screenshot/PinWindow.cs:307-316`）：「复制 / 识字并复制」，先后也和 mac `PinPanel.swift:605-644` 不同；
+  - 角落卡悬停（`Screenshot/ScreenshotCard.cs:355-356`）是「复制」「保存」，同一张卡的录制卡（`:366`）和右键（`:686`）又是「拷贝」「存储」。
+  - 截图历史、长图标注、速查表已经是 mac 的叫法。轻提示「已复制」不用动（mac 也这么写）。
+- **写死的键和数字**：
+  - 保存 ▾ 菜单写死 Ctrl+S / Ctrl+Shift+S（`SelectionOverlayWindow.cs:1105-1114`，mac 用 `ShotKey.save.label`）；
+  - 开始录制的悬停提示写死「倒数 3 秒」（`:1062`，倒数能设 0 / 3 / 5）；
+  - 顶部提示写死「Ctrl+S 保存 · 1–0 标注 · S 长截图 · R 录屏 · D 上次区域」（`:1817-1830`）：没有上次区域时也写 D；开着识别元素时没有「滚轮 换大小 · Tab 只认窗口」（mac `SelectionView.swift:366-383`）。
+  - 修：都读 `ShotKeys.Current` 和设置。
+- **速查表截图几组**（`Settings/ShortcutsSheet.cs:454-528` 对照 mac `ShortcutsSheet.swift:411-560`）：
+  - 框选少滚轮、Tab；
+  - 标注少 Shift、Alt、Ctrl+= / Ctrl+-、滚轮、Ctrl+D、方向键（代码里都有，`SelectionOverlayWindow.cs:2580-2662`）；
+  - 长截图只有 Enter、Esc；
+  - 长图标注写死 1–0 / Ctrl+Z / Ctrl+Y / Ctrl+S（窗口实际按改过的键走，`LongAnnotateWindow.cs:1384`），没列空格平移、Ctrl+0 / Ctrl+1；
+  - 录制只有 Esc，mac 分录屏、录音两组。
+- **设置 › 截图**：
+  - 少 mac 那一行「改按键 · 截图里的快捷键…」（`Settings/ScreenshotTab.swift:159-168`）；
+  - 「角落缩略图」mac 叫「角落的缩略图」；
+  - 截图历史脚注少「（打码会直接打进存下的图）」。
+- **钉图**：
+  - 原始大小是不带修饰键的 0，没有 Ctrl+W（`PinWindow.cs:264-299`）；mac ⌘0、⌘W；
+  - 快速保存的文件名是「钉图 日期.png」、重名加 GUID（`:372-375`），mac 走截图的保存（「截图 日期 时间.png」、重名加序号，`ScreenshotOutput.swift:84-87`）。
+- **角落卡**：停 5 秒（`ScreenshotCard.cs:76`）；mac 6 秒，鼠标移开后再等 2.5 秒（`Screenshot/ShotShelf.swift:260`、`:391`）。
+
+#### R98（P2）便签正文的右键「格式」只有四项
+
+- mac 的格式菜单（`Notes/NoteTextView.swift:1819-1842`）：粗体、斜体、删除线、代码、链接，分节线后标题 1–3、引用、无序列表、有序列表、代码块，最后清除格式。正文右键还有「打开链接」「插入图片…」（`:1461-1463`）。无障碍规范里键盘和读屏用户打开链接靠的就是它。
+- Windows（`Notes/NoteEditor.Input.cs:416-421`）只有粗体、斜体、删除线、行内代码。
+  - Core 里块格式、链接、清除格式、代码块的函数都写好了（`KittyTools.Core/Notes/NoteMarkdown.cs:1577` 起）；
+  - `Notes/NoteEditor.Images.cs:4` 的注释也提到「菜单「插入图片…」」，只是菜单没接。
+- **修**：照 mac 接上，在代码块里时照 mac 只留能用的那几项。
+
+#### R99（P2）便签：删除 / 归档的提示、便签墙的键、全部便签窗口、设置页
+
+- **删除**：
+  - mac 的说明写「⌘Z 撤销，或到「最近删除」里放回」，按钮叫「放回」；6 秒内连着删的合成「已删除 N 条」、一起放回（`Notes/NotesWindow.swift:461-464`、`NoteSheetModel.swift:243`，0.7.0 更新日志）。
+  - Windows 一律「撤销」、说明写「留 30 天」、不合并（`Notes/NotesWindow.cs:649-650`、`NoteSheetView.cs:389-390`、`NoteDeckWindows.cs:87-88`）。
+- **归档**：全部便签窗口里是「撤销」（`NotesWindow.cs:627-628`），mac 叫「取消归档」、连着归档的也合并（`NotesWindow.swift:595-602`）。那叠和打开的便签里已经叫「取消归档」了。
+- **便签墙的键**：
+  - mac 焦点在墙上时 ⌘⌫ / ⌫ 删选中的卡片，没开编辑卡时 ⌘W 关窗（`Settings/ShortcutsSheet.swift:630`、`:634`）；
+  - Windows 的 Delete 只挂在列表上（`NotesWindow.cs:111-117`），墙的按键（`:822-847`）不认 Delete，`OnKeyDown`（`:1068-1107`）没有 Ctrl+W。
+- **全部便签窗口**：
+  - 0 条的分段 mac 不写数字（`NotesWindowView.swift:89`），Windows 会出「归档 0」（`NotesWindow.cs:297`）；
+  - 确认框文案：mac「…会被永久删除，不能撤销。」「清空最近删除？」，Windows「找不回来」「清空最近删除（N 条）？」（`:669`、`:685`）。
+- **设置 › 便签**（两处联动 = PLAN-v23 L5，照那边做）：
+  - 「一直展开」开着时「不显示药丸」停用、「悬停即打开」开着时「悬停预览」停用（mac `Settings/NotesTab.swift:271`、`:276`），Windows 没有这两处联动（`SettingsWindow.Notes.cs:104-109`）；
+  - 页脚漏了「或标签之间的空处」（`:132-134`，mac `:297`；Windows 实际支持右键空处，`NoteDeckWindows.cs:45`）。
+- **速查表「便签 · 全部便签」**（`ShortcutsSheet.cs:586-596`）：没列 PLAN-v20 N3 做好的方向键和 Enter / 空格；「浮在屏幕上」没列 Ctrl+,（`NoteSheetView.cs:341`）。
+
+#### R100（P2）提醒：满 50 条时照样说「建好了」、建好后没有「编辑」、打不开那一条
+
+- **mac**（`App/AppDelegate.swift:1748-1760`）：
+  - 满 50 条说「提醒已经满了」；
+  - 建好说「提醒建好了」、带一颗「编辑」；
+  - 启动器和菜单栏「N 分钟后提醒我」都走它。
+- **Windows**：
+  - `Reminders/ReminderCenter.cs:153-159` 不看上限，`KittyTools.Core/Reminder.cs:478` 的 `Adding` 满了时直接不加；
+  - 启动器照样说「建好了提醒」（`Launcher/LauncherModel.cs:1246-1247`，用词也不同、没有编辑）；
+  - 托盘「N 分钟后提醒我」什么都不说（`Shell/TrayMenu.cs:326`）。
+- **打开那一条**：mac 的 `openReminder(id)`（`AppDelegate.swift:3358-3361`）直接推到那一条的详情；Windows 的托盘「下一个」（`TrayMenu.cs:319`）和启动器 Ctrl+Enter（`LauncherModel.cs:1321-1325`）都只打开提醒那一页。
+- **修**：
+  - `Add` 返回加没加上，照 mac 的两种说法；
+  - 设置页支持打开后直接弹出某一条的编辑框，三处入口都走它。
+
+#### R101（P2）提醒的编辑框照 mac 的详情页（中；和 PLAN-v23 E1 改成子页一起做）
+
+- **「重复」**：mac 叫「重复」，6 种：一次 / 每天 / 工作日 / 每周 / 每月 / 每隔一阵（`Settings/ReminderDetail.swift:338-386`、`:444-457`）；Windows 叫「什么时候」，4 种：一次 / 每周 / 每月 / 间隔（`Settings/SettingsWindow.Reminders.cs:212`），每天和工作日要自己勾星期。
+- **每隔一阵**：
+  - mac 依次是「每隔」「星期」「全天」开关、「从 / 到」；
+  - Windows 没有「全天」，用「到（0:00 = 到半夜）」（`:221`），先后是星期、从、到、每隔，星期那排没有标签；
+  - 「1.5 小时」Windows 写成「90 分钟」（`:228`，mac `:496-499`）。
+- **名字和分组**：mac「提醒方式」「多久自己收起」「日期和时间」「时间」，分「时间」「提醒方式」「声音和催促」三组（`:158`、`:178`）；Windows「怎么提醒」「全屏多久自己收起」「日期」+「时刻」，不分组。
+- **说明**：
+  - mac 每种重复方式各有一句说明（`:389-396`），提醒方式那组也有（`:158-163`），还有「标题最多 30 个字…」（`:89-91`）；
+  - 「没理会时再催」mac 写「没点「知道了」或「稍后」就再响一次，第 3 次换成全屏，之后不再催」（`:255`），Windows 是一条笼统的脚注（`:375`）。
+- **修**：
+  - 照 mac 的字段、名字、先后重排对话框；
+  - 存的格式不变（「每天」「工作日」就是 weekly 勾全部 / 勾一到五，编辑框按勾了哪几天反认出来，同 mac）。
+
+#### R102（P2）提醒和状态屏的几处小的
+
+- **进入状态屏**：状态屏关着时，提醒「方式」里还能选「进入状态屏」（`SettingsWindow.Reminders.cs:243`）。mac 藏起来，已经选了的照旧显示（`ReminderDetail.swift:127-132`，mac-native §1：指向别的功能的东西跟着它的开关走）。
+- **设置 › 提醒的文案**（mac `Settings/RemindersTab.swift`）：
+  - 组名 mac「到点之后」（`:92`），Windows「稍后」（`:79`）；
+  - 行说明 mac「提醒到点后点「稍后」，过这么久再提醒一次」；
+  - 页脚 mac 写到「没打开 Kitty 时到点的」「删掉一条才能再加」（`:73-75`、`:95-96`），Windows 缺这两句（`:74-76`、`:88-90`）；
+  - 空列表 mac「还没有提醒，点下面的「+」加一条」（`:59`），Windows 是 `:46` 另写的一句；
+  - Windows 独有的录屏那一句可以留着。
+- **选状态的面板**：mac 的 Tab = →、Shift+Tab = ←（`StatusScreen/StatusPicker.swift:125`），Windows 不认 Tab（`StatusScreen/StatusPicker.cs:292-318`）；速查表状态屏那组跟着补。
+
+### 缺口：mac 有、Windows 没有、也没排进任何 PLAN（等用户拍板）
+
+推荐四选一：照做 / 换成 Windows 的做法 / 不适用 / 以后。规模：小 = 一两天内、改动集中；中 = 一批里的一块；大 = 自己就是一批以上。
+
+| # | mac 是什么 | Windows 现在 | 推荐 | 规模 |
+|---|---|---|---|---|
+| G1 | **识字时框里有二维码 / 条码就复制码的内容**（`App/AppDelegate.swift:3128-3150`，从 `92d1cf14` 起；设置脚注「框选里有二维码或条码时复制它的内容」，`Settings/ScreenshotTab.swift:150`） | 没有。WinRT 没有识别静态图片里条码的公开接口，依赖又只许用微软的包 | **以后**：要自己在 Core 里写二维码解码；先写进 MAC-DIFF | 大 |
+| G2 | **长截图面板的按钮**：▶ / ⏸ 中途开关自动滚动（空格）、「存储到「X」 ▾」带另存为、取消、✓ 拷贝；速度那排一直在；对不上时边框变橙（`Screenshot/ScrollCapture.swift:912-921`、`:1243-1265`） | 只有「放弃」「标注」「完成」（`Screenshot/ScrollPreviewPanel.cs:103-116`）；手动 / 自动开始时就定死（S / A），手动滚中途转不了自动；速度那排只在自动时出；边框一直粉色 | **照做**按钮那半（点按钮不用拿焦点）；面板不拿焦点、空格做不到的写进 MAC-DIFF | 中 |
+| G3 | **长截图时和选区相交的钉图让开**：不接鼠标、淡到 0.3，完了放回（`Screenshot/PinPanel.swift:40-48`，体检 B40） | 钉图没设不进截图，长截图按选区 BitBlt（`Screenshot/ScreenCapture.cs:323`）会把置顶的钉图拍进长图；钉图的滚轮是缩放（`PinWindow.cs:73`），压在选区上会吃掉滚轮 | **照做** | 小到中 |
+| G4 | **长截图开始前两个检查**：选区不到 60 pt 时响一声、说「选区太矮」不开始；有标注时说「长截图不带这些标注，拼完可以在长图上标」（`Screenshot/SelectionView.swift:2266-2281`） | 没有（`Screenshot/ScreenshotSession.cs:548-573`） | **照做** | 小 |
+| G5 | **长图标注的工具栏留着「识字并拷贝」和「存储 ▾」**（`Screenshot/EditorToolbar.swift:254-273`；0.7.1 更新日志） | 裁剪、撤销、重做、关闭、保存、拷贝，没有识字、没有 ▾（`Screenshot/LongAnnotateWindow.cs:193-221`） | **照做** | 小 |
+| G6 | **放大镜和信息卡**：15 × 15 格、圆角白环、像素网格、中间一行一列粉条；下面一张色块 + HEX + 坐标 +「C」键帽的卡，截图翻译和识字时不出；悬停窗口时尺寸胶囊显示窗口大小（`SelectionView.swift:252-253`、`:390-400`、`:779-796`） | 11 × 11、直角粉框、只描中间一格，下面一行「x, y  #HEX」，所有模式都一样（`SelectionOverlayWindow.cs:1840-1885`）；尺寸胶囊只在有选区时出（`SelectionOverlayWindow.Chrome.cs:311-318`） | **照做**（规格 `mac-whisker/capture.md`） | 小到中 |
+| G7 | **吸附时画粉色虚线参考线，按住 ⌃ 暂停吸附**（`SelectionView.swift:2707-2721`） | 没有参考线；Ctrl 已经给了十字准线 | 参考线**照做**；暂停**不适用**（写进 MAC-DIFF）。先修 R87 | 小 |
+| G8 | **状态、提醒的列表拖动排序**（`Settings/StatusScreenTab.swift:190-194`、`RemindersTab.swift:126-130`，页脚「拖动调整顺序」） | 一行行设置卡，右键上移 / 下移（`SettingsWindow.StatusScreen.cs:70-71`、`SettingsWindow.Reminders.cs:74-75`） | **照做**（能拖的 ListView，`NotesWindow.cs:431` 已经这么用）；不做就写进 MAC-DIFF | 中 |
+| G9 | **图标格子左边 120 pt 的大预览一直播选中表情的动画，状态详情的样式预览会动**（`Settings/StatusPresetDetail.swift:146-153`、`:302-330`、`:83`；用户 11-04、11-05 要的「选了就播、不要悬停」） | 两个编辑框都没有大预览（`SettingsWindow.Reminders.cs:174-209`、`SettingsWindow.StatusScreen.cs:212-275`），预览明写「表情用静止画面」（`StatusScreen/StatusScreenView.cs:299-301`） | **照做** | 小到中 |
+| G10 | **全部便签窗口工具栏的「换颜色」；空状态「没有匹配的便签」+「清除搜索」、「归档是空的」+ 说明**（`Notes/NotesWindowView.swift:177-201`、`:329`） | 只能右键换颜色，空状态一行字（`NotesWindow.cs:316-337`、`:397-402`） | **照做** | 小 |
+| — | mac 0.9.0 的刘海岛插件（录制计时 / 提醒倒数挂在刘海、正在播放、系统提示、音量亮度键提示、下一个日程、月历、模糊） | — | **不适用**（PLAN-v20 §4：刘海交互不移植，系统自己有媒体 / 音量浮窗） | — |
+| — | 访达右键（RAR、压缩时跳过，`3c8da2fa` 改成常见项开关）、启动台、程序坞预览、⌘Tab 预览 | — | **不适用**（PLAN-v18 D12、PLAN-v10 D7） | — |
+
+推荐「照做」的 9 条（G2–G10，G7 只做参考线）：
+- 规模：两条中（G2、G8），其余小到中；
+- 总量：大约一批半；
+- 都不碰数据格式。
+
+### 已经排了、还没做完的
+
+| 项 | 卡在哪 |
+|---|---|
+| PLAN-v11 第 5 批 F1–F3（翻译语言扩到 30 种左右、长文分段、片段占位符的日期格式 / 偏移 / 填空） | **等 mac**。mac 的这三项（第四轮体检 X1 X2 X20）也还没做：`Translate/Language.swift` 仍是 11 种，`Translate/Providers/Zhipu.swift:11` 仍是 1024 |
+| PLAN-v16 V1 b：动画表情包（release `emoji-pack-1` 按需下载）、mac 后加的 12 个表情、「自动下载动画表情」开关，以及「其他表情」改名「系统表情」（mac `7c203b88`） | **等用户定**（`PLAN-v16.md:64`、`:72`）。Windows 自带 16 个（`KittyTools.Core/StatusPreset.cs:457-474`），mac 28 个；后来的只认不画。这次补进 MAC-DIFF「还没对齐」 |
+| PLAN-v9 V2：设置 › 截图「接起来」的实时对照小样（mac `ScreenshotTab.swift:147-148`、`:296-321`） | 排过，没做 |
+| PLAN-v18 S10：识字分段（侧栏、标题各成一段） | 以后：阈值要拿 Windows 的真截图重调 |
+| PLAN-v20 §5 的「以后」：便签那叠的动画、便签墙拖动排序和先建看得见的卡片、状态屏标题逐字模糊、长截图预览的动效 | 照旧不排 |
+| 0.2.0 审查「观察」里还开着的：重开时可能两个实例、卸载提示没提便签和提醒、未处理异常时不 Flush 便签、标记里的库编号变了 Windows 跟着换、同步文件夹被删了写的时候建回来（mac 不建） | 没人排；「便签的设置项没进导出」并进 R84 |
+| 真机 | 0.2.0「发版前必须真机走的」1–37 条、HANDTEST 1318–1383（PLAN-v20 / v21 / v22 / 左边在前）都没真机走；PLAN-v21 没在真两台 Windows、真 Mac 上测 |
+| mac 本地还没推的（不算缺口，推了再跟） | 多语言（先英文，`i18n-wip` 第 0–4 批）、截图识别元素第二轮（认网页里的元素、下限 16 点，`claude/element-detect-v2-*` 两个提交）、刘海岛 / 正在播放的后续几批、`plugins-wip` 里的保持唤醒。其中**多语言**和**识别元素第二轮**推上来后要跟 |
+
+### MAC-DIFF 这次改了的
+
+同一个提交里顺手改了 `MAC-DIFF.md` 这几处：
+- **设置窗**：
+  - 对照基准 origin/main → origin/macos；
+  - 「mac 独有的几页」去掉便签、补上访达右键和刘海岛；
+  - mac 改插件是七样（漏了刘海岛）；
+  - 没有「桌面」组那句改成 mac 现在的「插件」组；
+  - 新功能标记的原因（mac 菜单用的是系统徽标，不是小圆点）；
+  - 快捷键补上连按两下修饰键；
+  - 关于页去掉「未来计划」（mac `8e60ccf8` 也删了），「素材出处没有便签」挪进「还没对齐」（R95）。
+- **截图**：
+  - 框选识别元素那句里「任务栏不在冻结的窗口列表里」不对，它在，能悬停（只读代码，没上机确认）；
+  - 补上截图时的键（默认 P / T、多 A 和 X 共 24 个、重做 Ctrl+Y）、吸附没有暂停键、截图翻译不进截图页时识字接行跟设置走这三条长期例外；
+  - 「还没对齐」补识字认码（G1）。
+- **主界面、长截图、长图标注**：
+  - 主界面「还没对齐」下面挂的四条归位：刘海岛、托盘挪进长期例外，长截图面板、长图标注挪进新的「截图」小节，按 G2 / G5 补全，已做的删掉；
+  - 格子宽的理由不再提「钉住剪贴板里的图」；
+  - 托盘里也没有「划词翻译并替换」。
+- **便签**：
+  - 「没编译、核验后照实际改这一节」删掉（11-06 已核验）；
+  - 便签墙那条删掉已做的方向键。
+- **提醒和状态屏**：
+  - 补上刘海上的倒数不跟；编辑用对话框记进「还没对齐」（PLAN-v23 E1 排了）；
+  - 「其他表情」那条注明 mac 现在叫「系统表情」，「还没对齐」补动画表情包那一条。
+- **新加一节「Windows 先做了的」**（以后对齐时别当成漏的）：裁剪、截图带指针、截图 / 录屏时藏桌面图标、长截图 Shift+S 往上、录制页里的点按 / 按键 / 声音开关、录屏选麦克风、关于页「反馈问题」、保持唤醒。
+
 ## PLAN-v23（设置窗的交互再对一遍 mac，2026-11-15）
 
 对照表在 `PLAN-v23.md` §1（W1–W12 窗口与导航、H1–H11 快捷键录制、L1–L6 列表和跟着开关变的行、E1 编辑页）。一批一个提交
