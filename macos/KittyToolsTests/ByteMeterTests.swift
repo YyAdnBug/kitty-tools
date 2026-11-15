@@ -54,7 +54,7 @@ import Testing
     let single = root.appending(path: "单个.bin")
     try Data(count: 1000).write(to: single)
     let sizes = await ByteMeter.sizes(of: [folder, single, root.appending(path: "没有")])
-    #expect(sizes == [200 * 12, 1000, 0])
+    #expect(sizes == [Int64(200 * 12), 1000, 0])
     #expect(ByteMeter.fileSize(single.path(percentEncoded: false)) == 1000)
     #expect(ByteMeter.fileSize(folder.path(percentEncoded: false)) == nil)
   }
@@ -68,7 +68,9 @@ import Testing
     let made = try await Subprocess.run(
       "/bin/dd", ["if=/dev/urandom", "of=" + big.path(percentEncoded: false), "bs=1m", "count=100"])
     try #require(made.status == 0)
-    #expect(await ByteMeter.sizes(of: [big, root.appending(path: "没有")]) == [100 << 20, 0])
+    #expect(
+      await ByteMeter.sizes(of: [big, root.appending(path: "没有")])
+        == [Int64(100 << 20), 0])
     var packed: [Double] = []
     let archive = try #require(
       await Archives.pack(

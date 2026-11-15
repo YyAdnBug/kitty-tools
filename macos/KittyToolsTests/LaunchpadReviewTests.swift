@@ -723,11 +723,11 @@ struct LaunchpadReviewTests {
     #expect(layout.tidied(capacity: 35) == layout)
     // 一页 5 个：第 1 页挤出 app5 到第 2 页开头；第 2 页 4 个放得下；第 3 页原样
     let shrunk = layout.tidied(capacity: 5)
-    #expect(
-      shrunk.pages.map { $0.map(\.id) }
-        == [
-          Array(tiles[0..<5]), [tiles[5]] + Array(tiles[6..<9]), Array(tiles[9..<14]),
-        ].map { $0.map(\.id) })
+    let expected = [
+      Array(tiles[0..<5]), [tiles[5]] + Array(tiles[6..<9]), Array(tiles[9..<14]),
+    ].map { $0.map(\.id) }
+    let actual = shrunk.pages.map { $0.map(\.id) }
+    #expect(actual == expected)
     // 一页 4 个：挤出来的一路往后推，页只多不少，先后不变
     let tighter = layout.tidied(capacity: 4)
     #expect(tighter.tiles.map(\.id) == layout.tiles.map(\.id))
