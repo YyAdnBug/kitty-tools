@@ -450,7 +450,7 @@ internal sealed unsafe partial class NoticeHost
             MinHeight = 0,
             VerticalAlignment = VerticalAlignment.Center,
         };
-        if (primary && Application.Current.Resources.TryGetValue("AccentButtonStyle", out var style) && style is Style accent)
+        if (primary && Theme.Style("AccentButtonStyle") is { } accent)
         {
             button.Style = accent;
         }

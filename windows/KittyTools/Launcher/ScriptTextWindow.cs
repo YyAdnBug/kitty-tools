@@ -68,7 +68,7 @@ internal sealed class ScriptTextWindow : Window
         var button = new Button { Content = text, MinWidth = 88 };
         if (accent)
         {
-            button.Style = Application.Current.Resources["AccentButtonStyle"] as Style;
+            button.Style = Theme.Style("AccentButtonStyle");
         }
 
         button.Click += (_, _) => run();

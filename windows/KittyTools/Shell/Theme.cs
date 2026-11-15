@@ -253,9 +253,27 @@ internal static class Theme
             ? radius
             : new CornerRadius(4);
 
-    /// <summary>PLAN-v7 §2.1：从 Styles.xaml 取样式。</summary>
+    /// <summary>
+    /// PLAN-v7 §2.1：从 Styles.xaml 取样式（WinUI 自带的 AccentButtonStyle 也从这里取）。
+    /// Release AOT 下资源字典里的对象按运行时类名建托管包装：程序里 Style 只出现在 as / is 里时 ILC 不留它的构造，
+    /// CsWinRT 只能给一个通用的 IInspectable 包装，`as Style` 得 null——设置卡整套样式（底色、描边、内边距、圆角）
+    /// 和键帽在 Release 里都没了，Debug 正常（2026-11-15）。认不出时按指针包成 Style；这一处 FromAbi 也让 Style 的构造
+    /// 留了下来，实测之后取到的直接就是 Style。别处取样式一律走这里，别写 `Resources[...] as Style`。
+    /// </summary>
     public static Style? Style(string key)
-        => Application.Current?.Resources.TryGetValue(key, out var value) == true ? value as Style : null;
+    {
+        if (Application.Current?.Resources.TryGetValue(key, out var value) != true)
+        {
+            return null;
+        }
+
+        return value switch
+        {
+            Style style => style,
+            WinRT.IWinRTObject native => Microsoft.UI.Xaml.Style.FromAbi(native.NativeObject.ThisPtr),
+            _ => null,
+        };
+    }
 
     /// <summary>Debug 自检：三套主题各取一次卡片底色，颜色要不一样（R15）。</summary>
     public static void VerifyThemeResources()

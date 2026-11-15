@@ -290,7 +290,7 @@ internal static class ReminderScreen
         }
 
         var done = new Button { Content = "知道了" };
-        if (Application.Current.Resources.TryGetValue("AccentButtonStyle", out var style) && style is Style accent)
+        if (Theme.Style("AccentButtonStyle") is { } accent)
         {
             done.Style = accent;
         }

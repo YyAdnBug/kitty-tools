@@ -486,7 +486,7 @@ internal sealed partial class ClipDialogHost : Grid
         _saveButton = new Button
         {
             Content = saveText,
-            Style = Application.Current.Resources["AccentButtonStyle"] as Style,
+            Style = Theme.Style("AccentButtonStyle"),
             IsTabStop = false,
         };
         _saveButton.Click += (_, _) => Save();
