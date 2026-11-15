@@ -899,6 +899,20 @@ internal static class UiSnapshotProbe
                 await ShootSettingsWindowAsync(settings, "settings-" + page, dark, directory);
             }
 
+            // mac 9acd4306：便签「屏幕边缘 › 位置」左边在前（展开的下拉框在设置窗里面，只拍真窗口）。
+            if (Wanted("settings-notes-edge"))
+            {
+                settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 760));
+                settings.ShowPage(welcome: false, "notes");
+                await Task.Delay(600);
+                settings.OpenDeckEdgeForProbe();
+                await Task.Delay(1200);
+                await WindowShot.SaveAsync(
+                    WinRT.Interop.WindowNative.GetWindowHandle(settings),
+                    Path.Combine(directory, $"settings-notes-edge-{(dark ? "dark" : "light")}-window.png"));
+                settings.CloseDeckEdgeForProbe();
+            }
+
             // PLAN-v16 E1 / E2：状态、提醒的编辑框（图标格子最后一格「其他表情」选着一个系统表情；提醒滚到底看提示音和自定义催促）。
             // ContentDialog 在弹出层里，RenderTargetBitmap 画不出，只用 WGC 拍真窗口。
             foreach (var (name, reminder, end) in new[] { ("settings-status-editor", false, false), ("settings-reminder-editor", true, false), ("settings-reminder-editor-end", true, true) })

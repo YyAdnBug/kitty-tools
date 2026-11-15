@@ -8,6 +8,19 @@
 
 条目编号不复用。行号按条目里写的那个提交。
 
+## 便签屏幕边缘的「位置」左边在前（mac `9acd4306`，2026-11-15）
+
+一个提交（`git log --grep "左边在前"`），手测 HANDTEST 1381–1383。设置 › 便签 › 屏幕边缘 ›「位置」的下拉框原来是「右边、左边」，
+和屏幕上的方位反着；改成「左边、右边」（下标 0 = left），默认仍是右边、`NotesDeckEdge` 存的值不变。全 `windows/` 搜过：探针、单测、
+MAC-DIFF 都不靠这个先后（`NotesHost` 的示例便签、同步字段、Core 的 `NoteDeckEdge` 都读存的字符串）。
+
+- **截图自检**：`--ui-snapshots` 多一张 `settings-notes-edge`：展开「位置」的下拉框拍真窗口（下拉列表平时是单独的弹出窗口，自检里同
+  「添加服务」菜单关在设置窗里画，`SettingsWindow.OpenDeckEdgeForProbe`）。`KITTY_SNAPSHOT_ONLY` 是前缀匹配、整个设置那一段先查
+  `settings`，所以只拍这张也要写 `settings`。
+- **探针的坑**：把 Release 的 `KittyTools.exe` 改名成 `KittyProbe.exe` 跑时，旁边要有同名的 `KittyProbe.pri`，不然 WinUI 找不到资源，
+  起来就在 `Microsoft.UI.Xaml.dll` 里 0xC000027B 退出、不写崩溃记录。
+- **没测**：真点下拉框换边、旧版本选过左边的升级上来（存的值没变，按代码看是对的）。
+
 ## PLAN-v22（折叠的翻译服务不自动翻译、标出免费的服务，2026-11-15，用户「全部按推荐」）
 
 一批做完（`git log --grep "PLAN-v22"`），报告在提交正文里；手测 HANDTEST 1368–1380。mac 那一半是 `origin/macos` `07625a56`、`894b8b2c`。

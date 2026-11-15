@@ -62,8 +62,9 @@ internal sealed partial class SettingsWindow
             }
         }
 
-        Deck(() => AddCombo("位置", string.Empty, new[] { "右边", "左边" },
-            settings.NotesDeckEdge == "left" ? 1 : 0, index => Save(() => settings.NotesDeckEdge = index == 1 ? "left" : "right")));
+        // 照屏幕上的方位左边在前（mac 9acd4306）；默认仍是右边，存的值不变。
+        Deck(() => AddCombo("位置", string.Empty, new[] { "左边", "右边" },
+            settings.NotesDeckEdge == "left" ? 0 : 1, index => Save(() => settings.NotesDeckEdge = index == 0 ? "left" : "right")));
         var displays = Displays.All().Select(display => display.Name).ToList();
         if (displays.Count > 1)
         {
@@ -148,5 +149,61 @@ internal sealed partial class SettingsWindow
             "便签存在这台电脑上，和剪贴板历史分开：清空历史、保留天数都碰不到它。每天自动备份一份，留最近 7 份（正文里的图片跟着一起备）。" +
             $"删掉的便签在「最近删除」里留 {NoteBook.TrashDays} 天。设置 › 通用 里的导出与导入带便签的文字、不带图片；要连图片一起带走、或者拿别的工具看，" +
             "用上面的 Markdown 导出。在几台电脑之间同步到 设置 › 通用「同步」里选文件夹。")));
+    }
+
+    /// <summary>UI 截图自检（mac 9acd4306）：滚到「屏幕边缘」、展开「位置」下拉框看选项的先后；CloseDeckEdgeForProbe 收起。</summary>
+    internal void OpenDeckEdgeForProbe()
+    {
+        ScrollToSectionForProbe("屏幕边缘");
+        if (DeckEdgeCombo(_content) is { } combo)
+        {
+            // 平时下拉列表是单独的弹出窗口，只抓设置窗拍不到：自检里关在窗口里画（同 OpenAddServiceMenuForProbe）。
+            if (Descendant<Microsoft.UI.Xaml.Controls.Primitives.Popup>(combo) is { } popup)
+            {
+                popup.ShouldConstrainToRootBounds = true;
+            }
+
+            combo.IsDropDownOpen = true;
+        }
+    }
+
+    private static T? Descendant<T>(DependencyObject node) where T : DependencyObject
+    {
+        for (var index = 0; index < Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChildrenCount(node); index++)
+        {
+            var child = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChild(node, index);
+            if ((child as T ?? Descendant<T>(child)) is { } found)
+            {
+                return found;
+            }
+        }
+
+        return null;
+    }
+
+    internal void CloseDeckEdgeForProbe()
+    {
+        if (DeckEdgeCombo(_content) is { } combo)
+        {
+            combo.IsDropDownOpen = false;
+        }
+    }
+
+    private static ComboBox? DeckEdgeCombo(DependencyObject node)
+    {
+        if (node is ComboBox combo && Microsoft.UI.Xaml.Automation.AutomationProperties.GetName(combo) == "位置")
+        {
+            return combo;
+        }
+
+        for (var index = 0; index < Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChildrenCount(node); index++)
+        {
+            if (DeckEdgeCombo(Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChild(node, index)) is { } found)
+            {
+                return found;
+            }
+        }
+
+        return null;
     }
 }
