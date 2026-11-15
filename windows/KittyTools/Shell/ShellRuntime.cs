@@ -12,6 +12,9 @@ internal sealed class ShellRuntime
 {
     private Window? _keeper;
     private SettingsWindow? _settingsWindow;
+
+    /// <summary>SettingsProbe（PLAN-v23）看设置窗用。</summary>
+    internal SettingsWindow? SettingsWindowForProbe => _settingsWindow;
     private string _hotKeySignature = string.Empty;
     /// <summary>上次按哪份停用名单 / 全屏开关算的规则（变了才重算）。</summary>
     private string _blockSignature = string.Empty;

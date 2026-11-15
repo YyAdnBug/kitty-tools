@@ -28,6 +28,7 @@ internal sealed partial class SettingsWindow : Window
 {
     private readonly Grid _shell;
     private readonly NavigationView _nav;
+    private readonly AutoSuggestBox _search;
     private readonly NavigationViewItem _noMatch;
     private readonly ScrollViewer _scroll;
     private readonly StackPanel _content;
@@ -101,9 +102,9 @@ internal sealed partial class SettingsWindow : Window
         {
             "外观", "浅色", "深色", "暗黑", "主题", "跟随系统", "强调色", "主题色", "颜色", "开机", "登录", "自启", "启动", "权限", "麦克风",
             "隐私", "导出", "导入", "备份", "恢复", "迁移", "换电脑", "配置", "功能", "模块", "关闭", "停用", "启用", "不用",
-            "同步", "OneDrive", "云盘", "多台", "几台", "另一台", "数据", "目录", "卸载", "移除",
-            // 插件在 通用 › 功能 下面添加（没添加的插件页不进搜索，落到这一页，同 mac SettingsPage.matching）
-            "插件", "添加", "保持唤醒", "awake", "防息屏", "防止睡眠", "不睡眠", "咖啡因",
+            "同步", "OneDrive", "云盘", "多台", "几台", "另一台", "数据", "数据目录", "目录", "文件夹", "卸载", "移除",
+            "动效", "动画", "挤压", "弹开", "插件", "添加",
+            // 没添加的插件的词不写在这里：Core SettingsSearch.Matching 把它们算成通用页对上（PLAN-v23 W5，同 mac SettingsPage.matching）
         },
         ["keepAwake"] = new[]
         {
@@ -156,7 +157,7 @@ internal sealed partial class SettingsWindow : Window
         {
             "快捷键", "热键", "冲突", "录制", "恢复默认", "速查", "按键", "钉图", "停用", "游戏", "全屏", "截图时", "工具栏", "连按", "双击",
         },
-        ["about"] = new[] { "版本", "更新", "日志", "发布", "检查更新", "自动检查" },
+        ["about"] = new[] { "版本", "更新", "日志", "发布", "检查更新", "自动检查", "欢迎", "引导" },
     };
 
     public SettingsWindow()
@@ -188,7 +189,7 @@ internal sealed partial class SettingsWindow : Window
             RequestedTheme = Theme.ElementTheme,
         };
         // 侧栏顶上「搜索设置」（mac .searchable(placement: .sidebar)）：按页名和每页的关键词筛侧栏。
-        var search = new AutoSuggestBox { PlaceholderText = "搜索设置", QueryIcon = new SymbolIcon(Symbol.Find) };
+        var search = _search = new AutoSuggestBox { PlaceholderText = "搜索设置", QueryIcon = new SymbolIcon(Symbol.Find) };
         AutomationProperties.SetName(search, "搜索设置");
         search.TextChanged += (_, args) =>
         {
@@ -280,6 +281,9 @@ internal sealed partial class SettingsWindow : Window
 
         _shell.AddHandler(UIElement.KeyDownEvent, new KeyEventHandler(OnRecordKeyDown), handledEventsToo: true);
         _shell.AddHandler(UIElement.KeyUpEvent, new KeyEventHandler(OnRecordKeyUp), handledEventsToo: true);
+        // 子页回上一层（PLAN-v23 W3，mac 工具栏「‹」/ ⌘[）：Alt + ←、键盘上的「后退」键、鼠标的后退侧键
+        _shell.AddHandler(UIElement.KeyDownEvent, new KeyEventHandler(OnBackKeyDown), handledEventsToo: true);
+        _shell.AddHandler(UIElement.PointerPressedEvent, new PointerEventHandler(OnBackPointerPressed), handledEventsToo: true);
 
         Content = _shell;
         // 用 XAML 自带的 MicaBackdrop：深浅色跟着 _shell 的 RequestedTheme（设置里选的外观）走，窗口不在前台时
@@ -295,11 +299,32 @@ internal sealed partial class SettingsWindow : Window
         _width = (int)Math.Round(980 * scale);
         _height = (int)Math.Round(720 * scale);
         AppWindow.Resize(new Windows.Graphics.SizeInt32(_width, _height));
+        // 最小尺寸同 mac SettingsWindow.minSize（700 × 460）；位置和大小记在这台电脑，没记过才居中（PLAN-v23 W2）
+        if (AppWindow.Presenter is OverlappedPresenter overlapped)
+        {
+            overlapped.PreferredMinimumWidth = (int)Math.Round(700 * scale);
+            overlapped.PreferredMinimumHeight = (int)Math.Round(460 * scale);
+        }
+
+        _placed = RestoreBounds();
+        AppWindow.Changed += (_, args) =>
+        {
+            if ((args.DidPositionChange || args.DidSizeChange) && _everShown && AppWindow.IsVisible &&
+                AppWindow.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Restored })
+            {
+                var position = AppWindow.Position;
+                var size = AppWindow.Size;
+                SettingsService.Current.SettingsWindowBounds = new List<int> { position.X, position.Y, size.Width, size.Height };
+                _boundsChanged = true;
+            }
+        };
         // 标题栏左上角的图标（2026-10-29 用户反馈：以前传 exe 路径，SetIcon 不认，显示的是系统默认图标）。
         AppWindow.SetIcon(Paths.AppIconFile);
         Theme.ApplyTitleBar(AppWindow);
 
-        BuildPage("general");
+        // 上次停在的那一页（PLAN-v23 W1，同 mac SettingsNavigation.init）：没有这一页、或者是没添加的插件的页就回通用
+        var last = SettingsService.Current.SettingsLastPage;
+        BuildPage(last is not null && Pages.Any(page => page.Tag == last) && !AbsentPlugins().Contains(last) ? last : "general");
         if (Syncer.Instance is { } syncer)
         {
             syncer.Changed += OnSyncChanged;
@@ -334,15 +359,50 @@ internal sealed partial class SettingsWindow : Window
         AppWindow.Closing += (_, args) =>
         {
             args.Cancel = true;
-            IsClosed = false;
-            AppWindow.Hide();
-            Log.Info("settings.hidden");
+            HideInsteadOfClosing();
         };
+    }
+
+    private void HideInsteadOfClosing()
+    {
+        IsClosed = false;
+        if (_boundsChanged)
+        {
+            _boundsChanged = false;
+            SaveOwn();
+        }
+
+        AppWindow.Hide();
+        Log.Info("settings.hidden");
     }
 
     public bool IsClosed { get; private set; }
 
     private bool _everShown;
+
+    /// <summary>窗口已经摆好位置了（记着上次的、或者第一次打开时居中过）：之后每次打开留在原处，不再挪回正中。</summary>
+    private bool _placed;
+
+    /// <summary>挪过、拉过大小，关窗（隐藏）时存一次。</summary>
+    private bool _boundsChanged;
+
+    /// <summary>照上次记的位置和大小摆（标题栏那一条不在任何一块屏上就不用，居中）。</summary>
+    private bool RestoreBounds()
+    {
+        if (SettingsService.Current.SettingsWindowBounds is not [var x, var y, var width, var height] || width <= 0 || height <= 0)
+        {
+            return false;
+        }
+
+        var titleBar = new Windows.Graphics.RectInt32(x, y, width, Math.Min(height, 40));
+        if (DisplayArea.GetFromRect(titleBar, DisplayAreaFallback.None) is null)
+        {
+            return false;
+        }
+
+        AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(x, y, width, height));
+        return true;
+    }
 
     /// <summary>page 不给 = 上次停在的那一页（同 mac 记住上次的页；欢迎页总在通用）。</summary>
     public void ShowPage(bool welcome, string? page = null, string? service = null)
@@ -350,6 +410,13 @@ internal sealed partial class SettingsWindow : Window
         Motion.Refresh();
         _firstRun = welcome;
         page ??= welcome ? "general" : _currentPage;
+        // 开着对话框（编辑一条、确认框、速查表）时不换页：换页会把底下那页连同对话框里没存的输入一起拆掉（同 mac show(page:) 看 attachedSheet）
+        if (_content.XamlRoot is { } openRoot && VisualTreeHelper.GetOpenPopupsForXamlRoot(openRoot).Count > 0)
+        {
+            page = _currentPage;
+            service = null;
+        }
+
         // R34：同一页反复开关不重建 XAML 树（每次重建约 +5 MB）；换页或第一次才建。
         if (service is not null)
         {
@@ -375,10 +442,14 @@ internal sealed partial class SettingsWindow : Window
             Activate();
         }
 
-        var area = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary).WorkArea;
-        AppWindow.Move(new Windows.Graphics.PointInt32(
-            area.X + Math.Max(0, (area.Width - _width) / 2),
-            area.Y + Math.Max(0, (area.Height - _height) / 2)));
+        if (!_placed)
+        {
+            _placed = true;
+            var area = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary).WorkArea;
+            AppWindow.Move(new Windows.Graphics.PointInt32(
+                area.X + Math.Max(0, (area.Width - _width) / 2),
+                area.Y + Math.Max(0, (area.Height - _height) / 2)));
+        }
         Foreground.Restore(_hwnd);
         // 焦点给内容区，不落在左栏第一项上（REVIEW R10：鼠标打开时不该有焦点框）。
         _scroll.Focus(FocusState.Programmatic);
@@ -446,7 +517,7 @@ internal sealed partial class SettingsWindow : Window
     /// <summary>设置在别处被存了（不是外观 / 强调色 / 功能开关变了）：窗口不在前台时记一下，切回来再重建。</summary>
     public void MarkStale()
     {
-        if (!_active)
+        if (!_active && !_savingOwn)
         {
             _stale = true;
         }
@@ -524,10 +595,123 @@ internal sealed partial class SettingsWindow : Window
         }
 
         ApplyGate();
+        RememberPage();
         // 新功能标记：换到这一页时算一遍（看着的这页原来标着的留着，换页才没）
         _whatsNewShown = WhatsNew.Shown(_currentPage, WhatsNewHost.Current(), _whatsNewShown);
         RebuildSidebar();
         UpdateNavSelection();
+    }
+
+    /// <summary>
+    /// 换到一页之后（PLAN-v23 W1 W7 W8，同 mac SettingsRoot.onChange(of: page)）：记下这一页（跨重启）；从别处跳过来、旧搜索词把它筛掉了
+    /// 就清掉搜索词；它在收起的组里就把那组展开并记住。
+    /// </summary>
+    private void RememberPage()
+    {
+        if (_sidebarQuery.Length > 0 && !SettingsSearch.Matching(SearchPages(), _sidebarQuery, AbsentPlugins()).Contains(_currentPage))
+        {
+            _sidebarQuery = string.Empty;
+            _search.Text = string.Empty;
+        }
+
+        var settings = SettingsService.Current;
+        var changed = false;
+        var group = SettingsSidebar.GroupTitle(_currentPage) ?? (SettingsSidebar.PluginPages.Contains(_currentPage) ? "插件" : null);
+        if (group is not null && settings.SettingsCollapsedGroups?.Remove(group) == true)
+        {
+            changed = true;
+        }
+
+        if (settings.SettingsLastPage != _currentPage)
+        {
+            settings.SettingsLastPage = _currentPage;
+            changed = true;
+        }
+
+        if (changed)
+        {
+            SaveOwn();
+        }
+    }
+
+    /// <summary>设置窗自己记的东西（上次的页、收起的组、窗口位置）存盘：不算「别处存了设置」，不让下次切回来再整页重建一遍。</summary>
+    private void SaveOwn()
+    {
+        _savingOwn = true;
+        try
+        {
+            SettingsService.Save();
+        }
+        finally
+        {
+            _savingOwn = false;
+        }
+    }
+
+    private bool _savingOwn;
+
+    /// <summary>侧栏搜索用的每一页；快捷键页另带此刻开着的全部动作名（同 mac HotKeyAction.allCases.filter(\.isActive).map(\.title)）。</summary>
+    private static List<SettingsSearchPage> SearchPages() => Pages
+        .Select(page => new SettingsSearchPage(page.Tag, page.Title, page.Tag == "hotkeys"
+            ? PageKeywords[page.Tag].Concat(SettingsDefaults.DefaultHotKeys
+                .Select(definition => definition.Action)
+                .Where(Features.IsOnFor)
+                .Select(SettingsDefaults.RowTitle)).ToList()
+            : PageKeywords[page.Tag]))
+        .ToList();
+
+    /// <summary>没添加的插件的页：侧栏、搜索里都没有它（同 mac SettingsPage.absentPlugins）。</summary>
+    private static HashSet<string> AbsentPlugins()
+        => Features.Plugins.Where(plugin => !Features.IsOn(plugin)).Select(Features.Key).ToHashSet();
+
+    /// <summary>
+    /// 子页回上一层（PLAN-v23 W3，mac SettingsBackButton / ⌘[）：翻译服务详情 → 翻译、怎么写脚本 → 脚本命令、启动器的子页 → 启动器、
+    /// 功能 → 通用。不在子页、正在录快捷键、开着对话框或菜单时不动。
+    /// </summary>
+    private bool GoBack()
+    {
+        if (_recordingAction is not null ||
+            _content.XamlRoot is { } root && VisualTreeHelper.GetOpenPopupsForXamlRoot(root).Count > 0)
+        {
+            return false;
+        }
+
+        if (_currentPage == "translate" && _serviceDetail is not null)
+        {
+            CloseServiceDetail();
+        }
+        else if (_currentPage == "launcher" && _launcherSubpage is { } sub)
+        {
+            OpenLauncherSubpage(sub == "script-guide" ? "scripts" : null);
+        }
+        else if (_currentPage == "general" && _featuresPage)
+        {
+            OpenFeaturesPage(false);
+        }
+        else
+        {
+            return false;
+        }
+
+        Log.Info("settings.back");
+        return true;
+    }
+
+    private void OnBackKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        var altLeft = e.Key == VirtualKey.Left && IsDown(VirtualKey.Menu) && !IsDown(VirtualKey.Control) && !IsDown(VirtualKey.Shift);
+        if ((altLeft || e.Key == VirtualKey.GoBack) && GoBack())
+        {
+            e.Handled = true;
+        }
+    }
+
+    private void OnBackPointerPressed(object sender, PointerRoutedEventArgs e)
+    {
+        if (e.GetCurrentPoint(_shell).Properties.IsXButton1Pressed && GoBack())
+        {
+            e.Handled = true;
+        }
     }
 
     /// <summary>
@@ -539,11 +723,7 @@ internal sealed partial class SettingsWindow : Window
     {
         var settings = SettingsService.Current;
         var query = _sidebarQuery;
-        var matches = Pages
-            .Where(page => query.Length == 0 || page.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                           PageKeywords[page.Tag].Any(word => word.Contains(query, StringComparison.OrdinalIgnoreCase)))
-            .Select(page => page.Tag)
-            .ToList();
+        var matches = SettingsSearch.Matching(SearchPages(), query, AbsentPlugins());
         var off = Pages.Select(page => page.Tag).Where(tag => Features.ForPage(tag) is { } feature && !Features.IsOn(feature)).ToHashSet();
         var collapsed = (settings.SettingsCollapsedGroups ?? new List<string>()).ToHashSet();
         var added = Features.Plugins.Where(Features.IsOn).Select(Features.Key).ToList();
@@ -635,22 +815,16 @@ internal sealed partial class SettingsWindow : Window
     }
 
     /// <summary>
-    /// 侧栏「搜索设置」：只留页名或关键词对得上的页；当前页不在结果里就跳到第一个，搜的正好是页名时停在那页
-    /// （同 mac SettingsPage.page(for:current:)）。
+    /// 侧栏「搜索设置」：只留页名或关键词对得上的页；页名里有搜的字的优先，否则当前页不在结果里就跳到第一个
+    /// （同 mac SettingsPage.page(for:current:)，规则在 Core SettingsSearch）。
     /// </summary>
     private void FilterPages(string text)
     {
         var query = text.Trim();
-        var matches = Pages
-            .Where(page => query.Length == 0 || page.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                           PageKeywords[page.Tag].Any(word => word.Contains(query, StringComparison.OrdinalIgnoreCase)))
-            .Select(page => page.Tag)
-            .ToList();
         _sidebarQuery = query;
         RebuildSidebar();
-        var exact = Pages.FirstOrDefault(page => page.Title == query).Tag;
-        var target = exact ?? (matches.Contains(_currentPage) ? null : matches.FirstOrDefault());
-        if (target is not null && target != _currentPage && _recordingAction is null)
+        var target = SettingsSearch.PageFor(SearchPages(), query, _currentPage, AbsentPlugins());
+        if (target != _currentPage && _recordingAction is null)
         {
             _serviceDetail = null;
             _launcherSubpage = null;
@@ -794,7 +968,7 @@ internal sealed partial class SettingsWindow : Window
             return;
         }
 
-        _content.Children.Add(Header("通用", "外观、登录时打开、权限、同步、设置的导出与导入"));
+        _content.Children.Add(Header("通用", "功能、外观、登录时打开、权限、同步、导出与导入、数据目录"));
         if (_firstRun)
         {
             // 首次安装：盖一层三屏的欢迎引导（SettingsWindow.Onboarding.cs，照 mac OnboardingView），只弹一次。

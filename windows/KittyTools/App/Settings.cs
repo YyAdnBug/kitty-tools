@@ -532,6 +532,12 @@ internal sealed class Settings
     /// <summary>设置侧栏最底下「已关闭」那组展开着没有（默认收起）。</summary>
     public bool SettingsShowsOffFeatures { get; set; }
 
+    /// <summary>设置窗上次停在哪一页（PLAN-v23 W1，同 mac Prefs.settingsPage；这台电脑自己的，不导出不同步）。</summary>
+    public string? SettingsLastPage { get; set; }
+
+    /// <summary>设置窗上次的位置和大小：物理像素的 x、y、宽、高（PLAN-v23 W2，同 mac setFrameAutosaveName；这台电脑自己的）。</summary>
+    public List<int>? SettingsWindowBounds { get; set; }
+
     /// <summary>
     /// 新功能标记的账（PLAN-v16 G3，这台电脑自己的，不导出不同步）：各版本第一次打开的时刻（Unix 毫秒，0 = 很久以前）、碰过哪几个；
     /// 上次运行的版本（升级上来才标，新装不标）。
