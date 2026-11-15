@@ -36,4 +36,21 @@ internal sealed partial class SettingsWindow
 
     /// <summary>开一个对话框（同步「合在一起？」那个，点了也不会做什么），返回它，自检自己关。</summary>
     internal ContentDialog OpenDialogForProbe() => ShowSettingsJoinForProbe();
+
+    // ---- 快捷键录制（第 2 批）
+
+    internal string? RecordingForProbe => _recordingAction;
+
+    internal Button? RecorderForProbe(string action) => _hotKeyBoxes.GetValueOrDefault(action);
+
+    internal Button? ClearButtonForProbe(string action) => _hotKeyClears.GetValueOrDefault(action);
+
+    /// <summary>那一行下面此刻写着的字（橙字或说明）。</summary>
+    internal string RowMessageForProbe(string action)
+        => _hotKeyCards.TryGetValue(action, out var card) ? SettingsUi.DescriptionOf(card) : string.Empty;
+
+    /// <summary>录着时按下了这个键（同 OnRecordKeyDown 算好修饰键之后那条路；不发真的按键）。</summary>
+    internal void RecordKeyForProbe(string action, uint key, KittyTools.Core.HotKeyModifiers modifiers) => RecordKey(action, key, modifiers);
+
+    internal void RestoreHotKeyForProbe(string action) => RestoreHotKey(action);
 }

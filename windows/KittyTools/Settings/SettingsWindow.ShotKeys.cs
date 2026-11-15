@@ -67,7 +67,6 @@ internal sealed partial class SettingsWindow
             VerticalAlignment = VerticalAlignment.Center,
         };
         _hotKeyBoxes[action] = box;
-        ShowBinding(box, action);
         box.Click += (_, _) =>
         {
             if (_recordingAction != action)
@@ -84,7 +83,9 @@ internal sealed partial class SettingsWindow
         };
         var restore = new MenuFlyoutItem { Text = "恢复默认", IsEnabled = current != entry.Default };
         restore.Click += (_, _) => RestoreHotKey(action);
-        box.ContextFlyout = new MenuFlyout { Items = { restore } };
+        var clearItem = new MenuFlyoutItem { Text = "清除", IsEnabled = current is not null };
+        clearItem.Click += (_, _) => ClearHotKey(action);
+        box.ContextFlyout = new MenuFlyout { Items = { restore, clearItem } };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetHelpText(box, "点一下后按新的键；右键可恢复默认");
 
         var clear = new Button
@@ -98,11 +99,8 @@ internal sealed partial class SettingsWindow
             VerticalAlignment = VerticalAlignment.Center,
             Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent),
             BorderThickness = new Thickness(0),
-            Visibility = current is null ? Visibility.Collapsed : Visibility.Visible,
         };
-        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(clear, $"清除截图时「{entry.Title}」的键");
-        ToolTipService.SetToolTip(clear, "清除");
-        clear.Click += (_, _) => ClearHotKey(action);
+        AddClearButton(box, clear, action);
         var recorder = new Grid { VerticalAlignment = VerticalAlignment.Center };
         recorder.Children.Add(box);
         recorder.Children.Add(clear);
@@ -154,6 +152,6 @@ internal sealed partial class SettingsWindow
         SettingsService.Current.ScreenshotKeys = ShotKeys.Set(SettingsService.Current.ScreenshotKeys, id, binding);
         SettingsService.Save();
         _recordingAction = null;
-        BuildPage("hotkeys");
+        RebuildKeepingRecorder(action, "hotkeys");
     }
 }

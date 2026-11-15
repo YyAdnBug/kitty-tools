@@ -53,8 +53,14 @@ internal sealed partial class SettingsWindow : Window
         get => _recordingActionValue;
         set
         {
+            var was = _recordingActionValue is not null;
             _recordingActionValue = value;
             RecordingHotKey = value is not null;
+            // 录着的时候全局热键全停（PLAN-v23 H1，mac center.suspend）：不然按到别的动作的键，那个动作直接触发、录不上
+            if (was != RecordingHotKey)
+            {
+                ShellRuntime.Instance?.HotKeys.Hold(RecordingHotKey, SettingsService.Current);
+            }
         }
     }
 
@@ -337,6 +343,12 @@ internal sealed partial class SettingsWindow : Window
         Activated += (_, args) =>
         {
             _active = args.WindowActivationState != WindowActivationState.Deactivated;
+            // 设置窗失去前台就不录了（PLAN-v23 H2，mac didResignKey）：XAML 的焦点不因窗口失活而丢，不停的话热键一直停着
+            if (!_active && _recordingAction is { } recording)
+            {
+                StopRecording(recording, null);
+            }
+
             // 从 Windows 设置里改了麦克风权限回来：通用 › 权限那一行跟上（mac 窗口变成 key 时刷新）。
             var microphoneChanged = _active && _currentPage == "general" && _microphoneAllowed != MicrophoneAllowed();
             if (_active && (_stale || microphoneChanged) && _recordingAction is null)
@@ -543,6 +555,7 @@ internal sealed partial class SettingsWindow : Window
         _content.Children.Clear();
         _browserRefreshers.Clear();
         _hotKeyCards.Clear();
+        _hotKeyClears.Clear();
         _gateFeature = null;
         _ungated.Clear();
         switch (page)
@@ -3358,6 +3371,9 @@ internal sealed partial class SettingsWindow : Window
     /// <summary>每一行的录制框（录制时原地换成「按下快捷键」）。</summary>
     private readonly Dictionary<string, Button> _hotKeyBoxes = new();
 
+    /// <summary>每个录制框右边的 ⓧ（ShowBinding 跟着录没录、有没有键换）。</summary>
+    private readonly Dictionary<string, Button> _hotKeyClears = new();
+
     /// <summary>
     /// 设置 › 快捷键（照 mac HotkeysTab）：按 剪贴板与启动器 / 翻译 / 截图与录制 分组（只列开着的功能），每行 = 家族色块 + 动作名
     /// （出问题、录制时的提示用橙字写在下面）+ 输入框样子的录制框（点一下录，✕ 清除，右键「恢复默认」）。
@@ -3382,7 +3398,7 @@ internal sealed partial class SettingsWindow : Window
         _content.Children.Add(new Border { Height = 8 });
         AddShortcutsRow(null, "面板里的按键", "剪贴板、启动器、翻译浮窗和截图里按什么键，都在速查表里");
         _content.Children.Add(SettingsUi.Footnote(
-            "点录制框后按下新组合；Esc 取消，Backspace 清除，右键可恢复默认。至少带 Ctrl 或 Alt，或者单独一个 F1–F24；也可以连按两下 Ctrl、Alt 或 Shift。"));
+            "点录制框后按下新组合；Esc 取消，Backspace 或 Delete 清除，右键可恢复默认。至少带 Ctrl 或 Alt，或者单独一个 F1–F24；也可以连按两下 Ctrl、Alt 或 Shift。"));
         // 截图时的键（PLAN-v18 S3，.ShotKeys.cs）、按应用停用（PLAN-v17 H5 H7，.HotKeyBlock.cs）
         BuildShotKeys();
         BuildHotKeyBlocks();
@@ -3447,7 +3463,6 @@ internal sealed partial class SettingsWindow : Window
             VerticalAlignment = VerticalAlignment.Center,
         };
         _hotKeyBoxes[action] = box;
-        ShowBinding(box, action);
         // 录着时按空格 / Enter 也会触发 Click：只在没在录这一行时才开始录。
         box.Click += (_, _) =>
         {
@@ -3470,7 +3485,10 @@ internal sealed partial class SettingsWindow : Window
             IsEnabled = binding.VirtualKey != definition.VirtualKey || binding.Modifiers != definition.Modifiers,
         };
         restore.Click += (_, _) => RestoreHotKey(action);
-        box.ContextFlyout = new MenuFlyout { Items = { restore } };
+        // 「清除」也在右键菜单里（PLAN-v23 H7，mac contextMenu 两项）
+        var clearItem = new MenuFlyoutItem { Text = "清除", IsEnabled = binding.VirtualKey != 0 };
+        clearItem.Click += (_, _) => ClearHotKey(action);
+        box.ContextFlyout = new MenuFlyout { Items = { restore, clearItem } };
         AutomationProperties.SetHelpText(box, "点一下后按新的组合；右键可恢复默认");
 
         var clear = new Button
@@ -3484,11 +3502,8 @@ internal sealed partial class SettingsWindow : Window
             VerticalAlignment = VerticalAlignment.Center,
             Background = new SolidColorBrush(Colors.Transparent),
             BorderThickness = new Thickness(0),
-            Visibility = binding.VirtualKey == 0 ? Visibility.Collapsed : Visibility.Visible,
         };
-        AutomationProperties.SetName(clear, $"清除「{SettingsDefaults.RowTitle(action)}」的快捷键");
-        ToolTipService.SetToolTip(clear, "清除");
-        clear.Click += (_, _) => ClearHotKey(action);
+        AddClearButton(box, clear, action);
         var recorder = new Grid { VerticalAlignment = VerticalAlignment.Center };
         recorder.Children.Add(box);
         recorder.Children.Add(clear);
@@ -3507,22 +3522,92 @@ internal sealed partial class SettingsWindow : Window
         var shot = IsShot(action) ? ShotKeys.Find(ShotId(action)) : null;
         var command = IsCommand(action) ? LauncherCommandKeys.Rows.FirstOrDefault(row => row.Id == CommandId(action)) : null;
         var name = shot?.Title ?? command?.Title ?? SettingsDefaults.RowTitle(action);
-        if (_recordingAction == action)
-        {
-            box.Content = new TextBlock { Text = "按下快捷键", Foreground = Theme.SecondaryText() };
-            box.BorderBrush = new SolidColorBrush(Theme.AccentColor);
-            AutomationProperties.SetName(box, $"正在录「{name}」的快捷键：按下新组合，Esc 取消");
-            return;
-        }
-
         var shortcut = shot is not null
             ? ShotKeys.Current(shot.Id, SettingsService.Current.ScreenshotKeys)?.Display ?? "未设置"
             : command is not null
                 ? CommandHotKey(command.Id) ?? "未设置"
                 : HotKeyManager.FormatFor(action);
-        box.Content = SettingsUi.KeyCaps(shortcut);
+        var recording = _recordingAction == action;
+        // ⓧ：录着时 = 取消录制，有键时 = 清除，都不是时不出（PLAN-v23 H6，mac 录制框右边那颗）
+        if (_hotKeyClears.TryGetValue(action, out var clear))
+        {
+            clear.Visibility = recording || shortcut != "未设置" ? Visibility.Visible : Visibility.Collapsed;
+            var tip = recording ? "取消录制（Esc）" : "清除";
+            ToolTipService.SetToolTip(clear, tip);
+            AutomationProperties.SetName(clear, recording ? $"取消录制「{name}」的快捷键" : $"清除「{name}」的快捷键");
+        }
+
+        if (recording)
+        {
+            // 录着：强调色「按下快捷键…」，按住的修饰键实时变成键帽（OnRecordKeyDown 里换，PLAN-v23 H4 H5）
+            box.Content = new TextBlock { Text = "按下快捷键…", Foreground = new SolidColorBrush(Theme.AccentColor) };
+            box.BorderBrush = new SolidColorBrush(Theme.AccentColor);
+            AutomationProperties.SetName(box, $"正在录「{name}」的快捷键：按下新组合，Esc 取消");
+            return;
+        }
+
+        // 没设：灰的占位「按下快捷键」（mac 同），不是一枚「未设置」
+        box.Content = shortcut == "未设置"
+            ? new TextBlock { Text = "按下快捷键", Foreground = Theme.TertiaryText() }
+            : SettingsUi.KeyCaps(shortcut);
         box.ClearValue(Control.BorderBrushProperty);
         AutomationProperties.SetName(box, $"{name}：{shortcut}");
+    }
+
+    /// <summary>录制框右边的 ⓧ：不拿焦点（点它时录制框不先失焦、不先停录），录着时取消、平时清除。</summary>
+    private void AddClearButton(Button box, Button clear, string action)
+    {
+        clear.IsTabStop = false;
+        clear.AllowFocusOnInteraction = false;
+        clear.Click += (_, _) =>
+        {
+            if (_recordingAction == action)
+            {
+                StopRecording(action, null);
+            }
+            else
+            {
+                ClearHotKey(action);
+            }
+        };
+        _hotKeyClears[action] = clear;
+        ShowBinding(box, action);
+    }
+
+    /// <summary>录制按住的修饰键（「Ctrl+Alt」；一个都没按是空串）。</summary>
+    private static string HeldModifiers()
+    {
+        var names = new List<string>();
+        if (IsDown(VirtualKey.Control)) names.Add("Ctrl");
+        if (IsDown(VirtualKey.Menu)) names.Add("Alt");
+        if (IsDown(VirtualKey.Shift)) names.Add("Shift");
+        if (IsDown(VirtualKey.LeftWindows) || IsDown(VirtualKey.RightWindows)) names.Add("Win");
+        return string.Join("+", names);
+    }
+
+    /// <summary>录着时框里跟着按住的修饰键：有就是键帽，松开了回到「按下快捷键…」。</summary>
+    private void ShowHeld(string action)
+    {
+        if (_recordingAction != action || !_hotKeyBoxes.TryGetValue(action, out var box))
+        {
+            return;
+        }
+
+        var held = HeldModifiers();
+        box.Content = held.Length == 0
+            ? new TextBlock { Text = "按下快捷键…", Foreground = new SolidColorBrush(Theme.AccentColor) }
+            : SettingsUi.KeyCaps(held);
+    }
+
+    /// <summary>录完 / 清除 / 恢复默认后整页重建：焦点回到那一行的录制框（PLAN-v23 H9，mac 焦点留在录制框上）。</summary>
+    private void RebuildKeepingRecorder(string action, string page)
+    {
+        var focused = _hotKeyBoxes.TryGetValue(action, out var old) && old.FocusState != FocusState.Unfocused;
+        BuildPage(page);
+        if (_hotKeyBoxes.TryGetValue(action, out var box))
+        {
+            box.Focus(focused ? FocusState.Keyboard : FocusState.Programmatic);
+        }
     }
 
     private void BeginRecording(string action)
@@ -3576,6 +3661,21 @@ internal sealed partial class SettingsWindow : Window
             ? null
             : ShellRuntime.Instance?.HotKeys.FailureFor(action));
         SettingsUi.SetDescription(card, text ?? string.Empty, problem: true);
+        Announce(action, message);
+    }
+
+    /// <summary>录制被拒的橙字读屏看不到：主动播报一次（PLAN-v23 H10，mac AccessibilityNotification.Announcement）。</summary>
+    private void Announce(string action, string? message)
+    {
+        if (message is { Length: > 0 } && _hotKeyBoxes.TryGetValue(action, out var box) &&
+            Microsoft.UI.Xaml.Automation.Peers.FrameworkElementAutomationPeer.FromElement(box) is { } peer)
+        {
+            peer.RaiseNotificationEvent(
+                Microsoft.UI.Xaml.Automation.Peers.AutomationNotificationKind.Other,
+                Microsoft.UI.Xaml.Automation.Peers.AutomationNotificationProcessing.ImportantMostRecent,
+                message,
+                "kitty-hotkey-message");
+        }
     }
 
     private void OnRecordKeyDown(object sender, KeyRoutedEventArgs e)
@@ -3598,9 +3698,14 @@ internal sealed partial class SettingsWindow : Window
         if (IsDown(VirtualKey.Menu)) modifiers |= HotKeyModifiers.Alt;
         if (IsDown(VirtualKey.Shift)) modifiers |= HotKeyModifiers.Shift;
         if (IsDown(VirtualKey.LeftWindows) || IsDown(VirtualKey.RightWindows)) modifiers |= HotKeyModifiers.Win;
+        RecordKey(action, key, modifiers);
+    }
 
-        // 单按 Backspace = 清除（同 mac 录制框里的 ⌫）。
-        if (e.Key == VirtualKey.Back && modifiers == HotKeyModifiers.None)
+    /// <summary>录制中按下了 key（带着 modifiers）：清除、修饰键、截图时的键、命令的键、全局动作（SettingsProbe 也从这里走）。</summary>
+    private void RecordKey(string action, uint key, HotKeyModifiers modifiers)
+    {
+        // 单按 Backspace 或 Delete = 清除（同 mac 录制框里的 ⌫ / ⌦，PLAN-v23 H8）。
+        if (key is HotKeyRules.VkBack or HotKeyRules.VkDelete && modifiers == HotKeyModifiers.None)
         {
             StopRecording(action, null);
             ClearHotKey(action);
@@ -3615,7 +3720,9 @@ internal sealed partial class SettingsWindow : Window
                 FeedRecordTaps(action);
             }
 
-            SetHotKeyMessage(action, IsShot(action) || IsCommand(action) ? "再按一个普通键（修饰键本身不算）" : "再按一个普通键，或者连按两下 Ctrl / Alt / Shift");
+            // 按住的修饰键在框里实时显示成键帽（PLAN-v23 H4，mac held）；不另写橙字
+            SetHotKeyMessage(action, null);
+            ShowHeld(action);
             return;
         }
 
@@ -3642,12 +3749,40 @@ internal sealed partial class SettingsWindow : Window
             return;
         }
 
+        // 和别的动作（关着的功能也算）、和启动器命令重复：不收，接着录（PLAN-v23 H3，mac HotKeyRecorder.save）
+        if (HotKeyConflicts.ForGlobal(action, key, modifiers, GlobalOwners(), CommandOwners()) is { } conflict)
+        {
+            SetHotKeyMessage(action, conflict);
+            return;
+        }
+
         SettingsDefaults.SetBinding(SettingsService.Current, action, new HotKeyBinding(key, modifiers));
         SettingsService.Save();
-        ShellRuntime.Instance?.HotKeys.RegisterAll(SettingsService.Current);
+        // 停录 = 按新的设置把热键注册回来；重画后那一行自己写注册失败的原因（被别的程序占着之类）。
         _recordingAction = null;
-        // 重画后那一行自己写注册失败的原因（被别的程序占着之类）。
-        BuildPage("hotkeys");
+        RebuildKeepingRecorder(action, "hotkeys");
+    }
+
+    /// <summary>全部全局动作此刻的键（关着的功能也在，带上功能名），给撞键检查用。</summary>
+    private static IEnumerable<HotKeyOwner> GlobalOwners()
+        => SettingsDefaults.DefaultHotKeys.Select(definition =>
+        {
+            var binding = SettingsDefaults.BindingFor(SettingsService.Current, definition.Action);
+            return new HotKeyOwner(definition.Action, SettingsDefaults.RowTitle(definition.Action), binding.VirtualKey, binding.Modifiers,
+                Features.IsOnFor(definition.Action) ? null : Features.Title(Features.ForHotKey(definition.Action)));
+        });
+
+    /// <summary>启动器各条命令此刻的键（这台电脑上没有那一条的不算：没有那一行、清不掉，会一直挡着，同 mac knowsCommand）。</summary>
+    private static IEnumerable<CommandKeyOwner> CommandOwners()
+    {
+        var rows = LauncherCommandKeys.Rows.ToDictionary(row => row.Id, row => row.Title);
+        foreach (var (id, text) in SettingsService.Current.LauncherCommandHotKeys ?? new Dictionary<string, string>())
+        {
+            if (rows.TryGetValue(id, out var title) && HotKeyRules.TryParse(text, out var virtualKey, out var modifiers))
+            {
+                yield return new CommandKeyOwner(id, title, virtualKey, modifiers);
+            }
+        }
     }
 
     /// <summary>录制框里认连按两下（同一份 Core 状态机，按下 / 松开修饰键各喂一次）。</summary>
@@ -3655,10 +3790,15 @@ internal sealed partial class SettingsWindow : Window
 
     private void OnRecordKeyUp(object sender, KeyRoutedEventArgs e)
     {
-        if (_recordingAction is { } action && !IsShot(action) && !IsCommand(action) && HotKeyRules.IsModifierKey((uint)e.Key))
+        if (_recordingAction is { } action && HotKeyRules.IsModifierKey((uint)e.Key))
         {
             e.Handled = true;
-            FeedRecordTaps(action);
+            if (!IsShot(action) && !IsCommand(action))
+            {
+                FeedRecordTaps(action);
+            }
+
+            ShowHeld(action);
         }
     }
 
@@ -3675,20 +3815,17 @@ internal sealed partial class SettingsWindow : Window
         }
 
         var key = ModifierTaps.VirtualKey(tap.Key);
-        // 别的动作已经是这个连按：不收（同一个键只认第一个）
-        if (SettingsDefaults.DefaultHotKeys.FirstOrDefault(definition => definition.Action != action &&
-                SettingsDefaults.BindingFor(SettingsService.Current, definition.Action) is var other &&
-                other.VirtualKey == key && other.Modifiers == HotKeyModifiers.None) is { } taken)
+        // 别的动作已经是这个连按：不收（同一个键只认第一个；关着的功能也算，PLAN-v23 H3）
+        if (HotKeyConflicts.ForGlobal(action, key, HotKeyModifiers.None, GlobalOwners(), CommandOwners()) is { } conflict)
         {
-            SetHotKeyMessage(action, $"和「{SettingsDefaults.RowTitle(taken.Action)}」重复");
+            SetHotKeyMessage(action, conflict);
             return;
         }
 
         SettingsDefaults.SetBinding(SettingsService.Current, action, new HotKeyBinding(key, HotKeyModifiers.None));
         SettingsService.Save();
-        ShellRuntime.Instance?.HotKeys.RegisterAll(SettingsService.Current);
         _recordingAction = null;
-        BuildPage("hotkeys");
+        RebuildKeepingRecorder(action, "hotkeys");
     }
 
     private void ClearHotKey(string action)
@@ -3703,14 +3840,14 @@ internal sealed partial class SettingsWindow : Window
         {
             SettingsService.Current.ScreenshotKeys = ShotKeys.Set(SettingsService.Current.ScreenshotKeys, ShotId(action), null);
             SettingsService.Save();
-            BuildPage("hotkeys");
+            RebuildKeepingRecorder(action, "hotkeys");
             return;
         }
 
         SettingsDefaults.SetBinding(SettingsService.Current, action, new HotKeyBinding(0, HotKeyModifiers.None));
         SettingsService.Save();
         ShellRuntime.Instance?.HotKeys.RegisterAll(SettingsService.Current);
-        BuildPage("hotkeys");
+        RebuildKeepingRecorder(action, "hotkeys");
     }
 
     /// <summary>右键「恢复默认」：这一个动作换回默认键（mac 录制框右键菜单）。</summary>
@@ -3721,14 +3858,14 @@ internal sealed partial class SettingsWindow : Window
             var id = ShotId(action);
             SettingsService.Current.ScreenshotKeys = ShotKeys.Set(SettingsService.Current.ScreenshotKeys, id, ShotKeys.Find(id)?.Default);
             SettingsService.Save();
-            BuildPage("hotkeys");
+            RebuildKeepingRecorder(action, "hotkeys");
             return;
         }
 
         SettingsDefaults.ResetBinding(SettingsService.Current, action);
         SettingsService.Save();
         ShellRuntime.Instance?.HotKeys.RegisterAll(SettingsService.Current);
-        BuildPage("hotkeys");
+        RebuildKeepingRecorder(action, "hotkeys");
     }
 
     private static bool IsDown(VirtualKey key)

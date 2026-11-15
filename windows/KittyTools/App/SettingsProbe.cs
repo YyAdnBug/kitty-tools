@@ -3,6 +3,8 @@
 // - a：换页记进 settings.json；挪窗口、拉大小、关窗后记下位置，再打开不挪回正中；最小尺寸；搜索停在哪页（W4–W6）；从别处跳页清掉搜索词（W7）；
 //   跳到收起的组里的页那组展开并记住（W8）；子页回上一层（W3）；开着对话框时不换页（W9）。最后停在录制页、关窗。
 // - b：同一个测试档再起一次，打开设置窗：停在 a 最后的那页、窗口在 a 记下的位置和大小（W1 W2）。
+// - h：快捷键录制（第 2 批 H1–H9）：用 UIA 的 Invoke 点录制框和 ⓧ，「按下的键」走 RecordKey（算好修饰键之后那条路），不发真的按键；
+//   录着时全局热键全停、结束注册回来；撞键的三种话；ⓧ 录着时取消；录完焦点回到录制框；Delete 清除；占位字；窗口失活就停。
 // 每份把结果写进 <目录>\report-<角色>.md，跑完就退（有不对的退出码 1）。
 using System.Text;
 using KittyTools.Core;
@@ -53,6 +55,10 @@ internal static class SettingsProbe
             else if (role == "b")
             {
                 await RunSecondAsync(shell, Check);
+            }
+            else if (role == "h")
+            {
+                await RunHotKeysAsync(shell, Check);
             }
             else
             {
@@ -186,6 +192,126 @@ internal static class SettingsProbe
         window.CloseForProbe();
         await Task.Delay(300);
         report.Append($"\n给角色 b：最后的页 {settings.SettingsLastPage}，位置 {string.Join(",", settings.SettingsWindowBounds ?? new List<int>())}\n");
+    }
+
+    private static void Invoke(Button? button)
+    {
+        if (button is null)
+        {
+            return;
+        }
+
+        var peer = Microsoft.UI.Xaml.Automation.Peers.FrameworkElementAutomationPeer.FromElement(button)
+                   ?? Microsoft.UI.Xaml.Automation.Peers.FrameworkElementAutomationPeer.CreatePeerForElement(button);
+        if (peer?.GetPattern(Microsoft.UI.Xaml.Automation.Peers.PatternInterface.Invoke) is Microsoft.UI.Xaml.Automation.Provider.IInvokeProvider invoke)
+        {
+            invoke.Invoke();
+        }
+    }
+
+    private static string BoxText(Button? box) => box?.Content switch
+    {
+        TextBlock text => text.Text,
+        Microsoft.UI.Xaml.Controls.Panel panel => "键帽:" + panel.Children.Count,
+        _ => string.Empty,
+    };
+
+    private static async Task RunHotKeysAsync(ShellRuntime shell, Action<bool, string> check)
+    {
+        var settings = SettingsService.Current;
+        var launcher = HotKeyActions.Launcher;
+        // 默认键多半被这台电脑上正在用的那份 Kitty Tools 占着（注册不上）：给「截图历史」一个没人用的组合，保证停 / 恢复看得出来
+        SettingsDefaults.SetBinding(settings, HotKeyActions.ShotHistory, new HotKeyBinding(0x7A, HotKeyModifiers.Control | HotKeyModifiers.Alt | HotKeyModifiers.Shift));
+        SettingsService.Save();
+        shell.HotKeys.RegisterAll(settings);
+        var window = await ShowAsync(shell, "hotkeys");
+        var before = shell.HotKeys.RegisteredCountForProbe;
+        var original = SettingsDefaults.BindingFor(settings, launcher);
+        check(before > 0, $"开始前注册着 {before} 个全局热键");
+
+        // H1 H5 H6：点录制框开始录
+        Invoke(window.RecorderForProbe(launcher));
+        await Task.Delay(200);
+        check(window.RecordingForProbe == launcher && shell.HotKeys.HeldForProbe && shell.HotKeys.RegisteredCountForProbe == 0,
+            $"H1 点了启动器的录制框：在录、全局热键全停（注册着 {shell.HotKeys.RegisteredCountForProbe} 个）");
+        check(BoxText(window.RecorderForProbe(launcher)) == "按下快捷键…", $"H5 录着时框里「{BoxText(window.RecorderForProbe(launcher))}」");
+        check(window.ClearButtonForProbe(launcher)?.Visibility == Microsoft.UI.Xaml.Visibility.Visible, "H6 录着时 ⓧ 在");
+
+        // H3：撞键
+        window.RecordKeyForProbe(launcher, 'C', HotKeyModifiers.Alt);
+        await Task.Delay(150);
+        check(window.RecordingForProbe == launcher && window.RowMessageForProbe(launcher) == "和「剪贴板历史」重复" &&
+              SettingsDefaults.BindingFor(settings, launcher) == original,
+            $"H3 录 Alt+C：「{window.RowMessageForProbe(launcher)}」，接着录、键没变");
+        var recordWasOn = Features.IsOn(Feature.Recording);
+        Features.Set(Feature.Recording, false);
+        window.RecordKeyForProbe(launcher, 'R', HotKeyModifiers.Alt);
+        await Task.Delay(150);
+        check(window.RowMessageForProbe(launcher) == $"和「录屏（再按一次停止）」重复（{Features.Title(Feature.Recording)}已关闭）",
+            $"H3 录制关着时录 Alt+R：「{window.RowMessageForProbe(launcher)}」");
+        Features.Set(Feature.Recording, recordWasOn);
+        var commands = settings.LauncherCommandHotKeys;
+        var kill = LauncherCommandKeys.Rows.FirstOrDefault()?.Id;
+        if (kill is not null)
+        {
+            settings.LauncherCommandHotKeys = new Dictionary<string, string> { [kill] = "Ctrl+Alt+J" };
+            window.RecordKeyForProbe(launcher, 'J', HotKeyModifiers.Control | HotKeyModifiers.Alt);
+            await Task.Delay(150);
+            check(window.RowMessageForProbe(launcher).StartsWith("和启动器命令「", StringComparison.Ordinal),
+                $"H3 和启动器命令撞：「{window.RowMessageForProbe(launcher)}」");
+            settings.LauncherCommandHotKeys = commands;
+        }
+
+        // H6：录着时点 ⓧ = 取消
+        Invoke(window.ClearButtonForProbe(launcher));
+        await Task.Delay(300);
+        check(window.RecordingForProbe is null && SettingsDefaults.BindingFor(settings, launcher) == original &&
+              !shell.HotKeys.HeldForProbe && shell.HotKeys.RegisteredCountForProbe == before,
+            $"H6 录着时点 ⓧ：取消了、键没变，热键注册回来 {shell.HotKeys.RegisteredCountForProbe} 个");
+
+        // H1 H9：录上一个新组合
+        Invoke(window.RecorderForProbe(launcher));
+        await Task.Delay(200);
+        window.RecordKeyForProbe(launcher, 'K', HotKeyModifiers.Control | HotKeyModifiers.Alt);
+        await Task.Delay(400);
+        var saved = SettingsDefaults.BindingFor(settings, launcher);
+        var box = window.RecorderForProbe(launcher);
+        check(window.RecordingForProbe is null && saved == new HotKeyBinding('K', HotKeyModifiers.Control | HotKeyModifiers.Alt) &&
+              !shell.HotKeys.HeldForProbe && shell.HotKeys.RegisteredCountForProbe > 0,
+            $"H1 录上 Ctrl+Alt+K：存了、停录、热键注册回来 {shell.HotKeys.RegisteredCountForProbe} 个");
+        check(box is not null && box.FocusState != Microsoft.UI.Xaml.FocusState.Unfocused,
+            $"H9 录完整页重建后焦点在启动器的录制框上（{box?.FocusState}）");
+        check(box?.ContextFlyout is MenuFlyout menu && menu.Items.OfType<MenuFlyoutItem>().Select(item => item.Text).SequenceEqual(new[] { "恢复默认", "清除" }),
+            "H7 右键菜单：恢复默认、清除");
+        window.RestoreHotKeyForProbe(launcher);
+        await Task.Delay(300);
+        check(SettingsDefaults.BindingFor(settings, launcher) == original, "右键「恢复默认」换回默认键");
+
+        // H8：Delete 清除；H5 没键时的占位
+        Invoke(window.RecorderForProbe(launcher));
+        await Task.Delay(200);
+        window.RecordKeyForProbe(launcher, HotKeyRules.VkDelete, HotKeyModifiers.None);
+        await Task.Delay(400);
+        check(SettingsDefaults.BindingFor(settings, launcher).VirtualKey == 0 && window.RecordingForProbe is null,
+            "H8 录着时按 Delete：清除了、停录");
+        check(BoxText(window.RecorderForProbe(launcher)) == "按下快捷键" &&
+              window.ClearButtonForProbe(launcher)?.Visibility == Microsoft.UI.Xaml.Visibility.Collapsed,
+            $"H5 H6 没键时框里「{BoxText(window.RecorderForProbe(launcher))}」、ⓧ 不出");
+        window.RestoreHotKeyForProbe(launcher);
+        await Task.Delay(300);
+
+        // H2：设置窗失去前台就停
+        Invoke(window.RecorderForProbe(launcher));
+        await Task.Delay(200);
+        var other = new Microsoft.UI.Xaml.Window { Title = "settings-probe" };
+        other.AppWindow.MoveAndResize(new Windows.Graphics.RectInt32(40, 40, 320, 200));
+        other.Activate();
+        await Task.Delay(600);
+        check(window.RecordingForProbe is null && !shell.HotKeys.HeldForProbe && shell.HotKeys.RegisteredCountForProbe == before,
+            $"H2 录着时别的窗口到前台：停录，热键注册回来 {shell.HotKeys.RegisteredCountForProbe} 个");
+        other.Close();
+        await Task.Delay(200);
+        check(SettingsDefaults.BindingFor(settings, launcher) == original, "最后启动器的键还是默认");
     }
 
     private static async Task RunSecondAsync(ShellRuntime shell, Action<bool, string> check)

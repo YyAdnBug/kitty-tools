@@ -347,6 +347,8 @@ internal sealed partial class SettingsWindow
             problem.Text = text ?? string.Empty;
             problem.Visibility = string.IsNullOrEmpty(text) ? Visibility.Collapsed : Visibility.Visible;
         }
+
+        Announce(action, message);
     }
 
     private static string? CommandHotKey(string id)
@@ -399,28 +401,18 @@ internal sealed partial class SettingsWindow
 
         var text = HotKeyRules.Format(key, modifiers);
         var id = CommandId(action);
-        if (SettingsDefaults.DefaultHotKeys.FirstOrDefault(definition =>
-                SettingsDefaults.BindingFor(SettingsService.Current, definition.Action) is var binding &&
-                binding.VirtualKey == key && binding.Modifiers == modifiers) is { } global)
+        // 和全局动作（关着的功能也算）、和别的命令重复（PLAN-v23 H3，mac saveCommand）
+        if (HotKeyConflicts.ForCommand(id, key, modifiers, GlobalOwners(), CommandOwners()) is { } conflict)
         {
-            SetCommandMessage(action, $"和全局快捷键「{SettingsDefaults.RowTitle(global.Action)}」重复");
-            return;
-        }
-
-        if ((SettingsService.Current.LauncherCommandHotKeys ?? new Dictionary<string, string>())
-            .FirstOrDefault(pair => pair.Key != id && pair.Value == text) is { Key: { } other })
-        {
-            var title = LauncherCommandKeys.Rows.FirstOrDefault(row => row.Id == other)?.Title ?? other;
-            SetCommandMessage(action, $"和命令「{title}」重复");
+            SetCommandMessage(action, conflict);
             return;
         }
 
         var keys = new Dictionary<string, string>(SettingsService.Current.LauncherCommandHotKeys ?? new Dictionary<string, string>()) { [id] = text };
         SettingsService.Current.LauncherCommandHotKeys = keys;
         SettingsService.Save();
-        ShellRuntime.Instance?.HotKeys.RegisterAll(SettingsService.Current);
         _recordingAction = null;
-        BuildPage("launcher");
+        RebuildKeepingRecorder(action, "launcher");
     }
 
     private void ClearCommandKey(string action)

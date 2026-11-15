@@ -163,6 +163,14 @@ internal static class SettingsUi
         label.Visibility = Visibility.Visible;
     }
 
+    /// <summary>一张 <see cref="Card"/> 此刻的说明（收起了是空串）。</summary>
+    public static string DescriptionOf(Border card)
+        => card.Child is Grid row &&
+           row.Children.OfType<StackPanel>().FirstOrDefault(panel => panel.Name == CardTextName) is { } text &&
+           text.Children.Count > 1 && text.Children[1] is TextBlock { Visibility: Visibility.Visible } label
+            ? label.Text
+            : string.Empty;
+
     /// <summary>原地改一张 <see cref="Card"/> 能不能点（和 Card 的 enabled 参数同一套：0.55 透明、不接点击）。</summary>
     public static void SetEnabled(Border card, bool enabled)
     {

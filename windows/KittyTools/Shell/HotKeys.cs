@@ -52,13 +52,43 @@ internal sealed class HotKeyManager
         return id;
     }
 
+    /// <summary>此刻注册着几个（SettingsProbe 看录快捷键时停没停）。</summary>
+    internal int RegisteredCountForProbe => _registered.Count;
+
+    internal bool HeldForProbe => _held;
+
     /// <summary>上一次注册 / 注销用了多久（PLAN-v17 W5，报告用）。</summary>
     public double LastApplyMilliseconds { get; private set; }
 
-    /// <summary>按设置注册全部热键（截图、录快捷键结束时也是它）；被前台规则停的动作跳过。</summary>
+    /// <summary>设置窗正在录快捷键（PLAN-v23 H1，mac center.suspend）：全部停着，这期间别处（截图结束、前台规则）的 RegisterAll 不算数。</summary>
+    private bool _held;
+
+    /// <summary>录快捷键开始 / 结束：开始时停掉全部热键（连按两下、命令的键一起），结束时按那时的设置注册回来。</summary>
+    public void Hold(bool held, Settings settings)
+    {
+        if (held)
+        {
+            _held = true;
+            UnregisterAll();
+            Log.Info("hotkeys.held");
+        }
+        else if (_held)
+        {
+            _held = false;
+            RegisterAll(settings);
+            Log.Info("hotkeys.released");
+        }
+    }
+
+    /// <summary>按设置注册全部热键（截图、录快捷键结束时也是它）；被前台规则停的动作跳过；录快捷键时不注册。</summary>
     public void RegisterAll(Settings settings)
     {
         UnregisterAll();
+        if (_held)
+        {
+            return;
+        }
+
         _suspended = false;
         var started = Stopwatch.GetTimestamp();
         var id = 1;
