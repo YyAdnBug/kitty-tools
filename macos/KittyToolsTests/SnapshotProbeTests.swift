@@ -270,11 +270,12 @@ struct SnapshotProbeTests {
         "manage-groups-deleted",
         { m in
           m.dialog = .manageGroups
-          m.toast = .undo("已删除收藏夹「旅行」")
+          // 插值写法和 App 里同一个 key（英文截图里是英文）
+          m.toast = .undo("已删除收藏夹「\("旅行")」")
         }
       ),
       // 取消收藏后已超过保留天数（体检 A1）
-      ("toast-expiring", { m in m.toast = .undo("超过 7 天，稍后会被清理") }),
+      ("toast-expiring", { m in m.toast = .undo("超过 \(7) 天，稍后会被清理") }),
       // 菜单栏暂停了记录（D4）
       ("paused", { m in m.isRecordingPaused = true }),
       ("snippets", { m in m.scope = .snippets }),

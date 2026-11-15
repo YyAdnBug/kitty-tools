@@ -1,6 +1,6 @@
 // 剪贴板搜索（纯函数，配单测）：空白分词，每个词都要命中（AND）；不区分大小写、全半角、变音符号。
 // 只过滤、不排序（体检 A6）：结果保持复制时间新→旧，和没有搜索词时同一顺序、同样按天分组。
-// 搜的字段：备注、正文、图片文字、文件路径、来源 App。
+// 搜的字段：备注、正文、图片文字、文件路径、来源 App（通用剪贴板过来的，存的字和显示的字都认）。
 // 命中摘录（excerpt）：行标题和透镜正文从第一个命中处截取，调用方只对屏上可见的行算。
 // 性能：每条先折叠成 UTF-8 字节（Key，由调用方缓存），之后每次搜索只做 memmem 字节查找。
 // 直接用 range(of:options:) 做不区分大小写 / 全半角的比较，5000 条要 1 秒（M2 实测）。
@@ -28,7 +28,9 @@ nonisolated enum Search {
   static func key(for item: ClipItem) -> Key {
     let fields =
       [item.note, item.text.map { String($0.prefix(maxIndexedCharacters)) }, item.ocrText]
-      + (item.filePaths ?? []).map(Optional.some) + [item.sourceName]
+      + (item.filePaths ?? []).map(Optional.some)
+      // 通用剪贴板过来的：存的是中文「其他设备」，英文界面里显示的那个也认
+      + [item.sourceName, item.sourceTitle == item.sourceName ? nil : item.sourceTitle]
     return Key(bytes: fold(fields.compactMap { $0 }.joined(separator: "\n")))
   }
 

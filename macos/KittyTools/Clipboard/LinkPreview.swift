@@ -244,7 +244,11 @@ nonisolated struct LinkMetadata: Equatable, Sendable {
   func get(_ url: URL, as kind: Kind) async throws -> Result {
     var request = URLRequest(url: url)
     request.setValue("text/html,application/xhtml+xml,image/*;q=0.8", forHTTPHeaderField: "Accept")
-    request.setValue("zh-CN,zh;q=0.9,en;q=0.8", forHTTPHeaderField: "Accept-Language")
+    // 网页标题、简介要哪种语言的：跟界面语言，另一种排在后面
+    request.setValue(
+      InterfaceLanguage.running == .english
+        ? "en-US,en;q=0.9,zh-CN;q=0.8" : "zh-CN,zh;q=0.9,en;q=0.8",
+      forHTTPHeaderField: "Accept-Language")
     return try await withCheckedThrowingContinuation { continuation in
       let task = session.dataTask(with: request)
       pending[task.taskIdentifier] = Pending(kind: kind, continuation: continuation)

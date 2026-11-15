@@ -585,18 +585,18 @@ struct SettingsBackupTests {
     let yesterday = SettingsBackup.Copy(
       url: root.appending(path: "a.json"), kind: .daily,
       date: calendar.startOfDay(for: Self.moment(day: 7)))
-    #expect(SettingsBackup.title(of: yesterday, now: now, calendar: calendar) == "10 月 7 日（昨天）")
+    #expect(SettingsBackup.title(of: yesterday, now: now, calendar: calendar) == "10月7日（昨天）")
     let before = SettingsBackup.Copy(
       url: root.appending(path: "b.json"), kind: .beforeImport,
       date: Self.moment(hour: 15, minute: 30))
     #expect(
-      SettingsBackup.title(of: before, now: now, calendar: calendar) == "导入前 · 10 月 8 日（今天） 15:30")
+      SettingsBackup.title(of: before, now: now, calendar: calendar) == "导入前 · 10月8日（今天） 15:30")
     // 恢复表单页头里的说法
     #expect(
-      SettingsBackup.source(of: yesterday, now: now, calendar: calendar) == "10 月 7 日（昨天）的自动备份")
+      SettingsBackup.source(of: yesterday, now: now, calendar: calendar) == "10月7日（昨天）的自动备份")
     #expect(
       SettingsBackup.source(of: before, now: now, calendar: calendar)
-        == "10 月 8 日（今天） 15:30 导入前存的备份")
+        == "10月8日（今天） 15:30 导入前存的备份")
 
     // 时、分都两位，24 小时制，不跟系统的 12 / 24 小时制走
     #expect(SettingsBackup.when(Self.moment(), now: now, calendar: calendar) == "今天 09:12")
@@ -607,7 +607,7 @@ struct SettingsBackupTests {
       SettingsBackup.when(Self.moment(day: 7, hour: 22, minute: 40), now: now, calendar: calendar)
         == "昨天 22:40")
     #expect(
-      SettingsBackup.when(Self.moment(day: 3), now: now, calendar: calendar) == "10 月 3 日（5 天前）")
+      SettingsBackup.when(Self.moment(day: 3), now: now, calendar: calendar) == "10月3日（5 天前）")
 
     #expect(SettingsBackup.summary(of: [], now: now, calendar: calendar) == "还没有备份")
     // 时间取文件的修改时间（每天那份的名字里只有日期）

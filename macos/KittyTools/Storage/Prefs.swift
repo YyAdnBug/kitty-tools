@@ -229,7 +229,7 @@ enum Prefs {
 
   /// 识字后把同一段的换行合成一行（中日文直接连、其它加空格）
   static let ocrJoinLines = "ocrJoinLines"
-  /// 识字模型已经为哪个系统版本编好了（OCR.prepare；存系统版本字符串）。这台电脑自己的状态：不注册默认值、不跟着导出
+  /// 识字模型已经为哪个系统版本编好了（OCR.prepare；存 OCR.systemVersion「27.0.1 (26A434)」，不跟界面语言变）。这台电脑自己的状态：不注册默认值、不跟着导出
   nonisolated static let ocrPreparedSystem = "ocrPreparedSystem"
 
   /// 状态屏的状态列表（StatusPreset 数组的 JSON）。**不注册默认值**：没存过 / 解不出 / 为空时用自带的三个

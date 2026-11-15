@@ -118,7 +118,7 @@ struct NotesWindowView: View {
           .foregroundStyle(.secondary)
           .lineLimit(1)
         Spacer(minLength: 4)
-        DangerButton(Model.emptyTrashTitle) { model.isEmptyingTrash = true }
+        DangerButton("\(Model.emptyTrashTitle)") { model.isEmptyingTrash = true }
           .controlSize(.small)
       }
       .padding(.horizontal, inset)

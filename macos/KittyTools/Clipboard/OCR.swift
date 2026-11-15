@@ -429,8 +429,19 @@ nonisolated enum OCR {
     _ defaults: UserDefaults = .standard, domainName: String? = Bundle.main.bundleIdentifier
   ) -> Bool {
     domainName.flatMap(defaults.persistentDomain(forName:))?[Prefs.ocrPreparedSystem] as? String
-      == ProcessInfo.processInfo.operatingSystemVersionString
+      == systemVersion
   }
+
+  /// 记进偏好的系统版本：三段版本号 + 版号（「27.0.1 (26A434)」；缓存目录按版号分）。不用 operatingSystemVersionString：
+  /// 它跟着界面语言（「版本27.0.1（版号26A434）」/「Version 27.0.1 (Build 26A434)」），换了语言就对不上、白白再准备一次。
+  /// 0.9.0 及以前记的是那句本地化的话：对不上，升级后照没准备过再识一次那张小图（模型已经编好了，几秒钟）
+  static let systemVersion: String = {
+    let version = ProcessInfo.processInfo.operatingSystemVersion
+    let build =
+      NSDictionary(contentsOfFile: "/System/Library/CoreServices/SystemVersion.plist")?[
+        "ProductBuildVersion"] as? String ?? ""
+    return "\(version.majorVersion).\(version.minorVersion).\(version.patchVersion) (\(build))"
+  }()
 
   /// 编译最多等这么久，到点杀掉，下次启动再来（本机忙的时候冷的也就一分来钟）
   static let prepareTimeout = Duration.seconds(300)
@@ -438,10 +449,17 @@ nonisolated enum OCR {
   @MainActor private static var preparing: Task<Void, Never>?
 
   /// 没准备好就准备，同时来的等同一个（记进先来的那个偏好域；只有单测传别的）；好了直接返回。
-  /// 子进程起不来、失败、超时都不记，接下来那次识字自己编（照样慢一回）
+  /// 子进程起不来、失败、超时都不记，接下来那次识字自己编（照样慢一回）。
+  /// 单测宿主（= Dev 版）里默认的那个偏好域是用户的真实偏好：不准备、不记（剪贴板后台识字、截图的单测都走到这里；
+  /// 开发机的模型早编好了。要验准备这一步的单测传临时的偏好域）
   @MainActor static func prepare(
     _ defaults: UserDefaults = .standard, domainName: String? = Bundle.main.bundleIdentifier
   ) async {
+    if defaults === UserDefaults.standard,
+      ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    {
+      return
+    }
     guard !isPrepared(defaults, domainName: domainName),
       let executable = Bundle.main.executablePath
     else { return }
@@ -456,8 +474,7 @@ nonisolated enum OCR {
           environment: helperEnvironment(ProcessInfo.processInfo.environment),
           timeout: prepareTimeout, quality: .utility)
         if result?.status == 0 {
-          defaults.set(
-            ProcessInfo.processInfo.operatingSystemVersionString, forKey: Prefs.ocrPreparedSystem)
+          defaults.set(systemVersion, forKey: Prefs.ocrPreparedSystem)
         } else {
           Log.clipboard.error("准备识字模型没成（状态 \(result?.status ?? -1)）")
         }

@@ -232,7 +232,7 @@ struct ClipboardPanelTests {
     let rich = try item(model, "看 https://example.com/a 这篇")
     #expect(
       model.actions(for: rich, targets: [rich]).prefix(4).map(\.title) == [
-        "粘贴", model.alternatePasteTitle, "仅复制", "复制为纯文本",
+        "粘贴", String(localized: model.alternatePasteTitle), "仅复制", "复制为纯文本",
       ])
     // 编辑正文后「打开链接」跟着变（链接按条目缓存，编辑时清掉，体检 B18）
     model.edit(link.id, text: "没有网址了")

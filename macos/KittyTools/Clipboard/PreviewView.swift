@@ -55,7 +55,7 @@ struct PreviewView: View {
       if let icon = AppIcons.icon(for: item.sourceBundleID) {
         Image(nsImage: icon).resizable().frame(width: 18, height: 18)
       }
-      Text(item.sourceName ?? "未知来源")
+      Text(item.sourceTitle ?? String(localized: "未知来源"))
         .font(.system(size: 13, weight: .semibold))
         .lineLimit(1)
       Spacer(minLength: 8)
@@ -79,10 +79,13 @@ struct PreviewView: View {
     let time = LensView.exactTime(item.copiedAt)
     let detail: String =
       switch item.kind {
-      case .text: "\(form?.title ?? "文本") · \((item.text ?? "").count) 字"
+      case .text:
+        "\(form?.title ?? String(localized: "文本")) · \(LensView.characterCount(item.text ?? ""))"
       case .image:
-        item.image.map { "图片 · \($0.byteCount.formatted(.byteCount(style: .file)))" } ?? "图片"
-      case .file: "\(item.filePaths?.count ?? 0) 个文件"
+        item.image.map {
+          "\(String(localized: "图片")) · \($0.byteCount.formatted(.byteCount(style: .file)))"
+        } ?? String(localized: "图片")
+      case .file: String(localized: "\(item.filePaths?.count ?? 0) 个文件")
       }
     return "\(detail) · \(time)"
   }
@@ -206,7 +209,7 @@ struct PreviewView: View {
 /// 无边框胶囊按钮：高 26，12 medium，图标加文字，按下缩到 0.97。键位（「操作 ⌘K」）是键帽，和面板底栏一个写法；
 /// 带键帽的那一枚右内边距收到 6：键帽高 18、上下各留 4，右边照 10 留的话它在胶囊里偏左
 private struct Pill: View {
-  let title: String
+  let title: LocalizedStringResource
   let symbol: String
   var shortcut: String?
   let action: () -> Void

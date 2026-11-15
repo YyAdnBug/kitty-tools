@@ -782,7 +782,7 @@ private struct WallEditor: View {
         if note.deletedAt != nil {
           HStack(spacing: 8) {
             Button(Model.restoreTitle) { model.restore(note.id) }
-            DangerButton(Model.eraseTitle) { model.delete(note.id) }
+            DangerButton("\(Model.eraseTitle)") { model.delete(note.id) }
           }
           .controlSize(.small)
           .padding(.trailing, 20)

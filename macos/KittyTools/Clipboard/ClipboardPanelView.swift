@@ -255,13 +255,15 @@ struct ClipboardPanelView: View {
   }
 
   private var placeholder: String {
-    switch model.palette {
-    case .filters: "筛选范围、收藏夹、类型、来源"
-    // 子列表只有「移到收藏夹」这一个
-    case .actions: model.submenuTitle == nil ? "搜索操作" : "搜索收藏夹"
-    case .groups: "搜索收藏夹"
-    case nil: model.tokens.isEmpty ? "搜索剪贴板，Tab 筛选" : "搜索"
-    }
+    let text: LocalizedStringResource =
+      switch model.palette {
+      case .filters: "筛选范围、收藏夹、类型、来源"
+      // 子列表只有「移到收藏夹」这一个
+      case .actions: model.submenuTitle == nil ? "搜索操作" : "搜索收藏夹"
+      case .groups: "搜索收藏夹"
+      case nil: model.tokens.isEmpty ? "搜索剪贴板，Tab 筛选" : "搜索"
+      }
+    return String(localized: text)
   }
 
   private var permissionBanner: some View {
@@ -516,7 +518,9 @@ struct ClipboardPanelView: View {
 
   private func bottomBar(count: Int) -> some View {
     HStack(spacing: 12) {
+      // 左边先分宽度（英文的动词长：不先分的话 HStack 只给它剩下的一半，还有空也被截断）；中文本来就放得下，样子不变
       barStatus(count: count)
+        .layoutPriority(1)
         .transition(reduceMotion ? .opacity : AnyTransition(.blurReplace))
         .id(barState(count: count))
         // 对话框开着时只有「撤销」能点（管理收藏夹里删掉的收藏夹）；多选动词里的粘贴会收起面板、丢掉没保存的字
@@ -624,7 +628,8 @@ struct ClipboardPanelView: View {
     let items = model.targets
     let ids = Set(items.map(\.id))
     HStack(spacing: 12) {
-      Text("已选 \(items.count) 条")
+      // 实在放不下时先截它（勾选标记看得见选了哪些），动词不截
+      Text("已选 \(items.count) 条").lineLimit(1).layoutPriority(-1)
       Button(action: { model.pasteSelection() }) {
         hint(ClipboardPanelModel.PasteMode(items).verb, key: "↩", primary: true)
       }
@@ -650,12 +655,14 @@ struct ClipboardPanelView: View {
   /// 「动词 键帽」；primary：↩ 是品牌粉实心键帽（主按钮）；leadingKey：键帽在前（按住修饰键时的替代动作）；
   /// danger：删除这类，动词用危险色（mac-whisker §3「危险色」）
   private func hint(
-    _ title: String, key: String, primary: Bool = false, leadingKey: Bool = false,
+    _ title: LocalizedStringResource, key: String, primary: Bool = false, leadingKey: Bool = false,
     danger: Bool = false
   ) -> some View {
     HStack(spacing: 6) {
       if leadingKey { KeyCap(key) }
-      Text(title).foregroundStyle(danger ? AnyShapeStyle(Style.danger) : AnyShapeStyle(.primary))
+      // 一行：英文的动词长，挤的时候截断，别从词中间折成两行
+      Text(title).lineLimit(1)
+        .foregroundStyle(danger ? AnyShapeStyle(Style.danger) : AnyShapeStyle(.primary))
       if !leadingKey {
         KeyCap(key, primary: primary)
       }
@@ -663,7 +670,7 @@ struct ClipboardPanelView: View {
     .contentShape(.rect)
   }
 
-  private func countText(_ count: Int) -> String {
+  private func countText(_ count: Int) -> LocalizedStringResource {
     let total = model.store.items.count
     return count == total ? "\(total) 条" : "\(count) / \(total) 条"
   }

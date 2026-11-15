@@ -263,7 +263,8 @@ nonisolated enum NotesRecovery {
     guard size == nil || size == 0, !NotesBackup.list(in: directory, calendar: calendar).isEmpty
     else { return nil }
     return Problem(
-      reason: size == nil ? "便签的数据库文件不见了" : "便签的数据库文件是空的",
+      reason: size == nil
+        ? String(localized: "便签的数据库文件不见了") : String(localized: "便签的数据库文件是空的"),
       backup: NotesBackup.latestUsable(in: directory, calendar: calendar), lost: true)
   }
 
@@ -338,35 +339,41 @@ nonisolated enum NotesRecovery {
     for problem: Problem, directory: URL, now: Date = .now, calendar: Calendar = .current
   ) -> (title: String, text: String, buttons: [String], choices: [Choice]) {
     let place = (directory.path as NSString).abbreviatingWithTildeInPath
-    let title = "便签打不开了"
-    let head = "便签的数据读不出来了。剪贴板、翻译和别的功能不受影响。"
-    let fresh = "重新开始：便签从空的开始；现在的便签数据、图片和备份一起挪开留着。"
-    let skip = "这次先不用便签：什么都不动，便签这次用不了，下次打开 Kitty Tools 时再试。"
-    let kept = "挪开的文件不会删，在数据目录（\(place)）里一个「damaged-日期-时间」的文件夹里。"
-    let reason = "原因：\(problem.reason)"
+    let title = String(localized: "便签打不开了")
+    let head = String(localized: "便签的数据读不出来了。剪贴板、翻译和别的功能不受影响。")
+    let fresh = String(localized: "重新开始：便签从空的开始；现在的便签数据、图片和备份一起挪开留着。")
+    let skip = String(localized: "这次先不用便签：什么都不动，便签这次用不了，下次打开 Kitty Tools 时再试。")
+    let kept = String(localized: "挪开的文件不会删，在数据目录（\(place)）里一个「damaged-日期-时间」的文件夹里。")
+    let reason = String(localized: "原因：\(problem.reason)")
     let tail =
       [kept]
       + (problem.exported.map { saved in
         let day = Recovery.describe(saved.day, now: now, calendar: calendar)
         return [
-          "选了重新开始，便签的文字之后还能导回来：到 设置 › 通用 点「从备份恢复」，选 \(day)那份，只勾「便签」"
-            + "（\(saved.count) 条；图片和「最近删除」里的不在里面）。"
+          String(
+            localized:
+              "选了重新开始，便签的文字之后还能导回来：到 设置 › 通用 点「从备份恢复」，选 \(day)那份，只勾「便签」（\(saved.count) 条；图片和「最近删除」里的不在里面）。"
+          )
         ]
       } ?? []) + [reason]
+    let buttons = (fresh: String(localized: "重新开始"), skip: String(localized: "这次先不用便签"))
     guard let backup = problem.backup else {
+      let none = String(localized: "便签的数据读不出来了。剪贴板、翻译和别的功能不受影响。也没有可用的备份。")
       return (
-        title, ([head + "也没有可用的备份。", fresh + "\n" + skip] + tail).joined(separator: "\n\n"),
-        ["重新开始", "这次先不用便签"], [.startFresh, .skip]
+        title, ([none, fresh + "\n" + skip] + tail).joined(separator: "\n\n"),
+        [buttons.fresh, buttons.skip], [.startFresh, .skip]
       )
     }
     let day = Recovery.describe(backup.day, now: now, calendar: calendar)
     let restore =
-      "用备份：便签回到 \(day)备份时的样子，那之后写的、改的不在里面。"
-      + (problem.lost ? "" : "出问题的便签数据留在「damaged-日期-时间」文件夹里。")
+      problem.lost
+      ? String(localized: "用备份：便签回到 \(day)备份时的样子，那之后写的、改的不在里面。")
+      : String(localized: "用备份：便签回到 \(day)备份时的样子，那之后写的、改的不在里面。出问题的便签数据留在「damaged-日期-时间」文件夹里。")
     return (
       title,
       ([head, [restore, fresh, skip].joined(separator: "\n")] + tail).joined(separator: "\n\n"),
-      ["用 \(day)的备份", "重新开始", "这次先不用便签"], [.restore, .startFresh, .skip]
+      [String(localized: "用 \(day)的备份"), buttons.fresh, buttons.skip],
+      [.restore, .startFresh, .skip]
     )
   }
 
@@ -376,13 +383,16 @@ nonisolated enum NotesRecovery {
   static func notice(for failure: Failure, directory: URL) -> (title: String, text: String)? {
     switch failure {
     case .skipped: return nil
-    case .newer: return ("便签这次用不了", "数据是更新版本写的，更新后照常可用")
+    case .newer:
+      return (String(localized: "便签这次用不了"), String(localized: "数据是更新版本写的，更新后照常可用"))
     case .stillBroken(let reason):
       let place = (directory.path as NSString).abbreviatingWithTildeInPath
       return (
-        "便签还是打不开",
-        "便签这次用不了，下次打开 Kitty Tools 时再试。剪贴板、翻译和别的功能不受影响。\n\n"
-          + "已经挪开的文件没有删，在数据目录（\(place)）里的「damaged-日期-时间」文件夹里。\n\n原因：\(reason)"
+        String(localized: "便签还是打不开"),
+        String(
+          localized:
+            "便签这次用不了，下次打开 Kitty Tools 时再试。剪贴板、翻译和别的功能不受影响。\n\n已经挪开的文件没有删，在数据目录（\(place)）里的「damaged-日期-时间」文件夹里。\n\n原因：\(reason)"
+        )
       )
     }
   }

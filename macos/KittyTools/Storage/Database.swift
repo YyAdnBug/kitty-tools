@@ -7,6 +7,7 @@ import Foundation
 import SQLite3
 
 nonisolated final class Database {
+  /// description 可能出现在给人看的地方（数据打不开的弹框「原因：…」、便签没存上）：按界面语言写；SQLite 自己的原话不翻
   struct Failure: Error, CustomStringConvertible {
     let description: String
   }
@@ -50,7 +51,7 @@ nonisolated final class Database {
       // 打开失败也可能给了连接：关掉并置空，throw 之后 deinit 照样会跑，不能再关一次
       sqlite3_close(handle)
       handle = nil
-      throw Failure(description: "打开数据库失败：\(path)")
+      throw Failure(description: String(localized: "打开数据库失败：\(path)"))
     }
     sqlite3_busy_timeout(handle, 2000)
     guard !readOnly else { return }
@@ -110,7 +111,7 @@ nonisolated final class Database {
       } else {
         // body 里有语句出错被吞掉、SQLite 已经自动回滚了整个事务（之后的语句是一条条自动提交的）：别当成功
         guard sqlite3_get_autocommit(handle) == 0 else {
-          throw Failure(description: "事务已被回滚")
+          throw Failure(description: String(localized: "事务已被回滚"))
         }
         try execute("COMMIT")
       }

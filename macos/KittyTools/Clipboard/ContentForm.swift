@@ -5,7 +5,7 @@ import Foundation
 nonisolated enum ContentForm: String, CaseIterable, Sendable {
   case color, json, link, code
 
-  var title: String {
+  var titleResource: LocalizedStringResource {
     switch self {
     case .color: "颜色"
     case .json: "JSON"
@@ -13,6 +13,8 @@ nonisolated enum ContentForm: String, CaseIterable, Sendable {
     case .code: "代码"
     }
   }
+
+  var title: String { String(localized: titleResource) }
 
   /// 0...1 的 sRGB 分量
   struct RGBA: Equatable, Sendable {

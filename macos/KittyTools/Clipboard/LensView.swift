@@ -68,9 +68,10 @@ enum Lens {
 
   static func typeTitle(_ item: ClipItem, form: ContentForm?) -> String {
     switch item.kind {
-    case .text: form?.title ?? (item.richType != nil ? "富文本" : "文本")
-    case .image: "图片"
-    case .file: "文件"
+    case .text:
+      form?.title ?? (item.richType != nil ? String(localized: "富文本") : String(localized: "文本"))
+    case .image: String(localized: "图片")
+    case .file: String(localized: "文件")
     }
   }
 
@@ -184,7 +185,7 @@ struct LensView: View {
         Image(nsImage: icon).resizable().frame(width: 16, height: 16).accessibilityHidden(true)
           .padding(.trailing, 6)
       }
-      if let name = item.sourceName {
+      if let name = item.sourceTitle {
         Text(name).lineLimit(1)
       }
       Spacer(minLength: 8)
@@ -203,27 +204,34 @@ struct LensView: View {
   private var metaText: String {
     let detail: String? =
       switch item.kind {
-      case .text: "\((item.text ?? "").count) 字"
+      case .text: Self.characterCount(item.text ?? "")
       case .image:
         item.image.map {
           "\($0.width)×\($0.height) · \($0.byteCount.formatted(.byteCount(style: .file)))"
         }
-      case .file: "\(item.filePaths?.count ?? 0) 个"
+      case .file:
+        String(
+          localized: "clipboard.lens.fileCount", defaultValue: "\(item.filePaths?.count ?? 0) 个",
+          comment: "透镜元信息里文件条目有几个文件")
       }
     return [Lens.typeTitle(item, form: form), detail, Self.exactTime(item.copiedAt)]
       .compactMap { $0 }.joined(separator: " · ")
   }
 
-  /// 今天写 14:02，更早写 9月25日 14:02（跨年带年份）
+  /// 「70 字」（透镜、⌘Y 大卡的元信息同一个）
+  static func characterCount(_ text: String) -> String {
+    String(localized: "\(text.count) 字")
+  }
+
+  /// 今天写 14:02，更早写 9月25日 14:02（跨年带年份）。跟着界面语言（Locale.current）：英文「Sep 25 2:02 PM」，
+  /// 12 / 24 小时制按系统设置（中文是两位的 14:02、09:05，和以前定死 zh-Hans 时一样）
   static func exactTime(_ date: Date) -> String {
-    let chinese = Locale(identifier: "zh-Hans")
-    let time = date.formatted(
-      .dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits).locale(chinese))
+    let time = date.formatted(.dateTime.hour().minute())
     if Calendar.current.isDateInToday(date) { return time }
     let day =
       Calendar.current.isDate(date, equalTo: .now, toGranularity: .year)
-      ? date.formatted(.dateTime.month().day().locale(chinese))
-      : date.formatted(.dateTime.year().month().day().locale(chinese))
+      ? date.formatted(.dateTime.month().day())
+      : date.formatted(.dateTime.year().month().day())
     return "\(day) \(time)"
   }
 }

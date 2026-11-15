@@ -173,9 +173,9 @@ struct ClipRowView: View {
     if let note = item.note, !note.isEmpty {
       Text(note).foregroundStyle(.secondary)
     } else {
-      let ago = item.copiedAt.formatted(
-        .relative(presentation: .named).locale(Locale(identifier: "zh-Hans")))
-      Text([item.sourceName, ago].compactMap { $0 }.joined(separator: " · "))
+      // 跟着界面语言（Locale.current）：「31秒钟前」/「31 seconds ago」
+      let ago = item.copiedAt.formatted(.relative(presentation: .named))
+      Text([item.sourceTitle, ago].compactMap { $0 }.joined(separator: " · "))
         .foregroundStyle(.tertiary)
     }
   }
@@ -295,13 +295,15 @@ extension ClipItem.Kind {
     }
   }
 
-  var title: String {
+  var titleResource: LocalizedStringResource {
     switch self {
     case .text: "文本"
     case .image: "图片"
     case .file: "文件"
     }
   }
+
+  var title: String { String(localized: titleResource) }
 }
 
 extension ContentForm {
@@ -323,11 +325,12 @@ extension ClipItem {
       return String((text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).prefix(200))
         .replacing(/\s+/, with: " ")
     case .image:
-      guard let image else { return "图片" }
-      return "图片 \(image.width)×\(image.height)"
+      guard let image else { return String(localized: "图片") }
+      // 宽高按原样的数字插（插 Int 会按语言加千分位：1,200×240）
+      return String(localized: "图片 \(String(image.width))×\(String(image.height))")
     case .file:
       let names = (filePaths ?? []).map { URL(filePath: $0).lastPathComponent }
-      return names.count == 1 ? names[0] : names.joined(separator: "、")
+      return names.count == 1 ? names[0] : names.joinedAsList()
     }
   }
 }

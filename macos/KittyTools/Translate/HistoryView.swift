@@ -588,16 +588,16 @@ struct HistoryView: View {
     return sections
   }
 
-  /// 分组标题（剪贴板按天分组也用它）
+  /// 分组标题（剪贴板按天分组也用它）：今天 / 昨天 / 月日（跨年带年），跟着界面语言（Locale.current）
   static func dayTitle(_ date: Date, now: Date, calendar: Calendar) -> String {
-    if calendar.isDate(date, inSameDayAs: now) { return "今天" }
+    if calendar.isDate(date, inSameDayAs: now) { return String(localized: "今天") }
     if let yesterday = calendar.date(byAdding: .day, value: -1, to: now),
       calendar.isDate(date, inSameDayAs: yesterday)
     {
-      return "昨天"
+      return String(localized: "昨天")
     }
     var style = Date.FormatStyle(
-      locale: Locale(identifier: "zh-Hans"), calendar: calendar, timeZone: calendar.timeZone)
+      locale: .current, calendar: calendar, timeZone: calendar.timeZone)
     style =
       calendar.isDate(date, equalTo: now, toGranularity: .year)
       ? style.month().day() : style.year().month().day()

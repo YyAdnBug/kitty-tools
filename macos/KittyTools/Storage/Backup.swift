@@ -236,7 +236,8 @@ nonisolated enum Recovery {
       let backup = Backup.latestUsable(in: directory, calendar: calendar)
     else { return nil }
     return Problem(
-      reason: size == nil ? "数据库文件不见了" : "数据库文件是空的", backup: backup, lost: true)
+      reason: size == nil ? String(localized: "数据库文件不见了") : String(localized: "数据库文件是空的"),
+      backup: backup, lost: true)
   }
 
   /// 挪开的文件放在数据目录里的这个文件夹：damaged-20261002-213045（当地时间；重名加序号）
@@ -291,18 +292,20 @@ nonisolated enum Recovery {
     return folder
   }
 
-  /// 弹框里怎么称呼那份备份：「10 月 1 日（昨天）」「9 月 28 日（4 天前）」「今天」
+  /// 弹框里怎么称呼那份备份：「10月1日（昨天）」「9月28日（4 天前）」「10月2日（今天）」。月、日按界面语言的写法
+  /// （Locale.current：英文「Oct 1 (yesterday)」），不手拼；时区、历法按传进来的 calendar
   static func describe(_ day: Date, now: Date = .now, calendar: Calendar = .current) -> String {
-    let parts = calendar.dateComponents([.month, .day], from: day)
-    let date = "\(parts.month ?? 0) 月 \(parts.day ?? 0) 日"
+    let date = day.formatted(
+      Date.FormatStyle(locale: .current, calendar: calendar, timeZone: calendar.timeZone)
+        .month().day())
     let days =
       calendar.dateComponents(
         [.day], from: calendar.startOfDay(for: day), to: calendar.startOfDay(for: now)
       ).day ?? 0
     switch days {
-    case ...0: return date + "（今天）"
-    case 1: return date + "（昨天）"
-    default: return date + "（\(days) 天前）"
+    case ...0: return String(localized: "\(date)（今天）")
+    case 1: return String(localized: "\(date)（昨天）")
+    default: return String(localized: "\(date)（\(days) 天前）")
     }
   }
 
@@ -314,30 +317,43 @@ nonisolated enum Recovery {
     for problem: Problem, directory: URL, now: Date = .now, calendar: Calendar = .current
   ) -> (title: String, text: String, buttons: [String], choices: [Choice]) {
     let place = (directory.path as NSString).abbreviatingWithTildeInPath
-    let head = "Kitty Tools 的数据库读不出来了。"
-    let fresh = "重新开始：全部从空的开始；现在的数据库文件、图片和备份一起挪开留着。"
-    let kept = "挪开的文件不会删，在数据目录（\(place)）里一个「damaged-日期-时间」的文件夹里。设置和钥匙串里的密钥不受影响。"
-    let reason = "原因：\(problem.reason)"
-    let note =
-      "选了重新开始，片段、文字收藏和生词本之后还能导回来：到 设置 › 通用 点「导入…」，选上面那个文件夹的 backups 里最新的「Kitty Tools 自动备份 日期.json」。"
+    let title = String(localized: "数据打不开了")
+    let head = String(localized: "Kitty Tools 的数据库读不出来了。")
+    let fresh = String(localized: "重新开始：全部从空的开始；现在的数据库文件、图片和备份一起挪开留着。")
+    let kept = String(
+      localized: "挪开的文件不会删，在数据目录（\(place)）里一个「damaged-日期-时间」的文件夹里。设置和钥匙串里的密钥不受影响。")
+    let reason = String(localized: "原因：\(problem.reason)")
+    // 文件名是固定的中文（SettingsBackup.fileName，永不翻）：英文里也照原样写，只有「日期」那两个字跟着界面语言
+    let file =
+      "Kitty Tools 自动备份 \(String(localized: "recovery.fileDate", defaultValue: "日期", comment: "自动备份文件名里日期那一段（文件名本身是固定的中文）")).json"
+    let note = String(
+      localized: "选了重新开始，片段、文字收藏和生词本之后还能导回来：到 设置 › 通用 点「导入…」，选上面那个文件夹的 backups 里最新的「\(file)」。")
     // 说明文件留在哪的那一段后面接这一段（没有那种备份就没有这一段）
     let tail = (problem.hasSettingsBackup ? [kept, note] : [kept]) + [reason]
     guard let backup = problem.backup else {
       // 有那种备份时把话说准：没有的是数据库的备份
-      let none = problem.hasSettingsBackup ? "也没有可用的数据库备份。" : "也没有可用的备份。"
+      let none =
+        problem.hasSettingsBackup
+        ? String(localized: "Kitty Tools 的数据库读不出来了。也没有可用的数据库备份。")
+        : String(localized: "Kitty Tools 的数据库读不出来了。也没有可用的备份。")
       return (
-        "数据打不开了", ([head + none, fresh] + tail).joined(separator: "\n\n"),
-        ["重新开始", "退出"], [.startFresh, .quit]
+        title, ([none, fresh] + tail).joined(separator: "\n\n"),
+        [String(localized: "重新开始"), String(localized: "退出")], [.startFresh, .quit]
       )
     }
     let day = describe(backup.day, now: now, calendar: calendar)
     let restore =
-      "用备份：片段、收藏、收藏夹、生词本和启动器的收藏回到 \(day)备份时的样子；普通剪贴板历史、翻译历史和启动器的使用记录不在备份里，"
-      + "会从空的开始。"
-      + (problem.lost ? "" : "出问题的数据库和当时的图片都留在「damaged-日期-时间」文件夹里（全部数据还在里面）。")
+      problem.lost
+      ? String(
+        localized: "用备份：片段、收藏、收藏夹、生词本和启动器的收藏回到 \(day)备份时的样子；普通剪贴板历史、翻译历史和启动器的使用记录不在备份里，会从空的开始。")
+      : String(
+        localized:
+          "用备份：片段、收藏、收藏夹、生词本和启动器的收藏回到 \(day)备份时的样子；普通剪贴板历史、翻译历史和启动器的使用记录不在备份里，会从空的开始。出问题的数据库和当时的图片都留在「damaged-日期-时间」文件夹里（全部数据还在里面）。"
+      )
     return (
-      "数据打不开了", ([head, restore + "\n" + fresh] + tail).joined(separator: "\n\n"),
-      ["用 \(day)的备份", "重新开始", "退出"], [.restore, .startFresh, .quit]
+      title, ([head, restore + "\n" + fresh] + tail).joined(separator: "\n\n"),
+      [String(localized: "用 \(day)的备份"), String(localized: "重新开始"), String(localized: "退出")],
+      [.restore, .startFresh, .quit]
     )
   }
 }

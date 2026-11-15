@@ -163,7 +163,8 @@ struct ClipboardTab: View {
   /// 「图片最多占用」的档位（MB → 名字；0 = 不限）。256 MB 是 issue #19 加的（2026-11-13，想少占点空间），
   /// 六项起换成弹出菜单（Whisker §6）
   static let imageBudgetChoices = [
-    (256, "256 MB"), (512, "512 MB"), (1024, "1 GB"), (2048, "2 GB"), (5120, "5 GB"), (0, "不限"),
+    (256, "256 MB"), (512, "512 MB"), (1024, "1 GB"), (2048, "2 GB"), (5120, "5 GB"),
+    (0, String(localized: "不限")),
   ]
 
   /// 两个上限：保留天数、图片占用（MB）
@@ -217,32 +218,33 @@ struct ClipboardTab: View {
   /// 确认框的标题：「保留普通历史改成「1 天」？」「图片最多占用改成「512 MB」？」
   private static func title(_ change: LimitChange) -> String {
     switch change.field {
-    case .days: "保留普通历史改成「\(retentionTitle(change.value))」？"
+    case .days: String(localized: "保留普通历史改成「\(retentionTitle(change.value))」？")
     case .imageMB:
-      "图片最多占用改成「\(imageBudgetChoices.first { $0.0 == change.value }?.1 ?? "\(change.value) MB")」？"
+      String(
+        localized:
+          "图片最多占用改成「\(imageBudgetChoices.first { $0.0 == change.value }?.1 ?? "\(change.value) MB")」？"
+      )
     }
   }
 
   /// 改上限前的确认里那句：会删掉几条普通历史（其中几张图片），收藏和片段不受影响
   static func pruneWarning(items: Int, images: Int) -> String {
-    let what =
-      switch images {
-      case 0: "\(items) 条普通历史"
-      case items: "\(images) 张普通历史里的图片"
-      default: "\(items) 条普通历史（其中 \(images) 张图片）"
-      }
-    return "会删掉 \(what)，收藏和片段不受影响。"
+    switch images {
+    case 0: String(localized: "会删掉 \(items) 条普通历史，收藏和片段不受影响。")
+    case items: String(localized: "会删掉 \(images) 张普通历史里的图片，收藏和片段不受影响。")
+    default: String(localized: "会删掉 \(items) 条普通历史（其中 \(images) 张图片），收藏和片段不受影响。")
+    }
   }
 
   /// 「保留普通历史」的档位名：1 天 / 1 周 / 1 个月 / 3 个月 / 1 年 / 永久
   static func retentionTitle(_ days: Int) -> String {
     switch days {
-    case 0: "永久"
-    case 7: "1 周"
-    case 30: "1 个月"
-    case 90: "3 个月"
-    case 365: "1 年"
-    default: "\(days) 天"
+    case 0: String(localized: "永久")
+    case 7: String(localized: "1 周")
+    case 30: String(localized: "1 个月")
+    case 90: String(localized: "3 个月")
+    case 365: String(localized: "1 年")
+    default: String(localized: "\(days) 天")
     }
   }
 
@@ -256,8 +258,9 @@ struct ClipboardTab: View {
   /// 「普通 X · 留下的 Y」：只有普通的算进「图片最多占用」（体检 B2）
   private var imageUsage: String {
     let usage = store.imageUsage
-    return "普通 \(usage.ordinary.formatted(.byteCount(style: .file))) · 留下的 "
-      + usage.retained.formatted(.byteCount(style: .file))
+    let ordinary = usage.ordinary.formatted(.byteCount(style: .file))
+    return String(
+      localized: "普通 \(ordinary) · 留下的 \(usage.retained.formatted(.byteCount(style: .file)))")
   }
 
   // MARK: 排除的 App

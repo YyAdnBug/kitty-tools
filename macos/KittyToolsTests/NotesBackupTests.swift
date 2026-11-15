@@ -674,7 +674,7 @@ struct NotesBackupTests {
       for: problem, directory: directory, now: at(10, 6, 9), calendar: calendar)
     #expect(
       wording.text.contains(
-        "选了重新开始，便签的文字之后还能导回来：到 设置 › 通用 点「从备份恢复」，选 10 月 2 日（4 天前）那份，"
+        "选了重新开始，便签的文字之后还能导回来：到 设置 › 通用 点「从备份恢复」，选 10月2日（4 天前）那份，"
           + "只勾「便签」（3 条；图片和「最近删除」里的不在里面）。"))
     // 这一段在「挪开的文件在哪」和「原因」之间
     let parts = wording.text.components(separatedBy: "\n\n")
@@ -764,10 +764,10 @@ struct NotesBackupTests {
       for: .init(reason: "file is not a database", backup: copy), directory: home, now: now,
       calendar: calendar)
     #expect(wording.title == "便签打不开了")
-    #expect(wording.buttons == ["用 10 月 2 日（昨天）的备份", "重新开始", "这次先不用便签"])
+    #expect(wording.buttons == ["用 10月2日（昨天）的备份", "重新开始", "这次先不用便签"])
     #expect(wording.choices == [.restore, .startFresh, .skip])
     #expect(wording.text.contains("剪贴板、翻译和别的功能不受影响"))
-    #expect(wording.text.contains("便签回到 10 月 2 日（昨天）备份时的样子"))
+    #expect(wording.text.contains("便签回到 10月2日（昨天）备份时的样子"))
     #expect(wording.text.contains("出问题的便签数据留在「damaged-日期-时间」文件夹里"))
     #expect(wording.text.contains("数据目录（~/Library/数据）"))
     #expect(wording.text.hasSuffix("原因：file is not a database"))

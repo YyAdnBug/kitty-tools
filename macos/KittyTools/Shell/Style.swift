@@ -432,11 +432,12 @@ struct KeyCap: View {
 /// （屏外实测标题都不变色）；role 照给——旁白和系统自己的样式靠它。自己上了色的标题置灰时系统不替它变淡
 /// （屏外实测和能点时一个样）：禁用时自己乘上 disabledOpacity（设置 › 状态屏只剩一个状态时的「删除」）
 struct DangerButton: View {
-  let title: String
+  let title: LocalizedStringResource
   let action: () -> Void
   @Environment(\.isEnabled) private var isEnabled
 
-  init(_ title: String, action: @escaping () -> Void) {
+  /// 标题是能本地化的（调用处的字面量会被抽进目录）
+  init(_ title: LocalizedStringResource, action: @escaping () -> Void) {
     self.title = title
     self.action = action
   }

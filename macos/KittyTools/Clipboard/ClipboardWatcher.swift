@@ -73,14 +73,14 @@ final class ClipboardWatcher {
     isPaused = false
   }
 
-  /// 这次复制的来源（体检 B6）：通用剪贴板过来的是「其他设备」（没有 bundle ID，来源筛选里不列）；
+  /// 这次复制的来源（体检 B6）：通用剪贴板过来的是「其他设备」（ClipItem.remoteSourceName，显示时按界面语言翻；没有 bundle ID，来源筛选里不列）；
   /// 写入方打了来源标记就用它（名字按 bundle ID 查，排除的 App 照样认得出）；在本 App 自己的窗口里复制的
   /// （ownWindow：在自家浮层里 ⌘C，或本 App 在前台）没有来源（体检 B20）；都没有才用轮询时的前台 App（推测值）
   static func source(
     ownWindow: Bool = false, remote: Bool, marker: String?,
     frontmost: (name: String?, bundleID: String?)?, appName: (String) -> String?
   ) -> (name: String?, bundleID: String?) {
-    if remote { return ("其他设备", nil) }
+    if remote { return (ClipItem.remoteSourceName, nil) }
     if let marker, !marker.isEmpty { return (appName(marker) ?? marker, marker) }
     if ownWindow { return (nil, nil) }
     return frontmost ?? (nil, nil)

@@ -770,12 +770,12 @@ struct BackupTests {
 
   @Test func describesHowOldTheBackupIs() {
     let now = at(10, 2, 0, 0, 1)
-    #expect(Recovery.describe(at(10, 2), now: now, calendar: calendar) == "10 月 2 日（今天）")
+    #expect(Recovery.describe(at(10, 2), now: now, calendar: calendar) == "10月2日（今天）")
     #expect(
-      Recovery.describe(at(10, 1, 23, 59, 59), now: now, calendar: calendar) == "10 月 1 日（昨天）")
-    #expect(Recovery.describe(at(9, 28), now: now, calendar: calendar) == "9 月 28 日（4 天前）")
+      Recovery.describe(at(10, 1, 23, 59, 59), now: now, calendar: calendar) == "10月1日（昨天）")
+    #expect(Recovery.describe(at(9, 28), now: now, calendar: calendar) == "9月28日（4 天前）")
     // 时钟往回调过：备份比现在还「新」
-    #expect(Recovery.describe(at(10, 5), now: now, calendar: calendar) == "10 月 5 日（今天）")
+    #expect(Recovery.describe(at(10, 5), now: now, calendar: calendar) == "10月5日（今天）")
   }
 
   @Test func wordingSaysWhatEachChoiceDoes() {
@@ -784,10 +784,10 @@ struct BackupTests {
     let with = Recovery.wording(
       for: .init(reason: "database disk image is malformed", backup: copy), directory: home,
       now: at(10, 2), calendar: calendar)
-    #expect(with.buttons == ["用 10 月 1 日（昨天）的备份", "重新开始", "退出"])
+    #expect(with.buttons == ["用 10月1日（昨天）的备份", "重新开始", "退出"])
     #expect(with.choices == [.restore, .startFresh, .quit])
     for part in [
-      "片段、收藏、收藏夹、生词本和启动器的收藏回到 10 月 1 日（昨天）备份时的样子",
+      "片段、收藏、收藏夹、生词本和启动器的收藏回到 10月1日（昨天）备份时的样子",
       "普通剪贴板历史、翻译历史和启动器的使用记录不在备份里，会从空的开始", "出问题的数据库和当时的图片都留在", "重新开始：全部从空的开始", "不会删",
       "~/Library/Application Support/示例", "damaged-", "钥匙串", "原因：database disk image is malformed",
     ] {

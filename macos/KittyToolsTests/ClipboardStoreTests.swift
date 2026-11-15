@@ -780,8 +780,9 @@ struct ClipboardStoreTests {
     let model = ClipboardPanelModel(store: store)
     let (texts, files) = (store.items.filter { $0.kind == .text }, [fileB, fileA])
     typealias Mode = ClipboardPanelModel.PasteMode
-    #expect(Mode([texts[0]]).verb == "粘贴" && Mode(texts).verb == "合并粘贴")
-    #expect(Mode(files).verb == "一起粘贴" && Mode([texts[0], fileA]).verb == "依次粘贴")
+    let verb = { (items: [ClipItem]) in String(localized: Mode(items).verb) }
+    #expect(verb([texts[0]]) == "粘贴" && verb(texts) == "合并粘贴")
+    #expect(verb(files) == "一起粘贴" && verb([texts[0], fileA]) == "依次粘贴")
     let today = Date.now.formatted(
       Date.ISO8601FormatStyle(timeZone: .current).year().month().day().dateSeparator(.dash))
     let merged = model.payload(for: texts, plainText: false)
