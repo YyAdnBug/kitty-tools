@@ -34,6 +34,12 @@
   关掉的录制、Windows 独有的、启动器的键，假 Mac 加入后它的三项一项不少，a 跟着 Mac 换了主题、Mac 独有的两项透传进了自己那份、Windows 的快捷键没变；一轮 14–76 ms）。
   替用户定的 / 要说的：**第一次和 Mac 合时，本机关掉而 Mac 没存过的功能开关会回到默认（开）**——a 关的录制就是这样（mac C4 同样：「整个跟着别的电脑」）；第 4 批问「合在一起？」时写明。
   Windows 之间第一次合时共有的那几项是并在一起（本机有、别人没有的留着），不是整个跟着（「共有编号的删除不落」的副作用）；Windows 独有的照常整个跟着。
+- **第 3 批（`git log --grep "PLAN-v21 第 3 批"`）**：启动器收藏（D5，只在 Windows 之间）。Core `Sync/LauncherFavoriteSync`（类别 `windows-launcher`，照 mac `LauncherUsage`：
+  编号 = 类型 + 目标的哈希、内容 {kind, target, title}、顺序单独一条、第一次合并在一起、不卡 8 个、解不开的整个不落）；`LauncherFavorites` 加 `SyncRows` / `ApplySync`
+  （整张表按顺序重写，原来就有的留着加入的时刻，和账本同一个事务——`SyncLedger` 把 `windows-launcher` 的账本放进库里）和 `Changed`（同步看着它判断本机改没改）；
+  `settings.json` 加 `SyncLauncher`（同 `SyncSettings`，第 4 批接设置页）。验：1015 → 1018 个测试（LauncherFavoriteSyncTests 3 条，最后一条两台走真的 SyncRunner：
+  各加、合并、挪顺序、删）；`--sync-settings-probe` 加了收藏：b 跟上两个网址和挪过的顺序，假 Mac 的 `launcher.json` 一个字节都没变、Windows 不写 `launcher.json`；
+  AOT 0 警告；内存只托盘 48.7 / 49.1 MB（第 2 批 48.6 / 49.1）；空闲 CPU（开着同步、设置和收藏同步的测试档、300 s）0.068 %；同一个档拷一份给第 1 批的 Release（没有这两类）跑是 0.078 %，没多。
 
 ## PLAN-v20（mac 还有、Windows 还没有的，2026-11-14，照推荐直接做）
 

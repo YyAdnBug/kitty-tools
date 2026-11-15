@@ -5,6 +5,7 @@
 // - mac：在文件夹里照 mac 的规矩写一台假 Mac 的 settings.json（Core 的 SyncRunner + 一个照 mac 合的内存仓库，不起同步），
 //   有一项 Mac 独有的、一个 mac 写法的快捷键、主题是浅色；
 // - a2：再合两轮，查跟着 Mac 换了主题、Mac 独有的那两项透传进了自己那份 settings.json、Windows 的快捷键没变。
+// 启动器收藏（第 3 批）：a 收藏两个、挪一下顺序，b 查顺序一样；假 Mac 另写一份 launcher.json，a2 查它一个字节都没变（Windows 不读不写）。
 // 每份把结果写进 <目录>\report-<角色>.md（每轮多久、各项的值、对照表有没有没接上读写的），跑完就退。
 using System.Diagnostics;
 using System.Text;
@@ -19,6 +20,9 @@ internal static class SettingsSyncProbe
     public const string ArgumentPrefix = "--sync-settings-probe";
 
     private const string MacHotKey = "{\"keyCode\":0,\"modifiers\":2048}";
+
+    private const string MacLauncherText =
+        "{\"erased\":[],\"format\":1,\"kind\":\"launcher\",\"records\":[{\"clock\":\"" + FakeDevice.MacId + ":1\",\"id\":\"~order\",\"modified\":1,\"value\":\"[]\"}]}";
 
     public static bool IsRequested(string[] args)
         => Paths.IsTestProfile && args.Any(arg => arg.StartsWith(ArgumentPrefix, StringComparison.OrdinalIgnoreCase));
@@ -75,6 +79,7 @@ internal static class SettingsSyncProbe
             settings.SyncFolder = folder;
             settings.SyncEnabled = true;
             settings.SyncSettings = true;
+            settings.SyncLauncher = true;
             SettingsService.Save();
             var theme = SettingsSyncMap.FindShared("pref:appearance")!;
             var record = SettingsSyncMap.FindShared("pref:feature.record")!;
@@ -88,6 +93,13 @@ internal static class SettingsSyncProbe
                 settings.Features["recording"] = false;
                 settings.LauncherRecentPrograms = false;
                 SettingsService.Save();
+                if (LauncherFavorites.Instance is { } favorites)
+                {
+                    favorites.Toggle("https://example.com/kitty-probe-1", "Url", "自检网址一");
+                    favorites.Toggle("https://example.com/kitty-probe-2", "Url", "自检网址二");
+                    var both = new[] { "https://example.com/kitty-probe-1", "https://example.com/kitty-probe-2" };
+                    favorites.Move("https://example.com/kitty-probe-2", both, -1);
+                }
                 await Task.Delay(300);
             }
 
@@ -104,6 +116,8 @@ internal static class SettingsSyncProbe
             var ownWindows = Path.Combine(folder, SyncDisk.KindPath(me, SettingsSync.WindowsKind));
             string Value(SettingKey key) => SettingsSyncFields.Read(SettingsService.Current, key)?.Encode() ?? "（没有）";
             report.Append($"- 主题 {Value(theme)}，录制功能 {Value(record)}，最近用过的程序 {Value(recent)}，启动器的键 {Value(launcher)}\n");
+            var titles = string.Join("、", LauncherFavorites.Instance?.Load().Select(item => item.Title) ?? Array.Empty<string>());
+            report.Append($"- 启动器收藏：{titles}\n");
             report.Append($"- 存过的键 {SettingsService.Current.SyncStoredKeys?.Count ?? 0} 项；透传 {SettingsService.Current.SyncPassthrough?.Count ?? 0} 项\n");
             switch (role)
             {
@@ -117,6 +131,7 @@ internal static class SettingsSyncProbe
                     Check(Value(recent) == "false", "Windows 独有的跟着 a");
                     Check(Value(launcher) == "\"Ctrl+Alt+Space\"", "快捷键跟着 a");
                     Check(!File.Exists(ownSettings), "还没有 Mac：没写 settings.json");
+                    Check(titles == "自检网址二、自检网址一", "启动器收藏跟着 a，顺序也一样");
                     break;
                 case "a2":
                     Check(Value(theme) == "\"light\"", "第一次和 Mac 合：主题跟着 Mac");
@@ -124,6 +139,9 @@ internal static class SettingsSyncProbe
                     var text = File.Exists(ownSettings) ? File.ReadAllText(ownSettings) : string.Empty;
                     Check(text.Contains("pref:islandHaptics") && text.Contains("hotkey:noteAll"), "Mac 独有的那两项透传进了自己那份 settings.json");
                     Check(!text.Contains("LauncherRecentPrograms") && !text.Contains("hotkey:launcher"), "Windows 独有的不进 settings.json");
+                    var macLauncher = Path.Combine(folder, SyncDisk.KindPath(FakeDevice.MacId, "launcher"));
+                    Check(File.Exists(macLauncher) && File.ReadAllText(macLauncher) == MacLauncherText, "假 Mac 的 launcher.json 一个字节都没变");
+                    Check(!File.Exists(Path.Combine(folder, SyncDisk.KindPath(me, "launcher"))), "Windows 不写 launcher.json");
                     break;
             }
         }
@@ -149,12 +167,16 @@ internal static class SettingsSyncProbe
         mac.Map["hotkey:noteAll"] = MacHotKey;
         var result = await new SyncRunner(new FakeDevice(), new ISyncSource[] { mac }, "Probe Mac")
             .RunAsync(folder, new Dictionary<string, int>(), DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        // mac 的启动器收藏那一类（Windows 不碰）：照 mac 文件的样子原样放一份，a2 回头看它变没变
+        File.WriteAllText(Path.Combine(folder, SyncDisk.KindPath(FakeDevice.MacId, "launcher")), MacLauncherText);
         report.Append($"- 假 Mac 合了一轮：{result.State}；它的设置 {mac.Map.Count} 项（{string.Join("、", mac.Map.Keys.Order(StringComparer.Ordinal))}）\n");
     }
 
     private sealed class FakeDevice : ISyncDevice
     {
-        public string Id { get; private set; } = "00000000-0000-4000-8000-00000000AC01";
+        public const string MacId = "00000000-0000-4000-8000-00000000AC01";
+
+        public string Id { get; private set; } = MacId;
 
         public string? Library { get; private set; }
 

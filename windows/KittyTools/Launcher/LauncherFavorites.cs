@@ -1,6 +1,8 @@
 // 启动器收藏（第三版 §6，PLAN-v9-launcher R8 照 mac）：launcher_favorites，按 position 排；Ctrl+D 收藏 / 取消（看得见的满 8 个不让加，
 // 由模型判断），Ctrl+Alt+↑↓ 和看得见的邻居换。空查询时收藏排在「常用」前面；还原不出来的只藏起来、不删。
 // 目标用 Target（应用路径 / 设置页 id / 命令 target），Kind 记类型，重建时能认出。
+// 同步（PLAN-v21 第 3 批，只在 Windows 之间）：SyncRows 交出去、ApplySync 整张表按顺序重写，和账本同一个事务；改了就 Changed。
+using KittyTools.Core.Sync;
 using KittyTools.Infrastructure;
 
 namespace KittyTools;
@@ -26,6 +28,9 @@ internal sealed class LauncherFavorites
     }
 
     public static LauncherFavorites? Instance { get; private set; }
+
+    /// <summary>收藏、取消、挪了顺序、同步落了（同步看着它判断本机改没改）。</summary>
+    public event Action? Changed;
 
     public static LauncherFavorites? Start(Database database)
     {
@@ -69,6 +74,7 @@ internal sealed class LauncherFavorites
                 "DELETE FROM launcher_favorites WHERE target = $target;");
             statement.BindText(1, target);
             statement.Step();
+            Changed?.Invoke();
             return false;
         }
 
@@ -82,6 +88,7 @@ internal sealed class LauncherFavorites
         insert.BindInt64(4, position);
         insert.BindInt64(5, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         insert.Step();
+        Changed?.Invoke();
         return true;
     }
 
@@ -117,6 +124,52 @@ internal sealed class LauncherFavorites
             throw;
         }
 
+        Changed?.Invoke();
         return true;
+    }
+
+    public List<SyncFavorite> SyncRows() => Load().Select(item => new SyncFavorite(item.Kind, item.Target, item.Title)).ToList();
+
+    /// <summary>同步落下来的整张表：按顺序重写（原来就有的留着加入的时刻），和账本同一个事务。</summary>
+    public void ApplySync(IReadOnlyList<SyncFavorite> favorites, Action saveLedger)
+    {
+        var added = new Dictionary<string, long>(StringComparer.Ordinal);
+        using (var read = _database.Connection.Prepare("SELECT target, added_at FROM launcher_favorites;"))
+        {
+            while (read.Step())
+            {
+                added[read.GetText(0) ?? string.Empty] = read.GetInt64(1);
+            }
+        }
+
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        _database.BeginTransaction();
+        try
+        {
+            _database.Connection.Execute("DELETE FROM launcher_favorites;");
+            var position = 0;
+            foreach (var favorite in favorites)
+            {
+                using var insert = _database.Connection.Prepare(
+                    "INSERT OR REPLACE INTO launcher_favorites(target, kind, title, position, added_at) " +
+                    "VALUES ($target, $kind, $title, $position, $added);");
+                insert.BindText(1, favorite.Target);
+                insert.BindText(2, favorite.Kind);
+                insert.BindText(3, favorite.Title);
+                insert.BindInt64(4, position++);
+                insert.BindInt64(5, added.GetValueOrDefault(favorite.Target, now));
+                insert.Step();
+            }
+
+            saveLedger();
+            _database.Commit();
+        }
+        catch
+        {
+            _database.Rollback();
+            throw;
+        }
+
+        Changed?.Invoke();
     }
 }

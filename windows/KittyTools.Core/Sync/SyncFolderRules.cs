@@ -97,5 +97,5 @@ public static class SyncFolderRules
     public static string FileName(string kind) => kind + ".json";
 
     public static bool IsSyncedKind(string kind) => kind is "clips" or "vocabulary" or "engines" or "services" or "statuses" or "reminders" or
-        SettingsSync.Kind or SettingsSync.WindowsKind;
+        SettingsSync.Kind or SettingsSync.WindowsKind or LauncherFavoriteSync.Kind;
 }

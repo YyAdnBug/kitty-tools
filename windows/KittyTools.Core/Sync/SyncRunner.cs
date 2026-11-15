@@ -75,6 +75,7 @@ public sealed class SyncRunner(
         StatusPresetSync.Kind => "状态屏的状态",
         ReminderSync.Kind => "提醒",
         SettingsSync.Kind or SettingsSync.WindowsKind => "设置与快捷键",
+        LauncherFavoriteSync.Kind => "启动器收藏",
         _ => kind,
     };
 

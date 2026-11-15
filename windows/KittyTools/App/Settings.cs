@@ -202,6 +202,9 @@ internal sealed class Settings
     /// <summary>同步设置与快捷键。null = 还没定过（升级上来、已经开着同步的人：先不勾，PLAN-v21 D7）。</summary>
     public bool? SyncSettings { get; set; }
 
+    /// <summary>同步启动器收藏（PLAN-v21 第 3 批，只在 Windows 之间）。null = 还没定过（同 SyncSettings）。</summary>
+    public bool? SyncLauncher { get; set; }
+
     /// <summary>存过的设置项（SettingKey.Field；PLAN-v21 D4：和本机默认不一样过的、同步落下来过的才同步）。</summary>
     public List<string>? SyncStoredKeys { get; set; }
 

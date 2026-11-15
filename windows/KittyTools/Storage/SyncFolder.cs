@@ -64,6 +64,7 @@ internal sealed class Syncer
     private ClipboardStore? _watchedClips;
     private TranslationHistory? _watchedHistory;
     private NoteStore? _watchedNotes;
+    private LauncherFavorites? _watchedFavorites;
 
     /// <summary>上一轮什么都没剩下（合完、没等确认、没出错）时这一轮开始那一刻的样子；下一轮还是这样就跳过。</summary>
     private string? _quiet;
@@ -445,6 +446,12 @@ internal sealed class Syncer
             _watchedNotes = notes;
             notes.Changed += () => _revision++;
         }
+
+        if (LauncherFavorites.Instance is { } favorites && !ReferenceEquals(favorites, _watchedFavorites))
+        {
+            _watchedFavorites = favorites;
+            favorites.Changed += () => _revision++;
+        }
     }
 
     private static string? Fingerprint(string folder, IReadOnlyList<string> kinds, bool notes)
@@ -517,6 +524,12 @@ internal sealed class Syncer
         if (settings.SyncReminders && Features.IsOn(Feature.Reminders))
         {
             sources.Add(new ReminderSource(_ledger));
+        }
+
+        // 启动器收藏（PLAN-v21 第 3 批，只在 Windows 之间）
+        if (settings.SyncLauncher == true && Features.IsOn(Feature.Launcher))
+        {
+            sources.Add(new FavoriteSource(_ledger));
         }
 
         // 设置与快捷键（PLAN-v21）：两类一行开关；settings 一类等文件夹里有了别的电脑的那份才写（D3）
@@ -699,6 +712,33 @@ internal sealed class Syncer
             SettingsService.Current.LauncherSearchEngines = engines;
             SettingsService.Save();
             SaveLedger(data, library);
+            return null;
+        }
+    }
+
+    /// <summary>启动器收藏（PLAN-v21 第 3 批）：一张表按顺序重写，账本在同一个库、同一个事务里。</summary>
+    private sealed class FavoriteSource(SyncLedger ledger) : Source(ledger, LauncherFavoriteSync.Kind)
+    {
+        public override string? JoinKey(string value) => null;
+
+        public override IReadOnlyDictionary<string, string>? Values()
+            => LauncherFavorites.Instance is { } favorites ? LauncherFavoriteSync.Values(favorites.SyncRows()) : null;
+
+        public override string? Apply(
+            IReadOnlyDictionary<string, string?> changes, SyncLedgerData data, string library)
+        {
+            if (LauncherFavorites.Instance is not { } favorites)
+            {
+                return "启动器收藏还没准备好";
+            }
+
+            var list = LauncherFavoriteSync.Plan(changes, favorites.SyncRows(), out var failure);
+            if (list is null)
+            {
+                return failure;
+            }
+
+            favorites.ApplySync(list, () => SaveLedger(data, library));
             return null;
         }
     }

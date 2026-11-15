@@ -147,7 +147,7 @@ internal sealed class SyncLedger
 
     public string? Read(string kind)
     {
-        if (kind is "clips" or "vocabulary")
+        if (kind is "clips" or "vocabulary" or LauncherFavoriteSync.Kind)
         {
             using var statement = _database.Connection.Prepare(
                 "SELECT ledger FROM sync_ledger WHERE kind = $kind;");
@@ -160,7 +160,7 @@ internal sealed class SyncLedger
 
     public string? ReadLibrary(string kind)
     {
-        if (kind is "clips" or "vocabulary")
+        if (kind is "clips" or "vocabulary" or LauncherFavoriteSync.Kind)
         {
             using var statement = _database.Connection.Prepare(
                 "SELECT library FROM sync_ledger WHERE kind = $kind;");
@@ -174,7 +174,7 @@ internal sealed class SyncLedger
 
     public void Write(string kind, string library, string ledger)
     {
-        if (kind is "clips" or "vocabulary")
+        if (kind is "clips" or "vocabulary" or LauncherFavoriteSync.Kind)
         {
             using var statement = _database.Connection.Prepare(
                 """
