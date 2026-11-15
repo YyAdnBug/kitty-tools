@@ -3548,6 +3548,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           .compactMap { $0 }.joined(separator: "；")
         actions.append(openSyncSettings)
       }
+      // 升级时替用户保持了中文（InterfaceLanguage.keepChineseOnUpgrade）：说一声能换成英文
+      if InterfaceLanguage.keptChinese {
+        detail = [detail, String(localized: "现在也有英文界面了，在 设置 › 通用「语言」里换")]
+          .compactMap { $0 }.joined(separator: "；")
+      }
       island.show(
         "已更新到 \(AboutTab.version)", detail: detail, tone: .success, symbol: "sparkles",
         actions: actions)

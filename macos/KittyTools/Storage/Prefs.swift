@@ -410,6 +410,11 @@ enum Prefs {
   /// 欢迎引导做到了第几屏（OnboardingView.Screen 的 rawValue）：没走完就退出、下次接着开时从哪一屏起（E1）；走完删掉。
   /// 这台电脑自己的状态，不注册默认值
   nonisolated static let onboardingScreen = "onboardingScreen"
+  /// 本 App 自己的界面语言（系统的键名，值是 ["en"] 这样的列表；InterfaceLanguage）：没有 = 跟随系统。系统设置 › 通用 ›
+  /// 语言与地区 › 应用程序 里选的也写在这里。这台电脑自己的，不注册默认值（不导出、不同步）；只在启动时读一次
+  nonisolated static let appleLanguages = "AppleLanguages"
+  /// 带英文界面的版本第一次打开过了（InterfaceLanguage.keepChineseOnUpgrade 只在这之前做一次）。这台电脑自己的，不注册默认值
+  nonisolated static let languageIntroduced = "languageIntroduced"
   /// 「去授权」请求过辅助功能 / 屏幕录制的系统授权框没有（第四轮体检 U10：系统只弹一次，请求过了再点就直接打开系统设置那一页，
   /// 不再两个窗一起出来）。这台电脑自己的状态，不注册默认值
   static let accessibilityRequested = "accessibilityRequested"

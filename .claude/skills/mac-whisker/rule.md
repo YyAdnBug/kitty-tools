@@ -106,6 +106,7 @@ Panel 里的内容表面只用填充、**不叠玻璃**，一律 `Style` 里的�
 
 ## 9. 验收
 - `SnapshotProbeTests` 补新状态（截图家族在 `ScreenshotSnapshotTests`）；动效类视图给一个 `elapsed` / 静态参数，能渲染动画中间帧和终态。屏幕外渲染材质会发灰、拍不到动画，只能锁布局；面板描边（`PanelRim`，`OverlayPanel` 套在内容外面的那一层）不在这些图里，改它要另外看（屏外 `cacheDisplay` 比像素，或真机）；隐式循环动画（翻译卡片的彗星边框、扫光）在图里是出现后不久的某一帧，每次略有不同。**贴着裁切区的字发白是屏外出图的假象**（2026-10-12 查清）：`.clipped()` 的容器里，默认层级色（`.primary` 等）的 `Text` 贴着裁切区的边时，SwiftUI 可能给容器建一层裁切图层，把字画成白的、颜色放在那一层的图层滤镜（`multiplyColor`）上，而 `cacheDisplay` 不画图层滤镜——图里是白字，真机颜色是对的（同一棵图层树用 `CARenderer` 按真实合成画出来对过）。哪些字走这条路由 SwiftUI 定（居中、离边远的不走；同样贴边的一行字有时走有时不走），看到白字先想到它，别当成界面问题。要让图和真机一个样就给具体的颜色（剪贴板透镜的 `Lens.ink`）。
+- **多语言**（2026-11-15）：界面改动出中英两套截图（同一个截图自检函数加 `-testLanguage en -testRegion US` 再跑一遍），逐张看英文的截断、换行、对齐；英文一般比中文宽 2–3 倍，固定宽的地方（刘海岛、工具栏、按键胶囊、主界面格子）用 `macos/TRANSLATION.md` 术语表里的短说法，放不下再两行、缩字、加宽，不为英文另做一套布局。
 - 每阶段结束给用户一份真机清单：浅色 / 深色 / 降低透明度 / 减弱动态效果各看一遍；质感和手感以真机为准。红线禁止为截图弹面板抢键盘。
 
 ## 10. 新界面上线前检查清单
@@ -117,7 +118,8 @@ Panel 里的内容表面只用填充、**不叠玻璃**，一律 `Style` 里的�
 6. 有没有持续运行的 `ambient`？不可见时停了吗？
 7. 浮起的菜单 / ⌘K 用的是 `Shell/ActionMenu.swift` 吗？新加的键进快捷键速查表了吗（设置页里不写整段按键说明）？
 8. 截图自检补了吗？真机清单写了吗？
-9. 有删除、清空、放弃这类危险操作吗？按钮 / 菜单行的图标和文字、二次确认用的是 `Style.danger`（动作菜单 `isDestructive`、设置里 `DangerButton`、主按钮键帽 `KeyCap(danger:)`、HUD `Style.HUD.danger`）吗？确认框和系统菜单里给 `role: .destructive` 了吗？没有手写 systemRed / `.red` 吧（§3「危险色」）？
+9. 新加的文字走 String Catalog 了吗（mac-native §2「多语言」）？英文补了、英文截图看过没有截断吗？
+10. 有删除、清空、放弃这类危险操作吗？按钮 / 菜单行的图标和文字、二次确认用的是 `Style.danger`（动作菜单 `isDestructive`、设置里 `DangerButton`、主按钮键帽 `KeyCap(danger:)`、HUD `Style.HUD.danger`）吗？确认框和系统菜单里给 `role: .destructive` 了吗？没有手写 systemRed / `.red` 吧（§3「危险色」）？
 
 ## 11. 许可
 boring.notch、Easydict、Ice、Loop 是 GPL，Capso 是 BSL：只看效果，一行代码都不拷。DynamicNotchKit、copyo、Pesty 是 MIT，Snapzy 是 BSD：只借数值和思路自己重写（本项目禁止任何依赖）。系统快门声在私有路径，先判断存在。Hello Kitty 是 Sanrio 的商标和版权形象：已换成原创角色「探头」（D1，2026-09-26），任何地方都不要再用它。 状态屏的动画表情是 Microsoft Fluent Emoji Animated（MIT，2026-10-10 用户要求用现成素材）：素材文件随包、许可全文在 `Resources/status-emoji-LICENSE.txt`、关于页写一行出处；不是代码依赖，播放自己写（`mac-whisker/status-screen.md`）。 便签（2026-10-12 立项，PLAN §10「便签」）借的是 Noty（github.com/aimen08/noty，MIT）的交互和数值：一行代码都不拷、自己重写；许可全文随包在 `Resources/notes-LICENSE.txt`、关于页写一行出处。

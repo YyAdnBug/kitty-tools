@@ -473,8 +473,8 @@ import AppKit
     try await URLSession.shared.download(from: url, delegate: DownloadWatcher(report: progress))
   }
 
-  /// 等本进程退出后重新打开：先开的话新实例会看到还没退的旧实例，按单实例规则自己退出
-  private static func relaunch(_ app: URL) throws {
+  /// 等本进程退出后重新打开：先开的话新实例会看到还没退的旧实例，按单实例规则自己退出（设置 › 通用换语言后也用它）
+  static func relaunch(_ app: URL) throws {
     let process = Process()
     process.executableURL = URL(filePath: "/bin/sh")
     process.arguments = [

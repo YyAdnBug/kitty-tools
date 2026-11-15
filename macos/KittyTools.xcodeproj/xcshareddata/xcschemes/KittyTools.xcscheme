@@ -28,6 +28,8 @@
       selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       shouldUseLaunchSchemeArgsEnv = "YES"
+      language = "zh-Hans"
+      region = "CN"
       shouldAutocreateTestPlan = "YES">
       <Testables>
          <TestableReference

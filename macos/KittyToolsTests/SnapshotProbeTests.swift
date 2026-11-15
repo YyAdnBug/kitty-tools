@@ -1717,6 +1717,20 @@ struct SnapshotProbeTests {
     }
   }
 
+  /// 设置 › 通用最上面（多语言第 0 批，2026-11-15）：功能、语言、外观、强调色。几秒，图以 settings-language 开头：
+  ///   -only-testing:'KittyToolsTests/SnapshotProbeTests/language()'
+  /// 英文图加 -testLanguage en -testRegion US 再跑一遍（多语言的每一批都这样出英文图）
+  @Test(.enabled(if: directory != nil)) func language() throws {
+    let out = try #require(Self.directory)
+    try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
+    Prefs.registerDefaults()
+    for dark in [false, true] {
+      try snapshot(
+        GeneralTab(), size: NSSize(width: 640, height: 420), dark: dark,
+        to: "\(out)/settings-language\(dark ? "-dark" : "").png")
+    }
+  }
+
   /// 主界面（Shell/HomePanel.swift，2026-10-29 拍板）。单独一个测试函数，几秒：
   ///   -only-testing:'KittyToolsTests/SnapshotProbeTests/home()'
   /// 面板的大小取模型算出来的（和真面板一样）。出：全开浅 / 深色（键盘选中「截图」、鼠标停在「启动器」上；插件收在最后

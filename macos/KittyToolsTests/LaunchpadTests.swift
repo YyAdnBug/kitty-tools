@@ -76,11 +76,11 @@ struct LaunchpadTests {
       case .folder(let folder): "folder:" + folder.name
       }
     }
-    // 系统 App 按显示名（本地化顺序）：Safari、活动监视器 → 两个 App 一页（容量 4 放得下）
-    // 再「其他」文件夹（终端、磁盘工具），最后别的（Alfred、Zoom）
+    // 系统 App 按显示名（本地化顺序；单测宿主固定简体中文，中文的排法汉字在拉丁字母前）：活动监视器、Safari →
+    // 两个 App 一页（容量 4 放得下），再「其他」文件夹（终端、磁盘工具），最后别的（Alfred、Zoom）
     #expect(names.count == 5)
-    #expect(names[0] == "com.example.safari")
-    #expect(names[1] == "com.example.活动监视器")
+    #expect(names[0] == "com.example.活动监视器")
+    #expect(names[1] == "com.example.safari")
     #expect(names[2] == "folder:其他")
     #expect(names[3] == "com.example.alfred")
     #expect(names[4] == "com.example.zoom")

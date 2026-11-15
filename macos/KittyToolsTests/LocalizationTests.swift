@@ -1,0 +1,174 @@
+// 多语言（PLAN §10「多语言」，做法和术语表在 macos/TRANSLATION.md）：读源码里的 String Catalog（同 FinderLinkTests 读扩展源码），
+// 查已经有英文的每一条：状态是 translated、占位符和中文一样、英文里没有汉字、核心术语照术语表；目录里没有 stale 的条目。
+// 「每条中文都有英文」（requiresEnglish）第 9 批收尾时打开，之前每批只保证自己那一族。
+// Info.plist 的权限说明：每条都有英文，中文和 Config/Info.plist 一字不差。界面语言（InterfaceLanguage）的纯函数也在这里。
+
+import Foundation
+import Testing
+
+@testable import KittyTools
+
+struct LocalizationTests {
+  /// 第 9 批收尾时改成 true：目录里每条中文都要有英文，不是中文的要么有英文、要么标了不翻
+  static let requiresEnglish = false
+
+  private static let macos = URL(filePath: #filePath).deletingLastPathComponent()
+    .deletingLastPathComponent()
+
+  private static func catalog(_ path: String) throws -> [String: [String: Any]] {
+    let data = try Data(contentsOf: macos.appending(path: path))
+    let json = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+    #expect(json["sourceLanguage"] as? String == "zh-Hans")
+    return try #require(json["strings"] as? [String: [String: Any]])
+  }
+
+  /// 术语表里不会被别的说法替代的那些（TRANSLATION.md「术语表」，改那边要一起改）：中文里有左边，英文里就得有右边
+  static let glossary = [
+    ("刘海岛", "notch"), ("剪贴板", "clipboard"), ("启动器", "launcher"), ("启动台", "launchpad"),
+    ("便签", "note"), ("状态屏", "status screen"), ("程序坞预览", "dock preview"),
+    ("访达右键", "finder menu"), ("晾衣绳", "clothesline"), ("插件", "plugin"), ("片段", "snippet"),
+    ("收藏夹", "collection"), ("生词本", "word list"), ("截图历史", "screenshot history"),
+    ("长截图", "scrolling capture"), ("复制即译", "translate on copy"), ("最近删除", "recently deleted"),
+    ("主界面", "home"),
+  ]
+
+  private static let han = /[\u{3400}-\u{9FFF}]/
+
+  /// 一条字里的占位符，按位置排好（%@、%lld、%1$@ 这些；%% 不算）
+  static func placeholders(_ text: String) -> [String] {
+    var next = 0
+    var found: [(Int, String)] = []
+    for match in text.matches(of: /%(?:(\d+)\$)?([-+ #0]*\d*(?:\.\d+)?(?:ll|l|h)?[@dDuUxXoOfeEgGcCsSpaA])/) {
+      next += 1
+      let position = match.1.flatMap { Int($0) } ?? next
+      let spec = String(match.2).replacing(/^[-+ #0]*\d*(?:\.\d+)?/, with: "")
+      found.append((position, spec))
+    }
+    return found.sorted { $0.0 < $1.0 }.map(\.1)
+  }
+
+  /// 一种语言下所有的字（单复数、设备这些变体里的都算）
+  typealias Value = (text: String, state: String?, variant: String)
+
+  static func values(_ localization: Any?) -> [Value] {
+    guard let localization = localization as? [String: Any] else { return [] }
+    var result: [Value] = []
+    if let unit = localization["stringUnit"] as? [String: Any], let value = unit["value"] as? String {
+      result.append((text: value, state: unit["state"] as? String, variant: ""))
+    }
+    for (_, kinds) in localization["variations"] as? [String: [String: Any]] ?? [:] {
+      for (name, nested) in kinds {
+        result += values(nested).map { (text: $0.text, state: $0.state, variant: name) }
+      }
+    }
+    return result
+  }
+
+  @Test func englishMatchesChinese() throws {
+    var problems: [String] = []
+    for (key, entry) in try Self.catalog("KittyTools/Resources/Localizable.xcstrings") {
+      if entry["extractionState"] as? String == "stale" {
+        problems.append("代码里已经不用了（stale），从目录里删掉：\(key)")
+      }
+      let localizations = entry["localizations"] as? [String: Any] ?? [:]
+      let source = Self.values(localizations["zh-Hans"]).first?.text ?? key
+      let english = Self.values(localizations["en"])
+      let needsEnglish = source.contains(Self.han) || entry["shouldTranslate"] as? Bool != false
+      if english.isEmpty {
+        if Self.requiresEnglish, needsEnglish, !key.isEmpty { problems.append("没有英文：\(key)") }
+        continue
+      }
+      // 带 substitutions 的（一句里两处单复数）占位符换成了 %#@名字@，只查汉字
+      let checksPlaceholders = (localizations["en"] as? [String: Any])?["substitutions"] == nil
+      let expected = Self.placeholders(source)
+      for value in english {
+        if value.state != "translated" { problems.append("英文不是 translated：\(key)") }
+        if value.text.contains(Self.han) { problems.append("英文里有汉字：\(key) → \(value.text)") }
+        guard checksPlaceholders else { continue }
+        let got = Self.placeholders(value.text)
+        // 复数的 one / zero 可以不写数字（「1 小时」写成 an hour），其余必须一样
+        let optional = value.variant == "one" || value.variant == "zero"
+        if got != expected, !(optional && Set(got).isSubset(of: Set(expected))) {
+          problems.append("占位符对不上：\(key) → \(value.text)")
+        }
+      }
+      let lowered = english.map { $0.text.lowercased() }
+      for (chinese, term) in Self.glossary where source.contains(chinese) {
+        if !lowered.allSatisfy({ $0.contains(term) }) {
+          problems.append("术语：「\(chinese)」要译成 \(term)：\(key)")
+        }
+      }
+    }
+    #expect(problems.isEmpty, "\(problems.sorted().joined(separator: "\n"))")
+  }
+
+  @Test func usageDescriptionsAreTranslated() throws {
+    let plist = try #require(
+      NSDictionary(contentsOf: Self.macos.appending(path: "Config/Info.plist")) as? [String: Any])
+    let strings = try Self.catalog("KittyTools/Resources/InfoPlist.xcstrings")
+    let keys = plist.keys.filter { $0.hasSuffix("UsageDescription") }
+    #expect(keys.count >= 7)
+    for key in keys {
+      let localizations = strings[key]?["localizations"] as? [String: Any]
+      #expect(Self.values(localizations?["zh-Hans"]).first?.text == plist[key] as? String, "\(key)")
+      let english = Self.values(localizations?["en"]).first
+      #expect(english?.state == "translated" && english?.text.contains(Self.han) == false, "\(key)")
+    }
+  }
+
+  @Test func placeholderParsing() {
+    #expect(Self.placeholders("版本 %@（%@）") == ["@", "@"])
+    #expect(Self.placeholders("Next: %2$@ (%1$lld)") == ["lld", "@"])
+    #expect(Self.placeholders("%lld%% 已完成，%.1f MB") == ["lld", "f"])
+  }
+
+  // MARK: 界面语言
+
+  @Test func storedChoice() {
+    #expect(InterfaceLanguage.choice(in: [:]) == .system)
+    #expect(InterfaceLanguage.choice(in: [Prefs.appleLanguages: ["en"]]) == .english)
+    #expect(InterfaceLanguage.choice(in: [Prefs.appleLanguages: ["zh-Hans-CN"]]) == .chinese)
+    #expect(InterfaceLanguage.choice(in: [Prefs.appleLanguages: ["zh-Hant"]]) == .chinese)
+  }
+
+  @Test func resolvesLikeTheSystem() {
+    let ours = ["zh-Hans", "en", "zh-Hant"]
+    func resolve(_ system: [String]) -> InterfaceLanguage {
+      InterfaceLanguage.resolved(.system, system: system, localizations: ours)
+    }
+    #expect(resolve(["en-CN", "zh-Hans-CN"]) == .english)
+    #expect(resolve(["zh-Hans-CN", "en-CN"]) == .chinese)
+    #expect(resolve(["zh-Hant-TW"]) == .chinese)
+    #expect(resolve(["de-DE"]) == .english)
+    #expect(resolve(["fr-FR", "zh-Hans-CN"]) == .chinese)
+    #expect(InterfaceLanguage.resolved(.english, system: ["zh-Hans"], localizations: ours) == .english)
+  }
+
+  @Test func upgradeKeepsChineseOnce() throws {
+    let english = ["en-CN", "zh-Hans-CN"]
+    let ours = ["zh-Hans", "en", "zh-Hant"]
+    func run(_ stored: [String: Any], system: [String]) throws -> (kept: Bool, after: [String: Any]) {
+      let name = "kitty-tests.language.\(UUID().uuidString)"
+      let defaults = try #require(UserDefaults(suiteName: name))
+      defer { defaults.removePersistentDomain(forName: name) }
+      defaults.setPersistentDomain(stored, forName: name)
+      let kept = InterfaceLanguage.keepChineseOnUpgrade(
+        defaults, domainName: name, system: system, localizations: ours)
+      return (kept, defaults.persistentDomain(forName: name) ?? [:])
+    }
+    // 从 0.9.x 升上来、系统英文在前：定成中文
+    let upgrade = try run([Prefs.lastSeenVersion: "0.9.0"], system: english)
+    #expect(upgrade.kept)
+    #expect(upgrade.after[Prefs.appleLanguages] as? [String] == ["zh-Hans"])
+    #expect(upgrade.after[Prefs.languageIntroduced] as? Bool == true)
+    // 只做一次：之后改回跟随系统不会再被定成中文
+    #expect(try !run([Prefs.lastSeenVersion: "0.9.0", Prefs.languageIntroduced: true], system: english).kept)
+    // 新装跟系统
+    let fresh = try run([:], system: english)
+    #expect(!fresh.kept && fresh.after[Prefs.appleLanguages] == nil)
+    // 系统中文在前、或者自己选过语言：不动
+    #expect(try !run([Prefs.lastSeenVersion: "0.9.0"], system: ["zh-Hans-CN"]).kept)
+    let chose = try run([Prefs.lastSeenVersion: "0.9.0", Prefs.appleLanguages: ["en"]], system: english)
+    #expect(!chose.kept && chose.after[Prefs.appleLanguages] as? [String] == ["en"])
+  }
+}

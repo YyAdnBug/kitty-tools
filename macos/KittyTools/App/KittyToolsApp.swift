@@ -28,6 +28,11 @@ enum Main {
       // 就跟着到了被打开的 App：JetBrains 的 IDE 见 SHLVL > 0 当成从终端起的，不读登录 shell 的环境（PATH 里
       // 没有 /opt/homebrew/bin）。启动时去掉 shell 留下的这几个，打开的 App 和从访达打开的一样
       for key in ["SHLVL", "PWD", "OLDPWD", "_"] { unsetenv(key) }
+      // 升级上来的保持中文（拍板 D2b）：要在第一次取字之前做，当次启动就生效。单测宿主不碰（不写用户的偏好）
+      if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil {
+        InterfaceLanguage.keptChinese = InterfaceLanguage.keepChineseOnUpgrade()
+      }
+      InterfaceLanguage.storedAtLaunch = InterfaceLanguage.stored
       // macOS 26 默认程序坞图标常驻：进 SwiftUI 之前就设成 .regular（见 NSApplication.keepsDockIcon）
       if NSApplication.keepsDockIcon { NSApplication.shared.setActivationPolicy(.regular) }
       KittyToolsApp.main()

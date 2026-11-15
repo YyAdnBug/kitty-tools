@@ -960,8 +960,8 @@ struct SubprocessStopTests {
     var bundled = ScriptCommand(path: "/b/script-time.sh", title: "时间戳", interpreter: ["/bin/sh"])
     bundled.isBundled = true
     let rows = LauncherCommandsSection.rows(scripts: [mine, bundled, other])
-    // 我的脚本 → 自带脚本 → 关键词命令 → 系统命令；组里按名字
-    #expect(rows.prefix(3).map(\.title) == ["Alpha", "测试", "时间戳"])
+    // 我的脚本 → 自带脚本 → 关键词命令 → 系统命令；组里按名字（本地化顺序：单测宿主固定简体中文，中文的排法汉字在拉丁字母前）
+    #expect(rows.prefix(3).map(\.title) == ["测试", "Alpha", "时间戳"])
     let groups = rows.map(\.group)
     #expect(
       groups
@@ -972,7 +972,7 @@ struct SubprocessStopTests {
     let settings = LauncherCommands.Settings(off: [LauncherCommands.scriptID(mine), "system:lock"])
     #expect(
       LauncherCommandsSection.filter(rows, by: "", scope: .mine, settings: settings).map(\.title)
-        == ["Alpha", "测试"])
+        == ["测试", "Alpha"])
     #expect(
       LauncherCommandsSection.filter(rows, by: "", scope: .mine, onlyOn: true, settings: settings)
         .map(\.title) == ["Alpha"])

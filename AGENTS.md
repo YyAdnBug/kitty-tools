@@ -33,6 +33,7 @@
 - Swift 6.2，Swift 6 语言模式，默认 `MainActor` 隔离 + approachable concurrency。
 - SwiftUI（`MenuBarExtra`、`Form`、`@Observable`）+ AppKit（`NSPanel` 浮层、设置窗）。
 - 系统 libsqlite3、钥匙串、Carbon 热键、AX、Vision、NaturalLanguage 等 Apple 框架，完整清单见 PLAN §2。
+- 界面文字：String Catalog（`Resources/Localizable.xcstrings`，开发语言 zh-Hans、中文原文当 key），先支持英文（2026-11-15 立项，分支 `i18n-wip`，随 0.10.0；做法和术语表 `macos/TRANSLATION.md`）。
 - 第三方依赖：运行时 0 个，开发期 0 个。
 - Xcode 26.3 工程，构建设置全在 xcconfig；`hdiutil` 打 DMG；Apple Development 签名（Team `HTX9F4KG39`），不公证。
 
@@ -47,6 +48,8 @@ macos/                       # 本分支唯一开发区
 ├── KittyToolsTests/         # 纯函数单测（Swift Testing），M2 起建
 ├── Config/                  # Base/Debug/Release.xcconfig、Info.plist（局部）、Secrets.xcconfig（不入库）
 ├── build-dmg.sh             # 打包：archive → 自检 → DMG + App 内更新用的 zip → notes
+├── sync-strings.sh          # 构建一遍、把代码里能本地化的字面量并进 String Catalog（xcstringstool sync）
+├── TRANSLATION.md           # 多语言：代码怎么写、每批的流程、英文口径、术语表、不翻的清单
 ├── status-emoji.swift       # 状态屏的动画表情：下载好的动画 PNG → Resources/status-emoji-*.heics（只用 ImageIO）
 ├── emoji-pack.swift         # 动画表情包：Fluent 动画全部 746 个 → 上传到 release emoji-pack-<版本> 的 HEICS + Resources/emoji-pack.json 对照表（中文名用 CLDR）+ Resources/emoji-thumbs/ 缩略图
 ├── brand-icons.swift        # 品牌图标：角色「探头」的 AppIcon 10 张 + 菜单栏剪影 StatusIcon + DMG 背景（CoreGraphics 生成）
@@ -77,6 +80,12 @@ xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools test
 # 见 RecordingProbeTests.swift 文件头；文件头没写的 formatTake(_:)（清晰度 / 编码各录约 2 s、再各压缩一遍，第二轮体检第 5 批）不用 _MIC
 TEST_RUNNER_KITTY_LIVE_RECORD_DIR=/tmp/kitty-record xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
   test -only-testing:KittyToolsTests/RecordingProbeTests
+
+# 多语言：把新写的界面文字并进 String Catalog（构建一遍再 xcstringstool sync；Xcode 打开工程时自己做）。填完英文再跑一次收拾格式
+macos/sync-strings.sh macos/build/dd-strings
+# 英文界面的截图自检：任意截图自检函数加 -testLanguage en -testRegion US（单测宿主平时固定简体中文）
+TEST_RUNNER_KITTY_SNAPSHOT_DIR=/tmp/kitty-shots-en xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
+  test -testLanguage en -testRegion US -only-testing:'KittyToolsTests/SnapshotProbeTests/home()'
 
 # 核对关键构建设置（期望 6.0 / 15.0 / NO / MainActor）
 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools -configuration Release -showBuildSettings \
@@ -245,11 +254,12 @@ defaults delete com.yy.kitty-tools.native.dev folderAccessRequested
 ## 开发约定
 
 - 用中文回答用户；文档写中文，代码注释可以写中文。
+- **多语言**：界面文字照样写中文，但要用能本地化的写法、英文同一个提交补上；存下来要读回来比对的字不翻。动手前读 `macos/TRANSLATION.md`，红线在 mac-native §2「多语言」。
 - 每个入口文件头部写注释说明用途。
 - 禁止新增任何第三方依赖（SPM 包、构建 / 格式化工具都算）。
 - 刻意的简化写 `ponytail:` 注释，写明上限和升级路径。
 - commit 格式 `<type>: <description>`，type 取 feat / fix / ui / refactor / docs / perf / build / chore。**标题一行、70 字以内，空一行再写正文**：为什么改、改了什么、怎么验的都写进正文（会话开头会自动带上最近几条提交的标题，写长了每个会话都白读一遍）。旧提交不改。
-- **更新日志（必遵）**：改 `MARKETING_VERSION` 必须在 `macos/KittyTools/Resources/changelog.json` 追加该版本条目，`type` 只允许 feat / fix / perf / ui（refactor / build / chore 不进用户日志）；缺条目时 `build-dmg.sh` 直接中止。
+- **更新日志（必遵）**：改 `MARKETING_VERSION` 必须在 `macos/KittyTools/Resources/changelog.json` 追加该版本条目，`type` 只允许 feat / fix / perf / ui（refactor / build / chore 不进用户日志）；缺条目时 `build-dmg.sh` 直接中止。0.10.0 起中英两份（`summaryEn`、`textEn`，mac-native §7）。
 - 发布：本仓库 github.com/YyAdnBug/kitty-tools（不碰 Tauri 版的仓库），tag `macos-v*`，正式 release、标 latest，附 DMG、`_arm64.zip` 和更新清单 `macos-update.json`（App 内更新先读 latest 上的清单、读不到再走 API，mac-native §7）；不公证，发布说明固定附「系统设置 › 隐私与安全 › 仍要打开」步骤（只有第一次安装要，之后 App 内更新）。
 
 ## 给 agent 的工具

@@ -1,5 +1,6 @@
 // 设置 › 通用：功能（各功能一个开关，最上面一组，2026-10-21；关掉的功能入口全藏、后台不干活，Shell/Feature.swift。2026-11-07 用户嫌
 // 占了整页，收成一行「功能 ›」写开着几个、关着哪几个，开关推进 FeaturesPage；页头画在自己的 NavigationStack 里，推进时一起换掉）、
+// 语言（跟随系统 / 简体中文 / English，重新打开后生效；Shell/InterfaceLanguage.swift，2026-11-15 多语言第 0 批）、
 // 外观（跟随系统 / 浅色 / 深色三张缩略图）与强调色（跟随系统 + 系统设置那一排 8 色，都是改了立刻生效）、
 // 动效：呼出面板时挤压弹开（剪贴板 / 启动器 / 翻译浮窗共用，2026-09-29 从启动器页挪来；2026-10-03 用户定转正：去掉「实验」、
 // 单独成组，默认仍关）、
@@ -22,6 +23,9 @@ struct GeneralTab: View {
   @AppStorage(Prefs.dockIconOnTahoe) private var dockIconOnTahoe = true
   @AppStorage(Prefs.statusItemStyle) private var statusItemStyle = StatusItem.IconStyle.template
   @AppStorage(Prefs.panelSqueezeEntrance) private var squeezeEntrance = false
+  /// 界面语言（InterfaceLanguage：本 App 自己偏好域里的 AppleLanguages，不注册默认值，@AppStorage 读不到「没存过」）
+  @State private var language = InterfaceLanguage.stored
+  @State private var languageNeedsRelaunch = InterfaceLanguage.needsRelaunch
   @State private var trusted = Permissions.isAccessibilityTrusted
   @State private var screenRecording = Permissions.isScreenRecordingAllowed
   @State private var microphone = Permissions.microphoneStatus
@@ -58,6 +62,40 @@ struct GeneralTab: View {
     }
   }
 
+  /// 显式 key：翻译页也有一组「语言」（英文是复数）
+  private static let languageLabel = LocalizedStringResource("general.language", defaultValue: "语言")
+
+  /// 语言（拍板 D2）：跟随系统 / 简体中文 / English，写本 App 自己的 AppleLanguages，重新打开后生效
+  private var languageRow: some View {
+    LabeledContent {
+      HStack(spacing: 10) {
+        if languageNeedsRelaunch {
+          Button("现在重新打开") {
+            // 起不了「等退出后重新打开」的那个 sh 就不退：用户自己退出再打开也一样
+            if (try? Updater.relaunch(Bundle.main.bundleURL)) != nil { NSApp.terminate(nil) }
+          }
+        }
+        Picker(selection: $language) {
+          ForEach(InterfaceLanguage.allCases) { Text($0.title).tag($0) }
+        } label: {
+          Text(Self.languageLabel)
+        }
+        .labelsHidden()
+        .fixedSize()
+      }
+    } label: {
+      Text(Self.languageLabel)
+      Text(
+        languageNeedsRelaunch
+          ? "重新打开 Kitty Tools 后换成新的语言"
+          : "也可以在 系统设置 › 通用 › 语言与地区 › 应用程序 里选")
+    }
+    .onChange(of: language) {
+      InterfaceLanguage.store(language)
+      languageNeedsRelaunch = InterfaceLanguage.needsRelaunch
+    }
+  }
+
   private var form: some View {
     Form {
       Section {
@@ -73,6 +111,7 @@ struct GeneralTab: View {
         }
       }
       Section {
+        languageRow
         LabeledContent("外观") { AppearancePicker(selection: $appearance) }
           .onChange(of: appearance) { AppAppearance.apply() }
         LabeledContent {
