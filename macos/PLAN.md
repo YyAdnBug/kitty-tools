@@ -1661,6 +1661,17 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
   （`ScreenCapture.hoverWindows`、`ElementFinder.dockBar`；第一次读程序坞 42 ms、之后 0.6 ms）；③ 一层的下限 24 → 20 点
   （菜单栏图标高 22）。评审后又改：缓存按进程分开、钻过的只在指针还在最里面那块时用（不然同一个大容器里换一行还给旧的）、往下钻的超时封在一半里、主菜单层级只认 WindowServer 的那一条、菜单栏看不见时不收。没做：AX 挪出主线程（现在有总时限和命中缓存，够用）、第三方菜单栏图标（要挨个问所有 App，第一次几百毫秒）、
   核对 AXWindow、窗口边上 = 整扇窗口、替 Chromium / Electron 临时打开辅助功能（拍板 B2；macshot 是开、结束时只撤自己开的那次）。
+- 第三轮（2026-11-15，用户：「希望更精细一点，现在还是有很多识别不到」；拍板页 https://claude.ai/artifact/Nxzsp9Nssftomsw8FVjn96 （标题叫「第二轮」），
+  8 项「全部按推荐」；探针、原始数据、别家调研在工作树 element-detect-v2-f18765 的 `macos/build/research/element-detect-v2/`）：
+  用只读探针（和产品的 `ElementFinder.swift` 一起编译）在 8 个 App 上每 30–40 点问一次，拿整棵树对照归因。认不到的大多是我们没去拿：
+  ① 从不读 App 对象本身，Chromium / Electron 一直不打开无障碍（读一次 App 的 AXRole、不设任何属性，约 0.3 s 后 Obsidian 认出的点 0% → 95%；
+  本机有别的程序给不少 App 设了 AXEnhancedUserInterface，所以本机的 Chrome / VS Code 本来就能认）；② 下限 20 点筛掉文件名框（18）、链接（19）、
+  开关（16）（访达 32% 的点）；③ 缓存只看指针在不在钻到的那块里，没看进没进它的子元素（系统设置 5% 的点停在大一层）；④ macOS 26 起内容铺到
+  玻璃工具栏底下，指针在工具栏按钮上时访达的命中测试给的是底下被盖住的那一行（4–15% 的点）。往下钻读更多个、钻更久、先读 AXVisibleRows 都
+  不改变结果；Safari 网页被盖住 62 秒后照样答（遮罩不会让它不答）；Xcode 编辑区空着、终端内容区一整块是对的。图像兜底试了多尺度 XY 切分：
+  一扇窗口 12–25 ms，网页这类有留白的版面切得像样，原生 App 里和 AX 的块对得上的 13–30%（侧栏列表、淡底色卡片、整行切不开），别家也都不拿
+  图像做悬停识别，C1 先不做。做了：A1 下限 16 点、A2 缓存看子元素和工具栏、A3 工具栏优先（第 1 批）；B1 叫醒网页（第 2 批）。
+  不做：B2 设 AXManualAccessibility / AXEnhancedUserInterface、C1 图像兜底、D1 修饰键只认最小那层、D2 挪出主线程（改完 p95 2–14 ms）。
 
 **启动器 / 启动台按使用习惯排 App（2026-11-10）**（论坛反馈：「唤出启动台之后输入 s 然后回车，结果启动了 Safari」，想要
 Shadowrocket；用户看了建议回「按推荐改」；调研笔记和探针在主检出 `macos/build/research/launcher-app-ranking-2026-11-09/`）

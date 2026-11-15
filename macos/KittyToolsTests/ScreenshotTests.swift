@@ -146,6 +146,56 @@ struct ScreenshotTests {
     #expect(ElementFinder.layers([], at: point, in: window).isEmpty)
   }
 
+  // 第三轮（2026-11-15）：短边到 16 点、长边到 20 点才算一层——文件名框（122×18）、开关（36×16）算，16×16 的图标、
+  // 再窄的不算
+  @Test func elementLayersKeepSixteenPointControls() {
+    typealias Layer = ElementFinder.Layer
+    let window = CGRect(x: 0, y: 0, width: 800, height: 600)
+    let point = CGPoint(x: 100, y: 400)
+    let chain = [
+      Layer(frame: CGRect(x: 95, y: 392, width: 15, height: 15), name: "小图"),
+      Layer(frame: CGRect(x: 92, y: 392, width: 16, height: 16), name: "图标"),
+      Layer(frame: CGRect(x: 85, y: 392, width: 36, height: 16), name: "开关"),
+      Layer(frame: CGRect(x: 60, y: 391, width: 122, height: 18), name: "文本框"),
+      Layer(frame: CGRect(x: 20, y: 390, width: 347, height: 20), name: "单元格"),
+    ]
+    #expect(
+      ElementFinder.layers(chain, at: point, in: window).map(\.name) == ["开关", "文本框", "单元格"])
+  }
+
+  // 第三轮：缓存什么时候还能用——指针还在钻到的那块里、没进它的子元素、没进工具栏（children）
+  @Test func elementCacheEntryHolds() {
+    let hit = AXUIElementCreateApplication(getpid())
+    let row = CGRect(x: 0, y: 0, width: 100, height: 100)
+    let text = CGRect(x: 10, y: 10, width: 20, height: 20)
+    let drilled = ElementFinder.Cache.Entry(
+      hit: hit, answer: .chain([]), within: row, children: [text])
+    #expect(drilled.holds(CGPoint(x: 50, y: 50)))
+    // 进了里面那行字：要钻得更深
+    #expect(!drilled.holds(CGPoint(x: 15, y: 15)))
+    // 出了钻到的那块
+    #expect(!drilled.holds(CGPoint(x: 150, y: 50)))
+    // 没钻下去（命中的元素自己）：只看子元素；工具栏（内容铺在它底下，命中测试还给同一个元素）同样记在 children
+    let toolbar = CGRect(x: 0, y: 500, width: 800, height: 52)
+    let flat = ElementFinder.Cache.Entry(
+      hit: hit, answer: .chain([]), within: nil, children: [text, toolbar])
+    #expect(flat.holds(CGPoint(x: 50, y: 50)))
+    #expect(!flat.holds(CGPoint(x: 15, y: 15)))
+    #expect(!flat.holds(CGPoint(x: 100, y: 520)))
+  }
+
+  // 第三轮：指针在工具栏那一条里，命中的是铺在玻璃工具栏底下的内容（伸出工具栏的滚动区、侧栏）或窗口本身时换成工具栏；
+  // 整个在那一条里的（窗口标题那行字）不换
+  @Test func elementToolbarUnderneath() {
+    let toolbar = CGRect(x: 0, y: 548, width: 800, height: 52)
+    #expect(ElementFinder.underneath(CGRect(x: 0, y: 0, width: 763, height: 590), toolbar))
+    #expect(ElementFinder.underneath(nil, toolbar))
+    #expect(ElementFinder.underneath(.null, toolbar))
+    #expect(!ElementFinder.underneath(CGRect(x: 300, y: 548, width: 411, height: 52), toolbar))
+    // 差不到 4 点的不算伸出
+    #expect(!ElementFinder.underneath(CGRect(x: 0, y: 546, width: 802, height: 56), toolbar))
+  }
+
   @Test func elementLayerPositionAndScrollSteps() {
     let frames = [
       CGRect(x: 10, y: 10, width: 50, height: 30), CGRect(x: 0, y: 0, width: 200, height: 100),
