@@ -37,6 +37,7 @@ import SwiftUI
   }
 
   struct Content: Equatable {
+    /// 显示的字：换上来时就按当前语言取好（最近的提示里存的也是它）
     var title: String
     var detail: String?
     var tone: Tone
@@ -44,10 +45,28 @@ import SwiftUI
     var leading: Leading
     /// 进行中、且知道做到哪了（0…1：更新包下载、转 GIF、压缩）：标题后面多一条细进度条。nil = 不画
     var fraction: Double?
+    /// 认这一条用的（多语言，2026-11-15）：进度、收起、缩进耳朵的编号按它找这一条（progress、dismiss(ifShowing:)），
+    /// 不拿显示出来的字比——两句不同的中文可能译成同一句英文。key + 插进去的值都算
+    var source: LocalizedStringResource
+
+    /// 标题、说明是能本地化的字（调用处的字面量会被抽进目录）；用户的数据（歌名、文件名）传 "\(x)"
+    init(
+      title: LocalizedStringResource, detail: LocalizedStringResource? = nil, tone: Tone,
+      symbol: String, leading: Leading, fraction: Double? = nil
+    ) {
+      self.title = String(localized: title)
+      self.detail = detail.map { String(localized: $0) }
+      self.tone = tone
+      self.symbol = symbol
+      self.leading = leading
+      self.fraction = fraction
+      source = title
+    }
   }
 
   /// 岛上的一个按钮。第一个是最主要的：平时露在行尾，展开后在 × 左边（拍板 B2）
   struct Action {
+    /// 显示的字（建的时候按当前语言取好）
     let title: String
     /// 打开类（在访达中显示、打开系统设置里那一项、跳到设置的某一页）：点岛本身也执行它（拍板 B3）。
     /// 撤销、取消、重试、继续这类是 false，只能点按钮
@@ -57,9 +76,10 @@ import SwiftUI
     let run: () -> Void
 
     init(
-      _ title: String, opens: Bool = false, symbol: String? = nil, run: @escaping () -> Void
+      _ title: LocalizedStringResource, opens: Bool = false, symbol: String? = nil,
+      run: @escaping () -> Void
     ) {
-      self.title = title
+      self.title = String(localized: title)
       self.opens = opens
       self.symbol = symbol
       self.run = run
@@ -325,8 +345,10 @@ import SwiftUI
   /// 指针停在刘海上时岛比刘海宽出、长出多少（每侧 8、往下 5）；停在这一圈里也算停在刘海上
   static let peekGrow = CGSize(width: 8, height: 5)
 
+  /// 标题、说明是能本地化的字：调用处写中文字面量就会被抽进目录；用户的数据（文件名、App 名、出错的原文）传 "\(x)"
   func show(
-    _ title: String, detail: String? = nil, tone: Tone = .success, symbol: String? = nil,
+    _ title: LocalizedStringResource, detail: LocalizedStringResource? = nil,
+    tone: Tone = .success, symbol: String? = nil,
     leading: Leading = .tone, fraction: Double? = nil, actions: [Action] = []
   ) {
     let next = Content(
@@ -406,11 +428,11 @@ import SwiftUI
       open(with: next, settle: settle, seats: level != nil)
     }
     if next.tone == .error, !quiet { shakes += 1 }
-    if next.tone == .progress { collapseLater(next.title) }
+    if next.tone == .progress { collapseLater(next.source) }
     if !quiet { onToneChange?(next.tone) }
     // VoiceOver 不会去读不当 key 的岛：主动播报（一瞥不报：一首歌念一遍太吵）
     if announces {
-      Self.announce([next.title, next.detail].compactMap { $0 }.joined(separator: "，"))
+      Self.post([next.title, next.detail].compactMap { $0 }.joined(separator: Self.comma))
     }
     // 挂着的那条不到点收起（按钮、×、上滑才收）
     if let pinned, next == pinned.content {
@@ -454,8 +476,12 @@ import SwiftUI
   }
 
   /// 进行中的岛改详情（更新包下载、转 GIF、压缩的百分比；fraction 是同一个进度，细进度条跟着走）：内容不重新出场、不播报
-  /// （一秒几次，旁白会被刷屏），停留重新计时——事情还在做就一直挂着。岛上已经不是这一条（标题对不上、被别的岛换掉了）就不动
-  func progress(_ title: String, detail: String, fraction: Double? = nil) {
+  /// （一秒几次，旁白会被刷屏），停留重新计时——事情还在做就一直挂着。岛上已经不是这一条（标题对不上、被别的岛换掉了）就不动。
+  /// title 和 show 时给的同一个（按 Content.source 认，不比显示的字）
+  func progress(
+    _ title: LocalizedStringResource, detail: LocalizedStringResource, fraction: Double? = nil
+  ) {
+    let detail = String(localized: detail)
     // 已经缩进耳朵的：改活动（卡片展开着就原地换），兜底的 60 s 重新计时
     if var activity = activities.first(where: { $0.id == Self.progressID(title) }) {
       activity.detail = detail
@@ -465,13 +491,13 @@ import SwiftUI
       return
     }
     // 排着还没换上的那条：改它，换上来时就是最新的百分比
-    if var queued = pending, queued.content.title == title, queued.content.tone == .progress {
+    if var queued = pending, queued.content.source == title, queued.content.tone == .progress {
       queued.content.detail = detail
       queued.content.fraction = fraction
       pending = queued
       return
     }
-    guard isOpen, let content, content.title == title, content.tone == .progress,
+    guard isOpen, let content, content.source == title, content.tone == .progress,
       content.detail != detail || content.fraction != fraction
     else { return }
     // 细条刚出现 / 收掉时宽度变一大截，同原地更新的弹簧；平时只是数字在变，不动画
@@ -485,7 +511,8 @@ import SwiftUI
   /// 慢活的「进行中」岛：work 超过 delay 还没做完才出（很快做完的不闪这一下）。做完之后调用方出结果岛就原地换掉它；
   /// 没有结果岛的调用方自己收（dismiss(ifShowing:)）
   func showIfSlow<T>(
-    _ title: String, symbol: String? = nil, after delay: Duration = .milliseconds(300),
+    _ title: LocalizedStringResource, symbol: String? = nil,
+    after delay: Duration = .milliseconds(300),
     _ work: () async -> T
   ) async -> T {
     await Self.whenSlow(
@@ -696,7 +723,8 @@ import SwiftUI
     onClose: @escaping () -> Void
   ) {
     let next = Content(
-      title: title, detail: detail, tone: .info, symbol: symbol, leading: .tone, fraction: nil)
+      title: "\(title)", detail: detail.map { "\($0)" }, tone: .info, symbol: symbol,
+      leading: .tone)
     let wasShowing = isShowingPinned
     let same = pinned?.content == next
     pinned = (next, actions, onClose)
@@ -713,7 +741,7 @@ import SwiftUI
   func nudge() {
     guard isShowingPinned, let content else { return }
     shakes += 1
-    Self.announce([content.title, content.detail].compactMap { $0 }.joined(separator: "，"))
+    Self.post([content.title, content.detail].compactMap { $0 }.joined(separator: Self.comma))
   }
 
   /// 不再挂着（调用方那边处理完了、功能关了）：正显示着就收
@@ -724,11 +752,12 @@ import SwiftUI
     if showing { dismiss() }
   }
 
-  /// 收起标题是 title 的这一条（没有结果岛的进行中提示，调用方做完了自己收）：正显示着就收，排着就丢掉
-  func dismiss(ifShowing title: String) {
+  /// 收起标题是 title 的这一条（没有结果岛的进行中提示，调用方做完了自己收）：正显示着就收，排着就丢掉。
+  /// title 和 show 时给的同一个（按 Content.source 认）
+  func dismiss(ifShowing title: LocalizedStringResource) {
     endActivity(Self.progressID(title))
-    if pending?.content.title == title { pending = nil }
-    if content?.title == title { dismiss() }
+    if pending?.content.source == title { pending = nil }
+    if content?.source == title { dismiss() }
   }
 
   /// 点岛本身：耳朵露着、没别的东西时 = 展开最要紧的那个活动；有打开类的按钮就执行它，没有就什么都不做（点得到时已经展开着）。
@@ -756,7 +785,9 @@ import SwiftUI
       activity?.id == id, isStaged || pointerIsOnNotchScreen, pendingLevel == nil
     else { return }
     apply(
-      Content(title: title, detail: detail, tone: .info, symbol: symbol, leading: leading),
+      Content(
+        title: "\(title)", detail: detail.map { "\($0)" }, tone: .info, symbol: symbol,
+        leading: leading),
       actions: [], quiet: true, announces: false)
     glancing = id
   }
@@ -770,7 +801,7 @@ import SwiftUI
   /// 一瞬的；挂着的提醒收起后会换回来）。不进最近的提示、不播报、菜单栏图标不动
   /// 自己冒出来的那种（耳机连上）：岛上正用着——那一张开着、指针停在带按钮的提示上——时不顶掉它，退回成一条
   /// 普通的提示排着（同 show 的规矩，评审）；别的时候同 showLevel
-  func showNotice(_ next: Level, fallback: String) {
+  func showNotice(_ next: Level, fallback: LocalizedStringResource) {
     let busy = isHovered && content.map { $0.tone != .progress } == true
     if isBoardOpen || busy { return show(fallback, tone: .info, symbol: next.symbol) }
     showLevel(next)
@@ -829,7 +860,7 @@ import SwiftUI
     // 活动的卡片开着就收掉它、不留着「展开着」（形体从卡片缩到这一条不走展开的那条弹簧）：都在 apply 里和内容
     // 一起换
     apply(
-      Content(title: next.title, detail: nil, tone: .info, symbol: next.symbol, leading: .tone),
+      Content(title: "\(next.title)", tone: .info, symbol: next.symbol, leading: .tone),
       actions: [], quiet: true, announces: false, level: next)
     // 这一条上没有能点的东西：不算悬停（指针正在被顶掉的卡片上时也放开），窗口不接鼠标——它盖着刘海两边的菜单栏
     hoverCheck?.cancel()
@@ -970,17 +1001,20 @@ import SwiftUI
   @ObservationIgnored private var collapseTask: Task<Void, Never>?
   @ObservationIgnored private var expiryTask: Task<Void, Never>?
 
-  static func progressID(_ title: String) -> String { "progress:" + title }
+  /// 缩进耳朵的进行中那个活动的编号：key 分开不同的句子（译文可能撞），取出来的字分开同一句插了不同的值
+  static func progressID(_ title: LocalizedStringResource) -> String {
+    "progress:" + title.key + "\u{1F}" + String(localized: title)
+  }
 
   /// 进行中的提示出来了：挂满 3 秒还是它（指针不在上面）就缩进耳朵；指针在上面就等它离开
-  private func collapseLater(_ title: String) {
+  private func collapseLater(_ title: LocalizedStringResource) {
     collapseTask?.cancel()
     guard hasExtras else { return }
     collapseTask = Task { [weak self] in
       try? await Task.sleep(for: Self.progressCollapse)
       while !Task.isCancelled {
         guard let self, let content = self.content, content.tone == .progress,
-          content.title == title
+          content.source == title
         else { return }
         if !self.isHovered, !self.isBoardOpen { return self.collapseProgress(content) }
         try? await Task.sleep(for: .seconds(1))
@@ -994,9 +1028,10 @@ import SwiftUI
     guard hasExtras, canShowWings, self.content == content else { return }
     setActivity(
       Activity(
-        id: Self.progressID(content.title), kind: .progress, title: content.title,
+        id: Self.progressID(content.source), kind: .progress, title: content.title,
         detail: content.detail, symbol: content.symbol,
-        trailing: content.fraction.map { .fraction($0) } ?? .none, actions: actions))
+        trailing: content.fraction.map { .fraction($0) } ?? .none, actions: actions,
+        source: content.source))
     expireProgressLater()
     dismiss()
   }
@@ -1161,8 +1196,11 @@ import SwiftUI
     }
     let heading =
       quickActions.isEmpty && calendarDay != nil && !showsHistory
-      ? "月历" : !showsHistory ? "快捷动作" : quickActions.isEmpty ? "最近的提示" : "最近的提示和快捷动作"
-    guard byKeyboard, let window else { return Self.announce(heading) }
+      ? String(localized: "月历")
+      : !showsHistory
+        ? String(localized: "快捷动作")
+        : quickActions.isEmpty ? String(localized: "最近的提示") : String(localized: "最近的提示和快捷动作")
+    guard byKeyboard, let window else { return Self.post(heading) }
     takeKeyboard(window)
     Self.announce(
       quickActions.isEmpty
@@ -1199,7 +1237,7 @@ import SwiftUI
           count: quickActions.count)
       else { return }
       boardSelection = next
-      Self.announce(quickActions[next].title)
+      Self.post(quickActions[next].title)
     case 36, 76:
       if let index = boardSelection, quickActions.indices.contains(index) {
         perform(quickActions[index], checked: false)
@@ -1647,7 +1685,11 @@ import SwiftUI
 
   /// VoiceOver 主动播报（全 App 同一个入口）：焦点一直在搜索框 / 原文框，或者窗口本来就不接鼠标（岛、钉图、飞行卡片），
   /// 看不到焦点的变化要自己说出来
-  static func announce(_ text: String) {
+  /// 能本地化的字：调用处的字面量会被抽进目录；已经是取好的字（标题、用户的数据）用 post
+  static func announce(_ text: LocalizedStringResource) { post(String(localized: text)) }
+
+  /// 播报一段已经取好的字
+  static func post(_ text: String) {
     NSAccessibility.post(
       element: NSApp as Any, notification: .announcementRequested,
       userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.high.rawValue])
@@ -1659,6 +1701,9 @@ import SwiftUI
   static func hasPlate(_ symbol: String) -> Bool {
     [".circle.fill", ".triangle.fill", ".octagon.fill"].contains { symbol.hasSuffix($0) }
   }
+
+  /// 几段字连成一句时的分隔（播报、读屏的标签）：中文「，」、英文「, 」
+  static var comma: String { String(localized: "list.separator", defaultValue: "，") }
 
   private static func symbol(for tone: Tone) -> String {
     switch tone {

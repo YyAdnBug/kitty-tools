@@ -201,7 +201,7 @@ final class NoteEdge {
       // 刚记下第一条时岛上正说着「已记下」：等它说完，不顶掉
       if island.isOpen { try? await Task.sleep(for: .seconds(2.4)) }
       guard !Task.isCancelled, self?.decks.isEmpty == false else { return }
-      island.show(hint.title, detail: hint.detail, tone: .info, symbol: "note.text")
+      island.show("\(hint.title)", detail: "\(hint.detail)", tone: .info, symbol: "note.text")
     }
   }
 

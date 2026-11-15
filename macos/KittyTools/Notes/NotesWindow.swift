@@ -460,9 +460,9 @@ import SwiftUI
     // 这一串里已经放回 / 永久删了的不算（不然删 A、⌘Z、再删 B 会写成「已删除 2 条」）
     let ids = deletions.add(id).filter { store.note($0)?.deletedAt != nil }
     island?.show(
-      Self.deletedTitle(ids.count), detail: "⌘Z 撤销，或到「最近删除」里放回",
+      "\(Self.deletedTitle(ids.count))", detail: "⌘Z 撤销，或到「最近删除」里放回",
       symbol: "trash.circle.fill",
-      actions: [.init(Self.restoreTitle) { [weak self] in self?.restoreDeleted(ids) }])
+      actions: [.init("\(Self.restoreTitle)") { [weak self] in self?.restoreDeleted(ids) }])
   }
 
   /// 岛上的「放回」（第三轮体检 U2）：这一串里还在「最近删除」里的都放回原处（顺序、归档照旧），选中最后删的那条（同 ⌘Z）
@@ -475,7 +475,7 @@ import SwiftUI
     }
     select(restored: id)
     // 结果就在列表上：只播报（同 ⌘Z）
-    Island.announce(NoteSheetModel.restoredTitle(back.count, first: note))
+    Island.announce("\(NoteSheetModel.restoredTitle(back.count, first: note))")
   }
 
   /// 岛上的「取消归档」（第四轮体检 U6）：这一串里还在归档里的放回原处（不挪到最前：归档没动过顺序），选中最后归档的那条
@@ -487,7 +487,7 @@ import SwiftUI
       return ids.contains(id)
     }
     select(restored: id)
-    Island.announce(Self.unarchivedTitle(back.count, first: note))
+    Island.announce("\(Self.unarchivedTitle(back.count, first: note))")
   }
 
   // MARK: 归档的提示（全部便签窗口、屏幕边缘那叠、浮动便签同一份，第四轮体检 U6）
@@ -572,7 +572,7 @@ import SwiftUI
       case .archived(let id):
         guard Self.unarchive([id], in: store) == [id], let note = store.note(id) else { continue }
         select(restored: id)
-        Island.announce(Self.unarchivedTitle(1, first: note))
+        Island.announce("\(Self.unarchivedTitle(1, first: note))")
       }
       return true
     }
@@ -596,9 +596,9 @@ import SwiftUI
     undoStack.append(.archived(id))
     let ids = archivals.add(id).filter { Self.isArchived($0, in: store) }
     island?.show(
-      Self.archivedTitle(ids.count), detail: "⌘Z 撤销，或到「归档」里找回",
+      "\(Self.archivedTitle(ids.count))", detail: "⌘Z 撤销，或到「归档」里找回",
       symbol: Self.archivedSymbol,
-      actions: [.init(Self.unarchiveTitle) { [weak self] in self?.restoreArchived(ids) }])
+      actions: [.init("\(Self.unarchiveTitle)") { [weak self] in self?.restoreArchived(ids) }])
   }
 
   /// ⌘P：固定 / 取消固定
@@ -657,30 +657,35 @@ import SwiftUI
     let id = note.id
     guard note.deletedAt == nil else {
       return [
-        ActionMenu.Item(title: Self.restoreTitle) { [weak self] in self?.restore(id) },
-        ActionMenu.Item(title: Self.eraseTitle, section: 1, isDestructive: true) { [weak self] in
+        ActionMenu.Item(title: "\(Self.restoreTitle)") { [weak self] in self?.restore(id) },
+        ActionMenu.Item(title: "\(Self.eraseTitle)", section: 1, isDestructive: true) {
+          [weak self] in
           self?.delete(id)
         },
-        ActionMenu.Item(title: Self.emptyTrashTitle, section: 1, isDestructive: true) {
+        ActionMenu.Item(title: "\(Self.emptyTrashTitle)", section: 1, isDestructive: true) {
           [weak self] in self?.isEmptyingTrash = true
         },
       ]
     }
     var items = [
-      ActionMenu.Item(title: Self.pinTitle(note)) { [weak self] in self?.togglePinned(id) },
-      ActionMenu.Item(title: Self.archiveTitle(note)) { [weak self] in self?.toggleArchived(id) },
+      ActionMenu.Item(title: "\(Self.pinTitle(note))") { [weak self] in self?.togglePinned(id) },
+      ActionMenu.Item(title: "\(Self.archiveTitle(note))") { [weak self] in self?.toggleArchived(id)
+      },
       ActionMenu.Item(
-        title: NoteMarkdownFiles.singleExportTitle, symbol: "square.and.arrow.up"
+        title: "\(NoteMarkdownFiles.singleExportTitle)", symbol: "square.and.arrow.up"
       ) { [weak self] in self?.exportMarkdown(id) },
     ]
-    if colors { items.append(ActionMenu.Item(title: Self.colorTitle, submenu: colorItems(note))) }
+    if colors {
+      items.append(ActionMenu.Item(title: "\(Self.colorTitle)", submenu: colorItems(note)))
+    }
     // 归档里的不能浮着
     if !note.isArchived {
       items.append(
-        ActionMenu.Item(title: floatTitle(note)) { [weak self] in self?.toggleFloating(id) })
+        ActionMenu.Item(title: "\(floatTitle(note))") { [weak self] in self?.toggleFloating(id) })
     }
     items.append(
-      ActionMenu.Item(title: Self.deleteTitle, section: 1, isDestructive: true) { [weak self] in
+      ActionMenu.Item(title: "\(Self.deleteTitle)", section: 1, isDestructive: true) {
+        [weak self] in
         self?.delete(id)
       })
     return items
@@ -736,14 +741,15 @@ import SwiftUI
   /// 正文框拦下了会超上限的一次输入
   func overflowed() {
     isOverLimit = true
-    Island.announce(Self.overLimitText)
+    Island.announce("\(Self.overLimitText)")
   }
 
   static let overLimitText = "一条便签最多 1 MB，这次输入没有记进去"
 
   /// 正文里插图被拒 / 存图没成：用刘海岛说一句（标题 + 说明分开，F9）
   func imageProblem(_ title: String, _ detail: String) {
-    island?.show(title, detail: detail, tone: .warning, symbol: "photo.badge.exclamationmark")
+    island?.show(
+      "\(title)", detail: "\(detail)", tone: .warning, symbol: "photo.badge.exclamationmark")
   }
 
   func focusSearch() { searchFocus += 1 }

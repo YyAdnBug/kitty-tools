@@ -773,7 +773,7 @@ import Observation
     status = .waiting(trashing: count)
     if braked != count {
       island?.show(
-        title, detail: detail, tone: .warning,
+        "\(title)", detail: "\(detail)", tone: .warning,
         actions: [.init("继续") { [weak self] in self?.confirmTrashing() }])
     }
     braked = count

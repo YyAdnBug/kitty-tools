@@ -2,8 +2,9 @@
 // 星期几、几号，下面列今天的日程；右边这个月的日期网格，今天圈出来。设置 › 刘海岛「日程」里打开（默认关）。
 // 日期网格是纯算的，不要任何授权；今天的日程只在已经给了「日历」授权时列（NextEvent.agenda，EventKit 只在那个文件里用），
 // 这里从不问授权。点这一块打开「日历」App。
-// 星期、月份的写法定死成中文（「周六」「11月」「日 一 二…」）：界面是中文字面量，不跟系统语言走；一周从星期几开始
-// 跟系统的日历设置（Calendar.firstWeekday）。画在岛的黑底上，颜色用岛的强调色。
+// 星期、月份跟着界面语言（多语言，2026-11-15：calendar 的地区就是 Locale.current）——中文「周六」「11月」「日 一 二…」，
+// 英文「Sat」「Nov」「S M T…」，用系统自己的写法、不手拼；一周从星期几开始跟系统的日历设置（Calendar.firstWeekday）。
+// 画在岛的黑底上，颜色用岛的强调色。
 
 import SwiftUI
 
@@ -53,16 +54,28 @@ nonisolated enum MonthGrid {
     return stride(from: 0, to: days.count, by: 7).map { Array(days[$0..<min($0 + 7, days.count)]) }
   }
 
-  private static let names = ["日", "一", "二", "三", "四", "五", "六"]
-
-  /// 表头那一行：从 calendar.firstWeekday 起的七个字
-  static func header(calendar: Calendar) -> [String] {
-    (0..<7).map { names[(calendar.firstWeekday - 1 + $0) % 7] }
+  /// 星期、月份的写法按界面语言取（Locale.current），一周从哪天起仍按传进来的 calendar
+  private static func symbols(_ calendar: Calendar) -> Calendar {
+    var copy = calendar
+    copy.locale = .current
+    return copy
   }
 
-  /// 「周六」
+  /// 表头那一行：从 calendar.firstWeekday 起的七个字（中文「日 一 二…」、英文一个字母「S M T…」）
+  static func header(calendar: Calendar) -> [String] {
+    let names = symbols(calendar).veryShortStandaloneWeekdaySymbols
+    return (0..<7).map { names[(calendar.firstWeekday - 1 + $0) % 7] }
+  }
+
+  /// 「周六」/「Sat」
   static func weekday(of date: Date, calendar: Calendar) -> String {
-    "周" + names[(calendar.component(.weekday, from: date) - 1) % 7]
+    symbols(calendar).shortStandaloneWeekdaySymbols[
+      (calendar.component(.weekday, from: date) - 1) % 7]
+  }
+
+  /// 「11月」/「Nov」
+  static func month(of date: Date, calendar: Calendar) -> String {
+    symbols(calendar).shortStandaloneMonthSymbols[(calendar.component(.month, from: date) - 1) % 12]
   }
 }
 
@@ -89,7 +102,7 @@ struct IslandCalendar: View {
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
       VStack(alignment: .trailing, spacing: 4) {
-        Text("\(calendar.component(.month, from: date))月")
+        Text(MonthGrid.month(of: date, calendar: calendar))
           .font(.system(size: 11, weight: .bold))
           .foregroundStyle(tint)
         Grid(horizontalSpacing: 0, verticalSpacing: 0) {
@@ -169,13 +182,16 @@ struct IslandCalendar: View {
     }
   }
 
+  /// 读屏：「11月15日星期六，今天没有日程」（日期跟着界面语言，系统的写法）
   private var label: String {
-    let day =
-      "\(calendar.component(.month, from: date))月\(calendar.component(.day, from: date))日，"
-      + MonthGrid.weekday(of: date, calendar: calendar)
+    var style = Date.FormatStyle.dateTime.month(.wide).day().weekday(.wide)
+    style.calendar = calendar
+    style.timeZone = calendar.timeZone
+    let day = date.formatted(style)
     guard let agenda else { return day }
-    if agenda.items.isEmpty { return day + "，今天没有日程" }
-    return day + "，" + agenda.items.map { "\($0.time) \($0.title)" }.joined(separator: "，")
-      + (agenda.more > 0 ? "，还有 \(agenda.more) 个" : "")
+    let comma = Island.comma
+    if agenda.items.isEmpty { return day + comma + String(localized: "今天没有日程") }
+    return day + comma + agenda.items.map { "\($0.time) \($0.title)" }.joined(separator: comma)
+      + (agenda.more > 0 ? comma + String(localized: "还有 \(agenda.more) 个") : "")
   }
 }

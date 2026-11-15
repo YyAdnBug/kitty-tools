@@ -602,14 +602,14 @@ nonisolated enum NoteMarkdownFiles {
         guard let island else { return }
         if let failure = result.failure {
           island.show(
-            "导出没成", detail: failure, tone: .error,
+            "导出没成", detail: "\(failure)", tone: .error,
             symbol: "exclamationmark.triangle.fill")
           return
         }
         if result.missingImages > 0 {
           var detail = "\(result.missingImages) 张图片不在，没导出"
           if result.images > 0 { detail = "\(result.images) 张图片在旁边的 attachments 文件夹 · " + detail }
-          island.show("已导出「\(result.fileName)」", detail: detail, actions: [.reveal(url)])
+          island.show("已导出「\(result.fileName)」", detail: "\(detail)", actions: [.reveal(url)])
           return
         }
         island.show(

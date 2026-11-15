@@ -578,7 +578,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
   /// 主动播报：本 App 不激活，VoiceOver 的焦点多半不在遮罩上，状态切换要自己说出来
   private func announce(_ text: String) {
     announcement = text
-    Island.announce(text)
+    Island.announce("\(text)")
   }
 
   /// 选区（点）在冻结帧上的像素宽高：尺寸胶囊、旁白共用

@@ -149,13 +149,14 @@ import Observation
   /// 正文框拦下了会超上限的一次输入
   func overflowed() {
     isOverLimit = true
-    Island.announce(NotesWindowModel.overLimitText)
+    Island.announce("\(NotesWindowModel.overLimitText)")
   }
 
   /// 正文里插图被拒 / 存图没成：用刘海岛说一句（标题 + 说明分开；那叠、浮动便签、全部便签窗口都用这一条，
   /// 岛从 model 手里已有的来，不靠 SwiftUI 环境注入，F9）
   func imageProblem(_ title: String, _ detail: String) {
-    island?.show(title, detail: detail, tone: .warning, symbol: "photo.badge.exclamationmark")
+    island?.show(
+      "\(title)", detail: "\(detail)", tone: .warning, symbol: "photo.badge.exclamationmark")
   }
 
   /// Esc：操作菜单开着先退它（颜色那一级退回上一级），查找条开着先关它，再按才关——用键盘关的，键盘当场回原来的 App
@@ -206,7 +207,7 @@ import Observation
   func setColor(_ color: Int, of id: String? = nil) {
     guard let note = target(id) else { return }
     store.setColor(color, of: note.id)
-    Island.announce(NotePaper.of(color: color).name)
+    Island.announce("\(NotePaper.of(color: color).name)")
   }
 
   /// ⇧⌘A：归档（要找回到「全部便签」的「归档」里）。归档的是开着的那条就先从界面上拿走。照删除的写法（第四轮体检
@@ -217,15 +218,15 @@ import Observation
     store.setArchived(true, of: note.id)
     let ids = archivals.add(note.id).filter { NotesWindowModel.isArchived($0, in: store) }
     island?.show(
-      NotesWindowModel.archivedTitle(ids.count), detail: "到「全部便签」的「归档」里找回",
+      "\(NotesWindowModel.archivedTitle(ids.count))", detail: "到「全部便签」的「归档」里找回",
       symbol: NotesWindowModel.archivedSymbol,
       actions: [
-        .init(NotesWindowModel.unarchiveTitle) { [store, island] in
+        .init("\(NotesWindowModel.unarchiveTitle)") { [store, island] in
           // 屏幕上看不出放回了（那叠收着、浮动便签不再浮起来）：岛上说一句
           let back = NotesWindowModel.unarchive(ids, in: store)
           guard let first = back.first.flatMap(store.note) else { return }
           island?.show(
-            NotesWindowModel.unarchivedTitle(back.count, first: first),
+            "\(NotesWindowModel.unarchivedTitle(back.count, first: first))",
             symbol: "arrow.uturn.backward.circle.fill")
         }
       ])
@@ -240,15 +241,16 @@ import Observation
     // 这一串里已经放回 / 永久删了的不算（同全部便签窗口）
     let ids = deletions.add(note.id).filter { store.note($0)?.deletedAt != nil }
     island?.show(
-      NotesWindowModel.deletedTitle(ids.count), detail: "到「全部便签」的「最近删除」里放回",
+      "\(NotesWindowModel.deletedTitle(ids.count))", detail: "到「全部便签」的「最近删除」里放回",
       symbol: "trash.circle.fill",
       actions: [
-        .init(NotesWindowModel.restoreTitle) { [store, island] in
+        .init("\(NotesWindowModel.restoreTitle)") { [store, island] in
           // 屏幕上看不出放回了（那叠已经收回成药丸、浮动便签放回到收着的那叠里）：岛上说一句
           let back = Self.restore(ids, in: store)
           guard let first = back.first.flatMap(store.note) else { return }
           island?.show(
-            Self.restoredTitle(back.count, first: first), symbol: "arrow.uturn.backward.circle.fill"
+            "\(Self.restoredTitle(back.count, first: first))",
+            symbol: "arrow.uturn.backward.circle.fill"
           )
         }
       ])
@@ -296,29 +298,30 @@ import Observation
     typealias Names = NotesWindowModel
     return [
       ActionMenu.Item(
-        title: Names.pinTitle(note), symbol: note.isPinned ? "pin.slash" : "pin", shortcut: "⌘P"
+        title: "\(Names.pinTitle(note))", symbol: note.isPinned ? "pin.slash" : "pin",
+        shortcut: "⌘P"
       ) { [unowned self] in togglePinned() },
       ActionMenu.Item(
-        title: Names.colorTitle, symbol: "paintpalette", submenu: colorItems(note)),
-      ActionMenu.Item(title: Names.taskTitle, symbol: Names.taskSymbol, shortcut: "⌘T") {
+        title: "\(Names.colorTitle)", symbol: "paintpalette", submenu: colorItems(note)),
+      ActionMenu.Item(title: "\(Names.taskTitle)", symbol: Names.taskSymbol, shortcut: "⌘T") {
         [unowned self] in toggleTask()
       },
       ActionMenu.Item(
-        title: Names.archiveTitle(note), symbol: "archivebox", shortcut: "⇧⌘A", section: 1
+        title: "\(Names.archiveTitle(note))", symbol: "archivebox", shortcut: "⇧⌘A", section: 1
       ) { [unowned self] in archive() },
       ActionMenu.Item(
-        title: Names.deleteTitle, symbol: "trash", section: 1, isDestructive: true
+        title: "\(Names.deleteTitle)", symbol: "trash", section: 1, isDestructive: true
       ) { [unowned self] in delete() },
       ActionMenu.Item(
-        title: Names.floatTitle(isFloating: isFloating, hasEdge: hasEdge),
+        title: "\(Names.floatTitle(isFloating: isFloating, hasEdge: hasEdge))",
         symbol: Names.floatSymbol(isFloating: isFloating, hasEdge: hasEdge, edge: tuckEdge),
         section: 2
       ) { [unowned self] in toggleFloating() },
       ActionMenu.Item(
-        title: Self.openInWindowTitle, symbol: HotKeyAction.noteAll.symbol, section: 2
+        title: "\(Self.openInWindowTitle)", symbol: HotKeyAction.noteAll.symbol, section: 2
       ) { [unowned self] in openInWindow() },
       ActionMenu.Item(
-        title: NoteMarkdownFiles.singleExportTitle, symbol: "square.and.arrow.up", section: 2
+        title: "\(NoteMarkdownFiles.singleExportTitle)", symbol: "square.and.arrow.up", section: 2
       ) { [unowned self] in exportMarkdown() },
       ActionMenu.Item(
         title: "\(Names.settingsTitle)…", symbol: Names.settingsSymbol, shortcut: "⌘,", section: 3

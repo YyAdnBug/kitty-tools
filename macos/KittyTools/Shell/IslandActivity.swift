@@ -54,11 +54,14 @@ extension Island {
     var media: Media?
     /// 上不上耳朵（菜单栏那一项同）：正在播放暂停一阵后 false，卡片照样轮得到
     var onWings: Bool
+    /// 从进行中的提示缩进来的：原来那一条的 Content.source（换回提示时还按它认，progress / dismiss(ifShowing:) 找得到）
+    var source: LocalizedStringResource?
 
     init(
       id: String, kind: Kind, title: String, detail: String? = nil, symbol: String,
       tone: Tone = .info, trailing: Trailing = .none, actions: [Action] = [],
-      started: Date = .now, media: Media? = nil, onWings: Bool = true
+      started: Date = .now, media: Media? = nil, onWings: Bool = true,
+      source: LocalizedStringResource? = nil
     ) {
       self.id = id
       self.kind = kind
@@ -71,6 +74,7 @@ extension Island {
       self.started = started
       self.media = media
       self.onWings = onWings
+      self.source = source
     }
 
     /// 耳朵上露哪一个（B2）：上得了耳朵的里面，类别要紧的先；同一类后开始的先（刚开的那件事更可能是你在等的）
@@ -104,9 +108,11 @@ extension Island {
     var content: Content {
       var fraction: Double?
       if case .fraction(let value) = trailing { fraction = value }
-      return Content(
-        title: title, detail: detail, tone: tone, symbol: symbol, leading: .tone, fraction: fraction
-      )
+      var content = Content(
+        title: "\(title)", detail: detail.map { "\($0)" }, tone: tone, symbol: symbol,
+        leading: .tone, fraction: fraction)
+      if let source { content.source = source }
+      return content
     }
   }
 
@@ -178,7 +184,7 @@ struct IslandWings: View {
       [
         activity.title, activity.media == nil ? nil : activity.detail,
         Island.Activity.reading(activity.trailing, now: .now),
-      ].compactMap { $0 }.joined(separator: "，")
+      ].compactMap { $0 }.joined(separator: Island.comma)
     )
     .accessibilityActions {
       if let media = activity.media {

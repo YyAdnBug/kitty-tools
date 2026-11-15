@@ -173,8 +173,9 @@ struct IslandExcerptTests {
 
   /// 进行中的岛改详情（转 GIF、压缩的百分比，第二轮体检 R3）：只改详情；岛上不是这一条（标题不同、不是进行中）就不动
   @MainActor @Test func progressUpdatesDetailInPlace() {
-    let content = { (title: String, tone: Island.Tone) in
-      Island.Content(title: title, detail: nil, tone: tone, symbol: "circle", leading: .tone)
+    // 进行中那一条按 show 时给的 resource 认（Content.source）：progress 给同一句才改得到
+    let content = { (title: LocalizedStringResource, tone: Island.Tone) in
+      Island.Content(title: title, tone: tone, symbol: "circle", leading: .tone)
     }
     let island = Island(showing: content("正在压缩…", .progress))
     island.progress("正在压缩…", detail: "37%")
@@ -193,7 +194,7 @@ struct IslandExcerptTests {
   /// 点了 × / 按钮（dismiss）时排着的直接换上
   @MainActor @Test func hoverQueuesNewNotices() {
     let content = { (title: String, tone: Island.Tone) in
-      Island.Content(title: title, detail: nil, tone: tone, symbol: "circle", leading: .tone)
+      Island.Content(title: "\(title)", detail: nil, tone: tone, symbol: "circle", leading: .tone)
     }
     let island = Island(showing: content("已删除 3 条", .info), actions: [.init("撤销") {}])
     island.hover(true)
@@ -224,7 +225,7 @@ struct IslandExcerptTests {
   /// 离开后照旧展开的卡片换成新的一条就合上（评审 3）
   @MainActor @Test func queuedProgressAndExpandedReset() {
     let content = { (title: String, tone: Island.Tone) in
-      Island.Content(title: title, detail: nil, tone: tone, symbol: "circle", leading: .tone)
+      Island.Content(title: "\(title)", detail: nil, tone: tone, symbol: "circle", leading: .tone)
     }
     let island = Island(showing: content("已复制", .success))
     island.hover(true)

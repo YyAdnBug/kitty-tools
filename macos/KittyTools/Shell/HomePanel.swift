@@ -19,6 +19,8 @@ enum Home {
   static let columns = 5
   /// 一格：最长的名字（「划词翻译并替换」这类七八个字）11 pt 一行放得下
   static let tile = CGSize(width: 92, height: 76)
+  /// 名字的第二行（多语言，2026-11-15：英文的名字长，一行放不下就折成两行）：11 pt 的一行
+  static let secondLine: CGFloat = 13
   /// 格子之间（横竖一样）
   static let gap: CGFloat = 2
   /// 面板左右内缩（同列表型面板的选中高亮离边 6 再加 4：格子的高亮是 card 圆角，和面板 16 同心要内缩 6 以上）
@@ -69,7 +71,7 @@ enum Home {
   static let unlisted: Set<HotKeyAction> = [.home, .pinClipboard]
 
   /// 插件那一节的标题（同设置侧栏那一组的名字）
-  static let pluginsTitle = "插件"
+  static var pluginsTitle: String { String(localized: "插件") }
 
   /// 分节（纯函数）：和菜单栏菜单同一份（AppDelegate.buildStatusMenu），关着的功能不出现，unlisted 的不列；
   /// 每节末尾接那一节的 MenuExtra 里是动作的（开关不列：isOn 不是 nil 的）。功能只剩一格的节不画标题，和前面同样是一格的
@@ -133,13 +135,25 @@ enum Home {
     return rows
   }
 
+  /// 名字一行放得下（格子宽减左右各 3；带「新」的小圆点再让出圆点 6 + 间距 3）
+  static func fitsOneLine(_ tile: Tile) -> Bool {
+    Style.fitsOneLine(tile.title, size: 11, width: Self.tile.width - 6 - (tile.isNew ? 9 : 0))
+  }
+
+  /// 格子的高（纯函数）：有一格的名字一行放不下（英文），整块面板的格子都高一行，排得齐；都放得下（中文）就是 tile.height
+  static func tileHeight(_ sections: [Section]) -> CGFloat {
+    let wraps = sections.contains { $0.tiles.contains { !fitsOneLine($0) } }
+    return tile.height + (wraps ? secondLine : 0)
+  }
+
   /// 面板的高（纯函数）：格子那一块 + 关着的功能那一行（有才有）+ 底栏
   static func height(_ sections: [Section], offCount: Int) -> CGFloat {
     var height = top + bottom
+    let tileHeight = tileHeight(sections)
     for (index, section) in sections.enumerated() {
       height += section.title != nil ? titleHeight : (index == 0 ? 0 : untitledGap)
       let rows = CGFloat((section.tiles.count + columns - 1) / columns)
-      height += rows * tile.height + (rows - 1) * gap
+      height += rows * tileHeight + (rows - 1) * gap
     }
     return height + (offCount > 0 ? noteHeight : 0) + barHeight
   }
@@ -234,6 +248,7 @@ enum Home {
   }
 
   var tiles: [Home.Tile] { sections.flatMap(\.tiles) }
+  var tileHeight: CGFloat { Home.tileHeight(sections) }
   var size: CGSize { CGSize(width: Home.width, height: Home.height(sections, offCount: offCount)) }
 
   /// 换成现在的样子。appearing：新呼出（选中、悬停清掉）；开着时再排一遍选中留着
@@ -296,6 +311,7 @@ struct HomeView: View {
     let starts = model.sections.indices.map { index in
       model.sections[..<index].reduce(0) { $0 + $1.tiles.count }
     }
+    let tileHeight = model.tileHeight
     return VStack(alignment: .leading, spacing: 0) {
       ForEach(Array(model.sections.enumerated()), id: \.offset) { index, section in
         if let title = section.title {
@@ -317,7 +333,7 @@ struct HomeView: View {
                 offset in
                 HomeTile(
                   model: model, tile: section.tiles[offset], index: starts[index] + offset,
-                  namespace: selection)
+                  height: tileHeight, namespace: selection)
               }
             }
           }
@@ -363,7 +379,9 @@ struct HomeView: View {
     .overlay(alignment: .top) { Hairline() }
   }
 
-  private func barButton(_ title: String, key: String, _ extra: MenuExtra) -> some View {
+  private func barButton(
+    _ title: LocalizedStringResource, key: String, _ extra: MenuExtra
+  ) -> some View {
     Button {
       model.run(extra)
     } label: {
@@ -376,7 +394,9 @@ struct HomeView: View {
       .contentShape(.rect)
     }
     .accessibilityLabel(
-      extra == .quit ? "退出 Kitty Tools" : isNew(extra) ? "设置，" + WhatsNew.spoken : "设置")
+      extra == .quit
+        ? String(localized: "退出 Kitty Tools")
+        : String(localized: "设置") + (isNew(extra) ? Island.comma + WhatsNew.spoken : ""))
   }
 
   private func isNew(_ extra: MenuExtra) -> Bool {
@@ -390,11 +410,14 @@ private struct HomeTile: View {
   let model: HomeModel
   let tile: Home.Tile
   let index: Int
+  /// Home.tileHeight：一块面板里的格子一样高
+  let height: CGFloat
   let namespace: Namespace.ID
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
     let selected = model.selection == index
+    let wraps = height > Home.tile.height
     let shape = RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
     Button {
       model.activate(index)
@@ -404,9 +427,12 @@ private struct HomeTile: View {
         // 新功能：名字前面一个小圆点（iOS 主屏新装 App 的那种，拍板 A1）
         HStack(spacing: 3) {
           if tile.isNew { NewDot() }
+          // 英文的名字长：一行放不下时整块面板的格子高一行（Home.tileHeight），名字折成两行、居中；
+          // 不折的时候（中文）照旧一行，和以前一个像素都不差
           Text(tile.title)
             .font(.system(size: 11))
-            .lineLimit(1)
+            .lineLimit(wraps ? 2 : 1)
+            .multilineTextAlignment(wraps ? .center : .leading)
             .minimumScaleFactor(0.85)
         }
         .padding(.horizontal, 3)
@@ -420,7 +446,7 @@ private struct HomeTile: View {
           .padding(.top, 1)
         Spacer(minLength: 0)
       }
-      .frame(width: Home.tile.width, height: Home.tile.height)
+      .frame(width: Home.tile.width, height: height)
       .background {
         if selected {
           shape.fill(Style.selectedFill)
@@ -443,8 +469,8 @@ private struct HomeTile: View {
       }
     }
     .help(tile.key.map { "\(tile.title)  \($0)" } ?? tile.title)
-    .accessibilityLabel(tile.isNew ? tile.title + "，" + WhatsNew.spoken : tile.title)
-    .accessibilityValue(tile.key.map { "快捷键 \($0)" } ?? "")
+    .accessibilityLabel(tile.isNew ? tile.title + Island.comma + WhatsNew.spoken : tile.title)
+    .accessibilityValue(tile.key.map { String(localized: "快捷键 \($0)") } ?? "")
     .accessibilityAddTraits(selected ? .isSelected : [])
   }
 }

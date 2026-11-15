@@ -148,7 +148,7 @@ struct ScriptsSection: View {
         }
         library?.refresh()
         island?.show(
-          "已存成「\(url.lastPathComponent)」", detail: candidate.nextStep, actions: [.reveal(url)])
+          "已存成「\(url.lastPathComponent)」", detail: "\(candidate.nextStep)", actions: [.reveal(url)])
       }
     }
     Section {

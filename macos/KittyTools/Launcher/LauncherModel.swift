@@ -573,7 +573,7 @@ import UniformTypeIdentifiers
   /// 刚从常用里移除的一项和它的使用记录：⌘Z 放回（只留最近一次；打字、移动、Esc、收起都清掉）
   @ObservationIgnored private var forgotten: (item: LauncherItem, entries: [LauncherUsage.Entry])? {
     didSet {
-      if forgotten == nil, case .undo = notice { notice = nil }
+      if forgotten == nil, notice?.kind == .undo { notice = nil }
     }
   }
   @ObservationIgnored private var noticeTask: Task<Void, Never>?
@@ -1828,7 +1828,7 @@ import UniformTypeIdentifiers
       // 岛上那条「正在运行」会被这一条换掉、挂满 60 秒也会收：这里再给一个「停止」（第三轮评审）
       let path = script.path
       island?.show(
-        name + "还在运行", detail: "等它跑完，或者点「停止」", tone: .info,
+        "\(name)还在运行", detail: "等它跑完，或者点「停止」", tone: .info,
         actions: [Island.Action("停止") { [weak self] in self?.runningScripts[path]?.cancel() }])
       return
     }
@@ -1841,7 +1841,7 @@ import UniformTypeIdentifiers
       guard let self else { return }
       let outcome = await Island.whenSlow(after: .seconds(1)) { [weak self] in
         self?.island?.show(
-          progress, tone: .progress, symbol: "terminal.fill",
+          "\(progress)", tone: .progress, symbol: "terminal.fill",
           actions: [Island.Action("停止") { [weak self] in self?.runningScripts[path]?.cancel() }])
       } work: {
         await self.runScript(script, arguments, nil)
@@ -1878,7 +1878,7 @@ import UniformTypeIdentifiers
       var page = Self.outputPage(outcome, of: script, arguments: arguments)
       page.startedAt = started ?? page.startedAt
       output = page
-      Island.announce(page.failure ?? "「\(script.title)」运行完了")
+      Island.announce(page.failure.map { "\($0)" } ?? "「\(script.title)」运行完了")
     }
   }
 
@@ -1969,7 +1969,7 @@ import UniformTypeIdentifiers
     self.output = nil
     Paster.write(string: text, record: true)
     close()
-    island?.show("已复制「\(output.script.title)」的输出", detail: Island.excerpt(text))
+    island?.show("已复制「\(output.script.title)」的输出", detail: "\(Island.excerpt(text))")
   }
 
   /// 等脚本跑完（单测）
@@ -1989,7 +1989,7 @@ import UniformTypeIdentifiers
       let id = UUID()
       if keeps { lastOutput = (id, page) }
       island?.show(
-        failure.title, detail: failure.detail.isEmpty ? nil : failure.detail,
+        "\(failure.title)", detail: failure.detail.isEmpty ? nil : "\(failure.detail)",
         tone: stopped ? .info : .error,
         actions: keeps
           ? [Island.Action("看输出", opens: true) { [weak self] in self?.showOutput(id) }] : [])
@@ -1999,33 +1999,33 @@ import UniformTypeIdentifiers
     switch script.mode {
     case .paste, .copy:
       guard !text.isEmpty else {
-        island?.show(name + "没有输出", tone: .warning)
+        island?.show("\(name)没有输出", tone: .warning)
         return
       }
       if script.mode == .copy {
         Paster.write(string: text, record: true)
-        island?.show("已复制" + name + "的输出", detail: Island.excerpt(text))
+        island?.show("已复制\(name)的输出", detail: "\(Island.excerpt(text))")
       } else {
-        island?.dismiss(ifShowing: progress)
+        island?.dismiss(ifShowing: "\(progress)")
         pasteOutput(text, into: target)
       }
     case .none:
-      island?.dismiss(ifShowing: progress)
+      island?.dismiss(ifShowing: "\(progress)")
     // 全文：跑着时启动器收起了的才走这里（detach）。岛上说一声，带「看输出」
     case .full:
       let page = Self.outputPage(outcome, of: script, arguments: arguments)
       let id = UUID()
       if !page.text.isEmpty { lastOutput = (id, page) }
       island?.show(
-        name + "运行完了", detail: ScriptCommand.lastLine(outcome.output),
+        "\(name)运行完了", detail: ScriptCommand.lastLine(outcome.output).map { "\($0)" },
         actions: page.text.isEmpty
           ? [] : [Island.Action("看输出", opens: true) { [weak self] in self?.showOutput(id) }])
     // list 平时不走这里（列表行）；万一走到了按岛上一行
     case .island, .list:
       if let line = ScriptCommand.lastLine(outcome.output) {
-        island?.show(line, detail: script.title)
+        island?.show("\(line)", detail: "\(script.title)")
       } else {
-        island?.show("已运行" + name)
+        island?.show("已运行\(name)")
       }
     }
   }
@@ -2156,7 +2156,7 @@ import UniformTypeIdentifiers
       selection = index
     }
     self.armed = armed
-    Island.announce(text)
+    Island.announce("\(text)")
     return false
   }
 
@@ -2421,7 +2421,8 @@ import UniformTypeIdentifiers
           if let item { self.usage.record(item, query: query) }
         } else {
           self.island?.show(
-            "打不开「\(item?.title ?? url.absoluteString)」", detail: error?.localizedDescription,
+            "打不开「\(item?.title ?? url.absoluteString)」",
+            detail: error.map { "\($0.localizedDescription)" },
             tone: .error)
         }
       }
@@ -2520,14 +2521,15 @@ import UniformTypeIdentifiers
     noticeTask?.cancel()
     self.notice = notice
     if isQuickLooking, let island {
-      switch notice {
-      case .message(let text): island.show(text)
-      case .warning(let text): island.show(text, tone: .warning)
-      case .undo(let text):
-        island.show(text, detail: "⌘Z 撤销", tone: .info, symbol: "minus.circle.fill")
+      let text = notice.text
+      switch notice.kind {
+      case .message: island.show("\(text)")
+      case .warning: island.show("\(text)", tone: .warning)
+      case .undo:
+        island.show("\(text)", detail: "⌘Z 撤销", tone: .info, symbol: "minus.circle.fill")
       }
     } else {
-      Island.announce(spoken ?? notice.text)
+      Island.post(spoken ?? notice.text)
     }
     noticeTask = Task {
       try? await Task.sleep(for: .seconds(notice.seconds))
@@ -2586,7 +2588,7 @@ import UniformTypeIdentifiers
       do {
         try await recycle(URL(filePath: item.target))
       } catch {
-        island?.show("没能移到废纸篓", detail: error.localizedDescription, tone: .error)
+        island?.show("没能移到废纸篓", detail: "\(error.localizedDescription)", tone: .error)
         return
       }
       island?.show("已移到废纸篓「\(item.title)」", symbol: "trash.circle.fill")
@@ -2932,8 +2934,9 @@ import UniformTypeIdentifiers
     guard let title else { return }
     let isPath = (item.kind == .app || item.kind == .path) && copyTitle(for: item) == title
     island?.show(
-      "已" + title,
-      detail: isPath ? (text as NSString).abbreviatingWithTildeInPath : Island.excerpt(text))
+      "已\(title)",
+      detail: isPath
+        ? "\((text as NSString).abbreviatingWithTildeInPath)" : "\(Island.excerpt(text))")
   }
 
   /// [标题](网址)：标题里的方括号、网址里的空格和右括号转义，粘进 Markdown 不断链
@@ -2973,7 +2976,8 @@ import UniformTypeIdentifiers
     ) {
       actions.append(
         ActionMenu.Item(
-          title: title, symbol: symbol, image: image, detail: detail, shortcut: shortcut,
+          title: "\(title)", symbol: symbol, image: image, detail: detail.map { "\($0)" },
+          shortcut: shortcut,
           id: "\(actions.count)", section: section, isDestructive: destructive, run: run))
     }
     // 0 打开

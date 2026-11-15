@@ -152,9 +152,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       noteEdge?.suspend(.all)
     }
     screen.blocker = { [unowned self] in
-      let busy = "先停止这一段再进入状态屏"
-      if recorder != nil { return ("正在录屏", busy) }
-      if audioRecorder?.isStarted == true { return ("正在录音", busy) }
+      let busy = String(localized: "先停止这一段再进入状态屏")
+      if recorder != nil { return (String(localized: "正在录屏"), busy) }
+      if audioRecorder?.isStarted == true { return (String(localized: "正在录音"), busy) }
       return nil
     }
     screen.isBusy = { [unowned self] in isCapturing || isReadingSelection }
@@ -286,11 +286,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch action {
         case .copy:
           guard let copied = await copyImage(image, scale: scale) else { return }
-          island.show("已复制钉图", detail: copied.detail, leading: Island.thumbnail(of: image))
+          island.show(
+            "已复制钉图", detail: copied.detail.map { "\($0)" as LocalizedStringResource },
+            leading: Island.thumbnail(of: image))
         case .save:
           guard let saved = await saveImage(image, scale: scale, asking: false) else { return }
           island.show(
-            FlyCard.Badge.saved(saved.url).title, detail: saved.url.lastPathComponent,
+            "\(FlyCard.Badge.saved(saved.url).title)", detail: "\(saved.url.lastPathComponent)",
             leading: Island.thumbnail(of: image), actions: .file(saved.url))
         case .saveAs: await saveImageAs(image, scale: scale)
         case .recognize: await copyRecognizedText(in: image)
@@ -836,16 +838,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 到点的提醒要进入状态屏（提醒 C1 / C12）：先把进不去的情况挑出来（进不去时提醒退成全屏，原因写在全屏上——状态屏自己的
   /// 警告岛会被全屏盖住），再真的进。进去了返回 nil
   private func enterStatus(forReminder id: String) -> (reason: String, grants: Bool)? {
-    guard Feature.statusScreen.isOn else { return ("状态屏插件没添加", false) }
-    guard Permissions.isAccessibilityTrusted else { return ("还没给辅助功能授权，进不了状态屏", true) }
-    if let blocked = statusScreen.blocker() { return (blocked.title + "，没进状态屏", false) }
-    guard !statusScreen.isBusy(), !statusScreen.isActive else { return ("现在进不了状态屏", false) }
+    guard Feature.statusScreen.isOn else { return (String(localized: "状态屏插件没添加"), false) }
+    guard Permissions.isAccessibilityTrusted else {
+      return (String(localized: "还没给辅助功能授权，进不了状态屏"), true)
+    }
+    if let blocked = statusScreen.blocker() {
+      return (String(localized: "\(blocked.title)，没进状态屏"), false)
+    }
+    guard !statusScreen.isBusy(), !statusScreen.isActive else {
+      return (String(localized: "现在进不了状态屏"), false)
+    }
     let presets = StatusPreset.load()
     guard let preset = presets.first(where: { $0.id == id }) ?? presets.first else {
-      return ("没有可进入的状态", false)
+      return (String(localized: "没有可进入的状态"), false)
     }
     statusScreen.enter(preset)
-    return statusScreen.isActive ? nil : ("没进入状态屏", false)
+    return statusScreen.isActive ? nil : (String(localized: "没进入状态屏"), false)
   }
 
   /// 导入设置（设置 › 通用）整批写完偏好之后，让运行中的东西跟上：各页自己改的时候有各自的 onChange，这里没人通知。
@@ -1024,7 +1032,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       return HotKeyAction.islandOrder(defaults.string(forKey: Prefs.islandActionOrder) ?? "")
         .filter { $0.isActive && !off.contains($0) }
         .map { action in
-          Island.Action(action.title(recording: recording == action), symbol: action.symbol) {
+          Island.Action("\(action.title(recording: recording == action))", symbol: action.symbol) {
             [unowned self] in run(action)
           }
         }
@@ -1062,7 +1070,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           let found = await ScreenRecorder.recover(
             into: ScreenshotOutput.saveDirectory, medium: medium)
         else { continue }
-        island.show(found.title, detail: found.detail, tone: found.tone)
+        island.show("\(found.title)", detail: "\(found.detail)", tone: found.tone)
       }
     }
     finishLaunchingNotes()
@@ -1372,13 +1380,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     return noteStore.flushBeforeQuit { problem in
       let alert = NSAlert()
       alert.alertStyle = .warning
-      alert.messageText = "便签没存上"
-      alert.informativeText =
-        "最近改的便签没能写进磁盘（\(problem)）。\n现在退出，这些改动就丢了；可以先把正在写的那条拷贝到别处，再试一次。"
-      alert.addButton(withTitle: "再试一次")
-      alert.addButton(withTitle: "仍要退出").hasDestructiveAction = true
+      alert.messageText = String(localized: "便签没存上")
+      alert.informativeText = String(
+        localized: "最近改的便签没能写进磁盘（\(problem)）。\n现在退出，这些改动就丢了；可以先把正在写的那条拷贝到别处，再试一次。")
+      alert.addButton(withTitle: String(localized: "再试一次"))
+      alert.addButton(withTitle: String(localized: "仍要退出")).hasDestructiveAction = true
       // Esc = 取消
-      alert.addButton(withTitle: "取消").keyEquivalent = "\u{1b}"
+      alert.addButton(withTitle: String(localized: "取消")).keyEquivalent = "\u{1b}"
       NSApp.activate()
       switch alert.runModal() {
       case .alertFirstButtonReturn: return .retry
@@ -1754,7 +1762,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     Reminder.save(Reminder.adding(reminder, to: list))
     island.show(
-      "提醒建好了", detail: reminder.summary() + " · " + reminder.title, tone: .success,
+      "提醒建好了", detail: "\(reminder.summary()) · \(reminder.title)", tone: .success,
       symbol: "checkmark.circle.fill",
       actions: [Island.Action("编辑", opens: true) { [unowned self] in openReminder(reminder.id) }])
   }
@@ -1765,11 +1773,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private func addReminderMenu(to menu: NSMenu, isNew: Bool) {
     let family = HotKeyAction.reminderNew
     let color = NSColor(family.color)
-    let item = menu.addAction(SettingsPage.reminders.title, symbol: family.symbol, color: color) {}
+    let item = menu.addAction(
+      SettingsPage.reminders.titleResource, symbol: family.symbol, color: color
+    ) {}
     let submenu = NSMenu()
     let hotKey = hotKeys.bindings[family]
     let create = submenu.addAction(
-      family.title + "…", symbol: "plus", color: color, key: hotKey?.menuKeyEquivalent ?? "",
+      "\(family.title)…", symbol: "plus", color: color, key: hotKey?.menuKeyEquivalent ?? "",
       modifiers: hotKey?.modifierFlags ?? []
     ) { [unowned self] in run(family) }
     if isNew {
@@ -1786,7 +1796,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     submenu.addItem(.separator())
     for minutes in [5, 10, 25, 60] {
       submenu.addAction(
-        minutes == 60 ? "1 小时后提醒我" : "\(minutes) 分钟后提醒我", symbol: "timer", color: color
+        minutes == 60 ? "1 小时后提醒我" : "\(minutes) 分钟后提醒我",
+        symbol: "timer", color: color
       ) { [unowned self] in
         // 子菜单里的快捷提醒也算用过提醒（新功能标记）
         WhatsNew.touch(action: family)
@@ -1809,7 +1820,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       let tomorrow = Calendar.current.date(
         byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: .now))
       for (title, until) in [
-        ("暂停全部提醒 1 小时", Date.now.addingTimeInterval(3600)), ("暂停到明天", tomorrow),
+        ("暂停全部提醒 1 小时" as LocalizedStringResource, Date.now.addingTimeInterval(3600)),
+        ("暂停到明天", tomorrow),
       ] {
         guard let until else { continue }
         submenu.addAction(title, symbol: "pause.circle", color: color) { [unowned self] in
@@ -1882,7 +1894,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let wasOn = UserDefaults.standard.bool(forKey: Prefs.translateCopyToTranslate)
     UserDefaults.standard.set(!wasOn, forKey: Prefs.translateCopyToTranslate)
     island.show(
-      wasOn ? "已关闭复制即译" : "已开启复制即译", detail: wasOn ? nil : "复制文字后会弹出翻译", tone: .info,
+      wasOn ? "已关闭复制即译" : "已开启复制即译",
+      detail: wasOn ? nil : "复制文字后会弹出翻译", tone: .info,
       symbol: wasOn ? "character.bubble" : "character.bubble.fill",
       actions: [.init("撤销") { [unowned self] in toggleCopyToTranslate() }])
   }
@@ -1924,7 +1937,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     Task {
       guard let image = await PinBoard.decode(source) else {
-        let name = if case .file(let url) = source { "「\(url.lastPathComponent)」" } else { "这张图片" }
+        let name =
+          if case .file(let url) = source {
+            String(localized: "「\(url.lastPathComponent)」")
+          } else {
+            String(localized: "这张图片")
+          }
         return island.show("没能钉到屏幕", detail: "读不出\(name)", tone: .error)
       }
       // 解码完才找空位：连按几下时，前一张这时已经钉上了
@@ -1946,7 +1964,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       island.show("已允许访问", detail: "文件搜索现在能搜到桌面、文稿、下载里的文件")
     } else {
       island.show(
-        "没有权限搜" + denied.map { "「\($0)」" }.joined(),
+        "没有权限搜\(String(localized: "「\(denied.joined(separator: Self.quotedSeparator))」"))",
         detail: "可在系统设置 › \(Permissions.privacyPane) › 文件和文件夹里打开",
         tone: .warning, actions: [.settings(for: .filesAndFolders)])
     }
@@ -2047,7 +2065,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       } else if let text = await SelectionReader.read(pausing: watcher) {
         coordinator.translate(text, selectedIn: sourceApp)
       } else if !Permissions.isAccessibilityTrusted {
-        coordinator.showNotice("划词翻译需要「辅助功能」授权", permission: .accessibility)
+        coordinator.showNotice(String(localized: "划词翻译需要「辅助功能」授权"), permission: .accessibility)
         Permissions.requestAccessibility()
       } else {
         // 没有选中文字：当输入翻译用，占位说清楚是没取到（体检 A16），VoiceOver 同一句
@@ -2072,7 +2090,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return island.show(
           "已复制译文", detail: "便签里的原文已经改了，没有替换", tone: .info, symbol: "doc.on.doc")
       }
-      return island.show("已替换为译文", detail: Island.excerpt(text))
+      return island.show("已替换为译文", detail: "\(Island.excerpt(text))")
     }
     guard let pid = source.pid else {
       Paster.write(string: text, record: true)
@@ -2169,7 +2187,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               "已复制译文", detail: "便签里的原文已经改了，没有替换", tone: .info,
               symbol: "doc.on.doc")
           }
-          return island.show("已替换为译文", detail: Island.excerpt(result))
+          return island.show("已替换为译文", detail: "\(Island.excerpt(result))")
         }
         Paster.write(string: result, record: true)
         guard NSWorkspace.shared.frontmostApplication?.processIdentifier == sourceApp,
@@ -2179,12 +2197,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             "已复制译文", detail: "前台已不是取词的 App，没有替换", tone: .info, symbol: "doc.on.doc")
         }
         _ = Paster.pasteToFrontmost()
-        island.show("已替换为译文", detail: Island.excerpt(result))
+        island.show("已替换为译文", detail: "\(Island.excerpt(result))")
       } catch {
         guard !Task.isCancelled else { return }
         // 重试 = 再划一次：前台还是取词的 App（点岛不激活本 App），选区多半还在
         island.show(
-          "翻译失败", detail: error.localizedDescription, tone: .error,
+          "翻译失败", detail: "\(error.localizedDescription)", tone: .error,
           actions: [.init("重试") { [self] in translateAndReplace() }])
       }
     }
@@ -2198,14 +2216,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       return beginCapture(hidingPanels: true) { [self] in
         guard
           let region = await frozenSelection(
-            "截图翻译", { await RegionSelector.select($0, hint: "拖动框选要翻译的文字 · Esc 取消") })
+            "截图翻译",
+            { await RegionSelector.select($0, hint: String(localized: "拖动框选要翻译的文字 · Esc 取消")) })
         else { return }
         await translateInPanel(region)
       }
     }
     captureShots(
       feature: "截图翻译", hidingPanels: true,
-      hint: "拖动框选要翻译的文字 · Esc 取消", autoTranslate: true)
+      hint: String(localized: "拖动框选要翻译的文字 · Esc 取消"), autoTranslate: true)
   }
 
   /// 识字：框选后静默复制识别出的文字（有二维码 / 条码时复制它的内容），轻提示结果，不弹窗
@@ -2213,7 +2232,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     beginCapture(hidingPanels: true) { [self] in
       guard
         let region = await frozenSelection(
-          "识字", { await RegionSelector.select($0, hint: "拖动框选要识别的文字或二维码 · Esc 取消") })
+          "识字",
+          {
+            await RegionSelector.select(
+              $0, hint: String(localized: "拖动框选要识别的文字或二维码 · Esc 取消"))
+          })
       else { return }
       await copyRecognizedText(in: region)
     }
@@ -2229,7 +2252,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 截图家族共用的后半段（截图、截图翻译）：冻结各屏 → 框选 → 按交回的动作出图。
   /// hint 非空时换掉遮罩顶上的提示；autoTranslate = 框完松手就自动翻译（⌥S）
   private func captureShots(
-    feature: String, hidingPanels: Bool, repeatingLastRegion: Bool = false,
+    feature: LocalizedStringResource, hidingPanels: Bool, repeatingLastRegion: Bool = false,
     hint: String? = nil, autoTranslate: Bool = false
   ) {
     // 工具栏「翻译」就地盖回截图上，还是交出去走翻译浮窗：看设置 › 翻译「把译文直接盖回截图上」
@@ -2247,7 +2270,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               recordingBlocker: { [weak self] in self?.recordingBlocker(.screen) },
               translate: overlays
                 ? { [weak self] image, pixelsPerPoint in
-                  guard let self else { return .init(message: "翻译不可用") }
+                  guard let self else { return .init(message: String(localized: "翻译不可用")) }
                   return await self.overlayTranslate(image, pixelsPerPoint: pixelsPerPoint)
                 } : nil)
           })
@@ -2334,13 +2357,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 先录后更新）。录音待录（控制条开着、没开始）不算在录：不拦录屏，真要录屏时 beginRecording 把控制条收掉
   private func recordingBlocker(_ medium: ScreenRecorder.Medium) -> (title: String, detail: String)?
   {
-    let busy = "先停止这一段再录"
-    if recorder != nil { return (medium == .screen ? "已经在录屏" : "正在录屏", busy) }
+    let busy = String(localized: "先停止这一段再录")
+    if recorder != nil {
+      return (
+        medium == .screen ? String(localized: "已经在录屏") : String(localized: "正在录屏"), busy
+      )
+    }
     if audioRecorder?.isStarted == true {
-      return (medium == .audio ? "已经在录音" : "正在录音", busy)
+      return (
+        medium == .audio ? String(localized: "已经在录音") : String(localized: "正在录音"), busy
+      )
     }
     if case .installing = updater.state {
-      return ("正在更新", "装好会自动重新打开，之后再\(medium.noun)")
+      return (String(localized: "正在更新"), String(localized: "装好会自动重新打开，之后再\(medium.noun)"))
     }
     return nil
   }
@@ -2348,7 +2377,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 开不了就出警告岛，返回 true
   private func refusesRecording(_ medium: ScreenRecorder.Medium) -> Bool {
     guard let blocker = recordingBlocker(medium) else { return false }
-    island.show(blocker.title, detail: blocker.detail, tone: .warning)
+    island.show("\(blocker.title)", detail: "\(blocker.detail)", tone: .warning)
     return true
   }
 
@@ -2382,7 +2411,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     guard !refusesRecording(.audio),
       source == .microphone || screenRecordingAllowed(for: "录系统声音")
     else { return false }
-    updater.blocker = "录制结束后再更新"
+    updater.blocker = String(localized: "录制结束后再更新")
     return true
   }
 
@@ -2412,7 +2441,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       return island.show("没能开始录屏", detail: "找不到选区所在的屏幕", tone: .warning)
     }
     self.recorder = recorder
-    updater.blocker = "录制结束后再更新"
+    updater.blocker = String(localized: "录制结束后再更新")
     ReminderSound.stop()  // 正在放的长提示音别录进去（提醒 C11）
     recorder.start()
   }
@@ -2454,9 +2483,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if result.moved, let file = result.file {
       // 飞过去了：落地的角标已写目录名，正常停的不再出岛（同截图快速保存），只给 VoiceOver 说一句
       if landRecording(file, result, medium), summary.tone == .success {
-        return Island.announce(
-          "\(medium.noun)已保存到「\(folder)」，"
-            + ScreenRecorder.spoken(Int(result.duration.components.seconds)))
+        let spoken = ScreenRecorder.spoken(Int(result.duration.components.seconds))
+        return Island.announce("\(medium.noun)已保存到「\(folder)」，\(spoken)")
       }
       if summary.tone == .success, let poster = result.poster {
         leading = Island.thumbnail(of: poster)
@@ -2467,7 +2495,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let actions =
       result.moveDenied ? saveFolderActions : result.file.map([Island.Action].file) ?? []
     island.show(
-      summary.title, detail: summary.detail, tone: summary.tone,
+      "\(summary.title)", detail: "\(summary.detail)", tone: summary.tone,
       symbol: summary.tone == .success ? symbol : nil, leading: leading, actions: actions)
   }
 
@@ -2525,7 +2553,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private func copyColor(_ hex: String) {
     Paster.write(string: hex, record: true)
     island.show(
-      "已复制色值", detail: hex, leading: Self.color(hex).map(Island.Leading.color) ?? .tone)
+      "已复制色值", detail: "\(hex)", leading: Self.color(hex).map(Island.Leading.color) ?? .tone)
   }
 
   /// 长截图（截图框选后按 S）：遮罩已收起，在实时画面上边滚边拼，结束后按选的方式输出。整个过程都算在这次截图里
@@ -2579,7 +2607,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     } catch {
       pins.resume()
       if Feature.notes.isOn { noteEdge?.floats.resume() }  // 便签关着时它们是藏着的，别放出来
-      island.show("长截图失败", detail: error.localizedDescription, tone: .error)
+      island.show("长截图失败", detail: "\(error.localizedDescription)", tone: .error)
     }
   }
 
@@ -2668,7 +2696,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           if recordsClipboard { clipboardStore.recordFiles([url]) }
           let poster = await shotHistory.thumbnail(for: item.id)
           island.show(
-            "已复制\(item.kind.title)", detail: url.lastPathComponent,
+            "已复制\(item.kind.title)", detail: "\(url.lastPathComponent)",
             leading: poster.map { Island.thumbnail(of: $0) } ?? .tone)
           return
         }
@@ -2676,7 +2704,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 拷成文件时借存过的文件名（同拖出去的那份）
         let name = shotHistory.dragName(for: item)
         guard let copied = await copyImage(image, scale: item.scale, name: name) else { return }
-        island.show("已复制截图", detail: copied.detail, leading: Island.thumbnail(of: image))
+        island.show(
+          "已复制截图", detail: copied.detail.map { "\($0)" as LocalizedStringResource },
+          leading: Island.thumbnail(of: image))
       }
     }
     actions.save = { [unowned self] item in
@@ -2685,7 +2715,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let saved = await saveImage(image, scale: item.scale, asking: false) else { return }
         shotHistory.markSaved(item.id, to: saved.url)
         island.show(
-          FlyCard.Badge.saved(saved.url).title, detail: saved.url.lastPathComponent,
+          "\(FlyCard.Badge.saved(saved.url).title)", detail: "\(saved.url.lastPathComponent)",
           leading: Island.thumbnail(of: image), actions: .file(saved.url))
       }
     }
@@ -2700,7 +2730,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard !urls.isEmpty else { return missingShot() }
         Paster.write(files: urls)
         if recordsClipboard { clipboardStore.recordFiles(urls) }
-        island.show("已复制 \(urls.count) 项", detail: urls.first?.lastPathComponent)
+        island.show(
+          "已复制 \(urls.count) 项", detail: urls.first.map { "\($0.lastPathComponent)" })
       }
     }
     // 多选存储：一条条存到快速保存目录，最后只说一句（一张张弹提示会刷屏）
@@ -2715,10 +2746,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           saved.append(out.url)
         }
         guard let first = saved.first else { return missingShot() }
-        island.show(
-          "已存 \(saved.count) 张",
-          detail: FileManager.default.displayName(
-            atPath: first.deletingLastPathComponent().path), actions: .file(first))
+        let folder = FileManager.default.displayName(atPath: first.deletingLastPathComponent().path)
+        island.show("已存 \(saved.count) 张", detail: "\(folder)", actions: .file(first))
       }
     }
     actions.saveAs = { [unowned self] item in
@@ -2750,7 +2779,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       }
     }
     actions.notice = { [unowned self] text, warning in
-      island.show(text, tone: warning ? .warning : .info)
+      island.show("\(text)", tone: warning ? .warning : .info)
     }
     actions.edit = { [unowned self] item in
       Task {
@@ -2822,12 +2851,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch action {
         case .copy:
           guard let copied = await copyImage(image, scale: scale) else { return }
-          island.show("已复制长截图", detail: copied.detail, leading: Island.thumbnail(of: image))
+          island.show(
+            "已复制长截图", detail: copied.detail.map { "\($0)" as LocalizedStringResource },
+            leading: Island.thumbnail(of: image))
         case .save:
           guard let saved = await saveImage(image, scale: scale, asking: false) else { return }
           markSaved(remembered, at: saved.url)
           island.show(
-            FlyCard.Badge.saved(saved.url).title, detail: saved.url.lastPathComponent,
+            "\(FlyCard.Badge.saved(saved.url).title)", detail: "\(saved.url.lastPathComponent)",
             leading: Island.thumbnail(of: image), actions: .file(saved.url))
         case .saveAs:
           if let saved = await saveImageAs(image, scale: scale) {
@@ -2873,12 +2904,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   /// 有「屏幕录制」授权（截图家族、录系统声音开始前查）；没有就同设置 › 通用、引导里的授权按钮：请求一次（系统框只弹一次，
   /// 所以同时打开系统设置的「屏幕录制」）+ 警告岛说 feature 要用，返回 false
-  private func screenRecordingAllowed(for feature: String) -> Bool {
+  private func screenRecordingAllowed(for feature: LocalizedStringResource) -> Bool {
     guard !Permissions.isScreenRecordingAllowed else { return true }
     Permissions.requestScreenRecording()
     Permissions.Kind.screenRecording.openSettings()
     island.show(
-      "需要「屏幕录制」授权", detail: "\(feature)要用，授权后可能要重新打开本 App", tone: .warning,
+      "需要「屏幕录制」授权", detail: "\(String(localized: feature))要用，授权后可能要重新打开本 App",
+      tone: .warning,
       actions: [.settings(for: .screenRecording)])
     return false
   }
@@ -2887,7 +2919,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// key 窗口（还开着的话；只 makeKey，不激活本 App）。没授权 / 截屏失败时用刘海提示，返回 nil。
   /// 框选期间别的热键会弹出浮层抢走 key（遮罩就收不到 Esc）；设置里正在录快捷键时热键本来就停着，结束后不能替它恢复
   private func frozenSelection<T>(
-    _ feature: String, _ select: ([ScreenCapture.Shot]) async -> T?
+    _ feature: LocalizedStringResource, _ select: ([ScreenCapture.Shot]) async -> T?
   ) async -> T? {
     guard screenRecordingAllowed(for: feature) else { return nil }
     let shots: [ScreenCapture.Shot]
@@ -2902,7 +2934,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       }
       shots = frozen
     } catch {
-      island.show("截屏失败", detail: error.localizedDescription, tone: .error)
+      island.show("截屏失败", detail: "\(error.localizedDescription)", tone: .error)
       return nil
     }
     let hotKeysWereActive = hotKeys.isActive
@@ -2933,17 +2965,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   {
     // 图标被认成的单字（首页的剪贴板图标认成「目」）不翻、不擦（拍板 F1）
     guard let recognized = await recognizeForTranslation(image, droppingIcons: true) else {
-      return .init(message: "识别失败")
+      return .init(message: String(localized: "识别失败"))
     }
     let segments = ScreenshotOverlay.segments(
       of: recognized.lines, imageSize: CGSize(width: image.width, height: image.height))
-    guard !segments.isEmpty else { return .init(message: "没有识别到文字") }
+    guard !segments.isEmpty else { return .init(message: String(localized: "没有识别到文字")) }
     do {
       let translations = try await translateSegments(segments, source: recognized.text)
       var composed = await ScreenshotOverlay.render(
         image, segments: segments, translations: translations, pixelsPerPoint: pixelsPerPoint)
       guard composed.image != nil || !composed.leftovers.isEmpty else {
-        return .init(message: "合成失败")
+        return .init(message: String(localized: "合成失败"))
       }
       // 卡片的「拷贝译文」拷全部段（纯符号段原样占位，不算）
       composed.translation = zip(segments, translations)
@@ -2953,9 +2985,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       return composed
     } catch {
       guard !Task.isCancelled, !(error is CancellationError) else {
-        return .init(message: "已取消")
+        return .init(message: String(localized: "已取消"))
       }
-      island.show("翻译失败", detail: error.localizedDescription, tone: .error)
+      island.show("翻译失败", detail: "\(error.localizedDescription)", tone: .error)
       return .init(message: error.localizedDescription)
     }
   }
@@ -2993,7 +3025,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   /// 截图翻译盖回时的进度岛：和划词翻译并替换那条「翻译中…」分开（同名的话进度会写到那条上）
-  private static let overlayTitle = "截图翻译中…"
+  private static let overlayTitle: LocalizedStringResource = "截图翻译中…"
 
   /// 逐段翻译（原位覆盖用）：整段原文检测一次语种，各段用同一个方向；同时最多 3 段一起请求（inParallel），
   /// 每段按顺序试启用的服务（没折叠的在前）。
@@ -3004,7 +3036,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // 没折叠的服务先试（浮窗里折叠 = 不自动翻译，排第一的贵模型折叠了也不先用它）
     let services = coordinator.orderedServices
     guard !services.isEmpty else {
-      throw TranslateError(message: "没有启用的翻译服务，先在设置 › 翻译里开一个")
+      throw TranslateError(message: String(localized: "没有启用的翻译服务，先在设置 › 翻译里开一个"))
     }
     let plan = TranslateCoordinator.plan(for: source, wordMode: false).request
     // 纯符号段不发请求（有道这类接口会回错误码，一段失败整张图就白翻了），原样占位；覆盖那一步也会跳过它
@@ -3079,7 +3111,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private nonisolated static func translateSegment(
     _ request: TranslateRequest, services: [TranslateService]
   ) async throws -> (text: String, service: TranslateService) {
-    var failure: Error = TranslateError(message: "翻译失败")
+    var failure: Error = TranslateError(message: String(localized: "翻译失败"))
     for service in services {
       try Task.checkCancellation()
       do {
@@ -3100,17 +3132,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   /// 识字慢的时候先出「识别中」（第二轮体检 R3）：常见选区 0.04–0.13 s，不出；整屏密集文字约 0.9 s，过了 0.3 s 还没出结果
   /// 刘海岛先说一声，结果出来原地换掉（识字、截图翻译、钉图上的识字 / 翻译都走这里）
-  private static let recognizingTitle = "识别中…"
+  private static let recognizingTitle: LocalizedStringResource = "识别中…"
   /// 新装、系统更新后第一次识字：系统要先现场编译识字模型（OCR.prepare，冷的约一分钟）。岛一直挂着、每秒报等了多久，
   /// 不然看着像卡死了
-  private static let preparingTitle = "正在准备识字模型…"
+  private static let preparingTitle: LocalizedStringResource = "正在准备识字模型…"
 
   private func recognizing<T>(_ work: () async -> T) async -> T {
     // 进程内识过字，模型就留在内存里：这一路不一定开关面板（⌥O 识字、钉图上识字），自己记得回头放掉
     defer { idleReclaim.schedule() }
     if !OCR.isPrepared() {
-      let note = "第一次识字要等一分钟左右，以后就快了"
-      island.show(Self.preparingTitle, detail: note, tone: .progress, symbol: "text.viewfinder")
+      let note = String(localized: "第一次识字要等一分钟左右，以后就快了")
+      island.show(
+        Self.preparingTitle, detail: "\(note)", tone: .progress, symbol: "text.viewfinder")
       let started = ContinuousClock.now
       let ticker = Task { [island] in
         while !Task.isCancelled {
@@ -3145,7 +3178,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     Paster.write(string: text, record: true)
     island.show(
-      codes.isEmpty ? "已复制" : "已复制二维码", detail: Island.excerpt(text),
+      codes.isEmpty ? "已复制" : "已复制二维码",
+      detail: "\(Island.excerpt(text))",
       symbol: codes.isEmpty ? nil : "qrcode")
   }
 
@@ -3223,7 +3257,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private func saveImageAs(_ image: CGImage, png: Data) async -> URL? {
     guard let url = await savePNG(png, asking: true) else { return nil }
     island.show(
-      "已保存", detail: url.lastPathComponent, leading: Island.thumbnail(of: image),
+      "已保存", detail: "\(url.lastPathComponent)", leading: Island.thumbnail(of: image),
       actions: .file(url))
     return url
   }
@@ -3241,7 +3275,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         !ScreenshotOutput.isPermissionDenied(error)
         ? [] : asking ? [.settings(for: .filesAndFolders)] : saveFolderActions
       island.show(
-        "保存失败，截图已复制到剪贴板", detail: error.localizedDescription, tone: .warning,
+        "保存失败，截图已复制到剪贴板", detail: "\(error.localizedDescription)", tone: .warning,
         actions: actions)
       return nil
     }
@@ -3296,7 +3330,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       peg = pegger(remembered, on: landing.screen)
       // 不飞就没有落地的角标：结果用刘海说（Whisker：减弱动态效果时飞行卡片改成轻提示；岛自己会播报）
       let actions: [Island.Action] = if case .saved(let url) = badge { .file(url) } else { [] }
-      island.show(badge.title, leading: Island.thumbnail(of: image), actions: actions)
+      island.show("\(badge.title)", leading: Island.thumbnail(of: image), actions: actions)
       guard keeps, let rect = landing.slot ?? FlyCard.landingRect(for: frame) else { return }
       linger(rect, badge)
     }
@@ -3402,7 +3436,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let freshActions = Set(fresh.flatMap(\.actions))
     func addExtra(_ extra: MenuExtra) {
       let item = menu.addAction(
-        extra.title(pinsHidden: state.pinsHidden == true), symbol: extra.symbol,
+        extra.titleResource(pinsHidden: state.pinsHidden == true), symbol: extra.symbol,
         color: NSColor(extra.color), key: extra == .settings ? "," : extra == .quit ? "q" : ""
       ) { [unowned self] in run(extra) }
       if let on = extra.isOn(state) { item.state = on ? .on : .off }
@@ -3425,7 +3459,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       if section.actions == [.statusScreen] {
         let family = HotKeyAction.statusScreen
         let color = NSColor(family.color)
-        let item = menu.addAction(family.title, symbol: family.symbol, color: color) {}
+        let item = menu.addAction(family.titleResource, symbol: family.symbol, color: color) {}
         if freshActions.contains(family) { item.badge = WhatsNew.menuBadge }
         let submenu = NSMenu()
         let hotKey = hotKeys.bindings[family]
@@ -3439,7 +3473,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for (row, preset) in state.statusPresets.enumerated() {
           let binding = state.statusEntersFirst && row == 0 ? hotKey : nil
           let entry = submenu.addAction(
-            preset.title, symbol: StatusPreset.plainSymbol,
+            "\(preset.title)", symbol: StatusPreset.plainSymbol,
             color: color, key: binding?.menuKeyEquivalent ?? "",
             modifiers: binding?.modifierFlags ?? []
           ) { [unowned self] in statusScreen.enter(preset) }
@@ -3454,13 +3488,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       }
       // 只有一项、节标题和它同名的不画节标题（F40：启动台那一节；关掉剪贴板后只剩「启动器」的那一节同理；
       // 状态屏那一节在上面单独处理）
-      if !(section.actions.count == 1 && section.title == section.actions[0].title) {
+      // 按目录的 key 比（不比显示的字）：节标题是「启动台」、唯一那一项也是「启动台」
+      if !(section.actions.count == 1 && section.key == section.actions[0].titleResource.key) {
         menu.addItem(.sectionHeader(title: section.title))
       }
       for action in section.actions {
         let binding = hotKeys.bindings[action]
         let item = menu.addAction(
-          action.title(recording: state.isRunning(action)), symbol: action.symbol,
+          "\(action.title(recording: state.isRunning(action)))", symbol: action.symbol,
           color: NSColor(action.color),
           key: binding?.menuKeyEquivalent ?? "", modifiers: binding?.modifierFlags ?? []
         ) { [unowned self] in run(action) }
@@ -3486,7 +3521,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let name = front.localizedName ?? id
     let blocked = HotKeyBlock.list(HotKeyBlock.stored).contains { $0.bundleID == id }
     menu.addAction(
-      blocked ? "在「\(name)」中恢复快捷键" : "在「\(name)」中停用快捷键", symbol: "keyboard",
+      blocked ? "在「\(name)」中恢复快捷键" : "在「\(name)」中停用快捷键",
+      symbol: "keyboard",
       color: NSColor(Style.Family.general)
     ) { [unowned self] in
       HotKeyBlock.change { list in
@@ -3544,19 +3580,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       var detail = summary.map(Island.excerpt)
       if NoteSyncer.isUpgrade(.standard) {
         toldSyncUpgrade = true
-        detail = [detail, "现在也能同步设置、片段和收藏这些了，到 设置 › 通用「同步」里勾上"]
-          .compactMap { $0 }.joined(separator: "；")
+        detail = [detail, String(localized: "现在也能同步设置、片段和收藏这些了，到 设置 › 通用「同步」里勾上")]
+          .compactMap { $0 }.joined(separator: Self.semicolon)
         actions.append(openSyncSettings)
       }
       // 升级时替用户保持了中文（InterfaceLanguage.keepChineseOnUpgrade）：说一声能换成英文
       if InterfaceLanguage.keptChinese {
         detail = [detail, String(localized: "现在也有英文界面了，在 设置 › 通用「语言」里换")]
-          .compactMap { $0 }.joined(separator: "；")
+          .compactMap { $0 }.joined(separator: Self.semicolon)
       }
       island.show(
-        "已更新到 \(AboutTab.version)", detail: detail, tone: .success, symbol: "sparkles",
+        "已更新到 \(AboutTab.version)", detail: detail.map { "\($0)" }, tone: .success,
+        symbol: "sparkles",
         actions: actions)
     }
+  }
+
+  /// 一串加了引号的名字（「A」「B」）里两个名字之间的那一段：中文「」「」、英文「”, “」。外面再包一层「%@」。
+  /// 默认值不能是空串：查不到译文、默认值又是空的时候系统显示 key 本身（实测）
+  private static var quotedSeparator: String {
+    String(localized: "list.quoted", defaultValue: "」「", comment: "「A」「B」这样一串名字里两个名字之间的那一段")
+  }
+
+  /// 「已更新到」那座岛上几句话之间的分隔：中文「；」、英文「; 」
+  private static var semicolon: String {
+    String(localized: "list.semicolon", defaultValue: "；", comment: "两句话并成一句时中间的分号")
   }
 
   /// 首次安装的引导走完了（「开始使用」、Esc、关掉设置窗）：这时才记「看过这一版」，做到第几屏的记录删掉（E1）
@@ -3694,9 +3742,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     } catch {
       let alert = NSAlert()
       alert.alertStyle = .critical
-      alert.messageText = "无法打开数据库"
-      alert.informativeText =
-        "\(error)\n\n数据目录：\((directory.path as NSString).abbreviatingWithTildeInPath)"
+      alert.messageText = String(localized: "无法打开数据库")
+      let folder = (directory.path as NSString).abbreviatingWithTildeInPath
+      alert.informativeText = String(localized: "\(String(describing: error))\n\n数据目录：\(folder)")
       NSApp.activate()
       alert.runModal()
       exit(1)
@@ -3735,9 +3783,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       Log.storage.error("便签这次用不了：\(error)")
       guard let notice = NotesRecovery.notice(for: error, directory: directory) else { return nil }
       if case .newer = error {
-        island.show(notice.title, detail: notice.text, tone: .warning)
+        island.show("\(notice.title)", detail: "\(notice.text)", tone: .warning)
       } else {
-        _ = show(notice.title, notice.text, ["好"])
+        _ = show(notice.title, notice.text, [String(localized: "好")])
       }
       return nil
     }

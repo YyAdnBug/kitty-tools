@@ -396,7 +396,7 @@ extension NoteColor {
   {
     allCases.map { color in
       ActionMenu.Item(
-        title: color.title, image: color.swatch(side: 16), isChecked: current == color,
+        title: "\(color.title)", image: color.swatch(side: 16), isChecked: current == color,
         id: "ink-\(color.name)"
       ) { choose(color) }
     } + [
@@ -423,7 +423,7 @@ extension NotePaper {
   ) -> [ActionMenu.Item] {
     var items = all.enumerated().map { index, paper in
       ActionMenu.Item(
-        title: paper.name, image: paper.swatch(side: 16), isChecked: index == current,
+        title: "\(paper.name)", image: paper.swatch(side: 16), isChecked: index == current,
         id: "color-\(index)"
       ) { choose(index) }
     }
@@ -436,14 +436,15 @@ extension NotePaper {
       let paper = of(color: color)
       items.append(
         ActionMenu.Item(
-          title: paper.name, image: paper.swatch(side: 16), isChecked: color == current,
+          title: "\(paper.name)", image: paper.swatch(side: 16), isChecked: color == current,
           id: "color-\(Note.hex(rgb: rgb))", section: 1
         ) { choose(color) })
     }
     if let other {
       items.append(
-        ActionMenu.Item(title: otherColorTitle, symbol: "eyedropper", id: "color-other", section: 2)
-        {
+        ActionMenu.Item(
+          title: "\(otherColorTitle)", symbol: "eyedropper", id: "color-other", section: 2
+        ) {
           other()
         })
     }

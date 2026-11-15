@@ -129,6 +129,37 @@ struct HomeTests {
     #expect(Home.width == 2 * Home.inset + 5 * Home.tile.width + 4 * Home.gap)
   }
 
+  /// 名字一行放不下（英文）：整块面板的格子都高一行、面板跟着高；中文都是一行，高度不变（多语言第 1 批）
+  @Test func longNamesWrapToTwoLines() {
+    var state = LauncherItem.ActionState()
+    state.features = all
+    #expect(Home.tileHeight(Home.sections(state: state, keys: [:])) == Home.tile.height)
+    let long = Home.Tile(
+      target: .action(.translateReplace), title: "Translate and Replace Selection",
+      symbol: "kitty.translate.replace", color: HotKeyAction.translateReplace.color, key: nil)
+    let short = Home.Tile(
+      target: .action(.launcher), title: "Launcher", symbol: "kitty.launcher",
+      color: HotKeyAction.launcher.color, key: nil)
+    #expect(Home.fitsOneLine(short) && !Home.fitsOneLine(long))
+    let wide = [Home.Section(title: nil, tiles: [short, long])]
+    #expect(Home.tileHeight(wide) == Home.tile.height + Home.secondLine)
+    #expect(
+      Home.height(wide, offCount: 0)
+        == Home.top + Home.bottom + Home.tile.height + Home.secondLine + Home.barHeight)
+  }
+
+  /// 菜单栏菜单「只有一项、节标题和它同名的不画节标题」按目录的 key 比（不比显示的字）：启动台那一节、只剩启动器的那一节
+  @Test func sectionKeysMatchTheirOnlyAction() {
+    let launchpad = HotKeyAction.visibleSections(enabled: [.launchpad]).first
+    #expect(launchpad?.key == HotKeyAction.launchpad.titleResource.key)
+    let launcher = HotKeyAction.visibleSections(enabled: [.launcher]).first
+    #expect(launcher?.actions == [.launcher])
+    #expect(launcher?.key == HotKeyAction.launcher.titleResource.key)
+    // 动作「截图」和页名「截图」是两个 key（英文不同）
+    #expect(HotKeyAction.screenshot.titleResource.key != SettingsPage.screenshot.titleResource.key)
+    #expect(HotKeyAction.screenshot.title == SettingsPage.screenshot.title)
+  }
+
   /// 点菜单栏图标打开的挂在图标下面：右边对着图标的右边、顶边在菜单栏下面 6 pt；靠屏幕左边的图标往里挪
   @Test func placedBelowTheIcon() {
     let visible = NSRect(x: 0, y: 0, width: 1470, height: 918)

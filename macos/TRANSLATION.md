@@ -31,6 +31,10 @@
 | 意思靠上下文的短词 | 加 `comment:` 写在哪、指什么（给翻译的人看） |
 | 不翻的（App 名、品牌、示例网址、只有符号和格式符的） | `Text(verbatim:)`；已经抽进目录的只有格式符的 key 标 `shouldTranslate: false` |
 | AppKit（`NSMenuItem`、`NSAlert`、`toolTip`、读屏的标签和播报） | `String(localized:)` |
+| 刘海岛（第 1 批改好）：`show` / `progress` / `dismiss(ifShowing:)` / `showIfSlow`、`Island.Action`、`Island.announce` 收 `LocalizedStringResource` | 进行中那一条按 `Content.source`（传进来的 resource，key + 插的值）认：`progress`、`dismiss(ifShowing:)` 给和 `show` 同一个 resource（存成 `static let x: LocalizedStringResource`）；已经取好的字播报用 `Island.post` |
+| 自家组件（第 1 批改好）：`ActionMenu.Item(title:detail:)`、`emptyText`、`EmptyState`、`BarNotice.message/warning/undo`、`NSMenu.addAction`、`NewTitle`、`WhatsNew.touch(section:)` | 同上，字面量直接写；`ActionMenu.Item.original` 是中文原文（`resource.chinese`），过滤时和标题一起认 |
+| 某种语言里是空的（中文「」「」之间什么都不加、英文要「, 」） | 别让哪种语言的值是空串：查不到译文、默认值又是空的时候系统显示 key 本身（实测）。把空的那段并进旁边的字里（`list.quoted` 的中文是「」「」，外面再包一层「%@」），`LocalizationTests` 查空串 |
+| 固定宽的格子里英文放不下（主界面格子、刘海岛那一张的快捷动作） | `Style.fitsOneLine` 量：放不下的才折两行、居中，放得下的修饰符和原来一模一样（中文截图逐像素不变） |
 
 **存下来的字：存原文、显示时翻**（拍板 D6）。写进偏好、数据库、同步文件夹、导出文件、文件名，而且之后还要读回来比对的中文，
 不能因为换语言就认不出来：

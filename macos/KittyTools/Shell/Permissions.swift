@@ -14,7 +14,9 @@ enum Permissions {
     case accessibility, screenRecording, filesAndFolders, automation, fullDiskAccess, microphone
     case calendar
 
-    var settingsTitle: String {
+    var settingsTitle: String { String(localized: settingsTitleResource) }
+
+    var settingsTitleResource: LocalizedStringResource {
       switch self {
       case .accessibility: "打开辅助功能设置"
       case .screenRecording: "打开屏幕录制设置"
@@ -43,7 +45,8 @@ enum Permissions {
   }
 
   /// 系统设置里放这些授权的那一栏，提示里写路径用：macOS 27 起改叫「隐私与安全」（扩展的 InfoPlist.loctable）
-  nonisolated static let privacyPane = if #available(macOS 27, *) { "隐私与安全" } else { "隐私与安全性" }
+  nonisolated static let privacyPane =
+    if #available(macOS 27, *) { String(localized: "隐私与安全") } else { String(localized: "隐私与安全性") }
 
   static var isAccessibilityTrusted: Bool { AXIsProcessTrusted() }
 
@@ -104,8 +107,9 @@ enum Permissions {
   /// 文件搜索要读的受保护文件夹（显示名, 相对主目录的路径）。实测 Spotlight 按调用方的授权过滤结果：
   /// 没授权时文稿、下载、iCloud 云盘里的文件一条都搜不到，也不会因此弹框
   static let protectedFolders = [
-    ("桌面", "Desktop"), ("文稿", "Documents"), ("下载", "Downloads"),
-    ("iCloud 云盘", "Library/Mobile Documents/com~apple~CloudDocs"),
+    (String(localized: "桌面"), "Desktop"), (String(localized: "文稿"), "Documents"),
+    (String(localized: "下载"), "Downloads"),
+    (String(localized: "iCloud 云盘"), "Library/Mobile Documents/com~apple~CloudDocs"),
   ]
 
   /// 没问过返回 nil（读一下目录就会弹框，所以问之前不碰）；问过之后返回被拒绝的文件夹（系统记住了答复，

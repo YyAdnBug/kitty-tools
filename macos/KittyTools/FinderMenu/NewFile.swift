@@ -154,7 +154,7 @@ nonisolated enum NewFile {
       return target
     } catch {
       Log.finder.error("新建文件失败：\((error as NSError).code)")
-      island?.show("没能新建", detail: writeProblem(error), tone: .error)
+      island?.show("没能新建", detail: "\(writeProblem(error))", tone: .error)
       return nil
     }
   }

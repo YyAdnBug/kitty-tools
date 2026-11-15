@@ -358,7 +358,7 @@ struct TranslatePanelView: View {
             isActive: speaker.speaking == key && !coordinator.sourceText.isEmpty)
           Button("复制原文", systemImage: "doc.on.doc") {
             Paster.write(string: coordinator.sourceText, record: true)
-            island?.show("已复制原文", detail: Island.excerpt(coordinator.sourceText))
+            island?.show("已复制原文", detail: "\(Island.excerpt(coordinator.sourceText))")
           }
           Button("清空", systemImage: "xmark.circle") { coordinator.beginInput() }
         }
@@ -431,7 +431,7 @@ struct TranslatePanelView: View {
   /// 去设置的两个按钮是主按钮（BrandButtonStyle）：这时面板里该点的就是它
   @ViewBuilder private var results: some View {
     if let notice = coordinator.notice {
-      EmptyState(symbol: "exclamationmark.bubble", title: notice) {
+      EmptyState(symbol: "exclamationmark.bubble", title: "\(notice)") {
         // 只有授权类提示才给按钮（以前任何提示都挂「打开辅助功能设置」）
         if let permission = coordinator.noticePermission {
           Button(permission.settingsTitle, action: permission.openSettings)

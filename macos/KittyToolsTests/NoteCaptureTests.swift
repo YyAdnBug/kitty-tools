@@ -98,11 +98,11 @@ struct NoteCaptureTests {
     #expect(model.save() == .tooLong)
     #expect(store.notes.isEmpty && panel.hidden == 0)
     #expect(model.draft.utf8.count == Note.maxBodyBytes + 1)
-    guard case .warning(let text)? = model.notice else {
+    guard let notice = model.notice, notice.kind == .warning else {
       Issue.record("底栏没有说原因")
       return
     }
-    #expect(text.contains("1 MB"))
+    #expect(notice.text.contains("1 MB"))
     // 一改草稿提示就收
     model.draft = String(repeating: "a", count: Note.maxBodyBytes)
     #expect(model.notice == nil)

@@ -183,7 +183,7 @@ final class AudioRecorder: NSObject {
   func open() {
     guard hud == nil, !isStarted else { return }
     presentHUD(.ready)
-    Island.announce(Self.readyAnnouncement(key: HotKeyAction.audioRecord.hotKey?.display))
+    Island.announce("\(Self.readyAnnouncement(key: HotKeyAction.audioRecord.hotKey?.display))")
   }
 
   /// 开录（异步：问过授权、开起来之后才出 HUD 和停止项；待录的控制条已经在了就原地换成录制态），结束时回调 onFinish。

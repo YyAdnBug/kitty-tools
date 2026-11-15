@@ -42,11 +42,11 @@ struct IslandFrameProbeTests {
     let island = Island()
     let url = URL(filePath: "/tmp/截屏 2026-10-26 14.32.08.png")
     island.boardActions = {
-      HotKeyAction.islandShortcuts.map { Island.Action($0.title, symbol: $0.symbol) {} }
+      HotKeyAction.islandShortcuts.map { Island.Action("\($0.title)", symbol: $0.symbol) {} }
     }
     // 先垫几条进列表（那一张里要有东西排）
     for title in ["已复制", "已存为片段", "翻译失败", "已导出 12 条", "已暂停记录剪贴板", "已复制色值"] {
-      island.show(title, detail: "https://example.com/kitty-tools/\(title)")
+      island.show("\(title)", detail: "https://example.com/kitty-tools/\(title)")
     }
     try await Task.sleep(for: .seconds(0.6))
     island.dismiss()

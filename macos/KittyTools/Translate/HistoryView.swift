@@ -241,7 +241,9 @@ import UniformTypeIdentifiers
     typealias Item = ActionMenu.Item
     let exports = HistoryMenu.exports.map { favoritesOnly, anki in
       Item(
-        title: (favoritesOnly ? "只导收藏" : "全部历史") + " · " + HistoryMenu.formatTitle(anki: anki),
+        title: favoritesOnly
+          ? "只导收藏 · \(HistoryMenu.formatTitle(anki: anki))"
+          : "全部历史 · \(HistoryMenu.formatTitle(anki: anki))",
         symbol: favoritesOnly ? "star" : "clock"
       ) { [unowned self] in
         HistoryMenu.export(store, favoritesOnly: favoritesOnly, anki: anki, island: island)
@@ -719,10 +721,10 @@ enum HistoryMenu {
       do {
         try text.write(to: url, atomically: true, encoding: .utf8)
         island?.show(
-          "已导出 \(entries.count) 条", detail: url.lastPathComponent,
+          "已导出 \(entries.count) 条", detail: "\(url.lastPathComponent)",
           symbol: "square.and.arrow.up.circle.fill", actions: [.reveal(url)])
       } catch {
-        island?.show("导出失败", detail: error.localizedDescription, tone: .error)
+        island?.show("导出失败", detail: "\(error.localizedDescription)", tone: .error)
       }
     }
   }

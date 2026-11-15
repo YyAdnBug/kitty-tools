@@ -49,7 +49,7 @@ enum SystemControl {
       case ESRCH: island?.show("「\(name)」已经不在运行了", tone: .info)
       case EPERM: island?.show("没能结束「\(name)」", detail: "它属于别的用户", tone: .error)
       default:
-        island?.show("没能结束「\(name)」", detail: String(cString: strerror(errno)), tone: .error)
+        island?.show("没能结束「\(name)」", detail: "\(String(cString: strerror(errno)))", tone: .error)
       }
       return
     }
@@ -134,7 +134,10 @@ enum SystemControl {
       island?.show("「\(name)」已经不在运行了", tone: .info)
       return
     }
-    if !act(app) { island?.show(failure + "「\(app.localizedName ?? "")」", tone: .error) }
+    if !act(app) {
+      let name = app.localizedName ?? ""
+      island?.show("\(failure)「\(name)」", tone: .error)
+    }
   }
 
   private static func quitAll(island: Island?) {
@@ -191,7 +194,7 @@ enum SystemControl {
     async
   {
     if (try? await Subprocess.run(path, arguments))?.status != 0 {
-      island?.show(failure, tone: .error)
+      island?.show("\(failure)", tone: .error)
     }
   }
 
@@ -203,7 +206,7 @@ enum SystemControl {
     guard
       let result = try? await Subprocess.run("/usr/bin/osascript", ["-e", source], captures: true)
     else {
-      island?.show(failure, tone: .error)
+      island?.show("\(failure)", tone: .error)
       return nil
     }
     guard result.status != 0 else {
@@ -216,7 +219,7 @@ enum SystemControl {
         actions: [.settings(for: .automation)])
       Permissions.Kind.automation.openSettings()
     } else if !result.error.contains("-128") {
-      island?.show(failure, detail: Island.excerpt(result.error), tone: .error)
+      island?.show("\(failure)", detail: "\(Island.excerpt(result.error))", tone: .error)
     }
     return nil
   }

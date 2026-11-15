@@ -539,7 +539,8 @@ import Observation
     recordedPrimary = service.id
     // 焦点在原文框，结果出来了读屏不知道（第四轮体检 U12）：浮窗是 key 时把译文开头读出来（自动复制不另播）
     if isPanelKey() {
-      Island.announce(Self.announcement(service: ProviderCardView.displayName(service), text: text))
+      Island.announce(
+        "\(Self.announcement(service: ProviderCardView.displayName(service), text: text))")
     }
     let defaults = UserDefaults.standard
     if defaults.bool(forKey: Prefs.translateHistoryEnabled) {

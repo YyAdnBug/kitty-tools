@@ -108,7 +108,7 @@ extension NameRepair {
     }
     island?.show(
       renamed.count == 1 ? "已修复文件名" : "已修复 \(renamed.count) 个文件名",
-      detail: renamed.count == 1 ? renamed[0].to.lastPathComponent : nil,
+      detail: renamed.count == 1 ? "\(renamed[0].to.lastPathComponent)" : nil,
       actions: [
         Island.Action("撤销") {
           let back = undo(renamed)

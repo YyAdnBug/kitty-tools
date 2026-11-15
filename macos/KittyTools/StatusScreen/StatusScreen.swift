@@ -320,7 +320,7 @@ import Observation
     else { return NSSound.beep() }
     // 录屏 / 录音中：控制条和停止项会被盖住、热键停着，退出前停不了；长截图的自动滚动还会被拦截吞掉（同录屏录音互斥的提示）
     if let blocker = blocker() {
-      island?.show(blocker.title, detail: blocker.detail, tone: .warning)
+      island?.show("\(blocker.title)", detail: "\(blocker.detail)", tone: .warning)
       return
     }
     // 上一次退出后还在等按键松开的拦截：先作废，不叠两个
@@ -376,7 +376,7 @@ import Observation
     }
     scheduleIdlePeek()
     watcher.start()
-    Island.announce("状态屏：\(preset.title)。" + Self.exitWording(passcode: passcode != nil))
+    Island.announce("状态屏：\(preset.title)。\(Self.exitWording(passcode: passcode != nil))")
     // 真进来了才记：选状态的面板下次默认选中它（菜单栏、启动器进的也算）
     UserDefaults.standard.set(preset.id, forKey: Prefs.statusScreenLastPreset)
     decodeFrames(for: preset)
@@ -739,10 +739,10 @@ import Observation
     }
     guard reason != .quit else { return }
     defer { onExit() }
+    let summary = Self.summary(
+      reason, seconds: seconds, touches: touches, autoEndMinutes: preset.autoEndMinutes)
     island?.show(
-      "状态屏已结束",
-      detail: Self.summary(
-        reason, seconds: seconds, touches: touches, autoEndMinutes: preset.autoEndMinutes),
+      "状态屏已结束", detail: "\(summary)",
       tone: .info, symbol: HotKeyAction.statusScreen.symbol)
   }
 

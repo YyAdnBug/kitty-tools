@@ -90,7 +90,7 @@ import Network
       defaults.bool(forKey: Prefs.islandNoticePower)
     {
       let level = Self.powerLevel(plugged: now.plugged, percent: now.percent, low: false)
-      let spoken = now.plugged ? "已接上电源" : "已拔掉电源"
+      let spoken = now.plugged ? String(localized: "已接上电源") : String(localized: "已拔掉电源")
       island?.showNotice(level, fallback: "\(spoken) \(now.percent)%")
       Island.announce("\(spoken)，电量 \(now.percent)%")
     }
@@ -111,7 +111,11 @@ import Network
   static func powerLevel(plugged: Bool, percent: Int, low: Bool) -> Island.Level {
     Island.Level(
       kind: .device, fraction: Double(min(max(percent, 0), 100)) / 100,
-      caption: low ? "电量低" : plugged ? (percent >= 100 ? "已充满" : "充电中") : "电池供电",
+      caption: low
+        ? String(localized: "电量低")
+        : plugged
+          ? (percent >= 100 ? String(localized: "已充满") : String(localized: "充电中"))
+          : String(localized: "电池供电"),
       tone: low ? .low : plugged ? .good : .plain, stay: .seconds(5))
   }
 
@@ -183,8 +187,9 @@ import Network
     var level = Island.Level(
       kind: .device, fraction: -1, label: name, glyph: Headphones.symbol(named: name),
       stay: .seconds(3))
-    island?.showNotice(level, fallback: "已连上\(name ?? "耳机")")
-    Island.announce("已连上\(name ?? "耳机")")
+    let shown = name ?? String(localized: "耳机")
+    island?.showNotice(level, fallback: "已连上\(shown)")
+    Island.announce("已连上\(shown)")
     batteryRead?.cancel()
     // 电量只有蓝牙耳机有（USB 的没有地址，按名字去找会认成同名的别的蓝牙设备）
     guard transport != kAudioDeviceTransportTypeUSB else { return }

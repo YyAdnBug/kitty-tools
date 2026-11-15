@@ -409,9 +409,10 @@ import AppKit
         try? await Task.sleep(for: .seconds(1))
         while !Task.isCancelled {
           // 再挂时不抢别的：岛上空着、或者正挂着这一条才挂（别的提示、挂着的提醒照常露出来）
-          if island?.content == nil || island?.content?.title == notice {
+          if island?.content == nil || island?.content?.source == "\(notice)" {
             island?.show(
-              notice, detail: batch.detail, tone: .progress, fraction: batch.fraction,
+              "\(notice)", detail: batch.detail.map { "\($0)" }, tone: .progress,
+              fraction: batch.fraction,
               actions: [Island.Action("停止") { batch.task?.cancel() }])
           }
           try? await Task.sleep(for: .seconds(50))
@@ -420,7 +421,7 @@ import AppKit
       let result = await work { fraction, detail in
         batch.fraction = fraction
         batch.detail = detail
-        island?.progress(notice, detail: detail, fraction: fraction)
+        island?.progress("\(notice)", detail: "\(detail)", fraction: fraction)
       }
       ticker.cancel()
       finish(result)
@@ -433,7 +434,7 @@ import AppKit
     let verb = move ? "移动" : "复制"
     let place = FileManager.default.displayName(atPath: folder.path(percentEncoded: false))
     if let reason = refusal(files, into: folder, move: move, place: place) {
-      island?.show("没有\(verb)", detail: reason, tone: .warning)
+      island?.show("没有\(verb)", detail: "\(reason)", tone: .warning)
       return
     }
     enqueue("正在\(verb) \(files.count) 项到「\(place)」…", detail: "准备中", island: island) { report in
@@ -476,7 +477,7 @@ import AppKit
       island?.show("已停止\(verb)", tone: .info)
     case (true, _):
       island?.show(
-        "没能\(verb)到「\(place)」", detail: outcome.problem ?? "可能是没有权限，或者那里放不下",
+        "没能\(verb)到「\(place)」", detail: outcome.problem.map { "\($0)" } ?? "可能是没有权限，或者那里放不下",
         tone: .error)
     case (false, 0) where outcome.kept > 0:
       island?.show(
@@ -484,16 +485,16 @@ import AppKit
         tone: .warning, actions: [reveal])
     case (false, 0):
       island?.show(
-        (verb == "移动" ? "已移到" : "已复制到") + "「\(place)」",
+        verb == "移动" ? "已移到「\(place)」" : "已复制到「\(place)」",
         detail: outcome.done.count == 1
-          ? outcome.done[0].lastPathComponent : "\(outcome.done.count) 项",
+          ? "\(outcome.done[0].lastPathComponent)" : "\(outcome.done.count) 项",
         actions: [reveal])
     case (false, let failed):
       island?.show(
         "\(verb)了 \(outcome.done.count) 项，\(failed) 项没成",
         detail: outcome.kept > 0
-          ? "\(outcome.kept) 项的原件没能删掉；" + (outcome.problem ?? "到「\(place)」")
-          : outcome.problem ?? "到「\(place)」",
+          ? "\(outcome.kept) 项的原件没能删掉；\(outcome.problem ?? String(localized: "到「\(place)」"))"
+          : outcome.problem.map { "\($0)" } ?? "到「\(place)」",
         tone: .warning, actions: [reveal])
     }
   }
@@ -587,7 +588,7 @@ import AppKit
     // 这里放不了（比如就是原来那个文件夹）：说原因，剪切留着，换个地方再粘贴
     let place = FileManager.default.displayName(atPath: folder.path(percentEncoded: false))
     if let reason = refusal(items, into: folder, move: true, place: place) {
-      island?.show("没有移动", detail: reason, tone: .warning)
+      island?.show("没有移动", detail: "\(reason)", tone: .warning)
       return
     }
     forgetCut()
@@ -653,7 +654,8 @@ import AppKit
       return done
     } finish: { done in
       if done == items.count {
-        island?.show("已彻底删除" + (done == 1 ? "「\(items[0].lastPathComponent)」" : " \(done) 项"))
+        island?.show(
+          done == 1 ? "已彻底删除「\(items[0].lastPathComponent)」" : "已彻底删除 \(done) 项")
       } else {
         island?.show(
           "删了 \(done) 项，\(items.count - done) 项没删完",
@@ -706,7 +708,7 @@ import AppKit
       return
     }
     island?.show(
-      "已把替身放到桌面", detail: made.count == 1 ? made[0].lastPathComponent : "\(made.count) 个",
+      "已把替身放到桌面", detail: made.count == 1 ? "\(made[0].lastPathComponent)" : "\(made.count) 个",
       actions: [
         Island.Action("在访达中显示", opens: true) {
           NSWorkspace.shared.activateFileViewerSelecting(made)

@@ -54,7 +54,9 @@ import Carbon.HIToolbox
       return
     }
     island?.show(
-      (hidden ? "已隐藏" : "已取消隐藏") + (changed == 1 ? "" : " \(changed) 项"),
+      changed == 1
+        ? (hidden ? "已隐藏" : "已取消隐藏")
+        : (hidden ? "已隐藏 \(changed) 项" : "已取消隐藏 \(changed) 项"),
       detail: hidden ? "在访达里按 ⇧⌘. 能看到隐藏的东西" : nil)
   }
 
@@ -68,7 +70,9 @@ import Carbon.HIToolbox
       return
     }
     island?.show(
-      (hidden ? "已隐藏扩展名" : "已显示扩展名") + (changed == 1 ? "" : "（\(changed) 项）"))
+      changed == 1
+        ? (hidden ? "已隐藏扩展名" : "已显示扩展名")
+        : (hidden ? "已隐藏扩展名（\(changed) 项）" : "已显示扩展名（\(changed) 项）"))
   }
 
   /// 给每一样设一下属性；返回设成了几样

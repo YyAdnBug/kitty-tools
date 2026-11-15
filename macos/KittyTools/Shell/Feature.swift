@@ -34,7 +34,9 @@ nonisolated enum Feature: String, CaseIterable {
   var prefsKey: String { Prefs.featurePrefix + rawValue }
 
   /// 「功能」列表、每页「启用」那一行的说明
-  var blurb: String {
+  var blurb: String { String(localized: blurbResource) }
+
+  var blurbResource: LocalizedStringResource {
     switch self {
     case .clipboard: "记下复制过的文字、图片和文件，随时找回来粘贴"
     case .launcher: "一个搜索框：打开 App、文件和网页，顺手算算式"
@@ -57,34 +59,55 @@ nonisolated enum Feature: String, CaseIterable {
   ]
   var isPlugin: Bool { Self.plugins.contains(self) }
 
+  /// 插件卡片「授权」那一行的「不要」（显式 key：单独一个「不要」意思靠上下文）
+  private static var noPermission: String {
+    String(localized: "plugin.permission.none", defaultValue: "不要", comment: "插件卡片「授权」那一行：不要任何授权")
+  }
+
   /// 插件卡片上那两行：要什么授权、在后台做什么（拍板 A2：添加之前就看得清）；不是插件的 nil
   var pluginFacts: (permission: String, background: String)? {
     switch self {
-    case .notes: ("不要", "屏幕边缘一条细药丸；开着同步时跟着合")
-    case .reminders: ("不要", "等着下一条提醒；一条都没有时什么都不跑")
-    case .statusScreen: ("进入时要「辅助功能」（拦住键盘鼠标）", "没进入时什么都不跑")
-    case .launchpad: ("不要", "看着触控板捏合和触发角，装卸 App 时重扫一遍")
-    case .dockPreview: ("辅助功能、屏幕录制", "看着程序坞；鼠标停在图标上才截缩略图")
-    case .finderMenu: ("要在系统设置里打开访达扩展", "只在你右键时动")
+    case .notes:
+      (
+        Self.noPermission,
+        String(localized: "屏幕边缘一条细药丸；开着同步时跟着合")
+      )
+    case .reminders:
+      (
+        Self.noPermission,
+        String(localized: "等着下一条提醒；一条都没有时什么都不跑")
+      )
+    case .statusScreen: (String(localized: "进入时要「辅助功能」（拦住键盘鼠标）"), String(localized: "没进入时什么都不跑"))
+    case .launchpad:
+      (
+        Self.noPermission,
+        String(localized: "看着触控板捏合和触发角，装卸 App 时重扫一遍")
+      )
+    case .dockPreview: (String(localized: "辅助功能、屏幕录制"), String(localized: "看着程序坞；鼠标停在图标上才截缩略图"))
+    case .finderMenu: (String(localized: "要在系统设置里打开访达扩展"), String(localized: "只在你右键时动"))
     case .island:
       (
-        "不要（打开「下一个日程」要「日历」，打开「音量和亮度」要「辅助功能」；正在播放读不到时，「音乐」「Spotify」的播放控制要「自动化」）",
-        "看着指针有没有停在刘海上；打开了系统提示才听电源、耳机、网络，打开了正在播放才起一个读播放信息的小进程，打开了下一个日程才读日历，打开了音量和亮度才接那五个键。不添加时提示照常弹"
+        String(localized: "不要（打开「下一个日程」要「日历」，打开「音量和亮度」要「辅助功能」；正在播放读不到时，「音乐」「Spotify」的播放控制要「自动化」）"),
+        String(
+          localized:
+            "看着指针有没有停在刘海上；打开了系统提示才听电源、耳机、网络，打开了正在播放才起一个读播放信息的小进程，打开了下一个日程才读日历，打开了音量和亮度才接那五个键。不添加时提示照常弹"
+        )
       )
     default: nil
     }
   }
 
-  /// 启动器里打这些词（插件没添加时）出「添加…插件」那一行；名字本身也算
+  /// 启动器里打这些词（插件没添加时）出「添加…插件」那一行；名字本身也算（名字是当前语言的，所以中文名留在这里）。
+  /// 中英都认（多语言：英文界面里打中文、中文界面里打英文都找得到），这些词不翻
   var pluginWords: [String] {
     switch self {
-    case .notes: ["便签", "笔记", "note", "notes", "记一条"]
-    case .reminders: ["提醒", "闹钟", "remind", "reminder"]
-    case .statusScreen: ["状态屏", "请勿触碰", "status"]
+    case .notes: ["便签", "笔记", "记一条", "note", "notes", "quick note", "sticky"]
+    case .reminders: ["提醒", "闹钟", "remind", "reminder", "reminders", "alarm"]
+    case .statusScreen: ["状态屏", "请勿触碰", "status", "status screen", "do not touch"]
     case .launchpad: ["启动台", "launchpad"]
-    case .dockPreview: ["程序坞", "窗口预览", "dock"]
-    case .finderMenu: ["访达右键", "右键菜单", "finder"]
-    case .island: ["刘海岛", "刘海", "灵动岛", "island", "notch"]
+    case .dockPreview: ["程序坞", "窗口预览", "程序坞预览", "dock", "dock preview", "window preview"]
+    case .finderMenu: ["访达右键", "右键菜单", "finder", "finder menu", "context menu", "right click"]
+    case .island: ["刘海岛", "刘海", "灵动岛", "island", "notch", "dynamic island"]
     default: []
     }
   }

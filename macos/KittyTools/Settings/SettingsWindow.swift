@@ -80,7 +80,10 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     Set(Feature.plugins.filter { !$0.isOn }.map(\.page))
   }
 
-  var title: String {
+  var title: String { String(localized: titleResource) }
+
+  /// 能本地化的页名（菜单、主界面、功能名都读它；key 是中文原文）
+  var titleResource: LocalizedStringResource {
     switch self {
     case .general: "通用"
     case .island: "刘海岛"

@@ -213,10 +213,15 @@ import EventKit
         // 编号拼上开始时刻：每天重复的日程各次共用一个编号，跨零点的那种（23:00–07:00）昨天那次和今天那次会同时在
         return Island.AgendaItem(
           id: "\(entry.id)@\(entry.start.timeIntervalSince1970)",
-          title: title.isEmpty ? "日程" : String(title.prefix(80)),
-          time: entry.isAllDay ? "全天" : entry.start.formatted(style))
+          title: title.isEmpty ? Self.untitled : String(title.prefix(80)),
+          time: entry.isAllDay ? String(localized: "全天") : entry.start.formatted(style))
       }
     return Island.Agenda(items: Array(rows.prefix(limit)), more: max(rows.count - limit, 0))
+  }
+
+  /// 没有标题的日程叫什么（显式 key：设置 › 刘海岛 那一节也叫「日程」，英文不同）
+  static var untitled: String {
+    String(localized: "event.untitled", defaultValue: "日程", comment: "没有标题的日历日程")
   }
 
   /// 下一个日程：还没开始的里面最早的（同一刻的按标题排，几台读出来一样）；全天的、拒绝 / 取消的不算
@@ -291,7 +296,8 @@ import EventKit
     actions.append(Island.Action("打开日历", opens: actions.isEmpty, run: openCalendar))
     let title = entry.title.trimmingCharacters(in: .whitespacesAndNewlines)
     return Island.Activity(
-      id: activityID, kind: .event, title: title.isEmpty ? "日程" : String(title.prefix(200)),
+      id: activityID, kind: .event,
+      title: title.isEmpty ? Self.untitled : String(title.prefix(200)),
       detail: detail(entry), symbol: "calendar", trailing: .countdown(to: entry.start),
       actions: actions)
   }

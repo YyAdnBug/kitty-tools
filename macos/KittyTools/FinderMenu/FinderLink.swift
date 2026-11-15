@@ -337,7 +337,7 @@ nonisolated struct FinderLink: Equatable {
     case .copyPaths(let shell):
       Paster.write(string: shell ? shellText(link.files) : pathText(link.files), record: true)
       // 拷贝是转一手交给本 App 做的，访达那边看不出成没成：说一声（同几家成熟产品拷完的提示）
-      island?.show(shell ? "已拷贝终端写法的路径" : "已拷贝路径", detail: copiedDetail(link.files))
+      island?.show(shell ? "已拷贝终端写法的路径" : "已拷贝路径", detail: "\(copiedDetail(link.files))")
     case .copyNames(let stem):
       let text = nameText(link.files, stem: stem) {
         let values = try? $0.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey])
@@ -345,7 +345,7 @@ nonisolated struct FinderLink: Equatable {
       }
       Paster.write(string: text, record: true)
       island?.show(
-        "已拷贝名称", detail: link.files.count == 1 ? text : "\(link.files.count) 个名称")
+        "已拷贝名称", detail: link.files.count == 1 ? "\(text)" : "\(link.files.count) 个名称")
     case .tooMany:
       island?.show("一次最多 \(maxFiles) 项", detail: "少选一些再右键", tone: .warning)
     case .open(let id):

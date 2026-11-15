@@ -445,7 +445,8 @@ final class ShotShelf {
       // 角标不换（存过的还要留着文件夹和「在访达中显示」），缩略图看不出拷没拷上：用刘海说（岛自己也播报）
       if let png = await encoded(), let copied = await shelf.copy(png) {
         shelf.island?.show(
-          "已复制截图", detail: copied.detail, leading: shown.map(Island.thumbnail(of:)) ?? .tone)
+          "已复制截图", detail: copied.detail.map { "\($0)" },
+          leading: shown.map(Island.thumbnail(of:)) ?? .tone)
       }
       isBusy = false
     }
@@ -461,7 +462,7 @@ final class ShotShelf {
           old.deletingLastPathComponent() == url.deletingLastPathComponent()
         {
           shelf.island?.show(
-            "已保存", detail: url.lastPathComponent,
+            "已保存", detail: "\(url.lastPathComponent)",
             leading: shown.map(Island.thumbnail(of:)) ?? .tone, actions: .file(url))
         }
         badge = .saved(url)
@@ -475,7 +476,7 @@ final class ShotShelf {
   private func exists(_ url: URL) -> Bool {
     guard !FileManager.default.fileExists(atPath: url.path) else { return true }
     shelf?.island?.show(
-      "文件已不存在", detail: url.lastPathComponent, tone: .warning, symbol: "questionmark.folder")
+      "文件已不存在", detail: "\(url.lastPathComponent)", tone: .warning, symbol: "questionmark.folder")
     return false
   }
 
@@ -507,10 +508,10 @@ final class ShotShelf {
       do {
         _ = try await NSWorkspace.shared.recycle([url])
       } catch {
-        shelf?.island?.show("没能移到废纸篓", detail: error.localizedDescription, tone: .error)
+        shelf?.island?.show("没能移到废纸篓", detail: "\(error.localizedDescription)", tone: .error)
         return
       }
-      shelf?.island?.show("已移到废纸篓", detail: url.lastPathComponent, symbol: "trash.circle.fill")
+      shelf?.island?.show("已移到废纸篓", detail: "\(url.lastPathComponent)", symbol: "trash.circle.fill")
       close()
     }
   }

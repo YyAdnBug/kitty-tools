@@ -71,6 +71,11 @@ struct LocalizationTests {
         problems.append("代码里已经不用了（stale），从目录里删掉：\(key)")
       }
       let localizations = entry["localizations"] as? [String: Any] ?? [:]
+      // 空串不行：查不到译文、默认值又是空的时候系统显示 key 本身（实测，显式 key 会把「list.quoted」露出来）
+      for (language, localization) in localizations
+      where Self.values(localization).contains(where: { $0.text.isEmpty }) {
+        problems.append("\(language) 是空串：\(key)")
+      }
       let source = Self.values(localizations["zh-Hans"]).first?.text ?? key
       let english = Self.values(localizations["en"])
       let needsEnglish = source.contains(Self.han) || entry["shouldTranslate"] as? Bool != false
@@ -120,6 +125,23 @@ struct LocalizationTests {
     #expect(Self.placeholders("版本 %@（%@）") == ["@", "@"])
     #expect(Self.placeholders("Next: %2$@ (%1$lld)") == ["lld", "@"])
     #expect(Self.placeholders("%lld%% 已完成，%.1f MB") == ["lld", "f"])
+  }
+
+  /// 中文原文（搜索中英都认用）：字面量的 key、显式 key 的默认值，插进去的值照样填上
+  @Test func chineseOriginal() {
+    #expect(HotKeyAction.clipboard.titleResource.chinese == "剪贴板历史")
+    #expect(HotKeyAction.screenshot.titleResource.chinese == "截图")
+    // chinese 靠的是 locale 能指定取哪一种语言：单测宿主是中文，反过来指到英文验一下
+    var english = HotKeyAction.screenshot.titleResource
+    english.locale = Locale(identifier: "en")
+    #expect(String(localized: english) == "Take Screenshot")
+    let name = "工作"
+    let moved: LocalizedStringResource = "已复制到我的脚本：\(name)"
+    #expect(moved.chinese == "已复制到我的脚本：工作")
+    #expect(ActionMenu.Item(title: "在访达中显示").original == "在访达中显示")
+    // 英文界面里打中文也找得到：标题和原文都认（这里两个是同一个字，照样只出一次）
+    let items = [ActionMenu.Item(title: "在访达中显示"), ActionMenu.Item(title: "打开")]
+    #expect(ActionMenu.filter(items, query: "zfd").map(\.title) == ["在访达中显示"])
   }
 
   // MARK: 界面语言

@@ -156,7 +156,7 @@ struct TransferSection: View {
     } catch {
       island?.show(
         "没有恢复",
-        detail: (error as? SettingsArchive.Failure)?.message ?? error.localizedDescription,
+        detail: "\((error as? SettingsArchive.Failure)?.message ?? error.localizedDescription)",
         tone: .error)
     }
   }
@@ -181,7 +181,7 @@ struct TransferSection: View {
       } catch {
         island?.show(
           "没有导入",
-          detail: (error as? SettingsArchive.Failure)?.message ?? error.localizedDescription,
+          detail: "\((error as? SettingsArchive.Failure)?.message ?? error.localizedDescription)",
           tone: .error)
       }
     }
@@ -334,12 +334,12 @@ struct ExportSheet: View {
       if sealsSecrets { try archive.seal(secrets, password: password) }
       data = try archive.encoded()
     } catch {
-      island?.show("导出失败", detail: error.localizedDescription, tone: .error)
+      island?.show("导出失败", detail: "\(error.localizedDescription)", tone: .error)
       return
     }
     // 导入时不肯全收的就别写出去（条数、大小超了；要有几千条收藏、上千万字才到得了）
     if let problem = archive.exportProblem(encodedSize: data.count) {
-      island?.show("没有导出", detail: problem, tone: .error)
+      island?.show("没有导出", detail: "\(problem)", tone: .error)
       return
     }
     let panel = NSSavePanel()
@@ -353,10 +353,10 @@ struct ExportSheet: View {
         try data.write(to: url, options: .atomic)
         dismiss()
         island?.show(
-          "已导出", detail: url.lastPathComponent, symbol: "square.and.arrow.up.circle.fill",
+          "已导出", detail: "\(url.lastPathComponent)", symbol: "square.and.arrow.up.circle.fill",
           actions: [.reveal(url)])
       } catch {
-        island?.show("导出失败", detail: error.localizedDescription, tone: .error)
+        island?.show("导出失败", detail: "\(error.localizedDescription)", tone: .error)
       }
     }
   }
@@ -524,12 +524,13 @@ struct ImportSheet: View {
     let pruned = transfer.applied()
     dismiss()
     let chosen = archive.sections.filter(sections.contains)
+    let summary = Self.summary(
+      chosen, outcome: outcome,
+      // 清理每次都做（和复制时一样）；只有这次改了上限才归到导入头上说
+      pruned: sections.contains(.preferences) ? pruned : 0)
     island?.show(
-      Self.title(chosen, outcome: outcome, restoring: origin != nil),
-      detail: Self.summary(
-        chosen, outcome: outcome,
-        // 清理每次都做（和复制时一样）；只有这次改了上限才归到导入头上说
-        pruned: sections.contains(.preferences) ? pruned : 0),
+      "\(Self.title(chosen, outcome: outcome, restoring: origin != nil))",
+      detail: "\(summary)",
       // 便签没导入（这次用不了）、并进来了没存上：别的照常导了，换成警告的颜色提个醒
       tone: outcome.notesSkipped || outcome.notesUnsaved ? .warning : .success,
       symbol: "square.and.arrow.down")

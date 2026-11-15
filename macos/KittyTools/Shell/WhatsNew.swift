@@ -30,8 +30,9 @@ enum WhatsNew {
     var actions: [HotKeyAction] = []
     /// 它的设置页：侧栏那一行挂标记，打开过就算碰过
     var page: SettingsPage?
-    /// 设置页里新的那一节（或那一行开关）的标题：标题后面挂「新」，进了页面知道新的是哪个；nil = 只标页
-    var section: String?
+    /// 设置页里新的那一节（或那一行开关）的标题：标题后面挂「新」，进了页面知道新的是哪个；nil = 只标页。
+    /// 按目录的 key 认那一节（多语言：不拿显示出来的字比，换了语言也对得上；页里写的是同一句中文就是同一个 key）
+    var section: LocalizedStringResource?
   }
 
   /// 清单（新的版本往后加）
@@ -83,9 +84,9 @@ enum WhatsNew {
   /// 一直没碰最多挂多久（拍板 B2）
   static let lifetime: TimeInterval = 30 * 24 * 60 * 60
   /// 写出来的那个字
-  static let label = "新"
+  static var label: String { String(localized: "新", comment: "新功能标记：菜单徽标、设置页标题后的小胶囊") }
   /// 读屏念的
-  static let spoken = "新功能"
+  static var spoken: String { String(localized: "新功能") }
 
   /// 系统菜单的徽标（macOS 14 起；样子、颜色系统定，拍板 C1）
   static var menuBadge: NSMenuItemBadge { NSMenuItemBadge(string: label) }
@@ -164,9 +165,11 @@ enum WhatsNew {
     entries.contains { ids.contains($0.id) && $0.page == page }
   }
 
-  /// 设置页里这一节要不要标
-  static func marks(section: String, of page: SettingsPage, in ids: Set<String>) -> Bool {
-    entries.contains { ids.contains($0.id) && $0.page == page && $0.section == section }
+  /// 设置页里这一节要不要标（按 key 比）
+  static func marks(
+    section: LocalizedStringResource, of page: SettingsPage, in ids: Set<String>
+  ) -> Bool {
+    entries.contains { ids.contains($0.id) && $0.page == page && $0.section?.key == section.key }
   }
 
   // MARK: 这台 Mac 的账（偏好；AppDelegate 用）
@@ -208,8 +211,10 @@ enum WhatsNew {
   }
 
   /// 拨了设置页里新的那一节 / 那一行的开关（Entry.section 是它的标题）。光打开那一页不算（2026-11-06）
-  static func touch(section: String, of page: SettingsPage, defaults: UserDefaults = .standard) {
-    update(defaults) { touching($0) { $0.page == page && $0.section == section } }
+  static func touch(
+    section: LocalizedStringResource, of page: SettingsPage, defaults: UserDefaults = .standard
+  ) {
+    update(defaults) { touching($0) { $0.page == page && $0.section?.key == section.key } }
   }
 }
 
@@ -225,11 +230,11 @@ struct NewDot: View {
 
 /// 设置页里一行开关的标题，这一版新加、还没换过页时后面跟一个「新」（WhatsNew.Entry.section 写的就是这个标题）
 struct NewTitle: View {
-  let title: String
+  let title: LocalizedStringResource
   let page: SettingsPage
   let fresh: Set<String>
 
-  init(_ title: String, page: SettingsPage, fresh: Set<String>) {
+  init(_ title: LocalizedStringResource, page: SettingsPage, fresh: Set<String>) {
     self.title = title
     self.page = page
     self.fresh = fresh

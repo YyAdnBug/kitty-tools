@@ -45,7 +45,7 @@ enum FlyCard {
     /// announces：卡片不接鼠标，主动给 VoiceOver 播报结果；录屏自己说（带时长）或由岛说时传 false
     func land(_ badge: Badge, announces: Bool = true) {
       self.badge = badge
-      if announces { Island.announce(badge.title) }
+      if announces { Island.announce("\(badge.title)") }
     }
   }
 

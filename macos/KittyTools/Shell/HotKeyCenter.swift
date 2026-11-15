@@ -149,7 +149,8 @@ struct HotKey: Codable, Hashable {
   }
 
   private static let specialKeys: [Int: String] = [
-    kVK_Space: "空格", kVK_Return: "↩", kVK_Tab: "⇥", kVK_Delete: "⌫", kVK_ForwardDelete: "⌦",
+    kVK_Space: String(localized: "空格", comment: "按键名：空格键（快捷键里显示成 ⌥空格）"), kVK_Return: "↩",
+    kVK_Tab: "⇥", kVK_Delete: "⌫", kVK_ForwardDelete: "⌦",
     kVK_Escape: "⎋", kVK_LeftArrow: "←", kVK_RightArrow: "→", kVK_UpArrow: "↑", kVK_DownArrow: "↓",
     kVK_Home: "↖", kVK_End: "↘", kVK_PageUp: "⇞", kVK_PageDown: "⇟",
     // 小键盘的 Enter / Clear 按布局取出来是控制字符（画不出来）
@@ -171,14 +172,19 @@ enum HotKeyAction: String, CaseIterable {
     statusScreen, noteCapture, noteNew, noteAll, launchpad, shotHistory, island, clothesline, home,
     reminderNew
 
-  var title: String {
+  var title: String { String(localized: titleResource) }
+
+  /// 能本地化的标题（key 是中文原文；启动器搜索拿它的中文原文和拼音匹配，英文界面也搜得到中文）
+  var titleResource: LocalizedStringResource {
     switch self {
     case .clipboard: "剪贴板历史"
     case .selectionTranslate: "划词翻译"
     case .inputTranslate: "输入翻译"
     case .screenshotTranslate: "截图翻译"
     case .launcher: "启动器"
-    case .screenshot: "截图"
+    // 同一个中文、英文不同（页名「截图」是 Screenshot）：显式 key 分开
+    case .screenshot:
+      LocalizedStringResource("action.screenshot", defaultValue: "截图", comment: "动作：框选截图")
     case .screenshotLastRegion: "截取上次区域"
     case .recognizeText: "识字"
     case .translateReplace: "划词翻译并替换"
@@ -203,8 +209,8 @@ enum HotKeyAction: String, CaseIterable {
   func title(recording: Bool) -> String {
     guard recording else { return title }
     return switch self {
-    case .screenRecord: "停止录屏"
-    case .audioRecord: "停止录音"
+    case .screenRecord: String(localized: "停止录屏")
+    case .audioRecord: String(localized: "停止录音")
     default: title
     }
   }
@@ -218,7 +224,8 @@ enum HotKeyAction: String, CaseIterable {
   /// 状态屏的键默认是先出一排预览卡片、选一个再进（Z13a）；设置 › 状态屏打开「按快捷键直接进入排在最前面的状态」时
   /// 进的是列表里的第一个（Z10）
   func rowTitle(statusEntersFirst: Bool) -> String {
-    self == .statusScreen ? (statusEntersFirst ? "进入排在最前面的状态" : "选一个状态进入") : title
+    guard self == .statusScreen else { return title }
+    return statusEntersFirst ? String(localized: "进入排在最前面的状态") : String(localized: "选一个状态进入")
   }
 
   /// nil = 默认不设键（静默替换这类用得少、又容易误触的）
@@ -299,19 +306,24 @@ enum HotKeyAction: String, CaseIterable {
 
   /// 快捷键页、菜单栏、启动器、引导的分组（N13 / N15：同名同序），只列开着的功能（Feature；macOS 15 上没有启动台）。
   /// 每次现算：功能随时能在设置里开关
-  static var sections: [(title: String, actions: [HotKeyAction])] {
+  static var sections: [Section] {
     visibleSections(enabled: Feature.enabled)
   }
 
+  /// 一节：title 是显示的字，key 是它在目录里的 key（「节标题和唯一那一项同名」按 key 比，不拿显示的字比）
+  typealias Section = (title: String, key: String, actions: [HotKeyAction])
+
   /// 单测喂集合：关着的功能的动作去掉、空了的节去掉；两个功能合一节的（剪贴板与启动器、截图与录制）只剩一个功能时，
   /// 节标题换成它的名字
-  static func visibleSections(enabled: Set<Feature>) -> [(title: String, actions: [HotKeyAction])] {
+  static func visibleSections(enabled: Set<Feature>) -> [Section] {
     allSections.compactMap { section in
       let actions = section.actions.filter { $0.feature.map(enabled.contains) ?? true }
       guard let first = actions.first else { return nil }
       let shared = Set(section.actions.map(\.feature)).count > 1
       let alone = Set(actions.map(\.feature)).count == 1
-      return (shared && alone ? first.feature?.title ?? section.title : section.title, actions)
+      let title =
+        shared && alone ? first.feature.map(\.page.titleResource) ?? section.title : section.title
+      return (String(localized: title), title.key, actions)
     }
   }
 
@@ -343,7 +355,7 @@ enum HotKeyAction: String, CaseIterable {
   /// 查重仍然算它（HotKeyRecorder：重新打开时不和别的动作抢同一个组合）
   var isActive: Bool { feature?.isOn ?? true }
 
-  private static let allSections: [(title: String, actions: [HotKeyAction])] = [
+  private static let allSections: [(title: LocalizedStringResource, actions: [HotKeyAction])] = [
     ("剪贴板与启动器", [.clipboard, .launcher]),
     ("翻译", [.selectionTranslate, .inputTranslate, .translateReplace, .screenshotTranslate]),
     // 钉住剪贴板里的图排在最后：菜单栏、启动器里有钉图时紧接着是「隐藏 / 关闭全部钉图」（MenuExtra），钉图的几项挨在一起
@@ -746,12 +758,12 @@ enum HotKeyAction: String, CaseIterable {
       modifiers & UInt32(cmdKey | controlKey) == 0 && modifiers & UInt32(optionKey) != 0
     // 15.0–15.1 上只带 ⌥（或 ⌥⇧）的组合返回 -9868（eventInternalErr，M1 实测；以前按 eventHotKeyInvalidErr
     // -9879 判断，从来没对上过），两个都认，但只在组合确实只带 ⌥ 时才这么说
-    if status == needsAccessibility { return "连按两下要「辅助功能」授权" }
+    if status == needsAccessibility { return String(localized: "连按两下要「辅助功能」授权") }
     return switch Int(status) {
     case eventInternalErr where optionOnly, eventHotKeyInvalidErr where optionOnly:
-      "macOS 15.0 / 15.1 不支持只带 ⌥ 的组合，加上 ⌘ 或 ⌃ 再录一次"
-    case eventHotKeyExistsErr: "和本 App 的另一个快捷键重复，没有注册上"
-    default: "没有注册上（错误 \(status)），换一个组合试试"
+      String(localized: "macOS 15.0 / 15.1 不支持只带 ⌥ 的组合，加上 ⌘ 或 ⌃ 再录一次")
+    case eventHotKeyExistsErr: String(localized: "和本 App 的另一个快捷键重复，没有注册上")
+    default: String(localized: "没有注册上（错误 \(status)），换一个组合试试")
     }
   }
 

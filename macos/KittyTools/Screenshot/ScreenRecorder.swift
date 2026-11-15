@@ -568,7 +568,7 @@ final class ScreenRecorder: NSObject {
     let escapes = hotKeys?.registerEscape { [weak self] in self?.stop(.cancelled) } ?? false
     defer { hotKeys?.unregisterEscape() }
     showFrame(counting: true, escapes: escapes)
-    Island.announce(Self.countdownAnnouncement(countdown, escapes: escapes))
+    Island.announce("\(Self.countdownAnnouncement(countdown, escapes: escapes))")
     // 菜单开着（.eventTracking）时也要数
     let feed = delegate.feed
     let ticker = Timer(timeInterval: 1, repeats: true) { _ in feed.yield(.tick) }
@@ -932,7 +932,7 @@ final class ScreenRecorder: NSObject {
       defaults.set(false, forKey: Prefs.screenRecordShowsKeys)
       let notice = Self.keysDeniedNotice(withoutMicrophone: withoutMicrophone)
       island?.show(
-        notice.title, detail: notice.detail, tone: .warning,
+        "\(notice.title)", detail: "\(notice.detail)", tone: .warning,
         actions: [.settings(for: .accessibility)])
       return false
     }
@@ -987,13 +987,13 @@ final class ScreenRecorder: NSObject {
       let progress = Task {
         try? await Task.sleep(for: .seconds(1))
         guard !Task.isCancelled else { return false }
-        island?.show(saving, tone: .progress, symbol: "waveform.circle.fill")
+        island?.show("\(saving)", tone: .progress, symbol: "waveform.circle.fill")
         return true
       }
       file = await Self.extractAudio(from: temp) ?? temp
       progress.cancel()
       // 结果岛（出的话）随后由 AppDelegate 弹；飞了卡片的正常停只播报，进度岛得自己收
-      if await progress.value { island?.dismiss(ifShowing: saving) }
+      if await progress.value { island?.dismiss(ifShowing: "\(saving)") }
     }
     defaults.removeObject(forKey: medium.inProgressKey)
     let (saved, moved, denied) = Self.settle(file, into: directory, medium: medium, keeps: keeps)

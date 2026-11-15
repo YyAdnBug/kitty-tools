@@ -429,8 +429,8 @@ extension Island.Level {
   var reading: (label: String, value: String) {
     guard kind == .device else { return (title, "\(Int((shown * 100).rounded()))%") }
     return (
-      [title, label].compactMap { $0 }.joined(separator: "，"),
-      battery.map { "电量 \(Int(($0 * 100).rounded()))%" } ?? ""
+      [title, label].compactMap { $0 }.joined(separator: Island.comma),
+      battery.map { String(localized: "电量 \(Int(($0 * 100).rounded()))%") } ?? ""
     )
   }
 }
@@ -447,7 +447,7 @@ struct IslandLevelRow: View {
       }
       if level.kind == .device {
         // 耳机连上：「已连上 名字」+ 电量；电源：那句话 + 电量
-        Text(level.label.map { "已连上\($0)" } ?? level.title)
+        Text(level.label.map { String(localized: "已连上\($0)") } ?? level.title)
           .font(.system(size: 13, weight: .semibold))
           .foregroundStyle(.white.opacity(0.95))
           .lineLimit(1)
@@ -753,7 +753,8 @@ struct IslandTransport: View {
   /// 随机 / 循环：14 pt 的符号，符号贴着卡片内容的边（alignment）；开着染封面的主色（没有就强调色）、底下一个小圆点，
   /// 关着 white 0.45。点了不自己变：等播放器报回来
   private func mode(
-    _ symbol: String, label: String, value: String, on: Bool, alignment: Alignment,
+    _ symbol: String, label: LocalizedStringResource, value: LocalizedStringResource, on: Bool,
+    alignment: Alignment,
     run: @escaping () -> Void
   ) -> some View {
     let tint = media.tint.map { Color(nsColor: $0) } ?? IslandLeading.tint(.info)
@@ -770,8 +771,8 @@ struct IslandTransport: View {
         .contentShape(Rectangle())
     }
     .buttonStyle(IslandButtonStyle())
-    .accessibilityLabel(label)
-    .accessibilityValue(value)
+    .accessibilityLabel(Text(label))
+    .accessibilityValue(Text(value))
   }
 
   private var modeSpace: some View {
@@ -791,7 +792,8 @@ struct IslandTransport: View {
 
   /// 播放 ↔ 暂停换符号时原地替换（系统的符号过渡），不是硬切
   private func button(
-    _ symbol: String, label: String, size: CGFloat, enabled: Bool, run: @escaping () -> Void
+    _ symbol: String, label: LocalizedStringResource, size: CGFloat, enabled: Bool,
+    run: @escaping () -> Void
   ) -> some View {
     Button(action: run) {
       Image(systemName: symbol)
@@ -805,7 +807,7 @@ struct IslandTransport: View {
     }
     .buttonStyle(IslandButtonStyle())
     .disabled(!enabled)
-    .accessibilityLabel(label)
+    .accessibilityLabel(Text(label))
   }
 }
 

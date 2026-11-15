@@ -14,7 +14,10 @@ struct ActionMenu: View {
   struct Item: Identifiable {
     /// 同一个菜单里不能重复（默认取标题；标题可能撞，比如同名的来源 App 和收藏夹，就自己给）
     var id: String
+    /// 显示的字（建的时候按当前语言取好）
     var title: String
+    /// 标题的中文原文（目录里中文的那一份）：英文界面里打中文、拼音也找得到（TRANSLATION.md「搜索中英都认」）
+    var original: String
     /// SF Symbol 名；和 image 都没有时留空位对齐
     var symbol: String?
     /// 比 symbol 优先，16 × 16（来源 App 图标之类）
@@ -33,16 +36,20 @@ struct ActionMenu: View {
     var isDestructive = false
     var run: () -> Void
 
+    /// 标题、说明是能本地化的字（调用处的字面量会被抽进目录）；用户的数据（App 名、收藏夹名）传 "\(x)"
     init(
-      title: String, symbol: String? = nil, image: NSImage? = nil, detail: String? = nil,
-      shortcut: String? = nil, isChecked: Bool? = nil, id: String? = nil, section: Int = 0,
-      submenu: [Item]? = nil, isDestructive: Bool = false, run: @escaping () -> Void = {}
+      title: LocalizedStringResource, symbol: String? = nil, image: NSImage? = nil,
+      detail: LocalizedStringResource? = nil, shortcut: String? = nil, isChecked: Bool? = nil,
+      id: String? = nil, section: Int = 0, submenu: [Item]? = nil, isDestructive: Bool = false,
+      run: @escaping () -> Void = {}
     ) {
-      self.id = id ?? title
-      self.title = title
+      let shown = String(localized: title)
+      original = title.chinese
+      self.id = id ?? shown
+      self.title = shown
       self.symbol = symbol
       self.image = image
-      self.detail = detail
+      self.detail = detail.map { String(localized: $0) }
       self.shortcut = shortcut
       self.isChecked = isChecked
       self.section = section
@@ -55,7 +62,7 @@ struct ActionMenu: View {
   let items: [Item]
   /// 当前选中行在 items 里的下标（越界就是没选中）
   let selection: Int
-  var emptyText = "没有匹配的操作"
+  var emptyText: LocalizedStringResource = "没有匹配的操作"
   /// 在子列表里：顶上一行「‹ 标题」，点一下回上一级（onBack）
   var header: String?
   var onBack: () -> Void = {}
@@ -270,10 +277,14 @@ struct ActionMenu: View {
     guard !folded.isEmpty else { return items }
     let latin = folded.filter { !$0.isWhitespace }
     return items.filter { item in
-      if LauncherMatch.fold(item.title).contains(folded) { return true }
+      // 英文界面里标题是英文，中文原文另认一遍（中文界面里两个是同一个字）
+      let names = item.original == item.title ? [item.title] : [item.title, item.original]
+      if names.contains(where: { LauncherMatch.fold($0).contains(folded) }) { return true }
       if let detail = item.detail, LauncherMatch.fold(detail).contains(folded) { return true }
-      guard let pinyin = pinyin(of: item.title) else { return false }
-      return pinyin.full.hasPrefix(latin) || pinyin.initials.hasPrefix(latin)
+      return names.contains { name in
+        guard let pinyin = pinyin(of: name) else { return false }
+        return pinyin.full.hasPrefix(latin) || pinyin.initials.hasPrefix(latin)
+      }
     }
   }
 

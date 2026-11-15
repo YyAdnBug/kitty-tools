@@ -17,9 +17,12 @@ enum AccentChoice: String, CaseIterable, Identifiable {
 
   var id: String { rawValue }
 
-  var title: String {
+  var title: String { String(localized: titleResource) }
+
+  var titleResource: LocalizedStringResource {
     switch self {
-    case .system: "跟随系统"
+    // 显式 key：外观、语言也有「跟随系统」，英文各叫各的（强调色是系统设置里的 Multicolor）
+    case .system: LocalizedStringResource("accent.system", defaultValue: "跟随系统")
     case .blue: "蓝色"
     case .purple: "紫色"
     case .pink: "品牌粉"

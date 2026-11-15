@@ -69,8 +69,8 @@ import SwiftUI
     // 鼠标所在那块屏的当 key（贴着屏幕顶边时 contains 不算，用 NSMouseInRect；哪块都不在就第一块，同状态屏）
     let key = zip(NSScreen.screens, panels).first { NSMouseInRect(mouse, $0.0.frame, false) }?.1
     (key ?? panels.first)?.makeKey()
-    Island.announce(
-      [content.title, content.detail].compactMap { $0 }.joined(separator: "，") + "。回车表示知道了")
+    let text = [content.title, content.detail].compactMap { $0 }.joined(separator: "，")
+    Island.announce("\(text)。回车表示知道了")
   }
 
   /// 按钮先藏起来、1 秒后淡入（C7）

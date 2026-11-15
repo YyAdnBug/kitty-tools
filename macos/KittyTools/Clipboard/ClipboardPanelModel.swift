@@ -698,7 +698,7 @@ import Observation
   func paste(_ items: [ClipItem], plainText: Bool? = nil) {
     guard !items.isEmpty else { return }
     if let gone = unavailable(items) {
-      island?.show("没能粘贴", detail: gone, tone: .error)
+      island?.show("没能粘贴", detail: "\(gone)", tone: .error)
       return
     }
     let payload = payload(for: items, plainText: plainText ?? pastesPlainByDefault)
@@ -751,7 +751,7 @@ import Observation
     let partial = PasteMode(items) == .sequential
     let written = partial ? [items[0]] : items
     if let gone = unavailable(written) {  // 只查真会写进去的
-      island?.show("没能复制", detail: gone, tone: .error)
+      island?.show("没能复制", detail: "\(gone)", tone: .error)
       return
     }
     let payload = payload(for: written, plainText: plainText)
@@ -764,17 +764,17 @@ import Observation
       guard isQuickLooking, let island else {
         return showToast(.warning("只复制了第 1 条"), spoken: "只复制了第 1 条，\(detail)")
       }
-      return island.show("只复制了第 1 条", detail: detail, tone: .warning)
+      return island.show("只复制了第 1 条", detail: "\(detail)", tone: .warning)
     }
     let text = mode == .together ? "已复制 \(payload.writes[0].count) 个文件" : "已复制"
-    guard isQuickLooking, let island else { return showToast(.message(text)) }
+    guard isQuickLooking, let island else { return showToast(.message("\(text)")) }
     let detail =
       switch mode {
       case .merged: "\(items.count) 条合成一段"
       case .together: Island.excerpt(items[0].title) + " 等 \(items.count) 条"
       case .single, .sequential: Island.excerpt(items[0].title)
       }
-    island.show(text, detail: detail)
+    island.show("\(text)", detail: "\(detail)")
   }
 
   /// 粘贴 / 收起面板时：写进剪贴板的那条挪到最前，合成的记一条新历史（时间按现在，排在最前也按时间对得上；
@@ -846,7 +846,7 @@ import Observation
         [weak self] _, error in
         guard let error else { return }
         Task { @MainActor in
-          self?.island?.show(failure, detail: error.localizedDescription, tone: .error)
+          self?.island?.show("\(failure)", detail: "\(error.localizedDescription)", tone: .error)
         }
       }
     }
@@ -861,7 +861,7 @@ import Observation
     writeClipboard([plainItem(text)])
     pendingCopy = (.new(entry), clipboardChangeCount())
     guard isQuickLooking, let island else { return showToast(.message("已复制路径")) }
-    island.show("已复制路径", detail: Island.excerpt(text))
+    island.show("已复制路径", detail: "\(Island.excerpt(text))")
   }
 
   /// ⌘Y 大卡里选中文字按 ⌘C（体检 B11）：只拷纯文本（不带语法着色、搜索词黄底、放大的字号），经 Paster.write 写
@@ -871,7 +871,7 @@ import Observation
     guard !text.isEmpty else { return }
     Paster.write(string: text, record: true)
     guard let island else { return showToast(.message("已复制")) }
-    island.show("已复制", detail: Island.excerpt(text))
+    island.show("已复制", detail: "\(Island.excerpt(text))")
   }
 
   /// 钉得了的条目：图片，和有字的文字条目（2026-11-05，同「钉住剪贴板内容」：排成卡片 PinBoard.textCard）。文件不钉（只有文件名）
@@ -891,7 +891,7 @@ import Observation
     let pinnable = items.filter(Self.isPinnable)
     guard !pinnable.isEmpty else { return }
     if let gone = unavailable(pinnable) {
-      island?.show("没能钉到屏幕", detail: gone, tone: .error)
+      island?.show("没能钉到屏幕", detail: "\(gone)", tone: .error)
       return
     }
     let mouse = NSEvent.mouseLocation
@@ -948,7 +948,7 @@ import Observation
     let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
     if !name.isEmpty { store.update([saved.id]) { $0.note = name } }
     guard !visibleItems.contains(where: { $0.id == saved.id }) else { return }
-    island?.show("已存为片段", detail: Island.excerpt(text), symbol: "text.badge.star")
+    island?.show("已存为片段", detail: "\(Island.excerpt(text))", symbol: "text.badge.star")
   }
 
   /// 复制图片里识别出的文字（对标 Raycast「Copy Text from Image」、Maccy 的复制识别文字）：是新内容，记进历史
@@ -958,7 +958,7 @@ import Observation
     Paster.write(string: text, record: true)
     // 放大预览开着时底栏被它盖住，走岛（同 ⌘C）
     guard isQuickLooking, let island else { return showToast(.message("已复制图中文字")) }
-    island.show("已复制图中文字", detail: Island.excerpt(text))
+    island.show("已复制图中文字", detail: "\(Island.excerpt(text))")
   }
 
   /// ⌘P / 底栏图钉：固定 = 点面板外面不收起（Esc、⌘W、再按热键照样收，mac-overlay-panel §2）。
@@ -969,8 +969,8 @@ import Observation
     noteActivity()
     let text = pinning ? "已固定" : "已取消固定"
     // 放大预览开着时底栏和图钉都被它盖住，改走刘海（岛自己会播报）
-    guard isQuickLooking, let island else { return showToast(.message(text)) }
-    island.show(text, symbol: pinning ? "pin.fill" : "pin")
+    guard isQuickLooking, let island else { return showToast(.message("\(text)")) }
+    island.show("\(text)", symbol: pinning ? "pin.fill" : "pin")
   }
 
   /// 要写进剪贴板的内容（见 paste）。片段一律纯文本、展开占位符；{clipboard} 用调用时剪贴板里的那一份
@@ -1117,10 +1117,10 @@ import Observation
   /// 另走刘海（岛自己会播报）
   private func showUndo(_ text: String, symbol: String) {
     noteActivity()
-    showToast(.undo(text), spoken: "\(text)，按 Command-Z 撤销")
+    showToast(.undo("\(text)"), spoken: "\(text)，按 Command-Z 撤销")
     if isQuickLooking, let island {
       island.show(
-        text, tone: .info, symbol: symbol,
+        "\(text)", tone: .info, symbol: symbol,
         actions: [
           .init("撤销") { [weak self] in if self?.store.canUndo == true { self?.undoDelete() } }
         ])
@@ -1167,7 +1167,7 @@ import Observation
   func showToast(_ toast: BarNotice, spoken: String? = nil) {
     toastTask?.cancel()
     self.toast = toast
-    if !(isQuickLooking && island != nil) { Island.announce(spoken ?? toast.text) }
+    if !(isQuickLooking && island != nil) { Island.post(spoken ?? toast.text) }
     // 到期只让提示淡出；删掉的在面板收起（固定着时闲够 2 分钟）时才提交，在那之前 ⌘Z 一直有效
     toastTask = Task {
       try? await Task.sleep(for: .seconds(toast.seconds))
@@ -1218,7 +1218,7 @@ import Observation
     ) {
       actions.append(
         ActionMenu.Item(
-          title: title, symbol: symbol, shortcut: shortcut, id: id, section: section,
+          title: "\(title)", symbol: symbol, shortcut: shortcut, id: id, section: section,
           submenu: submenu, isDestructive: isDestructive, run: run))
     }
     // 0 粘贴与复制。纯文本的替代粘贴 / 复制只在有得换时给：带格式的文本（片段本来就是纯文本）或多条
@@ -1317,7 +1317,7 @@ import Observation
     var items = store.groups.map { group in
       let isIn = !targets.isEmpty && targets.allSatisfy { $0.groupID == group.id }
       return ActionMenu.Item(
-        title: group.name, symbol: "folder", isChecked: isIn, id: "group.\(group.id)"
+        title: "\(group.name)", symbol: "folder", isChecked: isIn, id: "group.\(group.id)"
       ) { [unowned self] in assign(ids, to: isIn ? nil : group.id) }
     }
     if targets.contains(where: { $0.groupID != nil }) {
@@ -1349,7 +1349,7 @@ import Observation
   var filterItems: [ActionMenu.Item] {
     func scopeItem(_ scope: Scope) -> ActionMenu.Item {
       ActionMenu.Item(
-        title: scope.title, symbol: scope.symbol, detail: "范围", isChecked: self.scope == scope,
+        title: "\(scope.title)", symbol: scope.symbol, detail: "范围", isChecked: self.scope == scope,
         id: "scope.\(scope.rawValue)"
       ) { [unowned self] in self.scope = self.scope == scope ? .all : scope }
     }
@@ -1360,7 +1360,7 @@ import Observation
       let isOn = groupFilter == .group(group.id)
       items.append(
         ActionMenu.Item(
-          title: group.name, symbol: "folder", detail: "收藏夹 \(groupCounts[group.id] ?? 0)",
+          title: "\(group.name)", symbol: "folder", detail: "收藏夹 \(groupCounts[group.id] ?? 0)",
           isChecked: isOn, id: "group.\(group.id)"
         ) { [unowned self] in groupFilter = isOn ? .all : .group(group.id) })
     }
@@ -1369,7 +1369,7 @@ import Observation
       let isOn = self.kind == kind && form == nil
       items.append(
         ActionMenu.Item(
-          title: kind.title, symbol: kind.symbol, detail: "类型", isChecked: isOn,
+          title: "\(kind.title)", symbol: kind.symbol, detail: "类型", isChecked: isOn,
           id: "kind.\(kind.rawValue)", section: 1
         ) { [unowned self] in
           form = nil
@@ -1380,7 +1380,7 @@ import Observation
       let isOn = self.form == form
       items.append(
         ActionMenu.Item(
-          title: form.title, symbol: form.symbol, detail: "形态", isChecked: isOn,
+          title: "\(form.title)", symbol: form.symbol, detail: "形态", isChecked: isOn,
           id: "form.\(form.rawValue)", section: 1
         ) { [unowned self] in
           self.form = isOn ? nil : form
@@ -1391,7 +1391,7 @@ import Observation
       let isOn = sourceBundleID == source.bundleID
       items.append(
         ActionMenu.Item(
-          title: source.name, symbol: "app", image: AppIcons.icon(for: source.bundleID),
+          title: "\(source.name)", symbol: "app", image: AppIcons.icon(for: source.bundleID),
           detail: "来源 \(source.count)", isChecked: isOn, id: "source.\(source.bundleID)",
           section: 2
         ) { [unowned self] in sourceBundleID = isOn ? nil : source.bundleID })

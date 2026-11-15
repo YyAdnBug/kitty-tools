@@ -21,6 +21,11 @@ struct SnapshotProbeTests {
     ProcessInfo.processInfo.environment["KITTY_SNAPSHOT_ONLY"]?.split(separator: ",").map(
       String.init)
 
+  /// 摆出来的岛、按钮上的字：测试数据里写的就是 App 里的中文原文，当目录的 key 取（英文截图里是英文；目录里没有的照原样）
+  static func key(_ text: String) -> LocalizedStringResource {
+    LocalizedStringResource(stringLiteral: text)
+  }
+
   /// 这张图出不出（按文件名的前缀）
   nonisolated private static func wants(_ path: String) -> Bool {
     guard let only else { return true }
@@ -887,7 +892,7 @@ struct SnapshotProbeTests {
       (
         "island-gif-progress",
         .init(
-          title: "正在转成 GIF…", detail: ShelfCard.progressDetail(37, note: "只转前 60 秒"),
+          title: "正在转成 GIF…", detail: "\(ShelfCard.progressDetail(37, note: "只转前 60 秒"))",
           tone: .progress, symbol: ShelfCard.gifIslandSymbol, leading: .tone, fraction: 0.37),
         notch
       ),
@@ -895,13 +900,13 @@ struct SnapshotProbeTests {
       (
         "island-update-progress",
         .init(
-          title: Updater.installingTitle("0.5.0"), detail: Updater.installingDetail(0.42),
+          title: Updater.installingTitle("0.5.0"), detail: "\(Updater.installingDetail(0.42))",
           tone: .progress, symbol: "arrow.down.circle.fill", leading: .tone, fraction: 0.42), notch
       ),
       (
         "island-update-progress-capsule",
         .init(
-          title: Updater.installingTitle("0.5.0"), detail: Updater.installingDetail(1),
+          title: Updater.installingTitle("0.5.0"), detail: "\(Updater.installingDetail(1))",
           tone: .progress, symbol: "arrow.down.circle.fill", leading: .tone, fraction: 1),
         .capsule(menuBar: 24)
       ),
@@ -909,7 +914,7 @@ struct SnapshotProbeTests {
       (
         "island-compress-progress",
         .init(
-          title: "正在压缩…", detail: ShelfCard.progressDetail(37), tone: .progress,
+          title: "正在压缩…", detail: "\(ShelfCard.progressDetail(37))", tone: .progress,
           symbol: ShelfCard.compressIslandSymbol, leading: .tone, fraction: 0.37), notch
       ),
       (
@@ -970,7 +975,7 @@ struct SnapshotProbeTests {
       (
         "island-expanded-error",
         .init(
-          title: "翻译失败", detail: longError, tone: .error,
+          title: "翻译失败", detail: "\(longError)", tone: .error,
           symbol: "exclamationmark.circle.fill", leading: .tone), notch, ["重试"], true
       ),
       (
@@ -996,7 +1001,8 @@ struct SnapshotProbeTests {
     ]
     for (name, content, geometry, titles, expanded) in interactive {
       let island = Island(
-        showing: content, geometry: geometry, actions: titles.map { Island.Action($0) {} },
+        showing: content, geometry: geometry,
+        actions: titles.map { Island.Action(Self.key($0)) {} },
         expanded: expanded)
       try snapshot(
         IslandView(island: island), size: geometry.windowSize, dark: false, to: "\(out)/\(name).png"
@@ -1004,7 +1010,9 @@ struct SnapshotProbeTests {
     }
     // 那一张（点刘海 / 快捷键叫出来，2026-10-26）：一排快捷动作 + 最近的提示（带打开类按钮的、截图缩略图前导、错误）；
     // 无刘海屏上是圆角卡片、还没有提示时的空样子；指针停在刘海上时鼓起一点
-    let quick = HotKeyAction.islandShortcuts.map { Island.Action($0.title, symbol: $0.symbol) {} }
+    let quick = HotKeyAction.islandShortcuts.map {
+      Island.Action($0.titleResource, symbol: $0.symbol) {}
+    }
     let records = [
       Island.Record(
         content: .init(
@@ -1018,7 +1026,8 @@ struct SnapshotProbeTests {
         at: .now.addingTimeInterval(-300)),
       Island.Record(
         content: .init(
-          title: "翻译失败", detail: longError, tone: .error, symbol: "exclamationmark.circle.fill",
+          title: "翻译失败", detail: "\(longError)", tone: .error,
+          symbol: "exclamationmark.circle.fill",
           leading: .tone), actions: [], at: .now.addingTimeInterval(-1500)),
       Island.Record(
         content: .init(
@@ -1283,7 +1292,8 @@ struct SnapshotProbeTests {
         IslandView(
           island: Island(
             showing: .init(
-              title: title, detail: detail, tone: tone, symbol: symbol, leading: .tone),
+              title: Self.key(title), detail: detail.map(Self.key), tone: tone, symbol: symbol,
+              leading: .tone),
             geometry: notch)),
         size: notch.windowSize, dark: false, to: "\(out)/\(name).png")
     }
@@ -1517,8 +1527,10 @@ struct SnapshotProbeTests {
     for (name, notice, titles, geometry, expanded) in cases {
       let island = Island(
         showing: .init(
-          title: notice.0, detail: notice.1, tone: .info, symbol: "alarm.fill", leading: .tone),
-        geometry: geometry, actions: titles.map { Island.Action($0) {} }, expanded: expanded)
+          title: Self.key(notice.0), detail: notice.1.map(Self.key), tone: .info,
+          symbol: "alarm.fill", leading: .tone),
+        geometry: geometry, actions: titles.map { Island.Action(Self.key($0)) {} },
+        expanded: expanded)
       try snapshot(
         IslandView(island: island), size: geometry.windowSize, dark: false,
         to: "\(out)/reminders-island-\(name).png")

@@ -316,7 +316,7 @@ enum VideoJob: Equatable {
   ) -> Task<Void, Never>? {
     if let busy = Self.running[video] {
       island?.show(
-        busy.job.progressTitle, detail: "这一段还没做完", tone: .progress,
+        "\(busy.job.progressTitle)", detail: "这一段还没做完", tone: .progress,
         symbol: busy.job.islandSymbol, actions: [Self.cancel(video)])
       return nil
     }
@@ -324,9 +324,9 @@ enum VideoJob: Equatable {
     let job = self
     let longNote = "只转前 60 秒"
     island?.show(
-      progress,
+      "\(progress)",
       detail: job == .gif && seconds.map({ Double($0) > VideoExport.maxSeconds }) == true
-        ? longNote : nil,
+        ? "\(longNote)" : nil,
       tone: .progress, symbol: islandSymbol, actions: [Self.cancel(video)])
     let task = Task {
       defer {
@@ -343,12 +343,12 @@ enum VideoJob: Equatable {
           let target = VideoExport.target(for: video, in: ScreenshotOutput.saveDirectory)
           let first = try await VideoExport.gif(from: video, to: target) { percent in
             island?.progress(
-              progress, detail: ShelfCard.progressDetail(percent, note: note),
+              "\(progress)", detail: "\(ShelfCard.progressDetail(percent, note: note))",
               fraction: Double(percent) / 100)
           }
           let bytes = (try? target.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0
           island?.show(
-            "已存成 GIF", detail: Int64(bytes).formatted(.byteCount(style: .file)),
+            "已存成 GIF", detail: "\(Int64(bytes).formatted(.byteCount(style: .file)))",
             leading: Island.thumbnail(of: first), actions: .file(target))
           output = Output(file: target, poster: first)
         case .compress:
@@ -357,19 +357,20 @@ enum VideoJob: Equatable {
             to: VideoExport.compressedTarget(for: video, in: video.deletingLastPathComponent())
           ) { percent in
             island?.progress(
-              progress, detail: ShelfCard.progressDetail(percent), fraction: Double(percent) / 100)
+              "\(progress)", detail: "\(ShelfCard.progressDetail(percent))",
+              fraction: Double(percent) / 100)
           }
           island?.show(
-            "已压缩", detail: Self.sizeChange(from: video, to: saved),
+            "已压缩", detail: "\(Self.sizeChange(from: video, to: saved))",
             leading: poster.map(Island.thumbnail(of:)) ?? .tone, actions: .file(saved))
           output = Output(file: saved, poster: poster)
         }
         done(output)
       } catch is CancellationError {
-        island?.dismiss(ifShowing: progress)
+        island?.dismiss(ifShowing: "\(progress)")
       } catch {
         island?.show(
-          job == .gif ? "没能转成 GIF" : "没能压缩", detail: error.localizedDescription, tone: .error)
+          job == .gif ? "没能转成 GIF" : "没能压缩", detail: "\(error.localizedDescription)", tone: .error)
       }
     }
     Self.running[video] = (job, task)

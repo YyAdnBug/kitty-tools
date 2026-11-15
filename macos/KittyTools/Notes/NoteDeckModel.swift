@@ -405,11 +405,11 @@ import SwiftUI
     }
     return [
       ActionMenu.Item(
-        title: HotKeyAction.noteNew.title,
+        title: "\(HotKeyAction.noteNew.title)",
         image: icon(HotKeyAction.noteNew.symbol, Style.Family.notes)
       ) { [unowned self] in create() },
       ActionMenu.Item(
-        title: HotKeyAction.noteAll.title,
+        title: "\(HotKeyAction.noteAll.title)",
         image: icon(HotKeyAction.noteAll.symbol, Style.Family.notes)
       ) { [unowned self] in showNotes() },
       ActionMenu.Item(
@@ -433,14 +433,15 @@ import SwiftUI
         choose: { [unowned self] in setColor($0, of: id) },
         other: { [unowned self] in pickColor(id) }) : []
     return [
-      ActionMenu.Item(title: Names.pinTitle(note)) { [unowned self] in togglePinned(id) },
-      ActionMenu.Item(title: Names.colorTitle, submenu: palette),
-      ActionMenu.Item(title: Names.floatTitle(isFloating: isFloating)) { [unowned self] in
+      ActionMenu.Item(title: "\(Names.pinTitle(note))") { [unowned self] in togglePinned(id) },
+      ActionMenu.Item(title: "\(Names.colorTitle)", submenu: palette),
+      ActionMenu.Item(title: "\(Names.floatTitle(isFloating: isFloating))") { [unowned self] in
         floatFromTab(id)
       },
-      ActionMenu.Item(title: Names.archiveTitle(note), section: 1) { [unowned self] in archive(id)
+      ActionMenu.Item(title: "\(Names.archiveTitle(note))", section: 1) { [unowned self] in
+        archive(id)
       },
-      ActionMenu.Item(title: Names.deleteTitle, section: 1, isDestructive: true) {
+      ActionMenu.Item(title: "\(Names.deleteTitle)", section: 1, isDestructive: true) {
         [unowned self] in delete(id)
       },
     ]

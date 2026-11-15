@@ -17,7 +17,8 @@ struct IslandBoard: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       if !island.quickActions.isEmpty {
-        HStack(spacing: 6) {
+        // 顶对齐：英文的名字放不下时折成两行，图标照旧排成一条线
+        HStack(alignment: .top, spacing: 6) {
           ForEach(Array(island.quickActions.enumerated()), id: \.offset) { index, action in
             QuickAction(action: action, selected: island.boardSelection == index) {
               island.perform(action)
@@ -69,7 +70,7 @@ struct IslandBoard: View {
     Rectangle().fill(.white.opacity(0.12)).frame(height: 0.5)
   }
 
-  private func placeholder(_ text: String) -> some View {
+  private func placeholder(_ text: LocalizedStringResource) -> some View {
     Text(text)
       .font(.system(size: 12))
       .foregroundStyle(.white.opacity(0.45))
@@ -85,6 +86,8 @@ private struct QuickAction: View {
   let run: () -> Void
 
   var body: some View {
+    // 名字一行放不下（英文）才折成两行、居中、可以缩一点；放得下的（中文）照旧一行
+    let wraps = !Style.fitsOneLine(action.title, size: 11, width: 60)
     Button(action: run) {
       VStack(spacing: 5) {
         Image(symbol: action.symbol ?? "circle")
@@ -98,7 +101,9 @@ private struct QuickAction: View {
         Text(action.title)
           .font(.system(size: 11))
           .foregroundStyle(.white.opacity(selected ? 0.95 : 0.75))
-          .lineLimit(1)
+          .lineLimit(wraps ? 2 : 1)
+          .multilineTextAlignment(wraps ? .center : .leading)
+          .minimumScaleFactor(wraps ? 0.85 : 1)
       }
       .frame(width: 60)
       .contentShape(Rectangle())

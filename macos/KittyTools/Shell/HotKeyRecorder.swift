@@ -97,7 +97,9 @@ struct HotKeyRecorder: View {
       }
       .buttonStyle(.plain)
       .accessibilityLabel("\(target.title)的快捷键")
-      .accessibilityValue(isRecording ? "正在录制" : current?.display ?? "未设置")
+      .accessibilityValue(
+        isRecording ? String(localized: "正在录制") : current?.display ?? String(localized: "未设置")
+      )
       .accessibilityHint(isRecording ? "按下新的组合，Esc 取消" : "按下后录制新的快捷键")
       if isRecording || current != nil {
         Button(isRecording ? "取消录制" : "清除快捷键", systemImage: "xmark.circle.fill") {
@@ -188,7 +190,7 @@ struct HotKeyRecorder: View {
       if let hotKey = HotKey(event: event) {
         save(hotKey)
       } else {
-        message = "要带 ⌘、⌃ 或 ⌥（F1–F20 可以单独用），或者连按两下一个修饰键"
+        message = String(localized: "要带 ⌘、⌃ 或 ⌥（F1–F20 可以单独用），或者连按两下一个修饰键")
       }
     }
   }
@@ -224,7 +226,7 @@ struct HotKeyRecorder: View {
     }
     // ⌘C、⌘V 这类各 App 通用的键设成全局热键，会在所有 App 里被吞掉：拒绝，继续录
     if let hotKey, hotKey.isReservedEditKey {
-      message = "这是各 App 通用的快捷键，设成全局会让它在所有 App 里失效"
+      message = String(localized: "这是各 App 通用的快捷键，设成全局会让它在所有 App 里失效")
       return
     }
     // 关着的功能的键也算（isAvailable，不是 isActive）：不然它重新打开时两个动作抢同一个组合，后注册的那个失败
@@ -233,14 +235,16 @@ struct HotKeyRecorder: View {
         $0 != action && $0.isAvailable && $0.hotKey == hotKey
       })
     {
+      let feature = other.feature?.title ?? String(localized: "它", comment: "快捷键重复：那个动作所属的功能")
       message =
         other.isActive
-        ? "和「\(other.title)」重复" : "和「\(other.title)」重复（\(other.feature?.title ?? "它")已关闭）"
+        ? String(localized: "和「\(other.title)」重复")
+        : String(localized: "和「\(other.title)」重复（\(feature)已关闭）")
       return
     }
     // 和「命令和别名」里某条命令的快捷键重复（第三轮 D1）
     if let hotKey, let other = commandOwner(of: hotKey, except: nil) {
-      message = "和启动器命令「\(other)」重复"
+      message = String(localized: "和启动器命令「\(other)」重复")
       return
     }
     action.hotKey = hotKey
@@ -254,17 +258,17 @@ struct HotKeyRecorder: View {
   /// 命令的快捷键：同全局动作的规矩，和全局动作、别的命令查重；存进「命令和别名」的那段 JSON
   private func saveCommand(_ hotKey: HotKey?, id: String) {
     if let hotKey, hotKey.isReservedEditKey {
-      message = "这是各 App 通用的快捷键，设成全局会让它在所有 App 里失效"
+      message = String(localized: "这是各 App 通用的快捷键，设成全局会让它在所有 App 里失效")
       return
     }
     if let hotKey,
       let other = HotKeyAction.allCases.first(where: { $0.isAvailable && $0.hotKey == hotKey })
     {
-      message = "和「\(other.title)」重复"
+      message = String(localized: "和「\(other.title)」重复")
       return
     }
     if let hotKey, let other = commandOwner(of: hotKey, except: id) {
-      message = "和「\(other)」重复"
+      message = String(localized: "和「\(other)」重复")
       return
     }
     LauncherModel.setCommandHotKey(hotKey, for: id)

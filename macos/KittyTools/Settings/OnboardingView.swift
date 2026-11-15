@@ -170,7 +170,7 @@ struct OnboardingView: View {
         try LaunchAtLogin.set(wants)
       } catch {
         island?.show(
-          wants ? "没能加入登录项" : "没能取消登录项", detail: error.localizedDescription,
+          wants ? "没能加入登录项" : "没能取消登录项", detail: "\(error.localizedDescription)",
           tone: .warning)
       }
     }

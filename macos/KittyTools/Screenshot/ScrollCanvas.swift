@@ -536,7 +536,7 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
       pickingColor = false
       if let rgb = color(at: point) {
         restyle { $0.custom = rgb }
-        Island.announce(String(format: "已取色 #%06X", rgb))
+        Island.announce("\(String(format: "已取色 #%06X", rgb))")
       }
       return refreshCursor()
     }

@@ -212,7 +212,8 @@ final class Launchpad {
     // 岛在面板之后出：面板一 orderFrontRegardless 就盖满屏，先出岛会被盖住（F14）
     let showNotice: (() -> Void)? = notice.map { notice in
       { [weak self] in
-        self?.island?.show(notice.title, detail: notice.detail, symbol: notice.symbol)
+        self?.island?.show(
+          "\(notice.title)", detail: notice.detail.map { "\($0)" }, symbol: notice.symbol)
       }
     }
     // 捏合建的：提示和第一次自动导入等松手定了打开再做（捏一下又退回去的不该导入布局、挂提示）
@@ -604,7 +605,7 @@ final class Launchpad {
       self.save(layout)
       self.replaceOpenLayout(layout)
       self.island?.show(
-        result == nil ? "已按默认排法排好" : "已按原来的启动台排好", detail: detail,
+        result == nil ? "已按默认排法排好" : "已按原来的启动台排好", detail: detail.map { "\($0)" },
         symbol: "square.grid.3x3")
     }
   }
@@ -632,7 +633,7 @@ final class Launchpad {
           self?.usage?.record(item, query: query)
           return
         }
-        self?.island?.show("打不开「\(name)」", detail: detail, tone: .warning)
+        self?.island?.show("打不开「\(name)」", detail: "\(detail)", tone: .warning)
       }
     }
   }
@@ -661,7 +662,7 @@ final class Launchpad {
       self.save(updated)
       model.adopt(catalog: self.catalog)
       model.replace(layout: updated)
-      self.island?.show("已移到废纸篓", detail: app.name, symbol: "trash")
+      self.island?.show("已移到废纸篓", detail: "\(app.name)", symbol: "trash")
     }
   }
 

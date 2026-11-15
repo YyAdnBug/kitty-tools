@@ -335,9 +335,9 @@ extension Island {
     /// 读屏、占位用的名字
     var title: String {
       switch kind {
-      case .volume: muted ? "静音" : "音量"
-      case .brightness: "亮度"
-      case .device: caption ?? "已连接"
+      case .volume: muted ? String(localized: "静音") : String(localized: "音量")
+      case .brightness: String(localized: "亮度")
+      case .device: caption ?? String(localized: "已连接")
       }
     }
 

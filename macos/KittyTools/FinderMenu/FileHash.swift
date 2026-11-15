@@ -107,7 +107,7 @@ nonisolated enum FileHash {
       if let match {
         island?.show(
           match ? "\(kind.title) 和剪贴板里的一致" : "\(kind.title) 和剪贴板里的不一致",
-          detail: "已拷贝新算的：" + String(results[0].hex.prefix(16)) + "…",
+          detail: "已拷贝新算的：\(String(results[0].hex.prefix(16)))…",
           tone: match ? .success : .warning)
         return
       }
@@ -115,7 +115,8 @@ nonisolated enum FileHash {
         "已拷贝 \(kind.title)",
         detail: missed > 0
           ? "\(missed) 个文件读不到，没算"
-          : results.count == 1 ? String(results[0].hex.prefix(16)) + "…" : "\(results.count) 个文件",
+          : results.count == 1
+            ? "\(String(results[0].hex.prefix(16)))…" : "\(results.count) 个文件",
         tone: missed > 0 ? .warning : .success)
     }
   }

@@ -49,7 +49,7 @@ final class StatusItem: NSObject, NSMenuDelegate {
     /// 偏好值 → 样式；没存过、存了认不得的值都算单色
     init(pref: String?) { self = pref.flatMap(Self.init(rawValue:)) ?? .template }
 
-    var title: String { self == .template ? "单色" : "彩色" }
+    var title: String { self == .template ? String(localized: "单色") : String(localized: "彩色") }
 
     /// 菜单栏上的图（设置页分段里的小预览也用它）
     var image: NSImage? { self == .template ? StatusItem.templateIcon : StatusItem.colorIcon }
@@ -79,7 +79,7 @@ final class StatusItem: NSObject, NSMenuDelegate {
     if #available(macOS 27, *) { item.expandedInterfaceDelegate = self }
     // 读屏用户按不出右键 / ⌃点：菜单另给一个自定义动作（U12①）
     item.button?.setAccessibilityCustomActions([
-      NSAccessibilityCustomAction(name: "显示菜单") { [weak self] in
+      NSAccessibilityCustomAction(name: String(localized: "显示菜单")) { [weak self] in
         self?.showMenu()
         return true
       }
@@ -117,7 +117,7 @@ final class StatusItem: NSObject, NSMenuDelegate {
   /// 圆点贴在图标的右上角（两种图标大小不一样，换样式时跟着挪）。不做出场动画：后台查到新版本的那一刻没人在看
   private func applyBadge() {
     guard let button = item.button else { return }
-    button.toolTip = updateVersion.map { "有新版本 \($0)" }
+    button.toolTip = updateVersion.map { String(localized: "有新版本 \($0)") }
     guard updateVersion != nil, let icon = button.image?.size else {
       return badge.removeFromSuperview()
     }
@@ -362,6 +362,10 @@ enum MenuExtra: String, CaseIterable {
 
   /// 菜单里的标题（打开窗口的按菜单习惯带「…」，启动器里去掉）；pinsHidden：钉图藏着时写「显示全部钉图」
   func title(pinsHidden: Bool = false) -> String {
+    String(localized: titleResource(pinsHidden: pinsHidden))
+  }
+
+  func titleResource(pinsHidden: Bool = false) -> LocalizedStringResource {
     switch self {
     case .pauseClipboard: "暂停记录剪贴板"
     case .copyToTranslate: "复制即译"
@@ -430,10 +434,11 @@ extension NSMenu {
   /// 加一项：左边家族色符号；key 为空就不显示快捷键
   @discardableResult
   func addAction(
-    _ title: String, symbol: String, color: NSColor, key: String = "",
+    _ title: LocalizedStringResource, symbol: String, color: NSColor, key: String = "",
     modifiers: NSEvent.ModifierFlags = .command, run: @escaping () -> Void
   ) -> NSMenuItem {
-    let item = NSMenuItem(title: title, action: #selector(MenuTarget.run), keyEquivalent: key)
+    let item = NSMenuItem(
+      title: String(localized: title), action: #selector(MenuTarget.run), keyEquivalent: key)
     item.target = MenuTarget.shared
     item.representedObject = run
     item.image = NSImage.symbol(symbol)?

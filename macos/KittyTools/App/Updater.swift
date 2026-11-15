@@ -125,7 +125,7 @@ import AppKit
     default: break
     }
     guard isSupported else {
-      state = .failed("开发版不自动更新")
+      state = .failed(String(localized: "开发版不自动更新"))
       return true
     }
     let previous = state
@@ -142,7 +142,7 @@ import AppKit
         if toMenu || (trigger == .schedule && notified != release.version) {
           UserDefaults.standard.set(release.version, forKey: Prefs.updateNotifiedVersion)
           // 菜单栏图标隐藏了（设置 › 通用）就指到关于页的按钮
-          let hint =
+          let hint: LocalizedStringResource =
             UserDefaults.standard.bool(forKey: Prefs.statusItemVisible)
             ? "点菜单栏图标，选「更新到 \(release.version)」" : "到 设置 › 关于 里点「更新并重新打开」"
           island?.show(
@@ -164,11 +164,11 @@ import AppKit
       } else if trigger == .schedule {
         if case .failed = previous { state = .idle } else { state = previous }
       } else {
-        state = .failed("检查更新失败：\(error.localizedDescription)")
+        state = .failed(String(localized: "检查更新失败：\(error.localizedDescription)"))
       }
       if toMenu {
         island?.show(
-          "检查更新失败", detail: error.localizedDescription, tone: .error,
+          "检查更新失败", detail: "\(error.localizedDescription)", tone: .error,
           actions: [
             .init("重试") { [weak self] in
               guard let self else { return }
@@ -185,7 +185,7 @@ import AppKit
   func install(_ trigger: Trigger = .menu) async {
     guard let release = available, isSupported else { return }
     if let blocker {
-      island?.show(blocker, tone: .warning)
+      island?.show("\(blocker)", tone: .warning)
       return
     }
     state = .installing(release)
@@ -225,7 +225,7 @@ import AppKit
       state = .available(release)
       progress = nil
       island?.show(
-        "更新失败", detail: error.localizedDescription, tone: .error,
+        "更新失败", detail: "\(error.localizedDescription)", tone: .error,
         actions: [installAction("重试")])
     }
   }
@@ -242,7 +242,7 @@ import AppKit
   }
 
   /// 岛上的「更新」「重试」：同菜单栏的「更新到 x」
-  private func installAction(_ title: String) -> Island.Action {
+  private func installAction(_ title: LocalizedStringResource) -> Island.Action {
     .init(title) { [weak self] in
       guard let self else { return }
       Task { await self.install(.menu) }
@@ -258,13 +258,13 @@ import AppKit
   }
 
   private func showInstalled(_ release: Release) {
-    island?.show("新版本 \(release.version) 已装好", detail: Self.installedDetail)
+    island?.show("新版本 \(release.version) 已装好", detail: "\(Self.installedDetail)")
   }
 
   /// 下载中带「取消」，下完（在装）就不带
   private func showInstalling(_ release: Release) {
     island?.show(
-      Self.installingTitle(release.version), detail: Self.installingDetail(progress),
+      Self.installingTitle(release.version), detail: "\(Self.installingDetail(progress))",
       tone: .progress, symbol: "arrow.down.circle.fill", fraction: progress,
       actions: isDownloading ? [.init("取消") { [weak self] in self?.cancelDownload() }] : [])
   }
@@ -276,33 +276,36 @@ import AppKit
     guard state == .installing(release), percent > progress ?? -1 else { return }
     progress = percent
     island?.progress(
-      Self.installingTitle(release.version), detail: Self.installingDetail(percent),
+      Self.installingTitle(release.version), detail: "\(Self.installingDetail(percent))",
       fraction: percent)
   }
 
   // MARK: 纯逻辑（单测）
 
   /// 刘海岛上更新那一条的标题（进度按标题认这一条，两处要同一句）
-  static func installingTitle(_ version: String) -> String { "正在更新到 \(version)…" }
+  static func installingTitle(_ version: String) -> LocalizedStringResource {
+    "正在更新到 \(version)…"
+  }
 
   /// 岛上的后半句：还不知道下了多少 / 下载中的百分比 / 下完了在装
   static func installingDetail(_ progress: Double?) -> String {
     switch progress {
-    case nil: "装好会自动重新打开"
-    case let value? where value < 1: "已下载 \(Int((value * 100).rounded()))%"
-    default: "正在安装，装好会自动重新打开"
+    case nil: String(localized: "装好会自动重新打开")
+    case let value? where value < 1: String(localized: "已下载 \(Int((value * 100).rounded()))%")
+    default: String(localized: "正在安装，装好会自动重新打开")
     }
   }
 
   /// 装好了、还没退出：岛上的后半句，关于页那句话的后半句
-  static let installedDetail = "退出后重新打开即生效"
+  static var installedDetail: String { String(localized: "退出后重新打开即生效") }
 
   /// 关于页上的那句话（进度条在它前面）
   static func installingLine(_ version: String, progress: Double?) -> String {
     switch progress {
-    case nil: installingTitle(version)
-    case let value? where value < 1: "正在下载 \(version) · \(Int((value * 100).rounded()))%"
-    default: "正在安装 \(version)…"
+    case nil: String(localized: installingTitle(version))
+    case let value? where value < 1:
+      String(localized: "正在下载 \(version) · \(Int((value * 100).rounded()))%")
+    default: String(localized: "正在安装 \(version)…")
     }
   }
 
@@ -329,7 +332,7 @@ import AppKit
     let reply = try await fetch(releases)
     // 仓库还没有 release 时列表是空的（200）；404 当成没有
     guard reply.status == 200 || reply.status == 404 else {
-      throw UpdateError(apiFailure(reply.status))
+      throw UpdateError("\(apiFailure(reply.status))")
     }
     return reply.status == 200 ? try release(from: reply.data) : nil
   }
@@ -346,7 +349,8 @@ import AppKit
   /// 别人就替你用完了（#12；关于页那一行只有一行宽，话要短，下面就是「打开发布页」）
   static func apiFailure(_ status: Int) -> String {
     status == 403 || status == 429
-      ? "GitHub 限流了（这个网络查得太频繁），稍后再试或到发布页下载" : "GitHub 返回 \(status)"
+      ? String(localized: "GitHub 限流了（这个网络查得太频繁），稍后再试或到发布页下载")
+      : String(localized: "GitHub 返回 \(status)")
   }
 
   /// 更新清单（build-dmg.sh 生成）→ 那一版。认 version（只有数字和点）、url 和 page（https）、sha256（64 位十六进制），
@@ -486,7 +490,9 @@ import AppKit
   }
 
   /// 跑系统命令（ditto / codesign）：在进程外，等它结束，非 0 退出就抛 failure
-  private static func run(_ tool: String, _ arguments: [String], failure: String) async throws {
+  private static func run(
+    _ tool: String, _ arguments: [String], failure: LocalizedStringResource
+  ) async throws {
     guard try await Subprocess.run(tool, arguments).status == 0 else { throw UpdateError(failure) }
   }
 }
@@ -511,5 +517,6 @@ private final class DownloadWatcher: NSObject, URLSessionTaskDelegate {
 
 struct UpdateError: LocalizedError {
   let errorDescription: String?
-  init(_ message: String) { errorDescription = message }
+  /// 能本地化的字（调用处的字面量会被抽进目录）
+  init(_ message: LocalizedStringResource) { errorDescription = String(localized: message) }
 }

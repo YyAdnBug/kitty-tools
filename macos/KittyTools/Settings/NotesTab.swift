@@ -141,13 +141,13 @@ struct NotesTab: View {
         isTransferring = false
         if let failure = result.failure {
           island?.show(
-            "导出到一半", detail: failure, tone: .error, symbol: "exclamationmark.triangle.fill")
+            "导出到一半", detail: "\(failure)", tone: .error, symbol: "exclamationmark.triangle.fill")
           return
         }
         var detail = "「\(result.folderName)」"
         if result.missingImages > 0 { detail += " · \(result.missingImages) 张图片不在，没导出" }
         island?.show(
-          "已导出 \(result.count) 条便签", detail: detail,
+          "已导出 \(result.count) 条便签", detail: "\(detail)",
           symbol: "square.and.arrow.up.circle.fill",
           actions: result.folder.map { [Island.Action.reveal($0)] } ?? [])
       }
@@ -212,10 +212,11 @@ struct NotesTab: View {
         if !adoption.saved {
           island?.show("便签没存上", detail: "导入的内容在内存里，稍后会自动再试", tone: .warning)
         } else if message.warning {
-          island?.show(message.title, detail: message.detail, tone: .warning)
+          island?.show("\(message.title)", detail: message.detail.map { "\($0)" }, tone: .warning)
         } else {
           island?.show(
-            message.title, detail: message.detail, symbol: "square.and.arrow.down.circle.fill")
+            "\(message.title)", detail: message.detail.map { "\($0)" },
+            symbol: "square.and.arrow.down.circle.fill")
         }
       }
     }

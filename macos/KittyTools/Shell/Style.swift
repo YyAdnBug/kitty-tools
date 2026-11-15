@@ -654,9 +654,19 @@ extension View {
 /// 空状态（剪贴板面板、翻译浮窗、翻译历史共用，2026-10-12 由两处各写一份合成）：28 pt 符号 + 14 semibold 标题 +
 /// 下面的说明 / 文字按钮 / 键帽（12 pt），间距 8，在给它的地方里居中。四周留白由用的地方加（翻译浮窗 20：标题长了
 /// 折行时别贴边）。启动器的空结果是一行 13 secondary（有意的紧凑写法），不用它
+extension Style {
+  /// 一行字（系统字体 size 号）在 width 宽里放不放得下（多语言：英文长，固定宽的格子里放不下的才折成两行，放得下的照旧一行、
+  /// 一个像素都不变）。按 NSString 量，和 SwiftUI 的 Text 同一套字体排版
+  static func fitsOneLine(_ text: String, size: CGFloat, width: CGFloat) -> Bool {
+    let measured = (text as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: size)])
+    return measured.width.rounded(.up) <= width
+  }
+}
+
 struct EmptyState<Detail: View>: View {
   let symbol: String
-  let title: String
+  /// 能本地化的字（调用处的字面量会被抽进目录）
+  let title: LocalizedStringResource
   @ViewBuilder var detail: Detail
 
   var body: some View {

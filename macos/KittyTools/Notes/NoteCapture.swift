@@ -277,7 +277,7 @@ import os
     let body = Self.body(appending: text, to: old?.body)
     guard body.utf8.count <= Note.maxBodyBytes else {
       notice = .warning(old == nil ? "太长了，一条便签最多 1 MB" : "接上这段就超过一条便签 1 MB 的上限了，换一条记")
-      Island.announce(notice?.text ?? "")
+      Island.post(notice?.text ?? "")
       return .tooLong
     }
     let id: String
@@ -292,11 +292,11 @@ import os
     hidePanel()
     if let problem = store.saveProblem {
       // 字在内存里、仓库会自己再试（NoteStore.flush）；退出前还落不下去 AppDelegate 会拦
-      island?.show("记下了，但还没存上", detail: Island.excerpt(problem), tone: .warning)
+      island?.show("记下了，但还没存上", detail: "\(Island.excerpt(problem))", tone: .warning)
     } else {
       // 「打开」（U6）：在屏幕边缘那叠 / 全部便签窗口里打开这一条，点岛本身也是它
       island?.show(
-        "已记下", detail: store.note(id)?.displayTitle,
+        "已记下", detail: store.note(id).map { "\($0.displayTitle)" },
         actions: [.init("打开", opens: true) { [weak self] in self?.openNote(id) }])
     }
     return .saved(id)

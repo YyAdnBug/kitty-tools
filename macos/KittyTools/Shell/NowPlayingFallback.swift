@@ -16,7 +16,10 @@ import AppKit
 nonisolated enum NowPlayingFallback {
   /// 听哪几个分布式通知、各是哪个 App 发的
   static let notices: [(name: String, bundleID: String, appName: String)] = [
-    ("com.apple.Music.playerInfo", "com.apple.Music", "音乐"),
+    (
+      "com.apple.Music.playerInfo", "com.apple.Music",
+      String(localized: "音乐", comment: "「音乐」App 的名字")
+    ),
     ("com.spotify.client.PlaybackStateChanged", "com.spotify.client", "Spotify"),
   ]
 

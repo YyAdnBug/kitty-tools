@@ -604,7 +604,7 @@ final class RecordBar: HUDBar {
     if let key = Self.key(for: item) {
       defaults.set(!isOn(item), forKey: key)
       applyToggles(animated: true, only: item)
-      Island.announce(tip(for: item, device: false))
+      Island.announce("\(tip(for: item, device: false))")
     }
     onClick(item)
   }

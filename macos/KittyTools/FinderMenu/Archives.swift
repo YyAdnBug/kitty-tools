@@ -541,7 +541,9 @@ import AppKit
     if encrypted {
       guard let given = askPassword(for: archive, wrong: retry == .wrongPassword) else {
         // 重问时取消了：「正在解压」那一条可能还挂着，换成一句
-        if retry != nil { island?.show("没有解压", detail: archive.lastPathComponent, tone: .info) }
+        if retry != nil {
+          island?.show("没有解压", detail: "\(archive.lastPathComponent)", tone: .info)
+        }
         return
       }
       password = given
@@ -581,7 +583,7 @@ import AppKit
     switch outcome {
     case .done(let url):
       island?.show(
-        verb == "压缩" ? "已压缩" : "已解压", detail: url.lastPathComponent,
+        verb == "压缩" ? "已压缩" : "已解压", detail: "\(url.lastPathComponent)",
         actions: [
           Island.Action("在访达中显示", opens: true) {
             NSWorkspace.shared.activateFileViewerSelecting([url])
@@ -592,7 +594,7 @@ import AppKit
     case .needsPassword, .wrongPassword:
       island?.show("没能\(verb)", detail: "密码不对", tone: .error)
     case .failed(let reason):
-      island?.show("没能\(verb)", detail: reason, tone: .error)
+      island?.show("没能\(verb)", detail: "\(reason)", tone: .error)
     }
   }
 }
