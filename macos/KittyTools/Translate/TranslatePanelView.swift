@@ -4,7 +4,7 @@
 // （翻译历史 ⌘Y、条数、清空与导出、复制即译、设置 ⌘,）；
 // 原文卡片（15 pt，↩ 就是翻译，⇧↩ / ⌘↩ 换行；只在出乎所选时写一行方向说明）+ 原文操作（收藏、划词来的可「替换原文」），
 // 没有常驻「翻译」按钮（N5）：原文改过还没重译时右下角才弹出品牌粉「翻译 ↩」胶囊（pop），开始翻译就收回（settle）；
-// 下方是各服务结果卡片（折叠状态记住；查单个词时最上面多一张系统词典卡）。翻译历史（N7，HistoryView）整块替换结果区，
+// 下方是各服务结果卡片（折叠状态记住；折叠着的不自动翻译，点开才翻；查单个词时最上面多一张系统词典卡）。翻译历史（N7，HistoryView）整块替换结果区，
 // 开 / 关时只有这块 settle 交叉淡变、原文区不动。高度随内容伸缩（Bob 的做法：只让人拖宽度），结果卡不超过三张时
 // 全放下、多于三张时至少放下前三张，第四张起才在卡片区里滚（2026-10-03 用户要求，panelHeight）；
 // 字号可调（⌘+ / ⌘- / ⌘0）。状态和操作都在 TranslateCoordinator，窗口快捷键见它的 handleKeyEquivalent。
@@ -76,6 +76,13 @@ struct TranslatePanelView: View {
     .padding(.bottom, coordinator.showsHistory ? 0 : 2)
     // 一次操作只重译一次（交换、撞同语言时两个值在同一次更新里一起改）
     .onChange(of: [source, target]) { retranslate() }
+    // 展开了一张没翻的卡（点箭头、折叠着点重新翻译，或者偏好从别处改了）：现在才翻
+    .onChange(of: collapsedServices) {
+      let collapsed = collapsed
+      for card in coordinator.cards where card.state == .idle && !collapsed.contains(card.id) {
+        coordinator.expand(card.id)
+      }
+    }
     // 拖下边改了最高多高（W2）也再量一次：resize 按设置里的上限算
     .onChange(of: [desiredHeight, mustFitHeight, maxHeight], initial: true) {
       resize(desiredHeight, mustFitHeight)
@@ -480,7 +487,13 @@ struct TranslatePanelView: View {
               isCollapsed: collapsed.contains(card.id),
               copyTick: coordinator.copiedCard == card.id ? coordinator.copyTick : 0
             ) {
-              coordinator.retry(card.id)
+              // 折叠着点重新翻译 = 展开并翻译（没翻的那张由展开去跑，见 onChange(of: collapsedServices)）
+              if collapsed.contains(card.id) {
+                toggleCollapse(card.id)
+              } else if card.state == .idle {
+                coordinator.expand(card.id)
+              }
+              if card.state != .idle { coordinator.retry(card.id) }
             } onCopy: {
               coordinator.copyCard(card.id)
             } onToggleCollapse: {
@@ -519,7 +532,7 @@ struct TranslatePanelView: View {
   private nonisolated static let resultsSpace = "translateResults"
 
   private var collapsed: Set<String> {
-    Set(collapsedServices.split(separator: "\n").map(String.init))
+    TranslateCoordinator.collapsedIDs(collapsedServices)
   }
 
   private func toggleCollapse(_ id: String) {

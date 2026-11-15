@@ -2996,12 +2996,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private static let overlayTitle = "截图翻译中…"
 
   /// 逐段翻译（原位覆盖用）：整段原文检测一次语种，各段用同一个方向；同时最多 3 段一起请求（inParallel），
-  /// 每段按顺序试启用的服务。
+  /// 每段按顺序试启用的服务（没折叠的在前）。
   /// 不走 coordinator.translate：那条路按服务写翻译历史，一块图拆成十几段会往历史里塞十几条碎片
   private func translateSegments(
     _ segments: [ScreenshotOverlay.Segment], source: String
   ) async throws -> [String] {
-    let services = coordinator.services.enabled
+    // 没折叠的服务先试（浮窗里折叠 = 不自动翻译，排第一的贵模型折叠了也不先用它）
+    let services = coordinator.orderedServices
     guard !services.isEmpty else {
       throw TranslateError(message: "没有启用的翻译服务，先在设置 › 翻译里开一个")
     }

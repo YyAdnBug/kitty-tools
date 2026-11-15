@@ -76,6 +76,8 @@ struct FreeServicesTests {
     let coordinator = TranslateCoordinator(
       services: TranslateServiceStore(services: [dict, ai]),
       history: try HistoryStore(db: Database(path: ":memory:")))
+    // 有道词典的 id 是固定的：不读 Dev 版里用户折叠了哪些
+    coordinator.collapsed = { [] }
     coordinator.stream = { service, _ in
       AsyncThrowingStream { continuation in
         continuation.yield(service.kind == .youdaoDict ? "美 /stʌf/\nn. 东西" : "东西")

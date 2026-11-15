@@ -3355,6 +3355,27 @@ struct SnapshotProbeTests {
         size: NSSize(width: 420, height: 760), dark: dark,
         to: "\(out)/translate-long-large\(suffix).png")
     }
+    // 折叠着的服务（2026-11-15）：GPT 折叠着没翻（只剩标题行，不发请求），Claude 折叠前就翻好了；只有智谱展开
+    let foldName = "KittyToolsSnapshot.\(UUID().uuidString)"
+    let fold = try #require(UserDefaults(suiteName: foldName))
+    defer { fold.removePersistentDomain(forName: foldName) }
+    fold.set([gpt.id, claude.id].joined(separator: "\n"), forKey: Prefs.translateCollapsedServices)
+    coordinator.beginInput()
+    coordinator.sourceText = "Collapsed services wait until you open them."
+    coordinator.translatedSource = coordinator.sourceText
+    coordinator.detected = .en
+    coordinator.target = .zhHans
+    coordinator.cards = [
+      .init(service: zhipu, state: .done("折叠的服务会等你点开再翻译。")),
+      .init(service: gpt, state: .idle),
+      .init(service: claude, state: .done("折叠起来的服务，要等你打开它们。")),
+    ]
+    for dark in [false, true] {
+      try snapshot(
+        TranslatePanelView(coordinator: coordinator, speaker: speaker).defaultAppStorage(fold),
+        size: NSSize(width: 420, height: 360), dark: dark,
+        to: "\(out)/translate-collapsed\(dark ? "-dark" : "").png")
+    }
     // 复制即译开着（顶栏品牌粉状态胶囊）+ 固定（粉色图钉）：偏好放进临时的 suite，不碰 dev 版的真实设置
     let suiteName = "KittyToolsSnapshot.\(UUID().uuidString)"
     let suite = try #require(UserDefaults(suiteName: suiteName))

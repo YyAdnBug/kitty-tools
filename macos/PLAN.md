@@ -1793,6 +1793,13 @@ Alfred 的 Related Apps、BetterTouchTool 按 App 停用，调研和测开销的
 
 > 2026-10-28（第三轮体检第 7 批）：2026-10-22 及更早的进度记录、做完的「已知的小毛病」、旧的「现状」「下一步」原样挪到 `docs/archive/PLAN-batches-2026-10.md` §12；AGENTS.md「项目概述」原来的长段原样挪到本节末尾「各族进度摘要（原 AGENTS 项目概述）」。
 
+**2026-11-15：折叠的服务不自动翻译**（有用户问折叠的 AI 服务还耗不耗 token：会，折叠只藏正文、所有启用的服务都请求，
+「闪一下」是折叠着也在画的彗星光和完成闪光）：拍板页 https://claude.ai/artifact/DFEx7K9FX9TXnW7kCuy42c 七项「全部按推荐」
+（对标 Easydict 的点开才查）。分支 `collapse-wip`（检出 `kitty-tools-macos-collapse`，从 macos `58f15ee3`）一个提交：
+折叠 = 不自动翻译、不加开关，点开才翻当前原文，主结果不认没翻的和点开后才翻的，静默替换 / 截图盖回先用没折叠的；规矩在
+mac-translate §2。没并回 macos、没 push；**下一版的更新日志要写一句**（老用户折叠过的服务以后要点开才翻）。待手测 HANDTEST
+「折叠的服务不自动翻译」1–11。Windows 同样改，写进 Windows 的 PLAN（D7）。
+
 **2026-11-13：0.9.0 准备中**（会话工作树 `claude/release-0-9-0-3adad5`，从 macos `632e5c4e`）：发版拍板页
 https://claude.ai/artifact/YTu1NosyLqkNFq9PDPsQZT 和「功能改插件与压缩跳过」https://claude.ai/artifact/DEKeRvQeZR3VxkVA9Bx2Fr
 都「全部按推荐」。island-atoll-wip 快进、plugins-wip 拣在上面（顺手清掉 7806b585 误提交进本文件的冲突标记），再加七样改插件、

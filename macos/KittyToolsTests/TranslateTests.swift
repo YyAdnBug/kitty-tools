@@ -1015,6 +1015,88 @@ struct TranslateBatch4Tests {
     }
   }
 
+  /// 折叠着的服务不自动翻译（2026-11-15）：开会话时是「没翻」、不发请求；点开才翻当前原文，翻好了也不当主结果；
+  /// 原文换了又回到没翻；收起时被中断的折叠卡回到没翻、不重跑
+  @Test func collapsedServicesTranslateOnExpand() async throws {
+    var (a, b) = (TranslateService.newAI(), TranslateService.newAI())
+    a.isEnabled = true
+    b.isEnabled = true
+    let coordinator = TranslateCoordinator(
+      services: TranslateServiceStore(services: [b, a]),
+      history: try HistoryStore(db: Database(path: ":memory:")))
+    var collapsed: Set<String> = [b.id]
+    coordinator.collapsed = { collapsed }
+    var requested: [String] = []
+    var hangs = false
+    coordinator.stream = { service, request in
+      requested.append(service.id)
+      return AsyncThrowingStream { continuation in
+        guard !hangs else { return }  // 不结束：留着给 cancel 标中断
+        continuation.yield("\(service.id == a.id ? "甲" : "乙")·\(request.text)")
+        continuation.finish()
+      }
+    }
+    func settle() async throws {
+      for _ in 0..<2000 where coordinator.isRunning { try await Task.sleep(for: .milliseconds(2)) }
+    }
+    // 复制即译带来的：不自动复制（不碰真剪贴板）
+    coordinator.translate("Good morning everyone here", fromCopy: true)
+    try await settle()
+    #expect(requested == [a.id])
+    #expect(coordinator.cards.map(\.state) == [.idle, .done("甲·Good morning everyone here")])
+    // 没翻的折叠卡排在前面也不挡着：主结果是 a
+    #expect(coordinator.primaryResult?.service.id == a.id)
+    // 点开：现在才翻；翻好了主结果还是 a
+    collapsed = []
+    coordinator.expand(b.id)
+    try await settle()
+    #expect(requested == [a.id, b.id])
+    #expect(coordinator.cards.first?.state == .done("乙·Good morning everyone here"))
+    #expect(coordinator.primaryResult?.service.id == a.id)
+    // 已经翻过的再点开不重复请求
+    coordinator.expand(b.id)
+    #expect(requested.count == 2)
+    // 再折叠、换原文：回到没翻
+    collapsed = [b.id]
+    coordinator.translate("See you tomorrow then", fromCopy: true)
+    try await settle()
+    #expect(requested == [a.id, b.id, a.id])
+    #expect(coordinator.cards.first?.state == .idle)
+    // 折叠着的卡在翻的时候收起浮窗：回来时不重跑、回到没翻；没折叠的照常重跑
+    collapsed = []
+    hangs = true
+    coordinator.translate("One more sentence please", fromCopy: true)
+    for _ in 0..<50 { await Task.yield() }
+    coordinator.cancel()
+    #expect(coordinator.cards.map(\.state) == [.failed(.interrupted), .failed(.interrupted)])
+    collapsed = [b.id]
+    hangs = false
+    coordinator.resumeInput()
+    try await settle()
+    #expect(coordinator.cards.map(\.state) == [.idle, .done("甲·One more sentence please")])
+    // 纯函数：没翻的跳过、点开后才翻的不认
+    typealias Card = TranslateCoordinator.Card
+    #expect(
+      TranslateCoordinator.primary(of: [
+        Card(service: b, state: .done("乙"), opened: true), Card(service: a, state: .running("甲")),
+      ]) == nil)
+    #expect(
+      TranslateCoordinator.primary(of: [
+        Card(service: b, state: .idle), Card(service: a, state: .done("甲")),
+      ])?.service.id == a.id)
+  }
+
+  /// 不开浮窗的两条路按这个顺序试服务：没折叠的在前、折叠的垫底，各自保持列表顺序
+  @Test func orderedServicesPutCollapsedLast() {
+    let services = (0..<4).map { _ in TranslateService.newAI() }
+    let ids = services.map(\.id)
+    let ordered = TranslateCoordinator.ordered(services, collapsed: [ids[0], ids[2]])
+    #expect(ordered.map(\.id) == [ids[1], ids[3], ids[0], ids[2]])
+    #expect(TranslateCoordinator.ordered(services, collapsed: []).map(\.id) == ids)
+    #expect(TranslateCoordinator.collapsedIDs("a\nb\n") == ["a", "b"])
+    #expect(TranslateCoordinator.collapsedIDs("").isEmpty)
+  }
+
   /// ⌘D 收藏（体检 A31）：浮窗和历史都认 ⌘D，⌘S 不再响应（交还系统）
   @Test func favoriteIsCommandD() throws {
     let history = try HistoryStore(db: Database(path: ":memory:"))

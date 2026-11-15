@@ -6,7 +6,8 @@
 // （钥匙图标，只给「打开设置」，直达这个服务的详情页），网络 / 服务错误是淡红卡（图标晃一下，给「重试」，
 // 自建 AI 服务另给「打开设置」）。重新翻译时卡片原位不动，只让正文交叉淡变 0.18 s（§4）。
 // 复制时对勾替换 + 整卡闪品牌粉。大模型完成后按 Markdown 渲染（行内记号 + 标题、列表、引用、分隔线、代码块）。
-// 折叠状态由浮窗按服务记住（跨重启），不再因为出结果自动展开；复制的对勾状态在会话里（⌘1–9 也亮）。
+// 折叠状态由浮窗按服务记住（跨重启），不再因为出结果自动展开；折叠着的服务不自动翻译、点开才翻（2026-11-15），
+// 折叠着不画彗星光和完成时的闪光（看不到正文，闪了像在偷偷翻）。复制的对勾状态在会话里（⌘1–9 也亮）。
 // 正文最高 8 行（按字号算的常数），再长就在卡片里滚动：滚动区铺满卡宽，系统滚动条贴卡片右边、落在内边距里不压字；
 // 下面还有时底部渐隐、滚下去后顶部也渐隐；
 // 大模型生成中跟着末尾走，用户往上滚就停、滚回底部再接着跟。
@@ -78,7 +79,7 @@ struct ProviderCardView: View {
   }
 
   private var isGenerating: Bool {
-    guard card.service.isStreaming else { return false }
+    guard card.service.isStreaming, !isCollapsed else { return false }
     switch card.state {
     case .waiting, .running: return true
     default: return false
@@ -97,6 +98,7 @@ struct ProviderCardView: View {
   /// 正文区现在是哪一种（等待 / 思考、正文、截断、失败）：变了才交叉淡变；生成中到完成还是同一种（同一个 ResultText）
   private var phase: Int {
     switch card.state {
+    case .idle: 4
     case .waiting: 0
     case .running(let text): text.isEmpty ? 0 : 1
     case .done(let text): card.service.isStreaming && Self.rendered(text) != nil ? 2 : 1
@@ -140,7 +142,8 @@ struct ProviderCardView: View {
         } keyframes: { _ in
           KeyframeTrack {
             LinearKeyframe(
-              isDone && card.service.isStreaming && !reduceMotion ? 0.45 : 0, duration: 0.01)
+              isDone && card.service.isStreaming && !isCollapsed && !reduceMotion ? 0.45 : 0,
+              duration: 0.01)
             LinearKeyframe(0, duration: 0.6)
           }
         }
@@ -207,7 +210,7 @@ struct ProviderCardView: View {
         .accessibilityLabel("用\(name)重新翻译")
         Button(isCollapsed ? "展开" : "收起", systemImage: "chevron.down", action: onToggleCollapse)
           .rotationEffect(.degrees(isCollapsed ? 0 : 180))
-          .help(isCollapsed ? "展开（会一直记住）" : "收起（会一直记住）")
+          .help(isCollapsed ? "展开：以后自动翻译" : "收起：以后不自动翻译，点开再翻")
       }
     }
     .frame(height: 18)
@@ -365,6 +368,12 @@ struct ProviderCardView: View {
       .id(phase)
     } else if case .failed(let error) = state {
       failureRow(error).id(phase)
+    } else if state == .idle {
+      // 展开着却没翻（折叠状态从别处改过来的，正常点开会马上开跑）：说一句，不画骨架（骨架会一直在）
+      Text("折叠着时没有翻译，点右上角的重新翻译")
+        .font(.system(size: 11))
+        .foregroundStyle(.secondary)
+        .id(phase)
     } else {
       VStack(alignment: .leading, spacing: 4) {
         if state.isThinking { ThinkingLabel() }
