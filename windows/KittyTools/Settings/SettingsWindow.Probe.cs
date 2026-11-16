@@ -34,6 +34,18 @@ internal sealed partial class SettingsWindow
 
     internal void OpenFeaturesPageForProbe() => OpenFeaturesPage(true);
 
+    /// <summary>开着的详情页（PLAN-v23 E1）：哪一页、哪一条。</summary>
+    internal (string Page, string Id)? DetailForProbe => _detail;
+
+    internal void CloseDetailForProbe() => CloseDetail();
+
+    /// <summary>详情页页头那一行状态（有问题时的橙字）。</summary>
+    internal string? DetailStatusForProbe => _detailStatusForProbe?.Text;
+
+    /// <summary>详情页里 Header 是 header 的那个输入框。</summary>
+    internal TextBox? DetailTextBoxForProbe(string header)
+        => _content.Children.OfType<TextBox>().FirstOrDefault(box => box.Header as string == header);
+
     /// <summary>开一个对话框（同步「合在一起？」那个，点了也不会做什么），返回它，自检自己关。</summary>
     internal ContentDialog OpenDialogForProbe() => ShowSettingsJoinForProbe();
 

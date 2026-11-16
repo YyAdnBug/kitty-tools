@@ -277,6 +277,8 @@ internal sealed partial class SettingsWindow : Window
                 _serviceDetail = null;
                 _launcherSubpage = null;
                 _featuresPage = false;
+                FlushDetail();
+                _detail = null;
                 BuildPage(tag);
             }
         };
@@ -551,6 +553,14 @@ internal sealed partial class SettingsWindow : Window
     private void BuildPage(string page)
     {
         Log.Info($"settings.build {page}");
+        // 详情页改的先写掉；换到别的页，详情收起（PLAN-v23 E1）
+        FlushDetail();
+        ReminderSound.StopPreview();
+        if (_detail is { } open && open.Page != (page == "launcher" && _launcherSubpage == "web" ? "launcher-web" : page))
+        {
+            _detail = null;
+        }
+
         _stale = false;
         _currentPage = page;
         _content.Children.Clear();
@@ -690,7 +700,11 @@ internal sealed partial class SettingsWindow : Window
             return false;
         }
 
-        if (_currentPage == "translate" && _serviceDetail is not null)
+        if (_detail is not null)
+        {
+            CloseDetail();
+        }
+        else if (_currentPage == "translate" && _serviceDetail is not null)
         {
             CloseServiceDetail();
         }
@@ -2344,6 +2358,19 @@ internal sealed partial class SettingsWindow : Window
     /// </summary>
     private void BuildWebSearchPage()
     {
+        // 详情页（PLAN-v23 E1）：那一条还在就推进它，不在了回列表
+        if (_detail is { Page: "launcher-web" } open)
+        {
+            var current = SettingsService.Current.LauncherSearchEngines ?? WebSearch.Defaults();
+            if (current.FirstOrDefault(item => item.Id == open.Id) is { } shown)
+            {
+                BuildEngineDetail(shown);
+                return;
+            }
+
+            _detail = null;
+        }
+
         var back = new HyperlinkButton { Content = "‹ 启动器", Padding = new Thickness(0), Margin = new Thickness(0, 0, 0, 4) };
         back.Click += (_, _) => OpenLauncherSubpage(null);
         AutomationProperties.SetName(back, "返回启动器设置");
@@ -2404,8 +2431,9 @@ internal sealed partial class SettingsWindow : Window
         }
 
         var custom = new MenuFlyoutItem { Text = "自定义搜索或快捷链接…" };
-        custom.Click += async (_, _) =>
+        custom.Click += (_, _) =>
         {
+            // 新建 = 先加进列表、再推进它的详情（同 mac）
             var engine = new KittyTools.Core.SearchEngine
             {
                 Id = "custom-" + Guid.NewGuid().ToString("N")[..8],
@@ -2414,11 +2442,9 @@ internal sealed partial class SettingsWindow : Window
                 UrlTemplate = "https://",
                 Fallback = false,
             };
-            if (await EditEngineAsync(engine, engines.Append(engine).ToList()))
-            {
-                engines.Add(engine);
-                Persist();
-            }
+            engines.Add(engine);
+            _detail = ("launcher-web", engine.Id);
+            Persist();
         };
         addMenu.Items.Add(custom);
         add.Flyout = addMenu;
@@ -2801,13 +2827,7 @@ internal sealed partial class SettingsWindow : Window
             }, $"「{WebSearch.Title(engine)}」没有本地结果时兜底"));
         }
 
-        async Task EditAsync()
-        {
-            if (await EditEngineAsync(engine, engines))
-            {
-                persist();
-            }
-        }
+        void EditAsync() => OpenDetail("launcher-web", engine.Id);
 
         async Task RemoveAsync()
         {
@@ -2838,7 +2858,7 @@ internal sealed partial class SettingsWindow : Window
             WebSearch.Title(engine),
             problem ?? WebSearch.KindTitle(engine),
             controls,
-            () => _ = EditAsync(),
+            EditAsync,
             problem: problem is not null);
         AutomationProperties.SetHelpText(card, "点一下或按 Enter 编辑；拖动或 Alt + 上下箭头排序；Delete 删除；右键有上移、下移和删除");
 
@@ -2852,7 +2872,7 @@ internal sealed partial class SettingsWindow : Window
             SettingsUi.RememberAction(card, text, enabled, action);
         }
 
-        Add("编辑…", true, () => _ = EditAsync());
+        Add("编辑…", true, EditAsync);
         menu.Items.Add(new MenuFlyoutSeparator());
         Add("上移", index > 0, () =>
         {
@@ -2871,12 +2891,15 @@ internal sealed partial class SettingsWindow : Window
     }
 
     /// <summary>
-    /// 编辑一条（mac SearchEngineDetail，L3）：名称、关键词、网址三个框，下面橙字写现在有什么问题；网址空着或不完整时「保存」置灰。
-    /// 改的是传进来的那一条；点「保存」才返回 true。
+    /// 一条网页搜索 / 快捷链接的详情页（PLAN-v23 E1，mac SearchEngineDetail）：名称、关键词、网址 ｜ 删除；页头写现在有什么问题（橙字，不拦着）。
+    /// 改了就存；名称空着时存的留原来的。
     /// </summary>
-    private async Task<bool> EditEngineAsync(KittyTools.Core.SearchEngine engine, List<KittyTools.Core.SearchEngine> list)
+    private void BuildEngineDetail(KittyTools.Core.SearchEngine engine)
     {
         var draft = Copy(engine);
+        var ready = false;
+        var lastName = engine.Name;
+        var (headerTitle, hint) = AddDetailHeader("网页搜索与快捷链接", engine.Name.Trim().Length == 0 ? "新建搜索或快捷链接" : WebSearch.Title(engine));
         var name = new TextBox { Header = "名称", Text = draft.Name, PlaceholderText = "比如：GitHub" };
         var keyword = new TextBox { Header = "关键词（可空）", Text = draft.Keyword, PlaceholderText = "比如：gh" };
         var url = new TextBox
@@ -2885,57 +2908,64 @@ internal sealed partial class SettingsWindow : Window
             Text = draft.UrlTemplate,
             PlaceholderText = "https://github.com/search?q={query}",
         };
-        var hint = new TextBlock
+        AddDetailSection(null, name, keyword, url,
+            SettingsUi.Footnote("网址里放 {query} 就是搜索（「关键词 空格 内容」直达），不放就是快捷链接；也可以填 C:\\ 这类文件夹路径。"));
+        AddDetailDelete("删除", !WebSearch.IsPreset(engine.Id), $"删除「{WebSearch.Title(engine)}」？", "自定义的搜索删掉就找不回来了。", () =>
         {
-            FontSize = Theme.FontSize("Kitty.FontSize.Label"),
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = Theme.SecondaryText(),
-        };
-        var panel = new StackPanel { Spacing = 10, MinWidth = 420 };
-        panel.Children.Add(name);
-        panel.Children.Add(keyword);
-        panel.Children.Add(url);
-        panel.Children.Add(hint);
-        var dialog = new ContentDialog
-        {
-            RequestedTheme = Theme.ElementTheme,
-            Title = engine.Name.Trim().Length == 0 ? "新建搜索或快捷链接" : "编辑「" + WebSearch.Title(engine) + "」",
-            Content = panel,
-            PrimaryButtonText = "保存",
-            CloseButtonText = "取消",
-            DefaultButton = ContentDialogButton.Primary,
-            XamlRoot = _content.XamlRoot,
-        };
+            var settings = SettingsService.Current;
+            settings.LauncherSearchEngines = (settings.LauncherSearchEngines ?? WebSearch.Defaults()).Where(item => item.Id != engine.Id).Select(Copy).ToList();
+            _shownEngines = settings.LauncherSearchEngines;
+            SaveOwn();
+            BuildPage("launcher");
+        });
 
         void Validate()
         {
             draft.Name = name.Text;
             draft.Keyword = keyword.Text.Trim();
             draft.UrlTemplate = url.Text.Trim();
+            // 改了就存（E1）：名称空着时存的留原来的；别的问题照存、页头橙字（mac 同样不拦）
+            var saving = Copy(draft);
+            if (draft.Name.Trim().Length > 0)
+            {
+                lastName = draft.Name.Trim();
+            }
+
+            saving.Name = lastName;
+            var list = SettingsService.Current.LauncherSearchEngines ?? WebSearch.Defaults();
             var others = list.Select(item => item.Id == engine.Id ? draft : item).ToList();
             var problem = WebSearch.Problem(draft, others);
-            hint.Text = problem ?? "网址里放 {query} 就是搜索（「关键词 空格 内容」直达），不放就是快捷链接；也可以填 C:\\ 这类文件夹路径。";
-            hint.Foreground = problem is null
-                ? Theme.SecondaryText()
-                : Theme.Caution();
-            // 名称、网址这两样不对就不让存；关键词重复、用不上只提醒（mac 也只写橙字）。
-            dialog.IsPrimaryButtonEnabled = problem is not ("还没填名称" or "网址不完整") &&
-                                            !(problem ?? string.Empty).StartsWith("关键词「", StringComparison.Ordinal);
+            headerTitle.Text = saving.Name.Length > 0 ? WebSearch.Title(saving) : "新建搜索或快捷链接";
+            hint.Text = problem ?? (saving.IsQuicklink ? "快捷链接：打关键词直接打开" : "搜索：「关键词 空格 内容」直达");
+            hint.Foreground = problem is null ? Theme.SecondaryText() : Theme.Caution();
+            if (!ready)
+            {
+                return;
+            }
+
+            SaveDetailSoon(() =>
+            {
+                var settings = SettingsService.Current;
+                var current = (settings.LauncherSearchEngines ?? WebSearch.Defaults()).Select(Copy).ToList();
+                var index = current.FindIndex(item => item.Id == saving.Id);
+                if (index < 0)
+                {
+                    return;
+                }
+
+                saving.Fallback = current[index].Fallback;
+                current[index] = saving;
+                settings.LauncherSearchEngines = current;
+                _shownEngines = current;
+                SaveOwn();
+            });
         }
 
         name.TextChanged += (_, _) => Validate();
         keyword.TextChanged += (_, _) => Validate();
         url.TextChanged += (_, _) => Validate();
         Validate();
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
-        {
-            return false;
-        }
-
-        engine.Name = draft.Name.Trim();
-        engine.Keyword = draft.Keyword;
-        engine.UrlTemplate = draft.UrlTemplate;
-        return true;
+        ready = true;
     }
 
     /// <summary>
@@ -4705,19 +4735,30 @@ internal sealed partial class SettingsWindow : Window
             draft.Sound = Reminder.SoundChime;
             draft.Chime = Reminders.ChimeFilePrefix + "下课铃.mp3";
             draft.NagMinutes = 7;
-            _ = EditReminderAsync(draft, isNew: false);
+            // 详情页（PLAN-v23 E1）：先放进这个测试档的列表，再推进它
+            var settings = SettingsService.Current;
+            var list = Reminders.Load(settings.Reminders);
+            settings.Reminders = list.Any(item => item.Id == draft.Id) ? Reminders.Updating(list, draft) : Reminders.Adding(draft, list);
+            SaveOwn();
+            OpenDetail("reminders", draft.Id);
         }
         else
         {
             var draft = StatusPresets.BuiltIn()[2].Copy();
             draft.Symbol = "🍵";
-            _ = EditStatusPresetAsync(draft, isNew: false);
+            var settings = SettingsService.Current;
+            var list = StatusScreenHost.Presets;
+            settings.StatusScreenPresets = list.Any(item => item.Id == draft.Id) ? StatusPresets.Updating(list, draft) : StatusPresets.Adding(draft, list);
+            SaveOwn();
+            OpenDetail("statusScreen", draft.Id);
         }
     }
 
-    /// <summary>UI 截图自检：开着的编辑框里滚到底。</summary>
+    /// <summary>UI 截图自检：开着的编辑框（详情页）里滚到底。</summary>
     internal void ScrollDialogForProbe()
     {
+        _scroll.UpdateLayout();
+        _scroll.ChangeView(null, _scroll.ScrollableHeight, null, disableAnimation: true);
         foreach (var popup in VisualTreeHelper.GetOpenPopupsForXamlRoot(_content.XamlRoot))
         {
             if (popup.Child is ContentDialog { Content: ScrollViewer scroll })
@@ -4730,6 +4771,11 @@ internal sealed partial class SettingsWindow : Window
 
     internal void CloseDialogsForProbe()
     {
+        if (_detail is not null)
+        {
+            CloseDetail();
+        }
+
         foreach (var popup in VisualTreeHelper.GetOpenPopupsForXamlRoot(_content.XamlRoot))
         {
             if (popup.Child is ContentDialog dialog)

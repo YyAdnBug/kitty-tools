@@ -296,9 +296,9 @@ internal static class StatusScreenView
 
     /// <summary>
     /// 缩小的预览（设置里改一个状态、选状态的面板的卡片）：一块 1440 × 900 的假屏幕按真画面排、整体缩到 width × height；
-    /// 熄屏是纯黑（靠标题认），透出是一张假桌面压暗再垫底板。表情用静止画面、没有小字以外的动效。
+    /// 熄屏是纯黑（靠标题认），透出是一张假桌面压暗再垫底板。animated：表情播动画（设置里的详情页，REVIEW G9）；选状态的面板里静止。
     /// </summary>
-    public static FrameworkElement Preview(StatusPreset preset, double width, double height)
+    public static FrameworkElement Preview(StatusPreset preset, double width, double height, bool animated = false)
     {
         const double screenWidth = 1440;
         const double screenHeight = 900;
@@ -328,7 +328,7 @@ internal static class StatusScreenView
 
             var title = StatusScreenRules.TitleSize(screenHeight);
             var column = BuildColumn(
-                preset, title, screenWidth * 0.8, animated: false,
+                preset, title, screenWidth * 0.8, animated: animated,
                 StatusScreenRules.Footer(DateTime.Now.ToString("HH:mm"), 0, preset.AutoEndMinutes));
             if (preset.Style == StatusPresets.Dim)
             {

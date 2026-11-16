@@ -368,13 +368,33 @@ internal static class SettingsProbe
         await Task.Delay(400);
         check(deleted && StatusScreenHost.Presets.Count == before.Count - 1 && StatusScreenHost.Presets.All(preset => preset.Id != after[2]),
             "L1 自带的、没改过的状态按 Delete：直接删了（不问）");
+        var firstStatus = StatusScreenHost.Presets[0].Id;
         var opened = window.ListKeyForProbe(statuses, 0, Windows.System.VirtualKey.Enter, alt: false);
         await Task.Delay(500);
-        var root = window.ContentForProbe.XamlRoot;
-        check(opened && Microsoft.UI.Xaml.Media.VisualTreeHelper.GetOpenPopupsForXamlRoot(root).Any(popup => popup.Child is ContentDialog),
-            "L1 第一行按 Enter：打开编辑");
-        window.CloseDialogsForProbe();
+        check(opened && window.DetailForProbe == ("statusScreen", firstStatus), "L1 第一行按 Enter：推进那一个的详情页（E1）");
+
+        // PLAN-v23 E1：详情页改了就存；标题空着时存的留原来的、页头橙字；Alt + ← 回列表
+        if (window.DetailTextBoxForProbe("标题") is { } statusTitle)
+        {
+            var original = StatusScreenHost.Presets[0].Title;
+            statusTitle.Text = "探针改的标题";
+            await Task.Delay(700);
+            check(StatusScreenHost.Presets[0].Title == "探针改的标题", "E1 状态详情：改了标题停手就存（不用点保存）");
+            statusTitle.Text = string.Empty;
+            await Task.Delay(700);
+            check(StatusScreenHost.Presets[0].Title == "探针改的标题" && window.DetailStatusForProbe?.StartsWith("标题空着", StringComparison.Ordinal) == true,
+                "E1 状态详情：标题清空时存的留原来的、页头写「标题空着…」");
+            statusTitle.Text = original;
+            await Task.Delay(700);
+        }
+        else
+        {
+            check(false, "E1 状态详情：找不到「标题」框");
+        }
+
+        window.GoBackForProbe();
         await Task.Delay(300);
+        check(window.DetailForProbe is null && window.ListForProbe(statuses) is not null, "E1 Alt + ←：从详情回到状态列表");
         check(!window.ListKeyForProbe(statuses, 0, Windows.System.VirtualKey.Up, alt: true), "L1 第一行按 Alt + ↑：什么都不做（上移是灰的）");
 
         if (TranslateServiceStore.Instance is { Services.Count: >= 2 } store)
@@ -443,11 +463,8 @@ internal static class SettingsProbe
         shell.OpenReminder(reminder.Id);
         await Task.Delay(800);
         window = shell.SettingsWindowForProbe!;
-        var dialogRoot = window.ContentForProbe.XamlRoot;
-        check(dialogRoot is not null && Microsoft.UI.Xaml.Media.VisualTreeHelper.GetOpenPopupsForXamlRoot(dialogRoot)
-                .Any(popup => popup.Child is ContentDialog { Title: "编辑「探针提醒」" }),
-            "R100 OpenReminder：打开 设置 › 提醒 并弹出那一条的编辑框");
-        window.CloseDialogsForProbe();
+        check(window.DetailForProbe == ("reminders", reminder.Id), "R100 OpenReminder：打开 设置 › 提醒 并推进那一条的详情页（E1）");
+        window.CloseDetailForProbe();
         await Task.Delay(300);
         var full = Reminders.Load(settings.Reminders);
         while (full.Count < Reminders.MaxCount)

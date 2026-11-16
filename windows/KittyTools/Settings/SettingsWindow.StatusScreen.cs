@@ -24,6 +24,18 @@ internal sealed partial class SettingsWindow
         var settings = SettingsService.Current;
         var presets = StatusScreenHost.Presets;
         _shownStatuses = settings.StatusScreenPresets;
+        // 详情页（PLAN-v23 E1）：那一条还在就推进它，不在了回列表
+        if (_detail is { Page: "statusScreen" } open)
+        {
+            if (presets.FirstOrDefault(item => item.Id == open.Id) is { } shown)
+            {
+                _content.Children.Clear();
+                BuildStatusPresetDetail(shown, presets.Count > 1);
+                return;
+            }
+
+            _detail = null;
+        }
 
         void Persist(List<StatusPreset> next)
         {
@@ -52,13 +64,12 @@ internal sealed partial class SettingsWindow
         ToolTipService.SetToolTip(add, "新状态 / 恢复自带的状态");
         var addMenu = new MenuFlyout { Placement = FlyoutPlacementMode.BottomEdgeAlignedLeft };
         var newItem = new MenuFlyoutItem { Text = "新状态" };
-        newItem.Click += async (_, _) =>
+        newItem.Click += (_, _) =>
         {
+            // 新建 = 先加进列表、再推进它的详情（同 mac）
             var draft = StatusPresets.New();
-            if (await EditStatusPresetAsync(draft, isNew: true))
-            {
-                Persist(StatusPresets.Adding(draft, presets));
-            }
+            _detail = ("statusScreen", draft.Id);
+            Persist(StatusPresets.Adding(draft, presets));
         };
         var restore = new MenuFlyoutItem { Text = "恢复自带的状态", IsEnabled = StatusPresets.MissingBuiltIns(presets).Count > 0 };
         restore.Click += (_, _) => Persist(StatusPresets.RestoringBuiltIns(presets));
@@ -122,14 +133,7 @@ internal sealed partial class SettingsWindow
             ? StatusEmoji.Still(preset.Symbol, 24, dark)
             : KindTile.Create("statusScreen", "\uE8E4", 24);
 
-        async Task EditAsync()
-        {
-            var draft = preset.Copy();
-            if (await EditStatusPresetAsync(draft, isNew: false))
-            {
-                persist(StatusPresets.Updating(presets, draft));
-            }
-        }
+        void EditAsync() => OpenDetail("statusScreen", preset.Id);
 
         async Task RemoveAsync()
         {
@@ -160,7 +164,7 @@ internal sealed partial class SettingsWindow
             persist(StatusPresets.Removing(preset.Id, presets));
         }
 
-        var card = SettingsUi.Card(preset.Title, StatusPresets.Summary(preset), null, () => _ = EditAsync(), leading: leading);
+        var card = SettingsUi.Card(preset.Title, StatusPresets.Summary(preset), null, EditAsync, leading: leading);
         AutomationProperties.SetHelpText(card, "点一下或按 Enter 编辑；拖动或 Alt + 上下箭头排序；Delete 删除；右键有上移、下移和删除");
         var menu = new MenuFlyout();
         void Add(string text, bool enabled, Action action)
@@ -172,7 +176,7 @@ internal sealed partial class SettingsWindow
             SettingsUi.RememberAction(card, text, enabled, action);
         }
 
-        Add("编辑…", true, () => _ = EditAsync());
+        Add("编辑…", true, EditAsync);
         menu.Items.Add(new MenuFlyoutSeparator());
         Add("上移", index > 0, () => persist(StatusPresets.Moving(preset.Id, -1, presets)));
         Add("下移", index < presets.Count - 1, () => persist(StatusPresets.Moving(preset.Id, 1, presets)));
@@ -183,19 +187,20 @@ internal sealed partial class SettingsWindow
     }
 
     /// <summary>
-    /// 编辑一个状态（mac StatusPresetDetail）：标题、说明、图标格子、样式 + 缩小的预览、电源、自动结束；下面橙字写有什么问题。
-    /// 改的是传进来的 draft；点「保存」才返回 true。标题空着不让存。
+    /// 一个状态的详情页（PLAN-v23 E1，mac StatusPresetDetail）：标题、说明 ｜ 图标（左边大预览一直播动画，REVIEW G9）｜
+    /// 样式 + 会动的缩小预览 ｜ 电源、自动结束 ｜ 删除。改了就存；标题空着时页头橙字、存的标题留原来的。
     /// </summary>
-    private async Task<bool> EditStatusPresetAsync(StatusPreset draft, bool isNew)
+    private void BuildStatusPresetDetail(StatusPreset stored, bool canDelete)
     {
-        var title = new TextBox { Header = "标题", Text = draft.Title, PlaceholderText = "如 马上回来" };
-        var detail = new TextBox { Header = "说明", Text = draft.Detail ?? string.Empty, PlaceholderText = "可不填" };
-        var hint = new TextBlock
-        {
-            FontSize = Theme.FontSize("Kitty.FontSize.Label"),
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = Theme.SecondaryText(),
-        };
+        var draft = stored.Copy();
+        var ready = false;
+        // 标题空着时存的是最后一次有字的标题（mac 每改一下就存，留下的就是它）
+        var lastTitle = stored.Title;
+        var dark = Theme.EffectiveTheme == ElementTheme.Dark;
+        var headerIcon = new ContentControl { Width = 40, Height = 40, VerticalAlignment = VerticalAlignment.Center };
+        var (headerTitle, hint) = AddDetailHeader("状态屏", stored.Title, headerIcon);
+        var title = new TextBox { Header = "标题", Text = draft.Title, PlaceholderText = "如 马上回来", MaxLength = StatusPresets.MaxTitle };
+        var detail = new TextBox { Header = "说明", Text = draft.Detail ?? string.Empty, PlaceholderText = "可不填", MaxLength = StatusPresets.MaxDetail };
         var previewHost = new Border { HorizontalAlignment = HorizontalAlignment.Left };
         var styles = new ComboBox { Header = "样式", ItemsSource = StatusPresets.Styles.Select(StatusPresets.StyleTitle).ToList(), MinWidth = 160 };
         styles.SelectedIndex = Math.Max(0, Array.IndexOf(StatusPresets.Styles, draft.Style));
@@ -210,13 +215,15 @@ internal sealed partial class SettingsWindow
         };
         ends.SelectedIndex = Math.Max(0, Array.IndexOf(StatusPresets.AutoEndChoices, draft.AutoEndMinutes));
 
-        // 图标格子：第一格「无」，后面 16 个表情的静止画面，选中的外面一圈强调色。
-        var dark = Theme.EffectiveTheme == ElementTheme.Dark;
-        var icons = new VariableSizedWrapGrid { Orientation = Orientation.Horizontal, MaximumRowsOrColumns = 9, ItemWidth = 44, ItemHeight = 44 };
+        // 图标格子：第一格「无」，后面 16 个表情的静止画面，选中的外面一圈强调色；左边大预览一直播动画（G9）。
+        var icons = new VariableSizedWrapGrid { Orientation = Orientation.Horizontal, MaximumRowsOrColumns = 7, ItemWidth = 44, ItemHeight = 44 };
+        var (iconRow, showPreview) = IconPicker(icons, "statusScreen", "\uE8E4");
         var iconButtons = new List<(string Id, Button Button)>();
         void SelectIcon(string id)
         {
             draft.Symbol = id;
+            headerIcon.Content = id.Length > 0 ? StatusEmoji.Still(id, 40, dark) : KindTile.Create("statusScreen", "\uE8E4", 40);
+            showPreview(id);
             foreach (var (value, button) in iconButtons)
             {
                 button.BorderBrush = EmojiChoice.Selected(value, id) ? new SolidColorBrush(Theme.AccentColor) : new SolidColorBrush(Colors.Transparent);
@@ -225,32 +232,7 @@ internal sealed partial class SettingsWindow
             Refresh();
         }
 
-        var iconHeader = new TextBlock { Text = "图标", Margin = new Thickness(0, 4, 0, 0) };
-        var panel = new StackPanel { Spacing = 10, MinWidth = 440 };
-        panel.Children.Add(title);
-        panel.Children.Add(detail);
-        panel.Children.Add(iconHeader);
-        panel.Children.Add(icons);
-        panel.Children.Add(styles);
-        panel.Children.Add(styleNote);
-        panel.Children.Add(previewHost);
-        panel.Children.Add(powers);
-        panel.Children.Add(ends);
-        panel.Children.Add(SettingsUi.Footnote("电源只管闲置的时候：屏幕锁定后照常熄灭，合上盖子照样睡眠。屏幕常亮时电脑也不睡眠。"));
-        panel.Children.Add(hint);
-        var dialog = new ContentDialog
-        {
-            RequestedTheme = Theme.ElementTheme,
-            Title = isNew ? "新状态" : $"编辑「{draft.Title}」",
-            Content = new ScrollViewer { Content = panel, MaxHeight = 560 },
-            PrimaryButtonText = "保存",
-            CloseButtonText = "取消",
-            DefaultButton = ContentDialogButton.Primary,
-            XamlRoot = _content.XamlRoot,
-        };
-
-        // 图标按钮放在 dialog 建好之后：按钮的 lambda 调 SelectIcon → Refresh，Refresh 用到 dialog；lambda 写在 dialog 赋值之前
-        // 编译器判「使用了未赋值的局部变量」（CS0165）。
+        // 按钮的 lambda 调 SelectIcon → Refresh，Refresh 用到的控件都在上面建好了（不然编译器判 CS0165）。
         foreach (var id in new[] { string.Empty }.Concat(StatusEmojiCatalog.Choices.Select(choice => choice.Id)))
         {
             var button = new Button
@@ -275,6 +257,22 @@ internal sealed partial class SettingsWindow
         iconButtons.Add((EmojiChoice.Key, otherEmoji));
         icons.Children.Add(otherEmoji);
 
+        AddDetailSection(null, title, detail, SettingsUi.Footnote($"标题最多 {StatusPresets.MaxTitle} 个字，说明最多 {StatusPresets.MaxDetail} 个字。"));
+        AddDetailSection("图标", iconRow);
+        AddDetailSection("样式", styles, styleNote, previewHost);
+        AddDetailSection("电源与结束", powers, ends,
+            SettingsUi.Footnote("电源只管闲置的时候：屏幕锁定后照常熄灭，合上盖子照样睡眠。屏幕常亮时电脑也不睡眠。"));
+        if (canDelete)
+        {
+            AddDetailDelete("删除", !StatusPresets.IsPristine(stored), $"删除「{stored.Title}」？", "自己加的、改过的状态删掉就找不回来了。", () =>
+            {
+                var settings = SettingsService.Current;
+                settings.StatusScreenPresets = StatusPresets.Sanitized(StatusPresets.Removing(stored.Id, StatusScreenHost.Presets));
+                SaveOwn();
+                BuildPage("statusScreen");
+            });
+        }
+
         void Refresh()
         {
             draft.Title = title.Text;
@@ -283,11 +281,43 @@ internal sealed partial class SettingsWindow
             draft.Power = StatusPresets.Powers[Math.Max(0, powers.SelectedIndex)];
             draft.AutoEndMinutes = StatusPresets.AutoEndChoices[Math.Max(0, ends.SelectedIndex)];
             styleNote.Text = StatusPresets.StyleExplanation(draft.Style);
-            previewHost.Child = StatusScreenView.Preview(draft, 288, 180);
-            var problem = StatusPresets.Problem(draft);
-            hint.Text = problem ?? $"标题最多 {StatusPresets.MaxTitle} 个字，说明最多 {StatusPresets.MaxDetail} 个字。";
+            // 预览里表情也动（G9；减弱动态效果时静止）
+            previewHost.Child = StatusScreenView.Preview(draft, 288, 180, animated: !Motion.Reduced);
+
+            // 改了就存（E1）：标题空着时页头橙字，存的标题留原来的
+            var named = StatusPresets.OneLine(draft.Title).Length > 0;
+            var saving = draft.Copy();
+            if (named)
+            {
+                lastTitle = StatusPresets.OneLine(draft.Title);
+            }
+            else
+            {
+                saving.Title = lastTitle;
+            }
+
+            var problem = named ? StatusPresets.Problem(saving) : $"标题空着：先留着原来的「{lastTitle}」";
+            headerTitle.Text = saving.Title;
+            hint.Text = problem ?? StatusPresets.Summary(saving);
             hint.Foreground = problem is null ? Theme.SecondaryText() : Theme.Caution();
-            dialog.IsPrimaryButtonEnabled = StatusPresets.OneLine(draft.Title).Length > 0;
+            if (!ready)
+            {
+                return;
+            }
+
+            SaveDetailSoon(() =>
+            {
+                var settings = SettingsService.Current;
+                var list = StatusScreenHost.Presets;
+                if (list.All(item => item.Id != saving.Id))
+                {
+                    return;
+                }
+
+                settings.StatusScreenPresets = StatusPresets.Sanitized(StatusPresets.Updating(list, saving));
+                _shownStatuses = settings.StatusScreenPresets;
+                SaveOwn();
+            });
         }
 
         title.TextChanged += (_, _) => Refresh();
@@ -296,7 +326,7 @@ internal sealed partial class SettingsWindow
         powers.SelectionChanged += (_, _) => Refresh();
         ends.SelectionChanged += (_, _) => Refresh();
         SelectIcon(draft.Symbol);
-        return await dialog.ShowAsync() == ContentDialogResult.Primary;
+        ready = true;
     }
 
     /// <summary>

@@ -24,7 +24,18 @@ internal sealed partial class SettingsWindow
         var settings = SettingsService.Current;
         var reminders = Reminders.Load(settings.Reminders);
         _shownReminders = settings.Reminders;
-        _reminderEdits.Clear();
+        // 详情页（PLAN-v23 E1）：那一条还在就推进它，不在了（被删、同步换掉）回列表
+        if (_detail is { Page: "reminders" } open)
+        {
+            if (reminders.FirstOrDefault(item => item.Id == open.Id) is { } shown)
+            {
+                _content.Children.Clear();
+                BuildReminderDetail(shown);
+                return;
+            }
+
+            _detail = null;
+        }
 
         void Persist(List<Reminder> next)
         {
@@ -60,13 +71,12 @@ internal sealed partial class SettingsWindow
         ToolTipService.SetToolTip(add, "新提醒 / 恢复示例提醒");
         var menu = new MenuFlyout { Placement = FlyoutPlacementMode.BottomEdgeAlignedLeft };
         var create = new MenuFlyoutItem { Text = "新提醒" };
-        create.Click += async (_, _) =>
+        create.Click += (_, _) =>
         {
+            // 新建 = 先加进列表、再推进它的详情（同 mac）
             var draft = Reminders.New(DateTime.UtcNow, TimeZoneInfo.Local);
-            if (await EditReminderAsync(draft, isNew: true))
-            {
-                Persist(Reminders.Adding(draft, reminders));
-            }
+            _detail = ("reminders", draft.Id);
+            Persist(Reminders.Adding(draft, reminders));
         };
         var restore = new MenuFlyoutItem { Text = "恢复示例提醒", IsEnabled = Reminders.MissingExamples(reminders).Count > 0 };
         restore.Click += (_, _) => Persist(Reminders.RestoringExamples(reminders));
@@ -105,16 +115,7 @@ internal sealed partial class SettingsWindow
             ? StatusScreenHost.Presets.FirstOrDefault(preset => preset.Id == reminder.StatusID)?.Title ?? StatusScreenHost.Presets.FirstOrDefault()?.Title
             : null;
 
-        async Task EditAsync()
-        {
-            var draft = reminder.Copy();
-            if (await EditReminderAsync(draft, isNew: false))
-            {
-                persist(Reminders.Updating(reminders, draft));
-            }
-        }
-
-        _reminderEdits[reminder.Id] = EditAsync;
+        void EditAsync() => OpenDetail("reminders", reminder.Id);
 
         async Task RemoveAsync()
         {
@@ -146,7 +147,7 @@ internal sealed partial class SettingsWindow
             persist(Reminders.Updating(reminders, next));
         }, $"「{reminder.Title}」开着");
         var card = SettingsUi.Card(
-            reminder.Title, Reminders.Summary(reminder, DateTime.UtcNow, TimeZoneInfo.Local, statusTitle), toggle, () => _ = EditAsync(),
+            reminder.Title, Reminders.Summary(reminder, DateTime.UtcNow, TimeZoneInfo.Local, statusTitle), toggle, EditAsync,
             leading: leading);
         AutomationProperties.SetHelpText(card, "点一下或按 Enter 编辑；拖动或 Alt + 上下箭头排序；Delete 删除；右键有上移、下移和删除");
         var menu = new MenuFlyout();
@@ -159,7 +160,7 @@ internal sealed partial class SettingsWindow
             SettingsUi.RememberAction(card, text, enabled, action);
         }
 
-        Add("编辑…", true, () => _ = EditAsync());
+        Add("编辑…", true, EditAsync);
         menu.Items.Add(new MenuFlyoutSeparator());
         Add("上移", index > 0, () => persist(Reminders.Moving(reminder.Id, -1, reminders)));
         Add("下移", index < reminders.Count - 1, () => persist(Reminders.Moving(reminder.Id, 1, reminders)));
@@ -169,70 +170,46 @@ internal sealed partial class SettingsWindow
         return card;
     }
 
-    /// <summary>这一页上每一条的「编辑」（建页时记下，OpenReminder 用）。</summary>
-    private readonly Dictionary<string, Func<Task>> _reminderEdits = new(StringComparer.Ordinal);
-
-    /// <summary>
-    /// 打开某一条的编辑框（REVIEW R100，mac openReminder）。ShowPage 之后调；开着别的对话框、找不到那一条（刚被删）时只停在这一页。
-    /// 列表在页面建好之后变过（刚从启动器 / 托盘加的）先重建这一页。
-    /// </summary>
+    /// <summary>打开某一条的详情（REVIEW R100，mac openReminder）。ShowPage 之后调；找不到那一条（刚被删）时只停在列表。</summary>
     internal void OpenReminder(string id)
     {
-        if (_currentPage != "reminders")
+        if (_currentPage == "reminders" && Reminders.Load(SettingsService.Current.Reminders).Any(item => item.Id == id))
         {
-            return;
+            OpenDetail("reminders", id);
         }
-
-        if (!ReferenceEquals(SettingsService.Current.Reminders, _shownReminders))
-        {
-            BuildPage("reminders");
-        }
-
-        if (!_reminderEdits.TryGetValue(id, out var edit))
-        {
-            return;
-        }
-
-        void Open()
-        {
-            if (_content.XamlRoot is { } root && VisualTreeHelper.GetOpenPopupsForXamlRoot(root).Count == 0)
-            {
-                _ = edit();
-            }
-        }
-
-        // 第一次开设置窗时内容区还没进可视树（XamlRoot 是 null），等它 Loaded
-        if (_content.XamlRoot is null)
-        {
-            void Loaded(object sender, RoutedEventArgs e)
-            {
-                _content.Loaded -= Loaded;
-                Open();
-            }
-
-            _content.Loaded += Loaded;
-            return;
-        }
-
-        Open();
     }
 
-    /// <summary>编辑一条（mac ReminderDetail）：改的是 draft；点「保存」才返回 true。标题空着不让存。</summary>
-    private async Task<bool> EditReminderAsync(Reminder draft, bool isNew)
+    /// <summary>
+    /// 一条提醒的详情页（PLAN-v23 E1 + REVIEW R101，照 mac ReminderDetail）：页头写标题和下一次 / 有问题的橙字；
+    /// 标题、说明 ｜ 图标 ｜ 时间（重复 = 一次 / 每天 / 工作日 / 每周 / 每月 / 每隔一阵，各带一句脚注）｜ 提醒方式 ｜ 声音和催促 ｜ 删除。
+    /// 改了就存（SaveDetailSoon）；标题空着时页头橙字、存的标题留原来的。
+    /// </summary>
+    private void BuildReminderDetail(Reminder stored)
     {
         var zone = TimeZoneInfo.Local;
+        var draft = stored.Copy();
+        var ready = false;
+        // 标题空着时存的是最后一次有字的标题（mac 每改一下就存，留下的就是它）
+        var lastTitle = stored.Title;
         var schedule = draft.Schedule;
-        var title = new TextBox { Header = "标题", Text = draft.Title, PlaceholderText = "如 喝水" };
-        var detail = new TextBox { Header = "说明", Text = draft.Detail ?? string.Empty, PlaceholderText = "可不填" };
-        var hint = new TextBlock { FontSize = Theme.FontSize("Kitty.FontSize.Label"), TextWrapping = TextWrapping.Wrap };
+        var dark = Theme.EffectiveTheme == ElementTheme.Dark;
+        var headerIcon = new ContentControl { Width = 40, Height = 40, VerticalAlignment = VerticalAlignment.Center };
+        var (headerTitle, hint) = AddDetailHeader("提醒", stored.Title, headerIcon);
+        var title = new TextBox { Header = "标题", Text = draft.Title, PlaceholderText = "如 喝水", MaxLength = Reminders.MaxTitle };
+        var detail = new TextBox { Header = "说明", Text = draft.Detail ?? string.Empty, PlaceholderText = "可不填", MaxLength = Reminders.MaxDetail };
 
         // 图标格子（同状态屏）：「无」+ 16 个表情 +「其他表情」（PLAN-v16 E1）。
-        var dark = Theme.EffectiveTheme == ElementTheme.Dark;
-        var icons = new VariableSizedWrapGrid { Orientation = Orientation.Horizontal, MaximumRowsOrColumns = 9, ItemWidth = 44, ItemHeight = 44 };
         var iconButtons = new List<(string Id, Button Button)>();
+        // 选了图标也要存：Refresh 在下面才建好，先挂一个空的，建好后换成它
+        Action changed = static () => { };
+        var icons = new VariableSizedWrapGrid { Orientation = Orientation.Horizontal, MaximumRowsOrColumns = 7, ItemWidth = 44, ItemHeight = 44 };
+        var (iconRow, showPreview) = IconPicker(icons, "reminders", FeatureIcons.Reminders);
         void SelectIcon(string id)
         {
             draft.Symbol = id;
+            headerIcon.Content = id.Length > 0 ? StatusEmoji.Still(id, 40, dark) : KindTile.Create("reminders", FeatureIcons.Reminders, 40);
+            showPreview(id);
+            changed();
             foreach (var (value, button) in iconButtons)
             {
                 button.BorderBrush = new SolidColorBrush(EmojiChoice.Selected(value, id) ? Theme.AccentColor : Colors.Transparent);
@@ -263,24 +240,23 @@ internal sealed partial class SettingsWindow
         iconButtons.Add((EmojiChoice.Key, otherEmoji));
         icons.Children.Add(otherEmoji);
 
-        // 什么时候
-        string[] kindTitles = { "一次", "每周", "每月", "间隔" };
-        var kind = new ComboBox { Header = "什么时候", ItemsSource = kindTitles.ToList(), MinWidth = 160 };
-        kind.SelectedIndex = Math.Max(0, Array.IndexOf(ReminderSchedule.Kinds, schedule.Kind));
+        // 时间（REVIEW R101）：重复 = 一次 / 每天 / 工作日 / 每周 / 每月 / 每隔一阵；存的照旧是四种，每天、工作日是勾满 / 勾一到五的每周
+        var kind = new ComboBox { Header = "重复", ItemsSource = ReminderRepeats.All.Select(ReminderRepeats.Title).ToList(), MinWidth = 160 };
+        kind.SelectedIndex = Array.IndexOf(ReminderRepeats.All, ReminderRepeats.Of(schedule));
         var onceLocal = schedule.Date > ReminderTime.DistantPast
             ? ReminderMath.Local(ReminderTime.ToUtc(schedule.Date), zone)
             : ReminderMath.Local(DateTime.UtcNow.AddHours(1), zone);
-        var date = new DatePicker { Header = "日期", Date = new DateTimeOffset(onceLocal.Date) };
-        var time = new TimePicker { Header = "时刻", ClockIdentifier = "24HourClock", MinuteIncrement = 5 };
+        var date = new DatePicker { Header = "日期和时间", Date = new DateTimeOffset(onceLocal.Date) };
+        var time = new TimePicker { Header = "时间", ClockIdentifier = "24HourClock", MinuteIncrement = 5 };
         time.Time = schedule.Kind == ReminderSchedule.Once ? onceLocal.TimeOfDay : TimeSpan.FromMinutes(schedule.Time);
-        var until = new TimePicker { Header = "到（0:00 = 到半夜）", ClockIdentifier = "24HourClock", MinuteIncrement = 5 };
+        var until = new TimePicker { Header = "到", ClockIdentifier = "24HourClock", MinuteIncrement = 5 };
         until.Time = TimeSpan.FromMinutes(schedule.Until % 1440);
         var monthDay = new ComboBox { Header = "每月几号", ItemsSource = Enumerable.Range(1, 31).Select(day => $"{day} 号").ToList(), MinWidth = 120 };
         monthDay.SelectedIndex = Math.Clamp(schedule.Day, 1, 31) - 1;
         var every = new ComboBox
         {
             Header = "每隔",
-            ItemsSource = ReminderSchedule.EveryChoices.Select(minutes => minutes % 60 == 0 ? $"{minutes / 60} 小时" : $"{minutes} 分钟").ToList(),
+            ItemsSource = ReminderSchedule.EveryChoices.Select(ReminderRepeats.EveryTitle).ToList(),
             MinWidth = 120,
         };
         every.SelectedIndex = Math.Max(0, Array.IndexOf(ReminderSchedule.EveryChoices, schedule.Every));
@@ -294,14 +270,19 @@ internal sealed partial class SettingsWindow
             days.Children.Add(toggle);
         }
 
+        var daysRow = new StackPanel { Spacing = 4, Children = { new TextBlock { Text = "星期" }, days } };
+        // 每隔一阵的「全天」（mac）：开着 = 0:00–24:00，关上回到 9:00–18:00
+        var allDay = new ToggleSwitch { Header = "全天", IsOn = ReminderRepeats.IsAllDay(schedule) };
+        var timeNote = new TextBlock { FontSize = Theme.FontSize("Kitty.FontSize.Label"), Foreground = Theme.SecondaryText(), TextWrapping = TextWrapping.Wrap };
+
         // 怎么提醒
         var alerts = Reminders.AlertChoices(draft.Alert, Features.IsOn(Feature.StatusScreen));
-        var alert = new ComboBox { Header = "怎么提醒", ItemsSource = alerts.Select(Reminders.AlertTitle).ToList(), MinWidth = 160 };
+        var alert = new ComboBox { Header = "提醒方式", ItemsSource = alerts.Select(Reminders.AlertTitle).ToList(), MinWidth = 160 };
         alert.SelectedIndex = Math.Max(0, Array.IndexOf(alerts, draft.Alert));
         var alertNote = new TextBlock { FontSize = Theme.FontSize("Kitty.FontSize.Label"), Foreground = Theme.SecondaryText(), TextWrapping = TextWrapping.Wrap };
         var fullSeconds = new ComboBox
         {
-            Header = "全屏多久自己收起",
+            Header = "多久自己收起",
             ItemsSource = Reminders.FullChoices.Select(seconds => seconds == 0 ? "点了才收" : Reminders.DurationTitle(seconds)).ToList(),
             MinWidth = 160,
         };
@@ -423,34 +404,78 @@ internal sealed partial class SettingsWindow
         };
         int CustomNag() => double.IsNaN(nagCustom.Value) ? 20 : Math.Clamp((int)Math.Round(nagCustom.Value), 1, Reminders.MaxNag);
 
-        var panel = new StackPanel { Spacing = 10, MinWidth = 440 };
-        foreach (var element in new UIElement[]
-                 {
-                     title, detail, new TextBlock { Text = "图标" }, icons, kind, date, days, time, until, monthDay, every, alert, alertNote,
-                     fullSeconds, status, sound, chime, chimeNote, nag, nagCustom,
-                     SettingsUi.Footnote("催到第 3 次换成全屏；声音只响一遍，自己选的文件最多放 30 秒。"), hint,
-                 })
+        AddDetailSection(null, title, detail, SettingsUi.Footnote($"标题最多 {Reminders.MaxTitle} 个字，说明最多 {Reminders.MaxDetail} 个字。"));
+        AddDetailSection("图标", iconRow);
+        AddDetailSection("时间", kind, date, monthDay, every, daysRow, allDay, time, until, timeNote);
+        AddDetailSection("提醒方式", alert, fullSeconds, status, alertNote);
+        AddDetailSection("声音和催促", sound, chime, chimeNote, nag, nagCustom,
+            SettingsUi.Footnote("没点「知道了」或「稍后」就再响一次，第 3 次换成全屏，之后不再催。声音只响一遍，自己选的文件最多放 30 秒。"));
+        AddDetailDelete("删除", !Reminders.IsPristine(stored), $"删除「{stored.Title}」？", "自己加的、改过的提醒删掉就找不回来了。", () =>
         {
-            panel.Children.Add(element);
-        }
+            ReminderSound.StopPreview();
+            var settings = SettingsService.Current;
+            settings.Reminders = Reminders.Sanitized(Reminders.Removing(stored.Id, Reminders.Load(settings.Reminders)));
+            SaveOwn();
+            BuildPage("reminders");
+        });
 
-        var dialog = new ContentDialog
+        // 换重复方式（mac repeating）：每天 / 工作日改勾那几天，换回每周只勾今天，换成一次而时间过了给下一个整点
+        kind.SelectionChanged += (_, _) =>
         {
-            RequestedTheme = Theme.ElementTheme,
-            Title = isNew ? "新提醒" : $"编辑「{draft.Title}」",
-            Content = new ScrollViewer { Content = panel, MaxHeight = 560 },
-            PrimaryButtonText = "保存",
-            CloseButtonText = "取消",
-            DefaultButton = ContentDialogButton.Primary,
-            XamlRoot = _content.XamlRoot,
+            if (!ready || kind.SelectedIndex < 0)
+            {
+                return;
+            }
+
+            var changed = ReminderRepeats.Repeating(draft.Schedule, ReminderRepeats.All[kind.SelectedIndex], DateTime.UtcNow, zone);
+            ready = false;
+            foreach (var (day, toggle) in dayToggles)
+            {
+                toggle.IsChecked = changed.Days.Contains(day);
+            }
+
+            if (changed.Kind == ReminderSchedule.Once)
+            {
+                var local = ReminderMath.Local(ReminderTime.ToUtc(changed.Date), zone);
+                date.Date = new DateTimeOffset(local.Date);
+                time.Time = local.TimeOfDay;
+            }
+
+            ready = true;
+            Refresh();
+        };
+        allDay.Toggled += (_, _) =>
+        {
+            if (!ready)
+            {
+                return;
+            }
+
+            if (!allDay.IsOn)
+            {
+                ready = false;
+                time.Time = TimeSpan.FromHours(9);
+                until.Time = TimeSpan.FromHours(18);
+                ready = true;
+            }
+
+            Refresh();
         };
 
         void Refresh()
         {
             draft.Title = title.Text;
             draft.Detail = detail.Text.Length == 0 ? null : detail.Text;
-            var next = schedule.Copy();
-            next.Kind = ReminderSchedule.Kinds[Math.Max(0, kind.SelectedIndex)];
+            var repeat = ReminderRepeats.All[Math.Max(0, kind.SelectedIndex)];
+            var next = draft.Schedule.Copy();
+            next.Kind = repeat switch
+            {
+                ReminderRepeat.Once => ReminderSchedule.Once,
+                ReminderRepeat.Monthly => ReminderSchedule.Monthly,
+                ReminderRepeat.Interval => ReminderSchedule.Interval,
+                _ => ReminderSchedule.Weekly,
+            };
+            var wholeDay = next.Kind == ReminderSchedule.Interval && allDay.IsOn;
             var minutes = (int)time.Time.TotalMinutes;
             if (next.Kind == ReminderSchedule.Once)
             {
@@ -463,9 +488,20 @@ internal sealed partial class SettingsWindow
             }
 
             next.Until = until.Time == TimeSpan.Zero ? 1440 : (int)until.Time.TotalMinutes;
+            if (wholeDay)
+            {
+                next.Time = 0;
+                next.Until = 1440;
+            }
+
             next.Day = monthDay.SelectedIndex + 1;
             next.Every = ReminderSchedule.EveryChoices[Math.Max(0, every.SelectedIndex)];
-            next.Days = dayToggles.Where(item => item.Button.IsChecked == true).Select(item => item.Day).Order().ToList();
+            next.Days = repeat switch
+            {
+                ReminderRepeat.Daily => ReminderSchedule.AllDays.ToList(),
+                ReminderRepeat.Workdays => ReminderSchedule.Workdays.ToList(),
+                _ => dayToggles.Where(item => item.Button.IsChecked == true).Select(item => item.Day).Order().ToList(),
+            };
             draft.Schedule = next.Sanitized();
             draft.Alert = alerts[Math.Max(0, alert.SelectedIndex)];
             draft.FullSeconds = Reminders.FullChoices[Math.Max(0, fullSeconds.SelectedIndex)];
@@ -488,17 +524,53 @@ internal sealed partial class SettingsWindow
 
             // 按种类露出要填的那几样。
             date.Visibility = Show(next.Kind == ReminderSchedule.Once);
-            days.Visibility = Show(next.Kind is ReminderSchedule.Weekly or ReminderSchedule.Interval);
-            until.Visibility = every.Visibility = Show(next.Kind == ReminderSchedule.Interval);
+            daysRow.Visibility = Show(repeat is ReminderRepeat.Weekly or ReminderRepeat.Interval);
+            every.Visibility = allDay.Visibility = Show(next.Kind == ReminderSchedule.Interval);
+            time.Visibility = Show(!wholeDay);
+            until.Visibility = Show(next.Kind == ReminderSchedule.Interval && !wholeDay);
             monthDay.Visibility = Show(next.Kind == ReminderSchedule.Monthly);
-            time.Header = next.Kind == ReminderSchedule.Interval ? "从" : "时刻";
+            time.Header = next.Kind == ReminderSchedule.Interval ? "从" : next.Kind == ReminderSchedule.Once ? null : "时间";
+            timeNote.Text = ReminderRepeats.Footnote(next.Kind);
             fullSeconds.Visibility = Show(draft.Alert == Reminder.Full);
             status.Visibility = Show(draft.Alert == Reminder.Status);
-            alertNote.Text = Reminders.AlertExplanation(draft.Alert);
-            var problem = Reminders.Problem(draft, DateTime.UtcNow);
-            hint.Text = problem ?? Reminders.ScheduleSummary(draft.Schedule, DateTime.UtcNow, zone);
+            alertNote.Text = Reminders.AlertExplanation(draft.Alert) +
+                             (draft.Alert == Reminder.Status ? "。按住 Esc 或到了状态的自动结束时间才退出。" : "。正在录屏、录音时，边框和全屏改成底部的提示、也不出声，免得录进去。");
+
+            // 改了就存（E1）：标题空着时页头橙字，存的标题留原来的
+            var named = StatusPresets.OneLine(draft.Title).Length > 0;
+            var saving = draft.Copy();
+            if (named)
+            {
+                lastTitle = StatusPresets.OneLine(draft.Title);
+            }
+            else
+            {
+                saving.Title = lastTitle;
+            }
+
+            var problem = named ? Reminders.Problem(saving, DateTime.UtcNow) : $"标题空着：先留着原来的「{lastTitle}」";
+            var statusTitle = saving.Alert == Reminder.Status ? presets.FirstOrDefault(preset => preset.Id == saving.StatusID)?.Title : null;
+            headerTitle.Text = saving.Title;
+            hint.Text = problem ?? Reminders.Summary(saving, DateTime.UtcNow, zone, statusTitle);
             hint.Foreground = problem is null ? Theme.SecondaryText() : Theme.Caution();
-            dialog.IsPrimaryButtonEnabled = StatusPresets.OneLine(draft.Title).Length > 0;
+            if (!ready)
+            {
+                return;
+            }
+
+            SaveDetailSoon(() =>
+            {
+                var settings = SettingsService.Current;
+                var list = Reminders.Load(settings.Reminders);
+                if (list.All(item => item.Id != saving.Id))
+                {
+                    return;
+                }
+
+                settings.Reminders = Reminders.Sanitized(Reminders.Updating(list, saving));
+                _shownReminders = settings.Reminders;
+                SaveOwn();
+            });
         }
 
         static Visibility Show(bool shown) => shown ? Visibility.Visible : Visibility.Collapsed;
@@ -519,10 +591,8 @@ internal sealed partial class SettingsWindow
             toggle.Click += (_, _) => Refresh();
         }
 
+        changed = Refresh;
         SelectIcon(draft.Symbol);
-        Refresh();
-        var saved = await dialog.ShowAsync() == ContentDialogResult.Primary;
-        ReminderSound.StopPreview();
-        return saved;
+        ready = true;
     }
 }

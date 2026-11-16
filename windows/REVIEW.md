@@ -426,16 +426,16 @@ Windows（`Shell/HomePanel.cs`）：
 
 | # | mac 是什么 | Windows 现在 | 推荐 | 规模 |
 |---|---|---|---|---|
-| G1 | **识字时框里有二维码 / 条码就复制码的内容**（`App/AppDelegate.swift:3128-3150`，从 `92d1cf14` 起；设置脚注「框选里有二维码或条码时复制它的内容」，`Settings/ScreenshotTab.swift:150`） | 没有。WinRT 没有识别静态图片里条码的公开接口，依赖又只许用微软的包 | **以后**：要自己在 Core 里写二维码解码；先写进 MAC-DIFF | 大 |
-| G2 | **长截图面板的按钮**：▶ / ⏸ 中途开关自动滚动（空格）、「存储到「X」 ▾」带另存为、取消、✓ 拷贝；速度那排一直在；对不上时边框变橙（`Screenshot/ScrollCapture.swift:912-921`、`:1243-1265`） | 只有「放弃」「标注」「完成」（`Screenshot/ScrollPreviewPanel.cs:103-116`）；手动 / 自动开始时就定死（S / A），手动滚中途转不了自动；速度那排只在自动时出；边框一直粉色 | **照做**按钮那半（点按钮不用拿焦点）；面板不拿焦点、空格做不到的写进 MAC-DIFF | 中 |
-| G3 | **长截图时和选区相交的钉图让开**：不接鼠标、淡到 0.3，完了放回（`Screenshot/PinPanel.swift:40-48`，体检 B40） | 钉图没设不进截图，长截图按选区 BitBlt（`Screenshot/ScreenCapture.cs:323`）会把置顶的钉图拍进长图；钉图的滚轮是缩放（`PinWindow.cs:73`），压在选区上会吃掉滚轮 | **照做** | 小到中 |
-| G4 | **长截图开始前两个检查**：选区不到 60 pt 时响一声、说「选区太矮」不开始；有标注时说「长截图不带这些标注，拼完可以在长图上标」（`Screenshot/SelectionView.swift:2266-2281`） | 没有（`Screenshot/ScreenshotSession.cs:548-573`） | **照做** | 小 |
-| G5 | **长图标注的工具栏留着「识字并拷贝」和「存储 ▾」**（`Screenshot/EditorToolbar.swift:254-273`；0.7.1 更新日志） | 裁剪、撤销、重做、关闭、保存、拷贝，没有识字、没有 ▾（`Screenshot/LongAnnotateWindow.cs:193-221`） | **照做** | 小 |
-| G6 | **放大镜和信息卡**：15 × 15 格、圆角白环、像素网格、中间一行一列粉条；下面一张色块 + HEX + 坐标 +「C」键帽的卡，截图翻译和识字时不出；悬停窗口时尺寸胶囊显示窗口大小（`SelectionView.swift:252-253`、`:390-400`、`:779-796`） | 11 × 11、直角粉框、只描中间一格，下面一行「x, y  #HEX」，所有模式都一样（`SelectionOverlayWindow.cs:1840-1885`）；尺寸胶囊只在有选区时出（`SelectionOverlayWindow.Chrome.cs:311-318`） | **照做**（规格 `mac-whisker/capture.md`） | 小到中 |
-| G7 | **吸附时画粉色虚线参考线，按住 ⌃ 暂停吸附**（`SelectionView.swift:2707-2721`） | 没有参考线；Ctrl 已经给了十字准线 | 参考线**照做**；暂停**不适用**（写进 MAC-DIFF）。先修 R87 | 小 |
+| G1 | **识字时框里有二维码 / 条码就复制码的内容**（`App/AppDelegate.swift:3128-3150`，从 `92d1cf14` 起；设置脚注「框选里有二维码或条码时复制它的内容」，`Settings/ScreenshotTab.swift:150`） | 没有。WinRT 没有识别静态图片里条码的公开接口，依赖又只许用微软的包 | **以后**：要自己在 Core 里写二维码解码；先写进 MAC-DIFF | 大 | **写进 MAC-DIFF「以后」（`0f7f9816`）** |
+| G2 | **长截图面板的按钮**：▶ / ⏸ 中途开关自动滚动（空格）、「存储到「X」 ▾」带另存为、取消、✓ 拷贝；速度那排一直在；对不上时边框变橙（`Screenshot/ScrollCapture.swift:912-921`、`:1243-1265`） | 只有「放弃」「标注」「完成」（`Screenshot/ScrollPreviewPanel.cs:103-116`）；手动 / 自动开始时就定死（S / A），手动滚中途转不了自动；速度那排只在自动时出；边框一直粉色 | **照做**按钮那半（点按钮不用拿焦点）；面板不拿焦点、空格做不到的写进 MAC-DIFF | 中 | **已做（`0f7f9816`）**：按钮行、速度那排一直在、橙色边框；空格 / A / ⌘S 写进 MAC-DIFF |
+| G3 | **长截图时和选区相交的钉图让开**：不接鼠标、淡到 0.3，完了放回（`Screenshot/PinPanel.swift:40-48`，体检 B40） | 钉图没设不进截图，长截图按选区 BitBlt（`Screenshot/ScreenCapture.cs:323`）会把置顶的钉图拍进长图；钉图的滚轮是缩放（`PinWindow.cs:73`），压在选区上会吃掉滚轮 | **照做** | 小到中 | **已做（`0f7f9816`）**：相交的钉图藏起来、完了放回（淡到 0.3 做不到，MAC-DIFF） |
+| G4 | **长截图开始前两个检查**：选区不到 60 pt 时响一声、说「选区太矮」不开始；有标注时说「长截图不带这些标注，拼完可以在长图上标」（`Screenshot/SelectionView.swift:2266-2281`） | 没有（`Screenshot/ScreenshotSession.cs:548-573`） | **照做** | 小 | **已做（`0f7f9816`）** |
+| G5 | **长图标注的工具栏留着「识字并拷贝」和「存储 ▾」**（`Screenshot/EditorToolbar.swift:254-273`；0.7.1 更新日志） | 裁剪、撤销、重做、关闭、保存、拷贝，没有识字、没有 ▾（`Screenshot/LongAnnotateWindow.cs:193-221`） | **照做** | 小 | **已做（`0f7f9816`）** |
+| G6 | **放大镜和信息卡**：15 × 15 格、圆角白环、像素网格、中间一行一列粉条；下面一张色块 + HEX + 坐标 +「C」键帽的卡，截图翻译和识字时不出；悬停窗口时尺寸胶囊显示窗口大小（`SelectionView.swift:252-253`、`:390-400`、`:779-796`） | 11 × 11、直角粉框、只描中间一格，下面一行「x, y  #HEX」，所有模式都一样（`SelectionOverlayWindow.cs:1840-1885`）；尺寸胶囊只在有选区时出（`SelectionOverlayWindow.Chrome.cs:311-318`） | **照做**（规格 `mac-whisker/capture.md`） | 小到中 | **已做（`0f7f9816`）**：自检图 shot-magnifier |
+| G7 | **吸附时画粉色虚线参考线，按住 ⌃ 暂停吸附**（`SelectionView.swift:2707-2721`） | 没有参考线；Ctrl 已经给了十字准线 | 参考线**照做**；暂停**不适用**（写进 MAC-DIFF）。先修 R87 | 小 | **已做（`0f7f9816`）**：参考线；⌃ 暂停写进 MAC-DIFF |
 | G8 | **状态、提醒的列表拖动排序**（`Settings/StatusScreenTab.swift:190-194`、`RemindersTab.swift:126-130`，页脚「拖动调整顺序」） | 一行行设置卡，右键上移 / 下移（`SettingsWindow.StatusScreen.cs:70-71`、`SettingsWindow.Reminders.cs:74-75`） | **照做**（能拖的 ListView，`NotesWindow.cs:431` 已经这么用）；不做就写进 MAC-DIFF | 中 | **已做（PLAN-v23 第 3 批 L1：状态、提醒换成能拖的列表，另加 Enter / Delete / Alt + ↑↓）** |
 | G9 | **图标格子左边 120 pt 的大预览一直播选中表情的动画，状态详情的样式预览会动**（`Settings/StatusPresetDetail.swift:146-153`、`:302-330`、`:83`；用户 11-04、11-05 要的「选了就播、不要悬停」） | 两个编辑框都没有大预览（`SettingsWindow.Reminders.cs:174-209`、`SettingsWindow.StatusScreen.cs:212-275`），预览明写「表情用静止画面」（`StatusScreen/StatusScreenView.cs:299-301`） | **照做** | 小到中 |
-| G10 | **全部便签窗口工具栏的「换颜色」；空状态「没有匹配的便签」+「清除搜索」、「归档是空的」+ 说明**（`Notes/NotesWindowView.swift:177-201`、`:329`） | 只能右键换颜色，空状态一行字（`NotesWindow.cs:316-337`、`:397-402`） | **照做** | 小 |
+| G10 | **全部便签窗口工具栏的「换颜色」；空状态「没有匹配的便签」+「清除搜索」、「归档是空的」+ 说明**（`Notes/NotesWindowView.swift:177-201`、`:329`） | 只能右键换颜色，空状态一行字（`NotesWindow.cs:316-337`、`:397-402`） | **照做** | 小 | **已做（`0f7f9816`）** |
 | — | mac 0.9.0 的刘海岛插件（录制计时 / 提醒倒数挂在刘海、正在播放、系统提示、音量亮度键提示、下一个日程、月历、模糊） | — | **不适用**（PLAN-v20 §4：刘海交互不移植，系统自己有媒体 / 音量浮窗） | — |
 | — | 访达右键（RAR、压缩时跳过，`3c8da2fa` 改成常见项开关）、启动台、程序坞预览、⌘Tab 预览 | — | **不适用**（PLAN-v18 D12、PLAN-v10 D7） | — |
 
@@ -492,8 +492,8 @@ Windows（`Shell/HomePanel.cs`）：
 - **第 1–3 批做完**（`git log --grep "PLAN-v23"`，报告在各提交正文里）：W1–W10、H1–H10、L1–L6 都照 mac 改了，W11 W12 H11 本来就记在 MAC-DIFF。
   新自检 `--settings-probe`（只在测试档，角色 a / b / h / l，不发按键：UIA Invoke + 走收到键以后那条路），Debug 和 Release x64 都全过；
   截图 `windows-shots` `0.3.0-v23-1/2/3`（第 3 批那个目录里带着四份自检报告）。
-- **E1 没做**（编辑网页搜索 / 状态 / 提醒从对话框改成即时存的子页）：三个编辑器约 550 行、要连着「对齐检查」G9（大预览一直播）和 R101 一起改，
-  另开一个会话做；MAC-DIFF「状态屏 / 提醒」两行写着。
+- **E1 已做**（编辑网页搜索 / 状态 / 提醒从对话框改成即时存的详情页）：和「对齐检查」R101、G9 一起（`git log --grep "PLAN-v23 E1"`），
+  手测 HANDTEST 1473–1482；MAC-DIFF 那两行删了，补了一条长期例外（停手 300 ms 才写）。
 - **和「对齐检查」重叠的**：G8（状态、提醒拖动排序）、R91 侧栏搜索词三项、R99 的便签两处联动已在这里做了，表里各写了「已做」。
 - **没测**（要真按键或真机）：Alt + ← / 鼠标侧键、录制时按住修饰键的键帽、真的 Alt+C 不弹面板、列表的真键盘、速查表 ↑↓、讲述人播报；见 HANDTEST 1384–1412 里没写「Windows 11-15」的。
 
