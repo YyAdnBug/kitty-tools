@@ -508,8 +508,7 @@ private enum TCPHTTP {
     let dataEnd = buffer.index(dataStart, offsetBy: size)
     let crlfEnd = buffer.index(dataEnd, offsetBy: 2)
     let trailer = buffer.subdata(in: dataEnd..<crlfEnd)
-    guard trailer == Data("
-".utf8) else {
+    guard trailer == Data("\r\n".utf8) else {
       throw TranslateError(message: "服务返回的内容无法解析", kind: .service)
     }
     let chunk = buffer.subdata(in: dataStart..<dataEnd)
