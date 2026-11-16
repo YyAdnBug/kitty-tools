@@ -827,7 +827,7 @@ struct LauncherLanguageTests {
 
   @Test func bundledScriptsHaveEnglishHeaders() async throws {
     let scan = await ScriptLibrary.scan([], bundled: ScriptLibrary.bundledFiles)
-    #expect(scan.scripts.count == 9)
+    #expect(scan.scripts.count == 8)  // awake 2026-11-16 换成了保持唤醒插件
     for script in scan.scripts {
       let text = try String(contentsOfFile: script.path, encoding: .utf8)
       let english = try #require(ScriptCommand.parse(text, path: script.path, english: true)).get()

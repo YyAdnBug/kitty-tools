@@ -34,7 +34,7 @@ struct LocalizationTests {
     ("收藏夹", "collection"), ("生词本", "Word List"), ("截图历史", "Screenshot History"),
     ("长截图", "scrolling capture"), ("复制即译", "Translate on Copy"), ("最近删除", "Recently Deleted"),
     ("主界面", "Home"), ("剪贴板历史", "Clipboard History"), ("透镜", "Lens"), ("便签墙", "Note Wall"),
-    ("快速记一条", "Quick Note"),
+    ("快速记一条", "Quick Note"), ("保持唤醒", "Keep Awake"),
   ]
 
   private static let han = /[\u{3400}-\u{9FFF}]/
@@ -169,6 +169,18 @@ struct LocalizationTests {
       let parsed = ReminderPhrase.parse(
         phrase, now: now, calendar: Calendar(identifier: .gregorian))
       #expect(parsed != nil && parsed?.title.isEmpty == false, "提醒的例子解析不了：\(example)")
+    }
+    // 保持唤醒（第 10 批）：设置页小字、速查表、认不出时的提示里的例子，awake 后面那截要认得出来
+    let awake = [
+      "也能在菜单栏、主界面里开，或者在启动器里输入「awake 2小时」「保持唤醒 到18点」。重启电脑、退出 Kitty Tools 后不再保持。",
+      "在启动器里输入「awake 2小时」「保持唤醒 到18点」「awake 无限期」：↩ 开始；开着时第一行是停止",
+      "试试「2小时」「30分钟」「到18点」「无限期」",
+    ].flatMap { examples($0) }
+    #expect(awake.count == 18)
+    for example in awake {
+      let typed = KeepAwakePlan.query(example) ?? example
+      let parsed = KeepAwakePlan.parse(typed, now: now, calendar: Calendar(identifier: .gregorian))
+      #expect(parsed != .invalid && parsed != .empty, "保持唤醒的例子解析不了：\(example)")
     }
     let currency =
       examples("汇率换算；也可以直接输「100 美元 转 日元」（要联网取汇率）") + texts("launcher.currencyExample")
@@ -510,6 +522,11 @@ struct LocalizationTests {
     ("KittyTools/Launcher/Calculator.swift", [], true, "单位、进制的中文名：解析输入用，中英都认"),
     ("KittyTools/Launcher/ExchangeRates.swift", [], true, "货币的中文叫法、问法里去掉的字：解析输入用"),
     ("KittyTools/Reminders/ReminderPhrase.swift", [], true, "提醒那一句话里的时间说法、关键词：解析输入用"),
+    (
+      "KittyTools/KeepAwake/KeepAwakePlan.swift", [], true,
+      "启动器「awake …」后面那截里的「无限期」「到 / 直到」这些说法、关键词：解析输入用，中英都认"
+    ),
+    ("KittyTools/Launcher/WebSearch.swift", ["防息屏"], false, "保持唤醒的关键词：不能再当网页搜索的关键词"),
     ("KittyTools/Launcher/SystemCommands.swift", [], true, "系统命令另外认的中文叫法：只进搜索名，不显示"),
     (
       "KittyTools/Translate/WordLookup.swift", ["美 /rʌn/", "píngguǒ"], true,
@@ -534,7 +551,7 @@ struct LocalizationTests {
     ),
     (
       "KittyTools/Launcher/LauncherItem.swift",
-      ["脚本命令", "脚本写法", "钉图 贴图", "Capture 便签", "启动台 应用", "全部功能"],
+      ["脚本命令", "脚本写法", "钉图 贴图", "Capture 便签", "启动台 应用", "全部功能", "防息屏 防止睡眠"],
       false, "动作的英文别名后面另加的中文搜索词：只进搜索名"
     ),
     (
@@ -586,7 +603,10 @@ struct LocalizationTests {
     ),
     (
       "KittyTools/Shell/Feature.swift",
-      ["笔记", "记一条", "闹钟", "请勿触碰", "程序坞", "窗口预览", "右键菜单", "刘海", "灵动岛"], false,
+      [
+        "笔记", "记一条", "闹钟", "请勿触碰", "程序坞", "窗口预览", "右键菜单", "刘海", "灵动岛", "防息屏", "防止睡眠", "唤醒",
+        "咖啡因",
+      ], false,
       "启动器里认插件的词（pluginWords，中英都认）"
     ),
     ("KittyTools/Shell/Island.swift", ["系统灵动岛", "胶囊", "刘海"], false, "写进日志的屏幕类型"),

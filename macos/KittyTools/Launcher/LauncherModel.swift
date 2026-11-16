@@ -1247,32 +1247,32 @@ import UniformTypeIdentifiers
     if let status {
       items.append(
         LauncherItem(
-          kind: .prompt, target: awakePrefix + "stop", title: "停止保持唤醒",
-          subtitle: "保持唤醒中 · " + status))
+          kind: .prompt, target: awakePrefix + "stop", title: String(localized: "停止保持唤醒"),
+          subtitle: String(localized: "保持唤醒中 · \(status)")))
     }
     func start(_ title: String, minutes: Int?) -> LauncherItem {
       let end = minutes.map { now.addingTimeInterval(Double($0 * 60)) }
       return LauncherItem(
         kind: .prompt, target: awakePrefix + "for:" + (minutes.map(String.init) ?? ""),
-        title: "保持唤醒 " + title,
-        subtitle: end.map { "到 " + KeepAwakePlan.moment($0, now: now, calendar: calendar) }
-          ?? "直到你停止")
+        title: String(localized: "保持唤醒 \(title)"),
+        subtitle: end.map { KeepAwakePlan.until($0, now: now, calendar: calendar) }
+          ?? String(localized: "直到你停止"))
     }
     switch KeepAwakePlan.parse(rest, now: now, calendar: calendar) {
     case .empty:
       items += KeepAwakePlan.presets.map { start($0.title, minutes: $0.minutes) }
     case .indefinitely:
-      items.append(start("无限期", minutes: nil))
+      items.append(start(KeepAwakePlan.title(minutes: nil), minutes: nil))
     case .until(let end, let label):
       items.append(
         LauncherItem(
-          kind: .prompt, target: awakePrefix + "until", title: "保持唤醒 " + label,
-          subtitle: "到 " + KeepAwakePlan.moment(end, now: now, calendar: calendar), payload: rest))
+          kind: .prompt, target: awakePrefix + "until", title: String(localized: "保持唤醒 \(label)"),
+          subtitle: KeepAwakePlan.until(end, now: now, calendar: calendar), payload: rest))
     case .invalid:
       items.append(
         LauncherItem(
-          kind: .prompt, target: awakePrefix + "hint", title: "认不出要多久",
-          subtitle: "试试「2小时」「30分钟」「到18点」「无限期」"))
+          kind: .prompt, target: awakePrefix + "hint", title: String(localized: "认不出要多久"),
+          subtitle: String(localized: "试试「2小时」「30分钟」「到18点」「无限期」")))
     }
     return items
   }
@@ -1280,7 +1280,6 @@ import UniformTypeIdentifiers
   /// ↩ 那几行：「到…」的按这一刻再算一遍（行列出来之后过了一会儿，「2小时」要从现在算，「到18点」可能已经过了）
   private func runKeepAwake(_ item: LauncherItem) {
     let command = String(item.target.dropFirst(Self.awakePrefix.count))
-    let label = String(item.title.dropFirst("保持唤醒 ".count))
     switch command {
     case "stop":
       close()
@@ -1295,7 +1294,9 @@ import UniformTypeIdentifiers
     case _ where command.hasPrefix("for:"):
       let minutes = Int(command.dropFirst("for:".count))
       close()
-      keepAwakeBegin(minutes.map { Date.now.addingTimeInterval(Double($0 * 60)) }, label)
+      keepAwakeBegin(
+        minutes.map { Date.now.addingTimeInterval(Double($0 * 60)) },
+        KeepAwakePlan.title(minutes: minutes))
     default:
       NSSound.beep()
     }

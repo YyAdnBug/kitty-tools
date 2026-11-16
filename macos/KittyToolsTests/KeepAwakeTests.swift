@@ -99,6 +99,39 @@ struct KeepAwakeTests {
     #expect(KeepAwakePlan.parse("2小时 下载", now: now, calendar: calendar) == .invalid)
   }
 
+  /// 英文（多语言第 10 批）：更新日志、设置页小字里的「awake 2h」「awake until 18:00」；多久之后借提醒的解析（2 hours、30 min、
+  /// half an hour、for…），几点认 18:00、6pm、6:30 pm、tomorrow 8:00 / 9am，过了的钟点是明天；英文的「无限期」
+  @Test func parseEnglish() {
+    let now = date(16, 10)
+    func parse(_ typed: String) -> KeepAwakePlan.Parsed {
+      KeepAwakePlan.parse(KeepAwakePlan.query(typed) ?? typed, now: now, calendar: calendar)
+    }
+    func ends(_ typed: String) -> Date? {
+      if case .until(let end, _) = parse(typed) { return end }
+      return nil
+    }
+    #expect(ends("awake 2h") == now.addingTimeInterval(7200))
+    #expect(ends("awake 2 hours") == now.addingTimeInterval(7200))
+    #expect(ends("awake for 2 hours") == now.addingTimeInterval(7200))
+    #expect(ends("awake 30 min") == now.addingTimeInterval(1800))
+    #expect(ends("awake half an hour") == now.addingTimeInterval(1800))
+    #expect(ends("awake 1.5 hours") == now.addingTimeInterval(5400))
+    #expect(ends("awake until 18:00") == date(16, 18))
+    #expect(ends("Awake till 18:30") == date(16, 18, 30))
+    #expect(ends("awake until 6pm") == date(16, 18))
+    #expect(ends("awake until 6:30 PM") == date(16, 18, 30))
+    #expect(ends("awake until 12am") == date(17, 0))
+    // 过了的钟点是明天；tomorrow 不带 am / pm 的照 24 小时制
+    #expect(ends("awake until 9am") == date(17, 9))
+    #expect(ends("awake until tomorrow 8:00") == date(17, 8))
+    #expect(ends("awake until tomorrow at 9am") == date(17, 9))
+    #expect(parse("awake indefinitely") == .indefinitely && parse("awake forever") == .indefinitely)
+    // 认不出的不猜：英文的别的字、13pm、只写一个数
+    #expect(parse("awake until lunch") == .invalid)
+    #expect(parse("awake 13pm") == .invalid && parse("awake 6") == .invalid)
+    #expect(parse("awake 2 hours download") == .invalid)
+  }
+
   @Test func wording() {
     let now = date(16, 10)
     #expect(KeepAwakePlan.remaining(until: nil, now: now) == "无限期")

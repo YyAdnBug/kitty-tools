@@ -3019,6 +3019,132 @@
         }
       }
     },
+    "island.wingHours" : {
+      "comment" : "刘海岛耳朵上一小时以上的倒数：4小时（耳朵只有 36 pt，不带空格；短说法）",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lldh"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%lld小时"
+          }
+        }
+      }
+    },
+    "keepAwake.allDay" : {
+      "comment" : "定时：「每天 全天」（%@ 是哪几天）",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, all day"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%@ 全天"
+          }
+        }
+      }
+    },
+    "keepAwake.dateTime" : {
+      "comment" : "保持唤醒管到哪天的几点：「11月20日 9:00」（日期、钟点）",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ at %2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ %2$@"
+          }
+        }
+      }
+    },
+    "keepAwake.overnight" : {
+      "comment" : "定时跨过半夜：「周五 22:00–次日 2:00」（哪几天、开始、结束）",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@–%3$@ next day"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ %2$@–次日 %3$@"
+          }
+        }
+      }
+    },
+    "keepAwake.span" : {
+      "comment" : "定时：「工作日 9:00–18:00」（哪几天、开始、结束）",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ %2$@–%3$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ %2$@–%3$@"
+          }
+        }
+      }
+    },
+    "keepAwake.tomorrow" : {
+      "comment" : "保持唤醒管到明天的几点：「明天 8:00」",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "tomorrow at %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "明天 %@"
+          }
+        }
+      }
+    },
+    "keepAwake.until" : {
+      "comment" : "保持唤醒管到哪一刻：「到 18:00」「到 明天 8:00」",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "until %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "到 %@"
+          }
+        }
+      }
+    },
     "lang.short.zhHans" : {
       "comment" : "翻译浮窗顶栏胶囊里的语言名（短说法）",
       "extractionState" : "extracted_with_value",
@@ -3338,6 +3464,24 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "文件"
+          }
+        }
+      }
+    },
+    "launcher.kind.keepAwake" : {
+      "comment" : "启动器行右侧的类型",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep Awake"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "保持唤醒"
           }
         }
       }
@@ -5728,6 +5872,16 @@
         }
       }
     },
+    "一直开着" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "all the time"
+          }
+        }
+      }
+    },
     "一直留着" : {
       "localizations" : {
         "en" : {
@@ -6247,6 +6401,16 @@
         }
       }
     },
+    "不让电脑睡、不让屏幕熄：手动开一段，或按时段自动开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keeps your Mac and display awake: for a while, or on a schedule"
+          }
+        }
+      }
+    },
     "不记录" : {
       "localizations" : {
         "en" : {
@@ -6433,6 +6597,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Also search browsing history"
+          }
+        }
+      }
+    },
+    "也能在菜单栏、主界面里开，或者在启动器里输入「awake 2小时」「保持唤醒 到18点」。重启电脑、退出 Kitty Tools 后不再保持。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You can also turn on Keep Awake from the menu bar or Home, or type “awake 2h” or “awake until 18:00” in the Launcher. It stops when you restart your Mac or quit Kitty Tools."
           }
         }
       }
@@ -7549,6 +7723,76 @@
         }
       }
     },
+    "保持唤醒" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep Awake"
+          }
+        }
+      }
+    },
+    "保持唤醒 %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep Awake · %@"
+          }
+        }
+      }
+    },
+    "保持唤醒 · %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep Awake · %@"
+          }
+        }
+      }
+    },
+    "保持唤醒中" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep Awake is on"
+          }
+        }
+      }
+    },
+    "保持唤醒中 · %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep Awake is on · %@"
+          }
+        }
+      }
+    },
+    "保持唤醒到点了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep Awake ended"
+          }
+        }
+      }
+    },
+    "保持唤醒设置…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep Awake Settings…"
+          }
+        }
+      }
+    },
     "保留" : {
       "localizations" : {
         "en" : {
@@ -7698,6 +7942,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Stop"
+          }
+        }
+      }
+    },
+    "停止保持唤醒" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn Off Keep Awake"
           }
         }
       }
@@ -8254,6 +8508,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "When off, animated emoji that aren’t downloaded yet show a still thumbnail. Downloaded ones still move."
+          }
+        }
+      }
+    },
+    "关掉就只防系统睡眠，屏幕照常熄灭（后台下载、跑任务时省电）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When off, only system sleep is prevented and the display turns off as usual (saves power during downloads and background tasks)"
           }
         }
       }
@@ -13126,6 +13390,16 @@
         }
       }
     },
+    "在启动器里输入「awake 2小时」「保持唤醒 到18点」「awake 无限期」：↩ 开始；开着时第一行是停止" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Type “awake 2h”, “awake until 18:00”, or “awake indefinitely” in the Launcher: ↩ starts Keep Awake; while it’s on, the first row turns it off"
+          }
+        }
+      }
+    },
     "在启动器里输入「提醒 10分钟 喝水」「提醒 明天9点 交周报」：↩ 建好（tx、remind 也行）" : {
       "localizations" : {
         "en" : {
@@ -13152,6 +13426,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Show notes on the screen edge"
+          }
+        }
+      }
+    },
+    "在时段里自动开始、出了时段自动停；手动开的那一段优先" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starts on its own during the time range and stops after it; a session you start yourself takes priority"
           }
         }
       }
@@ -14312,6 +14596,36 @@
         }
       }
     },
+    "定时" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schedule"
+          }
+        }
+      }
+    },
+    "定时 · %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scheduled · %@"
+          }
+        }
+      }
+    },
+    "定时还在，%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schedule still on, %@"
+          }
+        }
+      }
+    },
     "实心" : {
       "localizations" : {
         "en" : {
@@ -14838,6 +15152,16 @@
         }
       }
     },
+    "屏幕" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Display"
+          }
+        }
+      }
+    },
     "屏幕上方" : {
       "localizations" : {
         "en" : {
@@ -14854,6 +15178,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Top of Screen is centered at the top of the screen with the pointer, Near Pointer is next to the pointer, and Last Position is where you last dragged it"
+          }
+        }
+      }
+    },
+    "屏幕也不熄" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Display stays on"
           }
         }
       }
@@ -14914,6 +15248,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Stopped automatically because the display changed"
+          }
+        }
+      }
+    },
+    "屏幕照常熄" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Display sleeps as usual"
           }
         }
       }
@@ -15286,6 +15630,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Stopped “%@”"
+          }
+        }
+      }
+    },
+    "已停止保持唤醒" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep Awake turned off"
           }
         }
       }
@@ -17708,6 +18062,16 @@
         }
       }
     },
+    "开始" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start"
+          }
+        }
+      }
+    },
     "开始使用" : {
       "localizations" : {
         "en" : {
@@ -17798,6 +18162,16 @@
         }
       }
     },
+    "开始（无限期）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start (Indefinitely)"
+          }
+        }
+      }
+    },
     "开着 %lld 个；关着：%@" : {
       "localizations" : {
         "en" : {
@@ -17810,6 +18184,16 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "开着 %1$lld 个；关着：%2$@"
+          }
+        }
+      }
+    },
+    "开着时让系统别睡；没开时什么都不跑" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prevents sleep while on; runs nothing while off"
           }
         }
       }
@@ -20477,6 +20861,16 @@
         }
       }
     },
+    "按一下开始（无限期），再按一下停止；菜单栏「保持唤醒」里能选 30 分钟到 5 小时" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Press once to start (indefinitely), press again to stop; choose 30 minutes to 5 hours from “Keep Awake” in the menu bar"
+          }
+        }
+      }
+    },
     "按一下试试" : {
       "localizations" : {
         "en" : {
@@ -20695,6 +21089,26 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "按时段保持唤醒" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep Awake started on schedule"
+          }
+        }
+      }
+    },
+    "按时段自动保持唤醒" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Run Keep Awake on a schedule"
           }
         }
       }
@@ -21263,12 +21677,42 @@
         }
       }
     },
+    "插件 · 不让电脑睡、不让屏幕熄：手动开一段，或按时段自动开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plugin · Keeps your Mac and display awake: for a while, or on a schedule"
+          }
+        }
+      }
+    },
     "插件 · 用得上再勾，以后也能在 设置 › 通用 › 功能 里添加" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Plugins · optional; you can add them later in Settings › General › Features"
+          }
+        }
+      }
+    },
+    "插件,保持唤醒,唤醒,防息屏,息屏,熄屏,防止睡眠,睡眠,不睡眠,屏幕常亮,常亮,定时,工作日,时段,awake,caffeinate,咖啡因,下载,后台任务" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plugin,Keep Awake,Awake,Prevent Sleep,Sleep,No Sleep,Display,Screen On,Display Sleep,Schedule,Weekdays,Time Range,caffeinate,Caffeine,Download,Background Task"
+          }
+        }
+      }
+    },
+    "插件移除了，电脑会照常睡" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plugin removed; your Mac will sleep as usual"
           }
         }
       }
@@ -21975,6 +22419,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Change Shortcut for “%@”…"
+          }
+        }
+      }
+    },
+    "改一下" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edit"
           }
         }
       }
@@ -23159,6 +23613,16 @@
         }
       }
     },
+    "无限期" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Indefinitely"
+          }
+        }
+      }
+    },
     "日志文件" : {
       "localizations" : {
         "en" : {
@@ -23195,6 +23659,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Japanese"
+          }
+        }
+      }
+    },
+    "时段结束，不再保持唤醒" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Schedule ended; Keep Awake is off"
+          }
+        }
+      }
+    },
+    "时长" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Duration"
           }
         }
       }
@@ -23821,6 +24305,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "The update is wrong (the app or version doesn’t match)"
+          }
+        }
+      }
+    },
+    "更新包不支持这台 Mac 的芯片，请到发布页下载" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The update doesn’t support this Mac’s chip. Download it from the releases page."
           }
         }
       }
@@ -26320,6 +26814,16 @@
         }
       }
     },
+    "没在保持唤醒" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep Awake is off"
+          }
+        }
+      }
+    },
     "没复制成「%@」" : {
       "localizations" : {
         "en" : {
@@ -26366,6 +26870,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Couldn’t create it: the scripts folder isn’t writable."
+          }
+        }
+      }
+    },
+    "没开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Off"
           }
         }
       }
@@ -27796,6 +28310,16 @@
         }
       }
     },
+    "没选哪天" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No days selected"
+          }
+        }
+      }
+    },
     "法语" : {
       "localizations" : {
         "en" : {
@@ -28801,6 +29325,16 @@
         }
       }
     },
+    "现在" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Now"
+          }
+        }
+      }
+    },
     "现在也有英文界面了，在 设置 › 通用「语言」里换" : {
       "localizations" : {
         "en" : {
@@ -29227,12 +29761,32 @@
         }
       }
     },
+    "电脑会照常睡" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your Mac will sleep as usual"
+          }
+        }
+      }
+    },
     "电脑正在跑任务，别动键盘和鼠标" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Working on a task, please don’t touch the keyboard or mouse"
+          }
+        }
+      }
+    },
+    "电脑照常睡、屏幕照常熄" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your Mac and display sleep as usual"
           }
         }
       }
@@ -29546,6 +30100,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "When the target language is “Auto”, text in your first language is translated into your second language, and everything else into your first (Simplified and Traditional Chinese count as one). Change the source and target languages at the top of the translation panel; they’re remembered."
+          }
+        }
+      }
+    },
+    "直到你停止" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Until you stop it"
+          }
+        }
+      }
+    },
+    "直到你停止 · %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Until you stop it · %@"
           }
         }
       }
@@ -31034,6 +31608,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Thin"
+          }
+        }
+      }
+    },
+    "结束早于开始就是跨过半夜（22:00 到 2:00 管到第二天凌晨）。定时跟着这台 Mac，不同步。合上盖子时系统照样会睡（接着电源和外接显示器时除外）。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An end earlier than the start runs past midnight (22:00 to 2:00 lasts until early the next morning). The schedule stays on this Mac and isn’t synced. Your Mac still sleeps when you close the lid (unless it’s connected to power and an external display)."
           }
         }
       }
@@ -32713,6 +33297,16 @@
         }
       }
     },
+    "认不出要多久" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can’t tell how long"
+          }
+        }
+      }
+    },
     "认窗口里的元素" : {
       "localizations" : {
         "en" : {
@@ -33159,6 +33753,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Try “10 min stretch” or “2 h check the oven”"
+          }
+        }
+      }
+    },
+    "试试「2小时」「30分钟」「到18点」「无限期」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Try “2h”, “30 min”, “until 18:00”, or “indefinitely”"
           }
         }
       }
@@ -34033,6 +34637,52 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Back to %@"
+          }
+        }
+      }
+    },
+    "还剩 %lld 分" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld min left"
+          }
+        }
+      }
+    },
+    "还剩 %lld 小时" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld hr left"
+          }
+        }
+      }
+    },
+    "还剩 %lld 小时 %lld 分" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld hr %2$lld min left"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "还剩 %1$lld 小时 %2$lld 分"
+          }
+        }
+      }
+    },
+    "还剩不到 1 分钟" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Less than 1 min left"
           }
         }
       }

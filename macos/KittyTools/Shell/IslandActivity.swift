@@ -100,7 +100,11 @@ extension Island {
     static func wingReading(_ trailing: Trailing, now: Date) -> String? {
       if case .countdown(let end) = trailing {
         let seconds = Int(end.timeIntervalSince(now).rounded(.up))
-        if seconds >= 3600 { return "\(seconds / 3600)小时" }
+        if seconds >= 3600 {
+          return String(
+            localized: "island.wingHours", defaultValue: "\(seconds / 3600)小时",
+            comment: "刘海岛耳朵上一小时以上的倒数：4小时（耳朵只有 36 pt，不带空格；短说法）")
+        }
       }
       return reading(trailing, now: now)
     }

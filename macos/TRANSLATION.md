@@ -93,7 +93,7 @@ LaunchServices 按调用方 App 自己的语言给，界面定成中文时英文
 - 界面不提其他 App / 产品（mac-native §8，英文同样）；功能本身要用的名字照写。
 - 语言名写它自己的文字（简体中文、English），不翻。
 - 撇号用弯的 ’（don’t、it’s、Kitty Tools’），不用直撇号 '（`LocalizationTests` 查字母之间的）。
-- 功能名（下表里首字母大写的：Launcher、Clipboard History、Status Screen、Screenshot History、Word List、Finder Menu、Notch……）在句子中间
+- 功能名（下表里首字母大写的：Launcher、Clipboard History、Status Screen、Screenshot History、Word List、Finder Menu、Keep Awake、Notch……）在句子中间
   也首字母大写：the Launcher、in Finder Menu、Turn on “Keep Screenshot History”。刘海岛 = the Notch，硬件的刘海照常小写（click the notch）；
   指一条条东西的复数照常小写（scrolling captures、floating notes、translation services、web searches）。
 
@@ -133,6 +133,7 @@ LaunchServices 按调用方 App 自己的语言给，界面定成中文时英文
 | 启动台 | Launchpad | |
 | 程序坞预览 | Dock Preview | |
 | 访达右键 | Finder Menu | |
+| 保持唤醒 | Keep Awake | 插件；动词用法也写功能名（保持唤醒中 Keep Awake is on、停止保持唤醒 Turn Off Keep Awake） |
 | 刘海岛 / 打开刘海岛 | Notch / Open Notch | 不用 Dynamic Island |
 | 提示 / 活动（刘海岛上） | Notices / Activities | |
 | 主界面 | Home | |

@@ -21,7 +21,7 @@ import AppKit
   /// 手动开的是无限期
   var isIndefinite: Bool { sessionEnd == .distantFuture }
 
-  /// 岛上说一声（标题、说明）
+  /// 岛上说一声（标题、说明；已经按界面语言取好的字）
   @ObservationIgnored var announce: (String, String?) -> Void = { _, _ in }
   /// 手动开的那一段挂在它上面（AppDelegate 接；单测里是 nil）
   @ObservationIgnored weak var island: Island?
@@ -50,13 +50,24 @@ import AppKit
     if let end = sessionEnd {
       return KeepAwakePlan.remaining(until: isIndefinite ? nil : end, now: now)
     }
-    return inSchedule ? "定时 · " + scheduleUntil(now: now, calendar: calendar) : "没开"
+    guard inSchedule else { return String(localized: "没开") }
+    let until = scheduleUntil(now: now, calendar: calendar)
+    return String(localized: "定时 · \(until)")
   }
 
   /// 定时那一段管到哪：「到 18:00」；一直在时段里（每天全天）的是「一直开着」
   private func scheduleUntil(now: Date = .now, calendar: Calendar = .current) -> String {
-    guard let until = schedule.nextChange(after: now, calendar: calendar) else { return "一直开着" }
-    return "到 " + KeepAwakePlan.moment(until, now: now, calendar: calendar)
+    guard let until = schedule.nextChange(after: now, calendar: calendar) else {
+      return String(localized: "一直开着")
+    }
+    return KeepAwakePlan.until(until, now: now, calendar: calendar)
+  }
+
+  /// 「定时还在，到 18:00」/「电脑会照常睡」：手动那段停了、到点了之后岛上的说明
+  private func afterSession(now: Date = .now) -> String {
+    guard inSchedule else { return String(localized: "电脑会照常睡") }
+    let until = scheduleUntil(now: now)
+    return String(localized: "定时还在，\(until)")
   }
 
   // MARK: 起停（插件添加 / 移除）
@@ -71,7 +82,9 @@ import AppKit
   func stop() {
     guard isRunning else { return }
     // 手动开着一段时移除插件（卡片、设置页、同步来的）：说一声，不悄悄停
-    if sessionEnd != nil { announce("已停止保持唤醒", "插件移除了，电脑会照常睡") }
+    if sessionEnd != nil {
+      announce(String(localized: "已停止保持唤醒"), String(localized: "插件移除了，电脑会照常睡"))
+    }
     isRunning = false
     lastSchedule = nil
     for (center, token) in observers { center.removeObserver(token) }
@@ -111,7 +124,8 @@ import AppKit
   /// 手动那一段在岛上的样子（纯函数）：until 是 nil = 无限期，右耳不写数；卡片上一个「停止」
   static func activity(until: Date?, display: Bool, stop: @escaping () -> Void) -> Island.Activity {
     Island.Activity(
-      id: islandActivity, kind: .awake, title: "保持唤醒", detail: display ? "屏幕也不熄" : "屏幕照常熄",
+      id: islandActivity, kind: .awake, title: String(localized: "保持唤醒"),
+      detail: display ? String(localized: "屏幕也不熄") : String(localized: "屏幕照常熄"),
       symbol: "cup.and.saucer.fill", trailing: until.map { .countdown(to: $0) } ?? .none,
       actions: [Island.Action("停止", run: stop)])
   }
@@ -123,8 +137,10 @@ import AppKit
     guard isRunning else { return }
     sessionEnd = until ?? .distantFuture
     evaluate(announcing: false)
-    let screen = keepsDisplayOn ? "屏幕也不熄" : "屏幕照常熄"
-    announce("保持唤醒 · " + label, until == nil ? "直到你停止 · " + screen : screen)
+    let screen = keepsDisplayOn ? String(localized: "屏幕也不熄") : String(localized: "屏幕照常熄")
+    announce(
+      String(localized: "保持唤醒 · \(label)"),
+      until == nil ? String(localized: "直到你停止 · \(screen)") : screen)
   }
 
   /// 停掉手动的那一段（定时的时段里照样保持唤醒，岛上说清楚）
@@ -132,7 +148,7 @@ import AppKit
     guard sessionEnd != nil else { return }
     sessionEnd = nil
     evaluate(announcing: false)
-    announce("已停止保持唤醒", inSchedule ? "定时还在，" + scheduleUntil() : "电脑会照常睡")
+    announce(String(localized: "已停止保持唤醒"), afterSession())
   }
 
   /// 快捷键、主界面、启动器那一项：开着就停，没开就开无限期
@@ -140,7 +156,7 @@ import AppKit
     if sessionEnd != nil {
       end()
     } else {
-      begin(until: nil, label: "无限期")
+      begin(until: nil, label: KeepAwakePlan.title(minutes: nil))
     }
   }
 
@@ -163,10 +179,11 @@ import AppKit
       expired = true
     }
     if expired {
-      announce("保持唤醒到点了", inside ? "定时还在，" + scheduleUntil(now: now) : "电脑会照常睡")
+      announce(String(localized: "保持唤醒到点了"), afterSession(now: now))
     } else if announcing, enteredOrLeft, !edited, sessionEnd == nil {
       announce(
-        inside ? "按时段保持唤醒" : "时段结束，不再保持唤醒", inside ? plan.summary : "电脑会照常睡")
+        inside ? String(localized: "按时段保持唤醒") : String(localized: "时段结束，不再保持唤醒"),
+        inside ? plan.summary : String(localized: "电脑会照常睡"))
     }
     apply(isActive)
     syncIsland()

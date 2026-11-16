@@ -34,7 +34,11 @@ struct KeepAwakeTab: View {
             }
           } label: {
             Text(keepAwake.isActive ? "保持唤醒中" : "没在保持唤醒")
-            Text(keepAwake.isActive ? keepAwake.status(now: context.date) : "电脑照常睡、屏幕照常熄")
+            if keepAwake.isActive {
+              Text(keepAwake.status(now: context.date))
+            } else {
+              Text("电脑照常睡、屏幕照常熄")
+            }
           }
         }
       } header: {

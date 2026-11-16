@@ -5,7 +5,9 @@
 //   （连着的两天全天之间的半夜不算）。
 // - 启动器「awake 2小时」「保持唤醒 到18点」「awake 30m」「awake 无限期」：多久之后、几点都借提醒的解析（ReminderPhrase），
 //   时间以外只许剩下「到 / 直到 / 至 / until」这类连接词，别的字认不出就给 .invalid（不猜）。
-// - 剩多久的说法（菜单栏、启动器、设置页、岛上同一句）。
+//   英文（2026-11-16 多语言第 10 批）：多久之后提醒那边本来就认（2h、2 hours、30 min、half an hour），18:00 也认；另补
+//   for / until / till、indefinitely，和这里自己认的 6pm、6:30 pm、tomorrow 8:00（englishMoment；提醒那边不认，不动它）。
+// - 剩多久的说法（菜单栏、启动器、设置页、岛上同一句）：跟界面语言，钟点用 FormatStyle（中文 24 小时制下和以前手拼的一样）。
 
 import Foundation
 
@@ -82,35 +84,52 @@ nonisolated enum KeepAwakePlan {
       }
     }
 
-    /// 「工作日 9:00–18:00」「周六、周日 22:00–次日 2:00」「每天 全天」：设置页、岛上的说法
+    /// 「工作日 9:00–18:00」「周二、周六 22:00–次日 2:00」「每天 全天」：岛上的说法（跟界面语言：Weekdays 9:00–18:00）
     var summary: String {
       let days: String =
         switch weekdays {
-        case [2, 3, 4, 5, 6]: "工作日"
-        case Set(1...7): "每天"
-        case [1, 7]: "周末"
-        case []: "没选哪天"
-        default:
-          Self.order.filter(weekdays.contains).map { "周" + Self.names[$0 - 1] }
-            .joined(separator: "、")
+        case [2, 3, 4, 5, 6]: String(localized: "工作日")
+        case Set(1...7): String(localized: "每天")
+        case [1, 7]: String(localized: "周末")
+        case []: String(localized: "没选哪天")
+        default: Self.order.filter(weekdays.contains).map { Self.names[$0 - 1] }.joinedAsList()
         }
-      if allDay { return days + " 全天" }
-      return days + " \(Self.clock(start))–" + (end < start ? "次日 " : "") + Self.clock(end)
+      if allDay {
+        return String(
+          localized: "keepAwake.allDay", defaultValue: "\(days) 全天", comment: "定时：「每天 全天」（%@ 是哪几天）")
+      }
+      let from = Reminder.clock(start)
+      let to = Reminder.clock(end)
+      return end < start
+        ? String(
+          localized: "keepAwake.overnight", defaultValue: "\(days) \(from)–次日 \(to)",
+          comment: "定时跨过半夜：「周五 22:00–次日 2:00」（哪几天、开始、结束）")
+        : String(
+          localized: "keepAwake.span", defaultValue: "\(days) \(from)–\(to)",
+          comment: "定时：「工作日 9:00–18:00」（哪几天、开始、结束）")
     }
 
     /// 周一排在最前（设置页的那一排也是这个顺序）
     static let order = [2, 3, 4, 5, 6, 7, 1]
-    static let names = ["日", "一", "二", "三", "四", "五", "六"]
-
-    static func clock(_ minutes: Int) -> String { "\(minutes / 60):" + pad(minutes % 60) }
+    /// 「周日」「周一」…，英文「Sun」「Mon」…（跟界面语言）
+    static var names: [String] {
+      var calendar = Calendar(identifier: .gregorian)
+      calendar.locale = .current
+      return calendar.shortStandaloneWeekdaySymbols
+    }
   }
 
   // MARK: 一段要多久
 
-  /// 菜单栏子菜单、设置页「开始」的几档（nil = 无限期）
-  static let presets: [(title: String, minutes: Int?)] = [
-    ("30 分钟", 30), ("1 小时", 60), ("2 小时", 120), ("5 小时", 300), ("无限期", nil),
-  ]
+  /// 菜单栏子菜单、设置页「开始」的几档（nil = 无限期）；title 是「30 分钟」「无限期」（跟界面语言）
+  static var presets: [(title: String, minutes: Int?)] {
+    [30, 60, 120, 300, nil].map { (title(minutes: $0), $0) }
+  }
+
+  /// 一档的说法：「2 小时」，nil 是「无限期」
+  static func title(minutes: Int?) -> String {
+    minutes.map(length) ?? String(localized: "无限期")
+  }
 
   /// 启动器里「awake」后面那截解析出来的样子
   enum Parsed: Equatable {
@@ -124,9 +143,13 @@ nonisolated enum KeepAwakePlan {
   }
 
   /// 无限期的几种写法
-  private static let forever = ["无限期", "无限", "一直", "永久", "不限", "forever", "∞"]
-  /// 「到 18 点」里的连接词：去掉之后什么都不剩才算认出来了
-  private static let joiners = ["直到", "一直到", "到", "至", "until", "till", "to", "后", "以后", "之后"]
+  private static let forever = [
+    "无限期", "无限", "一直", "永久", "不限", "forever", "indefinitely", "indefinite", "always", "∞",
+  ]
+  /// 「到 18 点」里的连接词：去掉之后什么都不剩才算认出来了（for：「awake for 2 hours」）
+  private static let joiners = [
+    "直到", "一直到", "到", "至", "until", "till", "to", "for", "后", "以后", "之后",
+  ]
 
   static func parse(_ raw: String, now: Date, calendar: Calendar) -> Parsed {
     let text = ReminderPhrase.halfWidth(raw).trimmingCharacters(in: .whitespaces)
@@ -134,16 +157,45 @@ nonisolated enum KeepAwakePlan {
     if forever.contains(text.lowercased()) { return .indefinitely }
     // 两样都有时按先出现的（同提醒）
     let span = ReminderPhrase.duration(in: text)
-    let point = ReminderPhrase.moment(in: text, now: now, calendar: calendar)
+    let point =
+      englishMoment(in: text, now: now, calendar: calendar)
+      ?? ReminderPhrase.moment(in: text, now: now, calendar: calendar)
     if let span, point == nil || span.1.lowerBound <= point!.1.lowerBound {
       guard leftover(text, removing: span.1) else { return .invalid }
       return .until(now.addingTimeInterval(span.0 * 60), label: length(minutes: Int(span.0)))
     }
     if let point, point.0 > now {
       guard leftover(text, removing: point.1) else { return .invalid }
-      return .until(point.0, label: "到 " + moment(point.0, now: now, calendar: calendar))
+      return .until(point.0, label: until(point.0, now: now, calendar: calendar))
     }
     return .invalid
+  }
+
+  /// 英文的几点（提醒的解析只认中文和「18:00」）：6pm、6:30 pm（13pm、18:00 pm 不认）；前面可带 tomorrow（「tomorrow 8:00」
+  /// 「tomorrow 9am」）。没说 tomorrow 的过了就是明天；tomorrow 8:00 这种不带 am / pm 的照 24 小时制。只写「18:00」的
+  /// 不在这里认（交给提醒的解析：「到 6:00」取最近的那个将来时刻，同中文）
+  static func englishMoment(in text: String, now: Date, calendar: Calendar) -> (
+    Date, Range<String.Index>
+  )? {
+    guard
+      let match = text.firstMatch(
+        of: /(?i)(?:\b(tomorrow)\s+(?:at\s+)?)?\b([0-9]{1,2})(?::([0-9]{2}))?\s*(am|pm)?\b/),
+      match.output.4 != nil || (match.output.1 != nil && match.output.3 != nil),
+      var hour = Int(match.output.2), let minute = Int(match.output.3 ?? "0"), minute < 60
+    else { return nil }
+    if let half = match.output.4?.lowercased() {
+      guard (1...12).contains(hour) else { return nil }
+      hour = hour % 12 + (half == "pm" ? 12 : 0)
+    }
+    let today = calendar.startOfDay(for: now)
+    guard hour < 24,
+      var date = calendar.date(bySettingHour: hour, minute: minute, second: 0, of: today)
+    else { return nil }
+    if match.output.1 != nil || date <= now {
+      guard let next = calendar.date(byAdding: .day, value: 1, to: date) else { return nil }
+      date = next
+    }
+    return (date, match.range)
   }
 
   /// 时间那一段去掉之后，剩下的只有连接词
@@ -156,40 +208,58 @@ nonisolated enum KeepAwakePlan {
     return rest.isEmpty
   }
 
-  /// 「2 小时」「1 小时 30 分钟」「45 分钟」
+  /// 「2 小时」「1 小时 30 分钟」「45 分钟」（英文 2 hours、1 hour 30 minutes）
   static func length(minutes: Int) -> String {
     let hours = minutes / 60
     let rest = minutes % 60
-    if hours == 0 { return "\(rest) 分钟" }
-    return rest == 0 ? "\(hours) 小时" : "\(hours) 小时 \(rest) 分钟"
+    if hours == 0 { return String(localized: "\(rest) 分钟") }
+    // 小时、分钟两段各自的单复数，中间一个空格（中英都这么写）
+    return rest == 0
+      ? String(localized: "\(hours) 小时")
+      : String(localized: "\(hours) 小时") + " " + String(localized: "\(rest) 分钟")
   }
 
-  /// 「18:00」「明天 8:00」「11月20日 9:00」：到哪一刻
+  /// 「到 18:00」「到 明天 8:00」：一段管到哪（行上的说法）
+  static func until(_ date: Date, now: Date, calendar: Calendar) -> String {
+    let when = moment(date, now: now, calendar: calendar)
+    return String(
+      localized: "keepAwake.until", defaultValue: "到 \(when)",
+      comment: "保持唤醒管到哪一刻：「到 18:00」「到 明天 8:00」")
+  }
+
+  /// 「18:00」「明天 8:00」「11月20日 9:00」：到哪一刻（跟界面语言和系统的 12 / 24 小时）
   static func moment(_ date: Date, now: Date, calendar: Calendar) -> String {
-    let parts = calendar.dateComponents([.hour, .minute], from: date)
-    let time = "\(parts.hour ?? 0):" + pad(parts.minute ?? 0)
+    var style = Date.FormatStyle(date: .omitted, time: .shortened)
+    style.calendar = calendar
+    style.timeZone = calendar.timeZone
+    let time = date.formatted(style)
     if calendar.isDate(date, inSameDayAs: now) { return time }
     if let tomorrow = calendar.date(byAdding: .day, value: 1, to: now),
       calendar.isDate(date, inSameDayAs: tomorrow)
     {
-      return "明天 " + time
+      return String(
+        localized: "keepAwake.tomorrow", defaultValue: "明天 \(time)",
+        comment: "保持唤醒管到明天的几点：「明天 8:00」")
     }
-    let day = calendar.dateComponents([.month, .day], from: date)
-    return "\(day.month ?? 0)月\(day.day ?? 0)日 " + time
+    var day = Date.FormatStyle().month(.defaultDigits).day()
+    day.calendar = calendar
+    day.timeZone = calendar.timeZone
+    return String(
+      localized: "keepAwake.dateTime", defaultValue: "\(date.formatted(day)) \(time)",
+      comment: "保持唤醒管到哪天的几点：「11月20日 9:00」（日期、钟点）")
   }
 
   /// 「还剩 1 小时 12 分」「还剩 42 分」「还剩不到 1 分钟」；nil（无限期）是「无限期」
   static func remaining(until end: Date?, now: Date) -> String {
-    guard let end else { return "无限期" }
+    guard let end else { return String(localized: "无限期") }
     let minutes = Int((end.timeIntervalSince(now) / 60).rounded(.up))
-    if minutes <= 1 { return "还剩不到 1 分钟" }
+    if minutes <= 1 { return String(localized: "还剩不到 1 分钟") }
     let hours = minutes / 60
     let rest = minutes % 60
-    if hours == 0 { return "还剩 \(rest) 分" }
-    return rest == 0 ? "还剩 \(hours) 小时" : "还剩 \(hours) 小时 \(rest) 分"
+    if hours == 0 { return String(localized: "还剩 \(rest) 分") }
+    return rest == 0
+      ? String(localized: "还剩 \(hours) 小时") : String(localized: "还剩 \(hours) 小时 \(rest) 分")
   }
-
-  static func pad(_ number: Int) -> String { number < 10 ? "0\(number)" : "\(number)" }
 
   // MARK: 启动器的关键词
 

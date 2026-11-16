@@ -64,7 +64,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     switch self {
     case .clipboard, .launcher, .translate: .text
     case .screenshot, .record: .capture
-    case .notes, .reminders, .statusScreen, .launchpad, .dockPreview, .finderMenu, .keepAwake, .island:
+    case .notes, .reminders, .statusScreen, .launchpad, .dockPreview, .finderMenu, .keepAwake,
+      .island:
       .plugins
     case .general, .hotkeys, .about: nil
     }

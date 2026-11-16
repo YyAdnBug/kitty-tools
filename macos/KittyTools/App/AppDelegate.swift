@@ -168,7 +168,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private(set) lazy var keepAwake: KeepAwake = {
     let keepAwake = KeepAwake()
     keepAwake.announce = { [unowned self] title, detail in
-      island.show(title, detail: detail, tone: .info, symbol: SettingsPage.keepAwake.symbol)
+      island.show(
+        "\(title)", detail: detail.map { "\($0)" }, tone: .info,
+        symbol: SettingsPage.keepAwake.symbol)
     }
     keepAwake.island = island
     return keepAwake
@@ -1798,8 +1800,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private func addKeepAwakeMenu(to menu: NSMenu, isNew: Bool) {
     let family = HotKeyAction.keepAwake
     let color = NSColor(family.color)
-    let status = keepAwake.isActive ? " · " + keepAwake.status() : ""
-    let item = menu.addAction(family.title + status, symbol: family.symbol, color: color) {}
+    let title: LocalizedStringResource =
+      keepAwake.isActive ? "\(family.title) · \(keepAwake.status())" : family.titleResource
+    let item = menu.addAction(title, symbol: family.symbol, color: color) {}
     if isNew { item.badge = WhatsNew.menuBadge }
     let submenu = NSMenu()
     // 定时那一行要灰着（只是告诉你到几点）：自动启用会把它点亮
@@ -1812,14 +1815,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       ) { [unowned self] in keepAwake.end() }
     } else {
       if keepAwake.inSchedule {
-        let line = submenu.addAction(keepAwake.status(), symbol: "clock", color: color) {}
+        let line = submenu.addAction("\(keepAwake.status())", symbol: "clock", color: color) {}
         line.isEnabled = false
         submenu.addItem(.separator())
       }
       for preset in KeepAwakePlan.presets {
         let key = preset.minutes == nil ? hotKey : nil
+        let title: LocalizedStringResource =
+          preset.minutes == nil ? "开始（无限期）" : "\(preset.title)"
         submenu.addAction(
-          preset.minutes == nil ? "开始（无限期）" : preset.title, symbol: "timer", color: color,
+          title, symbol: "timer", color: color,
           key: key?.menuKeyEquivalent ?? "", modifiers: key?.modifierFlags ?? []
         ) { [unowned self] in
           keepAwake.begin(

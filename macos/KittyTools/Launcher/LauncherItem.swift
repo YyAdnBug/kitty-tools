@@ -215,7 +215,7 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
     // 主界面（2026-10-29）：搜「全部功能」「功能」也找得到
     .home: "Home Main Window 全部功能",
     // 保持唤醒（插件）：搜「awake」「防息屏」「不睡眠」都找得到这一项（按一下开无限期，开着时叫「停止保持唤醒」）
-    .keepAwake: "Keep Awake Caffeinate awake 防息屏 防止睡眠 不睡眠 屏幕常亮",
+    .keepAwake: "Keep Awake Caffeinate Caffeine Prevent Sleep 防息屏 防止睡眠 不睡眠 屏幕常亮",
   ]
 
   /// trimsEllipsis：菜单栏那一项的标题去掉菜单的「…」（中文原文、英文同样去掉再进搜索名）

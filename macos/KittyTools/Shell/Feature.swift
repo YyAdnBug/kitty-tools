@@ -111,7 +111,7 @@ nonisolated enum Feature: String, CaseIterable {
     case .keepAwake:
       [
         "awake", "保持唤醒", "防息屏", "防止睡眠", "不睡眠", "唤醒", "咖啡因", "caffeinate", "keep awake",
-        "stay awake", "prevent sleep",
+        "stay awake", "prevent sleep", "caffeine",
       ]
     case .island: ["刘海岛", "刘海", "灵动岛", "island", "notch", "dynamic island"]
     default: []
