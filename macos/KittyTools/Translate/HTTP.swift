@@ -274,7 +274,7 @@ nonisolated enum HTTP {
 }
 
 /// TLS over TCP 的 HTTP/1.1 客户端（证书用系统默认校验）。
-private enum TCPHTTP {
+private nonisolated enum TCPHTTP {
   private static let maxHeaderBytes = 64 * 1024
   private static let maxBodyBytes = 8 * 1024 * 1024
 
@@ -533,7 +533,7 @@ private enum TCPHTTP {
   }
 }
 
-private struct WireRequest {
+private nonisolated struct WireRequest {
   let host: String
   let port: UInt16
   let tls: Bool
@@ -569,7 +569,7 @@ private struct WireRequest {
   }
 }
 
-private struct ResponseParser {
+private nonisolated struct ResponseParser {
   let status: Int
   let headers: [String: String]
   let remainder: Data
@@ -612,9 +612,9 @@ private struct ResponseParser {
   }
 }
 
-extension AsyncThrowingStream where Element == UInt8 {
+nonisolated extension AsyncThrowingStream where Element == UInt8 {
   fileprivate var lines: AsyncThrowingStream<String, Error> {
-    AsyncThrowingStream { continuation in
+    AsyncThrowingStream(String.self) { continuation in
       let task = Task {
         do {
           var buffer = Data()
