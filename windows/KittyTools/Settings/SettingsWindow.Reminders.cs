@@ -19,7 +19,7 @@ internal sealed partial class SettingsWindow
 {
     private void BuildReminders()
     {
-        _content.Children.Add(Header("提醒", "到点提醒你：一次、每天、每周或每隔一阵"));
+        _content.Children.Add(Header("提醒", "到点提醒你：什么时候响、用什么方式、点了「稍后」推多久"));
         AddFeatureToggle(Feature.Reminders);
         var settings = SettingsService.Current;
         var reminders = Reminders.Load(settings.Reminders);

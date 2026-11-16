@@ -193,33 +193,25 @@ internal static partial class TrayMenu
         {
             Add(menu, "输入翻译", HotKeyActions.InputTranslate,
                 () => TranslateHost.ToggleInput());
+            // 截图翻译归翻译（mac HotKeyAction.sections），截图关着照样在（REVIEW R90）
+            Add(menu, "截图翻译", HotKeyActions.ScreenshotTranslate,
+                () => ScreenshotSession.Start(ScreenshotMode.Translate), capture: true);
             menu.Add(new Item(
                 "复制即译", null, () => runtime?.ToggleCopyTranslate(), runtime is not null, settings.CopyTranslate));
         }
 
         AddSeparator(menu);
 
-        // 第三节：截图与录制。
-        if (Features.IsOn(Feature.Screenshot))
+        // 第三节：截图与录制（先后同 mac：截图、截取上次区域、识字、录屏、录音、钉住剪贴板内容、截图历史、钉图两项，REVIEW R90）。
+        // 「压缩最近的录屏」「转成 GIF」不在菜单里（mac 也没有；截图历史、角落的视频卡里有，REVIEW R96）。
+        var screenshot = Features.IsOn(Feature.Screenshot);
+        if (screenshot)
         {
             Add(menu, "截图", HotKeyActions.Screenshot,
                 () => ScreenshotSession.Start(ScreenshotMode.Capture), capture: true);
             // PLAN-v9 G1（同 mac 菜单栏）：截取上次区域、钉图那几项、关于。划词翻译不放：一点托盘原来的程序就不在前台了。
             Add(menu, "截取上次区域", HotKeyActions.ScreenshotLast, ScreenshotSession.StartLast, capture: true);
-            if (Features.IsOn(Feature.Translate))
-            {
-                Add(menu, "截图翻译", HotKeyActions.ScreenshotTranslate,
-                    () => ScreenshotSession.Start(ScreenshotMode.Translate), capture: true);
-            }
-
             Add(menu, "识字", HotKeyActions.Ocr, () => ScreenshotSession.Start(ScreenshotMode.Ocr), capture: true);
-            Add(menu, "截图历史", HotKeyActions.ShotHistory, ShotHistoryWindow.ShowWindow);
-            Add(menu, "钉住剪贴板内容", HotKeyActions.PinClipboard, () => _ = PinHost.PinClipboardAsync());
-            if (PinHost.Count > 0)
-            {
-                Add(menu, PinHost.AllHidden ? "显示全部钉图" : "隐藏全部钉图", string.Empty, PinHost.ToggleHidden);
-                Add(menu, "关闭全部钉图", string.Empty, PinHost.CloseAll);
-            }
         }
 
         if (Features.IsOn(Feature.Recording))
@@ -234,18 +226,6 @@ internal static partial class TrayMenu
                 Add(menu, "录屏", HotKeyActions.Record, RecordingHost.Toggle, capture: true);
             }
 
-            if (RecordingHost.LastPath is { } last && File.Exists(last) &&
-                last.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase))
-            {
-                Add(menu,
-                    CompressionService.IsRunning
-                        ? $"压缩中 {(int)(CompressionService.Progress * 100)}%"
-                        : "压缩最近的录屏（不超过 60%）",
-                    string.Empty, () => _ = CompressionService.CompressLastAsync());
-                Add(menu, "转成 GIF（10 fps，长边 800）", string.Empty,
-                    () => _ = GifService.ConvertLastAsync());
-            }
-
             // 录音（PLAN-v9 F2）：同录屏，右边写它的快捷键；待录时不算在录，仍叫「录音」，点它是开始（同 mac）。
             if (AudioHost.IsRecording)
             {
@@ -254,6 +234,17 @@ internal static partial class TrayMenu
             else
             {
                 Add(menu, "录音", HotKeyActions.Audio, AudioHost.Toggle);
+            }
+        }
+
+        if (screenshot)
+        {
+            Add(menu, "钉住剪贴板内容", HotKeyActions.PinClipboard, () => _ = PinHost.PinClipboardAsync());
+            Add(menu, "截图历史", HotKeyActions.ShotHistory, ShotHistoryWindow.ShowWindow);
+            if (PinHost.Count > 0)
+            {
+                Add(menu, PinHost.AllHidden ? "显示全部钉图" : "隐藏全部钉图", string.Empty, PinHost.ToggleHidden);
+                Add(menu, "关闭全部钉图", string.Empty, PinHost.CloseAll);
             }
         }
 
@@ -266,41 +257,7 @@ internal static partial class TrayMenu
             Add(menu, "全部便签", HotKeyActions.NoteAll, NotesWindow.ShowWindow);
         }
 
-        // 状态屏（PLAN-v12 N5，mac buildStatusMenu）：不画节标题，一项「状态屏」带子菜单——「选择状态…」（全局快捷键，打开选状态的面板；
-        // 设置里开了「直接进入」时没有它，键位写在第一个状态右边）、每个状态一行（点了直接进入）、「管理状态…」。
-        if (Features.IsOn(Feature.StatusScreen))
-        {
-            AddSeparator(menu);
-            var shortcut = runtime?.HotKeys.ShortcutFor(HotKeyActions.StatusScreen);
-            var entersFirst = settings.StatusScreenHotKeyEntersFirst;
-            var children = new List<Item>();
-            if (!entersFirst)
-            {
-                children.Add(new Item("选择状态…", shortcut, () =>
-                {
-                    WhatsNewHost.Touch(HotKeyActions.StatusScreen);
-                    StatusPicker.ToggleOrEnterFirst();
-                }, IsNew: IsNew(HotKeyActions.StatusScreen)));
-                children.Add(new Item(null, null, static () => { }));
-            }
-
-            var presets = StatusScreenHost.Presets;
-            for (var index = 0; index < presets.Count; index++)
-            {
-                var preset = presets[index];
-                children.Add(new Item(preset.Title, entersFirst && index == 0 ? shortcut : null, () =>
-                {
-                    WhatsNewHost.Touch(HotKeyActions.StatusScreen);
-                    StatusScreenHost.Enter(preset);
-                }));
-            }
-
-            children.Add(new Item(null, null, static () => { }));
-            children.Add(new Item("管理状态…", null, () => runtime?.ShowSettings(welcome: false, "statusScreen")));
-            menu.Add(new Item("状态屏", null, static () => { }, Children: children, IsNew: IsNew(HotKeyActions.StatusScreen)));
-        }
-
-        // 提醒（PLAN-v12 N6，mac addReminderMenu）：一项「提醒」带子菜单——新建提醒…（快捷键）、下一个、几分钟后提醒我、暂停全部 / 恢复、管理提醒…。
+        // 提醒（PLAN-v12 N6，mac addReminderMenu；便签 → 提醒 → 状态屏，REVIEW R90）：一项「提醒」带子菜单——新建提醒…（快捷键）、下一个、几分钟后提醒我、暂停全部 / 恢复、管理提醒…。
         if (Features.IsOn(Feature.Reminders))
         {
             AddSeparator(menu);
@@ -359,6 +316,40 @@ internal static partial class TrayMenu
             children.Add(new Item(null, null, static () => { }));
             children.Add(new Item("管理提醒…", null, () => runtime?.ShowSettings(welcome: false, "reminders")));
             menu.Add(new Item("提醒", null, static () => { }, Children: children, IsNew: IsNew(HotKeyActions.ReminderNew)));
+        }
+
+        // 状态屏（PLAN-v12 N5，mac buildStatusMenu）：不画节标题，一项「状态屏」带子菜单——「选择状态…」（全局快捷键，打开选状态的面板；
+        // 设置里开了「直接进入」时没有它，键位写在第一个状态右边）、每个状态一行（点了直接进入）、「管理状态…」。
+        if (Features.IsOn(Feature.StatusScreen))
+        {
+            AddSeparator(menu);
+            var shortcut = runtime?.HotKeys.ShortcutFor(HotKeyActions.StatusScreen);
+            var entersFirst = settings.StatusScreenHotKeyEntersFirst;
+            var children = new List<Item>();
+            if (!entersFirst)
+            {
+                children.Add(new Item("选择状态…", shortcut, () =>
+                {
+                    WhatsNewHost.Touch(HotKeyActions.StatusScreen);
+                    StatusPicker.ToggleOrEnterFirst();
+                }, IsNew: IsNew(HotKeyActions.StatusScreen)));
+                children.Add(new Item(null, null, static () => { }));
+            }
+
+            var presets = StatusScreenHost.Presets;
+            for (var index = 0; index < presets.Count; index++)
+            {
+                var preset = presets[index];
+                children.Add(new Item(preset.Title, entersFirst && index == 0 ? shortcut : null, () =>
+                {
+                    WhatsNewHost.Touch(HotKeyActions.StatusScreen);
+                    StatusScreenHost.Enter(preset);
+                }));
+            }
+
+            children.Add(new Item(null, null, static () => { }));
+            children.Add(new Item("管理状态…", null, () => runtime?.ShowSettings(welcome: false, "statusScreen")));
+            menu.Add(new Item("状态屏", null, static () => { }, Children: children, IsNew: IsNew(HotKeyActions.StatusScreen)));
         }
 
         // 保持唤醒（插件，PLAN-v20 K1，mac addKeepAwakeMenu）：一项「保持唤醒」带子菜单——开着时项名后写还剩多久、「停止保持唤醒」；

@@ -15,7 +15,7 @@ internal sealed partial class SettingsWindow
 
     private void BuildNotes()
     {
-        _content.Children.Add(Header("便签", "快速记一条，屏幕边缘的便签"));
+        _content.Children.Add(Header("便签", "留着看、接着改的东西：屏幕边缘的那一叠、字号和行距，存在哪、怎么备份"));
         AddFeatureToggle(Feature.Notes);
         var settings = SettingsService.Current;
         if (NotesRecovery.Unavailable is { } reason)

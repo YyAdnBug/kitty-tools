@@ -201,7 +201,7 @@ internal sealed partial class SettingsWindow
     /// <summary>通用 › 功能 下面一组「插件」（mac FeaturesPage 的插件卡片）。</summary>
     private void AddPluginCards()
     {
-        _content.Children.Add(SettingsUi.Section("插件", "添加了才出现在侧栏、托盘和启动器里，才在后台运行"));
+        _content.Children.Add(SettingsUi.Section("插件"));
         foreach (var plugin in Features.Plugins)
         {
             var (permission, background) = Features.PluginFacts(plugin);
@@ -214,14 +214,19 @@ internal sealed partial class SettingsWindow
                 RebuildSidebar();
                 BuildPage("general");
             };
+            // 同 mac PluginCard：名字后「已添加」、授权和后台各占一行（REVIEW R96）
             var card = SettingsUi.Card(
                 Features.Title(plugin),
-                Features.Blurb(plugin) + "\n要的授权：" + permission + " · 后台：" + background,
+                Features.Blurb(plugin) + "\n授权　" + permission + "\n后台　" + background,
                 button,
-                leading: KindTile.Create(FamilyForPage(Features.Key(plugin)), FeatureIcons.KeepAwake, 20));
+                leading: KindTile.Create(FamilyForPage(Features.Key(plugin)), FeatureIcons.KeepAwake, 20),
+                tag: added ? "已添加" : null);
             card.Tag = "plugin:" + Features.Key(plugin);
             _content.Children.Add(card);
         }
+
+        _content.Children.Add(SettingsUi.Footnote(
+            "新装时插件都没添加；从旧版升级上来的，原来开着的照旧添加着。添加了才出现在侧栏、托盘、主界面、快捷键和启动器里；移除就是关掉，设置和数据留着，再添加就回来。"));
     }
 
     /// <summary>从启动器「添加…插件」来（mac SettingsNavigation.focusedPlugin）：打开 通用 › 功能，滚到那张卡，描两秒强调色。</summary>

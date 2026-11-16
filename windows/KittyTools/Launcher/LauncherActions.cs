@@ -64,6 +64,9 @@ internal static class LauncherActions
         if (Features.IsOn(Feature.Translate))
         {
             items.Add(Item(new(Translate, "输入翻译", "Translate Input", FeatureIcons.TranslateInput, "translate", HotKeyActions.InputTranslate)));
+            // 截图翻译归翻译（mac HotKeyAction.feature / color），截图关着照样在（REVIEW R90）
+            items.Add(Item(new(ScreenshotTranslate, "截图翻译", "Screenshot Translate", FeatureIcons.TranslateScreenshot, "translate",
+                HotKeyActions.ScreenshotTranslate)));
             items.Add(Item(
                 new(CopyTranslate, "复制即译", "Copy to Translate", Glyphs.Translate, "translate"),
                 SettingsService.Current.CopyTranslate ? "已开启" : "已关闭"));
@@ -72,12 +75,6 @@ internal static class LauncherActions
         if (Features.IsOn(Feature.Screenshot))
         {
             items.Add(Item(new(Screenshot, "截图", "Screenshot Capture", FeatureIcons.Screenshot, "capture", HotKeyActions.Screenshot)));
-            if (Features.IsOn(Feature.Translate))
-            {
-                items.Add(Item(new(ScreenshotTranslate, "截图翻译", "Screenshot Translate", FeatureIcons.TranslateScreenshot, "capture",
-                    HotKeyActions.ScreenshotTranslate)));
-            }
-
             items.Add(Item(new(ScreenshotLast, "截取上次区域", "Capture Last Region", FeatureIcons.ScreenshotLast, "capture", HotKeyActions.ScreenshotLast)));
             items.Add(Item(new(Ocr, "识字", "OCR Recognize Text", FeatureIcons.ScreenshotText, "capture", HotKeyActions.Ocr)));
             items.Add(Item(new(ShotHistory, "截图历史", "Screenshot History", FeatureIcons.ScreenshotHistory, "capture", HotKeyActions.ShotHistory)));

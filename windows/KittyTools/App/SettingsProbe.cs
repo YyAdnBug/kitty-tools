@@ -260,7 +260,7 @@ internal static class SettingsProbe
         Features.Set(Feature.Recording, false);
         window.RecordKeyForProbe(launcher, 'R', HotKeyModifiers.Alt);
         await Task.Delay(150);
-        check(window.RowMessageForProbe(launcher) == $"和「录屏（再按一次停止）」重复（{Features.Title(Feature.Recording)}已关闭）",
+        check(window.RowMessageForProbe(launcher) == $"和「录屏」重复（{Features.Title(Feature.Recording)}已关闭）",
             $"H3 录制关着时录 Alt+R：「{window.RowMessageForProbe(launcher)}」");
         Features.Set(Feature.Recording, recordWasOn);
         var commands = settings.LauncherCommandHotKeys;
@@ -445,6 +445,24 @@ internal static class SettingsProbe
         var archive = ArchiveService.Decode(text);
         var (_, error) = archive is null ? (null, "读不出") : ArchiveService.Apply(archive, null);
         check(error is null && archive!.AppliesWindowsSettings && settings.Theme == theme, $"读回来再导一遍：{error ?? "没出错"}");
+
+        // R84：原来导出没带的那些（快门声、帧率、便签字号、翻译浮窗位置……）跟着同步那张表走
+        settings.ScreenshotShutterSound = false;
+        settings.RecordFps = 60;
+        settings.NotesFontSize = 17;
+        settings.TranslateWindowPosition = PanelPositions.Mouse;
+        SettingsService.Save();
+        var exported = ArchiveService.Encode(ArchiveService.Build(new[] { ArchiveSection.Preferences }));
+        settings.ScreenshotShutterSound = true;
+        settings.RecordFps = 30;
+        settings.NotesFontSize = 13;
+        settings.TranslateWindowPosition = PanelPositions.Top;
+        SettingsService.Save();
+        var (_, again) = ArchiveService.Decode(exported) is { } back ? ArchiveService.Apply(back, null) : (null, "读不出");
+        check(again is null && !settings.ScreenshotShutterSound && settings.RecordFps == 60 && settings.NotesFontSize == 17 &&
+              settings.TranslateWindowPosition == PanelPositions.Mouse && exported.Contains("\"pref:", StringComparison.Ordinal),
+            $"R84 导出带上同步表里的设置、导回来都回来了（快门声 {settings.ScreenshotShutterSound}、帧率 {settings.RecordFps}、" +
+            $"便签字号 {settings.NotesFontSize}、浮窗位置 {settings.TranslateWindowPosition}）");
 
         if (Environment.GetEnvironmentVariable("KITTY_SETTINGS_PROBE_MAC") is not { Length: > 0 } macPath || !File.Exists(macPath))
         {

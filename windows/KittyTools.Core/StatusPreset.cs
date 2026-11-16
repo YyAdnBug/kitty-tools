@@ -491,9 +491,12 @@ public static class StatusEmojiCatalog
            symbol.Skip(PackPrefix.Length).All(c => c is (>= 'a' and <= 'z') or (>= '0' and <= '9') or '-');
 
     /// <summary>
-    /// mac 挑的系统表情（存的就是那个字，mac StatusEmoji.isCustom）：正好一个字、UTF-8 不超过 64 字节、是表情。
-    /// .NET 读不到 Unicode 的 Emoji 属性，这里放宽：一个码位的要是 U+2000 以上的符号（So）或在表情码段 U+1F000–1FAFF 里（含还没收进表的），
-    /// 多个码位的（变体、组合、肤色、旗子）首字是这种符号或带 U+FE0F / U+20E3 就算。宁可多留（mac 收拾掉再同步回来），不能少留。
+    /// mac 挑的系统表情（存的就是那个字，mac StatusEmoji.isCustom）：正好一个字、UTF-8 不超过 64 字节、是表情——一个码位的要「默认就画成表情」
+    /// （Emoji_Presentation），多个码位的（变体、组合、肤色、旗子、键帽）首字是表情（Emoji）。表情码段 U+1F000–1FAFF 里的都算（含还没收进表的，
+    /// 同 mac 对没分配的码位的处理）。REVIEW R86 的观察（2026-11-16）：原来 U+2000 以上的符号（So）都算，★ 这种 mac 不认的字同步到 Mac 被置空、
+    /// 再当本机改动传回来，用户选的图标没了；现在照 mac 收。
+    /// ponytail: .NET 读不到 Unicode 的 Emoji 属性，BMP 里那两张表照 Unicode 15 的 emoji-data.txt 抄成码段（下面 EmojiPresentation / EmojiBmp）；
+    /// 以后 Unicode 在 BMP 加了表情再补，表情码段外的新码位最坏是这边不认（mac 认的这边置空）。
     /// </summary>
     public static bool IsCustom(string symbol)
     {
@@ -503,12 +506,39 @@ public static class StatusEmojiCatalog
             return false;
         }
 
-        var symbolic = (Rune.GetUnicodeCategory(first) == UnicodeCategory.OtherSymbol && first.Value >= 0x2000) ||
-                       first.Value is >= 0x1F000 and <= 0x1FAFF;
+        var plane = first.Value is >= 0x1F000 and <= 0x1FAFF;
         return first.Utf16SequenceLength == symbol.Length
-            ? symbolic
-            : symbolic || symbol.Contains('\uFE0F') || symbol.Contains('\u20E3');
+            ? plane || InRanges(first.Value, EmojiPresentation)
+            : plane || InRanges(first.Value, EmojiPresentation) || InRanges(first.Value, EmojiBmp);
     }
+
+    private static bool InRanges(int value, (int From, int To)[] ranges) => ranges.Any(range => value >= range.From && value <= range.To);
+
+    /// <summary>BMP 里默认画成表情的（Emoji_Presentation=Yes，emoji-data.txt）。</summary>
+    private static readonly (int From, int To)[] EmojiPresentation =
+    {
+        (0x231A, 0x231B), (0x23E9, 0x23EC), (0x23F0, 0x23F0), (0x23F3, 0x23F3), (0x25FD, 0x25FE), (0x2614, 0x2615), (0x2648, 0x2653),
+        (0x267F, 0x267F), (0x2693, 0x2693), (0x26A1, 0x26A1), (0x26AA, 0x26AB), (0x26BD, 0x26BE), (0x26C4, 0x26C5), (0x26CE, 0x26CE),
+        (0x26D4, 0x26D4), (0x26EA, 0x26EA), (0x26F2, 0x26F3), (0x26F5, 0x26F5), (0x26FA, 0x26FA), (0x26FD, 0x26FD), (0x2705, 0x2705),
+        (0x270A, 0x270B), (0x2728, 0x2728), (0x274C, 0x274C), (0x274E, 0x274E), (0x2753, 0x2755), (0x2757, 0x2757), (0x2795, 0x2797),
+        (0x27B0, 0x27B0), (0x27BF, 0x27BF), (0x2B1B, 0x2B1C), (0x2B50, 0x2B50), (0x2B55, 0x2B55),
+    };
+
+    /// <summary>BMP 里是表情、但默认画成文字的（Emoji=Yes 而 Emoji_Presentation=No）：要带 U+FE0F / 键帽才算；数字、#、* 只在组合里算。</summary>
+    private static readonly (int From, int To)[] EmojiBmp =
+    {
+        (0x0023, 0x0023), (0x002A, 0x002A), (0x0030, 0x0039), (0x00A9, 0x00A9), (0x00AE, 0x00AE), (0x203C, 0x203C), (0x2049, 0x2049),
+        (0x2122, 0x2122), (0x2139, 0x2139), (0x2194, 0x2199), (0x21A9, 0x21AA), (0x2328, 0x2328), (0x23CF, 0x23CF), (0x23ED, 0x23EF),
+        (0x23F1, 0x23F2), (0x23F8, 0x23FA), (0x24C2, 0x24C2), (0x25AA, 0x25AB), (0x25B6, 0x25B6), (0x25C0, 0x25C0), (0x25FB, 0x25FC),
+        (0x2600, 0x2604), (0x260E, 0x260E), (0x2611, 0x2611), (0x2618, 0x2618), (0x261D, 0x261D), (0x2620, 0x2620), (0x2622, 0x2623),
+        (0x2626, 0x2626), (0x262A, 0x262A), (0x262E, 0x262F), (0x2638, 0x263A), (0x2640, 0x2640), (0x2642, 0x2642), (0x265F, 0x2660),
+        (0x2663, 0x2663), (0x2665, 0x2666), (0x2668, 0x2668), (0x267B, 0x267B), (0x267E, 0x267E), (0x2692, 0x2692), (0x2694, 0x2697),
+        (0x2699, 0x2699), (0x269B, 0x269C), (0x26A0, 0x26A0), (0x26A7, 0x26A7), (0x26B0, 0x26B1), (0x26C8, 0x26C8), (0x26CF, 0x26CF),
+        (0x26D1, 0x26D1), (0x26D3, 0x26D3), (0x26E9, 0x26E9), (0x26F0, 0x26F1), (0x26F4, 0x26F4), (0x26F7, 0x26F9), (0x2702, 0x2702),
+        (0x2708, 0x2709), (0x270C, 0x270D), (0x270F, 0x270F), (0x2712, 0x2712), (0x2714, 0x2714), (0x2716, 0x2716), (0x271D, 0x271D),
+        (0x2721, 0x2721), (0x2733, 0x2734), (0x2744, 0x2744), (0x2747, 0x2747), (0x2763, 0x2764), (0x27A1, 0x27A1), (0x2934, 0x2935),
+        (0x2B05, 0x2B07), (0x3030, 0x3030), (0x303D, 0x303D), (0x3297, 0x3297), (0x3299, 0x3299),
+    };
 
     /// <summary>有人碰键盘鼠标时从屏幕边冒出来的那双眼睛：不在可选的里面。</summary>
     public const string Eyes = "eyes";

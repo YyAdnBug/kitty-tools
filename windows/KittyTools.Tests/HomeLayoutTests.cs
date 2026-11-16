@@ -47,6 +47,24 @@ public sealed class HomeLayoutTests
     }
 
     [TestMethod]
+    public void PluginsGoIntoTheirOwnTitledSectionAtTheEnd()
+    {
+        // REVIEW R88（mac Home.sections）：插件的格子收进最后一节「插件」，只有一个也带标题，不和单格的节并成一行
+        var sections = HomeLayout.Sections(new[]
+        {
+            Section("剪贴板与启动器", "clipboard", "launcher"),
+            new HomeSection("保持唤醒", new[] { Tile("keepAwake") }, Plugin: true),
+            Section("提醒", "reminderNew"),
+            Section("状态屏", "statusScreen"),
+        });
+        Assert.AreEqual(3, sections.Count);
+        Assert.IsNull(sections[1].Title);
+        CollectionAssert.AreEqual(new[] { "reminderNew", "statusScreen" }, sections[1].Tiles.Select(tile => tile.Id).ToArray());
+        Assert.AreEqual(HomeLayout.PluginsTitle, sections[2].Title);
+        CollectionAssert.AreEqual(new[] { "keepAwake" }, sections[2].Tiles.Select(tile => tile.Id).ToArray());
+    }
+
+    [TestMethod]
     public void SingleTileAfterTitledSectionStartsItsOwnRow()
     {
         var sections = HomeLayout.Sections(new[]

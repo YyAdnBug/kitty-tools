@@ -1,109 +1,68 @@
 // 片段占位符（第三版 §4，纯函数 + 单测）：{date} {time} {datetime} {weekday} {uuid}
 // {clipboard} / {clipboard:N} {cursor}。当前时间、剪贴板文字、UUID 都由调用方给，方便单测。
 // {cursor} 不产出文字，只告诉调用方粘贴后要往左挪几个字（光标之后还有多少字）。
+// 边界上的意思照 mac Clipboard/Snippet.swift（REVIEW R86，2026-11-16；片段正文是同步的，两边展开结果要一样）：
+// - 只认 \{(date|time|datetime|weekday|uuid|clipboard(:\d)?|cursor)\}，不分大小写；{ date }、{clipboard:12}、{clipboard:abc} 原样留着；
+// - {clipboard} / {clipboard:0} = 粘贴时剪贴板里的文字；{clipboard:N}（1…9）= 历史第 N 条文字（历史跳过所有片段，取不到是空）；
+// - 只认第一个 {cursor}，其余的去掉；它后面的字数按字形簇数（和 ← 一次挪一个字对应，后面有表情时不挪过头）。
 using System.Globalization;
-using System.Text;
+using System.Text.RegularExpressions;
 
 namespace KittyTools.Core;
 
 public readonly record struct SnippetExpansion(string Text, int CursorBackChars);
 
-public static class SnippetRules
+public static partial class SnippetRules
 {
     public const int MaxCursorBackChars = 500;
 
-    /// <summary>支持 {name} 和 {name:参数} 两种写法；不认识的占位符原样留着。</summary>
+    [GeneratedRegex(@"\{(date|time|datetime|weekday|uuid|clipboard(?::(\d))?|cursor)\}", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex Placeholder();
+
+    [GeneratedRegex(@"\{cursor\}", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex Cursor();
+
+    /// <param name="clipboard">粘贴时剪贴板里的文字。</param>
+    /// <param name="history">历史里的文字（新→旧、不含片段）：{clipboard:N} 取第 N 条。</param>
+    public static SnippetExpansion Expand(
+        string template, DateTimeOffset now, Func<string> uuid, string clipboard, IReadOnlyList<string> history)
+        => Expand(template, now, uuid, () => clipboard, n => n <= history.Count ? history[n - 1] : null);
+
+    /// <summary>不认识的写法原样留着；剪贴板、历史只在用到时才读（同 mac）。</summary>
     /// <param name="uuid">每出现一处 {uuid} 调一次：每处、每次粘贴都应该是新的（REVIEW R61）。</param>
     public static SnippetExpansion Expand(
-        string template,
-        DateTimeOffset now,
-        Func<string> uuid,
-        string clipboard,
-        IReadOnlyList<string> history)
+        string template, DateTimeOffset now, Func<string> uuid, Func<string?> clipboard, Func<int, string?> history)
     {
-        var builder = new StringBuilder(template.Length + 32);
-        var cursorAt = -1;
-        for (var index = 0; index < template.Length; index++)
+        if (!Placeholder().IsMatch(template))
         {
-            var ch = template[index];
-            if (ch != '{')
-            {
-                builder.Append(ch);
-                continue;
-            }
-
-            var close = template.IndexOf('}', index + 1);
-            if (close < 0)
-            {
-                builder.Append(ch);
-                continue;
-            }
-
-            var token = template[(index + 1)..close];
-            var colon = token.IndexOf(':');
-            var name = (colon < 0 ? token : token[..colon]).Trim().ToLowerInvariant();
-            var argument = colon < 0 ? null : token[(colon + 1)..].Trim();
-            var replaced = true;
-            switch (name)
-            {
-                case "date":
-                    builder.Append(now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
-                    break;
-                case "time":
-                    builder.Append(now.ToString("HH:mm", CultureInfo.InvariantCulture));
-                    break;
-                case "datetime":
-                    builder.Append(now.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture));
-                    break;
-                case "weekday":
-                    builder.Append(Weekday(now));
-                    break;
-                case "uuid":
-                    builder.Append(uuid());
-                    break;
-                case "clipboard":
-                    var depth = 0;
-                    if (argument is not null && int.TryParse(argument, out var parsed) && parsed > 0)
-                    {
-                        depth = parsed;
-                    }
-
-                    builder.Append(ClipboardAt(depth, clipboard, history));
-                    break;
-                case "cursor":
-                    cursorAt = builder.Length;
-                    break;
-                default:
-                    replaced = false;
-                    break;
-            }
-
-            if (replaced)
-            {
-                index = close;
-                continue;
-            }
-
-            builder.Append(ch);
+            return new SnippetExpansion(template, 0);
         }
 
-        var text = builder.ToString();
-        var back = cursorAt < 0 ? 0 : text.Length - cursorAt;
-        return new SnippetExpansion(text, Math.Clamp(back, 0, MaxCursorBackChars));
-    }
+        string? cached = null;
+        string Clipboard() => cached ??= clipboard() ?? string.Empty;
 
-    /// <summary>{clipboard} = 现在剪贴板里的文字；{clipboard:N} = 历史里第 N 条（1 = 最近一条）。空就用最近的。</summary>
-    private static string ClipboardAt(int depth, string clipboard, IReadOnlyList<string> history)
-    {
-        if (depth <= 1)
+        string Fill(string part) => Placeholder().Replace(part, match => match.Groups[1].Value.ToLowerInvariant() switch
         {
-            return string.IsNullOrEmpty(clipboard)
-                ? history.FirstOrDefault() ?? string.Empty
-                : clipboard;
+            "date" => now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            "time" => now.ToString("HH:mm", CultureInfo.InvariantCulture),
+            "datetime" => now.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture),
+            "weekday" => Weekday(now),
+            "uuid" => uuid(),
+            "cursor" => string.Empty,
+            _ => match.Groups[2].Success && match.Groups[2].Value != "0"
+                ? history(match.Groups[2].Value[0] - '0') ?? string.Empty
+                : Clipboard(),
+        });
+
+        var cursor = Cursor().Match(template);
+        if (!cursor.Success)
+        {
+            return new SnippetExpansion(Fill(template), 0);
         }
 
-        var index = depth - 1;
-        return index >= 0 && index < history.Count ? history[index] : string.Empty;
+        var after = Fill(template[(cursor.Index + cursor.Length)..]);
+        var back = new StringInfo(after).LengthInTextElements;
+        return new SnippetExpansion(Fill(template[..cursor.Index]) + after, Math.Clamp(back, 0, MaxCursorBackChars));
     }
 
     private static string Weekday(DateTimeOffset now) => now.DayOfWeek switch

@@ -1022,7 +1022,7 @@ internal sealed partial class SettingsWindow : Window
         back.Click += (_, _) => OpenFeaturesPage(false);
         AutomationProperties.SetName(back, "返回通用设置");
         _content.Children.Add(back);
-        _content.Children.Add(Header("功能", "用不上的整个关掉"));
+        _content.Children.Add(Header("功能", "不用的整个关掉，用的时候再打开"));
         foreach (var feature in Features.Listed)
         {
             _content.Children.Add(SettingsUi.Card(
@@ -1124,7 +1124,7 @@ internal sealed partial class SettingsWindow : Window
         transfer.Children.Add(import);
         _content.Children.Add(SettingsUi.Card(
             "设置与数据",
-            "设置、快捷键、翻译服务、网页搜索、片段和文字收藏、生词本存成一个文件，换电脑或重装后导回来",
+            "设置、快捷键、翻译服务、网页搜索、片段和文字收藏、生词本、便签存成一个文件，换电脑或重装后导回来",
             transfer));
         BuildBackupRows();
         _content.Children.Add(SettingsUi.Footnote(
@@ -1136,7 +1136,7 @@ internal sealed partial class SettingsWindow : Window
         AutomationProperties.SetName(reveal, "在资源管理器中显示数据目录");
         reveal.Click += (_, _) => OpenDataDirectory();
         _content.Children.Add(SettingsUi.Card(
-            "数据目录", "剪贴板和翻译历史的数据库、图片、设置、日志和每日备份都在这里", reveal));
+            "数据目录", "剪贴板、便签和翻译历史的数据库、图片、设置、日志和每日备份都在这里", reveal));
         // Windows 才有：没装进开始菜单的便携版也要能干净地拿掉（MAC-DIFF.md）。
         _content.Children.Add(SettingsUi.Card(
             "从这台电脑移除 Kitty Tools…",
@@ -1953,8 +1953,9 @@ internal sealed partial class SettingsWindow : Window
                 ReportCleanup(service.EnforceLimits());
             })));
 
-        // 图片占用：512 MB / 1 GB / 2 GB / 5 GB / 不限（= PLAN-v9 C2）；存着别的值（旧的 128 / 256）照原值算，多显示一项，换了就没了。
-        var budgets = new List<(int Value, string Title)> { (512, "512 MB"), (1024, "1 GB"), (2048, "2 GB"), (5120, "5 GB"), (0, "不限") };
+        // 图片占用：256 MB / 512 MB / 1 GB / 2 GB / 5 GB / 不限（= PLAN-v9 C2；256 MB 同 mac 58c91673、issue #19，REVIEW R89）；
+        // 存着别的值（旧的 128）照原值算，多显示一项，换了就没了。
+        var budgets = new List<(int Value, string Title)> { (256, "256 MB"), (512, "512 MB"), (1024, "1 GB"), (2048, "2 GB"), (5120, "5 GB"), (0, "不限") };
         if (budgets.All(budget => budget.Value != settings.ClipboardImageBudgetMB))
         {
             budgets.Insert(0, (settings.ClipboardImageBudgetMB, $"{settings.ClipboardImageBudgetMB} MB"));
@@ -2472,7 +2473,7 @@ internal sealed partial class SettingsWindow : Window
             return;
         }
 
-        _content.Children.Add(Header("启动器", "搜索应用、文件、书签与历史、网页搜索与快捷链接"));
+        _content.Children.Add(Header("启动器", "搜索应用、文件、书签与历史、网页搜索与快捷链接、脚本命令、命令和别名"));
         AddFeatureToggle(Feature.Launcher);
         var settings = SettingsService.Current;
 
@@ -3007,7 +3008,7 @@ internal sealed partial class SettingsWindow : Window
     /// </summary>
     private void BuildScreenshot()
     {
-        _content.Children.Add(Header("截图", "快速保存、拷贝为图像还是文件、快门声、缩略图和识字"));
+        _content.Children.Add(Header("截图", "快速保存、拷贝为图像还是文件、工具栏位置、快门声、缩略图和识字"));
         AddFeatureToggle(Feature.Screenshot);
 
         // 快速保存到：功能关着也能改（mac 这一行在变灰的那块外面）
@@ -3222,7 +3223,7 @@ internal sealed partial class SettingsWindow : Window
     /// </summary>
     private void BuildRecord()
     {
-        _content.Children.Add(Header("录制", "录屏的帧率和按键，录音的来源"));
+        _content.Children.Add(Header("录制", "录屏的画质、倒数和按键，录音的来源"));
         AddFeatureToggle(Feature.Recording);
 
         _content.Children.Add(Ungated(new Border { Height = 8 }));
@@ -3487,12 +3488,12 @@ internal sealed partial class SettingsWindow : Window
             }
         }
 
+        // 先后同 mac HotkeysTab：全局 → 截图时（PLAN-v18 S3，.ShotKeys.cs）→ 面板里的按键 → 按应用停用（PLAN-v17 H5 H7，.HotKeyBlock.cs）（REVIEW R90）
+        BuildShotKeys();
         _content.Children.Add(new Border { Height = 8 });
         AddShortcutsRow(null, "面板里的按键", "剪贴板、启动器、翻译浮窗和截图里按什么键，都在速查表里");
         _content.Children.Add(SettingsUi.Footnote(
             "点录制框后按下新组合；Esc 取消，Backspace 或 Delete 清除，右键可恢复默认。至少带 Ctrl 或 Alt，或者单独一个 F1–F24；也可以连按两下 Ctrl、Alt 或 Shift。"));
-        // 截图时的键（PLAN-v18 S3，.ShotKeys.cs）、按应用停用（PLAN-v17 H5 H7，.HotKeyBlock.cs）
-        BuildShotKeys();
         BuildHotKeyBlocks();
     }
 
@@ -3517,6 +3518,9 @@ internal sealed partial class SettingsWindow : Window
             }),
             // 便签（PLAN-v13）：三项同名同序（同 mac 那一节、托盘、速查表）。
             ("便签", new List<string> { HotKeyActions.NoteCapture, HotKeyActions.NoteNew, HotKeyActions.NoteAll }),
+            // 提醒、状态屏各一节（同 mac，原来掉进兜底、追加在截图与录制最后，REVIEW R90）
+            ("提醒", new List<string> { HotKeyActions.ReminderNew }),
+            ("状态屏", new List<string> { HotKeyActions.StatusScreen }),
             // 保持唤醒（插件，PLAN-v20 K1）：添加了才出（Features.IsOnFor）
             ("保持唤醒", new List<string> { HotKeyActions.KeepAwake }),
             // 主界面（PLAN-v10 §5）：不归哪个功能、一直在（同 mac 那一节）。

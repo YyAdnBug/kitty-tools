@@ -68,7 +68,7 @@ internal static class Features
         Feature.Clipboard => "剪贴板",
         Feature.Translate => "翻译",
         Feature.Launcher => "启动器",
-        Feature.Recording => "录屏",
+        Feature.Recording => "录制", // 同 mac 的页名（REVIEW R91）
         Feature.Notes => "便签",
         Feature.StatusScreen => "状态屏",
         Feature.Reminders => "提醒",
@@ -80,8 +80,8 @@ internal static class Features
     {
         Feature.Clipboard => "记下复制过的文字、图片和文件，随时找回来粘贴",
         Feature.Translate => "划词、输入、截图翻译，复制即译",
-        Feature.Launcher => "一个搜索框：打开应用、设置和网页，顺手算算式",
-        Feature.Recording => "把屏幕录成视频（Alt+R 开始 / 停止）",
+        Feature.Launcher => "一个搜索框：打开应用、文件和网页，顺手算算式",
+        Feature.Recording => "录屏和录音",
         Feature.Notes => "快速记一条，屏幕边缘的便签",
         Feature.StatusScreen => "盖住屏幕、拦住键盘鼠标的告示",
         Feature.Reminders => "到点提醒你：一次、每天、每周或每隔一阵",

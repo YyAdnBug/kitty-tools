@@ -3,11 +3,11 @@
 // 尺寸是 DIP：mac 的数按 PLAN-v7 §2 1:1 换算，字号最小 12（mac 11），所以格子比 mac 宽一点（104，mac 92），放得下「钉住剪贴板里的图」。
 namespace KittyTools.Core;
 
-/// <summary>一格。Id 是执行时认的（全局动作名，或 extra.* 这几个开关 / 钉图项）；IsOn 只有开关有。</summary>
-public sealed record HomeTile(string Id, string Title, string Glyph, string Family, string? Key = null, bool? IsOn = null);
+/// <summary>一格。Id 是执行时认的（全局动作名，或 extra:* 这几个钉图项）。主界面只放点一下就做的动作，开关不占格子（mac 0.9.0，REVIEW R88）。</summary>
+public sealed record HomeTile(string Id, string Title, string Glyph, string Family, string? Key = null);
 
-/// <summary>一节；Title 为 null 不画标题（只有一格的节并成的那一行）。</summary>
-public sealed record HomeSection(string? Title, IReadOnlyList<HomeTile> Tiles);
+/// <summary>一节；Title 为 null 不画标题（只有一格的节并成的那一行）。Plugin：插件的格子，收进最后一节「插件」。</summary>
+public sealed record HomeSection(string? Title, IReadOnlyList<HomeTile> Tiles, bool Plugin = false);
 
 public enum HomeMove
 {
@@ -45,12 +45,17 @@ public static class HomeLayout
 
     public static double Width => Inset * 2 + Columns * TileWidth + (Columns - 1) * Gap;
 
+    /// <summary>插件那一节的标题（同设置侧栏那一组的名字，mac Home.pluginsTitle）。</summary>
+    public const string PluginsTitle = "插件";
+
     /// <summary>
     /// 分节：空的节去掉；两格以上的节照原样带标题；只有一格的节不画标题，和前面同样不画标题的并成一行（同 mac Home.sections）。
+    /// 插件的格子不分节，按原来的先后全收进最后一节「插件」，只添加了一个也带标题（mac 0.9.0，REVIEW R88）。
     /// </summary>
     public static List<HomeSection> Sections(IEnumerable<HomeSection> sections)
     {
         var result = new List<HomeSection>();
+        var plugins = new List<HomeTile>();
         foreach (var section in sections)
         {
             if (section.Tiles.Count == 0)
@@ -58,7 +63,11 @@ public static class HomeLayout
                 continue;
             }
 
-            if (section.Tiles.Count > 1)
+            if (section.Plugin)
+            {
+                plugins.AddRange(section.Tiles);
+            }
+            else if (section.Tiles.Count > 1)
             {
                 result.Add(section);
             }
@@ -70,6 +79,11 @@ public static class HomeLayout
             {
                 result.Add(new HomeSection(null, section.Tiles));
             }
+        }
+
+        if (plugins.Count > 0)
+        {
+            result.Add(new HomeSection(PluginsTitle, plugins));
         }
 
         return result;

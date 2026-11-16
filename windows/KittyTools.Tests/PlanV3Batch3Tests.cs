@@ -57,10 +57,12 @@ public sealed class SnippetRulesTests
     public void ClipboardUsesCurrentThenHistory()
     {
         Assert.AreEqual("CURRENT", Expand("{clipboard}").Text);
-        Assert.AreEqual("CURRENT", Expand("{clipboard:1}").Text);
+        // 2026-11-16 照 mac 改（REVIEW R86）：{clipboard:N} 是历史第 N 条（1 = 最近一条），不再是「1 = 剪贴板」；
+        // {clipboard} 只看剪贴板，空的不再退回历史
+        Assert.AreEqual("newest", Expand("{clipboard:1}", "CURRENT", "newest").Text);
         Assert.AreEqual("older", Expand("{clipboard:2}", "CURRENT", "CURRENT", "older").Text);
         Assert.AreEqual(string.Empty, Expand("{clipboard:9}", "CURRENT", "CURRENT").Text);
-        Assert.AreEqual("first", Expand("{clipboard}", string.Empty, "first").Text);
+        Assert.AreEqual(string.Empty, Expand("{clipboard}", string.Empty, "first").Text);
     }
 
     [TestMethod]

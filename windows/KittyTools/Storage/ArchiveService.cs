@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.Json;
 using KittyTools.Core;
 using KittyTools.Core.Notes;
+using KittyTools.Core.Sync;
 using KittyTools.Infrastructure;
 
 namespace KittyTools;
@@ -632,8 +633,34 @@ internal static class ArchiveService
         }
 
         using var document = JsonDocument.Parse(stream.ToArray());
-        return document.RootElement.EnumerateObject()
+        var preferences = document.RootElement.EnumerateObject()
             .ToDictionary(property => property.Name, property => property.Value.Clone());
+
+        // REVIEW R84：同步那张表（PLAN-v21，A、B、C 组）里的每一项都带上，以后新加的设置只登记一处。键是同步的编号（pref:… / win:…），
+        // 值是同步记录里那一段的原文（写成字符串，读回来一字不差；换算和范围检查走同步同一条路）。上面那些旧键名照留（旧版本、旧单测认）。
+        foreach (var key in SettingsSyncMap.Shared.Concat(SettingsSyncMap.WindowsOnly))
+        {
+            if (SettingsSyncFields.Read(settings, key) is { } value && key.Outgoing(value) is { } wire)
+            {
+                preferences[key.Id] = JsonSerializer.SerializeToElement(wire, ArchiveStringContext.Default.String);
+            }
+        }
+
+        return preferences;
+    }
+
+    /// <summary>导入时同步表里的那几项（R84）：文件里有哪项落哪项，过同步的换算和范围检查；落不下的跳过。</summary>
+    private static void ApplySyncPreferences(Dictionary<string, JsonElement> preferences, Settings settings)
+    {
+        foreach (var (id, element) in preferences)
+        {
+            if (element.ValueKind == JsonValueKind.String &&
+                (SettingsSyncMap.FindShared(id) ?? SettingsSyncMap.FindWindows(id)) is { } key &&
+                key.Incoming(element.GetString()!) is { } value && SettingsSyncFields.Accept(key, value))
+            {
+                SettingsSyncFields.Write(settings, key, value);
+            }
+        }
     }
 
     private static void ApplyPreferences(Dictionary<string, JsonElement>? preferences)
@@ -828,6 +855,7 @@ internal static class ArchiveService
             }
         }
 
+        ApplySyncPreferences(preferences, settings);
         SettingsService.Save();
         Theme.ApplyAccent();
     }
@@ -949,6 +977,12 @@ internal static class ArchiveService
             }
         }
     }
+}
+
+/// <summary>导出时把同步记录的原文写成 JSON 字符串（AOT 下不用反射）。</summary>
+[System.Text.Json.Serialization.JsonSerializable(typeof(string))]
+internal sealed partial class ArchiveStringContext : System.Text.Json.Serialization.JsonSerializerContext
+{
 }
 
 /// <summary>能分开勾选的七类（PLAN-v13 加了便签）。</summary>

@@ -32,6 +32,21 @@ public sealed class StatusEmojiKeyTests
     }
 
     [TestMethod]
+    public void OnlyWhatMacCallsEmoji()
+    {
+        // REVIEW R86 的观察：只收 mac 也认的（mac StatusEmoji.isCustom：一个码位的要默认画成表情，多个码位的首字是表情）
+        foreach (var emoji in new[] { "⭐", "⌚", "☕", "✅", "✈️", "☀️", "⚡" })
+        {
+            Assert.IsTrue(StatusEmojiCatalog.IsCustom(emoji), emoji);
+        }
+
+        foreach (var text in new[] { "★", "☆", "✈", "☀", "♪", "→", "※", "✓" })
+        {
+            Assert.IsFalse(StatusEmojiCatalog.IsCustom(text), text);
+        }
+    }
+
+    [TestMethod]
     public void EmojiGoesInTheEmojiKey()
     {
         var tea = StatusPresets.BuiltIn()[2].Copy();

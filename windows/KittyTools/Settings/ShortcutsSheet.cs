@@ -46,12 +46,13 @@ internal static class ShortcutsSheet
         ("clipboard", "剪贴板", FeatureIcons.Clipboard),
         ("launcher", "启动器", FeatureIcons.Launcher),
         ("translate", "翻译", FeatureIcons.Translate),
-        ("screenshot", "截图与录制", FeatureIcons.Screenshot),
+        ("screenshot", "截图", FeatureIcons.Screenshot),
+        ("record", "录制", FeatureIcons.Record),
         ("notes", "便签", FeatureIcons.Notes),
-        ("statusScreen", "状态屏", FeatureIcons.StatusScreen),
         ("reminders", "提醒", FeatureIcons.Reminders),
+        ("statusScreen", "状态屏", FeatureIcons.StatusScreen),
         ("keepAwake", "保持唤醒", FeatureIcons.KeepAwake),
-        ("general", "设置窗", FeatureIcons.General),
+        ("general", "通用", FeatureIcons.General),
     };
 
     /// <summary>在设置窗上弹出速查表，停在 <paramref name="page"/> 那一类（不是这几类的停在第一类）。</summary>
@@ -326,7 +327,7 @@ internal static class ShortcutsSheet
         "clipboard" => "clipboard",
         "launcher" => "launcher",
         "translate" => "translate",
-        "screenshot" => "capture",
+        "screenshot" or "record" => "capture",
         "notes" => "notes",
         "statusScreen" => "statusScreen",
         "reminders" => "reminders",
@@ -522,7 +523,7 @@ internal static class ShortcutsSheet
             new("O", "识字并拷贝"),
             new("Esc", "双击", "关闭"),
         }),
-        new("screenshot", "录制", "capture", FeatureIcons.Record, new[] { HotKeyActions.Record, HotKeyActions.Audio }, new ShortcutEntry[]
+        new("record", "录制", "capture", FeatureIcons.Record, new[] { HotKeyActions.Record, HotKeyActions.Audio }, new ShortcutEntry[]
         {
             new("Esc", "倒数的时候取消"),
         }),

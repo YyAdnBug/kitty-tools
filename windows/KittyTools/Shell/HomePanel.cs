@@ -38,8 +38,6 @@ namespace KittyTools;
 internal sealed class HomePanel : Window
 {
     // 托盘菜单里那几项（不是全局动作）的 id。
-    private const string PauseClipboard = "extra:pause-clipboard";
-    private const string CopyTranslate = "extra:copy-translate";
     private const string PinsToggle = "extra:pins-toggle";
     private const string PinsClose = "extra:pins-close";
 
@@ -337,11 +335,6 @@ internal sealed class HomePanel : Window
             first.Add(Global(HotKeyActions.Launcher, "启动器"));
         }
 
-        if (clipboard)
-        {
-            first.Add(new HomeTile(PauseClipboard, "暂停记录剪贴板", Glyphs.Pause, "clipboard", IsOn: runtime?.Clipboard?.Paused == true));
-        }
-
         yield return new HomeSection(clipboard && launcher ? "剪贴板与启动器" : clipboard ? "剪贴板" : "启动器", first);
 
         var second = new List<HomeTile>();
@@ -350,12 +343,8 @@ internal sealed class HomePanel : Window
             second.Add(Global(HotKeyActions.SelectionTranslate, "划词翻译"));
             second.Add(Global(HotKeyActions.InputTranslate, "输入翻译"));
             second.Add(Global(HotKeyActions.TranslateReplace, "划词翻译并替换"));
-            if (screenshot)
-            {
-                second.Add(Global(HotKeyActions.ScreenshotTranslate, "截图翻译"));
-            }
-
-            second.Add(new HomeTile(CopyTranslate, "复制即译", Glyphs.Copy, "translate", IsOn: SettingsService.Current.CopyTranslate));
+            // 截图翻译归翻译（mac HotKeyAction.feature），截图关着照样在（REVIEW R90）
+            second.Add(Global(HotKeyActions.ScreenshotTranslate, "截图翻译"));
         }
 
         yield return new HomeSection("翻译", second);
@@ -374,9 +363,9 @@ internal sealed class HomePanel : Window
             third.Add(Global(HotKeyActions.Audio, AudioHost.IsRecording ? "停止录音" : "录音"));
         }
 
+        // 「钉住剪贴板内容」不列（剪贴板历史面板里就能钉，mac Home.unlisted，REVIEW R88）
         if (screenshot)
         {
-            third.Add(Global(HotKeyActions.PinClipboard, "钉住剪贴板内容"));
             third.Add(Global(HotKeyActions.ShotHistory, "截图历史"));
             if (PinHost.Count > 0)
             {
@@ -385,7 +374,7 @@ internal sealed class HomePanel : Window
             }
         }
 
-        yield return new HomeSection(screenshot && recording ? "截图与录制" : screenshot ? "截图" : "录屏", third);
+        yield return new HomeSection(screenshot && recording ? "截图与录制" : screenshot ? "截图" : "录制", third);
 
         // 便签（PLAN-v13）：三格，同 mac 那一节（快速记一条、新建便签、全部便签），排在截图与录制后面、提醒和状态屏前面。
         if (Features.IsOn(Feature.Notes))
@@ -398,16 +387,16 @@ internal sealed class HomePanel : Window
             });
         }
 
+        // 提醒（PLAN-v12 N6）：一格「新建提醒」，同它的快捷键（打开启动器填好「提醒 」）。便签 → 提醒 → 状态屏（mac 处处这个先后，REVIEW R90）。
+        if (Features.IsOn(Feature.Reminders))
+        {
+            yield return new HomeSection("提醒", new[] { Global(HotKeyActions.ReminderNew, "新建提醒") });
+        }
+
         // 状态屏（PLAN-v12 N5）：一格，同它的快捷键（先出选状态的面板）；只有一格的节不画标题、和别的单格节并成一行（HomeLayout）。
         if (Features.IsOn(Feature.StatusScreen))
         {
             yield return new HomeSection("状态屏", new[] { Global(HotKeyActions.StatusScreen, "状态屏") });
-        }
-
-        // 提醒（PLAN-v12 N6）：一格「新建提醒」，同它的快捷键（打开启动器填好「提醒 」）。
-        if (Features.IsOn(Feature.Reminders))
-        {
-            yield return new HomeSection("提醒", new[] { Global(HotKeyActions.ReminderNew, "新建提醒") });
         }
 
         // 保持唤醒（插件，PLAN-v20 K1）：一格，同它的快捷键（开无限期 / 停止；开着时叫「停止保持唤醒」，mac ActionState.awake）。
@@ -416,7 +405,7 @@ internal sealed class HomePanel : Window
             yield return new HomeSection("保持唤醒", new[]
             {
                 Global(HotKeyActions.KeepAwake, KeepAwakeHost.HasSession ? "停止保持唤醒" : "保持唤醒"),
-            });
+            }, Plugin: true); // 收进最后一节「插件」（REVIEW R88）
         }
     }
 
@@ -492,16 +481,11 @@ internal sealed class HomePanel : Window
         ShowSelection();
     }
 
-    /// <summary>一格：色块（开关是圆）+ 名字 + 快捷键（开关这一行写「已暂停」「已开启」）。开关是 ToggleButton（读屏念开 / 关）。</summary>
+    /// <summary>一格：色块 + 名字 + 快捷键。</summary>
     private ButtonBase TileView(HomeTile tile, int index)
     {
-        var detail = tile.Id switch
-        {
-            PauseClipboard => tile.IsOn == true ? "已暂停" : string.Empty,
-            CopyTranslate => tile.IsOn == true ? "已开启" : string.Empty,
-            _ => tile.Key ?? string.Empty,
-        };
-        var icon = Icon(tile);
+        var detail = tile.Key ?? string.Empty;
+        var icon = KindTile.Create(tile.Family, tile.Glyph, 30);
         icon.HorizontalAlignment = HorizontalAlignment.Center;
         icon.Margin = new Thickness(0, 9, 0, 0);
         var stack = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center };
@@ -535,13 +519,13 @@ internal sealed class HomePanel : Window
         {
             Text = detail,
             FontSize = Theme.FontSize("Kitty.FontSize.KeyCap"),
-            Foreground = tile.IsOn == true ? new SolidColorBrush(Theme.AccentTextColor) : Theme.TertiaryText(),
+            Foreground = Theme.TertiaryText(),
             Height = 15,
             HorizontalAlignment = HorizontalAlignment.Center,
             Margin = new Thickness(0, 1, 0, 0),
         });
 
-        ButtonBase button = tile.IsOn is { } on ? new ToggleButton { IsChecked = on } : new Button();
+        ButtonBase button = new Button();
         Flatten(button);
         button.Content = stack;
         button.Width = HomeLayout.TileWidth;
@@ -569,35 +553,6 @@ internal sealed class HomePanel : Window
 
         _tileViews.Add(button);
         return button;
-    }
-
-    private static FrameworkElement Icon(HomeTile tile)
-    {
-        if (tile.IsOn is not { } on)
-        {
-            return KindTile.Create(tile.Family, tile.Glyph, 30);
-        }
-
-        // 开关：圆，关着中性底、开着强调色（同 mac）。
-        return new Border
-        {
-            Width = 30,
-            Height = 30,
-            CornerRadius = new CornerRadius(15),
-            Background = on
-                ? new SolidColorBrush(Theme.AccentColor)
-                : Theme.Brush("Kitty.Fill.Control", Theme.Argb(15, 128, 128, 128)),
-            Child = new FontIcon
-            {
-                Glyph = tile.Glyph,
-                FontSize = 14,
-                Foreground = on
-                    ? new SolidColorBrush(Theme.OnAccentColor)
-                    : Theme.PrimaryText(),
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-            },
-        };
     }
 
     /// <summary>按钮的底、边、字在各状态都换成平的：平时透明、悬停 fill.hover、按下 fill.selected（要在套模板之前放进 Resources）。</summary>
@@ -872,7 +827,7 @@ internal sealed class HomePanel : Window
         OverlayHost.Show(OverlayKind.Launcher);
     }
 
-    /// <summary>点了 / 按了第 index 格：开关原地切（不收、不弹轻提示）；别的先收起、还前台，再做（要拍屏幕的再等 300 ms）。</summary>
+    /// <summary>点了 / 按了第 index 格：先收起、还前台，再做（要拍屏幕的再等 300 ms）。</summary>
     private async void Run(int index)
     {
         if (index < 0 || index >= _tiles.Count)
@@ -882,20 +837,6 @@ internal sealed class HomePanel : Window
 
         var tile = _tiles[index];
         var runtime = ShellRuntime.Instance;
-        switch (tile.Id)
-        {
-            case PauseClipboard:
-                runtime?.TogglePauseClipboard(quiet: true);
-                Rebuild(appearing: false);
-                RefocusSelection();
-                return;
-            case CopyTranslate:
-                runtime?.ToggleCopyTranslate(quiet: true);
-                Rebuild(appearing: false);
-                RefocusSelection();
-                return;
-        }
-
         HideSelf(restoreForeground: true);
         var capture = tile.Id is HotKeyActions.Screenshot or HotKeyActions.ScreenshotLast or HotKeyActions.Ocr
                           or HotKeyActions.ScreenshotTranslate ||

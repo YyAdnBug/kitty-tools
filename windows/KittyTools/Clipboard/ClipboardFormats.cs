@@ -311,6 +311,24 @@ internal static unsafe partial class ClipboardFormats
     /// 标了隐私的（密码管理器：ExcludeClipboardContentFromMonitorProcessing、CanIncludeInClipboardHistory = 0）不钉，不把密码明着摆在
     /// 屏幕上（同剪贴板历史不记它）；首尾空行去掉、缩进留着，只有空白 → null。只读。
     /// </summary>
+    /// <summary>剪贴板里此刻的文字（片段的 {clipboard}，同 mac 读 NSPasteboard 的字符串）；密码管理器标了不记录的不读。</summary>
+    public static string? CurrentText()
+    {
+        if (!OpenClipboard())
+        {
+            return null;
+        }
+
+        try
+        {
+            return Has(CF_UNICODETEXT) && !IsPrivateCore() ? ReadText() : null;
+        }
+        finally
+        {
+            PInvoke.CloseClipboard();
+        }
+    }
+
     public static string? ReadTextForPin()
     {
         if (!OpenClipboard())

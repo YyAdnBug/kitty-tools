@@ -19,7 +19,7 @@ internal sealed partial class SettingsWindow
 {
     private void BuildStatusScreen()
     {
-        _content.Children.Add(Header("状态屏", "盖住屏幕、拦住键盘鼠标的告示"));
+        _content.Children.Add(Header("状态屏", "拦住键盘鼠标的全屏告示：有哪些状态、各是什么样子、怎么退出"));
         AddFeatureToggle(Feature.StatusScreen);
         var settings = SettingsService.Current;
         var presets = StatusScreenHost.Presets;

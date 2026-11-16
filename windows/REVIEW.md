@@ -53,8 +53,9 @@
 - **状态屏的状态**：`symbol` / `emoji` / `pack:` 一致。
 - **密钥加密**：PBKDF2 60 万轮 + AES-GCM + `routing`，一字不差。
 
-#### R80（P1）mac 读不了任何一份 Windows 导出的文件
+#### R80（P1）mac 读不了任何一份 Windows 导出的文件 → 已修
 
+- **已修**：`1c0a0203`。Windows 写的文件补了 mac 的必填字段，设置和快捷键改进 windowsPreferences / windowsHotkeys；单测 ArchiveInteropTests 用 Core ArchiveMacCheck（照 mac 解码规则）逐项查写出去的文件，--settings-probe 角色 e 查真的 Build（七类）。真 Mac 没导过。
 - **mac 读文件的规则**：解码时有几样是必填的（`Storage/SettingsArchive.swift:284-288`），缺任何一样整份读不出，提示「文件读不出来」（`:551-569`）：
   - `version`、`exportedAt`；
   - `hotkeys` 的值是 `{keyCode, modifiers}` 对象；
@@ -73,8 +74,9 @@
   - **Windows 的设置和快捷键改写进 `windowsPreferences` / `windowsHotkeys`**：mac 不认识的键直接忽略，也就不会出这两类的勾。读的时候 `platform == windows` 且只有旧键的，照旧当 Windows 的读。
   - 单测：写出去的文件按上面 mac 的必填字段逐项查一遍。
 
-#### R81（P1）Windows 读不了 Mac 上改过快捷键的人导出的文件
+#### R81（P1）Windows 读不了 Mac 上改过快捷键的人导出的文件 → 已修
 
+- **已修**：`1c0a0203`。hotkeys 改成 JsonElement，mac 的对象形式读得进来、不当 Windows 的快捷键导；单测用对象快捷键（含 shot.<名>、null）的 mac 样本 Fixtures/mac-archive-9acd4306.json。
 - mac 改过任何一个全局快捷键或截图时的键（`shot.<名>`），`hotkeys` 里就是对象（`SettingsArchive.swift:373-384`）。
 - Windows 把它定成 `Dictionary<string, string?>`（`KittyTools.Core/SettingsArchive.cs:47-48`），读到对象就抛 `JsonException`：
   - `ArchiveService.Decode` 返回 null（`:141-159`）；
@@ -85,8 +87,9 @@
   - 改成 `Dictionary<string, JsonElement>?`，只在是 Windows 的文件时才按字符串解；
   - 单测样本里加上对象形式的 `hotkeys`。
 
-#### R82（P1）从 Mac 导入时，网页搜索、服务开关、状态和提醒都丢
+#### R82（P1）从 Mac 导入时，网页搜索、服务开关、状态和提醒都丢 → 已修
 
+- **已修**：`1c0a0203`。搜索读 urlTemplate / enabled、不再要求 {query}，服务读 isEnabled，mac 的 statusScreenPresets / reminders 按 id 合并；probe 角色 e 走真的 Apply 导 mac 样本，四样都在。
 - **网页搜索整类丢**：
   - `Sanitized` 要求 `Url` 不为空、而且含 `{query}`（`KittyTools.Core/SettingsArchive.cs:210-219`）；
   - mac 的条目只有 `urlTemplate`，全被筛掉，也不报错；
@@ -101,8 +104,9 @@
   - 服务读 `isEnabled`（没有退回 `enabled`）；
   - mac 的文件里只单拿 `statusScreenPresets`、`reminders` 两个键走合并，别的设置照旧跳过。
 
-#### R83（P1）翻译浮窗「跟随鼠标」两边存的值不一样，同步过去都落成「屏幕上方」
+#### R83（P1）翻译浮窗「跟随鼠标」两边存的值不一样，同步过去都落成「屏幕上方」 → 已修
 
+- **已修**：`1c0a0203`。存 mouse，读设置时 pointer 换掉，同步发出去前也换（Core PanelPositions）；单测 PanelPositionsTests（同步表往返）。
 - **mac** 存 `mouse`：`App/AppDelegate.swift:1975-1977`，认不出的按 top。
 - **Windows** 存 `pointer`：设置页 `Settings/SettingsWindow.Translate.cs:136`、浮窗 `Translate/TranslateWindow.cs:569-574`、`App/Settings.cs:126`。
 - 同步表按 `top / mouse / last` 收（`KittyTools.Core/Sync/SettingsSyncMap.cs:69`、`:159`），出去的时候原样（`Same`）：
@@ -122,8 +126,9 @@
 - 同步（PLAN-v21 的 `Storage/SettingsSyncFields.cs`）倒是都带，现在导出和同步各管各的一份表。
 - **修**：导出导入改用 `SettingsSyncFields` 那张表（A、B、C 组都写进 R80 说的 `windowsPreferences`），以后新加设置只登记一处。截图工具栏的键（`shotKeys`）照旧。
 
-#### R85（P2）导出文件的细处
+#### R85（P2）导出文件的细处 → 已修
 
+- **已修**：`1c0a0203`。格式更新单独说「先更新再导入」、写文件不转义中文、时间到秒带 Z；单测 SaysWhyAFileCannotBeRead、WindowsFileHasEveryFieldMacRequires。
 - **格式比自己新**：Windows 直接当「不是导出文件」（`ArchiveService.cs:146-150`）；mac 说「来自更新版本，先更新再导入」（`SettingsArchive.swift:247`、`:569`）。修：`app` 对上、`format` 更大时单独说这句。
 - **转义**：`ArchiveJsonContext`（`KittyTools.Core/SettingsArchive.cs:253-256`）用默认编码器，中文、表情全写成 `\uXXXX`，人读不了，中文体积约是 mac 的两倍，离 32 MB 上限更近。修：换成不转义非 ASCII 的编码器（`JavaScriptEncoder.UnsafeRelaxedJsonEscaping` 只用在写文件这一处）。
 - **时间写法**：`copiedAt` / `createdAt` 写成带毫秒的 `+00:00`（`ArchiveService.cs:223`、`:243`）；mac 写到秒的 `Z`。macOS 27 实测读得了，15 上没验。修：截到秒、写 `Z`。
@@ -150,8 +155,9 @@
 
 ### 待修：两边都有、但没对齐（漏的）
 
-#### R87（P1）框选吸附横竖弄反了
+#### R87（P1）框选吸附横竖弄反了 → 已修
 
+- **已修**：`1c0a0203`。Core RegionMath.SnapEdges / SnapPoint，单测 SnapEdgesTests（窗口右边、下边、屏幕上边吸得上，横坐标不吸窗口上边）；真拖没走。
 - 毛病在 `Screenshot/SelectionOverlayWindow.cs:2775-2791`：
   - 边列表按「屏 0、W、0、H，然后每扇窗口 左、右、上、下」排，再按下标奇偶分成 x、y 两组；
   - 结果 x 吸的是 {0, 0, 左, 上}，y 吸的是 {W, H, 右, 下}；
