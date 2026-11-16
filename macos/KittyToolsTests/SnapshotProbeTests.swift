@@ -1110,10 +1110,14 @@ struct SnapshotProbeTests {
       IslandView(island: card), size: notch.windowSize, dark: false,
       to: "\(out)/island-wings-card.png")
     // 保持唤醒手动开的那一段（刘海岛完善 D1）：左耳杯子、右耳倒数；点开的卡片上「停止」
+    // 一小时以上耳朵上写「N小时」（2026-11-16）：「1小时」「15小时」（12 pt 放不下、缩到 10）、一小时以内照旧按秒倒数
     let awake = KeepAwake.activity(until: .now.addingTimeInterval(3600), display: true) {}
-    try snapshot(
-      IslandView(island: Island(showing: nil, geometry: notch, activities: [awake])),
-      size: notch.windowSize, dark: false, to: "\(out)/island-wings-awake.png")
+    for (name, seconds) in [("", 3600.0), ("-long", 15 * 3600.0), ("-minutes", 42 * 60.0)] {
+      let shown = KeepAwake.activity(until: .now.addingTimeInterval(seconds), display: true) {}
+      try snapshot(
+        IslandView(island: Island(showing: nil, geometry: notch, activities: [shown])),
+        size: notch.windowSize, dark: false, to: "\(out)/island-wings-awake\(name).png")
+    }
     let awakeCard = Island(showing: nil, geometry: notch, activities: [awake])
     awakeCard.tapped()
     try snapshot(

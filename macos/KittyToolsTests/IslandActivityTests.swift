@@ -1,7 +1,7 @@
 // 刘海岛的活动（2026-11-13，刘海岛扩展 B1–B3）：耳朵上露哪一个、读数怎么写，和岛在有活动时的几种状态。
 // 用摆出来的岛（Island(showing:…)）：从头到尾不建窗口。
 
-import CoreGraphics
+import AppKit
 import Foundation
 import Testing
 
@@ -55,6 +55,27 @@ struct IslandActivityTests {
     #expect(reading(.none) == nil)
     #expect(activity("a", .record, trailing: .elapsed(since: now)).ticks)
     #expect(!activity("a", .progress, trailing: .fraction(0.3)).ticks)
+  }
+
+  /// 耳朵上的字（2026-11-16）：倒数一小时以上写「N小时」（往下取整），一小时以内照旧按秒倒数；正计时、百分比不变。
+  /// 字号按排出来的宽度挑：12 pt 放不下 36 pt 的耳朵才缩到 10 pt
+  @Test func wingReadings() {
+    let now = Date(timeIntervalSince1970: 10_000)
+    let wing = { Island.Activity.wingReading($0, now: now) }
+    #expect(wing(.countdown(to: now.addingTimeInterval(4 * 3600 + 3599))) == "4小时")
+    #expect(wing(.countdown(to: now.addingTimeInterval(3600))) == "1小时")
+    #expect(wing(.countdown(to: now.addingTimeInterval(3599))) == "59:59")
+    #expect(wing(.countdown(to: now.addingTimeInterval(15 * 3600))) == "15小时")
+    #expect(wing(.elapsed(since: now.addingTimeInterval(-3723))) == "1:02:03")
+    #expect(wing(.fraction(0.376)) == "37%")
+    // 精确的那份（卡片、菜单栏、读屏）不变
+    #expect(
+      Island.Activity.reading(.countdown(to: now.addingTimeInterval(3600)), now: now) == "1:00:00")
+    let size = { IslandWings.font(for: $0).pointSize }
+    #expect(size("59:59") == 12 && size("4小时") == 12 && size("0:42") == 12)
+    #expect(size("15小时") == 10 && size("1:02:03") == 10)
+    #expect(
+      TickerView.measure("15小时", font: IslandWings.font(for: "15小时")).size.width <= Island.wing)
   }
 
   /// 刘海屏：有活动就露耳朵，全结束就收；同一个编号再来一次原地换、开始的时刻不变

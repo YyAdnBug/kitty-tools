@@ -27,11 +27,11 @@ extension Island {
     enum Trailing: Equatable {
       /// 从这一刻起往上数（录制）
       case elapsed(since: Date)
-      /// 倒数到这一刻（提醒）
+      /// 倒数到这一刻（提醒、保持唤醒；耳朵上一小时以上写「4小时」，见 wingReading）
       case countdown(to: Date)
       /// 做到哪了 0…1（长任务）：右耳写百分比，左耳画一圈进度
       case fraction(Double)
-      /// 定死的一小段字（暂停时的「0:42」、保持唤醒的「1 小时」）
+      /// 定死的一小段字（暂停时的「0:42」）
       case text(String)
       case none
     }
@@ -92,6 +92,17 @@ extension Island {
       case .text(let text): text
       case .none: nil
       }
+    }
+
+    /// 耳朵上的字：倒数还剩一小时以上写「4小时」（往下取整，同钟表；不带空格，省地方）——「1:00:00」10 pt 也要 40 pt 宽，
+    /// 耳朵只有 36（保持唤醒一开就是几个小时，2026-11-16 截图自检看出来的）。卡片、菜单栏那一项、读屏照旧是 reading 的精确倒数。
+    /// 正计时（录屏超过一小时的「1:02:03」）不改：录着时要看秒在走
+    static func wingReading(_ trailing: Trailing, now: Date) -> String? {
+      if case .countdown(let end) = trailing {
+        let seconds = Int(end.timeIntervalSince(now).rounded(.up))
+        if seconds >= 3600 { return "\(seconds / 3600)小时" }
+      }
+      return reading(trailing, now: now)
     }
 
     /// 这一个的读数每秒在变（耳朵露着时要每秒推一次）
@@ -233,9 +244,9 @@ struct IslandWings: View {
     } else if activity.ticks {
       // 只在耳朵露着时每秒推一次；Ticker 只换变了的那几位数字（图层动画，渲染服务做）
       TimelineView(.periodic(from: .now, by: 1)) { context in
-        reading(Island.Activity.reading(activity.trailing, now: context.date) ?? "")
+        reading(Island.Activity.wingReading(activity.trailing, now: context.date) ?? "")
       }
-    } else if let text = Island.Activity.reading(activity.trailing, now: .now) {
+    } else if let text = Island.Activity.wingReading(activity.trailing, now: .now) {
       reading(text)
     }
   }
@@ -246,9 +257,12 @@ struct IslandWings: View {
       direction: Style.reduceMotion ? 0 : (activity.trailing.isCountdown ? -1 : 1))
   }
 
-  /// 12 pt 等宽数字，放不下（「1:02:03」）就缩到 10
+  /// 12 pt 等宽数字，一只耳朵放不下（「1:02:03」「15小时」）就缩到 10。按排出来的宽度挑，不按字数：「15小时」只有
+  /// 4 个字，12 pt 却要 41 pt
   static func font(for text: String) -> NSFont {
-    .monospacedDigitSystemFont(ofSize: text.count > 5 ? 10 : 12, weight: .semibold)
+    let regular = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
+    return TickerView.measure(text, font: regular).size.width <= Island.wing
+      ? regular : .monospacedDigitSystemFont(ofSize: 10, weight: .semibold)
   }
 }
 

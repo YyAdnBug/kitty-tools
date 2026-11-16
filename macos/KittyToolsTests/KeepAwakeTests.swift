@@ -166,6 +166,9 @@ struct KeepAwakeTests {
     #expect(timed.trailing == .countdown(to: end) && timed.detail == "屏幕也不熄")
     #expect(
       Island.Activity.reading(timed.trailing, now: end.addingTimeInterval(-3600)) == "1:00:00")
+    // 耳朵上写整点的小时（36 pt 放不下「1:00:00」）
+    #expect(
+      Island.Activity.wingReading(timed.trailing, now: end.addingTimeInterval(-7199)) == "1小时")
     #expect(timed.actions.map(\.title) == ["停止"])
     timed.actions.first?.run()
     #expect(stopped == 1)
