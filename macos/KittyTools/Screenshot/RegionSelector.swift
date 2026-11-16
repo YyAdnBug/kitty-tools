@@ -2,7 +2,8 @@
 // - 截图翻译 / 识字 select：拖动框选（⇧ 正方形、⌥ 从中心、空格平移、吸附窗口边），松手确认，Esc / 右键取消；
 // - 截图 capture：悬停高亮窗口，或窗口里指针下的元素（设置 › 截图开着、有辅助功能授权时：滚轮换大小、Tab 只认窗口，
 //   ElementFinder）/ 单击截下那一块、确认后可调整选区和标注，↩ 复制、⌘S 保存、⇧⌘S 另存为、T 钉图、
-//   S 长截图、工具栏识字 / 翻译，C 复制放大镜中心的色值，D 选中上次的区域；
+//   S 长截图、工具栏识字 / 翻译，C 复制放大镜中心的色值，D 选中上次的区域；⌥S 盖回截图的截图翻译（autoTranslate）
+//   也走它，悬停、认元素同截图，框完松手 / 单击选中就直接翻；
 // - 录屏 record：框选同截图（悬停、单击窗口 / 整屏、调整、尺寸胶囊、D），没有标注和出图键，↩ / 双击 / 录制条的 ● 交回选区；
 //   截图调整时按 R / 工具栏「录屏」也会切到它（选区不变，录屏第 2 批）。
 // 遮罩是不激活前台的 NSPanel（和 OverlayPanel 一样不抢前台 App），会话结束立即 orderOut 释放，不常驻
@@ -59,14 +60,14 @@ enum RegionSelector {
   /// recordingBlocker 见 SelectionSession
   static func capture(
     _ shots: [ScreenCapture.Shot], lastRegion: CGRect?, preselect: Bool,
-    hint: String? = nil, autoTranslate: Bool = false,
+    autoTranslate: Bool = false,
     recordingBlocker: @escaping () -> (title: String, detail: String)? = { nil },
     translate: ((CGImage, CGFloat) async -> ScreenshotOverlay.Outcome)? = nil
   ) async -> Outcome? {
-    let session = SelectionSession(
-      mode: .capture, hint: hint ?? "", lastRegion: lastRegion)
-    // ⌥S 截图翻译（autoTranslate）照拍板 C3 不认元素：它的顶部提示也没写滚轮和 Tab
-    session.findsElements = !autoTranslate && SelectionSession.elementsAllowed
+    let session = SelectionSession(mode: .capture, lastRegion: lastRegion)
+    // ⌥S 盖回截图的截图翻译（autoTranslate）也认元素（2026-11-16 用户：悬停框出那一块、单击就翻它，同截图）。
+    // 拍板 C3「截图翻译不加」说的是没有悬停的那条（select），这条本来就有窗口悬停
+    session.findsElements = SelectionSession.elementsAllowed
     session.wakesWebContent = session.findsElements && SelectionSession.webElementsAllowed
     session.preselectsLastRegion = preselect
     session.recordingBlocker = recordingBlocker
@@ -362,7 +363,7 @@ enum RegionSelector {
 final class SelectionSession {
   /// 截图调整时按 R 切成录屏（SelectionView.switchToRecording），其余一直不变
   var mode: SelectionView.Mode
-  /// 松手即确认时屏幕上方的提示，几段之间用「 · 」隔开（截图、录屏模式自己拼）
+  /// 松手即确认时屏幕上方的提示，几段之间用「 · 」隔开（截图、录屏、⌥S 模式自己拼）
   let hint: String
   /// 上次截图的区域（全局坐标）
   let lastRegion: CGRect?
@@ -374,7 +375,7 @@ final class SelectionSession {
   /// 工具栏「翻译」的就地翻译（AppDelegate 给）：给选区的图，交回覆盖了译文的图；失败时带一句原因。
   /// nil = 没有翻译能力，点翻译时退回原来的「收起遮罩、翻完再开编辑窗」
   var translate: ((CGImage, CGFloat) async -> ScreenshotOverlay.Outcome)?
-  /// 框完松手就直接翻（⌥S：截图翻译 = 截图 + 自动点「翻译」）
+  /// 框完松手、单击选中就直接翻（⌥S：截图翻译 = 截图 + 自动点「翻译」）
   var autoTranslates = false
   /// 尺寸胶囊里锁着的比例（宽 / 高，RegionSelector.ratios 里的一个）：之后框选、拖边都按它，选「自由」解锁。整个会话共用
   var lockedRatio: CGFloat?
@@ -441,10 +442,7 @@ final class SelectionSession {
     self.continuation = continuation
     overlays = shots.map { SelectionOverlay(shot: $0, session: self) }
     views = overlays.map(\.selectionView)
-    for view in views {
-      view.translateHandler = translate
-      view.autoTranslates = autoTranslates
-    }
+    for view in views { view.translateHandler = translate }
     guard !overlays.isEmpty else { return finish(nil) }
     for overlay in overlays { overlay.orderFrontRegardless() }
     // 鼠标不动时收不到 mouseMoved：先设一次十字光标

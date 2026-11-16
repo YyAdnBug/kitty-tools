@@ -605,6 +605,47 @@ struct SelectionInteractionTests {
     #expect(h.view.accessibilityLabel() == "待选，组 300 × 30 像素")
   }
 
+  // ⌥S 盖回截图的截图翻译也认元素（2026-11-16 用户：悬停框出那一块、单击就翻它）：提示里有单击、滚轮、Tab；
+  // 单击用停着的那层去翻（交给翻译的正是那一块），翻完图上贴了译文；不认元素时单击翻整扇窗口
+  @Test func autoTranslateClickTranslatesHoveredElement() async throws {
+    let window = CGRect(x: 100, y: 100, width: 600, height: 500)
+    let row = CGRect(x: 120, y: 300, width: 300, height: 30)
+    let context = try #require(
+      CGContext(
+        data: nil, width: 40, height: 30, bitsPerComponent: 8, bytesPerRow: 0,
+        space: CGColorSpace(name: CGColorSpace.sRGB)!,
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+    context.fill(CGRect(x: 0, y: 0, width: 40, height: 30))
+    let patch = try #require(context.makeImage())
+    for elements in [true, false] {
+      let session = SelectionSession(mode: .capture)
+      session.autoTranslates = true
+      let h = Harness(
+        windows: [window], owners: [[4242]], findsElements: elements, session: session)
+      if elements { _ = h.fakeElements([row, window], names: ["行", "窗口"]) }
+      var asked: [CGSize] = []
+      h.view.translateHandler = { image, _ in
+        asked.append(CGSize(width: image.width, height: image.height))
+        return .init(image: patch)
+      }
+      let original = h.view.image
+      let parts = h.view.accessibilityHelp()?.components(separatedBy: Island.comma) ?? []
+      #expect(
+        parts
+          == ["拖动框选要翻译的文字"]
+          + (elements ? ["单击翻译", "滚轮 换大小", "Tab 只认窗口"] : ["单击翻译窗口"]) + ["Esc 取消"])
+      h.move(CGPoint(x: 200, y: 312))
+      h.click(CGPoint(x: 200, y: 312))
+      let picked = elements ? row : window
+      #expect(h.view.selection == picked)
+      for _ in 0..<500 where h.view.image === original {
+        try await Task.sleep(for: .milliseconds(10))
+      }
+      #expect(asked == [picked.size])
+      #expect(h.view.image !== original)
+    }
+  }
+
   // 问超时的 App 这次框选不再问、只认窗口；本 App 自己的窗口不问；不认元素时提示照旧
   @Test func silentAppsAndOwnWindowsStayWindowOnly() {
     let window = CGRect(x: 100, y: 100, width: 600, height: 500)

@@ -2213,8 +2213,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   /// 截图翻译（⌥S）。默认：冻结各屏 → 框选 → 本机识别文字 → 原文记进剪贴板历史 → 翻译浮窗走现有的多服务翻译。
-  /// 设置 › 翻译 开着「把译文直接盖回截图上」（PR #5）时：和截图同一个编辑页，框完松手自动翻译——译文贴在选区里，
-  /// 人可以接着标注、复制、保存
+  /// 设置 › 翻译 开着「把译文直接盖回截图上」（PR #5）时：和截图同一个编辑页，框完松手（或单击选中悬停的窗口 / 元素）
+  /// 自动翻译——译文贴在选区里，人可以接着标注、复制、保存
   func screenshotTranslate() {
     guard UserDefaults.standard.bool(forKey: Prefs.translateScreenshotOverlay) else {
       return beginCapture(hidingPanels: true) { [self] in
@@ -2226,9 +2226,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         await translateInPanel(region)
       }
     }
-    captureShots(
-      feature: "截图翻译", hidingPanels: true,
-      hint: String(localized: "拖动框选要翻译的文字 · Esc 取消"), autoTranslate: true)
+    captureShots(feature: "截图翻译", hidingPanels: true, autoTranslate: true)
   }
 
   /// 识字：框选后静默复制识别出的文字（有二维码 / 条码时复制它的内容），轻提示结果，不弹窗
@@ -2254,10 +2252,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   /// 截图家族共用的后半段（截图、截图翻译）：冻结各屏 → 框选 → 按交回的动作出图。
-  /// hint 非空时换掉遮罩顶上的提示；autoTranslate = 框完松手就自动翻译（⌥S）
+  /// autoTranslate = 框完松手、单击选中就自动翻译（⌥S）
   private func captureShots(
     feature: LocalizedStringResource, hidingPanels: Bool, repeatingLastRegion: Bool = false,
-    hint: String? = nil, autoTranslate: Bool = false
+    autoTranslate: Bool = false
   ) {
     // 工具栏「翻译」就地盖回截图上，还是交出去走翻译浮窗：看设置 › 翻译「把译文直接盖回截图上」
     let overlays = UserDefaults.standard.bool(forKey: Prefs.translateScreenshotOverlay)
@@ -2270,7 +2268,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           {
             await RegionSelector.capture(
               $0, lastRegion: lastRegion, preselect: repeatingLastRegion,
-              hint: hint, autoTranslate: autoTranslate,
+              autoTranslate: autoTranslate,
               recordingBlocker: { [weak self] in self?.recordingBlocker(.screen) },
               translate: overlays
                 ? { [weak self] image, pixelsPerPoint in

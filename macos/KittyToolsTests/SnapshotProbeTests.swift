@@ -4001,6 +4001,20 @@ struct SnapshotProbeTests {
         size: NSSize(width: 600, height: 480), dark: dark, configure: configure,
         to: "\(out)/\(name).png")
     }
+    // ⌥S 盖回截图的截图翻译也认元素（2026-11-16）：悬停框出指针下那一行，顶部提示是「单击翻译 · 滚轮 · Tab」
+    let session = SelectionSession(mode: .capture, lastRegion: .zero)
+    session.autoTranslates = true
+    session.findsElements = true
+    session.findElements = { _, point in
+      .chain([
+        ElementFinder.Layer(
+          frame: CGRect(x: point.x - 120, y: point.y - 12, width: 240, height: 24), name: "文本")
+      ])
+    }
+    try renderLayers(
+      SelectionView(image: desktop, windows: windows, owners: [[4242], []], session: session),
+      size: NSSize(width: 600, height: 480), dark: false,
+      configure: { $0.mouse = CGPoint(x: 160, y: 330) }, to: "\(out)/capture-translate-hover.png")
   }
 
   /// 长截图面板：刚开始（还没预览）、拼了一段（预览 + 尺寸）、对不上（橙色提示）、自动滚动中，深浅色

@@ -41,8 +41,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
   /// 截图工具栏「翻译」就地翻：给选区的图和它每点几个像素，返回覆盖了译文的图、放不下的段（失败带一句原因）。
   /// 由 AppDelegate 经 SelectionSession 注入；nil = 现在不能就地翻（退回原来的「退出截图页再翻」）
   var translateHandler: ((CGImage, CGFloat) async -> ScreenshotOverlay.Outcome)?
-  /// 框完松手就直接翻（⌥S：截图翻译 = 截图 + 自动点「翻译」，人还留在截图页）
-  var autoTranslates = false
+  /// 框完松手、单击选中就直接翻（⌥S：截图翻译 = 截图 + 自动点「翻译」，人还留在截图页）
+  private var autoTranslates: Bool { session.autoTranslates }
   /// 正在就地翻译：选区上出脉冲、框选和工具栏暂时不动
   private var translating = false
   /// 一键打码正在识字（再点「自动」不重复跑）
@@ -378,14 +378,17 @@ final class SelectionView: NSView, NSTextViewDelegate {
         : [String(localized: "滚轮 换大小"), String(localized: "Tab 只认窗口")]
     return switch session.mode {
     case .quick: session.hint.components(separatedBy: " · ")
+    case .capture where session.autoTranslates:
+      [
+        String(localized: "拖动框选要翻译的文字"),
+        elements ? String(localized: "单击翻译") : String(localized: "单击翻译窗口"),
+      ] + layers + [String(localized: "Esc 取消")]
     case .capture:
-      session.hint.isEmpty
-        ? [
-          String(localized: "拖动框选"),
-          elements ? String(localized: "单击选中") : String(localized: "单击选中窗口"),
-        ] + layers + [String(localized: "双击直接拷贝")] + lastRegion
-          + [String(localized: "Esc 取消")]
-        : session.hint.components(separatedBy: " · ")
+      [
+        String(localized: "拖动框选"),
+        elements ? String(localized: "单击选中") : String(localized: "单击选中窗口"),
+      ] + layers + [String(localized: "双击直接拷贝")] + lastRegion
+        + [String(localized: "Esc 取消")]
     case .record:
       [
         String(localized: "拖动框选要录的区域"),
@@ -2787,6 +2790,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
       if !isAdjusting, !session.hasSelection(besides: self) {
         select(pressedHover ?? hoverRect(at: point) ?? bounds)
         if isOverBars(point) { clickSelected = (event.timestamp, point) }
+        // ⌥S：单击选中的那一块（元素、窗口、整屏）同框完松手，直接翻
+        if autoTranslates { translateInPlace() }
       }
     case .draw(_, _, let restore)?:
       guard let selection, min(selection.width, selection.height) >= RegionSelector.minimumSide
