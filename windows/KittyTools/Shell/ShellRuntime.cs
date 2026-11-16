@@ -1036,6 +1036,13 @@ internal sealed class ShellRuntime
     }
 
     /// <summary>启动器的「新建脚本」（mac scripts-new，REVIEW R92）：打开 设置 › 启动器 › 脚本命令，弹新建脚本的小表单。</summary>
+    /// <summary>打开 设置 › 提醒 里的那一条（mac openReminder，REVIEW R100）：托盘「下一个」、启动器 Ctrl+Enter、「提醒建好了」的「编辑」。</summary>
+    public void OpenReminder(string id)
+    {
+        ShowSettings(welcome: false, "reminders");
+        _settingsWindow?.OpenReminder(id);
+    }
+
     public void NewScript()
     {
         ShowSettings(welcome: false, "launcher");

@@ -202,6 +202,119 @@ internal sealed partial class NoteEditor
         return true;
     }
 
+    /// <summary>格式菜单里的块格式（标题 1–3、引用、无序 / 有序列表，mac NoteTextView 的格式菜单，REVIEW R98）。</summary>
+    private void ApplyBlock(NoteMarkdown.BlockFormat format)
+    {
+        var (start, block, selection) = BlockOfSelection();
+        if (InCodeBlock(start) || NoteMarkdown.Block(format, block, selection) is not { } change)
+        {
+            SystemSound.Beep();
+            return;
+        }
+
+        ApplyChange(change, start);
+    }
+
+    /// <summary>格式菜单「链接」：选中的字包成 [字](地址)（Core NoteMarkdown.Link）。</summary>
+    private void ApplyLink()
+    {
+        var (start, block, selection) = BlockOfSelection();
+        if (InCodeBlock(start) || NoteMarkdown.Link(block, selection) is not { } change)
+        {
+            SystemSound.Beep();
+            return;
+        }
+
+        ApplyChange(change, start);
+    }
+
+    /// <summary>格式菜单「清除格式」：去掉选中那几行的 Markdown 标记（Core NoteMarkdown.Clear）。</summary>
+    private void ClearFormat()
+    {
+        var (start, block, selection) = BlockOfSelection();
+        if (InCodeBlock(start) || NoteMarkdown.Clear(block, selection) is not { } change)
+        {
+            SystemSound.Beep();
+            return;
+        }
+
+        ApplyChange(change, start);
+    }
+
+    /// <summary>格式菜单「代码块」：在块里 = 去掉围栏，空行 = 插三行，别的 = 上下加围栏（Core NoteMarkdown.CodeBlockChange，整篇算）。</summary>
+    private void ToggleCodeBlock()
+    {
+        if (NoteMarkdown.CodeBlockChange(_text, Selection) is not { } change)
+        {
+            SystemSound.Beep();
+            return;
+        }
+
+        ApplyChange(change, 0);
+    }
+
+    /// <summary>光标（或选区开头）落在的那个链接的地址；不在链接上是 null（右键「打开链接」，键盘和读屏也打得开，REVIEW R98）。</summary>
+    private Uri? LinkAtSelection()
+    {
+        var position = Selection.Location;
+        var (start, _, contentsEnd) = NoteText.Line(_text, position);
+        if (InCodeBlock(start))
+        {
+            return null;
+        }
+
+        foreach (var span in NoteStyles.Spans(_text[start..contentsEnd], _markdown))
+        {
+            if (span.Kind.Tag == NoteStyles.KindTag.Link && span.Kind.Address is { } address &&
+                span.Range.Location <= position - start && position - start <= span.Range.End &&
+                NoteMarkdown.Url(address) is { } url)
+            {
+                return url;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>右键「插入图片…」：选几张图存进图片目录、插在光标那儿（同粘贴图片那条路）。</summary>
+    private async Task PickImagesAsync()
+    {
+        if (Images is not { } store || _box.XamlRoot?.ContentIslandEnvironment is not { } island)
+        {
+            SystemSound.Beep();
+            return;
+        }
+
+        var picker = new Microsoft.Windows.Storage.Pickers.FileOpenPicker(island.AppWindowId);
+        foreach (var type in new[] { ".png", ".jpg", ".jpeg", ".gif", ".heic", ".heif", ".bmp", ".tif", ".tiff", ".webp" })
+        {
+            picker.FileTypeFilter.Add(type);
+        }
+
+        var files = await picker.PickMultipleFilesAsync();
+        if (files is null || files.Count == 0)
+        {
+            return;
+        }
+
+        var results = new List<NoteImageStore.StoreResult>();
+        foreach (var file in files)
+        {
+            results.Add(await NoteImageStore.StoreFileAsync(file.Path, store.Directory));
+        }
+
+        if (results.FirstOrDefault(result => result.Rejection is not null) is { Rejection: { } rejection })
+        {
+            NoticeHost.Show(NoteImageRules.NoticeTitle(rejection), NoteImageRules.NoticeDetail(rejection), NoticeTone.Warning);
+        }
+
+        var stored = results.Select(result => result.Stored).OfType<NoteImageStore.Stored>().ToList();
+        if (stored.Count > 0)
+        {
+            InsertImages(stored);
+        }
+    }
+
     public void SetTextColor(NoteColor? color)
     {
         var (start, block, selection) = BlockOfSelection();
@@ -411,13 +524,37 @@ internal sealed partial class NoteEditor
             Add(menu.Items, "剪切", Glyphs.Cut, () => CopySelection(cut: true), Selection.Length > 0, "Ctrl+X");
             Add(menu.Items, "拷贝", Glyphs.Copy, () => CopySelection(cut: false), Selection.Length > 0, "Ctrl+C");
             Add(menu.Items, "粘贴", Glyphs.Paste, () => _ = PasteAsync(), true, "Ctrl+V");
+            // 「打开链接」「插入图片…」（mac 正文右键，REVIEW R98）：键盘、读屏用户打开链接靠它
+            if (LinkAtSelection() is { } link)
+            {
+                Add(menu.Items, "打开链接", Glyphs.Link, () => _ = Windows.System.Launcher.LaunchUriAsync(link), true, null);
+            }
+
+            Add(menu.Items, "插入图片…", Glyphs.Image, () => _ = PickImagesAsync(), Images is not null, null);
             menu.Items.Add(new MenuFlyoutSeparator());
 
+            // 格式（同 mac NoteTextView 的格式菜单）：粗体、斜体、删除线、代码、链接 ｜ 标题 1–3、引用、无序列表、有序列表、代码块 ｜ 清除格式；
+            // 在代码块里只留「代码块」（拿掉围栏）
+            var inCode = InCodeBlock(BlockOfSelection().Start);
             var format = new MenuFlyoutSubItem { Text = "格式" };
-            Add(format.Items, "粗体", null, () => Wrap(NoteMarkdown.Wrap.Bold), true, "Ctrl+B");
-            Add(format.Items, "斜体", null, () => Wrap(NoteMarkdown.Wrap.Italic), true, "Ctrl+I");
-            Add(format.Items, "删除线", null, () => Wrap(NoteMarkdown.Wrap.Strike), true, "Ctrl+Shift+X");
-            Add(format.Items, "行内代码", null, () => Wrap(NoteMarkdown.Wrap.Code), true, "Ctrl+E");
+            Add(format.Items, "粗体", null, () => Wrap(NoteMarkdown.Wrap.Bold), !inCode, "Ctrl+B");
+            Add(format.Items, "斜体", null, () => Wrap(NoteMarkdown.Wrap.Italic), !inCode, "Ctrl+I");
+            Add(format.Items, "删除线", null, () => Wrap(NoteMarkdown.Wrap.Strike), !inCode, "Ctrl+Shift+X");
+            Add(format.Items, "代码", null, () => Wrap(NoteMarkdown.Wrap.Code), !inCode, "Ctrl+E");
+            Add(format.Items, "链接", null, ApplyLink, !inCode, null);
+            format.Items.Add(new MenuFlyoutSeparator());
+            for (var level = 1; level <= 3; level++)
+            {
+                var heading = NoteMarkdown.BlockFormat.Heading(level);
+                Add(format.Items, NoteMarkdown.Title(heading), null, () => ApplyBlock(heading), !inCode, null);
+            }
+
+            Add(format.Items, NoteMarkdown.Title(NoteMarkdown.BlockFormat.Quote), null, () => ApplyBlock(NoteMarkdown.BlockFormat.Quote), !inCode, null);
+            Add(format.Items, NoteMarkdown.Title(NoteMarkdown.BlockFormat.Bullet), null, () => ApplyBlock(NoteMarkdown.BlockFormat.Bullet), !inCode, null);
+            Add(format.Items, NoteMarkdown.Title(NoteMarkdown.BlockFormat.Ordered), null, () => ApplyBlock(NoteMarkdown.BlockFormat.Ordered), !inCode, null);
+            Add(format.Items, "代码块", null, ToggleCodeBlock, true, null);
+            format.Items.Add(new MenuFlyoutSeparator());
+            Add(format.Items, "清除格式", null, ClearFormat, !inCode, null);
             menu.Items.Add(format);
 
             var tasks = new MenuFlyoutSubItem { Text = "任务状态" };

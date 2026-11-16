@@ -1244,8 +1244,7 @@ internal sealed partial class LauncherModel
 
             Close();
             var schedule = new ReminderSchedule { Kind = ReminderSchedule.Once, Date = ReminderTime.FromUtc(parsed.At) };
-            ReminderCenter.Add(new Reminder { Id = Guid.NewGuid().ToString().ToUpperInvariant(), Title = parsed.Title, Schedule = schedule });
-            NoticeHost.Show("建好了提醒", Reminders.ScheduleSummary(schedule, now, TimeZoneInfo.Local) + " · " + parsed.Title, NoticeTone.Normal);
+            ReminderCenter.AddAndAnnounce(new Reminder { Id = Guid.NewGuid().ToString().ToUpperInvariant(), Title = parsed.Title, Schedule = schedule });
             return;
         }
 
@@ -1319,10 +1318,10 @@ internal sealed partial class LauncherModel
             case LauncherKind.Ip when item.Payload is not null:
                 Copy(item);
                 break;
-            case LauncherKind.Action when ReminderLauncher.IdOf(item.Target) is not null:
-                // 已有的提醒：到设置里编辑。
+            case LauncherKind.Action when ReminderLauncher.IdOf(item.Target) is { } reminderId:
+                // 已有的提醒：到设置里直接打开那一条（mac openReminder，REVIEW R100）。
                 Close();
-                ShellRuntime.Instance?.ShowSettings(welcome: false, "reminders");
+                ShellRuntime.Instance?.OpenReminder(reminderId);
                 break;
             default:
                 Beep();

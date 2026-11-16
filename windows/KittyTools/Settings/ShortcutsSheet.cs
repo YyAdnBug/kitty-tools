@@ -622,6 +622,7 @@ internal static class ShortcutsSheet
         {
             new("Esc", "Ctrl+W", "收回边缘（固定着的也收）"),
             new("Ctrl+K", "操作菜单里的「收回边缘」；别的键同屏幕边缘里打开的便签"),
+            new("Ctrl+,", "打开 设置 › 便签"),
         }),
         new("notes", "便签 · 全部便签", "notes", FeatureIcons.Notes, Array.Empty<string>(), new ShortcutEntry[]
         {
@@ -629,8 +630,12 @@ internal static class ShortcutsSheet
             new("Esc", "便签墙上：收回编辑卡（点旁边变暗的地方也行）"),
             new("Ctrl+N", "新建便签（便签墙上直接打开它的编辑卡）"),
             new("Ctrl+F", "搜索便签；光标在正文里时是在这条便签里查找"),
-            new("Delete", "焦点在列表上时：删除选中的便签，进「最近删除」（在最近删除里是永久删除，要确认）"),
+            // 便签墙的键（PLAN-v20 N3）和墙上的删除、关窗（REVIEW R99）
+            new(new[] { "←", "→", "↑", "↓" }, "便签墙上：挑卡片"),
+            new("Enter", "空格", "便签墙上：放大挑中的那张来编辑"),
+            new("Delete", "Backspace", "列表或便签墙上：删除选中的便签，进「最近删除」（在最近删除里是永久删除，要确认）"),
             new("Ctrl+Z", "焦点不在输入框里时：放回刚删的便签（连着删了几条就一条条放回）"),
+            new("Ctrl+W", "没开编辑卡时：关掉全部便签窗口"),
             new(Array.Empty<string>(), "打开的便签里的键同「便签 · 屏幕边缘」"),
         }),
 
@@ -638,6 +643,7 @@ internal static class ShortcutsSheet
         new("statusScreen", "状态屏", "statusScreen", FeatureIcons.StatusScreen, new[] { HotKeyActions.StatusScreen }, new ShortcutEntry[]
         {
             new("←→", "↑↓", "选状态（再按一次全局快捷键也是选下一张）"),
+            new("Tab", "Shift+Tab", "选下一张 / 上一张"),
             new("1–9", "直接进入那一张"),
             new("Enter", "进入选中的状态"),
             new("Esc", "Ctrl+W", "收起选状态的面板"),

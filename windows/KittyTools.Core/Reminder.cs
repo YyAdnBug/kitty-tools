@@ -183,6 +183,13 @@ public static class Reminders
     public static readonly int[] SnoozeChoices = { 5, 10, 15, 30 };
 
     public static readonly string[] Alerts = { Reminder.Light, Reminder.Glow, Reminder.Full, Reminder.Status };
+    /// <summary>
+    /// 编辑框「提醒方式」里列哪几种（mac ReminderDetail.swift:127-132，REVIEW R102）：状态屏关着时不列「进入状态屏」，
+    /// 已经选了的照旧列着（不替用户改掉）。
+    /// </summary>
+    public static string[] AlertChoices(string current, bool statusScreenOn)
+        => statusScreenOn || current == Reminder.Status ? Alerts : Alerts.Where(alert => alert != Reminder.Status).ToArray();
+
     public static readonly string[] Sounds = { Reminder.SoundNone, Reminder.SoundChime, Reminder.SoundSpeak };
 
     /// <summary>mac 的提示音（/System/Library/Sounds 里的文件名）：同步、导入时认这几个名字。</summary>

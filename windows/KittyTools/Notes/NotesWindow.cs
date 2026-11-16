@@ -294,7 +294,7 @@ internal sealed class NotesWindow : Window
             var count = NoteStore.Instance is { } store ? NotesWindowRules.List(store.Book, scope).Count : 0;
             var button = new ToggleButton
             {
-                Content = $"{NotesWindowRules.ScopeTitle(scope)} {count}",
+                Content = count > 0 ? $"{NotesWindowRules.ScopeTitle(scope)} {count}" : NotesWindowRules.ScopeTitle(scope), // 0 条不写数字（同 mac，REVIEW R99）
                 IsChecked = scope == _scope,
                 Padding = new Thickness(10, 4, 10, 4),
             };
@@ -624,8 +624,16 @@ internal sealed class NotesWindow : Window
         store.SetArchived(id, archiving);
         _selection = next;
         CollapseCard();
-        NoticeHost.Show(archiving ? NotesWindowRules.ArchivedTitle(1) : "已取消归档", note.DisplayTitle, NoticeTone.Normal,
-            new NoticeAction("撤销", () => store.SetArchived(id, note.IsArchived, toFront: false)));
+        // 归档的按钮叫「取消归档」、连着归档的合并（同 mac，REVIEW R99）
+        if (archiving)
+        {
+            NoteNotices.ShowArchived(id, note.DisplayTitle);
+        }
+        else
+        {
+            NoticeHost.Show("已取消归档", note.DisplayTitle, NoticeTone.Normal,
+                new NoticeAction("撤销", () => store.SetArchived(id, true, toFront: false)));
+        }
     }
 
     private void RemoveSelected(string id)
@@ -646,8 +654,7 @@ internal sealed class NotesWindow : Window
         _deleted.Add(id);
         _selection = next;
         CollapseCard();
-        NoticeHost.Show(NotesWindowRules.DeletedTitle(1), "在「最近删除」里留 30 天", NoticeTone.Normal,
-            new NoticeAction("撤销", () => store.Restore(id)));
+        NoteNotices.ShowDeleted(id, undoKey: true);
     }
 
     private void FloatSelected()
@@ -666,7 +673,7 @@ internal sealed class NotesWindow : Window
             return;
         }
 
-        if (await ConfirmAsync($"永久删除「{note.DisplayTitle}」？", "永久删除后找不回来。", "永久删除"))
+        if (await ConfirmAsync($"永久删除「{note.DisplayTitle}」？", "这条便签会被永久删除，不能撤销。", "永久删除"))
         {
             var next = NotesWindowRules.SelectionAfterRemoving(id, Notes.Select(item => item.Id).ToList());
             store.Erase(id);
@@ -682,7 +689,7 @@ internal sealed class NotesWindow : Window
         }
 
         var count = store.Book.Trashed.Count;
-        if (await ConfirmAsync($"清空最近删除（{count} 条）？", "里面的便签会永久删除，找不回来。", "清空"))
+        if (await ConfirmAsync("清空最近删除？", $"里面的 {count} 条便签会被永久删除，不能撤销。", "清空"))
         {
             store.EmptyTrash();
         }
@@ -843,6 +850,13 @@ internal sealed class NotesWindow : Window
         else if (e.Key is VirtualKey.Enter or VirtualKey.Space && _wallFocus is { } id && _wallIds.Contains(id))
         {
             ExpandCard(id);
+            e.Handled = true;
+        }
+        else if (e.Key is VirtualKey.Delete or VirtualKey.Back && _wallFocus is { } target && _wallIds.Contains(target))
+        {
+            // 墙上挑中的那张按 Delete / Backspace 删（同 mac ⌘⌫ / ⌫，REVIEW R99；以前只有列表认 Delete）
+            RemoveSelected(target);
+            _wallFocus = _selection;
             e.Handled = true;
         }
     }
@@ -1103,6 +1117,12 @@ internal sealed class NotesWindow : Window
         else if (e.Key == VirtualKey.Escape && _editCard.Visibility == Visibility.Visible)
         {
             CollapseCard();
+            e.Handled = true;
+        }
+        else if (control && e.Key == VirtualKey.W && _editCard.Visibility != Visibility.Visible)
+        {
+            // 没开编辑卡时 Ctrl+W 关窗（同 mac ⌘W，REVIEW R99）
+            Close();
             e.Handled = true;
         }
     }

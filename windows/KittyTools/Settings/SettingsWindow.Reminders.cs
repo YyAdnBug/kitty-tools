@@ -24,6 +24,7 @@ internal sealed partial class SettingsWindow
         var settings = SettingsService.Current;
         var reminders = Reminders.Load(settings.Reminders);
         _shownReminders = settings.Reminders;
+        _reminderEdits.Clear();
 
         void Persist(List<Reminder> next)
         {
@@ -43,7 +44,7 @@ internal sealed partial class SettingsWindow
         _content.Children.Add(SettingsUi.Section("提醒"));
         if (reminders.Count == 0)
         {
-            _content.Children.Add(SettingsUi.Footnote("还没有提醒。点「＋」新建，或者在启动器里输「提醒 10分钟 喝水」。"));
+            _content.Children.Add(SettingsUi.Footnote("还没有提醒，点下面的「＋」加一条"));
         }
 
         // 拖动排序、键盘 Enter / Delete / Alt + ↑↓（PLAN-v23 L1，mac RemindersTab 的 List .onMove / onDeleteCommand）
@@ -75,11 +76,11 @@ internal sealed partial class SettingsWindow
         _content.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0), Children = { add } });
         _content.Children.Add(SettingsUi.Footnote(
             "点一行编辑，拖动调整顺序，右键能上移、下移和删除；一次性的提醒点了「知道了」就删掉。示例默认关着，打开才响。" +
-            (isFull ? $"最多 {Reminders.MaxCount} 条，已经满了。" : string.Empty)));
+            (isFull ? $"最多 {Reminders.MaxCount} 条，已经满了，删掉一条才能再加。" : string.Empty)));
 
-        // 稍后
-        _content.Children.Add(SettingsUi.Section("稍后"));
-        AddCombo("「稍后」推多久", "提示上的「稍后」按这个推；全屏上另有 15 分钟、1 小时",
+        // 到点之后（mac RemindersTab「到点之后」，REVIEW R102）
+        _content.Children.Add(SettingsUi.Section("到点之后"));
+        AddCombo("「稍后」推多久", "提醒到点后点「稍后」，过这么久再提醒一次（全屏上另有 15 分钟、1 小时）",
             Reminders.SnoozeChoices.Select(minutes => $"{minutes} 分钟").ToArray(),
             Math.Max(0, Array.IndexOf(Reminders.SnoozeChoices, settings.RemindersSnoozeMinutes)),
             index =>
@@ -88,8 +89,8 @@ internal sealed partial class SettingsWindow
                 SettingsService.Save();
             });
         _content.Children.Add(SettingsUi.Footnote(
-            "到点时锁着屏、睡着、在状态屏里的，回来后晚了 5 分钟以内照常响，更晚的合成一条「错过了」。间隔提醒碰上锁屏、睡眠、5 分钟没碰键盘鼠标，" +
-            "算休息过了，回来重新数。正在录屏录音时边框和全屏都降成提示、也不出声。"));
+            "电脑睡着、锁着屏、在状态屏里，或者没打开 Kitty 时到点的提醒，晚 5 分钟以内的照常提醒，更晚的回来后合成一条告诉你。" +
+            "每隔一阵的提醒碰上锁屏、睡眠，或者 5 分钟没碰键盘鼠标，算休息过了，回来重新数。正在录屏录音时边框和全屏都降成提示、也不出声。"));
     }
 
     /// <summary>一行提醒：表情（没选的是家族色块）+ 标题 + 摘要 + 开关；点一下编辑，右键 编辑… / 上移 / 下移 / 删除。</summary>
@@ -112,6 +113,8 @@ internal sealed partial class SettingsWindow
                 persist(Reminders.Updating(reminders, draft));
             }
         }
+
+        _reminderEdits[reminder.Id] = EditAsync;
 
         async Task RemoveAsync()
         {
@@ -164,6 +167,54 @@ internal sealed partial class SettingsWindow
         Add(Reminders.IsPristine(reminder) ? "删除" : "删除…", true, () => _ = RemoveAsync());
         card.ContextFlyout = menu;
         return card;
+    }
+
+    /// <summary>这一页上每一条的「编辑」（建页时记下，OpenReminder 用）。</summary>
+    private readonly Dictionary<string, Func<Task>> _reminderEdits = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// 打开某一条的编辑框（REVIEW R100，mac openReminder）。ShowPage 之后调；开着别的对话框、找不到那一条（刚被删）时只停在这一页。
+    /// 列表在页面建好之后变过（刚从启动器 / 托盘加的）先重建这一页。
+    /// </summary>
+    internal void OpenReminder(string id)
+    {
+        if (_currentPage != "reminders")
+        {
+            return;
+        }
+
+        if (!ReferenceEquals(SettingsService.Current.Reminders, _shownReminders))
+        {
+            BuildPage("reminders");
+        }
+
+        if (!_reminderEdits.TryGetValue(id, out var edit))
+        {
+            return;
+        }
+
+        void Open()
+        {
+            if (_content.XamlRoot is { } root && VisualTreeHelper.GetOpenPopupsForXamlRoot(root).Count == 0)
+            {
+                _ = edit();
+            }
+        }
+
+        // 第一次开设置窗时内容区还没进可视树（XamlRoot 是 null），等它 Loaded
+        if (_content.XamlRoot is null)
+        {
+            void Loaded(object sender, RoutedEventArgs e)
+            {
+                _content.Loaded -= Loaded;
+                Open();
+            }
+
+            _content.Loaded += Loaded;
+            return;
+        }
+
+        Open();
     }
 
     /// <summary>编辑一条（mac ReminderDetail）：改的是 draft；点「保存」才返回 true。标题空着不让存。</summary>
@@ -244,8 +295,9 @@ internal sealed partial class SettingsWindow
         }
 
         // 怎么提醒
-        var alert = new ComboBox { Header = "怎么提醒", ItemsSource = Reminders.Alerts.Select(Reminders.AlertTitle).ToList(), MinWidth = 160 };
-        alert.SelectedIndex = Math.Max(0, Array.IndexOf(Reminders.Alerts, draft.Alert));
+        var alerts = Reminders.AlertChoices(draft.Alert, Features.IsOn(Feature.StatusScreen));
+        var alert = new ComboBox { Header = "怎么提醒", ItemsSource = alerts.Select(Reminders.AlertTitle).ToList(), MinWidth = 160 };
+        alert.SelectedIndex = Math.Max(0, Array.IndexOf(alerts, draft.Alert));
         var alertNote = new TextBlock { FontSize = Theme.FontSize("Kitty.FontSize.Label"), Foreground = Theme.SecondaryText(), TextWrapping = TextWrapping.Wrap };
         var fullSeconds = new ComboBox
         {
@@ -415,7 +467,7 @@ internal sealed partial class SettingsWindow
             next.Every = ReminderSchedule.EveryChoices[Math.Max(0, every.SelectedIndex)];
             next.Days = dayToggles.Where(item => item.Button.IsChecked == true).Select(item => item.Day).Order().ToList();
             draft.Schedule = next.Sanitized();
-            draft.Alert = Reminders.Alerts[Math.Max(0, alert.SelectedIndex)];
+            draft.Alert = alerts[Math.Max(0, alert.SelectedIndex)];
             draft.FullSeconds = Reminders.FullChoices[Math.Max(0, fullSeconds.SelectedIndex)];
             draft.StatusID = presets.Count > 0 ? presets[Math.Max(0, status.SelectedIndex)].Id : string.Empty;
             draft.Sound = Reminders.Sounds[Math.Max(0, sound.SelectedIndex)];

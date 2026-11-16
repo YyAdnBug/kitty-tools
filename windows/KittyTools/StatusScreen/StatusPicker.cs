@@ -295,6 +295,10 @@ internal sealed class StatusPicker : Window
             case VirtualKey.Right:
                 Select(_selection + 1);
                 break;
+            // Tab = →、Shift+Tab = ←（mac StatusPicker.swift:125，REVIEW R102）
+            case VirtualKey.Tab:
+                Select(_selection + (IsDown(VirtualKey.Shift) ? -1 : 1));
+                break;
             case VirtualKey.Up:
                 Select(_selection - columns);
                 break;

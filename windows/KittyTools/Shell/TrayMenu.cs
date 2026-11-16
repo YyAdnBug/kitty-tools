@@ -274,13 +274,13 @@ internal static partial class TrayMenu
                 var when = Core.Reminders.ScheduleSummary(
                     new Core.ReminderSchedule { Kind = Core.ReminderSchedule.Once, Date = Core.ReminderTime.FromUtc(next.At) },
                     DateTime.UtcNow, TimeZoneInfo.Local);
-                children.Add(new Item($"下一个：{next.Reminder.Title}（{when}）", null, () => runtime?.ShowSettings(welcome: false, "reminders")));
+                children.Add(new Item($"下一个：{next.Reminder.Title}（{when}）", null, () => runtime?.OpenReminder(next.Reminder.Id)));
             }
 
             children.Add(new Item(null, null, static () => { }));
             foreach (var minutes in new[] { 5, 10, 25, 60 })
             {
-                children.Add(new Item(minutes == 60 ? "1 小时后提醒我" : $"{minutes} 分钟后提醒我", null, () => ReminderCenter.Add(new Core.Reminder
+                children.Add(new Item(minutes == 60 ? "1 小时后提醒我" : $"{minutes} 分钟后提醒我", null, () => ReminderCenter.AddAndAnnounce(new Core.Reminder
                 {
                     Id = Guid.NewGuid().ToString().ToUpperInvariant(),
                     Title = Core.ReminderPhrase.DefaultTitle,

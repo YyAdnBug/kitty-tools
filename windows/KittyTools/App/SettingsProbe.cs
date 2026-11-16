@@ -431,6 +431,34 @@ internal static class SettingsProbe
         check(Find<Border>(window.ContentForProbe, "不显示药丸") is { IsHitTestVisible: true } &&
               Find<Border>(window.ContentForProbe, "悬停预览") is { IsHitTestVisible: false },
             "L5 「悬停即打开」开着：「悬停预览」灰、「不显示药丸」能拨");
+
+        // REVIEW R100：建好了能从外面直接打开那一条的编辑框；满 50 条不加
+        var reminder = new Reminder
+        {
+            Id = Guid.NewGuid().ToString().ToUpperInvariant(), Title = "探针提醒",
+            Schedule = new ReminderSchedule { Kind = ReminderSchedule.Once, Date = ReminderTime.FromUtc(DateTime.UtcNow.AddHours(3)) },
+        };
+        var added = ReminderCenter.AddAndAnnounce(reminder);
+        check(added && Reminders.Load(settings.Reminders).Any(item => item.Id == reminder.Id), "R100 AddAndAnnounce：加上了");
+        shell.OpenReminder(reminder.Id);
+        await Task.Delay(800);
+        window = shell.SettingsWindowForProbe!;
+        var dialogRoot = window.ContentForProbe.XamlRoot;
+        check(dialogRoot is not null && Microsoft.UI.Xaml.Media.VisualTreeHelper.GetOpenPopupsForXamlRoot(dialogRoot)
+                .Any(popup => popup.Child is ContentDialog { Title: "编辑「探针提醒」" }),
+            "R100 OpenReminder：打开 设置 › 提醒 并弹出那一条的编辑框");
+        window.CloseDialogsForProbe();
+        await Task.Delay(300);
+        var full = Reminders.Load(settings.Reminders);
+        while (full.Count < Reminders.MaxCount)
+        {
+            full.Add(new Reminder { Id = Guid.NewGuid().ToString().ToUpperInvariant(), Title = $"填满 {full.Count}", Schedule = reminder.Schedule, IsOn = false });
+        }
+
+        settings.Reminders = full;
+        SettingsService.Save();
+        var extra = new Reminder { Id = Guid.NewGuid().ToString().ToUpperInvariant(), Title = "第 51 条", Schedule = reminder.Schedule };
+        check(!ReminderCenter.AddAndAnnounce(extra) && Reminders.Load(settings.Reminders).Count == Reminders.MaxCount, "R100 满 50 条：说满了、不加");
     }
 
     private static void RunArchive(Action<bool, string> check, StringBuilder report)

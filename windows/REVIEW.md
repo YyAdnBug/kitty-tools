@@ -245,8 +245,9 @@ Windows（`Shell/HomePanel.cs`）：
   - 快捷键页（`:155`）少各动作名和「屏蔽 / 不响应」；
   - 关于页（`:159`）少「欢迎 / 引导」。
 
-#### R92（P2）启动器：内置动作、补全提示、脚本行、底栏动词
+#### R92（P2）启动器：内置动作、补全提示、脚本行、底栏动词 → 已修
 
+- **已修**：`9ad0132f`。启动器三条内置动作、提示认中文和全拼、底栏动词、脚本行的 Ctrl+K 和 Ctrl+E、速查表、怎么写脚本那句；单测 LauncherMacPromptTests，菜单和新动作没在真机上点。
 - **少三条内置动作**：「新建提醒」「新建脚本」「复制脚本写法说明（给 AI）」。
   - mac：`Launcher/LauncherItem.swift:113-130`、`:189-196`，脚本命令关着时后两条不列。
   - Windows：`Launcher/LauncherActions.cs` 里都没有。
@@ -273,8 +274,9 @@ Windows（`Shell/HomePanel.cs`）：
 - **速查表启动器那组**（`Settings/ShortcutsSheet.cs:379-399`）没有脚本的键（mac `ShortcutsSheet.swift:342-351`），看全文那扇窗的 Ctrl+R 重跑也没列。
 - **「怎么写脚本」里过时的一句**：`Settings/SettingsWindow.Scripts.cs:44` 还写着「这一版启动器里先都画脚本的图标」。PLAN-v20 L1 之后已经画表情和旁边的图片，改成写清哪些写法照旧画脚本图标（SF 符号名、网址）。
 
-#### R93（P2）设置 › 启动器 一页的分节和「命令和别名」表
+#### R93（P2）设置 › 启动器 一页的分节和「命令和别名」表 → 已修
 
+- **已修**：`9ad0132f`。启动器页分节和脚注、命令和别名的小字、筛选下拉、空的我的脚本；截图 settings-sub-launcher、settings-sub-commands。脚本命令留子页、改别名的做法写进 MAC-DIFF。
 - **分节**：
   - mac 的顺序（`Settings/LauncherTab.swift:96-161`、`ScriptsSection.swift:58-186`）：
     - 浏览器书签与历史；
@@ -294,14 +296,16 @@ Windows（`Shell/HomePanel.cs`）：
   - 补筛选和空组那一行；
   - 从「改别名…」进来时 mac 只列那一条，Windows 滚到那一行描两秒，留着现在的做法，在 MAC-DIFF 记一句。
 
-#### R94（P2）欢迎引导第三屏
+#### R94（P2）欢迎引导第三屏 → 已修
 
+- **已修**：`9ad0132f`。第三屏加快速记一条、列不出时「都准备好了」；没走真引导。
 - `Settings/SettingsWindow.Onboarding.cs:20-25` 只列 6 个键，注释还写着「Windows 没有便签」。
 - mac 列 7 个，含「快速记一条」（`Settings/OnboardingView.swift:392-395`）；一个键都列不出时换成「都准备好了」那一屏（`:401-407`）。
 - **修**：加上 `HotKeyActions.NoteCapture`，补上那一屏。
 
-#### R95（P2）关于页没有便签的出处和许可全文
+#### R95（P2）关于页没有便签的出处和许可全文 → 已修
 
+- **已修**：`9ad0132f`。关于页加 Noty 那一行和 Resources/notes-LICENSE.txt（发布目录里有）；截图 settings-about-end。
 - mac：关于页有「便签的交互参考了 Noty（MIT 许可）」，后面是打开随包 `Resources/notes-LICENSE.txt` 的链接（`Settings/AboutTab.swift:100-121`）。
 - Windows 的便签是从 mac 那份搬过来的，但关于页只有状态屏表情那一行（`SettingsWindow.cs:3676-3688`），`Resources/` 里也没有这份许可。
 - **修**：照 mac 补上这一行和许可全文（`git show origin/macos:macos/KittyTools/Resources/notes-LICENSE.txt`），点「许可」用记事本打开，同表情那一行。
@@ -316,8 +320,9 @@ Windows（`Shell/HomePanel.cs`）：
 - **托盘里多出两项**：「压缩最近的录屏（不超过 60%）」「转成 GIF（10 fps，长边 800）」（`Shell/TrayMenu.cs:239-249`）。mac 的菜单没有，它们在视频卡和截图历史里（`Shell/StatusItem.swift:346`）。
   - 修：去掉（截图历史、角落卡里都有）；要留就写进 MAC-DIFF。
 
-#### R97（P2）截图：叫法、写死的键、速查表、设置页、钉图、角落卡
+#### R97（P2）截图：叫法、写死的键、速查表、设置页、钉图、角落卡 → 已修
 
+- **已修**：`9ad0132f`。截图全家叫法、写死的键和倒数、顶部提示、速查表几组、设置页三处、钉图键和存储、角落卡 6 + 2.5 秒；截图 settings-screenshot，工具栏和钉图没在真机上看。
 - **「拷贝 / 存储」**：mac 全家统一叫「拷贝 / 存储到「X」 / 另存为… / 识字并拷贝 / 钉到屏幕」（`Screenshot/EditorToolbar.swift:251-273`、`ShotKeys.swift:43-53`，体检 B41）。Windows 混着用：
   - 工具栏（`Screenshot/SelectionOverlayWindow.cs:999-1049`）：「识字」「钉在屏幕上」「快速保存」「复制」；
   - 保存菜单（`:1108`）：「快速保存到文件夹」；

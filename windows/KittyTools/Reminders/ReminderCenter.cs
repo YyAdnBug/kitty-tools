@@ -158,6 +158,25 @@ internal static partial class ReminderCenter
         Log.Info($"reminder.added kind={reminder.Schedule.Kind}");
     }
 
+    /// <summary>
+    /// 加一条并说一句（mac AppDelegate.addReminder，REVIEW R100）：满 50 条说「提醒已经满了」、不加；加上了说「提醒建好了」带「编辑」，
+    /// 点了打开设置里那一条。启动器一句话建、托盘「N 分钟后提醒我」都走它。
+    /// </summary>
+    public static bool AddAndAnnounce(Reminder reminder)
+    {
+        if (Reminders.Load(SettingsService.Current.Reminders).Count >= Reminders.MaxCount)
+        {
+            NoticeHost.Show("提醒已经满了", $"最多 {Reminders.MaxCount} 条，先到 设置 › 提醒 里删掉几条", NoticeTone.Warning);
+            return false;
+        }
+
+        Add(reminder);
+        var id = reminder.Id;
+        NoticeHost.Show("提醒建好了", Reminders.ScheduleSummary(reminder.Schedule, DateTime.UtcNow, TimeZoneInfo.Local) + " · " + reminder.Title,
+            NoticeTone.Normal, new NoticeAction("编辑", () => ShellRuntime.Instance?.OpenReminder(id)));
+        return true;
+    }
+
     /// <summary>锁屏（WTS_SESSION_LOCK）：一条都不响，解锁后再看。</summary>
     public static void Locked() => _locked = true;
 

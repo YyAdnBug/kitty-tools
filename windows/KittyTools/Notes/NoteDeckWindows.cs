@@ -78,14 +78,12 @@ internal static partial class NoteDeckUi
         Add(menu.Items, NotesWindowRules.ArchiveTitle(note), "\uE7B8", () =>
         {
             store?.SetArchived(id, true);
-            NoticeHost.Show(NotesWindowRules.ArchivedTitle(1), note.DisplayTitle, NoticeTone.Normal,
-                new NoticeAction("取消归档", () => store?.SetArchived(id, false, toFront: false)));
+            NoteNotices.ShowArchived(id, note.DisplayTitle);
         });
         var delete = Add(menu.Items, NotesWindowRules.DeleteTitle, Glyphs.Delete, () =>
         {
             store?.Delete(id);
-            NoticeHost.Show(NotesWindowRules.DeletedTitle(1), "在全部便签的「最近删除」里留 30 天", NoticeTone.Normal,
-                new NoticeAction("撤销", () => store?.Restore(id)));
+            NoteNotices.ShowDeleted(id, undoKey: false);
         });
         delete.Foreground = Theme.Brush("Kitty.Danger", Color.FromArgb(255, 196, 43, 28));
         Show(bay, menu, anchor, at);

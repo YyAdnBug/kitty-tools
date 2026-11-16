@@ -386,8 +386,7 @@ internal sealed class NoteSheetView
 
         NoteStore.Instance?.Delete(note.Id);
         _host.Close(false);
-        NoticeHost.Show(NotesWindowRules.DeletedTitle(1), "在全部便签的「最近删除」里留 30 天", NoticeTone.Normal,
-            new NoticeAction("撤销", () => NoteStore.Instance?.Restore(note.Id)));
+        NoteNotices.ShowDeleted(note.Id, undoKey: false);
     }
 
     /// <summary>操作菜单（mac NoteSheetModel.actionItems）：固定 / 颜色 ›/ 任务｜归档 / 删除｜浮在屏幕上 / 在全部便签里打开 / 导出｜便签设置。</summary>

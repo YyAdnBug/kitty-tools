@@ -453,6 +453,15 @@ public sealed class ReminderTests
     }
 
     [TestMethod]
+    public void AlertChoices_HideStatusScreenWhenItIsOff()
+    {
+        // REVIEW R102（mac ReminderDetail.swift:127-132）：状态屏关着时不列「进入状态屏」，已经选了的照旧列着。
+        CollectionAssert.AreEqual(Reminders.Alerts, Reminders.AlertChoices(Reminder.Light, statusScreenOn: true));
+        CollectionAssert.AreEqual(new[] { Reminder.Light, Reminder.Glow, Reminder.Full }, Reminders.AlertChoices(Reminder.Light, statusScreenOn: false));
+        CollectionAssert.AreEqual(Reminders.Alerts, Reminders.AlertChoices(Reminder.Status, statusScreenOn: false));
+    }
+
+    [TestMethod]
     public void Chimes_EveryMacNameHasItsOwnWindowsSound()
     {
         CollectionAssert.AreEqual(Reminders.Chimes, Reminders.WindowsChimes.Select(chime => chime.Name).ToArray());
