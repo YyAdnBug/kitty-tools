@@ -614,7 +614,7 @@ private nonisolated struct ResponseParser {
 
 nonisolated extension AsyncThrowingStream where Element == UInt8 {
   fileprivate var lines: AsyncThrowingStream<String, Error> {
-    AsyncThrowingStream(String.self) { continuation in
+    AsyncThrowingStream<String, any Error> { continuation in
       let task = Task {
         do {
           var buffer = Data()
