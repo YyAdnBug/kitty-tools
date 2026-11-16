@@ -771,8 +771,8 @@ struct IslandTransport: View {
         .contentShape(Rectangle())
     }
     .buttonStyle(IslandButtonStyle())
-    .accessibilityLabel(Text(label))
-    .accessibilityValue(Text(value))
+    .accessibilityLabel(Text(plain: label))
+    .accessibilityValue(Text(plain: value))
   }
 
   private var modeSpace: some View {
@@ -807,7 +807,7 @@ struct IslandTransport: View {
     }
     .buttonStyle(IslandButtonStyle())
     .disabled(!enabled)
-    .accessibilityLabel(Text(label))
+    .accessibilityLabel(Text(plain: label))
   }
 }
 

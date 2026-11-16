@@ -74,7 +74,7 @@ struct CompressSkipPage: View {
             ForEach(group.items, id: \.name) { item in
               Toggle(isOn: preset(item.name, in: entries)) {
                 Text(verbatim: item.name)
-                Text(item.detail)
+                Text(plain: item.detail)
               }
             }
           } header: {

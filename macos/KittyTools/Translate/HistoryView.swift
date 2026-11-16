@@ -820,7 +820,7 @@ private struct ScopeCapsule: View {
 
   var body: some View {
     Button(action: action) {
-      Text(title)
+      Text(plain: title)
         .font(.system(size: 12, weight: .medium))
         .padding(.horizontal, 10)
         .frame(height: 22)

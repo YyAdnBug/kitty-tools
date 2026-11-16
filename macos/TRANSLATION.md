@@ -23,6 +23,7 @@
 | SwiftUI 的 `Text` / `Button` / `Toggle` / `Label` / `Section` / `Picker` / `TextField` / `.help` 等直接给字面量 | 不用改，会自动抽出来 |
 | 自家组件收标题、说明的参数（`SectionFootnote`、`EmptyState`、`island.show`、`SettingsPushRow`……） | 参数类型 `String` → `LocalizedStringResource`，调用处的字面量不动；显示用 `Text(resource)`，AppKit 用 `String(localized: resource)` |
 | 上面那种参数要传用户的数据（便签标题、App 名） | 传 `"\(name)"`：key 是 `%@`（目录里标了不翻），原样显示。**别**用 `LocalizedStringResource(stringLiteral: name)`：用户的字碰巧等于某个 key 就会被翻掉 |
+| 组件里显示收进来的 `LocalizedStringResource` | 写 `Text(plain: title)`（`Shell/InterfaceLanguage.swift`），**别**直接 `Text(title)`：`Text(LocalizedStringResource)` 连 `"\(x)"` 插进去的用户的字一起当 Markdown 解析（文件名里的 `*`、反引号会变成斜体、代码样式，实测）。组件以前收 String、原样显示，`plain` 保持这个样子；真要 Markdown 样式的只在视图里直接写字面量 `Text("…")` |
 | 模型、逻辑里的 `String`（错误信息、菜单项、刘海岛文字） | `String(localized: "…")` |
 | 枚举的标题 | `var titleResource: LocalizedStringResource { switch self { case .a: "…" } }` + `var title: String { String(localized: titleResource) }` |
 | 同一个中文、英文不同（动作「截图」Take Screenshot / 页名「截图」Screenshot；外观的「跟随系统」Auto / 语言的 System Language） | 显式 key：`String(localized: "action.screenshot", defaultValue: "截图")`、`LocalizedStringResource("general.language", defaultValue: "语言")`；key 写成 `<族>.<名>`，小写英文、点分 |

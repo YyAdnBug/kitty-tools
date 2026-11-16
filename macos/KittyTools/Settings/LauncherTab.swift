@@ -255,7 +255,7 @@ struct LauncherTab: View {
   }
 
   private func problem(_ text: LocalizedStringResource) -> some View {
-    Text(text).foregroundStyle(Color(nsColor: .systemOrange))
+    Text(plain: text).foregroundStyle(Color(nsColor: .systemOrange))
   }
 
   private var folderDetail: String {

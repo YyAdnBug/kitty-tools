@@ -206,8 +206,8 @@ private struct Heading: View {
 
   var body: some View {
     VStack(spacing: 4) {
-      Text(title).font(.system(size: 26, weight: .bold, design: .rounded))
-      Text(subtitle)
+      Text(plain: title).font(.system(size: 26, weight: .bold, design: .rounded))
+      Text(plain: subtitle)
         .font(.callout)
         .foregroundStyle(.secondary)
         .multilineTextAlignment(.center)

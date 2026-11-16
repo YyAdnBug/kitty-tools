@@ -444,7 +444,8 @@ struct DangerButton: View {
 
   var body: some View {
     Button(role: .destructive, action: action) {
-      Text(title).foregroundStyle(Style.danger.opacity(isEnabled ? 1 : Style.disabledOpacity))
+      Text(plain: title).foregroundStyle(
+        Style.danger.opacity(isEnabled ? 1 : Style.disabledOpacity))
     }
   }
 }
@@ -676,7 +677,7 @@ struct EmptyState<Detail: View>: View {
         .font(.system(size: 28))
         .symbolRenderingMode(.hierarchical)
         .foregroundStyle(.tertiary)
-      Text(title)
+      Text(plain: title)
         .font(.system(size: 14, weight: .semibold))
         .multilineTextAlignment(.center)
       detail.font(.system(size: 12))

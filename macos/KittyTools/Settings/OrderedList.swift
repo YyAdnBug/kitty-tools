@@ -72,7 +72,7 @@ struct ListEditBar<Add: View>: View {
         .labelStyle(.iconOnly)
         .frame(width: cell.width, height: cell.height)
         .disabled(!canRemove)
-        .help(Text(removeTitle))
+        .help(Text(plain: removeTitle))
       Spacer(minLength: 0)
     }
     .buttonStyle(.borderless)
@@ -94,12 +94,12 @@ struct DetailHeader<Icon: View>: View {
     HStack(spacing: 12) {
       icon
       VStack(alignment: .leading, spacing: 2) {
-        Text(title)
+        Text(plain: title)
           .font(.title2.weight(.semibold))
           .foregroundStyle(.primary)
           .lineLimit(1)
           .truncationMode(.tail)
-        Text(status)
+        Text(plain: status)
           .font(.callout)
           .foregroundStyle(OrderedList.statusStyle(isProblem: isProblem))
           .lineLimit(1)

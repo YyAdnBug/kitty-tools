@@ -186,7 +186,7 @@ struct ScriptGuidePage: View {
         .background(Style.brand, in: .circle)
       VStack(alignment: .leading, spacing: 2) {
         Text(title)
-        Text(detail).font(.system(size: 12)).foregroundStyle(.secondary)
+        Text(plain: detail).font(.system(size: 12)).foregroundStyle(.secondary)
       }
     }
     .accessibilityElement(children: .combine)

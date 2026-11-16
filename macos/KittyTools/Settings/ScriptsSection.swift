@@ -315,10 +315,10 @@ struct SettingsPushRow: View {
           .accessibilityHidden(true)
       } label: {
         HStack(spacing: 6) {
-          Text(title)
+          Text(plain: title)
           if isNew { NewTag() }
         }
-        Text(detail)
+        Text(plain: detail)
       }
       .contentShape(.rect)
     }

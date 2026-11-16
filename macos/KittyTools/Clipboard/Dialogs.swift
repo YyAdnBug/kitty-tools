@@ -132,7 +132,7 @@ private struct TextDialog: View {
   var body: some View {
     let canSave = ClipboardPanelModel.canSave(text, initial: initial)
     VStack(alignment: .leading, spacing: 10) {
-      Text(title).dialogTitle()
+      Text(plain: title).dialogTitle()
       if asksName {
         CommandTextField(
           text: $name, placeholder: String(localized: "名称（可选，用于搜索）"), isDialogField: true,
@@ -160,7 +160,7 @@ private struct TextDialog: View {
         KeyHint("保存", "⌘↩")
         if let note {
           Text("·").foregroundStyle(.tertiary)
-          Text(note)
+          Text(plain: note)
         }
       }
       .dialogHint()
@@ -573,7 +573,7 @@ private struct KeyHint: View {
 
   var body: some View {
     HStack(spacing: 6) {
-      Text(verb)
+      Text(plain: verb)
       KeyCap(key)
     }
     .accessibilityElement(children: .ignore)

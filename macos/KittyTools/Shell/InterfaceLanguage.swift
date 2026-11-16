@@ -8,6 +8,7 @@
 // 「已更新到」那座岛说一声。新装跟系统。
 
 import Foundation
+import SwiftUI
 
 enum InterfaceLanguage: String, CaseIterable, Identifiable {
   case system
@@ -141,4 +142,11 @@ extension InterfaceLanguage {
   nonisolated static var isEnglish: Bool {
     Bundle.main.preferredLocalizations.first?.hasPrefix("en") == true
   }
+}
+
+extension Text {
+  /// 目录里的字，不解析 Markdown。收 LocalizedStringResource 的组件显示时用它：Text(LocalizedStringResource) 连
+  /// "\(x)" 插进去的用户的字一起当 Markdown 解析（文件名里的 *、反引号会变成斜体、代码样式，实测）；这些组件在 0.9.0
+  /// 收的是 String、原样显示（TRANSLATION.md 二）
+  init(plain resource: LocalizedStringResource) { self.init(String(localized: resource)) }
 }

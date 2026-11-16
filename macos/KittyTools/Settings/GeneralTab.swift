@@ -280,9 +280,9 @@ struct PermissionRow: View {
     HStack(spacing: 10) {
       KindTile(symbol: symbol, color: color, size: 24)
       VStack(alignment: .leading, spacing: 1) {
-        Text(title)
+        Text(plain: title)
         // 11 pt：和系统画的行副标题同一个字号
-        Text(detail).font(.subheadline).foregroundStyle(.secondary)
+        Text(plain: detail).font(.subheadline).foregroundStyle(.secondary)
       }
       Spacer(minLength: 8)
       PermissionStatus(granted: granted, button: button, grant: grant)

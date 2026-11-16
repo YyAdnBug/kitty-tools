@@ -242,7 +242,7 @@ struct NewTitle: View {
 
   var body: some View {
     HStack(spacing: 6) {
-      Text(title)
+      Text(plain: title)
       if WhatsNew.marks(section: title, of: page, in: fresh) { NewTag() }
     }
   }

@@ -524,7 +524,7 @@ struct SettingsRoot: View {
   private func header(_ section: SettingsPage.SidebarSection, _ pages: [SettingsPage]) -> some View
   {
     HStack(spacing: 5) {
-      Text(section.title)
+      Text(plain: section.title)
       if !expanded(section).wrappedValue,
         pages.contains(where: { WhatsNew.marks($0, in: navigation.fresh) })
       {
@@ -543,7 +543,7 @@ struct SettingsRoot: View {
             Section(isExpanded: offExpanded) {
               rows(group.pages)
             } header: {
-              Text(title)
+              Text(plain: title)
             }
           } else if let section = group.pages.first?.section {
             Section(isExpanded: expanded(section)) {
@@ -775,7 +775,7 @@ struct PageHeader: View {
       KindTile(symbol: page.symbol, color: page.color, size: 40)
       VStack(alignment: .leading, spacing: 2) {
         Text(page.title).font(.title2.weight(.semibold))
-        Text(page.summary).font(.callout).foregroundStyle(.secondary)
+        Text(plain: page.summary).font(.callout).foregroundStyle(.secondary)
       }
       Spacer(minLength: 0)
     }
@@ -823,7 +823,7 @@ struct PanelSizeRow: View {
       .disabled((width == 0 || width == Double(defaultWidth)) && height == 0)
     } label: {
       Text("面板大小")
-      Text(detail)
+      Text(plain: detail)
     }
   }
 }
@@ -839,7 +839,7 @@ struct SectionFootnote: View {
   init(_ text: LocalizedStringResource) { self.text = text }
 
   var body: some View {
-    Text(text)
+    Text(plain: text)
       .font(.caption)
       .foregroundStyle(.secondary)
       .multilineTextAlignment(.leading)

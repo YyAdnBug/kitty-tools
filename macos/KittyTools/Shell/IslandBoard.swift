@@ -71,7 +71,7 @@ struct IslandBoard: View {
   }
 
   private func placeholder(_ text: LocalizedStringResource) -> some View {
-    Text(text)
+    Text(plain: text)
       .font(.system(size: 12))
       .foregroundStyle(.white.opacity(0.45))
       .frame(maxWidth: .infinity)

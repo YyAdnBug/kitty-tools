@@ -752,7 +752,7 @@ private struct GroupCard: View {
     VStack(alignment: .leading, spacing: 8) {
       HStack(spacing: 8) {
         KindTile(symbol: group.symbol, color: group.color, size: 20)
-        Text(group.title).font(.system(size: 13, weight: .semibold))
+        Text(plain: group.title).font(.system(size: 13, weight: .semibold))
       }
       .accessibilityElement(children: .combine)
       .accessibilityAddTraits(.isHeader)
@@ -779,7 +779,7 @@ private struct GroupCard: View {
         }
         ForEach(group.entries, id: \.self) { entry in
           row(divided: !group.globals.isEmpty || entry != group.entries.first) {
-            Text(entry.text)
+            Text(plain: entry.text)
           } keys: {
             KeyAlternatives(keys: entry.keys)
           }

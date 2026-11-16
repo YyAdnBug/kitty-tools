@@ -218,7 +218,7 @@ private struct Pill: View {
     Button(action: action) {
       HStack(spacing: 6) {
         Image(systemName: symbol).font(.system(size: 11, weight: .semibold))
-        Text(title).lineLimit(1)
+        Text(plain: title).lineLimit(1)
         if let shortcut { KeyCap(shortcut) }
       }
       .font(.system(size: 12, weight: .medium))

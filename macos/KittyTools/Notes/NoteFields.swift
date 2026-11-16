@@ -133,7 +133,7 @@ struct NotePlaceholder: View {
   let paper: NotePaper
 
   var body: some View {
-    Text(text)
+    Text(plain: text)
       .font(.system(size: size, weight: weight))
       .foregroundStyle(paper.ink.opacity(0.35))
       .padding(.leading, 2)

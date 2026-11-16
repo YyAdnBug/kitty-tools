@@ -225,7 +225,7 @@ private struct NoteIconButton: View {
         withAnimation(.easeOut(duration: 0.10)) { isHovered = inside }
       }
     }
-    .accessibilityLabel(Text(label))
+    .accessibilityLabel(Text(plain: label))
     .help(Text(help ?? label))
   }
 }

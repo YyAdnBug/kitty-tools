@@ -344,7 +344,7 @@ struct NotesTab: View {
         .fixedSize()
     } label: {
       Text(title)
-      Text(detail)
+      Text(plain: detail)
     }
   }
 }

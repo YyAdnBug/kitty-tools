@@ -695,8 +695,8 @@ struct TransferForm<Content: View>: View {
       HStack(spacing: 12) {
         KindTile(symbol: symbol, color: Style.Family.general, size: 40)
         VStack(alignment: .leading, spacing: 2) {
-          Text(title).font(.title2.weight(.semibold))
-          Text(detail).font(.callout).foregroundStyle(.secondary)
+          Text(plain: title).font(.title2.weight(.semibold))
+          Text(plain: detail).font(.callout).foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
         }
         Spacer(minLength: 0)
@@ -752,7 +752,7 @@ private struct TransferLabel: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 1) {
-      Text(title)
+      Text(plain: title)
       Text(detail).font(.caption).foregroundStyle(.secondary)
         .fixedSize(horizontal: false, vertical: true)
     }

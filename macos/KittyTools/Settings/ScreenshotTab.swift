@@ -278,7 +278,7 @@ struct SaveDirectoryRow: View {
         Button("更改…", action: chooseDirectory)
       }
     } label: {
-      Text(title)
+      Text(plain: title)
     }
   }
 
