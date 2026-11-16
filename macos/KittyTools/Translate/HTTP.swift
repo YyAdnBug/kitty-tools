@@ -252,24 +252,24 @@ nonisolated enum HTTP {
   }
 
   private static func sseStream<Lines: AsyncSequence>(
-    _ lines: Lines
+    _ lines: sending Lines
   ) -> AsyncThrowingStream<String, Error> where Lines.Element == String {
-    AsyncThrowingStream { continuation in
-      let task = Task {
-        do {
-          for try await line in lines {
-            guard line.hasPrefix("data:") else { continue }
-            let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
-            if payload == "[DONE]" { break }
-            continuation.yield(payload)
-          }
-          continuation.finish()
-        } catch {
-          continuation.finish(throwing: userFacing(error))
+    let (stream, continuation) = AsyncThrowingStream<String, any Error>.makeStream()
+    let task = Task {
+      do {
+        for try await line in lines {
+          guard line.hasPrefix("data:") else { continue }
+          let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
+          if payload == "[DONE]" { break }
+          continuation.yield(payload)
         }
+        continuation.finish()
+      } catch {
+        continuation.finish(throwing: userFacing(error))
       }
-      continuation.onTermination = { _ in task.cancel() }
     }
+    continuation.onTermination = { _ in task.cancel() }
+    return stream
   }
 }
 
