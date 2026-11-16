@@ -50,8 +50,8 @@ enum InterfaceLanguage: String, CaseIterable, Identifiable {
     }
   }
 
-  /// 系统的语言列表（全局那一份，不被本 App 自己的选择盖住）
-  static var systemLanguages: [String] {
+  /// 系统的语言列表（全局那一份，不被本 App 自己的选择盖住）；nonisolated：后台扫 App 目录时按它取 App 的名字
+  nonisolated static var systemLanguages: [String] {
     UserDefaults.standard.persistentDomain(forName: UserDefaults.globalDomain)?[
       Prefs.appleLanguages]
       as? [String] ?? []

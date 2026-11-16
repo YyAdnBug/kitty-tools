@@ -60,8 +60,9 @@ struct LauncherTests {
   }
 
   @Test func systemAppsMatchChineseAndEnglish() {
-    // 真实系统 App：显示名是中文，英文缩写要从文件名来（am），中文名 / 拼音也能搜
-    let monitor = AppCatalog.item(path: "/System/Applications/Utilities/Activity Monitor.app")
+    // 真实系统 App（系统语言是简体中文）：标题是中文，英文缩写要从文件名来（am），中文名 / 拼音也能搜
+    let monitor = AppCatalog.item(
+      path: "/System/Applications/Utilities/Activity Monitor.app", languages: ["zh-Hans"])
     #expect(monitor.title == "活动监视器" && monitor.subtitle == "Activity Monitor")
     for query in ["am", "activity", "活动", "hdjsq"] {
       #expect(LauncherMatch.score(query, item: monitor) > 0, "\(query)")
@@ -106,12 +107,19 @@ struct LauncherTests {
       }
       return outer.path
     }
-    let lproj = AppCatalog.item(
-      path: try make(
-        "rednote", linked: true, info: ["CFBundleDisplayName": "rednote"],
-        strings: ["CFBundleDisplayName": "小红书"]))
-    let plain = AppCatalog.item(
-      path: try make("rednote2", linked: false, info: ["CFBundleDisplayName": "小红书"], strings: nil))
+    let lprojPath = try make(
+      "rednote", linked: true, info: ["CFBundleDisplayName": "rednote"],
+      strings: ["CFBundleDisplayName": "小红书"])
+    let plainPath = try make(
+      "rednote2", linked: false, info: ["CFBundleDisplayName": "小红书"], strings: nil)
+    let lproj = AppCatalog.item(path: lprojPath, languages: ["zh-Hans"])
+    let plain = AppCatalog.item(path: plainPath, languages: ["zh-Hans"])
+    // 系统是英文：中文名只写在里面那层主 Info.plist 的，标题是外面那层的名字，中文名照样搜得到
+    let english = AppCatalog.item(path: plainPath, languages: ["en"])
+    #expect(english.title == "rednote2")
+    for query in ["xhs", "小红", "rednote"] {
+      #expect(LauncherMatch.score(query, item: english) > 0, "\(query)")
+    }
     for app in [lproj, plain] {
       #expect(app.title == "小红书")
       for query in ["xhs", "xiaohongshu", "小红", "rednote"] {
@@ -763,14 +771,31 @@ struct LauncherLanguageTests {
     #expect(SystemCommand.logout.titleResource.english == "Log Out…")
   }
 
-  @Test func appsShowLocalizedNameAndKeepChinese() {
-    let path = "/System/Applications/Calculator.app"
-    let chinese = AppCatalog.item(path: path, english: false)
-    let english = AppCatalog.item(path: path, english: true)
-    #expect(chinese.title == "计算器")
-    // 英文界面：标题用显示名（跟着本 App 的语言；单测宿主是中文，这里只要求中文名、拼音还在）
-    #expect(english.names.contains("计算器") && english.names.contains("jisuanqi"))
-    #expect(english.names.contains("calculator"))
+  /// 2026-11-16 手测反馈「我的应用都是英文，为什么启动器的别名展示成了中文」：标题是访达里的名字，跟系统的语言、
+  /// 不跟本 App 的界面语言（单测宿主钉在中文，英文系统照样是英文名）；中文名、拼音、英文名、缩写两种系统上都能搜
+  @Test func appTitleFollowsSystemLanguageAndSearchKeepsBoth() {
+    let path = "/System/Applications/Utilities/Disk Utility.app"
+    let english = AppCatalog.item(path: path, languages: ["en-CN", "zh-Hans-CN"])
+    let chinese = AppCatalog.item(path: path, languages: ["zh-Hans-CN", "en-CN"])
+    #expect(english.title == "Disk Utility" && chinese.title == "磁盘工具")
+    #expect(english.subtitle.isEmpty && chinese.subtitle == "Disk Utility")
+    for app in [english, chinese] {
+      for query in ["disk utility", "du", "磁盘", "cipan", "cpgj"] {
+        #expect(LauncherMatch.score(query, item: app) > 0, "\(query)")
+      }
+    }
+    // 英文名和文件名不一样的（FindMy.app 叫 Find My）、别的语言（德文系统叫 Notizen）都照包里的本地化名
+    let findMy = AppCatalog.item(path: "/System/Applications/FindMy.app", languages: ["en"])
+    #expect(findMy.title == "Find My" && LauncherMatch.score("查找", item: findMy) > 0)
+    #expect(
+      AppCatalog.systemName(path: "/System/Applications/Notes.app", languages: ["de"]) == "Notizen")
+    // 应用别名页、「用 X 打开」、剪贴板来源用的 systemName 和标题同一套
+    #expect(AppCatalog.systemName(path: path, languages: ["en"]) == "Disk Utility")
+    // 中文名优先只看系统的第一语言是不是简体中文
+    #expect(AppCatalog.prefersChinese(["zh-Hans-CN"]) && AppCatalog.prefersChinese(["zh-CN"]))
+    #expect(!AppCatalog.prefersChinese(["en-CN", "zh-Hans-CN"]))
+    #expect(
+      !AppCatalog.prefersChinese(["zh-Hant-TW"]) && !AppCatalog.prefersChinese(["ja", "zh-Hans"]))
   }
 
   @Test func scriptHeaderLanguageVariants() throws {

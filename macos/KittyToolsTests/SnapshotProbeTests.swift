@@ -3570,7 +3570,8 @@ struct SnapshotProbeTests {
       "/System/Applications/Calculator.app", "/System/Applications/Utilities/Activity Monitor.app",
       "/System/Applications/Utilities/Terminal.app", "/System/Applications/Notes.app",
       "/System/Applications/System Settings.app",
-    ].map { AppCatalog.item(path: $0) }
+      // 应用名跟系统语言：截图固定成和界面同一种，不随跑测试的这台 Mac 变
+    ].map { AppCatalog.item(path: $0, languages: [InterfaceLanguage.isEnglish ? "en" : "zh-Hans"]) }
     let model = LauncherModel(usage: usage, apps: apps)
     model.boundHotKey = { $0.defaultHotKey }  // 不读本机设置，键帽固定是默认键
     // 「用 X 打开」：固定两个浏览器 / 两个编辑器（不问本机的 LaunchServices）；fy 的释义固定一句

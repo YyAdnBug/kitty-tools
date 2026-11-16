@@ -1,7 +1,9 @@
 // 启动器的 App 目录：扫各应用程序目录下的 .app（含一层子文件夹）。名字取显示名、文件名、中文本地化名，
-// 标题（中文本地化名，没有就是显示名）再转拼音全拼 + 首字母，让「活动监视器」「huodong」「hdjsq」都能搜到（修旧版只认文件名，
-// §11 #26）；中文名直接写在主 Info.plist 里的（企业微信）也转（第三轮体检 B2）；在 Mac 上装的 iPhone / iPad App 进里面那层包读中文名
+// 中文名再转拼音全拼 + 首字母，让「活动监视器」「huodong」「hdjsq」都能搜到（修旧版只认文件名，§11 #26）；
+// 中文名直接写在主 Info.plist 里的（企业微信）也转（第三轮体检 B2）；在 Mac 上装的 iPhone / iPad App 进里面那层包读中文名
 // （美区小红书叫 rednote，2026-11-10）。
+// 标题是访达里看到的名字（systemName：跟系统的语言，不跟本 App 的界面语言，2026-11-16 手测反馈「我的应用都是英文」）；
+// 系统第一语言是简体中文时照旧中文名优先（同 0.9.0）。别的语言的名字照样都能搜。
 // 系统 App 不另写死一份、按解开符号链接后的路径去重（修旧版同一个 App 出现两行，§11 #25；
 // 本机 /Applications/Safari.app 就是指向 Cryptexes 的链接）；访达不在应用程序目录里，单独加。
 // 本机 116 个 App 实测约 65ms（含拼音），在后台扫（scanInBackground，第三轮体检 P3；启动台的 LaunchpadCatalog 同一份）。
@@ -33,6 +35,7 @@ enum AppCatalog {
   nonisolated static func scanInBackground() async -> [LauncherItem] { scan() }
 
   nonisolated static func scan() -> [LauncherItem] {
+    let languages = InterfaceLanguage.systemLanguages  // 读一次全局偏好，不每个 App 读一遍
     var seen = Set<String>()
     var items: [LauncherItem] = []
     let fileManager = FileManager.default
@@ -41,7 +44,7 @@ enum AppCatalog {
       guard fileManager.fileExists(atPath: path),
         seen.insert(URL(filePath: path).resolvingSymlinksInPath().path).inserted
       else { return }
-      var app = item(path: path)
+      var app = item(path: path, languages: languages)
       if let metadata = NSMetadataItem(url: URL(filePath: path)) {
         app.systemUse = systemUse(
           usedDates: metadata.value(forAttribute: "kMDItemUsedDates") as? [Date] ?? [],
@@ -68,33 +71,51 @@ enum AppCatalog {
     return items + panes()
   }
 
-  /// english：界面是英文时标题用系统给的显示名（跟着本 App 的语言，多半是英文名），中文名和它的拼音只进 names（D7：
-  /// 英文界面里打中文、拼音也找得到）；中文界面照旧是中文名
-  nonisolated static func item(path: String, english: Bool = InterfaceLanguage.isEnglish)
-    -> LauncherItem
-  {
+  /// languages 是系统的语言列表（单测传固定的）：标题跟它走，和访达、程序坞一致；本 App 的界面语言只影响 display
+  nonisolated static func item(
+    path: String, languages: [String] = InterfaceLanguage.systemLanguages
+  ) -> LauncherItem {
     let fileName = ((path as NSString).lastPathComponent as NSString).deletingPathExtension
-    // 访达开着「显示所有扩展名」时 displayName 带 .app
+    // 访达开着「显示所有扩展名」时 displayName 带 .app；它跟着本 App 的界面语言（LaunchServices 按调用方的语言给）
     var display = FileManager.default.displayName(atPath: path)
     if display.hasSuffix(".app") { display = String(display.dropLast(4)) }
-    let chinese = chineseName(URL(filePath: path))
-    let title = english ? display : chinese ?? display
+    let bundle = BundleNames(URL(filePath: path))
+    let chinese = bundle.chinese
+    let local = bundle.systemName(fileName: fileName, languages: languages)
+    let title = prefersChinese(languages) ? chinese ?? local : local
     // 按中文名转：中文名直接写在主 Info.plist 里的（企业微信、小程序开发者工具）没有 zh-Hans.lproj，显示名就是中文（B2）
     let pinyin = Self.pinyin(chinese ?? title)
-    let names = [title, chinese, display, fileName, pinyin?.full].compactMap {
+    let names = [title, chinese, local, display, fileName, pinyin?.full].compactMap {
       $0.map(LauncherMatch.fold)
     }
     return LauncherItem(
       kind: .app, target: path, title: title,
-      // 本 App 界面是简体中文，displayName 往往已是中文名：副标题用文件名（多为英文原名）
+      // 标题是中文名时副标题写文件名（多为英文原名）
       subtitle: fileName != title ? fileName : location(of: path),
       names: names.reduce(into: []) { if !$0.contains($1) { $0.append($1) } },
-      // 显示名常是中文（「活」），英文缩写要从文件名取（Activity Monitor → am）
+      // 显示名常是中文（「活」），英文缩写要从文件名、系统语言的名字取（Activity Monitor → am、Find My → fm）
       initials: [
-        LauncherMatch.initials(display), LauncherMatch.initials(fileName), pinyin?.initials,
+        LauncherMatch.initials(display), LauncherMatch.initials(fileName),
+        LauncherMatch.initials(local), pinyin?.initials,
       ]
       .compactMap { $0 }.reduce(into: []) { if !$0.contains($1) { $0.append($1) } },
       appBundleID: Bundle(url: URL(filePath: path))?.bundleIdentifier)
+  }
+
+  /// 访达里这个 App 叫什么（应用别名页、「用 X 打开」、剪贴板来源这些显示 App 名字的地方用）。
+  /// FileManager.displayName 给的是本 App 界面语言的名字（2026-11-16 实测：界面定成中文时英文系统上也是「备忘录」）
+  nonisolated static func systemName(
+    path: String, languages: [String] = InterfaceLanguage.systemLanguages
+  ) -> String {
+    let fileName = ((path as NSString).lastPathComponent as NSString).deletingPathExtension
+    return BundleNames(URL(filePath: path)).systemName(fileName: fileName, languages: languages)
+  }
+
+  /// 系统第一语言是简体中文（zh-Hans、zh-CN、粤语简体都算；繁体、日文不算）
+  nonisolated static func prefersChinese(_ languages: [String]) -> Bool {
+    Bundle.preferredLocalizations(
+      from: ["en", "zh-Hans", "zh-Hant"], forPreferences: Array(languages.prefix(1))
+    ).first == "zh-Hans"
   }
 
   /// 系统记的使用：用过的每一天按 28 天衰减求和（同启动器同一输入的记忆）；没有日子只有最后使用时间的按那一天算
@@ -122,42 +143,63 @@ enum AppCatalog {
     }
   }
 
-  /// 简体中文显示名：系统 App 在 InfoPlist.loctable（表里混着非字符串的项，要逐个取），
-  /// 第三方 App 在 zh_CN / zh-Hans.lproj/InfoPlist.strings。
+  /// 一个 App 包里各语言的名字：系统 App 在 InfoPlist.loctable（各语言合在一个表里，表里混着非字符串的项，要逐个取），
+  /// 第三方 App 在 <语言>.lproj/InfoPlist.strings。
   /// 在 Mac 上装的 iPhone / iPad App（2026-11-10 反馈：美区的小红书叫 rednote，xhs 搜不到）：App Store 在外面包了一层，
   /// 外面那层的名字是 App Store 那个区的叫法，真的包在里面（WrappedBundle 链接 → Wrapper/<名>.app），iOS 包没有
-  /// Contents/Resources，本地化文件就在包根上；中文名直接写在里面主 Info.plist 的也要自己读（外面那层的显示名不是它）
-  nonisolated static func chineseName(_ bundle: URL) -> String? {
-    let wrapped = wrappedBundle(bundle)
-    let resources = wrapped ?? bundle.appending(path: "Contents/Resources")
-    let keys = ["zh_CN", "zh-Hans", "zh_Hans", "zh-CN"]
-    if let data = try? Data(contentsOf: resources.appending(path: "InfoPlist.loctable")),
-      let table = try? PropertyListSerialization.propertyList(from: data, format: nil)
+  /// Contents/Resources，本地化文件就在包根上
+  nonisolated struct BundleNames {
+    let wrapped: URL?
+    let resources: URL
+    let table: [String: [String: Any]]
+    /// 真的那个包（iPhone / iPad App 是里面那层）：没本地化的名字、有哪些语言
+    let bundle: Bundle?
+
+    init(_ url: URL) {
+      wrapped = AppCatalog.wrappedBundle(url)
+      resources = wrapped ?? url.appending(path: "Contents/Resources")
+      table = AppCatalog.loctable(resources.appending(path: "InfoPlist.loctable"))
+      bundle = Bundle(url: wrapped ?? url)
+    }
+
+    /// 某种语言的名字（-macos 是同一张表里给 Mac 的叫法：Image Playground 的英文表里不带它的是「Playground」）
+    func name(_ localization: String) -> String? {
+      let strings =
+        table[localization]
+        ?? NSDictionary(
+          contentsOf: resources.appending(path: "\(localization).lproj/InfoPlist.strings"))
         as? [String: Any]
-    {
-      for key in keys {
-        if let strings = table[key] as? [String: String],
-          let name = strings["CFBundleDisplayName"] ?? strings["CFBundleName"]
-        {
-          return name
-        }
+      return ["CFBundleDisplayName-macos", "CFBundleDisplayName", "CFBundleName"].firstNonNil {
+        strings?[$0] as? String
       }
     }
-    for key in keys {
-      let url = resources.appending(path: "\(key).lproj/InfoPlist.strings")
-      if let strings = NSDictionary(contentsOf: url) as? [String: String],
-        let name = strings["CFBundleDisplayName"] ?? strings["CFBundleName"]
+
+    /// 简体中文名；中文名直接写在里面那层主 Info.plist 的也要自己读（外面那层的显示名不是它）
+    var chinese: String? {
+      if let name = ["zh_CN", "zh-Hans", "zh_Hans", "zh-CN"].firstNonNil(name) { return name }
+      if wrapped != nil, let info = bundle?.infoDictionary,
+        let name = (info["CFBundleDisplayName"] ?? info["CFBundleName"]) as? String,
+        name.contains(/\p{Han}/)
       {
         return name
       }
+      return nil
     }
-    if let wrapped, let info = NSDictionary(contentsOf: wrapped.appending(path: "Info.plist")),
-      let name = (info["CFBundleDisplayName"] ?? info["CFBundleName"]) as? String,
-      name.contains(/\p{Han}/)
-    {
-      return name
+
+    /// 照访达的取法：按系统的语言挑包里最合适的那种，有本地化的名字就用，没有就是文件名；包里没本地化的名字和文件名
+    /// 对不上（用户改过名、iTerm.app 里叫 iTerm2）也是文件名。本机 142 个 App 对着 LaunchServices 实测，英文只差
+    /// TV（中国大陆机型叫 Videos：表里的 #CH 键）。ponytail: 不认 #<地区> 这种按机型的键，碰到再加
+    func systemName(fileName: String, languages: [String]) -> String {
+      let info = bundle?.infoDictionary
+      if let base = (info?["CFBundleDisplayName"] ?? info?["CFBundleName"]) as? String,
+        base != fileName
+      {
+        return fileName
+      }
+      return Bundle.preferredLocalizations(
+        from: bundle?.localizations ?? [], forPreferences: languages
+      ).first.flatMap(name) ?? fileName
     }
-    return nil
   }
 
   /// iPhone / iPad App 里面那层真的包；不是这种 App 是 nil
@@ -263,7 +305,7 @@ enum AppCatalog {
   }
 
   /// .loctable：各语言的字符串表合在一个 plist 里（语言 → 键 → 字符串），读一次查多个键
-  private nonisolated static func loctable(_ url: URL) -> [String: [String: Any]] {
+  nonisolated static func loctable(_ url: URL) -> [String: [String: Any]] {
     guard let data = try? Data(contentsOf: url),
       let table = try? PropertyListSerialization.propertyList(from: data, format: nil)
         as? [String: Any]

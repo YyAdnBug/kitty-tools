@@ -219,7 +219,9 @@ struct LauncherBatch5Tests {
     #expect(AppCatalog.location(of: SystemCommands.finderPath).isEmpty)
     #expect(AppCatalog.location(of: NSHomeDirectory() + "/Downloads/Foo.app") == "~/Downloads")
     #expect(AppCatalog.location(of: "/Volumes/Xcode/Xcode.app") == "/Volumes/Xcode")
-    #expect(AppCatalog.item(path: "/System/Applications/Calculator.app").subtitle == "Calculator")
+    #expect(
+      AppCatalog.item(path: "/System/Applications/Calculator.app", languages: ["zh-Hans"]).subtitle
+        == "Calculator")
     let chess = AppCatalog.item(path: "/System/Applications/Chess.app")
     #expect(chess.subtitle == (chess.title == "Chess" ? "" : "Chess"))
   }

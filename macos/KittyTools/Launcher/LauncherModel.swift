@@ -2694,11 +2694,8 @@ import UniformTypeIdentifiers
       .map { ($0, $0 == preferred) }
   }
 
-  /// App 的显示名（访达开着「显示所有扩展名」时去掉 .app）
-  static func appName(_ url: URL) -> String {
-    let name = FileManager.default.displayName(atPath: url.path)
-    return name.hasSuffix(".app") ? String(name.dropLast(4)) : name
-  }
+  /// App 在访达里的名字（跟系统的语言）
+  static func appName(_ url: URL) -> String { AppCatalog.systemName(path: url.path) }
 
   private var otherBrowsers: [URL] {
     if let browserCache { return browserCache }

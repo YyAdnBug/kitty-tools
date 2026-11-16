@@ -406,10 +406,10 @@ enum AppIcons {
     return icon
   }
 
-  /// App 的显示名（按 bundle ID 找到 App 包；找不到是 nil）：来源标记、排除 App 列表用
+  /// App 在访达里的名字（按 bundle ID 找到 App 包；找不到是 nil）：来源标记、排除 App 列表用
   static func name(for bundleID: String) -> String? {
     NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID).map {
-      FileManager.default.displayName(atPath: $0.path).replacing(/\.app$/, with: "")
+      AppCatalog.systemName(path: $0.path)
     }
   }
 }
