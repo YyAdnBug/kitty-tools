@@ -29,8 +29,11 @@ struct MediaKeysTests {
   }
 
   /// 真正的拦截在后台线程：用 AppKit 在主线程造事件，序列化后在后台走生产的读取入口。不发系统事件，
-  /// 不建拦截、不切输入法、不动音量。非媒体子类型（包括输入法切换）必须在读 compound data 前放行。
+  /// 不建拦截、不切输入法、不动音量。非媒体子类型（包括输入法切换）必须在读 compound data 前放行
+  /// （6、9 读 data1 会让 SkyLight 断言退出：先读 data1 的写法这里直接崩）。
   @Test func decodesSystemEventsOffMainThread() async throws {
+    // 开拦截前的现场核对在这台系统上要过（过不了，设置里开了也不接这几个键）
+    #expect(MediaKeys.fieldsReadable)
     for subtype: Int16 in [0, 6, 7, 8, 9, 11, 12] {
       for (code, key) in [
         (0, MediaKeys.Key.volumeUp), (1, .volumeDown), (2, .brightnessUp),
