@@ -12,6 +12,8 @@
 // 按 App 停用（2026-11-10，HotKeyBlock）：名单里的 App 在前台时 reload 不注册它停用的那几个（「全部」时连命令的快捷键、
 // 连按两下一起），按键原样到那个 App；看着前台切换（frontChanged），停用的集合变了才重新注册一遍（8 个热键约 0.3 ms）。
 // 录屏倒数的临时 Esc 不受名单管。本 App 的浮层不激活自己，开在名单里的 App 上面时前台还是它、快捷键照样停着。
+// 安全输入（issue #27）：别的 App 开着它时只带 ⌥ 的组合收不到（HotKey.yieldsToSecureInput），注册照样成功、什么都看不出来；
+// 主界面打开时看一眼（secureInputBlock），挡着就在底下写一行是哪个 App。重新注册、停用都记一条日志（类别 hotkeys）。
 
 import AppKit
 import Carbon.HIToolbox
@@ -97,6 +99,14 @@ struct HotKey: Codable, Hashable {
     ].map { HotKey(keyCode: $0.0, modifiers: $0.1) })
 
   var isReservedEditKey: Bool { Self.reservedEditKeys.contains(self) }
+
+  /// 只带 ⌥（或 ⌥⇧）的字母数字符号键（F 键、连按两下不算）：有进程开着安全输入（别的 App 在输密码）时，系统不把它交给
+  /// 全局热键，按键原样打进前台 App（issue #27，2026-11-16 macOS 27.0.1 实测：⌥J、⌥⇧J 不响应，⌃⌥J、⌘⌥J、⌥F19 照常；
+  /// 安全输入一关马上恢复）。默认键全是这种
+  var yieldsToSecureInput: Bool {
+    modifiers & UInt32(cmdKey | controlKey) == 0 && modifiers & UInt32(optionKey) != 0
+      && Self.functionKeys[Int(keyCode)] == nil
+  }
 
   /// 例如 ⌘⇧V；连按两下是两个同样的修饰键「⌘⌘」（KeyCombo 画成两个键帽）
   var display: String {
@@ -537,7 +547,7 @@ enum HotKeyAction: String, CaseIterable {
 
   /// 按偏好重新注册全部热键
   func reload() {
-    suspend()
+    unregisterAll()
     suspended = false
     generation += 1
     installHandlerIfNeeded()
@@ -576,6 +586,31 @@ enum HotKeyAction: String, CaseIterable {
     registerCommands(blocked: block?.blocksCommands == true)
     watchTaps()
     watchTrust(HotKeyAction.allCases.contains { $0.isActive && $0.hotKey?.doubleTap != nil })
+    // 只记个数和错误码（命令的编号可能是用户的脚本名，不记）
+    let actions = failures.map { "\($0.key.rawValue) \($0.value)" }
+    let commands = commandFailures.values.map { "command \($0)" }
+    let failed = (actions + commands).sorted().joined(separator: ", ")
+    Log.hotkeys.notice(
+      "重新注册：\(self.bindings.count) 个动作、\(self.commandBindings.count) 条命令，按 App 停用 \(self.blockedSomething)，没注册上 [\(failed, privacy: .public)]"
+    )
+  }
+
+  /// 此刻挡着快捷键的安全输入（主界面底下那一行）。holder：开着它的 App 的名字（会话字典里记的是负责的那个 App，
+  /// 2026-11-16 实测只在开着时才有这一项）；取不到 nil
+  struct SecureInputBlock: Equatable {
+    var holder: String?
+  }
+
+  /// 有进程开着安全输入、生效的快捷键里又有只带 ⌥ 的（这时它们按了没反应）才有；主界面打开时看一眼，不轮询
+  func secureInputBlock() -> SecureInputBlock? {
+    guard IsSecureEventInputEnabled(),
+      bindings.values.contains(where: \.yieldsToSecureInput)
+        || commandBindings.values.contains(where: \.yieldsToSecureInput)
+    else { return nil }
+    let session = CGSessionCopyCurrentDictionary() as? [String: Any]
+    let pid = (session?["kCGSSessionSecureInputPID"] as? NSNumber)?.int32Value
+    return SecureInputBlock(
+      holder: pid.flatMap { NSRunningApplication(processIdentifier: $0)?.localizedName })
   }
 
   /// 命令的快捷键（在各动作之后注册：和动作撞了的是命令这边失败）。blocked：前台 App 停用了全部快捷键，照样记下要注册的
@@ -627,8 +662,13 @@ enum HotKeyAction: String, CaseIterable {
     }
   }
 
-  /// 注销全部（录制快捷键期间，免得按到现有组合就触发）
+  /// 注销全部（录制快捷键、截图框选、状态屏期间，免得按到现有组合就触发）；停的那一方结束时 reload
   func suspend() {
+    Log.hotkeys.notice("停用全部快捷键（录快捷键、框选或状态屏）")
+    unregisterAll()
+  }
+
+  private func unregisterAll() {
     for ref in refs { UnregisterEventHotKey(ref) }
     refs = []
     suspended = true

@@ -1547,6 +1547,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         fresh: Set(fresh.flatMap(\.actions))),
       offCount: Home.offCount(
         enabled: Feature.enabled, available: Set(Feature.listed)),
+      // 快捷键没反应时人多半先点图标：这时看一眼安全输入（issue #27）
+      secureInput: hotKeys.secureInputBlock(),
       settingsIsNew: WhatsNew.inSettingsOnly(fresh), appearing: appearing)
     if appearing {
       homePanel.setContentSize(homeModel.size)
