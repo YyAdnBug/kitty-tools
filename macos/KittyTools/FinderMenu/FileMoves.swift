@@ -199,7 +199,7 @@ import AppKit
       FileManager.default.fileExists(
         atPath: folder.path(percentEncoded: false), isDirectory: &isDirectory),
       isDirectory.boolValue
-    else { return Moved(problem: "要放进去的文件夹不在了") }
+    else { return Moved(problem: String(localized: "要放进去的文件夹不在了")) }
     // 拷到目标文件夹里的隐藏临时名
     let temporary = temporary(in: folder)
     let link = (try? file.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink == true
@@ -229,7 +229,7 @@ import AppKit
     var problem: String?
     if copied, let expected = check.count, let got = await count(temporary), got < expected {
       copied = false
-      problem = "拷过去少了 \(expected - got) 样，原件没动"
+      problem = String(localized: "拷过去少了 \(expected - got) 样，原件没动")
     }
     // 上了锁的改不了名：先解锁，落下后再锁上（同访达拷出来的照样锁着）
     let locked = immutable(temporary)
@@ -258,7 +258,7 @@ import AppKit
     ])
     let name = file.lastPathComponent
     if values?.fileResourceType == .namedPipe || values?.fileResourceType == .socket {
-      return ("「\(name)」是管道、套接字这类特殊文件，没法拷", nil)
+      return (String(localized: "「\(name)」是管道、套接字这类特殊文件，没法拷"), nil)
     }
     guard values?.isDirectory == true, values?.isSymbolicLink != true else { return (nil, nil) }
     let path = plainPath(file)
@@ -266,9 +266,8 @@ import AppKit
       "/usr/bin/find", [path, "(", "-type", "p", "-o", "-type", "s", ")", "-print", "-quit"],
       captures: true, quality: .userInitiated, stopsOnCancel: true)
     if let line = special?.output.split(separator: "\n").first {
-      return (
-        "「\(name)」里有管道、套接字这类特殊文件（\((String(line) as NSString).lastPathComponent)），没法拷", nil
-      )
+      let special = (String(line) as NSString).lastPathComponent
+      return (String(localized: "「\(name)」里有管道、套接字这类特殊文件（\(special)），没法拷"), nil)
     }
     guard
       let listing = try? await Subprocess.run(
@@ -277,7 +276,10 @@ import AppKit
     else { return (nil, nil) }
     let entries = listing.output.split(separator: "\0").map(String.init)
     if caseSensitive(file), !caseSensitive(folder), let clash = caseClash(entries) {
-      return ("「\(name)」里有只差大小写的同名文件（「\(clash.0)」和「\(clash.1)」），拷到这里只能留一个", nil)
+      return (
+        String(localized: "「\(name)」里有只差大小写的同名文件（「\(clash.0)」和「\(clash.1)」），拷到这里只能留一个"),
+        nil
+      )
     }
     return (nil, entries.count)
   }
@@ -396,7 +398,7 @@ import AppKit
   /// 动文件的一批（移动、复制、压缩、解压）排进同一条队，挨个来；超过 1 秒在刘海岛上挂 notice 带「停止」（停的是这一批自己，
   /// work 里的子进程要 stopsOnCancel）和进度条（work 拿到的 report 报进度），做完交给 finish
   static func enqueue<T>(
-    _ notice: String, detail: String? = nil, island: Island?,
+    _ notice: LocalizedStringResource, detail: String? = nil, island: Island?,
     work: @escaping (_ report: @escaping Report) async -> T, finish: @escaping (T) -> Void
   ) {
     let previous = last
@@ -409,9 +411,9 @@ import AppKit
         try? await Task.sleep(for: .seconds(1))
         while !Task.isCancelled {
           // 再挂时不抢别的：岛上空着、或者正挂着这一条才挂（别的提示、挂着的提醒照常露出来）
-          if island?.content == nil || island?.content?.source == "\(notice)" {
+          if island?.content == nil || island?.content?.source == notice {
             island?.show(
-              "\(notice)", detail: batch.detail.map { "\($0)" }, tone: .progress,
+              notice, detail: batch.detail.map { "\($0)" }, tone: .progress,
               fraction: batch.fraction,
               actions: [Island.Action("停止") { batch.task?.cancel() }])
           }
@@ -421,7 +423,7 @@ import AppKit
       let result = await work { fraction, detail in
         batch.fraction = fraction
         batch.detail = detail
-        island?.progress("\(notice)", detail: "\(detail)", fraction: fraction)
+        island?.progress(notice, detail: "\(detail)", fraction: fraction)
       }
       ticker.cancel()
       finish(result)
@@ -431,16 +433,17 @@ import AppKit
 
   /// 移动 / 复制到 folder，刘海岛报进度和结果
   static func transfer(_ files: [URL], to folder: URL, move: Bool, island: Island?) {
-    let verb = move ? "移动" : "复制"
     let place = FileManager.default.displayName(atPath: folder.path(percentEncoded: false))
     if let reason = refusal(files, into: folder, move: move, place: place) {
-      island?.show("没有\(verb)", detail: "\(reason)", tone: .warning)
+      island?.show(move ? "没有移动" : "没有复制", detail: "\(reason)", tone: .warning)
       return
     }
-    enqueue("正在\(verb) \(files.count) 项到「\(place)」…", detail: "准备中", island: island) { report in
+    let notice: LocalizedStringResource =
+      move ? "正在移动 \(files.count) 项到「\(place)」…" : "正在复制 \(files.count) 项到「\(place)」…"
+    enqueue(notice, detail: ByteMeter.preparing, island: island) { report in
       await execute(files, into: folder, move: move, report: report)
     } finish: { outcome in
-      report(outcome, verb: verb, place: place, island: island)
+      report(outcome, move: move, place: place, island: island)
     }
   }
 
@@ -453,48 +456,52 @@ import AppKit
       FileManager.default.fileExists(
         atPath: folder.path(percentEncoded: false), isDirectory: &isDirectory),
       isDirectory.boolValue
-    else { return "「\(place)」不在了（删掉、改了名，或者那块盘没接上）" }
+    else { return String(localized: "「\(place)」不在了（删掉、改了名，或者那块盘没接上）") }
     let present = files.filter(occupied)
-    if present.isEmpty { return "选中的东西不在了" }
+    if present.isEmpty { return String(localized: "选中的东西不在了") }
     let isProtected = protection()
     let candidates = move ? present.filter { !isProtected($0) } : present
-    if candidates.isEmpty { return "整块盘、系统文件夹、主目录不能移动，可以复制" }
+    if candidates.isEmpty { return String(localized: "整块盘、系统文件夹、主目录不能移动，可以复制") }
     if candidates.contains(where: { movable($0, into: folder, move: move) }) { return nil }
     let destination = plainPath(folder.resolvingSymlinksInPath()).lowercased()
     let already = candidates.allSatisfy {
       plainPath($0.deletingLastPathComponent().resolvingSymlinksInPath()).lowercased()
         == destination
     }
-    return move && already ? "已经在「\(place)」里了" : "不能放进它自己里面"
+    return move && already
+      ? String(localized: "已经在「\(place)」里了") : String(localized: "不能放进它自己里面")
   }
 
-  private static func report(_ outcome: Outcome, verb: String, place: String, island: Island?) {
+  private static func report(_ outcome: Outcome, move: Bool, place: String, island: Island?) {
     let reveal = Island.Action("在访达中显示", opens: true) {
       NSWorkspace.shared.activateFileViewerSelecting(outcome.done)
     }
     switch (outcome.done.isEmpty, outcome.failed) {
     case (true, 0):
-      island?.show("已停止\(verb)", tone: .info)
+      island?.show(move ? "已停止移动" : "已停止复制", tone: .info)
     case (true, _):
       island?.show(
-        "没能\(verb)到「\(place)」", detail: outcome.problem.map { "\($0)" } ?? "可能是没有权限，或者那里放不下",
+        move ? "没能移动到「\(place)」" : "没能复制到「\(place)」",
+        detail: "\(outcome.problem ?? String(localized: "可能是没有权限，或者那里放不下"))",
         tone: .error)
     case (false, 0) where outcome.kept > 0:
       island?.show(
         "已复制到「\(place)」，\(outcome.kept) 项的原件没能删掉", detail: "原件在只读的盘上、上了锁，或者没有权限",
         tone: .warning, actions: [reveal])
     case (false, 0):
+      // 可选参数里的三目只有第一个分支抽得进目录（第 8b 批实测）：先放进不是可选的 let
+      let detail: LocalizedStringResource =
+        outcome.done.count == 1
+        ? "\(outcome.done[0].lastPathComponent)" : "\(outcome.done.count) 项"
       island?.show(
-        verb == "移动" ? "已移到「\(place)」" : "已复制到「\(place)」",
-        detail: outcome.done.count == 1
-          ? "\(outcome.done[0].lastPathComponent)" : "\(outcome.done.count) 项",
-        actions: [reveal])
+        move ? "已移到「\(place)」" : "已复制到「\(place)」", detail: detail, actions: [reveal])
     case (false, let failed):
+      let reason = outcome.problem ?? String(localized: "到「\(place)」")
       island?.show(
-        "\(verb)了 \(outcome.done.count) 项，\(failed) 项没成",
-        detail: outcome.kept > 0
-          ? "\(outcome.kept) 项的原件没能删掉；\(outcome.problem ?? String(localized: "到「\(place)」"))"
-          : outcome.problem.map { "\($0)" } ?? "到「\(place)」",
+        move
+          ? "移动了 \(outcome.done.count) 项，\(failed) 项没成"
+          : "复制了 \(outcome.done.count) 项，\(failed) 项没成",
+        detail: outcome.kept > 0 ? "\(outcome.kept) 项的原件没能删掉；\(reason)" : "\(reason)",
         tone: .warning, actions: [reveal])
     }
   }
@@ -506,9 +513,11 @@ import AppKit
     panel.canChooseDirectories = true
     panel.canCreateDirectories = true
     panel.allowsMultipleSelection = false
-    panel.prompt = move ? "移到这里" : "复制到这里"
+    panel.prompt = move ? String(localized: "移到这里") : String(localized: "复制到这里")
     panel.message =
-      move ? "把选中的 \(files.count) 项移到哪个文件夹" : "把选中的 \(files.count) 项复制到哪个文件夹"
+      move
+      ? String(localized: "把选中的 \(files.count) 项移到哪个文件夹")
+      : String(localized: "把选中的 \(files.count) 项复制到哪个文件夹")
     Task {
       guard await FilePanel.begin(panel) == .OK, let folder = panel.url else { return }
       remember(folder)
@@ -634,9 +643,9 @@ import AppKit
     let present = files.filter(occupied)
     let items = present.filter { !isProtected($0) }
     guard !items.isEmpty else {
-      island?.show(
-        "没有彻底删除",
-        detail: present.isEmpty ? "选中的东西不在了" : "整块盘、系统文件夹、主目录不能彻底删除", tone: .warning)
+      let reason: LocalizedStringResource =
+        present.isEmpty ? "选中的东西不在了" : "整块盘、系统文件夹、主目录不能彻底删除"
+      island?.show("没有彻底删除", detail: reason, tone: .warning)
       return
     }
     guard confirmErase(items) else { return }
@@ -670,15 +679,20 @@ import AppKit
     let alert = NSAlert()
     alert.alertStyle = .warning
     alert.messageText =
-      items.count == 1 ? "彻底删除「\(items[0].lastPathComponent)」？" : "彻底删除这 \(items.count) 项？"
+      items.count == 1
+      ? String(localized: "彻底删除「\(items[0].lastPathComponent)」？")
+      : String(localized: "彻底删除这 \(items.count) 项？")
     var names =
       items.count == 1
-      ? "" : items.prefix(5).map { "「\($0.lastPathComponent)」" }.joined(separator: "\n")
-    if items.count > 5 { names += "\n……一共 \(items.count) 项" }
-    alert.informativeText = (names.isEmpty ? "" : names + "\n\n") + "不进废纸篓，删了无法恢复。"
+      ? ""
+      : items.prefix(5).map { String(localized: "「\($0.lastPathComponent)」") }
+        .joined(separator: "\n")
+    if items.count > 5 { names += "\n" + String(localized: "……一共 \(items.count) 项") }
+    alert.informativeText =
+      (names.isEmpty ? "" : names + "\n\n") + String(localized: "不进废纸篓，删了无法恢复。")
     // 第一个按钮是默认的（回车）：取消
-    let cancel = alert.addButton(withTitle: "取消")
-    alert.addButton(withTitle: "彻底删除").hasDestructiveAction = true
+    let cancel = alert.addButton(withTitle: String(localized: "取消"))
+    alert.addButton(withTitle: String(localized: "彻底删除")).hasDestructiveAction = true
     return FinderLink.ask(alert, focus: cancel) == .alertSecondButtonReturn
   }
 
@@ -707,8 +721,10 @@ import AppKit
       island?.show("没能放替身", detail: "选中的东西不在了，或者桌面上写不进去", tone: .warning)
       return
     }
+    let detail: LocalizedStringResource =
+      made.count == 1 ? "\(made[0].lastPathComponent)" : "\(made.count) 个"
     island?.show(
-      "已把替身放到桌面", detail: made.count == 1 ? "\(made[0].lastPathComponent)" : "\(made.count) 个",
+      "已把替身放到桌面", detail: detail,
       actions: [
         Island.Action("在访达中显示", opens: true) {
           NSWorkspace.shared.activateFileViewerSelecting(made)

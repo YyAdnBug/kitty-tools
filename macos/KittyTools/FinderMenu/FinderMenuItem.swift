@@ -27,7 +27,7 @@ nonisolated enum FinderMenuItem: String, CaseIterable {
   var defaultOn: Bool { ![.deskAlias, .showHidden, .hide, .hash, .erase].contains(self) }
 
   /// 设置里那一行
-  var title: String {
+  var title: LocalizedStringResource {
     switch self {
     case .newFile: "显示「新建文件」"
     case .copyPath: "显示「拷贝路径」"
@@ -46,7 +46,7 @@ nonisolated enum FinderMenuItem: String, CaseIterable {
   }
 
   /// 设置里那一行的小字：在哪右键
-  var detail: String {
+  var detail: LocalizedStringResource {
     switch self {
     case .newFile: "文件夹窗口的空白处右键"
     case .copyPath: "右键文件、文件夹，或者文件夹窗口的空白处"

@@ -70,11 +70,14 @@ import Foundation
     total > 0 ? min(Double(value) / Double(total), 0.99) : nil
   }
 
+  /// 还没开始做时的小字（排进队时也用它）
+  nonisolated static var preparing: String { String(localized: "准备中") }
+
   /// 刘海岛上的小字：「42% · 1.2 GB / 2.9 GB」，不知道一共多少时「已处理 1.2 GB」
   func detail(_ value: Int64) -> String {
-    guard value > 0 else { return "准备中" }
+    guard value > 0 else { return Self.preparing }
     let bytes = { (count: Int64) in count.formatted(.byteCount(style: .file)) }
-    guard let fraction = fraction(value) else { return "已处理 \(bytes(value))" }
+    guard let fraction = fraction(value) else { return String(localized: "已处理 \(bytes(value))") }
     return "\(Int(fraction * 100))% · \(bytes(min(value, total))) / \(bytes(total))"
   }
 

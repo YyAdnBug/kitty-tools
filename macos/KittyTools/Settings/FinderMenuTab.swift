@@ -250,8 +250,8 @@ struct FinderMenuTab: View {
     panel.canChooseFiles = false
     panel.canChooseDirectories = true
     panel.allowsMultipleSelection = true
-    panel.prompt = "添加"
-    panel.message = "选择的文件夹会出现在访达右键的「移动到」「复制到」里"
+    panel.prompt = String(localized: "添加")
+    panel.message = String(localized: "选择的文件夹会出现在访达右键的「移动到」「复制到」里")
     guard panel.runModal() == .OK else { return }
     changeFolders { list in
       for url in panel.urls {
@@ -382,7 +382,7 @@ private struct FolderRow: View {
       Text(FileManager.default.displayName(atPath: full))
         .lineLimit(1)
         .truncationMode(.tail)
-      Text(exists ? path : "这台 Mac 上没有")
+      (exists ? Text(verbatim: path) : Text("这台 Mac 上没有"))
         .foregroundStyle(.secondary)
         .lineLimit(1)
         .truncationMode(.middle)

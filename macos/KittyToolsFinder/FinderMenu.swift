@@ -24,6 +24,8 @@
 // 拷贝路径、新建文件的符号是自己画的（icons/finder/，swift icons/build-icons.swift finder 生成到本 target 的 Assets.xcassets）。
 // 看所有位置（directoryURLs 是根目录加上每个挂着的卷，挂上 / 推出时跟着换）；拿不到对着什么、废纸篓的空白处不出菜单；iCloud 云盘、网盘这类文件提供程序管的文件夹里系统不给扩展菜单。
 // 要用户在 系统设置 › 通用 › 登录项与扩展 里打开它（App 设置 › 访达右键 有「去打开…」）。
+// 菜单文字（多语言第 8b 批）：本 target 自己一份 String Catalog（Localizable.xcstrings），跟 App 的界面语言——App 在
+// 设置 › 通用「语言」里选了的就用它（读 App 偏好里的 AppleLanguages，只读），没选跟系统；只有简体中文和英文两份字（text）。
 // ponytail: 这个 target 用 Swift 5 语言模式（Config/Finder.xcconfig），FinderSync 加上并发标注后改回 6。
 
 import AppKit
@@ -163,10 +165,40 @@ final class FinderMenu: FIFinderSync {
   private static let appURL = Bundle.main.bundleURL.deletingLastPathComponent()
     .deletingLastPathComponent().deletingLastPathComponent()
 
-  /// 随 App 的五个模板（ponytail: 抄的 App 的 NewFile.builtIn，文件在 App 包里，扩展只列名字）
-  private static let builtIn = [
-    "文本文件.txt", "Markdown.md", "Word 文档.docx", "Excel 表格.xlsx", "PPT 演示文稿.pptx",
-  ]
+  /// 随 App 的五个模板：id 就是扩展名，点了交给 App 的是它（ponytail: 抄的 App 的 NewFile.builtIn，文件在 App 包里，
+  /// 扩展只列名字）
+  private static let builtIn = ["txt", "md", "docx", "xlsx", "pptx"]
+
+  /// 自带模板在菜单里的名字（App 那边建出来的文件名用同样几个字：NewFile.fileName）
+  private static func builtInTitle(_ id: String) -> String {
+    switch id {
+    case "txt": text("文本文件")
+    case "docx": text("Word 文档")
+    case "xlsx": text("Excel 表格")
+    case "pptx": text("PPT 演示文稿")
+    case "md": "Markdown"
+    default: id
+    }
+  }
+
+  /// 这一份菜单用哪种语言（搭菜单时定下，见 build）
+  private static var locale = Locale(identifier: "zh-Hans")
+
+  /// 同 App 的 InterfaceLanguage：App 自己选了语言时，它偏好域里的 AppleLanguages 就是那一种；没选时同一个键读到的是系统的
+  /// 语言列表（读不到就按扩展自己的）。只有简体中文和英文两份字：不是英文的都是中文（繁体也落回简体，同 App）
+  private static var preferredLocale: Locale {
+    let picked = Bundle.preferredLocalizations(
+      from: Bundle.main.localizations,
+      forPreferences: appDefaults?.stringArray(forKey: "AppleLanguages"))
+    return Locale(identifier: picked.first?.hasPrefix("en") == true ? "en" : "zh-Hans")
+  }
+
+  /// 菜单上的一段字：按这一份菜单的语言从本 target 的目录里取
+  private static func text(_ resource: LocalizedStringResource) -> String {
+    var resource = resource
+    resource.locale = locale
+    return String(localized: resource)
+  }
 
   /// 用户的模板文件夹：App 数据目录里的「新建文件模板」（ponytail: 抄的 NewFile.folderName）。沙盒里 FileManager 给的
   /// home 是容器，这里要真的 home
@@ -306,10 +338,11 @@ final class FinderMenu: FIFinderSync {
 
   /// 搭菜单。不加分隔线：macOS 26 上扩展菜单里的分隔线会画成一行空白（2026-09 开发者论坛，没解答）
   private static func build(container: Int, selected: [URL]) -> NSMenu {
+    locale = preferredLocale
     let menu = NSMenu()
     let items = container == 0
     if !items, Self.shows("finderMenuNewFile", default: true) {
-      let new = menu.addItem(withTitle: "新建文件", action: nil, keyEquivalent: "")
+      let new = menu.addItem(withTitle: text("新建文件"), action: nil, keyEquivalent: "")
       new.submenu = Self.newFileMenu()
       new.image = Self.tile("kitty.finder.new.file", custom: true, color: Tint.create)
     }
@@ -323,7 +356,7 @@ final class FinderMenu: FIFinderSync {
     let option = NSEvent.modifierFlags.contains(.option)
     if Self.shows("finderMenuCopyPath", default: true) {
       let copy = menu.addItem(
-        withTitle: option ? "拷贝路径（终端写法）" : "拷贝路径",
+        withTitle: option ? text("拷贝路径（终端写法）") : text("拷贝路径"),
         action: option ? #selector(copyShellPath(_:)) : #selector(copyPath(_:)), keyEquivalent: "")
       copy.tag = container
       copy.image = Self.tile("kitty.finder.copy.path", custom: true, color: Tint.copy)
@@ -438,9 +471,10 @@ final class FinderMenu: FIFinderSync {
 
   /// 加一项，图标是 color 的方块里一个白色的系统符号
   @discardableResult private static func add(
-    _ title: String, _ action: Selector?, symbol: String, color: NSColor, to menu: NSMenu
+    _ title: LocalizedStringResource, _ action: Selector?, symbol: String, color: NSColor,
+    to menu: NSMenu
   ) -> NSMenuItem {
-    let item = menu.addItem(withTitle: title, action: action, keyEquivalent: "")
+    let item = menu.addItem(withTitle: text(title), action: action, keyEquivalent: "")
     item.image = tile(symbol, color: color)
     return item
   }
@@ -616,10 +650,9 @@ final class FinderMenu: FIFinderSync {
       item.tag = tag
       item.image = icon
     }
-    for (index, name) in builtIn.enumerated() {
-      let ext = (name as NSString).pathExtension
+    for (index, ext) in builtIn.enumerated() {
       add(
-        (name as NSString).deletingPathExtension, index,
+        builtInTitle(ext), index,
         icon("type:" + ext) {
           bitmap(
             NSWorkspace.shared.icon(for: UTType(filenameExtension: ext) ?? .data),
@@ -632,16 +665,18 @@ final class FinderMenu: FIFinderSync {
     }
     // 剪贴板里有什么由 App 看（扩展不读剪贴板的内容）
     menu.addItem(
-      withTitle: "从剪贴板新建", action: #selector(createFromClipboard(_:)), keyEquivalent: ""
+      withTitle: text("从剪贴板新建"), action: #selector(createFromClipboard(_:)), keyEquivalent: ""
     ).image = tile("doc.on.clipboard.fill", color: Tint.create)
-    menu.addItem(withTitle: "自定义后缀…", action: #selector(createCustom(_:)), keyEquivalent: "")
-      .image = tile("character.cursor.ibeam", color: Tint.create)
-    menu.addItem(withTitle: "打开模板文件夹", action: #selector(showTemplates(_:)), keyEquivalent: "")
-      .image = icon("type:folder") {
-        bitmap(
-          NSWorkspace.shared.icon(for: .folder), size: NSSize(width: 16, height: 16),
-          template: false)
-      }
+    menu.addItem(
+      withTitle: text("自定义后缀…"), action: #selector(createCustom(_:)), keyEquivalent: ""
+    ).image = tile("character.cursor.ibeam", color: Tint.create)
+    menu.addItem(
+      withTitle: text("打开模板文件夹"), action: #selector(showTemplates(_:)), keyEquivalent: ""
+    ).image = icon("type:folder") {
+      bitmap(
+        NSWorkspace.shared.icon(for: .folder), size: NSSize(width: 16, height: 16),
+        template: false)
+    }
     return menu
   }
 
@@ -660,7 +695,7 @@ final class FinderMenu: FIFinderSync {
   private static func openTitle(_ app: URL) -> String {
     var name = FileManager.default.displayName(atPath: app.path)
     if name.hasSuffix(".app") { name.removeLast(4) }
-    return "在“\(name)”中打开"
+    return text("在“\(name)”中打开")
   }
 
   /// 空白处那份菜单的 tag 从这里起（App 不会有这么多个）

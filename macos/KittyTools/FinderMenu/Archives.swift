@@ -1,8 +1,8 @@
 // 访达右键「压缩为 ▸ ZIP、7Z」「解压到这里」（2026-11-08 右键扩充第 2 批，拍板 D1 D2）。都交给系统自带的 tar（bsdtar；另起进程，
 // 不卡主线程、停得住），不带第三方：
-// - 压缩：一样东西叫「名字.zip」，几样叫「归档.zip」（同访达），放在第一样所在的文件夹、重名加「 2」。zip 里的名字标上 UTF-8
-//   （zip:hdrcharset=UTF-8；访达和 ditto 打的不标，别的系统解开中文名会乱码，2026-11-08 实测），不带 __MACOSX、._*、.DS_Store
-//   （--no-mac-metadata 加排除）；7z 用 LZMA2。只选了一个包（App 这类）时 zip 改用 ditto（同访达的压缩：带着扩展属性，
+// - 压缩：一样东西叫「名字.zip」，几样叫「归档.zip」（同访达；跟当时的界面语言，英文界面「Archive.zip」），放在第一样所在的
+//   文件夹、重名加「 2」。zip 里的名字标上 UTF-8（zip:hdrcharset=UTF-8；访达和 ditto 打的不标，别的系统解开中文名会乱码，
+//   2026-11-08 实测），不带 __MACOSX、._*、.DS_Store（--no-mac-metadata 加排除）；7z 用 LZMA2。只选了一个包（App 这类）时 zip 改用 ditto（同访达的压缩：带着扩展属性，
 //   签名不坏）。不同文件夹里的同名东西包里只放得下一个，不打。不做带密码的压缩（拍板）。
 // - 解压：zip、7z、rar、tar 一族（.tar、.tar.gz / .tgz、.tar.xz / .txz、.tar.bz2 / .tbz），和只压了一个文件的 .gz / .bz2
 //   （系统的 gunzip / bunzip2，解出来的叫包名去掉 .gz，带上包的隔离标记）。RAR（2026-11-12）：系统 tar 是 libarchive 3.7.4，
@@ -40,6 +40,11 @@ import AppKit
   nonisolated enum Format: String {
     case zip
     case sevenZip = "7z"
+  }
+
+  /// 压缩还是解压（刘海岛上说哪一个）
+  nonisolated enum Verb {
+    case compress, extract
   }
 
   /// 一次的结果
@@ -113,10 +118,15 @@ import AppKit
     return String(name.dropLast(suffix.count))
   }
 
-  /// 打出来的包叫什么：一样东西用它的名字，几样叫「归档」（同访达）。名字太长的截短：加上扩展名、重名时的「 99」
+  /// 打出来的包叫什么：一样东西用它的名字，几样叫「归档」（同访达；跟界面语言）。名字太长的截短：加上扩展名、重名时的「 99」
   /// 还在 255 个字符以内（同 NewFile.freeName；不然白打完一整包、落不下来）
   nonisolated static func archiveName(for items: [URL], format: Format) -> String {
-    var base = items.count == 1 ? items[0].lastPathComponent : "归档"
+    var base =
+      items.count == 1
+      ? items[0].lastPathComponent
+      : String(
+        localized: "finder.archiveName", defaultValue: "归档",
+        comment: "访达右键压缩几样东西时包的文件名（不含扩展名），同访达自己的「归档.zip」")
     while (base + " 99." + format.rawValue).utf16.count > 255 { base.removeLast() }
     return base + "." + format.rawValue
   }
@@ -150,8 +160,8 @@ import AppKit
 
   /// 一条为什么不算（设置页上的橙字）：带「/」的不认（只认名字，Z2）、超过 100 个字的不收；nil = 照跳
   nonisolated static func skipProblem(_ name: String) -> String? {
-    if name.contains("/") { return "只认名字、不认路径" }
-    if name.count > 100 { return "超过 100 个字" }
+    if name.contains("/") { return String(localized: "只认名字、不认路径") }
+    if name.count > 100 { return String(localized: "超过 100 个字") }
     return nil
   }
 
@@ -255,12 +265,26 @@ import AppKit
   }
 
   /// 空间、权限这类和包本身无关的原因（压缩、解压都用）
-  nonisolated static func placeProblem(_ error: String) -> String? {
-    let known = [
-      ("No space left", "磁盘空间不够了"),
-      ("Read-only file system", "这个位置是只读的"),
-      ("Operation not permitted", "没有权限读写这个位置"),
-      ("Permission denied", "没有权限读写这个位置"),
+  nonisolated enum PlaceProblem {
+    case noSpace, readOnly, noPermission
+
+    /// 给人看的
+    var text: String {
+      switch self {
+      case .noSpace: String(localized: "磁盘空间不够了")
+      case .readOnly: String(localized: "这个位置是只读的")
+      case .noPermission: String(localized: "没有权限读写这个位置")
+      }
+    }
+  }
+
+  /// tar 的标准错误里认得出的空间、权限问题
+  nonisolated static func placeProblem(_ error: String) -> PlaceProblem? {
+    let known: [(String, PlaceProblem)] = [
+      ("No space left", .noSpace),
+      ("Read-only file system", .readOnly),
+      ("Operation not permitted", .noPermission),
+      ("Permission denied", .noPermission),
     ]
     return known.first { error.localizedCaseInsensitiveContains($0.0) }?.1
   }
@@ -272,25 +296,29 @@ import AppKit
   nonisolated static func outcome(ofFailure error: String, password: Bool, rar: Bool = false)
     -> Outcome
   {
-    if let problem = placeProblem(error) { return .failed(problem) }
+    if let problem = placeProblem(error) { return .failed(problem.text) }
     if error.contains("Incorrect passphrase") { return password ? .wrongPassword : .needsPassword }
     if password,
       ["bad CRC", "decompression failed"].contains(where: error.localizedCaseInsensitiveContains)
     {
       return .wrongPassword
     }
+    let incomplete = String(localized: "压缩包不完整，可能没下载完")
+    let unknown = String(localized: "不是压缩包，或者是不支持的格式")
     let damaged = [
-      ("ncrypt", "这个包加了密码，这里只解得开 zip 的密码"),
-      ("runcated", "压缩包不完整，可能没下载完"),
-      ("nexpected end", "压缩包不完整，可能没下载完"),
-      ("ends unexpectedly", "压缩包不完整，可能没下载完"),
-      ("Unrecognized archive format", "不是压缩包，或者是不支持的格式"),
-      ("not in gzip format", "不是压缩包，或者是不支持的格式"),
-      ("is not a bzip2 file", "不是压缩包，或者是不支持的格式"),
+      ("ncrypt", String(localized: "这个包加了密码，这里只解得开 zip 的密码")),
+      ("runcated", incomplete),
+      ("nexpected end", incomplete),
+      ("ends unexpectedly", incomplete),
+      ("Unrecognized archive format", unknown),
+      ("not in gzip format", unknown),
+      ("is not a bzip2 file", unknown),
     ]
     return .failed(
       damaged.first { error.localizedCaseInsensitiveContains($0.0) }?.1
-        ?? (rar ? "压缩包可能坏了，或者加了密码（RAR 的密码这里解不开）" : "压缩包可能坏了"))
+        ?? (rar
+          ? String(localized: "压缩包可能坏了，或者加了密码（RAR 的密码这里解不开）")
+          : String(localized: "压缩包可能坏了")))
   }
 
   // MARK: 压缩
@@ -352,16 +380,16 @@ import AppKit
     } else if let result, result.status != 0 {
       let problem = placeProblem(ByteMeter.errors(result.error))
       failure = .failed(
-        format == .sevenZip && problem == "磁盘空间不够了"
-          ? "磁盘空间不够了（7z 还要先在启动盘上暂存一份）"
-          : problem ?? "有文件读不到（被移走、改名了，或者没有权限）")
+        format == .sevenZip && problem == .noSpace
+          ? String(localized: "磁盘空间不够了（7z 还要先在启动盘上暂存一份）")
+          : problem?.text ?? String(localized: "有文件读不到（被移走、改名了，或者没有权限）"))
     } else if result == nil {
-      failure = .failed("系统的工具没能运行")
+      failure = .failed(String(localized: "系统的工具没能运行"))
     } else if let placed = FileMoves.land(temporary, at: archive) {
       FileMoves.release(temporary)
       return .done(placed)
     } else {
-      failure = .failed("没能放到旁边")
+      failure = .failed(String(localized: "没能放到旁边"))
     }
     await FileMoves.discard(temporary)
     return failure
@@ -387,13 +415,14 @@ import AppKit
       directoryHint: .isDirectory)
     let name = archiveName(for: items, format: format)
     let skip = skipNames(UserDefaults.standard.string(forKey: Prefs.finderCompressSkip) ?? "")
-    FileMoves.enqueue("正在压缩成「\(name)」…", detail: "准备中", island: island) { report in
+    FileMoves.enqueue("正在压缩成「\(name)」…", detail: ByteMeter.preparing, island: island) {
+      report in
       await pack(
         items, format: format,
         to: folder.appending(path: FileMoves.freeName(name, in: folder, used: [])), skip: skip,
         report: report)
     } finish: { outcome in
-      report(outcome, verb: "压缩", island: island)
+      report(outcome, verb: .compress, island: island)
     }
   }
 
@@ -416,7 +445,7 @@ import AppKit
     let work = FileMoves.temporary(in: parent)
     guard (try? manager.createDirectory(at: work, withIntermediateDirectories: false)) != nil else {
       FileMoves.release(work)
-      return .failed("没有权限写这个位置")
+      return .failed(String(localized: "没有权限写这个位置"))
     }
     var result: Subprocess.Result?
     let output = work.appending(path: stem(of: archive))
@@ -458,12 +487,12 @@ import AppKit
       failure = outcome(
         ofFailure: result.error, password: password != nil, rar: suffix(of: archive) == ".rar")
     } else if result == nil {
-      failure = .failed("系统的工具没能运行")
+      failure = .failed(String(localized: "系统的工具没能运行"))
     } else if let placed = settle(work, stem: stem(of: archive), in: parent) {
       FileMoves.release(work)
       return .done(placed)
     } else {
-      failure = .failed("没能放到压缩包旁边")
+      failure = .failed(String(localized: "没能放到压缩包旁边"))
     }
     await FileMoves.discard(work)
     return failure
@@ -529,7 +558,9 @@ import AppKit
     // 本 App 不在前台时直接弹的框拿不到键盘（打的字进了访达，评审）：先在刘海岛说一声，点了按钮（点的是本 App）再弹
     if encrypted, !askNow, let island, !NSApp.isActive {
       island.show(
-        retry == .wrongPassword ? "密码不对" : "「\(archive.lastPathComponent)」有密码",
+        retry == .wrongPassword
+          ? LocalizedStringResource("finder.wrongPassword", defaultValue: "密码不对")
+          : "「\(archive.lastPathComponent)」有密码",
         detail: "点「输入密码」再解压", tone: .info,
         actions: [
           Island.Action("输入密码…") {
@@ -548,15 +579,16 @@ import AppKit
       }
       password = given
     }
-    FileMoves.enqueue("正在解压「\(archive.lastPathComponent)」…", detail: "准备中", island: island) {
-      report in
+    FileMoves.enqueue(
+      "正在解压「\(archive.lastPathComponent)」…", detail: ByteMeter.preparing, island: island
+    ) { report in
       await unpack(archive, password: password, gbk: gbk, report: report)
     } finish: { outcome in
       if outcome == .wrongPassword || outcome == .needsPassword {
         // 这一批先收尾，再另起一个去问：框开着的时候别堵住后面排着的
         Task { extract(archive, retry: outcome, island: island) }
       } else {
-        report(outcome, verb: "解压", island: island)
+        report(outcome, verb: .extract, island: island)
       }
     }
   }
@@ -565,11 +597,14 @@ import AppKit
   private static func askPassword(for archive: URL, wrong: Bool) -> String? {
     let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 22))
     let alert = NSAlert()
-    alert.messageText = wrong ? "密码不对，再输一次" : "「\(archive.lastPathComponent)」有密码"
-    alert.informativeText = "输入解压的密码。"
-    alert.addButton(withTitle: "解压")
+    alert.messageText =
+      wrong
+      ? String(localized: "密码不对，再输一次")
+      : String(localized: "「\(archive.lastPathComponent)」有密码")
+    alert.informativeText = String(localized: "输入解压的密码。")
+    alert.addButton(withTitle: String(localized: "解压"))
     // Esc = 取消
-    alert.addButton(withTitle: "取消").keyEquivalent = "\u{1b}"
+    alert.addButton(withTitle: String(localized: "取消")).keyEquivalent = "\u{1b}"
     alert.accessoryView = field
     guard FinderLink.ask(alert, focus: field) == .alertFirstButtonReturn,
       !field.stringValue.isEmpty
@@ -579,22 +614,26 @@ import AppKit
 
   // MARK: 说一声
 
-  private static func report(_ outcome: Outcome, verb: String, island: Island?) {
+  private static func report(_ outcome: Outcome, verb: Verb, island: Island?) {
+    let compress = verb == .compress
     switch outcome {
     case .done(let url):
       island?.show(
-        verb == "压缩" ? "已压缩" : "已解压", detail: "\(url.lastPathComponent)",
+        compress ? "已压缩" : "已解压", detail: "\(url.lastPathComponent)",
         actions: [
           Island.Action("在访达中显示", opens: true) {
             NSWorkspace.shared.activateFileViewerSelecting([url])
           }
         ])
     case .stopped:
-      island?.show("已停止\(verb)", tone: .info)
+      island?.show(compress ? "已停止压缩" : "已停止解压", tone: .info)
     case .needsPassword, .wrongPassword:
-      island?.show("没能\(verb)", detail: "密码不对", tone: .error)
+      island?.show(
+        compress ? "没能压缩" : "没能解压",
+        detail: LocalizedStringResource("finder.wrongPassword", defaultValue: "密码不对"),
+        tone: .error)
     case .failed(let reason):
-      island?.show("没能\(verb)", detail: "\(reason)", tone: .error)
+      island?.show(compress ? "没能压缩" : "没能解压", detail: "\(reason)", tone: .error)
     }
   }
 }

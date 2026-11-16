@@ -2,6 +2,7 @@
 // 查已经有英文的每一条：状态是 translated、占位符和中文一样、英文里没有汉字、核心术语照术语表；目录里没有 stale 的条目。
 // 「每条中文都有英文」（requiresEnglish）第 9 批收尾时打开，之前每批只保证自己那一族。
 // Info.plist 的权限说明：每条都有英文，中文和 Config/Info.plist 一字不差。界面语言（InterfaceLanguage）的纯函数也在这里。
+// 访达扩展自己的目录（KittyToolsFinder/Localizable.xcstrings，第 8b 批）同样查，而且每条都要有英文（它整个在那一批译完）。
 
 import Foundation
 import Testing
@@ -64,9 +65,14 @@ struct LocalizationTests {
     return result
   }
 
-  @Test func englishMatchesChinese() throws {
+  /// App 的和访达扩展的两份目录
+  nonisolated static let catalogs = [
+    "KittyTools/Resources/Localizable.xcstrings", "KittyToolsFinder/Localizable.xcstrings",
+  ]
+
+  @Test(arguments: LocalizationTests.catalogs) func englishMatchesChinese(_ path: String) throws {
     var problems: [String] = []
-    for (key, entry) in try Self.catalog("KittyTools/Resources/Localizable.xcstrings") {
+    for (key, entry) in try Self.catalog(path) {
       if entry["extractionState"] as? String == "stale" {
         problems.append("代码里已经不用了（stale），从目录里删掉：\(key)")
       }
@@ -80,7 +86,8 @@ struct LocalizationTests {
       let english = Self.values(localizations["en"])
       let needsEnglish = source.contains(Self.han) || entry["shouldTranslate"] as? Bool != false
       if english.isEmpty {
-        if Self.requiresEnglish, needsEnglish, !key.isEmpty { problems.append("没有英文：\(key)") }
+        let required = Self.requiresEnglish || path.hasPrefix("KittyToolsFinder")
+        if required, needsEnglish, !key.isEmpty { problems.append("没有英文：\(key)") }
         continue
       }
       // 带 substitutions 的（一句里两处单复数）占位符换成了 %#@名字@，只查汉字
@@ -109,6 +116,25 @@ struct LocalizationTests {
     #expect(problems.isEmpty, "\(problems.sorted().joined(separator: "\n"))")
   }
 
+  /// 访达扩展：语言列表同 App（不然繁体中文的系统落到英文、App 是中文），自带模板在菜单里的名字和 App 建出来的文件名
+  /// 是同几条中文、英文也一样（两份目录各存一份）
+  @Test func finderExtensionMatchesApp() throws {
+    let languages = { (name: String) in
+      let plist = NSDictionary(contentsOf: Self.macos.appending(path: "Config/\(name)"))
+      return plist?["CFBundleLocalizations"] as? [String] ?? []
+    }
+    #expect(!languages("Info.plist").isEmpty)
+    #expect(languages("Finder-Info.plist") == languages("Info.plist"))
+    let app = try Self.catalog(Self.catalogs[0])
+    let finder = try Self.catalog(Self.catalogs[1])
+    let english = { (entry: [String: Any]?) in
+      Self.values((entry?["localizations"] as? [String: Any])?["en"]).first?.text
+    }
+    for key in ["文本文件", "Word 文档", "Excel 表格", "PPT 演示文稿"] {
+      #expect(english(finder[key]) != nil && english(finder[key]) == english(app[key]), "\(key)")
+    }
+  }
+
   @Test func usageDescriptionsAreTranslated() throws {
     let plist = try #require(
       NSDictionary(contentsOf: Self.macos.appending(path: "Config/Info.plist")) as? [String: Any])
@@ -128,6 +154,11 @@ struct LocalizationTests {
   /// 不进目录——进了目录，英文界面写出来的就和中文的对不上、认不回来
   @Test func storedNamesNeverTranslated() throws {
     let keys = try Self.catalog("KittyTools/Resources/Localizable.xcstrings").keys
+    // 新建文件模板的文件夹名（扩展的只读例外、扩展里抄的路径、用户放进去的模板都认它，第 8b 批）
+    #expect(NewFile.folderName == "新建文件模板")
+    for catalog in Self.catalogs {
+      #expect(try !Self.catalog(catalog).keys.contains(NewFile.folderName), "\(catalog)")
+    }
     for fixed in ["Kitty Tools 自动备份", "Kitty Tools 导入前"] {
       #expect(!keys.contains { $0.hasPrefix(fixed) }, "\(fixed)")
     }

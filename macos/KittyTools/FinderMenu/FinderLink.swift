@@ -1,8 +1,8 @@
 // 访达扩展交过来的一次动作（第十一族「访达右键」，2026-11-08 拍板，PLAN §10「访达右键」）。扩展只画菜单（KittyToolsFinder/FinderMenu），
 // 点了用 App 自己的网址把动作交过来：<App 的 bundle id>://finder?do=<动作>&key=<凭证>&…&file=/a&file=/b，动作是
-// copy（拷贝路径）、name（拷贝名称）、open（app=bundle id，用 App 打开）、new（template=模板名，mine=1 是模板文件夹里的；
-// file 是右键的文件夹）、suffix（自定义后缀，file 是文件夹）、templates（打开模板文件夹）、move / copyto（to=常用文件夹的路径，
-// 或 choose 另选）、cut（剪切）、paste（file 是右键的文件夹）、alias（发送替身到桌面）、zip / 7z（压缩）、extract（解压到这里）、
+// copy（拷贝路径）、name（拷贝名称）、open（app=bundle id，用 App 打开）、new（template=自带的 id 或模板文件夹里的文件名，
+// mine=1 是模板文件夹里的；file 是右键的文件夹）、suffix（自定义后缀，file 是文件夹）、templates（打开模板文件夹）、
+// move / copyto（to=常用文件夹的路径，或 choose 另选）、cut（剪切）、paste（file 是右键的文件夹）、alias（发送替身到桌面）、zip / 7z（压缩）、extract（解压到这里）、
 // clip（从剪贴板新建，file 是右键的文件夹）、copy 带 style=shell 是按住 ⌥ 时的「拷贝路径（终端写法）」、name 带 style=stem 是「拷贝名称（不带扩展名）」，toomany（一次选了
 // 超过上限，扩展交过来让 App 说一声，不带文件）、fixnames（修复乱码文件名）、hiddenfiles（切换隐藏文件）、hide / ext（on=1 / 0：隐藏、取消隐藏、隐藏 / 显示扩展名）、
 // hash（algo=sha256 / md5 / sha1）、erase（彻底删除，先问）。
@@ -31,7 +31,7 @@ nonisolated struct FinderLink: Equatable {
     case tooMany
     /// 交给这个 App 打开（bundle id）
     case open(app: String)
-    /// 用模板在 files 那一个文件夹里新建（mine：模板文件夹里的，否则随 App 的 NewFile.builtIn）
+    /// 用模板在 files 那一个文件夹里新建（mine：模板文件夹里的文件名，否则随 App 的 NewFile.builtIn 里的 id）
     case newFile(template: String, mine: Bool)
     /// 问后缀、在 files 那一个文件夹里建空文件
     case customSuffix
@@ -116,9 +116,10 @@ nonisolated struct FinderLink: Equatable {
       action = .open(app: app)
     case "new" where files.count == 1:
       let mine = one("mine") == "1"
-      guard let name = one("template"), NewFile.isPlainName(name),
-        mine || NewFile.builtIn.contains(name)
-      else { return nil }
+      guard var name = one("template"), NewFile.isPlainName(name) else { return nil }
+      // 0.9.0 的扩展交的是自带模板的中文文件名（NewFile.legacyNames），换成 id 照认
+      if !mine { name = NewFile.legacyNames[name] ?? name }
+      guard mine || NewFile.builtIn.contains(name) else { return nil }
       action = .newFile(template: name, mine: mine)
     case "suffix" where files.count == 1:
       action = .customSuffix
@@ -253,7 +254,7 @@ nonisolated struct FinderLink: Equatable {
   static func copiedDetail(_ files: [URL]) -> String {
     files.count == 1
       ? (files[0].path(percentEncoded: false) as NSString).abbreviatingWithTildeInPath
-      : "\(files.count) 个路径"
+      : String(localized: "\(files.count) 个路径")
   }
 
   // MARK: 发送方
@@ -344,8 +345,10 @@ nonisolated struct FinderLink: Equatable {
         return values?.isDirectory == true && values?.isPackage != true
       }
       Paster.write(string: text, record: true)
-      island?.show(
-        "已拷贝名称", detail: link.files.count == 1 ? "\(text)" : "\(link.files.count) 个名称")
+      // 可选参数里的三目只有第一个分支抽得进目录（第 8b 批实测）：先放进不是可选的 let
+      let detail: LocalizedStringResource =
+        link.files.count == 1 ? "\(text)" : "\(link.files.count) 个名称"
+      island?.show("已拷贝名称", detail: detail)
     case .tooMany:
       island?.show("一次最多 \(maxFiles) 项", detail: "少选一些再右键", tone: .warning)
     case .open(let id):

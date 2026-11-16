@@ -13,26 +13,44 @@ import SwiftUI
 struct CompressSkipPage: View {
   static let route = "page:compress-skip"
 
+  /// 常见的一项：名字照原样（存的、匹配的都是它，不翻），说明跟界面语言
+  struct Preset {
+    let name: String
+    let detail: LocalizedStringResource
+    init(_ name: String, _ detail: LocalizedStringResource) {
+      self.name = name
+      self.detail = detail
+    }
+  }
+
+  /// 一组常见的（不写成元组：元组字面量里的字有的抽不进目录，TRANSLATION.md 二）
+  struct Group {
+    let title: LocalizedStringResource
+    let items: [Preset]
+    init(_ title: LocalizedStringResource, _ items: [Preset]) {
+      self.title = title
+      self.items = items
+    }
+  }
+
   /// 常见的几项（名字、一句说明），两组。默认都不开（默认值还是空的，同 0.9.0：改默认值会让没动过的电脑在同步、导入时变样）
-  static let presets: [(title: String, items: [(name: String, detail: String)])] = [
-    (
+  static let presets = [
+    Group(
       "项目文件夹里的",
       [
-        ("node_modules", "前端项目装的依赖，往往几万个文件"),
-        (".git", "版本库，存着每一次改动的历史"),
-        (".venv", "Python 项目的虚拟环境"),
-        ("__pycache__", "Python 运行时生成的缓存"),
-        ("*.log", "日志文件"),
-      ]
-    ),
-    (
+        Preset("node_modules", "前端项目装的依赖，往往几万个文件"),
+        Preset(".git", "版本库，存着每一次改动的历史"),
+        Preset(".venv", "Python 项目的虚拟环境"),
+        Preset("__pycache__", "Python 运行时生成的缓存"),
+        Preset("*.log", "日志文件"),
+      ]),
+    Group(
       "别的系统、软件留下的",
       [
-        ("~$*", "Office 打开文档时生成的临时文件，像「~$报告.docx」"),
-        ("Thumbs.db", "Windows 生成的缩略图缓存"),
-        ("desktop.ini", "Windows 记文件夹样子的文件"),
-      ]
-    ),
+        Preset("~$*", "Office 打开文档时生成的临时文件，像「~$报告.docx」"),
+        Preset("Thumbs.db", "Windows 生成的缩略图缓存"),
+        Preset("desktop.ini", "Windows 记文件夹样子的文件"),
+      ]),
   ]
 
   static var presetNames: Set<String> { Set(presets.flatMap { $0.items.map(\.name) }) }
@@ -51,18 +69,18 @@ struct CompressSkipPage: View {
         KindTile(symbol: "doc.zipper", color: Style.Family.finderMenu, size: 40)
       }
       Form {
-        ForEach(Self.presets, id: \.title) { group in
+        ForEach(Self.presets, id: \.title.key) { group in
           Section {
             ForEach(group.items, id: \.name) { item in
               Toggle(isOn: preset(item.name, in: entries)) {
-                Text(item.name)
+                Text(verbatim: item.name)
                 Text(item.detail)
               }
             }
           } header: {
             Text(group.title)
           } footer: {
-            if group.title == Self.presets.last?.title {
+            if group.title.key == Self.presets.last?.title.key {
               SectionFootnote("Mac 自己的隐藏文件（.DS_Store、._*、__MACOSX）总会跳过，不用加。")
             }
           }
@@ -132,21 +150,21 @@ struct CompressSkipPage: View {
 
   /// 列表里那一条的橙字：nil = 照跳
   static func problem(_ name: String, applied: Set<String>) -> String? {
-    if let problem = Archives.skipProblem(name) { return problem + "，这条不算" }
-    return applied.contains(name) ? nil : "超过 50 个了，这条不算"
+    if let problem = Archives.skipProblem(name) { return String(localized: "\(problem)，这条不算") }
+    return applied.contains(name) ? nil : String(localized: "超过 50 个了，这条不算")
   }
 
   /// 「压缩和解压」里那一行的小字：跳哪几个（多了只列前 4 个）、几条写错了
   static func summary(_ text: String) -> String {
     let applied = Archives.skipNames(text)
     let wrong = Archives.skipEntries(text).count - applied.count
-    var line =
+    let names = applied.prefix(4).joinedAsList()
+    let line =
       applied.isEmpty
-      ? "只跳过 Mac 自己的隐藏文件"
-      : applied.prefix(4).joined(separator: "、")
-        + (applied.count > 4 ? " 等 \(applied.count) 个" : "")
-    if wrong > 0 { line += "；\(wrong) 条写错了、不算" }
-    return line
+      ? String(localized: "只跳过 Mac 自己的隐藏文件")
+      : applied.count > 4 ? String(localized: "\(names) 等 \(applied.count) 个") : names
+    guard wrong > 0 else { return line }
+    return [line, String(localized: "\(wrong) 条写错了、不算")].joinedAsClauses()
   }
 
   /// 添加框里打的字 → 要加进去的名字，或者为什么加不了。逗号隔开（全角半角）能一次加几个；两头空白、结尾的「/」去掉
@@ -161,15 +179,21 @@ struct CompressSkipPage: View {
     for name in names {
       let problem: String? =
         name.allSatisfy({ $0 == "*" })
-        ? "只写「*」会把文件夹里的东西全跳过" : Archives.skipProblem(name)
-      if let problem { return ([], names.count > 1 ? "「\(name)」\(problem)" : problem) }
+        ? String(localized: "只写「*」会把文件夹里的东西全跳过") : Archives.skipProblem(name)
+      if let problem {
+        return ([], names.count > 1 ? String(localized: "「\(name)」\(problem)") : problem)
+      }
     }
     let existing = Archives.skipEntries(text)
     let new = names.filter { !existing.contains($0) }
     if !names.isEmpty, new.isEmpty {
-      return ([], names.count > 1 ? "这几个都已经在里面了" : "已经在里面了")
+      return (
+        [], names.count > 1 ? String(localized: "这几个都已经在里面了") : String(localized: "已经在里面了")
+      )
     }
-    if Archives.skipNames(text).count + new.count > 50 { return ([], "最多 50 个，先移除几个不用的") }
+    if Archives.skipNames(text).count + new.count > 50 {
+      return ([], String(localized: "最多 50 个，先移除几个不用的"))
+    }
     return (new, nil)
   }
 }
@@ -223,7 +247,7 @@ struct SkipNameForm: View {
         .labelsHidden()
         .focused($focused)
         .onSubmit(add)
-      Text(check.problem ?? "* 代表任意几个字；几个名字用逗号隔开，一次加进去")
+      (check.problem.map(Text.init(verbatim:)) ?? Text("* 代表任意几个字；几个名字用逗号隔开，一次加进去"))
         .font(.subheadline)
         .foregroundStyle(check.problem == nil ? Color.secondary : Color.orange)
         .fixedSize(horizontal: false, vertical: true)

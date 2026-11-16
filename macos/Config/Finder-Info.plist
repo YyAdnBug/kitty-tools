@@ -1,8 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- 访达扩展的局部 Info.plist：和生成的合并，只放 NSExtension（INFOPLIST_KEY_* 写不了字典） -->
+<!-- 访达扩展的局部 Info.plist：和生成的合并，只放 INFOPLIST_KEY_* 写不了的（字典、数组）。
+     CFBundleLocalizations 同 App 的 Config/Info.plist（简体中文、英文；zh-Hant 只为让繁体中文的系统落回简体），菜单文字在
+     KittyToolsFinder/Localizable.xcstrings -->
 <plist version="1.0">
 <dict>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>zh-Hans</string>
+		<string>en</string>
+		<string>zh-Hant</string>
+	</array>
 	<key>NSExtension</key>
 	<dict>
 		<key>NSExtensionAttributes</key>

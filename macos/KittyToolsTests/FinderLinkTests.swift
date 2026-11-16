@@ -69,12 +69,20 @@ import UniformTypeIdentifiers
     #expect(parse(link("do=copy&key=K-123&" + many)) == nil)
   }
 
-  /// 新建文件的三种：模板名只能是一个文件名、自带的要在名单里；文件夹只能一个；打开模板文件夹不带文件
+  /// 新建文件的三种：模板名只能是一个文件名、自带的要在名单里（id）；文件夹只能一个；打开模板文件夹不带文件
   @Test func newFileLinks() {
     let home = [URL(filePath: "/Users/a")]
     #expect(
+      parse(link("do=new&key=K-123&template=docx&file=/Users/a"))
+        == FinderLink(action: .newFile(template: "docx", mine: false), files: home))
+    // 0.9.0 的扩展交的是中文文件名（App 更新后旧扩展的进程还在跑）：照认成 id
+    #expect(
       parse(link("do=new&key=K-123&template=Word%20%E6%96%87%E6%A1%A3.docx&file=/Users/a"))
-        == FinderLink(action: .newFile(template: "Word 文档.docx", mine: false), files: home))
+        == FinderLink(action: .newFile(template: "docx", mine: false), files: home))
+    // 模板文件夹里的照原名，不换成 id
+    #expect(
+      parse(link("do=new&key=K-123&template=Markdown.md&mine=1&file=/Users/a"))?.action
+        == .newFile(template: "Markdown.md", mine: true))
     #expect(
       parse(link("do=new&key=K-123&template=report.key&mine=1&file=/Users/a"))?.action
         == .newFile(template: "report.key", mine: true))

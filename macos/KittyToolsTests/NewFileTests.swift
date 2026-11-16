@@ -1,4 +1,4 @@
-// 访达右键「新建文件」：重名让开、后缀收拾、自定义后缀的名字、已有模板的判断、自带模板真打进了包里。
+// 访达右键「新建文件」：重名让开、后缀收拾、自定义后缀的名字、已有模板的判断、自带模板真打进了包里、建出来的名字跟界面语言。
 // 不碰 Dev 版的数据目录（模板文件夹）：只测纯函数和包里的资源。
 
 import AppKit
@@ -29,9 +29,10 @@ struct NewFileTests {
   }
 
   @Test func existingTemplateIsFoundBySuffix() {
-    #expect(NewFile.hasTemplate(suffix: "md", among: NewFile.builtIn))
-    #expect(NewFile.hasTemplate(suffix: "DOCX", among: NewFile.builtIn))
-    #expect(!NewFile.hasTemplate(suffix: "json", among: NewFile.builtIn))
+    let builtIn = NewFile.builtIn.map(NewFile.fileName(of:))
+    #expect(NewFile.hasTemplate(suffix: "md", among: builtIn))
+    #expect(NewFile.hasTemplate(suffix: "DOCX", among: builtIn))
+    #expect(!NewFile.hasTemplate(suffix: "json", among: builtIn))
     // 「tar.gz」整个比：只有 .gz 的不算
     #expect(!NewFile.hasTemplate(suffix: "tar.gz", among: ["a.gz"]))
     #expect(NewFile.hasTemplate(suffix: "gz", among: ["TAR.GZ 文件.tar.gz"]))
@@ -75,16 +76,28 @@ struct NewFileTests {
 
   /// 自带的五个真在包里（测试宿主就是 App），Office 那三个是 zip 包（PK 开头）
   @Test func builtInTemplatesAreBundled() throws {
-    for name in NewFile.builtIn {
+    for id in NewFile.builtIn {
       let url = try #require(
-        Bundle.main.url(forResource: NewFile.resourcePrefix + name, withExtension: nil), "\(name)")
-      if ["docx", "xlsx", "pptx"].contains((name as NSString).pathExtension) {
+        Bundle.main.url(forResource: NewFile.resourceName, withExtension: id), "\(id)")
+      if ["docx", "xlsx", "pptx"].contains(id) {
         let head = try FileHandle(forReadingFrom: url).read(upToCount: 2)
-        #expect(head == Data("PK".utf8), "\(name)")
+        #expect(head == Data("PK".utf8), "\(id)")
       }
     }
     #expect(
       NewFile.templatesFolder(in: URL(filePath: "/d")).path(percentEncoded: false) == "/d/新建文件模板/")
+  }
+
+  /// 自带模板内部认 id（多语言第 8b 批），建出来的文件名跟界面语言：单测宿主是中文，和 0.9.0 建出来的一样；
+  /// 0.9.0 的扩展交的中文文件名照认成 id
+  @Test func builtInNamesFollowInterfaceLanguage() {
+    #expect(
+      NewFile.builtIn.map(NewFile.fileName(of:)) == [
+        "文本文件.txt", "Markdown.md", "Word 文档.docx", "Excel 表格.xlsx", "PPT 演示文稿.pptx",
+      ])
+    #expect(Set(NewFile.legacyNames.values) == Set(NewFile.builtIn))
+    for (name, id) in NewFile.legacyNames { #expect(NewFile.fileName(of: id) == name) }
+    #expect(NewFile.builtIn.allSatisfy { $0.allSatisfy(\.isASCII) })
   }
 
   /// 「从剪贴板新建」：剪贴板里的 TIFF 转成 PNG

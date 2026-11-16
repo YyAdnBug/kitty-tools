@@ -77,7 +77,8 @@ nonisolated enum FileHash {
     }
     FileMoves.enqueue(
       "正在算 \(kind.title)…",
-      detail: regular.count == 1 ? regular[0].lastPathComponent : "\(regular.count) 个文件",
+      detail: regular.count == 1
+        ? regular[0].lastPathComponent : String(localized: "\(regular.count) 个文件"),
       island: island
     ) { _ in
       var results: [(file: URL, hex: String)] = []
@@ -111,13 +112,14 @@ nonisolated enum FileHash {
           tone: match ? .success : .warning)
         return
       }
+      // 可选参数里的三目只有第一个分支抽得进目录（第 8b 批实测）：先放进不是可选的 let
+      let detail: LocalizedStringResource =
+        missed > 0
+        ? "\(missed) 个文件读不到，没算"
+        : results.count == 1
+          ? "\(String(results[0].hex.prefix(16)))…" : "\(results.count) 个文件"
       island?.show(
-        "已拷贝 \(kind.title)",
-        detail: missed > 0
-          ? "\(missed) 个文件读不到，没算"
-          : results.count == 1
-            ? "\(String(results[0].hex.prefix(16)))…" : "\(results.count) 个文件",
-        tone: missed > 0 ? .warning : .success)
+        "已拷贝 \(kind.title)", detail: detail, tone: missed > 0 ? .warning : .success)
     }
   }
 }

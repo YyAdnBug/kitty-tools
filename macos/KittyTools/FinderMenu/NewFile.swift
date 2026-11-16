@@ -1,10 +1,11 @@
 // 访达右键「新建文件 ▸」（第十一族第 2 批，2026-11-08 拍板 B1，PLAN §10「访达右键」）：文件夹空白处右键，扩展列出菜单、
 // 点了交给 App（FinderLink 的 do=new / suffix / templates），App 在这里建：
-// - 自带五种：文本文件、Markdown、Word 文档、Excel 表格、PPT 演示文稿（Resources/new-file/，包里平铺、new-file- 开头；
-//   Word 是系统 textutil 转的、Excel / PPT 是手写的最小 Office Open XML，元数据都是空的）。
+// - 自带五种：文本文件、Markdown、Word 文档、Excel 表格、PPT 演示文稿（Resources/new-file/，包里平铺、叫 new-file.<id>；
+//   Word 是系统 textutil 转的、Excel / PPT 是手写的最小 Office Open XML，元数据都是空的）。内部认 id（就是扩展名，多语言第 8b 批），
+//   建出来的文件名跟当时的界面语言（「文本文件.txt」「Text File.txt」），建好就是用户的文件。
 // - 数据目录「新建文件模板」文件夹里用户放的任何文件（放什么就能建什么；扩展有这个文件夹的只读例外，列菜单用）。
-// - 「自定义后缀…」：App 弹框问后缀（扩展是后台进程，弹不出窗口），建一个空的「JSON 文件.json」；框里「以后列在「新建文件」里」
-//   默认勾着：模板文件夹里也放一个同名的空文件，已经有这个后缀的模板（含自带的）就不放。
+// - 「自定义后缀…」：App 弹框问后缀（扩展是后台进程，弹不出窗口），建一个空的「JSON 文件.json」（英文界面「JSON File.json」）；
+//   框里「以后列在「新建文件」里」默认勾着：模板文件夹里也放一个同名的空文件，已经有这个后缀的模板（含自带的）就不放。
 // 拷一份到右键的那个文件夹，名字同模板，重名加「 2」；新文件的日期是现在（拷贝会带着模板的旧日期）；建不成响一声、记错误码。
 // 建好后同访达的「新建文件夹」、Windows 的新建：在访达里选中它、进入改名（revealForRename，按回车要辅助功能授权）。
 // 名字、后缀的收拾是纯函数（NewFileTests）。
@@ -20,14 +21,32 @@ import OSLog
 import UniformTypeIdentifiers
 
 nonisolated enum NewFile {
-  /// 随 App 的五个（显示的文件名；扩展那边抄了一份，FinderLinkTests 读源码比对）
-  static let builtIn = [
-    "文本文件.txt", "Markdown.md", "Word 文档.docx", "Excel 表格.xlsx", "PPT 演示文稿.pptx",
+  /// 随 App 的五个：id 就是扩展名，网址里交的是它（扩展那边抄了一份，FinderLinkTests 读源码比对）
+  static let builtIn = ["txt", "md", "docx", "xlsx", "pptx"]
+  /// 0.9.0 的扩展交的是中文文件名：App 更新之后、访达重新拉起扩展之前，旧扩展的进程还在跑，交过来的照认
+  static let legacyNames = [
+    "文本文件.txt": "txt", "Markdown.md": "md", "Word 文档.docx": "docx", "Excel 表格.xlsx": "xlsx",
+    "PPT 演示文稿.pptx": "pptx",
   ]
-  /// 包里的文件名前缀（资源平铺，别和别的撞名）
-  static let resourcePrefix = "new-file-"
-  /// 数据目录里用户的模板文件夹（扩展的只读例外写的就是这个名字）
+  /// 包里的模板叫「new-file.<id>」（资源平铺，别和别的撞名）
+  static let resourceName = "new-file"
+  /// 数据目录里用户的模板文件夹（扩展的只读例外写的就是这个名字）。**永远不翻**：扩展的 entitlements、扩展里抄的路径、
+  /// 用户已经放进去的模板都认这个名字
   static let folderName = "新建文件模板"
+
+  /// 自带的那一个建出来叫什么（跟界面语言；扩展菜单里列的是同样几个名字，在它自己的目录里）
+  static func fileName(of id: String) -> String {
+    let title =
+      switch id {
+      case "txt": String(localized: "文本文件")
+      case "docx": String(localized: "Word 文档")
+      case "xlsx": String(localized: "Excel 表格")
+      case "pptx": String(localized: "PPT 演示文稿")
+      case "md": "Markdown"
+      default: id
+      }
+    return title + "." + id
+  }
 
   static func templatesFolder(in data: URL = AppDelegate.supportDirectory) -> URL {
     data.appending(path: folderName, directoryHint: .isDirectory)
@@ -63,9 +82,12 @@ nonisolated enum NewFile {
     return suffix
   }
 
-  /// 自定义后缀建出来的名字：「JSON 文件.json」「TAR.GZ 文件.tar.gz」
+  /// 自定义后缀建出来的名字：「JSON 文件.json」「TAR.GZ 文件.tar.gz」（英文「JSON File.json」）
   static func customName(suffix: String) -> String {
-    "\(suffix.uppercased()) 文件.\(suffix)"
+    String(
+      localized: "\(suffix.uppercased()) 文件",
+      comment: "访达右键「自定义后缀…」建出来的文件名（不含扩展名），%@ 是大写的后缀：JSON 文件")
+      + "." + suffix
   }
 
   /// 已经有这个后缀的模板了（不分大小写；「tar.gz」整个比，不当成「gz」）
@@ -75,7 +97,7 @@ nonisolated enum NewFile {
 
   // MARK: 建
 
-  /// 用模板建一个（mine：模板文件夹里的；否则随 App 的）。返回建好的位置
+  /// 用模板建一个（mine：模板文件夹里的，name 是文件名；否则随 App 的，name 是 id）。返回建好的位置
   @discardableResult @MainActor static func create(
     template name: String, mine: Bool, in folder: URL, island: Island? = nil
   )
@@ -84,10 +106,11 @@ nonisolated enum NewFile {
     let source =
       mine
       ? templatesFolder().appending(path: name)
-      : Bundle.main.url(forResource: resourcePrefix + name, withExtension: nil)
+      : Bundle.main.url(forResource: resourceName, withExtension: name)
+    let created = mine ? name : fileName(of: name)
     guard let source, FileManager.default.fileExists(atPath: source.path(percentEncoded: false))
     else {
-      island?.show("找不到模板「\(name)」", detail: "模板文件夹里的它可能被删了或改了名", tone: .warning)
+      island?.show("找不到模板「\(created)」", detail: "模板文件夹里的它可能被删了或改了名", tone: .warning)
       return nil
     }
     guard !mine || noAliases([AppDelegate.supportDirectory, templatesFolder(), source]) else {
@@ -96,7 +119,7 @@ nonisolated enum NewFile {
     }
     // ponytail: 查替身和拷贝之间有一小段空当（查完再换成替身还拷得过去），文件夹模板在主线程上一次拷完、不限大小——
     // 真碰上再改成 O_NOFOLLOW_ANY 打开再写、文件夹放到主线程外
-    return place(name, in: folder, island: island) {
+    return place(created, in: folder, island: island) {
       try FileManager.default.copyItem(at: source, to: $0)
     }
   }
@@ -162,10 +185,10 @@ nonisolated enum NewFile {
   /// 写不进去的原因（给人看）
   static func writeProblem(_ error: Error) -> String {
     switch (error as NSError).code {
-    case NSFileWriteVolumeReadOnlyError: "这个位置是只读的"
-    case NSFileWriteNoPermissionError: "没有权限写这个文件夹"
-    case NSFileWriteOutOfSpaceError: "磁盘空间不够了"
-    default: "写不进去（可能没有权限）"
+    case NSFileWriteVolumeReadOnlyError: String(localized: "这个位置是只读的")
+    case NSFileWriteNoPermissionError: String(localized: "没有权限写这个文件夹")
+    case NSFileWriteOutOfSpaceError: String(localized: "磁盘空间不够了")
+    default: String(localized: "写不进去（可能没有权限）")
     }
   }
 
@@ -199,7 +222,7 @@ nonisolated enum NewFile {
   // MARK: 从剪贴板新建
 
   /// 「从剪贴板新建」（2026-11-08，同几家成熟产品）：剪贴板里是图就存成「剪贴板图片.png」，是文字就存成「剪贴板文字.txt」
-  /// （UTF-8），重名加「 2」、建好照样选中进入改名；剪贴板里是文件的那是访达 ⌘V 的事，说一声。TIFF 转 PNG 在主线程外
+  /// （UTF-8；名字跟界面语言），重名加「 2」、建好照样选中进入改名；剪贴板里是文件的那是访达 ⌘V 的事，说一声。TIFF 转 PNG 在主线程外
   @MainActor static func fromClipboard(in folder: URL, island: Island?) {
     let board = NSPasteboard.general
     let types = board.types ?? []
@@ -209,10 +232,10 @@ nonisolated enum NewFile {
       return
     }
     if types.contains(.fileURL) {
-      island?.show(
-        "剪贴板里是文件",
-        detail: FileMoves.hasCut ? "剪切的：右键空白处「粘贴」，或者按 ⌥⌘V" : "在访达里按 ⌘V 就能粘贴",
-        tone: .info)
+      // 可选参数里的三目只有第一个分支抽得进目录（第 8b 批实测）：先放进不是可选的 let
+      let hint: LocalizedStringResource =
+        FileMoves.hasCut ? "剪切的：右键空白处「粘贴」，或者按 ⌥⌘V" : "在访达里按 ⌘V 就能粘贴"
+      island?.show("剪贴板里是文件", detail: hint, tone: .info)
       return
     }
     // 图和文字都有时按来源 App 给的顺序取（它把哪个放前面就是哪个）
@@ -221,13 +244,13 @@ nonisolated enum NewFile {
     if let text, image.map({ text < $0 }) ?? true,
       let string = board.string(forType: .string), !string.isEmpty
     {
-      place("剪贴板文字.txt", in: folder, island: island) {
+      place(clipboardText, in: folder, island: island) {
         try Data(string.utf8).write(to: $0, options: .withoutOverwriting)
       }
       return
     }
     if let png = board.data(forType: .png) {
-      place("剪贴板图片.png", in: folder, island: island) {
+      place(clipboardImage, in: folder, island: island) {
         try png.write(to: $0, options: .withoutOverwriting)
       }
       return
@@ -238,20 +261,24 @@ nonisolated enum NewFile {
           island?.show("没能新建", detail: "剪贴板里的图转不成 PNG", tone: .error)
           return
         }
-        place("剪贴板图片.png", in: folder, island: island) {
+        place(clipboardImage, in: folder, island: island) {
           try png.write(to: $0, options: .withoutOverwriting)
         }
       }
       return
     }
     if let text = board.string(forType: .string), !text.isEmpty {
-      place("剪贴板文字.txt", in: folder, island: island) {
+      place(clipboardText, in: folder, island: island) {
         try Data(text.utf8).write(to: $0, options: .withoutOverwriting)
       }
       return
     }
     island?.show("剪贴板里没有文字或图片", detail: "先拷贝一段文字或一张图", tone: .warning)
   }
+
+  /// 「从剪贴板新建」建出来的文件名（跟界面语言）
+  private static var clipboardText: String { String(localized: "剪贴板文字") + ".txt" }
+  private static var clipboardImage: String { String(localized: "剪贴板图片") + ".png" }
 
   /// 图转成 PNG（ImageIO，主线程外：mac-native §3 第 1 类）；带着原图的 DPI、方向这些（不然高分屏截图在预览里大一倍）
   @concurrent nonisolated static func pngData(from data: Data) async -> Data? {
@@ -280,9 +307,10 @@ nonisolated enum NewFile {
   @MainActor static func askSuffix(in folder: URL, island: Island? = nil) {
     let field = NSTextField(
       string: UserDefaults.standard.string(forKey: Prefs.finderLastSuffix) ?? "")
-    field.placeholderString = "比如 json、yaml、tar.gz"
+    field.placeholderString = String(localized: "比如 json、yaml、tar.gz")
     field.frame = NSRect(x: 0, y: 0, width: 260, height: 22)
-    let remember = NSButton(checkboxWithTitle: "以后列在「新建文件」里", target: nil, action: nil)
+    let remember = NSButton(
+      checkboxWithTitle: String(localized: "以后列在「新建文件」里"), target: nil, action: nil)
     remember.state = .on
     let stack = NSStackView(views: [field, remember])
     stack.orientation = .vertical
@@ -291,11 +319,11 @@ nonisolated enum NewFile {
     stack.frame = NSRect(x: 0, y: 0, width: 260, height: 52)
 
     let alert = NSAlert()
-    alert.messageText = "新建文件的后缀"
-    alert.informativeText = "在「\(folder.lastPathComponent)」里建一个这种后缀的空文件。"
-    alert.addButton(withTitle: "新建")
+    alert.messageText = String(localized: "新建文件的后缀")
+    alert.informativeText = String(localized: "在「\(folder.lastPathComponent)」里建一个这种后缀的空文件。")
+    alert.addButton(withTitle: String(localized: "新建"))
     // Esc = 取消
-    alert.addButton(withTitle: "取消").keyEquivalent = "\u{1b}"
+    alert.addButton(withTitle: String(localized: "取消")).keyEquivalent = "\u{1b}"
     alert.accessoryView = stack
     guard FinderLink.ask(alert, focus: field) == .alertFirstButtonReturn else { return }
     guard let suffix = cleanSuffix(field.stringValue) else {
@@ -319,7 +347,7 @@ nonisolated enum NewFile {
     let mine =
       (try? FileManager.default.contentsOfDirectory(atPath: folder.path(percentEncoded: false)))
       ?? []
-    guard !hasTemplate(suffix: suffix, among: builtIn + mine) else { return }
+    guard !hasTemplate(suffix: suffix, among: builtIn.map(fileName(of:)) + mine) else { return }
     try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     try? Data().write(to: folder.appending(path: name), options: .withoutOverwriting)
   }
