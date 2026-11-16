@@ -54,12 +54,13 @@ struct DialogOverlay: View {
     case .edit(let id):
       if let item = item(id) {
         // 说明只说和这条有关的（体检 C2）：片段说占位符（片段本来就按纯文本粘，带格式也不提丢格式），
-        // 其余带格式的才说保存后丢格式
+        // 其余带格式的才说保存后丢格式。那句先给不是可选的 let：直接写在赋给可选值的 if 里抽不进目录（TRANSLATION.md 二）
+        let richNote: LocalizedStringResource = "保存后不再保留原来的格式"
         let note: LocalizedStringResource? =
           if item.isSnippet {
             Snippet.placeholderHelp
           } else if item.richType != nil {
-            "保存后不再保留原来的格式"
+            richNote
           } else {
             nil
           }

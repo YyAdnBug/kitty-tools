@@ -368,7 +368,7 @@ private struct CommandRow: View {
         }
         .labelsHidden()
         .accessibilityLabel("「\(row.title)」的别名")
-        .accessibilityValue(conflicted ? "\(alias)，和别的重复了" : alias)
+        .accessibilityValue(conflicted ? String(localized: "\(alias)，和别的重复了") : alias)
       if let center {
         HotKeyRecorder(
           target: .command(id: row.id, title: row.title), center: center, message: $message,

@@ -8,7 +8,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lets launcher system commands ask Finder to empty the Trash and show the system’s Log Out, Restart and Shut Down confirmations. When the notch can’t read what’s playing, Kitty Tools also uses it to play, pause and skip in Music or Spotify and to read Music’s playback position."
+            "value" : "Lets Launcher system commands ask Finder to empty the Trash and show the system’s Log Out, Restart and Shut Down confirmations. When the Notch can’t read what’s playing, Kitty Tools also uses it to play, pause and skip in Music or Spotify and to read Music’s playback position."
           }
         },
         "zh-Hans" : {
@@ -26,7 +26,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Shows a countdown to your next event in the notch (title, time, location and meeting link). Event details stay on this Mac."
+            "value" : "Shows a countdown to your next event in the Notch (title, time, location and meeting link). Event details stay on this Mac."
           }
         },
         "zh-Hans" : {
@@ -44,7 +44,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lets Kitty Tools open and reveal Desktop files you pick in the launcher or clipboard history, and create new files from the Finder menu."
+            "value" : "Lets Kitty Tools open and reveal Desktop files you pick in the Launcher or Clipboard History, and create new files from Finder Menu."
           }
         },
         "zh-Hans" : {
@@ -62,7 +62,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lets Kitty Tools open and reveal Documents files you pick in the launcher or clipboard history, and create new files from the Finder menu."
+            "value" : "Lets Kitty Tools open and reveal Documents files you pick in the Launcher or Clipboard History, and create new files from Finder Menu."
           }
         },
         "zh-Hans" : {
@@ -80,7 +80,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lets Kitty Tools open and reveal Downloads files you pick in the launcher or clipboard history, and create new files from the Finder menu."
+            "value" : "Lets Kitty Tools open and reveal Downloads files you pick in the Launcher or Clipboard History, and create new files from Finder Menu."
           }
         },
         "zh-Hans" : {

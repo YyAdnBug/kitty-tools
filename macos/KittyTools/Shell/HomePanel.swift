@@ -52,6 +52,11 @@ enum Home {
     let key: String?
     /// 新功能标记（WhatsNew）：名字前面一个强调色小圆点
     var isNew = false
+    /// 格子里写的名字放不下全称时的短说法（Home.shortTitle）；悬停提示、读屏照旧用 title
+    var shortTitle: String? = nil
+
+    /// 格子里写的名字
+    var label: String { shortTitle ?? title }
 
     var id: String {
       switch target {
@@ -90,7 +95,7 @@ enum Home {
         Tile(
           target: .action(action), title: action.title(recording: state.isRunning(action)),
           symbol: action.symbol, color: action.color, key: keys[action],
-          isNew: fresh.contains(action))
+          isNew: fresh.contains(action), shortTitle: shortTitle(action))
       }
       for extra in extras where section.actions.contains(where: { $0 == extra.section }) {
         tiles.append(
@@ -135,9 +140,18 @@ enum Home {
     return rows
   }
 
+  /// 格子里用短说法的动作（TRANSLATION.md 五）：「划词翻译并替换」英文全称折两行也放不下（会缩字），格子里写 Translate & Replace。
+  /// 中文和全称一样
+  static func shortTitle(_ action: HotKeyAction) -> String? {
+    guard action == .translateReplace else { return nil }
+    return String(
+      localized: "home.translateReplace", defaultValue: "划词翻译并替换",
+      comment: "短说法：主界面格子里「划词翻译并替换」的名字（英文全称两行也放不下）")
+  }
+
   /// 名字一行放得下（格子宽减左右各 3；带「新」的小圆点再让出圆点 6 + 间距 3）
   static func fitsOneLine(_ tile: Tile) -> Bool {
-    Style.fitsOneLine(tile.title, size: 11, width: Self.tile.width - 6 - (tile.isNew ? 9 : 0))
+    Style.fitsOneLine(tile.label, size: 11, width: Self.tile.width - 6 - (tile.isNew ? 9 : 0))
   }
 
   /// 格子的高（纯函数）：有一格的名字一行放不下（英文），整块面板的格子都高一行，排得齐；都放得下（中文）就是 tile.height
@@ -429,7 +443,7 @@ private struct HomeTile: View {
           if tile.isNew { NewDot() }
           // 英文的名字长：一行放不下时整块面板的格子高一行（Home.tileHeight），名字折成两行、居中；
           // 不折的时候（中文）照旧一行，和以前一个像素都不差
-          Text(tile.title)
+          Text(tile.label)
             .font(.system(size: 11))
             .lineLimit(wraps ? 2 : 1)
             .multilineTextAlignment(wraps ? .center : .leading)

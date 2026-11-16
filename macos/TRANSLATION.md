@@ -38,9 +38,10 @@
 | 设置页的零件（第 2 批改好）：`SectionFootnote`、`DetailHeader(title:status:)`、`PermissionRow(title:detail:button:)`、`PermissionStatus`、`ListEditBar(removeTitle:)`、`SettingsPushRow(title:detail:)`、`PanelSizeRow(detail:)`、`AppListRow.chooseApps(prompt:message:)`、`DangerButton`（第 3 批） | 同上；用户起的名字、别处算好的一句摘要传 `"\(x)"`。原来拿 `+` 拼的说明（`SectionFootnote("a" + (x ? "b" : ""))`）编不过：拆成整句的三目，或者暂时整段 `"\(text)"` 传过去、留给那一族拆 |
 | 并列的几个名字连成一串（「剪贴板、启动器」） | `names.joinedAsList()`（显式 key `list.enumeration`：中文「、」，英文「, 」），别写死 `joined(separator: "、")` |
 | 某种语言里是空的（中文「」「」之间什么都不加、英文要「, 」） | 别让哪种语言的值是空串：查不到译文、默认值又是空的时候系统显示 key 本身（实测）。把空的那段并进旁边的字里（`list.quoted` 的中文是「」「」，外面再包一层「%@」），`LocalizationTests` 查空串 |
-| switch / 三目的各个分支是元组（`case .url: ("打开", "safari")`），或者 switch 表达式赋给一个可选值的 `let` | 编得过，但**只有第一个分支的字被抽进目录**，写成 `LocalizedStringResource("…")` 也一样（第 6 批实测，其余的英文界面显示中文）：经一个收 `LocalizedStringResource` 参数的小函数传进去（`LauncherModel.act`），或者让函数直接 `return` 那个 switch。不是元组的 switch / 三目、`String(localized:)` 都没事——**例外：三目直接写在可选的 `LocalizedStringResource?` 参数里**（`detail: x ? "a" : "b"`，第 8b 批实测）同样只抽到第一个分支，先赋给一个不是可选的 `let detail: LocalizedStringResource = x ? "a" : "b"` 再传。改完拿构建目录里的 `.stringsdata` 对一遍源码里的中文字面量 |
+| switch / 三目的各个分支是元组（`case .url: ("打开", "safari")`），或者 switch 表达式赋给一个可选值的 `let` | 编得过，但**只有第一个分支的字被抽进目录**，写成 `LocalizedStringResource("…")` 也一样（第 6 批实测，其余的英文界面显示中文）：经一个收 `LocalizedStringResource` 参数的小函数传进去（`LauncherModel.act`），或者让函数直接 `return` 那个 switch。不是元组的 switch / 三目、`String(localized:)` 都没事——**例外：三目直接写在可选的 `LocalizedStringResource?` 参数里**（`detail: x ? "a" : "b"`，第 8b 批实测）同样只抽到第一个分支，先赋给一个不是可选的 `let detail: LocalizedStringResource = x ? "a" : "b"` 再传；`if` / `switch` 表达式赋给可选值的 `let` 同样（第 9 批：先给一个不是可选的 `let`）。漏了的 `LocalizationTests.sourceStringsAreInCatalog` 会报（源码里的中文字面量目录里没有） |
 | 文件里的内容（新建脚本的模板、例子、给 AI 的写法说明） | 不进目录：按 `InterfaceLanguage.isEnglish` 写两份，建的那一刻用当时的语言（写进文件就是用户自己的） |
-| 固定宽的格子里英文放不下（主界面格子、刘海岛那一张的快捷动作） | `Style.fitsOneLine` 量：放不下的才折两行、居中，放得下的修饰符和原来一模一样（中文截图逐像素不变） |
+| 固定宽的格子里英文放不下（主界面格子、刘海岛那一张的快捷动作） | `Style.fitsOneLine` 量：放不下的才折两行、居中，放得下的修饰符和原来一模一样（中文截图逐像素不变）。折两行还放不下的只在格子里用短说法（主界面的「划词翻译并替换」→ Translate & Replace，`Home.shortTitle`；悬停提示、读屏照旧全称） |
+| 刘海岛收着那一行（标题 + 详情 + 按钮） | 不用管长短：`Island.rowRoom` 量好，整行放不下时先压详情（最窄 120、中间截断）、再截标题的尾巴，不超过岛的最宽 460（第 9 批；英文的长标题原来会撑出岛被裁掉）。岛上的句子照样写短 |
 
 **存下来的字：存原文、显示时翻**（拍板 D6）。写进偏好、数据库、同步文件夹、导出文件、文件名，而且之后还要读回来比对的中文，
 不能因为换语言就认不出来：
@@ -71,7 +72,10 @@
 3. `macos/sync-strings.sh macos/build/dd-i18n` 把新 key 并进目录。
 4. 填英文：直接改 `Localizable.xcstrings`（JSON；普通一条是 `localizations.en.stringUnit = {state: translated, value}`，单复数是
    `localizations.en.variations.plural.{one,other}.stringUnit`），改完再跑一次 sync 把格式收拾成 Xcode 的样子。
-5. `LocalizationTests`：已有英文的每一条状态 translated、占位符和中文一样、没有汉字、术语照下表；没有 stale。
+5. `LocalizationTests`：每一条中文都有英文（第 9 批起 `requiresEnglish`）、状态 translated、占位符和中文一样、没有汉字、术语照下表、
+   没有直撇号；没有 stale；**漏网检查**（`sourceStringsAreInCatalog`）：App 和访达扩展源码里带汉字的字面量都在目录里（key 或显式 key 的
+   中文默认值，去掉插值后对得上格式也算），故意不翻的（解析中文输入的词、存下来要认的固定名字、日志外的内部字、文件内容）写进
+   `notTranslated` 白名单、每条写理由；日志、断言、`comment:` 自己跳过。速查表、启动器提示里提醒和汇率的例子（中英）要真能解析（`examplesParse`）。
 6. 截图：这一族的屏外截图自检中文跑一遍、和改之前逐像素比（中文界面不该变）；`-testLanguage en -testRegion US` 再跑一遍，逐张看
    截断、换行、对齐。放不下的先用下表的短说法，再考虑两行、缩字、加宽。
 7. 单测全量（中文）过、`swift-format lint` 无输出，一个提交。
@@ -85,10 +89,15 @@
 - 数字用阿拉伯数字，单位走单复数；按键写符号（⌥Space、⌘⇧A）。
 - 界面不提其他 App / 产品（mac-native §8，英文同样）；功能本身要用的名字照写。
 - 语言名写它自己的文字（简体中文、English），不翻。
+- 撇号用弯的 ’（don’t、it’s、Kitty Tools’），不用直撇号 '（`LocalizationTests` 查字母之间的）。
+- 功能名（下表里首字母大写的：Launcher、Clipboard History、Status Screen、Screenshot History、Word List、Finder Menu、Notch……）在句子中间
+  也首字母大写：the Launcher、in Finder Menu、Turn on “Keep Screenshot History”。刘海岛 = the Notch，硬件的刘海照常小写（click the notch）；
+  指一条条东西的复数照常小写（scrolling captures、floating notes、translation services、web searches）。
 
 ## 五、术语表
 
-右边是英文；括号里是放不下时的短说法。`LocalizationTests.glossary` 查其中不会被别的说法替代的那些，改这里要一起改。
+右边是英文；括号里是放不下时的短说法。`LocalizationTests.glossary` 查其中不会被别的说法替代的那些（右边写成大写的按大小写查，第 9 批），
+改这里要一起改。
 用短说法的地方写显式 key、comment 里带「短说法」（测试不查它的术语），悬停提示、读屏照旧写全称。
 
 | 中文 | English | 说明 |

@@ -727,11 +727,12 @@ import Observation
     }
     guard Permissions.isAccessibilityTrusted else {
       writeClipboard(payload.writes[0])
-      // 是警告不是成功；系统授权框一点，没固定的面板就收了，底栏提示会跟着丢
+      // 是警告不是成功；系统授权框一点，没固定的面板就收了，底栏提示会跟着丢。
+      // 三目先给不是可选的 let：直接写在可选参数里只有第一个分支被抽进目录（TRANSLATION.md 二）
+      let detail: LocalizedStringResource =
+        payload.writes.count > 1 ? "只复制了第 1 条，授权辅助功能后才能直接粘贴" : "授权辅助功能后才能直接粘贴"
       island?.show(
-        "已复制到剪贴板",
-        detail: payload.writes.count > 1 ? "只复制了第 1 条，授权辅助功能后才能直接粘贴" : "授权辅助功能后才能直接粘贴",
-        tone: .warning, actions: [.settings(for: .accessibility)])
+        "已复制到剪贴板", detail: detail, tone: .warning, actions: [.settings(for: .accessibility)])
       Permissions.requestAccessibility()
       return
     }

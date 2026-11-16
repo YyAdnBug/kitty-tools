@@ -312,6 +312,29 @@ import SwiftUI
   /// 下巴 / 胶囊高度
   static let chin: CGFloat = 36
   static let maxWidth: CGFloat = 460
+
+  /// 收着那一行的标题、详情最宽多少（纯函数，多语言第 9 批）：整行（左右各 18、前导 26、间距 10、进度条、第一个按钮）
+  /// 不超过 maxWidth。详情原来就最宽 280、中间截断，标题不截；英文的长标题（「Finder Menu needs to be turned on once
+  /// in System Settings」）加上详情、按钮会撑出岛被裁掉（中文的长标题、带用户起的名字的也会）。放不下时先把详情压到
+  /// 最窄 120，还不够再截标题的尾巴；放得下时标题不限（nil）、详情 280，和原来一样（中文截图逐像素不变）
+  static func rowRoom(title: String, detail: String?, button: String?, fraction: Bool) -> (
+    title: CGFloat?, detail: CGFloat
+  ) {
+    func width(_ text: String, _ font: NSFont) -> CGFloat {
+      (text as NSString).size(withAttributes: [.font: font]).width.rounded(.up)
+    }
+    var budget = maxWidth - 36 - 26 - 10
+    if fraction { budget -= 56 + 10 }
+    if let button { budget -= width(button, .systemFont(ofSize: 12, weight: .semibold)) + 20 + 10 }
+    let titleWidth = width(title, .systemFont(ofSize: 13, weight: .semibold))
+    guard let detail else { return (titleWidth <= budget ? nil : max(budget, 60), 280) }
+    budget -= 10
+    let detailWidth = min(width(detail, .systemFont(ofSize: 13)), 280)
+    if titleWidth + detailWidth <= budget { return (nil, 280) }
+    let detailRoom = min(detailWidth, max(120, budget - titleWidth))
+    return (max(budget - detailRoom, 60), detailRoom)
+  }
+
   /// 画布（窗口）宽：最宽 460 的岛 + 两侧各 70（耳朵、阴影、渐进模糊往外晕的 68）
   static let canvasWidth: CGFloat = 600
   /// 离开岛后至少再留多久
@@ -2040,9 +2063,17 @@ struct IslandView: View {
   }
 
   private func row(_ content: Island.Content) -> some View {
-    HStack(spacing: 10) {
+    let room = Island.rowRoom(
+      title: content.title, detail: content.detail, button: island.actions.first?.title,
+      fraction: content.fraction != nil)
+    return HStack(spacing: 10) {
       IslandLeading(content: content)
-      title(content)
+      // 放得下时不套 frame：排法和原来一模一样
+      if let cap = room.title {
+        title(content).frame(maxWidth: cap, alignment: .leading)
+      } else {
+        title(content)
+      }
       if let activity = island.cardActivity { IslandActivityReading(activity: activity) }
       fractionBar(content)
       if let detail = content.detail {
@@ -2051,7 +2082,7 @@ struct IslandView: View {
           .foregroundStyle(.white.opacity(0.55))
           .lineLimit(1)
           .truncationMode(.middle)
-          .frame(maxWidth: 280, alignment: .leading)
+          .frame(maxWidth: room.detail, alignment: .leading)
       }
       if let first = island.actions.first {
         IslandButton(title: first.title, prominent: false) { island.perform(first) }

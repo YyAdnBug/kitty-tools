@@ -142,11 +142,13 @@ struct NoteSheet: View {
         model.toggleTask()
       }
       // 浮着的便签固定不固定都在别的窗口上面，固定只管重启后回不回来：提示单独说这一句
+      // （先给不是可选的 let：三目直接写在可选参数里只有第一个分支被抽进目录，TRANSLATION.md 二）
+      let pinHelp: LocalizedStringResource =
+        note.isPinned ? "取消固定（⌘P）：重启后不再浮在这里" : "固定（⌘P）：重启后还浮在这里"
       NoteIconButton(
         symbol: note.isPinned ? "pin.fill" : "pin",
         label: "\(NotesWindowModel.pinTitle(note))（⌘P）", ink: paper.ink,
-        help: model.isFloating
-          ? (note.isPinned ? "取消固定（⌘P）：重启后不再浮在这里" : "固定（⌘P）：重启后还浮在这里") : nil
+        help: model.isFloating ? pinHelp : nil
       ) {
         model.togglePinned()
       }
