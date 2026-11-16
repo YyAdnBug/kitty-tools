@@ -393,8 +393,9 @@ Windows（`Shell/HomePanel.cs`）：
   - `Add` 返回加没加上，照 mac 的两种说法；
   - 设置页支持打开后直接弹出某一条的编辑框，三处入口都走它。
 
-#### R101（P2）提醒的编辑框照 mac 的详情页（中；和 PLAN-v23 E1 改成子页一起做）
+#### R101（P2）提醒的编辑框照 mac 的详情页（中；和 PLAN-v23 E1 改成子页一起做） → 已修
 
+- **已修**：`eca521bf`：提醒详情页照 mac ReminderDetail 分组、重复 6 种（Core ReminderRepeats，单测 ReminderRepeatTests）、每隔一阵的全天开关和 1.5 小时、各种重复的脚注；截图 settings-reminder-editor / -end；真机没点（HANDTEST 1475–1477）。
 - **「重复」**：mac 叫「重复」，6 种：一次 / 每天 / 工作日 / 每周 / 每月 / 每隔一阵（`Settings/ReminderDetail.swift:338-386`、`:444-457`）；Windows 叫「什么时候」，4 种：一次 / 每周 / 每月 / 间隔（`Settings/SettingsWindow.Reminders.cs:212`），每天和工作日要自己勾星期。
 - **每隔一阵**：
   - mac 依次是「每隔」「星期」「全天」开关、「从 / 到」；
@@ -434,7 +435,7 @@ Windows（`Shell/HomePanel.cs`）：
 | G6 | **放大镜和信息卡**：15 × 15 格、圆角白环、像素网格、中间一行一列粉条；下面一张色块 + HEX + 坐标 +「C」键帽的卡，截图翻译和识字时不出；悬停窗口时尺寸胶囊显示窗口大小（`SelectionView.swift:252-253`、`:390-400`、`:779-796`） | 11 × 11、直角粉框、只描中间一格，下面一行「x, y  #HEX」，所有模式都一样（`SelectionOverlayWindow.cs:1840-1885`）；尺寸胶囊只在有选区时出（`SelectionOverlayWindow.Chrome.cs:311-318`） | **照做**（规格 `mac-whisker/capture.md`） | 小到中 | **已做（`0f7f9816`）**：自检图 shot-magnifier |
 | G7 | **吸附时画粉色虚线参考线，按住 ⌃ 暂停吸附**（`SelectionView.swift:2707-2721`） | 没有参考线；Ctrl 已经给了十字准线 | 参考线**照做**；暂停**不适用**（写进 MAC-DIFF）。先修 R87 | 小 | **已做（`0f7f9816`）**：参考线；⌃ 暂停写进 MAC-DIFF |
 | G8 | **状态、提醒的列表拖动排序**（`Settings/StatusScreenTab.swift:190-194`、`RemindersTab.swift:126-130`，页脚「拖动调整顺序」） | 一行行设置卡，右键上移 / 下移（`SettingsWindow.StatusScreen.cs:70-71`、`SettingsWindow.Reminders.cs:74-75`） | **照做**（能拖的 ListView，`NotesWindow.cs:431` 已经这么用）；不做就写进 MAC-DIFF | 中 | **已做（PLAN-v23 第 3 批 L1：状态、提醒换成能拖的列表，另加 Enter / Delete / Alt + ↑↓）** |
-| G9 | **图标格子左边 120 pt 的大预览一直播选中表情的动画，状态详情的样式预览会动**（`Settings/StatusPresetDetail.swift:146-153`、`:302-330`、`:83`；用户 11-04、11-05 要的「选了就播、不要悬停」） | 两个编辑框都没有大预览（`SettingsWindow.Reminders.cs:174-209`、`SettingsWindow.StatusScreen.cs:212-275`），预览明写「表情用静止画面」（`StatusScreen/StatusScreenView.cs:299-301`） | **照做** | 小到中 |
+| G9 | **图标格子左边 120 pt 的大预览一直播选中表情的动画，状态详情的样式预览会动**（`Settings/StatusPresetDetail.swift:146-153`、`:302-330`、`:83`；用户 11-04、11-05 要的「选了就播、不要悬停」） | 两个编辑框都没有大预览（`SettingsWindow.Reminders.cs:174-209`、`SettingsWindow.StatusScreen.cs:212-275`），预览明写「表情用静止画面」（`StatusScreen/StatusScreenView.cs:299-301`） | **照做** | 小到中 | **已做（`eca521bf`，和 PLAN-v23 E1 一起）**：大预览一直播、状态预览里表情会动 |
 | G10 | **全部便签窗口工具栏的「换颜色」；空状态「没有匹配的便签」+「清除搜索」、「归档是空的」+ 说明**（`Notes/NotesWindowView.swift:177-201`、`:329`） | 只能右键换颜色，空状态一行字（`NotesWindow.cs:316-337`、`:397-402`） | **照做** | 小 | **已做（`0f7f9816`）** |
 | — | mac 0.9.0 的刘海岛插件（录制计时 / 提醒倒数挂在刘海、正在播放、系统提示、音量亮度键提示、下一个日程、月历、模糊） | — | **不适用**（PLAN-v20 §4：刘海交互不移植，系统自己有媒体 / 音量浮窗） | — |
 | — | 访达右键（RAR、压缩时跳过，`3c8da2fa` 改成常见项开关）、启动台、程序坞预览、⌘Tab 预览 | — | **不适用**（PLAN-v18 D12、PLAN-v10 D7） | — |
