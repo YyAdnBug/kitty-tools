@@ -5,7 +5,7 @@
 // latest 时读 releases/latest 就找不到 mac 的新版）；API 也限流时说清是限流（apiFailure）。有更新的版本：刘海岛提示一次（每个版本一次；只停 2 秒、不接点击，错过就没了），
 // 所以另有常驻到更新为止的入口（2026-10-06，对标 Alfred 窗口底部的小提示 / Raycast 根搜索顶上那一行 / Sparkle 给后台 App 的
 // 「温和提醒」）：菜单栏图标右上角的小圆点（StatusItem.updateVersion）+ 菜单顶上「更新到 x…」、剪贴板面板和启动器底栏的
-// 「更新到 x」（UpdateBarHint）、关于页的「更新并重新打开」。更新 = 下载 release 里的 *_arm64.zip → ditto 解到 App 所在卷的临时目录 →
+// 「更新到 x」（UpdateBarHint）、关于页的「更新并重新打开」。更新 = 下载 release 里这台架构的包（*_arm64.zip；Intel 上自己编的是 *_x86_64.zip，PR #21）→ ditto 解到 App 所在卷的临时目录 →
 // 校验 bundle id、版本号和签名（Apple 签发、本团队 HTX9F4KG39 的证书）→ 原子地换掉正在运行的 .app →
 // 等本进程退出后重新打开。下载是最久的一步，下了多少实时报出来（progress：关于页的进度条、刘海岛上的细条和百分比，
 // 2026-10-13 用户要求「不是一直 loading」），下载中能取消（岛和关于页的「取消」，第四轮体检 E23：回到「有新版本」，
@@ -18,7 +18,7 @@ import AppKit
 @Observable final class Updater {
   struct Release: Equatable, Sendable {
     let version: String
-    /// 更新包（*_arm64.zip）
+    /// 更新包（*_arm64.zip / *_x86_64.zip，archiveSuffix）
     let archive: URL
     /// 发布页（看更新内容）
     let page: URL
@@ -78,6 +78,15 @@ import AppKit
   /// 最近 20 个 release（mac 和 Windows 混在一起，按发布时间倒序）：从里面挑 macos-v*
   private static let releases = URL(
     string: "https://api.github.com/repos/YyAdnBug/kitty-tools/releases?per_page=20")!
+  /// 更新包的后缀跟着这份 App 的架构走（PR #21：Intel 能自己编）。Intel 上找 _x86_64.zip，release 里没有就当没有更新——
+  /// 把 _arm64.zip 换上去，Intel 上就打不开了；清单（只写 arm64 那个包）的网址后缀对不上也不认，退回 API 按后缀挑
+  #if arch(x86_64)
+    static let archiveSuffix = "_x86_64.zip"
+    private static let architecture = NSBundleExecutableArchitectureX86_64
+  #else
+    static let archiveSuffix = "_arm64.zip"
+    private static let architecture = NSBundleExecutableArchitectureARM64
+  #endif
   /// 新包必须满足的签名要求：同一个 bundle id、Apple 签发、本团队的证书（只认团队，换证书也能更新）
   static let requirement =
     "=identifier \"\(bundleID)\" and anchor apple generic and certificate leaf[subject.OU] = \"HTX9F4KG39\""
@@ -352,7 +361,7 @@ import AppKit
   /// 更新清单（build-dmg.sh 生成）→ 那一版。认 version（只有数字和点）、url 和 page（https）、sha256（64 位十六进制），
   /// 缺一样、不对就 nil（退回 API）；别的键不管（size 现在没用上）。**格式发布后别改**（已装的老版本会读 latest 上的它）：
   /// 只加新键；要改已有键的意思就换一个文件名，旧名字的照发
-  static func release(fromManifest data: Data) -> Release? {
+  static func release(fromManifest data: Data, suffix: String = archiveSuffix) -> Release? {
     struct Manifest: Decodable {
       let version: String
       let url: URL
@@ -363,6 +372,7 @@ import AppKit
     let sha256 = manifest.sha256.lowercased()
     guard manifest.version.wholeMatch(of: /[0-9]+(\.[0-9]+)*/) != nil,
       manifest.url.scheme == "https", manifest.page.scheme == "https",
+      manifest.url.lastPathComponent.hasSuffix(suffix),
       sha256.wholeMatch(of: /[0-9a-f]{64}/) != nil
     else { return nil }
     return Release(
@@ -370,8 +380,8 @@ import AppKit
   }
 
   /// GitHub release 列表的 JSON → 版本号最大的那个 mac 版（版本、更新包、发布页）。只认 macos-v* 的 tag、带 https 的
-  /// *_arm64.zip 的；草稿、预发布跳过（E13：windows-v* 可能是 latest、也可能排在最前）。一个都没有时 nil
-  static func release(from data: Data) throws -> Release? {
+  /// 这台架构的更新包（suffix）的；草稿、预发布跳过（E13：windows-v* 可能是 latest、也可能排在最前）。一个都没有时 nil
+  static func release(from data: Data, suffix: String = archiveSuffix) throws -> Release? {
     struct Payload: Decodable {
       struct Asset: Decodable {
         let name: String
@@ -389,7 +399,7 @@ import AppKit
     let candidates = try decoder.decode([Payload].self, from: data).compactMap {
       payload -> Release? in
       guard payload.draft != true, payload.prerelease != true, payload.tagName.hasPrefix(prefix),
-        let asset = payload.assets.first(where: { $0.name.hasSuffix("_arm64.zip") }),
+        let asset = payload.assets.first(where: { $0.name.hasSuffix(suffix) }),
         asset.browserDownloadUrl.scheme == "https"
       else { return nil }
       return Release(
@@ -458,6 +468,10 @@ import AppKit
       info["CFBundleIdentifier"] as? String == bundleID,
       info["CFBundleShortVersionString"] as? String == release.version
     else { throw UpdateError("更新包不对（App 或版本号对不上）") }
+    // 名字对了也再看一眼里面的可执行文件：传错了包（Intel 上拿到只有 arm64 的），换上去就打不开了
+    guard
+      Bundle(url: app)?.executableArchitectures?.contains(NSNumber(value: architecture)) == true
+    else { throw UpdateError("更新包不支持这台 Mac 的芯片，请到发布页下载") }
     // 文件权限不在签名里：去掉组 / 其他人的写权限和 setuid / setgid / sticky，免得装进「应用程序」后别的账户能改它
     try await run("/bin/chmod", ["-R", "go-w,a-st", app.path], failure: "更新包的文件权限处理失败")
     try await run(
