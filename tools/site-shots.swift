@@ -1,5 +1,6 @@
 // 官网截图：把 macos 分支 WebsiteShotsTests 出的 PNG 转成网页用的格式，写进 docs/assets/。
-// 用法（仓库根目录）：swift tools/site-shots.swift <探针的出图目录>
+// 用法（仓库根目录）：swift tools/site-shots.swift <探针的出图目录> [en]
+//   带 en：英文那一套（探针加 -testLanguage en -testRegion US 跑的），写进 shots/en/，壁纸不动（中英共用一份）
 //   <名字>-light.png / -dark.png：
 //     带透明角的面板（@2x）→ shots/<名字>-light.avif、-dark.avif（原尺寸），另出 shots/<名字>-light.png（@1x）
 //     不透明的整幅场景 → shots/<名字>-light.avif、-dark.avif（最宽 2000），另出 shots/<名字>-light.jpg（最宽 1600）
@@ -17,7 +18,8 @@ let avif = UTType("public.avif")!
 
 let input = URL(filePath: CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : ".")
 let assets = URL(filePath: #filePath).deletingLastPathComponent().appending(path: "../docs/assets").standardized
-let shots = assets.appending(path: "shots")
+let language = CommandLine.arguments.count > 2 ? CommandLine.arguments[2] : nil
+let shots = assets.appending(path: language.map { "shots/\($0)" } ?? "shots")
 try FileManager.default.createDirectory(at: shots, withIntermediateDirectories: true)
 
 func load(_ url: URL) -> CGImage {
@@ -64,6 +66,7 @@ for name in names {
   let base = String(name.dropLast(4))
   let image = load(input.appending(path: name))
   if base.hasPrefix("wallpaper-") {
+    guard language == nil else { continue }
     write(scaled(image, maxWidth: 1600), to: assets.appending(path: base + ".avif"), type: avif, quality: 0.7)
   } else if base.hasPrefix("island") {
     try? FileManager.default.removeItem(at: shots.appending(path: name))
