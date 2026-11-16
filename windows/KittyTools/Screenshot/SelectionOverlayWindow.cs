@@ -996,7 +996,8 @@ internal sealed partial class SelectionOverlayWindow : Window
         var actionItems = new List<(string Glyph, string Tip, string Name, string ShotId, Action Run)>();
         if (_session.Mode != ScreenshotMode.Record)
         {
-            actionItems.Add((Glyphs.Ocr, "识字", "识别文字", "recognize", () => _ = _session.RecognizedSelectionAsync()));
+            // 叫法同 mac 全家：拷贝 / 存储 / 另存为… / 识字并拷贝 / 钉到屏幕（REVIEW R97）
+            actionItems.Add((Glyphs.Ocr, "识字并拷贝", "识字并拷贝", "recognize", () => _ = _session.RecognizedSelectionAsync()));
             if (Features.IsOn(Feature.Translate))
             {
                 actionItems.Add((Glyphs.Translate, "翻译", "截图翻译", "translate", () => _ = _session.TranslateSelectionAsync()));
@@ -1005,10 +1006,10 @@ internal sealed partial class SelectionOverlayWindow : Window
             actionItems.Add((Glyphs.LongScreenshot, "长截图", "长截图", "scroll", () => _session.BeginScrolling()));
             if (Features.IsOn(Feature.Recording))
             {
-                actionItems.Add((Glyphs.Record, "录屏", "切到录屏", "record", SwitchToRecording));
+                actionItems.Add((Glyphs.Record, "录屏", "录屏", "record", SwitchToRecording));
             }
 
-            actionItems.Add((Glyphs.Pin, "钉在屏幕上", "钉图", "pin", () => _ = PinSelectionAsync()));
+            actionItems.Add((Glyphs.Pin, "钉到屏幕", "钉到屏幕", "pin", () => _ = PinSelectionAsync()));
         }
 
         foreach (var item in actionItems)
@@ -1024,10 +1025,10 @@ internal sealed partial class SelectionOverlayWindow : Window
         if (_session.Mode != ScreenshotMode.Record)
         {
             actions.Children.Add(Separator());
-            var save = ShotButton(Glyphs.Save, "快速保存", "保存截图", "save");
+            var save = ShotButton(Glyphs.Save, "存储", "存储", "save");
             save.Click += (_, _) => _ = _session.SaveSelectionAsync(saveAs: false);
             actions.Children.Add(save);
-            var saveMenu = ShotButton(Glyphs.ChevronDown, "更多保存选项", "更多保存选项", "saveAs", width: 18);
+            var saveMenu = ShotButton(Glyphs.ChevronDown, "更多存储选项", "更多存储选项", "saveAs", width: 18);
             if (saveMenu.Content is FontIcon chevron)
             {
                 chevron.FontSize = 10;
@@ -1046,9 +1047,9 @@ internal sealed partial class SelectionOverlayWindow : Window
         {
             var done = AccentCircleButton(
                 new FontIcon { Glyph = Glyphs.Check, FontSize = 14, Foreground = new SolidColorBrush(Colors.White) },
-                "复制（Enter · 双击选区）", "复制截图");
+                "拷贝（Enter · 双击选区）", "拷贝");
             done.Click += (_, _) => _ = _session.CopySelectionAsync();
-            AttachRebind(done, "copy", "复制（Enter · 双击选区）");
+            AttachRebind(done, "copy", "拷贝（Enter · 双击选区）");
             actions.Children.Add(done);
         }
         else
@@ -1059,7 +1060,11 @@ internal sealed partial class SelectionOverlayWindow : Window
                     Width = 10, Height = 10, Fill = new SolidColorBrush(Colors.White),
                     HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center,
                 },
-                "开始录制（Enter · 双击选区，倒数 3 秒）", "开始录制");
+                // 倒数照设置（0 / 3 / 5 秒，REVIEW R97：原来写死 3 秒）
+                SettingsService.Current.RecordCountdown > 0
+                    ? $"开始录制（Enter · 双击选区，倒数 {SettingsService.Current.RecordCountdown} 秒）"
+                    : "开始录制（Enter · 双击选区）",
+                "开始录制");
             start.Click += (_, _) => _session.BeginRecordingSelection();
             actions.Children.Add(start);
         }
@@ -1105,10 +1110,13 @@ internal sealed partial class SelectionOverlayWindow : Window
     private void ShowSaveMenu(FrameworkElement anchor)
     {
         var menu = new MenuFlyout { Placement = FlyoutPlacementMode.Bottom };
-        var quick = new MenuFlyoutItem { Text = "快速保存到文件夹", KeyboardAcceleratorTextOverride = "Ctrl+S" };
+        // 「存储到「文件夹名」」、键读截图时的键（mac ShotKey.save.label，REVIEW R97：原来写死 Ctrl+S / Ctrl+Shift+S）
+        var keys = SettingsService.Current.ScreenshotKeys;
+        var folder = Path.GetFileName(ScreenshotOutput.SaveFolder.TrimEnd(Path.DirectorySeparatorChar));
+        var quick = new MenuFlyoutItem { Text = $"存储到「{folder}」", KeyboardAcceleratorTextOverride = ShotKeys.Current("save", keys)?.Display ?? string.Empty };
         quick.Click += (_, _) => _ = _session.SaveSelectionAsync(saveAs: false);
         menu.Items.Add(quick);
-        var saveAs = new MenuFlyoutItem { Text = "另存为…", KeyboardAcceleratorTextOverride = "Ctrl+Shift+S" };
+        var saveAs = new MenuFlyoutItem { Text = "另存为…", KeyboardAcceleratorTextOverride = ShotKeys.Current("saveAs", keys)?.Display ?? string.Empty };
         saveAs.Click += (_, _) => _ = _session.SaveSelectionAsync(saveAs: true);
         menu.Items.Add(saveAs);
         menu.ShowAt(anchor);
@@ -1817,16 +1825,23 @@ internal sealed partial class SelectionOverlayWindow : Window
     private void DrawHint(Microsoft.Graphics.Canvas.CanvasDrawingSession ds, float width, float height)
     {
         var flashing = _flash is not null && Environment.TickCount64 < _flashUntil;
+        // 键读截图时的键；没有上次区域时不写 D；认元素时写「滚轮 换大小 · Tab 只认窗口」（同 mac hintParts，REVIEW R97）
+        var keys = SettingsService.Current.ScreenshotKeys;
+        string Key(string id) => ShotKeys.Current(id, keys)?.Display ?? string.Empty;
+        var last = SettingsService.Current.ScreenshotLastWidth >= 8 && Key("lastRegion").Length > 0 ? $" · {Key("lastRegion")} 上次区域" : string.Empty;
+        var layers = !_elementsOn ? string.Empty : _windowsOnly ? " · Tab 认元素" : " · 滚轮 换大小 · Tab 只认窗口";
+        string Part(string id, string text) => Key(id) is { Length: > 0 } key ? $" · {key} {text}" : string.Empty;
         var hint = flashing ? _flash! : _session.Mode switch
         {
             ScreenshotMode.Ocr => "拖动框选要识别的区域 · Esc 取消",
             ScreenshotMode.Translate => "拖动框选要翻译的区域 · Esc 取消",
             _ when _session.AutoTranslate && !_session.HasSelection => "拖动框选要翻译的文字 · Esc 取消",
-            ScreenshotMode.Record when _session.HasSelection => "Enter / 双击选区开始录制 · D 上次区域 · Esc 取消",
-            ScreenshotMode.Record => "拖动框选要录的区域 · 单击窗口录这个窗口 · D 上次区域 · Esc 取消",
+            ScreenshotMode.Record when _session.HasSelection => "Enter / 双击选区开始录制" + last + " · Esc 取消",
+            ScreenshotMode.Record => "拖动框选要录的区域 · " + (_elementsOn && !_windowsOnly ? "单击选中" : "单击窗口录这个窗口") + layers + last + " · Esc 取消",
             _ when _session.HasSelection =>
-                "Enter 复制 · Ctrl+S 保存 · 1–0 标注 · S 长截图" + (Features.IsOn(Feature.Recording) ? " · R 录屏" : "") + " · Esc 取消",
-            _ => "拖动框选（按住空格平移）· 单击窗口截整窗 · D 上次区域 · Esc 取消",
+                "Enter 拷贝" + Part("save", "存储") + " · 1–0 标注" + Part("scroll", "长截图") +
+                (Features.IsOn(Feature.Recording) ? Part("record", "录屏") : string.Empty) + " · Esc 取消",
+            _ => "拖动框选（按住空格平移）· " + (_elementsOn && !_windowsOnly ? "单击选中" : "单击窗口截整窗") + layers + " · 双击直接拷贝" + last + " · Esc 取消",
         };
         var textWidth = Math.Min(width - 32, 640);
         ds.FillRoundedRectangle(

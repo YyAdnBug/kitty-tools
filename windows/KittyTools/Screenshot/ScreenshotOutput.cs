@@ -145,12 +145,15 @@ internal static partial class ScreenshotOutput
         }
     }
 
+    /// <summary>快速存储的文件夹（设置里没选过 = 系统的「屏幕截图」文件夹）。</summary>
+    public static string SaveFolder => string.IsNullOrWhiteSpace(SettingsService.Current.ScreenshotSaveFolder)
+        ? DefaultFolder()
+        : SettingsService.Current.ScreenshotSaveFolder!;
+
     /// <summary>quiet：存成了不弹「已保存截图」（截图历史一起存好几张时最后只说一句）；出错照样提示。</summary>
     public static async Task<string?> QuickSavePngAsync(byte[] png, bool quiet = false)
     {
-        var folder = string.IsNullOrWhiteSpace(SettingsService.Current.ScreenshotSaveFolder)
-            ? DefaultFolder()
-            : SettingsService.Current.ScreenshotSaveFolder!;
+        var folder = SaveFolder;
         try
         {
             Directory.CreateDirectory(folder);

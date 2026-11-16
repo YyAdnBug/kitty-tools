@@ -1,5 +1,5 @@
 // 钉图：截完的图钉在屏幕上（无边框、置顶、可拖、滚轮 10%–500%、双击 / Esc 关闭）。
-// Ctrl+C 复制、Ctrl+S 快存、Ctrl+Shift+S 另存为、O 识字、0 恢复 100%；右键菜单同这些。
+// Ctrl+C 拷贝、Ctrl+S 存储、Ctrl+Shift+S 另存为、O 识字并拷贝、Ctrl+0 原始大小、Ctrl+W 关闭；右键菜单同这些（同 mac PinPanel，REVIEW R97）。
 using KitTools = KittyTools;
 using Microsoft.UI;
 using Microsoft.UI.Windowing;
@@ -285,7 +285,8 @@ internal sealed partial class PinWindow : Window
                 }
                 else
                 {
-                    await SaveQuickAsync();
+                    // 走截图的存储（「截图 日期 时间.png」、重名加序号，同 mac ScreenshotOutput，REVIEW R97）
+                    await ScreenshotOutput.QuickSavePngAsync(_png);
                 }
 
                 break;
@@ -293,31 +294,37 @@ internal sealed partial class PinWindow : Window
                 e.Handled = true;
                 await RecognizeAsync();
                 break;
-            case VirtualKey.Number0:
+            // 原始大小 Ctrl+0、关闭 Ctrl+W（同 mac ⌘0、⌘W，REVIEW R97：原来是不带修饰键的 0）
+            case VirtualKey.Number0 when control:
                 e.Handled = true;
                 Zoom(1 / _scale);
+                break;
+            case VirtualKey.W when control:
+                e.Handled = true;
+                Close();
                 break;
         }
     }
 
     private void OnRightTapped(object sender, RightTappedRoutedEventArgs e)
     {
-        // PLAN-v9 S10（同 mac 钉图的右键菜单）：加了「存储」（快速保存到截图文件夹）和「翻译」（识字后开翻译浮窗）。
+        // 同 mac PinPanel.commands 的叫法和先后（REVIEW R97）：拷贝 / 识字并拷贝 / 翻译 / 存储到「X」/ 另存为… ｜ 透明度 / 原始大小 ｜ 关闭
         var menu = new MenuFlyout();
-        Add(menu, "复制", () => _ = CopyAsync());
-        Add(menu, "存储", () => _ = ScreenshotOutput.QuickSavePngAsync(_png));
-        Add(menu, "另存为…", () => _ = ScreenshotOutput.SavePngAsAsync(AppWindow, _png));
-        Add(menu, "识字并复制", () => _ = RecognizeAsync());
-        // 文件头说「右键菜单同这些」，以前少了它（REVIEW R41）；键是 0。
-        Add(menu, "恢复 100%", () => Zoom(1 / _scale));
-        Add(menu, $"透明度 {Math.Round(_opacity * 100)}%…", () => ShowOpacityFlyout(_root));
+        Add(menu, "拷贝", () => _ = CopyAsync(), "Ctrl+C");
+        Add(menu, "识字并拷贝", () => _ = RecognizeAsync(), "O");
         if (Features.IsOn(Feature.Translate))
         {
             Add(menu, "翻译", () => _ = TranslateAsync());
         }
 
+        var folder = Path.GetFileName(ScreenshotOutput.SaveFolder.TrimEnd(Path.DirectorySeparatorChar));
+        Add(menu, $"存储到「{folder}」", () => _ = ScreenshotOutput.QuickSavePngAsync(_png), "Ctrl+S");
+        Add(menu, "另存为…", () => _ = ScreenshotOutput.SavePngAsAsync(AppWindow, _png), "Ctrl+Shift+S");
         menu.Items.Add(new MenuFlyoutSeparator());
-        Add(menu, "关闭", Close);
+        Add(menu, $"透明度 {Math.Round(_opacity * 100)}%…", () => ShowOpacityFlyout(_root));
+        Add(menu, "原始大小", () => Zoom(1 / _scale), "Ctrl+0");
+        menu.Items.Add(new MenuFlyoutSeparator());
+        Add(menu, "关闭", Close, "Ctrl+W");
         menu.ShowAt(_root, new FlyoutShowOptions { Position = e.GetPosition(_root) });
         e.Handled = true;
     }
@@ -345,9 +352,9 @@ internal sealed partial class PinWindow : Window
         new Flyout { Content = slider }.ShowAt(anchor);
     }
 
-    private static void Add(MenuFlyout menu, string text, Action action)
+    private static void Add(MenuFlyout menu, string text, Action action, string? key = null)
     {
-        var item = new MenuFlyoutItem { Text = text };
+        var item = new MenuFlyoutItem { Text = text, KeyboardAcceleratorTextOverride = key ?? string.Empty };
         item.Click += (_, _) => action();
         menu.Items.Add(item);
     }
@@ -358,32 +365,6 @@ internal sealed partial class PinWindow : Window
         // 尺寸按图本身的像素：长截图钉出来比选区长（同角落卡，PLAN-v11 M16）。
         var (width, height) = KittyTools.Core.PngInfo.Size(_png) ?? (_origin.Width, _origin.Height);
         await ScreenshotOutput.CopyPngAsync(_png, width, height, "已复制钉图", "钉图", showSize: false);
-    }
-
-    private async Task SaveQuickAsync()
-    {
-        // 直接按 PNG 存，不再走冻结帧裁剪。
-        var folder = string.IsNullOrWhiteSpace(SettingsService.Current.ScreenshotSaveFolder)
-            ? ScreenshotOutput.DefaultFolder()
-            : SettingsService.Current.ScreenshotSaveFolder!;
-        try
-        {
-            Directory.CreateDirectory(folder);
-            var path = Path.Combine(folder, $"钉图 {DateTime.Now:yyyy-MM-dd HH.mm.ss}.png");
-            if (File.Exists(path))
-            {
-                path = Path.Combine(folder, $"钉图 {DateTime.Now:yyyy-MM-dd HH.mm.ss} ({Guid.NewGuid():N}).png");
-            }
-
-            await File.WriteAllBytesAsync(path, _png);
-            NoticeHost.Show("已保存钉图", Path.GetFileName(path), NoticeTone.Normal,
-                NoticeActions.Reveal(path), NoticeActions.Open(path));
-        }
-        catch (Exception ex)
-        {
-            Log.Error("pin.save-failed", ex);
-            NoticeHost.Show("没能保存", ex.GetType().Name, NoticeTone.Error);
-        }
     }
 
     /// <summary>认出钉图里的字：没有识字组件、一个字都没认出来时提示并返回 null。</summary>

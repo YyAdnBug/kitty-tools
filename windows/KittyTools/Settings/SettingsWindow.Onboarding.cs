@@ -17,11 +17,11 @@ namespace KittyTools;
 
 internal sealed partial class SettingsWindow
 {
-    /// <summary>第三屏列的快捷键（mac：剪贴板、启动器、划词翻译、截图、截图翻译、录屏、快速记一条；Windows 没有便签）。</summary>
+    /// <summary>第三屏列的快捷键（同 mac TryScreen.shown：剪贴板、启动器、划词翻译、截图、截图翻译、录屏、快速记一条，REVIEW R94）。</summary>
     private static readonly string[] OnboardingHotKeys =
     {
         HotKeyActions.Clipboard, HotKeyActions.Launcher, HotKeyActions.SelectionTranslate,
-        HotKeyActions.Screenshot, HotKeyActions.ScreenshotTranslate, HotKeyActions.Record,
+        HotKeyActions.Screenshot, HotKeyActions.ScreenshotTranslate, HotKeyActions.Record, HotKeyActions.NoteCapture,
     };
 
     private bool _onboardingOpen;
@@ -290,8 +290,9 @@ internal sealed partial class SettingsWindow
     private static UIElement OnboardingTry(Dictionary<string, FontIcon> checks, CheckBox autostart)
     {
         var panel = new StackPanel { Spacing = 14, Padding = new Thickness(0, 8, 0, 0) };
-        panel.Children.Add(OnboardingHeading(
-            "按一下试试", "在任何程序里按下这些键，对应的功能就会出来。\n现在按一下，按过的会打勾。"));
+        var heading = OnboardingHeading(
+            "按一下试试", "在任何程序里按下这些键，对应的功能就会出来。\n现在按一下，按过的会打勾。");
+        panel.Children.Add(heading);
 
         var rows = new StackPanel { Spacing = 10 };
         checks.Clear();
@@ -331,7 +332,18 @@ internal sealed partial class SettingsWindow
             rows.Children.Add(row);
         }
 
-        panel.Children.Add(OnboardingCard(rows));
+        if (rows.Children.Count > 0)
+        {
+            panel.Children.Add(OnboardingCard(rows));
+        }
+        else
+        {
+            // 一行都列不出（一个功能都没勾，或勾的功能没有默认键）：换成「都准备好了」（同 mac TryScreen，REVIEW R94）
+            panel.Children[panel.Children.IndexOf(heading)] = OnboardingHeading("都准备好了", Features.Listed.Any(Features.IsOn)
+                ? "勾上的功能没有默认快捷键：点托盘图标就能用，\n想用键叫出来到 设置 › 快捷键 里设一个。"
+                : "一个功能都没勾。以后用得上，到 设置 › 通用 › 功能 里打开。");
+        }
+
         autostart.HorizontalAlignment = HorizontalAlignment.Center;
         panel.Children.Add(autostart);
         panel.Children.Add(OnboardingCaption("提示从屏幕底部正中冒出来（任务栏上方）\n换键、看面板里的按键：设置 › 快捷键"));

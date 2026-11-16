@@ -41,7 +41,7 @@ internal sealed partial class SettingsWindow
             "\"type\": \"dropdown\", \"data\": [{\"title\": \"耳机\", \"value\": \"headphones\"}]（打到这里时列出来挑，交给脚本的是 value）；" +
             "密码写 \"type\": \"password\"（行上不显示、不记进使用记录，但打的时候搜索框里看得见）"),
         ("@kitty.description", "副标题", "启动器里名字下面的那行小字"),
-        ("@kitty.icon", "图标", "一个 emoji、同一个文件夹里的图片文件名；深色主题换一张写在 @kitty.iconDark（这一版启动器里先都画脚本的图标）"),
+        ("@kitty.icon", "图标", "一个 emoji、同一个文件夹里的图片文件名；深色主题换一张写在 @kitty.iconDark；写 SF 符号名、网址的照旧画脚本的图标"),
         ("@kitty.confirm", "先确认再跑", "写一句话：Enter 第一下只显示这句，再按一次才跑；列表脚本打字时就跑，不能写"),
         ("@kitty.timeout", "超时", "秒数，不写是 60 秒，写 0 不限"),
         ("@kitty.filter", "只跑一次", "列表脚本才写：打完「关键词 空格」时跑一次，之后打的字由启动器按标题、说明过滤（认拼音、首字母），脚本收不到参数"),
@@ -376,6 +376,13 @@ internal sealed partial class SettingsWindow
     }
 
     /// <summary>「新建脚本」的小对话框（mac NewScriptSheet）：名字、关键词、结果给谁、用什么写；建好用编辑器打开。</summary>
+    /// <summary>启动器「新建脚本」：停在脚本命令那一页、弹新建的小表单（同 mac 的 NewScriptSheet 从启动器打开）。</summary>
+    internal void NewScriptFromLauncher()
+    {
+        OpenLauncherSubpage("scripts");
+        _ = NewScriptAsync();
+    }
+
     private async Task NewScriptAsync()
     {
         TouchScriptsNew();

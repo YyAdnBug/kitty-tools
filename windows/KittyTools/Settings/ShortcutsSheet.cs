@@ -407,12 +407,15 @@ internal static class ShortcutsSheet
             new("Ctrl+Alt+↑↓", "调整收藏的顺序"),
             new("Ctrl+Delete", "从「常用」里移除选中的一项（Ctrl+Z 撤销）"),
             new("Ctrl+K", "打开操作菜单（光标在末尾时按 → 也行；右键是同一份）"),
+            new("Ctrl+E", "编辑选中的脚本（自带的命令没有文件，不能改）"),
             new("Ctrl+1–9", "打开第 1–9 项"),
             new("Ctrl", "按住一会儿，前 9 行右边换成 Ctrl+1–9 的键帽；按住 Ctrl / Alt / Shift 时选中行写着松手前按 Enter 会做什么"),
             new("↑↓", "移动选中（到头从另一头接着）"),
             new("Ctrl+,", "打开 设置 › 启动器"),
             new("Esc", "先关菜单、撤掉等确认的那一下，再清空搜索，最后收起"),
             new("Ctrl+W", "收起"),
+            // Launcher/ScriptTextWindow.cs：看全文 / 全部输出是一扇单独的窗口（MAC-DIFF）
+            new("Ctrl+R", "脚本的全部输出那扇窗口里：用同样的参数再跑一次"),
         }),
 
         // Core/LauncherCommands.cs、WebSearch.cs，Launcher/SystemCommands.cs。
@@ -476,7 +479,10 @@ internal static class ShortcutsSheet
                 new("Alt", "拉框时从中心往外拉"),
                 new("空格", "拉框时按住：整块平移"),
                 new("Ctrl", "按住出十字准线"),
-                new("单击", "选中鼠标下面的整个窗口"),
+                new("单击", "选中鼠标下面的整个窗口（开着识别元素时是指针下那一块）"),
+                // 框选时识别元素（PLAN-v20 E1）：REVIEW R97 补进速查表
+                new("滚轮", "识别元素时：往上大一层、往下小一层"),
+                new("Tab", "识别元素时：这一次只认窗口；再按认元素"),
                 new("双击", "没选工具时双击选区：拷贝（录屏时是开始录）"),
                 new("右键", "清掉选区；没有选区时退出（画了标注时不清）"),
                 new(new[] { "←", "→", "↑", "↓" }, "挪选区（选中标注时挪标注）1 px，Shift 10 px"),
@@ -489,6 +495,12 @@ internal static class ShortcutsSheet
         new("screenshot", "截图 · 标注", "capture", Glyphs.Edit, Array.Empty<string>(), ShotToolRows().Concat(new ShortcutEntry[]
         {
             new(Shot("crop"), "裁剪"),
+            new("Shift", "拖的时候按住：正方形 / 正圆、线吸到 45°"),
+            new("Alt", "拖的时候按住：从中心往外画"),
+            new("Ctrl+=", "Ctrl+-", "选中的标注加粗 / 变细（文字是换字号）"),
+            new("滚轮", "指针在选中的标注上：加粗 / 变细"),
+            new("Ctrl+D", "复制选中的标注"),
+            new(new[] { "←", "→", "↑", "↓" }, "挪选中的标注 1 px，Shift 10 px"),
             new("Delete", "Backspace", "删除选中的标注"),
             new(new[] { Shot("undo"), Shot("redo"), "Ctrl+Shift+Z" }, "撤销 / 重做"),
             new("Ctrl+Enter", "Esc", "文字框里收下文字（Enter 是换行；点外面也收下）"),
@@ -496,12 +508,12 @@ internal static class ShortcutsSheet
         new("screenshot", "截图 · 出图", "capture", Glyphs.Save, Array.Empty<string>(), new ShortcutEntry[]
         {
             new("Enter", Shot("copy"), "拷贝（识字 / 截图翻译时是确认，录屏时是开始录）"),
-            new(Shot("save"), "快速保存"),
+            new(Shot("save"), "存储到截图文件夹"),
             new(Shot("saveAs"), "另存为…"),
-            new(Shot("pin"), "钉在屏幕上"),
+            new(Shot("pin"), "钉到屏幕"),
             ScrollRow("scroll", "长截图：往下滚 / 往上滚"),
             ScrollRow("autoScroll", "自动滚动长截图：往下 / 往上"),
-            new(Shot("record"), "切到录屏（录屏功能开着时；画了标注不切）"),
+            new(Shot("record"), "录屏（录制功能开着时；画了标注不切）"),
             new(Shot("recognize"), "识字并拷贝"),
             new(Shot("translate"), "截图翻译"),
         }),
@@ -509,6 +521,7 @@ internal static class ShortcutsSheet
         // ScrollingCapture.cs（长截图期间临时注册的键）、PinWindow.cs、RecordingCountdown.cs。
         new("screenshot", "长截图", "capture", Glyphs.Down, Array.Empty<string>(), new ShortcutEntry[]
         {
+            new("滚轮", "往下滚就往下拼（自动滚动时不用动；加 Shift 进来的是往上拼）"),
             new("Enter", "拼好，拷贝"),
             new("Esc", "放弃"),
         }),
@@ -516,29 +529,39 @@ internal static class ShortcutsSheet
         new("screenshot", "钉图", "capture", FeatureIcons.Pin, new[] { HotKeyActions.PinClipboard }, new ShortcutEntry[]
         {
             new("滚轮", "缩放（10%–500%）"),
-            new("0", "恢复 100%"),
+            new("Ctrl+0", "原始大小"),
             new("Ctrl+C", "拷贝"),
-            new("Ctrl+S", "快速保存"),
+            new("Ctrl+S", "存储到截图文件夹"),
             new("Ctrl+Shift+S", "另存为…"),
             new("O", "识字并拷贝"),
-            new("Esc", "双击", "关闭"),
+            new(new[] { "Esc", "Ctrl+W", "双击" }, "关闭"),
         }),
-        new("record", "录制", "capture", FeatureIcons.Record, new[] { HotKeyActions.Record, HotKeyActions.Audio }, new ShortcutEntry[]
+        // 录屏、录音分两组（同 mac 速查表，REVIEW R97）
+        new("record", "录屏", "capture", FeatureIcons.Record, new[] { HotKeyActions.Record }, new ShortcutEntry[]
         {
-            new("Esc", "倒数的时候取消"),
+            new("Enter", "双击选区", "框好以后开始（有倒数时倒数完开始）"),
+            new("Esc", "框选和倒数的时候取消"),
+            new("录屏的快捷键", "录着时再按一次：停止并保存"),
+        }),
+        new("record", "录音", "capture", FeatureIcons.RecordAudio, new[] { HotKeyActions.Audio }, new ShortcutEntry[]
+        {
+            new("录音的快捷键", "录着时再按一次：停止并保存（设置里关了「立即开始」时第一下是待录）"),
         }),
 
         // Screenshot/LongAnnotateWindow.cs（PLAN-v9 S12）。
         new("screenshot", "长图标注", "capture", Glyphs.Edit, Array.Empty<string>(), new ShortcutEntry[]
         {
+            // 键照截图时的键走（窗口按改过的键认，LongAnnotateWindow.cs，REVIEW R97：原来写死）
             new("1–0", "选工具（再按一次收起）"),
             new("Shift", "拖的时候按住：正方形 / 正圆、线吸到 45°"),
             new("Delete", "删掉选中的标注"),
-            new("Ctrl+Z", "撤销"),
-            new("Ctrl+Y", "Ctrl+Shift+Z", "重做"),
-            new("Enter", "Ctrl+C", "拷贝"),
-            new("Ctrl+S", "保存到截图文件夹"),
-            new("Ctrl+Shift+S", "另存为…"),
+            new(Shot("undo"), "撤销"),
+            new(Shot("redo"), "Ctrl+Shift+Z", "重做"),
+            new("Enter", Shot("copy"), "拷贝"),
+            new(Shot("save"), "存储到截图文件夹"),
+            new(Shot("saveAs"), "另存为…"),
+            new("空格", "按住拖动：平移"),
+            new("Ctrl+0", "Ctrl+1", "适合宽度 / 实际大小"),
             new("Esc", "先收起工具；画过标注时按两下放弃"),
         }),
 

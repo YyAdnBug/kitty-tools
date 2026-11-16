@@ -115,8 +115,9 @@
 - 剪贴板、启动器两处本来就存 `mouse`，没问题。
 - **修**：Windows 改存 `mouse`；读设置时把旧的 `pointer` 换成 `mouse`（`SettingsService` 加载时迁一次）；`TranslateWindow` 两种都认；加一条往返单测。
 
-#### R84（P2）Windows 导出的「设置」只带了大约 40 项，和同步对不上
+#### R84（P2）Windows 导出的「设置」只带了大约 40 项，和同步对不上 → 已修
 
+- **已修**：`47e378ef`。导出把同步表 A、B、C 组每一项都带上（同步编号 + 记录原文），导入走同步的换算和范围检查；probe 角色 e 改快门声、帧率、便签字号、浮窗位置后导出再导回都回来了。
 - `ArchiveService.PreferencesOf`（`:505-602`）只写了约 40 个键，`Settings.cs` 一共 178 个属性。下面这些都没带：
   - 截图：快门声、截完图放哪、截图历史和天数、占用、长截图速度；
   - 录制：帧率、清晰度、倒数、光标、点按、按键、系统声音、麦克风；录音来源；
@@ -133,8 +134,9 @@
 - **转义**：`ArchiveJsonContext`（`KittyTools.Core/SettingsArchive.cs:253-256`）用默认编码器，中文、表情全写成 `\uXXXX`，人读不了，中文体积约是 mac 的两倍，离 32 MB 上限更近。修：换成不转义非 ASCII 的编码器（`JavaScriptEncoder.UnsafeRelaxedJsonEscaping` 只用在写文件这一处）。
 - **时间写法**：`copiedAt` / `createdAt` 写成带毫秒的 `+00:00`（`ArchiveService.cs:223`、`:243`）；mac 写到秒的 `Z`。macOS 27 实测读得了，15 上没验。修：截到秒、写 `Z`。
 
-#### R86（P2）片段占位符：支持的集合一样，边界上意思不一样
+#### R86（P2）片段占位符：支持的集合一样，边界上意思不一样 → 已修
 
+- **已修**：`47e378ef`。照 mac 的正则、{clipboard} 只读剪贴板、{clipboard:N} 跳过片段、只认第一个 {cursor}、按字形簇数；单测 SnippetMacTests（mac ContentFormTests 三条的期望值）。观察那条也改了：系统表情只收 mac 也认的（StatusEmojiKeyTests）。
 - 两边都认 `{date} {time} {datetime} {weekday} {uuid} {clipboard} {clipboard:N} {cursor}`，不分大小写。
 - 片段正文是同步的，同一条片段在两边展开结果会不同。对照的代码：mac `Clipboard/Snippet.swift:21-58`、`ClipboardPanelModel.swift:1029-1032`；Windows `KittyTools.Core/SnippetRules.cs:17-111`、`Clipboard/Expander.cs:16-29`。
 
@@ -168,8 +170,9 @@
   - 每 4 个一组，第 0、1 个进 x（左右），第 2、3 个进 y（上下）；
   - 抽成 Core 纯函数，加单测：窗口右边、下边、屏幕上边都吸得上。
 
-#### R88（P2）主界面照 mac 0.9.0 重排（mac `e8fc2424`、`ecc2037e`，0.9.0 更新日志「界面 · 主界面」）
+#### R88（P2）主界面照 mac 0.9.0 重排（mac `e8fc2424`、`ecc2037e`，0.9.0 更新日志「界面 · 主界面」） → 已修
 
+- **已修**：`47e378ef`。三格去掉、开关画法删掉、插件收进最后一节「插件」；单测 HomeLayoutTests.PluginsGoIntoTheirOwnTitledSectionAtTheEnd，截图 home 浅深。
 mac 现在的做法（`Shell/HomePanel.swift` `Home.unlisted`、`sections`）：
 - 只放点一下就做的动作。
 - 「暂停记录剪贴板」「复制即译」两个开关不占格子，在右键菜单和启动器里。
@@ -187,8 +190,9 @@ Windows（`Shell/HomePanel.cs`）：
 - 开关的画法（`IsOn`、`ToggleButton` 那半）跟着删；
 - `HomeLayout` 单测同步改。
 
-#### R89（P2）剪贴板「图片最多占用」少 256 MB 一档（mac `58c91673`，issue #19）
+#### R89（P2）剪贴板「图片最多占用」少 256 MB 一档（mac `58c91673`，issue #19） → 已修
 
+- **已修**：`47e378ef`（376a990d 在 Mac 上、这里拿不到，照它的意思重写）。档位加 256 MB，注释改成「旧的 128」；截图 settings-clipboard。
 - `Settings/SettingsWindow.cs:1749` 的档位是 512 MB / 1 GB / 2 GB / 5 GB / 不限。
 - **已经写好、没并**：本地分支 `claude/win-clip-image-256` 的 `376a990d`（11-13 在 Mac 上写的，没编译）。
 - **修**：
@@ -196,8 +200,9 @@ Windows（`Shell/HomePanel.cs`）：
   - 那个提交里的 HANDTEST 编号 1318 和 PLAN-v20 撞了，改成末尾的号；
   - 注释里「旧的 128 / 256」改成「旧的 128」。
 
-#### R90（P2）快捷键页、托盘、速查表、主界面的分节和先后
+#### R90（P2）快捷键页、托盘、速查表、主界面的分节和先后 → 已修
 
+- **已修**：`47e378ef`。快捷键页、托盘、速查表、主界面、启动器的分节和先后都照 mac，截图翻译归翻译，行名去掉「再按一次停止」；截图 settings-hotkeys、home，托盘和速查表没截图。
 - **快捷键页没有「提醒」「状态屏」两节**：
   - `Settings/SettingsWindow.cs:3221-3245`，它们掉进兜底，追加在「截图与录制」最后；
   - mac `Shell/HotKeyCenter.swift:346-364`，便签后面是「提醒」「状态屏」各一节。
@@ -215,8 +220,9 @@ Windows（`Shell/HomePanel.cs`）：
 - **速查表左栏的分类**：mac「截图」「录制」分两类，最后一类叫「通用」；Windows 合成「截图与录制」，最后一类叫「设置窗」（`ShortcutsSheet.cs:44-55`）。
 - **修**：照 mac。
 
-#### R91（P2）功能名、功能说明、页头说明、通用页的几句、侧栏搜索词
+#### R91（P2）功能名、功能说明、页头说明、通用页的几句、侧栏搜索词 → 已修
 
+- **已修**：`47e378ef`。功能名「录制」、两句功能说明、六个页头说明、通用页两句加便签；侧栏搜索词见上面那条。
 - **功能名**：`Shell/Feature.cs:71` 叫「录屏」，所以录制页第一行、通用 › 功能、引导、主界面只开录制时的节名都写「录屏」；mac 的功能名就是页名「录制」（`Shell/Feature.swift:31`）。
 - **功能说明**：
   - 录制：Windows `:84`「把屏幕录成视频（Alt+R 开始 / 停止）」，漏了录音，键还是写死的；mac「录屏和录音」（`Feature.swift:43`）。
@@ -300,8 +306,9 @@ Windows（`Shell/HomePanel.cs`）：
 - Windows 的便签是从 mac 那份搬过来的，但关于页只有状态屏表情那一行（`SettingsWindow.cs:3676-3688`），`Resources/` 里也没有这份许可。
 - **修**：照 mac 补上这一行和许可全文（`git show origin/macos:macos/KittyTools/Resources/notes-LICENSE.txt`），点「许可」用记事本打开，同表情那一行。
 
-#### R96（P2）插件卡片和功能页的文案；托盘里多出的两项
+#### R96（P2）插件卡片和功能页的文案；托盘里多出的两项 → 已修
 
+- **已修**：`47e378ef`。插件卡片「已添加」、授权 / 后台各一行、脚注，功能页页头照 mac；托盘去掉压缩和转 GIF 两项。截图 settings-sub-features。
 - **插件卡片和功能页**：
   - mac（`Settings/FeaturesPage.swift:30-37`、`:80-110`）：插件一组有一句完整的脚注（新装都没添加、升级上来照旧……），卡片上有「已添加」，「授权」「后台」各占一行，功能页页头是「不用的整个关掉，用的时候再打开」。
   - Windows（`Settings/SettingsWindow.KeepAwake.cs:204-221`）：只有一行说明，授权和后台并在说明里，页头是「用不上的整个关掉」（`SettingsWindow.cs:828`）。

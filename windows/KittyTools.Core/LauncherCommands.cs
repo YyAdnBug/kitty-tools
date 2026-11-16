@@ -121,21 +121,28 @@ public static partial class LauncherCommands
         HotKeyAction = "inputTranslate",
     };
 
-    /// <summary>单输 fy：Enter / Tab 补全关键词的提示。</summary>
+    /// <summary>单输 fy：Enter / Tab 补全关键词的提示（正好是 fy 的，排在最前）。</summary>
     public static List<LauncherItem> TranslatePrompts(string query)
-        => LauncherMatch.Fold(query.Trim()) == "fy"
-            ? new List<LauncherItem>
-            {
-                new()
-                {
-                    Kind = LauncherKind.Prompt,
-                    Target = "translate-fy",
-                    Title = "翻译…",
-                    Subtitle = "输入「fy 空格 文字」，Enter 或 Tab 补全关键词",
-                    Completion = "fy ",
-                },
-            }
+        => LauncherMatch.PromptMatch(query, new[] { "fy" }, TranslateAliases) == PromptMatchKind.Exact
+            ? new List<LauncherItem> { TranslatePrompt() }
             : new List<LauncherItem>();
+
+    /// <summary>打「翻译」「fanyi」（或它们的开头）时同一行提示，排在本地结果（输入翻译）后面（mac translatePrompts 的 partial，REVIEW R92）。</summary>
+    public static List<LauncherItem> TranslatePromptsPartial(string query)
+        => LauncherMatch.PromptMatch(query, new[] { "fy" }, TranslateAliases) == PromptMatchKind.Partial
+            ? new List<LauncherItem> { TranslatePrompt() }
+            : new List<LauncherItem>();
+
+    private static readonly string[] TranslateAliases = { "翻译", "fanyi" };
+
+    private static LauncherItem TranslatePrompt() => new()
+    {
+        Kind = LauncherKind.Prompt,
+        Target = "translate-fy",
+        Title = "翻译…",
+        Subtitle = "输入「fy 空格 文字」，Enter 或 Tab 补全关键词",
+        Completion = "fy ",
+    };
 
     public static bool IsFileMode(this LauncherMode mode) => mode is LauncherMode.FileSearch or LauncherMode.FileFind;
 
@@ -155,7 +162,8 @@ public static partial class LauncherCommands
 
     /// <summary>
     /// 单输（或拼到一半）open / find / quit / hide / forcequit / kill / port 时的补全提示：正好是关键词的放最前（Exact），
-    /// ≥ 2 个字的开头放本地结果后面（Partial）。Enter / Tab 把「关键词 」补进框。
+    /// ≥ 2 个字的开头放本地结果后面（Partial）；中文叫法和全拼（「端口」「duankou」「文件」）只算打了一半（同 mac Verb.aliases、
+    /// FileSearch.promptItems，LauncherMatch.PromptMatch，REVIEW R92）。Enter / Tab 把「关键词 」补进框。
     /// </summary>
     public static (List<LauncherItem> Exact, List<LauncherItem> Partial) PromptItems(string query)
     {
@@ -172,18 +180,32 @@ public static partial class LauncherCommands
                 Subtitle = $"输入「{keyword} 空格 {Noun(mode)}」，Enter 或 Tab 补全关键词",
                 Completion = keyword + " ",
             };
-            if (text == keyword)
+            switch (LauncherMatch.PromptMatch(text, new[] { keyword }, Aliases(mode)))
             {
-                exact.Add(item);
-            }
-            else if (text.Length >= 2 && keyword.StartsWith(text, StringComparison.Ordinal))
-            {
-                partial.Add(item);
+                case PromptMatchKind.Exact:
+                    exact.Add(item);
+                    break;
+                case PromptMatchKind.Partial:
+                    partial.Add(item);
+                    break;
             }
         }
 
         return (exact, partial);
     }
+
+    /// <summary>提示行另外认的中文叫法和全拼（mac Verb.aliases、FileSearch 的那张表；hide 在 Windows 上是最小化，两种叫法都认）。</summary>
+    public static IReadOnlyList<string> Aliases(LauncherMode mode) => mode switch
+    {
+        LauncherMode.FileSearch => new[] { "搜索文件", "打开文件", "文件", "sousuowenjian", "wenjian" },
+        LauncherMode.FileFind => new[] { "查找文件", "在资源管理器中显示", "chazhaowenjian", "chazhao" },
+        LauncherMode.Quit => new[] { "退出", "退出应用", "tuichu" },
+        LauncherMode.Hide => new[] { "隐藏", "隐藏应用", "最小化", "yincang", "zuixiaohua" },
+        LauncherMode.ForceQuit => new[] { "强制退出", "qiangzhituichu" },
+        LauncherMode.Kill => new[] { "结束进程", "进程", "杀进程", "jieshujincheng", "jincheng" },
+        LauncherMode.Port => new[] { "端口", "端口占用", "查看端口", "duankou" },
+        _ => Array.Empty<string>(),
+    };
 
     /// <summary>补全提示那一行的标题（mac Verb.prompt；「App」在 Windows 上叫「应用」）。</summary>
     public static string PromptTitle(LauncherMode mode) => mode switch

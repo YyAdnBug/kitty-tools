@@ -68,7 +68,10 @@ public static class PanelFooterText
             LauncherKind.Prompt when target == KeepAwakeLauncher.Prefix + "stop" => "停止",
             LauncherKind.Prompt when target == KeepAwakeLauncher.Prefix + "hint" => "改一下",
             LauncherKind.Prompt when KeepAwakeLauncher.IsKeepAwake(target) => "开始",
-            LauncherKind.Prompt when target.StartsWith(PluginOffers.Prefix, StringComparison.Ordinal) => "去添加",
+            LauncherKind.Prompt when target.StartsWith(PluginOffers.Prefix, StringComparison.Ordinal) => "去设置里添加",
+            // 汇率的用法提示「填进示例」、货币候选「补全货币」（mac primaryAction，REVIEW R92）
+            LauncherKind.Prompt when target == ExchangeRates.PromptTarget => "填进示例",
+            LauncherKind.Prompt when target.StartsWith(ExchangeRates.SuggestionPrefix, StringComparison.Ordinal) => "补全货币",
             LauncherKind.Prompt => "补全关键词",
             LauncherKind.Process => "结束",
             _ => "打开",

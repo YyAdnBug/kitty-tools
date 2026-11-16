@@ -25,15 +25,15 @@ public static class ShotKeys
             AnnotationKinds.StorageName(kind), AnnotationKinds.Title(kind), kind, Key(AnnotationKinds.Key(kind)[0])))
         .Concat(new ShotKeyEntry[]
         {
-            new("copy", "复制", null, Key('C', HotKeyModifiers.Control)),
-            new("save", "快速保存", null, Key('S', HotKeyModifiers.Control)),
+            new("copy", "拷贝", null, Key('C', HotKeyModifiers.Control)),
+            new("save", "存储", null, Key('S', HotKeyModifiers.Control)),
             new("saveAs", "另存为…", null, Key('S', HotKeyModifiers.Control | HotKeyModifiers.Shift)),
-            new("pin", "钉在屏幕上", null, Key('P')),
-            new("recognize", "识字", null, Key('O')),
+            new("pin", "钉到屏幕", null, Key('P')),
+            new("recognize", "识字并拷贝", null, Key('O')),
             new("translate", "截图翻译", null, Key('T')),
             new("scroll", "长截图（加 Shift 向上）", null, Key('S')),
             new("autoScroll", "自动滚动长截图（加 Shift 向上）", null, Key('A')),
-            new("record", "切到录屏", null, Key('R')),
+            new("record", "录屏", null, Key('R')),
             new("crop", "裁剪", null, Key('X')),
             new("undo", "撤销", null, Key('Z', HotKeyModifiers.Control)),
             new("redo", "重做", null, Key('Y', HotKeyModifiers.Control)),

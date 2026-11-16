@@ -2527,14 +2527,18 @@ internal sealed partial class SettingsWindow : Window
         // 后台读浏览器数据，读完原地改各行的条数（不重建整页：以前读完整页重画，开关全闪一下、滚动跳回顶部）。
         _ = RefreshBrowsersAsync(settings);
 
-        // 脚本命令（PLAN-v18 L1 第 8 批：一行，点进去）
-        AddScriptsRow();
-
-        // 命令与网页搜索（PLAN-v18 L2 L4：各收成一行，点进去编辑）
-        _content.Children.Add(SettingsUi.Section("命令与网页搜索"));
-        AddCommandsRow();
+        // 先后同 mac LauncherTab（REVIEW R93）：网页搜索 → 脚本命令 → 命令 → 使用记录；网页搜索、命令各一节、带脚注
+        _content.Children.Add(SettingsUi.Section("网页搜索"));
         AddSubpageRow("网页搜索与快捷链接", WebSearch.Summary(settings.LauncherSearchEngines ?? WebSearch.Defaults()),
             () => OpenLauncherSubpage("web"));
+        _content.Children.Add(SettingsUi.Footnote("「关键词 空格 内容」直接用那个网站搜；没有本地结果时用开了兜底的几个搜。"));
+
+        // 脚本命令（PLAN-v18 L1 第 8 批：一行，点进去；mac 铺在这一页上，MAC-DIFF）
+        AddScriptsRow();
+
+        _content.Children.Add(SettingsUi.Section("命令"));
+        AddCommandsRow();
+        _content.Children.Add(SettingsUi.Footnote("给内置命令和脚本改在启动器里要打的词，关掉用不上的。"));
 
         // 使用记录：「空搜索框里列出常用」跟着功能开关变灰（PLAN-v16 L1，mac adc47977）；清空是管数据的，功能关着也能清（同 mac）
         _content.Children.Add(Ungated(SettingsUi.Section("使用记录")));
@@ -3153,7 +3157,7 @@ internal sealed partial class SettingsWindow : Window
         historyButtons.Children.Add(clearHistory);
         _content.Children.Add(Ungated(SettingsUi.Card("截图历史", "看、拷贝、再钉出来，或者删掉", historyButtons)));
         _content.Children.Add(SettingsUi.Footnote(
-            "截图、长截图、钉过的图和录屏录音都留在这里，能回头接着改标注、再钉一次。超过保留期或占用的先删最旧的（已经存到文件夹里的文件不动）。" +
+            "截图、长截图、钉过的图和录屏录音都留在这里，能回头接着改标注（打码会直接打进存下的图）、再钉一次。超过保留期或占用的先删最旧的（已经存到文件夹里的文件不动）。" +
             "历史只在这台电脑上，不跟着同步。"));
 
         // 工具栏位置（PLAN-v12 N4，mac 0f83c117）：靠右（默认）/ 居中，录屏的录制条同一个设置。
@@ -3190,7 +3194,7 @@ internal sealed partial class SettingsWindow : Window
         // 截完图放哪（PLAN-v9 S7）：角落缩略图 / 都不要（mac 还有晾衣绳，Windows 不做）。
         _content.Children.Add(new Border { Height = 8 });
         var placements = new[] { "card", "none" };
-        AddCombo("截完图放哪", string.Empty, new[] { "角落缩略图", "都不要" },
+        AddCombo("截完图放哪", string.Empty, new[] { "角落的缩略图", "都不要" },
             Math.Max(0, Array.IndexOf(placements, SettingsService.Current.ShotPlacement)),
             index =>
             {
@@ -3214,6 +3218,10 @@ internal sealed partial class SettingsWindow : Window
         _content.Children.Add(new Border { Height = 8 });
         AddShortcutsRow("screenshot", "框选、标注、长截图和录屏的按键",
             "拖动框选，数字键 1–0 换标注工具，Enter 拷贝，S 长截图，R 录屏");
+        // 截图时的快捷键在快捷键页改（同 mac ScreenshotTab 那一行，REVIEW R97）
+        var shotKeys = new HyperlinkButton { Content = "截图里的快捷键…" };
+        shotKeys.Click += (_, _) => BuildPage("hotkeys");
+        _content.Children.Add(SettingsUi.Card("改按键", "标注工具、钉图、长截图、识字、出图这些键能自己改", shotKeys));
     }
 
     /// <summary>
@@ -3330,7 +3338,7 @@ internal sealed partial class SettingsWindow : Window
             "立即开始关着时，按快捷键（或点托盘、启动器里的「录音」）先在屏幕底部打开录音控制条，点「开始」或再按一次才开始录。"));
 
         _content.Children.Add(new Border { Height = 8 });
-        AddShortcutsRow("screenshot", "录屏和录音的按键",
+        AddShortcutsRow("record", "录屏和录音的按键",
             "框选和截图一样，Enter 或双击选区开始，Esc 取消；录着时再按一次快捷键停止并保存");
     }
 
@@ -4093,6 +4101,21 @@ internal sealed partial class SettingsWindow : Window
         license.Click += (_, _) => LauncherOpeners.Start(Path.Combine(AppContext.BaseDirectory, "Resources", "StatusEmoji", "LICENSE.txt"));
         credit.Children.Add(license);
         _content.Children.Add(credit);
+
+        // 便签参考了 Noty（MIT，同 mac AboutTab.noteCredit，REVIEW R95）：同一个写法，点「许可」用记事本打开随包那份
+        var noteCredit = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+        noteCredit.Children.Add(new TextBlock
+        {
+            Text = "便签的交互参考了 Noty（MIT 许可）",
+            FontSize = Theme.FontSize("Kitty.FontSize.Label"),
+            Foreground = Theme.SecondaryText(),
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        var noteLicense = new HyperlinkButton { Content = "许可", Padding = new Thickness(4, 0, 4, 0) };
+        AutomationProperties.SetName(noteLicense, "便签参考的 Noty 的许可全文");
+        noteLicense.Click += (_, _) => LauncherOpeners.Start(Path.Combine(AppContext.BaseDirectory, "Resources", "notes-LICENSE.txt"));
+        noteCredit.Children.Add(noteLicense);
+        _content.Children.Add(noteCredit);
     }
 
     /// <summary>版本胶囊下面那一行（mac updateRow）：强调色只给现在该点的「更新并重新打开」，其余是文字链接。</summary>

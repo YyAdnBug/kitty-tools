@@ -13,6 +13,14 @@ internal static class LauncherCommandKeys
     public static LauncherCommandSettings Settings
         => LauncherCommandTable.FromStored(SettingsService.Current.LauncherCommandAliases, SettingsService.Current.LauncherCommandsOff);
 
+    /// <summary>开 / 关一条命令（同 设置 › 启动器「命令和别名」里那个开关；启动器 Ctrl+K「关掉这条命令」也走它）。</summary>
+    public static void SetOn(string id, bool on)
+    {
+        var settings = Settings.WithOn(id, on);
+        SettingsService.Current.LauncherCommandsOff = settings.Off.Count == 0 ? null : settings.Off.OrderBy(item => item, StringComparer.Ordinal).ToList();
+        SettingsService.Save();
+    }
+
     /// <summary>表里全部的行：我的脚本（PLAN-v18 L1）、关键词命令、系统命令（编号、标题、原来的关键词、图标）。</summary>
     public static IEnumerable<LauncherBuiltIn> Rows
         => ScriptRows.Concat(BundledRows).Concat(LauncherCommandTable.BuiltIns).Concat(SystemCommands.Rows());

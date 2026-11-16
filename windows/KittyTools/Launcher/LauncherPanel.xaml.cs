@@ -954,6 +954,11 @@ public sealed partial class LauncherPanel : UserControl
                 e.Handled = true;
                 ToggleActions();
                 break;
+            // Ctrl+E（mac ⌘E）：编辑选中的脚本（REVIEW R92）
+            case VirtualKey.E when control && !shift && item is { Kind: LauncherKind.Script }:
+                e.Handled = true;
+                model.EditScript(item);
+                break;
             // 浮层都认 Ctrl+W 收起（OverlayWindow 文件头、剪贴板面板同一处；REVIEW R41）。
             case VirtualKey.W when control:
                 e.Handled = true;

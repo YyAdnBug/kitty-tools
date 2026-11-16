@@ -39,6 +39,13 @@ internal static class LauncherActions
     public const string Update = "action:update";
     public const string Quit = "action:quit";
 
+    /// <summary>新建提醒、新建脚本、复制给 AI 的脚本写法说明（mac 内置动作 reminderNew、scripts-new、scripts-ai-guide，REVIEW R92）。</summary>
+    public const string ReminderNew = "action:reminder-new";
+
+    public const string ScriptNew = "action:scripts-new";
+
+    public const string ScriptGuide = "action:scripts-ai-guide";
+
     /// <summary>状态屏的一个状态：后面接 StatusPreset.Id。</summary>
     public const string StatusPrefix = "statusScreen:";
 
@@ -72,21 +79,13 @@ internal static class LauncherActions
                 SettingsService.Current.CopyTranslate ? "已开启" : "已关闭"));
         }
 
-        if (Features.IsOn(Feature.Screenshot))
+        // 截图与录制的先后同 mac（截图、截取上次区域、识字、录屏、录音、钉住剪贴板内容、截图历史、钉图两项，REVIEW R90）
+        var screenshot = Features.IsOn(Feature.Screenshot);
+        if (screenshot)
         {
             items.Add(Item(new(Screenshot, "截图", "Screenshot Capture", FeatureIcons.Screenshot, "capture", HotKeyActions.Screenshot)));
             items.Add(Item(new(ScreenshotLast, "截取上次区域", "Capture Last Region", FeatureIcons.ScreenshotLast, "capture", HotKeyActions.ScreenshotLast)));
             items.Add(Item(new(Ocr, "识字", "OCR Recognize Text", FeatureIcons.ScreenshotText, "capture", HotKeyActions.Ocr)));
-            items.Add(Item(new(ShotHistory, "截图历史", "Screenshot History", FeatureIcons.ScreenshotHistory, "capture", HotKeyActions.ShotHistory)));
-            // 搜「钉图」「贴图」也找得到它（标题是「钉住…」；别家把钉文字叫贴图，mac 同）
-            items.Add(Item(new(PinClipboard, "钉住剪贴板内容", "Pin Clipboard Image Text", FeatureIcons.Pin, "capture",
-                HotKeyActions.PinClipboard, new[] { "钉图", "贴图" })));
-            if (PinHost.Count > 0)
-            {
-                items.Add(Item(new(PinsToggle, PinHost.AllHidden ? "显示全部钉图" : "隐藏全部钉图", "Show Hide All Pins",
-                    Glyphs.Pin, "capture")));
-                items.Add(Item(new(PinsClose, "关闭全部钉图", "Close All Pins", Glyphs.Pin, "capture")));
-            }
         }
 
         if (Features.IsOn(Feature.Recording))
@@ -97,12 +96,32 @@ internal static class LauncherActions
                 FeatureIcons.RecordAudio, "capture", HotKeyActions.Audio)));
         }
 
+        if (screenshot)
+        {
+            // 搜「钉图」「贴图」也找得到它（标题是「钉住…」；别家把钉文字叫贴图，mac 同）
+            items.Add(Item(new(PinClipboard, "钉住剪贴板内容", "Pin Clipboard Image Text", FeatureIcons.Pin, "capture",
+                HotKeyActions.PinClipboard, new[] { "钉图", "贴图" })));
+            items.Add(Item(new(ShotHistory, "截图历史", "Screenshot History", FeatureIcons.ScreenshotHistory, "capture", HotKeyActions.ShotHistory)));
+            if (PinHost.Count > 0)
+            {
+                items.Add(Item(new(PinsToggle, PinHost.AllHidden ? "显示全部钉图" : "隐藏全部钉图", "Show Hide All Pins",
+                    Glyphs.Pin, "capture")));
+                items.Add(Item(new(PinsClose, "关闭全部钉图", "Close All Pins", Glyphs.Pin, "capture")));
+            }
+        }
+
         // 便签（PLAN-v13，同 mac 启动器里那三项：名字和托盘、快捷键页同名）。
         if (Features.IsOn(Feature.Notes))
         {
             items.Add(Item(new(NoteCapture, "快速记一条", "Quick Note Capture", FeatureIcons.NotesCapture, "notes", HotKeyActions.NoteCapture)));
             items.Add(Item(new(NoteNew, "新建便签", "New Note Sticky", FeatureIcons.NotesNew, "notes", HotKeyActions.NoteNew)));
             items.Add(Item(new(NoteAll, "全部便签", "All Notes Sticky", FeatureIcons.Notes, "notes", HotKeyActions.NoteAll)));
+        }
+
+        // 提醒（mac 内置动作 reminderNew，排在状态屏前面）：同它的快捷键，打开启动器填好「提醒 」（REVIEW R92）
+        if (Features.IsOn(Feature.Reminders))
+        {
+            items.Add(Item(new(ReminderNew, "新建提醒", "New Reminder Alarm Timer", FeatureIcons.Reminders, "reminders", HotKeyActions.ReminderNew)));
         }
 
         if (Features.IsOn(Feature.StatusScreen))
@@ -137,6 +156,13 @@ internal static class LauncherActions
                 KeepAwakeHost.IsActive ? "保持唤醒中 · " + KeepAwakeHost.Status() : "Kitty Tools"));
         }
 
+        // 脚本命令的两条（mac LauncherItem.scriptActions）：脚本命令关着时不列
+        if (Features.IsOn(Feature.Launcher) && SettingsService.Current.LauncherScripts)
+        {
+            items.Add(Item(new(ScriptNew, "新建脚本", "New Script Command 脚本命令", Glyphs.Add, "launcher")));
+            items.Add(Item(new(ScriptGuide, "复制脚本写法说明（给 AI）", "Copy Script Guide AI 脚本写法 提示词", Glyphs.Copy, "launcher")));
+        }
+
         items.Add(Item(new(Home, "打开主界面", "Home Panel All Features", FeatureIcons.Home, "general", HotKeyActions.Home)));
         items.Add(Item(new(Settings, "设置", "Settings Preferences", Glyphs.Settings, "general")));
         items.Add(Item(new(Shortcuts, "快捷键速查表", "Keyboard Shortcuts", Glyphs.Keyboard, "shortcut")));
@@ -160,6 +186,8 @@ internal static class LauncherActions
             or Record or Audio => "capture",
         Shortcuts => "shortcut",
         NoteCapture or NoteNew or NoteAll => "notes",
+        ReminderNew => "reminders",
+        ScriptNew or ScriptGuide => "launcher",
         KeepAwake => "keepAwake",
         _ when KeepAwakeLauncher.IsKeepAwake(target) => "keepAwake",
         _ when target.StartsWith(PluginOffers.Prefix, StringComparison.Ordinal) => "keepAwake",
@@ -265,6 +293,16 @@ internal static class LauncherActions
                 break;
             case KeepAwake:
                 KeepAwakeHost.Toggle();
+                break;
+            case ReminderNew:
+                runtime?.NewReminder();
+                break;
+            case ScriptNew:
+                runtime?.NewScript();
+                break;
+            case ScriptGuide:
+                Paster.WriteText(ScriptTemplates.AIGuide);
+                NoticeHost.Show("已复制脚本写法说明", "贴给你常用的 AI，在最后一段写上想做什么", NoticeTone.Normal);
                 break;
             case Settings:
                 runtime?.ShowSettings(welcome: false);

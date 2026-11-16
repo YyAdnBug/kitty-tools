@@ -1035,6 +1035,13 @@ internal sealed class ShellRuntime
         _settingsWindow?.FocusPlugin(key);
     }
 
+    /// <summary>启动器的「新建脚本」（mac scripts-new，REVIEW R92）：打开 设置 › 启动器 › 脚本命令，弹新建脚本的小表单。</summary>
+    public void NewScript()
+    {
+        ShowSettings(welcome: false, "launcher");
+        _settingsWindow?.NewScriptFromLauncher();
+    }
+
     /// <summary>启动器的「快捷键速查表」（PLAN-v9-launcher R12）：打开设置窗，在上面弹速查表。</summary>
     public void ShowShortcutsSheet()
     {

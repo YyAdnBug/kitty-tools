@@ -497,7 +497,8 @@ internal sealed partial class LauncherModel
         var seen = new HashSet<string>();
         // 「新建提醒…」提示排在本地结果后面：输「提醒」想打开别的「提醒」应用的，Enter 照旧打开它（mac）。
         var reminderPrompts = remindersOn && !remindBlocked ? ReminderLauncher.Prompts(command) : Array.Empty<LauncherItem>();
-        return ordered.Concat(history).Concat(prompts.Partial).Concat(Relabeled(commandPrompts.Partial))
+        var translatePartial = translateOn ? LauncherCommands.TranslatePromptsPartial(command) : new List<LauncherItem>();
+        return ordered.Concat(history).Concat(prompts.Partial).Concat(Relabeled(commandPrompts.Partial)).Concat(Relabeled(translatePartial))
             .Concat(Relabeled(currencyPrompts.Partial))
             .Concat(Relabeled(reminderPrompts))
             // 没添加的插件打到名字或关键词：「添加…插件」一行，本地结果后面、兜底前面（PLAN-v20 K2）
@@ -1725,6 +1726,26 @@ internal sealed partial class LauncherModel
             return ("改一下再建", Glyphs.Edit, false);
         }
 
+        // 状态那一行「进入状态屏」；要参数的脚本只打了关键词时「补全关键词」，必填的没填够「先填参数」（mac primaryAction，REVIEW R92）
+        if (item.Kind == LauncherKind.Action && item.Target.StartsWith(LauncherActions.StatusPrefix, StringComparison.Ordinal))
+        {
+            return ("进入状态屏", Ui.KindTile.GlyphOf(item.Kind, item.Target), false);
+        }
+
+        if (item.Kind == LauncherKind.Script && !item.Target.StartsWith("scriptline:", StringComparison.Ordinal) &&
+            Scripts.FirstOrDefault(script => string.Equals(script.Path, item.Target, StringComparison.OrdinalIgnoreCase)) is { } script)
+        {
+            if (script.TakesInput && item.Payload is null)
+            {
+                return ("补全关键词", Glyphs.Edit, false);
+            }
+
+            if ((item.Payload ?? string.Empty).Split('\u001F', StringSplitOptions.RemoveEmptyEntries).Length < script.RequiredCount)
+            {
+                return ("先填参数", Glyphs.Edit, false);
+            }
+        }
+
         var verb = PanelFooterText.LauncherVerb(item.Kind, item.Target, confirming, item.Title);
         return (verb.Text, Ui.KindTile.GlyphOf(item.Kind, item.Target), verb.Danger);
     }
@@ -1883,15 +1904,11 @@ internal sealed partial class LauncherModel
             actions.Add(new PaletteItem("从启动器里隐藏", Glyphs.Remove, 4, () => HideApp(item)));
         }
 
-        // 自己的脚本（PLAN-v18 L1 第 8 批，mac ⌘E / 在访达中显示）：用编辑器改、在资源管理器里找到它；自带的没有文件
+        // 自己的脚本（PLAN-v18 L1 第 8 批，mac ⌘E / 在访达中显示）：用编辑器改（Ctrl+E）、在资源管理器里找到它；自带的没有文件
         if (item.Kind == LauncherKind.Script &&
             Scripts.FirstOrDefault(script => string.Equals(script.Path, item.Target, StringComparison.OrdinalIgnoreCase)) is { IsBundled: false } own)
         {
-            actions.Add(new PaletteItem("编辑脚本", Glyphs.Edit, 1, () =>
-            {
-                HidePanel();
-                ScriptLibrary.Edit(own.Path);
-            }));
+            actions.Add(new PaletteItem("编辑脚本", Glyphs.Edit, 1, () => EditScript(item), "Ctrl+E"));
             actions.Add(new PaletteItem("在资源管理器中显示", Glyphs.Folder, 1, () =>
             {
                 HidePanel();
@@ -1899,17 +1916,56 @@ internal sealed partial class LauncherModel
             }));
         }
 
-        // 改别名（PLAN-v20 L2，mac bda29731）：命令表里那一行（脚本、系统命令、关键词命令），打开设置滚到它、光标放进别名框
+        // 改别名（PLAN-v20 L2，mac bda29731）：命令表里那一行（脚本、系统命令、关键词命令），打开设置滚到它、光标放进别名框。
+        // 脚本那一行同 mac 放在脚本那一组，后面接「关掉这条命令」（REVIEW R92）
         if (CommandIdFor(item) is { } commandId && LauncherCommandKeys.Rows.Any(row => row.Id == commandId))
         {
-            actions.Add(new PaletteItem("改别名…", Glyphs.Edit, 4, () =>
+            var isScript = item.Kind == LauncherKind.Script;
+            actions.Add(new PaletteItem("改别名…", Glyphs.Edit, isScript ? 1 : 4, () =>
             {
                 HidePanel();
                 ShellRuntime.Instance?.FocusCommand(commandId);
             }));
+            if (isScript)
+            {
+                actions.Add(new PaletteItem("关掉这条命令", Glyphs.Remove, 1, () => DisableCommand(commandId, item.Title)));
+            }
         }
 
         return actions;
+    }
+
+    /// <summary>Ctrl+E（mac ⌘E）：选中的是自己的脚本时用编辑器打开它；不是响一声。</summary>
+    public void EditScript(LauncherItem item)
+    {
+        if (item.Kind == LauncherKind.Script &&
+            Scripts.FirstOrDefault(script => string.Equals(script.Path, item.Target, StringComparison.OrdinalIgnoreCase)) is { IsBundled: false } own)
+        {
+            HidePanel();
+            ScriptLibrary.Edit(own.Path);
+            return;
+        }
+
+        Beep();
+    }
+
+    /// <summary>
+    /// Ctrl+K「关掉这条命令」（mac disable）：从搜索里拿掉（就是 设置 › 启动器「命令和别名」里那个开关），启动器留着、重搜；提示里带「撤销」。
+    /// </summary>
+    private void DisableCommand(string id, string title)
+    {
+        LauncherCommandKeys.SetOn(id, false);
+        Search(Query);
+        NoticeHost.Show($"已关掉「{title}」", "设置 › 启动器「命令和别名」里能再打开", NoticeTone.Normal,
+            new NoticeAction("撤销", () =>
+            {
+                LauncherCommandKeys.SetOn(id, true);
+                // 收起着就不搜（留着的查询可能正好会跑一个列表脚本）；下次呼出自己会搜
+                if (_shown)
+                {
+                    Search(Query);
+                }
+            }));
     }
 
     // ---- 脚本的参数和列表（PLAN-v18 L1 第 7 批）

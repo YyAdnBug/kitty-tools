@@ -29,17 +29,34 @@ internal sealed partial class SettingsWindow
 
     private static string CommandId(string action) => action[CommandPrefix.Length..];
 
-    /// <summary>启动器页上那一行：「命令和别名 ›」，说明写改过几条、关掉几条。</summary>
+    /// <summary>启动器页上那一行：「命令和别名 ›」，小字写各有几条、关了几条（mac commandsSummary，REVIEW R93）。</summary>
     private void AddCommandsRow()
     {
         var settings = LauncherCommandKeys.Settings;
-        var changed = settings.Aliases.Count;
-        var off = settings.Off.Count;
-        var detail = changed == 0 && off == 0
-            ? "open、kill、ip、cb、fy、remind、currency 和系统命令：改要打的词、关掉不用的、设快捷键"
-            : string.Join("，", new[] { changed > 0 ? $"改了 {changed} 个别名" : null, off > 0 ? $"关了 {off} 条" : null }.OfType<string>());
-        AddSubpageRow("命令和别名", detail, () => OpenLauncherSubpage("commands"));
+        var mine = LauncherCommandKeys.ScriptRows.ToList();
+        var bundled = LauncherCommandKeys.BundledRows.ToList();
+        var keyword = LauncherCommandTable.BuiltIns.ToList();
+        var system = SystemCommands.Rows().ToList();
+        var parts = new List<string>();
+        if (mine.Count > 0)
+        {
+            parts.Add($"{mine.Count} 个我的脚本");
+        }
+
+        if (bundled.Count > 0)
+        {
+            parts.Add($"{bundled.Count} 个自带的命令");
+        }
+
+        parts.Add($"{keyword.Count} 个关键词命令");
+        parts.Add($"{system.Count} 个系统命令");
+        var closed = mine.Concat(bundled).Concat(keyword).Concat(system).Count(row => !settings.IsOn(row.Id));
+        AddSubpageRow("命令和别名", string.Join("、", parts) + (closed > 0 ? $"，关了 {closed} 个" : string.Empty),
+            () => OpenLauncherSubpage("commands"));
     }
+
+    /// <summary>「命令和别名」表上面那排筛选（mac LauncherCommandsSection.Filter）：0 全部、1 我的脚本、2 自带的命令、3 内置。</summary>
+    private int _commandGroup;
 
     /// <summary>一行「标题 ›」：点了推进子页（L4：网页搜索、功能开关、命令和别名都这样收成一行）。</summary>
     private void AddSubpageRow(string title, string detail, Action open)
@@ -145,11 +162,23 @@ internal sealed partial class SettingsWindow
         var search = new TextBox { PlaceholderText = "按名字或别名找", Text = _commandFilter };
         AutomationProperties.SetName(search, "搜索命令");
         var onlyOn = new CheckBox { Content = "只看开着的", IsChecked = _commandOnlyOn, Margin = new Thickness(12, 0, 0, 0) };
+        // 一排筛选（mac 是分段控件，Windows 选项一律下拉框，MAC-DIFF）
+        var group = new ComboBox
+        {
+            ItemsSource = new[] { "全部", "我的脚本", "自带的命令", "内置" },
+            SelectedIndex = _commandGroup,
+            Margin = new Thickness(12, 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        AutomationProperties.SetName(group, "只看哪一种命令");
         var top = new Grid();
         top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         top.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        top.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         top.Children.Add(search);
-        Grid.SetColumn(onlyOn, 1);
+        Grid.SetColumn(group, 1);
+        top.Children.Add(group);
+        Grid.SetColumn(onlyOn, 2);
         top.Children.Add(onlyOn);
         _content.Children.Add(top);
 
@@ -168,15 +197,31 @@ internal sealed partial class SettingsWindow
                     row.Keyword.Contains(filter, StringComparison.Ordinal));
             var groups = new[]
             {
-                ("我的脚本", LauncherCommandKeys.ScriptRows),
-                ("自带的命令", LauncherCommandKeys.BundledRows),
-                ("关键词命令", LauncherCommandTable.BuiltIns.AsEnumerable()),
-                ("系统命令", SystemCommands.Rows()),
+                ("我的脚本", LauncherCommandKeys.ScriptRows, 1),
+                ("自带的命令", LauncherCommandKeys.BundledRows, 2),
+                ("关键词命令", LauncherCommandTable.BuiltIns.AsEnumerable(), 3),
+                ("系统命令", SystemCommands.Rows(), 3),
             };
             var any = false;
-            foreach (var (title, rows) in groups)
+            foreach (var (title, rows, kind) in groups)
             {
+                if (_commandGroup != 0 && _commandGroup != kind)
+                {
+                    continue;
+                }
+
                 var shown = rows.Where(Shown).OrderBy(row => row.Title, StringComparer.CurrentCulture).ToList();
+                // 「我的脚本」是空的时候照样列这一组、一行「还没有自己的脚本 · 用例子新建」（mac LauncherCommandsSection，REVIEW R93）
+                if (kind == 1 && shown.Count == 0 && !rows.Any() && filter.Length == 0 && !_commandOnlyOn && SettingsService.Current.LauncherScripts)
+                {
+                    any = true;
+                    table.Children.Add(SettingsUi.Section(title));
+                    var example = new HyperlinkButton { Content = "用例子新建" };
+                    example.Click += (_, _) => NewScriptExample();
+                    table.Children.Add(SettingsUi.Card("还没有自己的脚本", "把脚本放进脚本文件夹就是一条命令", example));
+                    continue;
+                }
+
                 if (shown.Count == 0)
                 {
                     continue;
@@ -207,6 +252,11 @@ internal sealed partial class SettingsWindow
         onlyOn.Click += (_, _) =>
         {
             _commandOnlyOn = onlyOn.IsChecked == true;
+            Fill();
+        };
+        group.SelectionChanged += (_, _) =>
+        {
+            _commandGroup = Math.Max(0, group.SelectedIndex);
             Fill();
         };
         Fill();

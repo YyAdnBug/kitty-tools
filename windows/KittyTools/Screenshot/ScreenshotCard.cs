@@ -2,7 +2,7 @@
 // 复制或快速保存之后，卡片直接在屏幕右下角淡入（0.1.0 用户定：不从选区飞过去）。
 // 卡片就是截图本身（缩进 200 × 140 以内，圆角和阴影是系统的）；悬停时盖一层 black 0.35 的蒙层，
 // 中间「复制」「保存」两个 HUD 胶囊，左上关闭、右上钉图两个圆钮（PLAN-v7 §3.6）。
-// 最多叠三张（S9）：最新的贴右下角，旧的往上叠，第四张来时最旧那张收掉；每张停 5 秒，悬停时不消失。
+// 最多叠三张（S9）：最新的贴右下角，旧的往上叠，第四张来时最旧那张收掉；每张停 6 秒、悬停时不消失、移开后再等 2.5 秒（同 mac ShotShelf，REVIEW R97）。
 // 双击打开（存过的打开那个文件，没存的用临时文件打开）；右键：复制、存储、钉在屏幕上、在资源管理器中显示（存过以后）、
 // 在历史里看、关闭。可以拖到别的程序（拖出去的是 PNG 文件）。
 // 录屏、录音、GIF 录完也出一张（R1，同一叠）：录屏是封面、GIF 是它自己、录音是麦克风图标 + 文件名；悬停「拷贝」「打开」，
@@ -73,7 +73,7 @@ internal sealed partial class ScreenshotCard : Window
         _scale = _display.Scale <= 0 ? 1 : _display.Scale;
 
         _hideTimer = DispatcherQueue.CreateTimer();
-        _hideTimer.Interval = TimeSpan.FromSeconds(5);
+        _hideTimer.Interval = TimeSpan.FromSeconds(6);
         _hideTimer.IsRepeating = false;
         _hideTimer.Tick += (_, _) =>
         {
@@ -155,6 +155,7 @@ internal sealed partial class ScreenshotCard : Window
         {
             _hovering = false;
             SetHover(false);
+            _hideTimer.Interval = TimeSpan.FromSeconds(2.5);
             _hideTimer.Start();
         };
         _root.DoubleTapped += (_, _) => _ = OpenAsync();
@@ -352,8 +353,8 @@ internal sealed partial class ScreenshotCard : Window
         };
         if (_file is null)
         {
-            center.Children.Add(HudButton(Glyphs.Copy, "复制", withText, () => _ = CopyAsync()));
-            center.Children.Add(HudButton(Glyphs.Save, "保存", withText, () => _ = SaveAsync()));
+            center.Children.Add(HudButton(Glyphs.Copy, "拷贝", withText, () => _ = CopyAsync()));
+            center.Children.Add(HudButton(Glyphs.Save, "存储", withText, () => _ = SaveAsync()));
             // 截完马上想补个箭头（PLAN-v11 F4，mac X7）：以前得打开截图历史找到它再双击。历史关着时没这个钮。
             if (ShotHistory.IsOn)
             {
@@ -379,7 +380,7 @@ internal sealed partial class ScreenshotCard : Window
 
             var corner = _file is { } file
                 ? RoundButton(Glyphs.Folder, "在资源管理器中显示", () => NoticeActions.RevealInExplorer(file))
-                : RoundButton(Glyphs.Pin, "钉在屏幕上", Pin);
+                : RoundButton(Glyphs.Pin, "钉到屏幕", Pin);
             corner.HorizontalAlignment = HorizontalAlignment.Right;
             corner.VerticalAlignment = VerticalAlignment.Top;
             layer.Children.Add(corner);
@@ -683,10 +684,10 @@ internal sealed partial class ScreenshotCard : Window
 
         if (_file is not { } file)
         {
-            Add("复制", true, () => _ = CopyAsync());
+            Add("拷贝", true, () => _ = CopyAsync());
             Add("存储", true, () => _ = SaveAsync());
             Add("改标注", ShotHistory.IsOn, EditAnnotations);
-            Add("钉在屏幕上", true, Pin);
+            Add("钉到屏幕", true, Pin);
             Add("打开", true, () => _ = OpenAsync());
             Add("在资源管理器中显示", _savedPath is not null, () =>
             {
