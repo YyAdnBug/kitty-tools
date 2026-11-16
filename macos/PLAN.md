@@ -139,6 +139,7 @@
 **窗口体系**
 - **App 入口与菜单栏**：
   - `@main enum Main` 先分流 OCR 子进程，普通 GUI 再进入 `KittyToolsApp: App`，用 `@NSApplicationDelegateAdaptor` 挂 AppDelegate，~~唯一的 scene 是 `MenuBarExtra(.menu)`~~（D 阶段：菜单栏图标和菜单改成 AppKit `NSStatusItem`（`Shell/StatusItem.swift`，图标要做动效），这里只留一个不插入菜单栏的 MenuBarExtra 当 scene）。
+  - **原生悬停提示**（2026-11-16，用户同意整个 App 都加快）：GUI 入口在创建 `NSApplication` 前单独注册 `NSInitialToolTipDelay = 600`（毫秒，`Prefs.toolTipDelay`），截图工具栏和其它原生提示都继续由 AppKit 显示，目标等待约 0.6 秒。只注册进程内默认值，不写持久偏好、不进 `Prefs.defaults` 的导出 / 同步清单，OCR 子进程不注册；已有应用级或系统级覆盖值仍优先。此键不是公开 API，系统不认时退回系统默认等待。macOS 27.0 临时屏外探针验证 AppKit 采用的初始等待为 0.600 秒（未设时 1.500 秒；用户原先实测可见提示约 2–3 秒），同日独立屏上探针（非激活、未按 ⌘）首次悬停到系统提示窗口可见实测 0.637 / 0.622 秒，对照默认 1.544 秒，报告在 `build/research/tooltips-2026-11-16/report.md`；完整 App 截图工具栏和跨系统版本仍按 HANDTEST 验。
   - `LSUIElement=YES` 保留：macOS 26 的普通 GUI 入口在 `KittyToolsApp.main()` 前设为 `.regular`，程序坞 / ⌘⇥ 图标从启动起显示并保留到退出；其他系统启动时仍不显示图标。OCR 子进程不走 GUI 入口，不创建 `NSApplication`。
   - ~~菜单项：剪贴板历史 / 划词翻译 / 输入翻译 / 复制即译（Toggle）/ 设置… / 退出。快捷键用 `.keyboardShortcut` 显示；热键为空时显示「未设置」。~~ 现状（N15、体检 A26）：按 `HotKeyAction.sections` 分三节，和快捷键页同名同序，每节末尾接那一节的 `MenuExtra`（暂停记录剪贴板、复制即译、有钉图时的两项）；右边是当前生效的快捷键，没设 / 注册失败的留空；最后 设置… / 关于 / 检查更新…（正式版）/ 退出，启动器的内置动作读同一份。
   - 菜单栏图标默认用单色模板图（2026-09-29 第 9 批起设置 › 通用可改成彩色 App 图标或隐藏，见 §12「菜单栏图标手测」）。左键点击直接弹菜单（HIG 做法），去掉 Tauri 版「左键打开主界面」。
