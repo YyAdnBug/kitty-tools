@@ -41,7 +41,10 @@ struct ShotHistoryView: View {
           ForEach(ShotHistoryModel.Filter.allCases) { Text($0.title).tag($0) }
         }
         .pickerStyle(.segmented)
-        .frame(width: Self.filterWidth)
+        // 至少 280；四段排不下（英文）时按工具栏里那个控件自己要的宽撑开。不另建 NSSegmentedControl 量：
+        // 工具栏里的是 SwiftUI 配的（macOS 27 实测 extraLarge、等宽分段），量出来比它窄，窄了会被挤或裁
+        .frame(minWidth: 280)
+        .fixedSize(horizontal: true, vertical: false)
       }
     }
     .searchable(text: $model.search, prompt: "搜来源或种类")
@@ -200,15 +203,6 @@ struct ShotHistoryView: View {
       }
     }
   }
-
-  /// 顶上筛选的宽：280；英文四段放不下（约 370）时按系统分段控件量出来的宽加宽，中文照旧 280
-  private static let filterWidth: CGFloat = max(
-    280,
-    ceil(
-      NSSegmentedControl(
-        labels: ShotHistoryModel.Filter.allCases.map(\.title), trackingMode: .selectOne,
-        target: nil, action: nil
-      ).fittingSize.width) + 8)
 
   /// 空状态那句：保留几天照设置（0 = 一直留着）
   static func keepLine(days: Int) -> String {
