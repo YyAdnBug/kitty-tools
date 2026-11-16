@@ -16,7 +16,9 @@ nonisolated enum LaunchpadCornerOption: String, CaseIterable, Identifiable {
 
   var id: String { rawValue }
 
-  var title: String {
+  var title: String { String(localized: titleResource) }
+
+  var titleResource: LocalizedStringResource {
     switch self {
     case .off: "关"
     case .topLeft: "左上角"

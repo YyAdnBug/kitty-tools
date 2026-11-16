@@ -55,8 +55,10 @@ struct Passcode {
 
   /// 设置里填的两遍有什么问题（nil = 可以存）
   static func problem(_ text: String, confirmation: String) -> String? {
-    if Passcode(text) == nil { return "密码是 \(lengths.lowerBound)–\(lengths.upperBound) 位数字" }
-    return text == confirmation ? nil : "再输一次，两次要一样"
+    if Passcode(text) == nil {
+      return String(localized: "密码是 \(lengths.lowerBound)–\(lengths.upperBound) 位数字")
+    }
+    return text == confirmation ? nil : String(localized: "再输一次，两次要一样")
   }
 
   /// 键码 → 数字：主键盘那一排和小键盘的 0–9

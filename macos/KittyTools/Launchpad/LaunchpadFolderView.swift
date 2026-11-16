@@ -116,13 +116,13 @@ struct FolderOverlay: View {
     }
     .position(x: metrics.size.width / 2, y: metrics.size.height / 2)
     .accessibilityElement(children: .contain)
-    .accessibilityLabel(model.openFolder?.name ?? "文件夹")
+    .accessibilityLabel(model.openFolder?.name ?? String(localized: "文件夹"))
   }
 
   /// 文件夹名：只有字那一块能点进编辑（照 macOS 15；2026-10-18 真机反馈：整行都能点）。框按字量出来的宽度，
   /// 跟着打的字变宽，最宽到面板那么宽；旁边的空处点了和点背景一样（提交改名、收起文件夹）。编辑时垫一块浅底
   private var title: some View {
-    let text = model.folderNameDraft.isEmpty ? "文件夹名字" : model.folderNameDraft
+    let text = model.folderNameDraft.isEmpty ? String(localized: "文件夹名字") : model.folderNameDraft
     let width = min(
       ceil(NSAttributedString(string: text, attributes: [.font: Self.titleFont]).size().width) + 24,
       metrics.folderGridWidth)

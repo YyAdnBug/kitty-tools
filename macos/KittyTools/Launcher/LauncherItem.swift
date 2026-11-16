@@ -163,7 +163,7 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
   /// 状态屏的一个状态：标题是状态的标题，副标题同别的内置动作，右侧类型写「状态屏」；输状态的标题、「状态屏」、
   /// 拼音都搜得到。↩ 直接进入、不确认，所以同分时排在别的结果后面、也不记使用（LauncherMatch.priority、LauncherModel）
   private static func statusPreset(_ preset: StatusPreset) -> LauncherItem {
-    var item = action(statusPresetPrefix + preset.id, "\(preset.title)", "Status Screen")
+    var item = action(statusPresetPrefix + preset.id, preset.titleResource, "Status Screen")
     let family = searchTerms(
       HotKeyAction.statusScreen.title, HotKeyAction.statusScreen.titleResource)
     item.names += family.names.filter { !item.names.contains($0) }

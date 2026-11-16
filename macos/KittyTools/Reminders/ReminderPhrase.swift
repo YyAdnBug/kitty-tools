@@ -11,7 +11,11 @@
 //   只写哪天没写几点 = 那天 9:00，写了「中午 / 下午 / 晚上」没写几点 = 12 / 15 / 20 点。
 // - 一句话里既有「多久之后」又有「哪天几点」时，按先出现的那个（「周五下午3点 开会1小时」是周五 15:00）。
 // 不认：重复（「每天…」：去设置里建，isRepeating 给提示）、年份、农历、汉字数字（「十分钟」）。全角数字和冒号先换成半角。
-// 时间去掉之后剩下的就是标题，没剩下就是「时间到了」。
+// 时间去掉之后剩下的就是标题，没剩下就是「时间到了」（按建的那一刻的界面语言写）。
+// 英文（2026-11-15 多语言第 8 批，只补「多久之后」）：remind 后面可带 me（「remind me in 10 min to stretch」）；
+// 10 min / 10 minutes / 2 h / 1.5 hours / half an hour / an hour，前面可带 in、后面可带 later / from now，标题开头的 to 去掉；
+// every day / daily 这类当重复。ponytail: 英文的「哪天几点」（tomorrow 9am、at 3pm、next Monday）不认，给「认不出时间」的提示；
+// 要认的话在 moment 旁边另写一套英文的，别往中文的那条正则里塞。
 
 import Foundation
 
@@ -23,7 +27,12 @@ nonisolated enum ReminderPhrase {
   static func query(_ text: String) -> String? {
     let lower = text.lowercased()
     for keyword in keywords where lower.hasPrefix(keyword + " ") {
-      return String(text.dropFirst(keyword.count)).trimmingCharacters(in: .whitespaces)
+      let rest = String(text.dropFirst(keyword.count)).trimmingCharacters(in: .whitespaces)
+      // 「remind me …」：me 不算内容
+      guard keyword == "remind", let me = rest.firstMatch(of: /^(?i)me(?:\s+|$)/) else {
+        return rest
+      }
+      return String(rest[me.range.upperBound...])
     }
     return nil
   }
@@ -36,6 +45,9 @@ nonisolated enum ReminderPhrase {
   /// 写的是重复的提醒（「每天9点 吃药」「每隔一小时」）：启动器只建一次性的，提示去设置里建
   static func isRepeating(_ text: String) -> Bool {
     ["每天", "每周", "每月", "每隔", "每小时", "每个", "每晚", "每早", "工作日"].contains { text.contains($0) }
+      || text.contains(
+        /(?i)\bevery\s+(?:day|week|month|hour|morning|evening|night|weekday|weekend|other|[0-9])|\b(?:daily|hourly|everyday)\b/
+      )
   }
 
   struct Parsed: Equatable {
@@ -43,8 +55,8 @@ nonisolated enum ReminderPhrase {
     var title: String
   }
 
-  /// 没写内容时的标题
-  static let defaultTitle = "时间到了"
+  /// 没写内容时的标题（存进去就是用户的，按建的那一刻的语言写）
+  static var defaultTitle: String { String(localized: "时间到了") }
 
   /// 解析一句话（关键词后面的部分）：认不出时间、写的是重复的给 nil。算出来的时刻可能已经过了（「今天上午8点」在 10 点说），
   /// 调用方自己看
@@ -78,21 +90,21 @@ nonisolated enum ReminderPhrase {
 
   // MARK: 多久之后
 
-  /// 汉字写的几个常用的；「一个半小时」排在「半小时」前面（不然先认成 30 分钟）
+  /// 汉字写的几个常用的；「一个半小时」排在「半小时」前面（不然先认成 30 分钟）。英文的不分大小写
   private static let fixedSpans: [(String, Double)] = [
     ("一个半小时", 90), ("一个半钟头", 90), ("半个小时", 30), ("半小时", 30), ("一刻钟", 15), ("一个小时", 60),
-    ("一小时", 60),
+    ("一小时", 60), ("half an hour", 30), ("half hour", 30), ("an hour", 60),
   ]
 
   /// 「1个半小时」：数字后面的「半」算半小时
   private static let hoursPattern = try! NSRegularExpression(
     pattern:
-      #"([0-9]+(?:\.[0-9]+)?)\s*(?:个\s*)?(半\s*)?(?:小时|钟头|(?:hours?|hrs?|h)(?![a-z]))(?:\s*([0-9]+)\s*(?:分钟|分|minutes?|mins?|m)(?![a-z]))?(?:\s*(?:以后|之后|后))?"#,
+      #"(?:\bin\s+)?([0-9]+(?:\.[0-9]+)?)\s*(?:个\s*)?(半\s*)?(?:小时|钟头|(?:hours?|hrs?|h)(?![a-z]))(?:\s*([0-9]+)\s*(?:分钟|分|minutes?|mins?|m)(?![a-z]))?(?:\s*(?:以后|之后|后)|\s+later\b|\s+from\s+now\b)?"#,
     options: [.caseInsensitive])
   /// 前面紧挨着「点」的不算（「3点15分」是钟点，不是 15 分钟后）
   private static let minutesPattern = try! NSRegularExpression(
     pattern:
-      #"(?<![0-9.点])(?<!点\s)([0-9]+)\s*(?:分钟|分|minutes?|mins?|m)(?![a-z])(?:\s*(?:以后|之后|后))?"#,
+      #"(?<![0-9.点])(?<!点\s)(?:\bin\s+)?([0-9]+)\s*(?:分钟|分|minutes?|mins?|m)(?![a-z])(?:\s*(?:以后|之后|后)|\s+later\b|\s+from\s+now\b)?"#,
     options: [.caseInsensitive])
 
   /// 「多久之后」有几分钟、在原文的哪一段（夹在 1 分钟…7 天）
@@ -111,8 +123,12 @@ nonisolated enum ReminderPhrase {
       if let minutes = clamp(hours * 60 + half + extra) { found.append((minutes, range)) }
     }
     for (word, minutes) in fixedSpans {
-      if let range = text.range(of: word) {
-        found.append((minutes, range.lowerBound..<suffix(after: range.upperBound, in: text)))
+      if let range = text.range(of: word, options: .caseInsensitive) {
+        found.append(
+          (
+            minutes,
+            prefix(before: range.lowerBound, in: text)..<suffix(after: range.upperBound, in: text)
+          ))
         break
       }
     }
@@ -134,7 +150,17 @@ nonisolated enum ReminderPhrase {
     for word in ["以后", "之后", "后"] where text[index...].hasPrefix(word) {
       return text.index(index, offsetBy: word.count)
     }
+    // 「half an hour later」「an hour from now」
+    if let match = text[index...].prefixMatch(of: /(?i)\s+(?:later|from\s+now)\b/) {
+      return match.range.upperBound
+    }
     return index
+  }
+
+  /// 「in an hour」的 in 也算进时间那一段
+  private static func prefix(before index: String.Index, in text: String) -> String.Index {
+    guard let match = text[..<index].firstMatch(of: /(?i)\bin\s+$/) else { return index }
+    return match.range.lowerBound
   }
 
   private static func clamp(_ minutes: Double) -> Double? {
@@ -277,8 +303,12 @@ nonisolated enum ReminderPhrase {
   private static func title(_ text: String, removing range: Range<String.Index>) -> String {
     var rest = text
     rest.removeSubrange(range)
-    let trimmed = rest.trimmingCharacters(
+    var trimmed = rest.trimmingCharacters(
       in: .whitespacesAndNewlines.union(.init(charactersIn: "，,、。:：")))
+    // 「remind me in 10 min to stretch」：开头的 to 不算标题
+    if let to = trimmed.prefixMatch(of: /(?i)to\s+/) {
+      trimmed = String(trimmed[to.range.upperBound...])
+    }
     let title = Reminder.oneLine(trimmed)
     return title.isEmpty ? defaultTitle : String(title.prefix(Reminder.maxTitle))
   }

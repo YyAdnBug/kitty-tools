@@ -33,7 +33,7 @@ struct RemindersTab: View {
     }
     .task { await StatusEmoji.warmStills() }
     .confirmationDialog(
-      "删除「\(reminders.first { $0.id == removing }?.title ?? "")」？",
+      "删除「\(reminders.first { $0.id == removing }?.displayTitle ?? "")」？",
       isPresented: Binding {
         removing != nil
       } set: {
@@ -80,7 +80,7 @@ struct RemindersTab: View {
         } header: {
           Text("图标")
         } footer: {
-          SectionFootnote("\(EmojiPackToggle.footnote)")
+          SectionFootnote(EmojiPackToggle.footnote)
         }
         Section {
           Picker(selection: $snooze) {
@@ -110,7 +110,8 @@ struct RemindersTab: View {
         ReminderListRow(
           reminder: reminder,
           summary: reminder.summary(
-            now: now ?? .now, statusTitle: ReminderDetail.status(for: reminder, in: statuses)?.title
+            now: now ?? .now,
+            statusTitle: ReminderDetail.status(for: reminder, in: statuses)?.displayTitle
           ),
           isOn: Binding {
             reminder.isOn
@@ -210,7 +211,7 @@ private struct ReminderListRow: View {
     HStack(spacing: 10) {
       ReminderIcon(symbol: reminder.symbol)
       VStack(alignment: .leading, spacing: 1) {
-        Text(reminder.title).font(.system(size: 13))
+        Text(reminder.displayTitle).font(.system(size: 13))
         Text(summary)
           .font(.system(size: 11))
           .foregroundStyle(.secondary)
@@ -219,7 +220,7 @@ private struct ReminderListRow: View {
       .truncationMode(.tail)
       .accessibilityElement(children: .combine)
       Spacer(minLength: 8)
-      Toggle("打开「\(reminder.title)」", isOn: $isOn)
+      Toggle("打开「\(reminder.displayTitle)」", isOn: $isOn)
         .labelsHidden()
         .toggleStyle(.switch)
         .controlSize(.mini)

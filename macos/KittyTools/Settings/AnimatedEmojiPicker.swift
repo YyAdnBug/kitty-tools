@@ -18,12 +18,26 @@ struct AnimatedEmojiPicker: View {
   @AppStorage(Prefs.emojiPackRecent) private var recentData = ""
   @FocusState private var searching: Bool
 
-  /// 分类：编号、名字（旁白、悬停提示）、底下那排的符号（同系统表情面板）
-  static let categories: [(id: String, title: String, symbol: String)] = [
-    ("recent", "常用", "clock"), ("people", "表情与人物", "face.smiling"),
-    ("nature", "动物与自然", "pawprint"), ("food", "食物", "carrot"), ("activities", "活动", "soccerball"),
-    ("travel", "旅行与地点", "car"), ("objects", "物品", "lightbulb"), ("flags", "旗帜", "flag"),
+  /// 分类：编号、底下那排的符号（同系统表情面板）；名字（旁白、悬停提示）在 categoryTitle
+  static let categories: [(id: String, symbol: String)] = [
+    ("recent", "clock"), ("people", "face.smiling"), ("nature", "pawprint"), ("food", "carrot"),
+    ("activities", "soccerball"), ("travel", "car"), ("objects", "lightbulb"), ("flags", "flag"),
   ]
+
+  /// 分类的名字（函数直接 return switch：元组里的字只有第一个抽得进目录）
+  static func categoryTitle(_ id: String) -> LocalizedStringResource {
+    switch id {
+    case "recent":
+      LocalizedStringResource("emojiPicker.recent", defaultValue: "常用", comment: "动画表情面板的分类：最近挑过的")
+    case "people": "表情与人物"
+    case "nature": "动物与自然"
+    case "food": "食物"
+    case "activities": "活动"
+    case "travel": "旅行与地点"
+    case "objects": "物品"
+    default: "旗帜"
+    }
+  }
   static let columns = 6
   static let cell: CGFloat = 48
   static let size = CGSize(width: 332, height: 440)
@@ -144,8 +158,8 @@ struct AnimatedEmojiPicker: View {
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .help(category.title)
-        .accessibilityLabel(category.title)
+        .help(Text(Self.categoryTitle(category.id)))
+        .accessibilityLabel(Text(Self.categoryTitle(category.id)))
         .accessibilityAddTraits(active ? .isSelected : [])
       }
     }
@@ -194,8 +208,8 @@ private struct PickerCell: View {
     }
     .buttonStyle(.plain)
     .task(id: entry.id) { thumbnail = await EmojiPack.loadThumbnail(entry.id) }
-    .help(entry.name)
-    .accessibilityLabel(entry.name)
+    .help(EmojiPack.name(entry.id) ?? entry.name)
+    .accessibilityLabel(EmojiPack.name(entry.id) ?? entry.name)
     .accessibilityAddTraits(selected ? .isSelected : [])
   }
 }

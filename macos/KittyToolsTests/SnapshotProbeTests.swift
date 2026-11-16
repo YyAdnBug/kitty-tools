@@ -1508,7 +1508,8 @@ struct SnapshotProbeTests {
     // 刘海岛上挂着的提醒：一条（带说明）、几条合成一条、错过的；收着 / 展开，刘海屏 / 胶囊
     let notch = Island.Geometry.notch(width: 200, height: 32)
     let capsule = Island.Geometry.capsule(menuBar: 24)
-    let buttons = ["知道了", "稍后 5 分钟"]
+    // 按钮的字走目录（英文截图里是英文；中文和原来一样）
+    let buttons = [String(localized: "知道了"), String(localized: "稍后 \(5) 分钟")]
     let cases: [(String, (String, String?), [String], Island.Geometry, Bool)] = [
       ("one", ReminderCenter.notice(fired: [meeting], missed: [])!, buttons, notch, false),
       ("one-expanded", ReminderCenter.notice(fired: [meeting], missed: [])!, buttons, notch, true),
@@ -1517,7 +1518,7 @@ struct SnapshotProbeTests {
         capsule, false
       ),
       (
-        "missed", ReminderCenter.notice(fired: [], missed: [rent, call, nap])!, ["知道了"], notch,
+        "missed", ReminderCenter.notice(fired: [], missed: [rent, call, nap])!, [buttons[0]], notch,
         false
       ),
       (
@@ -1542,20 +1543,23 @@ struct SnapshotProbeTests {
       (
         "full",
         .init(
-          title: "休息眼睛", detail: "看看 6 米外的地方，20 秒", symbol: "sleeping-face", seconds: 20,
+          title: Reminder.examples[1].displayTitle, detail: Reminder.examples[1].displayDetail,
+          symbol: "sleeping-face", seconds: 20,
           snoozes: [5, 15, 60]), true, CGSize(width: 1440, height: 900)
       ),
       (
         "full-merged",
         .init(
-          title: "周会 · 交房租", detail: "还错过了：给妈妈打电话", symbol: "busts", seconds: 0,
+          title: "周会 · 交房租", detail: String(localized: "还错过了：\("给妈妈打电话")"), symbol: "busts",
+          seconds: 0,
           snoozes: [15, 60]), true, CGSize(width: 1440, height: 900)
       ),
       (
         "full-note",
         .init(
           title: "午休", detail: nil, symbol: "", seconds: 0, snoozes: [5, 15, 60],
-          note: ("还没给辅助功能授权，进不了状态屏", true)), true, CGSize(width: 1440, height: 900)
+          note: (String(localized: "还没给辅助功能授权，进不了状态屏"), true)), true,
+        CGSize(width: 1440, height: 900)
       ),
       (
         "full-settling",

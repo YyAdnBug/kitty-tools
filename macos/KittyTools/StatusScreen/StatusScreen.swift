@@ -98,8 +98,24 @@ import Observation
   static let mouseTravel: CGFloat = 40
   /// 退出之后拦截最多再留多久
   static let lingerLimit: TimeInterval = 2
-  /// 退出提示胶囊的大小、离屏幕底边多远（画面按它摆，鼠标按住的命中也按它算）
-  static let hintSize = CGSize(width: 148, height: 40)
+  /// 退出提示胶囊的大小、离屏幕底边多远（画面按它摆，鼠标按住的命中也按它算）。宽 148 是按中文「按住 Esc 退出」定的；
+  /// 别的语言的两段字比中文宽多少，胶囊就宽多少（英文「Hold Esc to exit」放不下，中文照旧 148）
+  static let hintSize: CGSize = {
+    let font = NSFont.systemFont(ofSize: 13, weight: .medium)
+    func width(_ text: String) -> CGFloat {
+      (text as NSString).size(withAttributes: [.font: font]).width
+    }
+    let parts = [hintHold, hintExit]
+    let extra =
+      parts.map { width(String(localized: $0)) }.reduce(0, +)
+      - parts.map { width($0.chinese) }.reduce(0, +)
+    return CGSize(width: 148 + max(0, ceil(extra)), height: 40)
+  }()
+  /// 退出提示的两段字：「按住」[Esc]「退出」（英文 Hold [Esc] to exit；退出是退出状态屏，不是退出 App，显式 key）
+  static let hintHold: LocalizedStringResource = "按住"
+  static let hintExit = LocalizedStringResource(
+    "statusScreen.hintExit", defaultValue: "退出",
+    comment: "状态屏底部的提示「按住 [Esc] 退出」的后半句：退出状态屏（不是退出 App）")
   static let hintBottom: CGFloat = 56
   /// 眼睛那张图露出屏幕边几成。图上面空着四分之一：露八成时眼睛本身露出约八成
   static let eyesShown: CGFloat = 0.8
@@ -169,9 +185,14 @@ import Observation
   /// 时长：「不到 1 分钟」「5 分钟」「1 小时」「1 小时 23 分」
   static func span(_ seconds: Int) -> String {
     let minutes = seconds / 60
-    if minutes < 1 { return "不到 1 分钟" }
-    if minutes < 60 { return "\(minutes) 分钟" }
-    return minutes % 60 == 0 ? "\(minutes / 60) 小时" : "\(minutes / 60) 小时 \(minutes % 60) 分"
+    if minutes < 1 { return String(localized: "不到 1 分钟") }
+    if minutes < 60 { return String(localized: "\(minutes) 分钟") }
+    return minutes % 60 == 0
+      ? String(localized: "\(minutes / 60) 小时")
+      : String(
+        localized: "statusScreen.hoursMinutes",
+        defaultValue: "\(minutes / 60) 小时 \(minutes % 60) 分",
+        comment: "时长：1 小时 23 分")
   }
 
   /// 小字里的时长，精确到秒：「5 秒」「3 分 05 秒」「1 小时 23 分 05 秒」。前面有更大的单位时补成两位：
@@ -179,8 +200,19 @@ import Observation
   static func clock(_ seconds: Int) -> String {
     let (hours, minutes, rest) = (seconds / 3600, seconds / 60 % 60, seconds % 60)
     func padded(_ value: Int) -> String { value < 10 ? "0\(value)" : "\(value)" }
-    if hours > 0 { return "\(hours) 小时 \(padded(minutes)) 分 \(padded(rest)) 秒" }
-    return minutes > 0 ? "\(minutes) 分 \(padded(rest)) 秒" : "\(rest) 秒"
+    if hours > 0 {
+      return String(
+        localized: "statusScreen.clockHours",
+        defaultValue: "\(hours) 小时 \(padded(minutes)) 分 \(padded(rest)) 秒",
+        comment: "状态屏小字里每秒在变的时长：1 小时 23 分 05 秒（分、秒补成两位）")
+    }
+    return minutes > 0
+      ? String(
+        localized: "statusScreen.clockMinutes", defaultValue: "\(minutes) 分 \(padded(rest)) 秒",
+        comment: "状态屏小字里每秒在变的时长：3 分 05 秒（秒补成两位）")
+      : String(
+        localized: "statusScreen.clockSeconds", defaultValue: "\(rest) 秒",
+        comment: "状态屏小字里每秒在变的时长：5 秒")
   }
 
   /// 小字里每秒在变的那个数：定了自动结束的是还剩几秒（倒数），没定的是已经过了几秒
@@ -191,24 +223,43 @@ import Observation
   /// 画面上那行小字（started 是格式化好的时间）：「14:02 开始 · 已 1 小时 23 分 05 秒」；
   /// 定了自动结束的倒数：「14:02 开始 · 还剩 4 分 32 秒」
   static func footer(started: String, seconds: Int, autoEndMinutes: Int = 0) -> String {
-    "\(started) 开始 · \(autoEndMinutes > 0 ? "还剩" : "已") "
-      + clock(reading(elapsed: seconds, autoEndMinutes: autoEndMinutes))
+    let reading = clock(reading(elapsed: seconds, autoEndMinutes: autoEndMinutes))
+    return autoEndMinutes > 0
+      ? String(
+        localized: "statusScreen.footerLeft", defaultValue: "\(started) 开始 · 还剩 \(reading)",
+        comment: "状态屏的小字：几点开始的 · 还剩多久（定了自动结束）")
+      : String(
+        localized: "statusScreen.footerElapsed", defaultValue: "\(started) 开始 · 已 \(reading)",
+        comment: "状态屏的小字：几点开始的 · 已经过了多久")
   }
 
   /// 怎么退出的一句话（进入时的播报、整屏的无障碍名字）
   static func exitWording(passcode: Bool) -> String {
-    passcode ? "按住 Esc 两秒，再输入密码退出" : "按住 Esc 两秒退出"
+    passcode ? String(localized: "按住 Esc 两秒，再输入密码退出") : String(localized: "按住 Esc 两秒退出")
   }
 
   /// 结束时刘海岛的详情：「持续 1 小时 23 分 · 挡下 12 次触碰」；自动结束的写「到 5 分钟自动结束」；没有触碰就不写后半句
   static func summary(_ reason: ExitReason, seconds: Int, touches: Int, autoEndMinutes: Int)
     -> String
   {
+    let duration = span(reason == .autoEnd ? autoEndMinutes * 60 : seconds)
     let lasted =
       reason == .autoEnd
-      ? "到 \(span(autoEndMinutes * 60))自动结束"
-      : "持续" + (seconds < 60 ? "" : " ") + span(seconds)
-    return touches > 0 ? "\(lasted) · 挡下 \(touches) 次触碰" : lasted
+      ? String(
+        localized: "statusScreen.autoEnded", defaultValue: "到 \(duration)自动结束",
+        comment: "状态屏结束时刘海岛的详情：到了定的时长自动结束（%@ 是「5 分钟」）")
+      : seconds < 60
+        ? String(
+          localized: "statusScreen.lastedShort", defaultValue: "持续\(duration)",
+          comment: "状态屏结束时刘海岛的详情：持续不到 1 分钟（中文这里不空格）")
+        : String(
+          localized: "statusScreen.lasted", defaultValue: "持续 \(duration)",
+          comment: "状态屏结束时刘海岛的详情：持续 1 小时 23 分")
+    return touches > 0
+      ? String(
+        localized: "statusScreen.touches", defaultValue: "\(lasted) · 挡下 \(touches) 次触碰",
+        comment: "状态屏结束时刘海岛的详情：持续多久 · 拦下了几次触碰")
+      : lasted
   }
 
   /// 防残影（纯函数）：第几分钟 → 告示那一列挪开多少。液晶屏长时间显示静止画面会留残影（Apple 的支持文档建议别让
@@ -376,7 +427,7 @@ import Observation
     }
     scheduleIdlePeek()
     watcher.start()
-    Island.announce("状态屏：\(preset.title)。\(Self.exitWording(passcode: passcode != nil))")
+    Island.announce("状态屏：\(preset.displayTitle)。\(Self.exitWording(passcode: passcode != nil))")
     // 真进来了才记：选状态的面板下次默认选中它（菜单栏、启动器进的也算）
     UserDefaults.standard.set(preset.id, forKey: Prefs.statusScreenLastPreset)
     decodeFrames(for: preset)

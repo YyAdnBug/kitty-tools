@@ -67,8 +67,17 @@ import Observation
 
   nonisolated static func contains(_ id: String) -> Bool { entries[id] != nil }
 
-  /// 一个编号的中文名
-  nonisolated static func name(_ id: String) -> String? { entries[id]?.name }
+  /// 一个编号的名字：中文界面是对照表里的中文名；别的语言从编号推（编号就是 Fluent 的英文名 grinning-face →
+  /// 「Grinning face」：连字符换空格、首字母大写），对照表一个字不改
+  nonisolated static func name(_ id: String) -> String? {
+    guard let entry = entries[id] else { return nil }
+    return InterfaceLanguage.isEnglish ? englishName(entry.id) : entry.name
+  }
+
+  nonisolated static func englishName(_ id: String) -> String {
+    let words = id.replacingOccurrences(of: "-", with: " ")
+    return words.prefix(1).uppercased() + words.dropFirst()
+  }
 
   /// 包里带的小缩略图（Resources/emoji-thumbs/emoji-thumb-<编号>.heic，96 × 96，打进包里是平铺的）：还没下好动画时垫着用（一次
   /// 一张，在主线程上现解约 3–5 ms）。解好画进位图再缓存（ImageIO 给的 HEIC 每画一次重解一次，同 StatusEmoji.bitmap 的注释）

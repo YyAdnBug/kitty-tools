@@ -38,9 +38,11 @@ enum ReminderSound {
       || extensions.contains((name as NSString).pathExtension.lowercased())
   }
 
-  /// 界面上的叫法：系统的用中文名，别的用文件名（不带扩展名）
+  /// 界面上的叫法：系统的用它的叫法（中文界面是中文名），别的用文件名（不带扩展名）
   static func title(of id: String) -> String {
-    if let chime = Reminder.chimes.first(where: { $0.name == id }) { return chime.title }
+    if Reminder.chimeNames.contains(id) {
+      return Reminder.chimeTitle(id).map { String(localized: $0) } ?? id
+    }
     let name = id.hasPrefix(filePrefix) ? String(id.dropFirst(filePrefix.count)) : id
     return (name as NSString).deletingPathExtension
   }
@@ -52,7 +54,7 @@ enum ReminderSound {
 
   /// 个人「声音」文件夹里的（不和系统自带的重名）、自己选过的文件。详情页打开时读一次
   static func choices() -> (library: [Choice], files: [Choice]) {
-    let builtIn = Set(Reminder.chimes.map(\.name))
+    let builtIn = Set(Reminder.chimeNames)
     let libraries = [
       URL.libraryDirectory.appending(path: "Sounds"), URL(filePath: "/Library/Sounds"),
     ]
@@ -123,9 +125,9 @@ enum ReminderSound {
 
     var message: String {
       switch self {
-      case .tooLarge: "文件太大，选一个 20 MB 以内的短音频"
-      case .unreadable: "放不了这个文件，换一个 mp3、m4a、wav 或 aiff"
-      case .copyFailed: "没能存下这个文件"
+      case .tooLarge: String(localized: "文件太大，选一个 20 MB 以内的短音频")
+      case .unreadable: String(localized: "放不了这个文件，换一个 mp3、m4a、wav 或 aiff")
+      case .copyFailed: String(localized: "没能存下这个文件")
       }
     }
   }
@@ -149,7 +151,8 @@ enum ReminderSound {
       source.deletingPathExtension().lastPathComponent
         .replacingOccurrences(of: ":", with: " ")
         .trimmingCharacters(in: CharacterSet(charactersIn: ". ")).prefix(60))
-    let base = stem.isEmpty ? "提示音" : stem
+    // 存下来的文件名：按选的那一刻的界面语言写（之后就是用户的文件，按名字认的是盘上真实的名字）
+    let base = stem.isEmpty ? String(localized: "提示音") : stem
     for index in 1...99 {
       let name = (index == 1 ? base : "\(base) \(index)") + "." + ext
       let target = directory.appending(path: name)

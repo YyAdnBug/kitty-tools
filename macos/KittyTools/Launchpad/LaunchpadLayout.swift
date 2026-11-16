@@ -103,8 +103,10 @@ nonisolated struct LaunchpadLayout: Codable, Equatable, Sendable {
   static let folderCapacity = 35
   /// 文件夹面板一页几列（macOS 15 展开后 7 列；`folderCapacity` 就是 7 × 5）
   static let folderColumns = 7
-  /// 文件夹没有共同分类、第一个 App 也没分类时的名字（SPEC R4）
-  static let untitledFolder = "未命名"
+  /// 文件夹没有共同分类、第一个 App 也没分类时的名字（SPEC R4）：建的那一刻的界面语言（存进布局就是用户的名字）
+  static var untitledFolder: String {
+    String(localized: "launchpad.untitled", defaultValue: "未命名", comment: "启动台文件夹没名字时")
+  }
 
   var format: Int
   var pages: [[LaunchpadTile]]
@@ -371,7 +373,10 @@ nonisolated struct LaunchpadLayout: Codable, Equatable, Sendable {
       sequence.append(
         .folder(
           LaunchpadFolder(
-            name: "其他", pages: paginateFolder(utilities.map(\.ref)))))
+            name: String(
+              localized: "launchpad.otherFolder", defaultValue: "其他",
+              comment: "启动台默认排法里放实用工具的那个文件夹（系统启动台的叫法）"),
+            pages: paginateFolder(utilities.map(\.ref)))))
     }
     sequence += others.map { LaunchpadTile.app($0.ref) }
     return LaunchpadLayout(pages: Self.paginate(sequence, capacity: capacity))

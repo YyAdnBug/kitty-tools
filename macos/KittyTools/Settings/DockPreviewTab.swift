@@ -60,15 +60,12 @@ struct DockPreviewTab: View {
         let missing = missing ?? WindowServer.missing
         if !missing.isEmpty {
           // 接口名普通人看不懂：说后果，名字放在悬停提示里
-          Text(
-            "这台 Mac 上有的系统接口用不了："
-              + WindowServer.consequences(of: missing).joined(separator: "；") + "。"
-          )
-          .font(.caption)
-          .foregroundStyle(Color(nsColor: .systemOrange))
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .padding(.horizontal, 10)
-          .help(missing.joined(separator: "、"))
+          Text("这台 Mac 上有的系统接口用不了：\(WindowServer.consequences(of: missing).joinedAsClauses())。")
+            .font(.caption)
+            .foregroundStyle(Color(nsColor: .systemOrange))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 10)
+            .help(missing.joinedAsList())
         }
       }
       PluginRemoveSection(plugin: .dockPreview)
@@ -78,6 +75,8 @@ struct DockPreviewTab: View {
 
   /// 「0.4 秒」「1 秒」
   static func title(_ milliseconds: Int) -> String {
-    (Double(milliseconds) / 1000).formatted(.number.precision(.fractionLength(0...1))) + " 秒"
+    let seconds = (Double(milliseconds) / 1000).formatted(.number.precision(.fractionLength(0...1)))
+    return String(
+      localized: "dockPreview.seconds", defaultValue: "\(seconds) 秒", comment: "程序坞预览停多久再弹出：0.4 秒")
   }
 }

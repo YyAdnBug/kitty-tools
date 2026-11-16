@@ -241,10 +241,10 @@ struct StatusScreenView: View {
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(
       [
-        "状态屏", screen.preset?.title, screen.preset?.detail,
+        String(localized: "状态屏"), screen.preset?.displayTitle, screen.preset?.displayDetail,
         StatusScreen.exitWording(passcode: screen.passcode != nil),
       ]
-      .compactMap { $0 }.joined(separator: "，")
+      .compactMap { $0 }.joined(separator: Island.comma)
     )
     .onChange(of: screen.isHolding) { _, holding in
       // 按住：线性走满，和退出判断同一个时长；取消：snap 缩回（减弱动态效果时直接回去）
@@ -260,7 +260,7 @@ struct StatusScreenView: View {
   /// 告示：中间一列。透出样式垫一块 HUD 底板（面板圆角；降低透明度、增强对比度由 HUD 皮肤自己管），告示样式底是纯黑、不用垫
   @ViewBuilder private func sign(_ preset: StatusPreset, in size: CGSize) -> some View {
     let title = Self.titleSize(screenHeight: size.height)
-    let entrance = StatusEntrance(glyphs: preset.title.count)
+    let entrance = StatusEntrance(glyphs: preset.displayTitle.count)
     // 出场走到第几秒：摆好的（截图自检、预览、卡片）照摆的；真的会话从 0 翻到头，各部分各带各的曲线走过去
     let time = screen.entranceAt ?? (entered ? entrance.end : 0)
     Group {
@@ -305,9 +305,9 @@ struct StatusScreenView: View {
           .animation(Style.Motion.pop.animation(reduced: false), value: entered)
           .padding(.bottom, title * 0.3)
       }
-      titleText(preset.title, size: title, entrance: entrance, time: time)
+      titleText(preset.displayTitle, size: title, entrance: entrance, time: time)
         .modifier(Shake(count: screen.shakes, enabled: !reduceMotion))
-      if let detail = preset.detail {
+      if let detail = preset.displayDetail {
         Text(detail)
           .font(.system(size: title * 0.36))
           .foregroundStyle(minor)
@@ -380,9 +380,9 @@ struct StatusScreenView: View {
       }
       .frame(width: 20, height: 20)
       .padding(.trailing, 2)
-      Text("按住")
+      Text(StatusScreen.hintHold)
       KeyCap("Esc")
-      Text("退出")
+      Text(StatusScreen.hintExit)
     }
     .font(.system(size: 13, weight: .medium))
     .lineLimit(1)

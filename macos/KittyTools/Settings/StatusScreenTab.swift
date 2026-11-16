@@ -46,7 +46,7 @@ struct StatusScreenTab: View {
       await StatusEmoji.warmStills()
     }
     .confirmationDialog(
-      "删除「\(presets.first { $0.id == removing }?.title ?? "")」？",
+      "删除「\(presets.first { $0.id == removing }?.displayTitle ?? "")」？",
       isPresented: Binding {
         removing != nil
       } set: {
@@ -78,13 +78,15 @@ struct StatusScreenTab: View {
         } header: {
           Text("状态")
         } footer: {
-          // 多语言：拼起来的几段先原样传（"\(x)" 不翻），状态屏那一批拆成整句
-          let text =
-            "拖动调整顺序，点一行编辑。"
-            + (entersFirst ? "排在最前面的状态就是全局快捷键进入的那个。" : "按全局快捷键选状态时，卡片也按这个顺序排。")
-            + "至少留一个；删掉的自带状态可以从「+」里恢复。"
-            + (isFull ? "最多 \(StatusPreset.maxCount) 个，已经满了，删掉一个才能再加。" : "")
-          SectionFootnote("\(text)")
+          // 整句（不拼接）：快捷键直接进入的 / 先选的，满了的多一句
+          SectionFootnote(
+            entersFirst
+              ? isFull
+                ? "拖动调整顺序，点一行编辑。排在最前面的状态就是全局快捷键进入的那个。至少留一个；删掉的自带状态可以从「+」里恢复。最多 \(StatusPreset.maxCount) 个，已经满了，删掉一个才能再加。"
+                : "拖动调整顺序，点一行编辑。排在最前面的状态就是全局快捷键进入的那个。至少留一个；删掉的自带状态可以从「+」里恢复。"
+              : isFull
+                ? "拖动调整顺序，点一行编辑。按全局快捷键选状态时，卡片也按这个顺序排。至少留一个；删掉的自带状态可以从「+」里恢复。最多 \(StatusPreset.maxCount) 个，已经满了，删掉一个才能再加。"
+                : "拖动调整顺序，点一行编辑。按全局快捷键选状态时，卡片也按这个顺序排。至少留一个；删掉的自带状态可以从「+」里恢复。")
         }
         Section {
           Toggle(isOn: $entersFirst) {
@@ -106,7 +108,7 @@ struct StatusScreenTab: View {
           Text("动画")
         } footer: {
           SectionFootnote(
-            "系统设置里打开了「减弱动态效果」时，这些动画都不做，标题也不晃。\(EmojiPackToggle.footnote)")
+            "系统设置里打开了「减弱动态效果」时，这些动画都不做，标题也不晃。\(String(localized: EmojiPackToggle.footnote))")
         }
         Section {
           LabeledContent {
@@ -121,7 +123,10 @@ struct StatusScreenTab: View {
           }
           passcodeRow
         } header: {
-          Text("退出")
+          Text(
+            LocalizedStringResource(
+              "statusScreen.exitSection", defaultValue: "退出",
+              comment: "设置 › 状态屏：怎么退出状态屏那一节（不是退出 App）"))
         } footer: {
           SectionFootnote(
             "状态屏是告示加防误触，不是安全措施：没设退出密码时照着提示谁都能退出，设了也拦不住电源键、触控 ID 键和合盖。要防别人动电脑，进入之后再锁定屏幕（按一下触控 ID 键）：电脑照样不睡，回来解锁就结束——忘了退出密码也这样出来。"
@@ -163,9 +168,10 @@ struct StatusScreenTab: View {
       Text("退出密码")
       Text(
         isSet
-          ? "已设置。按住满两秒之后，还要输入它才能退出。"
+          ? String(localized: "已设置。按住满两秒之后，还要输入它才能退出。")
           : passcode.isEmpty
-            ? "设了之后，按住满两秒还要输入这个密码才能退出" : problem ?? "两遍一样，可以设置了")
+            ? String(localized: "设了之后，按住满两秒还要输入这个密码才能退出")
+            : problem ?? String(localized: "两遍一样，可以设置了"))
     }
   }
 
@@ -277,7 +283,7 @@ private struct PresetListRow: View {
     HStack(spacing: 10) {
       StatusPresetIcon(symbol: preset.symbol)
       VStack(alignment: .leading, spacing: 1) {
-        Text(preset.title).font(.system(size: 13))
+        Text(preset.displayTitle).font(.system(size: 13))
         Text(preset.summary)
           .font(.system(size: 11))
           .foregroundStyle(.secondary)

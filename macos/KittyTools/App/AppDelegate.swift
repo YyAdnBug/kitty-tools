@@ -1765,7 +1765,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     Reminder.save(Reminder.adding(reminder, to: list))
     island.show(
-      "提醒建好了", detail: "\(reminder.summary()) · \(reminder.title)", tone: .success,
+      "提醒建好了", detail: "\(reminder.summary()) · \(reminder.displayTitle)", tone: .success,
       symbol: "checkmark.circle.fill",
       actions: [Island.Action("编辑", opens: true) { [unowned self] in openReminder(reminder.id) }])
   }
@@ -1792,7 +1792,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if let next = reminders.nextUp() {
       let when = Reminder.Schedule(kind: .once, date: next.at).summary(
         now: .now, calendar: .current)
-      submenu.addAction("下一个：\(next.reminder.title)（\(when)）", symbol: "clock", color: color) {
+      submenu.addAction("下一个：\(next.reminder.displayTitle)（\(when)）", symbol: "clock", color: color)
+      {
         [unowned self] in openReminder(next.reminder.id)
       }
     }
@@ -3482,7 +3483,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for (row, preset) in state.statusPresets.enumerated() {
           let binding = state.statusEntersFirst && row == 0 ? hotKey : nil
           let entry = submenu.addAction(
-            "\(preset.title)", symbol: StatusPreset.plainSymbol,
+            "\(preset.displayTitle)", symbol: StatusPreset.plainSymbol,
             color: color, key: binding?.menuKeyEquivalent ?? "",
             modifiers: binding?.modifierFlags ?? []
           ) { [unowned self] in statusScreen.enter(preset) }

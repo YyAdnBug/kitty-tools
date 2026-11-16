@@ -99,22 +99,28 @@ nonisolated struct Reminder: Codable, Hashable, Identifiable {
     /// 进入状态屏的某个状态（C1 的强制版，C12：进不去时退成全屏）
     case status
 
-    var title: String {
+    var titleResource: LocalizedStringResource {
       switch self {
       case .light: "轻提醒"
-      case .glow: "边框"
-      case .full: "全屏"
-      case .status: "进入状态屏"
+      case .glow:
+        LocalizedStringResource("reminders.glow", defaultValue: "边框", comment: "提醒方式：屏幕四边一圈光")
+      case .full:
+        LocalizedStringResource("reminders.full", defaultValue: "全屏", comment: "提醒方式：盖住所有屏幕")
+      case .status:
+        LocalizedStringResource(
+          "reminders.statusAlert", defaultValue: "进入状态屏",
+          comment: "短说法：提醒方式的第四种（分段控件里，英文写 Status Screen 放得下）")
       }
     }
+    var title: String { String(localized: titleResource) }
 
     /// 详情页选中这一种时下面的一句话
     var explanation: String {
       switch self {
-      case .light: "刘海岛上挂着，点了「知道了」或「稍后」才收"
-      case .glow: "屏幕四边一圈光，鼠标点得穿，刘海岛上同时挂着"
-      case .full: "盖住所有屏幕，键盘鼠标照常能用"
-      case .status: "到点进入一个状态，拦住键盘鼠标；要辅助功能授权"
+      case .light: String(localized: "刘海岛上挂着，点了「知道了」或「稍后」才收")
+      case .glow: String(localized: "屏幕四边一圈光，鼠标点得穿，刘海岛上同时挂着")
+      case .full: String(localized: "盖住所有屏幕，键盘鼠标照常能用")
+      case .status: String(localized: "到点进入一个状态，拦住键盘鼠标；要辅助功能授权")
       }
     }
   }
@@ -123,13 +129,15 @@ nonisolated struct Reminder: Codable, Hashable, Identifiable {
   enum Sound: String, Codable, CaseIterable {
     case none, chime, speak
 
-    var title: String {
+    var titleResource: LocalizedStringResource {
       switch self {
-      case .none: "无"
+      case .none:
+        LocalizedStringResource("reminders.noSound", defaultValue: "无", comment: "提醒的声音：不出声")
       case .chime: "提示音"
       case .speak: "朗读标题"
       }
     }
+    var title: String { String(localized: titleResource) }
   }
 
   var id: String
@@ -162,11 +170,33 @@ nonisolated struct Reminder: Codable, Hashable, Identifiable {
   /// 「稍后」推多久（设置 › 提醒，Prefs.remindersSnoozeMinutes，C8）
   static let snoozeChoices = [5, 10, 15, 30]
   /// 系统自带的提示音（/System/Library/Sounds 里的文件名）和界面上的叫法；个人文件夹里的、自己选的见 ReminderSound
-  static let chimes: [(name: String, title: String)] = [
-    ("Glass", "玻璃"), ("Ping", "叮"), ("Tink", "叮当"), ("Pop", "啵"), ("Purr", "呼噜"),
-    ("Hero", "号角"), ("Submarine", "潜艇"), ("Bottle", "瓶子"), ("Funk", "放克"), ("Frog", "青蛙"),
-    ("Morse", "摩斯"), ("Blow", "吹气"), ("Basso", "低音"), ("Sosumi", "Sosumi"),
+  static var chimes: [(name: String, title: String)] {
+    chimeNames.map { ($0, chimeTitle($0).map { String(localized: $0) } ?? $0) }
+  }
+  static let chimeNames = [
+    "Glass", "Ping", "Tink", "Pop", "Purr", "Hero", "Submarine", "Bottle", "Funk", "Frog", "Morse",
+    "Blow", "Basso", "Sosumi",
   ]
+
+  /// 系统提示音的叫法（英文就是系统里的名字）；Sosumi 不翻（函数直接 return switch：元组里的字只有第一个抽得进目录）
+  static func chimeTitle(_ name: String) -> LocalizedStringResource? {
+    switch name {
+    case "Glass": "玻璃"
+    case "Ping": "叮"
+    case "Tink": "叮当"
+    case "Pop": "啵"
+    case "Purr": "呼噜"
+    case "Hero": "号角"
+    case "Submarine": "潜艇"
+    case "Bottle": "瓶子"
+    case "Funk": "放克"
+    case "Frog": "青蛙"
+    case "Morse": "摩斯"
+    case "Blow": "吹气"
+    case "Basso": "低音"
+    default: nil
+    }
+  }
   static let defaultChime = "Glass"
 
   init(
@@ -206,7 +236,8 @@ nonisolated struct Reminder: Codable, Hashable, Identifiable {
     nagMinutes = (try? c.decode(Int.self, forKey: .nagMinutes)) ?? 0
   }
 
-  /// 示例（F1）：默认都关着，打开才响。id 固定，「恢复示例提醒」按它认
+  /// 示例（F1）：默认都关着，打开才响。id 固定，「恢复示例提醒」按它认。存的照旧是这份中文原文（拍板 D6），
+  /// 显示用 displayTitle / displayDetail：按 id + 标题是不是示例标题的某种语言写法认出没改过的
   static let examples = [
     Reminder(
       id: "water", title: "喝水", symbol: "hot-beverage", isOn: false,
@@ -298,13 +329,14 @@ nonisolated struct Reminder: Codable, Hashable, Identifiable {
 
   // MARK: 设置 › 提醒（纯函数；存之前 encoded 再收拾一遍）
 
-  /// 新加的一条：标题「新提醒」、一次、下一个整点（离现在不到 10 分钟就再下一个）、轻提醒、提示音、开着。
-  /// 「+」›「新提醒」先不存，详情页里第一次改动时才加进列表（saving）
+  /// 新加的一条：标题「新提醒」（存进去就是用户的，按加的那一刻的语言写）、一次、下一个整点（离现在不到 10 分钟就再下一个）、
+  /// 轻提醒、提示音、开着。「+」›「新提醒」先不存，详情页里第一次改动时才加进列表（saving）
   static func new(id: String = UUID().uuidString, now: Date = .now, calendar: Calendar = .current)
     -> Reminder
   {
     let hour = calendar.dateInterval(of: .hour, for: now.addingTimeInterval(600))?.end ?? now
-    return Reminder(id: id, title: "新提醒", schedule: Schedule(kind: .once, date: hour))
+    return Reminder(
+      id: id, title: String(localized: "新提醒"), schedule: Schedule(kind: .once, date: hour))
   }
 
   /// 加到末尾；已经有 maxCount 条就不加
@@ -335,11 +367,54 @@ nonisolated struct Reminder: Codable, Hashable, Identifiable {
     Array((list + missingExamples(in: list)).prefix(maxCount))
   }
 
-  /// 删之前要不要确认：和示例一模一样的不用（能从「+」原样加回来；开没开不算），自己加的、改过的要
+  /// 删之前要不要确认：和示例一模一样的不用（能从「+」原样加回来；开没开不算），自己加的、改过的要。
+  /// 标题、说明是示例那段话的中文或英文写法都算没改过
   var isPristine: Bool {
-    var off = self
-    off.isOn = false
-    return Self.examples.contains(off)
+    guard let original = Self.examples.first(where: { $0.id == id }) else { return false }
+    var normalized = self
+    normalized.isOn = false
+    if Self.exampleTitle(id).map(StatusPreset.spellings)?.contains(title) == true {
+      normalized.title = original.title
+    }
+    if let detail, Self.exampleDetail(id).map(StatusPreset.spellings)?.contains(detail) == true {
+      normalized.detail = original.detail
+    }
+    return normalized == original
+  }
+
+  // MARK: 示例显示时翻（存的照旧是中文）
+
+  /// 示例的标题（中文原文就是 examples 里存的）
+  static func exampleTitle(_ id: String) -> LocalizedStringResource? {
+    switch id {
+    case "water": "喝水"
+    case "eyes": "休息眼睛"
+    case "walk": "起来走走"
+    default: nil
+    }
+  }
+
+  static func exampleDetail(_ id: String) -> LocalizedStringResource? {
+    switch id {
+    case "eyes": "看看 6 米外的地方，20 秒"
+    default: nil
+    }
+  }
+
+  /// 没改过的示例标题：按界面语言显示；改过的、自己加的是 nil
+  var exampleTitle: LocalizedStringResource? {
+    Self.exampleTitle(id).flatMap { StatusPreset.spellings($0).contains(title) ? $0 : nil }
+  }
+
+  /// 显示的标题：没改过的示例按界面语言翻（「喝水」在英文界面是 Drink Water），别的照存的写
+  var displayTitle: String { exampleTitle.map { String(localized: $0) } ?? title }
+
+  /// 显示的说明（同 displayTitle）
+  var displayDetail: String? {
+    guard let detail, let text = Self.exampleDetail(id),
+      StatusPreset.spellings(text).contains(detail)
+    else { return detail }
+    return String(localized: text)
   }
 
   /// 详情页存一下：列表里有的按 id 换掉（updating）；还没存过的新提醒（fresh：「+」›「新提醒」推进来的那一条）
@@ -365,14 +440,18 @@ nonisolated struct Reminder: Codable, Hashable, Identifiable {
   /// 详情页里正在改的这一条有什么问题（页头的橙字；nil = 没问题）。不拦着改：存进去的是收拾过的
   func problem(now: Date = .now) -> String? {
     let title = Self.oneLine(title)
-    if title.isEmpty { return "还没填标题" }
-    if title.count > Self.maxTitle { return "标题最多 \(Self.maxTitle) 个字，后面的不会保存" }
-    if Self.oneLine(detail ?? "").count > Self.maxDetail {
-      return "说明最多 \(Self.maxDetail) 个字，后面的不会保存"
+    if title.isEmpty { return String(localized: "还没填标题") }
+    if title.count > Self.maxTitle {
+      return String(localized: "标题最多 \(Self.maxTitle) 个字，后面的不会保存")
     }
-    if schedule.kind == .once, schedule.date <= now { return "这个时间已经过了，不会再提醒" }
+    if Self.oneLine(detail ?? "").count > Self.maxDetail {
+      return String(localized: "说明最多 \(Self.maxDetail) 个字，后面的不会保存")
+    }
+    if schedule.kind == .once, schedule.date <= now {
+      return String(localized: "这个时间已经过了，不会再提醒")
+    }
     if schedule.kind == .interval, schedule.until - schedule.time < schedule.every {
-      return "这段时间比间隔还短，可能一次都不提醒"
+      return String(localized: "这段时间比间隔还短，可能一次都不提醒")
     }
     return nil
   }
@@ -385,8 +464,10 @@ nonisolated struct Reminder: Codable, Hashable, Identifiable {
   {
     let how: String =
       switch alert {
-      case .full: fullSeconds == 0 ? alert.title : "全屏 \(Self.durationTitle(fullSeconds))"
-      case .status: statusTitle.map { "进入「\($0)」" } ?? alert.title
+      case .full:
+        fullSeconds == 0
+          ? alert.title : String(localized: "全屏 \(Self.durationTitle(fullSeconds))")
+      case .status: statusTitle.map { String(localized: "进入「\($0)」") } ?? alert.title
       default: alert.title
       }
     return schedule.summary(now: now, calendar: calendar) + " · " + how
@@ -394,12 +475,29 @@ nonisolated struct Reminder: Codable, Hashable, Identifiable {
 
   /// 「20 秒」「1 分钟」「5 分钟」
   static func durationTitle(_ seconds: Int) -> String {
-    seconds < 60 ? "\(seconds) 秒" : "\(seconds / 60) 分钟"
+    seconds < 60 ? String(localized: "\(seconds) 秒") : String(localized: "\(seconds / 60) 分钟")
   }
 
-  /// 一天里的第几分钟 → 「9:00」「18:30」「24:00」
+  /// 一天里的第几分钟 → 「9:00」「18:30」「24:00」：跟界面语言和系统的 12 / 24 小时（Locale.current，中文 24 小时制下
+  /// 和以前手拼的一样）；1440（时段到半夜）中文写「24:00」、英文 midnight
   static func clock(_ minutes: Int) -> String {
-    "\(minutes / 60):" + (minutes % 60 < 10 ? "0" : "") + "\(minutes % 60)"
+    guard minutes < 1440 else {
+      return String(
+        localized: "reminders.midnight", defaultValue: "24:00",
+        comment: "时段的结束是半夜（9:00–24:00 的 24:00）")
+    }
+    var style = Date.FormatStyle(date: .omitted, time: .shortened)
+    style.timeZone = .gmt
+    return Date(timeIntervalSinceReferenceDate: TimeInterval(max(minutes, 0) * 60)).formatted(style)
+  }
+
+  /// 星期几的名字（Calendar 的 weekday：1 = 周日 … 7 = 周六），跟界面语言：中文「日」「一」…，英文「Sun」「Mon」…
+  /// （摘要里「每周一、三、五」/「Every Mon, Wed, Fri」）
+  static var weekdayNames: [String] {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.locale = .current
+    return Locale.current.language.languageCode == .chinese
+      ? calendar.veryShortStandaloneWeekdaySymbols : calendar.shortStandaloneWeekdaySymbols
   }
 }
 
@@ -407,14 +505,17 @@ nonisolated extension Reminder.Schedule {
   /// 「每天」「工作日」「周末」「每周一、三、五」
   var daysTitle: String {
     switch days {
-    case Self.allDays: return "每天"
-    case Self.workdays: return "工作日"
-    case [1, 7]: return "周末"
+    case Self.allDays: return String(localized: "每天")
+    case Self.workdays: return String(localized: "工作日")
+    case [1, 7]: return String(localized: "周末")
     default:
-      let names = ["日", "一", "二", "三", "四", "五", "六"]
+      let names = Reminder.weekdayNames
       // 周一排在前面、周日排最后（中文的习惯）
       let ordered = days.filter { $0 != 1 } + (days.contains(1) ? [1] : [])
-      return "每周" + ordered.map { names[$0 - 1] }.joined(separator: "、")
+      let list = ordered.map { names[$0 - 1] }.joinedAsList()
+      return String(
+        localized: "reminders.everyWeekdays", defaultValue: "每周\(list)",
+        comment: "每周勾了的那几天：「每周一、三、五」（%@ 是星期几连成的一串）")
     }
   }
 
@@ -426,26 +527,40 @@ nonisolated extension Reminder.Schedule {
       style.calendar = calendar
       style.timeZone = calendar.timeZone
       let time = date.formatted(style)
-      if calendar.isDate(date, inSameDayAs: now) { return "今天 " + time }
+      if calendar.isDate(date, inSameDayAs: now) {
+        return String(
+          localized: "reminders.today", defaultValue: "今天 \(time)", comment: "提醒的时间：今天 14:30")
+      }
       if let tomorrow = calendar.date(byAdding: .day, value: 1, to: now),
         calendar.isDate(date, inSameDayAs: tomorrow)
       {
-        return "明天 " + time
+        return String(
+          localized: "reminders.tomorrow", defaultValue: "明天 \(time)", comment: "提醒的时间：明天 9:00")
       }
       var day = Date.FormatStyle().month(.defaultDigits).day()
       if !calendar.isDate(date, equalTo: now, toGranularity: .year) { day = day.year() }
       day.calendar = calendar
       day.timeZone = calendar.timeZone
-      return date.formatted(day) + " " + time
+      return String(
+        localized: "reminders.dateTime", defaultValue: "\(date.formatted(day)) \(time)",
+        comment: "提醒的时间：11月3日 9:00（日期、钟点）")
     case .weekly:
-      return daysTitle + " " + Reminder.clock(time)
+      return String(
+        localized: "reminders.weeklyAt", defaultValue: "\(daysTitle) \(Reminder.clock(time))",
+        comment: "每周的提醒：「工作日 9:00」「每周一、三 9:00」（哪几天、钟点）")
     case .monthly:
-      return "每月 \(day) 号 " + Reminder.clock(time)
+      return String(localized: "每月 \(day) 号 \(Reminder.clock(time))")
     case .interval:
       let span =
-        time == 0 && until == 1440 ? "" : Reminder.clock(time) + "–" + Reminder.clock(until) + " "
-      let when = days == Self.allDays ? "" : daysTitle + " "
-      return when + span + "每 \(every) 分钟"
+        time == 0 && until == 1440
+        ? nil : Reminder.clock(time) + "–" + Reminder.clock(until)
+      let when = days == Self.allDays ? nil : daysTitle
+      let prefix = [when, span].compactMap { $0 }.joined(separator: " ")
+      return prefix.isEmpty
+        ? String(localized: "每 \(every) 分钟")
+        : String(
+          localized: "reminders.intervalWithin", defaultValue: "\(prefix) 每 \(every) 分钟",
+          comment: "间隔提醒：「工作日 9:00–18:00 每 60 分钟」（%1$@ 是哪几天、哪一段时间）")
     }
   }
 }

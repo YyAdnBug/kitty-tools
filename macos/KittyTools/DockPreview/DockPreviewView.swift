@@ -209,9 +209,9 @@ private struct PreviewCard: View {
   private var stateName: String? {
     switch window.state {
     case .shown: nil
-    case .minimized: "已最小化"
-    case .hidden: "已隐藏"
-    case .elsewhere: "在别的桌面"
+    case .minimized: String(localized: "已最小化")
+    case .hidden: String(localized: "已隐藏")
+    case .elsewhere: String(localized: "在别的桌面")
     }
   }
 

@@ -18,20 +18,21 @@ nonisolated struct StatusPreset: Codable, Hashable, Identifiable {
     /// 透出：屏幕压暗 + 大字
     case dim
 
-    var title: String {
+    var titleResource: LocalizedStringResource {
       switch self {
       case .blackout: "熄屏"
       case .sign: "告示"
       case .dim: "透出"
       }
     }
+    var title: String { String(localized: titleResource) }
 
     /// 设置里选中这一种时下面的一句话
     var explanation: String {
       switch self {
-      case .blackout: "纯黑，什么都不显示，适合擦屏幕"
-      case .sign: "黑底大字，看不到屏幕内容"
-      case .dim: "屏幕压暗，还看得见后面的窗口"
+      case .blackout: String(localized: "纯黑，什么都不显示，适合擦屏幕")
+      case .sign: String(localized: "黑底大字，看不到屏幕内容")
+      case .dim: String(localized: "屏幕压暗，还看得见后面的窗口")
       }
     }
   }
@@ -44,13 +45,14 @@ nonisolated struct StatusPreset: Codable, Hashable, Identifiable {
     /// 屏幕常亮（电脑也不睡眠）
     case displayOn
 
-    var title: String {
+    var titleResource: LocalizedStringResource {
       switch self {
       case .normal: "照常"
       case .awake: "不睡眠"
       case .displayOn: "屏幕常亮"
       }
     }
+    var title: String { String(localized: titleResource) }
   }
 
   /// 启动器使用记录、收藏按它认（改了会丢记录）：自带的固定 clean / busy / back
@@ -136,6 +138,8 @@ nonisolated struct StatusPreset: Codable, Hashable, Identifiable {
     if custom { try c.encode(symbol, forKey: .emoji) }
   }
 
+  /// 自带的三个（存进偏好、同步、导出的就是这份中文原文：拍板 D6 存原文、显示时翻。显示用 displayTitle / displayDetail，
+  /// 按 id + 标题是不是自带标题的某种语言写法认出没改过的那几个）
   static let builtIn = [
     StatusPreset(
       id: "clean", title: "清洁屏幕", detail: nil, symbol: "glowing-star", style: .blackout,
@@ -206,21 +210,30 @@ nonisolated struct StatusPreset: Codable, Hashable, Identifiable {
 
   /// 「几分钟后自动结束」的叫法：「不结束」「5 分钟」「1 小时」
   static func autoEndTitle(_ minutes: Int) -> String {
-    minutes == 0 ? "不结束" : minutes % 60 == 0 ? "\(minutes / 60) 小时" : "\(minutes) 分钟"
+    minutes == 0
+      ? String(localized: "不结束")
+      : minutes % 60 == 0
+        ? String(localized: "\(minutes / 60) 小时") : String(localized: "\(minutes) 分钟")
   }
 
   /// 列表行的一行小字：样式 · 电源 · 自动结束，照常、不结束的那一段不写（「透出 · 屏幕常亮」「熄屏 · 5 分钟后结束」）
   var summary: String {
     let power = power == .normal ? nil : power.title
-    let end = autoEndMinutes == 0 ? nil : Self.autoEndTitle(autoEndMinutes) + "后结束"
+    let end =
+      autoEndMinutes == 0
+      ? nil
+      : String(
+        localized: "statusScreen.endsAfter",
+        defaultValue: "\(Self.autoEndTitle(autoEndMinutes))后结束",
+        comment: "状态列表行的摘要：几分钟后自动结束（%@ 是「5 分钟」「1 小时」）")
     return [style.title, power, end].compactMap { $0 }.joined(separator: " · ")
   }
 
-  /// 新加的状态：标题「新状态」、告示样式、不睡眠、不自动结束、不带图标
+  /// 新加的状态：标题「新状态」（存进去就是用户的，按加的那一刻的语言写）、告示样式、不睡眠、不自动结束、不带图标
   static func new(id: String = UUID().uuidString) -> StatusPreset {
     StatusPreset(
-      id: id, title: "新状态", detail: nil, symbol: "", style: .sign, power: .awake,
-      autoEndMinutes: 0)
+      id: id, title: String(localized: "新状态"), detail: nil, symbol: "", style: .sign,
+      power: .awake, autoEndMinutes: 0)
   }
 
   /// 加到末尾；已经有 maxCount 个就不加
@@ -252,8 +265,61 @@ nonisolated struct StatusPreset: Codable, Hashable, Identifiable {
     Array((list + missingBuiltIns(in: list)).prefix(maxCount))
   }
 
-  /// 删之前要不要确认：和自带的一模一样的不用（「恢复自带的状态」能原样加回来），自己加的、改过的要
-  var isPristine: Bool { Self.builtIn.contains(self) }
+  /// 删之前要不要确认：和自带的一模一样的不用（「恢复自带的状态」能原样加回来），自己加的、改过的要。
+  /// 标题、说明是自带那段话的中文或英文写法都算没改过（英文界面里把标题框改成「Clean Screen」也还是原样）
+  var isPristine: Bool {
+    guard let original = Self.builtIn.first(where: { $0.id == id }) else { return false }
+    var normalized = self
+    if Self.builtInTitle(id).map(Self.spellings)?.contains(title) == true {
+      normalized.title = original.title
+    }
+    if let detail, Self.builtInDetail(id).map(Self.spellings)?.contains(detail) == true {
+      normalized.detail = original.detail
+    }
+    return normalized == original
+  }
+
+  // MARK: 自带的三个显示时翻（存的照旧是中文）
+
+  /// 自带的标题（中文原文就是 builtIn 里存的；函数直接 return switch：赋给可选值的 switch 里的字只有第一个抽得进目录）
+  static func builtInTitle(_ id: String) -> LocalizedStringResource? {
+    switch id {
+    case "clean": "清洁屏幕"
+    case "busy": "请勿触碰"
+    case "back": "马上回来"
+    default: nil
+    }
+  }
+
+  static func builtInDetail(_ id: String) -> LocalizedStringResource? {
+    switch id {
+    case "busy": "电脑正在跑任务，别动键盘和鼠标"
+    default: nil
+    }
+  }
+
+  /// 一段自带的话有哪几种写法（中文原文、英文）：存着的是其中一种就算没改过
+  static func spellings(_ text: LocalizedStringResource) -> [String] {
+    [text.chinese, text.english]
+  }
+
+  /// 没改过的自带标题（存的是中文或英文写法）：按界面语言显示；改过的、自己加的是 nil
+  var builtInTitle: LocalizedStringResource? {
+    Self.builtInTitle(id).flatMap { Self.spellings($0).contains(title) ? $0 : nil }
+  }
+
+  /// 显示的标题：没改过的自带标题按界面语言翻（「清洁屏幕」在英文界面是 Clean Screen），别的照存的写
+  var displayTitle: String { builtInTitle.map { String(localized: $0) } ?? title }
+
+  /// 显示的说明（同 displayTitle）
+  var displayDetail: String? {
+    guard let detail, let text = Self.builtInDetail(id), Self.spellings(text).contains(detail)
+    else { return detail }
+    return String(localized: text)
+  }
+
+  /// 启动器里的标题：没改过的自带标题带上中英两种写法（中文界面里打英文也搜得到），别的是存的那段（%@，不翻）
+  var titleResource: LocalizedStringResource { builtInTitle ?? "\(title)" }
 
   /// 详情页改了一个：按 id 换掉。标题只有空白时留着原来的标题——空标题存不下（sanitized 会把整条丢掉），
   /// 而输入框里删光了重打是常事
@@ -269,10 +335,12 @@ nonisolated struct StatusPreset: Codable, Hashable, Identifiable {
   /// 详情页里正在改的这一份有什么问题（页头的橙字；nil = 没问题）。不拦着改：存进去的是收拾过的
   var problem: String? {
     let title = Self.oneLine(title)
-    if title.isEmpty { return "还没填标题" }
-    if title.count > Self.maxTitle { return "标题最多 \(Self.maxTitle) 个字，后面的不会保存" }
+    if title.isEmpty { return String(localized: "还没填标题") }
+    if title.count > Self.maxTitle {
+      return String(localized: "标题最多 \(Self.maxTitle) 个字，后面的不会保存")
+    }
     if Self.oneLine(detail ?? "").count > Self.maxDetail {
-      return "说明最多 \(Self.maxDetail) 个字，后面的不会保存"
+      return String(localized: "说明最多 \(Self.maxDetail) 个字，后面的不会保存")
     }
     return nil
   }

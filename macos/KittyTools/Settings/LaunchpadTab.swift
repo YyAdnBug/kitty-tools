@@ -132,7 +132,14 @@ struct LaunchpadTab: View {
       .gated(by: .launchpad)
       Section {
         LabeledContent {
-          Button("从系统启动台重新导入…") { confirmsImport = true }
+          Button {
+            confirmsImport = true
+          } label: {
+            Text(
+              LocalizedStringResource(
+                "launchpad.reimport", defaultValue: "从系统启动台重新导入…",
+                comment: "短说法：设置 › 启动台「从系统启动台导入」那一行右边的按钮（行名里已经说了从哪导）"))
+          }
         } label: {
           Text("从系统启动台导入")
           Text("页、文件夹、顺序照旧；卸掉的跳过")
@@ -144,8 +151,13 @@ struct LaunchpadTab: View {
           Text("系统 App 在前、其余按名字排")
         }
         LabeledContent {
-          Button("撤销上一次导入或恢复默认", action: undo)
-            .disabled(undoLayout == nil || !canUndo())
+          Button(action: undo) {
+            Text(
+              LocalizedStringResource(
+                "launchpad.undoButton", defaultValue: "撤销上一次导入或恢复默认",
+                comment: "短说法：设置 › 启动台「撤销上一次导入或恢复默认」那一行右边的按钮（行名已经说了撤销什么）"))
+          }
+          .disabled(undoLayout == nil || !canUndo())
         } label: {
           Text("撤销上一次导入或恢复默认")
           Text("换回导入、恢复默认或改行列数之前的样子，只能用一次")
@@ -252,8 +264,14 @@ struct LaunchpadTab: View {
       if pinchAvailable() {
         let systemHelp =
           TrackpadSystemGesture.usesDockPinchSetting
-          ? "系统的应用程序捏合开着时（macOS 26 默认开着、系统设置里没有开关），捏合交给系统，启动台不响应；关掉之后马上由 Kitty 自己读触控板来认。"
-          : "系统设置 › 触控板 › 更多手势 里的「应用程序」开着时，捏合交给系统，启动台不响应；关掉之后马上由 Kitty 自己读触控板来认。"
+          ? String(
+            localized:
+              "系统的应用程序捏合开着时（macOS 26 默认开着、系统设置里没有开关），捏合交给系统，启动台不响应；关掉之后马上由 Kitty 自己读触控板来认。"
+          )
+          : String(
+            localized:
+              "系统设置 › 触控板 › 更多手势 里的「应用程序」开着时，捏合交给系统，启动台不响应；关掉之后马上由 Kitty 自己读触控板来认。"
+          )
         SectionFootnote(
           "\(systemHelp)四指捏合四根、五根手指都认（同系统），捏的时候多碰到一根也接着认；五指只认五根，和四指的横扫（切换桌面、调度中心）完全错开，不容易误开。Mac 从睡眠中唤醒后会自动重新接上触控板，不用重启。"
         )

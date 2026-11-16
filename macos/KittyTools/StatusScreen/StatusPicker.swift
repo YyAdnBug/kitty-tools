@@ -242,13 +242,13 @@ struct StatusPickerView: View {
     .overlay(alignment: .top) { Hairline() }
   }
 
-  private func hint(_ text: String, _ key: String) -> some View {
+  private func hint(_ text: LocalizedStringResource, _ key: String) -> some View {
     HStack(spacing: 6) {
       Text(text).foregroundStyle(.secondary)
       KeyCap(key)
     }
     .accessibilityElement(children: .ignore)
-    .accessibilityLabel("\(text)：\(key)")
+    .accessibilityLabel(String(localized: "\(String(localized: text))：\(key)"))
   }
 }
 
@@ -329,7 +329,7 @@ private struct PickerCard: View {
           .scaleEffect(selected ? StatusPicker.selectedScale : 1)
         HStack(spacing: 6) {
           if index < 9 { KeyCap("\(index + 1)") }
-          Text(preset.title)
+          Text(preset.displayTitle)
             .font(.system(size: 13))
             .foregroundStyle(selected ? .primary : .secondary)
             .lineLimit(1)
@@ -350,7 +350,7 @@ private struct PickerCard: View {
         }
       }
     }
-    .accessibilityLabel(preset.title)
+    .accessibilityLabel(preset.displayTitle)
     .accessibilityHint("进入这个状态")
     .accessibilityAddTraits(selected ? .isSelected : [])
   }

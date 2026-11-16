@@ -36,9 +36,12 @@ nonisolated struct TouchFrame: Equatable, Sendable {
 nonisolated enum PinchFingers: String, CaseIterable, Sendable {
   case off, four, five
 
-  var title: String {
+  var title: String { String(localized: titleResource) }
+
+  var titleResource: LocalizedStringResource {
     switch self {
-    case .off: "关闭"
+    case .off:
+      LocalizedStringResource("launchpad.pinchOff", defaultValue: "关闭", comment: "启动台的触控板手势：不用")
     case .four: "四指捏合"
     case .five: "五指捏合"
     }
@@ -71,7 +74,9 @@ nonisolated struct PinchRecognizer: Sendable {
   enum Sensitivity: String, CaseIterable, Sendable {
     case tight, standard, loose
 
-    var title: String {
+    var title: String { String(localized: titleResource) }
+
+    var titleResource: LocalizedStringResource {
       switch self {
       case .tight: "紧"
       case .standard: "标准"

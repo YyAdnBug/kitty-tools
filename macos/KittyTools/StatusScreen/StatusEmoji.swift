@@ -16,19 +16,56 @@ import AppKit
 import SwiftUI
 
 enum StatusEmoji {
-  /// 可选的 28 个（设置里的图标格子按这个顺序；后 12 个是 2026-11-04 加的：吃饭、运动、通勤……这些场景）；name 是旁白读的
-  /// 中文名。id 只能往后加、不能改（存在状态和提醒里）
-  nonisolated static let choices: [(id: String, name: String)] = [
-    ("raised-hand", "举手"), ("waving-hand", "挥手"), ("glowing-star", "发光的星"),
-    ("alarm-clock", "闹钟"), ("hourglass", "沙漏"), ("hot-beverage", "热饮"), ("zzz", "Zzz"),
-    ("sleeping-face", "睡觉"), ("shushing-face", "嘘"), ("busts", "开会"), ("telephone", "电话"),
-    ("rocket", "火箭"), ("robot", "机器人"), ("fire", "火"), ("high-voltage", "闪电"),
-    ("black-cat", "黑猫"), ("cook", "厨师"), ("person-running", "跑步"), ("automobile", "汽车"),
-    ("health-worker", "医护"), ("droplet", "水滴"), ("student", "学生"), ("lotus-position", "打坐"),
-    ("party-popper", "礼花"), ("office-worker", "上班"), ("person-walking", "走路"),
-    ("birthday-cake", "生日蛋糕"), ("thumbs-up", "点赞"),
+  /// 可选的 28 个（设置里的图标格子按这个顺序；后 12 个是 2026-11-04 加的：吃饭、运动、通勤……这些场景）。
+  /// id 只能往后加、不能改（存在状态和提醒里）
+  nonisolated static let ids = [
+    "raised-hand", "waving-hand", "glowing-star", "alarm-clock", "hourglass", "hot-beverage", "zzz",
+    "sleeping-face", "shushing-face", "busts", "telephone", "rocket", "robot", "fire",
+    "high-voltage",
+    "black-cat", "cook", "person-running", "automobile", "health-worker", "droplet", "student",
+    "lotus-position", "party-popper", "office-worker", "person-walking", "birthday-cake",
+    "thumbs-up",
   ]
-  nonisolated static let ids = choices.map(\.id)
+  /// id 和旁白读的名字（跟界面语言）
+  nonisolated static var choices: [(id: String, name: String)] {
+    ids.map { ($0, nameResource($0).map { String(localized: $0) } ?? $0) }
+  }
+
+  /// 自带的那 28 个的名字（旁白、图标预览下面那行字；函数直接 return switch：元组里的字只有第一个抽得进目录）
+  nonisolated static func nameResource(_ id: String) -> LocalizedStringResource? {
+    switch id {
+    case "raised-hand": "举手"
+    case "waving-hand": "挥手"
+    case "glowing-star": "发光的星"
+    case "alarm-clock": "闹钟"
+    case "hourglass": "沙漏"
+    case "hot-beverage": "热饮"
+    case "zzz":
+      LocalizedStringResource("statusEmoji.zzz", defaultValue: "Zzz", comment: "表情的名字：打呼噜的 Zzz")
+    case "sleeping-face": "睡觉"
+    case "shushing-face": "嘘"
+    case "busts": "开会"
+    case "telephone": "电话"
+    case "rocket": "火箭"
+    case "robot": "机器人"
+    case "fire": "火"
+    case "high-voltage": "闪电"
+    case "black-cat": "黑猫"
+    case "cook": "厨师"
+    case "person-running": "跑步"
+    case "automobile": "汽车"
+    case "health-worker": "医护"
+    case "droplet": "水滴"
+    case "student": "学生"
+    case "lotus-position": "打坐"
+    case "party-popper": "礼花"
+    case "office-worker": "上班"
+    case "person-walking": "走路"
+    case "birthday-cake": "生日蛋糕"
+    case "thumbs-up": "点赞"
+    default: nil
+    }
+  }
   /// 0.7.1 认得的那 16 个（前 16 个）：状态的 JSON 里只有它们放在 symbol 键，别的（新加的 12 个、动画表情包里的、系统表情）
   /// 放在 emoji 键——0.7.x 收拾 symbol 时会把认不得的置空再同步回来（StatusPreset.encode）
   nonisolated static let legacyIDs = Set(ids.prefix(16))
@@ -54,7 +91,7 @@ enum StatusEmoji {
 
   /// 旁白读的名字：自带的读中文名，动画表情包里的读对照表里的名字，系统表情读它本身（旁白认得表情）
   nonisolated static func name(_ id: String) -> String? {
-    if let name = choices.first(where: { $0.id == id })?.name { return name }
+    if let name = nameResource(id) { return String(localized: name) }
     if let pack = packID(id) { return EmojiPack.name(pack) }
     return isCustom(id) ? id : nil
   }
@@ -89,9 +126,9 @@ enum StatusEmoji {
   /// 图标预览下面那行字（纯函数；2026-11-05 用户：系统表情和动画版要分清）：自带的、动画表情包里的写名字，系统表情写「系统表情」
   nonisolated static func caption(_ symbol: String) -> String {
     let id = canonical(symbol)
-    if let name = choices.first(where: { $0.id == id })?.name { return name }
-    if let pack = packID(id) { return EmojiPack.name(pack) ?? "动画表情" }
-    return isCustom(id) ? "系统表情" : ""
+    if let name = nameResource(id) { return String(localized: name) }
+    if let pack = packID(id) { return EmojiPack.name(pack) ?? String(localized: "动画表情") }
+    return isCustom(id) ? String(localized: "系统表情") : ""
   }
 
   /// 存的值整理成一种写法（纯函数）：「pack:编号」正好是自带的那 28 个之一的同一个动画（🚀、👥…）就换成自带的 id——

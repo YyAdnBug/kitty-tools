@@ -24,7 +24,9 @@ import AppKit
   /// 正在状态屏里：先不响，退出后 AppDelegate 调 recheck
   var isStatusActive: () -> Bool = { false }
   /// 进入某个状态（状态屏的状态 id）；进不去时给原因，grants = 缺辅助功能授权
-  var enterStatus: (String) -> (reason: String, grants: Bool)? = { _ in ("状态屏不可用", false) }
+  var enterStatus: (String) -> (reason: String, grants: Bool)? = { _ in
+    (String(localized: "状态屏不可用"), false)
+  }
   /// 朗读一段文字（翻译那边现成的朗读）
   var speak: (String) -> Void = { _ in }
   /// 全屏上的「去授权」
@@ -275,8 +277,12 @@ import AppKit
     }
     island.setActivity(
       Island.Activity(
-        id: Self.islandActivity, kind: .reminder, title: reminder.title,
-        detail: at.formatted(date: .omitted, time: .shortened) + " 提醒", symbol: "alarm.fill",
+        id: Self.islandActivity, kind: .reminder, title: reminder.displayTitle,
+        detail: String(
+          localized: "reminders.countdownAt",
+          defaultValue: "\(at.formatted(date: .omitted, time: .shortened)) 提醒",
+          comment: "刘海岛上倒数的提醒：几点响"),
+        symbol: "alarm.fill",
         trailing: .countdown(to: at),
         actions: [
           Island.Action("提前结束") { [weak self] in self?.finish([reminder.id]) },
@@ -423,18 +429,19 @@ import AppKit
   /// 岛上那一条写什么（纯函数）：到点的标题连在一起（只有一条时带它的说明），错过的写在详情里；只有错过的时
   /// 「错过了提醒：喝水」/「错过了 3 个提醒」+ 是哪几个
   static func notice(fired: [Reminder], missed: [Reminder]) -> (title: String, detail: String?)? {
-    let lostTitles = missed.map(\.title).joined(separator: "、")
+    let lostTitles = missed.map(\.displayTitle).joinedAsList()
     if fired.isEmpty {
       guard let first = missed.first else { return nil }
       return missed.count == 1
-        ? ("错过了提醒：\(first.title)", first.detail) : ("错过了 \(missed.count) 个提醒", lostTitles)
+        ? (String(localized: "错过了提醒：\(first.displayTitle)"), first.displayDetail)
+        : (String(localized: "错过了 \(missed.count) 个提醒"), lostTitles)
     }
-    var detail = fired.count == 1 ? fired[0].detail : nil
+    var detail = fired.count == 1 ? fired[0].displayDetail : nil
     if !missed.isEmpty {
-      let line = "还错过了：" + lostTitles
-      detail = detail.map { $0 + "；" + line } ?? line
+      let line = String(localized: "还错过了：\(lostTitles)")
+      detail = detail.map { [$0, line].joinedAsClauses() } ?? line
     }
-    return (fired.map(\.title).joined(separator: " · "), detail)
+    return (fired.map(\.displayTitle).joined(separator: " · "), detail)
   }
 
   /// 「知道了」：挂着的都算处理了
@@ -493,7 +500,7 @@ import AppKit
     guard !isRecording(), let first = reminders.first(where: { $0.sound != .none }) else { return }
     switch first.sound {
     case .chime: ReminderSound.play(first.chime)
-    case .speak: speak(reminders.map(\.title).joined(separator: "，"))
+    case .speak: speak(reminders.map(\.displayTitle).joined(separator: Island.comma))
     case .none: break
     }
   }

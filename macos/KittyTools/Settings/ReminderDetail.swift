@@ -37,7 +37,7 @@ struct ReminderDetail: View {
   /// 提示音菜单里「选择文件…」那一项的标记（不是声音）
   private static let chooseFile = "\u{0}choose"
 
-  static let deleteMessage = "自己加的、改过的提醒删掉就找不回来了。"
+  static var deleteMessage: String { String(localized: "自己加的、改过的提醒删掉就找不回来了。") }
 
   var body: some View {
     let list = fixed ?? Reminder.decode(data)
@@ -45,7 +45,7 @@ struct ReminderDetail: View {
     // 还没存的新提醒画 fresh（改过一处就存进去了：之后不在列表里就是被删掉 / 拿掉了，不再画它）
     if let stored = list.first(where: { $0.id == id }) ?? (draft == nil ? fresh : nil) {
       form(editing: draft ?? stored, stored: stored)
-        .navigationTitle(stored.title)
+        .navigationTitle(stored.displayTitle)
         .toolbar { SettingsBackButton { dismiss() } }
     }
   }
@@ -68,23 +68,32 @@ struct ReminderDetail: View {
     let status =
       problem
       ?? stored.summary(
-        now: now ?? .now, statusTitle: Self.status(for: stored, in: statuses)?.title)
+        now: now ?? .now, statusTitle: Self.status(for: stored, in: statuses)?.displayTitle)
     return VStack(spacing: 0) {
       DetailHeader(
-        title: "\(stored.title)", status: "\(status)",
+        title: "\(stored.displayTitle)", status: "\(status)",
         isProblem: problem != nil
       ) {
         ReminderIcon(symbol: stored.symbol, size: 40)
       }
       Form {
         Section {
-          TextField("标题", text: binding.title, prompt: Text("如 喝水"))
+          // 没改过的示例显示翻好的（「喝水」在英文界面是 Drink Water），不动它就照存的中文留着（D6：只翻显示）
+          TextField(
+            "标题",
+            text: Binding {
+              editing.displayTitle
+            } set: { text in
+              guard text != editing.displayTitle else { return }
+              binding.wrappedValue.title = text
+            }, prompt: Text("如 喝水"))
           TextField(
             "说明",
             text: Binding {
-              editing.detail ?? ""
-            } set: {
-              binding.wrappedValue.detail = $0
+              editing.displayDetail ?? ""
+            } set: { text in
+              guard text != (editing.displayDetail ?? "") else { return }
+              binding.wrappedValue.detail = text
             }, prompt: Text("可不填"))
           SymbolGrid(selection: binding.symbol)
         } footer: {
@@ -101,7 +110,7 @@ struct ReminderDetail: View {
       }
       .formStyle(.grouped)
     }
-    .confirmationDialog("删除「\(stored.title)」？", isPresented: $confirmsDelete) {
+    .confirmationDialog("删除「\(stored.displayTitle)」？", isPresented: $confirmsDelete) {
       Button("删除", role: .destructive, action: delete)
     } message: {
       Text(Self.deleteMessage)
@@ -139,7 +148,7 @@ struct ReminderDetail: View {
       if editing.alert == .full {
         Picker("多久自己收起", selection: binding.fullSeconds) {
           ForEach(Reminder.fullChoices, id: \.self) {
-            Text($0 == 0 ? "点了才收" : Reminder.durationTitle($0)).tag($0)
+            Text($0 == 0 ? String(localized: "点了才收") : Reminder.durationTitle($0)).tag($0)
           }
         }
       }
@@ -152,11 +161,13 @@ struct ReminderDetail: View {
             binding.wrappedValue.statusID = $0
           }
         ) {
-          ForEach(statuses) { Text($0.title).tag($0.id) }
+          ForEach(statuses) { Text($0.displayTitle).tag($0.id) }
         }
       }
     } header: {
-      Text("提醒方式")
+      Text(
+        LocalizedStringResource(
+          "reminders.alertSection", defaultValue: "提醒方式", comment: "设置 › 提醒 › 某一条：怎么提醒那一节的标题"))
     } footer: {
       SectionFootnote(
         editing.alert == .status
@@ -187,9 +198,10 @@ struct ReminderDetail: View {
     let missing = sounds != nil && !known.contains(editing.chime)
     let note: String? =
       if missing {
-        "这台 Mac 上没有这个声音，到点响「\(ReminderSound.title(of: Reminder.defaultChime))」"
+        String(
+          localized: "这台 Mac 上没有这个声音，到点响「\(ReminderSound.title(of: Reminder.defaultChime))」")
       } else if editing.chime.hasPrefix(ReminderSound.filePrefix) {
-        "自己选的文件只存在这台 Mac 上，最多响 \(ReminderSound.maxSeconds) 秒"
+        String(localized: "自己选的文件只存在这台 Mac 上，最多响 \(ReminderSound.maxSeconds) 秒")
       } else {
         nil
       }
@@ -289,8 +301,8 @@ struct ReminderDetail: View {
     panel.canChooseDirectories = false
     panel.allowsMultipleSelection = false
     panel.allowedContentTypes = ReminderSound.contentTypes
-    panel.prompt = "选择"
-    panel.message = "选一个短音频（20 MB 以内），到点最多放 \(ReminderSound.maxSeconds) 秒"
+    panel.prompt = String(localized: "选择")
+    panel.message = String(localized: "选一个短音频（20 MB 以内），到点最多放 \(ReminderSound.maxSeconds) 秒")
     let chosen: (NSApplication.ModalResponse) -> Void = { response in
       guard response == .OK, let url = panel.url else { return }
       do throws(ReminderSound.ImportError) {
@@ -383,11 +395,11 @@ private struct ScheduleSection: View {
     } header: {
       Text("时间")
     } footer: {
-      SectionFootnote("\(Self.footnote(schedule.kind))")
+      SectionFootnote(Self.footnote(schedule.kind))
     }
   }
 
-  static func footnote(_ kind: Reminder.Schedule.Kind) -> String {
+  static func footnote(_ kind: Reminder.Schedule.Kind) -> LocalizedStringResource {
     switch kind {
     case .once: "响过、点了「知道了」之后从列表里拿掉。"
     case .weekly: "工作日按周一到周五算，不管调休；要别的日子选「每周」自己勾。"
@@ -410,18 +422,26 @@ private struct ScheduleSection: View {
   }
 }
 
-/// 一排星期（一 … 日）：按下的是勾了的；至少留一天（提醒的详情页、保持唤醒的定时共用）
+/// 一排星期（一 … 日）：按下的是勾了的；至少留一天（提醒的详情页、保持唤醒的定时共用）。星期几的名字跟界面语言
+/// （Locale.current：中文「一」…「日」，英文「M」…「S」；读屏读全称）
 struct WeekdayRow: View {
   @Binding var days: [Int]
   private static let order = [2, 3, 4, 5, 6, 7, 1]
-  private static let names = ["日", "一", "二", "三", "四", "五", "六"]
+  private static var calendar: Calendar {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.locale = .current
+    return calendar
+  }
 
   var body: some View {
+    let calendar = Self.calendar
+    let names = calendar.veryShortStandaloneWeekdaySymbols
+    let fullNames = calendar.standaloneWeekdaySymbols
     LabeledContent("星期") {
       HStack(spacing: 4) {
         ForEach(Self.order, id: \.self) { day in
           Toggle(
-            Self.names[day - 1],
+            names[day - 1],
             isOn: Binding {
               days.contains(day)
             } set: { on in
@@ -433,7 +453,7 @@ struct WeekdayRow: View {
             }
           )
           .toggleStyle(.button)
-          .accessibilityLabel("周" + Self.names[day - 1])
+          .accessibilityLabel(fullNames[day - 1])
         }
       }
     }
@@ -445,7 +465,7 @@ extension Reminder.Schedule {
   enum Repeat: CaseIterable {
     case once, daily, workdays, weekly, monthly, interval
 
-    var title: String {
+    var titleResource: LocalizedStringResource {
       switch self {
       case .once: "一次"
       case .daily: "每天"
@@ -455,6 +475,7 @@ extension Reminder.Schedule {
       case .interval: "每隔一阵"
       }
     }
+    var title: String { String(localized: titleResource) }
   }
 
   var repeats: Repeat {
@@ -495,7 +516,12 @@ extension Reminder.Schedule {
 
   /// 「15 分钟」「1 小时」「1.5 小时」
   static func everyTitle(_ minutes: Int) -> String {
-    if minutes < 60 { return "\(minutes) 分钟" }
-    return minutes % 60 == 0 ? "\(minutes / 60) 小时" : "\(Double(minutes) / 60) 小时"
+    if minutes < 60 { return String(localized: "\(minutes) 分钟") }
+    return minutes % 60 == 0
+      ? String(localized: "\(minutes / 60) 小时")
+      : String(
+        localized: "reminders.hoursDecimal",
+        defaultValue: "\((Double(minutes) / 60).formatted()) 小时",
+        comment: "间隔：1.5 小时（%@ 是带小数的小时数）")
   }
 }

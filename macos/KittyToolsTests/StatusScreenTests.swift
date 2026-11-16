@@ -60,6 +60,44 @@ struct StatusScreenTests {
     #expect(plain != nil && StatusPreset.plainSymbol == "text.alignleft")
   }
 
+  /// 自带的三个存的是中文原文（0.9.0 存下来的照样认），显示时翻；标题是自带标题的中文或英文写法都算没改过（拍板 D6）
+  @Test func builtInShownInInterfaceLanguage() throws {
+    let english = StatusPreset.builtIn.map { StatusPreset.builtInTitle($0.id)?.english }
+    #expect(english == ["Clean Screen", "Do Not Touch", "Be Right Back"])
+    #expect(StatusPreset.builtInTitle("clean")?.chinese == StatusPreset.builtIn[0].title)
+    #expect(StatusPreset.builtInDetail("busy")?.chinese == StatusPreset.builtIn[1].detail)
+    // 中文界面（单测宿主）照存的显示；启动器的标题带中英两种写法
+    #expect(StatusPreset.builtIn.map(\.displayTitle) == ["清洁屏幕", "请勿触碰", "马上回来"])
+    #expect(StatusPreset.builtIn[1].displayDetail == "电脑正在跑任务，别动键盘和鼠标")
+    #expect(StatusPreset.builtIn[0].titleResource.english == "Clean Screen")
+    // 0.9.0 存下来的列表：中文原文，认得出、算没改过、恢复自带的不重复加
+    let stored =
+      #"[{"id":"back","title":"马上回来","symbol":"alarm-clock","style":"sign","power":"awake","autoEndMinutes":0},{"id":"x","title":"清洁屏幕","symbol":"","style":"sign","power":"awake","autoEndMinutes":0}]"#
+    let old = StatusPreset.decode(Data(stored.utf8))
+    #expect(old[0].isPristine && old[0].builtInTitle != nil)
+    // 自己加的状态起了和自带一样的名字：不是自带的，不翻
+    #expect(!old[1].isPristine && old[1].builtInTitle == nil && old[1].displayTitle == "清洁屏幕")
+    #expect(StatusPreset.restoringBuiltIns(in: old).map(\.id) == ["back", "x", "clean", "busy"])
+    // 英文界面里把标题、说明改成英文写法：还是原样；改了别的字就是用户的
+    var busy = StatusPreset.builtIn[1]
+    busy.title = "Do Not Touch"
+    busy.detail = try #require(StatusPreset.builtInDetail("busy")?.english)
+    #expect(
+      busy.isPristine && busy.displayTitle == "请勿触碰" && busy.displayDetail == "电脑正在跑任务，别动键盘和鼠标")
+    busy.title = "Do not touch!"
+    #expect(!busy.isPristine && busy.displayTitle == "Do not touch!")
+    var clean = StatusPreset.builtIn[0]
+    clean.autoEndMinutes = 15
+    #expect(!clean.isPristine && clean.displayTitle == "清洁屏幕")
+    // 恢复自带的补回来的还是中文原文
+    #expect(
+      StatusPreset.restoringBuiltIns(in: [busy]).map(\.title) == ["Do not touch!", "清洁屏幕", "马上回来"])
+    // 表情的名字：自带的 28 个都有英文；动画表情包的英文名从编号推，对照表不改
+    #expect(StatusEmoji.ids.allSatisfy { StatusEmoji.nameResource($0)?.english.isEmpty == false })
+    #expect(StatusEmoji.nameResource("busts")?.english == "Meeting")
+    #expect(EmojiPack.englishName("grinning-face") == "Grinning face")
+  }
+
   /// 没存过、解不出、空列表、收拾完一个不剩：都用自带的
   @Test func presetsFallBackToBuiltIn() throws {
     #expect(StatusPreset.decode(nil) == StatusPreset.builtIn)

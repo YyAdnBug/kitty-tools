@@ -120,11 +120,11 @@ nonisolated enum WindowServer {
     for name in missing {
       let consequence =
         switch name {
-        case "_AXUIElementGetWindow": "缩略图可能对不上窗口"
-        case "CGSHWCaptureWindowList": "别的桌面上的窗口没有缩略图"
-        case "CGSCopySpacesForWindows": "别的桌面上的窗口不列"
-        case "CGSMainConnectionID": "别的桌面上的窗口不列，也没有缩略图"
-        default: "点缩略图可能切不到那一扇"
+        case "_AXUIElementGetWindow": String(localized: "缩略图可能对不上窗口")
+        case "CGSHWCaptureWindowList": String(localized: "别的桌面上的窗口没有缩略图")
+        case "CGSCopySpacesForWindows": String(localized: "别的桌面上的窗口不列")
+        case "CGSMainConnectionID": String(localized: "别的桌面上的窗口不列，也没有缩略图")
+        default: String(localized: "点缩略图可能切不到那一扇")
         }
       if !result.contains(consequence) { result.append(consequence) }
     }

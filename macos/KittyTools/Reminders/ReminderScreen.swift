@@ -69,7 +69,7 @@ import SwiftUI
     // 鼠标所在那块屏的当 key（贴着屏幕顶边时 contains 不算，用 NSMouseInRect；哪块都不在就第一块，同状态屏）
     let key = zip(NSScreen.screens, panels).first { NSMouseInRect(mouse, $0.0.frame, false) }?.1
     (key ?? panels.first)?.makeKey()
-    let text = [content.title, content.detail].compactMap { $0 }.joined(separator: "，")
+    let text = [content.title, content.detail].compactMap { $0 }.joined(separator: Island.comma)
     Island.announce("\(text)。回车表示知道了")
   }
 
@@ -299,7 +299,11 @@ struct ReminderScreenView: View {
     .padding(.vertical, title * 0.55)
     .hudSkin(RoundedRectangle(cornerRadius: Style.Radius.panel, style: .continuous))
     .accessibilityElement(children: .contain)
-    .accessibilityLabel("提醒")
+    .accessibilityLabel(
+      Text(
+        LocalizedStringResource(
+          "reminders.a11yBoard", defaultValue: "提醒",
+          comment: "全屏提醒那块底板的读屏名字：一条提醒（单数，不是页名「提醒」）")))
   }
 
   /// 现在几点（每分钟换一次）·「18 秒后自己收起」（每秒在变：图层画的 Ticker，不用 numericText，Whisker §8）
@@ -313,7 +317,7 @@ struct ReminderScreenView: View {
       if content.seconds > 0 {
         Text("·")
         Ticker(
-          text: "\(max(model.remaining, 0)) 秒后自己收起",
+          text: String(localized: "\(max(model.remaining, 0)) 秒后自己收起"),
           font: .systemFont(ofSize: size, weight: .medium), color: color,
           direction: reduceMotion ? 0 : -1)
       }

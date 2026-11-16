@@ -110,29 +110,51 @@ enum LaunchpadCatalog {
     return try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
   }
 
-  /// LSApplicationCategoryType → 中文名（文件夹名字）。系统自带的分类都在这里；第三方自定义的不认识就是 nil。
-  /// 用系统设置里那套叫法（工具、效率、图形与设计…）
+  /// LSApplicationCategoryType → 分类名（文件夹名字）。系统自带的分类都在这里；第三方自定义的不认识就是 nil。
+  /// 用系统设置里那套叫法（工具、效率、图形与设计…）。建文件夹那一刻的界面语言（拍板 D6：建出来就是用户的名字，
+  /// 换语言不改；认文件夹靠编号，不靠名字）
   nonisolated static func categoryName(_ key: String) -> String? {
     let tail = key.hasPrefix("public.app-category.") ? String(key.dropFirst(20)) : key
-    return categories[tail]
+    return category(tail).map { String(localized: $0) }
   }
 
-  nonisolated private static let categories: [String: String] = [
-    "business": "商务", "developer-tools": "开发者工具", "education": "教育",
-    "entertainment": "娱乐", "finance": "财务", "games": "游戏", "graphics-design": "图形与设计",
+  /// 分类的叫法（函数直接 return switch：字典字面量、元组里的字不保证都抽得进目录）
+  nonisolated private static func category(_ tail: String) -> LocalizedStringResource? {
+    switch tail {
+    case "business": "商务"
+    case "developer-tools": "开发者工具"
+    case "education": "教育"
+    case "entertainment": "娱乐"
+    case "finance": "财务"
     // 游戏的子分类都并进「游戏」（F43；LSApplicationCategoryType 里它们是单独的值）
-    "action-games": "游戏", "adventure-games": "游戏", "arcade-games": "游戏",
-    "board-games": "游戏", "card-games": "游戏", "casino-games": "游戏", "dice-games": "游戏",
-    "educational-games": "游戏", "family-games": "游戏", "kids-games": "游戏",
-    "music-games": "游戏", "puzzle-games": "游戏", "racing-games": "游戏",
-    "role-playing-games": "游戏", "simulation-games": "游戏", "sports-games": "游戏",
-    "strategy-games": "游戏", "trivia-games": "游戏", "word-games": "游戏",
-    "healthcare-fitness": "健康与健身", "lifestyle": "生活", "medical": "医疗",
-    "music": "音乐", "news": "新闻", "photography": "摄影", "productivity": "效率",
-    "reference": "参考", "social-networking": "社交", "sports": "体育", "travel": "旅行",
-    "utilities": "工具", "video": "视频", "weather": "天气", "books": "图书",
-    "food-and-drink": "美食佳饮", "magazines-newspapers": "杂志与报纸", "shopping": "购物",
-  ]
+    case "games", "action-games", "adventure-games", "arcade-games", "board-games", "card-games",
+      "casino-games", "dice-games", "educational-games", "family-games", "kids-games",
+      "music-games",
+      "puzzle-games", "racing-games", "role-playing-games", "simulation-games", "sports-games",
+      "strategy-games", "trivia-games", "word-games":
+      "游戏"
+    case "graphics-design": "图形与设计"
+    case "healthcare-fitness": "健康与健身"
+    case "lifestyle": "生活"
+    case "medical": "医疗"
+    case "music": "音乐"
+    case "news": "新闻"
+    case "photography": "摄影"
+    case "productivity": "效率"
+    case "reference": "参考"
+    case "social-networking": "社交"
+    case "sports": "体育"
+    case "travel": "旅行"
+    case "utilities": "工具"
+    case "video": "视频"
+    case "weather": "天气"
+    case "books": "图书"
+    case "food-and-drink": "美食佳饮"
+    case "magazines-newspapers": "杂志与报纸"
+    case "shopping": "购物"
+    default: nil
+    }
+  }
 }
 
 /// 图标位图缓存（2026-10-18 真机反馈「第一次打开卡一阵」）：每个 App 的图标在**后台**按显示尺寸画成一张位图，

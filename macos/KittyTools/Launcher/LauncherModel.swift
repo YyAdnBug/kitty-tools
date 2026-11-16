@@ -1202,15 +1202,21 @@ import UniformTypeIdentifiers
       }
     }
     let folded = LauncherMatch.fold(rest)
-    let existing = list.filter { rest.isEmpty || LauncherMatch.fold($0.title).contains(folded) }
-      .map { reminder in
-        let summary = reminder.summary(now: now, calendar: calendar)
-        var item = LauncherItem(
-          kind: .reminder, target: reminder.id, title: reminder.title,
-          subtitle: reminder.isOn ? summary : String(localized: "\(summary) · 已暂停"))
-        item.presetEmoji = reminder.symbol.isEmpty ? nil : reminder.symbol
-        return item
-      }
+    // 显示的、存的、没改过的示例的英文写法都认（打「喝水」「drink」都找得到这条示例）
+    let existing = list.filter { reminder in
+      rest.isEmpty
+        || [reminder.displayTitle, reminder.title, reminder.exampleTitle?.english].contains {
+          $0.map { LauncherMatch.fold($0).contains(folded) } ?? false
+        }
+    }
+    .map { reminder in
+      let summary = reminder.summary(now: now, calendar: calendar)
+      var item = LauncherItem(
+        kind: .reminder, target: reminder.id, title: reminder.displayTitle,
+        subtitle: reminder.isOn ? summary : String(localized: "\(summary) · 已暂停"))
+      item.presetEmoji = reminder.symbol.isEmpty ? nil : reminder.symbol
+      return item
+    }
     return create + existing + hint
   }
 
