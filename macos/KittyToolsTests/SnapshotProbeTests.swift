@@ -542,6 +542,8 @@ struct SnapshotProbeTests {
       // 私有接口在不在按固定的「都在」画（图不跟着机器变）
       case .dockPreview: AnyView(DockPreviewTab(missing: []))
       case .finderMenu: AnyView(FinderMenuTab(extensionEnabled: false))
+      // 没起的保持唤醒（只读偏好，不建断言）
+      case .keepAwake: AnyView(KeepAwakeTab(keepAwake: KeepAwake()))
       case .translate:
         AnyView(TranslateTab(services: services, history: history, speaker: speaker))
       case .hotkeys: AnyView(HotkeysTab(center: hotKeys))
@@ -1107,6 +1109,16 @@ struct SnapshotProbeTests {
     try snapshot(
       IslandView(island: card), size: notch.windowSize, dark: false,
       to: "\(out)/island-wings-card.png")
+    // 保持唤醒手动开的那一段（刘海岛完善 D1）：左耳杯子、右耳倒数；点开的卡片上「停止」
+    let awake = KeepAwake.activity(until: .now.addingTimeInterval(3600), display: true) {}
+    try snapshot(
+      IslandView(island: Island(showing: nil, geometry: notch, activities: [awake])),
+      size: notch.windowSize, dark: false, to: "\(out)/island-wings-awake.png")
+    let awakeCard = Island(showing: nil, geometry: notch, activities: [awake])
+    awakeCard.tapped()
+    try snapshot(
+      IslandView(island: awakeCard), size: notch.windowSize, dark: false,
+      to: "\(out)/island-wings-awake-card.png")
     // 正在播放（刘海岛扩展第 2 期）：耳朵上的封面 + 跳动条（在播 / 暂停）、点耳朵的播放卡片（有封面 / 没有封面也没有 App 图标）、
     // 封面是画出来的一块渐变，不读用户的东西
     let cover = NSImage(size: NSSize(width: 256, height: 256), flipped: false) { rect in
@@ -4732,7 +4744,8 @@ struct SnapshotProbeTests {
   }
 
   /// 插件（2026-11-12）：设置 › 通用 › 功能 下面的插件卡片（没添加、添加了、启动器带过来时描着强调色那一圈，浅 / 深）、
-  /// 几秒，图以 plugins- 开头：-only-testing:'KittyToolsTests/SnapshotProbeTests/plugins()'。开关读临时偏好域
+  /// 设置 › 保持唤醒（定时开着，浅 / 深）。几秒，图以 plugins- 开头：-only-testing:'KittyToolsTests/SnapshotProbeTests/plugins()'。
+  /// 开关和定时读临时偏好域；保持唤醒没起（不建断言），「现在」那一行是没开的样子
   @Test(.enabled(if: directory != nil)) func plugins() throws {
     let out = try #require(Self.directory)
     try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
@@ -4741,23 +4754,31 @@ struct SnapshotProbeTests {
     let prefs = try #require(UserDefaults(suiteName: name))
     defer { prefs.removePersistentDomain(forName: name) }
     let navigation = SettingsNavigation(defaults: nil)
+    // 高 1400：八个插件的卡片排到保持唤醒那张（排在访达右键、刘海岛之间）
     func features() -> some View {
       NavigationStack { FeaturesPage() }.environment(navigation).defaultAppStorage(prefs)
     }
     for dark in [false, true] {
       try snapshot(
-        features(), size: NSSize(width: 600, height: 1000), dark: dark,
+        features(), size: NSSize(width: 600, height: 1400), dark: dark,
         to: "\(out)/plugins-features\(dark ? "-dark" : "").png")
     }
-    navigation.focusedPlugin = .finderMenu
+    navigation.focusedPlugin = .keepAwake
     try snapshot(
-      features(), size: NSSize(width: 600, height: 1000), dark: false,
+      features(), size: NSSize(width: 600, height: 1400), dark: false,
       to: "\(out)/plugins-features-focused.png")
     navigation.focusedPlugin = nil
-    prefs.set(true, forKey: Feature.finderMenu.prefsKey)
+    prefs.set(true, forKey: Feature.keepAwake.prefsKey)
     try snapshot(
-      features(), size: NSSize(width: 600, height: 1000), dark: false,
+      features(), size: NSSize(width: 600, height: 1400), dark: false,
       to: "\(out)/plugins-features-added.png")
+    prefs.set(KeepAwakePlan.Schedule(isOn: true).encoded, forKey: Prefs.keepAwakeSchedule)
+    for dark in [false, true] {
+      try snapshot(
+        KeepAwakeTab(keepAwake: KeepAwake(defaults: prefs)).defaultAppStorage(prefs),
+        size: NSSize(width: 600, height: 760), dark: dark,
+        to: "\(out)/plugins-keep-awake\(dark ? "-dark" : "").png")
+    }
   }
 
   /// 设置 › 访达右键整页（「压缩时跳过」那一行的小字：填了一串、有一条写错了），推进去的「压缩时跳过」（空着、很多项带写错的，

@@ -753,6 +753,7 @@ extension LauncherItem {
     case .prompt where target.hasPrefix("reminder-"): SettingsPage.reminders.symbol
     case .prompt where target.hasPrefix(LauncherModel.pluginPrefix):
       pluginPage?.symbol ?? "puzzlepiece.extension.fill"
+    case .prompt where target.hasPrefix(LauncherModel.awakePrefix): SettingsPage.keepAwake.symbol
     case .calculation: "equal"
     case .path where contentType?.conforms(to: .volume) == true: "externaldrive.fill"
     case .prompt where target == FileSearch.accessTarget: "lock.open.fill"
@@ -797,6 +798,7 @@ extension LauncherItem {
     case .prompt where target.hasPrefix("reminder-"): Style.Family.reminders
     case .prompt where target.hasPrefix(LauncherModel.pluginPrefix):
       pluginPage?.color ?? Style.Family.general
+    case .prompt where target.hasPrefix(LauncherModel.awakePrefix): Style.Family.keepAwake
     case .system, .process, .ip, .script, .scriptResult: Style.Family.command
     case .prompt where target.hasPrefix("system-"): Style.Family.command
     case .url where isSettingsPane: Style.Family.general
@@ -845,6 +847,8 @@ extension LauncherItem {
       String(localized: "launcher.kind.reminder", defaultValue: "提醒", comment: "启动器行右侧的类型")
     case .prompt where target.hasPrefix(LauncherModel.pluginPrefix):
       String(localized: "launcher.kind.plugin", defaultValue: "插件", comment: "启动器行右侧的类型")
+    case .prompt where target.hasPrefix(LauncherModel.awakePrefix):
+      String(localized: "launcher.kind.keepAwake", defaultValue: "保持唤醒", comment: "启动器行右侧的类型")
     case .prompt where target.hasPrefix(LauncherModel.choicePrefix):
       String(localized: "launcher.kind.option", defaultValue: "选项", comment: "启动器行右侧的类型")
     case .search, .prompt:

@@ -19,7 +19,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   // 便签、提醒、状态屏一组，启动台、程序坞预览一组（启动台原来在便签后面）
   // 2026-11-13 起便签之后都是插件（Feature.plugins），刘海岛（2026-11-12 PR #17 加的页）也成了插件、挪到最后
   case general, clipboard, launcher, translate, screenshot, record, notes, reminders,
-    statusScreen, launchpad, dockPreview, finderMenu, island, hotkeys, about
+    statusScreen, launchpad, dockPreview, finderMenu, keepAwake, island, hotkeys, about
 
   var id: String { rawValue }
 
@@ -31,7 +31,9 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   /// 见 SettingsRoot），按这里的先后排、不按添加的先后
   static let groups: [[SettingsPage]] = [
     [.general], [.clipboard, .launcher, .translate], [.screenshot, .record],
-    [.notes, .reminders, .statusScreen, .launchpad, .dockPreview, .finderMenu, .island],
+    [
+      .notes, .reminders, .statusScreen, .launchpad, .dockPreview, .finderMenu, .keepAwake, .island,
+    ],
     [.hotkeys, .about],
   ]
 
@@ -62,7 +64,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     switch self {
     case .clipboard, .launcher, .translate: .text
     case .screenshot, .record: .capture
-    case .notes, .reminders, .statusScreen, .launchpad, .dockPreview, .finderMenu, .island: .plugins
+    case .notes, .reminders, .statusScreen, .launchpad, .dockPreview, .finderMenu, .keepAwake, .island:
+      .plugins
     case .general, .hotkeys, .about: nil
     }
   }
@@ -118,6 +121,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .reminders: "提醒"
     case .dockPreview: "程序坞预览"
     case .finderMenu: "访达右键"
+    case .keepAwake: "保持唤醒"
     case .translate: "翻译"
     case .hotkeys: "快捷键"
     case .about: "关于"
@@ -139,6 +143,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .reminders: "kitty.reminders"
     case .dockPreview: "kitty.dock.preview"
     case .finderMenu: "kitty.finder.menu"
+    case .keepAwake: "kitty.keep.awake"
     case .translate: "kitty.translate"
     case .hotkeys: "kitty.hotkeys"
     case .about: "kitty.about"  // 品牌页：猫头
@@ -159,6 +164,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .reminders: Style.Family.reminders
     case .dockPreview: Style.Family.dockPreview
     case .finderMenu: Style.Family.finderMenu
+    case .keepAwake: Style.Family.keepAwake
     case .translate: Style.Family.translate
     case .hotkeys: Style.Family.keyboard
     case .about: Color(nsColor: AccentPalette.brandPink)  // 关于是品牌页，不随强调色变
@@ -180,6 +186,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .reminders: "到点提醒你：什么时候响、用什么方式、点了「稍后」推多久"
     case .dockPreview: "停在程序坞图标上时弹出的窗口缩略图：开关和要给的授权"
     case .finderMenu: "在访达里右键：新建文件、拷贝路径、移动复制、压缩解压"
+    case .keepAwake: "插件 · 不让电脑睡、不让屏幕熄：手动开一段，或按时段自动开"
     case .translate: "语言、翻译服务与密钥、历史"
     case .hotkeys: "所有全局快捷键"
     case .about: "版本与更新内容"
@@ -215,6 +222,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
       "程序坞,Dock,预览,缩略图,窗口,切换,悬停,延迟,多久,⌘Tab,Command Tab,切换器,最小化,桌面,全屏,辅助功能,屏幕录制"
     case .finderMenu:
       "访达,Finder,右键,右键菜单,上下文菜单,拷贝路径,复制路径,路径,终端,Terminal,编辑器,打开方式,用 App 打开,在 App 中打开,改名,扩展,登录项与扩展,新建文件,新建,模板,后缀,Word,Excel,PPT,Markdown,文本,压缩,解压,zip,7z,跳过,排除,忽略,node_modules"
+    case .keepAwake:
+      "插件,保持唤醒,唤醒,防息屏,息屏,熄屏,防止睡眠,睡眠,不睡眠,屏幕常亮,常亮,定时,工作日,时段,awake,caffeinate,咖啡因,下载,后台任务"
     case .translate:
       "语言,第一语言,第二语言,字号,换行,自动复制,复制即译,历史,导出,CSV,Anki,位置,浮窗位置,鼠标,清空,服务,密钥,查词,词典,单词,音标,例句,生词本,收藏,智谱,OpenAI,Anthropic,DeepL,Google,百度,有道,微软,火山,腾讯,AI,模型"
     case .hotkeys:
