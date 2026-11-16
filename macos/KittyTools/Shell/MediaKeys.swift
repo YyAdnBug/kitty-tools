@@ -146,7 +146,7 @@ import Synchronization
           callback: { _, type, event, refcon in
             guard let refcon else { return Unmanaged.passUnretained(event) }
             let box = Unmanaged<Box>.fromOpaque(refcon).takeUnretainedValue()
-            // 每次鼠标点击也有系统定义事件：这条线程只转 CFRunLoop，自动释放的东西（NSEvent）要自己清
+            // 每次鼠标点击也有系统定义事件：这条线程只转 CFRunLoop，自动释放的东西要自己清
             let swallow = autoreleasepool { MediaKeys.handle(box, type, event) }
             return swallow ? nil : Unmanaged.passUnretained(event)
           }, userInfo: Unmanaged.passUnretained(box).toOpaque())
@@ -184,9 +184,7 @@ import Synchronization
       if let port = box.port { CGEvent.tapEnable(tap: port, enable: true) }
       return false
     }
-    guard type.rawValue == 14, let system = NSEvent(cgEvent: event), system.subtype.rawValue == 8,
-      let press = decode(data1: system.data1)
-    else { return false }
+    guard type.rawValue == 14, let press = decode(event: event) else { return false }
     let code = press.key.rawValue
     let verdict = verdict(
       down: press.down, isRepeat: press.isRepeat, held: box.held.contains(code),
@@ -250,6 +248,17 @@ import Synchronization
   }
 
   // MARK: 纯函数（单测锁住）
+
+  /// 直接读系统事件的 subtype / data1，不转 NSEvent：中英文切换（Caps Lock）的事件在转换时会进入
+  /// HIToolbox 的输入法处理，后台线程触发主队列断言（2026-11-16，0.9.0 真机崩溃）。这两个未公开的字段
+  /// 0x53 / 0x95 在 macOS 27 探针与 NSEvent 对照过；先认 subtype 8，其他子类型没有 compound data，不能读 data1。
+  nonisolated static func decode(event: CGEvent) -> (key: Key, down: Bool, isRepeat: Bool)? {
+    guard event.type.rawValue == 14,
+      let subtype = CGEventField(rawValue: 0x53), event.getIntegerValueField(subtype) == 8,
+      let data1 = CGEventField(rawValue: 0x95)
+    else { return nil }
+    return decode(data1: Int(event.getIntegerValueField(data1)))
+  }
 
   /// 系统定义事件（子类型 8）的 data1 → 哪个键、按下还是抬起、是不是连发。高 16 位是键；低 16 位里第 8–15 位
   /// 0xA = 按下、0xB = 抬起，最低位 = 连发。不是这五个键、不是按下 / 抬起的是 nil
