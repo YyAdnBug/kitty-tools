@@ -249,8 +249,14 @@ nonisolated enum OCR {
         // 2026-11-06）。下一行没有拉丁词（中日文随便哪个字都能断行）时照旧按短行算
         let room = lineRight - previous.box.maxX
         let wrapped = line.words.first.map { $0.box.width > room } ?? false
+        // 短标签可能紧贴下一段的右上角（New + 正文）；只看行距会把它接成正文首词。
+        // 两行横向至少覆盖较窄那行的一半才允许接段，居中标题、列表缩进和普通折行仍有充分重叠。
+        let overlap = max(
+          0, min(previous.box.maxX, line.box.maxX) - max(previous.box.minX, line.box.minX))
+        let narrow = min(previous.box.width, line.box.width)
         let breaks =
           gap > 1.2 * lineHeight || gap < -0.5 * lineHeight
+          || (narrow > 0 && overlap < narrow * 0.5)
           || (endsSentence && previous.box.width < 0.8 * lineWidth && !wrapped)
           || listMarker(line.text) != nil || differsInSize(previous, line)
           || item.map { line.box.minX < $0.left - $0.slack } == true

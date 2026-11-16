@@ -2935,8 +2935,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     guard let recognized = await recognizeForTranslation(image, droppingIcons: true) else {
       return .init(message: "识别失败")
     }
-    let segments = ScreenshotOverlay.segments(
-      of: recognized.lines, imageSize: CGSize(width: image.width, height: image.height))
+    let segments = await ScreenshotOverlay.prepareSegments(of: recognized.lines, in: image)
     guard !segments.isEmpty else { return .init(message: "没有识别到文字") }
     do {
       let translations = try await translateSegments(segments, source: recognized.text)

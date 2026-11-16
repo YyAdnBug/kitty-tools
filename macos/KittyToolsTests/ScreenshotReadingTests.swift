@@ -102,8 +102,7 @@ struct ScreenshotReadingTests {
     }
     let source = try #require(context.makeImage())
     let lines = try #require(await OCR.recognizeLines(in: source))
-    let segments = ScreenshotOverlay.segments(
-      of: lines, imageSize: CGSize(width: width, height: height))
+    let segments = await ScreenshotOverlay.prepareSegments(of: lines, in: source)
     #expect(segments.count == 4)
     let translations = [
       "Claude Haiku 4.5 将继续为个人 GitHub Copilot 订阅者提供年度计划服务。Claude Haiku 4.5 的弃用不适用于这些客户。",

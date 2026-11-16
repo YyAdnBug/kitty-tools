@@ -35,6 +35,18 @@ nonisolated enum ScreenshotOverlay {
     var pitch: CGFloat?
     /// 段里的行内代码块：哪些词、长什么样；没有就 nil
     var code: Code?
+    /// 近似纯色背景的闭合容器（像素）；没有可靠边界时 nil，仍走原来的文章排版。
+    var container: CGRect?
+    /// 已在翻译前分析过容器；nil 也是分析结果，出图时不再重复扫描整张图。
+    var isAnalyzed = false
+    /// 同一容器中，多行正文上方、左边对齐的单行标题。
+    var isHeading = false
+
+    var isControl: Bool {
+      guard let container else { return false }
+      return lineCount == 1 && container.height <= lineHeight * 3
+        && container.width <= lineHeight * 16
+    }
   }
 
   /// 行内代码块的样子，从原图量出来；译文里原样留着的代码词按它重画底框
@@ -80,6 +92,9 @@ nonisolated enum ScreenshotOverlay {
     /// 原文的行高：去字时按它切小块、定毛边扩多少
     var lineHeight: CGFloat
     var code: Code?
+    /// 容器内排版的字形和去字范围都受同一个内部边界约束。
+    var clip: CGRect?
+    var bold = false
   }
 
   /// 到字号下限也放不下的一段：图上留原文，原文和译文交给截图页的卡片
@@ -168,6 +183,68 @@ nonisolated enum ScreenshotOverlay {
     }
   }
 
+  /// 翻译前先区分容器与字色，再接段：标签不能混进正文，白色标题不能吞掉灰色正文。
+  /// 只读图像，放在后台做；识别与翻译仍使用同一份 Segment，不改原文或让服务猜布局。
+  @concurrent static func prepareSegments(of lines: [OCR.Line], in image: CGImage) async
+    -> [Segment]
+  {
+    let size = CGSize(width: image.width, height: image.height)
+    guard let context = canvas(like: image), let data = context.data else {
+      return segments(of: lines, imageSize: size)
+    }
+    context.draw(image, in: CGRect(origin: .zero, size: size))
+    let original = Pixels(
+      data: data.assumingMemoryBound(to: UInt8.self), width: context.width,
+      height: context.height, bytesPerRow: context.bytesPerRow
+    ).snapshot()
+    var detector = ScreenshotRegions(width: image.width, height: image.height)
+    var result: [Segment] = []
+    var run: [OCR.Line] = []
+    var previousContainer: CGRect?
+    var previousInk: RGB?
+    func flush() {
+      for var segment in segments(of: run, imageSize: size) {
+        segment = measure(segment, in: original)
+        segment.container = previousContainer
+        segment.isAnalyzed = true
+        result.append(segment)
+      }
+      run.removeAll(keepingCapacity: true)
+    }
+    for line in lines {
+      guard let single = segments(of: [line], imageSize: size).first else { continue }
+      let background = original.background(of: single.box, erasing: single.box)
+      let container = detector.container(
+        around: single.box, lineHeight: single.lineHeight, background: background,
+        color: original.color)
+      let ink = original.foreground(in: single.box, background: background)
+      let changedInk =
+        previousInk.flatMap { old in ink.map { old.distance(to: $0) > 0.18 } } ?? false
+      if !run.isEmpty, previousContainer != container || (container != nil && changedInk) {
+        flush()
+      }
+      run.append(line)
+      previousContainer = container
+      previousInk = ink
+    }
+    flush()
+    markHeadings(&result)
+    return result
+  }
+
+  private static func markHeadings(_ segments: inout [Segment]) {
+    for index in segments.indices {
+      let segment = segments[index]
+      guard let container = segment.container, !segment.isControl, segment.lineCount == 1 else {
+        continue
+      }
+      segments[index].isHeading = segments.contains {
+        $0.container == container && $0.lineCount > 1 && $0.box.maxY < segment.box.minY
+          && abs($0.box.minX - segment.box.minX) < segment.lineHeight * 0.5
+      }
+    }
+  }
+
   /// 这段有没有值得翻译的内容：字母、数字、汉字都算；纯标点、分隔线、装饰符不算。
   /// OCR 常把一条分割线认成 `———`、把项目符号认成 `•`，这种送去有道网页版会直接回错误码 40，
   /// 一段失败就拖垮整张图（分段翻译是串行的）
@@ -203,6 +280,18 @@ nonisolated enum ScreenshotOverlay {
       // 纯符号的段（分隔线、装饰符，OCR 常认成 `———`）不覆盖：里面没有可翻译的内容，
       // 送去服务那边还会直接回错误码（有道网页版是 40）
       guard !text.isEmpty, Self.hasTranslatableContent(segment.text) else { continue }
+      if segment.container != nil, segment.code == nil, marker == nil {
+        if let span = containerSpan(
+          segment, text: text,
+          others: segments.filter { $0.box != segment.box }.map(\.box) + spans.map(\.area),
+          pixelsPerPoint: pixelsPerPoint, isBlank: isBlank)
+        {
+          spans.append(span)
+        } else {
+          leftovers.append(index)
+        }
+        continue
+      }
       let box = segment.box
       let others = segments.indices.filter { $0 != index }.map { segments[$0].box }
       let gap = max(2, segment.lineHeight * 0.3)
@@ -418,6 +507,85 @@ nonisolated enum ScreenshotOverlay {
     return (spans, leftovers)
   }
 
+  /// 闭合容器内的排版：按钮/标签居中且不换行，正文保留左上起点；只在容器内部缩字和借空白。
+  /// 字号以实际源字形高度估算，不把带下伸部的英文统一当成大写字母，避免标题和按钮被额外放大。
+  private static func containerSpan(
+    _ segment: Segment, text: String, others: [CGRect], pixelsPerPoint: CGFloat,
+    isBlank: (CGRect, CGRect, CGRect) -> Bool
+  ) -> Span? {
+    guard let container = segment.container else { return nil }
+    let border = max(1, pixelsPerPoint)
+    let safe = container.insetBy(dx: border, dy: border)
+    let leftRoom = max(0, segment.box.minX - safe.minX)
+    let rightRoom = max(0, safe.maxX - segment.box.maxX)
+    let padding =
+      segment.isControl
+      ? max(border * 2, min(leftRoom, rightRoom) * 0.75)
+      : max(border * 3, leftRoom)
+    var frame: CGRect
+    if segment.isControl {
+      frame = safe.insetBy(dx: padding, dy: max(border, segment.lineHeight * 0.12))
+    } else {
+      let right =
+        others.filter {
+          $0.minX >= segment.box.maxX && overlaps($0, segment.box, vertically: true)
+        }.map(\.minX).min() ?? safe.maxX
+      let maxX = min(safe.maxX - padding, right - border * 2)
+      let bottom =
+        others.filter {
+          $0.maxY <= segment.box.minY && $0.maxX > segment.box.minX && $0.minX < maxX
+        }.map(\.maxY).max().map { $0 + segment.lineHeight * 0.3 } ?? safe.minY
+      frame = CGRect(
+        x: segment.box.minX, y: max(safe.minY, bottom), width: maxX - segment.box.minX,
+        height: segment.box.maxY - max(safe.minY, bottom))
+    }
+    guard frame.width > 1, frame.height > 1 else { return nil }
+    let sample = segment.isControl ? text : segment.text
+    guard
+      let reference = attributed(
+        sample, fontSize: 100, color: nil, code: nil, bold: segment.isHeading)
+    else { return nil }
+    let referenceLine = CTLineCreateWithAttributedString(reference)
+    let referenceHeight = CTLineGetBoundsWithOptions(referenceLine, [.useGlyphPathBounds]).height
+    guard referenceHeight > 0 else { return nil }
+    let nominal = segment.lineHeight * 100 / referenceHeight
+    let floor = smallestFontSize(nominal: nominal, pixelsPerPoint: pixelsPerPoint)
+    var size = nominal
+    while true {
+      let laid = lines(
+        of: text, width: frame.width, fontSize: size, color: nil, code: nil,
+        bold: segment.isHeading)
+      if let first = laid.first, !splitsWord(text, laid), !segment.isControl || laid.count == 1 {
+        let ink = CTLineGetBoundsWithOptions(first.line, [.useGlyphPathBounds])
+        let pitch = max(segment.pitch ?? estimatedPitch(segment) ?? size * 1.3, size * 1.2)
+        let baseline = segment.isControl ? frame.midY - ink.midY : frame.maxY - ink.maxY
+        let x = segment.isControl ? frame.midX - ink.midX : frame.minX
+        var area = CGRect.null
+        for (index, item) in laid.enumerated() {
+          let glyphs = CTLineGetBoundsWithOptions(item.line, [.useGlyphPathBounds])
+          area = area.union(glyphs.offsetBy(dx: x + item.x, dy: baseline - CGFloat(index) * pitch))
+        }
+        let own = segment.box.insetBy(dx: -border, dy: -border)
+        if frame.insetBy(dx: -0.1, dy: -0.1).contains(area),
+          !others.contains(where: { $0.intersects(area.insetBy(dx: 0.5, dy: 0.5)) }),
+          isBlank(area, own, segment.box)
+        {
+          // drawText 按相同字体、同一宽度再次排版；控件只有一行，平移 x 仍不会改变折行。
+          let drawFrame = CGRect(x: x, y: frame.minY, width: frame.width, height: frame.height)
+          return Span(
+            text: text, source: segment.box,
+            erase: segment.box.insetBy(dx: -border, dy: -border).intersection(safe),
+            cover: area.insetBy(dx: -border, dy: -border).intersection(safe), area: area,
+            frame: drawFrame, baseline: baseline, pitch: pitch, fontSize: size,
+            scale: size / nominal, lineHeight: segment.lineHeight, code: nil, clip: safe,
+            bold: segment.isHeading)
+        }
+      }
+      if size <= floor { return nil }
+      size = max(floor, size * 0.95)
+    }
+  }
+
   /// 英文的可见大写字高约为字体字号的七成，不能直接当字号再乘 0.9。
   /// 用系统字体的实际大写高度还原字号，并给行间留至少两成空隙。只调整英文到中日韩文的正文；
   /// 代码块沿用原来量好的底框和基线，不拿这套估算改变它。
@@ -596,11 +764,11 @@ nonisolated enum ScreenshotOverlay {
   /// 按宽度折好的一行行，带每行在框里的横向偏移（量和画共用，折法一致）
   private static func lines(
     of text: String, width: CGFloat, fontSize: CGFloat, color: CGColor?, code: Code?,
-    codeColor: CGColor? = nil
+    codeColor: CGColor? = nil, bold: Bool = false
   ) -> [(line: CTLine, x: CGFloat)] {
     guard
       let string = attributed(
-        text, fontSize: fontSize, color: color, code: code, codeColor: codeColor)
+        text, fontSize: fontSize, color: color, code: code, codeColor: codeColor, bold: bold)
     else { return [] }
     let framesetter = CTFramesetterCreateWithAttributedString(string)
     let path = CGPath(
@@ -614,11 +782,16 @@ nonisolated enum ScreenshotOverlay {
 
   /// 量和画共用的一份带格式文字：正文用系统字体；代码词用等宽字体（和颜色）
   private static func attributed(
-    _ text: String, fontSize: CGFloat, color: CGColor?, code: Code?, codeColor: CGColor? = nil
+    _ text: String, fontSize: CGFloat, color: CGColor?, code: Code?, codeColor: CGColor? = nil,
+    bold: Bool = false
   ) -> CFAttributedString? {
     guard let string = CFAttributedStringCreateMutable(nil, 0) else { return nil }
     CFAttributedStringReplaceString(string, CFRange(location: 0, length: 0), text as CFString)
-    var attributes: [CFString: Any] = [kCTFontAttributeName: font(size: fontSize)]
+    let base = font(size: fontSize)
+    let face =
+      bold
+      ? CTFontCreateCopyWithSymbolicTraits(base, 0, nil, .traitBold, .traitBold) ?? base : base
+    var attributes: [CFString: Any] = [kCTFontAttributeName: face]
     if let color { attributes[kCTForegroundColorAttributeName] = color }
     let whole = CFRange(location: 0, length: CFAttributedStringGetLength(string))
     CFAttributedStringSetAttributes(string, whole, attributes as CFDictionary, true)
@@ -704,7 +877,18 @@ nonisolated enum ScreenshotOverlay {
       data: data.assumingMemoryBound(to: UInt8.self), width: context.width,
       height: context.height, bytesPerRow: context.bytesPerRow)
     let original = pixels.snapshot()
-    let measured = segments.map { measure($0, in: original) }
+    var measured = segments.map { $0.isAnalyzed ? $0 : measure($0, in: original) }
+    if measured.contains(where: { !$0.isAnalyzed }) {
+      var detector = ScreenshotRegions(width: image.width, height: image.height)
+      for index in measured.indices where !measured[index].isAnalyzed {
+        let segment = measured[index]
+        measured[index].container = detector.container(
+          around: segment.box, lineHeight: segment.lineHeight,
+          background: original.background(of: segment.box, erasing: segment.box),
+          color: original.color)
+      }
+    }
+    markHeadings(&measured)
     let size = CGSize(width: image.width, height: image.height)
     let (spans, skipped) = layout(
       segments: measured, translations: translations, imageSize: size,
@@ -811,9 +995,10 @@ nonisolated enum ScreenshotOverlay {
   ) {
     context.saveGState()
     context.textMatrix = .identity
+    if let clip = span.clip { context.clip(to: clip) }
     let lines = lines(
       of: span.text, width: span.frame.width, fontSize: span.fontSize, color: color,
-      code: span.code, codeColor: codeColor)
+      code: span.code, codeColor: codeColor, bold: span.bold)
     if let code = span.code, let fill = cgColor(code.fill) {
       let ranges = codeSpans(in: span.text, phrases: code.phrases).ranges
       for (index, item) in lines.enumerated() {
@@ -1095,6 +1280,26 @@ nonisolated enum ScreenshotOverlay {
     func color(x: Int, y: Int) -> RGB {
       let (r, g, b) = raw(x: x, y: y)
       return RGB(red: CGFloat(r) / 255, green: CGFloat(g) / 255, blue: CGFloat(b) / 255)
+    }
+
+    /// 字框内非背景像素中最常见的字色；只用于容器内分段，抗锯齿像素按 5 位颜色聚类。
+    func foreground(in box: CGRect, background: RGB) -> RGB? {
+      let x0 = max(0, Int(box.minX.rounded(.down)))
+      let x1 = min(width, Int(box.maxX.rounded(.up)))
+      let y0 = max(0, Int(box.minY.rounded(.down)))
+      let y1 = min(height, Int(box.maxY.rounded(.up)))
+      guard x1 > x0, y1 > y0 else { return nil }
+      var counts: [Int: (count: Int, color: RGB)] = [:]
+      for y in stride(from: y0, to: y1, by: 2) {
+        for x in stride(from: x0, to: x1, by: 2) {
+          let pixel = color(x: x, y: y)
+          guard pixel.distance(to: background) > inkThreshold else { continue }
+          let (r, g, b) = raw(x: x, y: y)
+          let key = (r >> 3) << 10 | (g >> 3) << 5 | (b >> 3)
+          counts[key] = ((counts[key]?.count ?? 0) + 1, pixel)
+        }
+      }
+      return counts.values.max(by: { $0.count < $1.count })?.color
     }
 
     func contains(_ x: Int, _ y: Int) -> Bool { x >= 0 && x < width && y >= 0 && y < height }
