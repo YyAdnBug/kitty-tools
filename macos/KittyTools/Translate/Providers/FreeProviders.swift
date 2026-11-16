@@ -64,9 +64,7 @@ nonisolated enum YoudaoDict {
       ]
       var urlRequest = URLRequest(url: components.url!)
       urlRequest.timeoutInterval = 30
-      let (data, response) = try await HTTP.perform { [urlRequest] in
-        try await HTTP.session(for: urlRequest.url!).data(for: urlRequest)
-      }
+      let (data, response) = try await HTTP.data(for: urlRequest)
       let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
       try HTTP.check(response, object ?? [:])
       guard let object, let entry = entry(object) else {

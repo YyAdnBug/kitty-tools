@@ -118,7 +118,7 @@ import Observation
   nonisolated private static func fetch(_ url: URL) async -> Data? {
     var request = URLRequest(url: url)
     request.timeoutInterval = 3
-    guard let (data, response) = try? await HTTP.session(for: url).data(for: request),
+    guard let (data, response) = try? await HTTP.data(for: request),
       let http = response as? HTTPURLResponse, http.statusCode == 200,
       http.mimeType?.hasPrefix("audio/") == true, !data.isEmpty, data.count <= 1 << 20
     else { return nil }

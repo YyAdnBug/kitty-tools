@@ -162,6 +162,36 @@ struct AIServiceTests {
     }
   }
 
+
+  @Test func publicSessionIsNotShared() {
+    let session = HTTP.session(for: URL(string: "https://api.openai.com")!)
+    #expect(session !== URLSession.shared)
+    #expect(HTTP.session(for: URL(string: "http://127.0.0.1:11434")!) !== session)
+  }
+
+  @Test func requestDoesNotAssumeHTTP3() {
+    let request = HTTP.request(URL(string: "https://example.com/v1")!, headers: [:], json: [:])
+    #expect(request.httpMethod == "POST")
+    #expect(request.assumesHTTP3Capable == false)
+  }
+
+  @Test func handshakeErrorsAreNotCertificateCopy() {
+    let handshake = HTTP.userFacing(URLError(.secureConnectionFailed)) as? TranslateError
+    #expect(handshake?.kind == .network)
+    #expect(handshake?.message == "HTTPS 连接失败")
+    #expect(HTTP.isHandshakeFailure(URLError(.secureConnectionFailed)))
+    #expect(
+      HTTP.shouldFallbackToTCP(
+        URLError(.secureConnectionFailed), url: URL(string: "https://api.openai.com")))
+    #expect(
+      !HTTP.shouldFallbackToTCP(
+        URLError(.secureConnectionFailed), url: URL(string: "http://127.0.0.1:11434")))
+    let cert = HTTP.userFacing(URLError(.serverCertificateUntrusted)) as? TranslateError
+    #expect(cert?.message == "HTTPS 连接失败（证书问题）")
+    #expect(!HTTP.isHandshakeFailure(URLError(.serverCertificateUntrusted)))
+    #expect(!HTTP.isHandshakeFailure(URLError(.timedOut)))
+  }
+
   @Test(.enabled(if: ProcessInfo.processInfo.environment["KITTY_LIVE_TRANSLATE"] != nil))
   func liveZhipu() async throws {
     let request = TranslateRequest(text: "Hello, world", from: .en, to: .zhHans)
