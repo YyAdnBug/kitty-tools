@@ -60,6 +60,15 @@ internal sealed class FrozenScreen
     }
 
     /// <summary>放大镜取色：物理像素坐标（屏内），返回 #RRGGBB。</summary>
+    /// <summary>(x, y) 那个像素的颜色（夹在屏内；放大镜的色块、中心格描边按它的亮度挑黑白）。</summary>
+    public (byte R, byte G, byte B) ColorAt(int x, int y)
+    {
+        x = Math.Clamp(x, 0, Width - 1);
+        y = Math.Clamp(y, 0, Height - 1);
+        var index = (y * Width + x) * 4;
+        return (Bgra[index + 2], Bgra[index + 1], Bgra[index]);
+    }
+
     public string HexAt(int x, int y)
     {
         x = Math.Clamp(x, 0, Width - 1);

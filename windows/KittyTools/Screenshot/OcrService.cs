@@ -98,6 +98,47 @@ internal static class OcrService
         return (OcrText.Text(lines, joined, separator), lines);
     }
 
+    /// <summary>
+    /// 长图识字（长图标注的「识字并拷贝」，REVIEW G5）：比引擎上限高的按空白行切段分开认、文字首尾接上；不高的同 RecognizeAsync。
+    /// </summary>
+    public static async Task<string> RecognizeTallAsync(byte[] bgra, int width, int height, bool joined)
+    {
+        var maximum = (int)OcrEngine.MaxImageDimension;
+        if (height <= maximum)
+        {
+            return (await RecognizeAsync(bgra, width, height, joined)).Text;
+        }
+
+        var stride = width * 4;
+        bool IsBlank(int row)
+        {
+            var start = row * stride;
+            for (var offset = 4; offset < stride; offset += 4)
+            {
+                if (bgra[start + offset] != bgra[start] || bgra[start + offset + 1] != bgra[start + 1] || bgra[start + offset + 2] != bgra[start + 2])
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        var parts = new List<string>();
+        foreach (var (top, rows) in OcrScale.Bands(height, maximum, 400, IsBlank))
+        {
+            var slice = new byte[rows * stride];
+            System.Buffer.BlockCopy(bgra, top * stride, slice, 0, slice.Length);
+            var (text, _) = await RecognizeAsync(slice, width, rows, joined);
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                parts.Add(text.Trim());
+            }
+        }
+
+        return string.Join("\n", parts);
+    }
+
     private static async Task<OcrResult> RecognizeOnceAsync(OcrEngine engine, byte[] pixels, int width, int height)
     {
         using var bitmap = SoftwareBitmap.CreateCopyFromBuffer(

@@ -185,11 +185,14 @@ internal static partial class ScreenshotOutput
         }
     }
 
-    public static async Task<string?> SavePngAsAsync(Microsoft.UI.Windowing.AppWindow appWindow, byte[] png)
+    public static Task<string?> SavePngAsAsync(Microsoft.UI.Windowing.AppWindow appWindow, byte[] png) => SavePngAsAsync(appWindow.Id, png);
+
+    /// <summary>另存为：对话框挂在 owner 这扇窗口上（长截图拼完时面板已经收了，挂在隐藏的消息窗口上）。</summary>
+    public static async Task<string?> SavePngAsAsync(Microsoft.UI.WindowId owner, byte[] png)
     {
         try
         {
-            var picker = new FileSavePicker(appWindow.Id)
+            var picker = new FileSavePicker(owner)
             {
                 SuggestedFileName = $"截图 {DateTime.Now:yyyy-MM-dd HH.mm.ss}",
                 DefaultFileExtension = ".png",

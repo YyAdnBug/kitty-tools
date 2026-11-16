@@ -44,6 +44,13 @@ internal static unsafe partial class RecordingFrame
 
     public static void HideScrolling() => Scrolling.Hide();
 
+    /// <summary>长截图对不上时边框变橙、接上了换回粉色（REVIEW G2，mac ScrollBorderView）。</summary>
+    public static void SetScrollingLost(bool lost) => Scrolling.SetLost(lost);
+
+    /// <summary>画橙色的那几条（WM_ERASEBKGND 里查）：窗口类的画刷是粉色，录屏、长截图两套共用，不能改类。</summary>
+    private static readonly HashSet<nint> OrangeStrips = new();
+    private static IntPtr _orangeBrush;
+
     private sealed class Frame
     {
         private readonly string _name;
@@ -107,12 +114,27 @@ internal static unsafe partial class RecordingFrame
             Log.Info($"record.frame-shown {_name} created={created}");
         }
 
+        public void SetLost(bool lost)
+        {
+            foreach (var hwnd in _strips)
+            {
+                if (hwnd == IntPtr.Zero || (lost ? !OrangeStrips.Add(hwnd) : !OrangeStrips.Remove(hwnd)))
+                {
+                    continue;
+                }
+
+                InvalidateRect(hwnd, IntPtr.Zero, true);
+            }
+        }
+
         public void Hide()
         {
             if (!_shown)
             {
                 return;
             }
+
+            SetLost(false);
 
             _shown = false;
             _window = IntPtr.Zero;
@@ -226,7 +248,32 @@ internal static unsafe partial class RecordingFrame
 
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(CallConvStdcall) })]
     private static LRESULT WndProc(HWND hwnd, uint msg, WPARAM wParam, LPARAM lParam)
-        => PInvoke.DefWindowProc(hwnd, msg, wParam, lParam);
+    {
+        if (msg == 0x0014 /* WM_ERASEBKGND */ && OrangeStrips.Contains((nint)hwnd.Value) && GetClientRect((IntPtr)hwnd.Value, out var client))
+        {
+            if (_orangeBrush == IntPtr.Zero)
+            {
+                // systemOrange（同面板状态行的橙字）；整个进程只建这一个，不释放
+                _orangeBrush = CreateSolidBrush(255 | (159 << 8) | (10 << 16));
+            }
+
+            FillRect((IntPtr)(nint)wParam.Value, in client, _orangeBrush);
+            return new LRESULT(1);
+        }
+
+        return PInvoke.DefWindowProc(hwnd, msg, wParam, lParam);
+    }
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool GetClientRect(IntPtr hwnd, out RECT rect);
+
+    [LibraryImport("user32.dll")]
+    private static partial int FillRect(IntPtr hdc, in RECT rect, IntPtr brush);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool InvalidateRect(IntPtr hwnd, IntPtr rect, [MarshalAs(UnmanagedType.Bool)] bool erase);
 
     [LibraryImport("gdi32.dll")]
     private static partial IntPtr CreateSolidBrush(uint color);

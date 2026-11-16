@@ -310,20 +310,24 @@ internal sealed partial class SelectionOverlayWindow
     /// <summary>尺寸胶囊跟上选区：数字、比例按钮（锁着时粉底）、位置（SelectionChrome.SizeCapsule 避开工具栏和顶部提示）。</summary>
     private void UpdateSizeCapsule()
     {
-        if (_session.SelectionScreen != _screen || !_session.HasSelection)
+        // 还没有选区、悬停着一扇窗口：胶囊写那扇窗口的大小，只读（REVIEW G6，mac updateSizeField(for: selection ?? hovered)）
+        var hovered = _session.HasSelection || !_key || _hover is not { } hover
+            ? (RectD?)null
+            : new RectD(hover.Left, hover.Top, hover.Width, hover.Height);
+        if (hovered is null && (_session.SelectionScreen != _screen || !_session.HasSelection))
         {
             EndSizeEditing(commit: false);
             _sizeCapsule.Visibility = Visibility.Collapsed;
             return;
         }
 
-        var selection = _session.Selection;
+        var selection = hovered ?? _session.Selection;
         _widthText.Text = Math.Round(selection.Width).ToString(System.Globalization.CultureInfo.InvariantCulture);
         _heightText.Text = Math.Round(selection.Height).ToString(System.Globalization.CultureInfo.InvariantCulture);
         _ratioText.Text = SelectionChrome.RatioTitle(_session.LockedRatio);
         var locked = _session.LockedRatio is not null;
         _ratioButton.Background = new SolidColorBrush(locked ? Accent : Colors.Transparent);
-        _ratioButton.Visibility = _session.Mode is ScreenshotMode.Ocr or ScreenshotMode.Translate
+        _ratioButton.Visibility = hovered is not null || _session.Mode is ScreenshotMode.Ocr or ScreenshotMode.Translate
             ? Visibility.Collapsed
             : Visibility.Visible;
         _sizeCapsule.Visibility = Visibility.Visible;
@@ -355,7 +359,7 @@ internal sealed partial class SelectionOverlayWindow
         Canvas.SetLeft(_sizeCapsule, x);
         Canvas.SetTop(_sizeCapsule, y);
         // 框选、拖边时只读、不接点（不挡拖动）；放不下只能压在选区里时也只读
-        _sizeInteractive = interactive && _drag == DragKind.None;
+        _sizeInteractive = interactive && _drag == DragKind.None && hovered is null;
         _sizeCapsule.IsHitTestVisible = _sizeInteractive || _sizeEditing;
     }
 

@@ -41,7 +41,11 @@ internal sealed class NotesWindow : Window
     private readonly Canvas _wallCanvas;
     private readonly Grid _editCard;
     private readonly NoteSheetView _cardSheet;
-    private readonly TextBlock _empty;
+    /// <summary>空状态（REVIEW G10，mac NotesWindowView.empty）：图标 + 标题 + 一行说明 / 键 /「清除搜索」。</summary>
+    private readonly StackPanel _empty;
+    private readonly FontIcon _emptyIcon;
+    private readonly TextBlock _emptyTitle;
+    private readonly StackPanel _emptyDetail;
     private NotesScope _scope = NotesScope.All;
     private string? _selection;
     private bool _wallMode;
@@ -156,12 +160,21 @@ internal sealed class NotesWindow : Window
         _editCard.Children.Add(_cardSheet.View);
         _wall.Children.Add(_editCard);
 
-        _empty = new TextBlock
+        _emptyIcon = new FontIcon { FontSize = 32, Foreground = Theme.SecondaryText(), Margin = new Thickness(0, 0, 0, 4) };
+        _emptyTitle = new TextBlock
         {
+            FontSize = Theme.FontSize("Kitty.FontSize.Reading"),
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            HorizontalAlignment = HorizontalAlignment.Center,
+        };
+        _emptyDetail = new StackPanel { Spacing = 6, HorizontalAlignment = HorizontalAlignment.Center };
+        _empty = new StackPanel
+        {
+            Spacing = 6,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
-            Foreground = Theme.SecondaryText(),
             Visibility = Visibility.Collapsed,
+            Children = { _emptyIcon, _emptyTitle, _emptyDetail },
         };
         Grid.SetRow(_list, 1);
         Grid.SetRow(_wall, 1);
@@ -328,6 +341,17 @@ internal sealed class NotesWindow : Window
             AddAction(note?.IsPinned == true ? Glyphs.Unpin : Glyphs.Pin, NotesWindowRules.PinTitle(note),
                 () => Run(id => NoteStore.Instance?.SetPinned(id, note?.IsPinned != true)), note is not null);
             AddAction("\uE7B8", NotesWindowRules.ArchiveTitle(note), () => Run(ToggleArchive), note is not null);
+            // 换颜色（REVIEW G10，mac 工具栏的调色板）：弹出和右键「颜色 ›」同一份纸色菜单
+            Button? palette = null;
+            palette = AddAction(Glyphs.Palette, "换颜色（Ctrl+. 换下一种）", () =>
+            {
+                if (SelectedNote is { } current && palette is not null)
+                {
+                    var menu = new MenuFlyout { Placement = Microsoft.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.Bottom };
+                    NoteSheetView.FillColors(menu.Items, current, _wallMode ? _wallScroll : _rows);
+                    menu.ShowAt(palette);
+                }
+            }, note is not null);
             AddAction("\uE8A7", NotesWindowRules.FloatTitle(note is not null && NoteFloats.IsFloating(note.Id),
                 SettingsService.Current.NotesDeckEnabled), FloatSelected, note is { IsActive: true });
             AddAction(Glyphs.Delete, NotesWindowRules.DeleteTitle, () => Run(RemoveSelected), note is not null);
@@ -337,7 +361,59 @@ internal sealed class NotesWindow : Window
         AddAction(Glyphs.Settings, NotesWindowRules.SettingsTitle, () => ShellRuntime.Instance?.ShowSettings(false, "notes"), true);
     }
 
-    private void AddAction(string glyph, string name, Action action, bool enabled)
+    /// <summary>
+    /// 空状态的字（REVIEW G10，mac NotesWindowView.empty）：搜不到「没有匹配的便签」+「清除搜索」；全部「还没有便签」+ 两个键；
+    /// 归档「归档是空的」+ 一句说明；最近删除「最近删除是空的」+ 留几天。
+    /// </summary>
+    private void ShowEmpty()
+    {
+        _emptyDetail.Children.Clear();
+        TextBlock Line(string text) => new()
+        {
+            Text = text,
+            Foreground = Theme.SecondaryText(),
+            TextAlignment = TextAlignment.Center,
+            TextWrapping = TextWrapping.Wrap,
+            MaxWidth = 320,
+            HorizontalAlignment = HorizontalAlignment.Center,
+        };
+
+        if (Core.Search.Tokens(_search.Text).Length > 0)
+        {
+            _emptyIcon.Glyph = Glyphs.Search;
+            _emptyTitle.Text = "没有匹配的便签";
+            var clear = new HyperlinkButton { Content = "清除搜索", HorizontalAlignment = HorizontalAlignment.Center, Padding = new Thickness(4, 2, 4, 2) };
+            clear.Click += (_, _) => _search.Text = string.Empty;
+            _emptyDetail.Children.Add(clear);
+            return;
+        }
+
+        switch (_scope)
+        {
+            case NotesScope.All:
+                _emptyIcon.Glyph = "";
+                _emptyTitle.Text = "还没有便签";
+                _emptyDetail.Children.Add(Line("在这里新建一条 · Ctrl+N"));
+                if (ShellRuntime.Instance?.HotKeys.ShortcutFor(HotKeyActions.NoteCapture) is { } capture)
+                {
+                    _emptyDetail.Children.Add(Line($"在任何地方快速记一条 · {capture}"));
+                }
+
+                break;
+            case NotesScope.Archive:
+                _emptyIcon.Glyph = "";
+                _emptyTitle.Text = "归档是空的";
+                _emptyDetail.Children.Add(Line("暂时不看的便签可以归档，要用时再取消归档"));
+                break;
+            default:
+                _emptyIcon.Glyph = Glyphs.Delete;
+                _emptyTitle.Text = "最近删除是空的";
+                _emptyDetail.Children.Add(Line($"删掉的便签在这里留 {NoteBook.TrashDays} 天"));
+                break;
+        }
+    }
+
+    private Button AddAction(string glyph, string name, Action action, bool enabled)
     {
         var button = new Button
         {
@@ -353,6 +429,7 @@ internal sealed class NotesWindow : Window
         ToolTipService.SetToolTip(button, name);
         button.Click += (_, _) => action();
         _actions.Children.Add(button);
+        return button;
     }
 
     private void Run(Action<string> action)
@@ -393,14 +470,10 @@ internal sealed class NotesWindow : Window
         _list.Visibility = _wallMode ? Visibility.Collapsed : Visibility.Visible;
         _wall.Visibility = _wallMode ? Visibility.Visible : Visibility.Collapsed;
         _empty.Visibility = notes.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        _empty.Text = Core.Search.Tokens(_search.Text).Length > 0
-            ? "没有搜到"
-            : _scope switch
-            {
-                NotesScope.All => "还没有便签：Ctrl+N 新建一条，或者按快速记一条的快捷键",
-                NotesScope.Archive => "没有归档的便签",
-                _ => "最近删除是空的：删掉的便签在这里留 30 天",
-            };
+        if (notes.Count == 0)
+        {
+            ShowEmpty();
+        }
         if (_wallMode)
         {
             ArrangeWall();

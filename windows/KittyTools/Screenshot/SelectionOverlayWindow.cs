@@ -884,6 +884,16 @@ internal sealed partial class SelectionOverlayWindow : Window
 
     private static void Beep() => MessageBeep(0xFFFFFFFF);
 
+    /// <summary>S / A 键、工具栏「长截图」：开始不了（选区太矮，REVIEW G4）时提示音 + 顶部提示 + 播报，同切录屏。</summary>
+    private void StartScrolling(bool up = false, bool autoScroll = false)
+    {
+        if (_session.BeginScrolling(up, autoScroll) is { } reason)
+        {
+            RefuseWipe(reason);
+            Announce(reason);
+        }
+    }
+
 
     public void ShowOverlay(bool key)
     {
@@ -1003,7 +1013,7 @@ internal sealed partial class SelectionOverlayWindow : Window
                 actionItems.Add((Glyphs.Translate, "翻译", "截图翻译", "translate", () => _ = _session.TranslateSelectionAsync()));
             }
 
-            actionItems.Add((Glyphs.LongScreenshot, "长截图", "长截图", "scroll", () => _session.BeginScrolling()));
+            actionItems.Add((Glyphs.LongScreenshot, "长截图", "长截图", "scroll", () => StartScrolling()));
             if (Features.IsOn(Feature.Recording))
             {
                 actionItems.Add((Glyphs.Record, "录屏", "录屏", "record", SwitchToRecording));
@@ -1648,6 +1658,7 @@ internal sealed partial class SelectionOverlayWindow : Window
             DrawAnnotations(sender, ds, own, width, height);
             DrawTextEditor(ds);
             DrawSelection(ds, own);
+            DrawGuides(ds, own, width, height);
             DrawAnnotationSelection(ds);
             DrawCrop(ds, own);
         }
@@ -1853,50 +1864,125 @@ internal sealed partial class SelectionOverlayWindow : Window
             Theme.Shot.HudText, _small);
     }
 
+    /// <summary>放大镜信息卡的两种字：色值（等宽 13 半粗）、坐标（等宽 10）。</summary>
+    private readonly CanvasTextFormat _loupeHex = new()
+    {
+        FontFamily = "Consolas", FontSize = 13, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, WordWrapping = CanvasWordWrapping.NoWrap,
+    };
+
+    private readonly CanvasTextFormat _loupeSmall = new() { FontFamily = "Consolas", FontSize = 10, WordWrapping = CanvasWordWrapping.NoWrap };
+
+    private readonly CanvasTextFormat _loupeKey = new()
+    {
+        FontFamily = "Segoe UI", FontSize = 11, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+        HorizontalAlignment = CanvasHorizontalAlignment.Center, VerticalAlignment = CanvasVerticalAlignment.Center,
+    };
+
+    /// <summary>
+    /// 放大镜（REVIEW G6，mac SelectionView.setUpMagnifier / updateMagnifier，规格 mac-whisker capture）：15 × 15 像素、每格 9 DIP（135），
+    /// 圆角 10、2 DIP 白环 + 阴影，0.5 的像素网格，中间一行一列粉色条带（保持原色时只描边），中心格按亮度描黑或白；
+    /// 截图、录屏下面隔 6 贴一张 40 高的信息卡（色块 + HEX + 坐标 + 取色的键），截图翻译和识字不出那张卡。放在光标右下，靠边翻到另一侧。
+    /// </summary>
     private void DrawMagnifier(Microsoft.Graphics.Canvas.CanvasDrawingSession ds, float width, float height)
     {
-        const int radius = 5;
-        const float cell = 10;
-        const float size = (radius * 2 + 1) * cell;
-        var x = (float)(_cursor.X / _scale + 18);
-        var y = (float)(_cursor.Y / _scale + 18);
-        if (x + size + 8 > width)
+        const int pixels = 15;
+        const int radius = pixels / 2;
+        const float cell = 9;
+        const float side = pixels * cell;
+        const float corner = 10;
+        const float infoHeight = 40;
+        var info = _session.Mode is not (ScreenshotMode.Ocr or ScreenshotMode.Translate);
+        var total = side + (info ? 6 + infoHeight : 0);
+        var cursorX = (float)(_cursor.X / _scale);
+        var cursorY = (float)(_cursor.Y / _scale);
+        var x = cursorX + 20 + side > width ? cursorX - 20 - side : cursorX + 20;
+        var y = cursorY + 20 + total > height ? cursorY - 20 - total : cursorY + 20;
+        // 对齐到屏幕像素：落在半像素上网格和字会糊
+        x = (float)(Math.Round(x * _scale) / _scale);
+        y = (float)(Math.Round(y * _scale) / _scale);
+
+        var loupe = new Windows.Foundation.Rect(x, y, side, side);
+        // 阴影（mac 0.45 黑、半径 6、往下 2）：Win2D 不起效果链，叠三层半透明圆角矩形近似
+        for (var spread = 3; spread >= 1; spread--)
         {
-            x = (float)(_cursor.X / _scale - size - 18);
+            ds.FillRoundedRectangle(
+                new Windows.Foundation.Rect(x - spread, y - spread + 2, side + spread * 2, side + spread * 2),
+                corner + spread, corner + spread, Theme.Argb((byte)(30 + (3 - spread) * 15), 0, 0, 0));
         }
 
-        if (y + size + 30 > height)
+        using (var clip = Microsoft.Graphics.Canvas.Geometry.CanvasGeometry.CreateRoundedRectangle(ds, loupe, corner, corner))
+        using (ds.CreateLayer(1, clip))
         {
-            y = (float)(_cursor.Y / _scale - size - 30);
-        }
-
-        ds.FillRectangle(new Windows.Foundation.Rect(x - 1, y - 1, size + 2, size + 2), Accent);
-        for (var row = -radius; row <= radius; row++)
-        {
-            for (var column = -radius; column <= radius; column++)
+            ds.FillRectangle(loupe, Colors.Black);
+            for (var row = -radius; row <= radius; row++)
             {
-                var pixelX = (int)Math.Clamp(_cursor.X + column, 0, _screen.Width - 1);
-                var pixelY = (int)Math.Clamp(_cursor.Y + row, 0, _screen.Height - 1);
-                var index = (pixelY * _screen.Width + pixelX) * 4;
-                var color = Theme.Argb(
-                    255, _screen.Bgra[index + 2], _screen.Bgra[index + 1], _screen.Bgra[index]);
-                ds.FillRectangle(
-                    new Windows.Foundation.Rect(
-                        x + (column + radius) * cell, y + (row + radius) * cell, cell, cell),
-                    color);
+                for (var column = -radius; column <= radius; column++)
+                {
+                    var pixelX = (int)_cursor.X + column;
+                    var pixelY = (int)_cursor.Y + row;
+                    if (pixelX < 0 || pixelY < 0 || pixelX >= _screen.Width || pixelY >= _screen.Height)
+                    {
+                        continue;
+                    }
+
+                    var index = (pixelY * _screen.Width + pixelX) * 4;
+                    ds.FillRectangle(
+                        x + (column + radius) * cell, y + (row + radius) * cell, cell, cell,
+                        Theme.Argb(255, _screen.Bgra[index + 2], _screen.Bgra[index + 1], _screen.Bgra[index]));
+                }
             }
+
+            var grid = Theme.Argb(36, 0, 0, 0);
+            for (var line = 1; line < pixels; line++)
+            {
+                ds.DrawLine(x + line * cell, y, x + line * cell, y + side, grid, 0.5f);
+                ds.DrawLine(x, y + line * cell, x + side, y + line * cell, grid, 0.5f);
+            }
+
+            var middle = radius * cell;
+            var row1 = new Windows.Foundation.Rect(x, y + middle, side, cell);
+            var column1 = new Windows.Foundation.Rect(x + middle, y, cell, side);
+            if (_keepsColors)
+            {
+                // 保持原色时十字带只描边：填上粉色，正中那个要取的像素也被染了
+                ds.DrawRectangle(row1, Accent, 1);
+                ds.DrawRectangle(column1, Accent, 1);
+            }
+            else
+            {
+                var band = Theme.Argb(46, Accent.R, Accent.G, Accent.B);
+                ds.FillRectangle(row1, band);
+                ds.FillRectangle(column1, band);
+            }
+
+            var center = _screen.ColorAt((int)_cursor.X, (int)_cursor.Y);
+            var luminance = 0.299 * center.R + 0.587 * center.G + 0.114 * center.B;
+            ds.DrawRectangle(new Windows.Foundation.Rect(x + middle, y + middle, cell, cell), luminance > 153 ? Colors.Black : Colors.White, 1);
         }
 
-        ds.DrawRectangle(
-            new Windows.Foundation.Rect(x + radius * cell, y + radius * cell, cell, cell),
-            Theme.Shot.Outline, 1.5f);
-        var globalX = (int)(_screen.Bounds.Left + _cursor.X);
-        var globalY = (int)(_screen.Bounds.Top + _cursor.Y);
-        var text = $"{globalX}, {globalY}   {_screen.HexAt((int)_cursor.X, (int)_cursor.Y)}";
-        ds.FillRoundedRectangle(
-            new Windows.Foundation.Rect(x, y + size + 4, size, 22), 4, 4,
-            Theme.Shot.LabelBackground);
-        ds.DrawText(text, x + 6, y + size + 7, Theme.Shot.HudText, _small);
+        ds.DrawRoundedRectangle(new Windows.Foundation.Rect(x + 1, y + 1, side - 2, side - 2), corner - 1, corner - 1, Colors.White, 2);
+        if (!info)
+        {
+            return;
+        }
+
+        var card = new Windows.Foundation.Rect(x, y + side + 6, side, infoHeight);
+        ds.FillRoundedRectangle(new Windows.Foundation.Rect(card.X, card.Y + 2, card.Width, card.Height), corner, corner, Theme.Argb(70, 0, 0, 0));
+        ds.FillRoundedRectangle(card, corner, corner, Theme.Shot.HudBackground);
+        ds.DrawRoundedRectangle(card, corner, corner, Theme.Shot.HudStroke, 1);
+        var color = _screen.ColorAt((int)_cursor.X, (int)_cursor.Y);
+        var swatch = new Windows.Foundation.Rect(card.X + 10, card.Y + 12, 16, 16);
+        ds.FillRoundedRectangle(swatch, 4, 4, Theme.Argb(255, color.R, color.G, color.B));
+        ds.DrawRoundedRectangle(swatch, 4, 4, Theme.Argb(64, 255, 255, 255), 0.5f);
+        ds.DrawText(_screen.HexAt((int)_cursor.X, (int)_cursor.Y), (float)card.X + 34, (float)card.Y + 4, Theme.Shot.HudText, _loupeHex);
+        ds.DrawText($"{(int)(_screen.Bounds.Left + _cursor.X)}, {(int)(_screen.Bounds.Top + _cursor.Y)}",
+            (float)card.X + 34, (float)card.Y + 22, Theme.Shot.HudTextMuted, _loupeSmall);
+        // 取色的键（截图时的键里改得了，默认 C）
+        var key = ShotKeys.Current("pickColor", SettingsService.Current.ScreenshotKeys)?.Display ?? "C";
+        var keyWidth = Math.Max(20f, key.Length * 7f + 8);
+        var keyRect = new Windows.Foundation.Rect(card.X + side - 10 - keyWidth, card.Y + 11, keyWidth, 18);
+        ds.FillRoundedRectangle(keyRect, 4, 4, Theme.Argb(40, 255, 255, 255));
+        ds.DrawText(key, keyRect, Theme.Shot.HudText, _loupeKey);
     }
     private void OnPointerPressed(object sender, PointerRoutedEventArgs e)
     {
@@ -2187,6 +2273,12 @@ internal sealed partial class SelectionOverlayWindow : Window
         if (_drag == DragKind.None)
         {
             UpdateHover();
+            if (!Nullable.Equals(previousHover, _hover))
+            {
+                // 悬停的窗口换了：尺寸胶囊跟着写它的大小（REVIEW G6）
+                UpdateSizeCapsule();
+            }
+
             // 鼠标、悬停目标都没变就不重画：不动鼠标也按 50 帧 / 秒整屏重画是白烧 CPU（第二版 §2 第 6 条）。
             if (previousCursor == _cursor && Nullable.Equals(previousHover, _hover) && !crosshairChanged)
             {
@@ -2234,6 +2326,15 @@ internal sealed partial class SelectionOverlayWindow : Window
 
     /// <summary>自检（PLAN-v20 E1）：当成指针停在这里（这块屏的像素），不挪真的光标。</summary>
     private PointD? _probeCursor;
+
+    /// <summary>自检（REVIEW G6）：当成键盘在这块屏上、光标停在 point，画出放大镜和信息卡；null 换回去。</summary>
+    internal void ProbeMagnifier(PointD? point)
+    {
+        _key = point is not null;
+        _probeCursor = point;
+        ReadCursor();
+        _canvas.Invalidate();
+    }
 
     internal void ProbeHoverAt(PointD point)
     {
@@ -2787,13 +2888,48 @@ internal sealed partial class SelectionOverlayWindow : Window
         _layerChosen = (window, _hover.Value);
     }
 
+    /// <summary>这一下拖动吸上的竖边 / 横边（物理像素；画参考线用，REVIEW G7）。</summary>
+    private (double? X, double? Y) _snapEdges;
+
     private PointD Snap(PointD point)
     {
         // 竖边吸 x、横边吸 y（REVIEW R87：原来按下标奇偶分，横竖弄反了）
         var edges = RegionMath.SnapEdges(_screen.Width, _screen.Height,
             _windows.Select(window => ((double)window.Left, (double)window.Top, (double)window.Right, (double)window.Bottom)));
-        var (x, y) = RegionMath.SnapPoint(point.X, point.Y, edges, 6 * _scale);
+        var (x, y, edgeX, edgeY) = RegionMath.SnapPointWithEdges(point.X, point.Y, edges, 6 * _scale);
+        _snapEdges = (edgeX, edgeY);
         return new PointD(x, y);
+    }
+
+    /// <summary>
+    /// 吸附的参考线（REVIEW G7，mac guideLayer）：框选、拖边时吸上的边真落在选区边上，就沿那条边画一条贯穿整屏的 1 DIP 粉色虚线（4 / 3）。
+    /// mac 按住 ⌃ 暂停吸附；这里 Ctrl 是十字准线，不跟（MAC-DIFF）。
+    /// </summary>
+    private void DrawGuides(Microsoft.Graphics.Canvas.CanvasDrawingSession ds, RectD selection, float width, float height)
+    {
+        if (_drag is not (DragKind.Draw or DragKind.Resize))
+        {
+            return;
+        }
+
+        var (x, y) = RegionMath.Guides(_snapEdges.X, _snapEdges.Y, selection);
+        if (x is null && y is null)
+        {
+            return;
+        }
+
+        using var dash = new Microsoft.Graphics.Canvas.Geometry.CanvasStrokeStyle { CustomDashStyle = new[] { 4f, 3f } };
+        if (x is { } column)
+        {
+            var dip = (float)(Math.Round(column) / _scale);
+            ds.DrawLine(dip, 0, dip, height, Accent, 1, dash);
+        }
+
+        if (y is { } row)
+        {
+            var dip = (float)(Math.Round(row) / _scale);
+            ds.DrawLine(0, dip, width, dip, Accent, 1, dash);
+        }
     }
 
     private PointD ToPhysical(Windows.Foundation.Point point)

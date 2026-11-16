@@ -91,4 +91,34 @@ public static class OcrScale
 
         return RectD.FromLtrb(left, top, right, bottom);
     }
+
+    /// <summary>
+    /// 比识字引擎的上限（MaxImageDimension）还高的长图切成几段分开认（REVIEW G5：整张等比缩下去字就糊了）：每段不超过 maxBand 行，
+    /// 切口从段尾往上 search 行以内找一行空白（isBlank），找不到就硬切。返回各段的 (起始行, 行数)，首尾相接、盖满整张。
+    /// </summary>
+    public static List<(int Top, int Height)> Bands(int height, int maxBand, int search, Func<int, bool> isBlank)
+    {
+        var bands = new List<(int Top, int Height)>();
+        var top = 0;
+        while (top < height)
+        {
+            var end = Math.Min(height, top + Math.Max(1, maxBand));
+            if (end < height)
+            {
+                for (var row = end - 1; row > Math.Max(top, end - search); row--)
+                {
+                    if (isBlank(row))
+                    {
+                        end = row + 1;
+                        break;
+                    }
+                }
+            }
+
+            bands.Add((top, end - top));
+            top = end;
+        }
+
+        return bands;
+    }
 }

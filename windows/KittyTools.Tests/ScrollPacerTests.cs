@@ -8,6 +8,16 @@ namespace KittyTools.Tests;
 [TestClass]
 public sealed class ScrollPacerTests
 {
+    [TestMethod]
+    public void StartCheck_TooShortRefusesAndAnnotationsOnlyWarn()
+    {
+        // REVIEW G4（mac SelectionView.startScroll）：不到 60 DIP 高不开始；150% 缩放下是 90 像素；画了标注照样开始、说一句
+        Assert.AreEqual((ScrollPacer.TooShortText, (string?)null), ScrollPacer.StartCheck(59, 1, hasAnnotations: true));
+        Assert.AreEqual(((string?)null, (string?)null), ScrollPacer.StartCheck(60, 1, hasAnnotations: false));
+        Assert.AreEqual((ScrollPacer.TooShortText, (string?)null), ScrollPacer.StartCheck(89, 1.5, hasAnnotations: false));
+        Assert.AreEqual(((string?)null, ScrollPacer.AnnotationsDroppedText), ScrollPacer.StartCheck(90, 1.5, hasAnnotations: true));
+    }
+
     /// <summary>
     /// 一个「窗口」：一个滚轮单位滚 pixelsPerUnit 像素（老程序 accumulate = true 时攒满 120 才滚，按整格滚）；
     /// limit：最多滚到这么多像素（到底了）。返回这一下滚了多少像素。

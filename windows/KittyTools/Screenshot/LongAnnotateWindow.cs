@@ -200,10 +200,22 @@ internal sealed class LongAnnotateWindow
         bar.Children.Add(_undoButton);
         bar.Children.Add(_redoButton);
         bar.Children.Add(Separator());
-        var close = SelectionOverlayWindow.ToolbarButton(Glyphs.Close, "关闭（Esc）", "关闭");
-        close.Click += (_, _) => Escape();
-        var save = SelectionOverlayWindow.ToolbarButton(Glyphs.Save, ShotKeys.Tip("保存到截图文件夹", "save", SettingsService.Current.ScreenshotKeys), "保存");
+        // 右边同 mac EditorToolbar 的长图模式（REVIEW G5，0.7.1）：识字并拷贝 ｜ 存储、更多存储选项 ▾ ｜ 取消、拷贝
+        var ocr = SelectionOverlayWindow.ToolbarButton(Glyphs.Ocr, ShotKeys.Tip("识字并拷贝", "recognize", SettingsService.Current.ScreenshotKeys), "识字并拷贝");
+        ocr.Click += (_, _) => _ = RecognizeAsync();
+        bar.Children.Add(ocr);
+        bar.Children.Add(Separator());
+        var save = SelectionOverlayWindow.ToolbarButton(Glyphs.Save, ShotKeys.Tip("存储", "save", SettingsService.Current.ScreenshotKeys), "存储");
         save.Click += (_, _) => Save(saveAs: false);
+        var saveMenu = SelectionOverlayWindow.ToolbarButton(Glyphs.ChevronDown, "更多存储选项", "更多存储选项", width: 18);
+        if (saveMenu.Content is FontIcon chevron)
+        {
+            chevron.FontSize = 10;
+        }
+
+        saveMenu.Click += (_, _) => ShowSaveMenu(saveMenu);
+        var close = SelectionOverlayWindow.ToolbarButton(Glyphs.Close, "取消（Esc）", "取消");
+        close.Click += (_, _) => Escape();
         var copy = new Button
         {
             Content = "拷贝",
@@ -216,8 +228,10 @@ internal sealed class LongAnnotateWindow
         };
         ToolTipService.SetToolTip(copy, "拷贝（Enter）");
         copy.Click += (_, _) => Copy();
-        bar.Children.Add(close);
         bar.Children.Add(save);
+        bar.Children.Add(saveMenu);
+        bar.Children.Add(Separator());
+        bar.Children.Add(close);
         bar.Children.Add(copy);
 
         _hint = new TextBlock
@@ -1360,7 +1374,7 @@ internal sealed class LongAnnotateWindow
             : string.Join(" · ", new[]
             {
                 "Enter 拷贝",
-                ShotKeys.Current("save", SettingsService.Current.ScreenshotKeys) is { } save ? $"{save.Display} 保存" : null,
+                ShotKeys.Current("save", SettingsService.Current.ScreenshotKeys) is { } save ? $"{save.Display} 存储" : null,
                 ShotKeys.ToolsAreDefault(SettingsService.Current.ScreenshotKeys) ? "1–0 标注" : null,
                 ShotKeys.Current("crop", SettingsService.Current.ScreenshotKeys) is { } crop ? $"{crop.Display} 裁剪" : null,
                 "Ctrl+= / Ctrl+- 缩放", "空格拖动平移", "Esc 关闭",
@@ -1393,6 +1407,9 @@ internal sealed class LongAnnotateWindow
                     break;
                 case "save" or "saveAs":
                     Save(saveAs: shot.Id == "saveAs");
+                    break;
+                case "recognize":
+                    _ = RecognizeAsync();
                     break;
                 case "undo" or "redo":
                     Step(redo: shot.Id == "redo");
@@ -1544,7 +1561,71 @@ internal sealed class LongAnnotateWindow
 
         _busy = false;
         ShowHint();
-        NoticeHost.Show("没能拷贝", "再试一次，或者先保存", NoticeTone.Warning);
+        NoticeHost.Show("没能拷贝", "再试一次，或者先存储", NoticeTone.Warning);
+    }
+
+    /// <summary>「存储 ▾」：存储到「文件夹名」/ 另存为…，键读截图时的键（同框选的那个菜单，REVIEW G5）。</summary>
+    private void ShowSaveMenu(FrameworkElement anchor)
+    {
+        var menu = new MenuFlyout { Placement = Microsoft.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.Bottom };
+        var keys = SettingsService.Current.ScreenshotKeys;
+        var folder = Path.GetFileName(ScreenshotOutput.SaveFolder.TrimEnd(Path.DirectorySeparatorChar));
+        var quick = new MenuFlyoutItem { Text = $"存储到「{folder}」", KeyboardAcceleratorTextOverride = ShotKeys.Current("save", keys)?.Display ?? string.Empty };
+        quick.Click += (_, _) => Save(saveAs: false);
+        menu.Items.Add(quick);
+        var saveAs = new MenuFlyoutItem { Text = "另存为…", KeyboardAcceleratorTextOverride = ShotKeys.Current("saveAs", keys)?.Display ?? string.Empty };
+        saveAs.Click += (_, _) => Save(saveAs: true);
+        menu.Items.Add(saveAs);
+        menu.ShowAt(anchor);
+    }
+
+    /// <summary>
+    /// 识字并拷贝（REVIEW G5）：认这张长图（裁过的认裁过的，标注不算），文字放进剪贴板、窗口留着接着标。
+    /// 比引擎上限高的分段认（OcrService.RecognizeTallAsync）。
+    /// </summary>
+    private async Task RecognizeAsync()
+    {
+        if (_busy)
+        {
+            return;
+        }
+
+        if (!OcrService.HasEngine)
+        {
+            NoticeHost.Show("没装中文识字组件", string.Empty, NoticeTone.Warning, NoticeActions.SystemSettings("ms-settings:regionlanguage"));
+            return;
+        }
+
+        _busy = true;
+        ShowHint("正在识字…");
+        try
+        {
+            var text = await OcrService.RecognizeTallAsync(_bgra, _width, _height, SettingsService.Current.OcrJoinLines);
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                NoticeHost.Show("没有识别到文字", string.Empty, NoticeTone.Warning);
+                return;
+            }
+
+            if (ClipboardWriter.WriteText(text))
+            {
+                ClipboardService.Instance?.MarkOwnWrite();
+                ClipboardService.Instance?.Store.RecordOwnText(text);
+            }
+
+            var preview = text.Replace('\n', ' ').Trim();
+            NoticeHost.Show("已复制识别的文字", preview.Length > 30 ? preview[..30] + "…" : preview, NoticeTone.Normal);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("long-annotate.ocr-failed", ex);
+            NoticeHost.Show("识字失败", ex.Message, NoticeTone.Error);
+        }
+        finally
+        {
+            _busy = false;
+            ShowHint();
+        }
     }
 
     private async void Save(bool saveAs)

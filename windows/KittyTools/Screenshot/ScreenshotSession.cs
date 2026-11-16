@@ -544,12 +544,21 @@ internal sealed class ScreenshotSession
         }
     }
 
-    /// <summary>选区收起，开始长截图（S 键或工具栏）：自己滚，Enter 完成、Esc 放弃。</summary>
-    public void BeginScrolling(bool up = false, bool autoScroll = false)
+    /// <summary>
+    /// 选区收起，开始长截图（S 键或工具栏）：自己滚，Enter 完成、Esc 放弃。开始不了（选区太矮，REVIEW G4）返回原因，
+    /// 由框选那块屏提示音 + 顶部提示 + 播报；画了标注照样开始，面板的状态行先说一句标注不带过去。
+    /// </summary>
+    public string? BeginScrolling(bool up = false, bool autoScroll = false)
     {
         if (!HasSelection || SelectionScreen is not { } screen)
         {
-            return;
+            return null;
+        }
+
+        var (refusal, note) = ScrollPacer.StartCheck(Selection.Height, screen.Scale, _overlays.Any(overlay => overlay.HasAnnotations));
+        if (refusal is not null)
+        {
+            return refusal;
         }
 
         var global = GlobalRect(screen, Selection);
@@ -564,16 +573,21 @@ internal sealed class ScreenshotSession
             global,
             up ? ScrollDirection.Up : ScrollDirection.Down,
             autoScroll,
-            (frame, annotate) => _ = CompleteScrollingAsync(frame, global, annotate),
+            (frame, output) => _ = CompleteScrollingAsync(frame, global, output),
             () =>
             {
                 NoticeHost.Show("已取消长截图", string.Empty, NoticeTone.Normal);
                 Finish();
-            });
+            },
+            note);
+        return null;
     }
 
-    /// <summary>长截图拼完：拷贝、进历史、出角落卡；annotate（面板上点了「标注」）时不拷贝，进历史后开长图标注窗口（PLAN-v9 S12）。</summary>
-    private async Task CompleteScrollingAsync(ScrollFrame frame, PixelBounds global, bool annotate)
+    /// <summary>
+    /// 长截图拼完：拷贝、进历史、出角落卡；面板上点了「标注」时不拷贝，进历史后开长图标注窗口（PLAN-v9 S12）；
+    /// 点了「存储」「另存为…」时存成文件（REVIEW G2，同截图的存储：进历史带上存的路径，角落卡照出）。
+    /// </summary>
+    private async Task CompleteScrollingAsync(ScrollFrame frame, PixelBounds global, ScrollOutput output)
     {
         var bgra = new byte[frame.Width * frame.Height * 4];
         for (var index = 0; index < frame.Pixels.Length; index++)
@@ -587,7 +601,29 @@ internal sealed class ScreenshotSession
 
         var png = await ImageCodec.BgraToPngAsync(frame.Width, frame.Height, bgra);
         var screen = SelectionScreen;
-        if (annotate)
+        if (output is ScrollOutput.Save or ScrollOutput.SaveAs)
+        {
+            Finish();
+            if (png is null)
+            {
+                NoticeHost.Show("长截图没拼成", "再试一次", NoticeTone.Warning);
+                return;
+            }
+
+            // 另存为的对话框挂在隐藏的消息窗口上（面板、遮罩都已经收了）
+            var path = output == ScrollOutput.SaveAs
+                ? await ScreenshotOutput.SavePngAsAsync(Microsoft.UI.Win32Interop.GetWindowIdFromWindow(HiddenWindow.Hwnd), png)
+                : await ScreenshotOutput.QuickSavePngAsync(png, quiet: true);
+            if (path is not null)
+            {
+                _ = ShotHistory.RecordAsync(png, frame.Width, frame.Height, screen?.Scale ?? 1, ShotKind.Scroll, savedPath: path, source: _sourceName);
+                ShotFeedback.Delivered(png, global, path);
+            }
+
+            return;
+        }
+
+        if (output == ScrollOutput.Annotate)
         {
             Finish();
             if (png is null)

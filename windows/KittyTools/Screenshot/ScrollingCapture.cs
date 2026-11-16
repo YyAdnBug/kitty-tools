@@ -74,8 +74,8 @@ internal static class ScrollingCapture
     /// <summary>「完成」进行中：等着正在拼的那一拍，这时候不再抓新的、也不再进「完成」。</summary>
     private static bool _completing;
     private static int _frames;
-    /// <summary>拼完：整张图、要不要接着标注（面板上点的「标注」）。</summary>
-    private static Action<ScrollFrame, bool>? _onComplete;
+    /// <summary>拼完：整张图、拿它做什么（拷贝、标注、存储、另存为，面板上点的那颗）。</summary>
+    private static Action<ScrollFrame, ScrollOutput>? _onComplete;
     private static Action? _onCancel;
     private static ScrollDirection _direction = ScrollDirection.Down;
     private static bool _autoScroll;
@@ -97,7 +97,7 @@ internal static class ScrollingCapture
 
     public static void Start(
         FrozenScreen screen, PixelBounds rect, ScrollDirection direction, bool autoScroll,
-        Action<ScrollFrame, bool> onComplete, Action onCancel)
+        Action<ScrollFrame, ScrollOutput> onComplete, Action onCancel, string? note = null)
     {
         if (Active || rect.Width < 8 || rect.Height < 8)
         {
@@ -105,6 +105,7 @@ internal static class ScrollingCapture
         }
 
         NoteDeck.Suspend(NoteDeck.Suspension.UnlessPinned);
+        PinHost.StepAside(rect);
         _screen = screen;
         _rect = rect;
         _canvas = null;
@@ -113,9 +114,8 @@ internal static class ScrollingCapture
         _band = null;
         _prefetched = null;
         var speed = ScrollPacer.Parse(SettingsService.Current.ScrollCaptureSpeed);
-        _pacer = autoScroll
-            ? new ScrollPacer(rect.Height, Displays.AtPoint(rect.Left + rect.Width / 2, rect.Top + rect.Height / 2).Scale, speed)
-            : null;
+        // 手动开始的也建好：面板上 ▶ 能中途转成自动滚动（REVIEW G2，mac toggleAutoScroll）
+        _pacer = new ScrollPacer(rect.Height, Displays.AtPoint(rect.Left + rect.Width / 2, rect.Top + rect.Height / 2).Scale, speed);
         _completing = false;
         _frames = 0;
         _quietFrames = 0;
@@ -128,7 +128,7 @@ internal static class ScrollingCapture
         _onComplete = onComplete;
         _onCancel = onCancel;
         Active = true;
-        if (autoScroll && !_messageHooked)
+        if (!_messageHooked)
         {
             _messageHooked = true;
             HiddenWindow.Message += OnHiddenMessage;
@@ -152,9 +152,9 @@ internal static class ScrollingCapture
         _timer.Tick += (_, _) => CaptureFrame();
         _timer.Start();
         Log.Info($"scroll.begin {rect.Width}x{rect.Height} direction={direction} auto={autoScroll} speed={ScrollPacer.Name(speed)}");
-        ScrollPreviewPanel.Show(
-            rect, autoScroll ? "自动滚动中，Enter 完成，Esc 放弃" : "滚动选区，Enter 完成，Esc 放弃",
-            autoScroll ? speed : null);
+        // note：开始时先说的一句（画了标注时「长截图不带这些标注…」，REVIEW G4），接在状态行前面
+        var status = autoScroll ? "自动滚动中，Enter 完成，Esc 放弃" : "滚动选区，或点 ▶ 自动滚动；Enter 完成，Esc 放弃";
+        ScrollPreviewPanel.Show(rect, note is null ? status : $"{note}。{status}", speed);
         if (autoScroll)
         {
             BeginAutoScroll();
@@ -175,8 +175,43 @@ internal static class ScrollingCapture
         Log.Info($"scroll.speed {name}");
     }
 
-    /// <summary>结束、合成整张；annotate = 面板上点了「标注」（拼完不拷贝，开长图标注窗口）。</summary>
-    public static async void Complete(bool annotate = false)
+    /// <summary>自动滚动着（面板上那颗是 ⏸）。</summary>
+    public static bool AutoScrolling => _autoScroll;
+
+    /// <summary>
+    /// 面板上的 ▶ / ⏸（REVIEW G2，mac toggleAutoScroll）：自动滚着就停（之后自己滚），暂停着就接着滚，手动滚着就转成自动滚动；
+    /// 到头、对不上叫停过的再点一下从现在接着滚。
+    /// </summary>
+    public static void ToggleAuto()
+    {
+        if (!Active || _completing)
+        {
+            return;
+        }
+
+        if (_autoScroll)
+        {
+            _autoScroll = false;
+            UnhookFrames();
+            StopTrackingColumns();
+            ScrollPreviewPanel.SetStatus("自动滚动停了：可以自己滚，点 ▶ 接着自动滚；Enter 完成");
+            Log.Info("scroll.auto-toggled off");
+            return;
+        }
+
+        if (_paused)
+        {
+            Resume();
+            return;
+        }
+
+        BeginAutoScroll();
+        ScrollPreviewPanel.SetStatus("自动滚动中，Enter 完成，Esc 放弃");
+        Log.Info("scroll.auto-toggled on");
+    }
+
+    /// <summary>结束、合成整张；output = 面板上点的那颗（Enter = 拷贝；标注 = 拼完不拷贝，开长图标注窗口）。</summary>
+    public static async void Complete(ScrollOutput output = ScrollOutput.Copy)
     {
         if (!Active || _completing)
         {
@@ -213,7 +248,7 @@ internal static class ScrollingCapture
         var callback = _onComplete;
         Stop();
         Log.Info($"scroll.done frames={_frames} render-frames={_renderFrames} height={frame.Height}");
-        callback?.Invoke(frame, annotate);
+        callback?.Invoke(frame, output);
     }
 
     /// <summary>上一次「只上膛」的 Esc 是什么时候（Environment.TickCount64）；3 秒内再按才放弃。</summary>
@@ -259,8 +294,10 @@ internal static class ScrollingCapture
         Active = false;
         _timer?.Stop();
         _timer = null;
+        RecordingFrame.SetScrollingLost(false);
         RecordingFrame.HideScrolling();
         ScrollPreviewPanel.Hide();
+        PinHost.StepBack();
         PInvoke.UnregisterHotKey(HiddenWindow.Hwnd, EnterId);
         EscapeKeyWatch.Stop();
         WheelWake.Stop();
@@ -381,6 +418,12 @@ internal static class ScrollingCapture
             }
 
             ScrollPreviewPanel.Update(result.Canvas, direction == ScrollDirection.Up, result.Grown);
+            // 对不上时边框变橙，接上了换回粉色（REVIEW G2，mac ScrollBorderView.update(lost:)）；没动的那一拍不改
+            if (result.Step is ScrollStep.Lost or ScrollStep.Moved)
+            {
+                RecordingFrame.SetScrollingLost(result.Step == ScrollStep.Lost);
+            }
+
             if (_canvas.Height >= ScrollStitcher.MaxOutputHeight)
             {
                 Complete();
@@ -437,7 +480,7 @@ internal static class ScrollingCapture
         else if (step == ScrollStep.Moved && _lostShown)
         {
             _lostShown = false;
-            ScrollPreviewPanel.SetStatus("滚动选区，Enter 完成，Esc 放弃");
+            ScrollPreviewPanel.SetStatus("滚动选区，或点 ▶ 自动滚动；Enter 完成，Esc 放弃");
         }
 
         if (_timer is not { } timer || _paused)
@@ -539,6 +582,8 @@ internal static class ScrollingCapture
             _lastFrame = 0;
             CompositionTarget.Rendering += OnRendering;
         }
+
+        ScrollPreviewPanel.SyncAuto();
     }
 
     /// <summary>停掉帧回调、抓帧回到慢的间隔（手动滚、暂停、叫停之后）。</summary>
@@ -554,6 +599,8 @@ internal static class ScrollingCapture
         {
             timer.Interval = Interval;
         }
+
+        ScrollPreviewPanel.SyncAuto();
     }
 
     /// <summary>
@@ -655,7 +702,7 @@ internal static class ScrollingCapture
         UnhookFrames();
         StopTrackingColumns();
         PInvoke.RegisterHotKey(HiddenWindow.Hwnd, ResumeId, 0, (uint)VIRTUAL_KEY.VK_A);
-        ScrollPreviewPanel.SetStatus("自动滚动暂停了（光标移出了选区）：按 A 继续，Enter 完成", warning: true);
+        ScrollPreviewPanel.SetStatus("自动滚动暂停了（光标移出了选区）：按 A 或点 ▶ 继续，Enter 完成", warning: true);
         Log.Info("scroll.paused");
     }
 
@@ -693,4 +740,13 @@ internal static class ScrollingCapture
 
     /// <summary>拼完的一拍：画布、上一次拼上的那帧（这次拼上了就是这一帧）、在动的那一块、算哪种、长了几行。</summary>
     private readonly record struct Tick(ScrollCanvas Canvas, ScrollFrame Reference, ScrollBand? Band, ScrollStep Step, int Grown);
+}
+
+/// <summary>长截图拼完拿它做什么（面板上的 ✓ 拷贝、标注、存储、另存为；REVIEW G2）。</summary>
+internal enum ScrollOutput
+{
+    Copy,
+    Annotate,
+    Save,
+    SaveAs,
 }

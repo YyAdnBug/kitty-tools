@@ -276,6 +276,16 @@ internal static class UiSnapshotProbe
                 var crop = new PixelBounds(
                     (int)(width * 0.3) - 40, (int)(height * 0.25) - 40, (int)(width * 0.7) + 40, (int)(height * 0.6) + below);
                 await WindowShot.SaveAsync(overlay.Handle, Path.Combine(directory, "shot-toolbar.png"), crop);
+                // REVIEW G6：放大镜（15 × 15、白环、网格、十字带）和下面那张信息卡
+                if (Wanted("shot-magnifier"))
+                {
+                    overlay.ProbeMagnifier(new KittyTools.Core.PointD(width * 0.62, height * 0.3));
+                    await Task.Delay(400);
+                    await WindowShot.SaveAsync(overlay.Handle, Path.Combine(directory, "shot-magnifier.png"), crop);
+                    overlay.ProbeMagnifier(null);
+                    await Task.Delay(200);
+                }
+
                 // PLAN-v9 第 5b 批：十种标注、选中弯箭头（托盘 8 色 + 三档）、再选中实心椭圆（托盘多一段空心 / 实心）
                 overlay.ShowProbeAnnotations(KittyTools.Core.AnnotationKind.Arrow);
                 await Task.Delay(500);

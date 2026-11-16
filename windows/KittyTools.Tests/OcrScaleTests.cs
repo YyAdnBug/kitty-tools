@@ -8,6 +8,15 @@ namespace KittyTools.Tests;
 public sealed class OcrScaleTests
 {
     [TestMethod]
+    public void Bands_CutOnBlankRowsAndCoverEverything()
+    {
+        // REVIEW G5：长图分段识字。空白行在 95、190：切在空白行之后；找不到空白（search 以内）就硬切在 100
+        CollectionAssert.AreEqual(new[] { (0, 96), (96, 95), (191, 59) }, OcrScale.Bands(250, 100, 20, row => row is 95 or 190));
+        CollectionAssert.AreEqual(new[] { (0, 100), (100, 100), (200, 50) }, OcrScale.Bands(250, 100, 20, _ => false));
+        CollectionAssert.AreEqual(new[] { (0, 80) }, OcrScale.Bands(80, 100, 20, _ => true));
+    }
+
+    [TestMethod]
     public void ScalesSmallTextTowardsIdealHeight()
     {
         Assert.AreEqual(2.5, OcrScale.Factor(16, 600, 200, 10000), 1e-9);

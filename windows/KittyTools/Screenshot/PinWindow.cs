@@ -454,6 +454,57 @@ internal static class PinHost
     /// <summary>托盘「隐藏全部钉图」之后（PLAN-v9 G1、S10，同 mac 菜单栏）：再钉新的一张时先全部显示回来。</summary>
     public static bool AllHidden { get; private set; }
 
+    /// <summary>长截图时让开的那几张（StepAside 藏起来的，StepBack 放回）。</summary>
+    private static readonly List<PinWindow> SteppedAside = new();
+
+    /// <summary>
+    /// 长截图开始（REVIEW G3，mac PinPanel 体检 B40）：和选区（物理像素、全局坐标）相交的钉图让开，不然会被拍进长图、压在选区上还吃掉滚轮。
+    /// mac 淡到 0.3、不接鼠标；Windows 直接藏起来：点穿要分层窗口，分层窗口再设「不进截图」在用户机器上整个看不见（2026-10-29 实测）。
+    /// </summary>
+    public static void StepAside(PixelBounds rect)
+    {
+        StepBack();
+        foreach (var window in Windows.ToList())
+        {
+            try
+            {
+                var position = window.AppWindow.Position;
+                var size = window.AppWindow.Size;
+                if (window.AppWindow.IsVisible && position.X < rect.Right && rect.Left < position.X + size.Width &&
+                    position.Y < rect.Bottom && rect.Top < position.Y + size.Height)
+                {
+                    window.AppWindow.Hide();
+                    SteppedAside.Add(window);
+                }
+            }
+            catch
+            {
+                // 已经关掉的跳过。
+            }
+        }
+    }
+
+    /// <summary>长截图结束（拼完、放弃）：让开的放回原处；这中间关掉的、「隐藏全部钉图」藏着的不管。</summary>
+    public static void StepBack()
+    {
+        foreach (var window in SteppedAside)
+        {
+            try
+            {
+                if (Windows.Contains(window) && !AllHidden)
+                {
+                    window.AppWindow.Show(false);
+                }
+            }
+            catch
+            {
+                // 已经关掉的跳过。
+            }
+        }
+
+        SteppedAside.Clear();
+    }
+
     /// <summary>显示 / 隐藏全部钉图（不关掉，位置、缩放、透明度都留着）。</summary>
     public static void ToggleHidden()
     {

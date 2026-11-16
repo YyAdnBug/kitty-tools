@@ -174,7 +174,7 @@ internal sealed partial class SelectionOverlayWindow
                 return true;
             case "scroll" or "autoScroll" when _session.HasSelection:
                 // 长截图（第三版 §7）：向下，加 Shift 向上；自动滚同样
-                _session.BeginScrolling(up: up, autoScroll: id == "autoScroll");
+                StartScrolling(up: up, autoScroll: id == "autoScroll");
                 return true;
             case "record" when capture && _session.SelectionScreen == _screen && _session.HasSelection:
                 // S5：截图调整时切到录屏（工具栏原地换成录制条）

@@ -39,6 +39,17 @@ public sealed class PanelPositionsTests
 public sealed class SnapEdgesTests
 {
     [TestMethod]
+    public void GuidesOnlyWhereTheSelectionLands()
+    {
+        // REVIEW G7：吸上的边真落在选区边上才画参考线（锁比例时另一边由比例定，吸的那条可能没落上）
+        var edges = RegionMath.SnapEdges(1920, 1080, new[] { (300.0, 200.0, 900.0, 700.0) });
+        var snapped = RegionMath.SnapPointWithEdges(903, 650, edges, 6);
+        Assert.AreEqual((900.0, 650.0, (double?)900, (double?)null), snapped);
+        Assert.AreEqual(((double?)900, (double?)null), RegionMath.Guides(snapped.EdgeX, snapped.EdgeY, new RectD(100, 100, 800, 550)));
+        Assert.AreEqual(((double?)null, (double?)null), RegionMath.Guides(900, 700, new RectD(100, 100, 700, 550)));
+    }
+
+    [TestMethod]
     public void SnapsToTheRightKindOfEdge()
     {
         // 屏幕 1920 × 1080，一扇窗口 左 300、上 200、右 900、下 700

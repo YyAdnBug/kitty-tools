@@ -231,6 +231,25 @@ public static class RegionMath
     public static (double X, double Y) SnapPoint(double x, double y, (List<double> X, List<double> Y) edges, double threshold)
         => (Snap(x, edges.X, threshold).Value, Snap(y, edges.Y, threshold).Value);
 
+    /// <summary>同 SnapPoint，另给出吸上的是哪条竖边 / 横边（没吸上是 null；画参考线用）。</summary>
+    public static (double X, double Y, double? EdgeX, double? EdgeY) SnapPointWithEdges(
+        double x, double y, (List<double> X, List<double> Y) edges, double threshold)
+    {
+        var (snappedX, edgeX) = Snap(x, edges.X, threshold);
+        var (snappedY, edgeY) = Snap(y, edges.Y, threshold);
+        return (snappedX, snappedY, edgeX, edgeY);
+    }
+
+    /// <summary>
+    /// 吸附的参考线（REVIEW G7，mac showGuides）：只画真落在选区边上的那条（锁比例时由另一边定大小的那条边不算）。
+    /// </summary>
+    public static (double? X, double? Y) Guides(double? edgeX, double? edgeY, RectD rect)
+    {
+        static double? Lands(double? edge, double low, double high)
+            => edge is { } value && (Math.Abs(value - low) < 0.01 || Math.Abs(value - high) < 0.01) ? value : null;
+        return (Lands(edgeX, rect.X, rect.Right), Lands(edgeY, rect.Y, rect.Bottom));
+    }
+
     /// <summary>平移选区，整块留在 bounds 里。</summary>
     public static RectD Moved(RectD rect, double dx, double dy, RectD bounds)
     {

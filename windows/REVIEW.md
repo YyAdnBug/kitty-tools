@@ -350,16 +350,18 @@ Windows（`Shell/HomePanel.cs`）：
   - 快速保存的文件名是「钉图 日期.png」、重名加 GUID（`:372-375`），mac 走截图的保存（「截图 日期 时间.png」、重名加序号，`ScreenshotOutput.swift:84-87`）。
 - **角落卡**：停 5 秒（`ScreenshotCard.cs:76`）；mac 6 秒，鼠标移开后再等 2.5 秒（`Screenshot/ShotShelf.swift:260`、`:391`）。
 
-#### R98（P2）便签正文的右键「格式」只有四项
+#### R98（P2）便签正文的右键「格式」只有四项 → 已修
 
+- **已修**：`9b8e7e26`：右键「打开链接」「插入图片…」、格式菜单照 mac 十二项（代码块里只留「代码块」）；Debug / Release 编译过，菜单没在真机上点（HANDTEST 1448–1449）。
 - mac 的格式菜单（`Notes/NoteTextView.swift:1819-1842`）：粗体、斜体、删除线、代码、链接，分节线后标题 1–3、引用、无序列表、有序列表、代码块，最后清除格式。正文右键还有「打开链接」「插入图片…」（`:1461-1463`）。无障碍规范里键盘和读屏用户打开链接靠的就是它。
 - Windows（`Notes/NoteEditor.Input.cs:416-421`）只有粗体、斜体、删除线、行内代码。
   - Core 里块格式、链接、清除格式、代码块的函数都写好了（`KittyTools.Core/Notes/NoteMarkdown.cs:1577` 起）；
   - `Notes/NoteEditor.Images.cs:4` 的注释也提到「菜单「插入图片…」」，只是菜单没接。
 - **修**：照 mac 接上，在代码块里时照 mac 只留能用的那几项。
 
-#### R99（P2）便签：删除 / 归档的提示、便签墙的键、全部便签窗口、设置页
+#### R99（P2）便签：删除 / 归档的提示、便签墙的键、全部便签窗口、设置页 → 已修
 
+- **已修**：`9b8e7e26`：NoteNotices 合并 6 秒内的删除 / 归档（「放回」「取消归档」），便签墙 Delete、Ctrl+W，0 条不写数字（截图 notes-list），确认框和页脚的话、速查表补键；真机没点（HANDTEST 1450–1454）。
 - **删除**：
   - mac 的说明写「⌘Z 撤销，或到「最近删除」里放回」，按钮叫「放回」；6 秒内连着删的合成「已删除 N 条」、一起放回（`Notes/NotesWindow.swift:461-464`、`NoteSheetModel.swift:243`，0.7.0 更新日志）。
   - Windows 一律「撤销」、说明写「留 30 天」、不合并（`Notes/NotesWindow.cs:649-650`、`NoteSheetView.cs:389-390`、`NoteDeckWindows.cs:87-88`）。
@@ -375,8 +377,9 @@ Windows（`Shell/HomePanel.cs`）：
   - 页脚漏了「或标签之间的空处」（`:132-134`，mac `:297`；Windows 实际支持右键空处，`NoteDeckWindows.cs:45`）。
 - **速查表「便签 · 全部便签」**（`ShortcutsSheet.cs:586-596`）：没列 PLAN-v20 N3 做好的方向键和 Enter / 空格；「浮在屏幕上」没列 Ctrl+,（`NoteSheetView.cs:341`）。
 
-#### R100（P2）提醒：满 50 条时照样说「建好了」、建好后没有「编辑」、打不开那一条
+#### R100（P2）提醒：满 50 条时照样说「建好了」、建好后没有「编辑」、打不开那一条 → 已修
 
+- **已修**：`9b8e7e26`：ReminderCenter.AddAndAnnounce（满了 / 建好了 + 编辑）、ShellRuntime.OpenReminder 三处入口；--settings-probe l 在 Release x64 上验了加上、弹出那一条、满 50 条不加（HANDTEST 1455–1457）。
 - **mac**（`App/AppDelegate.swift:1748-1760`）：
   - 满 50 条说「提醒已经满了」；
   - 建好说「提醒建好了」、带一颗「编辑」；
@@ -405,8 +408,9 @@ Windows（`Shell/HomePanel.cs`）：
   - 照 mac 的字段、名字、先后重排对话框；
   - 存的格式不变（「每天」「工作日」就是 weekly 勾全部 / 勾一到五，编辑框按勾了哪几天反认出来，同 mac）。
 
-#### R102（P2）提醒和状态屏的几处小的
+#### R102（P2）提醒和状态屏的几处小的 → 已修
 
+- **已修**：`9b8e7e26`：Reminders.AlertChoices（单测 AlertChoices_HideStatusScreenWhenItIsOff）、设置 › 提醒 文案（截图 settings-reminders）、选状态面板 Tab / Shift+Tab 和速查表；Tab 没在真机上按（HANDTEST 1458–1460）。
 - **进入状态屏**：状态屏关着时，提醒「方式」里还能选「进入状态屏」（`SettingsWindow.Reminders.cs:243`）。mac 藏起来，已经选了的照旧显示（`ReminderDetail.swift:127-132`，mac-native §1：指向别的功能的东西跟着它的开关走）。
 - **设置 › 提醒的文案**（mac `Settings/RemindersTab.swift`）：
   - 组名 mac「到点之后」（`:92`），Windows「稍后」（`:79`）；

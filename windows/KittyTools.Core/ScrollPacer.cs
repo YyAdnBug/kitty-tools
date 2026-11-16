@@ -133,6 +133,22 @@ public sealed class ScrollPacer
     /// <summary>手动滚对不上时状态行的话（同 mac）。</summary>
     public const string LostText = "对不上了：往回滚一点，再慢慢滚";
 
+    /// <summary>选区至少这么高（DIP，同 mac ScrollCapture.minimumHeight）才开长截图：太矮的两帧之间没几行可比。</summary>
+    public const double MinimumHeight = 60;
+
+    /// <summary>选区太矮时的话（同 mac：不写点数，尺寸胶囊显示的是像素，写「60」和看到的数字对不上）。</summary>
+    public const string TooShortText = "选区太矮，拉高一点再长截图";
+
+    /// <summary>选区里画了标注时的话（同 mac：标注不带进长图）。</summary>
+    public const string AnnotationsDroppedText = "长截图不带这些标注，拼完可以在长图上标";
+
+    /// <summary>
+    /// 开长截图前的两个检查（REVIEW G4，mac SelectionView.startScroll）：选区物理像素高 heightPx、屏幕缩放 scale。
+    /// 返回 (拦下的原因, 开始时说的话)：太矮拦下；画了标注照样开始，状态行先说一句。
+    /// </summary>
+    public static (string? Refusal, string? Note) StartCheck(double heightPx, double scale, bool hasAnnotations)
+        => heightPx < MinimumHeight * Math.Max(scale, 0.1) ? (TooShortText, null) : (null, hasAnnotations ? AnnotationsDroppedText : null);
+
     /// <summary>每秒滚出几个选区高（同 mac Prefs.ScrollSpeed.heightsPerSecond）。</summary>
     public static double HeightsPerSecond(ScrollSpeed speed) => speed switch
     {

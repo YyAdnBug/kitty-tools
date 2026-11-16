@@ -1,6 +1,8 @@
 // 长截图拍的时候选区旁边那块面板（PLAN-v9 S11，照 mac ScrollCapture.swift 的 ScrollCaptureHUD）：永远深色，宽 216，
 // 上面是拼好的长图预览（跟着最新那头长），下面是尺寸、状态行、自动滚动时一排速度「慢 / 标准 / 快」（照 mac b923b882：放在按钮行
-// 上面，记住上次，滚动中换档下一帧生效），最下面「放弃」「标注」「完成」（标注 = 拼完不拷贝，开长图标注窗口，S12）。
+// 上面，记住上次，滚动中换档下一帧生效；REVIEW G2 起手动滚时也在，中途点 ▶ 转自动用它），最下面一排按钮照 mac 的 HUD：
+// ▶ / ⏸ 自动滚动 · 标注 ｜ 存储 ▾（存储到「X」/ 另存为…）｜ 取消 · ✓ 拷贝（标注 = 拼完不拷贝，开长图标注窗口，S12）。
+// 面板不拿键盘（焦点留在被滚的程序上），mac 面板上的空格 / A / ⌘S 这里没有，Enter、Esc 照旧是全局临时键。
 // 预览上滚轮 = 往回看长图前面的内容，右边一条细指示条说在整张图的哪里；双击预览或滚回最新那头回到跟随（ScrollPreview 的纯函数）。
 // 预览直接从 ScrollCanvas 的条带取样（不另外拷整张图），只在没有正在拼的那一拍时取（ScrollingCapture.Idle），没赶上的下一拍补上。
 // 摆在选区右边，放不下放左边，都放不下贴选区里面；不抢焦点、不进 Alt+Tab，设「不进录屏」免得贴在选区里时被拍进去
@@ -39,7 +41,8 @@ internal sealed partial class ScrollPreviewPanel
     private readonly TextBlock _size;
     private readonly TextBlock _status;
     private readonly double _scale;
-    private readonly ToggleButton[] _speeds = Array.Empty<ToggleButton>();
+    private readonly ToggleButton[] _speeds;
+    private readonly Button _auto;
     private CanvasBitmap? _bitmap;
 
     /// <summary>取好、还没建成位图的预览像素（下一次 Draw 里建）。</summary>
@@ -100,30 +103,63 @@ internal sealed partial class ScrollPreviewPanel
         };
         AutomationProperties.SetLiveSetting(_status, AutomationLiveSetting.Polite);
 
-        var cancel = new Button { Content = "放弃", HorizontalAlignment = HorizontalAlignment.Stretch };
-        ToolTipService.SetToolTip(cancel, "Esc");
+        // 按钮行（REVIEW G2，mac ScrollCaptureHUD）：▶ 标注 ｜ 存储 ▾ ｜ ✕ ✓；点了不拿焦点
+        _auto = SelectionOverlayWindow.ToolbarButton(Glyphs.Play, "自动滚动", "自动滚动");
+        _auto.Click += (_, _) => ScrollingCapture.ToggleAuto();
+        var annotate = SelectionOverlayWindow.ToolbarButton(Glyphs.Edit, "标注（拼完先标注再拷贝）", "标注");
+        annotate.Click += (_, _) => ScrollingCapture.Complete(ScrollOutput.Annotate);
+        var folder = Path.GetFileName(ScreenshotOutput.SaveFolder.TrimEnd(Path.DirectorySeparatorChar));
+        var save = SelectionOverlayWindow.ToolbarButton(Glyphs.Save, $"存储到「{folder}」", "存储", width: 30);
+        save.Click += (_, _) => ScrollingCapture.Complete(ScrollOutput.Save);
+        var saveMenu = SelectionOverlayWindow.ToolbarButton(Glyphs.ChevronDown, $"存储到「{folder}」/ 另存为…", "更多存储选项", width: 14);
+        if (saveMenu.Content is FontIcon chevron)
+        {
+            chevron.FontSize = 9;
+        }
+
+        saveMenu.Click += (_, _) =>
+        {
+            var menu = new MenuFlyout { Placement = FlyoutPlacementMode.Top };
+            var quick = new MenuFlyoutItem { Text = $"存储到「{folder}」" };
+            quick.Click += (_, _) => ScrollingCapture.Complete(ScrollOutput.Save);
+            var saveAs = new MenuFlyoutItem { Text = "另存为…" };
+            saveAs.Click += (_, _) => ScrollingCapture.Complete(ScrollOutput.SaveAs);
+            menu.Items.Add(quick);
+            menu.Items.Add(saveAs);
+            menu.ShowAt(saveMenu);
+        };
+        var cancel = SelectionOverlayWindow.ToolbarButton(Glyphs.Close, "取消（Esc）", "取消");
         cancel.Click += (_, _) => ScrollingCapture.Cancel();
         var done = new Button
         {
-            Content = "完成",
-            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Width = 28,
+            Height = 28,
+            Padding = new Thickness(0),
+            CornerRadius = new CornerRadius(14),
             Background = new SolidColorBrush(Theme.BrandPink),
             Foreground = new SolidColorBrush(Colors.White),
+            AllowFocusOnInteraction = false,
+            Content = new FontIcon { Glyph = Glyphs.Check, FontSize = 13 },
+            Margin = new Thickness(4, 0, 0, 0),
         };
-        ToolTipService.SetToolTip(done, "Enter");
+        ToolTipService.SetToolTip(done, "拷贝（Enter）");
+        AutomationProperties.SetName(done, "拷贝");
         done.Click += (_, _) => ScrollingCapture.Complete();
-        var annotate = new Button { Content = "标注", HorizontalAlignment = HorizontalAlignment.Stretch };
-        ToolTipService.SetToolTip(annotate, "拼完先标注再拷贝");
-        annotate.Click += (_, _) => ScrollingCapture.Complete(annotate: true);
-        var buttons = new Grid { ColumnSpacing = 6, Margin = new Thickness(0, 10, 0, 0) };
-        buttons.ColumnDefinitions.Add(new ColumnDefinition());
-        buttons.ColumnDefinitions.Add(new ColumnDefinition());
-        buttons.ColumnDefinitions.Add(new ColumnDefinition());
-        Grid.SetColumn(annotate, 1);
-        Grid.SetColumn(done, 2);
-        buttons.Children.Add(cancel);
-        buttons.Children.Add(annotate);
-        buttons.Children.Add(done);
+        var buttons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 2,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(0, 10, 0, 0),
+            Children = { _auto, annotate, BarSeparator(), save, saveMenu, BarSeparator(), cancel, done },
+        };
+        foreach (var child in buttons.Children)
+        {
+            if (child is Button button)
+            {
+                button.VerticalAlignment = VerticalAlignment.Center;
+            }
+        }
 
         var layout = new Grid();
         layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
@@ -140,7 +176,8 @@ internal sealed partial class ScrollPreviewPanel
         layout.Children.Add(_status);
         layout.Children.Add(buttons);
 
-        // 自动滚动的速度（只在自动滚动的这一轮有）：三个一组的切换钮，点了不放手（总有一个选中）。
+        // 自动滚动的速度（REVIEW G2：一直在，手动滚时点 ▶ 转自动照这个速度）：三个一组的切换钮，点了不放手（总有一个选中）。
+        _speeds = Array.Empty<ToggleButton>();
         if (speed is { } current)
         {
             var row = new Grid { ColumnSpacing = 2, Margin = new Thickness(0, 10, 0, 0) };
@@ -245,6 +282,35 @@ internal sealed partial class ScrollPreviewPanel
         var margin = (int)Math.Round(marginDip * panel._scale);
         return x >= position.X - margin && x < position.X + size.Width + margin &&
             y >= position.Y - margin && y < position.Y + size.Height + margin;
+    }
+
+    /// <summary>按钮行里的竖线（同截图工具栏）。</summary>
+    private static Border BarSeparator() => new()
+    {
+        Width = 1,
+        Height = 18,
+        Margin = new Thickness(3, 0, 3, 0),
+        VerticalAlignment = VerticalAlignment.Center,
+        Background = new SolidColorBrush(ColorHelper.FromArgb(46, 255, 255, 255)),
+    };
+
+    /// <summary>▶ / ⏸ 跟着自动滚动开没开（ScrollingCapture 开关自动滚动时调）。</summary>
+    public static void SyncAuto()
+    {
+        if (_instance is not { } panel)
+        {
+            return;
+        }
+
+        var on = ScrollingCapture.AutoScrolling;
+        if (panel._auto.Content is FontIcon icon)
+        {
+            icon.Glyph = on ? Glyphs.Pause : Glyphs.Play;
+        }
+
+        var text = on ? "停止自动滚动" : "自动滚动";
+        ToolTipService.SetToolTip(panel._auto, text);
+        AutomationProperties.SetName(panel._auto, text);
     }
 
     /// <summary>状态行；没有面板时退回轻提示。</summary>
