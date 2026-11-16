@@ -10,6 +10,9 @@
 #     curl -fsSL https://github.com/YyAdnBug/kitty-tools/releases/latest/download/macos-update.json
 #     curl -fsIL "$(curl -fsSL https://github.com/YyAdnBug/kitty-tools/releases/latest/download/macos-update.json | jq -r .url)"
 #   发布说明固定附「系统设置 › 隐私与安全 › 仍要打开」步骤（只有第一次安装要；之后 App 内更新下载的包不带隔离标记，不用再放行）。
+# 发布说明 notes.txt（多语言，0.10.0 起）：中文在前、英文在后，各是摘要 + 更新内容 + 安装（「仍要打开」两份），中间一条分隔线；
+#   英文取 changelog.json 的 summaryEn / textEn，scope 按 String Catalog 取英文。这一版缺英文（或 scope 在目录里没有英文）直接中止。
+#   「从旧版升级」「感谢」这类每版不同的段落发布时手动插在「安装」前面（照 0.9.0 的发布说明）。
 # 产物名跟 PRODUCT_NAME 走（N16：Kitty Tools.app、卷名 Kitty Tools、Kitty Tools_<版本>_arm64.dmg，之前叫 Kitty Tools Native）。
 #   和 Tauri 旧版同名，发布说明还要附：安装前先删掉（或让访达替换）/Applications 里旧版的 Kitty Tools.app；
 #   从 Kitty Tools Native 升上来的，把旧的 Kitty Tools Native.app 也删掉（同一个 bundle id，留着会让开机自启指错），
@@ -30,6 +33,11 @@ NAME=$(basename "$APP" .app)
 VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")
 jq -e --arg v "$VERSION" 'any(.[]; .version == $v)' "$CHANGELOG" >/dev/null \
   || { echo "changelog.json 缺少 $VERSION 条目"; exit 1; }
+CATALOG="$M/KittyTools/Resources/Localizable.xcstrings"
+jq -e --arg v "$VERSION" --slurpfile cat "$CATALOG" '.[] | select(.version == $v)
+  | (.summaryEn // "") != "" and all(.changes[]; (.textEn // "") != ""
+    and ($cat[0].strings[.scope].localizations.en.stringUnit.value // "") != "")' "$CHANGELOG" >/dev/null \
+  || { echo "changelog.json 的 $VERSION 缺英文（summaryEn / textEn，或 scope 在目录里没有英文）"; exit 1; }
 codesign --verify --deep --strict --verbose=2 "$APP"
 # 先存变量再判断：pipefail 下 grep -q 提前退出会让管道报错，导致漏报
 ENT=$(codesign -d --entitlements - "$APP" 2>&1 || true)
@@ -119,8 +127,48 @@ jq -n --arg version "$VERSION" --arg url "$REL/download/$TAG/${ZIPNAME// /.}" \
   --arg sha256 "$(shasum -a 256 "$ZIP" | cut -d' ' -f1)" --argjson size "$(stat -f%z "$ZIP")" \
   --arg page "$REL/tag/$TAG" '{version: $version, url: $url, sha256: $sha256, size: $size, page: $page}' \
   > "$MANIFEST"
-jq -r --arg v "$VERSION" '.[] | select(.version == $v) | .summary, (.changes[] | "- \(.scope)：\(.text)")' \
-  "$CHANGELOG" > "$OUT/notes.txt"
+# 发布说明（说明见文件头）：中文在前、英文在后
+DMGNAME=$(basename "$DMG") && DMGNAME=${DMGNAME// /.}
+{
+  jq -r --arg v "$VERSION" '.[] | select(.version == $v) | .summary, "", "## 更新内容", "",
+    (.changes[] | "- \(.scope)：\(.text)")' "$CHANGELOG"
+  cat <<NOTES
+
+## 安装
+
+只支持 Apple 芯片（M 系列）、macOS 15 及以上。下载 \`$DMGNAME\`（\`_arm64.zip\` 和 \`macos-update.json\` 是 App 内更新用的，不用手动下载）。
+
+1. 打开 DMG，把 $NAME 拖进「应用程序」。装过同名的旧版 \`$NAME.app\` 的，先删掉它（或让访达替换）；从 Kitty Tools Native 升上来的，把旧的 \`Kitty Tools Native.app\` 也删掉，开机自启可能要在 设置 › 通用 里重新打开一次。
+2. 第一次双击会被系统拦下，提示「未打开」（没有公证；签名是有效的，所以不是「已损坏」）。
+3. 到「系统设置 › 隐私与安全性」，在下面点「仍要打开」（尝试打开后约 1 小时内有效），输入密码即可。也可以在终端执行：
+   \`\`\`
+   xattr -dr com.apple.quarantine "/Applications/$NAME.app"
+   \`\`\`
+
+**只有第一次安装需要上面的放行步骤**：之后的新版本在 App 内更新（菜单栏或 设置 › 关于），下载的包不带隔离标记，不用再放行。
+
+---
+
+NOTES
+  jq -r --arg v "$VERSION" --slurpfile cat "$CATALOG" '.[] | select(.version == $v) | .summaryEn, "",
+    "## What’s New", "",
+    (.changes[] | "- \($cat[0].strings[.scope].localizations.en.stringUnit.value): \(.textEn)")' "$CHANGELOG"
+  cat <<NOTES
+
+## Installation
+
+Apple silicon (M-series) and macOS 15 or later only. Download \`$DMGNAME\` (the \`_arm64.zip\` and \`macos-update.json\` are for in-app updates; you don’t need to download them).
+
+1. Open the DMG and drag $NAME into Applications. If you have an older \`$NAME.app\` with the same name, delete it first (or let Finder replace it). If you’re coming from Kitty Tools Native, delete the old \`Kitty Tools Native.app\` too; you may need to turn on opening at login again in Settings › General.
+2. The first time you double-click it, macOS blocks it with a “Not Opened” message (the app isn’t notarized; its signature is valid, so it doesn’t say it’s damaged).
+3. Go to System Settings › Privacy & Security and click “Open Anyway” near the bottom (available for about an hour after you try to open it), then enter your password. Or run this in Terminal:
+   \`\`\`
+   xattr -dr com.apple.quarantine "/Applications/$NAME.app"
+   \`\`\`
+
+**Only the first install needs these steps**: later versions update inside the app (from the menu bar or Settings › About), and downloaded updates aren’t quarantined, so there’s nothing more to allow.
+NOTES
+} > "$OUT/notes.txt"
 echo "$DMG"
 echo "$ZIP"
 echo "$MANIFEST"

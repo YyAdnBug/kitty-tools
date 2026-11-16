@@ -3581,7 +3581,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     WhatsNew.adopt(upgradingFrom: last, to: AboutTab.version, defaults: defaults)
     defaults.set(AboutTab.version, forKey: Prefs.lastSeenVersion)
     if last != AboutTab.version {
-      let summary = AboutTab.releases.first { $0.version == AboutTab.version }?.summary
+      let summary = AboutTab.releases.first { $0.version == AboutTab.version }?.localizedSummary
       var actions = [
         Island.Action("看更新了什么", opens: true) { [unowned self] in showSettings(page: .about) }
       ]

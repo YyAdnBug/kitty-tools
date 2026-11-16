@@ -77,6 +77,11 @@ enum WhatsNew {
       id: "island-now-playing", version: "0.9.0", feature: .island, page: .island,
       section: "正在播放"),
     Entry(id: "sync-server", version: "0.9.0", feature: nil, page: .general, section: "同步"),
+    // 0.10.0（多语言）：设置 › 通用「语言」那一行（拨过算看过；只有升级上来的标，升级的保持了中文，这一行告诉他能换）。
+    // 英文界面本身、搜索中英都认、自带脚本说英文没有单独的入口，不标
+    Entry(
+      id: "interface-language", version: "0.10.0", feature: nil, page: .general,
+      section: GeneralTab.languageLabel),
   ]
 
   /// 一版最多标几个（拍板 B1：标多了到处都是「新」，等于没标）

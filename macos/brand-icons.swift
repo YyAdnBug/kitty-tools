@@ -4,7 +4,7 @@
 // 写入 KittyTools/Resources/Assets.xcassets：AppIcon 10 张 PNG（1024 画布、主体 824、四边留 100、超椭圆圆角约 185、
 // 烘焙阴影 y 10 / σ 10 / 黑 30%；16、32 像素用手调的简化版）和菜单栏模板图 StatusIcon（22 × 16 pt，@1x / @2x）；
 // 另写 Config/dmg-background.tiff（DMG 窗口背景：设计区 600 × 400 pt 在左上角，奶油底、字标 Kitty Tools、虚点弧线箭头、
-// 「仍要打开」路径；整张画布 2560 × 1600 pt，窗口拉大也不露白；@1x + @2x，Deflate；改产品名或文案也改这里）。
+// 「仍要打开」路径，说明中英各一行；整张画布 2560 × 1600 pt，窗口拉大也不露白；@1x + @2x，Deflate；改产品名或文案也改这里）。
 // 只用 AppKit / CoreGraphics / CoreText / ImageIO，几何都在这一个文件里：改角色就改这里再跑一遍。给了预览目录时另存放大的预览图。
 // 例外：彩色菜单栏图标（Shell/StatusItem.swift 的 menuBarImage）从 1024 的 AppIcon 按同样的留白 100 / 主体 824 /
 // 超椭圆 n = 5 裁主体，改这几项要一起改那边（StatusItemTests.colorIconIsTheWholeAppIcon 会报）。
@@ -278,7 +278,7 @@ func dmgBackground(scale: Int) -> CGImage {
       glow, startCenter: center, startRadius: radii.0, endCenter: center, endRadius: radii.1,
       options: .drawsBeforeStartLocation)
   }
-  // 字标和两行说明：水平居中，y 是基线（上下翻转的画布里字形要再翻回来）
+  // 字标和两组说明（中文一行、英文一行，多语言 0.10.0）：水平居中，y 是基线（上下翻转的画布里字形要再翻回来）
   func text(_ string: String, _ font: NSFont, _ color: CGColor, y: CGFloat) {
     let line = CTLineCreateWithAttributedString(
       NSAttributedString(
@@ -296,8 +296,14 @@ func dmgBackground(scale: Int) -> CGImage {
     "把左边的图标拖到「应用程序」文件夹，就装好了", NSFont(name: "PingFangSC-Regular", size: 13)!,
     hex(0x000000, 0.55), y: 86)
   text(
-    "首次打开被拦下时：系统设置 › 隐私与安全 › 仍要打开", .systemFont(ofSize: 11), hex(0x000000, 0.45),
-    y: 366)
+    "Drag the icon on the left into the Applications folder to install", .systemFont(ofSize: 12),
+    hex(0x000000, 0.5), y: 104)
+  text(
+    "首次打开被拦下时：系统设置 › 隐私与安全性 › 仍要打开", .systemFont(ofSize: 11), hex(0x000000, 0.45),
+    y: 357)
+  text(
+    "Blocked the first time? System Settings › Privacy & Security › Open Anyway",
+    .systemFont(ofSize: 11), hex(0x000000, 0.45), y: 374)
   // 中间的虚点弧线：零长虚线 + 圆头 = 等弧长的圆点（直径 4、间距 11.1），末端圆角三角箭头
   let arc = CGMutablePath()
   arc.move(to: point(235, 211))

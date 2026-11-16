@@ -1805,6 +1805,11 @@ Alfred 的 Related Apps、BetterTouchTool 按 App 停用，调研和测开销的
   通用页、功能 / 插件、快捷键页、速查表、引导、关于）→ 3 剪贴板 → 4 翻译 → 5 截图与录制 → 6 启动器 → 7 便签与同步 → 8 插件（提醒、
   状态屏、启动台、程序坞预览、访达右键含扩展）→ 9 收尾（更新日志补英文、发布说明、DMG 背景、漏网检查、`requiresEnglish` 打开、英文全套
   截图、HANDTEST 英文手测，升 0.10.0）。
+- **第 9 批的更新日志和发版**（2026-11-16）：`changelog.json` 每版多 `summaryEn`、每条多 `textEn`（一条仍是一行），`scope` 是
+  功能名、走目录（`ChangelogTests.everyEntryHasEnglish` 查每版每条有英文、scope 在目录里有英文）；关于页和「已更新到 x」读界面语言那份
+  （`AboutTab.localized`，英文缺了退回中文）。`build-dmg.sh` 这一版缺英文（或 scope 没英文）中止，`notes.txt` 中文在前、英文在后，
+  各带「安装」（「仍要打开」两份）；「从旧版升级」「感谢」照旧发布时手写。DMG 背景说明中英各一行（`brand-icons.swift`，顺手把
+  「隐私与安全」改成系统里的「隐私与安全性」）。
 
 ## 11½. Whisker 设计语言改造（2026-09-25 起）
 
@@ -1816,9 +1821,10 @@ Alfred 的 Related Apps、BetterTouchTool 按 App 停用，调研和测开销的
 
 > 2026-10-28（第三轮体检第 7 批）：2026-10-22 及更早的进度记录、做完的「已知的小毛病」、旧的「现状」「下一步」原样挪到 `docs/archive/PLAN-batches-2026-10.md` §12；AGENTS.md「项目概述」原来的长段原样挪到本节末尾「各族进度摘要（原 AGENTS 项目概述）」。
 
-**2026-11-15：多语言（先英文）**（§10「多语言」）：拍板页「全部按推荐」；分支 `i18n-wip`（工作树
-`.claude/worktrees/i18n-english-a53944`，从 macos `894b8b2c`）分十批做，没并回 macos、没 push。第 0 批（基建、通用页「语言」、
-升级保持中文、规则）在上面；待手测 HANDTEST「多语言」。
+**2026-11-15 – 16：多语言（先英文）**（§10「多语言」）：拍板页「全部按推荐」；分支 `i18n-wip`（工作树
+`.claude/worktrees/i18n-english-a53944`，从 macos `894b8b2c`）分十批做完（第 0–9 批），`MARKETING_VERSION` 升到 0.10.0、
+更新日志加 0.10.0（中英，日期 2026-11-16），旧的 15 版补了英文；`WhatsNew` 0.10.0 一个：通用「语言」那一行。没并回 macos、
+没 push、没打包、没发布（用户说发再走 `build-dmg.sh`）。待手测 HANDTEST「多语言」1–23（8 起是英文界面逐族的，录制控制条那条屏外截不到）。
 
 **2026-11-15：折叠的服务不自动翻译**（有用户问折叠的 AI 服务还耗不耗 token：会，折叠只藏正文、所有启用的服务都请求，
 「闪一下」是折叠着也在画的彗星光和完成闪光）：拍板页 https://claude.ai/artifact/DFEx7K9FX9TXnW7kCuy42c 七项「全部按推荐」

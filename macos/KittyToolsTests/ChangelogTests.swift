@@ -1,6 +1,7 @@
 // 更新日志的格式（第 8 批评审 F2）：changelog.json 里每条 change 一直是一条一行（`{ "type": …, "scope": …, "text": … }`），
 // 不是展开成多行的对象——展开会让以后每个版本的 diff 难看、也冲掉 git blame。
 // 读的是仓库里的源文件（#filePath），不是包里那份：它和打进 App 的是同一个文件。
+// 中英两份（多语言，0.10.0 起；旧的 15 版也补齐了）：每版有 summaryEn、每条有 textEn，scope 的英文在目录里。
 
 import Foundation
 import Testing
@@ -24,6 +25,29 @@ struct ChangelogTests {
     }
     // 不锁哪个版本在最前、有几条：下一版加条目时这条单测不该跟着红
     #expect(try JSONSerialization.jsonObject(with: Data(contentsOf: url)) is [[String: Any]])
+  }
+
+  /// 每版、每条都有英文（和中文不是同一段），scope 是功能名、目录里有它的英文（关于页和 build-dmg.sh 的发布说明都按目录取）
+  @Test func everyEntryHasEnglish() {
+    #expect(!AboutTab.releases.isEmpty)
+    for release in AboutTab.releases {
+      #expect(
+        release.summaryEn.map { !$0.isEmpty && $0 != release.summary } == true, "\(release.version)"
+      )
+      for change in release.changes {
+        #expect(change.textEn.map { !$0.isEmpty && $0 != change.text } == true, "\(change.text)")
+        let scope = LocalizedStringResource(String.LocalizationValue(change.scope))
+        #expect(scope.english != change.scope, "目录里没有「\(change.scope)」的英文")
+      }
+    }
+  }
+
+  /// 英文界面读英文那份，缺了（或是空的）退回中文；中文界面一直是中文
+  @Test func englishFallsBackToChinese() {
+    #expect(AboutTab.localized("中", english: "en", isEnglish: true) == "en")
+    #expect(AboutTab.localized("中", english: nil, isEnglish: true) == "中")
+    #expect(AboutTab.localized("中", english: "", isEnglish: true) == "中")
+    #expect(AboutTab.localized("中", english: "en", isEnglish: false) == "中")
   }
 
   /// 关于页的更新日志一开始只展开当前版本；changelog 里没有当前版本号（开发中的新版本）就展开最新那条（最新在前）

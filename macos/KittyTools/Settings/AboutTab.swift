@@ -9,19 +9,37 @@
 import SwiftUI
 
 struct AboutTab: View {
-  /// changelog.json 的一个版本
+  /// changelog.json 的一个版本。中英两份（0.10.0 起，旧版也补齐了）：英文界面读 summaryEn / textEn，缺了退回中文；
+  /// scope 是功能名，走目录（发布说明里 build-dmg.sh 同样按目录取英文）
   struct Release: Decodable, Identifiable {
     struct Change: Decodable, Hashable {
       let type: String
       let scope: String
       let text: String
+      var textEn: String? = nil
+
+      /// 界面语言那一份
+      var localizedText: String { AboutTab.localized(text, english: textEn) }
+      var localizedScope: String { String(localized: String.LocalizationValue(scope)) }
     }
 
     let version: String
     let date: String
     let summary: String
+    var summaryEn: String? = nil
     let changes: [Change]
     var id: String { version }
+
+    /// 界面语言那一份（刘海岛「已更新到 x」也读它）
+    var localizedSummary: String { AboutTab.localized(summary, english: summaryEn) }
+  }
+
+  /// 更新日志的一段字：英文界面用英文那份，没有（或是空的）就用中文
+  static func localized(
+    _ chinese: String, english: String?, isEnglish: Bool = InterfaceLanguage.isEnglish
+  ) -> String {
+    guard isEnglish, let english, !english.isEmpty else { return chinese }
+    return english
   }
 
   /// 应用内更新（截图自检里传一个摆好状态的；nil 就不显示更新那一行）
@@ -272,9 +290,9 @@ private struct ReleaseView: View {
         header
         if isExpanded {
           VStack(alignment: .leading, spacing: 8) {
-            Text(release.summary).foregroundStyle(.secondary)
+            Text(release.localizedSummary).foregroundStyle(.secondary)
             ForEach(release.changes, id: \.self) { change in
-              ChangeRow(type: change.type, scope: change.scope, text: change.text)
+              ChangeRow(type: change.type, scope: change.localizedScope, text: change.localizedText)
             }
           }
           .textSelection(.enabled)
@@ -303,7 +321,7 @@ private struct ReleaseView: View {
         if isExpanded {
           Spacer(minLength: 8)
         } else {
-          Text(release.summary)
+          Text(release.localizedSummary)
             .foregroundStyle(.secondary)
             .lineLimit(1)
             .truncationMode(.tail)

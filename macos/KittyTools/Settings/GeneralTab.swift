@@ -62,8 +62,8 @@ struct GeneralTab: View {
     }
   }
 
-  /// 显式 key：翻译页也有一组「语言」（英文是复数）
-  private static let languageLabel = LocalizedStringResource("general.language", defaultValue: "语言")
+  /// 显式 key：翻译页也有一组「语言」（英文是复数）。新功能标记（WhatsNew，0.10.0）按它认这一行
+  static let languageLabel = LocalizedStringResource("general.language", defaultValue: "语言")
 
   /// 语言（拍板 D2）：跟随系统 / 简体中文 / English，写本 App 自己的 AppleLanguages，重新打开后生效
   private var languageRow: some View {
@@ -84,13 +84,15 @@ struct GeneralTab: View {
         .fixedSize()
       }
     } label: {
-      Text(Self.languageLabel)
+      NewTitle(Self.languageLabel, page: .general, fresh: navigation?.fresh ?? [])
       Text(
         languageNeedsRelaunch
           ? "重新打开 Kitty Tools 后换成新的语言"
           : "也可以在 系统设置 › 通用 › 语言与地区 › 应用程序 里选")
     }
     .onChange(of: language) {
+      // 拨过这一行，「新」就算看过了（光点进这一页不算；WhatsNew）
+      WhatsNew.touch(section: Self.languageLabel, of: .general)
       InterfaceLanguage.store(language)
       languageNeedsRelaunch = InterfaceLanguage.needsRelaunch
     }
