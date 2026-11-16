@@ -1,5 +1,5 @@
 // 启动器的一条结果：App、内置动作、网址（含系统设置面板、浏览历史）、文件路径、系统命令、脚本命令（这六类记使用、能收藏），
-// 以及网页搜索、关键词提示、计算结果、「cb」「fy」那一行、kill / port 列的进程、「ip」列的地址（不记）。
+// 以及网页搜索、关键词提示、计算结果、「cb」「fy」那一行、kill / port 列的进程、「ip」列的地址、表情与符号（不记普通使用）。
 // id = 类型 + 目标，使用记录按它累计。内置动作和菜单栏同一份（体检 A26）：副标题只写「Kitty Tools」（两个开关写开没开），
 // 英文别名只进 names 参与匹配（N10）。
 
@@ -27,6 +27,8 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
     /// 「ip」列的本机 / 外网地址（IPAddresses；目标是网卡 + 地址或「public」）：↩ 粘贴 payload、⌘↩ 只复制，
     /// 没有 payload 的（外网还在查、没查到，没连上网络）不能粘贴
     case ip
+    /// 「emoji 词」的表情与符号：目标和 payload 是原始 Unicode 字符，↩ 粘贴、⌘↩ 复制，单独记本机最近使用。
+    case emoji
     /// 「提醒 …」列的提醒（2026-11-04，PLAN §10「提醒」D2 D4）：目标是提醒的 id，↩ 打开 / 暂停、⌘↩ 到设置里编辑；
     /// 目标空着的是「建一条」那一行（payload 是关键词后面那句话），↩ 建好
     case reminder
@@ -240,6 +242,7 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
     case (.url, _): "globe"
     case (.search, _), (.prompt, _): "magnifyingglass"
     case (.calculation, _): "equal.square"
+    case (.emoji, _): "face.smiling"
     default: "doc"
     }
   }

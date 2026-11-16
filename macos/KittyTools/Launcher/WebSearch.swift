@@ -141,7 +141,7 @@ enum WebSearch {
   static let reservedKeywords = [
     "cb": "剪贴板指令", "fy": "翻译", "open": "文件搜索", "find": "文件搜索", "quit": "系统命令",
     "hide": "系统命令", "forcequit": "系统命令", "eject": "系统命令", "kill": "系统命令",
-    "port": "系统命令", "提醒": "提醒", "tx": "提醒", "remind": "提醒",
+    "port": "系统命令", "提醒": "提醒", "tx": "提醒", "remind": "提醒", "emoji": "表情与符号",
   ]
 
   static func url(_ engine: SearchEngine, _ text: String) -> String {

@@ -54,6 +54,9 @@ import UniformTypeIdentifiers
   private(set) var fileRequest: FileSearch.Request?
   /// 系统命令的带对象模式（quit / hide / forcequit / eject / kill / port 空格）；nil = 不在这个模式
   private(set) var commandRequest: SystemCommands.Request?
+  /// 「emoji 空格」之后的搜索词（空字符串 = 最近使用）；nil = 普通搜索。
+  private(set) var emojiRequest: String?
+  @ObservationIgnored var recentEmoji: [String] = []
   /// 上膛的那一行：不可撤销的命令第一下按下后，等同一个键再按一次（打字、移动选中、Esc、收起都撤掉）
   private(set) var armed: Armed?
   /// 没有结果时显示的话。和结果一起换：文件搜索还在查时留着上一句，不闪「没有匹配」
@@ -609,17 +612,19 @@ import UniformTypeIdentifiers
     } else {
       rates = ExchangeRates.load()
       recentCurrencies = ExchangeRates.loadRecents()
+      recentEmoji = EmojiSearch.loadRecents()
     }
   }
 
   /// 空查询：「收藏」+「常用」（一个空格是文件搜索，不算）
   var isShowingRecent: Bool {
-    fileRequest == nil && query.trimmingCharacters(in: .whitespaces).isEmpty
+    fileRequest == nil && emojiRequest == nil && query.trimmingCharacters(in: .whitespaces).isEmpty
   }
 
   /// 列表里的分组标题：空查询「收藏」「常用」，文件搜索只输了关键词时「最近打开和下载的文件」，
   /// 系统命令只输了关键词时「正在运行的 App」/「可推出的磁盘」
   var groups: [Group] {
+    if emojiRequest == "" { return [Group(row: 0, title: "最近使用与常用表情")] }
     if isShowingRecent {
       var groups: [Group] = []
       if favoriteCount > 0 { groups.append(Group(row: 0, title: "收藏")) }
@@ -812,6 +817,7 @@ import UniformTypeIdentifiers
       ? SystemCommands.request(for: command).flatMap {
         allowed("builtin:" + $0.verb.rawValue) ? $0 : nil
       } : nil
+    emojiRequest = allowed(EmojiSearch.commandID) ? EmojiSearch.request(command) : nil
     if commandRequest == nil { commandItems = nil }
     if let fileRequest {
       searchFiles(fileRequest)
@@ -820,6 +826,11 @@ import UniformTypeIdentifiers
     files.stop()
     if let commandRequest {
       showTargets(commandRequest)
+      return
+    }
+    if let emojiRequest {
+      emptyText = "没有找到表情或符号，试试中文、英文或拼音"
+      results = EmojiSearch.search(emojiRequest, recent: recentEmoji)
       return
     }
     emptyText = "没有匹配的结果"
@@ -881,6 +892,7 @@ import UniformTypeIdentifiers
     let prompts = WebSearch.promptItems(for: query, engines: engines)
     let filePrompts = FileSearch.promptItems(for: typed)
     let systemPrompts = SystemCommands.promptItems(for: typed)
+    let emojiPrompts = EmojiSearch.promptItems(for: typed)
     let clip =
       features.contains(.clipboard) && allowed("builtin:cb") && Self.clipQuery(typed) != nil
       ? [Self.clipItem("")] : []
@@ -891,10 +903,12 @@ import UniformTypeIdentifiers
     // 没添加的插件：打到它的名字或关键词时，本地结果后面、兜底前面一行「添加…插件」（A4）
     let offers = Self.pluginOffers(for: typed, added: features)
     let exactPrompts: [LauncherItem] =
-      prompts.exact + labeled(filePrompts.exact + systemPrompts.exact)
+      prompts.exact + labeled(filePrompts.exact + systemPrompts.exact + emojiPrompts.exact)
     let partialPrompts: [LauncherItem] =
       prompts.partial
-      + labeled(filePrompts.partial + systemPrompts.partial + fy.partial + currency.partial)
+      + labeled(
+        filePrompts.partial + systemPrompts.partial + fy.partial + currency.partial
+          + emojiPrompts.partial)
     let calculation = calculationItem(query, currency: currencyOn)
     // 货币打到一半（「100 美元 转 英」）：紧跟在计算结果的位置列候选；有计算结果时不列（单位换算、打全了的汇率）
     let currencyHints =
@@ -1417,7 +1431,7 @@ import UniformTypeIdentifiers
         ? Self.item(kind: .path, target: target, title: title) : nil
     // 不记使用，不会出现
     case .search, .calculation, .clip, .prompt, .translate, .process, .ip, .reminder,
-      .scriptResult:
+      .scriptResult, .emoji:
       return nil
     }
   }
@@ -1454,6 +1468,10 @@ import UniformTypeIdentifiers
     case .ip:
       guard let address = item.payload else { return NSSound.beep() }
       paste { Paster.write(string: address, record: true) }
+    case .emoji:
+      guard let glyph = item.payload else { return NSSound.beep() }
+      rememberEmoji(item)
+      paste { Paster.write(string: glyph, record: true) }
     case .clip:
       close()
       openClipboard(item.target)
@@ -2208,6 +2226,7 @@ import UniformTypeIdentifiers
 
   /// ⌥↩ / ⌃↩ 搜的文字：文件搜索时去掉关键词、fy 时是要翻译的那段；cb、系统命令是指令，没有可搜的
   private var searchText: String {
+    if emojiRequest != nil { return "" }
     let features = features
     if features.contains(.translate), let text = Self.translateQuery(query) { return text }
     let query = query.trimmingCharacters(in: .whitespaces)
@@ -2216,7 +2235,7 @@ import UniformTypeIdentifiers
     return fileRequest.map { $0.terms.joined(separator: " ") } ?? query
   }
 
-  /// 计算结果：收起后写剪贴板、发 ⌘V 粘贴回原 App（和剪贴板面板一样不激活本 App、不等待）。
+  /// 计算结果、地址、表情等：收起后写剪贴板、发 ⌘V 粘贴回原 App（和剪贴板面板一样不激活本 App、不等待）。
   /// 没有辅助功能授权时只复制，刘海岛警告去授权（授权框一点启动器就收了，面板里的提示会丢）
   private func paste(_ copy: () -> Void) {
     executed = true
@@ -2275,7 +2294,7 @@ import UniformTypeIdentifiers
       return exists && isDirectory.boolValue && !path.hasSuffix("/") ? path + "/" : path
     case .script: return item.arguments == nil ? item.title : nil
     case .search, .calculation, .clip, .prompt, .translate, .process, .ip, .reminder,
-      .scriptResult:
+      .scriptResult, .emoji:
       return nil
     }
   }
@@ -2320,7 +2339,7 @@ import UniformTypeIdentifiers
           ? ("填进示例", "text.cursor")
           : item.target.hasPrefix(ExchangeRates.suggestionPrefix)
             ? ("补全货币", "text.cursor") : ("补全关键词", "text.cursor")
-    case .calculation, .ip: ("粘贴", "arrow.turn.down.left")
+    case .calculation, .ip, .emoji: ("粘贴", "arrow.turn.down.left")
     case .clip: (item.target.isEmpty ? "打开" : "搜索", "doc.on.clipboard")
     case .translate: ("翻译", "character.bubble")
     case .process: ("结束", "stop.circle")
@@ -2371,7 +2390,8 @@ import UniformTypeIdentifiers
       case .file: ("在访达中显示", "folder")
       case nil: ("只复制，不粘贴", "doc.on.doc")
       }
-    case .calculation where item.payload != nil, .ip where item.payload != nil:
+    case .calculation where item.payload != nil, .ip where item.payload != nil,
+      .emoji where item.payload != nil:
       ("只复制，不粘贴", "doc.on.doc")
     case .reminder where !item.target.isEmpty: ("在设置里编辑", "gearshape")
     case .script: ("在访达中显示", "folder")
@@ -2387,6 +2407,7 @@ import UniformTypeIdentifiers
     case .url, .search: "复制网址"
     case .calculation: item.payload == nil ? nil : "复制结果"
     case .ip: item.payload == nil ? nil : "复制地址"
+    case .emoji: "复制字符"
     case .scriptResult where item.payload == nil: nil
     case .scriptResult where item.copyText == nil && item.opens != nil:
       if case .url = item.opens { "复制网址" } else { "复制路径" }
@@ -2885,7 +2906,8 @@ import UniformTypeIdentifiers
       }
       close()
       NSWorkspace.shared.activateFileViewerSelecting([URL(filePath: path)])
-    case .calculation where item.payload != nil, .ip where item.payload != nil:
+    case .calculation where item.payload != nil, .ip where item.payload != nil,
+      .emoji where item.payload != nil:
       copy(item)
     case .reminder where !item.target.isEmpty:
       close()
@@ -2914,6 +2936,7 @@ import UniformTypeIdentifiers
     // 列表脚本正在按新输入重跑：看得见的是上一次的结果，不拷它（同 ↩ 等结果的那一处，第三轮评审）
     if isPending(item) { return NSSound.beep() }
     rememberCurrencies(item)
+    rememberEmoji(item)
     let text: String
     let title: String?
     switch format {
@@ -2941,6 +2964,14 @@ import UniformTypeIdentifiers
     let title = title.replacing("[", with: "\\[").replacing("]", with: "\\]")
     let url = url.replacing(" ", with: "%20").replacing(")", with: "%29")
     return "[\(title)](\(url))"
+  }
+
+  private func rememberEmoji(_ item: LauncherItem) {
+    guard item.kind == .emoji else { return }
+    let updated = EmojiSearch.recent(after: item.target, in: recentEmoji)
+    guard updated != recentEmoji else { return }
+    recentEmoji = updated
+    if !isFixture { UserDefaults.standard.set(updated, forKey: Prefs.launcherRecentEmoji) }
   }
 
   private func move(by offset: Int) {
@@ -3026,10 +3057,10 @@ import UniformTypeIdentifiers
         }
       }
     }
-    // 2 复制（计算结果、ip 的 ⌘C 和 ⌘↩ 一样，不重复列）；复制路径和剪贴板 ⌘K 的「复制路径」同一个符号 link（mac-whisker §3）
+    // 2 复制（计算结果、ip、表情的 ⌘C 和 ⌘↩ 一样，不重复列）；复制路径和剪贴板 ⌘K 的「复制路径」同一个符号 link（mac-whisker §3）
     // 列表结果的 ⌘↩ 是在访达中显示（文件）、或者另给了 ⌘C 复制的（text.copy）：⌘C 另列
     let copiesOnCommandReturn =
-      [.calculation, .ip].contains(item.kind)
+      [.calculation, .ip, .emoji].contains(item.kind)
       || (item.kind == .scriptResult && Self.resultFile(item) == nil && item.copyText == nil)
     if !copiesOnCommandReturn, let title = copyTitle(for: item) {
       let symbol =

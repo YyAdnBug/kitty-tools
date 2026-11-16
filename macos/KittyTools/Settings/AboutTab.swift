@@ -3,7 +3,7 @@
 // （随包分发的 changelog.json，最新版在前；只展开当前版本，别的折叠成一行、点了才排它的条目——2026-11-05 用户报全部展开太长、
 // 滚动卡）；可以重看欢迎引导。更新后第一次启动不再自动打开这一页，只由刘海岛说
 // 「已更新到 x」+ 本版摘要（AppDelegate 比较 lastSeenVersion，体检 A29），全文在这里。
-// 页面最底下两行小字是素材和参考产品的出处（状态屏的动画表情、便签参考的 Noty，都是 MIT，许可要求随包带着许可全文；
+// 页面最底下小字是素材和参考产品的出处（状态屏的动画表情、便签参考的 Noty 是 MIT，字符表是 Unicode；随包带着许可全文；
 // mac-whisker §11）。
 
 import SwiftUI
@@ -97,11 +97,12 @@ struct AboutTab: View {
     }
   }
 
-  /// 素材和参考产品的出处：更新日志下面两行小字，每行后面跟着打开随包那份许可全文的链接
+  /// 素材和参考产品的出处：更新日志下面的小字，每行后面跟着打开随包那份许可全文的链接
   private var credits: some View {
     VStack(alignment: .leading, spacing: 4) {
       credit(Self.emojiCredit, license: "status-emoji-LICENSE")
       credit(Self.noteCredit, license: "notes-LICENSE")
+      credit("表情与符号的字符数据来自 Unicode 与 CLDR", license: "unicode-LICENSE")
     }
     .font(.caption)
     .padding(.top, 4)

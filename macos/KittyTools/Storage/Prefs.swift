@@ -43,6 +43,8 @@ enum Prefs {
   static let launcherExchangeRates = "launcherExchangeRates"
   /// 计算器汇率换算用过的货币（代码，最近的在前，最多 8 种）：货币候选排前面；这台电脑自己的，**不注册默认值**
   static let launcherRecentCurrencies = "launcherRecentCurrencies"
+  /// 启动器最近复制 / 粘贴的表情和符号（最多 24 个）；本机使用记录，**不注册默认值**（不导出、不同步）
+  static let launcherRecentEmoji = "launcherRecentEmoji"
   /// 启动器的脚本命令（2026-11-07 拍板 E2，默认开）：关掉后自带的和自己的脚本都不出现，内置命令不受影响
   static let launcherScripts = "launcherScripts"
   /// 脚本命令另外添加的文件夹（换行分隔的路径，ScriptLibrary）：这台电脑自己的路径，**不注册默认值**（不导出、不同步）

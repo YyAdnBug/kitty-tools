@@ -5433,6 +5433,41 @@ struct SnapshotProbeTests {
     }
   }
 
+  /// 表情与符号只复用启动器列表；屏外检查提示、最近使用、中英长名称、符号、空结果和操作菜单（浅 / 深）。
+  @Test(.enabled(if: directory != nil)) func launcherEmoji() async throws {
+    let out = try #require(Self.directory)
+    try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
+    let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: [])
+    model.engines = { [] }
+    model.recentEmoji = ["👩🏽‍💻", "😂", "∞", "⌘"]
+    for dark in [false, true] {
+      let suffix = dark ? "-dark" : ""
+      for (name, query) in [
+        ("prompt", "emoji"), ("recent", "emoji "), ("smile", "emoji 笑"),
+        ("symbols", "emoji 箭头"), ("combined", "emoji woman technologist"),
+        ("empty", "emoji xyznotaword"),
+      ] {
+        model.query = query
+        try snapshot(
+          LauncherPanelView(model: model),
+          size: NSSize(width: 720, height: LauncherPanelView.height(for: model)), dark: dark,
+          to: "\(out)/launcher-emoji-\(name)\(suffix).png")
+      }
+      model.query = "emoji woman technologist"
+      try snapshot(
+        LauncherPanelView(model: model),
+        size: NSSize(width: 560, height: LauncherPanelView.height(for: model)), dark: dark,
+        to: "\(out)/launcher-emoji-narrow\(suffix).png")
+      model.query = "emoji infinity"
+      model.toggleActions()
+      try snapshot(
+        LauncherPanelView(model: model),
+        size: NSSize(width: 720, height: LauncherPanelView.height(for: model)), dark: dark,
+        to: "\(out)/launcher-emoji-actions\(suffix).png")
+      model.toggleActions()
+    }
+  }
+
   private func snapshot(
     _ view: some View, size: NSSize, dark: Bool, to path: String,
     prepare: ((NSView) -> Void)? = nil

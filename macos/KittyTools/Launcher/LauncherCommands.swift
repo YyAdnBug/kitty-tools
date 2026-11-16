@@ -1,5 +1,5 @@
 // 启动器的「命令」表（2026-11-07 拍板 C3 C4，PLAN §10「脚本命令」；纯函数，配单测）：内置的关键词命令（open / find /
-// quit / hide / forcequit / eject / kill / port / ip / cb / fy / 提醒 / 汇率）、14 个系统命令、脚本命令，每条一个别名、一个开关。
+// quit / hide / forcequit / eject / kill / port / ip / cb / fy / emoji / 提醒 / 汇率）、14 个系统命令、脚本命令，每条一个别名、一个开关。
 // 汇率换算（真机反馈，用户要在表里看到它）：别名是出用法提示的那个词，关掉 = 计算器不再换算货币、不取汇率表。
 // 别名就是要打的那个词：改了以后旧词不再认（名字和拼音照样搜得到），清空 = 只能按名字搜；关掉 = 不出现在搜索、常用、收藏里，
 // 关键词也不认（收藏不删，打开就回来）。只存改过的（Prefs.launcherCommandAliases / launcherCommandsOff，跟着设置导出、同步）：
@@ -35,6 +35,7 @@ nonisolated enum LauncherCommands {
     BuiltIn(id: "builtin:ip", title: "IP 地址", keyword: "ip", symbol: "network"),
     BuiltIn(id: "builtin:cb", title: "在剪贴板历史里搜索", keyword: "cb", symbol: "doc.on.clipboard.fill"),
     BuiltIn(id: "builtin:fy", title: "翻译", keyword: "fy", symbol: "character.bubble.fill"),
+    BuiltIn(id: "builtin:emoji", title: "搜索表情与符号", keyword: "emoji", symbol: "face.smiling"),
     // 默认别名一律英文（不用切输入法；2026-11-08 用户「为什么这两个是中文，不应该统一英文吗」）。中文的「提醒」「汇率」和
     // tx、huilv 这些照旧认（ReminderPhrase.keywords、ExchangeRates.keywords）
     BuiltIn(id: "builtin:reminder", title: "新建提醒", keyword: "remind", symbol: "alarm.fill"),
@@ -161,6 +162,7 @@ nonisolated enum LauncherCommands {
       case _ where target.hasPrefix("system-"): String(target.dropFirst("system-".count))
       case _ where target.hasPrefix("file-"): String(target.dropFirst("file-".count))
       case "translate-fy": "fy"
+      case EmojiSearch.promptTarget: "emoji"
       case _ where target.hasPrefix("reminder-"): "remind"
       case ExchangeRates.promptTarget: "currency"
       default: ""

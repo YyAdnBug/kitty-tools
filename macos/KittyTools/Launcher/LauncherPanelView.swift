@@ -679,7 +679,10 @@ private struct LauncherRow: View {
   }
 
   @ViewBuilder private var icon: some View {
-    if let emoji = item.presetEmoji {
+    if item.kind == .emoji {
+      Text(item.target).font(.system(size: 24)).frame(width: 24, height: 24)
+        .accessibilityHidden(true)
+    } else if let emoji = item.presetEmoji {
       // 状态屏的状态、提醒：它的表情（静止画面）；没选的是家族色块
       StatusPresetIcon(symbol: emoji)
     } else if item.contentType?.conforms(to: .volume) == true {
@@ -747,6 +750,7 @@ extension LauncherItem {
     case .prompt where target.hasPrefix(LauncherModel.pluginPrefix):
       pluginPage?.symbol ?? "puzzlepiece.extension.fill"
     case .calculation: "equal"
+    case .prompt where target == EmojiSearch.promptTarget: "face.smiling"
     case .path where contentType?.conforms(to: .volume) == true: "externaldrive.fill"
     case .prompt where target == FileSearch.accessTarget: "lock.open.fill"
     case .prompt where target.hasPrefix("file-"): "doc.text.magnifyingglass"
@@ -790,7 +794,8 @@ extension LauncherItem {
     case .prompt where target.hasPrefix("reminder-"): Style.Family.reminders
     case .prompt where target.hasPrefix(LauncherModel.pluginPrefix):
       pluginPage?.color ?? Style.Family.general
-    case .system, .process, .ip, .script, .scriptResult: Style.Family.command
+    case .system, .process, .ip, .script, .scriptResult, .emoji: Style.Family.command
+    case .prompt where target == EmojiSearch.promptTarget: Style.Family.command
     case .prompt where target.hasPrefix("system-"): Style.Family.command
     case .url where isSettingsPane: Style.Family.general
     case .url: Style.Family.url
@@ -824,12 +829,14 @@ extension LauncherItem {
     case .prompt where target.hasPrefix("reminder-"): "提醒"
     case .prompt where target.hasPrefix(LauncherModel.pluginPrefix): "插件"
     case .prompt where target.hasPrefix(LauncherModel.choicePrefix): "选项"
+    case .prompt where target == EmojiSearch.promptTarget: "字符"
     case .search, .prompt: "搜索"
     // 计算卡不显示副标题：汇率换算的副标题（「人民币 · 11-03 汇率」，ExchangeRates）写在这里，别的是空的
     case .calculation: subtitle.isEmpty ? "计算" : subtitle
     case .clip: "剪贴板"
     case .process: "进程"
     case .ip: "网络"
+    case .emoji: "字符"
     case .reminder: "提醒"
     // 列表结果写了 url / path 的：同网址行、文件行（↩ 打开写在底栏的主动作上，第三轮 B1）
     case .scriptResult:
