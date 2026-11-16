@@ -1,4 +1,8 @@
 <p align="center">
+  <a href="README.en.md">English</a> | <b>简体中文</b>
+</p>
+
+<p align="center">
   <img src="docs/images/icon.png" width="128" alt="Kitty Tools 图标">
 </p>
 

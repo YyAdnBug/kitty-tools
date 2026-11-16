@@ -414,6 +414,19 @@ body::before {
   width: 22px;
   height: 22px;
 }
+/* 语言切换：页头右边一个字链（中文页写 English，英文页写 中文） */
+.lang-link {
+  color: var(--muted);
+  font-size: 14px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+.lang-link:hover {
+  color: var(--fg);
+  background: var(--fill-hover);
+  text-decoration: none;
+}
 @media (max-width: 720px) {
   .top-in {
     height: auto;

@@ -5,6 +5,8 @@
 (function () {
   "use strict";
   var REPO = "YyAdnBug/kitty-tools";
+  // 英文页（docs/en/）：<html lang="en">。页面里的字都写在 HTML 里，这里只有脚本自己填的几句
+  var EN = document.documentElement.lang.indexOf("en") === 0;
   var API = "https://api.github.com/repos/" + REPO;
   var TTL = 10 * 60 * 1000;
 
@@ -117,7 +119,7 @@
       a.dataset.dl = "win";
       a.href = "https://github.com/YyAdnBug/kitty-tools/releases?q=windows&expanded=true";
       var label = a.querySelector("[data-label]");
-      if (label) label.textContent = "下载 Windows 版";
+      if (label) label.textContent = EN ? "Download for Windows" : "下载 Windows 版";
     });
     document.querySelectorAll("[data-auto-meta]").forEach(function (el) {
       el.hidden = true;
@@ -147,9 +149,9 @@
     if (!button) return;
     var text = document.getElementById(button.dataset.copy).textContent;
     var done = function () {
-      button.textContent = "已拷贝";
+      button.textContent = EN ? "Copied" : "已拷贝";
       setTimeout(function () {
-        button.textContent = "拷贝";
+        button.textContent = EN ? "Copy" : "拷贝";
       }, 1600);
     };
     if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, function () {});
@@ -235,11 +237,25 @@
       );
     }
     var TYPES = [
-      ["feat", "新功能"],
-      ["ui", "界面"],
-      ["perf", "性能"],
-      ["fix", "修复"],
+      ["feat", EN ? "New" : "新功能"],
+      ["ui", EN ? "UI" : "界面"],
+      ["perf", EN ? "Performance" : "性能"],
+      ["fix", EN ? "Fixes" : "修复"],
     ];
+    // 英文页：Mac 的日志每版有 summaryEn、每条有 textEn（缺了退回中文）；功能名（scope）的英文在 App 的
+    // Localizable.xcstrings 里，不在 changelog.json，这里抄一份（新加功能名时补一行，没有的照原样显示）。
+    // Windows 的日志还没有英文，照旧显示中文
+    var SCOPES = {
+      截图: "Screenshot", 翻译: "Translate", 启动器: "Launcher", 剪贴板: "Clipboard", 便签: "Notes",
+      全局: "Global", 启动台: "Launchpad", 设置: "Settings", 录屏: "Record Screen", 刘海岛: "Notch",
+      通用: "General", 访达右键: "Finder Menu", 同步: "Sync", 状态屏: "Status Screen", 程序坞预览: "Dock Preview",
+      提醒: "Reminders", 快捷键: "Shortcuts", 录音: "Record Audio", 主界面: "Home", 更新: "Update",
+      外观: "Appearance", 隐私: "Privacy", 插件: "Plugins", 长截图: "Scrolling Capture", 界面: "UI",
+      截图与录制: "Screenshot & Recording",
+    };
+    function english(zh, en) {
+      return EN && en ? en : zh;
+    }
     var tabs = root.querySelectorAll("[role=tab]");
     var loaded = {};
 
@@ -254,13 +270,20 @@
     function normalize(data) {
       var list = Array.isArray(data) ? data : data.entries || [];
       return list.map(function (v) {
-        return { version: v.version, date: v.date, summary: v.summary, changes: v.changes || v.items || [] };
+        return {
+          version: v.version,
+          date: v.date,
+          summary: v.summary,
+          summaryEn: v.summaryEn,
+          changes: v.changes || v.items || [],
+        };
       });
     }
 
     function render(platform, versions) {
       var panel = document.getElementById("log-" + platform);
       panel.textContent = "";
+      if (EN && platform === "windows") panel.appendChild(el("p", "small muted", "The Windows release notes are in Chinese for now."));
       versions.forEach(function (v, index) {
         var box = el("details", "release");
         box.id = platform + "-v" + v.version;
@@ -268,12 +291,13 @@
         var head = el("summary");
         var title = el("span", "release-title");
         title.appendChild(el("b", null, v.version));
-        if (index === 0) title.appendChild(el("span", "badge", "最新"));
+        if (index === 0) title.appendChild(el("span", "badge", EN ? "Latest" : "最新"));
         head.appendChild(title);
         head.appendChild(el("time", "release-date", v.date));
         box.appendChild(head);
         var body = el("div", "release-body");
-        if (v.summary) body.appendChild(el("p", "release-summary", v.summary));
+        var summary = english(v.summary, v.summaryEn);
+        if (summary) body.appendChild(el("p", "release-summary", summary));
         TYPES.forEach(function (t) {
           var items = v.changes.filter(function (c) {
             return c.type === t[0];
@@ -284,8 +308,8 @@
           var ul = el("ul");
           items.forEach(function (c) {
             var li = el("li");
-            if (c.scope) li.appendChild(el("span", "scope", c.scope));
-            li.appendChild(document.createTextNode(c.text));
+            if (c.scope) li.appendChild(el("span", "scope", english(c.scope, SCOPES[c.scope])));
+            li.appendChild(document.createTextNode(english(c.text, c.textEn)));
             ul.appendChild(li);
           });
           group.appendChild(ul);
@@ -312,7 +336,8 @@
       ref(platform)
         .then(function (at) {
           // 按 tag 记缓存：发了新版就换一个键，不会拿着旧版的日志等 10 分钟
-          return cached("kt-log-" + platform + "@" + at, function () {
+          // kt-log2：2026-11 起缓存里多了 summaryEn，换个键，免得英文页拿到旧格式的缓存
+          return cached("kt-log2-" + platform + "@" + at, function () {
             var url = API + "/contents/" + SOURCES[platform].path + "?ref=" + encodeURIComponent(at);
             return getJSON(url, true).then(normalize);
           });
@@ -322,8 +347,9 @@
         })
         .catch(function () {
           loaded[platform] = false;
-          document.getElementById("log-" + platform).querySelector(".log-status").textContent =
-            "暂时读不到更新日志（可能是网络问题，或者 GitHub 限制了访问次数）。可以稍后刷新，或者去 GitHub 的发布页看。";
+          document.getElementById("log-" + platform).querySelector(".log-status").textContent = EN
+            ? "Couldn’t load the release notes (a network problem, or GitHub is limiting requests). Try refreshing later, or see the GitHub releases page."
+            : "暂时读不到更新日志（可能是网络问题，或者 GitHub 限制了访问次数）。可以稍后刷新，或者去 GitHub 的发布页看。";
         });
     }
 

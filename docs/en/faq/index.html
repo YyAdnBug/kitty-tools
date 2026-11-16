@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>FAQ · Kitty Tools</title>
+<meta name="description" content="The questions that come up most when installing and using Kitty Tools, plus how it handles your privacy.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Kitty Tools">
+<meta property="og:image" content="https://yyadnbug.github.io/kitty-tools/assets/og.png">
+<meta property="og:title" content="FAQ · Kitty Tools">
+<meta property="og:description" content="The questions that come up most when installing and using Kitty Tools, plus how it handles your privacy.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#141012" media="(prefers-color-scheme: dark)">
+<link rel="alternate" hreflang="zh-CN" href="https://yyadnbug.github.io/kitty-tools/faq/">
+<link rel="alternate" hreflang="en" href="https://yyadnbug.github.io/kitty-tools/en/faq/">
+<link rel="alternate" hreflang="x-default" href="https://yyadnbug.github.io/kitty-tools/faq/">
+<link rel="icon" href="../../assets/favicon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="../../assets/apple-touch-icon.png">
+<link rel="stylesheet" href="../../assets/site.css">
+<script src="../../assets/site.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+  <div class="top-in">
+    <a class="brand" href="../"><img src="../../assets/icon-64.png" width="30" height="30" alt=""><span>Kitty Tools</span></a>
+    <nav class="nav" aria-label="Main">
+      <a href="../features/">Features</a>
+      <a href="../download/">Download</a>
+      <a href="../changelog/">Release Notes</a>
+      <a href="../faq/" aria-current="page">FAQ</a>
+    </nav>
+    <div class="top-actions">
+      <a class="lang-link" href="../../faq/" hreflang="zh-CN" lang="zh-CN">中文</a>
+      <a class="icon-link" href="https://github.com/YyAdnBug/kitty-tools" aria-label="Code on GitHub"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg></a>
+      <a class="btn sm" href="../download/">Download</a>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+<div class="wrap page-head">
+  <span class="eyebrow">FAQ</span>
+  <h1>Frequently asked questions</h1>
+  <p class="lead">The questions that come up most when installing and using it. Didn’t find your answer? <a href="https://github.com/YyAdnBug/kitty-tools/issues/new">Ask on GitHub</a>.</p>
+</div>
+
+<div class="wrap faq">
+  <section aria-labelledby="g-install">
+    <h2 id="g-install">Installing</h2>
+    <details class="qa" id="blocked"><summary>macOS says the app was “Not Opened”. What do I do?</summary><div>
+      <p>Kitty Tools is signed but not notarized by Apple, so macOS blocks it the first time you open it. The message says “Not Opened” rather than “damaged”, which means the signature is fine.</p>
+      <p>Open System Settings › Privacy &amp; Security, scroll down to Security, click “Open Anyway” next to Kitty Tools and enter your login password (the button stays available for about an hour after you tried to open the app). Or run this in Terminal:</p>
+      <p><code>xattr -dr com.apple.quarantine "/Applications/Kitty Tools.app"</code></p>
+      <p>You only need to do this once. After that the app updates itself, with no need to allow it again. <a href="../download/#install">Installation steps with pictures</a></p>
+    </div></details>
+    <details class="qa" id="damaged"><summary>It says the app “is damaged and can’t be opened”?</summary><div>
+      <p>Most likely the download didn’t finish. Delete the app and the DMG, download it again and reinstall. If that doesn’t help, use the Terminal command from the question above.</p>
+    </div></details>
+    <details class="qa" id="intel"><summary>Does it work on a Mac with an Intel processor?</summary><div>
+      <p>No. The Mac version only runs on Apple silicon (M1 or later). If you’re not sure, choose Apple menu › About This Mac: if the Chip line starts with Apple M, you’re good.</p>
+    </div></details>
+    <details class="qa" id="macos"><summary>Which versions of macOS are supported?</summary><div>
+      <p>macOS 15 and later. Launchpad only appears on macOS 26 and later; on macOS 15, use the system’s own.</p>
+      <p>macOS 15.0 and 15.1 don’t allow shortcuts with only ⌥. On those versions, change them in Settings › Shortcuts to combinations with ⌘ or ⌃; that page tells you.</p>
+    </div></details>
+    <details class="qa" id="slow"><summary>The download is slow or won’t finish?</summary><div>
+      <p>The installer is hosted on GitHub, which can be slow in some regions. The Mac DMG is only about a dozen megabytes, so trying again or switching networks usually gets it through. In-app updates download from GitHub too.</p>
+    </div></details>
+    <details class="qa" id="free"><summary>Does it cost anything? Where’s the code?</summary><div>
+      <p>It’s free, with no ads and no in-app purchases. The code is on <a href="https://github.com/YyAdnBug/kitty-tools">GitHub</a>: the Mac version on the <code>macos</code> branch and the Windows version on the <code>windows</code> branch.</p>
+    </div></details>
+  </section>
+
+  <section aria-labelledby="g-use">
+    <h2 id="g-use">Using it</h2>
+    <details class="qa" id="permissions"><summary>Why does it need Accessibility and Screen Recording access?</summary><div>
+      <p>Accessibility is used to paste what you picked back into your app, for Translate Selection, replacing the original text, auto-scrolling in Scrolling Capture, showing keys while recording, and Dock Preview. Screen Recording is used for screenshots, Capture Text, Translate Screenshot, Record Screen and Dock Preview thumbnails. Everything else works without them. <a href="../download/#permissions">What each permission is for</a></p>
+    </div></details>
+    <details class="qa" id="hotkeys"><summary>A shortcut does nothing, or clashes with another app?</summary><div>
+      <p>First check Settings › Shortcuts: shortcuts that couldn’t be registered are marked there, and choosing another combination fixes it. Then check Settings › General › Features to see whether that feature is turned off. Pasting back into your app needs Accessibility access; if you just granted it and it isn’t working yet, reopen the app.</p>
+    </div></details>
+    <details class="qa" id="translate-key"><summary>Do I need my own key to translate?</summary><div>
+      <p>No. The built-in translation service works out of the box. To use other services (Baidu, Youdao, DeepL, language models…), add your own key in Settings › Translate. Keys are stored in the system keychain and don’t sync; when you export your settings you can choose to include them, encrypted.</p>
+    </div></details>
+    <details class="qa" id="features-off"><summary>Can I turn off features I don’t use?</summary><div>
+      <p>Yes. Settings › General › Features has a switch for each feature. Turning one off stops its entry points, shortcuts and background work together while keeping its data and settings, and turning it back on brings everything back right away.</p>
+      <p>On the Mac, Notes, Reminders, Status Screen, Launchpad, Dock Preview, Finder Menu and the Notch are plugins: add them in the plugin cards further down the same page, and until then they don’t appear or run. New installs start with none added; Macs updating from an earlier version keep the ones that were on.</p>
+    </div></details>
+    <details class="qa" id="language"><summary>Is the interface available in English?</summary><div>
+      <p>The Mac version is. Choose System Language, <span lang="zh-CN">简体中文</span> or English in Settings › General › Language; the change takes effect after the app relaunches. New installs follow the system language, and Macs updating from an earlier version stay in Chinese. Search in the Launcher and in Settings understands both languages. The Windows version is in Chinese only for now.</p>
+    </div></details>
+    <details class="qa" id="sync"><summary>Can it sync between computers?</summary><div>
+      <p>Yes. In Settings › General › Sync, choose a folder on a synced drive (iCloud Drive, for example) or connect straight to a WebDAV server (from a cloud storage provider, or your own NAS), and settings and shortcuts, snippets and favorites, the Word List, web searches, translation services, notes and more sync between Macs, each kind with its own switch. Snippets, favorites, the Word List, web searches, translation services, notes and reminders also sync between Mac and Windows. Keys don’t sync.</p>
+    </div></details>
+    <details class="qa" id="update"><summary>How do I update?</summary><div>
+      <p>When a new version is out, the menu bar shows “Update to x.y.z…”, or click “Update and Relaunch” in Settings › About. It updates in one click.</p>
+    </div></details>
+    <details class="qa" id="uninstall"><summary>How do I uninstall it and remove its data?</summary><div>
+      <p>Quit the app and drag Kitty Tools from Applications to the Trash. To remove its data too, delete <code>~/Library/Application Support/com.yy.kitty-tools.native</code> and <code>~/Library/Preferences/com.yy.kitty-tools.native.plist</code>; translation service keys are in Keychain Access under the name <code>com.yy.kitty-tools.native</code>. On Windows, uninstall it from Settings › Apps.</p>
+    </div></details>
+    <details class="qa" id="windows"><summary>How is the Windows version different from the Mac version?</summary><div>
+      <p>The Windows version has Clipboard History, Translate, Launcher, Screenshot (with Scrolling Capture and Screenshot History), screen and audio recording, Notes, Reminders, Status Screen and Home; Launchpad, Dock Preview, Finder Menu and the Notch are Mac only for now, and its interface is in Chinese for now. The two are released separately and look and work as much alike as they can, though the default shortcuts differ a little; see the <a href="../features/#shortcuts">shortcut table on the Features page</a>.</p>
+    </div></details>
+    <details class="qa" id="feedback"><summary>How do I report a problem or suggest something?</summary><div>
+      <p>Open a new issue on <a href="https://github.com/YyAdnBug/kitty-tools/issues/new">GitHub</a> (you’ll need a GitHub account). Include the version (Settings › About), your system version and how to reproduce it, ideally with a screenshot. Writing in English is fine.</p>
+    </div></details>
+  </section>
+
+  <section class="privacy" id="privacy" aria-labelledby="g-privacy">
+    <h2 id="g-privacy">Privacy</h2>
+    <div class="prose">
+      <p><strong>Kitty Tools doesn’t collect any usage data</strong>: no analytics, no ads, no account needed.</p>
+      <h3>What stays on your computer</h3>
+      <ul>
+        <li>Clipboard History, notes, Screenshot History and translation history are all stored on your own computer.</li>
+        <li>Recognizing text in images, detecting languages and detecting sensitive content all happen on your device, using what the system provides.</li>
+        <li>Translation service keys are stored in the system keychain.</li>
+        <li>What’s playing and your next calendar event are read for the Notch and shown only on your Mac.</li>
+      </ul>
+      <h3>What goes online, and only when you use it</h3>
+      <ul>
+        <li>Translation: the text you translate is sent to the service you chose (the built-in one by default), and each service handles it under its own privacy policy.</li>
+        <li>Links on the clipboard: when you preview one in the panel, the page’s title and image are fetched.</li>
+        <li>Checking for and downloading updates: the list of releases is read from GitHub, and updates are downloaded from GitHub.</li>
+        <li>The Launcher’s <code>ip</code> command asks a public service for your public address; web searches and bookmarks open in your browser.</li>
+        <li>To show a translation service’s icon in Settings, the icon is fetched once from its website.</li>
+      </ul>
+      <h3>Sync</h3>
+      <p>Sync only writes files to a folder you chose or a WebDAV server you entered; Kitty Tools has no servers of its own. Whether those files are uploaded, and where, is up to that synced drive or server. The WebDAV password is stored in the keychain.</p>
+      <h3>This website</h3>
+      <p>No cookies, no analytics. The download buttons and release notes read GitHub’s public API directly from your browser (so GitHub sees that visit), and what they read is kept in your browser for 10 minutes.</p>
+    </div>
+  </section>
+</div>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <div class="foot-grid">
+      <div>
+        <a class="brand" href="../"><img src="../../assets/icon-64.png" width="30" height="30" alt=""><span>Kitty Tools</span></a>
+        <p>Leave the little things on your Mac to a cat.</p>
+      </div>
+      <div><h2>Product</h2><ul><li><a href="../features/">Features</a></li><li><a href="../download/">Download</a></li><li><a href="../changelog/">Release Notes</a></li></ul></div>
+      <div><h2>Help</h2><ul><li><a href="../faq/">FAQ</a></li><li><a href="../download/#install">Installation</a></li><li><a href="../faq/#privacy">Privacy</a></li><li><a href="https://github.com/YyAdnBug/kitty-tools/issues/new">Report a Problem</a></li></ul></div>
+      <div><h2>Development</h2><ul><li><a href="https://github.com/YyAdnBug/kitty-tools">GitHub</a></li><li><a href="https://github.com/YyAdnBug/kitty-tools/tree/macos">Mac source code</a></li><li><a href="https://github.com/YyAdnBug/kitty-tools/tree/windows">Windows source code</a></li></ul></div>
+      <div><h2>Credits</h2><ul><li><a href="https://github.com/aimen08/noty">Noty</a>: inspiration for Notes</li><li><a href="https://github.com/microsoft/fluentui-emoji-animated">Fluent Emoji</a>: Status Screen’s animated emoji</li></ul></div>
+    </div>
+    <div class="foot-base">
+      <span>© 2026 Kitty Tools · Source code on GitHub</span>
+      <span>This site uses no cookies and no analytics</span>
+    </div>
+  </div>
+</footer>
+</body>
+</html>
