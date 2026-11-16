@@ -565,11 +565,11 @@ internal sealed partial class TranslateWindow : Window
         Last,
     }
 
-    /// <summary>「浮窗位置」（top / pointer / last，认不出的按默认的屏幕上方）：划词、复制即译、截图翻译、剪贴板「翻译」用它。</summary>
-    private static Placement ConfiguredPlacement => SettingsService.Current.TranslateWindowPosition switch
+    /// <summary>「浮窗位置」（top / mouse / last，同 mac；旧的 pointer 也认，认不出的按默认的屏幕上方）：划词、复制即译、截图翻译、剪贴板「翻译」用它。</summary>
+    private static Placement ConfiguredPlacement => PanelPositions.Normalize(SettingsService.Current.TranslateWindowPosition) switch
     {
-        "pointer" => Placement.Pointer,
-        "last" => Placement.Last,
+        PanelPositions.Mouse => Placement.Pointer,
+        PanelPositions.Last => Placement.Last,
         _ => Placement.Top,
     };
 

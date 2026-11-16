@@ -133,7 +133,7 @@ internal sealed partial class SettingsWindow
 
         // ---- 行为
         _content.Children.Add(SettingsUi.Section("行为"));
-        var positions = new[] { "top", "pointer", "last" };
+        var positions = new[] { PanelPositions.Top, PanelPositions.Mouse, PanelPositions.Last };
         AddCombo("浮窗位置",
             "划词、截图翻译、复制即译时出现的位置：屏幕上方是鼠标所在屏幕的上方正中，跟随鼠标是光标旁边；输入翻译总在上次拖到的位置",
             new[] { "屏幕上方", "跟随鼠标", "上次位置" }, Math.Max(0, Array.IndexOf(positions, settings.TranslateWindowPosition)), index =>

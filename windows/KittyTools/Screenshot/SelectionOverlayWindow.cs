@@ -2774,19 +2774,10 @@ internal sealed partial class SelectionOverlayWindow : Window
 
     private PointD Snap(PointD point)
     {
-        var edges = new List<double> { 0, _screen.Width, 0, _screen.Height };
-        foreach (var window in _windows)
-        {
-            edges.Add(window.Left);
-            edges.Add(window.Right);
-            edges.Add(window.Top);
-            edges.Add(window.Bottom);
-        }
-
-        var xEdges = edges.Where((_, index) => index % 2 == 0).ToList();
-        var yEdges = edges.Where((_, index) => index % 2 == 1).ToList();
-        var (x, _) = RegionMath.Snap(point.X, xEdges, 6 * _scale);
-        var (y, _) = RegionMath.Snap(point.Y, yEdges, 6 * _scale);
+        // 竖边吸 x、横边吸 y（REVIEW R87：原来按下标奇偶分，横竖弄反了）
+        var edges = RegionMath.SnapEdges(_screen.Width, _screen.Height,
+            _windows.Select(window => ((double)window.Left, (double)window.Top, (double)window.Right, (double)window.Bottom)));
+        var (x, y) = RegionMath.SnapPoint(point.X, point.Y, edges, 6 * _scale);
         return new PointD(x, y);
     }
 

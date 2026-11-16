@@ -194,7 +194,8 @@ public sealed class ArchiveTests
         };
         var clean = archive.Sanitized();
         Assert.AreEqual(SettingsArchive.MaxClips, clean.Clips!.Count);
-        Assert.AreEqual(1, clean.SearchEngines!.Count);
+        // 没有 id 的丢掉；没有 {query} 的是快捷链接，2026-11-15 起照收（REVIEW R82：原来连自己导出的快捷链接都筛掉）
+        CollectionAssert.AreEqual(new[] { "g", "bad" }, clean.SearchEngines!.Select(engine => engine.Id).ToArray());
         Assert.AreEqual(1, clean.ClipGroups!.Count);
         Assert.AreEqual("a", clean.ClipGroups[0]);
     }

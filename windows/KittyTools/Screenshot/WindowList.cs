@@ -18,24 +18,6 @@ internal static unsafe partial class WindowList
         return result;
     }
 
-    /// <summary>所有窗口的边（左 / 右 / 上 / 下），吸附用。</summary>
-    public static List<double> Edges(IReadOnlyList<SnapWindow> windows, PixelBounds monitor)
-    {
-        var edges = new List<double>
-        {
-            monitor.Left, monitor.Right, monitor.Top, monitor.Bottom,
-        };
-        foreach (var window in windows)
-        {
-            edges.Add(window.Bounds.Left);
-            edges.Add(window.Bounds.Right);
-            edges.Add(window.Bounds.Top);
-            edges.Add(window.Bounds.Bottom);
-        }
-
-        return edges;
-    }
-
     private static List<SnapWindow>? _result;
 
     [UnmanagedCallersOnly(CallConvs = new[] { typeof(System.Runtime.CompilerServices.CallConvStdcall) })]

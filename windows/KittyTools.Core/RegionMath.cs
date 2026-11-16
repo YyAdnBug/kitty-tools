@@ -207,6 +207,30 @@ public static class RegionMath
         return Math.Abs(nearest - value) <= threshold ? (nearest, nearest) : (value, null);
     }
 
+    /// <summary>
+    /// 框选吸附用的边（REVIEW R87，同 mac SelectionView 6 pt 内吸到窗口边和屏幕边）：竖边给 x（屏幕的 0、宽，每扇窗口的左、右），
+    /// 横边给 y（屏幕的 0、高，每扇窗口的上、下）。原来混在一张表里按下标奇偶分，x 吸到了窗口上边、y 吸到了窗口右边。
+    /// </summary>
+    public static (List<double> X, List<double> Y) SnapEdges(
+        double screenWidth, double screenHeight, IEnumerable<(double Left, double Top, double Right, double Bottom)> windows)
+    {
+        var x = new List<double> { 0, screenWidth };
+        var y = new List<double> { 0, screenHeight };
+        foreach (var (left, top, right, bottom) in windows)
+        {
+            x.Add(left);
+            x.Add(right);
+            y.Add(top);
+            y.Add(bottom);
+        }
+
+        return (x, y);
+    }
+
+    /// <summary>一个点在 threshold 内吸到最近的竖边 / 横边（两个方向各自吸）。</summary>
+    public static (double X, double Y) SnapPoint(double x, double y, (List<double> X, List<double> Y) edges, double threshold)
+        => (Snap(x, edges.X, threshold).Value, Snap(y, edges.Y, threshold).Value);
+
     /// <summary>平移选区，整块留在 bounds 里。</summary>
     public static RectD Moved(RectD rect, double dx, double dy, RectD bounds)
     {

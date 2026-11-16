@@ -17,7 +17,7 @@ public static class ImportReview
         SettingsArchive archive, int retentionDays, bool blockSensitive, IReadOnlyCollection<string> excludedApps)
     {
         var warnings = new List<string>();
-        if (!archive.AppliesWindowsSettings || archive.Preferences is not { } preferences)
+        if (archive.WindowsSettings is not { } preferences)
         {
             return warnings;
         }

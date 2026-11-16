@@ -1,0 +1,159 @@
+{
+  "app" : "Kitty Tools",
+  "clipGroups" : [
+    "工作",
+    "常用回复"
+  ],
+  "clips" : [
+    {
+      "copiedAt" : "2026-11-14T03:20:00Z",
+      "favorite" : true,
+      "group" : "工作",
+      "note" : "周报模板",
+      "snippet" : true,
+      "text" : "本周完成：{cursor}"
+    },
+    {
+      "copiedAt" : "2026-11-13T09:00:05Z",
+      "favorite" : true,
+      "snippet" : false,
+      "text" : "收到，马上看 👀"
+    }
+  ],
+  "exportedAt" : "2026-11-15T08:30:00Z",
+  "format" : 2,
+  "hotkeys" : {
+    "clipboard" : {
+      "keyCode" : 9,
+      "modifiers" : 768
+    },
+    "recognizeText" : null,
+    "screenshot" : {
+      "keyCode" : 21,
+      "modifiers" : 2304
+    },
+    "shot.arrow" : {
+      "keyCode" : 0,
+      "modifiers" : 0
+    }
+  },
+  "notes" : [
+    {
+      "archived" : false,
+      "body" : "买牛奶\n- [ ] 面包",
+      "color" : 2,
+      "createdAt" : 1763180000000,
+      "id" : "4C1E8F6A-6A1B-4B0E-9D52-7B7A3E0C9F11",
+      "modifiedAt" : 1763183600000,
+      "order" : 1,
+      "pinned" : true,
+      "revision" : 3,
+      "title" : ""
+    }
+  ],
+  "preferences" : {
+    "appearance" : "dark",
+    "clipboardHistoryRetentionDays" : 1,
+    "reminders" : [
+      {
+        "alert" : "light",
+        "chime" : "Glass",
+        "detail" : "看看 6 米外的地方",
+        "fullSeconds" : 0,
+        "id" : "MAC-R1",
+        "isOn" : true,
+        "nagMinutes" : 0,
+        "schedule" : {
+          "date" : "2026-11-20T01:00:00Z",
+          "day" : 1,
+          "days" : [
+            2,
+            3,
+            4,
+            5,
+            6
+          ],
+          "every" : 45,
+          "kind" : "interval",
+          "time" : 540,
+          "until" : 1080
+        },
+        "sound" : "chime",
+        "statusID" : "",
+        "symbol" : "hot-beverage",
+        "title" : "Mac 上的提醒"
+      }
+    ],
+    "statusItemVisible" : false,
+    "statusScreenPresets" : [
+      {
+        "autoEndMinutes" : 30,
+        "id" : "meeting",
+        "power" : "awake",
+        "style" : "dim",
+        "symbol" : "",
+        "title" : "开会中"
+      },
+      {
+        "autoEndMinutes" : 5,
+        "id" : "clean",
+        "power" : "normal",
+        "style" : "blackout",
+        "symbol" : "glowing-star",
+        "title" : "清洁屏幕"
+      }
+    ],
+    "translateFontScale" : 1.1
+  },
+  "searchEngines" : [
+    {
+      "enabled" : true,
+      "id" : "google",
+      "keyword" : "g",
+      "name" : "Google",
+      "urlTemplate" : "https://www.google.com/search?q={query}"
+    },
+    {
+      "enabled" : false,
+      "id" : "custom-mail",
+      "keyword" : "mail",
+      "name" : "邮箱",
+      "urlTemplate" : "https://mail.example.com/inbox"
+    }
+  ],
+  "translateServices" : [
+    {
+      "id" : "zhipu",
+      "isEnabled" : true,
+      "kind" : "zhipu",
+      "model" : "glm-4-flash",
+      "name" : "智谱 GLM（免费）"
+    },
+    {
+      "id" : "deepl",
+      "isEnabled" : false,
+      "kind" : "deepl",
+      "name" : "DeepL",
+      "usesDeepLX" : false
+    },
+    {
+      "aiProtocol" : "openai",
+      "baseURL" : "https://api.deepseek.com/v1",
+      "id" : "ai:1a2b3c4d",
+      "isEnabled" : true,
+      "kind" : "ai",
+      "model" : "deepseek-chat",
+      "name" : "DeepSeek"
+    }
+  ],
+  "version" : "0.9.0",
+  "vocabulary" : [
+    {
+      "createdAt" : "2026-11-12T10:00:00Z",
+      "result" : "猫",
+      "service" : "zhipu",
+      "source" : "cat",
+      "target" : "zh-Hans"
+    }
+  ]
+}

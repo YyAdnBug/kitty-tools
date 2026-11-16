@@ -1270,10 +1270,12 @@ internal sealed partial class SettingsWindow : Window
             return null;
         }
 
-        var archive = ArchiveService.Decode(await File.ReadAllTextAsync(path));
+        // 格式比自己新的说「先更新」，读不出的说读不出（R85，同 mac 那三句）
+        var (archive, failure) = SettingsArchive.Read(await File.ReadAllTextAsync(path));
         if (archive is null)
         {
-            NoticeHost.Show("这不是 Kitty Tools 导出的设置文件", "换一个文件试试", NoticeTone.Error);
+            NoticeHost.Show(SettingsArchive.FailureText(failure), failure == SettingsArchive.ReadFailure.Newer ? string.Empty : "换一个文件试试",
+                NoticeTone.Error);
         }
 
         return archive;
@@ -1322,8 +1324,17 @@ internal sealed partial class SettingsWindow : Window
             panel.Children.Add(check);
         }
 
-        Offer(ArchiveSection.Preferences, archive.AppliesWindowsSettings && archive.Preferences is { Count: > 0 }, "整类换成文件里的");
-        Offer(ArchiveSection.Hotkeys, archive.AppliesWindowsSettings && archive.Hotkeys is { Count: > 0 }, "整类换成文件里的");
+        // Mac 的文件：设置只拿状态屏的状态和提醒（R82），快捷键不导
+        if (archive.WindowsSettings is { Count: > 0 })
+        {
+            Offer(ArchiveSection.Preferences, true, "整类换成文件里的");
+        }
+        else
+        {
+            Offer(ArchiveSection.Preferences, archive.MacLists is not null, "只导状态屏的状态和提醒（按 id 合并、本机的不删）；别的 Mac 设置不导");
+        }
+
+        Offer(ArchiveSection.Hotkeys, archive.WindowsKeys is { Count: > 0 }, "整类换成文件里的");
         Offer(ArchiveSection.Services, archive.TranslateServices is { Count: > 0 },
             "同一个服务换成文件里的设置，没有的加进来" + (archive.Secrets is null ? string.Empty : "；带着加密的密钥"));
         Offer(ArchiveSection.Engines, archive.SearchEngines is { Count: > 0 }, "同一个关键词的换成文件里的，没有的加进来");

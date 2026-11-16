@@ -96,6 +96,8 @@ internal static class SettingsDefaults
         }
 
         settings.HotKeys.RemoveAll(h => DefaultHotKeys.All(d => d.Action != h.Action));
+        // 翻译浮窗「跟随鼠标」旧版存 pointer，同 mac 改存 mouse（REVIEW R83）
+        settings.TranslateWindowPosition = PanelPositions.Normalize(settings.TranslateWindowPosition);
     }
 
     public static HotKeyDefault? Find(string action)

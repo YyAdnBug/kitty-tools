@@ -7,6 +7,9 @@
 //   录着时全局热键全停、结束注册回来；撞键的三种话；ⓧ 录着时取消；录完焦点回到录制框；Delete 清除；占位字；窗口失活就停。
 // - l：列表和跟着开关变的行（第 3 批 L1 L3–L5）：状态、翻译服务的列表按 Alt + ↑ / Delete / Enter（走 ListViewItem 收到键以后那条路），
 //   挪完焦点还在列表里；快门声关着时「试听」灰；截图历史关着时两行不显示；便签边缘两对互斥的开关。
+// - e：导出导入互通（REVIEW R80–R82）：真的 ArchiveService.Build（七类）写出去，按 mac 的必填字段查（Core ArchiveMacCheck），
+//   读回来再导一遍不出错；KITTY_SETTINGS_PROBE_MAC 给一份 mac 的导出文件（单测的 Fixtures/mac-archive-9acd4306.json）时，
+//   走真的 Apply 导进测试档：状态、提醒按 id 并进来，关着的服务导进来还关着，快捷链接和兜底开关都在，mac 的设置和快捷键不碰。
 // 每份把结果写进 <目录>\report-<角色>.md，跑完就退（有不对的退出码 1）。
 using System.Text;
 using KittyTools.Core;
@@ -65,6 +68,10 @@ internal static class SettingsProbe
             else if (role == "l")
             {
                 await RunListsAsync(shell, Check);
+            }
+            else if (role == "e")
+            {
+                RunArchive(Check, report);
             }
             else
             {
@@ -424,6 +431,47 @@ internal static class SettingsProbe
         check(Find<Border>(window.ContentForProbe, "不显示药丸") is { IsHitTestVisible: true } &&
               Find<Border>(window.ContentForProbe, "悬停预览") is { IsHitTestVisible: false },
             "L5 「悬停即打开」开着：「悬停预览」灰、「不显示药丸」能拨");
+    }
+
+    private static void RunArchive(Action<bool, string> check, StringBuilder report)
+    {
+        var settings = SettingsService.Current;
+        var all = Enum.GetValues<ArchiveSection>();
+        var text = ArchiveService.Encode(ArchiveService.Build(all));
+        var problems = ArchiveMacCheck.Problems(text);
+        check(problems.Count == 0, $"R80 真的 Build（七类）写出去 mac 读得了（{text.Length} 字）：{(problems.Count == 0 ? "没问题" : string.Join(" / ", problems))}");
+        check(!text.Contains("\\u", StringComparison.Ordinal) && text.Contains("智谱", StringComparison.Ordinal), "R85 中文原样写、不转义");
+        var theme = settings.Theme;
+        var archive = ArchiveService.Decode(text);
+        var (_, error) = archive is null ? (null, "读不出") : ArchiveService.Apply(archive, null);
+        check(error is null && archive!.AppliesWindowsSettings && settings.Theme == theme, $"读回来再导一遍：{error ?? "没出错"}");
+
+        if (Environment.GetEnvironmentVariable("KITTY_SETTINGS_PROBE_MAC") is not { Length: > 0 } macPath || !File.Exists(macPath))
+        {
+            report.Append("- 没给 KITTY_SETTINGS_PROBE_MAC，mac 的文件没导\n");
+            return;
+        }
+
+        var hotkeysBefore = string.Join(",", settings.HotKeys.Select(hotkey => $"{hotkey.Action}={hotkey.VirtualKey}:{hotkey.Modifiers}"));
+        var mac = ArchiveService.Decode(File.ReadAllText(macPath));
+        check(mac is not null && !mac.AppliesWindowsSettings && mac.MacLists is not null, "R81 mac 的文件（对象形式的快捷键）读得进来");
+        if (mac is null)
+        {
+            return;
+        }
+
+        var (outcome, macError) = ArchiveService.Apply(mac, null);
+        check(macError is null, $"导 mac 的文件：{macError ?? "没出错"}（新增服务 {outcome.ServicesAdded}、搜索 {outcome.EnginesAdded}、片段 {outcome.ClipsAdded}、便签 {outcome.NotesAdded}）");
+        check(StatusScreenHost.Presets.Any(preset => preset.Id == "meeting" && preset.Title == "开会中"), "R82 mac 的状态「开会中」并进来了");
+        check(settings.Reminders?.Any(reminder => reminder.Id == "MAC-R1") == true, "R82 mac 的提醒并进来了");
+        check(TranslateServiceStore.Instance?.Find("deepl") is { Enabled: false }, "R82 mac 上关着的 DeepL 导进来还关着");
+        var engines = settings.LauncherSearchEngines ?? new List<KittyTools.Core.SearchEngine>();
+        check(engines.FirstOrDefault(engine => engine.Id == "custom-mail") is { UrlTemplate: "https://mail.example.com/inbox", Fallback: false } &&
+              engines.FirstOrDefault(engine => engine.Id == "google") is { Fallback: true },
+            "R82 快捷链接（没有 {query}）导进来了，兜底开关照文件");
+        check(settings.Theme == theme, "mac 的 appearance 不碰 Windows 的外观");
+        check(hotkeysBefore == string.Join(",", settings.HotKeys.Select(hotkey => $"{hotkey.Action}={hotkey.VirtualKey}:{hotkey.Modifiers}")),
+            "mac 的快捷键不碰 Windows 的快捷键");
     }
 
     private static async Task RunSecondAsync(ShellRuntime shell, Action<bool, string> check)

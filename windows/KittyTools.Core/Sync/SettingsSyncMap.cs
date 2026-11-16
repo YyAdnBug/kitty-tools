@@ -156,7 +156,9 @@ public static class SettingsSyncMap
         Flag("translateScreenshotOverlay", "TranslateScreenshotOverlay");
         Flag("translateHistoryEnabled", "TranslateHistoryEnabled");
         Number("translateHistoryLimit", "TranslateHistoryLimit");
-        Choice("translatePanelPosition", "TranslateWindowPosition", Positions);
+        // 翻译浮窗：旧版存 pointer（REVIEW R83），发出去之前换成 mac 的 mouse
+        keys.Add(new(PrefPrefix + "translatePanelPosition", "TranslateWindowPosition", SettingType.Text, true,
+            value => SettingValue.Of(PanelPositions.Normalize(value.Text)), value => Positions.Contains(value.Text) ? value : null));
         Flag("translateClipboardMonitor", "CopyTranslate");
         Flag("translateWordMode", "TranslateWordLookup");
         Flag("translateWordRecording", "TranslateWordRecording");

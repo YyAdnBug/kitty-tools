@@ -106,9 +106,13 @@ internal static class ArchiveService
     {
         App = archive.App,
         Format = archive.Format,
+        Version = archive.Version,
+        ExportedAt = archive.ExportedAt,
         Platform = archive.Platform,
         Preferences = sections.Contains(ArchiveSection.Preferences) ? archive.Preferences : null,
+        WindowsPreferences = sections.Contains(ArchiveSection.Preferences) ? archive.WindowsPreferences : null,
         Hotkeys = sections.Contains(ArchiveSection.Hotkeys) ? archive.Hotkeys : null,
+        WindowsHotkeys = sections.Contains(ArchiveSection.Hotkeys) ? archive.WindowsHotkeys : null,
         TranslateServices = sections.Contains(ArchiveSection.Services) ? archive.TranslateServices : null,
         SearchEngines = sections.Contains(ArchiveSection.Engines) ? archive.SearchEngines : null,
         Clips = sections.Contains(ArchiveSection.Clips) ? archive.Clips : null,
@@ -135,28 +139,13 @@ internal static class ArchiveService
         return NoteEntry.Fit(entries) ? null : "有便签的正文超过 1 MB，先取消勾选「便签」";
     }
 
-    public static string Encode(SettingsArchive archive)
-        => JsonSerializer.Serialize(archive, ArchiveJsonContext.Default.SettingsArchive);
+    /// <summary>写成文件的文字（Core SettingsArchive.Write：mac 读得了的写法，中文不转义）。</summary>
+    public static string Encode(SettingsArchive archive) => SettingsArchive.Write(archive);
 
-    public static SettingsArchive? Decode(string text)
-    {
-        try
-        {
-            var archive = JsonSerializer.Deserialize(text, ArchiveJsonContext.Default.SettingsArchive);
-            if (archive is null ||
-                !string.Equals(archive.App, SettingsArchive.Marker, StringComparison.Ordinal) ||
-                archive.Format is < 1 or > SettingsArchive.CurrentFormat)
-            {
-                return null;
-            }
+    public static SettingsArchive? Decode(string text) => SettingsArchive.Read(text).Archive;
 
-            return archive.Sanitized();
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-    }
+    /// <summary>App 的版本（文件里的 version，mac 必填）。</summary>
+    private static string AppVersion => typeof(ArchiveService).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
 
     /// <summary>按勾选的类别从本机组一份文件；<paramref name="password"/> 不为空时把密钥加密带上。</summary>
     public static SettingsArchive Build(
@@ -164,18 +153,24 @@ internal static class ArchiveService
         string? password = null)
     {
         var settings = SettingsService.Current;
-        var archive = new SettingsArchive { Platform = SettingsArchive.WindowsPlatform };
+        // 写 mac 的必填字段（version、exportedAt），Windows 的设置和快捷键放进 windowsPreferences / windowsHotkeys（REVIEW R80）
+        var archive = new SettingsArchive
+        {
+            Platform = SettingsArchive.WindowsPlatform,
+            Version = AppVersion,
+            ExportedAt = DateTimeOffset.UtcNow,
+        };
 
         if (sections.Contains(ArchiveSection.Preferences))
         {
-            archive.Preferences = PreferencesOf(settings);
+            archive.WindowsPreferences = PreferencesOf(settings);
         }
 
         if (sections.Contains(ArchiveSection.Hotkeys))
         {
-            archive.Hotkeys = settings.HotKeys.ToDictionary(
+            archive.WindowsHotkeys = settings.HotKeys.ToDictionary(
                 hotkey => hotkey.Action,
-                hotkey => (string?)HotKeyRules.Format(hotkey.VirtualKey, (HotKeyModifiers)hotkey.Modifiers));
+                hotkey => hotkey.VirtualKey == 0 ? null : (string?)HotKeyRules.Format(hotkey.VirtualKey, (HotKeyModifiers)hotkey.Modifiers));
         }
 
         if (sections.Contains(ArchiveSection.Services) && TranslateServiceStore.Instance is { } store)
@@ -185,10 +180,13 @@ internal static class ArchiveService
                 Id = service.Id,
                 Kind = service.Kind,
                 Name = service.Name,
-                Enabled = service.Enabled,
+                IsEnabled = service.Enabled,
                 Model = service.Model,
                 BaseUrl = service.BaseUrl,
-                AiProtocol = service.Protocol,
+                // mac 的 aiProtocol 是枚举（openai / azure / anthropic），只有 AI 服务带、别的值不写（不然 mac 整份读不出）
+                AiProtocol = service.Kind == TranslateKinds.Ai && service.Protocol is { } protocol && ArchiveMacCheck.AiProtocols.Contains(protocol)
+                    ? protocol
+                    : null,
                 Region = service.Region,
                 UsesDeepLX = service.UsesDeepLX,
             }).ToList();
@@ -202,8 +200,8 @@ internal static class ArchiveService
                     Id = engine.Id,
                     Name = engine.Name,
                     Keyword = engine.Keyword,
-                    Url = engine.UrlTemplate,
-                    Fallback = engine.Fallback,
+                    UrlTemplate = engine.UrlTemplate,
+                    Enabled = engine.Fallback,
                 })
                 .ToList();
         }
@@ -239,7 +237,7 @@ internal static class ArchiveService
                     Source = entry.Source,
                     Target = entry.TargetLang,
                     Result = entry.Result,
-                    Service = entry.Service,
+                    Service = entry.Service ?? string.Empty,
                     CreatedAt = DateTimeOffset.FromUnixTimeMilliseconds(entry.CreatedAt),
                 })
                 .ToList();
@@ -278,11 +276,9 @@ internal static class ArchiveService
         var outcome = new ArchiveOutcome();
         try
         {
-            if (archive.AppliesWindowsSettings)
-            {
-                ApplyPreferences(archive.Preferences);
-                ApplyHotkeys(archive.Hotkeys);
-            }
+            // Windows 的设置整类导；Mac 的文件只拿状态列表、提醒列表按 id 合并（R82）。Mac 的快捷键不导（两边的键不一样）。
+            ApplyPreferences(archive.WindowsSettings ?? archive.MacLists);
+            ApplyHotkeys(archive.WindowsKeys);
 
             if (archive.TranslateServices is { Count: > 0 } services && TranslateServiceStore.Instance is { } store)
             {
@@ -303,7 +299,7 @@ internal static class ArchiveService
 
                     service.Name = entry.Name ?? service.Name;
                     service.Kind = entry.Kind ?? service.Kind;
-                    service.Enabled = entry.Enabled ?? service.Enabled;
+                    service.Enabled = entry.On ?? service.Enabled;
                     service.Model = entry.Model ?? service.Model;
                     service.BaseUrl = entry.BaseUrl ?? service.BaseUrl;
                     service.Protocol = entry.AiProtocol ?? service.Protocol;
@@ -881,8 +877,8 @@ internal static class ArchiveService
                     Id = entry.Id!,
                     Name = entry.Name ?? entry.Id!,
                     Keyword = entry.Keyword ?? string.Empty,
-                    UrlTemplate = entry.Url!,
-                    Fallback = entry.Fallback == true,
+                    UrlTemplate = entry.Template!,
+                    Fallback = entry.IsFallback == true,
                 });
                 outcome.EnginesAdded++;
             }
@@ -890,8 +886,8 @@ internal static class ArchiveService
             {
                 existing.Name = entry.Name ?? existing.Name;
                 existing.Keyword = entry.Keyword ?? existing.Keyword;
-                existing.UrlTemplate = entry.Url ?? existing.UrlTemplate;
-                existing.Fallback = entry.Fallback ?? existing.Fallback;
+                existing.UrlTemplate = entry.Template ?? existing.UrlTemplate;
+                existing.Fallback = entry.IsFallback ?? existing.Fallback;
             }
         }
 
