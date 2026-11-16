@@ -126,11 +126,13 @@ struct ScreenshotTab: View {
             ) { Permissions.grant(.accessibility) }
           }
           Toggle(isOn: $findsWebElements) {
-            Text("也认网页里的元素")
+            NewTitle("也认网页里的元素", page: .screenshot, fresh: navigation.fresh)
             Text(
               "浏览器和一部分用网页技术做的 App 不主动交出网页里的元素。打开后第一次停到它上面时请它打开辅助功能（只有位置和名字的那一档），一直开到它退出，可能让它稍慢一点")
           }
           .disabled(!findsElements)
+          // 拨过这一行，「新」就算看过了（光点进这一页不算；WhatsNew）
+          .onChange(of: findsWebElements) { WhatsNew.touch(section: "也认网页里的元素", of: .screenshot) }
         }
         Section {
           Picker("截完图放哪", selection: $placement) {

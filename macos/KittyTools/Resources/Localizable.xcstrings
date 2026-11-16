@@ -37114,16 +37114,6 @@
         }
       }
     },
-    "鼠标停在侧栏、列表、按钮这些上面就框出那一块，单击截下；滚轮往上换大一块、往下换小一块，Tab 只认整扇窗口。网页内容、游戏这类认不出来的照旧只认窗口" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Hovering over sidebars, lists, buttons, and similar outlines that part; click to capture it. Scroll up for a larger area, down for a smaller one; Tab detects whole windows only. Content that can’t be detected, like web pages and games, still uses the whole window"
-          }
-        }
-      }
-    },
     "鼠标停在标签上时，旁边显示这条便签的开头几行" : {
       "localizations" : {
         "en" : {
@@ -37312,6 +37302,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Save,Storage,Directory,Folder,Shutter,Sound,Thumbnail,Capture Text,Line Breaks,QR Code,Annotate,Scrolling Capture,Pin,Keys,Keyboard Shortcuts,Toolbar,Position,Right,Center,Recording Bar,Original Colors,Dim,Overlay,Filter,Color Picker,Color,Copy,Duplicate,File,PNG,Transfer Cable,Remote,element,detect,hover,web page,browser"
+          }
+        }
+      }
+    },
+    "鼠标停在侧栏、列表、按钮这些上面就框出那一块，单击截下；滚轮往上换大一块、往下换小一块，Tab 只认整扇窗口。游戏这类自己画界面的认不出来，照旧只认窗口" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hovering over sidebars, lists, buttons, and similar outlines that part; click to capture it. Scroll up for a larger area, down for a smaller one; Tab detects whole windows only. Apps that draw their own interface, like games, can’t be detected and still use the whole window"
+          }
+        }
+      }
+    },
+    "也认网页里的元素" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Also detect elements in web pages"
+          }
+        }
+      }
+    },
+    "浏览器和一部分用网页技术做的 App 不主动交出网页里的元素。打开后第一次停到它上面时请它打开辅助功能（只有位置和名字的那一档），一直开到它退出，可能让它稍慢一点" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Browsers and some apps built with web technology don’t expose the elements in their pages. When on, the first time you hover over one, Kitty Tools asks it to turn on accessibility (the lightest level, positions and names only); it stays on until the app quits and may slow it down slightly"
           }
         }
       }

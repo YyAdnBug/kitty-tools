@@ -82,6 +82,10 @@ enum WhatsNew {
     Entry(
       id: "interface-language", version: "0.10.0", feature: nil, page: .general,
       section: GeneralTab.languageLabel),
+    // 0.10.0 另有 设置 › 截图「也认网页里的元素」（截图识别元素第三轮，拨过算看过）
+    Entry(
+      id: "screenshot-web-elements", version: "0.10.0", feature: .screenshot, page: .screenshot,
+      section: "也认网页里的元素"),
   ]
 
   /// 一版最多标几个（拍板 B1：标多了到处都是「新」，等于没标）
