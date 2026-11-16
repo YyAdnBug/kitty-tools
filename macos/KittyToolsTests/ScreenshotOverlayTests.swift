@@ -123,7 +123,7 @@ struct ScreenshotOverlayTests {
     #expect(spans[0].fontSize == spans[1].fontSize)
   }
 
-  /// 行距照原文：多行的段按自己量出来的行距（基线到基线），一行的段用全图正文的；第一行的基线落在原文第一行的基线上
+  /// 非中日韩文的译文沿用原文行距和基线；英文转中文按字面上沿对齐，另由 ScreenshotReadingTests 覆盖。
   @Test func translationFollowsTheOriginalLinePitch() {
     let paragraph = segment(
       "Three lines of text", box: CGRect(x: 40, y: 600, width: 900, height: 142), lineHeight: 40,
@@ -131,7 +131,7 @@ struct ScreenshotOverlayTests {
     let single = segment(
       "One line", box: CGRect(x: 40, y: 400, width: 900, height: 40), lineHeight: 40)
     let spans = ScreenshotOverlay.layout(
-      segments: [paragraph, single], translations: ["三行", "一行"],
+      segments: [paragraph, single], translations: ["Three lines", "One line"],
       imageSize: CGSize(width: 1000, height: 1000)
     ).spans
     #expect(spans.count == 2)
@@ -144,7 +144,8 @@ struct ScreenshotOverlayTests {
     measured.baseline = 710
     measured.pitch = 49
     let fromPixels = ScreenshotOverlay.layout(
-      segments: [measured], translations: ["三行"], imageSize: CGSize(width: 1000, height: 1000)
+      segments: [measured], translations: ["Three lines"],
+      imageSize: CGSize(width: 1000, height: 1000)
     ).spans
     #expect(fromPixels.first?.baseline == 710 && fromPixels.first?.pitch == 49)
   }
@@ -778,8 +779,8 @@ struct ScreenshotOverlayTests {
       CGSize(width: 800, height: 260))
   }
 
-  /// 随机版面（种子固定）：几段不重叠的原文框、长短不一的英文译文、1x 和 Retina，排出来都守住不变式
-  @Test func randomLayoutsKeepTheInvariants() {
+  /// 两组固定随机版面：中文译英文沿用原路径，英文译中文验证校准字号后的边界；覆盖 1x 和 Retina。
+  @Test(arguments: [false, true]) func randomLayoutsKeepTheInvariants(chinese: Bool) {
     var random = SplitMix(seed: 2026_1108)
     let words = "the quick brown fox jumps over lazy dog recognition element default value color"
       .split(separator: " ").map(String.init)
@@ -801,13 +802,19 @@ struct ScreenshotOverlayTests {
         guard !segments.contains(where: { $0.box.insetBy(dx: -2, dy: -2).intersects(box) }) else {
           continue
         }
-        segments.append(segment("一段原文", box: box, lineHeight: lineHeight, lineCount: lines))
+        segments.append(
+          segment(
+            chinese ? "A source paragraph" : "一段原文", box: box, lineHeight: lineHeight,
+            lineCount: lines))
       }
       let translations = segments.map { _ in
-        (0..<Int.random(in: 1...24, using: &random)).map { _ in
-          words[Int.random(in: 0..<words.count, using: &random)]
+        if chinese {
+          return String(
+            repeating: "这是一段用于检查译文边界的文字。", count: Int.random(in: 1...12, using: &random))
         }
-        .joined(separator: " ")
+        return (0..<Int.random(in: 1...24, using: &random)).map { _ in
+          words[Int.random(in: 0..<words.count, using: &random)]
+        }.joined(separator: " ")
       }
       let pixelsPerPoint: CGFloat = Bool.random(using: &random) ? 2 : 1
       let result = ScreenshotOverlay.layout(
