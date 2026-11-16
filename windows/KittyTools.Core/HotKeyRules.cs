@@ -1,7 +1,8 @@
 // 热键录制规则（纯函数）。PLAN §5.3：
 // - 至少带一个 Ctrl 或 Alt，或者单独一个 F1–F24；
 // - 不收 Win 组合；
-// - 拒绝通用键（Ctrl+C/V/X/Z/Y/A/S/F/W/T/N/P、Alt+F4/Tab/Esc、Ctrl+Esc 等）。
+// - 拒绝通用键（Ctrl+C/V/X/Z/Y/A/S/F/W/T/N/P，带不带 Shift 都算；Alt+F4/Tab/Esc、Ctrl+Esc 等）。
+//   带 Alt 的（Ctrl+Alt+A，很多截图工具的默认键）不是通用键，不拒（issue #29）。
 using System.Text;
 
 namespace KittyTools.Core;
@@ -82,7 +83,8 @@ public static class HotKeyRules
             }
         }
 
-        if (hasCtrl && IsGenericCtrlKey(virtualKey))
+        // Ctrl / Ctrl+Shift 加这几个字母是各应用的通用快捷键；Ctrl+Alt 加它们不是（issue #29：Ctrl+Alt+A 被挡掉了）
+        if (hasCtrl && !hasAlt && IsGenericCtrlKey(virtualKey))
         {
             return HotKeyValidation.Fail($"{Format(virtualKey, modifiers)} 是应用里的通用快捷键");
         }

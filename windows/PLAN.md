@@ -134,7 +134,7 @@ windows/
 - **录制规则**写成纯函数 `HotKeyRules`，配单测：
   - 至少带一个 Ctrl 或 Alt，或者单独一个 F1–F24；
   - 不收 Win 键组合（系统保留；ponytail：真要支持再换低级键盘钩子）；
-  - 拒绝通用键：Ctrl+C / V / X / Z / Y / A / S / F / W / T / N / P、Alt+F4、Alt+Tab、Alt+Esc、Ctrl+Esc。被拒时说明原因。
+  - 拒绝通用键：Ctrl+C / V / X / Z / Y / A / S / F / W / T / N / P（带不带 Shift 都算；带 Alt 的不算，Ctrl+Alt+A 能设，issue #29）、Alt+F4、Alt+Tab、Alt+Esc、Ctrl+Esc。被拒时说明原因。
 - **默认键**（都能改）：
 
 | 动作 | Windows 默认 | mac | 为什么不一样 |

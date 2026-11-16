@@ -8,6 +8,20 @@
 
 条目编号不复用。行号按条目里写的那个提交。
 
+## issue #29：Ctrl+Alt+A 被当成通用键（审查方在 Mac 上写、没编译，2026-11-16）
+
+用户 cx994 报：把截图快捷键设成 Ctrl+Alt+A，提示「Ctrl+Alt+A 是应用里的通用快捷键」。`Core/HotKeyRules.cs` 拒通用键的条件是
+`hasCtrl && IsGenericCtrlKey(virtualKey)`：只要带 Ctrl 就拒，带 Alt 的也挡了。PLAN §5.3 的本意是 Ctrl（`CtrlShiftGenericKeyIsStillRejected`
+另外锁了 Ctrl+Shift）加那 12 个字母；Ctrl+Alt+A 不是通用快捷键，很多截图工具默认就用它。mac 按完整组合比（`HotKey.reservedEditKeys`），⌃⌥A 本来就能设。
+
+### R103（P2）Ctrl+Alt+通用字母被拒 → 审查方已改（`git log --grep "issue #29"`），待你们编译验证
+
+- 改成 `hasCtrl && !hasAlt && IsGenericCtrlKey(virtualKey)`。同一个 `Validate` 也管注册（`Shell/HotKeys.cs`）、导入（`ArchiveService`）、
+  同步落快捷键（`SettingsSyncFields.Accept`），一起放开，口径一致。
+- 单测 `HotKeyRulesTests.CtrlAltGenericKeyIsAllowed`（Ctrl+Alt+A、Ctrl+Alt+Shift+C 通过，Ctrl+A 照旧拒）；PLAN §5.3 那一句补了「带 Alt 的不算」。
+- 要你们做：编译零警告、全部单测；HANDTEST 1483。
+- AltGr：德语、波兰语等布局上 Ctrl+Alt+字母就是 AltGr+字母（打 @、ą 这些字）。原来就允许 Ctrl+Alt+别的字母，这里只是把那 12 个也放开，不另加提示。
+
 ## 对齐检查（2026-11-15）
 
 用户：「windows 最近提交了很多修改 / 更新，主要是为了对齐 macos 的功能，你检查一下看看有没有还没有对齐的」。审查方在 Mac 上只读两边的代码，**没编译、没上机**。

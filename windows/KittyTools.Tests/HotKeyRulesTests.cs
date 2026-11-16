@@ -63,6 +63,15 @@ public sealed class HotKeyRulesTests
         Assert.IsFalse(HotKeyRules.Validate('C', HotKeyModifiers.Control | HotKeyModifiers.Shift).Ok);
     }
 
+    /// <summary>issue #29：Ctrl+Alt 加通用键的字母不是通用快捷键（Ctrl+Alt+A 是很多截图工具的默认键），能设。</summary>
+    [TestMethod]
+    public void CtrlAltGenericKeyIsAllowed()
+    {
+        Assert.IsTrue(HotKeyRules.Validate('A', HotKeyModifiers.Control | HotKeyModifiers.Alt).Ok);
+        Assert.IsTrue(HotKeyRules.Validate('C', HotKeyModifiers.Control | HotKeyModifiers.Alt | HotKeyModifiers.Shift).Ok);
+        Assert.IsFalse(HotKeyRules.Validate('A', HotKeyModifiers.Control).Ok);
+    }
+
     [TestMethod]
     public void AltSystemKeysAreRejected()
     {
