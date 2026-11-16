@@ -5,6 +5,8 @@
 import Foundation
 
 enum Prefs {
+  /// AppKit 原生悬停提示的初始延迟（毫秒）；GUI 入口单独注册，不进 defaults 的导出 / 同步清单。
+  static let toolTipDelay = "NSInitialToolTipDelay"
   /// 外观（AppAppearance.rawValue）：system 跟随系统 / light 浅色 / dark 深色
   static let appearance = "appearance"
   /// 强调色（AccentChoice.rawValue）：system 跟随系统（默认）/ blue / purple / pink（品牌粉）/ red / orange / yellow / green / graphite
