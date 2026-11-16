@@ -28,6 +28,46 @@ struct MediaKeysTests {
     #expect(MediaKeys.decode(data1: 0x0000_0000) == nil)
   }
 
+  /// 真正的拦截在后台线程：用 AppKit 在主线程造事件，序列化后在后台走生产的读取入口。不发系统事件，
+  /// 不建拦截、不切输入法、不动音量。非媒体子类型（包括输入法切换）必须在读 compound data 前放行。
+  @Test func decodesSystemEventsOffMainThread() async throws {
+    for subtype: Int16 in [0, 6, 7, 8, 9, 11, 12] {
+      for (code, key) in [
+        (0, MediaKeys.Key.volumeUp), (1, .volumeDown), (2, .brightnessUp),
+        (3, .brightnessDown), (7, .mute), (4, nil), (16, nil), (21, nil),
+      ] as [(Int, MediaKeys.Key?)] {
+        for state in [0xA00, 0xA01, 0xB00, 0] {
+          let system = try #require(
+            NSEvent.otherEvent(
+              with: .systemDefined, location: .zero, modifierFlags: [], timestamp: 0,
+              windowNumber: 0, context: nil, subtype: subtype, data1: (code << 16) | state,
+              data2: -1))
+          let data = try #require(system.cgEvent?.data) as Data
+          let press = try await Self.decodeOffMain(data)
+          if subtype == 8, let key, state != 0 {
+            #expect(press?.key == key)
+            #expect(press?.down == (state != 0xB00))
+            #expect(press?.isRepeat == (state == 0xA01))
+          } else {
+            #expect(press == nil)
+          }
+        }
+      }
+    }
+    // Caps Lock 的普通修饰键事件也不能当媒体键（只构造、不发送）。
+    let caps = try #require(CGEvent(keyboardEventSource: nil, virtualKey: 57, keyDown: false))
+    caps.type = .flagsChanged
+    #expect(try await Self.decodeOffMain(#require(caps.data) as Data) == nil)
+  }
+
+  @concurrent nonisolated private static func decodeOffMain(_ data: Data) async throws
+    -> (key: MediaKeys.Key, down: Bool, isRepeat: Bool)?
+  {
+    #expect(pthread_main_np() == 0)
+    let event = try #require(CGEvent(withDataAllocator: nil, data: data as CFData))
+    return MediaKeys.decode(event: event)
+  }
+
   /// 哪些时候接这个键：平时接；按着 ⌥（打开设置）、⇧（反转提示音）、⌃（调外接屏）任一个、锁屏着（岛看不见）交回系统
   @Test func leavesModifiersAndLockScreenToSystem() {
     #expect(MediaKeys.takes(flags: [], locked: false))
