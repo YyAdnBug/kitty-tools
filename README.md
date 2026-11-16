@@ -41,11 +41,11 @@ macOS 版用 Swift 6 + SwiftUI / AppKit 写成，常驻菜单栏、不占程序�
 | [`macos`](https://github.com/YyAdnBug/kitty-tools/tree/macos) | macOS 版（Swift 6 + SwiftUI / AppKit），零第三方依赖 | tag `macos-v*`，最新一版标 latest |
 | [`windows`](https://github.com/YyAdnBug/kitty-tools/tree/windows) | Windows 版（C# + .NET + WinUI 3，Native AOT），只用微软的包 | tag `windows-v*`，不标 latest |
 
-两个版本的功能、样子和默认值尽量对齐；剪贴板片段、生词本、网页搜索、翻译服务能在 Mac 和 Windows 之间同步。
+两个版本的功能、样子和默认值尽量对齐；剪贴板片段、生词本、网页搜索、翻译服务、便签、提醒能在 Mac 和 Windows 之间同步。
 
 ## Windows 版
 
-常驻托盘，全局快捷键呼出，界面跟着 Windows 11 的样子走（亚克力、Segoe 字体），功能和 mac 版对齐：剪贴板历史（片段、收藏夹、多选粘贴、拖出去）、翻译（八个服务、流式、划词 / 输入 / 复制即译、历史与生词本）、启动器（应用、设置页、系统命令、计算、文件搜索、浏览器书签、kill / port）、截图（标注、识字、钉图、截图翻译、长截图、截图历史）、录屏与录音。
+常驻托盘，全局快捷键呼出，界面跟着 Windows 11 的样子走（亚克力、Segoe 字体），功能和 mac 版对齐：剪贴板历史（片段、收藏夹、多选粘贴、拖出去）、翻译（八个服务、流式、划词 / 输入 / 复制即译、历史与生词本）、启动器（应用、设置页、系统命令、计算、文件搜索、浏览器书签、kill / port）、截图（标注、识字、钉图、截图翻译、长截图、截图历史）、录屏与录音、便签、提醒、状态屏；同步能连 WebDAV 服务器。
 
 从 [Releases](https://github.com/YyAdnBug/kitty-tools/releases) 里找 `windows-v` 开头的版本，下载 `KittyTools-x.y.z-windows-x64-setup.exe`（ARM 电脑下载 arm64 那个）双击安装，以后在程序里自动更新。代码、规矩和计划在 [`windows`](https://github.com/YyAdnBug/kitty-tools/tree/windows/windows) 分支的 `windows/` 下，入口是 `windows/AGENTS.md`。
 
