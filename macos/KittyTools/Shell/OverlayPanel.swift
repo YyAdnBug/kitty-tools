@@ -687,13 +687,13 @@ final class OverlayPanel: NSPanel {
     // 记着的宽度（W1）先摆上：下面几种摆法都按当前的宽度算
     if let widthKey, case let width = UserDefaults.standard.double(forKey: widthKey), width > 0 {
       let minWidth = max(minSize.width, contentMinSize.width)
-      let clamped = min(max(width, minWidth), maxSize.width)
+      let clamped = min(max(CGFloat(width), minWidth), maxSize.width)
       if abs(clamped - frame.width) > 0.5 {
         setFrame(
           NSRect(x: frame.minX, y: frame.minY, width: clamped, height: frame.height), display: false
         )
       }
-      if let user = userFrame { userFrame = (user.topLeft, clamped) }
+      if let user = userFrame { userFrame = (topLeft: user.topLeft, width: clamped) }
     }
     // 挂在图标下面时用图标所在的那块屏（键盘、旁白点开的，鼠标不一定在那儿）
     let point = below.map { NSPoint(x: $0.midX, y: $0.midY) } ?? NSEvent.mouseLocation

@@ -145,6 +145,10 @@ enum ScreenCapture {
     var result: Result<T, any Error>?
     var timer: Task<Void, Never>?
 
+    // Xcode 26.3 / Swift 6.2.4 的 EarlyPerfInliner 会在合成的 deinit 上崩溃；
+    // 显式空 deinit 让优化器走稳定的 SIL 路径。
+    deinit {}
+
     func finish(_ result: Result<T, any Error>?) {
       guard let wake else { return }
       self.wake = nil

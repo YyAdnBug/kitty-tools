@@ -165,9 +165,10 @@ struct NoteTaskBoxTests {
     func near(_ color: NSColor?, _ hex: Int) -> Bool {
       guard let color, color.alphaComponent > 0.95 else { return false }
       let parts = [color.redComponent, color.greenComponent, color.blueComponent]
-      return zip(parts, [16, 8, 0]).allSatisfy { value, shift in
-        abs(value * 255 - CGFloat(hex >> shift & 0xFF)) < 12
+      for (value, shift) in zip(parts, [16, 8, 0] as [Int]) {
+        guard abs(value * 255 - CGFloat(hex >> shift & 0xFF)) < 12 else { return false }
       }
+      return true
     }
     #expect((color(boxes[0], 0.5, 0.5)?.alphaComponent ?? 1) < 0.05, "待办中间")
     #expect((color(boxes[0], 0.5, 0.02)?.alphaComponent ?? 0) > 0.3, "待办的描边")
