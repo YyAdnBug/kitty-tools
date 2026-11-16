@@ -164,15 +164,18 @@ struct LaunchpadZoomTests {
       recorder.events.withLock { $0.append((event, current)) }
     }
     recorder.bridge.withLock { $0 = bridge }
-    let frames = [
+    let samples: [(time: Double, radius: Double)] = [
       (0.0, 0.2), (0.05, 0.17), (0.1, 0.16), (0.15, 0.15),
-    ].map { time, radius in
-      TouchFrame(
-        time: time,
-        touches: [
-          (0.5 - radius, 0.5), (0.5, 0.5 - radius), (0.5 + radius, 0.5), (0.5, 0.5 + radius),
-        ]
-        .enumerated().map { TouchPoint(id: Int32($0), x: $1.0, y: $1.1, state: 4) })
+    ]
+    let frames = samples.map { sample in
+      let radius = sample.radius
+      let points: [(Double, Double)] = [
+        (0.5 - radius, 0.5), (0.5, 0.5 - radius), (0.5 + radius, 0.5), (0.5, 0.5 + radius),
+      ]
+      let touches = points.enumerated().map {
+        TouchPoint(id: Int32($0), x: $1.0, y: $1.1, state: 4)
+      }
+      return TouchFrame(time: sample.time, touches: touches)
     }
     await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
       DispatchQueue.global().async {

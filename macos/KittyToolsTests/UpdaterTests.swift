@@ -117,6 +117,26 @@ struct UpdaterTests {
     #expect(Updater.release(fromManifest: manifest(version: "")) == nil)
     #expect(Updater.release(fromManifest: Data(#"{"version":"0.8.1"}"#.utf8)) == nil)
     #expect(Updater.release(fromManifest: Data("<html>404</html>".utf8)) == nil)
+    // Intel 上自己编的（PR #21）：清单里只有 arm64 的包，不认（退回 API）
+    #expect(Updater.release(fromManifest: manifest(), suffix: "_x86_64.zip") == nil)
+  }
+
+  /// 更新包按这份 App 的架构挑（PR #21）：Intel 上只认 _x86_64.zip，release 里只有 _arm64.zip 时没有更新（换上去打不开）
+  @Test func picksArchiveForThisArchitecture() throws {
+    #expect(Updater.archiveSuffix == "_arm64.zip")
+    let both = Self.payload(
+      tag: "macos-v0.2.0",
+      assets: [
+        ("Kitty.Tools_0.2.0_arm64.zip", "https://github.com/x/y/a.zip"),
+        ("Kitty.Tools_0.2.0_x86_64.zip", "https://github.com/x/y/x.zip"),
+      ])
+    #expect(try Updater.release(from: both)?.archive.lastPathComponent == "a.zip")
+    #expect(
+      try Updater.release(from: both, suffix: "_x86_64.zip")?.archive.lastPathComponent == "x.zip")
+    let armOnly = Self.payload(
+      tag: "macos-v0.2.0", assets: [("Kitty.Tools_0.2.0_arm64.zip", "https://github.com/x/y/a.zip")]
+    )
+    #expect(try Updater.release(from: armOnly, suffix: "_x86_64.zip") == nil)
   }
 
   /// 先读清单、读到就不碰 API；清单 404（老 release 没有它）、连不上、解不出来时读 API 的列表；API 限流（403 / 429）时
@@ -201,6 +221,9 @@ struct UpdaterTests {
     #expect(script.contains("/\(Updater.manifestName)\""))
     #expect(
       script.contains("{version: $version, url: $url, sha256: $sha256, size: $size, page: $page}"))
+    // 更新包的名字跟着架构走，和 Updater.archiveSuffix 的两种对得上（PR #21）
+    #expect(script.contains("ARCH=\"${ARCH:-arm64}\""))
+    #expect(script.contains("ZIP=\"$OUT/${NAME}_${VERSION}_${ARCH}.zip\""))
   }
 
   @Test func comparesVersionsNumerically() {

@@ -2259,6 +2259,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   ) {
     // 工具栏「翻译」就地盖回截图上，还是交出去走翻译浮窗：看设置 › 翻译「把译文直接盖回截图上」
     let overlays = UserDefaults.standard.bool(forKey: Prefs.translateScreenshotOverlay)
+    let translate: ((CGImage, CGFloat) async -> ScreenshotOverlay.Outcome)?
+    if overlays {
+      translate = {
+        [weak self] (image: CGImage, pixelsPerPoint: CGFloat) async -> ScreenshotOverlay.Outcome in
+        guard let self else { return .init(message: String(localized: "翻译不可用")) }
+        return await self.overlayTranslate(image, pixelsPerPoint: pixelsPerPoint)
+      }
+    } else {
+      translate = nil
+    }
     beginCapture(hidingPanels: hidingPanels) { [self] in
       let lastRegion = UserDefaults.standard.string(forKey: Prefs.screenshotLastRegion).map(
         NSRectFromString)
@@ -2270,11 +2280,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               $0, lastRegion: lastRegion, preselect: repeatingLastRegion,
               autoTranslate: autoTranslate,
               recordingBlocker: { [weak self] in self?.recordingBlocker(.screen) },
-              translate: overlays
-                ? { [weak self] image, pixelsPerPoint in
-                  guard let self else { return .init(message: String(localized: "翻译不可用")) }
-                  return await self.overlayTranslate(image, pixelsPerPoint: pixelsPerPoint)
-                } : nil)
+              translate: translate)
           })
       else { return }
       await handleCapture(outcome)

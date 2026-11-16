@@ -1668,7 +1668,11 @@ import SwiftUI
   /// 这一款 Mac 是触屏，它也是唯一有灵动岛的
   // ponytail: 拿触屏当灵动岛的记号；出了带刘海的触屏 Mac、或者 Apple 给了正式接口，换成那个
   static func hasSystemIsland(_ screen: NSScreen) -> Bool {
-    if #available(macOS 27, *) { screen.touchCapabilities.contains(.multiTouch) } else { false }
+    #if compiler(>=6.4)
+      if #available(macOS 27, *) { screen.touchCapabilities.contains(.multiTouch) } else { false }
+    #else
+      false
+    #endif
   }
 
   private func makeWindow() -> IslandPanel {

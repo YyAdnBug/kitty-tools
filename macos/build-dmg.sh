@@ -23,11 +23,17 @@
 #   用 hdiutil 做可写映像 + AppleScript 让访达摆位置（隐藏的 .background 挪到默认窗口外、删掉 .fseventsd，
 #   免得开了「显示隐藏文件」时压在字标上），再压成只读。第一次跑会问能不能控制访达；
 #   不允许或 DMG_LAYOUT=0 时照样出包，只是没有背景和摆位。
+# Intel 包（PR #21，正式 release 仍以 arm64 为主）：ARCH=x86_64 macos/build-dmg.sh——在 Apple 芯片上用 Xcode 27 交叉编，
+#   产物是 <名字>_<版本>_x86_64.dmg / .zip，不写更新清单（清单只给 arm64）。要让 Intel 上的版本也能 App 内更新，把 _x86_64.zip
+#   传到同一个 macos-v* release：Updater 在 Intel 上认不出清单里的 arm64 包，退回 API 按后缀挑 _x86_64.zip（没有就当没更新）。
+#   每个可执行文件都要正好是这一种架构（lipo 核对），文件名里的架构不许说谎。
 set -euo pipefail
+ARCH="${ARCH:-arm64}"
+[[ "$ARCH" == arm64 || "$ARCH" == x86_64 ]] || { echo "ARCH 只能是 arm64 或 x86_64"; exit 1; }
 M="$(cd "$(dirname "$0")" && pwd)"; OUT="$M/build"; CHANGELOG="$M/KittyTools/Resources/changelog.json"
 rm -rf "$OUT/KittyTools.xcarchive" "$OUT/dmg" && mkdir -p "$OUT/dmg"
 xcodebuild archive -project "$M/KittyTools.xcodeproj" -scheme KittyTools -configuration Release \
-  -destination 'generic/platform=macOS' -archivePath "$OUT/KittyTools.xcarchive" -quiet
+  -destination 'generic/platform=macOS' -archivePath "$OUT/KittyTools.xcarchive" ARCHS="$ARCH" -quiet
 APP=$(ls -d "$OUT"/KittyTools.xcarchive/Products/Applications/*.app)
 NAME=$(basename "$APP" .app)
 VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")
@@ -42,7 +48,11 @@ codesign --verify --deep --strict --verbose=2 "$APP"
 # 先存变量再判断：pipefail 下 grep -q 提前退出会让管道报错，导致漏报
 ENT=$(codesign -d --entitlements - "$APP" 2>&1 || true)
 [[ "$ENT" != *get-task-allow* ]] || { echo "get-task-allow 混入发布包"; exit 1; }
-lipo -archs "$APP/Contents/MacOS/$NAME"
+# ARCHS 跟着构建机走（PR #21）：发出去的每个可执行文件都要正好是 $ARCH，不然 _arm64 的包里装着别的架构
+for BIN in "$APP/Contents/MacOS/$NAME" "$APP/Contents/PlugIns/KittyToolsFinder.appex/Contents/MacOS/KittyToolsFinder" \
+  "$APP/Contents/XPCServices/KittyToolsNowPlaying.xpc/Contents/MacOS/KittyToolsNowPlaying"; do
+  [[ "$(lipo -archs "$BIN")" == "$ARCH" ]] || { echo "$(basename "$BIN") 不是只有 $ARCH：$(lipo -archs "$BIN")"; exit 1; }
+done
 # 访达扩展（第十一族「访达右键」，mac-native §6）：在包里、本团队签名、开着沙盒、没有 get-task-allow
 FX="$APP/Contents/PlugIns/KittyToolsFinder.appex"
 codesign --verify --strict \
@@ -67,7 +77,7 @@ NPENT=$(codesign -d --entitlements - "$NP" 2>&1 || true)
 [[ -n "$(/usr/libexec/PlistBuddy -c 'Print :KittyBuiltinZhipuKey' "$APP/Contents/Info.plist" 2>/dev/null)" ]] \
   || { echo "内置智谱 key 没打进包（缺 macos/Config/Secrets.xcconfig？）"; exit 1; }
 ditto "$APP" "$OUT/dmg/$NAME.app" && ln -s /Applications "$OUT/dmg/Applications"
-DMG="$OUT/${NAME}_${VERSION}_arm64.dmg"
+DMG="$OUT/${NAME}_${VERSION}_${ARCH}.dmg"
 if [[ "${DMG_LAYOUT:-1}" == 0 ]]; then
   hdiutil create -volname "$NAME" -srcfolder "$OUT/dmg" -format UDZO -ov "$DMG"
 else
@@ -113,20 +123,23 @@ APPLESCRIPT
 fi
 hdiutil verify "$DMG"
 # App 内更新用的 zip（Updater 下载后 ditto 解开、按同样的签名要求验签）：打完就解开验一次，别发出去才发现装不上
-ZIP="$OUT/${NAME}_${VERSION}_arm64.zip"
+ZIP="$OUT/${NAME}_${VERSION}_${ARCH}.zip"
 ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
 CHECK="$OUT/zip-check" && rm -rf "$CHECK" && ditto -x -k "$ZIP" "$CHECK"
 codesign --verify --deep --strict \
   -R '=identifier "com.yy.kitty-tools.native" and anchor apple generic and certificate leaf[subject.OU] = "HTX9F4KG39"' \
   "$CHECK/$NAME.app"
 rm -rf "$CHECK"
-# 更新清单（#12，说明见文件头）：文件名和 Updater.manifestName 一样（单测比对）
-ZIPNAME=$(basename "$ZIP") && TAG="macos-v$VERSION" && REL="https://github.com/YyAdnBug/kitty-tools/releases"
-MANIFEST="$OUT/macos-update.json"
-jq -n --arg version "$VERSION" --arg url "$REL/download/$TAG/${ZIPNAME// /.}" \
-  --arg sha256 "$(shasum -a 256 "$ZIP" | cut -d' ' -f1)" --argjson size "$(stat -f%z "$ZIP")" \
-  --arg page "$REL/tag/$TAG" '{version: $version, url: $url, sha256: $sha256, size: $size, page: $page}' \
-  > "$MANIFEST"
+# 更新清单（#12，说明见文件头）：文件名和 Updater.manifestName 一样（单测比对）；只给 arm64 的包写
+MANIFEST=""
+if [[ "$ARCH" == arm64 ]]; then
+  ZIPNAME=$(basename "$ZIP") && TAG="macos-v$VERSION" && REL="https://github.com/YyAdnBug/kitty-tools/releases"
+  MANIFEST="$OUT/macos-update.json"
+  jq -n --arg version "$VERSION" --arg url "$REL/download/$TAG/${ZIPNAME// /.}" \
+    --arg sha256 "$(shasum -a 256 "$ZIP" | cut -d' ' -f1)" --argjson size "$(stat -f%z "$ZIP")" \
+    --arg page "$REL/tag/$TAG" '{version: $version, url: $url, sha256: $sha256, size: $size, page: $page}' \
+    > "$MANIFEST"
+fi
 # 发布说明（说明见文件头）：中文在前、英文在后
 DMGNAME=$(basename "$DMG") && DMGNAME=${DMGNAME// /.}
 {
@@ -171,4 +184,4 @@ NOTES
 } > "$OUT/notes.txt"
 echo "$DMG"
 echo "$ZIP"
-echo "$MANIFEST"
+[[ -z "$MANIFEST" ]] || echo "$MANIFEST"

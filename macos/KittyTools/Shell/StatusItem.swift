@@ -76,7 +76,9 @@ final class StatusItem: NSObject, NSMenuDelegate {
     item.button?.target = self
     item.button?.action = #selector(clicked)
     item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
-    if #available(macOS 27, *) { item.expandedInterfaceDelegate = self }
+    #if compiler(>=6.4)
+      if #available(macOS 27, *) { item.expandedInterfaceDelegate = self }
+    #endif
     // 读屏用户按不出右键 / ⌃点：菜单另给一个自定义动作（U12①）
     item.button?.setAccessibilityCustomActions([
       NSAccessibilityCustomAction(name: String(localized: "显示菜单")) { [weak self] in
@@ -211,7 +213,9 @@ final class StatusItem: NSObject, NSMenuDelegate {
   /// 这一下点在图标上、由图标自己处理（主界面不当成点了外面）：只在 15–26——那里再点一下图标，按钮的动作负责收起；
   /// 27 上系统不把这一下交给我们，得让主界面当成点了外面收起
   func ownsClick(at point: NSPoint) -> Bool {
-    if #available(macOS 27, *) { return false }
+    #if compiler(>=6.4)
+      if #available(macOS 27, *) { return false }
+    #endif
     return iconFrame?.contains(point) == true
   }
 
@@ -219,7 +223,9 @@ final class StatusItem: NSObject, NSMenuDelegate {
   @objc private func clicked() {
     if Self.showsMenu(NSApp.currentEvent) { return showMenu() }
     // 27 上左键归 expandedInterfaceDelegate：哪天也送到这里来，别开两次
-    if #available(macOS 27, *) { return }
+    #if compiler(>=6.4)
+      if #available(macOS 27, *) { return }
+    #endif
     if homeIsOpen() { closeHome() } else { expand() }
   }
 
@@ -253,7 +259,9 @@ final class StatusItem: NSObject, NSMenuDelegate {
   /// 主界面收起了（点外面、Esc、点了格子、程序收起都算）：撤掉图标的高亮；27 上告诉系统这次展开结束了
   func homeDidClose() {
     item.button?.highlight(false)
-    if #available(macOS 27, *) { item.expandedInterfaceSession?.cancel() }
+    #if compiler(>=6.4)
+      if #available(macOS 27, *) { item.expandedInterfaceSession?.cancel() }
+    #endif
   }
 
   /// 菜单从按钮上直接弹（菜单项打开前在 menuNeedsUpdate 里现建）；主界面开着就先收起
@@ -303,24 +311,26 @@ final class StatusItem: NSObject, NSMenuDelegate {
   }
 }
 
-@available(macOS 27, *)
-extension StatusItem: NSStatusItemExpandedInterfaceDelegate {
-  /// 系统叫开（左键、键盘导航到图标）：开主界面。⌃点系统也当左键开，可按钮同时还收到一次右键（菜单从那里弹）——不开。
-  /// 只认鼠标点击时带的 ⌃（U12①：原来看的是全局修饰键，读屏、键盘导航按着 ⌃ 时主界面一直开不出来；菜单栏在进程外，
-  /// 当前事件可能不是那一下点击，那就看此刻鼠标键和 ⌃ 是不是都按着）
-  func statusItem(
-    _ statusItem: NSStatusItem,
-    didBegin expandedInterfaceSession: NSStatusItemExpandedInterfaceSession
-  ) {
-    if Self.showsMenu(NSApp.currentEvent) { return expandedInterfaceSession.cancel() }
-    expand()
-  }
+#if compiler(>=6.4)
+  @available(macOS 27, *)
+  extension StatusItem: NSStatusItemExpandedInterfaceDelegate {
+    /// 系统叫开（左键、键盘导航到图标）：开主界面。⌃点系统也当左键开，可按钮同时还收到一次右键（菜单从那里弹）——不开。
+    /// 只认鼠标点击时带的 ⌃（U12①：原来看的是全局修饰键，读屏、键盘导航按着 ⌃ 时主界面一直开不出来；菜单栏在进程外，
+    /// 当前事件可能不是那一下点击，那就看此刻鼠标键和 ⌃ 是不是都按着）
+    func statusItem(
+      _ statusItem: NSStatusItem,
+      didBegin expandedInterfaceSession: NSStatusItemExpandedInterfaceSession
+    ) {
+      if Self.showsMenu(NSApp.currentEvent) { return expandedInterfaceSession.cancel() }
+      expand()
+    }
 
-  /// 系统叫收（别的菜单栏菜单接手了、键盘导航走开了）
-  func statusItemDidEndExpandedInterfaceSession(_ statusItem: NSStatusItem, animated: Bool) {
-    closeHome()
+    /// 系统叫收（别的菜单栏菜单接手了、键盘导航走开了）
+    func statusItemDidEndExpandedInterfaceSession(_ statusItem: NSStatusItem, animated: Bool) {
+      closeHome()
+    }
   }
-}
+#endif
 
 /// 菜单栏图标上「有新版本」的小圆点：强调色实心（现在该操作的东西），在 draw 里取色，跟着菜单栏的深浅和设置里的强调色走
 private final class BadgeDot: NSView {
