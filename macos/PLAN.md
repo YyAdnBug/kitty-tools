@@ -1792,6 +1792,8 @@ Alfred 的 Related Apps、BetterTouchTool 按 App 停用，调研和测开销的
   按后缀挑，release 里没有就当没更新；装前用 `Bundle.executableArchitectures` 再核一遍）；`build-dmg.sh` 加 `ARCH`（默认 arm64），
   每个可执行文件 lipo 核对、产物名带架构、只给 arm64 写清单。
 - 已经发出去的 0.8.1 x86_64 测试包是旧的更新逻辑：它会下 0.9.0 的 `_arm64.zip` 换上去，换完打不开。拿到测试包的人要手动重装 Intel 包。
+- 用户 2026-11-16 定「两个包」，不做通用包（Apple 文档、Sparkle 的惯例是通用包；本机实测通用包的 DMG 约是 arm64 的 1.6 倍，
+  0.9.0 的 15 MB 会到约 24 MB）：arm64 照旧是主包和清单，Intel 每版另传 `_x86_64.zip`（和 DMG）到同一个 release，不传就不提示更新。
 - ponytail：Intel 只靠交叉编和 PR 作者的 Intel 本机验过，没有 Intel 真机手测；Intel 上 App 内更新走 API（没登录每个 IP 每小时 60 次）。
   要省掉这一点，清单加一个 x86_64 的键（只加新键，老版本不受影响）。
 
