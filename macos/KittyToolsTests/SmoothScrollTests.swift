@@ -283,7 +283,7 @@ struct SmoothScrollTests {
 
   /// 见文件头。合成的探针滚轮：3 行往下，应滑出 120 点
   @Test(
-    .enabled(if: ProcessInfo.processInfo.environment["TEST_RUNNER_KITTY_LIVE_SMOOTH_SCROLL"] == "1")
+    .enabled(if: ProcessInfo.processInfo.environment["KITTY_LIVE_SMOOTH_SCROLL"] == "1")
   )
   func liveProbe() async throws {
     try #require(Permissions.isAccessibilityTrusted, "测试宿主没有「辅助功能」授权")
@@ -364,10 +364,10 @@ struct SmoothScrollTests {
   /// 见文件头：只听不改，打印真滚轮给的值
   @Test(
     .enabled(
-      if: ProcessInfo.processInfo.environment["TEST_RUNNER_KITTY_SMOOTH_SCROLL_RECORD"] != nil))
+      if: ProcessInfo.processInfo.environment["KITTY_SMOOTH_SCROLL_RECORD"] != nil))
   func record() async throws {
     let seconds =
-      Int(ProcessInfo.processInfo.environment["TEST_RUNNER_KITTY_SMOOTH_SCROLL_RECORD"] ?? "")
+      Int(ProcessInfo.processInfo.environment["KITTY_SMOOTH_SCROLL_RECORD"] ?? "")
       ?? 15
     let recorder = Recorder()
     let tap = CGEvent.tapCreate(
