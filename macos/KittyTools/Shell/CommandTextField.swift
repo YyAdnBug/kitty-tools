@@ -74,7 +74,12 @@ struct CommandTextField: NSViewRepresentable {
       field.romanOnly = romanOnly
       field.applyInputSources()
     }
-    guard field.stringValue != text else { return }
+    // 组字时 stringValue 带着拼音（组着的字确认前不进 text），和 text 不一样是正常的：这时只认外面真改了的（和上次给进来的
+    // 不一样）。组字中写 stringValue 会先把拼音当字母确认掉——组字一开始外面藏占位的那次重画就把 zhe 打成「z和」（issue #30）
+    let changed = text != context.coordinator.text
+    context.coordinator.text = text
+    let composing = (field.currentEditor() as? NSTextView)?.hasMarkedText() == true
+    guard !composing || changed, field.stringValue != text else { return }
     field.stringValue = text
     // 程序改的文字（Tab 补全、清空）：光标放到末尾，接着打字
     if let editor = field.currentEditor() {
@@ -88,6 +93,8 @@ struct CommandTextField: NSViewRepresentable {
     var parent: CommandTextField
     /// 上次处理过的 focusRequest（建出来时带着的那个数，没给就是 0）
     var focusRequest = 0
+    /// 上次 updateNSView 给进来的 text：组字中只有它变了（外面真改了）才换框里的字
+    var text = ""
     init(parent: CommandTextField) { self.parent = parent }
 
     func controlTextDidChange(_ notification: Notification) {

@@ -69,7 +69,13 @@ struct SourceTextView: NSViewRepresentable {
       context.coordinator.focusRequest = request
       textView.window?.makeFirstResponder(textView)
     }
-    if textView.string != text { textView.string = text }
+    // 组字时框里多着拼音（组着的字确认前不进 text），和 text 不一样是正常的：这时只认外面真改了的（和上次给进来的不一样）。
+    // 不然组字一开始外面藏占位的那次重画就把拼音冲掉，打 zhe 只剩 he（issue #30，同 NoteTextView.setText 认 reported）
+    let coordinator = context.coordinator
+    if textView.string != text, !textView.hasMarkedText() || text != coordinator.text {
+      textView.string = text
+    }
+    coordinator.text = text
     if textView.font?.pointSize != fontSize { textView.font = .systemFont(ofSize: fontSize) }
     // 不露系统蓝：插入点强调色，选中文字底色强调色 0.28（普通 NSTextView 不是共用的字段编辑器；在这里设，
     // 设置里换了强调色也跟着变）
@@ -85,6 +91,8 @@ struct SourceTextView: NSViewRepresentable {
     var parent: SourceTextView
     /// 上次处理过的 focusRequest（建出来时带着的那个数，没给就是 0）
     var focusRequest = 0
+    /// 上次 updateNSView 给进来的 text：组字中只有它变了（外面真改了）才换框里的字
+    var text = ""
     init(parent: SourceTextView) { self.parent = parent }
 
     func textDidChange(_ notification: Notification) {
