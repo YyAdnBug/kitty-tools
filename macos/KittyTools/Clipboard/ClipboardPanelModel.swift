@@ -774,7 +774,8 @@ import Observation
       island?.show("没能复制", detail: gone, tone: .error)
       return
     }
-    if inputs == nil, asksInputs(written, copies: true, plainText: plainText) { return }
+    // 填完回来按原来的那几条再走一遍（含图片的混合多选照旧只复制第 1 条、照旧警告）
+    if inputs == nil, asksInputs(items, copies: true, plainText: plainText) { return }
     let payload = payload(for: written, plainText: plainText, inputs: inputs ?? [:])
     writeClipboard(payload.writes[0])
     pendingCopy = (payload.entry, clipboardChangeCount())
@@ -1013,7 +1014,10 @@ import Observation
   func finishFill(_ fill: Fill, values: [String: String]) {
     dialog = nil
     let items = fill.items.compactMap { id in store.items.first { $0.id == id } }
-    guard !items.isEmpty else { return }
+    guard !items.isEmpty else {
+      island?.show(fill.copies ? "没能复制" : "没能粘贴", detail: "这几条已经删掉了", tone: .error)
+      return
+    }
     if fill.copies {
       copy(items, plainText: fill.plainText ?? false, inputs: values)
     } else {
@@ -1022,7 +1026,8 @@ import Observation
   }
 
   /// 要写进剪贴板的内容（见 paste）。片段一律纯文本、展开占位符；{clipboard} 用调用时剪贴板里的那一份，{input} 用填的字
-  func payload(for items: [ClipItem], plainText: Bool, inputs: [String: String] = [:]) -> Payload {
+  /// （nil = 没问过：拖出去的那条路，{input…} 原样留着）
+  func payload(for items: [ClipItem], plainText: Bool, inputs: [String: String]? = nil) -> Payload {
     let clipboard = { NSPasteboard.general.string(forType: .string) }
     switch PasteMode(items) {
     case .merged:
@@ -1066,7 +1071,7 @@ import Observation
   /// 所有 {clipboard} 共用调用前读的同一份
   static func merged(
     _ items: [ClipItem], clipboard: String?, history: (Int) -> String? = { _ in nil },
-    inputs: [String: String] = [:], now: Date = .now
+    inputs: [String: String]? = [:], now: Date = .now
   ) -> String {
     items.sorted { $0.copiedAt < $1.copiedAt }.compactMap { item in
       guard let text = item.text else { return nil }

@@ -98,6 +98,14 @@ struct ContentFormTests {
     #expect(expand("{date:}") == "2026-09-26")  // 空格式按默认
     // 认不出的原样：JSON、单位不对、多余的字
     #expect(expand(#"{"a":1} {date+1x} {dates}"#) == #"{"a":1} {date+1x} {dates}"#)
+    // 不像日期格式的冒号后面（JS 对象、Python f-string、全角数字的偏移）照旧原样（评审 A1 B5 B6）
+    for kept in ["{time: 30}", "{date: today}", "{date:%Y-%m-%d}", "{time: 5 min}", "{date+１d}"] {
+      #expect(expand(kept) == kept, "\(kept)")
+    }
+    #expect(expand("{date:'Day' d}") == "Day 26")
+    // 没问过的（拖出去）：{input…} 原样留着
+    #expect(
+      Snippet.expand("你好 {input:称呼}", clipboard: { nil }, inputs: nil).text == "你好 {input:称呼}")
     // 填空：同名只问一次、几处都填；没写名字的是空串；没填的是空
     let text = "你好 {input:称呼}，{INPUT:称呼} 的单号 {input: 单号 } {input}"
     #expect(Snippet.inputs(in: text) == ["称呼", "单号", ""])

@@ -166,7 +166,9 @@ nonisolated enum Recovery {
     var lost = false
     /// backups/ 里有设置与数据的自动备份（SettingsBackup 每天那份 JSON）：片段、文字收藏和生词本在里面还有一份。
     /// 选了重新开始它们跟着 backups/ 一起挪开、再拷一份回新的 backups/（T5），弹框里说用「从备份恢复」导回来
-    var hasSettingsBackup = false
+    var hasSettingsBackup: Bool { settingsBackupDay != nil }
+    /// 最近那份的日期：弹框里点名选它（重新开始之后当天会再备一份，那份是空的，不能说「最新的一份」，评审 A2 B1）
+    var settingsBackupDay: Date?
   }
 
   enum Failure: Error, Equatable, CustomStringConvertible {
@@ -206,9 +208,9 @@ nonisolated enum Recovery {
           reason: "\(error)", backup: Backup.latestUsable(in: directory, calendar: calendar))
       }
     }
-    problem.hasSettingsBackup = SettingsBackup.list(
-      in: Backup.folder(in: directory), calendar: calendar
-    ).contains { $0.kind == .daily }
+    problem.settingsBackupDay =
+      SettingsBackup.list(in: Backup.folder(in: directory), calendar: calendar)
+      .first { $0.kind == .daily }?.date
     let choice = ask(problem)
     guard choice != .quit, choice != .restore || problem.backup != nil else { throw Failure.quit }
     do {
@@ -307,12 +309,17 @@ nonisolated enum Recovery {
     let folder = Backup.folder(in: directory)
     do {
       try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-      for copy in copies {
+    } catch {
+      return Log.storage.error("重新开始后没能把设置的自动备份拷回来：\(error)")
+    }
+    // 一份一份拷：一份拷不成不连累别的
+    for copy in copies {
+      do {
         try FileManager.default.copyItem(
           at: copy.url, to: folder.appending(path: copy.url.lastPathComponent))
+      } catch {
+        Log.storage.error("重新开始后有一份设置的自动备份没拷回来：\(error)")
       }
-    } catch {
-      Log.storage.error("重新开始后没能把设置的自动备份拷回来：\(error)")
     }
   }
 
@@ -347,9 +354,12 @@ nonisolated enum Recovery {
     let kept = String(
       localized: "挪开的文件不会删，在数据目录（\(place)）里一个「damaged-日期-时间」的文件夹里。设置和钥匙串里的密钥不受影响。")
     let reason = String(localized: "原因：\(problem.reason)")
-    // 重新开始时这些 JSON 会拷回新的 backups/（T5，bringBackSettingsBackups），「从备份恢复」里直接选得到
+    // 重新开始时这些 JSON 会拷回新的 backups/（T5，bringBackSettingsBackups），「从备份恢复」里直接选得到。点名是哪一天的：
+    // 重新开始之后当天还会再备一份（那份是空的），「最新的一份」就不是它了
+    let backupDay =
+      problem.settingsBackupDay.map { describe($0, now: now, calendar: calendar) } ?? ""
     let note = String(
-      localized: "选了重新开始，片段、文字收藏和生词本之后还能导回来：每天的自动备份会留一份在原处，到 设置 › 通用 点「从备份恢复」选最新的一份。")
+      localized: "选了重新开始，片段、文字收藏和生词本之后还能导回来：每天的自动备份会留一份在原处，到 设置 › 通用 点「从备份恢复」，选 \(backupDay)那一份。")
     // 说明文件留在哪的那一段后面接这一段（没有那种备份就没有这一段）
     let tail = (problem.hasSettingsBackup ? [kept, note] : [kept]) + [reason]
     guard let backup = problem.backup else {

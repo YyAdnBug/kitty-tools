@@ -250,9 +250,10 @@ private struct FillDialog: View {
         isDialogField: true
       ) { selector in
         switch selector {
-        case #selector(NSResponder.insertNewline(_:)), #selector(NSResponder.insertTab(_:)):
-          advance()
-        case #selector(NSResponder.insertBacktab(_:)) where step > 0: back()
+        case #selector(NSResponder.insertNewline(_:)): advance()
+        // Tab 只往下一个空走（最后一个空上不粘贴：粘贴只认 ↩）；⇧Tab 回上一个，第一个空上什么都不做（不让焦点跑出对话框）
+        case #selector(NSResponder.insertTab(_:)): if !isLast { advance() }
+        case #selector(NSResponder.insertBacktab(_:)): if step > 0 { back() }
         case #selector(NSResponder.cancelOperation(_:)): onCancel()
         default: return false
         }

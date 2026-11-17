@@ -117,11 +117,22 @@ struct ClipboardStoreTests {
     #expect(reloaded.pasteboardItems(for: reloaded.items[1]).count == 2)
   }
 
-  /// X3：图文混排存的是 RTFD，粘回去 RTFD 原样 + 转出来的 RTF（只认 RTF 的 App 也带格式）
+  /// X3：图文混排存的是 RTFD，粘回去 RTFD 原样 + 转出来的 RTF（只认 RTF 的 App 也带格式、图丢）；
+  /// 采集时只要真带图的 RTFD，没图的照旧存 RTF
   @Test func rtfdPastesBackWithRTF() throws {
     let (store, _) = try makeStore()
-    let styled = NSAttributedString(
+    let attachment = NSTextAttachment()
+    attachment.image = NSImage(size: NSSize(width: 8, height: 8), flipped: false) { rect in
+      NSColor.red.setFill()
+      rect.fill()
+      return true
+    }
+    let styled = NSMutableAttributedString(
       string: "图文", attributes: [.font: NSFont.boldSystemFont(ofSize: 20)])
+    styled.append(NSAttributedString(attachment: attachment))
+    let plain = NSAttributedString(string: "只有字")
+    let plainRTFD = try #require(
+      plain.rtfd(from: NSRange(location: 0, length: plain.length), documentAttributes: [:]))
     let rtfd = try #require(
       styled.rtfd(from: NSRange(location: 0, length: styled.length), documentAttributes: [:]))
     var item = text("图文")
@@ -130,7 +141,24 @@ struct ClipboardStoreTests {
     let written = try #require(store.pasteboardItems(for: store.items[0]).first)
     #expect(written.data(forType: .rtfd) == rtfd)
     let rtf = try #require(written.data(forType: .rtf))
-    #expect(NSAttributedString(rtf: rtf, documentAttributes: nil)?.string == "图文")
+    #expect(
+      NSAttributedString(rtf: rtf, documentAttributes: nil)?.string.hasPrefix("图文") == true)
+    // 采集：带图的 RTFD 才要；没图的照旧 RTF
+    #expect(
+      ClipboardWatcher.hasAttachments(rtfd: rtfd)
+        && !ClipboardWatcher.hasAttachments(rtfd: plainRTFD))
+    let board = NSPasteboard(name: .init("kitty-test-\(UUID().uuidString)"))
+    defer { board.releaseGlobally() }
+    let plainRTF = try #require(
+      plain.rtf(from: NSRange(location: 0, length: plain.length), documentAttributes: [:]))
+    board.clearContents()
+    board.setData(plainRTFD, forType: .rtfd)
+    board.setData(plainRTF, forType: .rtf)
+    #expect(ClipboardWatcher.richFormat(of: board).type == .rtf)
+    board.clearContents()
+    board.setData(rtfd, forType: .rtfd)
+    board.setData(plainRTF, forType: .rtf)
+    #expect(ClipboardWatcher.richFormat(of: board).type == .rtfd)
   }
 
   @Test func imageStoreEncodesTIFFAndHashesPNG() async throws {
