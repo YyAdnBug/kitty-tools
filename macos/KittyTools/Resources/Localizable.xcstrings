@@ -6743,6 +6743,16 @@
         }
       }
     },
+    "丹麦语" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Danish"
+          }
+        }
+      }
+    },
     "主显示器" : {
       "localizations" : {
         "en" : {
@@ -6769,6 +6779,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Raised hand"
+          }
+        }
+      }
+    },
+    "乌克兰语" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ukrainian"
           }
         }
       }
@@ -10778,6 +10798,16 @@
         }
       }
     },
+    "匈牙利语" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hungarian"
+          }
+        }
+      }
+    },
     "区域" : {
       "localizations" : {
         "en" : {
@@ -11014,6 +11044,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "What’s behind the card gets blurrier closer to it; no blur when Reduce Transparency is on in System Settings"
+          }
+        }
+      }
+    },
+    "印地语" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hindi"
+          }
+        }
+      }
+    },
+    "印尼语" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Indonesian"
           }
         }
       }
@@ -13568,6 +13618,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Limit image storage to %@?"
+          }
+        }
+      }
+    },
+    "土耳其语" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turkish"
           }
         }
       }
@@ -18448,6 +18508,26 @@
         }
       }
     },
+    "希伯来语" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hebrew"
+          }
+        }
+      }
+    },
+    "希腊语" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Greek"
+          }
+        }
+      }
+    },
     "带标题的标签" : {
       "localizations" : {
         "en" : {
@@ -22075,6 +22155,16 @@
         }
       }
     },
+    "挪威语" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Norwegian"
+          }
+        }
+      }
+    },
     "挪开的文件不会删，在数据目录（%@）里一个「damaged-日期-时间」的文件夹里。" : {
       "localizations" : {
         "en" : {
@@ -22265,6 +22355,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Change Color (⌘. for the next one)"
+          }
+        }
+      }
+    },
+    "捷克语" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Czech"
           }
         }
       }
@@ -29488,6 +29588,26 @@
         }
       }
     },
+    "波兰语" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Polish"
+          }
+        }
+      }
+    },
+    "泰语" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Thai"
+          }
+        }
+      }
+    },
     "活动" : {
       "localizations" : {
         "en" : {
@@ -30825,6 +30945,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Glass"
+          }
+        }
+      }
+    },
+    "瑞典语" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Swedish"
           }
         }
       }
@@ -33586,6 +33716,16 @@
         }
       }
     },
+    "罗马尼亚语" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Romanian"
+          }
+        }
+      }
+    },
     "美 /%@/" : {
       "comment" : "美式读音，后面是音标",
       "localizations" : {
@@ -34357,6 +34497,16 @@
         }
       }
     },
+    "芬兰语" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finnish"
+          }
+        }
+      }
+    },
     "英 /%@/" : {
       "comment" : "英式读音，后面是音标",
       "localizations" : {
@@ -34444,6 +34594,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Highlighter"
+          }
+        }
+      }
+    },
+    "荷兰语" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dutch"
           }
         }
       }
@@ -36031,6 +36191,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "over the limit of %@ per import"
+          }
+        }
+      }
+    },
+    "越南语" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vietnamese"
           }
         }
       }
@@ -39207,6 +39377,16 @@
         }
       }
     },
+    "阿拉伯语" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arabic"
+          }
+        }
+      }
+    },
     "除了自带的状态和示例提醒用的几个，表情的动画第一次用到时从 Kitty Tools 在 GitHub 上的发布页下载（一个约 0.2 MB，不带任何个人信息），存在这台 Mac 上、最多 50 MB；没下好、没联网时先显示缩略图。" : {
       "localizations" : {
         "en" : {
@@ -39594,6 +39774,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Start now"
+          }
+        }
+      }
+    },
+    "马来语" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Malay"
           }
         }
       }

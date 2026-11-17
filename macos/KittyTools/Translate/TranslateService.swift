@@ -201,8 +201,34 @@ nonisolated struct TranslateService: Codable, Identifiable, Hashable, Sendable {
     }
   }
 
-  /// 服务分发：翻译会话和设置页「测试连接」共用这一个 switch
+  /// 翻译会话、静默替换、截图翻译和设置页「测试连接」都从这里发：大模型的原文太长时先按段切开、依次翻（X2，`LongText`）
   func translate(_ request: TranslateRequest) -> AsyncThrowingStream<String, Error> {
+    if !request.isWord, let tokens = outputTokens {
+      let pieces = LongText.split(request.text, budget: LongText.budget(outputTokens: tokens))
+      if pieces.count > 1 {
+        return LongText.stream(request, pieces: pieces) { [self] in dispatch($0) }
+      }
+    }
+    return dispatch(request)
+  }
+
+  /// 一次最多出多少 token 的译文（大模型才有；传统接口按字数限、整段一次给）：智谱 1024，AI 服务同它发的 max_tokens，
+  /// 没传 max_tokens 的（OpenAI 官方、Azure）由模型自己定、不切
+  var outputTokens: Int? {
+    switch kind {
+    case .zhipu: return Zhipu.maxTokens
+    case .ai:
+      let aiProtocol = aiProtocol ?? .openai
+      if aiProtocol == .anthropic { return 4096 }
+      return AIService.endpoint(baseURL ?? "", aiProtocol).flatMap {
+        AIService.maxTokens($0, aiProtocol)
+      }
+    default: return nil
+    }
+  }
+
+  /// 服务分发：只有这一个 switch
+  private func dispatch(_ request: TranslateRequest) -> AsyncThrowingStream<String, Error> {
     switch kind {
     case .zhipu: Zhipu.stream(request, service: self)
     case .ai: AIService.stream(request, service: self)

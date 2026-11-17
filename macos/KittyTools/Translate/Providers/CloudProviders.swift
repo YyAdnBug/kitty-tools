@@ -79,6 +79,7 @@ nonisolated enum Volcengine {
     switch lang {
     case .zhHans: "zh"
     case .zhHant: "zh-Hant"
+    case .nb: "no"
     default: lang.rawValue
     }
   }
@@ -156,6 +157,7 @@ nonisolated enum Tencent {
     switch lang {
     case .zhHans: "zh"
     case .zhHant: "zh-TW"
+    case .nb: "no"
     default: lang.rawValue
     }
   }

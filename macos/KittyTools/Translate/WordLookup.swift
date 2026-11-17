@@ -71,6 +71,8 @@ nonisolated enum WordLookup {
   private static func words(_ text: String) -> [Substring]? {
     let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty, text.count <= 40, !text.contains(where: \.isNewline) else { return nil }
+    // 泰文词之间不写空格（X1 加了泰语）：一整句也会被当成「一个词」进单词模式，泰文一律不算词
+    if text.contains(/\p{Thai}/) { return nil }
     let words = text.split(separator: " ")
     let valid = words.allSatisfy { word in
       word.first?.isLetter == true
