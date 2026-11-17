@@ -69,7 +69,8 @@ struct SourceTextView: NSViewRepresentable {
       context.coordinator.focusRequest = request
       textView.window?.makeFirstResponder(textView)
     }
-    if textView.string != text { textView.string = text }
+    // 组字回调会让 SwiftUI 刷新，绑定里仍是确认前的旧文；这时写回会清掉首个拼音（issue #30）。
+    if !textView.hasMarkedText(), textView.string != text { textView.string = text }
     if textView.font?.pointSize != fontSize { textView.font = .systemFont(ofSize: fontSize) }
     // 不露系统蓝：插入点强调色，选中文字底色强调色 0.28（普通 NSTextView 不是共用的字段编辑器；在这里设，
     // 设置里换了强调色也跟着变）

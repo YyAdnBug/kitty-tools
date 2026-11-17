@@ -1808,6 +1808,12 @@ Alfred 的 Related Apps、BetterTouchTool 按 App 停用，调研和测开销的
 
 > 2026-10-28（第三轮体检第 7 批）：2026-10-22 及更早的进度记录、做完的「已知的小毛病」、旧的「现状」「下一步」原样挪到 `docs/archive/PLAN-batches-2026-10.md` §12；AGENTS.md「项目概述」原来的长段原样挪到本节末尾「各族进度摘要（原 AGENTS 项目概述）」。
 
+**2026-11-17：多行输入框丢首个拼音**（issue #30，下一版）：快速记一条和翻译原文共用的 `SourceTextView` 在组字回调后
+被 SwiftUI 刷新，拿绑定里尚未确认的旧文盖掉拼音。`updateNSView` 组字期间不回写正文；同样覆盖剪贴板的编辑 / 新片段正文。
+补了带 SwiftUI 刷新的屏外回归测试，原生探针修复前复现、修复后通过（连续四字、确认 / 取消、选中替换、外部改文、撤销重做）；
+主工程与测试目标编译通过，Xcode 测试因缺开发签名证书私钥未运行。待真输入法按 HANDTEST「多行输入框丢首个拼音」1–3 复测，
+下一版更新日志写一条 fix。工作分支 `codex/fix-ime-first-pinyin`；已生成本地 arm64 测试 DMG（未签名），Release 编译与映像校验通过。
+
 **2026-11-15：折叠的服务不自动翻译**（有用户问折叠的 AI 服务还耗不耗 token：会，折叠只藏正文、所有启用的服务都请求，
 「闪一下」是折叠着也在画的彗星光和完成闪光）：拍板页 https://claude.ai/artifact/DFEx7K9FX9TXnW7kCuy42c 七项「全部按推荐」
 （对标 Easydict 的点开才查）。分支 `collapse-wip`（检出 `kitty-tools-macos-collapse`，从 macos `58f15ee3`）一个提交：
