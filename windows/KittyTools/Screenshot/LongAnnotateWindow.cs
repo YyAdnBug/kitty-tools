@@ -1590,16 +1590,22 @@ internal sealed class LongAnnotateWindow
             return;
         }
 
-        if (!OcrService.HasEngine)
-        {
-            NoticeHost.Show("没装中文识字组件", string.Empty, NoticeTone.Warning, NoticeActions.SystemSettings("ms-settings:regionlanguage"));
-            return;
-        }
-
         _busy = true;
         ShowHint("正在识字…");
         try
         {
+            // 长图里有二维码 / 条码就拷码的内容，不再识字（REVIEW R105，同 mac 长图标注的识字）；认码不用识字组件
+            if (await OcrService.CopyBarcodesAsync(_bgra, _width, _height))
+            {
+                return;
+            }
+
+            if (!OcrService.HasEngine)
+            {
+                NoticeHost.Show("没装中文识字组件", string.Empty, NoticeTone.Warning, NoticeActions.SystemSettings("ms-settings:regionlanguage"));
+                return;
+            }
+
             var text = await OcrService.RecognizeTallAsync(_bgra, _width, _height, SettingsService.Current.OcrJoinLines);
             if (string.IsNullOrWhiteSpace(text))
             {

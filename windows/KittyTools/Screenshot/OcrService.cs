@@ -2,7 +2,9 @@
 // 按行框切段、段内接行交给 Core 的 OcrText（和 mac 的 OCR.paragraphs / joiningLines 同一套规则）。
 // 引擎按「设置里的第一 / 第二语言」挑：用户语言的识字引擎里只有英文时，中文是识别不出来的，
 // 要按没装组件处理，而不是随便拿一个引擎硬认（第二版 §2 P3）。
+// 识字的几个入口（框选识字、截图工具栏、钉图、截图历史、长图标注）先过 CopyBarcodesAsync：有二维码 / 条码就拷码的内容（REVIEW R105）。
 using KittyTools.Core;
+using KittyTools.Core.Barcodes;
 using KittyTools.Infrastructure;
 using Windows.Foundation;
 using Windows.Graphics.Imaging;
@@ -96,6 +98,42 @@ internal static class OcrService
         }
 
         return (OcrText.Text(lines, joined, separator), lines);
+    }
+
+    /// <summary>
+    /// 识字前先认码（REVIEW R105，同 mac 识字的「二维码优先」）：图里有二维码 / 条码，就把内容（几个码一行一个）拷进剪贴板、
+    /// 记进剪贴板历史、提示「已复制二维码」，返回 true，不再识字；没有码返回 false，调用方照旧识字。
+    /// 认码不用识字组件，所以放在「没装识字组件」的检查之前。在后台线程认，最多 1.5 秒（BarcodeReader 自己卡）。
+    /// </summary>
+    public static async Task<bool> CopyBarcodesAsync(byte[] bgra, int width, int height)
+    {
+        IReadOnlyList<string> codes;
+        try
+        {
+            codes = await Task.Run(() => BarcodeReader.Read(bgra, width, height));
+        }
+        catch (Exception ex)
+        {
+            // 认码出错不挡识字：当没码
+            Log.Error("ocr.barcode-failed", ex);
+            return false;
+        }
+
+        if (codes.Count == 0)
+        {
+            return false;
+        }
+
+        var text = string.Join("\n", codes);
+        if (ClipboardWriter.WriteText(text))
+        {
+            ClipboardService.Instance?.MarkOwnWrite();
+            ClipboardService.Instance?.Store.RecordOwnText(text);
+        }
+
+        var preview = text.Replace('\n', ' ').Trim();
+        NoticeHost.Show("已复制二维码", preview.Length > 30 ? preview[..30] + "…" : preview, NoticeTone.Normal);
+        return true;
     }
 
     /// <summary>

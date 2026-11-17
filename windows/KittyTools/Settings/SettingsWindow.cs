@@ -138,7 +138,7 @@ internal sealed partial class SettingsWindow : Window
         },
         ["screenshot"] = new[]
         {
-            "保存", "存储", "目录", "文件夹", "快门", "声音", "缩略图", "识字", "换行", "标注", "长截图", "钉图", "截图历史", "按键", "速查",
+            "保存", "存储", "目录", "文件夹", "快门", "声音", "缩略图", "识字", "换行", "二维码", "标注", "长截图", "钉图", "截图历史", "按键", "速查",
             "工具栏", "靠右", "居中", "位置", "原色", "压暗", "取色", "粉色",
             "拷贝", "复制", "文件", "PNG", "对拷线", "远程",
         },
@@ -3243,7 +3243,7 @@ internal sealed partial class SettingsWindow : Window
                 SettingsService.Save();
             });
         _content.Children.Add(SettingsUi.Footnote(
-            "同一段里的行接起来，段和段之间保留换行：中文、日文的行直接接上，其它文字之间加空格。识字和截图翻译都看这个；只在本机用 Windows 的识字组件。"));
+            "同一段里的行接起来，段和段之间保留换行：中文、日文的行直接接上，其它文字之间加空格。识字和截图翻译都看这个；只在本机用 Windows 的识字组件。框选里有二维码或条码时复制它的内容。"));
 
         _content.Children.Add(new Border { Height = 8 });
         AddShortcutsRow("screenshot", "框选、标注、长截图和录屏的按键",

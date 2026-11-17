@@ -883,25 +883,32 @@ internal sealed class ScreenshotSession
 
     private async Task CopyRecognizedTextAsync(FrozenScreen screen, RectD selection)
     {
-        if (!OcrService.HasEngine)
-        {
-            // 不再自己弹系统设置（PLAN-v8 H14）：提示上给「打开设置」。
-            NoticeHost.Show(
-                "没装中文识字组件",
-                "设置 › 时间和语言 › 语言和区域 › 中文 › 语言选项 › 光学字符识别",
-                NoticeTone.Warning,
-                NoticeActions.SystemSettings("ms-settings:regionlanguage"));
-
-            Finish();
-            return;
-        }
-
         try
         {
             var png = await SelectionPngAsync();
             var decoded = png is null ? null : await ImageCodec.PngToBgraAsync(png);
             if (decoded is not { } image)
             {
+                Finish();
+                return;
+            }
+
+            // 框里有二维码 / 条码就拷码的内容，不再识字（REVIEW R105，同 mac）；认码不用识字组件，所以在下面的检查之前
+            if (await OcrService.CopyBarcodesAsync(image.Bgra, image.Width, image.Height))
+            {
+                Finish();
+                return;
+            }
+
+            if (!OcrService.HasEngine)
+            {
+                // 不再自己弹系统设置（PLAN-v8 H14）：提示上给「打开设置」。
+                NoticeHost.Show(
+                    "没装中文识字组件",
+                    "设置 › 时间和语言 › 语言和区域 › 中文 › 语言选项 › 光学字符识别",
+                    NoticeTone.Warning,
+                    NoticeActions.SystemSettings("ms-settings:regionlanguage"));
+
                 Finish();
                 return;
             }

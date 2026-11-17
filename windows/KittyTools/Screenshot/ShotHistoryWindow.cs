@@ -853,16 +853,22 @@ internal sealed partial class ShotHistoryWindow : Window
 
     private static async Task RecognizeAsync(ShotItem item)
     {
+        if (ShotHistory.ReadImage(item.Id) is not { } png || await ImageCodec.PngToBgraAsync(png) is not { } image)
+        {
+            NoticeHost.Show("原图不在了", string.Empty, NoticeTone.Warning);
+            return;
+        }
+
+        // 有二维码 / 条码就拷码的内容，不再识字（REVIEW R105，同 mac 截图历史的识字）；认码不用识字组件
+        if (await OcrService.CopyBarcodesAsync(image.Bgra, image.Width, image.Height))
+        {
+            return;
+        }
+
         if (!OcrService.HasEngine)
         {
             NoticeHost.Show("没装中文识字组件", string.Empty, NoticeTone.Warning,
                 NoticeActions.SystemSettings("ms-settings:regionlanguage"));
-            return;
-        }
-
-        if (ShotHistory.ReadImage(item.Id) is not { } png || await ImageCodec.PngToBgraAsync(png) is not { } image)
-        {
-            NoticeHost.Show("原图不在了", string.Empty, NoticeTone.Warning);
             return;
         }
 

@@ -415,6 +415,13 @@ internal sealed partial class PinWindow : Window
     {
         try
         {
+            // 钉图里有二维码 / 条码就拷码的内容，不再识字（REVIEW R105，同 mac 钉图的识字）；右键「翻译」不认码，同 mac
+            if (await ImageCodec.PngToBgraAsync(_png) is { } image &&
+                await OcrService.CopyBarcodesAsync(image.Bgra, image.Width, image.Height))
+            {
+                return;
+            }
+
             if (await RecognizedTextAsync() is not { } text)
             {
                 return;

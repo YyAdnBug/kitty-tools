@@ -1844,7 +1844,7 @@ internal sealed partial class SelectionOverlayWindow : Window
         string Part(string id, string text) => Key(id) is { Length: > 0 } key ? $" · {key} {text}" : string.Empty;
         var hint = flashing ? _flash! : _session.Mode switch
         {
-            ScreenshotMode.Ocr => "拖动框选要识别的区域 · Esc 取消",
+            ScreenshotMode.Ocr => "拖动框选要识别的文字或二维码 · Esc 取消",
             ScreenshotMode.Translate => "拖动框选要翻译的区域 · Esc 取消",
             _ when _session.AutoTranslate && !_session.HasSelection => "拖动框选要翻译的文字 · Esc 取消",
             ScreenshotMode.Record when _session.HasSelection => "Enter / 双击选区开始录制" + last + " · Esc 取消",
