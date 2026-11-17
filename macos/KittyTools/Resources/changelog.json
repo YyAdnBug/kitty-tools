@@ -1,7 +1,7 @@
 [
   {
     "version": "0.10.0",
-    "date": "2026-11-16",
+    "date": "2026-11-17",
     "summary": "界面支持英文：设置 › 通用「语言」能选跟随系统、简体中文或 English，新装的跟系统，从旧版本升上来的保持中文；启动器、设置的搜索中英文都认，自带的脚本、访达右键、一句话建提醒也说英文了。另外：新插件「保持唤醒」，折叠的翻译服务点开才翻、设置里标出免费的服务，截图悬停能认网页里的元素。",
     "summaryEn": "Now in English: choose System Language, 简体中文 or English in Settings › General › Language. New installs follow the system, and Macs updating from an earlier version stay in Chinese. Search in Launcher and Settings understands both languages, and the built-in scripts, Finder Menu and one-line reminders speak English too. Also: a new Keep Awake plugin, collapsed translation services translate only when expanded, free services are marked, and screenshot element detection can see inside web pages.",
     "changes": [
