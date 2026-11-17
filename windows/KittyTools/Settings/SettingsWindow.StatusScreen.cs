@@ -106,7 +106,7 @@ internal sealed partial class SettingsWindow
                 SettingsService.Save();
             });
         AddEmojiPackToggle();
-        _content.Children.Add(SettingsUi.Footnote("系统设置里关了「动画效果」时，这些动画都不做，标题也不晃。" + EmojiPackFootnote));
+        _content.Children.Add(SettingsUi.Footnote("系统设置里关了「动画效果」时，这些动画都不做，标题也不晃。" + (EmojiPack.IsPublished ? EmojiPackFootnote : string.Empty)));
 
         // 退出
         _content.Children.Add(SettingsUi.Section("退出"));

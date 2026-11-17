@@ -41,8 +41,15 @@ internal static class EmojiPack
 
     public static string Folder => Path.Combine(Paths.DataDirectory, EmojiPackCache.FolderName);
 
-    /// <summary>开关开着才联网。</summary>
-    public static bool IsEnabled => SettingsService.Current.EmojiPackDownloads;
+    /// <summary>
+    /// release emoji-pack-1-win 发了没有（用户 2026-11-17：0.3.0 先不发）。没发时「动画表情」那一格和「自动下载动画表情」开关都藏起来、
+    /// 不发下载请求；从 Mac 同步 / 导入来的「pack:」照旧画系统样子。
+    /// ponytail: 写死的，没有远程开关；发包那一版把这里改成 true（MAC-DIFF「状态屏」、REVIEW R107）。
+    /// </summary>
+    public static bool IsPublished => false;
+
+    /// <summary>包发了、开关开着才联网。</summary>
+    public static bool IsEnabled => IsPublished && SettingsService.Current.EmojiPackDownloads;
 
     /// <summary>本机测试服务器：只在测试档认（同自动更新的测试源只在 Debug / 自检认，R107 审查）。</summary>
     private static string? TestServer

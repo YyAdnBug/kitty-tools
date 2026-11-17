@@ -179,6 +179,11 @@ internal sealed partial class SettingsWindow
     /// <summary>「自动下载动画表情」那一行（R107，mac EmojiPackToggle；两页是同一个设置）。</summary>
     private void AddEmojiPackToggle()
     {
+        if (!EmojiPack.IsPublished)
+        {
+            return;
+        }
+
         var settings = SettingsService.Current;
         AddToggle("自动下载动画表情", "关掉后还没下好的动画表情先显示系统表情、不动，已经下好的照样动",
             settings.EmojiPackDownloads,

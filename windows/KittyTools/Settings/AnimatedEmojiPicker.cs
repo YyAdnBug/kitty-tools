@@ -44,7 +44,7 @@ internal static class AnimatedEmojiPicker
     /// </summary>
     public static (Button Button, Action Refresh)? Create(Func<string> current, Action<string> picked, bool dark)
     {
-        if (EmojiPack.Catalog is not { } catalog)
+        if (!EmojiPack.IsPublished || EmojiPack.Catalog is not { } catalog)
         {
             return null;
         }
