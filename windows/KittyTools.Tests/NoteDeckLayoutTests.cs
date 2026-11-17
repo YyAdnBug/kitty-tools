@@ -138,7 +138,10 @@ public sealed class NoteDeckLayoutTests
         Assert.AreEqual(1, NoteDeckLayout.Outward(NoteDeckEdge.Right));
         Assert.AreEqual(-1, NoteDeckLayout.Outward(NoteDeckEdge.Left));
         // 打开的便签离标签列 NoteGap：标签列那扇窗朝里多出来的正好挨上它
+        // 两个都是常量（MSTEST0032）；留着是为了有人只改其中一个时这里先红。
+#pragma warning disable MSTEST0032
         Assert.AreEqual(NoteDeckLayout.NoteGap, NoteDeckLayout.ColumnRoom);
+#pragma warning restore MSTEST0032
         Assert.AreEqual(38, Layout(3, 0, 40, 875).ColumnWidth);
     }
 

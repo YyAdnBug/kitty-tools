@@ -23,7 +23,10 @@ public sealed class StatusMotionTests
         Assert.AreEqual(StatusEntrance.TitleStart + StatusEntrance.StaggerLimit, longTitle.GlyphStart(29), 1e-9);
         Assert.IsTrue(longTitle.GlyphStart(29) + StatusEntrance.GlyphSpan <= longTitle.End);
         Assert.AreEqual(StatusEntrance.TitleStart, new StatusEntrance(1).GlyphStart(5), 1e-9);
+        // 两个都是常量（MSTEST0032）；留着是为了有人把它们改成不放大 / 不上浮时这里先红。
+#pragma warning disable MSTEST0032
         Assert.IsTrue(StatusEntrance.EmergeScale > 1 && StatusEntrance.RiseFactor > 0);
+#pragma warning restore MSTEST0032
     }
 
     [TestMethod]

@@ -172,7 +172,10 @@ public sealed class EmojiPackTests
         CollectionAssert.AreEqual(new[] { "old.png" }, EmojiPackCache.Overflow(files, 89).ToList());
         CollectionAssert.AreEqual(new[] { "old.png", "mid.png" }, EmojiPackCache.Overflow(files, 30).ToList());
         CollectionAssert.AreEqual(new[] { "old.png", "mid.png", "new.png" }, EmojiPackCache.Overflow(files, 0).ToList());
+        // MaxBytes 是常量，分析器认为恒真（MSTEST0032）；留着是为了有人改缓存上限时这里先红。
+#pragma warning disable MSTEST0032
         Assert.AreEqual(50L * 1024 * 1024, EmojiPackCache.MaxBytes);
+#pragma warning restore MSTEST0032
 
         Assert.IsTrue(EmojiPackCache.MayRetry(null, day));
         Assert.IsFalse(EmojiPackCache.MayRetry(day, day.AddMinutes(9)));
