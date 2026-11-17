@@ -566,11 +566,51 @@ public static class StatusScreenRules
     /// <summary>选状态的面板默认选中哪张：上次进入的那个，找不到就第一张。</summary>
     public static int DefaultIndex(IReadOnlyList<StatusPreset> presets, string? lastId)
         => Math.Max(0, presets.ToList().FindIndex(preset => preset.Id == lastId));
+
+    /// <summary>选状态的面板里选中的那张放大到多少（mac StatusPicker.selectedScale，snap 曲线）。</summary>
+    public const double PickerSelectedScale = 1.04;
+
+    /// <summary>卡片长成整屏走多久：island 曲线的时长（mac StatusScreenPanel.grow，约 0.42 s）。</summary>
+    public const double GrowSeconds = 0.42;
+
+    /// <summary>卡片（缩小的画面）的圆角，DIP（StatusScreenView.Preview 的 8）。</summary>
+    public const double CardRadius = 8;
+
+    /// <summary>从卡片长出来的是哪块屏：卡片中心所在的那块，都不在就第一块（mac growingIndex = keyIndex(卡片中心)）。</summary>
+    public static int GrowingIndex(PixelRect card, IReadOnlyList<PixelRect> screens)
+    {
+        var x = card.X + card.Width / 2;
+        var y = card.Y + card.Height / 2;
+        var index = screens.ToList().FindIndex(screen => x >= screen.X && x < screen.Right && y >= screen.Y && y < screen.Bottom);
+        return Math.Max(0, index);
+    }
+
+    /// <summary>
+    /// 长到第 t 刻（0–1，线性的时刻）画面占屏幕的哪一块、圆角多大（R107，mac grow：island 曲线，圆角另走不回弹的那条）：
+    /// 位置和大小从卡片按 island 插到整屏（略冲过头再回来），圆角从卡片的 radius 收到 0。Scale：画面要缩成多少（横竖各缩各的，
+    /// 卡片 1.6 的比例和屏幕差一点）；Offset：画面左上角相对整屏左上角挪多少（物理像素）。
+    /// </summary>
+    public static (double X, double Y, double Width, double Height, double Radius, double ScaleX, double ScaleY) GrowFrame(
+        PixelRect card, PixelRect full, double t, double radius)
+    {
+        var spring = MotionCurves.Of(MotionCurve.Island)!.Value;
+        var p = SpringEase.Progress(t, spring.Bounce);
+        var round = SpringEase.Progress(t, 0);
+        double Lerp(double from, double to) => from + (to - from) * p;
+        var x = Lerp(card.X, full.X);
+        var y = Lerp(card.Y, full.Y);
+        var width = Math.Max(1, Lerp(card.Width, full.Width));
+        var height = Math.Max(1, Lerp(card.Height, full.Height));
+        return (x, y, width, height, Math.Max(0, radius * (1 - round)),
+            full.Width > 0 ? width / full.Width : 1, full.Height > 0 ? height / full.Height : 1);
+    }
 }
 
 /// <summary>
 /// 告示出场的时间表（PLAN-v12 第 7 批，照 mac StatusEntrance；时刻 = 画面出现后过了几秒）：标题从 TitleStart 起逐字浮现，
 /// 字与字错开 Step、每个字走 GlyphSpan（三次方缓出）；说明和小字等最后一个字浮到一半时淡入（RestSpan）。
+/// 每个字从「放大 EmergeScale、往下 RiseFactor × 字号、透明」到原样（R107；mac 是从模糊 8 → 清楚，WinUI 给一个字加模糊要每个字一张
+/// 离屏表面 + 效果画刷，这里用放大一点逼近模糊那种「散开」的样子，App 的 StatusScreenView.EmergeTitle）。
 /// </summary>
 public readonly record struct StatusEntrance(int Glyphs)
 {
@@ -579,6 +619,15 @@ public readonly record struct StatusEntrance(int Glyphs)
     public const double Stagger = 0.045;
     public const double StaggerLimit = 0.9;
     public const double RestSpan = 0.28;
+
+    /// <summary>每个字从下面多远浮上来：字号的这么多倍（mac GlyphEmerge 的 rise = size × 0.1）。</summary>
+    public const double RiseFactor = 0.1;
+
+    /// <summary>每个字刚冒出来时放大到多少（代替 mac 的模糊 8：模糊让字往四周散开约一成）。</summary>
+    public const double EmergeScale = 1.12;
+
+    /// <summary>第 index 个字什么时候开始浮现（字形比字数多时，多出来的跟最后一个字一起）。</summary>
+    public double GlyphStart(int index) => TitleStart + Step * Math.Min(index, Math.Max(Glyphs - 1, 0));
 
     /// <summary>字与字错开多少；标题长的时候压到整个标题在 StaggerLimit 秒内都开始浮现。</summary>
     public double Step => Glyphs > 1 ? Math.Min(Stagger, StaggerLimit / (Glyphs - 1)) : 0;
@@ -590,11 +639,7 @@ public readonly record struct StatusEntrance(int Glyphs)
     public double End => RestStart + RestSpan;
 
     /// <summary>第 index 个字浮现到哪了（0–1，先快后慢）。</summary>
-    public double Glyph(int index, double time)
-    {
-        var start = TitleStart + Step * Math.Min(index, Math.Max(Glyphs - 1, 0));
-        return Eased((time - start) / GlyphSpan);
-    }
+    public double Glyph(int index, double time) => Eased((time - GlyphStart(index)) / GlyphSpan);
 
     private static double Eased(double value) => 1 - Math.Pow(1 - Math.Clamp(value, 0, 1), 3);
 }

@@ -1,12 +1,14 @@
 // 选状态的面板（PLAN-v12 N5，照 mac StatusScreen/StatusPicker.swift）：按状态屏的全局快捷键先出它（这时键盘鼠标还没被拦）。
 // 外壳同主界面 / 剪贴板面板：亚克力、DWM 圆角阴影、置顶、不进 Alt+Tab，鼠标所在屏中央，失去激活就收起。
 // 一行最多 4 张卡片、多了折行；卡片 = 缩小的真画面（StatusScreenView.Preview，200 × 125）+ 下面一行数字键帽（前 9 张）和标题。
-// 选中 = 卡片外一圈强调色（2）；悬停铺一层淡底、不改选中。默认选中上次进入的那个。
+// 选中 = 卡片外一圈强调色（2）、缩小的画面放大到 1.04（snap 曲线，标题不跟着放大；打开面板、按住方向键连发时直接到位，R107 同 mac）；
+// 悬停铺一层淡底、不改选中。默认选中上次进入的那个。
 // 键盘：←→↑↓ 换选中、1–9 直接进入那一张、Enter 进入、Esc / Ctrl+W 收起；开着时再按一次快捷键 = 选中下一张。点卡片直接进入。
 // 底栏照启动器：左边只提示键位的「选择 ←→ · 直接进入 1–9 · 取消 Esc」，右边能点的「进入 ↩」。
 // 设置里开了「按快捷键直接进入排在最前面的状态」时不出面板（ToggleOrEnterFirst）。
 // 和剪贴板面板、启动器、主界面互斥：打开它收起那几块。
-// ponytail: mac 选中的卡片长成整屏、选中时放大到 1.04 没做（Windows 版全 App 不做「从小放到大」，0.1.0 用户定）；进入就是整屏直接出来。
+// 进入：面板当场收起，选中那张卡片里缩小的画面从它在屏幕上的位置长到整屏（StatusScreenHost.Enter 的 growFrom，R107 同 mac Z14a）；
+// 快捷键直接进入、托盘 / 启动器进入照旧整屏直接出来。MAC-DIFF 里「Windows 版全 App 不做从小放到大」在这里不适用（用户 2026-11-17 要求对齐）。
 using KittyTools.Core;
 using KittyTools.Infrastructure;
 using KittyTools.Ui;
@@ -40,6 +42,7 @@ internal sealed class StatusPicker : Window
     private readonly ScrollViewer _scroll;
     private readonly HWND _hwnd;
     private readonly List<Border> _cards = new();
+    private readonly List<FrameworkElement> _previews = new();
     private List<StatusPreset> _presets = new();
     private int _selection;
     private bool _visible;
@@ -145,7 +148,7 @@ internal sealed class StatusPicker : Window
         var rows = (_presets.Count + PerRow - 1) / PerRow;
         var widthDip = 32 + columns * CardWidth + (columns - 1) * Gap;
         var heightDip = Math.Min(
-            16 + 12 + rows * (CardHeight + 30) + (rows - 1) * Gap + 36,
+            16 + 12 + rows * (CardHeight + 32) + (rows - 1) * Gap + 36,
             display.Work.Height / scale * 0.9);
         var width = MonitorLayout.Pixels(widthDip, scale);
         var height = MonitorLayout.Pixels(heightDip, scale);
@@ -154,7 +157,7 @@ internal sealed class StatusPicker : Window
         _visible = true;
         Activate();
         Foreground.Restore(_hwnd);
-        Select(StatusScreenRules.DefaultIndex(_presets, SettingsService.Current.StatusScreenLastPreset));
+        Select(StatusScreenRules.DefaultIndex(_presets, SettingsService.Current.StatusScreenLastPreset), MotionCurve.Instant);
         DispatcherQueue.TryEnqueue(() => _keys.Focus(FocusState.Programmatic));
         Motion.Entrance(_scroll);
         Log.Info($"status.picker-show count={_presets.Count}");
@@ -175,6 +178,7 @@ internal sealed class StatusPicker : Window
             // 卡片里的预览放掉（下次打开按那时的列表重建）。
             _grid.Children.Clear();
             _cards.Clear();
+            _previews.Clear();
             if (restoreForeground && _previous != default)
             {
                 Foreground.Restore(_previous);
@@ -192,6 +196,7 @@ internal sealed class StatusPicker : Window
         _grid.RowDefinitions.Clear();
         _grid.ColumnDefinitions.Clear();
         _cards.Clear();
+        _previews.Clear();
         var columns = Math.Min(PerRow, _presets.Count);
         for (var column = 0; column < columns; column++)
         {
@@ -229,12 +234,15 @@ internal sealed class StatusPicker : Window
             TextTrimming = TextTrimming.CharacterEllipsis,
             MaxLines = 1,
         });
+        // 画面四周留 4（圈 2 + 空 4）：选中时放大 1.04 不压到圈（mac ring 4）
+        var preview = StatusScreenView.Preview(preset, CardWidth - 12, (CardWidth - 12) * CardHeight / CardWidth);
+        _previews.Add(preview);
         var stack = new StackPanel();
-        stack.Children.Add(StatusScreenView.Preview(preset, CardWidth - 8, CardHeight - 8 * CardHeight / CardWidth));
+        stack.Children.Add(preview);
         stack.Children.Add(line);
         var card = new Border
         {
-            Padding = new Thickness(2),
+            Padding = new Thickness(4),
             CornerRadius = new CornerRadius(10),
             BorderThickness = new Thickness(2),
             BorderBrush = new SolidColorBrush(Colors.Transparent),
@@ -248,7 +256,8 @@ internal sealed class StatusPicker : Window
         return card;
     }
 
-    private void Select(int index)
+    /// <param name="curve">选中那张放大的曲线：键盘换选中是 snap；打开面板、方向键连发是 Instant（mac motion）。</param>
+    private void Select(int index, MotionCurve curve = MotionCurve.Snap)
     {
         if (_cards.Count == 0)
         {
@@ -259,6 +268,10 @@ internal sealed class StatusPicker : Window
         for (var i = 0; i < _cards.Count; i++)
         {
             _cards[i].BorderBrush = new SolidColorBrush(i == _selection ? Theme.AccentColor : Colors.Transparent);
+            if (i < _previews.Count)
+            {
+                Motion.Zoom(_previews[i], i == _selection ? (float)StatusScreenRules.PickerSelectedScale : 1f, curve);
+            }
         }
 
         _cards[_selection].StartBringIntoView(new BringIntoViewOptions { AnimationDesired = false });
@@ -276,8 +289,43 @@ internal sealed class StatusPicker : Window
         }
 
         var preset = _presets[index];
+        var card = CardRect(index);
         HideSelf(restoreForeground: false);
-        StatusScreenHost.Enter(preset);
+        StatusScreenHost.Enter(preset, growFrom: card);
+    }
+
+    /// <summary>
+    /// 第 index 张卡片里缩小的画面在屏幕上的位置（物理像素，R107）：画面从这里长到整屏。选中的那张是放大了 1.04 的样子（绕中心）。
+    /// 量不出来（还没排好、窗口没了）是 null，进入时就不长。
+    /// </summary>
+    private unsafe PixelRect? CardRect(int index)
+    {
+        if (index < 0 || index >= _previews.Count || _previews[index] is not { XamlRoot: { } root } preview ||
+            preview.ActualWidth <= 0 || preview.ActualHeight <= 0)
+        {
+            return null;
+        }
+
+        try
+        {
+            var scale = root.RasterizationScale;
+            var bounds = preview.TransformToVisual(null).TransformBounds(new Windows.Foundation.Rect(0, 0, preview.ActualWidth, preview.ActualHeight));
+            var zoom = index == _selection ? StatusScreenRules.PickerSelectedScale : 1;
+            var origin = new System.Drawing.Point(0, 0);
+            PInvoke.ClientToScreen(_hwnd, &origin);
+            var width = bounds.Width * zoom;
+            var height = bounds.Height * zoom;
+            var x = bounds.X - (width - bounds.Width) / 2;
+            var y = bounds.Y - (height - bounds.Height) / 2;
+            return new PixelRect(
+                origin.X + (int)Math.Round(x * scale), origin.Y + (int)Math.Round(y * scale),
+                Math.Max(1, (int)Math.Round(width * scale)), Math.Max(1, (int)Math.Round(height * scale)));
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"status.picker-card-rect-failed {ex.GetType().Name}");
+            return null;
+        }
     }
 
     private static bool IsDown(VirtualKey key)
@@ -286,24 +334,26 @@ internal sealed class StatusPicker : Window
     private void OnKeyDown(object sender, KeyRoutedEventArgs e)
     {
         var columns = Math.Max(1, Math.Min(PerRow, _presets.Count));
+        // 按住方向键连发时直接到位（mac Style.isKeyRepeat → instant）
+        var curve = e.KeyStatus.WasKeyDown ? MotionCurve.Instant : MotionCurve.Snap;
         e.Handled = true;
         switch (e.Key)
         {
             case VirtualKey.Left:
-                Select(_selection - 1);
+                Select(_selection - 1, curve);
                 break;
             case VirtualKey.Right:
-                Select(_selection + 1);
+                Select(_selection + 1, curve);
                 break;
             // Tab = →、Shift+Tab = ←（mac StatusPicker.swift:125，REVIEW R102）
             case VirtualKey.Tab:
-                Select(_selection + (IsDown(VirtualKey.Shift) ? -1 : 1));
+                Select(_selection + (IsDown(VirtualKey.Shift) ? -1 : 1), curve);
                 break;
             case VirtualKey.Up:
-                Select(_selection - columns);
+                Select(_selection - columns, curve);
                 break;
             case VirtualKey.Down:
-                Select(_selection + columns);
+                Select(_selection + columns, curve);
                 break;
             case VirtualKey.Enter:
                 EnterSelected();

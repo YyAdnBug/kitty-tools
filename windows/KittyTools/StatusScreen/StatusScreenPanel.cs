@@ -6,6 +6,8 @@
 // 都置顶、不进 Alt+Tab；鼠标所在那块屏的黑窗拿前台（全屏的前台窗口会把任务栏压下去），会话每秒把它们再提到最上面一次。
 // 先隐身（DWM cloak）再露面，画上几帧再显形：不然一露面先白一块（同轻提示 fb6e2539）。窗口退场不淡出（PLAN-v7 §1）。
 // 键盘鼠标由 InputBlock 吞掉，这些窗口自己收不到输入；鼠标按住退出提示由会话按钩子给的坐标自己算（HintHitRect）。
+// 从选状态的面板进来时，卡片所在那块屏的画面从卡片长到整屏（R107，mac grow；Growth）：熄屏 / 告示裁窗口本身的可见区域、画面跟着缩放，
+// 透出裁压暗层（底板那扇小窗照常出场）。
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using KittyTools.Core;
@@ -101,19 +103,20 @@ internal sealed unsafe partial class StatusScreenPanel
     /// 摆出来。key：鼠标所在的那块（拿前台）。footer：小字的第一版。
     /// 建不出来抛出去，会话按「进不去」处理（拦截已经撤了才会抛到用户那里——见 StatusScreenHost.Enter）。
     /// </summary>
-    public void Present(bool key, string footer)
+    /// <param name="growFrom">从选状态的面板进来、卡片在这块屏上：卡片在屏幕上的位置（物理像素），画面从它长到整屏（R107）。</param>
+    public void Present(bool key, string footer, PixelRect? growFrom = null)
     {
         if (_preset.Style == StatusPresets.Dim)
         {
-            PresentDim(key, footer);
+            PresentDim(key, footer, growFrom);
         }
         else
         {
-            PresentSurface(key, footer);
+            PresentSurface(key, footer, growFrom);
         }
     }
 
-    private void PresentSurface(bool key, string footer)
+    private void PresentSurface(bool key, string footer, PixelRect? growFrom)
     {
         var window = BareWindow(frame: false);
         _surface = window;
@@ -136,16 +139,23 @@ internal sealed unsafe partial class StatusScreenPanel
         window.AppWindow.MoveAndResize(new RectInt32(Bounds.Left, Bounds.Top, Bounds.Width, Bounds.Height));
         var hwnd = Handle(window);
         FitClientToBounds(hwnd);
-        RevealWhenDrawn(window, hwnd, key, () => _closed);
+        // 要从卡片长出来的：露面之前就把窗口裁成卡片那一块（第一帧就在卡片上），露面那一刻开始长
+        var growth = growFrom is { } card ? new Growth(hwnd, _surfaceRoot, card, Bounds, Scale, () => _closed) : null;
+        RevealWhenDrawn(window, hwnd, key, () => _closed, growth is null ? null : new Action(growth.Start));
         if (_column is not null && _animates)
         {
             PlayEntrance(_column);
         }
     }
 
-    private void PresentDim(bool key, string footer)
+    private void PresentDim(bool key, string footer, PixelRect? growFrom)
     {
-        _scrim = CreateScrim(Bounds, StatusScreenView.ScrimAlpha(HighContrast()));
+        // 从卡片长出来的：压暗层露面之前裁成卡片那一块、马上开始长（底板那扇小窗照常出场，R107）
+        Growth? growth = null;
+        _scrim = CreateScrim(Bounds, StatusScreenView.ScrimAlpha(HighContrast()), growFrom is { } card
+            ? new Action<IntPtr>(hwnd => growth = new Growth(hwnd, null, card, Bounds, Scale, () => _closed))
+            : null);
+        growth?.Start();
         var column = StatusScreenView.BuildColumn(_preset, _title, _width * 0.8, _animates, footer);
         _column = column;
         // Windows 核验：窗口按量出来的大小摆好后，那一列在窗口里排得比量的窄，右边露出一条没画的白边（--status-screen-probe 的图）：
@@ -267,7 +277,7 @@ internal sealed unsafe partial class StatusScreenPanel
             return;
         }
 
-        Motion.Shake(_column.Title);
+        Motion.Shake(_column.TitleBox);
         if (_animates && _column.Emoji is { } emoji)
         {
             Motion.Swing(emoji);
@@ -584,7 +594,7 @@ internal sealed unsafe partial class StatusScreenPanel
     /// 先隐身再露面，画上第一帧、再过 4 次合成且 ≥ 50 ms 才显形（最多藏 300 ms）：同轻提示 Reveal 的做法，不然一露面先白一块。
     /// activate：拿前台（全屏的前台窗口会把任务栏压下去）。closed：窗口已经被关了（关了就不再显形）。提醒的全屏底板也用它。
     /// </summary>
-    internal static void RevealWhenDrawn(Window window, IntPtr hwnd, bool activate, Func<bool> closed)
+    internal static void RevealWhenDrawn(Window window, IntPtr hwnd, bool activate, Func<bool> closed, Action? revealed = null)
     {
         var cloak = 1;
         DwmSetWindowAttribute(hwnd, 13 /* DWMWA_CLOAK */, &cloak, sizeof(int));
@@ -609,6 +619,7 @@ internal sealed unsafe partial class StatusScreenPanel
 
             var visible = 0;
             DwmSetWindowAttribute(hwnd, 13, &visible, sizeof(int));
+            revealed?.Invoke();
         }
 
         void OnRendering(object? sender, object args)
@@ -640,7 +651,7 @@ internal sealed unsafe partial class StatusScreenPanel
     /// 透出样式的压暗层：一扇黑底的分层弹出窗，整体透明度 alpha，盖满整块屏（同 ShotFlash 的做法）。建不出来抛异常。
     /// 提醒的全屏（ReminderScreen）也用它；关掉用 DestroyScrim。
     /// </summary>
-    internal static IntPtr CreateScrim(PixelBounds bounds, byte alpha)
+    internal static IntPtr CreateScrim(PixelBounds bounds, byte alpha, Action<IntPtr>? beforeShow = null)
     {
         EnsureScrimClass();
         var module = PInvoke.GetModuleHandle(default(PCWSTR));
@@ -653,6 +664,7 @@ internal sealed unsafe partial class StatusScreenPanel
         }
 
         SetLayeredWindowAttributes(hwnd, 0, alpha, 0x2 /* LWA_ALPHA */);
+        beforeShow?.Invoke(hwnd);
         ShowWindow(hwnd, 4 /* SW_SHOWNOACTIVATE */);
         return hwnd;
     }
@@ -744,6 +756,116 @@ internal sealed unsafe partial class StatusScreenPanel
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool ClientToScreen(IntPtr hwnd, WinPoint* point);
+
+    [LibraryImport("gdi32.dll")]
+    private static partial IntPtr CreateRoundRectRgn(int left, int top, int right, int bottom, int widthEllipse, int heightEllipse);
+
+    [LibraryImport("gdi32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool DeleteObject(IntPtr handle);
+
+    [LibraryImport("user32.dll")]
+    private static partial int SetWindowRgn(IntPtr hwnd, IntPtr region, [MarshalAs(UnmanagedType.Bool)] bool redraw);
+
+    /// <summary>
+    /// 画面从选状态的卡片长到整屏（R107，mac StatusScreenPanel.grow）：窗口一直是整屏大小，按 island 曲线每帧改窗口的可见区域
+    /// （SetWindowRgn，圆角从卡片的 8 DIP 收到直角、不回弹，StatusScreenRules.GrowFrame）；告示的画面跟着缩放平移（content 的
+    /// RenderTransform，横竖各缩各的），看起来就是卡片里那个缩小的画面长大。约 0.42 秒，UI 线程每帧算一次（CompositionTarget.Rendering）：
+    /// 窗口的可见区域只能这么改，画面要和它对上同一帧。mac 是窗口先透明、只动内容图层——透明的 WinUI 窗在用户机器上是白的，所以裁窗口本身。
+    /// 长到一半窗口被关了就停。
+    /// </summary>
+    private sealed class Growth
+    {
+        private readonly IntPtr _hwnd;
+        private readonly FrameworkElement? _content;
+        private readonly PixelRect _card;
+        private readonly PixelRect _full;
+        private readonly (int X, int Y) _origin;
+        private readonly double _scale;
+        private readonly Func<bool> _closed;
+        private readonly CompositeTransform? _transform;
+        private long _started;
+
+        public Growth(IntPtr hwnd, FrameworkElement? content, PixelRect card, PixelBounds bounds, double scale, Func<bool> closed)
+        {
+            _hwnd = hwnd;
+            _content = content;
+            _card = card;
+            _full = new PixelRect(bounds.Left, bounds.Top, bounds.Width, bounds.Height);
+            _scale = scale;
+            _closed = closed;
+            // 窗口区域按窗口左上角算（没边框的窗口外面还有一圈看不见的缩放边，见 FitClientToBounds）
+            WinRect window;
+            _origin = GetWindowRect(hwnd, &window) ? (window.Left, window.Top) : (bounds.Left, bounds.Top);
+            if (content is not null)
+            {
+                _transform = new CompositeTransform();
+                content.RenderTransform = _transform;
+            }
+
+            Apply(0);
+        }
+
+        public void Start()
+        {
+            if (_started != 0)
+            {
+                return;
+            }
+
+            _started = System.Diagnostics.Stopwatch.GetTimestamp();
+            CompositionTarget.Rendering += OnRendering;
+        }
+
+        private void OnRendering(object? sender, object args)
+        {
+            var t = System.Diagnostics.Stopwatch.GetElapsedTime(_started).TotalSeconds / StatusScreenRules.GrowSeconds;
+            if (_closed() || t >= 1)
+            {
+                CompositionTarget.Rendering -= OnRendering;
+                Finish();
+                return;
+            }
+
+            Apply(t);
+        }
+
+        private void Apply(double t)
+        {
+            var frame = StatusScreenRules.GrowFrame(_card, _full, t, StatusScreenRules.CardRadius * _scale);
+            var left = (int)Math.Round(frame.X) - _origin.X;
+            var top = (int)Math.Round(frame.Y) - _origin.Y;
+            var diameter = (int)Math.Round(frame.Radius * 2);
+            var region = CreateRoundRectRgn(
+                left, top, left + (int)Math.Round(frame.Width) + 1, top + (int)Math.Round(frame.Height) + 1, diameter, diameter);
+            // 设成了区域归系统管；没设成自己删
+            if (region != IntPtr.Zero && SetWindowRgn(_hwnd, region, true) == 0)
+            {
+                DeleteObject(region);
+            }
+
+            if (_transform is not null)
+            {
+                _transform.ScaleX = frame.ScaleX;
+                _transform.ScaleY = frame.ScaleY;
+                _transform.TranslateX = (frame.X - _full.X) / _scale;
+                _transform.TranslateY = (frame.Y - _full.Y) / _scale;
+            }
+        }
+
+        private void Finish()
+        {
+            if (!_closed())
+            {
+                SetWindowRgn(_hwnd, IntPtr.Zero, true);
+            }
+
+            if (_content is not null)
+            {
+                _content.RenderTransform = null;
+            }
+        }
+    }
 
     [StructLayout(LayoutKind.Sequential)]
     private struct WinRect

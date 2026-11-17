@@ -3,11 +3,11 @@
 // 设置和选状态面板里的缩小预览。整屏的会话（StatusScreenHost）、每屏的窗口（StatusScreenPanel）都从这里取，尺寸按标题字号的比例：
 // 标题 = 屏高 × 0.075（夹在 44–96 DIP），表情 1.3 倍、说明 0.36 倍、小字 max(13, 0.2 倍)；图标到标题 0.3、标题到说明 0.25、到小字 0.5。
 // 永远深色（HUD 家族），只有退出提示的进度环用强调色（截图那一套不随深浅的品牌粉）。
-// 出场（PlayEntrance，状态屏和全屏提醒共用）：表情落下弹一下、标题逐字浮现（StatusEntrance 的时间表）、说明和小字随后淡入；
-// 小字是 TickerText（变了的数字滚过去）。
-// ponytail: 标题逐字只做淡入，整行一起浮上来（mac 每个字还从模糊 8 变清楚、各自上浮：TextBlock 的 Run 只能换颜色，
-// 要做得拆成一个字一个元素、自己折行，再给每个加模糊效果）。选中卡片长成整屏不做（Windows 版全 App 不做「从小放到大」，0.1.0 用户定）。
+// 出场（PlayEntrance，状态屏和全屏提醒共用）：表情落下弹一下、标题逐字浮现（StatusEntrance 的时间表，每个字各自从下面浮上来、
+// 从放大一点收到原样、淡入，R107）、说明和小字随后淡入；小字是 TickerText（整行排一次再切开，变了的数字滚过去）。
+// mac 的每个字还从模糊 8 变清楚：WinUI 给一块元素加模糊要离屏表面 + 效果画刷（每个字一份），这里用放大 1.12 收回来逼近那种「散开」的样子。
 using KittyTools.Core;
+using KittyTools.Infrastructure;
 using KittyTools.Ui;
 using Microsoft.UI;
 using Microsoft.UI.Text;
@@ -40,6 +40,9 @@ internal static class StatusScreenView
 
         public required TextBlock Title { get; init; }
 
+        /// <summary>标题外面那一格：逐字浮现时每个字的那一份叠在这里（晃的时候晃它，一起晃）。</summary>
+        public required Grid TitleBox { get; init; }
+
         public FrameworkElement? Emoji { get; init; }
 
         public TextBlock? Detail { get; init; }
@@ -48,7 +51,7 @@ internal static class StatusScreenView
     }
 
     /// <summary>
-    /// 出场（mac Z16a）：表情落下并弹一下（pop）、标题逐字淡入且整行浮上来（glide）、说明和小字等最后一个字浮到一半时淡入。
+    /// 出场（mac Z16a）：表情落下并弹一下（pop）、标题逐字浮现（每个字各自浮上来）、说明和小字等最后一个字浮到一半时淡入。
     /// animates：做不做逐字（mac screen.animates：状态屏的动画开着、没有减弱动态效果）；不做时标题整行入场（Motion 自己降级）。
     /// </summary>
     public static void PlayEntrance(Column column, bool animates)
@@ -58,12 +61,15 @@ internal static class StatusScreenView
             Motion.Entrance(emoji, MotionCurve.Pop, rise: -24);
         }
 
-        Motion.Entrance(column.Title, MotionCurve.Glide, rise: (float)(column.Title.FontSize * 0.1));
         var entrance = new StatusEntrance(new System.Globalization.StringInfo(column.Title.Text).LengthInTextElements);
         var emerges = animates && !Motion.Reduced;
         if (emerges)
         {
-            EmergeTitle(column.Title, entrance);
+            EmergeTitle(column.TitleBox, column.Title, entrance);
+        }
+        else
+        {
+            Motion.Entrance(column.Title, MotionCurve.Glide, rise: (float)(column.Title.FontSize * StatusEntrance.RiseFactor));
         }
 
         var restDelay = (int)Math.Round((emerges ? entrance.RestStart : 0.18) * 1000);
@@ -76,45 +82,173 @@ internal static class StatusScreenView
     }
 
     /// <summary>
-    /// 标题逐字淡入（mac GlyphEmerge 的简化）：每个字一个 Run、各自一支画刷，每帧按 StatusEntrance.Glyph 设透明度；
-    /// 播完换回整行文字（不留几十支画刷），播的时候窗口关了也只多跑到 End 为止。
+    /// 标题逐字浮现（R107，mac GlyphEmerge）：标题照常排一次（原来那个 TextBlock，播的时候藏着），每个字一份一模一样的标题、只露这个字
+    /// 那一块（UIElement.Clip：横向从这个字的左边到下一个字的左边，一行的头尾放宽到整行；纵向是它那一行）——各份和原来的排法一模一样
+    /// （同样的字、同样的约束），播完拿掉、换回原来那个，逐像素对得上；同 mac Ticker「整行排一次再切开」的思路。每一份在合成器里走一遍
+    /// （Motion.Emerge），UI 线程不逐帧动。量不出字的位置（TextPointer 不给、给的不像话）就退回整行淡入浮上来。
     /// </summary>
-    private static void EmergeTitle(TextBlock title, StatusEntrance entrance)
+    private static void EmergeTitle(Grid box, TextBlock title, StatusEntrance entrance)
     {
-        var text = title.Text;
-        var brushes = new List<SolidColorBrush>();
-        title.Inlines.Clear();
-        var enumerator = System.Globalization.StringInfo.GetTextElementEnumerator(text);
-        while (enumerator.MoveNext())
-        {
-            var brush = new SolidColorBrush(ColorHelper.FromArgb(0, HudText.R, HudText.G, HudText.B));
-            brushes.Add(brush);
-            title.Inlines.Add(new Microsoft.UI.Xaml.Documents.Run { Text = enumerator.GetTextElement(), Foreground = brush });
-        }
+        title.Opacity = 0;
+        var started = false;
 
-        var started = System.Diagnostics.Stopwatch.GetTimestamp();
-
-        void Tick(object? sender, object args)
+        void Start()
         {
-            var time = System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalSeconds;
-            if (time >= entrance.End)
+            if (started || title.ActualWidth <= 0 || title.ActualHeight <= 0)
             {
-                CompositionTarget.Rendering -= Tick;
-                title.Text = text;
                 return;
             }
 
-            for (var index = 0; index < brushes.Count; index++)
+            started = true;
+            title.LayoutUpdated -= OnLayout;
+            IReadOnlyList<Windows.Foundation.Rect>? slices = null;
+            try
             {
-                var alpha = (byte)Math.Round(255 * entrance.Glyph(index, time));
-                if (brushes[index].Color.A != alpha)
-                {
-                    brushes[index].Color = ColorHelper.FromArgb(alpha, HudText.R, HudText.G, HudText.B);
-                }
+                slices = GlyphSlices(title);
             }
+            catch (Exception ex)
+            {
+                Log.Warn($"status.title-slices-failed {ex.GetType().Name}");
+            }
+
+            if (slices is null)
+            {
+                title.Opacity = 1;
+                Motion.Entrance(title, MotionCurve.Glide, rise: (float)(title.FontSize * StatusEntrance.RiseFactor));
+                return;
+            }
+
+            var copies = new List<TextBlock>(slices.Count);
+            for (var index = 0; index < slices.Count; index++)
+            {
+                var slice = slices[index];
+                var copy = new TextBlock
+                {
+                    Text = title.Text,
+                    FontSize = title.FontSize,
+                    FontWeight = title.FontWeight,
+                    FontFamily = title.FontFamily,
+                    Foreground = title.Foreground,
+                    TextWrapping = title.TextWrapping,
+                    TextTrimming = title.TextTrimming,
+                    MaxLines = title.MaxLines,
+                    TextAlignment = title.TextAlignment,
+                    HorizontalAlignment = title.HorizontalAlignment,
+                    VerticalAlignment = title.VerticalAlignment,
+                    Clip = new RectangleGeometry { Rect = slice },
+                    IsHitTestVisible = false,
+                };
+                AutomationProperties.SetAccessibilityView(copy, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+                box.Children.Add(copy);
+                copies.Add(copy);
+                Motion.Emerge(
+                    copy, entrance.GlyphStart(index), StatusEntrance.GlyphSpan, (float)(title.FontSize * StatusEntrance.RiseFactor),
+                    (float)StatusEntrance.EmergeScale,
+                    new System.Numerics.Vector2((float)(slice.X + slice.Width / 2), (float)(slice.Y + slice.Height / 2)));
+            }
+
+            _ = HandBackAsync(box, title, copies, entrance.End);
         }
 
-        CompositionTarget.Rendering += Tick;
+        void OnLayout(object? sender, object args) => Start();
+
+        title.LayoutUpdated += OnLayout;
+        Start();
+    }
+
+    /// <summary>播完（End 之后再等一帧多）拿掉各份、露出原来那个标题。窗口关了也只是从一棵不在屏上的树里拿掉几个元素。</summary>
+    private static async Task HandBackAsync(Grid box, TextBlock title, List<TextBlock> copies, double end)
+    {
+        await Task.Delay(TimeSpan.FromSeconds(end + 0.05));
+        try
+        {
+            title.Opacity = 1;
+            foreach (var copy in copies)
+            {
+                box.Children.Remove(copy);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"status.title-handback-failed {ex.GetType().Name}");
+        }
+    }
+
+    /// <summary>
+    /// 标题里每个字（字形簇）露哪一块（在标题自己的坐标里）：各字的左边由 TextPointer.GetCharacterRect 给，同一行的按左边排；
+    /// 一行的第一个字左边放到 0、最后一个字右边放到整个宽，纵向是这一行的顶到下一行的顶（最后一行到底）。量出来不像话的（不是有限数、
+    /// 出了框、同一行里往回走）给 null，调用方退回整行入场。
+    /// </summary>
+    private static IReadOnlyList<Windows.Foundation.Rect>? GlyphSlices(TextBlock title)
+    {
+        var text = title.Text;
+        var starts = new List<int>();
+        var elements = System.Globalization.StringInfo.GetTextElementEnumerator(text);
+        while (elements.MoveNext())
+        {
+            starts.Add(elements.ElementIndex);
+        }
+
+        if (starts.Count == 0)
+        {
+            return null;
+        }
+
+        // TextBlock 的内容外面可能还算着一个 Run 的头尾（各占一个位置）：多出来的对半当前导
+        var content = title.ContentStart;
+        var lead = Math.Max(0, (title.ContentEnd.Offset - content.Offset - text.Length) / 2);
+        var (width, height) = (title.ActualWidth, title.ActualHeight);
+        var points = new List<(double X, double Y)>(starts.Count);
+        foreach (var index in starts)
+        {
+            if (content.GetPositionAtOffset(lead + index, Microsoft.UI.Xaml.Documents.LogicalDirection.Forward) is not { } position)
+            {
+                return null;
+            }
+
+            var rect = position.GetCharacterRect(Microsoft.UI.Xaml.Documents.LogicalDirection.Forward);
+            if (!double.IsFinite(rect.X) || !double.IsFinite(rect.Y) || rect.X < -1 || rect.X > width + 1 || rect.Y < -1 || rect.Y > height)
+            {
+                return null;
+            }
+
+            points.Add((rect.X, rect.Y));
+        }
+
+        // 分行：顶边差不到 1 DIP 的算同一行
+        var lineTops = new List<double>();
+        var lines = new int[points.Count];
+        for (var index = 0; index < points.Count; index++)
+        {
+            var line = lineTops.FindIndex(top => Math.Abs(top - points[index].Y) < 1);
+            if (line < 0)
+            {
+                lineTops.Add(points[index].Y);
+                line = lineTops.Count - 1;
+            }
+
+            lines[index] = line;
+        }
+
+        var slices = new List<Windows.Foundation.Rect>(points.Count);
+        for (var index = 0; index < points.Count; index++)
+        {
+            var line = lines[index];
+            var first = index == 0 || lines[index - 1] != line;
+            var last = index == points.Count - 1 || lines[index + 1] != line;
+            var left = first ? 0 : points[index].X;
+            var right = last ? width : points[index + 1].X;
+            var top = lineTops[line];
+            var bottom = line + 1 < lineTops.Count ? lineTops[line + 1] : height;
+            if (right < left || bottom <= top)
+            {
+                return null;
+            }
+
+            slices.Add(new Windows.Foundation.Rect(left, top, right - left, bottom - top));
+        }
+
+        return slices;
     }
 
     /// <summary>
@@ -133,7 +267,7 @@ internal static class StatusScreenView
         {
             var side = StatusScreenRules.EmojiSide(title);
             emoji = StatusEmoji.Create(preset.Symbol, side, animated);
-            if (StatusEmojiCatalog.Dim.Contains(preset.Symbol))
+            if (StatusEmojiCatalog.Dim.Contains(StatusEmoji.Canonical(preset.Symbol)))
             {
                 // 颜色很深的剪影：垫一团柔和的亮光，不然黑底上看不见（mac StatusEmoji.dim）。
                 var glow = new Ellipse
@@ -178,7 +312,10 @@ internal static class StatusScreenView
             TextAlignment = TextAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Center,
         };
-        root.Children.Add(titleText);
+        // 标题放在一格里：逐字浮现时每个字的那一份叠在同一格（同样的可用宽，排法一模一样）
+        var titleBox = new Grid { HorizontalAlignment = HorizontalAlignment.Stretch };
+        titleBox.Children.Add(titleText);
+        root.Children.Add(titleBox);
 
         TextBlock? detail = null;
         if (!string.IsNullOrEmpty(preset.Detail))
@@ -208,7 +345,7 @@ internal static class StatusScreenView
         };
         footerText.Text = footer ?? string.Empty;
         root.Children.Add(footerText);
-        return new Column { Root = root, Title = titleText, Emoji = emoji, Detail = detail, Footer = footerText };
+        return new Column { Root = root, Title = titleText, TitleBox = titleBox, Emoji = emoji, Detail = detail, Footer = footerText };
     }
 
     /// <summary>透出样式垫在那一列下面的 HUD 底板内边距：横 标题 × 0.7、纵 × 0.55（不垫的话说明和后面窗口里的字叠在一起）。</summary>

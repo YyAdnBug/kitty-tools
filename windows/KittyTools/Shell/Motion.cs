@@ -1,12 +1,13 @@
 // 动效：mac 的七条弹簧在 Windows 上的做法（参数和规则的纯数据在 Core 的 MotionCurves）。
 // 位移走 CurveTo：把 Core 的 SpringEase 曲线采样成 Composition 关键帧（合成器里跑，不占主线程）。
 // 读 UISettings.AnimationsEnabled，系统关了动画效果时只留淡入淡出。
-// 不做「从小放到大」的缩放（0.1.0 用户定：Windows 版全 App 不要这种效果，截图卡片、钉图、轻提示原来都有）。
+// 不做「从小放到大」的缩放（0.1.0 用户定：Windows 版全 App 不要这种效果，截图卡片、钉图、轻提示原来都有）；例外是状态屏（R107，
+// 2026-11-17 用户要求对齐 mac）：选中的卡片放大到 1.04、卡片长成整屏、标题每个字从放大一点收回来。
 // 各界面只用下面三个现成的用法，不要自己拼 Composition：
 //   Entrance  入场：透明度 0→1 + 下落 6 px
 //   Appear    小东西出现：只淡入
 //   SlideTo   选中高亮滑动（把一块高亮挪到目标位置）
-// 另有 FadeIn / Fade 两个淡变（底栏就地提示）。
+// 另有 FadeIn / Fade 两个淡变（底栏就地提示），状态屏专用的 Emerge（标题逐字）、Zoom（选状态的卡片放大）。
 using System.Globalization;
 using System.Numerics;
 using KittyTools.Core;
@@ -106,6 +107,66 @@ internal static class Motion
             StartFade(visual, 1f, MotionCurves.FadeInSeconds);
         });
     }
+
+    /// <summary>
+    /// 状态屏标题的一个字浮现（R107，mac GlyphEmerge）：晚 delay 秒开始，span 秒内透明度 0→1、从往下 rise 回到原位、从放大 scale 收到 1
+    /// （绕 center，元素自己的坐标），三次方缓出（同 StatusEntrance.Glyph）；开始之前一直停在起点（透明）。
+    /// 调用方只在动画开着、没减弱动态效果时用。mac 还有模糊 8 → 0：WinUI 要每个字一张离屏表面 + 效果画刷，这里用放大一点代替。
+    /// </summary>
+    public static void Emerge(FrameworkElement element, double delay, double span, float rise, float scale, Vector2 center)
+        => WhenReady(element, visual =>
+        {
+            var compositor = visual.Compositor;
+            // 三次方缓出：1 − (1 − t)³ 的贝塞尔近似
+            var ease = compositor.CreateCubicBezierEasingFunction(new Vector2(0.33f, 1f), new Vector2(0.68f, 1f));
+            var duration = TimeSpan.FromSeconds(Math.Max(0.001, span));
+            var wait = TimeSpan.FromSeconds(Math.Max(0, delay));
+            EnableTranslation(element);
+            visual.CenterPoint = new Vector3(center, 0);
+            visual.Opacity = 0f;
+            visual.Scale = new Vector3(scale, scale, 1);
+            visual.Properties.InsertVector3("Translation", new Vector3(0, rise, 0));
+
+            var fade = compositor.CreateScalarKeyFrameAnimation();
+            fade.InsertKeyFrame(0f, 0f);
+            fade.InsertKeyFrame(1f, 1f, ease);
+            var lift = compositor.CreateVector3KeyFrameAnimation();
+            lift.InsertKeyFrame(0f, new Vector3(0, rise, 0));
+            lift.InsertKeyFrame(1f, Vector3.Zero, ease);
+            var settle = compositor.CreateVector3KeyFrameAnimation();
+            settle.InsertKeyFrame(0f, new Vector3(scale, scale, 1));
+            settle.InsertKeyFrame(1f, Vector3.One, ease);
+            foreach (var animation in new KeyFrameAnimation[] { fade, lift, settle })
+            {
+                animation.Duration = duration;
+                animation.DelayTime = wait;
+                animation.DelayBehavior = AnimationDelayBehavior.SetInitialValueBeforeDelay;
+            }
+
+            visual.StartAnimation("Opacity", fade);
+            visual.StartAnimation("Translation", lift);
+            visual.StartAnimation("Scale", settle);
+        });
+
+    /// <summary>
+    /// 放大到 scale / 回到 1（选状态的面板里选中的那张卡片，R107，mac selectedScale 1.04 + snap）：绕元素中心，snap 曲线；
+    /// 减弱动态效果、Instant 时直接设。被打断时从当前值接着走（CurveTo）。
+    /// </summary>
+    public static void Zoom(FrameworkElement element, float scale, MotionCurve curve = MotionCurve.Snap)
+        => WhenReady(element, visual =>
+        {
+            visual.CenterPoint = new Vector3((float)(element.ActualWidth / 2), (float)(element.ActualHeight / 2), 0);
+            var target = new Vector3(scale, scale, 1);
+            var spring = MotionCurves.Effective(curve, Reduced);
+            if (spring is null)
+            {
+                visual.StopAnimation("Scale");
+                visual.Scale = target;
+                return;
+            }
+
+            visual.StartAnimation("Scale", CurveTo(visual.Compositor, target, spring.Value));
+        });
 
     /// <summary>小东西出现：只淡入（不再从 0.85 放大，0.1.0 用户反馈）。</summary>
     public static void Appear(FrameworkElement element)

@@ -106,8 +106,10 @@ internal static partial class StatusScreenHost
     /// 进入一个状态。正在截图框选 / 长截图时不进（响一声）；正在录屏 / 录音时提示「先停止这一段」（录制条会被盖住、退出前停不了）；
     /// 拦截建不起来、窗口建不出来都不进。probe：自检（只拦带标记的注入事件，不记「上次进入」）。
     /// 返回进不去的原因（null = 进去了 / 本来就在里面）；quiet：不响、不出提示（提醒「进入状态屏」进不去时退成全屏、把原因写在全屏上）。
+    /// growFrom：从选状态的面板进来时那张卡片在屏幕上的位置（物理像素）——它所在那块屏的画面从它长到整屏（R107，mac Z14a），其余照常；
+    /// 减弱动态效果时不长。
     /// </summary>
-    public static string? Enter(StatusPreset preset, bool probe = false, bool quiet = false)
+    public static string? Enter(StatusPreset preset, bool probe = false, bool quiet = false, PixelRect? growFrom = null)
     {
         if (Active)
         {
@@ -191,7 +193,7 @@ internal static partial class StatusScreenHost
         HidePanels();
         try
         {
-            ArrangePanels();
+            ArrangePanels(Motion.Reduced ? null : growFrom);
         }
         catch (Exception ex)
         {
@@ -267,8 +269,8 @@ internal static partial class StatusScreenHost
         StatusPicker.Hide();
     }
 
-    /// <summary>每块屏一扇（进入时、显示器变了时）；鼠标所在那块拿前台。</summary>
-    private static void ArrangePanels()
+    /// <summary>每块屏一扇（进入时、显示器变了时）；鼠标所在那块拿前台。growFrom：卡片中心所在那块屏从卡片长出来（只在进入时给）。</summary>
+    private static void ArrangePanels(PixelRect? growFrom = null)
     {
         foreach (var panel in Panels)
         {
@@ -283,11 +285,17 @@ internal static partial class StatusScreenHost
 
         PInvoke.GetCursorPos(out var cursor);
         var footer = Footer();
-        foreach (var (bounds, scale) in ScreenCapture.Monitors())
+        var monitors = ScreenCapture.Monitors().ToList();
+        var growing = growFrom is { } card
+            ? StatusScreenRules.GrowingIndex(card, monitors.Select(monitor => new PixelRect(
+                monitor.Bounds.Left, monitor.Bounds.Top, monitor.Bounds.Width, monitor.Bounds.Height)).ToList())
+            : -1;
+        for (var index = 0; index < monitors.Count; index++)
         {
+            var (bounds, scale) = monitors[index];
             var panel = new StatusScreenPanel(bounds, scale, preset, _animates, _passcode is not null);
             Panels.Add(panel);
-            panel.Present(key: panel.Contains(cursor.X, cursor.Y), footer);
+            panel.Present(key: panel.Contains(cursor.X, cursor.Y), footer, index == growing ? growFrom : null);
         }
     }
 
