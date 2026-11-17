@@ -112,7 +112,72 @@ mac 还没推进 `macos` 的（多语言 / 英文、截图识别元素第二三�
 
 #### 交接
 
-（待写）
+审查方在 Mac 上写了（`aa2cfed4` 那叠的动画、`0a5091de` 便签墙、`7e828b14` 预览卡淡入、`f551b78c` 固定的小点和墙上的倾斜，加这次交接），**没编译**。
+本机没有 .NET SDK；每个文件对着编译规则（可空、CS0165 / CS0414、没人用的私有字段、AOT、using）看过一遍，没 BOM、没原样的 U+2028 / U+2029。
+
+**改了哪些文件**
+
+- Core：`Notes/NoteDeckLayout.cs`（动效的数：`OpenReach` / `RaisedReach` / `Reach`、`ColumnRoom` / `ColumnWidth`、`RevealStagger` / `RevealDelay` / `RevealDistance`、
+  `EmergeOffset`、`Outward`、`Shift`（让位）、`TabSlot`（标签在标签列那扇窗里摆在哪、绕哪转））；`Notes/NoteWall.cs`（`CardLine.Lead`：列表符号原样；
+  `BandHeight` / `Overscan` / `Band` / `Reach` / `Visible`：只建可见区附近的）。
+- App：新文件 `Notes/NoteMotion.cs`（那叠和墙用的 Composition 动效；照 `Shell/Motion.cs` 采样弹簧，单独一份是为了不碰全 App 共用的 Motion.cs）；
+  `Notes/NoteDeckWindows.cs`（标签列 `NoteDeckColumnWindow` 重写；打开的便签出场、它带着的标签当把手；预览卡淡入；竖排标题挪进 `NoteDeckUi.Label` 共用）；
+  `Notes/NoteDeck.cs`（标签列那扇窗宽 `ColumnWidth`、收回带不带动画、叫停时当场收走）；`Notes/NoteSheetView.cs`（它带着的那张标签 `SetTab` / `TabSide`、
+  `Host.TabPressed` / `TabName`、`MotionTarget`）；`Notes/NoteFloats.cs`（浮动便签也带标签，点 = 收回边缘）；`Notes/NotesWindow.cs`（「便签墙」整节重写）。
+- 单测：`NoteDeckLayoutTests` 新加 `RevealAndReach`、`OthersMakeRoomForTheDraggedTab`、`TabSlotHugsTheScreenEdge`；`NoteWallTests` 改
+  `CardLinesDrawHeadingsAndBulletsWithoutMarkers`（Bullet 带 `Lead`「- 」「* 」，不再换成圆点）、新加 `WallDragMovesTheBookAndStampsTheOrder`
+  （墙上拖完 → `StoreIndex` → 真的 `NoteBook.Move`：只动被拖那条、记下 `OrderChangedAt`）、`OnlyCardsNearTheViewportAreBuilt`。
+
+**要特别看的编译点**
+
+1. 主构造函数的私有嵌套类：`NoteDeckColumnWindow.Tab`、`NotesWindow.WallCard` / `WallDrag`。`WallCard` 有个属性叫 `Card`（外面有个方法也叫 `Card(...)`）、
+   一个 int 属性叫 `Color`（外层用的是 `Windows.UI.Color` 类型）——确认没有二义性，不行就改名。
+2. `NoteMotion` 用到的 Composition API：`KeyFrameAnimation.InsertExpressionKeyFrame` / `DelayTime`、`SetScalarParameter` / `SetVector3Parameter`、
+   `CreateCubicBezierEasingFunction`、`Visual.CenterPoint`（Vector3）、`RotationAngleInDegrees`（旋转是这个 App 第一次在手递 visual 上用）。
+3. 可空：`NotesWindow.Materialize` 里 `TryGetValue(out var view)` 之后的两个分支；`OnCardMoved` 里 `_wallBase is not { } based || based.IndexOf(id) is not { } from`
+   之后用 based / from；`NoteDeckColumnWindow.UpdateStates` 里 `book is not null && book.Find(...) is { } note ? ...`。
+4. `NoteWall.Visible(..., IReadOnlyCollection<string?> keep)`：调用处传 `new[] { _wallFocus, _wallDrag?.Id }`，`keep.Contains` 走 LINQ。
+5. NoteDeckWindows.cs、NotesWindow.cs 新加了 `using System.Numerics;`（Vector2 / Vector3）。TreatWarningsAsErrors 开着：任何警告都挡构建。
+
+**要特别看的运行点（屏上才看得出来）**
+
+1. 手递 visual 的 Translation / RotationAngleInDegrees / Opacity 能在标签（外层 Grid 和里层的纸）、「+N」「+」两颗 Button、NoteSheetView 的 `_frame`、
+   预览卡的字、墙上卡片外面那层 holder 上动。旋转只转画面，点击、悬停、拖动按不斜的算（同 mac）。
+2. **第一帧不闪**：标签列出场先把起点（边外、透明）设好再 `AppWindow.Show`。要是看到一帧标签在终点再跳走：手递 visual 在元素进树前拿不到，
+   改成等 Loaded（同 `Motion.WhenReady`），或者先把 UIElement.Opacity 设 0、Loaded 时再交给 Composition。
+3. 墙上 Composition 动的是卡片外面那层 holder：卡片本身有 XAML 的 `Translation`（z=8，给 ThemeShadow），不和 `SetIsTranslationEnabled` 混在同一个元素上。
+   看拖着、滑开时阴影跟不跟、有没有残影。
+4. 标签的纸朝屏幕边多画 TiltBleed，那一截在窗口外、靠窗口裁掉；「+N」展开成滚动的一列时靠 ScrollViewer 裁。
+5. 拖动排序松手：仓库的 `Changed` 是同步的，`DragEnded → Store.Move → Render` 在松手的那一下重建整列；被拖的那张从松手处 settle 进新格子。
+   松手那一下先清掉按着的状态、再 `ReleasePointerCapture`（不管「丢了指针」是同步还是异步来，都不会被当成取消）。
+6. 浮动便签点标签：`BeginMove`（系统挪窗口的循环）到松手才回来，回来后窗口没挪（≤ 5 像素）才收回。确认这个循环在没挪鼠标时也会回来。
+
+**替用户定的**
+
+- **窗口不挪、只动里面的内容**（理由写在 NoteDeckWindows.cs 文件头：挪窗口会压到任务栏 / 隔壁屏，每帧 SetWindowPos 在主线程上、打开便签那一下最容易掉帧）。
+  代价：标签列那扇亚克力窗一露出来就是整条，标签随后滑进来；打开的便签、预览卡先出纸，里面的东西随后滑进来、淡入（mac 是整张纸一起）。窗口退场照旧不淡出。
+- 标签列那扇窗比标签宽 8（`ColumnRoom` = 打开的便签离标签列的 `NoteGap`，正好挨上），给探出和斜着的角；没有探出的时候那 8 露着一道亚克力。
+- 打开的便签出场不做 0.97 → 1 的放大（全 App 不做从小放大，0.1.0 用户定），只偏 24、淡入。
+- 浮着的那条标签不再变淡（原来 0.6），改成 mac 的色条色竖条；打开的那张不再描粗边，改成立正、探出 8、竖条。
+- 打开的便签带着标签时顶上那条 4 的色条不画（mac 没有那条，颜色靠标签读）；全部便签窗口里的编辑区照旧有色条、没有标签。
+- 浮动便签也带标签（同 mac），点它 = 收回边缘（那叠关着时读屏念「取消浮动」）；按着拖走系统的挪窗口。
+- 便签墙触屏不拖动排序（按下就截住指针会让触屏滚不动墙），点一下照样开；鼠标、笔的「点开」改在松手时认（和拖动是同一个手势，同 mac）。
+- 墙上拖着的卡片立正、压在上面，不放大 1.02、阴影不加深。
+- 分段的小标题「固定的」改成 mac 的「已固定」。
+- 卡片上的列表符号用 `FadedInk`（墨的 50%，高对比度 75%）：mac 卡片走 NoteStyles 的 isBullet，是同一个色。
+- 代码块的底：连着的代码行一块 Border（铺满字的宽、没有圆角和内边距）；mac 卡片是逐行的字底色、铺满一行宽，看上去一样。
+- 出场最多错开 7 张（FanLimit + 2）：「+N」展开着时再出场，后面的不再一张张晚。
+- 墙上卡片的倾斜不再跟「动画效果」走（同 mac：倾斜不是动效）。
+
+**Windows 那边要做的**
+
+1. 编译零警告：`dotnet build windows/KittyTools.slnx -c Debug -p:Platform=x64`，编译错直接修。
+2. `dotnet test windows/KittyTools.Tests`（上面 6 个用例，连原来便签的全部）。
+3. Release AOT 发布 x64 / ARM64，零 trim / AOT 警告。
+4. 截图推 `windows-shots` 的 `0.3.0-fill/`（文件名 `r108-` 开头）：那叠扇出 / 打开 / 拖动让位、便签墙（列表符号、代码块）、浅色 / 深色 / 高对比度；
+   动效录 3–5 秒短视频（扇出收回、打开的便签出场、墙上拖动）。再用 `KITTY_REDUCED_MOTION=1` 看一遍。
+5. 走 `HANDTEST.md`「补齐 R108」1570–1605。
+6. 便签墙上千条（假数据，`.Dev` 或临时目录）：开墙、滚到底、来回切视图，和改前对一下内存（内存探针或任务管理器）。
 
 ## issue #29：Ctrl+Alt+A 被当成通用键（审查方在 Mac 上写、没编译，2026-11-16）
 
