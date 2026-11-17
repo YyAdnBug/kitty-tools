@@ -1991,9 +1991,10 @@ Alfred 的 Related Apps、BetterTouchTool 按 App 停用，调研和测开销的
 > 2026-10-28（第三轮体检第 7 批）：2026-10-22 及更早的进度记录、做完的「已知的小毛病」、旧的「现状」「下一步」原样挪到 `docs/archive/PLAN-batches-2026-10.md` §12；AGENTS.md「项目概述」原来的长段原样挪到本节末尾「各族进度摘要（原 AGENTS 项目概述）」。
 
 **2026-11-17：平滑滚动插件**（§10「平滑滚动」，issue #14）：先在 `smooth-scroll-wip`（检出 `kitty-tools-macos-smoothscroll`，
-从 origin/macos `09e5eced`）做完第 1 批、跑过实机自检；同日用户「修改的功能都放到 0.10.0 里面去」，挪到 `smooth-scroll-0.10`
-（同一个检出，从 `plugin-page-wip` 的 `ff27e093` = 0.10.0 的 `i18n-wip` + 插件页改版 + 睡眠关蓝牙）：换成插件页改版的写法（`Plugin.swift`
-的声明、统一的「权限」和「关于这个插件」两组、添加状态不同步），补英文，0.10.0 更新日志加一条。没 push。待手测 HANDTEST「平滑滚动手测」。
+从 origin/macos `09e5eced`）做完第 1 批、跑过实机自检；同日用户「修改的功能都放到 0.10.0 里面去」「合并到 i18n-wip」，
+挪到 `smooth-scroll-0.10`（同一个检出，变基到 `i18n-wip` 的 `70f5d90d`，含插件页改版、睡眠关蓝牙、钉图选字）：换成插件页改版的写法
+（`Plugin.swift` 的声明、新建的「键盘与鼠标」组、统一的「权限」和「关于这个插件」两组、添加状态不同步），补英文，0.10.0 更新日志加一条、
+「新」挂上，快进合进 `i18n-wip`。没 push。待手测 HANDTEST「平滑滚动手测」。
 
 **2026-11-15 – 16：多语言（先英文）**（§10「多语言」）：拍板页「全部按推荐」；分支 `i18n-wip`（工作树
 `.claude/worktrees/i18n-english-a53944`，从 macos `894b8b2c`）分十批做完（第 0–9 批），`MARKETING_VERSION` 升到 0.10.0、
