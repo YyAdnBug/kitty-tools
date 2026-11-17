@@ -102,7 +102,100 @@ mac 还没推进 `macos` 的（多语言 / 英文、截图识别元素第二三�
 
 #### 交接
 
-（待写）
+审查方在 Mac 上写了（`3e00a5cc` 动画表情 28 个 + 动画表情包 + 自动下载开关、`1fb6e443` 标题逐字 / 小字整行切开 / 选中放大和长成整屏、
+`db869055` 手测和 MAC-DIFF，加这次交接），**没编译、没跑单测**（本机没有 .NET SDK）。每个文件对着编译规则（可空、CS0165 / CS0414、
+没人用的私有字段、record / struct、AOT、using）看过一遍，没 BOM、没原样的 U+2028 / U+2029 / U+FE0F / NUL。
+
+**做了什么**：
+
+- **自带的动画表情 28 个**：`tools/status-emoji.swift` 清单加到 28 + 眼睛（160 像素、12 帧照旧），用本机那 29 个 Fluent 原文件（MIT）转出后 12 个
+  （厨师、跑步、汽车、医护、水滴、学生、打坐、礼花、上班、走路、生日蛋糕、点赞）的帧图集和静止画面；原来 17 个 PNG 一字节没动（manifest 那 17 行逐字一样）。
+  新的 24 张按 `png-squeeze.cs` 同样的算法（Python 移植，解出来逐字节比过）无损压过。自带的素材合计约 13 MB（原来 7.7 MB）。
+- **动画表情包**（同 mac `EmojiPack`）：图标格子倒数第二格「动画表情」（✨），点开浮层照系统表情面板排（搜索框、6 列、「常用」、分类那排，746 格分批补）；
+  挑的存「pack:编号」（和自带同一个的存自带 id），第一次用到时从 release `emoji-pack-1-win` 下 `<编号>.png`（帧图集 + tEXt 块写着怎么切），
+  缓存在数据目录 `emoji-pack\`（50 MB，删最久没用的；不备份不导出不同步）；没下好、关了下载、没联网时画那个表情的系统样子。
+  设置 › 状态屏「动画」、设置 › 提醒「图标」各一行「自动下载动画表情」（`Settings.EmojiPackDownloads`，默认开，导出 / 导入键 `emojiPackDownloads`，
+  同步从 PLAN-v21 D 组透传挪进 B 组 `pref:emojiPackDownloads`）。最后一格「其他表情」改名「系统表情」（同 mac `7c203b88`）。预览下面写名字 / 「系统表情」。
+- **标题逐字**：每个字一份同样排好的标题、Clip 只露这个字（TextPointer 量位置），在合成器里各自淡入、浮上来、从 1.12 收到 1；播完换回原来那个。
+- **小字**：整行交给 Win2D 排一次、每个字一块位图（整行里那一段），冒号夹在数字中间抬 0.1 em，只滚变了的数字，每个字两块位图轮着用。
+- **选状态的面板**：选中那张的画面放大到 1.04（snap）；进入时那块屏从卡片长到整屏（每帧裁窗口可见区域 + 画面缩放，island 0.42 s）。
+
+**改了哪些文件**（路径省略 `windows/`）：
+
+- 素材 / 工具：`tools/status-emoji.swift`（28 个、`--pack` 模式）；`KittyTools/Resources/StatusEmoji/` 新 24 张 PNG、`manifest.txt` 加 12 行、新 `emoji-pack.json`；
+  `KittyTools/KittyTools.csproj`（emoji-pack.json 进发布包）；`KittyTools.Tests/KittyTools.Tests.csproj`（链接 emoji-pack.json）、`Fixtures/emoji-pack/person-walking.png`
+  （`--pack` 真转出来的表情包文件，164 KB）。
+- Core：`StatusPreset.cs`（`StatusEmojiCatalog` 28 个、`LegacyIds`、`IsPackId`，删 `MacOnlyIds`；`UsesEmojiKey` 改看 `LegacyIds`）；新 `EmojiPack.cs`
+  （`EmojiPackCatalog` / `EmojiSheet` / `EmojiPackFile` / `EmojiPackCache` / `EmojiPackRemote`）；新 `TickerLayout.cs`；`StatusScreenRules.cs`（`StatusEntrance.GlyphStart`、
+  `RiseFactor`、`EmergeScale`；`PickerSelectedScale`、`GrowSeconds`、`CardRadius`、`GrowingIndex`、`GrowFrame`）；`Sync/SettingsSyncMap.cs`（`emojiPackDownloads`）。
+- App：新 `StatusScreen/EmojiPack.cs`（下载、缓存）、新 `Settings/AnimatedEmojiPicker.cs`（那一格和气泡）；`StatusScreen/StatusEmoji.cs`（28 个 + pack，`Canonical` / `Name`，
+  图集挂载合成一个 `Show`）；`Settings/EmojiChoice.cs`（改名、`Selected` 认动画表情那一格和 canonical）；`Settings/SettingsWindow.Details.cs`（预览下的名字、
+  `AddEmojiPackToggle`、`EmojiPackFootnote`）、`SettingsWindow.StatusScreen.cs` / `SettingsWindow.Reminders.cs`（加那一格和开关）；`App/Settings.cs`（`EmojiPackDownloads`、
+  `EmojiPackRecent`）；`Storage/SettingsSyncFields.cs`、`Storage/ArchiveService.cs`；`Launcher/LauncherRowView.cs`（状态行认 pack:）；`Shell/Motion.cs`（`Emerge`、`Zoom`）；
+  `Shell/Ui/TickerText.cs`（重写）；`StatusScreen/StatusScreenView.cs`（`EmergeTitle` 重写、`Column.TitleBox`、`GlyphSlices`）；`StatusScreen/StatusScreenPanel.cs`
+  （`Present(growFrom)`、嵌套类 `Growth`、`RevealWhenDrawn(revealed)`、`CreateScrim(beforeShow)`、三个新的 LibraryImport）；`StatusScreen/StatusScreenHost.cs`（`Enter(growFrom)`）；
+  `StatusScreen/StatusPicker.cs`（`_previews`、`Select(curve)`、`CardRect`、卡片内边距 4）；`Shell/Glyphs.cs`、`App/UiSnapshotProbe.cs`（注释改名）。
+- 单测：新 `EmojiPackTests.cs`（8 个）、`StatusMotionTests.cs`（5 个）；`StatusScreenTests`（28 个、LegacyIds）、`StatusEmojiKeyTests`（注释）、`SettingsSyncTests`（81 → 82）。
+
+**要特别看的编译点**：
+
+1. Win2D（`Shell/Ui/TickerText.cs`）：`new CanvasImageSource(ICanvasResourceCreator, float, float, float dpi)`、`CreateDrawingSession(Color)`、
+   `CanvasTextLayout.GetCaretPosition(int, bool)`（Vector2）、`session.TextAntialiasing = CanvasTextAntialiasing.Grayscale`；`using Microsoft.Graphics.Canvas.UI.Xaml`。
+   类里有个属性叫 `Color`、类型是 `Windows.UI.Color`（「Color Color」），里面写的是 `Windows.UI.Color.FromArgb`；`Colors` 用的是 `Microsoft.UI.Colors`。
+2. `LoadedImageSurface.StartLoadFromStream(IRandomAccessStream)` 和带 `Size desiredMaxSize` 的重载（`StatusEmoji.ShowPackAsync`）；流用 `InMemoryRandomAccessStream` + `DataWriter`（同 `ImageCodec`）。
+3. `TextPointer`（`StatusScreenView.GlyphSlices`）：`TextBlock.ContentStart.GetPositionAtOffset(int, LogicalDirection)` / `GetCharacterRect(LogicalDirection)`。
+   不确定 WinUI 3 的 TextBlock 在偏移里算不算 Run 的头尾，按 `ContentEnd.Offset − ContentStart.Offset − 字数` 的一半当前导；**真机看 1556–1557 字有没有对在原位**，
+   对不上（逐字时每个字露出来的是隔壁的字、或者播完跳一下）就修这个前导，量不出来时它会自己退回整行入场。
+4. `Motion.Emerge`：`foreach (var animation in new KeyFrameAnimation[] { … })` 设 `Duration` / `DelayTime` / `DelayBehavior`；在手递 visual 上设 `Scale`、`CenterPoint`（同 `SqueezeIn`）。
+5. `StatusScreenPanel.Growth` 是外层 `unsafe partial` 类里的私有嵌套类：直接用外层的 `GetWindowRect(hwnd, &window)`、`WinRect`、新的 `CreateRoundRectRgn` /
+   `SetWindowRgn`（`bool` 参数带 `MarshalAs(Bool)`）/ `DeleteObject`（和 CsWin32 的 `PInvoke.DeleteObject` 不撞：那个要写类名）；`new Action(growth.Start)`、
+   `new Action<IntPtr>(hwnd => growth = new Growth(…))`；`CompositionTarget.Rendering` 是 `Microsoft.UI.Xaml.Media` 的。
+6. `AnimatedEmojiPicker.Panel`：局部函数互相调（`Jump` → `FillSections` / `Highlight`），`root.Loaded` 挂在最后（`Jump` 用到的 `buttons` 那时才赋值，免 CS0165）；
+   `CategoryGlyphs` 里 `\U0001F552` 这类写法；分类那排是 `Segoe UI Symbol` 的单色表情字。
+7. Core `EmojiPack.cs`：`"IHDR"u8` 这类 UTF-8 字面量和 `ReadOnlySpan<byte>.SequenceEqual`、`Math.Min(uint, int)`（走 long）、`EmojiSheet` 是带 `IReadOnlyList<int>` 的 record
+   （单测比 `Encode()` 的字，不比记录相等）；`HttpClient` / `SocketsHttpHandler` 在 Core（net10.0）里。`EmojiPackFile.Read` 的 `sheet is { } found && found.Cell == Cell`。
+8. `StatusPicker.CardRect` 是 `unsafe` 方法（类没标 unsafe），`PInvoke.ClientToScreen(_hwnd, &origin)` 同 `PinWindow`；`e.KeyStatus.WasKeyDown`。
+9. `TickerLayout.Slices` 返回 `IReadOnlyList<(int Left, int Right)>`，`TickerText.Lay` 里 `(int Left, int Width, int Height) pixels = (…)`（写明了名字，免 CS8123）。
+10. 单测 `DownloadsFromALocalServer` 起 `TcpListener(IPAddress.Loopback, 0)`（只听本机，不该弹防火墙）、`AcceptTcpClientAsync(CancellationToken)`、HttpClient 用
+    `SocketsHttpHandler { AllowAutoRedirect = false, UseProxy = false }`；跑不起来先看是不是环境问题（代理、杀软），别改断言。
+
+**单测**：`EmojiPackTests` 8 个（`CatalogMatchesTheBundledEmoji`、`CatalogRejectsJunk`、`SearchSectionsAndRecent`、`SheetLines`、`PackFilesAreChecked`、
+`CacheKeepsTheRecentlyUsed`、`DownloadAddresses`、`DownloadsFromALocalServer`——最后一个起本机服务器真下：跳转、404、太大、校验不对、没 tEXt、跳去别的主机、没设测试服务器时不去本机），
+`StatusMotionTests` 5 个（逐字开始时刻、切片接缝、滚不滚、冒号、长成整屏的起止和回弹）。fixture 的 tEXt 和 CRC 在 Mac 上用 Python 逐块核过；期望值是手算的。
+
+**替用户定的**：
+
+- 表情包是 Windows 自己的 release `emoji-pack-1-win`，一个表情一个帧图集 PNG（160 像素、12 帧，同自带的），帧信息写在图集的 tEXt 块里（一个文件就能放，不另带清单）；
+  下下来核 PNG 块、CRC、宽高，3 MB 以内才存。mac 的 HEICS 包 Windows 不一定解得开。
+- 没下好时画系统样子（Segoe UI Emoji），气泡的格子也是系统样子：**不带** mac 那 746 张缩略图（3.2 MB）。分类图标是 Segoe UI Symbol 的单色字（mac SF 符号）。
+- 对照表（142 KB）只在用到「pack:」时才读（没挑过动画表情的人一直不读）。
+- 本机试下载用环境变量 `KITTY_EMOJI_PACK_SERVER`（只认 http 的 127.0.0.1 / localhost，Release 也认：下下来的照样按不可信输入核）。
+- 「自动下载动画表情」跟着同步（mac 注册了默认值、本来就同步）：PLAN-v21 §1 D 组里那一项作废，没去改 PLAN-v21 原文。
+- 标题逐字没有模糊，用放大 1.12 代替（每个字一张离屏表面 + 效果画刷太重）；冒号手动抬 0.1 em（Segoe UI 没有抬高的冒号）。
+- 长成整屏裁的是窗口本身（`SetWindowRgn`，圆角没有抗锯齿）；透出样式只长压暗层，中间的底板照常淡入；按数字键 / 点卡片直接进入时从那张卡片长；
+  托盘、启动器、主界面、「直接进入排在最前面的」不长；减弱动态效果时不长（同 mac）。
+- 卡片内边距 2 → 4、画面 192 → 188 宽：放大 1.04 时不压到选中圈；面板每行高 2 DIP。
+- 「其他表情」改名「系统表情」（REVIEW「PLAN-v16 V1 b」那一行原写「等用户定」，这次对齐 mac）。
+
+**要用户点头的**（没做，接着做了别的）：
+
+1. **生成整包**：从 Microsoft 的 fluentui-emoji-animated 仓库下 746 个动画 PNG（默认肤色，约 1.6 GB，照仓库的 `assets/<名字>/` 摆），在 Mac 上跑
+   `swift windows/tools/status-emoji.swift --pack <源目录> <输出目录> --catalog windows/KittyTools/Resources/StatusEmoji/emoji-pack.json`
+   （对照表里的编号一个不能少），再在 Windows 上对输出目录跑 `png-squeeze.cs`（约 −20%，tEXt 原样留着）。按本机 29 个的平均（0.56 MB）算，746 个原样约 420 MB、压后约 330 MB（mac 的 HEICS 包 155 MB）；
+   一个最大不到 1 MB，离 App 收的 3 MB 上限远。
+2. **发 release `emoji-pack-1-win`**：746 个 PNG + `LICENSE.txt`，目标分支 `windows`，`--latest=false`（不能成为 latest：mac 和 Windows 的更新检查都不认它）。
+   发之前在 Windows 上照 HANDTEST 1550 用本机服务器试一遍，发完挑一个没缓存的动画表情真下一次（1547）。在那之前挑的动画表情一直是系统样子。
+
+**要你们做的**：
+
+1. 编译零警告（`TreatWarningsAsErrors`）：`dotnet build windows/KittyTools.slnx -c Debug -p:Platform=x64`，编译错直接修。
+2. `dotnet test windows/KittyTools.Tests` 全过；新单测有挂的，先看是不是期望值算错，别改成对着实现抄。
+3. Release AOT 发布 x64 / ARM64，零 trim / AOT 警告（Win2D 的 `CanvasImageSource`、`LoadedImageSurface.StartLoadFromStream`、TextPointer 是这次新用的）。
+4. （可选）`dotnet run windows/tools/png-squeeze.cs -- windows/KittyTools/Resources/StatusEmoji`：新的 24 张已经按同样算法压过，再压能省多少写进报告。
+5. 截图推 `windows-shots` 的 `0.3.0-fill/`：设置 › 状态屏详情页的图标格子（28 个 + 两格，浅 / 深）、「动画表情」气泡（开头、搜「狗」）、
+   告示上一个新表情（如礼花）、`--status-screen-probe` 的告示和小字放大看接缝、选状态面板选中那张放大的样子；能录的话录 3–5 秒：逐字浮现、小字滚动、卡片长成整屏
+   （只录我们自己的窗口，状态屏只用手动进，别让自动化进入）。
+6. 走 HANDTEST 1540–1569；内存探针（挂着状态屏、小字滚了一阵之后）、空闲 CPU 照每批的自查清单。
 
 ### R108（P2）便签：屏幕边缘那叠的动画、便签墙拖动排序（`MAC-DIFF.md`「便签 › 还没对齐」）
 
