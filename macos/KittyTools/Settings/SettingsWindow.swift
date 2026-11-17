@@ -21,6 +21,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   // 2026-11-17 插件页改版（A1）：插件组第一行固定是「全部插件」（plugins，不是哪个功能的页）
   case general, clipboard, launcher, translate, screenshot, record, plugins, notes, reminders,
     statusScreen, launchpad, dockPreview, finderMenu, keepAwake, bluetoothSnooze, smoothScroll,
+    appShortcuts,
     island,
     hotkeys, about
 
@@ -36,7 +37,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     [.general], [.clipboard, .launcher, .translate], [.screenshot, .record],
     [
       .plugins, .notes, .reminders, .statusScreen, .launchpad, .dockPreview, .finderMenu,
-      .keepAwake, .bluetoothSnooze, .smoothScroll, .island,
+      .keepAwake, .bluetoothSnooze, .smoothScroll, .appShortcuts, .island,
     ],
     [.hotkeys, .about],
   ]
@@ -69,7 +70,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .clipboard, .launcher, .translate: .text
     case .screenshot, .record: .capture
     case .plugins, .notes, .reminders, .statusScreen, .launchpad, .dockPreview, .finderMenu,
-      .keepAwake, .bluetoothSnooze, .smoothScroll, .island:
+      .keepAwake, .bluetoothSnooze, .smoothScroll, .appShortcuts, .island:
       .plugins
     case .general, .hotkeys, .about: nil
     }
@@ -130,6 +131,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .keepAwake: "保持唤醒"
     case .bluetoothSnooze: "睡眠关蓝牙"
     case .smoothScroll: "平滑滚动"
+    case .appShortcuts: "App 快捷键"
     case .translate: "翻译"
     case .hotkeys: "快捷键"
     case .about: "关于"
@@ -155,6 +157,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .keepAwake: "kitty.keep.awake"
     case .bluetoothSnooze: "kitty.bluetooth.snooze"
     case .smoothScroll: "kitty.smooth.scroll"
+    case .appShortcuts: "kitty.app.shortcuts"
     case .translate: "kitty.translate"
     case .hotkeys: "kitty.hotkeys"
     case .about: "kitty.about"  // 品牌页：猫头
@@ -179,6 +182,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .keepAwake: Style.Family.keepAwake
     case .bluetoothSnooze: Style.Family.bluetoothSnooze
     case .smoothScroll: Style.Family.smoothScroll
+    case .appShortcuts: Style.Family.keyboard
     case .translate: Style.Family.translate
     case .hotkeys: Style.Family.keyboard
     case .about: Color(nsColor: AccentPalette.brandPink)  // 关于是品牌页，不随强调色变
@@ -204,6 +208,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .keepAwake: "插件 · 不让电脑睡、不让屏幕熄：手动开一段，或按时段自动开"
     case .bluetoothSnooze: "电脑睡下去时关掉蓝牙、醒来再打开：什么时候关、要给的授权"
     case .smoothScroll: "鼠标滚轮滑着滚：滑多久、滚多远、鼠标单独反向、在哪些 App 里停用"
+    case .appShortcuts: "按住 ⌘ 弹出的当前 App 快捷键：按多久、要给的授权"
     case .translate: "语言、翻译服务与密钥、历史"
     case .hotkeys: "所有全局快捷键"
     case .about: "版本与更新内容"
@@ -248,6 +253,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
       "蓝牙,Bluetooth,睡眠,休眠,合盖,盖子,唤醒,误唤醒,鼠标,键盘,耳机,外接显示器,包里"
     case .smoothScroll:
       "平滑,平滑滚动,滚动,滚轮,鼠标,顺滑,惯性,反向,方向,自然滚动,滚动方向,速度,距离,停用,游戏,虚拟机,远程桌面,smooth,scroll"
+    case .appShortcuts:
+      "按住,长按,⌘,Command,菜单,菜单栏,快捷键列表,快捷键提示,当前 App,多久,辅助功能"
     case .translate:
       "语言,第一语言,第二语言,字号,换行,自动复制,复制即译,历史,导出,CSV,Anki,位置,浮窗位置,鼠标,清空,服务,密钥,查词,词典,单词,音标,例句,生词本,收藏,智谱,OpenAI,Anthropic,DeepL,Google,百度,有道,微软,火山,腾讯,AI,模型"
     case .hotkeys:
@@ -282,7 +289,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   }
 
   /// 搜索时停在哪页：页名对上的优先（「录制」也是通用页的「屏幕录制」、快捷键页的「录制」，「快捷键」也是录制页的
-  /// 「只显示快捷键」，按侧栏顺序会先停在别处）；否则当前页还在结果里就不动，不在就去第一个，一页都没有也不动。
+  /// 「只显示快捷键」，按侧栏顺序会先停在别处），页名一字不差的又在前（「快捷键」停在快捷键页，不停在排在前面的
+  /// 「App 快捷键」）；否则当前页还在结果里就不动，不在就去第一个，一页都没有也不动。
   /// hidden：侧栏里没有的页（没添加的插件，SettingsRoot 现读）
   static func page(
     for query: String, current: SettingsPage, hidden: Set<SettingsPage> = []
@@ -291,8 +299,11 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     let matches = matching(query, hidden: hidden)
     if !query.isEmpty,
       let named = matches.first(where: {
-        $0.titles.contains { $0.localizedCaseInsensitiveContains(query) }
+        $0.titles.contains { $0.compare(query, options: .caseInsensitive) == .orderedSame }
       })
+        ?? matches.first(where: {
+          $0.titles.contains { $0.localizedCaseInsensitiveContains(query) }
+        })
     {
       return named
     }

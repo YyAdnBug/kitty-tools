@@ -555,6 +555,9 @@ struct SnapshotProbeTests {
             smoothScroll: SmoothScroll(observes: false), authorized: false, others: [],
             natural: true, excluded: []
           ))
+
+      // 授权按固定的「没给」画
+      case .appShortcuts: AnyView(AppShortcutsTab(trusted: false))
       case .translate:
         AnyView(TranslateTab(services: services, history: history, speaker: speaker))
       case .hotkeys: AnyView(HotkeysTab(center: hotKeys))
@@ -4878,6 +4881,111 @@ struct SnapshotProbeTests {
         excluded: ["com.apple.TextEdit", "com.apple.Preview"]
       ).defaultAppStorage(prefs),
       size: NSSize(width: 640, height: 1100), dark: false, to: "\(out)/smooth-settings-any.png")
+  }
+
+  /// App 快捷键（插件，2026-11-17）：面板（访达那样的几张卡、两段式和 🌐 的键帽，浅 / 深；221 条要竖着滚；一条都没有、
+  /// 没响应、读不到、没读完）和 设置 › App 快捷键（没授权 / 已授权、关了按住 ⌘，浅 / 深）。几秒，图以 app-shortcuts- 开头：
+  /// -only-testing:'KittyToolsTests/SnapshotProbeTests/appShortcuts()'。偏好读临时偏好域
+  @Test(.enabled(if: directory != nil)) func appShortcuts() throws {
+    let out = try #require(Self.directory)
+    try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
+    Prefs.registerDefaults()
+    let screen = NSSize(width: 1470, height: 920)
+    let icon = NSWorkspace.shared.icon(forFile: "/System/Library/CoreServices/Finder.app")
+    func shot(_ name: String, _ reading: MenuReading, app: String = "访达", dark: Bool = false) throws
+    {
+      let model = AppShortcutsModel()
+      model.load(reading, name: app, icon: icon, available: screen)
+      try snapshot(
+        AppShortcutsView(model: model), size: model.layout.size, dark: dark,
+        to: "\(out)/app-shortcuts-\(name).png")
+    }
+    var finder = MenuReading()
+    let menus: [(String, [(String, String, [String])])] = [
+      ("访达", [("设置", "⌘,", []), ("清倒废纸篓", "⇧⌘⌫", []), ("清倒废纸篓", "⌥⇧⌘⌫", []), ("隐藏访达", "⌘H", [])]),
+      (
+        "文件",
+        [
+          ("新建访达窗口", "⌘N", []), ("新建文件夹", "⇧⌘N", []), ("新建标签页", "⌘T", []), ("打开", "⌘O", []),
+          ("关闭窗口", "⌘W", []), ("显示简介", "⌘I", []), ("复制", "⌘D", []), ("制作替身", "⌃⌘A", []),
+          ("快速查看", "⌘Y", []), ("移到废纸篓", "⌘⌫", []), ("添加到程序坞", "⌃⇧⌘T", []),
+        ]
+      ),
+      (
+        "编辑",
+        [
+          ("撤销", "⌘Z", []), ("重做", "⇧⌘Z", []), ("剪切", "⌘X", []), ("拷贝", "⌘C", []), ("粘贴", "⌘V", []),
+          ("全选", "⌘A", []), ("开始听写", "🎤", []), ("表情与符号", "🌐E", []),
+        ]
+      ),
+      (
+        "显示",
+        [
+          ("为图标", "⌘1", []), ("为列表", "⌘2", []), ("为分栏", "⌘3", []), ("名称", "⌃⌥⌘1", ["排序方式"]),
+          ("种类", "⌃⌥⌘2", ["排序方式"]), ("显示路径栏", "⌥⌘P", []), ("进入全屏幕", "🌐F", []),
+        ]
+      ),
+      (
+        "前往",
+        [
+          ("返回", "⌘[", []), ("前进", "⌘]", []), ("上层文件夹", "⌘↑", []), ("下载", "⌥⌘L", []),
+          ("应用程序", "⇧⌘A", []),
+          ("前往文件夹", "⇧⌘G", []), ("连接服务器", "⌘K", []),
+        ]
+      ),
+      (
+        "窗口",
+        [
+          ("最小化", "⌘M", []), ("填充", "🌐⌃F", []), ("居中", "🌐⌃C", []),
+          ("左右", "🌐⌃⇧←", ["移动与调整大小"]), ("显示下一个标签页", "⌃⇥", []),
+        ]
+      ),
+      ("帮助", [("键盘快捷键", "⌘K ⌘S", [])]),
+    ]
+    for (bar, (menu, items)) in menus.enumerated() {
+      for (index, item) in items.enumerated() {
+        finder.shortcuts.append(
+          MenuShortcut(
+            menu: menu, path: item.2, title: item.0, keys: item.1, location: [bar + 1, index]))
+      }
+    }
+    for dark in [false, true] { try shot("finder\(dark ? "-dark" : "")", finder, dark: dark) }
+    var small = MenuReading()
+    small.shortcuts = Array(finder.shortcuts.prefix(6))
+    try shot("small", small)
+    var big = MenuReading()
+    for bar in 1...12 {
+      for index in 0..<(bar == 3 ? 60 : 14) {
+        big.shortcuts.append(
+          MenuShortcut(
+            menu: "菜单 \(bar)", path: index % 7 == 3 ? ["子菜单"] : [],
+            title: index % 5 == 0 ? "一个名字很长很长的菜单项会被截断在这里" : "第 \(index + 1) 项",
+            keys: ["⌘S", "⇧⌘F", "⌃⌥⌘↩", "F6", "⌃⇧F7"][index % 5], location: [bar, index]))
+      }
+    }
+    try shot("big", big, app: "Xcode")
+    var unfinished = finder
+    unfinished.finished = false
+    try shot("unfinished", unfinished)
+    try shot("empty", MenuReading(), app: "一个游戏")
+    try shot("unresponsive", MenuReading(shortcuts: [], finished: false), app: "卡住的 App")
+    try shot("unreadable", MenuReading(shortcuts: [], unreadable: true), app: "没有菜单的 App")
+
+    let name = "kitty-snapshot-app-shortcuts-\(UUID().uuidString)"
+    let prefs = try #require(UserDefaults(suiteName: name))
+    defer { prefs.removePersistentDomain(forName: name) }
+    prefs.set(true, forKey: Feature.appShortcuts.prefsKey)
+    for dark in [false, true] {
+      try snapshot(
+        AppShortcutsTab(trusted: false).defaultAppStorage(prefs),
+        size: NSSize(width: 640, height: 560),
+        dark: dark, to: "\(out)/app-shortcuts-settings\(dark ? "-dark" : "").png")
+    }
+    prefs.set(false, forKey: Prefs.appShortcutsHold)
+    try snapshot(
+      AppShortcutsTab(trusted: true).defaultAppStorage(prefs),
+      size: NSSize(width: 640, height: 560),
+      dark: false, to: "\(out)/app-shortcuts-settings-off.png")
   }
 
   /// 设置 › 访达右键整页（「压缩时跳过」那一行的小字：填了一串、有一条写错了），推进去的「压缩时跳过」（空着、很多项带写错的，

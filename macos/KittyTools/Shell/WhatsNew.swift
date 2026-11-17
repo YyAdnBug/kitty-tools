@@ -90,7 +90,7 @@ enum WhatsNew {
     Entry(
       id: "screenshot-web-elements", version: "0.10.0", feature: .screenshot, page: .screenshot,
       section: "也认网页里的元素"),
-    // 0.10.0 的三个新插件（插件页改版 E1）：没添加时在「全部插件」那一行、侧栏「全部插件」上标，添加了算碰过；三个算一个
+    // 0.10.0 的四个新插件（插件页改版 E1）：没添加时在「全部插件」那一行、侧栏「全部插件」上标，添加了算碰过；四个算一个
     Entry(
       id: "plugin-keep-awake", version: "0.10.0", feature: nil, page: .plugins, plugin: .keepAwake),
     Entry(
@@ -99,6 +99,9 @@ enum WhatsNew {
     Entry(
       id: "plugin-smooth-scroll", version: "0.10.0", feature: nil, page: .plugins,
       plugin: .smoothScroll),
+    Entry(
+      id: "plugin-app-shortcuts", version: "0.10.0", feature: nil, page: .plugins,
+      plugin: .appShortcuts),
   ]
 
   /// 一版最多标几个（拍板 B1：标多了到处都是「新」，等于没标）。同一版的几个新插件算一个：都只标在「全部插件」一处

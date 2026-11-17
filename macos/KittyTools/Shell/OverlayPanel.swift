@@ -89,15 +89,20 @@ final class OverlayPanel: NSPanel {
   ///   - minSize: 传了就允许拖左右边改宽度（无边框窗口没有系统的拖边，用两条 ResizeEdge）
   ///   - frameName: 传了就记住用户拖到的位置和宽度（首次居中），present 可带锚点跟随鼠标；不传则每次显示都居中到鼠标所在屏幕
   ///   - topAnchored: 放在屏幕上部（启动器），配合 setContentHeight 伸缩
+  ///   - firstMouse: 不是 key 时第一下点击也交给内容（App 快捷键：按着 ⌘ 时面板不拿键盘，点一行要直接执行）
   init<Content: View>(
     size: NSSize, minSize: NSSize? = nil, frameName: String? = nil, topAnchored: Bool = false,
-    autoHide: AutoHide, isPinned: @escaping () -> Bool, content: Content
+    firstMouse: Bool = false, autoHide: AutoHide, isPinned: @escaping () -> Bool, content: Content
   ) {
     self.autoHide = autoHide
     self.isPinned = isPinned
     self.frameName = frameName
     self.topAnchored = topAnchored
-    let hosting = NSHostingView(rootView: PanelRoot(content: content))
+    // 要第一下点击的才换成子类（别的面板照旧是系统的宿主，StyleTests 按类型数）
+    let hosting: NSHostingView<PanelRoot<Content>> =
+      firstMouse
+      ? FirstMouseHost(rootView: PanelRoot(content: content))
+      : NSHostingView(rootView: PanelRoot(content: content))
     hosting.sizingOptions = []  // 窗口大小由这里定，不让 SwiftUI 的理想尺寸反推窗口
     hosting.wantsLayer = true
     host = hosting
@@ -885,6 +890,11 @@ final class PanelStandIn: NSPanel {
     animationBehavior = .none
     setAccessibilityElement(false)
   }
+}
+
+/// 面板不是 key 时第一下点击也交给内容的宿主（同程序坞预览的 PreviewHost）
+private final class FirstMouseHost<Content: View>: NSHostingView<PanelRoot<Content>> {
+  override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
 /// 浮层内容的根：描边 + 减弱动态效果时去掉全部 SF Symbol 动效（mac-whisker §7，一处管三个面板）

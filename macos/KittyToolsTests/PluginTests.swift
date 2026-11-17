@@ -35,7 +35,7 @@ struct PluginTests {
   /// 接没接鼠标有关），并且都进了 localKeys
   @Test func localPluginsMatchBefore() {
     let local = Feature.plugins.filter { !$0.syncsAddition }
-    #expect(local == [.launchpad, .dockPreview, .finderMenu, .bluetoothSnooze, .smoothScroll])
+    #expect(local == [.launchpad, .dockPreview, .finderMenu, .bluetoothSnooze, .smoothScroll, .appShortcuts])
     for plugin in Feature.plugins {
       #expect(
         SettingsSync.localKeys.contains(plugin.prefsKey) == !plugin.syncsAddition, "\(plugin)")
@@ -64,6 +64,7 @@ struct PluginTests {
     #expect(Feature.bluetoothSnooze.pluginPermissions.map(\.kind) == [.bluetooth])
     #expect(Feature.statusScreen.pluginPermissions.map(\.kind) == [.accessibility])
     #expect(Feature.smoothScroll.pluginPermissions.map(\.kind) == [.accessibility])
+    #expect(Feature.appShortcuts.pluginPermissions.map(\.kind) == [.accessibility])
     for plugin in [Feature.notes, .reminders, .launchpad, .keepAwake] {
       #expect(plugin.pluginPermissions.isEmpty, "\(plugin)")
     }

@@ -148,7 +148,8 @@ struct HotKey: Codable, Hashable {
     }
   }
 
-  private static let specialKeys: [Int: String] = [
+  /// 键名（App 快捷键把菜单里只给了键码的快捷键还原成符号时也查这两张，MenuShortcuts）
+  nonisolated static let specialKeys: [Int: String] = [
     kVK_Space: String(localized: "空格", comment: "按键名：空格键（快捷键里显示成 ⌥空格）"), kVK_Return: "↩",
     kVK_Tab: "⇥", kVK_Delete: "⌫", kVK_ForwardDelete: "⌦",
     kVK_Escape: "⎋", kVK_LeftArrow: "←", kVK_RightArrow: "→", kVK_UpArrow: "↑", kVK_DownArrow: "↓",
@@ -157,7 +158,7 @@ struct HotKey: Codable, Hashable {
     kVK_ANSI_KeypadEnter: "⌤", kVK_ANSI_KeypadClear: "⌧",
   ]
 
-  private static let functionKeys: [Int: String] = [
+  nonisolated static let functionKeys: [Int: String] = [
     kVK_F1: "F1", kVK_F2: "F2", kVK_F3: "F3", kVK_F4: "F4", kVK_F5: "F5", kVK_F6: "F6",
     kVK_F7: "F7", kVK_F8: "F8", kVK_F9: "F9", kVK_F10: "F10", kVK_F11: "F11", kVK_F12: "F12",
     kVK_F13: "F13", kVK_F14: "F14", kVK_F15: "F15", kVK_F16: "F16", kVK_F17: "F17",
@@ -697,9 +698,11 @@ enum HotKeyAction: String, CaseIterable {
     fire(UInt32(HotKeyAction.allCases.firstIndex(of: action) ?? 0))
   }
 
-  /// 从 since（开机以来的秒数，同事件的时刻）到 now 之间没按过键盘上的键、鼠标键
-  private static func quiet(since: TimeInterval, now: TimeInterval) -> Bool {
-    let types: [CGEventType] = [.keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown]
+  /// 从 since（开机以来的秒数，同事件的时刻）到 now 之间没按过键盘上的键、鼠标键（App 快捷键的按住 ⌘ 另算滚轮）
+  static func quiet(
+    since: TimeInterval, now: TimeInterval,
+    types: [CGEventType] = [.keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown]
+  ) -> Bool {
     let latest =
       types.map {
         CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: $0)

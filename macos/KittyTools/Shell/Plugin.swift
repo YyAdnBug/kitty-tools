@@ -45,6 +45,7 @@ extension Feature {
     case .notes, .reminders: .notesAndReminders
     case .launchpad, .dockPreview, .finderMenu, .island: .desktop
     case .smoothScroll: .keyboardAndMouse
+    case .appShortcuts: .keyboardAndMouse
     case .statusScreen, .keepAwake, .bluetoothSnooze: .sleepAndScreen
     default: nil
     }
@@ -66,6 +67,8 @@ extension Feature {
       [PluginPermission(kind: .bluetooth, reason: "开关蓝牙；没有它这个插件什么都不做")]
     case .smoothScroll:
       [PluginPermission(kind: .accessibility, reason: "接住鼠标滚轮再滑出去；没有它用不了")]
+    case .appShortcuts:
+      [PluginPermission(kind: .accessibility, reason: "知道 ⌘ 有没有按住、读当前 App 的菜单；没有它用不了")]
     case .island:
       [
         PluginPermission(kind: .calendar, reason: "打开「下一个日程」时读日历", option: Prefs.islandNextEvent),
@@ -87,11 +90,13 @@ extension Feature {
     }
   }
 
-  /// 添加状态跟不跟同步（拍板 F2）：一添加就要这台弹授权框、去系统设置打开的（程序坞预览、访达右键、睡眠关蓝牙、平滑滚动——同步
+  /// 添加状态跟不跟同步（拍板 F2）：一添加就要这台弹授权框、去系统设置打开的（程序坞预览、访达右键、睡眠关蓝牙、平滑滚动、
+  /// App 快捷键——同步
   /// 过去会在那台凭空弹框；平滑滚动还跟这台接没接鼠标有关），和跟这台的屏幕、触控板有关的（启动台，连同它整页的设置）只在这台。
   /// 状态屏只在进入时才要辅助功能，跟着同步
   var syncsAddition: Bool {
-    ![.launchpad, .dockPreview, .finderMenu, .bluetoothSnooze, .smoothScroll].contains(self)
+    ![.launchpad, .dockPreview, .finderMenu, .bluetoothSnooze, .smoothScroll, .appShortcuts]
+      .contains(self)
   }
 
   /// 介绍页「能做什么」：两三条
@@ -123,6 +128,10 @@ extension Feature {
       Self.points(
         "普通鼠标的滚轮像触控板那样滑着滚；滑多久、一格滚多远都能调", "鼠标单独反向，触控板不变",
         "在游戏、虚拟机这类自己管滚轮的 App 里自动照原样，也能自己加")
+    case .appShortcuts:
+      Self.points(
+        "在任何 App 里单独按住 ⌘ 一会儿，弹出它菜单里的全部快捷键，按菜单分组", "按着 ⌘ 再按别的键就是那个快捷键；点一行直接执行",
+        "点一下搜索框能留住，打字搜菜单里的名字")
     case .island:
       Self.points(
         "点刘海叫出快捷动作和最近的提示", "录屏计时、提醒倒数、正在播放的歌挂在刘海两边", "能另外打开下一个日程、音量和亮度")
@@ -142,6 +151,7 @@ extension Feature {
     case .keepAwake: "菜单栏、主界面，或在启动器里打「awake 2小时」"
     case .bluetoothSnooze: "添加后自己工作，没有快捷键和菜单"
     case .smoothScroll: "添加后拨鼠标滚轮就是；按住 ⌥ 滚动临时不平滑，按住 ⇧ 左右滚"
+    case .appShortcuts: "单独按住 ⌘ 约 1 秒；不想长按的话在快捷键页另设一个组合"
     case .island: "点刘海、指针停在刘海上，或用快捷键打开"
     default: nil
     }
@@ -159,6 +169,7 @@ extension Feature {
     case .keepAwake: "开着时让系统别睡；没开时什么都不跑"
     case .bluetoothSnooze: "等着电脑睡下去；醒来时只打开睡前自己关掉的蓝牙"
     case .smoothScroll: "接住鼠标滚轮，在单独一条线程上滑出去；不碰触控板，没在滚时什么都不做"
+    case .appShortcuts: "看着 ⌘ 有没有单独按住；按够了才读一次前台 App 的菜单，不存"
     case .island:
       "看着指针有没有停在刘海上；打开了系统提示才听电源、耳机、网络，打开了正在播放才起一个读播放信息的小进程，打开了下一个日程才读日历，打开了音量和亮度才接那五个键。不添加时提示照常弹"
     default: nil

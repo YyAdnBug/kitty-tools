@@ -511,9 +511,10 @@ struct KeyCombo: View {
     .accessibilityLabel(combo)
   }
 
-  /// 前面的修饰键逐个拆开，其余整体一个键帽；只有修饰键时就是这几个修饰键
+  /// 前面的修饰键逐个拆开，其余整体一个键帽；只有修饰键时就是这几个修饰键。🌐（fn）也算修饰键：App 快捷键里
+  /// 系统给每个 App 加的「窗口 › 移动与调整大小」那些是 🌐⌃F 这样的
   static func caps(_ combo: String) -> [String] {
-    let modifiers = combo.prefix { "⌃⌥⇧⌘".contains($0) }
+    let modifiers = combo.prefix { "🌐⌃⌥⇧⌘".contains($0) }
     let rest = combo.dropFirst(modifiers.count).trimmingCharacters(in: .whitespaces)
     return modifiers.map(String.init) + (rest.isEmpty ? [] : [rest])
   }

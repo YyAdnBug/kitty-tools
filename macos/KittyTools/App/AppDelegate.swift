@@ -230,6 +230,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 程序坞预览（第九族，2026-10-22，PLAN §10「程序坞预览」）：鼠标停在程序坞的 App 图标上弹出它所有窗口的缩略图。
   /// 功能开关开着才起（默认关）；启动台开着、状态屏、截图框选时不弹。设置 › 程序坞预览。
   /// 睡眠关蓝牙（插件，2026-11-17）：只有添加了才建
+  /// App 快捷键（插件，2026-11-17，PLAN §10「App 快捷键」）：单独按住 ⌘ 弹出前台 App 菜单里的快捷键。添加了才起；
+  /// 截图框选、状态屏、启动台开着时不弹（同程序坞预览）。面板用时建、收起后放掉（AppShortcuts 里的 TransientPanel）
+  private lazy var appShortcuts: AppShortcuts = {
+    let shortcuts = AppShortcuts()
+    shortcuts.isSuppressed = { [unowned self] in
+      isCapturing || statusScreen.isActive || OverlayPanel.isSelectingRegion(in: NSApp.windows)
+        || (Feature.launchpad.isOn && launchpad.isOpen) || hotKeys.recording != nil
+    }
+    shortcuts.onHide = { [unowned self] in idleReclaim.schedule() }
+    return shortcuts
+  }()
   private lazy var bluetoothSnooze: BluetoothSnooze = {
     let snooze = BluetoothSnooze()
     snooze.announce = { [unowned self] text in
@@ -865,6 +876,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       case .bluetoothSnooze:
         AnyView(BluetoothSnoozeTab { [unowned self] in bluetoothSnooze.requestAccess() })
       case .smoothScroll: AnyView(SmoothScrollTab(smoothScroll: smoothScroll))
+      case .appShortcuts: AnyView(AppShortcutsTab())
       case .translate:
         AnyView(
           TranslateTab(services: serviceStore, history: historyStore, speaker: speaker)
@@ -1253,6 +1265,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       FinderMenuTab.openExtensionSettings()
     }
 
+    // App 快捷键：运行中添加、还没有辅助功能授权时当场带去授权（同程序坞预览；没有它按住 ⌘ 听不到、菜单也读不了）
+    if turnedOn.contains(.appShortcuts) {
+      appShortcuts.start()
+      if !launching, !settingsNavigation.showsOnboarding, !Permissions.isAccessibilityTrusted {
+        Permissions.requestAccessibility()
+      }
+    }
+
     // 睡眠关蓝牙：运行中添加、还没问过蓝牙授权时当场问（同程序坞预览：启动时、欢迎引导里勾上的不当场弹）
     if turnedOn.contains(.bluetoothSnooze) {
       bluetoothSnooze.start()
@@ -1341,6 +1361,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if turnedOff.contains(.statusScreen) { statusPicker.panel?.hide() }
     if turnedOff.contains(.dockPreview) { dockPreview.stop() }
     if turnedOff.contains(.bluetoothSnooze) { bluetoothSnooze.stop() }
+    if turnedOff.contains(.appShortcuts) { appShortcuts.stop() }
     if turnedOff.contains(.reminders) { reminders.stop() }
     idleReclaim.schedule()  // 关掉的功能占着的缓存跟着还
   }

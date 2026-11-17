@@ -41,7 +41,7 @@ struct SettingsListTests {
       pages == [
         .general, .clipboard, .launcher, .translate, .screenshot, .record, .plugins, .notes,
         .reminders, .statusScreen, .launchpad, .dockPreview, .finderMenu, .keepAwake,
-        .bluetoothSnooze, .smoothScroll, .island, .hotkeys, .about,
+        .bluetoothSnooze, .smoothScroll, .appShortcuts, .island, .hotkeys, .about,
       ])
     // 分组盖住每一页、和 allCases 同序
     #expect(SettingsPage.groups.flatMap { $0 } == pages)
@@ -52,7 +52,7 @@ struct SettingsListTests {
           [.general], [.clipboard, .launcher, .translate], [.screenshot, .record],
           [
             .plugins, .notes, .reminders, .statusScreen, .dockPreview, .finderMenu, .keepAwake,
-            .bluetoothSnooze, .smoothScroll, .island,
+            .bluetoothSnooze, .smoothScroll, .appShortcuts, .island,
           ],
           [.hotkeys, .about],
         ])
@@ -66,7 +66,7 @@ struct SettingsListTests {
         [.general], [.clipboard, .launcher], [.screenshot],
         [
           .plugins, .notes, .reminders, .statusScreen, .launchpad, .dockPreview, .finderMenu,
-          .keepAwake, .bluetoothSnooze, .smoothScroll, .island,
+          .keepAwake, .bluetoothSnooze, .smoothScroll, .appShortcuts, .island,
         ],
         [.hotkeys, .about], [.translate, .record],
       ])
@@ -139,6 +139,8 @@ struct SettingsListTests {
   @Test func sidebarSearchPrefersPageTitle() {
     #expect(SettingsPage.page(for: "录制", current: .clipboard) == .record)
     #expect(SettingsPage.page(for: " 快捷键", current: .general) == .hotkeys)
+    // 「App 快捷键」插件页排在快捷键页前面、名字里带「快捷键」：一字不差的那页优先（2026-11-17）
+    #expect(SettingsPage.page(for: "app 快捷键", current: .general) == .appShortcuts)
     #expect(SettingsPage.page(for: "帧率", current: .screenshot) == .record)
     // 刘海岛页排在前面、列着快捷动作，但搜动作的名字要停在那个功能的页（PR #17 原来把名字放进了关键词）
     #expect(SettingsPage.page(for: "录屏", current: .general) == .record)
