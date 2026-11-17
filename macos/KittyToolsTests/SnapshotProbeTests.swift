@@ -4964,6 +4964,16 @@ struct SnapshotProbeTests {
       }
     }
     try shot("big", big, app: "Xcode")
+    // 点了搜索框、留住之后：打了「废纸篓」，选中第一条；搜不到
+    for (name, query) in [("search", "废纸篓"), ("search-none", "没有这个")] {
+      let model = AppShortcutsModel()
+      model.load(finder, name: "访达", icon: icon, available: screen)
+      model.isStaying = true
+      model.search(query)
+      try snapshot(
+        AppShortcutsView(model: model), size: model.layout.size, dark: false,
+        to: "\(out)/app-shortcuts-\(name).png")
+    }
     var unfinished = finder
     unfinished.finished = false
     try shot("unfinished", unfinished)

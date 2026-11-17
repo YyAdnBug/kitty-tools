@@ -678,9 +678,9 @@ struct NotesWindowTests {
   /// 只有「快速记一条」有默认键 ⌥N；「便签」一节在「截图与录制」之后、「提醒」之前（功能管理拍板 M3），三项按这个顺序
   @Test func hotKeyActions() throws {
     #expect(
-      Array(HotKeyAction.allCases.suffix(10)) == [
+      Array(HotKeyAction.allCases.suffix(11)) == [
         .noteCapture, .noteNew, .noteAll, .launchpad, .shotHistory, .island, .clothesline, .home,
-        .reminderNew, .keepAwake,
+        .reminderNew, .keepAwake, .appShortcuts,
       ])
     #expect(
       HotKeyAction.noteCapture.defaultHotKey == HotKey(keyCode: kVK_ANSI_N, modifiers: optionKey))
@@ -712,8 +712,8 @@ struct NotesWindowTests {
     #expect(
       targets[start - 1] == "clothesline" && targets[start + 3] == "reminderNew"
         && targets[start + 4] == "launchpad" && targets[start + 5] == "keepAwake"
-        && targets[start + 6] == "island" && targets[start + 7] == "home"
-        && targets[start + 8] == "settings")
+        && targets[start + 6] == "appShortcuts" && targets[start + 7] == "island"
+        && targets[start + 8] == "home" && targets[start + 9] == "settings")
     #expect(launcher[start..<start + 3].map(\.title) == ["快速记一条", "新建便签", "全部便签"])
     for item in launcher[start..<start + 3] {
       #expect(item.symbol == item.hotKeyAction?.symbol, "\(item.title)")

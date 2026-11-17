@@ -720,6 +720,21 @@ struct ShortcutsSheet: View {
           Entry(text: "按一下开始（无限期），再按一下停止；菜单栏「保持唤醒」里能选 30 分钟到 5 小时"),
           Entry(text: "在启动器里输入「awake 2小时」「保持唤醒 到18点」「awake 无限期」：↩ 开始；开着时第一行是停止"),
         ]),
+      // App 快捷键（插件，2026-11-17，AppShortcuts/）：按住 ⌘ 在 AppShortcuts，留住后的按键在 AppShortcutsModel.command
+      // 和 AppShortcuts.keyEquivalent；全局键默认不设
+      Group(
+        title: "App 快捷键", symbol: HotKeyAction.appShortcuts.symbol, color: Style.Family.keyboard,
+        globals: [.appShortcuts],
+        entries: [
+          Entry("⌘", text: "单独按住一会儿：弹出当前 App 菜单里的全部快捷键，松开就收（按多久在设置里改）"),
+          Entry(text: "弹出后按着 ⌘ 再按别的键：就是那个快捷键，面板收起"),
+          Entry(text: "点一行：执行它"),
+          Entry(text: "点一下搜索框：留住，打字搜菜单里的名字（中文也认拼音和首字母）"),
+          Entry("↑↓", text: "留住时：换选中的一行"),
+          Entry("↩", text: "留住时：执行选中的那一行"),
+          Entry(text: "留住时按列表里有的组合（比如 ⌘S）：执行那一项"),
+          Entry("Esc", text: "先清空搜索，再按一次收起；点外面、切 App 也收起"),
+        ]),
       // 刘海岛（mac-whisker S2，2026-10-26）：一直列；2026-11-13 起点刘海那一行和全局键归刘海岛插件，没添加时只剩提示那一行
       Group(
         title: "刘海岛", symbol: HotKeyAction.island.symbol, color: Style.Family.general,

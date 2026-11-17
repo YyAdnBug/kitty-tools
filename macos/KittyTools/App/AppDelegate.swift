@@ -239,6 +239,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         || (Feature.launchpad.isOn && launchpad.isOpen) || hotKeys.recording != nil
     }
     shortcuts.onHide = { [unowned self] in idleReclaim.schedule() }
+    shortcuts.announce = { [unowned self] text in
+      island.show(text, tone: .warning, symbol: SettingsPage.appShortcuts.symbol)
+    }
     return shortcuts
   }()
   private lazy var bluetoothSnooze: BluetoothSnooze = {
@@ -1854,6 +1857,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     case .home: toggleHome()
     case .reminderNew: newReminder()
     case .keepAwake: keepAwake.toggle()
+    case .appShortcuts: appShortcuts.toggle()
     }
   }
 

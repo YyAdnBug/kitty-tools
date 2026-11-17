@@ -2,6 +2,7 @@
 // macos/build/research/cheatsheet-plugin-2026-11-17/）、标题收拾、单独按住 ⌘ 的状态机、分组和面板排版。
 
 import AppKit
+import Carbon.HIToolbox
 import Testing
 
 @testable import KittyTools
@@ -97,7 +98,9 @@ struct AppShortcutsTests {
 
     let one = AppShortcutsLayout.make(rows: [5], available: screen)
     #expect(one.columns == [[AppShortcutsLayout.Segment(group: 0, rows: 0..<5)]])
-    #expect(one.size.width == AppShortcutsLayout.padding * 2 + AppShortcutsLayout.columnWidth)
+    // 只有一列时被最窄宽度撑开（顶上那一行放得下），列跟着放宽
+    #expect(one.size.width == AppShortcutsLayout.minWidth)
+    #expect(one.columnWidth > AppShortcutsLayout.columnWidth)
     #expect(
       one.size.height
         == AppShortcutsLayout.padding * 2 + AppShortcutsLayout.header
@@ -165,6 +168,93 @@ struct AppShortcutsTests {
     #expect(AppShortcuts.delay(0) == 1000)
     #expect(AppShortcuts.delay(nil) == 1000)
     #expect(AppShortcuts.delay("1000") == 1000)
+  }
+
+  /// 搜索：每个词都对上某个名字的一段，或者首字母缩写的开头（中文认拼音）；没有对上的组整组去掉；
+  /// 选中第一条，↑↓ 在看得见的里挪，↩ 执行选中的，Esc 先清空
+  @Test func searchAndSelection() {
+    func item(_ menu: String, _ bar: Int, _ index: Int, _ title: String, _ keys: String)
+      -> MenuShortcut
+    {
+      MenuShortcut(menu: menu, path: [], title: title, keys: keys, location: [bar, index])
+    }
+    var reading = MenuReading()
+    reading.shortcuts = [
+      item("访达", 1, 0, "清倒废纸篓", "⇧⌘⌫"), item("文件", 2, 0, "新建文件夹", "⇧⌘N"),
+      item("文件", 2, 1, "移到废纸篓", "⌘⌫"), item("编辑", 3, 0, "拷贝", "⌘C"),
+    ]
+    let model = AppShortcutsModel()
+    model.load(reading, name: "访达", icon: nil, available: NSSize(width: 1470, height: 920))
+    var performed: [String] = []
+    model.onPerform = { performed.append($0.title) }
+
+    model.search("废纸篓")
+    #expect(model.flat.map(\.title) == ["清倒废纸篓", "移到废纸篓"])
+    #expect(model.visible.map(\.title) == ["访达", "文件"])
+    #expect(model.selection == [1, 0])
+    #expect(model.layout.size == model.layout.size)
+    model.search("qd")  // 清倒废纸篓的首字母
+    #expect(model.flat.map(\.title) == ["清倒废纸篓"])
+    model.search("xinjian")  // 新建文件夹的全拼
+    #expect(model.flat.map(\.title) == ["新建文件夹"])
+    model.search("wenjian")  // 菜单名也算
+    #expect(model.flat.map(\.title) == ["新建文件夹", "移到废纸篓"])
+    #expect(model.command(#selector(NSResponder.moveDown(_:))))
+    #expect(model.selection == [2, 1])
+    #expect(model.command(#selector(NSResponder.moveDown(_:))))
+    #expect(model.selection == [2, 1])  // 到底了不动
+    #expect(model.command(#selector(NSResponder.insertNewline(_:))))
+    #expect(performed == ["移到废纸篓"])
+    model.search("没有这个")
+    #expect(model.visible.isEmpty && model.selection == nil)
+    // Esc：先清空，空了交给面板收起
+    #expect(model.command(#selector(NSResponder.cancelOperation(_:))))
+    #expect(model.query.isEmpty && model.flat.count == 4)
+    #expect(!model.command(#selector(NSResponder.cancelOperation(_:))))
+    // 留住时按的组合：先看得见的、再全部
+    #expect(model.item(forKeys: "⌘C")?.title == "拷贝")
+    #expect(model.item(forKeys: "⌘S") == nil)
+    // 搜索时面板大小不变
+    let opened = model.layout.size
+    model.search("拷贝")
+    #expect(model.layout.size == opened)
+  }
+
+  /// 按键 → 和读出来的同一种写法：方向键、F 键本身带的 fn 位不算 🌐，字母带 fn 才算
+  @Test func keysFromEvents() {
+    #expect(AppShortcutsModel.keys(keyCode: UInt16(kVK_F6), flags: .function) == "F6")
+    #expect(
+      AppShortcutsModel.keys(
+        keyCode: UInt16(kVK_UpArrow), flags: [.command, .function, .numericPad])
+        == "⌘↑")
+    #expect(
+      AppShortcutsModel.keys(keyCode: UInt16(kVK_ANSI_F), flags: [.function, .control]).hasPrefix(
+        "🌐⌃"))
+    #expect(AppShortcutsModel.keys(keyCode: UInt16(kVK_Delete), flags: .command) == "⌘⌫")
+  }
+
+  /// 留住时交给搜索框的组合：编辑文字、删到行首、⌘ 方向键、⌘W；别的 ⌘ 组合当 App 快捷键
+  @Test func textEditingCombosStayInTheField() {
+    func edits(_ code: Int, _ flags: NSEvent.ModifierFlags, _ key: String?) -> Bool {
+      AppShortcuts.editsText(keyCode: UInt16(code), flags: flags, key: key)
+    }
+    #expect(edits(kVK_ANSI_A, .command, "a") && edits(kVK_ANSI_V, .command, "v"))
+    #expect(edits(kVK_ANSI_Z, [.command, .shift], "Z"))
+    #expect(edits(kVK_Delete, .command, nil) && edits(kVK_LeftArrow, [.command, .shift], nil))
+    #expect(edits(kVK_ANSI_W, [.command, .capsLock], "w"))
+    #expect(!edits(kVK_ANSI_S, .command, "s"))
+    #expect(!edits(kVK_ANSI_A, [.command, .shift], "A"))  // ⇧⌘A 是访达的「应用程序」
+    #expect(!edits(kVK_Delete, [.command, .option], nil))  // ⌥⌘⌫ 是「立即删除」
+  }
+
+  /// 带 ⇧ 才打得出的标点：菜单里是「⌘?」，按键是 ⇧⌘/，两种写法都试
+  @Test func shiftedPunctuationCandidates() {
+    let slash = AppShortcutsModel.candidates(
+      keyCode: UInt16(kVK_ANSI_Slash), flags: [.command, .shift], characters: "?")
+    #expect(slash.contains("⌘?"))
+    let save = AppShortcutsModel.candidates(
+      keyCode: UInt16(kVK_ANSI_S), flags: .command, characters: "s")
+    #expect(save.count == 1)
   }
 
   @Test func globeIsAModifierCap() {

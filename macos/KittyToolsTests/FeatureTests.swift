@@ -30,7 +30,7 @@ struct FeatureTests {
     for feature in Feature.allCases {
       #expect(
         HotKeyAction.allCases.contains { $0.feature == feature }
-          == ![.dockPreview, .finderMenu, .bluetoothSnooze, .smoothScroll, .appShortcuts].contains(feature))
+          == ![.dockPreview, .finderMenu, .bluetoothSnooze, .smoothScroll].contains(feature))
       #expect(feature.page.rawValue == feature.rawValue)
     }
     #expect(HotKeyAction.screenshotTranslate.feature == .translate)

@@ -1139,9 +1139,12 @@ struct StatusScreenTests {
     // 前面是「提醒」（2026-11-04），后面是「启动台」和不归功能的「刘海岛」（2026-10-26）、「主界面」（2026-10-29）两节
     // （功能管理拍板 M3：便签、提醒、状态屏、启动台，和设置侧栏同序；插件「保持唤醒」2026-11-12 排在功能后面）
     let sections = HotKeyAction.visibleSections(enabled: Set(Feature.allCases))
+    // 2026-11-17 保持唤醒后面加了「App 快捷键」一节
     #expect(
-      sections.suffix(6).map(\.title) == ["提醒", "状态屏", "启动台", "保持唤醒", "刘海岛", "主界面"])
-    #expect(sections.dropLast(4).last?.actions == [.statusScreen])
+      sections.suffix(7).map(\.title) == [
+        "提醒", "状态屏", "启动台", "保持唤醒", "App 快捷键", "刘海岛", "主界面",
+      ])
+    #expect(sections.dropLast(5).last?.actions == [.statusScreen])
     #expect(LauncherItem.actions().allSatisfy { !$0.isStatusPreset })
     var presets = StatusPreset.builtIn
     presets[2].symbol = ""

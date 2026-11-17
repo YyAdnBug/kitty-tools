@@ -171,7 +171,7 @@ enum HotKeyAction: String, CaseIterable {
   case clipboard, selectionTranslate, inputTranslate, screenshotTranslate, launcher, screenshot,
     screenshotLastRegion, recognizeText, translateReplace, screenRecord, audioRecord, pinClipboard,
     statusScreen, noteCapture, noteNew, noteAll, launchpad, shotHistory, island, clothesline, home,
-    reminderNew, keepAwake
+    reminderNew, keepAwake, appShortcuts
 
   var title: String { String(localized: titleResource) }
 
@@ -203,6 +203,7 @@ enum HotKeyAction: String, CaseIterable {
     case .home: "打开主界面"
     case .reminderNew: "新建提醒"
     case .keepAwake: "保持唤醒"
+    case .appShortcuts: "显示 App 快捷键"
     }
   }
 
@@ -282,6 +283,8 @@ enum HotKeyAction: String, CaseIterable {
     case .island: nil
     // 主界面（2026-10-29）：主入口是点菜单栏图标，键给把图标藏起来的人自己设
     case .home: nil
+    // App 快捷键（2026-11-17 拍板 B4）：主入口是按住 ⌘，键给不喜欢长按的人自己设
+    case .appShortcuts: nil
     }
   }
 
@@ -350,6 +353,7 @@ enum HotKeyAction: String, CaseIterable {
     case .statusScreen: .statusScreen
     case .reminderNew: .reminders
     case .keepAwake: .keepAwake
+    case .appShortcuts: .appShortcuts
     // 「打开刘海岛」2026-11-13 起归刘海岛插件（原来 nil、一直在）；岛上的提示不归它
     case .island: .island
     case .home: nil
@@ -386,6 +390,8 @@ enum HotKeyAction: String, CaseIterable {
     ("启动台", [.launchpad]),
     // 插件排在功能后面（同设置侧栏）。保持唤醒：菜单栏里同提醒，只有一项带子菜单（AppDelegate.addKeepAwakeMenu）
     ("保持唤醒", [.keepAwake]),
+    // App 快捷键（插件，2026-11-17）：排在启动台后面、刘海岛前面（同设置侧栏）
+    ("App 快捷键", [.appShortcuts]),
     // 刘海岛（2026-10-26）：2026-11-13 起归刘海岛插件，没添加时不列
     ("刘海岛", [.island]),
     // 主界面（2026-10-29）：不属于哪个功能、一直在；菜单栏菜单里不列（菜单就是图标的另一半），主界面里也不列它自己
@@ -448,6 +454,7 @@ enum HotKeyAction: String, CaseIterable {
     case .home: "kitty.home"
     case .reminderNew: SettingsPage.reminders.symbol
     case .keepAwake: SettingsPage.keepAwake.symbol
+    case .appShortcuts: SettingsPage.appShortcuts.symbol
     }
   }
 
@@ -466,6 +473,7 @@ enum HotKeyAction: String, CaseIterable {
     case .launchpad: Style.Family.launchpad
     case .reminderNew: Style.Family.reminders
     case .keepAwake: Style.Family.keepAwake
+    case .appShortcuts: Style.Family.keyboard
     case .island, .home: Style.Family.general
     }
   }

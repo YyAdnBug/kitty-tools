@@ -1,6 +1,6 @@
 // 读前台 App 菜单栏里的快捷键（App 快捷键插件，2026-11-17 拍板「全部按推荐」，PLAN §10「App 快捷键」）。
 // 走辅助功能：AXMenuBar → 各级菜单的子项，每项一次 AXUIElementCopyMultipleAttributeValues 取种类、标题、子项和四个
-// AXMenuItemCmd* 属性。只读，不点菜单。先问系统键盘在哪个 App 上：别家不激活的面板（比如系统的聚焦搜索）拿着键盘时，
+// AXMenuItemCmd* 属性。读的时候只读、不点菜单（执行一项是 press）。先问系统键盘在哪个 App 上：别家不激活的面板（比如系统的聚焦搜索）拿着键盘时，
 // 前台 App 还是底下那个，按住 ⌘ 是给那块面板的，不弹（2026-11-17 评审）。
 // 2026-11-17 本机实测（macOS 27，macos/build/research/cheatsheet-plugin-2026-11-17/）：读整个菜单栏之后 4–40 ms、
 // 第一次最多 0.3 s（Chrome）；访达 117、Xcode 221、VS Code 107 条，Electron / Tauri 的菜单照样读得到。
@@ -152,6 +152,48 @@ nonisolated enum MenuShortcuts {
       walk(menu, top: (title as? String) ?? "", path: [], location: [index])
     }
     return reading
+  }
+
+  /// 按的结果：按了 / 找不回那一项（菜单变了）/ App 没接（这一刻用不了）
+  enum Pressed { case pressed, changed, refused }
+
+  /// 按菜单里的一项（点一行、↩、留住时按它的组合；拍板 D3）：按 location 一级级找回去，标题对得上才按（读完之后菜单
+  /// 变了就不按）。AXPress 和从菜单里选它一样：这一刻能不能用由 App 自己定，菜单栏那一栏会闪一下。主线程，找的那几下
+  /// 整次 0.5 秒封顶（同读：每次调用用剩下的时间当超时）；按的那一下只等 0.1 秒：会弹确认框、打开面板的项（清倒废纸篓、
+  /// 打开…），App 要等那个窗口关了才回话，没回话（cannotComplete）也算按了
+  static func press(_ shortcut: MenuShortcut, pid: pid_t) -> Pressed {
+    let clock = ContinuousClock()
+    let deadline = clock.now + .milliseconds(500)
+    func value(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
+      let left = clock.now.duration(to: deadline)
+      guard left > .zero else { return nil }
+      let seconds = Double(left.components.seconds) + Double(left.components.attoseconds) / 1e18
+      AXUIElementSetMessagingTimeout(element, Float(max(seconds, 0.01)))
+      var result: CFTypeRef?
+      return AXUIElementCopyAttributeValue(element, name as CFString, &result) == .success
+        ? result : nil
+    }
+    func child(_ element: AXUIElement, _ index: Int) -> AXUIElement? {
+      let list = value(element, kAXChildrenAttribute) as? [AXUIElement] ?? []
+      return list.indices.contains(index) ? list[index] : nil
+    }
+    guard let first = shortcut.location.first,
+      let bar = value(AXUIElementCreateApplication(pid), kAXMenuBarAttribute),
+      CFGetTypeID(bar) == AXUIElementGetTypeID(),
+      var element = child(bar as! AXUIElement, first)  // 认过类型
+    else { return .changed }
+    for index in shortcut.location.dropFirst() {
+      guard let menu = child(element, 0), let item = child(menu, index) else { return .changed }
+      element = item
+    }
+    guard let title = value(element, kAXTitleAttribute) as? String,
+      cleaned(title) == shortcut.title || bracketed(title)?.title == shortcut.title
+    else { return .changed }
+    AXUIElementSetMessagingTimeout(element, 0.1)
+    switch AXUIElementPerformAction(element, kAXPressAction as CFString) {
+    case .success, .cannotComplete: return .pressed
+    default: return .refused
+    }
   }
 
   /// 缺的属性回来的是包着错误的 AXValue（先认过类型再强转）

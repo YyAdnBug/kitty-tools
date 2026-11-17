@@ -3,11 +3,17 @@
 // - 怎么认「单独按住」：全局 + 本地监听修饰键变化（要辅助功能授权，同连按两下；本地那份让状态机不漏掉在自家面板里松开的
 //   修饰键），交给 CommandHold；到点时再确认 ⌘ 还单独按着、这期间没按过键 / 鼠标 / 滚轮（HotKeyCenter.quiet）、鼠标键没按着、
 //   指针没挪远、前台还是同一个 App、没切过桌面、调度中心没开（拍板 B2 B3）。本 App 的面板、设置窗拿着键盘时不弹（那里按住 ⌘
-//   是 ⌘1–9 键帽）；截图框选、状态屏、启动台开着时不弹（isSuppressed）；前台 App 在「按 App 停用快捷键」名单里停了全部的不弹；
+//   是 ⌘1–9 键帽）；截图框选、状态屏、启动台开着时不弹（isSuppressed）；前台 App 在「按 App 停用快捷键」名单里停了全部
+//   或停了「显示 App 快捷键」的不弹；
 //   别家不激活的面板拿着键盘时不弹（MenuShortcuts 先问键盘在谁身上）。
 // - 什么时候读：单独按住 0.3 秒起在主线程外读（MenuShortcuts.read，整次 1 秒封顶），到点时一般已经读完；每次现读、不缓存（拍板 F1）。
 // - 面板（TransientPanel 里的 OverlayPanel，用时建、收起两秒后放掉）出来时不拿键盘：按着 ⌘ 再按别的键 = 那个快捷键照常给
 //   App，面板收起；松开 ⌘、切了 App / 桌面、点了外面也收。
+// - 点一行 = 执行它（先收起面板，再对那个菜单项 AXPress，MenuShortcuts.press；拍板 D3）。点一下面板别处（多半是搜索框）=
+//   留住：面板拿到键盘（按着 ⌘ 点的，系统不一定给，本地监听自己 makeKey；不激活本 App，前台 App 不变），能搜、↑↓、↩，
+//   松开 ⌘ 不收；按列表里有的组合 = 执行那一项，别的 ⌘ 组合只收起（编辑搜索框用的 ⌘A ⌘C ⌘V ⌘X ⌘Z ⇧⌘Z、⌘⌫ ⌘⌦、
+//   ⌘ 加方向键和 ⌘W 照常给搜索框 / 面板）；Esc 先清空搜索再收起；切到别的 App、切桌面也收（拍板 D1 D2）。
+// - 快捷键页的「显示 App 快捷键」（默认没设；菜单栏、启动器、主界面里也有这一项）：直接打开成留住的样子（toggle）。
 
 import AppKit
 import Carbon.HIToolbox
@@ -33,6 +39,8 @@ final class AppShortcuts {
   var isSuppressed: () -> Bool = { false }
   /// 面板收起（空闲回收排一轮）
   var onHide: (() -> Void)?
+  /// 刘海岛上说一句（执行不了、前台是本 App 自己）
+  var announce: ((LocalizedStringResource) -> Void)?
 
   private let model = AppShortcutsModel()
   private lazy var panel = TransientPanel { [unowned self] in
@@ -40,11 +48,15 @@ final class AppShortcuts {
       size: model.layout.size, firstMouse: true, autoHide: .clickOutside, isPinned: { false },
       content: AppShortcutsView(model: model))
     panel.onHide = { [unowned self] in
-      removeKeyMonitor()
+      removeMonitors()
       onHide?()
     }
+    panel.keyEquivalentHandler = { [unowned self] event in keyEquivalent(event) }
+    model.onPerform = { [unowned self] item in perform(item) }
     return panel
   }
+  /// 这一次弹的是哪个 App 的（执行时按它的 pid 找菜单）
+  private var shownApp: NSRunningApplication?
   private var hold = CommandHold()
   /// 这一次按住在做的事（等到点）和读菜单；松开、作废时都取消（读菜单在对方 App 的主线程上跑，别白读）
   private var pending: Task<Void, Never>?
@@ -52,6 +64,10 @@ final class AppShortcuts {
   private var flagsMonitors: [Any] = []
   /// 面板开着、不拿键盘时看着按键：按了就收（这一下照常到前台 App）
   private var keyMonitor: Any?
+  /// 面板开着时看着点在它上面的鼠标：按着 ⌘ 点的，系统不一定让它当 key，这里自己 makeKey（→ 留住）
+  private var clickMonitor: Any?
+  /// 快捷键打开时读菜单的那一下：和按住 ⌘ 的那套（pending）分开，松开 ⌘ 不取消它
+  private var opening: Task<Void, Never>?
   private var observers: [NSObjectProtocol] = []
   /// 切过几次桌面：按下时记一个，到点时对不上就作废
   private var spaceChanges = 0
@@ -69,13 +85,25 @@ final class AppShortcuts {
       ) { [weak self] _ in
         MainActor.assumeIsolated {
           self?.spaceChanges += 1
-          self?.dismissPeek()
+          self?.dismissForSwitch(to: nil)
         }
       },
       workspace.addObserver(
         forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
-      ) { [weak self] _ in
-        MainActor.assumeIsolated { self?.dismissPeek() }
+      ) { [weak self] note in
+        let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+        let pid = app?.processIdentifier
+        MainActor.assumeIsolated { self?.dismissForSwitch(to: pid) }
+      },
+      // 面板拿到键盘（点了它）：留住
+      NotificationCenter.default.addObserver(
+        forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main
+      ) { [weak self] note in
+        let window = note.object as? NSWindow
+        MainActor.assumeIsolated {
+          guard let self, let window, window === self.panel.panel else { return }
+          self.stay()
+        }
       },
       DistributedNotificationCenter.default().addObserver(
         forName: Notification.Name("com.apple.accessibility.api"), object: nil, queue: .main
@@ -95,11 +123,14 @@ final class AppShortcuts {
     guard isRunning else { return }
     isRunning = false
     cancelPending()
+    opening?.cancel()
+    opening = nil
     hold = CommandHold()
     flagsMonitors.forEach(NSEvent.removeMonitor)
     flagsMonitors = []
     for observer in observers {
       NSWorkspace.shared.notificationCenter.removeObserver(observer)
+      NotificationCenter.default.removeObserver(observer)
       DistributedNotificationCenter.default().removeObserver(observer)
     }
     observers = []
@@ -140,7 +171,7 @@ final class AppShortcuts {
   private func began(since: TimeInterval) {
     cancelPending()
     let defaults = UserDefaults.standard
-    guard defaults.object(forKey: Prefs.appShortcutsHold) as? Bool ?? true,
+    guard defaults.object(forKey: Prefs.appShortcutsHold) as? Bool ?? true, opening == nil,
       let app = NSWorkspace.shared.frontmostApplication,
       app.processIdentifier != getpid(), panel.panel?.isVisible != true
     else { return }
@@ -187,21 +218,114 @@ final class AppShortcuts {
       && hypot(mouse.x - hold.mouse.x, mouse.y - hold.mouse.y) <= Self.maxDrift
       && NSWorkspace.shared.frontmostApplication?.processIdentifier == hold.app.processIdentifier
       && spaceChanges == hold.spaces && NSApp.keyWindow == nil
-      && HotKeyBlock.rule(for: hold.app.bundleIdentifier, in: HotKeyBlock.stored) != .all
+      && HotKeyBlock.rule(for: hold.app.bundleIdentifier, in: HotKeyBlock.stored)?.blocks(
+        .appShortcuts) != true
       && Permissions.isAccessibilityTrusted && !IsSecureEventInputEnabled() && !isSuppressed()
   }
 
-  private func show(_ reading: MenuReading, app: NSRunningApplication) {
+  /// 弹出来。staying：直接留住（快捷键打开的）；按着 ⌘ 弹的不拿键盘
+  private func show(_ reading: MenuReading, app: NSRunningApplication, staying: Bool = false) {
     let mouse = NSEvent.mouseLocation
     let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
     model.load(
       reading, name: app.localizedName ?? "", icon: app.icon,
       available: screen?.visibleFrame.size ?? NSSize(width: 1440, height: 900))
+    shownApp = app
+    model.openedByKey = staying
     let panel = panel.open()
     panel.setContentSize(model.layout.size)
-    panel.present(makingKey: false)
-    installKeyMonitor()
+    panel.present(makingKey: staying)
+    if !staying { installKeyMonitor() }
+    installClickMonitor()
     Island.announce("\(model.appName)，\(model.count) 个快捷键")
+  }
+
+  /// 快捷键页的「显示 App 快捷键」（菜单栏、启动器、主界面里同一项）：开着就收起，不然读前台 App、直接留住。
+  /// 从本 App 的启动器、主界面点的，前台照旧是底下那个 App（浮层不激活本 App），所以不先问键盘在谁身上
+  func toggle() {
+    if let panel = panel.panel, panel.isVisible { return panel.dismiss() }
+    // 还在读（读得慢的 App）时再按一次 = 不要了
+    if let opening {
+      opening.cancel()
+      self.opening = nil
+      return
+    }
+    guard Permissions.isAccessibilityTrusted else { return Permissions.requestAccessibility() }
+    guard let app = NSWorkspace.shared.frontmostApplication, app.processIdentifier != getpid()
+    else {
+      announce?("先切到要看的 App，再打开 App 快捷键")
+      return
+    }
+    cancelPending()
+    opening = Task { [weak self] in
+      let reading = await MenuShortcuts.read(pid: app.processIdentifier, checksFocus: false)
+      guard let self, !Task.isCancelled else { return }
+      opening = nil
+      show(reading, app: app, staying: true)
+    }
+  }
+
+  /// 留住：拿着键盘，松开 ⌘ 不收；焦点进搜索框（点在别处拿到键盘的也是）
+  private func stay() {
+    guard let panel = panel.panel, panel.isVisible, !model.isStaying else { return }
+    model.isStaying = true
+    if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+    keyMonitor = nil
+    if !(panel.firstResponder is NSText), let field = panel.initialFirstResponder {
+      panel.makeFirstResponder(field)
+    }
+  }
+
+  /// 执行一行：先收起面板（键盘回到前台 App），再按那个菜单项；菜单变了按不了就说一声
+  private func perform(_ item: MenuShortcut) {
+    guard let app = shownApp else { return }
+    panel.panel?.hide()
+    let name = app.localizedName ?? "这个 App"
+    switch MenuShortcuts.press(item, pid: app.processIdentifier) {
+    case .pressed: break
+    case .changed: announce?("没能执行「\(item.title)」：\(name)的菜单变了")
+    case .refused: announce?("「\(item.title)」现在用不了")
+    }
+  }
+
+  /// 留住时按的组合（OverlayPanel 先问它）：编辑用的几个和 ⌘W 照常（返回 false 交给面板）；带 ⌘ 的、列表里有的执行
+  /// 那一项，没有的只收起
+  private func keyEquivalent(_ event: NSEvent) -> Bool {
+    let flags = event.modifierFlags.intersection([.command, .control, .option, .shift, .function])
+    guard flags.contains(.command) else { return false }
+    if Self.editsText(keyCode: event.keyCode, flags: flags, key: event.charactersIgnoringModifiers)
+    {
+      return false
+    }
+    let candidates = AppShortcutsModel.candidates(
+      keyCode: event.keyCode, flags: event.modifierFlags,
+      characters: event.charactersIgnoringModifiers)
+    if let item = candidates.lazy.compactMap(model.item(forKeys:)).first {
+      perform(item)
+    } else {
+      panel.panel?.dismiss()
+    }
+    return true
+  }
+
+  /// 留住时交给搜索框 / 面板、不当成 App 快捷键的 ⌘ 组合（纯函数）：编辑文字的 ⌘A ⌘C ⌘V ⌘X ⌘Z ⇧⌘Z、删到行首 / 行尾
+  /// ⌘⌫ ⌘⌦、⌘（加不加 ⇧）方向键，和收起面板的 ⌘W。不然在访达里打着字按 ⌘⌫ 清空，会把选中的文件移进废纸篓
+  static func editsText(keyCode: UInt16, flags: NSEvent.ModifierFlags, key: String?) -> Bool {
+    let flags = flags.intersection([.command, .control, .option, .shift])
+    let letter = key?.lowercased() ?? ""
+    let movement = [
+      kVK_Delete, kVK_ForwardDelete, kVK_LeftArrow, kVK_RightArrow, kVK_UpArrow, kVK_DownArrow,
+    ].contains(Int(keyCode))
+    return (flags == .command && ["a", "c", "v", "x", "z", "w"].contains(letter))
+      || (flags == [.command, .shift] && letter == "z")
+      || ((flags == .command || flags == [.command, .shift]) && movement)
+  }
+
+  /// 换了前台 App（不是弹的那个）、切了桌面：收起，留住的也收
+  private func dismissForSwitch(to pid: pid_t?) {
+    guard let panel = panel.panel, panel.isVisible else { return }
+    if let pid, pid == shownApp?.processIdentifier || pid == getpid() { return }
+    panel.dismiss(byKeyboard: false)
   }
 
   /// 不拿键盘的面板收起（松开 ⌘、按了键、切了 App / 桌面）；拿着键盘的（以后点了留住的）不动
@@ -211,14 +335,30 @@ final class AppShortcuts {
   }
 
   private func installKeyMonitor() {
-    removeKeyMonitor()
+    if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
     keyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] _ in
       MainActor.assumeIsolated { self?.dismissPeek() }
     }
   }
 
-  private func removeKeyMonitor() {
-    if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+  /// 点在面板上、它还不是 key（按着 ⌘ 点的）：先让它当 key（→ didBecomeKey → 留住），这一下照常交给面板
+  private func installClickMonitor() {
+    if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
+    clickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+      MainActor.assumeIsolated {
+        guard let panel = self?.panel.panel, event.window === panel, !panel.isKeyWindow else {
+          return
+        }
+        panel.makeKey()
+      }
+      return event
+    }
+  }
+
+  /// 面板收起：两个监听都摘
+  private func removeMonitors() {
+    for monitor in [keyMonitor, clickMonitor].compactMap({ $0 }) { NSEvent.removeMonitor(monitor) }
     keyMonitor = nil
+    clickMonitor = nil
   }
 }

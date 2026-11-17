@@ -25,7 +25,8 @@ struct HomeTests {
     #expect(
       sections.last?.tiles.map(\.target) == [
         .action(.noteCapture), .action(.noteNew), .action(.noteAll), .action(.reminderNew),
-        .action(.statusScreen), .action(.launchpad), .action(.keepAwake), .action(.island),
+        .action(.statusScreen), .action(.launchpad), .action(.keepAwake), .action(.appShortcuts),
+        .action(.island),
       ])
     #expect(tiles.first { $0.target == .action(.screenshot) }?.key == "⌥A")
     #expect(tiles.first { $0.target == .action(.clipboard) }?.key == nil)
@@ -117,9 +118,10 @@ struct HomeTests {
     var state = LauncherItem.ActionState()
     state.features = all
     let sections = Home.sections(state: state, keys: [:])
-    // 2 / 4 / 7 / 8（截图与录制 7 格折成 5 + 2；插件 8 格折成 5 + 3：便签三格、新建提醒、状态屏、启动台、保持唤醒、刘海岛）
-    #expect(Home.rows(sections).map(\.count) == [2, 4, 5, 2, 5, 3])
-    #expect(Home.rows(sections).flatMap { $0 } == Array(0..<21))
+    // 2 / 4 / 7 / 9（截图与录制 7 格折成 5 + 2；插件 9 格折成 5 + 4：便签三格、新建提醒、状态屏、启动台、保持唤醒、
+    // 显示 App 快捷键、刘海岛）
+    #expect(Home.rows(sections).map(\.count) == [2, 4, 5, 2, 5, 4])
+    #expect(Home.rows(sections).flatMap { $0 } == Array(0..<22))
     let rows: CGFloat = 6
     let expected =
       Home.top + Home.bottom + 4 * Home.titleHeight + rows * Home.tile.height
