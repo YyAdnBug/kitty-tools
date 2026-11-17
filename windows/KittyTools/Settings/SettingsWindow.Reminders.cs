@@ -301,8 +301,8 @@ internal sealed partial class SettingsWindow
 
         // 怎么提醒
         var alerts = Reminders.AlertChoices(draft.Alert, Features.IsOn(Feature.StatusScreen));
-        var alert = new ComboBox { Header = "提醒方式", ItemsSource = alerts.Select(Reminders.AlertTitle).ToList(), MinWidth = 160 };
-        alert.SelectedIndex = Math.Max(0, Array.IndexOf(alerts, draft.Alert));
+        // 提醒方式、声音同 mac 的分段
+        var alert = SettingsUi.Choice("提醒方式", alerts.Select(Reminders.AlertTitle).ToArray(), Math.Max(0, Array.IndexOf(alerts, draft.Alert)));
         var alertNote = new TextBlock { FontSize = Theme.FontSize("Kitty.FontSize.Label"), Foreground = Theme.SecondaryText(), TextWrapping = TextWrapping.Wrap };
         var fullSeconds = new ComboBox
         {
@@ -314,8 +314,7 @@ internal sealed partial class SettingsWindow
         var presets = StatusScreenHost.Presets;
         var status = new ComboBox { Header = "进入哪个状态", ItemsSource = presets.Select(preset => preset.Title).ToList(), MinWidth = 160 };
         status.SelectedIndex = Math.Max(0, presets.FindIndex(preset => preset.Id == draft.StatusID));
-        var sound = new ComboBox { Header = "声音", ItemsSource = Reminders.Sounds.Select(Reminders.SoundTitle).ToList(), MinWidth = 160 };
-        sound.SelectedIndex = Math.Max(0, Array.IndexOf(Reminders.Sounds, draft.Sound));
+        var sound = SettingsUi.Choice("声音", Reminders.Sounds.Select(Reminders.SoundTitle).ToArray(), Math.Max(0, Array.IndexOf(Reminders.Sounds, draft.Sound)));
         // mac 上选的、这台没有的声音（个人「声音」文件夹里的、自己选的文件）和「自定义…」填的催促间隔：多列一项留着，
         // 不然改个标题一保存就换成了默认的、再同步回去把 mac 上选的抹掉（审查方 2026-11-05）。
         // 提示音（PLAN-v16 E2）：系统的 ｜ 自己选过的文件 ｜ 末尾「选择文件…」（不是一个声音，选了弹文件框、选中回到原来那个）。
@@ -431,8 +430,8 @@ internal sealed partial class SettingsWindow
         AddDetailSection(null, title, detail, SettingsUi.Footnote($"标题最多 {Reminders.MaxTitle} 个字，说明最多 {Reminders.MaxDetail} 个字。"));
         AddDetailSection("图标", iconRow);
         AddDetailSection("时间", kind, date, monthDay, every, daysRow, allDay, time, until, timeNote);
-        AddDetailSection("提醒方式", alert, fullSeconds, status, alertNote);
-        AddDetailSection("声音和催促", sound, chime, chimeNote, nag, nagCustom,
+        AddDetailSection("提醒方式", alert.View, fullSeconds, status, alertNote);
+        AddDetailSection("声音和催促", sound.View, chime, chimeNote, nag, nagCustom,
             SettingsUi.Footnote("没点「知道了」或「稍后」就再响一次，第 3 次换成全屏，之后不再催。声音只响一遍，自己选的文件最多放 30 秒。"));
         AddDetailDelete("删除", !Reminders.IsPristine(stored), $"删除「{stored.Title}」？", "自己加的、改过的提醒删掉就找不回来了。", () =>
         {
@@ -601,10 +600,13 @@ internal sealed partial class SettingsWindow
 
         title.TextChanged += (_, _) => Refresh();
         detail.TextChanged += (_, _) => Refresh();
-        foreach (var box in new[] { kind, monthDay, every, alert, fullSeconds, status, sound, chime, nag })
+        foreach (var box in new[] { kind, monthDay, every, fullSeconds, status, chime, nag })
         {
             box.SelectionChanged += (_, _) => Refresh();
         }
+
+        alert.SelectionChanged += (_, _) => Refresh();
+        sound.SelectionChanged += (_, _) => Refresh();
 
         date.DateChanged += (_, _) => Refresh();
         nagCustom.ValueChanged += (_, _) => Refresh();

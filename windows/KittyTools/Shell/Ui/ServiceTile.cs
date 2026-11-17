@@ -1,11 +1,13 @@
 // 服务方块（PLAN-v7 §2.1，18 / 24 两档，照 mac ServiceTile）：有官方 logo 用 logo（选哪张见 Core 的 ServiceBadge.Logo），
-// 自带底色的满版图直接裁圆角，只有图形的垫白底、四周留 14%，0.5 发丝线；认不出是谁就用品牌色 + 首字。
+// 自带底色的满版图直接裁圆角（合成层裁剪），只有图形的垫白底、四周留 14%，0.5 发丝线；认不出是谁就用品牌色 + 首字。
 // logo 是从 mac 的 Assets.xcassets/ServiceLogo 拷来的（mac 是 SVG 的四张在 Mac 上渲成 128 px PNG），只用图片素材，不引依赖。
+using System.Numerics;
 using KittyTools.Core;
 using KittyTools.Infrastructure;
 using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using Windows.UI;
@@ -29,8 +31,19 @@ internal static class ServiceTile
             var source = new BitmapImage(new Uri($"ms-appx:///Resources/ServiceLogo/{logo}.png"));
             if (ServiceBadge.IsFullBleed(logo))
             {
-                // 用画刷铺底才裁得出圆角（Border 不裁子元素）。
-                tile.Background = new ImageBrush { ImageSource = source, Stretch = Stretch.UniformToFill };
+                // 满版图用 Image + 合成层的圆角裁剪（Border 不裁子元素）。以前用 ImageBrush 铺底，用户真机上智谱、有道
+                // 时不时是一块空方块（2026-11-17）：ImageBrush 里按地址懒加载的 BitmapImage 有时不解码，Image 一直正常。
+                var image = new Image { Source = source, Stretch = Stretch.UniformToFill };
+                var radius = (float)(size * 0.225);
+                image.SizeChanged += (_, args) =>
+                {
+                    var visual = ElementCompositionPreview.GetElementVisual(image);
+                    var geometry = visual.Compositor.CreateRoundedRectangleGeometry();
+                    geometry.Size = new Vector2((float)args.NewSize.Width, (float)args.NewSize.Height);
+                    geometry.CornerRadius = new Vector2(radius, radius);
+                    visual.Clip = visual.Compositor.CreateGeometricClip(geometry);
+                };
+                tile.Child = image;
             }
             else
             {

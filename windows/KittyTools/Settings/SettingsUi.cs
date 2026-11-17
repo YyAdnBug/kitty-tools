@@ -9,6 +9,7 @@ using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Media;
 
 namespace KittyTools;
@@ -122,6 +123,7 @@ internal static class SettingsUi
         }
 
         AutomationProperties.SetName(card, description.Length > 0 ? $"{title}，{description}" : title);
+        Groupable.AddOrUpdate(card, new CardLayout(card.Margin, card.Padding));
         return card;
     }
 
@@ -129,6 +131,92 @@ internal static class SettingsUi
 
     /// <summary>可点的卡点了做什么、右键菜单里各项做什么（列表的键盘操作要用，PLAN-v23 L1）。</summary>
     private static readonly ConditionalWeakTable<Border, Action> Clicks = new();
+
+    /// <summary>Card() 建的卡：GroupCards 只连这些（别的 Border 不动）。值是卡原来的边距和内边距。</summary>
+    private static readonly ConditionalWeakTable<Border, CardLayout> Groupable = new();
+
+    /// <summary>子设置那一行（「也搜浏览历史」这种跟着上一行的）：连在组里时内容往里缩一档。</summary>
+    private static readonly ConditionalWeakTable<Border, object> ChildRows = new();
+
+    private sealed record CardLayout(Thickness Margin, Thickness Padding)
+    {
+        public bool Watched { get; set; }
+    }
+
+    /// <summary>标成上一行的子设置（mac 里缩进的那行）：连成一组时左边多缩 28，不再单独一张往里挪的卡。</summary>
+    public static void MarkChild(Border card) => ChildRows.AddOrUpdate(card, new object());
+
+    /// <summary>
+    /// 相邻的设置卡连成一块（mac 设置的分组表单：一节一个圆角框、行和行之间一条细线；2026-11-17 用户：
+    /// 「在 mac 上是一整块区域，windows 是分开的」）。分组标题、脚注、空隙这些不是卡的东西把它们隔开；
+    /// 收起的不算、也不隔开。卡的显隐变了（子设置跟着开关露出来）就重连一遍。
+    /// spacing 是 content 的 Spacing：连着的卡往上挪这么多贴住上一张。
+    /// </summary>
+    public static void GroupCards(Panel content, double spacing)
+    {
+        var radius = Theme.Corner("Kitty.Corner.Card").TopLeft;
+        var run = new List<Border>();
+
+        void Flush()
+        {
+            for (var index = 0; index < run.Count; index++)
+            {
+                var card = run[index];
+                var layout = Groupable.TryGetValue(card, out var found) ? found : null;
+                if (layout is null)
+                {
+                    continue;
+                }
+
+                var first = index == 0;
+                var last = index == run.Count - 1;
+                card.CornerRadius = new CornerRadius(first ? radius : 0, first ? radius : 0, last ? radius : 0, last ? radius : 0);
+                // 上一张的下边线就是两行之间那条细线：不是第一张的去掉上边线，免得叠成两像素
+                card.BorderThickness = new Thickness(1, first ? 1 : 0, 1, 1);
+                card.Margin = new Thickness(layout.Margin.Left, first ? layout.Margin.Top : -spacing, layout.Margin.Right, layout.Margin.Bottom);
+                var indent = ChildRows.TryGetValue(card, out _) ? 28 : 0;
+                card.Padding = new Thickness(layout.Padding.Left + indent, layout.Padding.Top, layout.Padding.Right, layout.Padding.Bottom);
+            }
+
+            run.Clear();
+        }
+
+        foreach (var child in content.Children)
+        {
+            if (child.Visibility == Visibility.Collapsed)
+            {
+                continue;
+            }
+
+            if (child is Border card && Groupable.TryGetValue(card, out var layout))
+            {
+                run.Add(card);
+                if (!layout.Watched)
+                {
+                    layout.Watched = true;
+                    card.RegisterPropertyChangedCallback(UIElement.VisibilityProperty, (_, _) => GroupCards(content, spacing));
+                }
+            }
+            else
+            {
+                Flush();
+            }
+        }
+
+        Flush();
+
+        // 收起的卡回到单独一张的样子（再露出来时重连会改）
+        foreach (var child in content.Children)
+        {
+            if (child.Visibility == Visibility.Collapsed && child is Border card && Groupable.TryGetValue(card, out var layout))
+            {
+                card.CornerRadius = new CornerRadius(radius);
+                card.BorderThickness = new Thickness(1);
+                card.Margin = layout.Margin;
+                card.Padding = layout.Padding;
+            }
+        }
+    }
 
     private static readonly ConditionalWeakTable<Border, Dictionary<string, Action>> MenuActions = new();
 
@@ -271,6 +359,150 @@ internal static class SettingsUi
         combo.SelectionChanged += (_, _) => changed(combo.SelectedIndex);
         AutomationProperties.SetName(combo, automationName);
         return combo;
+    }
+
+    /// <summary>
+    /// 卡片右侧的分段按钮（mac .pickerStyle(.segmented)：2–3 个短选项，2026-11-17 用户「mac 上是按钮选择」）。
+    /// WinUI 没有分段控件：一排 ToggleButton 放在浅底圆角槽里，选中那个是强调色底（ToggleButton 自己的选中态），
+    /// 点已选中的不取消；←→ 换选项。读屏按「名字：选项」读每一个，选没选中读开关状态。
+    /// </summary>
+    public static FrameworkElement Segmented(string[] items, int selected, Action<int> changed, string automationName)
+    {
+        var buttons = new List<ToggleButton>();
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2 };
+        var current = Math.Clamp(selected, 0, Math.Max(0, items.Length - 1));
+
+        void Select(int index, bool notify)
+        {
+            for (var i = 0; i < buttons.Count; i++)
+            {
+                buttons[i].IsChecked = i == index;
+            }
+
+            if (notify && index != current)
+            {
+                current = index;
+                changed(index);
+            }
+
+            current = index;
+        }
+
+        for (var index = 0; index < items.Length; index++)
+        {
+            var at = index;
+            var button = new ToggleButton
+            {
+                Content = items[index],
+                MinWidth = 56,
+                Padding = new Thickness(12, 4, 12, 5),
+                BorderThickness = new Thickness(0),
+                Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+                CornerRadius = Theme.Corner("Kitty.Corner.Control"),
+            };
+            button.Click += (_, _) => Select(at, notify: true);
+            button.KeyDown += (_, args) =>
+            {
+                var step = args.Key switch
+                {
+                    Windows.System.VirtualKey.Left => -1,
+                    Windows.System.VirtualKey.Right => 1,
+                    _ => 0,
+                };
+                if (step != 0 && at + step >= 0 && at + step < buttons.Count)
+                {
+                    args.Handled = true;
+                    Select(at + step, notify: true);
+                    buttons[at + step].Focus(FocusState.Keyboard);
+                }
+            };
+            AutomationProperties.SetName(button, $"{automationName}：{items[index]}");
+            buttons.Add(button);
+            row.Children.Add(button);
+        }
+
+        Select(current, notify: false);
+        var slot = new Border
+        {
+            Child = row,
+            Padding = new Thickness(2),
+            CornerRadius = Theme.Corner("Kitty.Corner.Control"),
+            Background = Theme.Brush("Kitty.Fill.Control", Windows.UI.Color.FromArgb(15, 0, 0, 0)),
+            BorderBrush = Theme.Brush("Kitty.Hairline", Windows.UI.Color.FromArgb(20, 0, 0, 0)),
+            BorderThickness = new Thickness(1),
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Right,
+        };
+        AutomationProperties.SetName(slot, automationName);
+        return slot;
+    }
+
+    /// <summary>
+    /// 卡片右侧一行横排的单选（mac radios：3–5 个选项、.radioGroup + 横排），系统的 RadioButton；
+    /// 去掉它默认 120 的最小宽度，挨着排。
+    /// </summary>
+    public static FrameworkElement Radios(string[] items, int selected, Action<int> changed, string automationName)
+    {
+        var group = "kitty-radios-" + Guid.NewGuid().ToString("N");
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 16, VerticalAlignment = VerticalAlignment.Center };
+        var current = Math.Clamp(selected, 0, Math.Max(0, items.Length - 1));
+        for (var index = 0; index < items.Length; index++)
+        {
+            var at = index;
+            var radio = new RadioButton
+            {
+                Content = items[index],
+                GroupName = group,
+                MinWidth = 0,
+                IsChecked = index == current,
+            };
+            radio.Checked += (_, _) =>
+            {
+                if (at != current)
+                {
+                    current = at;
+                    changed(at);
+                }
+            };
+            row.Children.Add(radio);
+        }
+
+        AutomationProperties.SetName(row, automationName);
+        return row;
+    }
+
+    /// <summary>
+    /// 详情页里竖排表单用的「标题 + 分段 / 单选」（顶替带 Header 的 ComboBox）：SelectedIndex、SelectionChanged 同 ComboBox，
+    /// 放进页面的是 View。
+    /// </summary>
+    public sealed class ChoiceView
+    {
+        public required FrameworkElement View { get; init; }
+
+        public int SelectedIndex { get; internal set; }
+
+        public event EventHandler? SelectionChanged;
+
+        internal void Raise(int index)
+        {
+            SelectedIndex = index;
+            SelectionChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    /// <summary>上面一行标题、下面一组分段按钮（radios = true 时是横排单选）。</summary>
+    public static ChoiceView Choice(string header, string[] items, int selected, bool radios = false)
+    {
+        ChoiceView? choice = null;
+        var control = radios
+            ? Radios(items, selected, index => choice!.Raise(index), header)
+            : Segmented(items, selected, index => choice!.Raise(index), header);
+        control.HorizontalAlignment = HorizontalAlignment.Left;
+        var view = new StackPanel { Spacing = 6, Margin = new Thickness(0, 4, 0, 4) };
+        view.Children.Add(new TextBlock { Text = header });
+        view.Children.Add(control);
+        choice = new ChoiceView { View = view, SelectedIndex = Math.Clamp(selected, 0, Math.Max(0, items.Length - 1)) };
+        return choice;
     }
 
     /// <summary>分组标题（一大组设置卡上面那行）。</summary>

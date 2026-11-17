@@ -134,7 +134,7 @@ internal sealed partial class SettingsWindow
         // ---- 行为
         _content.Children.Add(SettingsUi.Section("行为"));
         var positions = new[] { PanelPositions.Top, PanelPositions.Mouse, PanelPositions.Last };
-        AddCombo("浮窗位置",
+        AddSegmented("浮窗位置",
             "划词、截图翻译、复制即译时出现的位置：屏幕上方是鼠标所在屏幕的上方正中，跟随鼠标是光标旁边；输入翻译总在上次拖到的位置",
             new[] { "屏幕上方", "跟随鼠标", "上次位置" }, Math.Max(0, Array.IndexOf(positions, settings.TranslateWindowPosition)), index =>
             {
@@ -201,7 +201,7 @@ internal sealed partial class SettingsWindow
         });
         var limits = new[] { 1000, 5000, 0 };
         limitCard = SettingsUi.Card("历史最多保留", string.Empty,
-            SettingsUi.Combo(new[] { "1000 条", "5000 条", "不限" },
+            SettingsUi.Segmented(new[] { "1000 条", "5000 条", "不限" },
                 Math.Max(0, Array.IndexOf(limits, settings.TranslateHistoryLimit)), index =>
                 {
                     settings.TranslateHistoryLimit = limits[index];
@@ -603,7 +603,7 @@ internal sealed partial class SettingsWindow
             case TranslateKinds.Zhipu:
                 var zhipuModels = new[] { "glm-4-flash", "glm-4.7-flash" };
                 _content.Children.Add(SettingsUi.Card("模型", string.Empty,
-                    SettingsUi.Combo(zhipuModels, Array.IndexOf(zhipuModels, TranslatePresets.ZhipuModel(service.Model)), index =>
+                    SettingsUi.Segmented(zhipuModels, Array.IndexOf(zhipuModels, TranslatePresets.ZhipuModel(service.Model)), index =>
                     {
                         service.Model = zhipuModels[index];
                         Save();
@@ -627,7 +627,7 @@ internal sealed partial class SettingsWindow
                     autoFetch?.Restart();
                 });
                 _content.Children.Add(SettingsUi.Card("协议", string.Empty,
-                    SettingsUi.Combo(protocols.Select(ProtocolTitle).ToArray(),
+                    SettingsUi.Segmented(protocols.Select(ProtocolTitle).ToArray(),
                         Array.IndexOf(protocols, AiEndpoint.ParseProtocol(service.Protocol)), index =>
                         {
                             service.Protocol = protocols[index].ToString().ToLowerInvariant();
@@ -688,7 +688,7 @@ internal sealed partial class SettingsWindow
                 var deepLxCard = SettingsUi.Card("DeepLX 地址", string.Empty, deepLx);
                 deepLxCard.Visibility = service.UsesDeepLX == true ? Visibility.Visible : Visibility.Collapsed;
                 _content.Children.Add(SettingsUi.Card("接口", string.Empty,
-                    SettingsUi.Combo(new[] { "官方 API", "DeepLX（自建）" }, service.UsesDeepLX == true ? 1 : 0, index =>
+                    SettingsUi.Segmented(new[] { "官方 API", "DeepLX（自建）" }, service.UsesDeepLX == true ? 1 : 0, index =>
                     {
                         service.UsesDeepLX = index == 1;
                         deepLxCard.Visibility = index == 1 ? Visibility.Visible : Visibility.Collapsed;

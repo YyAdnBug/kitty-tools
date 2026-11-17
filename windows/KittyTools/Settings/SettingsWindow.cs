@@ -619,6 +619,7 @@ internal sealed partial class SettingsWindow : Window
         }
 
         ApplyGate();
+        SettingsUi.GroupCards(_content, _content.Spacing);
         RememberPage();
         // 新功能标记：换到这一页时算一遍（看着的这页原来标着的留着，换页才没）
         _whatsNewShown = WhatsNew.Shown(_currentPage, WhatsNewHost.Current(), _whatsNewShown);
@@ -2743,7 +2744,7 @@ internal sealed partial class SettingsWindow : Window
                 RefreshAllBrowserRows();
                 _ = RefreshBrowsersAsync(settings);
             }, $"也搜 {browser.Name} 的浏览历史"));
-        historyCard.Margin = new Thickness(24, 0, 0, 0);
+        SettingsUi.MarkChild(historyCard);
         _content.Children.Add(bookmarkCard);
         _content.Children.Add(historyCard);
 
@@ -3055,7 +3056,7 @@ internal sealed partial class SettingsWindow : Window
         // 截图拷贝为（PLAN-v15，同 mac 2026-11-06）：图像（默认）/ PNG 文件。截图里的每一种「拷贝」都看它。
         _content.Children.Add(new Border { Height = 8 });
         var copyKinds = new[] { "image", "file" };
-        AddCombo("截图拷贝为",
+        AddSegmented("截图拷贝为",
             "选 PNG 文件时，剪贴板里是一个图片文件，和复制一个文件一样：能粘进聊天窗口和文件夹，只认文件的跨电脑剪贴板工具也传得过去；只收图像的程序粘不进去",
             new[] { "图像", "PNG 文件" },
             SettingsService.Current.ScreenshotCopyAs == "file" ? 1 : 0,
@@ -3187,7 +3188,7 @@ internal sealed partial class SettingsWindow : Window
         // 工具栏位置（PLAN-v12 N4，mac 0f83c117）：靠右（默认）/ 居中，录屏的录制条同一个设置。
         _content.Children.Add(new Border { Height = 8 });
         var aligns = new[] { "right", "center" };
-        AddCombo("工具栏位置",
+        AddSegmented("工具栏位置",
             "框选完工具栏贴在选区下方，放不下时在上方。靠右时从左上往右下拖完，✓ 就在鼠标旁边；录屏的录制条也这样摆",
             new[] { "靠右", "居中" },
             SettingsService.Current.ScreenshotToolbarAlign == "center" ? 1 : 0,
@@ -3268,7 +3269,7 @@ internal sealed partial class SettingsWindow : Window
             "文件名是「录屏 日期 时间.mp4」「录音 日期 时间.m4a」。没选过时存到「视频」里的「Screen Recordings」，和截图的「快速保存到」分开。")));
 
         _content.Children.Add(SettingsUi.Section("录屏"));
-        AddCombo("帧率", string.Empty,
+        AddSegmented("帧率", string.Empty,
             new[] { "30 fps", "60 fps" },
             SettingsService.Current.RecordFps >= 60 ? 1 : 0,
             index =>
@@ -3276,7 +3277,7 @@ internal sealed partial class SettingsWindow : Window
                 SettingsService.Current.RecordFps = index == 1 ? 60 : 30;
                 SettingsService.Save();
             });
-        AddCombo("清晰度", string.Empty, new[] { "原始", "标准" },
+        AddSegmented("清晰度", string.Empty, new[] { "原始", "标准" },
             SettingsService.Current.RecordSharpness == "standard" ? 1 : 0,
             index =>
             {
@@ -3313,7 +3314,7 @@ internal sealed partial class SettingsWindow : Window
                 SettingsService.Current.RecordKeys = value;
                 SettingsService.Save();
             });
-        AddCombo("显示按键时", string.Empty, new[] { "全部按键", "只显示快捷键" },
+        AddSegmented("显示按键时", string.Empty, new[] { "全部按键", "只显示快捷键" },
             SettingsService.Current.RecordKeysShortcutsOnly ? 1 : 0,
             index =>
             {
@@ -3343,7 +3344,7 @@ internal sealed partial class SettingsWindow : Window
 
         _content.Children.Add(SettingsUi.Section("录音"));
         var sources = new[] { "microphone", "system", "both" };
-        AddCombo("来源", string.Empty, new[] { "麦克风", "系统声音", "两者" },
+        AddSegmented("来源", string.Empty, new[] { "麦克风", "系统声音", "两者" },
             Math.Max(0, Array.IndexOf(sources, SettingsService.Current.AudioSource)),
             index =>
             {
@@ -4992,7 +4993,7 @@ internal sealed partial class SettingsWindow : Window
     private void AddPanelPositionCombo(string current, Action<string> store)
     {
         var positions = new[] { "top", "mouse", "last" };
-        AddCombo("面板位置", "屏幕上方是鼠标所在屏幕的上方正中，跟随鼠标是光标旁边，上次位置是上次拖到的地方",
+        AddSegmented("面板位置", "屏幕上方是鼠标所在屏幕的上方正中，跟随鼠标是光标旁边，上次位置是上次拖到的地方",
             new[] { "屏幕上方", "跟随鼠标", "上次位置" }, Math.Max(0, Array.IndexOf(positions, current)), index =>
             {
                 store(positions[index]);
@@ -5023,6 +5024,22 @@ internal sealed partial class SettingsWindow : Window
             title,
             subtitle,
             SettingsUi.Combo(items, selected, changed, title)));
+
+    /// <summary>右边一组分段按钮（mac .segmented 的那几项，2–3 个短选项）。</summary>
+    private void AddSegmented(
+        string title, string subtitle, string[] items, int selected, Action<int> changed)
+        => _content.Children.Add(SettingsUi.Card(
+            title,
+            subtitle,
+            SettingsUi.Segmented(items, selected, changed, title)));
+
+    /// <summary>右边一行横排单选（mac radios，3–5 个选项）。</summary>
+    private void AddRadios(
+        string title, string subtitle, string[] items, int selected, Action<int> changed)
+        => _content.Children.Add(SettingsUi.Card(
+            title,
+            subtitle,
+            SettingsUi.Radios(items, selected, changed, title)));
 
     private static Border Card(UIElement child) => new()
     {

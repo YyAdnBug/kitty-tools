@@ -159,15 +159,14 @@ internal sealed partial class SettingsWindow
         var search = new TextBox { PlaceholderText = "按名字或别名找", Text = _commandFilter };
         AutomationProperties.SetName(search, "搜索命令");
         var onlyOn = new CheckBox { Content = "只看开着的", IsChecked = _commandOnlyOn, Margin = new Thickness(12, 0, 0, 0) };
-        // 一排筛选（mac 是分段控件，Windows 选项一律下拉框，MAC-DIFF）
-        var group = new ComboBox
+        // 一排筛选（同 mac 的分段控件）；Fill 在下面定义，先占个位
+        Action fill = () => { };
+        var group = SettingsUi.Segmented(new[] { "全部", "我的脚本", "自带的命令", "内置" }, _commandGroup, index =>
         {
-            ItemsSource = new[] { "全部", "我的脚本", "自带的命令", "内置" },
-            SelectedIndex = _commandGroup,
-            Margin = new Thickness(12, 0, 0, 0),
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        AutomationProperties.SetName(group, "只看哪一种命令");
+            _commandGroup = index;
+            fill();
+        }, "只看哪一种命令");
+        group.Margin = new Thickness(12, 0, 0, 0);
         var top = new Grid();
         top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         top.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -251,11 +250,7 @@ internal sealed partial class SettingsWindow
             _commandOnlyOn = onlyOn.IsChecked == true;
             Fill();
         };
-        group.SelectionChanged += (_, _) =>
-        {
-            _commandGroup = Math.Max(0, group.SelectedIndex);
-            Fill();
-        };
+        fill = Fill;
         Fill();
         _content.Children.Add(SettingsUi.Footnote(
             "别名就是在启动器里要打的那个词：改了以后旧词不再认，清空就只能按名字搜；和别的命令、网页搜索的关键词撞了那一格描橙框。" +

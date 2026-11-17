@@ -203,18 +203,14 @@ internal sealed partial class SettingsWindow
         var title = new TextBox { Header = "标题", Text = draft.Title, PlaceholderText = "如 马上回来", MaxLength = StatusPresets.MaxTitle };
         var detail = new TextBox { Header = "说明", Text = draft.Detail ?? string.Empty, PlaceholderText = "可不填", MaxLength = StatusPresets.MaxDetail };
         var previewHost = new Border { HorizontalAlignment = HorizontalAlignment.Left };
-        var styles = new ComboBox { Header = "样式", ItemsSource = StatusPresets.Styles.Select(StatusPresets.StyleTitle).ToList(), MinWidth = 160 };
-        styles.SelectedIndex = Math.Max(0, Array.IndexOf(StatusPresets.Styles, draft.Style));
+        var styles = SettingsUi.Choice("样式", StatusPresets.Styles.Select(StatusPresets.StyleTitle).ToArray(),
+            Math.Max(0, Array.IndexOf(StatusPresets.Styles, draft.Style)));
         var styleNote = new TextBlock { FontSize = Theme.FontSize("Kitty.FontSize.Label"), Foreground = Theme.SecondaryText() };
-        var powers = new ComboBox { Header = "电源", ItemsSource = StatusPresets.Powers.Select(StatusPresets.PowerTitle).ToList(), MinWidth = 160 };
-        powers.SelectedIndex = Math.Max(0, Array.IndexOf(StatusPresets.Powers, draft.Power));
-        var ends = new ComboBox
-        {
-            Header = "自动结束",
-            ItemsSource = StatusPresets.AutoEndChoices.Select(StatusPresets.AutoEndTitle).ToList(),
-            MinWidth = 160,
-        };
-        ends.SelectedIndex = Math.Max(0, Array.IndexOf(StatusPresets.AutoEndChoices, draft.AutoEndMinutes));
+        var powers = SettingsUi.Choice("电源", StatusPresets.Powers.Select(StatusPresets.PowerTitle).ToArray(),
+            Math.Max(0, Array.IndexOf(StatusPresets.Powers, draft.Power)));
+        // 样式、电源同 mac 的分段，自动结束同 mac 的横排单选
+        var ends = SettingsUi.Choice("自动结束", StatusPresets.AutoEndChoices.Select(StatusPresets.AutoEndTitle).ToArray(),
+            Math.Max(0, Array.IndexOf(StatusPresets.AutoEndChoices, draft.AutoEndMinutes)), radios: true);
 
         // 图标格子：第一格「无」，后面 28 个表情的静止画面，再是「动画表情」「系统表情」，选中的外面一圈强调色；左边大预览一直播动画（G9）。
         var icons = new VariableSizedWrapGrid { Orientation = Orientation.Horizontal, MaximumRowsOrColumns = 7, ItemWidth = 44, ItemHeight = 44 };
@@ -276,8 +272,8 @@ internal sealed partial class SettingsWindow
 
         AddDetailSection(null, title, detail, SettingsUi.Footnote($"标题最多 {StatusPresets.MaxTitle} 个字，说明最多 {StatusPresets.MaxDetail} 个字。"));
         AddDetailSection("图标", iconRow);
-        AddDetailSection("样式", styles, styleNote, previewHost);
-        AddDetailSection("电源与结束", powers, ends,
+        AddDetailSection("样式", styles.View, styleNote, previewHost);
+        AddDetailSection("电源与结束", powers.View, ends.View,
             SettingsUi.Footnote("电源只管闲置的时候：屏幕锁定后照常熄灭，合上盖子照样睡眠。屏幕常亮时电脑也不睡眠。"));
         if (canDelete)
         {

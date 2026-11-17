@@ -32,11 +32,11 @@ internal sealed partial class SettingsWindow
 
         // 便签
         _content.Children.Add(SettingsUi.Section("便签"));
-        AddCombo("正文字号", "全部便签窗口、屏幕边缘和浮在屏幕上的便签里正文的大小",
+        AddRadios("正文字号", "全部便签窗口、屏幕边缘和浮在屏幕上的便签里正文的大小",
             new[] { "小", "标准", "大", "特大" }, Math.Max(Array.IndexOf(NoteFontSizes, settings.NotesFontSize), 1),
             index => Save(() => settings.NotesFontSize = NoteFontSizes[index]));
         var spacing = NoteStyles.SpacingFromName(settings.NotesLineSpacing) ?? NoteSpacing.Standard;
-        AddCombo("行距", "全部便签窗口、屏幕边缘和浮在屏幕上的便签里正文一行一行之间隔多远",
+        AddRadios("行距", "全部便签窗口、屏幕边缘和浮在屏幕上的便签里正文一行一行之间隔多远",
             NoteStyles.AllSpacings.Select(NoteStyles.SpacingTitle).ToArray(), Array.IndexOf(NoteStyles.AllSpacings, spacing),
             index => Save(() => settings.NotesLineSpacing = NoteStyles.SpacingName(NoteStyles.AllSpacings[index])));
         AddToggle("Markdown 样式",
@@ -63,7 +63,7 @@ internal sealed partial class SettingsWindow
         }
 
         // 照屏幕上的方位左边在前（mac 9acd4306）；默认仍是右边，存的值不变。
-        Deck(() => AddCombo("位置", string.Empty, new[] { "左边", "右边" },
+        Deck(() => AddSegmented("位置", string.Empty, new[] { "左边", "右边" },
             settings.NotesDeckEdge == "left" ? 0 : 1, index => Save(() => settings.NotesDeckEdge = index == 0 ? "left" : "right")));
         var displays = Displays.All().Select(display => display.Name).ToList();
         if (displays.Count > 1)
@@ -91,12 +91,12 @@ internal sealed partial class SettingsWindow
             })));
         }
 
-        Deck(() => AddCombo("样式", string.Empty, new[] { "带标题的标签", "只有色块" },
+        Deck(() => AddSegmented("样式", string.Empty, new[] { "带标题的标签", "只有色块" },
             settings.NotesDeckStyle == "chips" ? 1 : 0, index => Save(() => settings.NotesDeckStyle = index == 1 ? "chips" : "tabs")));
         var sizes = new[] { "small", "standard", "large" };
-        Deck(() => AddCombo("大小", string.Empty, new[] { "小", "标准", "大" },
+        Deck(() => AddSegmented("大小", string.Empty, new[] { "小", "标准", "大" },
             Math.Max(Array.IndexOf(sizes, settings.NotesDeckSize), 1), index => Save(() => settings.NotesDeckSize = sizes[index])));
-        Deck(() => AddCombo("感应范围", "鼠标离屏幕边缘多近就展开", new[] { "窄", "标准", "宽", "很宽" },
+        Deck(() => AddRadios("感应范围", "鼠标离屏幕边缘多近就展开", new[] { "窄", "标准", "宽", "很宽" },
             Math.Max(Array.IndexOf(NoteDeckOptions.SenseChoices, settings.NotesDeckSense), 1),
             index => Save(() => settings.NotesDeckSense = NoteDeckOptions.SenseChoices[index])));
         // 「一直展开」开着时「不显示药丸」没意义、「悬停即打开」开着时「悬停预览」没意义：跟着变灰（PLAN-v23 L5，mac NotesTab .disabled）
@@ -136,7 +136,7 @@ internal sealed partial class SettingsWindow
         Deck(() => AddToggle("盖在全屏程序上", "别的程序全屏时边缘也有便签", settings.NotesDeckOverFullScreen,
             isOn => Save(() => settings.NotesDeckOverFullScreen = isOn)));
         var noteSizes = new[] { "small", "medium", "large", "extraLarge" };
-        Deck(() => AddCombo("便签大小", "从边缘打开的便签多大", new[] { "小", "中", "大", "特大" },
+        Deck(() => AddRadios("便签大小", "从边缘打开的便签多大", new[] { "小", "中", "大", "特大" },
             Math.Max(Array.IndexOf(noteSizes, settings.NotesDeckNoteSize), 1), index => Save(() => settings.NotesDeckNoteSize = noteSizes[index])));
         if (!settings.NotesDeckEnabled)
         {
