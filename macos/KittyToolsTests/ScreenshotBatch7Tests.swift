@@ -284,22 +284,28 @@ struct ScreenshotBatch7Tests {
         context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
     let menu = try #require(view.menu(for: event))
     let folder = FileManager.default.displayName(atPath: ScreenshotOutput.saveDirectory.path)
+    // 翻译这个功能关着（跟本机的功能开关）时没有「翻译」这一项
+    let translates = Feature.translate.isOn
     #expect(
-      menu.items.map(\.title) == [
-        "拷贝", "识字并拷贝", "翻译", "存储到「\(folder)」", "另存为…", "", "透明度", "原始大小", "", "关闭",
-      ])
-    let keys = menu.items.map { "\($0.keyEquivalentModifierMask.rawValue):\($0.keyEquivalent)" }
+      menu.items.map(\.title)
+        == ["拷贝", "识字并拷贝"] + (translates ? ["翻译"] : []) + [
+          "存储到「\(folder)」", "另存为…", "", "透明度", "原始大小", "", "关闭",
+        ])
+    func key(_ title: String) -> String? {
+      menu.items.first { $0.title == title }.map {
+        "\($0.keyEquivalentModifierMask.rawValue):\($0.keyEquivalent)"
+      }
+    }
     let command = NSEvent.ModifierFlags.command.rawValue
     let shiftCommand = NSEvent.ModifierFlags([.command, .shift]).rawValue
-    #expect(keys[0] == "\(command):c" && keys[1] == "0:o" && keys[3] == "\(command):s")
-    #expect(
-      keys[4] == "\(shiftCommand):s" && keys[7] == "\(command):0" && keys[9] == "\(command):w")
+    #expect(key("拷贝") == "\(command):c" && key("识字并拷贝") == "0:o")
+    #expect(key("存储到「\(folder)」") == "\(command):s" && key("另存为…") == "\(shiftCommand):s")
+    #expect(key("原始大小") == "\(command):0" && key("关闭") == "\(command):w")
     // 菜单项点下去走对应的输出
-    for index in 0..<5 {
-      let item = menu.items[index]
+    for item in menu.items.prefix(translates ? 5 : 4) {
       NSApp.sendAction(try #require(item.action), to: item.target, from: item)
     }
-    #expect(outputs == [.copy, .recognize, .translate, .save, .saveAs])
+    #expect(outputs == [.copy, .recognize] + (translates ? [.translate] : []) + [.save, .saveAs])
     // 按键和菜单查同一张表（performKeyEquivalent 要钉图真是 key，经 keyDown 走同一个查表）：
     // ⌘C 拷贝、⌘S 快速保存、⇧⌘S 另存为、单键 O 识字并拷贝；按住不放不反复执行
     outputs = []

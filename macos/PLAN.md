@@ -39,6 +39,7 @@
 | ImageIO + UniformTypeIdentifiers | 10.x / 11 | PNG 编码、读取尺寸、按需生成缩略图；录屏转 GIF（`CGImageDestination` 逐帧写 GIF，录屏录音第 7 批 `Screenshot/VideoExport.swift`）；状态屏的动画表情：读 HEICS（HEVC 图像序列，带透明通道）的每一帧和时长，转换脚本用它把动画 PNG 写成 HEICS（2026-10-10） |
 | QuickLookThumbnailing `QLThumbnailGenerator` | 10.15 | 剪贴板检查器里文件的真实缩略图（PDF 首页、图片、视频帧） |
 | QuickLookUI `QLPreviewView` | 10.6 | 剪贴板 ⌘Y 放大预览里的文件（嵌在自己的浮层里；不用 `QLPreviewPanel`，见 D3） |
+| VisionKit `ImageAnalyzer`、`ImageAnalysisOverlayView`（系统的实况文本） | 13 / 14（`selectedRanges`、`text`） | 钉图上直接选字（2026-11-17，§10「截图提示、放大镜开关和钉图选字」）：识别在系统服务 `mediaanalysisd` 里跑（本进程只多十来 MB），选区、跨行、双击选词用系统那一套；只在 `Screenshot/PinPanel.swift` |
 | Vision `RecognizeTextRequest` | 15.0 | 剪贴板图片 OCR、截图翻译识字；空闲时放掉识字模型用它的私有 `VNSession.globalSession.releaseCachedResources`（2026-10-07 用户同意，接口不在就不放，mac-clipboard §1） |
 | ScreenCaptureKit `SCShareableContent` + `SCScreenshotManager` | 14.0 | 截图翻译的冻结帧（逐屏截图）；长截图用 `SCStreamConfiguration.sourceRect`（12.3+）反复截选区 |
 | NaturalLanguage `NLLanguageRecognizer` | 10.14 | 语种检测（替代 Lingua，能识别繁体） |
@@ -1910,6 +1911,16 @@ Alfred 的 Related Apps、BetterTouchTool 按 App 停用，调研和测开销的
   不显示色值时 C 不取色、不结束截图（看不见要拷的是什么；同类里有一家明写「放大镜可见时才复制色值」），托盘的吸管照常——
   点了吸管放大镜和色值照常出来，取完回到设置的样子（`SelectionView.showsColorCard`）；按住 ⌘ 的十字准线不再跟着放大镜开关
   （`magnifierMoment`）。录屏本来就没有色值卡，C 只在「放大镜和色值」时照旧取色。
+- 第 2 批（钉图选字）：设置 › 截图「钉图上的字可以直接选」（`Prefs.pinSelectsText`，默认开，照用户点名的那家）。用系统的实况文本
+  （VisionKit，§2 加了一行）：鼠标第一次停到钉图上（和圆钮出现同一刻，0.3 s）才认字（`PinView.startText`，所有钉图共用一个
+  `ImageAnalyzer`，一张只认一次，关钉图取消），认出字才叠一层 `ImageAnalysisOverlayView`（压在圆钮和缩放百分比下面，藏掉系统角上
+  的「实况文本」钮）。代理 `shouldBeginAt`：按在字上、没按 ⌥ 才归选字层（顺手 `makeKey`），别的都落回钉图——空白处的拖动、
+  双击（关）、滚轮（缩放）选字层本来就不接（探针实测），字上双击是选词、不关钉图；按键一律归钉图（`shouldHandleKeyDownEvent`
+  false），右键换成钉图自己的菜单（`updatedMenuFor`：系统那份的拷贝绕过 Paster、动作是私有方法）。命令表加两项（第 0 组，只在
+  用得上时出现：`Command.available`）：选中了字时「拷贝」⌘C 拷贝字（交给 `PinBoard.copyText`，AppDelegate 接 `Paster.write(string:
+  record: true)` + 岛「已复制」），整张图那项改叫「拷贝图像」、不带键；认出字后「全选文字」⌘A。Esc 先清选区、再按才关。
+  ponytail：语种跟系统首选语言（探针：只给中英会整行丢韩文，不给时粗体中文标题偶尔认成拉丁字母），认错的用 O 识字；
+  按住 ⌥ 时字上的光标仍是 I 形（系统选字层管光标）。
 
 ## 11½. Whisker 设计语言改造（2026-09-25 起）
 

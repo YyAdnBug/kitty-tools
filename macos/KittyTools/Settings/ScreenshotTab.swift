@@ -1,6 +1,6 @@
 // 设置 › 截图：⌘S 快速保存的位置（文件夹图标 + 访达里的名字，选过的能恢复默认，体检 A28；录屏、录音也存这里，
 // 「录制」页的「保存到」是同一行 SaveDirectoryRow）、截图拷贝为图像还是 PNG 文件（2026-11-06）、快门声（可试听）、截图后留不留常驻缩略图（体检 D18）、
-// 框选时显示操作提示、框选时的放大镜（2026-11-17：放大镜和色值 / 只显示放大镜 / 不显示）、
+// 框选时显示操作提示、框选时的放大镜（2026-11-17：放大镜和色值 / 只显示放大镜 / 不显示）、钉图上的字可以直接选（2026-11-17）、
 // 框选后工具栏靠右还是居中（2026-11-05，录屏的录制条同一个设置）、框选时保持屏幕原色（2026-11-06，不压暗不染色）、
 // 悬停时识别窗口里的元素（2026-11-08，要辅助功能授权：没授权时开关下面出授权那一行；2026-11-15 加子开关「也认网页里的元素」）、识字是否把同一段里的换行接起来（开关旁边实时对照效果，
 // 体检 A32）。截图历史改短保留期 / 改小占用会删掉东西时先问
@@ -24,6 +24,7 @@ struct ScreenshotTab: View {
   @AppStorage(Prefs.screenshotCopyAs) private var copyAs = "image"
   @AppStorage(Prefs.screenshotKeepsColors) private var keepsColors = false
   @AppStorage(Prefs.screenshotShowsHint) private var showsHint = true
+  @AppStorage(Prefs.pinSelectsText) private var pinSelectsText = true
   @AppStorage(Prefs.screenshotLoupe) private var loupe = Prefs.Loupe.full.rawValue
   @AppStorage(Prefs.screenshotFindsElements) private var findsElements = false
   @AppStorage(Prefs.screenshotFindsWebElements) private var findsWebElements = false
@@ -164,6 +165,12 @@ struct ScreenshotTab: View {
               ? "截完图挂到屏幕顶上的绳子上，最多 8 张：鼠标停到菜单栏那一条上它就滑下来，单击拷贝、双击改标注、拖出去发一份，点右上角的叉取下。取下不删历史。"
               : "角落的缩略图可以拖出、钉图、存储；选「都不要」后截图只在右下角闪一下，仍然进历史。"
           )
+        }
+        Section {
+          Toggle(isOn: $pinSelectsText) {
+            Text("钉图上的字可以直接选")
+            Text("鼠标停到钉图上时认出图里的字，在字上拖动就是选字，⌘C 拷贝。空白处照旧拖着挪，按住 ⌥ 在哪都能挪")
+          }
         }
         Section {
           Toggle("识字后把同一段里的换行接起来", isOn: $joinLines)

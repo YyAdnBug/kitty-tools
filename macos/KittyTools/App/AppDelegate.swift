@@ -321,6 +321,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
       }
     }
+    // 钉图上选中的字（2026-11-17）：同识字，记进剪贴板历史
+    board.copyText = { [unowned self] text in
+      Paster.write(string: text, record: true)
+      island.show("已复制", detail: "\(Island.excerpt(text))")
+    }
     return board
   }()
 

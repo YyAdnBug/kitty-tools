@@ -1142,6 +1142,37 @@ struct ScreenshotSnapshotTests {
     try write(try #require(image.cropping(to: pixels)), to: "\(stem)-crop.png")
   }
 
+  /// 钉图上选字（2026-11-17）：认出字、⌘A 全选之后的样子（选区高亮是系统的选字层画的）
+  @Test(.enabled(if: directory != nil)) func renderPinTextSelection() async throws {
+    let out = try #require(Self.directory)
+    Prefs.registerDefaults()  // 「钉图上的字可以直接选」的默认值（只写注册域）
+    let board = PinBoard()
+    board.pin(PinTextTests.image, frame: CGRect(x: -20000, y: -20000, width: 700, height: 200))
+    defer { board.closeAll() }
+    let panel = try #require(board.panels.first)
+    panel.finishPopIn()
+    panel.orderFront(nil)
+    await panel.prepareText()
+    let pin = try #require(panel.contentView)
+    pin.keyDown(
+      with: try #require(
+        NSEvent.keyEvent(
+          with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0, windowNumber: 0,
+          context: nil, characters: "a", charactersIgnoringModifiers: "a", isARepeat: false,
+          keyCode: UInt16(kVK_ANSI_A))))
+    try await Task.sleep(for: .milliseconds(300))  // 选区高亮画上
+    let size = pin.bounds.size
+    let bitmap = try #require(
+      NSBitmapImageRep(
+        bitmapDataPlanes: nil, pixelsWide: Int(size.width * 2), pixelsHigh: Int(size.height * 2),
+        bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+        colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+    let context = try #require(NSGraphicsContext(bitmapImageRep: bitmap)).cgContext
+    context.scaleBy(x: 2, y: 2)
+    try #require(pin.layer).render(in: context)
+    try write(try #require(bitmap.cgImage), to: "\(out)/shot-pin-text-selected.png")
+  }
+
   // 钉图的透明度滑块（2026-10-03）：右键「透明度 ▸」、悬停圆钮弹出的那一行（60%、最低 10%，浅 / 深色），垫在菜单材质上看对齐
   @Test(.enabled(if: directory != nil)) func renderPinOpacity() throws {
     let out = try #require(Self.directory)

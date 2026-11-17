@@ -152,6 +152,14 @@ M1 起的实测结论。代码：`Shell/OverlayPanel.swift`、`HotKeyCenter.swif
 - `PinPanel`：`.borderless + .nonactivatingPanel`、`.floating`、`canBecomeKey`；显示只 `orderFrontRegardless`，**不 makeKey**（出现时不抢键盘）；用户点了它才 makeKey，Esc / ⌘C 才归它。
 - 原位置出现（选区的全局坐标），`constrainFrameRect` 原样返回，别被挪出菜单栏区域。拖动用 `performDrag(with:)`，双击关闭；缩放以鼠标为锚点、保持宽高比。
 - 不做点击穿透、不做钉图历史；钉图是看得见的浮动窗口，按 §8 的留用名单留在之后的截图里（隐藏着的不截）。
+- **钉图上选字**（2026-11-17，设置 › 截图「钉图上的字可以直接选」默认开；PLAN §10「截图提示、放大镜开关和钉图选字」）：系统的实况文本，
+  VisionKit 只在 `PinPanel.swift`。鼠标第一次停上来（`mouseEntered` 那 0.3 s 之后）才 `startText()`，一张钉图只认一次、关钉图取消，
+  认出字才挂 `ImageAnalysisOverlayView`（`addSubview(_:positioned: .below, relativeTo: controls)`，`isSupplementaryInterfaceHidden`）。
+  **分流全靠代理，别给选字层另写 hitTest**：`shouldBeginAt` 只在 `hasText(at:)` 且这一下没按 ⌥（`NSApp.currentEvent`）时返回 true，
+  否则事件落回 `PinView`（拖动 `performDrag`、双击关、滚轮缩放都照旧；实测选字层自己就不接空白处的这些）；坐标是左上原点。
+  `shouldHandleKeyDownEvent` false（按键都走 `perform` 的命令表），`updatedMenuFor` 返回钉图自己的 `menu(for:)`。命令表的
+  `available` 决定一项在不在菜单、读屏和按键里：选中了字时第 0 组的「拷贝」⌘C 排在前面先被认，整张图那项改叫「拷贝图像」不带键；
+  拷贝文字走 `PinBoard.copyText`（单测接住，不碰真剪贴板）。Esc 有选区先 `resetSelection()`。
 - 按键（钉图是 key 时，和截图出图同义，体检 C9 D17）：⌘C 拷贝、O 识字并拷贝（不重复）、⌘S 快速保存（岛「已保存到「桌面」」+ 文件名 + 缩略图，失败改放剪贴板）、⇧⌘S 另存为…、⌘0 原始大小、⌘W / Esc 关闭；修饰键只比 ⌘⌃⌥⇧。右键菜单「拷贝 / 识字并拷贝 / 翻译 / 存储到「桌面」/ 另存为… ｜ 透明度 ▸ / 原始大小 ｜ 关闭」，和 VoiceOver 自定义动作、按键（`keyDown` / `performKeyEquivalent` 都经 `perform(_:)` 按 keyCode + 修饰键查表，按住不放不反复执行）同一份 `PinView.commands`，不另写 switch；输出全走 `PinBoard.output(动作, 图, 像素 / 点)`（`RegionSelector.Action`），AppDelegate 接到 `copyImage` / `saveImage` / `copyRecognizedText(in:)` / `translateImage(_:)`。
 - 无障碍（体检 B45）：`PinView` 是一个图像元素（名字「钉图」、值「宽 × 高 点，透明度 N%」）；钉上时播报「已钉到屏幕」（钉图不抢键盘，VoiceOver 焦点不在它上面）。用户选的透明度记在 `PinPanel.opacity`（长截图让开时窗口临时 0.3，`resume` 回到它）。透明度滑块（`OpacitySlider`，10–100%，2026-10-03）是一个 `NSMenuItem.view`：悬停圆钮 `popUp(positioning:at:in:)` 弹出、右键「透明度 ▸」的子菜单，同一个 `opacityMenu()`；放进菜单是因为菜单是自己的窗口——钉图按窗口 `alphaValue` 变淡，放在钉图里的控件会跟着淡。单测 `ScreenshotBatch7Tests.pinOpacitySlider` 经右键菜单拿到滑块、发 action 验透明度和旁白（`popUp` 会卡住测试，不点圆钮）。
 - 剪贴板里的图片也能钉（体检 D1，⌘K / 右键 / ⌘Y 页脚「钉到屏幕」；文字条目 2026-11-05 起在 ⌘K / 右键里也能钉，排成卡片 `PinBoard.textCard`，见 mac-clipboard §4）：同一块 `PinBoard`，AppDelegate 接给 `ClipboardPanelModel.pinImage`；位置是鼠标所在屏可见区中央，点尺寸 = 像素 ÷ 该屏 `backingScaleFactor`，超过可见区 80% 等比缩小，多张往右下错开 24 pt（`ClipboardPanelModel.pinFrame`）；剪贴板面板没固定就先 `hide()`。

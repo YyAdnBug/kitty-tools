@@ -8382,6 +8382,16 @@
         }
       }
     },
+    "全选文字" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Select All Text"
+          }
+        }
+      }
+    },
     "全选（搜索框为空时）" : {
       "localizations" : {
         "en" : {
@@ -21201,6 +21211,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Copy Command"
+          }
+        }
+      }
+    },
+    "拷贝图像" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy Image"
           }
         }
       }
@@ -37949,6 +37969,16 @@
         }
       }
     },
+    "钉图上的字可以直接选" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Select text directly on pins"
+          }
+        }
+      }
+    },
     "钉在屏幕上" : {
       "localizations" : {
         "en" : {
@@ -38802,6 +38832,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Default Color"
+          }
+        }
+      }
+    },
+    "鼠标停到钉图上时认出图里的字，在字上拖动就是选字，⌘C 拷贝。空白处照旧拖着挪，按住 ⌥ 在哪都能挪" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When the pointer rests on a pin, its text is recognized: drag over the text to select it and press ⌘C to copy. Drag empty areas to move the pin as before, or hold ⌥ to move it from anywhere"
           }
         }
       }

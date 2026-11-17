@@ -179,6 +179,9 @@ enum Prefs {
   /// 框选时的放大镜（2026-11-17 拍板 B1–B3，Loupe 的 rawValue）：full 放大镜和色值（默认）/ loupe 只显示放大镜 / off 不显示。
   /// 读它用 Loupe.current
   static let screenshotLoupe = "screenshotLoupe"
+  /// 钉图上的字可以直接选（2026-11-17 拍板 C2，默认开）：鼠标第一次停到钉图上时用系统的实况文本认出图里的字，字上拖动选字、
+  /// ⌘C 拷贝；空白处照旧拖着挪，按住 ⌥ 在哪都能挪。关掉 = 原来的样子（任意处拖动都是挪）
+  nonisolated static let pinSelectsText = "pinSelectsText"
   /// 截图 / 录屏框选时悬停识别窗口里的元素（侧栏、列表、按钮，2026-11-08；拍板 D1 是默认开，同日用户改成默认关）：要辅助功能授权，
   /// 没授权时照旧只认窗口。关掉 = 只认窗口（原来的样子）。截图翻译 / 识字没有悬停，不管它
   static let screenshotFindsElements = "screenshotFindsElements"
@@ -580,6 +583,7 @@ enum Prefs {
       scrollCaptureSpeed: ScrollSpeed.normal.rawValue,
       screenshotKeepsColors: false,
       screenshotShowsHint: true,
+      pinSelectsText: true,
       screenshotLoupe: Loupe.full.rawValue,
       screenshotFindsElements: false,
       screenshotFindsWebElements: false,
