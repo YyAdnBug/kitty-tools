@@ -156,13 +156,14 @@ public sealed class NoteWallTests
     [TestMethod]
     public void CardLinesDrawHeadingsAndBulletsWithoutMarkers()
     {
-        // PLAN-v16 V2：标题去掉 # 按几级画、列表符号换成圆点（缩进留着）、代码块的围栏行不要、块里的行原样、别的行去掉行内标记
+        // PLAN-v16 V2：标题去掉 # 按几级画、代码块的围栏行不要、块里的行原样、别的行去掉行内标记；
+        // 列表符号照原样（R108：同 mac 画成淡色的「-」，不再换成圆点），缩进留着
         var lines = NoteWall.CardLines(Make("# 周末\n- 前端改两处\n  * 子项 **粗**\n## 行李\n> 记得同步\n```\ngit log -5\n```\n普通 `代码`\n", "会议纪要"));
         CollectionAssert.AreEqual(new[]
         {
             new NoteWall.CardLine(NoteWall.CardLineKind.Heading, "周末", Level: 1),
-            new NoteWall.CardLine(NoteWall.CardLineKind.Bullet, "前端改两处"),
-            new NoteWall.CardLine(NoteWall.CardLineKind.Bullet, "子项 粗", Indent: 2),
+            new NoteWall.CardLine(NoteWall.CardLineKind.Bullet, "前端改两处", Lead: "- "),
+            new NoteWall.CardLine(NoteWall.CardLineKind.Bullet, "子项 粗", Indent: 2, Lead: "* "),
             new NoteWall.CardLine(NoteWall.CardLineKind.Heading, "行李", Level: 2),
             new NoteWall.CardLine(NoteWall.CardLineKind.Plain, "记得同步"),
             new NoteWall.CardLine(NoteWall.CardLineKind.Code, "git log -5"),
@@ -275,6 +276,62 @@ public sealed class NoteWallTests
         Drag(1, 0);
         Assert.AreEqual("DB|ECA", Shown());
         Assert.IsNull(NoteWall.StoreIndex("x", new[] { "a" }, new NoteRange(0, 1), new[] { "a" }));
+    }
+
+    /// <summary>R108：墙上拖完写回真的仓库——StoreIndex 给的下标交给 NoteBook.Move，只改被拖那条的顺序、记下改顺序的时刻（同步按它合）。</summary>
+    [TestMethod]
+    public void WallDragMovesTheBookAndStampsTheOrder()
+    {
+        const long t0 = 1_760_000_000_123;
+        var book = new NoteBook(() => "DEVICE-A");
+        // 建的顺序反着排在最前：E D C B A
+        var ids = new[] { "A", "B", "C", "D", "E" }.ToDictionary(name => name, name => book.Create(t0, name).Id);
+        book.SetPinned(ids["D"], true, t0);
+        string Name(string id) => ids.First(pair => pair.Value == id).Key;
+        List<string> Order() => book.Active.Select(note => note.Id).ToList();
+        // 墙：固定的一段（D）+ 其他（E C B A）
+        List<string> Wall() => Order().Where(id => book.Find(id)!.IsPinned).Concat(Order().Where(id => !book.Find(id)!.IsPinned)).ToList();
+        Assert.AreEqual("D|ECBA", string.Concat(Wall().Take(1).Select(Name)) + "|" + string.Concat(Wall().Skip(1).Select(Name)));
+
+        // 「其他」那段里把 A（墙上第 4 张）拖到 E 上（第 1 张）
+        var wall = Wall();
+        var moved = NoteWall.Moved(wall, 4, 1);
+        var at = NoteWall.StoreIndex(ids["A"], moved, new NoteRange(1, 4), Order());
+        Assert.IsNotNull(at);
+        var later = t0 + 5_000;
+        var others = book.Active.Where(note => note.Id != ids["A"]).ToDictionary(note => note.Id, note => note.Order);
+        Assert.IsTrue(book.Move(ids["A"], at.Value, later));
+        Assert.AreEqual("AECB", string.Concat(Wall().Skip(1).Select(Name)));
+        Assert.AreEqual(later, book.Find(ids["A"])!.OrderChangedAt);
+        // 别的几条一动不动（顺序值、改顺序的时刻都没变）
+        foreach (var (id, order) in others)
+        {
+            Assert.AreEqual(order, book.Find(id)!.Order);
+            Assert.AreNotEqual(later, book.Find(id)!.OrderChangedAt);
+        }
+    }
+
+    /// <summary>R108：只建可见区附近的卡片——这一段上下各多 320；挑中的、拖着的滚走了也建；段的顶夹在墙底往上一屏；量准到哪。</summary>
+    [TestMethod]
+    public void OnlyCardsNearTheViewportAreBuilt()
+    {
+        var ids = Enumerable.Range(0, 90).Select(index => $"n{index}").ToArray();
+        var layout = NoteWall.Arrange(new[] { Section(ids, ids.Select(_ => 100.0).ToArray()) }, 940);
+        Assert.AreEqual(1060, NoteWall.Reach(0, 500));
+        Assert.AreEqual(0, NoteWall.Band(-30));
+        Assert.AreEqual(2, NoteWall.Band(500));
+
+        // 三列、每排高 116（100 + 16），第 k 排的顶在 20 + 116k：第 0 段要 [−320, 1060] 里的排，0…8 排共 27 张
+        var first = NoteWall.Visible(layout, 0, 500, Array.Empty<string?>());
+        CollectionAssert.AreEqual(Enumerable.Range(0, 27).ToList(), first);
+        // 挑中的那张在墙底：照样建
+        var kept = NoteWall.Visible(layout, 0, 500, new string?[] { "n89", null });
+        Assert.AreEqual(28, kept.Count);
+        Assert.AreEqual(89, kept[^1]);
+        // 滚到很深的一段：夹在墙底往上一屏，最后一张在里面、第一张不在
+        var deep = NoteWall.Visible(layout, 1000, 500, Array.Empty<string?>());
+        Assert.IsTrue(deep.Contains(89) && !deep.Contains(0));
+        Assert.IsTrue(deep.All(index => layout.Frames[index].Bottom >= layout.Height - 500 - NoteWall.Overscan));
     }
 
     // ---- 编辑卡 ----

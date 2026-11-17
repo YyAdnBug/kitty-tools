@@ -9,7 +9,9 @@
 // 落盘：打字走仓库（停手再落）；换一条、收回编辑卡、窗口失去激活、关窗口时 Flush。
 // 便签墙的键盘（PLAN-v20 N3，mac NotesWallView）：墙拿着焦点时方向键在卡片之间挑（Core NoteWall.Neighbor：同一列上下、左右去最近的一列），
 // 挑中的那张描一圈强调色、滚进视野；Enter / 空格放大成编辑卡，Esc 收回后焦点回到墙上、还是那张。
-// ponytail: 便签墙不能拖动排序（mac 能）、卡片一次全画（mac 可见区附近的先建、其余分批建）；几百条以内没事，要再说。
+// 便签墙（R108，同 mac）：能拖动排序（「全部」里、没在搜索时；松手按 NoteWall.StoreIndex 写回顺序）；只建可见区附近的卡片，
+// 往下的高在后面分批量（「便签墙」那一节的注释）；卡片上的列表符号是淡色的原符号、代码块垫代码的底。
+using System.Numerics;
 using KittyTools.Core;
 using KittyTools.Core.Notes;
 using KittyTools.Infrastructure;
@@ -137,6 +139,16 @@ internal sealed class NotesWindow : Window
         _wallCanvas = new Canvas();
         _wallScroll = new ScrollViewer { Content = _wallCanvas, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, IsTabStop = true };
         _wallScroll.SizeChanged += (_, _) => ArrangeWall();
+        // 滚动位置按段记：跨段才重排、建新露出来的卡片（R108）
+        _wallScroll.ViewChanged += (_, _) =>
+        {
+            var band = NoteWall.Band(_wallScroll.VerticalOffset);
+            if (band != _wallBand)
+            {
+                _wallBand = band;
+                ArrangeWall();
+            }
+        };
         // 先于 ScrollViewer 自己处理方向键（不然方向键只是滚动）
         _wallScroll.PreviewKeyDown += OnWallKeyDown;
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_wallScroll, "便签墙：方向键挑一张，Enter 打开");
@@ -206,6 +218,7 @@ internal sealed class NotesWindow : Window
             }
 
             _populateTimer?.Stop();
+            _measureTimer?.Stop();
             _instance = null;
             IdleReclaimer.Schedule();
         };
@@ -476,7 +489,10 @@ internal sealed class NotesWindow : Window
         }
         if (_wallMode)
         {
-            ArrangeWall();
+            // 顺序变了（固定、删除、在别处挪了、搜索词筛掉了几张）：卡片滑到新位置（同 mac settle）；只是打字、换时间不动
+            var before = _wallSections.SelectMany(section => section.Ids).ToList();
+            BuildWallSections();
+            ArrangeWall(animate: before.Count > 0 && !before.SequenceEqual(_wallSections.SelectMany(section => section.Ids)));
             if (_editCard.Visibility == Visibility.Visible)
             {
                 _cardSheet.Show(SelectedNote?.Id);
@@ -682,6 +698,11 @@ internal sealed class NotesWindow : Window
         SettingsService.Current.NotesWindowLayout = _wallMode ? "wall" : "list";
         SettingsService.Save();
         CollapseCard();
+        if (!_wallMode)
+        {
+            ClearWall();
+        }
+
         Populate();
     }
 
@@ -832,8 +853,89 @@ internal sealed class NotesWindow : Window
     }
 
     // ---- 便签墙 ----
+    // 只建可见区附近的卡片（R108，mac NotesWallView + ListWindow）：位置全按排法算（NoteWall.Arrange），卡片的高按便签记下（_cardHeights：
+    // 标题、正文、固定、删没删没变就不再量）；顶在可见区附近的（NoteWall.Reach）当场量，往下的先按 EstimatedHeight 排、在后面几轮分批量好
+    // （一轮最多 8 ms，量完按真的高重排一次，挪的都在看不见的地方）。只建 NoteWall.Visible 那几张（加上方向键挑中的、正拖着的），
+    // 滚动位置按段记，跨段才重算；卡片的视图按便签留着（_wallViews），滚出去的拆掉。
+    // 拖动排序（R108，mac cardGesture）：按下就开始跟，挪过 4 才算拖（只在「全部」里、没在搜索时；触屏不拖，点一下照样开）；被拖的跟着指针走、
+    // 立正，指针进到同一段里另一张的里面（四边各收 20%）时它让到那个位置，别的卡片滑开（glide）；落点只看拖动开始时那份排法
+    // （NoteWall.DropTarget）；松手按 NoteWall.StoreIndex 写回仓库的顺序（NoteBook.Move：只改它自己的顺序值、记改顺序的时刻，同步照合）。
+    // 拖到可见区外不会自己滚（同 mac 的 ponytail）。
 
-    private void ArrangeWall()
+    /// <summary>卡片的高看的东西：显示的标题、正文、固定（标题让出图钉的位置）、在不在最近删除（那里显示原文）。</summary>
+    private readonly record struct CardKey(string Title, string Body, bool Pinned, bool Deleted);
+
+    /// <summary>墙上建着的一张：外层 holder（摆在墙上、拖动让位时 Composition 挪它）、卡片本身（纸、倾斜、挑中时的描边）、底下那行小字（每次重排换一下时间）。
+    /// Offset 是 holder 现在被挪向的位移（拖动让位时不为 0）。</summary>
+    private sealed class WallCard(CardKey key, int color, bool dark, Grid holder, Border card, TextBlock footer)
+    {
+        public CardKey Key { get; } = key;
+        public int Color { get; } = color;
+        public bool Dark { get; } = dark;
+        public Grid Holder { get; } = holder;
+        public Border Card { get; } = card;
+        public TextBlock Footer { get; } = footer;
+        public Vector2 Offset { get; set; }
+        public bool Placed { get; set; }
+    }
+
+    /// <summary>正拖着的那张：编号、拖动开始时那份排法里原来是第几张、现在让到第几张、按下时指针离卡片左上角多远。</summary>
+    private sealed class WallDrag(string id, int from, Vector2 grab)
+    {
+        public string Id { get; } = id;
+        public int From { get; } = from;
+        public int To { get; set; } = from;
+        public Vector2 Grab { get; } = grab;
+    }
+
+    private readonly Dictionary<string, (CardKey Key, double Height)> _cardHeights = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, WallCard> _wallViews = new(StringComparer.Ordinal);
+    private readonly List<TextBlock> _wallHeaders = new();
+    private readonly HashSet<string> _pendingHeights = new(StringComparer.Ordinal);
+    private List<(string? Title, IReadOnlyList<string> Ids)> _wallSections = new();
+    private Dictionary<string, Note> _wallNotes = new(StringComparer.Ordinal);
+    private Microsoft.UI.Dispatching.DispatcherQueueTimer? _measureTimer;
+    private int _wallBand;
+    private double _wallWidth;
+
+    /// <summary>拖动开始时那份排法（落点只看它）；拖着时墙上画的是让过位的那份（_wallLayout）。</summary>
+    private NoteWall.Layout? _wallBase;
+    private WallDrag? _wallDrag;
+
+    // 按下了一张卡片（还没算拖）：哪张、按下的地方（墙的坐标）
+    private string? _wallPressed;
+    private Vector2 _wallPressedAt;
+
+    /// <summary>能拖动排序：「全部」里、没在搜索（墙；列表另有 CanReorder）。</summary>
+    private bool CanReorderWall => _scope == NotesScope.All && Core.Search.Tokens(_search.Text).Length == 0;
+
+    private double WallViewport => _wallScroll.ViewportHeight > 0 ? _wallScroll.ViewportHeight : 600;
+
+    /// <summary>按现在的视图、搜索词分好段（固定的在前，最近删除里不分）；仓库变了、换了视图 / 搜索词时调，之后 ArrangeWall。</summary>
+    private void BuildWallSections()
+    {
+        var notes = Notes;
+        _wallNotes = notes.ToDictionary(note => note.Id, StringComparer.Ordinal);
+        var pinned = notes.Where(note => note.IsPinned && _scope != NotesScope.Trash).Select(note => note.Id).ToList();
+        var others = notes.Where(note => !(note.IsPinned && _scope != NotesScope.Trash)).Select(note => note.Id).ToList();
+        _wallSections = _scope == NotesScope.Trash || pinned.Count == 0
+            ? new List<(string? Title, IReadOnlyList<string> Ids)> { (null, notes.Select(note => note.Id).ToList()) }
+            : new List<(string? Title, IReadOnlyList<string> Ids)> { ("已固定", pinned), ("其他", others) };
+        if (NoteStore.Instance is { } store)
+        {
+            // 不在了的便签不再记它的高
+            foreach (var gone in _cardHeights.Keys.Where(id => store.Book.Find(id) is null).ToList())
+            {
+                _cardHeights.Remove(gone);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 排墙、建看得见的卡片。animate：位置变了的卡片从原来画在的地方滑过去（顺序变了、拖完落下；同 mac：窗口改宽、打字变高、滚动不动画）。
+    /// 拖着一张时墙上是让过位的样子（各段的张数不变，只在同一段里挪）。
+    /// </summary>
+    private void ArrangeWall(bool animate = false)
     {
         if (!_wallMode || NoteStore.Instance is not { } store)
         {
@@ -841,61 +943,399 @@ internal sealed class NotesWindow : Window
         }
 
         var width = _wallScroll.ActualWidth > 0 ? _wallScroll.ActualWidth : 1000;
-        var notes = Notes;
-        var pinned = notes.Where(note => note.IsPinned && _scope != NotesScope.Trash).ToList();
-        var others = notes.Where(note => !(note.IsPinned && _scope != NotesScope.Trash)).ToList();
-        var sections = _scope == NotesScope.Trash || pinned.Count == 0
-            ? new List<(string? Title, IReadOnlyList<string> Ids)> { (null, notes.Select(note => note.Id).ToList()) }
-            : new List<(string? Title, IReadOnlyList<string> Ids)>
-            {
-                ("固定的", pinned.Select(note => note.Id).ToList()),
-                ("其他", others.Select(note => note.Id).ToList()),
-            };
-        var ordered = sections.SelectMany(section => section.Ids).ToList();
+        animate &= Math.Abs(width - _wallWidth) < 0.5;
+        _wallWidth = width;
+        var ordered = _wallSections.SelectMany(section => section.Ids).ToList();
+        var reach = NoteWall.Reach(_wallBand, WallViewport);
         var dark = Theme.EffectiveTheme == ElementTheme.Dark;
-        var cards = new List<FrameworkElement>();
-        var layout = NoteWall.Arrange(sections, width, (index, _) =>
+        var built = new Dictionary<string, WallCard>(StringComparer.Ordinal);
+        _pendingHeights.Clear();
+        var based = NoteWall.Arrange(_wallSections, width, (index, top) => HeightOf(store, ordered[index], top < reach, dark, built));
+        _wallBase = based;
+        var shown = based;
+        if (_wallDrag is { } drag)
         {
-            var note = store.Book.Find(ordered[index])!;
-            var (card, height) = Card(note, store.Book.SummaryOf(note), dark);
-            cards.Add(card);
-            return height;
-        });
-        _wallLayout = layout;
-        _wallIds = ordered;
-        _wallCards = cards;
-        _wallCanvas.Children.Clear();
-        _wallCanvas.Height = layout.Height;
+            if (drag.From >= based.Ids.Count || based.Ids[drag.From] != drag.Id)
+            {
+                // 拖着的时候墙变了（它被删了、别处改了顺序）：当没拖
+                _wallDrag = null;
+            }
+            else if (drag.To != drag.From)
+            {
+                shown = ArrangeMoved(drag, width);
+            }
+        }
+
+        _wallLayout = shown;
+        _wallIds = shown.Ids.ToList();
+        _wallCanvas.Height = shown.Height;
         _wallCanvas.Width = width;
+        PlaceHeaders(shown);
+        Materialize(store, shown, dark, built, animate);
+        MarkWallFocus(bringIntoView: false);
+        if (_pendingHeights.Count > 0)
+        {
+            StartMeasuring();
+        }
+    }
+
+    /// <summary>拖着时让过位的各段：第 from 张挪成第 to 张（同一段里），各段张数不变。</summary>
+    private List<(string? Title, IReadOnlyList<string> Ids)> MovedSections(int from, int to)
+    {
+        var moved = NoteWall.Moved(_wallSections.SelectMany(section => section.Ids).ToList(), from, to);
+        var result = new List<(string? Title, IReadOnlyList<string> Ids)>();
+        var start = 0;
+        foreach (var (title, ids) in _wallSections)
+        {
+            result.Add((title, moved.GetRange(start, ids.Count)));
+            start += ids.Count;
+        }
+
+        return result;
+    }
+
+    /// <summary>拖着时让过位的那份排法：卡片的高只用记下的（没量过的按估计的），不当场量。</summary>
+    private NoteWall.Layout ArrangeMoved(WallDrag drag, double width)
+    {
+        var sections = MovedSections(drag.From, drag.To);
+        var ids = sections.SelectMany(section => section.Ids).ToList();
+        return NoteWall.Arrange(sections, width,
+            (index, _) => _cardHeights.TryGetValue(ids[index], out var cached) ? cached.Height : NoteWall.EstimatedHeight);
+    }
+
+    /// <summary>一张卡片的高：记下的（标题、正文、固定、删没删没变）；没有就看要不要当场量——顶在可见区附近的量（顺手把卡片建好留给 Materialize），
+    /// 往下的先按估计的高、记进待量的。</summary>
+    private double HeightOf(NoteStore store, string id, bool measureNow, bool dark, Dictionary<string, WallCard> built)
+    {
+        if (!_wallNotes.TryGetValue(id, out var note))
+        {
+            return NoteWall.EstimatedHeight;
+        }
+
+        var summary = store.Book.SummaryOf(note);
+        var key = new CardKey(summary.Title, note.Body, note.IsPinned, note.DeletedAt is not null);
+        if (_cardHeights.TryGetValue(id, out var cached) && cached.Key == key)
+        {
+            return cached.Height;
+        }
+
+        if (!measureNow)
+        {
+            // 往下的先不量：改过的按上次量的高（比估计的近），没量过的按估计的
+            _pendingHeights.Add(id);
+            return _cardHeights.TryGetValue(id, out var stale) ? stale.Height : NoteWall.EstimatedHeight;
+        }
+
+        var (card, height) = Card(note, summary, key, dark);
+        _cardHeights[id] = (key, height);
+        built[id] = card;
+        return height;
+    }
+
+    /// <summary>往下那些按估计的高排着的：一轮最多量 8 ms（按墙上的顺序），都量好了按真的高重排一次。拖着的时候不量。</summary>
+    private void StartMeasuring()
+    {
+        if (_measureTimer is null)
+        {
+            _measureTimer = DispatcherQueue.CreateTimer();
+            _measureTimer.Interval = TimeSpan.FromMilliseconds(16);
+            _measureTimer.Tick += (_, _) => MeasureSome();
+        }
+
+        if (!_measureTimer.IsRunning)
+        {
+            _measureTimer.Start();
+        }
+    }
+
+    private void MeasureSome()
+    {
+        if (_wallDrag is not null || _wallPressed is not null)
+        {
+            return;
+        }
+
+        if (!_wallMode || NoteStore.Instance is not { } store || _pendingHeights.Count == 0)
+        {
+            _measureTimer?.Stop();
+            return;
+        }
+
+        var dark = Theme.EffectiveTheme == ElementTheme.Dark;
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        foreach (var id in _wallSections.SelectMany(section => section.Ids).Where(_pendingHeights.Contains).ToList())
+        {
+            _pendingHeights.Remove(id);
+            if (_wallNotes.TryGetValue(id, out var note))
+            {
+                var summary = store.Book.SummaryOf(note);
+                var key = new CardKey(summary.Title, note.Body, note.IsPinned, note.DeletedAt is not null);
+                _cardHeights[id] = (key, Card(note, summary, key, dark).Height);
+            }
+
+            if (clock.ElapsedMilliseconds >= 8)
+            {
+                return;
+            }
+        }
+
+        _measureTimer?.Stop();
+        ArrangeWall();
+    }
+
+    private void PlaceHeaders(NoteWall.Layout layout)
+    {
+        foreach (var old in _wallHeaders)
+        {
+            _wallCanvas.Children.Remove(old);
+        }
+
+        _wallHeaders.Clear();
         foreach (var header in layout.Headers)
         {
             var label = new TextBlock { Text = header.Title, FontSize = 12, Foreground = Theme.SecondaryText() };
             Canvas.SetLeft(label, header.Frame.X);
             Canvas.SetTop(label, header.Frame.Y + 4);
             _wallCanvas.Children.Add(label);
+            _wallHeaders.Add(label);
         }
+    }
 
-        for (var index = 0; index < cards.Count && index < layout.Frames.Count; index++)
+    /// <summary>建 NoteWall.Visible 那几张（留着的视图照用、换一下底下的时间；改过的重建），摆到排法给的位置，滚出去的拆掉。</summary>
+    private void Materialize(NoteStore store, NoteWall.Layout layout, bool dark, Dictionary<string, WallCard> built, bool animate)
+    {
+        var visible = NoteWall.Visible(layout, _wallBand, WallViewport, new[] { _wallFocus, _wallDrag?.Id });
+        var wanted = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var index in visible)
         {
+            var id = layout.Ids[index];
+            if (!_wallNotes.TryGetValue(id, out var note))
+            {
+                continue;
+            }
+
+            wanted.Add(id);
+            var summary = store.Book.SummaryOf(note);
+            var key = new CardKey(summary.Title, note.Body, note.IsPinned, note.DeletedAt is not null);
+            if (!_wallViews.TryGetValue(id, out var view) || view.Key != key || view.Color != note.Color || view.Dark != dark)
+            {
+                if (view is not null)
+                {
+                    _wallCanvas.Children.Remove(view.Holder);
+                }
+
+                if (built.TryGetValue(id, out var fresh) && fresh.Key == key)
+                {
+                    view = fresh;
+                }
+                else
+                {
+                    var made = Card(note, summary, key, dark);
+                    view = made.Card;
+                    _cardHeights[id] = (key, made.Height);
+                }
+
+                _wallViews[id] = view;
+                _wallCanvas.Children.Add(view.Holder);
+            }
+            else
+            {
+                view.Footer.Text = FooterText(note, summary);
+            }
+
             var frame = layout.Frames[index];
-            var card = cards[index];
-            card.Width = frame.Width;
-            card.Height = frame.Height;
-            card.RenderTransformOrigin = new Windows.Foundation.Point(0.5, 0.5);
-            card.RenderTransform = new RotateTransform { Angle = Motion.Reduced ? 0 : layout.Tilts[index] };
-            Canvas.SetLeft(card, frame.X);
-            Canvas.SetTop(card, frame.Y);
-            _wallCanvas.Children.Add(card);
+            view.Holder.Width = frame.Width;
+            view.Holder.Height = frame.Height;
+            view.Card.Width = frame.Width;
+            view.Card.Height = frame.Height;
+            var dragged = _wallDrag?.Id == id;
+            view.Card.RenderTransform = new RotateTransform { Angle = Motion.Reduced || dragged ? 0 : layout.Tilts[index] };
+            Canvas.SetZIndex(view.Holder, dragged ? 10_000 : 0);
+            if (dragged)
+            {
+                continue;
+            }
+
+            Put(view, new Vector2((float)frame.X, (float)frame.Y), animate);
         }
 
-        MarkWallFocus(bringIntoView: false);
+        foreach (var gone in _wallViews.Keys.Where(id => !wanted.Contains(id)).ToList())
+        {
+            _wallCanvas.Children.Remove(_wallViews[gone].Holder);
+            _wallViews.Remove(gone);
+        }
+    }
+
+    /// <summary>把一张摆到 target（墙的坐标）：animate 时从它现在画在的地方（位置 + 正被挪向的位移）滑过去（glide），不然直接到。</summary>
+    private static void Put(WallCard view, Vector2 target, bool animate)
+    {
+        var current = new Vector2((float)Canvas.GetLeft(view.Holder), (float)Canvas.GetTop(view.Holder)) + view.Offset;
+        Canvas.SetLeft(view.Holder, target.X);
+        Canvas.SetTop(view.Holder, target.Y);
+        var from = current - target;
+        if (animate && view.Placed && from.Length() > 0.5f)
+        {
+            NoteMotion.SetTranslation(view.Holder, new Vector3(from, 0));
+            NoteMotion.TranslateTo(view.Holder, Vector3.Zero, MotionCurve.Glide);
+        }
+        else if (view.Offset != Vector2.Zero)
+        {
+            NoteMotion.SetTranslation(view.Holder, Vector3.Zero);
+        }
+
+        view.Offset = Vector2.Zero;
+        view.Placed = true;
+    }
+
+    // ---- 便签墙的拖动排序（R108）
+
+    private void OnCardPressed(string id, Border card, PointerRoutedEventArgs e)
+    {
+        var point = e.GetCurrentPoint(_wallCanvas);
+        if (!point.Properties.IsLeftButtonPressed || e.Pointer.PointerDeviceType == Microsoft.UI.Input.PointerDeviceType.Touch
+            || _editCard.Visibility == Visibility.Visible)
+        {
+            return;
+        }
+
+        _wallPressed = id;
+        _wallPressedAt = new Vector2((float)point.Position.X, (float)point.Position.Y);
+        card.CapturePointer(e.Pointer);
+        e.Handled = true;
+    }
+
+    private void OnCardMoved(string id, PointerRoutedEventArgs e)
+    {
+        if (_wallPressed != id)
+        {
+            return;
+        }
+
+        var position = e.GetCurrentPoint(_wallCanvas).Position;
+        var point = new Vector2((float)position.X, (float)position.Y);
+        if (_wallDrag is null)
+        {
+            if (!CanReorderWall || (point - _wallPressedAt).Length() < NoteWall.DragSlop || _wallBase is not { } based
+                || based.IndexOf(id) is not { } from)
+            {
+                return;
+            }
+
+            var frame = based.Frames[from];
+            _wallDrag = new WallDrag(id, from, _wallPressedAt - new Vector2((float)frame.X, (float)frame.Y));
+            if (_wallViews.TryGetValue(id, out var lifted))
+            {
+                // 抬起来：立正、压在别的上面，跟着指针（不做动画）
+                NoteMotion.SetTranslation(lifted.Holder, Vector3.Zero);
+                lifted.Offset = Vector2.Zero;
+                lifted.Card.RenderTransform = new RotateTransform { Angle = 0 };
+                Canvas.SetZIndex(lifted.Holder, 10_000);
+            }
+        }
+
+        if (_wallDrag is not { } drag)
+        {
+            return;
+        }
+
+        if (_wallViews.TryGetValue(id, out var view))
+        {
+            var origin = point - drag.Grab;
+            Canvas.SetLeft(view.Holder, origin.X);
+            Canvas.SetTop(view.Holder, origin.Y);
+        }
+
+        if (_wallBase is not { } baseLayout)
+        {
+            return;
+        }
+
+        var to = NoteWall.DropTarget(drag.From, drag.To, new PointD(point.X, point.Y), baseLayout);
+        if (to == drag.To)
+        {
+            return;
+        }
+
+        // 让位：按让过位的那份排法，别的卡片滑到新位置（glide）；被拖的那张不跟着滑
+        drag.To = to;
+        var moved = to == drag.From ? baseLayout : ArrangeMoved(drag, _wallWidth);
+        _wallLayout = moved;
+        _wallIds = moved.Ids.ToList();
+        for (var index = 0; index < moved.Ids.Count; index++)
+        {
+            if (moved.Ids[index] == id || !_wallViews.TryGetValue(moved.Ids[index], out var other))
+            {
+                continue;
+            }
+
+            var target = new Vector2((float)moved.Frames[index].X, (float)moved.Frames[index].Y)
+                         - new Vector2((float)Canvas.GetLeft(other.Holder), (float)Canvas.GetTop(other.Holder));
+            if (target != other.Offset)
+            {
+                other.Offset = target;
+                NoteMotion.TranslateTo(other.Holder, new Vector3(target, 0), MotionCurve.Glide);
+            }
+        }
+    }
+
+    private void OnCardReleased(string id, Border card, PointerRoutedEventArgs e)
+    {
+        if (_wallPressed != id)
+        {
+            return;
+        }
+
+        var position = e.GetCurrentPoint(_wallCanvas).Position;
+        var moved = (new Vector2((float)position.X, (float)position.Y) - _wallPressedAt).Length();
+        var drag = _wallDrag;
+        // 先清掉按着的状态再放开指针：放开时同步来的「丢了指针」就不再当成取消
+        _wallPressed = null;
+        _wallDrag = null;
+        card.ReleasePointerCapture(e.Pointer);
+        e.Handled = true;
+        if (drag is null)
+        {
+            // 没挪开：点了一下 = 打开编辑卡（双击的第二下落在编辑卡后面那层暗上，不再开一次）
+            if (moved < NoteWall.DragSlop && _editCard.Visibility != Visibility.Visible)
+            {
+                ExpandCard(id);
+            }
+
+            return;
+        }
+
+        if (drag.To != drag.From && NoteStore.Instance is { } store && _wallBase is { } based && based.SectionOf(drag.From) is { } section
+            && NoteWall.StoreIndex(drag.Id, NoteWall.Moved(based.Ids, drag.From, drag.To), based.Sections[section],
+                store.Book.Active.Select(note => note.Id).ToList()) is { } at)
+        {
+            store.Move(drag.Id, at);
+            BuildWallSections();
+        }
+
+        // 落下：被拖的那张从松手的地方、让过位的从让到的地方滑到排好的位置（glide）
+        ArrangeWall(animate: true);
+    }
+
+    private void OnCardCaptureLost(string id)
+    {
+        if (_wallPressed != id)
+        {
+            return;
+        }
+
+        _wallPressed = null;
+        if (_wallDrag is not null)
+        {
+            // 被系统取消了：当没拖，都滑回原位
+            _wallDrag = null;
+            ArrangeWall(animate: true);
+        }
     }
 
     // ---- 便签墙的键盘（PLAN-v20 N3）
 
     private NoteWall.Layout? _wallLayout;
     private List<string> _wallIds = new();
-    private List<FrameworkElement> _wallCards = new();
 
     /// <summary>方向键挑中的那张（便签编号；墙重排后照样认得）。</summary>
     private string? _wallFocus;
@@ -934,7 +1374,7 @@ internal sealed class NotesWindow : Window
         }
     }
 
-    /// <summary>往 direction 挑下一张（还没挑过的先挑第一张）；走不动就不动。</summary>
+    /// <summary>往 direction 挑下一张（还没挑过的先挑第一张）；走不动就不动。挑中的那张没建（在可见区外）就先建出来再滚过去。</summary>
     private void MoveWallFocus(NoteWall.Direction direction, NoteWall.Layout layout)
     {
         var current = _wallFocus is { } id ? _wallIds.IndexOf(id) : -1;
@@ -945,29 +1385,31 @@ internal sealed class NotesWindow : Window
         }
 
         _wallFocus = _wallIds[index];
+        if (!_wallViews.ContainsKey(_wallFocus))
+        {
+            ArrangeWall();
+        }
+
         MarkWallFocus(bringIntoView: true);
     }
 
     /// <summary>挑中的那张描一圈强调色（别的去掉），要的话滚进视野；读屏念它的标题。</summary>
     private void MarkWallFocus(bool bringIntoView)
     {
-        var index = _wallFocus is { } id ? _wallIds.IndexOf(id) : -1;
-        for (var at = 0; at < _wallCards.Count; at++)
+        foreach (var (id, view) in _wallViews)
         {
-            if (_wallCards[at] is Border card)
-            {
-                card.BorderBrush = at == index ? new SolidColorBrush(Theme.AccentColor) : null;
-                card.BorderThickness = new Thickness(at == index ? 2 : 0);
-            }
+            var focused = id == _wallFocus;
+            view.Card.BorderBrush = focused ? new SolidColorBrush(Theme.AccentColor) : null;
+            view.Card.BorderThickness = new Thickness(focused ? 2 : 0);
         }
 
-        if (index >= 0 && index < _wallCards.Count && bringIntoView)
+        if (bringIntoView && _wallFocus is { } focus && _wallViews.TryGetValue(focus, out var target))
         {
-            _wallCards[index].StartBringIntoView(new BringIntoViewOptions { AnimationDesired = !Motion.Reduced, VerticalAlignmentRatio = 0.5 });
+            target.Holder.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = !Motion.Reduced, VerticalAlignmentRatio = 0.5 });
             Microsoft.UI.Xaml.Automation.Peers.FrameworkElementAutomationPeer.FromElement(_wallScroll)?.RaiseNotificationEvent(
                 Microsoft.UI.Xaml.Automation.Peers.AutomationNotificationKind.ActionCompleted,
                 Microsoft.UI.Xaml.Automation.Peers.AutomationNotificationProcessing.MostRecent,
-                Microsoft.UI.Xaml.Automation.AutomationProperties.GetName(_wallCards[index]), "notes-wall-focus");
+                Microsoft.UI.Xaml.Automation.AutomationProperties.GetName(target.Card), "notes-wall-focus");
         }
     }
 
@@ -982,8 +1424,32 @@ internal sealed class NotesWindow : Window
         return _wallFocus;
     }
 
-    /// <summary>墙上的一张卡片：色条、标题（一两行）、开头几行字（截断渐隐）、底下的相对时间；量好的高。</summary>
-    private (FrameworkElement Card, double Height) Card(Note note, NoteBook.Summary summary, bool dark)
+    /// <summary>离开便签墙（换成列表）：建着的卡片都拆掉（记下的高留着，换回来不用再量）。</summary>
+    private void ClearWall()
+    {
+        _measureTimer?.Stop();
+        _wallDrag = null;
+        _wallPressed = null;
+        foreach (var view in _wallViews.Values)
+        {
+            _wallCanvas.Children.Remove(view.Holder);
+        }
+
+        _wallViews.Clear();
+    }
+
+    /// <summary>墙上一张卡片底下那行：相对时间（最近删除里是删的时间），有任务的接着写进度。</summary>
+    private static string FooterText(Note note, NoteBook.Summary summary)
+        => NotesWindowRules.Ago(note, NoteStore.Now, TimeZoneInfo.Local) +
+           (summary.Progress is { } progress ? " · " + Note.ProgressText(progress) : string.Empty);
+
+    private static Color Shade(NoteShade shade, int paper) => Rgb(NotePaper.Mix(shade.Rgb, paper, shade.Opacity));
+
+    /// <summary>
+    /// 墙上的一张卡片：色条、标题（一两行）、开头几行字（截断）、底下的相对时间；量好的高。外面套一层 holder（摆在墙上、拖动让位时挪它），
+    /// 卡片本身斜着（RenderTransform）。按下 / 拖动 / 松手走墙的拖动排序（OnCard*）；触屏不拖，点一下开编辑卡。
+    /// </summary>
+    private (WallCard Card, double Height) Card(Note note, NoteBook.Summary summary, CardKey key, bool dark)
     {
         var paper = NotePaper.Of(note);
         var tone = paper.Tone(dark);
@@ -1001,38 +1467,23 @@ internal sealed class NotesWindow : Window
             Foreground = ink,
             Width = NoteWall.TitleWidthFor(note.IsPinned),
         };
-        var body = new TextBlock
-        {
-            FontSize = NoteWall.BodySize,
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = ink,
-            Width = NoteWall.TextWidth,
-        };
-        if (note.DeletedAt is null)
-        {
-            CardText(body, note, secondary);
-        }
-        else if (NoteImages.Display(note.Body) is { Length: > 0 } deleted)
-        {
-            body.Inlines.Add(new Microsoft.UI.Xaml.Documents.Run { Text = deleted });
-        }
-
-        var hasText = body.Inlines.Count > 0;
+        var body = note.DeletedAt is null ? CardBody(note, paper, tone, dark, ink) : DeletedBody(note, ink);
         title.Measure(new Windows.Foundation.Size(title.Width, double.PositiveInfinity));
-        body.Measure(new Windows.Foundation.Size(body.Width, double.PositiveInfinity));
-        var metrics = NoteWall.Card(note.IsPinned, title.DesiredSize.Height, hasText ? body.DesiredSize.Height : 0);
-        body.MaxHeight = metrics.BodyRoom;
+        body?.Measure(new Windows.Foundation.Size(NoteWall.TextWidth, double.PositiveInfinity));
+        var metrics = NoteWall.Card(note.IsPinned, title.DesiredSize.Height, body?.DesiredSize.Height ?? 0);
         var stack = new StackPanel { Spacing = NoteWall.TitleGap, Padding = new Thickness(NoteWall.Padding, NoteWall.TopInset, NoteWall.Padding, 0) };
         stack.Children.Add(title);
-        if (hasText)
+        if (body is not null)
         {
+            // 超出卡片的截掉（露出 BodyRoom 那么高）
+            body.MaxHeight = metrics.BodyRoom;
+            body.Clip = new RectangleGeometry { Rect = new Windows.Foundation.Rect(0, 0, NoteWall.TextWidth, metrics.BodyRoom) };
             stack.Children.Add(body);
         }
 
         var footer = new TextBlock
         {
-            Text = NotesWindowRules.Ago(note, NoteStore.Now, TimeZoneInfo.Local) +
-                   (summary.Progress is { } progress ? " · " + Note.ProgressText(progress) : string.Empty),
+            Text = FooterText(note, summary),
             FontSize = 11,
             Foreground = secondary,
             Margin = new Thickness(NoteWall.Padding, 0, NoteWall.Padding, NoteWall.BottomInset),
@@ -1067,32 +1518,78 @@ internal sealed class NotesWindow : Window
             Background = new SolidColorBrush(Rgb(tone.Paper)),
             CornerRadius = new CornerRadius(6),
             Child = grid,
-            Translation = new System.Numerics.Vector3(0, 0, 8),
+            Translation = new Vector3(0, 0, 8),
             Shadow = new ThemeShadow(),
+            RenderTransformOrigin = new Windows.Foundation.Point(0.5, 0.5),
         };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(card, summary.Title);
-        card.Tapped += (_, _) => ExpandCard(note.Id);
+        var id = note.Id;
+        card.PointerPressed += (_, e) => OnCardPressed(id, card, e);
+        card.PointerMoved += (_, e) => OnCardMoved(id, e);
+        card.PointerReleased += (_, e) => OnCardReleased(id, card, e);
+        card.PointerCaptureLost += (_, _) => OnCardCaptureLost(id);
+        // 鼠标、笔的点开在松手时认（OnCardReleased：和拖动排序是同一个手势）；触屏不拖，点一下照样开
+        card.Tapped += (_, e) =>
+        {
+            if (e.PointerDeviceType == Microsoft.UI.Input.PointerDeviceType.Touch)
+            {
+                ExpandCard(id);
+            }
+        };
         card.ContextFlyout = ContextMenu(note);
-        return (card, metrics.Height);
+        var holder = new Grid { Children = { card } };
+        return (new WallCard(key, note.Color, dark, holder, card, footer), metrics.Height);
     }
 
     /// <summary>
     /// 卡片上那段字：标题之后的开头几行（NoteWall.CardLines，PLAN-v16 V2）——标题按几级标题的字号加粗（同正文编辑器）、
-    /// 无序列表前面一个淡色圆点、代码块里的行用等宽字，别的行去掉行内标记。
+    /// 无序列表的符号照原样画成淡色（R108，同 mac「列表符号变淡」：墨的 50%，高对比度 75%）、别的行去掉行内标记；
+    /// 代码块里的行用等宽字、垫代码的底（R108，同 mac：逐行铺满字的宽，墨的 8%；不是正文编辑器里那块圆角的底）。
+    /// 连着的普通行排在一个 TextBlock 里，连着的代码行排在一块垫了底的 TextBlock 里，从上到下摞起来。没有字返回 null。
     /// </summary>
-    private static void CardText(TextBlock block, Note note, Brush faded)
+    private static StackPanel? CardBody(Note note, NotePaper paper, NoteTone tone, bool dark, Brush ink)
     {
+        var contrast = Theme.IsHighContrast;
+        var faded = new SolidColorBrush(Shade(paper.FadedInk(dark, contrast), tone.Paper));
+        var codeFill = new SolidColorBrush(Shade(paper.CodeFill(dark), tone.Paper));
+        var mono = new FontFamily("Cascadia Mono, Consolas");
+        var panel = new StackPanel { Width = NoteWall.TextWidth };
+        TextBlock? text = null;
+        TextBlock? code = null;
         foreach (var line in NoteWall.CardLines(note))
         {
-            if (block.Inlines.Count > 0)
+            if (line.Kind == NoteWall.CardLineKind.Code)
             {
-                block.Inlines.Add(new Microsoft.UI.Xaml.Documents.LineBreak());
+                text = null;
+                if (code is null)
+                {
+                    code = new TextBlock { FontSize = NoteWall.BodySize, FontFamily = mono, TextWrapping = TextWrapping.Wrap, Foreground = ink };
+                    panel.Children.Add(new Border { Background = codeFill, Child = code });
+                }
+                else
+                {
+                    code.Inlines.Add(new Microsoft.UI.Xaml.Documents.LineBreak());
+                }
+
+                code.Inlines.Add(new Microsoft.UI.Xaml.Documents.Run { Text = line.Text });
+                continue;
+            }
+
+            code = null;
+            if (text is null)
+            {
+                text = new TextBlock { FontSize = NoteWall.BodySize, TextWrapping = TextWrapping.Wrap, Foreground = ink };
+                panel.Children.Add(text);
+            }
+            else
+            {
+                text.Inlines.Add(new Microsoft.UI.Xaml.Documents.LineBreak());
             }
 
             switch (line.Kind)
             {
                 case NoteWall.CardLineKind.Heading:
-                    block.Inlines.Add(new Microsoft.UI.Xaml.Documents.Run
+                    text.Inlines.Add(new Microsoft.UI.Xaml.Documents.Run
                     {
                         Text = line.Text,
                         FontSize = NoteStyles.HeadingSize(line.Level, NoteWall.BodySize),
@@ -1100,18 +1597,27 @@ internal sealed class NotesWindow : Window
                     });
                     break;
                 case NoteWall.CardLineKind.Bullet:
-                    block.Inlines.Add(new Microsoft.UI.Xaml.Documents.Run { Text = new string(' ', line.Indent) + "•  ", Foreground = faded });
-                    block.Inlines.Add(new Microsoft.UI.Xaml.Documents.Run { Text = line.Text });
-                    break;
-                case NoteWall.CardLineKind.Code:
-                    block.Inlines.Add(new Microsoft.UI.Xaml.Documents.Run { Text = line.Text, FontFamily = new FontFamily("Cascadia Mono, Consolas") });
+                    text.Inlines.Add(new Microsoft.UI.Xaml.Documents.Run { Text = new string(' ', line.Indent) + line.Lead, Foreground = faded });
+                    text.Inlines.Add(new Microsoft.UI.Xaml.Documents.Run { Text = line.Text });
                     break;
                 default:
-                    block.Inlines.Add(new Microsoft.UI.Xaml.Documents.Run { Text = line.Text });
+                    text.Inlines.Add(new Microsoft.UI.Xaml.Documents.Run { Text = line.Text });
                     break;
             }
         }
+
+        return panel.Children.Count > 0 ? panel : null;
     }
+
+    /// <summary>最近删除里的卡片：原文（令牌换成「[图片]」），不加样式。没有字返回 null。</summary>
+    private static StackPanel? DeletedBody(Note note, Brush ink)
+        => NoteImages.Display(note.Body) is { Length: > 0 } text
+            ? new StackPanel
+            {
+                Width = NoteWall.TextWidth,
+                Children = { new TextBlock { Text = text, FontSize = NoteWall.BodySize, TextWrapping = TextWrapping.Wrap, Foreground = ink } },
+            }
+            : null;
 
     private void ExpandCard(string id)
     {

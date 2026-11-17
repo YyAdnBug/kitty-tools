@@ -6,7 +6,9 @@
 //   编辑卡多大、它那块纸从哪长出来 / 缩回哪。
 // - 卡片上那段字（Excerpt：标题之后的开头几行 + 这一段里的代码块）和卡片多高（Card：字的高由窗口代码量好传进来——
 //   mac 用 NSFont 量，这里不碰字体）。卡片上的字一行一种（CardLines，PLAN-v16 V2）：标题去掉 # 记号、按几级标题的字号画，
-//   无序列表的符号画成淡色圆点，代码块的围栏行不要、块里的行原样，别的行去掉行内标记；字号和颜色在窗口代码里。
+//   无序列表的符号照原样（R108：窗口代码画成淡色，同 mac 的「-」），代码块的围栏行不要、块里的行原样（窗口代码垫代码的底），
+//   别的行去掉行内标记；字号和颜色在窗口代码里。
+// - 只建可见区附近的卡片（R108，mac ListWindow + NotesWallView.visible）：滚动位置按段记，量准哪些（Reach）、建哪些（Visible）。
 // 坐标：墙的坐标，滚动内容的左上角是原点、y 向下（mac 也是这么算的，不用换算）。
 using System.Text;
 
@@ -199,6 +201,39 @@ public static class NoteWall
         return (column + row) % 2 == 0 ? -size : size;
     }
 
+    // ---- 只建可见区附近的（R108）----
+
+    /// <summary>滚动位置按段记（段高 BandHeight），跨段才重算建哪些；这一段上下各多建 Overscan（同 mac ListWindow）。</summary>
+    public const double BandHeight = 240;
+    public const double Overscan = 320;
+
+    /// <summary>可见区的顶滚到 scrollY 时在第几段。</summary>
+    public static int Band(double scrollY) => (int)(Math.Max(scrollY, 0) / BandHeight);
+
+    /// <summary>卡片的高要量准到哪（墙的坐标）：顶在这以内的当场量（要画出来，位置是准的），往下的先按 EstimatedHeight 排。
+    /// 比要建的那一段（Visible）的下沿还多一点：这一段下面一整段都算。</summary>
+    public static double Reach(int band, double viewport) => (band + 1) * BandHeight + Math.Max(viewport, 0) + Overscan;
+
+    /// <summary>要建的卡片（墙上的下标，从前到后）：这一段上下各多 Overscan 里的，加上 keep 里的（方向键挑中的、正拖着的：
+    /// 滚出可见区也留着）。墙一下子变短（删了一批）时滚动位置下一帧才夹回来：段的顶夹在墙底往上一屏。</summary>
+    public static List<int> Visible(Layout layout, int band, double viewport, IReadOnlyCollection<string?> keep)
+    {
+        var top = Math.Min(Math.Max(band, 0) * BandHeight, Math.Max(layout.Height - viewport, 0));
+        var lower = top - Overscan;
+        var upper = top + BandHeight + Math.Max(viewport, 0) + Overscan;
+        var result = new List<int>();
+        for (var index = 0; index < layout.Frames.Count; index++)
+        {
+            var frame = layout.Frames[index];
+            if ((frame.Bottom >= lower && frame.Y <= upper) || keep.Contains(layout.Ids[index]))
+            {
+                result.Add(index);
+            }
+        }
+
+        return result;
+    }
+
     // ---- 方向键 ----
 
     public enum Direction
@@ -383,12 +418,13 @@ public static class NoteWall
         Code,
     }
 
-    /// <summary>卡片上的一行：哪种、几级标题（Heading）、列表符号前面缩进几个空白（Bullet）、去掉记号之后的字。</summary>
-    public readonly record struct CardLine(CardLineKind Kind, string Text, int Level = 0, int Indent = 0);
+    /// <summary>卡片上的一行：哪种、几级标题（Heading）、列表符号前面缩进几个空白（Bullet）、去掉记号之后的字、
+    /// 列表符号原样连它后面的空白（Bullet，「- 」「* 」；窗口代码画成淡色）。</summary>
+    public readonly record struct CardLine(CardLineKind Kind, string Text, int Level = 0, int Indent = 0, string Lead = "");
 
     /// <summary>
     /// 卡片上那段字一行一行（照 mac NoteWallCard.make：样式同正文编辑器，藏着的标记和代码块的围栏行删掉）：标题行去掉 # 和后面的空白、
-    /// 行内的标记照样去；无序列表的 - * + 换成圆点（窗口代码画淡色，mac 是淡色的原符号，PLAN-v16 V2 要圆点）；代码块里的行原样；
+    /// 行内的标记照样去；无序列表的 - * + 原样留在 Lead 里（窗口代码画淡色，同 mac；PLAN-v16 V2 当时要的圆点 R108 改回来了）；代码块里的行原样；
     /// 别的行同列表里的摘要（NoteMarkdown.Plain，引用的 &gt; 也去）。
     /// </summary>
     public static List<CardLine> CardLines(Note note)
@@ -413,7 +449,9 @@ public static class NoteWall
             }
             else if (NoteTasks.PrefixOf(line) is { Lead.Kind: NoteTasks.LeadKind.Bullet } prefix)
             {
-                lines.Add(new CardLine(CardLineKind.Bullet, NoteMarkdown.Plain(line[prefix.ContentStart..], blocks: false), Indent: prefix.Indent));
+                lines.Add(new CardLine(
+                    CardLineKind.Bullet, NoteMarkdown.Plain(line[prefix.ContentStart..], blocks: false), Indent: prefix.Indent,
+                    Lead: line[prefix.Indent..prefix.ContentStart]));
             }
             else
             {
