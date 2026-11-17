@@ -136,6 +136,15 @@ private struct PluginCard: View {
 /// SettingsRoot 带回「功能」页。刘海岛另写一句：岛上的提示不归它，移除了照常弹
 struct PluginRemoveSection: View {
   let plugin: Feature
+
+  /// 「移除」那一行的说明：刘海岛的提示不归它，睡眠关蓝牙没有菜单、快捷键这些入口
+  private var detail: LocalizedStringResource {
+    switch plugin {
+    case .island: "移除后点刘海没反应、刘海两边不挂计时；岛上的提示照常弹。设置留着，再添加就回来"
+    case .bluetoothSnooze: "移除后睡眠时不再关蓝牙（关着的先打开）；设置留着，再添加就回来"
+    default: "移除后菜单栏、主界面、启动器、快捷键里都没有它，设置和数据留着，再添加就回来"
+    }
+  }
   @AppStorage private var isAdded: Bool
 
   init(plugin: Feature) {
@@ -149,10 +158,7 @@ struct PluginRemoveSection: View {
         Button("移除") { isAdded = false }
       } label: {
         Text("\(plugin.title)插件")
-        Text(
-          plugin == .island
-            ? "移除后点刘海没反应、刘海两边不挂计时；岛上的提示照常弹。设置留着，再添加就回来"
-            : "移除后菜单栏、主界面、启动器、快捷键里都没有它，设置和数据留着，再添加就回来")
+        Text(detail)
       }
     }
   }

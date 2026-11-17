@@ -34,7 +34,7 @@ struct LocalizationTests {
     ("收藏夹", "collection"), ("生词本", "Word List"), ("截图历史", "Screenshot History"),
     ("长截图", "scrolling capture"), ("复制即译", "Translate on Copy"), ("最近删除", "Recently Deleted"),
     ("主界面", "Home"), ("剪贴板历史", "Clipboard History"), ("透镜", "Lens"), ("便签墙", "Note Wall"),
-    ("快速记一条", "Quick Note"), ("保持唤醒", "Keep Awake"),
+    ("快速记一条", "Quick Note"), ("保持唤醒", "Keep Awake"), ("睡眠关蓝牙", "Bluetooth Sleep"),
   ]
 
   private static let han = /[\u{3400}-\u{9FFF}]/
@@ -605,7 +605,7 @@ struct LocalizationTests {
       "KittyTools/Shell/Feature.swift",
       [
         "笔记", "记一条", "闹钟", "请勿触碰", "程序坞", "窗口预览", "右键菜单", "刘海", "灵动岛", "防息屏", "防止睡眠", "唤醒",
-        "咖啡因",
+        "咖啡因", "合盖", "休眠",
       ], false,
       "启动器里认插件的词（pluginWords，中英都认）"
     ),

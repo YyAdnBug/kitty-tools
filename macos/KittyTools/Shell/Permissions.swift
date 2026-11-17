@@ -2,7 +2,8 @@
 // 文件和文件夹（启动器文件搜索：Spotlight 只给本 App 能访问的文件夹里的结果）、自动化（启动器系统命令让访达清倒
 // 废纸篓、让 loginwindow 弹退出登录 / 重新启动 / 关机框；第一次用时系统自己弹框问，这里只负责被拒后打开系统设置）、
 // 完全磁盘访问（启动器读 Safari 的书签和历史；没有请求授权的 API，只能打开系统设置让用户自己加）、
-// 麦克风（录屏第 4 批：录制条打开麦克风时，按开始、遮罩收起后才问——遮罩开着时系统授权框会被压在它下面）。
+// 麦克风（录屏第 4 批：录制条打开麦克风时，按开始、遮罩收起后才问——遮罩开着时系统授权框会被压在它下面）、
+// 蓝牙（睡眠关蓝牙插件开关蓝牙要它；状态和弹框在 BluetoothSnooze，这里只有系统设置那一页）。
 
 import AVFoundation
 import AppKit
@@ -12,7 +13,7 @@ enum Permissions {
   /// 提示里「去系统设置授权」按钮要打开的那一项
   enum Kind {
     case accessibility, screenRecording, filesAndFolders, automation, fullDiskAccess, microphone
-    case calendar
+    case calendar, bluetooth
 
     var settingsTitle: String { String(localized: settingsTitleResource) }
 
@@ -25,6 +26,7 @@ enum Permissions {
       case .fullDiskAccess: "打开完全磁盘访问权限设置"
       case .microphone: "打开麦克风设置"
       case .calendar: "打开日历设置"
+      case .bluetooth: "打开蓝牙设置"
       }
     }
 
@@ -38,6 +40,7 @@ enum Permissions {
         case .fullDiskAccess: "Privacy_AllFiles"
         case .microphone: "Privacy_Microphone"
         case .calendar: "Privacy_Calendars"
+        case .bluetooth: "Privacy_Bluetooth"
         }
       NSWorkspace.shared.open(
         URL(string: "x-apple.systempreferences:com.apple.preference.security?\(anchor)")!)

@@ -31,6 +31,8 @@ import Foundation
     Prefs.launchpadPinchSense, Prefs.launchpadCorner, Feature.launchpad.prefsKey,
     Prefs.screenRecordMicrophone, Prefs.audioRecordSource, Prefs.screenRecordShowsKeys,
     Feature.dockPreview.prefsKey, Feature.finderMenu.prefsKey, Prefs.notesDeckDisplay,
+    // 睡眠关蓝牙要这台给蓝牙授权、只在有盖子的 Mac 上有（同程序坞预览）
+    Feature.bluetoothSnooze.prefsKey,
     Prefs.statusItemVisible,
     Prefs.clipboardHideOnUnfocus, Prefs.floatingPinned,
     // 保持唤醒的定时跟着这台 Mac（拍板 B4）

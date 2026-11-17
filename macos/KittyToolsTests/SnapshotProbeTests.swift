@@ -544,6 +544,8 @@ struct SnapshotProbeTests {
       case .finderMenu: AnyView(FinderMenuTab(extensionEnabled: false))
       // 没起的保持唤醒（只读偏好，不建断言）
       case .keepAwake: AnyView(KeepAwakeTab(keepAwake: KeepAwake()))
+      // 授权按固定的「没给」画
+      case .bluetoothSnooze: AnyView(BluetoothSnoozeTab(requestAccess: {}, authorized: false))
       case .translate:
         AnyView(TranslateTab(services: services, history: history, speaker: speaker))
       case .hotkeys: AnyView(HotkeysTab(center: hotKeys))
@@ -3180,7 +3182,8 @@ struct SnapshotProbeTests {
           c.cards = [
             .init(service: zhipu, state: .done("SwiftUI 提供了视图、控件和布局结构，用来**声明**应用的用户界面。")),
             .init(service: gpt, state: .running("SwiftUI 提供视图、控件以及")),
-            .init(service: claude, state: .failed(.config(String(localized: Self.key("密钥无效或没有权限"))))),
+            .init(
+              service: claude, state: .failed(.config(String(localized: Self.key("密钥无效或没有权限"))))),
           ]
         }
       ),
@@ -3196,7 +3199,8 @@ struct SnapshotProbeTests {
           c.cards = [
             .init(service: zhipu, state: .running("")),
             .init(service: gpt, state: .truncated("进程是操作系统分配资源的基本单位，线程是 CPU 调度的基本单位。一个进程可以包含多个线程")),
-            .init(service: claude, state: .failed(.config(String(localized: Self.key("App ID 或密钥不对"))))),
+            .init(
+              service: claude, state: .failed(.config(String(localized: Self.key("App ID 或密钥不对"))))),
             .init(
               service: .builtin(.baidu),
               state: .failed(TranslateError(message: String(localized: Self.key("请求太频繁，稍后再试"))))),
@@ -4783,6 +4787,31 @@ struct SnapshotProbeTests {
         size: NSSize(width: 600, height: 760), dark: dark,
         to: "\(out)/plugins-keep-awake\(dark ? "-dark" : "").png")
     }
+  }
+
+  /// 设置 › 睡眠关蓝牙整页：没授权、默认两个开关（还没关过），已授权、每次睡眠都关（上次关、开过），浅 / 深。几秒，图以 bt- 开头：
+  /// -only-testing:'KittyToolsTests/SnapshotProbeTests/bluetoothSnoozeSettings()'。偏好读临时偏好域
+  @Test(.enabled(if: directory != nil)) func bluetoothSnoozeSettings() throws {
+    let out = try #require(Self.directory)
+    try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
+    Prefs.registerDefaults()
+    let name = "kitty-snapshot-bt-\(UUID().uuidString)"
+    let prefs = try #require(UserDefaults(suiteName: name))
+    defer { prefs.removePersistentDomain(forName: name) }
+    prefs.set(true, forKey: Feature.bluetoothSnooze.prefsKey)
+    for dark in [false, true] {
+      try snapshot(
+        BluetoothSnoozeTab(requestAccess: {}, authorized: false).defaultAppStorage(prefs),
+        size: NSSize(width: 640, height: 640), dark: dark,
+        to: "\(out)/bt-settings\(dark ? "-dark" : "").png")
+    }
+    prefs.set(false, forKey: Prefs.bluetoothSnoozeLidOnly)
+    let off = Date.now.addingTimeInterval(-3600).timeIntervalSince1970
+    prefs.set(off, forKey: Prefs.bluetoothSnoozeOffAt)
+    prefs.set(off + 1500, forKey: Prefs.bluetoothSnoozeOnAt)
+    try snapshot(
+      BluetoothSnoozeTab(requestAccess: {}, authorized: true).defaultAppStorage(prefs),
+      size: NSSize(width: 640, height: 640), dark: false, to: "\(out)/bt-settings-any.png")
   }
 
   /// 设置 › 访达右键整页（「压缩时跳过」那一行的小字：填了一串、有一条写错了），推进去的「压缩时跳过」（空着、很多项带写错的，

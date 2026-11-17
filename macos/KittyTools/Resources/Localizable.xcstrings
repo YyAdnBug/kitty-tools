@@ -178,6 +178,52 @@
         }
       }
     },
+    "%@ 关掉" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turned off %@"
+          }
+        }
+      }
+    },
+    "%@ 关掉，%@ 打开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turned off %1$@, back on %2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ 关掉，%2$@ 打开"
+          }
+        }
+      }
+    },
+    "%@ 关掉，醒来不会自动打开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turned off %@; stays off at wake"
+          }
+        }
+      }
+    },
+    "%@ 关掉，醒来会打开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turned off %@; turns back on at wake"
+          }
+        }
+      }
+    },
     "%@ 和剪贴板里的一致" : {
       "localizations" : {
         "en" : {
@@ -5993,6 +6039,16 @@
         }
       }
     },
+    "上次" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last time"
+          }
+        }
+      }
+    },
     "上次位置" : {
       "localizations" : {
         "en" : {
@@ -11384,6 +11440,16 @@
         }
       }
     },
+    "只在合上盖子时关" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only when the lid is closed"
+          }
+        }
+      }
+    },
     "只在名字像「ÖÐÎÄ」「╓╨╬─」这种乱码时出现，改回中文" : {
       "localizations" : {
         "en" : {
@@ -11500,6 +11566,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Favorites Only (Word List)"
+          }
+        }
+      }
+    },
+    "只打开睡前由 Kitty Tools 关掉的；本来就关着的不会被打开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turns Bluetooth back on only if Kitty Tools turned it off before sleep; if it was already off, it stays off"
           }
         }
       }
@@ -11932,6 +12008,16 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "合上盖子睡着时关掉蓝牙，醒来再打开：放进包里不会被蓝牙键鼠弄醒" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turns Bluetooth off when you close the lid and back on at wake, so Bluetooth mice and keyboards can’t wake your Mac in a bag"
           }
         }
       }
@@ -18012,6 +18098,16 @@
         }
       }
     },
+    "开关蓝牙；没有它这个插件什么都不做" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turns Bluetooth on and off; without it, this plugin does nothing"
+          }
+        }
+      }
+    },
     "开发版不自动更新" : {
       "localizations" : {
         "en" : {
@@ -18184,6 +18280,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Prevents sleep while on; runs nothing while off"
+          }
+        }
+      }
+    },
+    "开着盖子睡着时不关，蓝牙键盘鼠标照样能叫醒电脑" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bluetooth stays on when your Mac sleeps with the lid open, so Bluetooth keyboards and mice can still wake it"
           }
         }
       }
@@ -20143,6 +20249,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Open Automation Settings"
+          }
+        }
+      }
+    },
+    "打开蓝牙设置" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Bluetooth Settings"
           }
         }
       }
@@ -26543,6 +26659,16 @@
         }
       }
     },
+    "每次睡眠都关：开着盖子时只能用电脑自己的键盘、触控板叫醒它" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turns off at every sleep: with the lid open, only the built-in keyboard and trackpad can wake your Mac"
+          }
+        }
+      }
+    },
     "每行以 #、// 或 -- 开头都行。网上常见的另一种写法（字段以 @raycast. 开头）也认，下载下来不用改。文件名里带 .template. 的不列出来。" : {
       "localizations" : {
         "en" : {
@@ -29781,6 +29907,36 @@
         }
       }
     },
+    "电脑睡下去时关掉蓝牙、醒来再打开：什么时候关、要给的授权" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn Bluetooth off when your Mac sleeps and back on at wake: when to turn it off, and the access it needs"
+          }
+        }
+      }
+    },
+    "电脑睡下去时关掉蓝牙：放进包里不会被蓝牙鼠标、键盘弄醒，睡着的 Mac 也不会抢走手机连着的耳机。接着外接显示器时不关；关机不管。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turns Bluetooth off when your Mac goes to sleep, so Bluetooth mice and keyboards can’t wake it in a bag, and a sleeping Mac won’t take over headphones connected to your phone. Bluetooth stays on with an external display connected; shutting down isn’t affected."
+          }
+        }
+      }
+    },
+    "电脑睡下去时关掉蓝牙：放进包里不会被蓝牙鼠标、键盘弄醒，睡着的 Mac 也不会抢走手机连着的耳机。接着外接显示器时不关；关机不管。开着盖子先睡着、之后才合上的那一次不关。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turns Bluetooth off when your Mac goes to sleep, so Bluetooth mice and keyboards can’t wake it in a bag, and a sleeping Mac won’t take over headphones connected to your phone. Bluetooth stays on with an external display connected; shutting down isn’t affected. If your Mac falls asleep with the lid open and you close it later, Bluetooth stays on that time."
+          }
+        }
+      }
+    },
     "电脑睡着、锁着屏或者没打开 Kitty 时到点的提醒，晚 5 分钟以内的照常提醒，更晚的回来后合成一条告诉你。每隔一阵的提醒碰上锁屏、睡眠，或者 5 分钟没碰键盘鼠标，算休息过了，回来重新数。" : {
       "localizations" : {
         "en" : {
@@ -30294,6 +30450,16 @@
         }
       }
     },
+    "睡眠关蓝牙" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bluetooth Sleep"
+          }
+        }
+      }
+    },
     "睡眠前已自动停止" : {
       "localizations" : {
         "en" : {
@@ -30641,6 +30807,16 @@
         }
       }
     },
+    "移除后睡眠时不再关蓝牙（关着的先打开）；设置留着，再添加就回来" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Once removed, Bluetooth is no longer turned off at sleep (if it’s off now, it’s turned back on); settings stay for when you add it again"
+          }
+        }
+      }
+    },
     "移除后菜单栏、主界面、启动器、快捷键里都没有它，设置和数据留着，再添加就回来" : {
       "localizations" : {
         "en" : {
@@ -30940,6 +31116,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Waits for the next reminder; nothing runs when there are none"
+          }
+        }
+      }
+    },
+    "等着电脑睡下去；醒来时只打开睡前自己关掉的蓝牙" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waits for your Mac to sleep; at wake, turns on only the Bluetooth it turned off"
           }
         }
       }
@@ -32834,6 +33020,36 @@
         }
       }
     },
+    "蓝牙" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bluetooth"
+          }
+        }
+      }
+    },
+    "蓝牙,Bluetooth,睡眠,休眠,合盖,盖子,唤醒,误唤醒,鼠标,键盘,耳机,外接显示器,包里" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bluetooth,sleep,lid,close lid,wake,mouse,keyboard,headphones,external display,bag"
+          }
+        }
+      }
+    },
+    "蓝牙没能重新打开，请在控制中心里打开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t turn Bluetooth back on. Turn it on in Control Center."
+          }
+        }
+      }
+    },
     "蓝牙耳机、AirPods、USB 耳机：刘海两边出一下，蓝牙耳机带电量" : {
       "localizations" : {
         "en" : {
@@ -32850,6 +33066,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bluetooth headset microphones switch to call quality"
+          }
+        }
+      }
+    },
+    "蓝牙（添加时系统会问）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bluetooth (macOS asks when you add it)"
           }
         }
       }
@@ -34793,6 +35019,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Not allowed yet: files in these folders can’t be searched"
+          }
+        }
+      }
+    },
+    "还没关过" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not yet"
           }
         }
       }
@@ -36741,6 +36977,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "All shortcuts are still the defaults"
+          }
+        }
+      }
+    },
+    "醒来后蓝牙键盘鼠标、耳机要几秒到几十秒才重新连上。睡着时蓝牙关着，用手表解锁这台 Mac、靠蓝牙的「查找」都用不了。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "After wake, Bluetooth keyboards, mice, and headphones take a few seconds to a minute to reconnect. While your Mac sleeps with Bluetooth off, unlocking it with your watch and Find My over Bluetooth don’t work."
+          }
+        }
+      }
+    },
+    "醒来时重新打开蓝牙" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn Bluetooth back on at wake"
           }
         }
       }
