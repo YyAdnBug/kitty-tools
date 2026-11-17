@@ -124,6 +124,20 @@ mac 还没推进 `macos` 的（多语言 / 英文、截图识别元素第二三�
 多看两个编译点：`BarcodeReader.Read` 里 `(var gray, width, height) = luma;`（声明和给参数赋值混在一个解构里，C# 10 起可以）；
 `PinWindow.RecognizedTextAsync` 的可空元组参数和 `decoded ??= await …`。`HugeImagesStopWithinTheBudget` 在很慢的机器上要是超了，先看是不是 Luma 那 32 行一检查的粒度，别直接放宽断言。
 
+#### Windows 核验（2026-11-17，Claude 在 Windows 上，`origin/windows` `6910dce8` 起）→ 编译、单测、AOT 过；真截图手测待用户
+
+- 编译：Debug x64 / ARM64 零警告。App、Core 第一次编就零错误（交接里列的编译点全过）；只有单测三处常量断言被 MSTEST0032 挡住，照 `PlanV4Tests` 的写法就地 pragma、断言原样留着（`dfdf304e`）。
+- 单测：`dotnet test` 1101 个第一次就全过（新的 Barcode / EmojiPack / StatusMotion / ScrollPreview / ScreenshotRegions / NoteDeckLayout / NoteWall 都在里面，没改断言）；加 R104 那一个后 1102。
+- Release AOT：x64 / ARM64 都是 0 个 trim / AOT 警告；`KittyTools.pri` 等 PRI 齐全，`Resources\StatusEmoji` 61 个文件 + `emoji-pack.json` 都进了发布目录。Release exe 真跑过（改名 `KittyProbe.exe` + 同名 PRI、探针档）：`--overlay-translate-probe` 的结论和 Debug 逐条一样。
+- 内存 / 空闲 CPU（Release x64，和改动前 `32405b33` 的 Release 同一台机器并排起、各自探针档、`--clipboard-paused`，只托盘）：启动 60 秒后 新 49.9 / 旧 50.1 MB，再静置 300 秒后 49.7 / 49.9 MB；静置那 300 秒的空闲 CPU 0.052 % / 0.057 % 单核。打开面板、截图、状态屏挂着之后的全量探针没跑（要拿前台、要真截图）。
+- 体积（x64 发布目录，按 build-release.ps1 删掉多余语言和 WebView2 之后算）：`32405b33` 98.9 MiB → 现在 105.3 MiB（+6.4），zip 43.1 → 48.9 MiB（+5.7）；涨的几乎全是 R107 新加的 24 张表情 PNG（Resources 7.7 → 13.2 MiB），exe 33.6 → 34.4 MiB。ARM64 发布目录 111.0 MiB、zip 47.8 MiB。安装包没打（不改版本号、不打包）。
+- **认码多花的时间**（`BarcodeReader.Read`，Release JIT，5 次中位数；临时小程序引 Core，不入库）：
+  - 4K 整屏、没有码：三张 Win2D 画的真文字样图（`--overlay-translate-probe` 的 article / light / dark-code）拼满 4K：**300–376 ms**；
+    合成的密排竖笔画（像条码的字）：**约 740 ms**，其中一维码扫描约 520 ms、二值化约 60 ms、两遍找二维码约 60 ms。**都超过了交接里的 300 ms**，没调（原型在 Mac 上是 100 ms 上下）。
+  - 1440 × 30000、3840 × 30000（超 4000 万像素先缩）：都是 **1500–1509 ms** 到点收手，贴在底部的二维码照样认出。
+  - 满屏字没认出假码。
+- 没测：HANDTEST 1500–1511 的真截图（扫码登录的码、商品条码、深色模式、钉图、截图历史、长图标注、没装识字组件）都要用户；真网页上截一张带码的图拷出内容也是。
+
 ### R106（P3）长截图面板的预览（`MAC-DIFF.md`「其他窗口 › 长截图 › 还没对齐」）
 
 - mac 的预览有纸带滑动、接缝闪品牌粉、高度数字滚动、平滑取样；Windows 是最近邻取样、没有这三样动效。
@@ -201,6 +215,13 @@ mac 还没推进 `macos` 的（多语言 / 英文、截图识别元素第二三�
 4. 真机走 HANDTEST 1520–1535（长截图手动 / 自动、往上、窄选区、往回看、关了动画效果）；1531 看拼接节奏和 CPU（平滑取样在 UI 线程上，长图长了的那拍多几毫秒，量一下 `Render` 的耗时；太慢把 `MaxTaps` 调成 3）。
 5. Debug `--long-annotate-probe=3000`（`KITTY_HUD_CAPTURE=1`）出的 `scroll-panel-*-moving.png` / `scroll-panel-*.png`，再录一段 3–5 秒的长截图预览（只录面板），推 `windows-shots` 的 `0.3.0-fill/`。
 6. 内存探针、空闲 CPU 照每批的自查清单（滑完闪完退订 `Rendering`，静置时应当是 0）。
+
+#### Windows 核验（2026-11-17）→ 编译、单测、AOT 过；真长截图手测待用户
+
+- 编译 / 单测 / AOT / 内存 / 体积同 R105 那一节。
+- **取样耗时**（`ScrollCanvas.Sample`，1440 宽的长图、预览撑满取最后 2400 行，Release JIT 中位数）：预览 300 × 500 / 360 × 600 / 450 × 750 物理像素时新的按块平均 **6.0 / 8.3 / 12.9 ms**，原来的最近邻 0.37 / 0.51 / 0.86 ms（约 15 倍）。每拼上一段在 UI 线程上算一次，在一帧以内；`MaxTaps` 没动。
+- Debug `--long-annotate-probe=3000`（`KITTY_HUD_CAPTURE=1`）：`scroll-panel-*.png` / `-moving.png` 推 `windows-shots` `0.3.0-fill/r106-*`。第 2 张起 moving 能看到图下边的粉、数字在滚（600 → 950 时上面那两位在往外滚）。**第 1 张 moving**（拼上后 50 ms）拍到的是刚出来、还没画第一帧的空面板（透着后面），不是 HANDTEST 1533 说的「第一帧、不动」——面板出场还在走，没改。这个探针跑完不自己退（按自己起的 PID 结束）。
+- 没测：**自动滚动时的 CPU**（1531，要真开长截图）、1520–1532 其余、录一段预览。
 
 ### R107（P2）状态屏和提醒图标（`MAC-DIFF.md`「状态屏 › 还没对齐」）
 
@@ -329,6 +350,14 @@ mac 还没推进 `macos` 的（多语言 / 英文、截图识别元素第二三�
 8. `--pack` 不检查图集上限：脚本拦帧数 2…256、列数 / 行数 ≤ 16（同 `EmojiSheet.Decode`）；本机 29 个重跑，输出逐字节不变，`swiftc -typecheck` 过。
 9. 测试源只在测试档认：`KITTY_EMOJI_PACK_SERVER` 只在 `Paths.IsTestProfile`（Debug、Release 的探针档）时读；HANDTEST 1550 改成用 Debug 版试。
 
+#### Windows 核验（2026-11-17）→ 编译、单测、AOT 过；表情包这次不发，那一格和开关先藏起来；长成整屏待用户手动进入时录屏
+
+- 编译 / 单测 / AOT / 内存 / 体积同 R105 那一节。
+- **表情包这次不发**（用户 2026-11-17）：`bfeaa12e` 加 `EmojiPack.IsPublished`（写死 false）。图标格子里不出「动画表情」那一格（`AnimatedEmojiPicker.Create` 给 null），设置 › 状态屏「动画」不出「自动下载动画表情」开关、说明里不提下载，设置 › 提醒「图标」整节不出；`EmojiPack.IsEnabled` 跟着为假，一个下载请求都不发。从 Mac 同步 / 导入来的 `pack:` 照旧认、画系统样子；导出照旧带 `emojiPackDownloads`；自带的 28 个照常动。包发了把 `IsPublished` 改成 true。`--ui-snapshots` 的设置图（状态 / 提醒详情、提醒页，浅深）推 `0.3.0-fill/r107-*`：格子是「无」+ 28 + 「系统表情」。MAC-DIFF「状态屏 › 还没对齐」写了。HANDTEST 1544 前加了暂缓说明。
+- `--status-screen-probe` **没跑**：它会真的进入状态屏（三种样式各一次、盖住所有屏约 45 秒）并发带标记的模拟按键，和「状态屏任何自动化都不许真的进入」、「不发合成按键」两条冲突；问了用户，用户选了不跑。告示、小字、逐字浮现（1556–1563）只能等用户手动进入时看。
+- **长成整屏（1566–1568）没录**：要用户手动按快捷键、Enter 进入，我只录自己的窗口；`SetWindowRgn` 裁不裁得住、掉不掉帧还不知道，所以还没决定退不退回「不长」。
+- `png-squeeze` 再压没跑（可选）。
+
 ### R108（P2）便签：屏幕边缘那叠的动画、便签墙拖动排序（`MAC-DIFF.md`「便签 › 还没对齐」）
 
 - 那叠：扇出、滑出、收回的动画；标签倾斜；打开的便签旁边跟着它的标签；拖动排序时别的标签让位。
@@ -428,18 +457,25 @@ mac 还没推进 `macos` 的（多语言 / 英文、截图识别元素第二三�
   13 HANDTEST 1609（笔按在卡片上滚不滚得动墙），1580 补了讲述人调用。
 - 要特别看的编译点多两处：`NoteSheetTabPeer.GetPatternCore`（返回 object、base 的结果加了 `!`）；`IInvokeProvider` 在 AOT 下的类要 partial（已加）。
 
+#### Windows 核验（2026-11-17）→ 编译、单测、AOT 过；动效和笔待用户
+
+- 编译 / 单测 / AOT / 内存 / 体积同 R105 那一节（`NoteDeckLayoutTests` 那条常量断言是 `dfdf304e` 里 pragma 的三处之一）。
+- Debug `--notes-ui-probe`（`KITTY_APP_THEME=light|dark`，各一份全新 .Dev 档）全部「好了」，图推 `0.3.0-fill/r108-*`：墙上卡片斜着、列表「- 」淡色原样、代码块一块灰底、小标题「已固定」「其他」；打开的便签在朝里那侧带着竖排标题的标签。窗口大小照旧（标签列 38 × 643、药丸 12 × 134、打开的便签 460 × 380 物理像素，150 %）。
+- 没测：**笔按在墙上的卡片上滚不滚得动（1609）**、扇出 / 收回 / 拖动让位 / 悬停这些动效（要真鼠标，没录）、高对比度、`KITTY_REDUCED_MOTION=1`、上千条便签的内存（1598）。
+
 ## issue #29：Ctrl+Alt+A 被当成通用键（审查方在 Mac 上写、没编译，2026-11-16）
 
 用户 cx994 报：把截图快捷键设成 Ctrl+Alt+A，提示「Ctrl+Alt+A 是应用里的通用快捷键」。`Core/HotKeyRules.cs` 拒通用键的条件是
 `hasCtrl && IsGenericCtrlKey(virtualKey)`：只要带 Ctrl 就拒，带 Alt 的也挡了。PLAN §5.3 的本意是 Ctrl（`CtrlShiftGenericKeyIsStillRejected`
 另外锁了 Ctrl+Shift）加那 12 个字母；Ctrl+Alt+A 不是通用快捷键，很多截图工具默认就用它。mac 按完整组合比（`HotKey.reservedEditKeys`），⌃⌥A 本来就能设。
 
-### R103（P2）Ctrl+Alt+通用字母被拒 → 审查方已改（`git log --grep "issue #29"`），待你们编译验证
+### R103（P2）Ctrl+Alt+通用字母被拒 → 已修（`312d40f6`）；Windows 11-17 编译、单测过，真按键（HANDTEST 1483）待用户
 
 - 改成 `hasCtrl && !hasAlt && IsGenericCtrlKey(virtualKey)`。同一个 `Validate` 也管注册（`Shell/HotKeys.cs`）、导入（`ArchiveService`）、
   同步落快捷键（`SettingsSyncFields.Accept`），一起放开，口径一致。
 - 单测 `HotKeyRulesTests.CtrlAltGenericKeyIsAllowed`（Ctrl+Alt+A、Ctrl+Alt+Shift+C 通过，Ctrl+A 照旧拒）；PLAN §5.3 那一句补了「带 Alt 的不算」。
 - 要你们做：编译零警告、全部单测；HANDTEST 1483。
+- **Windows 核验（11-17）**：零警告、`HotKeyRulesTests.CtrlAltGenericKeyIsAllowed` 过；R104 那份导出就是在测试档里把截图键设成 Ctrl+Alt+A 后导的（`Validate` 放行、文件里写 `"screenshot": "Ctrl+Alt+A"`）。真按键、和 QQ / 微信撞键没走。
 - AltGr：德语、波兰语等布局上 Ctrl+Alt+字母就是 AltGr+字母（打 @、ą 这些字）。原来就允许 Ctrl+Alt+别的字母，这里只是把那 12 个也放开，不另加提示。
 
 ## 对齐复查（2026-11-17）
@@ -528,11 +564,24 @@ mac 那次的 `Clipboard/OCR.swift` 其实没有「多给词框」，只改了�
 6. 真截图走 `HANDTEST.md` 1484–1490（带标签和按钮的网页、气泡里的中文、150 % 下的小选区），写上「Windows 11-xx」。
 7. 做完把这一条改成「已修（提交号）」。R104 照旧在下面，只能在 Windows 上做，一起做掉。
 
+##### Windows 核验（2026-11-17）：编译、单测、AOT 过；`--overlay-translate-probe` 7 条不对 → 还是待修，数在下面，没调阈值
+
+编译 / 单测 / AOT 同 R105 那一节（这一组的单测 `ScreenshotRegionsTests`、`ScreenshotOverlayTests`、`ScreenshotOverlayLayoutTests`、`ScreenshotCoreTests`、`PortedCoreBatch6Tests` 第一次就全过）。测试档跑 `--overlay-translate-probe`（Debug 和 Release AOT 各一遍，结论一样）：light、dark-code、小选区 tight / roomy、popover-2x 过；**popover-1x、popover-1.5x、article-1x、article-2x 不过**。图和完整 report.md 在 `windows-shots` `0.3.0-r103/`。
+
+- **popover-1x**：分成 4 段对（标题 | 正文 | Got it | New），标签单独一段；容器 602 × 336 标题 / 602 × 336 / 96 × 52 控件 / 74 × 36 控件；排出来的字号 27.3 粗 / 26.8 / 18.0（只有三个数：按钮那段没排上）。**放不下 1 段**——按钮「Got it」图上留原文（译后识字末尾是「Gotit」），所以「译后按钮认得出」也不对。标签「新建」、正文、描边都对。
+- **popover-1.5x**：识字把标签认成「N ew」；分成 4 段，但**「标签单独一段」不对**；容器 902 × 503 标题 / 902 × 503 / 145 × 79 控件 / 110 × 53 控件；字号 26.4 粗 / 25.1 / 18.3；**放不下 1 段**，译后识字里标签还是「New」（这次没排上的是标签），「译后标签认得出」跟着不对；按钮「知道了」对。
+- popover-2x（对照，全过）：容器 1204 × 672 标题 / 1204 × 672 / 192 × 104 控件 / 148 × 72 控件；字号 26.7 粗 / 25.9 / 19.1 / 18.1；放不下 0 段。
+- **article-1x**：识字行高（点）15.5 / 15.5 / 15.5 / 15.2（在 10–20 里，过）；排出来的字号 **14.0 / 14.0 / 21.7 / 21.7**，要 16–24，不过。四段都没容器。
+- **article-2x**：识字行高 14.8 / 14.8 / 14.8 / 14.8；字号 **13.4 / 21.2 / 21.2 / 21.2**，不过。
+- 看图：article 后两段（短段）还原到了 21 点上下，前一两段（长段）掉回 13–14 点、比原文还小——像是长段按原字号排不下时退回了旧的缩字号那条路，而不是「先按原字号自然换行、往下多占几行」；popover 1x 的按钮、1.5x 的标签都是控件容器里排不下（字号 18 点上下、容器 52 / 53 像素高）。
+- 对照 mac 的假设：Windows 识字的行高（16 号字 15.5 点）比 mac 交接里说的 Vision（16 号字约 14 像素）还高一点，不是「框更紧」。
+
 #### R104（P2）互通格式补一道真的交叉验证
 
 - 用测试档（`.Dev` 或探针档，不碰真数据）**真的导出一份** Windows 文件，带快捷键、截图时的键、网页搜索（含快捷链接）、翻译服务（一个关着）、状态、提醒、片段、生词、便签，
   提交成 `windows/KittyTools.Tests/Fixtures/windows-archive-<提交号>.json`，在这一节下面写一句。
 - 审查方拿它在 Mac 上用 mac 自己的 `SettingsArchive` 真读一遍（mac 的单测宿主），对不上的再记待修。
+- **Windows 已做（2026-11-17）**：`3cb04ec9` 提交了 `windows/KittyTools.Tests/Fixtures/windows-archive-226e157f.json`，待审查方在 Mac 上读。`226e157f` 给设置窗自检加了角色 x：全新 .Dev 测试档里配齐——截图键 Ctrl+Alt+A、截图时的键（钉图 Ctrl+P、录屏清除）、网页搜索默认几个 + MDN（有关键词）+ 「收件箱」快捷链接（没有 {query}、兜底关）、谷歌开 + DeepL 关、自带三个状态 + 「开会中」（party-popper、透出、60 分钟）、两条提醒（间隔的「喝水」、进状态屏的「周会」）、两条片段（一条在「回复模板」分组、带备注）+ 一条收藏的普通文字、两条收藏的生词（另一条没收藏的不该导出）、三条便签（任务五态、Markdown、文字颜色、固定、纸色）+ 新档自己建的欢迎便签——再走「导出」同一条路（`ArchiveService.Build` 七类 + `WriteFile`）。按 mac 必填字段查过（`ArchiveMacCheck`）；新单测 `ArchiveInteropTests.RealWindowsExportReadsBack` 读回来七类都在。文件里没有本机路径和密钥（没设密码，不带密钥）；`version` 还是 0.2.0（没改版本号）。
 
 **不用跟的**（mac 独有）：Intel 包（PR #21、`81811b35`、`bfd13d83`）、刘海岛媒体键（`3d6d7f35`、PR #22 `926a1749`）。
 **原生悬停提示等 0.6 秒**（PR #28，`1778399a`）：Windows 的悬停提示是系统的，照 `AGENTS.md`「系统自己的东西跟 Windows 走」不改，记进 `MAC-DIFF.md`。
