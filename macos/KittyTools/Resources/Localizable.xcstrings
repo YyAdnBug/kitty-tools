@@ -681,12 +681,6 @@
     },
     "%@，%lld 个快捷键" : {
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@，%2$lld 个快捷键"
-          }
-        },
         "en" : {
           "variations" : {
             "plural" : {
@@ -703,6 +697,12 @@
                 }
               }
             }
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@，%2$lld 个快捷键"
           }
         }
       }
@@ -3137,6 +3137,24 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "%lld小时"
+          }
+        }
+      }
+    },
+    "island.wingMinutes" : {
+      "comment" : "刘海岛耳朵上 10 分钟以上的倒数：42分（往上取整；耳朵只有 36 pt，不带空格；短说法）",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lldm"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%lld分"
           }
         }
       }
@@ -29040,16 +29058,16 @@
     },
     "没能执行「%@」：%@的菜单变了" : {
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "没能执行「%1$@」：%2$@的菜单变了"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Couldn’t run “%1$@”: %2$@’s menus have changed"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "没能执行「%1$@」：%2$@的菜单变了"
           }
         }
       }

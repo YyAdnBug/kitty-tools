@@ -56,13 +56,20 @@ extension Island {
     var onWings: Bool
     /// 从进行中的提示缩进来的：原来那一条的 Content.source（换回提示时还按它认，progress / dismiss(ifShowing:) 找得到）
     var source: LocalizedStringResource?
+    /// 左耳画这个表情（StatusPreset.symbol 那种：表情 id 或自己挑的系统表情）、不画 symbol（提醒自己的图标，2026-11-17
+    /// 拍板 C5）；卡片前导和菜单栏那一项照旧用 symbol
+    var emoji: String?
+    /// 右耳的读数一直用强调色（专注模式里挂着的提醒写几条，拍板 B3）；倒数最后 1 分钟不靠它也变色（isClosing）
+    var tintsReading: Bool
 
     init(
       id: String, kind: Kind, title: String, detail: String? = nil, symbol: String,
       tone: Tone = .info, trailing: Trailing = .none, actions: [Action] = [],
       started: Date = .now, media: Media? = nil, onWings: Bool = true,
-      source: LocalizedStringResource? = nil
+      source: LocalizedStringResource? = nil, emoji: String? = nil, tintsReading: Bool = false
     ) {
+      self.emoji = emoji
+      self.tintsReading = tintsReading
       self.id = id
       self.kind = kind
       self.title = title
@@ -82,7 +89,8 @@ extension Island {
       activities.filter(\.onWings).max { ($0.kind, $0.started) < ($1.kind, $1.started) }
     }
 
-    /// 右耳上的字（纯函数，单测锁住）：计时同录制 HUD（0:42、1:02:03），倒数到 0 停住，百分比取整
+    /// 读数（纯函数，单测锁住）：计时同录制 HUD（0:42、1:02:03），倒数到 0 停住，百分比取整。卡片、菜单栏那一项、读屏用它；
+    /// 耳朵上用 wingReading（倒数只到分钟 / 小时）
     static func reading(_ trailing: Trailing, now: Date) -> String? {
       switch trailing {
       case .elapsed(let since): ScreenRecorder.clock(max(Int(now.timeIntervalSince(since)), 0))
@@ -95,7 +103,8 @@ extension Island {
     }
 
     /// 耳朵上的字：倒数还剩一小时以上写「4小时」（往下取整，同钟表；不带空格，省地方）——「1:00:00」10 pt 也要 40 pt 宽，
-    /// 耳朵只有 36（保持唤醒一开就是几个小时，2026-11-16 截图自检看出来的）。卡片、菜单栏那一项、读屏照旧是 reading 的精确倒数。
+    /// 耳朵只有 36（保持唤醒一开就是几个小时，2026-11-16 截图自检看出来的）；10 分钟以上只写分钟「42分」（往上取整，每分钟
+    /// 才换一次、挂在眼角不滚，2026-11-17 拍板 C1），最后 10 分钟走秒。卡片、菜单栏那一项、读屏照旧是 reading 的精确倒数。
     /// 正计时（录屏超过一小时的「1:02:03」）不改：录着时要看秒在走
     static func wingReading(_ trailing: Trailing, now: Date) -> String? {
       if case .countdown(let end) = trailing {
@@ -105,8 +114,23 @@ extension Island {
             localized: "island.wingHours", defaultValue: "\(seconds / 3600)小时",
             comment: "刘海岛耳朵上一小时以上的倒数：4小时（耳朵只有 36 pt，不带空格；短说法）")
         }
+        if seconds > tickingSpan {
+          return String(
+            localized: "island.wingMinutes", defaultValue: "\((seconds + 59) / 60)分",
+            comment: "刘海岛耳朵上 10 分钟以上的倒数：42分（往上取整；耳朵只有 36 pt，不带空格；短说法）")
+        }
       }
       return reading(trailing, now: now)
+    }
+
+    /// 耳朵上倒数最后这么多秒走秒
+    static let tickingSpan = 10 * 60
+
+    /// 倒数到了最后 1 分钟（还没到 0）：耳朵上的读数换成强调色（拍板 C4，不闪）
+    static func isClosing(_ trailing: Trailing, now: Date) -> Bool {
+      guard case .countdown(let end) = trailing else { return false }
+      let left = end.timeIntervalSince(now)
+      return left > 0 && left <= 60
     }
 
     /// 这一个的读数每秒在变（耳朵露着时要每秒推一次）
@@ -216,6 +240,9 @@ struct IslandWings: View {
         .opacity(media.snapshot.isPlaying ? 1 : 0.5)
         .animation(.easeInOut(duration: 0.2), value: media.snapshot.isPlaying)
         .overlay { if reduceMotion { IslandSkipArrow(skip: skip, size: 20) } }
+    } else if let emoji = activity.emoji {
+      // 岛是深色（.colorScheme(.dark)）：要垫浅底的那两个表情按它垫（StatusEmoji.menuImage 看的是 AppKit 的外观，浅色模式下不垫）
+      StatusPresetIcon(symbol: emoji, size: 15)
     } else {
       IslandActivityMark(activity: activity, size: 12)
     }
@@ -248,25 +275,38 @@ struct IslandWings: View {
     } else if activity.ticks {
       // 只在耳朵露着时每秒推一次；Ticker 只换变了的那几位数字（图层动画，渲染服务做）
       TimelineView(.periodic(from: .now, by: 1)) { context in
-        reading(Island.Activity.wingReading(activity.trailing, now: context.date) ?? "")
+        reading(
+          Island.Activity.wingReading(activity.trailing, now: context.date) ?? "",
+          tinted: Island.Activity.isClosing(activity.trailing, now: context.date))
       }
     } else if let text = Island.Activity.wingReading(activity.trailing, now: .now) {
-      reading(text)
+      reading(text, tinted: false)
     }
   }
 
-  private func reading(_ text: String) -> some View {
+  /// 白 85%；专注模式里挂着的提醒（tintsReading）、倒数最后 1 分钟用活动的颜色
+  private func reading(_ text: String, tinted: Bool) -> some View {
     Ticker(
-      text: text, font: Self.font(for: text), color: .white.withAlphaComponent(0.92),
+      text: text, font: Self.font(for: text),
+      color: tinted || activity.tintsReading
+        ? Self.onDark(NSColor(activity.tint)) : .white.withAlphaComponent(0.85),
       direction: Style.reduceMotion ? 0 : (activity.trailing.isCountdown ? -1 : 1))
   }
 
-  /// 12 pt 等宽数字，一只耳朵放不下（「1:02:03」「15小时」）就缩到 10。按排出来的宽度挑，不按字数：「15小时」只有
-  /// 4 个字，12 pt 却要 41 pt
+  /// 岛固定是深色：颜色按深色那一档取成定值（同 IslandBars）——App 是浅色时 cgColor 会取成浅色那一档；动态色换外观前后
+  /// 比起来相等，Ticker 也不会重画
+  static func onDark(_ color: NSColor) -> NSColor {
+    var resolved = color.cgColor
+    NSAppearance(named: .darkAqua)?.performAsCurrentDrawingAppearance { resolved = color.cgColor }
+    return NSColor(cgColor: resolved) ?? color
+  }
+
+  /// 11 pt 中粗的等宽数字（2026-11-17 拍板 C3：原来 12 pt 粗体，五个字把 36 pt 的耳朵塞满、比左耳的图标重），一只耳朵放不下
+  /// （「1:02:03」「15小时」）就缩到 10。按排出来的宽度挑，不按字数：「15小时」只有 4 个字，却比「42:00」宽
   static func font(for text: String) -> NSFont {
-    let regular = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
+    let regular = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
     return TickerView.measure(text, font: regular).size.width <= Island.wing
-      ? regular : .monospacedDigitSystemFont(ofSize: 10, weight: .semibold)
+      ? regular : .monospacedDigitSystemFont(ofSize: 10, weight: .medium)
   }
 }
 

@@ -378,18 +378,21 @@ struct ReminderTests {
   @Test func pickedTimeIsWholeMinute() {
     let picked = { Reminder.picked($0, calendar: Self.calendar) }
     let earliest = { Reminder.earliestPick(after: $0, calendar: Self.calendar) }
-    let reading = { (at: Date, now: Date) in Island.Activity.reading(.countdown(to: at), now: now) }
+    // 耳朵上的读数（卡片、菜单栏那一项是精确倒数）
+    let reading = { (at: Date, now: Date) in
+      Island.Activity.wingReading(.countdown(to: at), now: now)
+    }
     // + 1 分钟：17:46:05.267 选「17:47」，被夹住的（下限）、带着秒改出来的都存成 17:47:00，倒数 0:55
     let now = Self.at(2, 17, 46).addingTimeInterval(5.267)
     #expect(earliest(now) == Self.at(2, 17, 47))
     #expect(picked(earliest(now)) == Self.at(2, 17, 47))
     #expect(picked(now + 60) == Self.at(2, 17, 47))
     #expect(reading(Self.at(2, 17, 47), now) == "0:55")
-    // + 1 小时：存 18:46:00；离响不到一小时，倒数已经挂上，从 59:55 数
+    // + 1 小时：存 18:46:00；离响不到一小时，倒数已经挂上，只到分钟（拍板 C1）
     let hour = picked(now + 3600)
     #expect(hour == Self.at(2, 18, 46))
     #expect(hour - ReminderCenter.countdownWindow <= now)
-    #expect(reading(hour, now) == "59:55")
+    #expect(reading(hour, now) == "60分")
     // 跨午夜：23:59:30.5 最早能选第二天 0:00，选到的 0:00:30.5 存成 0:00:00，倒数 0:30
     let late = Self.at(2, 23, 59).addingTimeInterval(30.5)
     #expect(earliest(late) == Self.at(3, 0))

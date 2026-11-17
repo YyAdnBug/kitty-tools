@@ -1242,6 +1242,22 @@ struct SnapshotProbeTests {
         IslandView(island: island), size: notch.windowSize, dark: false,
         to: "\(out)/island-event-card.png")
     }
+    // 提醒的倒数（2026-11-17 拍板 C1–C5）：10 分钟以上只到分钟、最后 10 分钟走秒、最后 1 分钟强调色、设了图标的左耳画它
+    do {
+      // busts：要垫浅底的深色表情，App 是浅色时也要垫上（评审）
+      let cases: [(String, TimeInterval, String?)] = [
+        ("minutes", 42 * 60 - 3, nil), ("ticking", 9 * 60 + 42, nil), ("closing", 42, nil),
+        ("emoji", 42 * 60 - 3, "sleeping-face"), ("emoji-plated", 42 * 60 - 3, "busts"),
+      ]
+      for (name, left, emoji) in cases {
+        let countdown = Island.Activity(
+          id: "reminder", kind: .reminder, title: "喝水", symbol: "alarm.fill",
+          trailing: .countdown(to: .now.addingTimeInterval(left)), emoji: emoji)
+        try snapshot(
+          IslandView(island: Island(showing: nil, geometry: notch, activities: [countdown])),
+          size: notch.windowSize, dark: false, to: "\(out)/island-wings-reminder-\(name).png")
+      }
+    }
     // 换歌的一瞥：耳朵不动，下面垂一行居中的「♪ 歌名 · 艺人」
     do {
       let island = Island(

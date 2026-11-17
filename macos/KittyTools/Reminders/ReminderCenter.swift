@@ -287,7 +287,9 @@ import AppKit
         actions: [
           Island.Action("提前结束") { [weak self] in self?.finish([reminder.id]) },
           Island.Action("推后 5 分钟") { [weak self] in self?.postpone(reminder.id, by: 5 * 60) },
-        ]))
+        ],
+        // 设了图标的左耳画它（静止的第一帧，拍板 C5），没设是闹钟
+        emoji: reminder.symbol.isEmpty ? nil : reminder.symbol))
     return nil
   }
 
