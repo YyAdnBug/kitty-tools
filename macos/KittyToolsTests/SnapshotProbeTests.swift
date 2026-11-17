@@ -654,7 +654,7 @@ struct SnapshotProbeTests {
     islandPrefs.set(true, forKey: Prefs.islandShowsHistory)
     for dark in [false, true] {
       try snapshot(
-        IslandTab().defaultAppStorage(islandPrefs), size: NSSize(width: 640, height: 1760),
+        IslandTab().defaultAppStorage(islandPrefs), size: NSSize(width: 640, height: 2000),
         dark: dark, to: "\(out)/settings-island-custom\(dark ? "-dark" : "").png")
     }
     // 设置 › 通用「菜单栏」（第 9 批 M1 M2）：显示 + 彩色、隐藏（图标样式置灰），各出深色；临时偏好域，不动用户的菜单栏图标
@@ -1187,6 +1187,16 @@ struct SnapshotProbeTests {
         IslandView(island: island), size: notch.windowSize, dark: false, to: "\(out)/\(name).png")
     }
     // 按音量键 / 亮度键时的那一行：音量 62%、静音、亮度 30%
+    // 第 4 批：细条用强调色 + 旁边写百分比
+    do {
+      let island = Island(showing: nil, geometry: notch)
+      island.levelAccent = true
+      island.levelPercent = true
+      island.showLevel(Island.Level(kind: .volume, fraction: 0.625))
+      try snapshot(
+        IslandView(island: island), size: notch.windowSize, dark: false,
+        to: "\(out)/island-level-volume-options.png")
+    }
     for (name, level) in [
       ("island-level-volume", Island.Level(kind: .volume, fraction: 0.625)),
       ("island-level-muted", Island.Level(kind: .volume, fraction: 0.625, muted: true)),
@@ -1236,6 +1246,11 @@ struct SnapshotProbeTests {
       ),
       // 低电量模式打开（同专注模式那种开 / 关，2026-11-17 第 3 批）
       ("island-level-lowpower", SystemNotices.lowPowerLevel(on: true)),
+      // 第 4 批：电量低时写还能用多久
+      (
+        "island-level-power-minutes",
+        SystemNotices.powerLevel(plugged: false, percent: 9, low: true, minutes: 25)
+      ),
     ] {
       let island = Island(showing: nil, geometry: notch)
       island.showLevel(level)

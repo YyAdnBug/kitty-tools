@@ -1203,6 +1203,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     island.haptics = UserDefaults.standard.bool(forKey: Prefs.islandHaptics)
     island.blurs = UserDefaults.standard.bool(forKey: Prefs.islandBlur)
     island.hidesFromCapture = UserDefaults.standard.bool(forKey: Prefs.islandHidesFromCapture)
+    let defaults = UserDefaults.standard
+    island.dwellScale =
+      (defaults.string(forKey: Prefs.islandNoticeLength).flatMap(Island.DwellLength.init)
+      ?? .standard).scale
+    island.hoverDelay = .milliseconds(
+      Int(min(max(defaults.double(forKey: Prefs.islandHoverDelay), 0.1), 3) * 1000))
+    island.levelStay = .milliseconds(
+      Int(min(max(defaults.double(forKey: Prefs.islandLevelStay), 0.5), 10) * 1000))
+    if island.levelAccent != defaults.bool(forKey: Prefs.islandLevelAccent) {
+      island.levelAccent.toggle()
+    }
+    if island.levelPercent != defaults.bool(forKey: Prefs.islandLevelPercent) {
+      island.levelPercent.toggle()
+    }
   }
 
   /// 点刘海、停在刘海上、往下滑打开（有活动是它的卡片，没有是那一张）：刘海岛插件添加着，设置 › 刘海岛「点刘海打开」也开着

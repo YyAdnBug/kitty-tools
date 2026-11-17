@@ -235,13 +235,13 @@ import EventKit
     String(localized: "event.untitled", defaultValue: "日程", comment: "没有标题的日历日程")
   }
 
-  /// 下一个日程：还没开始的里面最早的（同一刻的按标题排，几台读出来一样）；全天的、拒绝 / 取消的不算
   /// 这一条是不是刚开始（纯函数）：开始了、还不到 1 分钟（睡着醒来时早过了的不响）
   static func isStarting(_ entry: Entry, now: Date) -> Bool {
     let since = now.timeIntervalSince(entry.start)
     return since >= 0 && since < 60
   }
 
+  /// 下一个日程：还没开始的里面最早的（同一刻的按标题排，几台读出来一样）；全天的、拒绝 / 取消的不算
   static func pick(_ entries: [Entry], now: Date) -> Entry? {
     entries.filter { !$0.isAllDay && !$0.declined && $0.start > now }
       .min { ($0.start, $0.title) < ($1.start, $1.title) }

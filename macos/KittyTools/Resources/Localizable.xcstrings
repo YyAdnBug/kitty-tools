@@ -2132,6 +2132,26 @@
     "/" : {
       "shouldTranslate" : false
     },
+    "0.3 秒" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "0.3 seconds"
+          }
+        }
+      }
+    },
+    "0.6 秒" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "0.6 seconds"
+          }
+        }
+      }
+    },
     "0/%lld" : {
       "shouldTranslate" : false
     },
@@ -2185,12 +2205,32 @@
         }
       }
     },
+    "1 秒" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 second"
+          }
+        }
+      }
+    },
     "1–120 分钟" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "1–120 minutes"
+          }
+        }
+      }
+    },
+    "2 秒" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "2 seconds"
           }
         }
       }
@@ -2211,6 +2251,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "3 seconds"
+          }
+        }
+      }
+    },
+    "3.5 秒" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "3.5 seconds"
           }
         }
       }
@@ -6044,6 +6094,16 @@
         }
       }
     },
+    "「已复制」这类提示在刘海上停多久；带按钮的、出错的跟着变长变短，进行中的不算" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "How long notices like “Copied” stay on the Notch; ones with buttons or errors scale too, ones in progress don’t"
+          }
+        }
+      }
+    },
     "「常用」和按使用习惯的排序会从头开始学，收藏不动。" : {
       "localizations" : {
         "en" : {
@@ -8400,12 +8460,33 @@
         }
       }
     },
+    "停多久" : {
+      "comment" : "刘海岛设置：音量 / 亮度提示停多久",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stays for"
+          }
+        }
+      }
+    },
     "停多久再弹出" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Delay"
+          }
+        }
+      }
+    },
+    "停多久展开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hover time before expanding"
           }
         }
       }
@@ -9724,6 +9805,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Switch to %@"
+          }
+        }
+      }
+    },
+    "切到正在放歌的 App（比如音乐、浏览器里放视频的那个）时，刘海两边收起；切走再出来" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When you switch to the app that’s playing (like Music, or the browser playing a video), the sides of the notch hide; they come back when you switch away"
           }
         }
       }
@@ -22901,6 +22992,16 @@
         }
       }
     },
+    "提示停多久" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notice duration"
+          }
+        }
+      }
+    },
     "提示音" : {
       "localizations" : {
         "en" : {
@@ -27665,6 +27766,16 @@
         }
       }
     },
+    "正在用放歌的 App 时不显示" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide while using the playing app"
+          }
+        }
+      }
+    },
     "正在看原文" : {
       "localizations" : {
         "en" : {
@@ -32340,6 +32451,17 @@
         }
       }
     },
+    "短" : {
+      "comment" : "刘海岛设置「提示停多久」的一档",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Short"
+          }
+        }
+      }
+    },
     "石墨色" : {
       "localizations" : {
         "en" : {
@@ -33674,6 +33796,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Thin"
+          }
+        }
+      }
+    },
+    "细条旁边显示百分比" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show the percentage next to the bar"
+          }
+        }
+      }
+    },
+    "细条用强调色" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use the accent color for the bar"
           }
         }
       }
@@ -37383,6 +37525,28 @@
         }
       }
     },
+    "还能用约 %lld 分钟" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "About %lld minute left"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "About %lld minutes left"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "还错过了：%@" : {
       "localizations" : {
         "en" : {
@@ -39581,6 +39745,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Couldn’t block the keyboard and mouse"
+          }
+        }
+      }
+    },
+    "长" : {
+      "comment" : "刘海岛设置「提示停多久」的一档",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Long"
           }
         }
       }

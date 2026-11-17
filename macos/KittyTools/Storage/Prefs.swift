@@ -507,6 +507,14 @@ enum Prefs {
   static let islandEventChime = "islandEventChime"
   /// 截图、录屏里不出现刘海岛（2026-11-17 照 Alcove，默认关）
   static let islandHidesFromCapture = "islandHidesFromCapture"
+  /// 2026-11-17 第 4 批（照 Alcove 能调，默认同原来）：提示停多久（Island.DwellLength 的 rawValue）、停在刘海上多久展开（秒）、
+  /// 音量 / 亮度那一行停多久（秒）、细条用强调色、细条旁写百分比、正在用放歌的 App 时刘海两边不显示正在播放
+  static let islandNoticeLength = "islandNoticeLength"
+  static let islandHoverDelay = "islandHoverDelay"
+  static let islandLevelStay = "islandLevelStay"
+  static let islandLevelAccent = "islandLevelAccent"
+  static let islandLevelPercent = "islandLevelPercent"
+  static let islandNowPlayingHidesWhenActive = "islandNowPlayingHidesWhenActive"
   /// 刘海岛上的「正在播放」（刘海岛扩展第 2 期，Shell/NowPlaying.swift）：默认关（2026-11-13 拍板：归刘海岛插件、一组开关）；
   /// 关着时不连正在播放服务、服务不起
   static let islandNowPlaying = "islandNowPlaying"
@@ -684,6 +692,12 @@ enum Prefs {
       islandHourlyChime: false,
       islandEventChime: false,
       islandHidesFromCapture: false,
+      islandNoticeLength: Island.DwellLength.standard.rawValue,
+      islandHoverDelay: 0.3,
+      islandLevelStay: 2.2,
+      islandLevelAccent: false,
+      islandLevelPercent: false,
+      islandNowPlayingHidesWhenActive: false,
       islandNowPlaying: false,
       islandTrackPeek: true,
       // 默认关（2026-11-14，用户：Alcove 是点了才展开；它的实录里指针停 2–5 秒都只是鼓起）。这一项没发布过

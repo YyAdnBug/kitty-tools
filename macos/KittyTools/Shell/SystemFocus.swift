@@ -257,10 +257,11 @@ import os
   }
 
   /// 每侧伸出多宽（纯函数，量名字）：左边 11 边距 + 16 图标 + 6 间距 + 名字 + 8，最窄同音量提示的 90、最宽 160（再长的截尾）
-  static func wing(for name: String) -> CGFloat {
+  /// extra：名字之外左边还占多少（有图标 41；电量低那种只有一句话的 21）
+  static func wing(for name: String, extra: CGFloat = 41) -> CGFloat {
     let font = NSFont.systemFont(ofSize: 13, weight: .semibold)
     let width = (name as NSString).size(withAttributes: [.font: font]).width.rounded(.up)
-    return min(max(width + 41, Island.levelWing), 160)
+    return min(max(width + extra, Island.levelWing), 160)
   }
 
   /// 日志给的符号名系统里没有（iOS 才有的、别的系统版本的；「工作」写的 person.lanyardcard.fill 在 macOS 27 上就没有，

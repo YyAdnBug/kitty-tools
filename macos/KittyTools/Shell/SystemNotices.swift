@@ -149,23 +149,38 @@ import Network
       warned.insert(threshold)
       guard !quiet else { return }
       island?.showNotice(
-        Self.powerLevel(plugged: false, percent: now.percent, low: true),
+        Self.powerLevel(
+          plugged: false, percent: now.percent, low: true, minutes: Self.readTimeToEmpty()),
         fallback: "电量还剩 \(now.percent)%")
       Island.announce("电量低，还剩 \(now.percent)%")
     }
   }
 
   /// 电源的提示怎么画（纯函数；2026-11-14 照 Alcove：贴在刘海两边，左边一句话、右边百分比 + 电池）：接着电源是
-  /// 绿的「充电中」（满了是「已充满」），拔掉是白的「电池供电」，电量低是红的「电量低」。多出一会儿（5 秒，同它）
-  static func powerLevel(plugged: Bool, percent: Int, low: Bool) -> Island.Level {
-    Island.Level(
-      kind: .device, fraction: Double(min(max(percent, 0), 100)) / 100,
-      caption: low
-        ? String(localized: "电量低")
-        : plugged
-          ? (percent >= 100 ? String(localized: "已充满") : String(localized: "充电中"))
-          : String(localized: "电池供电"),
-      tone: low ? .low : plugged ? .good : .plain, stay: .seconds(5))
+  /// 绿的「充电中」（满了是「已充满」），拔掉是白的「电池供电」，电量低是红的「电量低」。多出一会儿（5 秒，同它）。
+  /// 电量低时系统算出了还能用多久（minutes）就写「还能用约 25 分钟」（2026-11-17 照 Alcove 的「还能用多久」），
+  /// 两边照这句话加宽
+  static func powerLevel(plugged: Bool, percent: Int, low: Bool, minutes: Int? = nil)
+    -> Island.Level
+  {
+    let caption =
+      low
+      ? (minutes.map { String(localized: "还能用约 \($0) 分钟") } ?? String(localized: "电量低"))
+      : plugged
+        ? (percent >= 100 ? String(localized: "已充满") : String(localized: "充电中"))
+        : String(localized: "电池供电")
+    return Island.Level(
+      kind: .device, fraction: Double(min(max(percent, 0), 100)) / 100, caption: caption,
+      tone: low ? .low : plugged ? .good : .plain, stay: .seconds(5),
+      wing: SystemFocus.wing(for: caption, extra: 21))
+  }
+
+  /// 内建电池还能用多少分钟（系统算的；还在算、接着电源、没有电池是 nil）
+  private static func readTimeToEmpty() -> Int? {
+    // 秒；还在算是 kIOPSTimeRemainingUnknown（-1），接着电源是 kIOPSTimeRemainingUnlimited（-2）
+    let seconds = IOPSGetTimeRemainingEstimate()
+    guard seconds > 0 else { return nil }
+    return max(Int((seconds / 60).rounded()), 1)
   }
 
   /// 该提醒低电量的门槛（纯函数）：没接电源、电量到了 20 / 10 以下、这一轮放电里还没提醒过；两个都到了只说低的那个

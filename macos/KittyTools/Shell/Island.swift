@@ -143,6 +143,28 @@ import SwiftUI
   /// 停在耳朵上自动展开最要紧的那个活动（设置 › 刘海岛，默认关：Alcove 是停上去只鼓起、点了才展开——第 2 批
   /// 以为它是悬停展开，做成了默认开，用户 2026-11-14 指出；AppDelegate 跟着偏好给）
   @ObservationIgnored var hoverExpands = false
+  /// 停在刘海上多久自动展开（设置 › 刘海岛，2026-11-17 照 Alcove 能调；默认 hoverExpandDelay）
+  @ObservationIgnored var hoverDelay = Island.hoverExpandDelay
+  /// 提示停多久的倍数（设置 › 刘海岛「提示停多久」，DwellLength；进行中的不算）
+  @ObservationIgnored var dwellScale = 1.0
+
+  /// 提示停多久（设置里三档）
+  enum DwellLength: String, CaseIterable {
+    case short, standard, long
+
+    var scale: Double {
+      switch self {
+      case .short: 0.6
+      case .standard: 1
+      case .long: 1.8
+      }
+    }
+  }
+  /// 音量 / 亮度那一行多久收回（设置 › 刘海岛「音量和亮度」；默认 levelDwell）
+  @ObservationIgnored var levelStay = Island.levelDwell
+  /// 音量 / 亮度的细条用强调色（默认白）、旁边写百分比（默认不写）
+  var levelAccent = false
+  var levelPercent = false
   /// 触感（设置 › 刘海岛「触感反馈」，A5）：滑动切歌、展开活动、进度条拖到头时触控板一下。摆出来的岛不给
   @ObservationIgnored var haptics = true
   /// 点到了岛本身（耳朵、刘海）：整座岛缩一下再弹回（C2；IslandView 看它的次数）
@@ -470,8 +492,8 @@ import SwiftUI
     let seconds: Double =
       switch next.tone {
       case .progress: 60
-      case .error: actions.isEmpty ? 3 : 6
-      default: actions.isEmpty ? (next.detail == nil ? 1.4 : 2) : 6
+      case .error: (actions.isEmpty ? 3 : 6) * dwellScale
+      default: (actions.isEmpty ? (next.detail == nil ? 1.4 : 2) : 6) * dwellScale
       }
     if isHovered {
       remaining = .seconds(seconds)
@@ -843,7 +865,7 @@ import SwiftUI
     }
     guard level?.identity == next.identity, content != nil else { return }
     level = next
-    arm(next.stay ?? Self.levelDwell)
+    arm(next.stay ?? levelStay)
   }
 
   func showLevel(_ next: Level) {
@@ -854,7 +876,7 @@ import SwiftUI
     }
     if level != nil, content != nil, level?.kind == next.kind {
       level = next
-      return arm(next.stay ?? Self.levelDwell)
+      return arm(next.stay ?? levelStay)
     }
     let swapsKind = level != nil && content != nil
     guard
@@ -893,7 +915,7 @@ import SwiftUI
     hoverCheck?.cancel()
     isHovered = false
     window?.ignoresMouseEvents = true
-    arm(next.stay ?? Self.levelDwell)
+    arm(next.stay ?? levelStay)
   }
 
   /// 出音量 / 亮度提示之前要不要先捏回刘海（纯函数）：从耳朵过来、或者提示换了种类（音量 → 亮度）时捏；岛上空着
@@ -1583,8 +1605,9 @@ import SwiftUI
       return
     }
     guard hoverExpand == nil else { return }
+    let delay = hoverDelay
     hoverExpand = Task { [weak self] in
-      try? await Task.sleep(for: Self.hoverExpandDelay)
+      try? await Task.sleep(for: delay)
       guard let self, !Task.isCancelled else { return }
       self.hoverExpand = nil
       guard self.isPeeking, self.content == nil, !self.isBoardOpen, !self.isSuppressed() else {
@@ -1936,7 +1959,7 @@ struct IslandView: View {
       } else if island.isShowingLevel, let level = island.level {
         // 音量 / 亮度：没有刘海的屏上是一行（换数不重新出场）；刘海屏上画在刘海两边（levelWings），这里不占地方
         if case .capsule = island.geometry {
-          IslandLevelRow(level: level)
+          IslandLevelRow(level: level, accent: island.levelAccent)
             .measured { report($0) }
             .transition(appear)
         }
@@ -2017,7 +2040,8 @@ struct IslandView: View {
     {
       let fading = island.pinched || !island.isShowingLevel
       IslandLevelWings(
-        level: level, notchWidth: width, notchHeight: height + Island.levelDrop
+        level: level, notchWidth: width, notchHeight: height + Island.levelDrop,
+        accent: island.levelAccent, percent: island.levelPercent
       )
       .modifier(Melt(progress: fading ? 0 : 1, scales: false))
       .animation(.smooth(duration: 0.24), value: fading)

@@ -332,13 +332,15 @@ struct IslandLevelSymbol: View {
 /// 音量 / 亮度提示的细条：4 pt 高的胶囊，白色填充（静音时整条暗着）；条跟着键走得很快（一秒十几格），用 0.08 秒的线性跟上
 struct IslandLevelBar: View {
   let level: Island.Level
+  /// 用强调色填（设置 › 刘海岛「音量和亮度」，默认白）
+  var accent = false
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
     Capsule().fill(.white.opacity(0.22))
       .overlay(alignment: .leading) {
         GeometryReader { proxy in
-          Capsule().fill(.white)
+          Capsule().fill(accent ? Style.brand : .white)
             .frame(width: max(proxy.size.width * level.shown, level.shown > 0 ? 4 : 0))
             .animation(reduceMotion ? nil : .linear(duration: 0.08), value: level.shown)
         }
@@ -355,6 +357,9 @@ struct IslandLevelWings: View {
   let level: Island.Level
   let notchWidth: CGFloat
   let notchHeight: CGFloat
+  /// 音量 / 亮度的细条用强调色、细条旁边写百分比（设置 › 刘海岛「音量和亮度」，2026-11-17 照 Alcove）
+  var accent = false
+  var percent = false
   @Environment(\.islandLevelRide) private var ride
 
   var body: some View {
@@ -397,7 +402,16 @@ struct IslandLevelWings: View {
             .contentTransition(.opacity)
             .animation(Style.Motion.snap.animation(), value: level.fraction > 0)
         } else {
-          IslandLevelBar(level: level).frame(width: 68)
+          HStack(spacing: 6) {
+            IslandLevelBar(level: level, accent: accent).frame(width: percent ? 40 : 68)
+            if percent {
+              Text(verbatim: "\(Int((level.shown * 100).rounded()))%")
+                .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                .foregroundStyle(.white.opacity(0.92))
+                .lineLimit(1)
+                .frame(width: 30, alignment: .trailing)
+            }
+          }
         }
       }
       .padding(.trailing, 12)
@@ -481,6 +495,8 @@ extension Island.Level {
 /// 同提示那一行的高度
 struct IslandLevelRow: View {
   let level: Island.Level
+  /// 细条用强调色（设置 › 刘海岛「音量和亮度」）
+  var accent = false
 
   var body: some View {
     HStack(spacing: 10) {
@@ -510,7 +526,7 @@ struct IslandLevelRow: View {
           .fixedSize(horizontal: true, vertical: false)
         IslandBattery(fraction: level.battery, tone: level.tone)
       } else {
-        IslandLevelBar(level: level).frame(width: 160)
+        IslandLevelBar(level: level, accent: accent).frame(width: 160)
         Text("\(Int((level.shown * 100).rounded()))%")
           .font(.system(size: 12, weight: .semibold).monospacedDigit())
           .foregroundStyle(.white.opacity(0.92))

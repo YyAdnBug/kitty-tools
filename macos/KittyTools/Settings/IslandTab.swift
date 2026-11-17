@@ -21,6 +21,13 @@ struct IslandTab: View {
   @AppStorage(Prefs.islandHourlyChime) private var hourlyChime = false
   @AppStorage(Prefs.islandEventChime) private var eventChime = false
   @AppStorage(Prefs.islandHidesFromCapture) private var hidesFromCapture = false
+  @AppStorage(Prefs.islandNoticeLength) private var noticeLength = Island.DwellLength.standard
+    .rawValue
+  @AppStorage(Prefs.islandHoverDelay) private var hoverDelay = 0.3
+  @AppStorage(Prefs.islandLevelStay) private var levelStay = 2.2
+  @AppStorage(Prefs.islandLevelAccent) private var levelAccent = false
+  @AppStorage(Prefs.islandLevelPercent) private var levelPercent = false
+  @AppStorage(Prefs.islandNowPlayingHidesWhenActive) private var hidesWhenActive = false
   @AppStorage(Prefs.islandNowPlaying) private var nowPlaying = false
   @AppStorage(Prefs.islandTrackPeek) private var trackPeek = true
   @AppStorage(Prefs.islandNextEvent) private var nextEvent = false
@@ -47,9 +54,15 @@ struct IslandTab: View {
           Text("在刘海上显示正在播放")
           Text("音乐、播客、浏览器里的视频：刘海两边是封面和跳动条，点开能暂停、切歌、拖进度")
         }
-        Toggle(isOn: $trackPeek) {
-          Text("换歌时显示歌名")
-          Text("从刘海垂下一小条歌名和艺人，约 2 秒收回")
+        Group {
+          Toggle(isOn: $trackPeek) {
+            Text("换歌时显示歌名")
+            Text("从刘海垂下一小条歌名和艺人，约 2 秒收回")
+          }
+          Toggle(isOn: $hidesWhenActive) {
+            Text("正在用放歌的 App 时不显示")
+            Text("切到正在放歌的 App（比如音乐、浏览器里放视频的那个）时，刘海两边收起；切走再出来")
+          }
         }
         .disabled(!nowPlaying)
       } header: {
@@ -120,6 +133,16 @@ struct IslandTab: View {
           Text("按音量键、亮度键时显示在刘海上")
           Text("系统自己的音量、亮度提示不再出现；按着 ⌥ 时照旧打开系统设置")
         }
+        Group {
+          Picker("停多久", selection: $levelStay) {
+            Text("1 秒").tag(1.0)
+            Text("2 秒").tag(2.2)
+            Text("3.5 秒").tag(3.5)
+          }
+          Toggle("细条用强调色", isOn: $levelAccent)
+          Toggle("细条旁边显示百分比", isOn: $levelPercent)
+        }
+        .disabled(!keyLevels)
         // 开关关着时不去查授权
         if keyLevels, !Permissions.isAccessibilityTrusted {
           LabeledContent {
@@ -203,6 +226,20 @@ struct IslandTab: View {
         Toggle(isOn: $hoverExpands) {
           Text("停在刘海上自动展开")
           Text("关着时停上去只鼓起一点、点一下才展开；打开后刘海两边挂着东西时，指针停一下就展开成卡片")
+        }
+        Picker("停多久展开", selection: $hoverDelay) {
+          Text("0.3 秒").tag(0.3)
+          Text("0.6 秒").tag(0.6)
+          Text("1 秒").tag(1.0)
+        }
+        .disabled(!hoverExpands)
+        Picker(selection: $noticeLength) {
+          Text("短").tag(Island.DwellLength.short.rawValue)
+          Text("标准").tag(Island.DwellLength.standard.rawValue)
+          Text("长").tag(Island.DwellLength.long.rawValue)
+        } label: {
+          Text("提示停多久")
+          Text("「已复制」这类提示在刘海上停多久；带按钮的、出错的跟着变长变短，进行中的不算")
         }
         Toggle(isOn: $haptics) {
           Text("触感反馈")
