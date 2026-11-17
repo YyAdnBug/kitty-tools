@@ -1,6 +1,6 @@
 // 访达扩展交过来的一次动作（第十一族「访达右键」，2026-11-08 拍板，PLAN §10「访达右键」）。扩展只画菜单（KittyToolsFinder/FinderMenu），
 // 点了用 App 自己的网址把动作交过来：<App 的 bundle id>://finder?do=<动作>&key=<凭证>&…&file=/a&file=/b，动作是
-// copy（拷贝路径）、name（拷贝名称）、open（app=bundle id，用 App 打开）、new（template=自带的 id 或模板文件夹里的文件名，
+// copy（拷贝路径）、name（拷贝名称）、ocr（拷贝图中文字）、open（app=bundle id，用 App 打开）、new（template=自带的 id 或模板文件夹里的文件名，
 // mine=1 是模板文件夹里的；file 是右键的文件夹）、suffix（自定义后缀，file 是文件夹）、templates（打开模板文件夹）、
 // move / copyto（to=常用文件夹的路径，或 choose 另选）、cut（剪切）、paste（file 是右键的文件夹）、alias（发送替身到桌面）、zip / 7z / tgz（压缩成 zip、7z、tar.gz）、extract（解压到这里；to=choose 是按住 ⌥ 的「解压到…」）、
 // clip（从剪贴板新建，file 是右键的文件夹）、copy 带 style=shell 是按住 ⌥ 时的「拷贝路径（终端写法）」、name 带 style=stem 是「拷贝名称（不带扩展名）」，toomany（一次选了
@@ -27,6 +27,8 @@ nonisolated struct FinderLink: Equatable {
     case copyPaths(shell: Bool)
     /// stem：不带扩展名
     case copyNames(stem: Bool)
+    /// 认出图里的字（二维码的内容）拷进剪贴板
+    case copyImageText
     /// 扩展里一次选了超过 maxFiles 个
     case tooMany
     /// 交给这个 App 打开（bundle id）
@@ -60,6 +62,7 @@ nonisolated struct FinderLink: Equatable {
       switch self {
       case .copyPaths: .copyPath
       case .copyNames: .copyName
+      case .copyImageText: .copyText
       case .open, .tooMany: nil
       case .newFile, .customSuffix, .showTemplates, .newFromClipboard: .newFile
       case .transfer: .transfer
@@ -80,6 +83,8 @@ nonisolated struct FinderLink: Equatable {
   let files: [URL]
 
   static let host = "finder"
+  /// 「拷贝图中文字」交给 App 做（识字要等模型、空闲回收这些在 AppDelegate；单测里是 nil）
+  @MainActor static var copyImageText: (([URL]) -> Void)?
   /// 一次最多这么多个：访达里全选几万个文件再右键，网址长得离谱，拷贝的字也没人要
   static let maxFiles = 2000
 
@@ -110,6 +115,8 @@ nonisolated struct FinderLink: Equatable {
       action = .copyPaths(shell: one("style") == "shell")
     case "name" where !files.isEmpty:
       action = .copyNames(stem: one("style") == "stem")
+    case "ocr" where !files.isEmpty:
+      action = .copyImageText
     case "toomany" where files.isEmpty:
       action = .tooMany
     case "open" where !files.isEmpty:
@@ -403,6 +410,8 @@ nonisolated struct FinderLink: Equatable {
       } else {
         Archives.extract(link.files, island: island)
       }
+    case .copyImageText:
+      copyImageText?(link.files)
     case .fixNames:
       NameRepair.fix(link.files, island: island)
     case .toggleHiddenFiles:

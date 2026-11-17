@@ -1705,6 +1705,13 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
     （tar 的写法按前缀认，「a」会把 a/ 下面的都解出来；zip、7z、tar 的文件夹 -v 都带「/」，实测），类型用 lstat 看
     （解出来是文件夹、指向文件夹的替身都不当成文件），丢的文件 a 和丢的 A/b 分到两轮；跨卷移动原件没删掉的那几样，撤销时原件
     还在就把复制品移到废纸篓、原件后来被删了就照常挪回去，挪回去时那边没删掉也照实说。解压后在主线程上拆 -v 输出写了 ponytail。
+  - 第 4 批（C1）：右键图片「拷贝图中文字」（`FinderMenuItem.copyText`，默认开；扩展只在选中的都是图片时出：按扩展名
+    `UTType` 认图片、不算 SVG），网址 `do=ocr`，App 经 `FinderLink.copyImageText` 交给 AppDelegate（识字要等模型、做完排空闲回收）：
+    `OCR.image(at:)` 在主线程外按照片里记的方向转正、长边缩到 4096（8192 一张要解成约 268 MB，评审），每张同截图识字——有二维码 /
+    条码拷它的内容，没有就识字、按设置接不接行，几张之间空一行，`Paster.write(record: true)`；排进访达右键那条队
+    （`FileMoves.enqueue`：超过 1 秒挂进度条「3/20」和「停止」，停了什么都不拷），一次最多 50 张；还没从 iCloud 下载的不读。
+    AppDelegate 里等模型那一段拆成 `prepareRecognition`，截图识字照旧走 `recognizing`。第 2 批（A1 工具栏按钮）等用户定要不要
+    「控制访达」的授权：苹果文档写明扩展管不到的位置点工具栏按钮时 selectedItemURLs / targetedURL 都是 nil，iCloud 文件夹多半就是。
 
 ### 截图识别元素（下一版，2026-11-08）
 

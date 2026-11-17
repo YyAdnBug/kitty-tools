@@ -171,6 +171,16 @@
         }
       }
     },
+    "拷贝图中文字" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy Text from Image"
+          }
+        }
+      }
+    },
     "拷贝路径" : {
       "localizations" : {
         "en" : {

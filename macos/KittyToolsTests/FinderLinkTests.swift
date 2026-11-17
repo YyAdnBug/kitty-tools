@@ -1,14 +1,41 @@
 // 访达右键：扩展交过来的网址怎么认（FinderLink.parse）、拷贝的字、交给 App 打开哪些、凭证只生成一次；
-// 还锁着扩展里抄的几个键名（KittyToolsFinder/FinderMenu 读 App 的偏好，名字对不上菜单就一直不出来）。
+// 还锁着扩展里抄的几个键名（KittyToolsFinder/FinderMenu 读 App 的偏好，名字对不上菜单就一直不出来）；「拷贝图中文字」读图时转正。
 // 偏好用临时域，不碰 Dev 版的。
 
+import CoreGraphics
 import Foundation
+import ImageIO
 import Testing
 import UniformTypeIdentifiers
 
 @testable import KittyTools
 
 @MainActor struct FinderLinkTests {
+  /// 「拷贝图中文字」读图（OCR.image）：照片里记的方向转正（竖着拍的照片原始像素是横的），超大的按长边缩，读不了是 nil
+  @Test func imageFilesAreReadUpright() async throws {
+    let folder = FileManager.default.temporaryDirectory.appending(path: "ImageText-\(UUID())")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let context = try #require(
+      CGContext(
+        data: nil, width: 40, height: 20, bitsPerComponent: 8, bytesPerRow: 0,
+        space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue))
+    context.setFillColor(gray: 1, alpha: 1)
+    context.fill(CGRect(x: 0, y: 0, width: 40, height: 20))
+    let pixels = try #require(context.makeImage())
+    let url = folder.appending(path: "竖拍.jpg")
+    let destination = try #require(
+      CGImageDestinationCreateWithURL(url as CFURL, UTType.jpeg.identifier as CFString, 1, nil))
+    CGImageDestinationAddImage(
+      destination, pixels, [kCGImagePropertyOrientation: 6] as CFDictionary)
+    #expect(CGImageDestinationFinalize(destination))
+    let image = try #require(await OCR.image(at: url))
+    #expect(image.width == 20 && image.height == 40)
+    let small = try #require(await OCR.image(at: url, maxSide: 10))
+    #expect(max(small.width, small.height) == 10)
+    #expect(await OCR.image(at: folder.appending(path: "没有.png")) == nil)
+  }
+
   let scheme = "com.yy.kitty-tools.native.dev"
   let key = "K-123"
   let apps = ["com.apple.Terminal", "com.microsoft.VSCode"]
@@ -131,6 +158,8 @@ import UniformTypeIdentifiers
     #expect(parse("do=zip&key=K-123&file=/a/b.txt")?.action == .compress(.zip))
     #expect(parse("do=7z&key=K-123&file=/a/b.txt&file=/a/c")?.action == .compress(.sevenZip))
     #expect(parse("do=tgz&key=K-123&file=/a/b.txt&file=/a/c")?.action == .compress(.tarGz))
+    #expect(parse("do=ocr&key=K-123&file=/a/b.png")?.action == .copyImageText)
+    #expect(parse("do=ocr&key=K-123") == nil)
     #expect(parse("do=tgz&key=K-123") == nil)
     #expect(parse("do=zip&key=K-123") == nil)
     #expect(parse("do=extract&key=K-123&file=/a/b.zip")?.action == .extract(choose: false))
@@ -302,7 +331,7 @@ import UniformTypeIdentifiers
     let words = [
       "do", "key", "app", "file", "copy", "open", "new", "template", "mine", "suffix", "name",
       "move",
-      "copyto", "to", "choose", "cut", "paste", "alias", "zip", "7z", "tgz", "extract",
+      "copyto", "to", "choose", "cut", "paste", "alias", "zip", "7z", "tgz", "ocr", "extract",
       "fixnames",
       "hiddenfiles", "hide", "ext", "on", "hash", "algo", "erase", "style", "shell", "stem",
       "toomany", "stale", "clip",

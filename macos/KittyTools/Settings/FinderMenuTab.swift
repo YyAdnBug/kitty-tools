@@ -93,6 +93,7 @@ struct FinderMenuTab: View {
       Section {
         ItemToggle(.copyPath)
         ItemToggle(.copyName)
+        ItemToggle(.copyText)
       } header: {
         Text("拷贝")
       } footer: {

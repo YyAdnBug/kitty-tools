@@ -1,5 +1,5 @@
 // 访达扩展（第十一族「访达右键」，2026-11-08 拍板，PLAN §10「访达右键」）：在访达的右键菜单第一层加几项。
-// - 选中文件 / 文件夹右键：「拷贝路径」「拷贝名称」、设置里选的每个 App 一项「在“X”中打开」（默认只有终端；叫法照访达
+// - 选中文件 / 文件夹右键：「拷贝路径」「拷贝名称」、「拷贝图中文字」（选中的都是图片时）、设置里选的每个 App 一项「在“X”中打开」（默认只有终端；叫法照访达
 //   自己的「在“照片”中打开」）、「移动到 ▸」「复制到 ▸」（常用文件夹 + 选择文件夹…）、「剪切」、「压缩为 ▸」（ZIP、7Z、TAR.GZ）、
 //   「解压到这里」（选中的都是压缩包时）、「修复乱码文件名」（选中的有名字像乱码、还原得出来的时候）、「隐藏」/「取消隐藏」、
 //   「隐藏扩展名」/「显示扩展名」（看选中的现在是什么样；读不到就当没隐藏）、「拷贝哈希 ▸」（选中的都是文件时）、
@@ -319,6 +319,14 @@ final class FinderMenu: FIFinderSync {
       && UTType(filenameExtension: url.pathExtension).map { $0.conforms(to: .package) } != true
   }
 
+  /// 是图片（只看扩展名，不碰文件）：系统读得了的图片，不算 SVG 这类矢量图（读不成位图）
+  private static func isImage(_ url: URL) -> Bool {
+    guard !url.hasDirectoryPath, let type = UTType(filenameExtension: url.pathExtension) else {
+      return false
+    }
+    return type.conforms(to: .image) && !type.conforms(to: .svg)
+  }
+
   /// 在不在废纸篓里（主目录的 .Trash，别的卷上的 .Trashes）
   private static func inTrash(_ url: URL) -> Bool {
     let path = url.standardizedFileURL.path(percentEncoded: false)
@@ -366,6 +374,14 @@ final class FinderMenu: FIFinderSync {
         option ? "拷贝名称（不带扩展名）" : "拷贝名称",
         option ? #selector(copyStem(_:)) : #selector(copyName(_:)), symbol: "textformat",
         color: Tint.copy, to: menu)
+    }
+    // 拷贝图中文字（2026-11-17 拍板 C1）：选中的都是图片时才出现
+    if items, Self.shows("finderMenuCopyText", default: true), !selected.isEmpty,
+      selected.allSatisfy(Self.isImage)
+    {
+      Self.add(
+        "拷贝图中文字", #selector(copyImageText(_:)), symbol: "text.viewfinder", color: Tint.copy,
+        to: menu)
     }
     if Self.shows("finderMenuHash", default: false), !selected.isEmpty,
       !selected.contains(where: \.hasDirectoryPath)
@@ -737,6 +753,10 @@ final class FinderMenu: FIFinderSync {
 
   @objc private func copyStem(_ sender: AnyObject?) {
     hand("name", extra: [URLQueryItem(name: "style", value: "stem")], container: false)
+  }
+
+  @objc private func copyImageText(_ sender: AnyObject?) {
+    hand("ocr", container: false)
   }
 
   @objc private func moveTo(_ sender: AnyObject?) {

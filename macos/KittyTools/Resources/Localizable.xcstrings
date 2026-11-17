@@ -6150,6 +6150,28 @@
         }
       }
     },
+    "一次最多认 %lld 张，后面的没认" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Reads at most %lld image at a time; the rest were skipped"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Reads at most %lld images at a time; the rest were skipped"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "一直展开" : {
       "localizations" : {
         "en" : {
@@ -7011,6 +7033,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Brightness"
+          }
+        }
+      }
+    },
+    "什么都没拷" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing was copied"
           }
         }
       }
@@ -12402,6 +12434,16 @@
         }
       }
     },
+    "右键图片：认出图里的字拷进剪贴板，有二维码就拷它的内容；只在选中的都是图片时出现" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Right-click images to copy the text in them to the clipboard, or a QR code’s content if there is one; appears only when everything selected is an image"
+          }
+        }
+      }
+    },
     "右键文件、文件夹，或者文件夹窗口的空白处" : {
       "localizations" : {
         "en" : {
@@ -16474,6 +16516,16 @@
         }
       }
     },
+    "已停止识别" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stopped recognizing"
+          }
+        }
+      }
+    },
     "已允许访问" : {
       "localizations" : {
         "en" : {
@@ -16867,6 +16919,28 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "Copied %lld files"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "已复制 %lld 张图里的文字" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Copied text from %lld image"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Copied text from %lld images"
                 }
               }
             }
@@ -25167,6 +25241,16 @@
         }
       }
     },
+    "显示「拷贝图中文字」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show “Copy Text from Image”"
+          }
+        }
+      }
+    },
     "显示「拷贝路径」" : {
       "localizations" : {
         "en" : {
@@ -25999,6 +26083,44 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "有 %lld 张没能读（读不了，或者还没从 iCloud 下载）" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld image couldn’t be read (unreadable, or not downloaded from iCloud yet)"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld images couldn’t be read (unreadable, or not downloaded from iCloud yet)"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "有 %lld 张没能读；一次最多认 %lld 张，后面的没认" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "有 %1$lld 张没能读；一次最多认 %2$lld 张，后面的没认"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld couldn’t be read; reads at most %lld images at a time, so the rest were skipped"
           }
         }
       }
@@ -27691,6 +27813,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Recording"
+          }
+        }
+      }
+    },
+    "正在识别图里的文字…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recognizing text in images…"
           }
         }
       }
@@ -29734,6 +29866,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Couldn’t put the Mac to sleep"
+          }
+        }
+      }
+    },
+    "没能读这张图" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t read this image"
           }
         }
       }
@@ -37881,6 +38023,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "These are all already in the list"
+          }
+        }
+      }
+    },
+    "这几张图都没能读" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t read any of these images"
           }
         }
       }

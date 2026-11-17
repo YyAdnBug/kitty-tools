@@ -967,6 +967,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     _ = stores
     isRunning = true
 
+    // 访达右键「拷贝图中文字」交给这里：识字要等模型、做完排空闲回收（recognizing）
+    FinderLink.copyImageText = { [unowned self] urls in copyRecognizedText(inFiles: urls) }
     // 本 App 生成的新文字写剪贴板时同时记进历史（Paster.write(string:record:)，mac-native §5）；暂停记录、剪贴板关着时不记
     Paster.recordText = { [unowned self] in
       if recordsClipboard { clipboardStore.recordOwnText($0) }
@@ -3318,6 +3320,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private func recognizing<T>(_ work: () async -> T) async -> T {
     // 进程内识过字，模型就留在内存里：这一路不一定开关面板（⌥O 识字、钉图上识字），自己记得回头放掉
     defer { idleReclaim.schedule() }
+    await prepareRecognition()
+    return await island.showIfSlow(Self.recognizingTitle, work)
+  }
+
+  /// 识字模型还没加载：刘海岛上说一声、按秒报已等多久，等它加载好（第一次要一分钟左右）
+  private func prepareRecognition() async {
     if !OCR.isPrepared() {
       let note = String(localized: "第一次识字要等一分钟左右，以后就快了")
       island.show(
@@ -3333,7 +3341,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       await OCR.prepare()
       ticker.cancel()
     }
-    return await island.showIfSlow(Self.recognizingTitle, work)
   }
 
   /// 有二维码 / 条码就复制它的内容，否则复制识别出的文字（设置里开了就把换行合成一段）；记进剪贴板历史
@@ -3360,6 +3367,86 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       detail: "\(Island.excerpt(text))",
       symbol: codes.isEmpty ? nil : "qrcode")
   }
+
+  /// 访达右键「拷贝图中文字」（2026-11-17 拍板 C1）：一张张认，每张同截图识字（有二维码 / 条码拷它的内容，没有就识字、
+  /// 按设置接不接行），几张之间空一行；拷进剪贴板、记进历史，刘海岛说一声。排进访达右键那条队（FileMoves.enqueue）：
+  /// 超过 1 秒挂进度条「3/20」和「停止」，停了什么都不拷。一次最多 maxImageFiles 张；还没从 iCloud 下载下来的不读
+  /// （一读就要整个下载，同解压不预读没下载的包）
+  private func copyRecognizedText(inFiles files: [URL]) {
+    let urls = Array(files.prefix(Self.maxImageFiles))
+    let joined = UserDefaults.standard.bool(forKey: Prefs.ocrJoinLines)
+    FileMoves.enqueue("正在识别图里的文字…", detail: "0/\(urls.count)", island: island) {
+      [unowned self] report in
+      defer { idleReclaim.schedule() }
+      await prepareRecognition()
+      var texts: [String] = []
+      var codesOnly = true
+      var unreadable = 0
+      for (index, url) in urls.enumerated() where !Task.isCancelled {
+        report(Double(index) / Double(urls.count), "\(index)/\(urls.count)")
+        let cloud = try? url.resourceValues(forKeys: [
+          .isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey,
+        ])
+        guard
+          !(cloud?.isUbiquitousItem == true
+            && cloud?.ubiquitousItemDownloadingStatus == .notDownloaded),
+          let image = await OCR.image(at: url)
+        else {
+          unreadable += 1
+          continue
+        }
+        let codes = await OCR.barcodes(in: image)
+        if !codes.isEmpty {
+          texts.append(codes.joined(separator: "\n"))
+          continue
+        }
+        codesOnly = false
+        guard let lines = await OCR.recognizeLines(in: image) else {
+          unreadable += 1
+          continue
+        }
+        let text = OCR.text(lines, joined: joined)
+        if !text.isEmpty { texts.append(text) }
+      }
+      return (
+        texts: texts, codesOnly: codesOnly, unreadable: unreadable, stopped: Task.isCancelled
+      )
+    } finish: { [unowned self] result in
+      guard !result.stopped else {
+        return island.show("已停止识别", detail: "什么都没拷", tone: .info)
+      }
+      let text = result.texts.joined(separator: "\n\n")
+      guard !text.isEmpty else {
+        let title: LocalizedStringResource =
+          result.unreadable < urls.count
+          ? "没有识别到文字" : urls.count == 1 ? "没能读这张图" : "这几张图都没能读"
+        return island.show(title, tone: .warning)
+      }
+      Paster.write(string: text, record: true)
+      let title: LocalizedStringResource =
+        result.codesOnly
+        ? "已复制二维码" : result.texts.count > 1 ? "已复制 \(result.texts.count) 张图里的文字" : "已复制"
+      // 有没读成的、超过上限没认的：照实说（不然以为全拷上了）
+      let unread = result.unreadable
+      let capped = files.count > urls.count
+      let detail: LocalizedStringResource =
+        if unread > 0 && capped {
+          "有 \(unread) 张没能读；一次最多认 \(Self.maxImageFiles) 张，后面的没认"
+        } else if unread > 0 {
+          "有 \(unread) 张没能读（读不了，或者还没从 iCloud 下载）"
+        } else if capped {
+          "一次最多认 \(Self.maxImageFiles) 张，后面的没认"
+        } else {
+          "\(Island.excerpt(text))"
+        }
+      island.show(
+        title, detail: detail, tone: unread > 0 || capped ? .warning : .success,
+        symbol: result.codesOnly ? "qrcode" : nil)
+    }
+  }
+
+  /// 访达右键「拷贝图中文字」一次最多认几张（一张 0.2–0.5 s，再多就让人分几次）
+  private static let maxImageFiles = 50
 
   /// 编成 PNG（截图那条路上拷贝 / 存储 / 常驻缩略图 / 历史共用这一份，R6）；失败时岛说一声
   private func encodePNG(_ image: CGImage, scale: CGFloat) async -> Data? {
