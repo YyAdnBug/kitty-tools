@@ -1385,7 +1385,7 @@ internal sealed partial class SettingsWindow : Window
             }
 
             panel.Children.Add(addresses.Count > 8
-                ? new ScrollViewer { MaxHeight = 126, Content = list, Margin = new Thickness(28, 0, 0, 0) }
+                ? new ScrollViewer { MaxHeight = 126, Content = list, Margin = new Thickness(28, 0, 0, 0), Padding = new Thickness(0, 0, 16, 0) }
                 : new Border { Child = list, Margin = new Thickness(28, 0, 0, 0) });
         }
 
@@ -1426,7 +1426,7 @@ internal sealed partial class SettingsWindow : Window
             PrimaryButtonText = restoring is null ? "导入" : "恢复",
             CloseButtonText = "取消",
             DefaultButton = ContentDialogButton.Primary,
-            Content = new ScrollViewer { Content = panel, MaxHeight = 480 },
+            Content = EdgeScroll.ToRightEdge(new ScrollViewer { Content = panel, MaxHeight = 480 }),
             XamlRoot = _shell.XamlRoot,
         };
         foreach (var box in checks.Values)

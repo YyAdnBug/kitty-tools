@@ -166,12 +166,13 @@ internal sealed class ScriptTextWindow : Window
             FontSize = 13,
             TextWrapping = TextWrapping.NoWrap,
         };
-        var scroller = new ScrollViewer
+        // 窗口根四周内边距 16：滚动条撑到窗口右边上
+        var scroller = KittyTools.Ui.EdgeScroll.ToRightEdge(new ScrollViewer
         {
             Content = rich,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-        };
+        }, 16);
         AutomationProperties.SetName(scroller, "全部输出");
         var root = (Grid)window.Content;
         root.Children.Remove(window._text);

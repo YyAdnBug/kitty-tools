@@ -683,7 +683,7 @@ internal static class UiSnapshotProbe
 
     private static async Task SafeRenderSettingsAsync(bool dark, string directory)
     {
-        if (!Wanted("settings") && !Wanted("settings-sync") && !Wanted("settings-sync-settings") && !Wanted("settings-hotkeys-block") && !Wanted("settings-hotkeys-shot") && !Wanted("settings-sub") && !Wanted("settings-translate-add"))
+        if (!Wanted("settings") && !Wanted("settings-sync") && !Wanted("settings-sync-settings") && !Wanted("settings-hotkeys-block") && !Wanted("settings-hotkeys-shot") && !Wanted("settings-sub") && !Wanted("settings-translate-add") && !Wanted("settings-shortcuts-sheet"))
         {
             return;
         }
@@ -946,6 +946,21 @@ internal static class UiSnapshotProbe
                 await WindowShot.SaveAsync(
                     WinRT.Interop.WindowNative.GetWindowHandle(settings),
                     Path.Combine(directory, $"{name}-{(dark ? "dark" : "light")}-window.png"));
+                settings.CloseDialogsForProbe();
+                await Task.Delay(400);
+            }
+
+            // 快捷键速查（截图那一类最长）：右栏滚动条贴对话框外边、键帽不被盖住（2026-11-17）
+            if (Wanted("settings-shortcuts-sheet"))
+            {
+                settings.AppWindow.MoveAndResize(new RectInt32(8, 8, 1000, 760));
+                settings.ShowPage(welcome: false, "screenshot");
+                await Task.Delay(300);
+                settings.OpenShortcutsSheetForProbe("screenshot");
+                await Task.Delay(900);
+                await WindowShot.SaveAsync(
+                    WinRT.Interop.WindowNative.GetWindowHandle(settings),
+                    Path.Combine(directory, $"settings-shortcuts-sheet-{(dark ? "dark" : "light")}-window.png"));
                 settings.CloseDialogsForProbe();
                 await Task.Delay(400);
             }

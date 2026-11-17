@@ -138,6 +138,11 @@ internal sealed partial class ClipQuickLook : Window
 
         var body = Body(entry, query, displayText, scale, width);
         var bodyHost = new Border { Padding = new Thickness(Edge, Edge, Edge, 0), Child = body };
+        if (body is ScrollViewer bodyScroll)
+        {
+            EdgeScroll.ToRightEdge(bodyScroll, Edge);
+        }
+
         Grid.SetRow(bodyHost, 1);
         grid.Children.Add(bodyHost);
 

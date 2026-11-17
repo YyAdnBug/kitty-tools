@@ -154,7 +154,7 @@ internal static class Recovery
             {
                 RequestedTheme = Theme.ElementTheme,
                 Title = title,
-                Content = new ScrollViewer
+                Content = KittyTools.Ui.EdgeScroll.ToRightEdge(new ScrollViewer
                 {
                     Content = new TextBlock
                     {
@@ -163,7 +163,7 @@ internal static class Recovery
                         MaxWidth = 560,
                     },
                     MaxHeight = 420,
-                },
+                }),
                 PrimaryButtonText = primary,
                 SecondaryButtonText = secondary,
                 CloseButtonText = close,

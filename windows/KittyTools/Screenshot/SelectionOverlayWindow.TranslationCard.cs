@@ -122,14 +122,15 @@ internal sealed partial class SelectionOverlayWindow
                 document.Children.Add(item);
             }
 
-            content.Children.Add(new ScrollViewer
+            // 卡片内边距 pad：滚动条撑到卡边上
+            content.Children.Add(KittyTools.Ui.EdgeScroll.ToRightEdge(new ScrollViewer
             {
                 Margin = new Thickness(0, 6, 0, 0),
                 MaxHeight = Math.Max(40, screenHeight * 0.4 - 24 - 3 * pad),
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                 Content = document,
-            });
+            }, pad));
         }
 
         var card = new Border

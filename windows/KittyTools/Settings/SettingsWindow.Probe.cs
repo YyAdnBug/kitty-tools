@@ -34,6 +34,9 @@ internal sealed partial class SettingsWindow
 
     internal void OpenFeaturesPageForProbe() => OpenFeaturesPage(true);
 
+    /// <summary>弹出快捷键速查（停在 page 那一类），关它用 CloseDialogsForProbe。</summary>
+    internal void OpenShortcutsSheetForProbe(string page) => _ = ShortcutsSheet.ShowAsync(_content.XamlRoot, page);
+
     /// <summary>开着的详情页（PLAN-v23 E1）：哪一页、哪一条。</summary>
     internal (string Page, string Id)? DetailForProbe => _detail;
 

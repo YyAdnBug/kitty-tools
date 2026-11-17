@@ -10,6 +10,7 @@ using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Documents;
 using Microsoft.UI.Xaml.Input;
 using Windows.System;
 using Windows.UI;
@@ -71,8 +72,8 @@ internal static class ShortcutsSheet
         Grid.SetRow(list, 1);
         left.Children.Add(list);
 
-        var right = new StackPanel { Spacing = 4, Padding = new Thickness(16, 0, 8, 8) };
-        var scroll = new ScrollViewer { Content = right, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        var right = new StackPanel { Spacing = 4, Padding = new Thickness(16, 0, 0, 8) };
+        var scroll = EdgeScroll.ToRightEdge(new ScrollViewer { Content = right, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
         var body = new Grid { Width = 680, Height = 440, ColumnSpacing = 8 };
         body.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -251,22 +252,21 @@ internal static class ShortcutsSheet
         var row = new Grid { ColumnSpacing = 12, Padding = new Thickness(0, 4, 0, 4) };
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-        label.Children.Add(new TextBlock
+        // 一个 TextBlock 里两段 Run：横排的 StackPanel 给字无限宽、长说明换不了行，会把右边的键帽挤出去。
+        var label = new TextBlock
         {
-            Text = text,
             TextWrapping = TextWrapping.Wrap,
             FontSize = Theme.FontSize("Kitty.FontSize.Body"),
             VerticalAlignment = VerticalAlignment.Center,
-        });
+        };
+        label.Inlines.Add(new Run { Text = text });
         if (global)
         {
-            label.Children.Add(new TextBlock
+            label.Inlines.Add(new Run
             {
-                Text = "全局",
+                Text = "  全局",
                 FontSize = Theme.FontSize("Kitty.FontSize.Meta"),
                 Foreground = Theme.TertiaryText(),
-                VerticalAlignment = VerticalAlignment.Center,
             });
         }
 

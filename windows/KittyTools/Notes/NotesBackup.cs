@@ -469,11 +469,11 @@ internal static class NotesRecovery
             {
                 RequestedTheme = Theme.ElementTheme,
                 Title = title,
-                Content = new ScrollViewer
+                Content = KittyTools.Ui.EdgeScroll.ToRightEdge(new ScrollViewer
                 {
                     Content = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, MaxWidth = 560 },
                     MaxHeight = 420,
-                },
+                }),
                 PrimaryButtonText = buttons[0],
                 SecondaryButtonText = buttons.Length > 2 ? buttons[1] : string.Empty,
                 CloseButtonText = buttons[^1],

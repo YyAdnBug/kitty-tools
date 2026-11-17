@@ -178,7 +178,8 @@ internal sealed partial class ClipDialogHost : Grid
     public void ShowManageGroups(ClipGroupsModel model)
     {
         var list = new StackPanel();
-        var scroll = new ScrollViewer { Content = list, MaxHeight = 28 * 6.5, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        // 卡片左右内边距 14：滚动条撑到卡边上
+        var scroll = EdgeScroll.ToRightEdge(new ScrollViewer { Content = list, MaxHeight = 28 * 6.5, VerticalScrollBarVisibility = ScrollBarVisibility.Auto }, 14);
         var input = Input("新建收藏夹", string.Empty);
         input.MaxLength = ClipGroups.MaxNameLength;
         var counter = Counter(input);
