@@ -10,7 +10,8 @@
 // 便签墙的键盘（PLAN-v20 N3，mac NotesWallView）：墙拿着焦点时方向键在卡片之间挑（Core NoteWall.Neighbor：同一列上下、左右去最近的一列），
 // 挑中的那张描一圈强调色、滚进视野；Enter / 空格放大成编辑卡，Esc 收回后焦点回到墙上、还是那张。
 // 便签墙（R108，同 mac）：能拖动排序（「全部」里、没在搜索时；松手按 NoteWall.StoreIndex 写回顺序）；只建可见区附近的卡片，
-// 往下的高在后面分批量（「便签墙」那一节的注释）；卡片上的列表符号是淡色的原符号、代码块垫代码的底。
+// 往下的高在后面分批量（「便签墙」那一节的注释）；卡片上的列表符号是淡色的原符号、代码块垫代码的底、超出的字底下渐隐；
+// 鼠标停着 / 拖着的卡片立正、抬起来、阴影加深（Pose）。
 using System.Numerics;
 using KittyTools.Core;
 using KittyTools.Core.Notes;
@@ -877,6 +878,10 @@ internal sealed class NotesWindow : Window
         public TextBlock Footer { get; } = footer;
         public Vector2 Offset { get; set; }
         public bool Placed { get; set; }
+
+        /// <summary>排法给它的倾斜（不悬停、没拖着时就这么斜）、鼠标在不在上面。</summary>
+        public double Tilt { get; set; }
+        public bool Hovered { get; set; }
     }
 
     /// <summary>正拖着的那张：编号、拖动开始时那份排法里原来是第几张、现在让到第几张、按下时指针离卡片左上角多远。</summary>
@@ -1149,8 +1154,10 @@ internal sealed class NotesWindow : Window
             view.Card.Width = frame.Width;
             view.Card.Height = frame.Height;
             var dragged = _wallDrag?.Id == id;
-            // 倾斜不是动效：系统关了动画效果也照样斜（同 mac）；拖着的那张立正
-            view.Card.RenderTransform = new RotateTransform { Angle = dragged ? 0 : layout.Tilts[index] };
+            // 倾斜不是动效：系统关了动画效果也照样斜（同 mac）；拖着的、鼠标停着的那张立正、抬起来
+            view.Tilt = layout.Tilts[index];
+            view.Card.CenterPoint = new Vector3((float)(frame.Width / 2), (float)(frame.Height / 2), 0);
+            Pose(view, raised: dragged || view.Hovered);
             Canvas.SetZIndex(view.Holder, dragged ? 10_000 : 0);
             if (dragged)
             {
@@ -1186,6 +1193,67 @@ internal sealed class NotesWindow : Window
 
         view.Offset = Vector2.Zero;
         view.Placed = true;
+    }
+
+    /// <summary>
+    /// 一张卡片的姿势（mac WallCard）：悬停 / 拖着的立正、往上抬 2、阴影加深（ThemeShadow 跟着 Translation 的 z 走），别的时候按排法斜着
+    /// （NoteWall.Pose；mac 还放大到 1.02，Windows 全 App 不做放大）。animated：第一次要动画时给卡片挂上 XAML 的隐式过渡（旋转、位移各 0.26 s），
+    /// 之后姿势变了都过渡过去——不在建卡片时就挂：新建、滚进来的卡片摆初始姿势时不该从 0 转过来。系统关了动画效果时摘掉、直接到位（同 mac）。
+    /// ponytail: 隐式过渡用的是系统的缓动，不是 glide 那条弹簧；要一模一样得换成 Composition 动画（卡片的 Translation 已经给阴影用了，得再套一层）。
+    /// </summary>
+    private static void Pose(WallCard view, bool raised, bool animated = false)
+    {
+        var card = view.Card;
+        if (Motion.Reduced)
+        {
+            card.RotationTransition = null;
+            card.TranslationTransition = null;
+        }
+        else if (animated && card.RotationTransition is null)
+        {
+            var duration = MotionCurves.Of(MotionCurve.Glide)?.Period ?? TimeSpan.FromMilliseconds(260);
+            card.RotationTransition = new ScalarTransition { Duration = duration };
+            card.TranslationTransition = new Vector3Transition { Duration = duration };
+        }
+
+        var (angle, rise, depth) = NoteWall.Pose(view.Tilt, raised);
+        var rotation = (float)angle;
+        var translation = new Vector3(0, -(float)rise, (float)depth);
+        if (card.Rotation != rotation)
+        {
+            card.Rotation = rotation;
+        }
+
+        if (card.Translation != translation)
+        {
+            card.Translation = translation;
+        }
+    }
+
+    /// <summary>鼠标进出一张卡片：立正、抬起来 / 斜回去。触屏不算悬停；编辑卡开着时后面的卡片不认（被那层暗盖着，进来的也不算）。</summary>
+    private void HoverCard(string id, Border card, PointerRoutedEventArgs e, bool inside)
+    {
+        if (e.Pointer.PointerDeviceType == Microsoft.UI.Input.PointerDeviceType.Touch
+            || !_wallViews.TryGetValue(id, out var view) || !ReferenceEquals(view.Card, card))
+        {
+            return;
+        }
+
+        view.Hovered = inside && _editCard.Visibility != Visibility.Visible;
+        if (_wallDrag?.Id != id)
+        {
+            Pose(view, raised: view.Hovered, animated: true);
+        }
+    }
+
+    /// <summary>编辑卡开了：停着的那张斜回去（鼠标被那层暗挡着，离开的事件不一定来）。</summary>
+    private void ClearCardHover()
+    {
+        foreach (var view in _wallViews.Values.Where(view => view.Hovered))
+        {
+            view.Hovered = false;
+            Pose(view, raised: false, animated: true);
+        }
     }
 
     // ---- 便签墙的拖动排序（R108）
@@ -1226,10 +1294,10 @@ internal sealed class NotesWindow : Window
             _wallDrag = new WallDrag(id, from, _wallPressedAt - new Vector2((float)frame.X, (float)frame.Y));
             if (_wallViews.TryGetValue(id, out var lifted))
             {
-                // 抬起来：立正、压在别的上面，跟着指针（不做动画）
+                // 抬起来：立正、阴影加深（glide）、压在别的上面，跟着指针走（位置不做动画）
                 NoteMotion.SetTranslation(lifted.Holder, Vector3.Zero);
                 lifted.Offset = Vector2.Zero;
-                lifted.Card.RenderTransform = new RotateTransform { Angle = 0 };
+                Pose(lifted, raised: true, animated: true);
                 Canvas.SetZIndex(lifted.Holder, 10_000);
             }
         }
@@ -1447,8 +1515,9 @@ internal sealed class NotesWindow : Window
     private static Color Shade(NoteShade shade, int paper) => Rgb(NotePaper.Mix(shade.Rgb, paper, shade.Opacity));
 
     /// <summary>
-    /// 墙上的一张卡片：色条、标题（一两行）、开头几行字（截断）、底下的相对时间；量好的高。外面套一层 holder（摆在墙上、拖动让位时挪它），
-    /// 卡片本身斜着（RenderTransform）。按下 / 拖动 / 松手走墙的拖动排序（OnCard*）；触屏不拖，点一下开编辑卡。
+    /// 墙上的一张卡片：色条、标题（一两行）、开头几行字（超出的截断、底下渐隐）、底下的相对时间；量好的高。外面套一层 holder（摆在墙上、
+    /// 拖动让位时 Composition 挪它），卡片本身的姿势（倾斜、抬起、阴影深浅）用它自己的 Rotation / Translation（Pose）。
+    /// 按下 / 拖动 / 松手走墙的拖动排序（OnCard*）；鼠标进出是悬停（HoverCard）；触屏不拖，点一下开编辑卡。
     /// </summary>
     private (WallCard Card, double Height) Card(Note note, NoteBook.Summary summary, CardKey key, bool dark)
     {
@@ -1476,10 +1545,13 @@ internal sealed class NotesWindow : Window
         stack.Children.Add(title);
         if (body is not null)
         {
-            // 超出卡片的截掉（露出 BodyRoom 那么高）
+            // 超出卡片的截掉（露出 BodyRoom 那么高），底下 FadeHeight 渐隐（同 mac）
             body.MaxHeight = metrics.BodyRoom;
+            body.VerticalAlignment = VerticalAlignment.Top;
             body.Clip = new RectangleGeometry { Rect = new Windows.Foundation.Rect(0, 0, NoteWall.TextWidth, metrics.BodyRoom) };
-            stack.Children.Add(body);
+            stack.Children.Add(metrics.Overflows
+                ? (UIElement)new Grid { Height = metrics.BodyRoom, Children = { body, Fade(tone.Paper) } }
+                : body);
         }
 
         var footer = new TextBlock
@@ -1519,9 +1591,8 @@ internal sealed class NotesWindow : Window
             Background = new SolidColorBrush(Rgb(tone.Paper)),
             CornerRadius = new CornerRadius(6),
             Child = grid,
-            Translation = new Vector3(0, 0, 8),
+            Translation = new Vector3(0, 0, (float)NoteWall.RestDepth),
             Shadow = new ThemeShadow(),
-            RenderTransformOrigin = new Windows.Foundation.Point(0.5, 0.5),
         };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(card, summary.Title);
         var id = note.Id;
@@ -1529,6 +1600,8 @@ internal sealed class NotesWindow : Window
         card.PointerMoved += (_, e) => OnCardMoved(id, e);
         card.PointerReleased += (_, e) => OnCardReleased(id, card, e);
         card.PointerCaptureLost += (_, _) => OnCardCaptureLost(id);
+        card.PointerEntered += (_, e) => HoverCard(id, card, e, inside: true);
+        card.PointerExited += (_, e) => HoverCard(id, card, e, inside: false);
         // 鼠标、笔的点开在松手时认（OnCardReleased：和拖动排序是同一个手势）；触屏不拖，点一下照样开
         card.Tapped += (_, e) =>
         {
@@ -1610,6 +1683,25 @@ internal sealed class NotesWindow : Window
         return panel.Children.Count > 0 ? panel : null;
     }
 
+    /// <summary>
+    /// 超出卡片的字底下那一条渐隐（mac 是正文那一层的渐变蒙版）：WinUI 3 没有不透明度蒙版，纸是一块实色，盖一条从透明到纸色的渐变，看上去一样。
+    /// 透明那头用纸色的 RGB、只把不透明度降到 0（用系统的透明色会往白 / 黑那边偏一点）。
+    /// </summary>
+    private static Border Fade(int paper)
+    {
+        var solid = Rgb(paper);
+        var brush = new LinearGradientBrush { StartPoint = new Windows.Foundation.Point(0, 0), EndPoint = new Windows.Foundation.Point(0, 1) };
+        brush.GradientStops.Add(new GradientStop { Color = Color.FromArgb(0, solid.R, solid.G, solid.B), Offset = 0 });
+        brush.GradientStops.Add(new GradientStop { Color = solid, Offset = 1 });
+        return new Border
+        {
+            Height = NoteWall.FadeHeight,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Background = brush,
+            IsHitTestVisible = false,
+        };
+    }
+
     /// <summary>最近删除里的卡片：原文（令牌换成「[图片]」），不加样式。没有字返回 null。</summary>
     private static StackPanel? DeletedBody(Note note, Brush ink)
         => NoteImages.Display(note.Body) is { Length: > 0 } text
@@ -1624,6 +1716,7 @@ internal sealed class NotesWindow : Window
     {
         Select(id);
         _wallFocus = id;
+        ClearCardHover();
         var size = NoteWall.EditorSize((_wall.ActualWidth > 0 ? _wall.ActualWidth : 1000, _wall.ActualHeight > 0 ? _wall.ActualHeight : 600));
         _cardSheet.View.Width = size.Width;
         _cardSheet.View.Height = size.Height;

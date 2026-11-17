@@ -269,8 +269,19 @@ mac 还没推进 `macos` 的（多语言 / 英文、截图识别元素第二三�
 3. Release AOT 发布 x64 / ARM64，零 trim / AOT 警告。
 4. 截图推 `windows-shots` 的 `0.3.0-fill/`（文件名 `r108-` 开头）：那叠扇出 / 打开 / 拖动让位、便签墙（列表符号、代码块）、浅色 / 深色 / 高对比度；
    动效录 3–5 秒短视频（扇出收回、打开的便签出场、墙上拖动）。再用 `KITTY_REDUCED_MOTION=1` 看一遍。
-5. 走 `HANDTEST.md`「补齐 R108」1570–1605。
+5. 走 `HANDTEST.md`「补齐 R108」1570–1608。
 6. 便签墙上千条（假数据，`.Dev` 或临时目录）：开墙、滚到底、来回切视图，和改前对一下内存（内存探针或任务管理器）。
+
+**追加（同日，用户「把那两条还没对齐的也做了」）**：上面交接时记进 MAC-DIFF「还没对齐」的两条也做了（同样在 Mac 上写、没编译，提交见 `git log --grep "R108 便签墙卡片悬停"`）。
+
+- 卡片悬停：鼠标停着 / 拖着的立正、往上抬 2、阴影从 z 8 加深到 24（`NoteWall.Pose`、`Lift` / `RestDepth` / `RaisedDepth`，单测 `RaisedCardsStandUp`）。
+  倾斜从 RenderTransform 换成卡片自己的 `UIElement.Rotation` + `CenterPoint`，抬起和阴影深浅是它的 `Translation`（原来就拿 z 给 ThemeShadow）；
+  过渡是 XAML 的 `RotationTransition` / `TranslationTransition`（0.26 s），**第一次要动画时才挂**（悬停、开始拖），新建、滚进来的卡片摆初始姿势时不从 0 转过来；
+  系统关了动画效果时摘掉、直接到位。编辑卡打开时把停着的那张放下（`ClearCardHover`）。触屏不算悬停。
+- 超出卡片的字底下 28 渐隐：卡片正文那一块（超出时）套一个 BodyRoom 高的 Grid，底下盖一条从「纸色、不透明度 0」到纸色的 `LinearGradientBrush`（WinUI 3 没有不透明度蒙版）。
+- 要看的：`card.RotationTransition = null` 这类赋 null（WinUI 的投影没有可空标注，原来的 `BorderBrush = … : null` 也这么写）；`Children.Add(cond ? (UIElement)grid : body)`；
+  屏上看隐式过渡挂上之后、重排时姿势变化（换了列、倾斜方向变了）会不会也过渡——会的话是预期的（同 mac 重排时一起动）。
+- 替用户定的：不放大 1.02（全 App 不做放大）；过渡用系统的缓动，不是 glide 弹簧（写在 `NotesWindow.Pose` 的 ponytail）。手测 1606–1608。
 
 ## issue #29：Ctrl+Alt+A 被当成通用键（审查方在 Mac 上写、没编译，2026-11-16）
 

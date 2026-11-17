@@ -58,6 +58,12 @@ public static class NoteWall
 
     public static double TextWidth => CardWidth - Padding * 2;
 
+    /// <summary>悬停 / 拖着的卡片往上抬多少、阴影多深（ThemeShadow 跟着 z 走：平时 RestDepth，抬起来 RaisedDepth；
+    /// mac 的阴影是 0.18 / r5 / y1 → 0.30 / r10 / y4）。R108。</summary>
+    public const double Lift = 2;
+    public const double RestDepth = 8;
+    public const double RaisedDepth = 24;
+
     // ---- 排 ----
 
     /// <summary>一段：小标题（null = 不画）、卡片的编号和高（从前到后）。</summary>
@@ -580,6 +586,11 @@ public static class NoteWall
         /// <summary>卡片上字的那一块多高：标题 + 露出来的正文。</summary>
         public double TextHeight => TitleHeight + (BodyHeight > 0 ? TitleGap + BodyRoom : 0);
     }
+
+    /// <summary>一张卡片的姿势（mac WallCard：悬停 / 拖着立正、抬起来、阴影加深；别的时候斜着）：转多少度、往上抬多少、阴影多深。
+    /// mac 还放大到 1.02：Windows 全 App 不做放大。</summary>
+    public static (double Angle, double Rise, double Depth) Pose(double tilt, bool raised)
+        => raised ? (0, Lift, RaisedDepth) : (tilt, 0, RestDepth);
 
     /// <summary>标题排多宽：固定的给右上角的图钉让出 PinRoom。</summary>
     public static double TitleWidthFor(bool isPinned) => TextWidth - (isPinned ? PinRoom : 0);
