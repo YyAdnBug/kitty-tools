@@ -1902,8 +1902,8 @@ Alfred 的 Related Apps、BetterTouchTool 按 App 停用，调研和测开销的
 ### 截图提示、放大镜开关和钉图选字（2026-11-17）
 - 用户转来三条：框选时的快捷键提示能关、放大镜旁的色值能关、钉图上能像 QQ / PixPin 那样直接拖选文字。拍板页
   https://claude.ai/artifact/67856ZhHfWmLgz2hfmanfs （D0 A1–A2 B1–B3 C1–C5），同日用户「全部按推荐」。调研、探针和实测数在
-  `macos/build/research/pin-text-2026-11-17/`（README）。在 `i18n-wip` 尖上切的 `shot-pin-wip`（工作树 kitty-tools-macos-shotpin）分三批做，
-  不并不推，等用户说。
+  `macos/build/research/pin-text-2026-11-17/`（README）。在 `i18n-wip` 尖上切的 `shot-pin-wip`（工作树 kitty-tools-macos-shotpin）分三批做；
+  同日用户「放到 0.10.0 里面去」：变基到当时的 i18n-wip 尖、补 0.10.0 更新日志（两条），快进进 i18n-wip（没推）。
 - 第 1 批（两个开关）：设置 › 截图「工具栏位置」那一节最前面加 **「框选时显示操作提示」**（`Prefs.screenshotShowsHint`，默认开）和
   **「框选时的放大镜」**（`Prefs.screenshotLoupe` / `Prefs.Loupe`：放大镜和色值（默认）/ 只显示放大镜 / 不显示），都注册默认值、跟设置导出走；
   截图、截图翻译 / 识字、录屏的框选同一套，每次框选新建遮罩时读一次（同「保持屏幕原色」，单测和截图自检直接给）。
