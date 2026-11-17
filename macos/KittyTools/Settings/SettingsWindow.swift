@@ -246,7 +246,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .dockPreview:
       "程序坞,Dock,预览,缩略图,窗口,切换,悬停,延迟,多久,⌘Tab,Command Tab,切换器,最小化,桌面,全屏,辅助功能,屏幕录制"
     case .finderMenu:
-      "访达,Finder,右键,右键菜单,上下文菜单,拷贝路径,复制路径,路径,终端,Terminal,编辑器,打开方式,用 App 打开,在 App 中打开,改名,扩展,登录项与扩展,新建文件,新建,模板,后缀,Word,Excel,PPT,Markdown,文本,压缩,解压,zip,7z,跳过,排除,忽略,node_modules"
+      "访达,Finder,右键,右键菜单,上下文菜单,拷贝路径,复制路径,路径,终端,Terminal,编辑器,打开方式,用 App 打开,在 App 中打开,改名,扩展,登录项与扩展,新建文件,新建,模板,后缀,Word,Excel,PPT,Markdown,文本,压缩,解压,zip,7z,tar,tar.gz,tgz,跳过,排除,忽略,node_modules"
     case .keepAwake:
       "插件,保持唤醒,唤醒,防息屏,息屏,熄屏,防止睡眠,睡眠,不睡眠,屏幕常亮,常亮,定时,工作日,时段,awake,caffeinate,咖啡因,下载,后台任务"
     case .bluetoothSnooze:

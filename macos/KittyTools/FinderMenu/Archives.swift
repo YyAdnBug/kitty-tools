@@ -1,9 +1,14 @@
-// 访达右键「压缩为 ▸ ZIP、7Z」「解压到这里」（2026-11-08 右键扩充第 2 批，拍板 D1 D2）。都交给系统自带的 tar（bsdtar；另起进程，
-// 不卡主线程、停得住），不带第三方：
+// 访达右键「压缩为 ▸ ZIP、7Z、TAR.GZ」「解压到这里」（2026-11-08 右键扩充第 2 批，拍板 D1 D2；TAR.GZ 2026-11-17）。都交给系统自带的
+// tar（bsdtar；另起进程，不卡主线程、停得住），不带第三方：
 // - 压缩：一样东西叫「名字.zip」，几样叫「归档.zip」（同访达；跟当时的界面语言，英文界面「Archive.zip」），放在第一样所在的
 //   文件夹、重名加「 2」。zip 里的名字标上 UTF-8（zip:hdrcharset=UTF-8；访达和 ditto 打的不标，别的系统解开中文名会乱码，
 //   2026-11-08 实测），不带 __MACOSX、._*、.DS_Store（--no-mac-metadata 加排除）；7z 用 LZMA2。只选了一个包（App 这类）时 zip 改用 ditto（同访达的压缩：带着扩展属性，
 //   签名不坏）。不同文件夹里的同名东西包里只放得下一个，不打。不做带密码的压缩（拍板）。
+//   tar.gz（2026-11-17）：gzip 是 tar 自带的 zlib，不靠外面的程序；名字按 pax 存成 UTF-8。另加 --no-xattrs --no-acls --no-fflags：
+//   --no-mac-metadata 只管 ._ 那份，扩展属性（每个文件都有的 com.apple.provenance、下载来的隔离标记）、上锁 / 隐藏标志照样写进
+//   pax 头（LIBARCHIVE.xattr.*、SCHILY.fflags，实测），Linux 的 GNU tar 解的时候每个文件报一句「Ignoring unknown extended header
+//   keyword」。别的几种不加：.tar.xz 慢（38 MB 22 s，gz 1.7 s，只小两成）、.tar.zst 系统 tar 没带 zstd、要外面的程序（实测报错），
+//   .tar.bz2 / 不压缩的 .tar 用的人少，菜单不加长。
 // - 解压：zip、7z、rar、tar 一族（.tar、.tar.gz / .tgz、.tar.xz / .txz、.tar.bz2 / .tbz），和只压了一个文件的 .gz / .bz2
 //   （系统的 gunzip / bunzip2，解出来的叫包名去掉 .gz，带上包的隔离标记）。RAR（2026-11-12）：系统 tar 是 libarchive 3.7.4，
 //   RAR4、RAR5 都解得开（本机样本实测，字节数和清单一致）；带密码的解不开（libarchive 不解 RAR 的密码：头加了密的 tar 说
@@ -40,6 +45,7 @@ import AppKit
   nonisolated enum Format: String {
     case zip
     case sevenZip = "7z"
+    case tarGz = "tar.gz"
   }
 
   /// 压缩还是解压（刘海岛上说哪一个）
@@ -129,6 +135,17 @@ import AppKit
         comment: "访达右键压缩几样东西时包的文件名（不含扩展名），同访达自己的「归档.zip」")
     while (base + " 99." + format.rawValue).utf16.count > 255 { base.removeLast() }
     return base + "." + format.rawValue
+  }
+
+  /// 包落在 folder 里叫什么：重名加「 2」。tar.gz 的「 2」加在整个扩展名前面（「资料 2.tar.gz」）：FileMoves.freeName 只认最后一段
+  /// 扩展名（同访达拷贝时），会让成「资料.tar 2.gz」，再「解压到这里」就被当成只压了一个文件的 .gz
+  nonisolated static func freeName(_ name: String, format: Format, in folder: URL) -> String {
+    guard format == .tarGz, name.hasSuffix(".tar.gz") else {
+      return FileMoves.freeName(name, in: folder, used: [])
+    }
+    return NewFile.freeName(String(name.dropLast(3))) {
+      FileMoves.occupied(folder.appending(path: $0 + ".gz"))
+    } + ".gz"
   }
 
   /// 同名的（不分大小写、统一合成形式：解到 Mac 上会撞）第一个：包里只放得下一个
@@ -232,12 +249,14 @@ import AppKit
   nonisolated static func compressArguments(
     _ items: [URL], format: Format, to archive: URL, excludes: URL? = nil
   ) -> [String] {
-    var arguments = [
-      "-c", "-v", "-f", archive.path(percentEncoded: false), "--format",
-      format == .zip ? "zip" : "7zip",
-      "--options", format == .zip ? "zip:hdrcharset=UTF-8" : "7zip:compression=lzma2",
-      "--no-mac-metadata", "-s", "|^\\./||S",
-    ]
+    var arguments = ["-c", "-v", "-f", archive.path(percentEncoded: false)]
+    switch format {
+    case .zip: arguments += ["--format", "zip", "--options", "zip:hdrcharset=UTF-8"]
+    case .sevenZip: arguments += ["--format", "7zip", "--options", "7zip:compression=lzma2"]
+    // 格式用 tar 默认的（用得着才写 pax 头的 ustar）；扩展属性、ACL、文件标志不带（见文件头）
+    case .tarGz: arguments += ["-z", "--no-xattrs", "--no-acls", "--no-fflags"]
+    }
+    arguments += ["--no-mac-metadata", "-s", "|^\\./||S"]
     arguments += junk.flatMap { ["--exclude", $0] }
     if let excludes { arguments += ["-X", excludes.path(percentEncoded: false)] }
     var folder: String?
@@ -419,7 +438,7 @@ import AppKit
       report in
       await pack(
         items, format: format,
-        to: folder.appending(path: FileMoves.freeName(name, in: folder, used: [])), skip: skip,
+        to: folder.appending(path: freeName(name, format: format, in: folder)), skip: skip,
         report: report)
     } finish: { outcome in
       report(outcome, verb: .compress, island: island)

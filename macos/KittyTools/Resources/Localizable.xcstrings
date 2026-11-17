@@ -12276,12 +12276,12 @@
         }
       }
     },
-    "右键文件、文件夹：打成 zip 或 7z 放在旁边" : {
+    "右键文件、文件夹：打成 zip、7z 或 tar.gz 放在旁边" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Right-click files or folders to pack them into a zip or 7z next to them"
+            "value" : "Right-click files or folders to pack them into a zip, 7z, or tar.gz next to them"
           }
         }
       }
@@ -35271,12 +35271,12 @@
         }
       }
     },
-    "访达,Finder,右键,右键菜单,上下文菜单,拷贝路径,复制路径,路径,终端,Terminal,编辑器,打开方式,用 App 打开,在 App 中打开,改名,扩展,登录项与扩展,新建文件,新建,模板,后缀,Word,Excel,PPT,Markdown,文本,压缩,解压,zip,7z,跳过,排除,忽略,node_modules" : {
+    "访达,Finder,右键,右键菜单,上下文菜单,拷贝路径,复制路径,路径,终端,Terminal,编辑器,打开方式,用 App 打开,在 App 中打开,改名,扩展,登录项与扩展,新建文件,新建,模板,后缀,Word,Excel,PPT,Markdown,文本,压缩,解压,zip,7z,tar,tar.gz,tgz,跳过,排除,忽略,node_modules" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Finder,Right-click,Context Menu,Copy Path,Path,Terminal,Editor,Open With,Open in App,Rename,Extension,Login Items & Extensions,New File,New,Template,File Extension,Word,Excel,PPT,Markdown,Text,Compress,Extract,Unzip,zip,7z,Skip,Exclude,Ignore,node_modules"
+            "value" : "Finder,Right-click,Context Menu,Copy Path,Path,Terminal,Editor,Open With,Open in App,Rename,Extension,Login Items & Extensions,New File,New,Template,File Extension,Word,Excel,PPT,Markdown,Text,Compress,Extract,Unzip,zip,7z,tar,tar.gz,tgz,Skip,Exclude,Ignore,node_modules"
           }
         }
       }

@@ -2,7 +2,7 @@
 // 点了用 App 自己的网址把动作交过来：<App 的 bundle id>://finder?do=<动作>&key=<凭证>&…&file=/a&file=/b，动作是
 // copy（拷贝路径）、name（拷贝名称）、open（app=bundle id，用 App 打开）、new（template=自带的 id 或模板文件夹里的文件名，
 // mine=1 是模板文件夹里的；file 是右键的文件夹）、suffix（自定义后缀，file 是文件夹）、templates（打开模板文件夹）、
-// move / copyto（to=常用文件夹的路径，或 choose 另选）、cut（剪切）、paste（file 是右键的文件夹）、alias（发送替身到桌面）、zip / 7z（压缩）、extract（解压到这里）、
+// move / copyto（to=常用文件夹的路径，或 choose 另选）、cut（剪切）、paste（file 是右键的文件夹）、alias（发送替身到桌面）、zip / 7z / tgz（压缩成 zip、7z、tar.gz）、extract（解压到这里）、
 // clip（从剪贴板新建，file 是右键的文件夹）、copy 带 style=shell 是按住 ⌥ 时的「拷贝路径（终端写法）」、name 带 style=stem 是「拷贝名称（不带扩展名）」，toomany（一次选了
 // 超过上限，扩展交过来让 App 说一声，不带文件）、fixnames（修复乱码文件名）、hiddenfiles（切换隐藏文件）、hide / ext（on=1 / 0：隐藏、取消隐藏、隐藏 / 显示扩展名）、
 // hash（algo=sha256 / md5 / sha1）、erase（彻底删除，先问）。
@@ -149,6 +149,8 @@ nonisolated struct FinderLink: Equatable {
       action = .compress(.zip)
     case "7z" where !files.isEmpty:
       action = .compress(.sevenZip)
+    case "tgz" where !files.isEmpty:
+      action = .compress(.tarGz)
     case "extract" where !files.isEmpty:
       action = .extract
     case "fixnames" where !files.isEmpty:

@@ -130,6 +130,8 @@ import UniformTypeIdentifiers
     #expect(parse("do=alias&key=K-123&file=/a/b.txt")?.action == .aliasToDesktop)
     #expect(parse("do=zip&key=K-123&file=/a/b.txt")?.action == .compress(.zip))
     #expect(parse("do=7z&key=K-123&file=/a/b.txt&file=/a/c")?.action == .compress(.sevenZip))
+    #expect(parse("do=tgz&key=K-123&file=/a/b.txt&file=/a/c")?.action == .compress(.tarGz))
+    #expect(parse("do=tgz&key=K-123") == nil)
     #expect(parse("do=zip&key=K-123") == nil)
     #expect(parse("do=extract&key=K-123&file=/a/b.zip")?.action == .extract)
     #expect(parse("do=fixnames&key=K-123&file=/a/b")?.action == .fixNames)
@@ -296,7 +298,8 @@ import UniformTypeIdentifiers
     let words = [
       "do", "key", "app", "file", "copy", "open", "new", "template", "mine", "suffix", "name",
       "move",
-      "copyto", "to", "choose", "cut", "paste", "alias", "zip", "7z", "extract", "fixnames",
+      "copyto", "to", "choose", "cut", "paste", "alias", "zip", "7z", "tgz", "extract",
+      "fixnames",
       "hiddenfiles", "hide", "ext", "on", "hash", "algo", "erase", "style", "shell", "stem",
       "toomany", "stale", "clip",
     ]

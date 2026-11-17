@@ -1,6 +1,6 @@
 // 访达扩展（第十一族「访达右键」，2026-11-08 拍板，PLAN §10「访达右键」）：在访达的右键菜单第一层加几项。
 // - 选中文件 / 文件夹右键：「拷贝路径」「拷贝名称」、设置里选的每个 App 一项「在“X”中打开」（默认只有终端；叫法照访达
-//   自己的「在“照片”中打开」）、「移动到 ▸」「复制到 ▸」（常用文件夹 + 选择文件夹…）、「剪切」、「压缩为 ▸」（ZIP、7Z）、
+//   自己的「在“照片”中打开」）、「移动到 ▸」「复制到 ▸」（常用文件夹 + 选择文件夹…）、「剪切」、「压缩为 ▸」（ZIP、7Z、TAR.GZ）、
 //   「解压到这里」（选中的都是压缩包时）、「修复乱码文件名」（选中的有名字像乱码、还原得出来的时候）、「隐藏」/「取消隐藏」、
 //   「隐藏扩展名」/「显示扩展名」（看选中的现在是什么样；读不到就当没隐藏）、「拷贝哈希 ▸」（选中的都是文件时）、
 //   「发送替身到桌面」、「彻底删除…」（App 那边先问）。
@@ -408,6 +408,7 @@ final class FinderMenu: FIFinderSync {
       let formats = NSMenu()
       formats.addItem(withTitle: "ZIP", action: #selector(compressZip(_:)), keyEquivalent: "")
       formats.addItem(withTitle: "7Z", action: #selector(compress7z(_:)), keyEquivalent: "")
+      formats.addItem(withTitle: "TAR.GZ", action: #selector(compressTarGz(_:)), keyEquivalent: "")
       // 「压缩为」：访达自己的「压缩“X”」在同一个菜单里，两项都叫压缩分不开
       Self.add("压缩为", nil, symbol: "doc.zipper", color: Tint.archive, to: menu).submenu = formats
     }
@@ -824,6 +825,10 @@ final class FinderMenu: FIFinderSync {
 
   @objc private func compress7z(_ sender: AnyObject?) {
     hand("7z", container: false)
+  }
+
+  @objc private func compressTarGz(_ sender: AnyObject?) {
+    hand("tgz", container: false)
   }
 
   @objc private func extract(_ sender: AnyObject?) {

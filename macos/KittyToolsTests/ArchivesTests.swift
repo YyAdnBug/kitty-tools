@@ -1,5 +1,5 @@
 // 访达右键的压缩和解压：名字、tar 的参数、出错原因；在临时文件夹里用系统 tar 真压、真解一遍（zip 标 UTF-8、不带杂文件，
-// 7z 往返，GBK 名字的 zip（先用 ASCII 名字打、再把名字的字节换成 GBK），带密码的 zip 密码不对 / 对），解出来只有一样东西时
+// 7z 往返，tar.gz 往返（不带扩展属性、文件标志，重名加在「.tar.gz」前面），GBK 名字的 zip（先用 ASCII 名字打、再把名字的字节换成 GBK），带密码的 zip 密码不对 / 对），解出来只有一样东西时
 // 放在包旁边、重名加「 2」。只动临时文件夹。
 
 import Foundation
@@ -37,6 +37,12 @@ import Testing
     #expect(
       Archives.archiveName(for: [URL(filePath: "/a/b"), URL(filePath: "/a/c")], format: .sevenZip)
         == "归档.7z")
+    #expect(
+      Archives.archiveName(for: [URL(filePath: "/a/b"), URL(filePath: "/a/c")], format: .tarGz)
+        == "归档.tar.gz")
+    let tarName = Archives.archiveName(
+      for: [URL(filePath: "/a/\(String(repeating: "长", count: 300))")], format: .tarGz)
+    #expect(tarName.hasSuffix("长.tar.gz") && (tarName.utf16.count + 3) <= 255)
     // 名字太长：截到加上「 99.zip」还在 255 个字符以内（按 UTF-16 数，同 FAT / HFS+；APFS 按字符）
     let long = String(repeating: "长", count: 300)
     let name = Archives.archiveName(for: [URL(filePath: "/a/\(long)")], format: .zip)
@@ -54,6 +60,16 @@ import Testing
     let tail = Array(arguments.suffix(7))
     #expect(tail == ["-C", "/p", "./a", "./-b", "-C", "/q", "./c"])
     #expect(arguments.contains("zip:hdrcharset=UTF-8"))
+    // tar.gz：tar 默认的格式 + gzip；扩展属性、ACL、文件标志都不写进头里（Linux 的 tar 不认、每个文件报一句）
+    let tar = Archives.compressArguments(
+      [URL(filePath: "/p/a")], format: .tarGz, to: URL(filePath: "/p/.tmp"))
+    #expect(Array(tar.prefix(4)) == ["-c", "-v", "-f", "/p/.tmp"])
+    let flags = ["-z", "--no-xattrs", "--no-acls", "--no-fflags", "--no-mac-metadata", ".DS_Store"]
+    for flag in flags {
+      #expect(tar.contains(flag), "\(flag)")
+    }
+    #expect(!tar.contains("--format") && !tar.contains("--options"))
+    #expect(Array(tar.suffix(3)) == ["-C", "/p", "./a"])
     #expect(
       Archives.extractArguments(
         URL(filePath: "/p/x.zip"), into: URL(filePath: "/p/.t"), gbk: true, password: nil
@@ -233,6 +249,49 @@ import Testing
     #expect(try names(in: unpacked) == ["乙", "甲.txt"])
     #expect(
       try String(contentsOf: unpacked.appending(path: "乙/里面.txt"), encoding: .utf8) == "二")
+  }
+
+  /// tar.gz：真是 gzip、名字是中文、不带杂文件和扩展属性 / 文件标志；再压一次叫「资料 2.tar.gz」（不是「资料.tar 2.gz」），
+  /// 解回来是一个文件夹
+  @Test func tarGzRoundTrip() async throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let folder = root.appending(path: "资料")
+    var file = folder.appending(path: "子/说明 文档.txt")
+    try write("中", to: file)
+    try write("x", to: folder.appending(path: ".DS_Store"))
+    try write("x", to: folder.appending(path: "._说明 文档.txt"))
+    #expect(setxattr(file.path(percentEncoded: false), "user.kitty", "1", 1, 0, 0) == 0)
+    var hidden = URLResourceValues()
+    hidden.isHidden = true
+    try file.setResourceValues(hidden)
+
+    let name = Archives.archiveName(for: [folder], format: .tarGz)
+    #expect(Archives.freeName(name, format: .tarGz, in: root) == "资料.tar.gz")
+    let archive = try #require(
+      await Archives.pack([folder], format: .tarGz, to: root.appending(path: name)).url)
+    #expect(try Data(contentsOf: archive).prefix(2) == Data([0x1F, 0x8B]))
+    let listing = try await Subprocess.run(
+      "/usr/bin/tar", ["-tf", archive.path(percentEncoded: false)], captures: true,
+      environment: ByteMeter.utf8Environment)
+    let lines = Set(listing.output.split(whereSeparator: \.isNewline).map(String.init))
+    #expect(lines == ["资料/", "资料/子/", "资料/子/说明 文档.txt"])
+    let raw = try await Subprocess.run(
+      "/usr/bin/gunzip", ["-c", archive.path(percentEncoded: false)], captures: true)
+    // pax 头里扩展属性（LIBARCHIVE.xattr.*、SCHILY.xattr.*）、文件标志（SCHILY.fflags）、ACL（SCHILY.acl.*）都没有
+    #expect(raw.status == 0 && raw.output.contains("说明 文档.txt"))
+    #expect(!raw.output.contains("LIBARCHIVE.") && !raw.output.contains("SCHILY."))
+    // 旁边已经有「资料.tar.gz」：「 2」加在整个扩展名前面，解压时还认得出是 tar.gz
+    let second = Archives.freeName(name, format: .tarGz, in: root)
+    #expect(second == "资料 2.tar.gz")
+    #expect(Archives.suffix(of: root.appending(path: second)) == ".tar.gz")
+
+    let placed = try #require(await Archives.unpack(archive, password: nil, gbk: false).url)
+    #expect(placed.lastPathComponent == "资料 2")
+    file = placed.appending(path: "子/说明 文档.txt")
+    #expect(try String(contentsOf: file, encoding: .utf8) == "中")
+    #expect(getxattr(file.path(percentEncoded: false), "user.kitty", nil, 0, 0, 0) == -1)
+    #expect(try file.resourceValues(forKeys: [.isHiddenKey]).isHidden == false)
   }
 
   /// GBK 名字、不标 UTF-8 的 zip（中文 Windows 打的那种）：认出来按 GB18030 解

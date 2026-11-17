@@ -1667,6 +1667,17 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
   的杂文件」勾选，Keka 只有那一个勾选，同步盘客户端多是一行一条的忽略列表、内置的规则只读列出；没选：多行文本框（还是要懂语法、
   没法逐条标错）、标记输入框（NSTokenField，一条一个胶囊，标不了错也放不下说明）、整套规则编辑器（为一行设置太重）。
   单测 `ArchivesTests.skipEditing`，截图自检 `SnapshotProbeTests/finderMenuSettings()`。
+- **压缩成 TAR.GZ**（2026-11-17，0.10.0；用户问能不能加 tar 包）：「压缩为 ▸」多一项 TAR.GZ（`Archives.Format.tarGz`，网址动作 `tgz`），
+  只加这一种。本机实测系统 tar（bsdtar 3.5.3 / libarchive 3.7.4，38 MB 源码 + App）：不压缩的 .tar 38.5 MB / 0.5 s、.tar.gz
+  19.3 MB / 1.7 s（同 zip 20.5 MB / 1.9 s）、.tar.bz2 17.8 MB / 4.3 s、.tar.xz 16.0 MB / 22 s（同 7z）；.tar.zst 做不了（系统 tar
+  没带 zstd、要外面的 zstd 程序，App 的 PATH 里没有，报错）。gz 是 Linux、macOS、Windows 11 资源管理器、Windows 10 起的 tar.exe、
+  7-Zip 都认的那一种；xz 慢十几倍只小两成、Windows 10 的 tar.exe 不带；.tar、.tar.bz2 用的人少，菜单不加长，有人要再加。
+  **要另加 `--no-xattrs --no-acls --no-fflags`**：`--no-mac-metadata` 只管 ._ 那份，扩展属性（每个文件都有的 com.apple.provenance、
+  下载来的隔离标记）、隐藏 / 上锁标志照样写进 pax 头（`LIBARCHIVE.xattr.*`、`SCHILY.xattr.*`、`SCHILY.fflags`，实测），Linux 的
+  GNU tar 解的时候每个文件报一句「Ignoring unknown extended header keyword」；加了之后头里只剩 path / mtime。格式用 tar 默认的
+  （用得着才写 pax 头），名字是 UTF-8。App 打成 tar.gz 再解出来签名照样过（`codesign --verify --deep --strict`，实测）。重名的
+  「 2」加在整个扩展名前面（`Archives.freeName`：「资料 2.tar.gz」；移动、复制照旧只认最后一段、同访达）——「资料.tar 2.gz」再
+  解压会被当成只压了一个文件的 .gz。解压本来就认 .tar.gz / .tgz。单测 `ArchivesTests.tarGzRoundTrip`。
 
 ### 截图识别元素（下一版，2026-11-08）
 
