@@ -235,7 +235,7 @@ mac 还没推进 `macos` 的（多语言 / 英文、截图识别元素第二三�
   下下来核 PNG 块、CRC、宽高，3 MB 以内才存。mac 的 HEICS 包 Windows 不一定解得开。
 - 没下好时画系统样子（Segoe UI Emoji），气泡的格子也是系统样子：**不带** mac 那 746 张缩略图（3.2 MB）。分类图标是 Segoe UI Symbol 的单色字（mac SF 符号）。
 - 对照表（142 KB）只在用到「pack:」时才读（没挑过动画表情的人一直不读）。
-- 本机试下载用环境变量 `KITTY_EMOJI_PACK_SERVER`（只认 http 的 127.0.0.1 / localhost，Release 也认：下下来的照样按不可信输入核）。
+- 本机试下载用环境变量 `KITTY_EMOJI_PACK_SERVER`（只认 http 的 127.0.0.1 / localhost；审查后改成只在测试档认，见下面「审查后改的」）。
 - 「自动下载动画表情」跟着同步（mac 注册了默认值、本来就同步）：PLAN-v21 §1 D 组里那一项作废，没去改 PLAN-v21 原文。
 - 标题逐字没有模糊，用放大 1.12 代替（每个字一张离屏表面 + 效果画刷太重）；冒号手动抬 0.1 em（Segoe UI 没有抬高的冒号）。
 - 长成整屏裁的是窗口本身（`SetWindowRgn`，圆角没有抗锯齿）；透出样式只长压暗层，中间的底板照常淡入；按数字键 / 点卡片直接进入时从那张卡片长；
@@ -262,6 +262,30 @@ mac 还没推进 `macos` 的（多语言 / 英文、截图识别元素第二三�
    告示上一个新表情（如礼花）、`--status-screen-probe` 的告示和小字放大看接缝、选状态面板选中那张放大的样子；能录的话录 3–5 秒：逐字浮现、小字滚动、卡片长成整屏
    （只录我们自己的窗口，状态屏只用手动进，别让自动化进入）。
 6. 走 HANDTEST 1540–1569；内存探针（挂着状态屏、小字滚了一阵之后）、空闲 CPU 照每批的自查清单。
+7. **卡片长成整屏一定要录屏看一遍**（1566–1568）：用的是每帧 `SetWindowRgn`（`StatusScreenPanel.Growth`），它能不能裁住 WinUI 的 DComp 内容、
+   会不会掉帧、会不会先闪一整屏，Mac 上看不出来。不行就退回「不长」：`StatusScreenHost.Enter` 里 `ArrangePanels(Motion.Reduced ? null : growFrom)`
+   改成 `ArrangePanels()`（选中放大 1.04 留着），MAC-DIFF 的长期例外跟着改一句、写明原因。
+
+#### 审查后改的（`acc37483`，2026-11-17，行号按 `b374f750`）
+
+审查方挑出 9 处，都改了，同样**没编译**：
+
+1. 下载正文没有超时（`HttpClient.Timeout` 配 `ResponseHeadersRead` 只管到响应头）：`DownloadAsync` 给整个下载 60 秒的 `CancellationTokenSource`；
+   Core `FetchAsync` 取消 / 超时一律给 null（不再往外抛），App 按失败记 `FailedAt`，10 分钟后能再试。单测 `DownloadsFromALocalServer` 加一路
+   「只发响应头和 10 个字节就不动」：1 秒取消、5 秒内回来、给 null（测试服务器改成每个连接各自处理）。
+2. 小字数字不等宽：`TickerText.Layout` 整行 `SetTypography` 加 `CanvasTypographyFeatureName.TabularFigures`（`CanvasTypography` 用完 `using` 放掉）。
+   编译点：`CanvasTypography.AddFeature(CanvasTypographyFeatureName, uint)`、`CanvasTextLayout.SetTypography(int, int, CanvasTypography)`。
+3. 坏缓存永远不换：`StatusEmoji.Show` 多一个 `failed` 回调，表情包的传 `EmojiPack.Forget(symbol)`——`LoadedImageSurface` 解不开时删掉缓存文件、
+   记一次失败，过 10 分钟再用到时重新下（替用户定：不当场重下，服务器上那份本身坏了会一直下）。
+4. 两格不跟着选中变：`AnimatedEmojiPicker.Create` 返回 `(Button Button, Action Refresh)?`、`EmojiChoice.Create` 返回 `(Button Button, Action Refresh)`，
+   两个详情页的 `SelectIcon` 每次调 `cellRefreshers`。
+5. 升级前存成透传的 `pref:emojiPackDownloads` 不落地：`SettingsSyncBook.Values` 先 `AdoptPassthrough`——透传里这一版认得的编号当一次传进来的改动
+   走 `SettingsSync.Plan`（`sharedFrozen: false`），落成了的从透传拿掉、清掉记着的时刻；落不下的照旧透传。`Land` 和它共用抽出来的 `Apply`。
+   单测 `SettingsSyncRunnerTests.RecognisedPassthroughLandsAfterAnUpgrade`（落下、交出去的值不变、落不下的和不认得的照旧、再读不动）。
+6. 逐字浮现可能闪一帧：每份标题建好就 `ElementCompositionPreview.GetElementVisual(copy).Opacity = 0f`（`StatusScreenView` 加了 `using Microsoft.UI.Xaml.Hosting`）。
+7. `Trim` 一个文件删不掉就全停：每个文件单独 try；`TrimSoon` 用 `Interlocked` 标记，上一次没收拾完就不再起（替用户定：跳过的那次等下一次下载或下次运行再收拾）。
+8. `--pack` 不检查图集上限：脚本拦帧数 2…256、列数 / 行数 ≤ 16（同 `EmojiSheet.Decode`）；本机 29 个重跑，输出逐字节不变，`swiftc -typecheck` 过。
+9. 测试源只在测试档认：`KITTY_EMOJI_PACK_SERVER` 只在 `Paths.IsTestProfile`（Debug、Release 的探针档）时读；HANDTEST 1550 改成用 Debug 版试。
 
 ### R108（P2）便签：屏幕边缘那叠的动画、便签墙拖动排序（`MAC-DIFF.md`「便签 › 还没对齐」）
 
