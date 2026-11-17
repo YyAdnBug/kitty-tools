@@ -1,5 +1,5 @@
 // 截图翻译把译文盖回截图上（PLAN-v16 S1 / S1b，mac AppDelegate.overlayTranslate + ScreenshotOverlay.render）：
-// 选区的像素 → 识字（带词框）→ 按段分好 → 翻译（整段原文定一次方向，每段按顺序试启用的服务；纯符号段不发请求；
+// 选区的像素 → 识字（带词框）→ 按容器和字色分好段（ScreenshotOverlay.Prepare，对齐复查 R103）→ 翻译（整段原文定一次方向，每段按顺序试启用的服务；纯符号段不发请求；
 // PLAN-v18 S11 / mac a428a86c：最多 3 段同时在翻，按段的顺序拼回，「翻译中 i/n」数的是翻完了几段）
 // → Core 的 ScreenshotOverlay.Compose 量基线 / 代码块、排版、去字 → Win2D 按原文的字色把译文画上去（代码词在新位置重画底框）。
 // 识字、合成、画字都在后台线程（Win2D 的共享设备不挑线程）；取消点在每段开头，取消后不再发新请求；一段翻不成，别的段也停。
@@ -57,7 +57,9 @@ internal static class ScreenshotTranslator
         }
 
         ClipboardService.Instance?.Store.RecordOwnText(text);
-        var segments = ScreenshotOverlay.Segments(lines, width, height);
+        // 先按闭合容器和字色分段（标签、按钮不并进正文），每段顺手量好；只读选区的像素，扫一遍图放后台
+        var segments = await Task.Run(() => ScreenshotOverlay.Prepare(lines, new OverlayPixels(bgra, width, height, width * 4)), cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
         if (segments.Count == 0)
         {
             throw new Failure("没有识别到文字");
@@ -224,7 +226,11 @@ internal static class ScreenshotTranslator
     {
         var baselineTop = height - span.Baseline;
         var lineBaseline = (float)(span.Pitch * 0.8);
-        using var layout = Layout(device, span.Text, span.Frame.Width, span.FontSize, span.Code, span.Pitch, color, codeColor);
+        using var layout = Layout(device, span.Text, span.Frame.Width, span.FontSize, span.Code, span.Pitch, color, codeColor, span.Bold);
+        // 容器里的段只画在容器里面（对齐复查 R103）：字不压到边框上
+        using var clipped = span.Clip is { } clipRect
+            ? ds.CreateLayer(1, new Windows.Foundation.Rect(clipRect.MinX, height - clipRect.MaxY, clipRect.Width, clipRect.Height))
+            : null;
         var origin = new System.Numerics.Vector2((float)span.Frame.MinX, (float)(baselineTop - lineBaseline));
         if (span.Code is { } code)
         {
@@ -263,14 +269,16 @@ internal static class ScreenshotTranslator
         ds.DrawTextLayout(layout, origin, color);
     }
 
-    /// <summary>量和画共用的一份排版：正文系统字体；代码词等宽字体、小一点、自己的颜色，前后各让出一个留白的宽度。</summary>
+    /// <summary>量和画共用的一份排版：正文系统字体（容器里的标题用粗体）；代码词等宽字体、小一点、自己的颜色，前后各让出一个留白的宽度。</summary>
     internal static CanvasTextLayout Layout(
-        CanvasDevice device, string text, double width, double fontSize, OverlayCode? code, double pitch, Color color, Color codeColor)
+        CanvasDevice device, string text, double width, double fontSize, OverlayCode? code, double pitch, Color color, Color codeColor,
+        bool bold = false)
     {
         var format = new CanvasTextFormat
         {
             FontFamily = BodyFont,
             FontSize = (float)Math.Max(1, fontSize),
+            FontWeight = bold ? Microsoft.UI.Text.FontWeights.Bold : Microsoft.UI.Text.FontWeights.Normal,
             WordWrapping = CanvasWordWrapping.Wrap,
         };
         if (pitch > 0)
@@ -302,13 +310,16 @@ internal static class ScreenshotTranslator
         return layout;
     }
 
-    /// <summary>量字：和画同一份排版（折法一致）。</summary>
-    private sealed class Win2DMeasure(CanvasDevice device) : ITextMeasure
+    /// <summary>量字：和画同一份排版（折法一致）。自检（OverlayTranslateProbe）也用它看排出来的字号。</summary>
+    internal sealed class Win2DMeasure(CanvasDevice device) : ITextMeasure
     {
         private static readonly Color Black = Color.FromArgb(255, 0, 0, 0);
 
         /// <summary>字的上伸部占字号的多少（「Ag国」的墨迹顶到基线；量一次）。</summary>
         private double? _ascent;
+
+        /// <summary>正文字体的大写字高占字号的多少（「H」的墨迹顶到基线；量一次）。</summary>
+        private double? _capHeight;
 
         public int LineCount(string text, double width, double fontSize, OverlayCode? code)
         {
@@ -342,6 +353,39 @@ internal static class ScreenshotTranslator
             }
 
             using var layout = Layout(device, text, width, fontSize, code, 0, Black, Black);
+            return SplitsWord(layout, text);
+        }
+
+        /// <summary>
+        /// 排好之后字形墨迹的外接框（对齐复查 R103）：等行距排版，第一行的基线在行顶下 0.8 行距（同 Layout / DrawSpan），
+        /// DrawBounds 换成「以第一行基线为 0、向上为正」。不给行距（0）时按 1.3 个字号排，只看一行时没有差别。
+        /// </summary>
+        public (int Lines, OverlayRect Bounds, bool SplitsWord) Ink(string text, double width, double fontSize, double pitch, bool bold)
+        {
+            var spacing = pitch > 0 ? pitch : Math.Max(1, fontSize) * 1.3;
+            using var layout = Layout(device, text, width, fontSize, null, spacing, Black, Black, bold);
+            var drawn = layout.DrawBounds;
+            var baseline = spacing * 0.8;
+            var bounds = drawn.Width > 0 && drawn.Height > 0
+                ? new OverlayRect(drawn.X, baseline - drawn.Y - drawn.Height, drawn.Width, drawn.Height)
+                : default;
+            return (Math.Max(1, layout.LineCount), bounds, text.Length >= 2 && SplitsWord(layout, text));
+        }
+
+        /// <summary>Segoe UI 的大写字高（H 的墨迹顶到基线）：量一次，量出离谱的值就用 0.7。</summary>
+        public double CapHeight(double fontSize)
+        {
+            if (_capHeight is null)
+            {
+                var top = Ink("H", 10_000, 100, 200, false).Bounds.MaxY / 100;
+                _capHeight = top is > 0.5 and < 0.9 ? top : 0.7;
+            }
+
+            return fontSize * _capHeight.Value;
+        }
+
+        private static bool SplitsWord(CanvasTextLayout layout, string text)
+        {
             if (layout.LineCount < 2)
             {
                 return false;

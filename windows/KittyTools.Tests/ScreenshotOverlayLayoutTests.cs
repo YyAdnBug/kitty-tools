@@ -252,10 +252,15 @@ public sealed class ScreenshotOverlayLayoutTests
         CheckInvariants(Layout(stairs, Enumerable.Repeat(longText, 4).ToArray(), 800, 260, 2), stairs, 800, 260, "stairs");
     }
 
+    /// <summary>
+    /// 随机版面（种子固定）：几段不重叠的原文框、长短不一的译文、1 倍和 2 倍，排出来都守住不变式。
+    /// 两组（对齐复查 R103，同 mac 5ef55b2f）：中文原文译成英文照原来的排法；英文原文译成中文，验还原字号之后的边界。
+    /// </summary>
     [TestMethod]
-    public void RandomLayoutsKeepTheInvariants()
+    [DataRow(false)]
+    [DataRow(true)]
+    public void RandomLayoutsKeepTheInvariants(bool chinese)
     {
-        // 随机版面（种子固定）：几段不重叠的原文框、长短不一的英文译文、1 倍和 2 倍，排出来都守住不变式
         var random = new Random(20261108);
         var words = "the quick brown fox jumps over lazy dog recognition element default value color".Split(' ');
         for (var round = 0; round < 400; round++)
@@ -280,14 +285,16 @@ public sealed class ScreenshotOverlayLayoutTests
                     continue;
                 }
 
-                segments.Add(Segment("一段原文", box, lineHeight, lines));
+                segments.Add(Segment(chinese ? "A source paragraph" : "一段原文", box, lineHeight, lines));
             }
 
-            var translations = segments.Select(_ => string.Join(" ", Enumerable.Range(0, random.Next(1, 25)).Select(_ => words[random.Next(words.Length)]))).ToArray();
+            var translations = segments.Select(_ => chinese
+                ? string.Concat(Enumerable.Repeat("这是一段用于检查译文边界的文字。", random.Next(1, 13)))
+                : string.Join(" ", Enumerable.Range(0, random.Next(1, 25)).Select(_ => words[random.Next(words.Length)]))).ToArray();
             var pixelsPerPoint = random.Next(2) == 0 ? 2.0 : 1.0;
             var array = segments.ToArray();
             var result = Layout(array, translations, width, height, pixelsPerPoint);
-            CheckInvariants(result, array, width, height, $"第 {round} 轮");
+            CheckInvariants(result, array, width, height, $"{(chinese ? "英译中" : "中译英")}第 {round} 轮");
             foreach (var span in result.Spans)
             {
                 Assert.IsTrue(span.FontSize >= 10 * pixelsPerPoint - 0.01 || span.Scale >= 0.999, $"第 {round} 轮字号 {span.FontSize}");

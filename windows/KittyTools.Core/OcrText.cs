@@ -3,6 +3,7 @@
 // 大写开头是复合词（State-/Of-the-art），连字符留着。空行是段落分隔。
 // PLAN-v16（mac 2cd75c5b 的 OCR.groups）：列表项（• / 1. / ① 开头的行）另起一段；句末短行后面跟着的一行，第一个词在上一行剩下的
 // 地方放不下（被长词挤断的）不算段落结尾。截图翻译的原位覆盖要每段的行框和词框，所以先按段分组行本身（Groups）。
+// 对齐复查 R103（mac d829b1b1）：横向几乎不重叠的两行（右上角的「New」和下面的正文）不接成一段。
 using System.Text.RegularExpressions;
 
 namespace KittyTools.Core;
@@ -54,7 +55,12 @@ public static partial class OcrText
                 // 句末短行：上一行剩下的地方连下一行的第一个词都放得下，才是段落结尾；放不下说明是被长词挤断的
                 var room = lineRight - last.Box.Right;
                 var wrapped = line.Words is { Count: > 0 } words && IsLatin(words[0].Text) && words[0].Box.Width > room;
+                // 短标签可能紧贴下一段的右上角（New + 正文），只看行距会被接成正文的第一个词（对齐复查 R103，mac d829b1b1）：
+                // 两行横向至少盖住窄的那行的一半才接段；居中的标题、列表缩进、普通折行都盖得住
+                var overlap = Math.Max(0, Math.Min(last.Box.Right, line.Box.Right) - Math.Max(last.Box.X, line.Box.X));
+                var narrow = Math.Min(last.Box.Width, line.Box.Width);
                 var breaks = gap > 1.2 * lineHeight || gap < -0.5 * lineHeight ||
+                             (narrow > 0 && overlap < narrow * 0.5) ||
                              (endsSentence && last.Box.Width < 0.8 * lineWidth && !wrapped) ||
                              ListMarker(line.Text) is not null ||
                              // 列表项后面一行的左边界比记号还靠左半个字以上：列表后面接着的正文（折行接着写的列表项缩进到正文列，不缩回去）

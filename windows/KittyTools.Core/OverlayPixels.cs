@@ -88,6 +88,42 @@ public sealed class OverlayPixels
         return new OverlayRgb(best.Red / n, best.Green / n, best.Blue / n);
     }
 
+    /// <summary>
+    /// 字框里和底色差过门槛的像素中最常见的颜色（对齐复查 R103，mac foreground(in:background:)）：只用来在容器里按字色分段；
+    /// 隔一个像素看一个，抗锯齿的边按 5 位颜色分桶；一个都没有 null。
+    /// </summary>
+    public OverlayRgb? Foreground(OverlayRect box, OverlayRgb background)
+    {
+        var x0 = Math.Max(0, Down(box.MinX));
+        var x1 = Math.Min(Width, Up(box.MaxX));
+        var y0 = Math.Max(0, Down(box.MinY));
+        var y1 = Math.Min(Height, Up(box.MaxY));
+        if (x1 <= x0 || y1 <= y0)
+        {
+            return null;
+        }
+
+        var counts = new Dictionary<int, (int Count, OverlayRgb Color)>();
+        for (var y = y0; y < y1; y += 2)
+        {
+            for (var x = x0; x < x1; x += 2)
+            {
+                var pixel = Color(x, y);
+                if (pixel.Distance(background) <= ScreenshotOverlay.InkLimit)
+                {
+                    continue;
+                }
+
+                var (r, g, b) = Raw(x, y);
+                var key = ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3);
+                counts.TryGetValue(key, out var old);
+                counts[key] = (old.Count + 1, pixel);
+            }
+        }
+
+        return counts.Count == 0 ? null : counts.Values.MaxBy(value => value.Count).Color;
+    }
+
     internal TileModes Tiles(int x0, int x1, int y0, int y1, double lineHeight)
     {
         var tile = Math.Max(6, (int)Math.Round(lineHeight, MidpointRounding.AwayFromZero));

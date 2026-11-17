@@ -43,6 +43,70 @@ mac 在 `9acd4306` 之后又推了 15 个提交，**要跟的只有 R103 一条*
   `ScreenshotReadingTests`（真实识字结果的气泡、文章 1x / 2x 样例，86 项）。用 `git show 5ef55b2f`、`git show d829b1b1` 看。
 - **Windows**：照做到 `Core/ScreenshotOverlay.cs` / `Core/OverlayPixels.cs`（区域探测放 Core、配单测，样例照 mac 的搬）；中文字号用 DirectWrite 量出的大写高度。
   开关照旧默认关。规模中。
+- **编号撞了**：上面「issue #29」那一节也叫 R103（Ctrl+Alt+A），HANDTEST 1483 的标题用的是那个。这里说的是对齐复查这一条，HANDTEST 1484–1490。
+
+##### 交接：审查方在 Mac 上写了（`R103_COMMIT`），没编译、没跑单测（本机没有 .NET SDK），待你们编译、核验
+
+照 mac 两个提交逐段搬，结构和 mac 对得上（mac 的 `prepareSegments` / `markHeadings` / `containerSpan` / `readingFontSize` / `ScreenshotRegions` 各有一个同名的 C# 版）。
+mac 那次的 `Clipboard/OCR.swift` 其实没有「多给词框」，只改了接段的一个条件；Windows 照搬的是那一处。
+
+**改了哪些文件**（路径省略 `windows/`）：
+
+- `KittyTools.Core/ScreenshotRegions.cs`（新）：找闭合容器（同底色的连通背景、碰到图边或两百万像素预算用完就不算、背景要占外接框一半以上），一张图一个实例、走过的区域记标签。
+- `KittyTools.Core/ScreenshotOverlay.cs`：
+  - `ITextMeasure` 加 `CapHeight`（默认 0.7 个字号）和 `Ink`（按宽度、行距、粗细排好后字形墨迹的外接框，以第一行基线为 0；默认实现给单测的假字体）。
+  - `OverlayRect` 加 `MidX`、`Offset`、`Contains(OverlayRect)`；`OverlaySegment` 加 `Container`、`IsAnalyzed`、`IsHeading`、算出来的 `IsControl`；`OverlaySpan` 加 `Clip`、`Bold`。
+  - 新 `Prepare`（翻译前按容器和字色分段、顺手量好）、`MarkHeadings`、`ContainerSpan`（容器里的排法）、`ReadingFontSize`（英文→中日韩文按大写字高还原字号）。
+  - `Layout`：容器里、没代码块、不是列表项的段走 `ContainerSpan`；还原了字号的段按字形顶边对齐、行距至少 1.2 个字号、先按原字号自然换行（`readable`）再缩。
+  - `Compose`：没分析过的段（单测、直接按 `Segments` 分的）补量、补找容器，再标标题。
+- `KittyTools.Core/OverlayPixels.cs`：`Foreground`（字框里最常见的字色，按 5 位分桶）。
+- `KittyTools.Core/OcrText.cs`：`Groups` 两行横向重叠不到窄的那行一半就断段（右上角的「New」不接进下面的正文）。普通识字（Ctrl+Shift+O 这类）的分段也跟着变，同 mac。
+- `KittyTools/Screenshot/ScreenshotTranslator.cs`：`TranslateAsync` 改走 `Prepare`（`Task.Run`）；`Layout` 多一个 `bold`；`DrawSpan` 有 `Clip` 时 `ds.CreateLayer` 裁到容器里；
+  `Win2DMeasure` 改成 internal（探针要用），实现 `Ink`（等行距排版、第一行基线在 0.8 行距，`DrawBounds` 换过来）和 `CapHeight`（量「H」，不在 0.5–0.9 就用 0.7），`SplitsWord` 抽出按 layout 判断的那一半。
+- `KittyTools/App/OverlayTranslateProbe.cs`：分段改走 `Prepare`；报告多写每段的容器和排出来的字号；加两组样图（下面「搬不了的」）。
+- 单测：新 `KittyTools.Tests/ScreenshotRegionsTests.cs`；`ScreenshotOverlayTests.TranslationFollowsTheOriginalLinePitch`、`ScreenshotOverlayLayoutTests.RandomLayoutsKeepTheInvariants` 照 mac 改。
+
+**要特别看的编译点**：
+
+1. `ITextMeasure.Ink` 返回命名元组 `(int Lines, OverlayRect Bounds, bool SplitsWord)`，`Win2DMeasure.Ink` 的元素名得一模一样（不一样是 CS8141）；`Win2DMeasure` 里另有一个两参数的私有静态 `SplitsWord(CanvasTextLayout, string)`，和四参数的接口方法靠参数个数分开。
+2. `CanvasTextFormat.FontWeight = Microsoft.UI.Text.FontWeights.Bold`（`Annotation.cs` 同写法）；探针的 `Label` 也这么写。
+3. `DrawSpan` 里 `using var clipped = span.Clip is { } clipRect ? ds.CreateLayer(1, rect) : null;`（每段一层、段画完就释放）。
+4. `Layout` 里 `calibrated * 1.2 ?? 0`（`double?` 运算再兜底）；循环体里已有的模式变量（`segmentCode`、`c`、`belowTop`、`code`、`placement`）没和新变量（`inside`、`calibrated`、`readable`）撞名。
+5. `ReadingFontSize` 的汉字区间写的是 `'\u3400'` 这类转义（审查方的编辑器一度把它写成了字面字符，已改回；源码里没有 U+2028 / U+2029、没有 BOM）。
+6. 单测里比 `OverlayRect?` / `double?` 的地方写了 `Assert.AreEqual<OverlayRect?>`、`Assert.AreEqual<double?>`，免得 MSTest 的重载挑不出来。
+7. `ScreenshotRegions` 的标签是 `ushort[宽 × 高]`（4K 选区约 16 MB，`Prepare` / `Compose` 用完就丢，同 mac 的 UInt16）；`Prepare` 只读传进去的那份字节（`new OverlayPixels(bgra, …)` 没拷贝）。
+
+**搬了哪些单测**（期望值照 mac 原样）：
+
+- mac `ScreenshotRegionsTests` 三个全搬：`NestedBadgeUsesItsOwnBoundary`、`OpenPageHasNoContainer`、`ControlFitsWithoutCrossingItsBorder`。
+- mac `ScreenshotPopoverTests.badgeIsNotJoinedToTheParagraphBelow` → `BadgeIsNotJoinedToTheParagraphBelow`（Vision 的归一化框换成 1000 × 1000 像素、左上原点）。
+- mac `ScreenshotReadingTests.chineseParagraphKeepsReadableSizeAndParagraphAnchors` → 同名（18–22 的字号区间原样；假字体的大写字高取 0.7 = Segoe UI，算出来 20）。
+- mac `ScreenshotOverlayTests` 的两处改动：`translationFollowsTheOriginalLinePitch` 译文改成英文；`randomLayoutsKeepTheInvariants` 加「英文原文、中文译文」一组（`DataRow(true)`）。
+- Windows 另加三个不要识字的：`ReadingSizeOnlyForEnglishIntoChinese`；`PrepareSplitsByContainerAndInk`、`ComposeKeepsContainerBordersAndCentersTheButton`
+  （合成的气泡图：白字标题和灰字正文按字色分开、标题认成标题、按钮自己一个容器且居中、去字不碰描边、按钮里的字去干净）。
+- **搬不了的**：mac `popoverPreservesControlsAndTranslatesBadge`（1x / 2x）、`englishArticleRendersChineseAtReadableSize`（1x / 2x）要真识字、真字体画图，Core 单测里没有 Windows 的识字。
+  搬进了 `--overlay-translate-probe`：同样的坐标、颜色、译文、检查的五个描边像素；字体用 Arial（mac 是 Helvetica），气泡多跑一次 150 %。
+- 现有用例里「英文原文 + 中文译文」的（`BodyParagraphsShareOneFontSize`、`IndentedParagraphBelowIsNotANeighbourColumn`、`ListItemKeepsItsMarker`、`WidenedTranslationStopsBeforeTheNextColumn`、
+  `EraseCoversTheTranslationWhenItGrowsPastTheParagraph`、`InpaintingKeepsInlineCodeAndTakesTheTextColour`）现在会走还原字号，审查方按假字体逐个推算过都还过（mac 的同名用例也没改）。
+  真红了先对推算找原因，不许改断言。
+
+**替用户定的**：
+
+- 大写字高用 Segoe UI 量「H」的墨迹（mac 读的是系统字体的 capHeight 度量），量出来不在 0.5–0.9 就用 0.7。
+- 字号还原靠识字框的高：mac 的 Vision 框比大写字高高一截（16 号字约 14 像素，中文排成约 20 像素）。Windows 识字的框更紧，中文会比 mac 小一点；更松就大一点。没加校正系数，等探针「article」的数（要求 16–24 点）。
+- 按钮、标签照 mac「容器不到三个行高、十六个行高宽」认。Windows 的框要是更矮（「Got it」没有下伸部），按钮可能认不成按钮、改成左对齐排；探针「popover」那几条看得出来。
+- 气泡、文章样图的字体用 Arial（Windows 没有 Helvetica）。开关照旧默认关，没加设置项。
+
+**Windows 那边要做的**：
+
+1. `git fetch origin && git rebase origin/windows`；`dotnet build windows/KittyTools.slnx -c Debug -p:Platform=x64` 零警告，编译错直接修（上面的编译点先看）。
+2. `dotnet test windows/KittyTools.Tests` 全过；重点 `ScreenshotRegionsTests`、`ScreenshotOverlayTests`、`ScreenshotOverlayLayoutTests`，和分段相关的 `ScreenshotCoreTests`、`PortedCoreBatch6Tests`。
+3. Release AOT 发布 x64 / ARM64 零 trim / AOT 警告。
+4. 测试档跑 `--overlay-translate-probe=<目录>`（真识字、真合成，译文写死）：`report.md` 里 light、dark-code、小选区、popover-1x / 1.5x / 2x、article-1x / 2x 都要过。
+   不过的把报告里的数（识字行高、排出来的字号、每段的容器）贴到这一节下面再定怎么改；「译后识字」那几条要识字引擎能读中文，读不了就装中文识字包再跑。
+5. 浅色、深色截图（`popover-*-after.png`、`article-*-after.png`、`light-after.png`、`dark-code-after.png`）推 `windows-shots` 的 `0.3.0-r103/`。
+6. 真截图走 `HANDTEST.md` 1484–1490（带标签和按钮的网页、气泡里的中文、150 % 下的小选区），写上「Windows 11-xx」。
+7. 做完把这一条改成「已修（提交号）」。R104 照旧在下面，只能在 Windows 上做，一起做掉。
 
 #### R104（P2）互通格式补一道真的交叉验证
 

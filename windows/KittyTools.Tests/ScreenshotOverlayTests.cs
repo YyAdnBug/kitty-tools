@@ -217,18 +217,19 @@ public sealed class ScreenshotOverlayTests
         Assert.AreEqual(spans[1].FontSize, spans[0].FontSize, 0.001);
     }
 
+    /// <summary>不是中日韩文的译文沿用原文行距和基线；英文译成中文按字形顶边对齐，见 ScreenshotRegionsTests（对齐复查 R103，同 mac 5ef55b2f 改成英文译文）。</summary>
     [TestMethod]
     public void TranslationFollowsTheOriginalLinePitch()
     {
         var paragraph = Segment("Three lines of text", new OverlayRect(40, 600, 900, 142), 40, 3);
         var single = Segment("One line", new OverlayRect(40, 400, 900, 40), 40);
-        var spans = Spans(new[] { paragraph, single }, new[] { "三行", "一行" }, 1000, 1000);
+        var spans = Spans(new[] { paragraph, single }, new[] { "Three lines", "One line" }, 1000, 1000);
         Assert.AreEqual(2, spans.Count);
         Assert.AreEqual(51, spans[0].Pitch, 0.01);
         Assert.AreEqual(51, spans[1].Pitch, 0.01);
         Assert.IsTrue(spans[0].Baseline < 742 && spans[0].Baseline > 742 - 40);
         var measured = paragraph with { Baseline = 710, Pitch = 49 };
-        var fromPixels = Spans(new[] { measured }, new[] { "三行" }, 1000, 1000);
+        var fromPixels = Spans(new[] { measured }, new[] { "Three lines" }, 1000, 1000);
         Assert.AreEqual(710, fromPixels[0].Baseline);
         Assert.AreEqual(49, fromPixels[0].Pitch);
     }
