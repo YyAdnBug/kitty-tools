@@ -123,6 +123,56 @@ public sealed class NoteDeckLayoutTests
         }
     }
 
+    /// <summary>R108 动效的数：出场每张晚 45 ms、从「标签宽 + 24」外滑进来；打开的探出 8、停着 / 拖着的 4；朝屏幕边的方向。</summary>
+    [TestMethod]
+    public void RevealAndReach()
+    {
+        Assert.AreEqual(TimeSpan.Zero, NoteDeckLayout.RevealDelay(0));
+        Assert.AreEqual(TimeSpan.FromMilliseconds(90), NoteDeckLayout.RevealDelay(2));
+        Assert.AreEqual(TimeSpan.Zero, NoteDeckLayout.RevealDelay(-1));
+        Assert.AreEqual(54, Layout(3, 0, 40, 875).RevealDistance);
+        Assert.AreEqual(62, Layout(3, 0, 40, 875, new NoteDeckOptions { Size = NoteDeckSize.Large }).RevealDistance);
+        Assert.AreEqual(8, NoteDeckLayout.Reach(isOpen: true, isRaised: true));
+        Assert.AreEqual(4, NoteDeckLayout.Reach(isOpen: false, isRaised: true));
+        Assert.AreEqual(0, NoteDeckLayout.Reach(isOpen: false, isRaised: false));
+        Assert.AreEqual(1, NoteDeckLayout.Outward(NoteDeckEdge.Right));
+        Assert.AreEqual(-1, NoteDeckLayout.Outward(NoteDeckEdge.Left));
+        // 打开的便签离标签列 NoteGap：标签列那扇窗朝里多出来的正好挨上它
+        Assert.AreEqual(NoteDeckLayout.NoteGap, NoteDeckLayout.ColumnRoom);
+        Assert.AreEqual(38, Layout(3, 0, 40, 875).ColumnWidth);
+    }
+
+    /// <summary>拖动排序：被拖的从 from 挪到 target，中间那几张往反方向让一格，别的不动。</summary>
+    [TestMethod]
+    public void OthersMakeRoomForTheDraggedTab()
+    {
+        double[] Shifts(int from, int target) => Enumerable.Range(0, 5).Select(index => NoteDeckLayout.Shift(index, from, target, 56)).ToArray();
+
+        // 往下拖：1 → 3，2、3 往上让
+        CollectionAssert.AreEqual(new double[] { 0, 0, -56, -56, 0 }, Shifts(1, 3));
+        // 往上拖：3 → 0，0、1、2 往下让
+        CollectionAssert.AreEqual(new double[] { 56, 56, 56, 0, 0 }, Shifts(3, 0));
+        // 还在原来那格：都不动
+        CollectionAssert.AreEqual(new double[] { 0, 0, 0, 0, 0 }, Shifts(2, 2));
+    }
+
+    /// <summary>标签在标签列那扇窗里：贴屏幕边那一侧（绕着斜的点）正好在窗口外缘，多画的那截伸到窗口外；探出 8 正好贴上窗口内缘。</summary>
+    [TestMethod]
+    public void TabSlotHugsTheScreenEdge()
+    {
+        var layout = Layout(3, 0, 40, 875);
+        var right = layout.TabSlot(NoteDeckEdge.Right);
+        Assert.AreEqual((8.0, 44.0, 30.0, 0.0), right);
+        // 右边缘：窗口宽 38，绕的点在 8 + 30 = 38（窗口右缘）；朝里的边在 8，探出 8 到 0
+        Assert.AreEqual(layout.ColumnWidth, right.Left + right.Pivot);
+        Assert.AreEqual(NoteDeckLayout.OpenReach, right.Left);
+        var left = layout.TabSlot(NoteDeckEdge.Left);
+        Assert.AreEqual((-14.0, 44.0, 14.0, 14.0), left);
+        // 左边缘：绕的点在 −14 + 14 = 0（窗口左缘）；朝里的边在 −14 + 44 = 30，探出 8 到 38（窗口右缘）
+        Assert.AreEqual(0, left.Left + left.Pivot);
+        Assert.AreEqual(layout.ColumnWidth, left.Left + left.Width + NoteDeckLayout.OpenReach);
+    }
+
     // ---- 尺寸和排法 ----
 
     /// <summary>三档大小：所有尺寸一起按比例，都是整点；字最小 10。</summary>

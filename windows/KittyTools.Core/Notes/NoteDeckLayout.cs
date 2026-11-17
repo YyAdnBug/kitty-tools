@@ -5,7 +5,8 @@
 // - NoteDeckLayout：一列标签怎么排（每张露出多长、要不要压短、「+N」、放不下时在视口里滚），药丸多高、放哪块屏哪条边
 //   （选哪边就放哪边，和另一块屏相接也放：PLAN-v18 L13，mac issue #11）、药丸 / 那叠 / 打开的便签摆在哪、拖药丸落在哪、拖动排序落在第几格、热区；
 // - NoteDeckLabel：竖排的标题——哪些字正着放、怎么分段、太长怎么截（每段多长由窗口代码量好传进来）；
-// - NoteDeckState：静置 / 扇出 / 打开的状态机，和状态变了该做哪几件事（Effects）。
+// - NoteDeckState：静置 / 扇出 / 打开的状态机，和状态变了该做哪几件事（Effects）；
+// - 动效的数（R108）：出场每张晚多少、从多远滑进来，探出多少，拖动排序时别的标签让多少，标签在标签列那扇窗里摆在哪。
 // **坐标（和 mac 不一样）**：Windows 的屏幕坐标原点在左上、y 向下（mac 是左下、y 向上），这里的函数一律按 y 向下写。
 // 屏幕给的是那块屏的整块（Frame）和**工作区**（WorkArea：去掉任务栏的矩形，相当于 mac 的 visibleFrame），由调用方传进来，
 // 单位由调用方定（全局 DIP 或全局像素，一套里别混）。「离面板顶多远」这类距离（ColumnTop、NoteTop、TabCenter）mac 也是从顶往下量的，
@@ -325,6 +326,67 @@ public sealed record NoteDeckLayout
     /// <summary>标签斜多少度（顺时针为正；绕贴屏幕边那一侧的中点转）：右边缘时逆时针、左边缘时顺时针；isOn 是 false（列里打开的那张）
     /// 就是 0。只是画面上的变换：布局、点击区、悬停区、拖动排序都按不斜的算。</summary>
     public static double Tilt(NoteDeckEdge edge, bool isOn) => !isOn ? 0 : edge == NoteDeckEdge.Right ? -TiltDegrees : TiltDegrees;
+
+    // ---- 动效（R108，照 mac NoteDeckView：NoteTabReveal、NoteTab.reach、NoteFan.shift、NoteEmerge）----
+
+    /// <summary>标签往屏幕里面探出多少：打开的那张 8（正好接上旁边的便签），鼠标停着 / 正拖着的 4。不跟大小档缩放（同 mac）。</summary>
+    public const double OpenReach = 8;
+    public const double RaisedReach = 4;
+
+    /// <summary>标签列那扇窗比标签宽出来的一截（朝屏幕里面）：装得下打开的那张探出来的 8 和斜着的角。
+    /// Windows 自己定（mac 是一整块透明面板，标签探到哪都画得出来）；= 打开的便签离标签列的 NoteGap，窗口正好挨上便签。</summary>
+    public const double ColumnRoom = OpenReach;
+
+    /// <summary>出场：标签（连「+N」「+」）一张接一张从边外滑进来，每张晚 45 ms；从边外多远 = 标签宽 + 24。</summary>
+    public static readonly TimeSpan RevealStagger = TimeSpan.FromMilliseconds(45);
+    public const double RevealExtra = 24;
+
+    /// <summary>打开的便签出场时往边缘那侧偏多少（mac 还缩到 0.97：Windows 全 App 不做从小放大，只偏、只淡入）。</summary>
+    public const double EmergeOffset = 24;
+
+    /// <summary>第 index 张晚多少出场。</summary>
+    public static TimeSpan RevealDelay(int index) => RevealStagger * Math.Max(index, 0);
+
+    /// <summary>朝屏幕边是 x 的哪个方向：右边缘 +1、左边缘 −1（滑出 / 滑回、打开的便签的出场偏移乘它；探出乘它的负数）。</summary>
+    public static double Outward(NoteDeckEdge edge) => edge == NoteDeckEdge.Right ? 1 : -1;
+
+    /// <summary>探出多少：打开的 OpenReach，停着 / 拖着的 RaisedReach。</summary>
+    public static double Reach(bool isOpen, bool isRaised) => isOpen ? OpenReach : isRaised ? RaisedReach : 0;
+
+    /// <summary>拖动排序时第 index 张（不是被拖的那张）让多少：被拖的从 from 挪到 target，它和目标格之间的那几张往反方向让一格。</summary>
+    public static double Shift(int index, int from, int target, double step)
+    {
+        if (from < target && index > from && index <= target)
+        {
+            return -step;
+        }
+
+        if (from > target && index < from && index >= target)
+        {
+            return step;
+        }
+
+        return 0;
+    }
+
+    /// <summary>出场时从边外多远滑进来。</summary>
+    public double RevealDistance => TabWidth + RevealExtra;
+
+    /// <summary>标签列那扇窗多宽：标签 + ColumnRoom（外缘贴着工作区的边）。</summary>
+    public double ColumnWidth => TabWidth + ColumnRoom;
+
+    /// <summary>
+    /// 一张标签在标签列那扇窗里摆在哪：Left 离窗口左边多远；Width = 标签宽 + 朝屏幕边多画出去的 TiltBleed（那一截在窗口外、被裁掉，
+    /// 斜了之后贴边的角不露缝）；Pivot 斜着时绕的点离标签左边多远（贴屏幕边那一侧，竖直方向在中点）；Label 竖排标题那一格
+    /// （TabWidth 宽，不算多画的那截）离标签左边多远。没探出时标签朝里的那条边离窗口内缘 ColumnRoom，探出 OpenReach 正好贴上内缘。
+    /// </summary>
+    public (double Left, double Width, double Pivot, double Label) TabSlot(NoteDeckEdge edge)
+    {
+        var bleed = Metrics.TiltBleed;
+        return edge == NoteDeckEdge.Right
+            ? (ColumnRoom, TabWidth + bleed, TabWidth, 0)
+            : (-bleed, TabWidth + bleed, bleed, bleed);
+    }
 
     public NoteDeckMetrics Metrics { get; }
 

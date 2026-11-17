@@ -6,6 +6,7 @@
 //   设置变了、屏幕变了、便签的条数和颜色变了重摆——都是现成的事件，没有定时器。
 // - NoteDeckBay 是一块屏上的那叠：药丸、标签列、预览卡、打开的便签四扇窗（NoteDeckWindows.cs）。状态机变了按 EffectsOf 去做：
 //   露出 / 收起、拿 / 还键盘、落盘。扇着、开着的时候每 150 ms 看一眼鼠标（离开热区、4 秒没动静；没拿键盘的便签点了别处），静置时没有计时器。
+//   动效（R108）在那几扇窗里（NoteDeckWindows.cs 文件头）：这里只告诉标签列收回时放不放动画（被叫停、被全屏盖住时不放）。
 // **Windows 自己定的（PLAN-v13 §3.2）**：贴在那块屏的**工作区**边上（永远不挡任务栏）；透明窗口在用户机器上是白的，所以药丸、标签列、
 // 预览卡、打开的便签各是一扇不透明的小窗，没有 mac 那块整屏高的透明面板；打开的便签要打字，所以拿前台。
 // 别的程序全屏时（前台窗口盖满那块屏）药丸收起、不扇出，设置里可开（挂了前台切换的系统事件，不轮询）。
@@ -392,6 +393,7 @@ internal sealed partial class NoteDeckBay
     private string? _hovered;
     private string? _previewId;
     private bool _covered;
+    private bool _suspending;
     private bool _takesKey = true;
     private bool _buttonWasDown;
     private long _lastActivity;
@@ -623,13 +625,25 @@ internal sealed partial class NoteDeckBay
         Render();
     }
 
+    /// <summary>被叫停：扇着的当场收起（不放收回的动画；刚收回、标签还在往回滑的也当场收走：截图的冻结帧里不留半截，同 mac）。</summary>
     public void Suspend(NoteDeck.Suspension kind)
-        => Send(NoteDeckEvent.Suspend(kind switch
+    {
+        _suspending = true;
+        try
         {
-            NoteDeck.Suspension.KeepsOpen => false,
-            NoteDeck.Suspension.UnlessPinned => Current?.IsPinned != true,
-            _ => true,
-        }));
+            _column?.FinishConceal();
+            Send(NoteDeckEvent.Suspend(kind switch
+            {
+                NoteDeck.Suspension.KeepsOpen => false,
+                NoteDeck.Suspension.UnlessPinned => Current?.IsPinned != true,
+                _ => true,
+            }));
+        }
+        finally
+        {
+            _suspending = false;
+        }
+    }
 
     public void Yield() => Send(NoteDeckEvent.Yield(Current?.IsPinned ?? false));
 
@@ -702,7 +716,8 @@ internal sealed partial class NoteDeckBay
 
         if (_state.Phase == NoteDeckPhase.Rest)
         {
-            _column?.Hide();
+            // 标签滑回边外、淡掉，0.14 s 后窗口收走（R108）；被叫停时当场收走
+            _column?.Conceal(animated: !_suspending);
             _preview?.Hide();
             IdleReclaimer.Schedule();
         }
@@ -728,18 +743,20 @@ internal sealed partial class NoteDeckBay
 
     private void UpdatePill() => _pill?.SetShown(_state.Phase == NoteDeckPhase.Rest && !_covered);
 
-    /// <summary>重画标签列（扇着、开着时露出来）、摆预览卡。</summary>
+    /// <summary>重画标签列（扇着、开着时露出来）、摆预览卡。标签列那扇窗比标签宽 ColumnRoom（朝屏幕里面，装探出和斜着的角，R108）。</summary>
     private void Render()
     {
         if (_state.Phase == NoteDeckPhase.Rest || _covered)
         {
-            _column?.Hide();
+            // 被全屏盖住、被叫停：当场收走；平常收回带动画（Conceal 自己认正在收的）
+            _column?.Conceal(animated: !_covered && !_suspending);
+            _preview?.Hide();
             return;
         }
 
         var layout = Layout();
         var top = ColumnTop(layout);
-        var frame = NoteDeckLayout.ColumnFrame(_panel, _edge, top, layout.ColumnHeight, layout.TabWidth);
+        var frame = NoteDeckLayout.ColumnFrame(_panel, _edge, top, layout.ColumnHeight, layout.ColumnWidth);
         _column ??= new NoteDeckColumnWindow(this);
         _column.Render(layout, Pixels(frame));
         if (_previewId is { } preview && Store?.Book.Find(preview) is { } note)

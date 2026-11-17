@@ -4,6 +4,7 @@
 // - 同时最多 5 张（NoteFloatSet.Limit）：再浮一张时最久没碰的那张收回边缘（轻提示说是哪张）；按菜单浮出来的和已经浮着的错开 24 往右下
 //   （NoteFloatLayout.Cascaded），从那叠里拖出来的就落在鼠标那儿。
 // - 按住头部空白处拖 = 系统的挪窗口（WM_NCLBUTTONDOWN + HTCAPTION，同标题栏）；松手后夹进那块屏的工作区（Settled）。
+//   它带着的那张标签（R108，NoteSheetView.SetTab）同样是把手，没挪开就松手 = 收回边缘。
 // - **固定着的每一张重启后回到原处**（NotesFloatPlaces，这台电脑自己的状态，不导出）；拉过的大小记在 NotesFloatSize。
 // 坐标一律物理像素（屏幕的整块、工作区都是）；尺寸是 DIP × 那块屏的缩放。
 using System.Runtime.InteropServices;
@@ -301,7 +302,13 @@ internal sealed partial class NoteFloatWindow : Window
             ToggleFloating = () => NoteFloats.Tuck(_id),
             IsFloating = () => true,
             GripPressed = _ => BeginMove(),
+            TabPressed = _ => OnTabPressed(),
+            TabName = () => NotesWindowRules.FloatTitle(true, SettingsService.Current.NotesDeckEnabled),
         });
+        // 它带着的那张标签（R108，同 mac）：在朝屏幕里面的那一侧，跟着那叠在哪条边、多大
+        Sheet.SetTab(
+            NoteDeck.Options.Edge == NoteDeckEdge.Right ? NoteSheetView.TabSide.Leading : NoteSheetView.TabSide.Trailing,
+            new NoteDeckMetrics(NoteDeck.Options.Size.Scale()));
         Content = new Microsoft.UI.Xaml.Controls.Grid { RequestedTheme = Theme.ElementTheme, Children = { Sheet.View } };
         Sheet.Show(id);
         AppWindow.Closing += (_, args) =>
@@ -354,6 +361,19 @@ internal sealed partial class NoteFloatWindow : Window
     {
         ReleaseCapture();
         SendMessage(_hwnd, 0x00A1 /* WM_NCLBUTTONDOWN */, 2 /* HTCAPTION */, IntPtr.Zero);
+    }
+
+    /// <summary>按下它带着的那张标签：同按住头部，是系统的挪窗口；没挪开就松手 = 点了一下 = 收回边缘（同 mac 点标签）。
+    /// 挪窗口的循环到松手才回来，回来后看窗口挪没挪。</summary>
+    private void OnTabPressed()
+    {
+        var before = AppWindow.Position;
+        BeginMove();
+        var after = AppWindow.Position;
+        if (!_closing && Math.Abs(after.X - before.X) + Math.Abs(after.Y - before.Y) <= NoteDeckLayout.DragSlop)
+        {
+            NoteFloats.Tuck(_id);
+        }
     }
 
     /// <summary>挪完 / 拉完大小停手 300 ms：夹进那块屏的工作区，记下位置和大小。</summary>

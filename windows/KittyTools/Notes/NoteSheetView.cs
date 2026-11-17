@@ -5,6 +5,9 @@
 // 便签里的按键固定（PLAN-v13 §3.3）：Ctrl+K 操作、Ctrl+P 固定、Ctrl+T 任务、Ctrl+F 查找、Ctrl+Shift+A 归档、Ctrl+Shift+Delete 删除、
 // Ctrl+. 换下一种纸色、Ctrl+, 便签设置、Esc / Ctrl+W 关。
 // 写标题、正文按这一份记着的编号落，不按「现在开着哪条」：换一条的那一下旧的输入框晚到的那次得落回它自己那条（同 mac）。
+// **它自己带着的那张标签**（R108，mac NoteSheet.tab；只在屏幕边缘那叠里打开的、浮动便签上，SetTab）：朝屏幕里面的那一侧一条和标签等宽的竖条，
+// 底 = 纸上叠 16% 的色条色（NotePaper.TabFill），竖排的标题（同标签列的排法），和纸之间一道墨 14% 的竖线；点它 = 关掉（那叠里回到那一列，
+// 浮着的收回边缘），按着拖 = 把手（Host.TabPressed：那叠里拖出来浮到屏幕上，浮着时挪窗口）。有这张标签时顶上的色条不画（同 mac：颜色靠标签读）。
 using KittyTools.Core;
 using KittyTools.Core.Notes;
 using KittyTools.Infrastructure;
@@ -26,6 +29,12 @@ internal sealed class NoteSheetView
     private readonly Border _paper;
     private readonly Border _strip;
     private readonly Grid _layout;
+    private readonly Grid _frame;
+    private readonly Border _tab;
+    private readonly Border _tabRule;
+    private TabSide _tabSide;
+    private NoteDeckMetrics _tabMetrics = new(1);
+    private string? _tabDrawn;
     private readonly Button _dot;
     private readonly TextBox _title;
     private readonly Button _task;
@@ -50,6 +59,20 @@ internal sealed class NoteSheetView
 
         /// <summary>按住头部空白处拖（浮动便签挪窗口、那叠里拖出来）。</summary>
         public Action<PointerRoutedEventArgs>? GripPressed { get; init; }
+
+        /// <summary>按下它带着的那张标签（左键）：没挪开就松手 = 关掉 / 收回，按着拖 = 把手。怎么认由外面那层定。</summary>
+        public Action<PointerRoutedEventArgs>? TabPressed { get; init; }
+
+        /// <summary>那张标签读屏念什么（同头部的关闭钮：那叠里「关闭便签」，浮着时「收回边缘」/「取消浮动」）。</summary>
+        public Func<string> TabName { get; init; } = () => "关闭便签";
+    }
+
+    /// <summary>它带着的那张标签在哪一侧：没有（全部便签窗口）/ 左边（那叠在右边缘时，朝屏幕里面）/ 右边。</summary>
+    public enum TabSide
+    {
+        None,
+        Leading,
+        Trailing,
     }
 
     private readonly Host _host;
@@ -143,7 +166,19 @@ internal sealed class NoteSheetView
         _layout.Children.Add(Editor.View);
         Grid.SetRow(_footnote, 3);
         _layout.Children.Add(_footnote);
-        _paper = new Border { CornerRadius = new CornerRadius(8), Child = _layout };
+        _tab = new Border { Visibility = Visibility.Collapsed };
+        _tab.PointerPressed += (_, e) =>
+        {
+            if (e.GetCurrentPoint(_tab).Properties.IsLeftButtonPressed)
+            {
+                _host.TabPressed?.Invoke(e);
+                e.Handled = true;
+            }
+        };
+        _tab.SizeChanged += (_, _) => DrawTab();
+        _tabRule = new Border { Width = 1, Visibility = Visibility.Collapsed };
+        _frame = new Grid { Children = { _tab, _tabRule, _layout } };
+        _paper = new Border { CornerRadius = new CornerRadius(8), Child = _frame };
         _paper.KeyDown += OnKeyDown;
         _paper.Unloaded += (_, _) => Detach();
         _paper.Loaded += (_, _) => Attach();
@@ -151,6 +186,80 @@ internal sealed class NoteSheetView
     }
 
     public FrameworkElement View => _paper;
+
+    /// <summary>纸里面的那一层（它带着的标签、头部、正文、小字）：那叠里打开的便签出场时动的是它（纸本身不动，见 NoteDeckWindows 文件头）。</summary>
+    public FrameworkElement MotionTarget => _frame;
+
+    /// <summary>它带着的那张标签放哪一侧、多宽、字多大（跟那叠的大小档走）。那叠换了边、换了大小档时外面再调一次。</summary>
+    public void SetTab(TabSide side, NoteDeckMetrics metrics)
+    {
+        if (side == _tabSide && metrics == _tabMetrics)
+        {
+            return;
+        }
+
+        _tabSide = side;
+        _tabMetrics = metrics;
+        _frame.ColumnDefinitions.Clear();
+        var shows = side != TabSide.None;
+        _tab.Visibility = shows ? Visibility.Visible : Visibility.Collapsed;
+        _tabRule.Visibility = _tab.Visibility;
+        _strip.Visibility = shows ? Visibility.Collapsed : Visibility.Visible;
+        if (shows)
+        {
+            _tab.Width = metrics.TabWidth;
+            var leading = side == TabSide.Leading;
+            _frame.ColumnDefinitions.Add(new ColumnDefinition { Width = leading ? GridLength.Auto : new GridLength(1, GridUnitType.Star) });
+            _frame.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            _frame.ColumnDefinitions.Add(new ColumnDefinition { Width = leading ? new GridLength(1, GridUnitType.Star) : GridLength.Auto });
+            Grid.SetColumn(_tab, leading ? 0 : 2);
+            Grid.SetColumn(_tabRule, 1);
+            Grid.SetColumn(_layout, leading ? 2 : 0);
+        }
+        else
+        {
+            Grid.SetColumn(_layout, 0);
+        }
+
+        _tabDrawn = null;
+        DrawTab();
+    }
+
+    /// <summary>那张标签的底、竖线、竖排的标题（标题、高、深浅、大小档没变就不重排）。</summary>
+    private void DrawTab()
+    {
+        if (_tabSide == TabSide.None || Note is not { } note)
+        {
+            return;
+        }
+
+        var dark = Theme.EffectiveTheme == ElementTheme.Dark;
+        var contrast = Theme.IsHighContrast;
+        var paper = NotePaper.Of(note);
+        var tone = paper.Tone(dark);
+        var title = NoteStore.Instance?.Book.SummaryOf(note).Title ?? note.DisplayTitle;
+        // 能排多长：上下各让出 14（同 mac 的边距）
+        var length = Math.Max(_tab.ActualHeight - 28, 0);
+        var key = string.Join('|', title, length, dark, contrast, note.Color, paper.Tone(dark).Ink, _tabMetrics.Scale);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_tab, _host.TabName());
+        if (key == _tabDrawn)
+        {
+            return;
+        }
+
+        _tabDrawn = key;
+        _tab.Background = new SolidColorBrush(Rgb(paper.TabFill(dark)));
+        _tabRule.Background = new SolidColorBrush(Shade(paper.Rule(dark, contrast), tone.Paper));
+        if (length <= 0)
+        {
+            _tab.Child = null;
+            return;
+        }
+
+        var label = NoteDeckUi.Label(title, length, _tabMetrics.FontSize, tone.Ink);
+        label.VerticalAlignment = VerticalAlignment.Center;
+        _tab.Child = label;
+    }
 
     public NoteEditor Editor { get; }
 
@@ -237,6 +346,7 @@ internal sealed class NoteSheetView
         var tone = paper.Tone(dark);
         _paper.Background = new SolidColorBrush(Rgb(tone.Paper));
         _strip.Background = new SolidColorBrush(Rgb(tone.Strip));
+        DrawTab();
         var ink = new SolidColorBrush(Rgb(tone.Ink));
         _title.Foreground = ink;
         foreach (var key in new[] { "TextControlForeground", "TextControlForegroundPointerOver", "TextControlForegroundFocused" })
