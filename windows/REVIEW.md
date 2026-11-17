@@ -33,7 +33,7 @@ mac 还没推进 `macos` 的（多语言 / 英文、截图识别元素第二三�
 
 #### 交接
 
-审查方在 Mac 上写了（`git log --grep "R106"` 的 feat 那个提交，提交号见下一条 docs 提交填的），**没编译、没跑单测**（本机没有 .NET SDK），待你们编译、核验。
+审查方在 Mac 上写了（`5e2d60fd`），**没编译、没跑单测**（本机没有 .NET SDK），待你们编译、核验。
 照 mac `Screenshot/ScrollCapture.swift` 的 `updatePreview` / `layoutFade` / `HeightReadingView` 和 `ScrollStitcher.preview` 做，参数照 mac-whisker §6 长截图。
 
 **做了什么**：
