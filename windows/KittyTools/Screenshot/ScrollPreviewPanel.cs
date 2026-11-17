@@ -70,6 +70,15 @@ internal sealed partial class ScrollPreviewPanel
 
     /// <summary>订着 CompositionTarget.Rendering（纸带在滑、接缝在闪时每帧重画预览）。</summary>
     private bool _ticking;
+
+    /// <summary>往回看 / 换大小时碰上正在拼、没取成（Render 提前返回）：下一次 Update 高没变也要重取。</summary>
+    private bool _stale;
+
+    /// <summary>接缝闪光、上下渐隐的刷子：建一次、每帧只改端点和不透明度；画布换设备时（CreateResources）和 Hide 时放掉。</summary>
+    private CanvasLinearGradientBrush? _seamBrush;
+    private CanvasLinearGradientBrush? _upperFade;
+    private CanvasLinearGradientBrush? _lowerFade;
+
     private ScrollCanvas? _canvas;
     private bool _growingUp;
     private string _statusText = string.Empty;
@@ -93,6 +102,7 @@ internal sealed partial class ScrollPreviewPanel
 
         _preview = new CanvasControl();
         _preview.Draw += OnDraw;
+        _preview.CreateResources += (_, _) => DisposeBrushes();
         _preview.SizeChanged += (_, _) => Render();
         _preview.PointerWheelChanged += (_, e) =>
         {
@@ -275,6 +285,14 @@ internal sealed partial class ScrollPreviewPanel
             return;
         }
 
+        // 长图没长就不重取（R106 审查）：没动的那拍不拼、拼不上不改图，高没变内容就没变（到 30000 行那拍直接结束）。
+        // 手动模式停着时每 200 ms 来一次，不白取样（UI 线程上几毫秒）、不白分配约 1.6 MB。
+        if (ReferenceEquals(panel._canvas, canvas) && canvas.Height == panel._previewedHeight &&
+            growingUp == panel._growingUp && !panel._stale)
+        {
+            return;
+        }
+
         panel._canvas = canvas;
         panel._growingUp = growingUp;
         if (growingUp && panel._browseFrom is { } from)
@@ -436,6 +454,7 @@ internal sealed partial class ScrollPreviewPanel
 
         _instance = null;
         panel.StopTicking();
+        panel.DisposeBrushes();
         panel._canvas = null;
         panel._bitmap?.Dispose();
         panel._bitmap = null;
@@ -503,8 +522,11 @@ internal sealed partial class ScrollPreviewPanel
         var box = (int)Math.Round(_preview.ActualHeight * _scale);
         if (_canvas is not { } canvas || !ScrollingCapture.Idle || width <= 0 || box <= 0 || canvas.Width <= 0)
         {
+            _stale = _canvas is not null;
             return;
         }
+
+        _stale = false;
 
         var visible = (int)((long)box * canvas.Width / width);
         var (start, count) = ScrollPreview.Range(canvas.Height, visible, _browseFrom, _growingUp);
@@ -641,12 +663,10 @@ internal sealed partial class ScrollPreviewPanel
                 var size = (float)ScrollPreview.SeamHeight;
                 var edge = _growingUp ? top : top + height;
                 var inward = _growingUp ? edge + size : edge - size;
-                using var flash = new CanvasLinearGradientBrush(sender, Theme.Shot.Accent, Transparent(Theme.Shot.Accent))
-                {
-                    StartPoint = new Vector2(0, edge),
-                    EndPoint = new Vector2(0, inward),
-                    Opacity = (float)seam,
-                };
+                var flash = Gradient(ref _seamBrush, sender, Theme.Shot.Accent);
+                flash.StartPoint = new Vector2(0, edge);
+                flash.EndPoint = new Vector2(0, inward);
+                flash.Opacity = (float)seam;
                 ds.FillRectangle(new Windows.Foundation.Rect(0, Math.Min(edge, inward), width, size), flash);
             }
         }
@@ -655,18 +675,13 @@ internal sealed partial class ScrollPreviewPanel
         var fade = (float)ScrollPreview.FadeHeight(box);
         if (fade > 0)
         {
-            var panel = Theme.Shot.HudBackground;
-            using var upper = new CanvasLinearGradientBrush(sender, panel, Transparent(panel))
-            {
-                StartPoint = new Vector2(0, 0),
-                EndPoint = new Vector2(0, fade),
-            };
+            var upper = Gradient(ref _upperFade, sender, Theme.Shot.HudBackground);
+            upper.StartPoint = new Vector2(0, 0);
+            upper.EndPoint = new Vector2(0, fade);
             ds.FillRectangle(new Windows.Foundation.Rect(0, 0, width, fade), upper);
-            using var lower = new CanvasLinearGradientBrush(sender, panel, Transparent(panel))
-            {
-                StartPoint = new Vector2(0, box),
-                EndPoint = new Vector2(0, box - fade),
-            };
+            var lower = Gradient(ref _lowerFade, sender, Theme.Shot.HudBackground);
+            lower.StartPoint = new Vector2(0, box);
+            lower.EndPoint = new Vector2(0, box - fade);
             ds.FillRectangle(new Windows.Foundation.Rect(0, box - fade, width, fade), lower);
         }
 
@@ -682,6 +697,18 @@ internal sealed partial class ScrollPreviewPanel
     }
 
     private static Windows.UI.Color Transparent(Windows.UI.Color color) => ColorHelper.FromArgb(0, color.R, color.G, color.B);
+
+    /// <summary>color 淡到透明的线性渐变刷子：没有就建一个（端点由调用方每帧设）。</summary>
+    private static CanvasLinearGradientBrush Gradient(ref CanvasLinearGradientBrush? brush, CanvasControl sender, Windows.UI.Color color)
+        => brush ??= new CanvasLinearGradientBrush(sender, color, Transparent(color));
+
+    private void DisposeBrushes()
+    {
+        _seamBrush?.Dispose();
+        _upperFade?.Dispose();
+        _lowerFade?.Dispose();
+        _seamBrush = _upperFade = _lowerFade = null;
+    }
 
     [LibraryImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

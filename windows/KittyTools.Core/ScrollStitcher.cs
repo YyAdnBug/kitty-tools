@@ -539,7 +539,8 @@ public sealed class ScrollCanvas
 
             for (var x = 0; x < width; x++)
             {
-                int blue = 0, green = 0, red = 0;
+                // 红、蓝打包在一个数里一起加（各占 16 位：MaxTaps² = 16 个点 × 255 放得下；MaxTaps 别超过 16，红那半用无符号右移取）。
+                int redBlue = 0, green = 0;
                 for (var j = 0; j < down; j++)
                 {
                     var pixels = rows[j];
@@ -547,14 +548,13 @@ public sealed class ScrollCanvas
                     for (var i = 0; i < across; i++)
                     {
                         var pixel = pixels[offset + columns[x * across + i]];
-                        blue += pixel & 0xFF;
+                        redBlue += pixel & 0x00FF00FF;
                         green += (pixel >> 8) & 0xFF;
-                        red += (pixel >> 16) & 0xFF;
                     }
                 }
 
-                result[y * width + x] = unchecked((int)0xFF000000) |
-                    (Average(red, divisor) << 16) | (Average(green, divisor) << 8) | Average(blue, divisor);
+                result[y * width + x] = unchecked((int)0xFF000000) | (Average(redBlue >>> 16, divisor) << 16) |
+                    (Average(green, divisor) << 8) | Average(redBlue & 0xFFFF, divisor);
             }
         }
 
