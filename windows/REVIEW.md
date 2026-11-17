@@ -8,6 +8,33 @@
 
 条目编号不复用。行号按条目里写的那个提交。
 
+## 0.3.0 发布（2026-11-17，Claude 在 Windows 上；用户批准发布、打 tag、建 release）
+
+- **提交**：`aa686373`（版本号 0.3.0 + `changelog.json` 0.3.0 一条，24 项）、`13891c07`（其中一条措辞：「关掉半透明的窗口后偶尔闪退」→「…的问题修好了」）。
+  `aa686373` 打出来的包没传，删掉重打；发出去的 exe 是 `0.3.0+13891c07…`。核验基线是 `2ee8b23f`，之后只有这两个提交。
+- **tag** `windows-v0.3.0` → `13891c07`（附注 tag），只推了这一个。
+- **release**：https://github.com/YyAdnBug/kitty-tools/releases/tag/windows-v0.3.0 ，REST API 先建草稿、传 8 个文件（大小逐个对上）、再发布；不是预发布、没标 latest（发布后 `releases/latest` 仍是 `macos-v0.9.0`）。说明用 `build-release.ps1` 生成的 `release-notes.md`（去掉了开头的 BOM）。
+- **打包**：`build-release.ps1`（Windows PowerShell 5.1 + vswhere 的 PATH，`Secrets.props` 从主 checkout 拷进 worktree），x64 / ARM64 AOT 0 个警告，PRI 各 4 个，`--smoke` 过；两个 exe 里都有内置智谱 key（只数了出现次数）。
+  x64 发布目录 105.3 MB / 159 个文件，ARM64 111 MB / 159 个。
+
+| 文件 | 字节 | sha256 |
+|---|---|---|
+| KittyTools-0.3.0-windows-x64-setup.exe | 39 743 080 | `b132b235639eaa36724ce5f97afde54c9411a10620f78b09f942c34d4cc7e47d` |
+| KittyTools-0.3.0-windows-x64.zip | 50 007 019 | `2247d999a0a5296501e4d9f5b60b5e37f32b4dbd1d6455b3b48aaa79cb2f4558` |
+| KittyTools-0.3.0-windows-arm64-setup.exe | 39 395 519 | `1f26455ac229f926c93091008f4b25ace6d6cec5dd16a18aff0dc4b8fcd3e892` |
+| KittyTools-0.3.0-windows-arm64.zip | 48 905 006 | `cca17a9f93a6852fb9305537936da315ca8b5e480cae7d99bc14535a0f65a66c` |
+
+  另有四个 `.sha256`（就是上面四行）。发布后从 GitHub 下回来：x64 zip、x64 安装包 sha256 对得上，arm64 两个 200。
+- **`--update-live=0.2.0`**（新 x64 zip 解压出来的 exe，ProcessStartInfo 起）：退出码 0，`%TEMP%\kitty-update-live\report.txt`：`ok=True`，下载 43 554 722 字节，sha256 对得上。
+- **更新清单**：0.2.0 先读 `releases/download/windows-update/windows-update.json`，所以把预发布 `windows-update` 里那一个文件换成新的（删旧附件、传新的），下回来和本地逐字节一样，`version` 0.3.0、两个架构的 zip 地址 / sha256 / 大小。
+- **0.2.0 → 0.3.0 真升级一次**：GitHub 上 windows-v0.2.0 的 x64 zip（sha256 `f7f2bc11…` 对得上）解压到 scratchpad，新探针档 `up030rel`（Release 探针档，`--clipboard-paused`，TEMP 指到 scratchpad）：
+  - 启动约 15 秒后自动检查：`update.check newer=True version=0.3.0 source=manifest` → `update.prepare` → `update.ready version=0.3.0`（后台下好）。
+  - **关于页的「检查更新」没点成**：0.2.0 Release 里 `--settings=` 在 `#if DEBUG` 里，打不开关于页；改成再起一次同档的 exe（单实例把「打开设置」转过去，0.2.0 开的是主界面），主界面底栏「更新到 0.3.0」用 UIA Invoke 点（不合成键鼠）——它和关于页的「更新并重新打开」是同一个 `AutoUpdater.StartAsync`。
+  - 日志：`update.installed files=159 version=0.3.0` → `app.exit`（2 秒后 `app.exit-forced`）→ 新进程 `shell.ready` → `update.relaunched version=0.3.0 removed-old=110`；新进程 `ProductVersion` 0.3.0+13891c07，自己再查一次 `update.check newer=False version=0.3.0 source=manifest`。再起一次同档 exe，新进程照常开出主界面。
+  - 观察（不挡发布）：新进程刚起那 1–2 秒，旧进程还没退完，记了 3 次 `instance.server-failed IOException 0x800700E7`（管道还被占着），旧进程退掉后转发就好了。快捷键全部 `hotkey.failed 1409` 是因为用户自己装的那份占着，正常。
+  - 只结束了自己起的 PID（28480、27712）；探针档和解压的目录都删了。`D:\Apps\Kitty Tools`（用户的 0.2.0，PID 2476）没碰。
+- **已知没解决、照发的**（用户知情，发布说明里没写成已修）：`--overlay-translate-probe` 7 条没过（popover 1x「Got it」、1.5x「New」，article 字号 14 / 21.7pt）；认码给识字多 300–740 ms；长截图预览取样 6–13 ms；`--status-screen-probe` 没跑；真机手测（HANDTEST 1483–1609 和回归清单）没走。动画表情包没发（`EmojiPack.IsPublished = false`）。
+
 ## 跟上 mac 0.10.0（2026-11-17，**暂缓：用户「先不做」，0.3.0 发了再说**；这一节下面的 R109–R111 现在都不用做）
 
 用户 2026-11-17：「继续 windows 未对齐 macos 的功能」，四样都要：截图几样、英文界面、插件页改版 + 睡眠关蓝牙、App 快捷键 + 平滑滚动。
