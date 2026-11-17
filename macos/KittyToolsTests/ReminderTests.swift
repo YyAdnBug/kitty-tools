@@ -195,6 +195,33 @@ struct ReminderTests {
     #expect(away.fire == ["a"])
   }
 
+  /// 专注模式滤镜让提醒安静着（2026-11-17 拍板 B4 B6）：没开「专注模式时也照常提醒」的间隔类不攒（同离开电脑），开了的照响；
+  /// 推过的间隔类照样到点（交给执行层压着）；别的种类照常算出来，再由 heldBack 分出哪些先压着
+  @Test func focusRestsIntervalsAndHoldsBack() {
+    let anchors = ["i": Self.at(2, 8, 30), "u": Self.at(2, 8, 30), "z": Self.at(2, 8, 30)]
+    let every = Schedule(kind: .interval, time: 0, until: 1440, every: 20)
+    let quiet = Reminder(id: "i", title: "i", schedule: every)
+    let urgent = Reminder(id: "u", title: "u", schedule: every, duringFocus: true)
+    let snoozed = Reminder(id: "z", title: "z", schedule: every)
+    let weekly = Self.weekly("w")
+    let list = [quiet, urgent, snoozed, weekly]
+    var state = ReminderState()
+    state.marks["w"] = .init(at: Self.at(2, 8), schedule: weekly.schedule)
+    state.snoozed["z"] = Self.at(2, 9, 1)
+    let check = { (focus: Bool) in
+      ReminderCheck.check(
+        list, state: state, anchors: anchors, showing: [], now: Self.at(2, 9, 3), focus: focus,
+        calendar: Self.calendar)
+    }
+    #expect(check(false).fire == ["i", "u", "z", "w"])
+    #expect(check(true).fire == ["u", "z", "w"])
+    // 先压着的：没开「照常」的；滤镜照常时一条都不压
+    #expect(ReminderCheck.heldBack(["u", "z", "w"], list: list, focus: true) == ["z", "w"])
+    #expect(ReminderCheck.heldBack(["u", "z", "w"], list: list, focus: false).isEmpty)
+    // 不在列表里的（刚删掉）也压着：不会照常弹出来
+    #expect(ReminderCheck.heldBack(["gone"], list: list, focus: true) == ["gone"])
+  }
+
   @Test func reconciledFollowsList() {
     let a = Self.weekly("a")
     var state = Self.state(["a": Self.at(1, 9)], list: [a])
@@ -315,6 +342,11 @@ struct ReminderTests {
     #expect(list.map(\.id) == ["a", "c"])
     #expect(list[0].alert == .light && list[0].sound == .chime && list[0].isOn)
     #expect(list[1].schedule.time == 600 && list[1].schedule.days == [2] && !list[1].isOn)
+    // 2026-11-17 加的「专注模式时也照常提醒」：旧数据没有这个键 = 关；编出去再读回来留着
+    #expect(!list[0].duringFocus)
+    var urgent = list[0]
+    urgent.duringFocus = true
+    #expect(Reminder.decode(Reminder.encoded([urgent])).first?.duringFocus == true)
     #expect(Reminder.decode(nil) == Reminder.examples)
     #expect(Reminder.decode(Data("[]".utf8)).isEmpty)
     #expect(Reminder.decode(Data("not json".utf8)) == Reminder.examples)

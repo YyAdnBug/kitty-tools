@@ -1222,6 +1222,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     for plugin in turnedOn where plugin.isPlugin { WhatsNew.touch(plugin: plugin) }
     // 刘海岛插件（2026-11-13）：没添加时活动、常驻的刘海监听都停（Island.hasExtras），提示照常
     island.hasExtras = now.contains(.island)
+    // 刚添加时提醒的倒数、专注模式里压着的那一个重新挂上（2026-11-17 评审）
+    if turnedOn.contains(.island), !launching, now.contains(.reminders) { reminders.recheck() }
     // 剪贴板的轮询：记历史要它，复制即译也要它（剪贴板关着时只为复制即译跑、不入库）
     watcher.records = now.contains(.clipboard)
     if now.contains(.clipboard) || (now.contains(.translate) && copyToTranslate) {

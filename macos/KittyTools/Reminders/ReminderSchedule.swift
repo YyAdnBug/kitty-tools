@@ -154,15 +154,17 @@ nonisolated enum ReminderCheck {
   }
 
   /// 此刻的检查（纯函数）。关着的、正挂着的不算；held（锁着屏、在状态屏里）时一条都不响也不算错过，等回来再看；
-  /// away（5 分钟没碰键盘鼠标）时间隔类（没推过的）不响也不等，回来重设锚点再数（B3）；间隔类晚了不算错过（推过的也是）
+  /// away（5 分钟没碰键盘鼠标）时间隔类（没推过的）不响也不等，回来重设锚点再数（B3）；间隔类晚了不算错过（推过的也是）。
+  /// focus（专注模式滤镜让提醒安静着，2026-11-17 拍板 B6）：没开「专注模式时也照常提醒」的间隔类同 away，不攒，结束后重新数
   static func check(
     _ list: [Reminder], state: ReminderState, anchors: [String: Date], showing: Set<String>,
-    now: Date, held: Bool = false, away: Bool = false, calendar: Calendar
+    now: Date, held: Bool = false, away: Bool = false, focus: Bool = false, calendar: Calendar
   ) -> Result {
     var result = Result()
     for reminder in list where reminder.isOn && !showing.contains(reminder.id) {
       let isInterval = reminder.schedule.kind == .interval
-      if isInterval, away, state.snoozed[reminder.id] == nil { continue }
+      let resting = away || (focus && !reminder.duringFocus)
+      if isInterval, resting, state.snoozed[reminder.id] == nil { continue }
       guard let due = due(reminder, state: state, anchors: anchors, calendar: calendar) else {
         continue
       }
@@ -194,6 +196,12 @@ nonisolated enum ReminderCheck {
       }
     }
     return next
+  }
+
+  /// 专注模式滤镜让提醒安静着（focus）时，到点的这几条里先压着、不弹出的（纯函数，拍板 B2 B4）：没开「专注模式时也照常提醒」的
+  static func heldBack(_ ids: [String], list: [Reminder], focus: Bool) -> [String] {
+    guard focus else { return [] }
+    return ids.filter { id in list.first { $0.id == id }?.duringFocus != true }
   }
 
   /// 时间规则变了的（新旧列表里同一个 id、规则不一样）：正挂着的要撤下来（纯函数）

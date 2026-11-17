@@ -1,5 +1,6 @@
 // 设置 › 提醒（PLAN §10「提醒」D1，排在「状态屏」后面）：启用开关、提醒列表（行 = 表情的静止画面 / 标题 / 一行摘要 / 开关，
 // 拖动排序，「+ −」增删，单击一行推进到 ReminderDetail 编辑——和状态屏的状态同一套 OrderedList 交互）、「稍后」推多久。
+// 下面一节「专注模式」：怎么在系统设置里加滤镜、现在生没生效（2026-11-17，ReminderFocus）。
 // 页头画在自己的 NavigationStack 里，推进时一起换掉。列表直接读写偏好里的 JSON（Prefs.reminders）：ReminderCenter 看着偏好变化跟上，
 // 它删掉响过的一次性提醒时这一页也跟着变。「+」›「新提醒」先不存：推进详情页，第一次改动时才加进列表（Reminder.saving）。
 
@@ -96,6 +97,8 @@ struct RemindersTab: View {
             "电脑睡着、锁着屏或者没打开 Kitty 时到点的提醒，晚 5 分钟以内的照常提醒，更晚的回来后合成一条告诉你。每隔一阵的提醒碰上锁屏、睡眠，或者 5 分钟没碰键盘鼠标，算休息过了，回来重新数。"
           )
         }
+        // 截图自检（fixed）不读这台 Mac 记着的专注模式，固定画「照常」
+        FocusSection(style: fixed == nil ? nil : .normal)
       }
       .gated(by: .reminders)
       PluginAboutSection(plugin: .reminders)
@@ -244,5 +247,42 @@ struct ReminderIcon: View {
     StatusPresetIcon(
       symbol: symbol, size: size, plainSymbol: SettingsPage.reminders.symbol,
       plainColor: Style.Family.reminders)
+  }
+}
+
+/// 专注模式那一节（2026-11-17 拍板 B8）：滤镜加在哪几个模式上读不到，只说现在生没生效；按钮打开系统设置里专注模式那一页
+private struct FocusSection: View {
+  /// 截图自检固定的；nil = ReminderFocus 现在说的
+  var style: ReminderFocusStyle?
+
+  var body: some View {
+    Section {
+      LabeledContent {
+        Button("打开专注模式设置…") {
+          if let url = URL(string: Self.settingsURL) { NSWorkspace.shared.open(url) }
+        }
+      } label: {
+        Text("专注模式")
+        Text(Self.status(style ?? ReminderFocus.shared.style))
+      }
+    } header: {
+      Text("专注模式")
+    } footer: {
+      SectionFootnote(
+        "在系统设置的专注模式里点开一个模式（比如「工作」），在「专注模式滤镜」里添加 Kitty Tools 的「提醒」：这个模式开着时，到点的提醒只在刘海上挂个图标，不弹出、不出声，模式结束后一起弹一次。要紧的提醒在它的详情里打开「专注模式时也照常提醒」。"
+      )
+    }
+  }
+
+  /// 系统设置里专注模式那一页
+  static let settingsURL = "x-apple.systempreferences:com.apple.Focus-Settings.extension"
+
+  /// 「现在」那一行（纯函数）
+  static func status(_ style: ReminderFocusStyle) -> LocalizedStringResource {
+    switch style {
+    case .normal: "现在照常提醒"
+    case .light: "现在：专注模式开着，到点的提醒只挂在刘海上"
+    case .hold: "现在：专注模式开着，到点的提醒等它结束再响"
+    }
   }
 }

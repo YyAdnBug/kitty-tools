@@ -157,6 +157,8 @@ nonisolated struct Reminder: Codable, Hashable, Identifiable {
   var chime: String
   /// 没理会时每隔几分钟再催一次（0 = 不催，C10；1–120，菜单里是 nagChoices，别的是「自定义…」填的）
   var nagMinutes: Int
+  /// 专注模式时也照常提醒（2026-11-17 拍板 B4，默认关）：加了「提醒」滤镜的专注模式开着时这一条不压着，照上面的方式出
+  var duringFocus: Bool
 
   static let maxCount = 50
   static let maxTitle = 30
@@ -202,7 +204,8 @@ nonisolated struct Reminder: Codable, Hashable, Identifiable {
   init(
     id: String, title: String, detail: String? = nil, symbol: String = "", isOn: Bool = true,
     schedule: Schedule, alert: Alert = .light, statusID: String = "", fullSeconds: Int = 0,
-    sound: Sound = .chime, chime: String = defaultChime, nagMinutes: Int = 0
+    sound: Sound = .chime, chime: String = defaultChime, nagMinutes: Int = 0,
+    duringFocus: Bool = false
   ) {
     self.id = id
     self.title = title
@@ -216,6 +219,7 @@ nonisolated struct Reminder: Codable, Hashable, Identifiable {
     self.sound = sound
     self.chime = chime
     self.nagMinutes = nagMinutes
+    self.duringFocus = duringFocus
   }
 
   /// 逐个字段兜底：只有 id 和标题是必须的，别的缺了、不认识就用默认值（sanitized 再收拾一遍）
@@ -234,6 +238,7 @@ nonisolated struct Reminder: Codable, Hashable, Identifiable {
     sound = (try? c.decode(Sound.self, forKey: .sound)) ?? .chime
     chime = (try? c.decode(String.self, forKey: .chime)) ?? Self.defaultChime
     nagMinutes = (try? c.decode(Int.self, forKey: .nagMinutes)) ?? 0
+    duringFocus = (try? c.decode(Bool.self, forKey: .duringFocus)) ?? false
   }
 
   /// 示例（F1）：默认都关着，打开才响。id 固定，「恢复示例提醒」按它认。存的照旧是这份中文原文（拍板 D6），

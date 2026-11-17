@@ -1258,6 +1258,21 @@ struct SnapshotProbeTests {
           size: notch.windowSize, dark: false, to: "\(out)/island-wings-reminder-\(name).png")
       }
     }
+    // 专注模式里压着的提醒（2026-11-17 拍板 B3）：左耳闹钟、右耳几条（强调色）；点开是卡片
+    do {
+      let held = Island.Activity(
+        id: ReminderCenter.heldActivity, kind: .heldReminder, title: "喝水 · 交周报",
+        symbol: "alarm.fill", trailing: .text("2"),
+        actions: [Island.Action("知道了") {}, Island.Action("稍后 5 分钟") {}], tintsReading: true)
+      try snapshot(
+        IslandView(island: Island(showing: nil, geometry: notch, activities: [held])),
+        size: notch.windowSize, dark: false, to: "\(out)/island-wings-reminder-held.png")
+      let card = Island(showing: nil, geometry: notch, activities: [held])
+      card.tapped()
+      try snapshot(
+        IslandView(island: card), size: notch.windowSize, dark: false,
+        to: "\(out)/island-wings-reminder-held-card.png")
+    }
     // 换歌的一瞥：耳朵不动，下面垂一行居中的「♪ 歌名 · 艺人」
     do {
       let island = Island(

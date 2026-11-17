@@ -164,6 +164,11 @@ struct ReminderDetail: View {
           ForEach(statuses) { Text($0.displayTitle).tag($0.id) }
         }
       }
+      // 拍板 B4：要紧的穿过专注模式（同系统通知的「时间敏感」）
+      Toggle(isOn: binding.duringFocus) {
+        Text("专注模式时也照常提醒")
+        Text("加了 Kitty Tools 滤镜的专注模式开着时，这一条照样按上面的方式提醒")
+      }
     } header: {
       Text(
         LocalizedStringResource(

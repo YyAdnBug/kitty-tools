@@ -267,6 +267,9 @@ enum Prefs {
   nonisolated static let reminders = "reminders"
   /// 每条提醒处理到哪一刻、「稍后」推到几点（ReminderState 的 JSON）。这台电脑自己的状态：不注册默认值、不导出
   nonisolated static let remindersState = "remindersState"
+  /// 专注模式滤镜上一次说的（ReminderFocusStyle 的 rawValue，照常时不存）：启动时问到系统之前先按它（ReminderFocus）。
+  /// 这台电脑自己的状态：不注册默认值、不导出、不同步
+  nonisolated static let remindersFocus = "remindersFocus"
 
   /// 保持唤醒（第一个插件，2026-11-12，KeepAwake/）：屏幕也不熄（默认开；关掉只防系统睡眠）
   nonisolated static let keepAwakeDisplay = "keepAwakeDisplay"

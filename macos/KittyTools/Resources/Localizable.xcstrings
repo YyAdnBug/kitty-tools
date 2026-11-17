@@ -6643,6 +6643,26 @@
         }
       }
     },
+    "专注模式" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Focus"
+          }
+        }
+      }
+    },
+    "专注模式时也照常提醒" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Also remind during Focus"
+          }
+        }
+      }
+    },
     "两台电脑改了同一条便签" : {
       "localizations" : {
         "en" : {
@@ -8304,6 +8324,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Charging"
+          }
+        }
+      }
+    },
+    "先不提醒，结束后再响" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hold until the Focus ends"
           }
         }
       }
@@ -10238,6 +10268,16 @@
         }
       }
     },
+    "到点的提醒" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Due reminders"
+          }
+        }
+      }
+    },
     "到点进入一个状态，拦住键盘鼠标；要辅助功能授权" : {
       "localizations" : {
         "en" : {
@@ -10564,6 +10604,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Features, plugins, appearance, menu bar, open at login, permissions, sync, export and import, data folder"
+          }
+        }
+      }
+    },
+    "加了 Kitty Tools 滤镜的专注模式开着时，这一条照样按上面的方式提醒" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "While a Focus with the Kitty Tools filter is on, this reminder still alerts as set above"
           }
         }
       }
@@ -11712,6 +11762,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Runs only when you right-click"
+          }
+        }
+      }
+    },
+    "只在刘海上挂图标" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only show an icon on the Notch"
           }
         }
       }
@@ -13958,6 +14018,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Show icon in Dock"
+          }
+        }
+      }
+    },
+    "在系统设置的专注模式里点开一个模式（比如「工作」），在「专注模式滤镜」里添加 Kitty Tools 的「提醒」：这个模式开着时，到点的提醒只在刘海上挂个图标，不弹出、不出声，模式结束后一起弹一次。要紧的提醒在它的详情里打开「专注模式时也照常提醒」。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In System Settings › Focus, open a Focus (such as Work) and add the Kitty Tools “Reminders” filter under Focus Filters. While that Focus is on, due reminders only show an icon on the Notch, with no pop-up or sound, and appear together when it ends. For an important reminder, turn on “Also remind during Focus” in its details."
           }
         }
       }
@@ -20615,6 +20685,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Takes over the five volume and brightness keys when “Volume and Brightness” is on"
+          }
+        }
+      }
+    },
+    "打开专注模式设置…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Focus Settings…"
           }
         }
       }
@@ -30316,6 +30396,16 @@
         }
       }
     },
+    "照常提醒" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remind as usual"
+          }
+        }
+      }
+    },
     "熄屏" : {
       "localizations" : {
         "en" : {
@@ -30639,6 +30729,16 @@
         }
       }
     },
+    "现在照常提醒" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reminding as usual"
+          }
+        }
+      }
+    },
     "现在的排法会被换掉；之后可以在「撤销上一次导入或恢复默认」里换回来一次。App 本身不受影响。" : {
       "localizations" : {
         "en" : {
@@ -30685,6 +30785,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Relaunch Now"
+          }
+        }
+      }
+    },
+    "现在：专注模式开着，到点的提醒只挂在刘海上" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Now: a Focus is on, due reminders only show on the Notch"
+          }
+        }
+      }
+    },
+    "现在：专注模式开着，到点的提醒等它结束再响" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Now: a Focus is on, due reminders wait until it ends"
           }
         }
       }
@@ -36929,6 +37049,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No Shortcuts in This App’s Menus"
+          }
+        }
+      }
+    },
+    "这个专注模式开着时，Kitty Tools 到点的提醒怎么出" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "How Kitty Tools reminders appear while this Focus is on"
           }
         }
       }
