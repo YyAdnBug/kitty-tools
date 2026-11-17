@@ -1149,7 +1149,8 @@ internal sealed class NotesWindow : Window
             view.Card.Width = frame.Width;
             view.Card.Height = frame.Height;
             var dragged = _wallDrag?.Id == id;
-            view.Card.RenderTransform = new RotateTransform { Angle = Motion.Reduced || dragged ? 0 : layout.Tilts[index] };
+            // 倾斜不是动效：系统关了动画效果也照样斜（同 mac）；拖着的那张立正
+            view.Card.RenderTransform = new RotateTransform { Angle = dragged ? 0 : layout.Tilts[index] };
             Canvas.SetZIndex(view.Holder, dragged ? 10_000 : 0);
             if (dragged)
             {

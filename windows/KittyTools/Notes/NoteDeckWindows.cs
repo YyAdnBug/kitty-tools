@@ -736,7 +736,8 @@ internal sealed class NoteDeckColumnWindow : Window
         var book = NoteStore.Instance?.Book;
         foreach (var note in _bay.Tabs)
         {
-            builder.Append('\n').Append(note.Id).Append(',').Append(note.Color).Append(',').Append(book?.SummaryOf(note).Title ?? note.DisplayTitle);
+            builder.Append('\n').Append(note.Id).Append(',').Append(note.Color).Append(',').Append(note.IsPinned).Append(',')
+                .Append(book?.SummaryOf(note).Title ?? note.DisplayTitle);
         }
 
         return builder.ToString();
@@ -749,18 +750,34 @@ internal sealed class NoteDeckColumnWindow : Window
         var title = NoteStore.Instance?.Book.SummaryOf(note).Title ?? note.DisplayTitle;
         var inward = right ? new CornerRadius(6, 0, 0, 6) : new CornerRadius(0, 6, 6, 0);
         var face = new Grid();
+        // 标题、固定的小点排在不算多画那一截的标签宽里
+        var area = new Grid
+        {
+            Width = layout.TabWidth,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Margin = new Thickness(slot.Label, 0, 0, 0),
+            IsHitTestVisible = false,
+        };
+        face.Children.Add(area);
         if (layout.Style == NoteDeckTabStyle.Tabs)
         {
             var label = NoteDeckUi.Label(title, layout.LabelHeight - layout.Metrics.LabelInset, layout.Metrics.FontSize, tone.Ink);
             label.VerticalAlignment = VerticalAlignment.Top;
             label.Margin = new Thickness(0, layout.Metrics.LabelInset / 2, 0, 0);
-            // 标题排在不算多画那一截的标签宽里
-            face.Children.Add(new Grid
+            area.Children.Add(label);
+        }
+
+        if (note.IsPinned)
+        {
+            // 固定的：贴边那一侧的上角一个 5 的色条色小点（同 mac，不跟大小档缩放）
+            area.Children.Add(new Microsoft.UI.Xaml.Shapes.Ellipse
             {
-                Width = layout.TabWidth,
-                HorizontalAlignment = HorizontalAlignment.Left,
-                Margin = new Thickness(slot.Label, 0, 0, 0),
-                Children = { label },
+                Width = 5,
+                Height = 5,
+                Fill = NoteDeckUi.Brush(tone.Strip),
+                HorizontalAlignment = right ? HorizontalAlignment.Right : HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(5),
             });
         }
 
