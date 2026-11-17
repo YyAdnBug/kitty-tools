@@ -74,7 +74,7 @@ mac 还没推进 `macos` 的（多语言 / 英文、截图识别元素第二三�
 
 #### 交接
 
-审查方在 Mac 上写了（`5e2d60fd`），**没编译、没跑单测**（本机没有 .NET SDK），待你们编译、核验。
+审查方在 Mac 上写了（`5e2d60fd`，审查后改的在 `a7310729`，见下面「审查后改的」），**没编译、没跑单测**（本机没有 .NET SDK），待你们编译、核验。
 照 mac `Screenshot/ScrollCapture.swift` 的 `updatePreview` / `layoutFade` / `HeightReadingView` 和 `ScrollStitcher.preview` 做，参数照 mac-whisker §6 长截图。
 
 **做了什么**：
@@ -107,7 +107,9 @@ mac 还没推进 `macos` 的（多语言 / 英文、截图识别元素第二三�
 **要特别看的编译点**：
 
 1. `OnRendering(object? sender, object e)` 订的是 `Microsoft.UI.Xaml.Media.CompositionTarget.Rendering`（`EventHandler<object>`，`StatusScreenPanel`、`ScrollingCapture` 同写法）；文件里没引 `Microsoft.UI.Composition`，不会和它的 `CompositionTarget` 撞名。
-2. Win2D：`bitmap.Bounds`（`CanvasBitmap.Bounds`，DIP）、`ds.DrawImage(CanvasBitmap, Rect, Rect, float, CanvasImageInterpolation)`、`new CanvasLinearGradientBrush(sender, Color, Color) { StartPoint, EndPoint, Opacity }`（`using Microsoft.Graphics.Canvas.Brushes`，`using var`）。
+2. Win2D：`bitmap.Bounds`（`CanvasBitmap.Bounds`，DIP）、`ds.DrawImage(CanvasBitmap, Rect, Rect, float, CanvasImageInterpolation)`、`new CanvasLinearGradientBrush(sender, Color, Color)`（`using Microsoft.Graphics.Canvas.Brushes`）；
+   `a7310729` 起刷子缓存在字段里：`Gradient(ref CanvasLinearGradientBrush? brush, …) => brush ??= new …`（`??=` 的结果按非空算），每帧设 `StartPoint` / `EndPoint` / `Opacity`；
+   `_preview.CreateResources += (_, _) => DisposeBrushes()`（`TypedEventHandler<CanvasControl, CanvasCreateResourcesEventArgs>`）。
 3. `OnDraw` 里 `var seam = _seamSince == 0 ? 0 : ScrollPreview.SeamOpacity(…)`（int / double 合成 double）、`var top = (_growingUp ? box - height : 0) + (float)TapeOffset(now)`（float）、`Math.Min(edge, inward)`（float）进 `Rect` 的 double。
 4. 面板里的实例方法 `TapeOffset(long)` 和 Core 的 `ScrollPreview.TapeOffset(double, double)` 同名，调用处都写全了类名。
 5. `ScrollHeightReading : StackPanel` 是 `internal sealed partial`（CsWinRT），`OnCreateAutomationPeer` 返回 `FrameworkElementAutomationPeer`（同 `TickerText`）；`FontWeights` 是 `Microsoft.UI.Text` 的。
@@ -126,12 +128,20 @@ mac 还没推进 `macos` 的（多语言 / 英文、截图识别元素第二三�
 - 数字滚动自己写在 `ScrollHeightReading`，没用 `TickerText`：要半粗、要按位值对齐和位数变化，而且 R107 这一轮正在改 `TickerText`（同时改会撞）。做法和 `TickerText` 一样（一位一个 TextBlock、Motion 的四个用法），以后可以并回去。
 - 位数变多时整行宽度立刻变（居中的数字往左跳半个字），mac 跟着动画走；位数变少（实际碰不到）整行直接换。写在文件头的 ponytail。
 
+**审查后改的**（`a7310729`，审查方 R106 审查提的两处性能、一处文档）：
+
+- `Update`：同一个长图、高没变、方向没变就直接返回，不 `Render`（`ScrollingCapture` 每拍都调，没动的那拍也调；高没变内容就没变——没动的那拍不拼、拼不上不改图，
+  到 30000 行那拍直接 `Complete`）。往回看 / 换大小时碰上正在拼、`Render` 提前返回的记 `_stale`，下一次 `Update` 照取。手动模式停着时不再每 200 ms 整张重取样、分配约 1.6 MB。
+- 接缝和上下渐隐的三个 `CanvasLinearGradientBrush` 缓存成字段（`_seamBrush` / `_upperFade` / `_lowerFade`），每帧只设端点和不透明度；`CreateResources`（换设备）和 `Hide` 时 `DisposeBrushes`。
+- `ScrollCanvas.Sample` 红、蓝打包在一个 int 里一起累加（`redBlue += pixel & 0x00FF00FF`，红那半 `>>> 16`；16 个点 × 255 放得下 16 位，`MaxTaps` 别超过 16）。
+- HANDTEST 1531 改成「停下来以后 CPU 和改之前一样」（截屏本来就一直在跑）；MAC-DIFF 长截图例外补上说明那行 12 号 / 0.35、纸带打断时接着滑。
+
 **要你们做的**：
 
 1. 编译零警告（`TreatWarningsAsErrors`）：`dotnet build windows/KittyTools.slnx -c Debug -p:Platform=x64`，编译错直接修。
 2. `dotnet test windows/KittyTools.Tests` 全过；新单测有挂的，先看是不是期望值算错（算法、期望都在上面），别改成对着实现抄。
 3. Release AOT 发布 x64 / ARM64 零 trim / AOT 警告。
-4. 真机走 HANDTEST 1520–1535（长截图手动 / 自动、往上、窄选区、往回看、关了动画效果）；1531 看拼接节奏和 CPU（平滑取样在 UI 线程上，每拍多几毫秒，量一下 `Render` 的耗时；太慢把 `MaxTaps` 调成 3）。
+4. 真机走 HANDTEST 1520–1535（长截图手动 / 自动、往上、窄选区、往回看、关了动画效果）；1531 看拼接节奏和 CPU（平滑取样在 UI 线程上，长图长了的那拍多几毫秒，量一下 `Render` 的耗时；太慢把 `MaxTaps` 调成 3）。
 5. Debug `--long-annotate-probe=3000`（`KITTY_HUD_CAPTURE=1`）出的 `scroll-panel-*-moving.png` / `scroll-panel-*.png`，再录一段 3–5 秒的长截图预览（只录面板），推 `windows-shots` 的 `0.3.0-fill/`。
 6. 内存探针、空闲 CPU 照每批的自查清单（滑完闪完退订 `Rendering`，静置时应当是 0）。
 
