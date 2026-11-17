@@ -659,12 +659,50 @@
         }
       }
     },
+    "%@（续）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ (continued)"
+          }
+        }
+      }
+    },
     "%@（这台 Mac 上没有）" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ (not on this Mac)"
+          }
+        }
+      }
+    },
+    "%@，%lld 个快捷键" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@，%2$lld 个快捷键"
+          }
+        },
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%@, %lld shortcut"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%@, %lld shortcuts"
+                }
+              }
+            }
           }
         }
       }
@@ -2242,6 +2280,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "app name"
+          }
+        }
+      }
+    },
+    "App 快捷键" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "App Shortcuts"
           }
         }
       }
@@ -5622,6 +5670,16 @@
         }
       }
     },
+    "「%@」现在用不了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@” isn’t available right now"
+          }
+        }
+      }
+    },
     "「%@」的别名" : {
       "localizations" : {
         "en" : {
@@ -8262,6 +8320,16 @@
         }
       }
     },
+    "先切到要看的 App，再打开 App 快捷键" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch to the app you want to look at, then open App Shortcuts"
+          }
+        }
+      }
+    },
     "先填参数" : {
       "localizations" : {
         "en" : {
@@ -8298,6 +8366,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Copy some text or an image first"
+          }
+        }
+      }
+    },
+    "先清空搜索，再按一次收起；点外面、切 App 也收起" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clears the search first, then press again to close; clicking outside or switching apps also closes"
           }
         }
       }
@@ -10812,6 +10890,26 @@
         }
       }
     },
+    "单独按住 ⌘ 约 1 秒；不想长按的话在快捷键页另设一个组合" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hold ⌘ by itself for about 1 second. If you’d rather not hold it, set a shortcut in Shortcuts"
+          }
+        }
+      }
+    },
+    "单独按住一会儿：弹出当前 App 菜单里的全部快捷键，松开就收（按多久在设置里改）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hold by itself for a moment: shows every shortcut in the current app’s menus; release to close (set how long in Settings)"
+          }
+        }
+      }
+    },
     "单色" : {
       "localizations" : {
         "en" : {
@@ -11746,6 +11844,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Turns Bluetooth back on only if Kitty Tools turned it off before sleep; if it was already off, it stays off"
+          }
+        }
+      }
+    },
+    "只按着 ⌘、不按别的键；按着时按了别的键、点了鼠标就不弹" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hold only ⌘ with no other keys. Pressing another key or clicking while holding cancels it"
           }
         }
       }
@@ -13502,6 +13610,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Adding it on one Mac adds it on all your synced Macs"
+          }
+        }
+      }
+    },
+    "在任何 App 里单独按住 ⌘ 一会儿，弹出它菜单里的全部快捷键，按菜单分组" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In any app, hold ⌘ by itself for a moment to see every shortcut in its menus, grouped by menu"
           }
         }
       }
@@ -18670,6 +18788,26 @@
         }
       }
     },
+    "弹出前台 App 菜单栏里的全部快捷键，按菜单分组。按着 ⌘ 再按别的键，就是那个快捷键；松开 ⌘ 就收起。只列 App 菜单里的快捷键，网页和编辑器里自己定义的看不到。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shows every shortcut in the frontmost app’s menu bar, grouped by menu. While holding ⌘, press another key to use that shortcut; release ⌘ to close. Only shortcuts in the app’s menus are listed, not ones defined inside web pages or editors."
+          }
+        }
+      }
+    },
+    "弹出后按着 ⌘ 再按别的键：就是那个快捷键，面板收起" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Once it shows, keep holding ⌘ and press another key: uses that shortcut and closes the panel"
+          }
+        }
+      }
+    },
     "强" : {
       "localizations" : {
         "en" : {
@@ -21567,6 +21705,56 @@
         }
       }
     },
+    "按住 ⌘ 一会儿，列出当前 App 菜单里的全部快捷键" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hold ⌘ for a moment to list every shortcut in the current app’s menus"
+          }
+        }
+      }
+    },
+    "按住 ⌘ 叫出来" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hold ⌘ to show"
+          }
+        }
+      }
+    },
+    "按住 ⌘ 弹出的当前 App 快捷键：按多久、要给的授权" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The current app’s shortcuts, shown when you hold ⌘: how long to hold and the permission it needs"
+          }
+        }
+      }
+    },
+    "按住,长按,⌘,Command,菜单,菜单栏,快捷键列表,快捷键提示,当前 App,多久,辅助功能" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "hold,long press,⌘,Command,menu,menu bar,shortcut list,cheat sheet,current app,delay,how long,Accessibility"
+          }
+        }
+      }
+    },
+    "按住多久" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hold for"
+          }
+        }
+      }
+    },
     "按住它拖边上的药丸：换边、换高度" : {
       "localizations" : {
         "en" : {
@@ -21719,6 +21907,16 @@
         }
       }
     },
+    "按着 ⌘ 再按别的键就是那个快捷键；点一行直接执行" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "While holding ⌘, press another key to use that shortcut, or click a row to run it"
+          }
+        }
+      }
+    },
     "按过了「%@」" : {
       "localizations" : {
         "en" : {
@@ -21835,6 +22033,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Try a different search"
+          }
+        }
+      }
+    },
+    "换个词试试；Esc 清空" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Try another word. Press Esc to clear"
           }
         }
       }
@@ -24429,6 +24637,16 @@
         }
       }
     },
+    "显示 App 快捷键" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show App Shortcuts"
+          }
+        }
+      }
+    },
     "显示「%@」" : {
       "localizations" : {
         "en" : {
@@ -25531,6 +25749,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Apps with unsaved changes will ask you first"
+          }
+        }
+      }
+    },
+    "有的 App 只在窗口里响应快捷键，菜单里看不到" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Some apps handle shortcuts only inside their windows, so they don’t appear in menus"
+          }
+        }
+      }
+    },
+    "有的 App 没有菜单栏" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Some apps don’t have a menu bar"
           }
         }
       }
@@ -28080,6 +28318,16 @@
         }
       }
     },
+    "没有对上的快捷键" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Matching Shortcuts"
+          }
+        }
+      }
+    },
     "没有导入" : {
       "localizations" : {
         "en" : {
@@ -28770,6 +29018,22 @@
         }
       }
     },
+    "没能执行「%@」：%@的菜单变了" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "没能执行「%1$@」：%2$@的菜单变了"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t run “%1$@”: %2$@’s menus have changed"
+          }
+        }
+      }
+    },
     "没能推出「%@」" : {
       "localizations" : {
         "en" : {
@@ -29052,6 +29316,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Couldn’t hide “%@”"
+          }
+        }
+      }
+    },
+    "没读完：这个 App 没响应" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Incomplete: this app isn’t responding"
           }
         }
       }
@@ -29762,6 +30036,26 @@
         }
       }
     },
+    "点一下搜索框能留住，打字搜菜单里的名字" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Click the search field to keep it open and type to search menu items"
+          }
+        }
+      }
+    },
+    "点一下搜索框：留住，打字搜菜单里的名字（中文也认拼音和首字母）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Click the search field: keeps it open so you can type to search menu items (Chinese also matches pinyin and initials)"
+          }
+        }
+      }
+    },
     "点一张切过去，悬停点 ✕ 关掉；按 ⌘Tab 时也能显示" : {
       "localizations" : {
         "en" : {
@@ -29800,6 +30094,16 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "点一行：执行它" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Click a row: runs it"
           }
         }
       }
@@ -29930,6 +30234,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Thumbs up"
+          }
+        }
+      }
+    },
+    "点这里搜索" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Click here to search"
           }
         }
       }
@@ -30866,6 +31180,36 @@
         }
       }
     },
+    "留住时按列表里有的组合（比如 ⌘S）：执行那一项" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "While kept open, press a shortcut from the list (such as ⌘S): runs that item"
+          }
+        }
+      }
+    },
+    "留住时：执行选中的那一行" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "While kept open: runs the selected row"
+          }
+        }
+      }
+    },
+    "留住时：换选中的一行" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "While kept open: moves the selection"
+          }
+        }
+      }
+    },
     "留着看、接着改的东西：屏幕边缘的那一叠、字号和行距，存在哪、怎么备份" : {
       "localizations" : {
         "en" : {
@@ -31196,6 +31540,16 @@
         }
       }
     },
+    "看着 ⌘ 有没有单独按住；按够了才读一次前台 App 的菜单，不存" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watches for ⌘ held by itself; reads the frontmost app’s menus once it’s held long enough and keeps nothing"
+          }
+        }
+      }
+    },
     "看着指针有没有停在刘海上；打开了系统提示才听电源、耳机、网络，打开了正在播放才起一个读播放信息的小进程，打开了下一个日程才读日历，打开了音量和亮度才接那五个键。不添加时提示照常弹" : {
       "localizations" : {
         "en" : {
@@ -31322,6 +31676,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Zhihu"
+          }
+        }
+      }
+    },
+    "知道 ⌘ 有没有按住、读当前 App 的菜单；没有它用不了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Detects when ⌘ is held and reads the current app’s menus. Required."
           }
         }
       }
@@ -31649,6 +32013,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Remove"
+          }
+        }
+      }
+    },
+    "移除后按住 ⌘ 不再弹出，快捷键页里也没有它；设置留着，再添加就回来" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Once removed, holding ⌘ no longer shows anything and it’s gone from Shortcuts; settings stay for when you add it again"
           }
         }
       }
@@ -35271,6 +35645,16 @@
         }
       }
     },
+    "读不到这个 App 的菜单" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can’t Read This App’s Menus"
+          }
+        }
+      }
+    },
     "读系统「日历」里的日程，打开「下一个日程」时会问一次授权。全天的、已拒绝的不算下一个日程；日程的内容只留在这台 Mac 上，不进最近的提示。月历本身不用授权。" : {
       "localizations" : {
         "en" : {
@@ -35799,6 +36183,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Nothing is drawn on the edge; moving the pointer there still expands the tabs"
+          }
+        }
+      }
+    },
+    "过一会儿再按住 ⌘ 试试" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Try holding ⌘ again in a moment"
+          }
+        }
+      }
+    },
+    "过一会儿再试试" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Try again in a moment"
           }
         }
       }
@@ -36441,12 +36845,42 @@
         }
       }
     },
+    "这个 App" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This app"
+          }
+        }
+      }
+    },
     "这个 App 会被移到废纸篓。" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "This app will be moved to the Trash."
+          }
+        }
+      }
+    },
+    "这个 App 没响应" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This App Isn’t Responding"
+          }
+        }
+      }
+    },
+    "这个 App 的菜单里没有快捷键" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Shortcuts in This App’s Menus"
           }
         }
       }

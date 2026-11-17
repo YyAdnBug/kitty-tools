@@ -136,6 +136,8 @@ LaunchServices 按调用方 App 自己的语言给，界面定成中文时英文
 | 保持唤醒 | Keep Awake | 插件；动词用法也写功能名（保持唤醒中 Keep Awake is on、停止保持唤醒 Turn Off Keep Awake） |
 | 睡眠关蓝牙 | Bluetooth Sleep | 插件 |
 | 平滑滚动 | Smooth Scrolling | 插件 |
+| App 快捷键 / 显示 App 快捷键 | App Shortcuts / Show App Shortcuts | 插件（2026-11-17）；句子里说「当前 App 的快捷键」时照常写 the app’s shortcuts |
+| 键盘与鼠标（全部插件的分组） | Keyboard and Mouse | 同「记录与提醒」Notes and Reminders |
 | 刘海岛 / 打开刘海岛 | Notch / Open Notch | 不用 Dynamic Island |
 | 提示 / 活动（刘海岛上） | Notices / Activities | |
 | 主界面 | Home | |

@@ -280,7 +280,7 @@ final class AppShortcuts {
   private func perform(_ item: MenuShortcut) {
     guard let app = shownApp else { return }
     panel.panel?.hide()
-    let name = app.localizedName ?? "这个 App"
+    let name = app.localizedName ?? String(localized: "这个 App")
     switch MenuShortcuts.press(item, pid: app.processIdentifier) {
     case .pressed: break
     case .changed: announce?("没能执行「\(item.title)」：\(name)的菜单变了")

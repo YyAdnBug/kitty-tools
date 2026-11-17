@@ -417,7 +417,7 @@ struct AppShortcutsView: View {
   @ViewBuilder private var empty: some View {
     if !model.finished {
       EmptyState(symbol: "hourglass", title: "这个 App 没响应") {
-        Text(model.openedByKey ? "过一会儿再试试" : "过一会儿再按住 ⌘ 试试").foregroundStyle(.secondary)
+        (model.openedByKey ? Text("过一会儿再试试") : Text("过一会儿再按住 ⌘ 试试")).foregroundStyle(.secondary)
       }
     } else if model.unreadable {
       EmptyState(symbol: "menubar.rectangle", title: "读不到这个 App 的菜单") {

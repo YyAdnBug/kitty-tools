@@ -4781,7 +4781,9 @@ struct SnapshotProbeTests {
     let prefs = try #require(UserDefaults(suiteName: name))
     defer { prefs.removePersistentDomain(forName: name) }
     let navigation = SettingsNavigation(defaults: nil)
-    navigation.fresh = ["plugin-keep-awake", "plugin-bluetooth-snooze", "plugin-smooth-scroll"]
+    navigation.fresh = [
+      "plugin-keep-awake", "plugin-bluetooth-snooze", "plugin-smooth-scroll", "plugin-app-shortcuts",
+    ]
     let fixed = PluginsPage.Fixed(
       added: [.notes, .reminders, .dockPreview, .island], lacking: [.dockPreview])
     func list() -> some View {
