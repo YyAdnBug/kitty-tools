@@ -13150,16 +13150,6 @@
         }
       }
     },
-    "在「动画表情」里挑的，第一次用到时从 Kitty Tools 在 GitHub 上的发布页下载那个动画（一个约 0.2 MB，不带任何个人信息），存在这台 Mac 上、最多 50 MB；没下好、没联网时先显示缩略图。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Animated emoji are downloaded from the Kitty Tools releases page on GitHub the first time they’re used (about 0.2 MB each, with no personal information) and kept on this Mac, up to 50 MB. Until then, or when you’re offline, a thumbnail shows instead."
-          }
-        }
-      }
-    },
     "在「脚本命令」里点「新建脚本」" : {
       "localizations" : {
         "en" : {
@@ -37239,6 +37229,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Alarm clock"
+          }
+        }
+      }
+    },
+    "除了自带的状态和示例提醒用的几个，表情的动画第一次用到时从 Kitty Tools 在 GitHub 上的发布页下载（一个约 0.2 MB，不带任何个人信息），存在这台 Mac 上、最多 50 MB；没下好、没联网时先显示缩略图。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Except for the few used by the built-in statuses and example reminders, emoji animations are downloaded from the Kitty Tools releases page on GitHub the first time they’re used (about 0.2 MB each, with no personal information) and kept on this Mac, up to 50 MB. Until then, or when you’re offline, a thumbnail shows instead."
           }
         }
       }

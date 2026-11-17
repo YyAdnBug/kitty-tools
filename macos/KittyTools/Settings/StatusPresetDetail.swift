@@ -141,6 +141,7 @@ struct StatusPresetDetail: View {
 /// 整个是一行「图标」：标题在左上（和别的行一样），格子靠右，中间空着的那一大块是预览（2026-11-04 用户要看得出动画是什么，
 /// 又说「左边位置大，放大居中」）——放大放选中的那个的动画、下面写它的名字（EmojiPreview），在空着的那块里居中。2026-11-05 用户
 /// 「选择后就自动播放动画，不要 hover」：预览只跟着选中的走、一直在播，鼠标停在格子上不换。格子本身一直是静止画面
+/// （2026-11-17 起包里只带自带的状态和示例提醒用的几个，别的动画第一次用到时才下：没下好的格子画缩略图，选上了预览会去下）
 struct SymbolGrid: View {
   @Binding var selection: String
   @Environment(\.colorScheme) private var scheme
@@ -162,6 +163,7 @@ struct SymbolGrid: View {
   }
 
   private var grid: some View {
+    let _ = EmojiPack.shared.generation  // 选上的那个下好了换成它的静止画面
     let column = GridItem(.fixed(Self.cell + Self.ring * 2), spacing: 4)
     return LazyVGrid(columns: Array(repeating: column, count: 7), spacing: 4) {
       ForEach([""] + StatusEmoji.ids, id: \.self) { cell($0) }
@@ -181,7 +183,8 @@ struct SymbolGrid: View {
       selection = symbol
     } label: {
       Group {
-        if let still = StatusEmoji.still(symbol) {
+        // 没下好动画的（包里没带的格子只在选上时才下）画缩略图，格子这么小看不出差别
+        if let still = StatusEmoji.still(symbol) ?? StatusEmoji.thumbnail(symbol) {
           Image(decorative: still, scale: 1)
             .resizable()
             .interpolation(.high)
@@ -349,7 +352,7 @@ struct EmojiPackToggle: View {
   @AppStorage(Prefs.emojiPackDownloads) private var downloads = true
 
   static let footnote: LocalizedStringResource =
-    "在「动画表情」里挑的，第一次用到时从 Kitty Tools 在 GitHub 上的发布页下载那个动画（一个约 0.2 MB，不带任何个人信息），存在这台 Mac 上、最多 50 MB；没下好、没联网时先显示缩略图。"
+    "除了自带的状态和示例提醒用的几个，表情的动画第一次用到时从 Kitty Tools 在 GitHub 上的发布页下载（一个约 0.2 MB，不带任何个人信息），存在这台 Mac 上、最多 50 MB；没下好、没联网时先显示缩略图。"
 
   var body: some View {
     Toggle(isOn: $downloads) {

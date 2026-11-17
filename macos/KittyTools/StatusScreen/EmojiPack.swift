@@ -4,12 +4,15 @@
 // 下载、存在本机。系统表情不走这里（永远系统样子）。
 // - 对照表 Resources/emoji-pack.json（每个一条：编号、表情字、分类、CLDR 中文名、关键词；macos/emoji-pack.swift 生成）和
 //   96 × 96 的缩略图 Resources/emoji-thumbs/ 打进包里；动画文件在本仓库一个单独的 release（tag 写在对照表里，不标 latest：
-//   App 内更新只认 macos-v*），一个约 0.2 MB。包里自带的 28 个和眼睛不下载（bundledID）。
+//   App 内更新只认 macos-v*），一个约 0.2 MB。2026-11-17 起图标格子那 28 个也走这里（原来全打进包里，占 5.7 MB；
+//   插件按需下载评估里定的瘦身，PLAN §10「功能管理」下的记录）：包里只带自带的三个状态、三条示例提醒用的和眼睛
+//   （StatusEmoji.bundled），其余 22 个第一次用到时同样从这个 release 下（编号见 choiceAliases / packID(forChoice:)，
+//   release 上本来就有、和原来包里的是同一份）。
 // - 缓存在数据目录的 emoji-pack/（<编号>.heics），不备份、不导出、不同步（另一台用到时自己下）；用一次把文件的修改时间碰成现在，
 //   超过 50 MB 删最久没用的（启动时、每下好一个之后）。
-// - 什么时候下：选上的那个显示到的时候（设置的图标格子、列表行、进入状态屏、全屏提醒），和气泡里鼠标停在一格 0.4 s（预览）——
+// - 什么时候下：选上的那个显示到的时候（设置的列表行、详情页的大预览、进入状态屏、全屏提醒；图标格子、气泡里没选的不下）——
 //   还没下好、没联网时先垫缩略图，下好了 generation 加一，画它的视图跟着换成动画的静止画面 / 帧。同一个同时只下一次；下不成的
-//   这次运行里 10 分钟内不再试。
+//   这次运行里 10 分钟内不再试，没联网（isOffline）不算：联网后下一次用到就再下。
 // - 开关「自动下载动画表情」（Prefs.emojiPackDownloads，默认开，设置 › 状态屏 / 提醒两页各一行、同一个偏好）：关掉就不联网，
 //   已经下好的照用。
 // - 下下来的东西按不可信输入看：不超过 3 MB、解得出两帧以上、256 × 256 才存（主线程外，@concurrent 第 1 类：图片解码 / 写盘）。
@@ -24,7 +27,7 @@ import Observation
 
   /// 每下好一个加一：画自己挑的系统表情的视图读它，下好了跟着重画
   private(set) var generation = 0
-  @ObservationIgnored private var loading: [String: Task<Bool, Never>] = [:]
+  @ObservationIgnored private var loading: [String: Task<Bool?, Never>] = [:]
   @ObservationIgnored private var failedAt: [String: Date] = [:]
 
   /// 对照表里的一个：编号、表情字（去掉了 U+FE0F）、分类（smileys / people / nature / travel / other）、中文名、搜索用的
@@ -55,8 +58,8 @@ import Observation
   static let retryAfter: TimeInterval = 600
   nonisolated static var folder: URL { AppDelegate.supportDirectory.appending(path: folderName) }
 
-  /// 包里的编号和自带的不一样的那几个（其余同名）：挑到这几个字时直接用自带的文件
-  nonisolated static let bundledAliases = [
+  /// 包里的编号和图标格子那 28 个的 id 不一样的那几个（其余同名）：挑到这几个字时存格子里的 id
+  nonisolated static let choiceAliases = [
     "telephone-receiver": "telephone", "busts-in-silhouette": "busts",
     "hourglass-not-done": "hourglass", "person-in-lotus-position": "lotus-position",
   ]
@@ -132,15 +135,15 @@ import Observation
     }
   }
 
-  /// 动画包的编号如果是包里自带的那 28 个之一，自带的 id（不下载）
-  nonisolated static func bundledID(for packID: String) -> String? {
-    let id = bundledAliases[packID] ?? packID
+  /// 动画包的编号如果是图标格子那 28 个之一，格子里的 id
+  nonisolated static func choiceID(for packID: String) -> String? {
+    let id = choiceAliases[packID] ?? packID
     return StatusEmoji.ids.contains(id) ? id : nil
   }
 
-  /// 包里带着动画文件的（自带的 28 个、眼睛）：不下载，直接用包里的
-  nonisolated static func bundledFile(for packID: String) -> String? {
-    bundledID(for: packID) ?? (packID == StatusEmoji.eyes ? packID : nil)
+  /// 图标格子里一个 id 在动画包里的编号（反查 choiceAliases，其余同名）
+  nonisolated static func packID(forChoice id: String) -> String {
+    choiceAliases.first { $0.value == id }?.key ?? id
   }
 
   /// 缓存里的那个文件（下好了才有）
@@ -158,10 +161,10 @@ import Observation
   /// 下载用的会话：不进系统的网址缓存（文件自己存一份就够了）
   private static let session = URLSession(configuration: .ephemeral)
 
-  /// 这个表情要用到了：是动画表情包里的（「pack:编号」）、不是自带的、还没下好、开关开着，就下它。下好了（或本来就有）是 true
+  /// 这个表情要用到了：包里没带它的动画（StatusEmoji.downloadID：格子里包里没带的、「pack:编号」）、还没下好、开关开着，
+  /// 就下它。下好了（或本来就有）是 true；包里带着的是 false
   @discardableResult func fetch(_ symbol: String) async -> Bool {
-    guard let catalog = Self.catalog, let id = StatusEmoji.packID(symbol),
-      Self.bundledFile(for: id) == nil
+    guard let catalog = Self.catalog, let id = StatusEmoji.downloadID(symbol), Self.contains(id)
     else { return false }
     if let url = Self.cachedURL(id) {
       try? FileManager.default.setAttributes([.modificationDate: Date.now], ofItemAtPath: url.path)
@@ -171,18 +174,18 @@ import Observation
     if let failed = failedAt[id], Date.now.timeIntervalSince(failed) < Self.retryAfter {
       return false
     }
-    if let running = loading[id] { return await running.value }
+    if let running = loading[id] { return await running.value == true }
     let task = Task { await Self.download(id, tag: catalog.tag) }
     loading[id] = task
-    let done = await task.value
+    let result = await task.value
     loading[id] = nil
-    if done {
+    if result == true {
       generation += 1
       await Self.trim()
-    } else {
-      failedAt[id] = .now
+    } else if result == false {
+      failedAt[id] = .now  // 没联网（nil）不记：联网后下一次用到就再下
     }
-    return done
+    return result == true
   }
 
   /// 本仓库那个 release 里的文件；设了本机测试服务器（Prefs.emojiPackTestServer，发表情包之前试用）时是那里的
@@ -199,18 +202,32 @@ import Observation
       string: "https://github.com/YyAdnBug/kitty-tools/releases/download/\(tag)/\(id).heics")
   }
 
-  private static func download(_ id: String, tag: String) async -> Bool {
+  /// 下好、存好是 true；没下成是 false；没联网是 nil（fetch 不记失败时间）
+  private static func download(_ id: String, tag: String) async -> Bool? {
     guard let url = remoteURL(id, tag: tag) else { return false }
     let request = URLRequest(
       url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
-    guard let (data, response) = try? await session.data(for: request),
-      (response as? HTTPURLResponse)?.statusCode == 200,
+    let data: Data
+    let response: URLResponse
+    do {
+      (data, response) = try await session.data(for: request)
+    } catch {
+      Log.storage.error("动画表情没下成：\(id, privacy: .public)")
+      return isOffline(error) ? nil : false
+    }
+    guard (response as? HTTPURLResponse)?.statusCode == 200,
       response.expectedContentLength <= Int64(maxFileBytes)
     else {
       Log.storage.error("动画表情没下成：\(id, privacy: .public)")
       return false
     }
     return await store(data, as: id)
+  }
+
+  /// 是不是没联网这一类（纯函数）：是的话不算这个表情下不成——不等 10 分钟，联网后下一次用到就再下
+  nonisolated static func isOffline(_ error: any Error) -> Bool {
+    guard let code = (error as? URLError)?.code else { return false }
+    return [.notConnectedToInternet, .networkConnectionLost, .dataNotAllowed].contains(code)
   }
 
   /// 查过再存（先写临时名再换过去：写到一半的不会被当成好的）
