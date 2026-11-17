@@ -203,3 +203,4 @@ pwsh windows/tools/setup-e2e.ps1 -Zip windows/build/release/<版本>/KittyTools-
 - 应用图标 `KittyTools/Resources/AppIcon.ico` 和录制中的托盘图标 `AppIconRecording.ico`（`swift windows/tools/app-icon.swift`）；
 - 同步格式样本 `KittyTools.Tests/Fixtures/sync-golden.json`（`swift windows/tools/sync-golden.swift`，第五版用）。
 - 功能图标 `KittyTools/Shell/FeatureIcons.cs`（在仓库根跑 `swift icons/build-icons.swift windows`，源是 `icons/feature/*.svg`，和 mac 共用；2026-10-30）。
+- 识字认码的单测图 `KittyTools.Tests/Fixtures/barcodes/`（`swift windows/tools/barcode-fixtures.swift`，CoreImage 生成、Vision 核对；REVIEW R105）。

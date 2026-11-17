@@ -24,7 +24,48 @@ mac 还没推进 `macos` 的（多语言 / 英文、截图识别元素第二三�
 
 #### 交接
 
-（待写）
+**审查方在 Mac 上写了（`775f32ae`），没编译。**
+
+- **新文件**：`KittyTools.Core/Barcodes/`（命名空间 `KittyTools.Core.Barcodes`，纯 C#、只用 BCL，照 ISO/IEC 18004、GS1、ISO/IEC 15417 / 16388 / 16390 自己写的，没抄别家）——
+  `BarcodeReader`（公开入口：BGRA → 结果表，二维码在前，默认 1.5 秒上限，到点交出已读出的）、`BarcodeImage`（灰度、8×8 块自适应二值化、双线性取灰度）、
+  `QrDetector`（找定位图案、凑三角形、数定时图案定边长、先用三点网格验格式信息、找校正图形、四点透视取样、镜像、反色、一图多码；超过 400 万像素先在缩小的图上找）、
+  `Perspective`、`QrDecoder`（格式 / 版本信息、功能图形、读码字、拆块纠错）、`QrBitstream`（数字 / 字母数字 / 字节 / 汉字、ECI、结构链接、FNC1、字符集）、
+  `ReedSolomon`（`GaloisField` + Berlekamp-Massey / Chien / Forney）、`LinearBarcodes`（EAN-13 / EAN-8 / UPC-A / UPC-E / Code 128 / Code 39 / ITF）。
+  单测 `KittyTools.Tests/BarcodeReaderTests.cs` + `Fixtures/barcodes/`（64 张 PNG + `manifest.json`，约 0.9 MB）；生成脚本 `tools/barcode-fixtures.swift`。
+- **改的**：`Screenshot/OcrService.cs` 加 `CopyBarcodesAsync`（后台认码 → 有码就拷内容、几个码一行一个、记进剪贴板历史、提示「已复制二维码」+ 前 30 字）；
+  识字的五个入口先过它、再查识字组件：`ScreenshotSession.CopyRecognizedTextAsync`（框选识字 + 截图工具栏的识字）、`PinWindow.RecognizeAsync`、
+  `ShotHistoryWindow.RecognizeAsync`、`LongAnnotateWindow.RecognizeAsync`。钉图的「翻译」、截图翻译不认码（同 mac）。
+  照 mac 的文案：识字框选提示「拖动框选要识别的文字或二维码 · Esc 取消」（`SelectionOverlayWindow`），设置 › 截图识字说明末尾「框选里有二维码或条码时复制它的内容。」、搜索词加「二维码」（`SettingsWindow`）。
+- **在 Mac 上怎么验的**：先用 Swift 写了同一套算法的原型（不入库），C# 是照它逐个函数翻的。原型 64 张全过；随机二维码 1500 张（版本 1–40、四个纠错等级、八种掩码、
+  任意角度、2–5 像素一个模块、噪声、翻几个模块）0 失败；随机一维码 1800 张（六种码、1.5–3 像素一个模块、±10°、90°、180°、噪声）2 张失败（1.6 像素的 ITF 加重噪声，Vision 读得出）；
+  满屏文字 / 表格 / 代码 150 张 0 误认；里德-所罗门 3000 组 0 失败。原型（Swift -O，M 系列）的时间：v40 30–50 ms，4K 满屏文字 100 ms 上下，1440 × 14000 的长图约 0.5 s。
+- **要特别看的编译点**：
+  1. C# 14 的 first-class span：数组的 `.Reverse()` 会绑到 Span 的就地反转，`LinearBarcodes.GCodes` 写成了 `Enumerable.Reverse(code)`；别处报 `Reverse` 的照这个改。
+  2. `QrBitstream` 的静态构造里 `Encoding.RegisterProvider(CodePagesEncodingProvider.Instance)`：Core 里第一次用（App 的 `ScriptRunner` 已经这么用）。GB18030（54936）、Shift_JIS（932）
+     在 AOT 下能不能取到，单测 `qr-kanji-mask2`、`qr-eci-gb18030`、`qr-gbk-no-eci` 三张会说话。
+  3. 可空元组和模式：`(double Center, int Total)?`、`(string Text, (double X, double Y)[] Corners)?`、`A is not { } x || B(x)` 之后用 x 的确定赋值、
+     `Code39Char(...) is not { Char: '*' } start`（元组元素名当属性模式）、`return … ? size : null` 靠目标类型。
+  4. `Perspective.QuadToQuad` 收 `ReadOnlySpan<(double X, double Y)>`，传的是 `new (double X, double Y)[] { (far, 3.5), … }`（推断出的元组名不该报 CS8123；报了就写成 `(X: far, Y: 3.5)`）。
+  5. 局部函数（`DecodeGrid` 里的 `AffineDark` / `Dark`、`LinearBarcodes.Detect` 里的 `Point` / `Record` / `Scan`）和外层的变量名；`ItfDigit` 里 `stackalloc` 进 `Span<double>` 再 `Sort()`（Core 没开 unsafe，这样写不用）。
+  6. 单测里的 `TestPng`：自己解 PNG（`ZLibStream` + 五种行过滤器），只认 8 位、不隔行；生成脚本写的是 63 张灰度、1 张 RGB。
+- **单测**（`BarcodeReaderTests`）：`ReadsEveryFixture`（64 张，挂了会把每张期望 / 读到的都列出来；同一类全挂多半是翻译漏了一处，对照原型的那个函数——原型在 Mac 上全过，留在审查方这台 Mac 上）、
+  `QrCodesComeBeforeLinearOnes`、`NothingInBlankOrTinyImages`、`ReedSolomonMatchesTheSpecExample`（规范附录 HELLO WORLD 1-M 的 10 个纠错码字、错 5 个纠回来）、
+  `ReedSolomonCorrectsUpToHalfTheEccCodewords`。单测里时间上限放宽到 30 秒，只验读得对。
+- **替用户定的**：
+  1. 先认码、再查识字组件：没装中文识字组件也能认码（mac 没有这个情况）。
+  2. 字节模式没写 ECI、又不是合法 UTF-8 时，先按 GB18030 读、再退 ISO-8859-1（国内老的生成器写 GBK 不带 ECI）；mac 的 Vision 直接按 ISO-8859-1，GBK 的码读成乱码（生成脚本里 Vision 核对那一张就是这样）。
+     代价：不带 ECI 的 Latin-1 码（少见）可能被当成中文。
+  3. 提示照 mac：「已复制二维码」+ 内容（一维码也这么说，同 mac）；几个码一行一个（同 mac 的 `joined(separator: "\n")`）。
+  4. DataMatrix、PDF417、Aztec（和 mac 的 Vision 还认的 Code 93、Codabar、GS1 DataBar、Micro QR）不认，写进 `MAC-DIFF.md` 长期例外；一维码只认横竖和偏 12° 以内（mac 任意角度）。
+  5. 时间上限 1.5 秒（到点有几个交几个，一个没有就照旧识字）；一维码至少两条扫描线读到才算；超过 400 万像素的图在缩小的图上找到了码就不再到原图上找更小的。
+  6. 反色（深底浅码）只在正常的一个都没找到时才找。
+- **Windows 那边要做的**：
+  1. 编译零警告（Debug x64 / ARM64），编译错直接修；
+  2. `dotnet test` 全过（`BarcodeReaderTests` 五个）；
+  3. Release AOT 发布 x64 / ARM64 零 trim / AOT 警告、PRI 齐全；
+  4. 真截图走 HANDTEST 1500–1511（手机扫码登录的码、商品条码、快递单、深色模式的码、钉图、截图历史、长图标注、没装识字组件、满屏文字不误认）；
+  5. 记一下 4K 整屏截图识字（没码）认码多花的时间，超过 300 ms 写进报告；内存探针、空闲 CPU 不该变（认码只在识字时跑，用完就放）；
+  6. 有截图推 `windows-shots` 的 `0.3.0-fill/`（只截我们自己的窗口和提示）。
 
 ### R106（P3）长截图面板的预览（`MAC-DIFF.md`「其他窗口 › 长截图 › 还没对齐」）
 

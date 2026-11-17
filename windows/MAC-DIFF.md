@@ -67,17 +67,17 @@
 - **截图**：「截完图放哪」没有 mac 的「晾衣绳」（PLAN-v9 S7 定了只做两档）；快门声用系统自带的一个短音，不随包带素材。
 - **截图时的键**：钉图默认 P（mac T），T 给了截图翻译（mac 的翻译钮没有键，Windows `PLAN.md` 起就这么定）；比 mac 多自动滚 A、裁剪 X，一共 24 个（mac 21 个）；重做是 Ctrl+Y（PLAN-v9-annotate D5）。截图时的键只在 Windows 之间同步，不冲突。
 - **识字接行**：截图翻译不进截图页（没开「盖回截图上」）时，识出的字接不接行跟 设置 › 截图「接起来」走（`Screenshot/ScreenshotSession.cs:929-931`）；mac 这里总是接。
+- **识字认码**（REVIEW R105）：Windows 自己写的解码（`KittyTools.Core/Barcodes/`），认二维码和 EAN-13 / EAN-8 / UPC-A / UPC-E / Code 128 / Code 39 / ITF。
+  mac 的 Vision 还认的 **DataMatrix、PDF417、Aztec**（和 Code 93、Codabar、GS1 DataBar、Micro QR）不认：每一种都是一整套定位和编码
+  （DataMatrix 的 L 形边和五种编码方式、Aztec 的靶心和五种伽罗华域加几张字符表、PDF417 要照规范抄 3 × 929 个码字的图案表），体量都和二维码差不多，
+  截图里又少见（多在药盒、零件、证件、登机牌上，拍照的多）；要做时照二维码的路子在 Core 里加，生成脚本里用 CoreImage 的 `CIAztecCodeGenerator`、`CIPDF417BarcodeGenerator` 出单测图。
+  一维码只认横竖和偏 12° 以内的（mac 任意角度）；二维码没写 ECI、又不是 UTF-8 的字节先按 GB18030 读（mac 按 ISO-8859-1，GBK 的码是乱码）；没装识字组件也能认码。
 - **截图 / 录制的保存位置分开**：截图默认存系统的「屏幕截图」文件夹，录屏录音默认存「视频\Screen Recordings」（同 Windows 自带的截图工具），两页各有一行「保存到」；mac 是同一个文件夹。
 - **快捷键**：键名写成 `Ctrl + Shift + S`；组合至少带 Ctrl 或 Alt，或者单独一个 F1–F24（Windows 全局热键的限制），或者连按两下 Ctrl / Alt / Shift（PLAN-v18 第 3 批）。录制框是系统按钮的样子。
 - **录制**：倒数时选区边框不走蚂蚁线、录制中不呼吸发光，是静止的实线（四条细窗口只能填纯色，PLAN-v9 R6 定了不做）。
 - **录制**：「标准」清晰度是长边封顶 1920（mac 是高分屏上宽高各减半）；GDI 那条退路录屏不认清晰度。
 - **录制**：没有「编码（H.264 / HEVC）」：Windows 上播 HEVC 要另装扩展，录出来发给别人常常打不开（PLAN-v9 R5）。
 - **关于**：顶上是品牌粉淡下去的底（mac 是奶油色）；更新日志的条目没有「范围」那一列（Windows 的 `changelog.json` 没有 scope）；多一个「反馈问题」（见末尾「Windows 先做了的」）。两边都没有「未来计划」了（mac 0.9.0 也删了，`8e60ccf8`）。
-
-### 还没对齐
-
-- 识字时框里有二维码 / 条码，mac 复制码的内容（`92d1cf14`），这里没有：WinRT 没有识别静态图片里条码的公开接口，依赖又只许用微软的包，
-  要自己在 Core 里写解码（REVIEW G1，用户 2026-11-15 定了「以后」）。
 
 ## 其他窗口
 
