@@ -1637,6 +1637,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         fresh: Set(fresh.flatMap(\.actions))),
       offCount: Home.offCount(
         enabled: Feature.enabled, available: Set(Feature.listed)),
+      // 快捷键没反应时人多半先点图标：这时看一眼安全输入（issue #27）
+      secureInput: hotKeys.secureInputBlock(),
       settingsIsNew: WhatsNew.inSettingsOnly(fresh), appearing: appearing)
     if appearing {
       homePanel.setContentSize(homeModel.size)
@@ -3142,8 +3144,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     guard let recognized = await recognizeForTranslation(image, droppingIcons: true) else {
       return .init(message: String(localized: "识别失败"))
     }
-    let segments = ScreenshotOverlay.segments(
-      of: recognized.lines, imageSize: CGSize(width: image.width, height: image.height))
+    let segments = await ScreenshotOverlay.prepareSegments(of: recognized.lines, in: image)
     guard !segments.isEmpty else { return .init(message: String(localized: "没有识别到文字")) }
     do {
       let translations = try await translateSegments(segments, source: recognized.text)

@@ -23,6 +23,8 @@ enum Main {
       FileHandle.standardError.write(Data("用法：\(OCR.helperFlag) <图片路径>\n".utf8))
       exit(2)
     case nil:
+      // AppKit 会缓存原生提示的初始延迟，创建 NSApplication 前注册；单位毫秒，只在本进程生效。
+      UserDefaults.standard.register(defaults: [Prefs.toolTipDelay: 600])
       // 本进程的环境会经 NSWorkspace 原样传给从这里打开的 App（启动器、启动台、访达右键「用 App 打开」……，
       // 2026-11-12 实测 PATH、SHLVL 都照传）。应用内更新经 /bin/sh 调 open 重启本 App，sh 加上的 SHLVL=1、PWD、_
       // 就跟着到了被打开的 App：JetBrains 的 IDE 见 SHLVL > 0 当成从终端起的，不读登录 shell 的环境（PATH 里

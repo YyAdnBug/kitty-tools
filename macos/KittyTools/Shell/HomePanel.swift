@@ -1,6 +1,7 @@
 // 主界面（2026-10-29 拍板「全部按推荐」，拍板页 macos/build/research/home-panel-2026-10-29/decisions.html）：一眼看到全部功能、
 // 点一下就用的那块面板。内容和菜单栏菜单读同一份——HotKeyAction.sections 分节、同名同序（关着的功能不出现），每节末尾接上那一节
-// 的 MenuExtra 里是动作的（有钉图时的两项）；有关着的功能时最下面一行「N 个功能关着 · 管理…」；底栏左边有新版本
+// 的 MenuExtra 里是动作的（有钉图时的两项）；有关着的功能时最下面一行「N 个功能关着 · 管理…」；别的 App 开着安全输入、
+// 只带 ⌥ 的快捷键收不到时（issue #27，HotKeyCenter.secureInputBlock）再上面一行橙字说是哪个 App；底栏左边有新版本
 // 时是「更新到 x」（UpdateBarHint），右边「设置 ⌘,」「退出 ⌘Q」。一格 = 30 pt 家族色块 + 名字 + 一行小字快捷键，一行 5 格；
 // 功能各一节（只剩一格的不画标题、连着的并成一行），添加了的插件全收进最后一节「插件」（同设置侧栏的分组，2026-11-13）。
 // **只放点一下就做的动作**（2026-11-13 拍板，对标托盘快捷面板的通行做法：面板放动作，开关放菜单里打勾）：开关
@@ -32,7 +33,7 @@ enum Home {
   static let titleHeight: CGFloat = 24
   /// 没标题的那一行和上一节之间
   static let untitledGap: CGFloat = 6
-  /// 「N 个功能关着 · 管理…」那一行
+  /// 「N 个功能关着 · 管理…」那一行（安全输入挡着快捷键那一行同高）
   static let noteHeight: CGFloat = 26
   /// 底栏（同启动器、剪贴板面板）
   static let barHeight: CGFloat = 36
@@ -160,8 +161,8 @@ enum Home {
     return tile.height + (wraps ? secondLine : 0)
   }
 
-  /// 面板的高（纯函数）：格子那一块 + 关着的功能那一行（有才有）+ 底栏
-  static func height(_ sections: [Section], offCount: Int) -> CGFloat {
+  /// 面板的高（纯函数）：格子那一块 + 安全输入那一行、关着的功能那一行（有才有）+ 底栏
+  static func height(_ sections: [Section], offCount: Int, secureInput: Bool = false) -> CGFloat {
     var height = top + bottom
     let tileHeight = tileHeight(sections)
     for (index, section) in sections.enumerated() {
@@ -169,7 +170,7 @@ enum Home {
       let rows = CGFloat((section.tiles.count + columns - 1) / columns)
       height += rows * tileHeight + (rows - 1) * gap
     }
-    return height + (offCount > 0 ? noteHeight : 0) + barHeight
+    return height + (offCount > 0 ? noteHeight : 0) + (secureInput ? noteHeight : 0) + barHeight
   }
 
   enum Move { case left, right, up, down }
@@ -233,6 +234,8 @@ enum Home {
 @Observable final class HomeModel {
   private(set) var sections: [Home.Section]
   private(set) var offCount: Int
+  /// 安全输入挡着只带 ⌥ 的快捷键（打开时看的那一眼）；没挡着 nil
+  private(set) var secureInput: HotKeyCenter.SecureInputBlock?
   /// 设置里有只在那里才有入口的新功能（WhatsNew.inSettingsOnly）：底栏「设置」前面一个小圆点
   private(set) var settingsIsNew: Bool
   /// 键盘选中的那一格；没按过方向键时没有（打开时不画高亮）
@@ -251,11 +254,13 @@ enum Home {
 
   /// 截图自检直接摆出某个样子；正常使用建一个空的，每次呼出前 update
   init(
-    sections: [Home.Section] = [], offCount: Int = 0, settingsIsNew: Bool = false,
+    sections: [Home.Section] = [], offCount: Int = 0,
+    secureInput: HotKeyCenter.SecureInputBlock? = nil, settingsIsNew: Bool = false,
     selection: Int? = nil, hovered: Int? = nil
   ) {
     self.sections = sections
     self.offCount = offCount
+    self.secureInput = secureInput
     self.settingsIsNew = settingsIsNew
     self.selection = selection
     self.hovered = hovered
@@ -263,14 +268,20 @@ enum Home {
 
   var tiles: [Home.Tile] { sections.flatMap(\.tiles) }
   var tileHeight: CGFloat { Home.tileHeight(sections) }
-  var size: CGSize { CGSize(width: Home.width, height: Home.height(sections, offCount: offCount)) }
+  var size: CGSize {
+    CGSize(
+      width: Home.width,
+      height: Home.height(sections, offCount: offCount, secureInput: secureInput != nil))
+  }
 
   /// 换成现在的样子。appearing：新呼出（选中、悬停清掉）；开着时再排一遍选中留着
   func update(
-    _ sections: [Home.Section], offCount: Int, settingsIsNew: Bool = false, appearing: Bool
+    _ sections: [Home.Section], offCount: Int, secureInput: HotKeyCenter.SecureInputBlock? = nil,
+    settingsIsNew: Bool = false, appearing: Bool
   ) {
     self.sections = sections
     self.offCount = offCount
+    self.secureInput = secureInput
     self.settingsIsNew = settingsIsNew
     if appearing {
       selection = nil
@@ -313,6 +324,7 @@ struct HomeView: View {
   var body: some View {
     VStack(spacing: 0) {
       grid
+      if let block = model.secureInput { secureInputNote(block) }
       if model.offCount > 0 { offNote }
       bar
     }
@@ -373,6 +385,29 @@ struct HomeView: View {
     }
     .font(.system(size: 11))
     .padding(.leading, Home.inset + 10)
+    .frame(maxWidth: .infinity, minHeight: Home.noteHeight, alignment: .leading)
+  }
+
+  /// 「「Google Chrome」开着安全输入，⌥ 快捷键暂时不响应」：橙字（同快捷键页注册失败的那行），悬停说为什么、怎么恢复。
+  /// 只是告诉人为什么没反应，不给按钮——能做的是离开那个密码框，或者把快捷键换成带 ⌘ / ⌃ 的
+  private func secureInputNote(_ block: HotKeyCenter.SecureInputBlock) -> some View {
+    Group {
+      if let holder = block.holder {
+        // App 名原样显示（Text(String) 不按 Markdown 解析）
+        Text(String(localized: "「\(holder)」开着安全输入，⌥ 快捷键暂时不响应"))
+      } else {
+        Text("有 App 开着安全输入，⌥ 快捷键暂时不响应")
+      }
+    }
+    .foregroundStyle(Color(nsColor: .systemOrange))
+    .font(.system(size: 11))
+    .lineLimit(1)
+    .truncationMode(.middle)
+    .help(
+      "输入密码时系统会打开安全输入，这时只带 ⌥ 的快捷键收不到，按键会打进那个输入框。离开密码框或退出那个 App 后恢复；带 ⌘ 或 ⌃ 的快捷键不受影响。"
+    )
+    .padding(.leading, Home.inset + 10)
+    .padding(.trailing, Home.inset)
     .frame(maxWidth: .infinity, minHeight: Home.noteHeight, alignment: .leading)
   }
 

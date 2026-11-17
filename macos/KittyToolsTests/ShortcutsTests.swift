@@ -1,5 +1,5 @@
 // 快捷键界面的纯函数单测：键帽拆分（速查表 / 录制框 / 引导共用）、注册失败原因（-9868 只在只带 ⌥ 时才是系统限制）、
-// 速查表 sheet 的高度放得进设置窗、录制时拒绝各 App 通用的编辑键、默认键（输入翻译 ⌥T）。
+// 速查表 sheet 的高度放得进设置窗、录制时拒绝各 App 通用的编辑键、默认键（输入翻译 ⌥T）、安全输入挡哪些组合（issue #27）。
 
 import Carbon.HIToolbox
 import Testing
@@ -60,6 +60,24 @@ struct ShortcutsTests {
   }
 
   /// ⌘C、⇧⌘Z 这类各 App 通用的键设成全局会在所有 App 里失效：录制时拒绝；⌥C、⌘⇧C 照常能录
+  /// 安全输入开着时收不到的：只带 ⌥ / ⌥⇧ 的字母数字符号键（2026-11-16 macOS 27.0.1 实测）；带 ⌘ / ⌃ 的、F 键、连按两下不算。
+  /// 默认键全是这种
+  @Test func secureInputYields() {
+    let yields = { (key: Int, modifiers: Int) in
+      HotKey(keyCode: key, modifiers: modifiers).yieldsToSecureInput
+    }
+    #expect(yields(kVK_ANSI_A, optionKey))
+    #expect(yields(kVK_ANSI_A, optionKey | shiftKey))
+    #expect(yields(kVK_Space, optionKey))
+    #expect(!yields(kVK_ANSI_A, optionKey | controlKey))
+    #expect(!yields(kVK_ANSI_A, optionKey | cmdKey))
+    #expect(!yields(kVK_ANSI_A, cmdKey | shiftKey))
+    #expect(!yields(kVK_F5, optionKey))
+    #expect(!HotKey(doubleTap: .option).yieldsToSecureInput)
+    let defaults = HotKeyAction.allCases.compactMap(\.defaultHotKey)
+    #expect(!defaults.isEmpty && defaults.allSatisfy(\.yieldsToSecureInput))
+  }
+
   @Test func reservedEditKeys() {
     #expect(HotKey(keyCode: kVK_ANSI_C, modifiers: cmdKey).isReservedEditKey)
     #expect(HotKey(keyCode: kVK_ANSI_Z, modifiers: cmdKey | shiftKey).isReservedEditKey)

@@ -5570,6 +5570,16 @@
         }
       }
     },
+    "「%@」开着安全输入，⌥ 快捷键暂时不响应" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@” has Secure Input on, so ⌥ shortcuts won’t respond for now"
+          }
+        }
+      }
+    },
     "「%@」快捷键没注册上" : {
       "localizations" : {
         "en" : {
@@ -25573,6 +25583,16 @@
         }
       }
     },
+    "有 App 开着安全输入，⌥ 快捷键暂时不响应" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An app has Secure Input on, so ⌥ shortcuts won’t respond for now"
+          }
+        }
+      }
+    },
     "有 App 正在使用它" : {
       "localizations" : {
         "en" : {
@@ -36113,6 +36133,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Enter Password…"
+          }
+        }
+      }
+    },
+    "输入密码时系统会打开安全输入，这时只带 ⌥ 的快捷键收不到，按键会打进那个输入框。离开密码框或退出那个 App 后恢复；带 ⌘ 或 ⌃ 的快捷键不受影响。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS turns on Secure Input while you type a password. Until it’s off, shortcuts that use only ⌥ don’t respond, and the keystroke goes into that field. They work again once you leave the password field or quit that app. Shortcuts with ⌘ or ⌃ aren’t affected."
           }
         }
       }

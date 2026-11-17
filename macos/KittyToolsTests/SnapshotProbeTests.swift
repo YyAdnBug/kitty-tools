@@ -1785,7 +1785,7 @@ struct SnapshotProbeTests {
   /// 面板的大小取模型算出来的（和真面板一样）。出：全开浅 / 深色（键盘选中「截图」、鼠标停在「启动器」上；插件收在最后
   /// 一节）、新装默认的四个功能（没有「插件」一节，多一行「1 个功能关着 · 管理…」）、只添加了一个插件（「插件」一节里一格）、
   /// 在录屏、有钉图（深色；两个开关开着也不占格子）、没添加便签、关掉录制、增强对比度（选中描边、发丝线）、
-  /// 有新版本（底栏左边「更新到 x」，Updater 从环境给）
+  /// 有新版本（底栏左边「更新到 x」，Updater 从环境给）、别的 App 开着安全输入（issue #27，浅：知道是谁 + 关着的功能；深：不知道是谁）
   @Test(.enabled(if: directory != nil)) func home() throws {
     let out = try #require(Self.directory)
     try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
@@ -1827,6 +1827,15 @@ struct SnapshotProbeTests {
     fewer.features = all.subtracting([.notes, .record])
     let fewerModel = model(fewer, off: Home.offCount(enabled: fewer.features, available: all))
     try shot("home-features-off", HomeView(model: fewerModel), fewerModel)
+    // 别的 App 开着安全输入、只带 ⌥ 的快捷键收不到（issue #27）：底下一行橙字，和关着的功能那一行一起；取不到是谁时（深色）
+    let secure = HomeModel(
+      sections: Home.sections(state: fewer, keys: keys),
+      offCount: Home.offCount(enabled: fewer.features, available: all),
+      secureInput: .init(holder: "Google Chrome"))
+    try shot("home-secure-input", HomeView(model: secure), secure)
+    let secureUnknown = HomeModel(
+      sections: Home.sections(state: state, keys: keys), secureInput: .init(holder: nil))
+    try shot("home-secure-input-dark", HomeView(model: secureUnknown), secureUnknown, dark: true)
     let contrast = model(state, selection: 0)
     try shot(
       "home-contrast",

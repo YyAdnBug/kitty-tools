@@ -128,6 +128,9 @@ struct HomeTests {
       + (rows - 4) * Home.gap + Home.barHeight
     #expect(Home.height(sections, offCount: 0) == expected)
     #expect(Home.height(sections, offCount: 2) == expected + Home.noteHeight)
+    // 安全输入挡着快捷键那一行（issue #27）：和关着的功能那一行各占一行
+    #expect(Home.height(sections, offCount: 0, secureInput: true) == expected + Home.noteHeight)
+    #expect(Home.height(sections, offCount: 2, secureInput: true) == expected + 2 * Home.noteHeight)
     #expect(Home.width == 2 * Home.inset + 5 * Home.tile.width + 4 * Home.gap)
   }
 

@@ -142,6 +142,8 @@ if [[ "$ARCH" == arm64 ]]; then
 fi
 # 发布说明（说明见文件头）：中文在前、英文在后
 DMGNAME=$(basename "$DMG") && DMGNAME=${DMGNAME// /.}
+# 发布说明里两种芯片的包都写（同一个 release 附 arm64 和 x86_64 两份 DMG，PLAN §10「Intel 编译」）
+DMGBASE=${DMGNAME%_*}
 {
   jq -r --arg v "$VERSION" '.[] | select(.version == $v) | .summary, "", "## 更新内容", "",
     (.changes[] | "- \(.scope)：\(.text)")' "$CHANGELOG"
@@ -149,7 +151,7 @@ DMGNAME=$(basename "$DMG") && DMGNAME=${DMGNAME// /.}
 
 ## 安装
 
-只支持 Apple 芯片（M 系列）、macOS 15 及以上。下载 \`$DMGNAME\`（\`_arm64.zip\` 和 \`macos-update.json\` 是 App 内更新用的，不用手动下载）。
+macOS 15 及以上。Apple 芯片（M 系列）下载 \`${DMGBASE}_arm64.dmg\`，Intel 芯片下载 \`${DMGBASE}_x86_64.dmg\`（\`.zip\` 和 \`macos-update.json\` 是 App 内更新用的，不用手动下载）。
 
 1. 打开 DMG，把 $NAME 拖进「应用程序」。装过同名的旧版 \`$NAME.app\` 的，先删掉它（或让访达替换）；从 Kitty Tools Native 升上来的，把旧的 \`Kitty Tools Native.app\` 也删掉，开机自启可能要在 设置 › 通用 里重新打开一次。
 2. 第一次双击会被系统拦下，提示「未打开」（没有公证；签名是有效的，所以不是「已损坏」）。
@@ -170,7 +172,7 @@ NOTES
 
 ## Installation
 
-Apple silicon (M-series) and macOS 15 or later only. Download \`$DMGNAME\` (the \`_arm64.zip\` and \`macos-update.json\` are for in-app updates; you don’t need to download them).
+Requires macOS 15 or later. On Apple silicon (M-series) download \`${DMGBASE}_arm64.dmg\`; on Intel download \`${DMGBASE}_x86_64.dmg\` (the \`.zip\` files and \`macos-update.json\` are for in-app updates; you don’t need to download them).
 
 1. Open the DMG and drag $NAME into Applications. If you have an older \`$NAME.app\` with the same name, delete it first (or let Finder replace it). If you’re coming from Kitty Tools Native, delete the old \`Kitty Tools Native.app\` too; you may need to turn on opening at login again in Settings › General.
 2. The first time you double-click it, macOS blocks it with a “Not Opened” message (the app isn’t notarized; its signature is valid, so it doesn’t say it’s damaged).
