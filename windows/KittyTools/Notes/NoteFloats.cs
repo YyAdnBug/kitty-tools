@@ -37,6 +37,15 @@ internal static partial class NoteFloats
             new RectD(display.Bounds.Left, display.Bounds.Top, display.Bounds.Width, display.Bounds.Height),
             new RectD(display.Work.Left, display.Work.Top, display.Work.Width, display.Work.Height))).ToList();
 
+    /// <summary>那叠的设置变了（NoteDeck.Refresh）：每张浮着的带着的那张标签跟上。</summary>
+    public static void UpdateTabs()
+    {
+        foreach (var window in Windows.Values)
+        {
+            window.UpdateTab();
+        }
+    }
+
     /// <summary>浮着就收回，没浮就浮出来（菜单、工具栏的「浮在屏幕上 / 收回边缘」）。</summary>
     public static void Toggle(string id)
     {
@@ -306,9 +315,7 @@ internal sealed partial class NoteFloatWindow : Window
             TabName = () => NotesWindowRules.FloatTitle(true, SettingsService.Current.NotesDeckEnabled),
         });
         // 它带着的那张标签（R108，同 mac）：在朝屏幕里面的那一侧，跟着那叠在哪条边、多大
-        Sheet.SetTab(
-            NoteDeck.Options.Edge == NoteDeckEdge.Right ? NoteSheetView.TabSide.Leading : NoteSheetView.TabSide.Trailing,
-            new NoteDeckMetrics(NoteDeck.Options.Size.Scale()));
+        UpdateTab();
         Content = new Microsoft.UI.Xaml.Controls.Grid { RequestedTheme = Theme.ElementTheme, Children = { Sheet.View } };
         Sheet.Show(id);
         AppWindow.Closing += (_, args) =>
@@ -340,6 +347,12 @@ internal sealed partial class NoteFloatWindow : Window
     }
 
     public NoteSheetView Sheet { get; }
+
+    /// <summary>它带着的那张标签放哪一侧、多大：跟那叠的设置（左右边、大小档）。没变时 SetTab 什么都不做。</summary>
+    public void UpdateTab()
+        => Sheet.SetTab(
+            NoteDeck.Options.Edge == NoteDeckEdge.Right ? NoteSheetView.TabSide.Leading : NoteSheetView.TabSide.Trailing,
+            new NoteDeckMetrics(NoteDeck.Options.Size.Scale()));
 
     public RectD Frame => new(AppWindow.Position.X, AppWindow.Position.Y, AppWindow.Size.Width, AppWindow.Size.Height);
 

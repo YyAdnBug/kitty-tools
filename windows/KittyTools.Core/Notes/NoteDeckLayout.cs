@@ -344,8 +344,31 @@ public sealed record NoteDeckLayout
     /// <summary>打开的便签出场时往边缘那侧偏多少（mac 还缩到 0.97：Windows 全 App 不做从小放大，只偏、只淡入）。</summary>
     public const double EmergeOffset = 24;
 
-    /// <summary>第 index 张晚多少出场。</summary>
-    public static TimeSpan RevealDelay(int index) => RevealStagger * Math.Max(index, 0);
+    /// <summary>出场最多错开几张：再往后的和第 RevealCap 张一起出来（「+N」展开着时几百张一张晚 45 ms 要等好几秒）。</summary>
+    public const int RevealCap = FanLimit + 2;
+
+    /// <summary>第 index 张晚多少出场（RevealCap 封顶）。</summary>
+    public static TimeSpan RevealDelay(int index) => RevealStagger * Math.Clamp(index, 0, RevealCap);
+
+    /// <summary>出场从开始到最后一张停稳要多久（spring 是出场用的那条弹簧，pop）。</summary>
+    public static TimeSpan RevealLength(SpringSpec spring) => RevealDelay(RevealCap) + spring.Period;
+
+    /// <summary>
+    /// 出场进行到 elapsed 时第 index 张到哪了：还要等多久才开始、还剩边外那段距离的几分之几（弹簧冲过头时是负的）、透明度（淡入 fadeSeconds 秒）。
+    /// 出场途中整列重建（比如新建的便签一打字标题就变了）时，新建的标签从这里接着走：不从头再来，也不一下跳到终点。
+    /// </summary>
+    public static (TimeSpan Wait, double Away, double Opacity) RevealAt(int index, TimeSpan elapsed, SpringSpec spring, double fadeSeconds)
+    {
+        var start = RevealDelay(index);
+        if (elapsed <= start)
+        {
+            return (start - elapsed, 1, 0);
+        }
+
+        var run = (elapsed - start).TotalSeconds;
+        var progress = SpringEase.Progress(Math.Min(run / spring.Duration, 1), spring.Bounce);
+        return (TimeSpan.Zero, 1 - progress, Math.Min(run / Math.Max(fadeSeconds, 0.001), 1));
+    }
 
     /// <summary>朝屏幕边是 x 的哪个方向：右边缘 +1、左边缘 −1（滑出 / 滑回、打开的便签的出场偏移乘它；探出乘它的负数）。</summary>
     public static double Outward(NoteDeckEdge edge) => edge == NoteDeckEdge.Right ? 1 : -1;
@@ -655,6 +678,19 @@ public sealed record NoteDeckLayout
         var offset = tabWidth + NoteGap;
         return new RectD(
             edge == NoteDeckEdge.Right ? panel.Right - offset - size.Width : panel.X + offset, panel.Y + top, size.Width, size.Height);
+    }
+
+    /// <summary>
+    /// 预览卡摆在哪（mac NoteDeckView：离屏幕边「标签宽 + PreviewGap」，顶对着那张标签的顶；太靠下时往上收，不出面板）。
+    /// 按标签宽算、不按标签列那扇窗的宽：那扇窗朝里多出来的 ColumnRoom 只是给探出留的地方（R108 审查）。columnTop：标签列的顶离面板顶多远；
+    /// index：那张标签是第几张（-1 = 不在这一列里，对着列顶）。滚动过的「+N」列表不知道滚到了哪，按没滚时的位置摆、夹在这一列里（同 mac 的 ponytail）。
+    /// </summary>
+    public RectD PreviewFrame(RectD panel, NoteDeckEdge edge, double columnTop, int index)
+    {
+        var offset = index >= 0 ? Math.Min(index * Step, Math.Max(TabsHeight - Step, 0)) : 0;
+        var top = Math.Max(Math.Min(columnTop + offset, panel.Height - PreviewHeight), 0);
+        var x = edge == NoteDeckEdge.Right ? panel.Right - TabWidth - PreviewGap - PreviewWidth : panel.X + TabWidth + PreviewGap;
+        return new RectD(x, panel.Y + top, PreviewWidth, PreviewHeight);
     }
 
     /// <summary>热区：标签列四周再往外 HotMargin；预览卡出着时连它一起算（鼠标要能挪过去点它）。</summary>

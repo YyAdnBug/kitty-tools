@@ -97,6 +97,8 @@ internal static partial class NoteDeck
         var appeared = Bays.Count == 0 && placed.Count > 0;
         Bays.Clear();
         Bays.AddRange(placed);
+        // 浮动便签带着的那张标签跟着那叠在哪条边、多大（设置变了也跟，R108 审查）
+        NoteFloats.UpdateTabs();
         UpdateHook();
         if (appeared)
         {
@@ -761,14 +763,10 @@ internal sealed partial class NoteDeckBay
         _column.Render(layout, Pixels(frame));
         if (_previewId is { } preview && Store?.Book.Find(preview) is { } note)
         {
+            // 离屏幕边「标签宽 + 10」、顶对着那张标签的顶（同 mac；不按标签列那扇窗的宽算，热区朝里那侧才留得住 20，R108 审查）
             var index = Tabs.ToList().FindIndex(item => item.Id == preview);
-            var center = top + (index >= 0 ? layout.TabCenter(index) : 0);
-            var y = Math.Clamp(_panel.Y + center - NoteDeckLayout.PreviewHeight / 2, _panel.Y, _panel.Bottom - NoteDeckLayout.PreviewHeight);
-            var x = _edge == NoteDeckEdge.Right
-                ? frame.X - NoteDeckLayout.PreviewGap - NoteDeckLayout.PreviewWidth
-                : frame.Right + NoteDeckLayout.PreviewGap;
             _preview ??= new NoteDeckPreviewWindow(this);
-            _preview.Show(note, Pixels(new RectD(x, y, NoteDeckLayout.PreviewWidth, NoteDeckLayout.PreviewHeight)));
+            _preview.Show(note, Pixels(layout.PreviewFrame(_panel, _edge, top, index)));
         }
         else
         {

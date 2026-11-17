@@ -385,9 +385,6 @@ internal sealed class NoteDeckPillWindow : Window
 /// </summary>
 internal sealed class NoteDeckColumnWindow : Window
 {
-    /// <summary>出场错开的张数上限：「+N」展开着时也只有前几张错开（几百张一张晚 45 ms 要等好几秒）。</summary>
-    private const int StaggerLimit = NoteDeckLayout.FanLimit + 2;
-
     private readonly NoteDeckBay _bay;
     private readonly Grid _root;
     private readonly List<Tab> _tabs = new();
@@ -395,6 +392,12 @@ internal sealed class NoteDeckColumnWindow : Window
     private DispatcherQueueTimer? _hideTimer;
     private bool _shown;
     private bool _concealing;
+
+    /// <summary>这一次出场从什么时候开始（Environment.TickCount64）：出场途中整列重建时，新建的标签从这一刻算接着走（NoteDeckLayout.RevealAt）。</summary>
+    private long _revealedAt;
+
+    /// <summary>被拖的那张跟着手的位移：一个用到底，只改 Y（松手、取消时摘下来）。</summary>
+    private readonly TranslateTransform _dragTransform = new();
 
     // 按着一张标签：哪张、按下时鼠标的纵坐标（物理像素）、拖没拖起来、让位让到第几格
     private Tab? _pressed;
@@ -473,17 +476,28 @@ internal sealed class NoteDeckColumnWindow : Window
         var revealing = fromHidden || _concealing;
         _hideTimer?.Stop();
         _concealing = false;
+        // 出场还没放完（最后一张还没停稳）
+        var elapsed = TimeSpan.FromMilliseconds(Math.Clamp(Environment.TickCount64 - _revealedAt, 0, 60_000));
+        var entering = !revealing && MotionCurves.Of(MotionCurve.Pop) is { } pop && elapsed < NoteDeckLayout.RevealLength(pop);
+        var rebuilt = false;
         var signature = Signature(layout);
         if (signature != _drawn && _pressed is null)
         {
             _drawn = signature;
-            Rebuild(layout, slides: !revealing);
+            Rebuild(layout, slides: !revealing && !entering);
+            rebuilt = true;
         }
 
         UpdateStates(animated: !revealing);
         if (revealing)
         {
-            Reveal(fromHidden);
+            _revealedAt = Environment.TickCount64;
+            Reveal(fromHidden, TimeSpan.Zero);
+        }
+        else if (rebuilt && entering)
+        {
+            // 出场途中整列重建了（比如新建的便签一打字，标题就变了）：新建的这批从「一直都在」的进度接着走，不从头再来、也不跳到终点
+            Reveal(fromHidden: true, elapsed);
         }
 
         // 先把出场的起点设好再露出来：第一帧就是藏在边外的样子，不闪一下终点
@@ -559,34 +573,71 @@ internal sealed class NoteDeckColumnWindow : Window
             tab.Hovered = false;
         }
 
+        CancelPress();
         UpdateStates(animated: false);
+    }
+
+    /// <summary>
+    /// 按着一张标签时这一列被收走了（「丢了指针」不一定来，R108 审查）：当没拖——放开指针、被拖的和让过位的都直接回原位（窗口已经收了，不放动画），
+    /// 拖着的话告诉那叠拖完了。不清的话 _pressed 一直不为空，这一列再也不重建。
+    /// </summary>
+    private void CancelPress()
+    {
+        if (_pressed is not { } tab)
+        {
+            return;
+        }
+
+        var dragged = _dragging;
+        _pressed = null;
+        _dragging = false;
+        tab.Slot.ReleasePointerCaptures();
+        tab.Slot.RenderTransform = null;
+        _dragTransform.Y = 0;
+        Canvas.SetZIndex(tab.Slot, tab.Index);
+        foreach (var other in _tabs.Where(other => other.Shift != 0))
+        {
+            other.Shift = 0;
+            NoteMotion.SetTranslation(other.Slot, Vector3.Zero);
+        }
+
+        _target = -1;
+        if (dragged)
+        {
+            _bay.Send(NoteDeckEvent.DragEnded);
+        }
     }
 
     /// <summary>出场要动的：标签的外层、「+N」、「+」，从上到下。</summary>
     private IEnumerable<FrameworkElement> Animated() => _tabs.Select(tab => (FrameworkElement)tab.Slot).Concat(_buttons);
 
-    private void Reveal(bool fromHidden)
+    /// <summary>
+    /// 出场。fromHidden：先摆到出场进行到 elapsed 时该在的样子（elapsed 是 0 = 全在边外、透明），再走到位；不是的话（收回到一半又靠过来）
+    /// 从现在画在的地方接着走。每张晚 45 ms（RevealDelay，第 7 张封顶），pop；系统关了动画效果时直接到位。
+    /// </summary>
+    private void Reveal(bool fromHidden, TimeSpan elapsed)
     {
         var index = 0;
-        var away = new Vector3(Outward * (float)(_layout?.RevealDistance ?? 54), 0, 0);
+        var away = Outward * (float)(_layout?.RevealDistance ?? 54);
+        var spring = MotionCurves.Effective(MotionCurve.Pop, Motion.Reduced);
         foreach (var element in Animated())
         {
-            if (!NoteMotion.Animates(MotionCurve.Pop))
+            if (spring is not { } pop)
             {
                 NoteMotion.SetTranslation(element, Vector3.Zero);
                 NoteMotion.SetOpacity(element, 1);
                 continue;
             }
 
+            var (wait, distance, opacity) = NoteDeckLayout.RevealAt(index++, fromHidden ? elapsed : TimeSpan.Zero, pop, MotionCurves.FadeInSeconds);
             if (fromHidden)
             {
-                NoteMotion.SetTranslation(element, away);
-                NoteMotion.SetOpacity(element, 0);
+                NoteMotion.SetTranslation(element, new Vector3(away * (float)distance, 0, 0));
+                NoteMotion.SetOpacity(element, (float)opacity);
             }
 
-            var delay = NoteDeckLayout.RevealDelay(Math.Min(index++, StaggerLimit));
-            NoteMotion.TranslateTo(element, Vector3.Zero, MotionCurve.Pop, delay);
-            NoteMotion.FadeTo(element, 1, MotionCurves.FadeInSeconds, easeIn: false, delay);
+            NoteMotion.TranslateTo(element, Vector3.Zero, MotionCurve.Pop, wait);
+            NoteMotion.FadeTo(element, 1, MotionCurves.FadeInSeconds, easeIn: false, wait);
         }
     }
 
@@ -656,7 +707,8 @@ internal sealed class NoteDeckColumnWindow : Window
         for (var index = 0; index < notes.Count; index++)
         {
             var tab = MakeTab(notes[index], index, layout, slot);
-            Canvas.SetLeft(tab.Slot, slot.Left);
+            // 外层连朝里多出来的 ColumnRoom 一起占（接点击：探出来的那一截也点得到，R108 审查）
+            Canvas.SetLeft(tab.Slot, right ? slot.Left - NoteDeckLayout.ColumnRoom : slot.Left);
             Canvas.SetTop(tab.Slot, index * layout.Step);
             Canvas.SetZIndex(tab.Slot, index);
             host.Children.Add(tab.Slot);
@@ -732,7 +784,7 @@ internal sealed class NoteDeckColumnWindow : Window
         var builder = new System.Text.StringBuilder();
         builder.Append(layout.Count).Append('|').Append(layout.Hidden).Append('|').Append(layout.Step).Append('|').Append(layout.ItemHeight)
             .Append('|').Append(layout.Viewport).Append('|').Append(layout.Style).Append('|').Append(_bay.Edge).Append('|')
-            .Append(layout.TabWidth).Append('|').Append(Theme.EffectiveTheme);
+            .Append(layout.TabWidth).Append('|').Append(Theme.EffectiveTheme).Append('|').Append(Theme.IsHighContrast);
         var book = NoteStore.Instance?.Book;
         foreach (var note in _bay.Tabs)
         {
@@ -796,27 +848,39 @@ internal sealed class NoteDeckColumnWindow : Window
             IsHitTestVisible = false,
         };
         face.Children.Add(mark);
+        // 描边（同 mac）：带标题的描一道墨 14% 的发丝线（高对比度 45%），只有色块的描 1.5 的色条色（只有底的话浅纸在浅色桌面上看不见）
+        var paperColor = NotePaper.Of(note);
+        var rule = paperColor.Rule(Theme.EffectiveTheme == ElementTheme.Dark, Theme.IsHighContrast);
         var paper = new Border
         {
             Width = slot.Width,
             Height = layout.ItemHeight,
             Background = NoteDeckUi.Brush(tone.Paper),
-            BorderBrush = NoteDeckUi.Brush(tone.Strip),
-            BorderThickness = new Thickness(1),
+            BorderBrush = NoteDeckUi.Brush(chips ? tone.Strip : NotePaper.Mix(rule.Rgb, tone.Paper, rule.Opacity)),
+            BorderThickness = new Thickness(chips ? 1.5 : 1),
             CornerRadius = inward,
             Child = face,
+            HorizontalAlignment = right ? HorizontalAlignment.Right : HorizontalAlignment.Left,
         };
-        var holder = new Grid { Width = slot.Width, Height = layout.ItemHeight, Children = { paper } };
+        // 外层（slot）比纸宽 ColumnRoom、垫一层透明的底：探出是 Composition 的位移，点击区不跟着走，探出来的那一截靠它接住点击和悬停
+        var holder = new Grid
+        {
+            Width = slot.Width + NoteDeckLayout.ColumnRoom,
+            Height = layout.ItemHeight,
+            Background = new SolidColorBrush(Colors.Transparent),
+            Children = { paper },
+        };
         var tab = new Tab(note.Id, index, holder, paper, mark);
         Wire(tab);
         return tab;
     }
 
+    /// <summary>点击、悬停、拖动、右键都挂在外层（slot）上：它比纸宽出朝里的 ColumnRoom，探出来的那一截也接得住。</summary>
     private void Wire(Tab tab)
     {
-        var paper = tab.Paper;
+        var hit = tab.Slot;
         var id = tab.Id;
-        paper.PointerEntered += (_, _) =>
+        hit.PointerEntered += (_, _) =>
         {
             tab.Hovered = true;
             if (!_dragging)
@@ -826,7 +890,7 @@ internal sealed class NoteDeckColumnWindow : Window
 
             _bay.Hover(id, true);
         };
-        paper.PointerExited += (_, _) =>
+        hit.PointerExited += (_, _) =>
         {
             tab.Hovered = false;
             if (!_dragging)
@@ -836,9 +900,9 @@ internal sealed class NoteDeckColumnWindow : Window
 
             _bay.Hover(id, false);
         };
-        paper.PointerPressed += (_, e) =>
+        hit.PointerPressed += (_, e) =>
         {
-            if (!e.GetCurrentPoint(paper).Properties.IsLeftButtonPressed)
+            if (!e.GetCurrentPoint(hit).Properties.IsLeftButtonPressed)
             {
                 return;
             }
@@ -848,11 +912,11 @@ internal sealed class NoteDeckColumnWindow : Window
             _startY = cursor.Y;
             _dragging = false;
             _target = tab.Index;
-            paper.CapturePointer(e.Pointer);
+            hit.CapturePointer(e.Pointer);
             e.Handled = true;
         };
-        paper.PointerMoved += (_, _) => Dragged(tab);
-        paper.PointerReleased += (_, e) =>
+        hit.PointerMoved += (_, _) => Dragged(tab);
+        hit.PointerReleased += (_, e) =>
         {
             if (!ReferenceEquals(_pressed, tab))
             {
@@ -864,7 +928,7 @@ internal sealed class NoteDeckColumnWindow : Window
             var offset = Clamped(tab);
             _pressed = null;
             _dragging = false;
-            paper.ReleasePointerCapture(e.Pointer);
+            hit.ReleasePointerCapture(e.Pointer);
             e.Handled = true;
             if (dragged && _layout is { } current)
             {
@@ -878,7 +942,7 @@ internal sealed class NoteDeckColumnWindow : Window
                 _bay.TapTab(id);
             }
         };
-        paper.PointerCaptureLost += (_, _) =>
+        hit.PointerCaptureLost += (_, _) =>
         {
             if (!ReferenceEquals(_pressed, tab))
             {
@@ -897,12 +961,12 @@ internal sealed class NoteDeckColumnWindow : Window
                 _bay.Send(NoteDeckEvent.DragEnded);
             }
         };
-        paper.RightTapped += (_, e) =>
+        hit.RightTapped += (_, e) =>
         {
             e.Handled = true;
             if (NoteStore.Instance?.Book.Find(id) is { IsActive: true } current)
             {
-                NoteDeckUi.ShowTabMenu(_bay, current, paper, e.GetPosition(paper));
+                NoteDeckUi.ShowTabMenu(_bay, current, hit, e.GetPosition(hit));
             }
         };
     }
@@ -929,7 +993,12 @@ internal sealed class NoteDeckColumnWindow : Window
             return;
         }
 
-        tab.Slot.RenderTransform = new TranslateTransform { Y = Clamped(tab) };
+        if (!ReferenceEquals(tab.Slot.RenderTransform, _dragTransform))
+        {
+            tab.Slot.RenderTransform = _dragTransform;
+        }
+
+        _dragTransform.Y = Clamped(tab);
         Canvas.SetZIndex(tab.Slot, 10_000);
         var target = NoteDeckLayout.DragTarget(tab.Index, offset, layout.Step, layout.Count);
         if (target == _target)
@@ -953,6 +1022,7 @@ internal sealed class NoteDeckColumnWindow : Window
     private void Drop(Tab tab, double offset)
     {
         tab.Slot.RenderTransform = null;
+        _dragTransform.Y = 0;
         Canvas.SetZIndex(tab.Slot, tab.Index);
         NoteMotion.SetTranslation(tab.Slot, new Vector3(0, (float)offset, 0));
         tab.Shift = offset;

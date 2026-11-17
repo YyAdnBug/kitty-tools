@@ -373,6 +373,16 @@ mac 还没推进 `macos` 的（多语言 / 英文、截图识别元素第二三�
   屏上看隐式过渡挂上之后、重排时姿势变化（换了列、倾斜方向变了）会不会也过渡——会的话是预期的（同 mac 重排时一起动）。
 - 替用户定的：不放大 1.02（全 App 不做放大）；过渡用系统的缓动，不是 glide 弹簧（写在 `NotesWindow.Pose` 的 ponytail）。手测 1606–1608。
 
+**审查后改的（第一部分，`git log --grep "R108 审查"`；用量到了上限，剩下的没做完）**：
+
+- 已改：1 拖着时重建出孤儿卡片（按着 / 拖着的那张在 Materialize 里不重建，`OnCardCaptureLost` 的重排推到下一拍）；
+  2 `HideNow` 清按着 / 拖着的状态（`CancelPress`）；3 探出的那一截点不到（标签外层比纸宽 ColumnRoom、垫透明底，事件都挂在外层）；
+  4 预览卡位置（Core `NoteDeckLayout.PreviewFrame`：按标签宽 + 10、顶对着那张标签的顶，单测 `PreviewSitsBesideTheTab`）；
+  5 浮动便签的标签跟设置（`NoteFloats.UpdateTabs`，NoteDeck.Refresh 里调）；8 标签描边（带标题的墨 14% 发丝线、色块 1.5 色条色）；
+  10 出场途中重建从进度接着走（Core `RevealAt` / `RevealLength` / `RevealCap`，单测 `RevealContinuesAfterARebuild`）；11 拖动复用一个 TranslateTransform。
+- 还没改：6 方向键挑中的卡片立正（Core `NoteWall.Pose` 已加 `selected` 参数、单测已改，窗口代码还没传）；7 带着的那张标签的读屏 Invoke；
+  9 分批量高只量不建；12 MAC-DIFF 记一句减弱动态效果直接到位；13 手测写笔按在卡片上滚不滚得动墙。
+
 ## issue #29：Ctrl+Alt+A 被当成通用键（审查方在 Mac 上写、没编译，2026-11-16）
 
 用户 cx994 报：把截图快捷键设成 Ctrl+Alt+A，提示「Ctrl+Alt+A 是应用里的通用快捷键」。`Core/HotKeyRules.cs` 拒通用键的条件是

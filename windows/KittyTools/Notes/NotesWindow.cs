@@ -1122,7 +1122,9 @@ internal sealed class NotesWindow : Window
             wanted.Add(id);
             var summary = store.Book.SummaryOf(note);
             var key = new CardKey(summary.Title, note.Body, note.IsPinned, note.DeletedAt is not null);
-            if (!_wallViews.TryGetValue(id, out var view) || view.Key != key || view.Color != note.Color || view.Dark != dark)
+            // 按着 / 拖着的那张不重建（R108 审查：拆了它的 holder 指针就丢了，「丢了指针」又会排一遍墙，画布上多出一张孤儿卡片）；松手后再换
+            var held = id == _wallPressed || id == _wallDrag?.Id;
+            if (!_wallViews.TryGetValue(id, out var view) || (!held && (view.Key != key || view.Color != note.Color || view.Dark != dark)))
             {
                 if (view is not null)
                 {
@@ -1395,9 +1397,9 @@ internal sealed class NotesWindow : Window
         _wallPressed = null;
         if (_wallDrag is not null)
         {
-            // 被系统取消了：当没拖，都滑回原位
+            // 被系统取消了：当没拖，都滑回原位。推到下一拍再排：「丢了指针」可能是在排墙的半路上同步来的，不在里面再排一遍
             _wallDrag = null;
-            ArrangeWall(animate: true);
+            DispatcherQueue.TryEnqueue(() => ArrangeWall(animate: true));
         }
     }
 

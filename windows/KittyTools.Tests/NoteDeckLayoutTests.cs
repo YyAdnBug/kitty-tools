@@ -142,6 +142,44 @@ public sealed class NoteDeckLayoutTests
         Assert.AreEqual(38, Layout(3, 0, 40, 875).ColumnWidth);
     }
 
+    /// <summary>R108 审查：出场错开到第 7 张封顶；出场途中重建的标签从「如果一直在」的进度接着走——没轮到的接着等、走完的已经到位、走到一半的在半路。</summary>
+    [TestMethod]
+    public void RevealContinuesAfterARebuild()
+    {
+        var pop = MotionCurves.Of(MotionCurve.Pop)!.Value;
+        Assert.AreEqual(NoteDeckLayout.RevealDelay(NoteDeckLayout.RevealCap), NoteDeckLayout.RevealDelay(40));
+        Assert.AreEqual(TimeSpan.FromMilliseconds(315) + pop.Period, NoteDeckLayout.RevealLength(pop));
+        // 还没开始：等剩下的、整段都在边外、透明
+        Assert.AreEqual((TimeSpan.FromMilliseconds(90), 1.0, 0.0), NoteDeckLayout.RevealAt(2, TimeSpan.Zero, pop, 0.12));
+        Assert.AreEqual(TimeSpan.FromMilliseconds(50), NoteDeckLayout.RevealAt(2, TimeSpan.FromMilliseconds(40), pop, 0.12).Wait);
+        // 走完了：到位、不透明
+        Assert.AreEqual((TimeSpan.Zero, 0.0, 1.0), NoteDeckLayout.RevealAt(0, TimeSpan.FromMilliseconds(500), pop, 0.12));
+        // 走到一半：已经开始、还在边外一截，淡了一半
+        var middle = NoteDeckLayout.RevealAt(1, TimeSpan.FromMilliseconds(45 + 60), pop, 0.12);
+        Assert.AreEqual(TimeSpan.Zero, middle.Wait);
+        Assert.IsTrue(middle.Away is > 0 and < 1, middle.Away.ToString(CultureInfo.InvariantCulture));
+        Assert.AreEqual(0.5, middle.Opacity, 1e-9);
+    }
+
+    /// <summary>R108 审查：预览卡离屏幕边「标签宽 + 10」（不算标签列那扇窗朝里多出来的 8）、顶对着那张标签的顶、太靠下往上收；
+    /// 热区朝里那侧照旧比预览卡多出 20。</summary>
+    [TestMethod]
+    public void PreviewSitsBesideTheTab()
+    {
+        var layout = Layout(3, 0, 40, 875);
+        var panel = new RectD(900, 25, 540, 875);
+        var right = layout.PreviewFrame(panel, NoteDeckEdge.Right, 300, 1);
+        Assert.AreEqual(new RectD(1440 - 30 - 10 - 220, 25 + 300 + layout.Step, 220, 130), right);
+        var left = layout.PreviewFrame(new RectD(0, 25, 540, 875), NoteDeckEdge.Left, 300, 1);
+        Assert.AreEqual(30 + 10, left.X);
+        // 太靠下：底边夹在面板里；不在这一列里：对着列顶
+        Assert.AreEqual(25 + 875 - 130, layout.PreviewFrame(panel, NoteDeckEdge.Right, 800, 2).Y);
+        Assert.AreEqual(25 + 300, layout.PreviewFrame(panel, NoteDeckEdge.Right, 300, -1).Y);
+        // 热区（预览卡出着时）朝里那侧比预览卡多出 HotMargin
+        var zone = NoteDeckLayout.HotZone(panel, NoteDeckEdge.Right, 300, layout.ColumnHeight, layout.TabWidth, true);
+        Assert.AreEqual(right.X - NoteDeckLayout.HotMargin, zone.X);
+    }
+
     /// <summary>拖动排序：被拖的从 from 挪到 target，中间那几张往反方向让一格，别的不动。</summary>
     [TestMethod]
     public void OthersMakeRoomForTheDraggedTab()

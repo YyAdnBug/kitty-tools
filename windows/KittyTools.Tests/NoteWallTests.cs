@@ -334,12 +334,15 @@ public sealed class NoteWallTests
         Assert.IsTrue(deep.All(index => layout.Frames[index].Bottom >= layout.Height - 500 - NoteWall.Overscan));
     }
 
-    /// <summary>R108：悬停 / 拖着的卡片立正、抬 2、阴影从 8 加深到 24，别的时候按排法斜着。</summary>
+    /// <summary>R108：悬停 / 拖着的卡片立正、抬 2、阴影从 8 加深到 24，挑中的只立正，别的时候按排法斜着。</summary>
     [TestMethod]
     public void RaisedCardsStandUp()
     {
         Assert.AreEqual((0.0, 2.0, 24.0), NoteWall.Pose(-1.5, raised: true));
         Assert.AreEqual((-1.5, 0.0, 8.0), NoteWall.Pose(-1.5, raised: false));
+        // 方向键挑中的只立正、不抬起（R108 审查，同 mac 选中的那张）；抬起来优先
+        Assert.AreEqual((0.0, 0.0, 8.0), NoteWall.Pose(-1.5, raised: false, selected: true));
+        Assert.AreEqual((0.0, 2.0, 24.0), NoteWall.Pose(-1.5, raised: true, selected: true));
         // 渐隐只给超出的卡片（窗口代码按 Overflows 盖那一条 FadeHeight）：最高 320 时露出来的正文至少还有一百多，总比渐隐高
         var tall = NoteWall.Card(false, 38, 1000, thumbnailHeight: NoteWall.ThumbnailMaxHeight);
         Assert.IsTrue(tall.Overflows && tall.BodyRoom > NoteWall.FadeHeight);

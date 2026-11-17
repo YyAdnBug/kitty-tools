@@ -587,10 +587,10 @@ public static class NoteWall
         public double TextHeight => TitleHeight + (BodyHeight > 0 ? TitleGap + BodyRoom : 0);
     }
 
-    /// <summary>一张卡片的姿势（mac WallCard：悬停 / 拖着立正、抬起来、阴影加深；别的时候斜着）：转多少度、往上抬多少、阴影多深。
-    /// mac 还放大到 1.02：Windows 全 App 不做放大。</summary>
-    public static (double Angle, double Rise, double Depth) Pose(double tilt, bool raised)
-        => raised ? (0, Lift, RaisedDepth) : (tilt, 0, RestDepth);
+    /// <summary>一张卡片的姿势（mac WallCard）：悬停 / 拖着的立正、抬起来、阴影加深；方向键挑中的（selected）只立正；别的时候斜着。
+    /// 转多少度、往上抬多少、阴影多深。mac 抬起来时还放大到 1.02：Windows 全 App 不做放大。</summary>
+    public static (double Angle, double Rise, double Depth) Pose(double tilt, bool raised, bool selected = false)
+        => raised ? (0, Lift, RaisedDepth) : selected ? (0, 0, RestDepth) : (tilt, 0, RestDepth);
 
     /// <summary>标题排多宽：固定的给右上角的图钉让出 PinRoom。</summary>
     public static double TitleWidthFor(bool isPinned) => TextWidth - (isPinned ? PinRoom : 0);
