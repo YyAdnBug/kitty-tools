@@ -360,8 +360,15 @@ private struct ScheduleSection: View {
       }
       switch schedule.kind {
       case .once:
+        // 下限和存的值都是整分：被夹住时不把「现在」的秒数带进去（Reminder.picked）
         DatePicker(
-          "日期和时间", selection: $schedule.date, in: now...,
+          "日期和时间",
+          selection: Binding {
+            schedule.date
+          } set: {
+            schedule.date = Reminder.picked($0)
+          },
+          in: Reminder.earliestPick(after: now)...,
           displayedComponents: [.date, .hourAndMinute])
       case .weekly:
         if repeats == .weekly { WeekdayRow(days: $schedule.days) }

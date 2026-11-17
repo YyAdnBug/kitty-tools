@@ -339,6 +339,17 @@ nonisolated struct Reminder: Codable, Hashable, Identifiable {
       id: id, title: String(localized: "新提醒"), schedule: Schedule(kind: .once, date: hour))
   }
 
+  /// 详情页「日期和时间」选到的那一刻：秒数归零（选择器只到分钟）。选得比下限早时系统的选择器把值夹成下限本身、
+  /// 连秒带毫秒，原来下限是「现在」，存进去的就是「17:47:05.267」，倒数看着从 58 秒起（2026-11-17 反馈）
+  static func picked(_ date: Date, calendar: Calendar = .current) -> Date {
+    calendar.dateInterval(of: .minute, for: date)?.start ?? date
+  }
+
+  /// 详情页最早能选到哪一刻：现在之后的下一个整分（正好在整分上也是下一分钟：这一分钟已经到了）
+  static func earliestPick(after now: Date, calendar: Calendar = .current) -> Date {
+    calendar.dateInterval(of: .minute, for: now)?.end ?? now
+  }
+
   /// 加到末尾；已经有 maxCount 条就不加
   static func adding(_ reminder: Reminder, to list: [Reminder]) -> [Reminder] {
     list.count < maxCount ? list + [reminder] : list

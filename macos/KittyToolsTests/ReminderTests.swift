@@ -373,6 +373,35 @@ struct ReminderTests {
       Reminder.new(now: Self.at(2, 9, 55), calendar: Self.calendar).schedule.date == Self.at(2, 11))
   }
 
+  /// 详情页的「日期和时间」存整分（2026-11-17 反馈：「现在 + 1 分钟」的倒数从 58 秒起——选得比下限早时系统的选择器
+  /// 把值夹成下限本身，原来下限是带秒的「现在」）：下限是下一个整分、选到的值去掉秒，刘海上的倒数照它数
+  @Test func pickedTimeIsWholeMinute() {
+    let picked = { Reminder.picked($0, calendar: Self.calendar) }
+    let earliest = { Reminder.earliestPick(after: $0, calendar: Self.calendar) }
+    let reading = { (at: Date, now: Date) in Island.Activity.reading(.countdown(to: at), now: now) }
+    // + 1 分钟：17:46:05.267 选「17:47」，被夹住的（下限）、带着秒改出来的都存成 17:47:00，倒数 0:55
+    let now = Self.at(2, 17, 46).addingTimeInterval(5.267)
+    #expect(earliest(now) == Self.at(2, 17, 47))
+    #expect(picked(earliest(now)) == Self.at(2, 17, 47))
+    #expect(picked(now + 60) == Self.at(2, 17, 47))
+    #expect(reading(Self.at(2, 17, 47), now) == "0:55")
+    // + 1 小时：存 18:46:00；离响不到一小时，倒数已经挂上，从 59:55 数
+    let hour = picked(now + 3600)
+    #expect(hour == Self.at(2, 18, 46))
+    #expect(hour - ReminderCenter.countdownWindow <= now)
+    #expect(reading(hour, now) == "59:55")
+    // 跨午夜：23:59:30.5 最早能选第二天 0:00，选到的 0:00:30.5 存成 0:00:00，倒数 0:30
+    let late = Self.at(2, 23, 59).addingTimeInterval(30.5)
+    #expect(earliest(late) == Self.at(3, 0))
+    #expect(picked(late + 60) == Self.at(3, 0))
+    #expect(reading(Self.at(3, 0), late) == "0:30")
+    // 正好在整分上：这一分钟已经到了，最早是下一分钟；整分的值原样；倒数从 1:00 起
+    let exact = Self.at(2, 9, 0)
+    #expect(earliest(exact) == Self.at(2, 9, 1))
+    #expect(picked(exact) == exact)
+    #expect(reading(Self.at(2, 9, 1), exact) == "1:00")
+  }
+
   /// 「+」›「新提醒」先不存：详情页第一次改动时才加到末尾（开着），之后按 id 换；别的 id、满了都不加；
   /// 列表里有的照旧按 id 换（2026-11-05 用户报「没开任何提醒，刘海却提示新提醒」：点开看了一眼就退回的那条
   /// 原来已经存进去、开着，整点响了）
