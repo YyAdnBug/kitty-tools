@@ -431,6 +431,9 @@ enum Prefs {
   /// 访达右键压缩时另外跳过的名字（设置 › 访达右键「压缩时跳过」，2026-11-13 拍板 Z1）：逗号隔开，* ? 通配，只认名字不认路径，
   /// 默认空 = 和原来一样（Mac 杂文件照旧总跳过）。只有 App 读，扩展不读；注册了默认值，跟着导出、同步（Z4）
   nonisolated static let finderCompressSkip = "finderCompressSkip"
+  /// 访达右键「解压到这里」解成功后把压缩包移到废纸篓（设置 › 访达右键「压缩和解压」，2026-11-17 拍板 B2，默认关；同系统归档实用工具的
+  /// 「展开后：将归档移到废纸篓」）。只有 App 读；注册了默认值，跟着导出、同步
+  nonisolated static let finderTrashAfterExtract = "finderTrashAfterExtract"
   /// 访达右键里每一项显示不显示：键是「finderMenu<名字>」，见 FinderMenu/FinderMenuItem（默认值按项，下面 defaults 里一起注册）。
   /// 访达右键「移动到」「复制到」的常用文件夹（~ 开头的写法；设置 › 访达右键，没存过是桌面、文稿、下载）。这台电脑自己的、
   /// **不注册默认值**（同截图的存储文件夹：别人给的设置文件不该能往右键菜单里加一个文件夹）。扩展读同一个键（键名和默认值
@@ -649,6 +652,7 @@ enum Prefs {
       notesDeckNoteSize: NoteDeckOptions.NoteSize.medium.rawValue,
       finderMenuGrouped: false,
       finderCompressSkip: "",
+      finderTrashAfterExtract: false,
       islandActionOrder: "",
       islandActionsOff: "",
       islandShowsHistory: false,

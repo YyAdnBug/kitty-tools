@@ -133,7 +133,11 @@ import UniformTypeIdentifiers
     #expect(parse("do=tgz&key=K-123&file=/a/b.txt&file=/a/c")?.action == .compress(.tarGz))
     #expect(parse("do=tgz&key=K-123") == nil)
     #expect(parse("do=zip&key=K-123") == nil)
-    #expect(parse("do=extract&key=K-123&file=/a/b.zip")?.action == .extract)
+    #expect(parse("do=extract&key=K-123&file=/a/b.zip")?.action == .extract(choose: false))
+    // 按住 ⌥ 的「解压到…」：先选放在哪；别的 to 不认（解到哪只能是用户在面板里选的）
+    #expect(
+      parse("do=extract&key=K-123&to=choose&file=/a/b.zip")?.action == .extract(choose: true))
+    #expect(parse("do=extract&key=K-123&to=/tmp&file=/a/b.zip") == nil)
     #expect(parse("do=fixnames&key=K-123&file=/a/b")?.action == .fixNames)
     #expect(parse("do=hiddenfiles&key=K-123&file=/a")?.action == .toggleHiddenFiles)
     #expect(parse("do=hide&key=K-123&on=1&file=/a/b")?.action == .setHidden(true))

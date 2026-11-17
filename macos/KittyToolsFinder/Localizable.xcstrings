@@ -285,6 +285,16 @@
         }
       }
     },
+    "解压到…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Extract To…"
+          }
+        }
+      }
+    },
     "解压到这里" : {
       "localizations" : {
         "en" : {

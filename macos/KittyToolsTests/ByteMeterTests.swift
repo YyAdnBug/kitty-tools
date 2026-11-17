@@ -117,6 +117,6 @@ import Testing
 
 extension Archives.Outcome {
   fileprivate var url: URL? {
-    if case .done(let url) = self { url } else { nil }
+    if case .done(let url, _, _) = self { url } else { nil }
   }
 }

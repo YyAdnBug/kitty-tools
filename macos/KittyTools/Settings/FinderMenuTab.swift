@@ -25,6 +25,7 @@ struct FinderMenuTab: View {
   @State private var copied = false
   @AppStorage(Prefs.finderMenuGrouped) private var grouped = false
   @AppStorage(Prefs.finderCompressSkip) private var compressSkip = ""
+  @AppStorage(Prefs.finderTrashAfterExtract) private var trashAfterExtract = false
   /// 推进「压缩时跳过」用（截图自检单独画这一页时没有）
   @Environment(SettingsNavigation.self) private var navigation: SettingsNavigation?
 
@@ -117,12 +118,17 @@ struct FinderMenuTab: View {
           navigation?.path = [CompressSkipPage.route]
         }
         ItemToggle(.extract)
+        // 解压后把压缩包移到废纸篓（2026-11-17 拍板 B2，默认关）
+        Toggle(isOn: $trashAfterExtract) {
+          Text("解压后把压缩包移到废纸篓")
+          Text("解压成功了才移；在废纸篓里能放回原处")
+        }
         ItemToggle(.fixNames)
       } header: {
         Text("压缩和解压")
       } footer: {
         SectionFootnote(
-          "压缩包放在旁边，重名的自动加「 2」；zip 里的中文名到别的系统上解开也不乱码，也不夹带 Mac 的隐藏文件（.DS_Store、._*、__MACOSX）。解压时只有一样东西就直接放在包旁边，几样就放进和包同名的文件夹；别的系统打的 zip，中文名也解得对。修复乱码文件名之后，刘海岛上能撤销。包里不带访达的标签、替身和自定义图标，要在 Mac 之间原样传，用访达自带的「压缩」。"
+          "压缩包放在旁边，重名的自动加「 2」；zip 里的中文名到别的系统上解开也不乱码，也不夹带 Mac 的隐藏文件（.DS_Store、._*、__MACOSX）。解压时只有一样东西就直接放在包旁边，几样就放进和包同名的文件夹；按住 ⌥ 右键是「解压到…」，自己选放在哪；别的系统打的 zip，中文名也解得对。修复乱码文件名之后，刘海岛上能撤销。包里不带访达的标签、替身和自定义图标，要在 Mac 之间原样传，用访达自带的「压缩」。"
         )
       }
       .gated(by: .finderMenu)

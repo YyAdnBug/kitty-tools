@@ -4,7 +4,7 @@
 //   「解压到这里」（选中的都是压缩包时）、「修复乱码文件名」（选中的有名字像乱码、还原得出来的时候）、「隐藏」/「取消隐藏」、
 //   「隐藏扩展名」/「显示扩展名」（看选中的现在是什么样；读不到就当没隐藏）、「拷贝哈希 ▸」（选中的都是文件时）、
 //   「发送替身到桌面」、「彻底删除…」（App 那边先问）。
-//   按住 ⌥ 右键时「拷贝路径」「拷贝名称」换成终端写法、不带扩展名；「移动到」「复制到」里这次用不上的文件夹变灰，后面接最近
+//   按住 ⌥ 右键时「拷贝路径」「拷贝名称」换成终端写法、不带扩展名，「解压到这里」换成「解压到…」；「移动到」「复制到」里这次用不上的文件夹变灰，后面接最近
 //   用「选择文件夹…」选过的。侧边栏右键当空白处。点不成的（列表变了、一次超过上限）交给 App 在刘海岛上说原因。
 // - 文件夹空白处右键：最前面「新建文件 ▸」（自带五种、模板文件夹里放的每个文件、「自定义后缀…」、「打开模板文件夹」），
 //   「从剪贴板新建」（剪贴板里的图存成 PNG、文字存成 .txt，App 看剪贴板）；剪切过、剪贴板还没换过时多一项「粘贴 N 项」
@@ -415,9 +415,10 @@ final class FinderMenu: FIFinderSync {
     if Self.shows("finderMenuExtract", default: true), !selected.isEmpty,
       selected.allSatisfy({ Self.isArchive($0) })
     {
+      // 按住 ⌥：换成「解压到…」，自己选放在哪（同「拷贝路径（终端写法）」的 ⌥ 习惯；2026-11-17 拍板 B3）
       Self.add(
-        "解压到这里", #selector(extract(_:)), symbol: "archivebox.fill", color: Tint.archive,
-        to: menu)
+        option ? "解压到…" : "解压到这里", option ? #selector(extractTo(_:)) : #selector(extract(_:)),
+        symbol: "archivebox.fill", color: Tint.archive, to: menu)
     }
     if Self.shows("finderMenuFixNames", default: true),
       selected.contains(where: { NameRepair.repair($0.lastPathComponent) != nil })
@@ -833,6 +834,11 @@ final class FinderMenu: FIFinderSync {
 
   @objc private func extract(_ sender: AnyObject?) {
     hand("extract", container: false)
+  }
+
+  /// 选放在哪的面板由 App 弹：要激活 App（hand 看 to=choose）
+  @objc private func extractTo(_ sender: AnyObject?) {
+    hand("extract", extra: [URLQueryItem(name: "to", value: "choose")], container: false)
   }
 
   @objc private func fixNames(_ sender: AnyObject?) {

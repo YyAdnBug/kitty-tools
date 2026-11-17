@@ -11,7 +11,9 @@
 //   拷到不分的盘时，同一层只差大小写的两个只能留一个，不拷（ditto 会悄悄盖掉一个、还报成功）。跨卷移动拷完再数一遍，
 //   少了就不删原件；原件没删掉（只读的盘、上了锁）照实说。ACL 不跟着拷（--noacl：文稿、桌面这些文件夹带「不许删」的 ACL，
 //   拷过去后临时名改不了名、也删不掉）；上了锁的先解锁、落下后再锁上。都是第三轮评审实测出来的。
-// - 超过 1 秒才在刘海岛上挂「正在…」带「停止」（每一批停自己），做完说一声、带「在访达中显示」。不做撤销（访达的 ⌘Z 管不到）。
+// - 超过 1 秒才在刘海岛上挂「正在…」带「停止」（每一批停自己），做完说一声、带「在访达中显示」和「撤销」（2026-11-17 拍板 B4；
+//   访达的 ⌘Z 撤不回我们做的，同访达自己的撤销：移动的挪回原处、用原来的名字，原处已经有同名的、挪过去的已经不在了的不动、照实说；
+//   复制的把复制出来的移到废纸篓，能放回）。撤销的移动排进同一条队、同样能停，走的还是 move（不覆盖、跨卷先拷完再删）。
 // - 剪切：清单只在内存里（偏好里只给扩展留「几项 + 剪贴板 changeCount」，别的程序改偏好也塞不进要搬的东西；App 启动时清掉），
 //   同时像 ⌘C 一样把文件放进剪贴板（访达里按 ⌥⌘V 也能移过去）；剪贴板换过了剪切就作废（同 Windows）。
 // - 替身：bookmarkData(.suitableForBookmarkFile) + writeBookmarkData，和访达 ⌥⌘ 拖出来的一样，原件挪了也打得开。
@@ -339,6 +341,10 @@ import AppKit
   /// 一批做下来怎样
   struct Outcome {
     var done: [URL] = []
+    /// done 里每一样原来在哪（一一对应；撤销移动时挪回去）
+    var origins: [URL] = []
+    /// done 里每一样是不是跨卷移动、原件没删掉（一一对应；撤销时把这一份复制品移到废纸篓，原件本来就还在）
+    var keptOriginals: [Bool] = []
     var failed = 0
     /// 头一个拷不了的原因（给人看）
     var problem: String?
@@ -373,6 +379,8 @@ import AppKit
       }
       if let url = moved.url {
         outcome.done.append(url)
+        outcome.origins.append(file)
+        outcome.keptOriginals.append(moved.keptOriginal)
         if moved.keptOriginal { outcome.kept += 1 }
       } else if !Task.isCancelled {
         outcome.failed += 1
@@ -476,6 +484,17 @@ import AppKit
     let reveal = Island.Action("在访达中显示", opens: true) {
       NSWorkspace.shared.activateFileViewerSelecting(outcome.done)
     }
+    // 跨卷移动有原件没删掉的（kept）也走移动的撤销：那几样把复制品扔进废纸篓（原件本来就还在），别的挪回去
+    let undo = Island.Action("撤销") {
+      if move {
+        undoMove(
+          zip(outcome.origins, zip(outcome.done, outcome.keptOriginals)).map {
+            (from: $0, to: $1.0, kept: $1.1)
+          }, island: island)
+      } else {
+        undoCopy(outcome.done, island: island)
+      }
+    }
     switch (outcome.done.isEmpty, outcome.failed) {
     case (true, 0):
       island?.show(move ? "已停止移动" : "已停止复制", tone: .info)
@@ -487,14 +506,15 @@ import AppKit
     case (false, 0) where outcome.kept > 0:
       island?.show(
         "已复制到「\(place)」，\(outcome.kept) 项的原件没能删掉", detail: "原件在只读的盘上、上了锁，或者没有权限",
-        tone: .warning, actions: [reveal])
+        tone: .warning,
+        actions: [reveal, undo])
     case (false, 0):
       // 可选参数里的三目只有第一个分支抽得进目录（第 8b 批实测）：先放进不是可选的 let
       let detail: LocalizedStringResource =
         outcome.done.count == 1
         ? "\(outcome.done[0].lastPathComponent)" : "\(outcome.done.count) 项"
       island?.show(
-        move ? "已移到「\(place)」" : "已复制到「\(place)」", detail: detail, actions: [reveal])
+        move ? "已移到「\(place)」" : "已复制到「\(place)」", detail: detail, actions: [reveal, undo])
     case (false, let failed):
       let reason = outcome.problem ?? String(localized: "到「\(place)」")
       island?.show(
@@ -502,7 +522,75 @@ import AppKit
           ? "移动了 \(outcome.done.count) 项，\(failed) 项没成"
           : "复制了 \(outcome.done.count) 项，\(failed) 项没成",
         detail: outcome.kept > 0 ? "\(outcome.kept) 项的原件没能删掉；\(reason)" : "\(reason)",
-        tone: .warning, actions: [reveal])
+        tone: .warning, actions: [reveal, undo])
+    }
+  }
+
+  /// 撤销一批移动：每一样挪回原来的文件夹、用原来的名字（同访达的 ⌘Z）。原处已经有同名的（之后又放了别的进去）、挪过去的
+  /// 已经不在了（又被挪走、改名）的不动；走 move（同一个卷改名，跨卷先拷完再删、不覆盖），排进同一条队、能停。
+  /// kept：当时跨卷移动原件没删掉（原件还在原处）——撤销就是把那一份复制品移到废纸篓
+  static func undoMove(_ items: [(from: URL, to: URL, kept: Bool)], island: Island?) {
+    enqueue("正在撤销移动…", detail: ByteMeter.preparing, island: island) { report in
+      var back = 0
+      var leftBehind = 0
+      var problem: String?
+      for item in items where !Task.isCancelled {
+        guard occupied(item.to) else { continue }
+        // 原件还在：这一份是复制品，移到废纸篓；原件后来被删了：它就是唯一的一份，照常挪回去
+        if item.kept, occupied(item.from) {
+          if (try? FileManager.default.trashItem(at: item.to, resultingItemURL: nil)) != nil {
+            back += 1
+          }
+          continue
+        }
+        guard !occupied(item.from) else { continue }
+        let moved = await move(
+          item.to, into: item.from.deletingLastPathComponent(), named: item.from.lastPathComponent,
+          copy: false, report: report)
+        if moved.url != nil {
+          back += 1
+          if moved.keptOriginal { leftBehind += 1 }
+        } else {
+          problem = problem ?? moved.problem
+        }
+      }
+      return (back: back, leftBehind: leftBehind, stopped: Task.isCancelled, problem: problem)
+    } finish: { result in
+      let rest = items.count - result.back
+      if result.stopped {
+        island?.show("已停止撤销", detail: "挪回了 \(result.back) 项", tone: .info)
+      } else if rest == 0, result.leftBehind > 0 {
+        // 跨卷挪回去了，那边的没能删掉（只读的盘、上了锁）：两边都有，照实说
+        island?.show(
+          "已撤销移动", detail: "\(result.leftBehind) 项挪回来了，那边的没能删掉（只读的盘、上了锁，或者没有权限）",
+          tone: .warning)
+      } else if rest == 0 {
+        let detail: LocalizedStringResource =
+          items.count == 1 ? "\(items[0].from.lastPathComponent)" : "\(items.count) 项挪回了原处"
+        island?.show("已撤销移动", detail: detail, tone: .info)
+      } else {
+        let reason = result.problem ?? String(localized: "原处已经有同名的，或者挪过去的又被挪走、改了名")
+        let title: LocalizedStringResource =
+          result.back == 0 ? "没能撤销移动" : "撤销了 \(result.back) 项，\(rest) 项没挪回去"
+        island?.show(title, detail: "\(reason)", tone: .warning)
+      }
+    }
+  }
+
+  /// 撤销一批复制：复制出来的移到废纸篓（能放回原处；同访达撤销复制）。已经不在了的不算
+  static func undoCopy(_ copies: [URL], island: Island?) {
+    var trashed = 0
+    for url in copies where occupied(url) {
+      if (try? FileManager.default.trashItem(at: url, resultingItemURL: nil)) != nil {
+        trashed += 1
+      }
+    }
+    if trashed == copies.count {
+      island?.show("已撤销复制", detail: "复制出来的 \(trashed) 项移到了废纸篓", tone: .info)
+    } else {
+      let title: LocalizedStringResource =
+        trashed == 0 ? "没能撤销复制" : "撤销了 \(trashed) 项，\(copies.count - trashed) 项没动"
+      island?.show(title, detail: "复制出来的已经被挪走、改了名，或者没有权限", tone: .warning)
     }
   }
 

@@ -108,6 +108,26 @@
       },
       "shouldTranslate" : false
     },
+    "%@ · 压缩包没能移到废纸篓" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · Couldn’t move the archive to the Trash"
+          }
+        }
+      }
+    },
+    "%@ · 压缩包移到了废纸篓" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · Archive moved to the Trash"
+          }
+        }
+      }
+    },
     "%@ · 已暂停" : {
       "localizations" : {
         "en" : {
@@ -1216,6 +1236,28 @@
         }
       }
     },
+    "%lld 个文件和别的只差大小写，另存时名字加了「 2」" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld file differed from another only in letter case, so “ 2” was added to its name"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld files differed from others only in letter case, so “ 2” was added to their names"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld 个文件读不到，没算" : {
       "localizations" : {
         "en" : {
@@ -2057,6 +2099,50 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld items"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld 项挪回了原处" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld item moved back"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld items moved back"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld 项挪回来了，那边的没能删掉（只读的盘、上了锁，或者没有权限）" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld item moved back, but the other copy couldn’t be deleted (read-only disk, locked, or no permission)"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld items moved back, but the other copies couldn’t be deleted (read-only disk, locked, or no permission)"
                 }
               }
             }
@@ -5496,6 +5582,16 @@
         }
       }
     },
+    "「%@」不见了（压缩时被移走或改了名）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@” is gone (moved or renamed while compressing)"
+          }
+        }
+      }
+    },
     "「%@」也在处理鼠标滚轮" : {
       "localizations" : {
         "en" : {
@@ -5746,6 +5842,26 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "「%1$@」的快捷键改成了 %2$@"
+          }
+        }
+      }
+    },
+    "「%@」读不到" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can’t read “%@”"
+          }
+        }
+      }
+    },
+    "「%@」读不到（没有权限）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can’t read “%@” (no permission)"
           }
         }
       }
@@ -11138,12 +11254,12 @@
         }
       }
     },
-    "压缩包放在旁边，重名的自动加「 2」；zip 里的中文名到别的系统上解开也不乱码，也不夹带 Mac 的隐藏文件（.DS_Store、._*、__MACOSX）。解压时只有一样东西就直接放在包旁边，几样就放进和包同名的文件夹；别的系统打的 zip，中文名也解得对。修复乱码文件名之后，刘海岛上能撤销。包里不带访达的标签、替身和自定义图标，要在 Mac 之间原样传，用访达自带的「压缩」。" : {
+    "压缩包放在旁边，重名的自动加「 2」；zip 里的中文名到别的系统上解开也不乱码，也不夹带 Mac 的隐藏文件（.DS_Store、._*、__MACOSX）。解压时只有一样东西就直接放在包旁边，几样就放进和包同名的文件夹；按住 ⌥ 右键是「解压到…」，自己选放在哪；别的系统打的 zip，中文名也解得对。修复乱码文件名之后，刘海岛上能撤销。包里不带访达的标签、替身和自定义图标，要在 Mac 之间原样传，用访达自带的「压缩」。" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Archives go next to the originals, and duplicate names get “ 2” added. Chinese names in a zip stay readable on other systems, and Mac hidden files (.DS_Store, ._*, __MACOSX) are left out. When extracting, a single item goes right next to the archive; several go into a folder named after it. Chinese names in zips made on other systems also come out right. After fixing garbled filenames, you can undo from the Notch. Archives don’t keep Finder tags, aliases, or custom icons; to move files between Macs as they are, use Finder’s own “Compress”."
+            "value" : "Archives go next to the originals, and duplicate names get “ 2” added. Chinese names in a zip stay readable on other systems, and Mac hidden files (.DS_Store, ._*, __MACOSX) are left out. When extracting, a single item goes right next to the archive; several go into a folder named after it. Hold ⌥ while right-clicking for “Extract To…” to choose where. Chinese names in zips made on other systems also come out right. After fixing garbled filenames, you can undo from the Notch. Archives don’t keep Finder tags, aliases, or custom icons; to move files between Macs as they are, use Finder’s own “Compress”."
           }
         }
       }
@@ -11194,6 +11310,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Reason: %@"
+          }
+        }
+      }
+    },
+    "原处已经有同名的，或者挪过去的又被挪走、改了名" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Something with the same name is already there, or the moved item was moved again or renamed"
           }
         }
       }
@@ -11322,6 +11448,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "The old layout was saved separately, nothing was overwritten"
+          }
+        }
+      }
+    },
+    "原来的文件夹不在了，或者那里写不了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The original folder is gone, or it can’t be written to"
           }
         }
       }
@@ -14418,6 +14554,38 @@
         }
       }
     },
+    "复制出来的 %lld 项移到了废纸篓" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Moved %lld copy to the Trash"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Moved %lld copies to the Trash"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "复制出来的已经被挪走、改了名，或者没有权限" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The copies were moved or renamed, or there’s no permission"
+          }
+        }
+      }
+    },
     "复制到剪贴板" : {
       "localizations" : {
         "en" : {
@@ -16266,6 +16434,16 @@
         }
       }
     },
+    "已停止撤销" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Undo stopped"
+          }
+        }
+      }
+    },
     "已停止移动" : {
       "localizations" : {
         "en" : {
@@ -17654,6 +17832,26 @@
         }
       }
     },
+    "已撤销复制" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy undone"
+          }
+        }
+      }
+    },
+    "已撤销移动" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move undone"
+          }
+        }
+      }
+    },
     "已撤销移除" : {
       "localizations" : {
         "en" : {
@@ -17754,6 +17952,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Put back “%@”"
+          }
+        }
+      }
+    },
+    "已放回压缩包" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Archive put back"
           }
         }
       }
@@ -18174,6 +18382,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Extracted"
+          }
+        }
+      }
+    },
+    "已解压「%@」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Extracted “%@”"
           }
         }
       }
@@ -18604,6 +18822,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "The Trash is empty"
+          }
+        }
+      }
+    },
+    "废纸篓里已经没有它了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It’s no longer in the Trash"
           }
         }
       }
@@ -21211,6 +21439,16 @@
         }
       }
     },
+    "把压缩包放在哪个文件夹" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose a folder for the archive"
+          }
+        }
+      }
+    },
     "把现在列出来的全选上（筛选、搜索之外的不算）" : {
       "localizations" : {
         "en" : {
@@ -22071,6 +22309,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Waving hand"
+          }
+        }
+      }
+    },
+    "挪回了 %lld 项" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Moved back %lld item"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Moved back %lld items"
+                }
+              }
+            }
           }
         }
       }
@@ -23045,6 +23305,38 @@
         }
       }
     },
+    "撤销了 %lld 项，%lld 项没动" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Undid %lld, left %lld as they were"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "撤销了 %1$lld 项，%2$lld 项没动"
+          }
+        }
+      }
+    },
+    "撤销了 %lld 项，%lld 项没挪回去" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Moved back %lld, couldn’t move back %lld"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "撤销了 %1$lld 项，%2$lld 项没挪回去"
+          }
+        }
+      }
+    },
     "撤销移除" : {
       "localizations" : {
         "en" : {
@@ -23617,6 +23909,16 @@
         }
       }
     },
+    "放到下载" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Put in Downloads"
+          }
+        }
+      }
+    },
     "放回" : {
       "localizations" : {
         "en" : {
@@ -23633,6 +23935,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Put back the note you just deleted (one at a time if you deleted several; in the text, title, or search field, undoes typing there first)"
+          }
+        }
+      }
+    },
+    "放回压缩包" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Put Back Archive"
+          }
+        }
+      }
+    },
+    "放在这里" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Put Here"
           }
         }
       }
@@ -25659,6 +25981,28 @@
         }
       }
     },
+    "有 %lld 个文件和别的只差大小写，这块盘上只留下了一个" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld file differed from another only in letter case; this disk could keep only one of them"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld files differed from others only in letter case; this disk could keep only one of each"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "有 %lld 段放不下，译文放在卡片里" : {
       "localizations" : {
         "en" : {
@@ -25697,6 +26041,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "An app is using it"
+          }
+        }
+      }
+    },
+    "有个文件和别的只差大小写，另存成了「%@」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A file differed from another only in letter case, so it was saved as “%@”"
           }
         }
       }
@@ -27179,6 +27533,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Arranging like your old Launchpad…"
+          }
+        }
+      }
+    },
+    "正在撤销移动…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Undoing move…"
           }
         }
       }
@@ -28776,6 +29140,28 @@
         }
       }
     },
+    "没有解压这 %lld 个压缩包" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld archive not extracted"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "These %lld archives not extracted"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "没有识别到文字" : {
       "localizations" : {
         "en" : {
@@ -29162,6 +29548,26 @@
         }
       }
     },
+    "没能撤销复制" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t undo copy"
+          }
+        }
+      }
+    },
+    "没能撤销移动" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t undo move"
+          }
+        }
+      }
+    },
     "没能改扩展名" : {
       "localizations" : {
         "en" : {
@@ -29188,6 +29594,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Couldn’t place it next to the originals"
+          }
+        }
+      }
+    },
+    "没能放回压缩包" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t put back archive"
           }
         }
       }
@@ -34931,6 +35347,46 @@
         }
       }
     },
+    "解压到哪个文件夹" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose a folder to extract into"
+          }
+        }
+      }
+    },
+    "解压到这里" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Extract Here"
+          }
+        }
+      }
+    },
+    "解压后把压缩包移到废纸篓" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move archives to the Trash after extracting"
+          }
+        }
+      }
+    },
+    "解压成功了才移；在废纸篓里能放回原处" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only after a successful extraction; you can put it back from the Trash"
+          }
+        }
+      }
+    },
     "触发角" : {
       "localizations" : {
         "en" : {
@@ -38375,6 +38831,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Choose…"
+          }
+        }
+      }
+    },
+    "选择位置…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose Location…"
           }
         }
       }
