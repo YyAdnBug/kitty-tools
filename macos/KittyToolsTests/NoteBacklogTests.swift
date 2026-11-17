@@ -57,9 +57,7 @@ struct NoteBacklogTests {
         看 [这里](https://example.com/a) 和 **粗体** ~~删掉~~ 跑 `ls -l`
         - 第一项
         - 第二项
-        ```
-        let a = 1
-        ```
+        `let a = 1`
         结尾
         """)
   }
@@ -211,6 +209,81 @@ struct NoteBacklogTests {
     #expect(model.handleFanKey(down) && model.hovered == model.tabs[1].id)
     let id = model.tabs[1].id
     #expect(model.handleFanKey(enter) && model.state.openID == id && !model.summonedByKey)
+  }
+
+  /// 评审 A1 B1：「一直展开」时快捷键叫出来再 Esc，状态不变也要把键盘还回去、不再算快捷键叫出来的
+  @Test func summonedAlwaysFannedReleasesKeyboard() throws {
+    let store = try NoteStore(db: Database(path: ":memory:"))
+    store.create(body: "一条", now: Self.at(0))
+    let model = NoteDeckModel(store: store)
+    var options = model.options
+    options.alwaysFanned = true
+    model.options = options
+    var released = 0
+    model.onReleaseKey = { released += 1 }
+    #expect(model.state.phase == .fanned)
+    model.summonedByKey = true
+    model.send(.summoned)
+    model.dismiss()
+    #expect(released == 1 && !model.summonedByKey && model.state.phase == .fanned)
+    // 不是快捷键叫出来的：照旧不动键盘
+    model.dismiss()
+    #expect(released == 1)
+  }
+
+  /// 评审 A3 A8 A4：最近删除里 ⇧⌘A 不归档；勾上的被别处删了就不算；墙上 ⇧ 点按照屏上（固定的在前）的顺序
+  @Test func markingFollowsWhatIsShown() throws {
+    let (model, store, ids) = try make(["A", "B", "C", "D"])
+    model.setListSelection([ids[0], ids[1], ids[2]])
+    store.delete(ids[1])
+    store.delete(ids[2])
+    #expect(!model.isMarking && model.targets == [ids[0]])
+    // 最近删除里
+    model.scope = .trash
+    model.markAll()
+    model.archiveTargets()
+    #expect(store.archived.isEmpty && store.trashed.count == 2)
+    // 墙上：D 固定了排在最前，从 A ⇧ 点到 B 不该带上 D 以外别的
+    model.scope = .all
+    store.restore(ids[1])
+    store.restore(ids[2])
+    store.setPinned(true, of: ids[3])
+    model.layout = .wall
+    model.clearMarks()
+    model.selection = ids[0]
+    #expect(model.click(ids[1], modifiers: .shift))
+    #expect(Set(model.targets) == [ids[0], ids[1]])
+    // ⌘ 点掉选中的那条：选中挪到还勾着的
+    #expect(model.click(ids[2], modifiers: .command))
+    #expect(model.click(ids[2], modifiers: .command) && model.selection != ids[2])
+  }
+
+  /// 评审 B3–B6 A9 A10：一行等宽是行内代码、几行等宽中间的空行留在块里、不间断空格不吞、<br> 换成换行、没有标记就不转、
+  /// HTML 里去外面取东西的标签去掉、围栏粘在一行中间时补换行
+  @Test func richPasteEdgeCases() {
+    let body = NSFont.systemFont(ofSize: 13)
+    let mono = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+    #expect(
+      NoteRichPaste.convert(NSAttributedString(string: "foo", attributes: [.font: mono]))
+        == ("`foo`", true))
+    let block = NSMutableAttributedString(
+      string: "func a() {\n\n  b()\n}", attributes: [.font: mono])
+    #expect(NoteRichPaste.convert(block).text == "```\nfunc a() {\n\n  b()\n}\n```")
+    let spaced = NSMutableAttributedString(string: "foo\u{00A0}", attributes: [.font: body])
+    spaced.append(
+      NSAttributedString(string: "bar", attributes: [.font: NSFont.boldSystemFont(ofSize: 13)]))
+    spaced.append(NSAttributedString(string: "\u{00A0}baz\u{2028}next", attributes: [.font: body]))
+    #expect(NoteRichPaste.convert(spaced) == ("foo\u{00A0}**bar**\u{00A0}baz\nnext", true))
+    #expect(
+      !NoteRichPaste.convert(
+        NSAttributedString(string: "para one\n\n\npara two", attributes: [.font: body])
+      ).marked)
+    #expect(
+      NoteRichPaste.withoutRemoteResources(
+        #"<p>a<img src="https://x/y.png">b</p><style>p{}</style><link rel="x" href="y">"#)
+        == "<p>ab</p>")
+    #expect(NoteRichPaste.fitting("```\nx\n```", after: "a", before: "b") == "\n```\nx\n```\n")
+    #expect(NoteRichPaste.fitting("```\nx\n```", after: "\n", before: nil) == "```\nx\n```")
   }
 
   @Test func deckActionIsLastAndNotes() {

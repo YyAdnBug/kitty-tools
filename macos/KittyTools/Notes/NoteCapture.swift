@@ -267,7 +267,9 @@ import os
       }
     }
   }
-  /// 正在存的图有几张（缩略图那一排先占好位置）
+  /// 草稿换了第几回（记下、Esc 清空时 +1）：存到一半的图回来时草稿已经换了就不要它（评审 A11 B2：不然掉进下一份草稿）
+  @ObservationIgnored private var draftGeneration = 0
+  /// 正在存的图有几张（缩略图那一排先占好位置）；没存完不让记下
   private(set) var storing = 0 {
     didSet { if storing != oldValue { resize(height) } }
   }
@@ -285,6 +287,7 @@ import os
       return true
     }
     let directory = imageStore.directory
+    let generation = draftGeneration
     storing += max(files.count, 1)
     Task { @MainActor [weak self] in
       var rejection: NoteImageStore.Rejection?
@@ -305,7 +308,7 @@ import os
         case .failure(let reason): rejection = rejection ?? reason
         }
       }
-      guard let self else { return }
+      guard let self, generation == draftGeneration else { return }
       storing = max(0, storing - max(files.count, 1))
       images += stored
       if let rejection {
@@ -350,13 +353,19 @@ import os
 
   /// 现在按 ↩ 有没有东西可记（底栏「记下」置不置灰）：正文有字，或者记成新便签、填了标题
   var canSave: Bool {
-    !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !newTitle.isEmpty
-      || !images.isEmpty
+    storing == 0
+      && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !newTitle.isEmpty
+        || !images.isEmpty)
   }
 
   /// ↩：记下。存成了就清空草稿、收起面板、刘海岛说一声
   @discardableResult
   func save(now: Date = .now) -> Outcome {
+    // 贴的图还在存：先不记（↩ 响一声，图存好了再按）
+    guard storing == 0 else {
+      NSSound.beep()
+      return .empty
+    }
     let text = Self.text(draft.trimmingCharacters(in: .whitespacesAndNewlines), images: images)
     let title = newTitle
     guard !text.isEmpty || !title.isEmpty else { return .empty }
@@ -387,6 +396,12 @@ import os
         actions: [.init("打开", opens: true) { [weak self] in self?.openNote(id) }])
     }
     return .saved(id)
+  }
+
+  /// 草稿文件里贴的图（便签图片的 30 天清理把它们当有人引用，评审 B12：草稿留得久，图不该被清掉）
+  static func draftImages(at url: URL) -> Set<UUID> {
+    let draft = Draft(data: try? Data(contentsOf: url))
+    return Set((draft?.images ?? []).compactMap { NoteImages.first(in: $0)?.id })
   }
 
   /// 记下的这段（纯函数）：正文后面每张图一行（令牌）
@@ -430,6 +445,8 @@ import os
 
   /// 清空（存好了、Esc）：草稿文件跟着删
   private func reset() {
+    draftGeneration += 1
+    storing = 0
     draft = ""
     title = ""
     images = []

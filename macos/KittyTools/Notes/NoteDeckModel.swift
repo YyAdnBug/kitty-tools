@@ -98,7 +98,18 @@ import SwiftUI
   /// ⌘W 在只扇着时也管用（收回那一列）
   override var isShown: Bool { state.phase != .rest }
   override func close() { send(.close) }
-  override func dismiss() { send(.dismiss) }
+  override func dismiss() {
+    let summoned = summonedByKey
+    send(.dismiss)
+    // 「一直展开」时收回就是回到那一列、状态不变（评审 A1 B1）：快捷键叫出来的照样把键盘还回去
+    if summoned, summonedByKey {
+      summonedByKey = false
+      onReleaseKey()
+    }
+  }
+
+  /// 把键盘还给原来的 App、面板留着（NoteDeck.releaseKey；快捷键叫出来的那一列收不回去时用）
+  @ObservationIgnored var onReleaseKey: () -> Void = {}
 
   /// 操作菜单的「浮在屏幕上」：不靠拖的那条路（键盘、旁白用户）。它在这叠里的那一份由 NoteEdge 跟着收掉
   override func toggleFloating() {

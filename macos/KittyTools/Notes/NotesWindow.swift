@@ -259,21 +259,30 @@ import SwiftUI
 
   /// ⌘点按 / ⇧点按勾上的几条（列表、便签墙同一份）；不到两条就不算多选（只有 selection 那一条）
   private(set) var marked: Set<String> = []
-  var isMarking: Bool { marked.count > 1 }
+  /// 勾上的里现在还看得见的（按列表顺序）：别处删了、同步走了、搜索筛掉的不算（评审 A8 B13）
+  var markedVisible: [String] { marked.isEmpty ? [] : notes.map(\.id).filter(marked.contains) }
+  var isMarking: Bool { marked.count > 1 && markedVisible.count > 1 }
 
   /// 删除、归档、固定、换色对着谁：多选时是勾上的（按列表顺序），否则右边 / 编辑卡上那一条
   var targets: [String] {
     guard isMarking else { return current.map { [$0.id] } ?? [] }
-    return notes.map(\.id).filter(marked.contains)
+    return markedVisible
+  }
+
+  /// ⇧点按按屏上看到的顺序：墙上固定的一段在前（wallGroups），列表照 notes（评审 A4）
+  private var shownIDs: [String] {
+    layout == .wall ? wallGroups.flatMap(\.notes).map(\.id) : notes.map(\.id)
   }
 
   /// 便签墙卡片带修饰键的点按：⌘ 勾上 / 去掉这一条，⇧ 从选中的那条勾到这一条。不带这两个键返回 false（照常打开）
   func click(_ id: String, modifiers: NSEvent.ModifierFlags) -> Bool {
-    let ids = notes.map(\.id)
+    let ids = shownIDs
     if modifiers.contains(.command) {
-      var next = isMarking ? marked : Set(selection.map { [$0] } ?? [])
+      var next = isMarking ? Set(markedVisible) : Set(selection.map { [$0] } ?? [])
       if next.contains(id) { next.remove(id) } else { next.insert(id) }
-      mark(next, focus: next.contains(id) ? id : selection)
+      // 去掉的正好是选中的那条：选中挪到还勾着的第一条（不然它还亮着、又不在操作对象里，评审 A5）
+      let kept = selection.flatMap { next.contains($0) ? $0 : nil }
+      mark(next, focus: next.contains(id) ? id : kept ?? ids.first(where: next.contains))
       return true
     }
     if modifiers.contains(.shift), let anchor = selection, let from = ids.firstIndex(of: anchor),
@@ -297,7 +306,9 @@ import SwiftUI
   }
 
   /// 列表视图里系统列表的选中：多选时是勾上的，否则选中的那一条
-  var listSelection: Set<String> { isMarking ? marked : Set(selection.map { [$0] } ?? []) }
+  var listSelection: Set<String> {
+    isMarking ? Set(markedVisible) : Set(selection.map { [$0] } ?? [])
+  }
 
   /// ⌘A（焦点不在输入框里时）：勾上列表里的全部
   func markAll() {
@@ -336,7 +347,8 @@ import SwiftUI
     if let selection, ids.contains(selection) { self.selection = next }
   }
 
-  /// 工具栏、⌘⌫ 的删除：多选时整批进「最近删除」（⌘Z、岛上的「放回」整批放回），最近删除里整批永久删除（先确认）
+  /// 工具栏、⌘⌫ 的删除：多选时整批进「最近删除」（⌘Z、岛上的「放回」整批放回），最近删除里整批永久删除（先确认）。
+  /// 整批的改动一个事务落盘（NoteStore.updateAll，评审 A7）
   func deleteTargets() {
     let ids = targets
     guard ids.count > 1 else { return ids.first.map(delete) ?? () }
@@ -344,7 +356,12 @@ import SwiftUI
       erasingBatch = ids
       return
     }
-    removing(batch: ids) { for id in ids { store.delete(id) } }
+    let now = Date.now
+    removing(batch: ids) {
+      store.updateAll(ids, now: now) { note in
+        if note.deletedAt == nil { note.deletedAt = Note.stamp(now) }
+      }
+    }
     undoStack.append(.batch(ids.map(Removal.deleted)))
     island?.show(
       "\(Self.deletedTitle(ids.count))", detail: "⌘Z 撤销，或到「最近删除」里放回",
@@ -356,32 +373,39 @@ import SwiftUI
   var erasingBatch: [String] = []
 
   func eraseBatch() {
-    let ids = erasingBatch
+    // 确认框开着时别处放回了的不删（只删还在最近删除里的）
+    let ids = erasingBatch.filter { store.note($0)?.deletedAt != nil }
     erasingBatch = []
-    removing(batch: ids) { for id in ids { store.erase(id) } }
+    removing(batch: ids) { store.erase(all: Set(ids)) }
   }
 
   /// 最近删除里多选的「放回」
   func restoreTargets() {
     let ids = targets
     guard ids.count > 1 else { return ids.first.map(restore) ?? () }
-    removing(batch: ids) { for id in ids { store.restore(id) } }
+    removing(batch: ids) { store.updateAll(ids) { $0.deletedAt = nil } }
     Island.announce("已放回 \(ids.count) 条")
   }
 
-  /// ⇧⌘A、工具栏的归档：多选时整批归档（归档里是整批取消归档，回到原来的位置）
+  /// ⇧⌘A、工具栏的归档：多选时整批归档（归档里是整批取消归档，回到原来的位置）。最近删除里没有归档（评审 A3：
+  /// ⇧⌘A 在每个视图里都接得到）
   func archiveTargets() {
+    guard scope != .trash else { return NSSound.beep() }
     let ids = targets
     guard ids.count > 1 else { return ids.first.map(toggleArchived) ?? () }
     if scope == .archive {
-      var back: [String] = []
-      removing(batch: ids) { back = Self.unarchive(ids, in: store) }
+      let back = ids.filter { Self.isArchived($0, in: store) }
+      removing(batch: ids) { store.updateAll(back) { $0.isArchived = false } }
       if let first = back.first.flatMap(store.note) {
         Island.announce("\(Self.unarchivedTitle(back.count, first: first))")
       }
       return
     }
-    removing(batch: ids) { for id in ids { store.setArchived(true, of: id) } }
+    removing(batch: ids) {
+      store.updateAll(ids) { note in
+        if note.deletedAt == nil { note.isArchived = true }
+      }
+    }
     undoStack.append(.batch(ids.map(Removal.archived)))
     island?.show(
       "\(Self.archivedTitle(ids.count))", detail: "⌘Z 撤销，或到「归档」里找回",
@@ -394,15 +418,23 @@ import SwiftUI
     let ids = targets
     guard ids.count > 1 else { return ids.first.map(togglePinned) ?? () }
     let pins = ids.contains { store.note($0)?.isPinned == false }
-    for id in ids where store.note(id)?.deletedAt == nil { store.setPinned(pins, of: id) }
+    store.updateAll(ids) { note in
+      if note.deletedAt == nil { note.isPinned = pins }
+    }
   }
 
   /// ⌘.：轮到下一种纸色（多选时按第一条的颜色往下轮，全都换成它）
   func cycleColorTargets() {
     let ids = targets
     guard let first = ids.first.flatMap(store.note) else { return }
-    let next = Self.nextColor(after: first.color)
-    for id in ids { setColor(next, of: id) }
+    setColor(Self.nextColor(after: first.color), of: ids)
+  }
+
+  /// 多选换色：一个事务
+  private func setColor(_ color: Int, of ids: [String]) {
+    store.updateAll(ids) { note in
+      if note.deletedAt == nil { note.color = Note.clamped(color: color) }
+    }
   }
 
   /// 工具栏的颜色菜单、多选时的右键菜单：多选时选一种全换上（没有「其他颜色…」：取色面板一次改一条）
@@ -414,10 +446,7 @@ import SwiftUI
     return NotePaper.colorItems(
       current: first.color,
       recent: defaults.map { NoteColorPicker.recentColors(in: $0) } ?? [],
-      choose: { [weak self] color in
-        guard let self else { return }
-        for id in ids { setColor(color, of: id) }
-      })
+      choose: { [weak self] color in self?.setColor(color, of: ids) })
   }
 
   /// 多选时右键菜单（点在勾上的那几条之一上）：整批的那几项
@@ -544,11 +573,13 @@ import SwiftUI
     /// 多选了几条（不到两条是 0）：删除、归档、固定、换色对着它们（X6）
     var marked = 0
     var sort = Sort.manual
+    /// 排序只管「全部」（归档、最近删除各有固定的排法）
+    var canSort = true
   }
 
   var toolbarState: ToolbarState {
     let note = current
-    let marked = isMarking ? marked.count : 0
+    let marked = isMarking ? markedVisible.count : 0
     return ToolbarState(
       layout: layout, isTrash: scope == .trash, hasNote: note != nil || marked > 0,
       canTask: marked == 0 && note.map { $0.deletedAt == nil } == true
@@ -559,7 +590,8 @@ import SwiftUI
         ? (scope == .archive ? Self.unarchiveTitle : Self.archiveTitle(nil))
         : Self.archiveTitle(note),
       canFloat: marked == 0 && (note.map { !$0.isArchived } ?? false),
-      floatTitle: floatTitle(note), floatSymbol: floatSymbol(note), marked: marked, sort: sort)
+      floatTitle: floatTitle(note), floatSymbol: floatSymbol(note), marked: marked, sort: sort,
+      canSort: scope == .all)
   }
 
   /// ⌘,、工具栏的「便签设置」：攒着的改动先落下去，再打开设置窗的「便签」页
@@ -738,7 +770,10 @@ import SwiftUI
     undoStack.removeAll { removal in
       switch removal {
       case .deleted(let id): ids.contains(id)
-      case .batch: removal.ids.allSatisfy(ids.contains)
+      // 整批删除的那一项（里面都是删除）才拿掉；整批归档的留着（评审 A12）
+      case .batch(let all):
+        all.allSatisfy { if case .deleted = $0 { true } else { false } }
+          && removal.ids.allSatisfy(ids.contains)
       case .archived: false
       }
     }
@@ -754,7 +789,9 @@ import SwiftUI
     undoStack.removeAll { removal in
       switch removal {
       case .archived(let id): ids.contains(id)
-      case .batch: removal.ids.allSatisfy(ids.contains)
+      case .batch(let all):
+        all.allSatisfy { if case .archived = $0 { true } else { false } }
+          && removal.ids.allSatisfy(ids.contains)
       case .deleted: false
       }
     }
@@ -861,9 +898,11 @@ import SwiftUI
           default: break
           }
         }
-        guard let id = back.last else { continue }
+        guard let id = back.last, let note = store.note(id) else { continue }
         select(restored: id)
-        Island.announce("已放回 \(back.count) 条")
+        let archived = all.allSatisfy { if case .archived = $0 { true } else { false } }
+        Island.announce(
+          archived ? "\(Self.unarchivedTitle(back.count, first: note))" : "已放回 \(back.count) 条")
       }
       return true
     }

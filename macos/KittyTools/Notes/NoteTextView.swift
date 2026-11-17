@@ -1953,10 +1953,20 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
     // ③½ 网页、文稿里带格式的字（X4）：Markdown 开着、不在代码块里时转成 Markdown 粘（链接、粗体、列表、标题留着）
     if theme.markdown, !touchesCodeBlock(selectedRange()),
       !(pasteboard.string(forType: .string) ?? "").isEmpty,
-      let markdown = NoteRichPaste.markdown(from: pasteboard)
+      let markdown = NoteRichPaste.markdown(from: pasteboard),
+      let text = textStorage?.string as NSString?
     {
+      // 围栏得独占一行：粘在一行中间时前后补换行
+      let range = selectedRange()
+      let previous =
+        range.location > 0
+        ? text.substring(with: NSRange(location: range.location - 1, length: 1)).first : nil
+      let end = NSMaxRange(range)
+      let next =
+        end < text.length ? text.substring(with: NSRange(location: end, length: 1)).first : nil
+      let fitted = NoteRichPaste.fitting(markdown, after: previous, before: next)
       replaceSelection(
-        with: NSAttributedString(string: markdown, attributes: baseAttributes), at: selectedRange())
+        with: NSAttributedString(string: fitted, attributes: baseAttributes), at: range)
       return
     }
     pastePlainText()

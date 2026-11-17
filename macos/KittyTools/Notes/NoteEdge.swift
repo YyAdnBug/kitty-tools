@@ -266,25 +266,30 @@ final class NoteEdge {
     return true
   }
 
-  /// 全局快捷键「屏幕边缘的便签」（X16）：有展开着的那叠就收回；没有就把鼠标所在屏的那叠扇出来、键盘给它（↑↓ ↩ Esc）。
-  /// 返回 false = 这边开不了（总开关关着、哪块屏都放不了）
-  func summon() -> Bool {
+  /// 全局快捷键「屏幕边缘的便签」叫出来的结果
+  enum Summon { case done, disabled, empty }
+
+  /// 全局快捷键「屏幕边缘的便签」（X16）：快捷键叫出来的那叠还开着、或者鼠标所在屏的那叠展开着，就收回它（别的屏上固定着
+  /// 打开的便签不动，评审 B10）；不然把鼠标所在屏的那叠扇出来、键盘给它（↑↓ ↩ Esc）。
+  /// disabled = 总开关关着、哪块屏都放不了；empty = 一条便签都没有（那叠本来就不出来，评审 B11）
+  func summon() -> Summon {
     let options = NoteDeckOptions(defaults)
     guard options.isEnabled,
       !NoteDeckLayout.placements(NoteDeckScreen.attached(), options: options).isEmpty
-    else { return false }
-    if let open = decks.first(where: {
-      $0.deck.model.state.isExpanded || $0.deck.model.summonedByKey
-    }) {
-      open.deck.model.send(.dismiss)
-      return true
-    }
+    else { return .disabled }
     refresh()
     let mouse = NSEvent.mouseLocation
     let home = decks.first { $0.deck.screen.frame.contains(mouse) } ?? decks.first
-    guard let deck = home?.deck else { return false }
+    if let open =
+      decks.first(where: { $0.deck.model.summonedByKey })
+      ?? home.flatMap({ $0.deck.model.state.isExpanded ? $0 : nil })
+    {
+      open.deck.model.dismiss()
+      return .done
+    }
+    guard let deck = home?.deck else { return .empty }
     deck.summon()
-    return true
+    return .done
   }
 
   // MARK: 药丸

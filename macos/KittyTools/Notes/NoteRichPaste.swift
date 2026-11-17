@@ -4,9 +4,12 @@
 // 转换是纯函数（markdown(from:)，配单测）：按段落走，标题看整段字号比正文大多少（HTML 的 h1–h3 进来是放大的粗体），
 // 列表看段落样式里的 NSTextList（系统把列表符号「\t•\t」写进了字里，去掉、换成「- 」/「1. 」，嵌套的每层缩两格），
 // 整段都是等宽字体的连着几段包成代码块，行内按「粗 / 斜 / 删除线 / 等宽 / 链接」把一样的连成一段再包标记（标记里不夹首尾空白）。
+// 评审之后（2026-11-18）：只有一行的等宽字是行内代码（不出围栏）、几行等宽字中间的空行留在块里；不间断空格、全角空格不吞；
+// <br> 进来的 U+2028 / U+2029 换成换行；一个标记都没转出来就当没有格式（照常粘纯文本，不悄悄改空行）；HTML 先去掉
+// img / link / script / style / iframe 这类会去外面取东西的标签再交给系统解析；链接地址里的括号、空格转义。
 // ponytail: 字里本来就有的 * _ ` [ 不转义（便签的 Markdown 不认反斜杠转义以外的写法，转了反而多出反斜杠）——碰巧凑成标记的会变样；
-// 表格、引用、图片不转（表格按系统给的制表符原样，图片的占位字符去掉）。HTML 用系统的解析（WebKit，主线程、几十毫秒），
-// 剪贴板里 RTF、HTML 都有时先用 RTF（便宜、不碰 WebKit）。
+// 表格、引用、图片不转（表格按系统给的制表符原样，图片的占位字符去掉）；整段放大的引言（pull quote）会被当成标题；一个链接里一半粗体
+// 会拆成两个链接。HTML 用系统的解析（WebKit，主线程，第一次约 0.3 秒），剪贴板里 RTF、HTML 都有时先用 RTF（便宜、不碰 WebKit）。
 
 import AppKit
 
@@ -18,24 +21,50 @@ enum NoteRichPaste {
       text = NSAttributedString(rtf: rtf, documentAttributes: nil)
     } else if let html = pasteboard.data(forType: .html) {
       text = NSAttributedString(
-        html: html, options: [.characterEncoding: String.Encoding.utf8.rawValue],
-        documentAttributes: nil)
+        html: Data(withoutRemoteResources(String(decoding: html, as: UTF8.self)).utf8),
+        options: [.characterEncoding: String.Encoding.utf8.rawValue], documentAttributes: nil)
     } else {
       text = nil
     }
     guard let text, text.length > 0 else { return nil }
-    let markdown = markdown(from: text)
-    let plain = text.string.replacingOccurrences(of: "\u{FFFC}", with: "")
-    guard !markdown.isEmpty, markdown != plain.trimmingCharacters(in: .newlines) else { return nil }
-    return markdown
+    let converted = convert(text)
+    guard converted.marked, !converted.text.isEmpty else { return nil }
+    return converted.text
+  }
+
+  /// HTML 里会去外面取东西的标签去掉（评审 A10：系统的解析遇到外面的图片会等它）：img、link、script、style（连内容）、
+  /// iframe、video、audio、source、object、embed
+  static func withoutRemoteResources(_ html: String) -> String {
+    html
+      .replacing(/(?is)<(script|style)\b.*?<\/\1\s*>/, with: "")
+      .replacing(/(?i)<(img|link|iframe|video|audio|source|object|embed)\b[^>]*>/, with: "")
+  }
+
+  /// 粘进去的地方前后（X4 评审）：围栏得独占一行，前面不是行首就先换行、后面不是行尾就补换行（纯函数）
+  static func fitting(_ markdown: String, after previous: Character?, before next: Character?)
+    -> String
+  {
+    var text = markdown
+    if text.hasPrefix("```"), let previous, !previous.isNewline { text = "\n" + text }
+    if text.hasSuffix("```"), let next, !next.isNewline { text += "\n" }
+    return text
   }
 
   /// 富文本 → Markdown（纯函数）
-  static func markdown(from text: NSAttributedString) -> String {
+  static func markdown(from text: NSAttributedString) -> String { convert(text).text }
+
+  /// 一行转出来的东西：代码行、普通行（带没带标记）、空行
+  private enum Line {
+    case code(String)
+    case text(String, marked: Bool)
+    case blank
+  }
+
+  /// 富文本 → Markdown，和转出来的字里有没有标记（一个都没有就照常粘纯文本）
+  static func convert(_ text: NSAttributedString) -> (text: String, marked: Bool) {
     let string = text.string as NSString
     let body = bodySize(of: text)
-    var lines: [String] = []
-    var inCode = false
+    var lines: [Line] = []
     var location = 0
     while location < string.length {
       var end = 0
@@ -49,41 +78,86 @@ enum NoteRichPaste {
         ? text.attribute(.paragraphStyle, at: range.location, effectiveRange: nil)
           as? NSParagraphStyle : nil
       let raw = string.substring(with: range).replacingOccurrences(of: "\u{FFFC}", with: "")
-      // 整段等宽：代码块（原样，不加行内标记）
-      if range.length > 0, !raw.trimmingCharacters(in: .whitespaces).isEmpty,
-        isMonospaced(text, in: range)
-      {
-        if !inCode {
-          lines.append("```")
-          inCode = true
-        }
-        lines.append(raw)
+      guard !raw.trimmingCharacters(in: .whitespaces).isEmpty else {
+        lines.append(.blank)
         continue
       }
-      if inCode {
-        lines.append("```")
-        inCode = false
-      }
-      guard !raw.trimmingCharacters(in: .whitespaces).isEmpty else {
-        // 空段：最多留一行空行
-        if lines.last?.isEmpty == false { lines.append("") }
+      // 整段等宽：代码（原样，不加行内标记；一行的是行内代码、几行连着的是代码块，见下面）
+      if range.length > 0, isMonospaced(text, in: range) {
+        lines.append(.code(raw))
         continue
       }
       if let lists = style?.textLists, let list = lists.last {
         let marker = list.markerFormat.rawValue.contains("decimal") ? "1. " : "- "
         let indent = String(repeating: "  ", count: max(0, lists.count - 1))
         let content = inline(text, in: dropListMarker(range, in: string), heading: false)
-        lines.append(indent + marker + content)
+        lines.append(.text(indent + marker + content.text, marked: true))
         continue
       }
       let level = headingLevel(text, in: range, body: body)
       let content = inline(text, in: range, heading: level > 0)
-      lines.append(level > 0 ? String(repeating: "#", count: level) + " " + content : content)
+      lines.append(
+        level > 0
+          ? .text(String(repeating: "#", count: level) + " " + content.text, marked: true)
+          : .text(content.text, marked: content.marked))
     }
-    if inCode { lines.append("```") }
-    while lines.last?.isEmpty == true { lines.removeLast() }
-    while lines.first?.isEmpty == true { lines.removeFirst() }
-    return lines.joined(separator: "\n")
+    return assemble(lines)
+  }
+
+  /// 把行拼起来：连着的代码行（中间的空行算在块里）两行以上包围栏、一行的写成行内代码；空行最多留一行、去掉首尾的
+  private static func assemble(_ lines: [Line]) -> (text: String, marked: Bool) {
+    var out: [String] = []
+    var marked = false
+    var index = 0
+    func blank() { if out.last?.isEmpty == false { out.append("") } }
+    while index < lines.count {
+      switch lines[index] {
+      case .blank:
+        blank()
+        index += 1
+      case .text(let line, let hasMarkup):
+        out.append(line)
+        marked = marked || hasMarkup
+        index += 1
+      case .code:
+        // 这一串代码：到最后一行代码为止（中间的空行留在块里）
+        var end = index
+        var codeLines = 0
+        var cursor = index
+        while cursor < lines.count {
+          if case .code = lines[cursor] {
+            end = cursor
+            codeLines += 1
+          } else if case .text = lines[cursor] {
+            break
+          }
+          cursor += 1
+        }
+        let block = lines[index...end].map { line -> String in
+          if case .code(let code) = line { code } else { "" }
+        }
+        marked = true
+        if codeLines == 1 {
+          out.append(inlineCode(block[0]))
+        } else {
+          out.append("```")
+          out.append(contentsOf: block)
+          out.append("```")
+        }
+        index = end + 1
+      }
+    }
+    while out.last?.isEmpty == true { out.removeLast() }
+    while out.first?.isEmpty == true { out.removeFirst() }
+    let text = out.joined(separator: "\n")
+      .replacingOccurrences(of: "\u{2028}", with: "\n")
+      .replacingOccurrences(of: "\u{2029}", with: "\n")
+    return (text, marked)
+  }
+
+  /// 行内代码：字里有反引号就用两个包、两头留空格
+  private static func inlineCode(_ code: String) -> String {
+    code.contains("`") ? "`` " + code + " ``" : "`" + code + "`"
   }
 
   /// 正文字号：字数最多的那个字号
@@ -149,7 +223,7 @@ enum NoteRichPaste {
 
   /// 行内：粗体、斜体、删除线、等宽、链接一样的连成一段再包标记（标题里不加粗：标题本来就粗）
   private static func inline(_ text: NSAttributedString, in range: NSRange, heading: Bool)
-    -> String
+    -> (text: String, marked: Bool)
   {
     struct Look: Equatable {
       var bold = false
@@ -182,26 +256,33 @@ enum NoteRichPaste {
         runs.append((look, piece))
       }
     }
-    return runs.map { run in
-      // 标记包住中间的字，首尾的空白留在外面（`** 粗 **` 不算粗体）
-      let core = run.text.trimmingCharacters(in: .whitespaces)
+    var marked = false
+    let text = runs.map { run in
+      // 标记包住中间的字，首尾的空白留在外面（`** 粗 **` 不算粗体）；不间断空格、全角空格同样留着（评审 B4）
+      let isSpace: (Character) -> Bool = { $0.isWhitespace && !$0.isNewline }
+      let lead = String(run.text.prefix(while: isSpace))
+      let rest = run.text.dropFirst(lead.count)
+      let trail = String(rest.reversed().prefix(while: isSpace).reversed())
+      let core = String(rest.dropLast(trail.count))
       guard !core.isEmpty else { return run.text }
-      let lead = String(run.text.prefix { $0 == " " || $0 == "\t" })
-      let trail = String(run.text.reversed().prefix { $0 == " " || $0 == "\t" }.reversed())
       var wrapped = core
       if run.look.code {
-        wrapped = "`" + wrapped + "`"
+        wrapped = inlineCode(wrapped)
       } else {
         if run.look.strike { wrapped = "~~" + wrapped + "~~" }
         if run.look.italic { wrapped = "*" + wrapped + "*" }
         if run.look.bold { wrapped = "**" + wrapped + "**" }
       }
-      if let link = run.look.link, let url = URL(string: link), url.scheme != nil,
-        !link.contains(where: \.isWhitespace)
-      {
-        wrapped = "[" + wrapped + "](" + link + ")"
+      if let link = run.look.link, let url = URL(string: link), url.scheme != nil {
+        // 地址里的括号、空白转义：不然 `)` 把链接截断
+        let address = link.replacingOccurrences(of: "(", with: "%28")
+          .replacingOccurrences(of: ")", with: "%29")
+          .replacingOccurrences(of: " ", with: "%20")
+        wrapped = "[" + wrapped + "](" + address + ")"
       }
+      if wrapped != core { marked = true }
       return lead + wrapped + trail
     }.joined()
+    return (text, marked)
   }
 }

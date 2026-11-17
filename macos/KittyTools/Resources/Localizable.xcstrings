@@ -35561,6 +35561,16 @@
         }
       }
     },
+    "记下第一条，屏幕边缘就会出现" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Write your first note and it will appear on the screen edge"
+          }
+        }
+      }
+    },
     "记到" : {
       "localizations" : {
         "en" : {

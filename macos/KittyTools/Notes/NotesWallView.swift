@@ -209,7 +209,7 @@ private struct WallBoard: View, Equatable {
     let (_, shown, layout) = arrangement()
     // 选中的、仓库在 ForEach 外面取一次：每张卡片各读一遍的话，每张都要单独挂一份「盯着它变」
     let (selection, canReorder) = (model.selection, model.canReorder)
-    let marked = model.isMarking ? model.marked : []
+    let marked = model.isMarking ? Set(model.markedVisible) : []
     let items = visible(layout, keeping: [selection, drag?.id])
     return ScrollView {
       ZStack(alignment: .topLeading) {

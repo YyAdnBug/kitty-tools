@@ -1446,7 +1446,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private func purgeNotes() {
     guard let noteStore else { return }
     noteStore.purgeExpired()
-    noteStore.images?.purge(referenced: noteStore.referencedImages)
+    // 快速记一条的草稿里贴的图也算有人引用（X5）：开着的面板看内存里的，没建过面板看草稿文件
+    let draft =
+      noteCapture.map { Set($0.model.images.map(\.id)) }
+      ?? NoteCaptureModel.draftImages(
+        at: dataDirectory.appending(path: NoteCaptureModel.draftName))
+    noteStore.images?.purge(referenced: noteStore.referencedImages.union(draft))
   }
 
   /// 屏幕边缘的便签：右键菜单里的「全部便签」「设置…」、「在全部便签里打开」接到这里的入口；什么时候不许扇出也由这里说
@@ -1718,18 +1723,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   /// 「新建便签」（全局动作、菜单栏、启动器、药丸的右键菜单）：屏幕边缘那叠开着（总开关开）就建一条、在鼠标所在屏的
   /// 那叠里打开；那边开不了（总开关关着、哪块屏都放不了）照第 2 批在全部便签窗口里新建
-  /// 「屏幕边缘的便签」（X16）：那叠扇出来、键盘给它；已经展开着就收回。屏幕边缘关着时岛上说怎么打开
-  private func summonNoteDeck() {
-    guard usableNotes() != nil else { return }
-    guard noteEdge?.summon() != true else { return }
-    island.show(
-      "屏幕边缘的便签关着", detail: "到 设置 › 便签 打开「屏幕边缘」", tone: .info,
-      actions: [.init("打开设置", opens: true) { [unowned self] in showSettings(page: .notes) }])
-  }
-
   private func newNote() {
     guard usableNotes() != nil else { return }
     if noteEdge?.openNew() != true { showNotes(creating: true) }
+  }
+  /// 「屏幕边缘的便签」（X16）：那叠扇出来、键盘给它；已经展开着就收回。屏幕边缘关着、还没有便签时岛上说
+  private func summonNoteDeck() {
+    guard usableNotes() != nil, let noteEdge else { return }
+    switch noteEdge.summon() {
+    case .done: break
+    case .disabled:
+      island.show(
+        "屏幕边缘的便签关着", detail: "到 设置 › 便签 打开「屏幕边缘」", tone: .info,
+        actions: [.init("打开设置", opens: true) { [unowned self] in showSettings(page: .notes) }])
+    case .empty:
+      island.show(
+        "还没有便签", detail: "记下第一条，屏幕边缘就会出现", tone: .info,
+        actions: [.init("新建便签") { [unowned self] in newNote() }])
+    }
   }
 
   private func makeNotesWindow(_ store: NoteStore) -> NotesWindow {

@@ -178,7 +178,7 @@ struct NotesWindowView: View {
       empty.padding(20)
     } else {
       // 系统的多选：⌘点按 / ⇧点按 / ⌘A（X6，NotesWindowModel.setListSelection）
-      let marked = model.isMarking ? model.marked : []
+      let marked = model.isMarking ? Set(model.markedVisible) : []
       List(
         selection: Binding {
           model.listSelection
@@ -200,7 +200,9 @@ struct NotesWindowView: View {
             }
           }
         }
-        .onMove(perform: model.canReorder ? { model.move(from: $0, to: $1) } : nil)
+        // 多选时不拖动排序：onMove 只挪得了一行（评审 A6）
+        .onMove(
+          perform: model.canReorder && !model.isMarking ? { model.move(from: $0, to: $1) } : nil)
       }
       // 焦点在列表上时 ⌫ 也是删除（⌘⌫ 由窗口按键码认，NotesWindow.handlesKeyDown）
       .onDeleteCommand { model.deleteTargets() }
@@ -253,7 +255,7 @@ struct NotesWindowView: View {
   @ViewBuilder private var detail: some View {
     if model.isMarking {
       // 多选（X6）：右边只说勾了几条，操作在下面那条
-      Text("已选 \(model.marked.count) 条便签").font(.callout).foregroundStyle(.secondary)
+      Text("已选 \(model.markedVisible.count) 条便签").font(.callout).foregroundStyle(.secondary)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     } else if let note = model.current {
       // 一条便签一块编辑区（.id）：换一条时滚动位置、光标、撤销栈都从头来
@@ -344,6 +346,7 @@ private struct NotesToolbar: View, Equatable {
         }
         .pickerStyle(.menu)
         .labelStyle(.iconOnly)
+        .disabled(!state.canSort)
         .help("排序：手动顺序 / 最近修改")
       }
       ToolbarItemGroup(placement: .primaryAction) {
@@ -561,7 +564,7 @@ private struct NotesBatchBar: View {
   private typealias Model = NotesWindowModel
 
   var body: some View {
-    let count = model.marked.count
+    let count = model.markedVisible.count
     HStack(spacing: 14) {
       Text("已选 \(count) 条").font(.system(size: 13, weight: .medium)).monospacedDigit()
       Divider().frame(height: 16)

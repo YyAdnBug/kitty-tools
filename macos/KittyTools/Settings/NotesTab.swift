@@ -237,9 +237,11 @@ struct NotesTab: View {
 
   /// 「撤回导入」（X6）：这次新加的、还没删的整批放进最近删除（30 天里能放回），岛上说一句
   static func withdraw(_ ids: [String], in store: NoteStore, island: Island?) {
-    let live = ids.filter { store.note($0)?.deletedAt == nil }
-    for id in live { store.delete(id) }
-    store.flush()
+    // 永久删了的（note 是 nil）不算（评审 A13）
+    let live = ids.filter { store.note($0).map { $0.deletedAt == nil } ?? false }
+    guard !live.isEmpty else { return }
+    let now = Date.now
+    store.updateAll(live, now: now) { $0.deletedAt = Note.stamp(now) }
     island?.show(
       "已撤回导入的 \(live.count) 条", detail: "在「最近删除」里留 \(NoteStore.trashDays) 天",
       symbol: "trash.circle.fill")

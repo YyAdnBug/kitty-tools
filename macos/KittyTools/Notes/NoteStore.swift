@@ -729,7 +729,28 @@ import Observation
   @discardableResult
   private func mutate(_ id: String, now: Date = .now, _ change: (inout Note) -> Void) -> Bool {
     guard let index = notes.firstIndex(where: { $0.id == id }) else { return false }
+    return mutate(at: index, now: now, change)
+  }
+
+  /// 一次改几条（全部便签窗口的多选、整批撤回导入，第四轮体检 X6）：一条条改内存（先按编号建一次下标），最后一个事务落盘——
+  /// 几千条也只写一次库（评审 A7：原来一条一个事务）
+  func updateAll(_ ids: [String], now: Date = .now, _ change: (inout Note) -> Void) {
+    let positions = Dictionary(
+      notes.indices.map { (notes[$0].id, $0) }, uniquingKeysWith: { first, _ in first })
+    var changed = false
+    for id in ids {
+      if let index = positions[id], mutate(at: index, now: now, change) { changed = true }
+    }
+    if changed { flush() }
+  }
+
+  /// 永久删除一批（一个事务；最近删除里多选的「永久删除」）
+  func erase(all ids: Set<String>, now: Date = .now) { erase(ids, now: now) }
+
+  @discardableResult
+  private func mutate(at index: Int, now: Date, _ change: (inout Note) -> Void) -> Bool {
     let old = notes[index]
+    let id = old.id
     var note = old
     change(&note)
     guard note != old else { return false }
