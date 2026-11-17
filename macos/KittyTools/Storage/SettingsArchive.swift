@@ -867,6 +867,17 @@ struct SettingsArchive: Codable, Equatable {
       || clears.contains { incoming($0) as? Bool == true && !defaults.bool(forKey: $0) }
   }
 
+  /// 导入「设置」后会添加的插件（插件页改版 F1，导入前列出来，要授权的另说）：文件里是添加着（文件里没有的按默认值算——导入后
+  /// 它回到默认）、这台现在没添加、这台用得了的
+  func addedPlugins(comparedTo defaults: UserDefaults = .standard) -> [Feature] {
+    guard preferences != nil else { return [] }
+    return Feature.allCases.filter { plugin in
+      plugin.isPlugin && plugin.isAvailable
+        && (incoming(plugin.prefsKey) as? Bool ?? plugin.defaultOn)
+        && !(defaults.object(forKey: plugin.prefsKey) as? Bool ?? plugin.defaultOn)
+    }
+  }
+
   /// 导入「设置」后哪些隐私保护会比现在弱（导入前橙字逐条说；没有就是空的）：不再过滤疑似密钥、剪贴板不记录的 App 变少、
   /// 新打开复制即译。文件里没有的键按默认值算
   func privacyLosses(comparedTo defaults: UserDefaults = .standard) -> [String] {

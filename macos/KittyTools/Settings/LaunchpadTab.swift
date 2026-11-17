@@ -165,7 +165,7 @@ struct LaunchpadTab: View {
       } header: {
         Text("排列数据")
       }
-      PluginRemoveSection(plugin: .launchpad)
+      PluginAboutSection(plugin: .launchpad)
     }
     .onAppear {
       systemPinch = systemPinchOn()

@@ -8560,6 +8560,16 @@
         }
       }
     },
+    "关于这个插件" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "About This Plugin"
+          }
+        }
+      }
+    },
     "关掉后屏幕上不再提示，只能按住 Esc 两秒退出；键盘上没有 Esc 键的别关" : {
       "localizations" : {
         "en" : {
@@ -15120,6 +15130,26 @@
         }
       }
     },
+    "导入后会添加插件：%@。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "After importing, these plugins will be added: %@."
+          }
+        }
+      }
+    },
+    "导入后会添加插件：%@。其中有的这台 Mac 还没给授权，导入后到它自己的设置页里打开。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "After importing, these plugins will be added: %@. Some don’t have access on this Mac yet; turn it on from each plugin’s settings page after importing."
+          }
+        }
+      }
+    },
     "导入后历史会保留得比现在少（保留时间、图片上限、翻译历史条数变小，或者退出、锁屏时清空），超出的普通历史会被清理；收藏和片段不动。" : {
       "localizations" : {
         "en" : {
@@ -19439,6 +19469,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Restoring can’t be undone. The current settings and data are saved first, so you can switch settings and shortcuts back with Restore from Backup."
+          }
+        }
+      }
+    },
+    "恢复后会添加插件：%@。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "After restoring, these plugins will be added: %@."
+          }
+        }
+      }
+    },
+    "恢复后会添加插件：%@。其中有的这台 Mac 还没给授权，恢复后到它自己的设置页里打开。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "After restoring, these plugins will be added: %@. Some don’t have access on this Mac yet; turn it on from each plugin’s settings page after restoring."
           }
         }
       }
@@ -32947,12 +32997,12 @@
         }
       }
     },
-    "脚本以你的身份运行，能用 Kitty Tools 已有的辅助功能、屏幕录制等授权，只放你信得过的脚本；从网上下载的，第一次运行前会先给你看一眼全文。" : {
+    "脚本以你的身份运行，能用 Kitty Tools 已有的辅助功能、屏幕录制等授权，只放你信得过的脚本；从网上下载的，第一次运行前会先给你看一眼全文。Kitty Tools 自带的大功能（便签、刘海岛这些）是插件，在 设置 › 全部插件 里添加。" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Scripts run as you and can use permissions Kitty Tools already has, like Accessibility and Screen Recording, so only add scripts you trust. A downloaded script is shown to you in full before its first run."
+            "value" : "Scripts run as you and can use permissions Kitty Tools already has, like Accessibility and Screen Recording, so only add scripts you trust. A downloaded script is shown to you in full before its first run. Larger built-in features, like Notes and the Notch, are plugins; add them in Settings › All Plugins."
           }
         }
       }

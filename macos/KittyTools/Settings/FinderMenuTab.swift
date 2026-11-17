@@ -193,7 +193,7 @@ struct FinderMenuTab: View {
         )
       }
       .gated(by: .finderMenu)
-      PluginRemoveSection(plugin: .finderMenu)
+      PluginAboutSection(plugin: .finderMenu)
     }
     .formStyle(.grouped)
     // 同步、导入落下了新的列表：页面跟上（同剪贴板页的排除列表）

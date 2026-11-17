@@ -74,7 +74,7 @@ extension Feature {
   }
 
   /// 添加着时此刻缺的授权（「全部插件」那一行的「要授权」、插件页「权限」组排到最上面，拍板 C2）；没添加的不算缺。
-  /// 查授权要跨进程问系统：页面出现、设置窗重新当 key 时查一次存起来，别在每次画行时调
+  /// 查授权要跨进程问系统：列表这种常重画的地方在页面出现、设置窗重新当 key 时查一次存起来，别在每次画行时调
   @MainActor func missingPermissions(_ defaults: UserDefaults = .standard) -> [PluginPermission] {
     guard isOn else { return [] }
     return pluginPermissions.filter {

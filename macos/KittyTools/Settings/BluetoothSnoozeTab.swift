@@ -1,8 +1,8 @@
-// 设置 › 睡眠关蓝牙（插件，2026-11-17，PLAN §10「睡眠关蓝牙」）。页头由 SettingsRoot 画（家族色午夜蓝）。三组：
+// 设置 › 睡眠关蓝牙（插件，2026-11-17，PLAN §10「睡眠关蓝牙」）。页头由 SettingsRoot 画（家族色午夜蓝）。三组（缺蓝牙授权时「权限」在最上面）：
 // 「睡眠关蓝牙」——两个开关（对标 Vorssaint「睡眠时的蓝牙」：添加插件就是它的「睡眠时关闭蓝牙」）：只在合上盖子时关（默认开）、
 //   醒来时重新打开蓝牙（默认开，只打开睡前自己关掉的），和上次关、开的时刻；页脚说接着外接显示器时不关；
-// 「权限」——蓝牙（同通用页的 PermissionRow；没授权时这个插件什么都不做）；
-// 最后一行「移除这个插件」。行为在 BluetoothSnooze/BluetoothSnooze.swift。
+// 「权限」——蓝牙（PluginPermissionSection；没授权时这个插件什么都不做，缺的时候排到最上面）；
+// 最后「关于这个插件」（后台、同步、移除）。行为在 BluetoothSnooze/BluetoothSnooze.swift。
 
 import SwiftUI
 
@@ -11,7 +11,8 @@ struct BluetoothSnoozeTab: View {
   let requestAccess: () -> Void
   /// 截图自检传固定的；正常是 nil = 现问
   var authorized: Bool?
-  @State private var granted = BluetoothSnooze.isAuthorized
+  /// 设置窗重新当 key 时 +1：「权限」组重查（从系统设置授权回来，同程序坞预览）
+  @State private var accessChecks = 0
   @AppStorage(Prefs.bluetoothSnoozeLidOnly) private var lidOnly = true
   @AppStorage(Prefs.bluetoothSnoozeReopen) private var reopen = true
   @AppStorage(Prefs.bluetoothSnoozeHeld) private var held = false
@@ -20,11 +21,12 @@ struct BluetoothSnoozeTab: View {
 
   var body: some View {
     // 从系统设置授权回来，设置窗重新当 key 时刷新（同程序坞预览）
-    form.onSettingsBecameKey { granted = BluetoothSnooze.isAuthorized }
+    form.onSettingsBecameKey { accessChecks += 1 }
   }
 
   private var form: some View {
     Form {
+      permissions(at: .top)
       Section {
         Toggle(isOn: $lidOnly) {
           Text("只在合上盖子时关")
@@ -46,20 +48,22 @@ struct BluetoothSnoozeTab: View {
             ? "电脑睡下去时关掉蓝牙：放进包里不会被蓝牙鼠标、键盘弄醒，睡着的 Mac 也不会抢走手机连着的耳机。接着外接显示器时不关；关机不管。开着盖子先睡着、之后才合上的那一次不关。"
             : "电脑睡下去时关掉蓝牙：放进包里不会被蓝牙鼠标、键盘弄醒，睡着的 Mac 也不会抢走手机连着的耳机。接着外接显示器时不关；关机不管。")
       }
-      Section {
-        PermissionRow(
-          title: "蓝牙", detail: "开关蓝牙；没有它这个插件什么都不做",
-          symbol: SettingsPage.bluetoothSnooze.symbol, color: Style.Family.bluetoothSnooze,
-          granted: authorized ?? granted, grant: requestAccess)
-      } header: {
-        Text("权限")
-      } footer: {
-        SectionFootnote(
-          "醒来后蓝牙键盘鼠标、耳机要几秒到几十秒才重新连上。睡着时蓝牙关着，用手表解锁这台 Mac、靠蓝牙的「查找」都用不了。")
-      }
-      PluginRemoveSection(plugin: .bluetoothSnooze)
+      permissions(at: .bottom)
+      PluginAboutSection(plugin: .bluetoothSnooze)
     }
     .formStyle(.grouped)
+  }
+
+  /// 「权限」组（蓝牙）；没给时画在最上面（插件页改版 C2）。「去授权」：没问过弹系统框，问过了开系统设置
+  private func permissions(at placement: PluginPermissionPlacement) -> some View {
+    PluginPermissionSection(
+      plugin: .bluetoothSnooze, at: placement, checks: accessChecks,
+      granted: authorized.map { value in { (_: Permissions.Kind) -> Bool? in value } },
+      grant: { _ in requestAccess() },
+      footer: {
+        SectionFootnote(
+          "醒来后蓝牙键盘鼠标、耳机要几秒到几十秒才重新连上。睡着时蓝牙关着，用手表解锁这台 Mac、靠蓝牙的「查找」都用不了。")
+      })
   }
 
   /// 「上次」那一行：还关着 / 关、开的时刻 / 还没关过（纯函数）
