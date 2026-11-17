@@ -551,7 +551,7 @@ struct LocalizationTests {
     ),
     (
       "KittyTools/Launcher/LauncherItem.swift",
-      ["脚本命令", "脚本写法", "钉图 贴图", "Capture 便签", "启动台 应用", "全部功能", "防息屏 防止睡眠"],
+      ["脚本命令", "脚本写法", "钉图 贴图", "Capture 便签", "启动台 应用", "全部功能", "防息屏 防止睡眠", "便签 侧边"],
       false, "动作的英文别名后面另加的中文搜索词：只进搜索名"
     ),
     (

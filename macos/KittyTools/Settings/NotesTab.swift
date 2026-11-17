@@ -221,12 +221,28 @@ struct NotesTab: View {
         } else if message.warning {
           island?.show("\(message.title)", detail: message.detail.map { "\($0)" }, tone: .warning)
         } else {
+          // 一下导进来一大批、导错了地方（X6）：岛上「撤回导入」把新加的整批放进最近删除（更新了的不动——被换下的
+          // 那一版已经另存在最近删除里了）
+          let added = adoption.addedIDs
           island?.show(
             "\(message.title)", detail: message.detail.map { "\($0)" },
-            symbol: "square.and.arrow.down.circle.fill")
+            symbol: "square.and.arrow.down.circle.fill",
+            actions: added.isEmpty
+              ? []
+              : [.init("撤回导入") { NotesTab.withdraw(added, in: store, island: island) }])
         }
       }
     }
+  }
+
+  /// 「撤回导入」（X6）：这次新加的、还没删的整批放进最近删除（30 天里能放回），岛上说一句
+  static func withdraw(_ ids: [String], in store: NoteStore, island: Island?) {
+    let live = ids.filter { store.note($0)?.deletedAt == nil }
+    for id in live { store.delete(id) }
+    store.flush()
+    island?.show(
+      "已撤回导入的 \(live.count) 条", detail: "在「最近删除」里留 \(NoteStore.trashDays) 天",
+      symbol: "trash.circle.fill")
   }
 
   // MARK: 屏幕边缘

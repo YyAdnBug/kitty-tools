@@ -13,6 +13,10 @@
 // - 保存（正文里 ↩）：去掉首尾空白，空的不存；新便签 = 新建一条；已有的 = 接在它正文后面（原来有内容、末尾没换行就先换一行）。
 //   存完的正文会超过 Note.maxBodyBytes 时不存，底栏就地说（不截断）。存好收起面板，刘海岛「已记下」+ 那条便签的标题，
 //   带「打开」（第四轮体检 U6：屏幕边缘那叠开着就在那叠里打开这一条，关着在全部便签窗口里打开；AppDelegate 接）。
+// - 贴图（第四轮体检 X5）：⌘V 时剪贴板里是图（截图、拷贝图像、访达里拷的图片文件）而没有字，图存进便签的图片目录
+//   （NoteImageStore，主线程外转码写盘），正文下面一排缩略图（点 × 拿掉）；记下时每张一行接在正文后面（令牌，同正文里粘图）。
+//   图跟着草稿走（notes-draft.json 里记令牌）；拿掉的、没记下的图没人引用，由便签图片的 30 天清理收。
+//   剪贴板里同时有字时照旧贴字（同正文的粘贴顺序：表格、文稿复制的字常带一张「渲染图」）。
 
 import AppKit
 import Carbon.HIToolbox
@@ -38,6 +42,9 @@ import os
     /// 文字、底栏的左右边线（同搜索线的左右内边距）
     static let margin: CGFloat = 18
     static let fontSize: CGFloat = 15
+    /// 贴的图那一排（缩略图 56 高 + 上下空隙）
+    static let imageRow: CGFloat = 68
+    static let thumbnail: CGFloat = 56
     /// 正文 3 行起，最多 8 行，再多在框里滚
     static let lines = 3...8
     /// 文本区上下：框外各 4 + SourceTextView 自己的上下内缩 6
@@ -107,16 +114,17 @@ import os
 
   // MARK: 草稿（E2）
 
-  /// 草稿的三样：标题、正文、记到哪（notes-draft.json 的样子）
+  /// 草稿的四样：标题、正文、记到哪、贴的图（notes-draft.json 的样子；images 是令牌，旧文件里没有）
   struct Draft: Codable, Equatable {
     var title = ""
     var body = ""
     var destination: String?
+    var images: [String]?
 
     /// 去掉空白什么都没有：不存文件、Esc 清掉也不给「恢复」
     var isEmpty: Bool {
       title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        && body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        && body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && (images ?? []).isEmpty
     }
 
     /// 读文件里的（没有、读不出来、是空的都是 nil）
@@ -126,20 +134,26 @@ import os
       self = draft
     }
 
-    init(title: String = "", body: String = "", destination: String? = nil) {
+    init(
+      title: String = "", body: String = "", destination: String? = nil, images: [String]? = nil
+    ) {
       (self.title, self.body, self.destination) = (title, body, destination)
+      self.images = images?.isEmpty == true ? nil : images
     }
 
     var data: Data? { try? JSONEncoder().encode(self) }
   }
 
   /// 现在的草稿
-  var current: Draft { Draft(title: title, body: draft, destination: destination) }
+  var current: Draft {
+    Draft(title: title, body: draft, destination: destination, images: images.map(NoteImages.token))
+  }
 
   private func put(_ saved: Draft) {
     title = saved.title
     draft = saved.body
     destination = saved.destination
+    images = (saved.images ?? []).compactMap(NoteImages.first(in:))
   }
 
   /// 标题、正文、目的地变了：停手 draftDelay 再存
@@ -188,6 +202,9 @@ import os
     if title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { title = saved.title }
     draft = draft.isEmpty ? saved.body : Self.body(appending: draft, to: saved.body)
     if destination == nil { destination = saved.destination }
+    // 清掉的图放回来、排在这几秒里又贴的前面（X5）
+    let back = (saved.images ?? []).compactMap(NoteImages.first(in:))
+    images = back + images.filter { !back.contains($0) }
     reopen()
     bodyFocus += 1
   }
@@ -229,13 +246,81 @@ import os
     Island.announce(index == 0 ? "记成新便签" : "记到「\(list[index - 1].displayTitle)」")
   }
 
-  /// ⌘1 新便签、⌘2–⌘9 记到已有的某一条（面板的 keyEquivalentHandler）
+  /// ⌘1 新便签、⌘2–⌘9 记到已有的某一条（面板的 keyEquivalentHandler）；⌘V 剪贴板里只有图时贴图（X5）
   func handleKeyEquivalent(_ event: NSEvent) -> Bool {
-    guard event.modifierFlags.intersection([.command, .control, .option, .shift]) == .command,
-      let digit = Self.digitKeys.firstIndex(of: Int(event.keyCode))
+    guard event.modifierFlags.intersection([.command, .control, .option, .shift]) == .command
     else { return false }
+    if Int(event.keyCode) == kVK_ANSI_V { return pasteImages(from: .general) }
+    guard let digit = Self.digitKeys.firstIndex(of: Int(event.keyCode)) else { return false }
     select(digit)
     return true
+  }
+
+  // MARK: 贴图（X5）
+
+  /// 贴进来的图（按贴的先后）；记下时每张一行接在正文后面
+  private(set) var images: [NoteImages.Image] = [] {
+    didSet {
+      if images != oldValue {
+        draftChanged()
+        resize(height)
+      }
+    }
+  }
+  /// 正在存的图有几张（缩略图那一排先占好位置）
+  private(set) var storing = 0 {
+    didSet { if storing != oldValue { resize(height) } }
+  }
+
+  /// 剪贴板里有字：交回去照常贴字（返回 false）；有图片文件 / 图片数据：存进图片目录、加进缩略图那一排。
+  /// 便签用不了图（没有图片目录）时响一声、说一句
+  func pasteImages(from pasteboard: NSPasteboard) -> Bool {
+    let files = NoteTextView.imageFileURLs(in: pasteboard)
+    let data = files.isEmpty ? NoteTextView.firstImageData(in: pasteboard) : nil
+    guard !files.isEmpty || data != nil else { return false }
+    if files.isEmpty, !(pasteboard.string(forType: .string) ?? "").isEmpty { return false }
+    guard let imageStore = store.images else {
+      NSSound.beep()
+      notice = .warning("\(NoteImageStore.Rejection.unreadable.noticeTitle)")
+      return true
+    }
+    let directory = imageStore.directory
+    storing += max(files.count, 1)
+    Task { @MainActor [weak self] in
+      var rejection: NoteImageStore.Rejection?
+      var stored: [NoteImages.Image] = []
+      let results: [Result<NoteImageStore.Stored, NoteImageStore.Rejection>]
+      if let data {
+        results = [await NoteImageStore.store(data: data, in: directory)]
+      } else {
+        var all: [Result<NoteImageStore.Stored, NoteImageStore.Rejection>] = []
+        for url in files { all.append(await NoteImageStore.store(fileAt: url, in: directory)) }
+        results = all
+      }
+      for result in results {
+        switch result {
+        case .success(let image):
+          imageStore.remember(image)
+          stored.append(image.image)
+        case .failure(let reason): rejection = rejection ?? reason
+        }
+      }
+      guard let self else { return }
+      storing = max(0, storing - max(files.count, 1))
+      images += stored
+      if let rejection {
+        NSSound.beep()
+        notice = .warning("\(rejection.noticeTitle)")
+        Island.post(rejection.noticeDetail)
+      }
+    }
+    return true
+  }
+
+  /// 缩略图上的 ×：拿掉这张（文件留给 30 天的清理）
+  func removeImage(_ image: NoteImages.Image) {
+    images.removeAll { $0 == image }
+    bodyFocus += 1
   }
 
   private static let digitKeys = [
@@ -266,12 +351,13 @@ import os
   /// 现在按 ↩ 有没有东西可记（底栏「记下」置不置灰）：正文有字，或者记成新便签、填了标题
   var canSave: Bool {
     !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !newTitle.isEmpty
+      || !images.isEmpty
   }
 
   /// ↩：记下。存成了就清空草稿、收起面板、刘海岛说一声
   @discardableResult
   func save(now: Date = .now) -> Outcome {
-    let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+    let text = Self.text(draft.trimmingCharacters(in: .whitespacesAndNewlines), images: images)
     let title = newTitle
     guard !text.isEmpty || !title.isEmpty else { return .empty }
     let old = target
@@ -301,6 +387,11 @@ import os
         actions: [.init("打开", opens: true) { [weak self] in self?.openNote(id) }])
     }
     return .saved(id)
+  }
+
+  /// 记下的这段（纯函数）：正文后面每张图一行（令牌）
+  static func text(_ body: String, images: [NoteImages.Image]) -> String {
+    ([body].filter { !$0.isEmpty } + images.map(NoteImages.token)).joined(separator: "\n")
   }
 
   /// 接在已有的正文后面（纯函数）：原来是空的就是这段话；有内容、末尾没换行就先换一行
@@ -341,6 +432,7 @@ import os
   private func reset() {
     draft = ""
     title = ""
+    images = []
     destination = nil
     notice = nil
     saveDraft()
@@ -349,11 +441,13 @@ import os
   // MARK: 高度
 
   /// 整块面板的高：顶上一行 + 文本区 + 底栏（两条发丝线各算 0.5，同启动器）
-  var height: CGFloat { Self.height(for: draft) }
+  var height: CGFloat { Self.height(for: draft, images: images.count + storing) }
 
-  static func height(for draft: String) -> CGFloat {
+  /// images：缩略图那一排有几张（有就多一排 imageRow 高）
+  static func height(for draft: String, images: Int = 0) -> CGFloat {
     Layout.headerHeight + 0.5 + textHeight(for: draft)
-      + 2 * (Layout.textInset + Layout.textPadding) + 0.5 + Layout.barHeight
+      + 2 * (Layout.textInset + Layout.textPadding) + (images > 0 ? Layout.imageRow : 0) + 0.5
+      + Layout.barHeight
   }
 
   /// 文本区里字占多高（纯函数）：按面板的宽排一遍草稿，夹在 3 行和 8 行之间。只排前 4000 个字：再窄的字这么多也早过了

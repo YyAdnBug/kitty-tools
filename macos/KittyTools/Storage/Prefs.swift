@@ -358,6 +358,9 @@ enum Prefs {
   /// 全部便签窗口上次用的显示方式（NotesWindowModel.Layout 的 rawValue：wall 便签墙 / list 列表；没存过 = 便签墙，
   /// 2026-10-15 手测反馈）。同窗口位置一样是这台电脑自己的状态、**不注册默认值**：不跟着导出 / 导入走
   nonisolated static let notesWindowLayout = "notesWindowLayout"
+  /// 全部便签窗口「全部」的排法（NotesWindowModel.Sort：manual 手动顺序 / modified 最近修改，第四轮体检 X19；没存过 = 手动）。
+  /// 同显示方式，这台电脑自己的状态、不注册默认值
+  nonisolated static let notesWindowSort = "notesWindowSort"
 
   /// 功能开关（2026-10-21，Shell/Feature.swift）：九个功能各一个键「feature.<Feature.rawValue>」（Feature.prefsKey 拼），
   /// 注册的默认值是 Feature.defaultOn（程序坞预览关、别的开；跟着导出 / 导入的「设置」一类走）。读用 Feature.isOn

@@ -2125,6 +2125,10 @@ struct SnapshotProbeTests {
     }
     let model = NotesWindowModel(store: store)
     try window("list", model)
+    // 多选（X6）：列表里勾了两条，右边写勾了几条、底下浮着整批操作的那一条
+    model.setListSelection([ids[0], ids[2]])
+    for dark in [false, true] { try window("marked\(dark ? "-dark" : "")", model, dark: dark) }
+    model.clearMarks()
     model.selection = ids[1]
     try window("list-dark", model, dark: true)
     model.selection = ids[4]
@@ -2263,6 +2267,15 @@ struct SnapshotProbeTests {
     }
     let photo = try addImage(600, 300)
     let small = try addImage(160, 120)
+    // 快速记一条贴了图（X5）：正文下面一排缩略图（缩略图在后台解，屏外这一帧可能还是灰块）
+    let pictured = try NoteStore(db: Database(path: ":memory:"))
+    pictured.images = imageStore
+    for dark in [false, true] {
+      let withImages = NoteCaptureModel(store: pictured)
+      withImages.restore(
+        .init(body: "截图里那个按钮的位置", images: [photo, small].map(NoteImages.token)))
+      try capture("images\(dark ? "-dark" : "")", withImages, dark: dark)
+    }
     let missing = NoteImages.Image(id: UUID(), ext: "png", width: nil)
     let imageNotes = try NoteStore(db: Database(path: ":memory:"))
     imageNotes.images = imageStore
@@ -2501,6 +2514,11 @@ struct SnapshotProbeTests {
     }
     let wallModel = NotesWindowModel(store: wallStore)
     for dark in [false, true] { try wall(dark ? "dark" : "light", wallModel, dark: dark) }
+    // 多选（X6）：墙上 ⌘ 点了三张
+    _ = wallModel.click(wallIDs[2], modifiers: .command)
+    _ = wallModel.click(wallIDs[5], modifiers: .command)
+    try wall("marked", wallModel)
+    wallModel.clearMarks()
     // 第 7 批：卡片顶上那张缩略图（单独一面墙：两张卡片都在可见区里）
     let wallImages = try NoteStore(db: Database(path: ":memory:"))
     wallImages.images = imageStore

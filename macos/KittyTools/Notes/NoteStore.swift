@@ -51,6 +51,8 @@ import Observation
     /// 加进来的、换成文件里那一版的
     var added = 0
     var updated = 0
+    /// 新加进来的那几条（导入后岛上「撤回导入」整批放进最近删除，第四轮体检 X6）
+    var addedIDs: [String] = []
     /// 落没落下去：没落下去的还在内存里、留着重试（saveProblem），但这时不能说「导入好了」
     var saved = true
   }
@@ -970,6 +972,7 @@ import Observation
         revive(entry.id)
         unsaved.insert(entry.id)
         result.added += 1
+        result.addedIDs.append(entry.id)
         continue
       }
       let old = notes[offset]

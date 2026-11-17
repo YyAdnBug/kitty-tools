@@ -266,6 +266,27 @@ final class NoteEdge {
     return true
   }
 
+  /// 全局快捷键「屏幕边缘的便签」（X16）：有展开着的那叠就收回；没有就把鼠标所在屏的那叠扇出来、键盘给它（↑↓ ↩ Esc）。
+  /// 返回 false = 这边开不了（总开关关着、哪块屏都放不了）
+  func summon() -> Bool {
+    let options = NoteDeckOptions(defaults)
+    guard options.isEnabled,
+      !NoteDeckLayout.placements(NoteDeckScreen.attached(), options: options).isEmpty
+    else { return false }
+    if let open = decks.first(where: {
+      $0.deck.model.state.isExpanded || $0.deck.model.summonedByKey
+    }) {
+      open.deck.model.send(.dismiss)
+      return true
+    }
+    refresh()
+    let mouse = NSEvent.mouseLocation
+    let home = decks.first { $0.deck.screen.frame.contains(mouse) } ?? decks.first
+    guard let deck = home?.deck else { return false }
+    deck.summon()
+    return true
+  }
+
   // MARK: 药丸
 
   /// 按住 ⌥ 拖药丸：跟着鼠标换边、换高度（「指定某一块」、而且那块真接着时还能换屏）；松手（drops）记进偏好再整个重摆。

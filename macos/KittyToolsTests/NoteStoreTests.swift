@@ -689,7 +689,7 @@ struct NoteStoreTests {
     ]
     let importedAt = Self.at(120)
     let outcome = store.adopt(entries, now: importedAt)
-    #expect(outcome == NoteStore.Adoption(added: 1, updated: 1, saved: true))
+    #expect((outcome.added, outcome.updated, outcome.saved) == (1, 1, true))
 
     #expect(
       store.note(fresh)
@@ -736,7 +736,7 @@ struct NoteStoreTests {
         entry(sameText.id, "两边文字一样", modified: now + 1_000, color: 4, archived: true),
         entry(blank.id, "文件里有字", modified: now + 1_000),
       ], now: importedAt)
-    #expect(outcome == NoteStore.Adoption(added: 0, updated: 3, saved: true))
+    #expect((outcome.added, outcome.updated, outcome.saved) == (0, 3, true))
     #expect(store.note(mine.id)?.body == "文件里的一版")
     #expect(store.note(sameText.id)?.color == 4 && store.note(sameText.id)?.isArchived == true)
     #expect(store.note(blank.id)?.body == "文件里有字")
@@ -772,7 +772,7 @@ struct NoteStoreTests {
     ]
     let importedAt = Self.at(60)
     let first = store.adopt(entries, now: importedAt)
-    #expect(first == NoteStore.Adoption(added: 1, updated: 0, saved: true))
+    #expect((first.added, first.updated, first.saved) == (1, 0, true))
     let note = try #require(store.note(id))
     #expect(note.body == "钟快的电脑写的" && note.color == Note.colorCount - 1)
     #expect(note.createdAt == Note.stamp(importedAt) && note.modifiedAt == Note.stamp(importedAt))
@@ -789,7 +789,7 @@ struct NoteStoreTests {
     // 等到文件里的时间不再是未来（真过了一天多）：这时它确实比本机的新，才换（重复的那条照旧不认）。导进来过的那条和文件里
     // 一模一样，只是「改于」晚：不算更新（第四轮体检 E18）
     let caughtUp = store.adopt(entries, now: Self.at(2 * 86_400))
-    #expect(caughtUp == NoteStore.Adoption(added: 0, updated: 1, saved: true))
+    #expect((caughtUp.added, caughtUp.updated, caughtUp.saved) == (0, 1, true))
     #expect(store.note(mine.id)?.body == "钟快的电脑上的一版" && store.note(id)?.body == "钟快的电脑写的")
     #expect(store.trashed.map(\.body) == ["本机的"])
 
@@ -804,7 +804,7 @@ struct NoteStoreTests {
     try db.execute("ALTER TABLE notes RENAME TO parked")
     let id = "EEEEEEEE-EEEE-4EEE-8EEE-EEEEEEEEEEEE"
     let outcome = store.adopt([entry(id, "没存上的", modified: 1_700_000_000_000)], now: Self.t0)
-    #expect(outcome == NoteStore.Adoption(added: 1, updated: 0, saved: false))
+    #expect((outcome.added, outcome.updated, outcome.saved) == (1, 0, false))
     #expect(store.note(id)?.body == "没存上的" && store.saveProblem != nil)
     try db.execute("ALTER TABLE parked RENAME TO notes")
     #expect(store.flush())

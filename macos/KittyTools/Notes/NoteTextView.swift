@@ -1744,6 +1744,14 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
   /// ⌘B ⌘I ⇧⌘X ⌘E：窗口把 ⌘ 组合沿着视图树问一遍（在主菜单之前；那叠、浮动便签的面板先问过自己的键，
   /// 都没接这四个），焦点在自己身上才接。输入法组字期间吞掉、不做事（键盘在输入法手里）；代码块里响一声（format）
   override func performKeyEquivalent(with event: NSEvent) -> Bool {
+    // ⌥⇧⌘V 粘贴为纯文本（X4：Markdown 开着时 ⌘V 会把网页、文稿的格式转成 Markdown，这个键照旧只要字）
+    if event.modifierFlags.intersection([.command, .option, .shift, .control])
+      == [.command, .option, .shift], event.charactersIgnoringModifiers?.lowercased() == "v",
+      window?.firstResponder === self, isEditable
+    {
+      if !hasMarkedText() { pasteAsPlainText(nil) }
+      return true
+    }
     guard let wrap = Self.wrap(for: event), window?.firstResponder === self, isEditable else {
       return super.performKeyEquivalent(with: event)
     }
@@ -1942,8 +1950,29 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
   override func paste(_ sender: Any?) {
     if pasteImages(from: pasteboard) { return }
     if pasteLink(from: pasteboard) { return }
-    // ③ 有非空的纯文字：**显式按 .string 读**（不让系统按 readablePasteboardTypes 的顺序挑中图片类型，
-    // 见 F5）。别的 App 里 U+FFFC 是一张图的占位，贴进来没有意义，去掉
+    // ③½ 网页、文稿里带格式的字（X4）：Markdown 开着、不在代码块里时转成 Markdown 粘（链接、粗体、列表、标题留着）
+    if theme.markdown, !touchesCodeBlock(selectedRange()),
+      !(pasteboard.string(forType: .string) ?? "").isEmpty,
+      let markdown = NoteRichPaste.markdown(from: pasteboard)
+    {
+      replaceSelection(
+        with: NSAttributedString(string: markdown, attributes: baseAttributes), at: selectedRange())
+      return
+    }
+    pastePlainText()
+  }
+
+  /// ⌥⇧⌘V、右键「粘贴为纯文本」：只要字（不转 Markdown、不粘成链接；图片照常走上面那条路时才有）
+  override func pasteAsPlainText(_ sender: Any?) {
+    guard isEditable else { return }
+    // 剪贴板里没有字（只有图）：照常粘贴（存图、插图）
+    guard !(pasteboard.string(forType: .string) ?? "").isEmpty else { return paste(sender) }
+    pastePlainText()
+  }
+
+  /// ③ 有非空的纯文字：**显式按 .string 读**（不让系统按 readablePasteboardTypes 的顺序挑中图片类型，
+  /// 见 F5）。别的 App 里 U+FFFC 是一张图的占位，贴进来没有意义，去掉。没有字交给父类 / 拖放那条路
+  private func pastePlainText() {
     if let raw = pasteboard.string(forType: .string), !raw.isEmpty {
       let text = raw.replacingOccurrences(of: "\u{FFFC}", with: "")
       guard !text.isEmpty else { return }
@@ -1952,7 +1981,7 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
       return
     }
     if pasteboard.name == .general {
-      super.paste(sender)
+      super.paste(nil)
     } else {
       _ = readSelection(from: pasteboard)
     }

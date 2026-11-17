@@ -9948,6 +9948,28 @@
         }
       }
     },
+    "删除 %lld 条" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Delete %lld Note"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Delete %lld Notes"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "删除 %lld 项" : {
       "localizations" : {
         "en" : {
@@ -10186,6 +10208,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Turn it on in System Settings › Microphone"
+          }
+        }
+      }
+    },
+    "到 设置 › 便签 打开「屏幕边缘」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn on “Screen Edge” in Settings › Notes"
           }
         }
       }
@@ -11658,6 +11690,28 @@
         }
       }
     },
+    "取消归档 %lld 条" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Unarchive %lld Note"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Unarchive %lld Notes"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "取消录制" : {
       "localizations" : {
         "en" : {
@@ -11694,6 +11748,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Stop Floating"
+          }
+        }
+      }
+    },
+    "取消选择" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deselect"
           }
         }
       }
@@ -13720,6 +13784,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Open in All Notes"
+          }
+        }
+      }
+    },
+    "在「最近删除」里留 %lld 天" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Kept in Recently Deleted for %lld day"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Kept in Recently Deleted for %lld days"
+                }
+              }
+            }
           }
         }
       }
@@ -15956,6 +16042,26 @@
         }
       }
     },
+    "屏幕边缘的便签" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notes on Screen Edge"
+          }
+        }
+      }
+    },
+    "屏幕边缘的便签关着" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notes on Screen Edge are off"
+          }
+        }
+      }
+    },
     "屏幕边缘的那一叠一直在；菜单栏、主界面和启动器里也有" : {
       "localizations" : {
         "en" : {
@@ -17726,6 +17832,28 @@
         }
       }
     },
+    "已撤回导入的 %lld 条" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Undid the import of %lld note"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Undid the import of %lld notes"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "已撤销" : {
       "localizations" : {
         "en" : {
@@ -18390,6 +18518,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld selected"
+          }
+        }
+      }
+    },
+    "已选 %lld 条便签" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld note selected"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld notes selected"
+                }
+              }
+            }
           }
         }
       }
@@ -19074,6 +19224,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Archive"
+          }
+        }
+      }
+    },
+    "归档 %lld 条" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Archive %lld Note"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Archive %lld Notes"
+                }
+              }
+            }
           }
         }
       }
@@ -20561,6 +20733,16 @@
         }
       }
     },
+    "手动顺序" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Manual Order"
+          }
+        }
+      }
+    },
     "打不开「%@」" : {
       "localizations" : {
         "en" : {
@@ -21775,6 +21957,16 @@
         }
       }
     },
+    "拿掉这张图" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove This Image"
+          }
+        }
+      }
+    },
     "挂到晾衣绳上" : {
       "localizations" : {
         "en" : {
@@ -22481,6 +22673,26 @@
         }
       }
     },
+    "排序" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sort"
+          }
+        }
+      }
+    },
+    "排序：手动顺序 / 最近修改" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sort: manual order / recently modified"
+          }
+        }
+      }
+    },
     "接上、拔掉电源" : {
       "localizations" : {
         "en" : {
@@ -23107,6 +23319,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Morse"
+          }
+        }
+      }
+    },
+    "撤回导入" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Undo Import"
           }
         }
       }
@@ -23745,6 +23967,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Put Back"
+          }
+        }
+      }
+    },
+    "放回 %lld 条" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Put Back %lld Note"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Put Back %lld Notes"
+                }
+              }
+            }
           }
         }
       }
@@ -25675,6 +25919,16 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "最近一份：%1$@，共 %2$lld 份"
+          }
+        }
+      }
+    },
+    "最近修改" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recently Modified"
           }
         }
       }
@@ -27907,6 +28161,28 @@
         }
       }
     },
+    "永久删除 %lld 条…" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Delete %lld Note Permanently…"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Delete %lld Notes Permanently…"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "永久删除…" : {
       "localizations" : {
         "en" : {
@@ -27923,6 +28199,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Delete “%@” permanently?"
+          }
+        }
+      }
+    },
+    "永久删除这 %lld 条便签？" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Permanently delete %lld note?"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Permanently delete these %lld notes?"
+                }
+              }
+            }
           }
         }
       }
@@ -36095,6 +36393,16 @@
         }
       }
     },
+    "贴的图片" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pasted images"
+          }
+        }
+      }
+    },
     "贴给你常用的 AI、写上想做什么；它给的脚本到 设置 › 启动器「从剪贴板新建」" : {
       "localizations" : {
         "en" : {
@@ -37597,6 +37905,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "This key is used elsewhere in screenshots (Esc, ↩, ⌫, Tab, Space, arrow keys, ⌘D, zoom). Choose another."
+          }
+        }
+      }
+    },
+    "这些便签会被永久删除，不能撤销。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "These notes will be deleted permanently. You can’t undo this."
           }
         }
       }

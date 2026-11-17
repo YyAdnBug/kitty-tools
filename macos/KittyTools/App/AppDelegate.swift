@@ -1718,6 +1718,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   /// 「新建便签」（全局动作、菜单栏、启动器、药丸的右键菜单）：屏幕边缘那叠开着（总开关开）就建一条、在鼠标所在屏的
   /// 那叠里打开；那边开不了（总开关关着、哪块屏都放不了）照第 2 批在全部便签窗口里新建
+  /// 「屏幕边缘的便签」（X16）：那叠扇出来、键盘给它；已经展开着就收回。屏幕边缘关着时岛上说怎么打开
+  private func summonNoteDeck() {
+    guard usableNotes() != nil else { return }
+    guard noteEdge?.summon() != true else { return }
+    island.show(
+      "屏幕边缘的便签关着", detail: "到 设置 › 便签 打开「屏幕边缘」", tone: .info,
+      actions: [.init("打开设置", opens: true) { [unowned self] in showSettings(page: .notes) }])
+  }
+
   private func newNote() {
     guard usableNotes() != nil else { return }
     if noteEdge?.openNew() != true { showNotes(creating: true) }
@@ -1852,6 +1861,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     case .noteCapture: toggleNoteCapture()
     case .noteNew: newNote()
     case .noteAll: showNotes()
+    case .noteDeck: summonNoteDeck()
     case .launchpad: launchpad.toggle()
     // 按键叫出的（全局快捷键；启动器、主界面里按 ↩——这一刻的事件是按键）：临时当 key，Esc / ←→ / ↩ 能用（U9）。
     // 用鼠标从菜单栏菜单、主界面点的，和点刘海叫出的一样不抢键盘

@@ -241,10 +241,16 @@ final class NoteDeck: NSObject {
   private func makePanel() -> NoteDeckPanel {
     let panel = NoteDeckPanel(frame: frame, model: model) { [weak self] in self?.pointerMoved() }
     panel.keyEquivalentHandler = { [weak model] in model?.handleKeyEquivalent($0) ?? false }
-    panel.keyDownHandler = { [weak model] in model?.handleMenuKey($0) ?? false }
+    panel.keyDownHandler = { [weak model] event in
+      guard let model else { return false }
+      return model.handleMenuKey(event) || model.handleFanKey(event)
+    }
     panel.onCancel = { [weak model] in model?.cancel() }
-    // 失去 key（切到别的 App、点了别的窗口）：攒着的改动先落下去
-    panel.onResignKey = { [weak model] in model?.store.flush() }
+    // 失去 key（切到别的 App、点了别的窗口）：攒着的改动先落下去；快捷键叫出来、还扇着的一列跟着收回（X16）
+    panel.onResignKey = { [weak model] in
+      model?.store.flush()
+      if let model, model.summonedByKey, model.state.phase == .fanned { model.send(.dismiss) }
+    }
     panel.contentFrame = { [weak self] in self?.contentFrame ?? .zero }
     return panel
   }
@@ -327,6 +333,19 @@ final class NoteDeck: NSObject {
     }
     updateTracking()
     applyBehavior()
+  }
+
+  /// 全局快捷键「屏幕边缘的便签」（X16）：这一列扇出来、面板当 key（键盘在这一列上：↑↓ 选、↩ 打开、Esc 收回）。
+  /// 不激活本 App（同点开便签）
+  func summon() {
+    model.summonedByKey = true
+    model.send(.summoned)
+    guard model.state.phase == .fanned, let panel else { return }
+    if takesKeyboard {
+      panel.makeKey()
+      panel.makeFirstResponder(nil)
+    }
+    pointerMoved()
   }
 
   /// 露出面板（没有就建；等着收起、等着放掉的都作废）。不当 key、不激活本 App
@@ -650,6 +669,8 @@ final class NoteDeck: NSObject {
 
   /// 离「没动静满 idleDelay」还差多久；到了就发 idle（正拖着标签、右键菜单开着时不算，重新数），返回 nil
   private func idleWait() -> Duration? {
+    // 快捷键叫出来的：按键之间多给些工夫看（还是会收：叫出来就去别处了的话不该一直挂着）
+    let idleAfter = model.summonedByKey ? self.idleAfter * 3 : self.idleAfter
     let left = idleAfter - (ContinuousClock.now - lastActivity)
     guard left <= .zero else { return left }
     if model.state.isDragging || model.isShowingMenu {
@@ -669,7 +690,10 @@ final class NoteDeck: NSObject {
     guard panel != nil else { return }
     updateTracking()
     guard model.state.phase == .fanned, !model.options.alwaysFanned else { return }
-    if model.isShowingMenu || hotZone.contains(NSEvent.mouseLocation) {
+    let inside = hotZone.contains(NSEvent.mouseLocation)
+    // 快捷键叫出来的（X16）：鼠标不在这一列上是常态、不算走了；鼠标进来过一次以后照鼠标的规矩
+    if inside { model.summonedByKey = false }
+    if model.isShowingMenu || inside || model.summonedByKey {
       lastActivity = .now
       skipsLeave = false
       leaveTask?.cancel()
