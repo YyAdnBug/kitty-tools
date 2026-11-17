@@ -1,5 +1,6 @@
 // 识字认码（REVIEW R105）：二维码纠错后的数据码字 → 文字（ISO/IEC 18004 第 7 章）。
 // 模式：数字（3 位一组 10 位）、字母数字（2 个一组 11 位，45 个字符）、字节、汉字（Shift_JIS 的双字节，13 位一个）、
+// 中文汉字（1101，GB/T 18284 加的：4 位子集 + GB2312 的双字节，13 位一个；国内有的生成器用它）、
 // ECI（换字符集，1–3 字节的指定符）、结构链接（跳过 16 位，各个码分开认）、FNC1（GS1：字母数字里的 % 是分隔符 GS，%% 是 %）。
 // 字符数指示符的位数按版本 1–9 / 10–26 / 27–40 三档。遇到不认识的模式、位数不够就当读不出来。
 // 字节模式的字符集：有 ECI 照 ECI；没有时 UTF-8 合法就按 UTF-8，不然试 GB18030（国内老的生成器写 GBK 不带 ECI），再不行按 ISO-8859-1。
@@ -8,13 +9,13 @@ using System.Text;
 
 namespace KittyTools.Core.Barcodes;
 
-internal static class QrBitstream
+public static class QrBitstream
 {
     private const string Alphanumeric = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:";
 
     static QrBitstream() => Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
-    /// <summary>读不出来（模式不认识、位数不够、数值越界）返回 null。</summary>
+    /// <summary>纠错后的数据码字 → 文字；读不出来（模式不认识、位数不够、数值越界）返回 null。version 定字符数指示符有几位。</summary>
     public static string? Parse(byte[] data, int version)
     {
         var reader = new BitReader(data);
@@ -134,9 +135,15 @@ internal static class QrBitstream
                     break;
                 }
 
-                case 8:
+                case 8:   // 汉字（Shift_JIS 的双字节）
+                case 13:  // 中文汉字（GB/T 18284 的扩展，规范里没有）：先 4 位子集，1 是 GB2312
                 {
                     Flush();
+                    if (mode == 13 && (reader.Available < 4 || reader.Read(4) != 1))
+                    {
+                        return null;
+                    }
+
                     var bits = new[] { 8, 10, 12 }[sizeClass];
                     if (reader.Available < bits)
                     {
@@ -149,17 +156,30 @@ internal static class QrBitstream
                         return null;
                     }
 
-                    var shiftJis = new byte[count * 2];
+                    var doubleBytes = new byte[count * 2];
                     for (var i = 0; i < count; i++)
                     {
                         var value = reader.Read(13);
-                        var assembled = ((value / 0xC0) << 8) | (value % 0xC0);
-                        assembled += assembled < 0x1F00 ? 0x8140 : 0xC140;
-                        shiftJis[2 * i] = (byte)(assembled >> 8);
-                        shiftJis[2 * i + 1] = (byte)assembled;
+                        int assembled;
+                        if (mode == 8)
+                        {
+                            // 0x8140–0x9FFC 减 0x8140、0xE040–0xEBBF 减 0xC140，高字节 × 0xC0 + 低字节
+                            assembled = ((value / 0xC0) << 8) | (value % 0xC0);
+                            assembled += assembled < 0x1F00 ? 0x8140 : 0xC140;
+                        }
+                        else
+                        {
+                            // 0xA1A1–0xAAFE 减 0xA1A1、0xB0A1–0xFAFE 减 0xA6A1，高字节 × 0x60 + 低字节
+                            assembled = ((value / 0x60) << 8) | (value % 0x60);
+                            assembled += assembled < 0x0A00 ? 0xA1A1 : 0xA6A1;
+                        }
+
+                        doubleBytes[2 * i] = (byte)(assembled >> 8);
+                        doubleBytes[2 * i + 1] = (byte)assembled;
                     }
 
-                    text.Append(Decode(shiftJis, 20));
+                    // GB2312 按 GB18030 读（它的超集）
+                    text.Append(Decode(doubleBytes, mode == 8 ? 20 : 32));
                     break;
                 }
 
@@ -363,6 +383,11 @@ internal static class QrBitstream
         28 => 950,
         29 => 54936,
         30 => 949,
+        31 => 936,
+        32 => 54936,
+        33 => 1200,
+        34 => 12001,
+        35 => 12000,
         _ => null,
     };
 

@@ -3,8 +3,8 @@
 // 扫描线：每隔几行一条横线、每隔几列一条竖线，再加偏 ±6°、±12° 的斜线（码转过一点、条又短时横线穿不过整个码）。
 // 每条线上按灰度和阈值（线上前后约 20 个点里最暗最亮的中点；那一带没什么明暗时用块阈值）找边，边的位置按相邻两点线性插值到
 // 零点几个像素：2.1 像素一个模块、边缘抗锯齿的截图也量得准。正反两个方向各解一遍（码倒过来）。
-// 防误认：码前后要有至少 5 个模块的空白（或空白一直到线头）；同一个结果至少两条线都读出来才算；Code 39、ITF 要求只有两种宽度
-// （ITF 没有校验位，卡得更严）；一条斜线从条的一头出去时能读出个短的假码，所以落在同一块地方的两个结果只留长的那个。
+// 防误认：码前后要有至少 5 个模块的空白（或空白一直到线头）；同一个结果至少两条线都读出来才算（Code 39、ITF 没有校验位，三条）；
+// Code 39、ITF 要求只有两种宽度（ITF 卡得更严）；一条斜线从条的一头出去时能读出个短的假码，所以落在同一块地方的两个结果只留长的那个。
 namespace KittyTools.Core.Barcodes;
 
 internal static class LinearBarcodes
@@ -67,9 +67,10 @@ internal static class LinearBarcodes
     /// <summary>一个结果和读到它的地方（读到它的每一段线的外框）。</summary>
     private sealed class Read
     {
-        public Read(string text, double minX, double minY, double maxX, double maxY)
+        public Read(string text, int need, double minX, double minY, double maxX, double maxY)
         {
             Text = text;
+            Need = need;
             MinX = minX;
             MinY = minY;
             MaxX = maxX;
@@ -77,6 +78,9 @@ internal static class LinearBarcodes
         }
 
         public string Text { get; }
+
+        /// <summary>要几条线读到才算：有校验位的 2 条，Code 39、ITF 没有校验位，3 条（REVIEW R105 审查第 3 条）。</summary>
+        public int Need { get; set; }
 
         public int Hits { get; set; } = 1;
 
@@ -112,9 +116,9 @@ internal static class LinearBarcodes
             return (xs[i] + (xs[j] - xs[i]) * f, ys[i] + (ys[j] - ys[i]) * f);
         }
 
-        void Record(List<(string Text, int First, int Last)> found, double[] line, bool flipped, int length)
+        void Record(List<(string Text, int First, int Last, bool Checked)> found, double[] line, bool flipped, int length)
         {
-            foreach (var (text, first, last) in found)
+            foreach (var (text, first, last, checkDigit) in found)
             {
                 var start = 0.0;
                 for (var i = 0; i < first; i++)
@@ -135,14 +139,16 @@ internal static class LinearBarcodes
 
                 var a = Point(start, length);
                 var b = Point(end, length);
+                var need = checkDigit ? 2 : 3;
                 var read = reads.Find(r => r.Text == text);
                 if (read is null)
                 {
-                    reads.Add(new Read(text, Math.Min(a.X, b.X), Math.Min(a.Y, b.Y), Math.Max(a.X, b.X), Math.Max(a.Y, b.Y)));
+                    reads.Add(new Read(text, need, Math.Min(a.X, b.X), Math.Min(a.Y, b.Y), Math.Max(a.X, b.X), Math.Max(a.Y, b.Y)));
                     continue;
                 }
 
                 read.Hits++;
+                read.Need = Math.Min(read.Need, need);
                 read.MinX = Math.Min(read.MinX, Math.Min(a.X, b.X));
                 read.MinY = Math.Min(read.MinY, Math.Min(a.Y, b.Y));
                 read.MaxX = Math.Max(read.MaxX, Math.Max(a.X, b.X));
@@ -332,10 +338,10 @@ internal static class LinearBarcodes
             }
         }
 
-        // 一条线读出来的可能是巧合（满是文字的截图里）：同一个结果至少两条线读到。一条线从条的一头出去时能读出个短的假码，
-        // 落在同一块地方的两个结果只留长的（一样长留读到次数多的）
+        // 一条线读出来的可能是巧合（满是文字的截图里）：有校验位的至少两条线读到，Code 39、ITF 至少三条（误认了会让这次识字整个跳过）。
+        // 一条线从条的一头出去时能读出个短的假码，落在同一块地方的两个结果只留长的（一样长留读到次数多的）
         var confirmed = reads
-            .Where(read => read.Hits >= 2)
+            .Where(read => read.Hits >= read.Need)
             .OrderByDescending(read => read.Text.Length)
             .ThenByDescending(read => read.Hits)
             .ToList();
@@ -367,10 +373,10 @@ internal static class LinearBarcodes
         return width * height >= Math.Min(areaA, areaB) * 0.25;
     }
 
-    /// <summary>一条线上解出的码，和它第一条、最后一条条的游程下标。runs[0] 是亮的，奇数下标是条。</summary>
-    private static List<(string Text, int First, int Last)> DecodeLine(double[] runs, int count)
+    /// <summary>一条线上解出的码、它第一条和最后一条条的游程下标、有没有校验位。runs[0] 是亮的，奇数下标是条。</summary>
+    private static List<(string Text, int First, int Last, bool Checked)> DecodeLine(double[] runs, int count)
     {
-        var found = new List<(string Text, int First, int Last)>();
+        var found = new List<(string Text, int First, int Last, bool Checked)>();
         for (var k = 1; k < count;)
         {
             // 每种码都以不超过两个模块宽的条开头，前面至少五个模块的空白：不像的直接跳过
@@ -380,11 +386,17 @@ internal static class LinearBarcodes
                 continue;
             }
 
-            var attempt = Ean13(runs, count, k) ?? Ean8(runs, count, k) ?? Upce(runs, count, k) ??
-                          Code128Read(runs, count, k) ?? Code39(runs, count, k) ?? Itf(runs, count, k);
+            var checkDigit = true;
+            var attempt = Ean13(runs, count, k) ?? Ean8(runs, count, k) ?? Upce(runs, count, k) ?? Code128Read(runs, count, k);
+            if (attempt is null)
+            {
+                checkDigit = false;
+                attempt = Code39(runs, count, k) ?? Itf(runs, count, k);
+            }
+
             if (attempt is { } result)
             {
-                found.Add((result.Text, k, result.End));
+                found.Add((result.Text, k, result.End, checkDigit));
                 k = result.End + 2;
             }
             else

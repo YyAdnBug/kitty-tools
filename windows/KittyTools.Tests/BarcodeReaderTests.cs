@@ -3,6 +3,7 @@
 // 模糊、深色底、一图多码，还有没码的图），每张都用 mac 识字用的 Vision 读过一遍（只有「GBK 不带 ECI」那张 Vision 读成乱码，
 // 这里按 GB18030 读，见 QrBitstream 文件头）。清单 manifest.json 是每张图里每个码的内容。
 // 另有里德-所罗门纠错：规范附录的「HELLO WORLD」1-M 纠错码字，和随机错不超过纠错能力的码字块都纠得回来。
+// 审查后（REVIEW R105「审查后改的」）加的：大图在时间上限内收手、超过像素上限先缩小、ITF 要三条线、中文汉字模式和 ECI 32。
 using System.IO.Compression;
 using System.Text.Json;
 using KittyTools.Core.Barcodes;
@@ -61,6 +62,64 @@ public sealed class BarcodeReaderTests
     }
 
     [TestMethod]
+    public void HugeImagesStopWithinTheBudget()
+    {
+        // 审查第 1 条：3000 万像素的噪点、上限 100 ms。灰度、二值化里面也看时间，不会先在预处理里耗上好几秒（Debug 下原来要三四秒）
+        var bgra = new byte[6000 * 5000 * 4];
+        new Random(105).NextBytes(bgra);
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        var codes = BarcodeReader.Read(bgra, 6000, 5000, budgetMilliseconds: 100);
+        watch.Stop();
+        Assert.AreEqual(0, codes.Count);
+        Assert.IsTrue(watch.ElapsedMilliseconds < 1100, $"上限 100 ms，用了 {watch.ElapsedMilliseconds} ms");
+    }
+
+    [TestMethod]
+    public void ShrinksImagesOverThePixelCap()
+    {
+        // 4 像素一个模块的码放大 5 倍贴进 3000 × 2000 的白图；上限压到 150 万像素 → 缩成一半再认，照样读得出
+        var (code, codeWidth, codeHeight) = TestPng.Read(File.ReadAllBytes(Path.Combine(FixtureDirectory, "qr-v02-M.png")));
+        const int width = 3000;
+        const int height = 2000;
+        var bgra = Enumerable.Repeat((byte)255, width * height * 4).ToArray();
+        for (var y = 0; y < codeHeight * 5; y++)
+        {
+            for (var x = 0; x < codeWidth * 5; x++)
+            {
+                var from = ((y / 5) * codeWidth + x / 5) * 4;
+                var to = ((500 + y) * width + 700 + x) * 4;
+                Array.Copy(code, from, bgra, to, 4);
+            }
+        }
+
+        var codes = BarcodeReader.Read(bgra, width, height, budgetMilliseconds: 30_000, maxPixels: 1_500_000);
+        CollectionAssert.AreEqual(new[] { Expected("qr-v02-M.png") }, codes.ToArray());
+    }
+
+    [TestMethod]
+    public void ItfNeedsThreeLines()
+    {
+        // 审查第 3 条：ITF、Code 39 没有校验位，三条扫描线读到才算。40 像素高的图横线每两行一条（y = 1, 3, 5…）：
+        // 4 像素高的条（第 10–13 行）只有两条线穿过，不算；8 像素高的四条，算。斜线穿不过这么矮的整条码
+        Assert.AreEqual(0, ReadItf(4).Count);
+        CollectionAssert.AreEqual(new[] { "1234567890" }, ReadItf(8).ToArray());
+    }
+
+    [TestMethod]
+    public void ReadsHanziModeAndNewerEcis()
+    {
+        // 审查第 4 条：1101 中文汉字模式（GB/T 18284）：子集 0001 = GB2312，版本 1 的字符数 8 位，每个字 13 位
+        // （GB2312 的双字节 0xA1A1–0xAAFE 减 0xA1A1、0xB0A1–0xFAFE 减 0xA6A1，高字节 × 0x60 + 低字节：中 4655、文 3875、，203）
+        var hanzi = Bits((0b1101, 4), (1, 4), (6, 8), (4655, 13), (3875, 13), (203, 13), (1629, 13), (3851, 13), (2762, 13), (0, 4));
+        Assert.AreEqual("中文，二维码", QrBitstream.Parse(hanzi, 1));
+        // 子集不是 GB2312：读不出来
+        Assert.IsNull(QrBitstream.Parse(Bits((0b1101, 4), (2, 4), (1, 8), (4655, 13), (0, 4)), 1));
+        // ECI 32（GB18030）+ 字节模式：「扫码」两个双字节、😀 是四字节
+        var eci = Bits((0b0111, 4), (32, 8), (0b0100, 4), (8, 8), (201, 8), (168, 8), (194, 8), (235, 8), (148, 8), (57, 8), (252, 8), (54, 8), (0, 4));
+        Assert.AreEqual("扫码😀", QrBitstream.Parse(eci, 1));
+    }
+
+    [TestMethod]
     public void ReedSolomonMatchesTheSpecExample()
     {
         // ISO/IEC 18004「HELLO WORLD」1-M：16 个数据码字、10 个纠错码字
@@ -99,6 +158,86 @@ public sealed class BarcodeReaderTests
                 CollectionAssert.AreEqual(word, damaged);
             }
         }
+    }
+
+    private static string Expected(string file)
+    {
+        using var manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(FixtureDirectory, "manifest.json")));
+        var entry = manifest.RootElement.EnumerateArray().First(item => item.GetProperty("file").GetString() == file);
+        return entry.GetProperty("codes")[0].GetString() ?? string.Empty;
+    }
+
+    /// <summary>白底上画一条 ITF「1234567890」：2 像素一个模块、宽条 3 个模块，条从第 10 行起 barHeight 行高，左右各留 20 个模块。</summary>
+    private static IReadOnlyList<string> ReadItf(int barHeight)
+    {
+        int[] patterns = { 0b00110, 0b10001, 0b01001, 0b11000, 0b00101, 0b10100, 0b01100, 0b00011, 0b10010, 0b01010 };
+        const string digits = "1234567890";
+        var widths = new List<int> { 1, 1, 1, 1 };
+        for (var i = 0; i < digits.Length; i += 2)
+        {
+            var bars = patterns[digits[i] - '0'];
+            var spaces = patterns[digits[i + 1] - '0'];
+            for (var j = 4; j >= 0; j--)
+            {
+                widths.Add(((bars >> j) & 1) == 1 ? 3 : 1);
+                widths.Add(((spaces >> j) & 1) == 1 ? 3 : 1);
+            }
+        }
+
+        widths.AddRange(new[] { 3, 1, 1 });
+        var modules = new List<bool>();
+        var dark = true;
+        foreach (var w in widths)
+        {
+            modules.AddRange(Enumerable.Repeat(dark, w));
+            dark = !dark;
+        }
+
+        var width = (modules.Count + 40) * 2;
+        const int height = 40;
+        var bgra = Enumerable.Repeat((byte)255, width * height * 4).ToArray();
+        for (var y = 10; y < 10 + barHeight; y++)
+        {
+            for (var m = 0; m < modules.Count; m++)
+            {
+                if (!modules[m])
+                {
+                    continue;
+                }
+
+                for (var dx = 0; dx < 2; dx++)
+                {
+                    var p = (y * width + (20 + m) * 2 + dx) * 4;
+                    bgra[p] = bgra[p + 1] = bgra[p + 2] = 0;
+                }
+            }
+        }
+
+        return BarcodeReader.Read(bgra, width, height, budgetMilliseconds: 30_000);
+    }
+
+    /// <summary>按位拼数据码字（高位在前），不满一个字节的补 0。</summary>
+    private static byte[] Bits(params (int Value, int Count)[] fields)
+    {
+        var bits = new List<bool>();
+        foreach (var (value, count) in fields)
+        {
+            for (var i = count - 1; i >= 0; i--)
+            {
+                bits.Add(((value >> i) & 1) == 1);
+            }
+        }
+
+        var bytes = new byte[(bits.Count + 7) / 8];
+        for (var i = 0; i < bits.Count; i++)
+        {
+            if (bits[i])
+            {
+                bytes[i >> 3] |= (byte)(0x80 >> (i & 7));
+            }
+        }
+
+        return bytes;
     }
 
     /// <summary>数据码字后面接上纠错码字（生成多项式 ∏(x - α^i)，i = 0…ecc-1，同二维码）。</summary>

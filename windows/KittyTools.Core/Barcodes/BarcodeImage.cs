@@ -56,19 +56,42 @@ internal sealed class BarcodeImage
         return _thresholds[by * _blocksWide + bx];
     }
 
-    /// <summary>BGRA（不预乘的 alpha）→ 灰度；透明的地方当白的（贴在白底上看）。</summary>
-    public static byte[] Luma(ReadOnlySpan<byte> bgra, int width, int height)
+    /// <summary>
+    /// BGRA（不预乘的 alpha）→ 灰度，每 step × step 个像素取平均成一个（step 是 1 就是原样）；透明的地方当白的（贴在白底上看）。
+    /// 到点了返回 null（每 32 行看一次时间）。
+    /// </summary>
+    public static (byte[] Gray, int Width, int Height)? Luma(ReadOnlySpan<byte> bgra, int width, int height, int step, Deadline deadline)
     {
-        var gray = new byte[width * height];
-        for (var i = 0; i < gray.Length; i++)
+        var w = width / step;
+        var h = height / step;
+        var gray = new byte[w * h];
+        var area = step * step;
+        for (var y = 0; y < h; y++)
         {
-            var p = i * 4;
-            var y = (bgra[p] * 29 + bgra[p + 1] * 150 + bgra[p + 2] * 77) >> 8;
-            var a = bgra[p + 3];
-            gray[i] = (byte)((y * a + 255 * (255 - a)) / 255);
+            if (y % 32 == 0 && deadline.Expired)
+            {
+                return null;
+            }
+
+            for (var x = 0; x < w; x++)
+            {
+                var sum = 0;
+                for (var dy = 0; dy < step; dy++)
+                {
+                    var p = ((y * step + dy) * width + x * step) * 4;
+                    for (var dx = 0; dx < step; dx++, p += 4)
+                    {
+                        var luma = (bgra[p] * 29 + bgra[p + 1] * 150 + bgra[p + 2] * 77) >> 8;
+                        var a = bgra[p + 3];
+                        sum += (luma * a + 255 * (255 - a)) / 255;
+                    }
+                }
+
+                gray[y * w + x] = (byte)(sum / area);
+            }
         }
 
-        return gray;
+        return (gray, w, h);
     }
 
     /// <summary>长宽各缩一半（2×2 取平均）。</summary>
@@ -91,14 +114,22 @@ internal sealed class BarcodeImage
         return (output, w, h);
     }
 
-    /// <summary>二值化；整张图几乎没有明暗差（纯色、空白）时返回 null。</summary>
-    public static BarcodeImage? Binarize(byte[] gray, int width, int height)
+    /// <summary>二值化；整张图几乎没有明暗差（纯色、空白）时、到点了时返回 null（每几十行看一次时间）。</summary>
+    public static BarcodeImage? Binarize(byte[] gray, int width, int height, Deadline deadline)
     {
         // 去掉最暗、最亮各 2% 之后的明暗跨度
         var histogram = new int[256];
-        foreach (var v in gray)
+        for (var y = 0; y < height; y++)
         {
-            histogram[v]++;
+            if (y % 64 == 0 && deadline.Expired)
+            {
+                return null;
+            }
+
+            for (var i = y * width; i < (y + 1) * width; i++)
+            {
+                histogram[gray[i]]++;
+            }
         }
 
         var total = width * height;
@@ -133,6 +164,11 @@ internal sealed class BarcodeImage
         var anyKnown = false;
         for (var by = 0; by < bh; by++)
         {
+            if (by % 8 == 0 && deadline.Expired)
+            {
+                return null;
+            }
+
             var y0 = by * BlockSize;
             var y1 = Math.Min(height, y0 + BlockSize);
             for (var bx = 0; bx < bw; bx++)
@@ -285,6 +321,11 @@ internal sealed class BarcodeImage
         var bits = new byte[total];
         for (var y = 0; y < height; y++)
         {
+            if (y % 64 == 0 && deadline.Expired)
+            {
+                return null;
+            }
+
             var row = y / BlockSize * bw;
             for (var x = 0; x < width; x++)
             {

@@ -16,6 +16,9 @@ internal static class QrDetector
 
     private const int MaxAttempts = 40;
 
+    /// <summary>一遍扫描最多记这么多个候选（REVIEW R105 审查第 2 条）。</summary>
+    private const int MaxCandidates = 2000;
+
     /// <summary>
     /// detection 上找定位图案，sampling 上取样（大图在缩小的图上找、原图上取；factor 是缩了几倍）。
     /// </summary>
@@ -70,11 +73,10 @@ internal static class QrDetector
         var found = new List<Finder>();
         var runs = new int[width + 2];
         var starts = new int[width + 2];
-        var rowsScanned = 0;
-        for (var y = step / 2; y < height; y += step)
+        // 每行都看一次时间（读一次时钟的开销比扫一行小得多）；候选多到 MaxCandidates 也停：满屏噪点、条纹时 Add 一个比一个慢
+        for (var y = step / 2; y < height && found.Count < MaxCandidates; y += step)
         {
-            rowsScanned++;
-            if (rowsScanned % 32 == 0 && deadline.Expired)
+            if (deadline.Expired)
             {
                 break;
             }

@@ -367,8 +367,10 @@ internal sealed partial class PinWindow : Window
         await ScreenshotOutput.CopyPngAsync(_png, width, height, "已复制钉图", "钉图", showSize: false);
     }
 
-    /// <summary>认出钉图里的字：没有识字组件、一个字都没认出来时提示并返回 null。</summary>
-    private async Task<string?> RecognizedTextAsync()
+    /// <summary>
+    /// 认出钉图里的字：没有识字组件、一个字都没认出来时提示并返回 null。decoded 是已经解好的钉图像素（识字前先认过码的那一份），没有就现解。
+    /// </summary>
+    private async Task<string?> RecognizedTextAsync((byte[] Bgra, int Width, int Height)? decoded = null)
     {
         if (!OcrService.HasEngine)
         {
@@ -377,7 +379,7 @@ internal sealed partial class PinWindow : Window
             return null;
         }
 
-        var decoded = await ImageCodec.PngToBgraAsync(_png);
+        decoded ??= await ImageCodec.PngToBgraAsync(_png);
         if (decoded is not { } image)
         {
             return null;
@@ -415,14 +417,15 @@ internal sealed partial class PinWindow : Window
     {
         try
         {
-            // 钉图里有二维码 / 条码就拷码的内容，不再识字（REVIEW R105，同 mac 钉图的识字）；右键「翻译」不认码，同 mac
-            if (await ImageCodec.PngToBgraAsync(_png) is { } image &&
-                await OcrService.CopyBarcodesAsync(image.Bgra, image.Width, image.Height))
+            // 钉图里有二维码 / 条码就拷码的内容，不再识字（REVIEW R105，同 mac 钉图的识字）；右键「翻译」不认码，同 mac。
+            // 解好的像素接着交给识字，不再解一遍
+            var decoded = await ImageCodec.PngToBgraAsync(_png);
+            if (decoded is { } image && await OcrService.CopyBarcodesAsync(image.Bgra, image.Width, image.Height))
             {
                 return;
             }
 
-            if (await RecognizedTextAsync() is not { } text)
+            if (await RecognizedTextAsync(decoded) is not { } text)
             {
                 return;
             }

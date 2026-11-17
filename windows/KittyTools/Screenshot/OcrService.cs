@@ -119,21 +119,33 @@ internal static class OcrService
             return false;
         }
 
-        if (codes.Count == 0)
+        // 码里可以有 U+0000：剪贴板的文字在 NUL 处就断了，历史里却是全文；先去掉，两边一样（REVIEW R105 审查第 5 条）
+        var text = string.Join("\n", codes).Replace("\0", string.Empty, StringComparison.Ordinal);
+        if (text.Length == 0)
         {
             return false;
         }
 
-        var text = string.Join("\n", codes);
         if (ClipboardWriter.WriteText(text))
         {
             ClipboardService.Instance?.MarkOwnWrite();
             ClipboardService.Instance?.Store.RecordOwnText(text);
         }
 
-        var preview = text.Replace('\n', ' ').Trim();
-        NoticeHost.Show("已复制二维码", preview.Length > 30 ? preview[..30] + "…" : preview, NoticeTone.Normal);
+        NoticeHost.Show("已复制二维码", Excerpt(text.Replace('\n', ' ').Trim(), 30), NoticeTone.Normal);
         return true;
+    }
+
+    /// <summary>前 length 个字加「…」；切点正好在一个 emoji（代理对）中间时少取一个，不留半个字符。</summary>
+    private static string Excerpt(string text, int length)
+    {
+        if (text.Length <= length)
+        {
+            return text;
+        }
+
+        var cut = char.IsLowSurrogate(text[length]) ? length - 1 : length;
+        return text[..cut] + "…";
     }
 
     /// <summary>
