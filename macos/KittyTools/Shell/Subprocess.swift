@@ -7,8 +7,10 @@
 // 访达右键的压缩、解压、复制要进度条：watch 在跑着的时候每 0.25 秒给一次子进程的进程号和标准错误里新写完的几行
 // （同样是看临时文件，不接管道；和 live 不一起用——live 把两路并成一个文件了）。
 // 标准输入一律接空设备：等输入的脚本读到的是文件结尾，不会一直挂着。
+// 一直跑着的那种（lines，2026-11-17：专注模式读系统日志的 log stream）：不等它结束，标准输出按行交出来。
 
 import Foundation
+import Synchronization
 
 enum Subprocess {
   struct Result {
@@ -209,5 +211,63 @@ enum Subprocess {
 
   private static func temporaryFile() -> URL {
     FileManager.default.temporaryDirectory.appending(path: "kitty-\(UUID().uuidString)")
+  }
+
+  /// 一直跑着、按行交出标准输出的子进程（SystemFocus 的 `log stream`）：流结束 = 子进程退出了（拿到退出码）；
+  /// 消费的任务被取消、流被丢掉时停掉子进程（SIGTERM）。stop：当场停掉（App 退出时用——那时候任务取消来不及走到
+  /// onTermination，子进程会留下来归 launchd，评审）。标准错误丢掉。管道的读回调在系统的线程上：这里只切行、
+  /// yield 出去，不碰别的状态（mac-native §3，同录制的事件流）
+  nonisolated static func lines(
+    _ tool: String, _ arguments: [String], quality: QualityOfService = .utility
+  ) -> (lines: AsyncStream<Line>, stop: @Sendable () -> Void) {
+    let process = Process()
+    process.executableURL = URL(filePath: tool)
+    process.arguments = arguments
+    process.qualityOfService = quality
+    process.standardInput = FileHandle.nullDevice
+    process.standardError = FileHandle.nullDevice
+    let lines = AsyncStream<Line> { continuation in
+      let pipe = Pipe()
+      process.standardOutput = pipe
+      // 上一次读到、还没换行的半行
+      let pending = Mutex(Data())
+      pipe.fileHandleForReading.readabilityHandler = { handle in
+        let data = handle.availableData
+        guard !data.isEmpty else {
+          handle.readabilityHandler = nil
+          return
+        }
+        let complete = pending.withLock { buffer -> [Data] in
+          buffer.append(data)
+          var lines: [Data] = []
+          while let newline = buffer.firstIndex(of: 0x0A) {
+            lines.append(buffer[buffer.startIndex..<newline])
+            buffer.removeSubrange(buffer.startIndex...newline)
+          }
+          return lines
+        }
+        for line in complete { continuation.yield(.output(String(decoding: line, as: UTF8.self))) }
+      }
+      process.terminationHandler = { finished in
+        continuation.yield(.exited(finished.terminationStatus))
+        continuation.finish()
+      }
+      continuation.onTermination = { _ in
+        if process.isRunning { process.terminate() }
+      }
+      do {
+        try process.run()
+      } catch {
+        continuation.yield(.exited(-1))
+        continuation.finish()
+      }
+    }
+    return (lines, { if process.isRunning { process.terminate() } })
+  }
+
+  /// lines 交出来的：一行标准输出，或者子进程退出了（退出码；起不来是 -1）
+  nonisolated enum Line: Sendable, Equatable {
+    case output(String)
+    case exited(Int32)
   }
 }

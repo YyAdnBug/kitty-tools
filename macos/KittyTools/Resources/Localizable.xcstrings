@@ -3045,6 +3045,142 @@
         }
       }
     },
+    "focus.driving" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Driving"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "驾驶"
+          }
+        }
+      }
+    },
+    "focus.fitness" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fitness"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "健身"
+          }
+        }
+      }
+    },
+    "focus.gaming" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gaming"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "游戏"
+          }
+        }
+      }
+    },
+    "focus.mindfulness" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mindfulness"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "正念"
+          }
+        }
+      }
+    },
+    "focus.personal" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Personal"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "个人"
+          }
+        }
+      }
+    },
+    "focus.reading" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reading"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "阅读"
+          }
+        }
+      }
+    },
+    "focus.sleep" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sleep"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "睡眠"
+          }
+        }
+      }
+    },
+    "focus.work" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Work"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "工作"
+          }
+        }
+      }
+    },
     "general.language" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {
@@ -3119,6 +3255,42 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "island shows the last line in a notice (the default), paste pastes into the front app, copy copies, full shows all of the output in the Launcher, list offers one result per line to pick from, none shows nothing"
+          }
+        }
+      }
+    },
+    "island.focusOff" : {
+      "comment" : "刘海岛：专注模式关掉了",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Off"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "关"
+          }
+        }
+      }
+    },
+    "island.focusOn" : {
+      "comment" : "刘海岛：专注模式打开了",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "开"
           }
         }
       }
@@ -6653,6 +6825,36 @@
         }
       }
     },
+    "专注模式「%@」已关闭" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Focus “%@” turned off"
+          }
+        }
+      }
+    },
+    "专注模式「%@」已打开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Focus “%@” turned on"
+          }
+        }
+      }
+    },
+    "专注模式开着时，到点的提醒" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When a Focus is on, due reminders"
+          }
+        }
+      }
+    },
     "专注模式时也照常提醒" : {
       "localizations" : {
         "en" : {
@@ -9406,6 +9608,16 @@
         }
       }
     },
+    "减少干扰" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reduce Interruptions"
+          }
+        }
+      }
+    },
     "几台电脑连同一个服务器上的同一个文件夹，不在一个网络里也能同步。" : {
       "localizations" : {
         "en" : {
@@ -10764,6 +10976,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Select what to include in the file."
+          }
+        }
+      }
+    },
+    "勿扰、睡眠、工作和自己建的模式都认。读的是系统日志里专注模式的切换记录，不要授权；开着时常驻一个约 4 MB 的小进程，这里和提醒都用不着时退出。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Works with Do Not Disturb, Sleep, Work and Focuses you created. It reads Focus changes from the system log, so no permission is needed; while on, a small process (about 4 MB) keeps running, and it quits when neither this nor Reminders needs it."
+          }
+        }
+      }
+    },
+    "勿扰模式" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Do Not Disturb"
           }
         }
       }
@@ -13762,6 +13994,16 @@
         }
       }
     },
+    "在刘海上显示专注模式" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show Focus on the Notch"
+          }
+        }
+      }
+    },
     "在刘海上显示正在播放" : {
       "localizations" : {
         "en" : {
@@ -13962,6 +14204,16 @@
         }
       }
     },
+    "在某个模式的「专注模式滤镜」里添加 Kitty Tools 的「提醒」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add Kitty Tools’ “Reminders” under Focus Filters of a Focus"
+          }
+        }
+      }
+    },
     "在格子之间换（Tab、⇧Tab 也行）" : {
       "localizations" : {
         "en" : {
@@ -14018,16 +14270,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Show icon in Dock"
-          }
-        }
-      }
-    },
-    "在系统设置的专注模式里点开一个模式（比如「工作」），在「专注模式滤镜」里添加 Kitty Tools 的「提醒」：这个模式开着时，到点的提醒只在刘海上挂个图标，不弹出、不出声，模式结束后一起弹一次。要紧的提醒在它的详情里打开「专注模式时也照常提醒」。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "In System Settings › Focus, open a Focus (such as Work) and add the Kitty Tools “Reminders” filter under Focus Filters. While that Focus is on, due reminders only show an icon on the Notch, with no pop-up or sound, and appear together when it ends. For an important reminder, turn on “Also remind during Focus” in its details."
           }
         }
       }
@@ -18830,6 +19072,16 @@
         }
       }
     },
+    "开着任何专注模式（勿扰、睡眠、工作、自己建的）都算。滤镜里另选了的模式以滤镜为准：比如这里选「照常提醒」，只给「工作」加滤镜选「只在刘海上挂图标」。挂在刘海上的提醒，专注模式结束后一起弹一次。要紧的提醒在它的详情里打开「专注模式时也照常提醒」。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Any Focus counts (Do Not Disturb, Sleep, Work, ones you created). A Focus whose filter picks something else follows the filter: for example, choose “Remind as usual” here and add a filter set to “Only show an icon on the Notch” to Work only. Reminders held on the Notch pop up together when the Focus ends. For important reminders, turn on “Also remind during Focus” in their details."
+          }
+        }
+      }
+    },
     "开着时让系统别睡；没开时什么都不跑" : {
       "localizations" : {
         "en" : {
@@ -20649,6 +20901,16 @@
         }
       }
     },
+    "打开、关掉、换模式时，刘海两边出 2 秒：模式的图标和名字" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When a Focus turns on, off or changes, its icon and name show beside the notch for 2 seconds"
+          }
+        }
+      }
+    },
     "打开「%@」" : {
       "localizations" : {
         "en" : {
@@ -22011,6 +22273,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Turns on automatically on a schedule, such as Weekdays 9:00–18:00"
+          }
+        }
+      }
+    },
+    "按模式另选" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose per Focus"
           }
         }
       }
@@ -30789,6 +31061,36 @@
         }
       }
     },
+    "现在：「%@」开着，到点的提醒只挂在刘海上" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Now: “%@” is on, due reminders only show on the Notch"
+          }
+        }
+      }
+    },
+    "现在：「%@」开着，到点的提醒等它结束再响" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Now: “%@” is on, due reminders wait until it ends"
+          }
+        }
+      }
+    },
+    "现在：「%@」开着，照常提醒" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Now: “%@” is on, reminding as usual"
+          }
+        }
+      }
+    },
     "现在：专注模式开着，到点的提醒只挂在刘海上" : {
       "localizations" : {
         "en" : {
@@ -35803,6 +36105,26 @@
         }
       }
     },
+    "读不到系统的专注模式，刘海上显示不了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can’t read the system Focus, so it can’t show on the Notch"
+          }
+        }
+      }
+    },
+    "读不到系统的专注模式：只认加了「提醒」滤镜的模式" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can’t read the system Focus: only Focuses with the “Reminders” filter count"
+          }
+        }
+      }
+    },
     "读不到这个 App 的菜单" : {
       "localizations" : {
         "en" : {
@@ -36071,6 +36393,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Running"
+          }
+        }
+      }
+    },
+    "跟着 Kitty 的设置" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Follow Kitty’s setting"
           }
         }
       }

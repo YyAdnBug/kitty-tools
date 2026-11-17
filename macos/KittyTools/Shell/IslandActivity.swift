@@ -163,7 +163,7 @@ extension Island {
   /// 不放歌、指针不在岛上时的实录：394 × 37.5；我们的「刘海宽」比真刘海宽几个点，每侧 90 量出来正好 394.5。原来定的
   /// 108、高出 5 是照它「指针停在岛上、鼓起着」的那段录像量的，量大了；用户装上后说往两边展开的动画不对）。放得下
   /// 符号 + 两个字、一根 68 pt 的细条。比耳朵宽，会盖住离刘海最近的菜单栏图标——只有两秒多
-  static let levelWing: CGFloat = 90
+  nonisolated static let levelWing: CGFloat = 90
   static let levelDrop: CGFloat = 0
 
   /// 刘海两边的东西这一刻要往里挪多少，才贴着形体的边（纯函数）。它们是照「长到位」的样子排的（每侧 wing 宽）；

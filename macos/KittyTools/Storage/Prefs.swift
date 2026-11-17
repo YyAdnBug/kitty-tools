@@ -270,6 +270,13 @@ enum Prefs {
   /// 专注模式滤镜上一次说的（ReminderFocusStyle 的 rawValue，照常时不存）：启动时问到系统之前先按它（ReminderFocus）。
   /// 这台电脑自己的状态：不注册默认值、不导出、不同步
   nonisolated static let remindersFocus = "remindersFocus"
+  /// 专注模式开着时到点的提醒怎么出（ReminderFocusStyle 的 rawValue：light 只在刘海上挂图标 / hold 结束后再响 / normal 照常；
+  /// 2026-11-17 拍板 B2，设置 › 提醒）：对任何专注模式都算（SystemFocus 读系统日志认出来的），某个模式的滤镜另选了的以滤镜为准。
+  /// 默认 light；跟着设置导出、同步
+  nonisolated static let remindersDuringFocus = "remindersDuringFocus"
+  /// 系统现在开着的专注模式（SystemFocus.Mode 的 JSON，都关了不存）：刚启动、往回查日志的那两秒先按它。这台电脑自己的状态：
+  /// 不注册默认值、不导出、不同步
+  nonisolated static let focusMode = "focusMode"
 
   /// 保持唤醒（第一个插件，2026-11-12，KeepAwake/）：屏幕也不熄（默认开；关掉只防系统睡眠）
   nonisolated static let keepAwakeDisplay = "keepAwakeDisplay"
@@ -509,6 +516,8 @@ enum Prefs {
   static let islandHaptics = "islandHaptics"
   /// 岛展开成卡片 / 那一张时四周渐进模糊（默认开；2026-11-14，Shell/IslandBackdrop.swift）
   static let islandBlur = "islandBlur"
+  /// 系统专注模式开、关、换模式时在刘海两边提示一下（默认开；2026-11-17 拍板 B1，Shell/SystemFocus.swift）
+  static let islandFocus = "islandFocus"
   /// 新功能标记（Shell/WhatsNew.swift，2026-11-05）的账：各版本在这台 Mac 上第一次打开的时刻（版本号 → Date，从这一刻起挂 30 天）、
   /// 碰过哪几个（WhatsNew.Entry.id 的数组）。这台电脑自己的状态：不注册默认值、不导出不同步
   static let whatsNewStarted = "whatsNewStarted"
@@ -631,6 +640,7 @@ enum Prefs {
       statusScreenHotKeyEntersFirst: false,
       statusScreenAnimations: true,
       remindersSnoozeMinutes: 5,
+      remindersDuringFocus: ReminderFocusStyle.light.rawValue,
       emojiPackDownloads: true,
       notesFontSize: 15,
       notesMarkdown: true,
@@ -664,6 +674,7 @@ enum Prefs {
       islandHoverExpands: false,
       islandHaptics: true,
       islandBlur: true,
+      islandFocus: true,
       keepAwakeDisplay: true,
       keepAwakeSchedule: "",
     ].merging(Feature.allCases.map { ($0.prefsKey, $0.defaultOn as Any) }) { current, _ in current }

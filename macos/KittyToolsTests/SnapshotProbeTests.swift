@@ -654,7 +654,7 @@ struct SnapshotProbeTests {
     islandPrefs.set(true, forKey: Prefs.islandShowsHistory)
     for dark in [false, true] {
       try snapshot(
-        IslandTab().defaultAppStorage(islandPrefs), size: NSSize(width: 640, height: 1400),
+        IslandTab().defaultAppStorage(islandPrefs), size: NSSize(width: 640, height: 1560),
         dark: dark, to: "\(out)/settings-island-custom\(dark ? "-dark" : "").png")
     }
     // 设置 › 通用「菜单栏」（第 9 批 M1 M2）：显示 + 彩色、隐藏（图标样式置灰），各出深色；临时偏好域，不动用户的菜单栏图标
@@ -1203,6 +1203,28 @@ struct SnapshotProbeTests {
         SystemNotices.powerLevel(plugged: false, percent: 64, low: false)
       ),
       ("island-level-power-low", SystemNotices.powerLevel(plugged: false, percent: 9, low: true)),
+      // 系统专注模式（SystemFocus，2026-11-17）：勿扰打开、自己建的「午睡」关掉、名字长的（每侧照名字加宽）
+      (
+        "island-level-focus",
+        SystemFocus.level(
+          SystemFocus.Mode(
+            id: "com.apple.donotdisturb.mode.default", name: "Do Not Disturb", symbol: "moon.fill",
+            tint: "systemIndigoColor"), on: true)
+      ),
+      (
+        "island-level-focus-off",
+        SystemFocus.level(
+          SystemFocus.Mode(
+            id: "com.apple.donotdisturb.mode.headphones", name: "午睡", symbol: "headphones",
+            tint: "systemOrangeColor"), on: false)
+      ),
+      (
+        "island-level-focus-long",
+        SystemFocus.level(
+          SystemFocus.Mode(
+            id: "x", name: "写周报的时候不要打扰", symbol: "pencil", tint: "systemTealColor"),
+          on: true)
+      ),
     ] {
       let island = Island(showing: nil, geometry: notch)
       island.showLevel(level)
@@ -1224,6 +1246,15 @@ struct SnapshotProbeTests {
       try snapshot(
         IslandView(island: device), size: capsule.windowSize, dark: false,
         to: "\(out)/island-level-device-capsule.png")
+      let focus = Island(showing: nil, geometry: capsule)
+      focus.showLevel(
+        SystemFocus.level(
+          SystemFocus.Mode(
+            id: "com.apple.focus.work", name: "Work", symbol: "person.lanyardcard.fill",
+            tint: "systemCyanColor"), on: true))
+      try snapshot(
+        IslandView(island: focus), size: capsule.windowSize, dark: false,
+        to: "\(out)/island-level-focus-capsule.png")
     }
     // 下一个日程：开始前 10 分钟挂在耳朵上倒数；点开是标题、时间地点、加入会议 / 打开日历
     do {
@@ -1517,6 +1548,10 @@ struct SnapshotProbeTests {
     try snapshot(
       root([]), size: NSSize(width: 780, height: 600), dark: false,
       to: "\(out)/reminders-settings-empty.png")
+    // 拉长到最下面的「专注模式」一节（2026-11-17：任何专注模式都认、滤镜按模式另选）
+    try snapshot(
+      root(list), size: NSSize(width: 780, height: 1500), dark: false,
+      to: "\(out)/reminders-settings-focus.png")
     try snapshot(
       root(list), size: NSSize(width: 700, height: 460), dark: false,
       to: "\(out)/reminders-settings-min.png")
@@ -4822,7 +4857,8 @@ struct SnapshotProbeTests {
     defer { prefs.removePersistentDomain(forName: name) }
     let navigation = SettingsNavigation(defaults: nil)
     navigation.fresh = [
-      "plugin-keep-awake", "plugin-bluetooth-snooze", "plugin-smooth-scroll", "plugin-app-shortcuts",
+      "plugin-keep-awake", "plugin-bluetooth-snooze", "plugin-smooth-scroll",
+      "plugin-app-shortcuts",
     ]
     let fixed = PluginsPage.Fixed(
       added: [.notes, .reminders, .dockPreview, .island], lacking: [.dockPreview])

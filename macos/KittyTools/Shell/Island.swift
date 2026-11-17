@@ -908,6 +908,8 @@ import SwiftUI
 
   /// 岛上现在是音量 / 亮度的提示
   var isShowingLevel: Bool { level != nil && content != nil }
+  /// 刘海两边那种提示现在每侧伸出多宽：出着的（或刚收起、还在淡的）那一条的；专注模式的随名字长短（Level.wing）
+  var levelWing: CGFloat { (level ?? departingLevel)?.wing ?? Self.levelWing }
 
   /// 形体现在按「坐在刘海里」算（seated 只在岛上空着时算数：开着、有耳朵、鼓起时照它们自己的样子）
   var isSeated: Bool { seated && !isOpen && !isShowingWings && !isPeeking }
@@ -1790,7 +1792,10 @@ struct IslandView: View {
           wings(geometry)
           levelWings(geometry)
         }
-        .modifier(EdgeRide(width: shape.frame.width, notch: geometry.notchWidth))
+        .modifier(
+          EdgeRide(
+            width: shape.frame.width, notch: geometry.notchWidth, levelWing: island.levelWing)
+        )
         // 减弱动态效果时不挂这条（形体本来就不伸缩；curve 是 nil，挂上会把这棵子树里同一拍的动画清掉）
         .animation(curve, value: reduceMotion ? 0 : shape.frame.width)
       }
@@ -1826,7 +1831,7 @@ struct IslandView: View {
         let shown = island.pinched || island.levelShaped
         let width =
           island.pinched
-          ? notchWidth + 8 : (island.levelShaped ? notchWidth + Island.levelWing * 2 : tucked.width)
+          ? notchWidth + 8 : (island.levelShaped ? notchWidth + island.levelWing * 2 : tucked.width)
         let height = notchHeight + (island.levelShaped ? Island.levelDrop : 0)
         return IslandGeometry(
           frame: CGRect(x: (canvas - width) / 2, y: 0, width: width, height: height),
@@ -2368,6 +2373,8 @@ nonisolated private struct EdgeRide: ViewModifier, Animatable {
   var width: CGFloat
   /// 刘海宽；没有刘海的屏是 nil
   let notch: CGFloat?
+  /// 音量 / 亮度那种提示每侧伸出多宽（专注模式的随名字长短，Island.levelWing）
+  let levelWing: CGFloat
 
   var animatableData: CGFloat {
     get { width }
@@ -2381,7 +2388,7 @@ nonisolated private struct EdgeRide: ViewModifier, Animatable {
           \.islandWingRide, Island.ride(wing: Island.wing, notch: notch, shape: width)
         )
         .environment(
-          \.islandLevelRide, Island.ride(wing: Island.levelWing, notch: notch, shape: width))
+          \.islandLevelRide, Island.ride(wing: levelWing, notch: notch, shape: width))
     } else {
       content
     }

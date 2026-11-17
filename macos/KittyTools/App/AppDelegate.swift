@@ -1124,6 +1124,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     applyIslandFeel()
     island.start()
     systemNotices.apply()
+    // 系统专注模式（读系统日志，SystemFocus）：刘海上提示由它自己出；提醒那边跟着它算（ReminderFocus）。要在提醒起来
+    // （applyFeatures）之前接好：刚启动时按偏好里记着的那个模式算，别把专注期间压着的弹出来
+    SystemFocus.shared.island = island
+    SystemFocus.shared.onChange = { _, mode in ReminderFocus.shared.set(mode: mode) }
+    SystemFocus.shared.apply()
+    ReminderFocus.shared.set(mode: SystemFocus.shared.current)
     nowPlaying.apply()
     nextEvent.apply()
     mediaKeys.apply()
@@ -1163,6 +1169,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.island.respondsToNotch = self.respondsToNotch
         self.applyIslandFeel()
         self.systemNotices.apply()
+        SystemFocus.shared.apply()
+        ReminderFocus.shared.settingChanged()
         self.nowPlaying.apply()
         self.nextEvent.apply()
         self.mediaKeys.apply()
@@ -1517,6 +1525,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     guard isRunning else { return }
     FileMoves.forgetCut()  // 访达右键剪切的清单只在内存里：退出后扩展别再列「粘贴」
     statusScreen.exit(.quit)  // 在状态屏里被要求退出（远程、脚本）：拦截当场撤掉
+    SystemFocus.shared.terminate()  // 读专注模式的 log stream 当场停掉，不留给 launchd（评审）
     // 便签：applicationShouldTerminate 已经落过、落不下去也问过了；这里再落一次兜着之后才有的改动（等录屏收尾的那几秒）
     noteStore?.flush()
     // 面板固定着删了再退出：删掉的也要落库（撤销栈平时在面板收起时提交，体检 A2），⌘C 复制过的挪到最前

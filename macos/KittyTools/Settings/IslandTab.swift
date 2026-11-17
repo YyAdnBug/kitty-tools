@@ -27,6 +27,7 @@ struct IslandTab: View {
   @AppStorage(Prefs.islandHoverExpands) private var hoverExpands = false
   @AppStorage(Prefs.islandHaptics) private var haptics = true
   @AppStorage(Prefs.islandBlur) private var blur = true
+  @AppStorage(Prefs.islandFocus) private var focus = true
   /// 这一次打开开关时系统没给授权（偏好没打开，橙字留着告诉怎么开）
   @State private var calendarDenied = false
   @Environment(SettingsNavigation.self) private var navigation: SettingsNavigation?
@@ -119,6 +120,21 @@ struct IslandTab: View {
       } footer: {
         SectionFootnote(
           "只接音量 +、音量 −、静音、亮度 +、亮度 − 这五个键，要「辅助功能」授权。锁屏时、接着调不了音量的输出设备或者外接显示器时，照旧是系统自己的提示。")
+      }
+      Section {
+        Toggle(isOn: $focus) {
+          Text("在刘海上显示专注模式")
+          Text("打开、关掉、换模式时，刘海两边出 2 秒：模式的图标和名字")
+        }
+        // 读不到系统日志（不是管理员账户、系统改了日志的写法）
+        if focus, SystemFocus.shared.isRunning, !SystemFocus.shared.isReadable {
+          Text("读不到系统的专注模式，刘海上显示不了").foregroundStyle(.orange)
+        }
+      } header: {
+        Text("专注模式")
+      } footer: {
+        SectionFootnote(
+          "勿扰、睡眠、工作和自己建的模式都认。读的是系统日志里专注模式的切换记录，不要授权；开着时常驻一个约 4 MB 的小进程，这里和提醒都用不着时退出。")
       }
       Section {
         List {

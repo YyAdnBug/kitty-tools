@@ -305,6 +305,18 @@ struct IslandLevelSymbol: View {
 
   var body: some View {
     let muted = level.kind == .volume && (level.muted || level.fraction <= 0)
+    if level.kind == .focus {
+      // 专注模式：模式自己的图标和颜色（关掉时暗白），开 / 关之间原地换颜色
+      Image(systemName: level.symbol)
+        .font(.system(size: size, weight: .semibold))
+        .foregroundStyle(level.focusColor)
+        .animation(Style.Motion.snap.animation(), value: level.fraction > 0)
+    } else {
+      symbol(muted: muted)
+    }
+  }
+
+  private func symbol(muted: Bool) -> some View {
     Image(
       systemName: level.kind == .volume
         ? (muted ? "speaker.slash.fill" : "speaker.wave.3.fill") : level.symbol,
@@ -350,16 +362,25 @@ struct IslandLevelWings: View {
       HStack(spacing: 6) {
         // 电源的提示左边只有一句话，没有图标（同 Alcove 的「Charging」）
         if level.kind != .device || level.glyph != nil {
-          IslandLevelSymbol(level: level, size: 14).frame(width: 22)
+          IslandLevelSymbol(level: level, size: 14).frame(width: level.kind == .focus ? 16 : 22)
         }
-        Text(level.title)
-          .font(.system(size: 13, weight: .semibold))
-          .foregroundStyle(.white.opacity(0.95))
-          .lineLimit(1)
-          .fixedSize()
+        if level.kind == .focus {
+          // 专注模式的名字长短不一：每侧伸出多宽已经照名字量过（SystemFocus.wing），再长的截掉尾巴
+          Text(verbatim: level.title)
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(.white.opacity(0.95))
+            .lineLimit(1)
+            .truncationMode(.tail)
+        } else {
+          Text(level.title)
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(.white.opacity(0.95))
+            .lineLimit(1)
+            .fixedSize()
+        }
       }
       .padding(.leading, level.kind == .device && level.glyph == nil ? 13 : 11)
-      .frame(width: Island.levelWing, alignment: .leading)
+      .frame(width: level.wing, alignment: .leading)
       // 不再套动画：见 IslandWings
       .animation(nil) { $0.offset(x: ride) }
       Color.clear.frame(width: notchWidth)
@@ -367,12 +388,20 @@ struct IslandLevelWings: View {
         if level.kind == .device {
           // 耳机连上、电源：电量（还没读到时空着，读到了原地出来）
           IslandBattery(fraction: level.battery, tone: level.tone)
+        } else if level.kind == .focus {
+          Text(verbatim: Island.Level.focusState(on: level.fraction > 0))
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(level.focusColor)
+            .lineLimit(1)
+            .fixedSize()
+            .contentTransition(.opacity)
+            .animation(Style.Motion.snap.animation(), value: level.fraction > 0)
         } else {
           IslandLevelBar(level: level).frame(width: 68)
         }
       }
       .padding(.trailing, 12)
-      .frame(width: Island.levelWing, alignment: .trailing)
+      .frame(width: level.wing, alignment: .trailing)
       .animation(nil) { $0.offset(x: -ride) }
     }
     .frame(height: notchHeight)
@@ -425,8 +454,21 @@ struct IslandBattery: View {
 }
 
 extension Island.Level {
+  /// 专注模式那一条右边的字：「开」/「关」
+  static func focusState(on: Bool) -> String {
+    on
+      ? String(localized: "island.focusOn", defaultValue: "开", comment: "刘海岛：专注模式打开了")
+      : String(localized: "island.focusOff", defaultValue: "关", comment: "刘海岛：专注模式关掉了")
+  }
+
+  /// 专注模式那一条的颜色：开着是模式自己的颜色，关掉是暗白
+  var focusColor: Color {
+    fraction > 0 ? Color(nsColor: SystemFocus.color(named: tint)) : .white.opacity(0.55)
+  }
+
   /// 读屏里念什么：音量 / 亮度是名字 + 百分比；耳机是「已连接，名字」+ 电量（没读到就没有）
   var reading: (label: String, value: String) {
+    if kind == .focus { return (title, Self.focusState(on: fraction > 0)) }
     guard kind == .device else { return (title, "\(Int((shown * 100).rounded()))%") }
     return (
       [title, label].compactMap { $0 }.joined(separator: Island.comma),
@@ -445,7 +487,19 @@ struct IslandLevelRow: View {
       if level.kind != .device || level.glyph != nil {
         IslandLevelSymbol(level: level, size: 13).frame(width: 24)
       }
-      if level.kind == .device {
+      if level.kind == .focus {
+        // 专注模式：名字 + 「开 / 关」
+        Text(verbatim: level.title)
+          .font(.system(size: 13, weight: .semibold))
+          .foregroundStyle(.white.opacity(0.95))
+          .lineLimit(1)
+          .truncationMode(.tail)
+          .frame(maxWidth: 200, alignment: .leading)
+          .fixedSize(horizontal: true, vertical: false)
+        Text(verbatim: Island.Level.focusState(on: level.fraction > 0))
+          .font(.system(size: 13, weight: .semibold))
+          .foregroundStyle(level.focusColor)
+      } else if level.kind == .device {
         // 耳机连上：「已连上 名字」+ 电量；电源：那句话 + 电量
         Text(level.label.map { String(localized: "已连上\($0)") } ?? level.title)
           .font(.system(size: 13, weight: .semibold))
