@@ -33,6 +33,9 @@ enum WhatsNew {
     /// 设置页里新的那一节（或那一行开关）的标题：标题后面挂「新」，进了页面知道新的是哪个；nil = 只标页。
     /// 按目录的 key 认那一节（多语言：不拿显示出来的字比，换了语言也对得上；页里写的是同一句中文就是同一个 key）
     var section: LocalizedStringResource?
+    /// 新插件（插件页改版 E1）：插件默认不添加，按 feature 就永远标不上——这种条目没添加时标（「全部插件」那一行、
+    /// 侧栏「全部插件」，page 写 .plugins），添加着不标，添加的那一刻算碰过（之后移除也不再标）。feature 写 nil
+    var plugin: Feature?
   }
 
   /// 清单（新的版本往后加）
@@ -88,7 +91,7 @@ enum WhatsNew {
       section: "也认网页里的元素"),
   ]
 
-  /// 一版最多标几个（拍板 B1：标多了到处都是「新」，等于没标）
+  /// 一版最多标几个（拍板 B1：标多了到处都是「新」，等于没标）。同一版的几个新插件算一个：都只标在「全部插件」一处
   static let perVersion = 3
   /// 一直没碰最多挂多久（拍板 B2）
   static let lifetime: TimeInterval = 30 * 24 * 60 * 60
@@ -140,6 +143,8 @@ enum WhatsNew {
       guard let start = ledger.started[entry.version], now.timeIntervalSince(start) < lifetime,
         !ledger.touched.contains(entry.id)
       else { return false }
+      // 这台用不了的插件（台式机上的睡眠关蓝牙、15 上的启动台）不标：「全部插件」里没有它，碰不掉（评审 1）
+      if let plugin = entry.plugin { return plugin.isAvailable && !enabled.contains(plugin) }
       return entry.feature.map(enabled.contains) ?? true
     }
   }
@@ -172,6 +177,11 @@ enum WhatsNew {
   /// 设置窗里这一页要不要标（侧栏那一行、收起的组）：ids 是 shown 算出来的那一份
   static func marks(_ page: SettingsPage, in ids: Set<String>) -> Bool {
     entries.contains { ids.contains($0.id) && $0.page == page }
+  }
+
+  /// 「全部插件」里这个插件的那一行要不要标
+  static func marks(plugin: Feature, in ids: Set<String>) -> Bool {
+    entries.contains { ids.contains($0.id) && $0.plugin == plugin }
   }
 
   /// 设置页里这一节要不要标（按 key 比）
@@ -217,6 +227,11 @@ enum WhatsNew {
   /// 执行了一个动作
   static func touch(action: HotKeyAction, defaults: UserDefaults = .standard) {
     update(defaults) { touching($0) { $0.actions.contains(action) } }
+  }
+
+  /// 添加了一个插件（AppDelegate.applyFeatures：从哪儿添加的都算，同步来的也算）
+  static func touch(plugin: Feature, defaults: UserDefaults = .standard) {
+    update(defaults) { touching($0) { $0.plugin == plugin } }
   }
 
   /// 拨了设置页里新的那一节 / 那一行的开关（Entry.section 是它的标题）。光打开那一页不算（2026-11-06）

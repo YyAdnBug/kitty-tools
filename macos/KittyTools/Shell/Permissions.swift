@@ -3,17 +3,20 @@
 // 废纸篓、让 loginwindow 弹退出登录 / 重新启动 / 关机框；第一次用时系统自己弹框问，这里只负责被拒后打开系统设置）、
 // 完全磁盘访问（启动器读 Safari 的书签和历史；没有请求授权的 API，只能打开系统设置让用户自己加）、
 // 麦克风（录屏第 4 批：录制条打开麦克风时，按开始、遮罩收起后才问——遮罩开着时系统授权框会被压在它下面）、
-// 蓝牙（睡眠关蓝牙插件开关蓝牙要它；状态和弹框在 BluetoothSnooze，这里只有系统设置那一页）。
+// 蓝牙（睡眠关蓝牙插件开关蓝牙要它；状态和弹框在 BluetoothSnooze，这里只有系统设置那一页）、
+// 访达扩展（访达右键插件：不是隐私授权，是 系统设置 › 登录项与扩展 里要用户自己打开一次；插件页改版 C1 把它也当一项授权）。
+// isGranted：插件的「要授权」现查（2026-11-17 插件页改版，Shell/Plugin.swift）。
 
 import AVFoundation
 import AppKit
 import ApplicationServices
+import FinderSync
 
 enum Permissions {
   /// 提示里「去系统设置授权」按钮要打开的那一项
   enum Kind {
     case accessibility, screenRecording, filesAndFolders, automation, fullDiskAccess, microphone
-    case calendar, bluetooth
+    case calendar, bluetooth, finderExtension
 
     var settingsTitle: String { String(localized: settingsTitleResource) }
 
@@ -27,23 +30,40 @@ enum Permissions {
       case .microphone: "打开麦克风设置"
       case .calendar: "打开日历设置"
       case .bluetooth: "打开蓝牙设置"
+      case .finderExtension: "打开访达扩展设置"
       }
     }
 
     func openSettings() {
-      let anchor =
-        switch self {
-        case .accessibility: "Privacy_Accessibility"
-        case .screenRecording: "Privacy_ScreenCapture"
-        case .filesAndFolders: "Privacy_FilesAndFolders"
-        case .automation: "Privacy_Automation"
-        case .fullDiskAccess: "Privacy_AllFiles"
-        case .microphone: "Privacy_Microphone"
-        case .calendar: "Privacy_Calendars"
-        case .bluetooth: "Privacy_Bluetooth"
-        }
+      let anchor: String
+      switch self {
+      case .accessibility: anchor = "Privacy_Accessibility"
+      case .screenRecording: anchor = "Privacy_ScreenCapture"
+      case .filesAndFolders: anchor = "Privacy_FilesAndFolders"
+      case .automation: anchor = "Privacy_Automation"
+      case .fullDiskAccess: anchor = "Privacy_AllFiles"
+      case .microphone: anchor = "Privacy_Microphone"
+      case .calendar: anchor = "Privacy_Calendars"
+      case .bluetooth: anchor = "Privacy_Bluetooth"
+      // 系统设置 › 登录项与扩展 里访达扩展那一页。15.0、15.1 的系统设置里没有这个入口（点了没反应）：
+      // 访达右键页另给一条终端命令（FinderMenuTab.settingsHaveEntry）
+      case .finderExtension: return FIFinderSyncController.showExtensionManagementInterface()
+      }
       NSWorkspace.shared.open(
         URL(string: "x-apple.systempreferences:com.apple.preference.security?\(anchor)")!)
+    }
+
+    /// 这台 Mac 给没给（不弹框）；nil = 查不了（自动化按 App 各问各的、文件夹和完全磁盘访问没有总的状态）
+    var isGranted: Bool? {
+      switch self {
+      case .accessibility: Permissions.isAccessibilityTrusted
+      case .screenRecording: Permissions.isScreenRecordingAllowed
+      case .microphone: Permissions.microphoneStatus == .authorized
+      case .calendar: NextEvent.isAuthorized
+      case .bluetooth: BluetoothSnooze.isAuthorized
+      case .finderExtension: FIFinderSyncController.isExtensionEnabled
+      case .automation, .filesAndFolders, .fullDiskAccess: nil
+      }
     }
   }
 

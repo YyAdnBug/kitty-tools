@@ -3,8 +3,8 @@
 // 功能开关也在里面；发出去之前也核一遍，落不下的不发）、快捷键（"hotkey:" + 动作，清除了的也是一条）。只同步改过的（持久域
 // 里有的）：一项改回默认 = 删掉这一条，别的 Mac 也回到默认（和别处同时改了值的话改了值的赢：墓碑压不住同时的改动）。
 // - **留在本机的**（localKeys，B1 + 评审）：启动台整页（屏幕大小、触控板、装的 App；连它的功能开关）、录屏要不要录麦克风和
-//   录音的来源、录屏显示按键（跟着这台的授权走：没授权的那台一录就写回关、把对面的也关掉）、程序坞预览的开关（打开时要这台
-//   给授权，同步过去会凭空弹系统授权框）、便签放在哪块显示器、菜单栏图标显不显示（刘海屏挤不挤每台不同）、剪贴板面板和翻译
+//   录音的来源、录屏显示按键（跟着这台的授权走：没授权的那台一录就写回关、把对面的也关掉）、程序坞预览这类插件的添加状态（打开时要这台
+//   给授权，同步过去会凭空弹系统授权框；哪几个插件见 Feature.syncsAddition）、便签放在哪块显示器、菜单栏图标显不显示（刘海屏挤不挤每台不同）、剪贴板面板和翻译
 //   浮窗的图钉；导出已经不带的窗口位置、文件夹路径、授权状态这些本来就不在 kinds 里。保留天数、「不记录」的 App、剪贴板和
 //   复制即译的开关**同步**（评审 H1，用户 2026-10-24 定：第一次合时写明、清掉了历史刘海岛说）。状态屏的状态列表是用户写的东西，另走
 //   一类（StatusPresetSync：一个状态一条，第一次合并在一起）。
@@ -26,13 +26,11 @@ import Foundation
 
 @MainActor final class SettingsSync: SyncSource {
   /// 留在本机、不同步的偏好键
-  static let localKeys: Set<String> = [
+  static let localKeys = Set([
     Prefs.launchpadColumns, Prefs.launchpadRows, Prefs.launchpadPinchGesture,
-    Prefs.launchpadPinchSense, Prefs.launchpadCorner, Feature.launchpad.prefsKey,
+    Prefs.launchpadPinchSense, Prefs.launchpadCorner,
     Prefs.screenRecordMicrophone, Prefs.audioRecordSource, Prefs.screenRecordShowsKeys,
-    Feature.dockPreview.prefsKey, Feature.finderMenu.prefsKey, Prefs.notesDeckDisplay,
-    // 睡眠关蓝牙要这台给蓝牙授权、只在有盖子的 Mac 上有（同程序坞预览）
-    Feature.bluetoothSnooze.prefsKey,
+    Prefs.notesDeckDisplay,
     Prefs.statusItemVisible,
     Prefs.clipboardHideOnUnfocus, Prefs.floatingPinned,
     // 保持唤醒的定时跟着这台 Mac（拍板 B4）
@@ -41,7 +39,10 @@ import Foundation
     Prefs.statusScreenPresets,
     // 另走一类（ReminderSync）
     Prefs.reminders,
-  ]
+  ])
+  // 插件的添加状态只在这台的（启动台、程序坞预览、访达右键、睡眠关蓝牙：要这台给授权、跟这台的屏幕和触控板有关），
+  // 插件自己声明（Feature.syncsAddition，插件页改版 F2；原来在这里一个个点名）
+  .union(Feature.plugins.filter { !$0.syncsAddition }.map(\.prefsKey))
   private static let prefPrefix = "pref:"
   private static let hotkeyPrefix = "hotkey:"
   /// 截图时的键（2026-11-06，ShotKeys）：另一个前缀，旧版本不认、放进透传

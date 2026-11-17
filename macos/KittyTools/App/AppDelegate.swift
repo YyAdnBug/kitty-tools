@@ -1170,6 +1170,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let turnedOff = (before ?? []).subtracting(now)
     let launching = before == nil
 
+    // 新插件的「新」：添加了就算碰过（插件页改版 E1；启动时开着的也记——同步来的、旧版本里加过的）
+    for plugin in turnedOn where plugin.isPlugin { WhatsNew.touch(plugin: plugin) }
     // 刘海岛插件（2026-11-13）：没添加时活动、常驻的刘海监听都停（Island.hasExtras），提示照常
     island.hasExtras = now.contains(.island)
     // 剪贴板的轮询：记历史要它，复制即译也要它（剪贴板关着时只为复制即译跑、不入库）
