@@ -22,6 +22,39 @@
 - 要你们做：编译零警告、全部单测；HANDTEST 1483。
 - AltGr：德语、波兰语等布局上 Ctrl+Alt+字母就是 AltGr+字母（打 @、ą 这些字）。原来就允许 Ctrl+Alt+别的字母，这里只是把那 12 个也放开，不另加提示。
 
+## 对齐复查（2026-11-17）
+
+审查方在 Mac 上只读代码，没编译。对照 Windows `origin/windows` `312d40f6`、mac `origin/macos` `09e5eced`。
+
+**结论**：上一轮（下面「对齐检查（2026-11-15）」）的待修 R80–R102 全部已修、缺口 G2–G10 已做（G1 以后），和 mac 已推的代码对齐了。
+mac 在 `9acd4306` 之后又推了 15 个提交，**要跟的只有 R103 一条**；另加 R104 给互通格式补一道真的交叉验证。
+
+**抽查过的**：导出导入互通（`1c0a0203`）——写 `version` / `exportedAt` / `isEnabled` / `urlTemplate`、Windows 的设置和快捷键改进 `windowsPreferences` / `windowsHotkeys`、
+`hotkeys` 按 `JsonElement` 读、`ArchiveMacCheck` 按 mac 的必填字段查、`ArchiveInteropTests`；翻译浮窗「跟随鼠标」存 `mouse`。都对。
+只有一点：mac 样本 `Fixtures/mac-archive-9acd4306.json` 是照 mac 代码手写的，不是 mac 真写出来的，所以补 R104。
+
+#### R103（P2）截图翻译盖回的排版跟上 mac PR #25（`5ef55b2f`、`d829b1b1`）
+
+- **中文字号**（`5ef55b2f`）：英文识字框的字面高度不能直接当中文字号——按系统字体的大写高度和原文行距估出字号，优先保字号、让它自然换行，按字形顶边对齐；
+  保留段落起点。代码块和其它语言照旧。
+- **按容器分段**（`d829b1b1`）：翻译前先按闭合的容器（带边框 / 底色的块）和字色分区，右上角的「New」这类标签、浅色标题不再并进正文；
+  按钮和标签按真实字形单行居中；正文不越出它所在的容器；画字和去字都保留容器的边框。mac 新加了一个找背景区域的纯函数（`Translate/ScreenshotRegions.swift`）。
+- mac 的改动：`Translate/ScreenshotOverlay.swift`、`ScreenshotRegions.swift`、`Clipboard/OCR.swift`（多给了词框）；单测 `ScreenshotRegionsTests`、`ScreenshotPopoverTests`、
+  `ScreenshotReadingTests`（真实识字结果的气泡、文章 1x / 2x 样例，86 项）。用 `git show 5ef55b2f`、`git show d829b1b1` 看。
+- **Windows**：照做到 `Core/ScreenshotOverlay.cs` / `Core/OverlayPixels.cs`（区域探测放 Core、配单测，样例照 mac 的搬）；中文字号用 DirectWrite 量出的大写高度。
+  开关照旧默认关。规模中。
+
+#### R104（P2）互通格式补一道真的交叉验证
+
+- 用测试档（`.Dev` 或探针档，不碰真数据）**真的导出一份** Windows 文件，带快捷键、截图时的键、网页搜索（含快捷链接）、翻译服务（一个关着）、状态、提醒、片段、生词、便签，
+  提交成 `windows/KittyTools.Tests/Fixtures/windows-archive-<提交号>.json`，在这一节下面写一句。
+- 审查方拿它在 Mac 上用 mac 自己的 `SettingsArchive` 真读一遍（mac 的单测宿主），对不上的再记待修。
+
+**不用跟的**（mac 独有）：Intel 包（PR #21、`81811b35`、`bfd13d83`）、刘海岛媒体键（`3d6d7f35`、PR #22 `926a1749`）。
+**原生悬停提示等 0.6 秒**（PR #28，`1778399a`）：Windows 的悬停提示是系统的，照 `AGENTS.md`「系统自己的东西跟 Windows 走」不改，记进 `MAC-DIFF.md`。
+
+**mac 还没推、之后要跟的**（并进 `macos` 再说）：多语言（先英文，mac 0.10.0 那一版）——要单独出拍板页；截图识别元素第二、三轮（Windows 做过第一轮，PLAN-v20 第 6 批）。
+
 ## 对齐检查（2026-11-15）
 
 用户：「windows 最近提交了很多修改 / 更新，主要是为了对齐 macos 的功能，你检查一下看看有没有还没有对齐的」。审查方在 Mac 上只读两边的代码，**没编译、没上机**。
