@@ -963,10 +963,6 @@ internal sealed partial class SelectionOverlayWindow : Window
                 line.RenderTransformOrigin = new Windows.Foundation.Point(0.5, 0.5);
                 line.RenderTransform = new RotateTransform { Angle = -45 };
             }
-            else if (kind == AnnotationKind.Counter && button.Content is TextBlock number)
-            {
-                number.FontSize = 17;
-            }
 
             var chosen = kind;
             button.Click += (_, _) => SelectTool(chosen);
@@ -1497,6 +1493,16 @@ internal sealed partial class SelectionOverlayWindow : Window
             // 不抢焦点：按键都挂在画布上，按钮拿了焦点数字键、Esc 就没反应了，空格 / Enter 还会再点一下它
             AllowFocusOnInteraction = false,
         };
+        if (label == ToolGlyph(AnnotationKind.Counter) && button.Content is TextBlock number)
+        {
+            // ① 是字不是图标：17 号才和旁边 16 号的图标一样大；按行高居中时落在基线附近，比旁边低 4（用户 2026-11-17）。
+            // 行框收紧到字形再居中，圈的下沿还比基线低一点，下边距 4 再往上抬 2（屏外截图逐像素量过，和圆、A、网格同一条中线）。
+            // 截图和长图标注的工具栏都走这里
+            number.FontSize = 17;
+            number.TextLineBounds = TextLineBounds.Tight;
+            number.Margin = new Thickness(0, 0, 0, 4);
+        }
+
         ToolTipService.SetToolTip(button, tooltip);
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, automationName);
         return button;
