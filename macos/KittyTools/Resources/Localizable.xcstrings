@@ -25976,6 +25976,16 @@
         }
       }
     },
+    "查询「%@」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Look Up “%@”"
+          }
+        }
+      }
+    },
     "标准" : {
       "localizations" : {
         "en" : {
@@ -30163,6 +30173,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "More than %lld Word List entries. Deselect “Word List” first."
+          }
+        }
+      }
+    },
+    "用 %@ 搜索" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search With %@"
           }
         }
       }

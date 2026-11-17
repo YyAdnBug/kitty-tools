@@ -321,10 +321,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
       }
     }
-    // 钉图上选中的字（2026-11-17）：同识字，记进剪贴板历史
-    board.copyText = { [unowned self] text in
-      Paster.write(string: text, record: true)
-      island.show("已复制", detail: "\(Island.excerpt(text))")
+    // 钉图上选中的字（2026-11-17）：拷贝同识字（记进剪贴板历史）；翻译同钉图的翻译（开翻译浮窗）；搜索同启动器的 ⌃↩
+    board.textOutput = { [unowned self] action, text in
+      switch action {
+      case .copy:
+        Paster.write(string: text, record: true)
+        island.show("已复制", detail: "\(Island.excerpt(text))")
+      case .translate:
+        guard Feature.translate.isOn else { return }
+        coordinator.translate(text)
+        presentTranslate()
+      case .search:
+        let query = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        guard Feature.launcher.isOn, let engine = WebSearch.primary(),
+          let url = URL(string: WebSearch.url(engine, query))
+        else { return }
+        // 交给系统在后台打开（同启动器：同步的 open 要等浏览器启动完才返回），打不开时岛说一声
+        NSWorkspace.shared.open(url, configuration: NSWorkspace.OpenConfiguration()) {
+          [weak self] _, error in
+          guard let error else { return }
+          let message = error.localizedDescription
+          Task { @MainActor in
+            self?.island.show(
+              "打不开「\(url.absoluteString)」", detail: "\(message)", tone: .error)
+          }
+        }
+      }
     }
     return board
   }()

@@ -1917,10 +1917,16 @@ Alfred 的 Related Apps、BetterTouchTool 按 App 停用，调研和测开销的
   的「实况文本」钮）。代理 `shouldBeginAt`：按在字上、没按 ⌥ 才归选字层（顺手 `makeKey`），别的都落回钉图——空白处的拖动、
   双击（关）、滚轮（缩放）选字层本来就不接（探针实测），字上双击是选词、不关钉图；按键一律归钉图（`shouldHandleKeyDownEvent`
   false），右键换成钉图自己的菜单（`updatedMenuFor`：系统那份的拷贝绕过 Paster、动作是私有方法）。命令表加两项（第 0 组，只在
-  用得上时出现：`Command.available`）：选中了字时「拷贝」⌘C 拷贝字（交给 `PinBoard.copyText`，AppDelegate 接 `Paster.write(string:
+  用得上时出现：`Command.available`）：选中了字时「拷贝」⌘C 拷贝字（交给 `PinBoard.textOutput`，AppDelegate 接 `Paster.write(string:
   record: true)` + 岛「已复制」），整张图那项改叫「拷贝图像」、不带键；认出字后「全选文字」⌘A。Esc 先清选区、再按才关。
   ponytail：语种跟系统首选语言（探针：只给中英会整行丢韩文，不给时粗体中文标题偶尔认成拉丁字母），认错的用 O 识字；
   按住 ⌥ 时字上的光标仍是 I 形（系统选字层管光标）。
+- 第 3 批（选中后的菜单）：选中了字时右键第一组是「拷贝 ⌘C / 翻译「…」/ 用 X 搜索 / 查询「…」/ 全选文字 ⌘A」（「…」是选中的字的
+  开头 12 个字，同系统菜单；翻译功能关着时没有翻译，启动器关着、没有搜索引擎时没有搜索，查询只在选了一行、40 个字以内时有——
+  一大段交给词典会画成伸出钉图的一长行、什么也查不到），读屏的自定义动作同一份。翻译 = `coordinator.translate`
+  + 翻译浮窗（同钉图的「翻译」，只是不用再识一遍字），搜索 = 启动器的兜底搜索（`WebSearch.primary`，同启动器的 ⌃↩；空白并成
+  一个空格；同启动器在后台打开，打不开时岛说），查询 = 系统词典的小窗（`showDefinition(for:at:)`，挂在右键按下的地方；探针：不激活的钉图当 key 时弹得出来，
+  App 不在前台时会不会把它拉到前台没测出来，见 HANDTEST）。三样都只在钉图上选着字时有，不加按键。
 
 ## 11½. Whisker 设计语言改造（2026-09-25 起）
 

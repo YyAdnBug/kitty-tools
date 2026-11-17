@@ -30,8 +30,16 @@ import VisionKit
   @ObservationIgnored var output: @MainActor (RegionSelector.Action, CGImage, CGFloat) -> Void = {
     _, _, _ in
   }
-  /// 钉图上选中的字拷走（AppDelegate 接 Paster.write(string:record: true) + 刘海岛；单测接住看，不碰真的剪贴板）
-  @ObservationIgnored var copyText: @MainActor (String) -> Void = { _ in }
+  /// 钉图上选中的字拿去做什么（2026-11-17 拍板 C3）
+  enum TextAction { case copy, translate, search }
+  /// 选中的字的拷贝 / 翻译 / 搜索，由 AppDelegate 接（拷贝走 Paster.write(string:record: true) + 刘海岛、翻译开翻译浮窗、
+  /// 搜索用启动器排第一的搜索引擎）；单测接住看，不碰真的剪贴板。查询（系统词典的小窗）钉图自己弹
+  @ObservationIgnored var textOutput: @MainActor (TextAction, String) -> Void = { _, _ in }
+
+  /// 选中的字能不能查询：一行、不超过 40 个字（词典查的就是词和短语；一大段交给它会画成伸出钉图的一长行、什么也查不到）
+  nonisolated static func looksUp(_ text: String) -> Bool {
+    !text.isEmpty && text.count <= 40 && !text.contains(where: \.isNewline)
+  }
 
   /// frame：截图时选区的位置（点，全局坐标）。钉图不抢键盘、VoiceOver 的焦点不在它上面：主动播报
   func pin(_ image: CGImage, frame: CGRect) {
@@ -632,14 +640,29 @@ private final class PinView: NSView {
     var available = true
   }
 
-  /// 选中了字时的拷贝 / 全选文字 ｜ 拷贝 / 识字并拷贝 / 翻译 / 存储到「桌面」/ 另存为… ｜ 原始大小 ｜ 关闭
-  /// （体检 B41 C9 D17：截图家族同名同键）。选中了字时 ⌘C 拷贝字，拷贝整张图改叫「拷贝图像」、不带键
+  /// 选中了字时的拷贝 / 翻译「…」/ 用 X 搜索 / 查询「…」/ 全选文字 ｜ 拷贝 / 识字并拷贝 / 翻译 / 存储到「桌面」/ 另存为… ｜
+  /// 原始大小 ｜ 关闭（体检 B41 C9 D17：截图家族同名同键）。选中了字时 ⌘C 拷贝字，拷贝整张图改叫「拷贝图像」、不带键
   private var commands: [Command] {
-    let selected = textLayer?.hasActiveTextSelection == true
+    let text = selectedText ?? ""
+    let selected = !text.isEmpty
+    // 翻译、查询的标题带上选中的字的开头（同系统菜单），和下面翻译整张图的那项分得开
+    let excerpt = selected ? Self.excerpt(text) : ""
+    // 搜索引擎在设置 › 启动器里：启动器关着时没有这一项（mac-native §1 功能开关）
+    let engine = selected && Feature.launcher.isOn ? WebSearch.primary() : nil
     return [
       Command(
         title: String(localized: "拷贝"), key: "c", keyCode: kVK_ANSI_C, modifiers: .command,
         action: #selector(copySelectedText), group: 0, available: selected),
+      Command(
+        title: String(localized: "翻译「\(excerpt)」"), key: "", keyCode: nil, modifiers: [],
+        action: #selector(translateSelectedText), group: 0,
+        available: selected && Feature.translate.isOn),
+      Command(
+        title: String(localized: "用 \(engine?.displayName ?? "") 搜索"), key: "", keyCode: nil,
+        modifiers: [], action: #selector(searchSelectedText), group: 0, available: engine != nil),
+      Command(
+        title: String(localized: "查询「\(excerpt)」"), key: "", keyCode: nil, modifiers: [],
+        action: #selector(lookUpSelectedText(_:)), group: 0, available: PinBoard.looksUp(text)),
       Command(
         title: String(localized: "全选文字"), key: "a", keyCode: kVK_ANSI_A, modifiers: .command,
         action: #selector(selectAllText), group: 0,
@@ -685,6 +708,9 @@ private final class PinView: NSView {
         title: command.title, action: command.action, keyEquivalent: command.key)
       item.keyEquivalentModifierMask = command.modifiers
       item.target = self
+      if command.action == #selector(lookUpSelectedText(_:)) {  // 词典小窗挂在这次右键按下的地方
+        item.representedObject = NSValue(point: convert(event.locationInWindow, from: nil))
+      }
       menu.addItem(item)
     }
     return menu
@@ -718,7 +744,35 @@ private final class PinView: NSView {
 
   @objc private func copySelectedText() {
     guard let text = selectedText, !text.isEmpty else { return }
-    board.copyText(text)
+    board.textOutput(.copy, text)
+  }
+
+  @objc private func translateSelectedText() {
+    guard let text = selectedText, !text.isEmpty else { return }
+    board.textOutput(.translate, text)
+  }
+
+  @objc private func searchSelectedText() {
+    guard let text = selectedText, !text.isEmpty else { return }
+    board.textOutput(.search, text)
+  }
+
+  /// 系统词典的小窗，挂在右键按下的地方（读屏的自定义动作没有位置：钉图正中）
+  @objc private func lookUpSelectedText(_ sender: Any?) {
+    guard let text = selectedText, PinBoard.looksUp(text) else { return }
+    window?.makeKey()
+    let point =
+      ((sender as? NSMenuItem)?.representedObject as? NSValue)?.pointValue
+      ?? CGPoint(x: bounds.midX, y: bounds.midY)
+    showDefinition(
+      for: NSAttributedString(string: text, attributes: [.font: NSFont.systemFont(ofSize: 15)]),
+      at: point)
+  }
+
+  /// 菜单标题里选中的字的开头：换行并成空格，超过 12 个字截断加「…」
+  static func excerpt(_ text: String) -> String {
+    let line = text.split(whereSeparator: \.isNewline).joined(separator: " ")
+    return line.count > 12 ? line.prefix(12) + "…" : line
   }
 
   @objc private func selectAllText() {
