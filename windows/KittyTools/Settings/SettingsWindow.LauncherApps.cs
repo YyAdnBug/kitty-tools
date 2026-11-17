@@ -38,10 +38,7 @@ internal sealed partial class SettingsWindow
     private void BuildLauncherApps()
     {
         var settings = SettingsService.Current;
-        var back = new HyperlinkButton { Content = "‹ 启动器", Padding = new Thickness(0), Margin = new Thickness(0, 0, 0, 4) };
-        back.Click += (_, _) => OpenLauncherSubpage(null);
-        AutomationProperties.SetName(back, "返回启动器设置");
-        _content.Children.Add(back);
+        _content.Children.Add(SettingsUi.BackButton("启动器", "返回启动器设置", () => OpenLauncherSubpage(null)));
         _content.Children.Add(Header("应用", "应用别名、便携软件的文件夹、隐藏的应用"));
         var apps = AppCatalog.Instance?.Apps ?? Array.Empty<LauncherItem>();
 

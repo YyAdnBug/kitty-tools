@@ -555,10 +555,7 @@ internal sealed partial class SettingsWindow
 
     private void BuildServiceDetail(TranslateServiceStore store, TranslateServiceConfig service)
     {
-        var back = new HyperlinkButton { Content = "‹ 翻译", Padding = new Thickness(0), Margin = new Thickness(0, 0, 0, 4) };
-        back.Click += (_, _) => CloseServiceDetail();
-        AutomationProperties.SetName(back, "返回翻译设置");
-        _content.Children.Add(back);
+        _content.Children.Add(SettingsUi.BackButton("翻译", "返回翻译设置", () => CloseServiceDetail()));
 
         // 页头：40 的服务图标 + 名称 + 状态（改了就跟着变）
         var title = new TextBlock { Text = service.Name, FontSize = 24, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis };

@@ -304,6 +304,30 @@ internal static class SettingsUi
         Margin = new Thickness(2, 0, 2, 4),
     };
 
+    /// <summary>
+    /// 子页左上角回上一层的那个按钮（PLAN-v23 W3）：Segoe 的左箭头 + 上一页的名字，平时没底色、次要字色，
+    /// 指上去才铺一层浅底、字变深（Windows 设置里无边框按钮的样子）。左边往外挪 8，箭头和下面的标题对齐。
+    /// </summary>
+    public static Button BackButton(string previousTitle, string automationName, Action click)
+    {
+        var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        content.Children.Add(new FontIcon { Glyph = "", FontSize = 12, VerticalAlignment = VerticalAlignment.Center });
+        content.Children.Add(new TextBlock { Text = previousTitle, FontSize = 13, VerticalAlignment = VerticalAlignment.Center });
+        var button = new Button
+        {
+            Content = content,
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+            BorderThickness = new Thickness(0),
+            Foreground = Theme.SecondaryText(),
+            Padding = new Thickness(8, 5, 10, 6),
+            Margin = new Thickness(-8, 0, 0, 4),
+        };
+        button.Click += (_, _) => click();
+        AutomationProperties.SetName(button, automationName);
+        ToolTipService.SetToolTip(button, "返回（Alt + ←）");
+        return button;
+    }
+
     /// <summary>页头：一个家族色块 + 大标题 + 一句说明（PLAN-v7 §3.7）。glyph 是这一页自己的符号（和左栏同一个，同 mac PageHeader 的 page.symbol）。</summary>
     public static UIElement Header(string title, string subtitle, string? glyph = null)
     {

@@ -71,10 +71,7 @@ internal sealed partial class SettingsWindow
     /// <summary>详情页的页头：「‹ 上一页」、标题（跟着改）、一行状态（有问题时橙字）。</summary>
     private (TextBlock Title, TextBlock Status) AddDetailHeader(string backTitle, string title, UIElement? icon = null)
     {
-        var back = new HyperlinkButton { Content = "‹ " + backTitle, Padding = new Thickness(0), Margin = new Thickness(0, 0, 0, 4) };
-        back.Click += (_, _) => CloseDetail();
-        AutomationProperties.SetName(back, "返回" + backTitle);
-        _content.Children.Add(back);
+        _content.Children.Add(SettingsUi.BackButton(backTitle, "返回" + backTitle, () => CloseDetail()));
         var titleText = new TextBlock
         {
             Text = title,

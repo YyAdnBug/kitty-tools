@@ -153,10 +153,7 @@ internal sealed partial class SettingsWindow
 
     private void BuildLauncherCommands()
     {
-        var back = new HyperlinkButton { Content = "‹ 启动器", Padding = new Thickness(0), Margin = new Thickness(0, 0, 0, 4) };
-        back.Click += (_, _) => OpenLauncherSubpage(null);
-        AutomationProperties.SetName(back, "返回启动器设置");
-        _content.Children.Add(back);
+        _content.Children.Add(SettingsUi.BackButton("启动器", "返回启动器设置", () => OpenLauncherSubpage(null)));
         _content.Children.Add(Header("命令和别名", "启动器里要打的词、开关和快捷键"));
 
         var search = new TextBox { PlaceholderText = "按名字或别名找", Text = _commandFilter };

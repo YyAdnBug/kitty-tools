@@ -96,10 +96,7 @@ internal sealed partial class SettingsWindow
 
         var settings = SettingsService.Current;
         var on = settings.LauncherScripts;
-        var back = new HyperlinkButton { Content = "‹ 启动器", Padding = new Thickness(0), Margin = new Thickness(0, 0, 0, 4) };
-        back.Click += (_, _) => OpenLauncherSubpage(null);
-        AutomationProperties.SetName(back, "返回启动器设置");
-        _content.Children.Add(back);
+        _content.Children.Add(SettingsUi.BackButton("启动器", "返回启动器设置", () => OpenLauncherSubpage(null)));
         _content.Children.Add(Header("脚本命令", "脚本文件夹里的每个脚本就是启动器里的一条命令"));
         AddToggle("启用脚本命令", "PowerShell（.ps1）、批处理（.cmd）、装了 Python 时的 .py；关掉后启动器里不出、自带的几条也不出",
             on, isOn =>
@@ -194,10 +191,7 @@ internal sealed partial class SettingsWindow
 
     private void BuildScriptGuide()
     {
-        var back = new HyperlinkButton { Content = "‹ 脚本命令", Padding = new Thickness(0), Margin = new Thickness(0, 0, 0, 4) };
-        back.Click += (_, _) => OpenLauncherSubpage("scripts");
-        AutomationProperties.SetName(back, "返回脚本命令");
-        _content.Children.Add(back);
+        _content.Children.Add(SettingsUi.BackButton("脚本命令", "返回脚本命令", () => OpenLauncherSubpage("scripts")));
         _content.Children.Add(Header("怎么写脚本", "一个脚本文件就是启动器里的一条命令"));
 
         // 让 AI 来写

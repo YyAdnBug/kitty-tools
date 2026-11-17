@@ -1032,10 +1032,7 @@ internal sealed partial class SettingsWindow : Window
     /// <summary>设置 › 通用 › 功能（PLAN-v18 L4，mac FeaturesPage）：各功能一个开关。</summary>
     private void BuildFeaturesPage()
     {
-        var back = new HyperlinkButton { Content = "‹ 通用", Padding = new Thickness(0), Margin = new Thickness(0, 0, 0, 4) };
-        back.Click += (_, _) => OpenFeaturesPage(false);
-        AutomationProperties.SetName(back, "返回通用设置");
-        _content.Children.Add(back);
+        _content.Children.Add(SettingsUi.BackButton("通用", "返回通用设置", () => OpenFeaturesPage(false)));
         _content.Children.Add(Header("功能", "不用的整个关掉，用的时候再打开"));
         foreach (var feature in Features.Listed)
         {
@@ -2371,10 +2368,7 @@ internal sealed partial class SettingsWindow : Window
             _detail = null;
         }
 
-        var back = new HyperlinkButton { Content = "‹ 启动器", Padding = new Thickness(0), Margin = new Thickness(0, 0, 0, 4) };
-        back.Click += (_, _) => OpenLauncherSubpage(null);
-        AutomationProperties.SetName(back, "返回启动器设置");
-        _content.Children.Add(back);
+        _content.Children.Add(SettingsUi.BackButton("启动器", "返回启动器设置", () => OpenLauncherSubpage(null)));
         _content.Children.Add(Header("网页搜索与快捷链接", "「关键词 空格 内容」直达的搜索、没有本地结果时的兜底、一键打开的网址"));
         var settings = SettingsService.Current;
         var engines = (settings.LauncherSearchEngines ?? WebSearch.Defaults()).Select(Copy).ToList();
@@ -4015,6 +4009,11 @@ internal sealed partial class SettingsWindow : Window
 
     private Microsoft.UI.Dispatching.DispatcherQueueTimer? _updateTicker;
 
+    /// <summary>下载中那一行的进度条和文字：计时器原地改它们，不重建整行（重建会让进度条动画每半秒从头来）。</summary>
+    private ProgressBar? _updateBar;
+
+    private TextBlock? _updateProgressText;
+
     /// <summary>
     /// 设置 › 关于（照 mac AboutTab 的品牌页，没有页头）：128 的 App 图标 + 字标 + 品牌粉版本胶囊 + 更新状态一行 +「自动检查更新」+
     /// 「打开发布页」，下面是更新日志时间线（当前版本品牌粉圆点）。在这里点的检查结果、更新进度写在页上（同 mac）。
@@ -4167,10 +4166,15 @@ internal sealed partial class SettingsWindow : Window
             return link;
         }
 
+        _updateBar = null;
+        _updateProgressText = null;
         if (AutoUpdater.IsBusy)
         {
-            row.Children.Add(new ProgressBar { Width = 140, IsIndeterminate = true, VerticalAlignment = VerticalAlignment.Center });
-            row.Children.Add(Text(AutoUpdater.ProgressMenuText ?? "正在更新…"));
+            _updateBar = new ProgressBar { Width = 140, Maximum = 100, VerticalAlignment = VerticalAlignment.Center };
+            _updateProgressText = Text("");
+            UpdateProgressInPlace();
+            row.Children.Add(_updateBar);
+            row.Children.Add(_updateProgressText);
             row.Children.Add(Link("取消", () =>
             {
                 AutoUpdater.Cancel();
@@ -4279,11 +4283,45 @@ internal sealed partial class SettingsWindow : Window
             {
                 _updateTicker?.Stop();
                 _updateTicker = null;
+                RefreshUpdateRow();
+                return;
             }
 
-            RefreshUpdateRow();
+            if (_updateBar is null)
+            {
+                RefreshUpdateRow();
+                return;
+            }
+
+            UpdateProgressInPlace();
         };
         _updateTicker.Start();
+    }
+
+    /// <summary>
+    /// 知道总大小就按百分比走（确定进度条）；还不知道才用来回走的那种。
+    /// 只在状态变了时改属性：IsIndeterminate 反复置同一个值也会让动画重来。
+    /// </summary>
+    private void UpdateProgressInPlace()
+    {
+        if (_updateBar is null || _updateProgressText is null)
+        {
+            return;
+        }
+
+        var percent = AutoUpdater.ProgressPercent;
+        var indeterminate = percent < 0;
+        if (_updateBar.IsIndeterminate != indeterminate)
+        {
+            _updateBar.IsIndeterminate = indeterminate;
+        }
+
+        if (!indeterminate && _updateBar.Value != percent)
+        {
+            _updateBar.Value = percent;
+        }
+
+        _updateProgressText.Text = AutoUpdater.ProgressMenuText ?? "正在更新…";
     }
 
     /// <summary>

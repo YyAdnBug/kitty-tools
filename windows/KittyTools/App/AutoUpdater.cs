@@ -35,6 +35,9 @@ internal static class AutoUpdater
     /// <summary>正在下载 / 安装：托盘和设置里的按钮据此变灰。</summary>
     public static bool IsBusy => _busy;
 
+    /// <summary>下载进度 0–100，-1 表示还不知道总大小：关于页那条进度条用。</summary>
+    public static int ProgressPercent => _progressPercent;
+
     /// <summary>后台下好、等着装的那一版：版本号和解压出来的「Kitty Tools」文件夹（PLAN-v11 F7）。</summary>
     public static (string Version, string Entry)? Ready { get; private set; }
 
