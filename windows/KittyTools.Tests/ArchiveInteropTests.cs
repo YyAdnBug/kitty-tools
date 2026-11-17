@@ -122,6 +122,26 @@ public sealed class ArchiveInteropTests
         StringAssert.Contains(text, "正文 ✨");
     }
 
+    /// <summary>
+    /// REVIEW R104：App 真导出的那份（--settings-probe 角色 x，测试档配齐后走「导出」同一条路）。审查方拿它在 Mac 上用 mac 的代码读；
+    /// 这里先保证它本身 mac 的必填字段齐、Windows 自己读回来七类都在。
+    /// </summary>
+    [TestMethod]
+    public void RealWindowsExportReadsBack()
+    {
+        var text = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "windows-archive-226e157f.json"));
+        CollectionAssert.AreEqual(Array.Empty<string>(), ArchiveMacCheck.Problems(text));
+        var (archive, failure) = SettingsArchive.Read(text);
+        Assert.AreEqual(SettingsArchive.ReadFailure.None, failure);
+        Assert.IsTrue(archive!.AppliesWindowsSettings);
+        Assert.AreEqual("Ctrl+Alt+A", archive.WindowsKeys!["screenshot"]);
+        Assert.IsTrue(archive.TranslateServices!.Any(service => service.Id == "deepl" && service.On == false));
+        Assert.IsTrue(archive.SearchEngines!.Any(engine => engine.UrlTemplate?.Contains("{query}", StringComparison.Ordinal) == false));
+        Assert.AreEqual(2, archive.Clips!.Count(clip => clip.Snippet == true));
+        Assert.AreEqual(2, archive.Vocabulary!.Count);
+        Assert.AreEqual(4, NoteEntry.Sanitized(archive.Notes!).Count);
+    }
+
     [TestMethod]
     public void WindowsFileRoundTrips()
     {

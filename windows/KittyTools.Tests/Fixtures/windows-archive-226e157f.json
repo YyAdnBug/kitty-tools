@@ -1,0 +1,440 @@
+{
+  "app": "Kitty Tools",
+  "format": 2,
+  "version": "0.2.0",
+  "exportedAt": "2026-11-17T09:22:19Z",
+  "platform": "windows",
+  "windowsPreferences": {
+    "theme": "system",
+    "accent": "brand",
+    "autoCheckUpdates": true,
+    "copyTranslate": false,
+    "clipboardRetentionDays": 7,
+    "clipboardImageBudgetMB": 512,
+    "clipboardBlockSensitive": true,
+    "clipboardExcludedApps": [
+      "KeePass.exe",
+      "KeePassXC.exe",
+      "1Password.exe",
+      "Bitwarden.exe"
+    ],
+    "hotKeyBlockedExes": [],
+    "hotKeyBlockFullscreen": true,
+    "launcherCommandAliases": {},
+    "launcherCommandsOff": [],
+    "launcherAppAliases": {},
+    "launcherAppFolders": [],
+    "launcherHiddenApps": [],
+    "launcherCommandHotKeys": {},
+    "shotKeys": {
+      "pin": "Ctrl+P",
+      "record": ""
+    },
+    "translateFirstLanguage": "zh-Hans",
+    "translateSecondLanguage": "en",
+    "translateAutoCopy": false,
+    "translateWordRecording": true,
+    "translateWordAccent": "us",
+    "ocrJoinLines": false,
+    "clipboardPanelPosition": "top",
+    "launcherPanelPosition": "top",
+    "launcherShowsFrequent": true,
+    "screenshotToolbarAlign": "right",
+    "screenshotCopyAs": "image",
+    "translateScreenshotOverlay": false,
+    "screenshotKeepsColors": false,
+    "screenshotFindsElements": false,
+    "statusScreenExitHint": true,
+    "statusScreenHotKeyEntersFirst": false,
+    "statusScreenAnimations": true,
+    "emojiPackDownloads": true,
+    "keepAwakeDisplay": true,
+    "keepAwakeSchedule": "",
+    "statusScreenPresets": [
+      {
+        "id": "clean",
+        "title": "清洁屏幕",
+        "symbol": "glowing-star",
+        "style": "blackout",
+        "power": "normal",
+        "autoEndMinutes": 5
+      },
+      {
+        "id": "busy",
+        "title": "请勿触碰",
+        "detail": "电脑正在跑任务，别动键盘和鼠标",
+        "symbol": "raised-hand",
+        "style": "dim",
+        "power": "displayOn",
+        "autoEndMinutes": 0
+      },
+      {
+        "id": "back",
+        "title": "马上回来",
+        "symbol": "alarm-clock",
+        "style": "sign",
+        "power": "awake",
+        "autoEndMinutes": 0
+      },
+      {
+        "id": "WIN-MEETING",
+        "title": "开会中",
+        "detail": "一小时后回来",
+        "symbol": "",
+        "style": "dim",
+        "power": "displayOn",
+        "autoEndMinutes": 60,
+        "emoji": "party-popper"
+      }
+    ],
+    "remindersSnoozeMinutes": 5,
+    "reminders": [
+      {
+        "id": "WIN-R1",
+        "title": "喝水",
+        "detail": "起来走走",
+        "symbol": "droplet",
+        "isOn": true,
+        "schedule": {
+          "kind": "interval",
+          "date": "0001-01-01T00:00:00Z",
+          "time": 540,
+          "until": 1080,
+          "days": [
+            2,
+            3,
+            4,
+            5,
+            6
+          ],
+          "day": 1,
+          "every": 45
+        },
+        "alert": "light",
+        "statusID": "",
+        "fullSeconds": 0,
+        "sound": "chime",
+        "chime": "Glass",
+        "nagMinutes": 0
+      },
+      {
+        "id": "WIN-R2",
+        "title": "周会",
+        "symbol": "office-worker",
+        "isOn": true,
+        "schedule": {
+          "kind": "weekly",
+          "date": "0001-01-01T00:00:00Z",
+          "time": 870,
+          "until": 1080,
+          "days": [
+            2
+          ],
+          "day": 1,
+          "every": 60
+        },
+        "alert": "status",
+        "statusID": "WIN-MEETING",
+        "fullSeconds": 0,
+        "sound": "chime",
+        "chime": "Glass",
+        "nagMinutes": 0
+      }
+    ],
+    "pref:appearance": "\"system\"",
+    "pref:accent": "\"pink\"",
+    "pref:updateAutoCheck": "true",
+    "pref:panelSqueezeEntrance": "false",
+    "pref:clipboardHistoryRetentionDays": "7",
+    "pref:clipboardImageCacheMaxMb": "512",
+    "pref:clipboardBlockSensitive": "true",
+    "pref:clipboardPastePlainByDefault": "false",
+    "pref:clipboardImageOcr": "true",
+    "pref:clipboardClearOnExit": "false",
+    "pref:clipboardClearOnLock": "false",
+    "pref:clipboardShowPreview": "true",
+    "pref:clipboardLinkPreview": "true",
+    "pref:clipboardPasteOnClick": "false",
+    "pref:clipboardPanelPosition": "\"top\"",
+    "pref:launcherPanelPosition": "\"top\"",
+    "pref:launcherShowsFrequent": "true",
+    "pref:launcherFallbackAlways": "false",
+    "pref:launcherRomanInput": "false",
+    "pref:launcherScripts": "true",
+    "pref:translateNativeLang": "\"zh-Hans\"",
+    "pref:translateForeignLang": "\"en\"",
+    "pref:translateDeleteNewline": "false",
+    "pref:autoCopy": "false",
+    "pref:translateCopyRecognized": "false",
+    "pref:translateScreenshotOverlay": "false",
+    "pref:translateHistoryEnabled": "true",
+    "pref:translateHistoryLimit": "5000",
+    "pref:translatePanelPosition": "\"top\"",
+    "pref:translateClipboardMonitor": "false",
+    "pref:translateWordMode": "true",
+    "pref:translateWordRecording": "true",
+    "pref:translateWordAccent": "\"us\"",
+    "pref:translateFontScale": "1",
+    "pref:translateCollapsedServices": "\"\"",
+    "pref:ocrJoinLines": "false",
+    "pref:screenshotShutterSound": "true",
+    "pref:screenshotPlacement": "\"corner\"",
+    "pref:screenshotToolbarAlign": "\"right\"",
+    "pref:screenshotCopyAs": "\"image\"",
+    "pref:scrollCaptureSpeed": "\"normal\"",
+    "pref:screenshotKeepsColors": "false",
+    "pref:screenshotFindsElements": "false",
+    "pref:shotHistory": "true",
+    "pref:shotHistoryDays": "30",
+    "pref:shotHistoryMegabytes": "2048",
+    "pref:screenRecordFrameRate": "30",
+    "pref:screenRecordCountdown": "3",
+    "pref:screenRecordShowsCursor": "true",
+    "pref:screenRecordSharpness": "\"original\"",
+    "pref:screenRecordKeysShortcutsOnly": "false",
+    "pref:screenRecordSystemAudio": "true",
+    "pref:screenRecordShowsClicks": "false",
+    "pref:audioRecordStartsImmediately": "false",
+    "pref:statusScreenExitHint": "true",
+    "pref:statusScreenHotKeyEntersFirst": "false",
+    "pref:statusScreenAnimations": "true",
+    "pref:remindersSnoozeMinutes": "5",
+    "pref:emojiPackDownloads": "true",
+    "pref:notesFontSize": "15",
+    "pref:notesMarkdown": "true",
+    "pref:notesLineSpacing": "\"standard\"",
+    "pref:notesDeckEnabled": "true",
+    "pref:notesDeckEdge": "\"right\"",
+    "pref:notesDeckStyle": "\"tabs\"",
+    "pref:notesDeckSize": "\"standard\"",
+    "pref:notesDeckSense": "14",
+    "pref:notesDeckAlwaysFanned": "false",
+    "pref:notesDeckHidesPill": "false",
+    "pref:notesDeckPreview": "true",
+    "pref:notesDeckOpensOnHover": "false",
+    "pref:notesDeckOverFullScreen": "false",
+    "pref:notesDeckNoteSize": "\"medium\"",
+    "pref:feature.clipboard": "true",
+    "pref:feature.launcher": "true",
+    "pref:feature.translate": "true",
+    "pref:feature.record": "true",
+    "pref:feature.notes": "true",
+    "pref:feature.reminders": "true",
+    "pref:feature.statusScreen": "true",
+    "pref:ClipboardExcludedApps": "[\"KeePass.exe\",\"KeePassXC.exe\",\"1Password.exe\",\"Bitwarden.exe\"]",
+    "pref:HotKeyBlockedApps": "[]",
+    "pref:HotKeyBlockFullscreen": "true",
+    "pref:LauncherRecentPrograms": "true",
+    "pref:ScreenshotCursor": "false",
+    "pref:CaptureHideDesktopIcons": "false",
+    "pref:UpdateInstallOnQuit": "true",
+    "pref:KeepAwakeDisplay": "true",
+    "pref:feature.keepAwake": "false"
+  },
+  "windowsHotkeys": {
+    "clipboard": "Alt+C",
+    "launcher": "Alt+Space",
+    "selectionTranslate": "Alt+E",
+    "inputTranslate": "Alt+T",
+    "screenshotTranslate": "Alt+S",
+    "screenshot": "Ctrl+Alt+A",
+    "screenshotLast": "Ctrl+Alt+Z",
+    "record": "Alt+R",
+    "ocr": "Alt+O",
+    "shotHistory": null,
+    "translateReplace": null,
+    "audioRecord": null,
+    "pinClipboard": null,
+    "home": null,
+    "statusScreen": null,
+    "reminderNew": null,
+    "noteCapture": "Alt+N",
+    "noteNew": null,
+    "noteAll": null,
+    "keepAwake": null
+  },
+  "translateServices": [
+    {
+      "id": "zhipu",
+      "kind": "zhipu",
+      "name": "智谱 GLM（免费）",
+      "isEnabled": true,
+      "model": "glm-4-flash"
+    },
+    {
+      "id": "google",
+      "kind": "google",
+      "name": "Google 翻译",
+      "isEnabled": true
+    },
+    {
+      "id": "deepl",
+      "kind": "deepl",
+      "name": "DeepL",
+      "isEnabled": false
+    }
+  ],
+  "searchEngines": [
+    {
+      "id": "google",
+      "name": "Google",
+      "keyword": "g",
+      "urlTemplate": "https://www.google.com/search?q={query}",
+      "enabled": false
+    },
+    {
+      "id": "bing",
+      "name": "Bing",
+      "keyword": "bing",
+      "urlTemplate": "https://www.bing.com/search?q={query}",
+      "enabled": true
+    },
+    {
+      "id": "baidu",
+      "name": "百度",
+      "keyword": "bd",
+      "urlTemplate": "https://www.baidu.com/s?wd={query}",
+      "enabled": false
+    },
+    {
+      "id": "github",
+      "name": "GitHub",
+      "keyword": "gh",
+      "urlTemplate": "https://github.com/search?q={query}",
+      "enabled": false
+    },
+    {
+      "id": "zhihu",
+      "name": "知乎",
+      "keyword": "zh",
+      "urlTemplate": "https://www.zhihu.com/search?q={query}",
+      "enabled": false
+    },
+    {
+      "id": "bilibili",
+      "name": "哔哩哔哩",
+      "keyword": "bili",
+      "urlTemplate": "https://search.bilibili.com/all?keyword={query}",
+      "enabled": false
+    },
+    {
+      "id": "wikipedia",
+      "name": "维基百科",
+      "keyword": "wiki",
+      "urlTemplate": "https://zh.wikipedia.org/w/index.php?search={query}",
+      "enabled": false
+    },
+    {
+      "id": "youtube",
+      "name": "YouTube",
+      "keyword": "yt",
+      "urlTemplate": "https://www.youtube.com/results?search_query={query}",
+      "enabled": false
+    },
+    {
+      "id": "custom-mdn",
+      "name": "MDN",
+      "keyword": "mdn",
+      "urlTemplate": "https://developer.mozilla.org/search?q={query}",
+      "enabled": true
+    },
+    {
+      "id": "custom-inbox",
+      "name": "收件箱",
+      "keyword": "mail",
+      "urlTemplate": "https://mail.example.com/inbox",
+      "enabled": false
+    }
+  ],
+  "clips": [
+    {
+      "text": "今天是 {date}",
+      "favorite": true,
+      "snippet": true,
+      "copiedAt": "2026-11-17T09:22:19Z"
+    },
+    {
+      "text": "你好 {cursor}，收到，我看一下。",
+      "note": "客气的回复",
+      "favorite": true,
+      "snippet": true,
+      "group": "回复模板",
+      "copiedAt": "2026-11-17T09:22:19Z"
+    },
+    {
+      "text": "https://github.com/YyAdnBug/kitty-tools",
+      "favorite": true,
+      "snippet": false,
+      "copiedAt": "2026-11-17T07:22:19Z"
+    }
+  ],
+  "clipGroups": [
+    "回复模板"
+  ],
+  "vocabulary": [
+    {
+      "source": "ephemeral",
+      "target": "zh-Hans",
+      "result": "短暂的；转瞬即逝的",
+      "service": "谷歌翻译",
+      "createdAt": "2026-11-17T06:22:19Z"
+    },
+    {
+      "source": "serendipity",
+      "target": "zh-Hans",
+      "result": "意外发现珍宝的运气；机缘巧合",
+      "service": "智谱 GLM（免费）",
+      "createdAt": "2026-11-15T09:22:19Z"
+    }
+  ],
+  "notes": [
+    {
+      "archived": false,
+      "body": "没有标题的一条",
+      "color": 6,
+      "createdAt": 1794907339398,
+      "id": "89F4FF87-6E1B-48BC-903E-728D2FE84A88",
+      "modifiedAt": 1794907339398,
+      "order": -4,
+      "pinned": false,
+      "revision": 0,
+      "title": ""
+    },
+    {
+      "archived": false,
+      "body": "**结论**：下周一上线\n- 前端改两处\n[重点]{red}：先同步给测试\n```\ngit log --oneline -5\n```",
+      "color": 5,
+      "createdAt": 1794907339396,
+      "id": "779BB4EB-77EB-45AD-9E7E-4EAAA91103B2",
+      "modifiedAt": 1794907339398,
+      "order": -3,
+      "pinned": false,
+      "revision": 1,
+      "title": "会议纪要"
+    },
+    {
+      "archived": false,
+      "body": "# 周末\n☐ 买菜\n◧ 打扫房间\n▣ 交水电费\n☑ 洗车\n☒ 看电影",
+      "color": 3,
+      "createdAt": 1794907339389,
+      "id": "4626982E-9EC0-4383-B202-040422EF0B0B",
+      "modifiedAt": 1794907339394,
+      "order": -2,
+      "pinned": true,
+      "revision": 2,
+      "title": "周末要做的"
+    },
+    {
+      "archived": false,
+      "body": "欢迎使用便签\n鼠标靠到屏幕右边缘，这一叠就会展开，点一张标签打开它。\n☐ 按 Alt+N 随手记一条\n☐ 拖动标签调整顺序\n☐ 点图钉固定，点别处时它也不收\n用不着这条了，点「⋯」里的「删除」。",
+      "color": 0,
+      "createdAt": 1794907337635,
+      "id": "613D46CD-7599-45EE-8BD9-DAAEB64B7443",
+      "modifiedAt": 1794907337635,
+      "order": -1,
+      "pinned": false,
+      "revision": 0,
+      "title": ""
+    }
+  ]
+}
