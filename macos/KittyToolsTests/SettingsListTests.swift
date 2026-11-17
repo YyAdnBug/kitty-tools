@@ -41,7 +41,7 @@ struct SettingsListTests {
       pages == [
         .general, .clipboard, .launcher, .translate, .screenshot, .record, .plugins, .notes,
         .reminders, .statusScreen, .launchpad, .dockPreview, .finderMenu, .keepAwake,
-        .bluetoothSnooze, .island, .hotkeys, .about,
+        .bluetoothSnooze, .smoothScroll, .island, .hotkeys, .about,
       ])
     // 分组盖住每一页、和 allCases 同序
     #expect(SettingsPage.groups.flatMap { $0 } == pages)
@@ -52,7 +52,7 @@ struct SettingsListTests {
           [.general], [.clipboard, .launcher, .translate], [.screenshot, .record],
           [
             .plugins, .notes, .reminders, .statusScreen, .dockPreview, .finderMenu, .keepAwake,
-            .bluetoothSnooze, .island,
+            .bluetoothSnooze, .smoothScroll, .island,
           ],
           [.hotkeys, .about],
         ])
@@ -66,7 +66,7 @@ struct SettingsListTests {
         [.general], [.clipboard, .launcher], [.screenshot],
         [
           .plugins, .notes, .reminders, .statusScreen, .launchpad, .dockPreview, .finderMenu,
-          .keepAwake, .bluetoothSnooze, .island,
+          .keepAwake, .bluetoothSnooze, .smoothScroll, .island,
         ],
         [.hotkeys, .about], [.translate, .record],
       ])

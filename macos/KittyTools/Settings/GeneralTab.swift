@@ -309,7 +309,7 @@ extension PermissionRow {
   static func accessibility(granted: Bool) -> PermissionRow {
     PermissionRow(
       title: "辅助功能",
-      detail: "粘贴回原 App、划词翻译、截图识别窗口里的元素、长截图自动滚动、录屏显示按键、状态屏拦住键鼠、程序坞预览",
+      detail: "粘贴回原 App、划词翻译、截图识别窗口里的元素、长截图自动滚动、录屏显示按键、状态屏拦住键鼠、程序坞预览、平滑滚动",
       symbol: "hand.raised.fill", color: Style.Family.command, granted: granted
     ) { Permissions.grant(.accessibility) }
   }

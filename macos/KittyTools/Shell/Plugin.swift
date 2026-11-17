@@ -19,14 +19,16 @@ struct PluginPermission {
 }
 
 extension Feature {
-  /// 「全部插件」页的分组（拍板 A2：按用途；组内按 Feature 的先后，空的组不画）
+  /// 「全部插件」页的分组（拍板 A2：按用途；组内按 Feature 的先后，空的组不画）。「键盘与鼠标」是拍板页上预留的，
+  /// 2026-11-17 平滑滚动先来、建了这一组
   enum PluginGroup: CaseIterable {
-    case notesAndReminders, desktop, sleepAndScreen
+    case notesAndReminders, desktop, keyboardAndMouse, sleepAndScreen
 
     var title: LocalizedStringResource {
       switch self {
       case .notesAndReminders: "记录与提醒"
       case .desktop: "桌面"
+      case .keyboardAndMouse: "键盘与鼠标"
       case .sleepAndScreen: "睡眠与屏幕"
       }
     }
@@ -42,6 +44,7 @@ extension Feature {
     switch self {
     case .notes, .reminders: .notesAndReminders
     case .launchpad, .dockPreview, .finderMenu, .island: .desktop
+    case .smoothScroll: .keyboardAndMouse
     case .statusScreen, .keepAwake, .bluetoothSnooze: .sleepAndScreen
     default: nil
     }
@@ -61,6 +64,8 @@ extension Feature {
       [PluginPermission(kind: .finderExtension, reason: "系统要你自己打开一次访达扩展，右键里才会出现这几项")]
     case .bluetoothSnooze:
       [PluginPermission(kind: .bluetooth, reason: "开关蓝牙；没有它这个插件什么都不做")]
+    case .smoothScroll:
+      [PluginPermission(kind: .accessibility, reason: "接住鼠标滚轮再滑出去；没有它用不了")]
     case .island:
       [
         PluginPermission(kind: .calendar, reason: "打开「下一个日程」时读日历", option: Prefs.islandNextEvent),
@@ -82,10 +87,11 @@ extension Feature {
     }
   }
 
-  /// 添加状态跟不跟同步（拍板 F2）：一添加就要这台弹授权框、去系统设置打开的（程序坞预览、访达右键、睡眠关蓝牙——同步过去
-  /// 会在那台凭空弹框），和跟这台的屏幕、触控板有关的（启动台，连同它整页的设置）只在这台。状态屏只在进入时才要辅助功能，跟着同步
+  /// 添加状态跟不跟同步（拍板 F2）：一添加就要这台弹授权框、去系统设置打开的（程序坞预览、访达右键、睡眠关蓝牙、平滑滚动——同步
+  /// 过去会在那台凭空弹框；平滑滚动还跟这台接没接鼠标有关），和跟这台的屏幕、触控板有关的（启动台，连同它整页的设置）只在这台。
+  /// 状态屏只在进入时才要辅助功能，跟着同步
   var syncsAddition: Bool {
-    ![.launchpad, .dockPreview, .finderMenu, .bluetoothSnooze].contains(self)
+    ![.launchpad, .dockPreview, .finderMenu, .bluetoothSnooze, .smoothScroll].contains(self)
   }
 
   /// 介绍页「能做什么」：两三条
@@ -113,6 +119,10 @@ extension Feature {
       Self.points("手动开一段：无限期、几小时，或到某一刻", "按时段自动开，比如工作日 9:00–18:00", "可以只防系统睡眠、让屏幕照常熄")
     case .bluetoothSnooze:
       Self.points("合上盖子睡下去时关掉蓝牙，放进包里不会被蓝牙鼠标、键盘弄醒", "醒来时只打开睡前自己关掉的蓝牙；接着外接显示器时不关")
+    case .smoothScroll:
+      Self.points(
+        "普通鼠标的滚轮像触控板那样滑着滚；滑多久、一格滚多远都能调", "鼠标单独反向，触控板不变",
+        "在游戏、虚拟机这类自己管滚轮的 App 里自动照原样，也能自己加")
     case .island:
       Self.points(
         "点刘海叫出快捷动作和最近的提示", "录屏计时、提醒倒数、正在播放的歌挂在刘海两边", "能另外打开下一个日程、音量和亮度")
@@ -131,6 +141,7 @@ extension Feature {
     case .finderMenu: "添加后在访达里右键；第一次要在系统设置里打开访达扩展"
     case .keepAwake: "菜单栏、主界面，或在启动器里打「awake 2小时」"
     case .bluetoothSnooze: "添加后自己工作，没有快捷键和菜单"
+    case .smoothScroll: "添加后拨鼠标滚轮就是；按住 ⌥ 滚动临时不平滑，按住 ⇧ 左右滚"
     case .island: "点刘海、指针停在刘海上，或用快捷键打开"
     default: nil
     }
@@ -147,6 +158,7 @@ extension Feature {
     case .finderMenu: "只在你右键时动"
     case .keepAwake: "开着时让系统别睡；没开时什么都不跑"
     case .bluetoothSnooze: "等着电脑睡下去；醒来时只打开睡前自己关掉的蓝牙"
+    case .smoothScroll: "接住鼠标滚轮，在单独一条线程上滑出去；不碰触控板，没在滚时什么都不做"
     case .island:
       "看着指针有没有停在刘海上；打开了系统提示才听电源、耳机、网络，打开了正在播放才起一个读播放信息的小进程，打开了下一个日程才读日历，打开了音量和亮度才接那五个键。不添加时提示照常弹"
     default: nil

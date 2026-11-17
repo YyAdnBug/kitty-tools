@@ -121,6 +121,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private lazy var nextEvent = NextEvent(island: island)
   /// 音量 / 亮度键换成刘海岛上的提示（设置 › 刘海岛，默认关）
   private(set) lazy var mediaKeys = MediaKeys(island: island)
+  /// 平滑滚动（插件，SmoothScroll/）：起停跟着插件添没添加和辅助功能授权（apply），滚动那条线程由它管
+  private(set) lazy var smoothScroll = SmoothScroll()
   /// 应用内更新（读本仓库的 GitHub release）
   private let updater = Updater()
   /// CleanShot 式常驻缩略图（截图飞入右下角后留在那里）
@@ -862,6 +864,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       case .keepAwake: AnyView(KeepAwakeTab(keepAwake: keepAwake))
       case .bluetoothSnooze:
         AnyView(BluetoothSnoozeTab { [unowned self] in bluetoothSnooze.requestAccess() })
+      case .smoothScroll: AnyView(SmoothScrollTab(smoothScroll: smoothScroll))
       case .translate:
         AnyView(
           TranslateTab(services: serviceStore, history: historyStore, speaker: speaker)
@@ -1109,6 +1112,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     nowPlaying.apply()
     nextEvent.apply()
     mediaKeys.apply()
+    smoothScroll.apply()
     showWelcomeIfNeeded()
     // 有快捷键没注册上（15.0 / 15.1 上只带 ⌥ 的组合）：按了没反应又不知道为什么，启动时说一次
     // （放在「已更新」之后：同一座岛原地换内容，警告不能被盖掉）
@@ -1147,6 +1151,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.nowPlaying.apply()
         self.nextEvent.apply()
         self.mediaKeys.apply()
+        self.smoothScroll.apply()
         // 命令的快捷键跟着「命令和别名」的开关和别名、脚本命令总开关、⌘K「关掉这条命令」走（第 4 批评审：只在那一页的
         // onChange 里跟，别处改的不注销）；没变不动
         self.hotKeys.reloadCommandsIfChanged()
@@ -1272,6 +1277,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // 插件移除：停掉、不再听（手动开着的那一段也停）
     if turnedOff.contains(.keepAwake) { keepAwake.stop() }
+
+    // 平滑滚动：起停在 smoothScroll.apply（偏好监听里调）。运行中添加时缺授权就当场要（同程序坞预览；启动时、欢迎引导里不问）；
+    // 别的改滚轮的工具开着时说一声（两层平滑会叠在一起、两层反向会反回去）
+    if turnedOn.contains(.smoothScroll), !launching, !settingsNavigation.showsOnboarding {
+      if !Permissions.isAccessibilityTrusted { Permissions.requestAccessibility() }
+      if let other = SmoothScroll.runningOtherTools().first {
+        island.show(
+          "「\(other)」也在处理鼠标滚轮", detail: "两边一起开会平滑两次、反向两次：留一边就好", tone: .warning,
+          symbol: "computermouse")
+      }
+    }
 
     guard !launching else { return }
     // 正在录快捷键时热键停着，录完它自己会重新注册；只是复制即译开关变了不用重新注册

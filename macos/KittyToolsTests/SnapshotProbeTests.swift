@@ -549,6 +549,12 @@ struct SnapshotProbeTests {
       case .keepAwake: AnyView(KeepAwakeTab(keepAwake: KeepAwake()))
       // 授权按固定的「没给」画
       case .bluetoothSnooze: AnyView(BluetoothSnoozeTab(requestAccess: {}, authorized: false))
+      case .smoothScroll:
+        AnyView(
+          SmoothScrollTab(
+            smoothScroll: SmoothScroll(observes: false), authorized: false, others: [],
+            natural: true, excluded: []
+          ))
       case .translate:
         AnyView(TranslateTab(services: services, history: history, speaker: speaker))
       case .hotkeys: AnyView(HotkeysTab(center: hotKeys))
@@ -4772,7 +4778,7 @@ struct SnapshotProbeTests {
     let prefs = try #require(UserDefaults(suiteName: name))
     defer { prefs.removePersistentDomain(forName: name) }
     let navigation = SettingsNavigation(defaults: nil)
-    navigation.fresh = ["plugin-keep-awake", "plugin-bluetooth-snooze"]
+    navigation.fresh = ["plugin-keep-awake", "plugin-bluetooth-snooze", "plugin-smooth-scroll"]
     let fixed = PluginsPage.Fixed(
       added: [.notes, .reminders, .dockPreview, .island], lacking: [.dockPreview])
     func list() -> some View {
@@ -4841,6 +4847,37 @@ struct SnapshotProbeTests {
     try snapshot(
       BluetoothSnoozeTab(requestAccess: {}, authorized: true).defaultAppStorage(prefs),
       size: NSSize(width: 640, height: 640), dark: false, to: "\(out)/bt-settings-any.png")
+  }
+
+  /// 设置 › 平滑滚动整页：没授权、默认值（浅 / 深），授权了、调过两条滑块、上下反向、停用了两个 App、系统关着「自然滚动」、
+  /// 有别的改滚轮的工具开着（橙字）。几秒，图以 smooth- 开头：-only-testing:'KittyToolsTests/SnapshotProbeTests/smoothScrollSettings()'。
+  /// 偏好读临时偏好域；授权、别的工具、系统方向、停用名单都传固定的
+  @Test(.enabled(if: directory != nil)) func smoothScrollSettings() throws {
+    let out = try #require(Self.directory)
+    try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
+    Prefs.registerDefaults()
+    let name = "kitty-snapshot-smooth-\(UUID().uuidString)"
+    let prefs = try #require(UserDefaults(suiteName: name))
+    defer { prefs.removePersistentDomain(forName: name) }
+    prefs.set(true, forKey: Feature.smoothScroll.prefsKey)
+    let scroll = SmoothScroll(defaults: prefs, observes: false)
+    for dark in [false, true] {
+      try snapshot(
+        SmoothScrollTab(
+          smoothScroll: scroll, authorized: false, others: [], natural: true, excluded: []
+        ).defaultAppStorage(prefs),
+        size: NSSize(width: 640, height: 1000), dark: dark,
+        to: "\(out)/smooth-settings\(dark ? "-dark" : "").png")
+    }
+    prefs.set(80, forKey: Prefs.smoothScrollStrength)
+    prefs.set(150, forKey: Prefs.smoothScrollSpeed)
+    prefs.set(true, forKey: Prefs.smoothScrollReverseVertical)
+    try snapshot(
+      SmoothScrollTab(
+        smoothScroll: scroll, authorized: true, others: ["另一个滚轮工具"], natural: false,
+        excluded: ["com.apple.TextEdit", "com.apple.Preview"]
+      ).defaultAppStorage(prefs),
+      size: NSSize(width: 640, height: 1100), dark: false, to: "\(out)/smooth-settings-any.png")
   }
 
   /// 设置 › 访达右键整页（「压缩时跳过」那一行的小字：填了一串、有一条写错了），推进去的「压缩时跳过」（空着、很多项带写错的，

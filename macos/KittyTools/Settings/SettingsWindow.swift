@@ -20,8 +20,9 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   // 2026-11-13 起便签之后都是插件（Feature.plugins），刘海岛（2026-11-12 PR #17 加的页）也成了插件、挪到最后。
   // 2026-11-17 插件页改版（A1）：插件组第一行固定是「全部插件」（plugins，不是哪个功能的页）
   case general, clipboard, launcher, translate, screenshot, record, plugins, notes, reminders,
-    statusScreen, launchpad, dockPreview, finderMenu, keepAwake, bluetoothSnooze, island, hotkeys,
-    about
+    statusScreen, launchpad, dockPreview, finderMenu, keepAwake, bluetoothSnooze, smoothScroll,
+    island,
+    hotkeys, about
 
   var id: String { rawValue }
 
@@ -35,7 +36,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     [.general], [.clipboard, .launcher, .translate], [.screenshot, .record],
     [
       .plugins, .notes, .reminders, .statusScreen, .launchpad, .dockPreview, .finderMenu,
-      .keepAwake, .bluetoothSnooze, .island,
+      .keepAwake, .bluetoothSnooze, .smoothScroll, .island,
     ],
     [.hotkeys, .about],
   ]
@@ -68,7 +69,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .clipboard, .launcher, .translate: .text
     case .screenshot, .record: .capture
     case .plugins, .notes, .reminders, .statusScreen, .launchpad, .dockPreview, .finderMenu,
-      .keepAwake, .bluetoothSnooze, .island:
+      .keepAwake, .bluetoothSnooze, .smoothScroll, .island:
       .plugins
     case .general, .hotkeys, .about: nil
     }
@@ -128,6 +129,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .finderMenu: "访达右键"
     case .keepAwake: "保持唤醒"
     case .bluetoothSnooze: "睡眠关蓝牙"
+    case .smoothScroll: "平滑滚动"
     case .translate: "翻译"
     case .hotkeys: "快捷键"
     case .about: "关于"
@@ -152,6 +154,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .finderMenu: "kitty.finder.menu"
     case .keepAwake: "kitty.keep.awake"
     case .bluetoothSnooze: "kitty.bluetooth.snooze"
+    case .smoothScroll: "kitty.smooth.scroll"
     case .translate: "kitty.translate"
     case .hotkeys: "kitty.hotkeys"
     case .about: "kitty.about"  // 品牌页：猫头
@@ -175,6 +178,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .finderMenu: Style.Family.finderMenu
     case .keepAwake: Style.Family.keepAwake
     case .bluetoothSnooze: Style.Family.bluetoothSnooze
+    case .smoothScroll: Style.Family.smoothScroll
     case .translate: Style.Family.translate
     case .hotkeys: Style.Family.keyboard
     case .about: Color(nsColor: AccentPalette.brandPink)  // 关于是品牌页，不随强调色变
@@ -199,6 +203,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .finderMenu: "在访达里右键：新建文件、拷贝路径、移动复制、压缩解压"
     case .keepAwake: "插件 · 不让电脑睡、不让屏幕熄：手动开一段，或按时段自动开"
     case .bluetoothSnooze: "电脑睡下去时关掉蓝牙、醒来再打开：什么时候关、要给的授权"
+    case .smoothScroll: "鼠标滚轮滑着滚：滑多久、滚多远、鼠标单独反向、在哪些 App 里停用"
     case .translate: "语言、翻译服务与密钥、历史"
     case .hotkeys: "所有全局快捷键"
     case .about: "版本与更新内容"
@@ -241,6 +246,8 @@ enum SettingsPage: String, CaseIterable, Identifiable {
       "插件,保持唤醒,唤醒,防息屏,息屏,熄屏,防止睡眠,睡眠,不睡眠,屏幕常亮,常亮,定时,工作日,时段,awake,caffeinate,咖啡因,下载,后台任务"
     case .bluetoothSnooze:
       "蓝牙,Bluetooth,睡眠,休眠,合盖,盖子,唤醒,误唤醒,鼠标,键盘,耳机,外接显示器,包里"
+    case .smoothScroll:
+      "平滑,平滑滚动,滚动,滚轮,鼠标,顺滑,惯性,反向,方向,自然滚动,滚动方向,速度,距离,停用,游戏,虚拟机,远程桌面,smooth,scroll"
     case .translate:
       "语言,第一语言,第二语言,字号,换行,自动复制,复制即译,历史,导出,CSV,Anki,位置,浮窗位置,鼠标,清空,服务,密钥,查词,词典,单词,音标,例句,生词本,收藏,智谱,OpenAI,Anthropic,DeepL,Google,百度,有道,微软,火山,腾讯,AI,模型"
     case .hotkeys:

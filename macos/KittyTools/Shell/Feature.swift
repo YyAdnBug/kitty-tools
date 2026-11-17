@@ -23,9 +23,9 @@ nonisolated enum Feature: String, CaseIterable {
   // 启动台、程序坞预览一组）。rawValue 是偏好键，不能改
   case clipboard, launcher, translate, screenshot, record, notes, reminders, statusScreen
   case launchpad, dockPreview, finderMenu
-  // 2026-11-13 起便签之后这几个都是插件（isPlugin），保持唤醒、睡眠关蓝牙（2026-11-17）、刘海岛新加在最后（刘海岛那一节一直排在
-  // 菜单栏、快捷键页最后）
-  case keepAwake, bluetoothSnooze, island
+  // 2026-11-13 起便签之后这几个都是插件（isPlugin），保持唤醒、睡眠关蓝牙、平滑滚动（2026-11-17）、刘海岛新加在最后（刘海岛那一节
+  // 一直排在菜单栏、快捷键页最后）
+  case keepAwake, bluetoothSnooze, smoothScroll, island
 
   /// 同名的设置页（名字、符号、家族色从它取）
   @MainActor var page: SettingsPage { SettingsPage(rawValue: rawValue) ?? .general }
@@ -52,6 +52,7 @@ nonisolated enum Feature: String, CaseIterable {
     case .finderMenu: "在访达里右键：新建文件、拷贝路径、移动复制、压缩解压"
     case .keepAwake: "不让电脑睡、不让屏幕熄：手动开一段，或按时段自动开"
     case .bluetoothSnooze: "合上盖子睡着时关掉蓝牙，醒来再打开：放进包里不会被蓝牙键鼠弄醒"
+    case .smoothScroll: "鼠标滚轮像触控板那样滑着滚，鼠标单独反向，按 App 停用"
     case .island: "点刘海叫出快捷动作，录屏计时、提醒倒数、正在播放挂在刘海两边、点开是卡片"
     }
   }
@@ -59,7 +60,7 @@ nonisolated enum Feature: String, CaseIterable {
   /// 插件（2026-11-12 起新的大模块；2026-11-13 起除了核心五个都是）
   static let plugins: Set<Feature> = [
     .notes, .reminders, .statusScreen, .launchpad, .dockPreview, .finderMenu, .keepAwake,
-    .bluetoothSnooze, .island,
+    .bluetoothSnooze, .smoothScroll, .island,
   ]
   var isPlugin: Bool { Self.plugins.contains(self) }
 
@@ -80,6 +81,11 @@ nonisolated enum Feature: String, CaseIterable {
       ]
     case .bluetoothSnooze:
       ["蓝牙", "睡眠关蓝牙", "合盖", "休眠", "bluetooth", "sleep bluetooth", "lid", "bluesnooze"]
+    case .smoothScroll:
+      [
+        "平滑滚动", "平滑", "滚轮", "鼠标滚轮", "鼠标反向", "滚动方向", "smooth", "scroll", "smooth scrolling",
+        "mouse wheel", "scroll wheel", "reverse scrolling",
+      ]
     case .island: ["刘海岛", "刘海", "灵动岛", "island", "notch", "dynamic island"]
     default: []
     }
@@ -92,7 +98,9 @@ nonisolated enum Feature: String, CaseIterable {
   /// 新做的插件默认不添加（拍板 A1：新装、升级都不添加）。2026-11-13 从功能转过来的插件照旧用原来的默认值（P2：导出文件、
   /// 同步里「没有这一项 = 默认值」，改了的话 0.8.x 的文件、电脑会把没拨过的便签悄悄关掉）；刘海岛也算开着——0.7.0 起就有
   /// 点刘海，升级上来照旧能用。新装照样一个插件都没添加：seedNewInstall 把核心以外的都明写成关
-  var defaultOn: Bool { ![.dockPreview, .finderMenu, .keepAwake, .bluetoothSnooze].contains(self) }
+  var defaultOn: Bool {
+    ![.dockPreview, .finderMenu, .keepAwake, .bluetoothSnooze, .smoothScroll].contains(self)
+  }
 
   /// 新装默认开着的四个（功能管理拍板 M4）
   static let core: Set<Feature> = [.clipboard, .launcher, .translate, .screenshot]

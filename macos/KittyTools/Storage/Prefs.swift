@@ -400,6 +400,15 @@ enum Prefs {
   nonisolated static let bluetoothSnoozeOffAt = "bluetoothSnoozeOffAt"
   nonisolated static let bluetoothSnoozeOnAt = "bluetoothSnoozeOnAt"
 
+  /// 平滑滚动（插件，2026-11-17，SmoothScroll/）：平滑程度 0…100（默认 50）、滚动距离（百分比 50…300，默认 100）、
+  /// 鼠标上下 / 左右反向（默认关；跟着这台 Mac 接的鼠标，不同步，SettingsSync.localKeys）、停用的 App（bundle id 的数组，
+  /// 默认空；虚拟机、远程桌面、游戏不用放进来，自动照原样）
+  nonisolated static let smoothScrollStrength = "smoothScrollStrength"
+  nonisolated static let smoothScrollSpeed = "smoothScrollSpeed"
+  nonisolated static let smoothScrollReverseVertical = "smoothScrollReverseVertical"
+  nonisolated static let smoothScrollReverseHorizontal = "smoothScrollReverseHorizontal"
+  nonisolated static let smoothScrollExcluded = "smoothScrollExcluded"
+
   /// 访达右键（第十一族，2026-11-08，FinderLink）：扩展把动作交过来时带的凭证（App 第一次启动时生成，FinderLink.ensureKey；
   /// 扩展从 App 的偏好里读）。这台电脑自己的、**不注册默认值**：不跟着导出 / 导入、同步走
   nonisolated static let finderMenuKey = "finderMenuKey"
@@ -542,6 +551,11 @@ enum Prefs {
       dockPreviewCmdTab: true,
       bluetoothSnoozeLidOnly: true,
       bluetoothSnoozeReopen: true,
+      smoothScrollStrength: 50,
+      smoothScrollSpeed: 100,
+      smoothScrollReverseVertical: false,
+      smoothScrollReverseHorizontal: false,
+      smoothScrollExcluded: [String](),
       finderOpenWithApps: finderOpenWithDefault,
       panelSqueezeEntrance: false,
       floatingPinned: false,

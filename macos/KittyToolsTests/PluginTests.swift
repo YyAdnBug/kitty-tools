@@ -31,10 +31,11 @@ struct PluginTests {
     #expect(Feature.PluginGroup.desktop.plugins.first == .launchpad || !Launchpad.isAvailable)
   }
 
-  /// 添加状态只在这台的（拍板 F2）：和改版前 SettingsSync 里点名的那四个一样，并且都进了 localKeys
+  /// 添加状态只在这台的（拍板 F2）：和改版前 SettingsSync 里点名的那四个一样，加上平滑滚动（要这台给辅助功能、跟这台
+  /// 接没接鼠标有关），并且都进了 localKeys
   @Test func localPluginsMatchBefore() {
     let local = Feature.plugins.filter { !$0.syncsAddition }
-    #expect(local == [.launchpad, .dockPreview, .finderMenu, .bluetoothSnooze])
+    #expect(local == [.launchpad, .dockPreview, .finderMenu, .bluetoothSnooze, .smoothScroll])
     for plugin in Feature.plugins {
       #expect(
         SettingsSync.localKeys.contains(plugin.prefsKey) == !plugin.syncsAddition, "\(plugin)")
@@ -54,7 +55,7 @@ struct PluginTests {
     #expect(!unknown.isMissing(isOn: { _ in true }, granted: denied))
   }
 
-  /// 刘海岛的授权都挂在开关上（插件本身不要授权）；程序坞预览、访达右键、睡眠关蓝牙、状态屏添加了就要
+  /// 刘海岛的授权都挂在开关上（插件本身不要授权）；程序坞预览、访达右键、睡眠关蓝牙、状态屏、平滑滚动添加了就要
   @Test func permissionDeclarations() {
     #expect(Feature.island.pluginPermissions.allSatisfy { $0.option != nil })
     #expect(
@@ -62,6 +63,7 @@ struct PluginTests {
     #expect(Feature.finderMenu.pluginPermissions.map(\.kind) == [.finderExtension])
     #expect(Feature.bluetoothSnooze.pluginPermissions.map(\.kind) == [.bluetooth])
     #expect(Feature.statusScreen.pluginPermissions.map(\.kind) == [.accessibility])
+    #expect(Feature.smoothScroll.pluginPermissions.map(\.kind) == [.accessibility])
     for plugin in [Feature.notes, .reminders, .launchpad, .keepAwake] {
       #expect(plugin.pluginPermissions.isEmpty, "\(plugin)")
     }

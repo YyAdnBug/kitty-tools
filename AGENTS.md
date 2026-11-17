@@ -183,6 +183,13 @@ TEST_RUNNER_KITTY_LIVE_NOW_PLAYING=1 xcodebuild -project macos/KittyTools.xcodep
 TEST_RUNNER_KITTY_LIVE_MEDIA_KEYS=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
   test -only-testing:'KittyToolsTests/MediaKeysTests/liveSwallowsVolumeKey()'
 
+# 平滑滚动插件的实机自检（按需，约 3 秒，要测试宿主有「辅助功能」授权；**跑之前先问用户**）：真的起滚动线程、建事件拦截（探针模式：
+# 真的滚轮原样放过），发几个带记号的合成滚轮，量第一帧多快、一共滑多远、主线程卡半秒时帧还出不出、停了线程退没退；帧也吞掉，
+# 到不了别的 App。改了 SmoothScroll/ 后跑。另有只听不改的 record()：TEST_RUNNER_KITTY_SMOOTH_SCROLL_RECORD=<秒>，这几秒里
+# 用真鼠标拨滚轮，打印系统给的行数 / 像素 / 定点（定「每行 40 点、一格至少一行」那两个数用）
+TEST_RUNNER_KITTY_LIVE_SMOOTH_SCROLL=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
+  test -only-testing:'KittyToolsTests/SmoothScrollTests/liveProbe()'
+
 # 刘海岛动画的掉帧探针（按需；**屏幕顶部正中会出现岛约 8 秒**，不动鼠标、不抢键盘）：measure() 挂显示链量主线程每拍的间隔，
 # 分阶段（出现、悬停展开、收起、开 / 收那一张、进行中换成结果）报掉了几帧，grep「island-frames」；recording() 要 Dev 版有
 # 「屏幕录制」授权，岛背后垫一块浅灰窗口逐帧抓刘海那一块，量形体的宽高（收起前停没停、换内容有没有先宽后窄、中途卡没卡），

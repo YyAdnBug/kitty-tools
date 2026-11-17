@@ -230,6 +230,10 @@ enum Style {
     static let bluetoothSnooze = Style.dynamic(
       light: NSColor(srgbRed: 0.15, green: 0.30, blue: 0.68, alpha: 1),
       dark: NSColor(srgbRed: 0.43, green: 0.57, blue: 0.96, alpha: 1))
+    /// 平滑滚动（插件，2026-11-17）：系统色用完了，自定义的橄榄绿（和翻译的系统绿、启动台的薄荷分得开：偏黄、偏暗）
+    static let smoothScroll = Style.dynamic(
+      light: NSColor(srgbRed: 0.42, green: 0.58, blue: 0.16, alpha: 1),
+      dark: NSColor(srgbRed: 0.60, green: 0.78, blue: 0.32, alpha: 1))
 
     /// 种类色块上的符号色：白；便签的黄上白色只有约 1.5:1，换成 black 0.85（同强调色选黄时 onBrand 的做法）
     static func onTile(_ color: Color) -> Color { color == notes ? .black.opacity(0.85) : .white }

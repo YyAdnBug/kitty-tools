@@ -31,6 +31,8 @@ import Foundation
     Prefs.launchpadPinchSense, Prefs.launchpadCorner,
     Prefs.screenRecordMicrophone, Prefs.audioRecordSource, Prefs.screenRecordShowsKeys,
     Prefs.notesDeckDisplay,
+    // 平滑滚动：反不反向跟着这台 Mac 接的鼠标（另一台可能只有触控板；添没添加见 Feature.syncsAddition）
+    Prefs.smoothScrollReverseVertical, Prefs.smoothScrollReverseHorizontal,
     Prefs.statusItemVisible,
     Prefs.clipboardHideOnUnfocus, Prefs.floatingPinned,
     // 保持唤醒的定时跟着这台 Mac（拍板 B4）

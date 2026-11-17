@@ -1,0 +1,278 @@
+// 平滑滚动的事件拦截（拍板 C2：放在 Kitty 里单独的一条线程上；全仓库第三处事件拦截，mac-overlay-panel §11）。
+// 会话层、头插、会吞事件的拦截，只收滚轮和鼠标按下。
+// 为什么不在主线程（同状态屏的 InputBlock 那样）：会吞事件的拦截在回调返回之前，这一下滚动谁都收不到；挂在主线程上，Kitty 一忙
+// （同步一轮、导入设置、排一篇长便签）全系统的滚轮都会顿，超时系统还会停掉拦截。这里一条专门的线程（Thread + 它自己的运行环，
+// 照刘海岛 MediaKeys 的写法）：拦截的回调、出帧的定时器都在它上面。红线：
+// - 线程上的东西（拦截、定时器、正在滑的那一段）只在这条线程上碰，回调里**不碰主线程的任何东西、不碰 AppKit**（不转 NSEvent）；
+//   主线程只经 ScrollShared 写设置、前台 App 停没停用，用 Mutex 护着
+// - 归不归它管、怎么滑都是纯函数（ScrollSmoothing）。自己发出去的合成滚动带一个记号（eventSourceUserData），回到这里原样放过；
+//   Dev 版和正式版用同一个记号，两个都开着也不会平滑两遍
+// - 合成的滚动是像素单位、标成连续的（App 照触控板那样按像素滚，不再自己加一层滚轮动画），修饰键清空（滑到一半按下 ⌘ 不会
+//   变成缩放，NonCoalesced 那一位照新建时的留着），发在光标下的窗口；按屏幕刷新一帧帧发，滑完就停掉定时器，没在滑时这条线程
+//   只是在等事件。帧上照抄原滚轮「方向已经按自然滚动翻过」的标记（没公开的字段 137，NSEvent.isDirectionInvertedFromDevice；
+//   反向开关反过的再翻一次）：按物理方向算的地方（截图框选里滚轮换层）才不会反
+// - 鼠标按下、触控板来了（连续的滚动）时把正在滑的那一段停掉（同触控板上手指一碰，惯性就停）
+// - 只就地改的（按着修饰键时的反向）三种距离要先全读出来再按 行 → 像素 → 定点 写：写行数时系统会按新的行数重算后两个
+// - 拦截被系统停用（回调超时、用户输入）就当场重新打开；醒来、本 App 回到前台时 SmoothScroll 整条重建
+// - 停：主线程 cancel 线程、往它上面排一个 wake 把运行环转停，这边撤定时器、停用并作废拦截，线程退出
+// - 探针（SmoothScrollTests/liveProbe，按需）：probe 开着时真的滚轮一概原样放过，只认带探针记号的事件（也不看前台 App 停没停用）；
+//   放出去的帧换一个探针帧的记号、回到这里记下时刻和距离再吞掉——一个都到不了别的 App，同时开着的另一个 Kitty 的帧照常放过
+// ponytail: 出帧用运行环的定时器（间隔 = 最快那块屏的一帧），没跟屏幕的刷新对齐；手测看出顿挫再换成加在这条线程运行环上的
+// CADisplayLink。
+
+import AppKit
+import Synchronization
+
+/// 主线程和滚动线程共用的：主线程写、滚动线程读
+nonisolated final class ScrollShared: NSObject, Sendable {
+  struct State: Sendable {
+    var settings = ScrollSmoothing.Settings()
+    /// 前台 App 停用了平滑滚动（ScrollSmoothing.isExcluded，主线程在前台 App 换了、设置变了时算好）
+    var excluded = false
+    /// 一帧多久（秒）：最快那块屏的一帧
+    var frameInterval = 1.0 / 60
+    /// 探针模式（只给 SmoothScrollProbeTests）：真的滚轮放过，只认探针的；放出去的帧记下来、吞掉
+    var probe = false
+    var probeFrames: [ProbeFrame] = []
+  }
+
+  struct ProbeFrame: Sendable {
+    let time: TimeInterval
+    let dx: Int
+    let dy: Int
+  }
+
+  let state = Mutex(State())
+  /// 建成了、正在听的拦截有几个（滚动线程写；重建时新的建好了、旧的还没撤完那一下会是 2）
+  let listening = Atomic<Int>(0)
+  var isListening: Bool { listening.load(ordering: .relaxed) > 0 }
+
+  /// 排到滚动线程上：把这一轮运行环转停（线程已经 cancel，随后退出）
+  @objc func wake() { CFRunLoopStop(CFRunLoopGetCurrent()) }
+}
+
+/// 只在滚动线程上用：拦截的端口、出帧的定时器、正在滑的那一段
+nonisolated final class ScrollTap: NSObject {
+  /// 自己发出去的合成滚动的记号（'KTSC'）
+  static let ownMarker: Int64 = 0x4B54_5343
+  /// 探针打进来的「滚轮」的记号（'KTSP'）、探针模式下放出去的帧的记号（'KTSF'）
+  static let probeMarker: Int64 = 0x4B54_5350
+  static let probeFrameMarker: Int64 = 0x4B54_5346
+  /// 「方向已经按自然滚动翻过」（没公开的字段 137：NSEvent.isDirectionInvertedFromDevice 读的就是它，2026-11-17 只建不发的
+  /// 小程序逐个字段试出来的）。只在滚轮事件之间照抄、翻转，不拿它判断别的
+  static let invertedField = CGEventField(rawValue: 137)
+
+  private let shared: ScrollShared
+  private var port: CFMachPort?
+  private var timer: Timer?
+  private var motion = ScrollSmoothing.Motion()
+  private var bounce = ScrollSmoothing.Bounce()
+  private var lastTick: TimeInterval = 0
+  /// 正在滑的那一段的帧上写的「方向已经翻过」（最近一格的）
+  private var inverted: Int64 = 0
+
+  private init(shared: ScrollShared) { self.shared = shared }
+
+  /// 起一条滚动线程：建拦截、转运行环，直到 stop。拦截建不起来、端口自己失效了（不是 stop 停的）时线程退出、调 failed
+  /// （在那条线程上调）
+  static func start(shared: ScrollShared, failed: @escaping @Sendable () -> Void) -> Thread {
+    let thread = Thread {
+      if !run(shared: shared) { failed() }
+    }
+    thread.name = "kitty.smooth-scroll"
+    thread.qualityOfService = .userInteractive
+    thread.start()
+    return thread
+  }
+
+  /// 让那条线程自己停下、撤掉拦截（主线程上调）
+  static func stop(_ thread: Thread, shared: ScrollShared) {
+    thread.cancel()
+    shared.perform(#selector(ScrollShared.wake), on: thread, with: nil, waitUntilDone: false)
+  }
+
+  /// 线程的全部；返回 false = 拦截没建起来，或者没让它停它自己停了
+  private static func run(shared: ScrollShared) -> Bool {
+    let tap = ScrollTap(shared: shared)
+    let types: [CGEventType] = [.scrollWheel, .leftMouseDown, .rightMouseDown, .otherMouseDown]
+    let mask = types.reduce(CGEventMask(0)) { $0 | CGEventMask(1) << CGEventMask($1.rawValue) }
+    guard
+      let port = CGEvent.tapCreate(
+        tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
+        eventsOfInterest: mask,
+        callback: { _, type, event, refcon in
+          guard let refcon else { return Unmanaged.passUnretained(event) }
+          let tap = Unmanaged<ScrollTap>.fromOpaque(refcon).takeUnretainedValue()
+          // 这条线程只转 CFRunLoop：每下点击、每格滚轮自动释放的东西要自己清
+          let swallow = autoreleasepool { tap.handle(type, event) }
+          return swallow ? nil : Unmanaged.passUnretained(event)
+        }, userInfo: Unmanaged.passUnretained(tap).toOpaque())
+    else { return false }
+    tap.port = port
+    CFRunLoopAddSource(
+      CFRunLoopGetCurrent(), CFMachPortCreateRunLoopSource(nil, port, 0), .commonModes)
+    CGEvent.tapEnable(tap: port, enable: true)
+    shared.listening.add(1, ordering: .relaxed)
+    // 一直转到 stop（cancel + 排一个 wake 把这一轮转停）。端口失效了（.finished：没有源了）就退出，不空转
+    while !Thread.current.isCancelled {
+      if CFRunLoopRunInMode(.defaultMode, 3600, false) == .finished { break }
+    }
+    tap.timer?.invalidate()
+    CGEvent.tapEnable(tap: port, enable: false)
+    CFMachPortInvalidate(port)
+    shared.listening.subtract(1, ordering: .relaxed)
+    withExtendedLifetime(tap) {}
+    return Thread.current.isCancelled
+  }
+
+  /// 一条事件来了：吞不吞（true = 吞掉）
+  private func handle(_ type: CGEventType, _ event: CGEvent) -> Bool {
+    switch type {
+    case .tapDisabledByTimeout, .tapDisabledByUserInput:
+      // 先判这个（这时 event 里是什么没有保证），当场重新打开
+      if let port { CGEvent.tapEnable(tap: port, enable: true) }
+      return false
+    case .leftMouseDown, .rightMouseDown, .otherMouseDown:
+      halt()
+      return false
+    case .scrollWheel:
+      break
+    default:
+      return false
+    }
+    let marker = event.getIntegerValueField(.eventSourceUserData)
+    if marker == Self.ownMarker { return false }
+    let (settings, excluded, probe) = shared.state.withLock { ($0.settings, $0.excluded, $0.probe) }
+    if marker == Self.probeFrameMarker {
+      guard probe else { return false }
+      let frame = ScrollShared.ProbeFrame(event)
+      shared.state.withLock { $0.probeFrames.append(frame) }
+      return true
+    }
+    // 探针开着时只认探针的：真的滚轮原样放过
+    if probe, marker != Self.probeMarker { return false }
+    let flags = event.flags
+    let wheel = ScrollSmoothing.Wheel(
+      continuous: event.getIntegerValueField(.scrollWheelEventIsContinuous) != 0,
+      phased: event.getIntegerValueField(.scrollWheelEventScrollPhase) != 0
+        || event.getIntegerValueField(.scrollWheelEventMomentumPhase) != 0,
+      dy: Self.lines(
+        event, fixed: .scrollWheelEventFixedPtDeltaAxis1, whole: .scrollWheelEventDeltaAxis1),
+      dx: Self.lines(
+        event, fixed: .scrollWheelEventFixedPtDeltaAxis2, whole: .scrollWheelEventDeltaAxis2),
+      option: flags.contains(.maskAlternate), shift: flags.contains(.maskShift),
+      command: !flags.isDisjoint(with: [.maskCommand, .maskControl]))
+    // 触控板一碰：鼠标滑着的那一段停下
+    if wheel.continuous || wheel.phased { halt() }
+    switch ScrollSmoothing.decide(wheel, settings: settings, excluded: excluded && !probe) {
+    case .pass:
+      return false
+    case .flip(let vertical, let horizontal):
+      if vertical { Self.negate(event, axis: 1) }
+      if horizontal { Self.negate(event, axis: 2) }
+      Self.toggleInverted(event)
+      return false
+    case .smooth(let dx, let dy, let flipped):
+      // 抖的那一格也吞掉：交给系统的话它会按原样反着滚一下
+      let time = Double(event.timestamp) / 1e9
+      guard bounce.accept(dx: dx, dy: dy, time: time) else { return true }
+      let device = Self.invertedField.map { event.getIntegerValueField($0) != 0 } ?? false
+      inverted = device != flipped ? 1 : 0
+      motion.add(dx: dx, dy: dy)
+      if timer == nil { begin() }
+      return true
+    }
+  }
+
+  /// 系统给的行数：定点的那个有小数（带加速）；万一是 0 退回整数的那个
+  private static func lines(_ event: CGEvent, fixed: CGEventField, whole: CGEventField) -> Double {
+    let value = event.getDoubleValueField(fixed)
+    return value != 0 ? value : Double(event.getIntegerValueField(whole))
+  }
+
+  /// 把一个轴的三种距离（行、像素、定点）都反过来：先全读出来，再按 行 → 像素 → 定点 写（写行数时系统会按新的行数重算
+  /// 后两个，边读边写会把它们反两遍；单测 SmoothScrollTests.negateFlipsAllThree 锁住）
+  static func negate(_ event: CGEvent, axis: Int) {
+    let (line, point, fixed): (CGEventField, CGEventField, CGEventField) =
+      axis == 1
+      ? (
+        .scrollWheelEventDeltaAxis1, .scrollWheelEventPointDeltaAxis1,
+        .scrollWheelEventFixedPtDeltaAxis1
+      )
+      : (
+        .scrollWheelEventDeltaAxis2, .scrollWheelEventPointDeltaAxis2,
+        .scrollWheelEventFixedPtDeltaAxis2
+      )
+    let values = (
+      event.getIntegerValueField(line), event.getIntegerValueField(point),
+      event.getDoubleValueField(fixed)
+    )
+    event.setIntegerValueField(line, value: -values.0)
+    event.setIntegerValueField(point, value: -values.1)
+    event.setDoubleValueField(fixed, value: -values.2)
+  }
+
+  /// 就地反过向的事件：「方向已经翻过」的标记跟着翻
+  static func toggleInverted(_ event: CGEvent) {
+    guard let field = invertedField else { return }
+    event.setIntegerValueField(field, value: event.getIntegerValueField(field) == 0 ? 1 : 0)
+  }
+
+  /// 从停着开始滑：当场先放一帧（不等下一个定时器，拨下去马上动），再按一帧的间隔接着放
+  private func begin() {
+    let interval = shared.state.withLock(\.frameInterval)
+    lastTick = ProcessInfo.processInfo.systemUptime - interval
+    let timer = Timer(
+      timeInterval: interval, target: self, selector: #selector(tick), userInfo: nil,
+      repeats: true)
+    timer.tolerance = 0
+    RunLoop.current.add(timer, forMode: .common)
+    self.timer = timer
+    tick()
+  }
+
+  /// 停掉正在滑的那一段
+  private func halt() {
+    timer?.invalidate()
+    timer = nil
+    motion = .init()
+  }
+
+  /// 放一帧：发一个像素单位的合成滚动（带记号）；滑完了停掉定时器
+  @objc private func tick() {
+    autoreleasepool {
+      let now = ProcessInfo.processInfo.systemUptime
+      let (tau, probe) = shared.state.withLock { ($0.settings.tau, $0.probe) }
+      let step = motion.step(dt: now - lastTick, tau: tau)
+      lastTick = now
+      if step.dx != 0 || step.dy != 0 {
+        Self.post(
+          dx: step.dx, dy: step.dy, inverted: inverted,
+          marker: probe ? Self.probeFrameMarker : Self.ownMarker)
+      }
+      if motion.isIdle { halt() }
+    }
+  }
+
+  private static func post(dx: Int, dy: Int, inverted: Int64, marker: Int64) {
+    guard
+      let event = CGEvent(
+        scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2,
+        wheel1: Int32(clamping: dy), wheel2: Int32(clamping: dx), wheel3: 0)
+    else { return }
+    event.flags = event.flags.intersection(.maskNonCoalesced)
+    event.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
+    if let field = invertedField { event.setIntegerValueField(field, value: inverted) }
+    event.setIntegerValueField(.eventSourceUserData, value: marker)
+    event.post(tap: .cgSessionEventTap)
+  }
+}
+
+extension ScrollShared.ProbeFrame {
+  nonisolated fileprivate init(_ event: CGEvent) {
+    self.init(
+      time: ProcessInfo.processInfo.systemUptime,
+      dx: Int(event.getIntegerValueField(.scrollWheelEventPointDeltaAxis2)),
+      dy: Int(event.getIntegerValueField(.scrollWheelEventPointDeltaAxis1)))
+  }
+}

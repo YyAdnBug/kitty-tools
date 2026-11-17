@@ -5430,6 +5430,26 @@
         }
       }
     },
+    "「%@」也在处理鼠标滚轮" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@” is also handling the mouse wheel"
+          }
+        }
+      }
+    },
+    "「%@」也在处理鼠标滚轮：两边一起开会平滑两次、反向两次。用这里的就把那边的平滑和反向关掉。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@” is also handling the mouse wheel: with both on, scrolling is smoothed twice and reversed twice. To use this one, turn off smoothing and reversing there."
+          }
+        }
+      }
+    },
     "「%@」写不进去：%@" : {
       "localizations" : {
         "en" : {
@@ -6573,6 +6593,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Both"
+          }
+        }
+      }
+    },
+    "两边一起开会平滑两次、反向两次：留一边就好" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "With both on, scrolling is smoothed and reversed twice; keep just one"
           }
         }
       }
@@ -8092,6 +8122,16 @@
         }
       }
     },
+    "停用平滑滚动" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn Off Smooth Scrolling"
+          }
+        }
+      }
+    },
     "停用快捷键" : {
       "localizations" : {
         "en" : {
@@ -9516,6 +9556,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "List scripts run as you type, so they can’t use confirm"
+          }
+        }
+      }
+    },
+    "列表里的 App 在前台时，滚轮照系统原样（也不反向）。常见的虚拟机、远程桌面和标明是游戏的 App 自动照原样，不用放进来；别的游戏、自己管滚轮的 App 放进来。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "While an app in this list is in front, the wheel scrolls the way the system does (and isn’t reversed). Common virtual machines, remote desktops and apps marked as games are left alone automatically, so you don’t need to add them; add other games and apps that handle the wheel themselves."
           }
         }
       }
@@ -11270,6 +11320,16 @@
         }
       }
     },
+    "反向只管这台 Mac 接的鼠标，不跟着同步；停用的 App 里也不反向。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reversing applies only to the mouse on this Mac and doesn’t sync. It’s also off in the apps listed below."
+          }
+        }
+      }
+    },
     "发一份到别的 App 或文件夹（历史里那条还在）" : {
       "localizations" : {
         "en" : {
@@ -11766,6 +11826,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Only enabled"
+          }
+        }
+      }
+    },
+    "只管鼠标滚轮，触控板和妙控鼠标照系统的。按住 ⌥ 滚动时不平滑；按住 ⇧ 改成左右滚；按着 ⌘ 或 ⌃ 时交给 App（缩放这类）。滑着的时候点一下鼠标就停下。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only the mouse wheel is affected; trackpads and Magic Mouse work the way the system does. Hold ⌥ while scrolling to skip smoothing, hold ⇧ to scroll sideways, and with ⌘ or ⌃ held the app handles it (zooming and the like). Click the mouse to stop a glide."
           }
         }
       }
@@ -13712,6 +13782,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Open in browser"
+          }
+        }
+      }
+    },
+    "在游戏、虚拟机这类自己管滚轮的 App 里自动照原样，也能自己加" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leaves apps that handle the wheel themselves, like games and virtual machines, alone automatically, and you can add your own"
           }
         }
       }
@@ -18192,6 +18272,36 @@
         }
       }
     },
+    "平滑,平滑滚动,滚动,滚轮,鼠标,顺滑,惯性,反向,方向,自然滚动,滚动方向,速度,距离,停用,游戏,虚拟机,远程桌面,smooth,scroll" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "smooth,smooth scrolling,scrolling,scroll,wheel,mouse,glide,inertia,reverse,direction,natural scrolling,scroll direction,speed,distance,turn off,games,virtual machine,remote desktop"
+          }
+        }
+      }
+    },
+    "平滑滚动" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Smooth Scrolling"
+          }
+        }
+      }
+    },
+    "平滑程度" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Smoothness"
+          }
+        }
+      }
+    },
     "序号" : {
       "localizations" : {
         "en" : {
@@ -20959,6 +21069,16 @@
         }
       }
     },
+    "拉到最左：不平滑，只按下面的开关反向" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All the way left: no smoothing, only the reversing below"
+          }
+        }
+      }
+    },
     "拖出去" : {
       "localizations" : {
         "en" : {
@@ -21159,6 +21279,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Blocks the keyboard and mouse, so wiping the screen or a curious kid won’t do anything; hold Esc to leave"
+          }
+        }
+      }
+    },
+    "拨一格滚多远；跟着系统设置里鼠标的「滚动速度」一起变" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "How far each notch scrolls; it also follows the mouse’s “Scrolling speed” in System Settings"
           }
         }
       }
@@ -21843,6 +21973,16 @@
         }
       }
     },
+    "授权显示给了，却接不住滚轮：到 系统设置 › %@ › 辅助功能 里把它关掉再打开。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Access shows as granted, but the wheel can’t be caught: turn Kitty Tools off and on again in System Settings › %@ › Accessibility."
+          }
+        }
+      }
+    },
     "授权辅助功能后再试" : {
       "localizations" : {
         "en" : {
@@ -21919,6 +22059,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Adding this would go over the 1 MB limit for a note. Choose another note"
+          }
+        }
+      }
+    },
+    "接住鼠标滚轮再滑出去；没有它用不了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Catches the mouse wheel and glides it; without it, this plugin can’t work"
+          }
+        }
+      }
+    },
+    "接住鼠标滚轮，在单独一条线程上滑出去；不碰触控板，没在滚时什么都不做" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Catches the mouse wheel and glides it on a separate thread; leaves the trackpad alone and does nothing while you’re not scrolling"
           }
         }
       }
@@ -24029,6 +24189,16 @@
         }
       }
     },
+    "方向" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Direction"
+          }
+        }
+      }
+    },
     "方向键" : {
       "localizations" : {
         "en" : {
@@ -24581,6 +24751,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Regular history and image and file favorites aren’t included. Set the screenshot folder, Open at Login, and system permissions again on the new computer."
+          }
+        }
+      }
+    },
+    "普通鼠标的滚轮像触控板那样滑着滚；滑多久、一格滚多远都能调" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An ordinary mouse wheel glides like a trackpad; adjust how long it glides and how far each notch goes"
           }
         }
       }
@@ -26381,6 +26561,16 @@
         }
       }
     },
+    "横向的滚轮；按住 ⇧ 拨的还是上下那个滚轮，跟着上面那一项" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The horizontal wheel; scrolling with ⇧ held still uses the vertical wheel, so it follows the option above"
+          }
+        }
+      }
+    },
     "橙" : {
       "localizations" : {
         "en" : {
@@ -27536,6 +27726,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Not saved"
+          }
+        }
+      }
+    },
+    "没有停用平滑滚动的 App" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No apps turn off Smooth Scrolling"
           }
         }
       }
@@ -29132,6 +29332,16 @@
         }
       }
     },
+    "添加后拨鼠标滚轮就是；按住 ⌥ 滚动临时不平滑，按住 ⇧ 左右滚" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Once added, just use the mouse wheel; hold ⌥ to scroll without smoothing, or ⇧ to scroll sideways"
+          }
+        }
+      }
+    },
     "添加后自己工作，没有快捷键和菜单" : {
       "localizations" : {
         "en" : {
@@ -29428,6 +29638,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "A light tap on the trackpad when you swipe to skip, expand a card, or drag the progress bar to the end"
+          }
+        }
+      }
+    },
+    "滚动" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scrolling"
+          }
+        }
+      }
+    },
+    "滚动距离" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scroll distance"
           }
         }
       }
@@ -31453,6 +31683,16 @@
         }
       }
     },
+    "移除后鼠标滚轮回到系统原样（也不反向）；设置留着，再添加就回来" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Once removed, the mouse wheel works the way the system does again (and isn’t reversed); settings stay for when you add it again"
+          }
+        }
+      }
+    },
     "移除在它自己那一页的最下面；移除了设置和数据都留着" : {
       "localizations" : {
         "en" : {
@@ -31996,12 +32236,12 @@
         }
       }
     },
-    "粘贴回原 App、划词翻译、截图识别窗口里的元素、长截图自动滚动、录屏显示按键、状态屏拦住键鼠、程序坞预览" : {
+    "粘贴回原 App、划词翻译、截图识别窗口里的元素、长截图自动滚动、录屏显示按键、状态屏拦住键鼠、程序坞预览、平滑滚动" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pasting back into apps, Translate Selection, detecting elements in windows for screenshots, auto-scrolling Scrolling Capture, showing keys in screen recordings, Status Screen input blocking, Dock Preview"
+            "value" : "Pasting back into apps, Translate Selection, detecting elements in windows for screenshots, auto-scrolling Scrolling Capture, showing keys in screen recordings, Status Screen input blocking, Dock Preview, Smooth Scrolling"
           }
         }
       }
@@ -32290,6 +32530,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "While “App Exposé” is on in System Settings › Trackpad › More Gestures, pinches go to the system and Launchpad ignores them. Once it’s off, Kitty reads the trackpad itself right away."
+          }
+        }
+      }
+    },
+    "系统设置里关着「自然滚动」：打开这一项，鼠标滚轮反过来，触控板不变" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“Natural scrolling” is off in System Settings: turn this on to reverse the mouse wheel; the trackpad stays the same"
+          }
+        }
+      }
+    },
+    "系统设置里开着「自然滚动」（鼠标和触控板是一个开关）：打开这一项，鼠标滚轮往下拨就往下翻，触控板不变" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“Natural scrolling” is on in System Settings (one switch for mouse and trackpad): turn this on so rolling the wheel down scrolls down; the trackpad stays the same"
           }
         }
       }
@@ -35233,6 +35493,16 @@
         }
       }
     },
+    "越往右，拨一格滑得越久" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Further right, each notch glides longer"
+          }
+        }
+      }
+    },
     "越松越容易捏出来" : {
       "localizations" : {
         "en" : {
@@ -35341,6 +35611,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Convert to GIF"
+          }
+        }
+      }
+    },
+    "轻" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Less"
           }
         }
       }
@@ -35549,6 +35829,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Finished"
+          }
+        }
+      }
+    },
+    "近" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Short"
           }
         }
       }
@@ -36917,6 +37207,16 @@
         }
       }
     },
+    "远" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Long"
+          }
+        }
+      }
+    },
     "连上了，能读能写" : {
       "localizations" : {
         "en" : {
@@ -37537,6 +37837,16 @@
         }
       }
     },
+    "选择的 App 在前台时，滚轮照系统原样" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "While a chosen app is in front, the wheel scrolls the way the system does"
+          }
+        }
+      }
+    },
     "选择的 App 里复制的内容不进剪贴板历史" : {
       "localizations" : {
         "en" : {
@@ -37785,6 +38095,16 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "重" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "More"
           }
         }
       }
@@ -38127,6 +38447,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Missed reminder: %@"
+          }
+        }
+      }
+    },
+    "键盘与鼠标" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keyboard and Mouse"
           }
         }
       }
@@ -38856,6 +39186,16 @@
         }
       }
     },
+    "鼠标上下反向" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reverse vertical mouse scrolling"
+          }
+        }
+      }
+    },
     "鼠标停到钉图上时认出图里的字，在字上拖动就是选字，⌘C 拷贝。空白处照旧拖着挪，按住 ⌥ 在哪都能挪" : {
       "localizations" : {
         "en" : {
@@ -38906,6 +39246,16 @@
         }
       }
     },
+    "鼠标单独反向，触控板不变" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reverse the mouse on its own; the trackpad stays the same"
+          }
+        }
+      }
+    },
     "鼠标在标签上停一下就打开，不用点" : {
       "localizations" : {
         "en" : {
@@ -38926,6 +39276,16 @@
         }
       }
     },
+    "鼠标左右反向" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reverse horizontal mouse scrolling"
+          }
+        }
+      }
+    },
     "鼠标挪到弹出的提示上：停住、展开看全文和按钮；在岛上双指往上滑收起" : {
       "localizations" : {
         "en" : {
@@ -38942,6 +39302,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Move the pointer into the corner and pause to open"
+          }
+        }
+      }
+    },
+    "鼠标滚轮像触控板那样滑着滚，鼠标单独反向，按 App 停用" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Make the mouse wheel glide like a trackpad, reverse the mouse on its own, and turn it off per app"
+          }
+        }
+      }
+    },
+    "鼠标滚轮滑着滚：滑多久、滚多远、鼠标单独反向、在哪些 App 里停用" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A gliding mouse wheel: how long it glides, how far it scrolls, mouse-only reversing, and the apps it’s turned off in"
           }
         }
       }
