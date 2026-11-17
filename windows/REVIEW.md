@@ -67,6 +67,21 @@ mac 还没推进 `macos` 的（多语言 / 英文、截图识别元素第二三�
   5. 记一下 4K 整屏截图识字（没码）认码多花的时间，超过 300 ms 写进报告；内存探针、空闲 CPU 不该变（认码只在识字时跑，用完就放）；
   6. 有截图推 `windows-shots` 的 `0.3.0-fill/`（只截我们自己的窗口和提示）。
 
+**审查后改的（`f9e9bb0b`，同样没编译）**：
+
+1. 预处理有时间和像素上限：超过 4000 万像素先按整数步长取平均缩小（`BarcodeReader.MaxPixels`；`Read` 多一个 `maxPixels` 参数，只给单测用）；
+   `BarcodeImage.Luma` / `Binarize` 收 `Deadline`，每 32 / 64 行看一次，到点返回 null，`Halve` 之间也看。
+2. `QrDetector.FindFinders` 每行都看超时，候选到 2000 个就停。
+3. Code 39、ITF 没有校验位，要三条扫描线读到才算（EAN / UPC / Code 128 照旧两条）。
+4. 补 1101 中文汉字模式（GB/T 18284：4 位子集 1 = GB2312，按 GB18030 读）；ECI 31–35（GBK、GB18030、UTF-16LE、UTF-32BE / LE）加进对照表。
+   `QrBitstream` 改成 public（单测手拼码字）。
+5. 钉图识字只解一次 PNG；拷码前去掉 U+0000（剪贴板和历史一致）；提示摘要不把 emoji 切成半个代理对。
+
+新单测 4 个：`HugeImagesStopWithinTheBudget`（6000 × 5000 噪点、上限 100 ms，要 1.1 秒内回来；Debug 下原来要三四秒）、`ShrinksImagesOverThePixelCap`、
+`ItfNeedsThreeLines`（条 4 像素高只有两条线穿过不算、8 像素算）、`ReadsHanziModeAndNewerEcis`。
+多看两个编译点：`BarcodeReader.Read` 里 `(var gray, width, height) = luma;`（声明和给参数赋值混在一个解构里，C# 10 起可以）；
+`PinWindow.RecognizedTextAsync` 的可空元组参数和 `decoded ??= await …`。`HugeImagesStopWithinTheBudget` 在很慢的机器上要是超了，先看是不是 Luma 那 32 行一检查的粒度，别直接放宽断言。
+
 ### R106（P3）长截图面板的预览（`MAC-DIFF.md`「其他窗口 › 长截图 › 还没对齐」）
 
 - mac 的预览有纸带滑动、接缝闪品牌粉、高度数字滚动、平滑取样；Windows 是最近邻取样、没有这三样动效。
