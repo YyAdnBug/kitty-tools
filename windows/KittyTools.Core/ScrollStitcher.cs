@@ -483,46 +483,96 @@ public sealed class ScrollCanvas
         return new ScrollFrame(Width, Height, pixels);
     }
 
+    /// <summary>平滑取样时每个输出像素每个方向最多取几个点（4 × 4 = 16 个）。</summary>
+    private const int MaxTaps = 4;
+
     /// <summary>
-    /// 预览（PLAN-v9 S11）：第 start 起的 count 行缩成 width × height（最近邻取样，不拷整张）。
+    /// 预览（PLAN-v9 S11；R106 起照 mac 平滑取样，原来是最近邻）：第 start 起的 count 行缩成 width × height，不拷整张。
+    /// 每个输出像素取它在长图里盖住的那一块（宽 Width / width、高 count / height）里均匀撒开的 n × m 个点求平均
+    /// （n、m = 那一块的宽、高向上取整，最多 MaxTaps；盖不满一个像素时就是取那一块中心的那个点），B、G、R 各自平均，透明度一律 255
+    /// （屏幕 DC 拷出来的 alpha 不可靠，画的时候也不看）。只管缩：比长图宽的 width 会把列重复取，放大交给画的那头（Win2D 线性插值）。
     /// 不加锁：调用方保证这时没有 Append 在跑（ScrollingCapture 只在没有正在拼的那一拍时取）。
+    /// ponytail: 撒点平均不是严格的面积平均，一块比 4 像素宽时中间有的列 / 行没取到；预览里看不出来，要更清楚再换成按面积加权。
     /// </summary>
     public int[] Sample(int start, int count, int width, int height)
     {
         var result = new int[Math.Max(width, 0) * Math.Max(height, 0)];
-        if (width <= 0 || height <= 0 || count <= 0)
+        if (width <= 0 || height <= 0 || count <= 0 || Height <= 0)
         {
             return result;
         }
 
         start = Math.Clamp(start, 0, Height - 1);
+        count = Math.Min(count, Height - start);
+        var across = Taps(Width, width);
+        var down = Taps(count, height);
+        var divisor = across * down;
+        var columns = new int[width * across];
+        for (var x = 0; x < width; x++)
+        {
+            for (var i = 0; i < across; i++)
+            {
+                columns[x * across + i] = TapAt(x * across + i, across, Width, width);
+            }
+        }
+
+        var rows = new int[down][];
+        var offsets = new int[down];
         var index = 0;
         var stripRow = 0;
         for (var y = 0; y < height; y++)
         {
-            var row = start + (int)((long)y * count / height);
-            if (row >= Height)
+            for (var j = 0; j < down; j++)
             {
-                break;
+                // 行号只增不减（TapAt 单调），条带顺着往下找。
+                var row = start + TapAt(y * down + j, down, count, height);
+                while (stripRow + _strips[index].Rows <= row)
+                {
+                    stripRow += _strips[index].Rows;
+                    index++;
+                }
+
+                var strip = _strips[index];
+                rows[j] = strip.Pixels;
+                offsets[j] = (strip.Start + row - stripRow) * Width;
             }
 
-            // 行号只增不减，条带顺着往下找。
-            while (stripRow + _strips[index].Rows <= row)
-            {
-                stripRow += _strips[index].Rows;
-                index++;
-            }
-
-            var strip = _strips[index];
-            var source = (strip.Start + row - stripRow) * Width;
             for (var x = 0; x < width; x++)
             {
-                result[y * width + x] = strip.Pixels[source + (int)((long)x * Width / width)];
+                int blue = 0, green = 0, red = 0;
+                for (var j = 0; j < down; j++)
+                {
+                    var pixels = rows[j];
+                    var offset = offsets[j];
+                    for (var i = 0; i < across; i++)
+                    {
+                        var pixel = pixels[offset + columns[x * across + i]];
+                        blue += pixel & 0xFF;
+                        green += (pixel >> 8) & 0xFF;
+                        red += (pixel >> 16) & 0xFF;
+                    }
+                }
+
+                result[y * width + x] = unchecked((int)0xFF000000) |
+                    (Average(red, divisor) << 16) | (Average(green, divisor) << 8) | Average(blue, divisor);
             }
         }
 
         return result;
+
+        static int Average(int sum, int divisor) => (sum + divisor / 2) / divisor;
     }
+
+    /// <summary>source 个像素缩成 output 个时每个输出像素取几个点：盖住的像素数向上取整，1–MaxTaps。</summary>
+    private static int Taps(int source, int output)
+        => output >= source ? 1 : Math.Min((source + output - 1) / output, MaxTaps);
+
+    /// <summary>
+    /// 第 position 个取样点（= 输出像素号 × taps + 这个像素里的第几个点）落在源的第几个像素：均匀撒在那个像素盖住的那一块里，
+    /// 取各小段的中点，即 ⌊(position + ½) × source / (taps × output)⌋。随 position 单调不减，总在 [0, source) 里。
+    /// </summary>
+    private static int TapAt(int position, int taps, int source, int output)
+        => (int)((2L * position + 1) * source / (2L * taps * output));
 
     /// <summary>
     /// 拿去和新帧比的那张小图：ScrollStitcher.Plan 只读最上面 HeadRows 行，和往下滚时最下面 / 往上滚时紧接着上面的一帧高的行

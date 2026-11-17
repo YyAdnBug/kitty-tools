@@ -33,7 +33,66 @@ mac 还没推进 `macos` 的（多语言 / 英文、截图识别元素第二三�
 
 #### 交接
 
-（待写）
+审查方在 Mac 上写了（`git log --grep "R106"` 的 feat 那个提交，提交号见下一条 docs 提交填的），**没编译、没跑单测**（本机没有 .NET SDK），待你们编译、核验。
+照 mac `Screenshot/ScrollCapture.swift` 的 `updatePreview` / `layoutFade` / `HeightReadingView` 和 `ScrollStitcher.preview` 做，参数照 mac-whisker §6 长截图。
+
+**做了什么**：
+
+- **平滑取样**：`ScrollCanvas.Sample` 从最近邻改成按块平均——每个输出像素取它在长图里盖住的那一块里均匀撒开的 n × m 个点求平均（每个方向最多 4 个，B / G / R 各自平均，透明度补 255）。
+  只管缩：长图比预览窄时面板按原大小取、画的时候 Win2D 线性放大（mac 是隔行取 + CG medium 插值）。
+- **纸带**：预览撑满了以后每拼上一段，新的一截从长的那头推进来：从「新拼上的行数 × 预览宽 / 长图宽」（DIP，夹在预览高以内）滑回 0，0.2 s easeOut（CA 的 (0, 0, 0.58, 1)）。
+  没撑满时不滑（图自己变长）。上一段还没滑完时接着它的当前位移算（mac 是直接从新位移重来，会跳一下）。
+- **接缝闪光**：每拼上一段，长的那头那条边上品牌粉（`Theme.Shot.Accent`），往里 24 DIP 渐隐到透明，整体不透明度 0.25 → 0 线性、0.4 s，跟着纸带一起走。
+- **上下渐隐**：预览上下各 18 DIP（预览很矮时最多三成）从面板底色淡到透明，盖在预览上；往回看时的位置指示条画在渐隐上面（mac 也不进蒙版）。
+- **高度数字**：原来的「W × H」18 号换成 mac 的读数——22 号半粗的高度数字 + 一行 12 号「像素高 · 宽 W」（mac 10 号），居中；
+  变了的那几位滚过去（数变大新的从下面上来、旧的往上走并淡掉；snap 曲线 + 0.12 s 淡变，`Motion.SlideFrom / SlideTo / FadeIn / Fade`，Composition 做）；位数变多时新长出来的高位从下面滚进来。
+- 第一帧、往回看的时候、系统关了动画效果（`Motion.Reduced`，同 mac 减弱动态效果）不滑不闪、数字直接换；渐隐照旧。
+- 动画就是这块 `CanvasControl` 每帧按时间重画（订 `CompositionTarget.Rendering`，滑完闪完画最后一帧就退订，`Hide` 也退订）；截屏、拼接、对账、自动滚动一行没动。
+  面板照旧不拿键盘（新的读数是 `StackPanel` + `TextBlock`，不进 Tab 序）。
+- 顺手：自动滚动开着时 ▶ / ⏸ 钮是品牌粉（mac `autoButton.contentTintColor = Shot.accent`），状态行居中（mac 竖栈 centerX），面板底色改用 `Theme.Shot.HudBackground`（同值，少一处写死的颜色）。
+
+**改了哪些文件**（路径省略 `windows/`）：
+
+- `KittyTools.Core/ScrollStitcher.cs`：`ScrollCanvas.Sample` 换成按块平均，加私有的 `MaxTaps`、`Taps`、`TapAt`。
+- `KittyTools.Core/ScrollPreview.cs`：新 `DigitPlace` 记录结构；`TapeSeconds` / `SeamSeconds` / `SeamPeak` / `SeamHeight` / `FadeHeightMax` 常量，
+  `FadeHeight`、`TapeStart`、`TapeOffset`、`SeamOpacity`、`EaseOut`、`CubicBezier`、`Places`、`RollDirection`。
+- `KittyTools/Screenshot/ScrollHeightReading.cs`（新）：高度读数和数字滚动。
+- `KittyTools/Screenshot/ScrollPreviewPanel.cs`：`_size` 换成 `_reading`；`Update` 按两次预览之间长了多少给 `Render(grown)`；`Render` 只缩不放、记 `_drawHeight`；
+  新 `StartMotion` / `StopTicking` / `OnRendering` / `TapeOffset` / `Seconds` / `Transparent`；`OnDraw` 画位移、接缝、渐隐；`SyncAuto` 给钮上色；
+  `ProbeAsync` 每拍多抓一张 `-moving`（拼上后 50 ms）。
+- `KittyTools.Tests/ScrollPreviewTests.cs`：`SampleReadsAcrossStrips` 改成按原大小取（最近邻的期望值不再成立，这是改算法，不是凑绿）；
+  新 `SampleAveragesTheCoveredBlock`、`EaseOutMatchesCoreAnimation`、`TapeSlidesFromTheGrowingEnd`、`SeamFlashFadesAndEdgesFade`、`PlacesAlignDigitsByPlaceValue`。
+
+**要特别看的编译点**：
+
+1. `OnRendering(object? sender, object e)` 订的是 `Microsoft.UI.Xaml.Media.CompositionTarget.Rendering`（`EventHandler<object>`，`StatusScreenPanel`、`ScrollingCapture` 同写法）；文件里没引 `Microsoft.UI.Composition`，不会和它的 `CompositionTarget` 撞名。
+2. Win2D：`bitmap.Bounds`（`CanvasBitmap.Bounds`，DIP）、`ds.DrawImage(CanvasBitmap, Rect, Rect, float, CanvasImageInterpolation)`、`new CanvasLinearGradientBrush(sender, Color, Color) { StartPoint, EndPoint, Opacity }`（`using Microsoft.Graphics.Canvas.Brushes`，`using var`）。
+3. `OnDraw` 里 `var seam = _seamSince == 0 ? 0 : ScrollPreview.SeamOpacity(…)`（int / double 合成 double）、`var top = (_growingUp ? box - height : 0) + (float)TapeOffset(now)`（float）、`Math.Min(edge, inward)`（float）进 `Rect` 的 double。
+4. 面板里的实例方法 `TapeOffset(long)` 和 Core 的 `ScrollPreview.TapeOffset(double, double)` 同名，调用处都写全了类名。
+5. `ScrollHeightReading : StackPanel` 是 `internal sealed partial`（CsWinRT），`OnCreateAutomationPeer` 返回 `FrameworkElementAutomationPeer`（同 `TickerText`）；`FontWeights` 是 `Microsoft.UI.Text` 的。
+6. `DigitPlace(char? From, char? To)`：`Places` 里写的是 `(char?)null`；单测 `new DigitPlace(null, '1')`、`CollectionAssert.AreEqual` 比记录结构的数组。
+7. `Sample` 里 `rows` 是 `int[][]`（`new int[down][]`，下面每一格都先赋值再读）；局部函数 `Average` 写在 `return` 后面。
+8. 单测里 double 的 `Assert.AreEqual` 都带了误差（`1e-12` 之类）；`Assert.AreEqual(0, double, delta)` 走 double 重载。
+
+**单测**：上面那 6 个（`SampleReadsAcrossStrips` 改、5 个新）。期望值在 Mac 上用 Python 按同样的整数算法核过（灰阶 0–120 平均 60、160–255 平均 214；easeOut 中点 0.6846；50 ms 时 100 → 62.19）。
+
+**替用户定的**：
+
+- 接缝闪在**图**长的那头那条边上（mac 在预览框那条边上）：撑满以后是同一处，没撑满时（刚开始那几拍）闪在新内容接上的地方，不在空着的底上。
+- 纸带被下一拍打断时接着当前位移滑（mac 从新位移重来、会跳一下）；快档自动滚动一拍 160 ms、滑 200 ms，接着滑看着连贯。
+- 平滑取样是「块里撒最多 4 × 4 个点平均」，不是严格面积平均（`// ponytail:` 写了上限）；mac 是隔行取再 CG medium 插值，看起来差不多。
+- 字体：数字用 Segoe UI Variable 半粗（Windows 没有 mac 的 SF Rounded 圆体）；说明那行 12 号（Windows 最小的说明字），颜色用现成的 `Theme.Shot.HudTextFaint`（white 0.35，mac tertiary 0.40）。
+- 数字滚动自己写在 `ScrollHeightReading`，没用 `TickerText`：要半粗、要按位值对齐和位数变化，而且 R107 这一轮正在改 `TickerText`（同时改会撞）。做法和 `TickerText` 一样（一位一个 TextBlock、Motion 的四个用法），以后可以并回去。
+- 位数变多时整行宽度立刻变（居中的数字往左跳半个字），mac 跟着动画走；位数变少（实际碰不到）整行直接换。写在文件头的 ponytail。
+
+**要你们做的**：
+
+1. 编译零警告（`TreatWarningsAsErrors`）：`dotnet build windows/KittyTools.slnx -c Debug -p:Platform=x64`，编译错直接修。
+2. `dotnet test windows/KittyTools.Tests` 全过；新单测有挂的，先看是不是期望值算错（算法、期望都在上面），别改成对着实现抄。
+3. Release AOT 发布 x64 / ARM64 零 trim / AOT 警告。
+4. 真机走 HANDTEST 1520–1535（长截图手动 / 自动、往上、窄选区、往回看、关了动画效果）；1531 看拼接节奏和 CPU（平滑取样在 UI 线程上，每拍多几毫秒，量一下 `Render` 的耗时；太慢把 `MaxTaps` 调成 3）。
+5. Debug `--long-annotate-probe=3000`（`KITTY_HUD_CAPTURE=1`）出的 `scroll-panel-*-moving.png` / `scroll-panel-*.png`，再录一段 3–5 秒的长截图预览（只录面板），推 `windows-shots` 的 `0.3.0-fill/`。
+6. 内存探针、空闲 CPU 照每批的自查清单（滑完闪完退订 `Rendering`，静置时应当是 0）。
 
 ### R107（P2）状态屏和提醒图标（`MAC-DIFF.md`「状态屏 › 还没对齐」）
 
