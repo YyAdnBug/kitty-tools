@@ -10,10 +10,10 @@
 // 只用到系统画的东西：圆角、阴影是 DWM 的（药丸和标签列用 NoteDeckUi.Shell；预览卡、打开的便签用系统边框的外壳），都不要 DWM 那圈细边框
 // （NoteDeckUi.NoOutline，同 mac 没有描边），菜单是 MenuFlyout。
 // 动效（R108，照 mac NoteDeckView）：标签一张接一张从边外滑出来、收回时一起滑回去淡掉，标签斜 3°（打开的那张立正、探出 8，停着 / 拖着的探出 4），
-// 拖动排序时别的让位，打开的便签从边缘那侧滑出来、淡入，它自己带着一张标签（NoteSheetView 的 TabSide）。**窗口都不挪**：每扇窗摆在动画的终点，
+// 拖动排序时别的让位，打开的便签从边缘那侧滑出来、淡入，它自己带着一张标签（NoteSheetView 的 TabSide），预览卡里的字从边那侧偏 8 淡入（snap）。**窗口都不挪**：每扇窗摆在动画的终点，
 // 动的是里面的内容（NoteMotion，Composition，合成器线程上跑）——窗口的外缘就是工作区的边，标签从外缘之外滑进来，看上去就是从屏幕边上出来。
 // 不按显示器刷新挪窗口：滑到工作区外会压到任务栏 / 隔壁那块屏，每帧 SetWindowPos 在主线程上，打开便签那一下主线程正排正文，最容易掉帧。
-// 代价：标签列那扇窗（亚克力）一露出来就是整条，标签随后滑进来；打开的便签那扇窗先出纸，里面的东西随后滑进来、淡入（mac 是整张纸一起）；
+// 代价：标签列那扇窗（亚克力）一露出来就是整条，标签随后滑进来；打开的便签、预览卡那扇窗先出纸，里面的东西随后滑进来、淡入（mac 是整张纸一起）；
 // 窗口退场照旧不淡出（PLAN-v7 §1）。
 using System.Numerics;
 using System.Runtime.InteropServices;
@@ -982,6 +982,7 @@ internal sealed class NoteDeckPreviewWindow : Window
 {
     private readonly NoteDeckBay _bay;
     private readonly Border _paper;
+    private readonly StackPanel _content;
     private readonly TextBlock _title;
     private readonly TextBlock _body;
     private string? _id;
@@ -1001,11 +1002,8 @@ internal sealed class NoteDeckPreviewWindow : Window
             MaxLines = 1,
         };
         _body = new TextBlock { FontSize = 12, TextWrapping = TextWrapping.Wrap, TextTrimming = TextTrimming.CharacterEllipsis, MaxLines = 5 };
-        _paper = new Border
-        {
-            Padding = new Thickness(12, 10, 12, 10),
-            Child = new StackPanel { Spacing = 4, Children = { _title, _body } },
-        };
+        _content = new StackPanel { Spacing = 4, Children = { _title, _body } };
+        _paper = new Border { Padding = new Thickness(12, 10, 12, 10), Child = _content };
         var root = NoteDeckUi.Root();
         root.Children.Add(_paper);
         root.PointerEntered += (_, _) => _bay.HoverPreview(true);
@@ -1022,6 +1020,23 @@ internal sealed class NoteDeckPreviewWindow : Window
 
     public void Show(Note note, RectInt32 frame)
     {
+        // 露出来 / 换了一条（R108，mac snap：淡入 + 从边那侧偏 8）：纸（这扇窗）不动，动里面的字（同打开的便签，见文件头）
+        if (!_shown || _id != note.Id)
+        {
+            if (NoteMotion.Animates(MotionCurve.Snap))
+            {
+                NoteMotion.SetTranslation(_content, new Vector3((float)NoteDeckLayout.Outward(_bay.Edge) * 8, 0, 0));
+                NoteMotion.SetOpacity(_content, 0);
+                NoteMotion.TranslateTo(_content, Vector3.Zero, MotionCurve.Snap);
+                NoteMotion.FadeTo(_content, 1, MotionCurves.FadeInSeconds, easeIn: false);
+            }
+            else
+            {
+                NoteMotion.SetTranslation(_content, Vector3.Zero);
+                NoteMotion.SetOpacity(_content, 1);
+            }
+        }
+
         _id = note.Id;
         var tone = NoteDeckUi.Tone(note);
         _paper.Background = NoteDeckUi.Brush(tone.Paper);
