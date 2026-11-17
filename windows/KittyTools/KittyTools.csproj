@@ -87,6 +87,9 @@
     <Content Update="Resources\StatusEmoji\*.png" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Resources\StatusEmoji\manifest.txt" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Resources\StatusEmoji\LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />
+    <!-- 动画表情包的对照表（R107，同 mac Resources/emoji-pack.json，tag 换成 emoji-pack-1-win）：746 个的编号、表情字、分类、中文名、
+         关键词；动画本身按需从 release 下载（StatusScreen/EmojiPack.cs）。 -->
+    <Content Include="Resources\StatusEmoji\emoji-pack.json" CopyToOutputDirectory="PreserveNewest" />
     <!-- 便签参考了 Noty（MIT）：许可要求随包带全文（REVIEW R95，同 mac Resources/notes-LICENSE.txt） -->
     <Content Include="Resources\notes-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />
     <None Include="NativeMethods.txt" />

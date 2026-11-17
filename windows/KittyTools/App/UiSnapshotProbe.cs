@@ -923,7 +923,7 @@ internal static class UiSnapshotProbe
                 settings.CloseDeckEdgeForProbe();
             }
 
-            // PLAN-v16 E1 / E2：状态、提醒的编辑框（图标格子最后一格「其他表情」选着一个系统表情；提醒滚到底看提示音和自定义催促）。
+            // PLAN-v16 E1 / E2：状态、提醒的编辑框（图标格子最后一格「系统表情」选着一个系统表情；提醒滚到底看提示音和自定义催促）。
             // ContentDialog 在弹出层里，RenderTargetBitmap 画不出，只用 WGC 拍真窗口。
             foreach (var (name, reminder, end) in new[] { ("settings-status-editor", false, false), ("settings-reminder-editor", true, false), ("settings-reminder-editor-end", true, true) })
             {

@@ -202,8 +202,9 @@ internal sealed partial class LauncherRowView : Grid
     private static FrameworkElement Icon(LauncherItem item, ImageSource? image)
     {
         // 状态屏的状态、提醒：它的表情（静止画面，深色下「开会」「黑猫」垫浅底；挑的系统表情用 Segoe UI Emoji 画，PLAN-v16 E1）；
-        // 没选表情的照旧是家族色块（mac presetEmoji）。
-        if (item.Emoji is { } emoji && (StatusEmojiCatalog.Ids.Contains(emoji) || StatusEmojiCatalog.IsCustom(emoji)))
+        // 没选表情的照旧是家族色块（mac presetEmoji）。动画表情包里的（R107）先画系统样子、下好了换成它的第一帧。
+        if (item.Emoji is { } emoji && (StatusEmojiCatalog.Ids.Contains(emoji) || StatusEmojiCatalog.IsCustom(emoji) ||
+                                         (StatusEmojiCatalog.IsPackSymbol(emoji) && EmojiPack.Catalog?.PackId(emoji) is not null)))
         {
             return StatusEmoji.Still(emoji, 24, Theme.EffectiveTheme == ElementTheme.Dark);
         }

@@ -78,7 +78,7 @@ public sealed class StatusEmojiKeyTests
     [TestMethod]
     public void MacOnlyIconsAlsoUseTheEmojiKeyAndSurvive()
     {
-        // mac 后来加的 12 个、动画表情包的：这一版画不出，但收到了不置空、编回去照样在 emoji 键（不然同步回去会抹掉 mac 上挑的）
+        // 后加的 12 个（R107 起有素材）、动画表情包的：收到了不置空、编回去照样在 emoji 键（mac 0.7.x 只认前 16 个，放 symbol 键会被它收拾掉）
         foreach (var icon in new[] { "cook", "pack:dog" })
         {
             var preset = StatusPresets.BuiltIn()[2].Copy();

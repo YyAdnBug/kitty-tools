@@ -203,6 +203,8 @@ public static class SettingsSyncMap
         Flag("statusScreenHotKeyEntersFirst", "StatusScreenHotKeyEntersFirst");
         Flag("statusScreenAnimations", "StatusScreenAnimations");
         Number("remindersSnoozeMinutes", "RemindersSnoozeMinutes");
+        // R107：「自动下载动画表情」Windows 也有了，从 D 组（mac 独有、透传）挪过来（mac 注册了默认值、跟着同步）
+        Flag("emojiPackDownloads", "EmojiPackDownloads");
 
         // 便签（放在哪块屏幕留在本机）
         Number("notesFontSize", "NotesFontSize");

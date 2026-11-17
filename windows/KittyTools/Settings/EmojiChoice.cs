@@ -1,4 +1,5 @@
-// 图标格子最后一格「其他表情」（PLAN-v16 E1，mac 0aea7ec8 的 StatusPresetDetail 系统表情格）：状态和提醒的详情共用。
+// 图标格子最后一格「系统表情」（PLAN-v16 E1，mac 0aea7ec8 的 StatusPresetDetail 系统表情格；原来叫「其他表情」，R107 照 mac 7c203b88 改名，
+// 倒数第二格是「动画表情」AnimatedEmojiPicker）：状态和提醒的详情共用。
 // 点了弹一个小浮层，里面一个拿着焦点的输入框，顺手叫出系统的表情面板（Win + .，往前台发这两个键：Windows 没有给桌面程序叫面板的公开接口）；
 // 面板插进来的、粘贴或直接打的，正好一个表情字才收（StatusEmojiCatalog.IsCustom），收了就关浮层、焦点交回格子。系统表情由
 // Segoe UI Emoji 画（StatusEmoji 的 Fallback），静态、不占包。面板没出来也能粘贴一个，是退路。
@@ -17,9 +18,17 @@ internal static partial class EmojiChoice
     /// <summary>格子里这一格在 (值, 按钮) 表里的键（不会和表情 id、系统表情撞上）。</summary>
     public const string Key = "other-emoji:";
 
-    /// <summary>格子里这一格亮不亮：其他表情那一格在选着系统表情时亮，别的格子按 id。</summary>
+    /// <summary>
+    /// 格子里这一格亮不亮：系统表情那一格在选着系统表情时亮，动画表情那一格在选着表情包里的（不是自带的）时亮，别的格子按 id
+    /// （表情包里和自带的同一个动画的按自带的那一格亮，mac canonical）。
+    /// </summary>
     public static bool Selected(string cell, string symbol)
-        => cell == Key ? StatusEmojiCatalog.IsCustom(symbol) : cell == symbol;
+        => cell switch
+        {
+            Key => StatusEmojiCatalog.IsCustom(symbol),
+            AnimatedEmojiPicker.Key => AnimatedEmojiPicker.IsPack(symbol),
+            _ => cell == StatusEmoji.Canonical(symbol),
+        };
 
     /// <summary>格子里那一格：选着系统表情时画那个字，没选时一个笑脸图标；picked 收到挑好的那个字。</summary>
     public static Button Create(Func<string> current, Action<string> picked)
@@ -37,13 +46,13 @@ internal static partial class EmojiChoice
             button.Content = StatusEmojiCatalog.IsCustom(symbol)
                 ? new TextBlock { Text = symbol, FontFamily = new FontFamily("Segoe UI Emoji"), FontSize = 22, HorizontalAlignment = HorizontalAlignment.Center }
                 : new FontIcon { Glyph = Glyphs.Emoji, FontSize = 18 };
-            AutomationProperties.SetName(button, StatusEmojiCatalog.IsCustom(symbol) ? $"其他表情：{symbol}" : "其他表情");
+            AutomationProperties.SetName(button, StatusEmojiCatalog.IsCustom(symbol) ? $"系统表情：{symbol}" : "系统表情");
         }
 
         Show();
-        ToolTipService.SetToolTip(button, "其他表情：从系统的表情面板挑一个");
+        ToolTipService.SetToolTip(button, "从系统表情里挑一个（按系统的样子画，不会动）");
         var box = new TextBox { Width = 220, PlaceholderText = "在弹出的面板里挑一个表情" };
-        AutomationProperties.SetName(box, "其他表情");
+        AutomationProperties.SetName(box, "系统表情");
         var hint = new TextBlock
         {
             Text = "也可以粘贴一个表情。没弹出面板时按 Win + 句号。",
@@ -96,7 +105,7 @@ internal static partial class EmojiChoice
         return button;
     }
 
-    /// <summary>叫出系统的表情面板（Win + .）。用户点了「其他表情」才发，只发这两个键。</summary>
+    /// <summary>叫出系统的表情面板（Win + .）。用户点了「系统表情」才发，只发这两个键。</summary>
     private static void OpenEmojiPanel()
     {
         const byte win = 0x5B;

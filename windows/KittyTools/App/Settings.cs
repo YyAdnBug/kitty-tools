@@ -417,6 +417,15 @@ internal sealed class Settings
     /// <summary>告示上的动画（表情动、进入时的出场、甩一下、冒眼睛；默认开）。</summary>
     public bool StatusScreenAnimations { get; set; } = true;
 
+    /// <summary>
+    /// 自动下载动画表情（R107，mac Prefs.emojiPackDownloads，默认开）：「动画表情」里挑的第一次用到时从本仓库的 release 下载那个动画；
+    /// 关掉就不联网，已经下好的照用。设置 › 状态屏「动画」、设置 › 提醒「图标」两处是同一个。跟着导出导入、同步（同 mac）。
+    /// </summary>
+    public bool EmojiPackDownloads { get; set; } = true;
+
+    /// <summary>「动画表情」气泡里的「常用」：最近挑过的表情包编号，逗号隔开、最多 18 个（mac Prefs.emojiPackRecent，留在本机：不导出、不同步）。</summary>
+    public string? EmojiPackRecent { get; set; }
+
     // 保持唤醒（插件，PLAN-v20 K1，mac Prefs.keepAwake*）：手动开的那一段不存（不跨重启）。
 
     /// <summary>定时（Core KeepAwakeSchedule 的 JSON，键同 mac；null / 空 = 默认的工作日 9:00–18:00、关着）。跟着导出导入，不同步。</summary>

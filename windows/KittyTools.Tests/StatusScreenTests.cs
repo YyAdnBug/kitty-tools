@@ -382,7 +382,9 @@ public sealed class StatusScreenTests
         Assert.AreEqual(2, StatusScreenRules.DefaultIndex(list, "back"));
         Assert.AreEqual(0, StatusScreenRules.DefaultIndex(list, "gone"));
         Assert.AreEqual(0, StatusScreenRules.NextIndex(2, 3));
-        Assert.AreEqual(16, StatusEmojiCatalog.Choices.Length);
+        Assert.AreEqual(28, StatusEmojiCatalog.Choices.Length);
+        Assert.AreEqual(16, StatusEmojiCatalog.LegacyIds.Count);
+        Assert.IsTrue(StatusEmojiCatalog.LegacyIds.All(StatusEmojiCatalog.Ids.Contains));
         Assert.IsTrue(StatusEmojiCatalog.NeedsPlate("busts", dark: true));
         Assert.IsFalse(StatusEmojiCatalog.NeedsPlate("busts", dark: false));
     }

@@ -601,6 +601,7 @@ internal static class ArchiveService
             writer.WriteBoolean("statusScreenExitHint", settings.StatusScreenExitHint);
             writer.WriteBoolean("statusScreenHotKeyEntersFirst", settings.StatusScreenHotKeyEntersFirst);
             writer.WriteBoolean("statusScreenAnimations", settings.StatusScreenAnimations);
+            writer.WriteBoolean("emojiPackDownloads", settings.EmojiPackDownloads); // R107，键名同 mac（「常用」和缓存不导出）
             // PLAN-v20 K1 保持唤醒：键名和写法同 mac（定时是一段 JSON 文字）
             writer.WriteBoolean("keepAwakeDisplay", settings.KeepAwakeDisplay);
             writer.WriteString("keepAwakeSchedule", settings.KeepAwakeSchedule ?? string.Empty);
@@ -816,6 +817,9 @@ internal static class ArchiveService
                     break;
                 case "statusScreenAnimations" when value.ValueKind is JsonValueKind.True or JsonValueKind.False:
                     settings.StatusScreenAnimations = value.GetBoolean();
+                    break;
+                case "emojiPackDownloads" when value.ValueKind is JsonValueKind.True or JsonValueKind.False:
+                    settings.EmojiPackDownloads = value.GetBoolean();
                     break;
                 case "keepAwakeDisplay" when value.ValueKind is JsonValueKind.True or JsonValueKind.False:
                     settings.KeepAwakeDisplay = value.GetBoolean();

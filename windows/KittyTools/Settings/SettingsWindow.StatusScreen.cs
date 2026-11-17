@@ -1,7 +1,7 @@
 // 设置 › 状态屏（PLAN-v12 N5，照 mac Settings/StatusScreenTab.swift + StatusPresetDetail.swift）：启用状态屏 ｜ 状态列表
 // （每行 = 表情的静止画面 + 标题 + 一行摘要；点一行编辑，右键 编辑… / 上移 / 下移 / 删除，下面「＋」新状态 / 恢复自带的状态）｜
-// 进入（按快捷键直接进入排在最前面的状态）｜ 动画（告示上的动画）｜ 退出（怎么退出 + 速查表、退出提示的开关、退出密码）。
-// 编辑是一张对话框（同网页搜索那张列表）：标题、说明、图标格子（无 + 16 个表情）、样式 + 缩小的预览、电源、自动结束。
+// 进入（按快捷键直接进入排在最前面的状态）｜ 动画（告示上的动画、自动下载动画表情）｜ 退出（怎么退出 + 速查表、退出提示的开关、退出密码）。
+// 编辑是详情页：标题、说明、图标格子（无 + 28 个表情 + 动画表情 + 系统表情）、样式 + 缩小的预览、电源、自动结束。
 // 页里不放「进入」「试一下」这类会真的进入状态屏的按钮（mac 同样）。
 using KittyTools.Core;
 using KittyTools.Infrastructure;
@@ -105,7 +105,8 @@ internal sealed partial class SettingsWindow
                 settings.StatusScreenAnimations = isOn;
                 SettingsService.Save();
             });
-        _content.Children.Add(SettingsUi.Footnote("系统设置里关了「动画效果」时，这些动画都不做，标题也不晃。"));
+        AddEmojiPackToggle();
+        _content.Children.Add(SettingsUi.Footnote("系统设置里关了「动画效果」时，这些动画都不做，标题也不晃。" + EmojiPackFootnote));
 
         // 退出
         _content.Children.Add(SettingsUi.Section("退出"));
@@ -215,7 +216,7 @@ internal sealed partial class SettingsWindow
         };
         ends.SelectedIndex = Math.Max(0, Array.IndexOf(StatusPresets.AutoEndChoices, draft.AutoEndMinutes));
 
-        // 图标格子：第一格「无」，后面 16 个表情的静止画面，选中的外面一圈强调色；左边大预览一直播动画（G9）。
+        // 图标格子：第一格「无」，后面 28 个表情的静止画面，再是「动画表情」「系统表情」，选中的外面一圈强调色；左边大预览一直播动画（G9）。
         var icons = new VariableSizedWrapGrid { Orientation = Orientation.Horizontal, MaximumRowsOrColumns = 7, ItemWidth = 44, ItemHeight = 44 };
         var (iconRow, showPreview) = IconPicker(icons, "statusScreen", "\uE8E4");
         var iconButtons = new List<(string Id, Button Button)>();
@@ -252,7 +253,14 @@ internal sealed partial class SettingsWindow
             icons.Children.Add(button);
         }
 
-        // 最后一格「其他表情」：从系统的表情面板挑任意一个（PLAN-v16 E1）
+        // 倒数第二格「动画表情」（R107）：动画表情包里挑，第一次用到时下载
+        if (AnimatedEmojiPicker.Create(() => draft.Symbol, SelectIcon, dark) is { } animatedEmoji)
+        {
+            iconButtons.Add((AnimatedEmojiPicker.Key, animatedEmoji));
+            icons.Children.Add(animatedEmoji);
+        }
+
+        // 最后一格「系统表情」：从系统的表情面板挑任意一个（PLAN-v16 E1）
         var otherEmoji = EmojiChoice.Create(() => draft.Symbol, SelectIcon);
         iconButtons.Add((EmojiChoice.Key, otherEmoji));
         icons.Children.Add(otherEmoji);

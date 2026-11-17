@@ -23,7 +23,7 @@ public sealed class StatusPreset
 
     public string? Detail { get; set; }
 
-    /// <summary>表情 id（StatusEmojiCatalog.Ids 里的一个）、系统表情（那个字）或 mac 那边的别的图标值（IsStorable）；空 = 不要图标。</summary>
+    /// <summary>表情 id（StatusEmojiCatalog.Ids 里的一个）、动画表情包里的（「pack:编号」）或系统表情（那个字）（IsStorable）；空 = 不要图标。</summary>
     public string Symbol { get; set; } = string.Empty;
 
     /// <summary>blackout 熄屏（纯黑，什么都不显示）/ sign 告示（黑底大字）/ dim 透出（屏幕压暗 + 大字）。</summary>
@@ -125,8 +125,8 @@ public static class StatusPresets
             : StatusEmojiCatalog.IsStorable(symbol) ? symbol
             : LegacySymbols.GetValueOrDefault(symbol, string.Empty);
 
-    /// <summary>JSON 里放在 emoji 键的图标（mac encode：不是自带的那 16 个、也不是空的）。</summary>
-    public static bool UsesEmojiKey(string symbol) => symbol.Length > 0 && !StatusEmojiCatalog.Ids.Contains(symbol);
+    /// <summary>JSON 里放在 emoji 键的图标（mac encode：不是 0.7.1 认得的那 16 个、也不是空的；后加的 12 个也在 emoji 键）。</summary>
+    public static bool UsesEmojiKey(string symbol) => symbol.Length > 0 && !StatusEmojiCatalog.LegacyIds.Contains(symbol);
 
     /// <summary>
     /// 把一张列表收拾成能用的：标题去首尾空白、换行当空格，空的整条丢掉、超过 30 个字截断；说明同样收拾、最多 60 个字、空了就是没有；
@@ -451,44 +451,49 @@ public static class StatusPresets
     }
 }
 
-/// <summary>状态屏的动画表情清单（mac StatusEmoji 的 choices / eyes / dim / plated；素材在 App 的 Resources\StatusEmoji）。</summary>
+/// <summary>状态屏的动画表情清单（mac StatusEmoji 的 choices / legacyIDs / eyes / dim / plated；素材在 App 的 Resources\StatusEmoji）。</summary>
 public static class StatusEmojiCatalog
 {
-    /// <summary>可选的 16 个（设置里的图标格子按这个顺序）；Name 是读屏读的中文名。</summary>
+    /// <summary>
+    /// 可选的 28 个（设置里的图标格子按这个顺序；后 12 个是 mac 2026-11-04 加的，R107 起 Windows 也带素材）；Name 是读屏读的中文名。
+    /// id 只能往后加、不能改（存在状态和提醒里）。
+    /// </summary>
     public static readonly (string Id, string Name)[] Choices =
     {
         ("raised-hand", "举手"), ("waving-hand", "挥手"), ("glowing-star", "发光的星"), ("alarm-clock", "闹钟"),
         ("hourglass", "沙漏"), ("hot-beverage", "热饮"), ("zzz", "Zzz"), ("sleeping-face", "睡觉"),
         ("shushing-face", "嘘"), ("busts", "开会"), ("telephone", "电话"), ("rocket", "火箭"), ("robot", "机器人"),
         ("fire", "火"), ("high-voltage", "闪电"), ("black-cat", "黑猫"),
+        ("cook", "厨师"), ("person-running", "跑步"), ("automobile", "汽车"), ("health-worker", "医护"), ("droplet", "水滴"),
+        ("student", "学生"), ("lotus-position", "打坐"), ("party-popper", "礼花"), ("office-worker", "上班"),
+        ("person-walking", "走路"), ("birthday-cake", "生日蛋糕"), ("thumbs-up", "点赞"),
     };
 
     public static readonly HashSet<string> Ids = new(Choices.Select(choice => choice.Id), StringComparer.Ordinal);
 
     /// <summary>
-    /// mac 后来加的 12 个（mac StatusEmoji.choices 的后 12 个，这一版没有素材）：提醒里存着它们时留着（画成色块）。
-    /// 状态里也认（PLAN-v16 E1 起读 emoji 键），画成空格子。
+    /// mac 0.7.1 认得的那 16 个（前 16 个，mac legacyIDs）：状态的 JSON 里只有它们放在 symbol 键，别的（后加的 12 个、动画表情包里的、
+    /// 系统表情）放在 emoji 键——0.7.x 收拾 symbol 时会把认不得的置空再同步回来。
     /// </summary>
-    public static readonly HashSet<string> MacOnlyIds = new(StringComparer.Ordinal)
-    {
-        "cook", "person-running", "automobile", "health-worker", "droplet", "student", "lotus-position", "party-popper",
-        "office-worker", "person-walking", "birthday-cake", "thumbs-up",
-    };
+    public static readonly HashSet<string> LegacyIds = new(Choices.Take(16).Select(choice => choice.Id), StringComparer.Ordinal);
 
-    /// <summary>mac 动画表情包里挑的存成「pack:编号」。</summary>
+    /// <summary>动画表情包里挑的存成「pack:编号」。</summary>
     public const string PackPrefix = "pack:";
 
     /// <summary>
-    /// 提醒的图标能存的值（mac StatusEmoji.isValid）：空、自带的、mac 后来加的、动画表情包（只看写法）、系统表情。
+    /// 提醒的图标能存的值（mac StatusEmoji.isValid）：空、自带的、动画表情包（只看写法）、系统表情。
     /// 同步、导入来的按不可信输入认；这一版画不出的不置空，不然收拾掉再同步回去会把 mac 上挑的抹掉。
     /// </summary>
     public static bool IsStorable(string symbol)
-        => symbol.Length == 0 || Ids.Contains(symbol) || MacOnlyIds.Contains(symbol) || IsPackSymbol(symbol) || IsCustom(symbol);
+        => symbol.Length == 0 || Ids.Contains(symbol) || IsPackSymbol(symbol) || IsCustom(symbol);
 
     /// <summary>「pack:」后面 1…64 个 [a-z0-9-]（mac isPackSymbol：不看这一版有没有这个编号）。</summary>
     public static bool IsPackSymbol(string symbol)
-        => symbol.StartsWith(PackPrefix, StringComparison.Ordinal) && symbol.Length - PackPrefix.Length is >= 1 and <= 64 &&
-           symbol.Skip(PackPrefix.Length).All(c => c is (>= 'a' and <= 'z') or (>= '0' and <= '9') or '-');
+        => symbol.StartsWith(PackPrefix, StringComparison.Ordinal) && IsPackId(symbol[PackPrefix.Length..]);
+
+    /// <summary>表情包里的编号的写法：1…64 个 [a-z0-9-]（下载地址、缓存文件名都拿它拼，不能带别的字）。</summary>
+    public static bool IsPackId(string id)
+        => id.Length is >= 1 and <= 64 && id.All(c => c is (>= 'a' and <= 'z') or (>= '0' and <= '9') or '-');
 
     /// <summary>
     /// mac 挑的系统表情（存的就是那个字，mac StatusEmoji.isCustom）：正好一个字、UTF-8 不超过 64 字节、是表情——一个码位的要「默认就画成表情」

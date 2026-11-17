@@ -2,6 +2,7 @@
 // 改了就存（停手 300 ms 写一次，离开这一页前先写掉），有问题页头写橙字、不拦着；标题 / 名称空着时存的留原来的。
 // 「‹ 上一页」、Alt + ← / 鼠标侧键回列表（GoBack），底下有删除。新建 = 先加进列表、再推进它的详情（同 mac）。
 using KittyTools.Core;
+using KittyTools.Infrastructure;
 using KittyTools.Ui;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
@@ -145,12 +146,47 @@ internal sealed partial class SettingsWindow
     /// </summary>
     private static (FrameworkElement Row, Action<string> Show) IconPicker(Panel grid, string family, string glyph)
     {
-        var preview = new ContentControl { Width = 120, Height = 120, VerticalAlignment = VerticalAlignment.Top, IsTabStop = false };
-        AutomationProperties.SetAccessibilityView(preview, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 16, Children = { preview, grid } };
-        return (row, id => preview.Content = id.Length > 0
-            ? StatusEmoji.Create(id, 120, animated: !Motion.Reduced)
-            : KindTile.Create(family, glyph, 120));
+        var preview = new ContentControl { Width = 120, Height = 120, IsTabStop = false };
+        // 预览下面那行字（R107，mac EmojiPreview）：自带的、动画表情写名字，系统表情写「系统表情」，没选图标时空着
+        var caption = new TextBlock
+        {
+            FontSize = Theme.FontSize("Kitty.FontSize.Label"),
+            Foreground = Theme.SecondaryText(),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            MaxLines = 1,
+            MaxWidth = 120,
+        };
+        var column = new StackPanel { Spacing = 6, VerticalAlignment = VerticalAlignment.Top, Children = { preview, caption } };
+        AutomationProperties.SetAccessibilityView(column, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 16, Children = { column, grid } };
+        return (row, id =>
+        {
+            preview.Content = id.Length > 0
+                ? StatusEmoji.Create(id, 120, animated: !Motion.Reduced)
+                : KindTile.Create(family, glyph, 120);
+            caption.Text = id.Length == 0 ? string.Empty
+                : StatusEmojiCatalog.IsPackSymbol(id) ? EmojiPack.Catalog?.Caption(id) ?? "动画表情"
+                : StatusEmojiCatalog.Name(id) ?? (StatusEmojiCatalog.IsCustom(id) ? "系统表情" : string.Empty);
+        });
+    }
+
+    /// <summary>「自动下载动画表情」的说明（R107，mac EmojiPackToggle.footnote；状态屏页「动画」、提醒页「图标」两处）。</summary>
+    private const string EmojiPackFootnote =
+        " 在「动画表情」里挑的，第一次用到时从 Kitty Tools 在 GitHub 上的发布页下载那个动画（一个约 0.5 MB，不带任何个人信息），" +
+        "存在这台电脑上、最多 50 MB；没下好、没联网时先显示系统表情。";
+
+    /// <summary>「自动下载动画表情」那一行（R107，mac EmojiPackToggle；两页是同一个设置）。</summary>
+    private void AddEmojiPackToggle()
+    {
+        var settings = SettingsService.Current;
+        AddToggle("自动下载动画表情", "关掉后还没下好的动画表情先显示系统表情、不动，已经下好的照样动",
+            settings.EmojiPackDownloads,
+            isOn =>
+            {
+                settings.EmojiPackDownloads = isOn;
+                SettingsService.Save();
+            });
     }
 
     /// <summary>详情页里的一节：组名 + 这几样（控件左对齐、不拉满）。</summary>

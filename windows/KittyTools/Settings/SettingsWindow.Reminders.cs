@@ -88,6 +88,11 @@ internal sealed partial class SettingsWindow
             "点一行编辑，拖动调整顺序，右键能上移、下移和删除；一次性的提醒点了「知道了」就删掉。示例默认关着，打开才响。" +
             (isFull ? $"最多 {Reminders.MaxCount} 条，已经满了，删掉一条才能再加。" : string.Empty)));
 
+        // 图标（R107，mac RemindersTab「图标」）：自动下载动画表情，和状态屏页那一行是同一个设置
+        _content.Children.Add(SettingsUi.Section("图标"));
+        AddEmojiPackToggle();
+        _content.Children.Add(SettingsUi.Footnote(EmojiPackFootnote.TrimStart()));
+
         // 到点之后（mac RemindersTab「到点之后」，REVIEW R102）
         _content.Children.Add(SettingsUi.Section("到点之后"));
         AddCombo("「稍后」推多久", "提醒到点后点「稍后」，过这么久再提醒一次（全屏上另有 15 分钟、1 小时）",
@@ -198,7 +203,7 @@ internal sealed partial class SettingsWindow
         var title = new TextBox { Header = "标题", Text = draft.Title, PlaceholderText = "如 喝水", MaxLength = Reminders.MaxTitle };
         var detail = new TextBox { Header = "说明", Text = draft.Detail ?? string.Empty, PlaceholderText = "可不填", MaxLength = Reminders.MaxDetail };
 
-        // 图标格子（同状态屏）：「无」+ 16 个表情 +「其他表情」（PLAN-v16 E1）。
+        // 图标格子（同状态屏）：「无」+ 28 个表情 +「动画表情」（R107）+「系统表情」（PLAN-v16 E1）。
         var iconButtons = new List<(string Id, Button Button)>();
         // 选了图标也要存：Refresh 在下面才建好，先挂一个空的，建好后换成它
         Action changed = static () => { };
@@ -235,7 +240,14 @@ internal sealed partial class SettingsWindow
             icons.Children.Add(button);
         }
 
-        // 最后一格「其他表情」：从系统的表情面板挑任意一个（PLAN-v16 E1）
+        // 倒数第二格「动画表情」（R107）：动画表情包里挑，第一次用到时下载
+        if (AnimatedEmojiPicker.Create(() => draft.Symbol, SelectIcon, dark) is { } animatedEmoji)
+        {
+            iconButtons.Add((AnimatedEmojiPicker.Key, animatedEmoji));
+            icons.Children.Add(animatedEmoji);
+        }
+
+        // 最后一格「系统表情」：从系统的表情面板挑任意一个（PLAN-v16 E1）
         var otherEmoji = EmojiChoice.Create(() => draft.Symbol, SelectIcon);
         iconButtons.Add((EmojiChoice.Key, otherEmoji));
         icons.Children.Add(otherEmoji);

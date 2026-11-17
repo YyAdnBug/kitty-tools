@@ -163,6 +163,6 @@ internal static class Glyphs
     /// <summary>主界面（PLAN-v10 §5）。</summary>
     public const string Home = "\uE80F";
 
-    /// <summary>笑脸（状态和提醒图标格子最后一格「其他表情」，PLAN-v16 E1）。</summary>
+    /// <summary>笑脸（状态和提醒图标格子最后一格「系统表情」，PLAN-v16 E1；R107 前叫「其他表情」）。</summary>
     public const string Emoji = "\uE76E";
 }

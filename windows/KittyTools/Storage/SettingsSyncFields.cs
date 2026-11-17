@@ -167,6 +167,7 @@ internal static class SettingsSyncFields
         Flag("StatusScreenHotKeyEntersFirst", s => s.StatusScreenHotKeyEntersFirst, (s, v) => s.StatusScreenHotKeyEntersFirst = v);
         Flag("StatusScreenAnimations", s => s.StatusScreenAnimations, (s, v) => s.StatusScreenAnimations = v);
         Number("RemindersSnoozeMinutes", s => s.RemindersSnoozeMinutes, (s, v) => s.RemindersSnoozeMinutes = v);
+        Flag("EmojiPackDownloads", s => s.EmojiPackDownloads, (s, v) => s.EmojiPackDownloads = v);
         Flag("KeepAwakeDisplay", s => s.KeepAwakeDisplay, (s, v) => s.KeepAwakeDisplay = v);
 
         // 便签

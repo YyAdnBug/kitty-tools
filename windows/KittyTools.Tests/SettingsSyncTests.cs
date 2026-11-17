@@ -53,7 +53,7 @@ public sealed class SettingsSyncTests
     public void MapCoversRealMacKeysOnly()
     {
         var ids = SettingsSyncMap.Shared.Select(key => key.Id).ToList();
-        Assert.AreEqual(81, ids.Count, "PLAN-v21 §1 A、B 组（含 7 个功能开关）");
+        Assert.AreEqual(82, ids.Count, "PLAN-v21 §1 A、B 组（含 7 个功能开关；R107 起多了 emojiPackDownloads）");
         Assert.AreEqual(15, SettingsSyncMap.WindowsOnly.Count, "C 组（快捷键另算）");
         CollectionAssert.AllItemsAreUnique(ids);
         CollectionAssert.AllItemsAreUnique(SettingsSyncMap.Shared.Select(key => key.Field).ToList());
