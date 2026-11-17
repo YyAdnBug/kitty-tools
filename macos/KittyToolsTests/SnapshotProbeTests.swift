@@ -654,7 +654,7 @@ struct SnapshotProbeTests {
     islandPrefs.set(true, forKey: Prefs.islandShowsHistory)
     for dark in [false, true] {
       try snapshot(
-        IslandTab().defaultAppStorage(islandPrefs), size: NSSize(width: 640, height: 1560),
+        IslandTab().defaultAppStorage(islandPrefs), size: NSSize(width: 640, height: 1760),
         dark: dark, to: "\(out)/settings-island-custom\(dark ? "-dark" : "").png")
     }
     // 设置 › 通用「菜单栏」（第 9 批 M1 M2）：显示 + 彩色、隐藏（图标样式置灰），各出深色；临时偏好域，不动用户的菜单栏图标
@@ -1169,6 +1169,15 @@ struct SnapshotProbeTests {
           island: Island(
             showing: nil, geometry: notch, activities: [media(playing: playing, artwork: cover)])),
         size: notch.windowSize, dark: false, to: "\(out)/\(name).png")
+    }
+    // 专注模式开着、打开了「跳动条换成专注模式的图标」：右耳画模式的符号（2026-11-17 第 2 批）
+    do {
+      let island = Island(
+        showing: nil, geometry: notch, activities: [media(playing: true, artwork: cover)])
+      island.focusMark = Island.FocusMark(symbol: "moon.fill", tint: .systemIndigo)
+      try snapshot(
+        IslandView(island: island), size: notch.windowSize, dark: false,
+        to: "\(out)/island-wings-media-focus.png")
     }
     for (name, art) in [("island-media-card", cover), ("island-media-card-bare", nil)] {
       let island = Island(

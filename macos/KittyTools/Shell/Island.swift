@@ -911,6 +911,15 @@ import SwiftUI
   /// 刘海两边那种提示现在每侧伸出多宽：出着的（或刚收起、还在淡的）那一条的；专注模式的随名字长短（Level.wing）
   var levelWing: CGFloat { (level ?? departingLevel)?.wing ?? Self.levelWing }
 
+  /// 专注模式开着、设置 › 刘海岛「跳动条换成专注模式的图标」打开时：正在播放的右耳画它（SystemFocus 给，平时 nil）
+  var focusMark: FocusMark?
+
+  /// 专注模式的符号和颜色（耳朵上替跳动条）
+  struct FocusMark: Equatable {
+    var symbol: String
+    var tint: NSColor
+  }
+
   /// 形体现在按「坐在刘海里」算（seated 只在岛上空着时算数：开着、有耳朵、鼓起时照它们自己的样子）
   var isSeated: Bool { seated && !isOpen && !isShowingWings && !isPeeking }
 
@@ -1968,7 +1977,7 @@ struct IslandView: View {
       ZStack {
         IslandWings(
           activity: activity, notchWidth: width, notchHeight: height, peeking: island.isPeeking,
-          skip: island.skip
+          skip: island.skip, focusMark: island.focusMark
         )
         .id(activity.id)
         .transition(melt)

@@ -1127,6 +1127,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // 系统专注模式（读系统日志，SystemFocus）：刘海上提示由它自己出；提醒那边跟着它算（ReminderFocus）。要在提醒起来
     // （applyFeatures）之前接好：刚启动时按偏好里记着的那个模式算，别把专注期间压着的弹出来
     SystemFocus.shared.island = island
+    SystemFocus.shared.isRecording = { [unowned self] in
+      recorder != nil || audioRecorder?.isStarted == true
+    }
     SystemFocus.shared.onChange = { _, mode in ReminderFocus.shared.set(mode: mode) }
     SystemFocus.shared.apply()
     ReminderFocus.shared.set(mode: SystemFocus.shared.current)

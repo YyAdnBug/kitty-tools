@@ -1124,7 +1124,12 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 - **提醒（B2）**：设置 › 提醒「专注模式开着时，到点的提醒」（`Prefs.remindersDuringFocus`，默认只在刘海上挂图标，跟着设置导出、同步）对任何专注模式都算；
   滤镜的默认值改成「跟着 Kitty 的设置」（`ReminderFocusStyle.follow`，= 这个模式没另选，关掉时系统送来的也是它），另选了的以滤镜为准
   （`ReminderFocus.effective`，单测锁住）。单条的「专注模式时也照常提醒」照旧最优先。
-- 还没做（同一分支后几批）：Alcove 另外几项专注模式的设置（睡眠开启时响一声、专注期间跳动条换成图标、专注期间不弹系统提示），拍板页 C 节的别的 Alcove 功能。
+- **第 2 批：Alcove 另外几项专注模式的设置**（设置 › 刘海岛「专注模式」那一节，都默认关，「在刘海上显示专注模式」关着时变灰、也不起作用）：
+  睡眠模式刚打开时响一声（系统的「Purr」，录屏 / 录音时不响；`Mode.isSleep` 认编号里的 sleep、`bed.double` 符号、英文名 Sleep）；
+  正在播放的右耳跳动条换成模式的符号和颜色（`Island.focusMark`，SystemFocus 在变了、偏好变了时更新；任何专注模式都换，Alcove 能只选一个
+  模式——日志里只见过切换到的那几个，列不全，ponytail）；专注模式开着时不弹电源 / 电量低 / 耳机 / 网络的提示（`SystemFocus.quietsNotices`，
+  SystemNotices 四处看它；低电量的门槛照样记下，不在结束后补弹）。音量、亮度键的提示照常（键是用户自己按的）。
+- 还没做（同一分支后几批）：拍板页 C 节的别的 Alcove 功能。
 
 ### 功能管理（2026-11-04 立项）
 

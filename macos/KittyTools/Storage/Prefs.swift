@@ -518,6 +518,11 @@ enum Prefs {
   static let islandBlur = "islandBlur"
   /// 系统专注模式开、关、换模式时在刘海两边提示一下（默认开；2026-11-17 拍板 B1，Shell/SystemFocus.swift）
   static let islandFocus = "islandFocus"
+  /// 专注模式那一节的另外三样（2026-11-17，照 Alcove，都默认关）：睡眠模式打开时响一声、正在播放的右耳跳动条换成专注模式的图标、
+  /// 专注模式开着时不弹电源 / 电量 / 耳机 / 网络的提示
+  static let islandFocusSleepSound = "islandFocusSleepSound"
+  static let islandFocusWaveform = "islandFocusWaveform"
+  static let islandFocusQuiet = "islandFocusQuiet"
   /// 新功能标记（Shell/WhatsNew.swift，2026-11-05）的账：各版本在这台 Mac 上第一次打开的时刻（版本号 → Date，从这一刻起挂 30 天）、
   /// 碰过哪几个（WhatsNew.Entry.id 的数组）。这台电脑自己的状态：不注册默认值、不导出不同步
   static let whatsNewStarted = "whatsNewStarted"
@@ -675,6 +680,9 @@ enum Prefs {
       islandHaptics: true,
       islandBlur: true,
       islandFocus: true,
+      islandFocusSleepSound: false,
+      islandFocusWaveform: false,
+      islandFocusQuiet: false,
       keepAwakeDisplay: true,
       keepAwakeSchedule: "",
     ].merging(Feature.allCases.map { ($0.prefsKey, $0.defaultOn as Any) }) { current, _ in current }

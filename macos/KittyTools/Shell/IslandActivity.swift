@@ -208,6 +208,8 @@ struct IslandWings: View {
   /// 刚用双指左右滑切了歌。平时岛往一侧伸一下、箭头出在伸出的那一截里（IslandView）；减弱动态效果时岛不伸，
   /// 箭头闪在左耳的封面上
   var skip: Island.Skip?
+  /// 专注模式开着、设置里打开了「跳动条换成专注模式的图标」：正在播放的右耳画模式的符号（2026-11-17，照 Alcove）
+  var focusMark: Island.FocusMark?
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.islandWingRide) private var ride
 
@@ -257,10 +259,18 @@ struct IslandWings: View {
         media.send(.toggle)
       } label: {
         ZStack {
-          IslandBars(
-            moving: media.snapshot.isPlaying && media.snapshot.rate > 0,
-            color: media.tint ?? NSColor(activity.tint)
-          )
+          Group {
+            if let focusMark {
+              Image(systemName: focusMark.symbol)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color(nsColor: focusMark.tint))
+            } else {
+              IslandBars(
+                moving: media.snapshot.isPlaying && media.snapshot.rate > 0,
+                color: media.tint ?? NSColor(activity.tint)
+              )
+            }
+          }
           .opacity(peeking ? 0 : 1)
           Image(systemName: media.snapshot.isPlaying ? "pause.fill" : "play.fill")
             .font(.system(size: 12, weight: .semibold))

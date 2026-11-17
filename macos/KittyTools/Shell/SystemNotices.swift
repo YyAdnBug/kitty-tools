@@ -1,5 +1,6 @@
 // 刘海岛上的系统一瞬提示（2026-11-13，刘海岛扩展 D1）：接上 / 拔掉电源（带电量）、电量低到 20% 和 10%、耳机或 AirPods 连上
 // （2026-11-14 起贴在刘海两边、带电量：Headphones.swift）、断网 / 网络恢复。弹一下就走，同别的提示；每种一个开关（设置 › 刘海岛「系统提示」，默认都关），**不开就不监听**。
+// 专注模式开着、设置 › 刘海岛「专注模式时不弹系统提示」打开时这几样都先不弹（SystemFocus.quietsNotices，2026-11-17 照 Alcove）。
 // 全是公开接口、有变化才通知，空闲 0 CPU、不要授权：电源走 IOKit 的电源通知（IOPSNotificationCreateRunLoopSource，主线程的
 // run loop 上回调），耳机走 CoreAudio 的默认输出设备变化（回调投在主队列），网络走 Network 的 NWPathMonitor（主队列）。
 // 不做的（拍板 D1）：Wi-Fi 的名字（macOS 14 起要定位授权）、摄像头 / 麦克风在用（菜单栏本来就有
@@ -86,8 +87,10 @@ import Network
     guard let now = Self.readPower() else { return }
     defer { lastPower = now }
     if now.plugged { warned = [] }
+    // 专注模式开着、设置里打开了「专注模式时不弹系统提示」：这几样都先不弹（SystemFocus.quietsNotices）
+    let quiet = SystemFocus.shared.quietsNotices
     if let last = lastPower, last.plugged != now.plugged,
-      defaults.bool(forKey: Prefs.islandNoticePower)
+      defaults.bool(forKey: Prefs.islandNoticePower), !quiet
     {
       let level = Self.powerLevel(plugged: now.plugged, percent: now.percent, low: false)
       let spoken = now.plugged ? String(localized: "已接上电源") : String(localized: "已拔掉电源")
@@ -99,6 +102,7 @@ import Network
         percent: now.percent, plugged: now.plugged, warned: warned)
     {
       warned.insert(threshold)
+      guard !quiet else { return }
       island?.showNotice(
         Self.powerLevel(plugged: false, percent: now.percent, low: true),
         fallback: "电量还剩 \(now.percent)%")
@@ -188,6 +192,7 @@ import Network
       kind: .device, fraction: -1, label: name, glyph: Headphones.symbol(named: name),
       stay: .seconds(3))
     let shown = name ?? String(localized: "耳机")
+    guard !SystemFocus.shared.quietsNotices else { return }
     island?.showNotice(level, fallback: "已连上\(shown)")
     Island.announce("已连上\(shown)")
     batteryRead?.cancel()
@@ -298,6 +303,7 @@ import Network
       try? await Task.sleep(for: Self.networkSettleTime)
       guard let self, !Task.isCancelled else { return }
       self.online = satisfied
+      guard !SystemFocus.shared.quietsNotices else { return }
       if satisfied {
         self.island?.show("网络已恢复", tone: .success, symbol: "wifi")
       } else {

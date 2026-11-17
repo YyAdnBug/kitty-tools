@@ -28,6 +28,9 @@ struct IslandTab: View {
   @AppStorage(Prefs.islandHaptics) private var haptics = true
   @AppStorage(Prefs.islandBlur) private var blur = true
   @AppStorage(Prefs.islandFocus) private var focus = true
+  @AppStorage(Prefs.islandFocusSleepSound) private var focusSleepSound = false
+  @AppStorage(Prefs.islandFocusWaveform) private var focusWaveform = false
+  @AppStorage(Prefs.islandFocusQuiet) private var focusQuiet = false
   /// 这一次打开开关时系统没给授权（偏好没打开，橙字留着告诉怎么开）
   @State private var calendarDenied = false
   @Environment(SettingsNavigation.self) private var navigation: SettingsNavigation?
@@ -130,6 +133,21 @@ struct IslandTab: View {
         if focus, SystemFocus.shared.isRunning, !SystemFocus.shared.isReadable {
           Text("读不到系统的专注模式，刘海上显示不了").foregroundStyle(.orange)
         }
+        Group {
+          Toggle(isOn: $focusSleepSound) {
+            Text("睡眠模式打开时响一声")
+            Text("一声轻的提示音；录屏、录音时不响")
+          }
+          Toggle(isOn: $focusWaveform) {
+            Text("跳动条换成专注模式的图标")
+            Text("专注模式开着、正在放歌时，刘海右边画模式的图标")
+          }
+          Toggle(isOn: $focusQuiet) {
+            Text("专注模式时不弹系统提示")
+            Text("接上或拔掉电源、电量低、耳机连上、断网这几样先不弹；音量和亮度照常")
+          }
+        }
+        .disabled(!focus)
       } header: {
         Text("专注模式")
       } footer: {
