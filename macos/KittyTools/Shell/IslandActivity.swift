@@ -67,8 +67,10 @@ extension Island {
       id: String, kind: Kind, title: String, detail: String? = nil, symbol: String,
       tone: Tone = .info, trailing: Trailing = .none, actions: [Action] = [],
       started: Date = .now, media: Media? = nil, onWings: Bool = true,
-      source: LocalizedStringResource? = nil, emoji: String? = nil, tintsReading: Bool = false
+      source: LocalizedStringResource? = nil, emoji: String? = nil, tintsReading: Bool = false,
+      color: NSColor? = nil
     ) {
+      self.color = color
       self.emoji = emoji
       self.tintsReading = tintsReading
       self.id = id
@@ -142,7 +144,10 @@ extension Island {
       }
     }
 
-    var tint: Color { IslandLeading.tint(tone) }
+    /// 自己的颜色（日程：它所在日历的颜色）；nil = 跟语气走
+    var color: NSColor?
+
+    var tint: Color { color.map { Color(nsColor: $0) } ?? IslandLeading.tint(tone) }
 
     /// 展开成卡片时的样子（前导同提示：语气色圆底的符号）
     var content: Content {

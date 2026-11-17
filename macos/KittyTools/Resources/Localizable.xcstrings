@@ -10079,6 +10079,16 @@
         }
       }
     },
+    "刘海上的日程图标、月历旁今天的日程，用它所在日历的颜色" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The event icon on the Notch and today’s events beside the month calendar use their calendar’s color"
+          }
+        }
+      }
+    },
     "刘海两边出几秒：「低电量模式」和开 / 关" : {
       "localizations" : {
         "en" : {
@@ -21788,6 +21798,16 @@
         }
       }
     },
+    "拒绝了的、取消了的日程也倒数、也列出来" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Declined and canceled events also count down and show in the list"
+          }
+        }
+      }
+    },
     "拖出去" : {
       "localizations" : {
         "en" : {
@@ -25478,6 +25498,16 @@
         }
       }
     },
+    "显示已拒绝的日程" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show declined events"
+          }
+        }
+      }
+    },
     "显示按键时" : {
       "localizations" : {
         "en" : {
@@ -26146,6 +26176,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Calendar"
+          }
+        }
+      }
+    },
+    "月历上标出有日程的日子" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mark days with events on the month calendar"
           }
         }
       }
@@ -31644,6 +31684,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Incorrect username or password (some services require a separate app password generated on their website)"
+          }
+        }
+      }
+    },
+    "用日历的颜色" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use calendar colors"
           }
         }
       }
@@ -39075,6 +39125,16 @@
         }
       }
     },
+    "选择日历" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Calendars"
+          }
+        }
+      }
+    },
     "选择状态" : {
       "localizations" : {
         "en" : {
@@ -39271,6 +39331,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "General"
+          }
+        }
+      }
+    },
+    "那几天的数字下面一个小点" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A small dot under those dates"
           }
         }
       }

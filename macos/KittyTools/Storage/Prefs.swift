@@ -515,6 +515,13 @@ enum Prefs {
   static let islandLevelAccent = "islandLevelAccent"
   static let islandLevelPercent = "islandLevelPercent"
   static let islandNowPlayingHidesWhenActive = "islandNowPlayingHidesWhenActive"
+  /// 2026-11-17 第 5 批，日历（照 Alcove，默认关）：日程用它所在日历的颜色、拒绝 / 取消的也列、月历上标出有日程的日子
+  static let islandCalendarColors = "islandCalendarColors"
+  static let islandShowDeclined = "islandShowDeclined"
+  static let islandCalendarDots = "islandCalendarDots"
+  /// 不看的日历（EKCalendar.calendarIdentifier，一行一个；设置 › 刘海岛「选择日历」）。编号只在这台 Mac 上有意义：
+  /// **不注册默认值**——不导出、不同步
+  static let islandHiddenCalendars = "islandHiddenCalendars"
   /// 刘海岛上的「正在播放」（刘海岛扩展第 2 期，Shell/NowPlaying.swift）：默认关（2026-11-13 拍板：归刘海岛插件、一组开关）；
   /// 关着时不连正在播放服务、服务不起
   static let islandNowPlaying = "islandNowPlaying"
@@ -698,6 +705,9 @@ enum Prefs {
       islandLevelAccent: false,
       islandLevelPercent: false,
       islandNowPlayingHidesWhenActive: false,
+      islandCalendarColors: false,
+      islandShowDeclined: false,
+      islandCalendarDots: false,
       islandNowPlaying: false,
       islandTrackPeek: true,
       // 默认关（2026-11-14，用户：Alcove 是点了才展开；它的实录里指针停 2–5 秒都只是鼓起）。这一项没发布过

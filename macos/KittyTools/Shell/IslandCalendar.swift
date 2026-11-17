@@ -14,12 +14,15 @@ extension Island {
     var id: String
     var title: String
     var time: String
+    /// 它所在日历的颜色（设置里打开「用日历的颜色」时有：行首一个小圆点）
+    var color: CGColor? = nil
   }
 
-  /// 今天的日程：最多列几条，另有几条没列
+  /// 今天的日程：最多列几条，另有几条没列；busy：这个月里有日程的那几天（几号，「月历上标出有日程的日子」打开时有）
   struct Agenda: Equatable {
     var items: [AgendaItem]
     var more = 0
+    var busy: Set<Int> = []
   }
 }
 
@@ -134,6 +137,12 @@ struct IslandCalendar: View {
                   .background {
                     if day.isToday { Circle().fill(tint).frame(width: 19, height: 19) }
                   }
+                  // 有日程的日子：数字下面一个小点（今天的圆底上不画）
+                  .overlay(alignment: .bottom) {
+                    if day.inMonth, !day.isToday, agenda?.busy.contains(day.number) == true {
+                      Circle().fill(.white.opacity(0.55)).frame(width: 3, height: 3).offset(y: 1)
+                    }
+                  }
               }
             }
           }
@@ -161,6 +170,9 @@ struct IslandCalendar: View {
         VStack(alignment: .leading, spacing: 3) {
           ForEach(agenda.items) { item in
             HStack(spacing: 6) {
+              if let color = item.color {
+                Circle().fill(Color(cgColor: color)).frame(width: 6, height: 6)
+              }
               Text(item.time)
                 .font(.system(size: 11).monospacedDigit())
                 .foregroundStyle(.white.opacity(0.5))

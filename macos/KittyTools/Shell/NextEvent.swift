@@ -35,6 +35,30 @@ import EventKit
     var location: String?
     var url: URL?
     var notes: String?
+    /// 它所在日历的颜色（设置 › 刘海岛「用日历的颜色」打开时画）
+    var color: CGColor?
+  }
+
+  /// 设置里列的一个日历（选哪些日历）
+  struct CalendarInfo: Identifiable, Equatable {
+    var id: String
+    var title: String
+    var color: CGColor?
+  }
+
+  /// 这台 Mac 上能读的日历（设置 › 刘海岛「选择日历」列；没授权是空的）。建一个 EventKitStore 要几十毫秒，只在那一页打开时调
+  static func eventCalendars() -> [CalendarInfo] {
+    guard isAuthorized else { return [] }
+    return EKEventStore().calendars(for: .event)
+      .map { CalendarInfo(id: $0.calendarIdentifier, title: $0.title, color: $0.cgColor) }
+      .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+  }
+
+  /// 不看的日历（设置 › 刘海岛「选择日历」关掉的，一行一个编号；这台 Mac 自己的，Prefs.islandHiddenCalendars）
+  static func hiddenCalendars(_ defaults: UserDefaults) -> Set<String> {
+    Set(
+      (defaults.string(forKey: Prefs.islandHiddenCalendars) ?? "").split(separator: "\n").map(
+        String.init))
   }
 
   private weak var island: Island?
@@ -49,6 +73,8 @@ import EventKit
   private var chimed: String?
   /// 那一张的月历读今天的日程用（「下一个日程」没开时 store 是 nil）：第一次用到才建，留着（建一个要几十毫秒）
   private var agendaStore: EKEventStore?
+  /// 上一次读的时候看的那几样偏好（不看的日历、拒绝的也列、用日历的颜色）：变了就重读
+  private var filterKey = ""
 
   init(island: Island, defaults: UserDefaults = .standard) {
     self.island = island
@@ -101,6 +127,22 @@ import EventKit
     } else if !wanted, store != nil {
       stop()
     }
+    let key = [
+      defaults.string(forKey: Prefs.islandHiddenCalendars) ?? "",
+      "\(defaults.bool(forKey: Prefs.islandShowDeclined))",
+      "\(defaults.bool(forKey: Prefs.islandCalendarColors))",
+    ].joined(separator: "|")
+    if key != filterKey {
+      filterKey = key
+      if store != nil { refreshSoon() }
+    }
+  }
+
+  /// 要读的日历：去掉设置里关掉的；都关掉了是空的（nil = 全部）
+  private func calendars(in store: EKEventStore) -> [EKCalendar]? {
+    let hidden = Self.hiddenCalendars(defaults)
+    guard !hidden.isEmpty else { return nil }
+    return store.calendars(for: .event).filter { !hidden.contains($0.calendarIdentifier) }
   }
 
   private func start() {
@@ -150,11 +192,16 @@ import EventKit
       chimed = shown.id
       Chime.play(.event)
     }
+    let chosen = calendars(in: store)
     let predicate = store.predicateForEvents(
-      withStart: now, end: now.addingTimeInterval(Self.window), calendars: nil)
-    // 先按便宜的几样筛掉（全天的、已经开始的），剩下的才取参会人、备注（EventKit 用到才去读）
-    let upcoming = store.events(matching: predicate).filter { !$0.isAllDay && $0.startDate > now }
-    let next = Self.pick(upcoming.map(Self.entry), now: now)
+      withStart: now, end: now.addingTimeInterval(Self.window), calendars: chosen)
+    // 先按便宜的几样筛掉（全天的、已经开始的），剩下的才取参会人、备注（EventKit 用到才去读）；日历都关掉了就不读
+    let upcoming =
+      chosen?.isEmpty == true
+      ? [] : store.events(matching: predicate).filter { !$0.isAllDay && $0.startDate > now }
+    let next = Self.pick(
+      upcoming.map(Self.entry), now: now,
+      declined: defaults.bool(forKey: Prefs.islandShowDeclined))
     let plan = Self.plan(next, now: now)
     shown = plan.shows ? next : nil
     if plan.shows, let next {
@@ -163,7 +210,7 @@ import EventKit
           next, join: { NSWorkspace.shared.open($0) },
           openCalendar: {
             NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Calendar.app"))
-          }))
+          }, colored: defaults.bool(forKey: Prefs.islandCalendarColors)))
     } else {
       island?.endActivity(Self.activityID)
     }
@@ -183,7 +230,7 @@ import EventKit
       id: event.eventIdentifier ?? UUID().uuidString, title: event.title ?? "",
       start: event.startDate, end: event.endDate, isAllDay: event.isAllDay,
       declined: mine?.participantStatus == .declined || event.status == .canceled,
-      location: event.location, url: event.url, notes: event.notes)
+      location: event.location, url: event.url, notes: event.notes, color: event.calendar?.cgColor)
   }
 
   /// 今天的日程（那一张的月历旁边列；Island.agendaProvider 接到这里）。没有「日历」授权是 nil——只查不弹框。
@@ -196,12 +243,28 @@ import EventKit
     }
     let store = store ?? agendaStore ?? EKEventStore()
     agendaStore = self.store == nil ? store : nil
-    let predicate = store.predicateForEvents(withStart: day.start, end: day.end, calendars: nil)
+    let chosen = calendars(in: store)
+    guard chosen?.isEmpty != true else { return Island.Agenda(items: []) }
+    let predicate = store.predicateForEvents(withStart: day.start, end: day.end, calendars: chosen)
     // 先按便宜的几样筛（已经结束的、正好明天零点开始的不要），剩下的才取参会人、备注（EventKit 用到才去读）
     let events = store.events(matching: predicate).filter {
       $0.startDate < day.end && ($0.isAllDay || $0.endDate > now)
     }
-    return Self.today(events.map(Self.entry), now: now)
+    var agenda = Self.today(
+      events.map(Self.entry), now: now, declined: defaults.bool(forKey: Prefs.islandShowDeclined),
+      colored: defaults.bool(forKey: Prefs.islandCalendarColors))
+    // 月历上标出有日程的日子（设置 › 刘海岛，默认关）：读这一整个月
+    if defaults.bool(forKey: Prefs.islandCalendarDots),
+      let month = calendar.dateInterval(of: .month, for: now)
+    {
+      let all = store.events(
+        matching: store.predicateForEvents(
+          withStart: month.start, end: month.end, calendars: chosen))
+      agenda.busy = Self.busyDays(
+        all.map(Self.entry), month: month,
+        declined: defaults.bool(forKey: Prefs.islandShowDeclined), calendar: calendar)
+    }
+    return agenda
   }
 
   // MARK: 纯函数（单测锁住）
@@ -209,13 +272,14 @@ import EventKit
   /// 今天的日程排成月历旁边那几行：全天的在前，其余按开始时刻；已经结束的、拒绝 / 取消的不列；最多 limit 条，
   /// 另记还有几条。标题空的写「日程」、最多 80 个字
   static func today(
-    _ entries: [Entry], now: Date, limit: Int = 3, timeZone: TimeZone = .current
+    _ entries: [Entry], now: Date, limit: Int = 3, timeZone: TimeZone = .current,
+    declined: Bool = false, colored: Bool = false
   ) -> Island.Agenda {
     var style = Date.FormatStyle(date: .omitted, time: .shortened)
     style.timeZone = timeZone
     let rows =
       entries
-      .filter { !$0.declined && ($0.isAllDay || $0.end > now) }
+      .filter { (declined || !$0.declined) && ($0.isAllDay || $0.end > now) }
       .sorted {
         ($0.isAllDay ? 0 : 1, $0.start, $0.title) < ($1.isAllDay ? 0 : 1, $1.start, $1.title)
       }
@@ -225,7 +289,8 @@ import EventKit
         return Island.AgendaItem(
           id: "\(entry.id)@\(entry.start.timeIntervalSince1970)",
           title: title.isEmpty ? Self.untitled : String(title.prefix(80)),
-          time: entry.isAllDay ? String(localized: "全天") : entry.start.formatted(style))
+          time: entry.isAllDay ? String(localized: "全天") : entry.start.formatted(style),
+          color: colored ? entry.color : nil)
       }
     return Island.Agenda(items: Array(rows.prefix(limit)), more: max(rows.count - limit, 0))
   }
@@ -242,8 +307,9 @@ import EventKit
   }
 
   /// 下一个日程：还没开始的里面最早的（同一刻的按标题排，几台读出来一样）；全天的、拒绝 / 取消的不算
-  static func pick(_ entries: [Entry], now: Date) -> Entry? {
-    entries.filter { !$0.isAllDay && !$0.declined && $0.start > now }
+  /// declined：「显示已拒绝的日程」打开时拒绝 / 取消的也算
+  static func pick(_ entries: [Entry], now: Date, declined: Bool = false) -> Entry? {
+    entries.filter { !$0.isAllDay && (declined || !$0.declined) && $0.start > now }
       .min { ($0.start, $0.title) < ($1.start, $1.title) }
   }
 
@@ -303,8 +369,10 @@ import EventKit
 
   /// 挂在岛上的样子：类别是日程（比保持唤醒、提醒的倒数要紧，让给录制和长任务），左耳日历、右耳倒数到开始；卡片上「加入会议」（有链接时）和「打开日历」。
   /// 标题最多 200 个字，空的写「日程」
+  /// colored：耳朵、卡片上的日历符号用它所在日历的颜色（设置 › 刘海岛「用日历的颜色」）
   static func activity(
-    _ entry: Entry, join: @escaping (URL) -> Void, openCalendar: @escaping () -> Void
+    _ entry: Entry, join: @escaping (URL) -> Void, openCalendar: @escaping () -> Void,
+    colored: Bool = false
   ) -> Island.Activity {
     var actions: [Island.Action] = []
     if let link = meetingURL(entry) {
@@ -316,6 +384,24 @@ import EventKit
       id: activityID, kind: .event,
       title: title.isEmpty ? Self.untitled : String(title.prefix(200)),
       detail: detail(entry), symbol: "calendar", trailing: .countdown(to: entry.start),
-      actions: actions)
+      actions: actions, color: colored ? entry.color.flatMap { NSColor(cgColor: $0) } : nil)
+  }
+
+  /// 这个月里哪几天有日程（纯函数）：几号的集合；跨天的每一天都算，月外的不算
+  static func busyDays(
+    _ entries: [Entry], month: DateInterval, declined: Bool = false, calendar: Calendar
+  ) -> Set<Int> {
+    var days: Set<Int> = []
+    for entry in entries where declined || !entry.declined {
+      var day = calendar.startOfDay(for: max(entry.start, month.start))
+      // 结束在零点整的（全天的、到 24:00 的）不算到第二天
+      let last = min(entry.end.addingTimeInterval(-1), month.end.addingTimeInterval(-1))
+      while day <= last {
+        days.insert(calendar.component(.day, from: day))
+        guard let next = calendar.date(byAdding: .day, value: 1, to: day) else { break }
+        day = next
+      }
+    }
+    return days
   }
 }

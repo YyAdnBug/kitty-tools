@@ -1089,6 +1089,19 @@ struct SnapshotProbeTests {
         ("island-board-calendar", busy, false),
         ("island-board-calendar-empty", Island.Agenda(items: []), false),
         ("island-board-calendar-history", nil, true),
+        // 第 5 批：日历的颜色 + 月历上有日程的日子
+        (
+          "island-board-calendar-colors",
+          Island.Agenda(
+            items: [
+              Island.AgendaItem(
+                id: "1", title: "周会", time: "10:30",
+                color: CGColor(red: 0.2, green: 0.5, blue: 1, alpha: 1)),
+              Island.AgendaItem(
+                id: "3", title: "牙医", time: "18:30",
+                color: CGColor(red: 1, green: 0.6, blue: 0, alpha: 1)),
+            ], busy: [3, 5, 14, 20, 21, 27]), false
+        ),
       ]
       for (name, agenda, history) in cases {
         let island = Island(

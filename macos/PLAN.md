@@ -1147,7 +1147,12 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
     拔掉电源那一下系统多半还在算，不写；
   - 正在用放歌的 App 时刘海两边不显示正在播放（C5）：`NowPlaying` 看着前台 App 换了重画一次，前台是放歌的那个（浏览器里的视频按上级 App 认，
     `isSource`）时 `onWings` 为假；卡片照样轮得到。
-- 还没做（同一分支后几批）：日历的几样（C10）、正在播放的几样（C1–C4、C7，先探针）、显示位置的几样（C18、C19）。
+- **第 5 批：日历（C10，「日程」一节，都默认关）**：用日历的颜色（`Entry.color` = `EKCalendar.cgColor`：耳朵、卡片上日历符号的颜色
+  `Activity.color`，那一张月历旁今天的日程行首一个小圆点）；显示已拒绝的日程（`pick` / `today` / `busyDays` 的 `declined`）；月历上标出有日程的
+  日子（`Agenda.busy`：那一张打开时多读这一个月，跨天的每天都算、结束在零点整的不算第二天）；选择日历（有「日历」授权时列这台 Mac 的日历，
+  关掉的编号存 `Prefs.islandHiddenCalendars`——编号只在这台 Mac 上有意义，不注册默认值、不导出不同步；都关掉了就不读）。偏好变了 `NextEvent.apply`
+  比一下 `filterKey` 重读。
+- 还没做（同一分支后几批）：正在播放的几样（C1–C4、C7，先探针）、显示位置的几样（C18、C19）。
 
 ### 功能管理（2026-11-04 立项）
 

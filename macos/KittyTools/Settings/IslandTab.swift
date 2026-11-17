@@ -28,6 +28,12 @@ struct IslandTab: View {
   @AppStorage(Prefs.islandLevelAccent) private var levelAccent = false
   @AppStorage(Prefs.islandLevelPercent) private var levelPercent = false
   @AppStorage(Prefs.islandNowPlayingHidesWhenActive) private var hidesWhenActive = false
+  @AppStorage(Prefs.islandCalendarColors) private var calendarColors = false
+  @AppStorage(Prefs.islandShowDeclined) private var showDeclined = false
+  @AppStorage(Prefs.islandCalendarDots) private var calendarDots = false
+  @AppStorage(Prefs.islandHiddenCalendars) private var hiddenCalendars = ""
+  /// 这台 Mac 上的日历（有「日历」授权时，这一页出现时读一次）
+  @State private var eventCalendars: [NextEvent.CalendarInfo] = []
   @AppStorage(Prefs.islandNowPlaying) private var nowPlaying = false
   @AppStorage(Prefs.islandTrackPeek) private var trackPeek = true
   @AppStorage(Prefs.islandNextEvent) private var nextEvent = false
@@ -121,6 +127,35 @@ struct IslandTab: View {
         Toggle(isOn: $monthCalendar) {
           Text("点刘海打开时显示月历")
           Text("快捷动作下面一块这个月的日历，点它打开「日历」；已经允许读取「日历」时，旁边还列今天的日程")
+        }
+        Toggle(isOn: $calendarDots) {
+          Text("月历上标出有日程的日子")
+          Text("那几天的数字下面一个小点")
+        }
+        .disabled(!monthCalendar)
+        Group {
+          Toggle(isOn: $calendarColors) {
+            Text("用日历的颜色")
+            Text("刘海上的日程图标、月历旁今天的日程，用它所在日历的颜色")
+          }
+          Toggle(isOn: $showDeclined) {
+            Text("显示已拒绝的日程")
+            Text("拒绝了的、取消了的日程也倒数、也列出来")
+          }
+        }
+        .disabled(!nextEvent && !monthCalendar)
+        if !eventCalendars.isEmpty, nextEvent || monthCalendar {
+          DisclosureGroup("选择日历") {
+            ForEach(eventCalendars) { item in
+              Toggle(isOn: shows(calendar: item.id)) {
+                HStack(spacing: 6) {
+                  Circle().fill(item.color.map { Color(cgColor: $0) } ?? .secondary)
+                    .frame(width: 8, height: 8)
+                  Text(verbatim: item.title)
+                }
+              }
+            }
+          }
         }
       } header: {
         Text("日程")
@@ -285,6 +320,7 @@ struct IslandTab: View {
       PluginAboutSection(plugin: .island)
     }
     .formStyle(.grouped)
+    .task { eventCalendars = NextEvent.eventCalendars() }
     .onReceive(
       NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
     ) { _ in
@@ -299,6 +335,17 @@ struct IslandTab: View {
   }
 
   /// 问「日历」授权（系统框只弹一次）：给了才把开关打开；没给留在关着、橙字说怎么开
+  /// 「选择日历」里一行的开关：开着 = 不在关掉的名单里
+  private func shows(calendar id: String) -> Binding<Bool> {
+    Binding {
+      !hiddenCalendars.split(separator: "\n").contains { $0 == id }
+    } set: { isOn in
+      var hidden = Set(hiddenCalendars.split(separator: "\n").map(String.init))
+      if isOn { hidden.remove(id) } else { hidden.insert(id) }
+      hiddenCalendars = hidden.sorted().joined(separator: "\n")
+    }
+  }
+
   private func askCalendar() {
     Task {
       let allowed = await NextEvent.requestAccess()
