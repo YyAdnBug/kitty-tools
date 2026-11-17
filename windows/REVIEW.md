@@ -45,7 +45,7 @@ mac 在 `9acd4306` 之后又推了 15 个提交，**要跟的只有 R103 一条*
   开关照旧默认关。规模中。
 - **编号撞了**：上面「issue #29」那一节也叫 R103（Ctrl+Alt+A），HANDTEST 1483 的标题用的是那个。这里说的是对齐复查这一条，HANDTEST 1484–1490。
 
-##### 交接：审查方在 Mac 上写了（`R103_COMMIT`），没编译、没跑单测（本机没有 .NET SDK），待你们编译、核验
+##### 交接：审查方在 Mac 上写了（`66f069a7`），没编译、没跑单测（本机没有 .NET SDK），待你们编译、核验
 
 照 mac 两个提交逐段搬，结构和 mac 对得上（mac 的 `prepareSegments` / `markHeadings` / `containerSpan` / `readingFontSize` / `ScreenshotRegions` 各有一个同名的 C# 版）。
 mac 那次的 `Clipboard/OCR.swift` 其实没有「多给词框」，只改了接段的一个条件；Windows 照搬的是那一处。
