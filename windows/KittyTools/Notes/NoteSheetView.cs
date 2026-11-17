@@ -30,7 +30,7 @@ internal sealed class NoteSheetView
     private readonly Border _strip;
     private readonly Grid _layout;
     private readonly Grid _frame;
-    private readonly Border _tab;
+    private readonly NoteSheetTab _tab;
     private readonly Border _tabRule;
     private TabSide _tabSide;
     private NoteDeckMetrics _tabMetrics = new(1);
@@ -166,7 +166,8 @@ internal sealed class NoteSheetView
         _layout.Children.Add(Editor.View);
         Grid.SetRow(_footnote, 3);
         _layout.Children.Add(_footnote);
-        _tab = new Border { Visibility = Visibility.Collapsed };
+        // 读屏把它当一颗按钮，「调用」= 关掉 / 收回（同 mac 的 .isButton + 关掉的动作；R108 审查）
+        _tab = new NoteSheetTab { Visibility = Visibility.Collapsed, Invoked = () => _host.Close(false) };
         _tab.PointerPressed += (_, e) =>
         {
             if (e.GetCurrentPoint(_tab).Properties.IsLeftButtonPressed)
@@ -252,13 +253,14 @@ internal sealed class NoteSheetView
         _tabRule.Background = new SolidColorBrush(Shade(paper.Rule(dark, contrast), tone.Paper));
         if (length <= 0)
         {
-            _tab.Child = null;
+            _tab.Children.Clear();
             return;
         }
 
         var label = NoteDeckUi.Label(title, length, _tabMetrics.FontSize, tone.Ink);
         label.VerticalAlignment = VerticalAlignment.Center;
-        _tab.Child = label;
+        _tab.Children.Clear();
+        _tab.Children.Add(label);
     }
 
     public NoteEditor Editor { get; }
@@ -592,4 +594,28 @@ internal sealed class NoteSheetView
             items.Add(item);
         }
     }
+}
+
+/// <summary>
+/// 打开的便签带着的那张标签（R108 审查，mac NoteSheet.tab 是 .isButton、带关掉的动作）：读屏把它当一颗按钮，「调用」（Invoke）= Invoked（关掉 / 收回）。
+/// 不进 Tab 键的顺序（同 mac 不当焦点）：键盘照旧用头部的关闭钮、Esc。点、拖还是 NoteSheetView 挂的指针事件。
+/// </summary>
+internal sealed partial class NoteSheetTab : Grid
+{
+    public Action? Invoked { get; set; }
+
+    protected override Microsoft.UI.Xaml.Automation.Peers.AutomationPeer OnCreateAutomationPeer() => new NoteSheetTabPeer(this);
+}
+
+/// <summary>NoteSheetTab 的读屏对象：按钮，能调用。</summary>
+internal sealed partial class NoteSheetTabPeer(NoteSheetTab owner)
+    : Microsoft.UI.Xaml.Automation.Peers.FrameworkElementAutomationPeer(owner), Microsoft.UI.Xaml.Automation.Provider.IInvokeProvider
+{
+    public void Invoke() => owner.Invoked?.Invoke();
+
+    protected override Microsoft.UI.Xaml.Automation.Peers.AutomationControlType GetAutomationControlTypeCore()
+        => Microsoft.UI.Xaml.Automation.Peers.AutomationControlType.Button;
+
+    protected override object GetPatternCore(Microsoft.UI.Xaml.Automation.Peers.PatternInterface patternInterface)
+        => patternInterface == Microsoft.UI.Xaml.Automation.Peers.PatternInterface.Invoke ? this : base.GetPatternCore(patternInterface)!;
 }

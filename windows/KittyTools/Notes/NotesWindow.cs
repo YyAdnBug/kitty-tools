@@ -879,9 +879,10 @@ internal sealed class NotesWindow : Window
         public Vector2 Offset { get; set; }
         public bool Placed { get; set; }
 
-        /// <summary>排法给它的倾斜（不悬停、没拖着时就这么斜）、鼠标在不在上面。</summary>
+        /// <summary>排法给它的倾斜（不悬停、没拖着、没挑中时就这么斜）、鼠标在不在上面、是不是方向键挑中的那张。</summary>
         public double Tilt { get; set; }
         public bool Hovered { get; set; }
+        public bool Selected { get; set; }
     }
 
     /// <summary>正拖着的那张：编号、拖动开始时那份排法里原来是第几张、现在让到第几张、按下时指针离卡片左上角多远。</summary>
@@ -1075,7 +1076,8 @@ internal sealed class NotesWindow : Window
             {
                 var summary = store.Book.SummaryOf(note);
                 var key = new CardKey(summary.Title, note.Body, note.IsPinned, note.DeletedAt is not null);
-                _cardHeights[id] = (key, Card(note, summary, key, dark).Height);
+                // 只量高：标题和正文那一块排一遍就够，不建整张卡片（R108 审查）
+                _cardHeights[id] = (key, MeasureCard(note, summary, dark));
             }
 
             if (clock.ElapsedMilliseconds >= 8)
@@ -1156,8 +1158,9 @@ internal sealed class NotesWindow : Window
             view.Card.Width = frame.Width;
             view.Card.Height = frame.Height;
             var dragged = _wallDrag?.Id == id;
-            // 倾斜不是动效：系统关了动画效果也照样斜（同 mac）；拖着的、鼠标停着的那张立正、抬起来
+            // 倾斜不是动效：系统关了动画效果也照样斜（同 mac）；拖着的、鼠标停着的那张立正、抬起来，方向键挑中的只立正
             view.Tilt = layout.Tilts[index];
+            view.Selected = id == _wallFocus;
             view.Card.CenterPoint = new Vector3((float)(frame.Width / 2), (float)(frame.Height / 2), 0);
             Pose(view, raised: dragged || view.Hovered);
             Canvas.SetZIndex(view.Holder, dragged ? 10_000 : 0);
@@ -1198,7 +1201,8 @@ internal sealed class NotesWindow : Window
     }
 
     /// <summary>
-    /// 一张卡片的姿势（mac WallCard）：悬停 / 拖着的立正、往上抬 2、阴影加深（ThemeShadow 跟着 Translation 的 z 走），别的时候按排法斜着
+    /// 一张卡片的姿势（mac WallCard）：悬停 / 拖着的立正、往上抬 2、阴影加深（ThemeShadow 跟着 Translation 的 z 走），方向键挑中的只立正
+    /// （view.Selected，R108 审查），别的时候按排法斜着
     /// （NoteWall.Pose；mac 还放大到 1.02，Windows 全 App 不做放大）。animated：第一次要动画时给卡片挂上 XAML 的隐式过渡（旋转、位移各 0.26 s），
     /// 之后姿势变了都过渡过去——不在建卡片时就挂：新建、滚进来的卡片摆初始姿势时不该从 0 转过来。系统关了动画效果时摘掉、直接到位（同 mac）。
     /// ponytail: 隐式过渡用的是系统的缓动，不是 glide 那条弹簧；要一模一样得换成 Composition 动画（卡片的 Translation 已经给阴影用了，得再套一层）。
@@ -1218,7 +1222,7 @@ internal sealed class NotesWindow : Window
             card.TranslationTransition = new Vector3Transition { Duration = duration };
         }
 
-        var (angle, rise, depth) = NoteWall.Pose(view.Tilt, raised);
+        var (angle, rise, depth) = NoteWall.Pose(view.Tilt, raised, view.Selected);
         var rotation = (float)angle;
         var translation = new Vector3(0, -(float)rise, (float)depth);
         if (card.Rotation != rotation)
@@ -1464,7 +1468,7 @@ internal sealed class NotesWindow : Window
         MarkWallFocus(bringIntoView: true);
     }
 
-    /// <summary>挑中的那张描一圈强调色（别的去掉），要的话滚进视野；读屏念它的标题。</summary>
+    /// <summary>挑中的那张描一圈强调色、立正（别的去掉、斜回去），要的话滚进视野；读屏念它的标题。</summary>
     private void MarkWallFocus(bool bringIntoView)
     {
         foreach (var (id, view) in _wallViews)
@@ -1472,6 +1476,12 @@ internal sealed class NotesWindow : Window
             var focused = id == _wallFocus;
             view.Card.BorderBrush = focused ? new SolidColorBrush(Theme.AccentColor) : null;
             view.Card.BorderThickness = new Thickness(focused ? 2 : 0);
+            // 挑中的立正、挑走的斜回去（同 mac 选中的那张；R108 审查）
+            if (focused != view.Selected)
+            {
+                view.Selected = focused;
+                Pose(view, raised: view.Hovered || _wallDrag?.Id == id, animated: true);
+            }
         }
 
         if (bringIntoView && _wallFocus is { } focus && _wallViews.TryGetValue(focus, out var target))
@@ -1527,22 +1537,7 @@ internal sealed class NotesWindow : Window
         var tone = paper.Tone(dark);
         var ink = new SolidColorBrush(Rgb(tone.Ink));
         var secondary = new SolidColorBrush(Rgb(NotePaper.Mix(tone.Ink, tone.Paper, NotePaper.SecondaryOpacity)));
-        var title = new TextBlock
-        {
-            Text = summary.Title,
-            FontSize = NoteWall.TitleSize,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            LineHeight = NoteWall.TitleLine,
-            MaxLines = NoteWall.TitleLines,
-            TextWrapping = TextWrapping.Wrap,
-            TextTrimming = TextTrimming.CharacterEllipsis,
-            Foreground = ink,
-            Width = NoteWall.TitleWidthFor(note.IsPinned),
-        };
-        var body = note.DeletedAt is null ? CardBody(note, paper, tone, dark, ink) : DeletedBody(note, ink);
-        title.Measure(new Windows.Foundation.Size(title.Width, double.PositiveInfinity));
-        body?.Measure(new Windows.Foundation.Size(NoteWall.TextWidth, double.PositiveInfinity));
-        var metrics = NoteWall.Card(note.IsPinned, title.DesiredSize.Height, body?.DesiredSize.Height ?? 0);
+        var (title, body, metrics) = CardText(note, summary, paper, tone, dark, ink);
         var stack = new StackPanel { Spacing = NoteWall.TitleGap, Padding = new Thickness(NoteWall.Padding, NoteWall.TopInset, NoteWall.Padding, 0) };
         stack.Children.Add(title);
         if (body is not null)
@@ -1615,6 +1610,39 @@ internal sealed class NotesWindow : Window
         card.ContextFlyout = ContextMenu(note);
         var holder = new Grid { Children = { card } };
         return (new WallCard(key, note.Color, dark, holder, card, footer), metrics.Height);
+    }
+
+    /// <summary>
+    /// 卡片上的字：标题（一两行）和正文那一块（NoteWall.CardLines 排的；最近删除里是原文），按卡片的宽量好，给出卡片的尺寸（NoteWall.Card）。
+    /// 建卡片和后台分批量高都从这里来：只量高时不建纸、色条、底下那行和事件（MeasureCard，R108 审查）。
+    /// </summary>
+    private static (TextBlock Title, StackPanel? Body, NoteWall.CardMetrics Metrics) CardText(
+        Note note, NoteBook.Summary summary, NotePaper paper, NoteTone tone, bool dark, Brush ink)
+    {
+        var title = new TextBlock
+        {
+            Text = summary.Title,
+            FontSize = NoteWall.TitleSize,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            LineHeight = NoteWall.TitleLine,
+            MaxLines = NoteWall.TitleLines,
+            TextWrapping = TextWrapping.Wrap,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            Foreground = ink,
+            Width = NoteWall.TitleWidthFor(note.IsPinned),
+        };
+        var body = note.DeletedAt is null ? CardBody(note, paper, tone, dark, ink) : DeletedBody(note, ink);
+        title.Measure(new Windows.Foundation.Size(title.Width, double.PositiveInfinity));
+        body?.Measure(new Windows.Foundation.Size(NoteWall.TextWidth, double.PositiveInfinity));
+        return (title, body, NoteWall.Card(note.IsPinned, title.DesiredSize.Height, body?.DesiredSize.Height ?? 0));
+    }
+
+    /// <summary>只量一张卡片多高（后台分批量往下那些卡片用）。</summary>
+    private static double MeasureCard(Note note, NoteBook.Summary summary, bool dark)
+    {
+        var paper = NotePaper.Of(note);
+        var tone = paper.Tone(dark);
+        return CardText(note, summary, paper, tone, dark, new SolidColorBrush(Rgb(tone.Ink))).Metrics.Height;
     }
 
     /// <summary>
