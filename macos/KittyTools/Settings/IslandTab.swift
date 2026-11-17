@@ -17,6 +17,10 @@ struct IslandTab: View {
   @AppStorage(Prefs.islandNoticeBattery) private var noticeBattery = false
   @AppStorage(Prefs.islandNoticeHeadphones) private var noticeHeadphones = false
   @AppStorage(Prefs.islandNoticeNetwork) private var noticeNetwork = false
+  @AppStorage(Prefs.islandNoticeLowPower) private var noticeLowPower = false
+  @AppStorage(Prefs.islandHourlyChime) private var hourlyChime = false
+  @AppStorage(Prefs.islandEventChime) private var eventChime = false
+  @AppStorage(Prefs.islandHidesFromCapture) private var hidesFromCapture = false
   @AppStorage(Prefs.islandNowPlaying) private var nowPlaying = false
   @AppStorage(Prefs.islandTrackPeek) private var trackPeek = true
   @AppStorage(Prefs.islandNextEvent) private var nextEvent = false
@@ -91,6 +95,15 @@ struct IslandTab: View {
             Text("没有「日历」授权，读不了日程").foregroundStyle(.orange)
           }
           .id(accessChecks)
+        }
+        Toggle(isOn: $eventChime) {
+          Text("日程开始时响一声")
+          Text("刘海上倒数的那个日程开始的那一刻")
+        }
+        .disabled(!nextEvent)
+        Toggle(isOn: $hourlyChime) {
+          Text("整点报时")
+          Text("每到整点响一声轻的；开着专注模式、录屏或录音时不响")
         }
         Toggle(isOn: $monthCalendar) {
           Text("点刘海打开时显示月历")
@@ -199,6 +212,10 @@ struct IslandTab: View {
           Text("展开时模糊四周")
           Text("卡片背后的东西越靠近卡片越模糊；系统设置里开着「降低透明度」时不模糊")
         }
+        Toggle(isOn: $hidesFromCapture) {
+          Text("截图、录屏时不显示刘海岛")
+          Text("截下来、录下来的画面里没有刘海岛和它上面的提示")
+        }
       } footer: {
         SectionFootnote("装了别的刘海 App 时可以关掉「点刘海打开」：提示和挂在刘海两边的录制计时这些照常，快捷键照样能叫出快捷动作。")
       }
@@ -218,6 +235,10 @@ struct IslandTab: View {
         Toggle(isOn: $noticeNetwork) {
           Text("断网、网络恢复")
           Text("断了或者好了 3 秒以上才说，醒来时闪一下不算")
+        }
+        Toggle(isOn: $noticeLowPower) {
+          Text("低电量模式打开、关掉")
+          Text("刘海两边出几秒：「低电量模式」和开 / 关")
         }
       } header: {
         Text("系统提示")

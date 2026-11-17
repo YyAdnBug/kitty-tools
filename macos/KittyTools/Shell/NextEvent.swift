@@ -44,6 +44,9 @@ import EventKit
   /// 一直听着的两样（不跟着起停）：本 App 回到前台、设置页问完授权——授权可能刚变
   private var accessObservers: [NSObjectProtocol] = []
   private var wait: Task<Void, Never>?
+  /// 挂在刘海上的那一条、它开始时响过没有（设置 › 刘海岛「日程开始时响一声」，Chime）
+  private var shown: Entry?
+  private var chimed: String?
   /// 那一张的月历读今天的日程用（「下一个日程」没开时 store 是 nil）：第一次用到才建，留着（建一个要几十毫秒）
   private var agendaStore: EKEventStore?
 
@@ -140,12 +143,20 @@ import EventKit
   /// 重新看一遍：下一个日程到了该倒数的时候就挂上，还早就收着；排好下一次要变的时刻
   private func refresh(now: Date = .now) {
     guard let store else { return }
+    // 挂着的那一条刚到开始的那一刻（plan 排的下一次就是它）：响一声
+    if let shown, Self.isStarting(shown, now: now), chimed != shown.id,
+      defaults.bool(forKey: Prefs.islandEventChime)
+    {
+      chimed = shown.id
+      Chime.play(.event)
+    }
     let predicate = store.predicateForEvents(
       withStart: now, end: now.addingTimeInterval(Self.window), calendars: nil)
     // 先按便宜的几样筛掉（全天的、已经开始的），剩下的才取参会人、备注（EventKit 用到才去读）
     let upcoming = store.events(matching: predicate).filter { !$0.isAllDay && $0.startDate > now }
     let next = Self.pick(upcoming.map(Self.entry), now: now)
     let plan = Self.plan(next, now: now)
+    shown = plan.shows ? next : nil
     if plan.shows, let next {
       island?.setActivity(
         Self.activity(
@@ -225,6 +236,12 @@ import EventKit
   }
 
   /// 下一个日程：还没开始的里面最早的（同一刻的按标题排，几台读出来一样）；全天的、拒绝 / 取消的不算
+  /// 这一条是不是刚开始（纯函数）：开始了、还不到 1 分钟（睡着醒来时早过了的不响）
+  static func isStarting(_ entry: Entry, now: Date) -> Bool {
+    let since = now.timeIntervalSince(entry.start)
+    return since >= 0 && since < 60
+  }
+
   static func pick(_ entries: [Entry], now: Date) -> Entry? {
     entries.filter { !$0.isAllDay && !$0.declined && $0.start > now }
       .min { ($0.start, $0.title) < ($1.start, $1.title) }

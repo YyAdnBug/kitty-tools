@@ -115,6 +115,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private let island = Island()
   /// 刘海岛上的系统一瞬提示（电源、电量、耳机、网络；设置 › 刘海岛「系统提示」，开着的才监听）
   private lazy var systemNotices = SystemNotices(island: island)
+  /// 整点报时（设置 › 刘海岛「日程」，默认关；Shell/Chime.swift）
+  private let hourlyChime = HourlyChime()
   /// 刘海岛的正在播放（刘海岛扩展第 2 期）：开着才连包里的正在播放服务
   private lazy var nowPlaying = NowPlaying(island: island)
   /// 刘海岛上的「下一个日程」（设置 › 刘海岛，默认关）
@@ -1124,12 +1126,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     applyIslandFeel()
     island.start()
     systemNotices.apply()
+    hourlyChime.apply()
     // 系统专注模式（读系统日志，SystemFocus）：刘海上提示由它自己出；提醒那边跟着它算（ReminderFocus）。要在提醒起来
     // （applyFeatures）之前接好：刚启动时按偏好里记着的那个模式算，别把专注期间压着的弹出来
     SystemFocus.shared.island = island
-    SystemFocus.shared.isRecording = { [unowned self] in
-      recorder != nil || audioRecorder?.isStarted == true
-    }
+    Chime.isRecording = { [unowned self] in recorder != nil || audioRecorder?.isStarted == true }
     SystemFocus.shared.onChange = { _, mode in ReminderFocus.shared.set(mode: mode) }
     SystemFocus.shared.apply()
     ReminderFocus.shared.set(mode: SystemFocus.shared.current)
@@ -1172,6 +1173,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.island.respondsToNotch = self.respondsToNotch
         self.applyIslandFeel()
         self.systemNotices.apply()
+        self.hourlyChime.apply()
         SystemFocus.shared.apply()
         ReminderFocus.shared.settingChanged()
         self.nowPlaying.apply()
@@ -1200,6 +1202,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     island.hoverExpands = UserDefaults.standard.bool(forKey: Prefs.islandHoverExpands)
     island.haptics = UserDefaults.standard.bool(forKey: Prefs.islandHaptics)
     island.blurs = UserDefaults.standard.bool(forKey: Prefs.islandBlur)
+    island.hidesFromCapture = UserDefaults.standard.bool(forKey: Prefs.islandHidesFromCapture)
   }
 
   /// 点刘海、停在刘海上、往下滑打开（有活动是它的卡片，没有是那一张）：刘海岛插件添加着，设置 › 刘海岛「点刘海打开」也开着

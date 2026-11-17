@@ -500,6 +500,13 @@ enum Prefs {
   static let islandNoticeBattery = "islandNoticeBattery"
   static let islandNoticeHeadphones = "islandNoticeHeadphones"
   static let islandNoticeNetwork = "islandNoticeNetwork"
+  /// 低电量模式打开 / 关掉时提示（2026-11-17 照 Alcove，「系统提示」一节，默认关）
+  static let islandNoticeLowPower = "islandNoticeLowPower"
+  /// 整点响一声、日程开始时响一声（2026-11-17 照 Alcove，「日程」一节，默认关；Shell/Chime.swift）
+  static let islandHourlyChime = "islandHourlyChime"
+  static let islandEventChime = "islandEventChime"
+  /// 截图、录屏里不出现刘海岛（2026-11-17 照 Alcove，默认关）
+  static let islandHidesFromCapture = "islandHidesFromCapture"
   /// 刘海岛上的「正在播放」（刘海岛扩展第 2 期，Shell/NowPlaying.swift）：默认关（2026-11-13 拍板：归刘海岛插件、一组开关）；
   /// 关着时不连正在播放服务、服务不起
   static let islandNowPlaying = "islandNowPlaying"
@@ -673,6 +680,10 @@ enum Prefs {
       islandNoticeBattery: false,
       islandNoticeHeadphones: false,
       islandNoticeNetwork: false,
+      islandNoticeLowPower: false,
+      islandHourlyChime: false,
+      islandEventChime: false,
+      islandHidesFromCapture: false,
       islandNowPlaying: false,
       islandTrackPeek: true,
       // 默认关（2026-11-14，用户：Alcove 是点了才展开；它的实录里指针停 2–5 秒都只是鼓起）。这一项没发布过

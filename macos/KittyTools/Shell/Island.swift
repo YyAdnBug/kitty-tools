@@ -232,6 +232,10 @@ import SwiftUI
   @ObservationIgnored var shapeFrame = CGRect.zero { didSet { syncBackdrop() } }
   /// 展开成大面（卡片、那一张）时四周的渐进模糊（设置 › 刘海岛；IslandBackdrop.swift，私有接口，取不到就没有）
   @ObservationIgnored var blurs = true { didSet { syncBackdrop() } }
+  /// 截图、录屏里不出现（设置 › 刘海岛，默认关；2026-11-17 照 Alcove）：窗口的 sharingType 设成 .none，同触发角的面板
+  @ObservationIgnored var hidesFromCapture = false {
+    didSet { window?.sharingType = hidesFromCapture ? .none : .readOnly }
+  }
   @ObservationIgnored private var backdrop: IslandBackdrop?
   /// 语气变了（nil = 收起）：菜单栏图标据此呼吸 / 弹一下（StatusItem.reflect）
   @ObservationIgnored var onToneChange: ((Tone?) -> Void)?
@@ -1704,6 +1708,7 @@ import SwiftUI
     panel.acceptsMouseMovedEvents = true
     panel.isReleasedWhenClosed = false
     panel.animationBehavior = .none
+    panel.sharingType = hidesFromCapture ? .none : .readOnly
     // 宿主包在普通容器里（setHostedContent）：直接当 contentView 时窗口一改大小就在「更新约束」里绕下去、抛异常崩掉
     // （2026-10-26 屏上复现：先弹提示、再在上面开那一张；测试里还见过窗口被它改成 520 × 64）
     let host = IslandHost(rootView: IslandView(island: self))

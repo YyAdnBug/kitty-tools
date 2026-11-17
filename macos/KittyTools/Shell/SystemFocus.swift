@@ -62,8 +62,6 @@ import os
   @ObservationIgnored var onChange: ((Mode?, Mode?) -> Void)?
 
   @ObservationIgnored weak var island: Island?
-  /// 正在录屏 / 录音（AppDelegate 给）：睡眠模式那一声不响（不然录进去）
-  @ObservationIgnored var isRecording: () -> Bool = { false }
   @ObservationIgnored private let defaults = UserDefaults.standard
   @ObservationIgnored private var task: Task<Void, Never>?
   /// 这一次 log stream 的「当场停掉」
@@ -79,11 +77,13 @@ import os
     }
   }
 
-  /// 要不要读（纯函数）：刘海上显示专注模式（插件添加着），或者提醒开着、专注模式时不是照常
+  /// 要不要读（纯函数）：刘海上显示专注模式（插件添加着），或者提醒开着、专注模式时不是照常，或者开着整点报时 /
+  /// 日程开始时响一声（专注模式时它们不响，得知道开没开）
   nonisolated static func wanted(
-    island: Bool, islandFocus: Bool, reminders: Bool, reminderStyle: String
+    island: Bool, islandFocus: Bool, reminders: Bool, reminderStyle: String, chimes: Bool = false
   ) -> Bool {
-    (island && islandFocus) || (reminders && reminderStyle != ReminderFocusStyle.normal.rawValue)
+    (island && (islandFocus || chimes))
+      || (reminders && reminderStyle != ReminderFocusStyle.normal.rawValue)
   }
 
   /// 专注模式开着时不弹电源、电量、耳机、网络的提示（设置 › 刘海岛「专注模式」那一节，默认关；SystemNotices 看它）
@@ -113,7 +113,9 @@ import os
     let wanted = Self.wanted(
       island: Feature.island.isOn, islandFocus: defaults.bool(forKey: Prefs.islandFocus),
       reminders: Feature.reminders.isOn,
-      reminderStyle: defaults.string(forKey: Prefs.remindersDuringFocus) ?? "")
+      reminderStyle: defaults.string(forKey: Prefs.remindersDuringFocus) ?? "",
+      chimes: defaults.bool(forKey: Prefs.islandHourlyChime)
+        || defaults.bool(forKey: Prefs.islandEventChime))
     if wanted, !isRunning {
       start()
     } else if !wanted, isRunning {
@@ -232,11 +234,11 @@ import os
     guard announces, let island, showsOnNotch, let shown = next ?? before ?? previous else {
       return
     }
-    // 睡眠模式刚打开：响一声轻的（照 Alcove；录屏、录音时不响）
+    // 睡眠模式刚打开：响一声轻的（照 Alcove；录屏、录音时不响，Chime）
     if let next, next.isSleep, before?.isSleep != true,
-      defaults.bool(forKey: Prefs.islandFocusSleepSound), !isRecording()
+      defaults.bool(forKey: Prefs.islandFocusSleepSound)
     {
-      NSSound(named: Self.sleepSound)?.play()
+      Chime.play(.sleep, duringFocus: true)
     }
     let level = Self.level(shown, on: next != nil)
     let name = shown.displayName
@@ -246,14 +248,11 @@ import os
     Island.announce("\(spoken)")
   }
 
-  /// 睡眠模式打开时那一声（系统自带的提示音里最轻的）
-  static let sleepSound = "Purr"
-
   /// 刘海上那一条（贴着刘海两边，2 秒）：左边模式的图标 + 名字，右边「开 / 关」；每侧照名字量多宽
   static func level(_ mode: Mode, on: Bool) -> Island.Level {
     let name = mode.displayName
     return Island.Level(
-      kind: .focus, fraction: on ? 1 : 0, glyph: symbol(mode.symbol, id: mode.id), caption: name,
+      kind: .toggle, fraction: on ? 1 : 0, glyph: symbol(mode.symbol, id: mode.id), caption: name,
       stay: .seconds(2), tint: mode.tint, wing: wing(for: name))
   }
 

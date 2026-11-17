@@ -314,10 +314,10 @@ import Synchronization
 
 extension Island {
   /// 音量 / 亮度的那一行画什么；带电量的提示也是它（device：耳机连上、接上 / 拔掉电源、电量低——左边一句话
-  /// （耳机的前面带它的图标），右边电量百分比 + 电池）；focus：系统专注模式开 / 关（SystemFocus，2026-11-17）——左边
-  /// 模式的图标（模式的颜色）+ 名字，右边「开 / 关」；fraction 1 是开、0 是关
+  /// （耳机的前面带它的图标），右边电量百分比 + 电池）；toggle：开 / 关这一类（2026-11-17：系统专注模式 SystemFocus、
+  /// 低电量模式 SystemNotices）——左边图标（它的颜色）+ 名字，右边「开 / 关」；fraction 1 是开、0 是关
   nonisolated struct Level: Equatable, Sendable {
-    nonisolated enum Kind: Sendable { case volume, brightness, device, focus }
+    nonisolated enum Kind: Sendable { case volume, brightness, device, toggle }
     /// device：电量那一截的颜色——好着（绿）、低了（红）、平常（白）
     nonisolated enum Tone: Sendable { case plain, good, low }
     var kind: Kind
@@ -333,9 +333,9 @@ extension Island {
     var tone = Tone.good
     /// 出多久（不给是 Island.levelDwell）
     var stay: Duration?
-    /// focus：模式的颜色（系统的颜色名，SystemFocus.color）
+    /// toggle：图标和「开」的颜色（系统的颜色名，SystemFocus.color）
     var tint: String?
-    /// 刘海两边各伸出多宽（focus 的名字长短不一，由 SystemFocus 量好给；别的都是 Island.levelWing）
+    /// 刘海两边各伸出多宽（toggle 的名字长短不一，量好给：SystemFocus.wing；别的都是 Island.levelWing）
     var wing = Island.levelWing
 
     /// 是不是「同一条」（不看数）：同一条原地换数，不是同一条的两个 device 提示换的时候糊着进出
@@ -349,7 +349,7 @@ extension Island {
       switch kind {
       case .brightness: "sun.max.fill"
       case .device: glyph ?? "bolt.fill"
-      case .focus: glyph ?? "moon.fill"
+      case .toggle: glyph ?? "moon.fill"
       case .volume:
         if muted || fraction <= 0 {
           "speaker.slash.fill"
@@ -369,7 +369,7 @@ extension Island {
       case .volume: muted ? String(localized: "静音") : String(localized: "音量")
       case .brightness: String(localized: "亮度")
       case .device: caption ?? String(localized: "已连接")
-      case .focus: caption ?? String(localized: "专注模式")
+      case .toggle: caption ?? String(localized: "专注模式")
       }
     }
 

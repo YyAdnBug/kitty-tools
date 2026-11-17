@@ -6880,7 +6880,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Hold System Notices during Focus"
+            "value" : "Hold system notices during Focus"
           }
         }
       }
@@ -7667,6 +7667,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Position"
+          }
+        }
+      }
+    },
+    "低电量模式" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Low Power Mode"
+          }
+        }
+      }
+    },
+    "低电量模式打开、关掉" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Low Power Mode turns on or off"
           }
         }
       }
@@ -9954,6 +9974,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Notch,Dynamic Island,Card,Quick Actions,Order,Recent Notices,Notifications,Now Playing,Music,Artwork,Skip Track,Events,Calendar,Month Calendar,Meeting,Blur,Haptics,Expand Automatically,Volume,Brightness,Mute"
+          }
+        }
+      }
+    },
+    "刘海上倒数的那个日程开始的那一刻" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When the event counting down on the Notch begins"
+          }
+        }
+      }
+    },
+    "刘海两边出几秒：「低电量模式」和开 / 关" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shows “Low Power Mode” and On or Off beside the notch for a few seconds"
           }
         }
       }
@@ -14029,7 +14069,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Show Focus on the Notch"
+            "value" : "Show Focus on the notch"
           }
         }
       }
@@ -16608,6 +16648,16 @@
         }
       }
     },
+    "已关闭低电量模式" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Low Power Mode turned off"
+          }
+        }
+      }
+    },
     "已关闭全部钉图" : {
       "localizations" : {
         "en" : {
@@ -17670,6 +17720,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Default arrangement restored"
+          }
+        }
+      }
+    },
+    "已打开低电量模式" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Low Power Mode turned on"
           }
         }
       }
@@ -20369,6 +20429,16 @@
         }
       }
     },
+    "截下来、录下来的画面里没有刘海岛和它上面的提示" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Screenshots and recordings leave out the Notch and its notices"
+          }
+        }
+      }
+    },
     "截取上次区域" : {
       "localizations" : {
         "en" : {
@@ -20415,6 +20485,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Screenshot · Selection"
+          }
+        }
+      }
+    },
+    "截图、录屏时不显示刘海岛" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide the Notch in screenshots and recordings"
           }
         }
       }
@@ -24179,6 +24259,16 @@
         }
       }
     },
+    "整点报时" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hourly chime"
+          }
+        }
+      }
+    },
     "整理文件" : {
       "localizations" : {
         "en" : {
@@ -24953,6 +25043,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Events"
+          }
+        }
+      }
+    },
+    "日程开始时响一声" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Play a sound when an event starts"
           }
         }
       }
@@ -27851,6 +27951,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Every %lld min"
+          }
+        }
+      }
+    },
+    "每到整点响一声轻的；开着专注模式、录屏或录音时不响" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A soft sound on the hour; not during a Focus or while screen or audio recording"
           }
         }
       }

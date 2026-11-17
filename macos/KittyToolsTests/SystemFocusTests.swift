@@ -117,6 +117,10 @@ struct SystemFocusTests {
     #expect(
       !SystemFocus.wanted(
         island: true, islandFocus: false, reminders: true, reminderStyle: "normal"))
+    // 整点报时 / 日程开始时响一声开着：要知道专注模式开没开（开着时不响）
+    #expect(
+      SystemFocus.wanted(
+        island: true, islandFocus: false, reminders: false, reminderStyle: "normal", chimes: true))
   }
 
   @Test func filterOverridesSettingWhileFocused() {

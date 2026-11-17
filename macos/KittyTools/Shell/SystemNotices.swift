@@ -27,6 +27,9 @@ import Network
   /// 网络通不通（最后一次稳住的）；第一次读到时只记下
   private var online: Bool?
   private var networkSettle: Task<Void, Never>?
+  private var lowPowerObserver: NSObjectProtocol?
+  /// 低电量模式上一次读到的；第一次读到时只记下
+  private var lowPower: Bool?
 
   init(island: Island, defaults: UserDefaults = .standard) {
     self.island = island
@@ -55,6 +58,48 @@ import Network
     } else if !network, pathMonitor != nil {
       stopNetwork()
     }
+    let saver = added && defaults.bool(forKey: Prefs.islandNoticeLowPower)
+    if saver, lowPowerObserver == nil {
+      startLowPower()
+    } else if !saver, lowPowerObserver != nil {
+      stopLowPower()
+    }
+  }
+
+  // MARK: 低电量模式（2026-11-17 照 Alcove）
+
+  private func startLowPower() {
+    lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
+    // 系统在哪条线程上发没说：交给主队列
+    lowPowerObserver = NotificationCenter.default.addObserver(
+      forName: .NSProcessInfoPowerStateDidChange, object: nil, queue: .main
+    ) { [weak self] _ in
+      MainActor.assumeIsolated { self?.lowPowerChanged() }
+    }
+  }
+
+  private func stopLowPower() {
+    if let lowPowerObserver { NotificationCenter.default.removeObserver(lowPowerObserver) }
+    lowPowerObserver = nil
+    lowPower = nil
+  }
+
+  private func lowPowerChanged() {
+    let now = ProcessInfo.processInfo.isLowPowerModeEnabled
+    guard now != lowPower else { return }
+    lowPower = now
+    guard !SystemFocus.shared.quietsNotices else { return }
+    let spoken = now ? String(localized: "已打开低电量模式") : String(localized: "已关闭低电量模式")
+    island?.showNotice(Self.lowPowerLevel(on: now), fallback: "\(spoken)")
+    Island.announce("\(spoken)")
+  }
+
+  /// 低电量模式的提示（同专注模式那种开 / 关：左边黄色的电池 +「低电量模式」，右边「开 / 关」，3 秒）
+  static func lowPowerLevel(on: Bool) -> Island.Level {
+    let name = String(localized: "低电量模式")
+    return Island.Level(
+      kind: .toggle, fraction: on ? 1 : 0, glyph: "battery.25percent", caption: name,
+      stay: .seconds(3), tint: "systemYellowColor", wing: SystemFocus.wing(for: name))
   }
 
   // MARK: 电源

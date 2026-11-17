@@ -1234,6 +1234,8 @@ struct SnapshotProbeTests {
             id: "x", name: "写周报的时候不要打扰", symbol: "pencil", tint: "systemTealColor"),
           on: true)
       ),
+      // 低电量模式打开（同专注模式那种开 / 关，2026-11-17 第 3 批）
+      ("island-level-lowpower", SystemNotices.lowPowerLevel(on: true)),
     ] {
       let island = Island(showing: nil, geometry: notch)
       island.showLevel(level)
