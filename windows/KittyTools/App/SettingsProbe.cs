@@ -10,6 +10,8 @@
 // - e：导出导入互通（REVIEW R80–R82）：真的 ArchiveService.Build（七类）写出去，按 mac 的必填字段查（Core ArchiveMacCheck），
 //   读回来再导一遍不出错；KITTY_SETTINGS_PROBE_MAC 给一份 mac 的导出文件（单测的 Fixtures/mac-archive-9acd4306.json）时，
 //   走真的 Apply 导进测试档：状态、提醒按 id 并进来，关着的服务导进来还关着，快捷链接和兜底开关都在，mac 的设置和快捷键不碰。
+// - x：给 mac 真读的样本（REVIEW R104）：在空的测试档里配齐（快捷键含截图键 Ctrl+Alt+A、截图时的键、网页搜索含快捷链接、一个关着的翻译服务、
+//   状态、提醒、片段和分组、生词、便签），走设置窗「导出」同一条路（ArchiveService.Build 七类 + WriteFile）写 <目录>\windows-archive.json。
 // 每份把结果写进 <目录>\report-<角色>.md，跑完就退（有不对的退出码 1）。
 using System.Text;
 using KittyTools.Core;
@@ -72,6 +74,10 @@ internal static class SettingsProbe
             else if (role == "e")
             {
                 RunArchive(Check, report);
+            }
+            else if (role == "x")
+            {
+                RunExport(Check, report, directory);
             }
             else
             {
@@ -476,6 +482,114 @@ internal static class SettingsProbe
         SettingsService.Save();
         var extra = new Reminder { Id = Guid.NewGuid().ToString().ToUpperInvariant(), Title = "第 51 条", Schedule = reminder.Schedule };
         check(!ReminderCenter.AddAndAnnounce(extra) && Reminders.Load(settings.Reminders).Count == Reminders.MaxCount, "R100 满 50 条：说满了、不加");
+    }
+
+    private static void RunExport(Action<bool, string> check, StringBuilder report, string directory)
+    {
+        var settings = SettingsService.Current;
+
+        // 快捷键：截图改成 Ctrl+Alt+A（issue #29 放开的那种），截图时的键改一个、清一个
+        var shot = settings.HotKeys.FirstOrDefault(hotkey => hotkey.Action == HotKeyActions.Screenshot);
+        check(shot is not null && HotKeyRules.Validate('A', HotKeyModifiers.Control | HotKeyModifiers.Alt).Ok, "截图键能设成 Ctrl+Alt+A");
+        if (shot is not null)
+        {
+            shot.VirtualKey = 'A';
+            shot.Modifiers = (uint)(HotKeyModifiers.Control | HotKeyModifiers.Alt);
+        }
+
+        settings.ScreenshotKeys = new Dictionary<string, string> { ["pin"] = "Ctrl+P", ["record"] = string.Empty };
+
+        // 网页搜索：默认几个 + 一个带关键词的 + 一个快捷链接（没有 {query}），兜底开关各不一样
+        var engines = WebSearch.Defaults().ToList();
+        engines.Add(new SearchEngine { Id = "custom-mdn", Name = "MDN", Keyword = "mdn", UrlTemplate = "https://developer.mozilla.org/search?q={query}", Fallback = true });
+        engines.Add(new SearchEngine { Id = "custom-inbox", Name = "收件箱", Keyword = "mail", UrlTemplate = "https://mail.example.com/inbox", Fallback = false });
+        settings.LauncherSearchEngines = engines;
+
+        // 状态：自带三个 + 自己加的一个（新表情、透出、自动结束）
+        var presets = StatusPresets.BuiltIn().ToList();
+        presets.Add(new StatusPreset
+        {
+            Id = "WIN-MEETING", Title = "开会中", Detail = "一小时后回来", Symbol = "party-popper", Style = StatusPresets.Dim,
+            Power = StatusPresets.DisplayOn, AutoEndMinutes = 60,
+        });
+        settings.StatusScreenPresets = presets;
+
+        // 提醒：工作日的轻提示、一次性的进状态屏
+        settings.Reminders = new List<Reminder>
+        {
+            new()
+            {
+                Id = "WIN-R1", Title = "喝水", Detail = "起来走走", Symbol = "droplet",
+                Schedule = new ReminderSchedule { Kind = ReminderSchedule.Interval, Time = 9 * 60, Until = 18 * 60, Every = 45, Days = ReminderSchedule.Workdays.ToList() },
+            },
+            new()
+            {
+                Id = "WIN-R2", Title = "周会", Symbol = "office-worker", Alert = Reminder.Status, StatusID = "WIN-MEETING",
+                Schedule = new ReminderSchedule { Kind = ReminderSchedule.Weekly, Time = 14 * 60 + 30, Days = new List<int> { 2 } },
+            },
+        };
+        SettingsService.Save();
+
+        // 翻译服务：加一个关着的 DeepL、一个开着的谷歌
+        if (TranslateServiceStore.Instance is { } services)
+        {
+            services.AddBuiltin(TranslateKinds.Google).Enabled = true;
+            services.AddBuiltin(TranslateKinds.DeepL).Enabled = false;
+            services.Save();
+        }
+
+        // 片段（带分组和备注）、一条收藏的普通文字
+        if (ClipboardService.Instance?.Store is { } clips)
+        {
+            clips.AdoptTextClips(new List<(string Text, bool Favorite, DateTimeOffset? CopiedAt)>
+            {
+                ("https://github.com/YyAdnBug/kitty-tools", true, DateTimeOffset.UtcNow.AddHours(-2)),
+            });
+            var group = clips.CreateGroup("回复模板");
+            if (clips.AddSnippet("你好 {cursor}，收到，我看一下。", "客气的回复") is { } snippet && group is not null)
+            {
+                clips.MoveToGroup(snippet.Id, group.Id);
+            }
+
+            clips.AddSnippet("今天是 {date}", null);
+        }
+
+        // 生词：两条收藏、一条没收藏（不该导出）
+        if (TranslationHistory.Instance is { } history)
+        {
+            var now = DateTimeOffset.Now;
+            history.InsertForProbe("serendipity", "zh-Hans", "意外发现珍宝的运气；机缘巧合", "智谱 GLM（免费）", now.AddDays(-2), true);
+            history.InsertForProbe("ephemeral", "zh-Hans", "短暂的；转瞬即逝的", "谷歌翻译", now.AddHours(-3), true);
+            history.InsertForProbe("Hello, world", "zh-Hans", "你好，世界", "谷歌翻译", now.AddMinutes(-5), false);
+        }
+
+        // 便签：任务五种状态、Markdown、文字颜色、固定、纸色
+        if (NoteStore.Instance is { } notes)
+        {
+            var first = notes.Create("# 周末\n☐ 买菜\n◧ 打扫房间\n▣ 交水电费\n☑ 洗车\n☒ 看电影", "周末要做的");
+            notes.SetColor(first.Id, 3);
+            notes.SetPinned(first.Id, true);
+            var second = notes.Create("**结论**：下周一上线\n- 前端改两处\n[重点]{red}：先同步给测试\n```\ngit log --oneline -5\n```", "会议纪要");
+            notes.SetColor(second.Id, 5);
+            notes.Create("没有标题的一条", string.Empty);
+            notes.Flush();
+        }
+
+        var all = Enum.GetValues<ArchiveSection>();
+        var archive = ArchiveService.Build(all);
+        var path = Path.Combine(directory, "windows-archive.json");
+        check(ArchiveService.WriteFile(path, archive) == path, $"写出 {path}");
+        var text = File.Exists(path) ? File.ReadAllText(path) : string.Empty;
+        var problems = ArchiveMacCheck.Problems(text);
+        check(problems.Count == 0, $"按 mac 的必填字段查：{(problems.Count == 0 ? "没问题" : string.Join(" / ", problems))}");
+        check(archive.TranslateServices?.Any(service => service.Id == TranslateKinds.DeepL && service.IsEnabled == false) == true, "关着的 DeepL 在里面");
+        check(archive.SearchEngines?.Any(engine => engine.Id == "custom-inbox") == true, "快捷链接在里面");
+        check(archive.Clips?.Count(clip => clip.Snippet == true) == 2 && archive.ClipGroups?.Contains("回复模板") == true, "两条片段和分组在里面");
+        check(archive.Vocabulary?.Count == 2, $"生词 {archive.Vocabulary?.Count ?? 0} 条（要 2）");
+        check(archive.Notes?.Count == 4, $"便签 {archive.Notes?.Count ?? 0} 条（要 4：配的 3 条 + 新档自己建的欢迎便签）");
+        check(text.Contains("Ctrl+Alt+A", StringComparison.Ordinal) && text.Contains("WIN-MEETING", StringComparison.Ordinal) &&
+              text.Contains("WIN-R2", StringComparison.Ordinal), "截图键、自己加的状态、提醒都写进去了");
+        report.Append($"- 文件 {text.Length} 字\n");
     }
 
     private static void RunArchive(Action<bool, string> check, StringBuilder report)
