@@ -800,6 +800,7 @@ private final class Probe {
         switch page {
         case .general: AnyView(GeneralTab())
         case .island: AnyView(IslandTab())
+        case .plugins: AnyView(PluginsPage())
         case .clipboard: AnyView(ClipboardTab(store: store))
         case .launcher: AnyView(EmptyView())
         case .launchpad: AnyView(EmptyView())

@@ -75,7 +75,8 @@ enum WhatsNew {
     // 设置 › 刘海岛 里新的「正在播放」（刘海岛插件的页，拨过那个开关算看过；原来挑的是「系统提示」，正在播放进 0.9.0 后换成它，
     // 一版最多 3 个）、设置 › 通用「同步」能连 WebDAV 服务器
     // （issue #18，点过「连接服务器…」算看过）。截图标注的新东西在框选后的工具栏里、刘海两边的活动和两指下滑没有入口，不标
-    Entry(id: "plugins", version: "0.9.0", feature: nil, page: .general, section: "功能"),
+    // 2026-11-17 插件页改版：插件挪进「全部插件」，这一条改标通用页「插件 ›」那一行（id 不变），添加 / 移除过一个插件算看过
+    Entry(id: "plugins", version: "0.9.0", feature: nil, page: .general, section: "插件"),
     Entry(
       id: "island-now-playing", version: "0.9.0", feature: .island, page: .island,
       section: "正在播放"),
@@ -89,6 +90,12 @@ enum WhatsNew {
     Entry(
       id: "screenshot-web-elements", version: "0.10.0", feature: .screenshot, page: .screenshot,
       section: "也认网页里的元素"),
+    // 0.10.0 的两个新插件（插件页改版 E1）：没添加时在「全部插件」那一行、侧栏「全部插件」上标，添加了算碰过；两个算一个
+    Entry(
+      id: "plugin-keep-awake", version: "0.10.0", feature: nil, page: .plugins, plugin: .keepAwake),
+    Entry(
+      id: "plugin-bluetooth-snooze", version: "0.10.0", feature: nil, page: .plugins,
+      plugin: .bluetoothSnooze),
   ]
 
   /// 一版最多标几个（拍板 B1：标多了到处都是「新」，等于没标）。同一版的几个新插件算一个：都只标在「全部插件」一处

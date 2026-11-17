@@ -747,7 +747,9 @@ struct NotesWindowTests {
       ]))
 
     let pages = SettingsPage.allCases
-    #expect(pages[pages.firstIndex(of: .record)! + 1] == .notes)
+    // 录制后面是插件组：第一行「全部插件」，便签紧跟着（插件页改版 A1）
+    #expect(pages[pages.firstIndex(of: .record)! + 1] == .plugins)
+    #expect(pages[pages.firstIndex(of: .plugins)! + 1] == .notes)
     #expect(SettingsPage.notes.title == "便签" && SettingsPage.notes.color == Style.Family.notes)
     #expect(SettingsPage.page(for: "便签", current: .general) == .notes)
     #expect(SettingsPage.page(for: "最近删除", current: .general) == .notes)

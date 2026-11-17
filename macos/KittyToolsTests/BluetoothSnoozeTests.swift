@@ -40,7 +40,7 @@ struct BluetoothSnoozeTests {
   @Test func registration() {
     let plugin = Feature.bluetoothSnooze
     #expect(plugin.isPlugin && !plugin.defaultOn)
-    #expect(plugin.pluginFacts != nil && plugin.pluginWords.contains("蓝牙"))
+    #expect(plugin.pluginBackground != nil && plugin.pluginWords.contains("蓝牙"))
     #expect(plugin.isAvailable == BluetoothSnooze.isSupported)
     #expect(SettingsSync.localKeys.contains(plugin.prefsKey))
     #expect(Prefs.defaults[Prefs.bluetoothSnoozeHeld] == nil)

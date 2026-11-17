@@ -789,6 +789,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           )
           .environment(island))
       case .island: AnyView(IslandTab())
+      case .plugins: AnyView(PluginsPage())
       case .clipboard: AnyView(ClipboardTab(store: clipboardStore).environment(island))
       case .launcher:
         AnyView(
@@ -3500,11 +3501,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     settingsNavigation.path = [id]
   }
 
-  /// 打开 设置 › 通用 › 功能、滚到这个插件的卡（启动器「添加…插件」，拍板 A4）：不直接添加，先看清要什么授权
+  /// 打开这个插件的介绍页（启动器「添加…插件」，插件拍板 A4、插件页改版 G1）：不直接添加，先看清能做什么、要什么授权
   func showPlugin(_ plugin: Feature) {
-    showSettings(page: .general)
-    settingsNavigation.path = [FeaturesPage.route]
-    settingsNavigation.focusedPlugin = plugin
+    showSettings(page: .plugins)
+    // 设置窗挂着表单（速查表、确认框）时 show 不换页：别把介绍页推进别的页的栈里
+    guard settingsNavigation.page == .plugins else { return }
+    settingsNavigation.path = [PluginsPage.route(plugin)]
   }
 
   /// 打开设置窗（page 为 nil 保持上次的页；onboarding 盖上欢迎引导）：先按正常隐藏路径收起浮层

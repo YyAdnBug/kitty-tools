@@ -8,7 +8,7 @@
 // 常驻窗口、缓存）不建、不起、不注册。以后加的全局动作、菜单项、启动器内置动作、跨功能的按钮都要归到一个 Feature（mac-native §1）。
 // 插件（2026-11-12 拍板「全部按推荐」，PLAN §10「插件」）：以后新的大模块做成插件——同样编进 App、同样一个开关（「添加」=
 // 打开、「移除」= 关掉，设置和数据留着），区别只在露不露面：新装、升级都默认不添加；没添加的不进设置侧栏（也不进「已关闭」那组）、
-// 欢迎引导、「功能」列表和主界面的「N 个功能关着」，只在 设置 › 通用 › 功能 下面的「插件」卡片里，和启动器里打它的名字时
+// 欢迎引导、「功能」列表和主界面的「N 个功能关着」，只在 设置 › 全部插件（2026-11-17 插件页改版；原来是 通用 › 功能 下面的「插件」卡片）里，和启动器里打它的名字时
 // 最后那一行「添加…插件」（LauncherModel.pluginOffers）。
 // 2026-11-13（拍板页 https://claude.ai/artifact/DEKeRvQeZR3VxkVA9Bx2Fr「全部按推荐」）：便签、提醒、状态屏、启动台、程序坞预览、
 // 访达右键也改成插件，另加刘海岛（只管点刘海那一张、两边的活动、系统提示；岛上的提示是全 App 的，不归它）。功能剩剪贴板、
@@ -63,50 +63,6 @@ nonisolated enum Feature: String, CaseIterable {
   ]
   var isPlugin: Bool { Self.plugins.contains(self) }
 
-  /// 插件卡片「授权」那一行的「不要」（显式 key：单独一个「不要」意思靠上下文）
-  private static var noPermission: String {
-    String(localized: "plugin.permission.none", defaultValue: "不要", comment: "插件卡片「授权」那一行：不要任何授权")
-  }
-
-  /// 插件卡片上那两行：要什么授权、在后台做什么（拍板 A2：添加之前就看得清）；不是插件的 nil
-  var pluginFacts: (permission: String, background: String)? {
-    switch self {
-    case .notes:
-      (
-        Self.noPermission,
-        String(localized: "屏幕边缘一条细药丸；开着同步时跟着合")
-      )
-    case .reminders:
-      (
-        Self.noPermission,
-        String(localized: "等着下一条提醒；一条都没有时什么都不跑")
-      )
-    case .statusScreen: (String(localized: "进入时要「辅助功能」（拦住键盘鼠标）"), String(localized: "没进入时什么都不跑"))
-    case .launchpad:
-      (
-        Self.noPermission,
-        String(localized: "看着触控板捏合和触发角，装卸 App 时重扫一遍")
-      )
-    case .dockPreview: (String(localized: "辅助功能、屏幕录制"), String(localized: "看着程序坞；鼠标停在图标上才截缩略图"))
-    case .finderMenu: (String(localized: "要在系统设置里打开访达扩展"), String(localized: "只在你右键时动"))
-    case .keepAwake: (Self.noPermission, String(localized: "开着时让系统别睡；没开时什么都不跑"))
-    case .bluetoothSnooze:
-      (
-        String(localized: "蓝牙（添加时系统会问）"),
-        String(localized: "等着电脑睡下去；醒来时只打开睡前自己关掉的蓝牙")
-      )
-    case .island:
-      (
-        String(localized: "不要（打开「下一个日程」要「日历」，打开「音量和亮度」要「辅助功能」；正在播放读不到时，「音乐」「Spotify」的播放控制要「自动化」）"),
-        String(
-          localized:
-            "看着指针有没有停在刘海上；打开了系统提示才听电源、耳机、网络，打开了正在播放才起一个读播放信息的小进程，打开了下一个日程才读日历，打开了音量和亮度才接那五个键。不添加时提示照常弹"
-        )
-      )
-    default: nil
-    }
-  }
-
   /// 启动器里打这些词（插件没添加时）出「添加…插件」那一行；名字本身也算（名字是当前语言的，所以中文名留在这里）。
   /// 中英都认（多语言：英文界面里打中文、中文界面里打英文都找得到），这些词不翻
   var pluginWords: [String] {
@@ -159,7 +115,7 @@ nonisolated enum Feature: String, CaseIterable {
   }
 
   /// 这台系统上有没有（启动台只在 macOS 26 起；睡眠关蓝牙只在有盖子、私有接口在的 Mac 上）：没有的哪里都不出现，
-  /// 「功能」列表、插件卡片里也没有它那一行
+  /// 「功能」列表、「全部插件」里也没有它那一行
   var isAvailable: Bool {
     switch self {
     case .launchpad: Launchpad.isAvailable

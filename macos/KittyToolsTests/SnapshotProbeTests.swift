@@ -529,6 +529,9 @@ struct SnapshotProbeTests {
           GeneralTab(
             transfer: SettingsTransfer(services: services, clipboard: store, history: history)))
       case .island: AnyView(IslandTab())
+      // 添加着、缺授权是摆好的（不读 Dev 版的偏好、不查这台的授权）
+      case .plugins:
+        AnyView(PluginsPage(fixed: .init(added: [.notes, .reminders, .island], lacking: [])))
       case .clipboard: AnyView(ClipboardTab(store: store))
       case .launcher: AnyView(LauncherTab())
       case .launchpad: AnyView(LaunchpadTab())
@@ -4751,9 +4754,10 @@ struct SnapshotProbeTests {
       to: "\(out)/features-launchpad-off.png")
   }
 
-  /// 插件（2026-11-12）：设置 › 通用 › 功能 下面的插件卡片（没添加、添加了、启动器带过来时描着强调色那一圈，浅 / 深）、
-  /// 设置 › 保持唤醒（定时开着，浅 / 深）。几秒，图以 plugins- 开头：-only-testing:'KittyToolsTests/SnapshotProbeTests/plugins()'。
-  /// 开关和定时读临时偏好域；保持唤醒没起（不建断言），「现在」那一行是没开的样子
+  /// 插件（2026-11-12；2026-11-17 插件页改版）：设置 › 全部插件（四组；添加了、没添加、要授权、新；浅 / 深；侧栏搜索、
+  /// 启动器带过来时描着强调色那一圈）、没添加的插件的介绍页（睡眠关蓝牙：缺授权；保持唤醒：带快捷键；刘海岛：几项授权
+  /// 各一种状态）、设置 › 保持唤醒（定时开着，浅 / 深）。几秒，图以 plugins- 开头：
+  /// -only-testing:'KittyToolsTests/SnapshotProbeTests/plugins()'。添加着、缺授权是摆好的，开关和定时读临时偏好域
   @Test(.enabled(if: directory != nil)) func plugins() throws {
     let out = try #require(Self.directory)
     try FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
@@ -4762,24 +4766,43 @@ struct SnapshotProbeTests {
     let prefs = try #require(UserDefaults(suiteName: name))
     defer { prefs.removePersistentDomain(forName: name) }
     let navigation = SettingsNavigation(defaults: nil)
-    // 高 1400：八个插件的卡片排到保持唤醒那张（排在访达右键、刘海岛之间）
-    func features() -> some View {
-      NavigationStack { FeaturesPage() }.environment(navigation).defaultAppStorage(prefs)
+    navigation.fresh = ["plugin-keep-awake", "plugin-bluetooth-snooze"]
+    let fixed = PluginsPage.Fixed(
+      added: [.notes, .reminders, .dockPreview, .island], lacking: [.dockPreview])
+    func list() -> some View {
+      PluginsPage(fixed: fixed).environment(navigation).defaultAppStorage(prefs)
     }
     for dark in [false, true] {
       try snapshot(
-        features(), size: NSSize(width: 600, height: 1400), dark: dark,
-        to: "\(out)/plugins-features\(dark ? "-dark" : "").png")
+        list(), size: NSSize(width: 600, height: 1000), dark: dark,
+        to: "\(out)/plugins-list\(dark ? "-dark" : "").png")
     }
-    navigation.focusedPlugin = .keepAwake
+    navigation.focusedPlugin = .statusScreen
     try snapshot(
-      features(), size: NSSize(width: 600, height: 1400), dark: false,
-      to: "\(out)/plugins-features-focused.png")
+      list(), size: NSSize(width: 600, height: 1000), dark: false,
+      to: "\(out)/plugins-list-focused.png")
     navigation.focusedPlugin = nil
+    func intro(_ plugin: Feature, _ granted: @escaping (Permissions.Kind) -> Bool?) -> some View {
+      NavigationStack { PluginIntroPage(plugin: plugin, granted: granted) }
+        .environment(navigation).defaultAppStorage(prefs)
+    }
+    for dark in [false, true] {
+      try snapshot(
+        intro(.bluetoothSnooze) { _ in false }, size: NSSize(width: 600, height: 760), dark: dark,
+        to: "\(out)/plugins-intro-bt\(dark ? "-dark" : "").png")
+    }
+    try snapshot(
+      intro(.keepAwake) { _ in true }, size: NSSize(width: 600, height: 760), dark: false,
+      to: "\(out)/plugins-intro-awake.png")
+    prefs.set(false, forKey: Feature.island.prefsKey)
+    try snapshot(
+      intro(.island) { $0 == .automation ? nil : $0 == .calendar },
+      size: NSSize(width: 600, height: 900), dark: false,
+      to: "\(out)/plugins-intro-island.png")
     prefs.set(true, forKey: Feature.keepAwake.prefsKey)
     try snapshot(
-      features(), size: NSSize(width: 600, height: 1400), dark: false,
-      to: "\(out)/plugins-features-added.png")
+      intro(.keepAwake) { _ in true }, size: NSSize(width: 600, height: 760), dark: false,
+      to: "\(out)/plugins-intro-awake-added.png")
     prefs.set(KeepAwakePlan.Schedule(isOn: true).encoded, forKey: Prefs.keepAwakeSchedule)
     for dark in [false, true] {
       try snapshot(

@@ -408,12 +408,12 @@
         }
       }
     },
-    "%@插件没添加，先不同步；在上面「功能」里添加就接着同步" : {
+    "%@插件没添加，先不同步；在上面「插件」里添加就接着同步" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The %@ plugin isn’t added, so this isn’t syncing; add it under Features above to resume"
+            "value" : "The %@ plugin isn’t added, so this isn’t syncing; add it under Plugins above to resume"
           }
         }
       }
@@ -4032,24 +4032,6 @@
         }
       }
     },
-    "plugin.permission.none" : {
-      "comment" : "插件卡片「授权」那一行：不要任何授权",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "None"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "不要"
-          }
-        }
-      }
-    },
     "record.audioStarted" : {
       "comment" : "读屏播报：录音已经开始了",
       "extractionState" : "extracted_with_value",
@@ -6467,16 +6449,6 @@
         }
       }
     },
-    "不要（打开「下一个日程」要「日历」，打开「音量和亮度」要「辅助功能」；正在播放读不到时，「音乐」「Spotify」的播放控制要「自动化」）" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "None (Next Event needs Calendars, and Volume and Brightness needs Accessibility. If Now Playing can’t be read, controlling Music or Spotify needs Automation.)"
-          }
-        }
-      }
-    },
     "不让电脑睡、不让屏幕熄：手动开一段，或按时段自动开" : {
       "localizations" : {
         "en" : {
@@ -7389,6 +7361,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Notes · Floating"
+          }
+        }
+      }
+    },
+    "便签、提醒、刘海岛这些在「全部插件」里添加" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add Notes, Reminders, the Notch, and more in All Plugins"
           }
         }
       }
@@ -8488,6 +8470,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "All Keys"
+          }
+        }
+      }
+    },
+    "全部插件" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All Plugins"
           }
         }
       }
@@ -10152,6 +10144,16 @@
         }
       }
     },
+    "剪贴板、启动器、翻译、截图、录制的开关" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switches for Clipboard, Launcher, Translate, Screenshot, and Recording"
+          }
+        }
+      }
+    },
     "剪贴板、启动器、翻译浮窗和截图里按什么键，都在速查表里" : {
       "localizations" : {
         "en" : {
@@ -10352,12 +10354,12 @@
         }
       }
     },
-    "功能、外观、菜单栏、登录时打开、权限、同步、导出与导入、数据目录" : {
+    "功能、插件、外观、菜单栏、登录时打开、权限、同步、导出与导入、数据目录" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Features, appearance, menu bar, open at login, permissions, sync, export and import, data folder"
+            "value" : "Features, plugins, appearance, menu bar, open at login, permissions, sync, export and import, data folder"
           }
         }
       }
@@ -11526,6 +11528,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Only in the search field, and switched back when you leave; turn it off to search in Chinese"
+          }
+        }
+      }
+    },
+    "只在这台 Mac 上添加，不跟着同步" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Added on this Mac only; not synced"
           }
         }
       }
@@ -13356,6 +13368,16 @@
         }
       }
     },
+    "在一台 Mac 上添加，同步的几台都添加" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adding it on one Mac adds it on all your synced Macs"
+          }
+        }
+      }
+    },
     "在任何 App 里按下这些键，对应的功能就会出来。\n现在按一下，按过的会打勾。" : {
       "localizations" : {
         "en" : {
@@ -14738,6 +14760,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Security and Sync"
+          }
+        }
+      }
+    },
+    "完全磁盘访问权限" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Full Disk Access"
           }
         }
       }
@@ -19340,6 +19372,16 @@
         }
       }
     },
+    "怎么用" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "How to Use It"
+          }
+        }
+      }
+    },
     "怎么退出" : {
       "localizations" : {
         "en" : {
@@ -19547,6 +19589,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Preview on hover"
+          }
+        }
+      }
+    },
+    "想自己写个小命令，在启动器里跑" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Write your own small commands and run them from the Launcher"
           }
         }
       }
@@ -20269,6 +20321,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Opens a submenu"
+          }
+        }
+      }
+    },
+    "打开它的设置" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opens its settings"
           }
         }
       }
@@ -21653,16 +21715,6 @@
         }
       }
     },
-    "授权" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Permissions"
-          }
-        }
-      }
-    },
     "授权「辅助功能」后才能直接粘贴回原 App，现在只会写进剪贴板" : {
       "localizations" : {
         "en" : {
@@ -21993,12 +22045,12 @@
         }
       }
     },
-    "插件 · 用得上再勾，以后也能在 设置 › 通用 › 功能 里添加" : {
+    "插件 · 用得上再勾，以后也能在 设置 › 全部插件 里添加" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Plugins · optional; you can add them later in Settings › General › Features"
+            "value" : "Plugins · optional; you can add them later in Settings › All Plugins"
           }
         }
       }
@@ -22009,6 +22061,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Plugin,Keep Awake,Awake,Prevent Sleep,Sleep,No Sleep,Display,Screen On,Display Sleep,Schedule,Weekdays,Time Range,caffeinate,Caffeine,Download,Background Task"
+          }
+        }
+      }
+    },
+    "插件,添加,移除,扩展,更多功能,全部插件,新插件" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "plugins,add,remove,extensions,more features,all plugins,new plugins"
           }
         }
       }
@@ -23251,6 +23313,16 @@
         }
       }
     },
+    "文件和文件夹" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Files and Folders"
+          }
+        }
+      }
+    },
     "文件太大，选一个 20 MB 以内的短音频" : {
       "localizations" : {
         "en" : {
@@ -23809,12 +23881,12 @@
         }
       }
     },
-    "新装时插件都没添加；从旧版升级上来的，原来开着的照旧添加着。添加了才出现在侧栏、菜单栏、主界面、快捷键和启动器里；移除就是关掉，设置和数据留着，再添加就回来。" : {
+    "新装时插件都没添加。添加了才出现在侧栏、菜单栏、主界面、快捷键和启动器里；移除了设置和数据都留着，再添加就回来。" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "A new install starts with no plugins; after an upgrade, plugins that were on stay added. Only added plugins appear in the sidebar, menu bar, Home, shortcuts, and the Launcher. Removing one just turns it off; its settings and data stay for when you add it again."
+            "value" : "Plugins aren’t added on a new install. Once added, a plugin shows up in the sidebar, the menu bar, Home, shortcuts, and the Launcher. If you remove it, its settings and data stay for when you add it again."
           }
         }
       }
@@ -23925,6 +23997,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Indefinitely"
+          }
+        }
+      }
+    },
+    "日历" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Calendars"
           }
         }
       }
@@ -28816,12 +28898,58 @@
         }
       }
     },
+    "添加「%@」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add “%@”"
+          }
+        }
+      }
+    },
     "添加「%@」插件" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Add the “%@” Plugin"
+          }
+        }
+      }
+    },
+    "添加了 %lld 个" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld added"
+          }
+        }
+      }
+    },
+    "添加了 %lld 个，共 %lld 个" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld of %2$lld added"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "添加了 %1$lld 个，共 %2$lld 个"
+          }
+        }
+      }
+    },
+    "添加了才出现在侧栏、菜单栏、主界面、快捷键和启动器里" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Once added, it shows up in the sidebar, the menu bar, Home, shortcuts, and the Launcher"
           }
         }
       }
@@ -30007,6 +30135,16 @@
         }
       }
     },
+    "用到时系统会问" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS asks when it’s needed"
+          }
+        }
+      }
+    },
     "用备份：便签回到 %@备份时的样子，那之后写的、改的不在里面。" : {
       "localizations" : {
         "en" : {
@@ -30053,6 +30191,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Create from It"
+          }
+        }
+      }
+    },
+    "用得上的再添加；移除了，设置和数据也留着" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add the ones you’ll use; removing one keeps its settings and data"
           }
         }
       }
@@ -30640,6 +30788,16 @@
         }
       }
     },
+    "看看它能做什么、要什么授权" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shows what it does and what access it needs"
+          }
+        }
+      }
+    },
     "看看磁盘还有没有地方" : {
       "localizations" : {
         "en" : {
@@ -31133,6 +31291,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Once removed, it’s gone from the menu bar, Home, the Launcher, and shortcuts; settings and data stay for when you add it again"
+          }
+        }
+      }
+    },
+    "移除在它自己那一页的最下面；移除了设置和数据都留着" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "To remove it, go to the bottom of its own page; its settings and data stay"
           }
         }
       }
@@ -32749,6 +32917,16 @@
         }
       }
     },
+    "能做什么" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "What It Does"
+          }
+        }
+      }
+    },
     "能另外打开下一个日程、音量和亮度" : {
       "localizations" : {
         "en" : {
@@ -32945,6 +33123,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Download animated emoji automatically"
+          }
+        }
+      }
+    },
+    "自动化" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Automation"
           }
         }
       }
@@ -33400,16 +33588,6 @@
         }
       }
     },
-    "蓝牙（添加时系统会问）" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bluetooth (macOS asks when you add it)"
-          }
-        }
-      }
-    },
     "蓝色" : {
       "localizations" : {
         "en" : {
@@ -33621,16 +33799,6 @@
         }
       }
     },
-    "要在系统设置里打开访达扩展" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Turn on the Finder extension in System Settings"
-          }
-        }
-      }
-    },
     "要填密钥" : {
       "localizations" : {
         "en" : {
@@ -33647,6 +33815,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Include ⌘, ⌃, or ⌥ (F1–F20 work alone), or double-press a modifier key"
+          }
+        }
+      }
+    },
+    "要授权" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Needs access"
           }
         }
       }
@@ -33687,6 +33865,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "To open Launchpad with a pinch, copy the command into Terminal and run it to turn off the system Apps pinch"
+          }
+        }
+      }
+    },
+    "要的授权" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Access It Needs"
           }
         }
       }
@@ -34163,6 +34351,16 @@
         }
       }
     },
+    "访达扩展" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finder Extension"
+          }
+        }
+      }
+    },
     "识别中…" : {
       "localizations" : {
         "en" : {
@@ -34363,12 +34561,12 @@
         }
       }
     },
-    "语言,英文,中文,English,Language,外观,浅色,深色,暗黑,主题,跟随系统,强调色,主题色,颜色,开机,登录,自启,权限,辅助功能,屏幕录制,麦克风,剪贴板访问,隐私,菜单栏,状态栏,图标,隐藏,彩色,单色,挤压,弹开,动画,动效,导出,导入,备份,恢复,迁移,换电脑,配置,功能,模块,关闭,停用,启用,不用,插件,添加,移除,同步,iCloud,云盘,多台,几台,另一台,数据,数据目录,访达,文件夹" : {
+    "语言,英文,中文,English,Language,外观,浅色,深色,暗黑,主题,跟随系统,强调色,主题色,颜色,开机,登录,自启,权限,辅助功能,屏幕录制,麦克风,剪贴板访问,隐私,菜单栏,状态栏,图标,隐藏,彩色,单色,挤压,弹开,动画,动效,导出,导入,备份,恢复,迁移,换电脑,配置,功能,模块,关闭,停用,启用,不用,同步,iCloud,云盘,多台,几台,另一台,数据,数据目录,访达,文件夹" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Language,English,Chinese,Appearance,Light,Dark,Dark Mode,Theme,Auto,Accent Color,Color,Startup,Login,Open at Login,Permissions,Accessibility,Screen Recording,Microphone,Clipboard Access,Privacy,Menu Bar,Status Bar,Icon,Hide,Colorful,Monochrome,Squeeze,Bounce,Animation,Motion,Export,Import,Backup,Restore,Migrate,New Mac,Configuration,Features,Modules,Turn Off,Disable,Enable,Plugins,Add,Remove,Sync,iCloud,iCloud Drive,Multiple Macs,Another Mac,Data,Data Folder,Finder,Folder"
+            "value" : "Language,English,Chinese,Appearance,Light,Dark,Dark Mode,Theme,Auto,Accent Color,Color,Startup,Login,Open at Login,Permissions,Accessibility,Screen Recording,Microphone,Clipboard Access,Privacy,Menu Bar,Status Bar,Icon,Hide,Colorful,Monochrome,Squeeze,Bounce,Animation,Motion,Export,Import,Backup,Restore,Migrate,New Mac,Configuration,Features,Modules,Turn Off,Disable,Enable,Sync,iCloud,iCloud Drive,Multiple Macs,Another Mac,Data,Data Folder,Finder,Folder"
           }
         }
       }
@@ -34999,16 +35197,6 @@
         }
       }
     },
-    "辅助功能、屏幕录制" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Accessibility, Screen Recording"
-          }
-        }
-      }
-    },
     "输入「%@ 空格 %@」" : {
       "localizations" : {
         "en" : {
@@ -35373,6 +35561,16 @@
         }
       }
     },
+    "还没允许" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not allowed yet"
+          }
+        }
+      }
+    },
     "还没允许：这些文件夹里的文件搜不到" : {
       "localizations" : {
         "en" : {
@@ -35429,6 +35627,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Not started yet"
+          }
+        }
+      }
+    },
+    "还没打开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not turned on"
           }
         }
       }
@@ -35623,6 +35831,16 @@
         }
       }
     },
+    "还没添加；便签、提醒、刘海岛这些都在里面" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "None added yet; Notes, Reminders, the Notch, and more are in here"
+          }
+        }
+      }
+    },
     "还没给辅助功能授权，进不了状态屏" : {
       "localizations" : {
         "en" : {
@@ -35801,6 +36019,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "This address isn’t encrypted (http), so the password and synced content travel over the network as plain text"
+          }
+        }
+      }
+    },
+    "这个插件还没添加" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This plugin isn’t added yet"
           }
         }
       }
@@ -36467,16 +36695,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Blocks the keyboard and mouse while it’s up; without it, Status Screen can’t start"
-          }
-        }
-      }
-    },
-    "进入时要「辅助功能」（拦住键盘鼠标）" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Accessibility, when entering (to block the keyboard and mouse)"
           }
         }
       }

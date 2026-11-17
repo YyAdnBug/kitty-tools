@@ -229,7 +229,7 @@ import UniformTypeIdentifiers
   @ObservationIgnored var createReminder: (Reminder) -> Void = { _ in }
   @ObservationIgnored var toggleReminder: (String) -> Void = { _ in }
   @ObservationIgnored var openReminder: (String) -> Void = { _ in }
-  /// 「添加…插件」（2026-11-12 拍板 A4）：打开 设置 › 通用 › 功能 那张卡（AppDelegate 给）
+  /// 「添加…插件」（2026-11-12 拍板 A4）：打开 设置 › 全部插件 里它的介绍页（2026-11-17 插件页改版 G1；原来是 设置 › 通用 › 功能 那张卡）（AppDelegate 给）
   @ObservationIgnored var offerPlugin: (Feature) -> Void = { _ in }
   /// 「awake …」（保持唤醒插件 B2）：手动开着时还剩多久（没开 nil）、开一段（结束时刻，nil = 无限期；行上的说法）、停掉
   @ObservationIgnored var keepAwakeStatus: () -> String? = { nil }

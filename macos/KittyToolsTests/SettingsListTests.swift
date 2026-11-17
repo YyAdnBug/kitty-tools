@@ -39,10 +39,9 @@ struct SettingsListTests {
     let pages = SettingsPage.allCases
     #expect(
       pages == [
-        .general, .clipboard, .launcher, .translate, .screenshot, .record, .notes, .reminders,
-        .statusScreen, .launchpad, .dockPreview, .finderMenu, .keepAwake, .bluetoothSnooze, .island,
-        .hotkeys,
-        .about,
+        .general, .clipboard, .launcher, .translate, .screenshot, .record, .plugins, .notes,
+        .reminders, .statusScreen, .launchpad, .dockPreview, .finderMenu, .keepAwake,
+        .bluetoothSnooze, .island, .hotkeys, .about,
       ])
     // 分组盖住每一页、和 allCases 同序
     #expect(SettingsPage.groups.flatMap { $0 } == pages)
@@ -52,7 +51,7 @@ struct SettingsListTests {
         == [
           [.general], [.clipboard, .launcher, .translate], [.screenshot, .record],
           [
-            .notes, .reminders, .statusScreen, .dockPreview, .finderMenu, .keepAwake,
+            .plugins, .notes, .reminders, .statusScreen, .dockPreview, .finderMenu, .keepAwake,
             .bluetoothSnooze, .island,
           ],
           [.hotkeys, .about],
@@ -66,9 +65,8 @@ struct SettingsListTests {
       closed.map(\.pages) == [
         [.general], [.clipboard, .launcher], [.screenshot],
         [
-          .notes, .reminders, .statusScreen, .launchpad, .dockPreview, .finderMenu, .keepAwake,
-          .bluetoothSnooze,
-          .island,
+          .plugins, .notes, .reminders, .statusScreen, .launchpad, .dockPreview, .finderMenu,
+          .keepAwake, .bluetoothSnooze, .island,
         ],
         [.hotkeys, .about], [.translate, .record],
       ])
@@ -92,7 +90,8 @@ struct SettingsListTests {
     #expect(
       SettingsPage.general.feature == nil && SettingsPage.island.feature == .island
         && SettingsPage.hotkeys.feature == nil)
-    // 插件组就是全部插件（按 Feature 的先后）
+    // 插件组：第一行「全部插件」（不是哪个功能的页），下面就是全部插件（按 Feature 的先后）
+    #expect(SettingsPage.groups[3].first == .plugins && SettingsPage.plugins.feature == nil)
     #expect(SettingsPage.groups[3].compactMap(\.feature) == Feature.allCases.filter(\.isPlugin))
     let sections = HotKeyAction.sections.map(\.title)
     #expect(sections.firstIndex(of: "翻译")! < sections.firstIndex(of: "截图与录制")!)
