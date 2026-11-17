@@ -21,7 +21,7 @@ struct LauncherComposingTests {
   /// async：重读历史的 Task 要主线程空下来才跑（同步测试里转 run loop 跑不到它）
   @Test func keepsComposingWhilePanelUpdates() async throws {
     let apps = ["/System/Applications/Calculator.app", "/System/Applications/Notes.app"]
-      .map(AppCatalog.item(path:))
+      .map { AppCatalog.item(path: $0) }
     let model = LauncherModel(usage: try LauncherUsage(db: Database(path: ":memory:")), apps: apps)
     var reloads = 0
     var pages: [LauncherItem] = []
