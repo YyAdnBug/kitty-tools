@@ -139,10 +139,11 @@ final class ClipboardWatcher {
           && ClipboardFilter.looksSensitive(text))
       else { return }
       item.text = text
-      // 格式总是记下来（体检 A5）：粘贴时用不用由「默认粘贴为纯文本」和 ⌥↩ 决定
+      // 格式总是记下来（体检 A5）：粘贴时用不用由「默认粘贴为纯文本」和 ⌥↩ 决定。带图的 RTFD 优先（X3：只存 RTF 的话
+      // 图文混排粘回去图就没了），超过上限（图大）退回 RTF / HTML，同以前
       var rich: Data?
       for (type, richType) in [
-        (NSPasteboard.PasteboardType.rtf, ClipItem.RichType.rtf), (.html, .html),
+        (NSPasteboard.PasteboardType.rtfd, ClipItem.RichType.rtfd), (.rtf, .rtf), (.html, .html),
       ] {
         if let data = pasteboard.data(forType: type), data.count <= Self.maxRichBytes {
           (item.richType, rich) = (richType, data)

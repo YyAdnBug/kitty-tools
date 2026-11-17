@@ -284,6 +284,13 @@ struct SnapshotProbeTests {
       ("dialog-edit", { m in m.dialog = .edit(code.id) }),
       ("dialog-new-snippet", { m in m.dialog = .newSnippet }),
       ("dialog-new-group", { m in m.dialog = .newGroup([link.id]) }),
+      // 片段填空（X20）：第 2 / 2 个空，下面有「上一个」；只有一个空时没有 1/1
+      (
+        "dialog-fill",
+        { m in
+          m.dialog = .fill(.init(items: [], labels: ["称呼", "单号"], copies: false, plainText: nil))
+        }
+      ),
       // ⌘P / 底栏图钉：底栏就地提示（体检 A9）
       ("toast-pinned", { m in m.toast = .message("已固定") }),
       // 含图片的多选 ⌘C 只写了第 1 条：警告，不带绿色对勾（体检 B3）

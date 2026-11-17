@@ -60,8 +60,18 @@ import Observation
     case edit(UUID)
     case newSnippet, manageGroups
     case newGroup(Set<UUID>)
+    /// 片段里有 {input}：粘贴 / 复制前一个个填（X20）
+    case fill(Fill)
 
     var id: String { String(describing: self) }
+  }
+
+  /// 填完空要接着做的那次粘贴 / 复制：条目（按当时的顺序）、要问的空、是不是复制、粘贴方式
+  struct Fill {
+    var items: [UUID]
+    var labels: [String]
+    var copies: Bool
+    var plainText: Bool?
   }
 
   /// 一次粘贴 / 复制写进剪贴板的东西：writes 每项是一次写入（逐条粘贴时有多项）
@@ -702,13 +712,15 @@ import Observation
 
   /// 全是文本：按复制先后换行合成一段（片段展开占位符）粘贴，并记成一条新历史；全是文件：一次写进全部文件、一次 ⌘V；
   /// 其余（含图片，或文本和文件混着）：按复制先后逐条粘贴，文本之间补换行，间隔 250ms（目标 App 要时间处理上一次 ⌘V）
-  func paste(_ items: [ClipItem], plainText: Bool? = nil) {
+  func paste(_ items: [ClipItem], plainText: Bool? = nil, inputs: [String: String]? = nil) {
     guard !items.isEmpty else { return }
     if let gone = unavailable(items) {
       island?.show("没能粘贴", detail: gone, tone: .error)
       return
     }
-    let payload = payload(for: items, plainText: plainText ?? pastesPlainByDefault)
+    if inputs == nil, asksInputs(items, copies: false, plainText: plainText) { return }
+    let payload = payload(
+      for: items, plainText: plainText ?? pastesPlainByDefault, inputs: inputs ?? [:])
     pendingCopy = nil  // 粘贴的那条才是剪贴板里的
     // 第 8 批：呼出面板前焦点在自家便签里（正文 / 标题框）→ 收起面板、把 key 还给它、直接调它的 paste(_:)。
     // 这条路不发合成按键、不要辅助功能授权（放在授权检查前面）
@@ -754,7 +766,7 @@ import Observation
   /// 只写剪贴板，不关面板；列表这时不动，收起面板时再把它挪到最前（合成的记一条新历史，体检 A8），
   /// 下次打开第一条就是剪贴板里的。含图片的混合多选只能写第 1 条，如实说。底栏提示；放大预览开着时底栏被它盖住，改走刘海。
   /// 右键菜单、⌘Y 页脚的「复制」传被点的那一条，不管勾选了什么（体检 B9）
-  func copy(_ items: [ClipItem], plainText: Bool = false) {
+  func copy(_ items: [ClipItem], plainText: Bool = false, inputs: [String: String]? = nil) {
     guard !items.isEmpty else { return }
     let partial = PasteMode(items) == .sequential
     let written = partial ? [items[0]] : items
@@ -762,7 +774,8 @@ import Observation
       island?.show("没能复制", detail: gone, tone: .error)
       return
     }
-    let payload = payload(for: written, plainText: plainText)
+    if inputs == nil, asksInputs(written, copies: true, plainText: plainText) { return }
+    let payload = payload(for: written, plainText: plainText, inputs: inputs ?? [:])
     writeClipboard(payload.writes[0])
     pendingCopy = (payload.entry, clipboardChangeCount())
     let mode = PasteMode(items)
@@ -984,13 +997,38 @@ import Observation
     island.show(text, symbol: pinning ? "pin.fill" : "pin")
   }
 
-  /// 要写进剪贴板的内容（见 paste）。片段一律纯文本、展开占位符；{clipboard} 用调用时剪贴板里的那一份
-  func payload(for items: [ClipItem], plainText: Bool) -> Payload {
+  /// 片段里有 {input} 要填（X20）：开填空对话框、这次先不粘，填完由 finishFill 接着做；没有要填的返回 false
+  private func asksInputs(_ items: [ClipItem], copies: Bool, plainText: Bool?) -> Bool {
+    var seen = Set<String>()
+    let labels = items.filter(\.isSnippet).flatMap { Snippet.inputs(in: $0.text ?? "") }
+      .filter { seen.insert($0).inserted }
+    guard !labels.isEmpty else { return false }
+    dialog = .fill(
+      Fill(items: items.map(\.id), labels: labels, copies: copies, plainText: plainText))
+    noteActivity()
+    return true
+  }
+
+  /// 填空对话框填完：关对话框，拿填的字接着粘贴 / 复制（条目这期间被删了的跳过）
+  func finishFill(_ fill: Fill, values: [String: String]) {
+    dialog = nil
+    let items = fill.items.compactMap { id in store.items.first { $0.id == id } }
+    guard !items.isEmpty else { return }
+    if fill.copies {
+      copy(items, plainText: fill.plainText ?? false, inputs: values)
+    } else {
+      paste(items, plainText: fill.plainText, inputs: values)
+    }
+  }
+
+  /// 要写进剪贴板的内容（见 paste）。片段一律纯文本、展开占位符；{clipboard} 用调用时剪贴板里的那一份，{input} 用填的字
+  func payload(for items: [ClipItem], plainText: Bool, inputs: [String: String] = [:]) -> Payload {
     let clipboard = { NSPasteboard.general.string(forType: .string) }
     switch PasteMode(items) {
     case .merged:
       var merged = ClipItem(kind: .text)
-      merged.text = Self.merged(items, clipboard: clipboard(), history: historyText)
+      merged.text = Self.merged(
+        items, clipboard: clipboard(), history: historyText, inputs: inputs)
       return Payload(writes: [[plainItem(merged.text ?? "")]], entry: .new(merged))
     case .together:
       // 访达复制多个文件也是一次写进多个 file URL；同一个文件只写一次
@@ -1004,7 +1042,8 @@ import Observation
     let writes = items.enumerated().map { index, item in
       var write: [NSPasteboardItem]
       if item.isSnippet, let text = item.text {
-        let expanded = Snippet.expand(text, clipboard: clipboard, history: historyText)
+        let expanded = Snippet.expand(
+          text, clipboard: clipboard, history: historyText, inputs: inputs)
         caretMoves = items.count == 1 ? expanded.charactersAfterCursor : 0
         write = [plainItem(expanded.text)]
       } else if plainText, item.kind == .text {
@@ -1027,12 +1066,14 @@ import Observation
   /// 所有 {clipboard} 共用调用前读的同一份
   static func merged(
     _ items: [ClipItem], clipboard: String?, history: (Int) -> String? = { _ in nil },
-    now: Date = .now
+    inputs: [String: String] = [:], now: Date = .now
   ) -> String {
     items.sorted { $0.copiedAt < $1.copiedAt }.compactMap { item in
       guard let text = item.text else { return nil }
       guard item.isSnippet else { return text }
-      return Snippet.expand(text, clipboard: { clipboard }, history: history, now: now).text
+      return Snippet.expand(
+        text, clipboard: { clipboard }, history: history, inputs: inputs, now: now
+      ).text
     }
     .joined(separator: "\n")
   }

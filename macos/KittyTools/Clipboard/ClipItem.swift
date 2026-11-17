@@ -38,8 +38,10 @@ struct ClipItem: Identifiable, Hashable, Sendable {
     var sha256: String
   }
 
+  /// rtfd：图文混排（备忘录、邮件、文本编辑里连图带字复制，第四轮体检 X3）——带图的那份。旧版本读到不认识的 rtfd
+  /// 当没有格式（只粘纯文本）
   enum RichType: String, Sendable {
-    case rtf, html
+    case rtf, html, rtfd
   }
 
   /// 用户显式留下的条目（收藏 / 片段；收藏夹里的都是收藏）：保留天数、图片占用、退出与锁屏清空都不动它们。

@@ -117,6 +117,22 @@ struct ClipboardStoreTests {
     #expect(reloaded.pasteboardItems(for: reloaded.items[1]).count == 2)
   }
 
+  /// X3：图文混排存的是 RTFD，粘回去 RTFD 原样 + 转出来的 RTF（只认 RTF 的 App 也带格式）
+  @Test func rtfdPastesBackWithRTF() throws {
+    let (store, _) = try makeStore()
+    let styled = NSAttributedString(
+      string: "图文", attributes: [.font: NSFont.boldSystemFont(ofSize: 20)])
+    let rtfd = try #require(
+      styled.rtfd(from: NSRange(location: 0, length: styled.length), documentAttributes: [:]))
+    var item = text("图文")
+    item.richType = .rtfd
+    store.record(item, rich: rtfd)
+    let written = try #require(store.pasteboardItems(for: store.items[0]).first)
+    #expect(written.data(forType: .rtfd) == rtfd)
+    let rtf = try #require(written.data(forType: .rtf))
+    #expect(NSAttributedString(rtf: rtf, documentAttributes: nil)?.string == "图文")
+  }
+
   @Test func imageStoreEncodesTIFFAndHashesPNG() async throws {
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     let images = ImageStore(directory: directory)

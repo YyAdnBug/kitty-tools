@@ -4206,24 +4206,6 @@
         }
       }
     },
-    "recovery.fileDate" : {
-      "comment" : "自动备份文件名里日期那一段（文件名本身是固定的中文）",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "YYYY-MM-DD"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "日期"
-          }
-        }
-      }
-    },
     "reminders.a11yBoard" : {
       "comment" : "全屏提醒那块底板的读屏名字：一条提醒（单数，不是页名「提醒」）",
       "extractionState" : "extracted_with_value",
@@ -6125,6 +6107,16 @@
         }
       }
     },
+    "上一个" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Previous"
+          }
+        }
+      }
+    },
     "上一张" : {
       "localizations" : {
         "en" : {
@@ -6293,6 +6285,16 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "下一个" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Next"
           }
         }
       }
@@ -11028,12 +11030,12 @@
         }
       }
     },
-    "占位符：{date} 日期、{time} 时间、{datetime} 日期和时间、{weekday} 星期几、{uuid} 随机编号、{clipboard} 当前剪贴板、{clipboard:1}–{clipboard:9} 历史第 N 条文字（不算片段）、{cursor} 粘贴后光标停在这里" : {
+    "占位符：{date} 日期、{time} 时间、{datetime} 日期和时间、{weekday} 星期几（能加偏移和格式：{date+1d}、{date-1w:yyyy/MM/dd}，单位 m h d w M y）、{uuid} 随机编号、{clipboard} 当前剪贴板、{clipboard:1}–{clipboard:9} 历史第 N 条文字（不算片段）、{input:称呼} 粘贴前填空、{cursor} 粘贴后光标停在这里" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Placeholders: {date} date, {time} time, {datetime} date and time, {weekday} day of the week, {uuid} random ID, {clipboard} current clipboard, {clipboard:1}–{clipboard:9} Nth text item in history (not counting snippets), {cursor} where the cursor lands after pasting"
+            "value" : "Placeholders: {date} date, {time} time, {datetime} date and time, {weekday} day of the week (add an offset or a format: {date+1d}, {date-1w:yyyy/MM/dd}; units m h d w M y), {uuid} random ID, {clipboard} current clipboard, {clipboard:1}–{clipboard:9} Nth text item in history (not counting snippets), {input:Name} fill in before pasting, {cursor} where the cursor lands after pasting"
           }
         }
       }
@@ -14308,6 +14310,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Only needed with a key, e.g. eastasia"
+          }
+        }
+      }
+    },
+    "填写「%@」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fill In “%@”"
+          }
+        }
+      }
+    },
+    "填写片段里的空" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fill In the Snippet"
           }
         }
       }
@@ -34929,6 +34951,16 @@
         }
       }
     },
+    "要填进去的字" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Text to fill in"
+          }
+        }
+      }
+    },
     "要带 ⌘、⌃ 或 ⌥（F1–F20 可以单独用），或者连按两下一个修饰键" : {
       "localizations" : {
         "en" : {
@@ -38439,12 +38471,12 @@
         }
       }
     },
-    "选了重新开始，片段、文字收藏和生词本之后还能导回来：到 设置 › 通用 点「导入…」，选上面那个文件夹的 backups 里最新的「%@」。" : {
+    "选了重新开始，片段、文字收藏和生词本之后还能导回来：每天的自动备份会留一份在原处，到 设置 › 通用 点「从备份恢复」选最新的一份。" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "If you start over, you can bring snippets, text favorites, and the Word List back later: in Settings › General, click “Import…” and choose the newest “%@” in the backups folder inside that folder."
+            "value" : "If you start over, you can bring snippets, text favorites, and the Word List back later: the daily automatic backups stay in place, so in Settings › General, click “Restore from Backup” and choose the newest one."
           }
         }
       }

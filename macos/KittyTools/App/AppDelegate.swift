@@ -1322,8 +1322,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       builtClipboardPanel?.hide()
       quickLookPanel.panel?.hide()
       // 菜单栏的「暂停记录」跟着剪贴板藏起来了：恢复，免得复制即译也一直被它挡着
-      watcher.isUserPaused = false
-      clipboardModel.isRecordingPaused = false
+      setRecordingPaused(false)
     }
     if turnedOff.contains(.launcher) {
       builtLauncherPanel?.hide()
@@ -2045,12 +2044,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     .init("勾选同步", opens: true) { [unowned self] in showSettings(page: .general) }
   }
 
+  /// 暂停记录剪贴板的三处一起设：采集、面板底栏、菜单栏图标的暂停角标（X13）
+  private func setRecordingPaused(_ paused: Bool) {
+    watcher.isUserPaused = paused
+    clipboardModel.isRecordingPaused = paused
+    statusItem?.clipboardPaused = paused
+  }
+
   /// 暂停 / 恢复记录剪贴板（菜单栏、启动器，D4；主界面 2026-11-13 起不放开关）：不存盘，重启 App 自动恢复记录（免得忘了关）；
   /// 菜单一关就看不出开没开，用刘海说（剪贴板面板底栏也写着「已暂停记录」）
   private func togglePauseRecording() {
     let paused = watcher.isUserPaused
-    watcher.isUserPaused = !paused
-    clipboardModel.isRecordingPaused = !paused
+    setRecordingPaused(!paused)
     island.show(
       paused ? "已恢复记录剪贴板" : "已暂停记录剪贴板",
       detail: paused ? nil : "复制的内容不进历史，再点一次恢复", tone: .info,

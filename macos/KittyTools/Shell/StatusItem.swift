@@ -15,6 +15,7 @@
 // 彩色（完整的 App 图标）或隐藏（第 9 批 M1 M2），偏好一变立刻跟着变。隐藏只是 isVisible = false，动效照常调、看不见而已；
 // 隐藏后靠再打开一次本 App 回到主界面（AppDelegate.applicationShouldHandleReopen，设置从那里一键过去），退出在启动器里（MenuExtra.quit）。
 // 有新版本时图标右上角一个强调色小圆点（updateVersion，2026-10-06）：常驻到更新为止，点开菜单最上面就是「更新到 x…」。
+// 暂停记录剪贴板时右下角一个灰色的暂停角标（clipboardPaused，第四轮体检 X13）：暂停只在这次运行里有效，很容易忘了。
 
 import AppKit
 import Carbon.HIToolbox
@@ -34,9 +35,14 @@ final class StatusItem: NSObject, NSMenuDelegate {
   /// 按钮上现在是哪种图（nil = 还没设）
   private var style: IconStyle?
   private let badge = BadgeDot()
+  private let pauseBadge = BadgeDot(paused: true)
   /// 有新版本（Updater.available 的版本号，AppDelegate 给）：图标右上角出小圆点、悬停提示写版本号；nil = 没有
   var updateVersion: String? {
     didSet { if updateVersion != oldValue { applyBadge() } }
+  }
+  /// 暂停记录剪贴板（AppDelegate 跟 ClipboardWatcher.isUserPaused 一起设）：右下角灰色暂停角标、悬停提示说一声
+  var clipboardPaused = false {
+    didSet { if clipboardPaused != oldValue { applyBadge() } }
   }
 
   /// 图标样式（设置 › 通用「图标样式」）：单色 = 角色剪影模板图（跟着菜单栏深浅反色）；彩色 = 完整的 App 图标
@@ -116,15 +122,26 @@ final class StatusItem: NSObject, NSMenuDelegate {
     applyBadge()
   }
 
-  /// 圆点贴在图标的右上角（两种图标大小不一样，换样式时跟着挪）。不做出场动画：后台查到新版本的那一刻没人在看
+  /// 圆点贴在图标的右上角、暂停角标贴在右下角（两种图标大小不一样，换样式时跟着挪）。不做出场动画：后台查到新版本的那一刻没人在看
   private func applyBadge() {
     guard let button = item.button else { return }
-    button.toolTip = updateVersion.map { String(localized: "有新版本 \($0)") }
-    guard updateVersion != nil, let icon = button.image?.size else {
-      return badge.removeFromSuperview()
+    let tips = [
+      updateVersion.map { String(localized: "有新版本 \($0)") },
+      clipboardPaused ? String(localized: "已暂停记录剪贴板") : nil,
+    ].compactMap(\.self)
+    button.toolTip = tips.isEmpty ? nil : tips.joined(separator: "\n")
+    let icon = button.image?.size
+    for (view, shown, frame) in [
+      (badge, updateVersion != nil, Self.badgeFrame),
+      (pauseBadge, clipboardPaused, Self.pauseFrame),
+    ] {
+      guard shown, let icon else {
+        view.removeFromSuperview()
+        continue
+      }
+      view.frame = frame(icon, button.bounds, button.isFlipped)
+      if view.superview == nil { button.addSubview(view) }
     }
-    badge.frame = Self.badgeFrame(icon: icon, in: button.bounds, flipped: button.isFlipped)
-    if badge.superview == nil { button.addSubview(badge) }
   }
 
   /// 圆点的位置（纯函数，单测）：直径 6，圆心压在居中的图标的右上角往里 1 pt，不出按钮
@@ -134,6 +151,15 @@ final class StatusItem: NSObject, NSMenuDelegate {
     let top = max(bounds.midY - icon.height / 2 - side / 2 + 1, bounds.minY)
     let bottom = min(bounds.midY + icon.height / 2 - side / 2 - 1, bounds.maxY - side)
     return NSRect(x: x, y: flipped ? top : bottom, width: side, height: side)
+  }
+
+  /// 暂停角标的位置（纯函数，单测）：直径 9，圆心压在图标的右下角往里 1 pt，不出按钮
+  static func pauseFrame(icon: NSSize, in bounds: NSRect, flipped: Bool) -> NSRect {
+    let side: CGFloat = 9
+    let x = min(bounds.midX + icon.width / 2 - side / 2 - 1, bounds.maxX - side)
+    let top = max(bounds.midY - icon.height / 2 - side / 2 + 1, bounds.minY)
+    let bottom = min(bounds.midY + icon.height / 2 - side / 2 - 1, bounds.maxY - side)
+    return NSRect(x: x, y: flipped ? bottom : top, width: side, height: side)
   }
 
   /// 彩色图标 = 完整的 App 图标（程序坞、访达里那张）。不交给 NSImage 按菜单栏尺寸自己挑表示：16 pt 会挑到 16 / 32 px
@@ -334,16 +360,33 @@ final class StatusItem: NSObject, NSMenuDelegate {
 
 /// 菜单栏图标上「有新版本」的小圆点：强调色实心（现在该操作的东西），在 draw 里取色，跟着菜单栏的深浅和设置里的强调色走
 private final class BadgeDot: NSView {
-  override init(frame: NSRect) {
-    super.init(frame: frame)
+  /// 灰底白色两竖的暂停角标（X13）；false = 强调色小圆点（有新版本）
+  private let paused: Bool
+
+  init(paused: Bool = false) {
+    self.paused = paused
+    super.init(frame: .zero)
     wantsLayer = true
   }
 
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
   override func draw(_ dirtyRect: NSRect) {
-    NSColor(Style.brand).setFill()
+    guard paused else {
+      NSColor(Style.brand).setFill()
+      return NSBezierPath(ovalIn: bounds).fill()
+    }
+    NSColor.systemGray.setFill()
     NSBezierPath(ovalIn: bounds).fill()
+    NSColor.white.setFill()
+    let bar = NSSize(width: max(1, bounds.width * 0.16), height: bounds.height * 0.46)
+    for offset in [-0.13, 0.13] {
+      NSBezierPath(
+        rect: NSRect(
+          x: bounds.midX + bounds.width * offset - bar.width / 2, y: bounds.midY - bar.height / 2,
+          width: bar.width, height: bar.height)
+      ).fill()
+    }
   }
 
   /// 点在圆点上照常点到图标（开菜单）

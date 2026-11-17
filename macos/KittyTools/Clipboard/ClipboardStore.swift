@@ -537,7 +537,14 @@ import Observation
       let pasteboardItem = NSPasteboardItem()
       pasteboardItem.setString(item.text ?? "", forType: .string)
       if let richType = item.richType, let rich = richData(for: item.id) {
-        pasteboardItem.setData(rich, forType: richType == .rtf ? .rtf : .html)
+        switch richType {
+        case .rtf: pasteboardItem.setData(rich, forType: .rtf)
+        case .html: pasteboardItem.setData(rich, forType: .html)
+        case .rtfd:
+          // 带图的一份 + 从它转出的 RTF：只认 RTF 的 App 也能带格式粘（图丢）
+          pasteboardItem.setData(rich, forType: .rtfd)
+          if let rtf = Self.rtf(fromRTFD: rich) { pasteboardItem.setData(rtf, forType: .rtf) }
+        }
       }
       return [pasteboardItem]
     case .image:
@@ -548,6 +555,12 @@ import Observation
     case .file:
       return Paster.items(files: (item.filePaths ?? []).map { URL(filePath: $0) })
     }
+  }
+
+  /// RTFD 转成不带图的 RTF（X3）；解不出来是 nil
+  static func rtf(fromRTFD data: Data) -> Data? {
+    guard let text = NSAttributedString(rtfd: data, documentAttributes: nil) else { return nil }
+    return text.rtf(from: NSRange(location: 0, length: text.length), documentAttributes: [:])
   }
 
   /// 带格式文本的原始数据（只在粘贴时读）
