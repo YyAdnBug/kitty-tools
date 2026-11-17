@@ -47,8 +47,10 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private var translating = false
   /// 一键打码正在识字（再点「自动」不重复跑）
   private var redacting = false
-  /// 托盘上点了吸管：下一下单击取放大镜中心的颜色（拍板 O10）；Esc 取消
-  private var pickingColor = false
+  /// 托盘上点了吸管：下一下单击取放大镜中心的颜色（拍板 O10）；Esc 取消。设置里不显示色值时，取色期间色值卡照样出来
+  private var pickingColor = false {
+    didSet { if pickingColor != oldValue { layOutMagnifier() } }
+  }
   /// 正在跑的就地翻译（Esc / 换屏框选时取消：不然剩下的段会继续打翻译服务）
   private var translateTask: Task<Void, Never>?
   /// 就地翻译之前的冻结帧，和译文贴在哪个选区上（2026-11-06 用户：翻完再框别处，上次的译文还留在「屏幕」上，像是
@@ -229,6 +231,11 @@ final class SelectionView: NSView, NSTextViewDelegate {
   private var rebindTipGeneration = 0
   /// 框选时保持屏幕原色（设置 › 截图，Prefs.screenshotKeepsColors）：每次框选新建遮罩时读一次（单测、截图自检直接给）
   private let keepsColors: Bool
+  /// 刚开始框选时顶部那条 3 秒的提示（设置 › 截图「框选时显示操作提示」，Prefs.screenshotShowsHint）；关着时
+  /// flashHint 那种临时说一句照出。读法同 keepsColors
+  private let showsHint: Bool
+  /// 框选时的放大镜（设置 › 截图，Prefs.Loupe）：放大镜和色值 / 只显示放大镜 / 不显示。读法同 keepsColors
+  private let loupeStyle: Prefs.Loupe
 
   /// 遮罩压多暗（纯函数，配单测）：待选整屏 0.18，有洞（选区、悬停的窗口）时洞外 0.45；保持原色时不压
   static func shadeAlpha(hasHole: Bool, keepsColors: Bool) -> CGFloat {
@@ -257,13 +264,15 @@ final class SelectionView: NSView, NSTextViewDelegate {
 
   init(
     image: CGImage, windows: [CGRect] = [], owners: [[pid_t]] = [], session: SelectionSession,
-    keepsColors keeps: Bool? = nil
+    keepsColors keeps: Bool? = nil, showsHint shows: Bool? = nil, loupe: Prefs.Loupe? = nil
   ) {
     self.image = image
     self.windows = windows
     self.owners = owners
     self.session = session
     keepsColors = keeps ?? UserDefaults.standard.bool(forKey: Prefs.screenshotKeepsColors)
+    showsHint = shows ?? UserDefaults.standard.bool(forKey: Prefs.screenshotShowsHint)
+    loupeStyle = loupe ?? Prefs.Loupe.current()
     hintParts = Self.hintParts(for: session)
     super.init(frame: .zero)
     wantsLayer = true
@@ -361,6 +370,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
     sizeField.onRatio = { [unowned self] in toggleRatioMenu() }
     addSubview(sizeField)
     hint.setParts(hintParts)
+    // 不显示操作提示：一开始就是透明的（不设 isHidden，同 dismissHint）；flashHint 照样浮上来再淡出
+    if !showsHint { hint.layer.opacity = 0 }
     if annotates { makeBars() } else if adjusts { makeRecordBar() }
     updateScale()
   }
@@ -401,8 +412,14 @@ final class SelectionView: NSView, NSTextViewDelegate {
   /// 放大镜：15 × 15 像素、每格 9 pt（135 pt，圆角 10，2 pt 白环 + 阴影），0.5 pt 像素网格，中心行列粉色十字条带，
   /// 放大镜那块格子有多大（交互测试按它判断有没有带色值卡）
   static var loupeSide: CGFloat { CGFloat(loupePixels) * loupeCell }
-  /// 整块放大镜多高：截图时是格子 + 6 + 信息卡，翻译 / 识字只有格子
+  /// 整块放大镜多高：截图时是格子 + 6 + 信息卡，翻译 / 识字只有格子（设置里不显示色值时截图也只有格子）
   var magnifierHeight: CGFloat { magnifier.bounds.height }
+  /// 顶部提示现在看不看得见（交互测试读它）
+  var hintShowing: Bool { !hint.layer.isHidden && hint.layer.opacity > 0 }
+  /// 按住 ⌘ 的十字准线画着没有（交互测试读它）
+  var showsCrosshair: Bool { crossLight.path != nil }
+  /// 放大镜下面贴不贴色值卡：截图时按设置（放大镜和色值）；吸管取色时一定贴。录屏、截图翻译 / 识字没有
+  private var showsColorCard: Bool { annotates && (loupeStyle == .full || pickingColor) }
 
   /// 中心格按亮度描黑或白；截图时下贴一张 40 pt 的 HUD 信息卡（色块 + HEX + 坐标 +「C」键帽）。
   /// 截图翻译 / 识字只有放大镜本身、没有那张卡（2026-10-26 用户问「翻译识字时有必要出现吗」）：
@@ -412,8 +429,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
     let side = CGFloat(Self.loupePixels) * Self.loupeCell
     let cell = Self.loupeCell
     let middle = CGFloat(Self.loupePixels / 2) * cell
-    let loupeFrame = CGRect(
-      x: 0, y: annotates ? Self.infoHeight + 6 : 0, width: side, height: side)
+    let loupeFrame = CGRect(x: 0, y: 0, width: side, height: side)
     loupe.frame = loupeFrame
     loupe.magnificationFilter = .nearest
     loupe.cornerRadius = Style.Radius.card
@@ -485,11 +501,25 @@ final class SelectionView: NSView, NSTextViewDelegate {
         .font: Style.HUD.keyFont, .foregroundColor: Style.HUD.text, .baselineOffset: -2,
       ])
     for layer in [infoSwatch, infoText, infoKey] { infoCard.addSublayer(layer) }
-    magnifier.bounds = CGRect(x: 0, y: 0, width: side, height: loupeFrame.maxY)
     magnifier.anchorPoint = CGPoint(x: 0.5, y: 0.5)
     for layer in annotates ? [loupeShadow, loupe, infoCard] : [loupeShadow, loupe] {
       magnifier.addSublayer(layer)
     }
+    layOutMagnifier()
+  }
+
+  /// 按贴不贴色值卡摆格子和整块的高（showsColorCard：吸管取色开始 / 结束时会变）
+  private func layOutMagnifier() {
+    let side = Self.loupeSide
+    let card = showsColorCard
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    loupe.frame.origin.y = card ? Self.infoHeight + 6 : 0
+    loupeShadow.frame = loupe.frame
+    infoCard.isHidden = !card
+    magnifier.bounds = CGRect(x: 0, y: 0, width: side, height: loupe.frame.maxY)
+    if card, let sampled { writeInfo(sampled) }  // 卡藏着时没写字
+    CATransaction.commit()
   }
 
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -649,7 +679,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
     fade.toValue = 1
     fade.duration = 0.15
     shade.add(fade, forKey: "enter")
-    showHint(for: 3)
+    if showsHint { showHint(for: 3) }
   }
 
   /// 提示从下方 8 pt 浮上来（settle）+ fadeIn 淡入，seconds 秒后 fadeOut 淡出（再显示一次时旧的计时作废）。
@@ -836,11 +866,11 @@ final class SelectionView: NSView, NSTextViewDelegate {
     if measured.width >= size.width + 16, measured.height >= size.height + 16 {
       candidates.append(CGPoint(x: measured.minX + 8, y: measured.maxY - 8 - size.height))
     }
-    let showsHint = !hint.layer.isHidden && hint.layer.opacity > 0
+    let hintShowing = hintShowing
     return candidates.lazy.map { CGPoint(x: $0.x.rounded(), y: $0.y.rounded()) }.first {
       let frame = CGRect(origin: $0, size: size)
       return bounds.contains(frame) && !self.isOverBars(frame)
-        && !(showsHint && self.hint.frame.intersects(frame))
+        && !(hintShowing && self.hint.frame.intersects(frame))
     }
   }
 
@@ -1032,7 +1062,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
 
   /// 十字准线跟放大镜同时出现（待选、拖动框选、拖手柄），只在按住 ⌘ 时；对齐到整点，白线盖住光标所在的那一点
   private func updateCrosshair() {
-    guard let mouse, modifiers.contains(.command), showsMagnifier else {
+    guard let mouse, modifiers.contains(.command), magnifierMoment else {
       crossLight.path = nil
       crossDark.path = nil
       return
@@ -1112,23 +1142,28 @@ final class SelectionView: NSView, NSTextViewDelegate {
       let luminance =
         0.299 * color.redComponent + 0.587 * color.greenComponent + 0.114 * color.blueComponent
       loupeCenter.strokeColor = (luminance > 0.6 ? NSColor.black : NSColor.white).cgColor
-      guard annotates else { return placeMagnifier() }  // 翻译 / 识字没有那张信息卡
-      let info = NSMutableAttributedString(
-        string: sample.hex,
-        attributes: [
-          .font: NSFont.monospacedSystemFont(ofSize: 13, weight: .semibold),
-          .foregroundColor: Style.HUD.text,
-        ])
-      info.append(
-        NSAttributedString(
-          string: "\n\(x), \(y)",
-          attributes: [
-            .font: NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular),
-            .foregroundColor: Style.HUD.secondaryText,
-          ]))
-      infoText.string = info
+      // 翻译 / 识字、设置里不显示色值时没有那张信息卡
+      if showsColorCard { writeInfo((x, y, sample.hex)) }
     }
     placeMagnifier()
+  }
+
+  /// 信息卡上的 HEX 和坐标
+  private func writeInfo(_ sample: (x: Int, y: Int, hex: String)) {
+    let info = NSMutableAttributedString(
+      string: sample.hex,
+      attributes: [
+        .font: NSFont.monospacedSystemFont(ofSize: 13, weight: .semibold),
+        .foregroundColor: Style.HUD.text,
+      ])
+    info.append(
+      NSAttributedString(
+        string: "\n\(sample.x), \(sample.y)",
+        attributes: [
+          .font: NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular),
+          .foregroundColor: Style.HUD.secondaryText,
+        ]))
+    infoText.string = info
   }
 
   /// 放在光标右下，靠边时翻到另一侧；平时死贴光标，只有翻边那一下滑过去（glide）
@@ -1177,8 +1212,12 @@ final class SelectionView: NSView, NSTextViewDelegate {
       blue: CGFloat(value & 0xFF) / 255, alpha: 1)
   }
 
-  /// 待选、拖动框选、拖手柄时显示放大镜（截图翻译 / 识字也是）；平移、标注、鼠标在工具栏上时不显示。交互测试读它
-  var showsMagnifier: Bool {
+  /// 待选、拖动框选、拖手柄时显示放大镜（截图翻译 / 识字也是）；平移、标注、鼠标在工具栏上时不显示；设置里选了
+  /// 「不显示」时只有吸管取色时显示。交互测试读它
+  var showsMagnifier: Bool { magnifierMoment && (loupeStyle != .off || pickingColor) }
+
+  /// 这一刻该不该有放大镜（不看设置）：按住 ⌘ 的十字准线跟它走，放大镜关了照样有
+  private var magnifierMoment: Bool {
     guard let mouse, !isOverBars(mouse) else { return false }
     switch drag {
     case .move?, .annotate?, .moveAnnotation?, .resizeAnnotation?: return false
@@ -2348,6 +2387,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
     styleBar?.removeFromSuperview()
     toolbar = nil
     styleBar = nil
+    pickingColor = false  // 托盘没了，吸管也不取了
+    layOutMagnifier()  // 录屏没有色值卡
     hintParts = Self.hintParts(for: session)
     CATransaction.begin()
     CATransaction.setDisableActions(true)
@@ -3007,7 +3048,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
         pickColor()
         return true
       }
-      if showsMagnifier, let sampled { session.finish(.color(sampled.hex)) }
+      // 设置里不显示色值时不取：看不见要拷的是什么，误按一下这次截图就结束了（录屏没有色值卡，照旧按设置）
+      if showsMagnifier, loupeStyle == .full, let sampled { session.finish(.color(sampled.hex)) }
       return true
     case .record where !Feature.record.isOn:
       return false

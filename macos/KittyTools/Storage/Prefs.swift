@@ -173,6 +173,12 @@ enum Prefs {
   /// 框选时保持屏幕原色（2026-11-06 用户：截图时像蒙了一层粉色滤镜，取色不友好）：打开后不压暗、悬停的窗口只描边不染色、
   /// 放大镜的十字带只描边。默认关（照 Whisker 压暗 + 粉色高亮）；截图、截图翻译 / 识字、录屏的框选都管
   static let screenshotKeepsColors = "screenshotKeepsColors"
+  /// 框选时显示操作提示（2026-11-17 拍板 A1–A2，默认开）：刚开始框选时屏幕上方那条 3 秒的提示（拖动框选 · 单击选中 · …）。
+  /// 关掉只关这一条：操作被挡下时临时说的那一句（flashHint）照出。截图、截图翻译 / 识字、录屏的框选都管
+  static let screenshotShowsHint = "screenshotShowsHint"
+  /// 框选时的放大镜（2026-11-17 拍板 B1–B3，Loupe 的 rawValue）：full 放大镜和色值（默认）/ loupe 只显示放大镜 / off 不显示。
+  /// 读它用 Loupe.current
+  static let screenshotLoupe = "screenshotLoupe"
   /// 截图 / 录屏框选时悬停识别窗口里的元素（侧栏、列表、按钮，2026-11-08；拍板 D1 是默认开，同日用户改成默认关）：要辅助功能授权，
   /// 没授权时照旧只认窗口。关掉 = 只认窗口（原来的样子）。截图翻译 / 识字没有悬停，不管它
   static let screenshotFindsElements = "screenshotFindsElements"
@@ -573,6 +579,8 @@ enum Prefs {
       screenshotCopyAs: "image",
       scrollCaptureSpeed: ScrollSpeed.normal.rawValue,
       screenshotKeepsColors: false,
+      screenshotShowsHint: true,
+      screenshotLoupe: Loupe.full.rawValue,
       screenshotFindsElements: false,
       screenshotFindsWebElements: false,
       shotHistory: true,
@@ -662,6 +670,27 @@ enum Prefs {
     static func current(_ defaults: UserDefaults = .standard) -> ShotPlacement {
       defaults.string(forKey: Prefs.screenshotPlacement).flatMap(ShotPlacement.init(rawValue:))
         ?? .corner
+    }
+  }
+
+  /// 框选时的放大镜（screenshotLoupe）：格子和下面那张色值卡（色块 + HEX + 坐标 +「C」）分开开关。色值不显示时 C 不取色
+  /// （看不见要拷的是什么，误按一下这次截图就结束了），标注托盘的吸管照常：点了吸管放大镜和色值照常出来
+  enum Loupe: String, CaseIterable {
+    case full, loupe, off
+
+    var title: String {
+      switch self {
+      case .full: String(localized: "放大镜和色值")
+      case .loupe: String(localized: "只显示放大镜")
+      case .off:
+        String(
+          localized: "shot.loupe.off", defaultValue: "不显示", comment: "设置 › 截图「框选时的放大镜」的一项：不显示放大镜")
+      }
+    }
+
+    /// 偏好里存的（认不出来按默认的放大镜和色值）
+    static func current(_ defaults: UserDefaults = .standard) -> Loupe {
+      defaults.string(forKey: Prefs.screenshotLoupe).flatMap(Loupe.init(rawValue:)) ?? .full
     }
   }
 

@@ -4572,6 +4572,24 @@
         }
       }
     },
+    "shot.loupe.off" : {
+      "comment" : "设置 › 截图「框选时的放大镜」的一项：不显示放大镜",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Off"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "不显示"
+          }
+        }
+      }
+    },
     "shot.pin.name" : {
       "comment" : "名词：钉在屏幕上的一张截图（旁白）",
       "extractionState" : "extracted_with_value",
@@ -9542,6 +9560,16 @@
         }
       }
     },
+    "刚开始框选时屏幕上方那一行：拖动框选、单击选中、双击直接拷贝这些，3 秒后自己淡出" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The line at the top of the screen when you start selecting, such as drag to select, click to select, and double-click to copy. It fades out after 3 seconds"
+          }
+        }
+      }
+    },
     "创建" : {
       "localizations" : {
         "en" : {
@@ -11678,6 +11706,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Shortcuts Only"
+          }
+        }
+      }
+    },
+    "只显示放大镜" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Magnifier only"
           }
         }
       }
@@ -23133,6 +23171,16 @@
         }
       }
     },
+    "放大镜和色值" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Magnifier and color value"
+          }
+        }
+      }
+    },
     "放大预览" : {
       "localizations" : {
         "en" : {
@@ -26133,6 +26181,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Keep screen colors while selecting"
+          }
+        }
+      }
+    },
+    "框选时显示操作提示" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show tips while selecting"
+          }
+        }
+      }
+    },
+    "框选时的放大镜" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Magnifier while selecting"
           }
         }
       }
@@ -33443,6 +33511,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Keep at least one status."
+          }
+        }
+      }
+    },
+    "色值在放大镜下面，按 C 拷贝。不显示色值时 C 不取色，标注里的吸管照常能取" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The color value appears below the magnifier; press C to copy it. When the color value is hidden, C doesn’t copy a color, but the eyedropper in annotations still works"
           }
         }
       }

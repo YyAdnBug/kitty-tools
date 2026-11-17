@@ -78,7 +78,8 @@ struct SelectionProbeTests {
     // ② 截图：待选（没有选区，鼠标在桌面上晃）
     for (what, mode) in [("截图", SelectionView.Mode.capture), ("截图翻译", .quick)] {
       let view = SelectionView(
-        image: image, session: SelectionSession(mode: mode, hint: "拖动框选"))
+        image: image, session: SelectionSession(mode: mode, hint: "拖动框选"), keepsColors: false,
+        showsHint: true, loupe: .full)
       let window = stage(view, size: size)
       defer { window.orderOut(nil) }
       report.append(

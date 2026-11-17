@@ -1,5 +1,6 @@
 // 设置 › 截图：⌘S 快速保存的位置（文件夹图标 + 访达里的名字，选过的能恢复默认，体检 A28；录屏、录音也存这里，
 // 「录制」页的「保存到」是同一行 SaveDirectoryRow）、截图拷贝为图像还是 PNG 文件（2026-11-06）、快门声（可试听）、截图后留不留常驻缩略图（体检 D18）、
+// 框选时显示操作提示、框选时的放大镜（2026-11-17：放大镜和色值 / 只显示放大镜 / 不显示）、
 // 框选后工具栏靠右还是居中（2026-11-05，录屏的录制条同一个设置）、框选时保持屏幕原色（2026-11-06，不压暗不染色）、
 // 悬停时识别窗口里的元素（2026-11-08，要辅助功能授权：没授权时开关下面出授权那一行；2026-11-15 加子开关「也认网页里的元素」）、识字是否把同一段里的换行接起来（开关旁边实时对照效果，
 // 体检 A32）。截图历史改短保留期 / 改小占用会删掉东西时先问
@@ -22,6 +23,8 @@ struct ScreenshotTab: View {
   @AppStorage(Prefs.screenshotToolbarAlign) private var toolbarAlign = "right"
   @AppStorage(Prefs.screenshotCopyAs) private var copyAs = "image"
   @AppStorage(Prefs.screenshotKeepsColors) private var keepsColors = false
+  @AppStorage(Prefs.screenshotShowsHint) private var showsHint = true
+  @AppStorage(Prefs.screenshotLoupe) private var loupe = Prefs.Loupe.full.rawValue
   @AppStorage(Prefs.screenshotFindsElements) private var findsElements = false
   @AppStorage(Prefs.screenshotFindsWebElements) private var findsWebElements = false
   /// 认元素要辅助功能授权（拍板 D2：没授权只在这里说，不弹框）；从系统设置授权回来、设置窗重新当 key 时刷新
@@ -101,6 +104,16 @@ struct ScreenshotTab: View {
           )
         }
         Section {
+          Toggle(isOn: $showsHint) {
+            Text("框选时显示操作提示")
+            Text("刚开始框选时屏幕上方那一行：拖动框选、单击选中、双击直接拷贝这些，3 秒后自己淡出")
+          }
+          Picker(selection: $loupe) {
+            ForEach(Prefs.Loupe.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
+          } label: {
+            Text("框选时的放大镜")
+            Text("色值在放大镜下面，按 C 拷贝。不显示色值时 C 不取色，标注里的吸管照常能取")
+          }
           Picker(selection: $toolbarAlign) {
             Text("靠右").tag("right")
             Text("居中").tag("center")

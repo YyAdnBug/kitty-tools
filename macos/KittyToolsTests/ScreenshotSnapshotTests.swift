@@ -70,6 +70,18 @@ struct ScreenshotSnapshotTests {
     try shoot(
       h.window, "idle-window-original-colors", crop: CGRect(x: 100, y: 340, width: 620, height: 460)
     )
+    // 设置 › 截图「框选时的放大镜」（2026-11-17）：只显示放大镜（没有色值卡）、不显示（按住 ⌘ 的十字准线照样有）；
+    // 「框选时显示操作提示」关着时顶上没有那条
+    h = Harness(windows: Self.windows, image: desktop, loupe: .loupe)
+    h.move(CGPoint(x: 330, y: 520))
+    try shoot(
+      h.window, "idle-window-loupe-only", crop: CGRect(x: 100, y: 340, width: 620, height: 460))
+    h = Harness(windows: Self.windows, image: desktop, showsHint: false, loupe: .off)
+    h.move(CGPoint(x: 330, y: 520))
+    h.modifiers(.command)
+    try shoot(
+      h.window, "idle-window-no-loupe-no-hint",
+      crop: CGRect(x: 0, y: 340, width: 1200, height: 460))
     h = Harness(windows: Self.windows, image: desktop, keepsColors: true)
     h.drag(CGPoint(x: 300.3, y: 260.7), CGPoint(x: 800.4, y: 560.2))
     try shoot(

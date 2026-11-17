@@ -596,7 +596,7 @@ struct SnapshotProbeTests {
         size: NSSize(width: 780, height: 600), dark: dark,
         to: "\(out)/settings-about-update-\(name)\(dark ? "-dark" : "").png")
     }
-    // 设置 › 截图选过文件夹（体检 A28）：文件夹图标 + 访达里的名字 +「恢复默认」；常驻缩略图关着（D18）；截图拷贝为 PNG 文件。
+    // 设置 › 截图选过文件夹（体检 A28）：文件夹图标 + 访达里的名字 +「恢复默认」；常驻缩略图关着（D18）；截图拷贝为 PNG 文件；操作提示关、只显示放大镜（2026-11-17）。
     // 设置 › 录制（2026-10-03 从截图页拆出来）同一份偏好：「保存到」也是那个文件夹；录屏组（录屏第 2 批）60 fps、倒数 5 秒、
     // 不显示光标；录音组（录音第 6 批）来源「两者」、「按快捷键后立即开始录音」开着（手测反馈第 3 批；默认的样子在下面
     // -default 那两张）。临时偏好域和临时文件夹，不改用户的快速保存位置
@@ -611,6 +611,8 @@ struct SnapshotProbeTests {
     shotPrefs.set(inbox.path, forKey: Prefs.screenshotSaveDirectory)
     shotPrefs.set(Prefs.ShotPlacement.clothesline.rawValue, forKey: Prefs.screenshotPlacement)
     shotPrefs.set("file", forKey: Prefs.screenshotCopyAs)
+    shotPrefs.set(false, forKey: Prefs.screenshotShowsHint)
+    shotPrefs.set(Prefs.Loupe.loupe.rawValue, forKey: Prefs.screenshotLoupe)
     shotPrefs.set(60, forKey: Prefs.screenRecordFrameRate)
     shotPrefs.set(5, forKey: Prefs.screenRecordCountdown)
     shotPrefs.set(false, forKey: Prefs.screenRecordShowsCursor)
@@ -619,7 +621,7 @@ struct SnapshotProbeTests {
     for dark in [false, true] {
       try snapshot(
         ScreenshotTab(shots: nil).defaultAppStorage(shotPrefs).environment(navigation),
-        size: NSSize(width: 640, height: 720),
+        size: NSSize(width: 640, height: 1000),
         dark: dark, to: "\(out)/settings-screenshot-custom\(dark ? "-dark" : "").png")
       try snapshot(
         RecordTab().defaultAppStorage(shotPrefs), size: NSSize(width: 640, height: 860),
@@ -3930,7 +3932,8 @@ struct SnapshotProbeTests {
       try renderLayers(
         SelectionView(
           image: frozen,
-          session: SelectionSession(mode: .quick, hint: "拖动框选要翻译的文字　Esc 取消")),
+          session: SelectionSession(mode: .quick, hint: "拖动框选要翻译的文字　Esc 取消"),
+          showsHint: true, loupe: .full),
         size: NSSize(width: 600, height: 180), dark: false, configure: configure,
         to: "\(out)/\(name).png")
     }
@@ -4020,7 +4023,8 @@ struct SnapshotProbeTests {
       try renderLayers(
         SelectionView(
           image: desktop, windows: windows,
-          session: SelectionSession(mode: .capture, lastRegion: .zero)),
+          session: SelectionSession(mode: .capture, lastRegion: .zero), showsHint: true,
+          loupe: .full),
         size: NSSize(width: 600, height: 480), dark: dark, configure: configure,
         to: "\(out)/\(name).png")
     }
@@ -4035,7 +4039,9 @@ struct SnapshotProbeTests {
       ])
     }
     try renderLayers(
-      SelectionView(image: desktop, windows: windows, owners: [[4242], []], session: session),
+      SelectionView(
+        image: desktop, windows: windows, owners: [[4242], []], session: session,
+        keepsColors: false, showsHint: true, loupe: .full),
       size: NSSize(width: 600, height: 480), dark: false,
       configure: { $0.mouse = CGPoint(x: 160, y: 330) }, to: "\(out)/capture-translate-hover.png")
   }

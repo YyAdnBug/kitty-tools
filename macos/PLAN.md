@@ -1898,6 +1898,19 @@ Alfred 的 Related Apps、BetterTouchTool 按 App 停用，调研和测开销的
 - ponytail：Intel 只靠交叉编和 PR 作者的 Intel 本机验过，没有 Intel 真机手测；Intel 上 App 内更新走 API（没登录每个 IP 每小时 60 次）。
   要省掉这一点，清单加一个 x86_64 的键（只加新键，老版本不受影响）。
 
+### 截图提示、放大镜开关和钉图选字（2026-11-17）
+- 用户转来三条：框选时的快捷键提示能关、放大镜旁的色值能关、钉图上能像 QQ / PixPin 那样直接拖选文字。拍板页
+  https://claude.ai/artifact/67856ZhHfWmLgz2hfmanfs （D0 A1–A2 B1–B3 C1–C5），同日用户「全部按推荐」。调研、探针和实测数在
+  `macos/build/research/pin-text-2026-11-17/`（README）。在 `i18n-wip` 尖上切的 `shot-pin-wip`（工作树 kitty-tools-macos-shotpin）分三批做，
+  不并不推，等用户说。
+- 第 1 批（两个开关）：设置 › 截图「工具栏位置」那一节最前面加 **「框选时显示操作提示」**（`Prefs.screenshotShowsHint`，默认开）和
+  **「框选时的放大镜」**（`Prefs.screenshotLoupe` / `Prefs.Loupe`：放大镜和色值（默认）/ 只显示放大镜 / 不显示），都注册默认值、跟设置导出走；
+  截图、截图翻译 / 识字、录屏的框选同一套，每次框选新建遮罩时读一次（同「保持屏幕原色」，单测和截图自检直接给）。
+  提示关掉只关开场那条 3 秒的，被挡下时临时说的一句（`flashHint`）、Tab 换认法时的那一下照出。色值卡和格子本来就是两层：
+  不显示色值时 C 不取色、不结束截图（看不见要拷的是什么；同类里有一家明写「放大镜可见时才复制色值」），托盘的吸管照常——
+  点了吸管放大镜和色值照常出来，取完回到设置的样子（`SelectionView.showsColorCard`）；按住 ⌘ 的十字准线不再跟着放大镜开关
+  （`magnifierMoment`）。录屏本来就没有色值卡，C 只在「放大镜和色值」时照旧取色。
+
 ## 11½. Whisker 设计语言改造（2026-09-25 起）
 
 已归档到 `docs/archive/PLAN-12.md` §11½（A–E 各阶段的内容、状态和 2026-09-26 的交接）。现状：A 基础与招牌时刻、B 界面重做、C 品牌、E 截图重设计都已完成（待手测）；D 深度只剩「macOS 26 玻璃 + `.icon`」——玻璃分支第 11 批已写好，等 26 测试机按 `HANDTEST.md`「macOS 26 手测」实测，`.icon` 也等 26。规范正文在 `.claude/skills/mac-whisker/rule.md`（核心）和各 `mac-whisker/<界面>.md`。

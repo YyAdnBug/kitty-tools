@@ -38,7 +38,8 @@ struct SelectionInteractionTests {
       mode: SelectionView.Mode = .capture, windows: [CGRect] = [], owners: [[pid_t]] = [],
       findsElements: Bool = false, image: CGImage? = nil, hint: String = "",
       session: SelectionSession? = nil,
-      origin: CGPoint = CGPoint(x: -20000, y: -20000), keepsColors: Bool = false
+      origin: CGPoint = CGPoint(x: -20000, y: -20000), keepsColors: Bool = false,
+      showsHint: Bool = true, loupe: Prefs.Loupe = .full
     ) {
       let size = CGSize(width: 1200, height: 800)
       let context = CGContext(
@@ -51,7 +52,7 @@ struct SelectionInteractionTests {
       if findsElements { self.session.findsElements = true }
       view = SelectionView(
         image: image ?? context.makeImage()!, windows: windows, owners: owners,
-        session: self.session, keepsColors: keepsColors)
+        session: self.session, keepsColors: keepsColors, showsHint: showsHint, loupe: loupe)
       styles = UserDefaults(suiteName: styleSuite)!
       view.styleDefaults = styles
       window = KeyWindow(
@@ -1221,6 +1222,78 @@ struct SelectionInteractionTests {
     #expect(h.view.annotations.count == 1)
     let outcome = await h.outcome { h.key(kVK_Escape, "\u{1b}") }
     #expect(outcome == nil)
+  }
+
+  // 设置 › 截图「框选时显示操作提示」（2026-11-17 拍板 A1）：关掉只关开场那条，被挡下时临时说的一句照出
+  @Test func hintSwitchOnlyHidesTheOpeningHint() throws {
+    #expect(Harness().view.hintShowing)
+    let h = Harness(showsHint: false)
+    h.move(CGPoint(x: 300, y: 300))
+    #expect(!h.view.hintShowing)
+    h.drag(CGPoint(x: 300, y: 200), CGPoint(x: 700, y: 240))  // 40 点高：太矮，长截图不开始
+    #expect(!h.view.hintShowing)
+    h.key(kVK_ANSI_S, "s")
+    #expect(h.view.hintShowing)
+    #expect(h.view.announcement == "选区太矮，拉高一点再长截图")
+  }
+
+  // 设置 › 截图「框选时的放大镜」（拍板 B1–B3）：色值卡和格子分开；不显示色值时 C 不取色、不结束截图；
+  // 不显示放大镜时按住 ⌘ 的十字准线照样有；吸管取色时放大镜和色值照常出来，取完回到设置的样子
+  @Test func loupeSettingSplitsMagnifierAndColor() async throws {
+    let full = Harness()
+    full.move(CGPoint(x: 300, y: 300))
+    #expect(full.view.magnifierHeight > SelectionView.loupeSide)
+    let copied = await full.outcome { full.key(kVK_ANSI_C, "c") }
+    guard case .color(let hex)? = copied, hex.hasPrefix("#") else {
+      Issue.record("放大镜和色值时 C 要拷色值：\(String(describing: copied))")
+      return
+    }
+
+    let loupe = Harness(loupe: .loupe)
+    loupe.move(CGPoint(x: 300, y: 300))
+    #expect(loupe.view.showsMagnifier && loupe.view.magnifierHeight == SelectionView.loupeSide)
+    let ignored = await loupe.outcome { loupe.key(kVK_ANSI_C, "c") }
+    guard case .color("没交回结果")? = ignored else {
+      Issue.record("不显示色值时 C 不该结束截图：\(String(describing: ignored))")
+      return
+    }
+
+    let off = Harness(loupe: .off)
+    off.move(CGPoint(x: 300, y: 300))
+    #expect(!off.view.showsMagnifier && !off.view.showsCrosshair)
+    off.modifiers(.command)
+    #expect(off.view.showsCrosshair)
+    off.modifiers([])
+    let none = await off.outcome { off.key(kVK_ANSI_C, "c") }
+    guard case .color("没交回结果")? = none else {
+      Issue.record("不显示放大镜时 C 不该结束截图：\(String(describing: none))")
+      return
+    }
+
+    for h in [loupe, off] {
+      h.makeSelection()
+      h.view.tool = .rectangle
+      let styleBar = try #require(h.styleBar)
+      styleBar.onEyedropper()
+      h.move(CGPoint(x: 500, y: 450))
+      #expect(h.view.showsMagnifier && h.view.magnifierHeight > SelectionView.loupeSide)
+      h.click(CGPoint(x: 500, y: 450))
+      #expect(h.view.style.custom != nil)
+      #expect(h.view.magnifierHeight == SelectionView.loupeSide)
+    }
+  }
+
+  // 截图里按 R 切到录屏（评审）：吸管不取了、放大镜不再挂着截图的色值卡
+  @Test func switchingToRecordDropsColorCard() throws {
+    let h = Harness()
+    h.makeSelection()
+    h.view.tool = .rectangle
+    try #require(h.styleBar).onEyedropper()
+    h.move(CGPoint(x: 500, y: 450))
+    #expect(h.view.magnifierHeight > SelectionView.loupeSide)
+    h.key(kVK_ANSI_R, "r")
+    #expect(h.recordBar != nil)
+    #expect(h.view.magnifierHeight == SelectionView.loupeSide && !h.view.showsMagnifier)
   }
 
   // 截图翻译 / 识字：待选和框选时有放大镜、尺寸只读，⇧ 照样正方形，松手即确认（交回裁好的图）
