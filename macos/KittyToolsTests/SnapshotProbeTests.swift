@@ -4223,6 +4223,14 @@ struct SnapshotProbeTests {
     canvas.cacheDisplay(in: shown, to: bitmap)
     try #require(bitmap.representation(using: .png, properties: [:]))
       .write(to: URL(filePath: "\(out)/scroll-editor-canvas.png"))
+    // 裁剪框开着（X17）：框外压暗、白边框、八个手柄
+    canvas.selectedAnnotation = nil
+    canvas.toggleCropping()
+    canvas.setCropForSnapshot(CGRect(x: 60, y: 420, width: 420, height: 300))
+    let cropped = try #require(canvas.bitmapImageRepForCachingDisplay(in: shown))
+    canvas.cacheDisplay(in: shown, to: cropped)
+    try #require(cropped.representation(using: .png, properties: [:]))
+      .write(to: URL(filePath: "\(out)/scroll-editor-crop.png"))
   }
 
   private func renderScrollCapture(_ out: String) throws {

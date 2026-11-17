@@ -45,10 +45,10 @@ struct VideoCardTests {
         space: CGColorSpaceCreateDeviceRGB(),
         bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)?.makeImage())
     for (badge, menu) in [
-      (FlyCard.Badge.copied, [[ShelfCard.Command.copy, .save, .pin, .history], [.close]]),
+      (FlyCard.Badge.copied, [[ShelfCard.Command.copy, .save, .edit, .pin, .history], [.close]]),
       (
         .saved(URL(filePath: "/nonexistent/a.png")),
-        [[.copy, .save, .pin, .reveal, .history], [.close]]
+        [[.copy, .save, .edit, .pin, .reveal, .history], [.close]]
       ),
     ] {
       let shot = ShelfCard(

@@ -158,6 +158,12 @@ enum Prefs {
   static let screenshotToolStyles = "screenshotToolStyles"
   /// 截图（复制、保存、钉图）时放快门声；还要系统「播放用户界面音效」开着
   static let screenshotShutterSound = "screenshotShutterSound"
+  /// 截图带上鼠标指针（第四轮体检 X8，默认关；Windows ScreenshotCursor）：按快捷键那一刻的指针画进冻结帧。只管截图
+  /// （截图快捷键、截取上次区域）；识字、截图翻译不带（指针会挡字）
+  static let screenshotCursor = "screenshotCursor"
+  /// 截图、录屏时隐藏桌面图标（第四轮体检 X9，默认关；Windows CaptureHideDesktopIcons）：访达画桌面图标的那扇窗口
+  /// 不进冻结帧、不进录屏画面（ScreenCapture.desktopIconWindows）。识字、截图翻译用的同一张冻结帧，也不带
+  static let captureHideDesktopIcons = "captureHideDesktopIcons"
   /// 截完图放哪（2026-10-26 晾衣绳拍板 B1，ShotPlacement 的 rawValue）：corner 右下角的常驻缩略图（默认，
   /// 体检 D18 原来那样）/ clothesline 挂到屏幕顶上的晾衣绳上 / none 都不要（只进历史，飞行卡片落地停 0.9 s 就滑走）
   static let screenshotPlacement = "screenshotPlacement"
@@ -235,6 +241,9 @@ enum Prefs {
   nonisolated static let screenRecordMicrophone = "screenRecordMicrophone"
   nonisolated static let screenRecordShowsClicks = "screenRecordShowsClicks"
   nonisolated static let screenRecordShowsKeys = "screenRecordShowsKeys"
+  /// 录屏用哪个麦克风（第四轮体检 X18，Windows RecordMicrophoneDevice）：AVCaptureDevice 的 uniqueID，没有 = 跟随系统
+  /// 输入。录音不看它（录音照旧录系统默认的输入）。设备编号是这台 Mac 的：**不注册默认值**，不导出、不同步
+  nonisolated static let screenRecordMicrophoneDevice = "screenRecordMicrophoneDevice"
   /// 录音的来源（录音第 6 批，设置 › 录制「录音」）：AudioRecorder.Source 的 rawValue——麦克风（默认）/ 系统声音 / 两者；
   /// 「两者」被拒麦克风授权时弹回「系统声音」（同录制条的麦克风开关）
   nonisolated static let audioRecordSource = "audioRecordSource"
@@ -605,6 +614,8 @@ enum Prefs {
       translateCollapsedServices: "",
       ocrJoinLines: false,
       screenshotShutterSound: true,
+      screenshotCursor: false,
+      captureHideDesktopIcons: false,
       screenshotPlacement: ShotPlacement.corner.rawValue,
       screenshotToolbarAlign: "right",
       screenshotCopyAs: "image",

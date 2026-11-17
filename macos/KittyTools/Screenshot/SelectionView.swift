@@ -1308,6 +1308,7 @@ final class SelectionView: NSView, NSTextViewDelegate {
       case .record: switchToRecording()
       case .saveMenu: toggleSaveMenu()
       case .cancel: session.finish(nil)
+      case .crop: break  // 截图框选的工具栏里没有裁剪（调选区就是裁剪）
       }
     }
     let styleBar = StyleBar()

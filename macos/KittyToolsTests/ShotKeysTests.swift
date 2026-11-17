@@ -1,6 +1,7 @@
 // 截图时的快捷键（2026-11-06 拍板 A）：默认的那一套、存法（和默认一样删键、清除存空数据）、按键对哪个动作、固定的键和
 // 重复的不收、和全局快捷键一样的不收；设置导出 / 导入带上它们（shot.<名字>），固定的、重复的读文件时丢掉。只用临时偏好域。
 
+import AppKit
 import Carbon.HIToolbox
 import Foundation
 import Testing
@@ -87,7 +88,7 @@ struct ShotKeysTests {
     let items: [EditorToolbar.Item] =
       Annotation.Tool.allCases.map { .tool($0) } + [
         .undo, .redo, .output(.recognize), .output(.pin), .output(.save), .output(.copy), .saveMenu,
-        .scroll, .record,
+        .scroll, .record, .crop,
       ]
     let mapped = items.compactMap(EditorToolbar.shotKey(for:))
     #expect(mapped.count == items.count)
@@ -130,5 +131,49 @@ struct ShotKeysTests {
     #expect(ShotKey.pin.key(in: target) == optionP)
     #expect(ShotKey.record.key(in: target) == nil)
     #expect(ShotKey.undo.key(in: target) == ShotKey.undo.defaultKey)
+  }
+}
+
+/// 搁着的计划第 4 批（第四轮体检 X8 X9 X17 X18）的纯函数
+struct ShotBacklogTests {
+  /// X17：拖边改那几条边、夹在图里、不小于最小尺寸；整个挪不出图；点坐标 → 像素（原点换到左上）
+  @Test func cropDragAndPixels() {
+    let bounds = CGRect(x: 0, y: 0, width: 400, height: 300)
+    let box = CGRect(x: 100, y: 100, width: 100, height: 100)
+    #expect(
+      ScrollCanvas.dragCrop(
+        box, edges: [.right, .top], from: CGPoint(x: 200, y: 200), to: CGPoint(x: 260, y: 230),
+        in: bounds) == CGRect(x: 100, y: 100, width: 160, height: 130))
+    #expect(
+      ScrollCanvas.dragCrop(
+        box, edges: .left, from: CGPoint(x: 100, y: 150), to: CGPoint(x: 400, y: 150), in: bounds
+      )
+      .width == ScrollCanvas.minCrop)
+    #expect(
+      ScrollCanvas.dragCrop(
+        box, edges: [], from: CGPoint(x: 150, y: 150), to: CGPoint(x: 900, y: -900), in: bounds)
+        == CGRect(x: 300, y: 0, width: 100, height: 100))
+    #expect(
+      ScrollCanvas.cropPixelRect(
+        CGRect(x: 10, y: 20, width: 100, height: 50), in: CGSize(width: 400, height: 300),
+        pixels: CGSize(width: 800, height: 600)) == CGRect(x: 20, y: 460, width: 200, height: 100))
+  }
+
+  /// X17：裁剪只在标注遮罩的工具栏里、键默认 X、截图框选时没有
+  @Test func cropKeyAndButton() {
+    #expect(ShotKey.crop.defaultKey == HotKey(keyCode: kVK_ANSI_X, modifiers: 0))
+    #expect(EditorToolbar(mode: .longShot).button(for: .crop) != nil)
+    #expect(EditorToolbar(mode: .capture).button(for: .crop) == nil)
+  }
+
+  /// X18：选的麦克风还接着就用它，不在了跟随系统；X9：认访达的桌面图标窗口
+  @Test func microphoneAndDesktopIcons() {
+    #expect(ScreenRecorder.microphone(chosen: "usb", connected: ["built-in", "usb"]) == "usb")
+    #expect(ScreenRecorder.microphone(chosen: "gone", connected: ["built-in"]) == nil)
+    #expect(ScreenRecorder.microphone(chosen: nil, connected: ["built-in"]) == nil)
+    let icons = Int(CGWindowLevelForKey(.desktopIconWindow))
+    #expect(ScreenCapture.isDesktopIcons(bundleID: "com.apple.finder", layer: icons))
+    #expect(!ScreenCapture.isDesktopIcons(bundleID: "com.apple.finder", layer: 0))
+    #expect(!ScreenCapture.isDesktopIcons(bundleID: "com.apple.dock", layer: icons))
   }
 }

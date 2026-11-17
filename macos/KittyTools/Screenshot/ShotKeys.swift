@@ -12,6 +12,8 @@ import Carbon.HIToolbox
 enum ShotKey: String, CaseIterable {
   case rectangle, ellipse, arrow, line, pen, highlighter, text, counter, mosaic, spotlight
   case copy, save, saveAs, pin, recognize, scroll, record, undo, redo, lastRegion, pickColor
+  /// 标注遮罩（长截图、截图历史的改标注）里的裁剪（第四轮体检 X17，默认 X，Windows 同一个键）
+  case crop
 
   /// 设置页的两组：十种标注工具，出图和别的
   static var tools: [ShotKey] { Annotation.Tool.allCases.map { ShotKey($0) } }
@@ -51,6 +53,7 @@ enum ShotKey: String, CaseIterable {
     case .redo: String(localized: "重做")
     case .lastRegion: String(localized: "选中上次的区域")
     case .pickColor: String(localized: "复制放大镜里的色值")
+    case .crop: String(localized: "裁剪")
     default: ""
     }
   }
@@ -70,6 +73,7 @@ enum ShotKey: String, CaseIterable {
     case .redo: "arrow.uturn.forward"
     case .lastRegion: "arrow.counterclockwise"
     case .pickColor: "eyedropper"
+    case .crop: "crop"
     default: "keyboard"
     }
   }
@@ -94,6 +98,7 @@ enum ShotKey: String, CaseIterable {
       case .redo: (kVK_ANSI_Z, cmdKey | shiftKey)
       case .lastRegion: (kVK_ANSI_D, 0)
       case .pickColor: (kVK_ANSI_C, 0)
+      case .crop: (kVK_ANSI_X, 0)
       default: (kVK_ANSI_1, 0)
       }
     return HotKey(keyCode: code, modifiers: modifiers)

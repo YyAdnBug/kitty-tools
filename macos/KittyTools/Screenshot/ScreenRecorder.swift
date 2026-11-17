@@ -246,6 +246,10 @@ final class ScreenRecorder: NSObject {
     var microphone = false
     var showsClicks = false
     var showsKeys = false
+    /// 录屏用哪个麦克风（X18，设置 › 录制）：设备的 uniqueID；nil = 跟随系统输入（录音一直是 nil）
+    var microphoneDevice: String?
+    /// 设置里选了一个麦克风、这会儿却不在（拔了、关了）：这次跟随系统输入，开录时说一声
+    var microphoneMissing = false
 
     init(
       systemAudio: Bool = true, microphone: Bool = false, showsClicks: Bool = false,
@@ -264,7 +268,23 @@ final class ScreenRecorder: NSObject {
       microphone = defaults.bool(forKey: Prefs.screenRecordMicrophone)
       showsClicks = defaults.bool(forKey: Prefs.screenRecordShowsClicks)
       showsKeys = defaults.bool(forKey: Prefs.screenRecordShowsKeys)
+      let chosen = defaults.string(forKey: Prefs.screenRecordMicrophoneDevice)
+      microphoneDevice = ScreenRecorder.microphone(
+        chosen: chosen, connected: ScreenRecorder.microphones().map(\.id))
+      microphoneMissing = chosen != nil && microphoneDevice == nil
     }
+  }
+
+  /// 这台 Mac 现在接着的麦克风（设置 › 录制的选单、开录时核对选的还在不在）：内建的和外接的（USB、蓝牙、虚拟声卡）
+  nonisolated static func microphones() -> [(id: String, name: String)] {
+    AVCaptureDevice.DiscoverySession(
+      deviceTypes: [.microphone, .external], mediaType: .audio, position: .unspecified
+    ).devices.map { ($0.uniqueID, $0.localizedName) }
+  }
+
+  /// 选的麦克风还接着就用它，不在了跟随系统（纯函数，配单测）
+  nonisolated static func microphone(chosen: String?, connected: [String]) -> String? {
+    chosen.flatMap { connected.contains($0) ? $0 : nil }
   }
 
   /// 开录前麦克风这一步怎么走（纯函数，配单测）
@@ -477,6 +497,12 @@ final class ScreenRecorder: NSObject {
     options.microphone = await microphoneAllowed()
     if stoppedWhileAsking { return .cancelled }
     if options.microphone { watchMicrophone() }
+    // 选的麦克风这会儿不在（X18）：这次跟随系统输入，说一声（只是提示，录屏照常）
+    if options.microphone, options.microphoneMissing {
+      island?.show(
+        "选的麦克风不在", detail: "这次用系统默认的输入；设置 › 录制 里能换", tone: .warning,
+        symbol: "mic.badge.xmark")
+    }
     // 显示按键：没有辅助功能授权就这次不显示（警告岛、开关弹回），录屏照常；麦克风刚才也没拿到的话两件事并成一条岛
     options.showsKeys = keysAllowed(withoutMicrophone: wantsMicrophone && !options.microphone)
     if countdown > 0 {
@@ -639,8 +665,10 @@ final class ScreenRecorder: NSObject {
     // 第 0 批实测：排除本 App 时它自己的声音本来就录不进去，照设作保险
     configuration.excludesCurrentProcessAudio = true
     let outputs = Self.configure(configuration, options)
-    // 断开要比对的是开录这一刻的默认输入（麦克风跟随系统输入）
-    microphoneID = options.microphone ? AVCaptureDevice.default(for: .audio)?.uniqueID : nil
+    // 断开要比对的是开录这一刻录的那个设备：选了的那个（X18），没选就是此刻的默认输入
+    microphoneID =
+      options.microphone
+      ? options.microphoneDevice ?? AVCaptureDevice.default(for: .audio)?.uniqueID : nil
     let recording = SCRecordingOutputConfiguration()
     recording.outputURL = temp
     recording.videoCodecType = codec.type
@@ -667,7 +695,34 @@ final class ScreenRecorder: NSObject {
     guard medium == .screen else { return [] }
     var ids = ScreenCapture.recordedOwnWindows(ScreenCapture.ownWindows())
     if let overlay = inputOverlay?.windowID { ids.insert(overlay) }
+    if hidesDesktopIcons { ids.formUnion(Self.finderWindows()) }
     return ids
+  }
+
+  /// 录屏时隐藏桌面图标（X9，设置 › 截图）：访达整个排除、它别的窗口列进例外（访达的普通窗口照录，只少了桌面图标那扇）
+  private var hidesDesktopIcons: Bool {
+    medium == .screen && UserDefaults.standard.bool(forKey: Prefs.captureHideDesktopIcons)
+  }
+
+  /// 访达此刻在屏上的窗口（桌面图标那扇除外）。每秒比一次（refreshFilterIfNeeded），新开的访达窗口变了就换过滤器。
+  /// ponytail: 只看在屏上的，录的中途新开 / 从程序坞还原的访达窗口最多晚 1 s 进画面
+  private static func finderWindows() -> Set<CGWindowID> {
+    guard
+      let finder = NSRunningApplication.runningApplications(
+        withBundleIdentifier: "com.apple.finder"
+      ).first?.processIdentifier
+    else { return [] }
+    let list =
+      CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+    return Set(
+      list.compactMap { info -> CGWindowID? in
+        guard (info[kCGWindowOwnerPID as String] as? pid_t) == finder,
+          let id = info[kCGWindowNumber as String] as? CGWindowID,
+          !ScreenCapture.isDesktopIcons(
+            bundleID: "com.apple.finder", layer: info[kCGWindowLayer as String] as? Int ?? 0)
+        else { return nil }
+        return id
+      })
   }
 
   /// 排除整个本 App，白名单里的面板和点按圈的窗口列进例外（不看可见不可见；只录声音时没有例外）。返回过滤器和真正列进
@@ -679,8 +734,13 @@ final class ScreenRecorder: NSObject {
     let excepted = content.windows.filter { ids.contains($0.windowID) }
     let found = Set(excepted.map(\.windowID))
     if let me = content.applications.first(where: { $0.processID == getpid() }) {
+      // 隐藏桌面图标（X9）：访达也整个排除，它别的窗口已经在例外里
+      let finder =
+        hidesDesktopIcons
+        ? content.applications.filter { $0.bundleIdentifier == "com.apple.finder" } : []
       return (
-        SCContentFilter(display: display, excludingApplications: [me], exceptingWindows: excepted),
+        SCContentFilter(
+          display: display, excludingApplications: [me] + finder, exceptingWindows: excepted),
         found
       )
     }
@@ -688,9 +748,10 @@ final class ScreenRecorder: NSObject {
     // 窗口，本 App 一扇建出来的窗口都没有时就会走到这里（长截图因此一直对不上，ScrollCapture.init）；录屏默认倒数 3 秒，
     // 边框和 HUD 开流前就建好了，倒数设成 0、又没有便签的药丸、开 App 后没用过面板时才会落到这里。
     // ponytail: 这时之后才建的装饰窗口（边框、HUD、第一次弹的岛、飞行卡片）会进画面；真遇到了就照长截图先把边框建出来再开流
-    let excluded = content.windows.filter {
-      $0.owningApplication?.processID == getpid() && !ids.contains($0.windowID)
-    }
+    let excluded =
+      content.windows.filter {
+        $0.owningApplication?.processID == getpid() && !ids.contains($0.windowID)
+      } + (hidesDesktopIcons ? ScreenCapture.desktopIconWindows(in: content.windows) : [])
     return (SCContentFilter(display: display, excludingWindows: excluded), found)
   }
 
@@ -1245,7 +1306,8 @@ final class ScreenRecorder: NSObject {
     }
     if options.microphone {
       configuration.captureMicrophone = true
-      configuration.microphoneCaptureDeviceID = nil
+      // 设置里选的那个（X18）；nil = 跟随系统输入
+      configuration.microphoneCaptureDeviceID = options.microphoneDevice
       outputs.append(.microphone)
     }
     return outputs

@@ -1063,6 +1063,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     hotKeys.reload()
     try? FileManager.default.removeItem(at: ShotShelf.dragDirectory)
     shelf.copy = { [unowned self] png in await copyPNG(png) }
+    // 角落缩略图的「改标注」（X7）：历史里记好了这一条就同截图历史的「改标注」（原图 + 标注接着改、回写那一条），
+    // 没记成（历史关着）就对着这张图标、不回写
+    shelf.annotate = { [unowned self] image, scale, remembered in
+      Task {
+        if let id = await remembered?.value, let item = shotHistory.item(id),
+          let original = await shotHistory.image(for: id)
+        {
+          return openAnnotate(
+            original, scale: item.scale, history: { id }, annotations: item.annotations)
+        }
+        openAnnotate(image, scale: scale)
+      }
+    }
     shelf.island = island
     shelf.save = { [unowned self] in await savePNG($0, asking: false) }
     shelf.pin = { [unowned self] in pins.pin($0, frame: $1) }
@@ -2463,9 +2476,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     beginCapture(hidingPanels: hidingPanels) { [self] in
       let lastRegion = UserDefaults.standard.string(forKey: Prefs.screenshotLastRegion).map(
         NSRectFromString)
+      // 带上鼠标指针（X8）只给截图：截图翻译盖回的那一路要识字，指针会挡字
+      let cursor = !autoTranslate && UserDefaults.standard.bool(forKey: Prefs.screenshotCursor)
       guard
         let outcome = await frozenSelection(
-          feature,
+          feature, cursor: cursor,
           {
             await RegionSelector.capture(
               $0, lastRegion: lastRegion, preselect: repeatingLastRegion,
@@ -3046,6 +3061,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       // 新画的马赛克打进存下的原图（E6）：用遮罩里这张没画标注的，不再读盘。
       // 编号要等历史记完（刚拼好的长截图是并行记的）：另起任务等，不挡出图（同截图那条路）
       let remembered = Task { await history?() }
+      // 裁过（X17）：历史里换成裁好的原图，标注已经平移到它的坐标里
+      let original = annotateOverlay?.historyOriginal ?? original
       Task {
         if let id = await remembered.value {
           shotHistory.update(
@@ -3124,7 +3141,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// key 窗口（还开着的话；只 makeKey，不激活本 App）。没授权 / 截屏失败时用刘海提示，返回 nil。
   /// 框选期间别的热键会弹出浮层抢走 key（遮罩就收不到 Esc）；设置里正在录快捷键时热键本来就停着，结束后不能替它恢复
   private func frozenSelection<T>(
-    _ feature: LocalizedStringResource, _ select: ([ScreenCapture.Shot]) async -> T?
+    _ feature: LocalizedStringResource, cursor: Bool = false,
+    _ select: ([ScreenCapture.Shot]) async -> T?
   ) async -> T? {
     guard screenRecordingAllowed(for: feature) else { return nil }
     let shots: [ScreenCapture.Shot]
@@ -3132,7 +3150,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       // 截屏的系统服务不返回时最多等 5 秒（E22）：不然 isCapturing 一直为真，截图家族的热键全被静默忽略
       guard
         let frozen = try await ScreenCapture.within(
-          ScreenCapture.freezeTimeout, ScreenCapture.freeze)
+          ScreenCapture.freezeTimeout, { try await ScreenCapture.freeze(cursor: cursor) })
       else {
         island.show("截屏没有响应", detail: "请再试一次", tone: .warning)
         return nil
@@ -3506,12 +3524,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var png = Data()
     // 挂到晾衣绳上的那一下（land 时才有记历史的任务，闭包按引用拿着它）
     var peg: () -> Void = {}
+    // 记历史的那个任务（角落缩略图的「改标注」等它的编号，X7）
+    var history: Task<UUID?, Never>?
     let pixels = CGSize(width: image.width, height: image.height)
     let landing = shotLanding(pixels: pixels, frame: frame)
     let linger: (CGRect, FlyCard.Badge) -> Void = { [weak self] rect, badge in
       guard let self else { return }
       switch landing.placement {
-      case .corner: shelf.add(image, png: png, scale: scale, source: frame, at: rect, badge: badge)
+      case .corner:
+        shelf.add(
+          image, png: png, scale: scale, source: frame, at: rect, badge: badge, history: history)
       case .clothesline: peg()
       case .none: break
       }
@@ -3524,6 +3546,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       flight.onShow = { [weak self] in self?.statusItem?.pop() }
       return { [weak self] badge, data, remembered in
         png = data
+        history = remembered
         if let self { peg = pegger(remembered, on: landing.screen) }
         flight.land(badge)
       }
@@ -3531,6 +3554,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     return { [weak self] badge, data, remembered in
       guard let self else { return }
       png = data
+      history = remembered
       peg = pegger(remembered, on: landing.screen)
       // 不飞就没有落地的角标：结果用刘海说（Whisker：减弱动态效果时飞行卡片改成轻提示；岛自己会播报）
       let actions: [Island.Action] = if case .saved(let url) = badge { .file(url) } else { [] }
