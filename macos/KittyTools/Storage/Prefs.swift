@@ -383,6 +383,16 @@ enum Prefs {
   /// 程序坞预览：按 ⌘Tab 切换时也在切换器上方弹窗口预览（2026-11-06 拍板 C2，默认开；程序坞预览关着时不生效）
   nonisolated static let dockPreviewCmdTab = "dockPreviewCmdTab"
 
+  /// 睡眠关蓝牙（插件，2026-11-17）：只在合上盖子时关（默认开；关掉 = 每次睡眠都关）、醒来时重新打开睡前关掉的（默认开）。
+  /// 跟着导出、同步
+  nonisolated static let bluetoothSnoozeLidOnly = "bluetoothSnoozeLidOnly"
+  nonisolated static let bluetoothSnoozeReopen = "bluetoothSnoozeReopen"
+  /// 睡眠关蓝牙：蓝牙是我们睡前关掉的、还没打开（醒来、启动时据此打开）；上次关掉、打开的时刻（秒，设置页那一行）。
+  /// 这台电脑自己的状态，**不注册默认值**
+  nonisolated static let bluetoothSnoozeHeld = "bluetoothSnoozeHeld"
+  nonisolated static let bluetoothSnoozeOffAt = "bluetoothSnoozeOffAt"
+  nonisolated static let bluetoothSnoozeOnAt = "bluetoothSnoozeOnAt"
+
   /// 访达右键（第十一族，2026-11-08，FinderLink）：扩展把动作交过来时带的凭证（App 第一次启动时生成，FinderLink.ensureKey；
   /// 扩展从 App 的偏好里读）。这台电脑自己的、**不注册默认值**：不跟着导出 / 导入、同步走
   nonisolated static let finderMenuKey = "finderMenuKey"
@@ -523,6 +533,8 @@ enum Prefs {
       launchpadCorner: LaunchpadCornerOption.off.rawValue,
       dockPreviewDelay: 400,
       dockPreviewCmdTab: true,
+      bluetoothSnoozeLidOnly: true,
+      bluetoothSnoozeReopen: true,
       finderOpenWithApps: finderOpenWithDefault,
       panelSqueezeEntrance: false,
       floatingPinned: false,

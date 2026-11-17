@@ -6,10 +6,12 @@
 // 抽一半帧只剩 12 帧每秒、动起来卡，不用）。
 // 用法：swift macos/status-emoji.swift <放着下载好的 *_animated*.png 的目录>… [--out <输出目录>]
 //   默认输出到 macos/KittyTools/Resources/（同步文件夹，文件名 status-emoji-<id>.heics，打进包里是平铺的）。
-// 要加一个表情：从上面的仓库下载它的 animated PNG，在 emoji 表里加一行，再跑一遍；应用里的清单在 StatusEmoji.swift。
+// 2026-11-17 起这里只转打进包里的那几个：自带的三个状态、三条示例提醒用的和眼睛（StatusEmoji.bundled）。图标格子里
+// 另外 22 个和「动画表情」一样在 release emoji-pack-1 上（emoji-pack.swift 转的，同一种转法），第一次用到时下载。
+// 要再打进包里一个：从上面的仓库下载它的 animated PNG，在 emoji 表里加一行，再跑一遍，同时加进 StatusEmoji.bundled。
 // 只用 ImageIO / CoreGraphics：帧数、每帧时长原样保留，不缩放（原图就是 256 × 256）。
-// 2026-11-04 加了 12 个（吃饭、运动、通勤、看病、喝水、学习、专注、庆祝、上班、出门、生日、完成这些场景；动画的那一套里没有
-// 药丸、书、耳机、房子、对勾、碗，取最接近的）。
+// 2026-11-04 格子里加了 12 个（吃饭、运动、通勤、看病、喝水、学习、专注、庆祝、上班、出门、生日、完成这些场景；动画的那一套里没有
+// 药丸、书、耳机、房子、对勾、碗，取最接近的），2026-11-17 起它们也从 release 下载。
 
 import Foundation
 import ImageIO
@@ -20,30 +22,8 @@ let emoji: [(id: String, file: String)] = [
   ("waving-hand", "waving_hand_animated_default.png"),
   ("glowing-star", "glowing_star_animated.png"),
   ("alarm-clock", "alarm_clock_animated.png"),
-  ("hourglass", "hourglass_not_done_animated.png"),
   ("hot-beverage", "hot_beverage_animated.png"),
-  ("zzz", "zzz_animated.png"),
   ("sleeping-face", "sleeping_face_animated.png"),
-  ("shushing-face", "shushing_face_animated.png"),
-  ("busts", "busts_in_silhouette_animated.png"),
-  ("telephone", "telephone_receiver_animated.png"),
-  ("rocket", "rocket_animated.png"),
-  ("robot", "robot_animated.png"),
-  ("fire", "fire_animated.png"),
-  ("high-voltage", "high_voltage_animated.png"),
-  ("black-cat", "black_cat_animated.png"),
-  ("cook", "cook_animated_default.png"),
-  ("person-running", "person_running_animated_default.png"),
-  ("automobile", "automobile_animated.png"),
-  ("health-worker", "health_worker_animated_default.png"),
-  ("droplet", "droplet_animated.png"),
-  ("student", "student_animated_default.png"),
-  ("lotus-position", "person_in_lotus_position_animated_default.png"),
-  ("party-popper", "party_popper_animated.png"),
-  ("office-worker", "office_worker_animated_default.png"),
-  ("person-walking", "person_walking_animated_default.png"),
-  ("birthday-cake", "birthday_cake_animated.png"),
-  ("thumbs-up", "thumbs_up_animated_default.png"),
   ("eyes", "eyes_animated.png"),
 ]
 

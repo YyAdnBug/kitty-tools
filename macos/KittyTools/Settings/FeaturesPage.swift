@@ -1,9 +1,8 @@
 // 设置 › 通用 › 功能（2026-11-07 用户「通用的功能现在直接占用了右侧整个详情」，从通用页挪进推进去的这一页，同「命令和别名」）：
 // 页头 40 pt 通用灰色块 + 一句说明；每个功能一行开关（FeatureToggle：家族色块 + 名字 + 说明，和各功能页第一行「启用 x」绑同一个
 // 偏好）。通用页只留一行「功能 ›」写开着几个、关着哪几个（summary），0.8.0 的「新」标在那一行。
-// 下面一组「插件」（2026-11-12 拍板 A2）：每个插件一张卡（色块、名字、一句话、要的授权、后台做什么）+「添加」/「移除」，
-// 绑的还是那个功能开关的偏好。启动器里「添加…插件」那一行带过来时（SettingsNavigation.focusedPlugin）滚到那张卡、描一圈强调色。
-// 2026-11-13 起功能只剩核心五个，便签、提醒等七样也是插件卡片（拍板 P1）；插件自己的页最后一组是「移除」（PluginRemoveSection）。
+// 2026-11-13 起功能只剩核心五个（拍板 P1）。插件原来是这一页下面的一组大卡，2026-11-17 插件页改版（D1）挪进侧栏的「全部插件」
+// （Settings/PluginsPage.swift），这一页底下一行链过去；插件自己的页最后一组是「关于这个插件」（PluginAboutSection）。
 
 import SwiftUI
 
@@ -17,39 +16,19 @@ struct FeaturesPage: View {
       DetailHeader(title: "功能", status: "不用的整个关掉，用的时候再打开") {
         KindTile(symbol: "square.grid.2x2.fill", color: Style.Family.general, size: 40)
       }
-      ScrollViewReader { proxy in
-        Form {
-          Section {
-            ForEach(Feature.listed, id: \.self) { FeatureToggle(feature: $0) }
-          } footer: {
-            SectionFootnote("关掉的功能不出现在快捷键、菜单栏和启动器里，也不在后台运行；它的数据和设置都留着，打开就回来。")
-          }
-          Section {
-            ForEach(Feature.allCases.filter { $0.isPlugin && $0.isAvailable }, id: \.self) {
-              plugin in
-              PluginCard(plugin: plugin, isFocused: navigation?.focusedPlugin == plugin)
-                .id(plugin)
-            }
-          } header: {
-            Text("插件")
-          } footer: {
-            SectionFootnote(
-              "新装时插件都没添加；从旧版升级上来的，原来开着的照旧添加着。添加了才出现在侧栏、菜单栏、主界面、快捷键和启动器里；移除就是关掉，设置和数据留着，再添加就回来。"
-            )
-          }
+      Form {
+        Section {
+          ForEach(Feature.listed, id: \.self) { FeatureToggle(feature: $0) }
+        } footer: {
+          SectionFootnote("关掉的功能不出现在快捷键、菜单栏和启动器里，也不在后台运行；它的数据和设置都留着，打开就回来。")
         }
-        .formStyle(.grouped)
-        .onChange(of: navigation?.focusedPlugin, initial: true) {
-          guard let plugin = navigation?.focusedPlugin else { return }
-          // 晚一拍再滚：页面刚推进来时表单的行还没排好，当场滚不动（卡在十来行开关下面，常在屏外）；描边留一会儿就收
-          Task {
-            try? await Task.sleep(for: .milliseconds(150))
-            proxy.scrollTo(plugin, anchor: .center)
-            try? await Task.sleep(for: .seconds(2))
-            if navigation?.focusedPlugin == plugin { navigation?.focusedPlugin = nil }
+        Section {
+          SettingsPushRow(title: "插件", detail: "便签、提醒、刘海岛这些在「全部插件」里添加") {
+            navigation?.page = .plugins
           }
         }
       }
+      .formStyle(.grouped)
     }
     .navigationTitle("功能")
     .toolbar { SettingsBackButton { dismiss() } }
@@ -65,95 +44,5 @@ struct FeaturesPage: View {
       return String(localized: "开着 \(opened.count) 个；关着：\(closed.map(\.title).joinedAsList())")
     }
     return String(localized: "开着：\(opened.map(\.title).joinedAsList())；另外 \(closed.count) 个关着")
-  }
-}
-
-/// 一个插件的卡（表单里的一行）：40 pt 色块、名字 + 一句话、要的授权和后台做什么，右边「添加」/「移除」。
-/// 添加 = 打开它的功能开关（AppDelegate 看着偏好起停），移除 = 关掉（设置和数据留着）
-private struct PluginCard: View {
-  let plugin: Feature
-  let isFocused: Bool
-  @AppStorage private var isAdded: Bool
-
-  init(plugin: Feature, isFocused: Bool) {
-    self.plugin = plugin
-    self.isFocused = isFocused
-    _isAdded = AppStorage(wrappedValue: plugin.defaultOn, plugin.prefsKey)
-  }
-
-  var body: some View {
-    HStack(alignment: .top, spacing: 12) {
-      KindTile(symbol: plugin.page.symbol, color: plugin.page.color, size: 40)
-        .accessibilityHidden(true)
-      VStack(alignment: .leading, spacing: 4) {
-        HStack(spacing: 6) {
-          Text(plugin.title).font(.headline)
-          if isAdded {
-            Text("已添加").font(.caption).foregroundStyle(Style.brandInk)
-          }
-        }
-        Text(plugin.blurb).foregroundStyle(.secondary)
-        if let facts = plugin.pluginFacts {
-          Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 8, verticalSpacing: 2) {
-            GridRow {
-              Text("授权").foregroundStyle(.tertiary)
-              Text(facts.permission).foregroundStyle(.secondary)
-            }
-            GridRow {
-              Text("后台").foregroundStyle(.tertiary)
-              Text(facts.background).foregroundStyle(.secondary)
-            }
-          }
-          .font(.subheadline)
-          .padding(.top, 2)
-        }
-      }
-      .frame(maxWidth: .infinity, alignment: .leading)
-      if isAdded {
-        Button("移除") { isAdded = false }
-      } else {
-        Button("添加") { isAdded = true }
-          .buttonStyle(BrandButtonStyle())
-      }
-    }
-    .padding(.vertical, 4)
-    .overlay {
-      RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
-        .strokeBorder(Style.brand, lineWidth: 2)
-        .padding(-6)
-        .opacity(isFocused ? 1 : 0)
-        .animation(.easeOut(duration: 0.3), value: isFocused)
-    }
-    // 合起来读：名字、已添加、一句话、授权、后台都在（拍板 A2：添加之前就听得到要什么授权）；按钮并进来后用命名动作
-    .accessibilityElement(children: .combine)
-    .accessibilityAction(named: isAdded ? "移除" : "添加") { isAdded.toggle() }
-    // 0.9.0 的「新」挂在通用页「功能」那一行（WhatsNew 的 plugins）：添加 / 移除过一个插件就算看过
-    .onChange(of: isAdded) { WhatsNew.touch(section: "功能", of: .general) }
-  }
-}
-
-/// 插件自己的设置页最后一组：一行「移除」（同「功能」页卡片上的；mac-whisker settings「插件卡片」）。移除后这一页就不在侧栏了，
-/// SettingsRoot 带回「功能」页。刘海岛另写一句：岛上的提示不归它，移除了照常弹
-struct PluginRemoveSection: View {
-  let plugin: Feature
-  @AppStorage private var isAdded: Bool
-
-  init(plugin: Feature) {
-    self.plugin = plugin
-    _isAdded = AppStorage(wrappedValue: plugin.defaultOn, plugin.prefsKey)
-  }
-
-  var body: some View {
-    Section {
-      LabeledContent {
-        Button("移除") { isAdded = false }
-      } label: {
-        Text("\(plugin.title)插件")
-        Text(
-          plugin == .island
-            ? "移除后点刘海没反应、刘海两边不挂计时；岛上的提示照常弹。设置留着，再添加就回来"
-            : "移除后菜单栏、主界面、启动器、快捷键里都没有它，设置和数据留着，再添加就回来")
-      }
-    }
   }
 }

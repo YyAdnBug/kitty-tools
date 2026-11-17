@@ -110,6 +110,16 @@ struct GeneralTab: View {
         ) {
           navigation?.path = [FeaturesPage.route]
         }
+        // 插件页改版 D1：插件挪进侧栏的「全部插件」，这里一行带过去
+        SettingsPushRow(
+          title: "插件",
+          detail: enabled.contains(where: \.isPlugin)
+            ? "添加了 \(enabled.filter(\.isPlugin).count) 个" : "还没添加；便签、提醒、刘海岛这些都在里面",
+          isNew: navigation.map { WhatsNew.marks(section: "插件", of: .general, in: $0.fresh) }
+            ?? false
+        ) {
+          navigation?.page = .plugins
+        }
       }
       Section {
         languageRow

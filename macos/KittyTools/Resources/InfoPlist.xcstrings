@@ -19,6 +19,24 @@
         }
       }
     },
+    "NSBluetoothAlwaysUsageDescription" : {
+      "comment" : "Info.plist 权限说明（中文改 Config/Info.plist）",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Used by the Bluetooth Sleep plugin to turn Bluetooth off when your Mac sleeps and back on at wake."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用于「睡眠关蓝牙」插件：电脑睡下去时关掉蓝牙、醒来时再打开"
+          }
+        }
+      }
+    },
     "NSCalendarsFullAccessUsageDescription" : {
       "comment" : "Info.plist 权限说明（中文改 Config/Info.plist）",
       "extractionState" : "manual",

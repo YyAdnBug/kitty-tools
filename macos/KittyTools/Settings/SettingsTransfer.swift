@@ -468,6 +468,25 @@ struct ImportSheet: View {
           .foregroundStyle(Color(nsColor: .systemOrange))
           .fixedSize(horizontal: false, vertical: true)
       }
+      // 会添加的插件（插件页改版 F1）：有添加了就要、这台还没给的授权时用橙字（给过的、查不了的不算）
+      if sections.contains(.preferences), !addedPlugins.isEmpty {
+        let names = addedPlugins.map(\.title).joinedAsList()
+        let needsAccess = addedPlugins.contains { plugin in
+          plugin.pluginPermissions.contains { $0.option == nil && $0.kind.isGranted == false }
+        }
+        Text(
+          needsAccess
+            ? (origin == nil
+              ? "导入后会添加插件：\(names)。其中有的这台 Mac 还没给授权，导入后到它自己的设置页里打开。"
+              : "恢复后会添加插件：\(names)。其中有的这台 Mac 还没给授权，恢复后到它自己的设置页里打开。")
+            : (origin == nil ? "导入后会添加插件：\(names)。" : "恢复后会添加插件：\(names)。")
+        )
+        .font(.caption)
+        .foregroundStyle(
+          needsAccess ? Color(nsColor: .systemOrange) : Color(nsColor: .secondaryLabelColor)
+        )
+        .fixedSize(horizontal: false, vertical: true)
+      }
       // 自己的备份不用提醒「信不信得过」
       if origin == nil {
         Text("只导入自己导出的、或信得过的人给的文件：设置会照文件改；翻译服务和网页搜索的地址也照文件里的，要翻译的文字、密钥和搜索的内容会发到那里；快捷链接能打开任意网址和文件。")
@@ -485,6 +504,7 @@ struct ImportSheet: View {
   }
 
   private var privacyLosses: [String] { archive.privacyLosses() }
+  private var addedPlugins: [Feature] { archive.addedPlugins() }
 
   /// 「翻译服务」下面：文件里的服务会连到的自己填的地址，一行一个（太长的掐头留尾：要看的是结尾的域名）；
   /// 多于 8 个放进定高的框里滚，不省略——省略了，藏在后面的那个就没人看得到

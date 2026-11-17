@@ -289,7 +289,7 @@ struct SyncSection: View {
         featureOn
           ? detail
           : feature?.isPlugin == true
-            ? "\(feature?.title ?? "")插件没添加，先不同步；在上面「功能」里添加就接着同步"
+            ? "\(feature?.title ?? "")插件没添加，先不同步；在上面「插件」里添加就接着同步"
             : "\(feature?.title ?? "")关着，先不同步；在上面「功能」里打开就接着同步")
     }
   }

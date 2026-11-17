@@ -8,11 +8,12 @@
 // 常驻窗口、缓存）不建、不起、不注册。以后加的全局动作、菜单项、启动器内置动作、跨功能的按钮都要归到一个 Feature（mac-native §1）。
 // 插件（2026-11-12 拍板「全部按推荐」，PLAN §10「插件」）：以后新的大模块做成插件——同样编进 App、同样一个开关（「添加」=
 // 打开、「移除」= 关掉，设置和数据留着），区别只在露不露面：新装、升级都默认不添加；没添加的不进设置侧栏（也不进「已关闭」那组）、
-// 欢迎引导、「功能」列表和主界面的「N 个功能关着」，只在 设置 › 通用 › 功能 下面的「插件」卡片里，和启动器里打它的名字时
+// 欢迎引导、「功能」列表和主界面的「N 个功能关着」，只在 设置 › 全部插件（2026-11-17 插件页改版；原来是 通用 › 功能 下面的「插件」卡片）里，和启动器里打它的名字时
 // 最后那一行「添加…插件」（LauncherModel.pluginOffers）。
 // 2026-11-13（拍板页 https://claude.ai/artifact/DEKeRvQeZR3VxkVA9Bx2Fr「全部按推荐」）：便签、提醒、状态屏、启动台、程序坞预览、
 // 访达右键也改成插件，另加刘海岛（只管点刘海那一张、两边的活动、系统提示；岛上的提示是全 App 的，不归它）。功能剩剪贴板、
 // 启动器、翻译、截图、录制。转过来的照旧用原来的偏好键和默认值：开着的就是添加着，升级上来什么都不变（P2）。
+// 插件的分组、授权、同步、介绍页的几行在 Shell/Plugin.swift（2026-11-17 插件页改版）。
 
 import Foundation
 
@@ -22,8 +23,9 @@ nonisolated enum Feature: String, CaseIterable {
   // 启动台、程序坞预览一组）。rawValue 是偏好键，不能改
   case clipboard, launcher, translate, screenshot, record, notes, reminders, statusScreen
   case launchpad, dockPreview, finderMenu
-  // 2026-11-13 起便签之后这几个都是插件（isPlugin），保持唤醒、刘海岛新加在最后（刘海岛那一节一直排在菜单栏、快捷键页最后）
-  case keepAwake, island
+  // 2026-11-13 起便签之后这几个都是插件（isPlugin），保持唤醒、睡眠关蓝牙（2026-11-17）、刘海岛新加在最后（刘海岛那一节一直排在
+  // 菜单栏、快捷键页最后）
+  case keepAwake, bluetoothSnooze, island
 
   /// 同名的设置页（名字、符号、家族色从它取）
   @MainActor var page: SettingsPage { SettingsPage(rawValue: rawValue) ?? .general }
@@ -49,54 +51,17 @@ nonisolated enum Feature: String, CaseIterable {
     case .dockPreview: "鼠标停在程序坞的 App 图标上，看它所有窗口的缩略图"
     case .finderMenu: "在访达里右键：新建文件、拷贝路径、移动复制、压缩解压"
     case .keepAwake: "不让电脑睡、不让屏幕熄：手动开一段，或按时段自动开"
+    case .bluetoothSnooze: "合上盖子睡着时关掉蓝牙，醒来再打开：放进包里不会被蓝牙键鼠弄醒"
     case .island: "点刘海叫出快捷动作，录屏计时、提醒倒数、正在播放挂在刘海两边、点开是卡片"
     }
   }
 
   /// 插件（2026-11-12 起新的大模块；2026-11-13 起除了核心五个都是）
   static let plugins: Set<Feature> = [
-    .notes, .reminders, .statusScreen, .launchpad, .dockPreview, .finderMenu, .keepAwake, .island,
+    .notes, .reminders, .statusScreen, .launchpad, .dockPreview, .finderMenu, .keepAwake,
+    .bluetoothSnooze, .island,
   ]
   var isPlugin: Bool { Self.plugins.contains(self) }
-
-  /// 插件卡片「授权」那一行的「不要」（显式 key：单独一个「不要」意思靠上下文）
-  private static var noPermission: String {
-    String(localized: "plugin.permission.none", defaultValue: "不要", comment: "插件卡片「授权」那一行：不要任何授权")
-  }
-
-  /// 插件卡片上那两行：要什么授权、在后台做什么（拍板 A2：添加之前就看得清）；不是插件的 nil
-  var pluginFacts: (permission: String, background: String)? {
-    switch self {
-    case .notes:
-      (
-        Self.noPermission,
-        String(localized: "屏幕边缘一条细药丸；开着同步时跟着合")
-      )
-    case .reminders:
-      (
-        Self.noPermission,
-        String(localized: "等着下一条提醒；一条都没有时什么都不跑")
-      )
-    case .statusScreen: (String(localized: "进入时要「辅助功能」（拦住键盘鼠标）"), String(localized: "没进入时什么都不跑"))
-    case .launchpad:
-      (
-        Self.noPermission,
-        String(localized: "看着触控板捏合和触发角，装卸 App 时重扫一遍")
-      )
-    case .dockPreview: (String(localized: "辅助功能、屏幕录制"), String(localized: "看着程序坞；鼠标停在图标上才截缩略图"))
-    case .finderMenu: (String(localized: "要在系统设置里打开访达扩展"), String(localized: "只在你右键时动"))
-    case .keepAwake: (Self.noPermission, String(localized: "开着时让系统别睡；没开时什么都不跑"))
-    case .island:
-      (
-        String(localized: "不要（打开「下一个日程」要「日历」，打开「音量和亮度」要「辅助功能」；正在播放读不到时，「音乐」「Spotify」的播放控制要「自动化」）"),
-        String(
-          localized:
-            "看着指针有没有停在刘海上；打开了系统提示才听电源、耳机、网络，打开了正在播放才起一个读播放信息的小进程，打开了下一个日程才读日历，打开了音量和亮度才接那五个键。不添加时提示照常弹"
-        )
-      )
-    default: nil
-    }
-  }
 
   /// 启动器里打这些词（插件没添加时）出「添加…插件」那一行；名字本身也算（名字是当前语言的，所以中文名留在这里）。
   /// 中英都认（多语言：英文界面里打中文、中文界面里打英文都找得到），这些词不翻
@@ -113,6 +78,8 @@ nonisolated enum Feature: String, CaseIterable {
         "awake", "保持唤醒", "防息屏", "防止睡眠", "不睡眠", "唤醒", "咖啡因", "caffeinate", "keep awake",
         "stay awake", "prevent sleep", "caffeine",
       ]
+    case .bluetoothSnooze:
+      ["蓝牙", "睡眠关蓝牙", "合盖", "休眠", "bluetooth", "sleep bluetooth", "lid", "bluesnooze"]
     case .island: ["刘海岛", "刘海", "灵动岛", "island", "notch", "dynamic island"]
     default: []
     }
@@ -125,7 +92,7 @@ nonisolated enum Feature: String, CaseIterable {
   /// 新做的插件默认不添加（拍板 A1：新装、升级都不添加）。2026-11-13 从功能转过来的插件照旧用原来的默认值（P2：导出文件、
   /// 同步里「没有这一项 = 默认值」，改了的话 0.8.x 的文件、电脑会把没拨过的便签悄悄关掉）；刘海岛也算开着——0.7.0 起就有
   /// 点刘海，升级上来照旧能用。新装照样一个插件都没添加：seedNewInstall 把核心以外的都明写成关
-  var defaultOn: Bool { ![.dockPreview, .finderMenu, .keepAwake].contains(self) }
+  var defaultOn: Bool { ![.dockPreview, .finderMenu, .keepAwake, .bluetoothSnooze].contains(self) }
 
   /// 新装默认开着的四个（功能管理拍板 M4）
   static let core: Set<Feature> = [.clipboard, .launcher, .translate, .screenshot]
@@ -147,8 +114,15 @@ nonisolated enum Feature: String, CaseIterable {
     }
   }
 
-  /// 这台系统上有没有（启动台只在 macOS 26 起）：没有的哪里都不出现，「功能」列表里也没有它那一行
-  var isAvailable: Bool { self != .launchpad || Launchpad.isAvailable }
+  /// 这台系统上有没有（启动台只在 macOS 26 起；睡眠关蓝牙只在有盖子、私有接口在的 Mac 上）：没有的哪里都不出现，
+  /// 「功能」列表、「全部插件」里也没有它那一行
+  var isAvailable: Bool {
+    switch self {
+    case .launchpad: Launchpad.isAvailable
+    case .bluetoothSnooze: BluetoothSnooze.isSupported
+    default: true
+    }
+  }
 
   /// 开着：这台系统有、用户也没关。没存过 = defaultOn（不靠注册的默认值：单测宿主不一定注册过）
   var isOn: Bool {

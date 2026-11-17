@@ -24,13 +24,13 @@ struct FeatureTests {
   }
 
   /// 每个动作恰好归一个功能，就是它所在那一节里的；每个功能至少一个动作（程序坞预览除外：它停在程序坞上就弹，
-  /// 没有快捷键，拍板 D1；访达右键也是，入口在访达里）；和设置页同名。打开主界面（全部功能的入口，2026-10-29）不归哪个功能；
+  /// 没有快捷键，拍板 D1；访达右键也是，入口在访达里；睡眠关蓝牙也是，跟着睡眠自己动）；和设置页同名。打开主界面（全部功能的入口，2026-10-29）不归哪个功能；
   /// 打开刘海岛 2026-11-13 起归刘海岛插件（原来不归哪个功能）
   @Test func everyActionBelongsToOneFeature() {
     for feature in Feature.allCases {
       #expect(
         HotKeyAction.allCases.contains { $0.feature == feature }
-          == ![.dockPreview, .finderMenu].contains(feature))
+          == ![.dockPreview, .finderMenu, .bluetoothSnooze].contains(feature))
       #expect(feature.page.rawValue == feature.rawValue)
     }
     #expect(HotKeyAction.screenshotTranslate.feature == .translate)
@@ -210,14 +210,17 @@ struct FeatureTests {
   /// 新做的插件默认不添加（2026-11-12 拍板 A1）；2026-11-13 从功能转过来的插件照旧用原来的默认值、刘海岛默认添加着（P2：
   /// 没拨过开关的老用户升级上来便签、提醒、点刘海都还在，0.8.x 导出的文件里没有这一项也不会把它们关掉）
   @Test func switchesAreExportedSettings() {
-    #expect(Feature.allCases.filter { !$0.defaultOn } == [.dockPreview, .finderMenu, .keepAwake])
+    #expect(
+      Feature.allCases.filter { !$0.defaultOn } == [
+        .dockPreview, .finderMenu, .keepAwake, .bluetoothSnooze,
+      ])
     #expect(
       [Feature.notes, .reminders, .statusScreen, .launchpad, .island].allSatisfy {
         $0.isPlugin && $0.defaultOn
       })
     #expect(
       Feature.allCases.filter(\.isPlugin).allSatisfy {
-        $0.pluginFacts != nil && !$0.pluginWords.isEmpty
+        $0.pluginBackground != nil && !$0.pluginWords.isEmpty
       })
     for feature in Feature.allCases {
       #expect(Prefs.defaults[feature.prefsKey] as? Bool == feature.defaultOn)
@@ -243,11 +246,21 @@ struct FeatureTests {
       Feature.allCases.filter { !$0.isPlugin } == [
         .clipboard, .launcher, .translate, .screenshot, .record,
       ])
-    // 搜插件的名字：没添加时落到通用页（「功能 ›」下面就是它的卡），添加了停在它自己那页
-    #expect(SettingsPage.page(for: "保持唤醒", current: .about, hidden: [.keepAwake]) == .general)
-    #expect(SettingsPage.page(for: "防息屏", current: .about, hidden: [.keepAwake]) == .general)
+    // 搜插件的名字：没添加时落到「全部插件」、描出它那一行（插件页改版 A4），添加了停在它自己那页
+    #expect(SettingsPage.page(for: "保持唤醒", current: .about, hidden: [.keepAwake]) == .plugins)
+    #expect(SettingsPage.page(for: "防息屏", current: .about, hidden: [.keepAwake]) == .plugins)
+    #expect(SettingsPage.hiddenPlugin(matching: "防息屏", hidden: [.keepAwake]) == .keepAwake)
+    #expect(SettingsPage.hiddenPlugin(matching: "防息屏", hidden: []) == nil)
+    #expect(SettingsPage.hiddenPlugin(matching: " ", hidden: [.keepAwake]) == nil)
+    #expect(SettingsPage.page(for: "插件", current: .about) == .plugins)
+    // 搜的是「全部插件」自己的词不描行（保持唤醒的关键词里也有「插件」）；这台用不了的插件不算（列表里没有它那一行）
+    #expect(SettingsPage.hiddenPlugin(matching: "插件", hidden: [.keepAwake]) == nil)
+    for page in SettingsPage.allCases
+    where page.feature.map({ $0.isPlugin && !$0.isAvailable }) == true {
+      #expect(SettingsPage.hiddenPlugin(matching: page.title, hidden: [page]) == nil, "\(page)")
+    }
     #expect(SettingsPage.page(for: "保持唤醒", current: .about) == .keepAwake)
-    // 添加了之后搜它的词停在它自己那页，不落到通用页
+    // 添加了之后搜它的词停在它自己那页，不落到「全部插件」
     #expect(SettingsPage.matching("访达右键", hidden: []) == [.finderMenu])
     #expect(SettingsPage.finderMenu.section == .plugins)
     #expect(SettingsPage.page(for: "防息屏", current: .about) == .keepAwake)

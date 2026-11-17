@@ -227,6 +227,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }()
   /// 程序坞预览（第九族，2026-10-22，PLAN §10「程序坞预览」）：鼠标停在程序坞的 App 图标上弹出它所有窗口的缩略图。
   /// 功能开关开着才起（默认关）；启动台开着、状态屏、截图框选时不弹。设置 › 程序坞预览。
+  /// 睡眠关蓝牙（插件，2026-11-17）：只有添加了才建
+  private lazy var bluetoothSnooze: BluetoothSnooze = {
+    let snooze = BluetoothSnooze()
+    snooze.announce = { [unowned self] text in
+      island.show(text, tone: .warning, symbol: SettingsPage.bluetoothSnooze.symbol)
+    }
+    return snooze
+  }()
+
   private lazy var dockPreview: DockPreview = {
     let preview = DockPreview()
     preview.isSuppressed = { [unowned self] in
@@ -780,6 +789,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           )
           .environment(island))
       case .island: AnyView(IslandTab())
+      case .plugins: AnyView(PluginsPage())
       case .clipboard: AnyView(ClipboardTab(store: clipboardStore).environment(island))
       case .launcher:
         AnyView(
@@ -823,6 +833,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       case .dockPreview: AnyView(DockPreviewTab())
       case .finderMenu: AnyView(FinderMenuTab())
       case .keepAwake: AnyView(KeepAwakeTab(keepAwake: keepAwake))
+      case .bluetoothSnooze:
+        AnyView(BluetoothSnoozeTab { [unowned self] in bluetoothSnooze.requestAccess() })
       case .translate:
         AnyView(
           TranslateTab(services: serviceStore, history: historyStore, speaker: speaker)
@@ -1159,6 +1171,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let turnedOff = (before ?? []).subtracting(now)
     let launching = before == nil
 
+    // 新插件的「新」：添加了就算碰过（插件页改版 E1；启动时开着的也记——同步来的、旧版本里加过的）
+    for plugin in turnedOn where plugin.isPlugin { WhatsNew.touch(plugin: plugin) }
     // 刘海岛插件（2026-11-13）：没添加时活动、常驻的刘海监听都停（Island.hasExtras），提示照常
     island.hasExtras = now.contains(.island)
     // 剪贴板的轮询：记历史要它，复制即译也要它（剪贴板关着时只为复制即译跑、不入库）
@@ -1205,6 +1219,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       !FIFinderSyncController.isExtensionEnabled
     {
       FinderMenuTab.openExtensionSettings()
+    }
+
+    // 睡眠关蓝牙：运行中添加、还没问过蓝牙授权时当场问（同程序坞预览：启动时、欢迎引导里勾上的不当场弹）
+    if turnedOn.contains(.bluetoothSnooze) {
+      bluetoothSnooze.start()
+      if !launching, !settingsNavigation.showsOnboarding, !BluetoothSnooze.isAuthorized {
+        bluetoothSnooze.requestAccess()
+      }
     }
 
     if turnedOn.contains(.dockPreview) {
@@ -1275,6 +1297,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if turnedOff.contains(.launchpad) { launchpad.turnOff() }
     if turnedOff.contains(.statusScreen) { statusPicker.panel?.hide() }
     if turnedOff.contains(.dockPreview) { dockPreview.stop() }
+    if turnedOff.contains(.bluetoothSnooze) { bluetoothSnooze.stop() }
     if turnedOff.contains(.reminders) { reminders.stop() }
     idleReclaim.schedule()  // 关掉的功能占着的缓存跟着还
   }
@@ -3479,11 +3502,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     settingsNavigation.path = [id]
   }
 
-  /// 打开 设置 › 通用 › 功能、滚到这个插件的卡（启动器「添加…插件」，拍板 A4）：不直接添加，先看清要什么授权
+  /// 打开这个插件的介绍页（启动器「添加…插件」，插件拍板 A4、插件页改版 G1）：不直接添加，先看清能做什么、要什么授权
   func showPlugin(_ plugin: Feature) {
-    showSettings(page: .general)
-    settingsNavigation.path = [FeaturesPage.route]
-    settingsNavigation.focusedPlugin = plugin
+    showSettings(page: .plugins)
+    // 设置窗挂着表单（速查表、确认框）时 show 不换页：别把介绍页推进别的页的栈里
+    guard settingsNavigation.page == .plugins else { return }
+    settingsNavigation.path = [PluginsPage.route(plugin)]
   }
 
   /// 打开设置窗（page 为 nil 保持上次的页；onboarding 盖上欢迎引导）：先按正常隐藏路径收起浮层

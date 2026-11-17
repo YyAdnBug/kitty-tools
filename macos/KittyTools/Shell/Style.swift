@@ -226,6 +226,10 @@ enum Style {
     static let finderMenu = Style.dynamic(
       light: NSColor(srgbRed: 0.33, green: 0.47, blue: 0.62, alpha: 1),
       dark: NSColor(srgbRed: 0.47, green: 0.61, blue: 0.76, alpha: 1))
+    /// 睡眠关蓝牙（2026-11-17）：自定义的午夜蓝（蓝牙的蓝压暗，夜里睡着），比系统靛蓝暗、比访达右键的石板蓝饱和
+    static let bluetoothSnooze = Style.dynamic(
+      light: NSColor(srgbRed: 0.15, green: 0.30, blue: 0.68, alpha: 1),
+      dark: NSColor(srgbRed: 0.43, green: 0.57, blue: 0.96, alpha: 1))
 
     /// 种类色块上的符号色：白；便签的黄上白色只有约 1.5:1，换成 black 0.85（同强调色选黄时 onBrand 的做法）
     static func onTile(_ color: Color) -> Color { color == notes ? .black.opacity(0.85) : .white }

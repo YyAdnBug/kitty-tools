@@ -3,7 +3,8 @@
 // 「按快捷键直接进入排在最前面的状态」开关（默认关：按快捷键先出一排预览卡片，StatusPicker.swift）、
 // 「告示上的动画」总开关（Z18a，默认开）、
 // 「有人碰键盘或鼠标时显示怎么退出」开关、退出密码（4–8 位数字，存钥匙串，Passcode.swift；2026-10-11 用户要求）、
-// 怎么退出和「它不是安全措施」的说明。页头画在自己的 NavigationStack 里，推进时一起换掉。列表直接读写偏好里的 JSON（Prefs.statusScreenPresets）：菜单栏、启动器每次现读，改了就跟上。
+// 怎么退出和「它不是安全措施」的说明；「权限」（辅助功能，进入时拦住键盘鼠标要它；缺的时候排到最上面，插件页改版 C2）和最后
+// 「关于这个插件」（后台、同步、移除）。页头画在自己的 NavigationStack 里，推进时一起换掉。列表直接读写偏好里的 JSON（Prefs.statusScreenPresets）：菜单栏、启动器每次现读，改了就跟上。
 // 这一页没有「进入」「试一下」这类按钮：进入会拦住键盘鼠标，只从菜单栏、启动器、全局快捷键进。
 // 界面里不写「锁」字（定位是告示加防误触，mac-overlay-panel §11）。
 
@@ -23,6 +24,10 @@ struct StatusScreenTab: View {
   @Environment(SettingsNavigation.self) private var navigation
   /// 列表里用键盘选中的一条（「−」和 ⌫ 删它；鼠标单击直接推进，不留选中）
   @State private var selection: String?
+  /// 设置窗重新当 key 时 +1：「权限」组重查（插件页改版 C2）
+  @State private var accessChecks = 0
+  /// 截图自检（给了 fixed）不查宿主的授权，按给了画
+  private var fixedAccess: ((Permissions.Kind) -> Bool?)? { fixed == nil ? nil : { _ in true } }
   /// 等确认删除的状态（自己加的、改过的）
   @State private var removing: String?
   /// 钥匙串里有没有退出密码（这一页出现时读一次，设置 / 移除之后以读回来的为准）
@@ -66,6 +71,8 @@ struct StatusScreenTab: View {
     let isFull = list.count >= StatusPreset.maxCount
     // 关着时（Feature）变灰
     return Form {
+      PluginPermissionSection(
+        plugin: .statusScreen, at: .top, checks: accessChecks, granted: fixedAccess)
       Group {
         Section {
           presetList(list)
@@ -134,9 +141,13 @@ struct StatusScreenTab: View {
         }
       }
       .gated(by: .statusScreen)
-      PluginRemoveSection(plugin: .statusScreen)
+      PluginPermissionSection(
+        plugin: .statusScreen, at: .bottom, checks: accessChecks, granted: fixedAccess)
+      PluginAboutSection(plugin: .statusScreen)
     }
     .formStyle(.grouped)
+    // 从系统设置授权回来，「权限」组重查（插件页改版 C2）
+    .onSettingsBecameKey { accessChecks += 1 }
   }
 
   // MARK: 退出密码

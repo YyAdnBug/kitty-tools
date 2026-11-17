@@ -178,6 +178,52 @@
         }
       }
     },
+    "%@ 关掉" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turned off %@"
+          }
+        }
+      }
+    },
+    "%@ 关掉，%@ 打开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turned off %1$@, back on %2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ 关掉，%2$@ 打开"
+          }
+        }
+      }
+    },
+    "%@ 关掉，醒来不会自动打开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turned off %@; stays off at wake"
+          }
+        }
+      }
+    },
+    "%@ 关掉，醒来会打开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turned off %@; turns back on at wake"
+          }
+        }
+      }
+    },
     "%@ 和剪贴板里的一致" : {
       "localizations" : {
         "en" : {
@@ -362,12 +408,12 @@
         }
       }
     },
-    "%@插件没添加，先不同步；在上面「功能」里添加就接着同步" : {
+    "%@插件没添加，先不同步；在上面「插件」里添加就接着同步" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The %@ plugin isn’t added, so this isn’t syncing; add it under Features above to resume"
+            "value" : "The %@ plugin isn’t added, so this isn’t syncing; add it under Plugins above to resume"
           }
         }
       }
@@ -2472,6 +2518,16 @@
         }
       }
     },
+    "Markdown 样式、任务清单、行内图片；能导出导入、几台 Mac 同步" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Markdown styling, task lists, and inline images; export, import, and sync across your Macs"
+          }
+        }
+      }
+    },
     "Office 打开文档时生成的临时文件，像「~$报告.docx」" : {
       "localizations" : {
         "en" : {
@@ -3972,24 +4028,6 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "最近删除"
-          }
-        }
-      }
-    },
-    "plugin.permission.none" : {
-      "comment" : "插件卡片「授权」那一行：不要任何授权",
-      "extractionState" : "extracted_with_value",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "None"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "不要"
           }
         }
       }
@@ -5850,6 +5888,16 @@
         }
       }
     },
+    "一次、每天、每周、每月，或每隔一阵提醒一次" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Once, daily, weekly, monthly, or every so often"
+          }
+        }
+      }
+    },
     "一次最多 %lld 项" : {
       "localizations" : {
         "en" : {
@@ -5999,6 +6047,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Previous"
+          }
+        }
+      }
+    },
+    "上次" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last time"
           }
         }
       }
@@ -6397,16 +6455,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No Icon"
-          }
-        }
-      }
-    },
-    "不要（打开「下一个日程」要「日历」，打开「音量和亮度」要「辅助功能」；正在播放读不到时，「音乐」「Spotify」的播放控制要「自动化」）" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "None (Next Event needs Calendars, and Volume and Brightness needs Accessibility. If Now Playing can’t be read, controlling Music or Spotify needs Automation.)"
           }
         }
       }
@@ -6947,6 +6995,16 @@
         }
       }
     },
+    "从菜单栏、主界面或启动器进入" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start it from the menu bar, Home, or the Launcher"
+          }
+        }
+      }
+    },
     "从边缘打开的便签多大" : {
       "localizations" : {
         "en" : {
@@ -7313,6 +7371,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Notes · Floating"
+          }
+        }
+      }
+    },
+    "便签、提醒、刘海岛这些在「全部插件」里添加" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add Notes, Reminders, the Notch, and more in All Plugins"
           }
         }
       }
@@ -8276,6 +8344,16 @@
         }
       }
     },
+    "全屏的 App 图标网格：翻页、搜索、拖成文件夹" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A full-screen grid of app icons: flip pages, search, and drag apps into folders"
+          }
+        }
+      }
+    },
     "全屏的图标网格：排法、翻页、搜索、文件夹、捏合" : {
       "localizations" : {
         "en" : {
@@ -8406,6 +8484,16 @@
         }
       }
     },
+    "全部插件" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All Plugins"
+          }
+        }
+      }
+    },
     "全部操作（⌘K 或 →）" : {
       "localizations" : {
         "en" : {
@@ -8478,6 +8566,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "About Kitty Tools"
+          }
+        }
+      }
+    },
+    "关于这个插件" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "About This Plugin"
           }
         }
       }
@@ -9926,6 +10024,16 @@
         }
       }
     },
+    "到点在刘海岛、屏幕边框或全屏提醒你，能稍后再响" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When it’s time, you’re reminded in the Notch, with a screen border, or full screen, and you can snooze"
+          }
+        }
+      }
+    },
     "到点提醒你：一次、每天、每周或每隔一阵" : {
       "localizations" : {
         "en" : {
@@ -10052,6 +10160,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "The databases, images, and daily backups for Clipboard, Notes, and translation history are here"
+          }
+        }
+      }
+    },
+    "剪贴板、启动器、翻译、截图、录制的开关" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switches for Clipboard, Launcher, Translate, Screenshot, and Recording"
           }
         }
       }
@@ -10256,12 +10374,12 @@
         }
       }
     },
-    "功能、外观、菜单栏、登录时打开、权限、同步、导出与导入、数据目录" : {
+    "功能、插件、外观、菜单栏、登录时打开、权限、同步、导出与导入、数据目录" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Features, appearance, menu bar, open at login, permissions, sync, export and import, data folder"
+            "value" : "Features, plugins, appearance, menu bar, open at login, permissions, sync, export and import, data folder"
           }
         }
       }
@@ -11394,6 +11512,16 @@
         }
       }
     },
+    "只在合上盖子时关" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Only when the lid is closed"
+          }
+        }
+      }
+    },
     "只在名字像「ÖÐÎÄ」「╓╨╬─」这种乱码时出现，改回中文" : {
       "localizations" : {
         "en" : {
@@ -11420,6 +11548,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Only in the search field, and switched back when you leave; turn it off to search in Chinese"
+          }
+        }
+      }
+    },
+    "只在这台 Mac 上添加，不跟着同步" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Added on this Mac only; not synced"
           }
         }
       }
@@ -11510,6 +11648,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Favorites Only (Word List)"
+          }
+        }
+      }
+    },
+    "只打开睡前由 Kitty Tools 关掉的；本来就关着的不会被打开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turns Bluetooth back on only if Kitty Tools turned it off before sleep; if it was already off, it stays off"
           }
         }
       }
@@ -11690,6 +11838,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Optional, like hello"
+          }
+        }
+      }
+    },
+    "可以只防系统睡眠、让屏幕照常熄" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can prevent only system sleep and let the display turn off as usual"
           }
         }
       }
@@ -11942,6 +12100,26 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "合上盖子睡下去时关掉蓝牙，放进包里不会被蓝牙鼠标、键盘弄醒" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turns Bluetooth off when you close the lid, so Bluetooth mice and keyboards can’t wake your Mac in a bag"
+          }
+        }
+      }
+    },
+    "合上盖子睡着时关掉蓝牙，醒来再打开：放进包里不会被蓝牙键鼠弄醒" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turns Bluetooth off when you close the lid and back on at wake, so Bluetooth mice and keyboards can’t wake your Mac in a bag"
           }
         }
       }
@@ -12348,6 +12526,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "The small text after the name in the Launcher"
+          }
+        }
+      }
+    },
+    "启动器里打一句话就能建一条" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Type a sentence in the Launcher to create one"
+          }
+        }
+      }
+    },
+    "启动器里打一句话，或在菜单栏、主界面里新建" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Type a sentence in the Launcher, or create one from the menu bar or Home"
           }
         }
       }
@@ -13160,16 +13358,6 @@
         }
       }
     },
-    "在「动画表情」里挑的，第一次用到时从 Kitty Tools 在 GitHub 上的发布页下载那个动画（一个约 0.2 MB，不带任何个人信息），存在这台 Mac 上、最多 50 MB；没下好、没联网时先显示缩略图。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Animated emoji are downloaded from the Kitty Tools releases page on GitHub the first time they’re used (about 0.2 MB each, with no personal information) and kept on this Mac, up to 50 MB. Until then, or when you’re offline, a thumbnail shows instead."
-          }
-        }
-      }
-    },
     "在「脚本命令」里点「新建脚本」" : {
       "localizations" : {
         "en" : {
@@ -13196,6 +13384,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Open in Dictionary"
+          }
+        }
+      }
+    },
+    "在一台 Mac 上添加，同步的几台都添加" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adding it on one Mac adds it on all your synced Macs"
           }
         }
       }
@@ -13596,6 +13794,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Right-click files, folders, or empty space in a folder window in Finder to see the items turned on below. macOS doesn’t show them in iCloud Drive or other cloud storage folders."
+          }
+        }
+      }
+    },
+    "在访达里右键：新建文件、拷贝路径、用指定的 App 打开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Right-click in Finder to create files, copy paths, and open with the app you choose"
           }
         }
       }
@@ -14576,6 +14784,16 @@
         }
       }
     },
+    "完全磁盘访问权限" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Full Disk Access"
+          }
+        }
+      }
+    },
     "完成" : {
       "localizations" : {
         "en" : {
@@ -14918,6 +15136,26 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "导入前 · %1$@ %2$@"
+          }
+        }
+      }
+    },
+    "导入后会添加插件：%@。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "After importing, these plugins will be added: %@."
+          }
+        }
+      }
+    },
+    "导入后会添加插件：%@。其中有的这台 Mac 还没给授权，导入后到它自己的设置页里打开。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "After importing, these plugins will be added: %@. Some don’t have access on this Mac yet; turn it on from each plugin’s settings page after importing."
           }
         }
       }
@@ -15298,6 +15536,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "A thin pill at the screen edge; merges along when sync is on"
+          }
+        }
+      }
+    },
+    "屏幕边缘的那一叠一直在；菜单栏、主界面和启动器里也有" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The stack at the screen edge is always there; also in the menu bar, Home, and the Launcher"
+          }
+        }
+      }
+    },
+    "屏幕边缘的那一叠：鼠标靠过去就扇开，点开就能改" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A stack at the screen edge: move the pointer there to fan it out, then click a note to edit it"
           }
         }
       }
@@ -18032,6 +18290,16 @@
         }
       }
     },
+    "开关蓝牙；没有它这个插件什么都不做" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turns Bluetooth on and off; without it, this plugin does nothing"
+          }
+        }
+      }
+    },
     "开发版不自动更新" : {
       "localizations" : {
         "en" : {
@@ -18204,6 +18472,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Prevents sleep while on; runs nothing while off"
+          }
+        }
+      }
+    },
+    "开着盖子睡着时不关，蓝牙键盘鼠标照样能叫醒电脑" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bluetooth stays on when your Mac sleeps with the lid open, so Bluetooth keyboards and mice can still wake it"
           }
         }
       }
@@ -18556,6 +18834,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Needed to record the screen. You may need to reopen the app after allowing it."
+          }
+        }
+      }
+    },
+    "录屏计时、提醒倒数、正在播放的歌挂在刘海两边" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recording timers, reminder countdowns, and the song that’s playing sit beside the notch"
           }
         }
       }
@@ -19104,12 +19392,32 @@
         }
       }
     },
+    "快速记一条，记完就收起来" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jot down a Quick Note and it gets out of the way"
+          }
+        }
+      }
+    },
     "怎么写脚本" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "How to Write Scripts"
+          }
+        }
+      }
+    },
+    "怎么用" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "How to Use It"
           }
         }
       }
@@ -19171,6 +19479,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Restoring can’t be undone. The current settings and data are saved first, so you can switch settings and shortcuts back with Restore from Backup."
+          }
+        }
+      }
+    },
+    "恢复后会添加插件：%@。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "After restoring, these plugins will be added: %@."
+          }
+        }
+      }
+    },
+    "恢复后会添加插件：%@。其中有的这台 Mac 还没给授权，恢复后到它自己的设置页里打开。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "After restoring, these plugins will be added: %@. Some don’t have access on this Mac yet; turn it on from each plugin’s settings page after restoring."
           }
         }
       }
@@ -19321,6 +19649,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Preview on hover"
+          }
+        }
+      }
+    },
+    "想自己写个小命令，在启动器里跑" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Write your own small commands and run them from the Launcher"
           }
         }
       }
@@ -19727,6 +20065,16 @@
         }
       }
     },
+    "手动开一段：无限期、几小时，或到某一刻" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn it on yourself: indefinitely, for a few hours, or until a set time"
+          }
+        }
+      }
+    },
     "打不开「%@」" : {
       "localizations" : {
         "en" : {
@@ -19927,12 +20275,32 @@
         }
       }
     },
+    "打开「下一个日程」时读日历" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reads your calendars when you show your next event on the notch"
+          }
+        }
+      }
+    },
     "打开「词典」" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Open Dictionary"
+          }
+        }
+      }
+    },
+    "打开「音量和亮度」时接管那五个键" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Takes over the five volume and brightness keys when “Volume and Brightness” is on"
           }
         }
       }
@@ -20013,6 +20381,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Opens a submenu"
+          }
+        }
+      }
+    },
+    "打开它的设置" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opens its settings"
           }
         }
       }
@@ -20167,6 +20545,16 @@
         }
       }
     },
+    "打开蓝牙设置" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Bluetooth Settings"
+          }
+        }
+      }
+    },
     "打开触控板设置" : {
       "localizations" : {
         "en" : {
@@ -20183,6 +20571,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Open Settings"
+          }
+        }
+      }
+    },
+    "打开访达扩展设置" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Finder Extensions Settings"
           }
         }
       }
@@ -20717,6 +21115,16 @@
         }
       }
     },
+    "拦住键盘鼠标，擦屏幕、孩子乱按都不怕；按住 Esc 退出" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Blocks the keyboard and mouse, so wiping the screen or a curious kid won’t do anything; hold Esc to leave"
+          }
+        }
+      }
+    },
     "拷贝" : {
       "localizations" : {
         "en" : {
@@ -21123,6 +21531,16 @@
         }
       }
     },
+    "按时段自动开，比如工作日 9:00–18:00" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turns on automatically on a schedule, such as Weekdays 9:00–18:00"
+          }
+        }
+      }
+    },
     "按过了「%@」" : {
       "localizations" : {
         "en" : {
@@ -21353,16 +21771,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Change Color (⌘. for the next one)"
-          }
-        }
-      }
-    },
-    "授权" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Permissions"
           }
         }
       }
@@ -21697,12 +22105,12 @@
         }
       }
     },
-    "插件 · 用得上再勾，以后也能在 设置 › 通用 › 功能 里添加" : {
+    "插件 · 用得上再勾，以后也能在 设置 › 全部插件 里添加" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Plugins · optional; you can add them later in Settings › General › Features"
+            "value" : "Plugins · optional; you can add them later in Settings › All Plugins"
           }
         }
       }
@@ -21713,6 +22121,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Plugin,Keep Awake,Awake,Prevent Sleep,Sleep,No Sleep,Display,Screen On,Display Sleep,Schedule,Weekdays,Time Range,caffeinate,Caffeine,Download,Background Task"
+          }
+        }
+      }
+    },
+    "插件,添加,移除,扩展,更多功能,全部插件,新插件" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "plugins,add,remove,extensions,more features,all plugins,new plugins"
           }
         }
       }
@@ -22955,6 +23373,16 @@
         }
       }
     },
+    "文件和文件夹" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Files and Folders"
+          }
+        }
+      }
+    },
     "文件太大，选一个 20 MB 以内的短音频" : {
       "localizations" : {
         "en" : {
@@ -23513,12 +23941,12 @@
         }
       }
     },
-    "新装时插件都没添加；从旧版升级上来的，原来开着的照旧添加着。添加了才出现在侧栏、菜单栏、主界面、快捷键和启动器里；移除就是关掉，设置和数据留着，再添加就回来。" : {
+    "新装时插件都没添加。添加了才出现在侧栏、菜单栏、主界面、快捷键和启动器里；移除了设置和数据都留着，再添加就回来。" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "A new install starts with no plugins; after an upgrade, plugins that were on stay added. Only added plugins appear in the sidebar, menu bar, Home, shortcuts, and the Launcher. Removing one just turns it off; its settings and data stay for when you add it again."
+            "value" : "Plugins aren’t added on a new install. Once added, a plugin shows up in the sidebar, the menu bar, Home, shortcuts, and the Launcher. If you remove it, its settings and data stay for when you add it again."
           }
         }
       }
@@ -23629,6 +24057,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Indefinitely"
+          }
+        }
+      }
+    },
+    "日历" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Calendars"
           }
         }
       }
@@ -24755,6 +25193,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Your reminders, with their times and styles; if two computers are on, both alert"
+          }
+        }
+      }
+    },
+    "有哪些状态、各是什么样子都能自己改" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You choose which statuses there are and how each one looks"
           }
         }
       }
@@ -26131,6 +26579,16 @@
         }
       }
     },
+    "正在播放读不到时，控制「音乐」「Spotify」的播放" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Controls playback in Music and Spotify when Now Playing can’t read it"
+          }
+        }
+      }
+    },
     "正在更新" : {
       "localizations" : {
         "en" : {
@@ -26569,6 +27027,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Each item can also have url (↩ opens it in the browser), path (↩ opens the file, ⌘↩ shows it in Finder, ⌘Y Quick Look), icon (the item’s icon, written like @kitty.icon; {\"type\": \"fileicon\", \"path\": …} uses that file’s icon), autocomplete (⇥ fills it into the search field after the keyword), and copy inside text (what ⌘C copies)."
+          }
+        }
+      }
+    },
+    "每次睡眠都关：开着盖子时只能用电脑自己的键盘、触控板叫醒它" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turns off at every sleep: with the lid open, only the built-in keyboard and trackpad can wake your Mac"
           }
         }
       }
@@ -28500,12 +28968,58 @@
         }
       }
     },
+    "添加「%@」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add “%@”"
+          }
+        }
+      }
+    },
     "添加「%@」插件" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Add the “%@” Plugin"
+          }
+        }
+      }
+    },
+    "添加了 %lld 个" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld added"
+          }
+        }
+      }
+    },
+    "添加了 %lld 个，共 %lld 个" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld of %2$lld added"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "添加了 %1$lld 个，共 %2$lld 个"
+          }
+        }
+      }
+    },
+    "添加了才出现在侧栏、菜单栏、主界面、快捷键和启动器里" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Once added, it shows up in the sidebar, the menu bar, Home, shortcuts, and the Launcher"
           }
         }
       }
@@ -28526,6 +29040,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Add Name"
+          }
+        }
+      }
+    },
+    "添加后在访达里右键；第一次要在系统设置里打开访达扩展" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Once added, right-click in Finder; the first time, turn on the Finder extension in System Settings"
+          }
+        }
+      }
+    },
+    "添加后自己工作，没有快捷键和菜单" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Once added, it works on its own, with no shortcut or menu"
+          }
+        }
+      }
+    },
+    "添加后自己工作：鼠标停在程序坞的图标上" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Once added, it works on its own: rest the pointer on an icon in the Dock"
           }
         }
       }
@@ -28910,6 +29454,16 @@
         }
       }
     },
+    "点一张切过去，悬停点 ✕ 关掉；按 ⌘Tab 时也能显示" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Click one to switch to it, or hover and click ✕ to close it; can also show when you press ⌘Tab"
+          }
+        }
+      }
+    },
     "点一行编辑，右边的开关暂停或打开那一条。一次性的提醒点了「知道了」就从列表里拿掉。" : {
       "localizations" : {
         "en" : {
@@ -28958,6 +29512,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "This row comes up when you click the notch, swipe down with two fingers, or press the Open Notch shortcut (set it in Settings › Shortcuts). When something hangs beside the notch (music playing, a recording), clicking the notch expands that first; swipe down once more for this row. Drag to reorder."
+          }
+        }
+      }
+    },
+    "点刘海、指针停在刘海上，或用快捷键打开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Click the notch, rest the pointer on it, or use a shortcut"
+          }
+        }
+      }
+    },
+    "点刘海叫出快捷动作和最近的提示" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Click the notch for quick actions and recent notices"
           }
         }
       }
@@ -29631,6 +30205,16 @@
         }
       }
     },
+    "用到时系统会问" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS asks when it’s needed"
+          }
+        }
+      }
+    },
     "用备份：便签回到 %@备份时的样子，那之后写的、改的不在里面。" : {
       "localizations" : {
         "en" : {
@@ -29677,6 +30261,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Create from It"
+          }
+        }
+      }
+    },
+    "用得上的再添加；移除了，设置和数据也留着" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add the ones you’ll use; removing one keeps its settings and data"
           }
         }
       }
@@ -29807,6 +30401,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Your Mac and display sleep as usual"
+          }
+        }
+      }
+    },
+    "电脑睡下去时关掉蓝牙、醒来再打开：什么时候关、要给的授权" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn Bluetooth off when your Mac sleeps and back on at wake: when to turn it off, and the access it needs"
+          }
+        }
+      }
+    },
+    "电脑睡下去时关掉蓝牙：放进包里不会被蓝牙鼠标、键盘弄醒，睡着的 Mac 也不会抢走手机连着的耳机。接着外接显示器时不关；关机不管。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turns Bluetooth off when your Mac goes to sleep, so Bluetooth mice and keyboards can’t wake it in a bag, and a sleeping Mac won’t take over headphones connected to your phone. Bluetooth stays on with an external display connected; shutting down isn’t affected."
+          }
+        }
+      }
+    },
+    "电脑睡下去时关掉蓝牙：放进包里不会被蓝牙鼠标、键盘弄醒，睡着的 Mac 也不会抢走手机连着的耳机。接着外接显示器时不关；关机不管。开着盖子先睡着、之后才合上的那一次不关。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turns Bluetooth off when your Mac goes to sleep, so Bluetooth mice and keyboards can’t wake it in a bag, and a sleeping Mac won’t take over headphones connected to your phone. Bluetooth stays on with an external display connected; shutting down isn’t affected. If your Mac falls asleep with the lid open and you close it later, Bluetooth stays on that time."
           }
         }
       }
@@ -30234,6 +30858,16 @@
         }
       }
     },
+    "看看它能做什么、要什么授权" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shows what it does and what access it needs"
+          }
+        }
+      }
+    },
     "看看磁盘还有没有地方" : {
       "localizations" : {
         "en" : {
@@ -30320,6 +30954,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Sleep"
+          }
+        }
+      }
+    },
+    "睡眠与屏幕" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sleep and Screen"
+          }
+        }
+      }
+    },
+    "睡眠关蓝牙" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bluetooth Sleep"
           }
         }
       }
@@ -30515,6 +31169,16 @@
         }
       }
     },
+    "离开电脑时盖住所有屏幕，显示「马上回来」这类告示" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Covers every screen with a notice like “Be Right Back” while you’re away"
+          }
+        }
+      }
+    },
     "离线 · 本机翻译" : {
       "localizations" : {
         "en" : {
@@ -30595,6 +31259,16 @@
         }
       }
     },
+    "移动、复制到常用的位置，压缩和解压" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move or copy to places you use often, and compress or extract archives"
+          }
+        }
+      }
+    },
     "移动了 %lld 项，%lld 项没成" : {
       "localizations" : {
         "en" : {
@@ -30671,12 +31345,32 @@
         }
       }
     },
+    "移除后睡眠时不再关蓝牙（关着的先打开）；设置留着，再添加就回来" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Once removed, Bluetooth is no longer turned off at sleep (if it’s off now, it’s turned back on); settings stay for when you add it again"
+          }
+        }
+      }
+    },
     "移除后菜单栏、主界面、启动器、快捷键里都没有它，设置和数据留着，再添加就回来" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Once removed, it’s gone from the menu bar, Home, the Launcher, and shortcuts; settings and data stay for when you add it again"
+          }
+        }
+      }
+    },
+    "移除在它自己那一页的最下面；移除了设置和数据都留着" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "To remove it, go to the bottom of its own page; its settings and data stay"
           }
         }
       }
@@ -30970,6 +31664,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Waits for the next reminder; nothing runs when there are none"
+          }
+        }
+      }
+    },
+    "等着电脑睡下去；醒来时只打开睡前自己关掉的蓝牙" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waits for your Mac to sleep; at wake, turns on only the Bluetooth it turned off"
           }
         }
       }
@@ -32283,6 +32987,26 @@
         }
       }
     },
+    "能做什么" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "What It Does"
+          }
+        }
+      }
+    },
+    "能另外打开下一个日程、音量和亮度" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can also show your next event and volume and brightness levels"
+          }
+        }
+      }
+    },
     "脚本以你的身份运行，能用 Kitty Tools 已有的辅助功能、屏幕录制、完全磁盘访问授权，只放你信得过的。从网上下载的脚本，第一次运行前会先在启动器里给你看一眼全文。" : {
       "localizations" : {
         "en" : {
@@ -32293,12 +33017,12 @@
         }
       }
     },
-    "脚本以你的身份运行，能用 Kitty Tools 已有的辅助功能、屏幕录制等授权，只放你信得过的脚本；从网上下载的，第一次运行前会先给你看一眼全文。" : {
+    "脚本以你的身份运行，能用 Kitty Tools 已有的辅助功能、屏幕录制等授权，只放你信得过的脚本；从网上下载的，第一次运行前会先给你看一眼全文。Kitty Tools 自带的大功能（便签、刘海岛这些）是插件，在 设置 › 全部插件 里添加。" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Scripts run as you and can use permissions Kitty Tools already has, like Accessibility and Screen Recording, so only add scripts you trust. A downloaded script is shown to you in full before its first run."
+            "value" : "Scripts run as you and can use permissions Kitty Tools already has, like Accessibility and Screen Recording, so only add scripts you trust. A downloaded script is shown to you in full before its first run. Larger built-in features, like Notes and the Notch, are plugins; add them in Settings › All Plugins."
           }
         }
       }
@@ -32469,6 +33193,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Download animated emoji automatically"
+          }
+        }
+      }
+    },
+    "自动化" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Automation"
           }
         }
       }
@@ -32834,6 +33568,16 @@
         }
       }
     },
+    "菜单栏、主界面，或在启动器里打「awake 2小时」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "From the menu bar, Home, or by typing “awake 2h” in the Launcher"
+          }
+        }
+      }
+    },
     "菜单高亮和焦点环由系统绘制，仍使用系统强调色" : {
       "localizations" : {
         "en" : {
@@ -32860,6 +33604,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Blue"
+          }
+        }
+      }
+    },
+    "蓝牙" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bluetooth"
+          }
+        }
+      }
+    },
+    "蓝牙,Bluetooth,睡眠,休眠,合盖,盖子,唤醒,误唤醒,鼠标,键盘,耳机,外接显示器,包里" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bluetooth,sleep,lid,close lid,wake,mouse,keyboard,headphones,external display,bag"
+          }
+        }
+      }
+    },
+    "蓝牙没能重新打开，请在控制中心里打开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t turn Bluetooth back on. Turn it on in Control Center."
           }
         }
       }
@@ -33095,16 +33869,6 @@
         }
       }
     },
-    "要在系统设置里打开访达扩展" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Turn on the Finder extension in System Settings"
-          }
-        }
-      }
-    },
     "要填密钥" : {
       "localizations" : {
         "en" : {
@@ -33121,6 +33885,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Include ⌘, ⌃, or ⌥ (F1–F20 work alone), or double-press a modifier key"
+          }
+        }
+      }
+    },
+    "要授权" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Needs access"
           }
         }
       }
@@ -33161,6 +33935,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "To open Launchpad with a pinch, copy the command into Terminal and run it to turn off the system Apps pinch"
+          }
+        }
+      }
+    },
+    "要的授权" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Access It Needs"
           }
         }
       }
@@ -33297,6 +34081,26 @@
         }
       }
     },
+    "触控板捏合、触发角，或从菜单栏、启动器打开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pinch on the trackpad, use a hot corner, or open it from the menu bar or the Launcher"
+          }
+        }
+      }
+    },
+    "触控板捏合或触发角打开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opens with a trackpad pinch or a hot corner"
+          }
+        }
+      }
+    },
     "认不出原文是什么语言，在浮窗顶上选一下源语言" : {
       "localizations" : {
         "en" : {
@@ -33413,6 +34217,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Add to existing"
+          }
+        }
+      }
+    },
+    "记录与提醒" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notes and Reminders"
           }
         }
       }
@@ -33603,6 +34417,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Finder Menu needs to be turned on once in System Settings"
+          }
+        }
+      }
+    },
+    "访达扩展" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finder Extension"
           }
         }
       }
@@ -33807,12 +34631,12 @@
         }
       }
     },
-    "语言,英文,中文,English,Language,外观,浅色,深色,暗黑,主题,跟随系统,强调色,主题色,颜色,开机,登录,自启,权限,辅助功能,屏幕录制,麦克风,剪贴板访问,隐私,菜单栏,状态栏,图标,隐藏,彩色,单色,挤压,弹开,动画,动效,导出,导入,备份,恢复,迁移,换电脑,配置,功能,模块,关闭,停用,启用,不用,插件,添加,移除,同步,iCloud,云盘,多台,几台,另一台,数据,数据目录,访达,文件夹" : {
+    "语言,英文,中文,English,Language,外观,浅色,深色,暗黑,主题,跟随系统,强调色,主题色,颜色,开机,登录,自启,权限,辅助功能,屏幕录制,麦克风,剪贴板访问,隐私,菜单栏,状态栏,图标,隐藏,彩色,单色,挤压,弹开,动画,动效,导出,导入,备份,恢复,迁移,换电脑,配置,功能,模块,关闭,停用,启用,不用,同步,iCloud,云盘,多台,几台,另一台,数据,数据目录,访达,文件夹" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Language,English,Chinese,Appearance,Light,Dark,Dark Mode,Theme,Auto,Accent Color,Color,Startup,Login,Open at Login,Permissions,Accessibility,Screen Recording,Microphone,Clipboard Access,Privacy,Menu Bar,Status Bar,Icon,Hide,Colorful,Monochrome,Squeeze,Bounce,Animation,Motion,Export,Import,Backup,Restore,Migrate,New Mac,Configuration,Features,Modules,Turn Off,Disable,Enable,Plugins,Add,Remove,Sync,iCloud,iCloud Drive,Multiple Macs,Another Mac,Data,Data Folder,Finder,Folder"
+            "value" : "Language,English,Chinese,Appearance,Light,Dark,Dark Mode,Theme,Auto,Accent Color,Color,Startup,Login,Open at Login,Permissions,Accessibility,Screen Recording,Microphone,Clipboard Access,Privacy,Menu Bar,Status Bar,Icon,Hide,Colorful,Monochrome,Squeeze,Bounce,Animation,Motion,Export,Import,Backup,Restore,Migrate,New Mac,Configuration,Features,Modules,Turn Off,Disable,Enable,Sync,iCloud,iCloud Drive,Multiple Macs,Another Mac,Data,Data Folder,Finder,Folder"
           }
         }
       }
@@ -34443,16 +35267,6 @@
         }
       }
     },
-    "辅助功能、屏幕录制" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Accessibility, Screen Recording"
-          }
-        }
-      }
-    },
     "输入「%@ 空格 %@」" : {
       "localizations" : {
         "en" : {
@@ -34827,12 +35641,32 @@
         }
       }
     },
+    "还没允许" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not allowed yet"
+          }
+        }
+      }
+    },
     "还没允许：这些文件夹里的文件搜不到" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Not allowed yet: files in these folders can’t be searched"
+          }
+        }
+      }
+    },
+    "还没关过" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not yet"
           }
         }
       }
@@ -34873,6 +35707,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Not started yet"
+          }
+        }
+      }
+    },
+    "还没打开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not turned on"
           }
         }
       }
@@ -35067,6 +35911,16 @@
         }
       }
     },
+    "还没添加；便签、提醒、刘海岛这些都在里面" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "None added yet; Notes, Reminders, the Notch, and more are in here"
+          }
+        }
+      }
+    },
     "还没给辅助功能授权，进不了状态屏" : {
       "localizations" : {
         "en" : {
@@ -35245,6 +36099,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "This address isn’t encrypted (http), so the password and synced content travel over the network as plain text"
+          }
+        }
+      }
+    },
+    "这个插件还没添加" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This plugin isn’t added yet"
           }
         }
       }
@@ -35905,12 +36769,12 @@
         }
       }
     },
-    "进入时要「辅助功能」（拦住键盘鼠标）" : {
+    "进入时拦住键盘鼠标；没有它进不了状态屏" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Accessibility, when entering (to block the keyboard and mouse)"
+            "value" : "Blocks the keyboard and mouse while it’s up; without it, Status Screen can’t start"
           }
         }
       }
@@ -36785,6 +37649,36 @@
         }
       }
     },
+    "醒来后蓝牙键盘鼠标、耳机要几秒到几十秒才重新连上。睡着时蓝牙关着，用手表解锁这台 Mac、靠蓝牙的「查找」都用不了。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "After wake, Bluetooth keyboards, mice, and headphones take a few seconds to a minute to reconnect. While your Mac sleeps with Bluetooth off, unlocking it with your watch and Find My over Bluetooth don’t work."
+          }
+        }
+      }
+    },
+    "醒来时只打开睡前自己关掉的蓝牙；接着外接显示器时不关" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "At wake, turns on only the Bluetooth it turned off; stays on with an external display connected"
+          }
+        }
+      }
+    },
+    "醒来时重新打开蓝牙" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn Bluetooth back on at wake"
+          }
+        }
+      }
+    },
     "里面的 %lld 条便签会被永久删除，不能撤销。" : {
       "localizations" : {
         "en" : {
@@ -37269,6 +38163,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Alarm clock"
+          }
+        }
+      }
+    },
+    "除了自带的状态和示例提醒用的几个，表情的动画第一次用到时从 Kitty Tools 在 GitHub 上的发布页下载（一个约 0.2 MB，不带任何个人信息），存在这台 Mac 上、最多 50 MB；没下好、没联网时先显示缩略图。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Except for the few used by the built-in statuses and example reminders, emoji animations are downloaded from the Kitty Tools releases page on GitHub the first time they’re used (about 0.2 MB each, with no personal information) and kept on this Mac, up to 50 MB. Until then, or when you’re offline, a thumbnail shows instead."
           }
         }
       }
@@ -37870,6 +38774,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "When the pointer rests on a tab, the first few lines of the note appear beside it"
+          }
+        }
+      }
+    },
+    "鼠标停在程序坞的 App 图标上，弹出它所有窗口的缩略图" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rest the pointer on an app in the Dock to see thumbnails of all its windows"
           }
         }
       }

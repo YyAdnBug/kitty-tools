@@ -26,12 +26,19 @@ struct WhatsNewTests {
     let entries = WhatsNew.entries
     #expect(Set(entries.map(\.id)).count == entries.count)
     for version in Set(entries.map(\.version)) {
-      #expect(entries.filter { $0.version == version }.count <= WhatsNew.perVersion, "\(version)")
+      // 同一版的几个新插件算一个（都只标在「全部插件」一处）
+      let mine = entries.filter { $0.version == version }
+      let count =
+        mine.filter { $0.plugin == nil }.count + (mine.contains { $0.plugin != nil } ? 1 : 0)
+      #expect(count <= WhatsNew.perVersion, "\(version)")
     }
     let released = Set(AboutTab.releases.map(\.version))
     for entry in entries {
       #expect(!entry.actions.isEmpty || entry.page != nil, "\(entry.id)")
       #expect(entry.section == nil || entry.page != nil, "\(entry.id)")
+      if let plugin = entry.plugin {
+        #expect(plugin.isPlugin && entry.feature == nil && entry.actions.isEmpty, "\(entry.id)")
+      }
       if let feature = entry.feature {
         #expect(entry.actions.allSatisfy { $0.feature == feature }, "\(entry.id)")
       }

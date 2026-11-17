@@ -98,7 +98,7 @@ struct RemindersTab: View {
         }
       }
       .gated(by: .reminders)
-      PluginRemoveSection(plugin: .reminders)
+      PluginAboutSection(plugin: .reminders)
     }
     .formStyle(.grouped)
   }
