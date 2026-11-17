@@ -455,7 +455,9 @@ public static class EmojiPackRemote
 
     /// <summary>
     /// 下一个文件：client 不能自动跳转（自己跳，每一跳都过 IsAllowed）；200 才收，声明的长度、实际读到的都不超过 EmojiPackFile.MaxBytes，
-    /// 下完过 EmojiPackFile.Read。不成（网络、地址、大小、格式）一律 null，不抛（取消照常抛 OperationCanceledException）。
+    /// 下完过 EmojiPackFile.Read。不成（网络、地址、大小、格式、取消、超时）一律 null，不抛。
+    /// 整个下载多久由 cancellationToken 管（App 给 60 秒）：HttpClient.Timeout 配 ResponseHeadersRead 只管到响应头，正文传到一半卡住
+    /// 只有它能停（R107 审查）。
     /// </summary>
     public static async Task<byte[]?> FetchAsync(HttpClient client, string url, string? testServer, CancellationToken cancellationToken)
     {
@@ -507,10 +509,10 @@ public static class EmojiPackRemote
 
             return null;
         }
-        catch (Exception ex) when (ex is HttpRequestException or IOException or InvalidOperationException or UriFormatException ||
-                                   (ex is TaskCanceledException && !cancellationToken.IsCancellationRequested))
+        catch (Exception ex) when (ex is HttpRequestException or IOException or InvalidOperationException or UriFormatException or
+                                   OperationCanceledException)
         {
-            // 超时（HttpClient 的超时是 TaskCanceledException，但不是我们取消的）、连不上、读一半断了
+            // 连不上、读一半断了、超时（HttpClient 自己的超时和调用方的都是 OperationCanceledException）
             return null;
         }
     }

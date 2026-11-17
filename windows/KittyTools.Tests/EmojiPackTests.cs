@@ -218,11 +218,13 @@ public sealed class EmojiPackTests
             ["/out/tampered.png"] = () => Reply(200, tampered),
             ["/out/huge.png"] = () => Header(200, $"Content-Length: {EmojiPackFile.MaxBytes + 1}"),
         };
+        // 只发响应头和一点正文、然后不动（Serve 里认这个路径，挂到测试收尾）
+        const string stall = "/out/stall.png";
         var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
         using var stop = new CancellationTokenSource();
-        var serving = Serve(listener, routes, stop.Token);
+        var serving = Serve(listener, routes, stall, stop.Token);
         var server = $"http://127.0.0.1:{port}/out";
         using var client = new HttpClient(new SocketsHttpHandler { AllowAutoRedirect = false, UseProxy = false })
         {
@@ -242,6 +244,12 @@ public sealed class EmojiPackTests
             Assert.IsNull(await Fetch("huge"), "声明的长度超了");
             // 没设测试服务器时本机地址一跳都不去
             Assert.IsNull(await EmojiPackRemote.FetchAsync(client, $"{server}/person-walking.png", null, CancellationToken.None));
+
+            // 正文传到一半卡住：HttpClient.Timeout（10 秒）只管到响应头，停得下来靠调用方的取消（App 给 60 秒），到点给 null、不抛
+            using var quick = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            Assert.IsNull(await EmojiPackRemote.FetchAsync(client, $"http://127.0.0.1:{port}{stall}", server, quick.Token));
+            Assert.IsTrue(clock.Elapsed < TimeSpan.FromSeconds(5), $"卡住的正文要按取消停下，用了 {clock.Elapsed}");
         }
         finally
         {
@@ -251,9 +259,10 @@ public sealed class EmojiPackTests
         }
     }
 
-    /// <summary>最小的 HTTP/1.1：一个连接一个请求，回完就关。</summary>
-    private static async Task Serve(TcpListener listener, Dictionary<string, Func<string>> routes, CancellationToken token)
+    /// <summary>最小的 HTTP/1.1：一个连接一个请求，回完就关；每个连接各自处理（卡住的那个不挡后面的）。stall 那个路径只回响应头和 10 个字节就不动了。</summary>
+    private static async Task Serve(TcpListener listener, Dictionary<string, Func<string>> routes, string stall, CancellationToken token)
     {
+        var handlers = new List<Task>();
         while (!token.IsCancellationRequested)
         {
             TcpClient connection;
@@ -263,35 +272,48 @@ public sealed class EmojiPackTests
             }
             catch (Exception ex) when (ex is OperationCanceledException or SocketException or ObjectDisposedException)
             {
+                break;
+            }
+
+            handlers.Add(Handle(connection, routes, stall, token));
+        }
+
+        await Task.WhenAll(handlers);
+    }
+
+    private static async Task Handle(TcpClient connection, Dictionary<string, Func<string>> routes, string stall, CancellationToken token)
+    {
+        try
+        {
+            using var owned = connection;
+            var stream = connection.GetStream();
+            var request = new StringBuilder();
+            var buffer = new byte[4096];
+            while (!request.ToString().Contains("\r\n\r\n", StringComparison.Ordinal))
+            {
+                var read = await stream.ReadAsync(buffer, token);
+                if (read == 0)
+                {
+                    break;
+                }
+
+                request.Append(Encoding.Latin1.GetString(buffer, 0, read));
+            }
+
+            var path = request.ToString().Split(' ').ElementAtOrDefault(1) ?? "/";
+            if (path == stall)
+            {
+                await stream.WriteAsync(Encoding.Latin1.GetBytes(Header(200, "Content-Length: 100000") + "0123456789"), token);
+                await Task.Delay(Timeout.Infinite, token);
                 return;
             }
 
-            try
-            {
-                using var owned = connection;
-                var stream = connection.GetStream();
-                var request = new StringBuilder();
-                var buffer = new byte[4096];
-                while (!request.ToString().Contains("\r\n\r\n", StringComparison.Ordinal))
-                {
-                    var read = await stream.ReadAsync(buffer, token);
-                    if (read == 0)
-                    {
-                        break;
-                    }
-
-                    request.Append(Encoding.Latin1.GetString(buffer, 0, read));
-                }
-
-                var path = request.ToString().Split(' ').ElementAtOrDefault(1) ?? "/";
-                var reply = routes.TryGetValue(path, out var route) ? route() : Header(404, "Content-Length: 0");
-                var bytes = Encoding.Latin1.GetBytes(reply);
-                await stream.WriteAsync(bytes, token);
-            }
-            catch (Exception ex) when (ex is IOException or SocketException or OperationCanceledException)
-            {
-                // 客户端先断了（声明太大的那个不读正文）：下一个
-            }
+            var reply = routes.TryGetValue(path, out var route) ? route() : Header(404, "Content-Length: 0");
+            await stream.WriteAsync(Encoding.Latin1.GetBytes(reply), token);
+        }
+        catch (Exception ex) when (ex is IOException or SocketException or OperationCanceledException or ObjectDisposedException)
+        {
+            // 客户端先断了（声明太大的那个不读正文）、测试收尾取消了卡住的那个
         }
     }
 

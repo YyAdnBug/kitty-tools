@@ -30,8 +30,11 @@ internal static partial class EmojiChoice
             _ => cell == StatusEmoji.Canonical(symbol),
         };
 
-    /// <summary>格子里那一格：选着系统表情时画那个字，没选时一个笑脸图标；picked 收到挑好的那个字。</summary>
-    public static Button Create(Func<string> current, Action<string> picked)
+    /// <summary>
+    /// 格子里那一格：选着系统表情时画那个字，没选时一个笑脸图标；picked 收到挑好的那个字。Refresh：选中变了（挑了别的格子）时调，
+    /// 这一格跟着换（同 mac customCell 跟着 selection 实时画，R107 审查）。
+    /// </summary>
+    public static (Button Button, Action Refresh) Create(Func<string> current, Action<string> picked)
     {
         var button = new Button
         {
@@ -102,7 +105,7 @@ internal static partial class EmojiChoice
             });
         };
         button.Click += (_, _) => flyout.ShowAt(button);
-        return button;
+        return (button, new Action(Show));
     }
 
     /// <summary>叫出系统的表情面板（Win + .）。用户点了「系统表情」才发，只发这两个键。</summary>

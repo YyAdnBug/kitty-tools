@@ -268,6 +268,10 @@ internal sealed partial class TickerText : Grid
         ? Windows.UI.Color.FromArgb((byte)Math.Round(solid.Color.A * Math.Clamp(solid.Opacity, 0, 1)), solid.Color.R, solid.Color.G, solid.Color.B)
         : Colors.White;
 
+    /// <summary>
+    /// 排这一行：数字等宽（OpenType tnum；mac monospacedDigitSystemFont）——Segoe UI Variable 默认是比例数字，不开的话每秒各字的位置都在变，
+    /// 一次也滚不成、每秒整行重排（R107 审查）。
+    /// </summary>
     private CanvasTextLayout Layout(CanvasDevice device, string text)
     {
         using var format = new CanvasTextFormat
@@ -276,7 +280,15 @@ internal sealed partial class TickerText : Grid
             FontSize = (float)_fontSize,
             WordWrapping = CanvasWordWrapping.NoWrap,
         };
-        return new CanvasTextLayout(device, text, format, 100_000, 1_000);
+        var layout = new CanvasTextLayout(device, text, format, 100_000, 1_000);
+        if (text.Length > 0)
+        {
+            using var typography = new CanvasTypography();
+            typography.AddFeature(CanvasTypographyFeatureName.TabularFigures, 1u);
+            layout.SetTypography(0, text.Length, typography);
+        }
+
+        return layout;
     }
 
     /// <summary>按字形簇切开（同 mac Character）；starts 是每个字在字符串里从哪开始（排版按 UTF-16 下标认）。</summary>

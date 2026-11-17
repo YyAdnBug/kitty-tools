@@ -36,6 +36,9 @@ let still = 96
 let maxPackBytes = 3 * 1_048_576
 /// 图集里那个 tEXt 块的关键字（Core EmojiPackFile.Keyword）
 let keyword = "kitty-emoji"
+/// App 收的图集（Core EmojiSheet.Decode）：帧数 2…256（隔帧取完至少还有两帧）、列数和行数都不超过 16
+let maxFrames = 256
+let maxColumns = 16
 
 /// App 里的 id → 仓库里的文件名（顺序同 mac 的 StatusEmoji.ids，眼睛在最后；后 12 个是 mac 2026-11-04 加的）
 let emoji: [(id: String, file: String)] = [
@@ -169,6 +172,11 @@ func makeSheet(_ url: URL) -> Sheet? {
 
   guard let image = atlas.makeImage(), let png = encode(image), let first else {
     print("编不出 \(url.lastPathComponent)")
+    return nil
+  }
+  // 同 App 的 EmojiSheet.Decode：超了 App 不认，这里先拦（R107 审查）
+  guard count >= 2, count <= maxFrames, columns <= maxColumns, rows <= maxColumns else {
+    print("\(url.lastPathComponent) 有 \(count) 帧（\(columns) 列 × \(rows) 行），超过 App 收的 \(maxFrames) 帧 / \(maxColumns) 列")
     return nil
   }
   let meta = ["\(cell)", "\(columns)", "\(count)", delays.map(String.init).joined(separator: ",")]

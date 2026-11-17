@@ -220,11 +220,18 @@ internal sealed partial class SettingsWindow
         var icons = new VariableSizedWrapGrid { Orientation = Orientation.Horizontal, MaximumRowsOrColumns = 7, ItemWidth = 44, ItemHeight = 44 };
         var (iconRow, showPreview) = IconPicker(icons, "statusScreen", "\uE8E4");
         var iconButtons = new List<(string Id, Button Button)>();
+        // 「动画表情」「系统表情」两格画的是选着的那个：选中一变就重画（R107 审查）
+        var cellRefreshers = new List<Action>();
         void SelectIcon(string id)
         {
             draft.Symbol = id;
             headerIcon.Content = id.Length > 0 ? StatusEmoji.Still(id, 40, dark) : KindTile.Create("statusScreen", "\uE8E4", 40);
             showPreview(id);
+            foreach (var refresh in cellRefreshers)
+            {
+                refresh();
+            }
+
             foreach (var (value, button) in iconButtons)
             {
                 button.BorderBrush = EmojiChoice.Selected(value, id) ? new SolidColorBrush(Theme.AccentColor) : new SolidColorBrush(Colors.Transparent);
@@ -256,14 +263,16 @@ internal sealed partial class SettingsWindow
         // 倒数第二格「动画表情」（R107）：动画表情包里挑，第一次用到时下载
         if (AnimatedEmojiPicker.Create(() => draft.Symbol, SelectIcon, dark) is { } animatedEmoji)
         {
-            iconButtons.Add((AnimatedEmojiPicker.Key, animatedEmoji));
-            icons.Children.Add(animatedEmoji);
+            iconButtons.Add((AnimatedEmojiPicker.Key, animatedEmoji.Button));
+            cellRefreshers.Add(animatedEmoji.Refresh);
+            icons.Children.Add(animatedEmoji.Button);
         }
 
         // 最后一格「系统表情」：从系统的表情面板挑任意一个（PLAN-v16 E1）
         var otherEmoji = EmojiChoice.Create(() => draft.Symbol, SelectIcon);
-        iconButtons.Add((EmojiChoice.Key, otherEmoji));
-        icons.Children.Add(otherEmoji);
+        iconButtons.Add((EmojiChoice.Key, otherEmoji.Button));
+        cellRefreshers.Add(otherEmoji.Refresh);
+        icons.Children.Add(otherEmoji.Button);
 
         AddDetailSection(null, title, detail, SettingsUi.Footnote($"标题最多 {StatusPresets.MaxTitle} 个字，说明最多 {StatusPresets.MaxDetail} 个字。"));
         AddDetailSection("图标", iconRow);

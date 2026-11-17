@@ -205,6 +205,8 @@ internal sealed partial class SettingsWindow
 
         // 图标格子（同状态屏）：「无」+ 28 个表情 +「动画表情」（R107）+「系统表情」（PLAN-v16 E1）。
         var iconButtons = new List<(string Id, Button Button)>();
+        // 「动画表情」「系统表情」两格画的是选着的那个：选中一变就重画（R107 审查）
+        var cellRefreshers = new List<Action>();
         // 选了图标也要存：Refresh 在下面才建好，先挂一个空的，建好后换成它
         Action changed = static () => { };
         var icons = new VariableSizedWrapGrid { Orientation = Orientation.Horizontal, MaximumRowsOrColumns = 7, ItemWidth = 44, ItemHeight = 44 };
@@ -215,6 +217,11 @@ internal sealed partial class SettingsWindow
             headerIcon.Content = id.Length > 0 ? StatusEmoji.Still(id, 40, dark) : KindTile.Create("reminders", FeatureIcons.Reminders, 40);
             showPreview(id);
             changed();
+            foreach (var refresh in cellRefreshers)
+            {
+                refresh();
+            }
+
             foreach (var (value, button) in iconButtons)
             {
                 button.BorderBrush = new SolidColorBrush(EmojiChoice.Selected(value, id) ? Theme.AccentColor : Colors.Transparent);
@@ -243,14 +250,16 @@ internal sealed partial class SettingsWindow
         // 倒数第二格「动画表情」（R107）：动画表情包里挑，第一次用到时下载
         if (AnimatedEmojiPicker.Create(() => draft.Symbol, SelectIcon, dark) is { } animatedEmoji)
         {
-            iconButtons.Add((AnimatedEmojiPicker.Key, animatedEmoji));
-            icons.Children.Add(animatedEmoji);
+            iconButtons.Add((AnimatedEmojiPicker.Key, animatedEmoji.Button));
+            cellRefreshers.Add(animatedEmoji.Refresh);
+            icons.Children.Add(animatedEmoji.Button);
         }
 
         // 最后一格「系统表情」：从系统的表情面板挑任意一个（PLAN-v16 E1）
         var otherEmoji = EmojiChoice.Create(() => draft.Symbol, SelectIcon);
-        iconButtons.Add((EmojiChoice.Key, otherEmoji));
-        icons.Children.Add(otherEmoji);
+        iconButtons.Add((EmojiChoice.Key, otherEmoji.Button));
+        cellRefreshers.Add(otherEmoji.Refresh);
+        icons.Children.Add(otherEmoji.Button);
 
         // 时间（REVIEW R101）：重复 = 一次 / 每天 / 工作日 / 每周 / 每月 / 每隔一阵；存的照旧是四种，每天、工作日是勾满 / 勾一到五的每周
         var kind = new ComboBox { Header = "重复", ItemsSource = ReminderRepeats.All.Select(ReminderRepeats.Title).ToList(), MinWidth = 160 };

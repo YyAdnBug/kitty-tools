@@ -12,7 +12,9 @@
 // - 下载时只带表情编号（地址里那一段）；下下来的按不可信输入看：跳转每一跳只认本仓库的 release 和 GitHub 的资产主机、不超过 3 MB、
 //   tEXt 块和图的大小对得上才存（Core 的 EmojiPackRemote / EmojiPackFile）；先写临时名再换过去，写到一半的不会被当成好的。
 // - 发表情包之前在本机试：环境变量 KITTY_EMOJI_PACK_SERVER=http://127.0.0.1:<端口>（只认 http 的 127.0.0.1 / localhost），
-//   在 --pack 的输出目录起一个静态文件服务器（同 mac 的 emojiPackTestServer）。
+//   在 --pack 的输出目录起一个静态文件服务器（同 mac 的 emojiPackTestServer）。只在测试档认（Debug，或 Release 的 KITTY_PROBE_PROFILE），
+//   同自动更新的测试源。
+// - 一次下载最多 60 秒（正文传到一半卡住也停，HttpClient.Timeout 只管到响应头）；缓存里的文件结构对、像素却解不开时删掉，过 10 分钟再下。
 // - 日志只写编号和成没成，不写地址。
 using System.Net;
 using KittyTools.Core;
@@ -28,6 +30,12 @@ internal static class EmojiPack
     private static readonly HttpClient Http = CreateClient();
     private static bool _trimmed;
 
+    /// <summary>正在收拾缓存（线程池里）：同一时间只跑一个。</summary>
+    private static int _trimming;
+
+    /// <summary>一次下载最多多久（连上、收头、收完正文）。</summary>
+    private static readonly TimeSpan DownloadLimit = TimeSpan.FromSeconds(60);
+
     /// <summary>包里的对照表；读不出来是 null（当没有动画包：「动画表情」那一格不出，存着的 pack: 画成空格子）。</summary>
     public static EmojiPackCatalog? Catalog => LazyCatalog.Value;
 
@@ -36,7 +44,9 @@ internal static class EmojiPack
     /// <summary>开关开着才联网。</summary>
     public static bool IsEnabled => SettingsService.Current.EmojiPackDownloads;
 
-    private static string? TestServer => Environment.GetEnvironmentVariable(EmojiPackRemote.TestServerVariable);
+    /// <summary>本机测试服务器：只在测试档认（同自动更新的测试源只在 Debug / 自检认，R107 审查）。</summary>
+    private static string? TestServer
+        => Paths.IsTestProfile ? Environment.GetEnvironmentVariable(EmojiPackRemote.TestServerVariable) : null;
 
     private static HttpClient CreateClient()
     {
@@ -98,7 +108,7 @@ internal static class EmojiPack
         if (!_trimmed)
         {
             _trimmed = true;
-            _ = Task.Run(Trim);
+            TrimSoon();
         }
 
         if (await ReadCachedAsync(id) is { } cached)
@@ -174,7 +184,9 @@ internal static class EmojiPack
             return false;
         }
 
-        var bytes = await EmojiPackRemote.FetchAsync(Http, url, testServer, CancellationToken.None);
+        // 整个下载的时限：正文卡住也停（不然 Loading 里一直挂着，这次运行再也不试）；到点 FetchAsync 给 null，按失败记
+        using var limit = new CancellationTokenSource(DownloadLimit);
+        var bytes = await EmojiPackRemote.FetchAsync(Http, url, testServer, limit.Token);
         if (bytes is null)
         {
             Log.Warn($"status.emoji-pack-download-failed {id}");
@@ -205,13 +217,61 @@ internal static class EmojiPack
         }
 
         Log.Info($"status.emoji-pack-downloaded {id} bytes={bytes.Length}");
-        _ = Task.Run(Trim);
+        TrimSoon();
         return true;
     }
 
-    /// <summary>把缓存收到上限以内，顺手删掉没写完的临时文件（线程池里列目录、删文件）。</summary>
+    /// <summary>
+    /// 缓存里这个表情的文件结构对、像素却解不开（StatusEmoji 加载失败时调）：删掉，记一次失败——过 10 分钟再用到时重新下
+    /// （不当场重下：服务器上那个本身坏了的话会一直下）。
+    /// </summary>
+    public static void Forget(string symbol)
+    {
+        if (DownloadableId(symbol) is not { } id)
+        {
+            return;
+        }
+
+        FailedAt[id] = DateTime.UtcNow;
+        try
+        {
+            File.Delete(CachePath(id));
+            Log.Warn($"status.emoji-pack-undecodable {id}");
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"status.emoji-pack-forget-failed {id} {ex.GetType().Name}");
+        }
+    }
+
+    /// <summary>在线程池里收拾一次缓存；上一次还没收拾完就不再起（两个同时删会互相踩）。</summary>
+    private static void TrimSoon()
+    {
+        if (Interlocked.CompareExchange(ref _trimming, 1, 0) != 0)
+        {
+            return;
+        }
+
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                Trim();
+            }
+            finally
+            {
+                Volatile.Write(ref _trimming, 0);
+            }
+        });
+    }
+
+    /// <summary>
+    /// 把缓存收到上限以内，顺手删掉没写完的临时文件（线程池里列目录、删文件）。一个文件删不掉（被占着、没权限）只跳过它，
+    /// 别的照删。
+    /// </summary>
     private static void Trim()
     {
+        List<EmojiPackCache.CachedFile> files;
         try
         {
             if (!Directory.Exists(Folder))
@@ -222,23 +282,39 @@ internal static class EmojiPack
             foreach (var partial in Directory.EnumerateFiles(Folder, "*.partial"))
             {
                 // 正在写的那个刚建出来：只删放了一会儿的
-                if (DateTime.UtcNow - File.GetLastWriteTimeUtc(partial) > TimeSpan.FromMinutes(5))
-                {
-                    File.Delete(partial);
-                }
+                Delete(partial, File.Exists(partial) && DateTime.UtcNow - File.GetLastWriteTimeUtc(partial) > TimeSpan.FromMinutes(5));
             }
 
-            var files = new DirectoryInfo(Folder).EnumerateFiles("*.png")
+            files = new DirectoryInfo(Folder).EnumerateFiles("*.png")
                 .Select(file => new EmojiPackCache.CachedFile(file.Name, file.Length, file.LastWriteTimeUtc))
                 .ToList();
-            foreach (var name in EmojiPackCache.Overflow(files, EmojiPackCache.MaxBytes))
-            {
-                File.Delete(Path.Combine(Folder, name));
-            }
         }
         catch (Exception ex)
         {
             Log.Warn($"status.emoji-pack-trim-failed {ex.GetType().Name}");
+            return;
+        }
+
+        foreach (var name in EmojiPackCache.Overflow(files, EmojiPackCache.MaxBytes))
+        {
+            Delete(Path.Combine(Folder, name), true);
+        }
+    }
+
+    private static void Delete(string path, bool due)
+    {
+        if (!due)
+        {
+            return;
+        }
+
+        try
+        {
+            File.Delete(path);
+        }
+        catch (Exception ex)
+        {
+            Log.Warn($"status.emoji-pack-trim-skip {ex.GetType().Name}");
         }
     }
 }

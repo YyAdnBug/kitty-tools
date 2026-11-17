@@ -177,6 +177,37 @@ public sealed class SettingsSyncRunnerTests
         Assert.AreEqual(SettingValue.Of(19L), a.Host.Get(FontSize));
     }
 
+    [TestMethod]
+    public void RecognisedPassthroughLandsAfterAnUpgrade()
+    {
+        // R107：升级前 pref:emojiPackDownloads 这一版不认识、存成了透传（Mac 上关了）；升级后读同步状态时当一次传进来的改动落下
+        var emoji = SettingsSyncMap.FindShared("pref:emojiPackDownloads")!;
+        var keys = new[] { emoji, FontSize };
+        var host = new MemoryHost(keys);
+        var passthrough = host.Passthrough(SettingsSync.Kind);
+        passthrough["pref:emojiPackDownloads"] = "false";
+        passthrough["pref:notesFontSize"] = "5000000"; // 认得、落不下：照旧透传
+        passthrough["pref:islandHaptics"] = "false"; // 不认得：照旧透传
+        var book = new SettingsSyncBook(SettingsSync.Kind, keys, SettingsSyncMap.FindShared, host);
+        host.Books = new[] { book };
+
+        var values = book.Values()!;
+        Assert.AreEqual(SettingValue.Of(false), host.Get(emoji));
+        Assert.IsFalse(passthrough.ContainsKey("pref:emojiPackDownloads"));
+        Assert.AreEqual("false", values["pref:emojiPackDownloads"], "交出去的还是那个值：引擎看不出变化，不会当成本机改的");
+        Assert.AreEqual(SettingValue.Of(15L), host.Get(FontSize));
+        Assert.AreEqual("5000000", passthrough["pref:notesFontSize"]);
+        Assert.AreEqual("5000000", values["pref:notesFontSize"]);
+        Assert.AreEqual("false", passthrough["pref:islandHaptics"]);
+        Assert.AreEqual(1, host.Landed);
+        Assert.AreEqual(0, host.Times(SettingsSync.Kind).Count, "落下来的不记成本机改的");
+
+        // 再读一遍什么都不动
+        book.Values();
+        Assert.AreEqual(1, host.Landed);
+        Assert.AreEqual(SettingValue.Of(false), host.Get(emoji));
+    }
+
     /// <summary>一台 Windows：两本（settings、windows-settings），每轮新建两个 SettingsSyncSource（同 App）。</summary>
     private sealed class WindowsNode
     {

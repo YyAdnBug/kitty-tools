@@ -104,7 +104,30 @@ public sealed class SettingsSyncBook
             _host.Save(landed: false);
         }
 
+        AdoptPassthrough();
         return SettingsSync.Values(_known, _host.Passthrough(Kind));
+    }
+
+    /// <summary>
+    /// 透传里有这一版认得的编号（上一版不认识、存成了透传的，比如 R107 起 Windows 也有的 pref:emojiPackDownloads）：当成一次传进来的改动
+    /// 落下（同 Land 的 Plan），落成了的从透传里拿掉，落不下的照旧透传。不然本机那项一直是默认值，交出去的却是透传的那份，引擎看不出变化、
+    /// 永远不落（R107 审查：Mac 上关了「自动下载动画表情」，升级后的 Windows 照样开着、照样下载）。
+    /// </summary>
+    private void AdoptPassthrough()
+    {
+        var passthrough = _host.Passthrough(Kind);
+        var known = passthrough.Where(pair => _find(pair.Key) is not null)
+            .ToDictionary(pair => pair.Key, pair => (string?)pair.Value, StringComparer.Ordinal);
+        if (known.Count == 0)
+        {
+            return;
+        }
+
+        var plan = SettingsSync.Plan(known, _find, passthrough, Kind == SettingsSync.WindowsKind, sharedFrozen: false, _host.Accept);
+        if (plan.Writes.Count > 0 || plan.Passthrough.Count != passthrough.Count)
+        {
+            Apply(plan, known);
+        }
     }
 
     public IReadOnlyDictionary<string, long> Changed() => new Dictionary<string, long>(_host.Times(Kind), StringComparer.Ordinal);
@@ -114,6 +137,17 @@ public sealed class SettingsSyncBook
     {
         var plan = SettingsSync.Plan(
             changes, _find, _host.Passthrough(Kind), Kind == SettingsSync.WindowsKind, sharedFrozen, _host.Accept);
+        Apply(plan, changes);
+        saveLedger();
+        if (joining && plan.Writes.Count > 0)
+        {
+            _host.Followed(Kind, plan.Writes.Count);
+        }
+    }
+
+    /// <summary>写设置（存过的键跟着增减）、换透传、清落了的时刻，存下来（Land 和 AdoptPassthrough 共用）。</summary>
+    private void Apply(SettingsPlan plan, IReadOnlyDictionary<string, string?> changes)
+    {
         _landing = true;
         try
         {
@@ -144,12 +178,6 @@ public sealed class SettingsSyncBook
         finally
         {
             _landing = false;
-        }
-
-        saveLedger();
-        if (joining && plan.Writes.Count > 0)
-        {
-            _host.Followed(Kind, plan.Writes.Count);
         }
     }
 }

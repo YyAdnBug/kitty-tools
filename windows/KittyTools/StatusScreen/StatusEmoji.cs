@@ -124,7 +124,7 @@ internal static class StatusEmoji
         {
             try
             {
-                Show(host, still, LoadedImageSurface.StartLoadFromUri(SheetUri(id)), sheet, side, animate: true, owned: null);
+                Show(host, still, LoadedImageSurface.StartLoadFromUri(SheetUri(id)), sheet, side, animate: true, owned: null, failed: null);
             }
             catch (Exception ex)
             {
@@ -185,7 +185,8 @@ internal static class StatusEmoji
                 ? LoadedImageSurface.StartLoadFromStream(stream)
                 : LoadedImageSurface.StartLoadFromStream(stream, new Windows.Foundation.Size(
                     Math.Min(sheet.Cell, side * 2) * sheet.Columns, Math.Min(sheet.Cell, side * 2) * sheet.Rows));
-            Show(host, placeholder, surface, sheet, side, animated, stream);
+            // 结构核过了、像素却解不开：缓存里那份删掉，过一阵重新下（EmojiPack.Forget；R107 审查）
+            Show(host, placeholder, surface, sheet, side, animated, stream, () => EmojiPack.Forget(symbol));
         }
         catch (Exception ex)
         {
@@ -218,9 +219,11 @@ internal static class StatusEmoji
 
     /// <summary>
     /// 把图集挂到 host 上：铺成精灵、只露一格；animate 时一格一格挪（无限循环），不然停在第一格。图集解好之前 placeholder 照旧露着，
-    /// 解好了藏起来。owned：跟着一起放掉的东西（表情包的那个流）。
+    /// 解好了藏起来。owned：跟着一起放掉的东西（表情包的那个流）；failed：解不开时调（表情包的删掉缓存）。
     /// </summary>
-    private static void Show(Grid host, UIElement placeholder, LoadedImageSurface surface, EmojiSheet sheet, double side, bool animate, IDisposable? owned)
+    private static void Show(
+        Grid host, UIElement placeholder, LoadedImageSurface surface, EmojiSheet sheet, double side, bool animate, IDisposable? owned,
+        Action? failed)
     {
         var compositor = ElementCompositionPreview.GetElementVisual(host).Compositor;
         var brush = compositor.CreateSurfaceBrush(surface);
@@ -264,6 +267,7 @@ internal static class StatusEmoji
             if (args.Status != LoadedImageSourceLoadStatus.Success)
             {
                 Log.Warn($"status.emoji-load-failed {args.Status}");
+                failed?.Invoke();
                 return;
             }
 

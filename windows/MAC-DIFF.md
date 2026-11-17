@@ -123,7 +123,8 @@
 - 动画表情包（R107）：Windows 自己的 release `emoji-pack-1-win`（帧图集 PNG，帧信息写在图集的 tEXt 块里；mac 的 `emoji-pack-1` 是 HEICS，用不了）。
   没下好、没联网时画那个表情的系统样子（Segoe UI Emoji），「动画表情」气泡的格子也是系统样子——mac 是包里带的 746 张 96 × 96 缩略图（约 3.2 MB），
   Windows 不带：系统表情就是同一个表情。气泡底下那排分类图标是 Segoe UI Symbol 的单色表情字（mac SF 符号）。发表情包前本机试下载用
-  环境变量 `KITTY_EMOJI_PACK_SERVER`（mac 是偏好 `emojiPackTestServer`）。
+  环境变量 `KITTY_EMOJI_PACK_SERVER`，只在测试档（Debug、Release 的探针档）认（mac 是偏好 `emojiPackTestServer`，哪个版本都认）。
+  一次下载最多 60 秒；缓存里结构对、像素解不开的删掉，过 10 分钟再下（mac 解不开就停在缩略图）。
 
 还没对齐的：
 

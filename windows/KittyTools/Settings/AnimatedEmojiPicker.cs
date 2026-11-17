@@ -38,8 +38,11 @@ internal static class AnimatedEmojiPicker
     public static bool IsPack(string symbol)
         => StatusEmojiCatalog.IsPackSymbol(symbol) && EmojiPack.DownloadableId(StatusEmoji.Canonical(symbol)) is not null;
 
-    /// <summary>格子里那一格：挑过动画表情包里的画它的静止画面（没下好是系统样子），没挑过是一个闪光；picked 收到挑好的值。</summary>
-    public static Button? Create(Func<string> current, Action<string> picked, bool dark)
+    /// <summary>
+    /// 格子里那一格：挑过动画表情包里的画它的静止画面（没下好是系统样子），没挑过是一个闪光；picked 收到挑好的值。Refresh：选中变了
+    /// （挑了别的格子）时调，这一格跟着换（同 mac animatedCell，R107 审查）。对照表读不出来时整格没有（null）。
+    /// </summary>
+    public static (Button Button, Action Refresh)? Create(Func<string> current, Action<string> picked, bool dark)
     {
         if (EmojiPack.Catalog is not { } catalog)
         {
@@ -83,7 +86,7 @@ internal static class AnimatedEmojiPicker
             });
             flyout.ShowAt(button);
         };
-        return button;
+        return (button, new Action(Show));
     }
 
     /// <summary>浮层里的东西：搜索框、格子、分类那排。</summary>

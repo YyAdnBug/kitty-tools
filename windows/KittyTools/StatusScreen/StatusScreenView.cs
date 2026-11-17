@@ -14,6 +14,7 @@ using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Shapes;
 using Windows.UI;
@@ -139,6 +140,8 @@ internal static class StatusScreenView
                     IsHitTestVisible = false,
                 };
                 AutomationProperties.SetAccessibilityView(copy, Microsoft.UI.Xaml.Automation.Peers.AccessibilityView.Raw);
+                // 建好就透明：Motion.Emerge 等它挂上（Loaded）才设起点，中间那一帧会把整行画出来（R107 审查）
+                ElementCompositionPreview.GetElementVisual(copy).Opacity = 0f;
                 box.Children.Add(copy);
                 copies.Add(copy);
                 Motion.Emerge(
