@@ -1,7 +1,7 @@
 // 提醒的执行层（PLAN §10「提醒」）：只挂一个计时任务，指向最近要响的那一刻；醒来、解锁、改系统时间、换时区、换日、
 // 列表变了时重新看一遍（ReminderCheck.check，纯函数）。到点的挂在刘海岛上直到处理（Island.pin，C2），几条同时到点合成一条
 // （B5），错过的（晚了超过 5 分钟：睡着、锁着屏、App 没开）合成一条「错过了 N 个提醒」（B4）。
-// 「知道了」（或岛上的 ×、双指上滑）：一次的从列表里删掉（D7），间隔的从这一刻重新数；「稍后」推 N 分钟（C8，设置 › 提醒）。
+// 「知道了」（或在岛上双指上滑）：一次的从列表里删掉（D7），间隔的从这一刻重新数；「稍后」推 N 分钟（C8，设置 › 提醒）。
 // 间隔提醒碰上锁屏、醒来、5 分钟没碰键盘鼠标，算休息过了，回来重新数（B3）：有开着的间隔提醒时每分钟看一眼空闲了多久，
 // 没有就不看。锁着屏时一条都不响，解锁后再看（晚了 5 分钟以内照常响）。
 // 方式（C1，第 2 批）：几条一起到点时按最显眼的那条（状态屏 > 全屏 > 边框 > 轻提醒）；轻提醒挂在岛上，边框 = 四边的光 + 岛，
@@ -463,7 +463,7 @@ import AppKit
     }
     screen.dismiss()
     if !fired.isEmpty, mode == .glow { glow.show() } else { glow.dismiss() }
-    // 第一个是主按钮（露在行尾）
+    // 第一个是主按钮（白底、在最右；两个一开始就并排露着，Island 的 pinnedCard）
     var actions = [Island.Action("知道了") { [weak self] in self?.acknowledge() }]
     if !fired.isEmpty {
       actions.append(Island.Action("稍后 \(snoozeMinutes) 分钟") { [weak self] in self?.snooze() })

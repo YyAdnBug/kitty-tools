@@ -1695,6 +1695,21 @@ struct SnapshotProbeTests {
         capsule, false
       ),
       (
+        "merged-expanded",
+        ReminderCenter.notice(fired: [water, Reminder.examples[2]], missed: [])!,
+        buttons, capsule, true
+      ),
+      // 刘海屏上没有说明的：展开时只是底角从 24 变成 44（离两头的按钮、前导最近）
+      (
+        "merged-notch", ReminderCenter.notice(fired: [water, Reminder.examples[2]], missed: [])!,
+        buttons, notch, false
+      ),
+      (
+        "merged-notch-expanded",
+        ReminderCenter.notice(fired: [water, Reminder.examples[2]], missed: [])!, buttons, notch,
+        true
+      ),
+      (
         "missed", ReminderCenter.notice(fired: [], missed: [rent, call, nap])!, [buttons[0]], notch,
         false
       ),
@@ -1704,15 +1719,42 @@ struct SnapshotProbeTests {
       ),
     ]
     for (name, notice, titles, geometry, expanded) in cases {
+      // 和 Island.pin 换上来的一样：挂着直到处理
+      var content = Island.Content(
+        title: Self.key(notice.0), detail: notice.1.map(Self.key), tone: .info,
+        symbol: "alarm.fill", leading: .tone)
+      content.isPinned = true
       let island = Island(
-        showing: .init(
-          title: Self.key(notice.0), detail: notice.1.map(Self.key), tone: .info,
-          symbol: "alarm.fill", leading: .tone),
-        geometry: geometry, actions: titles.map { Island.Action(Self.key($0)) {} },
-        expanded: expanded)
+        showing: content, geometry: geometry,
+        actions: titles.map { Island.Action(Self.key($0)) {} }, expanded: expanded)
       try snapshot(
         IslandView(island: island), size: geometry.windowSize, dark: false,
         to: "\(out)/reminders-island-\(name).png")
+    }
+    // 刚弹出 vs 指针移上去展开（2026-11-18 用户反馈：悬停冒出来的「稍后」把「知道了」顶走、点错）：穿过按钮上半截
+    // （胶囊的底色、还没到字）的那一行像素两张图逐个相同——前导、标题、两个按钮在屏上一点不挪。有说明的（刘海屏）、
+    // 几条合成没说明的（胶囊、刘海屏）各一对
+    for (name, geometry) in [("one", notch), ("merged", capsule), ("merged-notch", notch)] {
+      let paths = ["", "-expanded"].map { "\(out)/reminders-island-\(name)\($0).png" }
+      guard paths.allSatisfy(FileManager.default.fileExists(atPath:)) else { continue }
+      let lines = try paths.map { path in
+        let bitmap = try #require(NSBitmapImageRep(data: Data(contentsOf: URL(filePath: path))))
+        let scale = CGFloat(bitmap.pixelsWide) / geometry.windowSize.width
+        let top: CGFloat = if case .notch(_, let height) = geometry { height } else { 2 }
+        let y = Int((top + 9) * scale)
+        return (0..<bitmap.pixelsWide).map {
+          bitmap.colorAt(x: $0, y: y)?.usingColorSpace(.deviceRGB)?.brightnessComponent ?? -1
+        }
+      }
+      // 只比黑色形体里面、两边各让开 3 pt：外面的阴影跟着形体变高本来就不一样，形体的弹簧截图时也还没完全停
+      // （边上差零点几个点；内容按最终尺寸排好，不跟着动）。胶囊是 0.92 的黑、透出背后的阴影，差 1 级亮度不算
+      let edge = Int(3 * CGFloat(lines[0].count) / geometry.windowSize.width)
+      let first = try #require(lines[0].firstIndex { $0 < 0.1 })
+      let last = try #require(lines[0].lastIndex { $0 < 0.1 })
+      let inside = (first + edge)...(last - edge)
+      let moved = inside.filter { abs(lines[0][$0] - lines[1][$0]) > 0.02 }
+      #expect(moved.isEmpty, "reminders-island-\(name)：悬停展开后第一行挪了（x = \(moved.prefix(5))）")
+      #expect(lines[0][inside].contains { $0 > 0.85 }, "那一行没穿过白底的主按钮")
     }
     // 全屏（第 2 批）：带表情和说明、20 秒倒数；几条合成一条、点了才收；进不去状态屏时的橙字和「去授权」；
     // 出现后那 1 秒按钮还没出来；小屏
