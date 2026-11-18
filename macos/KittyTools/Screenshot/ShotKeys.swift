@@ -80,10 +80,7 @@ enum ShotKey: String, CaseIterable {
 
   /// 原来写死的那一套：1–0 工具，T S O R D C 单字母，⌘C ⌘S ⇧⌘S ⌘Z ⇧⌘Z
   var defaultKey: HotKey {
-    let digits = [
-      kVK_ANSI_1, kVK_ANSI_2, kVK_ANSI_3, kVK_ANSI_4, kVK_ANSI_5, kVK_ANSI_6, kVK_ANSI_7,
-      kVK_ANSI_8, kVK_ANSI_9, kVK_ANSI_0,
-    ]
+    let digits = HotKey.digitKeys + [kVK_ANSI_0]
     if let tool { return HotKey(keyCode: digits[tool.rawValue - 1], modifiers: 0) }
     let (code, modifiers) =
       switch self {

@@ -1052,6 +1052,10 @@ struct StatusScreenTests {
     #expect(StatusScreen.keyIndex(mouse: CGPoint(x: 100, y: 100), screens: [main, side]) == 0)
     #expect(StatusScreen.keyIndex(mouse: CGPoint(x: 2000, y: -100), screens: [main, side]) == 1)
     #expect(StatusScreen.keyIndex(mouse: CGPoint(x: -500, y: 5000), screens: [main, side]) == 0)
+    // 鼠标在屏幕最上一行（y 正好是 frame.maxY）也算那块屏（第五轮体检 H4：共用的 NSScreen.index，frame.contains 不算这一行）
+    #expect(NSScreen.index(containing: CGPoint(x: 100, y: 982), in: [main, side]) == 0)
+    #expect(NSScreen.index(containing: CGPoint(x: 2000, y: 1240), in: [main, side]) == 1)
+    #expect(NSScreen.index(containing: CGPoint(x: 100, y: 0), in: [main, side]) == nil)
     // 电源：照常不拦，不睡眠只防系统闲置睡眠，屏幕常亮连显示器一起防
     #expect(StatusScreen.activityOptions(.normal) == nil)
     #expect(StatusScreen.activityOptions(.awake)?.contains(.idleDisplaySleepDisabled) == false)

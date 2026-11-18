@@ -155,6 +155,9 @@ enum Prefs {
 
   /// 截图 ⌘S 快速保存的目录（设置 › 截图「快速保存到」选的；「另存为」不改它，体检 A28）；没设 = 系统截屏的存储位置
   nonisolated static let screenshotSaveDirectory = "screenshotSaveDirectory"
+  /// 那个文件夹在访达里的名字（「桌面」）：选的那一刻取了存下（第五轮体检 P2，同 settingsBackupFolderName）。截图工具栏、
+  /// 钉图菜单、截图历史窗口、设置页只读它，不每次去问文件夹（它可能在卡住的网络盘上）。这台电脑自己的状态：不注册默认值
+  nonisolated static let screenshotSaveDirectoryName = "screenshotSaveDirectoryName"
   /// 上次截图的区域（NSStringFromRect，全局坐标）：框选时按 D、或用「截取上次区域」热键
   static let screenshotLastRegion = "screenshotLastRegion"
   /// 每个标注工具上次用的样式（JSON 字典，键是 Annotation.Tool 的 rawValue 字符串）；没存过的工具

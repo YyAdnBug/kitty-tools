@@ -377,6 +377,9 @@ final class SelectionSession {
   var translate: ((CGImage, CGFloat) async -> ScreenshotOverlay.Outcome)?
   /// 框完松手、单击选中就直接翻（⌥S：截图翻译 = 截图 + 自动点「翻译」）
   var autoTranslates = false
+  /// 画过标注时退出要按两下（第五轮体检 E8，SelectionView.cancel）：上膛记在会话上，几块屏共用——在一块屏上按 Esc、
+  /// 到另一块屏点 ✕ 也是两下
+  var discardArm = RecordingHUD.Discard()
   /// 尺寸胶囊里锁着的比例（宽 / 高，RegionSelector.ratios 里的一个）：之后框选、拖边都按它，选「自由」解锁。整个会话共用
   var lockedRatio: CGFloat?
   /// 悬停时认窗口里的元素（截图、录屏开始时按 elementsAllowed 定；单测、截图自检直接设）
@@ -448,9 +451,11 @@ final class SelectionSession {
     // 鼠标不动时收不到 mouseMoved：先设一次十字光标
     NSCursor.crosshair.set()
     // 鼠标所在屏的遮罩接收按键；其它屏的遮罩靠 acceptsFirstMouse 直接响应拖动。
-    // 含上边（NSMouseInRect）：光标在屏幕最上一行时 y 正好等于 frame.maxY
+    // 含上边（NSScreen.index）：光标在屏幕最上一行时 y 正好等于 frame.maxY
     let mouse = NSEvent.mouseLocation
-    let key = overlays.first { NSMouseInRect(mouse, $0.frame, false) } ?? overlays[0]
+    let key =
+      NSScreen.index(containing: mouse, in: overlays.map(\.frame)).map { overlays[$0] }
+      ?? overlays[0]
     key.makeKey()
     // 放大镜一出来就在光标处
     let view = key.selectionView

@@ -174,7 +174,11 @@ import SwiftUI
     var parts: [String] = []
     if let path = item.savedPath {
       let folder = (path as NSString).deletingLastPathComponent
-      parts.append(String(localized: "已存到「\(FileManager.default.displayName(atPath: folder))」"))
+      // 快速保存的文件夹读存下的名字，不在每次重画时去问（可能是卡住的网络盘，第五轮体检 P2）。
+      // ponytail: 另存为存到别处的那几条照旧在主线程上问文件夹名（每次重画），那个文件夹在卡住的网络盘上时会卡；升级路径：
+      // 存的那一刻把文件夹名一起记进历史（markSaved），这里只读
+      let name = ScreenshotOutput.folderName(of: URL(filePath: folder, directoryHint: .isDirectory))
+      parts.append(String(localized: "已存到「\(name)」"))
     }
     if !item.annotations.isEmpty {
       parts.append(String(localized: "\(item.annotations.count) 条标注"))

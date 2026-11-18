@@ -1886,11 +1886,7 @@ import SwiftUI
 
   /// 放到鼠标所在屏（耳朵给的是刘海屏）顶部正中（刘海屏贴着顶边，其它屏在菜单栏下方）。只在窗口不在屏上时调
   private func place(_ window: IslandPanel, on target: NSScreen? = nil) {
-    let mouse = NSEvent.mouseLocation
-    guard
-      let screen = target
-        ?? NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) }) ?? NSScreen.main
-    else { return }
+    guard let screen = target ?? NSScreen.underMouse else { return }
     geometry = Self.geometry(of: screen)
     let size = geometry.windowSize
     let menuBar = screen.frame.maxY - screen.visibleFrame.maxY

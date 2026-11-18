@@ -366,6 +366,14 @@ struct AudioRecorderTests {
     #expect(try FileManager.default.contentsOfDirectory(atPath: folder.path).isEmpty)
   }
 
+  /// 待录条的临时 Esc（第五轮体检 A3 评审 3）：前台换到别的 App（不是打开时那个、也不是本 App）就注销
+  @Test func readyEscapeDropsWhenAnotherAppComesForward() {
+    #expect(AudioRecorder.dropsEscape(activated: 300, front: 200, own: 100))
+    #expect(!AudioRecorder.dropsEscape(activated: 200, front: 200, own: 100))
+    #expect(!AudioRecorder.dropsEscape(activated: 100, front: 200, own: 100))
+    #expect(AudioRecorder.dropsEscape(activated: 300, front: nil, own: 100))
+  }
+
   /// 音轨导出（第 6 批）：读不出音轨（坏文件）返回 nil、mp4 原样留着；闪退恢复遇到打不开的 mp4 照旧留在原地说路径。
   /// 存盘名的扩展名跟着文件走（没能导出时是「录音 ….mp4」）
   @Test func extractAudioKeepsBrokenMP4() async throws {

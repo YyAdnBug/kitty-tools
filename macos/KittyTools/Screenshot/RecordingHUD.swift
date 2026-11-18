@@ -80,8 +80,8 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
   private let reading = Reading()
   private let stopTip: String
   private let startTip: String
-  /// 倒数的 Esc 注册上了：✕ 的提示才写「（Esc）」
-  private let escapes: Bool
+  /// 倒数（录音待录，第五轮体检 A3）的 Esc 注册上了：✕ 的提示才写「（Esc）」。待录时前台换了 App 会注销（setEscapes）
+  private var escapes: Bool
   /// 倒数的读数是个按钮（点了马上开始），录制中的读数（红点 + 计时）只是显示
   private lazy var countdownButton = makeCountdownButton()
   private lazy var clock = makeClock()
@@ -458,6 +458,12 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
 
   /// ✕ 的样子：倒数时「取消」，待录时「关闭」（点一下就关，没有东西可放弃），录制中「放弃录制」（录音「放弃录音」），
   /// 上膛后变红「再点一次放弃」
+  /// 临时 Esc 注销了（录音待录时前台换了 App）：✕ 的提示不再写「（Esc）」
+  func setEscapes(_ on: Bool) {
+    escapes = on
+    applyClose()
+  }
+
   private func applyClose() {
     let armed = discard.isArmed(at: .now)
     let discardName = medium == .audio ? String(localized: "放弃录音") : String(localized: "放弃录制")
@@ -465,7 +471,8 @@ final class RecordingHUD: HUDBar, NSWindowDelegate {
       switch state {
       case .countdown:
         (String(localized: "取消"), escapes ? String(localized: "取消（Esc）") : String(localized: "取消"))
-      case .ready: (String(localized: "关闭"), String(localized: "关闭"))
+      case .ready:
+        (String(localized: "关闭"), escapes ? String(localized: "关闭（Esc）") : String(localized: "关闭"))
       case .recording:
         armed
           ? (String(localized: "再点一次放弃"), String(localized: "再点一次放弃，不会保存"))

@@ -9665,6 +9665,16 @@
         }
       }
     },
+    "关闭（Esc）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Close (Esc)"
+          }
+        }
+      }
+    },
     "关闭（双击同样）" : {
       "localizations" : {
         "en" : {
@@ -9897,6 +9907,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Press the shortcut again to cancel"
+          }
+        }
+      }
+    },
+    "再按一次放弃这些标注" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Press again to discard these annotations"
           }
         }
       }
@@ -16241,6 +16261,16 @@
         }
       }
     },
+    "完成：标注存回截图历史，不出图" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Done: save the annotations back to Screenshot History without exporting"
+          }
+        }
+      }
+    },
     "完整输入别名时优先显示对应应用；多个应用用了同一别名时按使用习惯排序。带参数的命令仍按命令处理。每个应用最多 256 字。" : {
       "localizations" : {
         "en" : {
@@ -18289,6 +18319,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Saved to “%@”"
+          }
+        }
+      }
+    },
+    "已存回截图历史" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saved to Screenshot History"
           }
         }
       }

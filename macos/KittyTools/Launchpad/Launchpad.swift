@@ -123,11 +123,7 @@ final class Launchpad {
     prepare()
     // 已经画好的不再画；启动时启动台还关着、刚打开的话这里补上
     icons.prewarm(catalog, pixelSize: Self.iconPixelSize)
-    guard
-      let screen = NSScreen.screens.first(where: {
-        NSMouseInRect(NSEvent.mouseLocation, $0.frame, false)
-      }) ?? NSScreen.main
-    else { return false }
+    guard let screen = NSScreen.underMouse else { return false }
     self.screen = screen
     let capacity = Self.capacity
     let stored = LaunchpadLayout.stored(in: .standard)

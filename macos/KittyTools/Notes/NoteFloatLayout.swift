@@ -57,7 +57,7 @@ nonisolated enum NoteFloatLayout {
   static func home(of frame: CGRect, pointer: CGPoint? = nil, in screens: [NoteDeckScreen]) -> Int?
   {
     guard !screens.isEmpty else { return nil }
-    if let pointer, let under = screens.firstIndex(where: { $0.frame.contains(pointer) }) {
+    if let pointer, let under = NSScreen.index(containing: pointer, in: screens.map(\.frame)) {
       return under
     }
     let areas = screens.map { screen -> CGFloat in

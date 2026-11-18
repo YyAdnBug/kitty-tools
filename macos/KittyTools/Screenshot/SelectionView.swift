@@ -409,6 +409,48 @@ final class SelectionView: NSView, NSTextViewDelegate {
     }
   }
 
+  /// 顶部提示排成几行（第五轮体检 U3：英文整行 800–1200 pt，窄屏上两头被裁掉、「Esc to cancel」看不见）：一段不拆开，
+  /// 放不下 limit 就在段与段之间折行（一段本身就超的自己占一行）；行数定了再把各行排得差不多宽，不剩一段孤零零挂在最后。
+  /// widths 是各段的宽、separator 是「 · 」的宽；返回每行几段。纯函数，配单测
+  nonisolated static func hintRows(_ widths: [CGFloat], separator: CGFloat, limit: CGFloat) -> [Int]
+  {
+    let count = packRows(widths, separator: separator, limit: limit).count
+    // 行数不变，把上限往下压到刚好还是这么多行
+    var (low, high) = (widths.max() ?? 0, limit)
+    while high - low > 0.5 {
+      let middle = (low + high) / 2
+      if packRows(widths, separator: separator, limit: middle).count <= count {
+        high = middle
+      } else {
+        low = middle
+      }
+    }
+    return packRows(widths, separator: separator, limit: max(high, low))
+  }
+
+  /// 一段一段往后接，接上超过 limit 就另起一行
+  nonisolated private static func packRows(
+    _ widths: [CGFloat], separator: CGFloat, limit: CGFloat
+  ) -> [Int] {
+    var rows: [Int] = []
+    var width: CGFloat = 0
+    for part in widths {
+      if !rows.isEmpty, width + separator + part <= limit {
+        rows[rows.count - 1] += 1
+        width += separator + part
+      } else {
+        rows.append(1)
+        width = part
+      }
+    }
+    return rows
+  }
+
+  /// 顶部提示最宽多宽：所在屏的可见宽度（程序坞在侧边时比屏窄）减两边各 32，不窄于 240。纯函数，配单测
+  nonisolated static func hintWidthLimit(screen: CGFloat, visible: CGFloat?) -> CGFloat {
+    max(min(screen, visible ?? screen) - 64, 240)
+  }
+
   /// 放大镜：15 × 15 像素、每格 9 pt（135 pt，圆角 10，2 pt 白环 + 阴影），0.5 pt 像素网格，中心行列粉色十字条带，
   /// 放大镜那块格子有多大（交互测试按它判断有没有带色值卡）
   static var loupeSide: CGFloat { CGFloat(loupePixels) * loupeCell }
@@ -416,6 +458,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
   var magnifierHeight: CGFloat { magnifier.bounds.height }
   /// 顶部提示现在看不看得见（交互测试读它）
   var hintShowing: Bool { !hint.layer.isHidden && hint.layer.opacity > 0 }
+  /// 顶部提示摆在哪、写的什么（几行之间是换行；交互测试读它）
+  var hintLayout: (frame: CGRect, text: String) { (hint.frame, hint.text) }
   /// 按住 ⌘ 的十字准线画着没有（交互测试读它）
   var showsCrosshair: Bool { crossLight.path != nil }
   /// 放大镜下面贴不贴色值卡：截图时按设置（放大镜和色值）；吸管取色时一定贴。录屏、截图翻译 / 识字没有
@@ -813,6 +857,9 @@ final class SelectionView: NSView, NSTextViewDelegate {
     }
     hint.layer.isHidden = selection != nil && !hintFlashing
     if !hint.layer.isHidden {
+      // 遮罩铺满整块屏（bounds 就是屏幕）；单测、截图自检的窗口不在屏上，只按 bounds
+      hint.maxWidth = Self.hintWidthLimit(
+        screen: bounds.width, visible: window?.screen?.visibleFrame.width)
       hint.place(
         at: CGPoint(x: bounds.midX - hint.size.width / 2, y: bounds.maxY - 64 - hint.size.height))
     }
@@ -1307,8 +1354,9 @@ final class SelectionView: NSView, NSTextViewDelegate {
       case .scroll: startScroll()
       case .record: switchToRecording()
       case .saveMenu: toggleSaveMenu()
-      case .cancel: session.finish(nil)
-      case .crop: break  // 截图框选的工具栏里没有裁剪（调选区就是裁剪）
+      case .cancel: cancel()
+      // 截图框选的工具栏里没有裁剪（调选区就是裁剪）、没有「完成」（那是从截图历史改标注时的）
+      case .crop, .done: break
       }
     }
     let styleBar = StyleBar()
@@ -1766,7 +1814,8 @@ final class SelectionView: NSView, NSTextViewDelegate {
     refresh()
   }
 
-  /// Esc 依次：HUD 菜单 → 译文卡片 → 尺寸输入 → 输入中的文字 → 选中的标注 → 工具 → 取消截图（免得一下把画好的标注全丢了）
+  /// Esc 依次：HUD 菜单 → 译文卡片 → 尺寸输入 → 输入中的文字 → 选中的标注 → 工具 → 取消截图（免得一下把画好的标注全丢了；
+  /// 画过标注时最后这一下也要按两次，cancel）
   private func escape() {
     if let hudMenu {
       hudMenu.dismiss()
@@ -1788,9 +1837,22 @@ final class SelectionView: NSView, NSTextViewDelegate {
       refreshCursor()
       announce(String(localized: "已收起工具"))
     } else {
-      cancelTranslation()
-      session.finish(nil)
+      cancel()
     }
+  }
+
+  /// 退出截图（Esc 退到头、工具栏 ✕）。画过标注（不管在哪块屏，含输入着还没收下的字）时第一下只上膛（第五轮体检 E8，同长截图、
+  /// 标注遮罩的两下 Esc；截图历史只记出过的图，这里丢了就找不回来）：提示音 + 顶上提示「再按一次放弃这些标注」+ 播报，
+  /// 约 2 秒内再按一次（Esc、✕ 都算，哪块屏上按的都算：上膛记在几块屏共用的会话上）才放弃
+  private func cancel() {
+    if hasAnnotations || session.hasAnnotations(besides: self), !session.discardArm.press(at: .now)
+    {
+      NSSound.beep()
+      flashHint([String(localized: "再按一次放弃这些标注")])
+      return announce(String(localized: "再按一次放弃这些标注"))
+    }
+    cancelTranslation()
+    session.finish(nil)
   }
 
   /// 同时最多开一个 HUD 菜单
@@ -3404,12 +3466,17 @@ private final class Canvas: NSView {
   override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
-/// HUD 胶囊里一行白字（Style.HUD 皮肤 + 阴影）：顶部提示
-private struct Pill {
+/// HUD 胶囊里一行白字（Style.HUD 皮肤 + 阴影）：顶部提示。放不下 maxWidth 时在段与段之间折行（第五轮体检 U3）
+private final class Pill {
   let layer = CALayer()
   private let textLayer = CATextLayer()
   private let font: NSFont
   private let padding: CGSize
+  private var parts: [String] = []
+  /// 最宽多宽（含左右内边距；顶部提示按所在屏的可见宽度减边距给）：一行放不下就在「 · 」处折行，一段不拆开、哪段都不裁
+  var maxWidth: CGFloat = .greatestFiniteMagnitude {
+    didSet { if maxWidth != oldValue { layOut() } }
+  }
 
   init(font: NSFont, padding: CGSize) {
     self.font = font
@@ -3422,22 +3489,36 @@ private struct Pill {
 
   /// 几段之间用「 · 」隔开，点是次要文字色
   func setParts(_ parts: [String]) {
+    self.parts = parts
+    layOut()
+  }
+
+  /// 按 maxWidth 排成几行（SelectionView.hintRows），行内用「 · 」接、行间换行
+  private func layOut() {
+    let text: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: Style.HUD.text]
+    let dot = NSAttributedString(
+      string: " · ", attributes: [.font: font, .foregroundColor: Style.HUD.tertiaryText])
+    let pieces = parts.map { NSAttributedString(string: $0, attributes: text) }
+    let rows = SelectionView.hintRows(
+      pieces.map { ceil($0.size().width) }, separator: dot.size().width,
+      limit: maxWidth - padding.width * 2)
     let string = NSMutableAttributedString()
-    for (index, part) in parts.enumerated() {
-      if index > 0 {
-        string.append(
-          NSAttributedString(
-            string: " · ", attributes: [.font: font, .foregroundColor: Style.HUD.tertiaryText]))
+    var next = 0
+    for (row, count) in rows.enumerated() {
+      if row > 0 { string.append(NSAttributedString(string: "\n", attributes: text)) }
+      for index in next..<next + count {
+        if index > next { string.append(dot) }
+        string.append(pieces[index])
       }
-      string.append(
-        NSAttributedString(
-          string: part, attributes: [.font: font, .foregroundColor: Style.HUD.text]))
+      next += count
     }
-    set(string)
+    // 几行时各行居中（一行时照旧，和原来逐像素一样）
+    textLayer.alignmentMode = rows.count > 1 ? .center : .natural
+    set(string, rows: rows.count)
   }
 
   /// 文字没变就不动
-  private func set(_ string: NSAttributedString) {
+  private func set(_ string: NSAttributedString, rows: Int) {
     guard (textLayer.string as? NSAttributedString) != string else { return }
     let textSize = string.size()
     textLayer.string = string
@@ -3447,8 +3528,10 @@ private struct Pill {
     layer.bounds.size = CGSize(
       width: ceil(textSize.width) + padding.width * 2,
       height: ceil(textSize.height) + padding.height * 2)
-    // 胶囊两端是半圆：continuous 的圆角到了高的一半会被夹住，描边在两端多出一道竖线（截图自检看到的）
-    Style.HUD.applySkin(to: layer, radius: layer.bounds.height / 2, curve: .circular)
+    // 一行时两端是半圆：continuous 的圆角到了高的一半会被夹住，描边在两端多出一道竖线（截图自检看到的）。
+    // 折成几行时圆角照一行时的半径（不鼓成一团）
+    let radius = (ceil(textSize.height / CGFloat(max(rows, 1))) + padding.height * 2) / 2
+    Style.HUD.applySkin(to: layer, radius: radius, curve: .circular)
     Style.HUD.applyShadow(
       to: layer,
       path: CGPath(
@@ -3458,10 +3541,11 @@ private struct Pill {
 
   var size: CGSize { layer.bounds.size }
   var frame: CGRect { CGRect(origin: layer.position, size: size) }
+  var text: String { (textLayer.string as? NSAttributedString)?.string ?? "" }
 
   var scale: CGFloat {
     get { textLayer.contentsScale }
-    nonmutating set { textLayer.contentsScale = newValue }
+    set { textLayer.contentsScale = newValue }
   }
 
   /// 左下角放在 origin（取整到整点：选区给的是小数点，文字落在半像素上会糊）

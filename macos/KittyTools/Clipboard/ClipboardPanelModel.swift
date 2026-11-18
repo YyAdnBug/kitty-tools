@@ -528,7 +528,7 @@ import Observation
       guard let single = singleTarget, single.kind == .file else { return beep() }
       revealInFinder(single)
     default:
-      guard let digit = Self.digitKeys.firstIndex(of: Int(event.keyCode)) else { return false }
+      guard let digit = HotKey.digitKeys.firstIndex(of: Int(event.keyCode)) else { return false }
       let items = visibleItems
       if digit < items.count { paste([items[digit]]) }
     }
@@ -540,11 +540,6 @@ import Observation
     NSSound.beep()
     return true
   }
-
-  private static let digitKeys = [
-    kVK_ANSI_1, kVK_ANSI_2, kVK_ANSI_3, kVK_ANSI_4, kVK_ANSI_5, kVK_ANSI_6, kVK_ANSI_7, kVK_ANSI_8,
-    kVK_ANSI_9,
-  ]
 
   /// extending：⇧↑ / ⇧↓，从锚点到新位置整段选中（和系统列表一致）
   private func move(by offset: Int, extending: Bool = false) {
@@ -919,9 +914,7 @@ import Observation
       island?.show("没能钉到屏幕", detail: gone, tone: .error)
       return
     }
-    let mouse = NSEvent.mouseLocation
-    guard let screen = NSScreen.screens.first(where: { $0.frame.contains(mouse) }) ?? NSScreen.main
-    else { return }
+    guard let screen = NSScreen.underMouse else { return }
     let (scale, visible) = (screen.backingScaleFactor, screen.visibleFrame)
     if !isPinned { hidePanel() }
     let files = store.images

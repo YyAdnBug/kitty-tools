@@ -259,8 +259,9 @@ final class NoteEdge {
     else { return false }
     let id = id ?? store.blankOrNew().id
     refresh()  // 这是第一条的话，那叠这时才有
-    let mouse = NSEvent.mouseLocation
-    let home = decks.first { $0.deck.screen.frame.contains(mouse) } ?? decks.first
+    let home =
+      NSScreen.index(containing: NSEvent.mouseLocation, in: decks.map { $0.deck.screen.frame })
+      .map { decks[$0] } ?? decks.first
     guard let deck = home?.deck else { return false }
     deck.model.open(created: id)
     return true
@@ -278,8 +279,9 @@ final class NoteEdge {
       !NoteDeckLayout.placements(NoteDeckScreen.attached(), options: options).isEmpty
     else { return .disabled }
     refresh()
-    let mouse = NSEvent.mouseLocation
-    let home = decks.first { $0.deck.screen.frame.contains(mouse) } ?? decks.first
+    let home =
+      NSScreen.index(containing: NSEvent.mouseLocation, in: decks.map { $0.deck.screen.frame })
+      .map { decks[$0] } ?? decks.first
     if let open =
       decks.first(where: { $0.deck.model.summonedByKey })
       ?? home.flatMap({ $0.deck.model.state.isExpanded ? $0 : nil })

@@ -141,7 +141,7 @@ final class ScreenRecorder: NSObject {
     }
   }
   /// 临时文件所在卷剩余不到这么多就停
-  static let minimumFreeBytes: Int64 = 1_000_000_000
+  nonisolated static let minimumFreeBytes: Int64 = 1_000_000_000
 
   /// 录的是什么（录音第 5 批起，录屏和录音共用收尾挪文件、闪退恢复、结果岛、菜单栏停止项）：叫法、文件扩展名、
   /// 「进行中」记在哪个偏好键
@@ -370,6 +370,8 @@ final class ScreenRecorder: NSObject {
   /// 快速保存目录；进行中的文件在和它同一个卷的 workFile
   private let directory: URL
   private let temp: URL
+  /// 正在看剩余空间（主线程外，第五轮体检 P2）：上一次还没回来（网络盘卡住）就不再起，免得一次次堆着占线程
+  private var diskCheck: Task<Void, Never>?
   /// 「进行中」记在哪（单测换成临时偏好域）
   private let defaults: UserDefaults
   private let onFinish: (Result) -> Void
@@ -903,8 +905,14 @@ final class ScreenRecorder: NSObject {
     ticks += 1
     updateClock()
     refreshFilterIfNeeded()
-    // 每 5 s 看一次临时文件所在卷还剩多少
-    if ticks % 5 == 0, Self.isLowOnDisk(temp) { stop(.lowDisk) }
+    // 每 5 s 看一次临时文件所在卷还剩多少（主线程外：临时文件可能在网络盘上的保存目录里，P2）
+    if ticks % 5 == 0, diskCheck == nil {
+      diskCheck = Task { [weak self, temp] in
+        let low = await ScreenRecorder.isLowOnDisk(temp)
+        self?.diskCheck = nil
+        if low { self?.stop(.lowDisk) }
+      }
+    }
   }
 
   /// 菜单栏停止项和 HUD 同一个时钟
@@ -940,8 +948,9 @@ final class ScreenRecorder: NSObject {
     button.setAccessibilityValue(String(localized: "已录 \(spoken(seconds))"))
   }
 
-  /// file 所在卷剩余不到 1 GB（录制中每 5 s 查一次，录屏、录音共用）
-  static func isLowOnDisk(_ file: URL) -> Bool {
+  /// file 所在卷剩余不到 1 GB（录制中每 5 s 查一次，录屏、录音共用）。主线程外（第五轮体检 P2：快速保存目录和 App 的数据
+  /// 不在同一个卷时临时文件就在保存目录里，可能是卡住的网络盘，mac-native §3）
+  @concurrent nonisolated static func isLowOnDisk(_ file: URL) async -> Bool {
     guard
       let free = try? file.deletingLastPathComponent().resourceValues(forKeys: [
         .volumeAvailableCapacityForImportantUsageKey
@@ -1070,7 +1079,7 @@ final class ScreenRecorder: NSObject {
 
   /// 挪文件（settle）：开始过、文件在就挪进快速保存目录，挪不过去的留在原地；放弃的（倒数刚结束时按到的取消也算）删掉。
   /// 只录声音的先把音轨导出成 m4a（extractAudio；录音 HUD 在停的那一刻已收起，导出超过 1 s 出岛「正在存储录音…」，减弱动态
-  /// 效果时照出），导出不了就存 mp4（结果岛说一声）。都删「进行中」记录：这次是正常收尾，下次启动不该说「没有正常结束」
+  /// 效果时照出），导出不了就存 mp4（结果岛说一声）。挪完都删「进行中」记录：这次是正常收尾，下次启动不该说「没有正常结束」
   private func finalize(_ reason: Reason) async -> Result {
     let duration = startedAt.map { (endedAt ?? .now) - $0 } ?? .zero
     let keeps = startedAt != nil && reason != .discarded && reason != .cancelled
@@ -1085,12 +1094,16 @@ final class ScreenRecorder: NSObject {
         return true
       }
       file = await Self.extractAudio(from: temp) ?? temp
+      // 导出成了 m4a（mp4 已删）：「进行中」改记它，挪到一半退出的话下次启动挪的是它
+      if file != temp { defaults.set(file.path, forKey: medium.inProgressKey) }
       progress.cancel()
       // 结果岛（出的话）随后由 AppDelegate 弹；飞了卡片的正常停只播报，进度岛得自己收
       if await progress.value { island?.dismiss(ifShowing: saving) }
     }
+    let (saved, moved, denied) = await Self.settle(
+      file, into: directory, medium: medium, keeps: keeps)
+    // 挪完才删「进行中」记录（第五轮体检 P2 评审 5）：挪到一半退出 / 闪退的，下次启动照样由 recover 接手
     defaults.removeObject(forKey: medium.inProgressKey)
-    let (saved, moved, denied) = Self.settle(file, into: directory, medium: medium, keeps: keeps)
     return Result(
       file: saved, moved: moved, moveDenied: denied, duration: duration, reason: reason,
       region: region)
@@ -1098,22 +1111,28 @@ final class ScreenRecorder: NSObject {
 
   /// 收尾挪文件（录屏、录音共用）：不留的（放弃、取消、没开始录）和不在的删掉；否则挪进快速保存目录（「录屏 / 录音 <开录时刻>」，
   /// 重名追加序号），挪不过去（如桌面的文件夹授权被拒）的留在原地（系统不清理）、改成同样的名字，AppDelegate 在访达里选中它；
-  /// denied：挪不过去是因为没有写权限
-  static func settle(_ temp: URL, into directory: URL, medium: Medium, keeps: Bool) -> (
+  /// denied：挪不过去是因为没有写权限。挪在主线程外（第五轮体检 P2：保存目录可能在卡住的网络盘上，跨卷时 moveItem 是整份拷贝）
+  static func settle(_ temp: URL, into directory: URL, medium: Medium, keeps: Bool) async -> (
     file: URL?, moved: Bool, denied: Bool
   ) {
+    await move(temp, into: directory, prefix: medium.fileNoun, noun: medium.noun, keeps: keeps)
+  }
+
+  @concurrent nonisolated private static func move(
+    _ temp: URL, into directory: URL, prefix: String, noun: String, keeps: Bool
+  ) async -> (file: URL?, moved: Bool, denied: Bool) {
     let manager = FileManager.default
     guard keeps, manager.fileExists(atPath: temp.path) else {
       try? manager.removeItem(at: temp)
       return (nil, false, false)
     }
-    let target = savedURL(for: temp, in: directory, medium: medium)
+    let target = savedURL(for: temp, in: directory, prefix: prefix)
     do {
       try manager.moveItem(at: temp, to: target)
       return (target, true, false)
     } catch {
-      Log.record.error("\(medium.noun)挪不进快速保存目录：\(error)")
-      let renamed = savedURL(for: temp, in: temp.deletingLastPathComponent(), medium: medium)
+      Log.record.error("\(noun)挪不进快速保存目录：\(error)")
+      let renamed = savedURL(for: temp, in: temp.deletingLastPathComponent(), prefix: prefix)
       return (
         (try? manager.moveItem(at: temp, to: renamed)) != nil ? renamed : temp, false,
         ScreenshotOutput.isPermissionDenied(error)
@@ -1147,6 +1166,8 @@ final class ScreenRecorder: NSObject {
   /// 快速保存目录和 Application Support 同卷（常见：都在启动盘）时放 Application Support/<bundle id>/Recording/（系统不清理，
   /// 也不受桌面 / 下载的文件夹授权影响）；不同卷（移动硬盘、NAS）时放快速保存目录里的隐藏文件。都和保存目录同卷，
   /// 写完 moveItem 只是改名。文件名带 UUID：打不开留在原地的旧文件不会被下一次覆盖。录音（第 5 批）同一个地方，名字「录音 <UUID>.m4a」
+  /// ponytail: 在主线程上读保存目录所在的卷、建目录（开录那一下），保存目录在卡住的网络盘上时会卡住开录；升级路径：开录本来就
+  /// 是异步的，挪进一个 @concurrent 的函数里先定好（第五轮体检 P2 只挪了收尾挪文件和剩余空间）
   static func workFile(for directory: URL, medium: Medium = .screen) -> URL {
     let name = "\(medium.workNoun) \(UUID().uuidString).\(medium.ext)"
     let volume = { (url: URL) in
@@ -1168,9 +1189,16 @@ final class ScreenRecorder: NSObject {
   static func savedURL(
     for file: URL, in directory: URL, medium: Medium = .screen, ext: String? = nil
   ) -> URL {
+    savedURL(for: file, in: directory, prefix: medium.fileNoun, ext: ext)
+  }
+
+  /// 同上，前缀现成（主线程外挪文件时用：Medium 的叫法在主线程上取好）
+  nonisolated static func savedURL(
+    for file: URL, in directory: URL, prefix: String, ext: String? = nil
+  ) -> URL {
     let created = (try? file.resourceValues(forKeys: [.creationDateKey]))?.creationDate
     return ScreenshotOutput.availableURL(
-      in: directory, date: created ?? .now, prefix: medium.fileNoun, ext: ext ?? file.pathExtension)
+      in: directory, date: created ?? .now, prefix: prefix, ext: ext ?? file.pathExtension)
   }
 
   /// 启动时（AppDelegate，单测宿主不跑；录屏、录音各查一次）：偏好里还记着进行中的文件 = 上次没正常收尾（闪退、断电）。

@@ -275,8 +275,7 @@ final class AppShortcuts {
 
   /// 弹出来。staying：直接留住（快捷键打开的）；按着 ⌘ 弹的不拿键盘
   private func show(_ reading: MenuReading, app: NSRunningApplication, staying: Bool = false) {
-    let mouse = NSEvent.mouseLocation
-    let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
+    let screen = NSScreen.underMouse
     model.load(
       reading, name: app.localizedName ?? "", icon: app.icon,
       available: screen?.visibleFrame.size ?? NSSize(width: 1440, height: 900))

@@ -27,7 +27,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var replaceTask: Task<Void, Never>?
   /// 这次替换的标记：旧任务收尾时只清自己的引用，别把紧接着启动的新任务清掉
   private var replaceID: UUID?
-  /// 截图 / 截图翻译进行中（截屏 → 框选 → 识别或输出）：重复按热键直接忽略。录屏只占框选阶段（C9）
+  /// 截图家族的框选进行中（截屏 → 框选遮罩 → 长截图面板）：这时再按截图家族、划词翻译的热键只响一声。出图（编码、另存为、
+  /// 识字、快速保存）不算（第五轮体检 E3，beginCapture）；录屏只占框选阶段（C9）
   private var isCapturing = false
   /// 录屏会话（框选之后、开录到文件挪好）：在录时录屏的入口都是停止；录制中照样能截图、识字、截图翻译（C9）
   private var recorder: ScreenRecorder?
@@ -1099,7 +1100,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           let original = await shotHistory.image(for: id)
         {
           return openAnnotate(
-            original, scale: item.scale, history: { id }, annotations: item.annotations)
+            original, scale: item.scale, history: { id }, annotations: item.annotations,
+            fromHistory: true)
         }
         openAnnotate(image, scale: scale)
       }
@@ -1191,6 +1193,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // 上次录屏 / 录音没正常收尾（闪退）：能播的挪进快速保存目录，说一声（C7）。
     // 压缩到一半退出留下的隐藏临时文件也删掉（E24：只删记下的那几个路径，不列保存目录）
     Task { await VideoExport.removePartials() }
+    // 选过快速保存的文件夹却没存名字（0.10.0 及以前）：主线程外补上（第五轮体检 P2）
+    ScreenshotOutput.rememberSaveFolderName()
     Task {
       for medium in [ScreenRecorder.Medium.screen, .audio] {
         guard
@@ -2168,8 +2172,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     builtClipboardPanel?.hide()
     builtLauncherPanel?.hide()
     noteCapture?.panel.hide()
-    let mouse = NSEvent.mouseLocation
-    let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
+    let screen = NSScreen.underMouse
     statusPickerModel.prepare(
       presets, last: defaults.string(forKey: Prefs.statusScreenLastPreset),
       maxHeight: (screen?.visibleFrame.height ?? 800) * 0.9)
@@ -2240,11 +2243,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 可见区中央、连按依次错开（PinBoard.clipboardFrame）。没有图片、是文字时把文字排成卡片钉上去（issue #4）。
   /// 只读剪贴板，不写、不记历史（不是新内容）；图片、文字都没有时提示音 + 岛
   private func pinClipboard() {
-    let mouse = NSEvent.mouseLocation
-    guard
-      let screen = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) })
-        ?? NSScreen.main
-    else { return }
+    guard let screen = NSScreen.underMouse else { return }
     let (scale, visible) = (screen.backingScaleFactor, screen.visibleFrame)
     func place(_ image: CGImage) {
       let pixels = CGSize(width: image.width, height: image.height)
@@ -2367,8 +2366,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 划词翻译：取词完成前绝不显示浮窗（先显示会取消原 App 的选区）。自家浮层是 key 时先收起，
   /// 否则 AX 读到的、⌘C 发到的都是自己。**key 窗口的第一响应者是便签正文**时直接读便签自己的选区（第 8 批 R13）
   func selectionTranslate() {
-    // 截图框选中不划词：取词结束时显示的浮窗会被遮罩盖住、还抢走遮罩的 key
-    guard !isReadingSelection, !isCapturing else { return }
+    // 截图框选中不划词：取词结束时显示的浮窗会被遮罩盖住、还抢走遮罩的 key（被它拦下的响一声，E3）
+    guard !isReadingSelection, !isCapturing else {
+      if isCapturing { NSSound.beep() }
+      return
+    }
     // 便签里划的词：直接读便签自己的选区，不走 AX、不发 ⌘C；没有选中字就当没取到（不去读后面的 App）
     let note = noteSelection()
     let noteFocused = NSApp.keyWindow?.firstResponder is NoteTextView
@@ -2381,6 +2383,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if noteCapture?.panel.isKeyWindow == true { noteCapture?.panel.hide() }
     statusPicker.panel?.hide()
     if translatePanel.isKeyWindow { translatePanel.orderOut(nil) }
+    // 指针停在缩略图 / 晾衣绳上、它们拿着键盘：还掉，不然合成的 ⌘C 落到卡片上、拷的是截图（第五轮体检 A3 评审 2）
+    HoverKeyPanel.releaseAll()
     Task {
       defer { isReadingSelection = false }
       if let note {
@@ -2452,7 +2456,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       self.replaceTask = nil
       return island.show("已取消划词翻译并替换", tone: .info, symbol: "xmark.circle.fill")
     }
-    guard !isReadingSelection, !isCapturing else { return }
+    guard !isReadingSelection, !isCapturing else {
+      if isCapturing { NSSound.beep() }  // 被「正在截图」拦下的响一声（E3）
+      return
+    }
     // 便签里划的词：直接读便签自己的选区（R13），不要辅助功能授权、也不去读后面的 App
     let note = noteSelection()
     let noteFocused = NSApp.keyWindow?.firstResponder is NoteTextView
@@ -2479,6 +2486,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       translatePanel.orderOut(nil)
       if !pinned { coordinator.cancel() }
     }
+    HoverKeyPanel.releaseAll()  // 同划词翻译：合成的 ⌘C、之后粘贴的 ⌘V 别落到卡片上
     let id = UUID()
     replaceID = id
     // 强持有 self（App 的代理，活到进程退出）：岛上「取消」「重试」也直接拿着它，岛收起时就放掉
@@ -2547,8 +2555,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           let region = await frozenSelection(
             "截图翻译",
             { await RegionSelector.select($0, hint: String(localized: "拖动框选要翻译的文字 · Esc 取消")) })
-        else { return }
-        await translateInPanel(region)
+        else { return nil }
+        return { [self] in await translateInPanel(region) }
       }
     }
     captureShots(feature: "截图翻译", hidingPanels: true, autoTranslate: true)
@@ -2564,8 +2572,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             await RegionSelector.select(
               $0, hint: String(localized: "拖动框选要识别的文字或二维码 · Esc 取消"))
           })
-      else { return }
-      await copyRecognizedText(in: region)
+      else { return nil }
+      return { [self] in await copyRecognizedText(in: region) }
     }
   }
 
@@ -2609,60 +2617,71 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               recordingBlocker: { [weak self] in self?.recordingBlocker(.screen) },
               translate: translate)
           })
-      else { return }
-      await handleCapture(outcome)
+      else { return nil }
+      return await handleCapture(outcome)
     }
   }
 
-  /// 框选交回的结果 → 出图动作（复制 / 保存 / 钉图 / 识字 / 长截图 / 录屏 / 色值）
-  private func handleCapture(_ outcome: RegionSelector.Outcome) async {
+  /// 框选交回的结果 → 出图那一步（复制 / 保存 / 钉图 / 识字 / 长截图 / 录屏 / 色值），交给 beginCapture 在「正在截图」的
+  /// 标记外面做（E3）。按 S 转的长截图面板还算框选：在这里跑完，交回的是长图的出图
+  private func handleCapture(_ outcome: RegionSelector.Outcome) async -> (() async -> Void)? {
     switch outcome {
-    case .color(let hex): copyColor(hex)
+    case .color(let hex):
+      copyColor(hex)
+      return nil
     // 截图调整时按 R / 点「录屏」切过去的（录屏第 2 批）：和 ⌥R 框完一样开录
-    case .record(let region): beginRecording(region)
+    case .record(let region):
+      beginRecording(region)
+      return nil
     case .scroll(let region):
       UserDefaults.standard.set(NSStringFromRect(region), forKey: Prefs.screenshotLastRegion)
       // 长截图在实时画面上截、滤掉本 App：没固定的浮层留着只会盖住选区，挡住滚轮和自动滚动
       // （钉图、常驻缩略图同理，体检 B40，在 scrollCapture 里让开）
       hideUnpinnedPanels()
-      await scrollCapture(region)
+      return await scrollCapture(region)
     case .capture(let capture):
       UserDefaults.standard.set(
         NSStringFromRect(capture.frame), forKey: Prefs.screenshotLastRegion)
-      // 先出图、历史在后面并行记（第三轮体检 R6：原来先等历史写完盘才拷贝 / 存储 / 钉图）；
-      // 拷贝 / 存储编好的那份 PNG 历史直接拿去当原图，不再编一遍
-      switch capture.action {
-      case .copy:
-        // 拷成文件时先占好剪贴板，再飞卡片、编码（按 ⌘C 的那一刻就得写好，见 offerShotFile）
-        let offer = offerShotFile(.image(capture.image, scale: capture.scale))
-        let land = captured(capture.image, scale: capture.scale, frame: capture.frame)
-        guard let png = await encodePNG(capture.image, scale: capture.scale) else { return }
-        let remembered = remember(capture, png: png)
-        await copyPNG(png, offer: offer)
-        land(.copied, png, remembered)
-      case .pin:
-        FlyCard.playShutter()
-        pins.pin(capture.image, frame: capture.frame)
-        remember(capture, pinned: true)
-      case .save:
-        let land = captured(capture.image, scale: capture.scale, frame: capture.frame)
-        guard let png = await encodePNG(capture.image, scale: capture.scale) else { return }
-        let remembered = remember(capture, png: png)
-        if let saved = await savePNG(png, asking: false) {
-          land(.saved(saved), png, remembered)
-          markSaved(remembered, at: saved)
-        }
-      case .saveAs:
-        FlyCard.playShutter()
-        guard let png = await encodePNG(capture.image, scale: capture.scale) else { return }
-        let remembered = remember(capture, png: png)
-        if let saved = await saveImageAs(capture.image, png: png) {
-          markSaved(remembered, at: saved)
-        }
-      case .recognize: await copyRecognizedText(in: capture.image)
-      // 「把译文直接盖回截图上」关着时：工具栏的翻译交出来，走翻译浮窗（开着时在截图页里就地翻，不交回这个动作）
-      case .translate: await translateInPanel(capture.image)
+      return { [self] in await deliver(capture) }
+    }
+  }
+
+  /// 截图框选交回的图出成什么（E3：在「正在截图」的标记外面做）
+  private func deliver(_ capture: RegionSelector.Capture) async {
+    // 先出图、历史在后面并行记（第三轮体检 R6：原来先等历史写完盘才拷贝 / 存储 / 钉图）；
+    // 拷贝 / 存储编好的那份 PNG 历史直接拿去当原图，不再编一遍
+    switch capture.action {
+    case .copy:
+      // 拷成文件时先占好剪贴板，再飞卡片、编码（按 ⌘C 的那一刻就得写好，见 offerShotFile）
+      let ticket = nextCopy()
+      let offer = offerShotFile(.image(capture.image, scale: capture.scale))
+      let land = captured(capture.image, scale: capture.scale, frame: capture.frame)
+      guard let png = await encodePNG(capture.image, scale: capture.scale) else { return }
+      let remembered = remember(capture, png: png)
+      await copyPNG(png, offer: offer, ticket: ticket)
+      land(.copied, png, remembered)
+    case .pin:
+      FlyCard.playShutter()
+      pins.pin(capture.image, frame: capture.frame)
+      remember(capture, pinned: true)
+    case .save:
+      let land = captured(capture.image, scale: capture.scale, frame: capture.frame)
+      guard let png = await encodePNG(capture.image, scale: capture.scale) else { return }
+      let remembered = remember(capture, png: png)
+      if let saved = await savePNG(png, asking: false) {
+        land(.saved(saved), png, remembered)
+        markSaved(remembered, at: saved)
       }
+    case .saveAs:
+      FlyCard.playShutter()
+      guard let png = await encodePNG(capture.image, scale: capture.scale) else { return }
+      let remembered = remember(capture, png: png)
+      if let saved = await saveImageAs(capture.image, png: png) {
+        markSaved(remembered, at: saved)
+      }
+    case .recognize: await copyRecognizedText(in: capture.image)
+    // 「把译文直接盖回截图上」关着时：工具栏的翻译交出来，走翻译浮窗（开着时在截图页里就地翻，不交回这个动作）
+    case .translate: await translateInPanel(capture.image)
     }
   }
 
@@ -2678,12 +2697,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       guard
         let outcome = await frozenSelection(
           "录屏", { await RegionSelector.record($0, lastRegion: lastRegion) })
-      else { return }
+      else { return nil }
       switch outcome {
       case .color(let hex): copyColor(hex)
       case .record(let region): beginRecording(region)
       case .capture, .scroll: break
       }
+      return nil
     }
   }
 
@@ -2733,8 +2753,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let immediately = UserDefaults.standard.bool(forKey: Prefs.audioRecordStartsImmediately)
     // 立即开始：开不了（录系统声音没有屏幕录制授权）就不建会话，同以前
     if immediately, !allowsAudioRecording(AudioRecorder.Source(.standard)) { return }
-    let recorder = AudioRecorder(directory: ScreenshotOutput.saveDirectory, island: island) {
-      [weak self] in
+    let recorder = AudioRecorder(
+      directory: ScreenshotOutput.saveDirectory, island: island, hotKeys: hotKeys
+    ) { [weak self] in
       self?.recorded($0, .audio)
     }
     audioRecorder = recorder
@@ -2789,7 +2810,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 录屏 / 录音收尾：文件已挪进快速保存目录（挪不过去的留在原地、在访达里选中），刘海岛说结果（成功时岛让菜单栏图标弹一下）；
   /// 挪进去了还要飞卡片、留视频卡 / 录音卡（landRecording）。倒数中（录音：等授权框时、关掉待录的控制条）取消的不出岛，只播报。录制中麦克风断开的
   /// （第 4 批）summary 是警告：卡片照飞，岛也出来说「后半段没有麦克风声音」；开着麦克风（录音总是）但之前拒绝过授权的，这时打开
-  /// 系统设置的麦克风页（录音被拒时岛说「需要麦克风授权」，第 5 批）；开着显示按键但没有辅助功能授权的同样这时打开辅助功能页
+  /// 系统设置的麦克风页（录音被拒时岛说「需要麦克风授权」，第 5 批）；开着显示按键但没有辅助功能授权的同样这时去授权（Permissions.grant）
   private func recorded(_ result: ScreenRecorder.Result, _ medium: ScreenRecorder.Medium) {
     if medium == .screen { recorder = nil } else { audioRecorder = nil }
     // 关掉待录的录音控制条也走到这里（按取消收尾）：另一种在录时不替它放开更新
@@ -2804,18 +2825,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if result.reason == .denied { Permissions.Kind.screenRecording.openSettings() }
     // 开着麦克风但之前拒绝过：开录时只出了警告岛，这时才打开（开录前打开会盖住选区、录进画面）
     if result.microphoneDenied { Permissions.Kind.microphone.openSettings() }
-    // 开着显示按键但没有辅助功能授权（手测反馈第 2 批）：同样到这时才打开；先请求一次——从没问过时系统设置的列表里
-    // 还没有本 App（系统框只弹这一次，问过的不再弹）。麦克风页刚打开的就不再开辅助功能页（连开两个，前一个被盖掉，
-    // 用户只看得到后一个）：开关已经弹回，下次打开显示按键再提示；从没问过的，上面的系统框自己带「打开系统设置」
-    if result.keysDenied {
-      Permissions.requestAccessibility()
-      if !result.microphoneDenied { Permissions.openAccessibilitySettings() }
-    }
+    // 开着显示按键但没有辅助功能授权（手测反馈第 2 批）：同样到这时才去授权（Permissions.grant，第五轮体检 U11：从没问过
+    // 只弹系统框——它自己带「打开系统设置」，也让本 App 进系统设置的列表；问过了才打开辅助功能页，不再两样一起来）。
+    // 麦克风页刚打开的这次不管它（再弹框、再开一页会把前一个盖掉，用户只看得到后一个）：开关已经弹回，下次打开显示按键再提示
+    if result.keysDenied, !result.microphoneDenied { Permissions.grant(.accessibility) }
     // 挪不进快速保存目录：在访达里选中留下的文件，马上能拖走
     if let file = result.file, !result.moved {
       NSWorkspace.shared.activateFileViewerSelecting([file])
     }
-    let folder = FileManager.default.displayName(atPath: ScreenshotOutput.saveDirectory.path)
+    // 存下的名字，不去问保存目录（可能在卡住的网络盘上，第五轮体检 P2）
+    let folder = ScreenshotOutput.saveFolderName
     guard let summary = ScreenRecorder.summary(result, folder: folder, medium: medium) else {
       return Island.announce("已取消")
     }
@@ -2897,9 +2916,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       "已复制色值", detail: "\(hex)", leading: Self.color(hex).map(Island.Leading.color) ?? .tone)
   }
 
-  /// 长截图（截图框选后按 S）：遮罩已收起，在实时画面上边滚边拼，结束后按选的方式输出。整个过程都算在这次截图里
-  /// （isCapturing），期间别的截图热键不响应
-  private func scrollCapture(_ region: CGRect) async {
+  /// 长截图（截图框选后按 S）：遮罩已收起，在实时画面上边滚边拼。面板开着的这段算在这次截图里（isCapturing，期间别的
+  /// 截图热键只响一声）；交回的是结束后按选的方式输出那一步，在标记外面做（E3）
+  private func scrollCapture(_ region: CGRect) async -> (() async -> Void)? {
     // 压在选区上的钉图会吞掉滚轮、把自动滚动的合成滚轮当缩放（体检 B40）：让开到长截图结束（拷贝、存储、取消、出错），
     // 另存为的存储面板弹出来之前就放回；常驻缩略图直接收走
     pins.suspend(covering: region)
@@ -2911,44 +2930,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     {
       card.hide()
     }
+    let finished: ScrollCapture.Result?
     do {
-      let finished = try await ScrollCapture.run(region: region)
-      pins.resume()
-      if Feature.notes.isOn { noteEdge?.floats.resume() }  // 便签关着时它们是藏着的，别放出来
-      guard let result = finished else { return }
-      // 同截图：先出图、历史在后面并行记，拷贝 / 存储编好的那份历史直接用（R6，长图编一遍要好几百毫秒）
-      switch result.action {
-      case .copy:
-        let offer = offerShotFile(.image(result.image, scale: result.scale))
-        let land = captured(result.image, scale: result.scale, frame: region)
-        guard let png = await encodePNG(result.image, scale: result.scale) else { return }
-        let remembered = rememberScroll(result, png: png, region: region)
-        await copyPNG(png, offer: offer)
-        land(.copied, png, remembered)
-      case .save:
-        let land = captured(result.image, scale: result.scale, frame: region)
-        guard let png = await encodePNG(result.image, scale: result.scale) else { return }
-        let remembered = rememberScroll(result, png: png, region: region)
-        if let saved = await savePNG(png, asking: false) {
-          land(.saved(saved), png, remembered)
-          markSaved(remembered, at: saved)
-        }
-      case .saveAs:
-        FlyCard.playShutter()
-        guard let png = await encodePNG(result.image, scale: result.scale) else { return }
-        let remembered = rememberScroll(result, png: png, region: region)
-        if let saved = await saveImageAs(result.image, png: png) {
-          markSaved(remembered, at: saved)
-        }
-      case .annotate:
-        // 遮罩先开（历史的任务这时还没跑）；遮罩里出图时要的编号那时早记好了
-        let remembered = rememberScroll(result, region: region)
-        openAnnotate(result.image, scale: result.scale, history: { await remembered.value })
-      }
+      finished = try await ScrollCapture.run(region: region)
     } catch {
       pins.resume()
       if Feature.notes.isOn { noteEdge?.floats.resume() }  // 便签关着时它们是藏着的，别放出来
       island.show("长截图失败", detail: "\(error.localizedDescription)", tone: .error)
+      return nil
+    }
+    pins.resume()
+    if Feature.notes.isOn { noteEdge?.floats.resume() }  // 便签关着时它们是藏着的，别放出来
+    guard let result = finished else { return nil }
+    return { [self] in await deliver(result, region: region) }
+  }
+
+  /// 拼好的长图出成什么（E3：在「正在截图」的标记外面做）。同截图：先出图、历史在后面并行记，拷贝 / 存储编好的那份
+  /// 历史直接用（R6，长图编一遍要好几百毫秒）
+  private func deliver(_ result: ScrollCapture.Result, region: CGRect) async {
+    switch result.action {
+    case .copy:
+      let ticket = nextCopy()
+      let offer = offerShotFile(.image(result.image, scale: result.scale))
+      let land = captured(result.image, scale: result.scale, frame: region)
+      guard let png = await encodePNG(result.image, scale: result.scale) else { return }
+      let remembered = rememberScroll(result, png: png, region: region)
+      await copyPNG(png, offer: offer, ticket: ticket)
+      land(.copied, png, remembered)
+    case .save:
+      let land = captured(result.image, scale: result.scale, frame: region)
+      guard let png = await encodePNG(result.image, scale: result.scale) else { return }
+      let remembered = rememberScroll(result, png: png, region: region)
+      if let saved = await savePNG(png, asking: false) {
+        land(.saved(saved), png, remembered)
+        markSaved(remembered, at: saved)
+      }
+    case .saveAs:
+      FlyCard.playShutter()
+      guard let png = await encodePNG(result.image, scale: result.scale) else { return }
+      let remembered = rememberScroll(result, png: png, region: region)
+      if let saved = await saveImageAs(result.image, png: png) {
+        markSaved(remembered, at: saved)
+      }
+    case .annotate:
+      // 遮罩先开（历史的任务这时还没跑）；遮罩里出图时要的编号那时早记好了
+      let remembered = rememberScroll(result, region: region)
+      openAnnotate(result.image, scale: result.scale, history: { await remembered.value })
     }
   }
 
@@ -3087,7 +3114,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
           saved.append(out.url)
         }
         guard let first = saved.first else { return missingShot() }
-        let folder = FileManager.default.displayName(atPath: first.deletingLastPathComponent().path)
+        let folder = ScreenshotOutput.folderName(of: first.deletingLastPathComponent())
         island.show("已存 \(saved.count) 张", detail: "\(folder)", actions: .file(first))
       }
     }
@@ -3126,7 +3153,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       Task {
         guard let original = await shotHistory.image(for: item.id) else { return missingShot() }
         openAnnotate(
-          original, scale: item.scale, history: { item.id }, annotations: item.annotations)
+          original, scale: item.scale, history: { item.id }, annotations: item.annotations,
+          fromHistory: true)
       }
     }
     // 录屏转成 GIF / 压缩（U1）：进度岛、取消、结果岛同常驻缩略图的视频卡（VideoJob）；做好的进历史
@@ -3169,18 +3197,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   /// 长图标注（2026-10-26 拍板）：拼好的长图在自己的窗口里标注，出图走截图那条路、用刘海说结果（同钉图，不飞卡片：
   /// 这时选区多半已经不在眼前了）。一次只开一扇，再开一次就把前一扇换掉。
-  /// history：它在历史里是哪一条（刚拼好的长截图是并行记的，出图时等它记完拿编号，R6）
+  /// history：它在历史里是哪一条（刚拼好的长截图是并行记的，出图时等它记完拿编号，R6）。
+  /// fromHistory：从截图历史里改标注（历史窗口、晾衣绳、常驻缩略图的「改标注」）——工具栏多一颗「完成」，只存回历史、不出图
+  /// （第五轮体检 U7：原来只有出了图才存回，想放回历史只能顺手 ⌘C 一次、把剪贴板冲掉）
   private func openAnnotate(
     _ image: CGImage, scale: CGFloat, history: (() async -> UUID?)? = nil,
-    annotations: [Annotation] = []
+    annotations: [Annotation] = [], fromHistory: Bool = false
   ) {
     annotateOverlay?.close()
     let original = image
-    let editor = AnnotateOverlay(image: image, scale: scale, annotations: annotations) {
-      [unowned self] action, image, scale, annotations in
-      // 改完的标注回写到历史那一条（拍板 C4：更新同一条，不新建），缩略图照这张成品缩、不再读原图重合成（R6）。
-      // 新画的马赛克打进存下的原图（E6）：用遮罩里这张没画标注的，不再读盘。
-      // 编号要等历史记完（刚拼好的长截图是并行记的）：另起任务等，不挡出图（同截图那条路）
+    // 改完的标注回写到历史那一条（拍板 C4：更新同一条，不新建），缩略图照这张成品缩、不再读原图重合成（R6）。
+    // 新画的马赛克打进存下的原图（E6）：用遮罩里这张没画标注的，不再读盘。
+    // 编号要等历史记完（刚拼好的长截图是并行记的）：另起任务等，不挡出图（同截图那条路）。交回等编号的那个任务
+    let writeBack: (CGImage, [Annotation]) -> Task<UUID?, Never> = {
+      [unowned self] image, annotations in
       let remembered = Task { await history?() }
       // 裁过（X17）：历史里换成裁好的原图（重写原图、尺寸），标注已经平移到它的坐标里
       let cropped = annotateOverlay?.isCropped == true
@@ -3191,6 +3221,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             id, annotations: annotations, composed: image, original: original, cropped: cropped)
         }
       }
+      return remembered
+    }
+    let done: ((CGImage, [Annotation]) -> Void)? =
+      fromHistory
+      ? { image, annotations in
+        _ = writeBack(image, annotations)
+        Island.announce("已存回截图历史")
+      } : nil
+    let editor = AnnotateOverlay(
+      image: image, scale: scale, annotations: annotations, done: done
+    ) { [unowned self] action, image, scale, annotations in
+      let remembered = writeBack(image, annotations)
       Task {
         switch action {
         case .copy:
@@ -3219,12 +3261,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     editor.show()
   }
 
-  /// 截图和截图翻译共用的开头：互斥；work 跑完才算这次截图结束。
+  /// 截图和截图翻译共用的开头：互斥。select 是框选（和长截图）那一段，「正在截图」的标记只占它——遮罩、长截图面板一收起
+  /// 就放开（第五轮体检 E3：原来等出图那一步全做完才放，另存为面板开着、第一次识字在准备模型、快速保存写到卡住的网络盘时，
+  /// 截图、录屏、划词翻译这些快捷键全被静默吞掉）。select 交回的是出图那一步，在标记外面做：这时下一次截图已经可以开始，
+  /// 要拿键盘的出图（另存为面板、翻译浮窗）先等它收起（untilCaptureEnds）。被标记拦下的快捷键响一声。
   /// 截图（热键、⌥X、启动器、菜单栏）不收自家窗口：用户 2026-09-26 要能截到本 App，开着的浮层、设置窗、钉图留在
   /// 冻结帧里、能悬停和单击选中，截完还开着（遮罩当 key、被点时浮层不自动收起，OverlayPanel.isSelectingRegion）；
   /// 按 S 转长截图时才收起没固定的。截图翻译 / 识字（hidingPanels）照旧收起没固定的浮层；固定着的不收，照样截进去
-  private func beginCapture(hidingPanels: Bool, _ work: @escaping () async -> Void) {
-    guard !isCapturing, !isReadingSelection else { return }
+  private func beginCapture(
+    hidingPanels: Bool, _ select: @escaping () async -> (() async -> Void)?
+  ) {
+    guard !isCapturing, !isReadingSelection else {
+      if isCapturing { NSSound.beep() }
+      return
+    }
     isCapturing = true
     // 启动台是全屏面板，截图 / 录屏的冻结帧里不能有它：先收掉（不留动画，别让它出现在冻结帧里）
     launchpad.close(animated: false)
@@ -3232,9 +3282,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     noteEdge?.suspend(.keepsOpen)
     if hidingPanels { hideUnpinnedPanels() }
     Task {
-      defer { isCapturing = false }
-      await work()
+      let output = await select()
+      isCapturing = false
+      await output?()
     }
+  }
+
+  /// 等这一次框选 / 长截图收起（E3：出图在标记外面做，这时下一次截图可能已经开始了）。要拿键盘的出图——另存为的面板、
+  /// 翻译浮窗——先等它：遮罩开着时 key 被抢走，遮罩就收不到 Esc。
+  /// ponytail: 每 0.1 s 看一眼，只在两次截图叠在一起时才转；要省就换成放开标记时 resume 的 continuation
+  private func untilCaptureEnds() async {
+    while isCapturing, !Task.isCancelled { try? await Task.sleep(for: .milliseconds(100)) }
   }
 
   /// 收起没固定的浮层。先收剪贴板面板再收翻译浮窗：反过来浮窗的 onHide 会把 key 还给剪贴板面板
@@ -3247,12 +3305,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     noteEdge?.suspend(.unlessPinned)  // 屏幕边缘打开着的便签同理：没固定的收（先落盘）
   }
 
-  /// 有「屏幕录制」授权（截图家族、录系统声音开始前查）；没有就同设置 › 通用、引导里的授权按钮：请求一次（系统框只弹一次，
-  /// 所以同时打开系统设置的「屏幕录制」）+ 警告岛说 feature 要用，返回 false
+  /// 有「屏幕录制」授权（截图家族、录系统声音开始前查）；没有就同设置 › 通用、引导里的授权按钮（Permissions.grant：没问过
+  /// 只弹系统框，问过了才打开系统设置的「屏幕录制」；第五轮体检 U11，原来两样一起来，第一次截图就是两个窗叠着）+ 警告岛说
+  /// feature 要用，返回 false
   private func screenRecordingAllowed(for feature: LocalizedStringResource) -> Bool {
     guard !Permissions.isScreenRecordingAllowed else { return true }
-    Permissions.requestScreenRecording()
-    Permissions.Kind.screenRecording.openSettings()
+    Permissions.grant(.screenRecording)
     island.show(
       "需要「屏幕录制」授权", detail: "\(String(localized: feature))要用，授权后可能要重新打开本 App",
       tone: .warning,
@@ -3299,6 +3357,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 总是按段送去翻（体检 A32：同一段的行接起来、段间空一行，不看「接起来」开关）
   private func translateInPanel(_ image: CGImage) async {
     guard let recognized = await recognizeForTranslation(image) else { return }
+    await untilCaptureEnds()
     coordinator.translate(recognized.text)
     presentTranslate()
   }
@@ -3626,9 +3685,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private func copyImage(_ image: CGImage, scale: CGFloat, name: String? = nil) async
     -> ScreenshotOutput.Copied?
   {
+    let ticket = nextCopy()
     let offer = offerShotFile(.image(image, scale: scale), name: name)
     guard let png = await encodePNG(image, scale: scale) else { return nil }
-    return await copyPNG(png, name: name, offer: offer)
+    return await copyPNG(png, name: name, offer: offer, ticket: ticket)
+  }
+
+  /// 截图拷贝的号（第五轮体检 E3 评审 4）：出图在「正在截图」的标记外面做以后，两次截图会叠在一起——前一张编码慢、后一张
+  /// 先拷好了，前一张编完再写剪贴板就把后一张顶回去。按下拷贝时取号，写剪贴板那一刻已经有更新的号就不写（历史照记）
+  private var copies = 0
+
+  private func nextCopy() -> Int {
+    copies += 1
+    return copies
   }
 
   /// 设置 › 截图「截图拷贝为」选了 PNG 文件：**按下拷贝的那一刻**就把剪贴板写好（承诺一个文件，谁来读才给，
@@ -3648,14 +3717,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// （watcher 会跳过），所以自己记进剪贴板历史。设置 › 截图「截图拷贝为」选了 PNG 文件时剪贴板里只有一个文件
   /// （同在访达里拷贝一个文件，2026-11-06 拍板 Q3）：offer 是按下时已经占好的（offerShotFile），没给就在这里占；
   /// 写不成文件就改放图像。剪贴板历史两种都记成图片（Q5：临时文件清掉以后这条照样能用）
+  /// ticket：按下拷贝那一刻取的号（nextCopy；没给 = 现在取）——写图像时已经有更新的一次拷贝就不写剪贴板
   @discardableResult
   private func copyPNG(
-    _ png: Data, name: String? = nil, offer: ScreenshotOutput.FileOffer? = nil
+    _ png: Data, name: String? = nil, offer: ScreenshotOutput.FileOffer? = nil,
+    ticket: Int? = nil
   ) async -> ScreenshotOutput.Copied {
+    let ticket = ticket ?? nextCopy()
     var copied = ScreenshotOutput.Copied.image
     if let offer = offer ?? offerShotFile(.png(png), name: name), await offer.fulfill(png) {
       copied = .file(offer.url)
-    } else {
+    } else if ticket == copies {
       Paster.write([.png: png])
     }
     guard recordsClipboard else { return copied }  // 菜单栏暂停了记录、剪贴板关着
@@ -3695,6 +3767,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 存编码好的 PNG；返回存到的文件（取消、失败为 nil）。失败时截图改放进剪贴板，别让这张图就这么丢了；
   /// 没有写权限时岛上给出路（U7）
   private func savePNG(_ png: Data, asking: Bool) async -> URL? {
+    // 另存为的面板要拿键盘：下一次截图的遮罩这时开着就等它收起（E3）
+    if asking { await untilCaptureEnds() }
     do {
       return asking
         ? try await ScreenshotOutput.saveAs(png) : try await ScreenshotOutput.quickSave(png)
