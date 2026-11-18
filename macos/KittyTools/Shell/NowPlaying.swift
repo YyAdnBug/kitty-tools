@@ -52,6 +52,8 @@ import OSLog
   /// 前台 App 换了（设置 › 刘海岛「正在用放歌的 App 时不显示」，2026-11-17 照 Alcove）：重画一次耳朵
   private var activeObserver: NSObjectProtocol?
   private var hidesWhenActive = false
+  /// 上一次画的时候用的颜色样式（设置里换了就重画）
+  private var colorStyle = ""
 
   /// 连哪个服务（单测给一个不存在的名字，走「连不上 → 退路」）
   private let serviceName: String
@@ -70,8 +72,10 @@ import OSLog
       defaults.object(forKey: Feature.island.prefsKey) as? Bool ?? Feature.island.defaultOn
     let wanted = added && defaults.bool(forKey: Prefs.islandNowPlaying)
     let hides = defaults.bool(forKey: Prefs.islandNowPlayingHidesWhenActive)
-    if hides != hidesWhenActive {
+    let style = defaults.string(forKey: Prefs.islandMediaColor) ?? ""
+    if hides != hidesWhenActive || style != colorStyle {
       hidesWhenActive = hides
+      colorStyle = style
       if isOn { render() }
     }
     if wanted, !isOn {
@@ -358,7 +362,11 @@ import OSLog
         id: Self.activityID, kind: .media, title: snapshot.title, detail: snapshot.artist,
         symbol: "music.note", tone: .info,
         media: Island.Media(
-          snapshot: snapshot, artwork: current?.image, tint: current?.tint,
+          snapshot: snapshot, artwork: current?.image,
+          tint: Self.tint(
+            artwork: current?.tint,
+            style: defaults.string(forKey: Prefs.islandMediaColor).flatMap(Island.MediaColor.init)
+              ?? .artwork),
           appIcon: icon(for: snapshot),
           send: { [weak self] in self?.send($0) }, seek: { [weak self] in self?.seek(to: $0) },
           setShuffle: { [weak self] in self?.proxy()?.setShuffle($0) },
@@ -531,6 +539,16 @@ import OSLog
   }
 
   /// 上不上耳朵：在播；或者从在播变成暂停还不到 pausedLinger。一打开就是暂停着的（pausedFor 是 nil）不上
+  /// 跳动条、进度条用什么颜色（纯函数；设置 › 刘海岛「正在播放的颜色」，2026-11-18 照 Alcove 的配色样式）：封面的颜色
+  /// （原来的样子，封面太灰时退成强调色）、强调色（nil：画的地方退成强调色）、白色
+  static func tint(artwork: NSColor?, style: Island.MediaColor) -> NSColor? {
+    switch style {
+    case .artwork: artwork
+    case .accent: nil
+    case .white: .white
+    }
+  }
+
   /// 前台的是不是放歌的那个 App（纯函数；浏览器里的视频报的是 WebKit 的进程，按上级 App 认）
   static func isSource(_ front: String?, of snapshot: NowPlayingSnapshot) -> Bool {
     guard let front else { return false }

@@ -263,6 +263,51 @@ import SwiftUI
   @ObservationIgnored var hidesFromCapture = false {
     didSet { window?.sharingType = hidesFromCapture ? .none : .readOnly }
   }
+  /// 刘海那块屏上前台 App 全屏时藏起来（设置 › 刘海岛，默认关；2026-11-18 照 Alcove，IslandFullScreen）：窗口全透明、
+  /// 不接鼠标（AppDelegate 的 isSuppressed 也看它）。换桌面、换前台 App 时看一眼，全屏的动画要约 0.7 秒，再看两次
+  @ObservationIgnored var hidesInFullScreen = false {
+    didSet { if oldValue != hidesInFullScreen { watchFullScreen() } }
+  }
+  @ObservationIgnored private(set) var hiddenForFullScreen = false {
+    didSet {
+      if oldValue != hiddenForFullScreen { window?.alphaValue = hiddenForFullScreen ? 0 : 1 }
+    }
+  }
+  @ObservationIgnored private var fullScreenObservers: [NSObjectProtocol] = []
+  @ObservationIgnored private var fullScreenCheck: Task<Void, Never>?
+
+  private func watchFullScreen() {
+    let center = NSWorkspace.shared.notificationCenter
+    for observer in fullScreenObservers { center.removeObserver(observer) }
+    fullScreenObservers = []
+    fullScreenCheck?.cancel()
+    guard hidesInFullScreen, !isStaged else {
+      hiddenForFullScreen = false
+      return
+    }
+    for name in [
+      NSWorkspace.activeSpaceDidChangeNotification, NSWorkspace.didActivateApplicationNotification,
+    ] {
+      fullScreenObservers.append(
+        center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+          MainActor.assumeIsolated { self?.checkFullScreenSoon() }
+        })
+    }
+    checkFullScreenSoon()
+  }
+
+  private func checkFullScreenSoon() {
+    fullScreenCheck?.cancel()
+    fullScreenCheck = Task { [weak self] in
+      for wait in [Duration.zero, .milliseconds(800), .milliseconds(1600)] {
+        try? await Task.sleep(for: wait)
+        guard !Task.isCancelled, let self else { return }
+        self.hiddenForFullScreen =
+          self.hidesInFullScreen
+          && Self.notchScreen.map { IslandFullScreen.isFullScreen(on: $0) } ?? false
+      }
+    }
+  }
   @ObservationIgnored private var backdrop: IslandBackdrop?
   /// 语气变了（nil = 收起）：菜单栏图标据此呼吸 / 弹一下（StatusItem.reflect）
   @ObservationIgnored var onToneChange: ((Tone?) -> Void)?
@@ -1737,6 +1782,7 @@ import SwiftUI
     panel.isReleasedWhenClosed = false
     panel.animationBehavior = .none
     panel.sharingType = hidesFromCapture ? .none : .readOnly
+    panel.alphaValue = hiddenForFullScreen ? 0 : 1
     // 宿主包在普通容器里（setHostedContent）：直接当 contentView 时窗口一改大小就在「更新约束」里绕下去、抛异常崩掉
     // （2026-10-26 屏上复现：先弹提示、再在上面开那一张；测试里还见过窗口被它改成 520 × 64）
     let host = IslandHost(rootView: IslandView(island: self))

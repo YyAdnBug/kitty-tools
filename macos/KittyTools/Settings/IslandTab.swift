@@ -35,6 +35,9 @@ struct IslandTab: View {
   /// 这台 Mac 上的日历（有「日历」授权时，这一页出现时读一次）
   @State private var eventCalendars: [NextEvent.CalendarInfo] = []
   @AppStorage(Prefs.islandOutlined) private var outlined = false
+  @AppStorage(Prefs.islandHidesInFullScreen) private var hidesInFullScreen = false
+  @AppStorage(Prefs.islandMediaColor) private var mediaColor = Island.MediaColor.artwork.rawValue
+  @AppStorage(Prefs.islandMusicFavorite) private var musicFavorite = true
   @AppStorage(Prefs.islandNowPlaying) private var nowPlaying = false
   @AppStorage(Prefs.islandTrackPeek) private var trackPeek = true
   @AppStorage(Prefs.islandNextEvent) private var nextEvent = false
@@ -66,6 +69,18 @@ struct IslandTab: View {
           Toggle(isOn: $trackPeek) {
             Text("换歌时显示歌名")
             Text("从刘海垂下一小条歌名和艺人，约 2 秒收回")
+          }
+          Picker(selection: $mediaColor) {
+            Text("封面的颜色").tag(Island.MediaColor.artwork.rawValue)
+            Text("强调色").tag(Island.MediaColor.accent.rawValue)
+            Text("白色").tag(Island.MediaColor.white.rawValue)
+          } label: {
+            Text("跳动条和进度条的颜色")
+            Text("封面的颜色：跟着每首歌的封面变")
+          }
+          Toggle(isOn: $musicFavorite) {
+            Text("播放卡片上显示收藏按钮")
+            Text("放「音乐」时卡片右上角一颗心，点了收藏这首；第一次点会问能不能控制「音乐」")
           }
           Toggle(isOn: $hidesWhenActive) {
             Text("正在用放歌的 App 时不显示")
@@ -293,6 +308,10 @@ struct IslandTab: View {
         Toggle(isOn: $outlined) {
           Text("描一圈细边")
           Text("刘海两边伸出来、展开时，形体外面一圈淡淡的边，深色桌面上也看得清轮廓")
+        }
+        Toggle(isOn: $hidesInFullScreen) {
+          Text("全屏时藏起来")
+          Text("刘海那块屏上的 App 全屏时（看视频、玩游戏），刘海岛和它的提示都不出现")
         }
         Toggle(isOn: $hidesFromCapture) {
           Text("截图、录屏时不显示刘海岛")

@@ -176,6 +176,9 @@ struct IslandMediaCard: View {
   @State private var output: String?
   /// 进度那一行换成了音量滑杆（值 = 打开那一刻读到的音量：滑杆第一帧就在对的位置）；nil = 没开
   @State private var volume: Double?
+  /// 「音乐」放着的这首收藏了没有（2026-11-18 照 Alcove；只在已经允许过控制「音乐」时读，读不到是 nil = 空心）
+  @State private var favorited: Bool?
+  @AppStorage(Prefs.islandMusicFavorite) private var showsFavorite = true
 
   var body: some View {
     let snapshot = media.snapshot
@@ -206,6 +209,29 @@ struct IslandMediaCard: View {
         }
         Spacer(minLength: 12)
         HStack(spacing: 10) {
+          if showsFavorite, snapshot.bundleID == NowPlayingFallback.musicID {
+            // 收藏这首（「音乐」的收藏，AppleScript）：第一次点会问一次能不能控制「音乐」
+            Button {
+              Task {
+                favorited =
+                  await NowPlayingFallback.toggleMusicFavorite(island: island) ?? favorited
+              }
+            } label: {
+              Image(systemName: favorited == true ? "heart.fill" : "heart")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(
+                  favorited == true ? Color(nsColor: .systemPink) : .white.opacity(0.5)
+                )
+                .contentTransition(.symbolEffect(.replace))
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(IslandButtonStyle())
+            .accessibilityLabel(favorited == true ? "取消收藏" : "收藏")
+            .task(id: snapshot.title) {
+              if !island.isStaged { favorited = await NowPlayingFallback.musicFavorited() }
+            }
+          }
           if let output = stagedVolume == nil ? output : "speaker.wave.2.fill" {
             // 输出设备的图标（扬声器、耳机、显示器……）：点了进度那一行换成输出音量的滑杆，再点换回来
             Button {
@@ -464,6 +490,13 @@ struct IslandBattery: View {
     case ..<0.875: "battery.75percent"
     default: "battery.100percent"
     }
+  }
+}
+
+extension Island {
+  /// 正在播放的跳动条、进度条用什么颜色（设置 › 刘海岛「正在播放的颜色」）
+  enum MediaColor: String, CaseIterable {
+    case artwork, accent, white
   }
 }
 

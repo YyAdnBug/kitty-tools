@@ -1,6 +1,7 @@
 // 刘海岛照 Alcove 能调的几样（2026-11-17 第 4 批）：提示停多久的三档、正在用放歌的 App 时不上耳朵、电量低时写还能用多久；
 // 第 5 批日历：月历上有日程的日子、拒绝的也算、日历的颜色
 
+import AppKit
 import CoreGraphics
 import Foundation
 import Testing
@@ -91,5 +92,52 @@ import Testing
     let activity = NextEvent.activity(declined, join: { _ in }, openCalendar: {}, colored: true)
     #expect(activity.color != nil)
     #expect(NextEvent.activity(declined, join: { _ in }, openCalendar: {}).color == nil)
+  }
+}
+
+/// 最后一批（2026-11-18）：全屏时藏起的认法（数是用户在场把 Safari 全屏时探针记的）、正在播放的颜色样式
+@MainActor struct IslandFullScreenTests {
+  // 1710 × 1112 的刘海屏，刘海那一条 38
+  static let screen = CGRect(x: 0, y: 0, width: 1710, height: 1112)
+  static let dock = IslandFullScreen.Window(pid: 1, layer: 20, frame: screen, isDock: true)
+  static let menu = IslandFullScreen.Window(
+    pid: 2, layer: 24, frame: CGRect(x: 0, y: 0, width: 1710, height: 38), isDock: false)
+
+  static func window(_ frame: CGRect, pid: pid_t = 99) -> IslandFullScreen.Window {
+    IslandFullScreen.Window(pid: pid, layer: 0, frame: frame, isDock: false)
+  }
+
+  @Test func fullScreenWindowWithoutDock() {
+    // 全屏：从刘海下沿到底、和屏一样宽，程序坞不在（菜单栏那一层照样在）
+    let full = Self.window(CGRect(x: 0, y: 38, width: 1710, height: 1074))
+    #expect(
+      IslandFullScreen.isFullScreen([Self.menu, full], screen: Self.screen, top: 38, front: 99))
+    // 别的 App 全屏、前台不是它：不算
+    #expect(
+      !IslandFullScreen.isFullScreen([Self.menu, full], screen: Self.screen, top: 38, front: 7))
+  }
+
+  @Test func maximizedOrNormalWindowIsNotFullScreen() {
+    // 放大：一样宽、到程序坞上沿为止，程序坞在
+    let zoomed = Self.window(CGRect(x: 0, y: 38, width: 1710, height: 991))
+    #expect(
+      !IslandFullScreen.isFullScreen(
+        [Self.menu, Self.dock, zoomed], screen: Self.screen, top: 38, front: 99))
+    // 普通窗口
+    let normal = Self.window(CGRect(x: 150, y: 102, width: 1468, height: 815))
+    #expect(
+      !IslandFullScreen.isFullScreen([Self.menu, normal], screen: Self.screen, top: 38, front: 99))
+    // 程序坞在、窗口却到底（退出全屏那一帧）：不算
+    let exiting = Self.window(Self.screen)
+    #expect(
+      !IslandFullScreen.isFullScreen(
+        [Self.menu, Self.dock, exiting], screen: Self.screen, top: 38, front: 99))
+  }
+
+  @Test func mediaColorStyles() {
+    let art = NSColor.systemTeal
+    #expect(NowPlaying.tint(artwork: art, style: .artwork) == art)
+    #expect(NowPlaying.tint(artwork: art, style: .accent) == nil)
+    #expect(NowPlaying.tint(artwork: art, style: .white) == .white)
   }
 }

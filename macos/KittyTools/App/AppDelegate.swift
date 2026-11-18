@@ -1117,7 +1117,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     // 框选截图 / 录屏、启动台、状态屏盖着刘海时，点它、停在它上面都不算
     island.isSuppressed = { [unowned self] in
-      isCapturing || launchpad.isOpen || statusScreen.isActive
+      isCapturing || launchpad.isOpen || statusScreen.isActive || island.hiddenForFullScreen
     }
     island.hasExtras = Feature.island.isOn
     island.respondsToNotch = respondsToNotch
@@ -1203,6 +1203,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     island.haptics = UserDefaults.standard.bool(forKey: Prefs.islandHaptics)
     island.blurs = UserDefaults.standard.bool(forKey: Prefs.islandBlur)
     island.hidesFromCapture = UserDefaults.standard.bool(forKey: Prefs.islandHidesFromCapture)
+    island.hidesInFullScreen = UserDefaults.standard.bool(forKey: Prefs.islandHidesInFullScreen)
     let defaults = UserDefaults.standard
     island.dwellScale =
       (defaults.string(forKey: Prefs.islandNoticeLength).flatMap(Island.DwellLength.init)

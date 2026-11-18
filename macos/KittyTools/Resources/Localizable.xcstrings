@@ -8881,6 +8881,16 @@
         }
       }
     },
+    "全屏时藏起来" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide in full screen"
+          }
+        }
+      }
+    },
     "全屏的 App 图标网格" : {
       "localizations" : {
         "en" : {
@@ -10165,6 +10175,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Stays on the Notch until you click Got It or Snooze"
+          }
+        }
+      }
+    },
+    "刘海那块屏上的 App 全屏时（看视频、玩游戏），刘海岛和它的提示都不出现" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When an app on the notched screen is full screen (videos, games), the Notch and its notices don’t appear"
           }
         }
       }
@@ -16133,6 +16153,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Importing a folder you exported doesn’t create duplicates; each .md file from elsewhere becomes a new note"
+          }
+        }
+      }
+    },
+    "封面的颜色" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Artwork color"
+          }
+        }
+      }
+    },
+    "封面的颜色：跟着每首歌的封面变" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Artwork color follows each song’s artwork"
           }
         }
       }
@@ -23648,6 +23688,16 @@
         }
       }
     },
+    "播放卡片上显示收藏按钮" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show a favorite button on the playback card"
+          }
+        }
+      }
+    },
     "播放进度" : {
       "localizations" : {
         "en" : {
@@ -24134,6 +24184,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Change this counter’s number"
+          }
+        }
+      }
+    },
+    "放「音乐」时卡片右上角一颗心，点了收藏这首；第一次点会问能不能控制「音乐」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "While Music is playing, a heart at the top right of the card favorites the song; the first time, you’re asked to let Kitty Tools control Music"
           }
         }
       }
@@ -29285,6 +29345,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No permission to control “%@”"
+          }
+        }
+      }
+    },
+    "没有权限控制「音乐」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No permission to control Music"
           }
         }
       }
@@ -36845,6 +36915,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Paths are full paths without quotes, one per line for multiple items; on empty space, it’s the folder’s path. The Notch confirms the copy, and it’s also in Clipboard History."
+          }
+        }
+      }
+    },
+    "跳动条和进度条的颜色" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waveform and progress bar color"
           }
         }
       }

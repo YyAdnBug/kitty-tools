@@ -1158,7 +1158,19 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
   比一下 `filterKey` 重读。
 - **第 7 批（一部分）：描一圈细边**（Alcove 1.7 的对比描边，默认关）：刘海屏上形体的发丝线从 0 改成白 22%（`Island.outlined`），
   收着时形体藏在真刘海后面、看不见。
-- 还没做（同一分支后几批）：正在播放的几样（C1–C4、C7，先探针）、全屏时藏起（C18，先探针：别的 App 全屏时公开接口怎么认出来）。
+- **2026-11-18 用户在场跑了探针**（`build/research/focus-2026-11-17/probe/`；装着的还是旧的 0.10.0，没看到刘海提示，后来装了测试包、看到了）：
+  - 勿扰开关四次，log stream 都在 4–15 ms 内收到；老的分布式广播 `_NSDoNotDisturbEnabledNotification` 一条都没有。专注模式滤镜在系统设置里**出现了**
+    （Kitty Tools「Due reminders」三个选项，预选「Only show an icon on the Notch」）——那时装的是旧包，没有「跟着 Kitty 的设置」那一项。
+  - 正在播放（npdump，签成 com.apple. 才读得到）：「音乐」31 个字段、32 个命令；Chrome 视频 14 个字段、5 个命令。**倍速**：音乐的 #19 关着、Chrome
+    没有，**不做**；**音质标签、Explicit**：字段里没有，**不做**；**拷贝链接**：音乐只给商店编号，链接要带账号的地区（cn 能开、us / jp 404），读不到地区；
+    浏览器 / Spotify 要新的自动化授权、还得按标题猜是哪个标签，**不做**；**收藏**：音乐的「Like」命令关着，但它的 AppleScript 有 track 的 `favorited`，做。
+  - 全屏（fullscreen）：Safari 全屏 26 秒——前台窗口从刘海下沿到底、和屏一样宽（1710 × 1074），程序坞那扇窗口不在；放大的窗口到程序坞上沿、程序坞在；
+    菜单栏那层窗口全屏时照样在；`currentSystemPresentationOptions` 只管本 App；换桌面的通知探针里没收到（不是完整的 App）。
+- **最后一批（2026-11-18）**：全屏时藏起来（C18，默认关；`Shell/IslandFullScreen.swift`：`CGWindowListCopyWindowInfo` 按上面的认法，换桌面、换前台 App
+  时看，0.8 / 1.6 秒后再看两次；藏起 = 窗口透明 + `isSuppressed`；**程序坞自动隐藏时放大到底的窗口可能被当成全屏，没实测**）；正在播放的颜色（C4 的一部分：
+  封面的颜色 / 强调色 / 白色，`Island.MediaColor`、`NowPlaying.tint`；Alcove 的渐变没做）；播放卡片上的收藏（C7，默认开、只在放「音乐」时出：
+  `NowPlayingFallback.musicFavorited` / `toggleMusicFavorite`，AppleScript `favorited of current track`，读之前看 `canAutomate` 不弹框，点了才可能弹授权）。
+  游戏时藏起没单独做（游戏多半全屏）。
   不做：选在哪块屏显示、刘海宽高微调（C19）——我们只在刘海屏上画岛、别的屏用菜单栏那一项（定过不画药丸），宽高直接取系统给的刘海区域，
   没有要微调的模拟刘海。
 

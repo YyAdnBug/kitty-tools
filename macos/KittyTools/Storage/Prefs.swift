@@ -524,6 +524,11 @@ enum Prefs {
   static let islandHiddenCalendars = "islandHiddenCalendars"
   /// 刘海屏上的岛描一圈细边（2026-11-17 第 7 批，照 Alcove 的对比描边，默认关）
   static let islandOutlined = "islandOutlined"
+  /// 2026-11-18 最后一批（照 Alcove，默认关 / 同原来）：前台 App 全屏时藏起刘海岛、正在播放的颜色（Island.MediaColor 的
+  /// rawValue：封面的颜色 / 强调色 / 白色）、播放卡片上「音乐」的收藏按钮（默认开，只在放「音乐」时出）
+  static let islandHidesInFullScreen = "islandHidesInFullScreen"
+  static let islandMediaColor = "islandMediaColor"
+  static let islandMusicFavorite = "islandMusicFavorite"
   /// 刘海岛上的「正在播放」（刘海岛扩展第 2 期，Shell/NowPlaying.swift）：默认关（2026-11-13 拍板：归刘海岛插件、一组开关）；
   /// 关着时不连正在播放服务、服务不起
   static let islandNowPlaying = "islandNowPlaying"
@@ -713,6 +718,9 @@ enum Prefs {
       islandShowDeclined: false,
       islandCalendarDots: false,
       islandOutlined: false,
+      islandHidesInFullScreen: false,
+      islandMediaColor: Island.MediaColor.artwork.rawValue,
+      islandMusicFavorite: true,
       islandNowPlaying: false,
       islandTrackPeek: true,
       // 默认关（2026-11-14，用户：Alcove 是点了才展开；它的实录里指针停 2–5 秒都只是鼓起）。这一项没发布过
