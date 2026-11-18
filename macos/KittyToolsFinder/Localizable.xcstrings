@@ -11,6 +11,16 @@
         }
       }
     },
+    "Kitty Tools：对选中的东西，或者这个文件夹" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kitty Tools: act on the selection or this folder"
+          }
+        }
+      }
+    },
     "PPT 演示文稿" : {
       "localizations" : {
         "en" : {
@@ -117,6 +127,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Copy To"
+          }
+        }
+      }
+    },
+    "废纸篓里没有这些项" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not available in the Trash"
           }
         }
       }
@@ -311,6 +331,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Extract Here"
+          }
+        }
+      }
+    },
+    "访达右键在 Kitty Tools 里关着" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finder Menu is turned off in Kitty Tools"
+          }
+        }
+      }
+    },
+    "访达右键里的项都关着" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All Finder Menu items are turned off"
           }
         }
       }

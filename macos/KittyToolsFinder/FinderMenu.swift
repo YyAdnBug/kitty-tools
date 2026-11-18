@@ -10,6 +10,11 @@
 //   「从剪贴板新建」（剪贴板里的图存成 PNG、文字存成 .txt，App 看剪贴板）；剪切过、剪贴板还没换过时多一项「粘贴 N 项」
 //   （选中的是一个文件夹时右键它也有「粘贴 N 项到这个文件夹」），然后「拷贝路径」「在“X”中打开」「切换隐藏文件」，对着的是这个文件夹。
 // 设置里打开「收进一个子菜单」时，这些都收进第一层的一项「Kitty Tools ▸」里（默认关、平铺）。
+// - 访达工具栏按钮「Kitty Tools」（2026-11-17 拍板 A1；用户在 访达 › 显示 › 自定工具栏… 里拖上去，系统不让替他放）：有选中的
+//   同右键选中的东西，没选中同右键空白处。iCloud 云盘（包括同步的桌面、文稿）、网盘这类文件提供程序管的文件夹里系统不给扩展
+//   右键项，工具栏按钮却在；那里访达不告诉扩展选中了什么、在哪个文件夹（苹果文档：扩展管不到的位置 selectedItemURLs /
+//   targetedURL 是 nil），菜单照全的列（blind：按类型才出的几项也列上，App 那边会说不合适），点了交过去的网址不带文件、带
+//   finder=items / folder / auto，App 自己问访达（要「控制访达」的授权，第一次用时系统问；App 的 FinderLink 文件头）。
 // 每一项在 App 设置里能单独关（App 的 FinderMenuItem；同几家成熟产品），默认开关照 2026-11-08 右键扩充拍板 A2。
 // 扩展只画菜单、不碰文件（拍板 C2）：点了用 App 自己的网址把动作交给常驻菜单栏的 Kitty Tools，
 // <App 的 bundle id>://finder?do=<动作>&key=<凭证>&…&file=/a，App 那边是 FinderLink（网址的写法在那边的文件头）；
@@ -157,6 +162,10 @@ final class FinderMenu: FIFinderSync {
   /// 「移动到」「复制到」子菜单里「选择文件夹…」的 tag
   private static let chooseTag = 999
 
+  /// 这份菜单是工具栏按钮在访达不告诉扩展的位置弹的（见文件头）：点了交过去的网址带 finder=…、不带文件。
+  /// 每次搭菜单都重设，点的总是最后搭的那一份（菜单一次只开一个）
+  private static var blind = false
+
   /// 一次最多交这么多个：再多 App 不认，这里先响一声
   private static let maxFiles = 2000
 
@@ -283,8 +292,70 @@ final class FinderMenu: FIFinderSync {
     _ = grouped(build(container: containerTag, selected: []))
   }
 
+  // 工具栏按钮：名字、悬停时的说明、图（模板图，系统按工具栏的样子上色）
+  override var toolbarItemName: String { "Kitty Tools" }
+
+  override var toolbarItemToolTip: String {
+    Self.locale = Self.preferredLocale
+    return Self.text("Kitty Tools：对选中的东西，或者这个文件夹")
+  }
+
+  /// 同别的交给访达的图：先画成小位图（见文件头），模板图（系统按工具栏的样子上色）
+  override var toolbarItemImage: NSImage {
+    Self.icon("toolbar") {
+      guard
+        let symbol = NSImage(systemSymbolName: "pawprint", accessibilityDescription: "Kitty Tools")?
+          .withSymbolConfiguration(.init(pointSize: 14, weight: .regular))
+      else { return nil }
+      let size = NSSize(width: 18, height: 18)
+      let art = NSImage(size: size, flipped: false) { rect in
+        let glyph = symbol.size
+        symbol.draw(
+          in: NSRect(
+            x: (rect.width - glyph.width) / 2, y: (rect.height - glyph.height) / 2,
+            width: glyph.width, height: glyph.height))
+        return true
+      }
+      return Self.bitmap(art, size: size, template: true)
+    } ?? NSImage()
+  }
+
+  /// 工具栏按钮的菜单（见文件头）：功能关着时一行灰字说明（不然点了什么都没有）；不收进「Kitty Tools ▸」（本来就在按钮里）
+  private static func toolbarMenu() -> NSMenu {
+    locale = preferredLocale
+    blind = false
+    guard key != nil else {
+      let menu = NSMenu()
+      menu.addItem(withTitle: text("访达右键在 Kitty Tools 里关着"), action: nil, keyEquivalent: "")
+      return menu
+    }
+    let controller = FIFinderSyncController.default()
+    let selected = controller.selectedItemURLs() ?? []
+    let menu: NSMenu
+    if !selected.isEmpty {
+      menu = build(container: 0, selected: selected)
+    } else if let target = controller.targetedURL() {
+      guard !inTrash(target) else {
+        let menu = NSMenu()
+        menu.addItem(withTitle: text("废纸篓里没有这些项"), action: nil, keyEquivalent: "")
+        return menu
+      }
+      menu = build(container: containerTag, selected: [])
+    } else {
+      blind = true
+      menu = build(container: 0, selected: [])
+    }
+    // 设置里把这几项都关了：说一声（不然点开是空的）
+    if menu.items.isEmpty {
+      menu.addItem(withTitle: text("访达右键里的项都关着"), action: nil, keyEquivalent: "")
+    }
+    return menu
+  }
+
   // 访达在主线程上要菜单、点菜单项
   override func menu(for menuKind: FIMenuKind) -> NSMenu? {
+    if menuKind == .toolbarItemMenu { return Self.toolbarMenu() }
+    Self.blind = false
     guard Self.key != nil else { return nil }
     // 空白处右键对着的是这个文件夹：记在每一项的 tag 里（菜单项要跨进程交给访达，只有 tag 带得回来）。
     // 不能点的时候再看「有没有选中的」：窗口里选着文件、却在空白处右键时，选中的那几样还在
@@ -349,12 +420,14 @@ final class FinderMenu: FIFinderSync {
     locale = preferredLocale
     let menu = NSMenu()
     let items = container == 0
-    if !items, Self.shows("finderMenuNewFile", default: true) {
+    // blind（工具栏按钮、访达不告诉扩展的位置）：看不到选中的是什么，空白处的项和按类型才出的项都列上
+    let blind = Self.blind
+    if !items || blind, Self.shows("finderMenuNewFile", default: true) {
       let new = menu.addItem(withTitle: text("新建文件"), action: nil, keyEquivalent: "")
       new.submenu = Self.newFileMenu()
       new.image = Self.tile("kitty.finder.new.file", custom: true, color: Tint.create)
     }
-    if !items, Self.shows("finderMenuCut", default: true), Self.cutCount > 0 {
+    if !items || blind, Self.shows("finderMenuCut", default: true), Self.cutCount > 0 {
       Self.add(
         "粘贴 \(Self.cutCount) 项", #selector(paste(_:)), symbol: "doc.on.clipboard.fill",
         color: Tint.organize, to: menu)
@@ -376,15 +449,15 @@ final class FinderMenu: FIFinderSync {
         color: Tint.copy, to: menu)
     }
     // 拷贝图中文字（2026-11-17 拍板 C1）：选中的都是图片时才出现
-    if items, Self.shows("finderMenuCopyText", default: true), !selected.isEmpty,
-      selected.allSatisfy(Self.isImage)
+    if items, Self.shows("finderMenuCopyText", default: true),
+      blind || (!selected.isEmpty && selected.allSatisfy(Self.isImage))
     {
       Self.add(
         "拷贝图中文字", #selector(copyImageText(_:)), symbol: "text.viewfinder", color: Tint.copy,
         to: menu)
     }
-    if Self.shows("finderMenuHash", default: false), !selected.isEmpty,
-      !selected.contains(where: \.hasDirectoryPath)
+    if Self.shows("finderMenuHash", default: false),
+      blind || (!selected.isEmpty && !selected.contains(where: \.hasDirectoryPath))
     {
       let kinds = NSMenu()
       for (index, kind) in Self.hashes.enumerated() {
@@ -428,8 +501,8 @@ final class FinderMenu: FIFinderSync {
       // 「压缩为」：访达自己的「压缩“X”」在同一个菜单里，两项都叫压缩分不开
       Self.add("压缩为", nil, symbol: "doc.zipper", color: Tint.archive, to: menu).submenu = formats
     }
-    if Self.shows("finderMenuExtract", default: true), !selected.isEmpty,
-      selected.allSatisfy({ Self.isArchive($0) })
+    if Self.shows("finderMenuExtract", default: true),
+      blind || (!selected.isEmpty && selected.allSatisfy({ Self.isArchive($0) }))
     {
       // 按住 ⌥：换成「解压到…」，自己选放在哪（同「拷贝路径（终端写法）」的 ⌥ 习惯；2026-11-17 拍板 B3）
       Self.add(
@@ -449,7 +522,7 @@ final class FinderMenu: FIFinderSync {
     if items, Self.shows("finderMenuDeskAlias", default: false) {
       Self.add("发送替身到桌面", #selector(alias(_:)), symbol: "link", color: Tint.alias, to: menu)
     }
-    if !items, Self.shows("finderMenuShowHidden", default: false) {
+    if !items || blind, Self.shows("finderMenuShowHidden", default: false) {
       let toggle = Self.add(
         "切换隐藏文件", #selector(toggleHidden(_:)), symbol: "eye.fill", color: Tint.hide,
         to: menu)
@@ -900,6 +973,12 @@ final class FinderMenu: FIFinderSync {
   private func hand(
     _ action: String, app: String? = nil, extra: [URLQueryItem] = [], container: Bool
   ) {
+    // 工具栏按钮在访达不告诉扩展的位置（blind）：不带文件，让 App 去问访达。切换隐藏文件不看文件，照常交
+    if Self.blind, action != "hiddenfiles" {
+      let scope = ["copy", "open"].contains(action) ? "auto" : container ? "folder" : "items"
+      hand(action, app: app, extra: extra + [URLQueryItem(name: "finder", value: scope)], files: [])
+      return
+    }
     hand(action, app: app, extra: extra, files: Self.targets(container: container))
   }
 
@@ -931,7 +1010,9 @@ final class FinderMenu: FIFinderSync {
 
   private func hand(_ action: String, app: String? = nil, extra: [URLQueryItem] = [], files: [URL])
   {
-    guard let key = Self.key, !files.isEmpty || ["templates", "toomany", "stale"].contains(action)
+    guard let key = Self.key,
+      !files.isEmpty || ["templates", "toomany", "stale", "hiddenfiles"].contains(action)
+        || extra.contains(where: { $0.name == "finder" })
     else {
       return
     }

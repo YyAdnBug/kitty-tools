@@ -48,6 +48,50 @@ import UniformTypeIdentifiers
     FinderLink.parse(url, scheme: scheme, key: key, apps: apps)
   }
 
+  /// 工具栏按钮在访达不告诉扩展的位置交过来的（2026-11-17 拍板 A1）：凭证对上、不带文件、只有一个认得的 finder 才去问访达；
+  /// 问到的换成 file 照常认；osascript 的输出拆成文件夹和选中的
+  @Test func toolbarAsksFinder() throws {
+    let scope = { (query: String) in
+      FinderLink.finderScope(self.link(query), scheme: self.scheme, key: self.key)
+    }
+    #expect(scope("do=copy&key=K-123&finder=auto") == .auto)
+    #expect(scope("do=zip&key=K-123&finder=items") == .items)
+    #expect(scope("do=new&key=K-123&template=txt&finder=folder") == .folder)
+    // 凭证不对、带了文件、两个 finder、不认得的范围、没有 finder：不去读访达
+    #expect(scope("do=copy&key=wrong&finder=auto") == nil)
+    #expect(scope("do=copy&finder=auto") == nil)
+    #expect(scope("do=copy&key=K-123&finder=auto&file=/a") == nil)
+    #expect(scope("do=copy&key=K-123&finder=auto&finder=items") == nil)
+    #expect(scope("do=copy&key=K-123&finder=all") == nil)
+    #expect(scope("do=copy&key=K-123") == nil)
+    #expect(
+      FinderLink.finderScope(
+        try #require(URL(string: "https://finder?do=copy&key=K-123&finder=auto")), scheme: scheme,
+        key: key) == nil)
+
+    let asked = link("do=zip&key=K-123&finder=items")
+    let rebuilt = try #require(FinderLink.withFiles(asked, ["/a/b c.txt", "/a/中文/"]))
+    #expect(FinderLink.finderScope(rebuilt, scheme: scheme, key: key) == nil)
+    let parsed = try #require(parse(rebuilt))
+    #expect(parsed.action == .compress(.zip))
+    #expect(parsed.files.map { $0.path(percentEncoded: false) } == ["/a/b c.txt", "/a/中文/"])
+
+    // 文件夹在前，选中的跟在后面，每个后面一个 NUL，osascript 再加一个换行；名字里的换行照留
+    let answer = FinderLink.finderAnswer("/Users/x/云盘/\0/Users/x/云盘/a.txt\0/Users/x/b\nc.txt\0\n")
+    #expect(answer.folder == "/Users/x/云盘")
+    #expect(answer.selection == ["/Users/x/云盘/a.txt", "/Users/x/b\nc.txt"])
+    let none = FinderLink.finderAnswer("\0\n")
+    #expect(none.folder == nil && none.selection.isEmpty)
+    #expect(FinderLink.finderAnswer("").folder == nil)
+    // 选中的文件夹也去掉结尾的「/」（同右键）；根目录留着
+    let folders = FinderLink.finderAnswer("/\0/Users/x/项目/\0\n")
+    #expect(folders.folder == "/" && folders.selection == ["/Users/x/项目"])
+    // 脚本里写着上限和「太多」那一句
+    #expect(
+      FinderLink.finderScript.contains(
+        "> \(FinderLink.maxFiles) then return \"\(FinderLink.tooManyMark)\""))
+  }
+
   @Test func copyAndOpenParse() {
     let copy = parse(
       link("do=copy&key=K-123&file=/Users/a/My%20Folder&file=/Users/a/%E4%B8%AD%E6%96%87.txt"))
@@ -332,6 +376,7 @@ import UniformTypeIdentifiers
       "do", "key", "app", "file", "copy", "open", "new", "template", "mine", "suffix", "name",
       "move",
       "copyto", "to", "choose", "cut", "paste", "alias", "zip", "7z", "tgz", "ocr", "extract",
+      "finder", "auto", "items", "folder",
       "fixnames",
       "hiddenfiles", "hide", "ext", "on", "hash", "algo", "erase", "style", "shell", "stem",
       "toomany", "stale", "clip",

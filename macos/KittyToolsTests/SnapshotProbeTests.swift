@@ -544,7 +544,10 @@ struct SnapshotProbeTests {
       case .reminders: AnyView(RemindersTab(fixed: Reminder.examples))
       // 私有接口在不在按固定的「都在」画（图不跟着机器变）
       case .dockPreview: AnyView(DockPreviewTab(missing: []))
-      case .finderMenu: AnyView(FinderMenuTab(extensionEnabled: false))
+      case .finderMenu:
+        AnyView(
+          FinderMenuTab(
+            extensionEnabled: false, finderAutomation: .notAsked, desktopInICloud: false))
       // 没起的保持唤醒（只读偏好，不建断言）
       case .keepAwake: AnyView(KeepAwakeTab(keepAwake: KeepAwake()))
       // 授权按固定的「没给」画
@@ -5055,10 +5058,16 @@ struct SnapshotProbeTests {
     prefs.set(some, forKey: Prefs.finderCompressSkip)
     for dark in [false, true] {
       try snapshot(
-        FinderMenuTab(extensionEnabled: true).defaultAppStorage(prefs),
-        size: NSSize(width: 640, height: 2300), dark: dark,
+        FinderMenuTab(extensionEnabled: true, finderAutomation: .granted, desktopInICloud: false)
+          .defaultAppStorage(prefs),
+        size: NSSize(width: 640, height: 2400), dark: dark,
         to: "\(out)/finder-settings\(dark ? "-dark" : "").png")
     }
+    // 控制访达拒绝过（按钮「去打开…」）、桌面同步在 iCloud 里（页脚下面一行橙字）
+    try snapshot(
+      FinderMenuTab(extensionEnabled: true, finderAutomation: .denied, desktopInICloud: true)
+        .defaultAppStorage(prefs),
+      size: NSSize(width: 640, height: 560), dark: false, to: "\(out)/finder-settings-icloud.png")
     func page() -> some View { NavigationStack { CompressSkipPage() }.defaultAppStorage(prefs) }
     prefs.removeObject(forKey: Prefs.finderCompressSkip)
     for dark in [false, true] {

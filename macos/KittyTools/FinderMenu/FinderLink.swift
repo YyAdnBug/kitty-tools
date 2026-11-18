@@ -15,6 +15,11 @@
 // - 凭证对得上（App 第一次启动时生成、存在偏好里的随机串，ensureKey；扩展从 App 的偏好里读）；
 // - 功能开着、这一项在设置里开着；路径是绝对路径；要用的 App、常用文件夹在设置的列表里。
 // 新建文件那边另有一层（模板路径上不认替身、不往 ~/Library 里建，见 NewFile 文件头）。
+// 工具栏按钮（2026-11-17 拍板 A1）：访达不告诉扩展的位置（iCloud 云盘、网盘，系统在那里不给扩展右键项、工具栏按钮却在；苹果文档：
+// 扩展管不到的位置 selectedItemURLs / targetedURL 都是 nil）扩展交过来的网址不带文件、带 finder=items / folder / auto，App 先核对
+// 凭证（finderScope：别人借它让 App 去读访达不行），再用 AppleScript 问访达选中了什么、前面那个窗口是哪个文件夹（osascript，
+// 进程外：第一次时系统问要不要让 Kitty Tools 控制访达，要等用户点；拒绝过的刘海岛带「打开系统设置」），换上文件再照常做——
+// 后面的核对一样不少。同几家把动作放在访达工具栏上的工具问访达的做法。
 
 import AppKit
 import OSLog
@@ -334,7 +339,144 @@ nonisolated struct FinderLink: Equatable {
   // MARK: 做
 
   /// App 收到网址（AppDelegate.application(_:open:)，发送方已经核对过）：认得出来就做，认不出来什么都不做
+  /// 工具栏按钮交过来、要 App 去问访达的：items 是选中的那几样，folder 是前面那个窗口的文件夹（新建、粘贴这类），
+  /// auto 是选中的、没选中就是这个文件夹（拷贝路径、在“X”中打开，同右键空白处）
+  enum FinderScope: String {
+    case items, folder, auto
+  }
+
+  /// 网址是不是要 App 去问访达的那种：scheme、host、凭证都对上，只有一个 finder、不带文件才算（凭证不对就不去读访达）
+  static func finderScope(_ url: URL, scheme: String, key: String?) -> FinderScope? {
+    guard url.scheme?.caseInsensitiveCompare(scheme) == .orderedSame, url.host() == host,
+      let key, !key.isEmpty,
+      let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
+      items.filter({ $0.name == "key" }).map(\.value) == [key],
+      !items.contains(where: { $0.name == "file" })
+    else { return nil }
+    let scopes = items.filter { $0.name == "finder" }.compactMap(\.value)
+    return scopes.count == 1 ? FinderScope(rawValue: scopes[0]) : nil
+  }
+
+  /// 换上问到的文件：去掉 finder，后面接 file（和扩展交过来的写法一样，接着照常核对）
+  static func withFiles(_ url: URL, _ paths: [String]) -> URL? {
+    guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+      return nil
+    }
+    components.queryItems =
+      (components.queryItems ?? []).filter { $0.name != "finder" && $0.name != "file" }
+      + paths.map { URLQueryItem(name: "file", value: $0) }
+    return components.url
+  }
+
+  /// 问访达的 AppleScript：先给最前面那个访达窗口显示的文件夹（不用 insertion location：「最近使用」、搜索结果这类窗口它给的是
+  /// 桌面，新建、粘贴会悄悄落到桌面上，评审；窗口显示的不是文件夹、没有窗口都是空的），再给选中的每一样，都是 POSIX 路径、
+  /// 每个后面跟一个 NUL（名字里什么字都可能有，换行也是）。选中的超过 maxFiles 只回一句 tooManyMark（几万个时一个个拼要拼很久）；
+  /// 拼字用 text item delimiters 一次接起来（一个个 & 是平方级的）
+  static let finderScript = """
+    tell application "Finder"
+      set folderPath to ""
+      try
+        set folderPath to POSIX path of ((target of Finder window 1) as alias)
+      end try
+      set picked to selection as alias list
+      if (count of picked) > \(maxFiles) then return "\(tooManyMark)"
+      set paths to {}
+      repeat with anItem in picked
+        set end of paths to POSIX path of anItem
+      end repeat
+      set AppleScript's text item delimiters to (character id 0)
+      return folderPath & (character id 0) & (paths as text) & (character id 0)
+    end tell
+    """
+
+  /// 选中的太多时 finderScript 回的那一句
+  static let tooManyMark = "kitty-too-many"
+
+  /// 访达给的文件夹路径结尾带「/」（POSIX path 的写法），去掉（同右键拷出来的样子、同右键交过来的路径）；根目录留着
+  static func plain(_ path: String) -> String {
+    var path = path
+    while path.count > 1, path.hasSuffix("/") { path.removeLast() }
+    return path
+  }
+
+  /// 这一次正在问访达（系统的授权框开着时又点了一下：不再问第二遍、不做两遍）
+  @MainActor private static var askingFinder = false
+
+  /// osascript 的输出拆成文件夹（空的是 nil）和选中的，路径结尾的「/」去掉；结尾 osascript 自己加的换行去掉
+  static func finderAnswer(_ output: String) -> (folder: String?, selection: [String]) {
+    var text = Substring(output)
+    if text.hasSuffix("\n") { text = text.dropLast() }
+    let parts = text.split(separator: "\0", omittingEmptySubsequences: false).map(String.init)
+    guard let first = parts.first else { return (nil, []) }
+    return (first.isEmpty ? nil : plain(first), parts.dropFirst().filter { !$0.isEmpty }.map(plain))
+  }
+
+  /// 问访达选中了什么、前面那个窗口是哪个文件夹，按 scope 挑出文件，换上再照常做（见文件头「工具栏按钮」）
+  @MainActor static func performAskingFinder(_ url: URL, scope: FinderScope, island: Island?) async
+  {
+    guard !askingFinder else { return }
+    askingFinder = true
+    defer { askingFinder = false }
+    // 第一次时系统的授权框要等用户点：给足时间（苹果事件自己 2 分钟超时）
+    guard
+      let result = try? await Subprocess.run(
+        "/usr/bin/osascript", ["-e", finderScript], captures: true, timeout: .seconds(150))
+    else {
+      island?.show("没能问访达选中了什么", tone: .error)
+      return
+    }
+    // 到点被停掉（授权框一直没人点、访达卡住）：标准错误是空的，单独说
+    if result.signaled {
+      island?.show("访达一直没有回答", detail: "系统问要不要允许控制访达的话，点允许再试一次", tone: .warning)
+      return
+    }
+    if result.output.hasPrefix(tooManyMark) {
+      island?.show("一次最多 \(maxFiles) 项", detail: "少选一些再点", tone: .warning)
+      return
+    }
+    guard result.status == 0 else {
+      if result.error.contains("-1743") || result.error.contains("-1744") {
+        island?.show(
+          "没有控制访达的授权",
+          detail: "工具栏按钮要它才知道你选中了什么：在 系统设置 › \(Permissions.privacyPane) › 自动化 里打开",
+          tone: .warning, actions: [.settings(for: .automation)])
+      } else if !result.error.contains("-128") {
+        island?.show(
+          "没能问访达选中了什么", detail: "\(Island.excerpt(result.error))", tone: .error)
+      }
+      return
+    }
+    let answer = finderAnswer(result.output)
+    let paths: [String] =
+      switch scope {
+      case .items: answer.selection
+      case .folder: answer.folder.map { [$0] } ?? []
+      case .auto: answer.selection.isEmpty ? answer.folder.map { [$0] } ?? [] : answer.selection
+      }
+    guard !paths.isEmpty else {
+      let reason: LocalizedStringResource =
+        scope == .items ? "先在访达里选中文件，再点工具栏按钮" : "访达最前面的窗口不是一个文件夹"
+      island?.show("这一项没做成", detail: reason, tone: .warning)
+      return
+    }
+    guard paths.count <= maxFiles else {
+      island?.show("一次最多 \(maxFiles) 项", detail: "少选一些再点", tone: .warning)
+      return
+    }
+    guard let rebuilt = withFiles(url, paths) else { return }
+    perform(rebuilt, island: island)
+  }
+
   @MainActor static func perform(_ url: URL, island: Island?) {
+    // 工具栏按钮在访达不告诉扩展的位置点的：先问访达，换上文件再走下面
+    if Feature.finderMenu.isOn,
+      let scope = finderScope(
+        url, scheme: Bundle.main.bundleIdentifier ?? "",
+        key: UserDefaults.standard.string(forKey: Prefs.finderMenuKey))
+    {
+      Task { await performAskingFinder(url, scope: scope, island: island) }
+      return
+    }
     // 发送方已经核对过是自家扩展：认不出来多半是菜单弹出来之后设置改过（列表、开关），说一声（不只是什么都不做）
     guard Feature.finderMenu.isOn,
       let link = parse(

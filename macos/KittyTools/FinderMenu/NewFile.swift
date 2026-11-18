@@ -12,7 +12,7 @@
 // 安全（2026-11-08 评审）：凭证在偏好里，本机别的程序读得到、也能投网址过来，但它没有本 App 的文件夹授权（桌面 / 文稿 / 下载，
 // 用户给过的话还有完全磁盘访问）。所以：模板只认真放在模板文件夹里的——数据目录、模板文件夹、模板本身都不能是替身（符号链接），
 // 不然把模板文件夹换成指向 ~/Documents 的替身，就能借本 App 的授权把受保护的文件拷到别处；新文件不往 ~/Library 里建（别的 App
-// 的数据、容器都在那里，用户也不会在那里右键新建）；只新建、不覆盖。
+// 的数据、容器都在那里，用户也不会在那里右键新建；iCloud 云盘、网盘这两处除外，见 allowsNewFiles）；只新建、不覆盖。
 
 import AppKit
 import Carbon.HIToolbox
@@ -131,7 +131,8 @@ nonisolated enum NewFile {
     }
   }
 
-  /// 能不能往这个文件夹里建：不在 ~/Library 里（解开替身后比）
+  /// 能不能往这个文件夹里建：不在 ~/Library 里（解开替身后比）。iCloud 云盘（~/Library/Mobile Documents/…）和网盘
+  /// （~/Library/CloudStorage/…）是用户自己的文稿、照建（访达工具栏按钮主要就用在那里，2026-11-17 评审）；它们的根不算
   static func allowsNewFiles(
     in folder: URL, home: URL = FileManager.default.homeDirectoryForCurrentUser
   )
@@ -140,6 +141,11 @@ nonisolated enum NewFile {
     let library = home.resolvingSymlinksInPath().appending(path: "Library").path(
       percentEncoded: false)
     let path = folder.resolvingSymlinksInPath().path(percentEncoded: false)
+    if ["Mobile Documents", "CloudStorage"].contains(where: {
+      path.hasPrefix(library + "/" + $0 + "/") && path.count > (library + "/" + $0 + "/").count
+    }) {
+      return true
+    }
     return path != library && !path.hasPrefix(library + "/")
   }
 

@@ -7607,6 +7607,16 @@
         }
       }
     },
+    "你的桌面、文稿同步在 iCloud 里：那里右键没有这些项，把「Kitty Tools」按钮放到访达工具栏上用。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your Desktop and Documents sync with iCloud, so right-clicking there won’t show these items. Add the Kitty Tools button to the Finder toolbar and use that instead."
+          }
+        }
+      }
+    },
     "使用记录" : {
       "localizations" : {
         "en" : {
@@ -8532,6 +8542,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Switch to the app you want to look at, then open App Shortcuts"
+          }
+        }
+      }
+    },
+    "先在访达里选中文件，再点工具栏按钮" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Select files in Finder first, then click the toolbar button"
           }
         }
       }
@@ -14300,12 +14320,12 @@
         }
       }
     },
-    "在访达里右键文件、文件夹，或者文件夹窗口的空白处，就有下面开着的这几项。iCloud 云盘和网盘的文件夹里，系统不显示这些项。" : {
+    "在访达里右键文件、文件夹，或者文件夹窗口的空白处，就有下面开着的这几项；也能把「Kitty Tools」按钮放到访达的工具栏上（访达 › 显示 › 自定工具栏…，把它拖上去），点它是同样的几项。iCloud 云盘（包括同步到 iCloud 的桌面、文稿）和网盘的文件夹里，系统不在右键里显示这些项，用工具栏按钮。" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Right-click files, folders, or empty space in a folder window in Finder to see the items turned on below. macOS doesn’t show them in iCloud Drive or other cloud storage folders."
+            "value" : "Right-click files, folders, or empty space in a folder window in Finder to see the items turned on below. You can also add the Kitty Tools button to the Finder toolbar (Finder › View › Customize Toolbar…, then drag it in) for the same items. macOS doesn’t show them when you right-click in iCloud Drive (including a Desktop and Documents synced with iCloud) or other cloud storage folders; use the toolbar button there."
           }
         }
       }
@@ -15914,6 +15934,16 @@
         }
       }
     },
+    "少选一些再点" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Select fewer and try again"
+          }
+        }
+      }
+    },
     "局域网 IP" : {
       "localizations" : {
         "en" : {
@@ -16222,6 +16252,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Toolbar position"
+          }
+        }
+      }
+    },
+    "工具栏按钮要它才知道你选中了什么：在 系统设置 › %@ › 自动化 里打开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The toolbar button needs it to know what you’ve selected. Turn it on in System Settings › %@ › Automation"
           }
         }
       }
@@ -22603,6 +22643,16 @@
         }
       }
     },
+    "授权…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allow…"
+          }
+        }
+      }
+    },
     "授权「辅助功能」后才能直接粘贴回原 App，现在只会写进剪贴板" : {
       "localizations" : {
         "en" : {
@@ -22749,6 +22799,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "With the control bar open, start recording (same as ● on the control bar)"
+          }
+        }
+      }
+    },
+    "控制访达" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Control Finder"
           }
         }
       }
@@ -26111,16 +26171,16 @@
     },
     "有 %lld 张没能读；一次最多认 %lld 张，后面的没认" : {
       "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "有 %1$lld 张没能读；一次最多认 %2$lld 张，后面的没认"
-          }
-        },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld couldn’t be read; reads at most %lld images at a time, so the rest were skipped"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "有 %1$lld 张没能读；一次最多认 %2$lld 张，后面的没认"
           }
         }
       }
@@ -29062,6 +29122,16 @@
         }
       }
     },
+    "没有控制访达的授权" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No permission to control Finder"
+          }
+        }
+      }
+    },
     "没有改名" : {
       "localizations" : {
         "en" : {
@@ -29982,6 +30052,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Couldn’t lock the screen"
+          }
+        }
+      }
+    },
+    "没能问访达选中了什么" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t ask Finder what’s selected"
           }
         }
       }
@@ -33674,6 +33754,16 @@
         }
       }
     },
+    "系统问要不要允许控制访达的话，点允许再试一次" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "If macOS asked whether to allow controlling Finder, click Allow and try again"
+          }
+        }
+      }
+    },
     "紧" : {
       "localizations" : {
         "en" : {
@@ -35879,6 +35969,16 @@
         }
       }
     },
+    "访达一直没有回答" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finder didn’t answer"
+          }
+        }
+      }
+    },
     "访达不在最前面" : {
       "localizations" : {
         "en" : {
@@ -35909,12 +36009,32 @@
         }
       }
     },
+    "访达工具栏上的「Kitty Tools」按钮在 iCloud 云盘、网盘的文件夹里要它，才知道你选中了什么" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The Kitty Tools button in the Finder toolbar needs it to know what you’ve selected in iCloud Drive and cloud storage folders"
+          }
+        }
+      }
+    },
     "访达扩展" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Finder Extension"
+          }
+        }
+      }
+    },
+    "访达最前面的窗口不是一个文件夹" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The frontmost Finder window isn’t showing a folder"
           }
         }
       }

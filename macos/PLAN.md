@@ -1710,8 +1710,24 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
     `OCR.image(at:)` 在主线程外按照片里记的方向转正、长边缩到 4096（8192 一张要解成约 268 MB，评审），每张同截图识字——有二维码 /
     条码拷它的内容，没有就识字、按设置接不接行，几张之间空一行，`Paster.write(record: true)`；排进访达右键那条队
     （`FileMoves.enqueue`：超过 1 秒挂进度条「3/20」和「停止」，停了什么都不拷），一次最多 50 张；还没从 iCloud 下载的不读。
-    AppDelegate 里等模型那一段拆成 `prepareRecognition`，截图识字照旧走 `recognizing`。第 2 批（A1 工具栏按钮）等用户定要不要
+    AppDelegate 里等模型那一段拆成 `prepareRecognition`，截图识字照旧走 `recognizing`。第 2 批（A1 工具栏按钮）先问了用户要不要
     「控制访达」的授权：苹果文档写明扩展管不到的位置点工具栏按钮时 selectedItemURLs / targetedURL 都是 nil，iCloud 文件夹多半就是。
+  - 第 2 批（A1，2026-11-18 用户选「要授权」）：访达工具栏按钮「Kitty Tools」（`toolbarItemName` / `ToolTip` / `Image`：`pawprint`
+    模板图；系统不让替用户放，设置页脚写怎么拖上去）。有选中的同右键选中的、没选中同右键空白处；两样都拿不到（iCloud 云盘、
+    网盘）时菜单照全的列（`FinderMenu.blind`：空白处的项、按类型才出的项都列上），点了交的网址不带文件、带 `finder=items /
+    folder / auto`（拷贝路径、在“X”中打开是 auto：选中的，没选中就是这个文件夹）。App 先核对凭证（`FinderLink.finderScope`：
+    别人借它让 App 去读访达不行），再跑 osascript 问访达（`finderScript`：`insertion location` + `selection as alias list`，POSIX
+    路径、NUL 隔开；进程外，第一次时系统问要不要让 Kitty Tools 控制访达），换上文件（`withFiles`）照常走 `parse`。没授权（−1743 /
+    −1744）刘海岛带「打开系统设置」，用户点了取消（−128）不说。设置 › 访达右键第一组多一行「控制访达」（`Permissions.automation`：
+    允许 / 没问过 / 拒绝过，没问过点了跑一句问访达名字的 AppleScript 让系统问）；桌面或文稿同步在 iCloud（`isUbiquitousItem`，本机
+    没开这项，没真机验过）时页脚下面多一行橙字。Info.plist 的 NSAppleEventsUsageDescription 加了这一条（中英）。功能关着时点按钮
+    一行灰字；废纸篓里不选东西点按钮一行灰字。单测 `FinderLinkTests.toolbarAsksFinder`，截图自检 `finderMenuSettings()`。
+    独立评审后改了：iCloud 云盘（~/Library/Mobile Documents/…）、网盘（~/Library/CloudStorage/…）在资源库里，新建文件原来一律拒绝
+    （`NewFile.allowsNewFiles` 放开这两处、它们的根不算）；设置页「授权…」原来跑 `return name`（AppleScript 自己答、不发事件，
+    系统不问）→ 改数访达窗口；问文件夹不用 `insertion location`（「最近使用」、搜索窗口给的是桌面，新建、粘贴会悄悄落到桌面上）→
+    `target of Finder window 1`，不是文件夹就说「最前面的窗口不是一个文件夹」；路径结尾的「/」去掉（同右键）；选中的超过 2000 个
+    脚本里先回一句、拼字用 text item delimiters；超时（授权框一直没人点）单独说；授权框开着时再点不问第二遍；工具栏图也先画成
+    小位图；全关了点开说一声；桌面同步在 iCloud 另看访达自己的 FXICloudDriveDesktop / Documents（两路都没在开着的机器上验过）。
 
 ### 截图识别元素（下一版，2026-11-08）
 

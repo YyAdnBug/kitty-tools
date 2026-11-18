@@ -1,4 +1,7 @@
 // 设置 › 访达右键（第十一族，2026-11-08 拍板，PLAN §10「访达右键」；页头由 SettingsRoot 画，家族色石板蓝）。几组：
+// （2026-11-17 拍板 A1）第一组另有一行「控制访达」：访达工具栏按钮在 iCloud 云盘、网盘的文件夹里要它问访达选中了什么——
+//   没问过点「授权…」让系统问，拒绝过点「去打开…」到 系统设置 › 自动化；页脚说工具栏按钮怎么放上去，桌面或文稿同步在 iCloud
+//   里时多一行橙字（那里右键没有这些项）。
 // 「访达右键」——启用开关（Feature.finderMenu，默认关）；系统里扩展开没开（FIFinderSyncController.isExtensionEnabled）和
 //   「去打开…」；「收进一个子菜单」（Prefs.finderMenuGrouped，默认关）（拍板 D3：直接到 系统设置 › 通用 › 登录项与扩展）。15.0、15.1 的系统设置里没有扩展的入口，那两版上给一条
 //   终端命令和「拷贝命令」（不替用户跑）。页脚说在哪右键、哪里不出现。
@@ -17,6 +20,10 @@ import UniformTypeIdentifiers
 struct FinderMenuTab: View {
   /// 系统里扩展开没开（截图自检传固定的：屏外问不到真的状态）
   var extensionEnabled: Bool?
+  /// 截图自检传固定的：控制访达的授权、桌面 / 文稿是不是同步在 iCloud 里
+  var finderAutomation: Permissions.AutomationState?
+  var desktopInICloud: Bool?
+  @State private var automation = Permissions.automation(Self.finderID)
   @State private var enabled = FIFinderSyncController.isExtensionEnabled
   @State private var folders = Self.storedFolders
   @State private var folderSelection: String?
@@ -42,7 +49,10 @@ struct FinderMenuTab: View {
     VStack(spacing: 0) {
       PageHeader(page: .finderMenu)
       // 从系统设置打开扩展回来，设置窗重新当 key 时刷新那一行（同程序坞预览页的授权）
-      form.onSettingsBecameKey { enabled = FIFinderSyncController.isExtensionEnabled }
+      form.onSettingsBecameKey {
+        enabled = FIFinderSyncController.isExtensionEnabled
+        automation = Permissions.automation(Self.finderID)
+      }
     }
     .navigationTitle(SettingsPage.finderMenu.title)
     .navigationDestination(for: String.self) { route in
@@ -59,6 +69,12 @@ struct FinderMenuTab: View {
           granted: extensionEnabled ?? enabled, button: "去打开…"
         ) { Self.openExtensionSettings() }
         .gated(by: .finderMenu)
+        PermissionRow(
+          title: "控制访达", detail: "访达工具栏上的「Kitty Tools」按钮在 iCloud 云盘、网盘的文件夹里要它，才知道你选中了什么",
+          symbol: "gearshape.2.fill", color: Style.Family.finderMenu,
+          granted: (finderAutomation ?? automation) == .granted, button: automationButton
+        ) { requestFinderAutomation() }
+        .gated(by: .finderMenu)
         Toggle(isOn: $grouped) {
           Text("收进一个子菜单")
           Text("右键第一层只多一项「Kitty Tools」，下面开着的这几项都在它里面")
@@ -69,8 +85,9 @@ struct FinderMenuTab: View {
       } footer: {
         VStack(alignment: .leading, spacing: 6) {
           SectionFootnote(
-            "在访达里右键文件、文件夹，或者文件夹窗口的空白处，就有下面开着的这几项。iCloud 云盘和网盘的文件夹里，系统不显示这些项。"
+            "在访达里右键文件、文件夹，或者文件夹窗口的空白处，就有下面开着的这几项；也能把「Kitty Tools」按钮放到访达的工具栏上（访达 › 显示 › 自定工具栏…，把它拖上去），点它是同样的几项。iCloud 云盘（包括同步到 iCloud 的桌面、文稿）和网盘的文件夹里，系统不在右键里显示这些项，用工具栏按钮。"
           )
+          if desktopInICloud ?? Self.desktopInICloud { iCloudHint }
           if !Self.settingsHaveEntry { oldSystemHint }
         }
       }
@@ -283,6 +300,51 @@ struct FinderMenuTab: View {
 
   static func openExtensionSettings() {
     FIFinderSyncController.showExtensionManagementInterface()
+  }
+
+  /// 访达的 bundle id（控制访达的授权按它查）
+  static let finderID = "com.apple.finder"
+
+  /// 桌面或文稿同步在 iCloud 里（系统设置 › Apple 账户 › iCloud 云盘「桌面与文稿文件夹」）：那里右键没有我们的项。
+  /// 两路都看：访达自己记的那两个开关（FXICloudDriveDesktop / Documents，只读），文件夹本身是不是 iCloud 的。
+  /// ponytail: 开发机没开这项同步，两路都没在开着的机器上验过；有人说橙字该出没出再查
+  static var desktopInICloud: Bool {
+    let finder = UserDefaults(suiteName: "com.apple.finder")
+    if finder?.bool(forKey: "FXICloudDriveDesktop") == true
+      || finder?.bool(forKey: "FXICloudDriveDocuments") == true
+    {
+      return true
+    }
+    return [FileManager.SearchPathDirectory.desktopDirectory, .documentDirectory].contains { kind in
+      FileManager.default.urls(for: kind, in: .userDomainMask).first.map {
+        FileManager.default.isUbiquitousItem(at: $0)
+      } == true
+    }
+  }
+
+  private var automationButton: LocalizedStringResource {
+    (finderAutomation ?? automation) == .denied ? "去打开…" : "授权…"
+  }
+
+  /// 没问过：跑一句真要访达回答的 AppleScript（数访达窗口；「return name」AppleScript 自己就答了、不发事件，系统不问，评审），
+  /// 让系统弹「想控制“访达”」的框（进程外，要等用户点）；拒绝过：系统设置里手动打开
+  private func requestFinderAutomation() {
+    guard automation != .denied else { return Permissions.Kind.automation.openSettings() }
+    Task {
+      _ = try? await Subprocess.run(
+        "/usr/bin/osascript", ["-e", "tell application \"Finder\" to count Finder windows"],
+        captures: true,
+        timeout: .seconds(150))
+      automation = Permissions.automation(Self.finderID)
+    }
+  }
+
+  private var iCloudHint: some View {
+    Text("你的桌面、文稿同步在 iCloud 里：那里右键没有这些项，把「Kitty Tools」按钮放到访达工具栏上用。")
+      .font(.caption)
+      .foregroundStyle(Color(nsColor: .systemOrange))
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(.horizontal, 10)
   }
 
   private var oldSystemHint: some View {
