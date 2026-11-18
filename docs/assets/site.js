@@ -163,11 +163,12 @@
       .then(function (got) {
         var list = got[0], arm = got[1];
         var mac = latest(list, "macos-v"), win = latest(list, "windows-v");
-        var dmg = find(mac, /_arm64\.dmg$/);
+        var dmg = find(mac, /_arm64\.dmg$/), intel = find(mac, /_x86_64\.dmg$/);
         var x64 = find(win, /-windows-x64-setup\.exe$/), arm64 = find(win, /-windows-arm64-setup\.exe$/);
         var x64zip = find(win, /-windows-x64\.zip$/), arm64zip = find(win, /-windows-arm64\.zip$/);
         var links = {
           mac: dmg,
+          "mac-intel": intel,
           win: arm ? arm64 || x64 : x64 || arm64,
           "win-x64": x64,
           "win-arm64": arm64,

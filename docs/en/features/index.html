@@ -49,7 +49,7 @@
 
 <nav class="subnav" aria-label="Features">
   <div class="wrap subnav-in">
-    <a href="#home">Home</a><a href="#clipboard">Clipboard</a><a href="#launcher">Launcher</a><a href="#translate">Translate</a><a href="#screenshot">Screenshot</a><a href="#record">Recording</a><a href="#notes">Notes</a><a href="#reminders">Reminders</a><a href="#launchpad">Launchpad</a><a href="#status-screen">Status Screen</a><a href="#dock-preview">Dock Preview</a><a href="#finder-menu">Finder Menu</a><a href="#island">Notch</a><a href="#settings">Settings &amp; Sync</a><a href="#shortcuts">Shortcuts</a>
+    <a href="#home">Home</a><a href="#clipboard">Clipboard</a><a href="#launcher">Launcher</a><a href="#translate">Translate</a><a href="#screenshot">Screenshot</a><a href="#record">Recording</a><a href="#notes">Notes</a><a href="#reminders">Reminders</a><a href="#launchpad">Launchpad</a><a href="#status-screen">Status Screen</a><a href="#dock-preview">Dock Preview</a><a href="#finder-menu">Finder Menu</a><a href="#island">Notch</a><a href="#keep-awake">Keep Awake</a><a href="#smooth-scroll">Smooth Scrolling</a><a href="#app-shortcuts">App Shortcuts</a><a href="#bluetooth-snooze">Bluetooth Sleep</a><a href="#settings">Settings &amp; Sync</a><a href="#shortcuts">Shortcuts</a>
   </div>
 </nav>
 
@@ -63,6 +63,7 @@
       <li>Left-click for Home, right-click for the menu</li>
       <li>Home holds one-click actions; plugins you’ve added get their own section at the end, and if some features are off, the bottom row takes you to manage them</li>
       <li>The menu bar icon can be shown in color or hidden entirely; shortcuts keep working</li>
+      <li>On the Mac, just start typing on Home to search in the Launcher</li>
       <li>First-run setup has you pick the features you want, grant only the permissions they need and try a shortcut; you can see it again from the About page</li>
     </ul>
   </div>
@@ -81,6 +82,7 @@
       <li>⌘O opens a file and ⌘R shows it in Finder, ⌘T translates the item; images and text can be pinned to the screen, and items drag straight into other apps</li>
       <li>The panel appears at the top of the screen, at the pointer, or where you last left it; drag its edges to resize</li>
       <li>Skips password managers and content marked private, and blocks text that looks like keys or bank card numbers; exclude apps, pause recording, or clear history when you quit or lock the screen</li>
+      <li>On the Mac, snippet dates and times can be offset and formatted, and snippets can ask you to fill in blanks before pasting; text mixed with images pastes back with its images; while recording is paused, the menu bar icon shows a pause badge</li>
     </ul>
   </div>
   <div class="stage feature-stage"><picture><source srcset="../../assets/shots/en/clipboard-dark.avif" media="(prefers-color-scheme: dark)" type="image/avif"><source srcset="../../assets/shots/en/clipboard-light.avif" type="image/avif"><img class="shot" src="../../assets/shots/en/clipboard-light.png" width="720" height="520" alt="The Clipboard History panel: meeting notes expanded in place, with an image, a link, a PDF, SQL and a color value below" loading="lazy"></picture></div>
@@ -94,11 +96,12 @@
       <li>Find apps by name (Chinese names, pinyin and initials work too), ranked by how often you use them, with favorites first; on the Mac, pick an app once for what you typed and it comes first next time, and iPad apps are found too</li>
       <li>Find files: “open name” opens a file and “find name” selects it in Finder; ⌘Y for Quick Look, ⌘K to open it with another app</li>
       <li>Math and conversions: arithmetic, percentages and functions; “10 km to mi”, “30 c to f”, “255 in hex”, and currency like “100 usd”; ↩ pastes the result</li>
-      <li>Script Commands: every script in your scripts folder is a command, with optional arguments; results can be copied, pasted, shown in full or listed. Nine come built in (timestamps, Base64, JSON formatting, UUIDs…), and a script an AI wrote for you works as soon as you copy it in</li>
+      <li>Script Commands: every script in your scripts folder is a command, with optional arguments; results can be copied, pasted, shown in full or listed. Eight come built in on the Mac (timestamps, Base64, JSON formatting, UUIDs…), and a script an AI wrote for you works as soon as you copy it in</li>
       <li>Change the keyword for any built-in command or script, turn off the ones you don’t use, and give each command a shortcut; on the Mac, apps can have aliases too</li>
       <li>System commands: lock, sleep, empty the Trash, mute; quit or force quit apps, eject disks; “kill” ends processes, “port 3000” shows what’s using a port, and “ip” shows your addresses</li>
       <li>Search “Bluetooth” or “Displays” to jump to that page of System Settings; “g keyword” searches the web, with a dozen popular sites preset and room for your own</li>
       <li>Bookmarks and history from the browsers on your computer, with site icons; type a URL or a path starting with ~/ to open it directly</li>
+      <li>On the Mac, run shortcuts from the Shortcuts app too, and find things by their English or Chinese names whichever language the interface is in</li>
     </ul>
   </div>
   <div class="stage feature-stage"><picture><source srcset="../../assets/shots/en/launcher-calc-dark.avif" media="(prefers-color-scheme: dark)" type="image/avif"><source srcset="../../assets/shots/en/launcher-calc-light.avif" type="image/avif"><img class="shot" src="../../assets/shots/en/launcher-calc-light.png" width="720" height="209" alt="Launcher: a unit conversion answered as you type" loading="lazy"></picture></div>
@@ -111,10 +114,11 @@
     <ul class="points">
       <li>Translate Selection: select text in any app and press the shortcut; the panel appears at the top of the screen (or at the pointer). If the selection can’t be read directly, it copies it and restores your clipboard afterwards</li>
       <li>Translate Screenshot: select part of the screen, recognize the text on your device and translate it; translations can also be placed right back on the screenshot</li>
-      <li>The built-in service works out of the box, and Apple Translation and Youdao Dictionary need no key either; Baidu, Youdao, Google, DeepL, Microsoft, Volcengine, Tencent and many language models work once you add a key. Several services translate side by side, and language models stream as they write. On the Mac, free services are marked in Settings, and collapsed services translate only when you expand them, using no quota</li>
+      <li>The built-in service works out of the box, and Apple Translation and Youdao Dictionary need no key either; Baidu, Youdao, Google, DeepL, Microsoft, Volcengine, Tencent and many language models work once you add a key. Several services translate side by side, and language models stream as they write. Free services are marked in Settings, and collapsed services translate only when you expand them, using no quota</li>
       <li>Look up a single word for a dictionary entry, with real-voice pronunciation for English words; replace the original text with the translation, or set a shortcut that does it in one press</li>
       <li>Translation history and the Word List: searchable, with favorites, and exportable as a spreadsheet or flashcards</li>
-      <li>11 languages; with the target set to Auto it translates between your first and second languages; translations can be read aloud or copied automatically</li>
+      <li>With the target set to Auto it translates between your first and second languages; translations can be read aloud or copied automatically</li>
+      <li>The Mac version translates 30 languages (Vietnamese, Thai, Arabic, Dutch, Polish…), and very long texts are translated in parts so they don’t stop halfway</li>
     </ul>
   </div>
   <div class="stage feature-stage"><picture><source srcset="../../assets/shots/en/translate-dark.avif" media="(prefers-color-scheme: dark)" type="image/avif"><source srcset="../../assets/shots/en/translate-light.avif" type="image/avif"><img class="shot" src="../../assets/shots/en/translate-light.png" width="420" height="404" alt="The translation panel: a Chinese paragraph and two services’ English translations" loading="lazy"></picture></div>
@@ -126,13 +130,14 @@
     <p class="fsec-lead">Capture it, mark it up, send it off. Capture Previous Area <kbd>⌥X</kbd>, Capture Text <kbd>⌥O</kbd>.</p>
     <ul class="points cols">
       <li>The screen freezes before you select; hovering detects windows, and the selection snaps to window and screen edges; type an exact size or lock the ratio</li>
-      <li>It can also pick out buttons, text fields, sidebars, file names and links inside windows, with the scroll wheel moving in and out, and elements in web pages too (off by default, turn on in Settings)</li>
+      <li>It can also pick out buttons, text fields, sidebars, file names and links inside windows, with the scroll wheel moving in and out, and on the Mac elements in web pages too (off by default, turn on in Settings)</li>
       <li>A magnifier color picker: press C to copy the color under the pointer</li>
       <li>Ten annotation tools: rectangle, ellipse, arrow (curved or double-headed), line, pen, highlighter, text (adjustable size), counter, blur and spotlight, switched with the number keys; everything stays movable and resizable by its corners and edges, with undo; an eyedropper picks colors from the screenshot</li>
       <li>Blur is a real blur, or pixelate instead; “Auto” covers phone numbers, email addresses, bank card numbers and ID numbers in one go</li>
       <li>↩ copies, ⌘S saves, or pin it to the screen for reference; recognize text (QR codes too) or translate it; right-click a toolbar button to change its key</li>
       <li>Scrolling Capture: after selecting, press S and scroll inside the selection to stitch it together, or press Space to scroll automatically (speed adjustable); annotate the result afterwards</li>
       <li>Screenshot History: screenshots, scrolling captures, pinned images and recordings all in one place, searchable and filterable; double-click one to keep annotating</li>
+      <li>On the Mac, you can also select, copy and translate text right on pins, crop while annotating, edit annotations from the thumbnail in the corner, include the pointer or hide desktop icons, and turn off the hints and magnifier while selecting</li>
     </ul>
   </div>
   <div class="stage feature-stage full"><picture><source srcset="../../assets/shots/en/screenshot-annotate-dark.avif" media="(prefers-color-scheme: dark)" type="image/avif"><source srcset="../../assets/shots/en/screenshot-annotate-light.avif" type="image/avif"><img class="screen" src="../../assets/shots/en/screenshot-annotate-light.jpg" width="1600" height="1000" alt="Screenshot annotation: a rectangle, an arrow, counters and a note inside the selection, an email address blurred out, and the toolbar below" loading="lazy"></picture></div>
@@ -147,7 +152,7 @@
     <div class="fsec-head"><span class="ico lg i-record" style="--c:var(--pink)"></span><div><h2>Screen &amp; Audio Recording <kbd>⌥R</kbd></h2><p class="plat"><span>Mac</span><span>Windows</span></p></div></div>
     <p class="fsec-lead">Select an area or a whole screen just like a screenshot and press ↩; recording starts after a 3-second countdown.</p>
     <ul class="points">
-      <li>Records system audio and the microphone, and can show clicks and the keys you press</li>
+      <li>Records system audio and the microphone (on the Mac, choose which microphone), and can show clicks and the keys you press</li>
       <li>A timer runs in the menu bar; press the shortcut again to stop and save</li>
       <li>Record Audio starts with a control bar: choose the source (microphone, system audio or both), watch the levels, and save as m4a</li>
       <li>The finished video card waits in a corner of the screen: copy it, drag it away, convert it to GIF or compress it</li>
@@ -168,6 +173,7 @@
       <li>Floating notes: drag a note out onto the desktop, and it comes back to the same place after a restart</li>
       <li>Plain text with Markdown styling: headings, lists, quotes, code blocks, links; five task states, text colors, inline images, find and undo</li>
       <li>Export everything or a single note as Markdown and import it again; works with Clipboard History, the Launcher and Translate Selection; syncs between computers</li>
+      <li>On the Mac, select several notes to delete, archive or recolor them at once (undone in one step), sort by Recently Modified, keep links, bold, headings, lists and code when pasting from the web, paste images into Quick Note, and call up the stack on the screen edge with a shortcut</li>
     </ul>
   </div>
   <div class="gallery notes-gallery">
@@ -187,6 +193,7 @@
       <li>Create one in a sentence from the Launcher: “remind me in 10 min to stretch”</li>
       <li>Alert sounds can be system sounds, sounds you’ve added or any audio file</li>
       <li>“New Reminder” is in the menu bar and on Home, and can have a shortcut; reminders sync when sync is on</li>
+      <li>On the Mac, reminders recognize your Focus: during any Focus, a due reminder only shows an icon on the Notch, without popping up or making a sound, and they all come up when it ends; you can have them wait until it ends or ring as usual instead, and set an important reminder to always ring</li>
     </ul>
   </div>
 </section>
@@ -242,7 +249,10 @@
       <li>Copy paths and names, or open with a chosen app</li>
       <li>Create text, Markdown, document, spreadsheet or presentation files, or a new file from the text or image on the clipboard</li>
       <li>Move or copy to favorite folders, cut and paste, make aliases</li>
-      <li>Compress to zip or 7z, skipping things like node_modules and .git; extract zip, 7z, rar, tar, gz and more, asking for passwords when needed; follow the progress on the Notch and stop it there</li>
+      <li>Compress to zip, 7z or TAR.GZ (which opens on Linux and Windows 11 without extra software), skipping things like node_modules and .git; extract zip, 7z, rar, tar, gz and more, asking for passwords when needed, or hold ⌥ to choose where; follow the progress on the Notch and stop it there</li>
+      <li>“Copy Text from Image”: right-click an image to copy the text in it, or the contents of a QR code</li>
+      <li>Undo moving, copying or cut and paste from the Notch; optionally move archives to the Trash after extracting</li>
+      <li>Put a “Kitty Tools” button on the Finder toolbar: in iCloud Drive and cloud storage folders, where the system leaves these items out of the context menu, it still works</li>
       <li>Fix garbled file names, copy SHA-256 or MD5 checksums, toggle hidden files and extensions, delete immediately</li>
       <li>After adding the plugin, follow the prompt to turn on the Finder extension once in System Settings</li>
     </ul>
@@ -254,16 +264,69 @@
     <div class="fsec-head"><span class="ico lg i-island" style="--c:var(--gray)"></span><div><h2>Notch</h2><p class="plat"><span>Mac only</span><span>Plugin</span></p></div></div>
     <p class="fsec-lead">Copied, saved, something went wrong: notices grow out of the notch, and hovering expands them to show the full text and buttons. That part is always there; the Notch plugin adds:</p>
     <ul class="points">
+      <li>Focus: when a Focus turns on, off or changes, the notch shows its icon and name with On or Off for 2 seconds, and its icon stays beside the notch while it’s on. Focuses you made yourself work too, with no permission needed</li>
       <li>Activities beside the notch: timers while recording, countdowns for reminders due within the hour, and progress for long tasks like compressing and copying; on displays without a notch they sit in the menu bar</li>
-      <li>Now Playing: artwork and a level meter beside the notch; open it to scrub, change tracks and adjust the volume, or swipe left or right with two fingers to change tracks (off by default)</li>
-      <li>Next Event: a countdown starting 10 minutes before an event, with one-click joining for video meetings (off by default, needs Calendars access)</li>
-      <li>System Notices: plugging in power, a low battery or connecting headphones pops up with the battery level, and the volume and brightness indicators can move to the notch (off by default)</li>
+      <li>Now Playing: artwork and a level meter beside the notch; open it to scrub, change tracks and adjust the volume, or swipe left or right with two fingers to change tracks; tint it with the artwork, your accent color or white, and click a heart to favorite the song in Music (off by default)</li>
+      <li>Next Event: a countdown starting 10 minutes before an event, with one-click joining for video meetings; use calendar colors and choose which calendars to read (off by default, needs Calendars access)</li>
+      <li>System Notices: plugging in power, a low battery or connecting headphones pops up with the battery level, and the volume and brightness indicators can move to the notch; Low Power Mode turning on or off gets a notice too (off by default)</li>
       <li>Click the notch or swipe down with two fingers for a row of quick actions you can rearrange or turn off, plus recent notices and this month’s calendar if you want them</li>
+      <li>More options, all off by default: an hourly chime, a sound when an event starts, hiding the Notch in screenshots and recordings or when the front app is full screen, an outline around it, and how long notices stay and how soon it expands</li>
     </ul>
   </div>
   <div class="stage feature-stage island-stage">
     <img class="shot" src="../../assets/shots/en/island.png" width="478" height="114" alt="The Notch: a “Saved to Desktop” notice with “Show in Finder” and “Open” buttons" loading="lazy">
     <img class="shot" src="../../assets/shots/en/island-board.png" width="475" height="292" alt="The card that opens from the notch: a row of quick actions with recent notices below" loading="lazy">
+  </div>
+</section>
+
+<section class="fsec wide" id="keep-awake">
+  <div class="fsec-copy">
+    <div class="fsec-head"><span class="ico lg i-keep-awake" style="--c:var(--violet)"></span><div><h2>Keep Awake</h2><p class="plat"><span>Mac · Plugin</span><span>Windows · Plugin</span></p></div></div>
+    <p class="fsec-lead">Keep your computer from sleeping while it downloads, presents or runs a job overnight.</p>
+    <ul class="points cols">
+      <li>Indefinitely, for a few hours or until a set time; turn it on from the menu bar, Home, a shortcut or the Launcher (“awake 2h”)</li>
+      <li>Keep the display on too, or only prevent system sleep and let the display turn off as usual</li>
+      <li>Turn it on automatically on a schedule, like weekdays 9:00–18:00</li>
+      <li>On the Mac, while it’s on it sits beside the notch; click to stop it</li>
+    </ul>
+  </div>
+</section>
+
+<section class="fsec wide" id="smooth-scroll">
+  <div class="fsec-copy">
+    <div class="fsec-head"><span class="ico lg i-smooth-scroll" style="--c:var(--olive)"></span><div><h2>Smooth Scrolling</h2><p class="plat"><span>Mac only</span><span>Plugin</span></p></div></div>
+    <p class="fsec-lead">A regular mouse wheel glides like a trackpad.</p>
+    <ul class="points cols">
+      <li>Adjust how long it glides and how far each notch scrolls</li>
+      <li>Reverse the mouse on its own, leaving the trackpad as it is</li>
+      <li>Hold ⌥ to scroll without smoothing for a moment, or ⇧ to scroll sideways</li>
+      <li>Games, virtual machines and remote desktops are left alone automatically, and you can add other apps; needs Accessibility access</li>
+    </ul>
+  </div>
+</section>
+
+<section class="fsec wide" id="app-shortcuts">
+  <div class="fsec-copy">
+    <div class="fsec-head"><span class="ico lg i-app-shortcuts" style="--c:var(--orange)"></span><div><h2>App Shortcuts</h2><p class="plat"><span>Mac only</span><span>Plugin</span></p></div></div>
+    <p class="fsec-lead">Hold ⌘ on its own for a moment in any app to see every shortcut in its menus, grouped by menu.</p>
+    <ul class="points cols">
+      <li>Use ⌥, ⌃ or ⇧ instead, and set how long to hold (0.6–2 seconds); a shortcut can open it too</li>
+      <li>Press another key while holding and it goes to the app as usual</li>
+      <li>Click a row to run it; click the search field to keep the list open and type to search</li>
+      <li>Needs Accessibility access</li>
+    </ul>
+  </div>
+</section>
+
+<section class="fsec wide" id="bluetooth-snooze">
+  <div class="fsec-copy">
+    <div class="fsec-head"><span class="ico lg i-bluetooth-snooze" style="--c:var(--navy)"></span><div><h2>Bluetooth Sleep</h2><p class="plat"><span>Mac only</span><span>Plugin</span><span>MacBook</span></p></div></div>
+    <p class="fsec-lead">Bluetooth turns off when you close the lid and your Mac sleeps, so a Bluetooth mouse or keyboard won’t wake it in your bag.</p>
+    <ul class="points cols">
+      <li>On waking, only the Bluetooth it turned off comes back on</li>
+      <li>It stays on while an external display is connected, or you can have it turn off every time</li>
+      <li>The system asks for Bluetooth access when you add it</li>
+    </ul>
   </div>
 </section>
 
@@ -273,12 +336,12 @@
     <p class="fsec-lead">Appearance, shortcuts and every feature’s details are in the Settings window, whose sidebar can search for any setting.</p>
     <ul class="points">
       <li>Follow the system appearance, or stay light or dark; choose your own accent color</li>
-      <li>Turn off features you don’t need: their entry points, shortcuts and background work stop together and come back the moment you turn them on; on the Mac, Notes, Reminders, the Notch and others are plugins you add on the same page</li>
+      <li>Turn off features you don’t need: their entry points, shortcuts and background work stop together and come back the moment you turn them on; on the Mac, Notes, Reminders, the Notch, Smooth Scrolling and others are plugins you add in Settings › All Plugins, where you can see what each one does and needs before adding it</li>
       <li>The Mac version’s interface is available in English and Simplified Chinese: choose in Settings › General › Language, which follows the system by default</li>
       <li>Change any global shortcut, including to a double press of a modifier key; on the Mac, shortcuts can be turned off in specific apps, handing the keys to them; Keyboard Shortcuts lists them all by feature, searchable</li>
       <li>Sync: choose a folder on a synced drive (iCloud Drive, for example) or connect to a WebDAV server, and settings, snippets and favorites, the Word List, notes, reminders and more sync between computers, each kind with its own switch; keys don’t sync. Snippets, favorites, the Word List, web searches, translation services, notes and reminders also sync between Mac and Windows</li>
-      <li>A backup every day; export settings and data to a single file and import it again</li>
-      <li>New versions show up in the menu bar and install in one click</li>
+      <li>A backup every day; export settings and data to a single file and import it again, including between the Mac and Windows versions</li>
+      <li>New versions show up in the menu bar and install in one click; on the Mac they download in the background and install when you quit, and you can skip a version</li>
     </ul>
   </div>
   <div class="stage feature-stage"><picture><source srcset="../../assets/shots/en/settings-dark.avif" media="(prefers-color-scheme: dark)" type="image/avif"><source srcset="../../assets/shots/en/settings-light.avif" type="image/avif"><img class="shot" src="../../assets/shots/en/settings-light.png" width="780" height="640" alt="The General page of Settings: appearance and accent color" loading="lazy"></picture></div>
@@ -313,7 +376,7 @@
 
 <section class="band cream tight">
   <div class="wrap split">
-    <div class="section-head" style="margin:0"><h2>Want to try it?</h2><p class="muted">Free to download. The Mac version needs Apple silicon and macOS 15 or later; the Windows version needs Windows 11 (22H2 or later).</p></div>
+    <div class="section-head" style="margin:0"><h2>Want to try it?</h2><p class="muted">Free to download. The Mac version needs macOS 15 or later, on Apple silicon or Intel; the Windows version needs Windows 11 (22H2 or later).</p></div>
     <div class="btn-row"><a class="btn" href="https://github.com/YyAdnBug/kitty-tools/releases/latest" data-dl="mac" data-auto><span data-label>Download for Mac</span></a><a class="btn quiet" href="../download/">Download page</a></div>
   </div>
 </section>

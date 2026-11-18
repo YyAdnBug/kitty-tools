@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <title>App 快捷键</title>
+  <path d="M2.8 5.5H11.6M2.8 12H11.6M2.8 18.5H11.6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+  <rect x="14.6" y="3" width="6.8" height="5" rx="1.5" fill="currentColor"/>
+  <rect x="14.6" y="9.5" width="6.8" height="5" rx="1.5" fill="currentColor"/>
+  <rect x="14.6" y="16" width="6.8" height="5" rx="1.5" fill="currentColor"/>
+</svg>

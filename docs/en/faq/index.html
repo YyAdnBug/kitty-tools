@@ -60,7 +60,8 @@
       <p>Most likely the download didn’t finish. Delete the app and the DMG, download it again and reinstall. If that doesn’t help, use the Terminal command from the question above.</p>
     </div></details>
     <details class="qa" id="intel"><summary>Does it work on a Mac with an Intel processor?</summary><div>
-      <p>No. The Mac version only runs on Apple silicon (M1 or later). If you’re not sure, choose Apple menu › About This Mac: if the Chip line starts with Apple M, you’re good.</p>
+      <p>Yes, there’s an Intel version from 0.10.0 on: click “Intel version” under the Mac card on the <a href="../download/#mac">Download page</a>, or download the file ending in <code>_x86_64.dmg</code> from the GitHub releases page. Later in-app updates pick the Intel package automatically.</p>
+      <p>If you’re not sure which you have, choose Apple menu › About This Mac: a Chip line starting with Apple M means Apple silicon, and a Processor line mentioning Intel means Intel.</p>
     </div></details>
     <details class="qa" id="macos"><summary>Which versions of macOS are supported?</summary><div>
       <p>macOS 15 and later. Launchpad only appears on macOS 26 and later; on macOS 15, use the system’s own.</p>
@@ -87,7 +88,7 @@
     </div></details>
     <details class="qa" id="features-off"><summary>Can I turn off features I don’t use?</summary><div>
       <p>Yes. Settings › General › Features has a switch for each feature. Turning one off stops its entry points, shortcuts and background work together while keeping its data and settings, and turning it back on brings everything back right away.</p>
-      <p>On the Mac, Notes, Reminders, Status Screen, Launchpad, Dock Preview, Finder Menu and the Notch are plugins: add them in the plugin cards further down the same page, and until then they don’t appear or run. New installs start with none added; Macs updating from an earlier version keep the ones that were on.</p>
+      <p>On the Mac, Notes, Reminders, Status Screen, Launchpad, Dock Preview, Finder Menu, the Notch, Keep Awake, Bluetooth Sleep, Smooth Scrolling and App Shortcuts are plugins: add them in Settings › All Plugins, and until then they don’t appear or run. New installs start with none added; Macs updating from an earlier version keep the ones that were on.</p>
     </div></details>
     <details class="qa" id="language"><summary>Is the interface available in English?</summary><div>
       <p>The Mac version is. Choose System Language, <span lang="zh-CN">简体中文</span> or English in Settings › General › Language; the change takes effect after the app relaunches. New installs follow the system language, and Macs updating from an earlier version stay in Chinese. Search in the Launcher and in Settings understands both languages. The Windows version is in Chinese only for now.</p>
@@ -96,16 +97,16 @@
       <p>Yes. In Settings › General › Sync, choose a folder on a synced drive (iCloud Drive, for example) or connect straight to a WebDAV server (from a cloud storage provider, or your own NAS), and settings and shortcuts, snippets and favorites, the Word List, web searches, translation services, notes and more sync between Macs, each kind with its own switch. Snippets, favorites, the Word List, web searches, translation services, notes and reminders also sync between Mac and Windows. Keys don’t sync.</p>
     </div></details>
     <details class="qa" id="update"><summary>How do I update?</summary><div>
-      <p>When a new version is out, the menu bar shows “Update to x.y.z…”, or click “Update and Relaunch” in Settings › About. It updates in one click.</p>
+      <p>When a new version is out, the menu bar shows “Update to x.y.z…”, or click “Update and Relaunch” in Settings › About. It updates in one click. On the Mac, new versions download in the background and install when you quit (you can turn this off in Settings › About), and you can skip a version you don’t want.</p>
     </div></details>
     <details class="qa" id="uninstall"><summary>How do I uninstall it and remove its data?</summary><div>
       <p>Quit the app and drag Kitty Tools from Applications to the Trash. To remove its data too, delete <code>~/Library/Application Support/com.yy.kitty-tools.native</code> and <code>~/Library/Preferences/com.yy.kitty-tools.native.plist</code>; translation service keys are in Keychain Access under the name <code>com.yy.kitty-tools.native</code>. On Windows, uninstall it from Settings › Apps.</p>
     </div></details>
     <details class="qa" id="windows"><summary>How is the Windows version different from the Mac version?</summary><div>
-      <p>The Windows version has Clipboard History, Translate, Launcher, Screenshot (with Scrolling Capture and Screenshot History), screen and audio recording, Notes, Reminders, Status Screen and Home; Launchpad, Dock Preview, Finder Menu and the Notch are Mac only for now, and its interface is in Chinese for now. The two are released separately and look and work as much alike as they can, though the default shortcuts differ a little; see the <a href="../features/#shortcuts">shortcut table on the Features page</a>.</p>
+      <p>The Windows version has Clipboard History, Translate, Launcher, Screenshot (with Scrolling Capture and Screenshot History), screen and audio recording, Notes, Reminders, Status Screen, Keep Awake and Home; Launchpad, Dock Preview, Finder Menu, the Notch, Smooth Scrolling, App Shortcuts and Bluetooth Sleep are Mac only for now, and its interface is in Chinese for now. The two are released separately and look and work as much alike as they can, though the default shortcuts differ a little; see the <a href="../features/#shortcuts">shortcut table on the Features page</a>.</p>
     </div></details>
     <details class="qa" id="feedback"><summary>How do I report a problem or suggest something?</summary><div>
-      <p>Open a new issue on <a href="https://github.com/YyAdnBug/kitty-tools/issues/new">GitHub</a> (you’ll need a GitHub account). Include the version (Settings › About), your system version and how to reproduce it, ideally with a screenshot. Writing in English is fine.</p>
+      <p>Open a new issue on <a href="https://github.com/YyAdnBug/kitty-tools/issues/new">GitHub</a> (you’ll need a GitHub account). Include the version (Settings › About), your system version and how to reproduce it, ideally with a screenshot. Writing in English is fine. On the Mac, “Report a Problem” in Settings › About opens the page with the version and system version already filled in.</p>
     </div></details>
   </section>
 

@@ -36,6 +36,10 @@
   --gray: #8e8e93;
   --amber: #e69914;
   --slate: #54789e;
+  --violet: #6b5cdb;
+  --navy: #264dad;
+  --olive: #6b9429;
+  --orange: #ff9500;
 
   --sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI",
     "Microsoft YaHei", "Noto Sans SC", "Segoe UI", sans-serif;
@@ -86,6 +90,10 @@
     --gray: #98989d;
   --amber: #f5ad38;
   --slate: #789cc2;
+  --violet: #998cff;
+  --navy: #6e91f5;
+  --olive: #99c752;
+  --orange: #ff9f0a;
     color-scheme: dark;
   }
 }
@@ -118,6 +126,10 @@
   --gray: #98989d;
   --amber: #f5ad38;
   --slate: #789cc2;
+  --violet: #998cff;
+  --navy: #6e91f5;
+  --olive: #99c752;
+  --orange: #ff9f0a;
   color-scheme: dark;
 }
 
@@ -776,6 +788,18 @@ body::before {
 }
 .i-island {
   --i: url("icons/kitty.island.svg");
+}
+.i-keep-awake {
+  --i: url("icons/kitty.keep.awake.svg");
+}
+.i-bluetooth-snooze {
+  --i: url("icons/kitty.bluetooth.snooze.svg");
+}
+.i-smooth-scroll {
+  --i: url("icons/kitty.smooth.scroll.svg");
+}
+.i-app-shortcuts {
+  --i: url("icons/kitty.app.shortcuts.svg");
 }
 .i-launcher {
   --i: url("icons/kitty.launcher.svg");
