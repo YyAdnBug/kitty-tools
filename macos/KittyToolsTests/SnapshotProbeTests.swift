@@ -5072,13 +5072,19 @@ struct SnapshotProbeTests {
     for dark in [false, true] {
       try snapshot(
         AppShortcutsTab(trusted: false).defaultAppStorage(prefs),
-        size: NSSize(width: 640, height: 560),
+        size: NSSize(width: 640, height: 640),
         dark: dark, to: "\(out)/app-shortcuts-settings\(dark ? "-dark" : "").png")
     }
+    // 换成按住 ⇧（那一行下面多一句输入法的提醒）
+    prefs.set(ModifierTaps.Key.shift.rawValue, forKey: Prefs.appShortcutsHoldKey)
+    try snapshot(
+      AppShortcutsTab(trusted: true).defaultAppStorage(prefs),
+      size: NSSize(width: 640, height: 640),
+      dark: false, to: "\(out)/app-shortcuts-settings-shift.png")
     prefs.set(false, forKey: Prefs.appShortcutsHold)
     try snapshot(
       AppShortcutsTab(trusted: true).defaultAppStorage(prefs),
-      size: NSSize(width: 640, height: 560),
+      size: NSSize(width: 640, height: 640),
       dark: false, to: "\(out)/app-shortcuts-settings-off.png")
   }
 

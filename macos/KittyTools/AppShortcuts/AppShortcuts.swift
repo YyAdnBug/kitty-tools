@@ -1,7 +1,8 @@
-// App 快捷键（插件，2026-11-17 拍板「全部按推荐」，PLAN §10「App 快捷键」）：单独按住 ⌘ 一会儿（默认 1 秒，设置里
-// 0.6 / 1 / 2 秒），弹出前台 App 菜单里的全部快捷键；松开就收（拍板 D1）。
+// App 快捷键（插件，2026-11-17 拍板「全部按推荐」，PLAN §10「App 快捷键」）：单独按住一个修饰键一会儿（默认 ⌘、1 秒；
+// 键能换成 ⌥ ⌃ ⇧——2026-11-18 用户要的，时长 0.6 / 1 / 2 秒），弹出前台 App 菜单里的全部快捷键；松开就收（拍板 D1）。
+// 下面说的 ⌘ 都是「按住的那个键」，只有留住时执行的组合（⌘S 这些）是真的 ⌘。
 // - 怎么认「单独按住」：全局 + 本地监听修饰键变化（要辅助功能授权，同连按两下；本地那份让状态机不漏掉在自家面板里松开的
-//   修饰键），交给 CommandHold；到点时再确认 ⌘ 还单独按着、这期间没按过键 / 鼠标 / 滚轮（HotKeyCenter.quiet）、鼠标键没按着、
+//   修饰键），交给 ModifierHold；到点时再确认 ⌘ 还单独按着、这期间没按过键 / 鼠标 / 滚轮（HotKeyCenter.quiet）、鼠标键没按着、
 //   指针没挪远、前台还是同一个 App、没切过桌面、调度中心没开（拍板 B2 B3）。本 App 的面板、设置窗拿着键盘时不弹（那里按住 ⌘
 //   是 ⌘1–9 键帽）；截图框选、状态屏、启动台开着时不弹（isSuppressed）；前台 App 在「按 App 停用快捷键」名单里停了全部
 //   或停了「显示 App 快捷键」的不弹；
@@ -35,6 +36,16 @@ final class AppShortcuts {
     (stored as? Int).flatMap { delayChoices.contains($0) ? $0 : nil } ?? 1000
   }
 
+  /// 存的「按住哪个键」认不出时按 ⌘
+  static func holdKey(_ stored: Any?) -> ModifierTaps.Key {
+    (stored as? String).flatMap(ModifierTaps.Key.init(rawValue:)) ?? .command
+  }
+
+  /// 此刻设的是哪个键（界面上写「按住 ⌥」这类话、速查表那一行都读它）
+  static var currentHoldKey: ModifierTaps.Key {
+    holdKey(UserDefaults.standard.object(forKey: Prefs.appShortcutsHoldKey))
+  }
+
   /// 此刻不该弹（截图框选、状态屏、启动台开着）
   var isSuppressed: () -> Bool = { false }
   /// 面板收起（空闲回收排一轮）
@@ -57,7 +68,7 @@ final class AppShortcuts {
   }
   /// 这一次弹的是哪个 App 的（执行时按它的 pid 找菜单）
   private var shownApp: NSRunningApplication?
-  private var hold = CommandHold()
+  private var hold = ModifierHold()
   /// 这一次按住在做的事（等到点）和读菜单；松开、作废时都取消（读菜单在对方 App 的主线程上跑，别白读）
   private var pending: Task<Void, Never>?
   private var reading: Task<MenuReading, Never>?
@@ -125,7 +136,7 @@ final class AppShortcuts {
     cancelPending()
     opening?.cancel()
     opening = nil
-    hold = CommandHold()
+    hold = ModifierHold()
     flagsMonitors.forEach(NSEvent.removeMonitor)
     flagsMonitors = []
     for observer in observers {
@@ -139,7 +150,7 @@ final class AppShortcuts {
 
   private func installFlagsMonitor() {
     flagsMonitors.forEach(NSEvent.removeMonitor)
-    hold = CommandHold()
+    hold = ModifierHold()
     let global = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
       MainActor.assumeIsolated { self?.flagsChanged(event) }
     }
@@ -151,8 +162,9 @@ final class AppShortcuts {
   }
 
   private func flagsChanged(_ event: NSEvent) {
-    switch hold.handle(flags: event.modifierFlags, at: event.timestamp) {
-    case .began(let since): began(since: since)
+    let key = Self.currentHoldKey
+    switch hold.handle(flags: event.modifierFlags, at: event.timestamp, key: key) {
+    case .began(let since): began(since: since, key: key)
     case .ended:
       cancelPending()
       dismissPeek()
@@ -167,8 +179,8 @@ final class AppShortcuts {
     reading = nil
   }
 
-  /// 开始单独按住 ⌘：0.3 秒起读菜单，到点再确认一遍、弹出来
-  private func began(since: TimeInterval) {
+  /// 开始单独按住那个键：0.3 秒起读菜单，到点再确认一遍、弹出来
+  private func began(since: TimeInterval, key: ModifierTaps.Key) {
     cancelPending()
     let defaults = UserDefaults.standard
     guard defaults.object(forKey: Prefs.appShortcutsHold) as? Bool ?? true, opening == nil,
@@ -176,7 +188,8 @@ final class AppShortcuts {
       app.processIdentifier != getpid(), panel.panel?.isVisible != true
     else { return }
     let delay = Self.delay(defaults.object(forKey: Prefs.appShortcutsDelay))
-    let hold = Hold(since: since, app: app, spaces: spaceChanges, mouse: NSEvent.mouseLocation)
+    let hold = Hold(
+      since: since, key: key, app: app, spaces: spaceChanges, mouse: NSEvent.mouseLocation)
     pending = Task { [weak self] in
       try? await Task.sleep(for: Self.readAfter)
       guard let self else { return }
@@ -197,21 +210,22 @@ final class AppShortcuts {
     }
   }
 
-  /// 这一次按住：从什么时候、对着哪个 App、按下时切过几次桌面、指针在哪
+  /// 这一次按住：从什么时候、按的哪个键、对着哪个 App、按下时切过几次桌面、指针在哪
   private struct Hold {
     let since: TimeInterval
+    let key: ModifierTaps.Key
     let app: NSRunningApplication
     let spaces: Int
     let mouse: NSPoint
   }
 
-  /// 这一次还算数：⌘ 还单独按着，这期间没按过键、鼠标、滚轮，鼠标键没按着（按着 ⌘ 拖东西），指针没挪远，前台还是它，
+  /// 这一次还算数：那个键还单独按着，这期间没按过键、鼠标、滚轮，鼠标键没按着（按着 ⌘ 拖东西），指针没挪远，前台还是它，
   /// 没切过桌面，本 App 的窗口没拿着键盘，此刻能弹。别的 App 开着安全输入时（正在输密码）不弹：那时按键不经过全局监听，
   /// 分不清按着 ⌘ 时按没按过别的键
   private func holding(_ hold: Hold) -> Bool {
     let mouse = NSEvent.mouseLocation
     return NSEvent.modifierFlags.intersection([.command, .option, .control, .shift, .function])
-      == .command
+      == hold.key.flag
       && HotKeyCenter.quiet(
         since: hold.since, now: ProcessInfo.processInfo.systemUptime, types: Self.breaking)
       && NSEvent.pressedMouseButtons == 0
@@ -232,6 +246,7 @@ final class AppShortcuts {
       available: screen?.visibleFrame.size ?? NSSize(width: 1440, height: 900))
     shownApp = app
     model.openedByKey = staying
+    model.holdSymbol = Self.currentHoldKey.symbol
     let panel = panel.open()
     panel.setContentSize(model.layout.size)
     panel.present(makingKey: staying)

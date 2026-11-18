@@ -720,14 +720,16 @@ struct ShortcutsSheet: View {
           Entry(text: "按一下开始（无限期），再按一下停止；菜单栏「保持唤醒」里能选 30 分钟到 5 小时"),
           Entry(text: "在启动器里输入「awake 2小时」「保持唤醒 到18点」「awake 无限期」：↩ 开始；开着时第一行是停止"),
         ]),
-      // App 快捷键（插件，2026-11-17，AppShortcuts/）：按住 ⌘ 在 AppShortcuts，留住后的按键在 AppShortcutsModel.command
-      // 和 AppShortcuts.keyEquivalent；全局键默认不设
+      // App 快捷键（插件，2026-11-17，AppShortcuts/）：按住的那个键在 AppShortcuts（设置里能换，第一行写现在设的），
+      // 留住后的按键在 AppShortcutsModel.command 和 AppShortcuts.keyEquivalent；全局键默认不设
       Group(
         title: "App 快捷键", symbol: HotKeyAction.appShortcuts.symbol, color: Style.Family.keyboard,
         globals: [.appShortcuts],
         entries: [
-          Entry("⌘", text: "单独按住一会儿：弹出当前 App 菜单里的全部快捷键，松开就收（按多久在设置里改）"),
-          Entry(text: "弹出后按着 ⌘ 再按别的键：就是那个快捷键，面板收起"),
+          Entry(
+            AppShortcuts.currentHoldKey.symbol,
+            text: "单独按住一会儿：弹出当前 App 菜单里的全部快捷键，松开就收（按哪个键、按多久在设置里改）"),
+          Entry(text: "弹出后按着它再按别的键：这一下照常给 App，面板收起"),
           Entry(text: "点一行：执行它"),
           Entry(text: "点一下搜索框：留住，打字搜菜单里的名字（中文也认拼音和首字母）"),
           Entry("↑↓", text: "留住时：换选中的一行"),

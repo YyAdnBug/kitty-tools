@@ -58,22 +58,43 @@ struct AppShortcutsTests {
 
   /// 单独按住 ⌘：别的修饰键、🌐 掺进来就作废，全松开才重新算；两边的 ⌘ 换着按还是同一次
   @Test func commandHold() {
-    var hold = CommandHold()
-    #expect(hold.handle(flags: .command, at: 1) == .began(1))
-    #expect(hold.handle(flags: [.command, .capsLock], at: 1.2) == nil)
-    #expect(hold.handle(flags: [], at: 2) == .ended)
-    #expect(hold.handle(flags: [], at: 2.1) == nil)
+    var hold = ModifierHold()
+    func handle(_ flags: NSEvent.ModifierFlags, _ time: TimeInterval) -> ModifierHold.Event? {
+      hold.handle(flags: flags, at: time, key: .command)
+    }
+    #expect(handle(.command, 1) == .began(1))
+    #expect(handle([.command, .capsLock], 1.2) == nil)
+    #expect(handle([], 2) == .ended)
+    #expect(handle([], 2.1) == nil)
     // ⇧⌘：作废，松开 ⇧ 只剩 ⌘ 也不算，全松开后才重新算
-    #expect(hold.handle(flags: [.shift, .command], at: 3) == nil)
-    #expect(hold.handle(flags: .command, at: 3.1) == nil)
-    #expect(hold.handle(flags: [], at: 3.2) == nil)
-    #expect(hold.handle(flags: .command, at: 4) == .began(4))
+    #expect(handle([.shift, .command], 3) == nil)
+    #expect(handle(.command, 3.1) == nil)
+    #expect(handle([], 3.2) == nil)
+    #expect(handle(.command, 4) == .began(4))
     // 按着时又按了 ⌥ / 🌐：这一次结束
-    #expect(hold.handle(flags: [.command, .option], at: 4.5) == .ended)
-    #expect(hold.handle(flags: .command, at: 4.6) == nil)
-    #expect(hold.handle(flags: [], at: 5) == nil)
-    #expect(hold.handle(flags: .command, at: 6) == .began(6))
-    #expect(hold.handle(flags: [.command, .function], at: 6.2) == .ended)
+    #expect(handle([.command, .option], 4.5) == .ended)
+    #expect(handle(.command, 4.6) == nil)
+    #expect(handle([], 5) == nil)
+    #expect(handle(.command, 6) == .began(6))
+    #expect(handle([.command, .function], 6.2) == .ended)
+  }
+
+  /// 按哪个键能换（2026-11-18）：换成 ⌥ 时只认 ⌥，单按 ⌘ 不算；存的值认不出按 ⌘
+  @Test func otherHoldKeys() {
+    var hold = ModifierHold()
+    #expect(hold.handle(flags: .command, at: 1, key: .option) == nil)
+    #expect(hold.handle(flags: [], at: 1.1, key: .option) == nil)
+    #expect(hold.handle(flags: .option, at: 2, key: .option) == .began(2))
+    #expect(hold.handle(flags: [.option, .shift], at: 2.5, key: .option) == .ended)
+    #expect(hold.handle(flags: [], at: 3, key: .option) == nil)
+    #expect(hold.handle(flags: .shift, at: 4, key: .shift) == .began(4))
+    #expect(hold.handle(flags: [], at: 5, key: .shift) == .ended)
+    #expect(hold.handle(flags: .control, at: 6, key: .control) == .began(6))
+    #expect(AppShortcuts.holdKey("option") == .option)
+    #expect(AppShortcuts.holdKey("shift") == .shift)
+    #expect(AppShortcuts.holdKey("fn") == .command)
+    #expect(AppShortcuts.holdKey(nil) == .command)
+    #expect(AppShortcuts.holdKey(3) == .command)
   }
 
   /// 按顶层菜单分组：菜单栏里第几个分组（同名的也分开），先后照菜单

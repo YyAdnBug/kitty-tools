@@ -53,7 +53,7 @@ nonisolated enum Feature: String, CaseIterable {
     case .keepAwake: "不让电脑睡、不让屏幕熄：手动开一段，或按时段自动开"
     case .bluetoothSnooze: "合上盖子睡着时关掉蓝牙，醒来再打开：放进包里不会被蓝牙键鼠弄醒"
     case .smoothScroll: "鼠标滚轮像触控板那样滑着滚，鼠标单独反向，按 App 停用"
-    case .appShortcuts: "按住 ⌘ 一会儿，列出当前 App 菜单里的全部快捷键"
+    case .appShortcuts: "单独按住 ⌘（能换成 ⌥ ⌃ ⇧）一会儿，列出当前 App 菜单里的全部快捷键"
     case .island: "点刘海叫出快捷动作，录屏计时、提醒倒数、正在播放挂在刘海两边、点开是卡片"
     }
   }

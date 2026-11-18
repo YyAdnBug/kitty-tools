@@ -6873,6 +6873,16 @@
         }
       }
     },
+    "中文输入法里单按 ⇧ 会切中英文，按住松开时可能也切" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "With a Chinese input method, pressing ⇧ alone switches between Chinese and English, and releasing it after holding may switch too"
+          }
+        }
+      }
+    },
     "中文输入法里单按 ⇧ 切中英文，连按两下会切过去再切回来" : {
       "localizations" : {
         "en" : {
@@ -11200,22 +11210,32 @@
         }
       }
     },
-    "单独按住 ⌘ 约 1 秒；不想长按的话在快捷键页另设一个组合" : {
+    "单独按住 ⌘ 约 1 秒（按哪个键、多久都能改）；不想长按的话在快捷键页另设一个组合" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Hold ⌘ by itself for about 1 second. If you’d rather not hold it, set a shortcut in Shortcuts"
+            "value" : "Hold ⌘ by itself for about 1 second (you can change the key and how long). If you’d rather not hold it, set a shortcut in Shortcuts"
           }
         }
       }
     },
-    "单独按住一会儿：弹出当前 App 菜单里的全部快捷键，松开就收（按多久在设置里改）" : {
+    "单独按住 ⌘（能换成 ⌥ ⌃ ⇧）一会儿，列出当前 App 菜单里的全部快捷键" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Hold by itself for a moment: shows every shortcut in the current app’s menus; release to close (set how long in Settings)"
+            "value" : "Hold ⌘ (or ⌥, ⌃ or ⇧) for a moment to list every shortcut in the current app’s menus"
+          }
+        }
+      }
+    },
+    "单独按住一会儿：弹出当前 App 菜单里的全部快捷键，松开就收（按哪个键、按多久在设置里改）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hold by itself for a moment: shows every shortcut in the current app’s menus; release to close (set which key and how long in Settings)"
           }
         }
       }
@@ -12260,12 +12280,12 @@
         }
       }
     },
-    "只按着 ⌘、不按别的键；按着时按了别的键、点了鼠标就不弹" : {
+    "只按着这一个键、不按别的键；按着时按了别的键、点了鼠标就不弹" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Hold only ⌘ with no other keys. Pressing another key or clicking while holding cancels it"
+            "value" : "Hold only this key with no other keys. Pressing another key or clicking while holding cancels it"
           }
         }
       }
@@ -14078,12 +14098,12 @@
         }
       }
     },
-    "在任何 App 里单独按住 ⌘ 一会儿，弹出它菜单里的全部快捷键，按菜单分组" : {
+    "在任何 App 里单独按住 ⌘ 一会儿，弹出它菜单里的全部快捷键，按菜单分组；按哪个键能换成 ⌥ ⌃ ⇧" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "In any app, hold ⌘ by itself for a moment to see every shortcut in its menus, grouped by menu"
+            "value" : "In any app, hold ⌘ by itself for a moment to see every shortcut in its menus, grouped by menu; you can use ⌥, ⌃ or ⇧ instead"
           }
         }
       }
@@ -19550,22 +19570,22 @@
         }
       }
     },
-    "弹出前台 App 菜单栏里的全部快捷键，按菜单分组。按着 ⌘ 再按别的键，就是那个快捷键；松开 ⌘ 就收起。只列 App 菜单里的快捷键，网页和编辑器里自己定义的看不到。" : {
+    "弹出前台 App 菜单栏里的全部快捷键，按菜单分组。按着那个键再按别的键，这一下照常给 App、面板收起；松开就收起。只列 App 菜单里的快捷键，网页和编辑器里自己定义的看不到。" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Shows every shortcut in the frontmost app’s menu bar, grouped by menu. While holding ⌘, press another key to use that shortcut; release ⌘ to close. Only shortcuts in the app’s menus are listed, not ones defined inside web pages or editors."
+            "value" : "Shows every shortcut in the frontmost app’s menu bar, grouped by menu. While holding the key, pressing another key goes to the app as usual and closes the panel; release to close. Only shortcuts in the app’s menus are listed, not ones defined inside web pages or editors."
           }
         }
       }
     },
-    "弹出后按着 ⌘ 再按别的键：就是那个快捷键，面板收起" : {
+    "弹出后按着它再按别的键：这一下照常给 App，面板收起" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Once it shows, keep holding ⌘ and press another key: uses that shortcut and closes the panel"
+            "value" : "Once it shows, keep holding it and press another key: the key goes to the app as usual and the panel closes"
           }
         }
       }
@@ -22623,26 +22643,6 @@
         }
       }
     },
-    "按住 ⌘ 一会儿，列出当前 App 菜单里的全部快捷键" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Hold ⌘ for a moment to list every shortcut in the current app’s menus"
-          }
-        }
-      }
-    },
-    "按住 ⌘ 叫出来" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Hold ⌘ to show"
-          }
-        }
-      }
-    },
     "按住 ⌘ 弹出的当前 App 快捷键：按多久、要给的授权" : {
       "localizations" : {
         "en" : {
@@ -22659,6 +22659,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "hold,long press,⌘,Command,menu,menu bar,shortcut list,cheat sheet,current app,delay,how long,Accessibility"
+          }
+        }
+      }
+    },
+    "按住一个键叫出来" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hold a key to show"
           }
         }
       }
@@ -22739,6 +22749,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Find by name or alias"
+          }
+        }
+      }
+    },
+    "按哪个键" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Key"
           }
         }
       }
@@ -22825,12 +22845,12 @@
         }
       }
     },
-    "按着 ⌘ 再按别的键就是那个快捷键；点一行直接执行" : {
+    "按着那个键再按别的键，这一下照常给 App；点一行直接执行" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "While holding ⌘, press another key to use that shortcut, or click a row to run it"
+            "value" : "While holding the key, press another key and it goes to the app as usual, or click a row to run it"
           }
         }
       }
@@ -33006,16 +33026,6 @@
         }
       }
     },
-    "看着 ⌘ 有没有单独按住；按够了才读一次前台 App 的菜单，不存" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Watches for ⌘ held by itself; reads the frontmost app’s menus once it’s held long enough and keeps nothing"
-          }
-        }
-      }
-    },
     "看着指针有没有停在刘海上；打开了系统提示才听电源、耳机、网络，打开了正在播放才起一个读播放信息的小进程，打开了下一个日程才读日历，打开了音量和亮度才接那五个键。不添加时提示照常弹" : {
       "localizations" : {
         "en" : {
@@ -33042,6 +33052,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Watches trackpad pinches and hot corners; rescans when apps are installed or removed"
+          }
+        }
+      }
+    },
+    "看着设的那个键有没有单独按住；按够了才读一次前台 App 的菜单，不存" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watches for the chosen key held by itself; reads the frontmost app’s menus once it’s held long enough and keeps nothing"
           }
         }
       }
@@ -33146,22 +33166,22 @@
         }
       }
     },
-    "知道 ⌘ 有没有按住、读当前 App 的菜单；没有它用不了" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Detects when ⌘ is held and reads the current app’s menus. Required."
-          }
-        }
-      }
-    },
     "知道了" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Got It"
+          }
+        }
+      }
+    },
+    "知道那个键有没有按住、读当前 App 的菜单；没有它用不了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Detects when the key is held and reads the current app’s menus. Required."
           }
         }
       }
@@ -33483,12 +33503,12 @@
         }
       }
     },
-    "移除后按住 ⌘ 不再弹出，快捷键页里也没有它；设置留着，再添加就回来" : {
+    "移除后按住那个键不再弹出，快捷键页里也没有它；设置留着，再添加就回来" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Once removed, holding ⌘ no longer shows anything and it’s gone from Shortcuts; settings stay for when you add it again"
+            "value" : "Once removed, holding the key no longer shows anything and it’s gone from Shortcuts; settings stay for when you add it again"
           }
         }
       }
@@ -37863,12 +37883,12 @@
         }
       }
     },
-    "过一会儿再按住 ⌘ 试试" : {
+    "过一会儿再按住 %@ 试试" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Try holding ⌘ again in a moment"
+            "value" : "Try holding %@ again in a moment"
           }
         }
       }

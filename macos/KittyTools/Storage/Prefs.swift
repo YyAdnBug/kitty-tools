@@ -431,6 +431,9 @@ enum Prefs {
   /// 读它走 AppShortcuts.delay，认不出的按 1 秒）。跟着导出、同步
   nonisolated static let appShortcutsHold = "appShortcutsHold"
   nonisolated static let appShortcutsDelay = "appShortcutsDelay"
+  /// App 快捷键：按住哪个修饰键（ModifierTaps.Key 的 rawValue：command / option / control / shift，默认 command；2026-11-18
+  /// 用户要能换）。读它走 AppShortcuts.holdKey，认不出的按 ⌘。跟着导出、同步
+  nonisolated static let appShortcutsHoldKey = "appShortcutsHoldKey"
 
   /// 访达右键（第十一族，2026-11-08，FinderLink）：扩展把动作交过来时带的凭证（App 第一次启动时生成，FinderLink.ensureKey；
   /// 扩展从 App 的偏好里读）。这台电脑自己的、**不注册默认值**：不跟着导出 / 导入、同步走
@@ -590,6 +593,7 @@ enum Prefs {
       smoothScrollExcluded: [String](),
       appShortcutsHold: true,
       appShortcutsDelay: 1000,
+      appShortcutsHoldKey: ModifierTaps.Key.command.rawValue,
       finderOpenWithApps: finderOpenWithDefault,
       panelSqueezeEntrance: false,
       floatingPinned: false,
