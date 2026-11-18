@@ -1524,6 +1524,7 @@ a.card:hover {
 .mock-main {
   padding: 16px 18px;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   align-content: start;
   min-width: 0;
@@ -1541,6 +1542,7 @@ a.card:hover {
 }
 .mock-row {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
   gap: 12px;
@@ -1550,6 +1552,7 @@ a.card:hover {
   border: 1px solid var(--line);
 }
 .mock-row span:first-child {
+  flex: 1 1 8em;
   min-width: 0;
 }
 .mock-row.hl {
@@ -1558,7 +1561,6 @@ a.card:hover {
 }
 .mock-select {
   color: var(--muted);
-  white-space: nowrap;
 }
 .mock-btn {
   flex: none;
@@ -1586,6 +1588,7 @@ a.card:hover {
 }
 .cmd {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
   padding: 10px 12px;
@@ -1595,10 +1598,11 @@ a.card:hover {
 .cmd code {
   background: none;
   padding: 0;
-  flex: 1;
+  flex: 1 1 22ch;
 }
 .copy {
   flex: none;
+  margin-left: auto;
   font: 600 13px/1 var(--sans);
   color: var(--fg);
   background: var(--surface);
