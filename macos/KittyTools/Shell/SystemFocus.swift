@@ -96,7 +96,36 @@ import os
 
   /// 正在播放的右耳要不要画专注模式的符号（开着专注模式、设置里打开了那一样）
   /// ponytail: 任何专注模式都换；要「只在某个模式时换」得列出这台 Mac 有哪些模式（日志里只见过切换到的那几个），以后再说
+  /// 开着专注模式时一直挂在刘海两边（设置 › 刘海岛「开着时一直挂在刘海上」，默认开；2026-11-18 用户：「alcove 好像是一直展示的」）：
+  /// 左耳模式的符号（模式的颜色），点开是卡片——名字 +「专注模式设置…」。最不要紧（Activity.Kind.focus），放歌、倒数时让给它们
+  private func updateActivity() {
+    guard let island else { return }
+    guard showsOnNotch, defaults.bool(forKey: Prefs.islandFocusPinned), let mode = current else {
+      island.endActivity(Self.activityID)
+      return
+    }
+    island.setActivity(Self.activity(mode))
+  }
+
+  /// 刘海岛上专注模式那个活动的编号
+  static let activityID = "system-focus"
+
+  /// 一直挂着的那个活动（纯函数，截图自检也用）
+  static func activity(_ mode: Mode) -> Island.Activity {
+    Island.Activity(
+      id: activityID, kind: .focus, title: mode.displayName,
+      detail: String(localized: "专注模式开着"), symbol: symbol(mode.symbol, id: mode.id),
+      actions: [
+        Island.Action("专注模式设置…", opens: true) {
+          if let url = URL(string: "x-apple.systempreferences:com.apple.Focus-Settings.extension") {
+            NSWorkspace.shared.open(url)
+          }
+        }
+      ], color: color(named: mode.tint))
+  }
+
   private func updateMark() {
+    updateActivity()
     let mark =
       showsOnNotch && defaults.bool(forKey: Prefs.islandFocusWaveform)
       ? current.map {

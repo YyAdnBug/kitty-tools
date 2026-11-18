@@ -45,6 +45,8 @@ import SwiftUI
     var leading: Leading
     /// 进行中、且知道做到哪了（0…1：更新包下载、转 GIF、压缩）：标题后面多一条细进度条。nil = 不画
     var fraction: Double?
+    /// 圆底换成这个颜色（不跟语气走；活动自己的颜色：专注模式、日历的颜色），上面的符号是白的
+    var tint: NSColor?
     /// 认这一条用的（多语言，2026-11-15）：进度、收起、缩进耳朵的编号按它找这一条（progress、dismiss(ifShowing:)），
     /// 不拿显示出来的字比——两句不同的中文可能译成同一句英文。key + 插进去的值都算
     var source: LocalizedStringResource
@@ -2243,17 +2245,20 @@ struct IslandLeading: View {
         .overlay(shape.hairlineBorder(.white.opacity(0.25)))
     case .tone:
       // 底上的符号：成功 / 警告 / 错误是白的；信息 / 进行中的底是强调色，黄、橙、绿这些亮强调色上要换深色
-      let ink = content.tone == .info || content.tone == .progress ? Style.onBrand : .white
+      let ink =
+        content.tint == nil && (content.tone == .info || content.tone == .progress)
+        ? Style.onBrand : .white
+      let plate = content.tint.map { Color(nsColor: $0) } ?? Self.tint(content.tone)
       Group {
         if Island.hasPlate(content.symbol) {
           Image(symbol: content.symbol)
             .symbolRenderingMode(.palette)
-            .foregroundStyle(ink, Self.tint(content.tone))
+            .foregroundStyle(ink, plate)
         } else {
           // 没有圆底变体的符号：垫一个语气色圆。圆是同字号的 circle.fill，和 xxx.circle.fill 的圆一样大（约 18.5 pt）；
           // 符号放进 12 × 12（和系统圆底符号里的那个差不多大），宽的（键盘、带角标的文件夹）跟着缩，不出圆
           Image(systemName: "circle.fill")
-            .foregroundStyle(Self.tint(content.tone))
+            .foregroundStyle(plate)
             .overlay {
               Image(symbol: content.symbol)
                 .resizable()

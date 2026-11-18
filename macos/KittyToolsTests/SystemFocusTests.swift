@@ -152,4 +152,12 @@ struct SystemFocusTests {
     for await line in lines { ended.append(line) }
     #expect(ended == [.exited(SIGTERM)])
   }
+
+  /// 一直挂着的那个活动：最不要紧（放歌时让给正在播放）；没刘海的屏上不进菜单栏（系统自己有专注模式的图标）
+  @MainActor @Test func pinnedActivityYieldsAndStaysOutOfMenuBar() {
+    let focus = SystemFocus.activity(Self.nap)
+    #expect(focus.kind < .media)
+    #expect(focus.color != nil && focus.title == "午睡")
+    #expect(IslandMenuItem.pick([focus], wings: false) == nil)
+  }
 }

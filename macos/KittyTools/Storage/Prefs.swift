@@ -547,6 +547,8 @@ enum Prefs {
   static let islandFocusSleepSound = "islandFocusSleepSound"
   static let islandFocusWaveform = "islandFocusWaveform"
   static let islandFocusQuiet = "islandFocusQuiet"
+  /// 开着专注模式时一直挂在刘海两边（2026-11-18 用户「alcove 好像是一直展示的」，默认开）
+  static let islandFocusPinned = "islandFocusPinned"
   /// 新功能标记（Shell/WhatsNew.swift，2026-11-05）的账：各版本在这台 Mac 上第一次打开的时刻（版本号 → Date，从这一刻起挂 30 天）、
   /// 碰过哪几个（WhatsNew.Entry.id 的数组）。这台电脑自己的状态：不注册默认值、不导出不同步
   static let whatsNewStarted = "whatsNewStarted"
@@ -721,6 +723,7 @@ enum Prefs {
       islandFocusSleepSound: false,
       islandFocusWaveform: false,
       islandFocusQuiet: false,
+      islandFocusPinned: true,
       keepAwakeDisplay: true,
       keepAwakeSchedule: "",
     ].merging(Feature.allCases.map { ($0.prefsKey, $0.defaultOn as Any) }) { current, _ in current }

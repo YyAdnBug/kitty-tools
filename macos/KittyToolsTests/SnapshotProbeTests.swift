@@ -1183,6 +1183,21 @@ struct SnapshotProbeTests {
             showing: nil, geometry: notch, activities: [media(playing: playing, artwork: cover)])),
         size: notch.windowSize, dark: false, to: "\(out)/\(name).png")
     }
+    // 开着专注模式时一直挂在刘海上（2026-11-18）：左耳模式的符号，点开是卡片
+    do {
+      let dnd = SystemFocus.Mode(
+        id: "com.apple.donotdisturb.mode.default", name: "Do Not Disturb", symbol: "moon.fill",
+        tint: "systemIndigoColor")
+      try snapshot(
+        IslandView(
+          island: Island(showing: nil, geometry: notch, activities: [SystemFocus.activity(dnd)])),
+        size: notch.windowSize, dark: false, to: "\(out)/island-wings-focus.png")
+      let island = Island(showing: nil, geometry: notch, activities: [SystemFocus.activity(dnd)])
+      island.tapped()
+      try snapshot(
+        IslandView(island: island), size: notch.windowSize, dark: false,
+        to: "\(out)/island-focus-card.png")
+    }
     // 专注模式开着、打开了「跳动条换成专注模式的图标」：右耳画模式的符号（2026-11-17 第 2 批）
     do {
       let island = Island(

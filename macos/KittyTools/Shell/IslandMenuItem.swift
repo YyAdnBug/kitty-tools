@@ -14,9 +14,10 @@ import AppKit
   private var timer: Timer?
 
   /// 菜单栏里挂哪一个（纯函数，单测锁住）：挂得了耳朵时不挂；最要紧的是录制时也不挂（它有自己的停止项）；
-  /// 正在播放不挂（菜单栏里系统自己有「正在播放」，没刘海时它在那一张里）
+  /// 正在播放、专注模式不挂（菜单栏里系统自己有「正在播放」和专注模式的图标，没刘海时它在那一张里）
   static func pick(_ activities: [Island.Activity], wings: Bool) -> Island.Activity? {
-    guard !wings, let top = Island.Activity.top(activities.filter { $0.kind != .media }),
+    guard !wings,
+      let top = Island.Activity.top(activities.filter { $0.kind != .media && $0.kind != .focus }),
       top.kind != .record
     else { return nil }
     return top

@@ -1124,6 +1124,10 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
 - **提醒（B2）**：设置 › 提醒「专注模式开着时，到点的提醒」（`Prefs.remindersDuringFocus`，默认只在刘海上挂图标，跟着设置导出、同步）对任何专注模式都算；
   滤镜的默认值改成「跟着 Kitty 的设置」（`ReminderFocusStyle.follow`，= 这个模式没另选，关掉时系统送来的也是它），另选了的以滤镜为准
   （`ReminderFocus.effective`，单测锁住）。单条的「专注模式时也照常提醒」照旧最优先。
+- **2026-11-18 装上测试包后用户：「刘海上出来了，但是会消失，alcove 好像是一直展示的」**：加「开着时一直挂在刘海上」（默认开）——开着专注模式时
+  一个活动（`Activity.Kind.focus`，最不要紧，放歌、倒数、录制时让给它们；没刘海的屏上不进菜单栏那一项，系统自己有专注模式的图标）：左耳模式的
+  符号（模式的颜色），点开是卡片「勿扰模式 · 专注模式开着」+「专注模式设置…」。卡片圆底用活动自己的颜色（`Content.tint`，日程的日历颜色同）。
+  Alcove 的字串里有 `focusStatusSymbolContainer`、`isFocusStatusSymbolVisible`，对得上「一直显示」（推断）。
 - **第 2 批：Alcove 另外几项专注模式的设置**（设置 › 刘海岛「专注模式」那一节，都默认关，「在刘海上显示专注模式」关着时变灰、也不起作用）：
   睡眠模式刚打开时响一声（系统的「Purr」，录屏 / 录音时不响；`Mode.isSleep` 认编号里的 sleep、`bed.double` 符号、英文名 Sleep）；
   正在播放的右耳跳动条换成模式的符号和颜色（`Island.focusMark`，SystemFocus 在变了、偏好变了时更新；任何专注模式都换，Alcove 能只选一个

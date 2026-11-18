@@ -6915,6 +6915,16 @@
         }
       }
     },
+    "专注模式开着" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Focus is on"
+          }
+        }
+      }
+    },
     "专注模式开着、正在放歌时，刘海右边画模式的图标" : {
       "localizations" : {
         "en" : {
@@ -6935,6 +6945,16 @@
         }
       }
     },
+    "专注模式开着的这段时间，刘海左边一直有它的图标；放歌、倒数时先让给它们。点开能去专注模式设置" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "While a Focus is on, its icon stays on the left of the notch, giving way to music and countdowns. Click it to open Focus settings"
+          }
+        }
+      }
+    },
     "专注模式时不弹系统提示" : {
       "localizations" : {
         "en" : {
@@ -6951,6 +6971,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Also remind during Focus"
+          }
+        }
+      }
+    },
+    "专注模式设置…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Focus Settings…"
           }
         }
       }
@@ -19279,6 +19309,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Any Focus counts (Do Not Disturb, Sleep, Work, ones you created). A Focus whose filter picks something else follows the filter: for example, choose “Remind as usual” here and add a filter set to “Only show an icon on the Notch” to Work only. Reminders held on the Notch pop up together when the Focus ends. For important reminders, turn on “Also remind during Focus” in their details."
+          }
+        }
+      }
+    },
+    "开着时一直挂在刘海上" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep it on the notch while on"
           }
         }
       }

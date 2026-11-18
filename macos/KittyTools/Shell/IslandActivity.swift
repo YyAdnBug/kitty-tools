@@ -19,7 +19,8 @@ extension Island {
     enum Kind: Int, Comparable {
       /// event：十分钟内要开始的日程（2026-11-14）——比保持唤醒、提醒的倒数要紧（它们一挂几个小时，会议马上就到）；
       /// heldReminder：专注模式里到点、先压着没弹出的提醒（2026-11-17 拍板 B3）——比倒数、保持唤醒要紧（已经到点了）
-      case media, reminder, awake, heldReminder, event, progress, record
+      /// focus：开着的系统专注模式（2026-11-18，照 Alcove 一直挂着）——最不要紧：放歌、倒数、录制时都让给它们
+      case focus, media, reminder, awake, heldReminder, event, progress, record
 
       static func < (lhs: Kind, rhs: Kind) -> Bool { lhs.rawValue < rhs.rawValue }
     }
@@ -157,6 +158,7 @@ extension Island {
         title: "\(title)", detail: detail.map { "\($0)" }, tone: tone, symbol: symbol,
         leading: .tone, fraction: fraction)
       if let source { content.source = source }
+      content.tint = color
       return content
     }
   }

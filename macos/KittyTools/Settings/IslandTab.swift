@@ -49,6 +49,7 @@ struct IslandTab: View {
   @AppStorage(Prefs.islandFocusSleepSound) private var focusSleepSound = false
   @AppStorage(Prefs.islandFocusWaveform) private var focusWaveform = false
   @AppStorage(Prefs.islandFocusQuiet) private var focusQuiet = false
+  @AppStorage(Prefs.islandFocusPinned) private var focusPinned = true
   /// 这一次打开开关时系统没给授权（偏好没打开，橙字留着告诉怎么开）
   @State private var calendarDenied = false
   @Environment(SettingsNavigation.self) private var navigation: SettingsNavigation?
@@ -206,6 +207,10 @@ struct IslandTab: View {
           Text("读不到系统的专注模式，刘海上显示不了").foregroundStyle(.orange)
         }
         Group {
+          Toggle(isOn: $focusPinned) {
+            Text("开着时一直挂在刘海上")
+            Text("专注模式开着的这段时间，刘海左边一直有它的图标；放歌、倒数时先让给它们。点开能去专注模式设置")
+          }
           Toggle(isOn: $focusSleepSound) {
             Text("睡眠模式打开时响一声")
             Text("一声轻的提示音；录屏、录音时不响")
