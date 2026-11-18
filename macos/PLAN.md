@@ -2281,6 +2281,14 @@ sync-server。没并回 macos、没 push、没打 tag；待用候选包走
 `80e01660`）一个提交，写了 0.8.1 的更新日志；没并回 macos、没 push。待手测 HANDTEST「按 App 停用快捷键」1–9。Windows 那一半是
 `windows/PLAN-v17.md`（windows 分支）。
 
+**2026-11-18：0.10.0 已发布**（tag `macos-v0.10.0` = `0469a924`，latest；用户「合并完后准备打包 0.10.0，然后准备发布」→ 看过发布步骤后「Release」）：
+从 `focus-wip`（识别专注模式 + 刘海岛照 Alcove 的那一轮，并进了 i18n-wip 691f1566 之后的全部）打包，`origin/macos` 快进 `09e5eced..0469a924`。
+附 arm64 DMG / `_arm64.zip` / `macos-update.json` 和 Intel 的 `_x86_64.dmg` / `.zip`；两条 curl 都 200、`releases/latest` 是它。dSYM 在那个工作树
+（`kitty-tools-macos-focus`）的 `macos/build/dsym-0.10.0-arm64`、`dsym-0.10.0-x86_64`（Intel 那次把 arm64 的归档顶掉了，arm64 重打了一遍才留下对得上的）。
+发布说明照 0.9.0 的格式（中英两份：从旧版升级、更新内容、感谢 #21 #22 #25 #28 和 #3 #14 #27 #30、安装）。打包时修了 build-dmg.sh 在 Intel 那次把
+发布说明里的文件名写成 `_x86_arm64.dmg`。全量 2432 过、UpdaterTests 用这次的 zip 过。**没做**：README / 官网英文版（`site-en-wip`）没推——它还没写
+11-16 之后加的功能；issue #3 #14 #27 #30 的回复和关闭等用户看过回复；各批真机手测照旧没走完（HANDTEST「刘海岛上的专注模式」1–29、「搁着的计划手测」1–26 等）。
+
 **2026-11-14：0.9.0 已发布**（tag `macos-v0.9.0` = `2776aada`，latest；用户「现在发布」——发布前我建议先手测，用户定了直接发）：
 从候选分支 `claude/release-0-9-0-3adad5` 打，快进推到 macos；附 DMG、`_arm64.zip`、`macos-update.json`（两条 curl 核对都是 200，
 下回来的 zip 校验值和清单一致），dSYM 在候选工作树的 `macos/build/dsym-0.9.0/`；全量单测 2247 过，`UpdaterTests` 用这次的 zip 过。
