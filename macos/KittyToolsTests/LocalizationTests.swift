@@ -621,8 +621,13 @@ struct LocalizationTests {
       ["美", "英", "变形：", "美 /", "英 /", "例：%@"], false, "词典词条的内容和朗读要认的标记"
     ),
     (
-      "KittyTools/Translate/Providers/Zhipu.swift", ["<原文>", "</原文>", "你是一部简明词典", "你是翻译引擎"], false,
+      "KittyTools/Translate/Providers/Zhipu.swift",
+      ["<原文>", "</原文>", "你是一部简明词典", "你是翻译引擎", "你是外语老师", "附加要求：", "外文"], false,
       "给大模型的提示词"
+    ),
+    (
+      "KittyTools/Translate/SentenceExplain.swift", ["她刚坐下", "他一进门", "It started raining"], false,
+      "给大模型照着写的讲解示例（issue #35）"
     ),
     ("KittyTools/Translate/Speaker.swift", ["例", "英"], false, "朗读认词典词条的标记"),
   ]

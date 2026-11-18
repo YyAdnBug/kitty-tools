@@ -23,6 +23,8 @@ struct ProviderCardView: View {
   var fontScale = 1.0
   /// 单词卡（大模型单词模式、词典类服务）：右上角的喇叭只读释义（R1）
   var wordStyle = false
+  /// 讲解卡（issue #35）：喇叭只读第一段（译文）
+  var explains = false
   /// 单词卡第一行是「美 /…/ 英 /…/」时，读音旁边的小喇叭念的英文词（R2）；不是英文词时 nil
   var pronounce: String?
   var isCollapsed = false
@@ -186,8 +188,8 @@ struct ProviderCardView: View {
       Spacer(minLength: 6)
       CardActions {
         if let text = card.state.text, !text.isEmpty {
-          // 只读译文：单词卡读第一行释义，别的去掉 Markdown 记号再读（R1）
-          let speech = Speaker.speechText(text, wordStyle: wordStyle)
+          // 只读译文：单词卡读第一行释义，讲解卡读第一段，别的去掉 Markdown 记号再读（R1）
+          let speech = Speaker.speechText(text, wordStyle: wordStyle, explanation: explains)
           Button(
             "朗读", systemImage: speaker.speaking == speech ? "speaker.wave.2.fill" : "speaker.wave.2"
           ) { speaker.toggle(speech, language: language) }

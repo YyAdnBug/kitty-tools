@@ -11983,6 +11983,16 @@
         }
       }
     },
+    "原文、译文和单词的小喇叭都按它读，练听力可以放慢" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Applies to every speaker button; slow it down for listening practice"
+          }
+        }
+      }
+    },
     "原文为空或太长" : {
       "localizations" : {
         "en" : {
@@ -12629,6 +12639,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Only in the search field, and switched back when you leave; turn it off to search in Chinese"
+          }
+        }
+      }
+    },
+    "只在翻译浮窗里用；划词翻译并替换、截图翻译盖回截图照旧只要译文。讲解比译文长，用的额度也多。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Used only in the Translate panel; Translate and Replace Selection and translations put right on screenshots still get plain translations. Explanations are longer than translations and use more of your quota."
           }
         }
       }
@@ -15866,6 +15886,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "e.g. Be Right Back"
+          }
+        }
+      }
+    },
+    "如：术语保留英文；每个词多给一个例句" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "e.g. Keep technical terms in English; give one more example per word"
           }
         }
       }
@@ -23904,6 +23934,16 @@
         }
       }
     },
+    "接在内置的提示词后面，翻译、查词、讲解都用" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Added after the built-in prompt for translations, word lookups and explanations"
+          }
+        }
+      }
+    },
     "控制条开着、还没开始时开始录音（点控制条的 ● 同样）" : {
       "localizations" : {
         "en" : {
@@ -28000,6 +28040,16 @@
         }
       }
     },
+    "朗读速度" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Speaking rate"
+          }
+        }
+      }
+    },
     "未命名" : {
       "localizations" : {
         "en" : {
@@ -28217,6 +28267,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Lemon"
+          }
+        }
+      }
+    },
+    "查一句外文时给出译文、三到五个重点词和句型；单个词照 查词 的设置" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "For a single foreign sentence, give the translation, three to five key words and the sentence pattern; single words follow Word Lookup"
           }
         }
       }
@@ -29288,6 +29348,16 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "正常" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Normal"
           }
         }
       }
@@ -31589,6 +31659,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Panel position"
+          }
+        }
+      }
+    },
+    "浮窗里的回答" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Answers in the Panel"
           }
         }
       }
@@ -37393,6 +37473,16 @@
         }
       }
     },
+    "讲解外文句子" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Explain foreign sentences"
+          }
+        }
+      }
+    },
     "许可全文" : {
       "localizations" : {
         "en" : {
@@ -41644,6 +41734,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Arabic"
+          }
+        }
+      }
+    },
+    "附加要求" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Extra instructions"
           }
         }
       }

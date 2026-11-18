@@ -636,6 +636,13 @@ struct SettingsArchive: Codable, Equatable {
           && (service.region ?? "").wholeMatch(of: /[A-Za-z0-9-]{0,64}/) != nil
         return valid && fits && ids.insert(service.id).inserted
       }
+      // 讲解开关只认 true、附加要求去 NUL 截到上限（issue #35；关着、空着都存 nil，同本机）
+      .map { service in
+        var service = service
+        service.explainsSentences = service.explainsSentences == true ? true : nil
+        service.extraPrompt = TranslateService.cleanedExtraPrompt(service.extraPrompt)
+        return service
+      }
     }
     clean.searchEngines = searchEngines.map { engines in
       var ids: Set<String> = []
@@ -795,7 +802,7 @@ struct SettingsArchive: Codable, Equatable {
     try beforeWriting()
     apply(sections, to: defaults, domainName: domainName)
     if importsServices, let translateServices {
-      services.services = Self.merge(translateServices, into: services.services)
+      services.services = Self.mergeServices(translateServices, into: services.services)
       for (account, value) in unsealed { store(account, value) }
     }
     var outcome = Outcome(secrets: unsealed.count)
@@ -821,6 +828,20 @@ struct SettingsArchive: Codable, Equatable {
   static func merge<Item: Identifiable>(_ incoming: [Item], into current: [Item]) -> [Item] {
     let ids = Set(incoming.map(\.id))
     return incoming + current.filter { !ids.contains($0.id) }
+  }
+
+  /// 翻译服务照 merge 合并，只多一条（issue #35）：文件里那条没有附加要求（旧版本导出的文件）时，留着本机写的——
+  /// 那是用户自己写的字，不能导一个旧文件就无声没了
+  static func mergeServices(_ incoming: [TranslateService], into current: [TranslateService])
+    -> [TranslateService]
+  {
+    let local = Dictionary(current.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+    let incoming = incoming.map { service in
+      var service = service
+      if service.extraPrompt == nil { service.extraPrompt = local[service.id]?.extraPrompt }
+      return service
+    }
+    return merge(incoming, into: current)
   }
 
   /// 文件里的翻译服务会把文字和密钥发到哪些自己填的地址（主机名，带端口的连端口）：AI 服务的地址、DeepL 的 DeepLX 地址；

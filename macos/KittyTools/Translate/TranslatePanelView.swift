@@ -381,8 +381,9 @@ struct TranslatePanelView: View {
         .symbolEffect(.bounce, value: coordinator.isFavorite)
         .disabled(coordinator.primaryResult == nil)
         .help("收藏这次翻译（⌘D），在历史里可以只看收藏")
-        // 查单个词时结果是一段释义，不能拿去替换
-        if coordinator.replaceSource != nil, !coordinator.isWordLookup {
+        // 查单个词时结果是一段释义、讲解卡是一段讲解（issue #35），都不能拿去替换
+        if coordinator.replaceSource != nil, !coordinator.isWordLookup, !coordinator.primaryExplains
+        {
           Button("替换原文", systemImage: "arrow.uturn.backward", action: replaceOriginal)
             .labelStyle(.titleAndIcon)
             .disabled(coordinator.primaryResult == nil)
@@ -488,6 +489,7 @@ struct TranslatePanelView: View {
             ProviderCardView(
               card: card, index: index, language: coordinator.target, speaker: speaker,
               fontScale: fontScale, wordStyle: wordStyle,
+              explains: coordinator.explains(card.service),
               pronounce: wordStyle ? coordinator.translatedSource.flatMap(englishWord) : nil,
               isCollapsed: collapsed.contains(card.id),
               copyTick: coordinator.copiedCard == card.id ? coordinator.copyTick : 0

@@ -1,6 +1,6 @@
 // 设置 › 翻译 › 某个服务（N12 详情页，从服务列表推进来）：页头 40 pt 服务图标 + 名称 + 状态（在表单外面，和列表页的页头同一个位置），
 // 下面分组表单：启用、各服务自己的选项（智谱两档免费模型；自建 AI 实例的名称 / 协议 / 地址 / 模型）、钥匙串里的密钥、
-// 测试连接（成功时自动打开启用）；自建 AI 实例可以删除（连同密钥）。改动即时生效（服务列表写 UserDefaults，密钥直接写钥匙串）。
+// 测试连接（成功时自动打开启用）；自建 AI 实例可以删除（连同密钥）。大模型服务另有「浮窗里的回答」一组：讲解外文句子、附加要求（issue #35）。改动即时生效（服务列表写 UserDefaults，密钥直接写钥匙串）。
 // AI 实例的模型（体检 B27）：地址（Anthropic 可空）和 Key 齐了（本机 / 局域网地址不要 Key）就在后台取一次服务端的
 // 模型列表，模型框打字时按已输入的字列出来（textInputSuggestions，macOS 15）；右边 ↻ 重新读取，取的时候转圈。
 // 从「+」新建的（厂商预设，D15）光标落在 API Key。
@@ -73,6 +73,8 @@ struct TranslateServiceDetail: View {
         options(service)
         if current.kind == .ai { modelRow(service) }
       }
+      // 讲解和附加要求（issue #35）：只有大模型服务有；只在翻译浮窗里用
+      if current.isStreaming { answerSection(service) }
       // 系统翻译、有道词典不用密钥
       if !current.secretFields.isEmpty {
         Section {
@@ -112,6 +114,46 @@ struct TranslateServiceDetail: View {
       }
     }
     .formStyle(.grouped)
+  }
+
+  /// 浮窗里怎么回答（issue #35）：讲解外文句子（关着存 nil）、附加要求（空着存 nil，截到上限）
+  private func answerSection(_ service: Binding<TranslateService>) -> some View {
+    Section {
+      Toggle(
+        isOn: Binding {
+          service.wrappedValue.explainsSentences == true
+        } set: {
+          service.wrappedValue.explainsSentences = $0 ? true : nil
+        }
+      ) {
+        Text("讲解外文句子")
+        Text("查一句外文时给出译文、三到五个重点词和句型；单个词照 查词 的设置")
+      }
+      // 一段话：标题和说明在上、整行宽的输入框在下（右对齐的单行框放不下几句话）
+      VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 2) {
+          Text("附加要求")
+          Text("接在内置的提示词后面，翻译、查词、讲解都用")
+            .font(.subheadline).foregroundStyle(.secondary)
+        }
+        TextField(
+          "附加要求",
+          text: Binding {
+            service.wrappedValue.extraPrompt ?? ""
+          } set: {
+            service.wrappedValue.extraPrompt = TranslateService.storedExtraPrompt($0)
+          },
+          prompt: Text("如：术语保留英文；每个词多给一个例句"), axis: .vertical
+        )
+        .labelsHidden()
+        .textFieldStyle(.roundedBorder)  // 分组表单里输入框默认没边，看着像一段字
+        .lineLimit(3...6)
+      }
+    } header: {
+      Text("浮窗里的回答")
+    } footer: {
+      SectionFootnote("只在翻译浮窗里用；划词翻译并替换、截图翻译盖回截图照旧只要译文。讲解比译文长，用的额度也多。")
+    }
   }
 
   /// 按 id 找回这条服务的绑定（列表拖动排序后下标会变）

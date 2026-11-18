@@ -18,6 +18,7 @@ struct TranslateTab: View {
   @AppStorage(Prefs.translateWordMode) private var wordMode = true
   @AppStorage(Prefs.translateWordRecording) private var wordRecording = true
   @AppStorage(Prefs.translateWordAccent) private var wordAccent = "us"
+  @AppStorage(Prefs.translateSpeechSpeed) private var speechSpeed = 1.0
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(Island.self) private var island: Island?
   @AppStorage(Prefs.translateFirst) private var first = Lang.zhHans.rawValue
@@ -139,6 +140,29 @@ struct TranslateTab: View {
           Picker("英文单词发音", selection: $wordAccent) {
             Text("美音").tag("us")
             Text("英音").tag("uk")
+          }
+          // 四档横排单选（3–5 项，mac-whisker-settings）；导入、同步来的怪值显示成最近的一档（Speaker.speed）
+          LabeledContent {
+            Picker(
+              selection: Binding {
+                Speaker.speed(speechSpeed)
+              } set: {
+                speechSpeed = $0
+              }
+            ) {
+              ForEach(Speaker.speeds, id: \.self) { speed in
+                (speed == 1 ? Text("正常") : Text(verbatim: speed.formatted() + "×")).tag(speed)
+              }
+            } label: {
+              Text("朗读速度")
+            }
+            .pickerStyle(.radioGroup)
+            .horizontalRadioGroupLayout()
+            .labelsHidden()
+            .fixedSize()
+          } label: {
+            Text("朗读速度")
+            Text("原文、译文和单词的小喇叭都按它读，练听力可以放慢")
           }
         } header: {
           Text("朗读")
