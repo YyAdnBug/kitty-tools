@@ -1200,6 +1200,15 @@ struct SnapshotProbeTests {
         IslandView(island: island), size: notch.windowSize, dark: false, to: "\(out)/\(name).png")
     }
     // 按音量键 / 亮度键时的那一行：音量 62%、静音、亮度 30%
+    // 第 7 批：描一圈细边（深色底上看）
+    do {
+      let island = Island(showing: nil, geometry: notch)
+      island.outlined = true
+      island.showLevel(Island.Level(kind: .volume, fraction: 0.625))
+      try snapshot(
+        IslandView(island: island), size: notch.windowSize, dark: true,
+        to: "\(out)/island-level-outlined.png")
+    }
     // 第 4 批：细条用强调色 + 旁边写百分比
     do {
       let island = Island(showing: nil, geometry: notch)

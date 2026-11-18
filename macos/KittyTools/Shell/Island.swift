@@ -165,6 +165,9 @@ import SwiftUI
   /// 音量 / 亮度的细条用强调色（默认白）、旁边写百分比（默认不写）
   var levelAccent = false
   var levelPercent = false
+  /// 刘海屏上的形体描一圈细边（设置 › 刘海岛「描一圈细边」，默认关；2026-11-17 照 Alcove 的对比描边）：深色桌面、
+  /// 全屏的黑底上也看得清岛的轮廓。收着时形体藏在真刘海后面，描边也看不见
+  var outlined = false
   /// 触感（设置 › 刘海岛「触感反馈」，A5）：滑动切歌、展开活动、进度条拖到头时触控板一下。摆出来的岛不给
   @ObservationIgnored var haptics = true
   /// 点到了岛本身（耳朵、刘海）：整座岛缩一下再弹回（C2；IslandView 看它的次数）
@@ -1937,7 +1940,9 @@ struct IslandView: View {
   private func backdrop(_ shape: IslandGeometry) -> some View {
     let outline = IslandOutline(shape: shape)
     return outline.fill(.black.opacity(shape.capsule ? 0.92 : 1))
-      .overlay(outline.hairlineBorder(.white.opacity(shape.capsule ? 0.12 : 0)))
+      .overlay(
+        outline.hairlineBorder(.white.opacity(shape.capsule ? 0.12 : island.outlined ? 0.22 : 0))
+      )
       // 音量 / 亮度的提示贴在刘海那一行里，不算展开：没有阴影。
       // ponytail: 没有刘海的屏上有模糊时不画阴影（同第 12 批）——形体离窗口上沿只有 2 pt，又宽又淡的那一圈会在
       // 卡片上方被窗口切成一道平顶；要补就把那块屏上的窗口往上加高（place 的 top、shape 里胶囊的 y 一起改）

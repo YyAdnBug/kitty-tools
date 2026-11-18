@@ -10089,6 +10089,16 @@
         }
       }
     },
+    "刘海两边伸出来、展开时，形体外面一圈淡淡的边，深色桌面上也看得清轮廓" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When the Notch extends or expands, a faint edge around it keeps the outline visible on dark desktops"
+          }
+        }
+      }
+    },
     "刘海两边出几秒：「低电量模式」和开 / 关" : {
       "localizations" : {
         "en" : {
@@ -22968,6 +22978,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Postpone 5 Minutes"
+          }
+        }
+      }
+    },
+    "描一圈细边" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Outline the notch"
           }
         }
       }

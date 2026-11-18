@@ -34,6 +34,7 @@ struct IslandTab: View {
   @AppStorage(Prefs.islandHiddenCalendars) private var hiddenCalendars = ""
   /// 这台 Mac 上的日历（有「日历」授权时，这一页出现时读一次）
   @State private var eventCalendars: [NextEvent.CalendarInfo] = []
+  @AppStorage(Prefs.islandOutlined) private var outlined = false
   @AppStorage(Prefs.islandNowPlaying) private var nowPlaying = false
   @AppStorage(Prefs.islandTrackPeek) private var trackPeek = true
   @AppStorage(Prefs.islandNextEvent) private var nextEvent = false
@@ -283,6 +284,10 @@ struct IslandTab: View {
         Toggle(isOn: $blur) {
           Text("展开时模糊四周")
           Text("卡片背后的东西越靠近卡片越模糊；系统设置里开着「降低透明度」时不模糊")
+        }
+        Toggle(isOn: $outlined) {
+          Text("描一圈细边")
+          Text("刘海两边伸出来、展开时，形体外面一圈淡淡的边，深色桌面上也看得清轮廓")
         }
         Toggle(isOn: $hidesFromCapture) {
           Text("截图、录屏时不显示刘海岛")
