@@ -166,6 +166,16 @@
         }
       }
     },
+    "%@ · 这个文件夹" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · This folder"
+          }
+        }
+      }
+    },
     "%@ × %@ 像素" : {
       "localizations" : {
         "en" : {
@@ -5598,6 +5608,26 @@
         }
       }
     },
+    "↩ 允许读取外接盘和网络盘（系统可能会再问一次）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "↩ to allow reading external and network drives (macOS may ask again)"
+          }
+        }
+      }
+    },
+    "↩ 在访达中打开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "↩ opens it in Finder"
+          }
+        }
+      }
+    },
     "↩ 打开剪贴板面板；输入「cb 空格 关键词」直接搜" : {
       "localizations" : {
         "en" : {
@@ -5924,6 +5954,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "“%@” went back to the edge"
+          }
+        }
+      }
+    },
+    "「%@」是别的 App 的数据，这里不列" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@” holds another app’s data and isn’t listed here"
           }
         }
       }
@@ -8867,6 +8907,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Allow Calendar Access"
+          }
+        }
+      }
+    },
+    "允许读取" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allow Reading"
           }
         }
       }
@@ -12963,6 +13013,16 @@
         }
       }
     },
+    "可以在废纸篓里把它拖回去" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You can drag it back out of the Trash"
+          }
+        }
+      }
+    },
     "可以把选区框大一些再试" : {
       "localizations" : {
         "en" : {
@@ -14931,6 +14991,16 @@
         }
       }
     },
+    "在终端中打开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open in Terminal"
+          }
+        }
+      }
+    },
     "在菜单栏显示图标" : {
       "localizations" : {
         "en" : {
@@ -15565,6 +15635,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Copy result 1–9"
+          }
+        }
+      }
+    },
+    "复制终端写法的路径" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy Path for Terminal"
           }
         }
       }
@@ -18533,6 +18613,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Copied name"
+          }
+        }
+      }
+    },
+    "已拷贝文件" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copied file"
           }
         }
       }
@@ -22452,6 +22542,16 @@
         }
       }
     },
+    "找不到「%@」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can’t find “%@”"
+          }
+        }
+      }
+    },
     "找不到同步文件夹：没接上、被挪走或删了，找到了自己接着同步" : {
       "localizations" : {
         "en" : {
@@ -22990,6 +23090,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Copy Image"
+          }
+        }
+      }
+    },
+    "拷贝文件" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy File"
           }
         }
       }
@@ -23900,6 +24010,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "API"
+          }
+        }
+      }
+    },
+    "接着输入名字筛选；↩ 在访达中打开" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep typing a name to filter; ↩ opens it in Finder"
           }
         }
       }
@@ -30279,6 +30399,16 @@
         }
       }
     },
+    "没有名字里有「%@」的项" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No items match “%@”"
+          }
+        }
+      }
+    },
     "没有后台进程" : {
       "localizations" : {
         "en" : {
@@ -30595,6 +30725,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "No permission to replace the app in “%@”. Update from an administrator account, or download it from the releases page and replace it yourself."
+          }
+        }
+      }
+    },
+    "没有权限查看「%@」里的东西" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No permission to view what’s in “%@”"
           }
         }
       }
@@ -31143,6 +31283,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Couldn’t place it next to the originals"
+          }
+        }
+      }
+    },
+    "没能放回" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t put it back"
           }
         }
       }
@@ -36921,6 +37071,16 @@
         }
       }
     },
+    "要先允许访问「%@」才能列出里面的东西" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allow access to “%@” to list what’s in it"
+          }
+        }
+      }
+    },
     "要先勾选「翻译服务」" : {
       "localizations" : {
         "en" : {
@@ -38105,6 +38265,16 @@
         }
       }
     },
+    "读取「%@」上的内容前先确认一次" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirm once before reading “%@”"
+          }
+        }
+      }
+    },
     "读系统「日历」里的日程，打开「下一个日程」时会问一次授权。全天的、已拒绝的不算下一个日程；日程的内容只留在这台 Mac 上，不进最近的提示。月历本身不用授权。" : {
       "localizations" : {
         "en" : {
@@ -38953,6 +39123,28 @@
         }
       }
     },
+    "还有 %lld 项" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld more item"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld more items"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "还没允许" : {
       "localizations" : {
         "en" : {
@@ -39483,6 +39675,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "This plugin isn’t added yet"
+          }
+        }
+      }
+    },
+    "这个文件夹" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This folder"
           }
         }
       }

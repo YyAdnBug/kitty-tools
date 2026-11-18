@@ -289,10 +289,8 @@ struct LauncherTests {
     #expect(title("https://linux.do/latest") == "linux.do/latest")
     #expect(title("http://10.10.33.176:8089/app/") == "10.10.33.176:8089/app/")
     #expect(title("https://zh.wikipedia.org/wiki/%E8%8B%B9%E6%9E%9C") == "zh.wikipedia.org/wiki/苹果")
-    #expect(DirectItems.existingPath(from: "~") == NSHomeDirectory())
-    #expect(DirectItems.existingPath(from: "/tmp") == "/tmp")
-    #expect(DirectItems.existingPath(from: "./tmp") == nil)  // 不认相对路径
-    #expect(DirectItems.existingPath(from: "/no/such/path") == nil)
+    // 路径归路径模式（PathBrowser），直达项不再出路径
+    #expect(DirectItems.items(for: "/tmp").isEmpty && DirectItems.items(for: "~").isEmpty)
   }
 
   @Test func calculator() {
@@ -419,9 +417,10 @@ struct LauncherTests {
   @Test func tabCompletionAndAlternates() throws {
     let calculation = try #require(Calculator.item(for: "12*3+1"))
     #expect(LauncherModel.completion(for: calculation) == "37")  // 结果写回输入框接着算
+    // 没带补全的路径（收藏、常用还原出来的）补出路径本身、不 stat：是文件夹的话路径模式直接列它里面
     let directory = LauncherItem(
       kind: .path, target: "/System/Library", title: "Library", subtitle: "")
-    #expect(LauncherModel.completion(for: directory) == "/System/Library/")
+    #expect(LauncherModel.completion(for: directory) == "/System/Library")
     let file = LauncherItem(
       kind: .path, target: "/System/Library/CoreServices/SystemVersion.plist", title: "",
       subtitle: "")
@@ -542,9 +541,13 @@ struct LauncherTests {
     #expect(row.kind == .clip && row.title == "打开剪贴板历史")
     model.query = "CB "
     #expect(model.results.map(\.title) == ["打开剪贴板历史"])
-    #expect(String(localized: model.primaryAction(for: row).title) == "打开" && row.hotKeyAction == .clipboard)
+    #expect(
+      String(localized: model.primaryAction(for: row).title) == "打开"
+        && row.hotKeyAction == .clipboard)
     // 没有可复制、可补全的东西：⌘C 交给输入框，菜单里只有主动作
-    #expect(model.copyTitle(for: row).map { String(localized: $0) } == nil && LauncherModel.completion(for: row) == nil)
+    #expect(
+      model.copyTitle(for: row).map { String(localized: $0) } == nil
+        && LauncherModel.completion(for: row) == nil)
     model.toggleActions()
     #expect(model.actions.map(\.shortcut) == ["↩"])
   }
@@ -853,7 +856,8 @@ struct LauncherLanguageTests {
       """
     let chinese = ScriptLibrary.localizedCopy(text, english: false)
     #expect(!chinese.contains(".en ") && chinese.contains("# @kitty.title 防止睡眠"))
-    #expect(chinese.contains("# @kitty.keyword awake") && chinese.hasSuffix("print \"$KITTY_LANGUAGE\""))
+    #expect(
+      chinese.contains("# @kitty.keyword awake") && chinese.hasSuffix("print \"$KITTY_LANGUAGE\""))
     let english = ScriptLibrary.localizedCopy(text, english: true)
     #expect(!english.contains(".en ") && !english.contains("防止睡眠"))
     #expect(english.contains("# @kitty.title Keep Awake"))
@@ -874,7 +878,9 @@ struct LauncherLanguageTests {
       ScriptCommand.parse(String(guide[start.upperBound..<end.lowerBound]), path: "/s/w.sh")
     ).get()
     #expect(example.title == "Weather" && example.keyword == "weather")
-    for field in ["title", "keyword", "mode", "argument1", "description", "icon", "confirm", "filter"] {
+    for field in [
+      "title", "keyword", "mode", "argument1", "description", "icon", "confirm", "filter",
+    ] {
       #expect(guide.contains("@kitty.\(field)"))
     }
   }

@@ -173,7 +173,7 @@ struct LauncherBatch5Tests {
 
   /// D13（评审）：还原不出来的收藏（文件已删）不显示、不挡 ⌥⌘↑↓（只和看得见的邻居换）、不占 8 个名额；2026-10-24
   /// 全局同步起**不删**（别的 Mac 上有用，删了会同步删掉每一台的）；钉图两项不能收藏
-  @Test func missingFavoritesAreHidden() throws {
+  @Test func missingFavoritesAreHidden() async throws {
     let usage = try LauncherUsage(db: Database(path: ":memory:"))
     let apps = (1...8).map { app("App\($0)") }
     let model = LauncherModel(usage: usage, apps: apps)
@@ -190,6 +190,8 @@ struct LauncherBatch5Tests {
     model.query = ""
     #expect(model.results.prefix(3) == [apps[0], docs[0], apps[1]])
     try FileManager.default.removeItem(at: files[0])
+    // 在不在由主线程外查（2026-11-18）：查完再列
+    await model.presenceCheck()
     model.query = "a"
     model.query = ""
     #expect(model.favoriteCount == 2 && usage.favorites.count == 3)
@@ -200,6 +202,7 @@ struct LauncherBatch5Tests {
     for item in [docs[1]] + apps[2..<7] { model.toggleFavorite(item) }
     #expect(usage.favorites.count == 9)
     try FileManager.default.removeItem(at: files[1])
+    await model.presenceCheck()
     model.query = "App8"
     model.toggleFavorite(apps[7])
     #expect(usage.isFavorite(apps[7]) && usage.isFavorite(docs[0]) && usage.isFavorite(docs[1]))
@@ -329,7 +332,10 @@ struct LauncherBatch5Tests {
       ]
     }
     model.openQuickLook = { opened += 1 }
-    model.recycle = { trashed.append($0) }
+    model.recycle = {
+      trashed.append($0)
+      return nil
+    }
     model.query = "open 报告"
     let request = try #require(model.fileRequest)
     let home = NSHomeDirectory()

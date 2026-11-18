@@ -1,8 +1,8 @@
-// 启动器的直达项（纯函数，配单测）：输入像网址就「在浏览器中打开」，像存在的路径就「打开」，都排在最前。
+// 启动器的直达项（纯函数，配单测）：输入像网址就「在浏览器中打开」，排在最前。
 // 网址：带 http(s):// / mailto:，或 IPv4 / localhost（可带端口），或「域名.后缀[/路径]」：裸域名只认常见后缀白名单
 // （免得 install.sh、Package.swift 被当成网址），域名后面紧跟 / 或 :端口 时最后一段是 2–13 个字母就认
 // （docs.rs/serde、bun.sh/docs，体检 B34）；「Safari.app」这类不算（修旧版 .app 被当网址、localhost:3000 反而不认，§11 #36）。
-// 路径：/ 或 ~ 开头且真实存在；展开 ~，不认 ./ 这类相对路径（修 §11 #27）。
+// 路径（/ 或 ~/ 开头）2026-11-18 起归路径模式（PathBrowser：列出里面的东西，在主线程外读；原来每敲一个字在主线程 stat 一次）。
 
 import Foundation
 
@@ -22,13 +22,6 @@ enum DirectItems {
           subtitle: String(localized: "在浏览器中打开"), names: [],
           // Tab 保留原样（显示名去掉了协议、查询串，补回去会变成另一个网址）
           completion: query.trimmingCharacters(in: .whitespaces))
-      ]
-    }
-    if let path = existingPath(from: query) {
-      return [
-        LauncherItem(
-          kind: .path, target: path, title: (path as NSString).lastPathComponent,
-          subtitle: (path as NSString).abbreviatingWithTildeInPath, names: [])
       ]
     }
     return []
@@ -64,13 +57,6 @@ enum DirectItems {
     guard isIPv4 || isLocalhost || isDomain else { return nil }
     let scheme = isIPv4 || isLocalhost ? "http://" : "https://"
     return URL(string: scheme + text)
-  }
-
-  static func existingPath(from query: String) -> String? {
-    let text = query.trimmingCharacters(in: .whitespaces)
-    guard text.hasPrefix("/") || text.hasPrefix("~") else { return nil }
-    let path = (text as NSString).expandingTildeInPath
-    return FileManager.default.fileExists(atPath: path) ? path : nil
   }
 
   /// 记使用、「常用」里显示的标题：去掉协议，保留端口，路径不显示百分号编码
