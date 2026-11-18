@@ -43,6 +43,7 @@ struct KeepAwakeTab: View {
         }
       } header: {
         Text("现在")
+          .settingsAnchor(.keepAwakeNow)
       } footer: {
         SectionFootnote("也能在菜单栏、主界面里开，或者在启动器里输入「awake 2小时」「保持唤醒 到18点」。重启电脑、退出 Kitty Tools 后不再保持。")
       }
@@ -51,6 +52,7 @@ struct KeepAwakeTab: View {
           Text("屏幕也不熄")
           Text("关掉就只防系统睡眠，屏幕照常熄灭（后台下载、跑任务时省电）")
         }
+        .settingsAnchor(.keepAwakeDisplay)
       } header: {
         Text("屏幕")
       }
@@ -59,6 +61,7 @@ struct KeepAwakeTab: View {
           Text("按时段自动保持唤醒")
           Text("在时段里自动开始、出了时段自动停；手动开的那一段优先")
         }
+        .settingsAnchor(.keepAwakeSchedule)
         Group {
           WeekdayRow(
             days: Binding {
@@ -84,6 +87,7 @@ struct KeepAwakeTab: View {
       PluginAboutSection(plugin: .keepAwake)
     }
     .formStyle(.grouped)
+    .settingsScrollTarget()
   }
 
   private var schedule: KeepAwakePlan.Schedule { .decode(scheduleText) }

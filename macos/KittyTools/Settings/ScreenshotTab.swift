@@ -50,6 +50,7 @@ struct ScreenshotTab: View {
       Section { FeatureToggle(feature: .screenshot, inPage: true) }
       Section {
         SaveDirectoryRow(title: "快速保存到")
+          .settingsAnchor(.screenshotSaveFolder)
       } footer: {
         SectionFootnote(
           "按 ⌘S 或工具栏的「存储」存到这里，文件名是「截图 日期 时间.png」，重名自动加序号。没选过时跟随系统截屏的存储位置。录屏、录音也存这里。"
@@ -67,6 +68,7 @@ struct ScreenshotTab: View {
           .pickerStyle(.segmented)
           // 拨过这一行，「新」就算看过了（光点进这一页不算；WhatsNew）
           .onChange(of: copyAs) { WhatsNew.touch(section: "截图拷贝为", of: .screenshot) }
+          .settingsAnchor(.screenshotCopyAs)
         }
         Section {
           Toggle(isOn: $shutterSound) {
@@ -79,12 +81,15 @@ struct ScreenshotTab: View {
                 .help("试听快门声")
             }
           }
+          .settingsAnchor(.screenshotShutter)
         } footer: {
           SectionFootnote("拷贝、存储、钉图时响；还要 系统设置 › 声音 里的「播放用户界面音效」开着。截图翻译、识字不出声。")
         }
         Section {
           Toggle("截图带上鼠标指针", isOn: $cursor)
+            .settingsAnchor(.screenshotCursor)
           Toggle("截图、录屏时隐藏桌面图标", isOn: $hidesDesktopIcons)
+            .settingsAnchor(.screenshotHideDesktop)
         } footer: {
           SectionFootnote(
             "带上的是按快捷键那一刻的指针；识字、截图翻译不带。隐藏桌面图标：桌面上的文件不进截图和录屏，桌面本身照常；录屏中访达新弹出的菜单、窗口最多晚 1 秒才录进去。"
@@ -92,17 +97,20 @@ struct ScreenshotTab: View {
         }
         Section {
           Toggle("保留截图历史", isOn: $keepsHistory)
+            .settingsAnchor(.screenshotHistory)
           if keepsHistory {
             Picker("保留", selection: limited(days: true)) {
               ForEach([7, 30, 90, 0], id: \.self) { Text(Self.daysTitle($0)).tag($0) }
             }
             .id("days \(limitPickers)")  // 两个选项的 id 不能一样：同一个 id 的兄弟视图会被当成同一个
+            .settingsAnchor(.screenshotHistoryDays)
             Picker("最多占用", selection: limited(days: false)) {
               ForEach(Prefs.shotHistoryMegabyteChoices, id: \.self) {
                 Text(Self.megabytesTitle($0)).tag($0)
               }
             }
             .id("megabytes \(limitPickers)")
+            .settingsAnchor(.screenshotHistorySize)
           }
           HStack {
             Button("打开截图历史…", action: openHistory)
@@ -120,12 +128,14 @@ struct ScreenshotTab: View {
             Text("框选时显示操作提示")
             Text("刚开始框选时屏幕上方那一行：拖动框选、单击选中、双击直接拷贝这些，3 秒后自己淡出")
           }
+          .settingsAnchor(.screenshotHint)
           Picker(selection: $loupe) {
             ForEach(Prefs.Loupe.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
           } label: {
             Text("框选时的放大镜")
             Text("色值在放大镜下面，按 C 拷贝。不显示色值时 C 不取色，标注里的吸管照常能取")
           }
+          .settingsAnchor(.screenshotLoupe)
           Picker(selection: $toolbarAlign) {
             Text("靠右").tag("right")
             Text("居中").tag("center")
@@ -134,16 +144,19 @@ struct ScreenshotTab: View {
             Text("框选完工具栏贴在选区下方，放不下时在上方。靠右时从左上往右下拖完，✓ 就在鼠标旁边；录屏的录制条也这样摆")
           }
           .pickerStyle(.segmented)
+          .settingsAnchor(.screenshotToolbar)
           Toggle(isOn: $keepsColors) {
             NewTitle("框选时保持屏幕原色", page: .screenshot, fresh: navigation.fresh)
             Text("不压暗屏幕，悬停的窗口只描边、不染色，放大镜正中的像素也不染色。取色、对比颜色时打开")
           }
           // 拨过这一行，「新」就算看过了（光点进这一页不算；WhatsNew）
           .onChange(of: keepsColors) { WhatsNew.touch(section: "框选时保持屏幕原色", of: .screenshot) }
+          .settingsAnchor(.screenshotKeepsColors)
           Toggle(isOn: $findsElements) {
             Text("悬停时识别窗口里的元素")
             Text("鼠标停在侧栏、列表、按钮这些上面就框出那一块，单击截下；滚轮往上换大一块、往下换小一块，Tab 只认整扇窗口。游戏这类自己画界面的认不出来，照旧只认窗口")
           }
+          .settingsAnchor(.screenshotFindsElements)
           if findsElements, !trusted {
             PermissionRow(
               title: "辅助功能", detail: "识别窗口里的元素要它；没授权时只认窗口",
@@ -158,6 +171,7 @@ struct ScreenshotTab: View {
           .disabled(!findsElements)
           // 拨过这一行，「新」就算看过了（光点进这一页不算；WhatsNew）
           .onChange(of: findsWebElements) { WhatsNew.touch(section: "也认网页里的元素", of: .screenshot) }
+          .settingsAnchor(.screenshotWebElements)
         }
         Section {
           Picker("截完图放哪", selection: $placement) {
@@ -165,6 +179,7 @@ struct ScreenshotTab: View {
               Text(choice.title).tag(choice.rawValue)
             }
           }
+          .settingsAnchor(.screenshotPlacement)
           if placement == Prefs.ShotPlacement.clothesline.rawValue, !keepsHistory {
             Text("晾衣绳挂的就是历史里的那几条，要先打开上面的「保留截图历史」。")
               .font(.system(size: 11))
@@ -182,9 +197,11 @@ struct ScreenshotTab: View {
             Text("钉图上的字可以直接选")
             Text("鼠标停到钉图上时认出图里的字，在字上拖动就是选字，⌘C 拷贝。空白处照旧拖着挪，按住 ⌥ 在哪都能挪")
           }
+          .settingsAnchor(.screenshotPinText)
         }
         Section {
           Toggle("识字后把同一段里的换行接起来", isOn: $joinLines)
+            .settingsAnchor(.screenshotJoinLines)
           JoinLinesPreview(joins: joinLines)
         } footer: {
           SectionFootnote("同一段里的行接起来，段和段之间保留换行：中文、日文的行直接接上，其它文字之间加空格。截图翻译总是这样接。框选里有二维码或条码时复制它的内容。")
@@ -196,6 +213,7 @@ struct ScreenshotTab: View {
             Text("框选、标注、长截图和录屏的按键")
             Text("拖动框选，数字键换标注工具，↩ 拷贝")
           }
+          .settingsAnchor(.screenshotKeys)
           // 截图时的快捷键在快捷键页改（2026-11-06 拍板 A3）
           LabeledContent {
             Button("截图里的快捷键…") { navigation.page = .hotkeys }
@@ -206,11 +224,13 @@ struct ScreenshotTab: View {
             Text("改按键")
             Text("标注工具、钉图、长截图、识字、出图这些键能自己改")
           }
+          .settingsAnchor(.screenshotEditKeys)
         }
       }
       .gated(by: .screenshot)
     }
     .formStyle(.grouped)
+    .settingsScrollTarget()
     // 从系统设置授权回来（只认设置窗自己，同通用页）
     .onSettingsBecameKey { trusted = Permissions.isAccessibilityTrusted }
     .confirmationDialog("清空截图历史？", isPresented: $confirmClear) {

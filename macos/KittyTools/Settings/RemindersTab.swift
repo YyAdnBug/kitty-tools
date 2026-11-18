@@ -71,6 +71,7 @@ struct RemindersTab: View {
           }
         } header: {
           Text("提醒")
+            .settingsAnchor(.remindersList)
         } footer: {
           SectionFootnote(
             isFull
@@ -91,6 +92,7 @@ struct RemindersTab: View {
             Text("「稍后」推多久")
             Text("提醒到点后点「稍后」，过这么久再提醒一次")
           }
+          .settingsAnchor(.remindersSnooze)
         } header: {
           Text("到点之后")
         } footer: {
@@ -105,6 +107,7 @@ struct RemindersTab: View {
       PluginAboutSection(plugin: .reminders)
     }
     .formStyle(.grouped)
+    .settingsScrollTarget()
   }
 
   /// 单击一行推进详情页，↑↓ 选中（给「−」和 ⌫ 用）、↩ 推进，拖动排序（同状态屏的状态列表）
@@ -270,6 +273,7 @@ private struct FocusSection: View {
         Text("专注模式开着时，到点的提醒")
         Text(Self.status(style, mode: mode?.displayName))
       }
+      .settingsAnchor(.remindersFocus)
       // 读不到系统日志：只剩滤镜（不是管理员账户、系统改了日志的写法）
       if !fixed, SystemFocus.shared.isRunning, !SystemFocus.shared.isReadable {
         Text("读不到系统的专注模式：只认加了「提醒」滤镜的模式").foregroundStyle(.orange)

@@ -59,6 +59,7 @@ struct HotKeyBlockSection: View {
       }
     } header: {
       NewTitle("在这些 App 里停用", page: .hotkeys, fresh: navigation?.fresh ?? [])
+        .settingsAnchor(.hotkeysBlocked)
     } footer: {
       SectionFootnote("名单里的 App 在前台时，上面的快捷键不响应，按键交给那个 App。也可以在那个 App 里右键点菜单栏图标，从菜单里停用。")
     }

@@ -33,11 +33,13 @@ struct BluetoothSnoozeTab: View {
           Text(lidOnly ? "开着盖子睡着时不关，蓝牙键盘鼠标照样能叫醒电脑" : "每次睡眠都关：开着盖子时只能用电脑自己的键盘、触控板叫醒它")
         }
         .gated(by: .bluetoothSnooze)
+        .settingsAnchor(.bluetoothLidOnly)
         Toggle(isOn: $reopen) {
           Text("醒来时重新打开蓝牙")
           Text("只打开睡前由 Kitty Tools 关掉的；本来就关着的不会被打开")
         }
         .gated(by: .bluetoothSnooze)
+        .settingsAnchor(.bluetoothReopen)
         LabeledContent(
           "上次", value: Self.history(held: held, reopen: reopen, offAt: offAt, onAt: onAt))
       } header: {
@@ -52,6 +54,7 @@ struct BluetoothSnoozeTab: View {
       PluginAboutSection(plugin: .bluetoothSnooze)
     }
     .formStyle(.grouped)
+    .settingsScrollTarget()
   }
 
   /// 「权限」组（蓝牙）；没给时画在最上面（插件页改版 C2）。「去授权」：没问过弹系统框，问过了开系统设置

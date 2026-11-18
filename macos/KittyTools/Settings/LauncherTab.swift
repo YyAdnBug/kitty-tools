@@ -73,6 +73,7 @@ struct LauncherTab: View {
             Text("呼出时切到英文输入法")
             Text("只在搜索框里生效，离开后恢复；要搜中文时先关掉")
           }
+          .settingsAnchor(.launcherRomanInput)
           Picker(selection: $panelPosition) {
             Text("屏幕上方").tag("top")
             Text("跟随鼠标").tag("mouse")
@@ -82,9 +83,12 @@ struct LauncherTab: View {
             Text("屏幕上方是鼠标所在屏幕的上方正中，跟随鼠标是光标旁边，上次位置是上次拖到的地方")
           }
           .pickerStyle(.segmented)
+          .settingsAnchor(.launcherPanelPosition)
           PanelSizeRow(
             detail: "拖左右两边改宽度，拖下边改最多显示几行", widthKey: Prefs.launcherPanelWidth,
-            heightKey: Prefs.launcherPanelRows, defaultWidth: Style.listPanelWidth)
+            heightKey: Prefs.launcherPanelRows, defaultWidth: Style.listPanelWidth
+          )
+          .settingsAnchor(.launcherPanelSize)
           LabeledContent {
             ShortcutsButton()
           } label: {
@@ -92,6 +96,7 @@ struct LauncherTab: View {
             Text(
               "搜 App、系统设置、文件、书签、网址、路径、算式（也能换算单位和进制）和系统命令（lock、quit、kill 这些），↩ 打开，⌘K 看这一项的全部操作")
           }
+          .settingsAnchor(.launcherKeys)
         }
         Section {
           SettingsPushRow(
@@ -102,6 +107,7 @@ struct LauncherTab: View {
           ) {
             navigation.path = [AppAliasesPage.route]
           }
+          .settingsAnchor(.launcherAppAliases)
         }
         Section {
           PermissionRow(
@@ -114,6 +120,7 @@ struct LauncherTab: View {
               Permissions.Kind.filesAndFolders.openSettings()
             }
           }
+          .settingsAnchor(.launcherFileSearch)
         } header: {
           Text("文件搜索")
         } footer: {
@@ -124,6 +131,7 @@ struct LauncherTab: View {
           ForEach(browsers, id: \.browser.id) { browserRows($0.browser, app: $0.app) }
         } header: {
           Text("浏览器书签与历史")
+            .settingsAnchor(.launcherBrowsers)
         } footer: {
           SectionFootnote("只列本机装了的浏览器。")
         }
@@ -134,6 +142,7 @@ struct LauncherTab: View {
           ) {
             navigation.path = [WebSearchPage.route]
           }
+          .settingsAnchor(.launcherWebSearch)
         } header: {
           Text("网页搜索")
         } footer: {
@@ -149,6 +158,7 @@ struct LauncherTab: View {
           Text("搜索快捷指令")
           Text("在启动器里打快捷指令的名字就能运行（不带输入）；改了快捷指令，下次打开启动器时跟上")
         }
+        .settingsAnchor(.launcherShortcuts)
       }
       .gated(by: .launcher)
       Section {
@@ -160,7 +170,9 @@ struct LauncherTab: View {
         .gated(by: .launcher)
         // 拨过这一行，「新」就算看过了（光点进这一页不算；WhatsNew）
         .onChange(of: showsFrequent) { WhatsNew.touch(section: "空搜索框里列出常用", of: .launcher) }
+        .settingsAnchor(.launcherFrequent)
         DangerButton("清空使用记录…") { confirmsClear = true }
+          .settingsAnchor(.launcherClearUsage)
       } header: {
         Text("使用记录")
       } footer: {
@@ -169,6 +181,7 @@ struct LauncherTab: View {
       }
     }
     .formStyle(.grouped)
+    .settingsScrollTarget()
   }
 
   private func recheck() {

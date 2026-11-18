@@ -74,11 +74,13 @@ struct IslandTab: View {
           Text("在刘海上显示正在播放")
           Text("音乐、播客、浏览器里的视频：刘海两边是封面和跳动条，点开能暂停、切歌、拖进度")
         }
+        .settingsAnchor(.islandNowPlaying)
         Group {
           Toggle(isOn: $trackPeek) {
             Text("换歌时显示歌名")
             Text("从刘海垂下一小条歌名和艺人，约 2 秒收回")
           }
+          .settingsAnchor(.islandTrackPeek)
           Picker(selection: $mediaColor) {
             Text("封面的颜色").tag(Island.MediaColor.artwork.rawValue)
             Text("强调色").tag(Island.MediaColor.accent.rawValue)
@@ -87,14 +89,17 @@ struct IslandTab: View {
             Text("跳动条和进度条的颜色")
             Text("封面的颜色：跟着每首歌的封面变")
           }
+          .settingsAnchor(.islandMediaColor)
           Toggle(isOn: $musicFavorite) {
             Text("播放卡片上显示收藏按钮")
             Text("放「音乐」时卡片右上角一颗心，点了收藏这首；第一次点会问能不能控制「音乐」")
           }
+          .settingsAnchor(.islandMusicFavorite)
           Toggle(isOn: $hidesWhenActive) {
             Text("正在用放歌的 App 时不显示")
             Text("切到正在放歌的 App（比如音乐、浏览器里放视频的那个）时，刘海两边收起；切走再出来")
           }
+          .settingsAnchor(.islandHidesWhenActive)
         }
         .disabled(!nowPlaying)
       } header: {
@@ -125,6 +130,7 @@ struct IslandTab: View {
           Text("在刘海上显示下一个日程")
           Text("开始前 10 分钟挂在刘海两边倒数，点开能加入会议、打开日历")
         }
+        .settingsAnchor(.islandNextEvent)
         // 开关关着、也没被拒绝过时不去查授权（截图自检画这一页不碰 EventKit）
         if calendarDenied || (nextEvent && !NextEvent.isAuthorized) {
           LabeledContent {
@@ -146,28 +152,34 @@ struct IslandTab: View {
           Text("刘海上倒数的那个日程开始的那一刻")
         }
         .disabled(!nextEvent)
+        .settingsAnchor(.islandEventChime)
         Toggle(isOn: $hourlyChime) {
           Text("整点报时")
           Text("每到整点响一声轻的；开着专注模式、录屏或录音时不响")
         }
+        .settingsAnchor(.islandHourlyChime)
         Toggle(isOn: $monthCalendar) {
           Text("点刘海打开时显示月历")
           Text("快捷动作下面一块这个月的日历，点它打开「日历」；已经允许读取「日历」时，旁边还列今天的日程")
         }
+        .settingsAnchor(.islandCalendar)
         Toggle(isOn: $calendarDots) {
           Text("月历上标出有日程的日子")
           Text("那几天的数字下面一个小点")
         }
         .disabled(!monthCalendar)
+        .settingsAnchor(.islandCalendarDots)
         Group {
           Toggle(isOn: $calendarColors) {
             Text("用日历的颜色")
             Text("刘海上的日程图标、月历旁今天的日程，用它所在日历的颜色")
           }
+          .settingsAnchor(.islandCalendarColors)
           Toggle(isOn: $showDeclined) {
             Text("显示已拒绝的日程")
             Text("拒绝了的、取消了的日程也倒数、也列出来")
           }
+          .settingsAnchor(.islandShowDeclined)
         }
         .disabled(!nextEvent && !monthCalendar)
         if !eventCalendars.isEmpty, nextEvent || monthCalendar {
@@ -194,14 +206,18 @@ struct IslandTab: View {
           Text("按音量键、亮度键时显示在刘海上")
           Text("系统自己的音量、亮度提示不再出现；按着 ⌥ 时照旧打开系统设置")
         }
+        .settingsAnchor(.islandKeyLevels)
         Group {
           Picker("停多久", selection: $levelStay) {
             Text("1 秒").tag(1.0)
             Text("2 秒").tag(2.2)
             Text("3.5 秒").tag(3.5)
           }
+          .settingsAnchor(.islandLevelStay)
           Toggle("细条用强调色", isOn: $levelAccent)
+            .settingsAnchor(.islandLevelAccent)
           Toggle("细条旁边显示百分比", isOn: $levelPercent)
+            .settingsAnchor(.islandLevelPercent)
         }
         .disabled(!keyLevels)
         // 开关关着时不去查授权
@@ -230,6 +246,7 @@ struct IslandTab: View {
           Text("在刘海上显示专注模式")
           Text("打开、关掉、换模式时，刘海两边出 2 秒：模式的图标和名字")
         }
+        .settingsAnchor(.islandFocus)
         // 读不到系统日志（不是管理员账户、系统改了日志的写法）
         if focus, SystemFocus.shared.isRunning, !SystemFocus.shared.isReadable {
           Text("读不到系统的专注模式，刘海上显示不了").foregroundStyle(.orange)
@@ -239,18 +256,22 @@ struct IslandTab: View {
             Text("开着时一直挂在刘海上")
             Text("专注模式开着的这段时间，刘海左边一直有它的图标；放歌、倒数时先让给它们。点开能去专注模式设置")
           }
+          .settingsAnchor(.islandFocusPinned)
           Toggle(isOn: $focusSleepSound) {
             Text("睡眠模式打开时响一声")
             Text("一声轻的提示音；录屏、录音时不响")
           }
+          .settingsAnchor(.islandFocusSleepSound)
           Toggle(isOn: $focusWaveform) {
             Text("跳动条换成专注模式的图标")
             Text("专注模式开着、正在放歌时，刘海右边画模式的图标")
           }
+          .settingsAnchor(.islandFocusWaveform)
           Toggle(isOn: $focusQuiet) {
             Text("专注模式时不弹系统提示")
             Text("接上或拔掉电源、电量低到 20%、耳机连上、断网这几样不弹；10% 和音量、亮度照常")
           }
+          .settingsAnchor(.islandFocusQuiet)
         }
         .disabled(!focus)
       } header: {
@@ -278,6 +299,7 @@ struct IslandTab: View {
         .orderedListFrame(rows: actions.count)
       } header: {
         Text("快捷动作")
+          .settingsAnchor(.islandActions)
       } footer: {
         SectionFootnote(
           "点刘海、两指往下滑或者按「打开刘海岛」的快捷键（到 设置 › 快捷键 里设）叫出来的就是这一排。刘海两边挂着东西（在放歌、在录制）时，点刘海先展开它，再往下滑一次才是这一排。拖动调整先后。"
@@ -288,20 +310,24 @@ struct IslandTab: View {
           Text("列出最近的提示")
           Text("列在快捷动作下面：本次启动以来最近 10 条，新的在前；不列也不影响提示照常弹出")
         }
+        .settingsAnchor(.islandShowsHistory)
         Toggle(isOn: $notchClicks) {
           Text("点刘海打开")
           Text("停在刘海上会鼓起一点，点一下或者两指往下滑打开：刘海两边挂着东西时是它的卡片，没有时是快捷动作")
         }
+        .settingsAnchor(.islandNotchClicks)
         Toggle(isOn: $hoverExpands) {
           Text("停在刘海上自动展开")
           Text("关着时停上去只鼓起一点、点一下才展开；打开后刘海两边挂着东西时，指针停一下就展开成卡片")
         }
+        .settingsAnchor(.islandHoverExpands)
         Picker("停多久展开", selection: $hoverDelay) {
           Text("0.3 秒").tag(0.3)
           Text("0.6 秒").tag(0.6)
           Text("1 秒").tag(1.0)
         }
         .disabled(!hoverExpands)
+        .settingsAnchor(.islandHoverDelay)
         Picker(selection: $noticeLength) {
           Text("短").tag(Island.DwellLength.short.rawValue)
           Text("标准").tag(Island.DwellLength.standard.rawValue)
@@ -310,26 +336,32 @@ struct IslandTab: View {
           Text("提示停多久")
           Text("「已复制」这类提示在刘海上停多久；带按钮的、出错的跟着变长变短，进行中的不算")
         }
+        .settingsAnchor(.islandNoticeLength)
         Toggle(isOn: $haptics) {
           Text("触感反馈")
           Text("滑动切歌、展开卡片、进度条拖到头时，触控板轻轻一下")
         }
+        .settingsAnchor(.islandHaptics)
         Toggle(isOn: $blur) {
           Text("展开时模糊四周")
           Text("卡片背后的东西越靠近卡片越模糊；系统设置里开着「降低透明度」时不模糊")
         }
+        .settingsAnchor(.islandBlur)
         Toggle(isOn: $outlined) {
           Text("描一圈细边")
           Text("刘海两边伸出来、展开时，形体外面一圈淡淡的边，深色桌面上也看得清轮廓")
         }
+        .settingsAnchor(.islandOutlined)
         Toggle(isOn: $hidesInFullScreen) {
           Text("全屏时藏起来")
           Text("刘海那块屏上的 App 全屏时（看视频、玩游戏），刘海岛和它的提示都不出现")
         }
+        .settingsAnchor(.islandHidesInFullScreen)
         Toggle(isOn: $hidesFromCapture) {
           Text("截图、录屏时不显示刘海岛")
           Text("截下来、录下来的画面里没有刘海岛和它上面的提示")
         }
+        .settingsAnchor(.islandHidesFromCapture)
       } footer: {
         SectionFootnote("装了别的刘海 App 时可以关掉「点刘海打开」：提示和挂在刘海两边的录制计时这些照常，快捷键照样能叫出快捷动作。")
       }
@@ -338,22 +370,27 @@ struct IslandTab: View {
           Text("接上、拔掉电源")
           Text("刘海两边出几秒：一句话和现在的电量")
         }
+        .settingsAnchor(.islandNoticePower)
         Toggle(isOn: $noticeBattery) {
           Text("电量低")
           Text("没接电源时，降到 20% 和 10% 各说一次")
         }
+        .settingsAnchor(.islandNoticeBattery)
         Toggle(isOn: $noticeHeadphones) {
           Text("耳机连上")
           Text("蓝牙耳机、AirPods、USB 耳机：刘海两边出一下，蓝牙耳机带电量")
         }
+        .settingsAnchor(.islandNoticeHeadphones)
         Toggle(isOn: $noticeNetwork) {
           Text("断网、网络恢复")
           Text("断了或者好了 3 秒以上才说，醒来时闪一下不算")
         }
+        .settingsAnchor(.islandNoticeNetwork)
         Toggle(isOn: $noticeLowPower) {
           Text("低电量模式打开、关掉")
           Text("刘海两边出几秒：「低电量模式」和开 / 关")
         }
+        .settingsAnchor(.islandNoticeLowPower)
       } header: {
         Text("系统提示")
       } footer: {
@@ -362,6 +399,7 @@ struct IslandTab: View {
       PluginAboutSection(plugin: .island)
     }
     .formStyle(.grouped)
+    .settingsScrollTarget()
     .task(id: "\(accessChecks)|\(nextEvent)|\(monthCalendar)") {
       eventCalendars = NextEvent.eventCalendars()
     }
