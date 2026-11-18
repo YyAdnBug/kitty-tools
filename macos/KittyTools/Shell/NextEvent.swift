@@ -1,6 +1,7 @@
 // 刘海岛上的「下一个日程」（2026-11-14，以 Alcove 为准的那一轮 D3，用户「全部按推荐」；归刘海岛插件里一组、默认关）。
 // 读系统「日历」（EventKit）：下一个日程开始前 10 分钟挂到刘海两边倒数（没刘海时是菜单栏那一项），点开是标题、
-// 时间和地点、「加入会议」（日程里有认得的会议链接时）和「打开日历」；开始那一刻收掉。全天的、已拒绝的、取消的不算。
+// 时间和地点、「加入会议」（日程里有认得的会议链接时）和「打开日历」（点卡片本身也是它；加入会议只能点按钮，第五轮体检 E4）；
+// 开始那一刻收掉。全天的、已拒绝的、取消的不算。
 // - 授权：要「日历」的完整访问（读日程）。**只在设置里打开那个开关的那一刻问一次**（requestAccess，设置页调）；这里从不
 //   弹框——开关开着却没授权（后来在系统设置里关掉了）就什么都不做，设置页橙字说一声；本 App 回到前台、问完授权时
 //   重查一次（从系统设置里打开授权回来就跟上）。开关这个偏好跟着这台 Mac 的授权：不注册默认值，不导出、不同步。
@@ -208,6 +209,8 @@ import EventKit
       island?.setActivity(
         Self.activity(
           next, join: { NSWorkspace.shared.open($0) },
+          // ponytail: 只打开「日历」，不跳到这个日程——能跳的只有「日历」没公开的 ical://ekevent/<编号> 网址，没验过；
+          // 日程十分钟内开始，「日历」新开时停在今天
           openCalendar: {
             NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Calendar.app"))
           }, colored: defaults.bool(forKey: Prefs.islandCalendarColors)))
@@ -368,6 +371,8 @@ import EventKit
   }
 
   /// 挂在岛上的样子：类别是日程（比保持唤醒、提醒的倒数要紧，让给录制和长任务），左耳日历、右耳倒数到开始；卡片上「加入会议」（有链接时）和「打开日历」。
+  /// **点卡片本身是「打开日历」**（第五轮体检 E4）：「加入会议」只能点按钮——它会拉起会议 App、可能直接开麦开摄像头，
+  /// 停在刘海上自动展开时卡片冒到指针下面，那一下点击也会落到卡片上。
   /// 标题最多 200 个字，空的写「日程」
   /// colored：耳朵、卡片上的日历符号用它所在日历的颜色（设置 › 刘海岛「用日历的颜色」）
   static func activity(
@@ -376,9 +381,9 @@ import EventKit
   ) -> Island.Activity {
     var actions: [Island.Action] = []
     if let link = meetingURL(entry) {
-      actions.append(Island.Action("加入会议", opens: true) { join(link) })
+      actions.append(Island.Action("加入会议") { join(link) })
     }
-    actions.append(Island.Action("打开日历", opens: actions.isEmpty, run: openCalendar))
+    actions.append(Island.Action("打开日历", opens: true, run: openCalendar))
     let title = entry.title.trimmingCharacters(in: .whitespacesAndNewlines)
     return Island.Activity(
       id: activityID, kind: .event,

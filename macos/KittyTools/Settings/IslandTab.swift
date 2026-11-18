@@ -9,6 +9,10 @@
 import SwiftUI
 
 struct IslandTab: View {
+  /// 音量、亮度键的那个拦截（AppDelegate 给）：建不起来时「音量和亮度」下面一行橙字（第五轮体检 U6）
+  private let mediaKeys: MediaKeys?
+  /// 截图自检摆一种状态（不建真的拦截）；nil = 看 mediaKeys
+  private let keyStatus: MediaKeys.Status?
   @AppStorage(Prefs.islandActionOrder) private var order = ""
   @AppStorage(Prefs.islandActionsOff) private var offText = ""
   @AppStorage(Prefs.islandShowsHistory) private var showsHistory = false
@@ -56,6 +60,11 @@ struct IslandTab: View {
   /// 这一次打开开关时系统没给授权（偏好没打开，橙字留着告诉怎么开）
   @State private var calendarDenied = false
   @Environment(SettingsNavigation.self) private var navigation: SettingsNavigation?
+
+  init(mediaKeys: MediaKeys? = nil, keyStatus: MediaKeys.Status? = nil) {
+    self.mediaKeys = mediaKeys
+    self.keyStatus = keyStatus
+  }
 
   var body: some View {
     let actions = HotKeyAction.islandOrder(order)
@@ -205,6 +214,10 @@ struct IslandTab: View {
             Text("没有「辅助功能」授权，接不住这几个键").foregroundStyle(.orange)
           }
           .id(accessChecks)
+        }
+        // 授权有却接不住（核对字段没过、拦截建不起来）：开关亮着、按键照旧是系统的提示，说清楚（U6，照平滑滚动）
+        if keyLevels, let warning = Self.keyWarning(keyStatus ?? mediaKeys?.status) {
+          Text(verbatim: warning).foregroundStyle(.orange)
         }
       } header: {
         Text("音量和亮度")
@@ -363,6 +376,19 @@ struct IslandTab: View {
     }
     // 0.9.0 的「新」挂在「正在播放」（WhatsNew 的 island-now-playing）：拨过那个开关才算看过
     .onChange(of: nowPlaying) { WhatsNew.touch(section: "正在播放", of: .island) }
+  }
+
+  /// 「音量和亮度」那一节的橙字（纯函数，配单测）：授权有、拦截却接不住时说为什么、怎么办；别的状态（关着、没授权——
+  /// 上面另有一行带按钮的、正常）没有
+  static func keyWarning(_ status: MediaKeys.Status?) -> String? {
+    switch status {
+    case .unreadable:
+      String(localized: "这一版系统上认不出这几个键，照旧是系统自己的音量、亮度提示。")
+    case .failed:
+      String(
+        localized: "授权显示给了，却接不住这几个键：到 系统设置 › \(Permissions.privacyPane) › 辅助功能 里把它关掉再打开。")
+    default: nil
+    }
   }
 
   /// 「选择日历」里一行的开关：开着 = 不在关掉的名单里

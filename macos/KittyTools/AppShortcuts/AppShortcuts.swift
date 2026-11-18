@@ -8,6 +8,8 @@
 //   或停了「显示 App 快捷键」的不弹；
 //   别家不激活的面板拿着键盘时不弹（MenuShortcuts 先问键盘在谁身上）。
 // - 什么时候读：单独按住 0.3 秒起在主线程外读（MenuShortcuts.read，整次 1 秒封顶），到点时一般已经读完；每次现读、不缓存（拍板 F1）。
+//   按住的那一刻起另挂一个全局监听（按键、点按、滚轮、指针挪远，watchBreaks）：一有动静就作废这一次、取消在读的菜单
+//   （第五轮体检 P1：按着 ⌘ 按 ⌘C、挪鼠标时前台 App 不用再白答一遍整个菜单）。
 // - 面板（TransientPanel 里的 OverlayPanel，用时建、收起两秒后放掉）出来时不拿键盘：按着 ⌘ 再按别的键 = 那个快捷键照常给
 //   App，面板收起；松开 ⌘、切了 App / 桌面、点了外面也收。
 // - 点一行 = 执行它（先收起面板，再对那个菜单项 AXPress，MenuShortcuts.press；拍板 D3）。点一下面板别处（多半是搜索框）=
@@ -73,6 +75,8 @@ final class AppShortcuts {
   private var pending: Task<Void, Never>?
   private var reading: Task<MenuReading, Never>?
   private var flagsMonitors: [Any] = []
+  /// 按住期间看着按键、点按、滚轮、指针挪远（P1）：有动静就作废、取消读菜单；松开、作废、弹出来时摘掉
+  private var breakMonitor: Any?
   /// 面板开着、不拿键盘时看着按键：按了就收（这一下照常到前台 App）
   private var keyMonitor: Any?
   /// 面板开着时看着点在它上面的鼠标：按着 ⌘ 点的，系统不一定让它当 key，这里自己 makeKey（→ 留住）
@@ -177,6 +181,36 @@ final class AppShortcuts {
     pending = nil
     reading?.cancel()
     reading = nil
+    unwatchBreaks()
+  }
+
+  /// 按住的那一刻起看着：按了键、鼠标键、滚轮，或者指针挪出 maxDrift，就当场作废这一次——读菜单的任务一起取消（它在对方
+  /// App 的主线程上应答，别白读）。原来只在 0.3 秒、到点、读完这几个时刻查一次 quiet，中间按的 ⌘C、挪的鼠标都要等松开才停。
+  /// 只看、不吞（全局监听，要辅助功能授权——没有的话本来也弹不了）
+  private func watchBreaks(from mouse: NSPoint) {
+    unwatchBreaks()
+    breakMonitor = NSEvent.addGlobalMonitorForEvents(
+      matching: [
+        .keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel, .mouseMoved,
+      ]
+    ) { [weak self] event in
+      MainActor.assumeIsolated {
+        if event.type == .mouseMoved, !Self.drifted(from: mouse, to: NSEvent.mouseLocation) {
+          return
+        }
+        self?.cancelPending()
+      }
+    }
+  }
+
+  private func unwatchBreaks() {
+    if let breakMonitor { NSEvent.removeMonitor(breakMonitor) }
+    breakMonitor = nil
+  }
+
+  /// 指针挪出这么远算动了（纯函数）
+  static func drifted(from start: NSPoint, to now: NSPoint) -> Bool {
+    hypot(now.x - start.x, now.y - start.y) > maxDrift
   }
 
   /// 开始单独按住那个键：0.3 秒起读菜单，到点再确认一遍、弹出来
@@ -190,6 +224,7 @@ final class AppShortcuts {
     let delay = Self.delay(defaults.object(forKey: Prefs.appShortcutsDelay))
     let hold = Hold(
       since: since, key: key, app: app, spaces: spaceChanges, mouse: NSEvent.mouseLocation)
+    watchBreaks(from: hold.mouse)
     pending = Task { [weak self] in
       try? await Task.sleep(for: Self.readAfter)
       guard let self else { return }
@@ -206,6 +241,7 @@ final class AppShortcuts {
         return cancelPending()
       }
       self.reading = nil
+      unwatchBreaks()
       show(result, app: app)
     }
   }
@@ -229,7 +265,7 @@ final class AppShortcuts {
       && HotKeyCenter.quiet(
         since: hold.since, now: ProcessInfo.processInfo.systemUptime, types: Self.breaking)
       && NSEvent.pressedMouseButtons == 0
-      && hypot(mouse.x - hold.mouse.x, mouse.y - hold.mouse.y) <= Self.maxDrift
+      && !Self.drifted(from: hold.mouse, to: mouse)
       && NSWorkspace.shared.frontmostApplication?.processIdentifier == hold.app.processIdentifier
       && spaceChanges == hold.spaces && NSApp.keyWindow == nil
       && HotKeyBlock.rule(for: hold.app.bundleIdentifier, in: HotKeyBlock.stored)?.blocks(
@@ -315,7 +351,7 @@ final class AppShortcuts {
     let candidates = AppShortcutsModel.candidates(
       keyCode: event.keyCode, flags: event.modifierFlags,
       characters: event.charactersIgnoringModifiers)
-    if let item = candidates.lazy.compactMap(model.item(forKeys:)).first {
+    if let item = candidates.firstNonNil(model.item(forKeys:)) {
       perform(item)
     } else {
       panel.panel?.dismiss()

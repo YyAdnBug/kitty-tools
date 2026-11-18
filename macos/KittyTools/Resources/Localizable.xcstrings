@@ -817,6 +817,22 @@
         }
       }
     },
+    "%@，回车「%@」，Esc 关闭" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@. Press Return for “%2$@”, Esc to close."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@，回车「%2$@」，Esc 关闭"
+          }
+        }
+      }
+    },
     "%@，左右键选快捷动作，回车执行，Esc 关闭；现在是「%@」" : {
       "localizations" : {
         "en" : {
@@ -829,6 +845,22 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "%1$@，左右键选快捷动作，回车执行，Esc 关闭；现在是「%2$@」"
+          }
+        }
+      }
+    },
+    "%@，左右键选按钮，回车执行，Esc 关闭；现在是「%@」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@. Use the Left and Right Arrow keys to choose a button, Return to press it, Esc to close. Selected: “%2$@”"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@，左右键选按钮，回车执行，Esc 关闭；现在是「%2$@」"
           }
         }
       }
@@ -23874,6 +23906,16 @@
         }
       }
     },
+    "授权显示给了，却接不住这几个键：到 系统设置 › %@ › 辅助功能 里把它关掉再打开。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Access shows as granted, but these keys can’t be caught: turn Kitty Tools off and on again in System Settings › %@ › Accessibility."
+          }
+        }
+      }
+    },
     "授权辅助功能后再试" : {
       "localizations" : {
         "en" : {
@@ -39561,6 +39603,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "This one isn’t finished yet"
+          }
+        }
+      }
+    },
+    "这一版系统上认不出这几个键，照旧是系统自己的音量、亮度提示。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "These keys can’t be recognized on this version of macOS, so the system’s own volume and brightness indicators still appear."
           }
         }
       }

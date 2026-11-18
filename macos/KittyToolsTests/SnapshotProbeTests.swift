@@ -673,6 +673,18 @@ struct SnapshotProbeTests {
         IslandTab().defaultAppStorage(islandPrefs), size: NSSize(width: 640, height: 2200),
         dark: dark, to: "\(out)/settings-island-custom\(dark ? "-dark" : "").png")
     }
+    // 「音量和亮度」打开了、拦截却接不住（第五轮体检 U6）：建不起来、这一版系统认不出那两个字段，各一行橙字。
+    // 状态是摆的（keyStatus），不建真的拦截；「没有辅助功能授权」那一行跟着本机测试宿主的真实授权
+    islandPrefs.set(true, forKey: Prefs.islandKeyLevels)
+    for (name, status, dark) in [
+      ("failed", MediaKeys.Status.failed, false), ("failed-dark", .failed, true),
+      ("unreadable", .unreadable, false),
+    ] {
+      try snapshot(
+        IslandTab(keyStatus: status).defaultAppStorage(islandPrefs),
+        size: NSSize(width: 640, height: 2200), dark: dark,
+        to: "\(out)/settings-island-keys-\(name).png")
+    }
     // 设置 › 通用「菜单栏」（第 9 批 M1 M2）：显示 + 彩色、隐藏（图标样式置灰），各出深色；临时偏好域，不动用户的菜单栏图标
     let barSuite = "kitty-snapshot-\(UUID().uuidString)"
     let barPrefs = try #require(UserDefaults(suiteName: barSuite))
@@ -1039,6 +1051,23 @@ struct SnapshotProbeTests {
         showing: content, geometry: geometry,
         actions: titles.map { Island.Action(Self.key($0)) {} },
         expanded: expanded)
+      try snapshot(
+        IslandView(island: island), size: geometry.windowSize, dark: false, to: "\(out)/\(name).png"
+      )
+    }
+    // 按「打开刘海岛」时键盘交给提示上的按钮（第五轮体检 A2）：展开成卡片，选中的按钮外面一圈强调色。主按钮（打开）在最右、
+    // 按 ← 选到它左边的「在访达中显示」；只有一个按钮的「撤销」选中主按钮；没有刘海的屏上同样
+    // （第几条 interactive：0 是「已删除 3 条 · 撤销」，2 是「已保存 · 在访达中显示 / 打开」）
+    let keyboard: [(String, Int, Int, Island.Geometry)] = [
+      ("island-keyboard-buttons", 2, 1, notch), ("island-keyboard-primary", 0, 0, notch),
+      ("island-keyboard-capsule", 2, 1, .capsule(menuBar: 24)),
+    ]
+    for (name, row, selection, geometry) in keyboard {
+      let (_, content, _, titles, _) = interactive[row]
+      let island = Island(
+        showing: content, geometry: geometry,
+        actions: titles.map { Island.Action(Self.key($0)) {} }, expanded: true,
+        buttonSelection: selection)
       try snapshot(
         IslandView(island: island), size: geometry.windowSize, dark: false, to: "\(out)/\(name).png"
       )

@@ -973,6 +973,28 @@ CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO
       `CAFilter variableBlur`，**做了**（本批）；专注模式 = 私有名字的分布式通知（只知道开 / 关；名字和图标要「完全磁盘
       访问」或者读系统日志流，公开的 `INFocusStatusCenter` 要受限的权利），**只做开 / 关，等探针**；锁屏上显示 = 窗口
       服务器的私有 Space（绝对层级 400），**不做**。
+- **第五轮体检（2026-11-18，拍板页 https://claude.ai/artifact/5S1NM4U7MNwxcHKGmVPW6d「全部按推荐」，第 3 批：刘海岛、状态屏、插件）**：
+  - **E4 日程卡片**：「加入会议」不再是打开类（点岛本身不执行它，只能点按钮：会拉起会议 App、可能开麦开摄像头，停在刘海上
+    自动展开时卡片冒到指针下面那一下也会落上去）；点卡片本身是「打开日历」。只打开「日历」、不跳到那个日程（能跳的只有没公开的
+    `ical://ekevent/` 网址，没验过；ponytail）。
+  - **E11 状态屏里醒来**：`MediaKeys` 醒来 / 回到前台的重建在状态屏开着时不做（新建的拦截是头插、会排到状态屏那一处前面，
+    音量键、亮度键穿过去），记下欠一次，`StatusScreen.onExit` 时 `resume()` 补；偏好变了要新建时同样等。
+  - **E12 换屏**：屏幕参数一变，耳朵露着、没展开时按现在的刘海屏重摆一次（`place`：位置、刘海宽高都跟上）；展开着的不动，
+    ponytail：展开期间换的屏，收起缩回耳朵时不补摆。
+  - **U6 接不住时说一声**：`MediaKeys` 变成 `@Observable`、有 `status`（关 / 没授权 / 字段核对没过 / 建不起来 / 在跑，
+    纯函数 `MediaKeys.status`）；线程自己退了经回调记成 failed（同 `SmoothScroll`）。设置 › 刘海岛「音量和亮度」在后两种
+    时一行橙字（`IslandTab.keyWarning`）。
+  - **U13 到头再按的回弹**：`Level.pushed`（按住连发只有第一下）→ `Island.levelBumps` +1 → 细条整条往那一头顶出 6 pt、
+    snap 弹回（`IslandLevelBar`，keyframe + 渲染变换，减弱动态效果时不动）。
+  - **U14 调音量的提示音**：跟系统「调节音量时播放反馈」（`com.apple.sound.beep.feedback`，没存过 = 关——10.12 起的默认；
+    开发机 27.0.1 上读不到这个键），开着就在调完音量后回主线程放 BezelServices 的 `volume.aiff`；连按 / 按住时停下 0.15 秒
+    才放、先停上一声；静音、亮度不放；设置页不加开关。
+  - **A2 键盘够得着岛上的按钮**：按「打开刘海岛」时岛上正挂着带按钮的提示 / 活动卡片 → 展开成卡片、键盘交给它的按钮
+    （`Island.focusButtons`：↩ 执行选中的、←→ 换、Esc 同 ×，选中的外面一圈强调色焦点环、读屏念按钮名），再按一次才是
+    那一张；拿着键盘时新提示先排着。评审另修：全屏时藏着的岛不交键盘；岛失去 key 当场还键盘；挂着的提醒拿着键盘时指针离开不 arm；按钮换了夹选中（`Island.reselected`）；回弹的触发改成细条自己的计数，岛上原本没有这一条时出现后补弹一次。
+  - 单测 `MediaKeysTests.bumpsAtTheEnds` / `reportsWhyKeysAreNotTaken`、`IslandExcerptTests.buttonsTakeTheKeyboard`、
+    `NextEventTests.activityOnIsland`（改）；截图 `island-keyboard-*`、`settings-island-keys-*`。手测 `HANDTEST.md`
+    「第五轮体检手测」35–50。
 
 
 ### 晾衣绳（第十族，0.7.0，2026-10-26 立项）
@@ -2224,6 +2246,9 @@ Alfred 的 Related Apps、BetterTouchTool 按 App 停用，调研和测开销的
   🌐 / fn 不给选（系统拿它开听写、表情），分左右的不做。
 - ponytail：同一组合只按「同一处同名」去重，隐藏的菜单项（AX 分不出）照列；Java（JetBrains）、Qt、游戏没测；选中高亮是每行
   自己的一块底、不在行间滑（几列卡片里滑一块要算跨列的位置，等真机看了再说）。
+- 第五轮体检（2026-11-18，第 3 批）P1：按住的那一刻起挂一个全局监听（按键、鼠标键、滚轮、指针挪出 30 点，`watchBreaks`），
+  一有动静就作废这一次、取消在读的菜单（原来只在 0.3 秒、到点、读完这几个时刻查 `quiet`，按着 ⌘ 按 ⌘C、挪鼠标时前台 App
+  照样把整个菜单答完）；H3②：留住时按组合找那一项改用 `firstNonNil`（红线不许 `lazy.compactMap(f).first`）。
 - 验证：单测 `AppShortcutsTests`（还原快捷键、标题、状态机、分组、排版、时长；`TEST_RUNNER_KITTY_LIVE_MENU=1` 实读访达）；
   截图自检 `SnapshotProbeTests/appShortcuts()`（图以 app-shortcuts- 开头）。真机手感：HANDTEST「App 快捷键手测」，**都还没走**。
 

@@ -111,6 +111,38 @@ struct MediaKeysTests {
     #expect(MediaKeys.moved(from: 0, to: 0, up: false))
   }
 
+  /// 到头了再按（第五轮体检 U13）：100% 再按 +、0 再按 − 算到头；岛上每来一次「到头了」就多弹一下（levelBumps），平常的不算
+  @Test func bumpsAtTheEnds() {
+    #expect(MediaKeys.atEnd(1, up: true) && MediaKeys.atEnd(0.9995, up: true))
+    #expect(!MediaKeys.atEnd(0.9375, up: true) && !MediaKeys.atEnd(1, up: false))
+    #expect(MediaKeys.atEnd(0, up: false) && !MediaKeys.atEnd(0.0625, up: false))
+    let island = Island(showing: nil, geometry: .notch(width: 212, height: 37.5))
+    island.showLevel(Island.Level(kind: .volume, fraction: 0.9375))
+    #expect(island.levelBumps == 0)
+    island.showLevel(Island.Level(kind: .volume, fraction: 1, pushed: true))
+    island.showLevel(Island.Level(kind: .volume, fraction: 1, pushed: true))
+    #expect(island.levelBumps == 2 && island.level?.fraction == 1)
+    island.showLevel(Island.Level(kind: .brightness, fraction: 0, pushed: true))
+    #expect(island.levelBumps == 3)
+  }
+
+  /// 设置页说为什么接不住（第五轮体检 U6）：先看开没开，再看授权、字段核对、建没建起来过；只有核对没过、建不起来时有橙字
+  /// （没授权那一行另有按钮）
+  @Test func reportsWhyKeysAreNotTaken() {
+    #expect(MediaKeys.status(on: false, trusted: false, readable: false, gaveUp: true) == .off)
+    #expect(
+      MediaKeys.status(on: true, trusted: false, readable: false, gaveUp: false) == .needsPermission
+    )
+    #expect(MediaKeys.status(on: true, trusted: true, readable: false, gaveUp: true) == .unreadable)
+    #expect(MediaKeys.status(on: true, trusted: true, readable: true, gaveUp: true) == .failed)
+    #expect(MediaKeys.status(on: true, trusted: true, readable: true, gaveUp: false) == .running)
+    #expect(IslandTab.keyWarning(.unreadable) != nil && IslandTab.keyWarning(.failed) != nil)
+    for status in [MediaKeys.Status.off, .needsPermission, .running] {
+      #expect(IslandTab.keyWarning(status) == nil)
+    }
+    #expect(IslandTab.keyWarning(nil) == nil)
+  }
+
   /// 一格是 1/16：先吸到最近的格上再走，到头不出界
   @Test func stepsBySixteenths() {
     #expect(MediaKeys.stepped(0.25, up: true) == 0.3125)

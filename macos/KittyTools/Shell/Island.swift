@@ -9,7 +9,8 @@
 // 「打开刘海岛」的快捷键（哪块屏都行），长出「那一张」：一排快捷动作，设置里打开时再列本次启动以来最近 10 条提示
 // （IslandBoard.swift；快捷动作开哪几个、什么先后，列不列提示（2026-11-14 起默认不列），在 设置 › 刘海岛，2026-11-12 PR #17）。
 // 用快捷键叫出的那一张临时当 key（第四轮体检 U9）：Esc 收、←→ 选快捷动作、↩ 执行，到点自己收（同平时的岛）；收起时键盘
-// 还给原来那扇窗口 / 原来的 App。点刘海叫出的照旧不抢键盘。
+// 还给原来那扇窗口 / 原来的 App。点刘海叫出的照旧不抢键盘。按快捷键时岛上正挂着带按钮的提示 / 卡片（撤销、恢复、重试、停止、
+// 加入会议……）：先把键盘交给这几个按钮（第五轮体检 A2：展开成卡片，↩ 执行选中的、←→ 换、Esc 收），再按一次才是那一张。
 // 活动（2026-11-13，刘海岛扩展 B1–B3，IslandActivity.swift）：一直挂着的状态（录制中、长任务……）在刘海屏上收起时挂在
 // 刘海两侧的耳朵上；指针停上去鼓起一点。**一个刘海只有一张面**（2026-11-14）：有活动时点耳朵、点刘海、往下滑、停一下，
 // 开的都是最要紧那个活动的卡片（openTop），再往下滑 / 再点刘海轮到下一个活动、最后是那一张（rotate）；没有活动时点刘海
@@ -178,6 +179,8 @@ import SwiftUI
   @ObservationIgnored private var glancing: String?
   /// 岛上现在是音量 / 亮度的那一行（showLevel）；不是就是 nil
   private(set) var level: Level? { didSet { syncFullScreenAlpha() } }
+  /// 音量 / 亮度到头了还在按（Level.pushed）的次数：每多一次，细条往那一头顶出去一下再弹回（第五轮体检 U13；IslandLevelBar）
+  private(set) var levelBumps = 0
   /// 形体现在按音量 / 亮度提示的样子算（刘海两边各伸出一截、不往下长）。比 level 多留一拍：收回时内容先开始退、形体
   /// 晚两帧才缩，这一拍里 level 已经没了、形体得还是提示的样子——不然会按上一份内容的大小往下鼓出一块空的再缩回
   private(set) var levelShaped = false
@@ -221,8 +224,12 @@ import SwiftUI
   }
   /// 用快捷键叫出的那一张上，←→ 选中的快捷动作（第几个；鼠标叫出的、没有快捷动作时是 nil，U9）
   private(set) var boardSelection: Int?
-  /// 那一张是用快捷键叫出的、正临时拿着键盘：收起时还回去
+  /// 键盘交给了提示 / 卡片上的按钮（快捷键「打开刘海岛」，第五轮体检 A2）：选中的是 actions 里第几个（0 = 主按钮）；没交是 nil
+  private(set) var buttonSelection: Int?
+  /// 那一张是用快捷键叫出的、正临时拿着键盘（或者键盘交给了提示上的按钮）：收起时还回去
   @ObservationIgnored private var holdsKeyboard = false
+  /// 键盘交给进行中的提示、挂着的提醒（它们不到点收起）之后多久没按键就还回去
+  @ObservationIgnored private var keyIdle: Task<Void, Never>?
   /// 叫出那一张之前本 App 里当 key 的窗口（固定着的剪贴板面板、设置窗）：还键盘时还给它
   @ObservationIgnored private weak var keyBeforeBoard: NSWindow?
   /// 快捷动作从哪来（AppDelegate 给：截图、录屏、录音、识字、截图翻译、快速记一条，照设置里的先后；关掉的、关着的功能不给）
@@ -361,8 +368,8 @@ import SwiftUI
     showing content: Content?, geometry: Geometry = .capsule(menuBar: 24),
     actions: [Action] = [], expanded: Bool = false, board records: [Record]? = nil,
     quickActions: [Action] = [], peeking: Bool = false, boardSelection: Int? = nil,
-    showsHistory: Bool = true, activities: [Activity] = [], calendarDay: Date? = nil,
-    agenda: Agenda? = nil
+    buttonSelection: Int? = nil, showsHistory: Bool = true, activities: [Activity] = [],
+    calendarDay: Date? = nil, agenda: Agenda? = nil
   ) {
     isStaged = true
     self.calendarDay = calendarDay
@@ -377,6 +384,7 @@ import SwiftUI
     self.quickActions = quickActions
     isPeeking = peeking
     self.boardSelection = boardSelection
+    self.buttonSelection = buttonSelection
     self.showsHistory = showsHistory
     self.activities = activities
     // 同真的岛（refreshWings）：有上得了耳朵的活动才露（暂停一阵的正在播放不上）
@@ -474,8 +482,8 @@ import SwiftUI
       remember(next, actions: actions)
     }
     // 鼠标正停在岛上：先排着，免得正要点的按钮被换掉（B5）。进行中的那条例外——来的是它的结果，原地换。
-    // 那一张开着时也排着（收起后再出；那一张里的列表当场就有它）
-    let busy = isHovered && content.map { $0.tone != .progress } == true
+    // 那一张开着时也排着（收起后再出；那一张里的列表当场就有它）；键盘交给了提示上的按钮时同鼠标停着（A2）
+    let busy = (isHovered || holdsKeyboard) && content.map { $0.tone != .progress } == true
     if isBoardOpen || busy {
       pending = (next, actions)
       return
@@ -670,15 +678,20 @@ import SwiftUI
       return
     }
     hoverCheck?.cancel()
-    // 那一张开着时不当场换：离开 1.5 s 到点收起，dismiss 自己会换上排着的那条
-    if !isBoardOpen, let (next, actions) = pending {
+    // 那一张开着时不当场换：离开 1.5 s 到点收起，dismiss 自己会换上排着的那条；键盘还在提示的按钮上（A2）时同样不换，
+    // 免得正选着的按钮被顶掉（还键盘、收起时再换上）
+    if !isBoardOpen, !holdsKeyboard, let (next, actions) = pending {
       pending = nil
       apply(next, actions: actions)
       return
     }
-    if content?.tone == .progress || isShowingPinned {
+    // 键盘还在提示的按钮上（A2）：照旧展开着，选中的那个按钮收着时看不见
+    if content?.tone == .progress || isShowingPinned, !holdsKeyboard {
       withAnimation(Style.Motion.retract.animation()) { isExpanded = false }
     }
+    // 挂着的提醒本来就不到点收起；键盘在它的按钮上时交给 keyIdle（6 秒没按键还键盘、合回一行）。在这里 arm 的话到点
+    // dismiss 先还了键盘（连 keyIdle 一起取消）、挂着的那条又不收，卡片就一直展开着（评审 3）
+    if holdsKeyboard, isShowingPinned { return }
     arm(max(remaining, Self.leaveDelay))
   }
 
@@ -842,11 +855,14 @@ import SwiftUI
     let same = pinned?.content == next
     pinned = (next, actions, onClose)
     if same {
-      if wasShowing { self.actions = actions }
+      if wasShowing {
+        self.actions = actions
+        buttonsChanged()
+      }
       return
     }
     remember(next, actions: actions)
-    if isBoardOpen || (isHovered && content != nil && !wasShowing) { return }
+    if isBoardOpen || ((isHovered || holdsKeyboard) && content != nil && !wasShowing) { return }
     apply(next, actions: actions)
   }
 
@@ -915,7 +931,7 @@ import SwiftUI
   /// 自己冒出来的那种（耳机连上）：岛上正用着——那一张开着、指针停在带按钮的提示上——时不顶掉它，退回成一条
   /// 普通的提示排着（同 show 的规矩，评审）；别的时候同 showLevel
   func showNotice(_ next: Level, fallback: LocalizedStringResource) {
-    let busy = isHovered && content.map { $0.tone != .progress } == true
+    let busy = (isHovered || holdsKeyboard) && content.map { $0.tone != .progress } == true
     if isBoardOpen || busy { return show(fallback, tone: .info, symbol: next.symbol) }
     showLevel(next)
   }
@@ -933,6 +949,7 @@ import SwiftUI
   }
 
   func showLevel(_ next: Level) {
+    if next.pushed { levelBumps += 1 }
     // 正捏着：等会儿出的换成最新的这个
     if pendingLevel != nil {
       pendingLevel = next
@@ -1051,6 +1068,7 @@ import SwiftUI
     if expandedActivity == next.id, content != nil {
       content = next.content
       actions = next.actions
+      buttonsChanged()
     }
     refreshWings()
   }
@@ -1140,7 +1158,9 @@ import SwiftUI
         guard let self, let content = self.content, content.tone == .progress,
           content.source == title
         else { return }
-        if !self.isHovered, !self.isBoardOpen { return self.collapseProgress(content) }
+        if !self.isHovered, !self.isBoardOpen, !self.holdsKeyboard {
+          return self.collapseProgress(content)
+        }
         try? await Task.sleep(for: .seconds(1))
       }
     }
@@ -1272,12 +1292,94 @@ import SwiftUI
   private static let retractLag = Duration.milliseconds(30)
 
   /// 打开 / 收起那一张（快捷键「打开刘海岛」、点刘海）。岛上正有提示时换成那一张（那条已经记在列表里）。
-  /// byKeyboard：快捷键叫出的——临时当 key，Esc / ←→ / ↩ 能用，到点自己收（U9）
+  /// byKeyboard：快捷键叫出的——临时当 key，Esc / ←→ / ↩ 能用，到点自己收（U9）；岛上正挂着带按钮的提示 / 卡片时
+  /// 先把键盘交给它的按钮（focusButtons），已经交给它了再按一次才换成那一张（第五轮体检 A2）
   func toggleBoard(byKeyboard: Bool = false) {
-    if isBoardOpen { dismiss() } else { openBoard(byKeyboard: byKeyboard) }
+    if isBoardOpen { return dismiss() }
+    if byKeyboard, !holdsKeyboard, focusButtons() { return }
+    openBoard(byKeyboard: byKeyboard)
+  }
+
+  /// 键盘交给岛上那条提示 / 那张卡片的按钮（第五轮体检 A2；HIG：每个操作都要能用键盘做——「删除 → 撤销」「清掉草稿 →
+  /// 恢复」这类只在岛上给出路）：收着的一行只露主按钮，先展开成卡片（全部按钮都看得见），选中主按钮；之后 ↩ 执行选中的、
+  /// ←→ 换（卡片上主按钮在最右：← 往左 = 往后一个，到头回绕）、Esc 收（同 ×：挂着的提醒也算处理了）。窗口临时当 key、
+  /// 不激活本 App；读屏念标题和选中的按钮。没有带按钮的东西（音量提示、一瞥、播放卡片、空着）返回 false
+  private func focusButtons() -> Bool {
+    guard hasButtonsToFocus, let content, let window else { return false }
+    if !isExpanded {
+      changedAt = .now
+      withAnimation(Self.bloom) { isExpanded = true }
+    }
+    buttonSelection = 0
+    takeKeyboard(window)
+    armKeyboard()
+    if actions.count == 1 {
+      Self.announce("\(content.title)，回车「\(actions[0].title)」，Esc 关闭")
+    } else {
+      Self.announce("\(content.title)，左右键选按钮，回车执行，Esc 关闭；现在是「\(actions[0].title)」")
+    }
+    return true
+  }
+
+  /// 岛上正挂着能交键盘的按钮：一条提示、一张活动的卡片，带至少一个按钮（音量提示、一瞥没有按钮；播放卡片的按钮不是
+  /// Island.Action，另有自己的手势）。全屏时藏着的岛（hidesNow：窗口全透明）不算——不然一扇看不见的窗口当 key，全屏 App
+  /// 里打的字全被吞、↩ 执行看不见的按钮（评审 1）；这时照旧开那一张（那一张不藏）
+  var hasButtonsToFocus: Bool {
+    content != nil && !actions.isEmpty && level == nil && !isGlance && cardActivity?.media == nil
+      && !hidesNow
+  }
+
+  /// 拿着键盘时没人按键多久还回去：那一张、会到点收起的提示 / 卡片重新数 6 秒、到点收起（收起时还键盘）；进行中的提示、
+  /// 挂着的提醒不到点收起——只还键盘，照指针不在上面时的样子合回一行（排着的那条换上来，同 hover(false)）
+  private func armKeyboard() {
+    keyIdle?.cancel()
+    keyIdle = nil
+    guard !isBoardOpen, content?.tone == .progress || isShowingPinned else {
+      if !isHovered { arm(Self.boardKeyboardDwell) }
+      return
+    }
+    keyIdle = Task { [weak self] in
+      try? await Task.sleep(for: Self.boardKeyboardDwell)
+      guard !Task.isCancelled else { return }
+      self?.dropKeyboard()
+    }
+  }
+
+  /// 键盘不在岛上了（6 秒没按键、点了别处让岛不再是 key，评审 5）：还回去；原来在提示的按钮上、指针又不在岛上时照
+  /// hover(false) 的样子收拾——排着的那条换上来，进行中的、挂着的提醒合回一行（会到点收起的照旧等它自己的时间）
+  private func dropKeyboard() {
+    guard holdsKeyboard else { return }
+    let onButtons = !isBoardOpen
+    releaseKeyboard()
+    guard onButtons, !isHovered else { return }
+    if let (next, actions) = pending {
+      pending = nil
+      return apply(next, actions: actions)
+    }
+    if content?.tone == .progress || isShowingPinned {
+      withAnimation(Style.Motion.retract.animation()) { isExpanded = false }
+    }
+  }
+
+  /// 按钮换了（活动原地更新、挂着的提醒换按钮）：键盘在按钮上时选中的跟着夹，没有按钮了就还键盘（A2，评审 4）
+  private func buttonsChanged() {
+    guard let selection = buttonSelection else { return }
+    if let kept = Self.reselected(selection, count: actions.count) {
+      buttonSelection = kept
+    } else {
+      releaseKeyboard()
+    }
+  }
+
+  /// 按钮换了之后选中哪一个（纯函数）：还在范围里不动，超出了夹到最后一个，没有按钮了是 nil
+  static func reselected(_ selection: Int, count: Int) -> Int? {
+    count == 0 ? nil : min(selection, count - 1)
   }
 
   private func openBoard(byKeyboard: Bool = false) {
+    // 键盘原来在提示的按钮上（A2，再按一次快捷键）：交给那一张；不是按键开的就还回去
+    buttonSelection = nil
+    if !byKeyboard { releaseKeyboard() }
     dwell?.cancel()
     hoverCheck?.cancel()
     // 正捏着等出音量 / 亮度的提示：不出了（不然那一张刚开出来就被它顶掉，后来的动作反而输）
@@ -1325,7 +1427,9 @@ import SwiftUI
         ? String(localized: "快捷动作")
         : quickActions.isEmpty ? String(localized: "最近的提示") : String(localized: "最近的提示和快捷动作")
     guard byKeyboard, let window else { return Self.post(heading) }
+    boardSelection = quickActions.isEmpty ? nil : 0
     takeKeyboard(window)
+    armKeyboard()
     Self.announce(
       quickActions.isEmpty
         ? "\(heading)，按 Esc 关闭"
@@ -1335,22 +1439,27 @@ import SwiftUI
   /// 那一张没人碰时多久自己收（同带按钮的岛）
   static let boardKeyboardDwell = Duration.seconds(6)
 
-  /// 快捷键叫出的那一张：临时当 key（窗口是不激活本 App 的面板，前台 App 不变），选中第一个快捷动作，到点自己收
+  /// 快捷键叫出的那一张、键盘交给提示上的按钮时：临时当 key（窗口是不激活本 App 的面板，前台 App 不变）
   private func takeKeyboard(_ window: IslandPanel) {
     if let key = NSApp.keyWindow, key !== window { keyBeforeBoard = key }
     holdsKeyboard = true
-    boardSelection = quickActions.isEmpty ? nil : 0
     window.keyable = true
-    window.onKey = { [weak self] in self?.boardKey($0) }
+    window.onKey = { [weak self] in self?.keyPressed($0) }
+    // 点了别的 App、别的窗口拿走了键盘：岛就不再拿着它（不然新提示照样排着、再按快捷键直接换成那一张，评审 5）
+    window.onResign = { [weak self] in self?.dropKeyboard() }
     window.makeKey()
-    arm(Self.boardKeyboardDwell)
   }
 
-  /// 那一张上的按键（窗口当 key 时 sendEvent 交过来）：Esc 收、←→ 选（到头回绕）、↩ 执行；别的键吞掉、不响
+  /// 窗口当 key 时 sendEvent 交过来的按键：那一张开着归那一张，不然归提示上的按钮
+  private func keyPressed(_ event: NSEvent) {
+    guard holdsKeyboard else { return }
+    if isBoardOpen { boardKey(event) } else { buttonKey(event) }
+  }
+
+  /// 那一张上的按键：Esc 收、←→ 选（到头回绕）、↩ 执行；别的键吞掉、不响
   private func boardKey(_ event: NSEvent) {
-    guard isBoardOpen, holdsKeyboard else { return }
     // 按了键就重新计时（鼠标停在岛上时计时本来就停着）
-    if !isHovered { arm(Self.boardKeyboardDwell) }
+    armKeyboard()
     switch Int(event.keyCode) {
     case 53:
       dismiss()
@@ -1371,6 +1480,30 @@ import SwiftUI
     }
   }
 
+  /// 提示 / 卡片上的按钮拿着键盘时的按键（A2）：Esc 收（同 ×）、←→ 换按钮、↩ 执行选中的；别的键吞掉、不响
+  private func buttonKey(_ event: NSEvent) {
+    guard let selection = buttonSelection, content != nil else { return }
+    armKeyboard()
+    switch Int(event.keyCode) {
+    case 53:
+      swipeAway()
+    case 123, 124:
+      guard
+        let next = Self.moved(
+          selection, by: Self.buttonStep(left: event.keyCode == 123), count: actions.count)
+      else { return }
+      buttonSelection = next
+      Self.post(actions[next].title)
+    case 36, 76:
+      if actions.indices.contains(selection) { perform(actions[selection], checked: false) }
+    default:
+      break
+    }
+  }
+
+  /// 卡片上的按钮从右往左排（主按钮 actions[0] 在最右，挨着 ×）：← 是往后一个、→ 是往前一个（纯函数）
+  static func buttonStep(left: Bool) -> Int { left ? 1 : -1 }
+
   /// ←→ 选快捷动作（纯函数）：到头回绕；还没选中时从第一个起；没有快捷动作是 nil
   static func moved(_ selection: Int?, by step: Int, count: Int) -> Int? {
     guard count > 0 else { return nil }
@@ -1381,11 +1514,16 @@ import SwiftUI
   /// 收起 / 换成别的提示时把键盘还回去：叫出之前本 App 里有 key 窗口就还给它；本 App 不在前台（键盘本来在别的 App 里）
   /// 就 deactivate 一次——不激活的面板收起后 AppKit 会把 key 交给本进程别的面板、一直不放（同 NoteFloats.returnKeyboard）
   private func releaseKeyboard() {
+    keyIdle?.cancel()
+    keyIdle = nil
     guard holdsKeyboard else { return }
     holdsKeyboard = false
     boardSelection = nil
+    buttonSelection = nil
     window?.keyable = false
     window?.onKey = nil
+    // 先摘：下面把键盘还给别的窗口时岛会 resignKey
+    window?.onResign = nil
     defer { keyBeforeBoard = nil }
     guard window?.isKeyWindow == true else { return }
     if let previous = keyBeforeBoard, previous.isVisible {
@@ -1533,6 +1671,14 @@ import SwiftUI
     rewatchNotch()
     // 合盖只用外接屏、又打开：耳朵跟着收掉 / 长回来
     refreshWings()
+    // 耳朵露着、没展开（放歌、录制、保持唤醒挂一整天的那种）：按现在的刘海屏重摆一次——改了「更多空间」这类缩放、接上
+    // 外接屏让内建屏的坐标变了，刘海的位置和宽高都可能变，窗口不挪的话耳朵就不对着真刘海（第五轮体检 E12）。
+    // 展开着的（提示、卡片、那一张）不动：内容正在屏上，当场挪会跳一下
+    // ponytail: 展开期间换了屏的，收起后缩回耳朵时不重摆（要等耳朵收掉、下一次长出来，或者下一次换屏）；真碰到再在
+    // dismiss 缩回耳朵那一步补一次 place
+    if isShowingWings, !isOpen, !isStaged, let window, let screen = Self.notchScreen {
+      place(window, on: screen)
+    }
   }
 
   /// 有刘海屏、插件也添加着才常驻监听（点刘海、停在刘海上、耳朵的悬停要它们）；否则照旧显示时装、收起后卸
@@ -2028,7 +2174,7 @@ struct IslandView: View {
       } else if island.isShowingLevel, let level = island.level {
         // 音量 / 亮度：没有刘海的屏上是一行（换数不重新出场）；刘海屏上画在刘海两边（levelWings），这里不占地方
         if case .capsule = island.geometry {
-          IslandLevelRow(level: level, accent: island.levelAccent)
+          IslandLevelRow(level: level, accent: island.levelAccent, bumps: island.levelBumps)
             .measured { report($0) }
             .transition(appear)
         }
@@ -2110,7 +2256,7 @@ struct IslandView: View {
       let fading = island.pinched || !island.isShowingLevel
       IslandLevelWings(
         level: level, notchWidth: width, notchHeight: height + Island.levelDrop,
-        accent: island.levelAccent, percent: island.levelPercent
+        accent: island.levelAccent, percent: island.levelPercent, bumps: island.levelBumps
       )
       .modifier(Melt(progress: fading ? 0 : 1, scales: false))
       .animation(.smooth(duration: 0.24), value: fading)
@@ -2201,7 +2347,9 @@ struct IslandView: View {
           .frame(maxWidth: room.detail, alignment: .leading)
       }
       if let first = island.actions.first {
-        IslandButton(title: first.title, prominent: false) { island.perform(first) }
+        IslandButton(title: first.title, prominent: false, selected: island.buttonSelection == 0) {
+          island.perform(first)
+        }
       }
     }
     .frame(height: Island.chin)
@@ -2226,7 +2374,9 @@ struct IslandView: View {
         Spacer(minLength: 12)
         HStack(spacing: 8) {
           ForEach(Array(island.actions.enumerated().reversed()), id: \.offset) { index, action in
-            IslandButton(title: action.title, prominent: index == 0) { island.perform(action) }
+            IslandButton(
+              title: action.title, prominent: index == 0, selected: island.buttonSelection == index
+            ) { island.perform(action) }
           }
           Button {
             island.close()
@@ -2402,10 +2552,13 @@ extension View {
   }
 }
 
-/// 岛上的胶囊按钮：12 semibold、高约 22；主按钮（展开后最右那个）白底黑字，其余 white 0.16 底白字
+/// 岛上的胶囊按钮：12 semibold、高约 22；主按钮（展开后最右那个）白底黑字，其余 white 0.16 底白字。
+/// selected：键盘交给了这几个按钮、选中的是它（快捷键「打开刘海岛」，第五轮体检 A2）——外面隔 3 pt 一圈 2 pt 强调色焦点环，
+/// 同那一张上选中的快捷动作
 struct IslandButton: View {
   let title: String
   let prominent: Bool
+  var selected = false
   let action: () -> Void
 
   var body: some View {
@@ -2418,9 +2571,16 @@ struct IslandButton: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 4)
         .background(Capsule(style: .continuous).fill(.white.opacity(prominent ? 0.92 : 0.16)))
+        // 屏外截图自检里这一圈两头各多一小段竖线，真机没有（来历见 Style.swift 的 hudSkin）
+        .overlay {
+          if selected {
+            Capsule(style: .continuous).strokeBorder(Style.brand, lineWidth: 2).padding(-3)
+          }
+        }
     }
     .buttonStyle(IslandButtonStyle())
     .accessibilityLabel(title)
+    .accessibilityAddTraits(selected ? .isSelected : [])
   }
 }
 
@@ -2638,9 +2798,16 @@ nonisolated struct IslandOutline: InsettableShape {
 final class IslandPanel: NSPanel {
   var keyable = false
   var onKey: ((NSEvent) -> Void)?
+  /// 拿着键盘时被别的窗口拿走了（点了别的 App、别处）：岛还键盘（第五轮体检 A2 评审 5）
+  var onResign: (() -> Void)?
 
   override var canBecomeKey: Bool { keyable }
   override var canBecomeMain: Bool { false }
+
+  override func resignKey() {
+    super.resignKey()
+    onResign?()
+  }
 
   override func sendEvent(_ event: NSEvent) {
     if keyable, event.type == .keyDown {
