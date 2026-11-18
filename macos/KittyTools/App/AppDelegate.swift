@@ -1202,8 +1202,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     island.hoverExpands = UserDefaults.standard.bool(forKey: Prefs.islandHoverExpands)
     island.haptics = UserDefaults.standard.bool(forKey: Prefs.islandHaptics)
     island.blurs = UserDefaults.standard.bool(forKey: Prefs.islandBlur)
-    island.hidesFromCapture = UserDefaults.standard.bool(forKey: Prefs.islandHidesFromCapture)
-    island.hidesInFullScreen = UserDefaults.standard.bool(forKey: Prefs.islandHidesInFullScreen)
+    // 这两样归刘海岛插件：移除插件后不再藏起基本的提示（评审）
+    island.hidesFromCapture =
+      Feature.island.isOn && UserDefaults.standard.bool(forKey: Prefs.islandHidesFromCapture)
+    island.hidesInFullScreen =
+      Feature.island.isOn && UserDefaults.standard.bool(forKey: Prefs.islandHidesInFullScreen)
     let defaults = UserDefaults.standard
     island.dwellScale =
       (defaults.string(forKey: Prefs.islandNoticeLength).flatMap(Island.DwellLength.init)

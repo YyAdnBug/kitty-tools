@@ -236,7 +236,7 @@ struct IslandTab: View {
           }
           Toggle(isOn: $focusQuiet) {
             Text("专注模式时不弹系统提示")
-            Text("接上或拔掉电源、电量低、耳机连上、断网这几样先不弹；音量和亮度照常")
+            Text("接上或拔掉电源、电量低到 20%、耳机连上、断网这几样不弹；10% 和音量、亮度照常")
           }
         }
         .disabled(!focus)
@@ -349,7 +349,9 @@ struct IslandTab: View {
       PluginAboutSection(plugin: .island)
     }
     .formStyle(.grouped)
-    .task { eventCalendars = NextEvent.eventCalendars() }
+    .task(id: "\(accessChecks)|\(nextEvent)|\(monthCalendar)") {
+      eventCalendars = NextEvent.eventCalendars()
+    }
     .onReceive(
       NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
     ) { _ in
@@ -363,7 +365,6 @@ struct IslandTab: View {
     .onChange(of: nowPlaying) { WhatsNew.touch(section: "正在播放", of: .island) }
   }
 
-  /// 问「日历」授权（系统框只弹一次）：给了才把开关打开；没给留在关着、橙字说怎么开
   /// 「选择日历」里一行的开关：开着 = 不在关掉的名单里
   private func shows(calendar id: String) -> Binding<Bool> {
     Binding {
@@ -375,6 +376,7 @@ struct IslandTab: View {
     }
   }
 
+  /// 问「日历」授权（系统框只弹一次）：给了才把开关打开；没给留在关着、橙字说怎么开
   private func askCalendar() {
     Task {
       let allowed = await NextEvent.requestAccess()

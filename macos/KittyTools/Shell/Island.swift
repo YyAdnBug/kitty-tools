@@ -112,7 +112,7 @@ import SwiftUI
   /// 长成了卡片：悬停时展开；离开后照旧开着直到收起（进行中的离开就合上，它还要挂着）
   private(set) var isExpanded = false
   /// 「那一张」开着：点刘海、快捷键「打开刘海岛」叫出来的（快捷动作 + 最近的提示，IslandBoard）
-  private(set) var isBoardOpen = false
+  private(set) var isBoardOpen = false { didSet { syncFullScreenAlpha() } }
   /// 没有提示、没开那一张时指针停在刘海上：岛轻轻鼓起一点，告诉你能点
   private(set) var isPeeking = false
   /// 最近的提示：本次启动以来最近 historyLimit 条，新的在前；进行中的不记
@@ -177,7 +177,7 @@ import SwiftUI
   /// 岛上现在是哪个活动的「一瞥」（glance）；不是就是 nil
   @ObservationIgnored private var glancing: String?
   /// 岛上现在是音量 / 亮度的那一行（showLevel）；不是就是 nil
-  private(set) var level: Level?
+  private(set) var level: Level? { didSet { syncFullScreenAlpha() } }
   /// 形体现在按音量 / 亮度提示的样子算（刘海两边各伸出一截、不往下长）。比 level 多留一拍：收回时内容先开始退、形体
   /// 晚两帧才缩，这一拍里 level 已经没了、形体得还是提示的样子——不然会按上一份内容的大小往下鼓出一块空的再缩回
   private(set) var levelShaped = false
@@ -263,15 +263,29 @@ import SwiftUI
   @ObservationIgnored var hidesFromCapture = false {
     didSet { window?.sharingType = hidesFromCapture ? .none : .readOnly }
   }
-  /// 刘海那块屏上前台 App 全屏时藏起来（设置 › 刘海岛，默认关；2026-11-18 照 Alcove，IslandFullScreen）：窗口全透明、
-  /// 不接鼠标（AppDelegate 的 isSuppressed 也看它）。换桌面、换前台 App 时看一眼，全屏的动画要约 0.7 秒，再看两次
+  /// 刘海那块屏上前台 App 全屏时藏起来（设置 › 刘海岛，默认关；2026-11-18 照 Alcove，IslandFullScreen）：岛在刘海屏上时
+  /// 窗口全透明、不接鼠标（AppDelegate 的 isSuppressed 也看它）；跟着指针摆到别的屏上的提示、快捷键叫出来的那一张、
+  /// 音量 / 亮度的提示照常（评审：原来整扇窗口透明，那一张看不见却拿着键盘）。换桌面、换前台 App 时看一眼，全屏的动画要约
+  /// 0.7 秒，再看两次
   @ObservationIgnored var hidesInFullScreen = false {
     didSet { if oldValue != hidesInFullScreen { watchFullScreen() } }
   }
   @ObservationIgnored private(set) var hiddenForFullScreen = false {
-    didSet {
-      if oldValue != hiddenForFullScreen { window?.alphaValue = hiddenForFullScreen ? 0 : 1 }
-    }
+    didSet { if oldValue != hiddenForFullScreen { syncFullScreenAlpha() } }
+  }
+
+  /// 现在藏着（窗口在刘海屏上、全屏、不是那一张、不是音量 / 亮度提示）
+  private var hidesNow: Bool {
+    guard hiddenForFullScreen, !isBoardOpen, level == nil, let window,
+      let notch = Self.notchScreen
+    else { return false }
+    return window.screen?.frame == notch.frame
+  }
+
+  private func syncFullScreenAlpha() {
+    guard let window else { return }
+    let alpha: CGFloat = hidesNow ? 0 : 1
+    if window.alphaValue != alpha { window.alphaValue = alpha }
   }
   @ObservationIgnored private var fullScreenObservers: [NSObjectProtocol] = []
   @ObservationIgnored private var fullScreenCheck: Task<Void, Never>?
@@ -1474,6 +1488,7 @@ import SwiftUI
     // 直接画成终点的样子（2026-10-26 用户：「首次启动，hover 没有动画效果」）
     if fresh { window.contentView?.layoutSubtreeIfNeeded() }
     window.ignoresMouseEvents = true
+    syncFullScreenAlpha()
     window.orderFrontRegardless()
     watchMouse()
   }
@@ -1695,6 +1710,8 @@ import SwiftUI
     // 拖着时不算进出。兜底：松手那一下没送到窗口（拖着时锁屏、切桌面）就照按键的实际状态放开，不然卡片永远不收
     if isDragging, NSEvent.pressedMouseButtons & 1 == 0 { isDragging = false }
     guard !isDragging else { return }
+    // 全屏时藏着：不接鼠标（不然看不见的岛会吞掉全屏时滑下来的菜单栏上的点击）
+    if hidesNow { return }
     let mouse = NSEvent.mouseLocation
     // 音量 / 亮度的提示上没有能点的东西：不算悬停（不停计时、窗口不接鼠标，底下的菜单栏照常点）
     if isShowingLevel { return }
@@ -1782,7 +1799,6 @@ import SwiftUI
     panel.isReleasedWhenClosed = false
     panel.animationBehavior = .none
     panel.sharingType = hidesFromCapture ? .none : .readOnly
-    panel.alphaValue = hiddenForFullScreen ? 0 : 1
     // 宿主包在普通容器里（setHostedContent）：直接当 contentView 时窗口一改大小就在「更新约束」里绕下去、抛异常崩掉
     // （2026-10-26 屏上复现：先弹提示、再在上面开那一张；测试里还见过窗口被它改成 520 × 64）
     let host = IslandHost(rootView: IslandView(island: self))
@@ -2292,8 +2308,8 @@ struct IslandLeading: View {
     case .tone:
       // 底上的符号：成功 / 警告 / 错误是白的；信息 / 进行中的底是强调色，黄、橙、绿这些亮强调色上要换深色
       let ink =
-        content.tint == nil && (content.tone == .info || content.tone == .progress)
-        ? Style.onBrand : .white
+        content.tint.map(Self.ink(on:))
+        ?? (content.tone == .info || content.tone == .progress ? Style.onBrand : .white)
       let plate = content.tint.map { Color(nsColor: $0) } ?? Self.tint(content.tone)
       Group {
         if Island.hasPlate(content.symbol) {
@@ -2320,6 +2336,14 @@ struct IslandLeading: View {
       .symbolEffect(.bounce, value: content.tone == .success ? content.title : "")
       .frame(width: 22, height: 22)
     }
+  }
+
+  /// 自己颜色的圆底（专注模式、日历的颜色）上的符号：亮的底（黄、薄荷绿……）用深色，别的用白（评审：黄底白字看不清）
+  static func ink(on color: NSColor) -> Color {
+    guard let rgb = color.usingColorSpace(.sRGB) else { return .white }
+    let luminance =
+      0.2126 * rgb.redComponent + 0.7152 * rgb.greenComponent + 0.0722 * rgb.blueComponent
+    return luminance > 0.6 ? .black.opacity(0.85) : .white
   }
 
   static func tint(_ tone: Island.Tone) -> Color {

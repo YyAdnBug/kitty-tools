@@ -45,12 +45,15 @@ final class HourlyChime {
   }
 
   private static func run() async {
+    var last = Date.distantPast
     while !Task.isCancelled {
-      let next = nextHour(after: .now)
+      // 从刚响过的那个整点之后算：连续时钟和墙上的钟有漂移，醒早了几十毫秒时 .now 还在整点前，会把同一个整点算两遍（评审）
+      let next = nextHour(after: max(.now, last))
       // 连续时钟：合盖睡着时也在走，醒来就到点——晚了 1 分钟以上的不响
       try? await Task.sleep(for: .seconds(next.timeIntervalSinceNow + 0.05), tolerance: .seconds(1))
       guard !Task.isCancelled else { return }
       if isOnTime(next, now: .now) { Chime.play(.hourly) }
+      last = next
     }
   }
 

@@ -147,7 +147,8 @@ import Network
         percent: now.percent, plugged: now.plugged, warned: warned)
     {
       warned.insert(threshold)
-      guard !quiet else { return }
+      // 专注时不弹系统提示：20% 那一次不说，10% 照样说（评审：原来专注时 10% 也丢了、结束后也不补）
+      guard !quiet || threshold == 10 else { return }
       island?.showNotice(
         Self.powerLevel(
           plugged: false, percent: now.percent, low: true, minutes: Self.readTimeToEmpty()),

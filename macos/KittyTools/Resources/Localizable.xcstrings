@@ -22952,12 +22952,12 @@
         }
       }
     },
-    "接上或拔掉电源、电量低、耳机连上、断网这几样先不弹；音量和亮度照常" : {
+    "接上或拔掉电源、电量低到 20%、耳机连上、断网这几样不弹；10% 和音量、亮度照常" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Power plugged in or unplugged, low battery, headphones connected and network changes don’t show; volume and brightness still do"
+            "value" : "Power plugged in or unplugged, battery down to 20%, headphones connected and network changes don’t show; 10%, volume and brightness still do"
           }
         }
       }

@@ -70,6 +70,8 @@ import os
   @ObservationIgnored private var round = 0
   /// 这一次 stream 已经听到过：往回查晚回来的就不用了
   @ObservationIgnored private var heardLive = false
+  /// 刘海上一直挂着的是哪个模式（没挂是 nil）
+  @ObservationIgnored private var pinned: Mode?
 
   private init() {
     current = defaults.data(forKey: Prefs.focusMode).flatMap {
@@ -100,11 +102,15 @@ import os
   /// 左耳模式的符号（模式的颜色），点开是卡片——名字 +「专注模式设置…」。最不要紧（Activity.Kind.focus），放歌、倒数时让给它们
   private func updateActivity() {
     guard let island else { return }
-    guard showsOnNotch, defaults.bool(forKey: Prefs.islandFocusPinned), let mode = current else {
+    let next = showsOnNotch && defaults.bool(forKey: Prefs.islandFocusPinned) ? current : nil
+    // 只在挂的那个变了时设（偏好一变 apply 就会来；每次都设的话展开着的卡片会被反复重画，评审）
+    guard next != pinned else { return }
+    pinned = next
+    if let next {
+      island.setActivity(Self.activity(next))
+    } else {
       island.endActivity(Self.activityID)
-      return
     }
-    island.setActivity(Self.activity(mode))
   }
 
   /// 刘海岛上专注模式那个活动的编号

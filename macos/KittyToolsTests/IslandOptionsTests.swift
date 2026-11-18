@@ -4,6 +4,7 @@
 import AppKit
 import CoreGraphics
 import Foundation
+import SwiftUI
 import Testing
 
 @testable import KittyTools
@@ -132,6 +133,22 @@ import Testing
     #expect(
       !IslandFullScreen.isFullScreen(
         [Self.menu, Self.dock, exiting], screen: Self.screen, top: 38, front: 99))
+  }
+
+  @Test func dockOnAnotherScreenMeansUnknown() {
+    // 外接屏是主屏、程序坞在它上面：刘海屏上铺满的窗口和全屏一个样子，一律不算（评审）
+    let elsewhere = IslandFullScreen.Window(
+      pid: 1, layer: 20, frame: CGRect(x: 1710, y: 0, width: 2560, height: 1440), isDock: true)
+    let filled = Self.window(CGRect(x: 0, y: 38, width: 1710, height: 1074))
+    #expect(
+      !IslandFullScreen.isFullScreen(
+        [Self.menu, elsewhere, filled], screen: Self.screen, top: 38, front: 99))
+  }
+
+  @Test func lightPlatesGetDarkInk() {
+    #expect(IslandLeading.ink(on: NSColor(srgbRed: 1, green: 0.85, blue: 0.1, alpha: 1)) != .white)
+    #expect(
+      IslandLeading.ink(on: NSColor(srgbRed: 0.35, green: 0.34, blue: 0.84, alpha: 1)) == .white)
   }
 
   @Test func mediaColorStyles() {
