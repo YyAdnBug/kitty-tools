@@ -12833,16 +12833,6 @@
         }
       }
     },
-    "只管鼠标滚轮，触控板和妙控鼠标照系统的。按住 ⌥ 滚动时不平滑；按住 ⇧ 改成左右滚；按着 ⌘ 或 ⌃ 时交给 App（缩放这类）。滑着的时候点一下鼠标就停下。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Only the mouse wheel is affected; trackpads and Magic Mouse work the way the system does. Hold ⌥ while scrolling to skip smoothing, hold ⇧ to scroll sideways, and with ⌘ or ⌃ held the app handles it (zooming and the like). Click the mouse to stop a glide."
-          }
-        }
-      }
-    },
     "只给文件算（文件夹不算），或者选中的不在了" : {
       "localizations" : {
         "en" : {
@@ -19681,6 +19671,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "smooth,smooth scrolling,scrolling,scroll,wheel,mouse,glide,inertia,reverse,direction,natural scrolling,scroll direction,speed,distance,turn off,games,virtual machine,remote desktop"
+          }
+        }
+      }
+    },
+    "平滑只管滚轮鼠标；妙控鼠标本来就滑着滚，这两项不管它，它只跟着下面的反向开关；触控板都照系统的。按住 ⌥ 滚动时不平滑；按住 ⇧ 改成左右滚；按着 ⌘ 或 ⌃ 时交给 App（缩放这类）。滑着的时候点一下鼠标就停下。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Smoothing only affects wheel mice. Magic Mouse already scrolls smoothly, so these two settings don’t apply to it; only the direction switches below do. Trackpads work the way the system does. Hold ⌥ while scrolling to skip smoothing, hold ⇧ to scroll sideways, and with ⌘ or ⌃ held the app handles it (zooming and the like). Click the mouse to stop a glide."
           }
         }
       }
@@ -28716,12 +28716,12 @@
         }
       }
     },
-    "横向的滚轮；按住 ⇧ 拨的还是上下那个滚轮，跟着上面那一项" : {
+    "横向的滚轮、妙控鼠标左右划；按住 ⇧ 拨的还是上下那个滚轮，跟着上面那一项" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The horizontal wheel; scrolling with ⇧ held still uses the vertical wheel, so it follows the option above"
+            "value" : "The horizontal wheel and sideways swipes on Magic Mouse; scrolling with ⇧ held still uses the vertical wheel, so it follows the option above"
           }
         }
       }
@@ -35158,22 +35158,22 @@
         }
       }
     },
-    "系统设置里关着「自然滚动」：打开这一项，鼠标滚轮反过来，触控板不变" : {
+    "系统设置里关着「自然滚动」：打开这一项，鼠标滚动的方向反过来（妙控鼠标也是），触控板不变" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "“Natural scrolling” is off in System Settings: turn this on to reverse the mouse wheel; the trackpad stays the same"
+            "value" : "“Natural scrolling” is off in System Settings: turn this on to reverse the mouse’s scrolling direction (Magic Mouse too); the trackpad stays the same"
           }
         }
       }
     },
-    "系统设置里开着「自然滚动」（鼠标和触控板是一个开关）：打开这一项，鼠标滚轮往下拨就往下翻，触控板不变" : {
+    "系统设置里开着「自然滚动」（鼠标和触控板是一个开关）：打开这一项，鼠标往下滚就往下翻（妙控鼠标也是），触控板不变" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "“Natural scrolling” is on in System Settings (one switch for mouse and trackpad): turn this on so rolling the wheel down scrolls down; the trackpad stays the same"
+            "value" : "“Natural scrolling” is on in System Settings (one switch for mouse and trackpad): turn this on so scrolling the mouse down scrolls down (Magic Mouse too); the trackpad stays the same"
           }
         }
       }
@@ -42309,12 +42309,12 @@
         }
       }
     },
-    "鼠标单独反向，触控板不变" : {
+    "鼠标单独反向（妙控鼠标也行），触控板不变" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Reverse the mouse on its own; the trackpad stays the same"
+            "value" : "Reverse the mouse on its own (Magic Mouse too); the trackpad stays the same"
           }
         }
       }

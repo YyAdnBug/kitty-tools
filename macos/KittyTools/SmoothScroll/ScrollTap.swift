@@ -12,7 +12,10 @@
 //   只是在等事件。帧上照抄原滚轮「方向已经按自然滚动翻过」的标记（没公开的字段 137，NSEvent.isDirectionInvertedFromDevice；
 //   反向开关反过的再翻一次）：按物理方向算的地方（截图框选里滚轮换层）才不会反
 // - 鼠标按下、触控板来了（连续的滚动）时把正在滑的那一段停掉（同触控板上手指一碰，惯性就停）
-// - 只就地改的（按着修饰键时的反向）三种距离要先全读出来再按 行 → 像素 → 定点 写：写行数时系统会按新的行数重算后两个
+// - 妙控鼠标和触控板发的滚动一模一样（连续、带开始 / 变化 / 结束和惯性阶段，2026-11-18 只听的探针实测）：按发送设备分——没公开的
+//   字段 87 是 IORegistry 里那台设备（AppleMultitouchDevice）的编号，惯性阶段的也带着；它挂在妙控鼠标的驱动
+//   （AppleMultitouchMouseHIDEventDriver）下就是妙控鼠标（触控板挂 …TrackpadHIDEventDriver）。查一次 IOKit、按编号记下
+// - 只就地改的（按着修饰键时的反向、妙控鼠标的反向）三种距离要先全读出来再按 行 → 像素 → 定点 写：写行数时系统会按新的行数重算后两个
 // - 拦截被系统停用（回调超时、用户输入）就当场重新打开；醒来、本 App 回到前台时 SmoothScroll 整条重建
 // - 停：主线程 cancel 线程、往它上面排一个 wake 把运行环转停，这边撤定时器、停用并作废拦截，线程退出
 // - 探针（SmoothScrollTests/liveProbe，按需）：probe 开着时真的滚轮一概原样放过，只认带探针记号的事件（也不看前台 App 停没停用）；
@@ -21,6 +24,7 @@
 // CADisplayLink。
 
 import AppKit
+import IOKit
 import Synchronization
 
 /// 主线程和滚动线程共用的：主线程写、滚动线程读
@@ -61,8 +65,12 @@ nonisolated final class ScrollTap: NSObject {
   /// 「方向已经按自然滚动翻过」（没公开的字段 137：NSEvent.isDirectionInvertedFromDevice 读的就是它，2026-11-17 只建不发的
   /// 小程序逐个字段试出来的）。只在滚轮事件之间照抄、翻转，不拿它判断别的
   static let invertedField = CGEventField(rawValue: 137)
+  /// 发这个事件的设备在 IORegistry 里的编号（没公开的字段 87，2026-11-18 只听的探针实测：触控板、妙控鼠标的滚动和惯性都带着）
+  static let senderField = CGEventField(rawValue: 87)
 
   private let shared: ScrollShared
+  /// 发送设备的编号 → 是不是妙控鼠标（只记连续滚动的；重连换编号，多一条）
+  private var magicMice: [Int64: Bool] = [:]
   private var port: CFMachPort?
   private var timer: Timer?
   private var motion = ScrollSmoothing.Motion()
@@ -152,10 +160,13 @@ nonisolated final class ScrollTap: NSObject {
     // 探针开着时只认探针的：真的滚轮原样放过
     if probe, marker != Self.probeMarker { return false }
     let flags = event.flags
+    let continuous = event.getIntegerValueField(.scrollWheelEventIsContinuous) != 0
+    let phased =
+      event.getIntegerValueField(.scrollWheelEventScrollPhase) != 0
+      || event.getIntegerValueField(.scrollWheelEventMomentumPhase) != 0
     let wheel = ScrollSmoothing.Wheel(
-      continuous: event.getIntegerValueField(.scrollWheelEventIsContinuous) != 0,
-      phased: event.getIntegerValueField(.scrollWheelEventScrollPhase) != 0
-        || event.getIntegerValueField(.scrollWheelEventMomentumPhase) != 0,
+      continuous: continuous, phased: phased,
+      magicMouse: (continuous || phased) && isMagicMouse(event),
       dy: Self.lines(
         event, fixed: .scrollWheelEventFixedPtDeltaAxis1, whole: .scrollWheelEventDeltaAxis1),
       dx: Self.lines(
@@ -182,6 +193,31 @@ nonisolated final class ScrollTap: NSObject {
       if timer == nil { begin() }
       return true
     }
+  }
+
+  /// 这个连续的滚动是不是妙控鼠标发的（按发送设备的编号记下，同一台只查一次 IOKit）
+  private func isMagicMouse(_ event: CGEvent) -> Bool {
+    guard let field = Self.senderField else { return false }
+    let sender = event.getIntegerValueField(field)
+    if let known = magicMice[sender] { return known }
+    let found = Self.isMagicMouse(sender: sender)
+    magicMice[sender] = found
+    return found
+  }
+
+  /// IORegistry 里这个编号的设备挂在妙控鼠标的驱动下（合成的事件、拿不到设备的：false）
+  static func isMagicMouse(sender: Int64) -> Bool {
+    guard sender > 0 else { return false }
+    let service = IOServiceGetMatchingService(
+      kIOMainPortDefault, IORegistryEntryIDMatching(UInt64(sender)))
+    guard service != 0 else { return false }
+    defer { IOObjectRelease(service) }
+    var parent: io_registry_entry_t = 0
+    guard IORegistryEntryGetParentEntry(service, kIOServicePlane, &parent) == KERN_SUCCESS else {
+      return false
+    }
+    defer { IOObjectRelease(parent) }
+    return IOObjectConformsTo(parent, "AppleMultitouchMouseHIDEventDriver") != 0
   }
 
   /// 系统给的行数：定点的那个有小数（带加速）；万一是 0 退回整数的那个

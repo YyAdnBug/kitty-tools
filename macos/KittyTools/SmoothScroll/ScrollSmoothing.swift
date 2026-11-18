@@ -1,6 +1,8 @@
 // 平滑滚动（插件，2026-11-17，issue #14；拍板页 C1 C2，PLAN §10「平滑滚动」）的纯函数，单测锁住（SmoothScrollTests）。
 // 行为对标 Mos（CC BY-NC 4.0：只看行为、不拷代码），做法是通用的「目标 + 指数逼近」：
-// - 归不归它管（decide）：只管鼠标滚轮——一格一格的、不连续的事件；触控板、妙控鼠标（连续的、带滚动 / 惯性阶段的）原样放过。
+// - 归不归它管（decide）：平滑只管鼠标滚轮——一格一格的、不连续的事件；连续的、带滚动 / 惯性阶段的（触控板、妙控鼠标）不平滑。
+//   妙控鼠标（按发送设备认，ScrollTap.isMagicMouse）只照两个反向开关就地反过来，同一下从开始到惯性的每个事件都反（开始那个
+//   行数是 0、像素不是 0，2026-11-18 用户的妙控鼠标实测）；触控板原样放过。Mos 按「有阶段就是触控板」认，分不出妙控鼠标。
 //   停用的 App 在前台时整个不管（不平滑、不反向）。修饰键：⌥ 按着时不平滑（临时关掉）；⇧ 按着时改成左右滚（照样平滑）；
 //   ⌘ / ⌃ 按着时不平滑（缩放这类交给 App 和系统）。反向不看修饰键，照样反；⇧ 按着时拨的还是上下那个滚轮，跟着「上下反向」。
 //   平滑程度拉到 0 = 不平滑、只反向。
@@ -40,6 +42,8 @@ nonisolated enum ScrollSmoothing {
     var continuous = false
     /// 带滚动阶段 / 惯性阶段的（触控板的一下）
     var phased = false
+    /// 妙控鼠标发的（连续、带阶段，同触控板；按发送设备认）
+    var magicMouse = false
     /// 系统给的行数（含系统的加速，有小数；正 = 往上滚 / 往左滚，和 CGEvent 同号）：上下、左右
     var dy = 0.0
     var dx = 0.0
@@ -61,9 +65,14 @@ nonisolated enum ScrollSmoothing {
 
   /// excluded：前台 App 停用了平滑滚动（isExcluded）
   static func decide(_ wheel: Wheel, settings: Settings, excluded: Bool) -> Decision {
-    guard !wheel.continuous, !wheel.phased, !excluded, wheel.dx != 0 || wheel.dy != 0 else {
-      return .pass
+    guard !excluded else { return .pass }
+    if wheel.continuous || wheel.phased {
+      // 妙控鼠标本来就滑着滚：不平滑，只照开关反向（不看距离是不是 0：同一下的每个事件都反，开头才不会倒着动一个点）
+      let (flipY, flipX) = (settings.reverseVertical, settings.reverseHorizontal)
+      return wheel.magicMouse && (flipY || flipX)
+        ? .flip(vertical: flipY, horizontal: flipX) : .pass
     }
+    guard wheel.dx != 0 || wheel.dy != 0 else { return .pass }
     // 哪个轴要反：⇧ 按着时拨的还是上下那个滚轮（系统换没换到左右那一轴都一样），跟着「上下反向」
     let flipY = settings.reverseVertical && wheel.dy != 0
     let flipX =

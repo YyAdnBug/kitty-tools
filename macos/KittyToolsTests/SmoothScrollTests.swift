@@ -22,7 +22,7 @@ struct SmoothScrollTests {
 
   @Test func onlyMouseWheelsAreSmoothed() {
     let settings = S.Settings()
-    // 触控板、妙控鼠标：连续的、带阶段的原样放过
+    // 连续的、带阶段的不平滑（触控板放过；妙控鼠标只反向，见下一条）
     #expect(S.decide(.init(continuous: true, dy: -3), settings: settings, excluded: false) == .pass)
     #expect(S.decide(.init(phased: true, dy: -3), settings: settings, excluded: false) == .pass)
     // 停用的 App 在前台、没有距离的：放过
@@ -35,6 +35,76 @@ struct SmoothScrollTests {
     #expect(
       S.decide(.init(dx: 2), settings: settings, excluded: false)
         == .smooth(dx: 80, dy: 0, flipped: false))
+  }
+
+  /// 妙控鼠标：不平滑，只照开关反向；触控板发一模一样的事件，照样放过（2026-11-18 用户反馈 0.10.0「怎么设都不对、鼠标没反向」：
+  /// 用户接的是妙控鼠标，原来连续的一律放过）。样本是那天只听的探针在用户的妙控鼠标（蓝牙 0x004C / 0x0269）和 M3 Air 触控板上
+  /// 录的原值：两台的事件一样，只有发送设备（字段 87）不同
+  @Test func magicMouseIsOnlyReversed() {
+    // 妙控鼠标往上滑一下：开始（行数、定点都是 0，像素 1）→ 变化 → 结束 → 惯性
+    let samples: [S.Wheel] = [
+      .init(continuous: true, phased: true, dy: 0),  // phase=1 d1=0 pt1=1 fx1=0
+      .init(continuous: true, phased: true, dy: 1.4),  // phase=2 d1=1 pt1=14 fx1=1.4
+      .init(continuous: true, phased: true, dy: 2.3),  // phase=2 d1=2 pt1=23 fx1=2.3
+      .init(continuous: true, phased: true, dy: 0),  // phase=4（结束）
+      .init(continuous: true, phased: true, dy: 2.6),  // mom=1 d1=2 pt1=26 fx1=2.6
+      .init(continuous: true, phased: true, dy: 2.7),  // mom=2 d1=2 pt1=27 fx1=2.7
+      .init(continuous: true, phased: true, dy: -2.2),  // 往下：phase=2 d1=-2 pt1=-23 fx1=-2.2
+      .init(continuous: true, phased: true, dy: 0.8, dx: -1),  // 斜着划：d2=-1 pt2=-5
+    ]
+    var reverse = S.Settings()
+    reverse.reverseVertical = true
+    for var wheel in samples {
+      // 触控板（同样的值）：开不开反向都放过
+      #expect(S.decide(wheel, settings: reverse, excluded: false) == .pass)
+      wheel.magicMouse = true
+      // 妙控鼠标：没开反向放过；开了每个事件都反（开头距离是 0 的也反，不然那一个像素倒着走）
+      #expect(S.decide(wheel, settings: S.Settings(), excluded: false) == .pass)
+      #expect(
+        S.decide(wheel, settings: reverse, excluded: false)
+          == .flip(vertical: true, horizontal: false))
+      // 停用的 App 里不反
+      #expect(S.decide(wheel, settings: reverse, excluded: true) == .pass)
+    }
+    // 修饰键、平滑程度 0 都不影响反向；左右反向管妙控鼠标左右划（它有真的横向，⇧ 不改归哪个开关）
+    var both = reverse
+    both.reverseHorizontal = true
+    both.strength = 0
+    let swipe = S.Wheel(continuous: true, phased: true, magicMouse: true, dx: -1, shift: true)
+    #expect(
+      S.decide(swipe, settings: both, excluded: false) == .flip(vertical: true, horizontal: true))
+    var sideways = S.Settings()
+    sideways.reverseHorizontal = true
+    #expect(
+      S.decide(
+        .init(continuous: true, magicMouse: true, dy: 2, option: true), settings: sideways,
+        excluded: false)
+        == .flip(vertical: false, horizontal: true))
+    // 合成的事件、拿不到设备的：不当成妙控鼠标
+    #expect(!ScrollTap.isMagicMouse(sender: 0))
+    #expect(!ScrollTap.isMagicMouse(sender: -1))
+  }
+
+  /// 就地反向对连续的（妙控鼠标的惯性那一段，探针原值 d1=2 pt1=27 fx1=2.7）同样三个都反，App 读到的精确距离也反了、阶段不变。
+  /// 只建事件、不发
+  @Test func negateFlipsContinuousEvent() throws {
+    let event = try #require(
+      CGEvent(
+        scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: 0, wheel2: 0, wheel3: 0)
+    )
+    event.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
+    event.setIntegerValueField(.scrollWheelEventMomentumPhase, value: 2)
+    event.setIntegerValueField(.scrollWheelEventDeltaAxis1, value: 2)
+    event.setIntegerValueField(.scrollWheelEventPointDeltaAxis1, value: 27)
+    event.setDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1, value: 2.7)
+    ScrollTap.negate(event, axis: 1)
+    #expect(event.getIntegerValueField(.scrollWheelEventDeltaAxis1) == -2)
+    #expect(event.getIntegerValueField(.scrollWheelEventPointDeltaAxis1) == -27)
+    #expect(abs(event.getDoubleValueField(.scrollWheelEventFixedPtDeltaAxis1) + 2.7) < 0.001)
+    let ns = try #require(NSEvent(cgEvent: event))
+    #expect(ns.hasPreciseScrollingDeltas)
+    #expect(ns.scrollingDeltaY == -27)
+    #expect(ns.momentumPhase == .changed)
   }
 
   /// 一格至少一行（系统加速在慢慢拨时给不到一行）；快拨时系统给的多行照算；滚动距离按百分比乘
