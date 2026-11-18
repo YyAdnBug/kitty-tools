@@ -123,8 +123,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private lazy var nowPlaying = NowPlaying(island: island)
   /// 刘海岛上的「下一个日程」（设置 › 刘海岛，默认关）
   private lazy var nextEvent = NextEvent(island: island)
-  /// 音量 / 亮度键换成刘海岛上的提示（设置 › 刘海岛，默认关）
-  private(set) lazy var mediaKeys = MediaKeys(island: island)
+  /// 音量 / 亮度键换成刘海岛上的提示（设置 › 刘海岛，默认关）。状态屏开着时不重建它的拦截（新建的会排到状态屏那一处
+  /// 前面，音量键穿过状态屏），退出时补（第五轮体检 E11）
+  private(set) lazy var mediaKeys: MediaKeys = {
+    let keys = MediaKeys(island: island)
+    keys.isHeldBack = { [unowned self] in statusScreen.isActive }
+    return keys
+  }()
   /// 访达里的 ⌘X 剪切、⌘V 移动（访达右键插件里的开关，issue #33）
   private lazy var finderKeys = FinderKeys(island: island)
   /// 平滑滚动（插件，SmoothScroll/）：起停跟着插件添没添加和辅助功能授权（apply），滚动那条线程由它管
@@ -166,9 +171,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       return nil
     }
     screen.isBusy = { [unowned self] in isCapturing || isReadingSelection }
-    // 在状态屏里时到点的提醒等退出后再响（提醒 C11）
+    // 在状态屏里时到点的提醒等退出后再响（提醒 C11）；音量键那个拦截在里面时欠下的重建补上（E11）
     screen.onExit = { [unowned self] in
       if Feature.reminders.isOn { reminders.recheck() }
+      mediaKeys.resume()
     }
     return screen
   }()
@@ -851,7 +857,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             sync: noteSyncer
           )
           .environment(island))
-      case .island: AnyView(IslandTab())
+      case .island: AnyView(IslandTab(mediaKeys: mediaKeys))
       case .plugins: AnyView(PluginsPage())
       case .clipboard: AnyView(ClipboardTab(store: clipboardStore).environment(island))
       case .launcher:

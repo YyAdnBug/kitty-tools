@@ -355,14 +355,25 @@ struct IslandLevelSymbol: View {
   }
 }
 
-/// 音量 / 亮度提示的细条：4 pt 高的胶囊，白色填充（静音时整条暗着）；条跟着键走得很快（一秒十几格），用 0.08 秒的线性跟上
+/// 音量 / 亮度提示的细条：4 pt 高的胶囊，白色填充（静音时整条暗着）；条跟着键走得很快（一秒十几格），用 0.08 秒的线性跟上。
+/// 到头了还在按（100% 再按 +、0 再按 −；Island.levelBumps 每变一次）：整条往那一头多顶出 bumpReach、用 snap 的弹簧弹回，
+/// 连按每一下都弹（第五轮体检 U13，同类刘海工具和 iPhone 的「到头了」）；减弱动态效果时不动。
+/// 播放的触发是自己的计数 pushes：keyframeAnimator 在视图第一次出现时不播，岛上原本没有这一条（空刘海、从耳朵过来、
+/// 音量换亮度换了视图）时那一下「到头」在细条插进来之前就记了——出现时 level.pushed 就等入场走完补播一次（评审 2）
 struct IslandLevelBar: View {
   let level: Island.Level
   /// 用强调色填（设置 › 刘海岛「音量和亮度」，默认白）
   var accent = false
+  var bumps = 0
+  @State private var pushes = 0
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+  /// 到头再按时多顶出去多少（pt）
+  static let bumpReach: CGFloat = 6
+
   var body: some View {
+    // 顶向哪一头：在高的那一头（100%）往右，在 0 往左
+    let up = level.shown > 0.5
     Capsule().fill(.white.opacity(0.22))
       .overlay(alignment: .leading) {
         GeometryReader { proxy in
@@ -372,6 +383,32 @@ struct IslandLevelBar: View {
         }
       }
       .frame(height: 4)
+      .onChange(of: bumps) { pushes += 1 }
+      .task {
+        // 入场（形体长开约 0.4 秒、细条糊着进来）走得差不多了再弹，不然被入场盖住看不出
+        guard level.pushed else { return }
+        try? await Task.sleep(for: .milliseconds(300))
+        if !Task.isCancelled { pushes += 1 }
+      }
+      .keyframeAnimator(initialValue: CGFloat(0), trigger: pushes) { bar, push in
+        // 只是渲染变换（横着拉长、钉住另一头），不重排；push 是多出来的点数，按条的宽度换成倍数
+        bar.visualEffect { bar, proxy in
+          bar.scaleEffect(
+            x: proxy.size.width > 0 ? 1 + push / proxy.size.width : 1, y: 1,
+            anchor: up ? .leading : .trailing)
+        }
+      } keyframes: { _ in
+        KeyframeTrack {
+          CubicKeyframe(reduceMotion ? 0 : Self.bumpReach, duration: 0.07)
+          SpringKeyframe(0, spring: Self.bounceBack)
+        }
+      }
+  }
+
+  /// 弹回的弹簧：Whisker 的 snap（键盘驱动的反馈）
+  private static var bounceBack: Spring {
+    let (duration, bounce) = Style.Motion.snap.parameters ?? (0.16, 0.15)
+    return Spring(duration: duration, bounce: bounce)
   }
 }
 
@@ -386,6 +423,8 @@ struct IslandLevelWings: View {
   /// 音量 / 亮度的细条用强调色、细条旁边写百分比（设置 › 刘海岛「音量和亮度」，2026-11-17 照 Alcove）
   var accent = false
   var percent = false
+  /// 到头再按了几次（Island.levelBumps，U13）
+  var bumps = 0
   @Environment(\.islandLevelRide) private var ride
 
   var body: some View {
@@ -429,7 +468,8 @@ struct IslandLevelWings: View {
             .animation(Style.Motion.snap.animation(), value: level.fraction > 0)
         } else {
           HStack(spacing: 6) {
-            IslandLevelBar(level: level, accent: accent).frame(width: percent ? 40 : 68)
+            IslandLevelBar(level: level, accent: accent, bumps: bumps).frame(
+              width: percent ? 40 : 68)
             if percent {
               Text(verbatim: "\(Int((level.shown * 100).rounded()))%")
                 .font(.system(size: 11, weight: .semibold).monospacedDigit())
@@ -530,6 +570,8 @@ struct IslandLevelRow: View {
   let level: Island.Level
   /// 细条用强调色（设置 › 刘海岛「音量和亮度」）
   var accent = false
+  /// 到头再按了几次（Island.levelBumps，U13）
+  var bumps = 0
 
   var body: some View {
     HStack(spacing: 10) {
@@ -559,7 +601,7 @@ struct IslandLevelRow: View {
           .fixedSize(horizontal: true, vertical: false)
         IslandBattery(fraction: level.battery, tone: level.tone)
       } else {
-        IslandLevelBar(level: level, accent: accent).frame(width: 160)
+        IslandLevelBar(level: level, accent: accent, bumps: bumps).frame(width: 160)
         Text("\(Int((level.shown * 100).rounded()))%")
           .font(.system(size: 12, weight: .semibold).monospacedDigit())
           .foregroundStyle(.white.opacity(0.92))

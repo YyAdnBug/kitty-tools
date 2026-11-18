@@ -403,6 +403,40 @@ struct IslandExcerptTests {
     #expect(Island.moved(2, by: 1, count: 0) == nil)
   }
 
+  /// 按「打开刘海岛」时键盘先交给岛上带按钮的提示 / 卡片（第五轮体检 A2）：有按钮的提示、活动的卡片算；没按钮的、音量提示、
+  /// 空着的不算（照旧开那一张）。卡片上主按钮在最右：← 往后一个、→ 往前一个，到头回绕
+  @Test func buttonsTakeTheKeyboard() {
+    let notch = Island.Geometry.notch(width: 212, height: 37.5)
+    let deleted = Island.Content(
+      title: "已删除 3 条", tone: .info, symbol: "trash.circle.fill", leading: .tone)
+    let undo = Island.Action("撤销") {}
+    #expect(Island(showing: deleted, geometry: notch, actions: [undo]).hasButtonsToFocus)
+    #expect(!Island(showing: deleted, geometry: notch).hasButtonsToFocus)
+    #expect(!Island(showing: nil, geometry: notch).hasButtonsToFocus)
+    let level = Island(showing: nil, geometry: notch)
+    level.showLevel(Island.Level(kind: .volume, fraction: 0.5))
+    #expect(!level.hasButtonsToFocus)
+    // 活动的卡片（录屏的「停止」）算；卡片收起回到耳朵就不算了
+    let recording = Island.Activity(
+      id: "rec", kind: .record, title: "录屏中", symbol: "record.circle.fill",
+      actions: [Island.Action("停止") {}])
+    let winged = Island(showing: nil, geometry: notch, activities: [recording])
+    #expect(!winged.hasButtonsToFocus)
+    winged.tapped()
+    #expect(winged.hasButtonsToFocus)
+    // 两个按钮排成「打开 · 在访达中显示 ×」：选中主按钮（0）按 ← 到 1，再按 ← 回绕到 0；→ 反过来
+    #expect(Island.moved(0, by: Island.buttonStep(left: true), count: 2) == 1)
+    #expect(Island.moved(1, by: Island.buttonStep(left: true), count: 2) == 0)
+    #expect(Island.moved(0, by: Island.buttonStep(left: false), count: 2) == 1)
+    // 按钮换了（挂着的提醒换按钮、活动原地更新）：选中的还在范围里不动，超出了夹到最后一个，没按钮了还键盘（nil）
+    #expect(Island.reselected(1, count: 2) == 1 && Island.reselected(2, count: 2) == 1)
+    #expect(Island.reselected(0, count: 0) == nil)
+    // 摆出来的岛没有窗口：按键叫出照旧是那一张（不交键盘、不建窗口）
+    let staged = Island(showing: deleted, geometry: notch, actions: [undo])
+    staged.toggleBoard(byKeyboard: true)
+    #expect(staged.isBoardOpen && staged.buttonSelection == nil)
+  }
+
   /// 双指往上滑收起：按手指方向算，「自然滚动」开着时 scrollingDeltaY 和手指同向（往下为正）
   @Test func swipeUpFollowsFingers() {
     #expect(Island.fingersUp(deltaY: -10, inverted: true) == 10)

@@ -86,7 +86,8 @@ struct NextEventTests {
         .host() == "teams.microsoft.com")
   }
 
-  /// 挂在岛上：类别同提醒的倒数、倒数到开始；有会议链接时第一个按钮是「加入会议」（点岛本身也是它），没有就只有「打开日历」；
+  /// 挂在岛上：类别同提醒的倒数、倒数到开始；有会议链接时第一个按钮是「加入会议」（只能点按钮：点岛本身是「打开日历」，
+  /// 第五轮体检 E4），没有就只有「打开日历」；
   /// 第二行是时间和地点（地点是网址的不写）；空标题、超长标题收拾过
   @Test func activityOnIsland() throws {
     let utc = try #require(TimeZone(identifier: "UTC"))
@@ -101,7 +102,7 @@ struct NextEventTests {
     #expect(Island.Activity.Kind.event < .progress)
     #expect(activity.trailing == .countdown(to: meeting.start) && activity.symbol == "calendar")
     #expect(activity.actions.map(\.title) == ["加入会议", "打开日历"])
-    #expect(activity.actions.map(\.opens) == [true, false])
+    #expect(activity.actions.map(\.opens) == [false, true])
     activity.actions[0].run()
     activity.actions[1].run()
     #expect(joined?.host() == "zoom.us" && opened == 1)
