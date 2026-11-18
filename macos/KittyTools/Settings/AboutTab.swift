@@ -1,7 +1,8 @@
 // 设置 › 关于（Whisker 品牌页）：128 pt 大图标（点一下摇一摇，悬停时跟着指针 3D 倾斜 ≤ 6°）+ 26 pt 圆体字标 +
 // 版本胶囊 + 应用内更新（Updater：检查更新、发现新版本时「更新并重新打开」、下载中「取消」、自动检查开关）+ 更新日志时间线
 // （随包分发的 changelog.json，最新版在前；只展开当前版本，别的折叠成一行、点了才排它的条目——2026-11-05 用户报全部展开太长、
-// 滚动卡）；可以重看欢迎引导。更新后第一次启动不再自动打开这一页，只由刘海岛说
+// 滚动卡）；可以重看欢迎引导；「反馈问题」（第四轮体检 X14）打开 GitHub 上新建问题的页面，只预填版本号、芯片和系统版本，
+// 不带任何用户数据（feedbackURL，纯函数）。更新后第一次启动不再自动打开这一页，只由刘海岛说
 // 「已更新到 x」+ 本版摘要（AppDelegate 比较 lastSeenVersion，体检 A29），全文在这里。
 // 页面最底下两行小字是素材和参考产品的出处（状态屏的动画表情、便签参考的 Noty，都是 MIT，许可要求随包带着许可全文；
 // mac-whisker §11）。
@@ -47,6 +48,7 @@ struct AboutTab: View {
   /// 重看欢迎引导
   var showOnboarding: () -> Void = {}
   @AppStorage(Prefs.updateAutoCheck) private var autoCheck = true
+  @AppStorage(Prefs.updateInstallOnQuit) private var installOnQuit = true
 
   static let version =
     Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
@@ -92,6 +94,8 @@ struct AboutTab: View {
           HStack(spacing: 16) {
             Button("打开发布页") { NSWorkspace.shared.open(Updater.releasesPage) }
             Button("重看欢迎引导", action: showOnboarding)
+            Button("反馈问题") { NSWorkspace.shared.open(Self.feedbackURL()) }
+              .help("在 GitHub 上新建一个问题（只预填版本号和系统版本）")
           }
           .buttonStyle(.plain).foregroundStyle(Style.brandInk).pointerStyle(.link)
           .font(.callout)
@@ -118,6 +122,34 @@ struct AboutTab: View {
         .frame(maxWidth: .infinity, alignment: .leading)
       }
     }
+  }
+
+  /// 「反馈问题」（X14）：GitHub 新建问题的页面，标题「[macOS 版本] 」，正文是版本、芯片、系统版本和两行要填的。
+  /// 只有这几样，不带剪贴板、原文、路径、日志（纯函数，配单测）
+  static func feedbackURL(
+    version: String = version,
+    system: OperatingSystemVersion = ProcessInfo.processInfo.operatingSystemVersion,
+    chip: String = Self.chip
+  ) -> URL {
+    let os = "macOS \(system.majorVersion).\(system.minorVersion).\(system.patchVersion)"
+    let body = String(
+      localized:
+        "版本：Kitty Tools \(version)（\(chip)）\n系统：\(os)\n\n遇到了什么：\n\n怎么能重现：\n")
+    var components = URLComponents(string: "https://github.com/YyAdnBug/kitty-tools/issues/new")!
+    components.queryItems = [
+      URLQueryItem(name: "title", value: "[macOS \(version)] "),
+      URLQueryItem(name: "body", value: body),
+    ]
+    return components.url!
+  }
+
+  /// 这份 App 跑在什么芯片上（Intel 上自己编的是 x86_64）
+  private static var chip: String {
+    #if arch(x86_64)
+      "Intel"
+    #else
+      "Apple silicon"
+    #endif
   }
 
   /// 素材和参考产品的出处：更新日志下面两行小字，每行后面跟着打开随包那份许可全文的链接
@@ -156,8 +188,17 @@ struct AboutTab: View {
         case .upToDate:
           Label("已是最新版本", systemImage: "checkmark.circle.fill").foregroundStyle(.secondary)
           link("再查一次") { await updater.check(.page) }
+        case .available(let release) where release.version == updater.skipped:
+          // 跳过了这一版（X11）：别处都不提了，这里写着、能取消跳过
+          Text("已跳过新版本 \(release.version)").foregroundStyle(.secondary)
+          link("取消跳过") { updater.unskip() }
+          link("更新内容") { NSWorkspace.shared.open(release.page) }
         case .available(let release):
-          Text("有新版本 \(release.version)")
+          if updater.ready == release {
+            Text("新版本 \(release.version) 已下载好")
+          } else {
+            Text("有新版本 \(release.version)")
+          }
           Button("更新并重新打开") { Task { await updater.install(.page) } }
             .buttonStyle(BrandButtonStyle())
             .disabled(updater.blocker != nil)
@@ -166,6 +207,7 @@ struct AboutTab: View {
           } else {
             link("更新内容") { NSWorkspace.shared.open(release.page) }
           }
+          link("跳过这个版本") { updater.skip() }
         case .installing(let release):
           // 下载有进度就是一条真的进度条（服务器没给大小、还没开始时是来回走的那种），后面一句话带百分比
           ProgressView(value: updater.progress)
@@ -195,10 +237,16 @@ struct AboutTab: View {
       // 定高：有按钮和只有文字的状态一样高，切换时下面的内容不跳
       .frame(height: 24)
       .animation(Style.Motion.settle.animation(), value: updater.state)
-      Toggle("自动检查更新", isOn: $autoCheck)
-        .toggleStyle(.checkbox)
-        .font(.callout)
-        .foregroundStyle(.secondary)
+      // 两行竖排（英文并排一行放不下）
+      VStack(alignment: .leading, spacing: 6) {
+        Toggle("自动检查更新", isOn: $autoCheck)
+        // X11：查到新版本就在后台下好，退出时装上（下次打开就是新版）
+        Toggle("在后台下载新版本，退出时安装", isOn: $installOnQuit)
+          .onChange(of: installOnQuit) { updater.installOnQuitChanged() }
+      }
+      .toggleStyle(.checkbox)
+      .font(.callout)
+      .foregroundStyle(.secondary)
     }
   }
 

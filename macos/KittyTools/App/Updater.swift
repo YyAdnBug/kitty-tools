@@ -11,9 +11,16 @@
 // 2026-10-13 用户要求「不是一直 loading」），下载中能取消（岛和关于页的「取消」，第四轮体检 E23：回到「有新版本」，
 // 下了一半的临时文件由系统的下载任务删掉）；之后解包、验签、替换只有一两秒，写「正在安装」、不能取消。不用 Sparkle（禁止第三方依赖）；解包、验签交给系统的 ditto / codesign，在进程外跑。
 // App 自己用 URLSession 下载的文件不带隔离标记（实测），换上的新版不会再被 Gatekeeper 拦；证书不变，授权不丢。
+// 第四轮体检 X11（2026-11-17）：
+// - 「跳过这个版本」（岛上、关于页）：角标、菜单和底栏的「更新到 x」（nudge）、后台检查的岛都不再提它，更新的版本出来照常提；
+//   关于页照样写着、能取消跳过（Prefs.updateSkippedVersion，这台电脑自己的）。
+// - 后台下载、退出时安装（设置 › 关于，默认开）：查到新版本（没跳过）就在后台把包下到缓存目录（prepare），退出时
+//   （AppDelegate.applicationShouldTerminate）装上——校验一条不少，走同一个 replace；装好不重新打开（用户是要退出），
+//   装不成照常退出、下次打开再查再下。下好之前点了「更新」照旧从头下；下好之后点「更新」直接用下好的那份。
 // 只有正式版（bundle id com.yy.kitty-tools.native）更新：Debug 版的 bundle id 不同，装过去会把 Dev 换成正式版。
 
 import AppKit
+import OSLog
 
 @Observable final class Updater {
   struct Release: Equatable, Sendable {
@@ -49,10 +56,21 @@ import AppKit
   }
   /// 发现的新版本（菜单栏图标的角标和菜单顶上那一项、面板底栏的「更新到 x」）：复查期间、没查成时留着，见 available(_:after:)
   private(set) var available: Release? {
-    didSet { if available != oldValue { onAvailableChange(available) } }
+    didSet { if available != oldValue { onAvailableChange(nudge) } }
   }
-  /// available 变了（AppDelegate 接菜单栏图标的角标；面板底栏是 SwiftUI，自己跟着变）
+  /// 「跳过这个版本」跳过的版本号（X11）
+  private(set) var skipped: String? {
+    didSet { if skipped != oldValue { onAvailableChange(nudge) } }
+  }
+  /// 该提示的新版本：available 里去掉跳过的那个（菜单栏图标的角标、菜单顶上那一项、面板底栏的「更新到 x」）
+  var nudge: Release? { Self.nudge(available, skipped: skipped) }
+  /// nudge 可能变了（AppDelegate 接菜单栏图标的角标；面板底栏是 SwiftUI，自己跟着变）
   @ObservationIgnored var onAvailableChange: (Release?) -> Void = { _ in }
+  /// 后台下好、等退出时装的那一版（X11；关于页写「已下载好」）和包
+  private(set) var ready: Release?
+  @ObservationIgnored private var readyZip: URL?
+  /// 后台下载那个任务（跳过、关掉开关、点「更新」时掐掉）
+  @ObservationIgnored private var prepareTask: Task<Void, Never>?
   /// 更新包下了多少（0…1，整百分点；下完到重新打开之前一直是 1）。nil = 没在下载，或服务器没给大小（那就还是转着等）
   private(set) var progress: Double?
   /// 此刻不能更新的原因（录屏中「录制结束后再更新」，AppDelegate 写）：关于页的「更新并重新打开」置灰、旁边写它；
@@ -92,11 +110,17 @@ import AppKit
     "=identifier \"\(bundleID)\" and anchor apple generic and certificate leaf[subject.OU] = \"HTX9F4KG39\""
 
   /// state / progress / downloading：截图自检直接摆出各种状态；正常使用就是 `Updater()`
-  init(state: State = .idle, progress: Double? = nil, downloading: Bool = false) {
+  init(
+    state: State = .idle, progress: Double? = nil, downloading: Bool = false,
+    skipped: String? = UserDefaults.standard.string(forKey: Prefs.updateSkippedVersion),
+    ready: Release? = nil
+  ) {
     self.state = state
     self.progress = progress
     isDownloading = downloading
     available = Self.available(nil, after: state)
+    self.skipped = skipped
+    self.ready = ready
   }
 
   /// 正式版才更新（Debug 版 bundle id 不同）
@@ -105,6 +129,8 @@ import AppKit
   /// 启动后 10 s 查一次，之后每天一次；没查成（多半是刚开机网络还没好）半小时后再试。设置里关了就跳过
   func start() {
     guard isSupported else { return }
+    // 上次后台下好、没装上的包（退出时没装成、开关关了）：这次查到再下
+    try? FileManager.default.removeItem(at: Self.preparedFolder)
     schedule?.cancel()
     schedule = Task { [weak self] in
       try? await Task.sleep(for: .seconds(10))
@@ -148,16 +174,21 @@ import AppKit
       if let release = latest, Self.isNewer(release.version, than: AboutTab.version) {
         state = .available(release)
         let notified = UserDefaults.standard.string(forKey: Prefs.updateNotifiedVersion)
-        if toMenu || (trigger == .schedule && notified != release.version) {
+        let skipping = release.version == skipped
+        if toMenu || (trigger == .schedule && notified != release.version && !skipping) {
           UserDefaults.standard.set(release.version, forKey: Prefs.updateNotifiedVersion)
-          // 菜单栏图标隐藏了（设置 › 通用）就指到关于页的按钮
+          // 菜单栏图标隐藏了（设置 › 通用）就指到关于页的按钮；跳过了的（菜单里点「检查更新…」才说）指到取消跳过
           let hint: LocalizedStringResource =
-            UserDefaults.standard.bool(forKey: Prefs.statusItemVisible)
-            ? "点菜单栏图标，选「更新到 \(release.version)」" : "到 设置 › 关于 里点「更新并重新打开」"
+            skipping
+            ? "已跳过这个版本，到 设置 › 关于 里能取消跳过"
+            : UserDefaults.standard.bool(forKey: Prefs.statusItemVisible)
+              ? "点菜单栏图标，选「更新到 \(release.version)」" : "到 设置 › 关于 里点「更新并重新打开」"
           island?.show(
             "有新版本 \(release.version)", detail: hint, tone: .info,
-            symbol: "arrow.down.circle.fill", actions: [installAction("更新")])
+            symbol: "arrow.down.circle.fill",
+            actions: skipping ? [installAction("更新")] : [installAction("更新"), skipAction()])
         }
+        prepare(release)
       } else {
         state = .upToDate
         if toMenu { island?.show("已是最新版本", detail: "当前 \(AboutTab.version)") }
@@ -197,30 +228,43 @@ import AppKit
       island?.show("\(blocker)", tone: .warning)
       return
     }
+    // 后台已经下好这一版：直接装它（replace 照样全部校验）；还在下的掐掉、从头下（ponytail: 不接着它的进度，
+    // 后台那次没有进度可接；要省这一截再把后台下载改成带进度的同一个任务）
+    stopPreparing()
+    let prepared = ready == release ? readyZip : nil
+    if prepared == nil { discardReady() }
+    ready = nil
+    readyZip = nil
     state = .installing(release)
-    progress = nil
+    progress = prepared == nil ? nil : 1
     do {
       let app = Bundle.main.bundleURL
       try Self.checkReplaceable(app)
-      // 下载单独一个任务：「取消」只掐它（E23）。进度是下载的线程报的，回到主线程再动界面
-      let report: @Sendable (Double) -> Void = { [weak self] fraction in
-        Task { @MainActor in self?.downloaded(fraction, of: release) }
-      }
-      let task = Task { try await Self.download(release.archive, progress: report) }
-      downloadTask = task
-      isDownloading = true
-      if trigger != .page { showInstalling(release) }
-      let result = await task.result
-      downloadTask = nil
-      isDownloading = false
-      // 点了「取消」（哪怕刚好下完）：回到「有新版本」，下好的包删掉；没下完的临时文件系统的下载任务自己删
-      if task.isCancelled {
-        if case .success(let downloaded) = result {
-          try? FileManager.default.removeItem(at: downloaded.0)
+      let zip: URL
+      var response: URLResponse?
+      if let prepared {
+        zip = prepared
+      } else {
+        // 下载单独一个任务：「取消」只掐它（E23）。进度是下载的线程报的，回到主线程再动界面
+        let report: @Sendable (Double) -> Void = { [weak self] fraction in
+          Task { @MainActor in self?.downloaded(fraction, of: release) }
         }
-        return downloadCancelled(release)
+        let task = Task { try await Self.download(release.archive, progress: report) }
+        downloadTask = task
+        isDownloading = true
+        if trigger != .page { showInstalling(release) }
+        let result = await task.result
+        downloadTask = nil
+        isDownloading = false
+        // 点了「取消」（哪怕刚好下完）：回到「有新版本」，下好的包删掉；没下完的临时文件系统的下载任务自己删
+        if task.isCancelled {
+          if case .success(let downloaded) = result {
+            try? FileManager.default.removeItem(at: downloaded.0)
+          }
+          return downloadCancelled(release)
+        }
+        (zip, response) = try result.get()
       }
-      let (zip, response) = try result.get()
       // 下完了：岛上的「取消」去掉（解包、验签、替换不能停）
       if trigger != .page { showInstalling(release) }
       try await Self.replace(app, with: release, zip: zip, response: response)
@@ -248,6 +292,114 @@ import AppKit
     state = .available(release)
     progress = nil
     island?.dismiss(ifShowing: Self.installingTitle(release.version))
+  }
+
+  /// 「跳过这个版本」（岛上、关于页）：角标、菜单和底栏的「更新到 x」收起，后台下的包不要了
+  func skip() {
+    guard let release = available else { return }
+    UserDefaults.standard.set(release.version, forKey: Prefs.updateSkippedVersion)
+    skipped = release.version
+    stopPreparing()
+    discardReady()
+    island?.dismiss(ifShowing: "有新版本 \(release.version)")
+  }
+
+  /// 关于页的「取消跳过」
+  func unskip() {
+    UserDefaults.standard.removeObject(forKey: Prefs.updateSkippedVersion)
+    skipped = nil
+    if let available { prepare(available) }
+  }
+
+  /// 设置 › 关于「在后台下载新版本，退出时安装」拨了：关掉就不下了、下好的删掉；打开就把已经发现的那一版下起来
+  func installOnQuitChanged() {
+    if UserDefaults.standard.bool(forKey: Prefs.updateInstallOnQuit) {
+      if let available { prepare(available) }
+    } else {
+      stopPreparing()
+      discardReady()
+    }
+  }
+
+  /// 退出时有没有下好的新版本要装（AppDelegate.applicationShouldTerminate）
+  var hasPrepared: Bool {
+    guard let ready, readyZip != nil, isSupported, available == ready else { return false }
+    return UserDefaults.standard.bool(forKey: Prefs.updateInstallOnQuit) && ready.version != skipped
+  }
+
+  /// 退出时装上后台下好的新版本：校验和点「更新」走同一个 replace；装好不重新打开，装不成就算了（只记日志，照常退出）
+  func installPrepared() async {
+    guard hasPrepared, let release = ready, let zip = readyZip else { return }
+    ready = nil
+    readyZip = nil
+    state = .installing(release)
+    progress = 1
+    island?.show(
+      "正在装上新版本 \(release.version)", detail: "装好就退出", tone: .progress,
+      symbol: "arrow.down.circle.fill")
+    do {
+      try await Self.replace(Bundle.main.bundleURL, with: release, zip: zip, response: nil)
+      state = .installed(release)
+    } catch {
+      Log.storage.error("退出时没装上新版本：\(error.localizedDescription, privacy: .public)")
+      state = .available(release)
+    }
+    progress = nil
+  }
+
+  /// 后台把这一版下到缓存目录、等退出时装（X11）：开关关着、跳过了、已经下好 / 正在下、换不了 App（没拖进「应用程序」、
+  /// 没权限：下了也装不上）时不下；没下成就算了，下次检查再来
+  private func prepare(_ release: Release) {
+    guard isSupported, UserDefaults.standard.bool(forKey: Prefs.updateInstallOnQuit),
+      release.version != skipped, ready != release, prepareTask == nil,
+      (try? Self.checkReplaceable(Bundle.main.bundleURL)) != nil
+    else { return }
+    prepareTask = Task { [weak self] in
+      let result = try? await Self.download(release.archive, progress: { _ in })
+      // 掐掉了（stopPreparing 已经把 prepareTask 清了）、中途跳过了 / 关掉了 / 开始装了：下好的不要
+      guard let self, !Task.isCancelled else {
+        if let result { try? FileManager.default.removeItem(at: result.0) }
+        return
+      }
+      prepareTask = nil
+      guard let (zip, response) = result else { return }
+      guard (response as? HTTPURLResponse)?.statusCode == 200, available == release,
+        release.version != skipped, UserDefaults.standard.bool(forKey: Prefs.updateInstallOnQuit),
+        let kept = try? Self.keep(zip)
+      else {
+        try? FileManager.default.removeItem(at: zip)
+        return
+      }
+      ready = release
+      readyZip = kept
+    }
+  }
+
+  private func stopPreparing() {
+    prepareTask?.cancel()
+    prepareTask = nil
+  }
+
+  private func discardReady() {
+    if let readyZip { try? FileManager.default.removeItem(at: readyZip) }
+    ready = nil
+    readyZip = nil
+  }
+
+  /// 后台下好的包放这里（系统临时目录里放久了会被清掉）；启动时清空
+  static var preparedFolder: URL { URL.cachesDirectory.appending(path: "\(bundleID)/Updates") }
+
+  /// 挪进 preparedFolder（固定的名字：版本号来自网上，不拿它拼路径）
+  private static func keep(_ zip: URL) throws -> URL {
+    let target = preparedFolder.appending(path: "ready.zip")
+    try FileManager.default.createDirectory(at: preparedFolder, withIntermediateDirectories: true)
+    try? FileManager.default.removeItem(at: target)
+    try FileManager.default.moveItem(at: zip, to: target)
+    return target
+  }
+
+  private func skipAction() -> Island.Action {
+    .init("跳过这个版本") { [weak self] in self?.skip() }
   }
 
   /// 岛上的「更新」「重试」：同菜单栏的「更新到 x」
@@ -326,6 +478,11 @@ import AppKit
     case .upToDate, .installing, .installed: nil
     case .idle, .checking, .failed: known
     }
+  }
+
+  /// 该不该提示这一版：跳过的那个版本不提（更新的版本出来照常提）
+  static func nudge(_ available: Release?, skipped: String?) -> Release? {
+    available?.version == skipped ? nil : available
   }
 
   /// 最新的 mac 版（没有 = nil）：先读清单，没读到 200、解不出来就读 API 的 release 列表；API 不是 200 / 404 时抛出说给人听的原因。
@@ -445,9 +602,10 @@ import AppKit
     }
   }
 
-  /// 下好的更新包（zip，这里用完就删）：解到 target 所在卷的临时目录、校验、原子地换掉 target
+  /// 下好的更新包（zip，这里用完就删）：解到 target 所在卷的临时目录、校验、原子地换掉 target。
+  /// response：下载给的回复（看状态码）；nil = 后台下载时已经看过是 200（X11）
   static func replace(
-    _ target: URL, with release: Release, zip: URL, response: URLResponse
+    _ target: URL, with release: Release, zip: URL, response: URLResponse?
   ) async throws {
     defer { try? FileManager.default.removeItem(at: zip) }
     if let status = (response as? HTTPURLResponse)?.statusCode, status != 200 {
@@ -503,11 +661,14 @@ import AppKit
     try process.run()
   }
 
-  /// 跑系统命令（ditto / codesign）：在进程外，等它结束，非 0 退出就抛 failure
+  /// 跑系统命令（ditto / codesign）：在进程外，等它结束，非 0 退出就抛 failure。最多等 2 分钟（退出时装更新也走这里，
+  /// 不能让退出一直卡着；到点停掉 = 非 0，当没通过）
   private static func run(
     _ tool: String, _ arguments: [String], failure: LocalizedStringResource
   ) async throws {
-    guard try await Subprocess.run(tool, arguments).status == 0 else { throw UpdateError(failure) }
+    guard try await Subprocess.run(tool, arguments, timeout: .seconds(120)).status == 0 else {
+      throw UpdateError(failure)
+    }
   }
 }
 

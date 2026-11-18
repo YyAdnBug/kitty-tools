@@ -43,6 +43,9 @@ struct AppAliases {
 
   var count: Int { aliases.values.filter { !$0.isEmpty }.count }
 
+  /// 全部别名（折叠过的）：「命令和别名」查重时一起算（T3：和应用别名撞了，打这个词时两边都出）
+  var words: Set<String> { Set(aliases.values.flatMap(\.self)) }
+
   func text(for item: LauncherItem) -> String { values[Self.key(for: item)] ?? "" }
 
   /// nil = 超过可保存的长度；不截输入，不丢其它 App（含本机没装的）的配置。

@@ -47,6 +47,8 @@ enum Prefs {
   static let launcherRecentCurrencies = "launcherRecentCurrencies"
   /// 启动器的脚本命令（2026-11-07 拍板 E2，默认开）：关掉后自带的和自己的脚本都不出现，内置命令不受影响
   static let launcherScripts = "launcherScripts"
+  /// 启动器搜索、运行系统的「快捷指令」（第四轮体检 X10，默认开；SystemShortcuts）
+  static let launcherShortcuts = "launcherShortcuts"
   /// 脚本命令另外添加的文件夹（换行分隔的路径，ScriptLibrary）：这台电脑自己的路径，**不注册默认值**（不导出、不同步）
   static let scriptFolders = "scriptFolders"
   /// 跑脚本用的 PATH：从用户的登录 shell 读到的那一份（ScriptRunner）；这台电脑自己的，**不注册默认值**
@@ -481,6 +483,11 @@ enum Prefs {
   static let updateAutoCheck = "updateAutoCheck"
   /// 已经用刘海岛提示过的新版本号（后台检查每个版本只提示一次）
   static let updateNotifiedVersion = "updateNotifiedVersion"
+  /// 「跳过这个版本」跳过的版本号（第四轮体检 X11）：菜单栏的角标、菜单和面板底栏的「更新到 x」、后台检查的岛都不再提它，
+  /// 更新的版本出来照常提。这台电脑自己的状态，不注册默认值
+  static let updateSkippedVersion = "updateSkippedVersion"
+  /// 发现新版本就在后台下载好，退出时装上（X11，默认开）
+  static let updateInstallOnQuit = "updateInstallOnQuit"
   /// 设置窗上次看的页（SettingsPage.rawValue）
   static let settingsPage = "settingsPage"
   /// 设置侧栏收起了哪几组（SettingsPage.SidebarSection 的 rawValue，换行隔开；0.9.0 及以前存的是中文组标题，读时照样认；SettingsRoot）。这台电脑自己的界面状态：不注册默认值、不导出不同步
@@ -557,6 +564,7 @@ enum Prefs {
       launcherShowsFrequent: true,
       launcherRomanInput: false,
       launcherScripts: true,
+      launcherShortcuts: true,
       launcherCommandAliases: "",
       launcherAppAliases: "",
       launcherCommandsOff: "",
@@ -583,6 +591,7 @@ enum Prefs {
       panelSqueezeEntrance: false,
       floatingPinned: false,
       updateAutoCheck: true,
+      updateInstallOnQuit: true,
       clipboardRetentionDays: 7,
       clipboardImageBudgetMB: 512,
       clipboardExcludedBundleIDs: ClipboardFilter.defaultExcluded,

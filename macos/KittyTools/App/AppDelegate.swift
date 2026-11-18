@@ -297,6 +297,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     panel.ignoresClick = { [unowned self] in statusItem?.ownsClick(at: $0) == true }
     model.hidePanel = { [unowned panel] in panel.hide() }
     model.openFeatures = { [unowned self] in showSettings(page: .general) }
+    // 打字转到启动器（X12）：启动器这个功能关着就响一声
+    model.typeToLauncher = { [unowned self, unowned panel] text in
+      guard Feature.launcher.isOn else { return NSSound.beep() }
+      panel.hide()
+      if !(launcherPanel.isVisible && launcherPanel.isKeyWindow) { toggleLauncher() }
+      launcherModel.query = text
+      (launcherPanel.firstResponder as? NSTextView)?.moveToEndOfDocument(nil)
+    }
     model.perform = { [unowned self] target in
       switch target {
       case .action(let action): run(action)
@@ -1494,7 +1502,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // 快速记一条停手不到 1 秒的草稿（E2）
     noteCapture?.model.saveDraft()
     closeReadyAudio()  // 待录的录音控制条没有东西要收尾：直接收掉，不等它回调
-    guard recorder != nil || audioRecorder != nil else { return .terminateNow }
+    guard recorder != nil || audioRecorder != nil else {
+      guard updater.hasPrepared else { return .terminateNow }
+      replyQuit()
+      return .terminateLater
+    }
     quitsAfterRecording = true
     recorder?.stop()
     audioRecorder?.stop()
@@ -1502,9 +1514,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       try? await Task.sleep(for: .seconds(5))
       guard quitsAfterRecording else { return }
       quitsAfterRecording = false
-      NSApp.reply(toApplicationShouldTerminate: true)
+      replyQuit()
     }
     return .terminateLater
+  }
+
+  /// .terminateLater 之后回话「可以退了」：先装上后台下好的新版本（第四轮体检 X11；装不成照常退）
+  private func replyQuit() {
+    Task {
+      await updater.installPrepared()
+      NSApp.reply(toApplicationShouldTerminate: true)
+    }
   }
 
   /// 退出前把便签攒着没落盘的改动落下去（应用内更新的重启也走这里：Updater.install 调的是 NSApp.terminate）。
@@ -2676,7 +2696,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     defer {
       if quitsAfterRecording {
         quitsAfterRecording = false
-        NSApp.reply(toApplicationShouldTerminate: true)
+        replyQuit()
       }
     }
     // 开录报屏幕录制授权问题（录屏、录系统声音）
@@ -3673,8 +3693,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       if let on = extra.isOn(state) { item.state = on ? .on : .off }
       if extra == .settings, WhatsNew.inSettingsOnly(fresh) { item.badge = WhatsNew.menuBadge }
     }
-    // 有新版本时最上面一项就是更新（强调色：现在该操作的东西）
-    if let release = updater.available {
+    // 有新版本时最上面一项就是更新（强调色：现在该操作的东西）；跳过了的版本不挂（X11）
+    if let release = updater.nudge {
       menu.addAction(
         "更新到 \(release.version)…", symbol: "arrow.down.circle.fill", color: NSColor(Style.brand)
       ) { [unowned self] in Task { await updater.install() } }

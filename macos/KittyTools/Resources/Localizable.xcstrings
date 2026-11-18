@@ -11590,6 +11590,16 @@
         }
       }
     },
+    "反馈问题" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Report a Problem"
+          }
+        }
+      }
+    },
     "发一份到别的 App 或文件夹（历史里那条还在）" : {
       "localizations" : {
         "en" : {
@@ -11748,6 +11758,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Stop Floating"
+          }
+        }
+      }
+    },
+    "取消跳过" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop Skipping"
           }
         }
       }
@@ -13708,6 +13728,16 @@
         }
       }
     },
+    "在 GitHub 上新建一个问题（只预填版本号和系统版本）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opens a new issue on GitHub, prefilled with only the app and system versions"
+          }
+        }
+      }
+    },
     "在 全部 / 收藏 / 片段 之间切换" : {
       "localizations" : {
         "en" : {
@@ -13980,12 +14010,32 @@
         }
       }
     },
+    "在后台下载新版本，退出时安装" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Download updates in the background and install on quit"
+          }
+        }
+      }
+    },
     "在启动器里打它就排第一；设置 › 启动器「命令和别名」里还能改" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Typing it in the Launcher puts this script first; you can change it in Settings › Launcher › Commands & Aliases"
+          }
+        }
+      }
+    },
+    "在启动器里打快捷指令的名字就能运行（不带输入）；改了快捷指令，下次打开启动器时跟上" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Type a shortcut’s name in the Launcher to run it (without input). Changes to your shortcuts show up the next time you open the Launcher."
           }
         }
       }
@@ -18462,6 +18512,26 @@
         }
       }
     },
+    "已跳过新版本 %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skipped version %@"
+          }
+        }
+      }
+    },
+    "已跳过这个版本，到 设置 › 关于 里能取消跳过" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You skipped this version; you can undo that in Settings › About"
+          }
+        }
+      }
+    },
     "已运行「%@」" : {
       "localizations" : {
         "en" : {
@@ -19836,6 +19906,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Quick actions and recent notices are both off"
+          }
+        }
+      }
+    },
+    "快捷指令" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shortcuts"
+          }
+        }
+      }
+    },
+    "快捷指令「%@」没运行成" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shortcut “%@” didn’t run"
           }
         }
       }
@@ -22877,12 +22967,12 @@
         }
       }
     },
-    "描了橙框的别名重复了（也算网页搜索的关键词）：只打这个词时脚本排第一；后面接了空格和文字时，内置命令先认，其次脚本，网页搜索最后。改一个吧。" : {
+    "描了橙框的别名重复了（也算网页搜索的关键词和应用别名）：只打这个词时脚本排第一；后面接了空格和文字时，内置命令先认，其次脚本，网页搜索最后。改一个吧。" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Aliases outlined in orange are duplicates (web search keywords count too): typing just the word puts the script first; with a space and text after it, built-in commands come first, then scripts, then web search. Change one of them."
+            "value" : "Aliases outlined in orange are duplicates (web search keywords and app aliases count too): typing just the word puts the script first; with a space and text after it, built-in commands come first, then scripts, then web search. Change one of them."
           }
         }
       }
@@ -23253,6 +23343,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Search apps"
+          }
+        }
+      }
+    },
+    "搜索快捷指令" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search the Shortcuts app"
           }
         }
       }
@@ -24859,6 +24959,16 @@
         }
       }
     },
+    "新版本 %@ 已下载好" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Version %@ is downloaded"
+          }
+        }
+      }
+    },
     "新版本 %@ 已装好" : {
       "localizations" : {
         "en" : {
@@ -25955,6 +26065,16 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "最小化窗口" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Minimize Window"
           }
         }
       }
@@ -27757,6 +27877,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Computing %@…"
+          }
+        }
+      }
+    },
+    "正在装上新版本 %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Installing version %@"
           }
         }
       }
@@ -31022,6 +31152,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Git repository with the history of every change"
+          }
+        }
+      }
+    },
+    "版本：Kitty Tools %@（%@）\n系统：%@\n\n遇到了什么：\n\n怎么能重现：\n" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "版本：Kitty Tools %1$@（%2$@）\n系统：%3$@\n\n遇到了什么：\n\n怎么能重现：\n"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Version: Kitty Tools %1$@ (%2$@)\nSystem: %3$@\n\nWhat happened:\n\nSteps to reproduce:\n"
           }
         }
       }
@@ -34912,12 +35058,12 @@
         }
       }
     },
-    "英文,输入法,书签,浏览历史,历史,浏览器,Safari,Chrome,Edge,Arc,Brave,Firefox,完全磁盘访问,搜索,引擎,快捷链接,关键词,兜底,使用记录,常用,最近,收藏,文件,open,find,Spotlight,位置,面板位置,鼠标,跟随鼠标,上次位置,脚本,脚本命令,命令,别名,写法,AI,新建脚本,导入" : {
+    "英文,输入法,书签,浏览历史,历史,浏览器,Safari,Chrome,Edge,Arc,Brave,Firefox,完全磁盘访问,搜索,引擎,快捷链接,关键词,兜底,使用记录,常用,最近,收藏,文件,open,find,Spotlight,位置,面板位置,鼠标,跟随鼠标,上次位置,脚本,脚本命令,命令,别名,写法,AI,新建脚本,导入,快捷指令,Shortcuts" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "English,Input Method,Bookmarks,Browsing History,History,Browser,Safari,Chrome,Edge,Arc,Brave,Firefox,Full Disk Access,Search,Search Engine,Quicklinks,Keyword,Fallback,Usage,Frequent,Recent,Favorites,Files,open,find,Spotlight,Position,Panel Position,Mouse,Follow Mouse,Last Position,Scripts,Script Commands,Commands,Alias,How to Write,AI,New Script,Import"
+            "value" : "English,Input Method,Bookmarks,Browsing History,History,Browser,Safari,Chrome,Edge,Arc,Brave,Firefox,Full Disk Access,Search,Search Engine,Quicklinks,Keyword,Fallback,Usage,Frequent,Recent,Favorites,Files,open,find,Spotlight,Position,Panel Position,Mouse,Follow Mouse,Last Position,Scripts,Script Commands,Commands,Alias,How to Write,AI,New Script,Import,Shortcuts"
           }
         }
       }
@@ -35279,6 +35425,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "It relaunches after installing. Record audio after that."
+          }
+        }
+      }
+    },
+    "装好就退出" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quits when done"
           }
         }
       }
@@ -36767,6 +36923,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Skip files and folders with this name"
+          }
+        }
+      }
+    },
+    "跳过这个版本" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skip This Version"
           }
         }
       }

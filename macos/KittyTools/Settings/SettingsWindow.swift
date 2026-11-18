@@ -230,7 +230,7 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     case .clipboard:
       "历史,天数,保留,永久,图片,占用,预览,链接,网页,格式,纯文本,识别,文字,OCR,隐私,密钥,银行卡,清空,退出,锁屏,排除,App,收藏,收藏夹,片段,密码,敏感,网站,标题,透镜,单击,双击,点击,粘贴,位置,面板位置,鼠标,跟随鼠标,上次位置"
     case .launcher:
-      "英文,输入法,书签,浏览历史,历史,浏览器,Safari,Chrome,Edge,Arc,Brave,Firefox,完全磁盘访问,搜索,引擎,快捷链接,关键词,兜底,使用记录,常用,最近,收藏,文件,open,find,Spotlight,位置,面板位置,鼠标,跟随鼠标,上次位置,脚本,脚本命令,命令,别名,写法,AI,新建脚本,导入"
+      "英文,输入法,书签,浏览历史,历史,浏览器,Safari,Chrome,Edge,Arc,Brave,Firefox,完全磁盘访问,搜索,引擎,快捷链接,关键词,兜底,使用记录,常用,最近,收藏,文件,open,find,Spotlight,位置,面板位置,鼠标,跟随鼠标,上次位置,脚本,脚本命令,命令,别名,写法,AI,新建脚本,导入,快捷指令,Shortcuts"
     case .launchpad:
       "启动台,图标,网格,全屏,应用,App,排法,排列,列,行,翻页,页,搜索,App 文件夹,拖动,抖动,删除,卸载,App Store,捏合,触控板,四指,五指,触发角,导入,系统启动台,Launchpad,快捷键"
     case .screenshot:

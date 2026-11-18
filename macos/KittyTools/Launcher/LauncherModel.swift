@@ -442,6 +442,35 @@ import UniformTypeIdentifiers
 
   /// 系统命令（锁定屏幕…）：「命令」表里关掉的不列，改了别名的把原来的英文关键词换成别名（副标题也写别名）
   private var systemItems: [LauncherItem] {
+    systemCommandItems + (shortcutsOn ? shortcutNames.map(SystemShortcuts.item) : [])
+  }
+
+  /// 搜索、运行快捷指令（X10）开着没有（单测、截图自检是关的：不起 shortcuts 进程）
+  private var shortcutsOn: Bool {
+    !isFixture && UserDefaults.standard.bool(forKey: Prefs.launcherShortcuts)
+  }
+  /// 缓存的快捷指令名字（呼出时过期就在后台重列，SystemShortcuts）
+  @ObservationIgnored private(set) var shortcutNames: [String] = []
+  @ObservationIgnored private var shortcutsListedAt: Date?
+  @ObservationIgnored private var shortcutsTask: Task<Void, Never>?
+
+  /// 呼出时：快捷指令的列表过期了就在后台重列（不等它；列好了开着的面板按新的重搜）
+  private func refreshShortcuts(now: Date) {
+    guard shortcutsOn, shortcutsTask == nil,
+      shortcutsListedAt.map({ now.timeIntervalSince($0) > SystemShortcuts.staleAfter }) ?? true
+    else { return }
+    shortcutsTask = Task { [weak self] in
+      let names = await SystemShortcuts.list()
+      guard let self else { return }
+      shortcutsTask = nil
+      shortcutsListedAt = .now
+      guard let names, names != shortcutNames else { return }
+      shortcutNames = names
+      if isShown, !query.isEmpty { search() }
+    }
+  }
+
+  private var systemCommandItems: [LauncherItem] {
     let settings = commandSettings()
     guard !settings.aliases.isEmpty || !settings.off.isEmpty else { return SystemCommands.items }
     return SystemCommands.items.compactMap { item in
@@ -702,6 +731,7 @@ import UniformTypeIdentifiers
   /// 呼出前：应用程序目录变了就重扫（后台扫，扫完刚装的 App 就搜得到）；60 秒内没执行就收起的，接着上次的查询和选中项
   func prepareForShow(now: Date = .now) {
     isShown = true
+    refreshShortcuts(now: now)
     if !isFixture,
       Self.needsRescan(
         scannedAt: appsScannedAt, scanned: appsSignature, now: AppCatalog.signature())
@@ -1602,6 +1632,12 @@ import UniformTypeIdentifiers
       close()
       runAction(item.target)
     case .system:
+      // 快捷指令（X10）：记使用、收起、在进程外跑
+      if let name = SystemShortcuts.name(fromTarget: item.target) {
+        usage.record(item, query: query)
+        close()
+        return SystemShortcuts.run(name, island: island)
+      }
       guard let command = SystemCommand(rawValue: item.target) else { return }
       if let text = command.confirmation, !confirm(item, commandKey: false, text: text) { return }
       usage.record(item, query: query)
@@ -2429,7 +2465,7 @@ import UniformTypeIdentifiers
     case .system:
       confirming
         ? Self.act("确认\(item.title)", "exclamationmark.triangle")
-        : Self.act("运行", SystemCommand(rawValue: item.target)?.symbol ?? "power")
+        : Self.act("运行", SystemCommand(rawValue: item.target)?.symbol ?? item.symbol)
     case .url where AppCatalog.isSettingsPane(item.target):
       Self.act("打开", "gearshape")
     case .url: Self.act("打开网址", "safari")

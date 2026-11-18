@@ -273,6 +273,8 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
     case (.action, Self.scriptGuideID): "doc.on.clipboard.fill"
     case (.action, _): MenuExtra(rawValue: target)?.symbol ?? "gearshape"
     case (.translate, _): SettingsPage.translate.symbol
+    case (.system, let target) where target.hasPrefix(SystemShortcuts.prefix):
+      "square.stack.3d.up.fill"
     case (.system, _): SystemCommand(rawValue: target)?.symbol ?? "power"
     case (.process, _), (.script, _), (.scriptResult, _): "terminal.fill"
     case (.ip, let target):

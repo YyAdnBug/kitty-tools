@@ -589,6 +589,10 @@ struct SnapshotProbeTests {
     let updateStates: [(String, Updater.State, Bool, Double?)] = [
       ("available", .available(release), false, nil),
       ("available", .available(release), true, nil),
+      // 跳过了这一版、后台已经下好（第四轮体检 X11）
+      ("skipped", .available(release), false, nil),
+      ("ready", .available(release), false, nil),
+      ("ready", .available(release), true, nil),
       ("installing", .installing(release), false, nil),
       ("downloading", .installing(release), false, 0.42),
       ("downloading", .installing(release), true, 0.42),
@@ -602,7 +606,9 @@ struct SnapshotProbeTests {
     navigation.page = .about
     for (name, state, dark, progress) in updateStates {
       // 下载中有「取消」（第四轮体检 E23），下完在装的没有
-      let updater = Updater(state: state, progress: progress, downloading: name == "downloading")
+      let updater = Updater(
+        state: state, progress: progress, downloading: name == "downloading",
+        skipped: name == "skipped" ? release.version : nil, ready: name == "ready" ? release : nil)
       try snapshot(
         SettingsRoot(navigation: navigation) { page in
           page == .about ? AnyView(AboutTab(updater: updater)) : pages(page)

@@ -21,6 +21,7 @@ struct LauncherCommandsSection: View {
   @AppStorage(Prefs.launcherCommandsOff) private var offText = ""
   @AppStorage(Prefs.launcherScripts) private var scriptsOn = true
   @AppStorage(Prefs.launcherWebSearchEngines) private var enginesData: Data?
+  @AppStorage(Prefs.launcherAppAliases) private var appAliasesText = ""
   @State private var filter = ""
   @State private var scope = Scope.all
   @State private var onlyOn = false
@@ -128,7 +129,8 @@ struct LauncherCommandsSection: View {
     let all = Self.rows(scripts: library?.scripts ?? [])
     let conflicts = LauncherCommands.conflicts(
       all.map { ($0.id, settings.alias($0.id, default: $0.keyword)) },
-      engineKeywords: SearchEngineDetail.decode(enginesData).map(\.keyword))
+      engineKeywords: SearchEngineDetail.decode(enginesData).map(\.keyword),
+      appAliases: AppAliases(text: appAliasesText).words)
     let shown =
       only.map { id in all.filter { $0.id == id } }
       ?? Self.filter(all, by: filter, scope: scope, onlyOn: onlyOn, settings: settings)
@@ -205,7 +207,7 @@ struct LauncherCommandsSection: View {
       SectionFootnote(
         !shown.contains { conflicts.contains($0.id) }
           ? "别名就是在启动器里要打的那个词，改了以后原来的词不再认；清空就只能按名字搜。关掉的不出现在搜索里。"
-          : "描了橙框的别名重复了（也算网页搜索的关键词）：只打这个词时脚本排第一；后面接了空格和文字时，内置命令先认，其次脚本，网页搜索最后。改一个吧。")
+          : "描了橙框的别名重复了（也算网页搜索的关键词和应用别名）：只打这个词时脚本排第一；后面接了空格和文字时，内置命令先认，其次脚本，网页搜索最后。改一个吧。")
     }
     .onAppear { focus(in: all) }
     .onChange(of: navigation?.focusedCommand) { focus(in: all) }
