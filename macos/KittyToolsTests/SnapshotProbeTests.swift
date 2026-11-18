@@ -777,6 +777,15 @@ struct SnapshotProbeTests {
         TranslateServiceDetail(store: services, id: TranslateService.Kind.deepl.rawValue),
         size: NSSize(width: 590, height: 460), dark: dark,
         to: "\(out)/settings-translate-detail\(suffix).png")
+      // 大模型服务的「浮窗里的回答」（issue #35）：讲解打开、写了附加要求
+      var explaining = TranslateService.zhipu
+      explaining.explainsSentences = true
+      explaining.extraPrompt = "术语保留英文；每个词多给一个例句"
+      let explainStore = TranslateServiceStore(services: [explaining])
+      try snapshot(
+        TranslateServiceDetail(store: explainStore, id: explaining.id),
+        size: NSSize(width: 590, height: 720), dark: dark,
+        to: "\(out)/settings-translate-detail-explain\(suffix).png")
       try snapshot(
         LauncherTab().defaultAppStorage(engines).environment(navigation),
         size: NSSize(width: 590, height: 2900),
@@ -3413,6 +3422,26 @@ struct SnapshotProbeTests {
                 "## 安装\n- 下载 **App**\n  - 打开它\n> 需要 macOS 15\n---\n```\nbrew install kitty\n```\n1. 第一步 `--help`"
               )),
             .init(service: gpt, state: .done("## 安装\n- 下载 App")),
+          ]
+        }
+      ),
+      // 讲解外文句子（issue #35）：开了讲解的服务出译文 + 重点词 + 句型（块级 Markdown），没开的照常只出译文
+      (
+        "translate-explain",
+        { c in
+          c.sourceText = "The committee has yet to decide whether the proposal is worth pursuing."
+          c.detected = .en
+          c.target = .zhHans
+          c.translatedSource = c.sourceText
+          c.cards = [
+            .init(
+              service: deepseek,
+              state: .done(
+                "委员会还没决定这项提议值不值得继续推进。\n\n**重点词汇**\n- have yet to do 还没有做（某事），比 haven't 书面\n"
+                  + "- proposal /prəˈpəʊzl/ n. 提议；方案\n- be worth doing 值得做\n"
+                  + "- pursue /pəˈsjuː/ v. 追求；继续进行——这里指把提议推进下去\n\n**句型**\n"
+                  + "whether 引导的从句作 decide 的宾语；has yet to decide 是现在完成时，表示到现在还没决定。")),
+            .init(service: zhipu, state: .done("委员会尚未决定该提案是否值得推进。")),
           ]
         }
       ),

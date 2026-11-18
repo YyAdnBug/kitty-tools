@@ -402,9 +402,10 @@ import Observation
     return Lang.detect(trimmed, preferring: [first, second]) != nil
   }
 
-  /// 按浮窗上选的源 / 目标（全局记住的）和检测结果定这次的请求；wordMode：单个词时让大模型按词典格式回答。
+  /// 按浮窗上选的源 / 目标（全局记住的）和检测结果定这次的请求。inPanel：翻译浮窗里的请求——单个词时让大模型按词典格式回答、
+  /// 一句外文时打开了讲解的服务讲解、服务的附加要求接上（issue #35）；静默替换和截图翻译的原位覆盖传 false，只要干净的译文。
   /// 截图翻译的原位覆盖按整图文字定一次方向，各段共用（TranslateSegments）
-  static func plan(for text: String, wordMode: Bool = true) -> (
+  static func plan(for text: String, inPanel: Bool = true) -> (
     request: TranslateRequest, detected: Lang?, fixedSource: Lang?, abandonedTarget: Lang?
   ) {
     let defaults = UserDefaults.standard
@@ -415,11 +416,26 @@ import Observation
     let plan = Lang.resolve(
       source: fixedSource, target: chosenTarget, detected: detected, first: first, second: second)
     let isWord =
-      wordMode && defaults.bool(forKey: Prefs.translateWordMode) && WordLookup.isWord(text)
+      inPanel && defaults.bool(forKey: Prefs.translateWordMode) && WordLookup.isWord(text)
+    let explainable =
+      inPanel && !WordLookup.isWord(text)
+      && SentenceExplain.applies(text, source: plan.from ?? detected, target: plan.to, first: first)
     return (
-      TranslateRequest(text: text, from: plan.from, to: plan.to, isWord: isWord), detected,
-      fixedSource, plan.fellBack ? chosenTarget : nil
+      TranslateRequest(
+        text: text, from: plan.from, to: plan.to, isWord: isWord, inPanel: inPanel,
+        explainable: explainable),
+      detected, fixedSource, plan.fellBack ? chosenTarget : nil
     )
+  }
+
+  /// 这个服务这次是在讲解（结果是讲解不是译文：同单词卡，不自动复制、不给「替换原文」，喇叭只读第一段）
+  func explains(_ service: TranslateService) -> Bool {
+    request.map(service.explains) ?? false
+  }
+
+  /// 主结果是讲解卡（不给「替换原文」）
+  var primaryExplains: Bool {
+    primaryResult.map { explains($0.service) } ?? false
   }
 
   /// 静默替换：不开浮窗、不动当前会话，按列表顺序用启用的服务（没折叠的先试）、等完整结果；记历史（开着的话）。
@@ -430,7 +446,7 @@ import Observation
     guard !text.isEmpty, text.utf8.count <= Self.maxSourceBytes else {
       throw TranslateError(message: String(localized: "原文为空或太长"))
     }
-    let request = Self.plan(for: text, wordMode: false).request
+    let request = Self.plan(for: text, inPanel: false).request
     var failure: Error = TranslateError.config(String(localized: "没有启用的翻译服务"))
     for service in orderedServices where !service.kind.isDictionary {
       do {
@@ -548,10 +564,11 @@ import Observation
         source: request.text, target: request.to, result: text, service: service.name,
         limit: defaults.integer(forKey: Prefs.translateHistoryLimit))
     }
-    // 单词模式的结果是一段释义，不自动复制（划个词查一下，剪贴板不该被换掉）
+    // 单词模式的结果是一段释义、讲解卡是一段讲解（issue #35），都不自动复制（划个词查一下，剪贴板不该被换掉）
     // 和 ⌘1–9 一样对勾 + 整卡闪一下：剪贴板被换掉了要看得出来
     if Self.autoCopies(
-      enabled: defaults.bool(forKey: Prefs.translateAutoCopy), isWord: request.isWord,
+      enabled: defaults.bool(forKey: Prefs.translateAutoCopy),
+      isWord: request.isWord || service.explains(request),
       copied: copiedSource, translated: translatedSource)
     {
       copyCard(service.id, announces: false)

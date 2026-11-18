@@ -172,9 +172,18 @@ import Observation
   // MARK: 读哪段字（纯函数，配单测）
 
   /// 卡片右上角的喇叭读的字（R1）：单词卡只读第一行释义（去掉读音行、拼音行、例句和 n. v. 这类词性记号）；
-  /// 别的卡读整段，先去掉 Markdown 记号
-  nonisolated static func speechText(_ result: String, wordStyle: Bool) -> String {
+  /// 讲解卡（issue #35）只读第一行译文，不读重点词和句型（模型常不空行，按段切会念整张卡；有的模型先写一行「**译文**」，
+  /// 只有标题的行跳过）；别的卡读整段，先去掉 Markdown 记号
+  nonisolated static func speechText(_ result: String, wordStyle: Bool, explanation: Bool = false)
+    -> String
+  {
     let plain = withoutMarkdown(result)
+    if explanation {
+      let first = result.split(whereSeparator: \.isNewline).lazy
+        .map { $0.trimmingCharacters(in: .whitespaces) }
+        .first { !$0.isEmpty && $0.wholeMatch(of: /(#+\s*.*|\*\*[^*]+\*\*[:：]?)/) == nil }
+      return first.map { withoutMarkdown($0) } ?? plain
+    }
     guard wordStyle else { return plain }
     let meaning = plain.split(whereSeparator: \.isNewline)
       .map { $0.trimmingCharacters(in: .whitespaces) }
