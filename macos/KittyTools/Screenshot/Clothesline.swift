@@ -6,10 +6,12 @@
 // 什么时候出来（C1 D3）：鼠标停在菜单栏那一条上 0.3 秒滑下来，离开 0.4 秒收起；只在鼠标所在的那块屏上，换屏跟过去；
 // 另有一个可设的全局快捷键（HotKeyAction.clothesline，默认不占键）。收不收按鼠标位置算，不用追踪区的进出
 // （面板改尺寸会重建追踪区、淡出时进来的事件会丢，同程序坞预览 mac-dock-preview §5）。
-// 面板是普通 NSPanel 实例（不子类化，mac-overlay-panel §1）：无边框、不激活本 App、永不当 key、状态栏层级
-// （截图的冻结帧和录屏的白名单按层级都不收它）、所有桌面上都在；**不加 fullScreenAuxiliary**，所以别的 App
-// 全屏占着那块屏时它不出来（拍板 D3，同便签屏幕边缘的药丸）。整块透明、没有毛玻璃底：透明的地方系统自己点穿，
-// 只有卡片接鼠标。永不当 key，所以收起直接淡掉窗口自己的透明度（OverlayPanel 要替身是因为淡出时它还当着 key）。
+// 面板和常驻缩略图同是 HoverKeyPanel（第五轮体检 A3）：无边框、不激活本 App、状态栏层级（截图的冻结帧和录屏的白名单按
+// 层级都不收它）、所有桌面上都在；指针在一张卡片上停够、最近没在别处打字时临时当 key 接 ⌘C 拷贝、⌘S 存储、Esc 收起
+// 绳子，移开就还键盘。
+// **不加 fullScreenAuxiliary**，所以别的 App 全屏占着那块屏时它不出来（拍板 D3，同便签屏幕边缘的药丸）。整块透明、
+// 没有毛玻璃底：透明的地方系统自己点穿，只有卡片接鼠标。收起前先还键盘，所以收起直接淡掉窗口自己的透明度（OverlayPanel
+// 要替身是因为淡出时它还当着 key）。
 // 内容在 ClotheslineView.swift，几何和时机在 ClotheslineLayout.swift（纯函数）。
 
 import AppKit
@@ -22,7 +24,9 @@ import SwiftUI
   /// 这块屏上排好的样子（面板内坐标）
   var plan = ClotheslineLayout.Plan()
   /// 鼠标停在哪一张上（压一层蒙层、右上角出 ✕）；截图自检直接摆它
-  var hovered: UUID?
+  var hovered: UUID? { didSet { if hovered != oldValue { onHover(hovered) } } }
+  /// 停到一张上 / 离开（Clothesline 接：拿键盘、还键盘，A3）
+  @ObservationIgnored var onHover: (UUID?) -> Void = { _ in }
   /// 这一帧每张卡挂在哪、歪多少（物理在跑时每帧换一份；减弱动态效果时就是 plan 里静止的样子）
   var hangs: [Hang] = []
   /// 两段绳子这一帧的质点（画线用）
@@ -99,7 +103,7 @@ import SwiftUI
   /// 「截完图放哪」现在选的是哪个（单测注入）：不是晾衣绳的话这根绳子整个不开——见 start()
   var placement: () -> Prefs.ShotPlacement = { Prefs.ShotPlacement.current() }
 
-  private var panel: NSPanel?
+  private var panel: HoverKeyPanel?
   private var host: ClotheslineHost?
   /// 挂在哪块屏上（nil = 收着）
   private var shown: NSScreen?
@@ -138,6 +142,20 @@ import SwiftUI
     model = ClotheslineModel(history: history)
     super.init()
     model.onCommand = { [unowned self] command, item in perform(command, on: item) }
+    model.onHover = { [unowned self] id in panel?.pointer(inside: id != nil) }
+  }
+
+  /// 指针停在一张卡片上时的按键（第五轮体检 A3）：⌘C 拷贝、⌘S 存储（截图才有）这一张，Esc 收起绳子；别的键不认
+  private func key(_ event: NSEvent) -> Bool {
+    guard let id = model.hovered, let item = model.item(id),
+      let command = HoverKeyPanel.command(for: event)
+    else { return false }
+    switch command {
+    case .close: hide(animated: true)
+    case .save where !ClotheslineModel.menu(for: item).joined().contains(.save): return false
+    default: perform(command, on: item)
+    }
+    return true
   }
 
   var isEmpty: Bool { model.isEmpty }
@@ -409,6 +427,9 @@ import SwiftUI
   }
 
   func hide(animated: Bool) {
+    // 收起前先还键盘；停着的那张也清掉（收着时指针离开收不到，再出来停回同一张要能再接键盘）
+    model.hovered = nil
+    panel?.releaseKeyboard()
     pendingShow?.cancel()
     pendingShow = nil
     holdUntil = nil
@@ -660,10 +681,7 @@ import SwiftUI
       mouse: NSEvent.mouseLocation, strip: Self.strip(for: screen), notch: notch(screen))
   }
 
-  private func screenForMouse() -> NSScreen? {
-    let mouse = NSEvent.mouseLocation
-    return NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
-  }
+  private func screenForMouse() -> NSScreen? { NSScreen.underMouse }
 
   private func startWatching() {
     guard watch == nil else { return }
@@ -708,9 +726,12 @@ import SwiftUI
   /// 建面板（单测在屏外直接建：PanelHostingTests）
   func makePanel() -> NSPanel {
     // styleMask 在 init 里一次写全（.nonactivatingPanel 之后再加不生效）
-    let panel = NSPanel(
+    let panel = HoverKeyPanel(
       contentRect: CGRect(origin: .zero, size: CGSize(width: 100, height: 100)),
       styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
+    panel.onKey = { [unowned self] in key($0) }
+    // 收着、正在淡出（shown 已经是 nil）时不拿键盘（A3 评审 6）
+    panel.allowsKeyboard = { [unowned self] in shown != nil }
     // 本 App 失活时不收（NSPanel 默认收）
     panel.hidesOnDeactivate = false
     panel.isOpaque = false
@@ -733,7 +754,7 @@ import SwiftUI
   }
 }
 
-/// 面板的宿主：第一下点击就给卡片（本 App 不激活、面板永不当 key）
+/// 面板的宿主：第一下点击就给卡片（本 App 不激活，面板只在指针停在卡片上时当 key）
 private final class ClotheslineHost: NSHostingView<ClotheslineView> {
   override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }

@@ -176,6 +176,20 @@ struct HotKey: Codable, Hashable {
   ]
 }
 
+extension HotKey {
+  /// 主键盘上的 1–9，按顺序：面板里 ⌘1–9（不带 ⌘ 的 1–9）选第几项都按它认（启动器、翻译浮窗、剪贴板、快速记一条、
+  /// 选状态，第五轮体检 H4：原来各写一份）
+  static let digitKeys = [
+    kVK_ANSI_1, kVK_ANSI_2, kVK_ANSI_3, kVK_ANSI_4, kVK_ANSI_5, kVK_ANSI_6, kVK_ANSI_7, kVK_ANSI_8,
+    kVK_ANSI_9,
+  ]
+  /// 小键盘的 1–9（选状态、状态屏的退出密码也认它）
+  static let keypadDigitKeys = [
+    kVK_ANSI_Keypad1, kVK_ANSI_Keypad2, kVK_ANSI_Keypad3, kVK_ANSI_Keypad4, kVK_ANSI_Keypad5,
+    kVK_ANSI_Keypad6, kVK_ANSI_Keypad7, kVK_ANSI_Keypad8, kVK_ANSI_Keypad9,
+  ]
+}
+
 /// 追加动作只能加在末尾：注册时用 allCases 的下标当热键 id
 enum HotKeyAction: String, CaseIterable {
   case clipboard, selectionTranslate, inputTranslate, screenshotTranslate, launcher, screenshot,
@@ -516,6 +530,8 @@ enum HotKeyAction: String, CaseIterable {
   /// 录屏倒数期间临时注册的 Esc（不带修饰键）和它的回调；suspend / reload 不碰它
   @ObservationIgnored private var escapeRef: EventHotKeyRef?
   @ObservationIgnored private var onEscape: (() -> Void)?
+  /// 本 App 的普通窗口（设置窗、全部便签、截图历史）当 key 时也把 Esc 转给它（录音待录条，不是倒数）
+  @ObservationIgnored private var escapeToWindows = false
   private static let signature: OSType = 0x4B54_5459  // 'KTTY'
   /// 临时 Esc 的热键 id：不和动作的下标（allCases）撞
   private static let escapeID: UInt32 = 0xE5C
@@ -790,9 +806,11 @@ enum HotKeyAction: String, CaseIterable {
 
   /// 录屏倒数期间临时抢一个不带修饰键的 Esc（mac-overlay-panel §4）：录制 HUD 永不当 key，按键到不了它。只在倒数那几秒
   /// 挂着，倒数结束 / 取消 / 开录立刻 unregisterEscape（挂着时别的 App 都收不到 Esc）。本 App 自己的面板拿着键盘时
-  /// 这一下交给它、不回调（escapePressed）。返回 false = 没注册上（记一条日志，只能用录屏快捷键或 HUD 的 ✕ 取消）
+  /// 这一下交给它、不回调（escapePressed）。返回 false = 没注册上（记一条日志，只能用录屏快捷键或 HUD 的 ✕ 取消）。
+  /// 录音待录条（第五轮体检 A3）也用它：toWindows = 本 App 的普通窗口（设置窗、全部便签、截图历史）当 key 时同样把 Esc
+  /// 转给那扇窗口（倒数只有那几秒，设置窗在前台时 Esc 照旧取消倒数）
   @discardableResult
-  func registerEscape(_ handler: @escaping () -> Void) -> Bool {
+  func registerEscape(toWindows: Bool = false, _ handler: @escaping () -> Void) -> Bool {
     unregisterEscape()
     installHandlerIfNeeded()
     var ref: EventHotKeyRef?
@@ -805,6 +823,7 @@ enum HotKeyAction: String, CaseIterable {
     }
     escapeRef = ref
     onEscape = handler
+    escapeToWindows = toWindows
     return true
   }
 
@@ -812,6 +831,7 @@ enum HotKeyAction: String, CaseIterable {
     if let escapeRef { UnregisterEventHotKey(escapeRef) }
     escapeRef = nil
     onEscape = nil
+    escapeToWindows = false
   }
 
   /// 注册失败的原因（快捷键页、引导里那一行下面的橙字）；注册成功或没设键时为 nil
@@ -851,12 +871,12 @@ enum HotKeyAction: String, CaseIterable {
   /// 临时 Esc 按下：本 App 自己的面板拿着键盘（倒数中又开了截图框选、剪贴板、启动器、翻译浮窗，点了钉图……；录制 HUD
   /// 永不当 key，不会是它）时，这一下 Esc 是给那个面板的——Carbon 热键把按键整个吞了，合成一个 Esc 按下经 NSApp.sendEvent
   /// 照常派发（和真按键同一条路：本地监听、performKeyEquivalent、第一响应者），不回调；别的 App 或设置窗（NSWindow）在前台时
-  /// 才回调（取消倒数）
+  /// 才回调（取消倒数）。录音待录条挂的（toWindows）本 App 的普通窗口当 key 时也交给它
   private func escapePressed() {
-    guard let panel = NSApp.keyWindow as? NSPanel,
+    guard let window = NSApp.keyWindow, window is NSPanel || escapeToWindows,
       let escape = NSEvent.keyEvent(
         with: .keyDown, location: .zero, modifierFlags: [],
-        timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: panel.windowNumber,
+        timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
         context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}",
         isARepeat: false, keyCode: UInt16(kVK_Escape))
     else {

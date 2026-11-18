@@ -339,7 +339,7 @@ import Observation
 
   /// 哪块屏的面板当 key：鼠标所在的那块，都不在就第一块
   static func keyIndex(mouse: CGPoint, screens: [CGRect]) -> Int {
-    screens.firstIndex { NSMouseInRect(mouse, $0, false) } ?? 0
+    NSScreen.index(containing: mouse, in: screens) ?? 0
   }
 
   /// 从卡片长到整屏的是哪块屏的面板：卡片（它的中心）所在的那块，都不在就第一块

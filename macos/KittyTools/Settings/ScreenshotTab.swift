@@ -285,31 +285,35 @@ struct ScreenshotTab: View {
   }
 }
 
-/// 快速保存的文件夹一行：截图页「快速保存到」和录制页「保存到」是同一个偏好、同一行。16 pt 文件夹图标 + 访达里的名字
-/// （完整路径在悬停提示里），选过的能「恢复默认」，「更改…」选别的文件夹
+/// 快速保存的文件夹一行：截图页「快速保存到」和录制页「保存到」是同一个偏好、同一行。文件夹符号 + 访达里的名字
+/// （完整路径在悬停提示里），选过的能「恢复默认」，「更改…」选别的文件夹。
+/// **选过的这一行不去碰那个文件夹**（第五轮体检 P2，同自动备份「另存一份到」那一行：它可能在卡住的网络盘上，在主线程上
+/// 问一句名字、要一个图标就能把设置窗卡住）：名字是选的那一刻取了存下的，图标用符号
 struct SaveDirectoryRow: View {
   let title: LocalizedStringResource
   /// 选过的文件夹（没选过 = nil，跟随系统截屏的存储位置）；实际位置按 ScreenshotOutput.directory 算（有兜底）
   @AppStorage(Prefs.screenshotSaveDirectory) private var savedDirectory: String?
+  /// 它在访达里的名字（选的那一刻存下的）
+  @AppStorage(Prefs.screenshotSaveDirectoryName) private var savedName: String?
 
   var body: some View {
     LabeledContent {
       HStack(spacing: 8) {
-        let directory = ScreenshotOutput.directory(saved: savedDirectory)
+        // 没选过的是系统截屏的存储位置（多半是桌面，在本机）：现取。ponytail: 它也能在 ⌘⇧5 里设成网络盘，那时这里会卡，
+        // 升级路径见 ScreenshotOutput.saveFolderName
+        let path = savedDirectory ?? ScreenshotOutput.directory(saved: nil).path
+        let name =
+          savedDirectory == nil
+          ? FileManager.default.displayName(atPath: path)
+          : savedName ?? (path as NSString).lastPathComponent
         // 同工具栏「存储到「桌面」」：访达里的名字 + 文件夹图标，完整路径在悬停提示里
-        Label {
-          Text(FileManager.default.displayName(atPath: directory.path))
-            .lineLimit(1)
-            .truncationMode(.middle)
-        } icon: {
-          Image(nsImage: NSWorkspace.shared.icon(forFile: directory.path))
-            .resizable()
-            .frame(width: 16, height: 16)
-        }
-        .foregroundStyle(.secondary)
-        .help((directory.path as NSString).abbreviatingWithTildeInPath)
+        Label(name, systemImage: "folder")
+          .lineLimit(1)
+          .truncationMode(.middle)
+          .foregroundStyle(.secondary)
+          .help((path as NSString).abbreviatingWithTildeInPath)
         if savedDirectory != nil {
-          Button("恢复默认") { savedDirectory = nil }
+          Button("恢复默认") { pick(nil) }
             .buttonStyle(.plain)
             .foregroundStyle(Style.brandInk)
             .pointerStyle(.link)
@@ -327,11 +331,20 @@ struct SaveDirectoryRow: View {
     panel.canChooseDirectories = true
     panel.canChooseFiles = false
     panel.canCreateDirectories = true
-    panel.directoryURL = ScreenshotOutput.directory(saved: savedDirectory)
+    // 不先看它在不在（可能在卡住的网络盘上）：面板自己去
+    panel.directoryURL =
+      savedDirectory.map { URL(filePath: $0, directoryHint: .isDirectory) }
+      ?? ScreenshotOutput.directory(saved: nil)
     panel.prompt = String(localized: "选取")
     panel.begin { response in
-      if response == .OK, let url = panel.url { savedDirectory = url.path }
+      if response == .OK, let url = panel.url { pick(url) }
     }
+  }
+
+  /// 换文件夹（nil = 恢复默认）：名字跟着换。刚在面板里选的，这时候问名字不会卡
+  private func pick(_ url: URL?) {
+    savedName = url.map { FileManager.default.displayName(atPath: $0.path) }
+    savedDirectory = url?.path
   }
 }
 

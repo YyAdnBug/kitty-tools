@@ -5,6 +5,7 @@
 // 卡片窗口只建不显示。
 
 import AppKit
+import Carbon.HIToolbox
 import Testing
 
 @testable import KittyTools
@@ -159,5 +160,43 @@ struct VideoCardTests {
     #expect(gif.fileURL == file)
     gif.perform(.copy)
     #expect(copied == [file])
+  }
+
+  /// 指针在缩略图 / 晾衣绳的卡片上时的按键（第五轮体检 A3）：⌘C 拷贝、⌘S 存储、Esc 关；按字符认 C、S（换了键盘布局也对），
+  /// 带别的修饰键、别的键都不认（面板把键盘还回去）。录屏卡没有「存储」：⌘S 不认
+  @Test func hoverKeysMapToCardCommands() throws {
+    func command(_ key: String, _ code: Int, _ flags: NSEvent.ModifierFlags = []) -> ShelfCard
+      .Command?
+    {
+      HoverKeyPanel.command(key: key, keyCode: code, flags: flags)
+    }
+    #expect(command("c", kVK_ANSI_C, .command) == .copy)
+    // 字符是 C 就算（Dvorak 上 C 不在 C 键位）
+    #expect(command("C", kVK_ANSI_J, [.command, .capsLock]) == .copy)
+    #expect(command("s", kVK_ANSI_S, .command) == .save)
+    #expect(command("\u{1b}", kVK_Escape) == .close)
+    #expect(command("\u{1b}", kVK_Escape, .shift) == nil)
+    #expect(command("c", kVK_ANSI_C) == nil)
+    #expect(command("c", kVK_ANSI_C, [.command, .shift]) == nil)
+    // 空格不接：没有现成的快速查看（拿去「用默认 App 打开」不对）
+    #expect(command(" ", kVK_Space) == nil)
+    // 什么时候拿键盘（评审 1）：允许、指针下面就是这扇窗口、最近 1 秒没按过键、键盘不在本 App 别的窗口里，缺一样都不拿
+    func takes(
+      allowed: Bool = true, under: Bool = true, since: TimeInterval = 5, own: Bool = false
+    ) -> Bool {
+      HoverKeyPanel.takesKeyboard(
+        allowed: allowed, underPointer: under, secondsSinceKey: since, keyboardInOwnWindow: own)
+    }
+    #expect(takes())
+    #expect(takes(since: HoverKeyPanel.quiet))
+    #expect(!takes(allowed: false) && !takes(under: false))
+    #expect(!takes(since: 0.3) && !takes(own: true))
+    let video = card(URL(filePath: "/tmp/录屏 a.mp4"))
+    let save = try #require(
+      NSEvent.keyEvent(
+        with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0, windowNumber: 0,
+        context: nil, characters: "s", charactersIgnoringModifiers: "s", isARepeat: false,
+        keyCode: UInt16(kVK_ANSI_S)))
+    #expect(!video.key(save))
   }
 }

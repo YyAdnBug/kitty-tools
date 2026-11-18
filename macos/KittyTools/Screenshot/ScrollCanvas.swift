@@ -55,6 +55,8 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
   var canUndo: Bool { !undoStack.isEmpty }
   var canRedo: Bool { !redoStack.isEmpty }
   var hasAnnotations: Bool { !annotations.isEmpty || editor != nil }
+  /// 正在输入文字（还没收下）
+  var isTyping: Bool { editor != nil }
 
   private let overlay: AnnotationCanvas
   /// 裁剪框那一层（框外压暗、边框和手柄），盖在标注层上面，不接鼠标

@@ -116,6 +116,55 @@ struct AnnotateOverlayTests {
     editor.close()
   }
 
+  /// 从截图历史改标注（第五轮体检 U7）：工具栏多一颗「完成」，点了只交回标注（存回历史）、不出图，遮罩关掉；打开时带着的
+  /// 旧标注一笔没改，Esc 一下就关；改过（这里删掉了那条）要按两下。长截图那一套没有「完成」
+  @Test func doneSavesBackAndUnchangedEscCloses() throws {
+    let old = Annotation(shape: .rectangle(CGRect(x: 10, y: 10, width: 50, height: 50)))
+    func editor(
+      done: ((CGImage, [Annotation]) -> Void)?, closed: @escaping () -> Void
+    ) -> AnnotateOverlay {
+      let editor = AnnotateOverlay(
+        image: image(width: 400, height: 600), scale: 2, annotations: [old], done: done
+      ) { _, _, _, _ in Issue.record("不该出图") }
+      editor.onClose = closed
+      return editor
+    }
+    func bar(_ editor: AnnotateOverlay) throws -> EditorToolbar {
+      try #require(editor.panel.contentView?.subviews.compactMap { $0 as? EditorToolbar }.first)
+    }
+    let escape = try #require(
+      NSEvent.keyEvent(
+        with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0,
+        context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}",
+        isARepeat: false, keyCode: UInt16(kVK_Escape)))
+
+    var saved: [[Annotation]] = []
+    var closed = 0
+    let history = editor(done: { saved.append($1) }, closed: { closed += 1 })
+    #expect(!history.isChanged)
+    try #require(try bar(history).button(for: .done)).performClick(nil)
+    #expect(saved == [[old]] && closed == 1)
+
+    let unchanged = editor(done: { _, _ in }, closed: { closed += 1 })
+    let content = try #require(unchanged.panel.contentView as? AnnotateOverlayView)
+    content.keyDown(with: escape)
+    #expect(closed == 2)
+
+    let changed = editor(done: { _, _ in }, closed: { closed += 1 })
+    let changedContent = try #require(changed.panel.contentView as? AnnotateOverlayView)
+    changed.canvas.annotations = []
+    #expect(changed.isChanged)
+    changedContent.keyDown(with: escape)
+    #expect(closed == 2)
+    changedContent.keyDown(with: escape)
+    #expect(closed == 3)
+
+    let longShot = AnnotateOverlay(image: image(width: 400, height: 600), scale: 2) { _, _, _, _ in
+    }
+    defer { longShot.close() }
+    #expect(try bar(longShot).button(for: .done) == nil)
+  }
+
   /// 存储右边的 ▾（第四轮体检 U13）：弹 HUD 菜单「存储到「桌面」/ 另存为…」，不直接出图；Esc 先收菜单、遮罩留着；
   /// 点外面只收菜单；菜单里点「另存为…」交回 saveAs、遮罩收起
   @Test func saveCaretOpensHUDMenu() throws {

@@ -228,6 +228,8 @@ final class EditorToolbar: PopView {
     case cancel
     /// 裁剪（X17，只在标注遮罩里）：进 / 出裁剪框
     case crop
+    /// 完成（第五轮体检 U7，只在从截图历史改标注时）：标注存回历史那一条、不出图
+    case done
   }
 
   var onClick: (Item) -> Void = { _ in }
@@ -240,7 +242,8 @@ final class EditorToolbar: PopView {
   private let toolHighlight = CALayer()
   private var state: (tool: Annotation.Tool?, canUndo: Bool, canRedo: Bool, cropping: Bool)?
 
-  init(mode: Mode = .capture) {
+  /// done：右段末尾多一颗「完成」（从截图历史改标注时，U7）
+  init(mode: Mode = .capture, done: Bool = false) {
     super.init(frame: .zero)
     wantsLayer = true
     // (item, 符号, 旁白名字, 悬停提示)
@@ -253,6 +256,15 @@ final class EditorToolbar: PopView {
         (.redo, "arrow.uturn.forward", String(localized: "重做"), String(localized: "重做")),
       ],
     ]
+    let finish: [Spec] =
+      done
+      ? [
+        (
+          .done, "tray.and.arrow.down", String(localized: "完成"),
+          String(localized: "完成：标注存回截图历史，不出图")
+        )
+      ]
+      : []
     let right: [[Spec]] = [
       ([
         // 裁剪（X17）：截图框选时调选区就是裁剪，只有标注遮罩（长截图、截图历史的改标注）才有这颗
@@ -277,7 +289,7 @@ final class EditorToolbar: PopView {
         (.output(.save), "square.and.arrow.down", String(localized: "存储"), String(localized: "存储")),
         (.saveMenu, "chevron.down", String(localized: "更多存储选项"), String(localized: "更多存储选项")),
       ],
-      [
+      finish + [
         (.cancel, "xmark", String(localized: "取消"), String(localized: "取消（Esc）")),
         (.output(.copy), "checkmark", String(localized: "拷贝"), String(localized: "拷贝（↩）")),
       ],

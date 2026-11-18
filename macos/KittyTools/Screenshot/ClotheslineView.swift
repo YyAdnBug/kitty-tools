@@ -6,7 +6,7 @@
 // 卡片就是常驻缩略图那一张（圆角 10、white 0.25 发丝线描边 + black 0.28 / r16 / y6 阴影，Style.shotCard），
 // 图是截图历史里那条的缩略图（ShotThumbnail：和历史窗口共用一份缓存，读盘在主线程外、每张卡只读一次）。
 // 悬停压一层蒙层、右上角出 ✕（点它取下，拍板 D2）；单击拷贝、双击进标注窗口（录制的是打开）、拖出去是一个文件、
-// 拖到废纸篓取下、右键是一整套菜单——鼠标全在 CardMouse 那块 AppKit 视图里收（本 App 不激活、面板永不当 key，
+// 拖到废纸篓取下、右键是一整套菜单——鼠标全在 CardMouse 那块 AppKit 视图里收（本 App 不激活、面板平时不当 key——只有指针停在卡片上时临时接键盘，HoverKeyPanel，
 // SwiftUI 的 onHover 和手势在这种窗口里都不稳，同常驻缩略图的做法）。
 // 排法、静止时的样子由 ClotheslineLayout 算（面板内坐标，原点左上）。
 // 面板是整块透明的（没有毛玻璃底）：透明的地方系统自己点穿，只有卡片接鼠标（Clothesline.makePanel）。
@@ -141,7 +141,14 @@ private struct ClotheslineCard: View {
   private func mouse(_ image: NSImage?) -> some View {
     CardMouse(
       image: image, file: { [model] in model.history?.dragFileNow(for: item) },
-      onHover: { inside in model.hovered = inside ? item.id : nil },
+      // 从一张直接挪到相邻那张：后到的「离开」别把新停的那张清掉（停着的那张接着键盘，A3）
+      onHover: { inside in
+        if inside {
+          model.hovered = item.id
+        } else if model.hovered == item.id {
+          model.hovered = nil
+        }
+      },
       onClick: { model.onCommand(.copy, item) },
       // 录制的双击是用默认 App 打开（同截图历史窗口；原来一律进标注遮罩）
       onDoubleClick: { model.onCommand(item.filePath == nil ? .edit : .open, item) },
@@ -222,7 +229,7 @@ nonisolated private struct Spring: Shape {
   }
 }
 
-/// 一张卡片上的鼠标（第 2 批，拍板 C3）：本 App 从不激活、面板永不当 key，SwiftUI 的 onHover 和点击手势在这种窗口里
+/// 一张卡片上的鼠标（第 2 批，拍板 C3）：本 App 从不激活、面板平时不当 key（HoverKeyPanel 只在停着时临时接键盘），SwiftUI 的 onHover 和点击手势在这种窗口里
 /// 都不稳（常驻缩略图同样自建追踪区，mac-overlay-panel §8），所以悬停、单击 / 双击、点 ✕、拖出去都在这里收。
 /// 单击和双击分得开：单击先排在双击间隔之后，期间来了第二下就作废（SwiftUI 两个 tap 手势叠着时单击会先响一次）。
 /// 拖出去用 AppKit 的拖拽会话，**拖到废纸篓（operation 是 .delete）就取下**——SwiftUI 的 onDrag 没有结束回调，

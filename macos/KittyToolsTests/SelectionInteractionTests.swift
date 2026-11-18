@@ -32,16 +32,16 @@ struct SelectionInteractionTests {
     private var target: NSView?
     private(set) var intercepted: NSView?
 
-    /// image：冻结帧（默认 1200 × 800 纯色；截图自检传一张假桌面）；hint：松手即确认模式的顶部提示；
-    /// session / origin：多屏时几块「屏幕」共用一个会话，窗口摆在各自的位置（见 screens）
+    /// image：冻结帧（默认 size 那么大的纯色；截图自检传一张假桌面）；hint：松手即确认模式的顶部提示；
+    /// session / origin：多屏时几块「屏幕」共用一个会话，窗口摆在各自的位置（见 screens）；size：这块「屏幕」多大
     init(
       mode: SelectionView.Mode = .capture, windows: [CGRect] = [], owners: [[pid_t]] = [],
       findsElements: Bool = false, image: CGImage? = nil, hint: String = "",
       session: SelectionSession? = nil,
       origin: CGPoint = CGPoint(x: -20000, y: -20000), keepsColors: Bool = false,
-      showsHint: Bool = true, loupe: Prefs.Loupe = .full
+      showsHint: Bool = true, loupe: Prefs.Loupe = .full,
+      size: CGSize = CGSize(width: 1200, height: 800)
     ) {
-      let size = CGSize(width: 1200, height: 800)
       let context = CGContext(
         data: nil, width: Int(size.width), height: Int(size.height), bitsPerComponent: 8,
         bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
@@ -1192,7 +1192,7 @@ struct SelectionInteractionTests {
     #expect(h.menu?.accessibilityLabel() != "快捷键")
   }
 
-  // Esc 依次：HUD 菜单 → 尺寸输入（放弃输入的数）→ 选中的标注 → 工具 → 取消截图
+  // Esc 依次：HUD 菜单 → 尺寸输入（放弃输入的数）→ 选中的标注 → 工具 → 取消截图（画过标注时这一下要按两次，E8）
   @Test func escapeOrder() async throws {
     let h = Harness()
     h.makeSelection()
@@ -1220,8 +1220,79 @@ struct SelectionInteractionTests {
     h.key(kVK_Escape, "\u{1b}")
     #expect(h.view.tool == nil)
     #expect(h.view.annotations.count == 1)
+    // 第五轮体检 E8：画过标注，最后这一下先上膛（顶上提示 + 播报），约 2 秒内再按才放弃
+    let armed = await h.outcome { h.key(kVK_Escape, "\u{1b}") }
+    guard case .color("没交回结果")? = armed else {
+      Issue.record("第一下 Esc 就退出了")
+      return
+    }
+    #expect(h.view.announcement == "再按一次放弃这些标注" && h.view.hintShowing)
+    #expect(h.view.annotations.count == 1)
     let outcome = await h.outcome { h.key(kVK_Escape, "\u{1b}") }
     #expect(outcome == nil)
+  }
+
+  // E8 评审 12：上膛记在几块屏共用的会话上——在一块屏上按了第一下，到另一块屏再按一下就放弃（不是三下）
+  @Test func discardArmIsSharedAcrossScreens() async {
+    let (left, right) = Harness.screens()
+    left.makeSelection()
+    left.view.tool = .rectangle
+    left.drag(CGPoint(x: 350, y: 250), CGPoint(x: 450, y: 350))
+    left.view.selectedAnnotation = nil
+    left.view.tool = nil
+    let armed = await left.outcome { left.key(kVK_Escape, "\u{1b}") }
+    guard case .color("没交回结果")? = armed else {
+      Issue.record("第一下 Esc 就退出了")
+      return
+    }
+    #expect(await right.outcome { right.key(kVK_Escape, "\u{1b}") } == nil)
+  }
+
+  // E8：工具栏 ✕ 同 Esc——画过标注时第一下只上膛，再点才放弃；没画标注时一下就退出
+  @Test func cancelButtonArmsWithAnnotations() async throws {
+    let h = Harness()
+    h.makeSelection()
+    let cancel = try #require(h.toolbar?.button(for: .cancel))
+    h.view.tool = .rectangle
+    h.drag(CGPoint(x: 350, y: 250), CGPoint(x: 450, y: 350))
+    let armed = await h.outcome { cancel.performClick(nil) }
+    guard case .color("没交回结果")? = armed else {
+      Issue.record("第一下 ✕ 就退出了")
+      return
+    }
+    #expect(h.view.announcement == "再按一次放弃这些标注")
+    #expect(await h.outcome { cancel.performClick(nil) } == nil)
+
+    let clean = Harness()
+    clean.makeSelection()
+    let close = try #require(clean.toolbar?.button(for: .cancel))
+    #expect(await clean.outcome { close.performClick(nil) } == nil)
+  }
+
+  // 顶部提示排成几行（第五轮体检 U3）：一段不拆开，超了在段与段之间折行（一段本身就超的自己占一行），行数定了再排匀
+  @Test func hintRowsWrapBetweenParts() {
+    #expect(SelectionView.hintRows([100, 100, 100], separator: 20, limit: 400) == [3])
+    #expect(SelectionView.hintRows([100, 100, 100], separator: 20, limit: 300) == [2, 1])
+    #expect(SelectionView.hintRows([100, 100, 100], separator: 20, limit: 219) == [1, 1, 1])
+    #expect(SelectionView.hintRows([500, 50, 50], separator: 20, limit: 300) == [1, 2])
+    #expect(SelectionView.hintRows([], separator: 20, limit: 300) == [])
+    // 行数定了再排匀：不剩一段孤零零挂在第二行
+    #expect(SelectionView.hintRows([80, 80, 80, 80, 80, 60], separator: 10, limit: 470) == [3, 3])
+    // 宽度上限：所在屏的可见宽度（程序坞在侧边时更窄）减两边各 32，不窄于 240
+    #expect(SelectionView.hintWidthLimit(screen: 1512, visible: nil) == 1448)
+    #expect(SelectionView.hintWidthLimit(screen: 1512, visible: 1430) == 1366)
+    #expect(SelectionView.hintWidthLimit(screen: 200, visible: nil) == 240)
+    // 窄屏上提示条不超出屏幕（折成两行以上），各段一个字都不少
+    let h = Harness(findsElements: true, size: CGSize(width: 480, height: 600))
+    h.move(CGPoint(x: 320, y: 300))
+    let hint = h.view.hintLayout
+    #expect(hint.frame.minX >= 32 && hint.frame.maxX <= 480 - 32)
+    #expect(hint.text.contains("\n") && hint.text.hasSuffix("Esc 取消"))
+    #expect(hint.text.replacingOccurrences(of: "\n", with: " · ").contains("双击直接拷贝 · Esc 取消"))
+    // 宽屏上照旧一行
+    let wide = Harness(findsElements: true)
+    wide.move(CGPoint(x: 320, y: 300))
+    #expect(!wide.view.hintLayout.text.contains("\n"))
   }
 
   // 设置 › 截图「框选时显示操作提示」（2026-11-17 拍板 A1）：关掉只关开场那条，被挡下时临时说的一句照出

@@ -92,9 +92,10 @@ import SwiftUI
       panels.append(panel)
     }
     guard !panels.contains(where: \.isKeyWindow) else { return }
-    // 鼠标所在那块屏的当 key（贴着屏幕顶边时 contains 不算，用 NSMouseInRect；哪块都不在就第一块，同状态屏）
-    let mouse = NSEvent.mouseLocation
-    let key = zip(screens, panels).first { NSMouseInRect(mouse, $0.0.frame, false) }?.1
+    // 鼠标所在那块屏的当 key（含最上一行，NSScreen.index；哪块都不在就第一块，同状态屏）
+    let key = NSScreen.index(
+      containing: NSEvent.mouseLocation, in: zip(screens, panels).map { $0.0.frame }
+    ).map { panels[$0] }
     (key ?? panels.first)?.makeKey()
   }
 

@@ -2,9 +2,10 @@
 // 悬停时出 HUD 操作：中间「拷贝」「存储」两个胶囊和「改标注」圆钮（第四轮体检 X7：连到截图历史里那一条接着改，历史关着就
 // 对着这张图开标注、不回写），左上关闭、右下钉图（右上角是品牌粉角标），存过的左下「在访达中显示」；
 // 拖出去是一个 PNG 文件（拖进访达、邮件、聊天窗口），双击用默认 App 打开；触控板往右扫跟手，松手时扫得够远或够快就滑走、否则弹回；
-// 鼠标不在上面时 6 s 后自己滑走（移开后 2.5 s）。同一块屏上连截几张时往上叠，最多 3 张，更早的滑走。
-// 窗口是普通 NSPanel 实例（不当 key、不激活本 App；层级状态栏，之后的截图冻结帧会排除它），用完放回复用池
-// （挂过 NSHostingView 的窗口 close 后 AppKit 不释放，同 FlyCard）。减弱动态效果时不飞，直接在角落淡入、淡出。
+// 鼠标不在上面时 6 s 后自己滑走（移开后 2.5 s；读屏开着时不自己走，第五轮体检 A3）。同一块屏上连截几张时往上叠，最多 3 张，
+// 更早的滑走。窗口是 HoverKeyPanel（不激活本 App；层级状态栏，之后的截图冻结帧会排除它）：指针在卡片上停够、最近没在别处
+// 打字时临时当 key 接 ⌘C 拷贝、⌘S 存储、Esc 关，移开就把键盘还回去（A3）。用完放回复用池（挂过 NSHostingView 的窗口 close 后 AppKit 不释放，
+// 同 FlyCard）。减弱动态效果时不飞，直接在角落淡入、淡出。
 // 卡片只留缩到卡片大小的图和复制 / 保存时编码好的 PNG（不再编码一遍，也不留整张解码的图：5K 一张 59 MB、长截图上百 MB），
 // 钉图时才解码；拖出用的临时 PNG 在主线程外写，卡片走的时候没拖过的就删掉（拖过的留到下次启动，第四轮体检 F2）。
 // 录屏（第 3 批，拍板 R11-a）的视频卡是同一种卡片的另一种内容（ShelfCard.Kind.video）：图是最后一帧（取不到就是 HUD 底色）、
@@ -43,7 +44,7 @@ final class ShotShelf {
   var historyIsOn: () -> Bool = { true }
 
   private(set) var cards: [ShelfCard] = []
-  private var idle: [NSPanel] = []
+  private var idle: [HoverKeyPanel] = []
   /// 卡片四周给阴影留的边（窗口比卡片大这么多）
   static let margin: CGFloat = 24
   private static let gap: CGFloat = 10
@@ -120,7 +121,7 @@ final class ShotShelf {
   /// 同一块屏上已有的往上挪给新的让位；超过 3 张的最早那张滑走（截图、录屏混着叠）
   private func insert(
     at rect: CGRect, fadesIn: Bool = Style.reduceMotion, popsIn: Bool = false,
-    _ make: (NSScreen?, NSPanel) -> ShelfCard
+    _ make: (NSScreen?, HoverKeyPanel) -> ShelfCard
   ) {
     let screen = NSScreen.screens.first { $0.frame.intersects(rect) }
     let neighbours = cards.filter { !$0.isLeaving && $0.screen == screen }
@@ -145,7 +146,7 @@ final class ShotShelf {
     card.slideOut { [weak self, weak card] in
       guard let self, let card else { return }
       cards.removeAll { $0 === card }
-      let panel = card.panel
+      guard let panel = card.panel as? HoverKeyPanel else { return }
       panel.close()
       // 下一轮再拆视图：别在它自己的 SwiftUI 任务里把它释放
       Task {
@@ -164,8 +165,8 @@ final class ShotShelf {
     }
   }
 
-  private static func makePanel() -> NSPanel {
-    let panel = NSPanel(
+  private static func makePanel() -> HoverKeyPanel {
+    let panel = HoverKeyPanel(
       contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered,
       defer: true)
     // 本 App 失活时不收（NSPanel 默认收；收回浮动便签后 NoteFloats.returnKeyboard 会 deactivate 一次）
@@ -262,7 +263,23 @@ final class ShotShelf {
   @ObservationIgnored private(set) var rect: CGRect
   @ObservationIgnored var isLeaving = false
   var badge: FlyCard.Badge
-  var isHovered = false { didSet { isHovered ? timer?.cancel() : scheduleDismiss(after: 2.5) } }
+  /// 指针在不在卡片上：在就停掉自己滑走的计时、停够了接键盘（A3，HoverKeyPanel），移开 2.5 s 后滑走、还键盘
+  var isHovered = false {
+    didSet {
+      guard isHovered != oldValue else { return }
+      let keys = panel as? HoverKeyPanel
+      if isHovered {
+        timer?.cancel()
+        keys?.onKey = { [weak self] in self?.key($0) ?? false }
+        // 正在滑走的不拿（A3 评审 6）
+        keys?.allowsKeyboard = { [weak self] in self?.isLeaving == false }
+        keys?.pointer(inside: true)
+      } else {
+        keys?.pointer(inside: false)
+        scheduleDismiss(after: 2.5)
+      }
+    }
+  }
   /// 正在拷贝 / 保存（按钮转圈）
   var isBusy = false
   /// 拖出去用的文件：存过就是存的那个，否则是临时目录里编码好的 PNG
@@ -416,6 +433,7 @@ final class ShotShelf {
   /// 向右滑出屏幕（0.28 s easeIn）；减弱动态效果时原地淡出
   func slideOut(completion: @escaping @MainActor @Sendable () -> Void) {
     timer?.cancel()
+    (panel as? HoverKeyPanel)?.releaseKeyboard()
     export?.cancel()  // 卡片被关掉（关闭、横扫、被挤走）：GIF 不转了、不压了
     if let dragFile, !dragged { try? FileManager.default.removeItem(at: dragFile) }
     dragFile = nil
@@ -438,6 +456,16 @@ final class ShotShelf {
   // MARK: 操作
 
   func close() { shelf?.dismiss(self) }
+
+  /// 指针在卡片上时的按键（第五轮体检 A3）：⌘C 拷贝、⌘S 存储（截图才有）、Esc 关掉这张；别的键不认（返回 false，
+  /// 面板这时把键盘还回去）
+  func key(_ event: NSEvent) -> Bool {
+    guard let command = HoverKeyPanel.command(for: event),
+      command != .save || menu.joined().contains(.save)
+    else { return false }
+    perform(command)
+    return true
+  }
 
   func copyAgain() {
     guard !isBusy, let shelf else { return }
@@ -607,8 +635,11 @@ final class ShotShelf {
     guard !isLeaving else { return }
     timer = Task { [weak self] in
       try? await Task.sleep(for: .seconds(seconds))
-      // 正在转 GIF / 压缩的不走（走了就取消了），做完再等 2.5 s
-      guard !Task.isCancelled, let self, !self.isHovered, self.export == nil else { return }
+      // 正在转 GIF / 压缩的不走（走了就取消了），做完再等 2.5 s。读屏开着时不自己走（A3，WCAG 2.2.1：读屏用户跟不上
+      // 6 秒的计时）：留到被新的挤走、或者自己关掉
+      guard !Task.isCancelled, let self, !self.isHovered, self.export == nil,
+        !NSWorkspace.shared.isVoiceOverEnabled
+      else { return }
       self.close()
     }
   }

@@ -9,6 +9,7 @@
 // ⌘0 适配宽度、⌘1 原始大小、⌘+ / ⌘-），标注坐标一律存图的点坐标，所以缩放不影响画好的标注。
 // 画布和标注交互在 ScrollCanvas.swift；这里管窗口、滚动、缩放、工具栏和样式托盘、出图。
 // 裁剪（第四轮体检 X17，工具栏的裁剪钮 / X）：出图按框裁，给出去的标注平移到裁好的图里，回写历史用 historyOriginal（裁好的原图）。
+// 从截图历史改标注时（第五轮体检 U7）工具栏多一颗「完成」：只把标注存回历史、不出图；打开以后一笔没改的，一下 Esc 就关。
 
 import AppKit
 import Carbon.HIToolbox
@@ -34,11 +35,16 @@ import Carbon.HIToolbox
   private let outlineOuter = CAShapeLayer()
   /// 图在遮罩里占的那一块（点，面板坐标）
   private var box = CGRect.zero
-  /// Esc 第一下是「再按一次放弃」（画过标注时；遮罩里不弹系统框，同录屏放弃两下）
+  /// Esc 第一下是「再按一次放弃」（改过时；遮罩里不弹系统框，同录屏放弃两下）
   private var armedEscape = false
+  /// 打开时就有的标注（历史里「改标注」给的）：没动过它们就算没改过（U7）
+  private let opened: [Annotation]
+  /// 「完成」：标注存回历史、不出图（只在从截图历史改标注时有，U7）
+  private let done: ((CGImage, [Annotation]) -> Void)?
   private let scrollView = NSScrollView()
-  private let canvas: ScrollCanvas
-  private let bar = EditorToolbar(mode: .longShot)
+  /// 画布（单测直接改标注）
+  let canvas: ScrollCanvas
+  private let bar: EditorToolbar
   private let styleBar = StyleBar()
   /// 开着的 HUD 菜单（存储右边 ▾ 的、托盘上字号的；同时最多一个）：Esc、点外面先收它（同截图遮罩、长截图面板）
   private(set) var menu: HUDMenu?
@@ -49,19 +55,20 @@ import Carbon.HIToolbox
   var isVisible: Bool { panel.isVisible }
 
   /// screen：盖哪块屏（默认鼠标所在的那块）。annotations：打开时就画上的标注（历史里「改标注」给的，
-  /// 坐标是这张图的点坐标）
+  /// 坐标是这张图的点坐标）。done：给了工具栏就多一颗「完成」（合成好的图、画了哪些标注；从截图历史改标注时，U7）
   init(
     image: CGImage, scale: CGFloat, annotations: [Annotation] = [], screen: NSScreen? = nil,
-    output: @escaping Output
+    done: ((CGImage, [Annotation]) -> Void)? = nil, output: @escaping Output
   ) {
     self.image = image
     self.scale = scale
     self.output = output
+    opened = annotations
+    self.done = done
+    bar = EditorToolbar(mode: .longShot, done: done != nil)
     canvas = ScrollCanvas(image: image, scale: scale)
     let target =
-      screen
-      ?? NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) }
-      ?? NSScreen.main ?? NSScreen.screens[0]
+      screen ?? NSScreen.underMouse ?? NSScreen.screens[0]
     panel = AnnotatePanel(
       contentRect: target.frame, styleMask: [.borderless, .nonactivatingPanel],
       backing: .buffered, defer: false)
@@ -295,6 +302,7 @@ import Carbon.HIToolbox
     case .crop: canvas.toggleCropping()
     case .undo: canvas.undo()
     case .redo: canvas.redo()
+    case .done: finish()
     case .scroll, .record: break  // 长图的工具栏里没有这两颗
     }
   }
@@ -388,13 +396,27 @@ import Carbon.HIToolbox
     if action != .recognize { close() }
   }
 
+  /// 「完成」（U7）：标注存回截图历史那一条、不出图，关掉。一键打码还在识字时同出图，等它落下
+  private func finish() {
+    if canvas.redacting {
+      NSSound.beep()
+      return Island.announce("正在打码，稍等再出图")
+    }
+    canvas.finishCropping(apply: true)
+    done?(composed(), canvas.croppedOriginal()?.annotations ?? canvas.annotations)
+    close()
+  }
+
   /// 回写历史用的原图（X17）：裁过是裁好的那张（标注已平移到它的坐标里），没裁就是打开时那张
   var historyOriginal: CGImage { canvas.croppedOriginal()?.image ?? image }
   var isCropped: Bool { canvas.isCropped }
 
-  /// 取消：画过标注的要按两下（遮罩里不弹系统框，同录屏的放弃；第一下提示音 + 顶部提示）
+  /// 打开以后改过没有（U7）：标注和打开时不一样、正在输入文字、拉过裁剪框。打开一条带旧标注的、一笔没改，Esc 一下就关
+  var isChanged: Bool { canvas.annotations != opened || canvas.isTyping || canvas.crop != nil }
+
+  /// 取消：改过的要按两下（遮罩里不弹系统框，同录屏的放弃；第一下提示音 + 播报）
   private func dismiss() {
-    guard canvas.hasAnnotations || canvas.crop != nil, !armedEscape else { return close() }
+    guard isChanged, !armedEscape else { return close() }
     armedEscape = true
     NSSound.beep()
     Island.announce("再按一次 Esc 放弃这些改动")

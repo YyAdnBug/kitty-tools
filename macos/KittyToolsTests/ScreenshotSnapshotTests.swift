@@ -61,6 +61,10 @@ struct ScreenshotSnapshotTests {
       h.window, "idle-element-parent", crop: CGRect(x: 100, y: 340, width: 620, height: 460))
     h = element()
     try shoot(h.window, "idle-element-hint", crop: top)
+    // 窄屏（第五轮体检 U3：13 寸「更大字体」、随航的 iPad）：提示条按屏宽在段与段之间折行，不撑出屏幕，「Esc 取消」在
+    h = Harness(findsElements: true, size: CGSize(width: 480, height: 480))
+    h.move(CGPoint(x: 240, y: 60))
+    try shoot(h.window, "idle-hint-narrow", crop: CGRect(x: 0, y: 300, width: 480, height: 180))
     h = capture()
     h.move(CGPoint(x: 1000, y: 700))
     try shoot(h.window, "idle-desktop", crop: top)
@@ -326,6 +330,13 @@ struct ScreenshotSnapshotTests {
     ]
     h.rightClick(CGPoint(x: 1000, y: 700))
     try shoot(h.window, "right-click-hint", crop: top)
+    // 有标注时 Esc 退到头 / 点 ✕（第五轮体检 E8）：先上膛，顶部提示「再按一次放弃这些标注」
+    h = adjust()
+    h.view.annotations = [
+      Annotation(shape: .rectangle(CGRect(x: 360, y: 330, width: 200, height: 100)))
+    ]
+    h.key(kVK_Escape, "\u{1b}")
+    try shoot(h.window, "discard-armed-hint", crop: top)
 
     // 截图翻译 / 识字（quick）：待选（提示 + 放大镜）、框选中（粉线、只读尺寸、放大镜、吸附参考线）
     let quick = {
@@ -536,6 +547,31 @@ struct ScreenshotSnapshotTests {
   /// 放弃上膛（✕ 变红）、整屏（没有边框，可见区底部居中）。HUD 永远深色，不出深色版；-crop 是 HUD 的局部。
   /// 2026-10-12 视觉对齐：选区录制的 HUD 右边线对着录制条的右边线（各张 -crop 右边都留 24 pt：✕、主圆钮离右边一样远）；
   /// record-hud-align / audio-hud-align 把各种形态按真实的摆位上下叠在一张图里，看右边线、✕、主圆钮是不是各在一条竖线上
+  /// 从截图历史改标注时的工具栏（第五轮体检 U7）：✕ 左边多一颗「完成」（存回历史、不出图），浅色、深色；
+  /// 压在标注遮罩那样的暗底上（假桌面 + HUD.scrim）
+  @Test(.enabled(if: directory != nil)) func renderHistoryToolbar() throws {
+    let bar = EditorToolbar(mode: .longShot, done: true)
+    bar.update(tool: nil, canUndo: true, canRedo: false)
+    let size = CGSize(width: bar.frame.width + 48, height: bar.frame.height + 48)
+    let container = NSView(frame: CGRect(origin: .zero, size: size))
+    container.wantsLayer = true
+    container.layer?.contents = try Self.desktop()
+    container.layer?.contentsGravity = .resizeAspectFill
+    let scrim = CALayer()
+    scrim.frame = container.bounds
+    scrim.backgroundColor = Style.HUD.scrim.cgColor
+    container.layer?.addSublayer(scrim)
+    bar.frame.origin = CGPoint(x: 24, y: 24)
+    container.addSubview(bar)
+    let window = NSWindow(
+      contentRect: CGRect(origin: CGPoint(x: -20000, y: -20000), size: size),
+      styleMask: [.borderless], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    window.contentView = container
+    defer { window.orderOut(nil) }
+    for dark in [false, true] { try shoot(window, "annotate-toolbar-done", dark: dark) }
+  }
+
   @Test(.enabled(if: directory != nil)) func renderRecordingHUD() throws {
     let desktop = try Self.desktop()
     let region = CGRect(x: 160, y: 260, width: 640, height: 400)

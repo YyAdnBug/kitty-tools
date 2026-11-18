@@ -131,6 +131,16 @@ final class AudioRecorder: NSObject {
   var requestMicrophone = Permissions.requestMicrophone
   /// 两者被拒麦克风授权时的警告岛、导出时的「正在存储录音…」（engine 用；单测 / 实录自检里是 nil）
   private weak var island: Island?
+  /// 待录时临时注册 Esc（第五轮体检 A3，同录屏倒数：控制条不当 key，只用键盘的人原来关不掉它）；单测里是 nil
+  private weak var hotKeys: HotKeyCenter?
+  /// 待录的 Esc 注册上了（开始录、收掉、前台换了 App 时注销）
+  private var escapes = false
+  /// 待录条打开时的前台 App 和看着前台切换的那个观察者：换到别的 App 去干活了就注销 Esc（评审 3：待录条可能开很久，
+  /// 挂着时别的 App 都收不到 Esc）。切到本 App 自己不算（Esc 交给本 App 的窗口）
+  private var escapeFront: pid_t?
+  private var escapeWatch: NSObjectProtocol?
+  /// 正在看剩余空间（主线程外，第五轮体检 P2；同 ScreenRecorder）：上一次还没回来就不再起
+  private var diskCheck: Task<Void, Never>?
   private var recorder: AVAudioRecorder?
   /// 系统声音 / 两者：录屏管线的只录声音模式（麦克风授权、开流、中断、导出 m4a、挪文件、「进行中」记录都在它那里）
   private var engine: ScreenRecorder?
@@ -162,14 +172,15 @@ final class AudioRecorder: NSObject {
   private var microphoneID: String?
 
   /// directory：快速保存目录（进行中的文件在和它同一个卷的 workFile）；defaults：来源从这里读、「进行中」记在这里；
-  /// island：交给 engine（系统声音 / 两者）
+  /// island：交给 engine（系统声音 / 两者）；hotKeys：待录时临时注册 Esc
   init(
     directory: URL, defaults: UserDefaults = .standard, island: Island? = nil,
-    onFinish: @escaping (ScreenRecorder.Result) -> Void
+    hotKeys: HotKeyCenter? = nil, onFinish: @escaping (ScreenRecorder.Result) -> Void
   ) {
     self.directory = directory
     source = Source(defaults)
     self.island = island
+    self.hotKeys = hotKeys
     self.defaults = defaults
     self.onFinish = onFinish
     super.init()
@@ -182,6 +193,20 @@ final class AudioRecorder: NSObject {
   /// AVAudioEngine 的输入 tap，或只为读电平把 AVAudioRecorder 录到 /dev/null；两种都会让菜单栏的麦克风指示在开录前就亮
   func open() {
     guard hud == nil, !isStarted else { return }
+    // 开着时挂一个不带修饰键的 Esc（= ✕ 关掉；挂着时别的 App 收不到 Esc，开始录、收掉就注销；本 App 自己的面板拿着键盘时
+    // 这一下交给它，HotKeyCenter.escapePressed）
+    escapes =
+      hotKeys?.registerEscape(toWindows: true) { [weak self] in self?.stop(.cancelled) } ?? false
+    if escapes {
+      escapeFront = NSWorkspace.shared.frontmostApplication?.processIdentifier
+      escapeWatch = NSWorkspace.shared.notificationCenter.addObserver(
+        forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+      ) { [weak self] note in
+        let pid = (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?
+          .processIdentifier
+        MainActor.assumeIsolated { self?.frontChanged(to: pid) }
+      }
+    }
     presentHUD(.ready)
     Island.announce("\(Self.readyAnnouncement(key: HotKeyAction.audioRecord.hotKey?.display))")
   }
@@ -190,6 +215,7 @@ final class AudioRecorder: NSObject {
   /// 从这里到真正录起来之间（等授权框、流约 0.15 s 开起来）控制条上的开关和 ● 置灰，✕ 还能点（= 还没开始就叫停，当取消）
   func start() {
     guard !isStarted, stopping == nil else { return }
+    dropEscape()
     source = Source(defaults)
     guard allowsStart(source) else { return stop(.cancelled) }
     isStarted = true
@@ -318,9 +344,8 @@ final class AudioRecorder: NSObject {
 
   /// 系统声音 / 两者（拍板 A2-a「复用录屏管线」）：鼠标所在屏左上角那一小块只为声音，开起来了（onStarted）才出 HUD 和停止项
   private func startEngine() {
-    let mouse = NSEvent.mouseLocation
     guard
-      let screen = NSScreen.screens.first(where: { $0.frame.contains(mouse) }) ?? NSScreen.main,
+      let screen = NSScreen.underMouse,
       let engine = ScreenRecorder(
         region: ScreenRecorder.audioOnlyRegion(screen.frame), directory: directory,
         defaults: defaults, island: island,
@@ -374,12 +399,11 @@ final class AudioRecorder: NSObject {
 
   /// 出录音控制条：鼠标所在屏可见区底部居中，从底边长出来（待录、直接开始的录制态共用）
   private func presentHUD(_ state: RecordingHUD.State) {
-    let mouse = NSEvent.mouseLocation
     let hud = RecordingHUD(
-      state: state, stopKey: HotKeyAction.audioRecord.hotKey?.display, medium: .audio,
-      pausable: source == .microphone, defaults: defaults)
+      state: state, stopKey: HotKeyAction.audioRecord.hotKey?.display, escapes: escapes,
+      medium: .audio, pausable: source == .microphone, defaults: defaults)
     hud.onClick = { [weak self] in self?.clicked($0) }
-    if let screen = NSScreen.screens.first(where: { $0.frame.contains(mouse) }) ?? NSScreen.main {
+    if let screen = NSScreen.underMouse {
       hud.present(region: screen.frame, on: screen, isFullScreen: true)
     }
     self.hud = hud
@@ -432,11 +456,17 @@ final class AudioRecorder: NSObject {
 
   // MARK: 录制中
 
-  /// 20 Hz：每 5 s 查剩余空间；没暂停时看还在不在录、读电平（HUD 电平、「没听到声音」）、走计时
+  /// 20 Hz：每 5 s 查剩余空间（主线程外，P2）；没暂停时看还在不在录、读电平（HUD 电平、「没听到声音」）、走计时
   private func tick() {
     ticks += 1
     guard stopping == nil else { return }
-    if ticks % (5 * Self.meterRate) == 0, ScreenRecorder.isLowOnDisk(temp) { return stop(.lowDisk) }
+    if ticks % (5 * Self.meterRate) == 0, diskCheck == nil {
+      diskCheck = Task { [weak self, temp] in
+        let low = await ScreenRecorder.isLowOnDisk(temp)
+        self?.diskCheck = nil
+        if low, self?.stopping == nil { self?.stop(.lowDisk) }
+      }
+    }
     guard !isPaused else { return }
     if let recorder {
       // 没人叫停它却不录了（编码出错这类，AVAudioRecorder 自己停）：保住已录的部分。
@@ -501,20 +531,48 @@ final class AudioRecorder: NSObject {
     recorder?.stop()
     recorder = nil
     tearDown()
-    defaults.removeObject(forKey: ScreenRecorder.Medium.audio.inProgressKey)
-    let (file, moved, denied) = ScreenRecorder.settle(
-      temp, into: directory, medium: .audio,
-      keeps: started && reason != .discarded && reason != .cancelled)
-    var result = ScreenRecorder.Result(
-      file: file, moved: moved, moveDenied: denied, duration: duration, reason: reason,
-      region: region)
-    result.microphoneDenied = microphoneDenied
-    if moved { result.poster = Self.waveform(levels.envelope) }
-    onFinish(result)
+    // 挪文件在主线程外（保存目录可能在卡住的网络盘上，P2）：挪好了再删「进行中」记录（挪到一半退出 / 闪退的，下次启动
+    // 照样由 recover 接手）、交回
+    Task {
+      let (file, moved, denied) = await ScreenRecorder.settle(
+        temp, into: directory, medium: .audio,
+        keeps: started && reason != .discarded && reason != .cancelled)
+      defaults.removeObject(forKey: ScreenRecorder.Medium.audio.inProgressKey)
+      var result = ScreenRecorder.Result(
+        file: file, moved: moved, moveDenied: denied, duration: duration, reason: reason,
+        region: region)
+      result.microphoneDenied = microphoneDenied
+      if moved { result.poster = Self.waveform(levels.envelope) }
+      onFinish(result)
+    }
+  }
+
+  /// 待录时挂的 Esc 注销（只注销自己挂的：别的会话这时可能挂着它的）
+  private func dropEscape() {
+    if let escapeWatch { NSWorkspace.shared.notificationCenter.removeObserver(escapeWatch) }
+    escapeWatch = nil
+    guard escapes else { return }
+    escapes = false
+    hotKeys?.unregisterEscape()
+    hud?.setEscapes(false)
+  }
+
+  /// 待录时前台换了：换到别的 App（不是打开时那个、也不是本 App）= 去别处干活了，注销 Esc；条照旧开着（点 ✕ 或再按快捷键）
+  private func frontChanged(to pid: pid_t?) {
+    guard let pid, Self.dropsEscape(activated: pid, front: escapeFront, own: getpid()) else {
+      return
+    }
+    dropEscape()
+  }
+
+  /// 待录条开着时换到这个 App 要不要注销 Esc（纯函数，配单测）
+  nonisolated static func dropsEscape(activated: pid_t, front: pid_t?, own: pid_t) -> Bool {
+    activated != own && activated != front
   }
 
   /// HUD、停止项、计时、防睡眠、中断监听收掉（收 HUD 前记下飞入的起点）；可以重复调
   private func tearDown() {
+    dropEscape()
     if let hud { region = Self.flightStart(hud: hud.screenFrame) }
     timer?.invalidate()
     timer = nil

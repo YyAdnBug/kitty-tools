@@ -247,7 +247,8 @@ nonisolated struct NoteDeckLayout: Equatable, Sendable {
     pillHeight: CGFloat
   ) -> (placement: NoteDeckPlacement, position: Double)? {
     guard screens.indices.contains(index) else { return nil }
-    let target = (crossesScreens ? screens.firstIndex { $0.frame.contains(mouse) } : nil) ?? index
+    let target =
+      (crossesScreens ? NSScreen.index(containing: mouse, in: screens.map(\.frame)) : nil) ?? index
     let edge: NoteDeckOptions.Edge = mouse.x < screens[target].frame.midX ? .left : .right
     let visible = screens[target].visibleFrame
     let top = visible.maxY - pillMargin - pillHeight

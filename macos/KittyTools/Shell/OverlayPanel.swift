@@ -702,7 +702,7 @@ final class OverlayPanel: NSPanel {
     }
     // 挂在图标下面时用图标所在的那块屏（键盘、旁白点开的，鼠标不一定在那儿）
     let point = below.map { NSPoint(x: $0.midX, y: $0.midY) } ?? NSEvent.mouseLocation
-    let screen = NSScreen.screens.first { NSMouseInRect(point, $0.frame, false) } ?? NSScreen.main
+    let screen = NSScreen.containing(point) ?? NSScreen.main
     guard let visible = screen?.visibleFrame else { return }
     defer { placed = (NSPoint(x: frame.minX, y: frame.maxY), frame.width) }
     if let below {
@@ -1068,4 +1068,22 @@ extension NSWindow {
     if view.textLayoutManager != nil { view.didChangeText() }
     return true
   }
+}
+
+extension NSScreen {
+  /// 含 point（屏幕坐标）的是 frames 里的第几块。**含上边**（NSMouseInRect）：光标在屏幕最上一行时 y 正好等于 frame.maxY，
+  /// frame.contains 不算——第五轮体检 H4：录音那两处这样漏了最上一行，控制条可能出在别的屏上。面板、遮罩、录音条要摆在
+  /// 「鼠标所在的屏」上的都走这里（原来十来份各写各的）。纯函数，配单测
+  nonisolated static func index(containing point: CGPoint, in frames: [CGRect]) -> Int? {
+    frames.firstIndex { NSMouseInRect(point, $0, false) }
+  }
+
+  /// 含 point（屏幕坐标）的那块屏
+  static func containing(_ point: CGPoint) -> NSScreen? {
+    let screens = screens
+    return index(containing: point, in: screens.map(\.frame)).map { screens[$0] }
+  }
+
+  /// 鼠标所在的那块屏；哪块都不在（拔屏的那一瞬）给主屏
+  static var underMouse: NSScreen? { containing(NSEvent.mouseLocation) ?? main }
 }

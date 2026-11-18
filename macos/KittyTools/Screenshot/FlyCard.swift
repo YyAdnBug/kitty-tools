@@ -26,10 +26,11 @@ enum FlyCard {
       }
     }
 
-    /// 存到的文件夹的显示名（访达里的名字：中文系统上 Desktop 是「桌面」，同保存 ▾ 菜单的「存储到「桌面」」）
+    /// 存到的文件夹的显示名（访达里的名字：中文系统上 Desktop 是「桌面」，同保存 ▾ 菜单的「存储到「桌面」」；
+    /// 快速保存的文件夹读存下的名字，第五轮体检 P2）
     var folder: String? {
       if case .saved(let url) = self {
-        FileManager.default.displayName(atPath: url.deletingLastPathComponent().path)
+        ScreenshotOutput.folderName(of: url.deletingLastPathComponent())
       } else {
         nil
       }

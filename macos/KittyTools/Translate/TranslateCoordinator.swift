@@ -630,16 +630,11 @@ import Observation
     case kVK_ANSI_0:
       defaults.set(1.0, forKey: Prefs.translateFontScale)
     default:
-      guard let digit = Self.digitKeys.firstIndex(of: code) else { return false }
+      guard let digit = HotKey.digitKeys.firstIndex(of: code) else { return false }
       if !(cards.indices.contains(digit) && copyCard(cards[digit].id)) { NSSound.beep() }
     }
     return true
   }
-
-  private static let digitKeys = [
-    kVK_ANSI_1, kVK_ANSI_2, kVK_ANSI_3, kVK_ANSI_4, kVK_ANSI_5, kVK_ANSI_6, kVK_ANSI_7, kVK_ANSI_8,
-    kVK_ANSI_9,
-  ]
 
   /// 历史搜索框的编辑命令（doCommandBy，输入法组字时不会来）：↑↓ 选、↩ 重新翻译这条、⇧Tab 换范围、
   /// → 在搜索词末尾时打开动作菜单（同剪贴板 / 启动器）、Esc 先清搜索词再关历史（回到浮窗）；

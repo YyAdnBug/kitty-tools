@@ -271,13 +271,11 @@ struct ClipboardPanelView: View {
       Image(systemName: "lock.shield").foregroundStyle(Color(nsColor: .systemOrange))
       Text("授权「辅助功能」后才能直接粘贴回原 App，现在只会写进剪贴板")
       Spacer()
-      Button("去授权") {
-        Permissions.requestAccessibility()
-        Permissions.openAccessibilitySettings()
-      }
-      .buttonStyle(.plain)
-      .foregroundStyle(Style.brandInk)
-      .pointerStyle(.link)
+      // 没问过只弹系统框、问过了才打开系统设置（第五轮体检 U11：原来两样一起来）
+      Button("去授权") { Permissions.grant(.accessibility) }
+        .buttonStyle(.plain)
+        .foregroundStyle(Style.brandInk)
+        .pointerStyle(.link)
     }
     .font(.system(size: 12))
     .lineLimit(1)
