@@ -143,7 +143,8 @@ fi
 # 发布说明（说明见文件头）：中文在前、英文在后
 DMGNAME=$(basename "$DMG") && DMGNAME=${DMGNAME// /.}
 # 发布说明里两种芯片的包都写（同一个 release 附 arm64 和 x86_64 两份 DMG，PLAN §10「Intel 编译」）
-DMGBASE=${DMGNAME%_*}
+# 按名字和版本拼（不能从文件名去掉最后一段：_x86_64 里也有「_」，原来 Intel 那次会写成 _x86_arm64 / _x86_x86_64）
+DMGBASE="${NAME// /.}_${VERSION}"
 {
   jq -r --arg v "$VERSION" '.[] | select(.version == $v) | .summary, "", "## 更新内容", "",
     (.changes[] | "- \(.scope)：\(.text)")' "$CHANGELOG"
