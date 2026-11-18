@@ -21256,6 +21256,16 @@
         }
       }
     },
+    "恢复提醒（暂停到%@）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resume Reminders (Paused Until %@)"
+          }
+        }
+      }
+    },
     "恢复示例提醒" : {
       "localizations" : {
         "en" : {
@@ -24234,6 +24244,26 @@
         }
       }
     },
+    "提醒暂停到%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reminders paused until %@"
+          }
+        }
+      }
+    },
+    "提醒暂停到明天 %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reminders paused until tomorrow at %@"
+          }
+        }
+      }
+    },
     "插件" : {
       "localizations" : {
         "en" : {
@@ -26960,12 +26990,22 @@
         }
       }
     },
-    "暂停到明天" : {
+    "暂停到 %@" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pause Until Tomorrow"
+            "value" : "Pause Until %@"
+          }
+        }
+      }
+    },
+    "暂停到%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pause Until %@"
           }
         }
       }
@@ -33829,12 +33869,12 @@
         }
       }
     },
-    "盖住所有屏幕，键盘鼠标照常能用" : {
+    "盖住所有屏幕，点不到后面的窗口、也打不了字；点按钮或按 ↩ / Esc 收起" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Covers all screens, keyboard and mouse still work"
+            "value" : "Covers all screens. You can’t click or type in the windows behind it; click a button or press ↩ or Esc to close."
           }
         }
       }
@@ -34806,6 +34846,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "First language"
+          }
+        }
+      }
+    },
+    "第二天" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Next day"
           }
         }
       }

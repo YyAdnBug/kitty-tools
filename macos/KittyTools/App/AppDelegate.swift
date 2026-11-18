@@ -2093,34 +2093,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     submenu.addItem(.separator())
     if let until = reminders.pausedUntil {
-      submenu.addAction(
-        "恢复提醒（暂停到 \(until.formatted(date: .omitted, time: .shortened))）", symbol: "play.circle",
-        color: color
-      ) { [unowned self] in
+      // 今天之内只写钟点；到明天的带上哪天（「暂停到明天 8:00」，第五轮体检 E6）
+      let title: LocalizedStringResource =
+        Calendar.current.isDateInToday(until)
+        ? "恢复提醒（暂停到 \(until.formatted(date: .omitted, time: .shortened))）"
+        : "恢复提醒（暂停到\(Self.pauseDay(until))）"
+      submenu.addAction(title, symbol: "play.circle", color: color) { [unowned self] in
         reminders.pause(until: nil)
         island.show("提醒恢复了", tone: .success, symbol: "checkmark.circle.fill")
       }
     } else {
-      let tomorrow = Calendar.current.date(
-        byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: .now))
-      for (title, until) in [
-        ("暂停全部提醒 1 小时" as LocalizedStringResource, Date.now.addingTimeInterval(3600)),
-        ("暂停到明天", tomorrow),
-      ] {
-        guard let until else { continue }
+      // 「暂停到明天」= 明天第一个时段开始，没设时段的到 8:00；半夜之后、今天的还没到时是今天的（E6：原来到 0:00 就结束，
+      // 周六零点弹出工作日的提醒）。菜单上直接写到几点：今天的只写钟点。菜单每次打开时重建，时刻是打开那一刻算的
+      func pauseItem(_ title: LocalizedStringResource, until: Date) {
         submenu.addAction(title, symbol: "pause.circle", color: color) { [unowned self] in
           reminders.pause(until: until)
-          island.show(
-            "提醒暂停到 \(until.formatted(date: .omitted, time: .shortened))",
-            detail: "这期间到点的，之后合成一条告诉你", tone: .info)
+          let time = until.formatted(date: .omitted, time: .shortened)
+          // 英文句中的 tomorrow 小写：明天的单独一句，不拼摘要里的「Tomorrow at」
+          let notice: LocalizedStringResource =
+            if Calendar.current.isDateInToday(until) {
+              "提醒暂停到 \(time)"
+            } else if Calendar.current.isDateInTomorrow(until) {
+              "提醒暂停到明天 \(time)"
+            } else {
+              "提醒暂停到\(Self.pauseDay(until))"
+            }
+          island.show(notice, detail: "这期间到点的，之后合成一条告诉你", tone: .info)
         }
       }
+      pauseItem("暂停全部提醒 1 小时", until: .now.addingTimeInterval(3600))
+      let morning = reminders.pauseUntilTomorrow()
+      let title: LocalizedStringResource =
+        Calendar.current.isDateInToday(morning)
+        ? "暂停到 \(morning.formatted(date: .omitted, time: .shortened))"
+        : "暂停到\(Self.pauseDay(morning))"
+      pauseItem(title, until: morning)
     }
     submenu.addItem(.separator())
     submenu.addAction(
       "管理提醒…", symbol: MenuExtra.settings.symbol, color: NSColor(MenuExtra.settings.color)
     ) { [unowned self] in showSettings(page: .reminders) }
     item.submenu = submenu
+  }
+
+  /// 暂停到哪天几点的说法：「今天 15:30」「明天 8:00」「11月3日 8:00」（同提醒摘要里一次性的时间）
+  private static func pauseDay(_ until: Date) -> String {
+    Reminder.Schedule(kind: .once, date: until).summary(now: .now, calendar: .current)
   }
 
   /// 状态屏的全局快捷键（快捷键、菜单栏子菜单的「选择状态…」）：先出选状态的面板，选一个再进（Z13a）；设置 › 状态屏

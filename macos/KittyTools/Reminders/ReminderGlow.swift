@@ -4,11 +4,14 @@
 // 窗口是普通 NSPanel 实例（不子类化）：鼠标点得穿、永不当 key、不进旁白；层级 .statusBar（盖住菜单栏和程序坞；刘海岛在它
 // 之后出，所以岛在上面），所有桌面、全屏 App 上都在。刘海岛上同时挂着提醒，「知道了」在岛上点；边框只负责让余光看到。
 // 颜色是这一刻的强调色（Style.brand，按窗口的外观取一次：图层创建时取，Whisker §3）。
+// 接上 / 拔掉显示器、合上盖子时按现在的屏重摆（screensChanged，第五轮体检 E13）：已有的窄窗口挪过去（呼吸不断），
+// 新的屏补四条，没了的屏收掉。补的那几条排在已有的那几条后面（同一层里，岛是后出来的、在它们上面）：拿到最前的话会盖住岛。
 
 import AppKit
 import SwiftUI
 
 @MainActor final class ReminderGlow {
+  /// 按屏排：每块屏 Edge.allCases 那么多条，顺序同 NSScreen.screens
   private var panels: [NSPanel] = []
 
   /// 渐变往屏幕里铺多深
@@ -16,18 +19,42 @@ import SwiftUI
   /// 呼吸一个来回的一半（Whisker ambient：1.2 s 往返）
   static let breath: CFTimeInterval = 1.2
 
-  var isShowing: Bool { !panels.isEmpty }
+  /// 显示着（屏全没了的那一刻窗口是空的，屏回来时照样补上）
+  private(set) var isShowing = false
 
+  /// 出来，或者按现在的屏重摆（已经在了也可以再调：挪到的地方不变就什么都不动）
   func show() {
-    guard panels.isEmpty else { return }
-    for screen in NSScreen.screens {
-      for edge in Edge.allCases {
-        panels.append(Self.strip(edge, on: screen.frame))
+    isShowing = true
+    let screens = NSScreen.screens.map(\.frame)
+    let edges = Edge.allCases
+    while panels.count > screens.count * edges.count { panels.removeLast().orderOut(nil) }
+    // 第一次出来时拿到最前（之后挂上的岛在它们上面）；换屏补的排在已有的那条后面
+    let existing = panels.first?.windowNumber
+    for (index, screen) in screens.enumerated() {
+      for (offset, edge) in edges.enumerated() {
+        let at = index * edges.count + offset
+        if at < panels.count {
+          panels[at].setFrame(edge.frame(in: screen, depth: Self.depth), display: true)
+          continue
+        }
+        let strip = Self.strip(edge, on: screen)
+        if let existing {
+          strip.order(.below, relativeTo: existing)
+        } else {
+          strip.orderFrontRegardless()
+        }
+        panels.append(strip)
       }
     }
   }
 
+  /// 屏幕变了（E13）：显示着就按现在的屏重摆
+  func screensChanged() {
+    if isShowing { show() }
+  }
+
   func dismiss() {
+    isShowing = false
     for panel in panels { panel.orderOut(nil) }
     panels = []
   }
@@ -104,7 +131,6 @@ import SwiftUI
       breathe.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
       gradient.add(breathe, forKey: "breathe")
     }
-    panel.orderFrontRegardless()
     return panel
   }
 }

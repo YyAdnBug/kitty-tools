@@ -399,9 +399,13 @@ private struct ScheduleSection: View {
           })
         if !(schedule.time == 0 && schedule.until == 1440) {
           DatePicker("从", selection: clock($schedule.time), displayedComponents: .hourAndMinute)
+          // 早于「从」的跨过半夜，算到第二天（第五轮体检 U10：原来悄悄改成到 24:00）
           DatePicker(
-            "到", selection: clock($schedule.until, endOfDay: true),
-            displayedComponents: .hourAndMinute)
+            selection: clock($schedule.until, endOfDay: true), displayedComponents: .hourAndMinute
+          ) {
+            Text("到")
+            if schedule.until < schedule.time { Text("第二天") }
+          }
         }
       }
     } header: {

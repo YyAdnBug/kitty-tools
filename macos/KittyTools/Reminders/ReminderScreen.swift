@@ -2,7 +2,10 @@
 // HUD 底板：表情、标题（几条合在一起）、说明、现在几点、「N 秒后自己收起」，下面一排按钮：稍后 5 分钟 / 15 分钟 / 1 小时、知道了。
 // 和状态屏的根本区别：不拦键盘鼠标、不要授权，按钮直接点。鼠标所在那块屏的面板当 key，↩ / Esc = 知道了（C6），稍后只能点；
 // 出现后 1 秒内的按键、点击都不算，按钮这 1 秒里淡入（C7，正在打字时弹出来，下一下回车不会把它关掉）。
-// 设了时长的到点自己收 = 知道了（C5）。进入状态屏没进去时（C12）底板上多一行橙字说为什么，缺授权的带「去授权」。
+// 设了时长的到点自己收（C5）：交给 onExpire，倒数期间有人碰过键盘鼠标才算知道了（第五轮体检 E7，ReminderCenter.expired）。
+// 进入状态屏没进去时（C12）底板上多一行橙字说为什么，缺授权的带「去授权」。
+// 接上 / 拔掉显示器、合上盖子时按现在的屏重摆（screensChanged，E13，同状态屏的 arrangePanels）：还在的屏挪过去、新的屏补一张、
+// 没了的屏收掉，几块屏共用的 model 不动——倒数、按钮淡没淡入都接着。
 // ReminderScreenPanel 是「禁止另写 NSPanel 子类」的第九个例外（mac-overlay-panel §1）：无边框窗口默认当不了 key，而 ↩ / Esc
 // 要收按键；它不吞事件（不同于状态屏的面板），鼠标点按钮照常走 SwiftUI，带 ⌘ 的组合吞掉（不然 ⌘Q 落到主菜单上退出了 App）。
 // 层级同状态屏（CGShieldingWindowLevel：盖住菜单栏、程序坞、通知横幅），不调 NSApp.activate。
@@ -33,18 +36,23 @@ import SwiftUI
   }
 
   var onDone: () -> Void = {}
+  /// 倒数到 0 自己收起：参数是这一轮倒数出来了几秒（真实流逝的，睡眠也算）
+  var onExpire: (TimeInterval) -> Void = { _ in }
   var onSnooze: (Int) -> Void = { _ in }
   var onGrant: () -> Void = {}
   private let model = ReminderScreenModel()
   private var panels: [ReminderScreenPanel] = []
   private var countdown: Timer?
+  /// 这一轮倒数从哪一刻起（换了内容重新数）
+  private var countdownStart = ContinuousClock.now
   private var guardTask: Task<Void, Never>?
   private var framesTask: Task<Void, Never>?
 
   /// 出现后多久之内的按键、点击不算（C7）
   static let settleTime: Duration = .seconds(1)
 
-  var isShowing: Bool { !panels.isEmpty }
+  /// 显示着（按内容算：屏全没了的那一刻面板是空的，屏回来时照样补上）
+  var isShowing: Bool { model.content != nil }
 
   /// 出来；已经在了就原地换内容（又有一条到点、合成一条），时长从这一刻重新数
   func show(_ content: Content) {
@@ -56,8 +64,25 @@ import SwiftUI
     // 换了内容（又有一条合进来）也重新等那 1 秒：正要点给旧内容的那一下，不能把没看到的新一条处理掉
     settle()
     guard panels.isEmpty else { return }
-    let mouse = NSEvent.mouseLocation
-    for screen in NSScreen.screens {
+    arrangePanels()
+    let text = [content.title, content.detail].compactMap { $0 }.joined(separator: Island.comma)
+    Island.announce("\(text)。回车表示知道了")
+  }
+
+  /// 屏幕变了（E13）：显示着就按现在的屏重摆
+  func screensChanged() {
+    if isShowing { arrangePanels() }
+  }
+
+  /// 每块屏一张：已有的挪到对应的屏、多出来的屏补新的（淡入）、屏少了的收掉；没有 key 的就让鼠标所在那块屏的当 key
+  private func arrangePanels() {
+    let screens = NSScreen.screens
+    while panels.count > screens.count { panels.removeLast().dismiss(fading: false) }
+    for (index, screen) in screens.enumerated() {
+      if index < panels.count {
+        panels[index].setFrame(screen.frame, display: true)
+        continue
+      }
       let panel = ReminderScreenPanel(frame: screen.frame, model: model)
       panel.onKey = { [weak self] in self?.key() }
       panel.done = { [weak self] in self?.done() }
@@ -66,11 +91,11 @@ import SwiftUI
       panel.present(fading: !Style.reduceMotion)
       panels.append(panel)
     }
+    guard !panels.contains(where: \.isKeyWindow) else { return }
     // 鼠标所在那块屏的当 key（贴着屏幕顶边时 contains 不算，用 NSMouseInRect；哪块都不在就第一块，同状态屏）
-    let key = zip(NSScreen.screens, panels).first { NSMouseInRect(mouse, $0.0.frame, false) }?.1
+    let mouse = NSEvent.mouseLocation
+    let key = zip(screens, panels).first { NSMouseInRect(mouse, $0.0.frame, false) }?.1
     (key ?? panels.first)?.makeKey()
-    let text = [content.title, content.detail].compactMap { $0 }.joined(separator: Island.comma)
-    Island.announce("\(text)。回车表示知道了")
   }
 
   /// 按钮先藏起来、1 秒后淡入（C7）
@@ -110,16 +135,21 @@ import SwiftUI
     onSnooze(minutes)
   }
 
-  /// 设了时长的每秒数一下，到 0 自己收 = 知道了（不看 isSettled：时长至少 20 秒）
+  /// 设了时长的每秒数一下，到 0 交给 onExpire（不看 isSettled：时长至少 20 秒）
   private func startCountdown(_ seconds: Int) {
     countdown?.invalidate()
     countdown = nil
     guard seconds > 0 else { return }
+    countdownStart = .now
     let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
       MainActor.assumeIsolated {
         guard let self else { return }
         self.model.remaining -= 1
-        if self.model.remaining <= 0 { self.onDone() }
+        guard self.model.remaining <= 0 else { return }
+        self.countdown?.invalidate()
+        self.countdown = nil
+        let shown = self.countdownStart.duration(to: .now).components.seconds
+        self.onExpire(TimeInterval(shown))
       }
     }
     timer.tolerance = 0.1

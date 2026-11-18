@@ -1644,6 +1644,14 @@ struct SnapshotProbeTests {
         ReminderDetail(id: id, fixed: list, now: now), size: NSSize(width: 590, height: 1100),
         dark: dark, to: "\(out)/reminders-detail-\(name).png")
     }
+    // 跨过半夜的时段（第五轮体检 U10）：22:00–6:00，「到」下面一行「第二天」，页头是摘要、不报「比间隔还短」
+    let night = Reminder(
+      id: "night", title: "夜班喝水", symbol: "hot-beverage",
+      schedule: .init(
+        kind: .interval, time: 22 * 60, until: 6 * 60, days: Reminder.Schedule.workdays))
+    try snapshot(
+      ReminderDetail(id: "night", fixed: [night], now: now), size: NSSize(width: 590, height: 1100),
+      dark: false, to: "\(out)/reminders-detail-night.png")
     // 时间已经过了的一次性提醒：页头换成橙色说明
     var late = call
     late.schedule.date = now.addingTimeInterval(-600)

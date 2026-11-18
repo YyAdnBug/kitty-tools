@@ -19,6 +19,9 @@
 // 先压着（heldFired / heldMissed）：不弹出、不出声、不升方式、不催；「只在刘海上挂图标」时耳朵上挂一个——左耳闹钟、右耳几条（强调色），
 // 点开是卡片（知道了 / 稍后），「先不提醒」时什么都不挂。专注模式结束（滤镜回到照常）时压着的照轻提醒的样子弹一次、响一声，
 // 期间没数的间隔提醒从那一刻重新数（同离开电脑）。耳朵上的倒数照常挂（B7）。
+// 第五轮体检：暂停全部提醒时间隔类也不攒、暂停结束从那一刻重新数，「暂停到明天」到明天第一个时段开始（E6）；
+// 全屏倒数完自己收起时，倒数期间没人碰过键盘鼠标（或会话切走、锁着屏）不算知道了，挂到刘海岛上等处理（E7）；
+// 接上 / 拔掉显示器、合上盖子时全屏和边框按现在的屏重摆（E13）；时钟明显往回调才收回将来的时刻（E5）。
 
 import AppKit
 
@@ -75,6 +78,7 @@ import AppKit
   init(defaults: UserDefaults = .standard) {
     self.defaults = defaults
     screen.onDone = { [weak self] in self?.acknowledge() }
+    screen.onExpire = { [weak self] in self?.expired(after: $0) }
     screen.onSnooze = { [weak self] in self?.snooze(minutes: $0) }
     screen.onGrant = { [weak self] in self?.grantAccessibility() }
   }
@@ -86,12 +90,19 @@ import AppKit
     check()
   }
 
-  /// 暂停全部提醒到 date（菜单栏，D6；nil = 恢复）：这期间一条都不响，之后晚了 5 分钟以内照常响、更晚的合成「错过了」
+  /// 暂停全部提醒到 date（菜单栏，D6；nil = 恢复）：这期间一条都不响，之后晚了 5 分钟以内照常响、更晚的合成「错过了」；
+  /// 间隔类不攒，恢复时从那一刻重新数（E6：原来暂停结束马上补响一次，可能落在它的时段外）
   func pause(until date: Date?) {
     guard isRunning else { return }
     state.pausedUntil = date
+    if date == nil { restartIntervals(at: .now) }
     saveState()
     check()
+  }
+
+  /// 「暂停到明天」到哪一刻：明天第一个时段开始，没设时段的到 8:00（E6，ReminderCheck.pauseUntilTomorrow）
+  func pauseUntilTomorrow() -> Date {
+    ReminderCheck.pauseUntilTomorrow(list, now: .now, calendar: .current)
   }
 
   /// 暂停到几点（还在暂停才有）
@@ -101,12 +112,16 @@ import AppKit
   func nextUp() -> (reminder: Reminder, at: Date)? {
     let now = Date.now
     let showing = showing
-    return list.filter { $0.isOn && !showing.contains($0.id) }
-      .compactMap { reminder in
-        ReminderCheck.due(reminder, state: state, anchors: anchors, calendar: .current)
-          .flatMap { $0 > now ? (reminder, $0) : nil }
-      }
-      .min { $0.1 < $1.1 }
+    // 暂停着时间隔类不按旧锚点响（暂停期间不攒、结束时重新数，E6），不列
+    let paused = pausedUntil != nil
+    return list.filter {
+      $0.isOn && !showing.contains($0.id) && !(paused && $0.schedule.kind == .interval)
+    }
+    .compactMap { reminder in
+      ReminderCheck.due(reminder, state: state, anchors: anchors, calendar: .current)
+        .flatMap { $0 > now ? (reminder, $0) : nil }
+    }
+    .min { $0.1 < $1.1 }
   }
 
   func start() {
@@ -231,14 +246,22 @@ import AppKit
     let now = Date.now
     // 到点前一刻才离开的，等不到下一次空闲检查：有间隔提醒要看时现读一次
     if !isAway, idlePoll != nil, Self.idleSeconds() >= Self.awayAfter { isAway = true }
+    // 暂停到点了：间隔类从这一刻重新数（暂停期间它们不攒，E6）
+    if state.endPause(now: now) {
+      restartIntervals(at: now)
+      saveState()
+    }
     let paused = pausedUntil
     let holding = isLocked || isStatusActive() || paused != nil
     if !holding { releaseHeld() }
     let quiet = focus != .normal
+    // 暂停着的间隔类同离开电脑：不响也不等，暂停结束重新数（E6）
     let result = ReminderCheck.check(
       list, state: state, anchors: anchors, showing: showing, now: now,
-      held: holding, away: isAway, focus: quiet,
+      held: holding, away: isAway || paused != nil, focus: quiet,
       calendar: .current)
+    // 过了点、已经出了时段的间隔类：不补响，从现在数（下一个时段，ReminderCheck.check）
+    for id in result.rested { anchors[id] = now }
     let fresh = result.fire + result.missed
     if !fresh.isEmpty {
       for id in fresh {
@@ -290,6 +313,10 @@ import AppKit
   static let islandActivity = "reminder-countdown"
   /// 离响还有多久起在耳朵上倒数
   static let countdownWindow: TimeInterval = 60 * 60
+  /// 倒数上的「推后 5 分钟」
+  static let postponeStep: TimeInterval = 5 * 60
+  /// 推得最远能到现在之后多久（E5）：倒数只挂一小时以内的，再「推后 5 分钟」就是 65 分钟；全屏的「稍后」最多 1 小时
+  static let farthestSnooze = countdownWindow + postponeStep
 
   /// 下一条要响的一次性提醒和几点（纯函数）：开着、没挂着、还没到点的里面最近的一条（推过的按推到的时刻）
   static func nextOnce(
@@ -330,7 +357,9 @@ import AppKit
         trailing: .countdown(to: at),
         actions: [
           Island.Action("提前结束") { [weak self] in self?.finish([reminder.id]) },
-          Island.Action("推后 5 分钟") { [weak self] in self?.postpone(reminder.id, by: 5 * 60) },
+          Island.Action("推后 5 分钟") { [weak self] in
+            self?.postpone(reminder.id, by: Self.postponeStep)
+          },
         ],
         // 设了图标的左耳画它（静止的第一帧，拍板 C5），没设是闹钟
         emoji: reminder.symbol.isEmpty ? nil : reminder.symbol))
@@ -565,6 +594,31 @@ import AppKit
     return (fired.map(\.displayTitle).joined(separator: " · "), detail)
   }
 
+  /// 全屏倒数完自己收起（C5）：倒数期间有人碰过键盘鼠标才算「知道了」；一直没人碰、会话切走了、锁着屏（人不在跟前：
+  /// 显示器睡了没锁、去开会了、切到了别的用户），不是间隔类的不算——收起全屏、挂到刘海岛上等处理（E7：原来一次性的就这样
+  /// 被删掉了，回来岛上、列表里都没有）；间隔类照旧算处理了、从这一刻重新数（「休息眼睛」照做的人正好 20 秒不碰键鼠，
+  /// 挂到岛上的话锚点空着、之后不再数；离开本来就算休息过，B3）。挂上去不再催：全屏已经出过（同「第 3 次换成全屏，之后不再催」）
+  private func expired(after shown: TimeInterval) {
+    let away = isLocked || InputBlock.isSessionAway
+    let pending = Self.unattended(
+      firing + missed, list: list, idle: Self.idleSeconds(), shown: shown, away: away)
+    guard !pending.isEmpty else { return acknowledge() }
+    let handled = (firing + missed).filter { !pending.contains($0) }
+    firing = firing.filter(pending.contains)
+    missed = missed.filter(pending.contains)
+    hideSurfaces()
+    finish(handled)
+  }
+
+  /// 全屏自己收起时还要挂在岛上等处理的（纯函数）：出来的这 shown 秒里没人碰过键盘鼠标（空闲得比它还久）、或者会话不在
+  /// 用户手里时，不是间隔类的那几条；有人碰过、或者全是间隔类，是空的（都算知道了）
+  static func unattended(
+    _ ids: [String], list: [Reminder], idle: TimeInterval, shown: TimeInterval, away: Bool
+  ) -> [String] {
+    guard away || idle >= shown else { return [] }
+    return ids.filter { id in list.first { $0.id == id }?.schedule.kind != .interval }
+  }
+
   /// 「知道了」：挂着的都算处理了
   private func acknowledge() {
     ReminderSound.stop()  // 自己选的长音频：用户处理了才停（进入状态屏、只剩错过的那几条收面板时不停：刚响的那声还要响完）
@@ -650,10 +704,9 @@ import AppKit
       $0.restartIntervals(at: .now)
       $0.check()
     }
-    // 系统时间往回调过：记在「将来」的时刻收回来，不然要等真实时间追上才响
+    // 系统时间往回调过：记在「将来」的时刻收回来，不然要等真实时间追上才响；只收明显往回调的，推后的最远按 65 分钟算（E5）
     add(local, .NSSystemClockDidChange) {
-      let max = TimeInterval((Reminder.snoozeChoices.last ?? 30) * 60)
-      let pulled = $0.state.pulledBack(now: .now, maxSnooze: max)
+      let pulled = $0.state.pulledBack(now: .now, maxSnooze: Self.farthestSnooze)
       if pulled != $0.state {
         $0.state = pulled
         $0.saveState()
@@ -662,6 +715,11 @@ import AppKit
     }
     for name in [Notification.Name.NSSystemTimeZoneDidChange, .NSCalendarDayChanged] {
       add(local, name) { $0.check() }
+    }
+    // 接上 / 拔掉显示器、合上盖子：显示着的全屏和边框按现在的屏重摆，内容沿用（E13，同状态屏）
+    add(local, NSApplication.didChangeScreenParametersNotification) {
+      $0.screen.screensChanged()
+      $0.glow.screensChanged()
     }
   }
 

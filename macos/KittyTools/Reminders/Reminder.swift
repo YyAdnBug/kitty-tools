@@ -28,7 +28,7 @@ nonisolated struct Reminder: Codable, Hashable, Identifiable {
     var date: Date
     /// 一天里的第几分钟：每周 / 每月的时刻、间隔的时段开始
     var time: Int
-    /// 间隔的时段结束（一天里的第几分钟，不含；1440 = 到半夜）
+    /// 间隔的时段结束（一天里的第几分钟，不含；1440 = 到半夜；早于 time = 跨过半夜、结束在第二天，U10）
     var until: Int
     /// 星期几（Calendar 的 weekday：1 = 周日 … 7 = 周六）
     var days: [Int]
@@ -55,6 +55,30 @@ nonisolated struct Reminder: Codable, Hashable, Identifiable {
       self.every = every
     }
 
+    private enum CodingKeys: String, CodingKey {
+      case kind, date, time, until, days, day, every
+      /// 跨过半夜的时段才写（第五轮体检 U10，只读 isOvernight、不解码）：0.10.0 及以前不认识它，同步时那一版解了再编往返
+      /// 对不上（SyncRecords.decodeExact），整类停下说先更新，不会把 22:00–6:00 收拾成到半夜、再当成自己的改动推回来。
+      /// 别的提醒编出来的字节和以前一样
+      case overnight
+    }
+
+    /// 和以前自动生成的一样逐个写（键和值都不变），跨过半夜的多一个 overnight
+    func encode(to encoder: Encoder) throws {
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(kind, forKey: .kind)
+      try c.encode(date, forKey: .date)
+      try c.encode(time, forKey: .time)
+      try c.encode(until, forKey: .until)
+      try c.encode(days, forKey: .days)
+      try c.encode(day, forKey: .day)
+      try c.encode(every, forKey: .every)
+      if isOvernight { try c.encode(true, forKey: .overnight) }
+    }
+
+    /// 间隔的时段跨过半夜（22:00–6:00，U10）
+    var isOvernight: Bool { kind == .interval && until < time }
+
     init(from decoder: Decoder) throws {
       let c = try decoder.container(keyedBy: CodingKeys.self)
       let fallback = Schedule(kind: .weekly)
@@ -73,12 +97,15 @@ nonisolated struct Reminder: Codable, Hashable, Identifiable {
       every = (try? c.decode(Int.self, forKey: .every)) ?? fallback.every
     }
 
-    /// 收拾成能用的：时刻夹进一天里，时段的结束不早于开始（否则到半夜），星期去重排序、一天都没勾当七天都勾，
-    /// 几号夹进 1…31，间隔夹进 5 分钟…12 小时，时刻不是有限数的换成很久以前（一次的提醒就是错过了）
+    /// 收拾成能用的：时刻夹进一天里，时段的结束不早于开始（否则到半夜）——间隔类的结束早于开始（1 起）是跨过半夜，留着
+    /// （第五轮体检 U10：原来悄悄改成到半夜，夜里的时段设不了；别的种类没有时段，照旧到半夜，编出来的字节和以前一样），
+    /// 星期去重排序、一天都没勾当七天都勾，几号夹进 1…31，间隔夹进 5 分钟…12 小时，时刻不是有限数的换成很久以前
+    /// （一次的提醒就是错过了）
     var sanitized: Schedule {
       var next = self
       next.time = min(max(time, 0), 1439)
-      next.until = until > next.time && until <= 1440 ? until : 1440
+      let overnight = kind == .interval && until >= 1 && until < next.time
+      next.until = (until > next.time && until <= 1440) || overnight ? until : 1440
       let days = Set(days.filter { (1...7).contains($0) }).sorted()
       next.days = days.isEmpty ? Self.allDays : days
       next.day = min(max(day, 1), 31)
@@ -94,7 +121,7 @@ nonisolated struct Reminder: Codable, Hashable, Identifiable {
     case light
     /// 所有屏幕四边一圈强调色的光 + 刘海岛（C3）
     case glow
-    /// 盖住所有屏的告示 + 按钮，不拦键盘鼠标（C4）
+    /// 盖住所有屏的告示 + 按钮（C4）：不建事件拦截，但整屏面板接住点击、按键只认 ↩ / Esc，后面的窗口点不到、打不了字
     case full
     /// 进入状态屏的某个状态（C1 的强制版，C12：进不去时退成全屏）
     case status
@@ -119,7 +146,7 @@ nonisolated struct Reminder: Codable, Hashable, Identifiable {
       switch self {
       case .light: String(localized: "刘海岛上挂着，点了「知道了」或「稍后」才收")
       case .glow: String(localized: "屏幕四边一圈光，鼠标点得穿，刘海岛上同时挂着")
-      case .full: String(localized: "盖住所有屏幕，键盘鼠标照常能用")
+      case .full: String(localized: "盖住所有屏幕，点不到后面的窗口、也打不了字；点按钮或按 ↩ / Esc 收起")
       case .status: String(localized: "到点进入一个状态，拦住键盘鼠标；要辅助功能授权")
       }
     }
@@ -466,7 +493,8 @@ nonisolated struct Reminder: Codable, Hashable, Identifiable {
     if schedule.kind == .once, schedule.date <= now {
       return String(localized: "这个时间已经过了，不会再提醒")
     }
-    if schedule.kind == .interval, schedule.until - schedule.time < schedule.every {
+    // 按存进去的样子算（跨过半夜的算到第二天，U10）
+    if schedule.kind == .interval, schedule.sanitized.windowMinutes < schedule.sanitized.every {
       return String(localized: "这段时间比间隔还短，可能一次都不提醒")
     }
     return nil
