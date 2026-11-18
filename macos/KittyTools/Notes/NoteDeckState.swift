@@ -1,6 +1,7 @@
 // 屏幕边缘那叠的状态机（纯状态，单测 NoteDeckTests 逐条锁住；规矩在 mac-overlay-panel §12）。一块屏一份。
 // 三种样子：静置（只有边上的药丸）→ 扇出（一列标签）→ 打开（某一条便签）；另记「+N」展没展开、是不是正拖着标签排序。
 // - 静置 → 扇出：鼠标进药丸。按着 ⌥ 不扇出（那是要拖它）；这时不许扇出（截图框选、长截图、录屏选区和倒数、状态屏）也不扇出。
+//   全局快捷键（summoned，第四轮体检 X16）也是扇出，键盘在这一列上（↑↓ 选、↩ 打开、Esc 收回，NoteDeck.summon）。
 // - 扇出 → 静置：鼠标离开热区又确认了一次、4 秒没动静、Esc / ⌘W；拖着标签排序时不收。
 // - 扇出 → 打开：点标签（悬停即打开时停够久）。打开着点另一张 = 换一条，点它自己那张 = 关（回到扇出）。
 // - 打开 → 扇出（close）：用鼠标关的——关闭按钮、它自己的标签；归档、删除之后。
@@ -26,6 +27,8 @@ nonisolated struct NoteDeckState: Equatable, Sendable {
   enum Event: Equatable, Sendable {
     /// 鼠标进了药丸。optionDown：按着 ⌥；allowed：现在能不能扇出
     case pillEntered(optionDown: Bool, allowed: Bool)
+    /// 全局快捷键叫出来（X16）
+    case summoned
     /// 鼠标离开热区，过一会儿确认了还在外面
     case left
     /// 4 秒没动静
@@ -81,6 +84,8 @@ nonisolated struct NoteDeckState: Equatable, Sendable {
     switch (event, phase) {
     case (.pillEntered(let optionDown, let allowed), .rest):
       if !optionDown, allowed { phase = .fanned }
+    case (.summoned, .rest):
+      phase = .fanned
     case (.left, .fanned), (.idle, .fanned):
       if !isDragging { collapse() }
     case (.tab(let id), .fanned):

@@ -164,6 +164,7 @@ final class Launchpad {
       self?.usage?.boost(for: item, query: query) ?? (0, 0)
     }
     model.onLayoutChange = { [weak self] layout in self?.save(layout) }
+    model.appAliasesText = { UserDefaults.standard.string(forKey: Prefs.launcherAppAliases) ?? "" }
     model.onDeleteApp = { [weak self] app in self?.delete(app) }
     model.folderName = { first, second in
       LaunchpadCatalog.folderName(first: first, second: second)

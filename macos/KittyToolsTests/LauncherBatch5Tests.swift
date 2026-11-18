@@ -236,7 +236,8 @@ struct LauncherBatch5Tests {
         "translate-screenshot", "copyToTranslate", "screenshot", "screenshotLastRegion", "ocr",
         "screenRecord", "audioRecord", "pinClipboard", "shotHistory", "clothesline", "noteCapture",
         "noteNew",
-        "noteAll", "reminderNew", "launchpad", "keepAwake", "appShortcuts", "island", "home",
+        "noteAll", "noteDeck", "reminderNew", "launchpad", "keepAwake", "appShortcuts", "island",
+        "home",
         "settings",
         "shortcuts",
         "about",
@@ -290,7 +291,8 @@ struct LauncherBatch5Tests {
     model.query = "linux.do"
     let link = try #require(model.selectedItem)
     #expect(link.kind == .url && model.isWebLink(link))
-    #expect(model.commandReturnAction(for: link).map { String(localized: $0.title) } == "用「TestFox」打开")
+    #expect(
+      model.commandReturnAction(for: link).map { String(localized: $0.title) } == "用「TestFox」打开")
     model.alternate = .command
     #expect(model.alternateSubtitle(for: link) == "⌘↩ 用「TestFox」打开")
     let actions = model.actions
@@ -420,7 +422,9 @@ struct LauncherBatch5Tests {
     model.query = "FY hello"
     let row = try #require(model.results.first)
     #expect(model.results.count == 1 && row.kind == .translate && row.title == "翻译「hello」")
-    #expect(row.hotKeyAction == .inputTranslate && String(localized: model.primaryAction(for: row).title) == "翻译")
+    #expect(
+      row.hotKeyAction == .inputTranslate
+        && String(localized: model.primaryAction(for: row).title) == "翻译")
     await model.definitionLookup()
     #expect(model.results.first?.subtitle == "used as a greeting")
     model.execute(try #require(model.results.first))

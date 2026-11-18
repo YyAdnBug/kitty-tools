@@ -104,6 +104,11 @@ struct StatusItemTests {
       #expect(flipped.midX > bounds.midX + icon.width / 2 - 6)
       // 上边：翻转坐标里 y 小，不翻转时 y 大
       #expect(flipped.midY < bounds.midY && upright.midY > bounds.midY)
+      // 暂停角标（X13）在右下角：和圆点同一条竖线附近、不出按钮、和圆点不重叠
+      let pause = StatusItem.pauseFrame(icon: icon, in: bounds, flipped: true)
+      let pauseUp = StatusItem.pauseFrame(icon: icon, in: bounds, flipped: false)
+      #expect(bounds.contains(pause) && bounds.contains(pauseUp))
+      #expect(pause.midY > bounds.midY && pauseUp.midY < bounds.midY && !pause.intersects(flipped))
     }
   }
 

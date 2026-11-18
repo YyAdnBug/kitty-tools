@@ -594,10 +594,10 @@ extension NoteTextView {
   /// 剪贴板里有没有我们处理得了的图片（右键菜单 / 主菜单「粘贴」的可用状态：只有图时也要能点）
   func canPasteImages(from pasteboard: NSPasteboard) -> Bool {
     if pasteboard.string(forType: Self.noteTextType) != nil { return true }
-    if !imageFileURLs(in: pasteboard).isEmpty { return true }
+    if !Self.imageFileURLs(in: pasteboard).isEmpty { return true }
     // 有非空的纯文字：照现在的路走（父类那边本来就可用）
     if !(pasteboard.string(forType: .string) ?? "").isEmpty { return false }
-    return firstImageData(in: pasteboard) != nil
+    return Self.firstImageData(in: pasteboard) != nil
   }
 
   /// 粘贴 / 拖进：读剪贴板的顺序见 paste(_:)。处理了返回 true
@@ -610,7 +610,7 @@ extension NoteTextView {
       return true
     }
     // ② 图片文件：每张存进目录、各插一张
-    let urls = imageFileURLs(in: pasteboard)
+    let urls = Self.imageFileURLs(in: pasteboard)
     if !urls.isEmpty {
       storeAndInsert(files: urls, at: selectedRange())
       return true
@@ -618,7 +618,7 @@ extension NoteTextView {
     // ③ 有非空的纯文字：照现在走（粘成链接 / 照常粘贴纯文本）
     if !(pasteboard.string(forType: .string) ?? "").isEmpty { return false }
     // ④ 只有图片数据（截图、浏览器里「拷贝图像」）
-    if let data = firstImageData(in: pasteboard) {
+    if let data = Self.firstImageData(in: pasteboard) {
       storeAndInsert(data: data, at: selectedRange())
       return true
     }
@@ -644,7 +644,7 @@ extension NoteTextView {
       pasteStored(stored)
       return true
     }
-    let urls = imageFileURLs(in: pboard)
+    let urls = Self.imageFileURLs(in: pboard)
     if !urls.isEmpty {
       storeAndInsert(files: urls, at: selectedRange())
       return true
@@ -659,7 +659,8 @@ extension NoteTextView {
   }
 
   /// 剪贴板里是图片的文件（UTType 属于 .image 的）
-  private func imageFileURLs(in pasteboard: NSPasteboard) -> [URL] {
+  /// 剪贴板里的图片文件（快速记一条贴图也用，X5）
+  static func imageFileURLs(in pasteboard: NSPasteboard) -> [URL] {
     let options: [NSPasteboard.ReadingOptionKey: Any] = [
       .urlReadingFileURLsOnly: true,
       .urlReadingContentsConformToTypes: [UTType.image.identifier],
@@ -669,7 +670,7 @@ extension NoteTextView {
 
   /// 剪贴板里的第一份图片数据。**先取 PNG / JPEG / HEIC / GIF**（多半就是原图、体积小），没有再取 TIFF 等：
   /// 预览、浏览器「拷贝图像」常常先给未压缩的 TIFF，一张 1200 万像素的照片约 48 MB，直接取它会说「太大了」（F14）
-  private func firstImageData(in pasteboard: NSPasteboard) -> Data? {
+  static func firstImageData(in pasteboard: NSPasteboard) -> Data? {
     let types = pasteboard.types ?? []
     let preferred = [
       "public.png", "public.jpeg", "public.heic", "public.heif", "com.compuserve.gif",

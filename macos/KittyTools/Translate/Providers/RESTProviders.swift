@@ -59,6 +59,16 @@ nonisolated enum Baidu {
     case .ko: "kor"
     case .fr: "fra"
     case .es: "spa"
+    case .vi: "vie"
+    case .ar: "ara"
+    case .ms: "may"
+    case .uk: "ukr"
+    case .sv: "swe"
+    case .da: "dan"
+    case .fi: "fin"
+    case .nb: "nor"
+    case .ro: "rom"
+    case .he: "heb"
     case let lang?: lang.rawValue
     }
   }
@@ -119,6 +129,7 @@ nonisolated enum Youdao {
     case nil: "auto"
     case .zhHans: "zh-CHS"
     case .zhHant: "zh-CHT"
+    case .nb: "no"
     case let lang?: lang.rawValue
     }
   }
@@ -145,6 +156,7 @@ nonisolated enum Google {
     switch lang {
     case .zhHans: "zh-CN"
     case .zhHant: "zh-TW"
+    case .nb: "no"
     default: lang.rawValue
     }
   }

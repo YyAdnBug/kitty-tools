@@ -15,6 +15,7 @@ struct LauncherTab: View {
   /// 清空使用记录（LauncherUsage.clearAll）
   var clearUsage: () -> Void = {}
   @AppStorage(Prefs.launcherRomanInput) private var romanInput = false
+  @AppStorage(Prefs.launcherShortcuts) private var searchesShortcuts = true
   @AppStorage(Prefs.launcherPanelPosition) private var panelPosition = "top"
   @AppStorage(Prefs.launcherShowsFrequent) private var showsFrequent = true
   @AppStorage(Prefs.launcherAppAliases) private var appAliasesText = ""
@@ -142,6 +143,14 @@ struct LauncherTab: View {
       .gated(by: .launcher)
       ScriptsSection(library: scripts)
         .gated(by: .launcher)
+      // 快捷指令（X10）
+      Section {
+        Toggle(isOn: $searchesShortcuts) {
+          Text("搜索快捷指令")
+          Text("在启动器里打快捷指令的名字就能运行（不带输入）；改了快捷指令，下次打开启动器时跟上")
+        }
+      }
+      .gated(by: .launcher)
       Section {
         // 显示的开关跟着功能开关变灰；清空使用记录是管数据的，关着也能点（mac-native §1）
         Toggle(isOn: $showsFrequent) {

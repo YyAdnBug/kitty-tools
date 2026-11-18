@@ -99,7 +99,13 @@ enum AppCatalog {
         LauncherMatch.initials(local), pinyin?.initials,
       ]
       .compactMap { $0 }.reduce(into: []) { if !$0.contains($1) { $0.append($1) } },
-      appBundleID: Bundle(url: URL(filePath: path))?.bundleIdentifier)
+      appBundleID: Self.bundleID(at: path))
+  }
+
+  /// 包的 bundle id：直接读 Info.plist（T3：Bundle(url:) 会在进程里常驻一份 NSBundle，几百个 App 扫一遍就留几百份）
+  nonisolated static func bundleID(at path: String) -> String? {
+    (CFBundleCopyInfoDictionaryForURL(URL(filePath: path) as CFURL) as? [String: Any])?[
+      kCFBundleIdentifierKey as String] as? String
   }
 
   /// 访达里这个 App 叫什么（应用别名页、「用 X 打开」、剪贴板来源这些显示 App 名字的地方用）。

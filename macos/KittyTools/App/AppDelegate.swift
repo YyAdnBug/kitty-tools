@@ -36,6 +36,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var audioRecorder: AudioRecorder?
   /// 退出时在等录屏 / 录音收尾（applicationShouldTerminate 返回了 .terminateLater）
   private var quitsAfterRecording = false
+  /// 退出时在等装后台下好的新版本（replyQuit）：装完、到点两条路只回一次话
+  private var quitReplyPending = false
   /// 上次按功能开关（Feature）起停过的样子和那时复制即译开没开（剪贴板的轮询看它）：applyFeatures 只对变了的做事；
   /// nil = 还没起过（启动时）
   private var appliedFeatures: Set<Feature>?
@@ -297,6 +299,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     panel.ignoresClick = { [unowned self] in statusItem?.ownsClick(at: $0) == true }
     model.hidePanel = { [unowned panel] in panel.hide() }
     model.openFeatures = { [unowned self] in showSettings(page: .general) }
+    // 打字转到启动器（X12）：启动器这个功能关着就响一声。按键原样交给启动器输入框的字段编辑器（经输入法：开着拼音时
+    // 这一下进组字，第一个字母不拆出去，同 issue #30）；框里原有的字先全选、被这一下替换。输入框没拿到焦点时
+    // （toggleLauncher 之后照理已经是它，同那里的 selectAll）退回直接填这个字
+    model.typeToLauncher = { [unowned self, unowned panel] event in
+      guard Feature.launcher.isOn else { return NSSound.beep() }
+      panel.hide()
+      if !(launcherPanel.isVisible && launcherPanel.isKeyWindow) { toggleLauncher() }
+      if let editor = launcherPanel.firstResponder as? NSTextView {
+        editor.selectAll(nil)
+        editor.keyDown(with: event)
+      } else {
+        launcherModel.query = event.characters ?? ""
+      }
+    }
     model.perform = { [unowned self] target in
       switch target {
       case .action(let action): run(action)
@@ -1065,6 +1081,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     hotKeys.reload()
     try? FileManager.default.removeItem(at: ShotShelf.dragDirectory)
     shelf.copy = { [unowned self] png in await copyPNG(png) }
+    // 角落缩略图的「改标注」（X7）：历史里记好了这一条就同截图历史的「改标注」（原图 + 标注接着改、回写那一条），
+    // 没记成（历史关着）就对着这张图标、不回写
+    shelf.annotate = { [unowned self] image, scale, remembered in
+      Task {
+        if let id = await remembered?.value, let item = shotHistory.item(id),
+          let original = await shotHistory.image(for: id)
+        {
+          return openAnnotate(
+            original, scale: item.scale, history: { id }, annotations: item.annotations)
+        }
+        openAnnotate(image, scale: scale)
+      }
+    }
     shelf.island = island
     shelf.save = { [unowned self] in await savePNG($0, asking: false) }
     shelf.pin = { [unowned self] in pins.pin($0, frame: $1) }
@@ -1324,8 +1353,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       builtClipboardPanel?.hide()
       quickLookPanel.panel?.hide()
       // 菜单栏的「暂停记录」跟着剪贴板藏起来了：恢复，免得复制即译也一直被它挡着
-      watcher.isUserPaused = false
-      clipboardModel.isRecordingPaused = false
+      setRecordingPaused(false)
     }
     if turnedOff.contains(.launcher) {
       builtLauncherPanel?.hide()
@@ -1449,7 +1477,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private func purgeNotes() {
     guard let noteStore else { return }
     noteStore.purgeExpired()
-    noteStore.images?.purge(referenced: noteStore.referencedImages)
+    // 快速记一条的草稿里贴的图也算有人引用（X5）：开着的面板看内存里的，没建过面板看草稿文件
+    let draft =
+      noteCapture.map { Set($0.model.images.map(\.id)) }
+      ?? NoteCaptureModel.draftImages(
+        at: dataDirectory.appending(path: NoteCaptureModel.draftName))
+    noteStore.images?.purge(referenced: noteStore.referencedImages.union(draft))
   }
 
   /// 屏幕边缘的便签：右键菜单里的「全部便签」「设置…」、「在全部便签里打开」接到这里的入口；什么时候不许扇出也由这里说
@@ -1479,7 +1512,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // 快速记一条停手不到 1 秒的草稿（E2）
     noteCapture?.model.saveDraft()
     closeReadyAudio()  // 待录的录音控制条没有东西要收尾：直接收掉，不等它回调
-    guard recorder != nil || audioRecorder != nil else { return .terminateNow }
+    guard recorder != nil || audioRecorder != nil else {
+      guard updater.hasPrepared else { return .terminateNow }
+      replyQuit()
+      return .terminateLater
+    }
     quitsAfterRecording = true
     recorder?.stop()
     audioRecorder?.stop()
@@ -1487,9 +1524,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       try? await Task.sleep(for: .seconds(5))
       guard quitsAfterRecording else { return }
       quitsAfterRecording = false
-      NSApp.reply(toApplicationShouldTerminate: true)
+      replyQuit()
     }
     return .terminateLater
+  }
+
+  /// .terminateLater 之后回话「可以退了」：先装上后台下好的新版本（第四轮体检 X11；装不成照常退）。最多等 30 秒
+  /// （解包、验签各自的上限加起来要几分钟）：到点直接退，装到一半的不换上（换上那一下是原子的），下次打开再查再下
+  private func replyQuit() {
+    quitReplyPending = true
+    let finish = { [unowned self] in
+      guard quitReplyPending else { return }
+      quitReplyPending = false
+      NSApp.reply(toApplicationShouldTerminate: true)
+    }
+    Task {
+      await updater.installPrepared()
+      finish()
+    }
+    Task {
+      try? await Task.sleep(for: .seconds(30))
+      finish()
+    }
   }
 
   /// 退出前把便签攒着没落盘的改动落下去（应用内更新的重启也走这里：Updater.install 调的是 NSApp.terminate）。
@@ -1725,6 +1781,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     guard usableNotes() != nil else { return }
     if noteEdge?.openNew() != true { showNotes(creating: true) }
   }
+  /// 「屏幕边缘的便签」（X16）：那叠扇出来、键盘给它；已经展开着就收回。屏幕边缘关着、还没有便签时岛上说
+  private func summonNoteDeck() {
+    guard usableNotes() != nil, let noteEdge else { return }
+    switch noteEdge.summon() {
+    case .done: break
+    case .disabled:
+      island.show(
+        "屏幕边缘的便签关着", detail: "到 设置 › 便签 打开「屏幕边缘」", tone: .info,
+        actions: [.init("打开设置", opens: true) { [unowned self] in showSettings(page: .notes) }])
+    case .empty:
+      island.show(
+        "还没有便签", detail: "记下第一条，屏幕边缘就会出现", tone: .info,
+        actions: [.init("新建便签") { [unowned self] in newNote() }])
+    }
+  }
 
   private func makeNotesWindow(_ store: NoteStore) -> NotesWindow {
     let window = NotesWindow(model: notesModel ?? makeNotesModel(store))
@@ -1855,6 +1926,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     case .noteCapture: toggleNoteCapture()
     case .noteNew: newNote()
     case .noteAll: showNotes()
+    case .noteDeck: summonNoteDeck()
     case .launchpad: launchpad.toggle()
     // 按键叫出的（全局快捷键；启动器、主界面里按 ↩——这一刻的事件是按键）：临时当 key，Esc / ←→ / ↩ 能用（U9）。
     // 用鼠标从菜单栏菜单、主界面点的，和点刘海叫出的一样不抢键盘
@@ -2047,12 +2119,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     .init("勾选同步", opens: true) { [unowned self] in showSettings(page: .general) }
   }
 
+  /// 暂停记录剪贴板的三处一起设：采集、面板底栏、菜单栏图标的暂停角标（X13）
+  private func setRecordingPaused(_ paused: Bool) {
+    watcher.isUserPaused = paused
+    clipboardModel.isRecordingPaused = paused
+    statusItem?.clipboardPaused = paused
+  }
+
   /// 暂停 / 恢复记录剪贴板（菜单栏、启动器，D4；主界面 2026-11-13 起不放开关）：不存盘，重启 App 自动恢复记录（免得忘了关）；
   /// 菜单一关就看不出开没开，用刘海说（剪贴板面板底栏也写着「已暂停记录」）
   private func togglePauseRecording() {
     let paused = watcher.isUserPaused
-    watcher.isUserPaused = !paused
-    clipboardModel.isRecordingPaused = !paused
+    setRecordingPaused(!paused)
     island.show(
       paused ? "已恢复记录剪贴板" : "已暂停记录剪贴板",
       detail: paused ? nil : "复制的内容不进历史，再点一次恢复", tone: .info,
@@ -2439,9 +2517,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     beginCapture(hidingPanels: hidingPanels) { [self] in
       let lastRegion = UserDefaults.standard.string(forKey: Prefs.screenshotLastRegion).map(
         NSRectFromString)
+      // 带上鼠标指针（X8）只给截图：截图翻译盖回的那一路要识字，指针会挡字
+      let cursor = !autoTranslate && UserDefaults.standard.bool(forKey: Prefs.screenshotCursor)
       guard
         let outcome = await frozenSelection(
-          feature,
+          feature, cursor: cursor,
           {
             await RegionSelector.capture(
               $0, lastRegion: lastRegion, preselect: repeatingLastRegion,
@@ -2637,7 +2717,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     defer {
       if quitsAfterRecording {
         quitsAfterRecording = false
-        NSApp.reply(toApplicationShouldTerminate: true)
+        replyQuit()
       }
     }
     // 开录报屏幕录制授权问题（录屏、录系统声音）
@@ -3022,10 +3102,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       // 新画的马赛克打进存下的原图（E6）：用遮罩里这张没画标注的，不再读盘。
       // 编号要等历史记完（刚拼好的长截图是并行记的）：另起任务等，不挡出图（同截图那条路）
       let remembered = Task { await history?() }
+      // 裁过（X17）：历史里换成裁好的原图（重写原图、尺寸），标注已经平移到它的坐标里
+      let cropped = annotateOverlay?.isCropped == true
+      let original = cropped ? annotateOverlay?.historyOriginal ?? original : original
       Task {
         if let id = await remembered.value {
           shotHistory.update(
-            id, annotations: annotations, composed: image, original: original)
+            id, annotations: annotations, composed: image, original: original, cropped: cropped)
         }
       }
       Task {
@@ -3033,7 +3116,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .copy:
           guard let copied = await copyImage(image, scale: scale) else { return }
           island.show(
-            "已复制长截图", detail: copied.detail.map { "\($0)" as LocalizedStringResource },
+            "\(FlyCard.Badge.copied.title)",
+            detail: copied.detail.map { "\($0)" as LocalizedStringResource },
             leading: Island.thumbnail(of: image))
         case .save:
           guard let saved = await saveImage(image, scale: scale, asking: false) else { return }
@@ -3100,7 +3184,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// key 窗口（还开着的话；只 makeKey，不激活本 App）。没授权 / 截屏失败时用刘海提示，返回 nil。
   /// 框选期间别的热键会弹出浮层抢走 key（遮罩就收不到 Esc）；设置里正在录快捷键时热键本来就停着，结束后不能替它恢复
   private func frozenSelection<T>(
-    _ feature: LocalizedStringResource, _ select: ([ScreenCapture.Shot]) async -> T?
+    _ feature: LocalizedStringResource, cursor: Bool = false,
+    _ select: ([ScreenCapture.Shot]) async -> T?
   ) async -> T? {
     guard screenRecordingAllowed(for: feature) else { return nil }
     let shots: [ScreenCapture.Shot]
@@ -3108,7 +3193,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       // 截屏的系统服务不返回时最多等 5 秒（E22）：不然 isCapturing 一直为真，截图家族的热键全被静默忽略
       guard
         let frozen = try await ScreenCapture.within(
-          ScreenCapture.freezeTimeout, ScreenCapture.freeze)
+          ScreenCapture.freezeTimeout, { try await ScreenCapture.freeze(cursor: cursor) })
       else {
         island.show("截屏没有响应", detail: "请再试一次", tone: .warning)
         return nil
@@ -3567,12 +3652,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var png = Data()
     // 挂到晾衣绳上的那一下（land 时才有记历史的任务，闭包按引用拿着它）
     var peg: () -> Void = {}
+    // 记历史的那个任务（角落缩略图的「改标注」等它的编号，X7）
+    var history: Task<UUID?, Never>?
     let pixels = CGSize(width: image.width, height: image.height)
     let landing = shotLanding(pixels: pixels, frame: frame)
     let linger: (CGRect, FlyCard.Badge) -> Void = { [weak self] rect, badge in
       guard let self else { return }
       switch landing.placement {
-      case .corner: shelf.add(image, png: png, scale: scale, source: frame, at: rect, badge: badge)
+      case .corner:
+        shelf.add(
+          image, png: png, scale: scale, source: frame, at: rect, badge: badge, history: history)
       case .clothesline: peg()
       case .none: break
       }
@@ -3585,6 +3674,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       flight.onShow = { [weak self] in self?.statusItem?.pop() }
       return { [weak self] badge, data, remembered in
         png = data
+        history = remembered
         if let self { peg = pegger(remembered, on: landing.screen) }
         flight.land(badge)
       }
@@ -3592,6 +3682,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     return { [weak self] badge, data, remembered in
       guard let self else { return }
       png = data
+      history = remembered
       peg = pegger(remembered, on: landing.screen)
       // 不飞就没有落地的角标：结果用刘海说（Whisker：减弱动态效果时飞行卡片改成轻提示；岛自己会播报）
       let actions: [Island.Action] = if case .saved(let url) = badge { .file(url) } else { [] }
@@ -3708,8 +3799,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       if let on = extra.isOn(state) { item.state = on ? .on : .off }
       if extra == .settings, WhatsNew.inSettingsOnly(fresh) { item.badge = WhatsNew.menuBadge }
     }
-    // 有新版本时最上面一项就是更新（强调色：现在该操作的东西）
-    if let release = updater.available {
+    // 有新版本时最上面一项就是更新（强调色：现在该操作的东西）；跳过了的版本不挂（X11）
+    if let release = updater.nudge {
       menu.addAction(
         "更新到 \(release.version)…", symbol: "arrow.down.circle.fill", color: NSColor(Style.brand)
       ) { [unowned self] in Task { await updater.install() } }

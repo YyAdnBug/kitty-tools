@@ -226,6 +226,8 @@ final class EditorToolbar: PopView {
     /// 保存右侧的 ▾：弹出「存储到 / 另存为」菜单
     case saveMenu
     case cancel
+    /// 裁剪（X17，只在标注遮罩里）：进 / 出裁剪框
+    case crop
   }
 
   var onClick: (Item) -> Void = { _ in }
@@ -236,7 +238,7 @@ final class EditorToolbar: PopView {
   private var buttons: [(item: Item, button: BarButton)] = []
   /// 当前工具的粉色底块（全 App 唯一一处强调色填满的块），在工具间滑动
   private let toolHighlight = CALayer()
-  private var state: (tool: Annotation.Tool?, canUndo: Bool, canRedo: Bool)?
+  private var state: (tool: Annotation.Tool?, canUndo: Bool, canRedo: Bool, cropping: Bool)?
 
   init(mode: Mode = .capture) {
     super.init(frame: .zero)
@@ -253,6 +255,8 @@ final class EditorToolbar: PopView {
     ]
     let right: [[Spec]] = [
       ([
+        // 裁剪（X17）：截图框选时调选区就是裁剪，只有标注遮罩（长截图、截图历史的改标注）才有这颗
+        (.crop, "crop", String(localized: "裁剪"), String(localized: "裁剪")),
         (
           .output(.recognize), "text.viewfinder", String(localized: "识字并拷贝"),
           String(localized: "识字并拷贝")
@@ -262,8 +266,9 @@ final class EditorToolbar: PopView {
         (.record, "record.circle", String(localized: "录屏"), String(localized: "录屏")),
         (.output(.pin), "pin", String(localized: "钉到屏幕"), String(localized: "钉到屏幕")),
       ] as [Spec]).filter { spec in
-        // 长图的标注窗口：这一组只留识字（翻译、长截图、录屏、钉图对一张长图没意义，拍板 C1）
-        guard mode == .capture || spec.0 == .output(.recognize) else { return false }
+        // 长图的标注窗口：这一组只留裁剪和识字（翻译、长截图、录屏、钉图对一张长图没意义，拍板 C1）；截图框选时没有裁剪
+        guard mode == .capture ? spec.0 != .crop : [.crop, .output(.recognize)].contains(spec.0)
+        else { return false }
         // 翻译、录制这两个功能关着（Feature）时没有它们的钮
         return (spec.0 != .output(.translate) || Feature.translate.isOn)
           && (spec.0 != .record || Feature.record.isOn)
@@ -364,6 +369,7 @@ final class EditorToolbar: PopView {
     case .saveMenu: .saveAs
     case .scroll: .scroll
     case .record: .record
+    case .crop: .crop
     default: nil
     }
   }
@@ -442,10 +448,14 @@ final class EditorToolbar: PopView {
   }
 
   /// 当前工具的底块滑过去、图标换成强调色上的符号色（白，黄色这类亮色上是深色）；撤销 / 重做没得做时变灰。跟着鼠标移动一直在调，状态没变就不动
-  func update(tool: Annotation.Tool?, canUndo: Bool, canRedo: Bool) {
-    if let state, state.tool == tool, state.canUndo == canUndo, state.canRedo == canRedo { return }
+  func update(tool: Annotation.Tool?, canUndo: Bool, canRedo: Bool, cropping: Bool = false) {
+    if let state, state.tool == tool, state.canUndo == canUndo, state.canRedo == canRedo,
+      state.cropping == cropping
+    {
+      return
+    }
     let previous = state?.tool
-    state = (tool, canUndo, canRedo)
+    state = (tool, canUndo, canRedo, cropping)
     for (item, button) in buttons {
       switch item {
       case .tool(let each):
@@ -454,6 +464,8 @@ final class EditorToolbar: PopView {
       case .undo: button.isEnabled = canUndo
       case .redo: button.isEnabled = canRedo
       case .output(.copy), .saveMenu: break
+      // 裁剪框开着：裁剪钮是强调色（同当前工具，只是不挪粉色底块）
+      case .crop: button.contentTintColor = cropping ? Style.Shot.accent : Style.HUD.text
       default: button.contentTintColor = Style.HUD.text
       }
     }

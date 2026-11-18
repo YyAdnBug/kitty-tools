@@ -36,14 +36,15 @@ struct BarNotice: Hashable {
 
 /// 有新版本时底栏里常驻的「更新到 x」（剪贴板面板、启动器共用，2026-10-06；对标 Alfred 窗口底部的小提示）：跟在左边的
 /// 条数 / 种类后面，就地提示出来时让开；点了先收起面板，再下载安装、装好自动重新打开（同菜单栏菜单顶上那一项，符号也是
-/// 同一个；进度和失败原因在刘海岛上）。Updater 从环境里取：没给（单测、多数截图自检）或没有新版本时什么都不画
+/// 同一个；进度和失败原因在刘海岛上）。Updater 从环境里取：没给（单测、多数截图自检）、没有新版本或跳过了这一版
+/// （X11）时什么都不画
 struct UpdateBarHint: View {
   /// 收起所在的面板
   let dismiss: () -> Void
   @Environment(Updater.self) private var updater: Updater?
 
   var body: some View {
-    if let updater, let release = updater.available {
+    if let updater, let release = updater.nudge {
       Button {
         dismiss()
         Task { await updater.install() }

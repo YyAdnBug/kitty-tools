@@ -210,6 +210,7 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
     .pinClipboard: "Pin Clipboard Image Text 钉图 贴图",
     // 「便签」：标题是「快速记一条」，不放进来搜「便签」找不到它（另两项标题里就有）
     .noteCapture: "Quick Note Capture 便签", .noteNew: "New Note", .noteAll: "All Notes",
+    .noteDeck: "Notes on Screen Edge 便签 侧边",
     // 第八族：搜「启动台」「launchpad」「应用」都找得到它（和现有的「启动器」是两个东西，名字分开）
     .launchpad: "Launchpad 启动台 应用",
     // 主界面（2026-10-29）：搜「全部功能」「功能」也找得到
@@ -272,6 +273,8 @@ struct LauncherItem: Identifiable, Hashable, Sendable {
     case (.action, Self.scriptGuideID): "doc.on.clipboard.fill"
     case (.action, _): MenuExtra(rawValue: target)?.symbol ?? "gearshape"
     case (.translate, _): SettingsPage.translate.symbol
+    case (.system, let target) where target.hasPrefix(SystemShortcuts.prefix):
+      "square.stack.3d.up.fill"
     case (.system, _): SystemCommand(rawValue: target)?.symbol ?? "power"
     case (.process, _), (.script, _), (.scriptResult, _): "terminal.fill"
     case (.ip, let target):

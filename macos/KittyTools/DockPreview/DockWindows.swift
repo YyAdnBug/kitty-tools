@@ -109,6 +109,14 @@ struct DockWindow: Identifiable, Equatable {
     return DockWatcher.value(element, kAXCloseButtonAttribute) != nil
   }
 
+  /// 最小化那扇窗口（第四轮体检 X15）：设 AXMinimized；设不了时 false
+  @discardableResult func minimize(_ window: DockWindow) -> Bool {
+    guard let element = elements[window.id] else { return false }
+    AXUIElementSetMessagingTimeout(element, DockWatcher.messagingTimeout)
+    return AXUIElementSetAttributeValue(
+      element, kAXMinimizedAttribute as CFString, kCFBooleanTrue) == .success
+  }
+
   /// 按那扇窗口的关闭钮；按不了时 false
   @discardableResult func close(_ window: DockWindow) -> Bool {
     guard let element = elements[window.id],

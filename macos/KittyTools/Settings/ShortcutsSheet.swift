@@ -588,7 +588,7 @@ struct ShortcutsSheet: View {
       // 新建便签、全部便签不设默认键，没设时那两行写「未设置」
       Group(
         title: "便签", symbol: HotKeyAction.noteAll.symbol, color: Style.Family.notes,
-        globals: [.noteCapture, .noteNew, .noteAll],
+        globals: [.noteCapture, .noteNew, .noteAll, .noteDeck],
         entries: [
           Entry("↩", text: "快速记一条里：记下"),
           Entry("⇧↩", "⌘↩", text: "快速记一条里：换行"),

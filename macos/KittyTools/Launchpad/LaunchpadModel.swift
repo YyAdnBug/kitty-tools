@@ -141,7 +141,10 @@ final class LaunchpadModel {
   @ObservationIgnored private var scrollTask: Task<Void, Never>?
   @ObservationIgnored private var pager = LaunchpadPager()
   @ObservationIgnored private var folderPager = LaunchpadPager()
-  @ObservationIgnored private var searchCache: (query: String, apps: [LaunchpadProjectApp])?
+  @ObservationIgnored private var searchCache:
+    (query: String, aliases: String, apps: [LaunchpadProjectApp])?
+  /// 启动器的应用别名（T3：启动台的搜索也认）。Launchpad 建模型时接上偏好；单测、截图自检是空的，不读真实偏好
+  @ObservationIgnored var appAliasesText: () -> String = { "" }
   @ObservationIgnored private var jiggleTask: Task<Void, Never>?
   @ObservationIgnored private var combineTask: Task<Void, Never>?
   @ObservationIgnored private var turnTask: Task<Void, Never>?
@@ -201,12 +204,18 @@ final class LaunchpadModel {
   /// 搜索到的 App（复用启动器的匹配：中文名、拼音全拼、首字母、英文名都算，SPEC R3；使用加成和启动器同一份）
   var searchResults: [LaunchpadProjectApp] {
     guard isSearching else { return [] }
-    if let searchCache, searchCache.query == query { return searchCache.apps }
+    let aliasText = appAliasesText()
+    if let searchCache, searchCache.query == query, searchCache.aliases == aliasText {
+      return searchCache.apps
+    }
     let text = query
-    let items = LauncherMatch.rank(catalog.map(\.item), query: text) { boost($0, text) }
+    let aliases = AppAliases(text: aliasText)
+    let items = LauncherMatch.rank(catalog.map { aliases.applying(to: $0.item) }, query: text) {
+      boost($0, text)
+    }
     let byPath = Dictionary(catalog.map { ($0.path, $0) }, uniquingKeysWith: { first, _ in first })
     let apps = items.compactMap { byPath[$0.target] }
-    searchCache = (query, apps)
+    searchCache = (query, aliasText, apps)
     return apps
   }
 

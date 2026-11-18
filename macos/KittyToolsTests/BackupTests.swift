@@ -587,13 +587,18 @@ struct BackupTests {
     #expect(stores.clipboard.items.isEmpty)
     #expect(Backup.list(in: directory, calendar: calendar).isEmpty)
     #expect(snapshot(of: directory.appending(path: "damaged-20261002-213045")) == before)
-    // 那份 JSON 在挪开的 backups 里（弹框说的就是去那里选），新的 backups/ 里没有
+    // 那份 JSON 在挪开的 backups 里，也拷了一份回新的 backups/（T5：「从备份恢复」里直接选得到），导入前那份同样
     #expect(
       FileManager.default.fileExists(
         atPath: directory.appending(
           path: "damaged-20261002-213045/backups/\(json.lastPathComponent)"
         ).path))
-    #expect(SettingsBackup.list(in: folder, calendar: calendar).isEmpty)
+    #expect(
+      SettingsBackup.list(in: folder, calendar: calendar).map(\.url.lastPathComponent).sorted()
+        == SettingsBackup.list(
+          in: directory.appending(path: "damaged-20261002-213045/backups"), calendar: calendar
+        ).map(\.url.lastPathComponent).sorted())
+    #expect(SettingsBackup.list(in: folder, calendar: calendar).count == 2)
     #expect(await run(10, 2) == .made(backup(10, 2)))
     #expect(Backup.list(in: directory, calendar: calendar).count == 1)
   }
@@ -813,11 +818,13 @@ struct BackupTests {
     // backups/ 里有设置与数据的自动备份：多一段说重新开始之后怎么导回来，接在「挪开的文件在哪」后面、原因前面；
     // 按钮不变。没有那种备份时一个字都不多
     let note =
-      "选了重新开始，片段、文字收藏和生词本之后还能导回来：到 设置 › 通用 点「导入…」，选上面那个文件夹的 backups 里最新的「Kitty Tools 自动备份 日期.json」。"
+      "选了重新开始，片段、文字收藏和生词本之后还能导回来：每天的自动备份会留一份在原处，到 设置 › 通用 点「从备份恢复」，选 10月1日（昨天）那一份。"
     #expect(!with.text.contains("导回来") && !lost.text.contains("导回来"))
     #expect(!without.text.contains("导回来"))
     let withText = Recovery.wording(
-      for: .init(reason: "database disk image is malformed", backup: copy, hasSettingsBackup: true),
+      for: .init(
+        reason: "database disk image is malformed", backup: copy,
+        settingsBackupDay: at(10, 1)),
       directory: home, now: at(10, 2), calendar: calendar)
     #expect(withText.buttons == with.buttons && withText.choices == with.choices)
     #expect(
@@ -825,7 +832,9 @@ struct BackupTests {
         == with.text.replacingOccurrences(of: "\n\n原因：", with: "\n\n\(note)\n\n原因："))
     // 数据库没有备份、只有那种备份：别说成「没有可用的备份」
     let onlyText = Recovery.wording(
-      for: .init(reason: "file is not a database", backup: nil, hasSettingsBackup: true),
+      for: .init(
+        reason: "file is not a database", backup: nil,
+        settingsBackupDay: at(10, 1)),
       directory: home, now: at(10, 2), calendar: calendar)
     #expect(onlyText.buttons == ["重新开始", "退出"])
     #expect(onlyText.text.contains("也没有可用的数据库备份。") && !onlyText.text.contains("也没有可用的备份。"))

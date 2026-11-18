@@ -1,5 +1,6 @@
 // CleanShot 式常驻缩略图（Whisker D8）：截图飞到右下角、角标弹完以后由这里接手，留在原地（同一个位置、同样的圆角阴影）。
-// 悬停时出 HUD 操作：中间「拷贝」「存储」两个胶囊，左上关闭、右下钉图（右上角是品牌粉角标），存过的左下「在访达中显示」；
+// 悬停时出 HUD 操作：中间「拷贝」「存储」两个胶囊和「改标注」圆钮（第四轮体检 X7：连到截图历史里那一条接着改，历史关着就
+// 对着这张图开标注、不回写），左上关闭、右下钉图（右上角是品牌粉角标），存过的左下「在访达中显示」；
 // 拖出去是一个 PNG 文件（拖进访达、邮件、聊天窗口），双击用默认 App 打开；触控板往右扫跟手，松手时扫得够远或够快就滑走、否则弹回；
 // 鼠标不在上面时 6 s 后自己滑走（移开后 2.5 s）。同一块屏上连截几张时往上叠，最多 3 张，更早的滑走。
 // 窗口是普通 NSPanel 实例（不当 key、不激活本 App；层级状态栏，之后的截图冻结帧会排除它），用完放回复用池
@@ -29,6 +30,8 @@ final class ShotShelf {
   var save: (Data) async -> URL? = { _ in nil }
   var pin: (CGImage, CGRect) -> Void = { _, _ in }
   var copyFile: (URL) -> Void = { _ in }
+  /// 「改标注」（X7，AppDelegate 给）：这张图、像素 / 点、记历史的那个任务（等它给出编号就接着改历史里那一条；没记成是 nil）
+  var annotate: (CGImage, CGFloat, Task<UUID?, Never>?) -> Void = { _, _, _ in }
   /// 刘海岛（AppDelegate 给）：缩略图看起来没变的结果（再拷贝、存到同一个文件夹）、文件已不在时用它说
   var island: Island?
   /// 转出来的 GIF、压缩版也记进截图历史（AppDelegate 给，2026-10-26 拍板 B1）
@@ -73,12 +76,12 @@ final class ShotShelf {
   /// 接手一张截图：png 是复制 / 保存时编码好的，rect 是落地位置（屏幕坐标），source 是选区（钉图钉回那里）
   func add(
     _ image: CGImage, png: Data, scale: CGFloat, source: CGRect, at rect: CGRect,
-    badge: FlyCard.Badge
+    badge: FlyCard.Badge, history: Task<UUID?, Never>? = nil
   ) {
     insert(at: rect) { screen, panel in
       ShelfCard(
         image: image, png: png, scale: scale, source: source, rect: rect, badge: badge,
-        screen: screen, panel: panel, shelf: self)
+        screen: screen, panel: panel, shelf: self, history: history)
     }
   }
 
@@ -275,15 +278,19 @@ final class ShotShelf {
   @ObservationIgnored let isCompressed: Bool
   /// 没有飞行卡片交接、在角落弹出来（GIF 卡，第 7 批）：出现时 pop
   @ObservationIgnored var popsIn = false
+  /// 截图记进历史的那个任务（X7「改标注」等它的编号）；录屏、GIF 卡和没记的截图是 nil
+  @ObservationIgnored private var history: Task<UUID?, Never>?
   /// 触控板横扫时跟手的偏移，和最近一次非零位移与它的时间（松手前还在快速往右 = 甩出去；停住再松手不算）
   @ObservationIgnored private var swipe: CGFloat = 0
   @ObservationIgnored private var lastSwipe: (delta: CGFloat, time: CFTimeInterval) = (0, 0)
 
   init(
     image: CGImage, png: Data? = nil, scale: CGFloat, source: CGRect, rect: CGRect,
-    badge: FlyCard.Badge, screen: NSScreen?, panel: NSPanel, shelf: ShotShelf
+    badge: FlyCard.Badge, screen: NSScreen?, panel: NSPanel, shelf: ShotShelf,
+    history: Task<UUID?, Never>? = nil
   ) {
     kind = .image
+    self.history = history
     self.png = png
     self.image = png == nil ? image : nil
     pixels = CGSize(width: image.width, height: image.height)
@@ -351,8 +358,8 @@ final class ShotShelf {
       return [[.copy] + convert + [.open, .reveal] + history, [.trash], [.close]]
     }
     let saved = if case .saved = badge { true } else { false }
-    // 截图这个功能关掉之后还留在角落的：没有钉图（Feature）
-    let pin: [Command] = Feature.screenshot.isOn ? [.pin] : []
+    // 截图这个功能关掉之后还留在角落的：没有钉图、改标注（Feature）
+    let pin: [Command] = Feature.screenshot.isOn ? [.edit, .pin] : []
     return [[.copy, .save] + pin + (saved ? [.reveal] : []) + history, [.close]]
   }
 
@@ -368,8 +375,9 @@ final class ShotShelf {
     case .history: shelf?.openHistory()
     case .trash: moveToTrash()
     case .close: close()
-    // 晾衣绳那边的三个（menu 里不给，常驻缩略图没有这几样）
-    case .edit, .unpeg, .forget: break
+    case .edit: edit()
+    // 晾衣绳那边的两个（menu 里不给，常驻缩略图没有这几样）
+    case .unpeg, .forget: break
     }
   }
 
@@ -488,15 +496,26 @@ final class ShotShelf {
     return false
   }
 
+  /// 整张图：没留原图就从 PNG 解码（钉图、改标注）
+  private var fullImage: CGImage? {
+    image
+      ?? png.flatMap({ CGImageSourceCreateWithData($0 as CFData, nil) }).flatMap({
+        CGImageSourceCreateImageAtIndex($0, 0, nil)
+      })
+  }
+
+  /// 「改标注」（X7）：打开标注遮罩，历史里有这一条就接着改它（原图和标注从历史读，改完回写），没有就对着这张图标。
+  /// 卡片收起：改完出的是新的图
+  func edit() {
+    guard kind == .image, let full = fullImage else { return }
+    shelf?.annotate(full, scale, history)
+    close()
+  }
+
   /// 钉到选区的位置；长截图比选区高得多，按选区宽度钉整张，太高就等比缩到屏幕可见高度的 90%（顶边对齐选区）。
   /// 钉图要整张图：没留原图就从 PNG 解码
   func pin() {
-    guard
-      let full = image
-        ?? png.flatMap({ CGImageSourceCreateWithData($0 as CFData, nil) }).flatMap({
-          CGImageSourceCreateImageAtIndex($0, 0, nil)
-        })
-    else { return }
+    guard let full = fullImage else { return }
     let frame = PinBoard.restoredFrame(
       pixels: pixels, source: source, visible: screen?.visibleFrame ?? source)
     shelf?.pin(full, frame)
@@ -873,6 +892,10 @@ struct ShelfCardView: View {
         if card.kind == .image {
           pill(
             String(localized: "存储"), "square.and.arrow.down", compact: compact, action: card.save)
+          // 改标注（X7）：只放图标，三个带字的胶囊在 200 宽的卡片上放不下
+          if Feature.screenshot.isOn {
+            pill(ShelfCard.Command.edit.title, "pencil.tip", compact: true, action: card.edit)
+          }
         } else if case .video = card.kind {
           // 卡片里放不下英文全称（Convert to GIF）：胶囊上用短说法，悬停提示、旁白照旧写全称
           pill(
