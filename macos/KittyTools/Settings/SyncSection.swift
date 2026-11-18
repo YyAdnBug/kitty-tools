@@ -1,13 +1,17 @@
 // 设置 › 通用「同步」（2026-10-23 全局同步拍板 A1：从 设置 › 便签 挪过来，整个 App 的同步都在这一节。执行在 NoteSyncer）。
 // 没开时一行「连接服务器…」「选择文件夹…」（WebDAV 服务器：issue #18，2026-11-13，表单在 SyncServerForm）；开着时文件夹或
-// 服务器、状态、停止 / 立即同步，「同步的内容」每类一个勾（A3，这台电脑自己的），其他电脑。
+// 服务器、状态、停止 / 立即同步，「同步的内容」每类一个勾（A3，这台电脑自己的），其他电脑。第五轮体检：服务器不认密码时
+// 「更新密码…」（E1，表单 SyncPasswordForm 在 SyncServerForm.swift）、连服务器时「停止同步…」先确认、http 连着时服务器名后面
+// 一个橙色的「未加密」（U2）；刘海岛「打开同步设置」滚到这一节（anchor，U1）。
 
 import AppKit
 import SwiftUI
 
 /// 没开时一行「连接服务器…」（WebDAV，SyncServerForm）+「选择文件夹…」（打开面板先指到 iCloud 云盘）；选的文件夹里已经有
 /// 别的电脑在同步，先问一句合不合在一起。
-/// 开着时：文件夹（悬停看路径）或服务器（悬停看网址和用户名）+「停止同步」+「立即同步」（刹车时换成「继续同步」），
+/// 开着时：文件夹（悬停看路径）或服务器（悬停看网址和用户名；http 的后面橙字「未加密」）+「停止同步」（连服务器时是
+/// 「停止同步…」，先确认：会删掉钥匙串里的密码和本机的镜像）+「立即同步」（刹车时换成「继续同步」；服务器不认密码时前面
+/// 多一个「更新密码…」），
 /// 说明是状态（上次同步、还在下载几个、连服务器时还有几个没传上去），
 /// 出了问题橙字说为什么、能怎么办；下面一行列出别的 Mac 和它们上次有改动的时刻。勾上一类会是它第一次合（升级上来的那台
 /// 新加的几类先没勾，NoteSyncer.isUpgrade）时先问合不合在一起，说明和选文件夹时那段一样。**这一节不去碰那个文件夹**（可能在卡住的
@@ -37,6 +41,17 @@ struct SyncSection: View {
   @State private var confirming: String?
   /// 「连接服务器」的表单开着
   @State private var connecting = false
+  /// 连服务器时「停止同步…」的确认框开着
+  @State private var stopping = false
+  /// 「更新密码…」的表单开着
+  @State private var updatingPassword = false
+
+  /// 刘海岛「打开同步设置」滚到这一节（GeneralTab 认这个 id）
+  static let anchor = "sync"
+  /// 连服务器时「停止同步…」的确认框（截图自检照同样的字画一个系统确认框）
+  static let stopTitle: LocalizedStringResource = "停止和服务器同步？"
+  static let stopMessage: LocalizedStringResource =
+    "会删掉钥匙串里存的密码和这台 Mac 上那份服务器文件的副本，再连接要重新填写、重新下载；服务器上的文件留着，这台 Mac 上的便签和别的数据也不动。"
 
   struct Joining {
     var folder: URL
@@ -106,6 +121,8 @@ struct SyncSection: View {
         "勾上的几类在几台电脑之间保持一样，取消一类只是不再同步它。同步文件夹（连服务器时是服务器上那个文件夹）里放的是不加密的文本文件和图片，能打开这个文件夹的人都看得到。每台电脑只往自己的那份里写、读所有电脑的，改动一般几十秒到几分钟传过去（看同步盘多快；连服务器时大约一分钟一轮）。两台都改了同一条时，后改的留下（便签的另一版放进「最近删除」）；别处删掉的片段、收藏和生词，这台 Mac 上只是不再收藏；一轮要删的太多会先停下来问。停止同步后，文件夹里的东西留着，这台 Mac 上的也不动。"
       )
     }
+    // 挂在整节上：滚过去时「同步」节标题也看得见
+    .id(Self.anchor)
   }
 
   // MARK: 没开
@@ -235,11 +252,31 @@ struct SyncSection: View {
         .lineLimit(1)
         .truncationMode(.middle)
         .foregroundStyle(.secondary)
-        Button("停止同步") { syncer.disable() }
-          .buttonStyle(.plain)
-          .foregroundStyle(Style.brandInk)
-          .pointerStyle(.link)
-          .help("文件夹里的东西留着，这台 Mac 上的数据也不动")
+        // 明文连着（http，U2④）：服务器名后面一个橙字
+        if syncer.server?.scheme == "http" {
+          // 带锁的符号：别和旁边能点的「停止同步…」看成一样的文字按钮
+          Label("未加密", systemImage: "lock.open")
+            .foregroundStyle(Color(nsColor: .systemOrange))
+            .fixedSize()
+            .help("这个地址没加密（http），密码和同步的内容在网上都是明文的")
+        }
+        // 连服务器时先确认（U2②）：会删掉钥匙串里的密码和整份镜像，再连要重填、整份重新下载
+        Button(syncer.server == nil ? "停止同步" : "停止同步…") {
+          if syncer.server == nil { syncer.disable() } else { stopping = true }
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(Style.brandInk)
+        .pointerStyle(.link)
+        .help(
+          syncer.server == nil
+            ? "文件夹里的东西留着，这台 Mac 上的数据也不动"
+            : "服务器上的东西留着，这台 Mac 上的数据也不动；钥匙串里的密码和这台 Mac 上的副本会删掉"
+        )
+        .confirmationDialog(Text(plain: Self.stopTitle), isPresented: $stopping) {
+          Button("停止同步", role: .destructive) { syncer.disable() }
+        } message: {
+          Text(plain: Self.stopMessage)
+        }
         if case .waiting = syncer.status {
           Button(
             String(
@@ -247,8 +284,12 @@ struct SyncSection: View {
               comment: "短说法：同步停下来等确认时那个按钮（英文全称把这一行挤成两行）")
           ) { syncer.confirmTrashing() }
         } else {
-          // 不停用：一轮没完时按它排在后面（停用的话每 20 秒闪一下灰）
-          Button("立即同步") { syncer.syncNow() }
+          // 服务器不认密码（E1）：只换钥匙串里的密码，镜像留着
+          if syncer.needsPassword {
+            Button("更新密码…") { updatingPassword = true }
+          }
+          // 不停用：一轮没完时按它排在后面（停用的话每 20 秒闪一下灰）。用户主动的一轮：拒过密码也照发（E1）
+          Button("立即同步") { syncer.syncNow(manual: true) }
         }
       }
     } label: {
@@ -269,6 +310,7 @@ struct SyncSection: View {
     }
     // 「现在也能同步…」那句看过了：离开这一节就不再说
     .onDisappear { syncer.dismissHint() }
+    .sheet(isPresented: $updatingPassword) { SyncPasswordForm(syncer: syncer) }
   }
 
   /// 「同步的内容」里的一类：勾上才同步；它跟着的功能关着（插件没添加）时说一声（勾着也先不同步）
@@ -343,6 +385,14 @@ struct SyncSection: View {
       case .failed(let reason): String(localized: "上一轮没同步成：\(Self.clause(reason))")
       case .busy(let until):
         String(localized: "服务器说请求太多，\(until.formatted(date: .omitted, time: .shortened)) 后接着同步")
+      case .unauthorized:
+        String(
+          localized:
+            "服务器不认这个用户名或密码，先不自动重试了（免得被当成在试密码）：点「更新密码…」填新的（有的服务要用网页上另外生成的应用密码）")
+      case .noPassword:
+        String(localized: "钥匙串里没有服务器的密码：点「更新密码…」重新填")
+      case .forbidden:
+        String(localized: "服务器不让这个账号读写同步的那个文件夹，先不自动重试了：在服务器上给了权限再点「立即同步」，或者「更新密码…」")
       }
     }
   }

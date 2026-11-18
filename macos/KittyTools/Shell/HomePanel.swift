@@ -252,6 +252,13 @@ enum Home {
   private(set) var secureInput: HotKeyCenter.SecureInputBlock?
   /// 设置里有只在那里才有入口的新功能（WhatsNew.inSettingsOnly）：底栏「设置」前面一个小圆点
   private(set) var settingsIsNew: Bool
+  /// 同步（AppDelegate 每次呼出前接上）：底栏「设置」的橙点直接读它的 needsAttention——那是被观察的，主界面开着时状态
+  /// 变了也跟着变（第五轮体检 U1）
+  @ObservationIgnored weak var syncer: NoteSyncer?
+  /// 截图自检直接摆的（没接同步时用它）
+  private let pinnedTrouble: Bool
+  /// 同步停了、该让人知道了：底栏「设置」前面一个橙色小圆点（盖过「新」的那个）
+  var syncTrouble: Bool { syncer?.needsAttention ?? pinnedTrouble }
   /// 键盘选中的那一格；没按过方向键时没有（打开时不画高亮）
   private(set) var selection: Int?
   /// 鼠标停在哪一格上（没选中的那格铺 fill.hover）
@@ -273,12 +280,13 @@ enum Home {
   init(
     sections: [Home.Section] = [], offCount: Int = 0,
     secureInput: HotKeyCenter.SecureInputBlock? = nil, settingsIsNew: Bool = false,
-    selection: Int? = nil, hovered: Int? = nil
+    syncTrouble: Bool = false, selection: Int? = nil, hovered: Int? = nil
   ) {
     self.sections = sections
     self.offCount = offCount
     self.secureInput = secureInput
     self.settingsIsNew = settingsIsNew
+    pinnedTrouble = syncTrouble
     self.selection = selection
     self.hovered = hovered
   }
@@ -452,21 +460,34 @@ struct HomeView: View {
       model.run(extra)
     } label: {
       HStack(spacing: 6) {
-        // 设置里有新的（只在那里才有入口的）：「设置」前面一个小圆点（拍板 A4）
-        if isNew(extra) { NewDot() }
+        // 同步停了（U1）：橙色小圆点，好了自己没；不然设置里有新的（只在那里才有入口的）：强调色小圆点（拍板 A4）
+        if isTroubled(extra) {
+          Circle()
+            .fill(Color(nsColor: .systemOrange))
+            .frame(width: 6, height: 6)
+        } else if isNew(extra) {
+          NewDot()
+        }
         Text(title)
         KeyCap(key).accessibilityHidden(true)
       }
       .contentShape(.rect)
     }
+    .help(isTroubled(extra) ? Text("同步停了：到 设置 › 通用「同步」里看为什么") : Text(verbatim: ""))
     .accessibilityLabel(
       extra == .quit
         ? String(localized: "退出 Kitty Tools")
-        : String(localized: "设置") + (isNew(extra) ? Island.comma + WhatsNew.spoken : ""))
+        : String(localized: "设置")
+          + (isTroubled(extra) ? Island.comma + String(localized: "同步停了") : "")
+          + (isNew(extra) ? Island.comma + WhatsNew.spoken : ""))
   }
 
   private func isNew(_ extra: MenuExtra) -> Bool {
     extra == .settings && model.settingsIsNew
+  }
+
+  private func isTroubled(_ extra: MenuExtra) -> Bool {
+    extra == .settings && model.syncTrouble
   }
 }
 

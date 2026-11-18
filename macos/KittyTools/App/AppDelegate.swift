@@ -1462,6 +1462,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if let noteStore {
       let syncer = NoteSyncer(store: noteStore)
       syncer.island = island
+      syncer.openSettings = { [unowned self] in showSyncSettings() }
+      // 上次停止同步、换服务器时没删完就退了的镜像（第五轮体检 E14）
+      syncer.removeStaleMirrors()
       // 从只同步便签的版本升上来：新加的几类先没勾（NoteSyncer.isUpgrade），说一声去哪里勾。「已更新到」那座岛已经并进去
       // 说了的不再说；岛上正挂着警告（快捷键没注册上）时也不弹——同一座岛原地换内容，警告不能被盖掉，只靠设置页那句
       if syncer.upgraded, !toldSyncUpgrade, island.content?.tone != .warning {
@@ -1727,6 +1730,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   /// 开着时再呼出一次，高度变了带动画
   private func refreshHome(appearing: Bool) {
     let fresh = WhatsNew.current()
+    // 底栏「设置」的橙点直接读同步的状态（被观察的：主界面开着时也跟着变，U1）
+    homeModel.syncer = noteSyncer
     homeModel.update(
       Home.sections(
         state: menuState, keys: hotKeys.bindings.mapValues(\.display),
@@ -2152,7 +2157,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   /// 岛上的「勾选同步」：跳到 设置 › 通用（同步那一节在里面；从只同步便签的版本升上来时）
   private var openSyncSettings: Island.Action {
-    .init("勾选同步", opens: true) { [unowned self] in showSettings(page: .general) }
+    .init("勾选同步", opens: true) { [unowned self] in showSyncSettings() }
+  }
+
+  /// 设置 › 通用，滚到「同步」那一节（刘海岛上「打开同步设置」「勾选同步」，第五轮体检 U1）
+  private func showSyncSettings() {
+    showSettings(page: .general)
+    // 设置窗开着 sheet 时不换页也不退页（同 SettingsWindow.show 的口径）：没到通用页、挂着 sheet 都不动
+    guard settingsWindow.window.attachedSheet == nil, settingsNavigation.page == .general else {
+      return
+    }
+    settingsNavigation.path = []
+    settingsNavigation.revealsSync = true
   }
 
   /// 暂停记录剪贴板的三处一起设：采集、面板底栏、菜单栏图标的暂停角标（X13）

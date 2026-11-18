@@ -1968,6 +1968,13 @@ struct SnapshotProbeTests {
     busy.features = all
     let busyModel = model(busy)
     try shot("home-busy-dark", HomeView(model: busyModel), busyModel, dark: true)
+    // 同步停了（第五轮体检 U1）：底栏「设置」前面一个橙色小圆点
+    for dark in [false, true] {
+      let trouble = HomeModel(
+        sections: Home.sections(state: state, keys: keys), syncTrouble: true)
+      try shot(
+        "home-sync-trouble\(dark ? "-dark" : "")", HomeView(model: trouble), trouble, dark: dark)
+    }
     var fewer = state
     fewer.features = all.subtracting([.notes, .record])
     let fewerModel = model(fewer, off: Home.offCount(enabled: fewer.features, available: all))
@@ -5393,13 +5400,60 @@ struct SnapshotProbeTests {
           $0.peers = [pc]
         }
       ),
+      // 服务器不认密码（第五轮体检 E1）：橙字 +「更新密码…」
+      (
+        "server-password",
+        {
+          $0.status = .stopped(.unauthorized)
+          $0.lastSync = now.addingTimeInterval(-3600)
+          $0.peers = [pc]
+        }
+      ),
     ]
     for (state, prepare) in servers {
-      for dark in state == "server-idle" ? [false, true] : [false] {
+      for dark in state == "server-idle" || state == "server-password" ? [false, true] : [false] {
         try snapshot(
           section(prepare), size: size, dark: dark,
           to: "\(out)/sync-\(state)\(dark ? "-dark" : "").png")
       }
+    }
+    // 「更新密码…」的表单（E1）
+    for dark in [false, true] {
+      try snapshot(
+        SyncPasswordForm(syncer: NoteSyncer(store: store, defaults: prefs)),
+        size: NSSize(width: 460, height: 300), dark: dark,
+        to: "\(out)/sync-server-password-form\(dark ? "-dark" : "").png")
+    }
+    // 连服务器时「停止同步…」的确认框（U2②）：SwiftUI 的确认框在 macOS 上是系统画的确认框，屏外照同样的字画一个
+    for dark in [false, true] {
+      let path = "\(out)/sync-server-stop\(dark ? "-dark" : "").png"
+      guard Self.wants(path) else { continue }
+      let alert = NSAlert()
+      alert.messageText = String(localized: SyncSection.stopTitle)
+      alert.informativeText = String(localized: SyncSection.stopMessage)
+      alert.addButton(withTitle: String(localized: "停止同步")).hasDestructiveAction = true
+      alert.addButton(withTitle: String(localized: "取消"))
+      alert.window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+      alert.layout()
+      let view = try #require(alert.window.contentView)
+      view.layoutSubtreeIfNeeded()
+      let bitmap = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+      view.cacheDisplay(in: view.bounds, to: bitmap)
+      try #require(bitmap.representation(using: .png, properties: [:])).write(
+        to: URL(filePath: path))
+    }
+    // http 连着（U2④）：服务器名后面橙字「未加密」；再加上「更新密码…」是这一行最挤的样子
+    prefs.set(
+      "http://192.168.1.20:5005/Kitty%20Tools%20%E5%90%8C%E6%AD%A5/", forKey: Prefs.syncServer)
+    for (state, problem) in [
+      ("server-http", nil), ("server-http-password", NoteSyncer.Problem.unauthorized),
+    ] {
+      try snapshot(
+        section {
+          $0.status = problem.map { .stopped($0) } ?? .idle
+          $0.lastSync = now.addingTimeInterval(-50)
+          $0.peers = [pc]
+        }, size: size, dark: false, to: "\(out)/sync-\(state).png")
     }
     prefs.removeObject(forKey: Prefs.syncServer)
     prefs.removeObject(forKey: Prefs.syncServerUser)

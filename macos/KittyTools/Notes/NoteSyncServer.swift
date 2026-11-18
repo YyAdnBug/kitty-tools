@@ -485,10 +485,11 @@ nonisolated enum NoteSyncServer {
     }
   }
 
-  /// 不用了的镜像（停止同步、换了服务器）：整个删掉，keeping 那个留着
+  /// 不用了的镜像（停止同步、换了服务器、上次没删完留下的）：整个删掉，keeping 那个留着。只删 parent（数据目录的
+  /// sync-server/）下面名字是编号（UUID，enable 建的那种）的直接子项：别的东西不是这里建的，不碰（第五轮体检 E14）
   @concurrent static func removeMirrors(in parent: URL, keeping: URL?) async {
     let names = (try? FileManager.default.contentsOfDirectory(atPath: parent.path)) ?? []
-    for name in names where name != keeping?.lastPathComponent {
+    for name in names where UUID(uuidString: name) != nil && name != keeping?.lastPathComponent {
       try? FileManager.default.removeItem(at: parent.appending(path: name))
     }
   }
