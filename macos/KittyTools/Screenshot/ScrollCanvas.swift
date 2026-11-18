@@ -71,6 +71,8 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
   }
   /// 进裁剪之前的框（Esc 退回它）
   private var cropBefore: CGRect?
+  /// 框外按下拖新框之前的那个框（拖出来太小 = 单击了一下，退回它）
+  private var cropAtPress: CGRect?
   private var draft: Annotation? { didSet { syncAnnotations() } }
   private var undoStack: [[Annotation]] = []
   private var redoStack: [[Annotation]] = []
@@ -134,8 +136,8 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
     let count = annotations.count
     let (width, height) = (String(image.width), String(image.height))
     return count > 0
-      ? String(localized: "长截图，\(width) × \(height) 像素，\(count) 条标注")
-      : String(localized: "长截图，\(width) × \(height) 像素")
+      ? String(localized: "截图，\(width) × \(height) 像素，\(count) 条标注")
+      : String(localized: "截图，\(width) × \(height) 像素")
   }
 
   override func accessibilityHelp() -> String? {
@@ -278,6 +280,8 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
 
   /// 再按一次同一个工具就收起；选上时读这个工具上次的样式
   func choose(_ next: Annotation.Tool?) {
+    // 裁着时选了工具（⌘ 工具键、点工具栏）：先收下这个框
+    finishCropping(apply: true)
     endEditing()
     pickingColor = false  // 换工具就不取色了
     let chosen = tool == next ? nil : next
@@ -406,28 +410,25 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
     recordUndo(from: before)
   }
 
-  /// 合成好的长图：没画标注就是原图（拍板 C2，很长的图重渲一张峰值内存翻倍）；有裁剪框就按它裁
+  /// 合成好的长图：没画标注就是原图（拍板 C2，很长的图重渲一张峰值内存翻倍）；有裁剪框就只渲框里那一块（不先渲整张再裁）
   func composed() -> CGImage {
     endEditing()
-    let full: CGImage
-    if annotations.isEmpty {
-      full = image
-    } else {
-      let pixels = CGRect(x: 0, y: 0, width: image.width, height: image.height)
-      full =
-        Annotation.render(annotations, over: image, pixelRect: pixels, viewSize: bounds.size)
-        ?? image
-    }
-    guard let rect = cropPixels else { return full }
-    return full.cropping(to: rect) ?? full
+    if annotations.isEmpty { return cropPixels.flatMap { image.cropping(to: $0) } ?? image }
+    let pixels = cropPixels ?? CGRect(x: 0, y: 0, width: image.width, height: image.height)
+    return Annotation.render(annotations, over: image, pixelRect: pixels, viewSize: bounds.size)
+      ?? image
   }
+
+  /// 有没有裁（框不是整张）
+  var isCropped: Bool { cropPixels != nil }
 
   /// 裁过时历史里存的那一份（X17）：裁好的原图、平移到它坐标里的标注（整个在框外的去掉）；没裁是 nil
   func croppedOriginal() -> (image: CGImage, annotations: [Annotation])? {
     guard let crop, let rect = cropPixels, let cut = image.cropping(to: rect) else { return nil }
     let moved = annotations.map { $0.offset(by: CGSize(width: -crop.minX, height: -crop.minY)) }
     let frame = CGRect(origin: .zero, size: crop.size)
-    return (cut, moved.filter { $0.bounds.intersects(frame) })
+    // 聚光灯整个在框外也留着：它压暗的是自己外面那一圈，出图那张是暗的，历史里要一样
+    return (cut, moved.filter { $0.tool == .spotlight || $0.bounds.intersects(frame) })
   }
 
   /// 裁剪框在图里的像素矩形（原点左上）；不裁是 nil
@@ -465,6 +466,7 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
     if isCropping { return finishCropping(apply: true) }
     endEditing()
     if tool != nil { choose(nil) }
+    pickingColor = false
     selectedAnnotation = nil
     cropBefore = crop
     if crop == nil { crop = bounds }
@@ -480,6 +482,8 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
   /// ↩ / 再按 X 收下（框就是整张时等于不裁）；Esc 退回进来之前的样子
   func finishCropping(apply: Bool) {
     guard isCropping else { return }
+    // 拖着框时按了 ↩ / Esc：这一下拖动到此为止
+    if case .crop? = drag { drag = nil }
     if !apply { crop = cropBefore }
     if let crop, crop.size.width >= bounds.width - 0.5, crop.size.height >= bounds.height - 0.5 {
       self.crop = nil
@@ -685,6 +689,7 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
         drag = .crop(original: crop, start: point, edges: edges)
       } else {
         let fresh = CGRect(origin: clamped, size: .zero)
+        cropAtPress = crop
         crop = fresh
         drag = .crop(original: fresh, start: clamped, edges: [.right, .top])
       }
@@ -855,7 +860,7 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
     case .crop(let original, _, _)?:
       // 拖出来的新框太小（单击了一下）：退回按下之前的框
       if let crop, crop.width < Self.minCrop || crop.height < Self.minCrop {
-        self.crop = original.size == .zero ? (cropBefore ?? bounds) : original
+        self.crop = original.size == .zero ? (cropAtPress ?? bounds) : original
       }
     case .pan?, nil:
       break

@@ -246,10 +246,17 @@ final class ScreenRecorder: NSObject {
     var microphone = false
     var showsClicks = false
     var showsKeys = false
-    /// 录屏用哪个麦克风（X18，设置 › 录制）：设备的 uniqueID；nil = 跟随系统输入（录音一直是 nil）
+    /// 设置里选的麦克风（X18，设置 › 录制）：设备的 uniqueID；nil = 跟随系统输入（录音一直是 nil）
+    var chosenMicrophone: String?
+    /// 这次真用的：开流那一刻（倒数完）resolveMicrophone 才定——工具栏读开关时也建 Options，不在那里列设备
     var microphoneDevice: String?
-    /// 设置里选了一个麦克风、这会儿却不在（拔了、关了）：这次跟随系统输入，开录时说一声
+    /// 选了一个麦克风、开流时却不在（拔了、关了）：这次跟随系统输入，说一声
     var microphoneMissing = false
+
+    mutating func resolveMicrophone(connected: [String]) {
+      microphoneDevice = ScreenRecorder.microphone(chosen: chosenMicrophone, connected: connected)
+      microphoneMissing = chosenMicrophone != nil && microphoneDevice == nil
+    }
 
     init(
       systemAudio: Bool = true, microphone: Bool = false, showsClicks: Bool = false,
@@ -268,10 +275,7 @@ final class ScreenRecorder: NSObject {
       microphone = defaults.bool(forKey: Prefs.screenRecordMicrophone)
       showsClicks = defaults.bool(forKey: Prefs.screenRecordShowsClicks)
       showsKeys = defaults.bool(forKey: Prefs.screenRecordShowsKeys)
-      let chosen = defaults.string(forKey: Prefs.screenRecordMicrophoneDevice)
-      microphoneDevice = ScreenRecorder.microphone(
-        chosen: chosen, connected: ScreenRecorder.microphones().map(\.id))
-      microphoneMissing = chosen != nil && microphoneDevice == nil
+      chosenMicrophone = defaults.string(forKey: Prefs.screenRecordMicrophoneDevice)
     }
   }
 
@@ -497,12 +501,6 @@ final class ScreenRecorder: NSObject {
     options.microphone = await microphoneAllowed()
     if stoppedWhileAsking { return .cancelled }
     if options.microphone { watchMicrophone() }
-    // 选的麦克风这会儿不在（X18）：这次跟随系统输入，说一声（只是提示，录屏照常）
-    if options.microphone, options.microphoneMissing {
-      island?.show(
-        "选的麦克风不在", detail: "这次用系统默认的输入；设置 › 录制 里能换", tone: .warning,
-        symbol: "mic.badge.xmark")
-    }
     // 显示按键：没有辅助功能授权就这次不显示（警告岛、开关弹回），录屏照常；麦克风刚才也没拿到的话两件事并成一条岛
     options.showsKeys = keysAllowed(withoutMicrophone: wantsMicrophone && !options.microphone)
     if countdown > 0 {
@@ -664,6 +662,15 @@ final class ScreenRecorder: NSObject {
     configuration.colorSpaceName = CGColorSpace.sRGB
     // 第 0 批实测：排除本 App 时它自己的声音本来就录不进去，照设作保险
     configuration.excludesCurrentProcessAudio = true
+    // 选的麦克风（X18）开流这一刻才核对（倒数中拔掉的也算）；不在了这次跟随系统输入，说一声（只是提示，录屏照常）
+    if options.microphone, options.chosenMicrophone != nil {
+      options.resolveMicrophone(connected: Self.microphones().map(\.id))
+      if options.microphoneMissing {
+        island?.show(
+          "选的麦克风不在", detail: "这次用系统默认的输入；设置 › 录制 里能换", tone: .warning,
+          symbol: "mic.badge.xmark")
+      }
+    }
     let outputs = Self.configure(configuration, options)
     // 断开要比对的是开录这一刻录的那个设备：选了的那个（X18），没选就是此刻的默认输入
     microphoneID =
@@ -705,7 +712,9 @@ final class ScreenRecorder: NSObject {
   }
 
   /// 访达此刻在屏上的窗口（桌面图标那扇除外）。每秒比一次（refreshFilterIfNeeded），新开的访达窗口变了就换过滤器。
-  /// ponytail: 只看在屏上的，录的中途新开 / 从程序坞还原的访达窗口最多晚 1 s 进画面
+  /// ponytail: 只看在屏上的，录的中途访达新开 / 从程序坞还原的窗口和一闪而过的（右键菜单、拖动的图像、快速查看、
+  /// 提示条）最多晚 1 s 进画面（设置页的说明写着）；要跟上得改成只排除桌面图标那扇——那就要逐个列本 App 的窗口，
+  /// 新开的自家面板会漏进画面
   private static func finderWindows() -> Set<CGWindowID> {
     guard
       let finder = NSRunningApplication.runningApplications(

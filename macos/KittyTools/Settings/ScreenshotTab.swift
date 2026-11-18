@@ -86,7 +86,9 @@ struct ScreenshotTab: View {
           Toggle("截图带上鼠标指针", isOn: $cursor)
           Toggle("截图、录屏时隐藏桌面图标", isOn: $hidesDesktopIcons)
         } footer: {
-          SectionFootnote("带上的是按快捷键那一刻的指针；识字、截图翻译不带。隐藏桌面图标：桌面上的文件不进截图和录屏，桌面本身照常。")
+          SectionFootnote(
+            "带上的是按快捷键那一刻的指针；识字、截图翻译不带。隐藏桌面图标：桌面上的文件不进截图和录屏，桌面本身照常；录屏中访达新弹出的菜单、窗口最多晚 1 秒才录进去。"
+          )
         }
         Section {
           Toggle("保留截图历史", isOn: $keepsHistory)

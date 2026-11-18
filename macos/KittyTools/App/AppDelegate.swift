@@ -3061,12 +3061,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       // 新画的马赛克打进存下的原图（E6）：用遮罩里这张没画标注的，不再读盘。
       // 编号要等历史记完（刚拼好的长截图是并行记的）：另起任务等，不挡出图（同截图那条路）
       let remembered = Task { await history?() }
-      // 裁过（X17）：历史里换成裁好的原图，标注已经平移到它的坐标里
-      let original = annotateOverlay?.historyOriginal ?? original
+      // 裁过（X17）：历史里换成裁好的原图（重写原图、尺寸），标注已经平移到它的坐标里
+      let cropped = annotateOverlay?.isCropped == true
+      let original = cropped ? annotateOverlay?.historyOriginal ?? original : original
       Task {
         if let id = await remembered.value {
           shotHistory.update(
-            id, annotations: annotations, composed: image, original: original)
+            id, annotations: annotations, composed: image, original: original, cropped: cropped)
         }
       }
       Task {
@@ -3074,7 +3075,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .copy:
           guard let copied = await copyImage(image, scale: scale) else { return }
           island.show(
-            "已复制长截图", detail: copied.detail.map { "\($0)" as LocalizedStringResource },
+            "\(FlyCard.Badge.copied.title)",
+            detail: copied.detail.map { "\($0)" as LocalizedStringResource },
             leading: Island.thumbnail(of: image))
         case .save:
           guard let saved = await saveImage(image, scale: scale, asking: false) else { return }

@@ -18,8 +18,8 @@ struct RecordTab: View {
   @AppStorage(Prefs.audioRecordSource) private var audioSource = AudioRecorder.Source.microphone
   @AppStorage(Prefs.audioRecordStartsImmediately) private var startsImmediately = false
   @AppStorage(Prefs.screenRecordMicrophoneDevice) private var microphoneDevice: String?
-  /// 接着的麦克风（打开这一页时读一次；插拔后重新打开这一页才更新）
-  @State private var microphones = ScreenRecorder.microphones()
+  /// 接着的麦克风（打开这一页时读一次；插拔后重新打开这一页才更新）。onAppear 里读：@State 的初值每次建视图都会算一遍
+  @State private var microphones: [(id: String, name: String)] = []
 
   var body: some View {
     // 关着时（Feature）变灰；存到哪个文件夹截图也在用，照常能改
@@ -100,5 +100,6 @@ struct RecordTab: View {
       .gated(by: .record)
     }
     .formStyle(.grouped)
+    .onAppear { microphones = ScreenRecorder.microphones() }
   }
 }

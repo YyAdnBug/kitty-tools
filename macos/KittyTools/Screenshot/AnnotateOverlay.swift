@@ -390,13 +390,14 @@ import Carbon.HIToolbox
 
   /// 回写历史用的原图（X17）：裁过是裁好的那张（标注已平移到它的坐标里），没裁就是打开时那张
   var historyOriginal: CGImage { canvas.croppedOriginal()?.image ?? image }
+  var isCropped: Bool { canvas.isCropped }
 
   /// 取消：画过标注的要按两下（遮罩里不弹系统框，同录屏的放弃；第一下提示音 + 顶部提示）
   private func dismiss() {
     guard canvas.hasAnnotations || canvas.crop != nil, !armedEscape else { return close() }
     armedEscape = true
     NSSound.beep()
-    Island.announce("再按一次 Esc 放弃这些标注")
+    Island.announce("再按一次 Esc 放弃这些改动")
   }
 
   /// 窗口里的按键（内容视图收，第 2 批标注的键也走这里）
