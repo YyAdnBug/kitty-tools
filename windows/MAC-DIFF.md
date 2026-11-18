@@ -14,7 +14,7 @@
 
 ### 长期例外
 
-- **同步的设置与快捷键**（PLAN-v21）：和 Mac 只同步两边都有的设置（对照表在 PLAN-v21 §1）；**全局快捷键、截图工具栏的键只在 Windows 之间同步**（两边默认键刻意不一样、⌘ 在 Windows 上没有对应）；
+- **同步的设置与快捷键**（PLAN-v21）：和 Mac 只同步两边都有的设置（对照表在 PLAN-v21 §1）；**全局快捷键、截图工具栏的键只在 Windows 之间同步**（⌘ 在 Windows 上没有对应；默认键 2026-11-18 起已和 mac 一样，⌥ = Alt）；
   Windows 独有的设置（排除的应用按 exe 名、启动器命令的别名、浏览器来源……）另走 `windows-settings` 一类。只有 Windows 的文件夹里不写 `settings.json`，等有了 Mac 再写（免得 Mac 第一次加入时被清掉 Mac 独有的设置）。
 - **启动器收藏只在 Windows 之间同步**（`windows-launcher`，PLAN-v21 D5）：mac 收到 Windows 独有的类型会整类停下，Windows 的应用路径在 Mac 上也打不开。
 - **壳**：Windows 11 设置的样子（NavigationView + 设置卡，PLAN-v7 U6），不是 mac 的侧栏 + 分组表单；侧栏的选中是系统画的（mac 自绘是为了绕开 AppKit 把强调色压暗）。

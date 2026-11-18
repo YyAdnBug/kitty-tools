@@ -10,7 +10,7 @@ namespace KittyTools.Infrastructure;
 
 internal sealed class Settings
 {
-    public int Version { get; set; } = 2;
+    public int Version { get; set; } = 3;
 
     public bool StartWithWindows { get; set; } = true;
 
@@ -667,6 +667,25 @@ internal static class SettingsService
                 {
                     _current.RecordSystemSound = true;
                     _current.Version = 2;
+                }
+
+                // 默认快捷键对齐 mac（2026-11-18）：还是旧默认值的截图 / 截取上次区域 / 划词翻译换成新的，改过的不动。
+                if (_current.Version < 3)
+                {
+                    var stored = _current.HotKeys.ToDictionary(
+                        h => h.Action,
+                        h => new Core.HotKeyDefaultsMigration.Binding((Core.HotKeyModifiers)h.Modifiers, h.VirtualKey),
+                        StringComparer.Ordinal);
+                    foreach (var (action, binding) in Core.HotKeyDefaultsMigration.Plan(stored))
+                    {
+                        var setting = _current.HotKeys.First(h => h.Action == action);
+                        setting.Modifiers = (uint)binding.Modifiers;
+                        setting.VirtualKey = binding.VirtualKey;
+                        Log.Info($"settings.hotkey-default-moved {action}");
+                    }
+
+                    // 不当场存：下次随别的改动一起写；没存之前再加载一遍结果一样
+                    _current.Version = 3;
                 }
 
                 // 帧率只剩 30 / 60（PLAN-v9 V3）：以前存的 15 读成 30。

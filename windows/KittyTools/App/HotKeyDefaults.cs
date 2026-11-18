@@ -55,15 +55,18 @@ internal sealed record HotKeyDefault(
 
 internal static class SettingsDefaults
 {
+    // 和 mac 一样都是单 Alt（2026-11-18 用户「快捷键和 macos 保持一致」）：划词 Alt+D（会盖掉浏览器、资源管理器的「跳到地址栏」）、
+    // 截图 Alt+A（和微信截图的默认键撞，谁先启动谁拿到）、截取上次区域 Alt+X，用户知道这两个代价后定的。
+    // 装过旧版的电脑在设置加载时换一次（Core 的 HotKeyDefaultsMigration，Settings.Version 3）。
     public static readonly HotKeyDefault[] DefaultHotKeys =
     {
         new(HotKeyActions.Clipboard, "剪贴板历史", HotKeyModifiers.Alt, (uint)'C'),
         new(HotKeyActions.Launcher, "启动器", HotKeyModifiers.Alt, 0x20),
-        new(HotKeyActions.SelectionTranslate, "划词翻译", HotKeyModifiers.Alt, (uint)'E'),
+        new(HotKeyActions.SelectionTranslate, "划词翻译", HotKeyModifiers.Alt, (uint)'D'),
         new(HotKeyActions.InputTranslate, "输入翻译", HotKeyModifiers.Alt, (uint)'T'),
         new(HotKeyActions.ScreenshotTranslate, "截图翻译", HotKeyModifiers.Alt, (uint)'S'),
-        new(HotKeyActions.Screenshot, "截图", HotKeyModifiers.Alt, (uint)'X'),
-        new(HotKeyActions.ScreenshotLast, "截取上次区域", HotKeyModifiers.Control | HotKeyModifiers.Alt, (uint)'Z'),
+        new(HotKeyActions.Screenshot, "截图", HotKeyModifiers.Alt, (uint)'A'),
+        new(HotKeyActions.ScreenshotLast, "截取上次区域", HotKeyModifiers.Alt, (uint)'X'),
         new(HotKeyActions.Record, "录屏", HotKeyModifiers.Alt, (uint)'R'),
         new(HotKeyActions.Ocr, "识字", HotKeyModifiers.Alt, (uint)'O'),
         // 新动作只加在最后（快捷键页和速查表按这张表的顺序排）。
