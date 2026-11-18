@@ -125,6 +125,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private lazy var nextEvent = NextEvent(island: island)
   /// 音量 / 亮度键换成刘海岛上的提示（设置 › 刘海岛，默认关）
   private(set) lazy var mediaKeys = MediaKeys(island: island)
+  /// 访达里的 ⌘X 剪切、⌘V 移动（访达右键插件里的开关，issue #33）
+  private lazy var finderKeys = FinderKeys(island: island)
   /// 平滑滚动（插件，SmoothScroll/）：起停跟着插件添没添加和辅助功能授权（apply），滚动那条线程由它管
   private(set) lazy var smoothScroll = SmoothScroll()
   /// 应用内更新（读本仓库的 GitHub release）
@@ -1169,6 +1171,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     nextEvent.apply()
     mediaKeys.apply()
     smoothScroll.apply()
+    finderKeys.apply()
     showWelcomeIfNeeded()
     // 有快捷键没注册上（15.0 / 15.1 上只带 ⌥ 的组合）：按了没反应又不知道为什么，启动时说一次
     // （放在「已更新」之后：同一座岛原地换内容，警告不能被盖掉）
@@ -1211,6 +1214,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.nextEvent.apply()
         self.mediaKeys.apply()
         self.smoothScroll.apply()
+        self.finderKeys.apply()
         // 命令的快捷键跟着「命令和别名」的开关和别名、脚本命令总开关、⌘K「关掉这条命令」走（第 4 批评审：只在那一页的
         // onChange 里跟，别处改的不注销）；没变不动
         self.hotKeys.reloadCommandsIfChanged()

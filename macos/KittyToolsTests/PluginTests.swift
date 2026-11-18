@@ -55,12 +55,15 @@ struct PluginTests {
     #expect(!unknown.isMissing(isOn: { _ in true }, granted: denied))
   }
 
-  /// 刘海岛的授权都挂在开关上（插件本身不要授权）；程序坞预览、访达右键、睡眠关蓝牙、状态屏、平滑滚动添加了就要
+  /// 刘海岛的授权都挂在开关上（插件本身不要授权）；程序坞预览、访达右键（另有一项挂在开关上）、睡眠关蓝牙、状态屏、平滑滚动添加了就要
   @Test func permissionDeclarations() {
     #expect(Feature.island.pluginPermissions.allSatisfy { $0.option != nil })
     #expect(
       Feature.dockPreview.pluginPermissions.map(\.kind) == [.accessibility, .screenRecording])
-    #expect(Feature.finderMenu.pluginPermissions.map(\.kind) == [.finderExtension])
+    // 访达右键：扩展添加了就要；辅助功能只在打开「⌘X 剪切、⌘V 移动」时要
+    #expect(
+      Feature.finderMenu.pluginPermissions.map(\.kind) == [.finderExtension, .accessibility])
+    #expect(Feature.finderMenu.pluginPermissions.map(\.option) == [nil, Prefs.finderMenuKeys])
     #expect(Feature.bluetoothSnooze.pluginPermissions.map(\.kind) == [.bluetooth])
     #expect(Feature.statusScreen.pluginPermissions.map(\.kind) == [.accessibility])
     #expect(Feature.smoothScroll.pluginPermissions.map(\.kind) == [.accessibility])

@@ -15,7 +15,8 @@
 //   访达的 ⌘Z 撤不回我们做的，同访达自己的撤销：移动的挪回原处、用原来的名字，原处已经有同名的、挪过去的已经不在了的不动、照实说；
 //   复制的把复制出来的移到废纸篓，能放回）。撤销的移动排进同一条队、同样能停，走的还是 move（不覆盖、跨卷先拷完再删）。
 // - 剪切：清单只在内存里（偏好里只给扩展留「几项 + 剪贴板 changeCount」，别的程序改偏好也塞不进要搬的东西；App 启动时清掉），
-//   同时像 ⌘C 一样把文件放进剪贴板（访达里按 ⌥⌘V 也能移过去）；剪贴板换过了剪切就作废（同 Windows）。
+//   同时像 ⌘C 一样把文件放进剪贴板（访达里按 ⌥⌘V 也能移过去）；剪贴板换过了剪切就作废（同 Windows）。访达里的 ⌘X / ⌘V
+//   （FinderKeys，issue #33）走同一个剪切：⌘X 交到 cut，⌘V 交给访达自己的 ⌥⌘V，剪切 / 忘掉时顺手设它看的 armed。
 // - 替身：bookmarkData(.suitableForBookmarkFile) + writeBookmarkData，和访达 ⌥⌘ 拖出来的一样，原件挪了也打得开。
 // ponytail: 查重名、比卷、改名都在主线程上（快，但目标在卡住的网络盘上会跟着卡）；真遇到再挪到主线程外。
 // ponytail: preflight 把 find 列出的路径读进主线程按层比（十万个文件约几十毫秒）；更大的再挪出去。
@@ -660,8 +661,12 @@ import AppKit
     let defaults = UserDefaults.standard
     defaults.set(files.count, forKey: Prefs.finderCutCount)
     defaults.set(change, forKey: Prefs.finderCutChange)
-    island?.show(
-      "已剪切 \(files.count) 项", detail: "到别的文件夹空白处右键「粘贴」，或者在访达里按 ⌥⌘V", tone: .info)
+    FinderKeys.setArmed(true)
+    // 开着「⌘X 剪切、⌘V 移动」（FinderKeys）时说 ⌘V
+    let detail: LocalizedStringResource =
+      defaults.bool(forKey: Prefs.finderMenuKeys)
+      ? "到别的文件夹按 ⌘V，或者空白处右键「粘贴」" : "到别的文件夹空白处右键「粘贴」，或者在访达里按 ⌥⌘V"
+    island?.show("已剪切 \(files.count) 项", detail: detail, tone: .info)
   }
 
   /// 剪切了、剪贴板还没换过
@@ -671,6 +676,7 @@ import AppKit
   static func forgetCut() {
     cutList = []
     cutChange = nil
+    FinderKeys.setArmed(false)
     UserDefaults.standard.removeObject(forKey: Prefs.finderCutCount)
     UserDefaults.standard.removeObject(forKey: Prefs.finderCutChange)
   }
