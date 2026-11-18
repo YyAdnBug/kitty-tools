@@ -71,6 +71,7 @@ struct LaunchpadTab: View {
           Text("启动台的按键")
           Text("打开 / 收起、翻页、搜索、文件夹里按什么键")
         }
+        .settingsAnchor(.launchpadKeys)
       } header: {
         Text("启动台")
       } footer: {
@@ -90,6 +91,7 @@ struct LaunchpadTab: View {
             Text("一页几列")
             Text("改少了，每页挤不下的顺到下一页开头")
           }
+          .settingsAnchor(.launchpadColumns)
           LabeledContent {
             HStack(spacing: 8) {
               Text("\(rows) 行")
@@ -102,6 +104,7 @@ struct LaunchpadTab: View {
             Text("一页几行")
             Text("大屏可以多放几行")
           }
+          .settingsAnchor(.launchpadRows)
         } header: {
           Text("排列")
         } footer: {
@@ -115,6 +118,7 @@ struct LaunchpadTab: View {
             Text("屏幕角")
             Text("鼠标推到角上停一下打开")
           }
+          .settingsAnchor(.launchpadCorner)
           if let option = LaunchpadCornerOption(rawValue: corner),
             option != .off, LaunchpadCorner.systemCornerIsOn(option)
           {
@@ -144,12 +148,14 @@ struct LaunchpadTab: View {
           Text("从系统启动台导入")
           Text("页、文件夹、顺序照旧；卸掉的跳过")
         }
+        .settingsAnchor(.launchpadImport)
         LabeledContent {
           Button("恢复默认排列…") { confirmsReset = true }
         } label: {
           Text("恢复默认排列")
           Text("系统 App 在前、其余按名字排")
         }
+        .settingsAnchor(.launchpadReset)
         LabeledContent {
           Button(action: undo) {
             Text(
@@ -198,6 +204,7 @@ struct LaunchpadTab: View {
     // macOS 上 Form 在有的容器里会取 columns 样式（标签右对齐一列、说明和标题挤成一行），
     // 和别的设置页（grouped：标题 + 说明堆叠、控件靠右）不一致——显式定成 grouped
     .formStyle(.grouped)
+    .settingsScrollTarget()
   }
 
   @ViewBuilder
@@ -215,6 +222,7 @@ struct LaunchpadTab: View {
         }
         .pickerStyle(.segmented)
         .disabled(!enabled)
+        .settingsAnchor(.launchpadPinch)
         Picker(selection: $pinchSense) {
           ForEach(PinchRecognizer.Sensitivity.allCases, id: \.rawValue) { level in
             Text(level.title).tag(level.rawValue)

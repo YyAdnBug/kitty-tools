@@ -125,6 +125,7 @@ struct GeneralTab: View {
         ) {
           navigation?.path = [FeaturesPage.route]
         }
+        .settingsAnchor(.generalFeatures)
         // 插件页改版 D1：插件挪进侧栏的「全部插件」，这里一行带过去
         SettingsPushRow(
           title: "插件",
@@ -135,11 +136,14 @@ struct GeneralTab: View {
         ) {
           navigation?.page = .plugins
         }
+        .settingsAnchor(.generalPlugins)
       }
       Section {
         languageRow
+          .settingsAnchor(.generalLanguage)
         LabeledContent("外观") { AppearancePicker(selection: $appearance) }
           .onChange(of: appearance) { AppAppearance.apply() }
+          .settingsAnchor(.generalAppearance)
         LabeledContent {
           AccentPicker()
         } label: {
@@ -148,18 +152,21 @@ struct GeneralTab: View {
             Accent.shared.choice == .system
               ? "系统强调色选「多色」时使用品牌粉" : "菜单高亮和焦点环由系统绘制，仍使用系统强调色")
         }
+        .settingsAnchor(.generalAccent)
       }
       Section("动效") {
         Toggle(isOn: $squeezeEntrance) {
           Text("呼出面板时挤压弹开")
           Text("剪贴板、启动器和翻译浮窗从窄一点、矮一点弹开到原尺寸；减弱动态效果时不弹")
         }
+        .settingsAnchor(.generalSqueeze)
       }
       Section("菜单栏") {
         Toggle(isOn: $statusItemVisible) {
           Text("在菜单栏显示图标")
           Text("隐藏后，再打开一次 Kitty Tools（在启动器或访达里）会打开主界面；快捷键照常能用")
         }
+        .settingsAnchor(.generalMenuBarIcon)
         // 分段左边是菜单栏上现在那张图（1:1 实时预览）：分段控件只显示文字，塞不进图。
         // LabeledContent 的标签不随 .disabled 变淡，图标隐藏时自己淡成 .tertiary（同系统禁用文字）
         LabeledContent {
@@ -180,12 +187,14 @@ struct GeneralTab: View {
           Text("图标样式").foregroundStyle(statusItemVisible ? .primary : .tertiary)
         }
         .disabled(!statusItemVisible)
+        .settingsAnchor(.generalIconStyle)
         // 只在 macOS 26 上有（PR #1）：别的系统没有关掉设置后面板接不到键盘的问题
         if ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 26 {
           Toggle(isOn: $dockIconOnTahoe) {
             Text("在程序坞显示图标")
             Text("这一版系统上，收起程序坞图标会让之后弹出的面板接不到键盘（启动台、启动器不能直接打字），所以默认一直留着。关掉后，设置窗口关上时图标跟着收起")
           }
+          .settingsAnchor(.generalDockIcon)
         }
       }
       Section {
@@ -194,6 +203,7 @@ struct GeneralTab: View {
           if let loginError { Text(loginError).foregroundStyle(.red) }
         }
         .disabled(!LaunchAtLogin.isInstalled)
+        .settingsAnchor(.generalLogin)
         if LaunchAtLogin.isInstalled, loginStatus == .requiresApproval {
           LabeledContent {
             Button("打开登录项设置") { SMAppService.openSystemSettingsLoginItems() }
@@ -214,7 +224,9 @@ struct GeneralTab: View {
       }
       Section("权限") {
         PermissionRow.accessibility(granted: trusted)
+          .settingsAnchor(.generalAccessibility)
         PermissionRow.screenRecording(granted: screenRecording)
+          .settingsAnchor(.generalScreenRecording)
         // 没问过时请求（系统弹框，回来就刷新）；拒绝过 / 受限的系统不再弹框，打开系统设置的麦克风页
         PermissionRow(
           title: "麦克风", detail: "录屏、录音时录下你的声音", symbol: "mic.fill",
@@ -228,6 +240,7 @@ struct GeneralTab: View {
             microphone = Permissions.microphoneStatus
           }
         }
+        .settingsAnchor(.generalMicrophone)
         if #available(macOS 15.4, *) { pasteboardAccess }
       }
       if let sync { SyncSection(syncer: sync) }
@@ -241,9 +254,11 @@ struct GeneralTab: View {
           Text("数据目录")
           Text("剪贴板、便签和翻译历史的数据库、图片和每日备份都在这里")
         }
+        .settingsAnchor(.generalDataFolder)
       }
     }
     .formStyle(.grouped)
+    .settingsScrollTarget()
     .onSettingsBecameKey {
       trusted = Permissions.isAccessibilityTrusted
       screenRecording = Permissions.isScreenRecordingAllowed
@@ -284,6 +299,7 @@ struct GeneralTab: View {
       NSWorkspace.shared.open(
         URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy")!)
     }
+    .settingsAnchor(.generalClipboardAccess)
   }
 
   private static var currentPasteboardBehavior: Int? {

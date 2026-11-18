@@ -32,11 +32,13 @@ struct DockPreviewTab: View {
           }
         }
         .gated(by: .dockPreview)
+        .settingsAnchor(.dockPreviewDelay)
         Toggle(isOn: $cmdTab) {
           Text("按 ⌘Tab 时也显示")
           Text("切换 App 时，在切换器上方显示选中那个 App 的窗口")
         }
         .gated(by: .dockPreview)
+        .settingsAnchor(.dockPreviewCmdTab)
       } header: {
         Text("程序坞预览")
       } footer: {
@@ -48,6 +50,7 @@ struct DockPreviewTab: View {
       PluginAboutSection(plugin: .dockPreview)
     }
     .formStyle(.grouped)
+    .settingsScrollTarget()
   }
 
   /// 「权限」组（Shell/Plugin.swift 的声明：辅助功能、屏幕录制）；缺授权时画在最上面（插件页改版 C2）。页脚：这台 Mac 上

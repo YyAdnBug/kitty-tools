@@ -192,12 +192,6 @@ private struct PluginRow: View {
         .onTapGesture(perform: open)
         .accessibilityHidden(true)
     }
-    .overlay {
-      RoundedRectangle(cornerRadius: Style.Radius.card, style: .continuous)
-        .strokeBorder(Style.brand, lineWidth: 2)
-        .padding(-6)
-        .opacity(isFocused ? 1 : 0)
-        .animation(.easeOut(duration: 0.3), value: isFocused)
-    }
+    .settingsHighlight(isFocused)
   }
 }

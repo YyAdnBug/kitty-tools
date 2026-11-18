@@ -753,6 +753,24 @@ struct SnapshotProbeTests {
         size: NSSize(width: 780, height: 1500), dark: dark,
         to: "\(out)/settings-clipboard-full\(dark ? "-dark" : "").png")
     }
+    // 设置改版 S7：侧栏搜索时最上面「设置项」那一组（对上的行 + 下面一行写在哪一页）；选了一项之后那一行描一圈
+    // （highlighted 摆着，截图时不会被两秒后清掉）
+    navigation.page = .general
+    for dark in [false, true] {
+      try snapshot(
+        SettingsRoot(navigation: navigation, page: pages, query: "显示") { AnyView(EmptyView()) },
+        size: NSSize(width: 780, height: 600), dark: dark,
+        to: "\(out)/settings-search-items\(dark ? "-dark" : "").png")
+    }
+    navigation.page = .clipboard
+    navigation.highlighted = .clipboardPasteOnClick
+    for dark in [false, true] {
+      try snapshot(
+        SettingsRoot(navigation: navigation, page: pages) { AnyView(EmptyView()) },
+        size: NSSize(width: 780, height: 900), dark: dark,
+        to: "\(out)/settings-highlight\(dark ? "-dark" : "").png")
+    }
+    navigation.highlighted = nil
     // 侧栏选中是自绘的（SettingsWindow 文件头）：屏外窗口永远不是 key，上面那些都是后台的中性样子。这里用环境摆成
     // key，再把原生行强制成强调态（key 窗口里系统就这么标），看原生高亮确实没画、只剩自绘那块。
     // 跟随系统（本机「多色」= 品牌粉）和黄色（字换深色），深浅色各一张

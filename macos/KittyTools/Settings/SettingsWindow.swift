@@ -320,6 +320,14 @@ enum SettingsPage: String, CaseIterable, Identifiable {
     }
   }
 
+  /// 侧栏搜索时列的页：页的词对上的，加上搜到的那些行所在的页（全部的、不止「设置项」里列出的 12 条）——选了一行，
+  /// 侧栏选中落在它的页上、搜索词不被清掉。打字时停到哪一页照旧只看页的词（page(for:)）
+  static func listed(_ query: String, hidden: Set<SettingsPage>) -> [SettingsPage] {
+    let pages = matching(query, hidden: hidden)
+    let rowPages = Set(SettingsItem.matching(query, hidden: hidden, limit: .max).map(\.page))
+    return visible.filter { pages.contains($0) || rowPages.contains($0) }
+  }
+
   /// 搜索落到「全部插件」时描出哪一行：对上了的第一个这台用得了、没添加的插件（按侧栏的先后）；搜的是「全部插件」
   /// 自己的词（插件、添加……）时不描——保持唤醒的关键词里也有「插件」
   static func hiddenPlugin(matching query: String, hidden: Set<SettingsPage>) -> Feature? {
@@ -377,6 +385,25 @@ enum SettingsPage: String, CaseIterable, Identifiable {
   /// 过期的可用状态可能还在，所以这里再判断一次（空路径 removeLast 会崩）
   func goBack() {
     if canGoBack { path.removeLast() }
+  }
+
+  /// 搜索结果、别处直达的那一行（设置改版 S7 S8）：那一页滚到它、描一圈强调色，两秒后清掉
+  var highlighted: SettingsItem?
+  /// 第几次描：两秒内再选同一项时 highlighted 没变，表单按它再滚一次；清掉的时候只清自己那一次
+  private(set) var highlightRound = 0
+
+  /// 打开那一行所在的页（推进着的详情页退回来）、滚过去描一圈；这会儿藏着的行落到露出它的那个开关上
+  func open(_ item: SettingsItem) {
+    let item = item.landing()
+    if page != item.page { page = item.page }
+    path = []
+    highlighted = item
+    highlightRound += 1
+    let round = highlightRound
+    Task {
+      try? await Task.sleep(for: .seconds(2.2))
+      if highlightRound == round { highlighted = nil }
+    }
   }
 
   init(defaults: UserDefaults? = .standard) {
@@ -530,7 +557,18 @@ struct SettingsRoot: View {
   @Bindable var navigation: SettingsNavigation
   let page: (SettingsPage) -> AnyView
   let onboarding: () -> AnyView
-  @State private var query = ""
+  @State private var query: String
+
+  /// query：截图自检摆一个搜索词（侧栏最上面「设置项」那一组）；平时空着
+  init(
+    navigation: SettingsNavigation, page: @escaping (SettingsPage) -> AnyView, query: String = "",
+    onboarding: @escaping () -> AnyView
+  ) {
+    _navigation = Bindable(wrappedValue: navigation)
+    self.page = page
+    self.onboarding = onboarding
+    _query = State(initialValue: query)
+  }
   /// 收起了的组（SidebarSection 的 rawValue，换行隔开；旧版本存的中文标题也认；这台电脑自己的）
   @AppStorage(Prefs.settingsCollapsedGroups) private var collapsedGroups = ""
   /// 底下「已关闭」那组展开着没有（默认收起）
@@ -555,7 +593,12 @@ struct SettingsRoot: View {
     }
   }
 
-  private var matches: [SettingsPage] { SettingsPage.matching(query, hidden: absent) }
+  /// 搜索对上的行（侧栏最上面「设置项」那一组，设置改版 S7）
+  private var results: [SettingsItem] { SettingsItem.matching(query, hidden: absent) }
+
+  /// 侧栏列的页：页的词对上的，加上「设置项」里那几行所在的页（选了那一行，侧栏选中落在它的页上、不清搜索词）。
+  /// 打字时停到哪一页照旧只看页的词（SettingsPage.page(for:)）
+  private var matches: [SettingsPage] { SettingsPage.listed(query, hidden: absent) }
 
   /// 一组展开没有：搜索时都展开（不然对上的页藏在收起的组里）
   private func expanded(_ section: SettingsPage.SidebarSection) -> Binding<Bool> {
@@ -578,7 +621,7 @@ struct SettingsRoot: View {
         page: page, isSelected: page == navigation.page,
         isNew: WhatsNew.marks(page, in: navigation.fresh)
       )
-      .tag(page)
+      .tag(SidebarItem.page(page))
     }
   }
 
@@ -598,6 +641,14 @@ struct SettingsRoot: View {
   var body: some View {
     NavigationSplitView {
       List(selection: selection) {
+        // 搜索时最上面一组「设置项」：对上的那几行，选了就落到那一行（S7）
+        if !results.isEmpty {
+          Section {
+            ForEach(results) { SearchResultRow(item: $0).tag(SidebarItem.item($0)) }
+          } header: {
+            Text("设置项（\(results.count)）")
+          }
+        }
         // 分组：功能两组和插件带小标题、点标题收起 / 展开（同访达的侧栏）；通用、快捷键与关于不写标题；关着的功能在最底下
         // 「已关闭」那组（默认收起）
         ForEach(SettingsPage.sidebar(matches, off: off)) { group in
@@ -619,7 +670,7 @@ struct SettingsRoot: View {
         }
       }
       .overlay {
-        if matches.isEmpty {
+        if matches.isEmpty && results.isEmpty {
           Text("没有匹配的设置").font(.callout).foregroundStyle(.secondary)
         }
       }
@@ -698,13 +749,42 @@ struct SettingsRoot: View {
     .appAccent()
   }
 
-  /// List 的单选要可选值；点空白处（nil）时保持当前页
-  private var selection: Binding<SettingsPage?> {
+  /// List 的单选要可选值；点空白处（nil）时保持当前页。选了「设置项」里的一行：落到那一行，侧栏选中回到它的页
+  /// （结果行只是入口，选中块不停在它上面）
+  private var selection: Binding<SidebarItem?> {
     Binding {
-      navigation.page
+      .page(navigation.page)
     } set: {
-      if let page = $0 { navigation.page = page }
+      switch $0 {
+      case .page(let page)?: navigation.page = page
+      case .item(let item)?: navigation.open(item)
+      case nil: break
+      }
     }
+  }
+}
+
+/// 侧栏的一项：一页，或者搜索时「设置项」里的一行
+enum SidebarItem: Hashable {
+  case page(SettingsPage)
+  case item(SettingsItem)
+}
+
+/// 「设置项」里的一行：20 pt 页的色块 + 那一行的标题，下面一行小字写它在哪一页
+private struct SearchResultRow: View {
+  let item: SettingsItem
+
+  var body: some View {
+    Label {
+      VStack(alignment: .leading, spacing: 1) {
+        Text(plain: item.info.title).lineLimit(1).truncationMode(.tail)
+        Text(item.location).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+      }
+    } icon: {
+      KindTile(symbol: item.page.symbol, color: item.page.color, size: 20)
+    }
+    .background(NativeHighlightOff())
+    .accessibilityElement(children: .combine)
   }
 }
 

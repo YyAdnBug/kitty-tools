@@ -122,6 +122,7 @@ struct AboutTab: View {
         .frame(maxWidth: .infinity, alignment: .leading)
       }
     }
+    .settingsScrollTarget()
   }
 
   /// 「反馈问题」（X14）：GitHub 新建问题的页面，标题「[macOS 版本] 」，正文是版本、芯片、系统版本和两行要填的。
@@ -240,9 +241,11 @@ struct AboutTab: View {
       // 两行竖排（英文并排一行放不下）
       VStack(alignment: .leading, spacing: 6) {
         Toggle("自动检查更新", isOn: $autoCheck)
+          .settingsAnchor(.aboutAutoCheck)
         // X11：查到新版本就在后台下好，退出时装上（下次打开就是新版）
         Toggle("在后台下载新版本，退出时安装", isOn: $installOnQuit)
           .onChange(of: installOnQuit) { updater.installOnQuitChanged() }
+          .settingsAnchor(.aboutInstallOnQuit)
       }
       .toggleStyle(.checkbox)
       .font(.callout)

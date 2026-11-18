@@ -547,7 +547,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     model.runAction = { [unowned self] in runLauncherAction($0) }
     model.actionState = { [unowned self] in menuState }
-    model.openSettings = { [unowned self] in showSettings(page: .launcher) }
+    // ⌘, 和内置「设置」：设置 › 启动器，停在「空搜索框里列出常用」（设置改版 S8）
+    model.openSettings = { [unowned self] in showSettings(.launcherFrequent) }
     // cb、fy 两行只在剪贴板 / 翻译开着（Feature）时列出来，这里再挡一道
     model.openClipboard = { [unowned self] in
       if Feature.clipboard.isOn { searchClipboard($0) }
@@ -692,7 +693,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       presentTranslate()
     }
     // ⌘, 和底栏齿轮直达 设置 › 剪贴板（同翻译浮窗直达 设置 › 翻译）
-    model.openSettings = { [unowned self] in showSettings(page: .clipboard) }
+    model.openSettings = { [unowned self] in showSettings(.clipboardPasteOnClick) }
     model.openQuickLook = { [unowned self] in showQuickLook() }
     // 图片条目「钉到屏幕」（体检 D1）：和截图的钉图同一块板
     model.pinImage = { [unowned self] in pins.pin($0, frame: $1) }
@@ -772,9 +773,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     panel.keyEquivalentHandler = { [unowned self] in coordinator.handleKeyEquivalent($0) }
     // ⌘,、「⋯」菜单和空状态到设置 › 翻译；错误卡带服务 id，直达那个服务的详情页（体检 C5）
     coordinator.openSettings = { [unowned self] service in
+      // 没带服务的落到「翻译服务」那一组（设置改版 S8）
+      guard let service else { return showSettings(.translateServices) }
       showSettings(page: .translate)
       // 设置窗开着速查表 / 确认框时不换页（SettingsWindow.show）：没到翻译页就不推，别把服务 id 推进别的页的 NavigationStack
-      if let service, settingsNavigation.page == .translate { settingsNavigation.path = [service] }
+      if settingsNavigation.page == .translate { settingsNavigation.path = [service] }
     }
     coordinator.focusSource = { [unowned panel] in
       panel.makeFirstResponder(panel.initialFirstResponder)
@@ -1545,7 +1548,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let edge = NoteEdge(store: store, island: island)
     edge.canFan = { [unowned self] in canFanNotes }
     edge.showNotes = { [unowned self] in showNotes() }
-    edge.showSettings = { [unowned self] in showSettings(page: .notes) }
+    edge.showSettings = { [unowned self] in showSettings(.notesDeck) }
     edge.showInWindow = { [unowned self] in showNotes(revealing: $0) }
     // 那叠收起、浮动便签收回：也排空闲回收（只用便签的人，看过的图也要还回去）
     edge.onHide = { [unowned self] in idleReclaim.schedule() }
@@ -1847,7 +1850,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     case .disabled:
       island.show(
         "屏幕边缘的便签关着", detail: "到 设置 › 便签 打开「屏幕边缘」", tone: .info,
-        actions: [.init("打开设置", opens: true) { [unowned self] in showSettings(page: .notes) }])
+        actions: [.init("打开设置", opens: true) { [unowned self] in showSettings(.notesDeck) }])
     case .empty:
       island.show(
         "还没有便签", detail: "记下第一条，屏幕边缘就会出现", tone: .info,
@@ -1868,7 +1871,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     model.floats = noteEdge?.floats
     model.toggleFloat = { [unowned self] in noteEdge?.floats.toggle($0) }
     // ⌘,、工具栏的「便签设置」：落在设置的「便签」页
-    model.showSettings = { [unowned self] in showSettings(page: .notes) }
+    model.showSettings = { [unowned self] in showSettings(.notesFontSize) }
     notesModel = model
     return model
   }
@@ -3036,7 +3039,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   func showShotHistory(deleting: ShotHistory.Item? = nil) {
     let model =
       shotHistoryWindow?.model ?? ShotHistoryModel(history: shotHistory, actions: shotActions)
-    model.openSettings = { [unowned self] in showSettings(page: .screenshot) }
+    model.openSettings = { [unowned self] in showSettings(.screenshotHistory) }
     if let deleting {
       model.selection = deleting.id
       model.deleting = [deleting.id]
@@ -3794,7 +3797,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var saveFolderActions: [Island.Action] {
     [
       .settings(for: .filesAndFolders),
-      .init("更改保存位置", opens: true) { [unowned self] in showSettings(page: .screenshot) },
+      .init("更改保存位置", opens: true) { [unowned self] in showSettings(.screenshotSaveFolder) },
     ]
   }
 
@@ -3920,6 +3923,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   func showSettings(page: SettingsPage? = nil, path: [String] = [], onboarding: Bool = false) {
     hidePanels()
     settingsWindow.show(page: page, path: path, onboarding: onboarding)
+  }
+
+  /// 打开设置窗、落到那一行（设置改版 S8：面板里的「设置…」、岛上的「打开设置」）：滚过去描一圈
+  func showSettings(_ item: SettingsItem) {
+    showSettings(page: item.page)
+    // 设置窗挂着表单（速查表、确认框）时不动：show 不换页，同一页上也别退掉推进着的详情页、把确认框一起拆掉
+    // （同 showSyncSettings）
+    guard settingsWindow.window.attachedSheet == nil, settingsNavigation.page == item.page else {
+      return
+    }
+    settingsNavigation.open(item)
   }
 
   /// 三块浮层、选状态的面板、快速记一条、主界面都收起，固定着的也收（打开设置、打开全部便签、进入状态屏）

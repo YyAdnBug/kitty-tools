@@ -41,13 +41,16 @@ struct ClipboardTab: View {
         }
         // 两个弹出菜单是同一节里挨着的兄弟：id 要各不相同，同一个值的话 SwiftUI 当成同一个视图、第二行画成第一行
         .id("days-\(limitPickers)")
+        .settingsAnchor(.clipboardRetention)
         Picker("图片最多占用", selection: limited(.imageMB)) {
           ForEach(Self.imageBudgetChoices, id: \.0) {
             Text($0.1).tag($0.0)
           }
         }
         .id("imageMB-\(limitPickers)")
+        .settingsAnchor(.clipboardImageBudget)
         LabeledContent("图片当前占用", value: imageUsage)
+          .settingsAnchor(.clipboardImageUsage)
       } header: {
         Text("历史")
       } footer: {
@@ -60,14 +63,17 @@ struct ClipboardTab: View {
           Text("显示透镜")
           Text("选中的条目在原地展开预览；关掉就是纯列表，一屏多露出几行")
         }
+        .settingsAnchor(.clipboardLens)
         Toggle(isOn: $linkPreview) {
           Text("链接显示网页标题和图片")
           Text("选中链接时联网读取；本机、内网和带登录令牌的网址不读")
         }
+        .settingsAnchor(.clipboardLinkPreview)
         Toggle(isOn: $pasteOnClick) {
           Text("单击条目直接粘贴")
           Text("关着时单击选中、双击粘贴；打开后点一下就粘贴，想先看内容用 ↑↓，⌘ 单击、⇧ 单击照常多选")
         }
+        .settingsAnchor(.clipboardPasteOnClick)
         Picker(selection: $panelPosition) {
           Text("屏幕上方").tag("top")
           Text("跟随鼠标").tag("mouse")
@@ -77,9 +83,12 @@ struct ClipboardTab: View {
           Text("屏幕上方是鼠标所在屏幕的上方正中，跟随鼠标是光标旁边，上次位置是上次拖到的地方")
         }
         .pickerStyle(.segmented)
+        .settingsAnchor(.clipboardPanelPosition)
         PanelSizeRow(
           detail: "拖左右两边改宽度，拖下边改最多显示几行", widthKey: Prefs.clipboardPanelWidth,
-          heightKey: Prefs.clipboardPanelRows, defaultWidth: Style.listPanelWidth)
+          heightKey: Prefs.clipboardPanelRows, defaultWidth: Style.listPanelWidth
+        )
+        .settingsAnchor(.clipboardPanelSize)
       }
       .gated(by: .clipboard)
       Section("内容") {
@@ -87,15 +96,21 @@ struct ClipboardTab: View {
           Text("默认粘贴为纯文本")
           Text("打开后 ↩ 粘贴纯文本，⌥↩ 保留格式；文字的格式总是记下来")
         }
+        .settingsAnchor(.clipboardPastePlain)
         Toggle("识别图片中的文字，用于搜索", isOn: $imageOCR)
+          .settingsAnchor(.clipboardOCR)
       }
       .gated(by: .clipboard)
       Section("隐私") {
         Toggle("不记录疑似密钥和银行卡号", isOn: $blockSensitive)
           .gated(by: .clipboard)
+          .settingsAnchor(.clipboardBlockSensitive)
         Toggle("退出 App 时清空普通历史", isOn: $clearOnQuit)
+          .settingsAnchor(.clipboardClearOnQuit)
         Toggle("锁屏时清空普通历史", isOn: $clearOnLock)
+          .settingsAnchor(.clipboardClearOnLock)
         DangerButton("立即清空普通历史…") { confirmClear = true }
+          .settingsAnchor(.clipboardClearNow)
       }
       Section {
         excludedList
@@ -118,12 +133,14 @@ struct ClipboardTab: View {
         }
       } header: {
         Text("不记录这些 App 里的复制")
+          .settingsAnchor(.clipboardExcludedApps)
       } footer: {
         SectionFootnote("密码管理器通常会自己标记「不要记录」，这里只是兜底。")
       }
       .gated(by: .clipboard)
     }
     .formStyle(.grouped)
+    .settingsScrollTarget()
     .onChange(of: imageOCR) { store.recognizePendingImages() }
     // 同步、导入落下了新的排除列表：页面跟上（异步序列在主线程上接：偏好不一定是在主线程上改的）。
     // object 不填：UserDefaults 不是 Sendable，填 .standard 会报警告；别的偏好域发来的也只是多比一次

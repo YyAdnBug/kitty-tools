@@ -100,6 +100,7 @@ struct TransferSection: View {
         Text("设置与数据")
         Text("设置、快捷键、翻译服务、网页搜索、片段和文字收藏、生词本、便签存成一个文件，换电脑或重装后导回来")
       }
+      .settingsAnchor(.generalTransfer)
       if transfer.backupFolder != nil { backupRows }
     } header: {
       Text("导出与导入")
@@ -120,6 +121,7 @@ struct TransferSection: View {
       )
     }
     .onChange(of: backsUp) { _, isOn in if isOn { backupNow() } }
+    .settingsAnchor(.generalBackup)
     LabeledContent {
       // 选一份走导入表单：设置、快捷键整类换回那天的样子，片段、收藏、生词只把没有的加回来
       Menu("从备份恢复") {
@@ -136,7 +138,8 @@ struct TransferSection: View {
         Text(backupProblem).foregroundStyle(Color(nsColor: .systemOrange))
       }
     }
-    if backsUp { BackupFolderRow(chosen: backupNow) }
+    .settingsAnchor(.generalRestore)
+    if backsUp { BackupFolderRow(chosen: backupNow).settingsAnchor(.generalMirror) }
   }
 
   private func reload() {

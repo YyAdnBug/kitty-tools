@@ -86,9 +86,11 @@ struct TranslateTab: View {
           Picker("第一语言", selection: $first) {
             ForEach(Lang.allCases, id: \.self) { Text($0.title).tag($0.rawValue) }
           }
+          .settingsAnchor(.translateFirst)
           Picker("第二语言", selection: $second) {
             ForEach(Lang.allCases, id: \.self) { Text($0.title).tag($0.rawValue) }
           }
+          .settingsAnchor(.translateSecond)
         } header: {
           Text("语言")
         } footer: {
@@ -111,6 +113,7 @@ struct TranslateTab: View {
           } label: {
             Text("大小")
           }
+          .settingsAnchor(.translateFontScale)
           // 实时预览：浮窗里的同一张卡（第一个服务），字号跟着滑块变
           ProviderCardView(
             card: .init(service: services.services.first ?? .zhipu, state: .done(Self.sample)),
@@ -123,13 +126,16 @@ struct TranslateTab: View {
         }
         Section {
           Toggle("查单个词时显示系统词典的释义", isOn: $systemDictionary)
+            .settingsAnchor(.translateSystemDictionary)
           Toggle("查单个词时大模型按词典回答（读音、词性、例句）", isOn: $wordMode)
+            .settingsAnchor(.translateWordMode)
           LabeledContent {
             Button("打开「词典」") { NSWorkspace.shared.open(URL(string: "dict://")!) }
           } label: {
             Text("系统词典的中文释义")
             Text("默认给英文词英英释义；在「词典」App 的设置里勾上「牛津英汉汉英词典」并拖到最前面，就会显示中文释义")
           }
+          .settingsAnchor(.translateDictionaryApp)
         } header: {
           Text("查词")
         } footer: {
@@ -137,10 +143,12 @@ struct TranslateTab: View {
         }
         Section {
           Toggle("英文单词用真人发音", isOn: $wordRecording)
+            .settingsAnchor(.translateWordRecording)
           Picker("英文单词发音", selection: $wordAccent) {
             Text("美音").tag("us")
             Text("英音").tag("uk")
           }
+          .settingsAnchor(.translateWordAccent)
           // 四档横排单选（3–5 项，mac-whisker-settings）；导入、同步来的怪值显示成最近的一档（Speaker.speed）
           LabeledContent {
             Picker(
@@ -164,6 +172,7 @@ struct TranslateTab: View {
             Text("朗读速度")
             Text("原文、译文和单词的小喇叭都按它读，练听力可以放慢")
           }
+          .settingsAnchor(.translateSpeechSpeed)
         } header: {
           Text("朗读")
         } footer: {
@@ -184,16 +193,22 @@ struct TranslateTab: View {
             Text("划词、截图翻译、复制即译时出现的位置：屏幕上方是鼠标所在屏幕的上方正中，跟随鼠标是光标旁边；输入翻译总在上次拖到的位置")
           }
           .pickerStyle(.segmented)
+          .settingsAnchor(.translatePanelPosition)
           PanelSizeRow(
             detail: "拖左右两边改宽度，拖下边改最高多高（内容少时照样变矮）", widthKey: Prefs.translatePanelWidth,
-            heightKey: Prefs.translatePanelMaxHeight, defaultWidth: TranslatePanelView.defaultWidth)
+            heightKey: Prefs.translatePanelMaxHeight, defaultWidth: TranslatePanelView.defaultWidth
+          )
+          .settingsAnchor(.translatePanelSize)
           Toggle("翻译前把同一段里的换行接起来（适合 PDF 复制的文字）", isOn: $removeNewlines)
+            .settingsAnchor(.translateRemoveNewlines)
           Toggle(isOn: $copyToTranslate) {
             Text("复制即译")
             Text("在别的 App 里复制文字，浮窗自动弹出翻译（网址、路径和数字不翻）")
           }
+          .settingsAnchor(.translateCopyToTranslate)
           Toggle("自动复制译文", isOn: $autoCopy)
             .help("复制即译弹出的翻译不会自动复制，免得覆盖你刚复制的原文")
+            .settingsAnchor(.translateAutoCopy)
           Toggle(isOn: $screenshotOverlay) {
             NewTitle("截图翻译时把译文直接盖回截图上", page: .translate, fresh: navigation.fresh)
             Text(
@@ -204,6 +219,7 @@ struct TranslateTab: View {
           .onChange(of: screenshotOverlay) {
             WhatsNew.touch(section: "截图翻译时把译文直接盖回截图上", of: .translate)
           }
+          .settingsAnchor(.translateOverlay)
           Toggle(isOn: $copyRecognized) {
             Text("截图翻译时复制识别出的原文")
             Text(
@@ -211,7 +227,9 @@ struct TranslateTab: View {
                 ? "识别出来就放进剪贴板；译文出来后，剪贴板换成译文（上面开着自动复制）"
                 : "识别出来就放进剪贴板，⌘V 能直接粘贴；关着时只记进剪贴板历史")
           }
+          .settingsAnchor(.translateCopyRecognized)
           Toggle("记录翻译历史", isOn: $historyEnabled)
+            .settingsAnchor(.translateHistory)
         }
         .gated(by: .translate)
         Picker("历史最多保留", selection: $historyLimit) {
@@ -222,6 +240,7 @@ struct TranslateTab: View {
         }
         .pickerStyle(.segmented)
         .disabled(!historyEnabled)
+        .settingsAnchor(.translateHistoryLimit)
         LabeledContent("导出和清空") {
           HStack(spacing: 8) {
             Menu("导出…") { HistoryExportItems(history: history, island: island) }
@@ -230,12 +249,14 @@ struct TranslateTab: View {
             DangerButton("清空翻译历史…") { confirmsClear = true }
           }
         }
+        .settingsAnchor(.translateHistoryExport)
         LabeledContent {
           ShortcutsButton()
         } label: {
           Text("翻译浮窗里的按键")
           Text("↩ 翻译，⌘R 重新翻译，⌘1–9 复制第 1–9 个结果，⌘Y 翻译历史；划词来的翻译可以「替换原文」")
         }
+        .settingsAnchor(.translateKeys)
       } header: {
         Text("行为")
       } footer: {
@@ -250,6 +271,7 @@ struct TranslateTab: View {
         }
       } header: {
         Text("翻译服务")
+          .settingsAnchor(.translateServices)
       } footer: {
         SectionFootnote(
           "拖动调整顺序，结果按这个顺序显示；排在最前、翻译成功的那个服务的结果写入历史、用于自动复制和收藏。点一行进入设置。删掉的内置服务可以从「+」加回来，密钥还在。")
@@ -257,6 +279,7 @@ struct TranslateTab: View {
       .gated(by: .translate)
     }
     .formStyle(.grouped)
+    .settingsScrollTarget()
   }
 
   /// 预览卡里的译文（跟界面语言：只是摆给人看的样子）
