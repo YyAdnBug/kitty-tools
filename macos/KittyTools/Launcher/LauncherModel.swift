@@ -442,7 +442,7 @@ import UniformTypeIdentifiers
 
   /// 系统命令（锁定屏幕…）：「命令」表里关掉的不列，改了别名的把原来的英文关键词换成别名（副标题也写别名）
   private var systemItems: [LauncherItem] {
-    systemCommandItems + (shortcutsOn ? shortcutNames.map(SystemShortcuts.item) : [])
+    systemCommandItems + (shortcutsOn ? shortcutItems : [])
   }
 
   /// 搜索、运行快捷指令（X10）开着没有（单测、截图自检是关的：不起 shortcuts 进程）
@@ -451,6 +451,8 @@ import UniformTypeIdentifiers
   }
   /// 缓存的快捷指令名字（呼出时过期就在后台重列，SystemShortcuts）
   @ObservationIgnored private(set) var shortcutNames: [String] = []
+  /// 建好的那几行（拼音转换不便宜，别每打一个字都重建；名字变了才换）
+  @ObservationIgnored private var shortcutItems: [LauncherItem] = []
   @ObservationIgnored private var shortcutsListedAt: Date?
   @ObservationIgnored private var shortcutsTask: Task<Void, Never>?
 
@@ -466,6 +468,7 @@ import UniformTypeIdentifiers
       shortcutsListedAt = .now
       guard let names, names != shortcutNames else { return }
       shortcutNames = names
+      shortcutItems = names.map(SystemShortcuts.item)
       if isShown, !query.isEmpty { search() }
     }
   }

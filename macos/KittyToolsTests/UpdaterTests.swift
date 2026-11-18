@@ -355,7 +355,24 @@ struct UpdaterTests {
       #expect(mode & 0o022 == 0, "\(item) \(String(mode, radix: 8))")
     }
 
-    // 好包：换上，签名完好
+    // 包里的 App 是个符号链接（指向一份签名有效的同版本）：拒绝——验签验的是链接那头，换上去的却是链接本身（X11 评审）
+    try makeOldApp()
+    let linkDir = work.appending(path: "link")
+    try FileManager.default.createDirectory(at: linkDir, withIntermediateDirectories: true)
+    try FileManager.default.createSymbolicLink(
+      at: linkDir.appending(path: "Kitty Tools.app"),
+      withDestinationURL: loose.appending(path: "Kitty Tools.app"))
+    let linkZip = work.appending(path: "link.zip")
+    try await Self.shell(
+      "/usr/bin/zip",
+      ["-q", "-y", "-j", linkZip.path, linkDir.appending(path: "Kitty Tools.app").path])
+    await #expect(throws: UpdateError.self) {
+      try await Updater.replace(
+        target, with: .init(version: version, archive: linkZip, page: Updater.releasesPage))
+    }
+    #expect(FileManager.default.fileExists(atPath: target.appending(path: "Contents/marker").path))
+
+    // 好包：换上，签名完好；换之前的那份（.before-update）不留
     try makeOldApp()
     try await Updater.replace(
       target, with: .init(version: version, archive: zip, page: Updater.releasesPage))
@@ -363,6 +380,9 @@ struct UpdaterTests {
     let installed = try #require(
       NSDictionary(contentsOf: target.appending(path: "Contents/Info.plist")))
     #expect(installed["CFBundleShortVersionString"] as? String == version)
+    #expect(
+      try FileManager.default.contentsOfDirectory(atPath: target.deletingLastPathComponent().path)
+        == ["Kitty Tools.app"])
     try await Self.shell(
       "/usr/bin/codesign",
       ["--verify", "--deep", "--strict", "-R", Updater.requirement, target.path])

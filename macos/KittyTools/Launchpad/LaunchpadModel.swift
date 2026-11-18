@@ -143,10 +143,8 @@ final class LaunchpadModel {
   @ObservationIgnored private var folderPager = LaunchpadPager()
   @ObservationIgnored private var searchCache:
     (query: String, aliases: String, apps: [LaunchpadProjectApp])?
-  /// 启动器的应用别名（T3：启动台的搜索也认）；单测、截图自检不读真实偏好
-  @ObservationIgnored var appAliasesText: () -> String = {
-    UserDefaults.standard.string(forKey: Prefs.launcherAppAliases) ?? ""
-  }
+  /// 启动器的应用别名（T3：启动台的搜索也认）。Launchpad 建模型时接上偏好；单测、截图自检是空的，不读真实偏好
+  @ObservationIgnored var appAliasesText: () -> String = { "" }
   @ObservationIgnored private var jiggleTask: Task<Void, Never>?
   @ObservationIgnored private var combineTask: Task<Void, Never>?
   @ObservationIgnored private var turnTask: Task<Void, Never>?

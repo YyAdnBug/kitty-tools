@@ -129,8 +129,10 @@ import OSLog
   /// 启动后 10 s 查一次，之后每天一次；没查成（多半是刚开机网络还没好）半小时后再试。设置里关了就跳过
   func start() {
     guard isSupported else { return }
-    // 上次后台下好、没装上的包（退出时没装成、开关关了）：这次查到再下
+    // 上次后台下好、没装上的包（退出时没装成、开关关了）：这次查到再下。换上之后还没核完就退出了（退出时最多等 30 秒）
+    // 留下的那份旧 App 也删掉
     try? FileManager.default.removeItem(at: Self.preparedFolder)
+    try? FileManager.default.removeItem(at: Self.backupURL(of: Bundle.main.bundleURL))
     schedule?.cancel()
     schedule = Task { [weak self] in
       try? await Task.sleep(for: .seconds(10))
@@ -231,7 +233,9 @@ import OSLog
     // 后台已经下好这一版：直接装它（replace 照样全部校验）；还在下的掐掉、从头下（ponytail: 不接着它的进度，
     // 后台那次没有进度可接；要省这一截再把后台下载改成带进度的同一个任务）
     stopPreparing()
-    let prepared = ready == release ? readyZip : nil
+    // 校验用下这个包时的那一版（清单那条路带 sha256；这次检查可能落在 API 那条路上、没有 sha256）
+    let downloadedFor = Self.same(ready, release) ? ready : nil
+    let prepared = downloadedFor == nil ? nil : readyZip
     if prepared == nil { discardReady() }
     ready = nil
     readyZip = nil
@@ -267,7 +271,7 @@ import OSLog
       }
       // 下完了：岛上的「取消」去掉（解包、验签、替换不能停）
       if trigger != .page { showInstalling(release) }
-      try await Self.replace(app, with: release, zip: zip, response: response)
+      try await Self.replace(app, with: downloadedFor ?? release, zip: zip, response: response)
       try Self.relaunch(app)
       NSApp.terminate(nil)
       // 还走得到这里 = 退出被取消了（B5：原来一直显示「正在安装」）。等着本进程退出再重开的 sh 留着
@@ -275,6 +279,8 @@ import OSLog
     } catch {
       downloadTask = nil
       isDownloading = false
+      // 换不了 App 时（checkReplaceable）后台下好的包还没交给 replace：一并删掉
+      if let prepared { try? FileManager.default.removeItem(at: prepared) }
       state = .available(release)
       progress = nil
       island?.show(
@@ -323,22 +329,31 @@ import OSLog
 
   /// 退出时有没有下好的新版本要装（AppDelegate.applicationShouldTerminate）
   var hasPrepared: Bool {
-    guard let ready, readyZip != nil, isSupported, available == ready else { return false }
+    guard let ready, readyZip != nil, isSupported, Self.same(available, ready) else { return false }
     return UserDefaults.standard.bool(forKey: Prefs.updateInstallOnQuit) && ready.version != skipped
   }
 
-  /// 退出时装上后台下好的新版本：校验和点「更新」走同一个 replace；装好不重新打开，装不成就算了（只记日志，照常退出）
+  /// 退出时装上后台下好的新版本：校验和点「更新」走同一个 replace；装好不重新打开，装不成就算了（只记日志，照常退出）。
+  /// 开着的这段时间里用户自己换上了一样新或更新的版本（从 DMG 拖进去的）：不装，免得装回旧的
   func installPrepared() async {
     guard hasPrepared, let release = ready, let zip = readyZip else { return }
     ready = nil
     readyZip = nil
+    let target = Bundle.main.bundleURL
+    let onDisk =
+      NSDictionary(contentsOf: target.appending(path: "Contents/Info.plist"))?[
+        "CFBundleShortVersionString"] as? String ?? AboutTab.version
+    guard Self.isNewer(release.version, than: onDisk) else {
+      try? FileManager.default.removeItem(at: zip)
+      return
+    }
     state = .installing(release)
     progress = 1
     island?.show(
       "正在装上新版本 \(release.version)", detail: "装好就退出", tone: .progress,
       symbol: "arrow.down.circle.fill")
     do {
-      try await Self.replace(Bundle.main.bundleURL, with: release, zip: zip, response: nil)
+      try await Self.replace(target, with: release, zip: zip, response: nil)
       state = .installed(release)
     } catch {
       Log.storage.error("退出时没装上新版本：\(error.localizedDescription, privacy: .public)")
@@ -351,7 +366,7 @@ import OSLog
   /// 没权限：下了也装不上）时不下；没下成就算了，下次检查再来
   private func prepare(_ release: Release) {
     guard isSupported, UserDefaults.standard.bool(forKey: Prefs.updateInstallOnQuit),
-      release.version != skipped, ready != release, prepareTask == nil,
+      release.version != skipped, !Self.same(ready, release), prepareTask == nil,
       (try? Self.checkReplaceable(Bundle.main.bundleURL)) != nil
     else { return }
     prepareTask = Task { [weak self] in
@@ -363,11 +378,13 @@ import OSLog
       }
       prepareTask = nil
       guard let (zip, response) = result else { return }
-      guard (response as? HTTPURLResponse)?.statusCode == 200, available == release,
+      guard (response as? HTTPURLResponse)?.statusCode == 200, Self.same(available, release),
         release.version != skipped, UserDefaults.standard.bool(forKey: Prefs.updateInstallOnQuit),
         let kept = try? Self.keep(zip)
       else {
         try? FileManager.default.removeItem(at: zip)
+        // 下载这一阵又查到了更新的一版（那时这边正在下，没起它）：接着下那一版
+        if let available, !Self.same(available, release) { prepare(available) }
         return
       }
       ready = release
@@ -478,6 +495,12 @@ import OSLog
     case .upToDate, .installing, .installed: nil
     case .idle, .checking, .failed: known
     }
+  }
+
+  /// 是不是同一个包（版本号 + 下载地址）：清单和 API 两条路查到的同一版，sha256、发布页可能一个有一个没有
+  static func same(_ lhs: Release?, _ rhs: Release?) -> Bool {
+    guard let lhs, let rhs else { return false }
+    return lhs.version == rhs.version && lhs.archive == rhs.archive
   }
 
   /// 该不该提示这一版：跳过的那个版本不提（更新的版本出来照常提）
@@ -626,9 +649,7 @@ import OSLog
       let app = try FileManager.default.contentsOfDirectory(
         at: staging, includingPropertiesForKeys: nil
       ).first(where: { $0.pathExtension == "app" }),
-      let info = NSDictionary(contentsOf: app.appending(path: "Contents/Info.plist")),
-      info["CFBundleIdentifier"] as? String == bundleID,
-      info["CFBundleShortVersionString"] as? String == release.version
+      isGenuine(app, version: release.version)
     else { throw UpdateError("更新包不对（App 或版本号对不上）") }
     // 名字对了也再看一眼里面的可执行文件：传错了包（Intel 上拿到只有 arm64 的），换上去就打不开了
     guard
@@ -639,7 +660,42 @@ import OSLog
     try await run(
       "/usr/bin/codesign", ["--verify", "--deep", "--strict", "-R", requirement, app.path],
       failure: "更新包的签名校验没通过")
-    _ = try FileManager.default.replaceItemAt(target, withItemAt: app)
+    // 换上之后对装好的那一份再核一遍：暂存目录、后台下好的包本机别的进程也写得进去（X11 评审：包放上几天、退出时才装），
+    // 验签之后、替换之前被换掉的在这里拦下；不过就换回原来的那份
+    let backupURL = backupURL(of: target)
+    let installed =
+      try FileManager.default.replaceItemAt(
+        target, withItemAt: app, backupItemName: backupURL.lastPathComponent,
+        options: .withoutDeletingBackupItem)
+      ?? target
+    do {
+      guard isGenuine(installed, version: release.version) else {
+        throw UpdateError("更新包不对（App 或版本号对不上）")
+      }
+      try await run(
+        "/usr/bin/codesign", ["--verify", "--deep", "--strict", "-R", requirement, installed.path],
+        failure: "更新包的签名校验没通过")
+    } catch {
+      if (try? FileManager.default.replaceItemAt(installed, withItemAt: backupURL)) == nil {
+        Log.storage.error("更新没核过、也没换回原来的那份")
+      }
+      throw error
+    }
+    try? FileManager.default.removeItem(at: backupURL)
+  }
+
+  /// 换上新版时原来那份暂放的地方（同一个文件夹里的隐藏项，核过就删）
+  static func backupURL(of target: URL) -> URL {
+    target.deletingLastPathComponent().appending(path: ".\(target.lastPathComponent).before-update")
+  }
+
+  /// 是不是我们的那个 App、是不是这一版：不是符号链接（链接那头的东西验签时和换上之后可以不一样）、bundle id、版本号
+  private static func isGenuine(_ app: URL, version: String) -> Bool {
+    guard (try? app.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink == false,
+      let info = NSDictionary(contentsOf: app.appending(path: "Contents/Info.plist"))
+    else { return false }
+    return info["CFBundleIdentifier"] as? String == bundleID
+      && info["CFBundleShortVersionString"] as? String == version
   }
 
   /// 下载到临时文件（调用方删），一路报下了多少（0…1，见 DownloadWatcher）

@@ -265,8 +265,9 @@ enum Home {
   @ObservationIgnored var openFeatures: () -> Void = {}
   /// 收起面板（不放淡出：接下来要做的事要面板已经不在屏幕上）
   @ObservationIgnored var hidePanel: () -> Void = {}
-  /// 打了字（X12）：收起主界面、打开启动器并把这个字填进去（AppDelegate 接；启动器关着时响一声）
-  @ObservationIgnored var typeToLauncher: (String) -> Void = { _ in }
+  /// 打了字（X12）：收起主界面、打开启动器、把这一下按键原样交给它的输入框（AppDelegate 接；启动器关着时响一声）。
+  /// 交的是按键不是字：开着拼音时这一下要进输入法组字，直接填字会把第一个字母拆出去（同 issue #30）
+  @ObservationIgnored var typeToLauncher: (NSEvent) -> Void = { _ in }
 
   /// 截图自检直接摆出某个样子；正常使用建一个空的，每次呼出前 update
   init(
@@ -575,8 +576,8 @@ private struct HomeKeys: NSViewRepresentable {
       case let key?: model?.handle(key)
       case nil:
         // 打字转到启动器搜索（X12）：按字母大概率是想搜东西
-        if let text = Home.typed(event.characters, modifiers: event.modifierFlags) {
-          model?.typeToLauncher(text)
+        if Home.typed(event.characters, modifiers: event.modifierFlags) != nil {
+          model?.typeToLauncher(event)
         } else {
           super.keyDown(with: event)
         }

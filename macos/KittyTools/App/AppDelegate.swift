@@ -36,6 +36,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var audioRecorder: AudioRecorder?
   /// 退出时在等录屏 / 录音收尾（applicationShouldTerminate 返回了 .terminateLater）
   private var quitsAfterRecording = false
+  /// 退出时在等装后台下好的新版本（replyQuit）：装完、到点两条路只回一次话
+  private var quitReplyPending = false
   /// 上次按功能开关（Feature）起停过的样子和那时复制即译开没开（剪贴板的轮询看它）：applyFeatures 只对变了的做事；
   /// nil = 还没起过（启动时）
   private var appliedFeatures: Set<Feature>?
@@ -297,13 +299,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     panel.ignoresClick = { [unowned self] in statusItem?.ownsClick(at: $0) == true }
     model.hidePanel = { [unowned panel] in panel.hide() }
     model.openFeatures = { [unowned self] in showSettings(page: .general) }
-    // 打字转到启动器（X12）：启动器这个功能关着就响一声
-    model.typeToLauncher = { [unowned self, unowned panel] text in
+    // 打字转到启动器（X12）：启动器这个功能关着就响一声。按键原样交给启动器输入框的字段编辑器（经输入法：开着拼音时
+    // 这一下进组字，第一个字母不拆出去，同 issue #30）；框里原有的字先全选、被这一下替换。输入框没拿到焦点时
+    // （toggleLauncher 之后照理已经是它，同那里的 selectAll）退回直接填这个字
+    model.typeToLauncher = { [unowned self, unowned panel] event in
       guard Feature.launcher.isOn else { return NSSound.beep() }
       panel.hide()
       if !(launcherPanel.isVisible && launcherPanel.isKeyWindow) { toggleLauncher() }
-      launcherModel.query = text
-      (launcherPanel.firstResponder as? NSTextView)?.moveToEndOfDocument(nil)
+      if let editor = launcherPanel.firstResponder as? NSTextView {
+        editor.selectAll(nil)
+        editor.keyDown(with: event)
+      } else {
+        launcherModel.query = event.characters ?? ""
+      }
     }
     model.perform = { [unowned self] target in
       switch target {
@@ -1519,11 +1527,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     return .terminateLater
   }
 
-  /// .terminateLater 之后回话「可以退了」：先装上后台下好的新版本（第四轮体检 X11；装不成照常退）
+  /// .terminateLater 之后回话「可以退了」：先装上后台下好的新版本（第四轮体检 X11；装不成照常退）。最多等 30 秒
+  /// （解包、验签各自的上限加起来要几分钟）：到点直接退，装到一半的不换上（换上那一下是原子的），下次打开再查再下
   private func replyQuit() {
+    quitReplyPending = true
+    let finish = { [unowned self] in
+      guard quitReplyPending else { return }
+      quitReplyPending = false
+      NSApp.reply(toApplicationShouldTerminate: true)
+    }
     Task {
       await updater.installPrepared()
-      NSApp.reply(toApplicationShouldTerminate: true)
+      finish()
+    }
+    Task {
+      try? await Task.sleep(for: .seconds(30))
+      finish()
     }
   }
 

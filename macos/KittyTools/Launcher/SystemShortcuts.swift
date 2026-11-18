@@ -49,12 +49,12 @@ enum SystemShortcuts {
     return parse(result.output)
   }
 
-  /// 运行一条（不带输入）：岛上先说「正在运行」，跑完说成没成
+  /// 运行一条（不带输入）：岛上先说「正在运行」，跑完说成没成。名字前加 `--`：「-」开头的名字不被当成参数
   static func run(_ name: String, island: Island?) {
     island?.show("正在运行「\(name)」", tone: .progress, symbol: "square.stack.3d.up.fill")
     Task {
       let result = try? await Subprocess.run(
-        tool, ["run", name], captures: true, timeout: .seconds(600))
+        tool, ["run", "--", name], captures: true, timeout: .seconds(600))
       if let result, result.status == 0, !result.signaled {
         island?.show("已运行「\(name)」", symbol: "square.stack.3d.up.fill")
       } else {
