@@ -16,6 +16,7 @@
 //   菜单开着时这一列不收（isShowingMenu：不算「4 秒没动静」、鼠标出了热区也不算走了、点别处也不算），关了照常。
 
 import AppKit
+import Carbon.HIToolbox
 import Observation
 import SwiftUI
 
@@ -51,6 +52,8 @@ import SwiftUI
   /// 鼠标停在哪张标签上、出着谁的预览卡
   private(set) var hovered: String?
   private(set) var preview: String?
+  /// 全局快捷键叫出来的（X16）：键盘在这一列上，鼠标不在热区里也不收；鼠标进了热区、收回、打开了便签就不再算
+  var summonedByKey = false
   private(set) var drag: Drag?
   /// 打开的便签的顶离面板顶多远：**打开那一刻定住**（它对着自己那张标签，而标签露出多长跟着最长的标题实时变——
   /// 不定住的话打第一行字时便签自己一跳一跳地上下挪）。关掉再开、面板大小变了才重算
@@ -95,7 +98,18 @@ import SwiftUI
   /// ⌘W 在只扇着时也管用（收回那一列）
   override var isShown: Bool { state.phase != .rest }
   override func close() { send(.close) }
-  override func dismiss() { send(.dismiss) }
+  override func dismiss() {
+    let summoned = summonedByKey
+    send(.dismiss)
+    // 「一直展开」时收回就是回到那一列、状态不变（评审 A1 B1）：快捷键叫出来的照样把键盘还回去
+    if summoned, summonedByKey {
+      summonedByKey = false
+      onReleaseKey()
+    }
+  }
+
+  /// 把键盘还给原来的 App、面板留着（NoteDeck.releaseKey；快捷键叫出来的那一列收不回去时用）
+  @ObservationIgnored var onReleaseKey: () -> Void = {}
 
   /// 操作菜单的「浮在屏幕上」：不靠拖的那条路（键盘、旁白用户）。它在这叠里的那一份由 NoteEdge 跟着收掉
   override func toggleFloating() {
@@ -164,7 +178,10 @@ import SwiftUI
         liftedID = nil
       }
     }
-    if state.phase != .fanned { clearHover() }
+    if state.phase != .fanned {
+      clearHover()
+      summonedByKey = false
+    }
     if !state.isDragging, drag != nil { drag = nil }
     onChange(old, state)
   }
@@ -298,6 +315,33 @@ import SwiftUI
     onActivity()
     if floatingIDs.contains(id) { return focusFloat(id) }
     send(.tab(id))
+  }
+
+  /// 扇着的这一列上的 ↑↓ ↩（X16：全局快捷键叫出来、面板当着 key 时）：↑↓ 在标签间挪（停着的那张同鼠标悬停的样子，
+  /// 开着预览就出预览卡），↩ 打开它（同点标签）。操作菜单开着、没有标签时不接。返回接没接
+  func handleFanKey(_ event: NSEvent) -> Bool {
+    guard state.phase == .fanned, menu == nil, !tabs.isEmpty,
+      event.modifierFlags.intersection([.command, .control, .option]).isEmpty
+    else { return false }
+    let ids = tabs.map(\.id)
+    switch Int(event.keyCode) {
+    case kVK_UpArrow, kVK_DownArrow:
+      let step = Int(event.keyCode) == kVK_DownArrow ? 1 : -1
+      let index =
+        hovered.flatMap(ids.firstIndex(of:)).map { ($0 + step + ids.count) % ids.count }
+        ?? (step > 0 ? 0 : ids.count - 1)
+      hoverTask?.cancel()
+      hovered = ids[index]
+      if options.showsPreview { setPreview(ids[index]) }
+      onActivity()
+      return true
+    case kVK_Return, kVK_ANSI_KeypadEnter:
+      guard let id = hovered, ids.contains(id) else { return false }
+      tapTab(id)
+      return true
+    default:
+      return false
+    }
   }
 
   /// 鼠标进出一张标签：停一会儿出预览卡（「悬停即打开」开着时是打开，不出预览卡），离开一会儿收。

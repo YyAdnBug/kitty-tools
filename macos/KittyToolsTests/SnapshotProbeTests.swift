@@ -284,6 +284,13 @@ struct SnapshotProbeTests {
       ("dialog-edit", { m in m.dialog = .edit(code.id) }),
       ("dialog-new-snippet", { m in m.dialog = .newSnippet }),
       ("dialog-new-group", { m in m.dialog = .newGroup([link.id]) }),
+      // 片段填空（X20）：第 2 / 2 个空，下面有「上一个」；只有一个空时没有 1/1
+      (
+        "dialog-fill",
+        { m in
+          m.dialog = .fill(.init(items: [], labels: ["称呼", "单号"], copies: false, plainText: nil))
+        }
+      ),
       // ⌘P / 底栏图钉：底栏就地提示（体检 A9）
       ("toast-pinned", { m in m.toast = .message("已固定") }),
       // 含图片的多选 ⌘C 只写了第 1 条：警告，不带绿色对勾（体检 B3）
@@ -544,7 +551,10 @@ struct SnapshotProbeTests {
       case .reminders: AnyView(RemindersTab(fixed: Reminder.examples))
       // 私有接口在不在按固定的「都在」画（图不跟着机器变）
       case .dockPreview: AnyView(DockPreviewTab(missing: []))
-      case .finderMenu: AnyView(FinderMenuTab(extensionEnabled: false))
+      case .finderMenu:
+        AnyView(
+          FinderMenuTab(
+            extensionEnabled: false, finderAutomation: .notAsked, desktopInICloud: false))
       // 没起的保持唤醒（只读偏好，不建断言）
       case .keepAwake: AnyView(KeepAwakeTab(keepAwake: KeepAwake()))
       // 授权按固定的「没给」画
@@ -582,6 +592,10 @@ struct SnapshotProbeTests {
     let updateStates: [(String, Updater.State, Bool, Double?)] = [
       ("available", .available(release), false, nil),
       ("available", .available(release), true, nil),
+      // 跳过了这一版、后台已经下好（第四轮体检 X11）
+      ("skipped", .available(release), false, nil),
+      ("ready", .available(release), false, nil),
+      ("ready", .available(release), true, nil),
       ("installing", .installing(release), false, nil),
       ("downloading", .installing(release), false, 0.42),
       ("downloading", .installing(release), true, 0.42),
@@ -595,7 +609,9 @@ struct SnapshotProbeTests {
     navigation.page = .about
     for (name, state, dark, progress) in updateStates {
       // 下载中有「取消」（第四轮体检 E23），下完在装的没有
-      let updater = Updater(state: state, progress: progress, downloading: name == "downloading")
+      let updater = Updater(
+        state: state, progress: progress, downloading: name == "downloading",
+        skipped: name == "skipped" ? release.version : nil, ready: name == "ready" ? release : nil)
       try snapshot(
         SettingsRoot(navigation: navigation) { page in
           page == .about ? AnyView(AboutTab(updater: updater)) : pages(page)
@@ -2216,6 +2232,10 @@ struct SnapshotProbeTests {
     }
     let model = NotesWindowModel(store: store)
     try window("list", model)
+    // 多选（X6）：列表里勾了两条，右边写勾了几条、底下浮着整批操作的那一条
+    model.setListSelection([ids[0], ids[2]])
+    for dark in [false, true] { try window("marked\(dark ? "-dark" : "")", model, dark: dark) }
+    model.clearMarks()
     model.selection = ids[1]
     try window("list-dark", model, dark: true)
     model.selection = ids[4]
@@ -2354,6 +2374,15 @@ struct SnapshotProbeTests {
     }
     let photo = try addImage(600, 300)
     let small = try addImage(160, 120)
+    // 快速记一条贴了图（X5）：正文下面一排缩略图（缩略图在后台解，屏外这一帧可能还是灰块）
+    let pictured = try NoteStore(db: Database(path: ":memory:"))
+    pictured.images = imageStore
+    for dark in [false, true] {
+      let withImages = NoteCaptureModel(store: pictured)
+      withImages.restore(
+        .init(body: "截图里那个按钮的位置", images: [photo, small].map(NoteImages.token)))
+      try capture("images\(dark ? "-dark" : "")", withImages, dark: dark)
+    }
     let missing = NoteImages.Image(id: UUID(), ext: "png", width: nil)
     let imageNotes = try NoteStore(db: Database(path: ":memory:"))
     imageNotes.images = imageStore
@@ -2592,6 +2621,11 @@ struct SnapshotProbeTests {
     }
     let wallModel = NotesWindowModel(store: wallStore)
     for dark in [false, true] { try wall(dark ? "dark" : "light", wallModel, dark: dark) }
+    // 多选（X6）：墙上 ⌘ 点了三张
+    _ = wallModel.click(wallIDs[2], modifiers: .command)
+    _ = wallModel.click(wallIDs[5], modifiers: .command)
+    try wall("marked", wallModel)
+    wallModel.clearMarks()
     // 第 7 批：卡片顶上那张缩略图（单独一面墙：两张卡片都在可见区里）
     let wallImages = try NoteStore(db: Database(path: ":memory:"))
     wallImages.images = imageStore
@@ -4296,6 +4330,14 @@ struct SnapshotProbeTests {
     canvas.cacheDisplay(in: shown, to: bitmap)
     try #require(bitmap.representation(using: .png, properties: [:]))
       .write(to: URL(filePath: "\(out)/scroll-editor-canvas.png"))
+    // 裁剪框开着（X17）：框外压暗、白边框、八个手柄
+    canvas.selectedAnnotation = nil
+    canvas.toggleCropping()
+    canvas.setCropForSnapshot(CGRect(x: 60, y: 420, width: 420, height: 300))
+    let cropped = try #require(canvas.bitmapImageRepForCachingDisplay(in: shown))
+    canvas.cacheDisplay(in: shown, to: cropped)
+    try #require(cropped.representation(using: .png, properties: [:]))
+      .write(to: URL(filePath: "\(out)/scroll-editor-crop.png"))
   }
 
   private func renderScrollCapture(_ out: String) throws {
@@ -5129,13 +5171,19 @@ struct SnapshotProbeTests {
     for dark in [false, true] {
       try snapshot(
         AppShortcutsTab(trusted: false).defaultAppStorage(prefs),
-        size: NSSize(width: 640, height: 560),
+        size: NSSize(width: 640, height: 640),
         dark: dark, to: "\(out)/app-shortcuts-settings\(dark ? "-dark" : "").png")
     }
+    // 换成按住 ⇧（那一行下面多一句输入法的提醒）
+    prefs.set(ModifierTaps.Key.shift.rawValue, forKey: Prefs.appShortcutsHoldKey)
+    try snapshot(
+      AppShortcutsTab(trusted: true).defaultAppStorage(prefs),
+      size: NSSize(width: 640, height: 640),
+      dark: false, to: "\(out)/app-shortcuts-settings-shift.png")
     prefs.set(false, forKey: Prefs.appShortcutsHold)
     try snapshot(
       AppShortcutsTab(trusted: true).defaultAppStorage(prefs),
-      size: NSSize(width: 640, height: 560),
+      size: NSSize(width: 640, height: 640),
       dark: false, to: "\(out)/app-shortcuts-settings-off.png")
   }
 
@@ -5154,10 +5202,16 @@ struct SnapshotProbeTests {
     prefs.set(some, forKey: Prefs.finderCompressSkip)
     for dark in [false, true] {
       try snapshot(
-        FinderMenuTab(extensionEnabled: true).defaultAppStorage(prefs),
-        size: NSSize(width: 640, height: 2300), dark: dark,
+        FinderMenuTab(extensionEnabled: true, finderAutomation: .granted, desktopInICloud: false)
+          .defaultAppStorage(prefs),
+        size: NSSize(width: 640, height: 2400), dark: dark,
         to: "\(out)/finder-settings\(dark ? "-dark" : "").png")
     }
+    // 控制访达拒绝过（按钮「去打开…」）、桌面同步在 iCloud 里（页脚下面一行橙字）
+    try snapshot(
+      FinderMenuTab(extensionEnabled: true, finderAutomation: .denied, desktopInICloud: true)
+        .defaultAppStorage(prefs),
+      size: NSSize(width: 640, height: 560), dark: false, to: "\(out)/finder-settings-icloud.png")
     func page() -> some View { NavigationStack { CompressSkipPage() }.defaultAppStorage(prefs) }
     prefs.removeObject(forKey: Prefs.finderCompressSkip)
     for dark in [false, true] {

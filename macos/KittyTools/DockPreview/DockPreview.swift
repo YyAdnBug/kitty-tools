@@ -101,6 +101,7 @@ import SwiftUI
   init() {
     model.onOpen = { [unowned self] in open($0) }
     model.onClose = { [unowned self] in close($0) }
+    model.onMinimize = { [unowned self] in minimize($0) }
     // 没有屏幕录制授权时底下那行（U12③）：去授权（没请求过弹系统框，请求过了打开系统设置那一页），面板收起
     model.onGrant = { [unowned self] in
       Permissions.grant(.screenRecording)
@@ -555,6 +556,15 @@ import SwiftUI
     if fromSwitcher { SwitcherWatcher.dismissSystemSwitcher() }
     lister.focus(window, of: shown.app)
     hide(animated: false)
+  }
+
+  /// 卡片上的「最小化」（X15）：最小化那扇窗口，卡片留着、角标换成「已最小化」（再点就是还原、切过去）
+  private func minimize(_ window: DockWindow) {
+    guard let index = model.windows.firstIndex(where: { $0.id == window.id }),
+      window.state == .shown, lister.minimize(window)
+    else { return }
+    model.windows[index] = DockWindow(
+      id: window.id, title: window.title, state: .minimized, size: window.size)
   }
 
   private func close(_ window: DockWindow) {

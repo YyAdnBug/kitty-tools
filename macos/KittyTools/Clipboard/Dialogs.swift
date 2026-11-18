@@ -1,4 +1,4 @@
-// 剪贴板面板内的对话框：备注、编辑正文、新建片段、新建 / 管理收藏夹（mac-whisker §6 剪贴板）。
+// 剪贴板面板内的对话框：备注、编辑正文、新建片段、新建 / 管理收藏夹、片段填空（X20）（mac-whisker §6 剪贴板）。
 // 直接画在面板里、不开 sheet 窗口：非激活浮层的 sheet 拿不稳键盘焦点。一张宽 708、圆角 card 的卡从搜索栏下沿落下
 // （settle，y −8→0 + 淡入；关掉淡出），只压暗列表区；输入框焦点环品牌粉，保存是品牌粉主按钮。
 // 输入框用 isDialogField：出现时抢焦点，关闭后焦点回到它之前的输入框（搜索框，或管理收藏夹下面的新建框）；Esc 关对话框。
@@ -85,6 +85,10 @@ struct DialogOverlay: View {
       }
     case .manageGroups:
       ManageGroupsDialog(model: model, onClose: close)
+    case .fill(let fill):
+      FillDialog(labels: fill.labels, copies: fill.copies, onCancel: close) { values in
+        model.finishFill(fill, values: values)
+      }
     }
   }
 
@@ -210,6 +214,85 @@ private struct NoteDialog: View {
         Button("保存") { onSave(text) }.buttonStyle(BrandButtonStyle())
       }
     }
+  }
+}
+
+/// 片段填空（X20）：{input:名字} 一个一个问，↩ / Tab 下一个、最后一个 ↩ 就粘贴（复制），Esc 不粘。
+/// 一直是同一个输入框（换掉它焦点会回到搜索框），换一个空只换字和标题
+private struct FillDialog: View {
+  let labels: [String]
+  let copies: Bool
+  let onCancel: () -> Void
+  let onDone: ([String: String]) -> Void
+  @State private var step = 0
+  @State private var values: [String: String] = [:]
+  @State private var text = ""
+
+  private var isLast: Bool { step + 1 >= labels.count }
+  private var label: String { labels[step] }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      HStack {
+        if label.isEmpty {
+          Text("填写片段里的空").dialogTitle()
+        } else {
+          Text("填写「\(label)」").dialogTitle()
+        }
+        Spacer()
+        if labels.count > 1 {
+          Text(verbatim: "\(step + 1)/\(labels.count)")
+            .font(.system(size: 11)).monospacedDigit().foregroundStyle(.secondary)
+        }
+      }
+      CommandTextField(
+        text: $text, placeholder: label.isEmpty ? String(localized: "要填进去的字") : label,
+        isDialogField: true
+      ) { selector in
+        switch selector {
+        case #selector(NSResponder.insertNewline(_:)): advance()
+        // Tab 只往下一个空走（最后一个空上不粘贴：粘贴只认 ↩）；⇧Tab 回上一个，第一个空上什么都不做（不让焦点跑出对话框）
+        case #selector(NSResponder.insertTab(_:)): if !isLast { advance() }
+        case #selector(NSResponder.insertBacktab(_:)): if step > 0 { back() }
+        case #selector(NSResponder.cancelOperation(_:)): onCancel()
+        default: return false
+        }
+        return true
+      }
+      .dialogField()
+      HStack(alignment: .firstTextBaseline, spacing: 12) {
+        KeyHint(verb, "↩")
+        if step > 0 {
+          Text("·").foregroundStyle(.tertiary)
+          KeyHint("上一个", "⇧⇥")
+        }
+      }
+      .dialogHint()
+      HStack {
+        Spacer()
+        Button("取消", action: onCancel)
+        Button(action: advance) { Text(plain: verb) }.buttonStyle(BrandButtonStyle())
+      }
+    }
+  }
+
+  /// 主按钮、键位提示的动词：不是最后一个空是「下一个」，最后一个是粘贴 / 复制
+  private var verb: LocalizedStringResource {
+    if !isLast { return "下一个" }
+    return copies ? "复制" : "粘贴"
+  }
+
+  private func advance() {
+    values[label] = text
+    guard !isLast else { return onDone(values) }
+    step += 1
+    text = values[label] ?? ""
+  }
+
+  private func back() {
+    values[label] = text
+    step -= 1
+    text = values[label] ?? ""
   }
 }
 

@@ -1026,6 +1026,39 @@ struct ShotHistoryTests {
     #expect(history.item(id)?.annotations == [moved])
   }
 
+  /// 标注里裁过（第四轮体检 X17 评审）：原图换成裁好的那张、尺寸跟着改、当初框的那一块清掉，标注是平移过的；
+  /// 只裁、标注没变也要回写；写完盘之前读到的还是旧原图 + 旧标注
+  @Test func updateCroppedRewritesTheOriginal() async throws {
+    let (history, root) = try makeHistory()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let original = pattern()
+    let id = try #require(
+      await history.record(
+        original, composed: original, scale: 2, frame: CGRect(x: 10, y: 10, width: 200, height: 150)
+      ))
+    let cut = try #require(original.cropping(to: CGRect(x: 40, y: 30, width: 200, height: 120)))
+    // 只裁、没有标注
+    history.update(id, annotations: [], composed: cut, original: cut, cropped: true)
+    #expect(history.item(id)?.pixelSize == CGSize(width: 400, height: 300))
+    try await waitForEdit(history, id)
+    let item = try #require(history.item(id))
+    #expect(item.pixelSize == CGSize(width: 200, height: 120))
+    #expect(item.frame == nil)
+    let stored = try #require(await history.image(for: id))
+    let whole = CGRect(x: 0, y: 0, width: 100, height: 60)  // 点（scale 2）
+    #expect(stored.width == 200 && stored.height == 120)
+    #expect(Self.pixels(of: stored, in: whole) == Self.pixels(of: cut, in: whole))
+    // 裁好之后再画：标注在裁好的图的坐标里，合成出来就是这张的大小
+    let arrow = Annotation(shape: .arrow(from: CGPoint(x: 10, y: 10), to: CGPoint(x: 80, y: 40)))
+    let composed = ShotHistory.compose(cut, annotations: [arrow], scale: 2)
+    history.update(id, annotations: [arrow], composed: composed, original: cut, cropped: true)
+    try await waitForEdit(history, id)
+    let again = try #require(history.item(id))
+    #expect(again.annotations == [arrow])
+    let redone = try #require(await history.composed(again))
+    #expect(Self.pixels(of: redone, in: whole) == Self.pixels(of: composed, in: whole))
+  }
+
   /// 打码写原图失败（文件夹只读；闪退同理）：马赛克留在标注里，从历史拷贝 / 钉图 / 拖出去合成出来的还是打了码的，
   /// 不露出明文（E6 评审：原来先把马赛克从标注里拿掉、再在后台写原图）
   @Test func mosaicStaysWhenTheOriginalCannotBeWritten() async throws {

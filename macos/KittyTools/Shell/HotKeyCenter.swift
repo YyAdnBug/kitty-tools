@@ -181,7 +181,7 @@ enum HotKeyAction: String, CaseIterable {
   case clipboard, selectionTranslate, inputTranslate, screenshotTranslate, launcher, screenshot,
     screenshotLastRegion, recognizeText, translateReplace, screenRecord, audioRecord, pinClipboard,
     statusScreen, noteCapture, noteNew, noteAll, launchpad, shotHistory, island, clothesline, home,
-    reminderNew, keepAwake, appShortcuts
+    reminderNew, keepAwake, appShortcuts, noteDeck
 
   var title: String { String(localized: titleResource) }
 
@@ -208,6 +208,7 @@ enum HotKeyAction: String, CaseIterable {
     case .noteCapture: "快速记一条"
     case .noteNew: "新建便签"
     case .noteAll: "全部便签"
+    case .noteDeck: "屏幕边缘的便签"
     case .launchpad: "启动台"
     case .island: "打开刘海岛"
     case .home: "打开主界面"
@@ -283,6 +284,8 @@ enum HotKeyAction: String, CaseIterable {
     case .noteCapture: HotKey(keyCode: kVK_ANSI_N, modifiers: optionKey)
     // 新建便签、全部便签不设默认键：从菜单栏、启动器进，要快捷键到 设置 › 快捷键 里自己设
     case .noteNew, .noteAll: nil
+    // 屏幕边缘那叠（第四轮体检 X16）不设默认键：主入口是鼠标靠过去，键给键盘用户自己设
+    case .noteDeck: nil
     // 启动台（第八族）不设默认键：触控板捏合是主入口（系统那项开着时设置页会提示关），快捷键到 设置 › 快捷键 里自己设（SPEC R8）
     case .launchpad: nil
     // 新建提醒（2026-11-04，提醒 D5）不设默认键：打开启动器、填好「提醒 」，要快捷键到 设置 › 快捷键 里自己设
@@ -358,7 +361,7 @@ enum HotKeyAction: String, CaseIterable {
       .clothesline:
       .screenshot
     case .screenRecord, .audioRecord: .record
-    case .noteCapture, .noteNew, .noteAll: .notes
+    case .noteCapture, .noteNew, .noteAll, .noteDeck: .notes
     case .launchpad: .launchpad
     case .statusScreen: .statusScreen
     case .reminderNew: .reminders
@@ -389,7 +392,7 @@ enum HotKeyAction: String, CaseIterable {
       ]
     ),
     // 便签（PLAN §10「便签」F②）：菜单栏、启动器、快捷键页、速查表各一节，三项同名同序
-    ("便签", [.noteCapture, .noteNew, .noteAll]),
+    ("便签", [.noteCapture, .noteNew, .noteAll, .noteDeck]),
     // 提醒（2026-11-04）：菜单栏里这一节同状态屏，只有一项「提醒」带子菜单（AppDelegate.addReminderMenu）。
     // 便签、提醒、状态屏挨着（功能管理拍板 M3，和设置侧栏同序）
     ("提醒", [.reminderNew]),
@@ -458,6 +461,8 @@ enum HotKeyAction: String, CaseIterable {
     case .noteNew: "kitty.notes.new"
     // 便签家族的符号（设置页头、速查表那一组也是它）
     case .noteAll: "kitty.notes"
+    // 屏幕边缘那一列（X16）：SF 的侧栏
+    case .noteDeck: "sidebar.right"
     case .launchpad: "kitty.launchpad"
     case .island: "kitty.island"
     // 从菜单栏垂下来的那一块
@@ -479,7 +484,7 @@ enum HotKeyAction: String, CaseIterable {
       .pinClipboard, .shotHistory, .clothesline:
       Style.Family.screenshot
     case .statusScreen: Style.Family.statusScreen
-    case .noteCapture, .noteNew, .noteAll: Style.Family.notes
+    case .noteCapture, .noteNew, .noteAll, .noteDeck: Style.Family.notes
     case .launchpad: Style.Family.launchpad
     case .reminderNew: Style.Family.reminders
     case .keepAwake: Style.Family.keepAwake

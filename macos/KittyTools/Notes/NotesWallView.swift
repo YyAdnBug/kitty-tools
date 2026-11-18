@@ -18,7 +18,8 @@
 // - 键盘：方向键在卡片之间走、↩ / 空格打开、⌫ 删除（⌘⌫ 由窗口认）。
 // - 点开和拖动排序是同一个手势（同屏幕边缘那叠的标签）：按下就开始跟，挪过 4 pt 才算拖（只在「全部」里、没在搜索时），
 //   没到就是点了一下。落点只看拖动开始时那份排法（NoteWall.dropTarget）。
-// - 右键菜单和列表行同一份（model.rowItems，系统菜单，ActionSystemMenu）。
+// - 右键菜单和列表行同一份（model.rowItems，系统菜单，ActionSystemMenu）；多选时点在勾上的卡片上是整批的（batchItems）。
+// - 多选（X6）：⌘点按 / ⇧点按卡片勾上（NotesWindowModel.click，不打开编辑卡），勾上的卡片同选中的样子；Esc 取消多选。
 
 import SwiftUI
 
@@ -208,6 +209,7 @@ private struct WallBoard: View, Equatable {
     let (_, shown, layout) = arrangement()
     // 选中的、仓库在 ForEach 外面取一次：每张卡片各读一遍的话，每张都要单独挂一份「盯着它变」
     let (selection, canReorder) = (model.selection, model.canReorder)
+    let marked = model.isMarking ? Set(model.markedVisible) : []
     let items = visible(layout, keeping: [selection, drag?.id])
     return ScrollView {
       ZStack(alignment: .topLeading) {
@@ -221,8 +223,9 @@ private struct WallBoard: View, Equatable {
         }
         ForEach(items) { item in
           card(
-            shown[item.index], at: item.index, in: layout, isSelected: item.id == selection,
-            canReorder: canReorder)
+            shown[item.index], at: item.index, in: layout,
+            isSelected: item.id == selection || marked.contains(item.id),
+            marked: marked.contains(item.id), canReorder: canReorder)
         }
       }
       .frame(maxWidth: .infinity, minHeight: layout.height, alignment: .topLeading)
@@ -284,14 +287,16 @@ private struct WallBoard: View, Equatable {
       return .handled
     }
     .onKeyPress(keys: [.return, .space]) { _ in
-      guard !model.isEditing, let id = model.selection else { return .ignored }
+      guard !model.isEditing, !model.isMarking, let id = model.selection else { return .ignored }
       model.open(id)
       return .handled
     }
     .onDeleteCommand {
-      if !model.isEditing, let id = model.selection { model.delete(id) }
+      if !model.isEditing { model.deleteTargets() }
     }
-    .onExitCommand { model.collapse() }
+    .onExitCommand {
+      if model.isMarking { model.clearMarks() } else { model.collapse() }
+    }
   }
 
   /// 墙上现在的样子：notes 是仓库的顺序（分段排好）、base 按它排；拖着一张时 shown / layout 是让过位之后的
@@ -337,7 +342,8 @@ private struct WallBoard: View, Equatable {
   }
 
   @ViewBuilder private func card(
-    _ note: Note, at index: Int, in layout: NoteWall.Layout, isSelected: Bool, canReorder: Bool
+    _ note: Note, at index: Int, in layout: NoteWall.Layout, isSelected: Bool, marked: Bool,
+    canReorder: Bool
   ) -> some View {
     let frame = layout.frames[index]
     let dragged = drag.flatMap { $0.id == note.id ? $0 : nil }
@@ -357,7 +363,9 @@ private struct WallBoard: View, Equatable {
     // 没验过；能不能拖动排序只在手势里面看（不能拖时照样点得开：.gesture(_, including: .none) 会连点按一起关掉）
     .gesture(cardGesture(note.id, canReorder: canReorder))
     // 系统菜单（右键、⌃ 点按才接），同列表行
-    .overlay { ActionSystemMenu { model.rowItems(note) } }
+    .overlay {
+      ActionSystemMenu { marked ? model.batchItems() : model.rowItems(note) }
+    }
     .accessibilityAction { model.open(note.id) }
     // 旁白的「更多动作」：右键菜单里不带子菜单的那几项（不带「颜色」那一级：每次重画都要，纸色圆点的图不白建）
     .accessibilityActions {
@@ -407,6 +415,9 @@ private struct WallBoard: View, Equatable {
             !model.isEditing
           {
             motion = .glide
+            // ⌘ / ⇧ 点按：勾上，不打开（X6）；不带修饰键的点按先不再多选
+            if model.click(id, modifiers: NSEvent.modifierFlags) { return }
+            model.clearMarks()
             model.open(id)
           }
           return

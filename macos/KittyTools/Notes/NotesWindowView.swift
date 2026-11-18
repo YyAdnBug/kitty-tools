@@ -41,8 +41,27 @@ struct NotesWindowView: View {
         .navigationTitle(HotKeyAction.noteAll.title)
       }
     }
+    .overlay(alignment: .bottom) {
+      if model.isMarking {
+        NotesBatchBar(model: model).padding(.bottom, 14)
+          .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+      }
+    }
+    .animation(Style.Motion.settle.animation(reduced: reduceMotion), value: model.isMarking)
     .background { NotesToolbar(model: model, state: model.toolbarState).equatable() }
     .background { shortcuts }
+    .confirmationDialog(
+      "永久删除这 \(model.erasingBatch.count) 条便签？",
+      isPresented: Binding {
+        !model.erasingBatch.isEmpty
+      } set: {
+        if !$0 { model.erasingBatch = [] }
+      }
+    ) {
+      Button("永久删除", role: .destructive) { model.eraseBatch() }
+    } message: {
+      Text("这些便签会被永久删除，不能撤销。")
+    }
     .onChange(of: model.searchFocus) { searchFocused = true }
     .confirmationDialog(
       "永久删除「\(model.erasing.flatMap(model.store.note)?.displayTitle ?? "")」？",
@@ -158,17 +177,36 @@ struct NotesWindowView: View {
     if notes.isEmpty {
       empty.padding(20)
     } else {
-      List(selection: $model.selection) {
-        ForEach(notes) { note in
-          NoteRow(note: note, store: store, isSelected: note.id == selection)
-            .tag(note.id)
-            // 系统菜单，不用 .contextMenu：SwiftUI 桥出来的右键菜单不带「颜色」每一项前面的纸色圆点
-            .overlay { ActionSystemMenu { model.rowItems(note) } }
+      // 系统的多选：⌘点按 / ⇧点按 / ⌘A（X6，NotesWindowModel.setListSelection）
+      let marked = model.isMarking ? Set(model.markedVisible) : []
+      List(
+        selection: Binding {
+          model.listSelection
+        } set: {
+          model.setListSelection($0)
         }
-        .onMove(perform: model.canReorder ? { model.move(from: $0, to: $1) } : nil)
+      ) {
+        ForEach(notes) { note in
+          NoteRow(
+            note: note, store: store,
+            isSelected: note.id == selection || marked.contains(note.id)
+          )
+          .tag(note.id)
+          // 系统菜单，不用 .contextMenu：SwiftUI 桥出来的右键菜单不带「颜色」每一项前面的纸色圆点。
+          // 多选时点在勾上的那几条之一上：整批的那几项
+          .overlay {
+            ActionSystemMenu {
+              marked.contains(note.id) ? model.batchItems() : model.rowItems(note)
+            }
+          }
+        }
+        // 多选时不拖动排序：onMove 只挪得了一行（评审 A6）
+        .onMove(
+          perform: model.canReorder && !model.isMarking ? { model.move(from: $0, to: $1) } : nil)
       }
       // 焦点在列表上时 ⌫ 也是删除（⌘⌫ 由窗口按键码认，NotesWindow.handlesKeyDown）
-      .onDeleteCommand { if let id = model.selection { model.delete(id) } }
+      .onDeleteCommand { model.deleteTargets() }
+      .onExitCommand { model.clearMarks() }
     }
   }
 
@@ -215,7 +253,11 @@ struct NotesWindowView: View {
   // MARK: 右边
 
   @ViewBuilder private var detail: some View {
-    if let note = model.current {
+    if model.isMarking {
+      // 多选（X6）：右边只说勾了几条，操作在下面那条
+      Text("已选 \(model.markedVisible.count) 条便签").font(.callout).foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    } else if let note = model.current {
       // 一条便签一块编辑区（.id）：换一条时滚动位置、光标、撤销栈都从头来
       NoteEditor(model: model, note: note, fontSize: Prefs.notesFontSize(fontSize)).id(note.id)
     } else if !model.notes.isEmpty {
@@ -240,18 +282,11 @@ struct NotesWindowView: View {
         .disabled(!model.toolbarState.canTask)
       // ⇧⌘Z 重做不挂在这里：同一个字母再挂一个带 ⇧ 的，⌘Z 会被它抢走（由窗口的按键监听认，NotesWindow.handlesKeyDown）
       Button("撤销") { model.undo() }.keyboardShortcut("z")
-      Button("归档") {
-        if let id = model.selection { model.toggleArchived(id) }
-      }
-      .keyboardShortcut("a", modifiers: [.command, .shift])
-      Button("固定") {
-        if let id = model.selection { model.togglePinned(id) }
-      }
-      .keyboardShortcut("p")
-      Button("换颜色") {
-        if let id = model.selection { model.cycleColor(id) }
-      }
-      .keyboardShortcut(".")
+      // 多选时对着勾上的全部（X6）
+      Button("归档") { model.archiveTargets() }
+        .keyboardShortcut("a", modifiers: [.command, .shift])
+      Button("固定") { model.pinTargets() }.keyboardShortcut("p")
+      Button("换颜色") { model.cycleColorTargets() }.keyboardShortcut(".")
       Button(Model.settingsTitle) { model.openSettings() }.keyboardShortcut(",")
       // ⌘1 / ⌘2：便签墙 / 列表（同工具栏上的切换）
       ForEach(Array(Model.Layout.allCases.enumerated()), id: \.element) { index, layout in
@@ -297,37 +332,50 @@ private struct NotesToolbar: View, Equatable {
         .labelStyle(.iconOnly)
         .help("便签墙（⌘1）/ 列表（⌘2）")
       }
+      // 「全部」怎么排（X19）：手动顺序 / 最近修改
+      ToolbarItem(placement: .primaryAction) {
+        Picker(
+          "排序",
+          selection: Binding {
+            state.sort
+          } set: {
+            model.sort = $0
+          }
+        ) {
+          ForEach(Model.Sort.allCases) { Text($0.title).tag($0) }
+        }
+        .pickerStyle(.menu)
+        .labelStyle(.iconOnly)
+        .disabled(!state.canSort)
+        .help("排序：手动顺序 / 最近修改")
+      }
       ToolbarItemGroup(placement: .primaryAction) {
         if state.isTrash {
           Button(Model.restoreTitle, systemImage: "arrow.uturn.backward") {
-            if let note = model.current { model.restore(note.id) }
+            model.restoreTargets()
           }
           .disabled(!state.hasNote)
           .help(Model.restoreTitle)
           Button(role: .destructive) {
-            if let note = model.current { model.delete(note.id) }
+            model.deleteTargets()
           } label: {
             Label(Model.eraseTitle, systemImage: "trash.slash").foregroundStyle(Style.danger)
           }
           .disabled(!state.hasNote)
           .help("永久删除（⌘⌫）")
         } else {
-          Button(state.pinTitle, systemImage: state.pinSymbol) {
-            if let note = model.current { model.togglePinned(note.id) }
-          }
-          .disabled(!state.hasNote)
-          .help("\(state.pinTitle)（⌘P）")
-          Button(state.archiveTitle, systemImage: "archivebox") {
-            if let note = model.current { model.toggleArchived(note.id) }
-          }
-          .disabled(!state.hasNote)
-          .help("\(state.archiveTitle)（⇧⌘A）")
+          Button(state.pinTitle, systemImage: state.pinSymbol) { model.pinTargets() }
+            .disabled(!state.hasNote)
+            .help("\(state.pinTitle)（⌘P）")
+          Button(state.archiveTitle, systemImage: "archivebox") { model.archiveTargets() }
+            .disabled(!state.hasNote)
+            .help("\(state.archiveTitle)（⇧⌘A）")
           Button(Model.taskTitle, systemImage: Model.taskSymbol) { model.toggleTask() }
             .disabled(!state.canTask)
             .help(Model.taskHelp)
           // 系统菜单，不用 SwiftUI 的 Menu：放进工具栏的 Menu 不画每一项前面的纸色圆点（2026-10-13 真机）
           Button(Model.colorTitle, systemImage: "paintpalette") {
-            if let note = model.current { NSMenu.of(model.colorItems(note)).popUpAtPointer() }
+            NSMenu.of(model.targetColorItems()).popUpAtPointer()
           }
           .disabled(!state.hasNote)
           .help("换颜色（⌘. 换下一种）")
@@ -338,7 +386,7 @@ private struct NotesToolbar: View, Equatable {
           .disabled(!state.canFloat)
           .help(state.floatTitle)
           Button(role: .destructive) {
-            if let note = model.current { model.delete(note.id) }
+            model.deleteTargets()
           } label: {
             Label(Model.deleteTitle, systemImage: "trash").foregroundStyle(Style.danger)
           }
@@ -505,5 +553,52 @@ struct NoteEditor: View {
       .padding(.horizontal, Self.margin)
       .padding(.top, 14)
     }
+  }
+}
+
+/// 多选时浮在窗口底部的一条（X6）：已选几条 ·（最近删除里）放回 / 永久删除，（别处）固定 · 归档 · 颜色 · 删除 · 取消选择。
+/// 和工具栏、右键菜单同一份操作（NotesWindowModel 的 …Targets）
+private struct NotesBatchBar: View {
+  let model: NotesWindowModel
+
+  private typealias Model = NotesWindowModel
+
+  var body: some View {
+    let count = model.markedVisible.count
+    HStack(spacing: 14) {
+      Text("已选 \(count) 条").font(.system(size: 13, weight: .medium)).monospacedDigit()
+      Divider().frame(height: 16)
+      if model.scope == .trash {
+        Button(Model.restoreTitle, systemImage: "arrow.uturn.backward") { model.restoreTargets() }
+        DangerButton("\(Model.eraseTitle)") { model.deleteTargets() }
+      } else {
+        Button(Model.pinTitle(nil), systemImage: "pin") { model.pinTargets() }
+        Button(
+          model.scope == .archive ? Model.unarchiveTitle : Model.archiveTitle(nil),
+          systemImage: "archivebox"
+        ) { model.archiveTargets() }
+        Button(Model.colorTitle, systemImage: "paintpalette") {
+          NSMenu.of(model.targetColorItems()).popUpAtPointer()
+        }
+        Button(role: .destructive) {
+          model.deleteTargets()
+        } label: {
+          Label(Model.deleteTitle, systemImage: "trash").foregroundStyle(Style.danger)
+        }
+      }
+      Divider().frame(height: 16)
+      Button("取消选择") { model.clearMarks() }
+        .keyboardShortcut(.cancelAction)
+    }
+    .buttonStyle(.borderless)
+    .font(.system(size: 13))
+    .padding(.horizontal, 16)
+    .frame(height: 40)
+    .background {
+      Capsule().fill(.regularMaterial).floatingShadow()
+    }
+    .overlay(Capsule().hairlineBorder())
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("已选 \(count) 条便签")
   }
 }

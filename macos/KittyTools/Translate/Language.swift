@@ -11,6 +11,8 @@ nonisolated enum Lang: String, CaseIterable, Codable, Sendable {
   case zhHans = "zh-Hans"
   case zhHant = "zh-Hant"
   case en, ja, ko, fr, de, es, ru, pt, it
+  // 第四轮体检 X1（2026-11-17）：常用的 30 种。新的只能加在末尾（浮窗、设置里的列表按这个顺序；原值存进偏好和历史）
+  case vi, th, id, ms, ar, tr, hi, nl, pl, uk, sv, da, fi, nb, cs, el, he, hu, ro
 
   /// 界面上的语言名（跟界面语言）
   var titleResource: LocalizedStringResource {
@@ -26,6 +28,25 @@ nonisolated enum Lang: String, CaseIterable, Codable, Sendable {
     case .ru: "俄语"
     case .pt: "葡萄牙语"
     case .it: "意大利语"
+    case .vi: "越南语"
+    case .th: "泰语"
+    case .id: "印尼语"
+    case .ms: "马来语"
+    case .ar: "阿拉伯语"
+    case .tr: "土耳其语"
+    case .hi: "印地语"
+    case .nl: "荷兰语"
+    case .pl: "波兰语"
+    case .uk: "乌克兰语"
+    case .sv: "瑞典语"
+    case .da: "丹麦语"
+    case .fi: "芬兰语"
+    case .nb: "挪威语"
+    case .cs: "捷克语"
+    case .el: "希腊语"
+    case .he: "希伯来语"
+    case .hu: "匈牙利语"
+    case .ro: "罗马尼亚语"
     }
   }
 
@@ -60,6 +81,25 @@ nonisolated enum Lang: String, CaseIterable, Codable, Sendable {
     case .ru: "Russian"
     case .pt: "Portuguese"
     case .it: "Italian"
+    case .vi: "Vietnamese"
+    case .th: "Thai"
+    case .id: "Indonesian"
+    case .ms: "Malay"
+    case .ar: "Arabic"
+    case .tr: "Turkish"
+    case .hi: "Hindi"
+    case .nl: "Dutch"
+    case .pl: "Polish"
+    case .uk: "Ukrainian"
+    case .sv: "Swedish"
+    case .da: "Danish"
+    case .fi: "Finnish"
+    case .nb: "Norwegian"
+    case .cs: "Czech"
+    case .el: "Greek"
+    case .he: "Hebrew"
+    case .hu: "Hungarian"
+    case .ro: "Romanian"
     }
   }
 
@@ -77,6 +117,25 @@ nonisolated enum Lang: String, CaseIterable, Codable, Sendable {
     case .ru: "ru-RU"
     case .pt: "pt-BR"
     case .it: "it-IT"
+    case .vi: "vi-VN"
+    case .th: "th-TH"
+    case .id: "id-ID"
+    case .ms: "ms-MY"
+    case .ar: "ar-SA"
+    case .tr: "tr-TR"
+    case .hi: "hi-IN"
+    case .nl: "nl-NL"
+    case .pl: "pl-PL"
+    case .uk: "uk-UA"
+    case .sv: "sv-SE"
+    case .da: "da-DK"
+    case .fi: "fi-FI"
+    case .nb: "nb-NO"
+    case .cs: "cs-CZ"
+    case .el: "el-GR"
+    case .he: "he-IL"
+    case .hu: "hu-HU"
+    case .ro: "ro-RO"
     }
   }
 
@@ -98,6 +157,25 @@ nonisolated enum Lang: String, CaseIterable, Codable, Sendable {
     case .ru: .russian
     case .pt: .portuguese
     case .it: .italian
+    case .vi: .vietnamese
+    case .th: .thai
+    case .id: .indonesian
+    case .ms: .malay
+    case .ar: .arabic
+    case .tr: .turkish
+    case .hi: .hindi
+    case .nl: .dutch
+    case .pl: .polish
+    case .uk: .ukrainian
+    case .sv: .swedish
+    case .da: .danish
+    case .fi: .finnish
+    case .nb: .norwegian
+    case .cs: .czech
+    case .el: .greek
+    case .he: .hebrew
+    case .hu: .hungarian
+    case .ro: .romanian
     }
   }
 

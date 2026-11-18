@@ -145,6 +145,26 @@ struct ClipboardPanelTests {
     #expect(model.multiSelection.isEmpty)
   }
 
+  /// X20：片段里有 {input}：复制先开填空对话框，填完才写剪贴板、用填的字；那条这期间删了就说没能复制
+  @Test func fillInputsBeforeCopying() throws {
+    let (model, store) = try makeModel(["一"])
+    var snippet = ClipItem(kind: .text)
+    snippet.text = "你好 {input:称呼}，{input:称呼}"
+    snippet.isSnippet = true
+    store.record(snippet)
+    var written: [String] = []
+    model.writeClipboard = { written.append($0.first?.string(forType: .string) ?? "") }
+    let item = try #require(store.items.first { $0.isSnippet })
+    model.copy([item])
+    guard case .fill(let fill)? = model.dialog else {
+      Issue.record("没开填空对话框")
+      return
+    }
+    #expect(written.isEmpty && fill.labels == ["称呼"] && fill.copies)
+    model.finishFill(fill, values: ["称呼": "张三"])
+    #expect(model.dialog == nil && written == ["你好 张三，张三"])
+  }
+
   /// 右键 / ⌘Y 页脚「复制」只复制被点的那一条，不管勾选了什么（体检 B9）
   @Test func copyTargetsTheClickedItem() throws {
     let (model, store) = try makeModel(["一", "二", "三"])

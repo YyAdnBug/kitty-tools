@@ -31,8 +31,10 @@ import SwiftUI
   var layout = AppShortcutsLayout.make(rows: [], available: NSSize(width: 1440, height: 900))
   /// 留住了（点了面板、用快捷键打开的）：拿着键盘，能搜、↑↓、↩
   var isStaying = false
-  /// 用快捷键打开的（不是按住 ⌘ 弹的）：没响应时的提示不说「再按住 ⌘」
+  /// 用快捷键打开的（不是按住修饰键弹的）：没响应时的提示不说「再按住 ⌘」
   var openedByKey = false
+  /// 按住的是哪个键（「再按住 ⌥ 试试」）
+  var holdSymbol = ModifierTaps.Key.command.symbol
   private(set) var query = ""
   /// 选中的那一行（MenuShortcut.id）；没搜、也没按过 ↑↓ 时没有
   var selection: [Int]?
@@ -417,7 +419,8 @@ struct AppShortcutsView: View {
   @ViewBuilder private var empty: some View {
     if !model.finished {
       EmptyState(symbol: "hourglass", title: "这个 App 没响应") {
-        (model.openedByKey ? Text("过一会儿再试试") : Text("过一会儿再按住 ⌘ 试试")).foregroundStyle(.secondary)
+        (model.openedByKey ? Text("过一会儿再试试") : Text("过一会儿再按住 \(model.holdSymbol) 试试"))
+          .foregroundStyle(.secondary)
       }
     } else if model.unreadable {
       EmptyState(symbol: "menubar.rectangle", title: "读不到这个 App 的菜单") {

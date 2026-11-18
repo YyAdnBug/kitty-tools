@@ -1,9 +1,14 @@
-// 访达右键「压缩为 ▸ ZIP、7Z」「解压到这里」（2026-11-08 右键扩充第 2 批，拍板 D1 D2）。都交给系统自带的 tar（bsdtar；另起进程，
-// 不卡主线程、停得住），不带第三方：
+// 访达右键「压缩为 ▸ ZIP、7Z、TAR.GZ」「解压到这里」（2026-11-08 右键扩充第 2 批，拍板 D1 D2；TAR.GZ 2026-11-17）。都交给系统自带的
+// tar（bsdtar；另起进程，不卡主线程、停得住），不带第三方：
 // - 压缩：一样东西叫「名字.zip」，几样叫「归档.zip」（同访达；跟当时的界面语言，英文界面「Archive.zip」），放在第一样所在的
 //   文件夹、重名加「 2」。zip 里的名字标上 UTF-8（zip:hdrcharset=UTF-8；访达和 ditto 打的不标，别的系统解开中文名会乱码，
 //   2026-11-08 实测），不带 __MACOSX、._*、.DS_Store（--no-mac-metadata 加排除）；7z 用 LZMA2。只选了一个包（App 这类）时 zip 改用 ditto（同访达的压缩：带着扩展属性，
 //   签名不坏）。不同文件夹里的同名东西包里只放得下一个，不打。不做带密码的压缩（拍板）。
+//   tar.gz（2026-11-17）：gzip 是 tar 自带的 zlib，不靠外面的程序；名字按 pax 存成 UTF-8。另加 --no-xattrs --no-acls --no-fflags：
+//   --no-mac-metadata 只管 ._ 那份，扩展属性（每个文件都有的 com.apple.provenance、下载来的隔离标记）、上锁 / 隐藏标志照样写进
+//   pax 头（LIBARCHIVE.xattr.*、SCHILY.fflags，实测），Linux 的 GNU tar 解的时候每个文件报一句「Ignoring unknown extended header
+//   keyword」。别的几种不加：.tar.xz 慢（38 MB 22 s，gz 1.7 s，只小两成）、.tar.zst 系统 tar 没带 zstd、要外面的程序（实测报错），
+//   .tar.bz2 / 不压缩的 .tar 用的人少，菜单不加长。
 // - 解压：zip、7z、rar、tar 一族（.tar、.tar.gz / .tgz、.tar.xz / .txz、.tar.bz2 / .tbz），和只压了一个文件的 .gz / .bz2
 //   （系统的 gunzip / bunzip2，解出来的叫包名去掉 .gz，带上包的隔离标记）。RAR（2026-11-12）：系统 tar 是 libarchive 3.7.4，
 //   RAR4、RAR5 都解得开（本机样本实测，字节数和清单一致）；带密码的解不开（libarchive 不解 RAR 的密码：头加了密的 tar 说
@@ -21,6 +26,19 @@
 //   开头、任意一层结尾，* 和 ? 还跨「/」——「Screenshot*.png」会扔掉 Screenshots/2024/a.png；[ ] \ 也被当成通配）：先用 find
 //   按名字找出要跳的确切路径（skipFindArguments：-name 只看名字，最外层 -depth +0 不算，包 -prune 不进去），转义后写进一个
 //   临时文件交给 tar -X（escapedForTar）；进度的总大小 = 全部 − 跳过的那几样（skipped）。
+// - 只差大小写的文件（2026-11-17 拍板 A2）：Mac 的盘默认不分大小写，包里有 src/Readme.md 和 src/README.md 时 tar 解出来只剩
+//   后一个、照样退出 0（实测）；文件 BUILD 后面跟着文件夹 build/ 时，文件被文件夹顶掉、也退出 0（评审实测）。解压加 -v 让 tar
+//   报出解了哪些，caseClashes 按包里的先后找出被顶掉的文件（文件夹只参与比：同名的文件夹合在一起，留第一个的写法），再一次把它们
+//   都解到旁边的临时文件夹（同一组里丢了不止一个时分几轮，免得在临时文件夹里又撞上），改名加「 2」放回原来那一层（同访达拷贝
+//   重名），刘海岛说一声；平时不多读一遍包，只有撞名时才多读，进度条照走。分大小写的盘（volumeSupportsCaseSensitiveNames）上
+//   两个本来都在，不做。另存不了的（名字里有「\」——-v 会把它打成「\\」，对不上；包里是绝对路径；落不下）照实说几个。
+//   -v 要 UTF-8 的 locale（不然中文名打成转义），出错原因里先去掉 -v 报的名字（extractErrors）。
+// - 包旁边放不下（只读的盘、没有写权限的文件夹；2026-11-17 拍板 B1）：动手之前先看（unwritable；不然 tar 只说「Failed to open」），
+//   刘海岛上带「放到下载」「选择位置…」两个按钮，换个地方再做（同几家解压软件碰到只读位置时问放哪）。
+// - 解压后把压缩包移到废纸篓（2026-11-17 拍板 B2，设置一项、默认关；同系统归档实用工具「展开后：将归档移到废纸篓」）：
+//   解成功才移，刘海岛上带「放回压缩包」（从废纸篓挪回原处，不覆盖）。按住 ⌥ 的「解压到…」（B3）先选放在哪，走同一个 into。
+// - 压缩时有文件读不到（2026-11-17 拍板 A3）：说出是哪个（unreadable：tar 的「Can't open `x'」「x: Couldn't visit directory」
+//   「x: Cannot stat」），整个照旧不打（同访达自带的压缩）；原来一律说成「没有权限读写这个位置」。
 // - 进度条（ByteMeter）：压缩按读过的字节（tar -v / ditto -V 报做完的文件，加上正读着的那个读到哪了），解压按压缩包读到第几个
 //   字节，刘海岛上「42% · 1.2 GB / 2.9 GB」。
 // - 落到正式名字都用「目标已存在就报错」的改名（FileMoves.land），算完名字到落下之间别人占了也盖不掉；和移动、复制排在同一条队
@@ -30,7 +48,8 @@
 //   iCloud 云盘这类还没下载下来的包不读（一读就要整个下载、主线程卡到下完）：不认 GBK、不预先问密码，tar 说要密码时再问。
 // ponytail: tar 打的 zip / 7z 里不带访达的标签、替身、上锁、自定义图标（bsdtar 的 zip 写入不存这些，评审实测；设置页写明了，
 //   在 Mac 之间原样传用访达自带的「压缩」）。叫「._*」「__MACOSX」的普通文件也会被当成杂文件跳过。
-// ponytail: 解区分大小写的 tar 包（Linux 的源码）到不分大小写的盘上，只差大小写的会少一个、tar 照样退出 0；有人报了再对 tar -t 的条数。
+// ponytail: 解压后在主线程上拆一遍 tar -v 的输出找撞名（caseClashes）：几千条无感，二十万条的包估计要停顿一秒左右（没量过）；
+//   碰到再挪出主线程（mac-native §3 的 @concurrent 白名单里没有这一类，要先拍板）。
 // ponytail: 7z 是先把整份压缩数据暂存在启动盘的临时目录里再写到目标（bsdtar 的做法），空间不够说的是启动盘。
 // ponytail: zip 的密码放在 tar 的命令行上（--passphrase，本机同一个用户的进程用 ps 看得到）：tar 只认它和终端输入。
 
@@ -40,6 +59,7 @@ import AppKit
   nonisolated enum Format: String {
     case zip
     case sevenZip = "7z"
+    case tarGz = "tar.gz"
   }
 
   /// 压缩还是解压（刘海岛上说哪一个）
@@ -49,7 +69,8 @@ import AppKit
 
   /// 一次的结果
   nonisolated enum Outcome: Equatable {
-    case done(URL)
+    /// renamed：解压时只差大小写、另存的那几个的新名字；unsaved：只差大小写、没能另存的几个
+    case done(URL, renamed: [String] = [], unsaved: Int = 0)
     case stopped
     /// 没给密码，tar 说要（中央目录没读出来加密的条目时）
     case needsPassword
@@ -131,6 +152,17 @@ import AppKit
     return base + "." + format.rawValue
   }
 
+  /// 包落在 folder 里叫什么：重名加「 2」。tar.gz 的「 2」加在整个扩展名前面（「资料 2.tar.gz」）：FileMoves.freeName 只认最后一段
+  /// 扩展名（同访达拷贝时），会让成「资料.tar 2.gz」，再「解压到这里」就被当成只压了一个文件的 .gz
+  nonisolated static func freeName(_ name: String, format: Format, in folder: URL) -> String {
+    guard format == .tarGz, name.hasSuffix(".tar.gz") else {
+      return FileMoves.freeName(name, in: folder, used: [])
+    }
+    return NewFile.freeName(String(name.dropLast(3))) {
+      FileMoves.occupied(folder.appending(path: $0 + ".gz"))
+    } + ".gz"
+  }
+
   /// 同名的（不分大小写、统一合成形式：解到 Mac 上会撞）第一个：包里只放得下一个
   nonisolated static func clash(in items: [URL]) -> String? {
     var seen = Set<String>()
@@ -186,11 +218,12 @@ import AppKit
       + either(packages.map { "*." + $0 }) + [")", "-type", "d", "-prune"]
   }
 
-  /// 交给 tar -X 的一行：确切路径（「./名字/…」，同 tar 自己走目录时看到的样子），* ? [ ] \ 前面加反斜杠，不让它当通配
+  /// 交给 tar 的一个确切路径（-X 的一行、解压时跟在 -- 后面的写法）：* ? [ ] \ 前面加反斜杠，不让它当通配；^ $ 也加
+  /// （开头的 ^、结尾的 $ 会被当成锚点：「^Readme」解出了「Readme」，评审实测）
   nonisolated static func escapedForTar(_ path: String) -> String {
     var line = ""
     for character in path {
-      if "\\*?[]".contains(character) { line.append("\\") }
+      if "\\*?[]^$".contains(character) { line.append("\\") }
       line.append(character)
     }
     return line
@@ -232,12 +265,14 @@ import AppKit
   nonisolated static func compressArguments(
     _ items: [URL], format: Format, to archive: URL, excludes: URL? = nil
   ) -> [String] {
-    var arguments = [
-      "-c", "-v", "-f", archive.path(percentEncoded: false), "--format",
-      format == .zip ? "zip" : "7zip",
-      "--options", format == .zip ? "zip:hdrcharset=UTF-8" : "7zip:compression=lzma2",
-      "--no-mac-metadata", "-s", "|^\\./||S",
-    ]
+    var arguments = ["-c", "-v", "-f", archive.path(percentEncoded: false)]
+    switch format {
+    case .zip: arguments += ["--format", "zip", "--options", "zip:hdrcharset=UTF-8"]
+    case .sevenZip: arguments += ["--format", "7zip", "--options", "7zip:compression=lzma2"]
+    // 格式用 tar 默认的（用得着才写 pax 头的 ustar）；扩展属性、ACL、文件标志不带（见文件头）
+    case .tarGz: arguments += ["-z", "--no-xattrs", "--no-acls", "--no-fflags"]
+    }
+    arguments += ["--no-mac-metadata", "-s", "|^\\./||S"]
     arguments += junk.flatMap { ["--exclude", $0] }
     if let excludes { arguments += ["-X", excludes.path(percentEncoded: false)] }
     var folder: String?
@@ -257,11 +292,124 @@ import AppKit
     _ archive: URL, into folder: URL, gbk: Bool, password: String?
   ) -> [String] {
     var arguments = [
-      "-x", "-f", archive.path(percentEncoded: false), "-C", folder.path(percentEncoded: false),
+      "-x", "-v", "-f", archive.path(percentEncoded: false), "-C",
+      folder.path(percentEncoded: false),
       "--passphrase", password ?? "kitty-no-password",
     ]
     if gbk { arguments += ["--options", "hdrcharset=GB18030"] }
     return arguments + junk.flatMap { ["--exclude", $0] }
+  }
+
+  /// 解压时 tar -v 报的条目（「x 路径」，文件夹带结尾的「/」）。按「\n」拆：名字里的 U+2028 这类 tar 原样打出来，
+  /// 不能按 isNewline 拆。报错的那一行是「x 路径: 原因」，只在失败时有
+  nonisolated static func extractedEntries(_ stderr: String) -> [String] {
+    stderr.split(separator: "\n").compactMap { line in
+      line.hasPrefix("x ") ? String(line.dropFirst(2)) : nil
+    }
+  }
+
+  /// 不分大小写的盘上被顶掉的文件：按包里的先后，路径（不分大小写、不分合成形式，同 Mac 的盘）对得上、写法不一样的——
+  /// 后来的文件盖掉前面的文件；后来的文件夹顶掉前面的文件（tar 先删文件再建文件夹）；文件夹之间合在一起、不算丢。
+  /// 写法一模一样的不算（tar 包本来就是后一个为准）。给回被顶掉的文件，按包里的先后
+  nonisolated static func caseClashes(_ entries: [String]) -> [String] {
+    var occupant: [String: (name: String, folder: Bool)] = [:]
+    var lost: [String] = []
+    for entry in entries {
+      let folder = entry.hasSuffix("/")
+      let name = folder ? String(entry.dropLast()) : entry
+      let key = name.precomposedStringWithCanonicalMapping.lowercased()
+      if let current = occupant[key], current.name != name, !current.folder,
+        !lost.contains(current.name)
+      {
+        lost.append(current.name)
+      }
+      // 文件夹已经在了就还是它（它的写法留着）；别的情况换成这一个。同一个写法的文件后面又来一次：盘上是它最后那一份，
+      // 按这个写法再解也只拿得到这一份，不算丢
+      if !(folder && occupant[key]?.folder == true) {
+        occupant[key] = (name, folder)
+        if !folder { lost.removeAll { $0 == name } }
+      }
+    }
+    return lost
+  }
+
+  /// 被顶掉的几个分成几轮：同一轮里没有两个对得上，也没有一个在另一个「里面」（丢的文件 a 和丢的 A/b 一起解，
+  /// A/b 会因为 a 是文件建不了文件夹，评审实测）。一般只有一轮
+  nonisolated static func rounds(_ lost: [String]) -> [[String]] {
+    var rounds: [[String]] = []
+    let key = { (entry: String) in entry.precomposedStringWithCanonicalMapping.lowercased() }
+    let clash = { (a: String, b: String) in a == b || a.hasPrefix(b + "/") || b.hasPrefix(a + "/") }
+    for entry in lost {
+      let mine = key(entry)
+      if let index = rounds.firstIndex(where: { round in
+        !round.contains { clash(key($0), mine) }
+      }) {
+        rounds[index].append(entry)
+      } else {
+        rounds.append([entry])
+      }
+    }
+    return rounds
+  }
+
+  /// 出错原因只看原因：-v 报的「x 路径」去掉，「x 路径: 原因」只留原因（文件名里的字别被当成原因认，比如叫 encrypted.txt 的文件）
+  nonisolated static func extractErrors(_ stderr: String) -> String {
+    stderr.split(separator: "\n").compactMap { line -> Substring? in
+      guard line.hasPrefix("x ") else { return line }
+      return line.range(of: ": ").map { line[$0.upperBound...] }
+    }.joined(separator: "\n")
+  }
+
+  /// 压缩时读不到的那一样（tar 的标准错误里的「Can't open `x'」「x: Couldn't visit directory」「x: Cannot stat」），给名字和原因
+  nonisolated static func unreadable(_ errors: String) -> (
+    name: String, missing: Bool, denied: Bool
+  )? {
+    for line in errors.split(whereSeparator: \.isNewline) {
+      var path: Substring?
+      if let open = line.range(of: "Can't open `"),
+        let close = line.range(of: "'", options: .backwards),
+        open.upperBound <= close.lowerBound
+      {
+        path = line[open.upperBound..<close.lowerBound]
+      } else if line.hasPrefix("tar: "),
+        let end = line.range(of: ": Couldn't visit directory") ?? line.range(of: ": Cannot stat")
+      {
+        path = line[line.index(line.startIndex, offsetBy: 5)..<end.lowerBound]
+      }
+      guard let path, !path.isEmpty else { continue }
+      return (
+        (path as NSString).lastPathComponent, line.contains("No such file"),
+        line.contains("Permission denied") || line.contains("Operation not permitted")
+      )
+    }
+    return nil
+  }
+
+  /// 压缩失败，给人看的原因
+  nonisolated static func packFailure(_ errors: String, format: Format) -> String {
+    let problem = placeProblem(errors)
+    if problem == .noSpace {
+      return format == .sevenZip
+        ? String(localized: "磁盘空间不够了（7z 还要先在启动盘上暂存一份）") : PlaceProblem.noSpace.text
+    }
+    if let item = unreadable(errors) {
+      if item.missing { return String(localized: "「\(item.name)」不见了（压缩时被移走或改了名）") }
+      return item.denied
+        ? String(localized: "「\(item.name)」读不到（没有权限）") : String(localized: "「\(item.name)」读不到")
+    }
+    // 写不了包本身：tar 只说「Failed to open '包'」（实测），动手前已经看过一遍（unwritable），这里是做到一半才变的
+    if errors.contains("Failed to open") { return PlaceProblem.noPermission.text }
+    return problem?.text ?? String(localized: "有文件读不到（被移走、改名了，或者没有权限）")
+  }
+
+  /// 往 folder 里写不了时的原因（只读的盘、没有写权限）；写得了是 nil。动手之前看：不然白打完一整包才知道
+  static func unwritable(_ folder: URL) -> String? {
+    guard !FileManager.default.isWritableFile(atPath: folder.path(percentEncoded: false)) else {
+      return nil
+    }
+    let readOnly =
+      (try? folder.resourceValues(forKeys: [.volumeIsReadOnlyKey]))?.volumeIsReadOnly == true
+    return readOnly ? PlaceProblem.readOnly.text : String(localized: "没有权限写这个位置")
   }
 
   /// 空间、权限这类和包本身无关的原因（压缩、解压都用）
@@ -378,11 +526,7 @@ import AppKit
     if Task.isCancelled {
       failure = .stopped
     } else if let result, result.status != 0 {
-      let problem = placeProblem(ByteMeter.errors(result.error))
-      failure = .failed(
-        format == .sevenZip && problem == .noSpace
-          ? String(localized: "磁盘空间不够了（7z 还要先在启动盘上暂存一份）")
-          : problem?.text ?? String(localized: "有文件读不到（被移走、改名了，或者没有权限）"))
+      failure = .failed(packFailure(ByteMeter.errors(result.error), format: format))
     } else if result == nil {
       failure = .failed(String(localized: "系统的工具没能运行"))
     } else if let placed = FileMoves.land(temporary, at: archive) {
@@ -395,7 +539,8 @@ import AppKit
     return failure
   }
 
-  static func compress(_ files: [URL], format: Format, island: Island?) {
+  /// into：放到哪个文件夹（nil = 第一样所在的文件夹；放不下时刘海岛上换的地方）
+  static func compress(_ files: [URL], format: Format, island: Island?, into: URL? = nil) {
     var items: [URL] = []
     for file in files where FileMoves.occupied(file) {
       let path = FileMoves.plainPath(file)
@@ -410,16 +555,27 @@ import AppKit
         "没有压缩", detail: "「\(name)」有不止一个（在不同的文件夹里），包里只放得下一个", tone: .warning)
       return
     }
-    let folder = URL(
-      filePath: (FileMoves.plainPath(first) as NSString).deletingLastPathComponent,
-      directoryHint: .isDirectory)
+    let folder =
+      into
+      ?? URL(
+        filePath: (FileMoves.plainPath(first) as NSString).deletingLastPathComponent,
+        directoryHint: .isDirectory)
+    if let reason = unwritable(folder) {
+      let chosen = items
+      island?.show(
+        "没有压缩", detail: "\(reason)", tone: .warning,
+        actions: elsewhere(than: folder, verb: .compress) { place in
+          compress(chosen, format: format, island: island, into: place)
+        })
+      return
+    }
     let name = archiveName(for: items, format: format)
     let skip = skipNames(UserDefaults.standard.string(forKey: Prefs.finderCompressSkip) ?? "")
     FileMoves.enqueue("正在压缩成「\(name)」…", detail: ByteMeter.preparing, island: island) {
       report in
       await pack(
         items, format: format,
-        to: folder.appending(path: FileMoves.freeName(name, in: folder, used: [])), skip: skip,
+        to: folder.appending(path: freeName(name, format: format, in: folder)), skip: skip,
         report: report)
     } finish: { outcome in
       report(outcome, verb: .compress, island: island)
@@ -428,9 +584,10 @@ import AppKit
 
   // MARK: 解压
 
-  /// 解一个包到它旁边
+  /// 解一个包到它旁边（into：另放到哪个文件夹）
   static func unpack(
-    _ archive: URL, password: String?, gbk: Bool, report: @escaping FileMoves.Report = { _, _ in }
+    _ archive: URL, password: String?, gbk: Bool, into: URL? = nil,
+    report: @escaping FileMoves.Report = { _, _ in }
   ) async -> Outcome {
     let manager = FileManager.default
     // 进度：压缩包读到第几个字节 ÷ 包有多大（ByteMeter，看子进程开着的那个包）
@@ -441,7 +598,7 @@ import AppKit
       let value = meter.archiveValue(ByteMeter.reading(pid: pid, named: name))
       report(meter.fraction(value), meter.detail(value))
     }
-    let parent = archive.deletingLastPathComponent()
+    let parent = into ?? archive.deletingLastPathComponent()
     let work = FileMoves.temporary(in: parent)
     guard (try? manager.createDirectory(at: work, withIntermediateDirectories: false)) != nil else {
       FileMoves.release(work)
@@ -478,24 +635,101 @@ import AppKit
     } else {
       result = try? await Subprocess.run(
         "/usr/bin/tar", extractArguments(archive, into: work, gbk: gbk, password: password),
-        captures: true, quality: .userInitiated, stopsOnCancel: true, watch: watch)
+        captures: true, environment: ByteMeter.utf8Environment, quality: .userInitiated,
+        stopsOnCancel: true, watch: watch)
+    }
+    var renamed: [String] = []
+    var unsaved = 0
+    let caseSensitive =
+      (try? work.resourceValues(forKeys: [.volumeSupportsCaseSensitiveNamesKey]))?
+      .volumeSupportsCaseSensitiveNames == true
+    if let result, result.status == 0, !Task.isCancelled, decompressor(for: archive) == nil,
+      !caseSensitive
+    {
+      let lost = caseClashes(extractedEntries(result.error))
+      if !lost.isEmpty {
+        (renamed, unsaved) = await recover(
+          lost, from: archive, into: work, gbk: gbk, password: password, watch: watch)
+      }
     }
     let failure: Outcome
     if Task.isCancelled {
       failure = .stopped
     } else if let result, result.status != 0 {
       failure = outcome(
-        ofFailure: result.error, password: password != nil, rar: suffix(of: archive) == ".rar")
+        ofFailure: extractErrors(result.error), password: password != nil,
+        rar: suffix(of: archive) == ".rar")
     } else if result == nil {
       failure = .failed(String(localized: "系统的工具没能运行"))
     } else if let placed = settle(work, stem: stem(of: archive), in: parent) {
       FileMoves.release(work)
-      return .done(placed)
+      return .done(placed, renamed: renamed, unsaved: unsaved)
     } else {
       failure = .failed(String(localized: "没能放到压缩包旁边"))
     }
     await FileMoves.discard(work)
     return failure
+  }
+
+  /// 被顶掉的那几个（caseClashes）：每一轮（rounds）一次把它们都解到旁边的临时文件夹（tar 按写法认、分大小写，只解这几个；
+  /// 再读一遍包，进度条照走），名字加「 2」放回 work 里它原来那一层（那一层是包里只读的文件夹时先临时放开写权限）。给回另存的
+  /// 新名字和没能另存的个数：名字里有「\」的（-v 把它打成「\\」，对不上）、解不出来的（包里是绝对路径这类）、解出来不是文件的
+  /// （包里同一个写法既是文件又是文件夹）、落不下的算没能另存。写法后面加「$」只认这一条（tar 的写法按前缀认，「a」会把 a/ 下面的
+  /// 都解出来；zip、7z、tar 的文件夹 -v 都带结尾的「/」，实测）
+  static func recover(
+    _ lost: [String], from archive: URL, into work: URL, gbk: Bool, password: String?,
+    watch: ((pid_t, String) -> Void)? = nil
+  ) async -> (renamed: [String], unsaved: Int) {
+    var names: [String] = []
+    var unsaved = lost.count { $0.contains("\\") }
+    let manager = FileManager.default
+    for round in rounds(lost.filter { !$0.contains("\\") }) where !Task.isCancelled {
+      let scratch = FileMoves.temporary(in: work.deletingLastPathComponent())
+      guard (try? manager.createDirectory(at: scratch, withIntermediateDirectories: false)) != nil
+      else {
+        FileMoves.release(scratch)
+        unsaved += round.count
+        continue
+      }
+      _ = try? await Subprocess.run(
+        "/usr/bin/tar",
+        extractArguments(archive, into: scratch, gbk: gbk, password: password) + ["--"]
+          + round.map { escapedForTar($0) + "$" }, captures: true,
+        environment: ByteMeter.utf8Environment,
+        quality: .userInitiated, stopsOnCancel: true, watch: watch)
+      for entry in round where !Task.isCancelled {
+        let source = scratch.appending(path: entry)
+        // 看它自己是什么（attributesOfItem 不顺着符号链接走）：没解出来、解出来是文件夹都算没能另存
+        let type =
+          (try? manager.attributesOfItem(atPath: source.path(percentEncoded: false)))?[
+            .type] as? FileAttributeType
+        guard let type, type != .typeDirectory else {
+          unsaved += 1
+          continue
+        }
+        let folder = work.appending(path: (entry as NSString).deletingLastPathComponent)
+        let name = FileMoves.freeName(source.lastPathComponent, in: folder, used: [])
+        if let placed = landOpening(source, at: folder.appending(path: name)) {
+          names.append(placed.lastPathComponent)
+        } else {
+          unsaved += 1
+        }
+      }
+      await FileMoves.discard(scratch)
+    }
+    return (names, unsaved)
+  }
+
+  /// 落到 target（不覆盖）；它所在的那一层没有写权限（包里带的只读文件夹）时先给自己加上写权限、落完改回去
+  private static func landOpening(_ item: URL, at target: URL) -> URL? {
+    let folder = target.deletingLastPathComponent().path(percentEncoded: false)
+    let manager = FileManager.default
+    guard !manager.isWritableFile(atPath: folder),
+      let mode = (try? manager.attributesOfItem(atPath: folder))?[.posixPermissions] as? Int
+    else { return FileMoves.land(item, at: target) }
+    try? manager.setAttributes([.posixPermissions: mode | 0o200], ofItemAtPath: folder)
+    defer { try? manager.setAttributes([.posixPermissions: mode], ofItemAtPath: folder) }
+    return FileMoves.land(item, at: target)
   }
 
   /// 解好之后：里面只有一样东西（不是隐藏的、不是符号链接：放出来访达里看不见，还会悄悄落在包旁边起作用）就把它放到包旁边，
@@ -518,20 +752,71 @@ import AppKit
       work, at: parent.appending(path: FileMoves.freeName(stem, in: parent, used: [])))
   }
 
-  static func extract(_ files: [URL], island: Island?) {
+  /// into：解到哪个文件夹（nil = 包旁边；放不下时刘海岛上换的地方）
+  static func extract(_ files: [URL], island: Island?, into: URL? = nil) {
     let archives = files.filter { isArchive($0) && FileMoves.occupied($0) }
     guard !archives.isEmpty else {
       island?.show("没有解压", detail: "压缩包不在了，或者不是能解的格式", tone: .warning)
       return
     }
-    for archive in archives { extract(archive, retry: nil, island: island) }
+    // 放不下的那一批一起说一声（选中的一般在同一个文件夹里），别的照常解
+    let blocked = archives.filter { unwritable(into ?? $0.deletingLastPathComponent()) != nil }
+    if let first = blocked.first, let reason = unwritable(into ?? first.deletingLastPathComponent())
+    {
+      let title: LocalizedStringResource =
+        blocked.count == 1
+        ? "没有解压「\(first.lastPathComponent)」" : "没有解压这 \(blocked.count) 个压缩包"
+      island?.show(
+        title, detail: "\(reason)", tone: .warning,
+        actions: elsewhere(than: into ?? first.deletingLastPathComponent(), verb: .extract) {
+          place in extract(blocked, island: island, into: place)
+        })
+    }
+    for archive in archives where !blocked.contains(archive) {
+      extract(archive, retry: nil, island: island, into: into)
+    }
+  }
+
+  /// 放不下时刘海岛上的两个按钮：「放到下载」（下载文件夹就是写不了的那个时不给）、「选择位置…」
+  private static func elsewhere(
+    than folder: URL, verb: Verb, redo: @escaping (URL) -> Void
+  ) -> [Island.Action] {
+    var actions: [Island.Action] = []
+    if let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)
+      .first,
+      FileMoves.plainPath(downloads) != FileMoves.plainPath(folder)
+    {
+      actions.append(Island.Action("放到下载") { redo(downloads) })
+    }
+    actions.append(
+      Island.Action("选择位置…") {
+        Task {
+          if let place = await chooseFolder(verb: verb) { redo(place) }
+        }
+      })
+    return actions
+  }
+
+  /// 选放在哪个文件夹（照 FilePanel：本 App 不在前台时也开在最上面）；取消是 nil
+  static func chooseFolder(verb: Verb) async -> URL? {
+    let panel = NSOpenPanel()
+    panel.canChooseFiles = false
+    panel.canChooseDirectories = true
+    panel.canCreateDirectories = true
+    panel.allowsMultipleSelection = false
+    panel.prompt = verb == .compress ? String(localized: "放在这里") : String(localized: "解压到这里")
+    panel.message =
+      verb == .compress
+      ? String(localized: "把压缩包放在哪个文件夹") : String(localized: "解压到哪个文件夹")
+    guard await FilePanel.begin(panel) == .OK else { return nil }
+    return panel.url
   }
 
   /// 排一个包进队。有加密条目的 zip 先问密码（排队之前问：框开着的时候别挂「正在解压」）。retry：上一回 tar 说要密码
   /// （needsPassword：中央目录没读出来，包前面多了一截这种）或者密码不对——这时不管认没认出来都问，每一回都要用户点，
   /// 取消就停（评审：不问就重排会一直转下去、把队堵死）
   private static func extract(
-    _ archive: URL, retry: Outcome?, island: Island?, askNow: Bool = false
+    _ archive: URL, retry: Outcome?, island: Island?, askNow: Bool = false, into: URL? = nil
   ) {
     var password: String?
     var gbk = false
@@ -564,7 +849,7 @@ import AppKit
         detail: "点「输入密码」再解压", tone: .info,
         actions: [
           Island.Action("输入密码…") {
-            extract(archive, retry: retry, island: island, askNow: true)
+            extract(archive, retry: retry, island: island, askNow: true, into: into)
           }
         ])
       return
@@ -582,14 +867,38 @@ import AppKit
     FileMoves.enqueue(
       "正在解压「\(archive.lastPathComponent)」…", detail: ByteMeter.preparing, island: island
     ) { report in
-      await unpack(archive, password: password, gbk: gbk, report: report)
+      await unpack(archive, password: password, gbk: gbk, into: into, report: report)
     } finish: { outcome in
       if outcome == .wrongPassword || outcome == .needsPassword {
         // 这一批先收尾，再另起一个去问：框开着的时候别堵住后面排着的
-        Task { extract(archive, retry: outcome, island: island) }
+        Task { extract(archive, retry: outcome, island: island, into: into) }
       } else {
-        report(outcome, verb: .extract, island: island)
+        // 解成功了、设置里开着：压缩包移到废纸篓，记下到了哪儿（「放回压缩包」用）。有只差大小写、没能另存的不扔：
+        // 那几个文件只剩压缩包里这一份（评审）
+        var trashed: URL?
+        var trashFailed = false
+        if case .done(_, _, 0) = outcome,
+          UserDefaults.standard.bool(forKey: Prefs.finderTrashAfterExtract)
+        {
+          var landed: NSURL?
+          if (try? FileManager.default.trashItem(at: archive, resultingItemURL: &landed)) != nil {
+            trashed = landed as URL?
+          } else {
+            trashFailed = true
+          }
+        }
+        report(
+          outcome, verb: .extract, island: island, trashed: trashed.map { ($0, archive) },
+          trashFailed: trashFailed)
       }
+    }
+  }
+
+  /// 按住 ⌥ 的「解压到…」：先选放在哪（面板开在最前面），再照「解压到这里」解进去
+  static func chooseAndExtract(_ files: [URL], island: Island?) {
+    Task {
+      guard let place = await chooseFolder(verb: .extract) else { return }
+      extract(files, island: island, into: place)
     }
   }
 
@@ -614,17 +923,62 @@ import AppKit
 
   // MARK: 说一声
 
-  private static func report(_ outcome: Outcome, verb: Verb, island: Island?) {
+  /// trashed：解压后压缩包移进了废纸篓（废纸篓里的位置，原来的位置）；trashFailed：设置里开着、却没能移进去
+  /// （只读的盘、没有废纸篓的盘）
+  private static func report(
+    _ outcome: Outcome, verb: Verb, island: Island?, trashed: (URL, URL)? = nil,
+    trashFailed: Bool = false
+  ) {
     let compress = verb == .compress
     switch outcome {
-    case .done(let url):
-      island?.show(
-        compress ? "已压缩" : "已解压", detail: "\(url.lastPathComponent)",
-        actions: [
-          Island.Action("在访达中显示", opens: true) {
-            NSWorkspace.shared.activateFileViewerSelecting([url])
-          }
-        ])
+    case .done(let url, let renamed, let unsaved):
+      let reveal = Island.Action("在访达中显示", opens: true) {
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+      }
+      // 从废纸篓挪回原处（不覆盖：原处又有了同名的就加「 2」）
+      let putBack = trashed.map { trash, original in
+        Island.Action("放回压缩包") {
+          let inTrash = FileMoves.occupied(trash)
+          let placed = inTrash ? FileMoves.land(trash, at: original) : nil
+          // 可选参数里的三目只有第一个分支抽得进目录：先放进不是可选的 let
+          let detail: LocalizedStringResource =
+            if let placed {
+              "\(placed.lastPathComponent)"
+            } else if inTrash {
+              "原来的文件夹不在了，或者那里写不了"
+            } else {
+              "废纸篓里已经没有它了"
+            }
+          island?.show(
+            placed == nil ? "没能放回压缩包" : "已放回压缩包", detail: detail,
+            tone: placed == nil ? .warning : .info)
+        }
+      }
+      if unsaved > 0 {
+        // 只差大小写、没能另存的：照实说（盘上只留下了一个）
+        island?.show(
+          "已解压「\(url.lastPathComponent)」", detail: "有 \(unsaved) 个文件和别的只差大小写，这块盘上只留下了一个",
+          tone: .warning, actions: [reveal] + (putBack.map { [$0] } ?? []))
+      } else if renamed.isEmpty, let putBack {
+        island?.show(
+          "已解压", detail: "\(url.lastPathComponent) · 压缩包移到了废纸篓", actions: [reveal, putBack])
+      } else if renamed.isEmpty, trashFailed {
+        island?.show(
+          "已解压", detail: "\(url.lastPathComponent) · 压缩包没能移到废纸篓", tone: .warning,
+          actions: [reveal])
+      } else if renamed.isEmpty {
+        island?.show(
+          compress ? "已压缩" : "已解压", detail: "\(url.lastPathComponent)", actions: [reveal])
+      } else {
+        // 可选参数里的三目只有第一个分支抽得进目录：先放进不是可选的 let
+        let detail: LocalizedStringResource =
+          renamed.count == 1
+          ? "有个文件和别的只差大小写，另存成了「\(renamed[0])」"
+          : "\(renamed.count) 个文件和别的只差大小写，另存时名字加了「 2」"
+        island?.show(
+          "已解压「\(url.lastPathComponent)」", detail: detail, tone: .info,
+          actions: [reveal] + (putBack.map { [$0] } ?? []))
+      }
     case .stopped:
       island?.show(compress ? "已停止压缩" : "已停止解压", tone: .info)
     case .needsPassword, .wrongPassword:

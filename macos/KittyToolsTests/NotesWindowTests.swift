@@ -678,9 +678,9 @@ struct NotesWindowTests {
   /// 只有「快速记一条」有默认键 ⌥N；「便签」一节在「截图与录制」之后、「提醒」之前（功能管理拍板 M3），三项按这个顺序
   @Test func hotKeyActions() throws {
     #expect(
-      Array(HotKeyAction.allCases.suffix(11)) == [
+      Array(HotKeyAction.allCases.suffix(12)) == [
         .noteCapture, .noteNew, .noteAll, .launchpad, .shotHistory, .island, .clothesline, .home,
-        .reminderNew, .keepAwake, .appShortcuts,
+        .reminderNew, .keepAwake, .appShortcuts, .noteDeck,
       ])
     #expect(
       HotKeyAction.noteCapture.defaultHotKey == HotKey(keyCode: kVK_ANSI_N, modifiers: optionKey))
@@ -689,10 +689,10 @@ struct NotesWindowTests {
     let index = try #require(titles.firstIndex(of: "便签"))
     #expect(titles[index - 1] == "截图与录制" && titles[index + 1] == "提醒")
     let actions = HotKeyAction.visibleSections(enabled: Set(Feature.allCases))[index].actions
-    #expect(actions == [.noteCapture, .noteNew, .noteAll])
-    #expect(actions.map(\.title) == ["快速记一条", "新建便签", "全部便签"])
+    #expect(actions == [.noteCapture, .noteNew, .noteAll, .noteDeck])
+    #expect(actions.map(\.title) == ["快速记一条", "新建便签", "全部便签", "屏幕边缘的便签"])
     #expect(actions.allSatisfy { $0.color == Style.Family.notes })
-    #expect(Set(actions.map(\.symbol)).count == 3)
+    #expect(Set(actions.map(\.symbol)).count == 4)
     for symbol in actions.map(\.symbol) + ["rectangle.split.2x1", "archivebox", "trash.slash"] {
       #expect(NSImage.symbol(symbol) != nil, "\(symbol)")
     }
@@ -710,10 +710,11 @@ struct NotesWindowTests {
     #expect(Array(targets[start..<start + 3]) == ["noteCapture", "noteNew", "noteAll"])
     // 「截图与录制」那一节末尾是截图历史、晾衣绳（枚举里晾衣绳在最后，菜单和启动器按节排）
     #expect(
-      targets[start - 1] == "clothesline" && targets[start + 3] == "reminderNew"
-        && targets[start + 4] == "launchpad" && targets[start + 5] == "keepAwake"
-        && targets[start + 6] == "appShortcuts" && targets[start + 7] == "island"
-        && targets[start + 8] == "home" && targets[start + 9] == "settings")
+      targets[start - 1] == "clothesline" && targets[start + 3] == "noteDeck"
+        && targets[start + 4] == "reminderNew"
+        && targets[start + 5] == "launchpad" && targets[start + 6] == "keepAwake"
+        && targets[start + 7] == "appShortcuts" && targets[start + 8] == "island"
+        && targets[start + 9] == "home" && targets[start + 10] == "settings")
     #expect(launcher[start..<start + 3].map(\.title) == ["快速记一条", "新建便签", "全部便签"])
     for item in launcher[start..<start + 3] {
       #expect(item.symbol == item.hotKeyAction?.symbol, "\(item.title)")
@@ -727,7 +728,8 @@ struct NotesWindowTests {
     let group = try #require(
       ShortcutsSheet.groups(enabled: Set(Feature.allCases)).first { $0.title.key == "便签" })
     #expect(
-      group.globals == [.noteCapture, .noteNew, .noteAll] && group.color == Style.Family.notes)
+      group.globals == [.noteCapture, .noteNew, .noteAll, .noteDeck]
+        && group.color == Style.Family.notes)
     let titles = ShortcutsSheet.groups(enabled: Set(Feature.allCases)).map(\.title.key)
     // 第 3 批在中间加了「屏幕边缘」一组，第 4 批在它后面加了「浮在屏幕上」一小组
     #expect(titles.firstIndex(of: "便签")! + 1 == titles.firstIndex(of: "便签 · 屏幕边缘")!)
@@ -839,7 +841,7 @@ struct NotesWindowTests {
     #expect(model.layout == .wall)
     #expect(
       window.toolbar?.items.map(\.label) == [
-        "显示方式", "固定", "归档", "任务", "颜色", "浮在屏幕上", "删除", "新建便签", "便签设置",
+        "显示方式", "排序", "固定", "归档", "任务", "颜色", "浮在屏幕上", "删除", "新建便签", "便签设置",
       ])
     #expect(model.selection == ids[0])
 
@@ -874,7 +876,9 @@ struct NotesWindowTests {
     model.scope = .trash
     settle()
     #expect(
-      window.toolbar?.items.map(\.label) == ["显示方式", "放回", "永久删除…", "新建便签", "便签设置"])
+      window.toolbar?.items.map(\.label) == [
+        "显示方式", "排序", "放回", "永久删除…", "新建便签", "便签设置",
+      ])
     model.scope = .all
     model.selection = ids[1]
     #expect(model.handleDeleteKey(inTextField: false))

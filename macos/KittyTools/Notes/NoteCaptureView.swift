@@ -2,6 +2,7 @@
 // 顶上一行「记到」+ 记到哪（记成新便签时是一个标题框，占位「标题（可不填）」；记到已有的某条时是那条的标题，不能改）
 // + 右边一排目的地（新便签 + 最近的 8 条，各是它的纸色圆点，选中的外面一圈强调色）；
 // 中间是多行输入框（SourceTextView：↩ 记下、⇧↩ 换行，输入法组字时不误提交；记成新便签时 Tab 去标题框），3 行起、最多 8 行；
+// 贴了图（X5）时输入框下面一排缩略图（56 高，悬停出 ×），还在存的先占一个灰块；
 // 底栏左边是键位（只提示、不能点，secondary），存不了时换成原因；右边「记下 ↩」。
 
 import SwiftUI
@@ -19,6 +20,7 @@ struct NoteCaptureView: View {
       header.frame(height: Layout.headerHeight)
       Hairline()
       editor
+      if model.images.count + model.storing > 0 { pictures }
       Hairline()
       bar
     }
@@ -143,6 +145,28 @@ struct NoteCaptureView: View {
     .padding(.vertical, Layout.textPadding)
   }
 
+  // MARK: 贴的图（X5）
+
+  private var pictures: some View {
+    ScrollView(.horizontal, showsIndicators: false) {
+      HStack(spacing: 8) {
+        ForEach(model.images, id: \.self) { image in
+          CaptureThumbnail(image: image, store: model.store.images) { model.removeImage(image) }
+        }
+        ForEach(0..<model.storing, id: \.self) { _ in
+          RoundedRectangle(cornerRadius: Style.Radius.control, style: .continuous)
+            .fill(Style.controlFill)
+            .frame(width: Layout.thumbnail, height: Layout.thumbnail)
+            .overlay { ProgressView().controlSize(.small) }
+        }
+      }
+      .padding(.horizontal, Layout.margin)
+    }
+    .frame(height: Layout.imageRow)
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("贴的图片")
+  }
+
   // MARK: 底栏
 
   private var bar: some View {
@@ -187,5 +211,54 @@ struct NoteCaptureView: View {
     }
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("\(String(localized: text))：\(key)")
+  }
+}
+
+/// 快速记一条里贴的一张图：长边 56 的缩略图（主线程外解），悬停出 ×（点了拿掉这张）
+private struct CaptureThumbnail: View {
+  let image: NoteImages.Image
+  let store: NoteImageStore?
+  let remove: () -> Void
+  @State private var picture: CGImage?
+  @State private var hovering = false
+  @Environment(\.displayScale) private var scale
+
+  private typealias Layout = NoteCaptureModel.Layout
+
+  var body: some View {
+    let shape = RoundedRectangle(cornerRadius: Style.Radius.control, style: .continuous)
+    ZStack(alignment: .topTrailing) {
+      Group {
+        if let picture {
+          Image(decorative: picture, scale: 1).resizable().scaledToFill()
+        } else {
+          Style.controlFill
+        }
+      }
+      .frame(width: Layout.thumbnail, height: Layout.thumbnail)
+      .clipShape(shape)
+      .overlay(shape.hairlineBorder())
+      if hovering {
+        Button(action: remove) {
+          Image(systemName: "xmark.circle.fill")
+            .font(.system(size: 14))
+            .symbolRenderingMode(.palette)
+            .foregroundStyle(.white, .black.opacity(0.6))
+        }
+        .buttonStyle(.plain)
+        .padding(3)
+        .help("拿掉这张图")
+      }
+    }
+    .background { HoverTracker { hovering = $0 } }
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("图片")
+    .accessibilityAction(named: "拿掉这张图", remove)
+    .task(id: image) {
+      guard let store else { return }
+      picture = await NoteImageStore.decodeThumbnail(
+        at: store.url(for: image.id, ext: image.ext),
+        maxPixel: Int(Layout.thumbnail * max(scale, 1)))
+    }
   }
 }

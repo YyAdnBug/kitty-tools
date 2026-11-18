@@ -47,6 +47,8 @@ enum Prefs {
   static let launcherRecentCurrencies = "launcherRecentCurrencies"
   /// 启动器的脚本命令（2026-11-07 拍板 E2，默认开）：关掉后自带的和自己的脚本都不出现，内置命令不受影响
   static let launcherScripts = "launcherScripts"
+  /// 启动器搜索、运行系统的「快捷指令」（第四轮体检 X10，默认开；SystemShortcuts）
+  static let launcherShortcuts = "launcherShortcuts"
   /// 脚本命令另外添加的文件夹（换行分隔的路径，ScriptLibrary）：这台电脑自己的路径，**不注册默认值**（不导出、不同步）
   static let scriptFolders = "scriptFolders"
   /// 跑脚本用的 PATH：从用户的登录 shell 读到的那一份（ScriptRunner）；这台电脑自己的，**不注册默认值**
@@ -158,6 +160,12 @@ enum Prefs {
   static let screenshotToolStyles = "screenshotToolStyles"
   /// 截图（复制、保存、钉图）时放快门声；还要系统「播放用户界面音效」开着
   static let screenshotShutterSound = "screenshotShutterSound"
+  /// 截图带上鼠标指针（第四轮体检 X8，默认关；Windows ScreenshotCursor）：按快捷键那一刻的指针画进冻结帧。只管截图
+  /// （截图快捷键、截取上次区域）；识字、截图翻译不带（指针会挡字）
+  static let screenshotCursor = "screenshotCursor"
+  /// 截图、录屏时隐藏桌面图标（第四轮体检 X9，默认关；Windows CaptureHideDesktopIcons）：访达画桌面图标的那扇窗口
+  /// 不进冻结帧、不进录屏画面（ScreenCapture.desktopIconWindows）。识字、截图翻译用的同一张冻结帧，也不带
+  static let captureHideDesktopIcons = "captureHideDesktopIcons"
   /// 截完图放哪（2026-10-26 晾衣绳拍板 B1，ShotPlacement 的 rawValue）：corner 右下角的常驻缩略图（默认，
   /// 体检 D18 原来那样）/ clothesline 挂到屏幕顶上的晾衣绳上 / none 都不要（只进历史，飞行卡片落地停 0.9 s 就滑走）
   static let screenshotPlacement = "screenshotPlacement"
@@ -235,6 +243,9 @@ enum Prefs {
   nonisolated static let screenRecordMicrophone = "screenRecordMicrophone"
   nonisolated static let screenRecordShowsClicks = "screenRecordShowsClicks"
   nonisolated static let screenRecordShowsKeys = "screenRecordShowsKeys"
+  /// 录屏用哪个麦克风（第四轮体检 X18，Windows RecordMicrophoneDevice）：AVCaptureDevice 的 uniqueID，没有 = 跟随系统
+  /// 输入。录音不看它（录音照旧录系统默认的输入）。设备编号是这台 Mac 的：**不注册默认值**，不导出、不同步
+  nonisolated static let screenRecordMicrophoneDevice = "screenRecordMicrophoneDevice"
   /// 录音的来源（录音第 6 批，设置 › 录制「录音」）：AudioRecorder.Source 的 rawValue——麦克风（默认）/ 系统声音 / 两者；
   /// 「两者」被拒麦克风授权时弹回「系统声音」（同录制条的麦克风开关）
   nonisolated static let audioRecordSource = "audioRecordSource"
@@ -365,6 +376,9 @@ enum Prefs {
   /// 全部便签窗口上次用的显示方式（NotesWindowModel.Layout 的 rawValue：wall 便签墙 / list 列表；没存过 = 便签墙，
   /// 2026-10-15 手测反馈）。同窗口位置一样是这台电脑自己的状态、**不注册默认值**：不跟着导出 / 导入走
   nonisolated static let notesWindowLayout = "notesWindowLayout"
+  /// 全部便签窗口「全部」的排法（NotesWindowModel.Sort：manual 手动顺序 / modified 最近修改，第四轮体检 X19；没存过 = 手动）。
+  /// 同显示方式，这台电脑自己的状态、不注册默认值
+  nonisolated static let notesWindowSort = "notesWindowSort"
 
   /// 功能开关（2026-10-21，Shell/Feature.swift）：九个功能各一个键「feature.<Feature.rawValue>」（Feature.prefsKey 拼），
   /// 注册的默认值是 Feature.defaultOn（程序坞预览关、别的开；跟着导出 / 导入的「设置」一类走）。读用 Feature.isOn
@@ -424,6 +438,9 @@ enum Prefs {
   /// 读它走 AppShortcuts.delay，认不出的按 1 秒）。跟着导出、同步
   nonisolated static let appShortcutsHold = "appShortcutsHold"
   nonisolated static let appShortcutsDelay = "appShortcutsDelay"
+  /// App 快捷键：按住哪个修饰键（ModifierTaps.Key 的 rawValue：command / option / control / shift，默认 command；2026-11-18
+  /// 用户要能换）。读它走 AppShortcuts.holdKey，认不出的按 ⌘。跟着导出、同步
+  nonisolated static let appShortcutsHoldKey = "appShortcutsHoldKey"
 
   /// 访达右键（第十一族，2026-11-08，FinderLink）：扩展把动作交过来时带的凭证（App 第一次启动时生成，FinderLink.ensureKey；
   /// 扩展从 App 的偏好里读）。这台电脑自己的、**不注册默认值**：不跟着导出 / 导入、同步走
@@ -438,6 +455,9 @@ enum Prefs {
   /// 访达右键压缩时另外跳过的名字（设置 › 访达右键「压缩时跳过」，2026-11-13 拍板 Z1）：逗号隔开，* ? 通配，只认名字不认路径，
   /// 默认空 = 和原来一样（Mac 杂文件照旧总跳过）。只有 App 读，扩展不读；注册了默认值，跟着导出、同步（Z4）
   nonisolated static let finderCompressSkip = "finderCompressSkip"
+  /// 访达右键「解压到这里」解成功后把压缩包移到废纸篓（设置 › 访达右键「压缩和解压」，2026-11-17 拍板 B2，默认关；同系统归档实用工具的
+  /// 「展开后：将归档移到废纸篓」）。只有 App 读；注册了默认值，跟着导出、同步
+  nonisolated static let finderTrashAfterExtract = "finderTrashAfterExtract"
   /// 访达右键里每一项显示不显示：键是「finderMenu<名字>」，见 FinderMenu/FinderMenuItem（默认值按项，下面 defaults 里一起注册）。
   /// 访达右键「移动到」「复制到」的常用文件夹（~ 开头的写法；设置 › 访达右键，没存过是桌面、文稿、下载）。这台电脑自己的、
   /// **不注册默认值**（同截图的存储文件夹：别人给的设置文件不该能往右键菜单里加一个文件夹）。扩展读同一个键（键名和默认值
@@ -476,6 +496,11 @@ enum Prefs {
   static let updateAutoCheck = "updateAutoCheck"
   /// 已经用刘海岛提示过的新版本号（后台检查每个版本只提示一次）
   static let updateNotifiedVersion = "updateNotifiedVersion"
+  /// 「跳过这个版本」跳过的版本号（第四轮体检 X11）：菜单栏的角标、菜单和面板底栏的「更新到 x」、后台检查的岛都不再提它，
+  /// 更新的版本出来照常提。这台电脑自己的状态，不注册默认值
+  static let updateSkippedVersion = "updateSkippedVersion"
+  /// 发现新版本就在后台下载好，退出时装上（X11，默认开）
+  static let updateInstallOnQuit = "updateInstallOnQuit"
   /// 设置窗上次看的页（SettingsPage.rawValue）
   static let settingsPage = "settingsPage"
   /// 设置侧栏收起了哪几组（SettingsPage.SidebarSection 的 rawValue，换行隔开；0.9.0 及以前存的是中文组标题，读时照样认；SettingsRoot）。这台电脑自己的界面状态：不注册默认值、不导出不同步
@@ -590,6 +615,7 @@ enum Prefs {
       launcherShowsFrequent: true,
       launcherRomanInput: false,
       launcherScripts: true,
+      launcherShortcuts: true,
       launcherCommandAliases: "",
       launcherAppAliases: "",
       launcherCommandsOff: "",
@@ -612,10 +638,12 @@ enum Prefs {
       smoothScrollExcluded: [String](),
       appShortcutsHold: true,
       appShortcutsDelay: 1000,
+      appShortcutsHoldKey: ModifierTaps.Key.command.rawValue,
       finderOpenWithApps: finderOpenWithDefault,
       panelSqueezeEntrance: false,
       floatingPinned: false,
       updateAutoCheck: true,
+      updateInstallOnQuit: true,
       clipboardRetentionDays: 7,
       clipboardImageBudgetMB: 512,
       clipboardExcludedBundleIDs: ClipboardFilter.defaultExcluded,
@@ -647,6 +675,8 @@ enum Prefs {
       translateCollapsedServices: "",
       ocrJoinLines: false,
       screenshotShutterSound: true,
+      screenshotCursor: false,
+      captureHideDesktopIcons: false,
       screenshotPlacement: ShotPlacement.corner.rawValue,
       screenshotToolbarAlign: "right",
       screenshotCopyAs: "image",
@@ -695,6 +725,7 @@ enum Prefs {
       notesDeckNoteSize: NoteDeckOptions.NoteSize.medium.rawValue,
       finderMenuGrouped: false,
       finderCompressSkip: "",
+      finderTrashAfterExtract: false,
       islandActionOrder: "",
       islandActionsOff: "",
       islandShowsHistory: false,

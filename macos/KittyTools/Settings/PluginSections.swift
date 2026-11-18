@@ -88,7 +88,7 @@ struct PluginAboutSection: View {
     case .island: "移除后点刘海没反应、刘海两边不挂计时；岛上的提示照常弹。设置留着，再添加就回来"
     case .bluetoothSnooze: "移除后睡眠时不再关蓝牙（关着的先打开）；设置留着，再添加就回来"
     case .smoothScroll: "移除后鼠标滚轮回到系统原样（也不反向）；设置留着，再添加就回来"
-    case .appShortcuts: "移除后按住 ⌘ 不再弹出，快捷键页里也没有它；设置留着，再添加就回来"
+    case .appShortcuts: "移除后按住那个键不再弹出，快捷键页里也没有它；设置留着，再添加就回来"
     default: "移除后菜单栏、主界面、启动器、快捷键里都没有它，设置和数据留着，再添加就回来"
     }
   }

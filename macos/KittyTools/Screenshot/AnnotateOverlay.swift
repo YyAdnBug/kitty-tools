@@ -8,6 +8,7 @@
 // 画（CGImage.cropping 是零拷贝的视图）。缩放交给 NSScrollView 的 magnification（拍板 A3：默认按宽适配、最大 1:1，
 // ⌘0 适配宽度、⌘1 原始大小、⌘+ / ⌘-），标注坐标一律存图的点坐标，所以缩放不影响画好的标注。
 // 画布和标注交互在 ScrollCanvas.swift；这里管窗口、滚动、缩放、工具栏和样式托盘、出图。
+// 裁剪（第四轮体检 X17，工具栏的裁剪钮 / X）：出图按框裁，给出去的标注平移到裁好的图里，回写历史用 historyOriginal（裁好的原图）。
 
 import AppKit
 import Carbon.HIToolbox
@@ -247,7 +248,9 @@ import Carbon.HIToolbox
   /// 工具栏浮在内容底部居中（离底 16，同截图工具栏离选区 10 的那条边）
   /// 工具栏和样式托盘跟着画布的状态走：托盘在工具栏上方 6 pt、x 对着当前工具那颗钮（夹在窗口里 10 pt）
   private func syncBars() {
-    bar.update(tool: canvas.tool, canUndo: canvas.canUndo, canRedo: canvas.canRedo)
+    bar.update(
+      tool: canvas.tool, canUndo: canvas.canUndo, canRedo: canvas.canRedo,
+      cropping: canvas.isCropping)
     guard let owner = canvas.styleOwner, let content = panel.contentView else {
       return styleBar.setShown(false)
     }
@@ -286,7 +289,10 @@ import Carbon.HIToolbox
     case .output(let action): emit(action)
     case .cancel: dismiss()
     case .saveMenu: toggleSaveMenu()
-    case .tool(let tool): canvas.choose(tool)
+    case .tool(let tool):
+      canvas.finishCropping(apply: true)
+      canvas.choose(tool)
+    case .crop: canvas.toggleCropping()
     case .undo: canvas.undo()
     case .redo: canvas.redo()
     case .scroll, .record: break  // 长图的工具栏里没有这两颗
@@ -376,16 +382,22 @@ import Carbon.HIToolbox
       return Island.announce("正在打码，稍等再出图")
     }
     armedEscape = false
-    output(action, composed(), scale, canvas.annotations)
+    // 裁剪框开着时点了出图：先收下这个框
+    canvas.finishCropping(apply: true)
+    output(action, composed(), scale, canvas.croppedOriginal()?.annotations ?? canvas.annotations)
     if action != .recognize { close() }
   }
 
+  /// 回写历史用的原图（X17）：裁过是裁好的那张（标注已平移到它的坐标里），没裁就是打开时那张
+  var historyOriginal: CGImage { canvas.croppedOriginal()?.image ?? image }
+  var isCropped: Bool { canvas.isCropped }
+
   /// 取消：画过标注的要按两下（遮罩里不弹系统框，同录屏的放弃；第一下提示音 + 顶部提示）
   private func dismiss() {
-    guard canvas.hasAnnotations, !armedEscape else { return close() }
+    guard canvas.hasAnnotations || canvas.crop != nil, !armedEscape else { return close() }
     armedEscape = true
     NSSound.beep()
-    Island.announce("再按一次 Esc 放弃这些标注")
+    Island.announce("再按一次 Esc 放弃这些改动")
   }
 
   /// 窗口里的按键（内容视图收，第 2 批标注的键也走这里）

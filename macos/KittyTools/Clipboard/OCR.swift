@@ -160,6 +160,20 @@ nonisolated enum OCR {
     return request
   }
 
+  /// 读一个图片文件来识字（访达右键「拷贝图中文字」，2026-11-17）：按照片里记的方向转正（手机竖着拍的照片原始像素是横的，
+  /// 不转 Vision 认不出竖排的字），长边最多 maxSide（4096 认字够用；8192 一张就要解成约 268 MB，评审）；读不了是 nil。
+  /// 解码在主线程外（mac-native §3 第 1 类：缩略图）
+  @concurrent static func image(at url: URL, maxSide: Int = 4096) async -> CGImage? {
+    guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+    let options: [CFString: Any] = [
+      kCGImageSourceCreateThumbnailFromImageAlways: true,
+      kCGImageSourceCreateThumbnailWithTransform: true,
+      kCGImageSourceThumbnailMaxPixelSize: maxSide,
+      kCGImageSourceShouldCacheImmediately: true,
+    ]
+    return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+  }
+
   /// 二维码 / 条码的内容（有几个返回几个，重复的去掉）。识字时有码优先用码
   @concurrent static func barcodes(in image: CGImage) async -> [String] {
     enter()

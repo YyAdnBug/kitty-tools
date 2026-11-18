@@ -68,7 +68,7 @@ extension Feature {
     case .smoothScroll:
       [PluginPermission(kind: .accessibility, reason: "接住鼠标滚轮再滑出去；没有它用不了")]
     case .appShortcuts:
-      [PluginPermission(kind: .accessibility, reason: "知道 ⌘ 有没有按住、读当前 App 的菜单；没有它用不了")]
+      [PluginPermission(kind: .accessibility, reason: "知道那个键有没有按住、读当前 App 的菜单；没有它用不了")]
     case .island:
       [
         PluginPermission(kind: .calendar, reason: "打开「下一个日程」时读日历", option: Prefs.islandNextEvent),
@@ -130,7 +130,8 @@ extension Feature {
         "在游戏、虚拟机这类自己管滚轮的 App 里自动照原样，也能自己加")
     case .appShortcuts:
       Self.points(
-        "在任何 App 里单独按住 ⌘ 一会儿，弹出它菜单里的全部快捷键，按菜单分组", "按着 ⌘ 再按别的键就是那个快捷键；点一行直接执行",
+        "在任何 App 里单独按住 ⌘ 一会儿，弹出它菜单里的全部快捷键，按菜单分组；按哪个键能换成 ⌥ ⌃ ⇧",
+        "按着那个键再按别的键，这一下照常给 App；点一行直接执行",
         "点一下搜索框能留住，打字搜菜单里的名字")
     case .island:
       Self.points(
@@ -151,7 +152,7 @@ extension Feature {
     case .keepAwake: "菜单栏、主界面，或在启动器里打「awake 2小时」"
     case .bluetoothSnooze: "添加后自己工作，没有快捷键和菜单"
     case .smoothScroll: "添加后拨鼠标滚轮就是；按住 ⌥ 滚动临时不平滑，按住 ⇧ 左右滚"
-    case .appShortcuts: "单独按住 ⌘ 约 1 秒；不想长按的话在快捷键页另设一个组合"
+    case .appShortcuts: "单独按住 ⌘ 约 1 秒（按哪个键、多久都能改）；不想长按的话在快捷键页另设一个组合"
     case .island: "点刘海、指针停在刘海上，或用快捷键打开"
     default: nil
     }
@@ -169,7 +170,7 @@ extension Feature {
     case .keepAwake: "开着时让系统别睡；没开时什么都不跑"
     case .bluetoothSnooze: "等着电脑睡下去；醒来时只打开睡前自己关掉的蓝牙"
     case .smoothScroll: "接住鼠标滚轮，在单独一条线程上滑出去；不碰触控板，没在滚时什么都不做"
-    case .appShortcuts: "看着 ⌘ 有没有单独按住；按够了才读一次前台 App 的菜单，不存"
+    case .appShortcuts: "看着设的那个键有没有单独按住；按够了才读一次前台 App 的菜单，不存"
     case .island:
       "看着指针有没有停在刘海上；打开了系统提示才听电源、耳机、网络，打开了正在播放才起一个读播放信息的小进程，打开了下一个日程才读日历，打开了音量和亮度才接那五个键。不添加时提示照常弹"
     default: nil

@@ -11,6 +11,16 @@
         }
       }
     },
+    "Kitty Tools：对选中的东西，或者这个文件夹" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kitty Tools: act on the selection or this folder"
+          }
+        }
+      }
+    },
     "PPT 演示文稿" : {
       "localizations" : {
         "en" : {
@@ -121,6 +131,16 @@
         }
       }
     },
+    "废纸篓里没有这些项" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not available in the Trash"
+          }
+        }
+      }
+    },
     "彻底删除…" : {
       "localizations" : {
         "en" : {
@@ -167,6 +187,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Copy Hash"
+          }
+        }
+      }
+    },
+    "拷贝图中文字" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy Text from Image"
           }
         }
       }
@@ -285,12 +315,42 @@
         }
       }
     },
+    "解压到…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Extract To…"
+          }
+        }
+      }
+    },
     "解压到这里" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Extract Here"
+          }
+        }
+      }
+    },
+    "访达右键在 Kitty Tools 里关着" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Finder Menu is turned off in Kitty Tools"
+          }
+        }
+      }
+    },
+    "访达右键里的项都关着" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "All Finder Menu items are turned off"
           }
         }
       }

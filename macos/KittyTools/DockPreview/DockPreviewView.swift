@@ -1,6 +1,7 @@
 // 程序坞预览的面板内容（第九族第 2 批；拍板 C4 C5 C6）：顶上一行 App 图标 + 名字，下面一排（多了换行）窗口卡片——缩略图（还没
 // 截到 / 截不到画 App 图标）+ 标题，最小化 / 隐藏 / 在别的桌面的在图的左下角一个角标；悬停的那张底色变浅灰、往外抬 2 点，图的
-// 左上角出 ✕（拿得到关闭钮的才有；Mac 上关闭都在左上角，2026-10-29 从右上角挪过来）。点卡片切过去，点 ✕ 关掉那扇。卡片的尺寸按 DockPreviewLayout 排好的方案；整块铺满宿主、
+// 左上角出 ✕（拿得到关闭钮的才有；Mac 上关闭都在左上角，2026-10-29 从右上角挪过来），在当前桌面上的旁边一颗 −（最小化，第四轮体检 X15）。
+// 点卡片切过去，点 ✕ 或用中键点卡片关掉那扇（X15）。卡片的尺寸按 DockPreviewLayout 排好的方案；整块铺满宿主、
 // 顶上对齐，面板的大小只由窗口定（换图标时窗口在滑，内容不另走一条曲线）。换 App 时新旧两排叠在同一处交叉淡变。
 // 角标和 ✕ 用卡片上小标记同一个底（hudMark：HUD 深底 + 内描边，永远深色）。没有屏幕录制授权时只有图标位和标题，
 // 最底下多一行说明（拍板 A2），点它去授权（第四轮体检 U12③）。本 App 不激活，悬停靠 HoverTracker（activeAlways 追踪区）。
@@ -27,6 +28,8 @@ import SwiftUI
   var hovered: CGWindowID?
   var onOpen: (DockWindow) -> Void = { _ in }
   var onClose: (DockWindow) -> Void = { _ in }
+  /// 卡片上的「最小化」（X15）
+  var onMinimize: (DockWindow) -> Void = { _ in }
   /// 点了「允许屏幕录制后显示缩略图」
   var onGrant: () -> Void = {}
 }
@@ -110,7 +113,8 @@ struct DockPreviewView: View {
       window: window, appName: model.appName, image: model.images[window.id],
       icon: model.appIcon, size: size, compact: !model.showsThumbnails,
       closable: model.closable.contains(window.id), hovered: model.hovered == window.id,
-      open: { model.onOpen(window) }, close: { model.onClose(window) })
+      open: { model.onOpen(window) }, close: { model.onClose(window) },
+      minimize: { model.onMinimize(window) })
   }
 }
 
@@ -127,13 +131,15 @@ private struct PreviewCard: View {
   let closable: Bool
   let open: () -> Void
   let close: () -> Void
+  /// 最小化（X15）：在当前桌面上、拿得到关闭钮（能改它）的窗口才有
+  let minimize: () -> Void
   @State private var hovered: Bool
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   init(
     window: DockWindow, appName: String, image: CGImage?, icon: NSImage?, size: CGSize,
     compact: Bool, closable: Bool, hovered: Bool, open: @escaping () -> Void,
-    close: @escaping () -> Void
+    close: @escaping () -> Void, minimize: @escaping () -> Void = {}
   ) {
     self.window = window
     self.appName = appName
@@ -144,6 +150,7 @@ private struct PreviewCard: View {
     self.closable = closable
     self.open = open
     self.close = close
+    self.minimize = minimize
     _hovered = State(initialValue: hovered)
   }
 
@@ -168,6 +175,8 @@ private struct PreviewCard: View {
     .animation(Style.Motion.glide.animation(reduced: reduceMotion), value: hovered)
     .contentShape(Rectangle())
     .onTapGesture(perform: open)
+    // 中键点卡片：关掉那扇窗口（X15，同任务栏缩略图的习惯）
+    .overlay { if closable { MiddleClick(action: close) } }
     .background { HoverTracker { hovered = $0 } }
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(title)
@@ -176,10 +185,14 @@ private struct PreviewCard: View {
     .accessibilityAction(.default, open)
     .accessibilityActions {
       if closable { Button("关闭窗口", action: close) }
+      if minimizable { Button("最小化窗口", action: minimize) }
     }
   }
 
   private var title: String { window.title.isEmpty ? appName : window.title }
+
+  /// 能最小化：在当前桌面上（不是已经最小化、隐藏、在别的桌面）、拿得到它的关闭钮（辅助功能对象在手上）
+  private var minimizable: Bool { closable && window.state == .shown }
 
   /// 图（或图标位）：角标、✕ 挂在图本身上（按比例缩进框里之后的那块），不挂在框上
   @ViewBuilder private var thumbnail: some View {
@@ -226,19 +239,56 @@ private struct PreviewCard: View {
     }
   }
 
-  /// 悬停时才有：22 pt 圆、10 pt 粗体 ✕（同常驻缩略图角上的圆钮），按下缩一点
+  /// 悬停时才有：22 pt 圆、10 pt 粗体 ✕（同常驻缩略图角上的圆钮），按下缩一点；能最小化的旁边一颗 −（X15）
   @ViewBuilder private var closeButton: some View {
     if hovered, closable {
-      Button(action: close) {
-        Image(systemName: "xmark")
-          .font(.system(size: 10, weight: .bold))
-          .frame(width: 22, height: 22)
-          .hudMark(Circle())
+      HStack(spacing: 4) {
+        cornerButton("xmark", help: "关闭窗口", action: close)
+        if minimizable { cornerButton("minus", help: "最小化窗口", action: minimize) }
       }
-      .buttonStyle(PressScale())
       .padding(4)
-      .help("关闭窗口")
       .transition(.opacity)
+    }
+  }
+
+  private func cornerButton(
+    _ symbol: String, help: LocalizedStringResource, action: @escaping () -> Void
+  ) -> some View {
+    Button(action: action) {
+      Image(systemName: symbol)
+        .font(.system(size: 10, weight: .bold))
+        .frame(width: 22, height: 22)
+        .hudMark(Circle())
+    }
+    .buttonStyle(PressScale())
+    .help(Text(help))
+    .accessibilityLabel(Text(help))
+  }
+}
+
+/// 中键点卡片关掉那扇窗口（X15）：只接中键，左键、右键、悬停都穿过去（hitTest 看当前事件是不是「其他键」）
+private struct MiddleClick: NSViewRepresentable {
+  let action: () -> Void
+
+  func makeNSView(context: Context) -> Catcher { Catcher() }
+  func updateNSView(_ view: Catcher, context: Context) { view.action = action }
+
+  final class Catcher: NSView {
+    var action: () -> Void = {}
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+      switch NSApp.currentEvent?.type {
+      case .otherMouseDown?, .otherMouseUp?, .otherMouseDragged?: super.hitTest(point)
+      default: nil
+      }
+    }
+
+    override func otherMouseDown(with event: NSEvent) {}
+
+    override func otherMouseUp(with event: NSEvent) {
+      if event.buttonNumber == 2, bounds.contains(convert(event.locationInWindow, from: nil)) {
+        action()
+      }
     }
   }
 }

@@ -3,6 +3,7 @@
 // （第二轮体检 R1：文件嫌大时调这两样）、开始前倒数、显示光标、显示按键时 全部按键 / 只显示快捷键（R2）；
 // 录音（录音第 6 批，拍板 A2-a）：来源 麦克风 / 系统声音 / 两者（手测反馈第 3 批起录音控制条待录时也能切，两边读写同一个偏好）、
 // 按快捷键后立即开始录音（手测反馈第 3 批，默认关：先出控制条，点 ● 或再按一次才开始）。
+// 录屏用哪个麦克风（第四轮体检 X18）：跟随系统输入（默认）或某一个接着的设备，选的那个不在了开录时说一声、跟随系统。
 // 按键不写进页里（N11）：一句话 +「查看全部快捷键…」；菜单栏、快捷键页、速查表里录屏录音仍和截图同在「截图与录制」一节。
 
 import SwiftUI
@@ -16,6 +17,9 @@ struct RecordTab: View {
   @AppStorage(Prefs.screenRecordKeysShortcutsOnly) private var shortcutsOnly = false
   @AppStorage(Prefs.audioRecordSource) private var audioSource = AudioRecorder.Source.microphone
   @AppStorage(Prefs.audioRecordStartsImmediately) private var startsImmediately = false
+  @AppStorage(Prefs.screenRecordMicrophoneDevice) private var microphoneDevice: String?
+  /// 接着的麦克风（打开这一页时读一次；插拔后重新打开这一页才更新）。onAppear 里读：@State 的初值每次建视图都会算一遍
+  @State private var microphones: [(id: String, name: String)] = []
 
   var body: some View {
     // 关着时（Feature）变灰；存到哪个文件夹截图也在用，照常能改
@@ -49,6 +53,14 @@ struct RecordTab: View {
             Text("5 秒").tag(5)
           }
           Toggle("显示光标", isOn: $showsCursor)
+          Picker("麦克风", selection: $microphoneDevice) {
+            Text("跟随系统输入").tag(String?.none)
+            ForEach(microphones, id: \.id) { Text(verbatim: $0.name).tag(String?.some($0.id)) }
+            // 选过的那个现在没接着：照样列出来（不然选单是空的、像被清掉了）
+            if let microphoneDevice, !microphones.contains(where: { $0.id == microphoneDevice }) {
+              Text("选过的麦克风（没接着）").tag(String?.some(microphoneDevice))
+            }
+          }
           Picker("显示按键时", selection: $shortcutsOnly) {
             Text("全部按键").tag(false)
             Text("只显示快捷键").tag(true)
@@ -58,7 +70,7 @@ struct RecordTab: View {
           Text(ScreenRecorder.Medium.screen.nounResource)
         } footer: {
           SectionFootnote(
-            "60 fps 更顺，文件大约大一半；大屏上可能录不满 60。文件嫌大：标准清晰度在高分屏上宽高各减半，文件小一半多，小字会糊一些；HEVC 同样的画面小三分之一左右，部分 App 和旧设备可能放不了。录好的也可以在角落的缩略图上点「压缩」另存一份小的。只显示快捷键：带 ⌘ ⌃ ⌥ 的组合键、Esc 和 F 键才进画面，打字不显示。"
+            "60 fps 更顺，文件大约大一半；大屏上可能录不满 60。文件嫌大：标准清晰度在高分屏上宽高各减半，文件小一半多，小字会糊一些；HEVC 同样的画面小三分之一左右，部分 App 和旧设备可能放不了。录好的也可以在角落的缩略图上点「压缩」另存一份小的。麦克风：录制条上的麦克风开着时录哪一个，选的那个没接着时这次用系统默认的；录音照旧用系统默认的输入。只显示快捷键：带 ⌘ ⌃ ⌥ 的组合键、Esc 和 F 键才进画面，打字不显示。"
           )
         }
         Section {
@@ -88,5 +100,6 @@ struct RecordTab: View {
       .gated(by: .record)
     }
     .formStyle(.grouped)
+    .onAppear { microphones = ScreenRecorder.microphones() }
   }
 }

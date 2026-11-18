@@ -195,16 +195,19 @@ nonisolated enum LauncherCommands {
     return builtIns.first { $0.keyword == keyword }
   }
 
-  /// 一个别名被几条用了（连网页搜索的关键词一起算）：重复的那几条的编号。entries 是（编号，此刻的别名）
-  static func conflicts(_ entries: [(id: String, alias: String?)], engineKeywords: [String]) -> Set<
-    String
-  > {
+  /// 一个别名被几条用了（连网页搜索的关键词、应用别名一起算，T3）：重复的那几条的编号。entries 是（编号，此刻的别名）
+  static func conflicts(
+    _ entries: [(id: String, alias: String?)], engineKeywords: [String],
+    appAliases: Set<String> = []
+  ) -> Set<String> {
     var owners: [String: [String]] = [:]
     for entry in entries {
       guard let alias = entry.alias, !alias.isEmpty else { continue }
       owners[alias, default: []].append(entry.id)
     }
-    let engines = Set(engineKeywords.map(LauncherMatch.fold))
-    return Set(owners.filter { $0.value.count > 1 || engines.contains($0.key) }.flatMap(\.value))
+    let taken = Set(engineKeywords.map(LauncherMatch.fold)).union(appAliases)
+    return Set(
+      owners.filter { $0.value.count > 1 || taken.contains(LauncherMatch.fold($0.key)) }
+        .flatMap(\.value))
   }
 }

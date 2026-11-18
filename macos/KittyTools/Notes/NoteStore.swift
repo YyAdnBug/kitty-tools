@@ -51,6 +51,8 @@ import Observation
     /// 加进来的、换成文件里那一版的
     var added = 0
     var updated = 0
+    /// 新加进来的那几条（导入后岛上「撤回导入」整批放进最近删除，第四轮体检 X6）
+    var addedIDs: [String] = []
     /// 落没落下去：没落下去的还在内存里、留着重试（saveProblem），但这时不能说「导入好了」
     var saved = true
   }
@@ -727,7 +729,28 @@ import Observation
   @discardableResult
   private func mutate(_ id: String, now: Date = .now, _ change: (inout Note) -> Void) -> Bool {
     guard let index = notes.firstIndex(where: { $0.id == id }) else { return false }
+    return mutate(at: index, now: now, change)
+  }
+
+  /// 一次改几条（全部便签窗口的多选、整批撤回导入，第四轮体检 X6）：一条条改内存（先按编号建一次下标），最后一个事务落盘——
+  /// 几千条也只写一次库（评审 A7：原来一条一个事务）
+  func updateAll(_ ids: [String], now: Date = .now, _ change: (inout Note) -> Void) {
+    let positions = Dictionary(
+      notes.indices.map { (notes[$0].id, $0) }, uniquingKeysWith: { first, _ in first })
+    var changed = false
+    for id in ids {
+      if let index = positions[id], mutate(at: index, now: now, change) { changed = true }
+    }
+    if changed { flush() }
+  }
+
+  /// 永久删除一批（一个事务；最近删除里多选的「永久删除」）
+  func erase(all ids: Set<String>, now: Date = .now) { erase(ids, now: now) }
+
+  @discardableResult
+  private func mutate(at index: Int, now: Date, _ change: (inout Note) -> Void) -> Bool {
     let old = notes[index]
+    let id = old.id
     var note = old
     change(&note)
     guard note != old else { return false }
@@ -970,6 +993,7 @@ import Observation
         revive(entry.id)
         unsaved.insert(entry.id)
         result.added += 1
+        result.addedIDs.append(entry.id)
         continue
       }
       let old = notes[offset]

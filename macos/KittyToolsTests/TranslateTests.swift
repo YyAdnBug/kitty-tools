@@ -72,6 +72,105 @@ struct LanguageTests {
     #expect(Lang.detect("iPhone 17 Pro Max 发布了", preferring: preferred) == .zhHans)
     #expect(Lang.detect("このアプリは iPhone で動く", preferring: preferred) == .ja)
     #expect(Lang.detect("The word 猫 means cat in Chinese", preferring: preferred) == .en)
+    // X1 加的语言：整句认得出，先验也盖不过
+    #expect(Lang.detect("Hôm nay trời đẹp, chúng ta đi dạo nhé", preferring: preferred) == .vi)
+    #expect(Lang.detect("วันนี้อากาศดีมาก เราไปเดินเล่นกันเถอะ", preferring: preferred) == .th)
+    #expect(Lang.detect("اليوم الطقس جميل جدا، لنذهب في نزهة", preferring: preferred) == .ar)
+    #expect(
+      Lang.detect("Bugün hava çok güzel, haydi yürüyüşe çıkalım", preferring: preferred) == .tr)
+    #expect(
+      Lang.detect("Vandaag is het mooi weer, laten we gaan wandelen", preferring: preferred) == .nl)
+  }
+
+  /// 每种语言的四个映射都齐（加语言漏了一处编不过，这里查原值和名字不重复、朗读码带地区）
+  @Test func everyLanguageIsComplete() {
+    #expect(Lang.allCases.count == 30)
+    #expect(Set(Lang.allCases.map(\.englishName)).count == Lang.allCases.count)
+    #expect(Set(Lang.allCases.map(\.chineseName)).count == Lang.allCases.count)
+    #expect(Lang.allCases.allSatisfy { $0.speechCode.contains("-") })
+  }
+}
+
+struct LongTextTests {
+  private func joined(_ pieces: [LongText.Piece]) -> String {
+    pieces.map { $0.text + $0.separator }.joined()
+  }
+
+  @Test func shortTextIsOnePiece() {
+    let text = "Hello world.\n\nSecond paragraph."
+    #expect(LongText.split(text, budget: 100) == [.init(text: text, separator: "")])
+  }
+
+  @Test func splitsAtParagraphsAndRejoins() {
+    let paragraph = String(repeating: "这是一句很长的中文。", count: 30)  // 300 字
+    let text = [paragraph, paragraph, paragraph].joined(separator: "\n\n")
+    let pieces = LongText.split(text, budget: 614)
+    #expect(pieces.count == 2)
+    #expect(joined(pieces) == text)
+    #expect(pieces[0].separator == "\n\n" && !pieces[0].text.hasSuffix("\n"))
+    #expect(pieces.allSatisfy { LongText.weight($0.text) <= 614 })
+  }
+
+  @Test func longLineSplitsAtSentencesThenHard() {
+    let sentence = "The quick brown fox jumps over the lazy dog. "  // 36 个非空白字，约 12
+    let line = String(repeating: sentence, count: 20)
+    let pieces = LongText.split(line, budget: 50)
+    #expect(joined(pieces) == line)
+    #expect(pieces.allSatisfy { LongText.weight($0.text) <= 50 && $0.text.hasSuffix(".") })
+    // 一整句都没有句号：按空白硬切
+    let run = String(repeating: "word ", count: 400)
+    let hard = LongText.split(run, budget: 30)
+    #expect(joined(hard) == run && hard.count > 1)
+    #expect(hard.allSatisfy { LongText.weight($0.text) <= 30 && !$0.text.hasPrefix(" ") })
+    // 3.14 这种句中的点不切
+    #expect(
+      LongText.split("Pi is 3.14 and e is 2.71. Next sentence here.", budget: 8).first?.text
+        == "Pi is 3.14 and e is 2.71.")
+  }
+
+  @Test func weightCountsDenseScriptsHigher() {
+    #expect(LongText.weight("你好世界") == 4)
+    #expect(LongText.weight("abc def") == 2)
+    #expect(LongText.weight("สวัสดี") == 6)
+  }
+
+  @Test func streamAppendsPiecesAndStopsOnError() async throws {
+    let pieces = [LongText.Piece(text: "a", separator: "\n\n"), .init(text: "b", separator: "")]
+    let request = TranslateRequest(text: "a\n\nb", from: nil, to: .zhHans)
+    let stream = LongText.stream(request, pieces: pieces) { part in
+      AsyncThrowingStream { continuation in
+        continuation.yield("")  // 思考中
+        continuation.yield(part.text.uppercased() + "1")
+        continuation.yield(part.text.uppercased() + "12")
+        continuation.finish()
+      }
+    }
+    var seen: [String] = []
+    for try await text in stream { seen.append(text) }
+    #expect(seen == ["", "A1", "A12", "A12\n\n", "A12\n\nB1", "A12\n\nB12"])
+    // 第二段被截断：前面的照给，截断照样抛出来
+    let truncated = LongText.stream(request, pieces: pieces) { part in
+      AsyncThrowingStream { continuation in
+        continuation.yield(part.text)
+        if part.text == "b" { continuation.finish(throwing: TranslateError.truncated) }
+        continuation.finish()
+      }
+    }
+    var last = ""
+    await #expect(throws: TranslateError.truncated) {
+      for try await text in truncated { last = text }
+    }
+    #expect(last == "a\n\nb")
+  }
+
+  @Test func onlyLanguageModelsSplit() {
+    #expect(TranslateService.zhipu.outputTokens == 1024)
+    #expect(TranslateService.builtin(.deepl).outputTokens == nil)
+    var ai = TranslateService.newAI()
+    ai.baseURL = "https://api.openai.com/v1"
+    #expect(ai.outputTokens == nil)
+    ai.baseURL = "https://api.deepseek.com"
+    #expect(ai.outputTokens == 4096)
   }
 }
 
@@ -293,12 +392,13 @@ struct HistoryStoreTests {
     // 截图历史（2026-10-26，不设默认键）接在后面——它在菜单和启动器里排在钉图后面，但枚举里只能往末尾加——
     // 打开刘海岛（2026-10-26，不设默认键）再接在后面，晾衣绳（第十族，2026-10-26，不设默认键）接在后面，
     // 打开主界面（2026-10-29，不设默认键）接在后面，新建提醒（2026-11-04，不设默认键）接在后面，
-    // 保持唤醒（第一个插件，2026-11-12，不设默认键）接在后面，显示 App 快捷键（2026-11-17，不设默认键）接在最后
+    // 保持唤醒（第一个插件，2026-11-12，不设默认键）接在后面，显示 App 快捷键（2026-11-17，不设默认键）接在后面，
+    // 屏幕边缘的便签（第四轮体检 X16，不设默认键）接在最后
     #expect(
-      Array(HotKeyAction.allCases.suffix(16)) == [
+      Array(HotKeyAction.allCases.suffix(17)) == [
         .translateReplace, .screenRecord, .audioRecord, .pinClipboard, .statusScreen, .noteCapture,
         .noteNew, .noteAll, .launchpad, .shotHistory, .island, .clothesline, .home, .reminderNew,
-        .keepAwake, .appShortcuts,
+        .keepAwake, .appShortcuts, .noteDeck,
       ])
     #expect(HotKeyAction.reminderNew.defaultHotKey == nil)
     #expect(HotKeyAction.home.defaultHotKey == nil)

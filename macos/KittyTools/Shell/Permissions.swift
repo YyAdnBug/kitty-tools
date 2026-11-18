@@ -4,7 +4,8 @@
 // 完全磁盘访问（启动器读 Safari 的书签和历史；没有请求授权的 API，只能打开系统设置让用户自己加）、
 // 麦克风（录屏第 4 批：录制条打开麦克风时，按开始、遮罩收起后才问——遮罩开着时系统授权框会被压在它下面）、
 // 蓝牙（睡眠关蓝牙插件开关蓝牙要它；状态和弹框在 BluetoothSnooze，这里只有系统设置那一页）、
-// 访达扩展（访达右键插件：不是隐私授权，是 系统设置 › 登录项与扩展 里要用户自己打开一次；插件页改版 C1 把它也当一项授权）。
+// 访达扩展（访达右键插件：不是隐私授权，是 系统设置 › 登录项与扩展 里要用户自己打开一次；插件页改版 C1 把它也当一项授权）、
+// 控制访达（访达右键的工具栏按钮在 iCloud 云盘这类地方问访达选中了什么，2026-11-17；automation 看现在是哪样）。
 // isGranted：插件的「要授权」现查（2026-11-17 插件页改版，Shell/Plugin.swift）。
 
 import AVFoundation
@@ -152,13 +153,22 @@ enum Permissions {
   /// 能不能给某个 App 发 Apple 事件（自动化授权），**从不弹框**：只有允许过才 true；没问过（−1744）、拒绝过（−1743）、
   /// 它没在运行（−600）都是 false。正在播放的退路读「音乐」的进度时先看它（2026-11-13，刘海岛扩展第 2-3 批：
   /// 不在放歌时凭空弹「想控制“音乐”」的框；要授权只在用户点了播放控制时由 osascript 弹）
-  static func canAutomate(_ bundleID: String) -> Bool {
+  static func canAutomate(_ bundleID: String) -> Bool { automation(bundleID) == .granted }
+
+  /// 自动化授权的三种样子（设置页那一行按它画：允许了绿勾、没问过「授权…」、拒绝过「去打开…」）
+  enum AutomationState { case granted, notAsked, denied }
+
+  /// 给某个 App 发 Apple 事件的授权现在是哪样，**从不弹框**。它没在运行（−600）、查不了的算没问过
+  static func automation(_ bundleID: String) -> AutomationState {
     // aeDesc 指向 descriptor 里面（内部指针）：descriptor 得活到调用完（临时的那个可能在 guard 之后就放掉了，评审 2）
     let descriptor = NSAppleEventDescriptor(bundleIdentifier: bundleID)
     return withExtendedLifetime(descriptor) {
-      guard let target = descriptor.aeDesc else { return false }
-      return AEDeterminePermissionToAutomateTarget(target, typeWildCard, typeWildCard, false)
-        == noErr
+      guard let target = descriptor.aeDesc else { return .notAsked }
+      switch AEDeterminePermissionToAutomateTarget(target, typeWildCard, typeWildCard, false) {
+      case noErr: return .granted
+      case OSStatus(errAEEventNotPermitted): return .denied
+      default: return .notAsked
+      }
     }
   }
 

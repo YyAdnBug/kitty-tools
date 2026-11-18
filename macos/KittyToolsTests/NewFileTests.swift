@@ -72,6 +72,17 @@ struct NewFileTests {
     #expect(NewFile.allowsNewFiles(in: home.appending(path: "LibraryNotes"), home: home))
     #expect(!NewFile.allowsNewFiles(in: home.appending(path: "Library"), home: home))
     #expect(!NewFile.allowsNewFiles(in: home.appending(path: "Library/Containers/x"), home: home))
+    // iCloud 云盘、网盘在资源库里，照建；它们的根、LaunchAgents 这类照旧不建
+    #expect(
+      NewFile.allowsNewFiles(
+        in: home.appending(path: "Library/Mobile Documents/com~apple~CloudDocs/项目"), home: home))
+    #expect(
+      NewFile.allowsNewFiles(
+        in: home.appending(path: "Library/CloudStorage/OneDrive-个人/文档"), home: home))
+    #expect(!NewFile.allowsNewFiles(in: home.appending(path: "Library/CloudStorage"), home: home))
+    #expect(
+      !NewFile.allowsNewFiles(in: home.appending(path: "Library/Mobile Documents/"), home: home))
+    #expect(!NewFile.allowsNewFiles(in: home.appending(path: "Library/LaunchAgents"), home: home))
   }
 
   /// 自带的五个真在包里（测试宿主就是 App），Office 那三个是 zip 包（PK 开头）

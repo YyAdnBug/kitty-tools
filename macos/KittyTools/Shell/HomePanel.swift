@@ -8,7 +8,8 @@
 // （暂停记录剪贴板、复制即译）不占格子，在右键菜单、启动器里；「打开主界面」自己不在里面；「钉住剪贴板内容」也不列
 // （剪贴板历史面板里就能钉，Home.unlisted），菜单栏菜单、启动器、快捷键照旧有它。格子点了面板先收起再做（同启动器的内置动作）。
 // 面板是一个 OverlayPanel 实例（AppDelegate.homePanel：Panel 皮肤、不激活本 App、点外面收）。键盘：←→ ↑↓ Tab 选（一块中性
-// 高亮滑过去），↩ / 空格执行，Esc 收起，⌘, 设置，⌘Q 退出。按键由一块当第一响应者的 NSView 收（同选状态的面板）。
+// 高亮滑过去），↩ / 空格执行，Esc 收起，⌘, 设置，⌘Q 退出；直接打字（字母、数字、标点）就收起主界面、在启动器里搜它（第四轮体检 X12）。
+// 按键由一块当第一响应者的 NSView 收（同选状态的面板）。
 // 分节、排版、选中怎么移动、按键对应什么都是纯函数（enum Home），单测锁住。
 
 import AppKit
@@ -217,6 +218,19 @@ enum Home {
     }
   }
 
+  /// 打字转到启动器（第四轮体检 X12）：不带 ⌘⌃⌥、打出来的是能显示的字（字母、数字、标点、符号；空格是执行选中的那格，
+  /// 不算）就给这段字，别的 nil（纯函数）
+  static func typed(_ characters: String?, modifiers: NSEvent.ModifierFlags) -> String? {
+    guard modifiers.isDisjoint(with: [.command, .control, .option]), let characters,
+      !characters.isEmpty,
+      characters.unicodeScalars.allSatisfy({ scalar in
+        !scalar.properties.isWhitespace && scalar.value >= 0x20 && scalar.value != 0x7F
+          && !(0xF700...0xF8FF).contains(scalar.value)  // 方向键、功能键这类私用区
+      })
+    else { return nil }
+    return characters
+  }
+
   /// 面板里的 ⌘ 组合（纯函数）：⌘, 设置、⌘Q 退出（同菜单栏菜单的键）。按键码认，不看输入法和键盘布局；
   /// 修饰键只比 ⌘⌃⌥⇧、不看大写锁定（同 OverlayPanel 的 ⌘W）
   static func command(code: Int, modifiers: NSEvent.ModifierFlags) -> MenuExtra? {
@@ -251,6 +265,9 @@ enum Home {
   @ObservationIgnored var openFeatures: () -> Void = {}
   /// 收起面板（不放淡出：接下来要做的事要面板已经不在屏幕上）
   @ObservationIgnored var hidePanel: () -> Void = {}
+  /// 打了字（X12）：收起主界面、打开启动器、把这一下按键原样交给它的输入框（AppDelegate 接；启动器关着时响一声）。
+  /// 交的是按键不是字：开着拼音时这一下要进输入法组字，直接填字会把第一个字母拆出去（同 issue #30）
+  @ObservationIgnored var typeToLauncher: (NSEvent) -> Void = { _ in }
 
   /// 截图自检直接摆出某个样子；正常使用建一个空的，每次呼出前 update
   init(
@@ -557,7 +574,13 @@ private struct HomeKeys: NSViewRepresentable {
       // Esc 走面板现成的路（OverlayPanel.cancelOperation → dismiss）
       case .cancel?: window?.cancelOperation(nil)
       case let key?: model?.handle(key)
-      case nil: super.keyDown(with: event)
+      case nil:
+        // 打字转到启动器搜索（X12）：按字母大概率是想搜东西
+        if Home.typed(event.characters, modifiers: event.modifierFlags) != nil {
+          model?.typeToLauncher(event)
+        } else {
+          super.keyDown(with: event)
+        }
       }
     }
   }

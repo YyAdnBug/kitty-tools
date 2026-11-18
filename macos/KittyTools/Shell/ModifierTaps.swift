@@ -10,8 +10,9 @@ import AppKit
 import Carbon.HIToolbox
 
 struct ModifierTaps {
-  /// 能连按的修饰键。HotKey 里记成「这个修饰键自己的键位（左边那个）、不带修饰键位」
-  enum Key: CaseIterable {
+  /// 能连按的修饰键。HotKey 里记成「这个修饰键自己的键位（左边那个）、不带修饰键位」。App 快捷键「按住哪个键」也用这四个，
+  /// 偏好里存 rawValue（Prefs.appShortcutsHoldKey）
+  enum Key: String, CaseIterable {
     case command, option, control, shift
 
     var flag: NSEvent.ModifierFlags {

@@ -5,6 +5,8 @@
 // 画面只画看得见的那一段（长图上限 30000 像素高，整张贴给图层会撞 GPU 纹理上限，第 1 批的注释）；
 // 标注层是和遮罩共用的 AnnotationCanvas（只重画变了的那块，选中框和手柄也画在它里面）。
 // 坐标系同截图标注：点、原点左下，所以 Annotation 的画法、命中、手柄、导出一字不改地用。
+// 裁剪（第四轮体检 X17，键 X / 工具栏的裁剪钮）：框外压暗、八个手柄，拖手柄改大小、拖框里挪、框外拖一个新的；↩ / 再按 X 收下，
+// Esc 退回进来之前的样子。出图按框裁（croppedOutput：原图、标注都跟着平移，历史里接着改的是裁好的这一张）。
 
 import AppKit
 import Carbon.HIToolbox
@@ -32,7 +34,12 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
   var style = Annotation.Style()
   var styleDefaults = UserDefaults.standard
   /// 画布缩放：选中框和手柄的线宽按它补偿
-  var zoom: CGFloat = 1 { didSet { updateChrome() } }
+  var zoom: CGFloat = 1 {
+    didSet {
+      updateChrome()
+      cropLayer.zoom = zoom
+    }
+  }
   /// 工具、选中、撤销栈、样式变了：窗口更新工具栏和样式托盘
   var onState: () -> Void = {}
 
@@ -50,6 +57,22 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
   var hasAnnotations: Bool { !annotations.isEmpty || editor != nil }
 
   private let overlay: AnnotationCanvas
+  /// 裁剪框那一层（框外压暗、边框和手柄），盖在标注层上面，不接鼠标
+  private let cropLayer = CropLayerView()
+  /// 裁剪框（图的点坐标）：nil = 不裁
+  private(set) var crop: CGRect? { didSet { syncCrop() } }
+  /// 正在调裁剪框（框外压暗 + 手柄；鼠标拖的是框）
+  private(set) var isCropping = false {
+    didSet {
+      syncCrop()
+      refreshCursor()
+      onState()
+    }
+  }
+  /// 进裁剪之前的框（Esc 退回它）
+  private var cropBefore: CGRect?
+  /// 框外按下拖新框之前的那个框（拖出来太小 = 单击了一下，退回它）
+  private var cropAtPress: CGRect?
   private var draft: Annotation? { didSet { syncAnnotations() } }
   private var undoStack: [[Annotation]] = []
   private var redoStack: [[Annotation]] = []
@@ -81,6 +104,8 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
     case resizeAnnotation(Annotation, Annotation.Handle, before: [Annotation], offset: CGVector)
     /// 空格 + 拖动：平移画布（start 是按下时的点，窗口坐标）
     case pan(start: CGPoint)
+    /// 拖裁剪框：按下时的框、按下的点、拖的是哪几条边（都没有 = 整个挪）
+    case crop(original: CGRect, start: CGPoint, edges: CropEdges)
   }
 
   init(image: CGImage, scale: CGFloat) {
@@ -93,6 +118,9 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
     overlay.frame = bounds
     overlay.autoresizingMask = [.width, .height]
     addSubview(overlay)
+    cropLayer.frame = bounds
+    cropLayer.autoresizingMask = [.width, .height]
+    addSubview(cropLayer)
   }
 
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -108,8 +136,8 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
     let count = annotations.count
     let (width, height) = (String(image.width), String(image.height))
     return count > 0
-      ? String(localized: "长截图，\(width) × \(height) 像素，\(count) 条标注")
-      : String(localized: "长截图，\(width) × \(height) 像素")
+      ? String(localized: "截图，\(width) × \(height) 像素，\(count) 条标注")
+      : String(localized: "截图，\(width) × \(height) 像素")
   }
 
   override func accessibilityHelp() -> String? {
@@ -252,6 +280,8 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
 
   /// 再按一次同一个工具就收起；选上时读这个工具上次的样式
   func choose(_ next: Annotation.Tool?) {
+    // 裁着时选了工具（⌘ 工具键、点工具栏）：先收下这个框
+    finishCropping(apply: true)
     endEditing()
     pickingColor = false  // 换工具就不取色了
     let chosen = tool == next ? nil : next
@@ -380,14 +410,130 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
     recordUndo(from: before)
   }
 
-  /// 合成好的长图：没画标注就是原图（拍板 C2，很长的图重渲一张峰值内存翻倍）
+  /// 合成好的长图：没画标注就是原图（拍板 C2，很长的图重渲一张峰值内存翻倍）；有裁剪框就只渲框里那一块（不先渲整张再裁）
   func composed() -> CGImage {
     endEditing()
-    guard !annotations.isEmpty else { return image }
-    let pixels = CGRect(x: 0, y: 0, width: image.width, height: image.height)
+    if annotations.isEmpty { return cropPixels.flatMap { image.cropping(to: $0) } ?? image }
+    let pixels = cropPixels ?? CGRect(x: 0, y: 0, width: image.width, height: image.height)
     return Annotation.render(annotations, over: image, pixelRect: pixels, viewSize: bounds.size)
       ?? image
   }
+
+  /// 有没有裁（框不是整张）
+  var isCropped: Bool { cropPixels != nil }
+
+  /// 裁过时历史里存的那一份（X17）：裁好的原图、平移到它坐标里的标注（整个在框外的去掉）；没裁是 nil
+  func croppedOriginal() -> (image: CGImage, annotations: [Annotation])? {
+    guard let crop, let rect = cropPixels, let cut = image.cropping(to: rect) else { return nil }
+    let moved = annotations.map { $0.offset(by: CGSize(width: -crop.minX, height: -crop.minY)) }
+    let frame = CGRect(origin: .zero, size: crop.size)
+    // 聚光灯整个在框外也留着：它压暗的是自己外面那一圈，出图那张是暗的，历史里要一样
+    return (cut, moved.filter { $0.tool == .spotlight || $0.bounds.intersects(frame) })
+  }
+
+  /// 裁剪框在图里的像素矩形（原点左上）；不裁是 nil
+  private var cropPixels: CGRect? {
+    guard let crop, crop != bounds else { return nil }
+    return Self.cropPixelRect(
+      crop, in: bounds.size, pixels: CGSize(width: image.width, height: image.height))
+  }
+
+  /// 裁剪框（点，原点左下）→ 像素矩形（原点左上）：四舍五入到整像素、夹进图里（不像 pixelRect 往外扩一像素）。纯函数，配单测
+  static func cropPixelRect(_ crop: CGRect, in size: CGSize, pixels: CGSize) -> CGRect? {
+    guard size.width > 0, size.height > 0 else { return nil }
+    let sx = pixels.width / size.width
+    let sy = pixels.height / size.height
+    let rect = CGRect(
+      x: (crop.minX * sx).rounded(), y: ((size.height - crop.maxY) * sy).rounded(),
+      width: (crop.width * sx).rounded(), height: (crop.height * sy).rounded()
+    ).intersection(CGRect(origin: .zero, size: pixels))
+    return rect.width >= 1 && rect.height >= 1 ? rect : nil
+  }
+
+  // MARK: 裁剪（X17）
+
+  /// 裁剪框的哪几条边在被拖
+  struct CropEdges: OptionSet {
+    let rawValue: Int
+    static let left = CropEdges(rawValue: 1)
+    static let right = CropEdges(rawValue: 2)
+    static let bottom = CropEdges(rawValue: 4)
+    static let top = CropEdges(rawValue: 8)
+  }
+
+  /// X / 裁剪钮：进裁剪（收起工具和输入中的文字）；已经在裁就收下
+  func toggleCropping() {
+    if isCropping { return finishCropping(apply: true) }
+    endEditing()
+    if tool != nil { choose(nil) }
+    pickingColor = false
+    selectedAnnotation = nil
+    cropBefore = crop
+    if crop == nil { crop = bounds }
+    isCropping = true
+    Island.announce("裁剪：拖边框或手柄调整，↩ 完成，Esc 取消")
+  }
+
+  #if DEBUG
+    /// 截图自检直接摆一个框
+    func setCropForSnapshot(_ rect: CGRect) { crop = rect }
+  #endif
+
+  /// ↩ / 再按 X 收下（框就是整张时等于不裁）；Esc 退回进来之前的样子
+  func finishCropping(apply: Bool) {
+    guard isCropping else { return }
+    // 拖着框时按了 ↩ / Esc：这一下拖动到此为止
+    if case .crop? = drag { drag = nil }
+    if !apply { crop = cropBefore }
+    if let crop, crop.size.width >= bounds.width - 0.5, crop.size.height >= bounds.height - 0.5 {
+      self.crop = nil
+    }
+    isCropping = false
+    onState()
+  }
+
+  private func syncCrop() {
+    cropLayer.crop = crop
+    cropLayer.isActive = isCropping
+    cropLayer.zoom = zoom
+  }
+
+  /// 按在裁剪框的哪儿：边（离边 8 个屏幕点以内）、框里（整个挪）、框外（nil：拖一个新的）
+  private func cropEdges(at point: CGPoint) -> CropEdges? {
+    guard let crop else { return nil }
+    let reach = 8 / max(zoom, 0.01)
+    let outer = crop.insetBy(dx: -reach, dy: -reach)
+    guard outer.contains(point) else { return nil }
+    var edges: CropEdges = []
+    if abs(point.x - crop.minX) <= reach { edges.insert(.left) }
+    if abs(point.x - crop.maxX) <= reach { edges.insert(.right) }
+    if abs(point.y - crop.minY) <= reach { edges.insert(.bottom) }
+    if abs(point.y - crop.maxY) <= reach { edges.insert(.top) }
+    return edges
+  }
+
+  /// 拖裁剪框到 point（纯函数，配单测）：拖边改那几条边，空 = 整个挪；夹在图里、至少 minCrop 那么大
+  static func dragCrop(
+    _ original: CGRect, edges: CropEdges, from start: CGPoint, to point: CGPoint,
+    in bounds: CGRect
+  ) -> CGRect {
+    let dx = point.x - start.x
+    let dy = point.y - start.y
+    guard !edges.isEmpty else {
+      let x = min(max(original.minX + dx, bounds.minX), bounds.maxX - original.width)
+      let y = min(max(original.minY + dy, bounds.minY), bounds.maxY - original.height)
+      return CGRect(x: x, y: y, width: original.width, height: original.height)
+    }
+    var (minX, maxX, minY, maxY) = (original.minX, original.maxX, original.minY, original.maxY)
+    if edges.contains(.left) { minX = min(max(minX + dx, bounds.minX), maxX - minCrop) }
+    if edges.contains(.right) { maxX = max(min(maxX + dx, bounds.maxX), minX + minCrop) }
+    if edges.contains(.bottom) { minY = min(max(minY + dy, bounds.minY), maxY - minCrop) }
+    if edges.contains(.top) { maxY = max(min(maxY + dy, bounds.maxY), minY + minCrop) }
+    return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+  }
+
+  /// 裁剪框最小多大（点）
+  static let minCrop: CGFloat = 16
 
   // MARK: 文字
 
@@ -534,6 +680,21 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
       drag = .pan(start: event.locationInWindow)
       return
     }
+    // 裁剪（X17）：拖边 / 框里挪；框外按下就从这一点拖一个新框
+    if isCropping {
+      let clamped = CGPoint(
+        x: min(max(point.x, bounds.minX), bounds.maxX),
+        y: min(max(point.y, bounds.minY), bounds.maxY))
+      if let edges = cropEdges(at: point), let crop {
+        drag = .crop(original: crop, start: point, edges: edges)
+      } else {
+        let fresh = CGRect(origin: clamped, size: .zero)
+        cropAtPress = crop
+        crop = fresh
+        drag = .crop(original: fresh, start: clamped, edges: [.right, .top])
+      }
+      return
+    }
     if pickingColor {
       pickingColor = false
       if let rgb = color(at: point) {
@@ -610,6 +771,21 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
       drag = .pan(start: event.locationInWindow)
       return
     }
+    if case .crop(let original, let start, let edges)? = drag {
+      autoscroll(with: event)
+      // 框外拖新框：往哪边拖都行（拖过起点就翻过来）
+      if original.size == .zero {
+        let end = CGPoint(
+          x: min(max(point.x, bounds.minX), bounds.maxX),
+          y: min(max(point.y, bounds.minY), bounds.maxY))
+        crop = CGRect(
+          x: min(start.x, end.x), y: min(start.y, end.y), width: abs(end.x - start.x),
+          height: abs(end.y - start.y))
+      } else {
+        crop = Self.dragCrop(original, edges: edges, from: start, to: point, in: bounds)
+      }
+      return
+    }
     guard isDraggingAnnotation else { return }
     // 画到窗口边上时跟着滚（拍板 B3）。ponytail: 用系统的自动滚动（拖出可见区才滚），没有自己做提前量
     autoscroll(with: event)
@@ -681,6 +857,11 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
         replace(original)
       }
       recordUndo(from: before)
+    case .crop(let original, _, _)?:
+      // 拖出来的新框太小（单击了一下）：退回按下之前的框
+      if let crop, crop.width < Self.minCrop || crop.height < Self.minCrop {
+        self.crop = original.size == .zero ? (cropAtPress ?? bounds) : original
+      }
     case .pan?, nil:
       break
     }
@@ -692,6 +873,15 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
     guard let point = mouse else { return }
     if isSpaceDown { return NSCursor.openHand.set() }
     if pickingColor { return NSCursor.crosshair.set() }
+    if isCropping {
+      guard let edges = cropEdges(at: point) else { return NSCursor.crosshair.set() }
+      if edges.isEmpty { return NSCursor.openHand.set() }
+      let horizontal = !edges.isDisjoint(with: [.left, .right])
+      let vertical = !edges.isDisjoint(with: [.top, .bottom])
+      return
+        (horizontal && vertical
+        ? NSCursor.crosshair : horizontal ? .resizeLeftRight : .resizeUpDown).set()
+    }
     if let editor {
       return (editor.field.frame.contains(point) ? NSCursor.iBeam : NSCursor.arrow).set()
     }
@@ -716,6 +906,17 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
       }
       return
     }
+    // 裁剪（X17）：↩ 收下、Esc 退回，别的键（工具、方向键）这时不认
+    if isCropping {
+      switch code {
+      case kVK_Return, kVK_ANSI_KeypadEnter: return finishCropping(apply: true)
+      case kVK_Escape: return finishCropping(apply: false)
+      default:
+        if ShotKey.matching(event) == .crop { return toggleCropping() }
+        return
+      }
+    }
+    if ShotKey.matching(event) == .crop { return toggleCropping() }
     // 十种工具照截图时的快捷键（ShotKeys，能改，再按一次收起）
     if let tool = ShotKey.matching(event)?.tool { return choose(tool) }
     let flags = event.modifierFlags.intersection([.command, .control, .option])
@@ -774,5 +975,39 @@ final class ScrollCanvas: NSView, NSTextViewDelegate {
     modifiers = event.modifierFlags
     if let dragPoint, isDraggingAnnotation { dragAnnotation(to: dragPoint) }
     super.flagsChanged(with: event)
+  }
+}
+
+/// 裁剪框那一层（X17）：框外压暗；调着的时候加白边框和八个手柄（线宽、手柄按缩放补偿）。不接鼠标
+final class CropLayerView: NSView {
+  var crop: CGRect? { didSet { needsDisplay = true } }
+  var isActive = false { didSet { needsDisplay = true } }
+  var zoom: CGFloat = 1 { didSet { if isActive { needsDisplay = true } } }
+
+  override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+  override func draw(_ dirtyRect: NSRect) {
+    guard let crop else { return }
+    // 框外一圈：要画的那块挖掉框（奇偶规则；框先裁进这一块，不然框伸出去的部分会被当成「框外」反着涂）
+    let shade = NSBezierPath(rect: dirtyRect)
+    let hole = crop.intersection(dirtyRect)
+    if !hole.isNull { shade.append(NSBezierPath(rect: hole)) }
+    shade.windingRule = .evenOdd
+    NSColor.black.withAlphaComponent(isActive ? 0.5 : 0.65).setFill()
+    shade.fill()
+    guard isActive else { return }
+    let width = 1.5 / max(zoom, 0.01)
+    NSColor.white.setStroke()
+    let frame = NSBezierPath(rect: crop.insetBy(dx: width / 2, dy: width / 2))
+    frame.lineWidth = width
+    frame.stroke()
+    let side = 8 / max(zoom, 0.01)
+    NSColor.white.setFill()
+    for x in [crop.minX, crop.midX, crop.maxX] {
+      for y in [crop.minY, crop.midY, crop.maxY] where x != crop.midX || y != crop.midY {
+        NSBezierPath(rect: CGRect(x: x - side / 2, y: y - side / 2, width: side, height: side))
+          .fill()
+      }
+    }
   }
 }

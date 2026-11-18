@@ -4,6 +4,8 @@
 // 同一时刻拍一份窗口快照（CGWindowList，从前到后），截图模式悬停高亮、单击截整窗都按它命中（§11 #41）；每扇窗口记着
 // 归哪个进程，悬停时只问那个 App 窗口里的元素（ElementFinder，2026-11-08）。
 // 本 App 开着的窗口（浮层、设置窗、引导、钉图）照常截进去、能悬停选中；截图自己的装饰排除（keptOwnWindows）。
+// 设置 › 截图的两个开关（第四轮体检 X8 X9）：带上鼠标指针（只有截图这一路，cursor 参数）、截图录屏时隐藏桌面图标
+// （访达画桌面图标的那扇窗口排除在外，desktopIconWindows；录屏那边见 ScreenRecorder.makeFilter）。
 
 import AppKit
 import ScreenCaptureKit
@@ -44,9 +46,10 @@ enum ScreenCapture {
 
   /// 截下所有屏幕。调用前先确认有「屏幕录制」授权（Permissions），否则每块屏幕会各弹一个系统框。
   /// 本 App 的窗口只留 keptOwnWindows 认下的，其余排除
-  static func freeze() async throws -> [Shot] {
+  static func freeze(cursor: Bool = false) async throws -> [Shot] {
     let content = try await SCShareableContent.excludingDesktopWindows(
       false, onScreenWindowsOnly: true)
+    let hidesIcons = UserDefaults.standard.bool(forKey: Prefs.captureHideDesktopIcons)
     let own = ownWindows()
     let kept = keptOwnWindows(own)
     let known = Set(own.map(\.id))
@@ -69,11 +72,13 @@ enum ScreenCapture {
       listed.filter { $0.layer != mainMenu || isReserved($0.frame) }, menuBar: menuBar,
       dock: Permissions.isAccessibilityTrusted ? ElementFinder.dockBar() : nil)
     // 不在 NSApp.windows 里的自家窗口（系统画的快照等）也排除；只有状态栏层级的照旧留（菜单栏图标，以防它不在列表里）
-    let ownWindows = content.windows.filter {
-      $0.owningApplication?.processID == getpid() && !kept.contains($0.windowID)
-        && (known.contains($0.windowID)
-          || $0.windowLayer != NSWindow.Level.statusBar.rawValue)
-    }
+    let ownWindows =
+      content.windows.filter {
+        $0.owningApplication?.processID == getpid() && !kept.contains($0.windowID)
+          && (known.contains($0.windowID)
+            || $0.windowLayer != NSWindow.Level.statusBar.rawValue)
+      }
+      + (hidesIcons ? desktopIconWindows(in: content.windows) : [])
     let jobs = content.displays.compactMap { display -> (NSScreen, SCContentFilter)? in
       guard let screen = NSScreen.screens.first(where: { $0.displayID == display.displayID })
       else { return nil }
@@ -91,7 +96,7 @@ enum ScreenCapture {
         let scale = CGFloat(filter.pointPixelScale)
         configuration.width = Int(filter.contentRect.width * scale)
         configuration.height = Int(filter.contentRect.height * scale)
-        configuration.showsCursor = false
+        configuration.showsCursor = cursor
         return try await SCScreenshotManager.captureImage(
           contentFilter: filter, configuration: configuration)
       }
@@ -107,6 +112,17 @@ enum ScreenCapture {
         screen: screen, image: image,
         windows: here.map { $0.frame.offsetBy(dx: -origin.x, dy: -origin.y) },
         owners: here.map(\.pids))
+    }
+  }
+
+  /// 访达画桌面图标的那扇窗口（X9）：访达的、层级正好是桌面图标那一层（27.0.1 实测就一扇，铺满整块屏）
+  static func isDesktopIcons(bundleID: String?, layer: Int) -> Bool {
+    bundleID == "com.apple.finder" && layer == Int(CGWindowLevelForKey(.desktopIconWindow))
+  }
+
+  static func desktopIconWindows(in windows: [SCWindow]) -> [SCWindow] {
+    windows.filter {
+      isDesktopIcons(bundleID: $0.owningApplication?.bundleIdentifier, layer: $0.windowLayer)
     }
   }
 

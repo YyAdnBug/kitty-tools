@@ -1,5 +1,5 @@
 // 访达右键的压缩和解压：名字、tar 的参数、出错原因；在临时文件夹里用系统 tar 真压、真解一遍（zip 标 UTF-8、不带杂文件，
-// 7z 往返，GBK 名字的 zip（先用 ASCII 名字打、再把名字的字节换成 GBK），带密码的 zip 密码不对 / 对），解出来只有一样东西时
+// 7z 往返，tar.gz 往返（不带扩展属性、文件标志，重名加在「.tar.gz」前面），GBK 名字的 zip（先用 ASCII 名字打、再把名字的字节换成 GBK），带密码的 zip 密码不对 / 对），解出来只有一样东西时
 // 放在包旁边、重名加「 2」。只动临时文件夹。
 
 import Foundation
@@ -37,6 +37,12 @@ import Testing
     #expect(
       Archives.archiveName(for: [URL(filePath: "/a/b"), URL(filePath: "/a/c")], format: .sevenZip)
         == "归档.7z")
+    #expect(
+      Archives.archiveName(for: [URL(filePath: "/a/b"), URL(filePath: "/a/c")], format: .tarGz)
+        == "归档.tar.gz")
+    let tarName = Archives.archiveName(
+      for: [URL(filePath: "/a/\(String(repeating: "长", count: 300))")], format: .tarGz)
+    #expect(tarName.hasSuffix("长.tar.gz") && (tarName.utf16.count + 3) <= 255)
     // 名字太长：截到加上「 99.zip」还在 255 个字符以内（按 UTF-16 数，同 FAT / HFS+；APFS 按字符）
     let long = String(repeating: "长", count: 300)
     let name = Archives.archiveName(for: [URL(filePath: "/a/\(long)")], format: .zip)
@@ -54,6 +60,16 @@ import Testing
     let tail = Array(arguments.suffix(7))
     #expect(tail == ["-C", "/p", "./a", "./-b", "-C", "/q", "./c"])
     #expect(arguments.contains("zip:hdrcharset=UTF-8"))
+    // tar.gz：tar 默认的格式 + gzip；扩展属性、ACL、文件标志都不写进头里（Linux 的 tar 不认、每个文件报一句）
+    let tar = Archives.compressArguments(
+      [URL(filePath: "/p/a")], format: .tarGz, to: URL(filePath: "/p/.tmp"))
+    #expect(Array(tar.prefix(4)) == ["-c", "-v", "-f", "/p/.tmp"])
+    let flags = ["-z", "--no-xattrs", "--no-acls", "--no-fflags", "--no-mac-metadata", ".DS_Store"]
+    for flag in flags {
+      #expect(tar.contains(flag), "\(flag)")
+    }
+    #expect(!tar.contains("--format") && !tar.contains("--options"))
+    #expect(Array(tar.suffix(3)) == ["-C", "/p", "./a"])
     #expect(
       Archives.extractArguments(
         URL(filePath: "/p/x.zip"), into: URL(filePath: "/p/.t"), gbk: true, password: nil
@@ -233,6 +249,174 @@ import Testing
     #expect(try names(in: unpacked) == ["乙", "甲.txt"])
     #expect(
       try String(contentsOf: unpacked.appending(path: "乙/里面.txt"), encoding: .utf8) == "二")
+  }
+
+  /// tar.gz：真是 gzip、名字是中文、不带杂文件和扩展属性 / 文件标志；再压一次叫「资料 2.tar.gz」（不是「资料.tar 2.gz」），
+  /// 解回来是一个文件夹
+  @Test func tarGzRoundTrip() async throws {
+    let root = try makeRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let folder = root.appending(path: "资料")
+    var file = folder.appending(path: "子/说明 文档.txt")
+    try write("中", to: file)
+    try write("x", to: folder.appending(path: ".DS_Store"))
+    try write("x", to: folder.appending(path: "._说明 文档.txt"))
+    #expect(setxattr(file.path(percentEncoded: false), "user.kitty", "1", 1, 0, 0) == 0)
+    var hidden = URLResourceValues()
+    hidden.isHidden = true
+    try file.setResourceValues(hidden)
+
+    let name = Archives.archiveName(for: [folder], format: .tarGz)
+    #expect(Archives.freeName(name, format: .tarGz, in: root) == "资料.tar.gz")
+    let archive = try #require(
+      await Archives.pack([folder], format: .tarGz, to: root.appending(path: name)).url)
+    #expect(try Data(contentsOf: archive).prefix(2) == Data([0x1F, 0x8B]))
+    let listing = try await Subprocess.run(
+      "/usr/bin/tar", ["-tf", archive.path(percentEncoded: false)], captures: true,
+      environment: ByteMeter.utf8Environment)
+    let lines = Set(listing.output.split(whereSeparator: \.isNewline).map(String.init))
+    #expect(lines == ["资料/", "资料/子/", "资料/子/说明 文档.txt"])
+    let raw = try await Subprocess.run(
+      "/usr/bin/gunzip", ["-c", archive.path(percentEncoded: false)], captures: true)
+    // pax 头里扩展属性（LIBARCHIVE.xattr.*、SCHILY.xattr.*）、文件标志（SCHILY.fflags）、ACL（SCHILY.acl.*）都没有
+    #expect(raw.status == 0 && raw.output.contains("说明 文档.txt"))
+    #expect(!raw.output.contains("LIBARCHIVE.") && !raw.output.contains("SCHILY."))
+    // 旁边已经有「资料.tar.gz」：「 2」加在整个扩展名前面，解压时还认得出是 tar.gz
+    let second = Archives.freeName(name, format: .tarGz, in: root)
+    #expect(second == "资料 2.tar.gz")
+    #expect(Archives.suffix(of: root.appending(path: second)) == ".tar.gz")
+
+    let placed = try #require(await Archives.unpack(archive, password: nil, gbk: false).url)
+    #expect(placed.lastPathComponent == "资料 2")
+    file = placed.appending(path: "子/说明 文档.txt")
+    #expect(try String(contentsOf: file, encoding: .utf8) == "中")
+    #expect(getxattr(file.path(percentEncoded: false), "user.kitty", nil, 0, 0, 0) == -1)
+    #expect(try file.resourceValues(forKeys: [.isHiddenKey]).isHidden == false)
+  }
+
+  /// 只差大小写（2026-11-17 A2）、出错原因里去掉 -v 报的名字、压缩时读不到的那一样（A3）、写不了的位置（B1）：纯函数
+  @Test func clashesAndReasons() throws {
+    // 按「\n」拆：名字里的 U+2028 不拆开
+    let listing = "x src/\nx src/Readme.md\nx src/README.md\nx a\u{2028}b\ntar: 警告\n"
+    #expect(
+      Archives.extractedEntries(listing) == [
+        "src/", "src/Readme.md", "src/README.md", "a\u{2028}b",
+      ])
+    // 后解的留在盘上；写法一模一样的重复不算
+    #expect(
+      Archives.caseClashes(["src/", "src/Readme.md", "src/README.md", "a.txt", "a.txt"]) == [
+        "src/Readme.md"
+      ])
+    // 同一个写法后面又来一次：盘上是它最后那一份，不算丢
+    #expect(Archives.caseClashes(["A", "a", "A"]) == ["a"])
+    #expect(Archives.caseClashes(["a/b", "A/B", "c"]) == ["a/b"])
+    // 文件被只差大小写的文件夹顶掉；文件夹之间合在一起不算
+    #expect(Archives.caseClashes(["BUILD", "build/", "build/x"]) == ["BUILD"])
+    #expect(Archives.caseClashes(["Docs/", "Docs/a", "docs/", "docs/b"]).isEmpty)
+    // 同一组丢了不止一个：分两轮，免得在临时文件夹里又撞上
+    #expect(
+      Archives.rounds(["README", "x", "Readme", "y"]) == [["README", "x", "y"], ["Readme"]])
+    // 丢的文件 a 和丢的 A/b 不能一起解（a 是文件，A/ 建不了）
+    #expect(Archives.rounds(["a", "A/b", "c"]) == [["a", "c"], ["A/b"]])
+    #expect(Archives.escapedForTar("^a$b") == "\\^a\\$b")
+    #expect(
+      Archives.extractErrors("x encrypted.txt\nx a.txt: Incorrect passphrase\ntar: Error exit")
+        == "Incorrect passphrase\ntar: Error exit")
+    // 文件名里的字不当成原因：叫 decrypt-notes.txt 的文件、包不完整
+    #expect(
+      Archives.outcome(
+        ofFailure: Archives.extractErrors("x decrypt-notes.txt\ntar: Truncated input file"),
+        password: false) == .failed("压缩包不完整，可能没下载完"))
+
+    let visit = """
+      tar: Couldn't list extended attributes: Permission denied
+      tar: ./项目/锁住的夹: Couldn't visit directory: Permission denied
+      """
+    let folder = try #require(Archives.unreadable(visit))
+    #expect(folder.name == "锁住的夹" && folder.denied && !folder.missing)
+    #expect(
+      Archives.packFailure("tar: Can't open `a/锁着.txt': Permission denied", format: .zip)
+        == "「锁着.txt」读不到（没有权限）")
+    #expect(
+      Archives.packFailure("tar: ./不存在: Cannot stat: No such file or directory", format: .zip)
+        == "「不存在」不见了（压缩时被移走或改了名）")
+    #expect(
+      Archives.packFailure("tar: Failed to open '/x/.kitty-1'", format: .tarGz) == "没有权限读写这个位置")
+    #expect(
+      Archives.packFailure("tar: No space left on device", format: .sevenZip)
+        == "磁盘空间不够了（7z 还要先在启动盘上暂存一份）")
+    #expect(Archives.packFailure("tar: 别的", format: .zip) == "有文件读不到（被移走、改名了，或者没有权限）")
+  }
+
+  /// 包里有只差大小写的两个文件：两个都留，被盖掉的那个名字加「 2」；压缩时有文件读不到，说出是哪个；写不了的文件夹先认出来
+  @Test func clashKeepsBothAndUnreadableIsNamed() async throws {
+    let root = try makeRoot()
+    defer {
+      _ = chmod(root.appending(path: "只读").path(percentEncoded: false), 0o755)
+      _ = chmod(root.appending(path: "项目/锁着.txt").path(percentEncoded: false), 0o644)
+      try? FileManager.default.removeItem(at: root)
+    }
+    // 先用两个不一样的名字打，打的时候让 tar 把其中一个改成只差大小写的写法（Mac 的盘上造不出这两个文件）
+    try write("一", to: root.appending(path: "src/Readme.md"))
+    try write("二", to: root.appending(path: "src/READMEX.md"))
+    let archive = root.appending(path: "撞名.zip")
+    let made = try await Subprocess.run(
+      "/usr/bin/tar",
+      [
+        "-c", "-f", archive.path(percentEncoded: false), "--format", "zip", "-s",
+        "|READMEX|README|",
+        "-C", root.path(percentEncoded: false), "src",
+      ], captures: true)
+    #expect(made.status == 0)
+    let unpacked = await Archives.unpack(archive, password: nil, gbk: false)
+    guard case .done(let placed, let renamed, let unsaved) = unpacked else {
+      Issue.record("没解开：\(unpacked)")
+      return
+    }
+    #expect(renamed.count == 1 && renamed[0].hasSuffix(" 2.md") && unsaved == 0)
+    let names = try names(in: placed)
+    #expect(names.count == 2 && names.contains(renamed[0]))
+    let texts = try Set(
+      names.map { try String(contentsOf: placed.appending(path: $0), encoding: .utf8) })
+    #expect(texts == ["一", "二"])
+
+    // 文件 BUILD 被后面的文件夹 build/ 顶掉：另存成「BUILD 2」
+    let tree = root.appending(path: "树")
+    try write("文件", to: tree.appending(path: "BUILDX"))
+    try write("里面", to: tree.appending(path: "build/x"))
+    let mixed = root.appending(path: "顶掉.tar")
+    let packedTree = try await Subprocess.run(
+      "/usr/bin/tar",
+      [
+        "-c", "-f", mixed.path(percentEncoded: false), "-s", "|BUILDX|BUILD|", "-C",
+        tree.path(percentEncoded: false), "BUILDX", "build",
+      ], captures: true)
+    #expect(packedTree.status == 0)
+    guard
+      case .done(let out, let saved, 0) = await Archives.unpack(mixed, password: nil, gbk: false)
+    else {
+      Issue.record("文件被文件夹顶掉的包没解好")
+      return
+    }
+    #expect(saved == ["BUILD 2"])
+    #expect(try String(contentsOf: out.appending(path: "BUILD 2"), encoding: .utf8) == "文件")
+    #expect(try String(contentsOf: out.appending(path: "build/x"), encoding: .utf8) == "里面")
+
+    // 压缩时有文件读不到：说出是哪个
+    try write("ok", to: root.appending(path: "项目/好.txt"))
+    try write("secret", to: root.appending(path: "项目/锁着.txt"))
+    #expect(chmod(root.appending(path: "项目/锁着.txt").path(percentEncoded: false), 0) == 0)
+    let packed = await Archives.pack(
+      [root.appending(path: "项目")], format: .zip, to: root.appending(path: "项目.zip"))
+    #expect(packed == .failed("「锁着.txt」读不到（没有权限）"))
+    #expect(!FileManager.default.fileExists(atPath: root.appending(path: "项目.zip").path))
+
+    // 写不了的文件夹：动手前就认出来
+    let locked = root.appending(path: "只读")
+    try FileManager.default.createDirectory(at: locked, withIntermediateDirectories: false)
+    #expect(Archives.unwritable(root) == nil)
+    #expect(chmod(locked.path(percentEncoded: false), 0o555) == 0)
+    #expect(Archives.unwritable(locked) == "没有权限写这个位置")
   }
 
   /// GBK 名字、不标 UTF-8 的 zip（中文 Windows 打的那种）：认出来按 GB18030 解
@@ -472,6 +656,6 @@ import Testing
 
 extension Archives.Outcome {
   fileprivate var url: URL? {
-    if case .done(let url) = self { url } else { nil }
+    if case .done(let url, _, _) = self { url } else { nil }
   }
 }

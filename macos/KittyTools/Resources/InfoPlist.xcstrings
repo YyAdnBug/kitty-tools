@@ -8,13 +8,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Lets Launcher system commands ask Finder to empty the Trash and show the system’s Log Out, Restart and Shut Down confirmations. When the Notch can’t read what’s playing, Kitty Tools also uses it to play, pause and skip in Music or Spotify and to read Music’s playback position."
+            "value" : "Lets Launcher system commands ask Finder to empty the Trash and show the system’s Log Out, Restart and Shut Down confirmations. When the Notch can’t read what’s playing, Kitty Tools also uses it to play, pause and skip in Music or Spotify and to read Music’s playback position. The Kitty Tools button in the Finder toolbar also uses it to ask Finder what you’ve selected in iCloud Drive and cloud-storage folders."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "用于启动器的系统命令：让访达清倒废纸篓，弹出退出登录、重新启动、关机的系统确认框；刘海岛读不到正在播放时，替「音乐」「Spotify」播放、暂停、切歌，读「音乐」播到哪"
+            "value" : "用于启动器的系统命令：让访达清倒废纸篓，弹出退出登录、重新启动、关机的系统确认框；刘海岛读不到正在播放时，替「音乐」「Spotify」播放、暂停、切歌，读「音乐」播到哪；访达工具栏上的「Kitty Tools」按钮在 iCloud 云盘、网盘的文件夹里问访达你选中了什么"
           }
         }
       }
