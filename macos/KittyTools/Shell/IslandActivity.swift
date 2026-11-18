@@ -299,6 +299,10 @@ struct IslandWings: View {
       }
     } else if let text = Island.Activity.wingReading(activity.trailing, now: .now) {
       reading(text, tinted: false)
+    } else {
+      // 右耳没东西（专注模式那种只有图标的活动）也得占住 36：空着的话这一侧不占宽，整排居中后左耳的图标往里挪半个耳朵、
+      // 被真刘海挡住（2026-11-18 用户装上后报的）
+      Color.clear
     }
   }
 
