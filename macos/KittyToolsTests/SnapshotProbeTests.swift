@@ -4041,6 +4041,32 @@ struct SnapshotProbeTests {
       }
     }
     model.alternate = .none
+    // 路径模式（2026-11-18）：临时目录里一个隐藏文件夹 .local（同反馈里的例子），列出里面的、按开头筛、⌘K
+    let shotRoot = FileManager.default.temporaryDirectory.appending(path: "kitty-shot-\(UUID())")
+      .resolvingSymlinksInPath()
+    defer { try? FileManager.default.removeItem(at: shotRoot) }
+    let local = shotRoot.appending(path: ".local")
+    for folder in ["bin", "lib", "share", "state"] {
+      try FileManager.default.createDirectory(
+        at: local.appending(path: folder), withIntermediateDirectories: true)
+    }
+    for file in ["README.md", "env.sh"] { try Data().write(to: local.appending(path: file)) }
+    for dark in [false, true] {
+      for (name, query) in [
+        ("launcher-path", local.path), ("launcher-path-filter", local.path + "/s"),
+        ("launcher-path-actions", local.path + "/"),
+      ] {
+        model.query = query
+        await model.pathLookup()
+        model.showsActions = name == "launcher-path-actions"
+        try snapshot(
+          LauncherPanelView(model: model),
+          size: NSSize(width: 720, height: LauncherPanelView.height(for: model)),
+          dark: dark,
+          to: "\(out)/\(name)\(dark ? "-dark" : "").png")
+      }
+    }
+    model.showsActions = false
     try await renderLauncherBatch6(out, usage: usage, apps: apps)
     try renderLauncherFollow(out)
   }
