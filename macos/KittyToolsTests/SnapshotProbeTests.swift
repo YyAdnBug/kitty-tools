@@ -303,6 +303,15 @@ struct SnapshotProbeTests {
           m.query = "zzzz"
         }
       ),
+      // 空收藏夹（第五轮体检 U8）：说「这个收藏夹还是空的」、教怎么放进来，不给「清除搜索和筛选」
+      (
+        "empty-group",
+        { m in
+          if let empty = m.store.groups.first(where: { $0.name == "读书笔记" }) {
+            m.groupFilter = .group(empty.id)
+          }
+        }
+      ),
     ]
     for dark in [false, true] {
       for (name, configure) in states {
@@ -3580,6 +3589,15 @@ struct SnapshotProbeTests {
         }
       ),
       ("translate-screenshot-empty", { c in c.showNotice("没有识别到文字，可以把选区框大一些再试") }),
+      // 只启用了词典类服务时翻一句话（第五轮体检 U8）：说「启用的服务只能查单词」，带「打开翻译设置」
+      (
+        "translate-dictionary-only",
+        { c in
+          c.sourceText = "This is a whole sentence, not a word."
+          c.translatedSource = c.sourceText
+          c.onlyDictionaries = true
+        }
+      ),
     ]
     for dark in [false, true] {
       for (name, configure) in states {
@@ -4042,6 +4060,13 @@ struct SnapshotProbeTests {
         .init(
           url: "https://developer.mozilla.org/en-US/docs/Web/CSS/grid",
           title: "grid - CSS: Cascading Style Sheets | MDN", visitedAt: .now - 86_400),
+        // 上百字的标题（第五轮体检 U9）：挤的是标题和副标题，行尾的类型标签不被压缩
+        .init(
+          url:
+            "https://github.com/swiftlang/swift-evolution/blob/main/proposals/0461-async-function-isolation.md",
+          title:
+            "swift-evolution/proposals/0461-async-function-isolation.md at main · swiftlang/swift-evolution · Run nonisolated async functions on the caller’s actor by default",
+          visitedAt: .now - 2 * 86_400),
       ])
     }
     // ip：Wi-Fi + 一块 VPN，开着代理时两家看到的外网地址不一样（文档用的保留地址，不是真的）

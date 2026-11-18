@@ -15,7 +15,7 @@
 // 键盘（对标 Alfred / Raycast）：↑↓ 循环、↩ 执行（计算结果是粘贴，find 的文件是在访达中显示）、⌘↩ 在访达中显示
 // （计算结果只复制，find 的文件是打开，网址用第二个浏览器打开）、⌥↩ 在访达里搜索、⌃↩ 网页搜索（按住修饰键时选中行的
 // 副标题换成替代动作）、Tab 补全、⌘C 复制路径 / 网址、⇧⌘C 网址复制为 Markdown 链接、⌘D 收藏、⌘Y 快速查看文件、
-// ⌘1–9 执行第 N 项、「常用」里 ⌘⌫ 移除一项（⌘Z 撤销，体检 B38）、Esc 先关预览 / 动作菜单再清空再关闭；
+// ⌘1–9 执行看得见的第 N 项（shortcutBase）、「常用」里 ⌘⌫ 移除一项（⌘Z 撤销，体检 B38）、Esc 先关预览 / 动作菜单再清空再关闭；
 // ⌘K / →（光标在末尾时）动作菜单（N8，共用 ActionMenu）：列出选中项的全部动作连同键位，开着时搜索框用来过滤动作，
 // ↑↓ ↩ 选择执行、Esc 关掉，菜单里标着的其余键位（⇥ ⌥↩ ⌃↩ ⌘ 键）照常可用、先关菜单。行上右键是同一份动作（体检 C8）。
 // 单击选中、双击执行（和剪贴板面板一致）。打开 App / 文件 / 网址 / 搜索页：↩ 当下就收起，系统在后台打开，不等 App
@@ -44,6 +44,11 @@ import UniformTypeIdentifiers
   }
   private(set) var results: [LauncherItem] = []
   var selection = 0
+  /// 列表滚到哪了：可见部分的顶在内容里的位置（视图滚动时写进来；列表被空状态换掉时回 0）。只有按住 ⌘ 时界面才读它
+  var listTop: CGFloat = 0
+  /// ⌘1 对的是第几行：列表里第一条看得见的行。按住 ⌘ 显示的数字和 ⌘1–9 执行的行都从它起编（第五轮体检 U9：往下翻过之后
+  /// ⌘1 对的是滚出去看不见的第一行）。每次现算，结果换了也对得上
+  var shortcutBase: Int { LauncherPanelView.firstVisibleRow(top: listTop, in: self) }
   /// 选中高亮这次怎么移动（Whisker §4）：键盘单按 snap，连发和结果刷新不动画，鼠标点选 glide
   private(set) var selectionMotion = Style.Motion.instant
   /// 执行失败的提示（面板不收起）
@@ -568,9 +573,11 @@ import UniformTypeIdentifiers
   @ObservationIgnored var applications: (UTType) -> [(url: URL, isDefault: Bool)] = {
     LauncherModel.applications(toOpen: $0)
   }
-  /// 移到废纸篓（能从废纸篓放回，不二次确认）；单测里换成记一笔，不真删
-  @ObservationIgnored var recycle: (URL) async throws -> Void = {
-    _ = try await NSWorkspace.shared.recycle([$0])
+  /// 移到废纸篓（能从废纸篓放回，不二次确认），给出它在废纸篓里的位置（「撤销」挪回来用）；单测里换成记一笔，不真删
+  @ObservationIgnored var recycle: (URL) async throws -> URL? = {
+    // 只移一样：按原网址查不到（文件夹的网址补了结尾的「/」这类）就取唯一那一项
+    let moved = try await NSWorkspace.shared.recycle([$0])
+    return moved[$0] ?? moved.values.first
   }
   /// 「fy 单词」副标题的释义（系统词典第一条）；单测、截图自检换成固定的
   @ObservationIgnored var lookUp: (String) async -> String? = { word in
@@ -2769,16 +2776,28 @@ import UniformTypeIdentifiers
     if !isQuickLooking { toggleQuickLook() }
   }
 
-  /// 移到废纸篓（能放回，按 D2「只确认不可撤销的」不二次确认）：刘海岛说一声，结果行原地删掉（settle）
+  /// 移到废纸篓（能放回，按 D2「只确认不可撤销的」不二次确认）：刘海岛说一声、带「撤销」（第五轮体检 U5①），
+  /// 结果行原地删掉（settle）
   private func moveToTrash(_ item: LauncherItem) {
+    let original = URL(filePath: item.target)
     Task {
+      let trashed: URL?
       do {
-        try await recycle(URL(filePath: item.target))
+        trashed = try await recycle(original)
       } catch {
         island?.show("没能移到废纸篓", detail: "\(error.localizedDescription)", tone: .error)
         return
       }
-      island?.show("已移到废纸篓「\(item.title)」", symbol: "trash.circle.fill")
+      island?.show(
+        "已移到废纸篓「\(item.title)」", symbol: "trash.circle.fill",
+        actions: trashed.map { trashed in
+          [
+            Self.putBack(trashed, to: original, island: island) { [self] in
+              // 收起着就不搜（同「关掉这条命令」的撤销）；下次呼出自己会搜
+              if isShown { search() }
+            }
+          ]
+        } ?? [])
       let index = selection
       withAnimation(Style.Motion.settle.animation(reduced: Style.reduceMotion)) {
         if isShowingRecent {
@@ -2788,6 +2807,31 @@ import UniformTypeIdentifiers
         }
       }
       selection = min(index, max(results.count - 1, 0))
+    }
+  }
+
+  /// 「已移到废纸篓」上的「撤销」（启动器、设置里脚本的「移到废纸篓」共用，第五轮体检 U5①）：从废纸篓挪回原处。
+  /// 原处又有了同名的就报错、不覆盖（RENAME_EXCL，同 mac-native §2 动用户文件的规矩）；done：放回去之后（重搜、重读脚本库）
+  static func putBack(
+    _ trashed: URL, to original: URL, island: Island?, done: @escaping () -> Void
+  ) -> Island.Action {
+    Island.Action("撤销") {
+      let name = original.lastPathComponent
+      let error = FileMoves.rename(trashed, to: original)
+      guard error != 0 else {
+        island?.show("已放回「\(name)」", symbol: "arrow.uturn.backward.circle.fill")
+        return done()
+      }
+      // 可选参数里的三目只有第一个分支抽得进目录：先放进不是可选的 let
+      let detail: LocalizedStringResource =
+        if error == EEXIST || error == ENOTEMPTY {
+          "原处已经有同名的了，没有覆盖"
+        } else if !FileMoves.occupied(trashed) {
+          "废纸篓里已经没有它了"
+        } else {
+          "原来的文件夹不在了，或者那里写不了"
+        }
+      island?.show("没能放回「\(name)」", detail: detail, tone: .warning)
     }
   }
 
@@ -3030,10 +3074,11 @@ import UniformTypeIdentifiers
       openSettings()
     default:
       guard let digit = HotKey.digitKeys.firstIndex(of: Int(event.keyCode)) else { return false }
+      let row = shortcutBase + digit
       // 列表脚本正在重跑时的结果行：⌘N 会落到新结果的第一条上，不执行
-      if digit < results.count, !isPending(results[digit]) {
-        execute(results[digit])
-      } else if digit < results.count {
+      if row < results.count, !isPending(results[row]) {
+        execute(results[row])
+      } else if row < results.count {
         NSSound.beep()
       }
     }
@@ -3155,6 +3200,8 @@ import UniformTypeIdentifiers
     selectionMotion = Style.isKeyRepeat ? .instant : .snap
     selection = (selection + offset + results.count) % results.count
     userMovedSelection = true
+    // 焦点一直在搜索框，行上的「已选中」读屏看不到：说出选中了什么（A1）
+    if let item = selectedItem { Island.announceSettled(item.title, item.kindTitle) }
   }
 
   // MARK: ⌘K 动作菜单 / 右键菜单
@@ -3327,9 +3374,11 @@ import UniformTypeIdentifiers
   }
 
   private func moveAction(by offset: Int) {
-    let count = filteredActions.count
+    let actions = filteredActions
+    let count = actions.count
     guard count > 0 else { return }
     actionSelection = (actionSelection + offset + count) % count
+    ActionMenu.announce(actions[actionSelection])
   }
 
   private func runSelectedAction() {

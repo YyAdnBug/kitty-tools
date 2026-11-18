@@ -119,7 +119,10 @@ import UniformTypeIdentifiers
       entries = self.entries
     }
     selectionMotion = Style.isKeyRepeat ? .instant : .snap
-    selectedID = entries[(current + offset + entries.count) % entries.count].id
+    let entry = entries[(current + offset + entries.count) % entries.count]
+    selectedID = entry.id
+    // 焦点一直在搜索框：说出选中的原文和译文（A1）
+    Island.announceSettled(entry.source, Island.excerpt(entry.result))
   }
 
   /// 单击选中（指针驱动，glide）
@@ -306,6 +309,7 @@ import UniformTypeIdentifiers
       guard !actions.isEmpty else { break }
       let offset = selector == #selector(NSResponder.moveUp(_:)) ? -1 : 1
       actionSelection = (actionSelection + offset + actions.count) % actions.count
+      ActionMenu.announce(actions[actionSelection])
     case #selector(NSResponder.insertNewline(_:)):
       guard let selectedAction else {
         NSSound.beep()
@@ -726,15 +730,22 @@ enum HistoryMenu {
     FilePanel.begin(panel) { response in
       guard response == .OK, let url = panel.url else { return }
       let text = anki ? HistoryStore.tsv(entries) : "\u{FEFF}" + HistoryStore.csv(entries)
-      do {
-        try text.write(to: url, atomically: true, encoding: .utf8)
-        island?.show(
-          "已导出 \(entries.count) 条", detail: "\(url.lastPathComponent)",
-          symbol: "square.and.arrow.up.circle.fill", actions: [.reveal(url)])
-      } catch {
-        island?.show("导出失败", detail: "\(error.localizedDescription)", tone: .error)
+      Task {
+        do {
+          try await write(text, to: url)
+          island?.show(
+            "已导出 \(entries.count) 条", detail: "\(url.lastPathComponent)",
+            symbol: "square.and.arrow.up.circle.fill", actions: [.reveal(url)])
+        } catch {
+          island?.show("导出失败", detail: "\(error.localizedDescription)", tone: .error)
+        }
       }
     }
+  }
+
+  /// 写文件在主线程外（第五轮体检 P2）：选的文件夹可能在卡住的网络盘上
+  @concurrent private static func write(_ text: String, to url: URL) async throws {
+    try text.write(to: url, atomically: true, encoding: .utf8)
   }
 
   /// 清空非收藏的历史（确认框由调用方弹，文案「清空翻译历史？」「收藏的记录会保留」）；结果用刘海说

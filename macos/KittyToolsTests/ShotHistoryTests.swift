@@ -699,7 +699,9 @@ struct ShotHistoryTests {
             windowNumber: window.windowNumber, context: nil, characters: "S",
             charactersIgnoringModifiers: "S", isARepeat: false, keyCode: UInt16(kVK_ANSI_S))),
         in: window, model: model))
-    #expect(try press("p", kVK_ANSI_P))
+    // 钉图是单键 T（第五轮体检 U4③）；⌘P 不再接
+    #expect(try !press("p", kVK_ANSI_P))
+    #expect(try press("t", kVK_ANSI_T, []))
     #expect(try press("o", kVK_ANSI_O))
     #expect(try press("\r", kVK_Return, []))
     #expect(done == ["拷贝", "存储", "另存为", "钉图", "识字", "改标注"], "实际：\(done)")

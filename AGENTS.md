@@ -203,6 +203,12 @@ TEST_RUNNER_KITTY_ISLAND_FRAMES=1 xcodebuild -project macos/KittyTools.xcodeproj
 TEST_RUNNER_KITTY_SELECTION_PROBE=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
   test -only-testing:'KittyToolsTests/SelectionProbeTests/measure()'
 
+# 流式翻译时每来一段字的主线程耗时探针（按需，屏外，不到一秒、不联网；grep「favorite-probe」：收藏状态那一查、浮窗更新一遍。
+# 第五轮体检 P3 量的：4 张生成中的卡、32 KB 原文时那一查 0.1 ms，浮窗更新一遍中位 4.1 ms，收藏状态记下来以后 3.6 ms；
+# 短原文都是 3.1 ms，大头是画卡片。探针的环境变量给一个绝对路径时另存一张浮窗的图）
+TEST_RUNNER_KITTY_TRANSLATE_PROBE=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
+  test -only-testing:'KittyToolsTests/TranslateFavoriteProbeTests/streamingCost()'
+
 # 启动台的性能 / 内存探针（按需，屏外，几秒；grep「launchpad-probe」：扫目录、第一帧、翻页布局、footprint）
 TEST_RUNNER_KITTY_LAUNCHPAD_PROBE=1 xcodebuild -project macos/KittyTools.xcodeproj -scheme KittyTools \
   test -only-testing:'KittyToolsTests/LaunchpadProbeTests/measure()'

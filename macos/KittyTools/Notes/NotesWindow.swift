@@ -1229,7 +1229,8 @@ final class NotesWindow: NSObject, NSWindowDelegate {
     window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
     window.toolbarStyle = .unified
     window.isReleasedWhenClosed = false
-    window.collectionBehavior = [.fullScreenAuxiliary]
+    // 文稿型窗口，能全屏（第五轮体检 U12：绿灯、⌃⌘F，同系统的备忘录）；别的 App 全屏时打开它照旧叠在上面，见 show()
+    window.collectionBehavior = [.fullScreenPrimary]
     window.setContentSize(NSSize(width: 940, height: 580))
     window.contentMinSize = Self.minSize
     super.init()
@@ -1281,6 +1282,13 @@ final class NotesWindow: NSObject, NSWindowDelegate {
   /// 显示并激活（调用方先把浮层收起，同 SettingsWindow.show）
   func show() {
     model.revalidateSelection()
+    // 还没显示时看它要出在的那块屏：别的 App 正全屏占着就叠在那个全屏上（fullScreenAuxiliary，不把人切出全屏；
+    // 便签的入口在全屏里也要能出，mac-overlay-panel 那叠一节），平时能自己全屏（fullScreenPrimary）。两者互斥，只设一个。
+    // ponytail: 叠在全屏上打开的这一回，绿灯是放大、不能全屏；关掉再从桌面打开就能。认全屏的口径和局限同 IslandFullScreen
+    if !window.isVisible, let screen = window.screen ?? NSScreen.underMouse {
+      window.collectionBehavior =
+        IslandFullScreen.isFullScreen(on: screen) ? [.fullScreenAuxiliary] : [.fullScreenPrimary]
+    }
     NSApp.setActivationPolicy(.regular)
     window.makeKeyAndOrderFront(nil)
     NSApp.activate()
@@ -1321,7 +1329,8 @@ final class NotesWindow: NSObject, NSWindowDelegate {
     return view === editor || (editor.enclosingScrollView.map(view.isDescendant(of:)) ?? false)
   }
 
-  /// 窗口的按键监听认的三个键（别的键是 SwiftUI 的 keyboardShortcut，见 NotesWindowView.shortcuts）；返回接没接。
+  /// 窗口的按键监听认的几个键（别的键是 SwiftUI 的 keyboardShortcut，见 NotesWindowView.shortcuts）；返回接没接。
+  /// - ⌃⌘F 进出全屏（第五轮体检 U12：主菜单里没有「进入全屏幕」那一项，这个键不会自己来）；叠在别的 App 的全屏上时不接
   /// 挂着确认框（sheet）时按键是给它的，不接。
   /// - ⌘W：便签墙上开着编辑卡时收回编辑卡（不关窗口）；没开着照常关窗口；
   /// - ⌘⌫ 按键码认：焦点在输入框里（搜索框、标题框的字段编辑器，正文的文本框）交还给输入框；
@@ -1341,6 +1350,13 @@ final class NotesWindow: NSObject, NSWindowDelegate {
     }
     if flags == [.command, .shift], event.charactersIgnoringModifiers?.lowercased() == "z" {
       model.redo()
+      return true
+    }
+    if flags == [.command, .control], event.charactersIgnoringModifiers?.lowercased() == "f",
+      window.collectionBehavior.contains(.fullScreenPrimary)
+        || window.styleMask.contains(.fullScreen)
+    {
+      window.toggleFullScreen(nil)
       return true
     }
     // ⌘A：焦点不在输入框里时勾上列表里的全部（X6；输入框里照常全选字）

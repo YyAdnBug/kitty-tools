@@ -10,6 +10,15 @@
 import SwiftUI
 
 struct ActionMenu: View {
+  /// ↑↓ 换了选中：读屏开着时说出这一行（标题，说明；勾着的加「已选中」，带子列表的加「子菜单」；第五轮体检 A1）
+  static func announce(_ item: Item) {
+    let state =
+      item.submenu != nil
+      ? String(localized: "子菜单") : item.isChecked == true ? String(localized: "已选中") : nil
+    Island.announceSettled(
+      item.title, [item.detail, state].compactMap { $0 }.joined(separator: Island.comma))
+  }
+
   /// 一行：[✓] [图标] 标题 ⋯ 说明 快捷键 / ›
   struct Item: Identifiable {
     /// 同一个菜单里不能重复（默认取标题；标题可能撞，比如同名的来源 App 和收藏夹，就自己给）

@@ -337,6 +337,7 @@ final class OverlayPanel: NSPanel {
   func hide() {
     endSqueeze()
     guard isVisible else { return }
+    Island.cancelSettled()
     saveFrameIfMoved()
     showGeneration += 1
     animationBehavior = .none
@@ -360,6 +361,7 @@ final class OverlayPanel: NSPanel {
     endSqueeze()
     guard isVisible else { return }
     let returnTo = byKeyboard ? pasteTarget()?.window : nil
+    Island.cancelSettled()  // 键盘换选中时排着要念的那一行不念了（A1）
     saveFrameIfMoved()
     showGeneration += 1
     lastDismiss = CACurrentMediaTime()

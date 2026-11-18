@@ -449,6 +449,14 @@ struct TranslatePanelView: View {
         Button("打开翻译设置") { coordinator.openSettings(nil) }.buttonStyle(BrandButtonStyle())
       }
       .padding(Self.emptyStateInset)
+    } else if coordinator.cards.isEmpty, coordinator.onlyDictionaries {
+      EmptyState(symbol: "character.book.closed", title: "启用的服务只能查单词") {
+        VStack(spacing: 12) {
+          Text("翻译句子要再启用一个翻译服务").foregroundStyle(.secondary)
+          Button("打开翻译设置") { coordinator.openSettings(nil) }.buttonStyle(BrandButtonStyle())
+        }
+      }
+      .padding(Self.emptyStateInset)
     } else if coordinator.cards.isEmpty {
       EmptyState(symbol: "character.bubble", title: "划词、截图或输入后开始翻译") {
         VStack(spacing: 6) {
@@ -583,8 +591,9 @@ private struct LanguageCapsule: View {
   }
 }
 
-/// 顶栏「⋯」菜单（N6）：翻译历史 ⌘Y、清空历史、导出（体检 C6，和设置 › 翻译、历史 ⌘K 同一个 HistoryMenu.export）
-/// 与条数、复制即译开关、设置 ⌘,。菜单项的键位和 TranslateCoordinator.handleKeyEquivalent 一致（那边先处理，这里只是显示）；
+/// 顶栏「⋯」菜单（N6）：翻译历史 ⌘Y、导出（体检 C6，和设置 › 翻译、历史 ⌘K 同一个 HistoryMenu.export）
+/// 与条数、复制即译开关、设置 ⌘,，「清空历史…」单独一组放在最后（第五轮体检 U4②：HIG 危险命令放最后，找导出时不擦到它）。
+/// 菜单项的键位和 TranslateCoordinator.handleKeyEquivalent 一致（那边先处理，这里只是显示）；
 /// 浮窗快捷键不再塞进按钮 help。清空的确认框挂在根视图上（历史 ⌘K 也开它）
 private struct MoreMenu: View {
   @Bindable var coordinator: TranslateCoordinator
@@ -598,8 +607,6 @@ private struct MoreMenu: View {
     Menu {
       Toggle("翻译历史", isOn: $coordinator.showsHistory)
         .keyboardShortcut("y")
-      Button("清空历史…", role: .destructive) { coordinator.confirmsClearHistory = true }
-        .disabled(counts.total == counts.favorites)
       Menu("导出") { HistoryExportItems(history: history, island: island) }
         .disabled(counts.total == 0)
       Text("共 \(counts.total) 条 · 收藏 \(counts.favorites)")
@@ -608,6 +615,9 @@ private struct MoreMenu: View {
       Divider()
       Button("设置…") { coordinator.openSettings(nil) }
         .keyboardShortcut(",")
+      Divider()
+      Button("清空历史…", role: .destructive) { coordinator.confirmsClearHistory = true }
+        .disabled(counts.total == counts.favorites)
     } label: {
       // 字形贴着点击框的右边：顶栏最右的东西贴外缘（离窗口 12），和左边贴着外缘的语言胶囊对称。
       // −1.5：13 medium 的「⋯」右边有 1.5 的留白，让掉它最右那个点才正好在外缘上

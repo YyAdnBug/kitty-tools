@@ -1611,6 +1611,64 @@ struct Checkup4TranslateTests {
     #expect(tried == [a])
   }
 
+  /// 第五轮体检 U8：只启用了词典类服务（有道词典）时翻一句话，一张卡都不开、结果区说「启用的服务只能查单词」，
+  /// 静默替换也这么说（原来是「没有启用的翻译服务」）；查单词照常开卡；清空了回到「还没开始翻译」
+  @Test func dictionaryOnlyServicesSaySo() async throws {
+    var dictionary = TranslateService.builtin(.youdaoDict)
+    dictionary.isEnabled = true
+    let coordinator = TranslateCoordinator(
+      services: TranslateServiceStore(services: [dictionary]),
+      history: try HistoryStore(db: Database(path: ":memory:")))
+    coordinator.stream = { _, _ in AsyncThrowingStream { $0.finish() } }
+    coordinator.translate("This is a whole sentence, not a word.")
+    #expect(coordinator.cards.isEmpty && coordinator.onlyDictionaries)
+    await #expect(
+      throws: TranslateError.config(String(localized: "启用的服务只能查单词，翻译句子要再启用一个翻译服务"))
+    ) { try await coordinator.translateOnce("This is a whole sentence.") }
+    coordinator.translate("serendipity")
+    #expect(coordinator.cards.map(\.id) == [dictionary.id] && !coordinator.onlyDictionaries)
+    coordinator.translate("This is a whole sentence, not a word.")
+    coordinator.beginInput()
+    #expect(!coordinator.onlyDictionaries)
+    // 一个服务都没启用：还是原来那句
+    let empty = TranslateCoordinator(
+      services: TranslateServiceStore(services: []),
+      history: try HistoryStore(db: Database(path: ":memory:")))
+    empty.translate("This is a whole sentence.")
+    #expect(!empty.onlyDictionaries)
+    await #expect(throws: TranslateError.config(String(localized: "没有启用的翻译服务"))) {
+      try await empty.translateOnce("This is a whole sentence.")
+    }
+  }
+
+  /// 第五轮体检 P3：星标的收藏状态记下来（流式时每来一段字不再查库），收藏、取消、别处删掉 / 收藏历史之后照样跟上
+  @Test func favoriteStateFollowsHistory() async throws {
+    var service = TranslateService.newAI()
+    service.isEnabled = true
+    let history = try HistoryStore(db: Database(path: ":memory:"))
+    let coordinator = TranslateCoordinator(
+      services: TranslateServiceStore(services: [service]), history: history)
+    coordinator.stream = { _, _ in
+      AsyncThrowingStream {
+        $0.yield("你好，世界。")
+        $0.finish()
+      }
+    }
+    let source = "Hello, world. How are you today?"
+    // 当成复制即译带来的：不自动复制（不碰剪贴板，不管本机设置）
+    coordinator.translate(source, fromCopy: true)
+    for _ in 0..<1000 where coordinator.primaryResult == nil { await Task.yield() }
+    let target = try #require(coordinator.target)
+    try #require(coordinator.primaryResult != nil)
+    #expect(!coordinator.isFavorite)
+    #expect(coordinator.toggleFavorite() && coordinator.isFavorite)
+    #expect(coordinator.toggleFavorite() && !coordinator.isFavorite)
+    history.setFavorite(source: source, target: target, result: "你好", service: "别处", true)
+    #expect(coordinator.isFavorite)
+    history.remove(source: source, target: target)
+    #expect(!coordinator.isFavorite)
+  }
+
   /// U12：主结果的播报是「服务名：译文开头一两句」，太长截到 80 个字
   @Test func primaryAnnouncement() {
     #expect(
@@ -1642,5 +1700,102 @@ struct Checkup4TranslateTests {
     for _ in 0..<2000 where coordinator.isRunning { try await Task.sleep(for: .milliseconds(2)) }
     #expect(coordinator.cards.map(\.state) == [.done("隐私政策")])
     #expect(!coordinator.isWordLookup && coordinator.dictionary == nil)
+  }
+}
+
+/// 第五轮体检 P3（按需探针，TEST_RUNNER_KITTY_TRANSLATE_PROBE=1，grep「favorite-probe」）：流式翻译时每来一段字，浮窗底栏的
+/// 收藏星标（coordinator.isFavorite）都对库查一次「原文 + 目标语言」，浮窗跟着重算。量库里 2000 条时这一查多久（短原文、32 KB
+/// 原文），和屏外的浮窗（4 张生成中的卡）每来一段字更新一遍多久（32 KB 原文 vs 短原文，差的就是那一查）。
+/// 超过 2 ms 才把收藏状态存成属性、只在定稿时刷新。窗口摆在离所有屏幕很远的地方、不当 key；不联网（流是测试自己喂的）
+@Suite(.enabled(if: ProcessInfo.processInfo.environment["KITTY_TRANSLATE_PROBE"] != nil))
+@MainActor
+struct TranslateFavoriteProbeTests {
+  private static func median(_ times: [Duration]) -> Duration { times.sorted()[times.count / 2] }
+
+  @Test func streamingCost() async throws {
+    let history = try HistoryStore(db: Database(path: ":memory:"))
+    for index in 0..<2000 {
+      history.restore(
+        .init(
+          id: UUID(), source: "第 \(index) 句原文，长短和平时差不多的一句话", target: .en,
+          result: "Sentence \(index)", service: "智谱",
+          createdAt: .now.addingTimeInterval(-Double(index)),
+          favorite: index % 7 == 0))
+    }
+    // 32 KB 的原文（上限，TranslateCoordinator.maxSourceBytes）
+    let long = String(repeating: "这是一段很长的原文，用来量最坏的情况。", count: 570)
+    #expect(long.utf8.count > 32_000 && long.utf8.count <= TranslateCoordinator.maxSourceBytes)
+    let clock = ContinuousClock()
+    for (label, source) in [("短原文", "hello world"), ("32 KB 原文", long)] {
+      _ = history.isFavorite(source: source, target: .zhHans)
+      let times = (0..<31).map { _ in
+        clock.measure { _ = history.isFavorite(source: source, target: .zhHans) }
+      }
+      print("favorite-probe isFavorite \(label)：中位 \(Self.median(times))，最慢 \(times.max()!)")
+    }
+
+    // 4 个启用的服务，流由这里喂、不结束（stream 换掉了，不联网）：浮窗画的是 4 张生成中的卡
+    var services: [TranslateService] = []
+    for name in ["甲", "乙", "丙", "丁"] {
+      var service = TranslateService.newAI()
+      service.name = name
+      service.isEnabled = true
+      services.append(service)
+    }
+    let frame = CGRect(x: -30000, y: -30000, width: 420, height: 720)
+    try #require(
+      !NSScreen.screens.contains { $0.frame.insetBy(dx: -2000, dy: -2000).intersects(frame) })
+    for (label, source) in [("短原文", "hello world, this is a sentence"), ("32 KB 原文", long)] {
+      var feeds: [String: AsyncThrowingStream<String, Error>.Continuation] = [:]
+      let coordinator = TranslateCoordinator(
+        services: TranslateServiceStore(services: services), history: history)
+      coordinator.stream = { service, _ in
+        AsyncThrowingStream { feeds[service.id] = $0 }
+      }
+      coordinator.translate(source)
+      let window = NSWindow(
+        contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false)
+      window.isReleasedWhenClosed = false
+      let host = NSHostingView(
+        rootView: TranslatePanelView(coordinator: coordinator, speaker: Speaker())
+          .frame(width: frame.width, height: frame.height))
+      window.contentView = host
+      window.orderFront(nil)
+      // 协调器的任务在主线程上排着：让一让它们开流（测试本身占着主线程，嵌套跑环轮不到主队列上的任务）
+      for _ in 0..<1000 where feeds.count < services.count { await Task.yield() }
+      try #require(feeds.count == services.count, "流没开起来：\(feeds.count)")
+      host.layoutSubtreeIfNeeded()
+      host.displayIfNeeded()
+      var texts = Array(repeating: "", count: services.count)
+      var times: [Duration] = []
+      for step in 0..<80 {
+        let card = step % services.count
+        texts[card] += "又来了一段字，"
+        feeds[services[card].id]?.yield(texts[card])
+        // 等协调器接到这一段（它的任务从流里取），再量浮窗重算、重画一遍
+        for _ in 0..<1000 where coordinator.cards[card].state != .running(texts[card]) {
+          await Task.yield()
+        }
+        times.append(
+          clock.measure {
+            host.layoutSubtreeIfNeeded()
+            host.displayIfNeeded()
+          })
+      }
+      #expect(coordinator.cards.allSatisfy { $0.state.text?.isEmpty == false })
+      // 环境变量是一个绝对路径时，存一张图看是不是真画了 4 张卡
+      if let folder = ProcessInfo.processInfo.environment["KITTY_TRANSLATE_PROBE"],
+        folder.hasPrefix("/"),
+        let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds)
+      {
+        host.cacheDisplay(in: host.bounds, to: bitmap)
+        try bitmap.representation(using: .png, properties: [:])?.write(
+          to: URL(filePath: folder).appending(path: "favorite-probe-\(source.count).png"))
+      }
+      for feed in feeds.values { feed.finish() }
+      coordinator.beginInput()
+      window.orderOut(nil)
+      print("favorite-probe 浮窗来一段字（\(label)）：中位 \(Self.median(times))，最慢 \(times.max()!)")
+    }
   }
 }
