@@ -268,7 +268,7 @@ enum Home {
 
   /// 做一件事（AppDelegate 接上：动作走 run(action)，菜单栏那几项走 run(extra)）
   @ObservationIgnored var perform: (Home.Tile.Target) -> Void = { _ in }
-  /// 「管理…」：设置 › 通用（「功能」那一节在里面）
+  /// 「管理…」：设置 › 通用 ›「功能」
   @ObservationIgnored var openFeatures: () -> Void = {}
   /// 收起面板（不放淡出：接下来要做的事要面板已经不在屏幕上）
   @ObservationIgnored var hidePanel: () -> Void = {}

@@ -42,8 +42,10 @@ import Carbon.HIToolbox
 
   /// 隐藏 / 取消隐藏（点开头的跳过）
   static func setHidden(_ files: [URL], _ hidden: Bool, island: Island?) {
+    // 保护的那几样只取一次（第五轮体检 P4：两千项时每一项都重新列一遍根目录）
+    let isProtected = FileMoves.protection()
     let changed = change(
-      files.filter { !$0.lastPathComponent.hasPrefix(".") && !FileMoves.protected($0) }
+      files.filter { !$0.lastPathComponent.hasPrefix(".") && !isProtected($0) }
     ) {
       $0.isHidden = hidden
     }

@@ -4,7 +4,8 @@
 // 空查询时带「收藏」「常用」、文件搜索只输关键词时带「最近打开和下载的文件」分组标题；计算结果是 64 pt 的大数字卡；
 // 一块中性高亮在行间滑动（键盘 snap、连发不动画、点选 glide）；没选中的行悬停铺 fill.hover（HoverTracker，体检 B37）；
 // 选中的内置动作右侧多一组全局快捷键键帽（N10）；按住修饰键时选中行的副标题换成替代动作，按住 ⌘ 150 ms 后类型依次
-// 换成 ⌘1–9 键帽；系统命令上了膛（清倒废纸篓、全部退出、强制退出的第一下）时选中行副标题换成 systemRed 的「再按 ↩ …」。
+// 换成 ⌘1–9 键帽（从第一条看得见的行起编，第五轮体检 U9）；系统命令上了膛（清倒废纸篓、全部退出、强制退出的第一下）时
+// 选中行副标题换成 systemRed 的「再按 ↩ …」。
 // 行上右键是和 ⌘K 同一份动作（ActionContextMenu，体检 C8），VoiceOver 另有主动作、⌘↩、复制、收藏、移除几个动作。
 // 底栏 36（N8，对标 Raycast）：左边选中项的种类（16 pt 家族色块 + 种类名；收藏、移除常用时换成就地提示，移除带
 // 「撤销 ⌘Z」），右边「主动作 ↩」（品牌粉实心键帽）·「操作 ⌘K」，都能点；⌘K 动作菜单（共用 ActionMenu）锚在右下，
@@ -31,6 +32,9 @@ struct LauncherPanelView: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   /// 按住 ⌘ 超过 150 ms：类型标签换成键帽
   @State private var showsShortcuts = false
+  /// 最近一次显示键帽时从第几行起编（U9）：只在键帽显示着时跟上 model.shortcutBase，松开 ⌘ 时不清——键帽照这个编号
+  /// 淡出，不先跳回 ⌘(index+1)、淡出的错开也按它算
+  @State private var shortcutBase = 0
   /// 列表的滚动位置：选中跟随滚动按前缀和算目标 y（RevealsSelection），不按行 id 滚
   @State private var position = ScrollPosition()
 
@@ -113,7 +117,14 @@ struct LauncherPanelView: View {
         return
       }
       try? await Task.sleep(for: .milliseconds(150))
-      if !Task.isCancelled { showsShortcuts = true }
+      if !Task.isCancelled {
+        shortcutBase = model.shortcutBase
+        showsShortcuts = true
+      }
+    }
+    // 按住 ⌘ 时滚了列表：编号跟着第一条看得见的行走（没按住时不读，滚动不重画）
+    .onChange(of: showsShortcuts ? model.shortcutBase : nil) { _, base in
+      if let base { shortcutBase = base }
     }
   }
 
@@ -139,6 +150,20 @@ struct LauncherPanelView: View {
   static func offset(ofRow row: Int, in model: LauncherModel) -> CGFloat {
     CGFloat(model.groups.filter { $0.row <= row }.count) * groupHeight
       + model.results.prefix(row).map(rowHeight).reduce(0, +)
+  }
+
+  /// 第一条看得见的行（露出一半以上才算；纯函数，配单测）：top 是滚动区可见部分的顶在内容里的位置。
+  /// ⌘1 对的就是它（第五轮体检 U9）
+  static func firstVisibleRow(top: CGFloat, in model: LauncherModel) -> Int {
+    var y = inset
+    let headers = Set(model.groups.map(\.row))
+    for (row, item) in model.results.enumerated() {
+      if headers.contains(row) { y += groupHeight }
+      let height = rowHeight(item)
+      if y + height / 2 > top { return row }
+      y += height
+    }
+    return 0
   }
 
   /// 选中跟随滚动要露出来的区间（滚动内容坐标，含四周内缩）：第 row 行；它是一组的第一行时连分组标题一起
@@ -213,6 +238,7 @@ struct LauncherPanelView: View {
     ScrollView {
       LazyVStack(spacing: 0) {
         let groups = model.groups
+        let base = shortcutBase
         ForEach(Array(model.results.enumerated()), id: \.element.rowID) { index, item in
           if let group = groups.first(where: { $0.row == index }) {
             groupHeader(group)
@@ -222,7 +248,8 @@ struct LauncherPanelView: View {
           } label: {
             let isSelected = index == model.selection
             LauncherRow(
-              item: item, index: index, showsShortcut: showsShortcuts && index < 9,
+              item: item, number: index - base,
+              showsShortcut: showsShortcuts && (0..<9).contains(index - base),
               isSelected: isSelected, isArmed: model.isArmed(item),
               alternate: isSelected ? model.alternateSubtitle(for: item) : nil,
               hotKey: isSelected ? item.hotKeyAction.flatMap(model.boundHotKey)?.display : nil
@@ -240,6 +267,13 @@ struct LauncherPanelView: View {
       .padding(Self.inset)
     }
     .scrollIndicators(.automatic)
+    // ⌘1–9 从第一条看得见的行起编（U9）：记下滚到哪了；列表被空状态换掉时回顶（新建的列表从顶上开始）
+    .onScrollGeometryChange(for: CGFloat.self) {
+      $0.visibleRect.minY
+    } action: { _, top in
+      model.listTop = top
+    }
+    .onDisappear { model.listTop = 0 }
     // 选中跟随滚动（共用 ListReveal，第 10 批）：选中换了、或结果换了都重新露出选中行。新结果时选中回到第 0 行，
     // 露出第 0 行（连分组标题）就是回到顶部；文件结果后续批次保留了用户选的那行时露出那行。上下都留一格内缩
     .modifier(
@@ -612,7 +646,8 @@ struct LauncherQuickLookView: View {
 
 private struct LauncherRow: View {
   let item: LauncherItem
-  let index: Int
+  /// ⌘N 的 N − 1：从第一条看得见的行起编（U9）；看不见数字的行可能是负的
+  let number: Int
   let showsShortcut: Bool
   let isSelected: Bool
   /// 不可撤销的系统命令等着再按一次：副标题（确认提示）用危险色（Style.danger，和 macOS 的破坏性按钮同色）
@@ -664,13 +699,16 @@ private struct LauncherRow: View {
             )
             .lineLimit(1)
             .truncationMode(.middle)
+            // 长标题把它挤到只剩半个字时至少留出「历…」那么宽（U9）
+            .frame(minWidth: 44, alignment: .leading)
         }
       }
       Spacer(minLength: 8)
+      // 行尾的快捷键和类型标签不被压缩（U9：长网页标题会把它们挤没），挤的是标题和副标题
       if let hotKey, !showsShortcut {
-        KeyCombo(hotKey).accessibilityLabel("快捷键 \(hotKey)")
+        KeyCombo(hotKey).fixedSize().accessibilityLabel("快捷键 \(hotKey)")
       }
-      kind
+      kind.fixedSize()
     }
     .padding(.horizontal, 10)
     .frame(maxHeight: .infinity)
@@ -692,6 +730,9 @@ private struct LauncherRow: View {
     } else if item.contentType?.conforms(to: .volume) == true {
       // 宗卷（eject 列出来的）：磁盘色块，不读宗卷本身取图标（按类型取是个文件夹，读宗卷可能要授权）
       KindTile(symbol: item.tileSymbol, color: item.familyColor)
+    } else if item.kind == .path, item.contentType?.conforms(to: .application) != false {
+      // 路径的行里的 App、不知道类型的（收藏、常用还原出来的）：按路径取图标，在主线程外读
+      PathIcon(path: item.target, type: item.contentType)
     } else if let type = item.contentType {
       Image(nsImage: LauncherIcons.icon(for: type)).resizable().frame(width: 24, height: 24)
     } else if item.kind == .app || item.kind == .path,
@@ -723,13 +764,13 @@ private struct LauncherRow: View {
         .font(.system(size: 12))
         .foregroundStyle(.tertiary)
         .opacity(showsShortcut ? 0 : 1)
-      KeyCap("⌘\(index + 1)")
+      KeyCap("⌘\(number + 1)")
         .opacity(showsShortcut ? 1 : 0)
         .scaleEffect(showsShortcut ? 1 : 0.9)
     }
     .animation(
       reduceMotion
-        ? .easeOut(duration: 0.12) : .easeOut(duration: 0.12).delay(Double(index) * 0.015),
+        ? .easeOut(duration: 0.12) : .easeOut(duration: 0.12).delay(Double(max(number, 0)) * 0.015),
       value: showsShortcut)
   }
 }
@@ -813,8 +854,9 @@ extension LauncherItem {
     }
   }
 
-  /// 行右侧的类型、底栏左边的种类名（显式 key：「提醒」「翻译」「设置」这些短词在别处是页名，英文是复数 / 别的说法）
-  fileprivate var kindTitle: String {
+  /// 行右侧的类型、底栏左边的种类名、键盘换选中时的播报（显式 key：「提醒」「翻译」「设置」这些短词在别处是页名，
+  /// 英文是复数 / 别的说法）
+  var kindTitle: String {
     switch kind {
     case .app: String(localized: "launcher.kind.app", defaultValue: "应用", comment: "启动器行右侧的类型")
     case .path where contentType?.conforms(to: .volume) == true:
@@ -908,6 +950,42 @@ enum LauncherIcons {
     let image = NSWorkspace.shared.icon(forFile: path)
     cache.setObject(image, forKey: path as NSString)
     return image
+  }
+
+  /// 按路径取图标，在主线程外读（路径可能在卡住的网络盘上，2026-11-18）；不在了是 nil
+  static func load(_ path: String) async -> NSImage? {
+    if let cached = cache.object(forKey: path as NSString) { return cached }
+    guard let picture = await render(path) else { return nil }
+    let image = NSImage(cgImage: picture, size: NSSize(width: 24, height: 24))
+    cache.setObject(image, forKey: path as NSString)
+    return image
+  }
+
+  /// 主线程外读一个文件的图标、画成 48 像素见方（24 点 × 2 倍屏）。NSWorkspace 的取图标文档写明哪个线程都能调
+  /// （启动台在后台画图标同理；mac-native §3「缩略图」一类）
+  @concurrent nonisolated static func render(_ path: String) async -> CGImage? {
+    guard FileManager.default.fileExists(atPath: path) else { return nil }
+    var rect = CGRect(x: 0, y: 0, width: 48, height: 48)
+    return NSWorkspace.shared.icon(forFile: path).cgImage(
+      forProposedRect: &rect, context: nil, hints: nil)
+  }
+}
+
+/// 按路径取的图标：先放类型图标（没有类型是普通文件的），主线程外读到了再换上
+private struct PathIcon: View {
+  let path: String
+  let type: UTType?
+  @State private var loaded: (path: String, image: NSImage)?
+
+  var body: some View {
+    let image =
+      loaded?.path == path
+      ? loaded?.image : LauncherIcons.cache.object(forKey: path as NSString)
+    Image(nsImage: image ?? LauncherIcons.icon(for: type ?? .data))
+      .resizable().frame(width: 24, height: 24)
+      .task(id: path) {
+        if let image = await LauncherIcons.load(path) { loaded = (path, image) }
+      }
   }
 }
 

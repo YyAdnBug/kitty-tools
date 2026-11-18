@@ -309,7 +309,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // 15–26 上再点菜单栏图标由图标自己收起：不当成点了外面（不然先收、松手时又开）
     panel.ignoresClick = { [unowned self] in statusItem?.ownsClick(at: $0) == true }
     model.hidePanel = { [unowned panel] in panel.hide() }
-    model.openFeatures = { [unowned self] in showSettings(page: .general) }
+    // 直接推进到「功能」那一页（第五轮体检 U12，原来停在通用页顶上、还要再点「功能 ›」）
+    model.openFeatures = { [unowned self] in
+      showSettings(page: .general, path: [FeaturesPage.route])
+    }
     // 打字转到启动器（X12）：启动器这个功能关着就响一声。按键原样交给启动器输入框的字段编辑器（经输入法：开着拼音时
     // 这一下进组字，第一个字母不拆出去，同 issue #30）；框里原有的字先全选、被这一下替换。输入框没拿到焦点时
     // （toggleLauncher 之后照理已经是它，同那里的 selectAll）退回直接填这个字
@@ -3917,9 +3920,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   /// 打开设置窗（page 为 nil 保持上次的页；onboarding 盖上欢迎引导）：先按正常隐藏路径收起浮层
   /// （固定的浮层会盖在设置窗上）
-  func showSettings(page: SettingsPage? = nil, onboarding: Bool = false) {
+  func showSettings(page: SettingsPage? = nil, path: [String] = [], onboarding: Bool = false) {
     hidePanels()
-    settingsWindow.show(page: page, onboarding: onboarding)
+    settingsWindow.show(page: page, path: path, onboarding: onboarding)
   }
 
   /// 打开设置窗、落到那一行（设置改版 S8：面板里的「设置…」、岛上的「打开设置」）：滚过去描一圈

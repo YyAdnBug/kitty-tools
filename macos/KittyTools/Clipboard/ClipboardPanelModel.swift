@@ -258,6 +258,15 @@ import Observation
     !query.isEmpty || kind != nil || form != nil || sourceBundleID != nil || groupFilter != .all
   }
 
+  /// 只按一个收藏夹筛（没有搜索词、别的筛选，范围不是片段），这个收藏夹里一条都没有：空状态说「这个收藏夹还是空的」、
+  /// 教怎么放进来，不给「清除搜索和筛选」（第五轮体检 U8：一点连收藏夹筛选也清了）
+  var isEmptyGroup: Bool {
+    guard case .group(let id) = groupFilter, query.isEmpty, kind == nil, form == nil,
+      sourceBundleID == nil, scope != .snippets
+    else { return false }
+    return !store.items.contains { $0.groupID == id }
+  }
+
   /// 片段范围第一行的「＋ 新建片段」：片段范围里搜索 / 筛选没有结果时不画，让位给「没有匹配的条目」和清除按钮
   func showsNewSnippetRow(in items: [ClipItem]) -> Bool {
     scope == .snippets && !(items.isEmpty && isFiltered)
@@ -562,6 +571,9 @@ import Observation
       multiSelection = []
     }
     select(items[next])
+    // 焦点一直在搜索框：说出选中了什么（A1；图片的摘要本来就是「图片 宽×高」，不再说一遍种类）
+    let item = items[next]
+    Island.announceSettled(item.title, item.kind == .image ? nil : item.kind.title)
   }
 
   // MARK: 放大预览
@@ -1484,9 +1496,11 @@ import Observation
   }
 
   private func moveAction(by offset: Int) {
-    let count = filteredActions.count
+    let actions = filteredActions
+    let count = actions.count
     guard count > 0 else { return }
     actionSelection = (actionSelection + offset + count) % count
+    ActionMenu.announce(actions[actionSelection])
   }
 
   func runSelectedAction() {

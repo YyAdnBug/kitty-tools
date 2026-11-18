@@ -1177,6 +1177,7 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
     let local = NSRange(location: selection.location - block.start, length: selection.length)
     if let change = NoteTasks.toggle(block.text, selection: local) {
       perform(change, at: block.start)
+      announceTask(at: selectedRange().location)
     }
   }
 
@@ -1309,6 +1310,77 @@ final class NoteTextView: NSTextView, NSTextStorageDelegate, NSLayoutManagerDele
     guard shouldChangeText(in: range, replacementString: flipped) else { return }
     storage.replaceCharacters(in: range, with: flipped)
     didChangeText()
+    announceTask(at: index)
+  }
+
+  // MARK: 读屏：任务的方框（第五轮体检 A4②）
+
+  /// 这一行（代码块外）是任务的话：方框在第几个字（存储的下标）、什么状态；不是任务给 nil
+  private func task(onLineAt index: Int) -> (box: Int, state: NoteTasks.State)? {
+    guard let text = textStorage?.mutableString, index <= text.length else { return nil }
+    var (start, contentsEnd) = (0, 0)
+    text.getLineStart(
+      &start, end: nil, contentsEnd: &contentsEnd, for: NSRange(location: index, length: 0))
+    guard NoteMarkdown.role(at: start, in: blocks) == nil else { return nil }
+    let head = text.substring(
+      with: NSRange(location: start, length: min(contentsEnd - start, 256)))
+    guard let offset = NoteTasks.box(in: head), let state = NoteTasks.state(of: head) else {
+      return nil
+    }
+    return (start + offset, state)
+  }
+
+  /// ⌘T、点方框之后焦点没动，读屏只听得到字换了：说出那一行现在是什么（读屏没开不做）
+  private func announceTask(at index: Int) {
+    Island.announceSettled(self.task(onLineAt: index)?.state.title ?? String(localized: "不是任务了"))
+  }
+
+  /// range 里各行行首的任务方框（代码块里的不算）
+  private func taskBoxes(in range: NSRange) -> [(box: Int, state: NoteTasks.State)] {
+    guard let text = textStorage?.mutableString, NSMaxRange(range) <= text.length else {
+      return []
+    }
+    var boxes: [(box: Int, state: NoteTasks.State)] = []
+    var location = range.location
+    repeat {
+      if let task = task(onLineAt: location), NSLocationInRange(task.box, range) {
+        boxes.append(task)
+      }
+      let next = NSMaxRange(text.lineRange(for: NSRange(location: location, length: 0)))
+      guard next > location else { break }
+      location = next
+    } while location < NSMaxRange(range)
+    return boxes
+  }
+
+  /// 读屏念一段字时，行首的方框念成它的状态（☐ ◧ ▣ ☑ ☒ 照字符名念听不出「进行中」「紧急」）。**只换念出来的字**：
+  /// 文本存储、accessibilityValue 和各种下标都不动（F13：长度对不上，读屏的选区、按行范围全错一位）。
+  /// ponytail: 换出来的字比 range 长（一个方框换成两三个字）。读屏只拿它来念，但按词移动、语音控制「选择 某个词」、
+  /// 盲文显示器的光标可能拿返回的字去对位置，在任务行上错开几格（没实测，HANDTEST 第五轮体检 81）。真错位就退一步：
+  /// 只在 range 正好是方框那一个字时替换（逐字念时念成状态），整行、整段的照原字给
+  override func accessibilityString(for range: NSRange) -> String? {
+    guard let text = super.accessibilityString(for: range) else { return nil }
+    let boxes = taskBoxes(in: range)
+    guard !boxes.isEmpty, (text as NSString).length == range.length else { return text }
+    let spoken = NSMutableString(string: text)
+    for task in boxes.reversed() {
+      spoken.replaceCharacters(
+        in: NSRange(location: task.box - range.location, length: 1), with: task.state.title)
+    }
+    return spoken as String
+  }
+
+  override func accessibilityAttributedString(for range: NSRange) -> NSAttributedString? {
+    guard let text = super.accessibilityAttributedString(for: range) else { return nil }
+    let boxes = taskBoxes(in: range)
+    guard !boxes.isEmpty, text.length == range.length else { return text }
+    let spoken = NSMutableAttributedString(attributedString: text)
+    for task in boxes.reversed() {
+      // 换进去的字带着方框那个字的属性
+      spoken.replaceCharacters(
+        in: NSRange(location: task.box - range.location, length: 1), with: task.state.title)
+    }
+    return spoken
   }
 
   // MARK: 链接

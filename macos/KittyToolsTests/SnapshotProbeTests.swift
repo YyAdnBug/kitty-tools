@@ -303,6 +303,15 @@ struct SnapshotProbeTests {
           m.query = "zzzz"
         }
       ),
+      // 空收藏夹（第五轮体检 U8）：说「这个收藏夹还是空的」、教怎么放进来，不给「清除搜索和筛选」
+      (
+        "empty-group",
+        { m in
+          if let empty = m.store.groups.first(where: { $0.name == "读书笔记" }) {
+            m.groupFilter = .group(empty.id)
+          }
+        }
+      ),
     ]
     for dark in [false, true] {
       for (name, configure) in states {
@@ -3669,6 +3678,15 @@ struct SnapshotProbeTests {
         }
       ),
       ("translate-screenshot-empty", { c in c.showNotice("没有识别到文字，可以把选区框大一些再试") }),
+      // 只启用了词典类服务时翻一句话（第五轮体检 U8）：说「启用的服务只能查单词」，带「打开翻译设置」
+      (
+        "translate-dictionary-only",
+        { c in
+          c.sourceText = "This is a whole sentence, not a word."
+          c.translatedSource = c.sourceText
+          c.onlyDictionaries = true
+        }
+      ),
     ]
     for dark in [false, true] {
       for (name, configure) in states {
@@ -4059,6 +4077,32 @@ struct SnapshotProbeTests {
       }
     }
     model.alternate = .none
+    // 路径模式（2026-11-18）：临时目录里一个隐藏文件夹 .local（同反馈里的例子），列出里面的、按开头筛、⌘K
+    let shotRoot = FileManager.default.temporaryDirectory.appending(path: "kitty-shot-\(UUID())")
+      .resolvingSymlinksInPath()
+    defer { try? FileManager.default.removeItem(at: shotRoot) }
+    let local = shotRoot.appending(path: ".local")
+    for folder in ["bin", "lib", "share", "state"] {
+      try FileManager.default.createDirectory(
+        at: local.appending(path: folder), withIntermediateDirectories: true)
+    }
+    for file in ["README.md", "env.sh"] { try Data().write(to: local.appending(path: file)) }
+    for dark in [false, true] {
+      for (name, query) in [
+        ("launcher-path", local.path), ("launcher-path-filter", local.path + "/s"),
+        ("launcher-path-actions", local.path + "/"),
+      ] {
+        model.query = query
+        await model.pathLookup()
+        model.showsActions = name == "launcher-path-actions"
+        try snapshot(
+          LauncherPanelView(model: model),
+          size: NSSize(width: 720, height: LauncherPanelView.height(for: model)),
+          dark: dark,
+          to: "\(out)/\(name)\(dark ? "-dark" : "").png")
+      }
+    }
+    model.showsActions = false
     try await renderLauncherBatch6(out, usage: usage, apps: apps)
     try renderLauncherFollow(out)
   }
@@ -4131,6 +4175,13 @@ struct SnapshotProbeTests {
         .init(
           url: "https://developer.mozilla.org/en-US/docs/Web/CSS/grid",
           title: "grid - CSS: Cascading Style Sheets | MDN", visitedAt: .now - 86_400),
+        // 上百字的标题（第五轮体检 U9）：挤的是标题和副标题，行尾的类型标签不被压缩
+        .init(
+          url:
+            "https://github.com/swiftlang/swift-evolution/blob/main/proposals/0461-async-function-isolation.md",
+          title:
+            "swift-evolution/proposals/0461-async-function-isolation.md at main · swiftlang/swift-evolution · Run nonisolated async functions on the caller’s actor by default",
+          visitedAt: .now - 2 * 86_400),
       ])
     }
     // ip：Wi-Fi + 一块 VPN，开着代理时两家看到的外网地址不一样（文档用的保留地址，不是真的）

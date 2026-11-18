@@ -261,7 +261,8 @@ struct AboutTab: View {
   }
 }
 
-/// 品牌大图标：点一下摇一摇（KeyframeAnimator），悬停时跟着指针 3D 倾斜（最多 6°）；减弱动态效果时都不做
+/// 品牌大图标（关于页、欢迎引导）：点一下摇一摇（KeyframeAnimator），悬停时跟着指针 3D 倾斜（最多 6°）；减弱动态效果时都不做。
+/// 读屏是一张图片
 struct BrandIcon: View {
   let size: CGFloat
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -304,6 +305,9 @@ struct BrandIcon: View {
       }
     }
     .accessibilityLabel("Kitty Tools 图标")
+    // 点一下只是摇一摇：读屏当图片读，不当按钮（第五轮体检 A4③）
+    .accessibilityRemoveTraits(.isButton)
+    .accessibilityAddTraits(.isImage)
   }
 }
 

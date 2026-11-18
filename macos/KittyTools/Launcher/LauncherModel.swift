@@ -15,7 +15,7 @@
 // 键盘（对标 Alfred / Raycast）：↑↓ 循环、↩ 执行（计算结果是粘贴，find 的文件是在访达中显示）、⌘↩ 在访达中显示
 // （计算结果只复制，find 的文件是打开，网址用第二个浏览器打开）、⌥↩ 在访达里搜索、⌃↩ 网页搜索（按住修饰键时选中行的
 // 副标题换成替代动作）、Tab 补全、⌘C 复制路径 / 网址、⇧⌘C 网址复制为 Markdown 链接、⌘D 收藏、⌘Y 快速查看文件、
-// ⌘1–9 执行第 N 项、「常用」里 ⌘⌫ 移除一项（⌘Z 撤销，体检 B38）、Esc 先关预览 / 动作菜单再清空再关闭；
+// ⌘1–9 执行看得见的第 N 项（shortcutBase）、「常用」里 ⌘⌫ 移除一项（⌘Z 撤销，体检 B38）、Esc 先关预览 / 动作菜单再清空再关闭；
 // ⌘K / →（光标在末尾时）动作菜单（N8，共用 ActionMenu）：列出选中项的全部动作连同键位，开着时搜索框用来过滤动作，
 // ↑↓ ↩ 选择执行、Esc 关掉，菜单里标着的其余键位（⇥ ⌥↩ ⌃↩ ⌘ 键）照常可用、先关菜单。行上右键是同一份动作（体检 C8）。
 // 单击选中、双击执行（和剪贴板面板一致）。打开 App / 文件 / 网址 / 搜索页：↩ 当下就收起，系统在后台打开，不等 App
@@ -29,6 +29,7 @@
 
 import AppKit
 import Carbon.HIToolbox
+import OSLog
 import Observation
 import SwiftUI
 import UniformTypeIdentifiers
@@ -44,6 +45,11 @@ import UniformTypeIdentifiers
   }
   private(set) var results: [LauncherItem] = []
   var selection = 0
+  /// 列表滚到哪了：可见部分的顶在内容里的位置（视图滚动时写进来；列表被空状态换掉时回 0）。只有按住 ⌘ 时界面才读它
+  var listTop: CGFloat = 0
+  /// ⌘1 对的是第几行：列表里第一条看得见的行。按住 ⌘ 显示的数字和 ⌘1–9 执行的行都从它起编（第五轮体检 U9：往下翻过之后
+  /// ⌘1 对的是滚出去看不见的第一行）。每次现算，结果换了也对得上
+  var shortcutBase: Int { LauncherPanelView.firstVisibleRow(top: listTop, in: self) }
   /// 选中高亮这次怎么移动（Whisker §4）：键盘单按 snap，连发和结果刷新不动画，鼠标点选 glide
   private(set) var selectionMotion = Style.Motion.instant
   /// 执行失败的提示（面板不收起）
@@ -535,6 +541,17 @@ import UniformTypeIdentifiers
   /// 文件结果最后一行的授权提示：每次呼出后第一次进文件搜索时算一次（要读受保护目录，问过之前不读）。
   /// ponytail: 授权被重置（tccutil reset、撤掉完全磁盘访问）后，第一次进文件搜索时系统会弹框
   @ObservationIgnored var folderHint: LauncherItem?
+  /// 路径模式（以 / 或 ~/ 开头，PathBrowser）：这次的输入怎么拆；nil = 不在路径模式
+  @ObservationIgnored private(set) var pathRequest: PathBrowser.Request?
+  /// 读过的目录（收起时清掉）、正在读的（同一个目录同时只读一次）、读得慢时过 0.15 秒出「正在读取…」
+  @ObservationIgnored private var pathListings: [String: PathBrowser.Listing] = [:]
+  @ObservationIgnored private var pathReads: [String: Task<Void, Never>] = [:]
+  @ObservationIgnored private var pathWait: Task<Void, Never>?
+  /// 要的目录还没读到、看得见的还是上一次的结果：↩、⌘1–9 只响提示音（不然会打开上一次的某一行）
+  @ObservationIgnored private var pathPending = false
+  /// 收藏、常用里的文件和应用程序目录以外的 App 不在了的（呼出时在主线程外查，PathBrowser.missing）；没查完时照常列
+  @ObservationIgnored private var missingPaths: Set<String> = []
+  @ObservationIgnored private var presenceTask: Task<Void, Never>?
   @ObservationIgnored private var checksFolderAccess = false
   /// 用户按过 ↑↓ / 点选过：文件结果后续批次到了才按 id 保持选中项，否则回到第一行（最佳匹配）
   @ObservationIgnored private var userMovedSelection = false
@@ -568,9 +585,11 @@ import UniformTypeIdentifiers
   @ObservationIgnored var applications: (UTType) -> [(url: URL, isDefault: Bool)] = {
     LauncherModel.applications(toOpen: $0)
   }
-  /// 移到废纸篓（能从废纸篓放回，不二次确认）；单测里换成记一笔，不真删
-  @ObservationIgnored var recycle: (URL) async throws -> Void = {
-    _ = try await NSWorkspace.shared.recycle([$0])
+  /// 移到废纸篓（能从废纸篓放回，不二次确认），给出它在废纸篓里的位置（岛上的「撤销」挪回来用）；单测里换成记一笔，不真删
+  @ObservationIgnored var recycle: (URL) async throws -> URL? = {
+    // 只移一样：按原网址查不到（文件夹的网址补了结尾的「/」这类）就取唯一那一项
+    let moved = try await NSWorkspace.shared.recycle([$0])
+    return moved[$0] ?? moved.values.first
   }
   /// 「fy 单词」副标题的释义（系统词典第一条）；单测、截图自检换成固定的
   @ObservationIgnored var lookUp: (String) async -> String? = { word in
@@ -744,6 +763,7 @@ import UniformTypeIdentifiers
     browserCache = nil
     applicationCache = [:]
     checksFolderAccess = !isFixture
+    if !isFixture { checkPresence() }
     let keeps = keptAt.map { now.timeIntervalSince($0) <= Self.keepQueryInterval } ?? false
     keptAt = nil
     let kept = keeps ? selectedItem?.id : nil
@@ -777,6 +797,12 @@ import UniformTypeIdentifiers
   func didHide(now: Date = .now) {
     isShown = false
     files.forgetItems()
+    // 路径模式读过的目录不留（再呼出重读：这期间可能有变化）；还在读的不要了
+    for read in pathReads.values { read.cancel() }
+    pathReads = [:]
+    pathListings = [:]
+    pathWait?.cancel()
+    pathWait = nil
     showsActions = false
     error = nil
     armed = nil
@@ -826,6 +852,11 @@ import UniformTypeIdentifiers
 
   private func search() {
     error = nil
+    // 路径模式在下面认；先清掉，别让上一次的读完、0.15 秒到点时动到别的模式的结果
+    pathRequest = nil
+    pathPending = false
+    pathWait?.cancel()
+    pathWait = nil
     armed = nil
     listTask?.cancel()
     listTask = nil
@@ -864,6 +895,12 @@ import UniformTypeIdentifiers
     files.stop()
     if let commandRequest {
       showTargets(commandRequest)
+      return
+    }
+    // 以 / 或 ~/ 开头：路径模式，只出路径的行（2026-11-18，PathBrowser）
+    pathRequest = PathBrowser.request(for: query)
+    if let pathRequest {
+      showPath(pathRequest)
       return
     }
     emptyText = String(localized: "没有匹配的结果")
@@ -1102,6 +1139,197 @@ import UniformTypeIdentifiers
 
   /// 等 kill / port 的进程列完（单测、截图自检用）
   func processLookup() async { await processTask?.task.value }
+
+  // MARK: 路径模式（PathBrowser）
+
+  /// 路径模式的行：输入正好是一个文件夹就列它里面（第一行是它本身），不然在上一级里按最后一段筛。
+  /// 要的目录还没读到：先留着上一次的结果，过 0.15 秒还没到才清空、写「正在读取…」
+  private func showPath(_ request: PathBrowser.Request) {
+    guard let parent = pathListing(request.directory) else { return waitForPath() }
+    var directory = request.directory
+    var typed = request.typedDirectory
+    var filter = request.name
+    var listing = parent
+    if let folder = PathBrowser.folder(named: request.name, in: parent.entries) {
+      directory = PathBrowser.child(folder.name, of: request.directory)
+      typed += folder.name + "/"
+      filter = ""
+      guard let inside = pathListing(directory) else { return waitForPath() }
+      listing = inside
+    }
+    pathWait?.cancel()
+    pathWait = nil
+    pathPending = false
+    // 不在了的文件夹不出「这个文件夹」那一行
+    var rows: [LauncherItem] =
+      filter.isEmpty && listing.problem != .missing ? [pathFolderRow(directory, typed: typed)] : []
+    if let problem = listing.problem {
+      rows += pathProblemRows(problem, directory: directory)
+      emptyText =
+        problem == .missing
+        ? String(localized: "找不到「\((typed as NSString).abbreviatingWithTildeInPath)」")
+        : String(localized: "没有匹配的结果")
+    } else {
+      let picked = PathBrowser.pick(listing.entries, filter: filter, in: directory)
+      rows += picked.entries.map { pathRow($0, in: directory, typed: typed) }
+      let more = picked.total - picked.entries.count
+      if more > 0 {
+        rows.append(
+          LauncherItem(
+            kind: .prompt, target: Self.pathOpenPrefix + directory,
+            title: String(localized: "还有 \(more) 项"),
+            subtitle: String(localized: "接着输入名字筛选；↩ 在访达中打开")))
+      }
+      emptyText = String(localized: "没有名字里有「\(filter)」的项")
+    }
+    results = rows
+  }
+
+  /// 这个目录读到的东西；没读过就在主线程外读（读到了重搜），先交回 nil
+  private func pathListing(_ directory: String) -> PathBrowser.Listing? {
+    if let cached = pathListings[directory] { return cached }
+    guard pathReads[directory] == nil else { return nil }
+    let access = UserDefaults.standard.bool(forKey: Prefs.folderAccessRequested)
+    let volumes = UserDefaults.standard.bool(forKey: Prefs.launcherVolumesAllowed)
+    pathReads[directory] = Task {
+      let listing = await PathBrowser.read(directory, folderAccess: access, volumes: volumes)
+      guard !Task.isCancelled else { return }
+      pathReads[directory] = nil
+      pathListings[directory] = listing
+      if pathRequest != nil { search() }
+    }
+    return nil
+  }
+
+  private func waitForPath() {
+    pathPending = true
+    guard pathWait == nil else { return }
+    pathWait = Task {
+      try? await Task.sleep(for: .milliseconds(150))
+      guard !Task.isCancelled, pathRequest != nil else { return }
+      results = []
+      emptyText = String(localized: "正在读取…")
+    }
+  }
+
+  /// 等路径模式要的目录都读完（单测用）
+  func pathLookup() async {
+    while let task = pathReads.values.first { await task.value }
+  }
+
+  /// 第一行：输入的这个文件夹本身（↩ 打开它，和以前输完路径直接 ↩ 一样）
+  private func pathFolderRow(_ directory: String, typed: String) -> LauncherItem {
+    let root = directory == "/"
+    let location =
+      root ? "" : FileSearch.location(of: (directory as NSString).deletingLastPathComponent)
+    return LauncherItem(
+      kind: .path, target: directory,
+      title: root
+        ? FileManager.default.displayName(atPath: "/") : (directory as NSString).lastPathComponent,
+      subtitle: location.isEmpty
+        ? String(localized: "这个文件夹") : String(localized: "\(location) · 这个文件夹"),
+      completion: typed, contentType: .folder)
+  }
+
+  /// 目录里的一项：类型按扩展名（不读文件），Tab 补成「输入的目录 + 名字」（文件夹再加 /）
+  private func pathRow(_ entry: PathBrowser.Entry, in directory: String, typed: String)
+    -> LauncherItem
+  {
+    LauncherItem(
+      kind: .path, target: PathBrowser.child(entry.name, of: directory), title: entry.name,
+      subtitle: FileSearch.location(of: directory), names: [entry.key],
+      completion: typed + entry.name + (entry.isFolder ? "/" : ""),
+      contentType: PathBrowser.contentType(of: entry))
+  }
+
+  /// 没读的原因那一行
+  private func pathProblemRows(_ problem: PathBrowser.Problem, directory: String) -> [LauncherItem]
+  {
+    // 不读磁盘取名字（受保护的位置读一下属性也会弹框）
+    let name = directory == "/" ? "/" : (directory as NSString).lastPathComponent
+    let finder = String(localized: "↩ 在访达中打开")
+    switch problem {
+    case .needsFolderAccess(let folder):
+      return [
+        LauncherItem(
+          kind: .prompt, target: FileSearch.accessTarget,
+          title: String(localized: "要先允许访问「\(folder)」才能列出里面的东西"),
+          subtitle: String(localized: "↩ 允许访问（系统会逐个询问，只要一次）"))
+      ]
+    case .needsVolumeConsent(let volume):
+      return [
+        LauncherItem(
+          kind: .prompt, target: Self.pathVolumes,
+          title: String(localized: "读取「\(volume)」上的内容前先确认一次"),
+          subtitle: String(localized: "↩ 允许读取外接盘和网络盘（系统可能会再问一次）"))
+      ]
+    case .otherAppsData:
+      return [
+        LauncherItem(
+          kind: .prompt, target: Self.pathOpenPrefix + directory,
+          title: String(localized: "「\(name)」是别的 App 的数据，这里不列"), subtitle: finder)
+      ]
+    case .denied:
+      // 桌面、文稿这类问过授权被拒的：去系统设置改；别的（系统保护的）在访达里看
+      if case .needsFolderAccess = PathBrowser.problem(
+        at: directory, folderAccess: false, volumes: true)
+      {
+        return [
+          LauncherItem(
+            kind: .prompt, target: FileSearch.accessTarget,
+            title: String(localized: "没有权限查看「\(name)」里的东西"),
+            subtitle: String(localized: "↩ 打开系统设置 › \(Permissions.privacyPane) › 文件和文件夹"))
+        ]
+      }
+      return [
+        LauncherItem(
+          kind: .prompt, target: Self.pathOpenPrefix + directory,
+          title: String(localized: "没有权限查看「\(name)」里的东西"), subtitle: finder)
+      ]
+    case .missing: return []
+    }
+  }
+
+  /// 路径模式里「在访达中打开」的行（目标是这个前缀 + 目录）、「允许读取外接盘」那一行
+  static let pathOpenPrefix = "path-open:"
+  static let pathVolumes = "path-volumes"
+
+  /// ⇧Tab：路径模式里回到上一级
+  private func goUpPath() {
+    guard pathRequest != nil, let up = PathBrowser.parentQuery(of: query) else {
+      return NSSound.beep()
+    }
+    query = up
+  }
+
+  /// 收藏、常用里的文件、应用程序目录以外的 App 还在不在：在主线程外查（卡住的盘不能冻住 App），查完有变化就重列
+  private func checkPresence() {
+    guard presenceTask == nil else { return }
+    let catalog = Set(apps.map(\.target))
+    var candidates: [(kind: LauncherItem.Kind, target: String)] = usage.favorites.map {
+      ($0.kind, $0.target)
+    }
+    for entry in usage.entries.values where entry.query.isEmpty {
+      candidates.append((entry.kind, entry.target))
+    }
+    let paths = Set(
+      candidates.filter { $0.kind == .path || ($0.kind == .app && !catalog.contains($0.target)) }
+        .map(\.target))
+    guard !paths.isEmpty else { return }
+    presenceTask = Task {
+      let missing = await PathBrowser.missing(Array(paths))
+      presenceTask = nil
+      guard missing != missingPaths else { return }
+      missingPaths = missing
+      if isShown, query.isEmpty, !userMovedSelection { search() }
+    }
+  }
+
+  /// 查一遍在不在、等它查完（单测用：截图自检、单测里的面板不呼出，checkPresence 不会自己跑）
+  func presenceCheck() async {
+    checkPresence()
+    await presenceTask?.value
+  }
 
   /// 文件搜索：查询还在跑时留着上一次的结果（约 40 ms 后换掉，免得列表先空再长）；1 个字母不查
   private func searchFiles(_ request: FileSearch.Request) {
@@ -1479,6 +1707,7 @@ import UniformTypeIdentifiers
       .filter {
         $0.query.isEmpty && ($0.kind == .url || $0.kind == .path) && !$0.listed
           && !bookmarked.contains($0.target.lowercased()) && !AppCatalog.isSettingsPane($0.target)
+          && !missingPaths.contains($0.target)
       }
       .map(Self.item(for:))
   }
@@ -1531,8 +1760,8 @@ import UniformTypeIdentifiers
     switch kind {
     case .app:
       if let app = apps.first(where: { $0.target == target }) { return app }
-      // 应用程序目录以外的 App
-      return FileManager.default.fileExists(atPath: target) ? AppCatalog.item(path: target) : nil
+      // 应用程序目录以外的 App（在不在由 checkPresence 在主线程外查）
+      return missingPaths.contains(target) ? nil : AppCatalog.item(path: target)
     case .action:
       return actions.first { $0.target == target }
         ?? (scriptsOn() ? LauncherItem.scriptActions.first { $0.target == target } : nil)
@@ -1545,8 +1774,8 @@ import UniformTypeIdentifiers
       return apps.first { $0.target == target }
         ?? Self.item(kind: .url, target: target, title: title)
     case .path:
-      return FileManager.default.fileExists(atPath: target)
-        ? Self.item(kind: .path, target: target, title: title) : nil
+      return missingPaths.contains(target)
+        ? nil : Self.item(kind: .path, target: target, title: title)
     // 不记使用，不会出现
     case .search, .calculation, .clip, .prompt, .translate, .process, .ip, .reminder,
       .scriptResult:
@@ -1574,6 +1803,7 @@ import UniformTypeIdentifiers
   // MARK: 执行
 
   func execute(_ item: LauncherItem) {
+    if pathPending { return NSSound.beep() }
     if let request = commandRequest, [.app, .path, .process].contains(item.kind) {
       return runTarget(item, rowVerb(item, in: request))
     }
@@ -1619,6 +1849,14 @@ import UniformTypeIdentifiers
       offerPlugin(plugin)
     case .prompt where item.target.hasPrefix(Self.awakePrefix):
       runKeepAwake(item)
+    case .prompt where item.target == Self.pathVolumes:
+      UserDefaults.standard.set(true, forKey: Prefs.launcherVolumesAllowed)
+      pathListings = [:]
+      search()
+    case .prompt where item.target.hasPrefix(Self.pathOpenPrefix):
+      close()
+      NSWorkspace.shared.open(
+        URL(filePath: String(item.target.dropFirst(Self.pathOpenPrefix.count))))
     case .prompt:
       if let completion = item.completion { query = completion }
     case .search:
@@ -2420,11 +2658,8 @@ import UniformTypeIdentifiers
     if let completion = item.completion { return completion }
     switch item.kind {
     case .app, .action, .url, .system: return item.title
-    case .path:
-      var isDirectory: ObjCBool = false
-      let exists = FileManager.default.fileExists(atPath: item.target, isDirectory: &isDirectory)
-      let path = (item.target as NSString).abbreviatingWithTildeInPath
-      return exists && isDirectory.boolValue && !path.hasSuffix("/") ? path + "/" : path
+    // 不 stat（路径可能在卡住的盘上）：补出路径本身，是文件夹的话路径模式会直接列它里面
+    case .path: return (item.target as NSString).abbreviatingWithTildeInPath
     case .script: return item.arguments == nil ? item.title : nil
     case .search, .calculation, .clip, .prompt, .translate, .process, .ip, .reminder,
       .scriptResult:
@@ -2482,6 +2717,9 @@ import UniformTypeIdentifiers
     case .prompt where item.target.hasPrefix(Self.awakePrefix): Self.act("开始", "cup.and.saucer")
     case .prompt where item.target.hasPrefix(Self.choicePrefix):
       Self.act("选这个", "text.cursor")
+    case .prompt where item.target == Self.pathVolumes: Self.act("允许读取", "externaldrive")
+    case .prompt where item.target.hasPrefix(Self.pathOpenPrefix):
+      Self.act("在访达中打开", "folder")
     case .prompt:
       item.target == FileSearch.accessTarget
         ? Self.act(
@@ -2769,16 +3007,31 @@ import UniformTypeIdentifiers
     if !isQuickLooking { toggleQuickLook() }
   }
 
-  /// 移到废纸篓（能放回，按 D2「只确认不可撤销的」不二次确认）：刘海岛说一声，结果行原地删掉（settle）
+  /// 移到废纸篓（能放回，按 D2「只确认不可撤销的」不二次确认）：刘海岛说一声、带「撤销」（第五轮体检 U5①），
+  /// 结果行原地删掉（settle）
   private func moveToTrash(_ item: LauncherItem) {
+    let original = URL(filePath: item.target)
     Task {
+      let trashed: URL?
       do {
-        try await recycle(URL(filePath: item.target))
+        trashed = try await recycle(original)
       } catch {
         island?.show("没能移到废纸篓", detail: "\(error.localizedDescription)", tone: .error)
         return
       }
-      island?.show("已移到废纸篓「\(item.title)」", symbol: "trash.circle.fill")
+      // 整个丢掉：删的可能是正在列的文件夹本身
+      pathListings = [:]
+      island?.show(
+        "已移到废纸篓「\(item.title)」", symbol: "trash.circle.fill",
+        actions: trashed.map { trashed in
+          [
+            Self.putBack(trashed, to: original, island: island) { [self] in
+              pathListings = [:]
+              // 收起着就不搜（同「关掉这条命令」的撤销）；下次呼出自己会搜
+              if isShown { search() }
+            }
+          ]
+        } ?? [])
       let index = selection
       withAnimation(Style.Motion.settle.animation(reduced: Style.reduceMotion)) {
         if isShowingRecent {
@@ -2789,6 +3042,98 @@ import UniformTypeIdentifiers
       }
       selection = min(index, max(results.count - 1, 0))
     }
+  }
+
+  /// 「已移到废纸篓」上的「撤销」（启动器、设置里脚本的「移到废纸篓」共用，第五轮体检 U5①）：从废纸篓挪回原处。
+  /// 原处又有了同名的就报错、不覆盖（RENAME_EXCL，同 mac-native §2 动用户文件的规矩）；done：放回去之后（重搜、重读脚本库）
+  static func putBack(
+    _ trashed: URL, to original: URL, island: Island?, done: @escaping () -> Void
+  ) -> Island.Action {
+    Island.Action("撤销") {
+      let name = original.lastPathComponent
+      let error = FileMoves.rename(trashed, to: original)
+      guard error != 0 else {
+        island?.show("已放回「\(name)」", symbol: "arrow.uturn.backward.circle.fill")
+        return done()
+      }
+      // 可选参数里的三目只有第一个分支抽得进目录：先放进不是可选的 let
+      let detail: LocalizedStringResource =
+        if error == EEXIST || error == ENOTEMPTY {
+          "原处已经有同名的了，没有覆盖"
+        } else if !FileMoves.occupied(trashed) {
+          "废纸篓里已经没有它了"
+        } else {
+          "原来的文件夹不在了，或者那里写不了"
+        }
+      island?.show("没能放回「\(name)」", detail: detail, tone: .warning)
+    }
+  }
+
+  /// 能不能移到废纸篓：只在主文件夹里面给；主文件夹本身、它下面的系统文件夹（桌面、文稿、下载、资源库、图片…）和资源库里的
+  /// 第一层不给（2026-11-18 拍板第 11 项：路径模式能选中整个文件夹）。盘不分大小写，按小写比（~/library/preferences 也挡住）。
+  /// ponytail: 按输入的路径判断、不解开链接（在主线程，不 stat）；主文件夹里链到外面的，系统不让删的照样删不掉
+  static func canTrash(_ path: String, home: String = NSHomeDirectory()) -> Bool {
+    let standard = (path as NSString).standardizingPath.lowercased()
+    let home = home.lowercased()
+    guard standard.hasPrefix(home + "/") else { return false }
+    let parts = standard.dropFirst(home.count + 1).split(separator: "/")
+    let system: Set<Substring> = [
+      "desktop", "documents", "downloads", "library", "pictures", "movies", "music", "public",
+      "applications",
+    ]
+    return !(parts.count == 1 && system.contains(parts[0]))
+      && !(parts.count == 2 && parts[0] == "library")
+  }
+
+  /// 路径的行（文件、文件夹，不是宗卷）：才有在终端中打开、拷贝文件、复制终端写法的路径
+  func isPathRow(_ item: LauncherItem) -> Bool {
+    item.kind == .path && commandRequest == nil && item.contentType?.conforms(to: .volume) != true
+  }
+
+  /// 「在终端中打开」用哪个：设置 › 访达右键「用 App 打开」里排第一的终端（打不开纯文本的那种，编辑器跳过），
+  /// 没设过、都没装就是系统「终端」（同访达右键）
+  static func terminalApp(ids: [String]) -> URL? {
+    let workspace = NSWorkspace.shared
+    let editors = Set(workspace.urlsForApplications(toOpen: .plainText).map(\.standardizedFileURL))
+    for id in ids {
+      if let app = workspace.urlForApplication(withBundleIdentifier: id),
+        !editors.contains(app.standardizedFileURL)
+      {
+        return app
+      }
+    }
+    return workspace.urlForApplication(withBundleIdentifier: "com.apple.Terminal")
+  }
+
+  /// ⌘T：在终端里打开这个文件夹（选中的是文件时开它所在的文件夹：脚本不会被运行，同访达右键交给终端）
+  private func openInTerminal(_ item: LauncherItem) {
+    guard let app = Self.terminalApp(ids: FinderLink.openWithApps) else { return NSSound.beep() }
+    let file = URL(filePath: item.target)
+    let isFolder =
+      item.contentType.map { $0.conforms(to: .folder) }
+      ?? ((try? file.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true)
+    let folder = isFolder ? file : file.deletingLastPathComponent()
+    close()
+    NSWorkspace.shared.open([folder], withApplicationAt: app, configuration: .init()) {
+      _, error in
+      // 只记错误码：错误说明里带着路径
+      if let error { Log.finder.error("启动器在终端中打开失败：\((error as NSError).code)") }
+    }
+  }
+
+  /// ⇧⌘C：把文件本身放进剪贴板（能粘进访达、聊天窗口；同录屏卡的「拷贝」）
+  private func copyFile(_ item: LauncherItem) {
+    Paster.write(files: [URL(filePath: item.target)])
+    close()
+    island?.show("已拷贝文件", detail: "\(item.title)")
+  }
+
+  /// ⌥⌘C：终端写法的路径（有空格、括号的整段加单引号，同访达右键 FinderLink.shellText）
+  private func copyShellPath(_ item: LauncherItem) {
+    let url = URL(filePath: item.target)
+    Paster.write(string: FinderLink.shellText([url]), record: true)
+    close()
+    island?.show("已拷贝终端写法的路径", detail: "\(FinderLink.copiedDetail([url]))")
   }
 
   /// 默认浏览器以外能开网页的 App（按 https 问 LaunchServices，不读网页）。
@@ -2858,6 +3203,9 @@ import UniformTypeIdentifiers
       }
     case #selector(NSResponder.insertTab(_:)):
       complete()  // 没得补也吞掉，不让焦点跳到别的控件
+    // ⇧Tab：路径模式里回到上一级；别处吞掉（同 Tab，不让焦点跳走）
+    case #selector(NSResponder.insertBacktab(_:)):
+      if pathRequest != nil { goUpPath() }
     // →：光标在搜索词末尾、有选中项时打开动作菜单（同剪贴板），否则照常往右移光标
     case #selector(NSResponder.moveRight(_:))
     where selectedItem != nil && Self.caretAtEnd(of: query):
@@ -2987,10 +3335,16 @@ import UniformTypeIdentifiers
     case [.command, .option] where key == kVK_UpArrow || key == kVK_DownArrow:
       handled = moveFavorite(by: key == kVK_UpArrow ? -1 : 1)
     case [.command, .shift] where key == kVK_ANSI_C:
-      guard let item = selectedItem, isWebLink(item), !Self.fieldHasSelection(event) else {
+      guard let item = selectedItem, isWebLink(item) || isPathRow(item),
+        !Self.fieldHasSelection(event)
+      else {
         return false
       }
-      copy(item, .markdown)
+      if isPathRow(item) { copyFile(item) } else { copy(item, .markdown) }
+      handled = true
+    case [.command, .option] where key == kVK_ANSI_C:
+      guard let item = selectedItem, isPathRow(item) else { return false }
+      copyShellPath(item)
       handled = true
     default: return false
     }
@@ -3022,6 +3376,9 @@ import UniformTypeIdentifiers
       toggleFavorite(item)
     case kVK_ANSI_Y:
       toggleQuickLook()
+    case kVK_ANSI_T:
+      guard let item = selectedItem, isPathRow(item) else { return false }
+      openInTerminal(item)
     case kVK_ANSI_E:
       guard let item = selectedItem, let script = script(of: item) else { return false }
       edit(script)
@@ -3030,10 +3387,11 @@ import UniformTypeIdentifiers
       openSettings()
     default:
       guard let digit = HotKey.digitKeys.firstIndex(of: Int(event.keyCode)) else { return false }
+      let row = shortcutBase + digit
       // 列表脚本正在重跑时的结果行：⌘N 会落到新结果的第一条上，不执行
-      if digit < results.count, !isPending(results[digit]) {
-        execute(results[digit])
-      } else if digit < results.count {
+      if row < results.count, !isPending(results[row]) {
+        execute(results[row])
+      } else if row < results.count {
         NSSound.beep()
       }
     }
@@ -3155,6 +3513,8 @@ import UniformTypeIdentifiers
     selectionMotion = Style.isKeyRepeat ? .instant : .snap
     selection = (selection + offset + results.count) % results.count
     userMovedSelection = true
+    // 焦点一直在搜索框，行上的「已选中」读屏看不到：说出选中了什么（A1）
+    if let item = selectedItem { Island.announceSettled(item.title, item.kindTitle) }
   }
 
   // MARK: ⌘K 动作菜单 / 右键菜单
@@ -3191,6 +3551,9 @@ import UniformTypeIdentifiers
     }
     if isFile(item) || Self.resultFile(item) != nil {
       add("快速查看", "eye", "⌘Y", section: 0) { [unowned self] in quickLook(item) }
+    }
+    if isPathRow(item) {
+      add("在终端中打开", "terminal", "⌘T", section: 0) { [unowned self] in openInTerminal(item) }
     }
     // 1 脚本（第二轮 D1）：发现一条不对劲，就地改它、换个词、关掉；自带的复制一份成自己的。
     // 脚本没有「用别的 App 打开」，接在打开后面，不用滚就看得到
@@ -3237,6 +3600,12 @@ import UniformTypeIdentifiers
         ? "link" : "doc.on.doc"
       add(title, symbol, "⌘C", section: 2) { [unowned self] in copy(item) }
     }
+    if isPathRow(item) {
+      add("拷贝文件", "doc.on.doc", "⇧⌘C", section: 2) { [unowned self] in copyFile(item) }
+      add("复制终端写法的路径", "apple.terminal", "⌥⌘C", section: 2) { [unowned self] in
+        copyShellPath(item)
+      }
+    }
     if web {
       add("复制为 Markdown 链接", "text.badge.plus", "⇧⌘C", section: 2) { [unowned self] in
         copy(item, .markdown)
@@ -3278,7 +3647,7 @@ import UniformTypeIdentifiers
     if isCommon(item) {
       add("从常用中移除", "clock.badge.xmark", "⌘⌫", section: 4) { [unowned self] in forget(item) }
     }
-    if isFile(item) {
+    if isFile(item), Self.canTrash(item.target) {
       add("移到废纸篓", "trash", section: 4, destructive: true) { [unowned self] in
         moveToTrash(item)
       }
@@ -3327,9 +3696,11 @@ import UniformTypeIdentifiers
   }
 
   private func moveAction(by offset: Int) {
-    let count = filteredActions.count
+    let actions = filteredActions
+    let count = actions.count
     guard count > 0 else { return }
     actionSelection = (actionSelection + offset + count) % count
+    ActionMenu.announce(actions[actionSelection])
   }
 
   private func runSelectedAction() {

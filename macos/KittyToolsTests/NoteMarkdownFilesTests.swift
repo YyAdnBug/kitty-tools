@@ -281,6 +281,24 @@ struct NoteMarkdownFilesTests {
     #expect(Set(result.notes.map(\.id)).count == 3)
   }
 
+  /// 第五轮体检 P2：「导入…」选中的文件夹（读第一层的 .md / .markdown）和文件（.md / .markdown / .txt）在主线程外
+  /// 列成 sources，按文件名排；文件的图片相对它所在的文件夹
+  @Test func sourcesFromPickedURLs() async throws {
+    let folder = root.appending(path: "picked", directoryHint: .isDirectory)
+    try manager.createDirectory(
+      at: folder.appending(path: "子文件夹"), withIntermediateDirectories: true)
+    for name in ["b.md", "a.markdown", "c.txt", ".隐藏.md", "子文件夹/d.md"] {
+      try "x".write(to: folder.appending(path: name), atomically: true, encoding: .utf8)
+    }
+    let loose = root.appending(path: "0 单独.txt")
+    try "y".write(to: loose, atomically: true, encoding: .utf8)
+    let image = root.appending(path: "图.png")
+    try Data([0]).write(to: image)
+    let sources = await NoteMarkdownFiles.sources(in: [folder, loose, image])
+    #expect(sources.map(\.url.lastPathComponent) == ["0 单独.txt", "a.markdown", "b.md"])
+    #expect(sources.map(\.root.lastPathComponent) == [root.lastPathComponent, "picked", "picked"])
+  }
+
   /// 同步文件夹里的文件（NoteSyncFolder，带 sync-clock）不导：这里读不全它的删除时刻，在最近删除里的会被当没删的导回来
   @Test func importSkipsSyncFiles() async throws {
     let folder = root.appending(path: "sync", directoryHint: .isDirectory)

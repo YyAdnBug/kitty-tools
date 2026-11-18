@@ -41,6 +41,9 @@ enum Prefs {
   static let launcherPanelPosition = "launcherPanelPosition"
   /// 呼出启动器时搜索框只用英文输入法（Alfred 的 Force Keyboard；离开启动器后恢复）
   static let launcherRomanInput = "launcherRomanInput"
+  /// 启动器路径模式里点过「允许读取」外接盘、网络盘（2026-11-18，PathBrowser）：之后才去读 /Volumes 下的盘（系统可能弹框）。
+  /// 这台电脑自己的，**不注册默认值**（不导出、不同步）
+  static let launcherVolumesAllowed = "launcherVolumesAllowed"
   /// 计算器汇率换算用的那一天的汇率表（ExchangeRates.Table 的 JSON）：取来的缓存，**不注册默认值**（不导出、不同步）
   static let launcherExchangeRates = "launcherExchangeRates"
   /// 计算器汇率换算用过的货币（代码，最近的在前，最多 8 种）：货币候选排前面；这台电脑自己的，**不注册默认值**

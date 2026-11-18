@@ -494,7 +494,11 @@ struct ClipboardPanelView: View {
 
   /// 共用的空状态（Shell/Style 的 EmptyState）：28 pt 符号 + 14 semibold 标题 + 说明 / 品牌粉文字按钮
   @ViewBuilder private var emptyState: some View {
-    if model.isFiltered {
+    if model.isEmptyGroup {
+      EmptyState(symbol: "folder", title: "这个收藏夹还是空的") {
+        Text("在别的条目上按 ⌘K，选「移到收藏夹」放进来").foregroundStyle(.secondary)
+      }
+    } else if model.isFiltered {
       EmptyState(symbol: "magnifyingglass", title: "没有匹配的条目") {
         Button("清除搜索和筛选", action: model.clearSearchAndFilters)
           .buttonStyle(.plain)

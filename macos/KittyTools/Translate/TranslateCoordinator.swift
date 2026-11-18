@@ -95,6 +95,9 @@ import Observation
   private(set) var notice: String?
   /// 提示要引导去授权的那一项；nil 就不显示授权按钮
   private(set) var noticePermission: Permissions.Kind?
+  /// 这次的原文不是单词、启用的服务却都只能查词（有道词典这类）：一张卡都没开，结果区说「启用的服务只能查单词」、
+  /// 带「打开翻译设置」，不当成还没开始翻译（第五轮体检 U8）。setter 不设 private 只为截图自检
+  var onlyDictionaries = false
 
   /// 查单个词时系统词典的释义（不是单个词、查不到、设置关掉时为 nil）；setter 不设 private 只为截图自检
   var dictionary: DictionaryEntry?
@@ -192,12 +195,25 @@ import Observation
     return nil
   }
 
-  /// 这次翻译收藏了没有（星标）；读 history.revision 让收藏变化时刷新
+  /// 这次翻译收藏了没有（星标）；读 history.revision 让收藏变化时刷新。
+  /// 记下来的那一份（第五轮体检 P3）：流式时每来一段字浮窗都重算，原来每次都对库查一次「原文 + 目标语言」
+  /// （4 张生成中的卡、32 KB 原文时浮窗更新一遍中位 4.1 ms，记下来以后 3.6 ms，TranslateFavoriteProbeTests）。
+  /// 原文、目标语言、历史的修订号都没变就用它；
+  /// 收藏、取消收藏、定稿写历史、别处删改历史都会让修订号变，下一次读就重查
   var isFavorite: Bool {
-    _ = history.revision
+    let revision = history.revision
     guard let request, let target else { return false }
-    return history.isFavorite(source: request.text, target: target)
+    if let cached = favoriteCache, cached.revision == revision, cached.target == target,
+      cached.text == request.text
+    {
+      return cached.value
+    }
+    let value = history.isFavorite(source: request.text, target: target)
+    favoriteCache = (request.text, target, revision, value)
+    return value
   }
+  @ObservationIgnored private var favoriteCache:
+    (text: String, target: Lang, revision: Int, value: Bool)?
 
   /// ⌘D / 星标：收藏或取消这次翻译（主结果定下来后才能收藏）；返回是否做了。
   /// 关着历史时取消收藏就把这条删掉（收藏时才记进去的，留着就成了「关了历史却有历史」）。
@@ -264,6 +280,7 @@ import Observation
     abandonedTarget = nil
     notice = nil
     noticePermission = nil
+    onlyDictionaries = false
     showsHistory = false
   }
 
@@ -315,6 +332,7 @@ import Observation
     showsHistory = false
     notice = nil
     noticePermission = nil
+    onlyDictionaries = false
     missedSelection = false
     translatedSource = sourceText.trimmingCharacters(in: .whitespacesAndNewlines)
     let text = Self.preprocess(sourceText)
@@ -338,6 +356,7 @@ import Observation
     cards = services.enabled.filter { lookup || !$0.kind.isDictionary }.map {
       Card(service: $0, state: collapsed.contains($0.id) ? .idle : .waiting)
     }
+    onlyDictionaries = cards.isEmpty && !services.enabled.isEmpty
     runAll(text)
   }
 
@@ -447,8 +466,12 @@ import Observation
       throw TranslateError(message: String(localized: "原文为空或太长"))
     }
     let request = Self.plan(for: text, inPanel: false).request
-    var failure: Error = TranslateError.config(String(localized: "没有启用的翻译服务"))
-    for service in orderedServices where !service.kind.isDictionary {
+    let services = orderedServices
+    // 只启用了词典类服务（有道词典）：它们只查单词，替换不了一段话（第五轮体检 U8，原来报「没有启用的翻译服务」）
+    var failure: Error = TranslateError.config(
+      services.isEmpty
+        ? String(localized: "没有启用的翻译服务") : String(localized: "启用的服务只能查单词，翻译句子要再启用一个翻译服务"))
+    for service in services where !service.kind.isDictionary {
       do {
         var latest = ""
         for try await partial in stream(service, request) { latest = partial }

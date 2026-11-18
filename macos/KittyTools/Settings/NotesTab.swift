@@ -189,29 +189,11 @@ struct NotesTab: View {
         isTransferring = false
         return
       }
-      let roots = panel.urls.map { url -> URL in
-        var isDirectory: ObjCBool = false
-        FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
-        return isDirectory.boolValue ? url : url.deletingLastPathComponent()
-      }
-      var sources: [NoteMarkdownFiles.Source] = []
-      for (index, url) in panel.urls.enumerated() {
-        var isDirectory: ObjCBool = false
-        FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
-        if isDirectory.boolValue {
-          for file in NoteMarkdownFiles.markdownFiles(in: url) {
-            sources.append(NoteMarkdownFiles.Source(url: file, root: url))
-          }
-        } else if ["md", "markdown", "txt"].contains(url.pathExtension.lowercased()) {
-          sources.append(NoteMarkdownFiles.Source(url: url, root: roots[index]))
-        }
-      }
-      sources.sort {
-        $0.url.lastPathComponent.localizedStandardCompare($1.url.lastPathComponent)
-          == .orderedAscending
-      }
+      let urls = panel.urls
       let imageDirectory = store.images?.directory
       Task {
+        // 列文件夹也在主线程外（第五轮体检 P2：选的可能是卡住的网络盘）
+        let sources = await NoteMarkdownFiles.sources(in: urls)
         let result = await NoteMarkdownFiles.importNotes(
           sources: sources, imageDirectory: imageDirectory)
         isTransferring = false

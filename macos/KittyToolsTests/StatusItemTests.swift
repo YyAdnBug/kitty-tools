@@ -166,4 +166,27 @@ struct StatusItemTests {
     rep.size = NSSize(width: 32, height: 32)
     return rep
   }
+
+  /// 第五轮体检 A4④：高亮的那一行换成模板图（跟着字反白），离开换回家族色；后来换成别的图（状态屏的表情）的不动
+  @Test func highlightedMenuIconTurnsTemplate() throws {
+    let menu = NSMenu()
+    let item = menu.addAction("截图", symbol: "camera", color: .systemPink) {}
+    let colored = try #require(item.image)
+    #expect(!colored.isTemplate)
+    StatusItem.highlight(item, true)
+    #expect(item.image?.isTemplate == true && item.image !== colored)
+    StatusItem.highlight(item, true)  // 再来一次不变
+    #expect(item.image?.isTemplate == true)
+    StatusItem.highlight(item, false)
+    #expect(item.image === colored)
+    let emoji = menu.addAction("状态", symbol: "camera", color: .systemPink) {}
+    let face = NSImage(size: NSSize(width: 16, height: 16))
+    emoji.image = face
+    StatusItem.highlight(emoji, true)
+    #expect(emoji.image === face)
+    // 重建菜单时清空（StatusItem.menuNeedsUpdate）：没记着的项不动
+    StatusItem.menuImages = [:]
+    StatusItem.highlight(item, true)
+    #expect(item.image === colored)
+  }
 }

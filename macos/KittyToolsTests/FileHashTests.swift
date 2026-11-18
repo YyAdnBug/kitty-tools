@@ -32,6 +32,17 @@ import Testing
     let expected = String(shasum.output.prefix(64))
     #expect(await FileHash.digest(of: big, kind: .sha256) == expected)
     #expect(await FileHash.digest(of: root.appending(path: "没有"), kind: .sha256) == nil)
+    // 第五轮体检 P4：读到第几个字节一块一块报出来，最后一个是文件大小，算完结束
+    let (read, reader) = AsyncStream.makeStream(of: Int64.self)
+    #expect(await FileHash.digest(of: big, kind: .sha256, read: reader) == expected)
+    var reported: [Int64] = []
+    for await bytes in read { reported.append(bytes) }
+    #expect(reported == [1 << 20, (1 << 20) + 4097])
+    // 读不到的也结束（不让等着的那一头挂住）
+    let (none, noneReader) = AsyncStream.makeStream(of: Int64.self)
+    #expect(
+      await FileHash.digest(of: root.appending(path: "没有"), kind: .md5, read: noneReader) == nil)
+    for await _ in none { Issue.record("读不到的不该报进度") }
   }
 
   /// 剪贴板里原来的是同样长的哈希值才比；大小写、前后空白不算

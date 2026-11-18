@@ -505,7 +505,7 @@ struct ShortcutsSheet: View {
           Entry("↩", String(localized: "双击"), text: "改标注（录制的是用默认 App 打开）"),
           Entry("⌘C", text: "拷贝（画过标注的带标注；选着好几条时拷的是几个文件）"),
           Entry("⌘S", "⇧⌘S", text: "存储到快速保存目录（选着好几条就一起存）/ 另存为…（一条时）"),
-          Entry("⌘P", text: "钉到屏幕"),
+          Entry("T", text: "钉到屏幕"),
           Entry("⌘O", text: "识字并拷贝"),
           Entry("⇧⌘R", text: "在访达中显示（存过盘的、录制的那几条才有）"),
           Entry("⌘F", text: "搜索（搜来源 App 和种类）"),

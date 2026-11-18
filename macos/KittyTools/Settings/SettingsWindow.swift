@@ -456,9 +456,13 @@ final class SettingsWindow: NSObject, NSWindowDelegate {
   }
 
   /// page：要切到的页；nil 保持上次的页。onboarding：盖上欢迎引导（首次安装、关于页里重看）
-  func show(page: SettingsPage? = nil, onboarding: Bool = false) {
+  /// path：换到 page 之后推进的详情页（主界面「管理…」直接到「功能」，同全部插件页的推进写法）
+  func show(page: SettingsPage? = nil, path: [String] = [], onboarding: Bool = false) {
     // 页面上开着 sheet（快捷键速查表、确认框等）时不换页：换页会把那一页连同 sheet 和没保存的输入一起拆掉
-    if let page, window.attachedSheet == nil { navigation.page = page }
+    if let page, window.attachedSheet == nil {
+      navigation.page = page
+      if !path.isEmpty { navigation.path = path }
+    }
     // 停在已经移除的插件页上（设置窗关着时同步来的移除：带回「全部插件」的那一步只在页面开着时跟，评审 7）：回「全部插件」
     if SettingsPage.absentPlugins().contains(navigation.page) { navigation.page = .plugins }
     // 新功能标记：打开设置窗也算打开了那一页（换了页时 SettingsRoot 的 onChange 也会来一次，重复的不写偏好）

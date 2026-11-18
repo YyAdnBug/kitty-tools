@@ -224,6 +224,35 @@ struct ClipboardStoreTests {
     #expect(store.items.map(\.text) == ["新收藏"])
   }
 
+  /// 第五轮体检 P4：一批取消收藏的 ⌘Z 一起改回去（一个事务），收藏、片段、收藏夹都回来，落进库里
+  @Test func undoingABatchOfUnfavoritesRestoresEveryItem() throws {
+    let (store, db) = try makeStore()
+    let later = Date.now.addingTimeInterval(10 * 86_400)
+    let week = ClipboardStore.Limits(maxAge: 7 * 86_400)
+    let work = try #require(store.createGroup(named: "工作"))
+    var items: [ClipItem] = []
+    for index in 0..<50 {
+      var item = text("第 \(index) 条")
+      item.favorite = true
+      item.isSnippet = index % 2 == 0
+      item.groupID = index % 5 == 0 ? nil : work.id
+      store.record(item)
+      items.append(item)
+    }
+    #expect(
+      store.changeRetention(Set(items.map(\.id)), limits: week, now: later) {
+        $0.favorite = false
+        $0.isSnippet = false
+        $0.groupID = nil
+      } == 50)
+    store.undo()
+    let (reloaded, _) = try makeStore(db)
+    for item in items {
+      let back = try #require(reloaded.items.first { $0.id == item.id })
+      #expect(back.favorite && back.isSnippet == item.isSnippet && back.groupID == item.groupID)
+    }
+  }
+
   @Test func editDropsRichFormat() throws {
     let (store, db) = try makeStore()
     var rich = text("原文")
